@@ -826,6 +826,19 @@ export interface ProcessingOrder {
   /** 客户手机号（列表/详情接口返回，订单详情块未用到） */
   customerPhone?: string
   processingOrderNo: string
+  /**
+   * 作业单类型（issue #7079；键名**冻结**，与同一 DTO 上既有的 `short_code` / `scan_url` 同族）。
+   *
+   * 上位概念统一叫**作业单**，实体上分两型：
+   * `processing` = 加工（成品帘的加工单：有加工方、有交期）；`outbound` = 出库（卖布单的裁剪 /
+   * 打包作业：**没有加工方、没有交期**）。
+   *
+   * 🔴 **缺键 / `null` = 存量单，按加工单处理** —— 读面键由后端并行补，落地前存量行不带它；
+   * 把它们读成「出库」会把加工单的加工方/交期整块藏掉。
+   * 🔴 **机器键不得上屏** —— 界面上一律渲染中文业务名（「加工单」/「出库作业单」），
+   * 走 `orderKindLabelOf()` 的单一真值。
+   */
+  order_kind?: 'processing' | 'outbound' | null
   processor?: string
   expectedDeliveryDate?: string
   status: 'generated' | 'issued' | 'in_processing' | 'completed' | 'cancelled'
@@ -841,8 +854,9 @@ export interface ProcessingOrder {
    * 加工单二维码的**确切内容**（形如 `https://app.migaozn.com/o/7K3M9QP2`）—— 前端**不拼**、逐字用
    * （`{base}/o/{短码}` 由服务端装配；前端自己拼 = 域名/路径段的第二份真值）。
    *
-   * 🔴 它就是**印在纸上的那个码**（issue #6867）：缺它 ⇒ `qrValue` 给 `null`、纸面出「无码」占位框 ——
-   * **不回落加工单号**（回落 = 扫出来仍是纯文本、打不开任何页面，正是本单要治的病）。
+   * 🔴 它仍是**工人端扫码的稳定短链**（issue #6867）：缺它 ⇒ 扫码面出「无码」占位、**不回落加工单号**
+   * （回落 = 扫出来仍是纯文本、打不开任何页面，正是本单要治的病）。⚠️ 加工单**纸面**自 issue #7219
+   * 起不再印 QR（`ProcessingDoc` 的 `qrValue` prop 已退场），本字段不再影响纸面。
    */
   scan_url?: string | null
   items?: ProcessingOrderItem[]
@@ -947,6 +961,16 @@ export interface ProductionOperation {
   status?: string | null
   done_qty?: number
   /**
+   * 报工三态数量（issue #7140，**只加不改**）：合格 / 返工 / 报废。
+   *
+   * 🔴 返工 / 报废**既不推进进度也不计件**（既有口径，一字未改）—— 但它们是**质量读数**：
+   * 加这三个键之前它们只出现在米宝的 agent 读面（`GET /api/admin/agent/production/worklog`）
+   * ⇒ 商家在观星台的生产明细上**看不到**（前端 0 消费者）。缺报工 ⇒ `0`（「没有这一笔」是真事实）。
+   */
+  qualified_qty?: number
+  rework_qty?: number
+  scrap_qty?: number
+  /**
    * 报工人（issue #4309）：该工序实例下报过工的人（`production_work_logs.worker_name`）。
    * 后端已去重、按首次报工时间升序、只取 `work_type='normal'`、空名折「未署名」；
    * 无报工 = 空数组 ⇒ 表格渲染「—」。**商家侧**生产明细专用，不得进顾客面卡片。
@@ -990,6 +1014,117 @@ export interface ProductionPosition {
   /** 订单行高度（米；V63 列，读面回查；缺键不补默认值） */
   height?: number | null
   operations?: ProductionOperation[]
+}
+
+// ── 质检记录（**成品帘级**；载体 issue #5652 / 商家面 issue #7140）──
+
+/**
+ * 质检判定三态（**成品帘级**）。
+ *
+ * 🔴 与报工侧 `work_type` **不是一回事**（用户 2026-10-16 裁定「两套口径并存」）：
+ * 报工说的是「这一笔报的是什么货」（数量事实），本判定说的是「**这一件成品帘**判了什么」。
+ */
+export type QualityInspectionResult = 'pass' | 'rework' | 'scrap'
+
+/** 待检清单的状态：`pending` = 尚无任何判定；其余 = 该成品帘**最新一条**判定的结果。 */
+export type QualityTargetState = QualityInspectionResult | 'pending'
+
+/** 一条质检记录（`GET|POST /api/admin/quality-inspections`）。 */
+export interface QualityInspectionRecord {
+  id: string
+  order_item_id: string
+  processing_order_id: string
+  /** 成品帘展示名快照；缺值 = `null`（界面不折成编号、不编假名） */
+  position_name?: string | null
+  result: QualityInspectionResult
+  /** 判定中文标签（服务端给：合格 / 返工 / 报废）；未知值如实 `null` */
+  result_label?: string | null
+  reason?: string | null
+  inspector_name?: string | null
+  inspected_at?: string | null
+}
+
+/** 待检清单一行 = **一件成品帘**（`order_item_id` 级，与录入的颗粒度同一份）。 */
+export interface QualityTarget {
+  order_item_id: string
+  processing_order_id: string
+  processing_order_no?: string | null
+  /** 加工单所属销售订单号（issue #7160）；取不到 = `null`（界面渲染 `—`，不编值） */
+  order_no?: string | null
+  processing_status?: string | null
+  product_name?: string | null
+  color_name?: string | null
+  sku?: string | null
+  quantity?: number | null
+  unit?: string | null
+  /** 最新判定状态（无记录 = `pending`） */
+  state: QualityTargetState
+  /** 最新一条记录；`null` = **从未质检**（不是「合格」，两句话不许混） */
+  latest?: QualityInspectionRecord | null
+}
+
+/** 待检清单响应：分页 + 逐状态计数（计数是**条数**，不是比率 —— 合格率不在服务端算）。 */
+export interface QualityTargetsResponse {
+  items: QualityTarget[]
+  total: number
+  page: number
+  size: number
+  counts: Record<QualityTargetState, number>
+}
+
+/** 指标时间窗（issue #7192）：今日 / 本周 / 本月 / 全部。 */
+export type QualityStatsWindow = 'today' | 'week' | 'month' | 'all'
+
+/** 趋势的一个桶（日 / 周 / 月）。`first_pass_rate` 为 `null` = 该桶 0 样本（**不是** 0%）。 */
+export interface QualityStatsPoint {
+  bucket: string
+  inspected: number
+  first_pass: number
+  first_pass_rate: number | null
+}
+
+/** 分组 Top-N 的一行（加工单 / 商品 / 检验人）。 */
+export interface QualityStatsGroup {
+  name: string
+  inspected: number
+  first_pass: number
+  first_pass_rate: number | null
+}
+
+/**
+ * 质检指标（P0+P1，issue #7192）—— **服务端唯一实现**，前端只格式化。
+ *
+ * 🔴 全部按「件」聚合（`order_item_id` 级）：未检**不进分母**；0 样本的率是 `null`（显示「—」）。
+ * 首检合格率按**首次**判定算（复检合格不洗白）；当前合格率 / 返工率 / 报废率按**最新**判定算。
+ */
+export interface QualityStats {
+  window: { from: string | null; to: string | null; name: string | null }
+  bucket: 'day' | 'week' | 'month'
+  min_sample: number
+  counts: {
+    inspected: number
+    first_pass: number
+    current_pass: number
+    rework: number
+    scrap: number
+  }
+  rates: {
+    first_pass_rate: number | null
+    current_pass_rate: number | null
+    rework_rate: number | null
+    scrap_rate: number | null
+  }
+  trend: QualityStatsPoint[]
+  by_processing_order: QualityStatsGroup[]
+  by_product: QualityStatsGroup[]
+  by_inspector: QualityStatsGroup[]
+  /** 待检积压：`oldest_pending_hours` 是**近似**（无「进入待检」时间戳，按加工单生成时刻起算）。 */
+  backlog: {
+    pending: number
+    oldest_pending_hours: number | null
+    approximate: boolean
+    approximate_from: string
+  }
 }
 
 export interface ProductionProgress {
@@ -1475,12 +1610,17 @@ export interface OperationLayers {
 export interface CraftCalcConfig {
   /** 单色每折吃布（米）—— 褶数法：用料 = 每折吃布 × 褶数 + 余量 */
   per_fold_single: number
-  /** 拼色「拼次 → 每折吃布（米）」；键是拼次的字符串形态（JSON 对象键恒为字符串） */
+  /** 拼色「拼次 → **配布长度**（米，整幅一次）」；键是拼次的字符串形态（JSON 对象键恒为字符串）。
+   *  ⚠️ 键名 `per_fold_mixed_times` 是跨端冻结的历史名（issue #7560：值语义已改为配布长度） */
   per_fold_mixed_times: Record<string, number>
   /** 单开余量（米） */
   margin_single: number
   /** 多开余量（米） */
   margin_multi: number
+  /** **拼色**单开余量（米）—— 与单开余量并列的独立参数（issue #7560） */
+  margin_mixed_single: number
+  /** **拼色**多开余量（米） */
+  margin_mixed_multi: number
   /** 褶倍下限（行业红线，可配但不可关） */
   min_fullness: number
   /** 工艺档位 `{档位名: {fullness, label}}` */
@@ -1607,7 +1747,7 @@ export interface RouteRuleCreateParams {
 }
 
 /** 条件工序规则的触发维（issue #4616；与后端闭词表 `TRIGGER_KINDS` 同口径；#4962 加第 4 档 `position`）。 */
-export type RouteRuleTriggerKind = 'craft' | 'option' | 'processing_item' | 'position'
+export type RouteRuleTriggerKind = 'craft' | 'option' | 'processing_item' | 'position' | 'sales_form'
 
 /**
  * 规则创建弹窗的**触发值取值域**（issue #4616；`GET /api/admin/production/route-rule-options`）。
@@ -1968,11 +2108,42 @@ export interface Order {
   refundAt?: string            // 退款时间
   status: OrderStatus
   hasProcessing: boolean       // 是否含加工
-  paymentDeadline?: string     // 支付截止时间（待付款状态用）
-  paymentNo?: string           // 支付宝交易号
-  paidAt?: string              // 支付时间
-  shippedAt?: string           // 发货时间
-  receivedAt?: string          // 确认收货时间
+  /**
+   * **发货前是否有需要报工的作业**（issue #7079 第 5 包；后端键 `needs_work`，详情面下发）
+   * = 含加工项 **或** 有卖布行 —— 后端唯一实现点 = `OrderShipGuard.needsWork`（发货守卫读的同一份）。
+   *
+   * ⚠️ 布尔形态与下面 `work_order_kind` **同源**（`work_order_kind !== null`），这里只如实声明 wire 键；
+   * 前端**唯一读点**是 `lib/processing-order.ts` 的 `workOrderKindOf`（它同时承载「要不要作业」与「要哪一型」，
+   * 两处都读会分裂口径）。🔴 **wire 键是 snake_case 冻结键**（issue #7319）—— 声明成 camelCase 就永远读不到。
+   * 🔴 前端**不许**按「`processingItems` 长度」或「有没有卖布行」自己再推一次（那是第四份口径）。
+   */
+  needs_work?: boolean
+  /**
+   * **没有作业单时该生成哪一型**（后端键 `work_order_kind`）：`processing` 加工单 /
+   * `outbound` 出库作业单；缺键 = 无需要报工的作业（订单直发，屏上不该出现生成入口）。
+   *
+   * 🔴 这是「发货前要不要作业」在前端的**唯一读点**（`lib/processing-order.ts` 的 `workOrderKindOf`）：
+   * 详情页的生成出口、发货页的前置守卫、详情页的发货入口三处一律读它 —— 卖布单（行上没有加工项）
+   * 只读 `processingItems` 会被判成「不需要作业」，那正是本单修前的形态。
+   *
+   * 与 `ProcessingOrder.order_kind` **同一份词表**（本键只在**还没有**作业单时才有值，
+   * 有单之后类型以那张单自己的 `order_kind` 为准）。屏上一律渲染中文业务名（走
+   * `workOrderKindLabelOf`），机器键不上屏。
+   *
+   * 🔴 **wire 键 = snake_case 冻结键 `work_order_kind`**（issue #7319）：后端
+   * `OrderDetailResponse` 用 `@JsonProperty("work_order_kind")` 下发，前端无响应键变换
+   * ⇒ 在这里声明成 camelCase 会让整条读面静默失效（生成作业单入口永不出现）。
+   */
+  work_order_kind?: 'processing' | 'outbound' | null
+  // 🔴 issue #7110：`paymentDeadline`（支付截止时间）**已删** —— 系统没有这个真值源：
+  // `orders` 无该列、无任何写入点、也没有「超时未付 ⇒ 自动取消」的规则 ⇒ 详情页那个
+  // 「支付倒计时」**从来没有渲染过**（前置判断恒为假）。按幽灵字段撤下；
+  // 若日后真要「支付截止」，先补后端真值源（列 + 下单冻结写入点）再回加本键。
+  // 🔴 issue #7078：`paymentNo`（支付宝交易号）**已删** —— 系统没有在线支付交易号的真值源，
+  // 该行已从屏幕撤下；留着本键就是「幽灵字段」（#6882 同类，编译器与测试都不拦 ⇒ 恒 "-"）。
+  paidAt?: string              // 支付时间（orders.paid_at：确认收款时刻，服务端下发）
+  shippedAt?: string           // 发货时间（orders.shipped_at，V148；#7078 起详情面下发）
+  receivedAt?: string          // 确认收货时间（orders.received_at：进入已完成的时刻）
   items?: OrderItem[]          // 商品明细
   processingItems?: OrderProcessingItem[]  // 加工项列表
   logistics?: LogisticsInfo    // 物流信息
@@ -2005,7 +2176,7 @@ export interface Order {
   requiredDeliveryDate?: string | null
   /**
    * **制单人姓名**（issue #5835；库列 `orders.created_by_name`，V142 的**姓名快照**）——
-   * 订单列表「制单人」列读它。`null` / 缺省 = **未采集**（存量单 / 内部服务占位 / 匿名 /
+   * 销售订单「制单人」列读它。`null` / 缺省 = **未采集**（存量单 / 内部服务占位 / 匿名 /
    * C 端自助下单）⇒ 列表渲染「—」，**不做客户端默认**（「没采集」不许静默留空）。
    *
    * 🔴 **不是** `userId`（那是「下单用户 ID / C 端数据隔离依据」）：两者是不同字段、不同口径。
@@ -2265,6 +2436,142 @@ export interface CustomerProfile {
 }
 
 // 客户详情页响应（后端契约：{ id, profile, tags, orders, sessions }）
+/**
+ * 客户授信与往来读数（issue #7370）。
+ *
+ * `creditLimit == null` = **未启用授信**（老客户默认）—— 与「额度 0」必须可区分：
+ * 后者 `available = 0` 且任何赊销都被服务端拒绝。
+ */
+/**
+ * 供应商主数据（issue #7369，P0-1 段 1）。
+ *
+ * `paymentTermsDays`：null = 未设置 / 0 = 现结 / 正数 = 账期天数；
+ * `status`：active 在用 / inactive 停用（停用后不可被新单据选中，段 2 在单据写面拦）。
+ */
+export interface Supplier {
+  id: string
+  name: string
+  contactName?: string | null
+  contactPhone?: string | null
+  paymentTermsDays?: number | null
+  status: 'active' | 'inactive'
+  remark?: string | null
+  createdAt?: string
+  updatedAt?: string
+}
+
+/** 「待指派」的入库单供应商名（issue #7369 段 2）：文本有、档案没挂。 */
+export interface UnassignedInboundSupplier {
+  supplierName: string
+  orderCount: number
+  lastInboundDate?: string | null
+}
+
+/** 采购单状态（后端派生，前端只读）。 */
+export type PurchaseOrderStatus = 'ordered' | 'partially_received' | 'received' | 'closed'
+
+/** 采购单读面（issue #7369 段 4）：已收/未收是派生值。 */
+export interface PurchaseOrderView {
+  id: string
+  poNo: string
+  supplierId: string
+  supplierName?: string | null
+  orderDate: string
+  expectedDate?: string | null
+  status: PurchaseOrderStatus
+  totalAmount: number
+  remark?: string | null
+  closedAt?: string | null
+  closedReason?: string | null
+  items: {
+    id: string
+    skuId: string
+    productId?: string | null
+    quantity: number
+    unitPrice: number
+    amount: number
+    receivedQuantity: number
+    remainingQuantity: number
+    /** 展示名（issue #7567，服务端解析）：收货面认商品用 —— 缺值 = 该 SKU 已删/查不到，**不拿 skuId 顶替** */
+    productName?: string | null
+    skuCode?: string | null
+    colorName?: string | null
+    doorWidth?: string | null
+  }[]
+  receipts: { id: string; itemId: string; quantity: number; receivedAt: string; inboundOrderId?: string | null }[]
+}
+
+/** 建采购单请求（状态由后端派生，请求里没有 status）。 */
+export interface PurchaseOrderCreateRequest {
+  supplierId: string
+  orderDate?: string | null
+  expectedDate?: string | null
+  remark?: string | null
+  items: { skuId: string; quantity: number; unitPrice: number; productId?: string | null }[]
+}
+
+/** 付款方式域（与后端 CHECK 逐值同域）。 */
+export type SupplierPaymentMethod = 'cash' | 'transfer' | 'wechat' | 'alipay' | 'other'
+
+/** 付款单读面（issue #7369 段 3-B）：`unallocatedAmount` = 未冲抵（预付/待勾对）。 */
+export interface SupplierPaymentView {
+  id: string
+  paymentNo: string
+  supplierId: string
+  paidAt: string
+  amount: number
+  allocatedAmount: number
+  unallocatedAmount: number
+  method: SupplierPaymentMethod
+  referenceNo?: string | null
+  remark?: string | null
+  status: 'posted' | 'voided'
+  voidedAt?: string | null
+  voidedReason?: string | null
+  allocations: { inboundOrderId: string; inboundNo?: string | null; amount: number }[]
+}
+
+/** 登记付款的请求体（allocations 省略 = 整笔挂账/预付）。 */
+export interface SupplierPaymentRequest {
+  supplierId: string
+  paidAt?: string | null
+  amount: number
+  method: SupplierPaymentMethod
+  referenceNo?: string | null
+  remark?: string | null
+  allocations?: { inboundOrderId: string; amount: number }[]
+}
+
+/** 一家供应商的应付对账面（issue #7369 段 3-A）：A 段只做对账视图，`paymentsRecorded=false` 表示「未做付款登记」。 */
+export interface SupplierPayable {
+  supplierId: string
+  supplierName: string
+  status: 'active' | 'inactive'
+  receivedAmount: number
+  orderCount: number
+  firstInboundDate?: string | null
+  lastInboundDate?: string | null
+  paidAmount: number
+  paymentsRecorded: boolean
+  outstanding: number
+}
+
+/** 应付对账汇总（合计 + 诚实标记）。 */
+export interface SupplierPayableSummary {
+  suppliers: SupplierPayable[]
+  totalReceived: number
+  totalOutstanding: number
+  paymentsRecorded: boolean
+}
+
+export interface CustomerCreditStatus {
+  customerId: string
+  creditLimit: number | null
+  paymentTermsDays: number | null
+  outstanding: number
+  available: number | null
+}
+
 export interface CustomerDetailResponse {
   id: string
   profile: CustomerProfile
@@ -2464,6 +2771,11 @@ export interface ProactiveRuleStatus {
   gaps?: string[]
   /** **数据源固有边界**（如审计 fail-open）—— 恒在（可为空数组），`wired` 时也不许静默 */
   caveats?: string[]
+  /**
+   * **商家可读**的一句话（issue #7195）：`wired` ⇒ null；非 `wired` ⇒ 一句大白话（无内部标识）。
+   * 🔴 界面只读这个键 —— `reason` / `caveats` 是诊断面（文件路径 / issue 号 / 列名），不上屏。
+   */
+  display?: string | null
 }
 
 /** 逐规则状态表：键 = rule_id */
@@ -2747,7 +3059,7 @@ export type SSEEventType = 'message_start' | 'text_delta' | 'text' | 'tool_start
 // - 新增 `batch_stock`（issue #5188）：批次/省料只读工具 `batch_stock_query` 的卡载荷
 // - 移除 `knowledge`：后端从不下发该卡型（ToolResultCard 死分支已同批删除）
 // 契约守卫：backend/ai-agent-service/tests/test_card_type_cross_end_contract.py（双向）
-export type CardType = 'product_list' | 'product_detail' | 'logistics' | 'order' | 'production_progress' | 'batch_stock'
+export type CardType = 'product_list' | 'product_detail' | 'logistics' | 'order' | 'production_progress' | 'batch_stock' | 'marketing_poster' | 'generated_image'
 
 // 卡片数据
 export interface ChatCard {
@@ -3017,6 +3329,9 @@ export type NotificationChannel = 'internal' | 'sms' | 'wechat' | 'email'
 // 接收人类型
 export type NotificationRecipientType = 'user' | 'employee'
 
+// 严重级（#7524）：站内信圆点/排序口径；老数据为空按 info 渲染
+export type NotificationSeverity = 'info' | 'warn' | 'urgent'
+
 // 通知
 export interface Notification {
   id: string
@@ -3029,6 +3344,18 @@ export interface Notification {
   title: string
   content: string
   status: NotificationStatus
+  /** 业务对象类型：order / after_sales / inbound_order（#7524） */
+  bizType?: string
+  /** 业务对象 ID（主键，不用于展示） */
+  bizId?: string
+  /** 业务对象单号（展示用，如 RK-20261023-0001） */
+  bizNo?: string
+  /** 前端落地页（含 query）；有值 ⇒ 条目可点开对应单据 */
+  targetPath?: string
+  /** 严重级；空 = info（老数据） */
+  severity?: NotificationSeverity
+  /** 业务发生时间（与 createdAt 区分） */
+  occurredAt?: string
   sentAt?: string
   readAt?: string
   errorMessage?: string
@@ -3040,6 +3367,8 @@ export interface Notification {
 export interface NotificationQueryParams extends PageParams {
   status?: NotificationStatus | ''
   channel?: NotificationChannel | ''
+  /** 按业务类型筛（#7524）：order / after_sales / inbound_order */
+  bizType?: string
   dateFrom?: string
   dateTo?: string
 }
@@ -4095,6 +4424,13 @@ export interface CuttingHeightPreview {
 export interface WorkerPageCatalogResponse {
   /** 闭词表全部页键（服务端 `WorkerPages` 一处给出，前端不自己维护第二份词表）。 */
   pages: string[]
+  /**
+   * **默认**页面键（未收窄时的勾选态；issue #7162 起「未收窄」不再等于「全部能力」——
+   * `inspect`（质检）不在默认集合里，逐人开）。
+   */
+  default_pages?: string[]
+  /** 非默认、逐人开放的能力页（issue #7162：`inspect` 同时是服务端写准入）。 */
+  optional_pages?: string[]
   /** 页面键 → 商家面人话名（同上，服务端一处给出）。 */
   labels: Record<string, string>
 }

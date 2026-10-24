@@ -1,30 +1,30 @@
 # case_ids: MC-085
-"""订单详情**打印入口矩阵**守卫（issue #6434）—— 让「又一个状态区漏挂打印入口」进不来。
+"""订单详情**打印入口收口**守卫（issue #6434 → **#7544 改判**）—— 让「又一个打印入口」进不来。
 
-## 病根（实测读数，不是推断）
+## 这条判据的改判史（为什么口径反过来了）
 
-订单详情页的四个纸质单据入口（发货单 / 报价单 / 加工单 / 销售单）原先在
-`status === 'shipped'` 与 `status === 'completed'` 两个分支里**各写一份 JSX 字面量**
-（现取 `origin/main`：`打印销售单` 只出现在这两处；`git log -S "打印销售单"` 只有一个提交 = #5669 引入）。
-后果：订单停在**「待发货 / 生产中 / 待付款」**时，商家打开订单详情**一个打印按钮都没有**
-（2026-10-06 用户报障），而这三张单据恰恰是发货**之前**就要用的
-（销售单随货给客户、加工单下车间、报价单先行）。
+- **#6434（2026-10-06）**：四个打印按钮原先在 `status === 'shipped'` / `completed` 两个分支里各写一份
+  字面量 ⇒ 待付款 / 待发货 / 生产中**一个按钮都没有**。当时修法 = 收敛成
+  `PRINT_TARGETS_BY_STATUS` **一张「状态 × 可打单据」表**，本守卫钉的就是那张表。
+- **#7544（2026-10-23，用户逐字）**：「这几个打印按钮**不要跟状态挂钩**，允许任何状态都能进行打印这些单据，
+  另外把按钮**收拢到一个打印统一入口**中」。⇒ 状态矩阵本身就是病根的另一半：
+  `closed` / `refund` 两个状态**一张都打不出来**，而四个按钮常驻把操作行铺满。
 
-⇒ 修法 = 收敛成 `PRINT_TARGETS_BY_STATUS` **一张表**（唯一声明处），按钮文案取
-`PRINT_TARGET_SPECS[*].title`（与纸面自检层同一份真值）。本守卫钉住「收敛」这件事**本身**：
-再抄一份字面量、或新增状态时忘了登记 ⇒ 当场红。
+**现在的口径**：页面上只有**一个**「打印」入口（页面级、**不在任何状态分支里**），
+进来后在纸面自检层里以**单据标签**选（销售单 / 加工单 / 报价单 / 发货单），先预览再出纸。
 
 ## 冻结判据（每条都能单独变红，见 `TestDiscriminatingPower`）
 
 | # | 判据 | 红证（怎么让它**单独**变红） |
 |---|---|---|
-| G1 | 矩阵覆盖 `OrderStatus` 的**全部**取值 | 从矩阵里删掉一个状态键（如 `closed`）⇒ 红 |
-| G2 | 四个「有单据可出」的状态必须**非空** | 把 `pending_shipment` 改成 `[]` ⇒ 红 |
-| G3 | 页面里**不得**再出现手写的打印按钮字面量 | 把 `<PrintActions …/>` 换回 `打印销售单` 字面量 ⇒ 红 |
-| G4 | 每个状态分支都要经 `<PrintActions>` 渲染（≥4 处接线）+ 定义只有一份 | 摘掉 pending_shipment 那处接线 ⇒ 红 |
-| G5 | 判别力自证 + **对照读数**（只加注释 ⇒ 不红） | 注入未生效 ⇒ 红（红证自己是空断言） |
+| G1 | 页面里**不得**再有「状态 → 可打单据」矩阵（打印与状态解耦） | 把 `PRINT_TARGETS_BY_STATUS` 那段加回去 ⇒ 红 |
+| G2 | 「打印」入口**恰好一处**，且**不在** `StatusSection`（状态分支）里 | 把入口塞进 `StatusSection` ⇒ 红；复制成两处 ⇒ 红 |
+| G3 | 页面里**不得**手写打印按钮文案（文案只能来自 `PRINT_TARGET_SPECS[*].title`） | 写回 `<button>打印销售单</button>` ⇒ 红 |
+| G4 | 打印层的单据选择器必须**接线**：`docs={ORDER_PRINT_DOCS}` + `onSelect={selectPreview}`，且清单里每份单据都是**真实 target** | 摘掉 `docs=` ⇒ 红；清单里写 `'sale'`（错键）⇒ 红 |
+| G5 | 「作业单」区块**不再**有第二个打印入口（打印只剩一处） | 在 `ProcessingOrderBlock` 里加回 `onPrintProcessing` ⇒ 红 |
+| G6 | 判别力自证 + **对照读数**（只加注释 ⇒ 不红） | 注入未生效 ⇒ 红（红证自己是空断言） |
 
-⚠️ **判据按「去注释后的代码」判定**：页面文件头用注释解释这些坑（会**写出**几个按钮名），
+⚠️ **判据按「去注释后的代码」判定**：页面文件用注释解释这些坑（会**写出**几个按钮名），
 按原文判定会把解释性注释判成违规 = 假红。故本文件自带字符串感知的注释剥离器。
 """
 from __future__ import annotations
@@ -34,21 +34,17 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PAGE_REL = "frontend/admin-web/src/app/(dashboard)/orders/[id]/OrderDetail.tsx"
-TYPES_REL = "frontend/admin-web/src/types/index.ts"
+PRINT_DOC_REL = "frontend/admin-web/src/lib/print-doc.ts"
+BLOCK_REL = "frontend/admin-web/src/components/orders/ProcessingOrderBlock.tsx"
 
 #: 页面里**不许**手写的按钮文案（必须来自 `PRINT_TARGET_SPECS[*].title`）
 HANDWRITTEN_LABELS: tuple[str, ...] = ("打印发货单", "打印报价单", "打印加工单", "打印销售单")
 
-#: 必须有入口的状态（其余状态可以为空 —— 那是产品口径，不在这里钉）
-STATUSES_REQUIRING_ENTRIES: tuple[str, ...] = (
-    "pending_payment",
-    "pending_shipment",
-    "shipped",
-    "completed",
-)
+#: 唯一入口的锚点（`data-testid` 是给单测与 e2e 的共同抓手）
+ENTRY_MARKER = 'data-testid="order-print-entry"'
 
-#: 状态分支里 `<PrintActions>` 接线的最少处数（待付款 / 待发货 / 已发货 / 已完成）
-MIN_WIRINGS = 4
+#: 订单详情必须能打的四份单据（顺序不钉；集合不齐 ⇒ 商家少一张纸）
+REQUIRED_ORDER_DOCS: tuple[str, ...] = ("shipment", "quotation", "processing", "sales")
 
 
 def _read(rel: str) -> str:
@@ -58,7 +54,7 @@ def _read(rel: str) -> str:
 def strip_comments(src: str) -> str:
     """字符串感知地剥掉注释（`//` 行注释、`/* */` 块注释、JSX `{/* */}`）。
 
-    保留字符串字面量内容（判据只看页面里有没有手写按钮文案，不解析语义）。
+    保留字符串字面量内容（判据只看代码里有没有手写按钮文案 / 有没有矩阵，不解析语义）。
     """
     out: list[str] = []
     i, n = 0, len(src)
@@ -93,42 +89,58 @@ def strip_comments(src: str) -> str:
     return "".join(out)
 
 
-def order_status_members(types_src: str) -> list[str]:
-    """现取 `OrderStatus` 联合类型的全部成员（真值在 `types/index.ts`，不在这里硬编码）。"""
-    m = re.search(r"export type OrderStatus\s*=\s*([^\n;]+)", types_src)
+def print_targets(print_doc_src: str) -> list[str]:
+    """现取 `lib/print-doc.ts` 的 `PRINT_TARGETS`（真值在那边，不在这里硬编码）。"""
+    m = re.search(r"export const PRINT_TARGETS\s*=\s*\[([^\]]*)\]", print_doc_src)
     if not m:
-        raise AssertionError(f"{TYPES_REL} 里找不到 `export type OrderStatus` 定义（判据 fail-closed）")
-    members = re.findall(r"'([a-z_]+)'", m.group(1))
-    if not members:
-        raise AssertionError(f"{TYPES_REL} 的 `OrderStatus` 一个成员都没解析出来（判据 fail-closed）")
-    return members
+        raise AssertionError(f"{PRINT_DOC_REL} 里找不到 `PRINT_TARGETS`（判据 fail-closed）")
+    targets = re.findall(r"'([a-z]+)'", m.group(1))
+    if not targets:
+        raise AssertionError("`PRINT_TARGETS` 一个成员都没解析出来（判据 fail-closed）")
+    return targets
 
 
-def matrix_entries(page_src: str) -> dict[str, list[str]]:
-    """解析页面里的 `PRINT_TARGETS_BY_STATUS` 矩阵。"""
-    m = re.search(r"const PRINT_TARGETS_BY_STATUS\s*:[^=]*=\s*\{(.*?)\n\}", page_src, re.S)
-    if not m:
-        raise AssertionError(
-            f"{PAGE_REL} 里找不到 `PRINT_TARGETS_BY_STATUS` 矩阵 —— "
-            "打印入口必须是**一张表**（唯一声明处），不是散在各状态分支里的字面量"
-        )
-    entries: dict[str, list[str]] = {}
-    for key, arr in re.findall(r"^\s*(\w+):\s*\[([^\]]*)\]", m.group(1), re.M):
-        entries[key] = re.findall(r"'([a-z]+)'", arr)
-    if not entries:
-        raise AssertionError("`PRINT_TARGETS_BY_STATUS` 解析出 0 条（判据 fail-closed）")
-    return entries
+# ============== G1：打印与订单状态解耦 ==============
 
 
-def missing_statuses(page_src: str, types_src: str) -> list[str]:
-    """G1：`OrderStatus` 里有、矩阵里没有的状态。"""
-    return sorted(set(order_status_members(types_src)) - set(matrix_entries(page_src)))
+def legacy_status_matrix(page_src: str) -> list[str]:
+    """G1：页面里残留的「状态 → 可打单据」矩阵形态。
+
+    两种都算：`PRINT_TARGETS_BY_STATUS`（#6434 的载体）与任何 `Record<OrderStatus, …>` 声明 ——
+    后者是同族的换名写法（把矩阵加回来同样违反「不跟状态挂钩」）。
+    """
+    code = strip_comments(page_src)
+    hits: list[str] = []
+    if "PRINT_TARGETS_BY_STATUS" in code:
+        hits.append("PRINT_TARGETS_BY_STATUS")
+    if re.search(r"Record<\s*OrderStatus", code):
+        hits.append("Record<OrderStatus")
+    return hits
 
 
-def empty_required_statuses(page_src: str) -> list[str]:
-    """G2：矩阵里存在但**空**的必填状态。"""
-    entries = matrix_entries(page_src)
-    return [s for s in STATUSES_REQUIRING_ENTRIES if not entries.get(s)]
+# ============== G2：唯一入口、且不在状态分支里 ==============
+
+
+def entry_count(page_src: str) -> int:
+    """G2：页面里「打印」入口的处数（去注释后数锚点）。"""
+    return strip_comments(page_src).count(ENTRY_MARKER)
+
+
+def entry_inside_status_section(page_src: str) -> bool:
+    """G2：入口是否落进了 `StatusSection`（= 状态分支所在的那个组件）。
+
+    🔴 用**组件边界**而不是「是否在某个 `status === …` 之后」判定：后者会被页面里
+    任意一处状态判断误伤（本页还有 `refundAmount` / `workOrderKind` 等状态派生分支）。
+    """
+    code = strip_comments(page_src)
+    pos = code.find(ENTRY_MARKER)
+    if pos < 0:
+        return False
+    section = code.find("function StatusSection(")
+    return section >= 0 and pos > section
+
+
+# ============== G3：不手写按钮文案 ==============
 
 
 def handwritten_labels(page_src: str) -> list[str]:
@@ -137,45 +149,108 @@ def handwritten_labels(page_src: str) -> list[str]:
     return [label for label in HANDWRITTEN_LABELS if label in code]
 
 
-def print_actions_wirings(page_src: str) -> int:
-    """G4：`<PrintActions>` 的接线处数。"""
-    return strip_comments(page_src).count("<PrintActions")
+# ============== G4：选择器接线 + 清单合法 ==============
+
+
+def order_print_docs(page_src: str) -> list[str]:
+    """G4：解析页面里的 `ORDER_PRINT_DOCS` 清单（唯一声明处）。"""
+    m = re.search(r"const ORDER_PRINT_DOCS\s*=\s*\[([^\]]*)\]", strip_comments(page_src))
+    if not m:
+        raise AssertionError(
+            f"{PAGE_REL} 里找不到 `ORDER_PRINT_DOCS` —— 可打印单据清单必须是**一处**声明，"
+            "不是散在各状态分支里的按钮"
+        )
+    docs = re.findall(r"'([a-z]+)'", m.group(1))
+    if not docs:
+        raise AssertionError("`ORDER_PRINT_DOCS` 解析出 0 条（判据 fail-closed）")
+    return docs
+
+
+def missing_required_docs(page_src: str) -> list[str]:
+    """G4：清单里缺的必打单据。"""
+    return sorted(set(REQUIRED_ORDER_DOCS) - set(order_print_docs(page_src)))
+
+
+def unknown_docs(page_src: str, print_doc_src: str) -> list[str]:
+    """G4：清单里写了 `PRINT_TARGETS` 之外的目标位（错键 ⇒ 该单据永远选不中）。"""
+    return sorted(set(order_print_docs(page_src)) - set(print_targets(print_doc_src)))
+
+
+def selector_wiring(page_src: str) -> list[str]:
+    """G4：打印层的选择器接线（`docs=` + `onSelect=`）。返回**缺失**的那几项。"""
+    code = strip_comments(page_src)
+    missing: list[str] = []
+    if "docs={ORDER_PRINT_DOCS}" not in code:
+        missing.append("docs={ORDER_PRINT_DOCS}")
+    if "onSelect={selectPreview}" not in code:
+        missing.append("onSelect={selectPreview}")
+    return missing
+
+
+# ============== G5：作业单区块不再自带打印入口 ==============
+
+
+def block_print_entry(block_src: str) -> list[str]:
+    """G5：`ProcessingOrderBlock` 里残留的打印入口（prop 或其按钮）。"""
+    code = strip_comments(block_src)
+    hits: list[str] = []
+    if "onPrintProcessing" in code:
+        hits.append("onPrintProcessing")
+    if re.search(r"<Button[^>]*>\s*打印\s*</Button>", code):
+        hits.append("打印 button")
+    return hits
 
 
 class TestRealSources:
-    """真语料判据（`origin/main` 上的页面 + 类型定义）。"""
+    """真语料判据（页面 + 打印入口 lib + 作业单区块三份语料）。"""
 
-    def test_matrix_covers_every_order_status(self) -> None:
-        missing = missing_statuses(_read(PAGE_REL), _read(TYPES_REL))
-        assert missing == [], (
-            f"`PRINT_TARGETS_BY_STATUS` 漏了状态 {missing} —— 新增状态必须在矩阵里显式登记"
-            "（空数组也是登记；漏登记 ⇒ 该状态下一个打印入口都没有）"
+    def test_g1_no_status_matrix(self) -> None:
+        hits = legacy_status_matrix(_read(PAGE_REL))
+        assert hits == [], (
+            f"页面里又出现了「状态 → 可打单据」矩阵 {hits} —— issue #7544 的口径是"
+            "**打印不跟订单状态挂钩**（任何状态都能打）；矩阵一回来，"
+            "`closed` / `refund` 这类状态就又会变成死路"
         )
 
-    def test_statuses_requiring_entries_are_not_empty(self) -> None:
-        empty = empty_required_statuses(_read(PAGE_REL))
-        assert empty == [], (
-            f"状态 {empty} 的打印入口集合是空的 —— 这几张单据是发货**前**就要用的"
-            "（报价单先行 / 销售单随货 / 加工单下车间），清空即用户可见的功能回退"
+    def test_g2_single_entry_outside_status_branches(self) -> None:
+        page = _read(PAGE_REL)
+        count = entry_count(page)
+        assert count == 1, (
+            f"「打印」入口有 {count} 处（应恰好 1 处）—— 多个入口正是 #7544 要消掉的形态；"
+            "要打哪一份由打印层里的单据标签选"
+        )
+        assert not entry_inside_status_section(page), (
+            "「打印」入口落进了 `StatusSection`（状态分支所在组件）—— "
+            "它必须挂在页面级（与订单状态无关），否则某个状态区又会漏挂/多挂"
         )
 
-    def test_page_has_no_handwritten_print_button_labels(self) -> None:
+    def test_g3_no_handwritten_labels(self) -> None:
         written = handwritten_labels(_read(PAGE_REL))
         assert written == [], (
-            f"页面里出现了手写的打印按钮文案 {written} —— 文案必须取 "
-            "`PRINT_TARGET_SPECS[*].title`（与纸面自检层同一份真值）；"
-            "再抄一份字面量正是「另一个状态区漏挂入口」的成因"
+            f"页面里出现了手写的打印按钮文案 {written} —— 单据名必须取 "
+            "`PRINT_TARGET_SPECS[*].title`（与纸面自检层同一份真值）"
         )
 
-    def test_every_status_branch_renders_through_print_actions(self) -> None:
+    def test_g4_selector_is_wired_and_valid(self) -> None:
         page = _read(PAGE_REL)
-        wirings = print_actions_wirings(page)
-        assert wirings >= MIN_WIRINGS, (
-            f"`<PrintActions>` 只有 {wirings} 处接线（应 ≥{MIN_WIRINGS}）—— "
-            "待付款 / 待发货 / 已发货 / 已完成 四个状态区都要经它渲染"
+        doc_lib = _read(PRINT_DOC_REL)
+        missing = missing_required_docs(page)
+        assert missing == [], f"可打印单据清单里缺了 {missing}（商家会少一张纸）"
+        unknown = unknown_docs(page, doc_lib)
+        assert unknown == [], (
+            f"清单里出现了 `PRINT_TARGETS` 之外的目标位 {unknown} —— 错键 ⇒ 该单据永远选不中"
         )
-        assert strip_comments(page).count("function PrintActions(") == 1, (
-            "`PrintActions` 渲染器必须只有一份（再来一份 ⇒ 又分叉了）"
+        wiring = selector_wiring(page)
+        assert wiring == [], (
+            f"打印层的单据选择器没接线，缺 {wiring} —— "
+            "「入口 → 预览 → 选单据」这条链断在任何一环，商家就只剩默认那一份能打"
+        )
+
+    def test_g5_work_order_block_has_no_print_entry(self) -> None:
+        hits = block_print_entry(_read(BLOCK_REL))
+        assert hits == [], (
+            f"「作业单」区块里又有打印入口 {hits} —— 同页两个打印入口正是 #7544 要消掉的形态"
+            "（加工单走页面级「打印」→ 选「加工单」）"
         )
 
 
@@ -183,50 +258,92 @@ class TestDiscriminatingPower:
     """判别力自证：每条判据在**内存变异**上单独变红，并给「只加注释 ⇒ 不红」的对照读数。"""
 
     PAGE = _read(PAGE_REL)
-    TYPES = _read(TYPES_REL)
+    PRINT_DOC = _read(PRINT_DOC_REL)
+    BLOCK = _read(BLOCK_REL)
 
-    def test_g1_missing_status_key_is_red(self) -> None:
-        mutated = self.PAGE.replace("  closed: [],\n", "")
-        assert missing_statuses(mutated, self.TYPES) == ["closed"], "删掉状态键却没红 ⇒ G1 是空断言"
-        assert missing_statuses(self.PAGE, self.TYPES) == []  # 对照：原文不红
-
-    def test_g2_emptied_required_status_is_red(self) -> None:
+    def test_g1_readding_matrix_is_red(self) -> None:
         mutated = self.PAGE.replace(
-            "  pending_shipment: ['quotation', 'processing', 'sales'],",
-            "  pending_shipment: [],",
+            "const ORDER_PRINT_DOCS",
+            "const PRINT_TARGETS_BY_STATUS: Record<OrderStatus, PrintTarget[]> = { closed: [] }\n"
+            "const ORDER_PRINT_DOCS",
         )
         assert mutated != self.PAGE, "注入未生效（锚点漂移）⇒ 红证自己是空断言"
-        assert empty_required_statuses(mutated) == ["pending_shipment"]
-        assert empty_required_statuses(self.PAGE) == []  # 对照
+        assert "PRINT_TARGETS_BY_STATUS" in legacy_status_matrix(mutated)
+        assert legacy_status_matrix(self.PAGE) == []  # 对照：原文不红
+
+    def test_g2_second_entry_is_red(self) -> None:
+        duplicated = self.PAGE.replace(
+            "<StatusSection",
+            f"<span {ENTRY_MARKER} />\n      <StatusSection",
+            1,
+        )
+        assert duplicated != self.PAGE, "注入未生效（锚点漂移）⇒ 红证自己是空断言"
+        assert entry_count(duplicated) == 2
+        assert entry_count(self.PAGE) == 1  # 对照
+
+    def test_g2_entry_inside_status_section_is_red(self) -> None:
+        # 把入口从页面级搬进 `StatusSection` 的**函数体**（= 回退成「跟状态走」的形态）
+        mutated = self.PAGE.replace(ENTRY_MARKER, 'data-testid="moved-away"', 1)
+        mutated = mutated.replace(
+            "  const refunded = (order.refundAmount ?? 0) > 0",
+            '  const movedEntry = <span data-testid="order-print-entry" />\n'
+            "  const refunded = (order.refundAmount ?? 0) > 0",
+            1,
+        )
+        assert mutated != self.PAGE, "注入未生效（锚点漂移）"
+        assert entry_inside_status_section(mutated) is True
+        assert entry_inside_status_section(self.PAGE) is False  # 对照
 
     def test_g3_handwritten_label_is_red(self) -> None:
         mutated = self.PAGE.replace(
-            "<PrintActions status={status} onOpen={onPrint} />",
-            "<button>打印销售单</button>",
+            "        <Button\n          variant=\"secondary\"",
+            "        <button>打印销售单</button>\n        <Button\n          variant=\"secondary\"",
+            1,
         )
         assert mutated != self.PAGE, "注入未生效（锚点漂移）⇒ 红证自己是空断言"
         assert handwritten_labels(mutated) == ["打印销售单"]
         assert handwritten_labels(self.PAGE) == []  # 对照
 
-    def test_g4_removed_wiring_is_red(self) -> None:
-        mutated = self.PAGE.replace(
-            "<PrintActions status={status} onOpen={onPrint} />",
-            "",
+    def test_g4_broken_wiring_is_red(self) -> None:
+        assert "docs={ORDER_PRINT_DOCS}" in strip_comments(self.PAGE)
+        missing_docs = self.PAGE.replace("docs={ORDER_PRINT_DOCS}", "")
+        assert selector_wiring(missing_docs) == ["docs={ORDER_PRINT_DOCS}"]
+        missing_select = self.PAGE.replace("onSelect={selectPreview}", "")
+        assert selector_wiring(missing_select) == ["onSelect={selectPreview}"]
+        assert selector_wiring(self.PAGE) == []  # 对照
+        # 错键（`'sale'`）⇒ unknown_docs 判红（对照读数：原文是空集）
+        wrong_key = self.PAGE.replace(
+            "const ORDER_PRINT_DOCS = ['sales'", "const ORDER_PRINT_DOCS = ['sale'"
+        )
+        assert wrong_key != self.PAGE, "注入未生效（锚点漂移）"
+        assert unknown_docs(wrong_key, self.PRINT_DOC) == ["sale"]
+        assert unknown_docs(self.PAGE, self.PRINT_DOC) == []
+        # 缺一份必打单据 ⇒ missing_required_docs 判红
+        dropped = self.PAGE.replace(
+            "const ORDER_PRINT_DOCS = ['sales', 'processing', 'quotation', 'shipment']",
+            "const ORDER_PRINT_DOCS = ['sales', 'processing', 'quotation']",
+        )
+        assert dropped != self.PAGE, "注入未生效（锚点漂移）"
+        assert missing_required_docs(dropped) == ["shipment"]
+
+    def test_g5_block_print_entry_is_red(self) -> None:
+        mutated = self.BLOCK.replace(
+            "  onReloadReady,",
+            "  onPrintProcessing,\n  onReloadReady,",
             1,
         )
-        assert mutated != self.PAGE, "注入未生效（锚点漂移）⇒ 红证自己是空断言"
-        assert print_actions_wirings(mutated) == MIN_WIRINGS - 1
-        assert print_actions_wirings(self.PAGE) >= MIN_WIRINGS  # 对照
+        assert mutated != self.BLOCK, "注入未生效（锚点漂移）⇒ 红证自己是空断言"
+        assert block_print_entry(mutated) == ["onPrintProcessing"]
+        assert block_print_entry(self.BLOCK) == []  # 对照
 
-    def test_g5_comment_only_change_is_not_red(self) -> None:
-        """对照读数：只往页面里加**注释**（哪怕注释里写满按钮名）⇒ 一条判据都不该红。"""
+    def test_g6_comment_only_change_is_not_red(self) -> None:
+        """对照读数：只往页面里加**注释**（哪怕注释里写满按钮名 / 旧矩阵名）⇒ 一条判据都不该红。"""
         mutated = self.PAGE.replace(
-            "const PRINT_TARGETS_BY_STATUS",
-            "// 说明：这些入口分别对应 打印发货单 / 打印报价单 / 打印加工单 / 打印销售单\n"
-            "const PRINT_TARGETS_BY_STATUS",
+            "const ORDER_PRINT_DOCS",
+            "// 说明：改前这里是 PRINT_TARGETS_BY_STATUS 矩阵，按钮叫 打印发货单 / 打印报价单 / "
+            "打印加工单 / 打印销售单\nconst ORDER_PRINT_DOCS",
         )
         assert mutated != self.PAGE, "注入未生效（锚点漂移）"
         assert handwritten_labels(mutated) == []
-        # 矩阵结构判据同样不受注释影响
-        assert missing_statuses(mutated, self.TYPES) == []
-        assert empty_required_statuses(mutated) == []
+        assert legacy_status_matrix(mutated) == []
+        assert entry_count(mutated) == 1

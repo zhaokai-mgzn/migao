@@ -41,6 +41,7 @@ import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.atLeast;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -184,8 +185,11 @@ class AgentWriteValuesTest {
             verify(productSkuMapper).update(patch.capture(), any(LambdaQueryWrapper.class));
             assertThat(patch.getValue().getStock()).as("SKU 级被置为改后库存")
                     .isEqualByComparingTo("1200.0");
-            // 派生列回写（`products.stock` = Σ SKU）+ 主更新 = 2 次（#4038：只写派生列 = 假成功）
-            verify(productMapper, atLeast(2)).updateById(any(Product.class));
+            // 派生列回写（`products.stock` = Σ SKU，走 updateById）+ 改品主写（issue #6961 起走
+            // 「只写自己负责的列」的 wrapper）＝ 两条写面各一次；缺任一条 = 假成功（#4038 的形态）
+            verify(productMapper, atLeast(1)).updateById(any(Product.class));
+            verify(productMapper, atLeast(1)).update(isNull(),
+                    any(com.baomidou.mybatisplus.core.conditions.Wrapper.class));
         }
 
         @Test

@@ -1,13 +1,18 @@
 import {
   BarChart3,
+  FileSpreadsheet,
+  Tags,
   Bell,
   BookOpen,
   Boxes,
   Calculator,
   ClipboardCheck,
+  Wrench,
   ClipboardList,
   Coins,
   Factory,
+  Handshake,
+  ShoppingBag,
   Headphones,
   Layers,
   LifeBuoy,
@@ -15,6 +20,7 @@ import {
   Package,
   PackageOpen,
   Recycle,
+  ScanLine,
   Ruler,
   ScrollText,
   Settings,
@@ -66,6 +72,14 @@ export const capabilityDomains: CapabilityDomain[] = [
         icon: BarChart3,
       },
       {
+        // issue #7376：看板的下钻报表（同属经营数据面，所以放在同一能力域里讲）。
+        // 口径必须与后台一致：「没有数据」显示留空/「—」，不写成 0。
+        name: '报表中心',
+        detail:
+          '订单毛利、库存滞销、员工业绩、质量成本四张报表；合计与明细可复算，没有数据时留空而不显示 0，算不出的成本明确标「未知」。',
+        icon: FileSpreadsheet,
+      },
+      {
         name: '每日简报',
         detail: 'AI 每天生成经营要点，数字都经过系统核对；简报不含客户手机号等个人信息。',
         icon: Newspaper,
@@ -102,10 +116,17 @@ export const capabilityDomains: CapabilityDomain[] = [
   {
     key: 'trade-center',
     name: '交易管理',
-    summary: '订单与账目从下单记录到对账。',
+    summary: '先定价，再下单，最后对账。',
     items: [
       {
-        name: '订单列表',
+        // issue #7375：价格本是交易的前置配置（先定价，才谈得上开单与收款）。
+        name: '价格本',
+        detail:
+          '商品对客户、等级、数量各自可以有价：协议价优先于等级价，等级价优先于阶梯价；价格必须大于 0，低于成本的改价要先走审批。',
+        icon: Tags,
+      },
+      {
+        name: '销售订单',
         detail: '按订单号 / 收货人 / 下单时间 / 商品编码 / 是否含加工多维检索，支持备注、关闭与发货。',
         icon: ClipboardList,
       },
@@ -122,8 +143,8 @@ export const capabilityDomains: CapabilityDomain[] = [
     summary: '布艺行业纵深环节：加工单、工序、报工与计件。',
     items: [
       {
-        name: '生产看板',
-        detail: '加工单列表 + 每单工序进度 + 计件合计；加工单的唯一入口。',
+        name: '作业看板',
+        detail: '作业单列表 + 每单工序进度 + 计件合计；作业单的唯一入口（加工单 / 出库作业单两型）。',
         icon: ClipboardCheck,
       },
       {
@@ -136,6 +157,41 @@ export const capabilityDomains: CapabilityDomain[] = [
         detail: '按人 / 工序 / 部位 / 套四档下钻；返工与报废不计件，系统会自动排除。',
         icon: Coins,
       },
+      {
+        name: '质检记录',
+        detail: '待检成品帘清单（未检 / 合格 / 返工 / 报废）+ 三态判定录入与质检流水；作业单明细内也能直接判定，不合格必须写原因。',
+        icon: ClipboardCheck,
+      },
+      {
+        name: '返工单',
+        detail: '售后判定要返工的活在这里开返工单并跟到完工；完工后售后状态才跟着推进，同一售后单同时只能有未完结返工单。',
+        icon: Wrench,
+      },
+    ],
+  },
+  {
+    key: 'supply-chain',
+    name: '供应链',
+    summary: '从谁家进的货、买了什么、什么时候到，上下游看全。',
+    items: [
+      {
+        name: '供应商',
+        detail:
+          '谁在供货、账期几天、停没停：名称 / 联系人 / 电话 / 账期（未设置、现结、N 天）/ 在用或停用，一处维护。',
+        icon: Handshake,
+      },
+      {
+        name: '采购单',
+        detail:
+          '采购登记、分次到货、关闭都在同一处：采购单下可分几次收货，已收和未收按收货记录实时算；到不齐或断货就关闭并写原因，单据不删除、原因留着备查。',
+        icon: ShoppingBag,
+      },
+      {
+        name: '入库单',
+        detail:
+          '草稿不动库存；过账自动生成批次号、增加库存并按移动加权平均记成本；期初建账支持 Excel 批量导入并逐行给出校验报告。',
+        icon: PackageOpen,
+      },
     ],
   },
   {
@@ -143,12 +199,6 @@ export const capabilityDomains: CapabilityDomain[] = [
     name: '仓储与物料',
     summary: '按布料的真实形态记账：批次、缸号与余料。',
     items: [
-      {
-        name: '入库单',
-        detail:
-          '草稿不动库存；过账自动生成批次号、增加库存并按移动加权平均记成本；期初建账支持 Excel 批量导入并逐行给出校验报告。',
-        icon: PackageOpen,
-      },
       {
         name: '发货单',
         detail: '全量发货单（单号 / 订单 / 客户 / 来源 / 发货人 / 实发），支持按真实尺寸 A4 补打。',
@@ -170,6 +220,12 @@ export const capabilityDomains: CapabilityDomain[] = [
         detail:
           '逐笔列出 SKU 级库存变更（变动前 → 变动后），按时间 / 货号 / 原因 / 单据号 / 操作人成行，想查库存为什么变，顺着它往下看。',
         icon: ScrollText,
+      },
+      {
+        name: '盘点单',
+        detail:
+          '按仓出盘点任务，逐批次录实盘并自动算差异；有差异要先走「盘点差异」审批，完成时按差异调批次数量（不动成本）。',
+        icon: ScanLine,
       },
     ],
   },

@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Layers, RefreshCw } from 'lucide-react'
-import { toastRequestError } from '@/lib/api-error'
+import { extractApiErrorMessage, toastRequestError } from '@/lib/api-error'
 import { savingBoardApi } from '@/lib/api'
-import { Button, Card, PageHeader } from '@/components/ui'
+import { Button, Card, PageHeader, SELECT_CONTROL } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import {
   NO_DATA,
@@ -69,7 +69,9 @@ export default function SavingBoardPage() {
       setBoard(b.data?.data ?? null)
       setError('')
     } catch (e) {
-      setError(e instanceof Error ? e.message : '加载省料看板失败')
+      // 🔴 2026-10-17：改用共享原语（服务端业务文案优先）—— `e.message` 在 axios 错误上
+      // 是传输层读数（`Request failed with status code NNN`），不许当失败原因上屏。
+      setError(extractApiErrorMessage(e, '加载省料看板失败'))
       toastRequestError(e, '加载省料看板失败')
     } finally {
       setLoading(false)
@@ -111,7 +113,7 @@ export default function SavingBoardPage() {
               data-testid="saving-granularity"
               value={granularity}
               onChange={(e) => setGranularity(e.target.value)}
-              className="h-9 rounded-md border border-neutral-300 bg-white px-2 text-sm text-neutral-700"
+              className={SELECT_CONTROL}
             >
               {GRANULARITIES.map((g) => (
                 <option key={g.value} value={g.value}>

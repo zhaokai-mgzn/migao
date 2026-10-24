@@ -19,15 +19,15 @@ db 校验 SQL 另有 **8 处** `tenant_id = 1`。而 tenant 1「词元通达」�
 | ① | **源码面未登记即红**：`auth.py` / `local_runner.py` 里裸的 `tenant_id=1` / `tenant_id = 1`（**代码行**，注释不算） | 把可配值改回写死的 `tenant_id=1`（= issue #6288 的原始形态） |
 | ② | **配置面逐值断言**：注入一个租户号 ⇒ 真正被使用的是**注入值**（逐值，不是"非空"） | 配置读了但没用（标识符留着、值仍写死） |
 | ③ | **🔴 反向护栏（缺一不可）**：非 DEBUG 路径即使有人注入了租户也**不生效** —— 两处 DEBUG 降级租户的引用都必须落在 `settings.DEBUG` + `X-Debug-Role` 守卫的 `if` 体内；非 DEBUG 路径的租户**只**来自 JWT payload、源码里无任何 `os.environ` / `getenv` 租户回落 | 把 DEBUG 降级租户的读值挪到守卫之外 / 给非 DEBUG 路径加一个环境变量兜底 |
-| ④ | **两处单一真值不许漂移**：`auth.py` 读的 `settings.EVAL_TENANT_ID` 默认值 ≡ `local_runner.py` 的 `EVAL_TENANT_ID` 默认值 ≡ `config.py` 的字段默认值 | 只改一侧（服务端认 25、运行器认 1 ⇒ 复位/校验与请求落到不同租户） |
-| ⑤ | **已部署入口显式钉住目标租户**：`agent-eval.yml` 的评测步骤 `EVAL_TENANT_ID == "25"` | 删掉该 env（下次环境重建又静默失去目标） |
+| ④ | **三处单一真值不许漂移**：`auth.py` 读的 `settings.EVAL_TENANT_ID` 默认值 ≡ `local_runner.py` 的 `EVAL_TENANT_ID` 默认值 ≡ `config.py` 的字段默认值 | 只改一侧（服务端认 1、运行器认 25 ⇒ 复位/校验与请求落到不同租户） |
+| ⑤ | **已部署入口显式钉住目标租户**：`agent-eval.yml` 的评测步骤 `EVAL_TENANT_ID == "1"` | 删掉该 env（下次环境重建又静默失去目标） |
 
-⚠️ **本文件不跑真实 LLM、不起栈、不连网**（零 LLM 静态判定）；「改后能否真打到 tenant 25」
+⚠️ **本文件不跑真实 LLM、不起栈、不连网**（零 LLM 静态判定）；「改后能否真打到 tenant 1」
 是一次人工择时的手动 `workflow_dispatch`，不在此处取证。
 
 ## 边界（照实登记）
 
-- 判据**不读语义**：它只判「形态 + 结构 + 默认值一致性」，不判「25 是不是当前的云测试租户」
+- 判据**不读语义**：它只判「形态 + 结构 + 默认值一致性」，不判「1 是不是当前的云测试租户」
   （那是环境事实，判据读不到；真值依据写在 PR body）。
 - `auth.py` 的行为面（真让 FastAPI 走一遍 DEBUG / 非 DEBUG 请求）在
   `backend/ai-agent-service/tests/test_utils_auth.py` 的射程内；本文件在 ci-helper job
@@ -45,10 +45,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 AUTH_PATH = REPO_ROOT / "backend/ai-agent-service/app/utils/auth.py"
 CONFIG_PATH = REPO_ROOT / "backend/ai-agent-service/app/config.py"
 RUNNER_PATH = REPO_ROOT / "tests/agent_eval/local_runner.py"
+COMPOSE_PATH = REPO_ROOT / "deploy" / "docker-compose.yml"
 WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
 
-# 云测试租户的真值（2026-10-04 云测试环境重建；依据见 PR body）
-CLOUD_TEST_TENANT_ID = 25
+# 云测试租户的真值（2026-10-19 / #7340：共享库恢复为 seed 租户 1）
+CLOUD_TEST_TENANT_ID = 1
 # 本地/CI docker 标准考场的租户（由栈内种子 `fixtures/*_eval_seed.sql` 创建）
 LOCAL_STACK_TENANT_ID = 1
 
@@ -322,8 +323,58 @@ def test_workflow_pins_configured_tenant_on_deployed_entry():
     env = eval_steps[0].get("env") or {}
     assert str(env.get("EVAL_TENANT_ID", "")).strip('"') == str(CLOUD_TEST_TENANT_ID), (
         f"agent-eval.yml 评测步骤的 EVAL_TENANT_ID={env.get('EVAL_TENANT_ID')!r} ≠ "
-        f"{CLOUD_TEST_TENANT_ID}（云测试租户）—— 该入口打的是已部署环境，"
+        f"{CLOUD_TEST_TENANT_ID}（seed/云测试租户）—— 该入口打的是已部署环境，"
         "必须显式钉住目标租户"
+    )
+
+
+def ai_agent_tenant_env(compose: dict) -> str:
+    """栈内 ai-agent 容器的 `EVAL_TENANT_ID` 原始值（形态变化 ⇒ fail-closed）。"""
+    svc = (compose.get("services") or {}).get("ai-agent-service") or {}
+    env = svc.get("environment") or {}
+    assert isinstance(env, dict), f"ai-agent-service.environment 形态变了：{type(env)}"
+    return str(env.get("EVAL_TENANT_ID", ""))
+
+
+def test_red_proof_missing_container_tenant_env_is_detectable():
+    """判别力自证：容器 env 缺 `EVAL_TENANT_ID` ⇒ 取值为空串（上面的断言必红）。"""
+    assert ai_agent_tenant_env(
+        {"services": {"ai-agent-service": {"environment": {"DEBUG": "false"}}}}) == ""
+    assert str(LOCAL_STACK_TENANT_ID) in ai_agent_tenant_env(
+        {"services": {"ai-agent-service": {"environment": {"EVAL_TENANT_ID": "${EVAL_TENANT_ID:-1}"}}}})
+
+
+def test_swas_cloud_compose_pins_seed_tenant():
+    """④ **共享云部署面**也必须钉 seed 租户 1（#7340：environment 覆盖 .env.ai-agent）。"""
+    import yaml
+    for rel in ("deploy/swas/docker-compose.yml",
+                "deploy/swas/docker-compose.bluegreen.yml"):
+        compose = yaml.safe_load((REPO_ROOT / rel).read_text(encoding="utf-8")) or {}
+        services = compose.get("services") or {}
+        svc_name = "ai-agent" if rel.endswith("docker-compose.yml") else "ai-agent-green"
+        env = ((services.get(svc_name) or {}).get("environment") or {})
+        assert str(env.get("EVAL_TENANT_ID", "")).strip('"') == str(CLOUD_TEST_TENANT_ID), (
+            f"{rel} 的 {svc_name}.EVAL_TENANT_ID={env.get('EVAL_TENANT_ID')!r} ≠ "
+            f"seed 租户 {CLOUD_TEST_TENANT_ID} —— 共享云服务会继续用 .env.ai-agent 里的旧值，"
+            "建会话 sessions_tenant_id_fkey 500"
+        )
+
+
+def test_eval_stack_container_pins_tenant():
+    """④ **容器侧**也要显式钉住目标租户（issue #7027 实证）。
+
+    只钉 runner 步骤的 env 不够：建会话的是 **ai-agent 容器**，它读 `app/config.py` 的
+    `EVAL_TENANT_ID`。历史默认值 25 与本地栈 seed 租户 1 分叉之后
+    会在建会话时 `sessions_tenant_id_fkey` 违例 —— 2026-10-19 的 post-deploy-eval run
+    39183565645 两条腿都死在这里（评测一行没跑）。
+    """
+    import yaml
+    compose = yaml.safe_load(COMPOSE_PATH.read_text(encoding="utf-8")) or {}
+    raw = ai_agent_tenant_env(compose)
+    assert str(LOCAL_STACK_TENANT_ID) in raw, (
+        f"deploy/docker-compose.yml 的 ai-agent-service 没把评测租户钉到本地栈租户 "
+        f"{LOCAL_STACK_TENANT_ID}（实测 EVAL_TENANT_ID={raw!r}）—— 容器会回落到云测试租户 "
+        f"{CLOUD_TEST_TENANT_ID}，本地栈建会话 FK 违例（#7027）"
     )
 
 

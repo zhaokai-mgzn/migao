@@ -3,6 +3,7 @@
 import pytest
 
 from app.production.routing import (
+    ROUTE_RULES,
     HOLE_KEYS,
     HOLE_PER_METER,
     METER_KEYS,
@@ -308,13 +309,15 @@ def test_operation_catalog_size_is_frozen_for_this_issue():
     """
     # 🔴 issue #4937：37 → **41**（新增 4 道纱帘变体 `熨烫-纱/定型-纱/复烫-纱/车被-纱` ——
     # `applicable` 过滤退场后它们会进纱帘路线，没有变体行 ⇒ 整张纱帘单 fail-closed）。
-    assert len(OPERATION_CATALOG) == 41, (
+    assert len(OPERATION_CATALOG) == 42, (
         "工序库条目数变了 —— 确需新增请走新迁移 + 同步 V54∪V56∪V79 聚合守卫 + 模板/价目终态")
     assert OPERATION_CATALOG["上车布-纱"] == {"group": "车位", "unit": "米", "unit_price": 0.5}
     assert OPERATION_CATALOG["打孔-纱"] == {"group": "车位", "unit": "孔", "unit_price": 0.15}
     # issue #4529：两道新工序的**冻结值**（单位是判据：单位错 ⇒ 应做数量口径错）
     assert OPERATION_CATALOG["配料"] == {"group": "后道", "unit": "米", "unit_price": 0.0}
     assert OPERATION_CATALOG["打包"] == {"group": "后道", "unit": "套", "unit_price": 0.0}
+    # issue #7523：整卷出库（单位 = 卷；应做数量 = 订单行 roll_count）
+    assert OPERATION_CATALOG["出库"] == {"group": "后道", "unit": "卷", "unit_price": 0.0}
 
 
 def _orphan_operations() -> set:
@@ -329,6 +332,10 @@ def _orphan_operations() -> set:
     consumed = {op for ops in ROUTINGS.values() for op in ops}
     consumed |= {rule["operation"] for rule in SPECIAL_OPTION_ROUTINGS.values()
                  if "operation" in rule}
+    # 新模型规则（含 sales_form 的 出库/裁剪）也是**真实消费点**（issue #7523）
+    consumed |= {rule["operation"] for rule in ROUTE_RULES}
+    consumed |= {rule["after_operation"] for rule in ROUTE_RULES
+                 if rule.get("after_operation")}
     return set(OPERATION_CATALOG) - consumed - set(NEW_MODEL_ONLY_OPERATIONS)
 
 

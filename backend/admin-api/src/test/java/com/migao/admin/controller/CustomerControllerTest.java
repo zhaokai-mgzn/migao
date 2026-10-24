@@ -1,3 +1,4 @@
+// case_ids: AR-004
 package com.migao.admin.controller;
 
 import com.migao.admin.dto.PageResponse;
@@ -39,6 +40,10 @@ class CustomerControllerTest extends BaseControllerTest {
     @Mock
     private CustomerService customerService;
 
+    /** 数据范围解析（issue #7372 段 2）：未打桩 ⇒ null ⇒ 不收窄（本类验既有接线）。 */
+    @Mock
+    private com.migao.admin.service.RoleService roleService;
+
     @InjectMocks
     private CustomerController customerController;
 
@@ -64,7 +69,7 @@ class CustomerControllerTest extends BaseControllerTest {
             PageResponse<CustomerProfile> page = new PageResponse<>();
             page.setItems(List.of());
             page.setTotal(0L);
-            when(customerService.getCustomerPage(anyLong(), anyLong(), any(), any(), any(), anyLong()))
+            when(customerService.getCustomerPage(anyLong(), anyLong(), any(), any(), any(), anyLong(), any()))
                     .thenReturn(page);
 
             mockMvc.perform(get("/api/admin/customers"))
@@ -76,7 +81,7 @@ class CustomerControllerTest extends BaseControllerTest {
         @Test
         @DisplayName("支持渠道筛选 -> 200")
         void channelFilter() throws Exception {
-            when(customerService.getCustomerPage(anyLong(), anyLong(), any(), any(), any(), anyLong()))
+            when(customerService.getCustomerPage(anyLong(), anyLong(), any(), any(), any(), anyLong(), any()))
                     .thenReturn(new PageResponse<>());
 
             mockMvc.perform(get("/api/admin/customers").param("sourceChannel", "wechat_mini"))
@@ -86,7 +91,7 @@ class CustomerControllerTest extends BaseControllerTest {
         @Test
         @DisplayName("支持 VIP 等级筛选 -> 200")
         void vipLevelFilter() throws Exception {
-            when(customerService.getCustomerPage(anyLong(), anyLong(), any(), any(), any(), anyLong()))
+            when(customerService.getCustomerPage(anyLong(), anyLong(), any(), any(), any(), anyLong(), any()))
                     .thenReturn(new PageResponse<>());
 
             mockMvc.perform(get("/api/admin/customers").param("vipLevel", "vip1"))
@@ -102,7 +107,7 @@ class CustomerControllerTest extends BaseControllerTest {
         @DisplayName("查询客户详情 -> 200")
         void getCustomerDetail() throws Exception {
             Map<String, Object> detail = Map.of("id", "cust-1", "wechatNickname", "测试用户");
-            when(customerService.getCustomerDetail(anyString())).thenReturn(detail);
+            when(customerService.getCustomerDetail(anyString(), any())).thenReturn(detail);
 
             mockMvc.perform(get("/api/admin/customers/cust-1"))
                     .andExpect(status().isOk())
@@ -213,7 +218,7 @@ class CustomerControllerTest extends BaseControllerTest {
         @Test
         @DisplayName("查询不存在的客户 -> 404")
         void customerNotFound() throws Exception {
-            when(customerService.getCustomerDetail("nonexistent"))
+            when(customerService.getCustomerDetail(eq("nonexistent"), any()))
                     .thenThrow(new BusinessException("NOT_FOUND", "客户不存在", 404));
 
             mockMvc.perform(get("/api/admin/customers/nonexistent"))
@@ -243,12 +248,12 @@ class CustomerControllerTest extends BaseControllerTest {
         @Test
         @DisplayName("列表查询携带租户 ID")
         void listPassesTenantId() throws Exception {
-            when(customerService.getCustomerPage(anyLong(), anyLong(), isNull(), isNull(), isNull(), eq(TEST_TENANT_ID)))
+            when(customerService.getCustomerPage(anyLong(), anyLong(), isNull(), isNull(), isNull(), eq(TEST_TENANT_ID), isNull()))
                     .thenReturn(new PageResponse<>());
 
             mockMvc.perform(get("/api/admin/customers"));
 
-            verify(customerService).getCustomerPage(anyLong(), anyLong(), isNull(), isNull(), isNull(), eq(TEST_TENANT_ID));
+            verify(customerService).getCustomerPage(anyLong(), anyLong(), isNull(), isNull(), isNull(), eq(TEST_TENANT_ID), isNull());
         }
 
         @Test

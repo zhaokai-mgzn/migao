@@ -148,7 +148,9 @@ class PermissionServiceTest {
         // issue #5699 的 **I4**：新增**一个写**码 `production:execute`（生产执行）⇒ 31 → 32（应补 30 → 31）。
         // issue #5652：新增**一个写**码 `production:inspect`（质检录入，只授独立质检员）⇒ 32 → 33
         // （应补 31 → 32）。**数字故意写死**的理由同上：这正是「存量租户拿新码」的唯一路径。
-        assertThat(inserted).isEqualTo(32);
+        // issue #7282：**删除死码** `product:manage`（用户 2026-10-18 裁定「可以删」）⇒ 33 → 32
+        // （应补 32 → 31）。删码同样是「存量租户」面：本路径不再补种它。
+        assertThat(inserted).isEqualTo(31);
         // 补种的码应含 order:list / employee:create / finance:view（此前角色管理无法授予）
         // + 本单的读码与写码（存量租户的运营/客服/财务要靠它们才能改单、转接会话、记账）
         verify(permissionMapper, atLeastOnce()).insert(argThat((Permission p) ->

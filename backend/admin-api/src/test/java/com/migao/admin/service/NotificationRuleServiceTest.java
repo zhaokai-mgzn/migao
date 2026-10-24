@@ -209,12 +209,26 @@ class NotificationRuleServiceTest {
     void deleteRule_success() {
         // given
         when(ruleMapper.selectById("rule-1")).thenReturn(rule(1L, "rule-1", "order_created", "tpl-1"));
+        when(ruleMapper.deleteById("rule-1")).thenReturn(1);
 
         // when
         ruleService.deleteRule(1L, "rule-1");
 
         // then
         verify(ruleMapper).deleteById("rule-1");
+    }
+
+    @Test
+    @DisplayName("🔴 deleteRule — 并发已被删（0 行）⇒ 404，不许回「删除成功」（issue #6956 · 现象 C）")
+    void deleteRule_zeroRows_conflict() {
+        // given：存在性读到时还在（并发另一方刚好删掉）⇒ 真正落库的 delete 影响 0 行
+        when(ruleMapper.selectById("rule-1")).thenReturn(rule(1L, "rule-1", "order_created", "tpl-1"));
+        when(ruleMapper.deleteById("rule-1")).thenReturn(0);
+
+        // when & then：修前这里静默通过（两个请求都 200），修后必须显式失败
+        assertThatThrownBy(() -> ruleService.deleteRule(1L, "rule-1"))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getCode()).isEqualTo("NOT_FOUND"));
     }
 
     @Test

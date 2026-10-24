@@ -29,6 +29,18 @@ public class OrderItem {
 
     private String productId;
 
+    /** 下单指定的 SKU（V180，issue #7375 段 2）：无外键（SKU 会硬删重建），追溯优先用 {@link #skuCode}。 */
+    private Long skuId;
+
+    /** SKU 货号快照（V180）：SKU 重建后仍可追溯。 */
+    private String skuCode;
+
+    /** 单价来源（V180）：`price_book_*` / `sku_standard_price` / `no_price_book` / `client`。 */
+    private String priceSource;
+
+    /** 服务端改写前的客户端单价（V180）：`null` = 未改写（事后对账「改前是多少」）。 */
+    private java.math.BigDecimal priceClientUnitPrice;
+
     private String productName;
 
     /**

@@ -3,12 +3,13 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
+import { formatYmd, resolveOrderDateWindow } from '@/lib/order-search-window'
 import { toastRequestError } from '@/lib/api-error'
-import { Search, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { orderApi } from '@/lib/api'
 import { OrderTable, CloseOrderModal, RemarkModal, RefundOrderModal } from '@/components/orders'
-import { Button, Modal, PageHeader } from '@/components/ui'
+import { Button, Modal, PageHeader, SearchPanel, SELECT_CONTROL } from '@/components/ui'
+import type { SearchFieldSpec } from '@/components/ui'
 import ListLoadError from '@/components/common/ListLoadError'
 import { usePermission } from '@/lib/permission'
 import type { OrderBrief, OrderStatus, OrderStatusTab } from '@/types'
@@ -26,19 +27,14 @@ interface SearchState {
 }
 
 // 将 Date 格式化为 YYYY-MM-DD（与 <input type="date"> 及后端 OrderListParams 一致）
-function formatDate(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
+
 
 // 默认下单时间范围：最近一个月（开始日期 = 今天往前推一个月，结束日期 = 今天）
 function getDefaultDateRange(): { startDate: string; endDate: string } {
   const end = new Date()
   const start = new Date()
   start.setMonth(start.getMonth() - 1)
-  return { startDate: formatDate(start), endDate: formatDate(end) }
+  return { startDate: formatYmd(start), endDate: formatYmd(end) }
 }
 
 const DEFAULT_DATE_RANGE = getDefaultDateRange()
@@ -54,29 +50,35 @@ const EMPTY_SEARCH: SearchState = {
   hasProcessing: '',
 }
 
-function FieldLabel({ children }: { children: React.ReactNode }) {
-  return (
-    // issue #5880：宽度改成**固定值**（`w-[4.5em]` 而非 `min-w-[4.5em]`）—— `min-w` 只是下限，
-    // 宽度仍随内容变 ⇒ 各格 label 实际宽度不同、行间起点参差；固定宽 + `text-right` 后，
-    // 配合单一 grid 的轨道，**每一列的控件左边界都对齐**。4.5em = 最长 label「下单时间」（4 个中文字）够用。
-    <label className="text-sm text-neutral-600 whitespace-nowrap shrink-0 text-right w-[4.5em]">
-      {children}
-    </label>
-  )
-}
+/** 收起态摘要里点名的筛选字段（顺序 = 筛选区里的顺序；label 与筛选区同源，不另写一套口径） */
+const SUMMARY_FIELDS: { key: 'orderId' | 'receiver' | 'creator' | 'productCode' | 'productTitle' | 'hasProcessing'; label: string }[] = [
+  { key: 'orderId', label: '订单ID' },
+  { key: 'receiver', label: '收货人' },
+  { key: 'creator', label: '制单人' },
+  { key: 'productCode', label: '商品货号' },
+  { key: 'productTitle', label: '商品标题' },
+  { key: 'hasProcessing', label: '是否加工' },
+]
 
-function FieldInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <input
-      {...props}
-      className={cn(
-        'flex-1 min-w-0 w-full h-9 px-3 rounded border border-neutral-300 bg-white text-sm',
-        'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15',
-        'placeholder:text-neutral-400',
-        props.className
-      )}
-    />
-  )
+/**
+ * 筛选区收起时的一行摘要（issue #7388）：只读**已提交**的 `search`，不读表单草稿
+ * （草稿还没点「查询」，写进摘要会骗人 —— 商家会以为列表已经按它筛过）。
+ *
+ * 时间范围必须显式说出来：收起态本就像「全部订单」，而列表其实一直只覆盖最近一个月。
+ */
+function summarizeSearch(search: SearchState): string {
+  const parts: string[] = []
+  if (search.startDate === DEFAULT_DATE_RANGE.startDate && search.endDate === DEFAULT_DATE_RANGE.endDate) {
+    parts.push('近一个月')
+  } else if (search.startDate || search.endDate) {
+    parts.push(`${search.startDate || '不限'} 至 ${search.endDate || '不限'}`)
+  }
+  const active = SUMMARY_FIELDS.filter(({ key }) => search[key]).map(({ label }) => label)
+  if (active.length > 0) {
+    // 一行摘要 ≠ 枚举全部：超过 3 项就点名前 3 个 + 计数（条数再多也不撑行）。
+    parts.push(active.length > 3 ? `${active.slice(0, 3).join('、')} 等 ${active.length} 项` : active.join('、'))
+  }
+  return parts.join(' · ')
 }
 
 /** 将 URL 参数中的中文标签映射为内部 tab key */
@@ -104,6 +106,12 @@ function resolveStatusParam(raw: string | null): OrderStatus | null {
   if (entry) return entry[0] as OrderStatus
   return null
 }
+
+/** 筛选控件统一形态：与 `SearchPanel` 的 `CONTROL_CLASS` 同口径（h-9 / 暖色描边 / 聚焦环） */
+const SEARCH_CONTROL =
+  'flex-1 min-w-0 w-full h-9 px-3 rounded border border-neutral-300 bg-white text-sm text-neutral-900 ' +
+  'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 ' +
+  'placeholder:text-neutral-400'
 
 export default function OrdersPage() {
   const router = useRouter()
@@ -266,13 +274,21 @@ export default function OrdersPage() {
   }, [loadOrders])
 
   const handleSearch = () => {
+    // issue #7404：下单时间两端都清空时不允许「查全部」——兜底最近 3 年，并把输入框回填成
+    // **实际查询的窗口**（否则界面空着、结果却是 3 年，等于骗人）。
+    const window = resolveOrderDateWindow(startDate, endDate)
+    if (window.filled) {
+      setStartDate(window.startDate)
+      setEndDate(window.endDate)
+      toast.info('未选择下单时间，已按最近 3 年查询')
+    }
     setCurrent(1)
     setSearch({
       orderId: orderId.trim(),
       receiver: receiver.trim(),
       creator: creator.trim(),
-      startDate,
-      endDate,
+      startDate: window.startDate,
+      endDate: window.endDate,
       productCode: productCode.trim(),
       productTitle: productTitle.trim(),
       hasProcessing,
@@ -428,11 +444,98 @@ export default function OrdersPage() {
     return list
   })()
 
+  const searchPanelFields: SearchFieldSpec[] = [
+    {
+      key: 'dateRange',
+      label: '下单时间',
+      span: 2,
+      control: (
+        <div className="flex items-center gap-1.5 min-w-0">
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            placeholder="开始日期"
+            className={SEARCH_CONTROL}
+          />
+          <span className="shrink-0 text-neutral-400 text-sm">至</span>
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            placeholder="结束日期"
+            className={SEARCH_CONTROL}
+          />
+        </div>
+      ),
+    },
+    {
+      key: 'orderId',
+      label: '订单ID',
+      control: (
+        <input type="text" placeholder="请输入订单ID" value={orderId}
+          onChange={(e) => setOrderId(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleSearch()} className={SEARCH_CONTROL} />
+      ),
+    },
+    {
+      key: 'receiver',
+      label: '收货人',
+      control: (
+        <input type="text" placeholder="请输入收货人姓名或手机号" value={receiver}
+          onChange={(e) => setReceiver(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleSearch()} className={SEARCH_CONTROL} />
+      ),
+    },
+    {
+      // 制单人（issue #5835）：文本框模糊匹配（与同区其它输入一致，回车即搜）
+      key: 'creator',
+      label: '制单人',
+      control: (
+        <input type="text" placeholder="请输入制单人姓名" value={creator}
+          onChange={(e) => setCreator(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleSearch()} className={SEARCH_CONTROL} />
+      ),
+    },
+    {
+      key: 'productCode',
+      label: '商品货号',
+      control: (
+        <input type="text" placeholder="请输入商品货号" value={productCode}
+          onChange={(e) => setProductCode(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleSearch()} className={SEARCH_CONTROL} />
+      ),
+    },
+    {
+      key: 'productTitle',
+      label: '商品标题',
+      control: (
+        <input type="text" placeholder="请输入商品标题" value={productTitle}
+          onChange={(e) => setProductTitle(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleSearch()} className={SEARCH_CONTROL} />
+      ),
+    },
+    {
+      key: 'hasProcessing',
+      label: '是否加工',
+      control: (
+        <select value={hasProcessing}
+          onChange={(e) => setHasProcessing(e.target.value as '' | 'true' | 'false')}
+          className={cn(SELECT_CONTROL, 'flex-1 min-w-0 w-full')}>
+          <option value="">全部</option>
+          <option value="true">是</option>
+          <option value="false">否</option>
+        </select>
+      ),
+    },
+  ]
+
+
   return (
     <div className="p-6 space-y-4">
       {/* 标题 */}
       <PageHeader
-        title="订单列表"
+        title="销售订单"
         actions={
           canWrite && (
             <button
@@ -456,135 +559,20 @@ export default function OrdersPage() {
           列梯 1 / 2 / 4（<768 一列、≥768 两列、≥1536 四列）：大轨道数只放在 ≥1536 —— #5850 的病根就是
           窄屏轨道太多、只能把控件**压扁**。每格 `min-w-0`：宽度由**轨道**给，不再靠 `min-w-[…]` 撑（#5841 的溢出）。
           排布：第 1 行 = 下单时间（跨 2 轨）· 订单ID · 收货人；第 2 行 = 制单人 · 商品货号 · 商品标题 · 是否加工；
-          第 3 行 = 按钮行（`col-span-full` 独占一行 + `justify-end` 右对齐）—— 主操作不再埋在第 2 行末尾。 */}
-      <div
-        className="bg-white rounded-lg border border-neutral-200 shadow-card p-5 grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4 gap-x-6 gap-y-4"
-        data-testid="search-area"
-      >
-        {/* 下单时间（跨 2 轨）：起 / 至 / 止 都在**同一个**容器里 —— 一个整体控件组，而不是三个散落的控件 */}
-        <div className="md:col-span-2 flex items-center gap-2 min-w-0">
-          <FieldLabel>下单时间</FieldLabel>
-          <div className="flex items-center gap-1.5 min-w-0 flex-1">
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              placeholder="开始日期"
-              className="flex-1 min-w-0 w-full h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-            />
-            <span className="shrink-0 text-neutral-400 text-sm">至</span>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              placeholder="结束日期"
-              className="flex-1 min-w-0 w-full h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-            />
-          </div>
-        </div>
-        {/* 订单ID */}
-        <div className="flex items-center gap-2 min-w-0">
-          <FieldLabel>订单ID</FieldLabel>
-          <FieldInput
-            placeholder="请输入订单ID"
-            value={orderId}
-            onChange={(e) => setOrderId(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-          />
-        </div>
-        {/* 收货人 */}
-        <div className="flex items-center gap-2 min-w-0">
-          <FieldLabel>收货人</FieldLabel>
-          <FieldInput
-            placeholder="请输入收货人姓名或手机号"
-            value={receiver}
-            onChange={(e) => setReceiver(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-          />
-        </div>
-        {/* 制单人（issue #5835）：文本框模糊匹配（与同区其它输入一致，回车即搜） */}
-        <div className="flex items-center gap-2 min-w-0">
-          <FieldLabel>制单人</FieldLabel>
-          <FieldInput
-            placeholder="请输入制单人姓名"
-            value={creator}
-            onChange={(e) => setCreator(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-          />
-        </div>
-        {/* 商品货号 */}
-        <div className="flex items-center gap-2 min-w-0">
-          <FieldLabel>商品货号</FieldLabel>
-          <FieldInput
-            placeholder="请输入商品货号"
-            value={productCode}
-            onChange={(e) => setProductCode(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-          />
-        </div>
-        {/* 商品标题 */}
-        <div className="flex items-center gap-2 min-w-0">
-          <FieldLabel>商品标题</FieldLabel>
-          <FieldInput
-            placeholder="请输入商品标题"
-            value={productTitle}
-            onChange={(e) => setProductTitle(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-          />
-        </div>
-        {/* 是否加工 */}
-        <div className="flex items-center gap-2 min-w-0">
-          <FieldLabel>是否加工</FieldLabel>
-          <select
-            value={hasProcessing}
-            onChange={(e) => setHasProcessing(e.target.value as '' | 'true' | 'false')}
-            className="flex-1 min-w-0 w-full h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-          >
-            <option value="">全部</option>
-            <option value="true">是</option>
-            <option value="false">否</option>
-          </select>
-        </div>
-        {/* 按钮行：`col-span-full` ⇒ 任何列数下都**独占一行**；`justify-end` ⇒ 右对齐（主操作在右）。
-            「刷新」是**列表动作**，「查询 / 重置」是**筛选动作** ⇒ 二者之间加一条细分隔分层。
-            按钮的**相对顺序与文案一字未改**（查询 → 重置 → 刷新），刷新按钮上的 `aria-label` 保持原值。 */}
-        <div className="col-span-full flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={handleSearch}
-            disabled={loading}
-            className="h-9 px-5 rounded bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 active:bg-primary-800 disabled:opacity-50 transition-colors inline-flex items-center gap-1.5"
-          >
-            <Search className="w-4 h-4" />
-            查询
-          </button>
-          <button
-            type="button"
-            onClick={handleReset}
-            disabled={loading}
-            className="h-9 px-5 rounded bg-white text-neutral-700 text-sm font-medium border border-neutral-300 hover:bg-neutral-50 active:bg-neutral-100 disabled:opacity-50 transition-colors inline-flex items-center gap-1"
-          >
-            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M3 12a9 9 0 1 0 3-6.7L3 8" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M3 3v5h5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            重置
-          </button>
-          <span className="flex items-center border-l border-neutral-200 pl-3 ml-1">
-            <button
-              type="button"
-              onClick={() => loadOrders()}
-              disabled={loading}
-              title="刷新订单列表"
-              aria-label="刷新"
-              className="h-9 px-3 rounded bg-white text-neutral-700 text-sm font-medium border border-neutral-300 hover:bg-neutral-50 active:bg-neutral-100 disabled:opacity-50 transition-colors inline-flex items-center gap-1.5"
-            >
-              <RefreshCw className="w-4 h-4" />
-              刷新
-            </button>
-          </span>
-        </div>
-      </div>
+          第 3 行 = 按钮行（`col-span-full` 独占一行 + `justify-end` 右对齐）—— 主操作不再埋在第 2 行末尾。
+
+          issue #7388（用户 2026-10-20 截图圈出整块查询区「默认折叠起来」）：这块 3 行的常驻面把首屏真正要看的
+          列表推到了折叠线以下 ⇒ 走原语的 `collapsible`（**默认收起**），收起态只占一行：标题 + 摘要 + 展开入口。
+          展开/收起只是版式（字段折叠态不进 DOM），查询行为、默认时间范围、URL 参数一律不变。 */}
+      <SearchPanel
+        fields={searchPanelFields}
+        onSearch={handleSearch}
+        onReset={handleReset}
+        onRefresh={() => loadOrders()}
+        loading={loading}
+        collapsible
+        summary={summarizeSearch(search)}
+      />
 
       {/* 表格 + Tab */}
       <div className="bg-white rounded-lg border border-neutral-200 shadow-card">

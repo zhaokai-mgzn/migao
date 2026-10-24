@@ -1,4 +1,4 @@
-// case_ids: UI-005, UI-033, UI-037, PG-038, UI-066
+// case_ids: UI-005, UI-033, UI-037, PG-038, UI-066, UI-064
 /**
  * Header 组件测试
  *
@@ -15,6 +15,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 // ─── Mock useAuthStore ───
 const mockLogout = vi.fn()
@@ -27,6 +29,11 @@ vi.mock('@/store/auth', () => ({
 // ─── Mock NotificationBell ───
 vi.mock('@/components/layout/NotificationBell', () => ({
   default: () => <div data-testid="notification-bell">NotificationBell</div>,
+}))
+
+// ─── Mock ApprovalBell（issue #7593：顶栏待审批入口，自身判据在 ApprovalBell.test.tsx）───
+vi.mock('@/components/layout/ApprovalBell', () => ({
+  default: () => <div data-testid="approval-bell">ApprovalBell</div>,
 }))
 
 // ─── Mock next/navigation ───
@@ -73,23 +80,29 @@ describe('Header', () => {
 
   // ─── 面包屑：默认路由 ───
 
-  it('根路径 / 应显示"工作台 > 经营看板"面包屑', async () => {
+  it('根路径 / 应显示**单级**「经营看板」面包屑（issue #7087：一级项无父组）', async () => {
     mockPathname = '/'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('工作台')).toBeInTheDocument()
-    // 经营看板 是最后一级，使用 span 渲染（非链接）
-    // 注意：路径 '/' 时 match 到 /dashboard 规则，显示 "工作台" + "经营看板"
+    // 🔴 issue #7087：「经营看板」由「工作台」组的组内项升为**一级项** ⇒ 面包屑**单级**
+    //（与 `/products`、`/notifications` 同口径；旧形态是「工作台 > 经营看板」两级）。
+    expect(screen.getByText('经营看板')).toBeInTheDocument()
+    expect(screen.queryByText('工作台')).not.toBeInTheDocument()
+    // 单级 = 整个面包屑容器里没有分隔符（不是「碰巧只剩一项」）
+    const nav = document.querySelector('nav')!
+    expect(nav.textContent).toBe('经营看板')
+    expect(screen.queryAllByText('/')).toHaveLength(0)
   })
 
-  it('/dashboard 路径应显示"工作台 > 经营看板"面包屑', async () => {
+  it('/dashboard 路径应显示**单级**「经营看板」面包屑（issue #7087）', async () => {
     mockPathname = '/dashboard'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('工作台')).toBeInTheDocument()
     expect(screen.getByText('经营看板')).toBeInTheDocument()
+    expect(screen.queryByText('工作台')).not.toBeInTheDocument()
+    expect(document.querySelector('nav')!.textContent).toBe('经营看板')
   })
 
   // 🔴 #5877（用户 2026-10-01 裁定）：一级项**没有父组** ⇒ 面包屑是**单级**「商品管理」
@@ -107,13 +120,13 @@ describe('Header', () => {
   })
 
   // issue #5271：原「订单管理」组与原「客户管理」组的客户列表/财务对账**并为一组**「交易管理」
-  it('/orders 路径应显示"交易管理 > 订单列表"面包屑', async () => {
+  it('/orders 路径应显示"交易管理 > 销售订单"面包屑', async () => {
     mockPathname = '/orders'
     await act(async () => {
       render(<Header />)
     })
     expect(screen.getByText('交易管理')).toBeInTheDocument()
-    expect(screen.getByText('订单列表')).toBeInTheDocument()
+    expect(screen.getByText('销售订单')).toBeInTheDocument()
   })
 
   // 🔴 #5778：客户列表由「交易管理」移入**客户服务**组（「客户管理不属于交易管理」）
@@ -135,12 +148,36 @@ describe('Header', () => {
     expect(screen.getByText('通知中心')).toBeInTheDocument()
   })
 
-  it('未知路径应兜底显示"工作台"', async () => {
+  it('未知路径应兜底显示**单级**「经营看板」（issue #7087：兜底项 = 真实存在的一级项，不再是已撤销的组名）', async () => {
     mockPathname = '/unknown-page'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('工作台')).toBeInTheDocument()
+    expect(screen.getByText('经营看板')).toBeInTheDocument()
+    // 旧兜底是「工作台」这个**已撤销的组名**（商家可见面不该再出现它）
+    expect(screen.queryByText('工作台')).not.toBeInTheDocument()
+    expect(document.querySelector('nav')!.textContent).toBe('经营看板')
+    // ⚠️ 如实登记：兜底 crumb 虽带 `href: '/dashboard'`，但渲染器按既有口径
+    // 「`href && !isLast` 才是链接」⇒ 单级面包屑的**末项**永远渲染成 `span`
+    // ⇒ 这里**不**断言「可回首页」（那是一处已登记的缺口，见交付报告「需裁定」）。
+    expect(document.querySelector('nav a')).toBeNull()
+  })
+
+  it('🔴 已撤销的组名「工作台」不再出现在面包屑匹配表（issue #7087，类级：整表扫一遍）', () => {
+    // 逐条渲染只能覆盖「已写进用例的那几条路径」；这条把**整张匹配表**扫一遍，
+    // 任何一条新条目再把「工作台」写回来都会红。只扫匹配表区段（跳过沿革注释）。
+    const src = readFileSync(join(__dirname, '../../../src/components/layout/Header.tsx'), 'utf8')
+    const from = src.indexOf('const ROUTE_BREADCRUMB_MAP')
+    const to = src.indexOf('function resolveBreadcrumbs')
+    expect(from, '切片锚点失配（匹配表被改名？）').toBeGreaterThan(-1)
+    expect(to, '切片锚点失配（resolveBreadcrumbs 被改名？）').toBeGreaterThan(from)
+    const table = src.slice(from, to)
+    expect(table).not.toContain("label: '工作台'")
+    // 已删除的菜单项同理（`/briefing` 不再是面包屑条目）
+    expect(table).not.toContain("label: '每日简报'")
+    // 反恒真：同一段里确实有真实 label（否则上面两条可能是「切片为空」造成的恒真）
+    expect(table).toContain("label: '经营看板'")
+    expect(table).toContain("label: '客户服务'")
   })
 
   it('pathname 为 null 时应显示"经营看板"', async () => {
@@ -299,7 +336,7 @@ describe('Header', () => {
 
   // ─── #3099 用户信息卡片（点击展开）───
 
-  it('点击用户按钮展开下拉卡片，展示 姓名/手机号/岗位/所属企业（#3099）', async () => {
+  it('点击用户按钮展开下拉卡片，展示 姓名/账号名/岗位/所属企业（#3099；#7272 账号名不再标成手机号）', async () => {
     mockUseAuthStore.mockReturnValue({
       user: {
         id: '1',
@@ -319,12 +356,54 @@ describe('Header', () => {
     await user.click(screen.getByRole('button', { name: '用户菜单' }))
     // 姓名（卡片头部 + 按钮各出现一次）
     expect(screen.getAllByText('张老板').length).toBeGreaterThanOrEqual(1)
-    // 手机号（username=手机号；卡片头部子行与手机号行各出现一次）
-    expect(screen.getAllByText('13800138000').length).toBeGreaterThanOrEqual(1)
+    // 账号名（issue #7272：取值是 user.username；标签必须是「账号名」而不是「手机号」）
+    expect(screen.getByText('账号名')).toBeInTheDocument()
+    expect(screen.queryByText('手机号')).toBeNull()
+    // 账号只在「账号名」行出现一次（卡片头部副标题不再重复账号 —— 信息不重复）
+    expect(screen.getByText('13800138000')).toBeInTheDocument()
     // 岗位
     expect(screen.getByText('运营')).toBeInTheDocument()
     // 所属企业
     expect(screen.getByText('观星台布艺')).toBeInTheDocument()
+  })
+
+  it('用户菜单里有「关于观星台」：新标签页打开官网关于页（issue #7491）', async () => {
+    mockUseAuthStore.mockReturnValue({
+      user: { id: '1', username: '13800138000', nickname: '张老板', tenantName: '观星台布艺' },
+      logout: mockLogout,
+    })
+    await act(async () => {
+      render(<Header />)
+    })
+    await user.click(screen.getByRole('button', { name: '用户菜单' }))
+    const about = screen.getByRole('link', { name: /关于观星台/ })
+    expect(about).toHaveAttribute('href', '/about')
+    expect(about).toHaveAttribute('target', '_blank')
+    expect(about.getAttribute('rel')).toContain('noopener')
+  })
+
+  it('非手机号账号（reg_sales）：显示「账号名」+ 账号，副标题放邮箱（#7272 用户截图同形态）', async () => {
+    mockUseAuthStore.mockReturnValue({
+      user: {
+        id: '1',
+        username: 'reg_sales',
+        nickname: '回归销售',
+        email: 'reg_sales@example.com',
+        position: '销售',
+        tenantName: '词元通达',
+      },
+      logout: mockLogout,
+    })
+    await act(async () => {
+      render(<Header />)
+    })
+    await user.click(screen.getByRole('button', { name: '用户菜单' }))
+
+    expect(screen.getByText('账号名')).toBeInTheDocument()
+    expect(screen.queryByText('手机号')).toBeNull()
+    expect(screen.getByText('reg_sales')).toBeInTheDocument()
+    // 副标题 = 邮箱（账号名已在独立一行，不重复）
+    expect(screen.getByText('reg_sales@example.com')).toBeInTheDocument()
   })
 
   it('再次点击用户按钮收起下拉卡片（#3099）', async () => {
@@ -415,6 +494,14 @@ describe('Header', () => {
     expect(screen.getByTestId('notification-bell')).toBeInTheDocument()
   })
 
+  // 顶栏待审批入口（issue #7593）：与通知铃铛**并列**的两条入口（通知 = FYI；审批 = 要动手）
+  it('应渲染 ApprovalBell 子组件（顶栏待审批入口）', async () => {
+    await act(async () => {
+      render(<Header />)
+    })
+    expect(screen.getByTestId('approval-bell')).toBeInTheDocument()
+  })
+
   // ─── Header 结构 ───
 
   it('应渲染 sticky header 元素', async () => {
@@ -430,7 +517,7 @@ describe('Header', () => {
 
   it('多级面包屑应显示 / 分隔符', async () => {
     // ⚠️ #5877：本用例原来用 `/products`（当时是两级同名面包屑）；该路径现为**单级**
-    //（一级项无父组）⇒ 改用真正的多级路径「交易管理 / 订单列表」，用例强度不变。
+    //（一级项无父组）⇒ 改用真正的多级路径「交易管理 / 销售订单」，用例强度不变。
     mockPathname = '/orders'
     await act(async () => {
       render(<Header />)
@@ -470,22 +557,22 @@ describe('Header', () => {
     expect(screen.queryByText('加工项管理')).not.toBeInTheDocument()
     expect(screen.queryByText('工艺配置')).not.toBeInTheDocument()
     expect(screen.queryByText('加工费管理')).not.toBeInTheDocument()
-    // 不得回落到 /production 的「生产看板」（更具体子路径必须先命中）
-    expect(screen.queryByText('生产看板')).not.toBeInTheDocument()
+    // 不得回落到 /production 的「作业看板」（更具体子路径必须先命中）
+    expect(screen.queryByText('作业看板')).not.toBeInTheDocument()
     const nav = document.querySelector('nav')!
     expect(nav.textContent).toBe('企业基础设置')
   })
 
   // 生产管理组面包屑（issue #4357）：加工单并入生产管理组。此前 /production **没有任何面包屑条目**
-  // ⇒ 落进兜底分支显示「工作台 > 经营看板」，§15.2「面包屑与侧边栏菜单名一致」不成立（本单补）。
-  it('/production 路径面包屑（生产管理 > 生产看板，issue #4357 补）', async () => {
+  // ⇒ 落进兜底分支（当时是「工作台 > 经营看板」），§15.2「面包屑与侧边栏菜单名一致」不成立（本单补）。
+  it('/production 路径面包屑（生产管理 > 作业看板，issue #4357 补）', async () => {
     mockPathname = '/production'
     await act(async () => {
       render(<Header />)
     })
     expect(screen.getByText('生产管理')).toBeInTheDocument()
-    expect(screen.getByText('生产看板')).toBeInTheDocument()
-    // 不得回落成兜底面包屑
+    expect(screen.getByText('作业看板')).toBeInTheDocument()
+    // 不得回落成兜底面包屑（#7087 起兜底 = 单级「经营看板」）
     expect(screen.queryByText('工作台')).not.toBeInTheDocument()
   })
 
@@ -499,16 +586,17 @@ describe('Header', () => {
   })
 
   // 入库单（issue #5071）：V111（#5034）新增该菜单项时**漏了 Header 的匹配表** ⇒ 该页面包屑
-  // 落兜底分支、**只剩「工作台」一项**（实测），§15.2「面包屑与侧边栏菜单名一致」不成立。
-  // issue #5271：随「面料进出与消耗」动线**移入新组「仓储与物料」**（原生产管理组）。
-  it('/inbound-orders 路径面包屑（仓储与物料 > 入库单，issue #5071 补 / #5271 改判组名）', async () => {
+  // 落兜底分支（当时只剩「工作台」一项，实测），§15.2「面包屑与侧边栏菜单名一致」不成立。
+  // 🔴 issue #7369（用户 2026-10-20 裁定「得加个新大菜单」）：入库单已从「仓储与物料」移到新组「供应链」
+  // —— 面包屑组名必须与菜单组名逐字一致（`Header.tsx` 文件头的硬约束），本用例就是钉它的那一处。
+  it('/inbound-orders 路径面包屑（供应链 > 入库单，issue #5071 补 / #5271 原判仓储与物料 / #7369 改判供应链）', async () => {
     mockPathname = '/inbound-orders'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('仓储与物料')).toBeInTheDocument()
+    expect(screen.getByText('供应链')).toBeInTheDocument()
     expect(screen.getByText('入库单')).toBeInTheDocument()
-    // 不得回落成兜底（兜底只有「工作台」一项）
+    // 不得回落成兜底（#7087 起兜底 = 单级「经营看板」）
     expect(screen.queryByText('工作台')).not.toBeInTheDocument()
   })
 
@@ -521,8 +609,8 @@ describe('Header', () => {
     })
     expect(screen.getByText('仓储与物料')).toBeInTheDocument()
     expect(screen.getByText('余料台账')).toBeInTheDocument()
-    // 不得退化成父路径的「生产看板」（本表 `find` 取首个命中 ⇒ 顺序敏感）
-    expect(screen.queryByText('生产看板')).not.toBeInTheDocument()
+    // 不得退化成父路径的「作业看板」（本表 `find` 取首个命中 ⇒ 顺序敏感）
+    expect(screen.queryByText('作业看板')).not.toBeInTheDocument()
     expect(screen.queryByText('生产管理')).not.toBeInTheDocument()
   })
 
@@ -533,7 +621,7 @@ describe('Header', () => {
     })
     expect(screen.getByText('仓储与物料')).toBeInTheDocument()
     expect(screen.getByText('省料看板')).toBeInTheDocument()
-    expect(screen.queryByText('生产看板')).not.toBeInTheDocument()
+    expect(screen.queryByText('作业看板')).not.toBeInTheDocument()
   })
 
   it('/production/pool 路径面包屑仍是「生产管理 > 智能派单」（不随面料动线搬家）', async () => {
@@ -543,7 +631,7 @@ describe('Header', () => {
     })
     expect(screen.getByText('生产管理')).toBeInTheDocument()
     expect(screen.getByText('智能派单')).toBeInTheDocument()
-    expect(screen.queryByText('生产看板')).not.toBeInTheDocument()
+    expect(screen.queryByText('作业看板')).not.toBeInTheDocument()
   })
 
   // ── issue #5271 移动端抽屉入口（Header 侧）──
@@ -560,7 +648,8 @@ describe('Header', () => {
     expect(trigger.tagName).toBe('BUTTON')
     expect(trigger.getAttribute('aria-label')).toBe('打开菜单')
     expect(container.querySelectorAll('nav')).toHaveLength(1)
-    expect(container.querySelector('nav')!.textContent).toContain('工作台')
+    // 本用例 pathname = '/'（beforeEach 的缺省）⇒ 面包屑 = 单级「经营看板」（issue #7087 后的口径）
+    expect(container.querySelector('nav')!.textContent).toBe('经营看板')
 
     await user.click(trigger)
     expect(onOpenMobileNav).toHaveBeenCalledTimes(1)
@@ -576,14 +665,19 @@ describe('Header', () => {
   })
 
   // 每日简报（issue #5071 同批实测发现的**同类第二例**）：与入库单同一形态 —— 菜单有、匹配表无。
-  it('/briefing 路径面包屑（工作台 > 每日简报，issue #5071 补）', async () => {
+  // 🔴 2026-10-17（issue #7087）：菜单项**已删除**（`/briefing` 保留为重定向薄壳 → `/dashboard`）
+  // ⇒ 匹配表不再为它保留条目，该路径落**未知路径兜底**：单级「经营看板」。
+  // 判据形态（§15.2「面包屑末项 == 真实存在的侧边栏菜单名」）一字未动，只换了那个真实存在的菜单名。
+  it('/briefing（旧深链，现为重定向薄壳）⇒ 兜底单级「经营看板」（#7087 撤掉该菜单项）', async () => {
     mockPathname = '/briefing'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('工作台')).toBeInTheDocument()
-    expect(screen.getByText('每日简报')).toBeInTheDocument()
-    // 兜底形态是「只有 工作台、没有第二项」；这里必须两项都在（上方两条断言即判据）
+    expect(screen.getByText('经营看板')).toBeInTheDocument()
+    // 已删除的菜单名 / 已撤销的组名都不得再渲染
+    expect(screen.queryByText('每日简报')).not.toBeInTheDocument()
+    expect(screen.queryByText('工作台')).not.toBeInTheDocument()
+    expect(document.querySelector('nav')!.textContent).toBe('经营看板')
   })
 
   it('/processing-orders/{id}/production 面包屑改判到生产管理组（issue #4357；原「订单管理 > 加工单」）', async () => {
@@ -691,5 +785,16 @@ describe('Header', () => {
     expect(screen.getByText('客户服务')).toBeInTheDocument()
     expect(screen.getByText('客服工作台')).toBeInTheDocument()
     expect(screen.queryByText('快捷回复')).not.toBeInTheDocument()
+  })
+
+  // 🔴 issue #7198：扫码是**跨设备交接的工具**，不是一条配置 ⇒ 主入口移到顶栏（任何页面一键弹码）；
+  // issue #7212：设置页的入口块也整块移除（扫码只在顶栏）。判据只钉「顶栏真的挂了它」，
+  // 弹层行为由 components/MobileEntry.test.tsx 承担。
+  it('顶栏带「手机端入口」按钮（#7198 主入口），且默认不画码', async () => {
+    await act(async () => {
+      render(<Header />)
+    })
+    expect(screen.getByRole('button', { name: '手机端入口' })).toBeInTheDocument()
+    expect(screen.queryByTestId('bmini-h5-qr')).toBeNull()
   })
 })

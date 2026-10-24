@@ -61,6 +61,8 @@ export const POSITION_SPEC_KEYS = [
   { key: 'color_name', label: '颜色' },
   { key: 'door_width', label: '门幅' },
   { key: 'selling_method', label: '售卖方式' },
+  // 整卷卷数（issue #7523）：批次号即卷号 ⇒ 工人屏要能看见「整卷 N 卷」；散剪单缺键不渲染
+  { key: 'roll_count', label: '卷数', unit: '卷', format: 'int' },
   { key: 'unit', label: '数量单位' },
   // ── 组 2 规格尺寸 ──
   { key: 'width', label: '宽', unit: '米', format: 'm' },

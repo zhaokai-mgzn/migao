@@ -26,7 +26,7 @@ CREATE TABLE tenants (
     status VARCHAR(32) DEFAULT 'active',
     auth_config JSONB DEFAULT '{}',
     bailian_config JSONB DEFAULT '{}',
-    briefing_enabled BOOLEAN DEFAULT FALSE,
+    briefing_enabled BOOLEAN DEFAULT TRUE,
     briefing_generate_time VARCHAR(5) DEFAULT '06:00',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -77,6 +77,9 @@ CREATE TABLE roles (
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
     name VARCHAR(128) NOT NULL,
     code VARCHAR(64) NOT NULL,
+    -- 数据范围（V177，issue #7372）：tenant = 全租户（默认，存量零回归）/ self = 只看本人创建的单据；
+    -- 多角色取**最宽**（只要有一个 tenant，该用户就是 tenant）。
+    data_scope VARCHAR(16) NOT NULL DEFAULT 'tenant',
     description TEXT,
     status VARCHAR(32) DEFAULT 'active',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -110,8 +113,11 @@ CREATE TABLE user_roles (
     role_id VARCHAR(64) NOT NULL REFERENCES roles(id),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    deleted INTEGER DEFAULT 0,
-    UNIQUE(user_id, role_id)
+    deleted INTEGER DEFAULT 0
+    -- 🔴 原 `UNIQUE(user_id, role_id)`（全表唯一）已于 V166（issue #7256）删除：
+    -- 全表唯一会把「软删 → 重新授予同一角色」永久挡住。终态 = 部分唯一索引
+    -- `uk_user_roles_active (user_id, role_id) WHERE deleted = 0`（见本文件第 15 节）。
+    -- 新建库曾经只为「存量库删了、脚本没删」而保留这条约束 ⇒ 两库行为不同（已随本段收敛）。
 );
 
 -- 用户身份表：支持多种登录方式（微信小程序、公众号、密码等）
@@ -514,7 +520,12 @@ CREATE TABLE customer_profiles (
     avatar_url VARCHAR(512),
 
     -- 客户等级与状态
+    -- 客户负责人（V178，issue #7372）：NULL = 未指派；数据范围 self 时「本人可见」= 自己是负责人，
+    -- 或未指派且自己有该客户（按 phone 关联 orders.created_by）的单。
+    owner_user_id VARCHAR(64),
     vip_level VARCHAR(16) DEFAULT 'normal',  -- normal / vip1 / vip2 / vip3
+    credit_limit NUMERIC(12,2),              -- 授信额度（issue #7370）：NULL = 未启用；0 = 零额度
+    payment_terms_days INTEGER,              -- 账期天数（issue #7370）：NULL = 未设置；0 = 现结
     customer_status VARCHAR(32) DEFAULT 'active',  -- active / silent / churn_warning / churned
     source_channel VARCHAR(32) DEFAULT 'wechat_mini',  -- wechat_mini / h5 / web
 
@@ -711,6 +722,9 @@ CREATE TABLE orders (
     remark TEXT,                                     -- 备注
     -- 来自 V148__add_order_shipped_at.sql（issue #6262，用户 2026-10-03 逐字裁定 B）
     shipped_at TIMESTAMP WITH TIME ZONE,             -- 发货时刻 = 该单最近一次 →shipped 流转发生的时刻；由两条发货路各自的条件 UPDATE 写入（OrderService.transitionStatusAtomic / OrderShipmentService.transition）。用途 = 「发货后 N 天自动完成」定时腿的判定锚点。NULL = 未采集（存量回填不全 / 从未发货）⇒ **不参与**自动完成，只能人工确认收货。不是 updated_at（会被后续编辑刷新）、也不是 created_at（那是下单时刻）
+    -- 来自 V160__add_order_paid_at_and_received_at.sql（issue #7078，用户 2026-10-17 裁定 A）
+    paid_at TIMESTAMP WITH TIME ZONE,                -- **收款时刻** = 该单 pending → confirmed（确认收款）发生的时刻；由 OrderService.transitionStatusAtomic 在「新态 confirmed + **期望前驱 pending**」这条边上写入（回退边 producing → confirmed 不写，否则支付时间会被一次回退顶成当天）。NULL = 未采集（从未确认收款 / 存量无收款流水）⇒ 屏幕显示「-」，不猜；不是 updated_at、也不是 created_at（那是下单时刻）
+    received_at TIMESTAMP WITH TIME ZONE,            -- **完成（收货）时刻** = 该单进入 completed 的时刻；两条完成路各写一次（商家「确认收货」= OrderService.transitionStatusAtomic；发货后 N 天自动完成 = OrderMapper.autoCompleteShippedOrders 的条件 UPDATE）⇒ 自动完成的单本列 = 自动完成时刻。NULL = 未采集（存量 completed 单不回填，无 durable 事实）
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted INTEGER DEFAULT 0
@@ -722,6 +736,12 @@ CREATE TABLE order_items (
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
     order_id VARCHAR(36) NOT NULL REFERENCES orders(id),
     product_id VARCHAR(36),                         -- 关联商品
+    -- 下单时的 SKU 与定价依据（V180，issue #7375 段 2）：无外键（SKU 会硬删重建），追溯优先用 sku_code。
+    -- 缺就是缺：存量行与手工行没有 SKU，不回填、不猜。
+    sku_id BIGINT,
+    sku_code VARCHAR(64),
+    price_source VARCHAR(32),                       -- price_book_* / sku_standard_price / no_price_book / client
+    price_client_unit_price NUMERIC(12,2),          -- 服务端改写前的客户端单价（NULL = 未改写）
     product_name VARCHAR(200),                      -- 商品名称
     quantity DECIMAL(10,2) DEFAULT 1,               -- 数量（计价方式口径：per_meter=米数/per_set=1/per_area=宽×高㎡，issue #3666）
     unit_price DECIMAL(12,2),                       -- 单价
@@ -975,7 +995,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_production_route_templates_tenant_default
 CREATE TABLE IF NOT EXISTS production_route_rules (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
-    trigger_kind VARCHAR(24) NOT NULL CHECK (trigger_kind IN ('craft', 'option', 'shaped', 'processing_item', 'position')),
+    trigger_kind VARCHAR(24) NOT NULL CHECK (trigger_kind IN ('craft', 'option', 'shaped', 'processing_item', 'position', 'sales_form')),
     trigger_value VARCHAR(64) NOT NULL,               -- 工艺名 / 特殊选项名（逐字 = ERP 写法；它是 join key）
     position VARCHAR(16),                             -- 部位限定；NULL = 不限
     action VARCHAR(16) NOT NULL CHECK (action IN ('insert', 'remove', 'factor')),
@@ -1080,6 +1100,8 @@ CREATE TABLE IF NOT EXISTS craft_calc_configs (
     per_fold_mixed_times JSONB NOT NULL DEFAULT '{"1": 0.65, "2": 1.2}'::jsonb,
     margin_single NUMERIC(6,3) NOT NULL DEFAULT 0.2,
     margin_multi NUMERIC(6,3) NOT NULL DEFAULT 0.3,
+    margin_mixed_single NUMERIC(6,3) NOT NULL DEFAULT 0.15,   -- 拼色单开余量（V188，issue #7560）
+    margin_mixed_multi NUMERIC(6,3) NOT NULL DEFAULT 0.20,    -- 拼色多开余量（V188）
     min_fullness NUMERIC(6,3) NOT NULL DEFAULT 1.5,
     tiers JSONB NOT NULL DEFAULT
         '{"standard": {"fullness": 2.0, "label": "标准工艺"}, "economy": {"fullness": 1.8, "label": "经济工艺"}}'::jsonb,
@@ -1655,11 +1677,139 @@ CREATE INDEX IF NOT EXISTS idx_stock_ledger_tenant_ref
 -- 单号 RK-yyyyMMdd-NNNN **租户内唯一**（V117 统一口径：改前是全局唯一索引，与建表注释矛盾）；
 -- import_run_id + source 见 V117（建单幂等键 / 单据来源）。
 -- 行业依据（缸号/批次）见 docs/curtain-selling-method-industry-research.md §1/§8.2。
+-- ================================================
+-- 供应商主数据（issue #7369，P0-1 段 1；V170 的终态同步）
+-- ================================================
+CREATE TABLE IF NOT EXISTS suppliers (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    name VARCHAR(128) NOT NULL,
+    contact_name VARCHAR(64),
+    contact_phone VARCHAR(32),
+    payment_terms_days INTEGER,
+    status VARCHAR(16) NOT NULL DEFAULT 'active',
+    remark TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    CONSTRAINT ck_suppliers_status CHECK (status IN ('active', 'inactive')),
+    CONSTRAINT ck_suppliers_terms CHECK (payment_terms_days IS NULL OR (payment_terms_days >= 0 AND payment_terms_days <= 365))
+);
+
+CREATE INDEX IF NOT EXISTS idx_suppliers_tenant_name
+    ON suppliers (tenant_id, name)
+    WHERE deleted = FALSE;
+
+COMMENT ON TABLE suppliers IS '供应商主数据（issue #7369，P0-1 段 1）：一行 = 一家供应商。单据侧引用（supplier_id）由段 2 落地 —— 本表不参与任何既有单据写面。';
+COMMENT ON COLUMN suppliers.payment_terms_days IS '账期天数：NULL = 未设置；0 = 现结；正数 = 账期（0~365，越界由 CHECK 与服务层双向拦）';
+COMMENT ON COLUMN suppliers.status IS '档案状态：active 在用 / inactive 停用（停用后不可再被新单据选中，由段 2 在写面拦）';
+
+ALTER TABLE suppliers ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation_suppliers ON suppliers;
+CREATE POLICY tenant_isolation_suppliers ON suppliers
+    USING (tenant_id::text = current_setting('app.current_tenant_id'));
+
+-- 供应商主数据（issue #7369，P0-1 段 1；V170 终态）：**必须排在 `inbound_orders` 之前** ——
+-- 后者的 `supplier_id` 是外键（V173），建库脚本按文件顺序执行，反了就是「关系 suppliers 不存在」。
+-- 供应商付款（V174，issue #7369 段 3-B）：一笔付款可冲抵多张入库单；作废留痕不物理删。
+-- ⚠️ 必须排在 `suppliers` 之后（外键），且 `supplier_payment_allocations` 要排在
+--    `supplier_payments` 与 `inbound_orders` 之后。
+CREATE TABLE IF NOT EXISTS supplier_payments (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    supplier_id VARCHAR(64) NOT NULL REFERENCES suppliers(id),
+    payment_no VARCHAR(32) NOT NULL,                 -- FK-yyyyMMdd-NNNN（租户内唯一）
+    paid_at DATE NOT NULL,
+    amount NUMERIC(16,4) NOT NULL CONSTRAINT ck_supplier_payments_amount CHECK (amount > 0),
+    method VARCHAR(16) NOT NULL CONSTRAINT ck_supplier_payments_method
+        CHECK (method IN ('cash', 'transfer', 'wechat', 'alipay', 'other')),
+    reference_no VARCHAR(64),
+    remark TEXT,
+    status VARCHAR(16) NOT NULL DEFAULT 'posted' CONSTRAINT ck_supplier_payments_status
+        CHECK (status IN ('posted', 'voided')),
+    voided_at TIMESTAMP WITH TIME ZONE,
+    voided_by VARCHAR(64),
+    voided_reason TEXT,
+    created_by VARCHAR(64),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_supplier_payments_no
+    ON supplier_payments (tenant_id, payment_no)
+    WHERE deleted = FALSE;
+CREATE INDEX IF NOT EXISTS idx_supplier_payments_tenant_supplier
+    ON supplier_payments (tenant_id, supplier_id, paid_at DESC)
+    WHERE deleted = FALSE;
+ALTER TABLE supplier_payments ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_supplier_payments ON supplier_payments
+    USING (tenant_id::text = current_setting('app.current_tenant_id'));
+
+-- 采购单（V175，issue #7369 段 4）：一张单可分多次收货；状态由 Σ收货派生，客户端不可写。
+-- ⚠️ 必须排在 `suppliers` 之后（外键）且 `purchase_order_receipts` 要排在 `inbound_orders` 之后。
+CREATE TABLE IF NOT EXISTS purchase_orders (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    po_no VARCHAR(32) NOT NULL,                      -- CG-yyyyMMdd-NNNN（租户内唯一）
+    supplier_id VARCHAR(64) NOT NULL REFERENCES suppliers(id),
+    order_date DATE NOT NULL,
+    expected_date DATE,
+    status VARCHAR(24) NOT NULL DEFAULT 'ordered' CONSTRAINT ck_purchase_orders_status
+        CHECK (status IN ('ordered', 'partially_received', 'received', 'closed')),
+    total_amount NUMERIC(16,4) NOT NULL DEFAULT 0,
+    closed_at TIMESTAMP WITH TIME ZONE,
+    closed_by VARCHAR(64),
+    closed_reason TEXT,
+    remark TEXT,
+    created_by VARCHAR(64),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_purchase_orders_no
+    ON purchase_orders (tenant_id, po_no)
+    WHERE deleted = FALSE;
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_tenant_supplier
+    ON purchase_orders (tenant_id, supplier_id, order_date DESC)
+    WHERE deleted = FALSE;
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_tenant_status
+    ON purchase_orders (tenant_id, status, order_date DESC)
+    WHERE deleted = FALSE;
+ALTER TABLE purchase_orders ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_purchase_orders ON purchase_orders
+    USING (tenant_id::text = current_setting('app.current_tenant_id'));
+
+CREATE TABLE IF NOT EXISTS purchase_order_items (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    purchase_order_id VARCHAR(64) NOT NULL REFERENCES purchase_orders(id),
+    line_no INT NOT NULL DEFAULT 1,
+    product_id VARCHAR(64),
+    sku_id VARCHAR(64) NOT NULL,
+    quantity NUMERIC(16,4) NOT NULL CONSTRAINT ck_purchase_order_items_qty CHECK (quantity > 0),
+    unit_price NUMERIC(16,4) NOT NULL DEFAULT 0 CONSTRAINT ck_purchase_order_items_price CHECK (unit_price >= 0),
+    amount NUMERIC(16,4) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE INDEX IF NOT EXISTS idx_purchase_order_items_po
+    ON purchase_order_items (tenant_id, purchase_order_id)
+    WHERE deleted = FALSE;
+ALTER TABLE purchase_order_items ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_purchase_order_items ON purchase_order_items
+    USING (tenant_id::text = current_setting('app.current_tenant_id'));
+
 CREATE TABLE IF NOT EXISTS inbound_orders (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
     inbound_no VARCHAR(32) NOT NULL,                 -- RK-yyyyMMdd-NNNN（租户内唯一）
     supplier VARCHAR(128),
+    -- 供应商档案引用（V173，issue #7369 段 2）：NULL = 未建档 / 待指派；历史行按**名称精确匹配**回填
+    --（用户 2026-10-20 裁定 A 口径），既有 supplier 文本列一字未改。
+    supplier_id VARCHAR(64) REFERENCES suppliers(id),
     supplier_doc_no VARCHAR(64),
     warehouse VARCHAR(64),
     inbound_date DATE NOT NULL DEFAULT CURRENT_DATE,
@@ -1692,8 +1842,62 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_inbound_orders_tenant_import_run
     WHERE import_run_id IS NOT NULL AND deleted = 0;
 CREATE INDEX IF NOT EXISTS idx_inbound_orders_tenant_status_date
     ON inbound_orders (tenant_id, status, inbound_date DESC);
+CREATE INDEX IF NOT EXISTS idx_inbound_orders_supplier_id
+    ON inbound_orders (tenant_id, supplier_id)
+    WHERE supplier_id IS NOT NULL AND deleted = 0;
 CREATE INDEX IF NOT EXISTS idx_inbound_orders_tenant_supplier
     ON inbound_orders (tenant_id, supplier);
+
+-- 付款冲抵明细（V174，issue #7369 段 3-B）：同一笔付款对同一张单至多一行。
+CREATE TABLE IF NOT EXISTS supplier_payment_allocations (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    payment_id VARCHAR(64) NOT NULL REFERENCES supplier_payments(id),
+    inbound_order_id VARCHAR(64) NOT NULL REFERENCES inbound_orders(id),
+    amount NUMERIC(16,4) NOT NULL CONSTRAINT ck_supplier_payment_allocations_amount CHECK (amount > 0),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_supplier_payment_allocations_pair
+    ON supplier_payment_allocations (payment_id, inbound_order_id)
+    WHERE deleted = FALSE;
+CREATE INDEX IF NOT EXISTS idx_supplier_payment_allocations_order
+    ON supplier_payment_allocations (tenant_id, inbound_order_id)
+    WHERE deleted = FALSE;
+ALTER TABLE supplier_payment_allocations ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_supplier_payment_allocations ON supplier_payment_allocations
+    USING (tenant_id::text = current_setting('app.current_tenant_id'));
+
+-- 采购收货记录（V175，issue #7369 段 4）：一次到货一行；可挂到生成的那张入库单。
+CREATE TABLE IF NOT EXISTS purchase_order_receipts (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    purchase_order_id VARCHAR(64) NOT NULL REFERENCES purchase_orders(id),
+    purchase_order_item_id VARCHAR(64) NOT NULL REFERENCES purchase_order_items(id),
+    inbound_order_id VARCHAR(64) REFERENCES inbound_orders(id),
+    quantity NUMERIC(16,4) NOT NULL CONSTRAINT ck_purchase_order_receipts_qty CHECK (quantity > 0),
+    received_at DATE NOT NULL,
+    remark TEXT,
+    created_by VARCHAR(64),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE INDEX IF NOT EXISTS idx_purchase_order_receipts_po
+    ON purchase_order_receipts (tenant_id, purchase_order_id)
+    WHERE deleted = FALSE;
+
+
+CREATE INDEX IF NOT EXISTS idx_purchase_order_receipts_item
+    ON purchase_order_receipts (tenant_id, purchase_order_item_id)
+    WHERE deleted = FALSE;
+CREATE INDEX IF NOT EXISTS idx_purchase_order_receipts_inbound
+    ON purchase_order_receipts (tenant_id, inbound_order_id)
+    WHERE inbound_order_id IS NOT NULL AND deleted = FALSE;
+ALTER TABLE purchase_order_receipts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_purchase_order_receipts ON purchase_order_receipts
+    USING (tenant_id::text = current_setting('app.current_tenant_id'));
 COMMENT ON TABLE inbound_orders IS
     '入库单（V111，issue #5034）：一次布料收货 = 一张单。draft 不动库存，posted 才加库存（只允许 draft→posted 一次），cancelled 仅 draft 可作废（已过账不得作废，冲销另开单）';
 COMMENT ON COLUMN inbound_orders.inbound_no IS
@@ -2164,6 +2368,7 @@ CREATE TABLE notification_templates (
     -- 加 FK 会让 V28 种子插不进去（实测：违反外键约束），**迁移链从 V28 起整条中断**。
     tenant_id BIGINT NOT NULL DEFAULT 0,
     name VARCHAR(128) NOT NULL,
+    title_template VARCHAR(255),  -- 标题模板（支持 {{var}}）；空 = 回落 name（issue #7524）
     type VARCHAR(64) NOT NULL,  -- ticket_assigned / ticket_status_changed / refund_success / shipment / etc.
     channel VARCHAR(32) NOT NULL,  -- wechat / sms / email / internal
     template_content TEXT NOT NULL,
@@ -2206,6 +2411,14 @@ CREATE TABLE notifications (
     channel VARCHAR(32) NOT NULL,
     title VARCHAR(255),
     content TEXT NOT NULL,
+    -- 业务对象（issue #7524）：让站内信挂得住单据（可点开 / 可按类型筛），而不只是一段文本
+    biz_type VARCHAR(32),  -- order / after_sales / inbound_order
+    biz_id VARCHAR(64),  -- 业务对象主键（跳转与幂等的挂载点）
+    biz_no VARCHAR(64),  -- 业务对象单号（展示用，如 RK-20261023-0001）
+    target_path VARCHAR(255),  -- 前端落地页（含 query）；空 = 无可跳转页面
+    severity VARCHAR(16),  -- info / warn / urgent；存量行 NULL 按 info 渲染
+    occurred_at TIMESTAMP WITH TIME ZONE,  -- 业务发生时间（与 created_at 区分）
+    dedupe_key VARCHAR(160),  -- 幂等键 eventType:bizId:recipientId（唯一索引兜底）
     status VARCHAR(32) DEFAULT 'pending',  -- pending / sent / failed / read
     sent_at TIMESTAMP WITH TIME ZONE,
     read_at TIMESTAMP WITH TIME ZONE,
@@ -2304,7 +2517,6 @@ CREATE INDEX idx_processing_items_deleted ON processing_items(deleted);
 -- （原 `processing_rules` 的两条索引随该表一并删除，issue #5245 A5）
 
 
-
 -- tenant_apps 索引
 CREATE INDEX idx_tenant_apps_tenant ON tenant_apps(tenant_id);
 CREATE INDEX idx_tenant_apps_status ON tenant_apps(status);
@@ -2346,6 +2558,9 @@ CREATE INDEX idx_agent_messages_tenant ON agent_messages(tenant_id);
 
 -- customer_profiles 索引
 CREATE INDEX idx_customer_profiles_tenant ON customer_profiles(tenant_id);
+-- 负责人下的客户（V178，issue #7372 段 2）：数据范围 self 的列表查询走这条
+CREATE INDEX IF NOT EXISTS idx_customer_profiles_owner
+    ON customer_profiles (tenant_id, owner_user_id);
 CREATE INDEX idx_customer_profiles_phone ON customer_profiles(phone);
 CREATE INDEX idx_customer_profiles_wechat ON customer_profiles(wechat_openid);
 CREATE INDEX idx_customer_profiles_status ON customer_profiles(customer_status);
@@ -2382,7 +2597,8 @@ CREATE INDEX idx_ticket_notes_tenant ON ticket_notes(tenant_id);
 
 -- orders 索引
 CREATE INDEX idx_orders_tenant ON orders(tenant_id);
-CREATE INDEX idx_orders_order_no ON orders(order_no);
+-- ⚠️ `idx_orders_order_no` 已于 V173 删除（与 `order_no` 的 UNIQUE 约束索引完全重复）；
+-- 新建库不再建它，存量库由 `V173__add_hot_path_indexes.sql` 的 `DROP INDEX IF EXISTS` 收敛。
 CREATE INDEX idx_orders_status ON orders(status);
 CREATE INDEX idx_orders_created_at ON orders(created_at DESC);
 CREATE INDEX idx_orders_deleted ON orders(deleted);
@@ -2423,6 +2639,9 @@ CREATE INDEX idx_notifications_tenant ON notifications(tenant_id);
 CREATE INDEX idx_notifications_recipient ON notifications(recipient_id);
 CREATE INDEX idx_notifications_status ON notifications(status);
 CREATE INDEX idx_notifications_created ON notifications(created_at DESC);
+-- 通知幂等 + 按业务类型筛（issue #7524）
+CREATE UNIQUE INDEX uk_notifications_dedupe ON notifications(tenant_id, dedupe_key) WHERE dedupe_key IS NOT NULL;
+CREATE INDEX idx_notifications_biz ON notifications(recipient_id, biz_type, created_at DESC) WHERE biz_type IS NOT NULL;
 
 -- tenant_applications 索引
 CREATE INDEX idx_tenant_applications_phone ON tenant_applications(phone);
@@ -2663,6 +2882,46 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_finance_txn_no ON finance_transactions(tena
 CREATE INDEX IF NOT EXISTS idx_finance_txn_order ON finance_transactions(order_id);
 CREATE INDEX IF NOT EXISTS idx_finance_txn_occurred ON finance_transactions(tenant_id, occurred_at);
 
+-- 客户收款核销（V176，issue #7370 段 3）：一笔收入流水可冲抵多张订单。
+-- 🔴 现金真值源仍**只**是 finance_transactions（这里只存「冲到哪张单、各多少」，
+-- 不复制金额 —— 复制 = 第二份会漂移的真相）；应收余额 = 货值 − 退款 − Σ核销。
+CREATE TABLE IF NOT EXISTS receipt_allocations (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    transaction_id VARCHAR(36) NOT NULL REFERENCES finance_transactions(id),
+    order_id VARCHAR(36) NOT NULL REFERENCES orders(id),
+    amount NUMERIC(16,4) NOT NULL CONSTRAINT ck_receipt_allocations_amount CHECK (amount > 0),
+    created_by VARCHAR(64),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+-- 同一笔收款对同一张单只允许一行（要改金额就删了重记，不留两份口径）
+CREATE UNIQUE INDEX IF NOT EXISTS uk_receipt_allocations_pair
+    ON receipt_allocations (transaction_id, order_id)
+    WHERE deleted = FALSE;
+CREATE INDEX IF NOT EXISTS idx_receipt_allocations_order
+    ON receipt_allocations (tenant_id, order_id)
+    WHERE deleted = FALSE;
+CREATE INDEX IF NOT EXISTS idx_receipt_allocations_transaction
+    ON receipt_allocations (tenant_id, transaction_id)
+    WHERE deleted = FALSE;
+
+ALTER TABLE receipt_allocations ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+         WHERE tablename = 'receipt_allocations'
+           AND policyname = 'tenant_isolation_receipt_allocations'
+    ) THEN
+        CREATE POLICY tenant_isolation_receipt_allocations ON receipt_allocations
+            USING (tenant_id::text = current_setting('app.current_tenant_id'));
+    END IF;
+END $$;
+
 -- 角色权限表（V16）
 CREATE TABLE IF NOT EXISTS role_permissions (
     id VARCHAR(64) PRIMARY KEY,
@@ -2821,7 +3080,9 @@ VALUES
   ('op-v54-31', 1, '熨烫-纱', '后道', '纱帘', '米', 0.35, FALSE, FALSE, 38, 'active', 0),
   ('op-v54-32', 1, '定型-纱', '后道', '纱帘', '米', 0.4, FALSE, FALSE, 39, 'active', 0),
   ('op-v54-33', 1, '复烫-纱', '后道', '纱帘', '米', 0.35, FALSE, FALSE, 40, 'active', 0),
-  ('op-v54-34', 1, '车被-纱', '后道', '纱帘', '米', 0.4, FALSE, FALSE, 41, 'active', 0)
+  ('op-v54-34', 1, '车被-纱', '后道', '纱帘', '米', 0.4, FALSE, FALSE, 41, 'active', 0),
+  -- issue #7523（用户裁定 2026-10-23）：整卷布料单的「出库」独立工序（单位 卷；原值 0 = 未定价载体在价目矩阵）
+  ('op-v186-01', 1, '出库', '后道', NULL, '卷', 0, FALSE, FALSE, 42, 'active', 0)
 ON CONFLICT (tenant_id, name) WHERE deleted = 0 DO NOTHING;
 
 -- 工艺路线模板种子（V54 的 6 条 + V58 的 3 条，issue #4246 的纱帘路线补齐）。
@@ -2861,9 +3122,10 @@ SET source = CASE
         WHEN id LIKE 'op-v54-%' THEN '占位待确认'
         WHEN id LIKE 'op-v56-%' THEN '推算'
         WHEN id LIKE 'op-v79-%' THEN '占位待确认'
+        WHEN id LIKE 'op-v186-%' THEN '占位待确认'
     END
 WHERE source IS NULL
-  AND (id LIKE 'op-v54-%' OR id LIKE 'op-v56-%' OR id LIKE 'op-v79-%');
+  AND (id LIKE 'op-v54-%' OR id LIKE 'op-v56-%' OR id LIKE 'op-v79-%' OR id LIKE 'op-v186-%');
 
 -- 工序作用域回填（V67，issue #4384 A1；`打包` 由 V79 / issue #4529 追加）：与迁移
 -- **逐字同集合** —— 三道外帘工序 + `打包` 是套级（每樘窗一次），其余全部由列默认值 'position'
@@ -3068,7 +3330,12 @@ VALUES
   ('opp-v79-33', 1, '打包', '通用', NULL, TRUE, 'active', 0),
   ('opp-v79-34', 1, '打包', '纱帘', NULL, TRUE, 'active', 1),
   ('opp-v79-35', 1, '打包', '帘头', NULL, TRUE, 'active', 1),
-  ('opp-v79-36', 1, '打包', '布料', NULL, TRUE, 'active', 1)
+  ('opp-v79-36', 1, '打包', '布料', NULL, TRUE, 'active', 1),
+  -- ── issue #7523：出库（布料 = 适用但未定价；O4 终态 = 通用一行存活、其余软删）──
+  ('opp-v186-01', 1, '出库', '通用', NULL, TRUE, 'active', 0),
+  ('opp-v186-02', 1, '出库', '布帘', NULL, FALSE, 'active', 1),
+  ('opp-v186-03', 1, '出库', '纱帘', NULL, FALSE, 'active', 1),
+  ('opp-v186-04', 1, '出库', '布料', NULL, TRUE, 'active', 1)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO production_route_templates
@@ -3121,6 +3388,17 @@ VALUES
   ('rr-v70-24', 1, 'option', '加立边', NULL, 'insert', '立边', '三边', 240, 'active'),
   ('rr-v70-25', 1, 'option', '扣环', NULL, 'insert', '扣环', '三边', 250, 'active'),
   ('rr-v70-26', 1, 'option', '防翘扣', NULL, 'insert', '防翘扣', '三边', 260, 'active')
+ON CONFLICT (id) DO NOTHING;
+
+-- issue #7523：整卷布料单 = 出库 → 打包（先 insert 出库（锚点 裁剪），再 remove 裁剪）。
+-- 🔴 **独立成块**（不并进 rr-v70）：rr-v70 是与 V71 逐行冻结的来源镜像
+-- （tests/unit_ci_workflows/test_v93_route_rules_backfill.py 的 `_RULE_BLOCK_SOURCES`）。
+INSERT INTO production_route_rules
+    (id, tenant_id, trigger_kind, trigger_value, position, action,
+     operation, after_operation, priority, status)
+VALUES
+  ('rr-v186-01', 1, 'sales_form', 'full_roll', NULL, 'insert', '出库', '裁剪', 270, 'active'),
+  ('rr-v186-02', 1, 'sales_form', 'full_roll', NULL, 'remove', '裁剪', NULL, 280, 'active')
 ON CONFLICT (id) DO NOTHING;
 
 -- ── 工序路线模型重构 P2 的终态种子（V72，issue #4432 = 母单 #4423 P2/3）──
@@ -3694,8 +3972,9 @@ CREATE TABLE IF NOT EXISTS quality_inspections (
     processing_order_id VARCHAR(64) NOT NULL REFERENCES processing_orders(id),
     order_item_id VARCHAR(64) NOT NULL,                -- 一件成品帘（order_items.id）：质检的唯一颗粒度
     position_name VARCHAR(128),                        -- 成品帘展示名快照（缺值不渲染假数据）
-    inspector_id VARCHAR(64) NOT NULL,                 -- 检验人（独立质检员）
+    inspector_id VARCHAR(64) NOT NULL,                 -- 检验人（独立质检员 / 工人端质检员）
     inspector_name VARCHAR(64),
+    inspector_kind VARCHAR(16) NOT NULL DEFAULT 'employee', -- issue #7162：employee 观星台 / worker 工人端
     inspection_result VARCHAR(16) NOT NULL,            -- 质检三态：pass 合格 / rework 返工 / scrap 报废
     reason VARCHAR(500),                               -- 不合格原因：判定 ≠ pass 时**服务层必填**（缺 ⇒ 422，不静默存）
     inspected_at TIMESTAMP WITH TIME ZONE NOT NULL,    -- 检验时刻（业务时钟单点 BusinessClock）
@@ -3714,9 +3993,354 @@ COMMENT ON TABLE quality_inspections IS '质检记录（成品帘级，issue #56
 COMMENT ON COLUMN quality_inspections.order_item_id IS '一件成品帘（order_items.id）：质检的**唯一颗粒度**（用户裁定「是按成品帘来检查的」）';
 COMMENT ON COLUMN quality_inspections.inspection_result IS '质检三态：pass 合格 / rework 返工 / scrap 报废；取值域由服务层 QualityCheckService.RESULTS 裁（与 production_work_logs.work_type 同名不同物）';
 COMMENT ON COLUMN quality_inspections.reason IS '不合格原因：判定 ≠ pass 时**必填**（缺 ⇒ 422 具名报错，绝不静默存）；pass 时可为 NULL';
-COMMENT ON COLUMN quality_inspections.inspector_id IS '检验人（独立质检员）：服务端从 SecurityContext 解，body 里的同名字段无效';
+COMMENT ON COLUMN quality_inspections.inspector_id IS '检验人（独立质检员 / 工人端质检员）：服务端从会话解（观星台员工 = SecurityContext，工人端 = 工人 session），body 里的同名字段无效';
+COMMENT ON COLUMN quality_inspections.inspector_kind IS '检验人身份类别（V163 / issue #7162）：employee 观星台员工 / worker 工人端（工人 session）；存量行默认 employee';
 COMMENT ON COLUMN quality_inspections.inspected_at IS '检验时刻：取业务时钟单点 BusinessClock（Asia/Shanghai）—— 不使用无参 now()（issue #3802 / BusinessClockSourceGuardTest）';
+
+-- 15. 热点查询索引补齐（V173，2026-10-20 索引审查第一刀）
+-- ================================================
+-- 为什么集中放在文件末尾：这些索引的承载表里有收尾才建的（如 `quality_inspections`），
+-- 放在各自建表语句旁边会**越序**（表还没建就建索引）。
+-- 判据：`tests/unit_ci_workflows/test_db_hot_path_indexes.py`（本段 ⇄ V173 逐条对账 + 前导列断言）；
+-- 真库形态由 `tests/unit_ci_workflows/test_schema_bootstrap_order.py` 的
+-- `ON_ERROR_STOP=1` 全文执行兜底。
+--
+-- 形态说明：老表是「单列拼盘」（tenant_id / status / deleted 各一条），真实读面却是
+-- `WHERE tenant_id = ? AND deleted = 0 [AND 过滤列] ORDER BY <时间列> DESC LIMIT n`
+-- ⇒ 只能取本租户全部行再 Sort。本段把老表补到与新表同形态（`(tenant_id, …) WHERE deleted = 0`）。
+
+-- 1. 订单：列表 / 状态筛选 / 客户页 / C 端「我的订单」
+CREATE INDEX IF NOT EXISTS idx_orders_tenant_created
+    ON orders (tenant_id, created_at DESC, id) WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_orders_tenant_status_created
+    ON orders (tenant_id, status, created_at DESC) WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_orders_tenant_phone
+    ON orders (tenant_id, customer_phone) WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_orders_tenant_user_created
+    ON orders (tenant_id, user_id, created_at DESC) WHERE deleted = 0;
+
+-- 2. 通知：收件箱分页 + 未读数（前端 30s 轮询；`<>` 只能作部分索引谓词）
+CREATE INDEX IF NOT EXISTS idx_notifications_inbox
+    ON notifications (tenant_id, recipient_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_unread
+    ON notifications (tenant_id, recipient_id) WHERE status <> 'read';
+
+-- 3. 审计日志：列表 / 登录日志
+CREATE INDEX IF NOT EXISTS idx_audit_logs_tenant_created
+    ON audit_logs (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_tenant_action_created
+    ON audit_logs (tenant_id, action, created_at DESC);
+
+-- 4. 库存：批次消耗按 batch_id（既有索引建在 batch_no 上，与读面错位）/ 台账按 sku 汇总
+CREATE INDEX IF NOT EXISTS idx_consumptions_tenant_batch_id
+    ON stock_batch_consumptions (tenant_id, batch_id) INCLUDE (delta) WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_ledger_tenant_sku_cover
+    ON stock_ledger_entries (tenant_id, sku_id) INCLUDE (reason, delta) WHERE deleted = 0;
+
+-- 5. 生产：工人计件按 worker_id（既有索引第二列是 worker_name）/ 期间报表按 work_date
+CREATE INDEX IF NOT EXISTS idx_work_logs_tenant_worker_id_date
+    ON production_work_logs (tenant_id, worker_id, work_date) WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_work_logs_tenant_date
+    ON production_work_logs (tenant_id, work_date) WHERE deleted = 0;
+
+-- 6. 扫码：OR 两支用不上 COALESCE 表达式唯一索引 ⇒ 两条单列部分索引（BitmapOr）
+CREATE INDEX IF NOT EXISTS idx_labels_short_code
+    ON inbound_labels (short_code) WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_labels_revoked_code
+    ON inbound_labels (revoked_code) WHERE deleted = 0;
+
+-- 7. 商品：列表分页 / 导入幂等键
+CREATE INDEX IF NOT EXISTS idx_products_tenant_created
+    ON products (tenant_id, created_at DESC, id DESC) WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_products_tenant_sku_code
+    ON products (tenant_id, sku_code, id) WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_skus_tenant_sku_code
+    ON product_skus (tenant_id, sku_code);
+
+-- 8. CRM / 客服会话 / 质检 / 加工单
+CREATE INDEX IF NOT EXISTS idx_customer_profiles_tenant_created
+    ON customer_profiles (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_sessions_tenant_created
+    ON agent_sessions (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_sessions_ended
+    ON agent_sessions (tenant_id, ended_at DESC) WHERE status = 'ended';
+CREATE INDEX IF NOT EXISTS idx_quality_inspections_tenant_time
+    ON quality_inspections (tenant_id, inspected_at) WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_processing_orders_tenant_created
+    ON processing_orders (tenant_id, created_at DESC) WHERE deleted = 0;
+
+-- 9. 部位码 / 部位工序 / 发货单（列表按 COALESCE 表达式排序 ⇒ 表达式索引）
+CREATE INDEX IF NOT EXISTS idx_set_part_tokens_order
+    ON processing_set_part_tokens (tenant_id, processing_order_id) WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_position_operations_tenant_set
+    ON processing_position_operations (tenant_id, set_id)
+    WHERE deleted = 0 AND set_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_shipments_tenant_list
+    ON order_shipments (tenant_id, (COALESCE(shipped_at, packed_at, created_at)) DESC, id DESC)
+    WHERE deleted = 0;
+
+-- 10. 知识卡片 / 员工 / 加工项 / 会话
+CREATE INDEX IF NOT EXISTS idx_knowledge_cards_tenant_status_updated
+    ON knowledge_cards (tenant_id, status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_users_tenant_created
+    ON users (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_processing_items_tenant_created
+    ON processing_items (tenant_id, created_at DESC) WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_sessions_tenant_updated
+    ON sessions (tenant_id, updated_at DESC) WHERE deleted = 0;
+
+-- 11. 权限判定 / 入库明细聚合
+CREATE INDEX IF NOT EXISTS idx_role_permissions_permission
+    ON role_permissions (permission_id);
+CREATE INDEX IF NOT EXISTS idx_inbound_items_tenant_order
+    ON inbound_order_items (tenant_id, inbound_order_id) INCLUDE (quantity, batch_no)
+    WHERE deleted = 0;
+
+-- 12. 补齐：建库脚本 ⇄ 已发布迁移的**存量漂移**（2026-10-20 索引审查顺带发现）
+-- 判据：`tests/unit_ci_workflows/test_db_hot_path_indexes.py` 的
+-- `test_every_live_migration_index_reaches_bootstrap`（活目录里每条 `CREATE INDEX` 的产成品
+-- 都必须在建库脚本里逐字存在；被后续迁移 DROP 掉的对象按「表已不在脚本」自动豁免）。
+-- 这四条索引/约束的迁移早已发布，但效果**从未同步进建库脚本** ⇒ 新建库与存量库是两份真相
+-- （最严重的一条：`user_roles` 新建库还留着全表 `UNIQUE(user_id, role_id)`，会让
+-- 「软删后重新授予同一角色」在新建库上失败、在存量库上成功）。
+CREATE INDEX IF NOT EXISTS idx_orders_tenant_status_shipped_at
+    ON orders (tenant_id, shipped_at)
+    WHERE status = 'shipped' AND deleted = 0;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_order_logistics_tenant_order
+    ON order_logistics (tenant_id, order_id) WHERE deleted = 0;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_user_roles_active
+    ON user_roles (user_id, role_id) WHERE deleted = 0;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_customer_profiles_phone
+    ON customer_profiles (tenant_id, phone);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_customer_profiles_openid
+    ON customer_profiles (tenant_id, wechat_openid);
+
+-- 13. `order_items` 的「含加工项」筛选（V172，第二刀的配套索引）
+-- 读面：OrderService#getOrderPage 的 hasProcessing 过滤（先取有加工信息的明细，再内存精确判定）
+CREATE INDEX IF NOT EXISTS idx_order_items_tenant_processing
+    ON order_items (tenant_id, order_id)
+    WHERE deleted = 0 AND processing_info IS NOT NULL;
 
 -- ================================================
 -- END OF SCHEMA
 -- ================================================
+
+-- ══════════════════════════════════════════════════════════════════════════════
+-- 价格本（V179，issue #7375 P1-3 段 1）：协议价 / 等级价 / 阶梯价
+-- 解析优先级：协议价 > 等级价 > 阶梯价 > SKU 标准价；四层皆无 ⇒ **未定价（不是 ¥0.00）**
+-- ══════════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS customer_sku_prices (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    customer_id VARCHAR(64) NOT NULL REFERENCES customer_profiles(id),
+    sku_id BIGINT NOT NULL REFERENCES product_skus(id),
+    price NUMERIC(12,2) NOT NULL CHECK (price >= 0),
+    note VARCHAR(255),
+    created_by VARCHAR(64),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    deleted INT NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_customer_sku_prices_pair
+    ON customer_sku_prices (tenant_id, customer_id, sku_id) WHERE deleted = 0;
+
+CREATE TABLE IF NOT EXISTS vip_level_prices (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    vip_level VARCHAR(16) NOT NULL,
+    sku_id BIGINT NOT NULL REFERENCES product_skus(id),
+    price NUMERIC(12,2) NOT NULL CHECK (price >= 0),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    deleted INT NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_vip_level_prices_pair
+    ON vip_level_prices (tenant_id, vip_level, sku_id) WHERE deleted = 0;
+
+CREATE TABLE IF NOT EXISTS sku_tier_prices (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    sku_id BIGINT NOT NULL REFERENCES product_skus(id),
+    min_qty NUMERIC(12,1) NOT NULL CHECK (min_qty > 0),
+    max_qty NUMERIC(12,1),
+    price NUMERIC(12,2) NOT NULL CHECK (price >= 0),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    deleted INT NOT NULL DEFAULT 0,
+    CONSTRAINT ck_sku_tier_range CHECK (max_qty IS NULL OR max_qty >= min_qty)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_sku_tier_prices_edge
+    ON sku_tier_prices (tenant_id, sku_id, min_qty) WHERE deleted = 0;
+
+-- 具名审批流（V181，issue #7374 P1-2）：改价 / 超授信 / 退款 / 采购超额 / 盘点差异
+-- 四态 pending → approved | rejected | withdrawn；业务对象**不存审批结论副本**（读本表）；超授信类单次消费。
+CREATE TABLE IF NOT EXISTS approvals (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    object_type VARCHAR(32) NOT NULL,
+    object_ref VARCHAR(128) NOT NULL,
+    object_label VARCHAR(255),
+    amount NUMERIC(16,4),
+    payload JSONB,
+    reason VARCHAR(500),
+    status VARCHAR(16) NOT NULL DEFAULT 'pending',
+    requested_by VARCHAR(64),
+    requested_by_name VARCHAR(64),
+    requested_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    decided_by VARCHAR(64),
+    decided_by_name VARCHAR(64),
+    decided_at TIMESTAMP WITH TIME ZONE,
+    decision_note VARCHAR(500),
+    consumed_at TIMESTAMP WITH TIME ZONE,
+    consumed_ref VARCHAR(128),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    deleted INT NOT NULL DEFAULT 0,
+    CONSTRAINT ck_approvals_object_type CHECK (object_type IN (
+        'credit_override', 'price_change', 'refund', 'purchase_over', 'stocktake_diff')),
+    CONSTRAINT ck_approvals_status CHECK (status IN ('pending', 'approved', 'rejected', 'withdrawn')),
+    CONSTRAINT ck_approvals_decided_shape CHECK (
+        (status = 'pending' AND decided_at IS NULL)
+        OR (status <> 'pending' AND decided_at IS NOT NULL))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_approvals_pending
+    ON approvals (tenant_id, object_type, object_ref)
+    WHERE status = 'pending' AND deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_approvals_gate
+    ON approvals (tenant_id, object_type, object_ref, status)
+    WHERE deleted = 0;
+
+-- ══════════════════════════════════════════════════════════════════════════════
+-- 多仓 + 调拨（V182，issue #7373 P1-1 段 1）：仓库实体 + 调拨单（逐批次明细，缸号随行）
+-- 段 1 = 即时调拨（确认即两端到位）；两阶段在途与负库存拦截见段 2。
+-- ══════════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS warehouses (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    code VARCHAR(32) NOT NULL,
+    name VARCHAR(128) NOT NULL,
+    warehouse_type VARCHAR(32) NOT NULL DEFAULT 'store',
+    is_default BOOLEAN NOT NULL DEFAULT FALSE,
+    status VARCHAR(16) NOT NULL DEFAULT 'active',
+    remark VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    deleted INT NOT NULL DEFAULT 0,
+    CONSTRAINT ck_warehouses_type CHECK (warehouse_type IN ('store', 'processing')),
+    CONSTRAINT ck_warehouses_status CHECK (status IN ('active', 'inactive'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_warehouses_code
+    ON warehouses (tenant_id, code) WHERE deleted = 0;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_warehouses_single_default
+    ON warehouses (tenant_id) WHERE is_default AND deleted = 0;
+
+CREATE TABLE IF NOT EXISTS stock_transfers (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    transfer_no VARCHAR(32) NOT NULL,
+    from_warehouse_id BIGINT NOT NULL REFERENCES warehouses(id),
+    to_warehouse_id BIGINT NOT NULL REFERENCES warehouses(id),
+    status VARCHAR(16) NOT NULL DEFAULT 'completed',
+    note VARCHAR(255),
+    created_by VARCHAR(64),
+    created_by_name VARCHAR(64),
+    completed_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    deleted INT NOT NULL DEFAULT 0,
+    CONSTRAINT ck_stock_transfers_not_same CHECK (from_warehouse_id <> to_warehouse_id),
+    CONSTRAINT ck_stock_transfers_status CHECK (status IN ('draft', 'in_transit', 'completed', 'cancelled'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_stock_transfers_no
+    ON stock_transfers (tenant_id, transfer_no) WHERE deleted = 0;
+
+CREATE TABLE IF NOT EXISTS stock_transfer_items (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    transfer_id VARCHAR(64) NOT NULL REFERENCES stock_transfers(id),
+    batch_id BIGINT NOT NULL REFERENCES stock_batches(id),
+    batch_no VARCHAR(32) NOT NULL,
+    sku_id BIGINT,
+    sku_code VARCHAR(64),
+    qty NUMERIC(12,1) NOT NULL CHECK (qty > 0),
+    unit_cost NUMERIC(12,4),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_stock_transfer_items_transfer
+    ON stock_transfer_items (tenant_id, transfer_id);
+
+-- ══════════════════════════════════════════════════════════════════════════════
+-- 盘点单（V184，issue #7373 P1-1 段 2）：按仓库出任务 → 录实盘 → 差异经审批后调整
+-- 恒等式：Σ账面 − Σ实盘 = Σ差异（逐批次）；差异调整只改数量，不动成本快照
+-- ══════════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS stocktakes (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    stocktake_no VARCHAR(32) NOT NULL,
+    warehouse_id BIGINT NOT NULL REFERENCES warehouses(id),
+    status VARCHAR(16) NOT NULL DEFAULT 'counting',
+    note VARCHAR(255),
+    counted_by VARCHAR(64),
+    counted_by_name VARCHAR(64),
+    completed_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    deleted INT NOT NULL DEFAULT 0,
+    CONSTRAINT ck_stocktakes_status CHECK (status IN ('counting', 'completed', 'cancelled'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_stocktakes_no
+    ON stocktakes (tenant_id, stocktake_no) WHERE deleted = 0;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_stocktakes_one_open_per_warehouse
+    ON stocktakes (tenant_id, warehouse_id) WHERE status = 'counting' AND deleted = 0;
+
+CREATE TABLE IF NOT EXISTS stocktake_items (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    stocktake_id VARCHAR(64) NOT NULL REFERENCES stocktakes(id),
+    batch_id BIGINT NOT NULL REFERENCES stock_batches(id),
+    batch_no VARCHAR(32) NOT NULL,
+    sku_code VARCHAR(64),
+    book_qty NUMERIC(12,1) NOT NULL,
+    counted_qty NUMERIC(12,1),
+    diff_qty NUMERIC(12,1),
+    unit_cost NUMERIC(12,4),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    deleted INT NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_stocktake_items_batch
+    ON stocktake_items (tenant_id, stocktake_id, batch_id) WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_stocktake_items_stocktake
+    ON stocktake_items (tenant_id, stocktake_id) WHERE deleted = 0;
+
+-- ══════════════════════════════════════════════════════════════════════════════
+-- 返工单（V185，issue #7377 P1-5 段 2）：售后 → 返工 → 回写；同一售后单同时只能一个未完结
+-- 四态：draft → in_progress → done | cancelled
+-- ══════════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS rework_orders (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    rework_no VARCHAR(32) NOT NULL,
+    after_sales_ticket_id VARCHAR(64) NOT NULL REFERENCES after_sales_tickets(id),
+    order_id VARCHAR(36),
+    processing_order_id VARCHAR(64),
+    status VARCHAR(16) NOT NULL DEFAULT 'draft',
+    reason VARCHAR(500),
+    created_by VARCHAR(64),
+    created_by_name VARCHAR(64),
+    started_at TIMESTAMP WITH TIME ZONE,
+    completed_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    deleted INT NOT NULL DEFAULT 0,
+    CONSTRAINT ck_rework_orders_status CHECK (status IN ('draft', 'in_progress', 'done', 'cancelled'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_rework_orders_no
+    ON rework_orders (tenant_id, rework_no) WHERE deleted = 0;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_rework_orders_open_per_ticket
+    ON rework_orders (tenant_id, after_sales_ticket_id)
+    WHERE status IN ('draft', 'in_progress') AND deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_rework_orders_ticket
+    ON rework_orders (tenant_id, after_sales_ticket_id) WHERE deleted = 0;

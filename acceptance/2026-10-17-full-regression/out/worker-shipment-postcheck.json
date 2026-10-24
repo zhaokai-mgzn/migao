@@ -1,0 +1,90 @@
+{
+  "order_no": "20261018167300025",
+  "order_id": "9fa05716f163f0cf4003a5de48df9dbb",
+  "shipment": {
+    "shipment_no": "SH202610180711166212",
+    "source": "worker",
+    "packed_at": "2026-10-18T07:11:28.298162+08:00",
+    "packed_by": "回归工人一",
+    "shipped_at": "2026-10-18T07:11:28.653197+08:00",
+    "shipped_by": "回归工人一",
+    "tracking_no": "SF13900001025",
+    "logistics_company": "顺丰速运",
+    "unpacked_at": "2026-10-18T07:11:28.139951+08:00",
+    "unpacked_by": "回归工人一",
+    "unpack_reason": "回归补充-打包规格复核",
+    "items": [
+      {
+        "order_item_id": "7b8a7a589c8539f10e8daee49faec78b",
+        "product_name": "回归布帘-遮光提花-暖咖-2.8米",
+        "shipped_quantity": 6.0,
+        "unit": "米"
+      }
+    ]
+  },
+  "checks": [
+    {
+      "name": "订单已由工人发货（shipped）",
+      "pass": true,
+      "detail": {
+        "status": "shipped"
+      }
+    },
+    {
+      "name": "存在 worker 来源发货单",
+      "pass": true,
+      "detail": {
+        "shipment_count": 1,
+        "worker_count": 1
+      }
+    },
+    {
+      "name": "发货单含实发明细",
+      "pass": true,
+      "detail": {
+        "items": [
+          {
+            "order_item_id": "7b8a7a589c8539f10e8daee49faec78b",
+            "product_name": "回归布帘-遮光提花-暖咖-2.8米",
+            "shipped_quantity": 6.0,
+            "unit": "米"
+          }
+        ],
+        "totals": null
+      }
+    },
+    {
+      "name": "打包留痕（packed_at）",
+      "pass": true,
+      "detail": {
+        "packed_at": "2026-10-18T07:11:28.298162+08:00",
+        "packed_by": "回归工人一"
+      }
+    },
+    {
+      "name": "撤销打包留痕（unpacked_at/unpack_reason）",
+      "pass": true,
+      "detail": {
+        "unpacked_at": "2026-10-18T07:11:28.139951+08:00",
+        "unpack_reason": "回归补充-打包规格复核"
+      }
+    },
+    {
+      "name": "发货人 = 回归工人一",
+      "pass": true,
+      "detail": {
+        "shipped_by": "回归工人一"
+      }
+    },
+    {
+      "name": "商家确认收货 → completed",
+      "pass": true,
+      "detail": {
+        "http": 200,
+        "status": "completed",
+        "receivedAt": "2026-10-18T07:11:54.38384+08:00"
+      }
+    }
+  ],
+  "all_pass": true
+}

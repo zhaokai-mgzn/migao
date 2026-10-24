@@ -6,7 +6,7 @@
  * ① 端侧拿 `GET /api/auth/me` 的 `permissions` **自己判码**（`visibleAdminSurfaces`），
  *    且**集合未知 ⇒ 照显**（fail-open）⇒ 员工看到自己没有的入口，点进去逐项 403；
  * ② 「数据」页对没有 `production:view` 的岗位（客服 / 财务实拍）摆一块
- *    「无权限查看生产待办（需生产看板权限）」——每一屏都无意义。
+ *    「无权限查看生产待办（需作业看板权限）」——每一屏都无意义。
  * 新口径：菜单由**服务端**按岗位投影（`mobileSurfaces`），端侧只渲染服务端给的面。
  *
  * | # | 判据 | 红证（怎么让它单独变红） |
@@ -64,7 +64,21 @@ function stubNetwork(menu: typeof SERVER_MENU | null) {
   mockGet.mockImplementation(async (url: string) => {
     if (url === '/api/auth/me') {
       if (menu === null) throw Object.assign(new Error('Request failed with status 500'), { statusCode: 500 })
-      return { success: true, data: { permissions: ['*'], mobileSurfaces: menu } } as any
+      // 2026-10-18：`/me` 同时下发底栏 `mobileTabs`（服务端 `MobileSurfaces.visibleTabsFor`）——
+      // 本夹具给全 4 项（「数据」页的整页权限门按它判；同族判据见 dashboard-three-state）
+      return {
+        success: true,
+        data: {
+          permissions: ['*'],
+          mobileSurfaces: menu,
+          mobileTabs: [
+            { key: 'chat', title: '问黄金策', route: '/pages/chat/index/index' },
+            { key: 'dashboard', title: '数据', route: '/pages/dashboard/index/index' },
+            { key: 'sessions', title: '坐席', route: '/pages/sessions/index/index' },
+            { key: 'profile', title: '我的', route: '/pages/profile/index/index' },
+          ],
+        },
+      } as any
     }
     if (url === '/api/admin/production/todo-overview') {
       return {

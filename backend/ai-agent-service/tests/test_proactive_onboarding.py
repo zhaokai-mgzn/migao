@@ -133,7 +133,7 @@ class TestDecisionBody:
         ⚠️ 2026-10-09（issue #6580）：宿主路径从 `/production/routings` 换成 `/production`
         —— 前者**已不再是菜单节点**（工艺配置菜单被收拢进「企业基础设置」，见下一条判据），
         对它的推送会被判 `unregistered`（另一条理由），拿它当 `not_visible` 的样本会**测错对象**。
-        本判据判的是「已注册但没有该码 ⇒ 不推」，故取一个**仍在菜单里**的路径（生产看板 `/production`）。
+        本判据判的是「已注册但没有该码 ⇒ 不推」，故取一个**仍在菜单里**的路径（作业看板 `/production`）。
         """
         denied = nav.build_proactive_push("/production", ["order:list"])
         assert denied.should_push is False
@@ -185,18 +185,39 @@ class TestDecisionBody:
             blob = verdict.push.render() + json.dumps(payload, ensure_ascii=False)
             hits = [w for w in step_words if w in blob]
             assert hits == [], f"{node.path} 的主动提示里出现步骤词 {hits}"
-            assert "操作步骤不在本轮" in blob, f"{node.path} 缺少「不给步骤」的如实告知"
+
+    def test_criterion_9_no_internal_identifiers_on_screen(self) -> None:
+        """判据 9（issue #7324）：上屏文案**不许**出现内部标识 / 元指令（§31 P2/P3/P4）。
+
+        红证：把 `citation`（`登记项 #…`）、`route`、菜单组 key 或「（只给导航…）」拼回 `render()` ⇒ 红。
+        """
+        for feature in nav.NAV_FEATURES:
+            node = nav.nodes_for_feature(feature.feature_id)[0]
+            verdict = nav.build_proactive_push(node.path, ["*"])
+            assert verdict.should_push is True
+            text = verdict.push.render()
+            for banned in ("登记项", "只给导航", "菜单组", "操作步骤不在本轮"):
+                assert banned not in text, f"{node.path} 的文案里出现内部标识/元指令：{banned}"
+            assert verdict.push.route not in text, f"{node.path} 的文案里出现 route：{verdict.push.route}"
+            for key, _label in nav.MENU_GROUPS:
+                assert key not in text, f"{node.path} 的文案里出现菜单组 key：{key}"
+            # 追溯锚仍可得（只是不上屏）
+            assert verdict.push.citation.startswith("登记项 #")
 
     def test_criterion_5_actionability(self) -> None:
-        """判据 5：**可行动性** —— 「在哪一页」+「这页能做什么」必须都能给出，否则不发。"""
+        """判据 5：**可行动性** —— 「你在哪一页」+「入口怎么走」必须都能给出，否则不发。"""
         verdict = nav.build_proactive_push("/shipments", ["order:list"])
         assert verdict.should_push is True
         text = verdict.push.render()
-        # 🔴 先钉「两个字段都非空」（否则 `"" in text` **恒真** ⇒ 这条断言永远绿 = 空断言）
+        # 🔴 先钉「字段都非空」（否则 `"" in text` **恒真** ⇒ 这条断言永远绿 = 空断言）
         assert verdict.push.label and verdict.push.route, "推送缺「在哪一页」的字段（空串不算给出）"
-        assert verdict.push.label in text and verdict.push.route in text, "文案里没有「在哪一页」"
-        assert nav.PROACTIVE_CAPABILITY_PREFIX in text, "文案里没有「这页能做什么」"
+        assert text.startswith(f"你在【{verdict.push.label}】"), f"文案里没有「你在哪一页」：{text}"
         assert verdict.push.capabilities, "capabilities 为空 ⇒ 这条推送不该发"
+        assert any("入口" in cap for cap in verdict.push.capabilities), (
+            f"文案里没有「入口怎么走」：{verdict.push.capabilities}"
+        )
+        # route 只做**判定入参**，不上屏（issue #7324）
+        assert verdict.push.route not in text, "route 不该上屏"
         assert set(verdict.push.to_data()["capabilities"]) == set(verdict.push.capabilities)
 
     def test_coverage_every_menu_node_has_exactly_one_feature(self) -> None:
@@ -225,9 +246,9 @@ class TestEntryPoint:
         store = _FakeStore(state=None)
         body, store = await _call(_enter("/products"), _merchant(), store)
         text = _text_of(body)
-        assert "商品管理" in text and "/products" in text, body
-        assert nav.PROACTIVE_CAPABILITY_PREFIX in text
-        assert "登记项 #products" in text
+        assert "商品管理" in text, body
+        # issue #7324：上屏只写商家话术 —— route / 登记项 / 元指令一律不出现
+        assert "/products" not in text and "登记项" not in text and "只给导航" not in text, body
         assert "event: done" in body
         assert store.commits, "推送后必须记账（否则同一页面会被反复推）"
         assert store.state["onboarding_pushed_features"] == ["products"]
@@ -311,16 +332,32 @@ class TestEntryPoint:
         assert store.commits == [], "写失败不该被当成记账成功"
 
     @pytest.mark.asyncio
-    async def test_pushed_message_is_saved_into_history(self) -> None:
-        """推送落进会话历史（用户重开会话时仍能看到这条导航）。"""
+    async def test_pushed_message_is_not_saved_into_history(self) -> None:
+        """🔴 **不落库**（issue #7324，用户裁定）：落进历史 ⇒ 换端 / 重登后回放成普通 AI 气泡。"""
         store = _FakeStore(state=None)
-        _body, _store = await _call(_enter("/knowledge"), _merchant(["knowledge:view"]), store)
+        body, _store = await _call(_enter("/knowledge"), _merchant(["knowledge:view"]), store)
         saved = _call.last_saved  # type: ignore[attr-defined]
-        assert saved.await_count == 1, "主动提示应当落库一次（否则历史里没有它）"
-        kwargs = saved.await_args.kwargs
-        assert kwargs["role"] == "assistant"
-        assert kwargs["source"] == "chat.proactive"
-        assert "知识库" in kwargs["content"]
+        assert "知识库" in _text_of(body), "本轮仍要推给用户"
+        assert saved.await_count == 0, "主动提示不该落库（否则重登后仍在会话里）"
+
+    def test_legacy_rows_are_dropped_on_read(self) -> None:
+        """存量行（#7324 前落库的提示）读侧消化：不回放、不进模型历史。"""
+        from app.api.chat import _convert_history_to_agent_format
+
+        legacy = (
+            "你在【订单列表】（/orders）。这页能做：查看「订单列表」、从菜单组「trade-center」进入这一页。"
+            "（登记项 #orders → 菜单组「trade-center」「订单列表」）"
+            "（只给导航：在哪一页 / 这页有什么。操作步骤不在本轮。）"
+        )
+        rows = [
+            {"role": "user", "content": "查一张单"},
+            {"role": "assistant", "content": legacy},
+            {"role": "assistant", "content": "这是一条正常的回答"},
+        ]
+        assert nav.is_legacy_proactive_tip(legacy) is True
+        assert nav.is_legacy_proactive_tip("这是一条正常的回答") is False
+        converted = _convert_history_to_agent_format(rows)
+        assert [m["content"] for m in converted] == ["查一张单", "这是一条正常的回答"]
 
     @pytest.mark.asyncio
     async def test_does_not_touch_the_llm_path(self) -> None:

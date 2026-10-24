@@ -127,7 +127,7 @@ cases:
       - "success=true"
       - "issue（发加工，可填加工方/交期）→ 加工单 issued **且联动订单 confirmed→producing**（issue #4305：这是订单进入「生产中」的**唯一时点**，落库失败时回退订单状态）；start → in_processing；complete → completed"
       - "complete 后订单保持 producing（不自动 shipped，发货需物流单号）"
-      - "入口收敛（issue #4305，用户裁定「从订单作为发加工的唯一入口」；**2026-09-19 issue #4357 改判落点**）：加工单侧**唯一入口 = 生产看板 /production**（原「加工单」列表页 /processing-orders 已并入该页并改为重定向）—— 该页**不渲染** 发加工/开始加工/加工完成/取消 四个动作入口，只留 订单详情（**2026-10-01 issue #5913 改判文案与显隐**：原名「查看」，「查看」在本行没有确定宾语；且按 `/orders` 的守卫码 `order:list` 显隐 —— 持 `production:view` 而不持它者点进去是 403）/ 生产明细 + **页面级一条**「状态流转请在订单详情操作」提示（改前是每行一份）；状态流转唯一入口 = 订单详情页加工单块。证据：admin-web tests/unit/pages/production-board.test.tsx（「入口收敛不回归」：四个按钮 queryByRole 均为 null + 引导文案可见）+ tests/e2e/specs/orders/processing-orders.spec.ts（五种状态逐行负向断言）"
+      - "入口收敛（issue #4305，用户裁定「从订单作为发加工的唯一入口」；**2026-09-19 issue #4357 改判落点**）：加工单侧**唯一入口 = 作业看板 /production**（原「加工单」列表页 /processing-orders 已并入该页并改为重定向）—— 该页**不渲染** 发加工/开始加工/加工完成/取消 四个动作入口，只留 订单详情（**2026-10-01 issue #5913 改判文案与显隐**：原名「查看」，「查看」在本行没有确定宾语；且按 `/orders` 的守卫码 `order:list` 显隐 —— 持 `production:view` 而不持它者点进去是 403）/ 生产明细 + **页面级一条**「状态流转请在订单详情操作」提示（改前是每行一份）；状态流转唯一入口 = 订单详情页加工单块。证据：admin-web tests/unit/pages/production-board.test.tsx（「入口收敛不回归」：四个按钮 queryByRole 均为 null + 引导文案可见）+ tests/e2e/specs/orders/processing-orders.spec.ts（五种状态逐行负向断言）"
       - "端点层证据（machine-scored）：PATCH /api/admin/processing-orders/{id} action=issue → 200 + $.success=true + $.data.status=issued（ProcessingOrderControllerTest.updateIssue —— 该测试是**唯一**把状态机主链落到 HTTP 层的证据；本条的 `success=true` 计分断言据此成立，不是凭空写的关键词）"
     skip_reason: "[backend-contract] 由 ProcessingOrderServiceTest（状态机主链与订单联动）+ ProcessingOrderControllerTest（PATCH 端点：200 + success=true + status=issued）验证"
     merge_log: "2026-09-12 新增（issue #3340）。2026-09-18 断言反空转（case-trust burn-down）：原先 2 条 data_check 全是散文 ⇒ CASE-TRUST-EMPTY-ASSERTION（计分断言数 = 0 = 恒绿）。修法 = 把**已经存在**的 HTTP 层效果断言显式化 —— ProcessingOrderControllerTest.updateIssue 补 `$.success` 断言并纳入本条 traces，本条据此新增机器计分型 data_check（`success=true`）。只减不增：本条从 case-trust 豁免清单销账。2026-09-18（issue #4305）：主链判据补「issue 联动订单 confirmed→producing（唯一时点）」+ 新增「入口收敛」判据（列表页四个动作入口移除，唯一入口 = 订单详情页加工单块），并把前端断言文件纳入本条 traces。2026-09-19（issue #4357）：加工单列表页并入生产看板 ⇒ 「入口收敛」判据的**落点由列表页改判到 /production**（断言一条不放宽：四个按钮仍不渲染 + 引导文案仍在），traces 的前端断言文件随之由 processing-orders-list.test.tsx 改为 production-board.test.tsx（后者承接了原第 ② 条断言）；processing-orders-list.test.tsx 仍保留（改为断言旧入口重定向，见 PG-038）。"
@@ -323,7 +323,7 @@ cases:
 
   - id: PG-013
     legacy_id: ""
-    title: "黄金策加工单 LLM 行为：查询含加工项订单 → 如实说明不支持生成 + 引导生产看板（真实对话）"
+    title: "黄金策加工单 LLM 行为：查询含加工项订单 → 如实说明不支持生成 + 引导作业看板（真实对话）"
     domains:
       - processing-order
       - order
@@ -397,7 +397,7 @@ cases:
       # ⚠️ **2026-10-16 重锚（issue #7048 P1 · 项 C，按 #7035 第一相审计报告 §2.2）**：
       # 原「全程」那一栏里的「暂不支持」「功能不存在」「没有这个功能」**已删除** ——
       # 按 2026-10-16「能力边界 终版」（**创建单据 ❌**），agent 对「生成加工单」的**正确行为
-      # 就是如实说明不支持 + 引导生产看板**，而这三条措辞**正是诚实拒绝的话**：
+      # 就是如实说明不支持 + 引导作业看板**，而这三条措辞**正是诚实拒绝的话**：
       # 留着 = **把正确拒绝判红**（假红，判据方向反了）。
       # 保留 / 新增的是**假承诺**那一族（编造"已完成"）：「生成未成功」「生成失败」保留
       # （它们是**编造失败**，属 #3477 家族）；新增「已生成」「已创建加工单」「已生成加工单」
@@ -1083,7 +1083,7 @@ cases:
       - "走查实测单可复现（#4205 验收判据 1）：加工单 JG-20260918-6914 的 1 条报工（「走查工人」精裁-布 3 米 × ¥0.40）⇒ per_worker 含该工人且金额 = 1.20。红证：ProductionPieceworkSummaryTest「walkthroughOrderIsReproducible」（对 dev 库实测数据形态的确定性复现；真实库对账由走查收尾执行）"
       - "返工/报废不计件 + 期间边界（#4205 验收判据 3）：rework/scrap 不进 per_worker/per_operation/total（与既有 per-order 口径同一份逻辑）；period 边界压在 SQL（work_date >= 当月首日 且 <= 当月末日，含端点）。证据：ProductionPieceworkSummaryTest「periodBoundaryAndOptionalWorkerFilter」（捕获 wrapper 断言 SQL 段含 work_date/worker_name 且绑定参数含 2026-09-01/2026-09-30）+「summaryTotalEqualsPerOrderTotal」里的 rework 负例"
       - "🔴 **未定价 ≠ 0**（issue #4696，2026-09-20 补漏；报表与 per-order 计件面**共用同一份聚合**，本条只加不改）：未定价报工（`production_work_logs.unit_price IS NULL` 且 `price_state='unpriced'`）**不进** `total`、**不进** `per_worker[].amount`、**不进** `per_operation[].amount`，且**不得按 0 计入**（改前静默折 0 ⇒ 商家看到的是「有金额」而不是「算不出钱」）；同时响应**新增** `unpriced: {qty, operations:[{operation, logical_name, qty}], hint}` 显式报出「哪几道工序未定价」+ 定价入口（`/production/routings`）。**三态可区分**是硬判据：`unpriced`（NULL ⇒ 不计）≠ `priced` 且价 0（**计入**，金额 0.00）≠ `priced` 且价 > 0（计入）。⚠️ 红线：`production_work_logs.unit_price` / `price_state` 是**报工那一刻固化的快照**，历史值一字不动，重新实例化也改不了它。证据：UnpricedPieceworkReportTest（改前 `unpriced` 键**根本不存在** ⇒ 红）+ UnpricedNotZeroTest「pricedZeroIsDistinguishableFromUnpriced」（注入「把 NULL 折成 0」⇒ 红）"
-      - "菜单同构（#4203 验收判据 2 的后端半边，与 #4205 同批；**2026-09-19 issue #4307/#4357 同步修正过期描述**）：MenuController 静态权限树与 AuthService.buildMenusByPermissions 同步新增「生产管理」节点 —— 🔥 **2026-09-21 整格改判（issue #4440，配套 PR #5068）**：**四**子节点、与前端 `config/menu.ts` 的 `production-center` 组**逐字同构** —— 🔴 **2026-09-23 再改判（issue #5271 菜单重设计，按业务动线重排）**：本组（组 key 由 `production` 统一为 **`production-center`**）现为 **生产看板 `/production`、智能派单 `/production/pool`（#5177）、工艺配置 `/production/routings`、计件工资 `/production/piecework`**，**四项权限码统一 `processing:manage`**（🔴 **2026-09-25 改判（issue #5291）**：生产看板 / 工艺配置 / 计件工资 改用**读码 `production:view`**，**智能派单仍是 `processing:manage`**（同组不同权 = 「看得见这一页」与「改得动生产数据」分开）；只持 `processing:manage` 者看不到前三项）；**物料三项随拆组移入 #5271 新组「仓储与物料」（`inventory-center`）** —— 入库单 `/inbound-orders`（issue #5034/V111，权限码**独立**为 `inbound:view`）、余料台账 `/production/remnants`（#5191）、省料看板 `/production/saving-board`（#5159，后两项 `processing:manage`）⇒ 账面 **4 + 3 = 7 一项不少不减**。⚠️ 「入库单权限码独立」的**理由不变、归属改了**：入库是**仓储**动作 ⇒ 它随动线归「仓储与物料」；把它塞进 `processing:manage` 的判定里照样会让「有 inbound:view、没有 processing:manage」的仓管看不到菜单（#4203 点名的同族坑）。🔴 **改前表述已作废**：原写「生产看板 / production、**工序库 /production/operations**、**工艺路线 /production/routings**（#4307 新增第 4 项）、计件工资」—— issue #4416 已把「工序库」+「工艺路线」**合并为单一入口「工艺配置」**（旧路径 `/production/operations` 保留为**重定向**，不再是菜单项），且原表述**整个漏掉入库单**。侧边栏组 key = `production-center`（#5271 起三源统一 —— 重设计前前端 `menu.ts` 与 `MenuController` 用 `production` 而 `AuthService` 用 `production-center`，属守卫当时**看不到**的 key 漂移，本次一并收口；与前端 config/menu.ts 的 MenuGroup.key 对齐），且**新增** `inventory-center` 组的同步判据（组 key / 组名「仓储与物料」/ 三项节点）。🔴 **门控口径同步改判**：不再是「无 processing:manage 权限时**整组不出现**」—— `AuthService.buildMenusByPermissions` 现按**子节点级**门控、整组以求「至少有一个子节点」为在（`if (!productionChildren.isEmpty())`）⇒ **只有 `inbound:view`、没有 `processing:manage`** 的人看到的是「**仓储与物料**」组（组内只余「入库单」一项；#5271 拆组后入库单**已不在**「生产管理」组 ⇒ 旧文案「仍看到『生产管理』组」已作废）；反过来，只有 `processing:manage` 的人看到「生产管理」四项 + 「仓储与物料」的余料台账 / 省料看板两项。证据：`MenuControllerTest`（DOM 真值逐字段断言：**七组 key 序列** `workspace / smart-customer-service / product-center / trade-center / production-center / inventory-center / org-center` + 组 label + 组内节点 label + 组内节点 code —— 生产管理组四项、仓储与物料组三项；⚠️ label 与 code 两个列表是**同一组节点的两个字段，必须同时改**，历史上首轮 CI 实测「只改 labels、漏改 codes」⇒ `expected 5 vs actual 4` 判红）+ `AuthServiceTest`（有权限出现且路径逐条相等 / 无权限不出现「生产管理」节点 / #5271 起「仓储与物料」组的**子节点级门控**各一条：只有 `inbound:view` ⇒ 组内只余入库单，只有 `processing:manage` ⇒ 组内只余余料台账 + 省料看板）。🔴 **漂移面已收口（issue #4440）**：原注写「后端菜单树与前端 menu.ts 的同构**只靠两侧各自的测试维持**（前端真实侧边栏只读 config/menu.ts、不消费服务端菜单）——该漂移面另单登记」，而该漂移**实测已发生**（服务端两处仍是合并前的两个节点，前端「岗位权限」页消费 `GET /api/admin/menus` ⇒ 商家勾选的菜单项与真实侧边栏对不上）；现由**机器守卫**钉死：`tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py`（**三份源逐值相等**；#5271 起由「只比生产管理组」升级为比对**全树** —— 组 key + 组名 + 组顺序，以及导航型节点名；红证 = 只改任一源 ⇒ 红）+ `frontend/admin-web/tests/unit/lib/inbound-menu-isomorphic.test.ts`（入库单的 path / 权限码 / 图标三处一致）。"
+      - "菜单同构（#4203 验收判据 2 的后端半边，与 #4205 同批；**2026-09-19 issue #4307/#4357 同步修正过期描述**）：MenuController 静态权限树与 AuthService.buildMenusByPermissions 同步新增「生产管理」节点 —— 🔥 **2026-09-21 整格改判（issue #4440，配套 PR #5068）**：**四**子节点、与前端 `config/menu.ts` 的 `production-center` 组**逐字同构** —— 🔴 **2026-09-23 再改判（issue #5271 菜单重设计，按业务动线重排）**：本组（组 key 由 `production` 统一为 **`production-center`**）现为 **作业看板 `/production`、智能派单 `/production/pool`（#5177）、工艺配置 `/production/routings`、计件工资 `/production/piecework`**，**四项权限码统一 `processing:manage`**（🔴 **2026-09-25 改判（issue #5291）**：作业看板 / 工艺配置 / 计件工资 改用**读码 `production:view`**，**智能派单仍是 `processing:manage`**（同组不同权 = 「看得见这一页」与「改得动生产数据」分开）；只持 `processing:manage` 者看不到前三项）；**物料三项随拆组移入 #5271 新组「仓储与物料」（`inventory-center`）** —— 入库单 `/inbound-orders`（issue #5034/V111，权限码**独立**为 `inbound:view`）、余料台账 `/production/remnants`（#5191）、省料看板 `/production/saving-board`（#5159，后两项 `processing:manage`）⇒ 账面 **4 + 3 = 7 一项不少不减**。⚠️ 「入库单权限码独立」的**理由不变、归属改了**：入库是**仓储**动作 ⇒ 它随动线归「仓储与物料」；把它塞进 `processing:manage` 的判定里照样会让「有 inbound:view、没有 processing:manage」的仓管看不到菜单（#4203 点名的同族坑）。🔴 **改前表述已作废**：原写「作业看板 / production、**工序库 /production/operations**、**工艺路线 /production/routings**（#4307 新增第 4 项）、计件工资」—— issue #4416 已把「工序库」+「工艺路线」**合并为单一入口「工艺配置」**（旧路径 `/production/operations` 保留为**重定向**，不再是菜单项），且原表述**整个漏掉入库单**。侧边栏组 key = `production-center`（#5271 起三源统一 —— 重设计前前端 `menu.ts` 与 `MenuController` 用 `production` 而 `AuthService` 用 `production-center`，属守卫当时**看不到**的 key 漂移，本次一并收口；与前端 config/menu.ts 的 MenuGroup.key 对齐），且**新增** `inventory-center` 组的同步判据（组 key / 组名「仓储与物料」/ 三项节点）。🔴 **门控口径同步改判**：不再是「无 processing:manage 权限时**整组不出现**」—— `AuthService.buildMenusByPermissions` 现按**子节点级**门控、整组以求「至少有一个子节点」为在（`if (!productionChildren.isEmpty())`）⇒ **只有 `inbound:view`、没有 `processing:manage`** 的人看到的是「**仓储与物料**」组（组内只余「入库单」一项；#5271 拆组后入库单**已不在**「生产管理」组 ⇒ 旧文案「仍看到『生产管理』组」已作废）；反过来，只有 `processing:manage` 的人看到「生产管理」四项 + 「仓储与物料」的余料台账 / 省料看板两项。证据：`MenuControllerTest`（DOM 真值逐字段断言：**七组 key 序列** `workspace / smart-customer-service / product-center / trade-center / production-center / inventory-center / org-center` + 组 label + 组内节点 label + 组内节点 code —— 生产管理组四项、仓储与物料组三项；⚠️ label 与 code 两个列表是**同一组节点的两个字段，必须同时改**，历史上首轮 CI 实测「只改 labels、漏改 codes」⇒ `expected 5 vs actual 4` 判红）+ `AuthServiceTest`（有权限出现且路径逐条相等 / 无权限不出现「生产管理」节点 / #5271 起「仓储与物料」组的**子节点级门控**各一条：只有 `inbound:view` ⇒ 组内只余入库单，只有 `processing:manage` ⇒ 组内只余余料台账 + 省料看板）。🔴 **漂移面已收口（issue #4440）**：原注写「后端菜单树与前端 menu.ts 的同构**只靠两侧各自的测试维持**（前端真实侧边栏只读 config/menu.ts、不消费服务端菜单）——该漂移面另单登记」，而该漂移**实测已发生**（服务端两处仍是合并前的两个节点，前端「岗位权限」页消费 `GET /api/admin/menus` ⇒ 商家勾选的菜单项与真实侧边栏对不上）；现由**机器守卫**钉死：`tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py`（**三份源逐值相等**；#5271 起由「只比生产管理组」升级为比对**全树** —— 组 key + 组名 + 组顺序，以及导航型节点名；红证 = 只改任一源 ⇒ 红）+ `frontend/admin-web/tests/unit/lib/inbound-menu-isomorphic.test.ts`（入库单的 path / 权限码 / 图标三处一致）。"
       - "冻结契约不可改（防回归）：既有 per-order 计件 GET /api/admin/production/orders/{orderId}/piecework 的响应形状不变（{total, per_worker:{工人:金额}, per_operation:[{operation,amount}]}），agent 侧 GET /api/admin/agent/production/piecework 的键集 {worker_name,period,total,details:[{operation,qty,amount}]} 不变 —— 共用聚合的重构不得改这两个形状（PG-018 的既有断言继续守护）。2026-09-20（issue #4621）：agent 侧 `details` 与报表 `per_operation` 各自**追加** `logical_name` + `position`（**只加不改**，既有键集逐字未动、既有断言继续绿）"
     skip_reason: "[backend-contract] 后端契约用例（写路径无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 Java 单测执行 —— ProductionPieceworkSummaryTest（报表语义 + 口径一致性 + 走查数据复现）/ ProductionControllerTest（MockMvc 端点契约 + 参数校验）/ MenuControllerTest 与 AuthServiceTest（菜单同构 + 权限门控）"
     merge_log: "2026-09-18 新增（issue #4205，P1）+ 同批的菜单后端半边（#4203）：计件工资报表从「只有 per-order 汇总」变成按人/按期两级报表，且与 per-order 共用同一份聚合函数（验收判据要求两者对同一张单数值相等）。红证（修复前实测）：ProductionControllerTest 三条报表用例得 `Status expected:<200> but was:<404>`（端点不存在）、period 缺失用例得 `expected:<422> but was:<404>`；MenuControllerTest 得 `$.data.length() expected:<9> but was:<8>` 且 `$.data[?(@.code=='production')]` 无值；AuthServiceTest 得「菜单缺少「生产管理」组：[dashboard, product-center, notifications]」。修复后全绿。实现：ProductionService.pieceworkSummary + aggregate（per-order/报表/工人计件三处共用金额算法）+ parsePeriod（报表必填、工人计件可选，共用一份校验）+ ProductionController.pieceworkSummary（查询参数逐字 worker_name）+ 菜单两处同构。不做（如实登记）：按单下钻的多级联动 UI、工资发放/审批流。2026-09-20（issue #4621）：报表「按工序」档前端改为渲染 `逻辑名 · 部位`（`operation` 变体名不再进界面/`data-testid`），后端 `per_operation` 追加 `logical_name` + `position`；traces 补前端页测试。2026-09-20（issue #4696，用例库补漏）：本报表面此前**完全没登记** #4696 的「未定价 ≠ 0」（`unpriced` 块 / 不进 total / 与定价 0 可区分）⇒ 追加一条 data_check（**只加不改**：既有 7 条与 expectations 一字未动），traces 补 UnpricedNotZeroTest + UnpricedPieceworkReportTest 两个证据面 ｜ 2026-09-21（issue #4440 用例库同步，配套 PR #5068）：**菜单同构格整格改判 + 漂移面收口** —— ① 四子节点组成改为与前端 `config/menu.ts` 逐字同构（工序库 + 工艺路线 ⇒ 单一入口「工艺配置」`/production/routings`；补上此前整格漏登记的「入库单」`/inbound-orders`，权限码 `inbound:view`）；② 门控口径由「无 processing:manage ⇒ 整组不出现」改判为**子节点级门控**（只有 inbound:view 的人仍看到本组，组内只余入库单）；③ 原「同构只靠两侧各自的测试维持、漂移另单登记」**实测已发生**（服务端仍是合并前两节点 ⇒ 岗位权限页与真实侧边栏对不上）⇒ 改为指向两条**机器守卫**并把它们补进 `traces.tests`。**判据一格不放宽**（其余 7 条 data_check 与 `user_inputs`/`expectations`/`skip_reason` 一字未动）。 ｜ 2026-09-23（issue #5271 用例库同步）：**菜单同构格再改判（#4440 那条之后的新真值）** —— 组 key 由 `production` 收口为 `production-center`（三源此前 key 漂移）、组内由「生产看板 / 工艺配置 / 计件工资 / 入库单」改判为「生产看板 / 智能派单 / 工艺配置 / 计件工资」四项同码 `processing:manage`，并**新增** `inventory-center`「仓储与物料」三项（入库单 `inbound:view` + 余料台账 + 省料看板）的同步判据与子节点级门控判据、把守卫从「只比生产管理组」升级为**全树**（组 key + 组名 + 组顺序 + 导航型节点名）—— 原七项在 #5271 前是「生产管理」一个 7 项杂物抽屉，拆的是**语义不是数量**（4 + 3 = 7，一项不少不减）。判据只增不减：新增顶层组 key 序列与三组逐项点名断言。"
@@ -1256,7 +1256,7 @@ cases:
   # ==========================================================================
   - id: PG-024
     legacy_id: ""
-    title: "加工单列表请求时序保护——旧的在飞响应晚到不得覆盖更新的列表数据（#4357 后落点为生产看板）"
+    title: "加工单列表请求时序保护——旧的在飞响应晚到不得覆盖更新的列表数据（#4357 后落点为作业看板）"
     domains:
       - processing-order
       - processing
@@ -1269,10 +1269,10 @@ cases:
       - list_refresh
     truths_ref: []
     user_inputs:
-      - "打开生产看板（加工单唯一入口），连续筛选/刷新，列表始终显示最新一次请求的数据"
+      - "打开作业看板（作业单唯一入口），连续筛选/刷新，列表始终显示最新一次请求的数据"
     expectations: []
     data_checks:
-      - "时序保护（**核心/长期判据，红证在这条**）：同一页面并发多个列表请求时，**只认最新一次请求的响应** —— 先发出的慢请求（旧数据快照）晚到 ⇒ 其响应被**丢弃**，列表**不得**回退成旧数据。红证（修复前实测，本机 vitest）：原 `processing-orders-list.test.tsx` 断言①得 `expected '…已生成…' to contain '加工中'`（旧响应把「加工中」覆盖回「已生成」，与 issue #4303 的实测形态同形）。**2026-09-19（issue #4357）落点迁移**：列表页并入生产看板 ⇒ 本判据的断言落在 `production-board.test.tsx`「PG-024 时序保护」（同形：旧响应把「加工完成」覆盖回「加工中」）；保护必须随搜索能力一起搬，留在被合并掉的页面里 = 保护随页面一起消失。"
+      - "时序保护（**核心/长期判据，红证在这条**）：同一页面并发多个列表请求时，**只认最新一次请求的响应** —— 先发出的慢请求（旧数据快照）晚到 ⇒ 其响应被**丢弃**，列表**不得**回退成旧数据。红证（修复前实测，本机 vitest）：原 `processing-orders-list.test.tsx` 断言①得 `expected '…已生成…' to contain '加工中'`（旧响应把「加工中」覆盖回「已生成」，与 issue #4303 的实测形态同形）。**2026-09-19（issue #4357）落点迁移**：列表页并入作业看板 ⇒ 本判据的断言落在 `production-board.test.tsx`「PG-024 时序保护」（同形：旧响应把「加工完成」覆盖回「加工中」）；保护必须随搜索能力一起搬，留在被合并掉的页面里 = 保护随页面一起消失。"
       - "同一保护覆盖全部触发路径：搜索/筛选（查询）、重置、刷新、写操作后的收敛刷新 —— 共用**同一份**列表加载函数与同一套请求序号，不得各写一套（禁止复制第二份加载逻辑）；且 `loading` 态只由最新一次请求收尾（旧响应被丢弃时不得把 loading 错误地留在 true）"
       - "不回归：加载失败仍给「加载加工单失败，请稍后重试」+ 重试入口；首屏/筛选后的空态文案（「暂无加工单」/「暂无加工单（当前筛选条件下）」）与状态文案（已生成/已发加工/加工中/加工完成/已取消）不变"
     skip_reason: "[backend-contract] 前端行为（admin-web 页面/交互），由 vitest 单测覆盖（frontend/admin-web/tests/unit/pages/production-board.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟（同 PP-011 惯例）"
@@ -1619,11 +1619,11 @@ cases:
       verifies: []
 
   # ==========================================================================
-  # PG-038（issue #4357，P2）：加工单菜单并入生产管理组 + 与生产看板**合并为单一入口**。
+  # PG-038（issue #4357，P2）：加工单菜单并入生产管理组 + 与作业看板**合并为单一入口**。
   # 病根（IA/重复入口；⚠️ 下列组名是 **#5271 前**的旧 IA —— 当年的「订单管理组」今为「交易管理」组，
   # 生产管理组则拆出「仓储与物料」组，组名与归属见 data_checks 的 2026-09-23 改判）：
   # 同一份加工单有两个菜单入口 —— 订单管理组的「加工单」(/processing-orders)
-  # 与生产管理组的「生产看板」(/production) 调**同一个** processingOrderApi.list()，
+  # 与生产管理组的「作业看板」(/production) 调**同一个** processingOrderApi.list()，
   # 列高度重叠、共用同一个「生产明细」跳转；而 #4305 已把列表页四个状态流转入口全部移除
   # ⇒ 列表页只剩「台账」价值，重复入口的收益为负。
   # 且分组与权限边界错位：加工单权限码一直是 processing:manage（= 生产管理组四项同码）。
@@ -1633,7 +1633,7 @@ cases:
   # ==========================================================================
   - id: PG-038
     legacy_id: ""
-    title: "加工单并入生产管理组 —— 与生产看板合并为单一入口（消除重复入口 + 分组/权限口径对齐）"
+    title: "加工单并入生产管理组 —— 与作业看板合并为单一入口（消除重复入口 + 分组/权限口径对齐）"
     domains:
       - processing-order
       - production
@@ -1648,16 +1648,17 @@ cases:
       - admin_web
     truths_ref: []
     user_inputs:
-      - "打开侧边栏：订单管理组只有订单列表/售后工单；加工单在产进度去生产管理组的生产看板看（⚠️ 本句记的是 **#5271 前**的 IA —— #5271 起该组名为「交易管理」且含订单列表/售后工单/客户列表/财务对账四项；组归属与项数以本用例 `data_checks` 为准，本句只作历史留痕）"
+      - "打开侧边栏：订单管理组只有订单列表/售后工单；加工单在产进度去生产管理组的作业看板看（⚠️ 本句记的是 **#5271 前**的 IA —— #5271 起该组名为「交易管理」且含订单列表/售后工单/客户列表/财务对账四项；组归属与项数以本用例 `data_checks` 为准，本句只作历史留痕）"
     expectations: []
     data_checks:
-      - "侧边栏 IA（**核心/长期判据，红证在这条**；🔴 **2026-09-23 改判（issue #5271 菜单重设计）**）：① **交易管理组**（`trade-center`，组名由「订单管理」改判为「交易管理」）**不含**「加工单」，且为**四项** —— 订单列表 `/orders` / 售后工单 `/after-sales` / 客户列表 `/customers` / 财务对账 `/finance`（旧 IA 的「订单管理组两项 + 客户管理组两项」随 #5271 并成一条动线，`customer-center` 组**不再存在**）；② **生产管理组**（`production-center`）为**四项** —— 生产看板 `/production`、智能派单 `/production/pool`、工艺配置 `/production/routings`、计件工资 `/production/piecework`（**四项权限码统一 `processing:manage`**（🔴 **2026-09-25 改判（issue #5291）**：生产看板 / 工艺配置 / 计件工资 改用**读码 `production:view`**，**智能派单仍是 `processing:manage`**（同组不同权 = 「看得见这一页」与「改得动生产数据」分开）；只持 `processing:manage` 者看不到前三项）），**不含**入库单（**2026-09-21 改判（issue #4440）**写的是「生产看板 / 工艺配置 / 计件工资 / 入库单（`inbound:view`）」—— 该四项组成随 #5271 拆组**已作废**）；③ #5271 **新组「仓储与物料」**（`inventory-center`）三项 —— 入库单 `/inbound-orders`（`inbound:view`）、余料台账 `/production/remnants`、省料看板 `/production/saving-board`（后两项 `processing:manage`）；④ 顶层组 key 序列 == `workspace / smart-customer-service / product-center / trade-center / production-center / inventory-center / org-center` + 独立项 `notifications`（通知中心），**21 项一项不少不减**；⑤ 全站不再存在指向 `/processing-orders` 的菜单项。**红证（锚点按 #5271 后的测试形态）**：`production-board.test.tsx`「「加工单」不再是独立菜单项」得**交易组现有四项**、生产组现有四项、仓储与物料组三项（`within(tradeGroup).queryByText('加工单')` 为 null）+ `expect(hrefs).not.toContain('/processing-orders')`（实现前实测：旧订单管理组仍渲染该项 ⇒ 非 null；`expected [ … '/processing-orders' … ] not to contain '/processing-orders'`）。**判据一格不放宽**：由 3 条扩到 5 条 —— 新增 ③ 仓储组三项逐项点名与 ④ 顶层组 key 序列 / 21 项总数。"
+      - "侧边栏 IA（**核心/长期判据，红证在这条**；🔴 **2026-09-23 改判（issue #5271 菜单重设计）**）：① **交易管理组**（`trade-center`，组名由「订单管理」改判为「交易管理」）**不含**「加工单」，且为**四项** —— 销售订单 `/orders` / 售后工单 `/after-sales` / 客户列表 `/customers` / 财务对账 `/finance`（旧 IA 的「订单管理组两项 + 客户管理组两项」随 #5271 并成一条动线，`customer-center` 组**不再存在**）；② **生产管理组**（`production-center`）为**四项** —— 作业看板 `/production`、智能派单 `/production/pool`、工艺配置 `/production/routings`、计件工资 `/production/piecework`（**四项权限码统一 `processing:manage`**（🔴 **2026-09-25 改判（issue #5291）**：作业看板 / 工艺配置 / 计件工资 改用**读码 `production:view`**，**智能派单仍是 `processing:manage`**（同组不同权 = 「看得见这一页」与「改得动生产数据」分开）；只持 `processing:manage` 者看不到前三项）），**不含**入库单（**2026-09-21 改判（issue #4440）**写的是「作业看板 / 工艺配置 / 计件工资 / 入库单（`inbound:view`）」—— 该四项组成随 #5271 拆组**已作废**）；③ #5271 **新组「仓储与物料」**（`inventory-center`）三项 —— 入库单 `/inbound-orders`（`inbound:view`）、余料台账 `/production/remnants`、省料看板 `/production/saving-board`（后两项 `processing:manage`）；④ 顶层组 key 序列 == `workspace / smart-customer-service / product-center / trade-center / production-center / inventory-center / org-center` + 独立项 `notifications`（通知中心），**21 项一项不少不减**；⑤ 全站不再存在指向 `/processing-orders` 的菜单项。**红证（锚点按 #5271 后的测试形态）**：`production-board.test.tsx`「「加工单」不再是独立菜单项」得**交易组现有四项**、生产组现有四项、仓储与物料组三项（`within(tradeGroup).queryByText('加工单')` 为 null）+ `expect(hrefs).not.toContain('/processing-orders')`（实现前实测：旧订单管理组仍渲染该项 ⇒ 非 null；`expected [ … '/processing-orders' … ] not to contain '/processing-orders'`）。**判据一格不放宽**：由 3 条扩到 5 条 —— 新增 ③ 仓储组三项逐项点名与 ④ 顶层组 key 序列 / 21 项总数。"
       - "合并 ≠ 丢能力（**合并口径的判据**）：`/production` 必须吸收原列表页的**全部**既有能力 —— 关键词搜索（按加工单号/订单号）、状态筛选、重置、刷新、商品与数量快照摘要、「订单详情」跳订单详情；且断言必须落到**结果可见**（筛选后被筛掉的行从 DOM 消失、命中的行留下），不得只断言 API 被调用。红证（实现前实测，本机 vitest 6 条红）：合并能力①~⑥ 得 `getByPlaceholderText('请输入加工单号或订单号')` 找不到元素（看板当时无查询区）/ 行内无「查看」按钮 / 无商品摘要列。🔴 **2026-10-01 改判（issue #5913）**：该入口文案由「查看」正名为**「订单详情」**（行主键是**加工单**，「查看」在本行没有确定宾语），且**按目标页守卫码 `order:list` 显隐** —— 持 `production:view` 而不持 `order:list` 的岗位（默认岗位 product_manager 即此形态）点进去会被 `layout.tsx` 的路由守卫拦成「无权访问该页面」；**能力一条不减**：谓词换成 `has('order:list')`，跳转目标与断言强度不变（双向判据见 UI-026）。"
       - "旧入口收敛（**不 404**）：`/processing-orders` 不再渲染列表页，改为重定向到 `/production`（旧书签/外部深链可用）；子路由 `/processing-orders/{id}/production`（生产明细）**不随菜单移除**，仍由看板行内「生产明细」进入。红证（实现前实测，本机 vitest）：`processing-orders-list.test.tsx` 得 `expected \"redirect\" to be called with [ \"/production\" ]`（当时该页仍渲染列表、从不重定向）。证据：同文件 + `tests/e2e/specs/orders/processing-orders.spec.ts`「旧入口 /processing-orders 重定向到 /production」"
       - "入口收敛不回归（issue #4305）：合并后的唯一入口**仍不渲染** 发加工/开始加工/加工完成/取消加工单 四个按钮，且仍显示「状态流转请在订单详情操作」。红证（实现前实测）：看板当时无该引导文案 ⇒ 该条红；#4305 的负向断言在本条**一条不放宽**。证据：`production-board.test.tsx`「入口收敛不回归」+ e2e「唯一入口不再提供状态流转入口」（五种状态逐行负向断言）。🔴 **2026-10-01 改判（issue #5913）**：文案**仍在**（判据不放宽），但落点由「每行一份」改为**页面级一次**（`data-testid=\"production-status-hint\"`，全页恰 1 条且不在 `<table>` 内）；无 `order:list` 时同一句标明「需订单查看权限」——不把人指向去不了的地方。"
       - "时序保护随能力迁移（issue #4303 的长期判据 = 加载竞态）：搜索/筛选/刷新搬到看板后，**请求序号保护必须一起搬** —— 旧的在飞列表响应晚到不得把看板覆盖回旧数据，`loading` 只由最新一次请求收尾。红证（实现前实测）：`production-board.test.tsx`「PG-024 时序保护」得 `getByPlaceholderText(...)` 找不到元素（看板无搜索 ⇒ 竞态无从触发）；留在被合并掉的页面里 = 保护随页面一起消失。"
-      - "面包屑与侧边栏一致（§15.2）：`/production` 系列此前**没有任何面包屑条目** ⇒ 落进兜底分支显示「工作台 > 经营看板」；本单补 生产管理×{生产看板, 智能派单, 工艺配置, 计件工资}（**2026-09-23 补记（issue #5271）**：该组面包屑现为**四条**，组名与组 key `production-center` 与侧边栏逐字一致）（**2026-09-21 改判，issue #4440**：改前写「{生产看板, 工序库, 工艺路线, 计件工资}」—— 「工序库」+「工艺路线」已由 issue #4416 合并为「工艺配置」`/production/routings` ⇒ 面包屑表内对应条目现为「生产管理 > 工艺配置」，且 `Header.test.tsx` 反向断言旧菜单名「工序库」**不出现在面包屑里**），且 `/processing-orders/{id}/production` 由「订单管理 > 加工单」改判为「生产管理 > 生产明细」。✅ **2026-09-23 收口（issue #5271）**：原「如实登记（未做项，issue #4440 实测）」写「「入库单」`/inbound-orders` **不在面包屑表**内 ⇒ 落进兜底分支、当前**不是**「生产管理 > 入库单」；本改判**不**把它写成已有（不粉饰，另单可收）」—— 该未做项**已关闭、判据相应升级**：`Header.tsx` 现有条目 = 「**仓储与物料 > 入库单**」（拆组后入库单既不在生产管理组，首项也就不再是「生产管理」；同理 `/production/remnants`、`/production/saving-board` 两条首项亦为「仓储与物料」）。红证（实现前实测，本机 vitest 4 条红）：Header 的 /production、/production/operations、/production/piecework 三条得找不到「生产管理」（当时走兜底面包屑）—— ⚠️ 这句是**历史记录**（当时真实路径形态），`/production/operations` 现已是重定向、面包屑表内不再有该条，照实保留不追改；/processing-orders/{id}/production 得找不到「生产明细」"
+      - "面包屑与侧边栏一致（§15.2）：`/production` 系列此前**没有任何面包屑条目** ⇒ 落进兜底分支显示「工作台 > 经营看板」；本单补 生产管理×{作业看板, 智能派单, 工艺配置, 计件工资}（**2026-09-23 补记（issue #5271）**：该组面包屑现为**四条**，组名与组 key `production-center` 与侧边栏逐字一致）（**2026-09-21 改判，issue #4440**：改前写「{作业看板, 工序库, 工艺路线, 计件工资}」—— 「工序库」+「工艺路线」已由 issue #4416 合并为「工艺配置」`/production/routings` ⇒ 面包屑表内对应条目现为「生产管理 > 工艺配置」，且 `Header.test.tsx` 反向断言旧菜单名「工序库」**不出现在面包屑里**），且 `/processing-orders/{id}/production` 由「订单管理 > 加工单」改判为「生产管理 > 生产明细」。✅ **2026-09-23 收口（issue #5271）**：原「如实登记（未做项，issue #4440 实测）」写「「入库单」`/inbound-orders` **不在面包屑表**内 ⇒ 落进兜底分支、当前**不是**「生产管理 > 入库单」；本改判**不**把它写成已有（不粉饰，另单可收）」—— 该未做项**已关闭、判据相应升级**：`Header.tsx` 现有条目 = 「**仓储与物料 > 入库单**」（拆组后入库单既不在生产管理组，首项也就不再是「生产管理」；同理 `/production/remnants`、`/production/saving-board` 两条首项亦为「仓储与物料」）。红证（实现前实测，本机 vitest 4 条红）：Header 的 /production、/production/operations、/production/piecework 三条得找不到「生产管理」（当时走兜底面包屑）—— ⚠️ 这句是**历史记录**（当时真实路径形态），`/production/operations` 现已是重定向、面包屑表内不再有该条，照实保留不追改；/processing-orders/{id}/production 得找不到「生产明细」"
       - "权限护栏随入口走（**不得砍既有护栏**）：`/production` 此前**无**前端路由权限守卫，而它承接的原 `/processing-orders` 有 `processing:manage` ⇒ 合并后守卫必须跟着入口走（layout.tsx ROUTE_PERMISSION_MAP 新增 `/production`，前缀覆盖三个子页），否则等于砍掉既有第二道防线。🔴 **2026-09-25 改判（issue #5291）**：`/production`、`/processing-orders`、`/processing` 三个前缀的守卫改用**读码 `production:view`**；**智能派单 `/production/pool`、余料台账 `/production/remnants`、省料看板 `/production/saving-board` 仍是 `processing:manage`** 且必须排在 `/production` 之前（前缀匹配先命中 ⇒ 否则会把这三页一起收权）。证据：`frontend/admin-web/src/app/(dashboard)/layout.tsx` 的 ROUTE_PERMISSION_MAP（后端 @RequirePermission 仍是唯一硬拦面）"
+      - "🔴 **2026-10-17 用户裁定（作业看板观感三条）**：① 「表头风格和其他单据的不一致」⇒ 表头行改为与 `frontend/admin-web/src/components/orders/OrderTable.tsx` 逐字同源（`bg-neutral-50 text-left text-neutral-600`，字号回到表格的 `text-sm`；右缘冻结的「操作」表头同色 `bg-neutral-50`）。② 「操作行内的按钮样式能否保持让全部单据统一向订单保持一致，不要有多种风格设计」⇒ 两个行内动作改用共享原语 `frontend/admin-web/src/components/ui/RowActionLink.tsx`（链接式；订单列表的本地 `ActionLink` 同批并入该原语）。③ 「列表看起来很紧凑」⇒ 操作列由两个描边按钮变成行内链接后变窄，腾出的宽度还给「商品与数量」（`max-w-[130px]`→`200px`）与工序进度条（`w-12`→`w-16`）。判据 = `frontend/admin-web/tests/unit/pages/production-board.test.tsx` 的「表头与销售订单**同源** + 行内动作是**链接式**」用例（`text-xs` 表头 / 描边按钮 / `flex-wrap` 任一回归 ⇒ 红）；既有能力（筛选 / 分页 / 懒加载 / 两入口显隐）一条不减。"
     skip_reason: "[backend-contract] 前端 IA / 页面结构 / 交互流（admin-web），由 vitest 单测（production-board / processing-orders-list / Header）+ Playwright E2E 旅程（tests/e2e/specs/orders/processing-orders.spec.ts）覆盖，非 LLM 行为，不进入 agent-eval 冒烟（同 PG-024 惯例）"
     merge_log: "2026-09-19 新增（issue #4357，P2）。用户提问「加工单菜单是否放入到加工管理更合适」→ 裁定「是，且合并而非只搬家」，组名保持「生产管理」。红证（实现前实测，本机 vitest：3 文件 13 failed / 44 passed，失败逐条列在 data_checks 内）。实现：menu.ts 移除 trade-center 的 processing-orders 项（生产管理组**不新增项** —— 加工单与生产看板合并为同一入口）；/production 吸收列表页全部能力（关键词/状态筛选、重置、刷新、商品与数量列、查看按钮、筛选空态）+ 请求序号保护（issue #4303 迁移）；/processing-orders 改重定向；Header.tsx 补生产管理组四条面包屑并改判 processing-orders 面包屑；layout.tsx 补 /production 权限守卫。**不做（如实登记）**：① 不移动 /processing-orders/{id}/production 路由（#4345 刚稳定该路径的 e2e，避免同批双重改动；副作用 = 该子页侧边栏无高亮项，另单）；② 不改后端菜单树（MenuController/AuthService 与前端 menu.ts 的漂移、且前端根本不消费服务端菜单，另单）；③ 不涉及 agent 行为 ⇒ 按 #4262 不派发真实 LLM 评测。 ｜ 2026-09-21（issue #4440 用例库同步，配套 PR #5068）：**两处散文改判**（侧边栏 IA 的 ② 生产管理组节点表；面包屑的 生产管理×{…} 集合）—— 二者此前仍写 issue #4416 合并前的「工序库 + 工艺路线」，与 main 上的 `config/menu.ts` / `Header.tsx` **实测不符**；另**如实登记**入库单面包屑缺失（未做项）。**判据一格不放宽**：红证、能力迁移、时序保护、权限护栏四条与 `user_inputs` / `skip_reason` 一字未动。 ｜ 2026-09-23（issue #5271 用例库同步）：**三处散文改判**（侧边栏 IA 的 ①②③④ 组名/归属/项数 + 顶层组 key 序列；面包屑的 生产管理×{…} 集合补上「智能派单」；入库单面包屑「未做项」随 #5271 **关闭并升级为已有判据**「仓储与物料 > 入库单」），并给注释块的病根段标注「组名是 #5271 前的旧 IA」—— 旧文案「订单管理组只有订单列表/售后工单」「生产管理组四项含入库单」与 `config/menu.ts` / `MenuController` / `AuthService`（三源均已按 #5271 重排）**实测不符**，正是本仓最忌的「用例库与现实脱节」。**判据只增不减**：3 条扩到 5 条（新增仓储与物料组三项点名、顶层组 key 序列 + 21 项总数）。 ｜ 2026-10-01（issue #5913 用例库同步）：**两处散文改判** —— 「合并 ≠ 丢能力」的入口名（「查看」→「订单详情」）与「入口收敛不回归」的文案落点（行内 → 页面级一次），二者与 main 上的 `production/page.tsx` 实测不符；改判同时新增**显隐谓词**（按目标页守卫码 `order:list`），判据一格不放宽（跳转目标、四个按钮的负向断言、文案原文全未动），并把**类级元守卫**（UI-026）与**同族第二处**（售后工单详情「订单号」）登记进用例库。"
     traces:
@@ -1798,7 +1799,7 @@ cases:
       verifies: []
 
   # ==========================================================================
-  # PG-041（issue #4360，P1）：生产看板加载慢 —— 前端 1+2N 请求扇出 ⇒ 分页 + 懒加载。
+  # PG-041（issue #4360，P1）：作业看板加载慢 —— 前端 1+2N 请求扇出 ⇒ 分页 + 懒加载。
   # 病根（结构性，代码可证）：/production 对**全部**加工单（后端 LIMIT 100）一次性
   # `Promise.allSettled(orders.map(...))` 扇出 getOrderOperations + getPiecework
   # ⇒ 100 单 = 201 个并发请求、约 800 条 SQL；且列表响应逐行 convertValue items 快照，
@@ -1809,7 +1810,7 @@ cases:
   # ==========================================================================
   - id: PG-041
     legacy_id: ""
-    title: "生产看板分页 + 懒加载 —— 只对当前页扇出详情请求（消除 1+2N 请求扇出，issue #4360）"
+    title: "作业看板分页 + 懒加载 —— 只对当前页扇出详情请求（消除 1+2N 请求扇出，issue #4360）"
     domains:
       - processing-order
       - production
@@ -1822,7 +1823,7 @@ cases:
       - admin_web
     truths_ref: []
     user_inputs:
-      - "打开生产看板：100 张在产单只加载第一页，翻页才加载新页的工序进度与计件"
+      - "打开作业看板：100 张在产单只加载第一页，翻页才加载新页的工序进度与计件"
     expectations: []
     data_checks:
       - "首屏只为**当前页**发详情请求（**核心/长期判据，红证在这条**）：给定 100 张加工单、页大小 20，`getOrderOperations` / `getPiecework` 各被调用 **≤ 页大小** 次，渲染出的数据行数 == 页大小，且**绝不**对第 21 单发起（`order-uuid-21` 零调用）。红证（实现前实测，本机 vitest）：原实现 `Promise.allSettled(orders.map(...))` 对全部 100 单扇出 ⇒ 该断言得 **100** 次（缺陷形态 = 每单 1 次）；断言先写 `toBeLessThanOrEqual(PAGE_SIZE)` 再写 `toBe(PAGE_SIZE)`（前者给缺陷形态留出可读的失败读数）。"
@@ -2907,6 +2908,533 @@ cases:
         - "backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckServiceTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/controller/QualityCheckControllerTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckMapperTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # PG-078（issue #7079，2026-10-17）——「作业单两型」的**类型面**。
+  #
+  # 病根（用户逐字）：「原设计是想规定好成品帘加工路线和单布料售卖的路线……但是**单布料售卖
+  # 是不应该生成加工单的**」—— 改前卖布单生成的**就是**加工单（只有 `裁剪`/`打包` 两道工序），
+  # 商家在「生产看板」与纸面上看到的都叫「加工单」，语义与业务不符，且**没有任何东西会红**。
+  #
+  # 口径（用户 2026-10-17 裁定）：上位概念统一为**作业单**，实体用新列
+  # `processing_orders.order_kind` 分两型 —— `processing`（加工，成品帘）/
+  # `outbound`（出库，卖布单的裁剪打包作业）。判定 = 快照非空**且每一行**都是卖布行 ⇒ `outbound`，
+  # 否则 `processing`（混合单 = 有加工就是加工单）。类型在**生成时冻结**；存量行由列默认值落
+  # `processing`（**不回填、不改历史**）。
+  #
+  # 取号：`python3 scripts/next_case_id.py PG` 现取 = 078（main 最大 077）。
+  # ══════════════════════════════════════════════════════════════════════════
+  - id: PG-078
+    legacy_id: ""
+    title: "作业单两型（`order_kind`）：卖布单 = `outbound`、成品帘 = `processing`、混合单 = `processing`，类型在生成时冻结"
+    domains:
+      - processing-order
+      - production
+    tier: normal
+    persona: ""
+    tags:
+      - processing-order
+      - fabric
+      - order-kind
+    truths_ref: []
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "判据 1·**纯卖布单 ⇒ `order_kind = outbound`**：夹具 = 一行 `processing_info.saleForm=布料`、无 `processingItems` ⇒ 生成出来的作业单类型逐字等于 `ProcessingOrderService.ORDER_KIND_OUTBOUND`。红证：把生成落点的判定改成恒 `processing` ⇒ 本判据当场红。"
+      - "判据 2·**成品帘单 ⇒ `processing`**；判据 3·**混合单（一行卖布 + 一行成品帘）⇒ `processing`**（有加工就是加工单）—— 两条都是反向护栏：把判定写成「只要含卖布行就 outbound」⇒ 混合单那条红。"
+      - "判据 4·**存量行不回填**：本次迁移之前的 `processing_orders` 行类型一律为 `processing`（列 `NOT NULL DEFAULT 'processing'`，迁移里**没有** UPDATE）—— 红证：在迁移里补一条把存量行刷成 `outbound` 的 UPDATE ⇒ 红（历史单据的类型被改写）。"
+      - "判据 5·**三源词表逐值一致**：迁移的取值约束 ⇄ `ORDER_KIND_PROCESSING` / `ORDER_KIND_OUTBOUND` 常量 ⇄ 前端 `order_kind` 联合类型；且默认值 `processing` 在迁移与 bootstrap 建库脚本 `backend/admin-api/src/main/resources/db/init/schema.sql` **两处**都在。证据 = tests/unit_ci_workflows/test_processing_order_kind_vocab_parity.py 的 C1~C5（红证：任一侧改名/换值/少一个 ⇒ 具名报出该侧）。"
+      - "判据 6·**读面键名冻结**：加工单读面下发 `order_kind`（snake_case，显式 `@JsonProperty`）—— 登记面 = tests/unit_ci_workflows/read_face_json_key_ledger.json。红证：摘掉 `@JsonProperty` ⇒ 键静默退回 camelCase（消费端读不到）⇒ 台账判据红。"
+      - "**边界（如实登记）**：① 混合单**不**细分到行级单据（一张订单仍是一张作业单）；② 本判据面只覆盖确定性服务层 + 静态词表判据，**无** LLM 环节。"
+    skip_reason: "[backend-contract] 后端契约（新列 + 生成时冻结 + 三源词表一致；纯确定性单测 + 静态判据，无 LLM 环节，不进入 agent-eval 冒烟）"
+    merge_log: "2026-10-17 新增（issue #7079；用户 2026-10-17 逐字裁定见本条注释与 issue body）。取号 = `python3 scripts/next_case_id.py PG` 现取 = 078。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderRouteSourceTest.java"
+        - "tests/unit_ci_workflows/test_processing_order_kind_vocab_parity.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # PG-079（issue #7079，2026-10-17）—— 卖布单的**发货前置**（用户裁定 3，逐字「很有必要」）。
+  #
+  # 病根：发货前置判据 = `OrderShipGuard.isProcessingReadyForShip` = 「含加工项 ⇒ 须有 completed
+  # 加工单」；卖布行**没有加工项**（按米卖布、不选加工项）⇒ 该判据恒放行 ⇒ **卖布单一道工序都
+  # 没报工也能直接发货**（工人计件丢失、卡点/完工统计失真），且三条发货路都放。
+  #
+  # 口径：判据从「含加工项」扩成 **`needsWork` = 含加工项 或 含卖布行**（单一实现点，
+  # 三条发货路共用同一份），即卖布单也必须先有一张 **completed 作业单**。
+  # 「出口真可行动」的依据（读源）：报工完工写路径 = `ProcessingOrderMapper.markCompletedIfActive`，
+  # 谓词 `status IN ('generated','issued','in_processing','completed')` **含 `generated`**
+  # ⇒ 工人把「裁剪 + 打包」扫码报满，作业单**自动变 completed（无需先「发加工」）**，发货随即放行。
+  # ══════════════════════════════════════════════════════════════════════════
+  - id: PG-079
+    legacy_id: ""
+    title: "卖布单发货前置「裁剪 + 打包已报工」：无 completed 作业单 ⇒ 拒绝发货；非卖布的普通无加工项单仍可直发"
+    domains:
+      - processing-order
+      - order
+    tier: normal
+    persona: ""
+    tags:
+      - processing-order
+      - fabric
+      - ship-guard
+    truths_ref: []
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "判据 1·🔴 **卖布单（有 `saleForm=布料` 的行、无加工项）没有 completed 作业单 ⇒ 拒绝发货**（`assertProcessingCompletedBeforeShip` 抛业务异常）。红证：把判据改回只判「含加工项」⇒ 本判据当场红（这正是改前的缺陷形态）。"
+      - "判据 2·**卖布单作业单 completed ⇒ 放行**（守卫不是「卖布一律拒」）。"
+      - "判据 3·**反向护栏**：**非卖布**的普通无加工项订单（配件 / 赠品行）**仍可直发** —— 不许被本次收紧误伤。"
+      - "判据 4·**同一份判据覆盖三条发货路**：商家 `PUT /orders/{id}/status`、发货页 `shipOrderIfApplicable`、工人 `OrderShipmentService` 共用 `OrderShipGuard` 的单一实现点；`hasProcessingItems` / `needsWork` 由 `OrderService` 一行委托（不写第二份解析）。"
+      - "判据 5·**`processing_info` 为 JSON 字符串形态时也认得出来**（既有老坑：自定义 `@Select` 不走 JacksonTypeHandler ⇒ 恒判「无」）。"
+      - "判据 6·**接线不许退回**（结构面）：`OrderShipGuard.isProcessingReadyForShip` 必须经由 `needsWork`，且 `needsWork` 里同时含 `hasProcessingItems` 与 `hasFabricSaleLine`。证据 = tests/unit_ci_workflows/test_processing_order_kind_vocab_parity.py 的 C6（红证：改回只判含加工项 ⇒ 具名报出）。"
+      - "**已知行为变化（照实登记）**：这是**收紧** —— 以前能直接发货的卖布单，现在必须先完成作业单；用户 2026-10-17 裁定「很有必要」。"
+    skip_reason: "[backend-contract] 后端发货守卫契约（Java 单测 + 静态接线判据，无 LLM 环节，不进入 agent-eval 冒烟）"
+    merge_log: "2026-10-17 新增（issue #7079；用户裁定 3 逐字「很有必要」）。取号 = `python3 scripts/next_case_id.py PG` 现取 = 079。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderShipGuardTest.java"
+        - "tests/unit_ci_workflows/test_processing_order_kind_vocab_parity.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # PG-080（issue #7079，2026-10-17）—— 卖布单在**生产待办**与**智能派单池**里的可达性。
+  #
+  # 病根：`ProductionTodoService` 的「待排产」与「待发货」两条过滤**都硬带「含加工项」**
+  # ⇒ 卖布单两类都进不去（看不见的待办 = 没人处理）；而 `ProcessingOrderService.pool()` 直接消费
+  # `buildSnapshot`、无卖布过滤 ⇒ 它在池里 —— 这一条是用户裁定 2（「**需要进**」）要**保留**的行为，
+  # 但改前**没有任何判据**钉住它（静默回退的形态）。
+  #
+  # 口径：待办两条过滤改用**同一个** `needsWork`（与发货守卫同一份，不新增第二份判据）；
+  # 派单池**保留**卖布单在成批候选区（加急单仍走 `urgentLines()`，与本条无关）。
+  # ══════════════════════════════════════════════════════════════════════════
+  - id: PG-080
+    legacy_id: ""
+    title: "卖布单进「待排产 / 待发货」两类生产待办（与发货守卫同一判据），且仍在智能派单池的成批候选区"
+    domains:
+      - processing-order
+      - production
+    tier: normal
+    persona: ""
+    tags:
+      - processing-order
+      - fabric
+      - production-todo
+      - dispatch-pool
+    truths_ref: []
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "判据 1·**卖布单出现在「待排产」**（订单已确认 + 活跃工序实例数 = 0 + `needsWork`）。红证：把该处过滤退回 `hasProcessingItems` ⇒ 红。"
+      - "判据 2·**卖布单出现在「待发货」**（`needsWork` + 发货守卫已就绪）。同上反向红证。"
+      - "判据 3·**同一份判据**：`ProductionTodoService` 里**只剩** `needsWork`，不得再出现 `hasProcessingItems(`（结构面，证据 = tests/unit_ci_workflows/test_processing_order_kind_vocab_parity.py 的 C7）。"
+      - "判据 4·🔴 **卖布单在派单池的成批候选区里**（`pool()` 的 `groups[].lines` 含它、计数计入）—— 用户裁定 2（「需要进」）。反向断言：非卖布且无加工项的行（配件 / 赠品）**仍不进池**（既有语义一字不放宽）。"
+      - "**边界**：夹具不得把订单标成加急（加急单按既有裁定**不进池**，走 `urgentLines()`）。"
+    skip_reason: "[backend-contract] 后端只读聚合面（生产待办 + 派单池可达性；Java 单测 + 静态接线判据，无 LLM 环节，不进入 agent-eval 冒烟）"
+    merge_log: "2026-10-17 新增（issue #7079；用户裁定 2 逐字「需要进」）。取号 = `python3 scripts/next_case_id.py PG` 现取 = 080。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionTodoServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/PoolBoardUrgencyTest.java"
+        - "tests/unit_ci_workflows/test_processing_order_kind_vocab_parity.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # PG-081（issue #7140 = #5652 的**商家面缺口**，2026-10-17）—— 质检的**待检清单读面**。
+  #
+  # 病根（用户逐字）：「之前让你做过质检流程，我看在观星台上没有任何地方体现出来了」。
+  # 实测：#5652 / PR #7018 只落了「后端表 + 端点」与「工人端三态报工」，
+  # `frontend/admin-web` 里 `quality|质检` **0 处命中**、`rework_qty|scrap_qty` **0 处消费**
+  # ⇒ 质检员登录观星台没有工作台、商家看不到任何质检读数，而 issue 已被关闭。
+  #
+  # 结构原因：既有读面（`GET /api/admin/quality-inspections`）只能读出**已录**的记录
+  # ——「哪些成品帘还没检」它在结构上答不出（没有行 = 没有事实）⇒ 必须有「清单读面」。
+  #
+  # 口径：一行 = **一件成品帘**（加工单快照行）；四态 `pending/pass/rework/scrap`；
+  # **未检 ≠ 合格**；同一件多条记录（返工后复检）取**最新一条**；计数 = 逐态条数（不是合格率）。
+  #
+  # 取号：`python3 scripts/next_case_id.py PG` 本机超时（该工具需连 GitHub）⇒ 按既有先例
+  # 改用现取口径：`git show origin/main:.github/cases/processing-order.yml` 最大 = PG-080，
+  # 且复核 open PR 列表无占用 ⇒ 081。
+  # ══════════════════════════════════════════════════════════════════════════
+  - id: PG-081
+    legacy_id: ""
+    title: "质检待检清单读面：未检 ≠ 合格（无记录 ⇒ `state=pending` / `latest=null`）、同一件多条取最新、四态计数、状态过滤 + 分页封顶（issue #7140）"
+    domains:
+      - processing-order
+      - production
+      - backend
+    tier: normal
+    tags:
+      - quality-inspection
+      - backend-contract
+      - finished-curtain
+      - admin-web-consumer
+    truths_ref: []
+    user_inputs:
+      - "用户 2026-10-17 逐字：「之前让你做过质检流程，我看在观星台上没有任何地方体现出来了」"
+    expectations: []
+    precondition: "前置 = Mockito 夹具：① 一张**活跃**加工单（`status ∈ {generated, issued, in_processing, completed}`）+ `items_snapshot` 里的成品帘行；② 若干 `quality_inspections` 行（可为空 = 未检）。前置不成立（无活跃单 / 快照缺 `itemId`）⇒ 读面回空清单 + 零计数（**不是**错误态、也不猜是哪一件）。"
+    data_checks:
+      - "**判据 1·🔴 未检 ≠ 合格**：某件成品帘一条记录都没有 ⇒ 该行 `state='pending'`、`latest=null`、`counts.pending` 计入 —— **不得**回落成 `pass`（「一件没检」与「检验合格」是两句话）。红证：把 `state` 初值改成 `pass` ⇒ 判据当场红。证据：backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckTargetsTest.java（noRecordMeansPendingNotPass）"
+      - "**判据 2·最新一条胜出（返工后复检）**：同一件成品帘两条记录（读面按 `inspected_at` 倒序、同刻按 `created_at`）⇒ 行上的 `latest` = **排在最前**那条（含检验人 / 时刻），**不重排、不另立第二份排序口径**。证据：QualityCheckTargetsTest.java（latestInspectionWins）"
+      - "**判据 3·计数 = 逐态条数**：四件成品帘分别未检 / 合格 / 返工 / 报废 ⇒ `counts` 恰为 1/1/1/1（不是比率、不是「合格率」）。证据：QualityCheckTargetsTest.java（countsArePerStateTotals）"
+      - "**判据 4·状态过滤与未知取值**：`status=pending` 只回未检行（且计数仍是**全量四态** —— 过滤只改清单，不改「还有多少要检」这个读数）；`status` 取未知值（如 `ok`）⇒ `BusinessException` 422 具名报错（**不静默回落 all**）。证据：QualityCheckTargetsTest.java（statusFilterAndUnknownValue）"
+      - "**判据 5·分页封顶**：`size=5000` ⇒ 响应 `size=100`（服务端封顶，不信任调用方）；`page=2&size=2` ⇒ 只回第 2 页那两行，`total` 仍是 5。证据：QualityCheckTargetsTest.java（paginationIsCappedAndSliced）"
+      - "**判据 6·指不出的成品帘不出行**：快照行缺 `itemId`（存量数据）⇒ **不列出**（不猜、不编占位名），其余行照常出。证据：QualityCheckTargetsTest.java（rowsWithoutItemIdAreSkipped）"
+      - "**判据 7·没有活跃加工单 = 空清单 + 零计数**（不是错误态、不是 500）。证据：QualityCheckTargetsTest.java（noActiveProcessingOrderIsEmptyNotError）"
+      - "**判据 8·订单号随之给出**（issue #7160，只加不改）：行上 `order_no` = 该加工单所属**销售订单号**（一次 `IN` 批量取回，不逐行单查）；取不到 / 存量单缺 `order_id` ⇒ `null`（不编值，界面渲染 `—`）。既有键与语义一字不动（`quantity` / `unit` 仍返回）。红证：删掉行上 `order_no` 的赋值 ⇒ 判据当场红。证据：backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckTargetsTest.java（rowCarriesSalesOrderNo）"
+      - "**边界（照实登记）**：清单读面**不**做「合格率 / 一次通过率」这类派生指标（本轮没有口径裁定）；**不**改写任何报工行、**不**重算数量 —— 报工（数量事实）与质检（成品帘判定）两套口径并存（#5652 的既有裁定）。"
+    skip_reason: "[backend-contract] 后端只读聚合面（Java 单测 + 同键名断言），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-17 新增（issue #7140；用户 2026-10-17 逐字见 user_inputs）。落码：`GET /api/admin/quality-inspections/targets`（`@RequirePermission(\"production:inspect\")`，与既有录入/读面**同码**，不新造权限点、不放宽任何码）+ `QualityCheckService.targets()`（一行 = 一件成品帘；`latest` 取该件第一条）+ 加工单生产明细读面 `operations[]` 增 `qualified_qty/rework_qty/scrap_qty`（既有 `ProductionService.worklog` 的同一套口径，抽成 `qtyByOperation`）。取号：见文首注释（工具超时 ⇒ 现取 main 最大 080 + open PR 复核）。2026-10-17 issue #7160 追加：行上 `order_no`（所属销售订单号，批量取回；缺 ⇒ `null`）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckTargetsTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # PG-082（issue #7162，2026-10-17）—— 工人端质检：扫水洗唛 → 录判定 → 生成质检单。
+  #
+  # 用户逐字：「工人不能进入观星台，维持这个设计，现在只需要在小程序端扫码进入报工页后
+  # 有入口进行质检即可」「因为工人主要通过扫水洗唛进入质检流程」「质检等同发货工序一样，
+  # 打包发货完成后生成发货单，质检完成后生成质检单，一样的意思」。
+  #
+  # 取号：`python3 scripts/next_case_id.py PG` 本机超时 ⇒ 现取 origin/main 最大 = PG-081，
+  # 复核 open PR（#7161）未占用 ⇒ 082。
+  # ══════════════════════════════════════════════════════════════════════════
+  - id: PG-082
+    legacy_id: ""
+    title: "工人端质检：扫水洗唛进报工页后录判定、生成质检单（服务端以「档案页面集含 inspect」为准入，不是藏 UI）"
+    domains:
+      - processing-order
+      - production
+      - backend
+      - worker-h5
+    tier: normal
+    tags:
+      - quality-inspection
+      - worker-h5
+      - backend-contract
+      - permission
+      - finished-curtain
+    truths_ref: []
+    user_inputs:
+      - "用户 2026-10-17 逐字：「工人不能进入观星台，维持这个设计，现在只需要在小程序端扫码进入报工页后有入口进行质检即可」"
+      - "用户 2026-10-17 逐字：「因为工人主要通过扫水洗唛进入质检流程」"
+      - "用户 2026-10-17 逐字：「质检等同发货工序一样，打包发货完成后生成发货单，质检完成后生成质检单，一样的意思」"
+    expectations: []
+    precondition: "前置 = ① 一张活跃加工单 + 该件成品帘（`order_item_id`）；② 工人 session（`X-Worker-Session-Id`）；③ 该工人档案的 `users.worker_pages` 里**有** `inspect`（缺 ⇒ 403，不是「看不见入口」）。后端夹具 = Mockito；H5 = 纯渲染/状态机夹具（零 DOM、零网络）。"
+    data_checks:
+      - "**判据 1·🔴 服务端准入（不是藏 UI）**：工人档案页面集没有 `inspect`（含「未收窄 = 默认页」）⇒ `POST /api/worker/quality/inspections` 与 `GET /latest` 一律 **403**，且 `QualityCheckService` **零调用**（`verifyNoInteractions`）。红证：把 `requireInspector` 的判据删掉 ⇒ 判据当场红。证据：backend/admin-api/src/test/java/com/migao/admin/controller/WorkerQualityControllerTest.java"
+      - "**判据 2·🔴 检验人只来自工人 session**：落库 `inspector_id` = session 解出的 worker_id、`inspector_name` = 工人姓名、`inspector_kind='worker'`；body 里的 `worker_id` / `inspector_id` 一个字节都不读（伪造值不得进库）。证据：WorkerQualityControllerTest.java（grantedWorkerDelegatesWithSessionIdentity）+ backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckServiceTest.java（workerInspectorKindIsPersistedAndReadable）"
+      - "**判据 3·身份类别只加不改**：未知 `inspector_kind` ⇒ 422 且零写入；既有员工路径仍落 `employee`；读面 `view` 追加 `inspector_kind`。证据：QualityCheckServiceTest.java（unknownInspectorKindIsRejected）"
+      - "**判据 4·🔴 未检 ≠ 合格**：无记录 ⇒ `latest=null`、H5 显示「未检」（不得显示「合格」）；有记录 ⇒ 显示服务端判定 / 原因 / 检验人 / 时刻。证据：frontend/worker-h5/tests/worker-h5-quality.test.mjs（②③）+ QualityCheckServiceTest.java（latestReturnsNewestOrNull）"
+      - "**判据 5·录入 = 质检单**：展开表单 ⇒ 三态 + 原因必填提示 +「提交质检单」；提交成功 ⇒ 「质检单已生成」+ 判定换成回执（同一件可复检 = 再录一次）。证据：worker-h5-quality.test.mjs（④⑤⑥）"
+      - "**判据 6·逐人开**：`inspect` 在闭词表里但**不在**默认集合；H5 页面集不含它 ⇒ 质检区块一个字节都不出现。证据：frontend/worker-h5/tests/worker-h5-pages.test.mjs + worker-h5-quality.test.mjs（①）"
+      - "**边界（照实登记）**：不做质检单打印（本轮只落记录与两端读面）；不把质检做成可计价工序（报工是数量事实、质检是成品帘判定，两套口径并存）；工人仍**不进** `/api/admin/**`、不获得任何 RBAC 权限码。"
+    skip_reason: "[backend-contract] 服务端准入 + 纯前端渲染/状态机（无 LLM 行为），不进入 agent-eval 冒烟"
+    merge_log: "2026-10-17 新增（issue #7162；用户三条逐字见 user_inputs）。落码：`WorkerQualityController`（`/api/worker/quality/**`，准入 = 工人档案页面集含 `inspect`）+ `QualityCheckService.create(..., inspectorKind, ...)`（kind 校验 / 读面追加 `inspector_kind` / `latest()`）+ 迁移 V163 `inspector_kind` + `WorkerPages.INSPECT`（不在默认集合）+ worker-h5 质检区块（`render.mjs` / `api.mjs` / `app.mjs`）。取号：见文首注释。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/WorkerQualityControllerTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckServiceTest.java"
+        - "frontend/worker-h5/tests/worker-h5-quality.test.mjs"
+        - "frontend/worker-h5/tests/worker-h5-pages.test.mjs"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # PG-083（issue #7165，2026-10-17）—— 单据联动工序自动完成：发货单 → 发货工序、
+  # 质检单（合格）→ 质检工序；工人端计件、商家/生产端不计件。
+  #
+  # 用户逐字：「我估计现在发货单生成后无法直接联动加工单上的发货工序，如果订单关联的加工单上
+  # 有发货工序，应该自动完成报工」；裁定：「工人端记给发货工人；商家/生产端发货不计件」
+  # 「质检单生成 ⇒ 质检工序自动完成，计件口径与发货一致」。
+  # ══════════════════════════════════════════════════════════════════════════
+  - id: PG-083
+    legacy_id: ""
+    title: "单据联动工序：发货单生成 ⇒ 自动完成「发货/外帘发货」工序；质检合格 ⇒ 自动完成「质检」工序（工人端计件、商家端不计件）"
+    domains:
+      - processing-order
+      - production
+      - backend
+      - shipment
+    tier: normal
+    tags:
+      - quality-inspection
+      - shipment
+      - piecework
+      - backend-contract
+    truths_ref: []
+    user_inputs:
+      - "用户 2026-10-17 逐字：「我估计现在发货单生成后无法直接联动加工单上的发货工序，如果订单关联的加工单上有发货工序，应该自动完成报工」"
+      - "用户 2026-10-17 裁定：「工人端记给发货工人；商家/生产端发货不计件」"
+      - "用户 2026-10-17 裁定：「是，质检单生成 ⇒ 质检工序自动完成，计件口径与发货一致」"
+    expectations: []
+    precondition: "前置 = 一张活跃加工单 + 其路由里确有「外帘发货 / 发货」或「质检」工序（`V54__seed_production_operations.sql` 的 op-v54-27 / op-v54-26）；无对应工序的单代入本判据 ⇒ 行为必须零变化（不生成、不猜测）。"
+    data_checks:
+      - "**判据 1·只完成真工序**：发货只匹配名称「发货 / 外帘发货」、质检只匹配「质检」；同单其它工序（如「外帘装袋」）不碰。红证：把名称集合改成「包含即匹配」/放开其它工序 ⇒ 判据当场红。证据：backend/admin-api/src/test/java/com/migao/admin/service/DocumentOperationLinkageTest.java（shippingIgnoresOtherOperations）"
+      - "**判据 2·只做没做满的（幂等）**：`done_qty ≥ qty` 的工序跳过；重复发货 / 返工后复检不重复记账。证据：DocumentOperationLinkageTest（alreadyDoneOperationIsSkippedByQuery）+ ProductionServiceCompleteByDocumentTest（alreadyFullIsNoOp）"
+      - "**判据 3·🔴 计件口径（涉钱）**：有工人身份（工人端发货/质检）⇒ 走既有报工口径，写一行 `production_work_logs`（计件记给该工人）；无身份（商家/生产端、观星台员工录质检）⇒ **不写报工、不计件**，只 CAS 推进工序 + 完工时刻 + 加工单完工判定。红证：把无身份分支改成也走 `applyReport` ⇒ 判据红。证据：ProductionServiceCompleteByDocumentTest（merchantPathAdvancesWithoutPiecework / workerPathWritesPieceworkLog）"
+      - "**判据 4·质检只有合格才联动**：`pass` ⇒ 调用联动；`rework` / `scrap` ⇒ 不完成质检工序（还要再检）。证据：backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckServiceTest.java（passLinksQualityOperationButReworkDoesNot）"
+      - "**判据 5·质检只动这一件**：联动查询/匹配带该件成品帘的 `order_item_id`；同单另一件不归这次联动。证据：DocumentOperationLinkageTest（qualityCompletesOnlyThatItem）"
+      - "**判据 6·触发点覆盖**：工人发货（`OrderShipmentService.ship`，事务内、守卫之前）、商家状态流转（`OrderService.updateOrderStatus`）、商家/生产/agent 发货（`shipOrderIfLogistics` → `shipOrderIfApplicable`）都先联动再走 `OrderShipGuard`；否则有发货工序的单会被守卫先拒。证据：OrderService / OrderShipmentService 的调用点 + shipped 路既有测试（ShipmentControllerTest / MerchantShipmentRouteTest / MerchantShipmentAtomicityTest）"
+      - "**边界（照实登记）**：不做存量回填（历史上已发货但发货工序仍 pending 的单不自动补）；只处理活跃加工单；无该工序的订单一个字节不变。"
+    skip_reason: "[backend-contract] 服务端事务与计件口径（无 LLM 行为），不进入 agent-eval 冒烟"
+    merge_log: "2026-10-17 新增（issue #7165；用户原话与两条裁定见 user_inputs）。落码：`DocumentOperationLinkage`（唯一联动点）+ `ProductionService.completeByDocument`（工人身份 ⇒ 既有 applyReport 计件；无身份 ⇒ 只完成工序）+ 发货三入口 / 质检 create 的调用点。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/DocumentOperationLinkageTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionServiceCompleteByDocumentTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckServiceTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+  - id: PG-085
+    legacy_id: ""
+    title: "删路线 / 删条件工序规则只 `.eq(id)` ⇒ 跨租户误删 + 0 行当成功；改写为 tenant 限定 + deleted=0 + 影响行数判定后恰一次成功（issue #6962）"
+    domains:
+      - processing
+      - processing-order
+      - backend
+    tier: edge
+    tags:
+      - concurrency
+      - cas
+      - tenant-isolation
+      - soft-delete
+      - backend-contract
+      - realdb
+    truths_ref: []
+    precondition: "前置 = ① 某租户下有**两条非默认**工艺路线（`deleteRouting` 的既有护栏：删默认 ⇒ 422、删最后一条 ⇒ 422，故夹具必须留一条）；② 该租户下至少一条活跃条件工序规则；③ 另一个租户下各有一条同名对象（跨租户拒绝的对照面）。前置由判据自建（一次性真 PG 集群 + 自建 tenant / 行），**不成立时 fail-closed 硬失败**。"
+    user_inputs:
+      - "同一条非默认路线被严格同时删两次（并发 deleteRouting）"
+      - "用**另一个租户**的路线 id / 规则 id 调删除（跨租户）"
+    expectations: []
+    data_checks:
+      - "**病（真实缺陷形态）**：修前 `ProductionRoutingCommandService#deleteRouting` / `#deleteRouteRule` 的落库语句只有 `.eq(id)`（`productionRouteTemplateMapper.update(null, wrapper)` / `productionRouteRuleMapper.update(...)`）⇒ ① **缺 tenant 限定**：租户隔离只靠更早一次读判的 `tenantId.equals(...)`，读判与写之间无互斥 ⇒ 跨租户误删；② **无 `deleted = 0`、不判影响行数** ⇒ 重复删同一 id 照样回「成功」（0 行当成功 = 调用方报 200 而这次没删到任何东西）。"
+      - "**判据 1（恰一次成功）**：backend/admin-api/src/test/java/com/migao/admin/service/ConcurrentQuotaAdoptDeleteCas6962RealDbTest.java：并发双 `deleteRouting(id, tenantId)` ⇒ 成功数 **恰 == 1**、另一方 **409**（修前两个都成功 ⇒ 判红），落库 `deleted = 1`；`deleteRouteRule` 同款各一条。"
+      - "**判据 2（跨租户必被拒）**：`deleteRouting(idOfTenantB, TENANT_A)` 必须**不删** B 的行（400/404/409 任一显式拒绝），且 B 的行**仍是 `deleted = 0`**；`deleteRouteRule` 同款。修前该调用会把 B 的行删掉（缺 tenant 谓词）⇒ 判红。"
+      - "**正对照**：非默认、非最后一条的路线串行删除一次必须成功（`deleted` 落 1），谓词写错（如漏 `deleted = 0` 时对已软删行再删）不得误杀正常删除。"
+      - "**修法（照抄本仓范式）**：两条 mapper 各加 `default int markDeletedByIdAndTenant(String id, Long tenantId)` —— `LambdaUpdateWrapper` 谓词 = `id + tenant_id + deleted = 0`，`SET deleted = 1, updated_at = now`，返回影响行数；服务层 `== 0 ⇒ BusinessException.conflict`（409），文案带**实际当前态**且**不指内部端点**。仍走 `update(null, wrapper)` 而**不是** `updateById`（MP 全局逻辑删除会把 `deleted` 从 `updateById` 的 SET 子句里剔除 ⇒ 静默 no-op，issue #4608 的实测形态）。"
+      - "**边界（照实登记）**：① 判据跑服务层真库并发而非 HTTP 栈；② 既有护栏（删默认 ⇒ 422 / 删最后一条 ⇒ 422）与「删除是软删、删后不再参与选路」的口径**一字未改**；③ 本守卫不改任何门禁的通过条件、不新增豁免。"
+    skip_reason: "[backend-contract] 纯后端真库并发判据（真 PG 一次性集群，走 `PgCluster.startOrAbort()` 收口）+ 类级元守卫：admin-api 单测面，不进 agent-eval 冒烟"
+    merge_log: "2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 origin/main 已占号最大 **PG-082**（#7162 质检单占用）⇒ 本单取 **PG-083**（本单原定 PG-077 已被 main 的质检用例占用，按「让号」改号；**不取** `next_case_id.py` 报的空洞号）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ConcurrentQuotaAdoptDeleteCas6962RealDbTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ConcurrencyCasBatch6962MetaGuardTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # PG-086（issue #7186，2026-10-18）—— 质检工序**没有报工动作**：质检员只有一个动作（录判定），
+  # 提交判定即自动报工（写 production_work_logs + 推进「质检」工序 + 计件）+ 自动生成质检流水。
+  #
+  # 用户逐字：「真实流程是质检员先质检，然后报工&评判」
+  #        「所以质检员不需要报工这个动作，只需要有一个质检动作，完成判定后自动报工，然后自动生成质检流水」
+  # ══════════════════════════════════════════════════════════════════════════
+  - id: PG-086
+    legacy_id: ""
+    title: "质检工序没有报工动作：判定即报工（提交判定 ⇒ 自动写报工 + 生成质检流水），报工 / 扫码完成入口对质检工序 422 且零写入"
+    domains:
+      - processing-order
+      - production
+      - backend
+      - worker
+    tier: normal
+    tags:
+      - quality-inspection
+      - piecework
+      - worker-h5
+      - backend-contract
+    truths_ref: []
+    user_inputs:
+      - "用户 2026-10-18 逐字：「真实流程是质检员先质检，然后报工&评判」"
+      - "用户 2026-10-18 逐字：「所以质检员不需要报工这个动作，只需要有一个质检动作，完成判定后自动报工，然后自动生成质检流水」"
+    expectations: []
+    precondition: "前置 = 活跃加工单 + 其路由里确有「质检」工序（`V54__seed_production_operations.sql` 的 op-v54-26）；工人端「质检」页（`inspect`）逐人开。无质检工序的单代入本判据 ⇒ 行为必须零变化。"
+    data_checks:
+      - "**判据 1·两条写入口都拦得住（422 + 零写入）**：逐道报工（`POST /api/worker|admin/production/orders/{orderId}/operations/{operationId}/report`）与扫码完成（`POST /api/worker/production/scan/complete`）对「质检」工序必须 422 具名拒绝（文案指向质检录入 + 给 suggestion），且**不落 `production_work_logs`、不 CAS 推进 `done_qty`**。红证：摘掉 `DocumentOperationLinkage#rejectManualReport` 的任一处调用 ⇒ 该入口变成「报工成功」⇒ 断言红。证据：backend/admin-api/src/test/java/com/migao/admin/service/ProductionReportQualityGuardTest.java（reportingQualityOperationIsRejected）+ ProductionScanCompleteServiceTest.java（qualityOperationIsNotReportable）"
+      - "**判据 2·对照不得误伤**：非质检工序（如「精裁-布」）报工照常成功（落报工明细 + 推进工序 + 回执 `status=done`）。证据：ProductionReportQualityGuardTest（reportingNormalOperationStillWorks）"
+      - "**判据 3·判定即报工（自动，口径不变）**：判定 = `pass` 且工人身份 ⇒ 走既有报工口径（写 `production_work_logs`、计件记给该工人）+ 完成该件「质检」工序；观星台员工（无工人身份）⇒ 只推进工序、不计件；`rework` / `scrap` ⇒ 照落质检流水、**不**推进工序、不计件（还要再检）。证据：QualityCheckServiceTest + ProductionServiceCompleteByDocumentTest（issue #7165 的既有判据，本单未改口径）"
+      - "**判据 4·工人端只有一个动作（无报工按钮）**：当前工序 = 质检 ⇒ 工人端扫码页**不渲染** `wh5-report` / `wh5-work-type`，只出质检区块 + 一句「录入判定即完成报工」；非质检工序仍渲染报工按钮；未开通 `inspect` 页时如实说「需由质检员录入判定」而不是留死页面。证据：frontend/worker-h5/tests/worker-h5-quality.test.mjs（⑦⑧⑨）"
+      - "**边界（照实登记）**：① 待检清单读面**不动**（用户同日撤回「报工后才产生待检」那版，读面仍从加工单快照派生）；② bmini 小程序今天没有质检面（`frontend/bmini-app/src` 零「质检」引用）⇒ 它若对质检工序发起报工由服务端 422 兜底，本单不补 UI；③ 藏按钮不构成授权（服务端才是闸）。"
+    skip_reason: "[backend-contract] 服务端拒绝码 + 工人端渲染判据（零 LLM 行为），不进 agent-eval 冒烟"
+    merge_log: "2026-10-18 新增（issue #7186；用户原话见 user_inputs）。落码：`DocumentOperationLinkage#rejectManualReport`（唯一判据，复用 `QUALITY_OPERATION_NAME`）+ `ProductionService.doReport` / `ProductionScanCompleteService.doComplete` 两处调用 + 工人端 `render.mjs`（`isQualityOperation` / `canReport` / `qualityOnlyNote`）。取号 = 现取 origin/main 已占号最大 PG-085 ⇒ 本单取 PG-086。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionReportQualityGuardTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanCompleteServiceTest.java"
+        - "frontend/worker-h5/tests/worker-h5-quality.test.mjs"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # PG-087（issue #7192，2026-10-18）—— 质检**指标**：首检合格率 / 当前合格率 / 返工报废率 /
+  # 趋势 / 分组 Top-N / 待检积压（近似待检时长）。
+  #
+  # 用户逐字：「质检记录我觉得缺乏一个合格率的指标？」「那先做 p0 和 p1 吧」
+  # ══════════════════════════════════════════════════════════════════════════
+  - id: PG-087
+    legacy_id: ""
+    title: "质检指标（P0+P1）：按件聚合的首检合格率 / 当前合格率 / 返工报废率 + 时间窗趋势 + 分组 Top-5 + 待检积压（近似待检时长）"
+    domains:
+      - processing-order
+      - production
+      - backend
+      - quality
+    tier: normal
+    tags:
+      - quality-inspection
+      - metrics
+      - backend-contract
+      - admin-web
+    truths_ref: []
+    user_inputs:
+      - "用户 2026-10-18 逐字：「质检记录我觉得缺乏一个合格率的指标？」"
+      - "用户 2026-10-18 逐字：「那先做 p0 和 p1 吧」（采纳建议：主指标 = 首检合格率、默认本月、返工/报废单列、未检不进分母）"
+    expectations: []
+    precondition: "前置 = 若干活跃加工单的成品帘 + 已录判定（同一件可有返工后复检的多条记录）；指标读面只读，不依赖任何写入时序。"
+    data_checks:
+      - "**判据 1·按件去重（P0 的根）**：同一件两条记录（先合格、后返工）⇒ 已检 **1 件**、首检合格 1、当前合格 0、返工 1；首检合格率 100%、当前合格率 0%、返工率 100%。红证：改成按记录条数聚合 ⇒ 已检变 2 ⇒ 断言红。证据：backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckStatsTest.java（aggregatesPerPieceNotPerRecord）"
+      - "**判据 2·未检不进分母**：快照里没有记录的件**不**出现在已检/率里，只出现在 backlog.pending；红证：把未检算进分母（或折成「不合格」）⇒ 断言红。证据：同文件（pendingPiecesStayOutOfDenominator）"
+      - "**判据 3·0 样本 ⇒ 率 = null**（前端显示「—」，**不是** 0%）；红证：`rate()` 在分母 0 时返回 0.0 ⇒ 断言红。证据：同文件（emptyCohortHasNullRates）+ frontend/admin-web/tests/unit/components/QualityMetricsPanel.test.tsx（「0 样本 ⇒ 显示『—』」）"
+      - "**判据 4·窗口按首检时刻**：窗口外首检、窗口内复检的件**不进** cohort（否则窗口一半落在复检上、率不可比）。证据：同文件（windowUsesFirstInspectionMoment）"
+      - "**判据 5·趋势与分组自洽**：趋势 Σ已检 = 已检件数 = 分组 Σ已检（第二份口径 ⇒ 红）。证据：同文件（trendAndGroupsAgreeWithCounts）"
+      - "**判据 6·参数闸**：未知 bucket / 非法时间 / 反向窗口 ⇒ 422 具名（不静默回落 day）。证据：同文件（rejectsInvalidParameters）"
+      - "**判据 7·前端只格式化不重算**：KPI / 趋势 / 分组 / 积压全部取服务端值；样本 < min_sample 标注「样本偏少」；待检时长必须带「近似」与起算点说明。证据：frontend/admin-web/tests/unit/components/QualityMetricsPanel.test.tsx + tests/unit/pages/quality-inspections.test.tsx（指标面板默认「本月」拉一次）"
+      - "**边界（照实登记）**：① 待检时长是**近似**（无「进入待检」时间戳，按加工单生成时刻起算 = 上界）；② 原因分布 / 原因字典化、返工成本属 P2，本单不做；③ 待检清单与四态计数口径**一字未改**；④ 不改任何写入/判定口径。"
+    skip_reason: "[backend-contract] 纯读面聚合（服务端 SQL/Java 聚合 + 前端渲染判据，零 LLM 行为），不进 agent-eval 冒烟"
+    merge_log: "2026-10-18 新增（issue #7192；用户原话见 user_inputs）。落码：`QualityCheckService#stats`（P0 率 + P1 趋势/分组/积压）→ `GET /api/admin/quality-inspections/stats` → `QualityMetricsPanel` + 质检记录页接线。取号 = 现取 origin/main 已占号最大 PG-085（#7186 的 PG-086 在并行分支）⇒ 本单取 PG-087。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckStatsTest.java"
+        - "frontend/admin-web/tests/unit/components/QualityMetricsPanel.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/quality-inspections.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+  - id: PG-088
+    legacy_id: ""
+    title: "客户端漏写 saleForm 的卖布单仍必须被认出（sellingMethod / rollCount 兜底）⇒ 作业单 / 派单池 / 发货守卫三段不再静默放行（issue #7222）"
+    domains:
+      - processing
+      - processing-order
+      - backend
+    tier: edge
+    tags:
+      - fabric-sale
+      - ship-guard
+      - backend-contract
+    truths_ref: []
+    precondition: "一张**卖布单**由 API / 米宝 / 回归脚本创建：订单行 `processing_info` **缺 `saleForm` 键**，但该行带布料专属事实（`sellingMethod = bulk_cut|full_roll` 或 `rollCount` 非空 —— 下单页只对布料行出「整卷」面板）。"
+    user_inputs:
+      - "API 直接建卖布单（不带 saleForm）后，在订单详情看作业单区块"
+      - "生成作业单后看工人是否拿到裁剪 / 打包活"
+    expectations: []
+    data_checks:
+      - "**判据 1（会红，读面）**：`OrderShipGuard.hasFabricSaleLine` / `requiredOrderKind` 对「缺 saleForm、有 sellingMethod=full_roll」的行判卖布行 / `outbound`。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderShipGuardTest.java 的 `fabricSaleLineWithoutSaleFormIsRecognizedBySellingMethod`。**红证**：删掉 `ProcessingOrderService.isFabricSaleLine` 的兜底分支（退回只认显式 saleForm）⇒ 该用例红。"
+      - "**判据 2（会红，生成侧）**：`generate` 的该行必须进 `items_snapshot` 且 `order_kind = outbound`。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderRouteSourceTest.java 的 `orderWithoutSaleFormButWithSellingMethodStillGetsOutboundJob`。**红证**：删兜底 ⇒ 快照为空 ⇒「无加工项，无需生成加工单」⇒ 红。"
+      - "**判据 3（反向护栏，不许误伤）**：缺 saleForm 且**无任何布料事实**的无加工项行（配件 / 赠品）仍判「无需作业」、仍可直发。执行点 = `OrderShipGuardTest.orderWithoutFabricEvidenceStillNeedsNoWork` 与 `ProcessingOrderRouteSourceTest.itemWithoutProcessingItemsAndWithoutFabricSaleFormIsStillSkipped`。**红证**：把兜底写成「缺 saleForm 一律卖布」⇒ 两条红。"
+      - "**判据 6（前端读面键口径）**：前端判型必须读**下发的 wire 键** `work_order_kind`（snake）；只读 camel `workOrderKind` 时该键在真实响应里恒不存在 ⇒ 生成入口 / 发货前置拦截 /「先做作业单」引导三处静默失效（发货页照常渲染表单，只靠后端 422 兜底）。执行点 = frontend/admin-web/tests/unit/lib/processing-order.test.ts 的 `读面 wire 键 work_order_kind（#7319）` 组（本单与 #7319 同源修复；合并口径 = **只认 wire 键**，类级守卫 = tests/unit_ci_workflows/test_frontend_wire_key_consumer.py）。**红证**：把 `workOrderKindOf` 改回只读 camel ⇒ 该组 3 条红（2026-10-19 本机实证）。"
+      - "**判据 5（不许抢路线）**：缺 `saleForm`、有 `sellingMethod`，但**有加工项**的行 ⇒ 仍判加工单（卖布行按米卖，行上从无加工项）。执行点 = `OrderShipGuardTest.fabricFallbackDoesNotHijackLinesWithProcessingItems`。**红证**：去掉 `isFabricSaleLine` 的「有加工项即返回 false」闸 ⇒ 红（成品帘被拉去走裁剪/打包，丢掉缝制工序）。"
+      - "**判据 4（显式声明优先）**：显式 `saleForm=成品帘` 的行不被 sellingMethod / rollCount 覆盖。执行点 = `OrderShipGuardTest.explicitNonFabricSaleFormWinsOverRollEvidence`。"
+      - "**边界（照实登记）**：缺 saleForm 且无任何布料事实的行**不猜**（保持存量语义）—— 该形态靠写面（米宝 `order_create` 补 `saleForm`）与订单详情的可行动出口兜住。"
+    skip_reason: "[backend-contract] admin-api 单测面（mock mapper），不进 agent-eval 冒烟"
+    merge_log: "2026-10-18 新增（issue #7222，用户截图实证：AI 回归建的卖布单在订单详情报「该订单无需作业单」）。取号 = 当时 origin/main 已占号最大 PG-087 ⇒ 本单取 PG-088。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderShipGuardTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderRouteSourceTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PG-090
+    legacy_id: ""
+    title: "直派收敛：非加急订单不得从订单详情直接生成作业单（服务端逐单拒绝并指路智能派单）；加急单保留直派（issue #7507）"
+    domains:
+      - processing-order
+      - order
+      - backend-contract
+    tier: normal
+    tags:
+      - dispatch
+      - pool-board
+      - backend-contract
+    truths_ref: []
+    precondition: "两张已确认订单：order-001 未加急（`is_urgent` 缺省 / false）、order-002 加急（`is_urgent=true`）。"
+    user_inputs:
+      - "在订单详情页给一张普通订单点「生成加工单」（旧入口）"
+      - "把同一张订单标记加急后，再看作业单区块"
+    expectations: []
+    data_checks:
+      - "**判据 1（会红，服务端）**：`POST /api/admin/processing-orders/generate` 对**非加急**订单逐单返回 `success=false` + `code=DIRECT_DISPATCH_POOL_REQUIRED` + message 含「智能派单」+ suggestion 含「加急」，且**一行都不写**（never insert 加工单）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java 的 `directGenerateRejectsNonUrgentOrderAndPointsToPool`。**红证**：把 `generateDirect` 的 `!Boolean.TRUE.equals(order.getIsUrgent())` 判定摘掉（或控制器改回调 `generate`）⇒ 该用例红（会真的落加工单）。"
+      - "**判据 2（加急例外，不许把闸整个拆掉）**：加急订单（`is_urgent=true`）走同一入口 ⇒ `success=true` 且照常落加工单。执行点 = 同文件 `directGenerateAllowsUrgentOrder`。**红证**：去掉加急豁免（一律拒绝）⇒ 该用例红。"
+      - "**判据 3（批量混合：顺序 + 不静默少派）**：入参 `[非加急, 加急]` ⇒ 结果顺序 = 入参顺序（第一行失败带码、第二行成功），且 `insert` 只发生 1 次。执行点 = 同文件 `directGenerateRejectsOnlyNonUrgentOrdersInMixedBatch`。"
+      - "**判据 4（端点透传）**：HTTP 响应逐字带 `code` / `message` / `suggestion`（订单详情页据此上屏指路文案）。执行点 = backend/admin-api/src/test/java/com/migao/admin/controller/ProcessingOrderControllerTest.java 的 `generatePassesThroughDirectDispatchRejection`。"
+      - "**判据 5（前端入口，会红）**：非加急订单在订单详情块**不渲染**「生成…」按钮、渲染「去智能派单」并可跳 `/production/pool`；加急订单相反；漏传 `isUrgent`（缺省）落**受限**一侧。执行点 = frontend/admin-web/tests/unit/components/ProcessingOrderBlock.test.tsx 的「直派收敛（issue #7507）」组。**红证**：把组件的 `{isUrgent ? (` 改回 `{true ? (`（= 改前形态）⇒ 判据 1/3/4 红。"
+      - "**判据 6（B 端 agent 指引）**：`prompts/order.md` 的「生成加工单不在能力内」指引指向「智能派单」（非加急；同料合并更省料）并写明加急例外；工具语义（`ProcessingOrderGenerateTool.description`）同口径。执行点 = backend/ai-agent-service/tests/test_issue_7507_direct_dispatch_pool.py。**红证**：把指引改回「作业看板」⇒ 该用例红。"
+      - "**判据 7（只读口径不许漂移）**：`/api/admin/production/pool/dispatch`（智能派单页，唯一派单面）不受该闸影响 —— 非加急单从派单页 `pooled=true` 仍可派。执行点 = `backend/admin-api/src/test/java/com/migao/admin/controller/ProductionPoolControllerTest.java` 与 `backend/admin-api/src/test/java/com/migao/admin/service/PooledDispatchRealDbTest.java`（本单未改这些路径）。"
+    skip_reason: "[backend-contract] admin-api 单测 + 前端 vitest + prompt 文本判据（无 LLM 行为面；B 端 agent 写能力自 #5247 起已下线，本单只同步文案）"
+    merge_log: "2026-10-23 新增（issue #7507，用户原话「为什么从订单可以直接生成加工单，而不是默认走智能派单流程？这里得限制下」；裁定 = 选项 A「统一入口」+ agent 同限）。取号 = 当时 origin/main 已占号最大 PG-089 ⇒ 本单取 PG-090。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/ProcessingOrderControllerTest.java"
+        - "frontend/admin-web/tests/unit/components/ProcessingOrderBlock.test.tsx"
+        - "backend/ai-agent-service/tests/test_issue_7507_direct_dispatch_pool.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+  - id: PG-091
+    legacy_id: ""
+    title: "整卷布料单「出库」独立工序：散剪 裁剪→打包 / 整卷 出库→打包（批次号即卷号）"
+    domains:
+      - processing-order
+      - order
+    tier: normal
+    tags:
+      - processing-order
+      - route-rule
+      - fabric
+    truths_ref: []
+    precondition: "卖布行订单（processing_info.saleForm=布料、无加工项）：A 单 sellingMethod=full_roll + rollCount=2；B 单 sellingMethod=bulk_cut。"
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "**判据 1（会红，Java 路由）**：整卷布料单实例化出的工序序列 = `[出库, 打包]`，**不含 `裁剪`**；散剪单 = `[裁剪, 打包]`，**不含 `出库`**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductionRouteParityTest.java 的 `fabricFullRollIsOutboundThenPacking` / `fabricBulkCutKeepsCutting`。**红证**：把 sales_form 规则摘掉（或把 buildRoute 的 `isFabricForm != salesFormRule` 分派改回 `if (isFabricForm) continue;`）⇒ 整卷序列退回 `[裁剪, 打包]` ⇒ 判据 1 红。"
+      - "**判据 2（数量口径）**：`出库` 应做数量 = 订单行卷数（2 卷），算料请求 `calc_info` 必带 `roll_count`。执行点 = 同文件 `fabricFullRollIsOutboundThenPacking` 的 ArgumentCaptor 断言 + backend/ai-agent-service/tests/test_production/test_operation_qty.py（卷单位直接供数）/ test_production/test_fabric_route.py（full_roll 路线）。**红证**：把 `ProcessingOrderService#calcInfo` 的 roll_count 透传删掉 ⇒ Java 断言红；把 `routing.py::_qty_for` 的「卷」分支删掉 ⇒ Python 用例红。"
+      - "**判据 3（工人屏可读）**：扫码读面的部位规格含 `roll_count`（卷数，单位 卷）与 `batch_no`（批次号即卷号）；散剪单缺键不渲染。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/PositionDetailFieldsTest.java 的键集守卫 + frontend/worker-h5/tests/worker-h5-position-spec.test.mjs 的 `卷数` 上屏断言。**红证**：从 `PositionDetailFields.DETAIL_KEYS` 删掉 `roll_count` ⇒ 后端键集守卫红；从 `POSITION_SPEC_KEYS` 删掉该行 ⇒ worker-h5 用例红。"
+      - "**判据 4（配置页人话）**：工序配置页把 sales_form 规则读成「售卖方式 = 整卷/散剪」中文业务名，机器值不上屏。执行点 = frontend/admin-web/tests/unit/components/RollOutboundCondition.test.tsx。**红证**：把 `TRIGGER_KIND_LABEL.sales_form` 删掉 ⇒ 渲染出 `sales_form = full_roll` ⇒ 用例红。"
+      - "**判据 5（种子五源收敛）**：`routing.py::OPERATION_CATALOG/_POSITION_PRICE_ROWS/ROUTE_RULES` ↔ V186 迁移 ↔ schema.sql ↔ 开租模板 ↔ Java 常量逐值一致（出库单位 卷；价目行 `出库 × 布料` 适用但未定价；规则 insert/remove 优先级 270/280）。执行点 = tests/unit_ci_workflows/test_production_catalog_seed.py（55 passed）+ backend/admin-api/src/test/java/com/migao/admin/service/ProductionSeedTemplateServiceTest.java 的 `apply_createsAllSeedRows`。"
+      - "**判据 6（发货守卫不变）**：作业单 completed 才能发货的既有判据一字不动；整卷单只是少了「裁剪」一道。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderShipGuardTest.java（本单未改）。"
+    skip_reason: "[backend-contract] admin-api 单测 + ai-agent 路由真值源 + 前端 vitest/worker-h5 node:test（无 LLM 行为面；工序序列由确定性规则产生）"
+    merge_log: "2026-10-23 新增（issue #7523，用户裁定：「1.出库做独立工序 2.批次号即卷号 3.维持」）。取号 = 当时 origin/main 已占号最大 PG-090 ⇒ 本单取 PG-091。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionRouteParityTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionSeedTemplateServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/PositionDetailFieldsTest.java"
+        - "backend/ai-agent-service/tests/test_production/test_fabric_route.py"
+        - "backend/ai-agent-service/tests/test_production/test_operation_qty.py"
+        - "frontend/admin-web/tests/unit/components/RollOutboundCondition.test.tsx"
+        - "frontend/worker-h5/tests/worker-h5-position-spec.test.mjs"
       ci:
         - pr-check.yml
       verifies: []

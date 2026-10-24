@@ -3,15 +3,12 @@
 
 ## 病灶（2026-10-16，P6 定位 / 主会话独立核实）
 
-`tests/agent_eval/local_runner.py` 的 `EVAL_TENANT_ID` **缺省 = 25（云端测试租户）**，
-而夹具 `tests/agent_eval/fixtures/*_eval_seed.sql` **逐行写 tenant 1** ⇒ 本地裸跑
-（不显式给变量）时，前置探针 / 复位 SQL 查的是 **tenant 25 = 空** ⇒ `capture=0`
-⇒ 被折进 **「📦 用例资产缺陷（前置未成立/漂移）」** —— **归因错人**：真因是
-**环境变量错配**，不是用例资产缺陷（单变量对照：缺省 25 ⇒ AS-004 0%；
-显式 `EVAL_TENANT_ID=1` ⇒ 100%；真库该工单 tenant1 = 1 行 / tenant25 = 0 行）。
-连带：复位落到错误租户 ⇒ 还会造出**假 fail-closed 阻塞**（"前置未复位/结论不可信"）。
-CI 的 `.github/workflows/post-deploy-eval.yml` 本来就设 `EVAL_TENANT_ID: "1"` ⇒
-缺口**只在本地跑法**，而本地跑法错了**没有任何东西会出声**。
+历史病灶（2026-10-16）：`tests/agent_eval/local_runner.py` 的 `EVAL_TENANT_ID` 缺省 = 25
+（当时的云测试租户），而夹具 `tests/agent_eval/fixtures/*_eval_seed.sql` 逐行写 tenant 1
+⇒ 本地裸跑把前置探针/复位 SQL 打到 tenant 25 = 空 ⇒ `capture=0`，被折进「用例资产缺陷」。
+2026-10-19（issue #7340）把缺省、容器、已部署入口统一收敛到 **seed 租户 1**，因此
+**裸跑默认不再错配**；但「注入错租户（如 25 / 46）必须 fail-closed 且具名」这条护栏仍必须保留
+（真库该工单 tenant1 = 1 行 / tenant25 = 0 行；显式传错时不能静默跑下去）。
 
 ## 本文件锁什么（判据 + 反向红证）
 
@@ -49,8 +46,10 @@ FIXTURE_PATHS = (
 # 本地 / CI 临时栈的租户（夹具逐行写的那个；同 `scripts/eval_stack_seed.sh` 的自证 SQL
 # `WHERE tenant_id=1` 与 `test_eval_tenant_single_source.py` 的 LOCAL_STACK_TENANT_ID）
 LOCAL_STACK_TENANT_ID = 1
-# 云端测试租户（本运行器的**缺省**，由 agent-eval.yml 显式钉住）—— 见 issue #6288
-CLOUD_TEST_TENANT_ID = 25
+# 评测租户的真值（2026-10-19 / #7340：本地栈、容器、agent-eval 三处统一 seed 租户 1）
+CLOUD_TEST_TENANT_ID = 1
+# 红证用的「不存在的租户」：旧的云测试租户 25（共享库已不再有它）
+WRONG_TENANT_ID = 25
 
 # 判据对象（消失即判据前提失效 ⇒ 红，不许静默变成空跑）
 REQUIRED_NAMES = (
@@ -195,7 +194,7 @@ def audit_scope_semantics(ns: dict) -> list[str]:
     """③ 三态语义 + 报错要素（在注入命名空间上复算）。"""
     mismatch = ns["tenant_scope_mismatch"]
     probe = int(ns["EVAL_TENANT_ID"])
-    other = LOCAL_STACK_TENANT_ID if probe != LOCAL_STACK_TENANT_ID else CLOUD_TEST_TENANT_ID
+    other = WRONG_TENANT_ID if probe != WRONG_TENANT_ID else 46
     problems: list[str] = []
     if mismatch("工单", "AS-20260914-9001", {probe}) is not None:
         problems.append(f"口径一致（锚点就在 EVAL_TENANT_ID={probe} 下）却报错 —— 误报")
@@ -276,8 +275,8 @@ def test_anchor_query_carries_no_tenant_predicate():
 
 
 def test_scope_semantics_hold_for_both_tenants():
-    """③ 口径一致（本地栈 1 / 云端 25 两格）都**不得**误报。"""
-    for tenant in (None, LOCAL_STACK_TENANT_ID, CLOUD_TEST_TENANT_ID):
+    """③ 口径一致（缺省 / 本地栈 / 已部署入口同值 1）都**不得**误报。"""
+    for tenant in (None, LOCAL_STACK_TENANT_ID):
         ns = runner_namespace(RUNNER_TEXT, tenant=tenant)
         problems = audit_scope_semantics(ns)
         assert problems == [], (
@@ -302,16 +301,25 @@ def test_anchors_are_really_seeded_in_the_fixtures():
         assert table in fixture_text, f"锚点表 {table!r} 不在夹具文件里"
 
 
-def test_bare_local_run_really_mismatches(monkeypatch):
-    """前提自证：缺省 ≠ 本地栈租户 ⇒「本地裸跑」这一格真的会踩错配（否则本判据是空转）。"""
+def test_bare_local_run_default_matches_stack(monkeypatch):
+    """收口后：缺省 = 本地栈租户 ⇒ 裸跑不再错配（反向对照：不误报）。"""
     monkeypatch.delenv("EVAL_TENANT_ID", raising=False)
     default = runner_namespace(RUNNER_TEXT)["EVAL_TENANT_ID"]
     assert default == CLOUD_TEST_TENANT_ID, (
-        f"运行器缺省租户实测 = {default}（期望云端测试租户 {CLOUD_TEST_TENANT_ID}）—— "
-        f"本判据的病灶前提变了，请连带重算本文件")
-    assert default != LOCAL_STACK_TENANT_ID
+        f"运行器缺省租户实测 = {default}（期望 seed 租户 {CLOUD_TEST_TENANT_ID}）—— "
+        f"配置再次漂移，请连带重算本文件")
+    assert default == LOCAL_STACK_TENANT_ID
     problems = audit_scope_semantics(runner_namespace(RUNNER_TEXT, tenant=default))
     assert problems == []
+
+
+def test_injected_wrong_tenant_is_still_detected():
+    """护栏本体：夹具锚点在 1、运行器注入 25 ⇒ 必须报错，不许静默跑。"""
+    ns = runner_namespace(RUNNER_TEXT, tenant=WRONG_TENANT_ID)
+    msg = ns["tenant_scope_mismatch"]("工单", "AS-20260914-9001", {LOCAL_STACK_TENANT_ID})
+    assert msg, "注入错租户却没判红 —— fail-closed 自检退化"
+    assert "租户口径错配" in msg
+    assert f"EVAL_TENANT_ID={LOCAL_STACK_TENANT_ID}" in msg
 
 
 # ── 红证（注入式）：判据自己必须会红；对照：只改注释不红 ────────────────────

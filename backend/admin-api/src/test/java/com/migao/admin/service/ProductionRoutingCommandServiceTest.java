@@ -629,6 +629,8 @@ class ProductionRoutingCommandServiceTest {
         when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of(
                 routing("rt-1", "路线甲", true, List.of("布三边")),
                 routing("rt-2", "路线乙", false, List.of("外帘装袋"))));
+        // issue #6962 P5-③：软删走带谓词的条件更新（id + tenant_id + deleted=0），影响行数 1 = 真删到
+        when(productionRouteTemplateMapper.markDeletedByIdAndTenant("rt-2", TENANT)).thenReturn(1);
 
         Map<String, Object> result = service.deleteRouting("rt-2", TENANT);
 
@@ -637,13 +639,15 @@ class ProductionRoutingCommandServiceTest {
         // 从 updateById 的 SET 子句里剔除 ⇒ 只有显式写列（update(null, LambdaUpdateWrapper)）
         // 才真落库。改回 `setDeleted(1); updateById(...)` ⇒ 本用例红（旧写法断言的是实体里的值，
         // 所以「服务端报成功、数据还在」也能绿 —— 那正是本单要消灭的假绿）。
-        ArgumentCaptor<LambdaUpdateWrapper> wrapper = ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
-        verify(productionRouteTemplateMapper).update(isNull(), wrapper.capture());
+        // issue #6962 P5-③：落库收口到**带谓词的条件更新** `markDeletedByIdAndTenant(id, tenantId)`
+        // （谓词 = id + tenant_id + deleted = 0，`SET deleted=1, updated_at=now`；见该 mapper 的 default 实现），
+        // 服务层按**影响行数**判是否真删到。⚠️ 这里**不再**断言 wrapper 的 SQL 文本：`markDeletedByIdAndTenant`
+        // 是 mock 的 default 方法 ⇒ 真 wrapper 在单测里根本不产生（那种断言会假绿）。
+        // 谓词 / 列存在性的真值由 **真库判据**（跨租户必被拒 + 重复删 409）与类级元守承担：
+        // backend/admin-api/src/test/java/com/migao/admin/service/ConcurrentQuotaAdoptDeleteCas6962RealDbTest.java
+        verify(productionRouteTemplateMapper).markDeletedByIdAndTenant("rt-2", TENANT);
         verify(productionRouteTemplateMapper, never()).updateById(any(ProductionRouteTemplate.class));
-        assertThat(wrapper.getValue().getSqlSet())
-                .as("显式 SET 必须含 deleted 与 updated_at（updated_at = 「什么时候删的」唯一证据）")
-                .contains("deleted")
-                .contains("updated_at");
+        verify(productionRouteTemplateMapper, never()).deleteById(any(String.class));
     }
 
     @Test
@@ -981,16 +985,15 @@ class ProductionRoutingCommandServiceTest {
     @DisplayName("软删规则 ⇒ 200 {id,deleted:true} 且**显式写列** deleted=1 + updated_at（不走 updateById）")
     void deleteRouteRuleSoftDeletes() {
         when(productionRouteRuleMapper.selectById("rr-1")).thenReturn(rule("rr-1", 0));
+        // 同 deleteRouting：条件更新（id + tenant_id + deleted=0），影响行数 1 = 真删到
+        when(productionRouteRuleMapper.markDeletedByIdAndTenant("rr-1", TENANT)).thenReturn(1);
 
         Map<String, Object> result = service.deleteRouteRule("rr-1", TENANT);
 
-        ArgumentCaptor<LambdaUpdateWrapper> wrapper = ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
-        verify(productionRouteRuleMapper).update(isNull(), wrapper.capture());
+        // 同 deleteRouting：收口到带谓词的条件更新，按影响行数判定（wrapper 文本断言见上一条说明）
+        verify(productionRouteRuleMapper).markDeletedByIdAndTenant("rr-1", TENANT);
         verify(productionRouteRuleMapper, never()).updateById(any(ProductionRouteRule.class));
-        assertThat(wrapper.getValue().getSqlSet())
-                .as("显式 SET 必须含 deleted 与 updated_at（不是只「调了 update」）")
-                .contains("deleted")
-                .contains("updated_at");
+        verify(productionRouteRuleMapper, never()).update(isNull(), any());
         verify(productionRouteRuleMapper, never()).deleteById(any(String.class));
         assertThat(result.get("id")).isEqualTo("rr-1");
         assertThat(result.get("deleted")).isEqualTo(true);
@@ -1025,5 +1028,30 @@ class ProductionRoutingCommandServiceTest {
 
         verify(productionRouteRuleMapper, never()).updateById(any(ProductionRouteRule.class));
         verify(productionRouteRuleMapper, never()).update(isNull(), any());
+    }
+
+    @Test
+    @DisplayName("删路线 / 删规则：影响行数 0（并发已被别人删 / 谓词不匹配）⇒ 409，不是静默成功")
+    void deleteConflictWhenNoRowAffected() {
+        when(productionRouteTemplateMapper.selectById("rt-2"))
+                .thenReturn(routing("rt-2", "路线乙", false, List.of("外帘装袋")));
+        when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of(
+                routing("rt-1", "路线甲", true, List.of("布三边")),
+                routing("rt-2", "路线乙", false, List.of("外帘装袋"))));
+        // 并发对手已先删 ⇒ 本次条件更新命中 0 行
+        when(productionRouteTemplateMapper.markDeletedByIdAndTenant("rt-2", TENANT)).thenReturn(0);
+        when(productionRouteTemplateMapper.selectById("rt-2"))
+                .thenReturn(routing("rt-2", "路线乙", false, List.of("外帘装袋")));
+
+        assertThatThrownBy(() -> service.deleteRouting("rt-2", TENANT))
+                .as("0 行 = 没删到任何东西 ⇒ 必须 409（修前无条件 update 恒回 200 = 0 行当成功）")
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(409));
+
+        when(productionRouteRuleMapper.selectById("rr-1")).thenReturn(rule("rr-1", 0));
+        when(productionRouteRuleMapper.markDeletedByIdAndTenant("rr-1", TENANT)).thenReturn(0);
+        assertThatThrownBy(() -> service.deleteRouteRule("rr-1", TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(409));
     }
 }

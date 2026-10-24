@@ -78,6 +78,44 @@ public final class OrderShipGuard {
     }
 
     /**
+     * **有需要报工的作业 ⇒ 该生成哪一型作业单**（issue #7079 第 5 包）：{@code null} = 无需要报工的作业
+     * （订单直发）；{@code "outbound"} = 全是卖布行 ⇒ 裁剪 / 打包的**出库作业单**；
+     * {@code "processing"} = 其余（含加工项 / 混合单）⇒ **加工单**。
+     *
+     * <p><b>为什么由读面给出</b>：前端手里只有「含加工项」这**单侧**信号（{@code order.processingItems}）
+     * ⇒ 卖布单既拿不到「生成」按钮（订单详情空态写着「无加工项订单无需加工环节」，而那对卖布单**不实**），
+     * 也过不了发货页的前置守卫（卖布单要填完整张表单、提交时才撞服务端拒绝）。
+     * 判据本身**早已有唯一实现点**（{@link #needsWork}）—— 本方法只是把**同一份**判据交给读面，
+     * <b>不是</b>第四份口径（前端自己再拼一次「加工项 ‖ 卖布行」，两处迟早分叉）。</p>
+     *
+     * <p><b>取值与「生成那一刻」同源</b>：常量 = {@code ProcessingOrderService.ORDER_KIND_*}，
+     * 判定规则与 {@code ProcessingOrderService.deriveOrderKind} 一致（快照**每一行** {@code saleForm=布料}
+     * ⇒ 出库，否则加工）—— 与 {@code POST /processing-orders/generate} 落库时算出的 {@code order_kind}
+     * **同一个答案**，商家看到的「要生成哪一型」与实际生成出来的那一型不会分叉。</p>
+     *
+     * <p><b>只加载一次订单明细</b>：两个子判据共用同一份明细
+     * （{@link #hasProcessingItems} / {@link #hasFabricSaleLine} 各加载一次 = 详情读面无谓地多查两次）。</p>
+     */
+    public static String requiredOrderKind(OrderItemMapper orderItemMapper, ObjectMapper objectMapper, Order order) {
+        List<OrderItem> items = loadOrderItems(orderItemMapper, order.getId(), order.getTenantId());
+        boolean fabric = items.stream()
+                .anyMatch(item -> isFabricSaleLine(objectMapper, item));
+        if (!fabric) {
+            boolean anyProcessing = items.stream()
+                    .anyMatch(item -> !extractProcessingItems(objectMapper, item.getProcessingInfo()).isEmpty());
+            return anyProcessing ? ProcessingOrderService.ORDER_KIND_PROCESSING : null;
+        }
+        for (OrderItem item : items) {
+            // 任一行不是卖布行（含**无加工项**的配件 / 赠品行）⇒ 加工单：与生成侧 `deriveOrderKind`
+            // 的「混合单 = 有加工 ⇒ 加工」同源，不另写一份判定。
+            if (!isFabricSaleLine(objectMapper, item)) {
+                return ProcessingOrderService.ORDER_KIND_PROCESSING;
+            }
+        }
+        return ProcessingOrderService.ORDER_KIND_OUTBOUND;
+    }
+
+    /**
      * 该订单是否含加工项（订单明细的 {@code processing_info} 非空）。
      *
      * <p><b>这是「含加工项」的唯一一份判据</b>（issue #3340 的发货守卫与 issue #5641 的生产待办
@@ -111,7 +149,7 @@ public final class OrderShipGuard {
                                             ObjectMapper objectMapper,
                                             Order order) {
         for (OrderItem item : loadOrderItems(orderItemMapper, order.getId(), order.getTenantId())) {
-            if (isFabricSaleLine(processingInfoAsMap(objectMapper, item.getProcessingInfo()))) {
+            if (isFabricSaleLine(objectMapper, item)) {
                 return true;
             }
         }
@@ -150,14 +188,28 @@ public final class OrderShipGuard {
         return normalized instanceof Map ? (Map<String, Object>) normalized : new LinkedHashMap<>();
     }
 
-    /** 卖布行判据（issue #7079）：{@code saleForm} 逐字等于 {@code 布料}（缺键 / 其它取值都不算）。 */
-    private static boolean isFabricSaleLine(Map<String, Object> processingInfo) {
-        Object saleForm = processingInfo.get("saleForm");
-        return SALE_FORM_FABRIC.equals(saleForm == null ? null : String.valueOf(saleForm).trim());
+    /**
+     * 卖布行判据（issue #7079 / #7222）—— **唯一实现点** = {@link ProcessingOrderService#isFabricSaleLine}。
+     *
+     * <p>本方法只做一件事：把**订单行已落库的布料专属事实**（{@code order_items.selling_method} /
+     * {@code roll_count}）补进 {@code processing_info} 的**副本**再判。为什么必须补：卖布行的
+     * {@code saleForm} 是**客户端**写的，API / 米宝 / 回归脚本漏写它时，只看 {@code processing_info}
+     * 就会把卖布单当成「无加工项的成品帘行」⇒ 作业单 / 派单池 / 发货守卫**三段同时静默放行**，
+     * 工人拿不到裁剪活且不报错（真实现象：订单详情报「该订单无需作业单」）。</p>
+     *
+     * <p>复制而非就地改：{@code processingInfoAsMap} 对「已是 Map」的入参原样返回，
+     * 而常量表 / 测试夹具可能是不可变 Map（{@code Map.of}）⇒ 就地 {@code put} 会抛异常。</p>
+     */
+    private static boolean isFabricSaleLine(ObjectMapper objectMapper, OrderItem item) {
+        Map<String, Object> evidence = new LinkedHashMap<>(processingInfoAsMap(objectMapper, item.getProcessingInfo()));
+        if (item.getSellingMethod() != null) {
+            evidence.putIfAbsent("sellingMethod", item.getSellingMethod());
+        }
+        if (item.getRollCount() != null) {
+            evidence.putIfAbsent("rollCount", item.getRollCount());
+        }
+        return ProcessingOrderService.isFabricSaleLine(evidence);
     }
-
-    /** 售卖形态 = **布料**（与 {@code ProcessingOrderService.SALE_FORM_FABRIC} 逐字同源，issue #4493/#4529）。 */
-    static final String SALE_FORM_FABRIC = "布料";
 
     /**
      * 加工单联动守卫（issue #3340）：订单含加工项且无已完成加工单时禁止发货。

@@ -384,7 +384,12 @@ class WorkerCuttingHeightNullProductIdTest {
                         + "`METHOD_DECL` ⇒ **跨行声明的方法整条被漏掉**，实测同时浮出本方法与 `ensureSetsFor`）"),
                 Map.entry("partTokensByItemId", "ProductionService｜现取无索引调用点（存量）"),
                 Map.entry("assignmentsOf", "StockBatchConsumptionService｜现取无索引调用点（工人端读面待接）"),
-                Map.entry("snapshotSkus", "StockLedgerService｜现取无索引调用点（存量）"));
+                Map.entry("snapshotSkus", "StockLedgerService｜现取无索引调用点（存量）"),
+                Map.entry("activeOperationsById", "ProductionService｜空集（本批报工为空）时 `return Collections.emptyMap()`。"
+                        + "现取**无**变量级 index site：调用方只用方法引用 `instancesById::get` 取值（形态是 "
+                        + "`aggregate(logs, instancesById::get, …)`，不是 `instancesById.get(…)`）⇒ 缺 id 时得 null，"
+                        + "由 `aggregate` 的「实例缺失 = 不计价（unpriced）」既有分支承接（issue #4205 判据 ④，"
+                        + "`ProductionPieceworkSummaryTest` 守）。2026-10-20 收窄扫描面时新增"));
 
         /**
          * 索引调用点台账：键 = {@code <仓库相对路径>|<变量>}。
@@ -400,9 +405,22 @@ class WorkerCuttingHeightNullProductIdTest {
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/WorkerCuttingHeightService.java|items",
                         new IndexSite("items", "itemsOf", "itemId", "entry.get(\"order_item_id\")", 152, Verdict.KEY_NULLABLE,
                                 "itemId 来自扫描结果可能为 null ⇒ `itemId == null ? null : items.get(itemId)` 短路")),
+                // issue #7373 段 2：盘点完成时按**下标**对齐「明细行 ↔ 计算行」——
+                // 两个 List 都是本方法内直接构造的可变 ArrayList/stream().toList()，
+                // 下标由 `for (int i = 0; i < items.size(); i++)` 给出 ⇒ 永不为 null，也不查不可变表。
+                Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/StocktakeService.java|items",
+                        new IndexSite("items", "itemsOf", "i", "循环下标 i（0 <= i < items.size()）", 267,
+                                Verdict.KEY_PROVABLY_NON_NULL,
+                                "同源同长：items 与 lines 由同一批明细一次构造，按下标配对；下标不可能为 null。"
+                                + "2026-10-24（issue #7618）：`open()` 增加剩余派生后行号下移 18 行（249→267），判定依据未变")),
+                Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/PurchaseOrderService.java|itemsById",
+                        new IndexSite("itemsById", "itemsOf", "itemId", "line.itemId()", 187,
+                                Verdict.READ_IS_NULL_TOLERANT,
+                                "issue #7369 段 4：itemsOf 返回 LinkedHashMap（可变表）⇒ get(null) 不抛 NPE；"
+                                + "且第 183 行已对 itemId 判空并抛 422。2026-10-23（issue #7567）：行号随 `PurchaseOrderService` 新增 mapper 字段下移 8 行（179→187），判定依据未变")),
                 // ── 存量：读法本身与表可变性无关（getOrDefault / containsKey） ──
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/DailyBriefingService.java|skusByProduct",
-                        new IndexSite("skusByProduct", "costSkusByProduct", "line.getProductId()", "line.getProductId()", 1022,
+                        new IndexSite("skusByProduct", "costSkusByProduct", "line.getProductId()", "line.getProductId()", 1025,
                                 Verdict.READ_IS_NULL_TOLERANT, "getOrDefault(line.getProductId(), List.of()) ⇒ 空键安全")),
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/FinanceService.java|refundMap",
                         new IndexSite("refundMap", "sumRefundByOrder", "o.getId()", "o.getId()", 323,

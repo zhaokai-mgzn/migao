@@ -56,7 +56,11 @@ const FROZEN_TABLES: string[] = [
   'src/app/(dashboard)/inbound-orders/new/page.tsx::表[货号 / 颜色 / 门幅|数量*|单价(元)|缸号|旧系统批次号|卷长(米)|批次号|~]',
   'src/app/(dashboard)/inbound-orders/page.tsx::表[行号|货号|剩余米数|缸号|旧系统批次号|校验结果]',
   'src/app/(dashboard)/inbound-orders/page.tsx::表[货号 / 颜色 / 门幅|数量|单价|金额|批次号|缸号|卷长(米)|旧系统批次号]',
-  'src/app/(dashboard)/production/page.tsx::表[加工单号|订单号|客户|商品与数量|状态|工序进度|计件合计|操作]',
+  // 2026-10-17（issue #7079）：作业看板表头首列改名（加工单号 → **作业单号**）并**新增**「类型」列
+  // （作业单两型用中文业务名可见）⇒ 锚里的表头顺序 / 文本同步。
+  // ⚠️ 这一条**仍是缺陷**（「操作」表头缺 `whitespace-nowrap`，与本单的两型可见面正交）
+  // ⇒ 条目**不删**、`TABLE_BASELINE` **不变**（条数未动，只改了锚里的表头文本；同 #6717 的表头顺序变更形态）。
+  'src/app/(dashboard)/production/page.tsx::表[作业单号|类型|订单号|客户|商品与数量|状态|工序进度|计件合计|操作]',
   'src/app/(dashboard)/production/piecework/page.tsx::表[~|计件数量|金额]',
   'src/app/(dashboard)/production/piecework/page.tsx::表[工人|计件数量|金额]',
   'src/app/(dashboard)/production/piecework/page.tsx::表[工序|计件数量|金额]',
@@ -68,9 +72,10 @@ const FROZEN_TABLES: string[] = [
   'src/components/dashboard/RecentOrders.tsx::表[订单号|客户|金额|状态|时间]',
   // ⚠️ 本条的锚里带 `~`（`{...}` 表达式被归一化成 `~`）：表头里嵌了受控复选框（跨行 JSX）⇒ 锚较长但仍是**稳定文本锚**。
   // 2026-10-11（issue #6717）：**列序变更**（状态/加急前置到「订单ID」右侧）⇒ 锚里的表头顺序同步。
-  // ⚠️ 这一条**仍是缺陷**（本表「采购明细」表头缺 `whitespace-nowrap`，与本单的可达性修复正交）
-  // ⇒ 条目**不删**、`TABLE_BASELINE` **不变**（只改了「表头顺序」这部分的文本，条数未动）。
-  'src/components/orders/OrderTable.tsx::表[~} onChange=~ className="w-4 h-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500" />|订单ID|状态|加急|采购商品|采购明细 (名称:单价×数量+加工费)|累计金额(元)|实收款(元)|收货人信息|下单时间|制单人|到货日|备注|操作]',
+  // 2026-10-17（issue #7138）：销售订单**真修好** ⇒ 条目**删除**、基线下调（22 → 21）。
+  // 该表真正的缺陷面是「采购明细」表头缺 `whitespace-nowrap` + **缺宽度下限**（空数据态被压成
+  // 一字一行竖排，用户截图）；本包给该 th 补 `whitespace-nowrap` + `min-w-[280px]`（与数据格同一
+  // 宽度契约），并顺手给复选列表头补 nowrap ⇒ 本表每个 th 都 nowrap，条目成为死条目。
   // 2026-10-11（issue #6754）：`CutPlanTable`（精裁输出清单）**补 nowrap ⇒ 缺陷已修** ⇒ 条目**删除**、
   // 基线下调（23 → 22）。⚠️ 与上面 #6717 那条相反：那条只是**表头顺序**变了、缺陷仍在（不删）；
   // 本条是**真修好**（每个 th 都补了 `whitespace-nowrap`）⇒ 留着就是死条目，本判据「台账不得腐坏」那一条会具名报红。
@@ -79,10 +84,11 @@ const FROZEN_TABLES: string[] = [
   'src/components/products/BatchStockPanel.tsx::表[档位|批次数|占比]',
   'src/components/products/BatchStockPanel.tsx::表[货号|SKU 库存|批次余量|差额|已售扣减|已派工扣减|其它台账|台账外存量|恒等式]',
   'src/components/products/BatchStocktakeForm.tsx::表[批次号|货号|当前余量|实盘米数|差异]',
-  // 同上（issue #6662）：`库存（米）` → `库存（{STOCK_UNIT}）`，锚同步；条数不变（缺陷仍在）
-  'src/components/products/SkuMatrix.tsx::表[颜色分类|规格尺寸|*价格（元）|*库存（~）]',
+  // 2026-10-24（issue #7597）：SkuMatrix 的**库存列整体退场**（商品档案不再设置库存）⇒
+  // 原条目的锚（`*库存（~）`）已不存在 = 死条目；顺手把剩下 3 个 th 补上 `whitespace-nowrap`
+  // ⇒ 该表不再是缺陷 ⇒ 条目**删除**（基线下调，与上面 #6754 同形态）。
 ]
-const TABLE_BASELINE = 22
+const TABLE_BASELINE = 20
 
 /**
  * 存量台账·规则 ②（手写药丸）：同上，冻结于 2026-10-06（issue #6398），**改前** 6 条 → **5**。
@@ -91,10 +97,9 @@ const FROZEN_PILLS: string[] = [
   'src/app/(corporate)/page.tsx::<div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-1.5 text-xs text-neutral-200 sm:text-sm">',
   'src/app/(corporate)/page.tsx::<span className="inline-flex items-center rounded-full border border-primary-200 bg-primary-50 px-3 py-1 align-middle text-sm font-bold text-primary-700">',
   'src/app/(dashboard)/after-sales/page.tsx::className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-100"',
-  'src/components/chat/QuickActions.tsx::className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-primary-50 border border-neutral-200 hover:border-primary-200 rounded-full text-xs text-neutral-600 hover:text-primary-600 transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"',
   'src/components/orders/EditOrderContentModal.tsx::\'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs cursor-pointer\',',
 ]
-const PILL_BASELINE = 5
+const PILL_BASELINE = 4
 
 const stripTags = (s: string): string =>
   s

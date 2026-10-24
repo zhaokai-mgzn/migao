@@ -164,13 +164,18 @@ def _is_cancel_message(text: str) -> bool:
 
 
 def _extract_content(response: AIMessage) -> str:
-    """从 AIMessage 中提取有效文本内容
+    """从 AIMessage 中提取**用户可见**的文本内容 —— 思考内容一律不上屏。
 
-    兼容 MiniMax 思考模式：
-    1. 优先取 response.content 并移除 <think> 标签
-    2. 若 stripped 结果仍含 <think> 标签（仅 thinking 内容），提取内部文本
-    3. 再 fallback 到 additional_kwargs 中的 reasoning_content
-    4. 仍为空则返回原始 content（保留 think 标签，确保有文字输出）
+    🔴 单一口径（issue #7510，实证会话 sess_5742c5b5c43a48b1）：本函数的结果会直接进入
+    回复气泡并落库（`react_turn` 的 `final_content = new_text`）⇒ **不得**回退到任何形态的
+    思考文本：
+
+    1. 取 `response.content` 并移除 `<think>…</think>` 块；
+    2. content 为空、或**只有**思考（`<think>` 内部文本 / `reasoning_content` 有值而正文为空）
+       ⇒ 返回 `""`，由调用方给固定话术或重答；
+    3. 旧实现的两种回退（`<think>` 内文、`reasoning_content`）已删除 —— 它们正是
+       「商家看到模型自问自答」的成因：模型把输出预算全花在思考上时正文为空，
+       回退把思考原文当答复发出去了。宁可这轮没话说，也不能把思考当回复。
     """
     content = response.content or ""
     if isinstance(content, list):
@@ -184,41 +189,25 @@ def _extract_content(response: AIMessage) -> str:
 
     stripped = _strip_think_tags(content)
 
-    # _strip_think_tags 在 stripping 结果为空时回退到原文本（含标签）。
-    # 二次检测：如果 stripped 仍含标签，说明只有 thinking 内容，需提取其内部文本。
+    # _strip_think_tags 在剥离后为空时会回退到原文（带标签）⇒ 这里必须再判一次：
+    # 仍含 <think> 说明**只有思考**，宁可返回空（调用方的兜底话术接管），也不上屏。
+    if stripped and "<think>" in stripped:
+        logger.warning(
+            "[_extract_content] Only thinking content found, refusing to surface it"
+        )
+        return ""
+
     if stripped:
-        if "<think>" in stripped:
-            # thinking-only 情况：提取标签内的思考文本，不暴露给用户
-            think_match = re.search(r"<think>([\s\S]*?)</think>", stripped, re.DOTALL)
-            if think_match:
-                fallback = think_match.group(1).strip()
-                if fallback:
-                    logger.warning(
-                        "[_extract_content] Only thinking content found, using thinking text as fallback"
-                    )
-                    return fallback
-            # 提取失败，至少返回带标签的原文总比空好
-            return stripped
         return stripped
 
-    # Fallback: 某些模型将回复放在 additional_kwargs 或 response_metadata
+    # 只有 reasoning_content、没有正文 ⇒ 同样不上屏（旧实现从这里把思考原文发出去）
     extra = getattr(response, "additional_kwargs", {}) or {}
     resp_meta = getattr(response, "response_metadata", {}) or {}
-    reasoning = extra.get("reasoning_content") or resp_meta.get("reasoning_content")
-    if reasoning:
+    if extra.get("reasoning_content") or resp_meta.get("reasoning_content"):
         logger.warning(
-            "[_extract_content] No main content, falling back to reasoning_content"
+            "[_extract_content] Empty content with reasoning_content present, refusing to surface reasoning"
         )
-        return reasoning
-
-    # 终极兜底：返回原始 content（保留 think 标签也不如让用户看到思考过程）
-    if content:
-        logger.info(
-            f"[_extract_content] Returning original content (preserve thinking tags)"
-        )
-        return content
-
-    return content
+    return ""
 
 
 # 需要深度思考的意图（仅保留真正需要多步推理的场景）
@@ -511,6 +500,29 @@ def _capability_index(skill_name: str) -> str:
     return _CAPABILITY_INDEX_HEADER + "\n" + "\n".join(lines)
 
 
+#: 能力边界段首标记（issue #7291）。与 `_CAPABILITY_INDEX_MARKER` 同族但**不同物**：
+#: 索引回答「哪个域有哪些写工具」，边界回答「能办什么 / 不能办什么 / 不能办去哪」。
+_CAPABILITY_BOUNDARY_MARKER = "【能力边界】"
+
+
+def _capability_boundary(skill_name: str) -> str:
+    """B 端能力边界段（**只给 mibao**，C 端逐字节不受影响）。
+
+    为什么由代码投影而不是写在 prompt 文件里：边界声明原先手抄在 10 个文件里，
+    其中 9 处与工具真值相反（#7291 现取证据）。投影的单一事实源 = 注册表 × mibao 绑定面，
+    工具一变文案自动跟随；真值变化由 `tests/test_capability_boundary.py` 的快照判据变红提醒。
+    """
+    cfg = _skill_config(skill_name)
+    if cfg is None or "mibao" not in set(cfg.system_prompts or {}):
+        return ""
+    from app.agents.capability_boundary import MARKER, render_capability_boundary
+
+    text = render_capability_boundary()
+    # 两处常量漂移会让「段在不在」被判错（测试也抓不到的那类静默失效）⇒ 就地自证。
+    assert text.startswith(MARKER) and MARKER == _CAPABILITY_BOUNDARY_MARKER
+    return text
+
+
 def create_skill_registry(tool_names: List[str]) -> ToolRegistry:
     """创建仅包含指定 Tool 的 Registry 子集
 
@@ -778,6 +790,12 @@ def _build_system_prompt(skill_name: str, inline_prompt: str = "") -> str:
     capability_index = _capability_index(skill_name)
     if capability_index:
         parts.append(capability_index)
+
+    # Layer 2.7: 能力边界（issue #7291）—— 与 2.6 同族：2.6 是「哪个域有哪些写工具」的地图，
+    # 2.7 是「能办什么 / 不能办什么 / 不能办去哪」的口径。**只给 mibao**（见 _capability_boundary）。
+    capability_boundary = _capability_boundary(skill_name)
+    if capability_boundary:
+        parts.append(capability_boundary)
 
     # Layer 3: 领域 Prompt
     domain = _read_cached(_os.path.join(_ref_dir, "prompts", f"{skill_name}.md"))
@@ -3268,7 +3286,6 @@ async def _inject_write_input_recovery(system_prompt: str, state: dict,
 # **不编名字**，原样回显码本身（详见 `_inject_permission_scope`）。
 PERMISSION_LABELS = {
     "dashboard:view": "仪表板查看",
-    "product:manage": "商品管理",
     "product:list": "商品管理",
     "product:create": "新增商品",
     "product:category": "商品分类",
@@ -3451,17 +3468,17 @@ def _sanitize_tool_args(tool, tool_args: dict) -> dict:
 # 修复：写工具丢弃**图片类**未知参数时不再静默 —— 直接失败 + 指引（不执行），误宣链源头切断。
 # ⚠️ #5318 改判：指引**不再点名 product_manage**（它自 #5247 起已从 B 端全部 skill 解绑
 # ⇒ 点名就是把模型推向必然 tool_not_found 的调用）；改为「如实说明图片写入不在能力内 +
-# 引导商家到后台「商品管理」页面(/products)」。
+# 引导商家到后台「商品管理」页面」。
 # ⚠️ 只对图片类参数生效：非图片类未知参数维持 issue #3361 的静默净化（存量用例依赖，
 # 见 test_graph_skills.py 的 test_unexpected_kwarg_dropped）；只读工具永远静默
 # （查询类模型爱带多余参数，不能因此失败）。
 _IMAGE_DROP_GUIDANCE = {
     "images": "商品主图写入不在黄金策能力内（改图不代做）——请如实说明，并引导商家到"
-              "后台「商品管理」页面(/products)操作",
+              "后台「商品管理」页面操作",
     "detail_images": "商品详情图写入不在黄金策能力内（改图不代做）——请如实说明，并引导商家到"
-                     "后台「商品管理」页面(/products)操作",
+                     "后台「商品管理」页面操作",
     "main_image": "商品主图写入不在黄金策能力内（改图不代做）——请如实说明，并引导商家到"
-                  "后台「商品管理」页面(/products)操作",
+                  "后台「商品管理」页面操作",
 }
 
 

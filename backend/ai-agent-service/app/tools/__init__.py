@@ -34,6 +34,10 @@ from app.tools.registry import (
 # **不进**本清单；加工单三工具按 issue #4196 恢复注册 ⇒ 一并回到本清单。
 from app.tools.product_search import ProductSearchTool
 from app.tools.product_detail import ProductDetailTool
+# 营销海报（issue #7351）：只读工具；注册集双向核对 = tests/test_tools_registry.py
+from app.tools.marketing_poster import MarketingPosterTool
+# 商品图生成（issue #7541）：只读工具；注册集双向核对 = tests/test_tools_registry.py
+from app.tools.product_image_generate import ProductImageGenerateTool
 from app.tools.logistics_track import LogisticsTrackTool
 from app.tools.customer_logistics_track import CustomerLogisticsTrackTool
 from app.tools.knowledge_search import KnowledgeSearchTool
@@ -81,6 +85,7 @@ from app.tools.inbound_order_query import InboundOrderQueryTool
 from app.tools.operation_catalog_query import OperationCatalogQueryTool
 from app.tools.briefing_query import BriefingQueryTool
 from app.tools.craft_calc_config_query import CraftCalcConfigQueryTool
+from app.tools.craft_calc_config_update import CraftCalcConfigUpdateTool
 from app.tools.craft_config_query import CraftConfigQueryTool
 from app.tools.processing_order_set_query import ProcessingOrderSetQueryTool
 # Agent 深通道（issue #5368 包 2）：图 → 同页填充计划（纯本地只读；绑 B 端 product / order）
@@ -95,7 +100,8 @@ __all__ = [
     "ToolRegistry", "get_tool_registry", "reset_tool_registry",
     "create_default_registry", "set_tool_context", "get_tool_context",
     # Tool 实现（= create_default_registry() 注册的全部类）
-    "ProductSearchTool", "ProductDetailTool", "LogisticsTrackTool",
+    "ProductSearchTool", "ProductDetailTool", "MarketingPosterTool",
+    "ProductImageGenerateTool", "LogisticsTrackTool",
     "CustomerLogisticsTrackTool", "KnowledgeSearchTool", "OrderQueryTool",
     "CustomerOrderQueryTool", "CustomerAddressQueryTool", "OrderManageTool",
     "OrderCreateTool", "ProductManageTool", "InventoryManageTool",
@@ -107,7 +113,7 @@ __all__ = [
     "NotificationManageTool", "SettingsManageTool",
     "SessionManageTool", "CategoryManageTool", "ProcessingItemManageTool",
     "ProductUpdateTool", "SkuUpdateTool",
-    # 批量更新（issue #5314 的 Agent 侧）：批量改价 / 批量上下架 + 撤销；
+    # 批量更新（issue #5314 的 Agent 侧）：批量改价 / 批量库存调整 + 撤销；
     # 与逐条写同码（product:create），登记形态与其余写工具一致（注册集双向核对 =
     # tests/test_tools_registry.py::TestToolsFacadeCompleteness）
     "ProductBatchUpdateTool",
@@ -120,7 +126,8 @@ __all__ = [
     # B 端只读模块覆盖（issue #5247）：6 个新只读工具类（必须与 registry 注册集逐一对应 ——
     # tests/test_tools_registry.py::TestToolsFacadeCompleteness 会双向核对）
     "StockLedgerQueryTool", "InboundOrderQueryTool", "OperationCatalogQueryTool",
-    "BriefingQueryTool", "CraftCalcConfigQueryTool", "ProcessingOrderSetQueryTool",
+    "BriefingQueryTool", "CraftCalcConfigQueryTool", "CraftCalcConfigUpdateTool",
+    "ProcessingOrderSetQueryTool",
     # 工艺配置读面聚合（issue #4923）：6 个零覆盖读端点（注册集双向核对同上）
     "CraftConfigQueryTool",
     # Agent 深通道（issue #5368 包 2）：同页填充计划的构造者（注册集双向核对同上）

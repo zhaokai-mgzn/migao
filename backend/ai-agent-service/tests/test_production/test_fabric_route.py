@@ -1,4 +1,4 @@
-# case_ids: PG-018, PG-035, PG-039
+# case_ids: PG-018, PG-035, PG-039, PG-091
 # （issue #4937 把矩阵终态从「30 × 4 = 120 行」换成「**一道逻辑工序一行**（30 行，部位写 `通用`）」；
 #   本文件既有用例的**行为契约**（布料单两道 / 打包套级 / 未定价可判）**未变** ⇒ 不新增用例 ID。）
 """布料基础路线 + 「打包」工序（issue #4529，包 F）—— 真值源判据（**去部位化后**）。
@@ -67,6 +67,9 @@ CRAFTS = ("韩褶", "打孔", "四爪钩", "穿杆", "平幔")
 
 #: 本包新增的两道工序。
 NEW_OPERATIONS = ("配料", "打包")
+#: 整卷布料单的「出库」工序（issue #7523）：未定价（价目行 None）+ 在矩阵里占一行。
+ROLL_OUTBOUND_OPERATION = "出库"
+UNPRICED_OPERATIONS = NEW_OPERATIONS + (ROLL_OUTBOUND_OPERATION,)
 
 #: O4 之后矩阵的终态形态（`V104__deposition_matrix_collapse.sql`）。
 NEUTRAL_POSITION = "通用"
@@ -215,6 +218,31 @@ def test_packing_is_priced_null_and_carries_its_own_row():
 # 判据 4：价目矩阵 = **一道逻辑工序一行**（30 行），逐行显式
 # ══════════════════════════════════════════════════════════════════════════════════
 
+class TestSellingFormRoute:
+    """整卷/散剪分叉（issue #7523，用户裁定 2026-10-23）：整卷 = 出库 → 打包；散剪 = 裁剪 → 打包。
+
+    红证：删掉 `ROUTE_RULES` 的两条 sales_form 规则，或把 `build_route_v2` 的
+    `is_fabric != (trigger_kind == "sales_form")` 改回 `if is_fabric: continue` ⇒ 整卷单退回
+    `[裁剪, 打包]` ⇒ 本类红。
+    """
+
+    def test_full_roll_replaces_cutting_with_outbound(self):
+        assert build_route_v2({"curtain_type": FABRIC_POSITION,
+                               "selling_method": "full_roll"}) == ["出库", "打包"]
+
+    def test_bulk_cut_keeps_cutting(self):
+        assert build_route_v2({"curtain_type": FABRIC_POSITION,
+                               "selling_method": "bulk_cut"}) == ["裁剪", "打包"]
+        # 缺 sellingMethod（存量单）⇒ 行为不变（不猜）
+        assert build_route_v2({"curtain_type": FABRIC_POSITION}) == ["裁剪", "打包"]
+
+    def test_sales_form_rules_never_leak_into_curtains(self):
+        # 窗帘单即便带了 selling_method=full_roll，也不得出「出库」（售卖方式只属于卖布行）
+        for craft in CRAFTS:
+            assert "出库" not in build_route_v2({"curtain_type": "布帘", "craft": craft,
+                                                 "selling_method": "full_roll"}), craft
+
+
 def test_position_matrix_is_thirty_rows_by_logical_operation():
     """**30 行**逐行显式（不留隐式缺省）—— 缺一行 ⇒ `build_route_v2` KeyError ⇒ 建单 500。
 
@@ -222,9 +250,9 @@ def test_position_matrix_is_thirty_rows_by_logical_operation():
     「一道逻辑工序一行」（`V104`），与 `backend/admin-api/src/main/resources/db/init/schema.sql` 的终态一致。
     """
     cells = _cells()
-    assert len(OPERATION_POSITION_PRICES) == 30, (
-        f"逻辑工序数应为 30（28 既有 + 配料 + 打包），实测 {len(OPERATION_POSITION_PRICES)}")
-    assert len(cells) == 30, f"价目矩阵应为 30 行（一道逻辑工序一行），实测 {len(cells)}"
+    assert len(OPERATION_POSITION_PRICES) == 31, (
+        f"逻辑工序数应为 31（28 既有 + 配料 + 打包 + 出库），实测 {len(OPERATION_POSITION_PRICES)}")
+    assert len(cells) == 31, f"价目矩阵应为 31 行（一道逻辑工序一行），实测 {len(cells)}"
     for logical, cell in OPERATION_POSITION_PRICES.items():
         assert set(cell) == {"unit_price", "applicable"}, (
             f"{logical} 的格子形状漂移：{sorted(cell)}")
@@ -250,11 +278,11 @@ def test_fabric_only_operations_are_registered():
 def test_unpriced_is_distinguishable_from_a_zero_price():
     """`unit_price = NULL`（未定价）与 `0.0`（有价 0 元）**可区分**，且集合逐条冻结。"""
     cells = _cells()
-    assert unpriced(cells) == set(NEW_OPERATIONS), (
-        f"「未定价」的工序集合漂移：{sorted(unpriced(cells))}（期望 {sorted(NEW_OPERATIONS)}）")
+    assert unpriced(cells) == set(UNPRICED_OPERATIONS), (
+        f"「未定价」的工序集合漂移：{sorted(unpriced(cells))}（期望 {sorted(UNPRICED_OPERATIONS)}）")
     # 反向：其余 28 道都必须**有价**（不是 None、也不是被悄悄回落成 0）
     priced = {logical for logical, cell in cells.items() if cell["unit_price"] is not None}
-    assert priced == set(cells) - set(NEW_OPERATIONS), (
+    assert priced == set(cells) - set(UNPRICED_OPERATIONS), (
         f"有价工序集合漂移：{sorted(set(cells) - set(NEW_OPERATIONS) - priced)} 缺价")
 
 
@@ -313,18 +341,18 @@ def test_schema_sql_terminal_state_is_the_collapsed_matrix():
     """
     schema = SCHEMA.read_text(encoding="utf-8")
     rows = _literal_position_rows(schema)
-    assert len(rows) == 120, (
+    assert len(rows) == 124, (
         f"schema.sql 的价目字面量应为 120 行，实测 {len(rows)} —— 只写迁移 = 新建库缺行 "
         f"⇒ `build_route_v2` KeyError（同 #3270 形态）")
     alive = [(lg, pos) for _, lg, pos, _, _, _ in rows if _deleted_flag(schema, lg, pos) == 0]
     # `_literal_position_rows` 不取 `deleted` 列 ⇒ 从原始文本按 id 逐行读（见下）
     alive = _schema_alive_rows(schema)
-    assert len(alive) == 30, (
+    assert len(alive) == 31, (
         f"schema.sql 的**存活**价目行 = {len(alive)}，期望 30（一道逻辑工序一行，O4 塌缩）")
     assert {pos for _, pos, _, _ in alive} == {NEUTRAL_POSITION}, (
         f"存活行的 position 不是全 `{NEUTRAL_POSITION}`："
         f"{sorted({pos for _, pos, _, _ in alive})}（O4 的中性值）")
-    assert len({lg for lg, _, _, _ in alive}) == 30, "同一逻辑工序有多个存活行 ⇒ 未塌缩"
+    assert len({lg for lg, _, _, _ in alive}) == 31, "同一逻辑工序有多个存活行 ⇒ 未塌缩"
     assert {lg for lg, _, _, _ in alive} == set(OPERATION_POSITION_PRICES), (
         "schema.sql 的存活逻辑工序集合 ≠ `routing.py` 的价目键集 ⇒ 两套口径分裂")
 
@@ -336,7 +364,7 @@ def _schema_alive_rows(schema: str) -> list:
     """
     out = []
     for m in re.finditer(
-            r"\(\s*'opp-v(?:70|79)-\d+'\s*,\s*1\s*,\s*'(?P<lg>[^']*)'\s*,\s*'(?P<pos>[^']*)'\s*,"
+            r"\(\s*'opp-v(?:70|79|186)-\d+'\s*,\s*1\s*,\s*'(?P<lg>[^']*)'\s*,\s*'(?P<pos>[^']*)'\s*,"
             r"\s*(?P<price>NULL|[\d.]+)\s*,\s*(?P<ap>TRUE|FALSE)\s*,\s*'active'\s*,\s*"
             r"(?P<del>[01])\s*\)", schema):
         if m.group("del") == "0":
@@ -346,7 +374,7 @@ def _schema_alive_rows(schema: str) -> list:
 
 def _deleted_flag(schema: str, logical: str, position: str) -> int:
     """兼容入口（旧调用点）：按 `(logical, position)` 找该行的 `deleted`（找不到 ⇒ 0）。"""
-    m = re.search(r"\(\s*'opp-v(?:70|79)-\d+'\s*,\s*1\s*,\s*'" + re.escape(logical) + r"'\s*,\s*'"
+    m = re.search(r"\(\s*'opp-v(?:70|79|186)-\d+'\s*,\s*1\s*,\s*'" + re.escape(logical) + r"'\s*,\s*'"
                   + re.escape(position) + r"'\s*,[\s\S]{0,40}?'active'\s*,\s*([01])\s*\)", schema)
     return int(m.group(1)) if m else 0
 
@@ -432,7 +460,7 @@ class TestInjectedDrift:
         """把一行已软删的格改成存活 ⇒ 存活行数判据红（判据 6 会红）。"""
         schema = SCHEMA.read_text(encoding="utf-8")
         before = len(_schema_alive_rows(schema))
-        assert before == 30
+        assert before == 31
         injected = schema.replace("  ('opp-v70-02', 1, '精裁', '纱帘', 0.4, TRUE, 'active', 1),",
                                   "  ('opp-v70-02', 1, '精裁', '纱帘', 0.4, TRUE, 'active', 0),", 1)
         assert injected != schema, "注入没生效 ⇒ 本红证是空断言"

@@ -106,6 +106,8 @@ describe('订单列表 · 制单人列与过滤（issue #5835）', () => {
   it('③ 输入制单人 + 查询 ⇒ 请求带 `creator`（独立参数，不并入 keyword）', async () => {
     render(<OrdersPage />)
     await waitFor(() => expect(mockGetOrders).toHaveBeenCalled())
+    // issue #7388：筛选区默认收起 ⇒ 先展开（否则取不到制单人输入框）。
+    fireEvent.click(screen.getByTestId('search-panel-toggle'))
     const before = mockGetOrders.mock.calls.length
 
     const input = screen.getByPlaceholderText('请输入制单人姓名')
@@ -123,6 +125,8 @@ describe('订单列表 · 制单人列与过滤（issue #5835）', () => {
   it('④ 重置 ⇒ 输入框清空、搜索态清空（请求不再带 `creator`）', async () => {
     render(<OrdersPage />)
     await waitFor(() => expect(mockGetOrders).toHaveBeenCalled())
+    // issue #7388：筛选区默认收起 ⇒ 先展开。
+    fireEvent.click(screen.getByTestId('search-panel-toggle'))
 
     const input = screen.getByPlaceholderText('请输入制单人姓名') as HTMLInputElement
     fireEvent.change(input, { target: { value: '蒋' } })

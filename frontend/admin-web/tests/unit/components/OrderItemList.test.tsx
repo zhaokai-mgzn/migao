@@ -780,3 +780,50 @@ describe('门幅不重复（issue #6893）', () => {
   })
 })
 
+/**
+ * issue #7320：**布料单不涉及加工费** —— 布料行不得印「未定价 / 缺选配信息」，
+ * 也不得在「工艺规格」组里印出「加工费米数」（布料没有工艺规格，那格是加工费口径的字段）。
+ *
+ * 反向护栏：成品帘行缺加工项 ⇒ **仍**显式「未定价」（既有真值，本单不砍）。
+ */
+describe('布料行不涉及加工费（issue #7320）', () => {
+  const fabricInfo = {
+    saleForm: '布料',
+    processingMeters: 10,
+    processingFeeDetail: {
+      composition: '',
+      items: [],
+      fee_source: 'unpriced',
+      amount: 0,
+      hint: '本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费',
+    },
+  }
+
+  it('布料行 ⇒ 不出现「未定价」与 hint，也不出现「加工费米数」那一格', () => {
+    render(<OrderItemList items={[makeItem({ processingFee: 0, processingInfo: fabricInfo })]} />)
+
+    expect(screen.queryByText(/未定价/)).toBeNull()
+    expect(screen.queryByText(/本行没有选配任何加工项/)).toBeNull()
+    expect(screen.queryByText(/加工费米数/)).toBeNull()
+    expect(screen.queryByText('工艺规格')).toBeNull()
+    // 合计区也不得挂那条假警报
+    expect(screen.queryByText(/有 1 行加工费未定价/)).toBeNull()
+  })
+
+  it('反向护栏：成品帘行缺加工项 ⇒ 仍显式「未定价」+ hint', () => {
+    render(
+      <OrderItemList
+        items={[
+          makeItem({
+            processingFee: 0,
+            processingInfo: { ...fabricInfo, saleForm: '成品帘' },
+          }),
+        ]}
+      />
+    )
+
+    expect(screen.getByText('未定价')).toBeInTheDocument()
+    expect(screen.getByText(/本行没有选配任何加工项/)).toBeInTheDocument()
+  })
+})
+

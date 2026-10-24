@@ -13,7 +13,6 @@ const MOCK_ROLES = [
 // #3002: 与后端权限目录一致的真实 catalog（resourceType = 旧分组码，页面已不再按它分组）
 const MOCK_PERMISSIONS = [
   { id: 'p-dashboard', name: '仪表板查看', code: 'dashboard:view', resource: 'dashboard', action: 'view', description: '查看数据概览' },
-  { id: 'p-product-manage', name: '商品管理', code: 'product:manage', resource: 'product', action: 'manage', description: '管理商品(旧大类码，兼容)' },
   { id: 'p-product-list', name: '商品列表', code: 'product:list', resource: 'product', action: 'list', description: '查看商品列表' },
   { id: 'p-product-create', name: '新增商品', code: 'product:create', resource: 'product', action: 'create', description: '新增/编辑/上下架商品' },
   { id: 'p-product-category', name: '商品分类', code: 'product:category', resource: 'product', action: 'category', description: '管理商品分类' },
@@ -106,14 +105,19 @@ test.describe('岗位权限管理页面（#2969 由角色权限改名）', () =>
     await expect(page.roleModal.getByText('权限分配', { exact: true })).toBeVisible()
     const tree = await page.permissionTree.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => null)
     expect(tree).not.toBeNull()
-    // 菜单组名 = 侧边栏菜单组（#5778 现 IA：工作台 / 客户服务 / 交易管理 / 生产管理 / 仓储与物料 / 组织管理）
-    // 🔴 #5895：**一级项「商品管理」**（`standaloneTopItems`）渲染在**所有分组之前**、不在任何分组里 ——
-    // 它此前整项缺席权限树（本 spec 的旧断言停在 #5271 的组名「智能客服 / 商品与加工项」上，
-    // 而 admin e2e 不在 pr-check 的跑测面 ⇒ 档期漂移没人发现；此处一并改判 + 补一级项判据）
+    // 菜单组名 = 侧边栏菜单组（🔴 2026-10-17 issue #7087 现 IA = **5 组**：客户服务 / 交易管理 /
+    // 生产管理 / 仓储与物料 / 组织管理 —— 原第 1 组「工作台」**已整组撤销** ⇒ 下面把它钉成**不得出现**）
+    // 🔴 #5895 / #7087：侧边栏是**四个梯队** —— 最前席位（`standaloneHeadItems`：「经营看板」）→
+    // 尾席位一级项（`standaloneTopItems`：「商品管理」「企业基础设置」）→ 分组 → 尾部项（通知中心）。
+    // 「经营看板」是一级项、**不属于任何组** ⇒ 它渲染在专属容器 `perm-standalone-head` 里
+    //（#5895 的缺陷形态 = 一级项整项缺席权限树；#7087 又把它从组内项升成一级项 ⇒ 容器随之改变）。
+    const headTier = page.permissionTree.getByTestId('perm-standalone-head')
+    await expect(headTier.getByText('经营看板', { exact: true })).toBeVisible()
+    await expect(headTier.getByText('dashboard:view', { exact: true })).toBeVisible()
     const topTier = page.permissionTree.getByTestId('perm-standalone-top')
     await expect(topTier.getByText('商品管理', { exact: true })).toBeVisible()
     await expect(topTier.getByText('product:list', { exact: true })).toBeVisible()
-    await expect(page.permissionTree.getByText('工作台', { exact: true })).toBeVisible()
+    await expect(page.permissionTree.getByText('工作台', { exact: true })).toHaveCount(0)
     await expect(page.permissionTree.getByText('客户服务', { exact: true })).toBeVisible()
     await expect(page.permissionTree.getByText('商品与加工项', { exact: true })).toHaveCount(0)
     // issue #5271：原「订单管理」+「客户管理」两组**并为一组**「交易管理」（客户列表 / 财务对账并入）
@@ -124,11 +128,12 @@ test.describe('岗位权限管理页面（#2969 由角色权限改名）', () =>
     await expect(page.permissionTree.getByText('在线接待', { exact: true })).toBeVisible()
     // #3094: 黄金策 · 在线对话 菜单入口已移除（智能体对话经右下角 FAB 进入）
     await expect(page.permissionTree.getByText('黄金策 · 在线对话', { exact: true })).toHaveCount(0)
-    // #3081: AI 客服配置菜单已移除（合并进企业基础信息）
+    // #3081: AI 客服配置菜单已移除（合并进后续改名为「企业基础设置」的那一页）
     await expect(page.permissionTree.getByText('AI 客服配置', { exact: true })).toHaveCount(0)
     await expect(page.permissionTree.getByText('售后工单', { exact: true })).toBeVisible()
     await expect(page.permissionTree.getByText('岗位权限', { exact: true })).toBeVisible()
-    await expect(page.permissionTree.getByText('企业基础信息', { exact: true })).toBeVisible()
+    // 🔴 2026-10-09（issue #6580）改名：「企业基础信息」→「**企业基础设置**」（且升为尾席位一级项）。
+    await expect(page.permissionTree.getByText('企业基础设置', { exact: true })).toBeVisible()
     // 旧权限名（会话监控/快捷回复等）不再出现
     await expect(page.permissionTree.getByText('会话监控', { exact: true })).toHaveCount(0)
     await expect(page.permissionTree.getByText('快捷回复', { exact: true })).toHaveCount(0)

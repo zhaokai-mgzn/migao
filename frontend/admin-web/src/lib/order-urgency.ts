@@ -3,7 +3,7 @@
  *
  * ## 为什么要有这个文件（不是为一个三元表达式开新文件）
  *
- * 「加急」这个事实在界面上有**三处**消费点：订单列表角标
+ * 「加急」这个事实在界面上有**三处**消费点：销售订单角标
  * （`frontend/admin-web/src/components/orders/OrderTable.tsx`）、订单详情徽标
  * （`frontend/admin-web/src/components/orders/OrderUrgencyPanel.tsx`）、智能派单插队区行
  * （`frontend/admin-web/src/app/(dashboard)/production/pool/page.tsx`）。

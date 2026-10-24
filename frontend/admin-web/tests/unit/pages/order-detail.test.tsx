@@ -1,14 +1,28 @@
-// case_ids: OR-001, OR-002, OR-003, OR-046, OR-055, UI-024, UI-040, UI-053, UI-076, UI-090
+// case_ids: OR-001, OR-002, OR-003, OR-046, OR-055, OR-067, OR-068, UI-024, UI-040, UI-053, UI-076, UI-090
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, cleanup, screen, waitFor } from '@testing-library/react'
+
+// issue #7276：订单详情页的**页面码 = order:detail**（判据见 tests/unit/pages/order-detail-permission-gate.test.tsx）
+// ⇒ 本文件渲染的是「有权限的商家」形态，必须给登录态一份 `*` 权限；否则页面走拒绝态，
+// 本文件的全部断言会凭空变红（那不是被测行为）。
+const authMock = vi.hoisted(() => ({
+  state: {
+    user: { id: '1', username: 'tester', name: '测试账号', permissions: ['*'] as string[], roles: [] as string[] },
+  },
+}))
+vi.mock('@/store/auth', () => ({
+  useAuthStore: (selector?: (s: unknown) => unknown) =>
+    typeof selector === 'function' ? selector(authMock.state) : authMock.state,
+}))
 import userEvent from '@testing-library/user-event'
+import dayjs from 'dayjs'
 import { markErrorToastShown } from '@/lib/api-error'
 
 // Mock API
 const mockGetOrder = vi.fn()
 // 发货读面（issue #5651 收口）：销售单数量列消费的**实发**来源 —— 详情页加载订单时一并取
 const mockGetOrderShipments = vi.fn()
-// 工序读面（issue #6901）：加工单纸面与加工单块的工序清单来源（既有读面，按订单 id 取）
+// 工序读面（issue #6901）：**屏幕**加工单块的工序清单来源（既有读面，按订单 id 取）；纸面自 #7274 起不印工序
 const mockGetOrderOperations = vi.fn()
 const mockConfirmPayment = vi.fn()
 const mockRefundOrder = vi.fn()
@@ -89,18 +103,13 @@ vi.mock('@/components/orders', async (importOriginal) => {
   // 修改订单（issue #5842）：本文件只验**入口**（哪个状态显示按钮、点开是否挂载弹窗）；
   // 弹窗自身的判据（改明细 / 加工项 / 金额服务端重算）在
   // tests/unit/components/EditOrderContentModal.test.tsx。
-  // 打印前的纸面自检层（issue #5914）：本文件只验「入口 → 预览 → 打印」这条接线，
-  // 纸面自检与截图的判据在 tests/unit/components/PrintDocPreview.test.tsx 与
-  // e2e/specs/orders/print-preview.spec.ts ⇒ 这里替身成「可点的壳」。
-  PrintDocPreview: ({ target, onPrint, children }: any) =>
-    target ? (
-      <div data-testid="print-preview">
-        <button data-testid="print-preview-print" onClick={onPrint}>
-          打印
-        </button>
-        {children}
-      </div>
-    ) : null,
+  // 打印层（issue #5914 / #7544）：**走真货**，不替身 —— 本文件要验的正是
+  // 「页面唯一入口 → 预览层的单据标签（`docs` / `onSelect` 接线）→ 打印」这条链，
+  // 替身成壳会让「选单据」变成空断言（几何自检那半边由 PrintDocPreview.test.tsx 负责）。
+  // ⚠️ 仍然显式写出这一条（值 = 真组件直通）：`test_orders_barrel_mock_guard.py` 的 C2 要求
+  // 「页面 import 的桶组件在 mock 里都有键」（它不解析 `...actual` 的展开）—— 写在这里既满足
+  // 该守卫，又保住「不替身」这一点。
+  PrintDocPreview: actual.PrintDocPreview,
   EditOrderContentModal: ({ open }: any) =>
     open ? <div data-testid="edit-order-content-modal">EditOrderContentModal</div> : null,
   // 加工单缺码提示 + 一键补码（issue #6867 / B5）：本文件不验它的行为（缺码提示的判据在
@@ -165,8 +174,8 @@ describe('OrderDetailPage', () => {
     mockGetOrderShipments.mockResolvedValue({
       data: { data: { order_id: 'test-order-123', status: 'producing', shipments: [] } },
     })
-    // 工序读面（issue #6901）：默认给「无工序实例」—— 工序块的纸面/屏幕判据在
-    // ProcessingDoc.test.tsx / ProcessingOrderBlock.test.tsx（此处只要形状对得上，不让它抛）
+    // 工序读面（issue #6901 / #7274）：默认给「无工序实例」—— 工序清单的**屏幕**判据在
+    // ProcessingOrderBlock.test.tsx（纸面自 #7274 起不印工序；此处只要形状对得上，不让它抛）
     mockGetOrderOperations.mockResolvedValue({ data: { data: { positions: [] } } })
   })
 
@@ -187,7 +196,7 @@ describe('OrderDetailPage', () => {
     render(<OrderDetailPage />)
     await waitFor(() => {
       expect(screen.getByText('首页')).toBeInTheDocument()
-      expect(screen.getByText('订单列表')).toBeInTheDocument()
+      expect(screen.getByText('销售订单')).toBeInTheDocument()
     })
   })
 
@@ -212,6 +221,31 @@ describe('OrderDetailPage', () => {
     await waitFor(() => {
       expect(screen.getByText('商品信息')).toBeInTheDocument()
     })
+  })
+
+  // ===== 商品信息表：整表统一居中（issue #7590）=====
+  // 改前实测（2026-10-24 用户截图）：商品/商品货号/颜色/规格尺寸 左对齐、数量 居中、
+  // 单价/金额/商品合计 右对齐 ⇒ **同一张表三种对齐并存**，列与列之间没有稳定参照边。
+  // 用户裁定「要不都设计成居中」⇒ 判据 = 表内**每一个** th / td 都带 `text-center`，
+  // 且**不带** `text-left` / `text-right`（后者会按 CSS 顺序覆盖居中 ⇒「看着居中、其实逐格漂移」）。
+  it('商品信息表：每个表头与数据格都居中（issue #7590）', async () => {
+    render(<OrderDetailPage />)
+    const header = await screen.findByRole('columnheader', { name: '商品合计' })
+    const table = header.closest('table')!
+    // 存在性断言要**触业务对象**（弱断言 `not.toBeNull` 会被 QA Growth Gate 判红）：
+    // 找不到表时 `tagName` 为 undefined ⇒ 这里同样红，且给出的是「扫的是不是 table」这个事实
+    expect(table.tagName, '找不到「商品信息」表 ⇒ 判据在扫空气').toBe('TABLE')
+    const cells = Array.from(table.querySelectorAll('th, td'))
+    expect(cells.length, '表内单元格不足 8 个 ⇒ 判据在扫空气').toBeGreaterThanOrEqual(8)
+    const label = (c: Element) => `${c.tagName}「${(c.textContent || '').trim().slice(0, 10)}」`
+    expect(
+      cells.filter((c) => !c.className.split(/\s+/).includes('text-center')).map(label),
+      '这些单元格没有居中（整表统一居中，见 issue #7590）'
+    ).toEqual([])
+    expect(
+      cells.filter((c) => /\btext-(left|right)\b/.test(c.className)).map(label),
+      '这些单元格同时带了 text-left / text-right ⇒ 会覆盖居中'
+    ).toEqual([])
   })
 
   it('should show empty state when order not found', async () => {
@@ -291,7 +325,7 @@ describe('OrderDetailPage', () => {
     expect(screen.queryByText('已退款 ¥0.00')).not.toBeInTheDocument()
   })
 
-  it('renders "-" for missing paidAt/shippedAt/receivedAt (defensive, no crash)', async () => {
+  it('renders "-" for missing paidAt/shippedAt/receivedAt（存量未采集 ⇒ 占位，不崩不猜）', async () => {
     const noTimes = { ...mockOrder, paidAt: undefined, shippedAt: undefined, receivedAt: undefined }
     mockGetOrder.mockResolvedValue({ data: { data: noTimes } })
     render(<OrderDetailPage />)
@@ -304,6 +338,43 @@ describe('OrderDetailPage', () => {
       expect(row).toBeTruthy()
       expect(row!.textContent).toContain('-')
     }
+  })
+
+  // issue #7078：三个时刻改由**服务端真值**下发（orders.paid_at / shipped_at / received_at）。
+  // 这条判据钉住的正是用户真机上那处自相矛盾：状态引导第 1 步「已付款 ✓」+ 基础信息「支付时间 -」
+  // （根因 = 屏幕面读后端从不下发的键 ⇒ 恒 "-"，#6882 同类）。
+  it('基础信息渲染服务端下发的 支付时间 / 发货时间 / 确认收货时间（不再是恒 -）', async () => {
+    const times = {
+      paidAt: '2026-06-20T10:30:00Z',
+      shippedAt: '2026-06-21T02:00:00Z',
+      receivedAt: '2026-06-23T06:00:00Z',
+    }
+    mockGetOrder.mockResolvedValue({ data: { data: { ...mockOrder, status: 'completed', ...times } } })
+    render(<OrderDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByText('基础信息')).toBeInTheDocument()
+    })
+    const rows: Array<[string, string]> = [
+      ['支付时间：', times.paidAt],
+      ['发货时间：', times.shippedAt],
+      ['确认收货时间：', times.receivedAt],
+    ]
+    for (const [label, iso] of rows) {
+      const cell = screen.getByText(label).parentElement!
+      // 期望值与 DateTimeCell 同一份格式化口径（本地时区 YYYY-MM-DD / HH:mm）⇒ 不写死字符串，
+      // 跨时区跑不会假红
+      expect(cell.textContent).toContain(dayjs(iso).format('YYYY-MM-DD'))
+      expect(cell.textContent).toContain(dayjs(iso).format('HH:mm'))
+    }
+  })
+
+  it('不再渲染「支付交易号」行（后端无真值源 ⇒ 撤下，issue #7078）', async () => {
+    mockGetOrder.mockResolvedValue({ data: { data: { ...mockOrder, status: 'confirmed' } } })
+    render(<OrderDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByText('基础信息')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('支付交易号：')).not.toBeInTheDocument()
   })
 
   // ===== 详情页操作区退款按钮（P1：confirmed/producing/shipped/completed 且未退款） =====
@@ -328,30 +399,89 @@ describe('OrderDetailPage', () => {
     })
   })
 
-  // ===== 补打发货单（issue #3768 / UI-040）：发货页有状态守卫进不去，重打只能从详情页 =====
+  // ===== 打印：页面级**唯一**入口，且不跟订单状态挂钩（issue #7544）=====
+  //
+  // 改前（#6434）是「订单状态 × 可打单据」矩阵：4 个按钮按状态分支各渲一组，`closed` / `refund`
+  // 两个状态**一个按钮都没有**（商家要给客户补一张报价单时是死路）。用户 2026-10-23 的裁定两头都要改：
+  // ① **不跟状态挂钩** —— 任何状态都能打；② **收拢成一个入口** —— 点「打印」再选单据、先预览再打出纸。
+  //
+  // 判据形态 = 表驱动：每个状态断言「**恰好一个**以『打印』开头的按钮」（改前是 4 个），
+  // 谁再往状态分支里塞第二个打印入口，这里当场红。
 
-  it('已发货订单操作区显示「打印发货单」且点击真的触发 window.print', async () => {
-    // 还原**只针对这一个 spy**（见 describe 头的反例二）：文件级 `restoreAllMocks()` 会连
-    // `vi.fn()` 替身的实现一起清掉 ⇒ 页面 effect 命中 `undefined` ⇒ 本文件随机红、卡住部署。
-    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
-    try {
-      mockGetOrder.mockResolvedValue({
-        data: { data: { ...mockOrder, status: 'shipped', refundAmount: 0 } },
-      })
+  const ALL_ORDER_STATUSES = [
+    'pending_payment',
+    'pending_shipment',
+    'producing',
+    'shipped',
+    'completed',
+    'closed',
+    'refund',
+  ]
+
+  it.each(ALL_ORDER_STATUSES)(
+    '打印不跟订单状态挂钩（issue #7544）：%s 也有且只有一个「打印」入口',
+    async (status) => {
+      mockGetOrder.mockResolvedValue({ data: { data: { ...mockOrder, status, refundAmount: 0 } } })
       render(<OrderDetailPage />)
 
+      // 稳态锚点 = 订单号进 DOM（页面已拿到订单）——**不拿打印按钮当锚点**，
+      // 否则「按钮本来就该在」这条判据会退化成「等我自己出现」（空断言）。
+      await screen.findAllByText(mockOrder.orderNo)
+
+      expect(screen.getByTestId('order-print-entry')).toBeInTheDocument()
+      // 🔴 唯一性：以「打印」开头的按钮**只能有一个**（改前是「打印报价单 / 打印加工单 / 打印销售单 …」
+      // 并排铺开）—— 这条就是「收拢成统一入口」本体的机器读数。
+      expect(screen.getAllByRole('button', { name: /^打印/ })).toHaveLength(1)
+    },
+  )
+
+  it('点「打印」→ 在预览层里换单据 → 打印：默认销售单，换标签后预览的就是所选那份（issue #7544）', async () => {
+    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
+    try {
+      mockGetOrder.mockResolvedValue({ data: { data: { ...mockOrder, status: 'shipped', refundAmount: 0 } } })
+      render(<OrderDetailPage />)
       const user = userEvent.setup()
-      const btn = await screen.findByRole('button', { name: /打印发货单/ })
-      await user.click(btn)
+      await screen.findAllByText(mockOrder.orderNo)
 
-      // 🔴 点「打印发货单」= 打开**纸面自检层**（issue #5914）：纸是耗材，没点「打印」前**不该**出纸
+      await user.click(screen.getByTestId('order-print-entry'))
+
+      // 打开预览 ≠ 出纸（纸是耗材，issue #5914）
       expect(printSpy).not.toHaveBeenCalled()
-      await user.click(await screen.findByTestId('print-preview-print'))
+      // 四份单据都在选择器里，文案取 `PRINT_TARGET_SPECS`（不手写第二份字面量）
+      for (const [target, title] of [
+        ['sales', '销售单'],
+        ['processing', '加工单'],
+        ['quotation', '报价单'],
+        ['shipment', '发货单'],
+      ] as const) {
+        expect(screen.getByTestId(`print-preview-doc-${target}`)).toHaveTextContent(title)
+      }
+      // 默认选中销售单（三联纸 241×140 ⇒ 纸型读数跟着它走）
+      expect(screen.getByTestId('print-preview-doc-sales')).toHaveAttribute('aria-pressed', 'true')
+      expect(screen.getByTestId('print-preview-media')).toHaveTextContent('241mm × 140mm')
 
+      // 换成加工单：预览与纸型都换成 A4 的那一份，但**仍然没出纸**
+      await user.click(screen.getByTestId('print-preview-doc-processing'))
+      expect(screen.getByTestId('print-preview-doc-processing')).toHaveAttribute('aria-pressed', 'true')
+      expect(screen.getByTestId('print-preview-media')).toHaveTextContent('210mm × 297mm')
+      expect(printSpy).not.toHaveBeenCalled()
+
+      await user.click(screen.getByTestId('print-preview-print'))
       expect(printSpy).toHaveBeenCalledTimes(1)
     } finally {
       printSpy.mockRestore()
     }
+  })
+
+  it('已关闭订单也能打开打印层（改前这个状态一张单据都打不出来）', async () => {
+    mockGetOrder.mockResolvedValue({ data: { data: { ...mockOrder, status: 'closed', refundAmount: 0 } } })
+    render(<OrderDetailPage />)
+
+    const user = userEvent.setup()
+    await screen.findAllByText(mockOrder.orderNo)
+    await user.click(screen.getByTestId('order-print-entry'))
+
+    expect(screen.getByTestId('print-preview')).toBeInTheDocument()
   })
 
   it('打印用例跑完后 window.print 必须已还原（否则泄漏到后续用例 ⇒「没打印」类断言恒真/恒假）', () => {
@@ -359,148 +489,23 @@ describe('OrderDetailPage', () => {
     expect(vi.isMockFunction(window.print)).toBe(false)
   })
 
-  it('已完成订单也能补打发货单', async () => {
-    mockGetOrder.mockResolvedValue({
-      data: { data: { ...mockOrder, status: 'completed', refundAmount: 0 } },
-    })
-    render(<OrderDetailPage />)
-
-    expect(await screen.findByRole('button', { name: /打印发货单/ })).toBeInTheDocument()
-  })
-
-  it('待付款订单没有发货单入口（未发货谈不上补打）', async () => {
-    mockGetOrder.mockResolvedValue({
-      data: { data: { ...mockOrder, status: 'pending_payment', refundAmount: 0 } },
-    })
-    render(<OrderDetailPage />)
-
-    await waitFor(() => expect(screen.getAllByText('订单详情').length).toBeGreaterThanOrEqual(1))
-    expect(screen.queryByRole('button', { name: /打印发货单/ })).not.toBeInTheDocument()
-  })
-
-  // ===== 打印报价单（issue #4965 / UI-053）：与「打印发货单」并列，同一权限口径与写法 =====
-
-  it('已发货订单操作区显示「打印报价单」且点击真的触发 window.print（与发货单同一写法）', async () => {
-    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
-    try {
-      mockGetOrder.mockResolvedValue({
-        data: { data: { ...mockOrder, status: 'shipped', refundAmount: 0 } },
-      })
-      render(<OrderDetailPage />)
-
-      const user = userEvent.setup()
-      const btn = await screen.findByRole('button', { name: /打印报价单/ })
-      await user.click(btn)
-
-      // 同上：报价单走的是**同一个**预览 → 打印两步（issue #5914）
-      expect(printSpy).not.toHaveBeenCalled()
-      await user.click(await screen.findByTestId('print-preview-print'))
-
-      expect(printSpy).toHaveBeenCalledTimes(1)
-    } finally {
-      printSpy.mockRestore()
-    }
-  })
-
-  it('已完成订单也能打印报价单（与发货单入口同状态口径）', async () => {
-    mockGetOrder.mockResolvedValue({
-      data: { data: { ...mockOrder, status: 'completed', refundAmount: 0 } },
-    })
-    render(<OrderDetailPage />)
-
-    expect(await screen.findByRole('button', { name: /打印报价单/ })).toBeInTheDocument()
-  })
-
   it('报价单在页面级挂载一份（不进 Modal；每页只挂一份）', async () => {
-    mockGetOrder.mockResolvedValue({
-      data: { data: { ...mockOrder, status: 'shipped', refundAmount: 0 } },
-    })
+    mockGetOrder.mockResolvedValue({ data: { data: { ...mockOrder, status: 'shipped', refundAmount: 0 } } })
     render(<OrderDetailPage />)
 
-    await screen.findByRole('button', { name: /打印报价单/ })
+    await screen.findAllByText(mockOrder.orderNo)
     expect(screen.getAllByTestId('quotation-doc')).toHaveLength(1)
   })
 
-  // ===== 打印入口 × 订单状态矩阵（issue #6434）=====
-  //
-  // 病根（2026-10-06 用户报告；现取 `origin/main` 读数）：四个打印入口**只**挂在
-  // `status === 'shipped'` / `status === 'completed'` 两个分支里 —— 自 #5669 引入起就是这样
-  // （`git log -S "打印销售单"` 只有一个提交）⇒ 订单停在「**待发货 / 生产中 / 待付款**」时，
-  // 订单详情页**一个打印按钮都没有**，而这三张单据恰恰是发货**之前**就要用的
-  // （销售单随货、加工单下车间、报价单先行）。
-  //
-  // 判据形态 = **表驱动**：每个状态 × 「应有的入口 / 不该有的入口」逐条断言 ——
-  // 以后新增状态忘了挂入口、或把入口从某个状态里删掉，这里当场红。
-  const PRINT_ENTRY_MATRIX: { label: string; status: string; expected: string[]; absent: string[] }[] = [
-    {
-      label: '待付款',
-      status: 'pending_payment',
-      expected: ['打印报价单'],
-      absent: ['打印发货单', '打印加工单', '打印销售单'],
-    },
-    {
-      label: '待发货',
-      status: 'pending_shipment',
-      expected: ['打印报价单', '打印加工单', '打印销售单'],
-      absent: ['打印发货单'],
-    },
-    {
-      // `producing`（生产中）与后端 `confirmed` 都归入待发货分支（`BackendToFrontendStatus`）——
-      // 生产中照旧要能打加工单（车间用）与销售单。
-      label: '生产中',
-      status: 'producing',
-      expected: ['打印报价单', '打印加工单', '打印销售单'],
-      absent: ['打印发货单'],
-    },
-    {
-      label: '已发货',
-      status: 'shipped',
-      expected: ['打印发货单', '打印报价单', '打印加工单', '打印销售单'],
-      absent: [],
-    },
-    {
-      label: '已完成',
-      status: 'completed',
-      expected: ['打印发货单', '打印报价单', '打印加工单', '打印销售单'],
-      absent: [],
-    },
-    {
-      label: '已关闭',
-      status: 'closed',
-      expected: [],
-      absent: ['打印发货单', '打印报价单', '打印加工单', '打印销售单'],
-    },
-  ]
-
-  it.each(PRINT_ENTRY_MATRIX)(
-    '打印入口矩阵：$label（$status）应有 [$expected] / 不该有 [$absent]',
-    async ({ status, expected, absent }) => {
-      mockGetOrder.mockResolvedValue({
-        data: { data: { ...mockOrder, status, refundAmount: 0 } },
-      })
-      render(<OrderDetailPage />)
-
-      // 稳态锚点 = 订单号进 DOM（页面已拿到订单）——**不拿打印按钮当锚点**，
-      // 否则「按钮本来就该在」这条判据会退化成「等我自己出现」（空断言）。
-      await screen.findAllByText(mockOrder.orderNo)
-
-      for (const label of expected) {
-        expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
-      }
-      for (const label of absent) {
-        expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument()
-      }
-    },
-  )
-
   // ===== 工序清单读面接线（issue #6901）=====
   //
-  // 🔴 「加了 prop 不等于接线」：加工单纸面 / 加工单块 / 「复制全部」文本三处都靠本页把
+  // 🔴 「加了 prop 不等于接线」：**屏幕**加工单块（含「复制全部」文本）靠本页把
   // `GET /api/admin/production/orders/{id}/operations` 的结果传下去 —— 没有真实调用方时
   // 工序清单在生产里**永远不出现**，而组件单测喂夹具会全绿（本仓反复复发的假绿形态）。
   // 本用例直连**真实调用路径**（页面 → 读面 → state）；`ProcessingOrderBlock` 端子行逐值由
   // ProcessingOrderBlock.test.tsx 的工序用例负责（本文件把该组件替身成空壳）。
-  // 接线面的机械证据（两处 prop 都在）另见 PR body 的 `grep -n "operations={orderOperations}"`。
+  // 🔴 纸面 `ProcessingDoc` 自 issue #7274 起**不再接收** `operations`（工序细节不上纸）。
+  // 接线面的机械证据另见 PR body 的 `grep -n "operations={orderOperations}"`（现在只剩加工单块那一处）。
   it('🔴 工序读面接线（issue #6901）：详情页按订单 id 取 `orders/{id}/operations` 并向下传', async () => {
     const operations = [
       {
@@ -523,9 +528,9 @@ describe('OrderDetailPage', () => {
 
     // ① 真调了既有读面，且引用的是**本订单** id（缺这行 ⇒ 页面根本不取工序）
     await waitFor(() => expect(mockGetOrderOperations).toHaveBeenCalledWith('test-order-123'))
-    // ② 页面到达**含加工单面**的稳态：本状态（producing + 含加工项）下「打印加工单」入口在
-    //    （该入口由加工单块区承载）⇒ 证明这一块被渲染出来了、没被工序读面拖垮，也没有失败态文案
-    expect(screen.getByRole('button', { name: /打印加工单/ })).toBeInTheDocument()
+    // ② 页面到达稳态：加工单块渲染出来、没被工序读面拖垮，也没有失败态文案
+    //    （issue #7544 起加工单块不再自带打印按钮 —— 打印统一走页面级入口，故锚点换回页面事实）
+    expect(screen.getByTestId('po-block')).toBeInTheDocument()
     expect(container.textContent).not.toContain('加载订单详情失败')
   })
 

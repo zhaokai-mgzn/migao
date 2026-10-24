@@ -28,6 +28,12 @@ public class Role {
 
     private String code;
 
+    /**
+     * 数据范围（V177，issue #7372）：`tenant` = 全租户（默认）/ `self` = 只看本人创建的单据。
+     * 多角色取**最宽**（见 {@code DataScope.resolve}）。
+     */
+    private String dataScope;
+
     private String description;
 
     private String status;

@@ -542,7 +542,6 @@ class TestEveryIntentHasL1OrRegisteredExemption:
         IntentType.PERMISSION_MANAGE: "同上（角色权限）· **已立证**（覆盖 3 条用例；唯一红条 `HR-005` 的红因是 action 过度指定 ≠ L2 路由）",
         IntentType.DATA_REPORT: "同上（报表/分析；与 STATISTICS/DASHBOARD 的边界由 L2 判）· **已立证**（覆盖 5 条用例全过）",
         IntentType.KNOWLEDGE_MANAGE: "同上（知识库管理；C 端 KNOWLEDGE_FAQ 另有 L1）· **已立证无用例面**（全库 0 条覆盖）",
-        IntentType.SCHEDULED_TASK_MANAGE: "同上（定时任务）· **已立证无用例面**（全库 0 条覆盖）",
         IntentType.AFTER_SALES_CREATE: "同上（售后工单**创建**；B 端按裁定不支持创建单据 ⇒ 主要面在 C 端）· **已立证**（覆盖 8 条用例全过）",
         IntentType.PROCESSING_ORDER_GENERATE: "同上（加工单**生成**；同上，B 端不支持创建单据）· **已立证无用例面**（全库 0 条覆盖）",
         IntentType.PROCESSING_ORDER_QUERY: "同上（加工单查询；「加工单」关键词已在 ORDER_QUERY 上）· **已立证**（覆盖 4 条用例全过）",
@@ -595,6 +594,32 @@ class TestEveryIntentHasL1OrRegisteredExemption:
         stripped = {i for i in self._rule_reachable() if i != IntentType.AI_CONFIG}
         missing = self._unreachable(list(IntentType), stripped, self.L2_ONLY_EXEMPT)
         assert "ai_config" in missing, "摘掉 AI_CONFIG 的关键词后守卫没有报 ⇒ 守卫退化成空断言"
+
+
+class TestScheduledTaskRouting:
+    """定时提醒的 L1 确定性路由（issue #7038 的唯一真缺口，2026-10-19）。
+
+    背景：`scheduled_task_manage` 只绑 reminder skill（兜底 general 也没有它）⇒
+    L2 判错一次就整句 direct_reply、工具不可达。本类钉住「该命中的命中、不该抢的不抢」。
+    红证：删掉 `KEYWORD_MAP[SCHEDULED_TASK_MANAGE]` ⇒ `test_relative_followup` 红。
+    """
+
+    def test_relative_followup(self):
+        r = RuleMatcher().match("3 天后提醒我跟进张先生")
+        assert r is not None and r.intent == IntentType.SCHEDULED_TASK_MANAGE
+
+    def test_explicit_reminder(self):
+        r = RuleMatcher().match("帮我设一个定时提醒，明天下午三点")
+        assert r is not None and r.intent == IntentType.SCHEDULED_TASK_MANAGE
+
+    def test_notification_not_hijacked(self):
+        r = RuleMatcher().match("把新订单通知标为已读")
+        assert r is not None and r.intent == IntentType.NOTIFICATION
+
+    def test_bare_reminder_word_is_not_routed(self):
+        """裸「提醒」刻意不收：订单/通知类复合句不得被抢。"""
+        r = RuleMatcher().match("提醒我一下这个订单到哪了")
+        assert r is None or r.intent != IntentType.SCHEDULED_TASK_MANAGE
 
 
 class TestStaffAccountRouting:

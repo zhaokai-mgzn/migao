@@ -202,11 +202,13 @@ class PoolBoardUrgencyTest {
     @Test
     @DisplayName("判据2/3 边界：同一个加急单走 pooled=false ⇒ **既有**单订单路径文案一字未变（加急不侵入单派）")
     void singleOrderPathKeepsItsExistingErrorTextForUrgentOrder() {
-        // 用「状态不是 confirmed」这张单，让既有单订单路径在自己的闸上失败 ⇒
+        // 用「状态不是可生成态」这张单，让既有单订单路径在自己的闸上失败 ⇒
         // 文案必须是既有那句，而不是本单新加的加急拒绝（判据 2 的「单订单路径错误文案」那一格）。
-        Order pending = Order.builder().id("o-urgent").tenantId(TENANT).orderNo("ORD-9001")
-                .status("pending").isUrgent(true).build();
-        when(orderMapper.selectById("o-urgent")).thenReturn(pending);
+        // ⚠️ issue #7626：待付款（`pending`）自 2026-10-24 起**可生成**作业单 ⇒ 这里改用
+        // `cancelled`（仍在闸的拒绝侧），判据语义逐字不变：加急**不改变**单订单路径的失败文案。
+        Order cancelled = Order.builder().id("o-urgent").tenantId(TENANT).orderNo("ORD-9001")
+                .status("cancelled").isUrgent(true).build();
+        when(orderMapper.selectById("o-urgent")).thenReturn(cancelled);
 
         List<ProcessingOrderService.GenerateResult> results = processingOrderService.generate(
                 List.of("o-urgent"), List.of(), TENANT, null, null, Boolean.FALSE);

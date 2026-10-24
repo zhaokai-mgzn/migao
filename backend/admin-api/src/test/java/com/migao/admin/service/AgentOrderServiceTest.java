@@ -557,7 +557,9 @@ class AgentOrderServiceTest {
 
             when(orderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testOrder);
             when(orderLogisticsMapper.selectByOrderId(eq("order-uuid-001"), any())).thenReturn(List.of(existing));
-            when(orderLogisticsMapper.updateById(any(OrderLogistics.class))).thenReturn(1);
+            // issue #7174：写面改为「条件更新优先」（不再整实体 updateById）⇒ 命中 1 行 = 既有记录被更新
+            when(orderLogisticsMapper.updateShippingDetails(any(), any(), any(), any(), any(), any(), any()))
+                    .thenReturn(1);
             when(orderMapper.selectById("order-uuid-001")).thenReturn(testOrder);
             when(orderMapper.update(any(), any())).thenReturn(1);
             when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
@@ -568,9 +570,17 @@ class AgentOrderServiceTest {
 
             // then: 更新最新物流记录，且**不覆盖**已记录的发货人
             // （改运单号/纠错 ≠ 换发货人；agent 本次操作人不该顶替首发的经手人）
-            verify(orderLogisticsMapper).updateById(org.mockito.ArgumentMatchers.<OrderLogistics>argThat(l ->
-                    "中通".equals(l.getLogisticsCompany()) && "ZT123456".equals(l.getTrackingNo())
-                            && "李四".equals(l.getShipperName())));
+            // 显式给了承运商与运单号 ⇒ 这两个值原样传给条件更新；
+            // 发货人**不传**（null）=「本次没说这件事」⇒ SQL 侧 COALESCE 保留「李四」，不被本次操作人顶替
+            // tenantId 由 TenantContext 提供，本用例没设上下文 ⇒ 入参为 null（与旧实现同款，不是本单的判定对象）
+            verify(orderLogisticsMapper).updateShippingDetails(org.mockito.ArgumentMatchers.<Long>isNull(),
+                    org.mockito.ArgumentMatchers.eq("order-uuid-001"),
+                    org.mockito.ArgumentMatchers.eq("中通"),
+                    org.mockito.ArgumentMatchers.eq("ZT123456"),
+                    org.mockito.ArgumentMatchers.<String>isNull(),
+                    org.mockito.ArgumentMatchers.<String>isNull(),
+                    org.mockito.ArgumentMatchers.<String>isNull());
+            verify(orderLogisticsMapper, never()).updateById(any(OrderLogistics.class));
         }
 
         @Test
@@ -587,7 +597,8 @@ class AgentOrderServiceTest {
 
             when(orderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testOrder);
             when(orderLogisticsMapper.selectByOrderId(eq("order-uuid-001"), any())).thenReturn(List.of(legacy));
-            when(orderLogisticsMapper.updateById(any(OrderLogistics.class))).thenReturn(1);
+            when(orderLogisticsMapper.updateShippingDetails(any(), any(), any(), any(), any(), any(), any()))
+                    .thenReturn(1);
             when(orderMapper.selectById("order-uuid-001")).thenReturn(testOrder);
             when(orderMapper.update(any(), any())).thenReturn(1);
             when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
@@ -597,8 +608,16 @@ class AgentOrderServiceTest {
             orderService.updateOrderForAgent("order-uuid-001", req, 1L);
 
             // then: 发货人保持 null（宁可空白显示「-」，也不把当次操作人写成历史经手人）
-            verify(orderLogisticsMapper).updateById(org.mockito.ArgumentMatchers.<OrderLogistics>argThat(l ->
-                    l.getShipperName() == null));
+            // 发货人传 null = 本次没说 ⇒ SQL 侧保留原值（历史行本来就是 null ⇒ 仍是 null，不猜一个经手人）
+            // tenantId 由 TenantContext 提供，本用例没设上下文 ⇒ 入参为 null（与旧实现同款，不是本单的判定对象）
+            verify(orderLogisticsMapper).updateShippingDetails(org.mockito.ArgumentMatchers.<Long>isNull(),
+                    org.mockito.ArgumentMatchers.eq("order-uuid-001"),
+                    org.mockito.ArgumentMatchers.eq("中通"),
+                    org.mockito.ArgumentMatchers.eq("ZT123456"),
+                    org.mockito.ArgumentMatchers.<String>isNull(),
+                    org.mockito.ArgumentMatchers.<String>isNull(),
+                    org.mockito.ArgumentMatchers.<String>isNull());
+            verify(orderLogisticsMapper, never()).updateById(any(OrderLogistics.class));
         }
 
         @Test

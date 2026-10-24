@@ -78,6 +78,9 @@ WRITE_TOOL_INVENTORY: frozenset = frozenset({
     # 🔴 issue #7040（2026-10-16 裁定「变更 ✅ 必须支持」）：通知标记已读接回 B 端 ⇒
     # 该工具重新成为**写工具**（自带 action 参数：mark_read / read_all）。
     "notification_manage",
+    # issue #7514（2026-10-23）：算料配置变更接回 B 端（A 档可逆写）——
+    # 无 `action` 参数 ⇒ 动作动词登记在 `registry._NO_ACTION_PARAM_TOOL_ACTION`（"update"）。
+    "craft_calc_config_update",
 })
 # 留痕标记（判据引用的字面量必须在实现里真出现，见 test_*_markers_exist_in_source）
 _PERSIST_FAILED_MARK = "[AUDIT] PERSIST_FAILED"

@@ -75,6 +75,14 @@ ENTITY_ID_RE = re.compile(r"^(?=.*[0-9])[A-Za-z0-9_\-]{2,64}$")
 #: 新增字段必须同批登记进本元组，否则判据红。这是「不含实体快照 / 敏感字段」的机械形态）。
 CONTEXT_FIELDS: Tuple[str, ...] = ("route", "truth_source", "entity_id")
 
+#: 注入信封的**结构锚**（渲染与「读回剥离」共用同一组常量 —— 各写一份必然漂移，
+#: 见 `strip_page_context_envelope`）。🔴 它们**不是**给用户看的：信封只属于「本轮送给 LLM 的文本」，
+#: **不落库**（issue #7112：信封被当成用户消息落库 ⇒ 切回会话时整段内部提示上屏）。
+PAGE_CONTEXT_ENVELOPE_OPEN = "（黄金策正在用户当前页面上："
+PAGE_CONTEXT_ENVELOPE_TAIL = "仅当用户的问题与当前页面或本页口径有关时才使用本提示；否则照常回答。"
+PAGE_CONTEXT_ENTITY_LINE_PREFIX = "用户当前正在看的对象 id："
+PAGE_CONTEXT_ENVELOPE_CLOSE = "）"
+
 #: 用户可见的降级提示（**常量**：不含 route、不含 id —— 未登记页面的路径绝不进 LLM 上下文）。
 PAGE_CONTEXT_UNKNOWN_NOTICE = (
     "（提示：本次没有可用的页面上下文 —— 无法确认用户当前在哪一页。"
@@ -97,6 +105,52 @@ class TruthSource:
 
 #: 真值源登记表。**未登记的真值源 id ⇒ 那条 route 不生效**（fail-closed，见 `build_page_context`）。
 TRUTH_SOURCES: Dict[str, TruthSource] = {
+    # 供应商档案（issue #7369，P0-1 段 1）：口径写在服务层 javadoc（账期三态 / 状态域 / 与单据快照的区别），
+    # 不编第二份说明文档。
+    # 采购单（issue #7369 段 4）：状态派生 / 不许超收 / 关单须写原因的**全部口径**都在服务层 javadoc，
+    # 不在别处再写一份（两份口径必然漂）。
+    "purchase-order-lifecycle": TruthSource(
+        label="采购单与收货（下单 / 分次收货 / 关闭）",
+        citation="依据：采购单状态与收货口径（服务层说明）",
+        path="backend/admin-api/src/main/java/com/migao/admin/service/PurchaseOrderService.java",
+    ),
+    # 价格本（issue #7375 段 3）：优先级链（协议 > 等级 > 阶梯 > 标准）/ 价必须 > 0 /
+    # 低于成本要审批 —— 全部口径写在服务层 javadoc。
+    "price-books": TruthSource(
+        label="价格本（协议价 / 等级价 / 阶梯价）",
+        citation="依据：价格本与改价口径说明（优先级与审批）",
+        path="backend/admin-api/src/main/java/com/migao/admin/service/PriceBookService.java",
+    ),
+    # 报表中心（issue #7376 / #7377）：四条口径（合计 = 明细之和 / 空数据 ≠ 0 / 未知不填 0 /
+    # 数据范围同 P0-4）全部写在服务层 javadoc，不在别处再写一份。
+    "report-center": TruthSource(
+        label="报表中心（毛利 / 滞销 / 业绩 / 质量成本）",
+        citation="依据：报表口径说明（合计与明细可复算；没有数据留空而不写 0；算不出的成本标未知）",
+        path="backend/admin-api/src/main/java/com/migao/admin/service/ReportService.java",
+    ),
+    # 盘点（issue #7373）：账面快照 / 差异必须经审批 / 只改数量不动成本 —— 全部口径在服务层 javadoc。
+    "stocktake-counting": TruthSource(
+        label="盘点（账面快照 · 实盘 · 差异审批）",
+        citation="依据：盘点口径说明（账面是出任务当刻的快照；有差异须先经审批；只调数量不动成本）",
+        path="backend/admin-api/src/main/java/com/migao/admin/service/StocktakeService.java",
+    ),
+    # 返工（issue #7377）：状态机（待开工/返工中/已完成/已取消）+ 完工回写售后 + 成本口径
+    # （返工成本 = 返工报工计件金额，返工单本身不产生金额）—— 全部口径在服务层 javadoc。
+    "rework-order-lifecycle": TruthSource(
+        label="返工单口径（状态机 · 完工回写售后 · 成本走返工报工）",
+        citation="依据：返工单口径说明（同一售后单同时只能有一张未完结返工单；完工才回写售后状态；本单不产生金额）",
+        path="backend/admin-api/src/main/java/com/migao/admin/service/ReworkOrderService.java",
+    ),
+    # 🔴 2026-10-24（issue #7593）：`approval-decision` **真值源已删** —— 它唯一的引用者 =
+    # `/approvals` 的 PageEntry，该页撤出侧边栏后登记被销账 ⇒ 留着就是「死条目」
+    # （判据 `truth_sources_are_registered` 会红：没有任何登记项引用的真值源）。
+    # ⚠️ 代价如实登记：黄金策**不再持有「审批四态 / 批一次用一次 / 不能自批」的口径引用**。
+    # 重启条件见 issue #7593：给「顶栏入口页」这一类节点一个登记位后，把本真值源与 PageEntry 一起恢复。
+    "supplier-master-data": TruthSource(
+        label="供应商档案（供应商主数据）",
+        citation="依据：供应商档案口径（服务层说明）",
+        path="backend/admin-api/src/main/java/com/migao/admin/service/SupplierService.java",
+    ),
     "curtain-fabric-quote-rules": TruthSource(
         label="窗帘布料算料与计价口径",
         citation="依据：本店算料与计价口径说明",
@@ -135,6 +189,14 @@ TRUTH_SOURCES: Dict[str, TruthSource] = {
         citation="依据：本店库存流水口径说明",
         path="frontend/admin-web/src/lib/stock-ledger.ts",
     ),
+    # issue #7140（= #5652 的商家面）：质检记录的展示口径 —— 一条 = **一件成品帘**、
+    # 判定三态（合格 / 返工 / 报废）、**未检 ≠ 合格**、缺值印「—」不折 0。
+    # 真值源 = 该口径的**唯一实现模块**（质检记录页与作业单质检区都从它取值）。
+    "quality-inspection-display": TruthSource(
+        label="质检记录口径（一件成品帘一条 · 合格/返工/报废 · 未检不折成合格）",
+        citation="依据：本店质检记录口径说明",
+        path="frontend/admin-web/src/lib/quality-check.ts",
+    ),
 }
 
 
@@ -154,6 +216,55 @@ class PageEntry:
 
 #: route → 真值源登记表（**未登记即不注入**；本表是「哪一页能注入」的唯一真值）。
 PAGE_REGISTRY: Tuple[PageEntry, ...] = (
+    # 采购单（issue #7369 段 4）：问「为什么还是部分收货 / 能不能改数量 / 关单干嘛用」⇒ 引服务层口径。
+    PageEntry(
+        route="/purchase-orders",
+        truth_source="purchase-order-lifecycle",
+        page_permissions=("inbound:view",),
+        entity_permissions=(),
+    ),
+    # 价格本（issue #7375 段 3）：问「为什么按这个价 / 怎么加协议价 / 为什么保存被拒」⇒ 引服务层口径。
+    PageEntry(
+        route="/price-books",
+        truth_source="price-books",
+        page_permissions=("order:list",),
+        entity_permissions=(),
+    ),
+    # 报表中心（issue #7376 / #7377）：问「毛利怎么算 / 为什么是空的 / 质量成本缺哪项」⇒ 引服务层口径。
+    PageEntry(
+        route="/reports",
+        truth_source="report-center",
+        page_permissions=("dashboard:view",),
+        entity_permissions=(),
+    ),
+    # 盘点单（issue #7373）：问「差异为什么没批 / 盘亏怎么调账 / 账面数会不会变」⇒ 引服务层口径。
+    PageEntry(
+        route="/stocktakes",
+        truth_source="stocktake-counting",
+        page_permissions=("inbound:view",),
+        entity_permissions=(),
+    ),
+    # 返工单（issue #7377）：问「为什么开不了返工 / 完工后售后怎么变 / 返工花了多少钱」⇒ 引服务层口径。
+    PageEntry(
+        route="/rework-orders",
+        truth_source="rework-order-lifecycle",
+        page_permissions=("after_sales:view",),
+        entity_permissions=(),
+    ),
+    # 🔴 2026-10-24（issue #7593）：`/approvals` 的 **PageEntry 已删** —— 该页撤出侧边栏（入口改顶栏
+    # `ApprovalBell`）⇒ 判据 2「登记表里有、挂不到任何菜单项 = 悬挂登记」会红，而豁免台账 `exemptions`
+    # **只许缩短**（不能把新页塞进豁免）⇒ 只能销账。
+    # ⚠️ 代价如实登记：黄金策**不再在审批页注入该页口径**，且 `approval-decision` 真值源因无人引用
+    # 已同批删除（「死亡条目」判据会红）⇒ **审批口径问答也随之失去**（不只「导航」）。
+    # 重启条件与修法见 issue #7593 的「已知缺口」节（与「AI 导航缺口」同一张单：
+    # 需要给「顶栏入口页」这一类节点一个登记位，恢复 PageEntry + 真值源）。
+    # 供应商档案（issue #7369）：页面上问「账期怎么算 / 停用是什么意思」⇒ 引服务层口径。
+    PageEntry(
+        route="/suppliers",
+        truth_source="supplier-master-data",
+        page_permissions=("inbound:view",),
+        entity_permissions=(),
+    ),
     PageEntry(
         route="/orders/new",
         truth_source="curtain-fabric-quote-rules",
@@ -207,7 +318,7 @@ PAGE_REGISTRY: Tuple[PageEntry, ...] = (
         entity_permissions=(),
     ),
     PageEntry(
-        # 生产看板（= 加工单唯一入口，issue #4357）：订单 → 加工单的形态与粒度
+        # 作业看板（= 作业单唯一入口，issue #4357）：订单 → 加工单的形态与粒度
         route="/production",
         truth_source="curtain-production-rules",
         page_permissions=("production:view",),
@@ -233,6 +344,14 @@ PAGE_REGISTRY: Tuple[PageEntry, ...] = (
         route="/stock-ledger",
         truth_source="stock-ledger-display",
         page_permissions=("product:list",),
+        entity_permissions=(),
+    ),
+    PageEntry(
+        # 质检记录（issue #7140 = #5652 的商家面）：页面读码 / 守卫码 / 菜单节点码三处同码
+        # `production:inspect`（该码只授质检员 + 管理员 —— 用户 2026-10-17 裁定保持现状）
+        route="/quality-inspections",
+        truth_source="quality-inspection-display",
+        page_permissions=("production:inspect",),
         entity_permissions=(),
     ),
 )
@@ -374,16 +493,48 @@ def render_page_context(question: str, context: Optional[PageContext]) -> str:
     if source is None:  # pragma: no cover - 与 build_page_context 同步的纵深防御
         return PAGE_CONTEXT_UNKNOWN_NOTICE + question
     lines = [
-        f"（黄金策正在用户当前页面上：{context.route}",
+        f"{PAGE_CONTEXT_ENVELOPE_OPEN}{context.route}",
         f"本页的口径说明以《{source.label}》为唯一真值源（{source.path}）；"
         f"解释本页字段/口径/价格时必须基于该真值源，并在答案里写明「{source.citation}」；"
         f"真值源没写到的内容不要替它编。",
-        "仅当用户的问题与当前页面或本页口径有关时才使用本提示；否则照常回答。",
+        PAGE_CONTEXT_ENVELOPE_TAIL,
     ]
     if context.entity_id is not None:
-        lines.append(f"用户当前正在看的对象 id：{context.entity_id}。")
-    lines.append("）")
+        lines.append(f"{PAGE_CONTEXT_ENTITY_LINE_PREFIX}{context.entity_id}。")
+    lines.append(PAGE_CONTEXT_ENVELOPE_CLOSE)
     return "".join(lines) + question
+
+
+def strip_page_context_envelope(text: str) -> str:
+    """从**会话历史里读出来的用户消息**剥掉页面上下文信封（issue #7112）。
+
+    两个目的：
+    1. **展示面**：切走再切回（`GET /history`）不该把内部提示当用户说的话上屏；
+    2. **LLM 历史**：旧行里的 route 是**当时**那一页 —— 之后每一轮都带着它，正是
+       「猜错页面比不猜更烦」的同族（过期上下文）。
+
+    - 只认**开头**：以 `PAGE_CONTEXT_ENVELOPE_OPEN` 起头的才可能是我们渲染的信封；
+      降级形态（`PAGE_CONTEXT_UNKNOWN_NOTICE`）同一条口径；
+    - 结构锚取**渲染侧同一组常量** ⇒ 渲染改了而这里没跟上，
+      `tests/test_page_context_persistence.py::test_strip_is_inverse_of_render_for_every_route` 当场红；
+    - **形态不完整一律原样返回**（宁可比用户多显示一段，也**不吞用户的话**）。
+    """
+    if text.startswith(PAGE_CONTEXT_UNKNOWN_NOTICE):
+        return text[len(PAGE_CONTEXT_UNKNOWN_NOTICE):]
+    if not text.startswith(PAGE_CONTEXT_ENVELOPE_OPEN):
+        return text
+    tail_at = text.find(PAGE_CONTEXT_ENVELOPE_TAIL)
+    if tail_at < 0:
+        return text
+    pos = tail_at + len(PAGE_CONTEXT_ENVELOPE_TAIL)
+    if text.startswith(PAGE_CONTEXT_ENTITY_LINE_PREFIX, pos):
+        line_end = text.find("。", pos)
+        if line_end < 0:
+            return text
+        pos = line_end + 1
+    if not text.startswith(PAGE_CONTEXT_ENVELOPE_CLOSE, pos):
+        return text
+    return text[pos + len(PAGE_CONTEXT_ENVELOPE_CLOSE):]
 
 
 def context_field_names() -> Tuple[str, ...]:

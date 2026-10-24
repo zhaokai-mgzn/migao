@@ -593,7 +593,7 @@ jobs:
               echo "### 清零判据（怎么算好，**不用人记得关**）"
               echo ""
               echo "- 该 commit 的部署成功（同 sha 的 run 结论 = success，或代码状态已上线、无漂移）"
-              echo "  ⇒ 下一轮 \`*/20\` 对账的值守面**自动关闭本单**并在单上留一条清零说明。"
+              echo "  ⇒ 下一轮 \`*/20\` 对账的值守面**自行关闭本单**并在单上留一条清零说明。"
               echo "- 本机复算：\`gh run list --workflow deploy-frontend.yml --branch main -L 5\` 看同 sha 的结论；"
               echo "  \`git log --oneline -1 <上次成功部署的 sha>..origin/main -- frontend/admin-web\` 看有没有漂移。"
               echo "- 人工出口（**不会**自动重试坏 commit）：\`gh workflow run <deploy-*.yml> --ref main\`，"

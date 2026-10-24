@@ -76,6 +76,11 @@ KEYWORD_MAP: dict[IntentType, list[str]] = {
     # 通知（ST-005 修复：此前缺 L1 关键词，「把新订单通知标为已读」被「订单」抢到 ORDER_QUERY，
     # agent 按 order 工具集误宣「无法改通知状态」——notification_manage 实有 mark_read）
     IntentType.NOTIFICATION: ["通知", "消息", "公告", "未读", "标为已读", "标记已读"],
+    # 定时提醒（issue #7038 的唯一真缺口，2026-10-19 现取）：此前无 L1 关键词 ⇒
+    # 「3 天后提醒我跟进张先生」走 L2；一次判错即 direct_reply，而 `scheduled_task_manage`
+    # 只绑 reminder skill（兜底 general 也没有）⇒ 工具不可达。刻意只用**完整短语**：
+    # 裸「提醒」会抢走通知/订单类复合句（实测 2 条用例改判，含 AG-010→None），故不收。
+    IntentType.SCHEDULED_TASK_MANAGE: ["定时提醒", "到点提醒", "待办提醒", "提醒我跟进", "提醒我催"],
     IntentType.AFTER_SALES: ["退货", "退款", "换货", "售后", "维修"],
     IntentType.KNOWLEDGE_FAQ: ["怎么清洗", "怎么安装", "怎么保养", "怎么测量", "怎么选", "如何", "什么是", "为什么", "教程",
                          # 售后/规则政策咨询（issue #3064 P1-2：双端「退换货政策/质保」此前被 after_sales 关键词抢占）

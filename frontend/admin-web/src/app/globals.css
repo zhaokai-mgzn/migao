@@ -2,6 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer components {
+  /* 下拉的自绘箭尖（issue #7397）—— 图形放这里、不放 Tailwind 任意值：
+     任意值里的内联 SVG（引号 + 逗号）会被内容扫描器切碎，实测构建后 `background-image: none`
+     ⇒ 下拉变成「没有箭头」。真值源 = `src/components/ui/Select.tsx` 的 `SELECT_CHEVRON`。 */
+  .select-chevron {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23b8aa94' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 1rem 1rem;
+  }
+}
+
 /* ═══════════════════════════════════════════════════════
    织物质感 · 全局基调（设计依据：上游 ershen/design/20-migao-ui-redesign.md，该仓已归档）
    暖中性亚麻底色 + 靛蓝主色 + 陶土点缀

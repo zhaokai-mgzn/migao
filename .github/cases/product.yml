@@ -2314,8 +2314,9 @@ cases:
       - "判据 3·**对账可读且可解释**（路线 A 的交换条件）：批次入 60 米、销售已扣 2.7、**未派工** ⇒ `diff = 60 − 57.3 = 2.7` = 已售未派，且恒等式 `diff == (soldDeducted − dispatched − otherLedgerDelta) − unbatched` 成立（`reconciled = true`）；派工之后差额归零；退货回补（aftersales）造成的差额如实反映为 −2.7；**不平的夹具 ⇒ `reconciled = false` 且 `unreconciledCount` 报数**。红证：把 `reconciled` 恒置 true ⇒ 不平夹具那条必红。"
       - "判据 4·**派工候选建议值 = 朴素先进先出**（`suggestionRule = FIFO_RECEIVED_DATE`）：入库早但余量不够的批次 `enough=false` 且不被建议，建议落在第一个**够用**的批次；口径随响应显式回传，免得被读成 best-fit（**缺省**口径不变；best-fit 自 issue #5167 起可**显式**切换，见 PR-066/PR-067）。"
       - "判据 5·**工人端指派读面取净额**：同一明细行既有扣减又有回补 ⇒ 取净额；净额归零的行**不出现**在结果里（工人不该被指去裁一个已经不扣账的批次）。"
+      - "判据 6·**批次余量分页读面（issue #7604）**：`GET /api/admin/batch-stock/batches/page` 回 `PageResponse<BatchRemaining>`（items/total/page/size 四字段，`total` = 服务端总数而非本页行数）；**服务端分页** —— 只对当页批次走 `selectPage`（不是 `selectList` 拉全量再内存切片），且余量三值走 `remaining()` 同一个派生点（入库 67 / 消耗 20.5 ⇒ 46.5，不是 47）；浏览序 = 收货日期倒序、id 倒序；`keyword` 是服务端 LIKE（批号 / 旧系统批号 / 缸号 / 入库单号 / 货号）。红证：把分页实现换成 `selectList` + 内存切片、或让页面自己算余量 ⇒ 本判据红。执行点 = StockBatchConsumptionServiceTest 的「分页读面」用例 + StockBatchControllerTest 的 `GET /batches/page` 用例。"
     skip_reason: "[backend-contract] 批次账服务与只读端点契约（真值断言在 Java 单测，非 LLM 行为）：由 StockBatchConsumptionServiceTest + StockBatchControllerTest 执行（Mockito 假 Mapper，无真实 DB）"
-    merge_log: "2026-09-22 新增：#5145 阶段 1（派加工单扣批次库存 + 消耗台账 + 余量/分布/对账读面）。取号 PR-055（原 PR-052 与 #5150 撞号，rebase 后顺延）。"
+    merge_log: "2026-09-22 新增：#5145 阶段 1（派加工单扣批次库存 + 消耗台账 + 余量/分布/对账读面）。取号 PR-055（原 PR-052 与 #5150 撞号，rebase 后顺延）。2026-10-24 扩写（issue #7604）：新增判据 6（批次余量分页读面 / 服务端分页 / 浏览序 / 服务端 keyword）—— 库存明细页要「默认就展示」，而旧读面没有分页参数；本判据钉住分页真的下推到 SQL、余量仍走同一个派生点。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/StockBatchConsumptionServiceTest.java"
@@ -2758,7 +2759,7 @@ cases:
       - "判据 1·**缺省不自动指派**：不传 `assignmentRule` 且某行没给 `batchNo` ⇒ **逐字**沿用原错误「批次指派缺少 batchNo（行 item-1）」、**绝不**去查建议值（`verify(never())`）、不落加工单、不落台账。红证：去掉 `assignmentRule == null` 守卫 ⇒ 该行会被「静默指派」（或换成另一条错误文案）⇒ 判据红。"
       - "判据 2·**显式传规则才补位**：`best_fit` ⇒ 未指定批次的行补成 `suggestedBatchNo(...)` 的结果，且**真的进计划**（`plan` 收到的指派行 `batchNo = PC-LATE`）与加工单快照 `batchNo`；补位用的需求 = 该行**公式口径**米数 2.7（实际扣减仍由 plan 按排料结果定）。"
       - "显式 `fifo` 同样开启补位（缺省「不补位」≠ 规则值 `fifo`）；行里已有 `batchNo` ⇒ 人工最终选择优先，不查建议值。"
-      - "判据 3·**无候选 ⇒ 显式拒绝该行**：`suggestedBatchNo` 回 null ⇒ 逐单失败（`在指派规则 best_fit 下没有可满足的批次（该行需要 2.7 米）`）、不落半成品（不插加工单、不扣批次）—— 不静默跳过 = 不静默少扣。"
+      - "判据 3·**无候选 ⇒ 显式拒绝该行**：`suggestedBatchNo` 回 null ⇒ 逐单失败（🔴 2026-10-17 issue #7077 改判：旧文案把**内部规则码**（`best_fit` / `fifo`）与**明细行 id**（UUID）端给商家 ⇒ 现为「`「布艺遮光帘A」这行需要 2.7 米，库存里没有能裁出它的批次（按「先到先用」也补不上）—— 请先把这批布入库，或核对库存里对应门幅与颜色的余量后重试`」；判据 = `ProcessingOrderServiceTest#noCandidateUnderTheRuleFailsClosed` 的**成对断言**：新文案必须在 ∧ `best_fit` / `item-1` / 「指派规则」三个内部串必须**不在** ⇒ 任一句写回即红）、不落半成品（不插加工单、不扣批次）—— 不静默跳过 = 不静默少扣。"
       - "判据 4·**非法规则值 ⇒ 整批拒绝**（**即使本次所有行都显式指定了批次**）：`bestfit` ⇒ 400 + `ASSIGNMENT_RULE_UNKNOWN`，且在**碰任何 Mapper 之前**判完。两个入口都判：`POST /processing-orders/generate`（body 字段）与 `GET /batch-stock/candidates`（query 参数，非法值 ⇒ 400）。"
     skip_reason: "[backend-contract] 生成加工单侧的规则装配与失败面（无黄金策工具面）⇒ 由 Java 单测覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-25 新增（issue #5167）：生成加工单口的 assignmentRule（显式开启才补位 / 人工指定优先 / 失败面显式）。取号 PR-068。"
@@ -4014,7 +4015,7 @@ cases:
       - "判据 1·**三处同构**（漏任一处 = 「岗位权限页勾得动、侧边栏看不到」或反之）：`frontend/admin-web/src/config/menu.ts`（真实侧边栏单一来源）/ `MenuController.MENU_TREE`（`GET /api/admin/menus`，岗位权限页消费）/ `AuthService.buildMenusByPermissions`（登录下发）的**「仓储与物料」组（`inventory-center`；#5271 拆组前本项挂在「生产管理」组 —— 该表述已作废）**都含「余料台账」，节点名 / 路径 / 图标逐字一致且**顺序一致**（组内三项顺序 = 入库单 `/inbound-orders`（`inbound:view`）、余料台账 `/production/remnants`、省料看板 `/production/saving-board`（后两项 `processing:manage`），组名逐字「仓储与物料」、组 key 三源一致）。红证 A（实测）：只改 `menu.ts` 一处 ⇒ `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py` 判红（#5271 起比对**全树**：组 key + 组名 + 组顺序 + 导航型节点名）；红证 B：删掉 `menu.ts` 里该节点 ⇒ `remnants-menu-isomorphic.test.tsx` 判据 ① 与 PG-038 的面包屑覆盖同时判红。"
       - "判据 2·**权限不放宽**（issue #5191 明写的判据）：菜单权限码 == `RemnantController` 类级 `@RequirePermission(「processing:manage」)` 的码**逐字相同**，且该节点确实落在 `permissions.contains(「processing:manage」)` 的 if 块内（测试取「该 add 之前最近的权限判定」，与注释长度无关 ⇒ 不假红）。**负控**：权限集只有 `order:list` 时渲染真实 `<Sidebar />` ⇒ 「余料台账」**不出现**（开菜单没有顺手把门禁放宽成「人人可见」）。"
       - "判据 3·**真的点得到**（不是只断言常量表里有这行）：以 `processing:manage` 权限渲染**真实** `<Sidebar />` ⇒ 出现名为「余料台账」的 link 且 `href == /production/remnants`。"
-      - "判据 4·**面包屑（§15.2）**：`Header.tsx` 的 `/production/remnants` 条目 label == 菜单名「余料台账」，首项 == **「仓储与物料」**（#5271 拆组 —— 该组是面包屑首项的真值源，改前写「生产管理」），且该条**排在** `/production` 之前（本表 `find` 取首个命中，否则面包屑退化成「生产看板」）；对**每一个**菜单项的通用判据由既有的 PG-038（`menu-breadcrumb-coverage.test.tsx`）自动覆盖新增项。"
+      - "判据 4·**面包屑（§15.2）**：`Header.tsx` 的 `/production/remnants` 条目 label == 菜单名「余料台账」，首项 == **「仓储与物料」**（#5271 拆组 —— 该组是面包屑首项的真值源，改前写「生产管理」），且该条**排在** `/production` 之前（本表 `find` 取首个命中，否则面包屑退化成「作业看板」）；对**每一个**菜单项的通用判据由既有的 PG-038（`menu-breadcrumb-coverage.test.tsx`）自动覆盖新增项。"
       - "判据 5·**图标注册不是静默的**：`Sidebar.tsx` 的 `iconMap` 注册 `Recycle`（漏注册只会静默回落 `BarChart3`，不会有任何东西变红）；测试替身 `tests/setup.ts` 的 lucide 清单同步登记（漏登记则任何渲染 Sidebar 的用例当场抛错）。"
       - "判据 6·**不损失客户**：纯入口变更 —— 不改任何端点、权限语义与金额/口径（对客金额、售价、成品口径逐值不变）。"
       - "**边界（如实登记）**：① 未新增真实浏览器点击 E2E（本单以「渲染真实 Sidebar 组件 + 三源静态守卫 + Java 节点表断言」覆盖；e2e 旅程未加）；② 原先「企业参数中心 → 余料回收」域的下钻入口**保留**（两处入口并存，不删下钻）；③ 后端 Java 侧的 `MenuControllerTest` / `AuthServiceTest` 的节点表已同步（否则实现与测试漂移）。"
@@ -4185,7 +4186,7 @@ cases:
         product_keyword: "北欧风窗帘"
         price: 128
     skip_reason: ""
-    merge_log: "2026-09-24 新增（issue #5314 的 Agent 侧包）：批量更新的**两段确认 + 撤销**（工具 `product_batch_update`，契约 = issue #5314 评论「批量更新能力 —— 设计 + 冻结契约」）。本用例覆盖改价批量（`product_price`）+ 撤销入口；上下架批量（`product_status`）、阈值、白名单与结构锁的确定性判据见 PR-109（非 LLM 面）。post_clean 复位两条共享夹具商品的**商品级价**（种子真值：遮光窗帘 168 / 北欧风窗帘 128，#4075 口径）。 ｜ 2026-10-16（issue #7048 **P10**）**第一段收成 OR**（与 P9 给 PR-014 的修法逐字同形，先例可比）：原写法把第一段硬绑在 `interact(component=choice, multiSelect=true)` 一条路径上，而本用例 R1 输入**自己就把集合给全**（两条商品逐一点名）⇒ 发 confirm 明细卡同样满足「改哪些在执行前经商家过目」这一内核。改前红证 = **两次全量权威跑**：run 2131 首跑 `unmatched expectation: interact(component=choice, multiSelect=True)`（重试发 choice 卡才通过 ⇒ 记为 llm-noise 放行）、run 2259 两次尝试同点判红（桶=`unstable` 阻塞）。**未放宽**：`multiSelect` 判据保留在 OR 第一条分支、第二段卡 / `execute` / `revert` / `required_args` 一字未删。"
+    merge_log: "2026-09-24 新增（issue #5314 的 Agent 侧包）：批量更新的**两段确认 + 撤销**（工具 `product_batch_update`，契约 = issue #5314 评论「批量更新能力 —— 设计 + 冻结契约」）。本用例覆盖改价批量（`product_price`）+ 撤销入口；上下架批量（`product_status`）已按 2026-10-16 裁定移除（#7334 裁定 A），阈值、白名单与结构锁的确定性判据见 PR-109（非 LLM 面）。post_clean 复位两条共享夹具商品的**商品级价**（种子真值：遮光窗帘 168 / 北欧风窗帘 128，#4075 口径）。 ｜ 2026-10-16（issue #7048 **P10**）**第一段收成 OR**（与 P9 给 PR-014 的修法逐字同形，先例可比）：原写法把第一段硬绑在 `interact(component=choice, multiSelect=true)` 一条路径上，而本用例 R1 输入**自己就把集合给全**（两条商品逐一点名）⇒ 发 confirm 明细卡同样满足「改哪些在执行前经商家过目」这一内核。改前红证 = **两次全量权威跑**：run 2131 首跑 `unmatched expectation: interact(component=choice, multiSelect=True)`（重试发 choice 卡才通过 ⇒ 记为 llm-noise 放行）、run 2259 两次尝试同点判红（桶=`unstable` 阻塞）。**未放宽**：`multiSelect` 判据保留在 OR 第一条分支、第二段卡 / `execute` / `revert` / `required_args` 一字未删。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_product_batch_update.py"
@@ -4213,7 +4214,7 @@ cases:
     expectations: []
     data_checks:
       - "判据① 阈值（边界双侧）：N=51 ⇒ `success=False` / `error=batch_too_large` / suggestion 含「分批」且**不发请求**；N=50 ⇒ 放行（判据是 `> 50`，不是 `>= 50`）"
-      - "判据② batchType 白名单**只有两个**：`product_price`（field=basePrice）/ `product_status`（field=status，取值 on_sale / off_sale）；传 `product_name` ⇒ `batch_type_unsupported` 且建议里点名两个合法值（通用批量有意不做）"
+      - "判据② batchType 白名单**只有两个**：`product_price`（field=basePrice）/ `inventory_stock`（field=stock，单位米）；传 `product_name` / `product_status` ⇒ `batch_type_unsupported` 且建议里点名两个合法值（通用批量有意不做；上下架按 2026-10-16 裁定单件/批量都 ❌，#7334 裁定 A 移除）"
       - "判据③ 两段确认的**结构锁**：`execute` / `revert` 不带 `batch_id` ⇒ `batch_preview_required` 且不发请求；`batch_id` 只能来自 `preview` ⇒「跳过预览直接执行」在结构上不可达（不是靠 prompt 自律）"
       - "判据④ 逐条 before → after：preview 返回 `preview[].fields` 逐条（商品ID / 改前价 / 改后价），且**逐字等于** `confirm_value.confirm_card_fields` 的产出（字段投影单一源，不新立第二份投影）"
       - "判据⑤ 撤销逐条还原：`revert` 打到 `/api/admin/agent/batches/{batchId}/revert`、话术含「还原」；部分失败逐条报告且执行路径**不得**顺带调用 revert（不做整体回滚）；可撤销性以服务端真值字段 `revertible` 为准（`false` ⇒ 话术不得承诺可撤销）"
@@ -4221,7 +4222,7 @@ cases:
       - "判据⑦ 写面接线：注册表 + 门面导出（`from app.tools import ProductBatchUpdateTool`）+ `product` skill 绑定 + 写标注显式表态（`read_only=False` / `requires_confirmation=True` / `idempotent=True` / `read_only_actions={'preview'}` —— preview 免确认门禁否则两段确认在第一段之后死锁）"
       - "红证（可执行）：以上每一条都由 backend/ai-agent-service/tests/test_product_batch_update.py 的对应用例**独立变红**（边界双侧 / 白名单 / 结构锁 / 单一源 / 端点归属 / 权限码 / 接线），不是一起红"
     skip_reason: "[backend-contract] 工具契约 / 阈值 / 两段确认结构锁 / 撤销端点归属 —— 全部由 pytest 单测（零 LLM、零网络，HTTP 客户端全程替身）执行，非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-24 新增（issue #5314 的 Agent 侧包）：把「阈值 N>50 拒绝 / batchType 白名单两个 / 两段确认不可跳过 / 撤销逐条还原」从散文变成可执行判据（同 PR-104 / PR-107 的非 LLM 面形态：机器判据在 traces.tests）。LLM 行为面见 PR-108。"
+    merge_log: "2026-09-24 新增（issue #5314 的 Agent 侧包）：把「阈值 N>50 拒绝 / batchType 白名单两个 / 两段确认不可跳过 / 撤销逐条还原」从散文变成可执行判据（同 PR-104 / PR-107 的非 LLM 面形态：机器判据在 traces.tests）。LLM 行为面见 PR-108。 ｜ 2026-10-19（issue #7334 裁定 A）：用户裁定「上下架都 ❌」⇒ 移除 `product_status`，白名单改为 `product_price` / `inventory_stock`；判据②同步改判，`test_status_batch_type_is_rejected` 补负向红证。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_product_batch_update.py"
@@ -5010,6 +5011,52 @@ cases:
       verifies: []
 
   # ==========================================================================
+  # PR-131（issue #7528，P1·图片建品）：建品页「补充一句」里的货号 / 门幅 / 颜色命名规则
+  #   必须真的落进表单（改前整条丢弃 ⇒ 货号空缺、门幅未选中、颜色不按格式、SKU 0 行）
+  # ==========================================================================
+  - id: PR-131
+    legacy_id: ""
+    title: "图片建品「补充一句」的字面事实落表单：货号 2659 / 门幅 2.8+3.2 / 颜色按「货号-序号+颜色名」/ SKU 4 行（issue #7528）"
+    domains:
+      - product
+      - recognition
+      - frontend
+    tier: normal
+    tags:
+      - image-recognize
+      - declared-facts
+      - prefill
+      - frontend
+      - regression
+    truths_ref: []
+    user_inputs:
+      - "建品页「拍照 / 上传识别」的补充一句里逐字写：「这个商品的货号是2659，颜色格式是2659-序号+颜色名，门幅是2.8和3.2」，再上传一张色卡图"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**病（用户 2026-10-23 实测，五项同时缺失）**：货号空缺 / 商品属性全空 / 门幅未选中 / 颜色不按格式 / SKU 0 行。根因四条：① 货号**不在** backend/ai-agent-service/app/vision/targets.py 的 `TARGET_FIELDS[\"product\"]`；② 门幅的**推理值**被冻结契约拦掉（关联 #6356 的裁定）；③ 那句话只当推理上下文（提示词逐字「不得改变输出格式与铁律」）；④ SKU = 颜色 × 门幅，门幅空 ⇒ 0 行。"
+      - "**判据 1**：解析用户原句 ⇒ 货号 `2659`、门幅 `['2.8','3.2']`、命名规则 `{code:'2659'}`。执行点 = frontend/admin-web/tests/unit/lib/declared-facts.test.ts。"
+      - "**判据 2（负例，防「见数字就抓」）**：`这款有2659个颜色` 不产货号/门幅；`颜色格式按序号+颜色名`（无货号）不产规则；门幅超区间（26）不认；超过 3 根门幅不认。"
+      - "**判据 3**：`01米白、02雾霾蓝` ⇒ `2659-1米白、2659-2雾霾蓝`（序号 1 起、不补零、丢图上原序号）；幂等；改名后超 30 字 ⇒ 整体不改（输入框会静默削断，半截名字更糟）。"
+      - "**判据 4**：规格属性命中内置选项即选中；否定前缀（`不要提花` / `无需遮光`）与单字选项（`棉` / `麻`）不参与。"
+      - "**判据 5（类级守卫 + 注入式反证）**：解析产出的键必须落在 `sku_code` / `door_width` / `SPEC_EN_TO_CN` 全键里；手造 `{key:'price'}` 事实 ⇒ 被过滤（涉钱面不许被一句话带进表单）。"
+      - "**判据 6（页面级，改前必红）**：真 `/products/new` 页 —— 填那句话 + 上传 ⇒ 一键填入后 `ProductAttributes.skuCode='2659'`、`SkuMatrix` 收到 `doorWidths=['2.8','3.2']`、颜色两行改名、SKU **4 行**，且仍零 create/update。执行点 = frontend/admin-web/tests/unit/pages/products-new-recognize-entry.test.tsx「判据 2d」。"
+      - "**判据 7（不覆盖 / 可覆盖）**：`[图片识别]` 已有值的格不被覆盖；`[米宝解读]` 的推断值可被商家明说的字面事实覆盖。执行点 = frontend/admin-web/tests/unit/components/FormInterpretCard.test.tsx「判据 6~9」。"
+      - "**边界（如实登记）**：只认三类显式说法（货号/款号/商品编号、门幅/幅宽/门宽、颜色格式/命名）；那句话里枚举颜色名**本单不做**（颜色内容仍必须来自图）；后端契约与 `INTERPRETABLE_KEYS` 白名单**零改动**（判据：backend/ai-agent-service/tests/test_vision/test_interpret.py 全绿）。"
+    skip_reason: "[backend-contract] 确定性契约/机械判据，由 vitest（declared-facts / FormInterpretCard / products-new-recognize-entry / image-recognize）验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-23 新增（issue #7528）。取号 = `python3 scripts/next_case_id.py PR`（原取 PR-074 历史空档；rebase 到 main 后与 main 的 PR-074（#7545 生图）撞号 ⇒ 按 next id 重编号为 PR-131）。红→绿（注入式双向对照，实跑）：注入 = 去掉 `facts={declaredFacts}` + 摘掉 `sku_code` 映射 ⇒ `Tests 3 failed | 37 passed (40)`（页面级判据 2d + declared-facts 判据 6 两条）；撤回注入 ⇒ `Tests 40 passed (40)`。旁证：Growth Gate 首轮判 ❌（新模块 `product-attribute-options.ts` 缺测）⇒ 补 `tests/unit/lib/product-attribute-options.test.ts` 后 `blockers=0`。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/lib/declared-facts.test.ts"
+        - "frontend/admin-web/tests/unit/components/FormInterpretCard.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/products-new-recognize-entry.test.tsx"
+        - "frontend/admin-web/tests/unit/lib/image-recognize.test.ts"
+        - "frontend/admin-web/tests/unit/lib/product-attribute-options.test.ts"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ==========================================================================
   # PR-023（issue #6960，P3·状态写）：余料 recover/scrap 状态迁移 = DB 原子条件更新（并发恰一次回收额）
   # ==========================================================================
   - id: PR-023
@@ -5289,6 +5336,319 @@ cases:
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProductCreateIdempotencyTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProductCreateIdempotencyRealDbTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/controller/ProductCreateIdempotencyEndpointTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ── issue #6961（P4·★★·状态写）：商品状态迁移无 CAS + updateProduct 全实体回写（并发回滚他人状态）──
+  # 取号：本单开工时 main 现取 PR-129 / MC-115 / PG-084 均未占用（PR max=PR-128、MC max=MC-104、PG max=PG-075；
+  # PG-076 与 MC-104 属并行在飞的 #6955 包，本单一个号都不碰）。
+  - id: PR-129
+    legacy_id: ""
+    title: "商品状态迁移改 DB 原子条件更新（CAS）：并发 on/off_sale 恰一个赢家，落败方 409 + 实际当前态"
+    domains:
+      - product
+    tier: normal
+    tags: [backend-contract, concurrency, real-db, red-proof, product-status]
+    truths_ref: []
+    user_inputs:
+      - "商家在商品管理页点「上架」，另一个管理员（或另一个标签页）同一时刻点「下架」——两个请求都回 200，谁后写谁的终态"
+    expectations: []
+    data_checks:
+      - "**核验结论 = 真**：修前 `ProductService#updateProductStatus` / `#updateProductForAgent` / `#batchOnShelf` / `#batchOffShelf` 四条状态迁移都是「先 `selectById` 读旧 status 过状态机（`STATUS_TRANSITIONS`）→ `updateById`（WHERE 仅主键 ⇒ **无谓词**）」⇒ 校验在**读**之后、写无谓词：并发 on/off_sale **两个请求都 200**、终态由后写者决定，另一个请求的 200 是谎话。"
+      - "**主判据（已落码）**：真库并发（N=2 同刻起跑 × 3 轮，各自独立连接 + 独立事务）on_sale × off_sale ⇒ 成功数 **恰 == 1**、落败方必须 **409 CONFLICT**、终态 == 赢家的目标态，且「谁回 200，终态就必须是它声称的那个态」。断言 = backend/admin-api/src/test/java/com/migao/admin/service/ProductStatusCasRaceRealDbTest.java 的 `concurrentOnAndOffShelfHasExactlyOneWinner`。"
+      - "**谓词完整性**：CAS = `WHERE id=? AND tenant_id=? AND deleted=0 AND ((#{fromStatus} IS NULL AND status IS NULL) OR status = #{fromStatus})` —— 谓词逐条自证（列存在性对 `db/init/schema.sql` 的 `products` DDL 核过：`status`/`tenant_id`/`deleted` 三列都在）；`status` 可空 ⇒ 单列一支 `IS NULL`（PG 里 `status = NULL` 永假）。断言 = 同文件判据 1 的落库终态 + ProductStatusCasMetaGuardTest 的谓词判据。"
+      - "**正对照（不误杀）**：串行 `off_sale → on_sale → off_sale` 各成功一次；`off_sale → under_review`（不在状态机里）照旧是既有校验错误（非 200 / 非 409）。断言 = 同文件 `serialTransitionsStillSucceed`。"
+      - "🔴 **红证（并发类修复必填：注入方式 + 修前逐字读数）**：见同批 PR body「红证」节（探针开 ⇒ 必红；探针关 ⇒ 绿，成对读数；注入 = 把 CAS 退回 `productMapper.updateById(product)`）。"
+      - "**改品不得回滚状态（T2b，本单另一半）**：真库并发「`updateProduct`（改名，带窗口探针）× 状态迁移 off_sale → on_sale」⇒ 终态必须仍是 `on_sale`（修前：整实体回写 + `setStatus(originalStatus)` ⇒ 静默写回 `off_sale`），且改名**真的生效**（判据不是「什么都没发生」）。断言 = 同文件 `updateProductDoesNotRollBackConcurrentStatusMigration`。"
+      - "**边界（如实登记）**：① 跑的是服务层真库并发而非 HTTP 栈（`PUT /api/admin/products/{id}/status` 与 agent 端点只是薄转发）；② 探针对象全部自建（tenant 6961 / 商品 id 前缀 `p-6961-`），随一次性临时集群销毁，不碰存量数据；③ 判据 1 只用 `updateProductStatus` 一条入口代表四条（四条都走同一个 `applyStatusTransition` → 同一条 CAS；另外三条的**登记**由 MC-115 逐条钉住）；④ `batchOnShelf`/`batchOffShelf` 的落败文案走 `BatchOperationResult.failed`（分部分成功语义）而不是 409，本判据未逐条断言它的影响行数分支。"
+    skip_reason: "[backend-contract] 真 PG 并发落库判据（initdb+pg_ctl 临时集群 + 真 ProductService 装配）：CAS 的行锁 / 条件重估与「改了哪几列」在 mock 面结构上不可见，无 LLM 环节 ⇒ 不进 agent-eval 冒烟。"
+    merge_log: "2026-10-15 新增（issue #6961，P4 包）：把四条状态迁移入口从「读判 + 无谓词 `updateById`」改成 DB 原子条件更新（CAS，`ProductMapper#updateStatusIfFrom`），按**受影响行数**判定，0 行 ⇒ 409 + 实际当前态；并把 `updateProduct` 从整实体回写改成只写自己负责的列（status 显式置 null ⇒ 不进 SET）⇒ 修掉「改品静默回滚并发状态迁移」（T2b 的类级根因）。范式 = `InboundOrderMapper#markPosted`（#6928）与 `ProcessingOrderMapper#markStatusIfFrom`（#6955）。取号 = PR-129（开工时 main 现取 PR max=PR-128）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductStatusCasRaceRealDbTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: MC-115
+    legacy_id: ""
+    title: "类级元守卫（#6961）：商品状态迁移写路径必须落到 SQL 谓词（CAS）+ 未登记即红 + 豁免只许缩短"
+    domains:
+      - product
+      - backend
+    tier: edge
+    tags: [backend_contract, meta_guard, concurrency, product-status, static-guard]
+    truths_ref: []
+    user_inputs:
+      - "（元守卫，无用户轮次）下一个人在商品族新加一条状态迁移写路径，或把 CAS 退回无谓词 `updateById` / 把改品退回整实体回写"
+    expectations: []
+    data_checks:
+      - "**为什么是类级**（铁律 8）：只修一个入口 = 没修 —— 下一个人在同族文件新加一条状态迁移写路径、或把 CAS 退回 `updateById`，不会有任何东西变红。守卫把「mapper 状态写谓词完整性 + service 状态写路径登记 + 改品不写状态列的否定锚」钉成机械判据。断言 = backend/admin-api/src/test/java/com/migao/admin/service/ProductStatusCasMetaGuardTest.java。"
+      - "**判据 1（扫描器非空跑自证）**：现取「写 `products.status` 的 mapper 手写 SQL」必须含 `updateStatusIfFrom`；现取「service 里出现状态写锚的方法」必须含 `updateProductStatus` / `updateProductForAgent` / `batchOnShelf` / `batchOffShelf` / `updateProduct` / `applyStatusTransition`（少一个核心对象 = 判据失明要当场暴露，不是静默通过）。"
+      - "**判据 2（谓词完整性）**：凡 SET 侧写 `status` 的手写 `@Update` SQL，必须同时含 `tenant_id` 参数 + WHERE 侧 status 谓词 + `deleted = 0` —— 少任何一条 ⇒ 红。"
+      - "**判据 3（无谓词写即红 + T2b 否定锚）**：现取的每个状态写路径方法体里**不得**出现 `productMapper.updateById(`；改品宿主 `updateProduct` 必须逐字含 `product.setStatus(null)`（退回 `setStatus(originalStatus)` 的整实体回写 ⇒ 红）。"
+      - "**判据 4（未登记即红 + 登记必须兑现 + 豁免只许缩短 + 不许空转）**：现取写路径与台账 backend/admin-api/src/test/resources/product-status-cas-ledger.json 的 `service_write_paths` **双向对账**（未登记 ⇒ 红 / 幽灵条目 ⇒ 红）；每条 `evidence` = `<仓库相对全路径>::<可检索文本>` 必须逐字兑现；`entries` 不许为空；`unverified` ≤ `unverified_baseline`（**0**，条数现取打印）。"
+      - "**判据 5（判别力自证）**：合成语料上七种坏形态各自判红 —— ① 无谓词状态写；② 缺 `deleted = 0`；③ 缺 tenant 谓词；④ **去谓词定向注入**（缺 WHERE 侧 status 谓词）；⑤ 未登记的新写路径；⑥ **去行数判定定向注入**（锚串留着 `if (false && …updateStatusIfFrom(…)`，真正落库换成无谓词 `updateById`）；⑦ 台账未兑现（CAS 调用被摘掉）；合规语料（与真源码同形）判绿；只改注释不红。另带两条**扫描器鲁棒性**自证（跨行签名必须仍被扫到 + 注释里的孤立 `{` 不得让花括号深度错位）。"
+      - "**边界（如实登记）**：见台账 `coverage_boundary` —— 形态判据不做 AST（换措辞可绕过，真实防线仍是 PR-129 的实例判据）；射程只到 `ProductMapper` + `ProductService` 两条文件；判不了「拿 `updateById` / wrapper 改**非状态**列」；不跑被它引用的真库判据；不改任何门禁的通过条件、不新增豁免；**与 MC-100 / PG-075 / MC-102 / MC-104 / #6220 的售后守卫有意不重叠**（各自守自己那张表，一字未动它们）。"
+    skip_reason: "[backend-contract] 类级形态守卫（读源码文本、零 DB 零网络）⇒ 不进 agent-eval 冒烟：由 admin-api 单测 ProductStatusCasMetaGuardTest 执行。"
+    merge_log: "2026-10-15 新增（issue #6961 的类级固化）：沿用 #6928 / #6955 的元守卫范式（扫描器非空跑自证 / 谓词完整性 / 无谓词写即红 / 未登记即红 / 登记必须兑现 / 豁免只许缩短 / 判别力自证），但**扩到本单的射程**（`products.status` 的 mapper 写面 + `ProductService` 的六条状态写路径 + 改品宿主的「不写状态列」否定锚），台账 = backend/admin-api/src/test/resources/product-status-cas-ledger.json（豁免基线 **0**）。取号 = MC-115（开工时 main 现取 MC max=MC-104，那个号属并行在飞的 #6955 包）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductStatusCasMetaGuardTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PG-084
+    legacy_id: ""
+    title: "🔴 真库并发（#6961）：商品状态迁移 = CAS（恰一个赢家 + 落败 409）+ 改品不得静默回滚并发状态迁移"
+    domains:
+      - product
+      - backend
+    tier: edge
+    tags:
+      - product
+      - concurrency
+      - real-db
+      - backend-contract
+      - red-proof
+    truths_ref: []
+    user_inputs:
+      - "两个管理员同时对同一件商品操作：一个点「上架」、一个点「下架」（或一个在改商品名、另一个在上下架）"
+    expectations: []
+    data_checks:
+      - "**核验结论 = 真（两条主张都在当前代码上成立）**：① 四条状态迁移入口（`updateProductStatus` / `updateProductForAgent` / `batchOnShelf` / `batchOffShelf`）是「读旧 status 过状态机 → `updateById`（WHERE 仅主键）」⇒ 并发 on/off_sale **两个请求都 200**、终态由后写者决定；② `updateProduct` 是整实体回写 + `setStatus(originalStatus)` ⇒ 改品会把读到的旧 status 写回，**静默回滚**并发的状态迁移（T2b 的类级根因）。"
+      - "**判据 1·恰一个赢家（真库并发 + 窗口探针，3 轮）**：同一件商品并发 `on_sale` × `off_sale`（同刻起跑、各自独立连接 + 独立事务）⇒ 成功数 **恰 == 1**、落败方必须 **409 CONFLICT**、终态 == 赢家的目标态，且「谁回 200，终态就必须是它声称的那个态」。断言 = backend/admin-api/src/test/java/com/migao/admin/service/ProductStatusCasRaceRealDbTest.java 的 `concurrentOnAndOffShelfHasExactlyOneWinner`。"
+      - "**判据 2·改品不得回滚状态（T2b）**：真库并发「`updateProduct`（改名）× 状态迁移 off_sale → on_sale」⇒ 终态必须仍是 `on_sale`，且改名**真的生效**（判据不是「什么都没发生」）。修前：迁移 200 + status 落 on_sale，随后改品的整实体回写把它写回 `off_sale` ⇒ 当场红。断言 = 同文件 `updateProductDoesNotRollBackConcurrentStatusMigration`。"
+      - "**判据 3·正对照（护栏不误杀）**：串行 `off_sale → on_sale → off_sale` 各成功一次；`off_sale → under_review`（不在状态机里）照旧是既有校验错误（非 200 / 非 409）。断言 = 同文件 `serialTransitionsStillSucceed`。"
+      - "**为什么必须真库 + 窗口探针**：CAS 的效力来自只有真 PG 才有的**行锁 + 条件重估**（后到者阻塞到前者提交后按新版本行重估谓词 ⇒ 影响行数 0）；mock 面结构上不可见（mock 恒返回 1）⇒ 修前形态在 mock 面**恒绿**（假绿）。窗口只有微秒级 ⇒ 用 `ProductService#setStatusMigrationProbePauseMillisForTest`（生产恒 0）放大，判据才是确定性的而不是 flake。"
+      - "🔴 **红证（探针开 ⇒ 必红 / 探针关 ⇒ 全绿，成对逐字读数见同批 PR body）**：注入 = 把四条写退回无谓词 `updateById` + 把 `updateProduct` 退回整实体回写 + `setStatus(originalStatus)`。"
+      - "**边界（如实登记）**：① 服务层真库并发，不覆盖 HTTP 薄转发层；② 探针对象全部自建（tenant 6961 / id 前缀 `p-6961-`），随一次性临时集群销毁，不碰存量数据；③ 判据 1 用 `updateProductStatus` 一条入口代表四条（同一个 `applyStatusTransition` → 同一条 CAS；另外三条的登记由 MC-115 钉住）；④ `batchOnShelf` / `batchOffShelf` 的落败走 `BatchOperationResult.failed`（分部分成功语义）而不是 409，本判据未逐条断言它的影响行数分支（已登记在台账 `coverage_boundary`）。"
+    skip_reason: "[backend-contract] 真 PG 并发落库判据（initdb+pg_ctl 临时集群 + 真 ProductService 装配），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-15 新增（issue #6961 的实例判据，与 PR-129 / MC-115 同批）：范式照抄 ProcessingOrderStatusCasRaceRealDbTest（#6955）。取号 = PG-084（开工时 main 现取 PG max=PG-075；PG-076 属并行在飞的 #6955 包，本单不碰）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductStatusCasRaceRealDbTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PR-130
+    legacy_id: ""
+    title: "报价问法真跑：问「2699 雪尼尔做 3 米宽一幅窗帘多少钱」→ 报商品真价 + 说清加工费口径，不得凭空给总价"
+    domains:
+      - product
+    tier: normal
+    persona: mibao
+    tags:
+      - product
+      - pricing
+      - journey
+    truths_ref: []
+    user_inputs:
+      - "2699系列雪尼尔窗帘面料，2.8 米门幅，做 3 米宽的一幅窗帘，大概多少钱？"
+    expectations:
+      - tool: product_detail or product_search
+    data_checks:
+      - "必须落到**商品真价 23.80 元/米**（夹具 prod_eval_2699 的 base_price；回复里出现 23.8 / 23.80 任一形态）"
+      - "必须说清**加工费/用料另有口径**（店铺加工项目录 15 项、按加工费组合计价）—— 不得把布料单价直接当总价，也不得凭空编一个总价数字"
+      - "不得出现「免费 / 一共 0 元」这类**未算就给结论**的形态"
+    skip_reason: ""
+    merge_log: "2026-10-19 新增（issue #7027 的用例补齐）：报价是商家最高频的问法，但语料里只有「查商品详情」（PR-0xx）这种**工具签名式**用例，没有「按商家的说法问价」的旅程用例。本用例只钉可判定的两点（真价 + 口径），不规定措辞。"
+    traces:
+      tests:
+      ci:
+      verifies: []
+
+  - id: PR-053
+    legacy_id: ""
+    title: "营销海报 - 商品事实 + 商家确认文案生成海报卡（缺文案 fail-closed；PC 下载 / 手机保存相册）"
+    domains:
+      - product
+    tier: normal
+    persona: ""
+    tags:
+      - product
+      - poster
+      - marketing
+      - tool
+      - backend_contract
+    truths_ref: []
+    user_inputs: []
+    expectations: []
+    must_fail:
+      - tool: marketing_poster
+    data_checks:
+      - "判据 0·**机器可判**：缺文案 / 越界时工具必须失败（`must_fail[marketing_poster]`；工具错误码为 `COPY_REQUIRED` / `COPY_INVALID`，属工具结果级、不是轮级 SSE 错误）；成功时 `success=true` 且 `data.product.name` 逐字等于 admin-api 返回的商品名。"
+      - "判据 1·🔴 **文案必须由操作员提供**（issue #7351；用户逐字「不要无脑的直接生成」）：`marketing_poster` 缺 `promo_title` / 缺 `selling_points` / 卖点 >3 条 ⇒ `success=False`（`COPY_REQUIRED` / `COPY_INVALID`），且**零 admin-api 调用**、`_should_send_card` 为 False（前端不会画「空头海报」）。注入红证：允许空标题发卡 ⇒ 变红。"
+      - "判据 2·**商品事实只来自 admin-api**：主图 / 名称 / 价格（缺 price 回退 basePrice）/ 单位 / 规格逐字段来自 `GET /api/admin/products/{id}`；商品描述里的营销词**不得**被搬进 `copy`。注入红证：把 description 拼进卖点 ⇒ 变红。"
+      - "判据 3·**租户隔离 + 权限码**：响应 tenantId ≠ 会话租户 ⇒ 按「商品不存在」拒绝；无 `product:list` 的 C 端上下文 ⇒ 权限拒绝（`c_end_reachable=False`）。注入红证：删掉 tenant 校验 ⇒ 变红。"
+      - "判据 4·**卡型跨端契约**：`_detect_card_type('marketing_poster')` → `marketing_poster`；该工具只绑黄金策 product/general ⇒ B 端桌面 `ToolResultCard` 与 B 端移动 `MessageBubble` 都必须有渲染分支（`test_card_type_cross_end_contract.py` 现算，缺一端即红）。"
+      - "判据 5·**PC 下载**：`MarketingPosterCard` 点「下载海报」触发带 `download=\"营销海报-<商品名>.png\"` 与 `data:image/png` href 的锚点；版面纯函数固定 750×1000、标题 ≤2 行、卖点 ≤3 行、缺价显示「价格面议」（不伪装 ¥0.00）。注入红证：把 download 改成新窗口打开 ⇒ 变红。"
+      - "判据 6·**手机保存到相册**：`PosterCard` 在微信内置浏览器弹「长按图片保存」提示（JS 无法直接写相册，不谎报已保存）；其它浏览器触发 `<a download>` + toast；商品图跨域失败 ⇒ 降级为无图海报并明说。注入红证：微信分支改成 toast「已保存」⇒ 变红。"
+      - "判据 7·**快捷入口**：`GET /api/chat/quick-actions` 的 `actions` 仍恰好 6 条（2×3 契约不变），新增 `tools` 字段含「营销海报」；两端按工具行独立渲染并发送服务端 prompt（前端不写死入口内容）。注入红证：把海报塞进 actions 变第 7 格 ⇒ 六格判据红。"
+    skip_reason: "[backend-contract] 工具 + 两端渲染契约（无 LLM 环节）：断言由 backend/ai-agent-service/tests/test_marketing_poster.py、test_chat.py::TestQuickActions、test_card_type_cross_end_contract.py 与两端前端单测执行"
+    merge_log: "2026-10-19 新增（issue #7351：黄金策营销海报工具 —— 对话工具 + 快捷入口；PC 下载 / 手机保存相册；文案必须由操作员提供）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_marketing_poster.py"
+        - "backend/ai-agent-service/tests/test_chat.py"
+        - "backend/ai-agent-service/tests/test_card_type_cross_end_contract.py"
+        - "frontend/admin-web/tests/unit/lib/marketing-poster-layout.test.ts"
+        - "frontend/admin-web/tests/unit/components/MarketingPosterCard.test.tsx"
+        - "frontend/admin-web/tests/unit/components/QuickActions.test.tsx"
+        - "frontend/bmini-app/tests/poster-layout.test.ts"
+        - "frontend/bmini-app/tests/poster-card.test.tsx"
+        - "frontend/bmini-app/tests/quick-actions.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PR-054
+    legacy_id: ""
+    title: "营销海报旅程 - 先问商家要文案，拿到「开门红 + 卖点」后才调海报工具（不得自行编文案）"
+    domains:
+      - product
+    tier: normal
+    persona: mibao
+    tags:
+      - product
+      - poster
+      - journey
+      - marketing
+    truths_ref: []
+    precondition:
+      - type: product_count_for_keyword
+        source: "2699"
+    user_inputs:
+      - "帮我给「2699系列雪尼尔窗帘面料」做一张营销海报"
+      - "主标题写「开门红」，卖点写「高遮光、免烫易打理」"
+    expectations:
+      - tool: product_search
+      - tool: marketing_poster
+        args:
+          promo_title: 开门红
+    data_checks:
+      - "第一轮：**不得直接生成海报**（商家还没给文案）—— 必须先问「主标题 + 2~3 条卖点」，不得用商品描述自动拼卖点、不得编造折扣/赠品/材质。"
+      - "第二轮：商家逐字给出「开门红」+「高遮光」「免烫易打理」后才调用 `marketing_poster`；工具入参 `promo_title` 必须逐字等于「开门红」（模型自己换词 = 红）。"
+      - "回复出现营销海报卡（商品主图 + 名称 + 价格 + 单位 + 文案），并提示商家可在 PC 下载 / 手机长按保存到相册。"
+    skip_reason: ""
+    merge_log: "2026-10-19 新增（issue #7351）：营销海报的**引导补文案**旅程。按用户裁定 #4262，本用例**不在合入时自动跑**，留给下一次手动集中评测。"
+    traces:
+      tests: []
+      ci: []
+      verifies: []
+
+  - id: PR-073
+    legacy_id: ""
+    title: "营销海报 - 商家让 AI 写文案：先按营销三板斧给 2~3 组候选，确认前不得调海报工具"
+    domains:
+      - product
+    tier: normal
+    persona: mibao
+    tags:
+      - product
+      - poster
+      - journey
+      - marketing
+      - fail_closed
+    truths_ref: []
+    precondition:
+      - type: product_count_for_keyword
+        source: "2699"
+    user_inputs:
+      - "我要给 2699 系列雪尼尔窗帘面料做张海报，文案你帮我写吧，随便写"
+    expectations: []
+    forbidden_tools:
+      - tool: marketing_poster
+    data_checks:
+      - "`marketing_poster` 在本轮**未被调用**（计分锚点；真实机器判据 = forbidden_tools，调用即违规）。"
+      - "必须给出 2~3 组**候选文案**（每组含主标题 + 2~3 条卖点），并明确请商家选一组或改写；候选必须基于商品事实（名称 / 规格 / 价格）。"
+      - "**不得**在商家确认前调用 `marketing_poster`（机器断言 = forbidden_tools，调用即违规）；不得把候选当最终结果直接发卡。"
+      - "候选不得编造折扣 / 赠品 / 材质 / 销量 / 「第一 / 最好 / 100%」等无依据表述；活动价、库存等不知道的事实先问商家。"
+    skip_reason: ""
+    merge_log: "2026-10-20 新增（issue #7351；用户 2026-10-20 裁定「B. A + AI 给候选文案，商家确认后采用」）：营销三板斧候选流程的机器判据 = 未确认前禁止调工具。按 #4262，本用例不在合入时自动跑，留给下一次手动集中评测。"
+    traces:
+      tests: []
+      ci: []
+      verifies: []
+
+  - id: PR-074
+    legacy_id: ""
+    title: "商品图生成 - 对已选商品生成商品图（缺主图/能力不可用都可行动拒绝；成功发卡：PC 下载 / 手机保存相册）"
+    domains:
+      - product
+    tier: normal
+    persona: ""
+    tags:
+      - product
+      - image_generation
+      - tool
+      - backend_contract
+      - fail_closed
+    truths_ref: []
+    user_inputs: []
+    expectations: []
+    must_fail:
+      - tool: product_image_generate
+    data_checks:
+      - "判据 0·**机器可判**：缺 `product_id` / `kind` 不在白名单 / 商品没有可用主图 ⇒ `success=False`（`missing_params` 或工具错误码 `IMAGE_SOURCE_MISSING`）；成功时 `success=true`、`data.image_url` 非空、`data.product.name` 逐字等于 admin-api 返回的商品名（判据源 = `backend/ai-agent-service/tests/test_product_image_generate.py`）。"
+      - "判据 1·**入口 = 已选商品**（issue #7541；用户 2026-10-23 裁定）：`product_id` 必填，模型先 `product_search` / `product_detail` 定位；缺参 / `kind` 越界 ⇒ 立刻失败且**零 admin-api 调用、零生图调用**。注入红证：缺参放行到取商品 ⇒ 变红。"
+      - "判据 2·**样图只来自该商品主图**：样图取 `GET /api/admin/products/{id}` 的 `mainImage`（缺失回退 `images[0]`）；两者都没有、或不是 http(s) 完整地址 ⇒ `IMAGE_SOURCE_MISSING` + **零生图调用**，不拿别的商品凑、不编造。注入红证：缺主图时改传空串给内核 ⇒ 变红。"
+      - "判据 3·**不写表单、不落库**：全程只有一次 `GET /api/admin/products/{id}`，`post` / `put` / `patch` / `delete` 一个都不调；生成图只作为卡载荷回给对话（转存与「用不用」都在商家后台）。注入红证：成功后顺手 PATCH 商品主图 ⇒ 变红。"
+      - "判据 4·🔴 **失败语义如实**：`ImageGenerationUnavailable`（含模型不接这类图生图请求）⇒ `IMAGE_GEN_UNAVAILABLE`；`ImageGenerationQuotaExceeded` ⇒ `IMAGE_GEN_QUOTA_EXCEEDED`；其它供应商失败 ⇒ `IMAGE_GEN_FAILED`。三者**互不冒充**，`IMAGE_GEN_UNAVAILABLE` 的用户话术里**不得**出现「额度」。注入红证：把前两者合成一个码 ⇒ 变红。"
+      - "判据 5·**卡发射条件**：`_detect_card_type('product_image_generate')` → `generated_image`；`_should_send_card` 只在 `success=true` **且** `data.image_url` 非空时为真（失败 / 空图不发卡，避免前端画空图框）。注入红证：去掉 image_url 判据 ⇒ 变红。"
+      - "判据 6·**跨端契约**：该工具只绑黄金策 `product` / `general` ⇒ B 端桌面 `ToolResultCard` 与 B 端移动 `MessageBubble` 都必须有 `generated_image` 渲染分支，C 端（元元）不可达（判据 = `backend/ai-agent-service/tests/test_card_type_cross_end_contract.py` 现算）。注入红证：删掉任一端的分支 ⇒ 变红。"
+      - "判据 7·**PC 下载 / 手机保存到相册**：桌面卡点「下载图片」走「取文件再按 `商品图-<商品名>.png` 存盘」，取不到时打开原图并明说可「图片另存为」（不谎报已下载）；移动卡在微信内置浏览器弹「长按图片保存」（JS 无法直接写相册，不谎报已保存）。注入红证：微信分支改成提示「已保存」⇒ 变红。"
+    skip_reason: "[backend-contract] 工具 + 两端渲染契约（无 LLM 环节）：断言由 backend/ai-agent-service/tests/test_product_image_generate.py、test_card_type_cross_end_contract.py 与 frontend/admin-web/tests/unit/components/GeneratedImageCard.test.tsx 执行；真实出图还依赖生图模型可用性（#7538：qwen-mt-image-2.0 不接图生图），合入时**不跑**端到端生成"
+    merge_log: "2026-10-23 新增（issue #7541：黄金策「对已选商品生成商品图」—— 工具 + 对话卡预览；PC 下载 / 手机保存相册；不写表单、不落库；失败语义三分）。按 #4262，本用例不在合入时自动跑，留给下一次手动集中评测。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_product_image_generate.py"
+        - "backend/ai-agent-service/tests/test_card_type_cross_end_contract.py"
+        - "frontend/admin-web/tests/unit/components/GeneratedImageCard.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PR-132
+    legacy_id: ""
+    title: "商品档案不再设置库存：表单 / 建品接口 / Excel 导入三面下线，存量按真实单据净额重算（V190）"
+    domains:
+      - product
+    tier: normal
+    persona: ""
+    tags:
+      - product
+      - stock
+      - product_contract
+      - data_migration
+    truths_ref:
+      - product-sku-stock.status-flow
+    user_inputs:
+      - "我们现在商品中设置了库存数值，这个要移除了，要根据真实库存数据来"
+    expectations: []
+    data_checks:
+      - "判据 1·**商品表单无库存录入口**（改前必红）：SKU 矩阵表头不含「库存」列、每行只有价格一个输入框、批量填写区没有「数量」框；源码（剥注释后）不再出现 `STOCK_UNIT` / `'stock'` / `batchStock` / 「库存（」任何一个。注入红证：把 `<th>库存（米）</th>` 与库存 `NumberInput` 加回去 ⇒ 判据红。判据本体 = frontend/admin-web/tests/unit/components/SkuMatrixStockRemoved.test.tsx（4 条行为 + 1 条静态扫描）；连带 = SkuMatrixNumbers.test.tsx 只剩价格逐键与编辑既有值，ProductForm.test.tsx 的「总库存」断言改成只读说明。"
+      - "判据 2·**建品接口忽略库存**（改前必红）：`ProductCreateRequest.stock=500` + `skus[].stock=300` ⇒ 落库 `products.stock=0`、`product_skus.stock=0`，且**不落**「新 SKU 初始库存（基线行）」台账行；`colors × doorWidths` 自动生成的 SKU 同样为 0（改前默认 100）。注入红证：把 `input.getStock()` 透传 / 恢复默认 100 ⇒ ProductCreateStockIgnoredTest 两条各红。"
+      - "判据 3·**Excel 导入不再建立库存**（改前必红）：`IMPORT_HEADERS` 不含「库存」（模板与解析同源）；旧文件仍带「库存」列时按未知列忽略 —— 行照常落库、库存 0，且不再因 2.755 被拒。注入红证：把库存加回 `IMPORT_HEADERS` 并恢复精度准入 ⇒ 判据红。判据本体 = ProductBulkImportServiceTest 的 legacyStockColumnIsIgnored / importHeaderFaceIsIsomorphicToExport / templateCanBeImportedBackAsIs。"
+      - "判据 4·**存量按真实单据净额重算**（V190，真库执行）：SKU 库存 = `reason IN (inbound, order, aftersales) OR (reason='manual' AND note LIKE '库存盘点：%')` 的台账净额，clamp ≥ 0；手工基线 / 表单改库存 / 手工调整**不计**。6 种形态实测：纯手工 30 ⇒ 0；入库 100 + 订单 -10 ⇒ 90；入库 50 + 手工调整 -20 ⇒ 50；入库 20 + 批次盘点 +5 ⇒ 25；净额 -7 ⇒ 0 且不落 0 变更行；无 SKU 商品 ⇒ 0。有变化的 SKU 各落一条 `manual` 补偿行（before=改前 / after=重算值），第二遍执行 0 行新增（幂等），且所有补偿行 `after_qty == product_skus.stock`。可重放证据 = acceptance/2026-10-24-7597-product-stock-from-documents/verify_v190_migration.py（真起临时 PG + schema.sql）；静态守卫 = tests/unit_ci_workflows/test_migration_immutability.py / test_migration_idempotency.py / test_migration_references_exist_in_schema.py。"
+      - "判据 5·**读面仍是只读余额、写面边界不清算**：商品列表 / 详情继续返回 `stock`（= SKU 汇总）且表单「总库存」为只读说明；**保留**改品 stock 分支（批量库存调整 / Agent 调整）作为唯一还在的绝对库存写面，其落账链条与幂等由 ProductStockLedgerRealDbTest 判据 1b/2/3 在真库上钉住（首行 before=0、逐次首尾相接、同值重放不增行）；订单侧库存校验**未改**（库存 0 ⇒ 拒绝下单，这是「只认真实入库」的有意后果）。"
+    skip_reason: "[backend-contract] 商品档案口径 + 破坏性数据迁移（前端组件 + Java 单测 + 真库迁移脚本，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/SkuMatrixStockRemoved.test.tsx、backend/admin-api/src/test/java/com/migao/admin/service/ProductCreateStockIgnoredTest.java、ProductBulkImportServiceTest.java、ProductStockLedgerRealDbTest.java、ProductUpdatePruneScopeRealDbTest.java 与 tests/unit_ci_workflows/test_migration_*.py 执行；V190 的真库执行证据见 acceptance/2026-10-24-7597-product-stock-from-documents/（CI 的迁移判据是静态的，不执行 SQL）"
+    merge_log: "2026-10-24 新增（用户裁定逐字：「我们现在商品中设置了库存数值，这个要移除了，要根据真实库存数据来」；同日两问的选择：① 移除范围 = A「表单不再录入，库存只由真实单据产生」；② 存量数据 = C「清零，只认真实入库」，该选项原文写明「会改变现网可售数量，风险最高」）。为什么是「按真实单据净额重算」而不是无脑置 0：置 0 会让「入库 60 米」的商品变成 0 而 `stock_batches` 仍有 60 米，`BatchStockViews` 的 `diff = batchRemaining − skuStock` 恒等式当场破；纯手工库存的商品算出 0 = 用户选择的「清零」。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/SkuMatrixStockRemoved.test.tsx"
+        - "frontend/admin-web/tests/unit/components/SkuMatrixNumbers.test.tsx"
+        - "frontend/admin-web/tests/unit/components/ProductForm.test.tsx"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductCreateStockIgnoredTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductBulkImportServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductStockLedgerRealDbTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductUpdatePruneScopeRealDbTest.java"
+        - "tests/unit_ci_workflows/test_migration_immutability.py"
+        - "tests/unit_ci_workflows/test_migration_idempotency.py"
+        - "acceptance/2026-10-24-7597-product-stock-from-documents/verify_v190_migration.py"
       ci:
         - pr-check.yml
       verifies: []

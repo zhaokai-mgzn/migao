@@ -689,7 +689,10 @@ admin_web_face_paths() {
 }
 worker_h5_face_paths() {
   # frontend/shared 是本腿的跨目录输入（operation-display.mjs 被 render.mjs 与测试执行）。
-  grep -E '^(frontend/worker-h5/|frontend/shared/)' || true
+  # frontend/admin-web/tailwind.config.ts 是**工人端调色板的真值源**（issue #7237：
+  # tests/worker-h5-theme-parity.test.mjs 逐值对账 primary/neutral/accent）⇒ 商家端改一阶，
+  # 本腿必须重跑（否则「工人端没跟上」这条判据在不命中 paths 的 PR 上永远不跑 = 漏面）。
+  grep -E '^(frontend/worker-h5/|frontend/shared/|frontend/admin-web/tailwind\.config\.ts$)' || true
 }
 # 命中判定与 cases_face_hit() / redproof_face_hit() / bmini_face_hit() **同款**：用变量收结果再判空，
 # **不要**写成 `… | grep -q .` —— `grep -q` 命中即退，上游 printf 吃 SIGPIPE ⇒ `set -o pipefail` 下

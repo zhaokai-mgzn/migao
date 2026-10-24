@@ -33,12 +33,18 @@ import userEvent from '@testing-library/user-event'
 
 const mockLedger = vi.fn()
 const mockGetProducts = vi.fn()
+/** 分页读面（issue #7604）：本页「批次余量」视图**唯一**调用的批次端点 */
+const mockBatchesPage = vi.fn()
+/** 旧全量端点（`/batches`）：本页**不得**再调用（判据 ⑪） */
 const mockBatches = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   stockLedgerApi: { ledger: (...args: unknown[]) => mockLedger(...args) },
   productApi: { getProducts: (...args: unknown[]) => mockGetProducts(...args) },
-  batchStockApi: { batches: (...args: unknown[]) => mockBatches(...args) },
+  batchStockApi: {
+    batches: (...args: unknown[]) => mockBatches(...args),
+    batchesPage: (...args: unknown[]) => mockBatchesPage(...args),
+  },
 }))
 
 /** 一行入库过账：成本三列都有值 */
@@ -120,6 +126,8 @@ beforeEach(() => {
   vi.clearAllMocks()
   mockLedger.mockResolvedValue(paged([inboundRow, legacyRow]))
   mockGetProducts.mockResolvedValue(paged([{ id: 'prod-1', name: '遮光窗帘布料' }]))
+  // 批次视图一进来就查第 1 页（issue #7604）⇒ 默认桩必须有值，否则 beforeEach 之后的结构性用例会拿到 undefined
+  mockBatchesPage.mockResolvedValue(paged([batchRow, exhaustedRow], 2))
 })
 
 describe('库存明细页（issue #6404 / UI-087）', () => {
@@ -278,26 +286,24 @@ const exhaustedRow = {
   remainingMeters: '0.0',
 }
 
-const list = (items: unknown[]) => ({ data: { data: items } })
-
-describe('批次余量视图（issue #6417 / UI-089）', () => {
-  it('⑨ 每卷一行：批次号 / 货号·SKU / 缸号 / 入库单 / 入库米数 / 已消耗 / **剩余米数** / 收货日期', async () => {
+describe('批次余量视图（issue #6417 / #7604 / UI-089）', () => {
+  it('⑨ 默认就展示（不必先选商品）：每卷一行 —— 批次号 / 货号·SKU / 缸号 / 入库单 / 入库米数 / 已消耗 / **剩余米数** / 收货日期', async () => {
     const user = userEvent.setup()
-    mockBatches.mockResolvedValue(list([batchRow, exhaustedRow]))
+    mockBatchesPage.mockResolvedValue(paged([batchRow, exhaustedRow], 2))
     render(<StockLedgerPage />)
     await screen.findAllByTestId('stock-ledger-row')
 
     await user.click(screen.getByTestId('view-batch'))
-    // 未选商品 ⇒ 显式提示（不是空白表）
-    expect(await screen.findByTestId('batch-need-product')).toBeInTheDocument()
 
-    await user.type(screen.getByLabelText('搜索商品'), '遮光')
-    await user.click(screen.getByRole('button', { name: '搜索商品' }))
-    await user.click(await screen.findByTestId('product-option'))
+    // 🔴 改前（#6417）这里是一句「批次余量要按商品查」的黄色提示；现在切过去就查第 1 页（#7604）
+    await waitFor(() => expect(mockBatchesPage).toHaveBeenCalled())
+    const firstParams = mockBatchesPage.mock.calls[0][0] as Record<string, unknown>
+    expect(firstParams).toMatchObject({ page: 1, size: 20 })
+    expect(firstParams.keyword).toBeUndefined()
+    expect(screen.queryByTestId('batch-need-product')).toBeNull()
 
     const rows = await screen.findAllByTestId('batch-row')
     expect(rows).toHaveLength(2)
-    expect(mockBatches).toHaveBeenLastCalledWith(expect.objectContaining({ productId: 'prod-1' }))
 
     const cells = (i: number, id: string) => screen.getAllByTestId(id)[i].textContent
     expect(cells(0, 'batch-no')).toBe('PC-20261001-0001')
@@ -312,18 +318,18 @@ describe('批次余量视图（issue #6417 / UI-089）', () => {
     // 缺值不空白、不伪造：缸号 null ⇒ 「—」；用尽的批次照样列出（余量 0 本身是要看的信息）
     expect(cells(1, 'batch-dyelot')).toBe('—')
     expect(cells(1, 'batch-remaining')).toBe('0')
+    // 分页读数在首屏（「共 N 条」+ 第 x / y 页）—— 不是"要不要先选商品"的占位语
+    expect(screen.getByTestId('batch-total').textContent).toContain('共 2 条')
+    expect(screen.getByTestId('batch-page-info').textContent).toContain('第 1 / 1 页')
   })
 
   it('⑩ 不重算：remainingMeters 原样渲染（见证批次 67−20 ≠ 46.5；现算会得 47 ⇒ 本用例红）', async () => {
     const user = userEvent.setup()
-    mockBatches.mockResolvedValue(list([batchRow]))
+    mockBatchesPage.mockResolvedValue(paged([batchRow], 1))
     render(<StockLedgerPage />)
     await screen.findAllByTestId('stock-ledger-row')
 
     await user.click(screen.getByTestId('view-batch'))
-    await user.type(screen.getByLabelText('搜索商品'), '遮光')
-    await user.click(screen.getByRole('button', { name: '搜索商品' }))
-    await user.click(await screen.findByTestId('product-option'))
     await screen.findAllByTestId('batch-row')
 
     const row = screen.getByTestId('batch-row').textContent ?? ''
@@ -334,31 +340,79 @@ describe('批次余量视图（issue #6417 / UI-089）', () => {
     expect(row).not.toContain('47')
   })
 
-  it('⑪ 未选商品：给可行动提示且**不发请求**（端点是全量无分页，不做一次拉全量）', async () => {
+  it('⑪ 只发**分页**读面且带 page/size；旧全量端点 /batches 一次都不调（不做"一次拉全量"）', async () => {
     const user = userEvent.setup()
+    // 总 45 条 ⇒ 3 页：证明「共 N 条 / 页数」取的是服务端 total，不是这一页的行数
+    mockBatchesPage.mockResolvedValue(paged([batchRow], 45))
     render(<StockLedgerPage />)
     await screen.findAllByTestId('stock-ledger-row')
 
     await user.click(screen.getByTestId('view-batch'))
-    expect(await screen.findByTestId('batch-need-product')).toBeInTheDocument()
+    await waitFor(() => expect(mockBatchesPage).toHaveBeenCalled())
+
     expect(mockBatches).not.toHaveBeenCalled()
-    expect(screen.queryAllByTestId('batch-row')).toHaveLength(0)
+    expect(mockBatchesPage.mock.calls[0][0]).toMatchObject({ page: 1, size: 20 })
+    expect(screen.getByTestId('batch-total').textContent).toContain('共 45 条')
+    expect(screen.getByTestId('batch-page-info').textContent).toContain('第 1 / 3 页')
   })
 
-  it('⑫ 两个读面不串：批次视图不渲染 SKU 流水；读面失败 ⇒ 可行动话术', async () => {
+  it('⑫ 翻页与关键字：下一页请求 page=2；关键字交给**服务端**（keyword 下传、页码重置 1、前端不自己过滤）', async () => {
     const user = userEvent.setup()
-    mockBatches.mockRejectedValue(new Error('403'))
+    mockBatchesPage.mockResolvedValue(paged([batchRow], 45))
     render(<StockLedgerPage />)
     await screen.findAllByTestId('stock-ledger-row')
 
     await user.click(screen.getByTestId('view-batch'))
+    await screen.findAllByTestId('batch-row')
+
+    await user.click(screen.getByRole('button', { name: '下一页' }))
+    await waitFor(() =>
+      expect(mockBatchesPage).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 })),
+    )
+
+    await user.type(screen.getByLabelText('批次关键字'), 'PC-20261001')
+    await user.click(screen.getByRole('button', { name: '查询' }))
+    await waitFor(() =>
+      expect(mockBatchesPage).toHaveBeenLastCalledWith(
+        expect.objectContaining({ keyword: 'PC-20261001', page: 1 }),
+      ),
+    )
+  })
+
+  it('⑬ 商品是**可选**收窄：选中后按 productId 查同一分页读面（不是另一个端点）', async () => {
+    const user = userEvent.setup()
+    render(<StockLedgerPage />)
+    await screen.findAllByTestId('stock-ledger-row')
+
+    await user.click(screen.getByTestId('view-batch'))
+    await screen.findAllByTestId('batch-row')
+
     await user.type(screen.getByLabelText('搜索商品'), '遮光')
     await user.click(screen.getByRole('button', { name: '搜索商品' }))
     await user.click(await screen.findByTestId('product-option'))
 
+    await waitFor(() =>
+      expect(mockBatchesPage).toHaveBeenLastCalledWith(
+        expect.objectContaining({ productId: 'prod-1', page: 1 }),
+      ),
+    )
+    expect(mockBatches).not.toHaveBeenCalled()
+    expect(screen.getByTestId('selected-product').textContent).toContain('遮光窗帘布料')
+  })
+
+  it('⑭ 两个读面不串：批次视图不渲染 SKU 流水；读面失败 ⇒ 可行动话术、计数印「—」', async () => {
+    const user = userEvent.setup()
+    mockBatchesPage.mockRejectedValue(new Error('403'))
+    render(<StockLedgerPage />)
+    await screen.findAllByTestId('stock-ledger-row')
+
+    await user.click(screen.getByTestId('view-batch'))
+
     const err = await screen.findByTestId('batch-error')
     expect(err.textContent).toContain('权限')
     expect(screen.queryAllByTestId('batch-row')).toHaveLength(0)
+    // 读不到 ≠ 共 0 条（#6703 的口径，批次视图同款）
+    expect(screen.getByTestId('batch-total').textContent).toContain('共 — 条')
     // 批次视图下不得残留 SKU 流水行（两本账量纲不同，串起来就是假口径）
     expect(screen.queryAllByTestId('stock-ledger-row')).toHaveLength(0)
     // 也读不到「单据号」筛选（它只对流水视图有意义）

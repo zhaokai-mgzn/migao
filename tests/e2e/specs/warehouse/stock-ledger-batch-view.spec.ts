@@ -52,10 +52,12 @@ const FLOW = {
 }
 
 /** 三卷：① 67 米裁剪掉 20 ⇒ 46.5（服务端值，**不等于** 67−20 —— 页面不得自算）；② 用尽；③ 未动过 */
+/** 分页信封（issue #7604：批次视图默认走 `GET /api/admin/batch-stock/batches/page`） */
 const BATCHES = {
   success: true,
-  data: [
-    {
+  data: {
+    items: [
+      {
       batchId: 11,
       batchNo: 'PC-20261001-0001',
       productId: 'prod-1',
@@ -97,7 +99,11 @@ const BATCHES = {
       consumedMeters: '0.0',
       remainingMeters: '120.0',
     },
-  ],
+    ],
+    total: 3,
+    page: 1,
+    size: 20,
+  },
 }
 
 /** 只放宽时间预算（`next dev` 冷编译本页实测可达 20s+），**断言一字未放宽** */
@@ -127,7 +133,8 @@ async function lines(locator: Locator): Promise<number> {
 
 /** 本页挂载后还会打若干**非本判据**的接口；无后端时它们 401 ⇒ 应用会登出跳登录页 ⇒ 判据与被测行为无关地红 */
 async function mockApis(page: Page) {
-  const hits = { batches: 0 }
+  // 记两个面：① 分页读面（本页**只该**调它）② 旧全量读面（不该被调 —— issue #7604）
+  const hits = { batches: 0, batchesPage: 0, fullList: 0, lastPageQuery: '' }
   await page.route('**/api/**', (route) =>
     route.request().url().includes('/api/auth/me')
       ? route.fallback()
@@ -140,7 +147,14 @@ async function mockApis(page: Page) {
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(FLOW) }),
   )
   await page.route('**/api/admin/batch-stock/batches**', (route) => {
+    const url = route.request().url()
     hits.batches += 1
+    if (url.includes('/batches/page')) {
+      hits.batchesPage += 1
+      hits.lastPageQuery = new URL(url).search
+    } else {
+      hits.fullList += 1
+    }
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(BATCHES) })
   })
   return hits
@@ -155,21 +169,23 @@ async function openLedger(page: Page, width: number) {
   return hits
 }
 
-async function pickProductAndOpenBatch(page: Page) {
+/** 切到批次视图 —— **不选商品**（issue #7604：默认就是分页列表，首屏就该有读数） */
+async function openBatchView(page: Page) {
   await page.getByTestId('view-batch').click()
-  await page.getByLabel('搜索商品').fill('遮光')
-  await page.getByRole('button', { name: '搜索商品' }).click()
-  await page.getByTestId('product-option').first().click()
   await expect(page.getByTestId('batch-row').first()).toBeVisible({ timeout: 20_000 })
 }
 
 test('批次余量视图：一行 = 一卷，剩余米数真的在屏幕上（67 裁剪掉 20 ⇒ 46.5；用尽的那卷也在）', async ({ page }) => {
   const hits = await openLedger(page, 1440)
-  await pickProductAndOpenBatch(page)
+  await openBatchView(page)
 
   const rows = page.getByTestId('batch-row')
   await expect(rows).toHaveCount(3)
-  expect(hits.batches, '批次读面必须真被调用（没调用 ⇒ 判据在扫空气）').toBeGreaterThan(0)
+  expect(hits.batchesPage, '分页读面必须真被调用（没调用 ⇒ 判据在扫空气）').toBeGreaterThan(0)
+  // 首屏就带 page/size（服务端分页），不是"一次拉全量"（issue #7604）
+  expect(hits.lastPageQuery).toContain('page=1')
+  expect(hits.lastPageQuery).toContain('size=20')
+  expect(hits.fullList, '旧全量端点 /batches 不该再被本页调用').toBe(0)
 
   const first = rows.first()
   await expect(first.getByTestId('batch-no')).toHaveText('PC-20261001-0001')
@@ -189,7 +205,7 @@ test('批次余量视图：一行 = 一卷，剩余米数真的在屏幕上（67
 
 test('表头八列全部单行（列不许被压成竖排）+ 卡片不裁切表格', async ({ page }) => {
   await openLedger(page, 1280)
-  await pickProductAndOpenBatch(page)
+  await openBatchView(page)
 
   const headers = page.getByRole('columnheader')
   await expect(headers).toHaveCount(8)
@@ -220,7 +236,7 @@ test('表头八列全部单行（列不许被压成竖排）+ 卡片不裁切表
 
 test('1280：8 列直接装得下 ⇒ 最右的「剩余米数」列无需横向滚就在视口内', async ({ page }) => {
   await openLedger(page, 1280)
-  await pickProductAndOpenBatch(page)
+  await openBatchView(page)
 
   const scroller = page.locator('table').last().locator('xpath=..')
   const { scrollWidth, clientWidth } = await scroller.evaluate((el) => ({
@@ -237,7 +253,7 @@ test('1280：8 列直接装得下 ⇒ 最右的「剩余米数」列无需横向
 
 test('1024 窄视口：最右两列**可达**（装得下就直接在视口内；装不下则滚到底必达）', async ({ page }) => {
   await openLedger(page, 1024)
-  await pickProductAndOpenBatch(page)
+  await openBatchView(page)
 
   const scroller = page.locator('table').last().locator('xpath=..')
   const { scrollWidth, clientWidth } = await scroller.evaluate((el) => ({
@@ -257,11 +273,16 @@ test('1024 窄视口：最右两列**可达**（装得下就直接在视口内�
   console.log(`[6417] 1024 读数：表 ${scrollWidth}px / 容器 ${clientWidth}px / overflow-x=${overflowX}`)
 })
 
-test('未选商品：显式提示，且**一次批次请求都不发**（端点是全量无分页）', async ({ page }) => {
+test('不选商品也能直接看：切过去就发**分页**请求（page/size 下传），首屏有表 + 共 N 条', async ({ page }) => {
   const hits = await openLedger(page, 1440)
   await page.getByTestId('view-batch').click()
 
-  await expect(page.getByTestId('batch-need-product')).toBeVisible()
-  await expect(page.getByTestId('batch-row')).toHaveCount(0)
-  expect(hits.batches, '没选商品却拉了批次 ⇒ 「一次拉全量」的口径被破坏').toBe(0)
+  // issue #7604：改前这里是「批次余量要按商品查」的黄色提示 + 零请求；现在默认就是分页列表
+  await expect(page.getByTestId('batch-need-product')).toHaveCount(0)
+  await expect(page.getByTestId('batch-row').first()).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByTestId('batch-total')).toContainText('共 3 条')
+  expect(hits.batchesPage, '批次视图必须真的查了分页读面（零请求 ⇒ 首屏是空态，判据在扫空气）').toBeGreaterThan(0)
+  expect(hits.lastPageQuery).toContain('page=1')
+  expect(hits.lastPageQuery).toContain('size=20')
+  expect(hits.fullList, '旧全量端点 /batches 不该再被本页调用（那才是一次拉全量）').toBe(0)
 })

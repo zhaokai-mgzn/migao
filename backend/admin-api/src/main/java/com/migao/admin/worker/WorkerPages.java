@@ -1,6 +1,7 @@
 package com.migao.admin.worker;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -20,6 +21,14 @@ import java.util.Set;
  * （{@code SecurityConfig.ADMIN_API_REJECTED_ROLES}）。</p>
  * <p>⇒ <b>禁止</b>把这里的页面码写进 {@code users.permissions}。本表只决定「页面上看不看得见」，
  * 服务端对每个工人都仍然按同一套授权判。</p>
+ *
+ * <p>🔴 <b>例外（issue #7162，用户 2026-10-17 裁定）</b>：{@link #INSPECT}（质检）这一个键
+ * <b>同时</b>是工人端质检写入的服务端**准入** —— 工人要在 H5 扫码后录质检判定，必须在其档案的
+ * 页面集里有 {@code inspect}。它不是 RBAC 权限码（仍不进 {@code users.permissions}），而是
+ * 「档案级能力开关」；其余键仍只是可见性。</p>
+ *
+ * <p>🔴 <b>质检页不在默认集合里</b>（逐人开）：未收窄（{@code null}）⇒ {@link #defaultPages()}
+ * （不含 {@code inspect}）；要开就给该工人的收窄集里加上 {@code inspect}。</p>
  *
  * <h3>一层真值（issue #6828，2026-10-13 用户裁定「一步到位移除」）</h3>
  * <p>企业级页面开关（V141 / 表 {@code worker_page_configs} / 设置页「工人端页面」域）<b>已整层移除</b>
@@ -59,24 +68,42 @@ public final class WorkerPages {
     public static final String SHIPMENT = "shipment";
 
     /**
+     * 页面键：**质检**（issue #7162）—— 工人扫水洗唛进报工页后，可录入质检判定并生成「质检单」。
+     *
+     * <p>🔴 与其它页不同：它**同时是服务端写准入**（不在默认集合里、逐人开；见类注释）。</p>
+     */
+    public static final String INSPECT = "inspect";
+
+    /**
      * 合法页面键的<b>闭词表</b>（缺页/未知页 ⇒ 422 逐条理由；拼错的键会被静默忽略 = 商家以为改了却没改）。
      *
      * <p>顺序 = 工人端默认的页面顺序（读面原样回给前端，前端不再自己排一遍）。</p>
      */
-    public static final Set<String> ALL = Set.copyOf(new LinkedHashSet<>(List.of(
-            REPORT, PIECEWORK, ORDER, CUT_CALC, SHIPMENT)));
+    public static final Set<String> ALL = Collections.unmodifiableSet(new LinkedHashSet<>(List.of(
+            REPORT, PIECEWORK, ORDER, CUT_CALC, SHIPMENT, INSPECT)));
 
     private WorkerPages() {
     }
 
     /**
-     * 全部页面键（= 默认集合：未收窄的工人看全部）。
+     * **默认**页面键（未收窄的工人看到的页面集合）。
      *
-     * <p>也是只读目录端点（{@code GET /api/admin/worker-pages}）回给商家配置面的可选页清单
-     * —— 可选页与默认值同源，前端不另抄一份。</p>
+     * <p>🔴 {@link #INSPECT} **不在**这里（issue #7162，用户裁定「工人档案逐人开质检页」）：
+     * 质检页只能通过给该工人的收窄集里加 {@code inspect} 来开放。</p>
+     *
+     * <p>也是只读目录端点（{@code GET /api/admin/worker-pages}）的 {@code default_pages}
+     * —— 配置面据此把「未收窄」渲染成默认勾选态，前端不另抄一份默认值。可选页全集 = {@link #ALL}。</p>
      */
     public static List<String> defaultPages() {
         return List.of(REPORT, PIECEWORK, ORDER, CUT_CALC, SHIPMENT);
+    }
+
+    /**
+     * **非默认、逐人开放**的能力页（issue #7162）：不在 {@link #defaultPages()} 里，
+     * 商家在工人档案上单独勾选；其中 {@link #INSPECT} 同时是服务端写准入。
+     */
+    public static List<String> optionalPages() {
+        return List.of(INSPECT);
     }
 
     /** 页面键 → 商家面可读名称（配置面板按它渲染勾选项；键是机器码，名称是人话）。 */
@@ -87,6 +114,7 @@ public final class WorkerPages {
         labels.put(ORDER, "订单");
         labels.put(CUT_CALC, "裁高计算器");
         labels.put(SHIPMENT, "发货");
+        labels.put(INSPECT, "质检");
         return labels;
     }
 
@@ -205,10 +233,14 @@ public final class WorkerPages {
             return defaultPages();
         }
         List<String> out = new ArrayList<>();
+        // 遍历 ALL（不是 defaultPages）：inspect 不在默认集合里，却是可逐人开放的页面键。
         for (String page : defaultPages()) {
             if (restricted.contains(page)) {
                 out.add(page);
             }
+        }
+        if (restricted.contains(INSPECT)) {
+            out.add(INSPECT);
         }
         return out.isEmpty() ? defaultPages() : out;
     }

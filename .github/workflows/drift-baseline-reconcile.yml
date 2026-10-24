@@ -1,0 +1,325 @@
+name: Drift Baseline Reconcile (归零基线条目自动销账)
+
+# ── 这是什么（issue #7127；实例 #7117）──────────────────────────────────────────
+# `Post-Merge Verify (main 侧守护腿)` 的第一步 `main 侧漂移兜底（漂移审计）` 跑
+# `python3 scripts/drift_audit.py --check`，而基线台账的规则是「只许缩短 + **全量对账**」：
+# **条目已归零但未删 ⇒ 阻塞（exit 1）**。其中有一族条目是**运行态**的（`heartbeat` 判据：
+# `<wf>|paused` / `<wf>|never-succeeded` / `<wf>|stale`）—— 某个 workflow 首次成功 / 被解停 /
+# 恢复心跳 ⇒ 条目**归零**，而**没有任何提交**会去删它 ⇒ 该腿此后每次 run 都红，每次都往 P1
+# 值班 issue 追一条评论。
+# 实测（2026-10-17）：`c-end-h5-publish.yml|never-succeeded` 在 2026-10-17 06:57 +08 该
+# workflow 首次发布成功（`workflow_dispatch` success）后归零，此后近 40 次 run **39 红**，
+# 逐字报 `❌ 基线条目已归零但未删（全量对账）：c-end-h5-publish.yml|never-succeeded`。
+# ⇒ 本腿给这条**外部事件驱动的归零**一个机械出口：**只剩归零条目时，开 bot PR + auto-merge**
+# （用户裁定「仅剩归零条目时开 bot PR + auto-merge」）。形态照既有范式
+# （`flaky-ledger-reconcile.yml` / `flaky-triage.yml`）：**单写者** + `GITHUB_TOKEN` 建 PR +
+# arm auto-merge —— 不新造第二套。
+
+# ── 为什么是这个形态（判据，不是口味）──────────────────────────────────────────
+# · 触发面 = `workflow_run`（上游 = 那条会红的守护腿）+ `workflow_dispatch`（值班复算入口）。
+#   🔴 **有意不新增 `schedule` / `cron`**（铁律 10：无人值守的**删除类**动作默认禁）——
+#   本腿会**删基线条目**，属删除类；而它的输入（上游 run 的结论）**只在事件上产生** ⇒
+#   事件触发是充分的。`workflow_run` 不是 cron，无需 `schedule_scope_ledger` 登记。
+# · 上游结论门控（`conclusion == 'failure'`）：上游成功 ⇒ 没有归零条目要销 ⇒ 不必消费一次。
+#   门控形态与登记见 `tests/unit_ci_workflows/ci_trigger_gate_ledger.json`
+#   （类级守卫 = `tests/unit_ci_workflows/test_ci_trigger_surface_slimming.py`）。
+# · **判据只有一处**：能不能删由 `scripts/drift_audit.py --prune-zeroed` 自己判（fail-closed：
+#   新增漂移 / 被删条目 / burn-down 阻塞 / 任一判据 `error` / 被点名条目所属判据本轮没跑出
+#   结论 ⇒ 拒绝动手，一个字都不写）。本 YAML **不复制**那套口径，只做「是不是只剩归零条目」
+#   的粗筛 + 编排 —— 粗筛偏保守（宁可不动），真判定在脚本里。
+#   ⚠️ **不许**改用 `--regen-baseline` 交差：那是**全量重建**，会连带删掉「本轮没跑出结论」的
+#   判据（CI 上 `sync-copy` 恒 `unknown`）名下的合法豁免 —— 正是 #5151 治过的形态。
+# · 单写者 + 幂等：固定分支 `chore/drift-baseline-prune` 只有本 workflow 一个写者；分支上
+#   已经是同一份 `entries` ⇒ **不重复推送**（否则每轮给 PR 造一个新提交、多跑一整轮 CI）。
+# · **不是我的事就零动作**：没有归零条目 / 有别的阻塞（新增漂移、判据崩了、被删条目）⇒
+#   零动作、exit 0、**不建 PR 不推分支**；那类红留在**上游**那条腿上（不在这里被静默吞掉）。
+# · 失败可见：审计报告**无法判定**（三态 `3` / `--json` 没落盘 / 缺字段）⇒ **非零退出**
+#   （"没跑"不许长得像"零动作"）；`--prune-zeroed` 拒绝动手 ⇒ 打 `::error::` + 逐字具名理由。
+# · 检查被抑制（`action_required`）的出路 = **复用** `.github/scripts/flaky_ledger.py approve`
+#   （与 `flaky-triage.yml` / `flaky-ledger-reconcile.yml` **同一实现**，不新造第二套）：
+#   不批准 ⇒ 该 PR 永远零 check-run ⇒ `--auto` 永不触发。
+#   ⚠️ 本腿在推分支那一步把工作区切到 `chore/…` ⇒ approve 用**推前取的 main 副本**
+#   （`/tmp/flaky_ledger.py`，同 `flaky-triage.yml` 步骤 ④b 的形态）。
+
+# ── 权限（逐条写明为什么；多一条都不加）────────────────────────────────────────
+# `contents: write`      —— 推固定分支 `chore/drift-baseline-prune`（销账要靠提交落仓）。
+# `pull-requests: write` —— 建/更新那**一个** PR + arm auto-merge（`--auto` 只 arm、**不放行**：
+#                           required 检查仍是唯一闸）。
+# `actions: write`       —— approve 被 `GITHUB_TOKEN` 抑制（`action_required`）的 PR run。
+# 不写 issue / 不碰 secrets / 不动别的 workflow（判红的值班单由**上游**那条腿负责）。
+
+# ── 边界（照实登记，勿读成"已覆盖"）────────────────────────────────────────────
+# · 本腿**不是修复器**：只销「实测归零」的条目。新增漂移 / 判据崩溃 / 被删条目仍由上游守护腿
+#   与各自的门禁承接 —— 本腿遇到它们只会**拒绝动手**（并具名报出），不会"顺手修好"。
+# · 归零是**运行期**事实（依赖 `gh` 取 run 历史）：取不到就记"未知"，而"未知"**不进入**
+#   销账面（`stale_baseline_unverifiable`）⇒ 宁可不动，不误删。
+# · 分支是**草稿分支**：内容永远 = main + 一处基线销账；squash 合并后与 main 无历史关系，
+#   故本腿**不**在旧基线上追加（每次都从 main 重新计算；已同内容则不推）。
+# · **合并者会是 bot**（用内置 `GITHUB_TOKEN` arm 的结果，与 `automerge.yml` 的 #6418 同源）
+#   ⇒ 该次合并产生的 `push` 事件可能被 GitHub 的反递归抑制吞掉。对本腿的**判定对象**
+#   （只有 `scripts/drift_audit_baseline.json`）无影响；drift 面另有一条定时腿兜底。
+#   若将来需要该次合并触发 push 面，改的是 **arm 凭据**（与 `AUTOMERGE_PAT` 同一口径），
+#   **不是**放宽任何门禁 —— 本次交付里**不**做这件事（照实登记）。
+
+# ── 谁看（停摆不许静默）──────────────────────────────────────────────────────
+# 本腿是「无人值守触发面 × 写作用域」（`workflow_run`/`workflow_dispatch` × contents/
+# pull-requests/actions）⇒ 按 `scripts/mechanism-registry.json` 的结构性发现规则**必须登记**
+# （未登记即红，判据 = `tests/unit_ci_workflows/test_mechanism_liveness.py`），并在 job 的
+# **最后一步**（`if: always()`）交出一条 `MECHANISM-LIVENESS` 读数：`seen=<归零条目数>` /
+# `acted=<本轮真删的条目数>` —— 「零动作」与「没跑」在形态上不同（§23 G6）。
+# 消费面 = `mechanism-liveness.yml` 的定时腿 ⇒ P1 值班 issue。
+
+on:
+  workflow_run:
+    workflows: ["Post-Merge Verify (main 侧守护腿)"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+# 同一时刻只允许一轮：本腿是**单一写者**（分支只有一个作者），排队比互相覆盖安全。
+concurrency:
+  group: drift-baseline-reconcile
+  cancel-in-progress: false
+
+env:
+  PRUNE_BRANCH: chore/drift-baseline-prune
+  BASELINE: scripts/drift_audit_baseline.json
+
+jobs:
+  reconcile:
+    name: Drift Baseline Reconcile (只剩归零条目 ⇒ 开 bot PR + arm auto-merge)
+    # 上游结论门控（类级守卫 A）：上游 success ⇒ 没有归零条目 ⇒ 不消费这一次；
+    # `workflow_dispatch` = 值班复算入口，不受门控。
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout main（**全历史**：漂移审计在浅检出上判不了）
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: 审计 + 粗筛（是否「只剩归零条目」；无法判定 ⇒ 非零退出）
+        id: decide
+        # `drift_audit.py` 内部会调 `gh run list`（heartbeat 判据）⇒ 必须带 token。
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          RC=0
+          python3 scripts/drift_audit.py --check --json /tmp/drift.json > /tmp/drift.txt 2>&1 || RC=$?
+          tail -40 /tmp/drift.txt
+          echo "漂移审计退出码 = ${RC}（0 通过 / 1 判红 / 3 不可判 —— 非 0 都不得当 0 读）"
+          [ -s /tmp/drift.json ] || {
+            echo "::error::审计报告没落盘（\`--json\` 没写出）⇒ **无法判定**（不是「零动作」）"; exit 1; }
+          case "$RC" in
+            0|1) : ;;
+            *) echo "::error::审计**不可判**（退出码 ${RC}）⇒ 先修判据（**未跑 ≠ 通过**）；本腿不动作"; exit 1 ;;
+          esac
+          # 粗筛（**保守**：宁可不动）：只有在「有归零条目 ∧ 没有其它阻塞」时才走到销账；
+          # 真判定仍在 `--prune-zeroed` 里（fail-closed），这里多判一次不多写一套口径。
+          python3 - > /tmp/verdict.txt <<'PY' || { echo "::error::报告解析失败 ⇒ 无法判定（不是「零动作」）"; exit 1; }
+          import json
+          rep = json.load(open('/tmp/drift.json'))
+          s = rep.get('summary') or {}
+          checks = rep.get('checks') or []
+          # **无法判定**不许降级成「零动作」：缺字段 / 空判据集 ⇒ 直接非零（"没跑"≠"零动作"）。
+          missing = [k for k in ('new_drift', 'stale_baseline_blocking', 'dropped_baseline_entry')
+                     if k not in s]
+          if missing or not checks:
+              raise SystemExit(f"报告不可判：缺 summary 字段 {missing} / 判据数 {len(checks)}")
+          zeroed = int(s.get('stale_baseline_blocking') or 0)
+          others = {
+              '新增漂移': int(s.get('new_drift') or 0),
+              '被删但仍漂移的条目': int(s.get('dropped_baseline_entry') or 0),
+              'burn-down 未达标': 1 if (s.get('burn_down') or {}).get('blocking') else 0,
+              '判据自身异常': sum(1 for c in checks if c.get('status') == 'error'),
+          }
+          blocking = {k: v for k, v in others.items() if v}
+          print(f'zeroed={zeroed}')
+          if zeroed and not blocking:
+              print('verdict=zeroed')
+              print(f"note=归零基线条目 {zeroed} 条，无其它阻塞 ⇒ 交给 --prune-zeroed 判定")
+          else:
+              print('verdict=none')
+              print('note=' + ('没有归零条目 ⇒ 零动作' if not zeroed else
+                               '有其它阻塞（' + '、'.join(f'{k} {v}' for k, v in blocking.items()) +
+                               '）⇒ 那不是本腿的事（留在上游守护腿）'))
+          for k, v in blocking.items():
+              print(f"blocking={k} {v}")
+          PY
+          cat /tmp/verdict.txt >> "$GITHUB_OUTPUT"
+          sed -n 's/^note=//p' /tmp/verdict.txt | while read -r line; do
+            echo "::notice::${line}"
+          done
+          echo "粗筛结论 = $(sed -n 's/^verdict=//p' /tmp/verdict.txt)"
+
+      - name: 零动作收工（不是我的事：没归零条目 / 有别的阻塞 ⇒ 不建 PR、不推分支、exit 0）
+        if: steps.decide.outputs.verdict != 'zeroed'
+        run: |
+          echo "::notice::本腿零动作（${GITHUB_JOB}）：没有可销的归零条目 —— 不建 PR、不推分支、不写盘"
+
+      - name: 销账（只删实测归零且本轮真跑出结论的条目；拒绝动手 ⇒ 非零退出）
+        id: prune
+        if: steps.decide.outputs.verdict == 'zeroed'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          # `--prune-zeroed` 的 fail-closed 语义：有其它阻塞 / 被点名条目所属判据没跑出结论
+          # ⇒ exit 1 且**一个字都不写**；没有可删的条目 ⇒ exit 0 零动作（幂等）。
+          RC=0
+          python3 scripts/drift_audit.py --prune-zeroed \
+            --reason "自动销账（drift-baseline-reconcile）：上游 \`${GITHUB_WORKFLOW}\` run ${GITHUB_RUN_ID} 实测归零的基线条目" \
+            > /tmp/prune.txt 2>&1 || RC=$?
+          tail -40 /tmp/prune.txt
+          case "$RC" in
+            0) : ;;
+            *) echo "::error::\`--prune-zeroed\` 拒绝动手（退出码 ${RC}）—— 具名理由见上方输出；**本轮未写盘**"; exit 1 ;;
+          esac
+          PRUNED=$(grep -c '^PRUNED ' /tmp/prune.txt 2>/dev/null || true)
+          echo "pruned=${PRUNED:-0}" >> "$GITHUB_OUTPUT"
+          if git diff --quiet -- "$BASELINE"; then
+            echo "changed=0" >> "$GITHUB_OUTPUT"
+            echo "::notice::⏭️ 没有可写的销账（幂等：同一状态下连跑两次是零动作）"
+          else
+            echo "changed=1" >> "$GITHUB_OUTPUT"
+            git diff --stat -- "$BASELINE"
+          fi
+
+      - name: 推固定分支 + 建/更新 PR（单写者；同内容不重复推送）
+        id: pr
+        if: steps.prune.outputs.changed == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          # ⚠️ approve 要用 **main 的副本**：本步后面会把工作区切到草稿分支（同
+          #    `flaky-triage.yml` 步骤 ④b 的形态 —— 那里踩过「切树后跑到分支的旧副本」）。
+          cp .github/scripts/flaky_ledger.py /tmp/flaky_ledger.py
+          KEEP=0
+          LEASE=""
+          if git fetch --quiet origin "$PRUNE_BRANCH" 2>/dev/null; then
+            EXPECTED=$(git rev-parse FETCH_HEAD)
+            # 幂等判据：分支上的 `entries` 与本次要写的**逐字相同** ⇒ 不重复推送
+            # （否则每轮都给 PR 造一个新提交、多跑一整轮 CI）。只比 `entries`：
+            # `reason` / `generated_at` 每轮必然不同，拿它们比会永远"不同"。
+            REMOTE=$(git show "FETCH_HEAD:$BASELINE" 2>/dev/null \
+                     | python3 -c 'import json,sys;print(json.dumps(json.load(sys.stdin).get("entries"),sort_keys=True))' 2>/dev/null || echo "")
+            LOCAL=$(python3 -c 'import json;print(json.dumps(json.load(open("'"$BASELINE"'")).get("entries"),sort_keys=True))')
+            if [ -n "$REMOTE" ] && [ "$REMOTE" = "$LOCAL" ]; then
+              KEEP=1
+              echo "::notice::⏭️ 分支 $PRUNE_BRANCH 上已是同一份 entries ⇒ 不重复推送（幂等）"
+            fi
+            # 🔴 推送必须是**租约式强推**：本腿每次都从 main 重新计算并 `checkout -B`
+            #    ⇒ 新提交**不是**旧分支 HEAD 的后代（main 前进过 / 上一轮销了别的条目都会这样）
+            #    ⇒ 普通 push 必然 non-fast-forward 被拒（#5075 同族的"静默停摆"）—— 实测：
+            #    同一状态下 `git push origin <b>` 被拒，而租约式强推通过。
+            #    分支是**单写者草稿分支**（内容永远 = main + 一处销账），故强推是正确语义；
+            #    租约 = 本次 fetch 到的远端 HEAD ⇒ 别人推过就失败重来，**不裸强推**。
+            # ⚠️ 必须写**全名** `<refs/heads/分支>:<期望 sha>`：只写 `<sha>` 那一形态实测**不生效**
+            #    （git 把它当 refname，租约没落到该分支上 ⇒ 退回普通 push ⇒ 非快进被拒）。
+            LEASE="--force-with-lease=refs/heads/$PRUNE_BRANCH:$EXPECTED"
+          fi
+          if [ "$KEEP" = "0" ]; then
+            git config user.name "migao-drift-bot"
+            git config user.email "drift-bot@users.noreply.github.com"
+            git checkout -q -B "$PRUNE_BRANCH"          # 从 main 重新计算（草稿分支无历史价值）
+            git add -- "$BASELINE"                       # 只加自己的文件（禁 `git add -A`）
+            git commit -q -m "chore(ci): 销账已归零的漂移基线条目（drift-baseline-reconcile）"
+            git push --quiet $LEASE origin "$PRUNE_BRANCH" || {
+              echo "::error::推送 $PRUNE_BRANCH 失败（含租约冲突：远端被别人推过）⇒ 销账未落仓（fail-closed）"; exit 1; }
+            git fetch --quiet origin "$PRUNE_BRANCH"
+            [ "$(git rev-parse FETCH_HEAD)" = "$(git rev-parse HEAD)" ] || {
+              echo "::error::销账未落到远端分支 $PRUNE_BRANCH（落仓复核失败）"; exit 1; }
+          fi
+          PR=$(gh pr list --head "$PRUNE_BRANCH" --state open --json number \
+                 --jq '.[0].number // empty' --repo "$GITHUB_REPOSITORY")
+          if [ -z "$PR" ]; then
+            # ⚠️ body 里**不得**出现 issue 关闭关键词 + 号（`close-linked-issues.yml` 是朴素正则，
+            #    任何「关键词 + #号」形态都会被读成关闭意图，含反引号里的样例）。
+            # 🔴 body 临时文件名**必须**走 `scripts/pr_body_guard.py new`（类级守卫
+            #    `test_pr_body_guard.py` 的 R1/R2：**共享固定名**的临时 body 路径会被静态扫描
+            #    判红 —— 并行会话互相覆盖 body；脚本分配的是本工作区忽略目录下的唯一名）。
+            BODY_FILE=$(python3 scripts/pr_body_guard.py new --issue 7127 2>/dev/null | tail -n 1)
+            [ -n "$BODY_FILE" ] || {
+              echo "::error::分配 PR body 临时文件失败（pr_body_guard.py new）⇒ fail-closed"; exit 1; }
+            cat > "$BODY_FILE" <<'BODY'
+          由 `.github/workflows/drift-baseline-reconcile.yml` 自动创建（关联 #7006，**不关闭**它）。
+
+          - 只改 `scripts/drift_audit_baseline.json`：删掉本次审计**实测归零**的基线条目（清单与理由写在该文件的 `reason` 里）。
+          - 判定 = `python3 scripts/drift_audit.py --prune-zeroed`（fail-closed：只要有别的阻塞 / 判据没跑出结论就拒绝动手，一个字都不写）。
+          - native auto-merge 在 required 检查全绿后合并 —— **arm 不等于放行**。
+          BODY
+            gh pr create --base main --head "$PRUNE_BRANCH" --repo "$GITHUB_REPOSITORY" \
+              --title "chore(ci): 销账已归零的漂移基线条目" --body-file "$BODY_FILE" || {
+              echo "::error::PR 创建失败 ⇒ 销账停在分支上、main 不增长（fail-closed）"; exit 1; }
+            PR=$(gh pr list --head "$PRUNE_BRANCH" --state open --json number \
+                   --jq '.[0].number // empty' --repo "$GITHUB_REPOSITORY")
+            [ -n "$PR" ] || { echo "::error::PR 创建后取不到 PR 号 ⇒ fail-closed"; exit 1; }
+          fi
+          echo "pr=$PR" >> "$GITHUB_OUTPUT"
+          echo "::notice::🧹 销账 PR #$PR（分支 $PRUNE_BRANCH）"
+
+      - name: 批准被抑制的 PR run（复用 flaky_ledger.py approve，同一实现）
+        if: steps.pr.outputs.pr != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          [ -s /tmp/flaky_ledger.py ] || {
+            echo "::error::没有 main 副本 /tmp/flaky_ledger.py ⇒ 无法 approve（**不许**当成「无需 approve」）"; exit 1; }
+          # 批准**不绕过门禁**：run 照样要真的跑完 required 检查才允许 auto-merge。
+          python3 /tmp/flaky_ledger.py approve --repo "$GITHUB_REPOSITORY" \
+            --head-branch "$PRUNE_BRANCH" --wait-seconds "${APPROVE_WAIT_SECONDS:-60}" || {
+            echo "::error::approve 失败（含「窗口用尽仍停在 action_required」）⇒ PR 拿不到 required 的 check（fail-closed）"; exit 1; }
+
+      - name: arm auto-merge（不放行：required 检查仍是唯一闸）
+        if: steps.pr.outputs.pr != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ steps.pr.outputs.pr }}
+        run: |
+          set -uo pipefail
+          ARM_RC=0
+          ARM_OUT=$(gh pr merge "$PR" --auto --squash --repo "$GITHUB_REPOSITORY" 2>&1) || ARM_RC=$?
+          [ -n "$ARM_OUT" ] && echo "$ARM_OUT"
+          # 动作（rc）与读数（回读 autoMerge）**自洽**才放行；不自洽 ⇒ 红（#5075 ④ 的口径）。
+          STATE=$(gh pr view "$PR" --json state,mergeStateStatus,autoMergeRequest \
+                    --jq '"state=\(.state) mergeStateStatus=\(.mergeStateStatus) autoMerge=\(if .autoMergeRequest then "armed" else "none" end)"' \
+                    --repo "$GITHUB_REPOSITORY" 2>&1) || STATE="UNKNOWN"
+          echo "::notice::🧹 销账 PR #$PR ${STATE}（arm rc=${ARM_RC}）"
+          echo "- 销账 PR：#${PR} ${STATE}" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$ARM_RC" != "0" ] && ! printf '%s' "$STATE" | grep -q 'autoMerge=armed'; then
+            echo "::error::arm auto-merge 失败（rc=${ARM_RC}）且回读未 armed（${STATE}）⇒ 销账 PR 不会被自动合并（fail-closed）"
+            exit 1
+          fi
+
+      # ── 存活读数（issue #5326 判据 1 / 4）：必须是 job 的**最后一步**且 `if: always()` ──
+      # 本腿是**无人值守 + 写作用域**（workflow_run × contents/pull-requests/actions）⇒ 按
+      # `scripts/mechanism-registry.json` 的发现规则必须登记并交出存活读数；否则「机制停摆」
+      # 这条缺陷会重演（#5326：没人知道它还在不在）。
+      # ⚠️ 读数步**独立一步**（注解有 per-step 上限），且 rc 与 run 结论自洽（`--outcome` 绑定
+      #    `${{ job.status }}`，元守卫逐字要求，见 `tests/unit_ci_workflows/test_mechanism_liveness.py`）。
+      - name: 存活读数（本轮看了几条归零条目 / 真删了几条）
+        if: always()
+        env:
+          OUTCOME: ${{ job.status }}
+          ZEROED: ${{ steps.decide.outputs.zeroed }}
+          PRUNED: ${{ steps.prune.outputs.pruned }}
+        run: |
+          if [ -f .github/scripts/mechanism_liveness.sh ]; then
+            bash .github/scripts/mechanism_liveness.sh emit drift-baseline-reconcile \
+              --outcome "$OUTCOME" \
+              --seen "${ZEROED:-unknown}" --acted "${PRUNED:-unknown}" \
+              --why "归零条目=${ZEROED:-unknown} 本轮销账=${PRUNED:-unknown}（零动作与失败在形态上不同）"
+          else
+            echo "::warning::机制存活读数**本轮无声**（mech=drift-baseline-reconcile）：发射器不在检出里 ⇒ 本轮读数缺失（**不是**「零动作」）"
+          fi

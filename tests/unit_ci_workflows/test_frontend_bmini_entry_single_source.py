@@ -21,10 +21,13 @@ r"""「手机端入口」二维码的**单一真值**与**缺配置不画假码*
 3. **二维码内容取自该单一值**：`value={bminiH5Url}`（不许拼字符串、不许写死域名）。
 4. **缺配置不画假码**（结构层）：`{bminiH5Url ? (…) : (…)}` 的**真分支**里才有 `QRCodeSVG`，
    假分支渲染「未配置」且**一个 svg 都没有**。行为层的孪生判据在
-   `frontend/admin-web/tests/unit/pages/settings.test.tsx`（UI-064 的 5 格）。
+   `frontend/admin-web/tests/unit/components/MobileEntry.test.tsx`（UI-064 的 5 格）。
 5. **发布链在案**（否则功能在线上静默缺失）：`Dockerfile` 的 `ARG`+`ENV`、
    `deploy-frontend.yml` 的 `--build-arg`、`.env.example` 的说明三者都在；
-   任一环缺失 ⇒ 镜像里没有这个值 ⇒ 设置页永远显示「未配置」（而没人会发现）。
+   任一环缺失 ⇒ 镜像里没有这个值 ⇒ 顶栏永远显示「未配置」（而没人会发现）。
+6. **设置页不得再有入口块**（issue #7212；用户 2026-10-18 逐字「这块直接移除吧，已经迁移到
+   右上角了」）：设置页**任何形态**的手机端入口 / 二维码痕迹都判红 —— 扫码入口只在顶栏，
+   两个入口 = 入口分裂，二维码会被渲染第二处。
 
 ## 边界（照实登记）
 
@@ -44,6 +47,10 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ADMIN_WEB_SRC = REPO_ROOT / "frontend" / "admin-web" / "src"
 SETTINGS_PAGE = ADMIN_WEB_SRC / "app" / "(dashboard)" / "settings" / "page.tsx"
+#: 手机端入口的**唯一渲染处**（issue #7198 / #7212）：全站只有顶栏入口，设置页没有入口块。
+#: 判据 3/4 的三元（`{bminiH5Url ? (…) : (…)}`）随落位从设置页搬到这里 —— **判据只搬位置、不放宽**。
+MOBILE_ENTRY = ADMIN_WEB_SRC / "components" / "layout" / "MobileEntry.tsx"
+HEADER = ADMIN_WEB_SRC / "components" / "layout" / "Header.tsx"
 URL_HELPER = ADMIN_WEB_SRC / "lib" / "bmini-h5-url.ts"
 ENV_EXAMPLE = REPO_ROOT / "frontend" / "admin-web" / ".env.example"
 DOCKERFILE = REPO_ROOT / "frontend" / "admin-web" / "Dockerfile"
@@ -218,8 +225,10 @@ def _inject_secret_ref(workflow: str) -> str:
     assert f"secrets.{ENV_VAR}" in mutated, "注入的未登记 secrets 引用没进变异体（fail-closed）"
     return mutated
 
-def _problems(page_src=None, helper_src=None, dockerfile=None, workflow=None, env_example=None, files=None) -> list:
+def _problems(page_src=None, entry_src=None, header_src=None, helper_src=None, dockerfile=None, workflow=None, env_example=None, files=None) -> list:
     page_src = _read(SETTINGS_PAGE) if page_src is None else page_src
+    entry_src = _read(MOBILE_ENTRY) if entry_src is None else entry_src
+    header_src = _read(HEADER) if header_src is None else header_src
     helper_src = _read(URL_HELPER) if helper_src is None else helper_src
     dockerfile = _read(DOCKERFILE) if dockerfile is None else dockerfile
     workflow = _read(DEPLOY_FRONTEND) if workflow is None else workflow
@@ -228,6 +237,33 @@ def _problems(page_src=None, helper_src=None, dockerfile=None, workflow=None, en
 
     if page_src is None:
         problems.append("frontend/admin-web/src/app/(dashboard)/settings/page.tsx 缺失")
+    else:
+        # 🔴 issue #7212（用户 2026-10-18 逐字「这块直接移除吧，已经迁移到右上角了」）：
+        # 扫码入口**只在顶栏**。设置页任何形态的入口块复活都判红 —— 包括「换回共享组件」那种
+        # 看起来更"整齐"的复活（两个入口 = 入口分裂，且二维码会被渲染第二处）。
+        # 注释抹掉再判：散文里提到组件名不算实现（同 `_hardcoded_domain_sites` 的口径）。
+        page_code = _strip_comments(page_src)
+        for marker, why in (
+            ('data-testid="bmini-h5-entry"', "入口块（bmini-h5-entry）"),
+            ("<MobileEntryInline", "共享入口组件（<MobileEntryInline />）"),
+            ("getBminiH5Url", "地址读取（getBminiH5Url）"),
+            ("QRCodeSVG", "二维码渲染（QRCodeSVG）"),
+            ("qrcode.react", "二维码依赖（qrcode.react）"),
+        ):
+            if marker in page_code:
+                problems.append(
+                    f"设置页不得再渲染手机端入口 —— 发现 {why}；扫码入口只在顶栏（issue #7212）"
+                )
+    if entry_src is None:
+        problems.append(
+            "frontend/admin-web/src/components/layout/MobileEntry.tsx 缺失 —— 手机端入口没有唯一渲染处"
+        )
+    if header_src is None:
+        problems.append("frontend/admin-web/src/components/layout/Header.tsx 缺失")
+    elif "<MobileEntryHeader" not in header_src:
+        problems.append(
+            "顶栏必须挂手机端入口（`<MobileEntryHeader />`）—— 否则「任何页面一键弹码」不成立（issue #7198 的主入口）"
+        )
     if helper_src is None:
         problems.append(f"{SOLE_READER} 缺失 —— 地址没有单一读取点")
     elif ENV_VAR not in helper_src:
@@ -238,14 +274,14 @@ def _problems(page_src=None, helper_src=None, dockerfile=None, workflow=None, en
     for rel in _env_var_readers(files if files is not None else None):
         problems.append(f"`{ENV_VAR}` 只允许在 {SOLE_READER} 里读，实际又被 {rel} 读了 —— 单一真值被破坏")
 
-    if isinstance(page_src, str):
-        if "getBminiH5Url()" not in page_src:
-            problems.append("设置页必须经 `getBminiH5Url()` 取地址（不许自己读 process.env）")
-        if f"process.env.{ENV_VAR}" in page_src:
-            problems.append("设置页不得直接读 process.env（破坏单一读取点）")
-        if "import { QRCodeSVG } from 'qrcode.react'" not in page_src:
-            problems.append("设置页必须用既有依赖 qrcode.react 的 QRCodeSVG 画码")
-        branches = _entry_branches(page_src)
+    if isinstance(entry_src, str):
+        if "getBminiH5Url()" not in entry_src:
+            problems.append("手机端入口必须经 `getBminiH5Url()` 取地址（不许自己读 process.env）")
+        if f"process.env.{ENV_VAR}" in entry_src:
+            problems.append("手机端入口不得直接读 process.env（破坏单一读取点）")
+        if "import { QRCodeSVG } from 'qrcode.react'" not in entry_src:
+            problems.append("手机端入口必须用既有依赖 qrcode.react 的 QRCodeSVG 画码")
+        branches = _entry_branches(entry_src)
         if not branches:
             problems.append("找不到「手机端入口」的 `{bminiH5Url ? (…) : (…)}` 三元（判据 3/4 的判据对象）")
         else:
@@ -308,8 +344,8 @@ def test_domain_exemptions_are_alive_and_justified():
     assert len(ALLOWED_DOMAIN_SITES) <= 3, "豁免条目过多 ⇒ 判据正在被绕过（要么收敛实现，要么重新论证）"
 
 
-def test_qr_entry_is_on_the_settings_page_and_keeps_existing_tabs():
-    """判据：手机端入口落在「企业基础设置」页，且既有的设置内容一块不少（只加不改）。
+def test_qr_entry_is_in_the_header_only_and_keeps_existing_tabs():
+    """判据：扫码入口**只在顶栏**；设置页不再有入口块，且既有的设置内容一块不少（只加不改）。
 
     ⚠️ 2026-10-09（issue #6580）**第二次改判**：本页重构成「配置指挥台」，
     旧的四个 tab（`label: '<名>'`）改由**域目录单一真值模块**
@@ -349,16 +385,34 @@ def test_qr_entry_is_on_the_settings_page_and_keeps_existing_tabs():
     assert "router.replace('/settings/params')" not in src, (
         "旧深链**不再**跳去 `/settings/params`（该页已并回本页 ⇒ 跳过去会回到一个重复入口）"
     )
-    for testid in ('data-testid="bmini-h5-entry"', 'data-testid="bmini-h5-qr"', 'data-testid="bmini-h5-unconfigured"'):
-        assert testid in src, f"设置页缺 {testid}"
+    # 🔴 issue #7198：主入口在**顶栏**（扫码是跨设备交接的工具）；
+    # 🔴 issue #7212：设置页那一行**整块移除**（用户 2026-10-18 逐字「这块直接移除吧，
+    # 已经迁移到右上角了」）⇒ 判据翻转：设置页**不得**再出现任何形态的入口 / 二维码痕迹。
+    # 顶栏真的挂了它 + 「未配置」与二维码锚点仍在**唯一渲染处**（不许两处各画一份）。
+    page_code = _strip_comments(src)
+    for marker in ('data-testid="bmini-h5-entry"', 'MobileEntryInline', 'qrcode.react', 'QRCodeSVG'):
+        assert marker not in page_code, (
+            f"设置页又出现了手机端入口痕迹（{marker}）—— 扫码入口只在顶栏（issue #7212）"
+        )
+    entry_src = _read(MOBILE_ENTRY)
+    assert isinstance(entry_src, str), f"{MOBILE_ENTRY} 缺失 —— 手机端入口没有唯一渲染处"
+    for testid in ('data-testid="bmini-h5-qr"', 'data-testid="bmini-h5-unconfigured"'):
+        assert testid in entry_src, f"手机端入口组件缺 {testid}"
+    header_src = _read(HEADER)
+    assert isinstance(header_src, str), f"{HEADER} 缺失"
+    assert "MobileEntryHeader" in header_src, (
+        "顶栏必须挂手机端入口（issue #7198 的主入口）—— 否则「任何页面一键弹码」不成立"
+    )
 
 def test_mutations_are_all_detected(tmp_path):
     """注入式红证：把实现改坏 ⇒ 判据必须红（证明上面几条不是空断言）。"""
     page = _read(SETTINGS_PAGE)
+    entry = _read(MOBILE_ENTRY)
+    header = _read(HEADER)
     helper = _read(URL_HELPER)
     dockerfile = _read(DOCKERFILE)
     workflow = _read(DEPLOY_FRONTEND)
-    assert isinstance(page, str) and isinstance(helper, str)
+    assert isinstance(page, str) and isinstance(entry, str) and isinstance(header, str) and isinstance(helper, str)
 
     # ① 硬编码域名：往前端源码里塞一行写死的地址
     polluted = tmp_path / "polluted.ts"
@@ -369,14 +423,14 @@ def test_mutations_are_all_detected(tmp_path):
     src_files = [polluted, second_reader]
 
     # ③ 假码：把 QRCodeSVG 挪进无值分支（缺配置也画一个）
-    fake_qr = page.replace(
-        '<QRCodeSVG value={bminiH5Url} size={112} title={bminiH5Url} data-testid="bmini-h5-qr" />', ""
+    fake_qr = entry.replace(
+        '<QRCodeSVG value={bminiH5Url} size={140} title={bminiH5Url} data-testid="bmini-h5-qr" />', ""
     ).replace(
         '<p className="text-sm text-neutral-500" data-testid="bmini-h5-unconfigured">',
         '<p className="text-sm text-neutral-500" data-testid="bmini-h5-unconfigured">'
         '<QRCodeSVG value="" data-testid="bmini-h5-qr" />',
     )
-    assert fake_qr != page, "变异注入未生效（找不到 QRCodeSVG 那一行）"
+    assert fake_qr != entry, "变异注入未生效（找不到 QRCodeSVG 那一行）"
 
     mutations = {
         "前端源码里硬编码域名": dict(files=src_files),
@@ -391,15 +445,19 @@ def test_mutations_are_all_detected(tmp_path):
         "deploy-frontend 新增未登记的 secrets 引用（Danger Scan 阻塞形态）": dict(
             workflow=_inject_secret_ref(workflow)
         ),
-        "把二维码挪进无值分支（画假码）": dict(page_src=fake_qr),
+        "把二维码挪进无值分支（画假码）": dict(entry_src=fake_qr),
         "二维码内容改成硬编码（不取配置值）": dict(
-            page_src=page.replace(
-                "value={bminiH5Url} size={112} title={bminiH5Url}",
-                'value="https://app.migaozn.com/b/" size={112} title="https://app.migaozn.com/b/"',
+            entry_src=entry.replace(
+                "value={bminiH5Url} size={140} title={bminiH5Url}",
+                'value="https://app.migaozn.com/b/" size={140} title="https://app.migaozn.com/b/"',
             )
         ),
-        "设置页自己读 process.env（绕过单一读取点）": dict(
-            page_src=page.replace("const bminiH5Url = getBminiH5Url()", f"const bminiH5Url = process.env.{ENV_VAR} || ''")
+        "手机端入口自己读 process.env（绕过单一读取点）": dict(
+            entry_src=entry.replace("const bminiH5Url = getBminiH5Url()", f"const bminiH5Url = process.env.{ENV_VAR} || ''")
+        ),
+        "顶栏摘掉手机端入口": dict(header_src=header.replace("<MobileEntryHeader />", "")),
+        "设置页复活手机端入口块": dict(
+            page_src=page + '\n<div data-testid="bmini-h5-entry"><MobileEntryInline /></div>\n'
         ),
     }
     undetected = []

@@ -30,7 +30,7 @@ describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 六能�
   it('renders 页头事实标签（AI 数 / 能力域数 / 终端数 / 行业纵深）', () => {
     render(<ServicesPage />)
     expect(screen.getByText('2 个 AI：元元与黄金策')).toBeInTheDocument()
-    expect(screen.getByText(/6 个能力域 · \d+ 项功能/)).toBeInTheDocument()
+    expect(screen.getByText(/7 个能力域 · \d+ 项功能/)).toBeInTheDocument()
     expect(screen.getByText('4 个终端')).toBeInTheDocument()
     expect(screen.getByText('算料 · 工序 · 批次 · 计件')).toBeInTheDocument()
   })
@@ -69,7 +69,7 @@ describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 六能�
 
   it('renders 能力边界（旧版「批量操作库存 / 退换货处理」等已过期表述不得残留）', () => {
     render(<ServicesPage />)
-    expect(screen.getByText(/写操作只有三类：改价、批量上下架、批量库存调整/)).toBeInTheDocument()
+    expect(screen.getByText(/可写的动作：改价、商品改名、批量改价与批量库存调整、通知标记已读、定时提醒/)).toBeInTheDocument()
     expect(screen.getByText(/不做：改价、取消订单、退款、承诺优惠折扣、报库存数量/)).toBeInTheDocument()
     expect(screen.queryByText(/批量操作库存/)).not.toBeInTheDocument()
     expect(screen.queryByText(/智能工单流转/)).not.toBeInTheDocument()
@@ -100,9 +100,9 @@ describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 六能�
       '客户列表',
       '知识库',
       '售后工单',
-      '订单列表',
+      '销售订单',
       '财务对账',
-      '生产看板',
+      '作业看板',
       '智能派单',
       '计件工资',
       '入库单',

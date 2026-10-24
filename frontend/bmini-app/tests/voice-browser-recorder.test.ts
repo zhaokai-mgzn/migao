@@ -32,6 +32,8 @@ import { isVoiceSupported, startRecording, stopRecording } from '../src/utils/vo
 class FakeMediaRecorder {
   static instances: FakeMediaRecorder[] = []
   static isTypeSupported = (mime: string) => mime.includes('webm') || mime.includes('mp4')
+  /** 模拟「内核在 stop 时补发一个空 Blob」——华为 ArkWeb 上的实测形态（issue #7310） */
+  static emitEmpty = false
   mimeType: string
   state = 'inactive'
   ondataavailable: ((e: any) => void) | null = null
@@ -46,7 +48,8 @@ class FakeMediaRecorder {
   }
   stop() {
     this.state = 'inactive'
-    this.ondataavailable?.({ data: new Blob(['audio-bytes'], { type: this.mimeType }) })
+    const bytes = FakeMediaRecorder.emitEmpty ? [] : ['audio-bytes']
+    this.ondataavailable?.({ data: new Blob(bytes, { type: this.mimeType }) })
     this.onstop?.()
   }
 }
@@ -54,6 +57,17 @@ class FakeMediaRecorder {
 const gum = jest.fn(async () => ({ getTracks: () => [{ stop: jest.fn() }] }))
 const originalMediaRecorder = (globalThis as any).MediaRecorder
 const originalCreateObjectURL = (URL as any).createObjectURL
+const originalUserAgent = navigator.userAgent
+
+function setUserAgent(ua: string) {
+  Object.defineProperty(window.navigator, 'userAgent', { value: ua, configurable: true })
+}
+
+/** 真机 UA（2026-10-19 服务端 nginx 逐字）：华为 ALN-AL00 + 支付宝 webview */
+const ALIPAY_UA =
+  'Mozilla/5.0 (OpenHarmony 2; ALN-AL00) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 ' +
+  'Safari/537.36 ArkWeb/4.1.6.1 Mobile HuaweiBrowser/1.2.9.353 Nebula AlipayDefined(nt:WIFI,ws:360|0|3.375) ' +
+  'AliApp(AP/12.12.30.5600) AlipayClient/12.12.30.5600 Language/zh-Hans'
 
 function installRecorder() {
   ;(globalThis as any).MediaRecorder = FakeMediaRecorder
@@ -75,6 +89,7 @@ function removeRecorder() {
 beforeEach(() => {
   jest.clearAllMocks()
   FakeMediaRecorder.instances = []
+  FakeMediaRecorder.emitEmpty = false
   // 本文件判的是 **h5 分支**（`getRecorder()` 在 h5 直接 return null ⇒ 走浏览器录音）。
   // 不设它的话会落到「非 h5」分支去碰 `Taro.getRecorderManager()` 的 mock，判据就测错了对象。
   process.env.TARO_ENV = 'h5'
@@ -82,6 +97,7 @@ beforeEach(() => {
 
 afterEach(() => {
   ;(process.env as Record<string, string | undefined>).TARO_ENV = undefined
+  Object.defineProperty(window.navigator, 'userAgent', { value: originalUserAgent, configurable: true })
   if (originalMediaRecorder === undefined) delete (globalThis as any).MediaRecorder
   else (globalThis as any).MediaRecorder = originalMediaRecorder
   ;(URL as any).createObjectURL = originalCreateObjectURL
@@ -125,5 +141,26 @@ describe('B 端 H5 浏览器录音链路（issue #6596）', () => {
     )
     startRecording()
     await expect(stopRecording()).rejects.toThrow(/麦克风权限/)
+  })
+
+  it('🔴 录音器只回 0 字节 chunk ⇒ 本地拒收，不交回可上传的 URL（issue #7310 生产实证）', async () => {
+    // 华为 ArkWeb（支付宝 webview）实测：请求体 0 字节 → 服务端 400「音频文件为空」
+    installRecorder()
+    FakeMediaRecorder.emitEmpty = true
+    startRecording()
+    await expect(stopRecording()).rejects.toThrow(/未检测到声音/)
+    expect((URL as any).createObjectURL).not.toHaveBeenCalled()
+  })
+
+  it('🔴 支付宝内置浏览器：有 MediaRecorder 也判不可用（真机对照，issue #7310）', () => {
+    // 同一台华为 ALN-AL00：支付宝 8/8 次上传 0 字节；换百度 App 同链路 2 次 200 转写成功
+    // ⇒ 不是设备问题，是支付宝 webview 拦截了麦克风数据 ⇒ 不摆按不动的键
+    installRecorder()
+    setUserAgent(ALIPAY_UA)
+    expect(isVoiceSupported()).toBe(false)
+
+    // 反向对照：同一个桩、换成微信 UA ⇒ 仍然可用（不是把所有 webview 一刀切判死）
+    setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_2 like Mac OS X) MicroMessenger/8.0.79')
+    expect(isVoiceSupported()).toBe(true)
   })
 })

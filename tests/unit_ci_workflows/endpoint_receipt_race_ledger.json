@@ -39,6 +39,16 @@
       "table": "processing_set_part_tokens",
       "reason": "已登记的缺口：冲突在 mapper 内消解，但该写入点服务的是**工人端取件令牌**（同一令牌重复领取 = 回执还是拒绝，取决于工人端交互口径）⇒ 端点级判据需先定口径，属工人端写面。",
       "restart_condition": "工人端取件令牌的重复领取口径确定后，补端点级判据。"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/CustomerProfileWriter.java::mapper": {
+      "table": "customer_profiles",
+      "reason": "本包只把 V167 已发布的 uk_customer_profiles_phone/openid 同步进建库脚本（此前脚本里没有 ⇒ 元守卫看不见这个写入点），不动客户建档写路径；端点级并发回执判据需要真库 + 并发注入，属独立包。",
+      "restart_condition": "补客户建档端点级判据时（MockMvc 并发两次同手机号 ⇒ 200 + 恰好一条档案）从 deferred 移入 sites。"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/UserRoleWriter.java::userRoleMapper": {
+      "table": "user_roles",
+      "reason": "本包只把 V166 已发布的 uk_user_roles_active 同步进建库脚本，不动角色授予写路径；端点级并发回执判据属独立包。",
+      "restart_condition": "补角色授予端点级判据时（并发两次授予同一角色 ⇒ 200 + 恰好一条活跃行）从 deferred 移入 sites。"
     }
   }
 }

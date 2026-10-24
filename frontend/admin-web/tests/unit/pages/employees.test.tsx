@@ -233,6 +233,13 @@ describe('EmployeesPage', () => {
   it('#2946: 列表查询请求参数不含 role（列表页已移除角色筛选）', async () => {
     mockGetEmployees.mockClear()
     render(<EmployeesPage />)
+    // 🔴 issue #7116：**先等挂载那次请求落地**，再做交互。
+    // 本页是「草稿 state + 已提交 state」两段式（`keyword` → `handleSearch` → `searchKeyword` → `useEffect` 重发），
+    // 挂载请求未落地时，`setSearchKeyword` 触发的重发**排在同一条微任务链后**，而断言在
+    // `waitFor(toHaveBeenCalled())` 上被**挂载那次**满足 ⇒ 读到的是挂载那次的入参（不带 keyword）。
+    // 这不是迁移引入的行为变化 —— 迁移前后请求序列逐字相同（实测 `[{page,size}, {page,size,keyword:'张'}]`），
+    // 只是**交互与挂载请求的竞争**在 `SearchPanel` 下更容易显现。等挂载落地再点，就是确定的。
+    await waitFor(() => expect(mockGetEmployees).toHaveBeenCalled())
     // 触发一次查询：输入关键字后点「查询」，请求参数只含 page/size/keyword/status，不含 role
     const searchInput = screen.getByPlaceholderText(/输入姓名或手机号搜索/)
     fireEvent.change(searchInput, { target: { value: '张' } })
@@ -519,7 +526,7 @@ describe('EmployeesPage', () => {
               // 手机端有面 ⇒ 必须出现标注
               { code: 'processing:view', label: '智能派单', mobileTitles: ['智能派单'] },
               // 手机端没有面 ⇒ 不得出现标注（纯 PC 权限）
-              { code: 'production:view', label: '生产看板', mobileTitles: [] },
+              { code: 'production:view', label: '作业看板', mobileTitles: [] },
             ],
           },
           {
@@ -545,8 +552,8 @@ describe('EmployeesPage', () => {
     expect(screen.getByText('入库单 · 手机端：入库过账')).toBeInTheDocument()
 
     // ② 没有手机端面的码 ⇒ **不追加任何标注**（不摆内部标识、不产生噪音）
-    expect(screen.getByText('生产看板')).toBeInTheDocument()
-    expect(screen.queryByText(/生产看板 · 手机端/)).not.toBeInTheDocument()
+    expect(screen.getByText('作业看板')).toBeInTheDocument()
+    expect(screen.queryByText(/作业看板 · 手机端/)).not.toBeInTheDocument()
     expect(screen.getByText('发货单')).toBeInTheDocument()
     expect(screen.queryByText(/发货单 · 手机端/)).not.toBeInTheDocument()
     // ③ 反向自证：整个树上「手机端：」只出现**两处**（= 服务端给了 mobileTitles 的那两个码）
@@ -570,6 +577,110 @@ describe('EmployeesPage', () => {
     await waitFor(() => expect(screen.getByTestId('modal')).toBeInTheDocument())
     expect(screen.getByText('智能派单')).toBeInTheDocument()
     expect(screen.queryAllByText(/手机端：/)).toHaveLength(0)
+  })
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 2026-10-18 用户验收截图（三处「内部标识 / 缺面」）：
+  //   ① 岗位列印角色码（`knowledge_editor`）
+  //   ② 权限列印权限码（`dashboard:view`，顶层独立项没有中文名）
+  //   ③ 员工弹窗看不到手机端菜单（「我之前让你设计落地过，可能漏做了？」）
+  // ══════════════════════════════════════════════════════════════════════════
+  it('岗位列显示岗位名 —— 角色码（API/脚本建号）不得原样上屏；行内无 roles 时用岗位清单兜底', async () => {
+    mockGetEmployees.mockResolvedValue({
+      data: {
+        data: {
+          items: [
+            // 存量脏数据形态：position 存的是**角色码**，中文名在 roles[] 里（user_roles 投影）
+            { id: 11, name: '回归知识编辑', phone: '13900002007', position: 'knowledge_editor',
+              roles: [{ id: 'r9', name: '知识编辑', code: 'knowledge_editor' }],
+              permissions: [], status: 'active', createdAt: '2026-10-18T07:09:00', employeeUsername: 'reg_knowledge' },
+            // 行内 roles 缺失 ⇒ 用页面已加载的岗位清单（/api/admin/roles/all）兜底
+            { id: 12, name: '运营小李', phone: '13900002003', position: 'operator',
+              roles: [], permissions: [], status: 'active', createdAt: '2026-10-18T07:09:00' },
+          ],
+          total: 2,
+        },
+      },
+    })
+    render(<EmployeesPage />)
+    await waitFor(() => expect(screen.getByTestId('employee-11')).toBeInTheDocument())
+    expect(within(screen.getByTestId('employee-11')).getByTestId('cell-position').textContent).toBe('知识编辑')
+    expect(within(screen.getByTestId('employee-12')).getByTestId('cell-position').textContent).toBe('运营')
+    // 负控：角色码一个字都不许上屏
+    expect(screen.queryByText('knowledge_editor')).not.toBeInTheDocument()
+    expect(screen.queryByText('operator')).not.toBeInTheDocument()
+  })
+
+  it('权限列显示中文名 —— 顶层独立项的权限码（dashboard:view）不得回退成英文码', async () => {
+    mockRequestGet.mockResolvedValue({
+      data: {
+        data: [
+          // #7087 后「经营看板」是**顶层独立项**（无 children）—— 改前只扫 children ⇒ 这个码没中文名
+          { code: 'dashboard:view', label: '经营看板' },
+          {
+            code: 'inventory-center',
+            label: '仓储与物料',
+            children: [
+              { code: 'product:list', label: '库存明细' },
+              // 叶子数（3）> 该员工的权限数（2）⇒ 不会折叠成「全部权限」徽章（否则测不到逐个中文名）
+              { code: 'inbound:view', label: '入库单' },
+            ],
+          },
+        ],
+      },
+    })
+    mockGetEmployees.mockResolvedValue({
+      data: {
+        data: {
+          items: [
+            { id: 21, name: '回归销售', phone: '13900002001', position: '销售', roles: [],
+              permissions: ['dashboard:view', 'product:list'], status: 'active', createdAt: '2026-10-18T07:09:00' },
+          ],
+          total: 1,
+        },
+      },
+    })
+    render(<EmployeesPage />)
+    await waitFor(() => expect(screen.getByTestId('employee-21')).toBeInTheDocument())
+    const cell = within(screen.getByTestId('employee-21')).getByTestId('cell-permissions')
+    expect(cell.textContent).toContain('经营看板')
+    expect(cell.textContent).toContain('库存明细')
+    expect(cell.textContent).not.toContain('dashboard:view')
+  })
+
+  it('编辑弹窗「手机端菜单」按服务端 mobileTitles 渲染；勾选改动的是**同一份**权限（不产生第二套授权）', async () => {
+    mockRequestGet.mockResolvedValue({
+      data: {
+        data: [
+          { code: 'dashboard:view', label: '经营看板', mobileTitles: ['数据'] },
+          {
+            code: 'production-center',
+            label: '生产管理',
+            children: [
+              { code: 'processing:view', label: '智能派单', mobileTitles: ['智能派单'] },
+              { code: 'production:view', label: '作业看板', mobileTitles: ['计件工资报表', '生产待办'] },
+            ],
+          },
+        ],
+      },
+    })
+    render(<EmployeesPage />)
+    fireEvent.click(screen.getByText('新增员工'))
+    await waitFor(() => expect(screen.getByTestId('modal')).toBeInTheDocument())
+
+    const box = await screen.findByTestId('employees-mobile-menus')
+    expect(within(box).getByText('数据')).toBeInTheDocument()
+    expect(within(box).getByText('智能派单')).toBeInTheDocument()
+    // 多个面共用同一权限码 ⇒ 同一行展示（不拆成两个不能独立勾选的格子）
+    expect(within(box).getByText('计件工资报表、生产待办')).toBeInTheDocument()
+
+    // 勾选 = 授予该权限码 ⇒ 权限树（同一份 formData.permissions）同步出现这个码
+    const label = within(box).getByText('数据').closest('label') as HTMLElement
+    fireEvent.click(within(label).getByRole('checkbox'))
+    await waitFor(() => {
+      expect(JSON.parse(screen.getByTestId('tree-checkbox').getAttribute('data-selected') || '[]'))
+        .toContain('dashboard:view')
+    })
   })
 
   // ==================== 员工管理权限全链路（按钮级权限） ====================

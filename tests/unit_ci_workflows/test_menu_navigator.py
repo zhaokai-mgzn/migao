@@ -773,7 +773,11 @@ class TestJudgementsOnRealObject:
         all_paths = {n.path for n in nav.visible_nodes(["*"])}
         assert all_paths == {n.path for n in nav.MENU_TREE}
         visible = {n.path for n in nav.visible_nodes(["order:list", "dashboard:view"])}
-        assert visible == {"/orders", "/shipments", "/notifications", "/dashboard", "/briefing"}
+        # 🔴 2026-10-17（issue #7087）：`/briefing` 的**菜单项已删除**（结论卡改挂在经营看板上）
+        # ⇒ 本集合里不再有它；`/dashboard` 仍在（节点码一字未动 = `dashboard:view`，零授权 delta）。
+        # issue #7376：报表中心与经营看板同码 ⇒ `/reports` 也在这批可见项里
+        # issue #7375 段 3：价格本节点码也是 `order:list` ⇒ `/price-books` 也在本权限集的可见项里
+        assert visible == {"/orders", "/shipments", "/notifications", "/dashboard", "/reports", "/price-books"}
         # 🔴 2026-10-09（issue #6580）：「工艺配置」「加工项管理」两个菜单项已移除（功能体并入
         # 「企业基础设置」页内的配置域）⇒ 夹具改用合并后的入口 `settings`（其节点 = `/settings`）。
         nodes = nav.nodes_for_feature("settings")
@@ -815,14 +819,14 @@ class TestEveryJudgementCanGoRed:
             _load_mutated(
                 tmp_path,
                 lambda s: s.replace(
-                    '    MenuNode("trade-center", "订单列表", "/orders", "order:list"),\n', ""
+                    '    MenuNode("trade-center", "销售订单", "/orders", "order:list"),\n', ""
                 ),
             )
         except Exception as exc:  # noqa: BLE001 - 读数就是「抛了什么」
             caught = exc
         with capsys.disabled():
             print(f"[MC-065][红证1b] 删节点 ⇒ 导入期自检抛 {type(caught).__name__}: {str(caught)[:90]}")
-        assert "订单列表" in str(caught), (
+        assert "销售订单" in str(caught), (
             f"删掉登记节点后**没有**被具名拦下（caught={caught!r}）⇒ fail-closed 失效"
         )
 
@@ -863,16 +867,23 @@ class TestEveryJudgementCanGoRed:
         assert problems_coverage(nav, []) != [], "对照：空的 menu.ts 节点集必须判红（防空跑）"
 
     def test_judgement_1b_red_on_reorder(self, nav, menu_ts_nodes, tmp_path, capsys):
+        """🔴 2026-10-17（issue #7087）改锚：原注入交换「工作台」组的
+        `经营看板` ⇄ `每日简报` —— 该组与「每日简报」菜单项**均已撤销**（经营看板现为**最前席位**
+        一级项），旧锚点**逐字不在** `menu_navigator.py` 里 ⇒ 注入静默失效（本红证会退化成空断言）。
+        改锚到**首组的相邻两项**（在线接待 ⇄ 知识库）：仍验「顺序漂移」这一维，且锚点是长在树上的。
+        """
         mutated = _load_mutated(
             tmp_path,
             lambda s: s.replace(
-                '    MenuNode("workspace", "经营看板", "/dashboard", "dashboard:view"),\n'
-                '    MenuNode("workspace", "每日简报", "/briefing", "dashboard:view"),\n',
-                '    MenuNode("workspace", "每日简报", "/briefing", "dashboard:view"),\n'
-                '    MenuNode("workspace", "经营看板", "/dashboard", "dashboard:view"),\n',
+                '    MenuNode("customer-service", "在线接待", "/agent-workspace/human-sessions", "agent:session"),\n'
+                '    MenuNode("customer-service", "知识库", "/knowledge", "knowledge:view"),\n',
+                '    MenuNode("customer-service", "知识库", "/knowledge", "knowledge:view"),\n'
+                '    MenuNode("customer-service", "在线接待", "/agent-workspace/human-sessions", "agent:session"),\n',
             ),
         )
-        assert [n.path for n in mutated.MENU_TREE][:2] == ["/briefing", "/dashboard"], "前提自证失败"
+        # ⚠️ 前两个节点是最前席位（经营看板 → 报表中心，#7087 + #7376）⇒ 被注入的是紧跟其后的首组两项。
+        assert [n.path for n in mutated.MENU_TREE][2:4] == ["/knowledge", "/agent-workspace/human-sessions"], (
+            "前提自证失败（注入没生效 ⇒ 红证无信息量）")
         assert problems_coverage(mutated, menu_ts_nodes), "判据 1b 没看见顺序漂移 ⇒ 空断言"
 
     def test_judgement_2_red_on_ghost_code(self, nav, catalog, tmp_path, capsys):
@@ -990,8 +1001,8 @@ class TestEveryJudgementCanGoRed:
             _load_mutated(
                 tmp_path,
                 lambda s: s.replace(
-                    'NavFeature("orders", "订单列表（订单）", (("trade-center", "订单列表"),), ("订单列表", "订单"))',
-                    'NavFeature("orders", "订单列表（订单）", (("trade-center", "订单列表"),), ("订单列表", "库存盘点"))',
+                    'NavFeature("orders", "销售订单（订单列表 / 订单）", (("trade-center", "销售订单"),), ("销售订单", "订单列表", "订单"))',
+                    'NavFeature("orders", "销售订单（订单列表 / 订单）", (("trade-center", "销售订单"),), ("销售订单", "订单列表", "库存盘点"))',
                 ),
             )
         except Exception as exc:  # noqa: BLE001 - 读数就是「抛了什么」
@@ -1123,8 +1134,10 @@ class TestEveryJudgementCanGoRed:
             _load_mutated(
                 tmp_path,
                 lambda s: s.replace(
-                    'NavFeature("inbound-orders", "入库单（入库）", (("inventory-center", "入库单"),), ("入库单", "入库"))',
-                    'NavFeature("inbound-orders", "入库单（入库/发货单列表）", (("inventory-center", "入库单"),), ("入库单", "发货单列表"))',
+                    # ⚠️ 注入锚点必须**逐字**等于真源码（issue #7369 段 5：把入库单挪到「供应链」组后
+                    # 这里的旧锚点失配 ⇒ 注入变成空操作 ⇒ 本红证当场报「注入未生效」——机制在起作用）
+                    'NavFeature("inbound-orders", "入库单（入库）", (("supply-chain", "入库单"),), ("入库单", "入库"))',
+                    'NavFeature("inbound-orders", "入库单（入库/发货单列表）", (("supply-chain", "入库单"),), ("入库单", "发货单列表"))',
                     1,
                 ),
             )

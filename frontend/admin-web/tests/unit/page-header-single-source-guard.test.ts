@@ -9,7 +9,7 @@
  * 而手写形态的默认结局就是那个已被诊断过的坏形态：
  *
  * ```
- * <h1 className="text-xl font-semibold text-neutral-900">生产看板</h1>
+ * <h1 className="text-xl font-semibold text-neutral-900">作业看板</h1>
  * ```
  *
  * `frontend/admin-web/src/lib/design-tokens.ts` 的 `TYPE_SCALE` 规定 **h1 = `text-2xl`**、
@@ -95,7 +95,7 @@ const PARKED_WITH_REASON: ReadonlyArray<readonly [string, string]> = [
   ['src/app/(dashboard)/agent-workspace/human-sessions/page.tsx',
    '同上（在线接待工作台，同族同布局）'],
   ['src/app/(dashboard)/orders/[id]/OrderDetail.tsx',
-   '标题与「返回」按钮同排；且该页首屏还有发货明细读失败告警区，改页头要连带重排版式'],
+   '标题行右侧是**页面级唯一的「打印」入口**（issue #7544：打印与订单状态解耦，故不能落进任何状态分支）；且该页首屏还有发货明细读失败告警区，改页头要连带重排版式'],
   ['src/app/(dashboard)/orders/[id]/ship/ShipOrder.tsx',
    '标题行内含 `Zap` 图标，右侧是「打印发货单」+ 确认发货两个动作，与运单号表单是一体的'],
   ['src/app/(dashboard)/processing-orders/[id]/production/page.tsx',
@@ -248,9 +248,9 @@ describe('判据 2：存量快照只许缩短（销账是必须动作）', () =>
 
 describe('判别力自证与 fail-closed', () => {
   it('坏形态判红、好形态放行（纯函数级）', () => {
-    expect(hasHandWrittenH1('<h1 className="text-xl font-semibold text-neutral-900">生产看板</h1>')).toBe(true)
+    expect(hasHandWrittenH1('<h1 className="text-xl font-semibold text-neutral-900">作业看板</h1>')).toBe(true)
     expect(hasHandWrittenH1('<h2 className="text-xl font-semibold">区块</h2>')).toBe(false)
-    expect(usesPageHeader("<PageHeader title=\"生产看板\" />")).toBe(true)
+    expect(usesPageHeader("<PageHeader title=\"作业看板\" />")).toBe(true)
     expect(usesPageHeader('<div>no header primitive here</div>')).toBe(false)
     // 🔴 关键反例：**只剩 import**（用点被换回手写 h1 但忘了删 import）⇒ 不算「用过」
     expect(usesPageHeader("import { PageHeader } from '@/components/ui'\n<h1>手写</h1>")).toBe(false)

@@ -139,7 +139,10 @@ public class OrderLogisticsService extends ServiceImpl<OrderLogisticsMapper, Ord
         if (logistics == null) {
             throw BusinessException.notFound("物流记录");
         }
-        orderLogisticsMapper.deleteById(id);
+        // issue #6956 · 现象 C：判影响行数（并发双删只许一次成功；0 行 = 已被别人删掉）
+        if (orderLogisticsMapper.deleteById(id) == 0) {
+            throw BusinessException.notFound("物流记录");
+        }
         log.info("删除物流记录成功: id={}", id);
     }
 

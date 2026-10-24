@@ -835,8 +835,8 @@ def test_canonical_matrix_constant_is_not_edited():
     start = src.index("String[][] CANONICAL_POSITION_PRICES = {")
     end = src.index("};", start)
     rows = [line for line in src[start:end].split("\n") if line.strip().startswith("{")]
-    assert len(rows) == 120, (
-        f"`CANONICAL_POSITION_PRICES` 行数 = {len(rows)}，期望 120（30 逻辑工序 × 4 部位）"
+    assert len(rows) == 124, (
+        f"`CANONICAL_POSITION_PRICES` 行数 = {len(rows)}，期望 124（31 逻辑工序 × 4 部位；#7523 新增「出库」）"
         f" —— 退场/保命格必须走播种层覆盖，不得改这份与真值源同值的常量"
     )
 
