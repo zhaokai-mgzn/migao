@@ -106,6 +106,10 @@ describe('盘点单页面', () => {
   it('🔴 明细：账面 / 实盘 / 差异逐格；**没数的行写「未数」，不写 0**', async () => {
     await openDetail()
 
+    // 列名说清口径（#7618：账面量曾经是"原始入库量"，改后是"剩余米数"）
+    expect(screen.getByText('账面剩余')).toBeInTheDocument()
+    expect(screen.getByTestId('stocktake-book-basis').textContent).toContain('入库米数 − 已派工消耗')
+
     const counted = screen.getByTestId('stocktake-line-11')
     expect(counted.textContent).toContain('PC-20261022-0001')
     expect(counted.textContent).toContain('SKU-A')

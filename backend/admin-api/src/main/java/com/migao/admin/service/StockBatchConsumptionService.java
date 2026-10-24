@@ -645,6 +645,36 @@ public class StockBatchConsumptionService {
     }
 
     /**
+     * 逐批次**当前剩余**（派生 = 入库量 + Σdelta）—— 给**别的读面**（盘点 / 对账）复用的唯一入口。
+     *
+     * <p>🔴 为什么不许调用方自己聚合 Σdelta：类级元守卫
+     * `tests/unit_ci_workflows/test_batch_stocktake_write_point.py` 的
+     * {@code DERIVED_REMAINING_READERS} 把「余量派生」的读口限定在本类 —— 第二处聚合就是第二份
+     * 「这批还剩多少」，两份不会同时变红。这里也不另查一次库：调用方把**已加载的批次行**传进来。</p>
+     *
+     * @param batches 已加载的批次行（含数量快照；id 为空的行会被跳过）
+     * @return {@code batchId → 剩余米数}（保持入参顺序）
+     */
+    public Map<Long, BigDecimal> remainingMeters(Long tenantId, Collection<StockBatch> batches) {
+        Map<Long, BigDecimal> out = new LinkedHashMap<>();
+        if (batches == null || batches.isEmpty()) {
+            return out;
+        }
+        List<StockBatch> rows = new ArrayList<>();
+        for (StockBatch b : batches) {
+            if (b != null && b.getId() != null) {
+                rows.add(b);
+            }
+        }
+        Map<Long, BigDecimal> consumed = consumedByBatchId(tenantId, ids(rows));
+        for (StockBatch b : rows) {
+            out.put(b.getId(), StockQuantity.orZero(b.getQuantity())
+                    .add(consumed.getOrDefault(b.getId(), BigDecimal.ZERO)));
+        }
+        return out;
+    }
+
+    /**
      * 批次余量**分页**读面（issue #7604）：库存明细页「批次余量」视图的默认列表。
      *
      * <p>与 {@link #remaining} 的分工是**场景**、不是口径：</p>
@@ -701,6 +731,7 @@ public class StockBatchConsumptionService {
         return new BatchStockViews.BatchRemaining(b.getId(), b.getBatchNo(), b.getProductId(),
                 b.getSkuId(), b.getSkuCode(), b.getInboundNo(), b.getDyeLot(), b.getReceivedDate(),
                 b.getUnitCost(), plain(inbound), plain(used.negate()), plain(rest));
+    }
     }
 
     /**

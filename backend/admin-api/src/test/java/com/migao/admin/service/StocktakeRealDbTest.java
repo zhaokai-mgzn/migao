@@ -8,6 +8,7 @@ import com.baomidou.mybatisplus.extension.plugins.handler.TenantLineHandler;
 import com.baomidou.mybatisplus.extension.plugins.inner.TenantLineInnerInterceptor;
 import com.migao.admin.entity.StockBatch;
 import com.migao.admin.mapper.ApprovalMapper;
+import com.migao.admin.mapper.StockBatchConsumptionMapper;
 import com.migao.admin.mapper.StockBatchMapper;
 import com.migao.admin.mapper.StocktakeItemMapper;
 import com.migao.admin.mapper.StocktakeMapper;
@@ -99,7 +100,8 @@ class StocktakeRealDbTest {
         }));
         configuration.addInterceptor(tenantLine);
         for (Class<?> mapper : List.of(StocktakeMapper.class, StocktakeItemMapper.class,
-                StockBatchMapper.class, WarehouseMapper.class, ApprovalMapper.class)) {
+                StockBatchMapper.class, StockBatchConsumptionMapper.class,
+                WarehouseMapper.class, ApprovalMapper.class)) {
             configuration.addMapper(mapper);
         }
         SqlSessionFactory factory = new MybatisSqlSessionFactoryBuilder().build(configuration);
@@ -107,9 +109,15 @@ class StocktakeRealDbTest {
 
         ApprovalService approvalService = new ApprovalService(session.getMapper(ApprovalMapper.class));
         WarehouseService warehouseService = new WarehouseService(session.getMapper(WarehouseMapper.class));
+        // 账面量取的是**派生剩余**（#7618）：真库这条腿也要装台账服务，否则构造器不成立
+        StockBatchConsumptionService ledgerService = new StockBatchConsumptionService(
+                session.getMapper(StockBatchMapper.class),
+                session.getMapper(StockBatchConsumptionMapper.class),
+                null, null, null, null, new com.migao.admin.time.BusinessClock());
         service = new StocktakeService(session.getMapper(StocktakeMapper.class),
                 session.getMapper(StocktakeItemMapper.class), session.getMapper(StockBatchMapper.class),
-                warehouseService, approvalService, new com.migao.admin.time.BusinessClock());
+                warehouseService, approvalService, new com.migao.admin.time.BusinessClock(),
+                ledgerService);
     }
 
     @AfterAll
