@@ -212,12 +212,19 @@ class TestDefaultFormula:
 
         判别性：若把 `pleat_mode` 判据写在 `formula` 判据之前（或漏了 `selected_formula` 判断），
         下面三条会全部落回褶数法（`formula='pleat'` / 13.3 米 / 有 pleat_count）⇒ 红。
+
+        ⚠️ 期望米数**分档**（issue #7649）：`craft_tier` 现在真的参与倍数 ⇒ economy 档是
+        `5.5 × 1.8 = 9.9` 米（改前两档都是 11.0 —— 那正是「切档位不算料」的缺陷形态）。
+        **本判据守的东西一字未变**：显式 `formula` 不被抢回褶数法。
         """
-        for extra in ({"craft_tier": "standard"}, {"pleat_count": 48},
-                      {"craft_tier": "economy", "pleat_count": 48}):
+        for extra, expected_meters in (
+            ({"craft_tier": "standard"}, 11.0),
+            ({"pleat_count": 48}, 11.0),
+            ({"craft_tier": "economy", "pleat_count": 48}, 9.9),
+        ):
             q = build_quote(formula="fullness", **{**ANCHOR, **extra})
             assert q["formula"] == FORMULA_FULLNESS, f"显式 formula 被 {extra} 遮蔽"
-            assert q["fabric_meters"] == 11.0, f"显式 formula 被 {extra} 遮蔽"
+            assert q["fabric_meters"] == expected_meters, f"显式 formula 被 {extra} 遮蔽"
             assert "pleat_count" not in q, f"褶倍数公式不该产出褶数（收到 {extra}）"
 
     def test_pleat_formula_still_needs_a_tier_or_pleat_count(self):
@@ -254,14 +261,50 @@ class TestFullnessIndependentOfOpenCount:
             q = build_quote(formula="fullness", **{**ANCHOR, "window_width": width})
             assert q["fabric_meters"] == expected, f"宽 {width} ⇒ 期望 {expected}，得到 {q['fabric_meters']}"
 
-    def test_fullness_ignores_craft_tier(self):
-        """褶倍数公式**不吃档位**：standard（2.0）与 economy（1.8）都是「总宽×档位倍数」，
-        公式串里写的倍数必须与实际相乘的倍数**同一个数**（档位被静默忽略 ⇒ 红）。"""
+    def test_fullness_follows_craft_tier(self):
+        """🔴 2026-10-24 改判（issue #7649）：倍数法**吃档位** —— 用户逐字「切换倍数法的档位没有再去算用料米数」。
+
+        真值源 `docs/design/order-craft-spec-design.md`（`craftTier` = …送算料引擎的 `craft_tier`，
+        「**倍数 `fullness` 与褶数都由它推出**」）+ 下单页「选倍数法 ⇒ 展示档位 chips」——
+        两处都要求档位改变**倍数与用料**。standard（2.0）⇒ 5.5 × 2.0 = 11.0 米；
+        economy（1.8）⇒ 5.5 × 1.8 = 9.9 米。
+
+        🔴 红证（改前实测）：两档都是 11.0 米 / `fullness` 2.0 —— 商家切档位，用料一动不动。
+        ⚠️ 本用例原名 `test_fullness_ignores_craft_tier`（把 #4527 的实现当成了口径，与上面两处
+        真值源自相矛盾）⇒ 按用户 2026-10-24 的实测反馈改判。
+        """
         std = build_quote(formula="fullness", **{**ANCHOR, "craft_tier": "standard"})
         eco = build_quote(formula="fullness", **{**ANCHOR, "craft_tier": "economy"})
-        assert std["fabric_meters"] == 11.0 and eco["fabric_meters"] == 11.0
-        assert std["fullness"] == eco["fullness"] == 2.0
+        assert std["fabric_meters"] == 11.0
+        assert std["fullness"] == 2.0
+        assert eco["fabric_meters"] == 9.9
+        assert eco["fullness"] == 1.8
+        # 公式串里的倍数必须是**实际相乘**的那个数（串与值不同源 ⇒ 商家照错的数对账）
         assert "×2" in std["formula_text"]
+        assert "×1.8" in eco["formula_text"]
+
+    def test_explicit_fullness_wins_over_craft_tier(self):
+        """显式 `fullness` 入参**优先**（既有调用方逐值不变；档位只在没给 `fullness` 时生效）。"""
+        q = build_quote(formula="fullness", **{**ANCHOR, "fullness": 2.2, "craft_tier": "economy"})
+        assert q["fullness"] == 2.2
+        assert q["fabric_meters"] == 12.1  # 5.5 × 2.2
+
+    def test_unknown_craft_tier_falls_back_to_standard(self):
+        """未知档位键 ⇒ **标准档**（与褶数法同一回落；不猜第三值、也不静默按 1.0 算）。"""
+        q = build_quote(formula="fullness", **{**ANCHOR, "craft_tier": "no-such-tier"})
+        assert q["fullness"] == 2.0
+        assert q["fabric_meters"] == 11.0
+
+    def test_tier_below_min_fullness_is_rejected(self):
+        """护栏与褶数法**同一把尺子**：档位倍数 < `min_fullness`（默认 1.5）⇒ fail-closed。
+
+        不静默降档、也不静默放行 —— 同一张 `tiers` 表在褶数法里已经会 400，
+        倍数法放行就是「同一份配置两种口径」。
+        """
+        cfg = resolve_craft_calc_config(
+            {"tiers": {"standard": {"fullness": 2.0}, "cheap": {"fullness": 1.2}}})
+        with pytest.raises(ValueError, match="低于行业下限"):
+            build_quote(formula="fullness", config=cfg, **{**ANCHOR, "craft_tier": "cheap"})
 
     def test_fullness_expression_is_per_panel(self):
         """逐片**表达**（数值与「总宽×褶倍」逐值一致）：总 = 每片 × 开数，每片 = (宽÷开数)×褶倍。"""
