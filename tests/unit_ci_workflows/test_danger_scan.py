@@ -1343,3 +1343,44 @@ class TestNewSecretAckChannel:
         assert secret_ack_env_lines({"B_PAT", "A_PAT"}, "owner", "u9") == [
             "DANGER_ACK_SECRET=A_PAT,B_PAT", "DANGER_ACK_SECRET_BY=owner",
             "DANGER_ACK_SECRET_URL=u9"]
+
+
+class TestCommentStepRetriesRateLimit:
+    """评论步的**限流**退避（issue #7549）。
+
+    现场（2026-10-23 17~20 秒内三条 required 腿同红）：`扫描步 success`、**评论步** `HTTP 403` ——
+    安装令牌 5000/h 打满。它有两个可修的后果：
+    ① 一次 403 就把整条腿判红（甚至要人重跑）；
+    ② 失败文本只有 `HTTP 403`，读红的人分不清「限流」还是「真没权限」。
+    """
+
+    PR_CHECK = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "pr-check.yml"
+
+    def _comment_step_script(self) -> str:
+        import yaml
+
+        doc = yaml.safe_load(self.PR_CHECK.read_text(encoding="utf-8"))
+        for job in (doc.get("jobs") or {}).values():
+            for step in (job.get("steps") or []):
+                if step.get("name") == "Post danger-scan comment":
+                    return str((step.get("with") or {}).get("script") or "")
+        raise AssertionError("找不到 `Post danger-scan comment` 步骤（判据锚点失效 ⇒ 判不了，不得当通过）")
+
+    def test_all_three_api_calls_are_wrapped(self):
+        script = self._comment_step_script()
+        assert script.count("await withRetry(") == 3, (
+            "三个 GitHub API 调用（列评论 / 更新评论 / 创建评论）必须**逐个**包在 withRetry 里，"
+            "否则任一次 403 限流仍会把评论步判红（issue #7549）")
+
+    def test_retry_is_bounded_and_only_for_rate_limit(self):
+        script = self._comment_step_script()
+        assert "attempt >= 3" in script, "重试必须有界（次数上限写死在代码里，判据可读）"
+        assert "Math.min(Math.max(retryAfter, 0), 2)" in script, (
+            "退避必须**封顶 2s**（CI 不许被限流等待拖死）")
+        assert "throw e" in script, "非限流的 403 必须立刻抛（重试也不会好）"
+
+    def test_failure_text_names_the_rate_limit_readouts(self):
+        script = self._comment_step_script()
+        for needle in ("x-ratelimit-remaining", "retry-after", "限流"):
+            assert needle in script, (
+                f"失败文本缺 `{needle}` ⇒ 读到红的人分不清「限流」与「真没权限」（#7549 的一半就是归因）")

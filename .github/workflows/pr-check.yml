@@ -1213,14 +1213,46 @@ jobs:
               body = (r.blocker_count > 0 ? '## 🔒 Danger Scan — BLOCKED' : '## ✅ Danger Scan — PASSED') + '\n\n' + (lines.join('\n') || '无');
             } catch (e) { body = '⚠️ danger-scan 输出解析失败'; }
             body = MARKER + '\n' + body;
-            const { data: comments } = await github.rest.issues.listComments({
+            // 🔴 限流也是**瞬时**态（issue #7549 现场：安装令牌打满 ⇒ 本步「扫描步 success、**评论步** 403」，
+            //    外观跟真失败一样）。⇒ 只对**限流**做有界退避（≤2s × 2 次），非限流立刻报错，
+            //    且失败文本带 `x-ratelimit-remaining` / `retry-after` ⇒ 读到红的人不用先怀疑自己的 diff。
+            const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+            async function withRetry(label, fn) {
+              for (let attempt = 1; ; attempt += 1) {
+                try { return await fn(); } catch (e) {
+                  const status = e?.status;
+                  const headers = e?.response?.headers || {};
+                  const remaining = headers['x-ratelimit-remaining'];
+                  const retryAfter = Number(headers['retry-after'] || 1);
+                  const rateLimited = status === 429
+                    || (status === 403 && (String(remaining) === '0'
+                      || String(e?.message || '').toLowerCase().includes('rate limit')));
+                  if (!rateLimited || attempt >= 3) {
+                    core.setFailed(`${label} 失败：HTTP ${status ?? '?'}`
+                      + (rateLimited
+                        ? `（**限流** x-ratelimit-remaining=${remaining ?? '?'} retry-after=${retryAfter}s）`
+                        : '（非限流）'));
+                    throw e;
+                  }
+                  await sleep(Math.min(Math.max(retryAfter, 0), 2) * 1000);
+                }
+              }
+            }
+            const { data: comments } = await withRetry('列评论', () => github.rest.issues.listComments({
               owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number,
-            });
+            }));
             // 只认领**自己的**报告（marker），取最新一条；没有 marker 评论（含旧版无 marker 报告）⇒ **新建**
             // —— 宁可多一条，绝不按散文标题认领去覆盖人类评论（issue #6423）。
             const prev = [...comments].reverse().find(c => c.body.includes(MARKER));
-            if (prev) { await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: prev.id, body }); }
-            else { await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body }); }
+            if (prev) {
+              await withRetry('更新评论', () => github.rest.issues.updateComment({
+                owner: context.repo.owner, repo: context.repo.repo, comment_id: prev.id, body,
+              }));
+            } else {
+              await withRetry('创建评论', () => github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body,
+              }));
+            }
 
   # ============ 任何 CI 失败都打 needs-changes（独立 job，覆盖全部检查）============
   # G3 fix: 原打标在 qa-growth-gate job 内，无法捕获 admin-api-test/admin-web-test/e2e 失败
