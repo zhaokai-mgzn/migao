@@ -681,8 +681,10 @@ public class StockBatchConsumptionService {
                         .like(StockBatch::getSkuCode, kw).or()
                         .like(StockBatch::getDyeLot, kw).or()
                         .like(StockBatch::getInboundNo, kw))
-                .orderByDesc(StockBatch::getReceivedDate)
-                .orderByDesc(StockBatch::getId);
+                // 浏览序 = 最近进的布在最上面；未记收货日期的排最后（不猜日期）。
+                // 🔴 NULLS LAST 用**可移植**写法：PG 的 `DESC` 默认把 NULL 排**最前**、MySQL 排最后
+                // ⇒ 只写 DESC 会让「未记日期」的批次在 PG 上抢占首屏（本仓生产库 = PostgreSQL）。
+                .last("ORDER BY received_date IS NULL, received_date DESC, id DESC");
         Page<StockBatch> result = stockBatchMapper.selectPage(new Page<>(safePage, safeSize), wrapper);
         Map<Long, BigDecimal> consumed = consumedByBatchId(tenantId, ids(result.getRecords()));
         List<BatchStockViews.BatchRemaining> rows = new ArrayList<>();

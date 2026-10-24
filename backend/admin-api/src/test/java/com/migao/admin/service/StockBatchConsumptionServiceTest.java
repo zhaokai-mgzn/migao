@@ -610,8 +610,8 @@ class StockBatchConsumptionServiceTest {
             TableInfoHelper.initTableInfo(
                     new MapperBuilderAssistant(new MybatisConfiguration(), ""), StockBatch.class);
             String sql = captor.getValue().getSqlSegment();
-            assertThat(sql).as("浏览序 = 收货日期倒序、id 倒序")
-                    .contains("received_date DESC").contains("id DESC");
+            assertThat(sql).as("浏览序 = 收货日期倒序、id 倒序，且未记收货日期的排最后（PG 的 DESC 会把 NULL 排最前）")
+                    .contains("received_date IS NULL").contains("received_date DESC").contains("id DESC");
             assertThat(sql).as("keyword 是服务端 LIKE（批号 / 缸号 / 入库单 / 货号）")
                     .contains("batch_no LIKE").contains("dye_lot LIKE").contains("inbound_no LIKE");
         }
