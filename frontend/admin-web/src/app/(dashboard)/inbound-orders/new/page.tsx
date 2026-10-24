@@ -358,17 +358,17 @@ export default function NewInboundOrderPage() {
                 <table className="w-full text-sm">
                   <thead className="bg-neutral-50 text-neutral-600">
                     <tr>
-                      <th className="text-left px-3 py-2 font-medium">货号 / 颜色 / 门幅</th>
-                      <th className="text-right px-3 py-2 font-medium w-24">卷数</th>
-                      <th className="text-right px-3 py-2 font-medium w-32">卷长(米/卷)</th>
-                      <th className="text-right px-3 py-2 font-medium w-28">数量（米）*</th>
-                      <th className="text-right px-3 py-2 font-medium w-32">单价(元)</th>
-                      <th className="text-left px-3 py-2 font-medium w-36">缸号</th>
+                      <th className="text-left px-3 py-2 font-medium whitespace-nowrap">货号 / 颜色 / 门幅</th>
+                      <th className="text-right px-3 py-2 font-medium w-24 whitespace-nowrap">卷数</th>
+                      <th className="text-right px-3 py-2 font-medium w-32 whitespace-nowrap">卷长(米/卷)</th>
+                      <th className="text-right px-3 py-2 font-medium w-28 whitespace-nowrap">数量（米）*</th>
+                      <th className="text-right px-3 py-2 font-medium w-32 whitespace-nowrap">单价(元)</th>
+                      <th className="text-left px-3 py-2 font-medium w-36 whitespace-nowrap">缸号</th>
                       {form.source === 'opening' && (
-                        <th className="text-left px-3 py-2 font-medium w-40">旧系统批次号</th>
+                        <th className="text-left px-3 py-2 font-medium w-40 whitespace-nowrap">旧系统批次号</th>
                       )}
-                      <th className="text-left px-3 py-2 font-medium w-36">批次号</th>
-                      <th className="w-12" />
+                      <th className="text-left px-3 py-2 font-medium w-36 whitespace-nowrap">批次号</th>
+                      <th className="w-12 whitespace-nowrap" />
                     </tr>
                   </thead>
                   <tbody>
@@ -416,7 +416,7 @@ export default function NewInboundOrderPage() {
                             )}
                           />
                           {l.rollCount.trim() !== '' && l.quantity !== '' && (
-                            <p className="mt-1 text-[11px] text-neutral-400 text-right whitespace-nowrap">
+                            <p className="mt-1 text-xs text-neutral-400 text-right whitespace-nowrap">
                               {l.rollCount} 卷 × {l.rollLengthM} 米
                             </p>
                           )}
