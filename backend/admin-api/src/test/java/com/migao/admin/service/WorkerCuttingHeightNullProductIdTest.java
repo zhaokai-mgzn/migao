@@ -420,10 +420,11 @@ class WorkerCuttingHeightNullProductIdTest {
                                 "同源同长：items 与 lines 由同一批明细一次构造，按下标配对；下标不可能为 null。"
                                 + "2026-10-24（issue #7618）：`open()` 增加剩余派生后行号下移 18 行（249→267），判定依据未变")),
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/PurchaseOrderService.java|itemsById",
-                        new IndexSite("itemsById", "itemsOf", "itemId", "line.itemId()", 187,
+                        new IndexSite("itemsById", "itemsOf", "itemId", "line.itemId()", 202,
                                 Verdict.READ_IS_NULL_TOLERANT,
                                 "issue #7369 段 4：itemsOf 返回 LinkedHashMap（可变表）⇒ get(null) 不抛 NPE；"
-                                + "且第 183 行已对 itemId 判空并抛 422。2026-10-23（issue #7567）：行号随 `PurchaseOrderService` 新增 mapper 字段下移 8 行（179→187），判定依据未变")),
+                                + "且第 198 行已对 itemId 判空并抛 422。2026-10-23（issue #7567）：行号随 `PurchaseOrderService` 新增 mapper 字段下移 8 行（179→187）；"
+                                + "2026-10-25（issue #7568）：建单补 SKU 归属校验后下移 15 行（187→202），判定依据未变")),
                 // ── 存量：读法本身与表可变性无关（getOrDefault / containsKey） ──
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/DailyBriefingService.java|skusByProduct",
                         new IndexSite("skusByProduct", "costSkusByProduct", "line.getProductId()", "line.getProductId()", 1025,
