@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>手机端黄金策表格渲染 · 静态复现件（issue #7235）</title>
+<style>
+/* ==== 编译自 frontend/bmini-app/src/components/chat/MessageBubble.scss（同一份 SCSS）==== */
+@charset "UTF-8";
+.message-bubble {
+  display: flex;
+  padding: 8px 24px;
+}
+.message-bubble--user {
+  justify-content: flex-end;
+}
+.message-bubble--user .message-bubble__content {
+  background: linear-gradient(135deg, #1A73E8 0%, #0A2540 100%);
+  color: #FFFFFF;
+  border-radius: 16px 16px 4px 16px;
+  box-shadow: 0 2px 8px rgba(26, 115, 232, 0.25);
+}
+.message-bubble--user .message-bubble__time {
+  text-align: right;
+}
+.message-bubble--assistant {
+  justify-content: flex-start;
+}
+.message-bubble--assistant .message-bubble__content {
+  background: #FFFFFF;
+  color: #0A2540;
+  border-radius: 16px 16px 16px 4px;
+  box-shadow: 0 2px 12px rgba(10, 37, 64, 0.06);
+  border: 1px solid rgba(10, 37, 64, 0.04);
+}
+.message-bubble--assistant .message-bubble__time {
+  text-align: left;
+}
+.message-bubble__wrapper {
+  max-width: 78%;
+  display: flex;
+  flex-direction: column;
+}
+.message-bubble__wrapper--wide {
+  max-width: 94%;
+}
+.message-bubble__content {
+  padding: 14px 18px;
+  font-size: 28px;
+  line-height: 1.6;
+  word-break: break-all;
+}
+.message-bubble__text {
+  white-space: pre-wrap;
+}
+.message-bubble__line {
+  display: block;
+  min-height: 1.5em;
+}
+.message-bubble__line--empty {
+  min-height: 0.75em;
+}
+.message-bubble__line--bullet {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.message-bubble__line--bullet::before {
+  content: "•";
+  flex-shrink: 0;
+  line-height: 1.5em;
+}
+.message-bubble__text-strong {
+  font-weight: 600;
+}
+.message-bubble__table-scroll {
+  width: 100%;
+  margin: 8px 0;
+}
+.message-bubble__table {
+  display: inline-flex;
+  flex-direction: column;
+  min-width: 100%;
+  border: 1px solid #EAEEF3;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.message-bubble__table-row {
+  display: flex;
+  align-items: stretch;
+}
+.message-bubble__table-row--header {
+  background: #F5F7FA;
+}
+.message-bubble__table-row + .message-bubble__table-row {
+  border-top: 1px solid #EAEEF3;
+}
+.message-bubble__table-cell {
+  flex: 1 0 auto;
+  min-width: 112px;
+  padding: 8px 12px;
+  border-left: 1px solid #EAEEF3;
+  font-size: 24px;
+  line-height: 1.45;
+  word-break: break-all;
+}
+.message-bubble__table-cell:first-child {
+  border-left: none;
+}
+.message-bubble__table-cell--header {
+  font-weight: 600;
+  color: #0A2540;
+  white-space: nowrap;
+}
+.message-bubble__table-text {
+  white-space: normal;
+  word-break: break-all;
+}
+.message-bubble__cursor {
+  display: inline;
+  animation: cursor-blink 1s step-end infinite;
+  color: inherit;
+  font-weight: bold;
+}
+.message-bubble__time {
+  font-size: 24px;
+  color: #9AA5B1;
+  margin-top: 6px;
+  padding: 0 4px;
+}
+.message-bubble__images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 0 4px;
+}
+.message-bubble__image {
+  width: 200px;
+  height: 200px;
+  border-radius: 12px;
+  background: #F3F4F6;
+}
+.message-bubble__tool-calls {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.message-bubble__tool-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #F3F4F6;
+  border-radius: 12px;
+  font-size: 24px;
+  color: #5A6B7C;
+}
+.message-bubble__tool-icon {
+  font-size: 24px;
+}
+.message-bubble__tool-name {
+  font-size: 24px;
+  color: #5A6B7C;
+}
+.message-bubble__cards {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.message-bubble__card-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.message-bubble__card-placeholder {
+  padding: 20px;
+  background: #F5F7FA;
+  border: 1px dashed #EAEEF3;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.message-bubble__card-text {
+  font-size: 24px;
+  color: #9AA5B1;
+}
+.message-bubble__error .message-bubble__content {
+  background: rgba(229, 72, 77, 0.08);
+  border: 1px solid rgba(229, 72, 77, 0.25);
+}
+.message-bubble__error .message-bubble__text {
+  color: #E5484D;
+}
+
+@keyframes cursor-blink {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+.message-bubble__source {
+  margin-bottom: 4px;
+}
+
+.message-bubble__source-text {
+  display: inline-flex;
+  align-items: center;
+  font-size: 24px;
+  line-height: 1;
+  color: #94a0b4;
+  letter-spacing: 0.5px;
+}
+
+.message-bubble__source-text--human {
+  color: #2f9e6e;
+}
+
+/* ==== Taro `<ScrollView scrollX>` 的容器语义（复现件补的**运行时**行为，非产品 SCSS）====
+   真栈里横向滚动由 Taro 的 scroll-view 组件提供（H5 = taro-scroll-view-core，小程序 = 原生 scroll-view）；
+   静态复现件没有这层运行时 ⇒ 在这里补 `overflow-x: auto` 等价语义，否则量到的是「页面被表格撑宽」的假读数。 */
+.message-bubble__table-scroll { overflow-x: auto; }
+/* ==== 复现件页面底座（非产品代码）：模拟手机竖屏 750px 设计宽 ==== */
+html, body { margin: 0; padding: 0; background: #F5F7FA; width: 750px; }
+body { font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif; }
+.probe-label { font: 12px/1.6 -apple-system, sans-serif; color: #6B7A8F; padding: 12px 24px 0; }
+</style></head>
+<body>
+  <div class="probe-label">① 6 列表格（真实后端形态：售后工单清单）</div>
+  <div class="message-bubble message-bubble--assistant">
+  <div class="message-bubble__wrapper message-bubble__wrapper--wide">
+    <div class="message-bubble__source"><span class="message-bubble__source-text">🤖 AI 助手</span></div>
+    <div class="message-bubble__content"><div class="message-bubble__line"><span class="message-bubble__text">最近的售后工单：</span></div><div class="message-bubble__table-scroll"><div class="message-bubble__table"><div class="message-bubble__table-row message-bubble__table-row--header"><div class="message-bubble__table-cell message-bubble__table-cell--header"><span class="message-bubble__table-text">工单号</span></div><div class="message-bubble__table-cell message-bubble__table-cell--header"><span class="message-bubble__table-text">关联订单</span></div><div class="message-bubble__table-cell message-bubble__table-cell--header"><span class="message-bubble__table-text">客户</span></div><div class="message-bubble__table-cell message-bubble__table-cell--header"><span class="message-bubble__table-text">类型</span></div><div class="message-bubble__table-cell message-bubble__table-cell--header"><span class="message-bubble__table-text">状态</span></div><div class="message-bubble__table-cell message-bubble__table-cell--header"><span class="message-bubble__table-text">创建时间</span></div></div><div class="message-bubble__table-row"><div class="message-bubble__table-cell"><span class="message-bubble__table-text">AS-20261018-0005</span></div><div class="message-bubble__table-cell"><span class="message-bubble__table-text">20261018167300025</span></div><div class="message-bubble__table-cell"><span class="message-bubble__table-text">回归客户-O5</span></div><div class="message-bubble__table-cell"><span class="message-bubble__table-text">其他</span></div><div class="message-bubble__table-cell"><span class="message-bubble__table-text">🟡 待处理</span></div><div class="message-bubble__table-cell"><span class="message-bubble__table-text">10-18 07:43</span></div></div><div class="message-bubble__table-row"><div class="message-bubble__table-cell"><span class="message-bubble__table-text">AS-20261018-0004</span></div><div class="message-bubble__table-cell"><span class="message-bubble__table-text">20261018751390021</span></div><div class="message-bubble__table-cell"><span class="message-bubble__table-text">回归客户-O1</span></div><div class="message-bubble__table-cell"><span class="message-bubble__table-text">维修</span></div><div class="message-bubble__table-cell"><span class="message-bubble__table-text">🟡 待处理</span></div><div class="message-bubble__table-cell"><span class="message-bubble__table-text">10-18 07:43</span></div></div><div class="message-bubble__table-row"><div class="message-bubble__table-cell"><span class="message-bubble__table-text">AS-20261018-0003</span></div><div class="message-bubble__table-cell"><span class="message-bubble__table-text">20261018167300025</span></div><div class="message-bubble__table-cell"><span class="message-bubble__table-text">回归客户-O5</span></div><div class="message-bubble__table-cell"><span class="message-bubble__table-text">换货</span></div><div class="message-bubble__table-cell"><span class="message-bubble__table-text">⚪ 已关闭</span></div><div class="message-bubble__table-cell"><span class="message-bubble__table-text">10-18 07:09</span></div></div></div></div></div>
+    <span class="message-bubble__time">14:32</span>
+  </div>
+</div>
+  <div class="probe-label">② 3 列表格</div>
+  <div class="message-bubble message-bubble--assistant">
+  <div class="message-bubble__wrapper message-bubble__wrapper--wide">
+    <div class="message-bubble__source"><span class="message-bubble__source-text">🤖 AI 助手</span></div>
+    <div class="message-bubble__content"><div class="message-bubble__table-scroll"><div class="message-bubble__table"><div class="message-bubble__table-row message-bubble__table-row--header"><div class="message-bubble__table-cell message-bubble__table-cell--header"><span class="message-bubble__table-text">工单号</span></div><div class="message-bubble__table-cell message-bubble__table-cell--header"><span class="message-bubble__table-text">客户</span></div><div class="message-bubble__table-cell message-bubble__table-cell--header"><span class="message-bubble__table-text">状态</span></div></div><div class="message-bubble__table-row"><div class="message-bubble__table-cell"><span class="message-bubble__table-text">AS-20261018-0005</span></div><div class="message-bubble__table-cell"><span class="message-bubble__table-text">回归客户-O5</span></div><div class="message-bubble__table-cell"><span class="message-bubble__table-text">🟡 待处理</span></div></div><div class="message-bubble__table-row"><div class="message-bubble__table-cell"><span class="message-bubble__table-text">AS-20261018-0004</span></div><div class="message-bubble__table-cell"><span class="message-bubble__table-text">回归客户-O1</span></div><div class="message-bubble__table-cell"><span class="message-bubble__table-text">🟡 待处理</span></div></div></div></div></div>
+    <span class="message-bubble__time">14:32</span>
+  </div>
+</div>
+  <div class="probe-label">③ 对照：纯文本气泡（78% 宽）</div>
+  <div class="message-bubble message-bubble--assistant">
+  <div class="message-bubble__wrapper">
+    <div class="message-bubble__source"><span class="message-bubble__source-text">🤖 AI 助手</span></div>
+    <div class="message-bubble__content"><div class="message-bubble__line"><span class="message-bubble__text">这是一段没有表格的普通回复，用来对照气泡宽度（78%）。</span></div></div>
+    <span class="message-bubble__time">14:32</span>
+  </div>
+</div>
+</body></html>

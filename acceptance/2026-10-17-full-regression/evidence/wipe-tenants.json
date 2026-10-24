@@ -1,0 +1,27 @@
+{
+  "wiped_tenant_ids": [
+    47
+  ],
+  "rows_deleted_by_table": {
+    "permissions": 33,
+    "processing_items": 15,
+    "production_crafts": 1,
+    "production_operation_price_versions": 41,
+    "production_route_rules": 27,
+    "role_permissions": 103,
+    "user_roles": 1,
+    "processing_categories": 1,
+    "production_operation_positions": 116,
+    "production_operations": 41,
+    "production_route_templates": 2,
+    "roles": 8,
+    "categories": 1,
+    "users": 1
+  },
+  "rows_deleted_total": 391,
+  "residue_rows_after": 0,
+  "residue_tenants_rows_after": [],
+  "tenants_before": [
+    "47|米高回归隔离租户|shop-why4"
+  ]
+}

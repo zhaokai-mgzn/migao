@@ -1,0 +1,25 @@
+{
+  "site": "http://localhost:3001",
+  "target": "/dashboard",
+  "url": "http://localhost:3001/dashboard",
+  "loginOk": true,
+  "afterLogin": "http://localhost:3001/dashboard",
+  "loginShape": {
+    "id": "login-tabs-20261020",
+    "ok": true,
+    "tabs": [
+      "员工登录账号密码",
+      "管理员登录手机验证码"
+    ]
+  },
+  "testids": 30,
+  "http5xx": [],
+  "files": [
+    "01-full.png",
+    "sidebar.png",
+    "sidebar-brand.png",
+    "page-text.txt",
+    "testids.txt"
+  ],
+  "missingShots": []
+}

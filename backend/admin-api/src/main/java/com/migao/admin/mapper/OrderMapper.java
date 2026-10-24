@@ -5,10 +5,13 @@ import com.baomidou.mybatisplus.annotation.InterceptorIgnore;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Result;
+import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.math.BigDecimal;
 import java.util.Map;
 
 /**
@@ -25,6 +28,103 @@ public interface OrderMapper extends BaseMapper<Order> {
     @Select("SELECT status, COUNT(*) as count FROM orders " +
             "WHERE deleted = 0 GROUP BY status")
     List<Map<String, Object>> selectOrderStatusDistribution();
+
+    /**
+     * 订单面料成本（issue #7371，P0-3 段 1）：该单所有**扣料行**的米数 × 当时批次进价快照。
+     *
+     * <p>口径：`stock_batch_consumptions` 里 `reason = 'processing_order'` 且 `deleted = 0` 的行，
+     * 按 `order_no` 归属到订单；成本 = `planned_meters × unit_cost`（`planned_meters` 已带符号，
+     * 扣减行为正 ⇒ 直接求和）。</p>
+     *
+     * <p>🔴 返回三件事（不是只返回金额）：`fabric_cost`（**只累加有进价的行**）、
+     * `unknown_lines`（缺进价的行数）、`lines`（总行数）。缺进价的行必须被**数出来** ——
+     * 「未知当 0」会让毛利率虚高（把成本当成没花钱），这是 P0-3 明令禁止的形态
+     * （issue #7371 验收判据：成本未知 ⇒ 显示「成本未知」，绝不填 0）。</p>
+     */
+    @Select("SELECT COALESCE(SUM(c.planned_meters * c.unit_cost), 0) AS fabric_cost, "
+            + "COUNT(*) FILTER (WHERE c.unit_cost IS NULL) AS unknown_lines, "
+            + "COUNT(*) AS lines "
+            + "FROM stock_batch_consumptions c "
+            + "WHERE c.deleted = 0 AND c.tenant_id = #{tenantId} AND c.order_no = #{orderNo} "
+            + "AND c.reason = 'processing_order'")
+    java.util.Map<String, Object> selectFabricCost(@Param("tenantId") Long tenantId,
+                                                   @Param("orderNo") String orderNo);
+
+    /**
+     * **批量**订单面料成本（issue #7582，报表中心订单毛利用）：{@link #selectFabricCost} 的 `GROUP BY` 版。
+     *
+     * <p>🔴 三元组与单条版**逐字相同**（同一 {@code reason} / {@code deleted = 0} / {@code tenant_id}；
+     * 同样返回 {@code fabric_cost} + {@code unknown_lines} + {@code lines}）——
+     * 口径不许因为「取数换了个形状」而漂移：缺进价的行仍必须被**数出来**（未知 ≠ 0）。</p>
+     *
+     * @param orderNos 非空集合（调用方保证；空集合渲染成 {@code IN ()} 是语法错误）
+     */
+    @Select("<script>SELECT c.order_no AS order_no, "
+            + "COALESCE(SUM(c.planned_meters * c.unit_cost), 0) AS fabric_cost, "
+            + "COUNT(*) FILTER (WHERE c.unit_cost IS NULL) AS unknown_lines, "
+            + "COUNT(*) AS lines "
+            + "FROM stock_batch_consumptions c "
+            + "WHERE c.deleted = 0 AND c.tenant_id = #{tenantId} "
+            + "AND c.reason = 'processing_order' AND c.order_no IN "
+            + "<foreach collection='orderNos' item='orderNo' open='(' separator=',' close=')'>#{orderNo}</foreach> "
+            + "GROUP BY c.order_no</script>")
+    java.util.List<java.util.Map<String, Object>> selectFabricCosts(
+            @Param("tenantId") Long tenantId, @Param("orderNos") java.util.Collection<String> orderNos);
+
+    /**
+     * 应收账龄取数（issue #7370，P0-2 段 2 + 段 3）：每笔**余额 &gt; 0** 的订单一行。
+     *
+     * <p>🔴 段 3 起余额再减「已核销收款合计」（{@code receipt_allocations}）：一笔收款可冲抵多张单，
+     * 部分收款的单不能再按「有没有 `paid_at`」整单算欠。
+     *
+     * <p>口径与「财务对账」逐字同源（{@code 应收 − 实收 + 已退}）：
+     * {@code actual_amount} 为 NULL 视为已收满（既有约定），退款取 {@code type=refund ∧ status=success} 成功流水。
+     * 余额 ≤ 0 的单**不进账龄面**（对平的不必看、多收的不冲抵别的单）。</p>
+     *
+     * <p>🔴 到期日与分档**不在 SQL 里算**：账期是客户档案属性，分档规则（到期日当天归未到期等）
+     * 钉在纯函数 {@code ReceivableAging} 上、逐格有判据；埋在 {@code CASE WHEN} 里只能靠「上线后看数字」发现错。</p>
+     *
+     * <p>上限 2000 行：账龄是「看欠款结构」的读面，不是导出台账；超限时前端会看到
+     * {@code truncated=true}（不静默截断成「刚好这么多」）。</p>
+     */
+    // ⚠️ `<script>` + `<if>` 不是花样：可选范围参数**不能**写成 `#{createdBy} IS NULL`
+    //（PG 在该位置推不出参数类型 ⇒ 实参为 NULL 时 500，issue #5975；真库实证见
+    //  `ReceivableAgingScopeRealDbTest`）⇒ 只有非空时才把条件拼进 SQL。
+    @Select("<script>SELECT * FROM ("
+            + "SELECT o.id AS order_id, o.order_no AS order_no, o.customer_name AS customer_name, "
+            + "o.customer_phone AS customer_phone, COALESCE(o.total_amount, 0) AS receivable, "
+            + "COALESCE((SELECT SUM(f.amount) FROM finance_transactions f "
+            + "WHERE f.tenant_id = o.tenant_id AND f.order_id = o.id "
+            + "AND f.type = 'refund' AND f.status = 'success' AND f.deleted = 0), 0) AS refunded, "
+            + "COALESCE(o.total_amount, 0) - COALESCE((SELECT SUM(f.amount) FROM finance_transactions f "
+            + "WHERE f.tenant_id = o.tenant_id AND f.order_id = o.id "
+            + "AND f.type = 'refund' AND f.status = 'success' AND f.deleted = 0), 0) "
+            + "- COALESCE((SELECT SUM(a.amount) FROM receipt_allocations a "
+            + "WHERE a.tenant_id = o.tenant_id AND a.order_id = o.id AND a.deleted = FALSE), 0) AS remaining, "
+            + "o.created_at AS created_at "
+            + "FROM orders o WHERE o.deleted = 0 AND o.tenant_id = #{tenantId} AND o.status != 'cancelled' "
+            + "AND o.paid_at IS NULL "
+            // 🔴 P0-4 数据范围（issue #7376 段 5）：`self` 范围只算本人创建的单；null ⇒ 不裁（财务看全量）
+            + "<if test='createdBy != null'> AND o.created_by = #{createdBy}</if>"
+            + ") t WHERE t.remaining > 0 ORDER BY t.remaining DESC LIMIT 2000</script>")
+    @Results({
+            @Result(column = "order_id", property = "orderId"),
+            @Result(column = "order_no", property = "orderNo"),
+            @Result(column = "customer_name", property = "customerName"),
+            @Result(column = "customer_phone", property = "customerPhone"),
+            @Result(column = "created_at", property = "createdAt")
+    })
+    List<com.migao.admin.dto.ReceivableAgingRow> selectReceivableRows(@Param("tenantId") Long tenantId,
+                                                                     @Param("createdBy") String createdBy);
+
+    /**
+     * 客户已欠金额（issue #7370 授信闸门）：未结清订单的金额合计。
+     * 口径 = `paid_at IS NULL` 且未取消；逐笔核销上线后（P0-2 段 3）扩展为「Σ订单 - Σ核销」。
+     */
+    @Select("SELECT COALESCE(SUM(total_amount), 0) FROM orders " +
+            "WHERE deleted = 0 AND tenant_id = #{tenantId} AND customer_phone = #{phone} " +
+            "AND paid_at IS NULL AND status <> 'cancelled'")
+    BigDecimal selectOutstandingTotal(@Param("tenantId") Long tenantId, @Param("phone") String phone);
 
     /**
      * 看板 stats 订单维度聚合（#2886 性能优化：替代原来 8 次串行 selectCount/selectList）。
@@ -140,7 +240,7 @@ public interface OrderMapper extends BaseMapper<Order> {
      */
     @InterceptorIgnore(tenantLine = "true")
     @Select("WITH done AS ("
-            + "UPDATE orders SET status = 'completed', updated_at = NOW() "
+            + "UPDATE orders SET status = 'completed', received_at = NOW(), updated_at = NOW() "
             + "WHERE tenant_id = #{tenantId} AND status = 'shipped' AND deleted = 0 "
             + "AND shipped_at IS NOT NULL AND shipped_at <= #{deadline} "
             + "RETURNING id"

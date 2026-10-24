@@ -36,6 +36,16 @@ export const PAGE_FILL_COMPONENT = 'page_fill'
 /** **Agent 解读/推荐**的来源标记（与 `[图片识别]` 必须不同：否则商家无从判断该信哪一格） */
 export const PAGE_FILL_SOURCE_INTERPRETED = '[米宝解读]'
 
+/**
+ * **商家在文字框里明说的字面事实**的来源标记（issue #7528）。
+ *
+ * 第三枚标记，与上面两枚**都不同**：它不是从图上抄的、也不是模型推的，而是商家自己在
+ * 「补充一句」里写下的（货号 / 门幅 / 规格属性），由 `frontend/admin-web/src/lib/declared-facts.ts`
+ * **确定性解析**（零 LLM、零网络）产出。来源可分辨是硬要求 —— 否则商家无从判断某个值
+ * 是「图上有」还是「他自己写的」。
+ */
+export const PAGE_FILL_SOURCE_DECLARED = '[商家填写]'
+
 /** **浏览器内存**事件名（不是 URL、不是存储键：它不落盘） */
 export const PAGE_FILL_EVENT = 'mibao:page-fill'
 

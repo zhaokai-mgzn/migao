@@ -351,10 +351,15 @@ NAMESPACE_CUSTOMER_ORDER_PREFIXES = ("customer_order:",)
 #:   ⚠️ 真值锚点若将来扩到账号凭据面，本条应**改判**进 `NAMESPACE_PREFIXES_JUDGED`
 #:   并补对应断言 —— 本常量就是那笔账的登记处。
 NAMESPACE_ACCOUNT_PREFIXES = ("account_password:",)
+#: `scheduled_task:`（2026-10-19 / issue #7027 给 CH-050 加的并行互斥键）—— **显式范围外**，
+#:   理由与 `finance_txn:` 同族（**登记而非沉默**）：本轮四类只覆盖 商品 / 加工项 / 色名 / 客户，
+#:   而 CH-050 写的是**定时提醒待办**（`scheduled_tasks` 表），种子真值目录里没有该实体
+#:   ⇒ 拿它判「名字能否在种子里解析」只会得到恒假结论（"基于错误真相模型写的护栏"）。
+NAMESPACE_SCHEDULED_TASK_PREFIXES = ("scheduled_task:",)
 NAMESPACE_PREFIXES_OUT_OF_SCOPE = (
     NAMESPACE_EMPLOYEE_PREFIXES + NAMESPACE_CATEGORY_PREFIXES + NAMESPACE_FINANCE_PREFIXES
     + NAMESPACE_ROLE_PREFIXES + NAMESPACE_CUSTOMER_ORDER_PREFIXES
-    + NAMESPACE_ACCOUNT_PREFIXES
+    + NAMESPACE_ACCOUNT_PREFIXES + NAMESPACE_SCHEDULED_TASK_PREFIXES
 )
 NAMESPACE_PREFIXES_JUDGED = ("product_name:", "customer_phone:")
 #: 分类面清单（判 / 显式范围外）—— 出现**不在两张表里**的新形态 ⇒ `TestNoSilentSkip` 报红，

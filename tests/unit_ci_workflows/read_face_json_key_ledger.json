@@ -167,6 +167,48 @@
         "fullness_actual"
       ],
       "contract_ledger_why": "嵌套只读视图，**没有单一账本锚行**（它的冻结键散落在账本多行：`fabric_meters` 见扫码读面两行、`pleat_count`/`fullness`/`fullness_actual` 见下单行要素行）⇒ 本类的账本侧判定退化在**全账本**范围做包含（不做行锚）。残差（现取 = 未在账本出现的冻结键）如实登记、不伪造。"
+    },
+    "com.migao.admin.dto.OrderDetailResponse": {
+      "source": "backend/admin-api/src/main/java/com/migao/admin/dto/OrderDetailResponse.java",
+      "kind": "read-face-response",
+      "keys": {
+        "replayed": "replayed",
+        "id": "id",
+        "orderNo": "orderNo",
+        "customerName": "customerName",
+        "customerPhone": "customerPhone",
+        "customerAddress": "customerAddress",
+        "logisticsType": "logisticsType",
+        "logisticsCompany": "logisticsCompany",
+        "totalAmount": "totalAmount",
+        "actualAmount": "actualAmount",
+        "discountAmount": "discountAmount",
+        "refundAmount": "refundAmount",
+        "refundAt": "refundAt",
+        "processingFee": "processingFee",
+        "status": "status",
+        "remark": "remark",
+        "closeReason": "closeReason",
+        "isUrgent": "isUrgent",
+        "requiredDeliveryDate": "requiredDeliveryDate",
+        "createdByName": "createdByName",
+        "needsWork": "needs_work",
+        "workOrderKind": "work_order_kind",
+        "items": "items",
+        "processingItems": "processingItems",
+        "logistics": "logistics",
+        "createdAt": "createdAt",
+        "paidAt": "paidAt",
+        "shippedAt": "shippedAt",
+        "receivedAt": "receivedAt",
+        "updatedAt": "updatedAt"
+      },
+      "frozen_keys": [
+        "needs_work",
+        "work_order_kind"
+      ],
+      "contract_ledger_keys": [],
+      "contract_ledger_why": "订单详情（`GET /api/admin/orders/{id}`）在 docs/wiki/CONTRACT-LEDGER.md 里**没有逐键行**，而那份文件由 B2 独占写面（本包只读，issue #6890 台账 `what` 逐字写明）⇒ 账本侧判定**不可达**，如实登记、不新增账本行。本类其余 28 个键是**存量 camelCase 契约**（前端 `Order` 类型按 camelCase 消费 `orderNo` / `paidAt` / `shippedAt` 等，见 #7078），非本单引入；本单只把两个**新冻结键**钉进 判据 2/3（snake_case + 清单双向相等）与判据 6（可空形态）。"
     }
   },
   "nullable_key_forms": {
@@ -249,6 +291,16 @@
       "form": "absent",
       "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。 ⚠️ issue #7079/V159：DB 列是 `NOT NULL DEFAULT 'processing'`，但 DTO 侧仍可空（存量 PO / 未接线写入方） ⇒ **不编造**：消费方按「加工（processing）」兜底。",
       "kind": "dto-key"
+    },
+    "com.migao.admin.dto.OrderDetailResponse::needs_work": {
+      "form": "absent",
+      "kind": "dto-key",
+      "why": "该键是引用类型（Boolean），类级与字段级都**没有** `@JsonInclude(ALWAYS)`，而全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）⇒ 值为 `null` 时**键缺席**（不是 `key: null`）。语义：`needs_work` 缺席 = 与 `false` 等价（无需要报工的作业）；`work_order_kind` 缺席 = 与 `null` 等价（无需要报工的作业，订单直发）—— 前端按 `workOrderKindOf()` 一律读成 `null`。issue #7079 第 5 包：读面把「发货前要不要作业」交给前端，判据与 `OrderShipGuard.needsWork` 同源。"
+    },
+    "com.migao.admin.dto.OrderDetailResponse::work_order_kind": {
+      "form": "absent",
+      "kind": "dto-key",
+      "why": "该键是引用类型（String），类级与字段级都**没有** `@JsonInclude(ALWAYS)`，而全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）⇒ 值为 `null` 时**键缺席**（不是 `key: null`）。语义：`needs_work` 缺席 = 与 `false` 等价（无需要报工的作业）；`work_order_kind` 缺席 = 与 `null` 等价（无需要报工的作业，订单直发）—— 前端按 `workOrderKindOf()` 一律读成 `null`。issue #7079 第 5 包：读面把「发货前要不要作业」交给前端，判据与 `OrderShipGuard.needsWork` 同源。"
     }
   },
   "contract_ledger_row_vocabulary": {

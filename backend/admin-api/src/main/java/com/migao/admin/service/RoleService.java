@@ -80,6 +80,25 @@ public class RoleService {
     }
 
     /**
+     * 岗位的**展示名**（面向用户的输出口径 —— 页面不许出现内部标识，§31 P3）。
+     *
+     * <p>`users.position` 有两种历史写法：**岗位名**（员工管理页建号，如「客服」）与**角色码**
+     * （API / 脚本建号，如 {@code knowledge_editor}）。展示层一律解析成角色名（= 岗位名）；
+     * 解析不到（自定义岗位名、"车间主任"这类没登记角色的）⇒ **原样返回**（那本来就是人话）。</p>
+     *
+     * <p>本方法是 {@code /api/auth/me} 与 {@code /api/admin/user/info} 的 {@code position} 字段
+     * 唯一取值口径（2026-10-18 用户截图：「这里的岗位不要用英文」—— 改前直接把 users.position 原样上屏）。</p>
+     *
+     * @param position 岗位名（如「客服」）或角色 code（如 customer_service）
+     * @param tenantId 租户ID
+     * @return 展示用岗位名；入参为空 ⇒ 原样返回（null / 空串）
+     */
+    public String displayPosition(String position, Long tenantId) {
+        Role role = getRoleByPosition(position, tenantId);
+        return role != null && StringUtils.hasText(role.getName()) ? role.getName() : position;
+    }
+
+    /**
      * 根据用户ID查询用户的所有角色
      *
      * @param userId 用户ID
@@ -100,6 +119,25 @@ public class RoleService {
                 .collect(Collectors.toList());
 
         return roleMapper.selectBatchIds(roleIds);
+    }
+
+    /**
+     * 该用户的**生效数据范围**（issue #7372 段 1）：取所有角色里**最宽**的那个。
+     *
+     * <p>取数复用 {@link #getUserRoles}（本仓「用户有哪些角色」的单一实现点）——
+     * 不在这里重写一套关联查询，否则角色表一变就有两份口径。</p>
+     *
+     * @param userId 用户 id（可空 ⇒ 按最宽处理，见 {@code DataScope.resolve}）
+     */
+    public String resolveDataScope(String userId) {
+        if (!org.springframework.util.StringUtils.hasText(userId)) {
+            return com.migao.admin.security.DataScope.TENANT;
+        }
+        java.util.List<Role> roles = getUserRoles(userId);
+        java.util.List<String> scopes = roles.stream()
+                .map(Role::getDataScope)
+                .collect(java.util.stream.Collectors.toList());
+        return com.migao.admin.security.DataScope.resolve(scopes);
     }
 
     /**
@@ -657,7 +695,10 @@ public class RoleService {
             throw BusinessException.validationError("该角色下有 " + count + " 个用户，无法删除");
         }
 
-        roleMapper.deleteById(roleId);
+        // issue #6956 · 现象 C：判影响行数（并发双删只许一次成功）
+        if (roleMapper.deleteById(roleId) == 0) {
+            throw BusinessException.notFound("角色");
+        }
 
         // 清理角色权限关联
         LambdaQueryWrapper<RolePermission> rpWrapper = new LambdaQueryWrapper<>();
@@ -817,23 +858,13 @@ public class RoleService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void assignRoleToUser(String userId, String roleId, Long tenantId) {
-        // 检查是否已分配
-        LambdaQueryWrapper<UserRole> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(UserRole::getUserId, userId)
-                .eq(UserRole::getRoleId, roleId)
-                .eq(UserRole::getDeleted, 0);
-        UserRole existing = userRoleMapper.selectOne(wrapper);
-        if (existing != null) {
-            throw BusinessException.validationError("用户已拥有该角色");
-        }
-
-        UserRole userRole = UserRole.builder()
-                .tenantId(tenantId)
-                .userId(userId)
-                .roleId(roleId)
-                .build();
-        userRoleMapper.insert(userRole);
-        log.info("为用户分配角色成功: userId={}, roleId={}", userId, roleId);
+        // issue #7256：写面收口到单一实现点（复活软删行 → 条件插入 → 撞键幂等收敛）。
+        // 原先是「selectOne 判重 + 普通 insert」：并发时第二个请求撞唯一键 ⇒ 500；
+        // 而本表唯一键是全表的、删除是逻辑删除 ⇒ 「移除后再授权」也必撞键 ⇒ 500（本单主症状）。
+        // 语义变化：重复授权不再抛 422，改为**幂等成功**（并发重试与"用户真的点了两次"服务端不可区分，
+        // 报错只会制造 500；授权是幂等动作）。
+        boolean changed = UserRoleWriter.ensureGranted(userRoleMapper, tenantId, userId, roleId);
+        log.info("为用户分配角色{}: userId={}, roleId={}", changed ? "成功" : "已存在（幂等）", userId, roleId);
     }
 
     /**

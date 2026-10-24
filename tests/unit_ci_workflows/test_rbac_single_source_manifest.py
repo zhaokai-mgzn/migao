@@ -294,7 +294,7 @@ COPY_FACES = (
     {
         # P3 扩面（issue #5699）：**「页面 → 码」在判据侧的三处手写副本**。设计 §1.3 的 C 类
         # （页面 / 菜单节点 → 码，4 份）里，前三份（`menu.ts` / `MenuController` / `AuthService`）
-        # 早就在册；**第四份是判据自己的锚点表**（`MENU_READ_ENDPOINT_ANCHORS` 的 21 条页面 → 第一屏调用），
+        # 早就在册；**第四份是判据自己的锚点表**（`MENU_READ_ENDPOINT_ANCHORS` 的 22 条页面 → 第一屏调用），
         # 而它此前**一处都没登记** ⇒ 「谁新写一份页面 → 码 的表」不会有东西变红（假绿方向）。
         # 形态 = **构造函数调用**（每条锚点一次）⇒ `hits` 是**条目数**，加/删一条锚点必须同 PR 更新登记。
         "id": "page-first-screen-anchors",

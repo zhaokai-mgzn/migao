@@ -77,6 +77,17 @@ REALDB_FILES: dict[str, str] = {
     # 再与「DTO 字段台账」和「ProductService 写面收口上限」三方对账（列长度改了而收口没跟 ⇒
     # `LENGTH-DRIFT` 判红）。列元数据在 mock 面上不存在 ⇒ 这份判据的真值**只有**真 PG 能给。
     _SVC + "ProductTextColumnAdmissionMetaGuardTest.java": "direct",
+    # issue #7373 复盘：**采购单读面**的真库判据 —— 云上「采购单加载失败」就是这条路径 500
+    # （`deleted BOOLEAN` + 全局整数逻辑删 ⇒ `boolean = integer`）。单元测试把 Mapper 全 mock 掉，
+    # 这类「实体列 ↔ 建库列」不一致**只有**真 PG 能现形 ⇒ 它必须留在真库族里（不许悄悄退化）。
+    _SVC + "PurchaseOrderListRealDbTest.java": "direct",
+    # issue #7373 段 2：**盘点单**的真库判据 —— 读写的列最多（账面快照/实盘/差异/成本快照），
+    # 上一轮「采购单加载失败」的教训就是「实体列 ↔ 建库列」只有真 PG 能现形。
+    _SVC + "StocktakeRealDbTest.java": "direct",
+    # issue #7376 段 5：**账龄取数 SQL 的可选范围参数**（P0-4）的真库判据 —— 参数落在
+    # `#{createdBy} IS NULL` 的**主语位**（issue #5975 形态）：NULL 实参在 PG 上推不出类型 ⇒ 500。
+    # 单元测试把 Mapper 全 mock 掉，这类故障只有真 PG 能现形 ⇒ 必须留在真库族（不许退化）。
+    _SVC + "ReceivableAgingScopeRealDbTest.java": "direct",
     # issue #5939：发货单**列表**读面（GET /api/admin/shipments）的真库判据 —— 只真 PG 能证的四条：
     # 跨租户不可见（+ 反向自证对方租户自己读得到）/ 软删明细不计进 itemCount / 客户名取自 orders 连接 /
     # 未发货按 packed_at 参与排序，以及 LIMIT 生效。
@@ -95,6 +106,20 @@ REALDB_FILES: dict[str, str] = {
     # 不是「某个 mock 被调用几次」）；③ 发货页新采集的三个字段（发货方式/物流类型/发货人）
     # **真的落进 `order_logistics`**（改前它们在原子端点上没有落点、被静默丢弃）。
     _SVC + "MerchantShipmentIdempotencyRealDbTest.java": "direct",
+    # issue #7174：物流 upsert 的**并发双行**判据 —— 只真 PG 能证的两条：
+    # ① 同一订单并发两次 upsert ⇒ 表里**恰好 1 行**（读改写形状在 mock 面上整个不存在：
+    #    mock 的 select 恒返回 stub 值，"两个请求同时读到空"这个窗口无法构造）；
+    # ② 判别力自证 = 把旧形状（一次空读 + 两次 insert）确定性复刻 ⇒ 必须落成 **2 行**
+    #    （观测点是表里的行数，不是"某个 mock 被调用几次"）。
+    _SVC + "OrderLogisticsUpsertConcurrencyRealDbTest.java": "direct",
+    # issue #7257：CustomerProfileMapper 的条件写/读（撞任意唯一索引都收敛、重复行下读不抛、只刷新活跃时刻）
+    _SVC + "CustomerProfileMapperTest.java": "direct",
+    # issue #7257：并发 3 次按同一手机号建档 ⇒ 恰 1 条；判别力自证 = 摘索引后按旧形状必须落 2 条
+    _SVC + "CustomerProfileDedupeRealDbTest.java": "direct",
+    # issue #7256（由 #7259 合入 main，本 worktree rebase 时补回）：user_roles 唯一性只约束活跃行
+    _SVC + "UserRoleReviveRealDbTest.java": "direct",
+    # issue #7256：UserRoleMapper 两条条件写的 SQL 行为（ON CONFLICT 谓词必须与 V166 部分唯一索引匹配）
+    _SVC + "UserRoleMapperTest.java": "direct",
     # issue #5388：改价审计读面（JSONB 真值 / 脱敏期历史行 / 工具筛选 / 窗口 / 租户）
     _SVC + "AuditLogPriceChangeRealDbTest.java": "direct",
     # issue #6220：售后工单**并发完结**的真库判据（N=4 同一 processing 工单 ⇒ 恰一个赢家 + 回补恰一次）。
@@ -295,6 +320,30 @@ REALDB_FILES: dict[str, str] = {
     # 既有 `RegistrationServiceTest` 正是 mock 面、此前对此缺陷零反应）；而「两个租户都真的建出来了」
     # 这个**不可逆副作用**只能从落库事实读（`tenants` / `users` 行数）。
     _SVC + "TenantApplicationReviewCasRaceRealDbTest.java": "direct",
+    # issue #6961：商品**状态迁移**（on/off_sale）与**改品整实体回写**的真库并发判据。为什么必须真 PG：
+    # ① 四条迁移入口的 CAS（`WHERE id=? AND tenant_id=? AND deleted=0 AND status=<前驱>`）靠**行锁 +
+    #    条件重估**互斥 —— mock 面上 `updateById` 恒返回 1 ⇒ 修前「两个请求都 200、终态由后写者决定」
+    #    完全测不出来；② 另一半（改品 `updateById` 整实体回写把旧 status 写回 ⇒ 静默回滚并发迁移）
+    #    只有在真库上「两条独立连接 + 独立事务 + 窗口探针」才能确定性命中（微秒级窗口 ⇒ 探针关掉必然是
+    #    load-dependent 的 flake，不能当证据）；③ 终态只能从落库事实读（`SELECT status FROM products`）。
+    #    窗口探针 = `ProductService#setStatusMigrationProbePauseMillisForTest`（生产恒 0）。
+    _SVC + "ProductStatusCasRaceRealDbTest.java": "direct",
+    # issue #6962（P5·并发；族级跟踪单 #6953 的 P5 包首批 3 处）：会话并发分配 / 知识候选并发双采纳 /
+    # 路线与规则删除（跨租户 + 幂等）的**真库并发**判据。为什么必须真 PG：
+    # ① 会话并发额度 —— 修前的病是「先 `selectCount(status='active')` 读计数、再 `updateById`（WHERE 仅主键）」
+    #    且那个**直觉修法**「`UPDATE … WHERE 子查询计数 < 上限`」**在真 PG 上根本不成立**（超额时谓词不匹配
+    #    ⇒ UPDATE 不命中行 ⇒ 不取行锁 ⇒ 两个请求都不阻塞、各自再读到未提交的旧计数 ⇒ 上限照样破）。
+    #    这一条**只有真 PG 的行锁语义**能判：mock 的 `updateById` 恒返回 1、`countActiveSessions` 可被随意 stub。
+    #    修后的闸 = 先抢会话行（条件更新，影响行数）→ 再 `SELECT … FOR UPDATE` 锁员工行 → 锁内现取计数，
+    #    「后到者阻塞到前者提交后重新求值」正是行锁 + 条件重估，mock 面结构上不可见。
+    # ② 候选双采纳 —— 「恰一次成功 ⇒ 恰一张卡」是**并发下的落库读数**（`knowledge_cards` 行数），
+    #    mock 面只会看到「两条路各调了一次 insert」。
+    # ③ 删除的 tenant 限定 + `deleted = 0` + 影响行数 —— 谓词是否真的挡住**跨租户**与**重复删**
+    #    是 SQL 行为（真值源 = 对方租户那一行仍 `deleted = 0`），mock 面把 wrapper 整个吃掉
+    #    （`markDeletedByIdAndTenant` 是 default 方法 ⇒ mock 下真 wrapper 根本不产生）。
+    # 窗口注入（`AgentSessionService#setAssignProbePauseMillisForTest`，生产恒 0）让并发读数从
+    # 「微秒级碰运气」变成**确定性**（同 #6928 / #6955 / #6960 的口径）。
+    _SVC + "ConcurrentQuotaAdoptDeleteCas6962RealDbTest.java": "direct",
     _MAP + "FabricRemnantMapperTest.java": "via:RemnantTestDb",
     _MAP + "RemnantItemSizeMapperTest.java": "via:RemnantTestDb",
     _SVC + "RemnantServiceTest.java": "via:RemnantTestDb",

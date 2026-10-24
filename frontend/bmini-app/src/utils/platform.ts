@@ -95,6 +95,35 @@ export const H5_SCAN_PHOTO_FAILED_HINT =
  */
 export const H5_VOICE_UNAVAILABLE_HINT = '当前浏览器不支持语音输入：请用文字发送'
 
+/**
+ * 是否运行在**支付宝内置浏览器**里（issue #7310，真机对照实证）
+ *
+ * 2026-10-19 同一台华为 ALN-AL00 的对照读数（服务端 nginx 逐条可查）：
+ * - **支付宝** webview（`AliApp(AP/12.12.30.5600)`）：8/8 次「按住说话」上传的都是 **0 字节音频**
+ *   ⇒ 服务端 400「音频文件为空」；`getUserMedia` **不报拒绝**（否则客户端会给「没有麦克风权限」），
+ *   返回的流里没有有效音频 ⇒ `MediaRecorder` 只吐一个空 Blob。
+ * - 同一台机器换**百度 App** 打同一份 H5：同链路 11:10:28 / 11:11:02 两次 **200 转写成功**。
+ * ⇒ 设备 / 系统麦克风权限 / 网络 / 服务端全部无关，是**支付宝 webview 拦截了麦克风数据**。
+ *
+ * 故按 #5650 / #6476 的口径（**不摆按不动的键**）在支付宝内不把「按住说话」摆成可用形态。
+ * 重启条件：某版支付宝放开麦克风时，按真机读数复核后撤掉这道门（不要凭印象撤）。
+ */
+export function isAlipayWebview(): boolean {
+  if (!isH5()) return false
+  if (typeof window === 'undefined') return false
+  const ua = String((window as any).navigator?.userAgent || '').toLowerCase()
+  return ua.includes('alipayclient') || ua.includes('aliapp')
+}
+
+/** 支付宝内语音不可用的**可行动**解释（说清「为什么 + 怎么办」，issue #7310） */
+export const ALIPAY_VOICE_UNAVAILABLE_HINT =
+  '支付宝里无法使用语音输入：请用手机浏览器打开，或直接用文字发送'
+
+/** 「语音不可用」的那句话：支付宝点名支付宝（用户才知道该换 App），其余走通用文案 */
+export function voiceUnavailableHint(): string {
+  return isAlipayWebview() ? ALIPAY_VOICE_UNAVAILABLE_HINT : H5_VOICE_UNAVAILABLE_HINT
+}
+
 /** h5 微信登录不可用时的**显式**提示（浏览器走账号密码 —— 用户裁定「浏览器仍然需要账号密码」） */
 export const H5_WECHAT_LOGIN_UNAVAILABLE_HINT =
   '浏览器环境不支持微信登录，请用「用户名@企业编码 + 密码」登录'

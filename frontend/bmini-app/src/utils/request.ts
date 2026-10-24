@@ -60,6 +60,79 @@ function serverMessage(data: any): string {
   return String(data?.error?.message || data?.message || '')
 }
 
+// ========== 会话续期（issue #7249） ==========
+
+/** 续期端点（HttpOnly `refresh_token` cookie 轮换；成功回新的 accessToken） */
+const REFRESH_PATH = '/api/auth/refresh'
+
+/** 单飞句柄：并发 401 共用同一次续期（多请求同时过期时不做 N 次轮换） */
+let refreshInFlight: Promise<string | null> | null = null
+
+/**
+ * 用 HttpOnly `refresh_token` cookie 换一枚新 accessToken（issue #7249）。
+ *
+ * 🔴 为什么手机端必须有这条：商家 H5 的 access token 只有 **2 小时**
+ * （`jwt.access-token-expiration: 7200`），而改前 401 只做「清态 + 跳登录页」⇒
+ * 隔一段时间打开 `/b/` 必被踢回登录页。PC 端（`frontend/admin-web/src/store/auth.ts`）
+ * 早就在整页加载时用同一枚 cookie 换 token，手机端一直没有 —— 这是「一套产品两个客户端」
+ * 的形态缺口，不是配置问题。
+ *
+ * 三条纪律：① 不递归（直接 `Taro.request`，不走本模块的 401 分支）；
+ * ② 失败一律返回 `null`（调用方落回既有 401 行为，不在此抛）；
+ * ③ 成功即写回 storage（后续请求与页面重载都拿到新 token）。
+ */
+export function refreshAccessToken(): Promise<string | null> {
+  if (!refreshInFlight) {
+    const pending = doRefresh()
+    refreshInFlight = pending.then(
+      (token) => {
+        refreshInFlight = null
+        return token
+      },
+      () => {
+        refreshInFlight = null
+        return null
+      },
+    )
+  }
+  return refreshInFlight
+}
+
+async function doRefresh(): Promise<string | null> {
+  try {
+    const response = await Taro.request({
+      url: `${API_BASE_URL}${REFRESH_PATH}`,
+      method: 'POST',
+      data: {},
+      header: { 'Content-Type': 'application/json', 'X-Client-Type': 'wechat_mini' },
+      timeout: REQUEST_CONFIG.TIMEOUT,
+    })
+    const { statusCode, data: payload } = response
+    const token = payload?.data?.accessToken
+    if (statusCode >= 200 && statusCode < 300 && token) {
+      Taro.setStorageSync(STORAGE_KEYS.TOKEN, token)
+      return token
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 该 401 是否值得先试一次续期（issue #7249）。
+ *
+ * 排除：① 工人端点（`/api/worker/**` 的 401 是工人身份，issue #6467 已分流）；
+ * ② 登录面（`skipAuth`，401 = 凭据错，不是会话过期）；③ 续期端点自己（防递归）；
+ * ④ 本机没有商家 token（没有会话可续，直接走既有 401 行为）。
+ */
+function canRefreshSession(path: string, skipAuth: boolean): boolean {
+  if (skipAuth) return false
+  if (path.startsWith(WORKER_API_PREFIX)) return false
+  if (path === REFRESH_PATH) return false
+  return Boolean(getToken())
+}
+
 /**
  * 统一错误处理
  *
@@ -173,6 +246,8 @@ async function request<T = any>(
 
   // 带重试的请求
   let lastError: any = null
+  // 本请求是否已尝试过「续期 + 重放」（只重放一次，不递归）
+  let refreshed = false
   for (let attempt = 0; attempt <= REQUEST_CONFIG.MAX_RETRIES; attempt++) {
     try {
       if (attempt > 0) {
@@ -193,6 +268,32 @@ async function request<T = any>(
       // 成功响应
       if (statusCode >= 200 && statusCode < 300) {
         return responseData as T
+      }
+
+      // 🔴 401（商家会话）⇒ 先用 HttpOnly refresh_token cookie 换新 accessToken 再**重放一次**
+      //    （issue #7249）。续期失败 / 重放仍失败 ⇒ 落回下面的既有 401 行为（一字不变）。
+      //    工人端点与登录面（skipAuth）不续期：它们的 401 不是「商家会话过期」。
+      if (statusCode === 401 && !refreshed && canRefreshSession(path, skipAuth)) {
+        refreshed = true
+        const freshToken = await refreshAccessToken()
+        if (freshToken) {
+          requestHeaders.Authorization = `Bearer ${freshToken}`
+          const retried = await Taro.request({
+            url,
+            method,
+            data,
+            header: requestHeaders,
+            timeout,
+          })
+          if (retried.statusCode >= 200 && retried.statusCode < 300) {
+            return retried.data as T
+          }
+          handleErrorStatus(retried.statusCode, retried.data, path)
+          const retryError: any = new Error(`Request failed with status ${retried.statusCode}`)
+          retryError.statusCode = retried.statusCode
+          retryError.data = retried.data
+          throw retryError
+        }
       }
 
       // 非成功状态码（把 `path` 一并传下去：401 要按**端点归属**分流，issue #6467）

@@ -10,6 +10,8 @@ import com.baomidou.mybatisplus.extension.plugins.inner.TenantLineInnerIntercept
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.CategoryMapper;
+import com.migao.admin.mapper.ProcessingCategoryMapper;
+import com.migao.admin.mapper.ProcessingItemMapper;
 import com.migao.admin.mapper.PermissionMapper;
 import com.migao.admin.mapper.RoleMapper;
 import com.migao.admin.mapper.RolePermissionMapper;
@@ -17,6 +19,7 @@ import com.migao.admin.mapper.TenantApplicationMapper;
 import com.migao.admin.mapper.TenantMapper;
 import com.migao.admin.mapper.UserMapper;
 import com.migao.admin.mapper.UserRoleMapper;
+import com.migao.admin.mapper.WarehouseMapper;
 import com.migao.admin.security.PermissionInterceptor;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.LongValue;
@@ -174,7 +177,8 @@ class TenantApplicationReviewCasRaceRealDbTest {
         configuration.addInterceptor(tenantLine);
         for (Class<?> mapper : List.of(TenantApplicationMapper.class, TenantMapper.class, UserMapper.class,
                 UserRoleMapper.class, RoleMapper.class, PermissionMapper.class, RolePermissionMapper.class,
-                CategoryMapper.class)) {
+                CategoryMapper.class, ProcessingCategoryMapper.class, ProcessingItemMapper.class,
+                WarehouseMapper.class)) {
             configuration.addMapper(mapper);
         }
         factory = new MybatisSqlSessionFactoryBuilder().build(configuration);
@@ -371,7 +375,11 @@ class TenantApplicationReviewCasRaceRealDbTest {
                 mock(RegistrationReviewClient.class),
                 mock(StringRedisTemplate.class),
                 productionSeedTemplateService,
-                new ProductCategorySeedService(session.getMapper(CategoryMapper.class)));
+                new ProductCategorySeedService(session.getMapper(CategoryMapper.class)),
+                new ProcessingItemSeedService(session.getMapper(ProcessingCategoryMapper.class),
+                        session.getMapper(ProcessingItemMapper.class)),
+                // #7592：开租默认主仓（本判据只关心审批权 CAS，仓播种走真实现即可）
+                new WarehouseSeedService(session.getMapper(WarehouseMapper.class)));
     }
 
     /** 落一条 pending 入驻申请（= 真实链路里 AI 放行前的那一行）。 */

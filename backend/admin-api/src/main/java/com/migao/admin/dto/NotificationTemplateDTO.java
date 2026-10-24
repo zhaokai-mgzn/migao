@@ -17,6 +17,9 @@ public class NotificationTemplateDTO {
 
     private String name;
 
+    /** 标题模板（支持 {{var}}）；空 = 标题回落 name（issue #7524） */
+    private String titleTemplate;
+
     private String type;
 
     private String channel;

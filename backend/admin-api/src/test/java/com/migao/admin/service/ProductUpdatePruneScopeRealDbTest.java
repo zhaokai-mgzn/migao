@@ -172,7 +172,7 @@ class ProductUpdatePruneScopeRealDbTest {
     // ══════════════════════════════════ 判据 1：只带 skus ⇒ SKU 行数不变（本单主判据）
 
     @Test
-    @DisplayName("判据1·只带 skus（点名单条 = 改价/改库存 的真实形态）、不带 colors ⇒ SKU 行数不变（改前 2 → 0）")
+    @DisplayName("判据1·只带 skus（点名单条 = 改价的真实形态）、不带 colors ⇒ SKU 行数不变（改前 2 → 0）")
     void skusOnlyUpdateKeepsSkuRows() throws Exception {
         String productId = createTwoColorProduct("SG-5515-A", "30");
         long skuA = skuIdOf(productId, COLOR_A);
@@ -181,7 +181,7 @@ class ProductUpdatePruneScopeRealDbTest {
         System.out.println("[#5515 判据1] 改前 SKU 行 = " + skuRowsOf(productId)
                 + "，颜色行数 = " + colorRowCount(productId));
 
-        // When：改价 + 改库存 —— **只带 skus（且只点名被改的那一条）、不带 colors**
+        // When：改价（SKU 入参同时带了 stock —— 它已随 issue #7597 不再生效）—— **只带 skus、不带 colors**
         updateSkusOnly(productId, skuA, "179.00", "12.5");
 
         System.out.println("[#5515 判据1] 改后 SKU 行 = " + skuRowsOf(productId)
@@ -193,11 +193,13 @@ class ProductUpdatePruneScopeRealDbTest {
         assertThat(colorRowCount(productId))
                 .as("口径①：请求**未声明** colors ⇒ 颜色一行都不许删（改前 = 0）")
                 .isEqualTo(2);
-        assertThat(stockOf(skuA)).as("该 SKU 的库存必须真的改掉（判据不是「什么都没发生」）")
-                .isEqualByComparingTo("12.5");
-        assertThat(priceOf(skuA)).as("该 SKU 的价必须真的改掉").isEqualByComparingTo("179.00");
-        assertThat(stockOf(skuB)).as("未被本次请求点名的 SKU 行必须原样保留（库存不变）")
-                .isEqualByComparingTo("30");
+        // 「必须有东西真的改掉」由价格承担（issue #7597：SKU 入参的 stock 已不再写库）
+        assertThat(priceOf(skuA)).as("该 SKU 的价必须真的改掉（判据不是「什么都没发生」）")
+                .isEqualByComparingTo("179.00");
+        assertThat(stockOf(skuA)).as("库存不再由改品的 SKU 入参写入 ⇒ 保持建品后的现值 0")
+                .isEqualByComparingTo("0");
+        assertThat(stockOf(skuB)).as("未被本次请求点名的 SKU 行必须原样保留")
+                .isEqualByComparingTo("0");
     }
 
     @Test
@@ -207,9 +209,14 @@ class ProductUpdatePruneScopeRealDbTest {
         long skuA = skuIdOf(productId, COLOR_A);
         long skuB = skuIdOf(productId, COLOR_B);
 
-        // When：只带 skus（两条都给，改库存）、不带 colors
+        // When：只带 skus（两条都给，改价）、不带 colors
+        // issue #7597：库存不再由 SKU 入参写入（商品档案不设置库存）⇒ 本判据用**价格**当可观察的改动
         ProductUpdateRequest request = new ProductUpdateRequest();
-        request.setSkus(List.of(skuInput(skuA, COLOR_A, "11"), skuInput(skuB, COLOR_B, "22")));
+        ProductSkuInput first = skuInput(skuA, COLOR_A, "11");
+        first.setPrice(new BigDecimal("11.00"));
+        ProductSkuInput second = skuInput(skuB, COLOR_B, "22");
+        second.setPrice(new BigDecimal("22.00"));
+        request.setSkus(List.of(first, second));
         productService.updateProduct(productId, request, TENANT_ID);
 
         System.out.println("[#5515 判据1b] 改后 SKU 行 = " + skuRowsOf(productId)
@@ -218,8 +225,10 @@ class ProductUpdatePruneScopeRealDbTest {
                 .as("未声明 colors ⇒ 矩阵未被声明 ⇒ 只做逐行 upsert，不删任何 SKU 行（改前 = 0）")
                 .isEqualTo(2);
         assertThat(colorRowCount(productId)).as("未声明 colors ⇒ 颜色一行都不许删（改前 = 0）").isEqualTo(2);
-        assertThat(stockOf(skuA)).isEqualByComparingTo("11");
-        assertThat(stockOf(skuB)).isEqualByComparingTo("22");
+        assertThat(priceOf(skuA)).isEqualByComparingTo("11.00");
+        assertThat(priceOf(skuB)).isEqualByComparingTo("22.00");
+        assertThat(stockOf(skuA)).as("库存不再由 SKU 入参写入").isEqualByComparingTo("0");
+        assertThat(stockOf(skuB)).as("库存不再由 SKU 入参写入").isEqualByComparingTo("0");
     }
 
     // ══════════════════════════════════ 判据 2：显式声明 colors ⇒ 删色能力不回归
@@ -305,7 +314,7 @@ class ProductUpdatePruneScopeRealDbTest {
         return productService.createProduct(request, TENANT_ID).getId();
     }
 
-    /** 改品（病根形态：**只带 skus、不带 colors** —— 改价 / 改库存）。 */
+    /** 改品（病根形态：**只带 skus、不带 colors** —— 改价的真实形态；SKU 入参里的 stock 已不再生效）。 */
     private static void updateSkusOnly(String productId, long skuId, String price, String stock) {
         ProductUpdateRequest request = new ProductUpdateRequest();
         ProductSkuInput sku = skuInput(skuId, COLOR_A, stock);

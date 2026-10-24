@@ -407,6 +407,41 @@ export function createApi(opts = {}) {
     },
 
     // ════════════════════════════════════════════════════════════════════════════════
+    // 质检（issue #7162）：扫水洗唛后读「这一件」的最新判定 / 录判定（生成质检单）。
+    //
+    // 🔴 走 `/api/worker/quality/**`（**不是** `/api/admin/quality-inspections`）：
+    //    工人 session 恒无 RBAC 权限码、`/api/admin/**` 对 worker 一律 403；
+    //    服务端把「工人档案里有 inspect 页」当写准入（见 WorkerQualityController）。
+    // 🔴 身份只由 `X-Worker-Session-Id` 解：body 里不带 worker_id / inspector_id。
+
+    /**
+     * 这一件成品帘的最新质检判定（无记录 ⇒ `latest = null` = 「未检」，**不是**「合格」）。
+     *
+     * @param {string} orderItemId 成品帘（`order_items.id`）—— 水洗唛扫码结果里的 `position.order_item_id`
+     */
+    async qualityLatest(orderItemId) {
+      const q = new URLSearchParams({ order_item_id: orderItemId })
+      const data = await request(`/api/worker/quality/latest?${q.toString()}`)
+      return { orderItemId: data?.order_item_id ?? orderItemId, latest: data?.latest ?? null }
+    },
+
+    /**
+     * 录一条质检判定 ⇒ 生成一张**质检单**（`POST /api/worker/quality/inspections`）。
+     *
+     * 判定 ≠ 合格时服务端要求原因（缺 ⇒ 422，零写入）；前端先拦一次只为不白跑网络。
+     */
+    async createQuality({ orderItemId, result, reason } = {}) {
+      if (!session?.sessionId) {
+        const err = new Error('尚未登录工人身份，请先用工号 + PIN 登录')
+        err.code = SESSION_EXPIRED
+        throw err
+      }
+      const body = { order_item_id: orderItemId, result }
+      if (reason) body.reason = reason
+      return request('/api/worker/quality/inspections', { method: 'POST', body })
+    },
+
+    // ════════════════════════════════════════════════════════════════════════════════
     // 发货面（issue #5648）：拍照识别 → 打包 / 发货 / 撤销 → 读实发
     //
     // 🔴 与报工**同一份**客户端、同一套纪律：身份只由 `X-Worker-Session-Id` 解，

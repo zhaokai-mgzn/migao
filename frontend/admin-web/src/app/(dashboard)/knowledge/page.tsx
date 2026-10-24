@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback } from 'react'
 import { Plus, Pencil, Trash2, Send, Archive, Eye, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import { knowledgeApi } from '@/lib/api'
-import { Table, Pagination, Modal, Button, Badge, SearchBar, PageHeader } from '@/components/ui'
+import { extractApiErrorMessage } from '@/lib/api-error'
+import { Table, Pagination, Modal, Button, Badge, SearchBar, PageHeader, SELECT_CONTROL } from '@/components/ui'
 import type { TableColumn } from '@/components/ui'
 import type { KnowledgeCard, KnowledgeCardStatus, KnowledgeCandidate, KnowledgeTemplateInfo } from '@/types'
 import DateTimeCell from '@/components/common/DateTimeCell'
@@ -172,7 +173,7 @@ export default function KnowledgePage() {
       setEditorOpen(false)
       loadEntries()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '保存失败')
+      toast.error(extractApiErrorMessage(e, '保存失败'))
     } finally {
       setSaving(false)
     }
@@ -185,7 +186,7 @@ export default function KnowledgePage() {
       toast.success(entry.status === 'archived' ? '知识卡片已重新发布' : '知识卡片已发布')
       loadEntries()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '发布失败')
+      toast.error(extractApiErrorMessage(e, '发布失败'))
     }
   }
 
@@ -195,7 +196,7 @@ export default function KnowledgePage() {
       toast.success('知识卡片已归档')
       loadEntries()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '归档失败')
+      toast.error(extractApiErrorMessage(e, '归档失败'))
     }
   }
 
@@ -207,7 +208,7 @@ export default function KnowledgePage() {
       setDeleteTarget(null)
       loadEntries()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '删除失败')
+      toast.error(extractApiErrorMessage(e, '删除失败'))
     }
   }
 
@@ -261,7 +262,7 @@ export default function KnowledgePage() {
       setRefreshTick((t) => t + 1)
       loadCandidates()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '采纳失败')
+      toast.error(extractApiErrorMessage(e, '采纳失败'))
     }
   }
 
@@ -271,7 +272,7 @@ export default function KnowledgePage() {
       toast.success('已拒绝')
       loadCandidates()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '拒绝失败')
+      toast.error(extractApiErrorMessage(e, '拒绝失败'))
     }
   }
 
@@ -300,7 +301,7 @@ export default function KnowledgePage() {
       setRefreshTick((t) => t + 1)
       loadTemplates()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '套用失败')
+      toast.error(extractApiErrorMessage(e, '套用失败'))
     } finally {
       setApplying('')
     }
@@ -322,7 +323,7 @@ export default function KnowledgePage() {
       setDocForm({ title: '', content: '' })
       loadCandidates()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '文档提炼失败')
+      toast.error(extractApiErrorMessage(e, '文档提炼失败'))
     } finally {
       setDistilling(false)
     }
@@ -332,6 +333,8 @@ export default function KnowledgePage() {
     {
       key: 'title',
       title: '知识卡片标题',
+      // 长文本列（标题 / 常见问法）显式允许折行；其余列由 Table 原语默认 nowrap（issue #7217）
+      wrap: true,
       render: (entry) => (
         <div className="min-w-[220px]">
           <div className="font-medium">{entry.title}</div>
@@ -468,9 +471,9 @@ export default function KnowledgePage() {
               onReset={() => { setKeyword(''); setCurrent(1); loadEntries() }}
             />
 
-            <div className="flex items-center gap-2">
+            <div data-testid="knowledge-filter-row" className="flex flex-wrap items-center gap-3">
               <select
-                className="h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                className={cn(SELECT_CONTROL, 'min-w-[9rem]')}
                 value={category}
                 onChange={(e) => { setCategory(e.target.value); setCurrent(1) }}
               >
@@ -480,7 +483,7 @@ export default function KnowledgePage() {
                 ))}
               </select>
               <select
-                className="h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                className={cn(SELECT_CONTROL, 'min-w-[9rem]')}
                 value={sourceFilter}
                 onChange={(e) => { setSourceFilter(e.target.value); setCurrent(1) }}
                 aria-label="来源筛选"
@@ -491,7 +494,7 @@ export default function KnowledgePage() {
                 ))}
               </select>
               <select
-                className="h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                className={cn(SELECT_CONTROL, 'min-w-[9rem]')}
                 value={statusFilter}
                 onChange={(e) => { setStatusFilter(e.target.value); setCurrent(1) }}
               >
@@ -618,7 +621,7 @@ export default function KnowledgePage() {
           <div>
             <label className="text-sm font-medium">分类</label>
             <select
-              className="mt-1 w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+              className={cn(SELECT_CONTROL, 'mt-1', 'w-full')}
               value={form.category}
               onChange={(e) => setForm({ ...form, category: e.target.value })}
             >

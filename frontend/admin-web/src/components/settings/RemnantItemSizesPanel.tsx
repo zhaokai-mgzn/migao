@@ -228,6 +228,12 @@ export function RemnantItemSizesPanel({ copy }: { copy: ParamCopy }) {
           <p className="text-xs text-neutral-500 mt-1">
             <InlineMarkdown text={copy.hint} />
           </p>
+          {/* 🔴 2026-10-17（issue #7077）：原文案在面板底部**另起一行**、还带「改它会怎样：」礼帽 ——
+              同一套设置页里「算料口径」已按用户裁定收掉那一行 ⇒ 两域形态收成一种。
+              **信息一字未丢**：这句「本参数不改钱、只决定余料能不能拿来做这个小件」仍在参数标题下。 */}
+          <p className="text-xs text-neutral-600 mt-0.5">
+            <InlineMarkdown text={copy.impact} />
+          </p>
         </div>
       </div>
 
@@ -411,11 +417,6 @@ export function RemnantItemSizesPanel({ copy }: { copy: ParamCopy }) {
         )}
       </div>
 
-      {/* §22 P4 的护栏文案：本参数**不改钱** —— 明确说出来，而不是让商家猜 */}
-      <p className="text-xs text-neutral-600 pt-2 border-t border-neutral-100">
-        改它会怎样：<InlineMarkdown text={copy.impact} />
-      </p>
-
       {/* ── §22 P5 术语说明（**就地**：锚点就在本面板里）── */}
       <div className="pt-2 border-t border-neutral-100 space-y-2">
         <p className="text-xs font-medium text-neutral-700">口径与术语（点上面任一词跳到此处）</p>
@@ -436,12 +437,16 @@ export function RemnantItemSizesPanel({ copy }: { copy: ParamCopy }) {
             )}
             <span className="block text-neutral-500">
               影响：<InlineMarkdown text={term.impact} />
+              {/* 🔴 2026-10-17（issue #7077）：原「边界：…」**另起一行灰色小字**的形态撤销 ——
+                  与「算料口径」的术语区块收成同一种（一条术语 = 定义 + 怎么判 + 影响）。
+                  **前提与例外一字未丢**：边界文案并入「影响」同一行（不是删掉它）。 */}
+              {term.boundary && (
+                <>
+                  {' '}
+                  <InlineMarkdown text={term.boundary} />
+                </>
+              )}
             </span>
-            {term.boundary && (
-              <span className="block text-neutral-400">
-                边界：<InlineMarkdown text={term.boundary} />
-              </span>
-            )}
           </div>
         ))}
       </div>

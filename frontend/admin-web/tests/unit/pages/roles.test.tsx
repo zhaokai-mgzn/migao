@@ -1,4 +1,4 @@
-// case_ids: HR-004, HR-005, HR-006, UI-028
+// case_ids: HR-004, HR-005, HR-006, UI-028, UI-117
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
@@ -7,6 +7,8 @@ import { render, screen, waitFor, fireEvent, within } from '@testing-library/rea
 const mockGetRoles = vi.fn()
 const mockGetPermissions = vi.fn()
 const mockCreateRole = vi.fn()
+// issue #7146：工人端页面目录（页键 + 人话名都取服务端；前端不维护第二份词表）
+const mockGetWorkerPages = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   roleApi: {
@@ -17,6 +19,9 @@ vi.mock('@/lib/api', () => ({
   },
   permissionApi: {
     getPermissions: (...args: any[]) => mockGetPermissions(...args),
+  },
+  workerPageCatalogApi: {
+    get: (...args: any[]) => mockGetWorkerPages(...args),
   },
 }))
 
@@ -95,7 +100,6 @@ vi.mock('lucide-react', async (importOriginal) => {
 // #3002：与后端权限目录一致的真实 catalog（resourceType = 旧分组码，仅操作权限节展示用）
 const PERMISSION_CATALOG = [
   { id: 'p-dashboard', name: '仪表板查看', code: 'dashboard:view', resource: 'dashboard', action: 'view', description: '查看数据概览' },
-  { id: 'p-product-manage', name: '商品管理', code: 'product:manage', resource: 'product', action: 'manage', description: '管理商品(旧大类码，兼容)' },
   { id: 'p-product-list', name: '商品列表', code: 'product:list', resource: 'product', action: 'list', description: '查看商品列表' },
   { id: 'p-product-create', name: '新增商品', code: 'product:create', resource: 'product', action: 'create', description: '新增/编辑/上下架商品' },
   { id: 'p-product-category', name: '商品分类', code: 'product:category', resource: 'product', action: 'category', description: '管理商品分类' },
@@ -151,6 +155,15 @@ describe('RolesPage', () => {
     })
     // 缺省：菜单接口读不到 ⇒ 零手机端标注（本文件绝大多数用例与本单无关，不喂语料）
     mockRequestGet.mockRejectedValue(new Error('not mocked'))
+    // 缺省：工人端页面目录可读（issue #7146；个别用例改成失败态 / 改名语料）
+    mockGetWorkerPages.mockResolvedValue({
+      data: {
+        data: {
+          pages: ['report', 'piecework', 'order', 'cut_calc', 'shipment'],
+          labels: { report: '报工', piecework: '计件工资报表', order: '订单', cut_calc: '裁高计算器', shipment: '发货' },
+        },
+      },
+    })
   })
 
   it('renders page title', () => {
@@ -182,6 +195,37 @@ describe('RolesPage', () => {
     })
   })
 
+  // issue #7146：描述只承载「职责」散文；「默认可用模块」改为派生区（后台 + 手机端同一张卡）
+  // 长描述仍默认收起（§31 P1 常驻面克制）+ 逐卡「展开/收起」看全文；短描述不给按钮（对照读数：不制造噪音）
+  it('#7111/#7146 长岗位描述默认收起，点「展开」看全文（短描述不给按钮）', async () => {
+    const longDescription =
+      '职责：' + '维护商品资料与分类，管理加工项与加工费口径。'.repeat(3)
+    mockGetRoles.mockResolvedValue({
+      data: {
+        data: {
+          items: [
+            { id: 'r9', name: '商品管理员', code: 'product_manager', description: longDescription, permissions: [], createdAt: '2026-06-01' },
+            { id: 'r8', name: '客服', code: 'customer_service', description: '客服人员', permissions: [], createdAt: '2026-06-02' },
+          ],
+        },
+      },
+    })
+    render(<RolesPage />)
+    const desc = await screen.findByTestId('role-description-product_manager')
+    expect(desc).toHaveClass('line-clamp-2')
+    expect(screen.queryByTestId('role-description-toggle-customer_service')).toBeNull()
+    // 🔴 #7146：描述里**不得**再出现模块清单（清单必须派生 ⇒ 否则就是第二份会漂的真值）
+    expect(desc).not.toHaveTextContent('默认可用模块')
+
+    fireEvent.click(screen.getByTestId('role-description-toggle-product_manager'))
+    expect(desc).not.toHaveClass('line-clamp-2')
+    expect(desc).toHaveTextContent('维护商品资料与分类')
+    expect(screen.getByTestId('role-description-toggle-product_manager')).toHaveAttribute('aria-expanded', 'true')
+
+    fireEvent.click(screen.getByTestId('role-description-toggle-product_manager'))
+    expect(desc).toHaveClass('line-clamp-2')
+  })
+
   it('shows empty state when no positions', () => {
     mockGetRoles.mockResolvedValue({
       data: { data: { items: [], total: 0 } },
@@ -192,17 +236,18 @@ describe('RolesPage', () => {
 
   // ── #3002 权限分配与真实菜单一致（菜单同构渲染，groupedBy menuGroups 单源）──
 
-  it('权限分配弹窗按真实侧边栏菜单分组渲染（菜单组名 + 菜单项名），旧英文分组不出现', async () => {
+  it('🔴 权限分配弹窗按真实侧边栏菜单分组渲染（菜单组名 + 菜单项名），旧英文分组与已撤销组名不出现', async () => {
     render(<RolesPage />)
     fireEvent.click(await screen.findByText('新增岗位'))
     const tree = within(await screen.findByTestId('perm-menu-sections'))
-    // 菜单组头 = 侧边栏菜单组名（#5778 新 IA：**6 组 + 1 个一级项**，逐组点名）
-    expect(tree.getByText('工作台')).toBeInTheDocument()
+    // 🔴 菜单组头 = 侧边栏菜单组名（issue #7087 后**5 组**；「工作台」组**整组撤销**）
     expect(tree.getByText('客户服务')).toBeInTheDocument()
     expect(tree.getByText('交易管理')).toBeInTheDocument()
     expect(tree.getByText('生产管理')).toBeInTheDocument()
     expect(tree.getByText('仓储与物料')).toBeInTheDocument()
     expect(tree.getByText('组织管理')).toBeInTheDocument()
+    // 🔴 已撤销的组名不得出现在权限树里 —— 商家可见面（含权限勾选树）不再有「工作台」（issue #7087）
+    expect(tree.queryByText('工作台')).not.toBeInTheDocument()
     // 旧组名不再出现：issue #5271 / #5778 三处改判（商品与加工项**撤销**；智能客服 → 客户服务；
     // 订单管理 + 客户管理 → 交易管理）。
     // 🔴 #5895 纠错：旧断言 `tree.getAllByText('商品管理')).toHaveLength(1)` 是**假绿** ——
@@ -219,24 +264,30 @@ describe('RolesPage', () => {
     expect(tree.queryByText('黄金策 · 在线对话')).not.toBeInTheDocument()
     expect(tree.getByText('在线接待')).toBeInTheDocument()
     expect(tree.getByText('知识库')).toBeInTheDocument()
-    // 工作台组两项**都**进权限树：每日简报要 dashboard:view；
-    // 🔴 issue #5699（P4）：经营看板自本阶段起**有码**（dashboard:view）⇒ 从「无码不进树」变为可勾选
-    //（否则「勾得动 / 看不到」会漂移：它现在确实决定一个菜单项与 5 个读端点的可见性）。
-    expect(tree.getByText('每日简报')).toBeInTheDocument()
-    expect(tree.getByText('经营看板')).toBeInTheDocument()
+    // 🔴 issue #7087：「经营看板」升为**最前席位**一级项 ⇒ 渲染在 `perm-standalone-head` 块里，
+    // 它带的码 `dashboard:view` 因此仍**可授予**（否则「勾得动 / 看不到」漂移 —— 与 #5895 同一形态）；
+    // 同批「每日简报」菜单项**已删除**（功能保留：企业开关仍驱动经营看板上的结论卡）。
+    const head = within(tree.getByTestId('perm-standalone-head'))
+    expect(head.getByText('经营看板')).toBeInTheDocument()
+    // 报表中心（issue #7376）与经营看板**同码**（报表就是看板的下钻，零授权 delta）⇒
+    // 权限树里两个节点都渲染同一个码 —— 与既有「入库单 / 供应商 / 采购单 同取 inbound:view」同款，
+    // 勾任一个即授予该码（这是码粒度决定的，不是本页的 bug）。
+    expect(head.getByText('报表中心')).toBeInTheDocument()
+    expect(head.getAllByText('dashboard:view')).toHaveLength(2)
+    expect(tree.queryByText('每日简报')).not.toBeInTheDocument()
     // #5778：「商品列表」改名「商品管理」（菜单项判据见本文件 #5895 三条：`perm-standalone-top`）
     // 🔴 #6580（2026-10-09 用户裁定）：菜单项「加工项管理」「工艺配置」**已移除**（功能体并入
     // `/settings` 企业基础设置页内的配置域）⇒ 权限树不再渲染它们；同批「企业基础设置」由
     // 组织管理组的组内项**升为一级项**（渲染在 `perm-standalone-top` 里，见下方断言）。
     expect(tree.queryByText('加工项管理')).not.toBeInTheDocument()
     expect(tree.queryByText('工艺配置')).not.toBeInTheDocument()
-    expect(tree.getByText('订单列表')).toBeInTheDocument()
+    expect(tree.getByText('销售订单')).toBeInTheDocument()
     expect(tree.getByText('售后工单')).toBeInTheDocument()
     expect(tree.getByText('客户列表')).toBeInTheDocument()
     expect(tree.getByText('财务对账')).toBeInTheDocument()
     // #5778：生产管理组 5 项（含移入的「加工项管理」）+「仓储与物料」3 项都要在权限树里
     //（否则「勾得动/看不到」漂移）
-    expect(tree.getByText('生产看板')).toBeInTheDocument()
+    expect(tree.getByText('作业看板')).toBeInTheDocument()
     expect(tree.getByText('智能派单')).toBeInTheDocument()
     expect(tree.getByText('计件工资')).toBeInTheDocument()
     expect(tree.getByText('入库单')).toBeInTheDocument()
@@ -298,7 +349,7 @@ describe('RolesPage', () => {
     })
   })
 
-  it('编辑岗位按菜单回显：角色已有 order:list → 「订单列表」勾选', async () => {
+  it('编辑岗位按菜单回显：角色已有 order:list → 「销售订单」勾选', async () => {
     mockGetRoles.mockResolvedValue({
       data: {
         data: {
@@ -312,7 +363,7 @@ describe('RolesPage', () => {
     await screen.findByText('订单客服')
     fireEvent.click(screen.getByTitle('编辑'))
     await screen.findByText('编辑岗位')
-    const orderItem = (await screen.findByText('订单列表')).closest('label')!
+    const orderItem = (await screen.findByText('销售订单')).closest('label')!
     expect(orderItem.querySelector('input')!.checked).toBe(true)
     // 未授予的菜单项不勾选
     const knowledgeItem = screen.getByText('知识库').closest('label')!
@@ -349,6 +400,9 @@ describe('RolesPage', () => {
   // 🔴 新增一个菜单梯队必须在此登记并接线，否则下面第一条判据当场红（未登记即红）。
   const MENU_TIERS: Record<string, string | null> = {
     menuGroups: null,
+    // 🔴 2026-10-17（issue #7087）：**最前席位**（`standaloneHeadItems`：经营看板 / `dashboard:view`）
+    // —— 它与 #5895 的尾席位是**同一形态**的入口（新增梯队、权限树没跟），必须同款接线。
+    standaloneHeadItems: 'perm-standalone-head',
     standaloneTopItems: 'perm-standalone-top',
     standaloneItems: null, // 尾部项「通知中心」：全员可见、**无码** ⇒ 不可授予
   }
@@ -361,7 +415,7 @@ describe('RolesPage', () => {
     expect(tierArrays).toEqual(Object.keys(MENU_TIERS).sort())
   })
 
-  it('类级守卫：三梯队里每个带码菜单节点都能在权限树里勾到（漏接即红）', async () => {
+  it('类级守卫：**四个梯队**里每个带码菜单节点都能在权限树里勾到（漏接即红）', async () => {
     render(<RolesPage />)
     fireEvent.click(await screen.findByText('新增岗位'))
     const container = await screen.findByTestId('perm-menu-sections')
@@ -372,25 +426,39 @@ describe('RolesPage', () => {
     const rows = Array.from(container.querySelectorAll('label')).map(l => l.textContent || '')
     const coded = [
       ...menuConfig.menuGroups.flatMap(g => g.children),
+      // 🔴 issue #7087：最前席位必须一起枚举 —— 只列尾席位会让「经营看板」的漏接**判不出来**
+      ...menuConfig.standaloneHeadItems,
       ...menuConfig.standaloneTopItems,
       ...menuConfig.standaloneItems,
     ].filter(item => item.permissionCode)
     expect(coded.length).toBeGreaterThan(0) // 反空跑：没有可判的对象时本判据不算通过
+    // 点名最前席位（避免将来又把它漏掉时这条判据「恰好」还是绿的）
+    expect(coded.map(i => i.name)).toContain('经营看板')
     for (const item of coded) {
       const hit = rows.some(text => text.includes(item.name) && text.includes(item.permissionCode!))
       expect(hit, `菜单节点「${item.name}」(${item.permissionCode}) 未出现在权限树 —— 梯队接线漏了`).toBe(true)
     }
   })
 
-  it('#5895 一级项「商品管理」渲染在权限树**所有分组之前**（standaloneTopItems / product:list）', async () => {
+  it('🔴 权限树顺序与侧边栏同源：#7087 最前席位在最前，「商品管理」「企业基础设置」随其后，二者都在**所有分组之前**', async () => {
     render(<RolesPage />)
     fireEvent.click(await screen.findByText('新增岗位'))
     const container = await screen.findByTestId('perm-menu-sections')
+    const head = within(container).getByTestId('perm-standalone-head')
     const top = within(container).getByTestId('perm-standalone-top')
+    expect(within(head).getByText('经营看板')).toBeInTheDocument()
+    // 报表中心（#7376）与经营看板同码（报表是看板的下钻）⇒ 同码两节点各自渲染，勾任一即授予该码
+    expect(within(head).getByText('报表中心')).toBeInTheDocument()
+    expect(within(head).getAllByText('dashboard:view')).toHaveLength(2)
     expect(within(top).getByText('商品管理')).toBeInTheDocument()
     expect(within(top).getByText('product:list')).toBeInTheDocument()
-    // 位置与侧边栏同序：一级项 → 分组 → 尾部项 ⇒ 一级项块是权限树的**第一个**子块
-    expect(container.firstElementChild).toBe(top)
+    // 位置与侧边栏同序（一级项块 → 分组 → 尾部项）：**席位块是权限树的第一个子块**
+    // （#7087 前这条判的是 `perm-standalone-top`；最前席位加入后它退到第二个 —— 断言强度不降：
+    //  现在多钉了「最前席位在最前」且「两个席位块连续」）。
+    expect(container.firstElementChild).toBe(head)
+    expect(container.firstElementChild!.nextElementSibling).toBe(top)
+    // 判别力：旧形态（席位块排在分组之后）会让上面两条红
+    expect(container.firstElementChild!.hasAttribute('data-testid')).toBe(true)
   })
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -420,9 +488,14 @@ describe('RolesPage', () => {
    * 菜单接口下发（真 `GET /api/admin/menus` 的形状）：`onlyFirstCarrier` = 本单修后形态
    * （同一个码只在**树序首个承载节点**上带 `mobileTitles`，其余同码节点为空）。
    *
-   * ⚠️ 承载节点**不止在组内**：`standaloneTopItems`（「商品管理」`product:list` /
-   * 「企业基础设置」`production:view`）是顶层的**叶子节点**，服务端树里同样是带着 `mobileTitles`
-   * 的顶层条目（`production:view` 因此有 3 个承载节点 —— 本单「名实不符」的那一个就在其中）。
+   * ⚠️ 承载节点**不止在组内**：`standaloneHeadItems`（「经营看板」`dashboard:view`）与
+   * `standaloneTopItems`（「商品管理」`product:list` / 「企业基础设置」`production:view`）都是顶层的
+   * **叶子节点**，服务端树里同样是带着 `mobileTitles` 的顶层条目
+   *（`production:view` 因此有 3 个承载节点 —— 本单「名实不符」的那一个就在其中）。
+   *
+   * 🔴 2026-10-17（issue #7087）：`dashboard:view` 的承载节点由**两个**（工作台组的经营看板 +
+   * 每日简报）降为**一个**（最前席位「经营看板」）—— 组撤销 + 菜单项删除的直接后果；
+   * 本文件据此把「重复标注」锚点从 `dashboard:view` 收敛到 `production:view`（它仍是 3 处）。
    */
   const menuPayload = (onlyFirstCarrier: boolean) => {
     const seen = new Set<string>()
@@ -434,6 +507,8 @@ describe('RolesPage', () => {
       return { code, label: c.name, mobileTitles: onlyFirstCarrier && !firstOfCode ? [] : titles }
     }
     return [
+      // 最前席位（issue #7087）：真服务端树里它是**顶层首个**条目
+      ...menuConfig.standaloneHeadItems.map(c => ({ code: c.key, label: c.name, children: [node(c)] })),
       ...menuConfig.menuGroups.map(g => ({
         code: g.key,
         label: g.name,
@@ -451,13 +526,15 @@ describe('RolesPage', () => {
 
     // 锚定：未修形态下「同一个码 = 同一串标注」在**多个**节点上被渲染（同屏重复 §31 P2）
     expect(container.querySelectorAll('[data-testid^="roles-mobile-production:view"]')).toHaveLength(3)
+    // 🔴 issue #7087 + #7376：`dashboard:view` 现有**两个**承载节点（经营看板 + 报表中心，同码）
+    // ⇒ 未修形态下它也变成「同屏重复」的实例之一（与 `production:view` 同族读数）
     expect(container.querySelectorAll('[data-testid="roles-mobile-dashboard:view"]')).toHaveLength(2)
   })
 
   it('🔴 #6781 修后形态：每个权限码**只**在树序首个承载节点上渲染一处手机端标注（同屏重复与名实不符都归零）', async () => {
     // 修后形态的语料 = 服务端只把标注放在**树序首个承载节点**上（其余同码节点 `mobileTitles` 为空）
     // 🔴 判别力自证（不读磁盘）：同一份真配置下，**未修形态**的语料必然在同屏渲染出**重复**标注
-    //（`production:view` 三处 / `dashboard:view` 两处）；修后形态收敛为每码一处。
+    //（`production:view` 三处；`dashboard:view` 自 issue #7087 起只剩一处承载节点）；修后形态收敛为每码一处。
     const legacyCodes = menuPayload(false).flatMap(g => g.children)
       .filter(c => (c.mobileTitles || []).length > 0).map((c: any) => c.code)
     expect(legacyCodes.filter(c => c === 'production:view')).toHaveLength(3)
@@ -586,5 +663,163 @@ describe('RolesPage 读面失败态（issue #6663）', () => {
     expect(failure).toHaveTextContent('权限目录读取失败')
     expect(screen.queryByText('暂无权限数据')).not.toBeInTheDocument()
     expect(screen.queryByTestId('perm-menu-sections')).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * issue #7146：**默认菜单 = 后台 + 手机端（一份菜单的两次投影）**。
+ *
+ * 用户 2026-10-17 逐字：「手机端可见面要不要作为『默认岗位默认菜单』的一部分，当然需要，
+ * **把 PC 和手机端当一个整体**」。
+ *
+ * 判据的真值面：
+ * - 后台菜单名 = `@/config/menu`（侧边栏真值源，三源同构）；
+ * - 手机端面名 = 服务端 `GET /api/admin/menus` 的 `mobileTitles`（真值 = `MobileSurfaces`）；
+ *   🔴 本文件的语料**必须**能证明「页面透传服务端、不自造表」——改名夹具 ⇒ 页面跟着改。
+ */
+describe('RolesPage 默认菜单 = 后台 + 手机端（issue #7146）', () => {
+  // ⚠️ 本块是**独立的顶层 describe**：上面那个 `beforeEach` 不覆盖这里的用例
+  //（曾因此让 `mockGetWorkerPages` 无实现 ⇒ 页面落到失败态、断言超时）——缺省语料在这里自带一份。
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetRoles.mockResolvedValue({
+      data: {
+        data: {
+          items: [
+            { id: 'r-cs', name: '客服', code: 'customer_service', description: '职责：在线接待客户咨询与投诉。', permissions: [], createdAt: '2026-06-02' },
+          ],
+        },
+      },
+    })
+    mockGetPermissions.mockResolvedValue({ data: { data: PERMISSION_CATALOG } })
+    mockRequestGet.mockRejectedValue(new Error('not mocked'))
+    mockGetWorkerPages.mockResolvedValue({
+      data: {
+        data: {
+          pages: ['report', 'piecework', 'order', 'cut_calc', 'shipment'],
+          labels: { report: '报工', piecework: '计件工资报表', order: '订单', cut_calc: '裁高计算器', shipment: '发货' },
+        },
+      },
+    })
+  })
+
+  const roleWithCodes = (codes: string[]) => ({
+    data: {
+      data: {
+        items: [
+          {
+            id: 'r-cs',
+            name: '客服',
+            code: 'customer_service',
+            description: '职责：在线接待客户咨询与投诉，跟进订单进度。',
+            permissions: codes.map((code, i) => ({ id: `p-${i}`, code, name: code })),
+            createdAt: '2026-06-02',
+          },
+        ],
+      },
+    },
+  })
+
+  const menusPayload = (titles: Record<string, string[]>) => ({
+    data: {
+      data: [
+        {
+          code: 'dashboard',
+          label: '经营看板',
+          children: [{ code: 'dashboard:view', label: '经营看板', mobileTitles: titles['dashboard:view'] || [] }],
+        },
+        {
+          code: 'customer-service',
+          label: '客户服务',
+          children: [
+            { code: 'agent:session', label: '在线接待', mobileTitles: titles['agent:session'] || [] },
+            { code: 'order:list', label: '销售订单', mobileTitles: titles['order:list'] || [] },
+          ],
+        },
+      ],
+    },
+  })
+
+  it('同一张卡给「后台 N 项」与「手机端 M 个入口」：默认收起，展开看两份清单', async () => {
+    mockGetRoles.mockResolvedValue(roleWithCodes(['dashboard:view', 'agent:session', 'order:list']))
+    mockRequestGet.mockResolvedValue(
+      menusPayload({ 'dashboard:view': ['数据'], 'agent:session': ['坐席'] }),
+    )
+    render(<RolesPage />)
+
+    const card = await screen.findByTestId('role-default-menu-customer_service')
+    await waitFor(() =>
+      expect(within(card).getByTestId('role-default-menu-summary-customer_service')).toHaveTextContent(
+        '默认菜单：后台 6 项 · 手机端 2 个入口',
+      ),
+    )
+    // §31 P1 常驻面克制：折叠态下清单不渲染（不是 CSS 隐藏）
+    expect(screen.queryByTestId('role-default-menu-backend-customer_service')).toBeNull()
+
+    fireEvent.click(within(card).getByRole('button', { name: /默认菜单/ }))
+    // 报表中心（#7376）与经营看板同码 ⇒ 勾了 dashboard:view 的岗位默认菜单里**两项都在**
+    expect(await screen.findByTestId('role-default-menu-backend-customer_service')).toHaveTextContent(
+      '经营看板、报表中心、在线接待、价格本、销售订单',
+    )
+    expect(screen.getByTestId('role-default-menu-mobile-customer_service')).toHaveTextContent('数据、坐席')
+    expect(within(card).getByRole('button', { name: /默认菜单/ })).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('手机端面名逐字取服务端下发：服务端改名 ⇒ 页面跟着改（前端没有第二张表）', async () => {
+    mockGetRoles.mockResolvedValue(roleWithCodes(['dashboard:view']))
+    mockRequestGet.mockResolvedValue(menusPayload({ 'dashboard:view': ['数据（服务端改名）'] }))
+    render(<RolesPage />)
+
+    const card = await screen.findByTestId('role-default-menu-customer_service')
+    fireEvent.click(await within(card).findByRole('button', { name: /默认菜单/ }))
+    expect(await screen.findByTestId('role-default-menu-mobile-customer_service')).toHaveTextContent(
+      '数据（服务端改名）',
+    )
+  })
+
+  it('没有手机端可见码的岗位 ⇒ 手机端 0 个入口（不是「全给」也不是「无权限报错」）', async () => {
+    mockGetRoles.mockResolvedValue(roleWithCodes(['order:list']))
+    mockRequestGet.mockResolvedValue(menusPayload({}))
+    render(<RolesPage />)
+
+    const card = await screen.findByTestId('role-default-menu-customer_service')
+    await waitFor(() =>
+      expect(within(card).getByTestId('role-default-menu-summary-customer_service')).toHaveTextContent(
+        // #7375 段 3：`order:list` 现在覆盖三项（价格本 / 销售订单 / 发货单）⇒ 后台 2 项 → 3 项
+        '默认菜单：后台 3 项 · 手机端 0 个入口',
+      ),
+    )
+    fireEvent.click(within(card).getByRole('button', { name: /默认菜单/ }))
+    expect(await screen.findByTestId('role-default-menu-mobile-customer_service')).toHaveTextContent('无')
+  })
+
+  it('工人只读卡（#7146 用户裁定）：页名逐字取服务端目录、无编辑/删除、链接到工人档案', async () => {
+    render(<RolesPage />)
+
+    const card = await screen.findByTestId('worker-menu-card')
+    expect(card).toHaveTextContent('工人')
+    expect(card).toHaveTextContent('只读')
+    const pages = await screen.findByTestId('worker-menu-pages')
+    for (const label of ['报工', '计件工资报表', '订单', '裁高计算器', '发货']) {
+      expect(pages, label).toHaveTextContent(label)
+    }
+    // 只读：卡片里没有编辑 / 删除按钮（工人不是 roles 行，不能在这里改）
+    expect(within(card).queryByTitle('编辑')).toBeNull()
+    expect(within(card).queryByTitle('删除')).toBeNull()
+    // 逐人配置的出口：员工管理（工人档案）
+    expect(within(card).getByRole('link')).toHaveAttribute('href', '/employees')
+  })
+
+  it('工人端页面目录读失败 ⇒ 显式失败态 + 重试（不画成「没有页面」）', async () => {
+    mockGetWorkerPages.mockRejectedValueOnce(new Error('403'))
+    render(<RolesPage />)
+
+    const failure = await screen.findByTestId('worker-menu-error')
+    expect(failure).toHaveTextContent('工人端页面目录读取失败')
+    expect(screen.queryByTestId('worker-menu-pages')).not.toBeInTheDocument()
+
+    fireEvent.click(within(failure).getByRole('button', { name: '重试' }))
+    await waitFor(() => expect(mockGetWorkerPages).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.getByTestId('worker-menu-pages')).toHaveTextContent('报工'))
   })
 })

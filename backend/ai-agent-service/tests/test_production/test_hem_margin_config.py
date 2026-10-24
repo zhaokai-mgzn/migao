@@ -29,9 +29,9 @@
 | 2 | **缺省逐值不变**：不传配置 ⇒ 与今天逐值相同（回归不变量） | 默认值改 0.4 ⇒ 红 |
 | 3 | **配置生效**：改 `hem_margin` ⇒ 定高可行性 / 每幅长 / 罗马帘随之变；**判定面（超高）不再随它变**（#5130 改判） | 几何层任一处仍用常量 ⇒ 红；超高判定又读回它 ⇒ 红 |
 | 4 | **四处消费点全部走 cfg**（静态：`HEM_MARGIN` 在函数体里只能出现在**默认值定义**处） | 留一处用常量 ⇒ 红 |
-| 5 | 护栏：`0` / 负数 / 非数 ⇒ `ValueError`（端点 400，**不静默回退默认值**） | 静默回退 ⇒ 红 |
-| 6 | 键进 `_POSITIVE_CONFIG_KEYS`（与 Java `NUMERIC_KEYS` 同集合，跨源守卫钉住） | 漏登记 ⇒ 红 |
-| 7 | **两个企业阈值参数**（`oversize_width_threshold` / `oversize_height_threshold`，issue #5130）与 `hem_margin` **同款纪律**：进键集、默认值 == 模块常量、进 `_POSITIVE_CONFIG_KEYS` | 漏登记 / 默认值有第二落点 ⇒ 红 |
+| 5 | 护栏：负数 / 非数 ⇒ `ValueError`（端点 400，**不静默回退默认值**）；issue #7548 起 `0` 合法（= 上下不留边） | 静默回退 ⇒ 红 |
+| 6 | 键进 `_NON_NEGATIVE_CONFIG_KEYS`（与 Java `NON_NEGATIVE_KEYS` 同集合，跨源守卫钉住；issue #7548 起 0 合法） | 漏登记 ⇒ 红 |
+| 7 | **两个企业阈值参数**（`oversize_width_threshold` / `oversize_height_threshold`，issue #5130）与 `hem_margin` **同款纪律**：进键集、默认值 == 模块常量、进 `_NON_NEGATIVE_CONFIG_KEYS`（0 合法） | 漏登记 / 默认值有第二落点 ⇒ 红 |
 
 ⚠️ **前端副本不动**：`frontend/admin-web/src/lib/craft-auto-features.ts` 仍持有一份 `HEM_MARGIN`
 （下单页「超高」判定用它，跨语言守卫 `test_hem_margin_cross_language_drift.py` 钉住）。
@@ -61,9 +61,9 @@ class TestKeyRegistration:
         # 注入：把默认值写成 0.4（而常量仍 0.3）⇒ 红（「默认值有两个落点」）
         assert curtain_calc.DEFAULT_CRAFT_CALC_CONFIG["hem_margin"] == curtain_calc.HEM_MARGIN
 
-    def test_key_is_registered_as_positive_scalar(self):
-        # 注入：漏登记 ⇒ 0/负数会被静默接受 ⇒ 红
-        assert "hem_margin" in curtain_calc._POSITIVE_CONFIG_KEYS
+    def test_key_is_registered_as_non_negative_scalar(self):
+        # 注入：漏登记 ⇒ 负数会被静默接受 ⇒ 红（issue #7548：0 合法，负数仍拒）
+        assert "hem_margin" in curtain_calc._NON_NEGATIVE_CONFIG_KEYS
 
     def test_missing_config_row_still_gets_the_default(self):
         cfg = curtain_calc.resolve_craft_calc_config(None)
@@ -188,7 +188,8 @@ class TestAllConsumptionPointsUseConfig:
 class TestGuardRails:
     """判据 5：非法值 fail-closed（**不静默回退默认值**）。"""
 
-    @pytest.mark.parametrize("bad", [0, -0.1, "abc"])
+    # issue #7548：`hem_margin = 0` 已合法（= 上下不留边），负数与非数仍拒
+    @pytest.mark.parametrize("bad", [-0.1, "abc"])
     def test_invalid_hem_margin_is_rejected(self, bad):
         with pytest.raises(ValueError):
             curtain_calc.build_quote(
@@ -201,7 +202,8 @@ class TestOversizeThresholdKeys:
     """判据 7（issue #5130 新增）：两个**企业阈值参数**与 `hem_margin` 同款纪律。
 
     判据形态与 `TestKeyRegistration` 逐条对应（同一个键集的三条纪律）：
-    ① 默认值 == 模块常量（**默认值只有一个落点**）；② 进 `_POSITIVE_CONFIG_KEYS`（0/负 ⇒ 报错）；
+    ① 默认值 == 模块常量（**默认值只有一个落点**）；② 进 `_NON_NEGATIVE_CONFIG_KEYS`（负数 ⇒ 报错；
+    issue #7548 起 **0 合法** = 全部按超额）；
     ③ 缺省行回落到引擎默认值（缺行 = 用引擎默认值，不做开租播种）。
 
     红证：任一处漏登记 ⇒ 对应断言红；把默认值写成第二个字面量 ⇒ 第一条红。
@@ -215,8 +217,8 @@ class TestOversizeThresholdKeys:
         assert curtain_calc.DEFAULT_CRAFT_CALC_CONFIG[key] == getattr(curtain_calc, const)
 
     @pytest.mark.parametrize("key", ["oversize_width_threshold", "oversize_height_threshold"])
-    def test_key_is_registered_as_positive_scalar(self, key):
-        assert key in curtain_calc._POSITIVE_CONFIG_KEYS
+    def test_key_is_registered_as_non_negative_scalar(self, key):
+        assert key in curtain_calc._NON_NEGATIVE_CONFIG_KEYS
 
     @pytest.mark.parametrize("key,const", [
         ("oversize_width_threshold", "OVERSIZE_WIDTH_THRESHOLD"),
@@ -227,7 +229,8 @@ class TestOversizeThresholdKeys:
         assert curtain_calc.resolve_craft_calc_config(None)[key] == getattr(curtain_calc, const)
 
     @pytest.mark.parametrize("key", ["oversize_width_threshold", "oversize_height_threshold"])
-    @pytest.mark.parametrize("bad", [0, -0.1, "abc"])
+    # issue #7548：0 已合法（= 全部按超额），负数与非数仍拒
+    @pytest.mark.parametrize("bad", [-0.1, "abc"])
     def test_invalid_threshold_is_rejected(self, key, bad):
         with pytest.raises(ValueError):
             curtain_calc.resolve_craft_calc_config({key: bad})

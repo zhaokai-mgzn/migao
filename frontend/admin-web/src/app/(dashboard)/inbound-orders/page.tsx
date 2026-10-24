@@ -130,6 +130,15 @@ export default function InboundOrdersPage() {
     void load()
   }, [load])
 
+  // 深链（issue #7524）：站内信「入库单 RK-… 已过账」点进来带 ?keyword=RK-… ⇒ 直接按单号过滤，
+  // 不让商家自己再搜一遍。用 window.location 而不是 useSearchParams：本页的单测对
+  // next/navigation 是**整模块**替身，多取一个 hook 会把既有判据打红（也避免多一层 Suspense 约束）。
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const linked = new URLSearchParams(window.location.search).get('keyword')
+    if (linked) setKeyword(linked)
+  }, [])
+
   const openDetail = async (id: string) => {
     try {
       const res = await inboundOrderApi.detail(id)

@@ -459,8 +459,8 @@ describe('SkuMatrix (#563)', () => {
 
     // ① 行数 = 2 × 2 = 4（**不是** 8）
     expect(container.querySelectorAll('tbody tr')).toHaveLength(4)
-    // 每行 2 个输入框（价格 / 库存）⇒ 4 × 2 = 8
-    expect(container.querySelectorAll('td input[type="text"]')).toHaveLength(8)
+    // 每行 1 个输入框（只有价格；库存不在商品表单录入，issue #7597）⇒ 4 × 1 = 4
+    expect(container.querySelectorAll('td input[type="text"]')).toHaveLength(4)
 
     // ② 表头没有「售卖方式」列
     const headers = Array.from(
@@ -494,7 +494,7 @@ describe('SkuMatrix (#563)', () => {
       } as ProductSku,
     ],
   }
-  const SKU_ERROR = '请完整填写所有 SKU 的价格与库存'
+  const SKU_ERROR = '请完整填写所有 SKU 的价格'
 
   it('#2908 L2-01: errors.skus 存在时渲染醒目警示横幅（含未填写计数）', () => {
     render(
@@ -527,11 +527,6 @@ describe('SkuMatrix (#563)', () => {
       'td input[type="text"]'
     ) as HTMLInputElement
     expect(priceInput.className).toContain('border-red-400')
-    // 库存为 0 视为有效，不标红
-    const stockInput = container.querySelectorAll('td input[type="text"]')[1]
-    expect((stockInput as HTMLInputElement).className).not.toContain(
-      'border-red-400'
-    )
     // aria-invalid 标记
     expect(priceInput.getAttribute('aria-invalid')).toBe('true')
   })
@@ -546,7 +541,7 @@ describe('SkuMatrix (#563)', () => {
     expect(priceInput.className).not.toContain('border-red-400')
   })
 
-  it('#2908 L2-05: SKU 行缺失（矩阵未重建）时价格与库存单元格均标红', () => {
+  it('#2908 L2-05: SKU 行缺失（矩阵未重建）时价格单元格标红', () => {
     const { container } = render(
       <SkuMatrix
         value={{
@@ -560,8 +555,9 @@ describe('SkuMatrix (#563)', () => {
         errors={{ skus: SKU_ERROR }}
       />
     )
+    // 每行只剩价格一个输入框（库存列已移除，issue #7597）
     const inputs = container.querySelectorAll('td input[type="text"]')
-    expect(inputs.length).toBe(2)
+    expect(inputs.length).toBe(1)
     inputs.forEach((i) =>
       expect((i as HTMLInputElement).className).toContain('border-red-400')
     )
@@ -725,7 +721,7 @@ describe('门幅口径统一 (#3621)', () => {
     expect(within(table).getByText('3.4米')).toBeTruthy()
   })
 
-  it('#3621 L2-05: 库内裸数值 2.8 + 表单 2.8米 → 矩阵单元格显示既有价格/库存（结果可见）', () => {
+  it('#3621 L2-05: 库内裸数值 2.8 + 表单 2.8米 → 矩阵单元格显示既有价格（库存列已移除，issue #7597）', () => {
     const { container } = render(
       <SkuMatrix
         value={{
@@ -737,10 +733,10 @@ describe('门幅口径统一 (#3621)', () => {
       />
     )
 
+    // SKU 矩阵只剩价格一个输入框（库存不在商品表单录入 ⇒ 既有 stock 500 不再上屏）
     const inputs = container.querySelectorAll('td input[type="text"]')
-    expect(inputs).toHaveLength(2)
+    expect(inputs).toHaveLength(1)
     expect((inputs[0] as HTMLInputElement).value).toBe('168')
-    expect((inputs[1] as HTMLInputElement).value).toBe('500')
     // 门幅列显示带单位文案（canonical 值 2.8 → 显示 2.8米，视觉不回退）
     expect(within(document.querySelector('table') as HTMLTableElement).getByText('2.8米')).toBeTruthy()
   })

@@ -7,16 +7,17 @@
  * 「常用」= 用户自己钉的一组菜单项 key。它是**个性化偏好**，不是第四处菜单源
  * ⇒ 唯一的危险是「偏好被当成权限」或「偏好留下死引用」，所以本文件把三件事钉死：
  *
- *   ① **权限优先于偏好**：钉过的项若当前无权（或企业开关关了「每日简报」）⇒ **必须**从
+ *   ① **权限优先于偏好**：钉过的项若当前无权 ⇒ **必须**从
  *      「常用」消失（`resolvePinnedItems`）。漏掉这条 = 「收藏可以绕过菜单权限」（安全缺口）；
  *   ② **不做死引用**：菜单项被删/改名（key 不再存在）⇒ 静默丢弃（侧边栏不出现死链、
  *      不抛错）；清单为空或钉住项**一项都不可见** ⇒ 整个「常用」区不渲染（`pinnedGroup` 返回 null）
  *      —— 空标题比没有标题更糟（用户会以为功能坏了）；
  *   ③ **上限与脏数据**：最多 `PINNED_MAX` 项；超出**拒绝**（原样返回，不静默顶掉别人的位置）；
  *      持久化值形状不对（非数组 / 非字符串 / 空串 / 重复）⇒ 一律按「读到什么算什么」清洗。
- *   ④ 🔴 **一级项不进「常用」**（#5877，用户 2026-10-01 裁定）：一级项已是一屏直达、且**没有星标**，
+ *   ④ 🔴 **一级项不进「常用」**（#5877，用户 2026-10-01 裁定；2026-10-17 issue #7087 扩到第三个席位）：
+ *      一级项已是一屏直达、且**没有星标**，
  *      再让它进「常用」只会在同一屏出现两条一模一样的入口 ⇒ 可收藏面**只含组内项 + 尾部独立项**；
- *      用户 localStorage 里残留的 `products` key **静默丢弃**（沿用既有「无效 key 静默丢弃」口径）。
+ *      用户 localStorage 里残留的 `products` / `dashboard` key **静默丢弃**（沿用既有「无效 key 静默丢弃」口径）。
  *
  * ## 边界（如实登记）
  *
@@ -24,7 +25,7 @@
  *   服务端同步（偏好表 + 迁移 + 端点）**本轮有意不做**，不是漏做。
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { menuGroups, standaloneTopItems, standaloneItems, type MenuItem } from '@/config/menu'
+import { menuGroups, standaloneHeadItems, standaloneTopItems, standaloneItems, type MenuItem } from '@/config/menu'
 import {
   PINNED_MAX,
   PINNED_STORAGE_KEY,
@@ -38,9 +39,13 @@ import {
   type MenuFilterOptions,
 } from '@/lib/menu-nav'
 
-const ADMIN: MenuFilterOptions = { permissions: ['*'], roles: ['admin'], briefingEnabled: true }
+const ADMIN: MenuFilterOptions = { permissions: ['*'], roles: ['admin'] }
 
-/** 全部可见项（权限过滤后）—— 与侧边栏 / 命令面板同一套纯函数 */
+/**
+ * 全部可见项（权限过滤后）—— 与侧边栏 / 命令面板同一套纯函数。
+ * ⚠️ 面 = **可收藏面** = 组内项 ∪ 尾部独立项（**不含**两个 `standalone*` 一级项席位：
+ * 它们没有星标、也一屏可见 ⇒ 进「常用」就是重复入口，#5877 / issue #7087 三席位同口径）。
+ */
 const visibleAll = (opts: MenuFilterOptions = ADMIN): MenuItem[] => [
   ...menuGroups.flatMap((g) => g.children.filter((i) => !i.permissionCode || opts.permissions.includes('*') || opts.permissions.includes(i.permissionCode))),
   ...standaloneTopItems,
@@ -168,18 +173,23 @@ describe('「常用（收藏）」：权限与有效性过滤（🔴 不得成�
     ).toEqual(['orders', 'customers', 'knowledge'])
   })
 
-  it('🔴 企业开关关掉「每日简报」⇒ 即使钉过也**不出现**（与侧边栏同一口径）', () => {
-    const pinned = ['briefing']
+  it('🔴 「每日简报」菜单项已删除（issue #7087）⇒ 钉过 `briefing` 静默丢弃（不抛错、不留死引用）', () => {
+    // 旧形态：该项由企业开关（`briefingToggle`）控制显隐。本轮用户裁定「不要新增每日简报的菜单」
+    // ⇒ 菜单项与菜单级开关机制一起撤掉，**它不再存在于任何菜单数组**。
+    const allMenuKeys = [
+      ...menuGroups.flatMap((g) => g.children.map((c) => c.key)),
+      ...standaloneHeadItems.map((i) => i.key),
+      ...standaloneTopItems.map((i) => i.key),
+      ...standaloneItems.map((i) => i.key),
+    ]
+    expect(allMenuKeys).not.toContain('briefing')
+    // 残留的偏好按既有「key 不存在 ⇒ 静默丢弃」路径处理（同 `products` 那条）
+    expect(resolvePinnedItems(menuGroups, standaloneItems, ['briefing'], ADMIN)).toEqual([])
+    expect(pinnedGroup(menuGroups, standaloneItems, ['briefing'], ADMIN)).toBeNull()
+    // 对照：同一次调用里正常项照旧解析得出来（说明不是「函数恒回空」的假绿）
     expect(
-      resolvePinnedItems(menuGroups, standaloneItems, pinned, {
-        permissions: ['*'],
-        roles: ['admin'],
-        briefingEnabled: false,
-      }),
-    ).toEqual([])
-    expect(
-      resolvePinnedItems(menuGroups, standaloneItems, pinned, ADMIN).map((i) => i.key),
-    ).toEqual(['briefing'])
+      resolvePinnedItems(menuGroups, standaloneItems, ['briefing', 'orders'], ADMIN).map((i) => i.key),
+    ).toEqual(['orders'])
   })
 
   it('菜单项被删/改名（key 不存在）⇒ **静默丢弃**，不抛错、不留死引用', () => {
@@ -198,13 +208,19 @@ describe('「常用（收藏）」：权限与有效性过滤（🔴 不得成�
     expect(menuOrder.indexOf('orders')).toBeLessThan(menuOrder.indexOf('finance'))
   })
 
-  it('🔴 一级项**不进「常用」**（#5877）：钉过 `products` 也解析为空 ⇒ 不出现重复入口', () => {
-    // 前提（面非空自证）：products 确实是一级项、且**不在**任何组内
+  it('🔴 一级项**不进「常用」**（#5877）：钉过 `products` / 最前席位 `dashboard` 都解析为空 ⇒ 不出现重复入口', () => {
+    // 前提（面非空自证）：products 确实是一级项（尾席位）、且**不在**任何组内
     expect(standaloneTopItems.map((i) => i.key)).toContain('products')
     expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).not.toContain('products')
+    // 🔴 2026-10-17（issue #7087）：最前席位（「经营看板」）是**第三个席位** ⇒ 同一条口径同样适用
+    //（它也没有星标：见 Sidebar.test.tsx 的 `sidebar-standalone-head` 渲染面判据）
+    expect(standaloneHeadItems.map((i) => i.key)).toEqual(['dashboard', 'reports'])
+    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).not.toContain('dashboard')
     // 一级项没星标、也不进「常用」⇒ 解析为空（**不是**「找不到就静默跳过」的假绿：见下一行对照）
     expect(resolvePinnedItems(menuGroups, standaloneItems, ['products'], ADMIN)).toEqual([])
     expect(pinnedGroup(menuGroups, standaloneItems, ['products'], ADMIN)).toBeNull()
+    expect(resolvePinnedItems(menuGroups, standaloneItems, ['dashboard'], ADMIN)).toEqual([])
+    expect(pinnedGroup(menuGroups, standaloneItems, ['dashboard'], ADMIN)).toBeNull()
     // 对照：同一次调用里，组内项照旧解析得出来（说明函数本身没坏）
     expect(resolvePinnedItems(menuGroups, standaloneItems, ['orders'], ADMIN).map((i) => i.key)).toEqual(['orders'])
     // 对照：尾部独立项（通知中心）**仍可**收藏（它仍是普通项、带星标）

@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 165
+    "backend_contract_scoring_zero": 229
   },
   "history": [
     {
@@ -568,6 +568,398 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 165,
       "note": "issue #7022（`grep -c` 配 `|| echo \"0\"` 捕获成两行 ⇒ 判据「绿着但没干活」；同单另收第二条独立成因：收尾 job 的 `needs:` 漏了 4 个 required 门禁）新增 **2** 条 `[backend-contract]` 用例 **MC-109**（`grep -c` 形态类级元守卫：工作区零残留 + 判别力自证 + 反空跑 fail-closed + 台账逐项冻结）与 **MC-110**（标签收尾 job 的 `needs:` 必须覆盖全部 required 门禁 + 冻结清单不许腐烂 + 注入式自证）。两条按设计**都不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0`）⇒ 本读数 +2（上一行 163 → 本 PR 后 165）。机器判红通道 = `traces.tests` 的真测试文件（非空、真实存在、本机实跑过）：`tests/unit_ci_workflows/test_grep_c_echo_dupe.py`（5 passed；注入式红证三条：两条改回坏形态 + 台账清空）与 `tests/unit_ci_workflows/test_needs_changes_tail_job_coverage.py`（4 passed；注入式红证两条：`needs` 删门禁 + 登记册删成员；**并且在无 `GH_TOKEN` 环境下也 4 passed**）；`traces.ci` = `pr-check.yml` + `case-draft.yml`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在**同一 PR 内实测重锚**（不按号推算）：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -p no:randomly` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 165}` ⇒ 与锚点 163 的差值 2 = 本 PR 新增那两条。"
+    },
+    {
+      "sha": "pending-pr-7080",
+      "date": "2026-10-17",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 166,
+      "note": "issue #7078（订单详情「支付/发货/确认收货时间」恒 `-`：屏幕面读后端未下发的键；本 PR 补真值 + 撤下支付交易号行）新增 **1** 条 `[backend-contract]` 用例 **OR-067**（`expectations: []` ⇒ `scoring_assertion_count == 0`）⇒ 本读数 +1（上一行 165 → 本 PR 后 166）。该用例按设计**不进 agent-eval**，其机器判红通道 = `traces.tests` 的**两个真实文件**（本机实跑过）：`backend/admin-api/src/test/java/com/migao/admin/service/OrderPaidAndReceivedAtWriteGuardTest.java`（4 tests / 0 failures，含五种坏形态的判别力自证）与 `frontend/admin-web/tests/unit/pages/order-detail.test.tsx`（50 passed；另做了注入式红证 = 把「支付时间」行改成恒空 ⇒ `1 failed | 49 passed`）；`traces.ci` = `pr-check.yml`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在**同一 PR 内**实测重锚（不按号推算）：先 `./scripts/sync-main.sh` 合并 `origin/main` `725ef336d`，再**现取**读数（`python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q`）⇒ {'no_channel_total': 0, 'backend_contract_scoring_zero': 166}。"
+    },
+    {
+      "sha": "pending-pr-7110",
+      "date": "2026-10-17",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 167,
+      "note": "issue #7110（订单详情撤下从未启动的「支付倒计时」+ 落「读面键 ⊆ OrderDetailResponse」类级守卫）新增 **1** 条 `[backend-contract]` 用例 **OR-068**（`expectations: []` ⇒ `scoring_assertion_count == 0`）⇒ 本读数 +1（上一行 166 → 本 PR 后 167）。该用例按设计**不进 agent-eval**，机器判红通道 = `traces.tests` 的两个真实文件（本机实跑过）：`tests/unit_ci_workflows/test_order_detail_reads_have_backend_source.py`（4 passed；含四种坏形态注入 + 「只改注释 ⇒ 不红」负控）与 `frontend/admin-web/tests/unit/pages/order-detail.test.tsx`（51 passed，含注入 `paymentDeadline` 仍不渲染倒计时那条）；`traces.ci` = `pr-check.yml`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在**同一 PR 内**实测重锚（不按号推算）：现取 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` ⇒ {'no_channel_total': 0, 'backend_contract_scoring_zero': 167}。"
+    },
+    {
+      "sha": "pending-pr-7079-p4",
+      "date": "2026-10-17",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 171,
+      "note": "撞号改号（本包用例 UI-113→UI-116）与 main 侧新增用例叠加后的一次测准重锚。本行按 `_how_to_regen` 在**同一 PR 内实测重锚**（不按号推算）：本机在本树实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 报 {'no_channel_total': 0, 'backend_contract_scoring_zero': 171}；上一行（main 侧）= 167，本 PR 净增 4。真债务 `no_channel_total` 仍为 **0**。"
+    },
+    {
+      "sha": "pending-pr-7148-onboarding-processing-catalog",
+      "date": "2026-10-17",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 172,
+      "note": "本 PR（issue #7148）新增两条 [backend-contract] 用例（OB-007 开租默认加工项目录 + MC-114 其类级元守卫）⇒ 净增 1（171 → 172；另一条的 data_checks 命中了机器判红标记）。本行按 `_how_to_regen` 在**同一 PR 内实测重锚**：本树实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 报 {'no_channel_total': 0, 'backend_contract_scoring_zero': 172}。真债务 `no_channel_total` 仍为 **0**。"
+    },
+    {
+      "sha": "pending-pr-7140",
+      "date": "2026-10-17",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 173,
+      "note": "issue #7140（质检记录落到观星台：新增商家面三处可见面 + 待检清单读面）新增 4 条 `[backend-contract]` 用例（PG-081 / UI-118 / UI-119 / UI-120；UI-117 已被 main 的 #7146 占用 ⇒ 本单后合、按规矩改号）。本行按 `_how_to_regen` 在**同一 PR 内实测重锚**（不按号推算）：rebase 到含 #7152（上一行 172）的 main 之后，本树实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 报 {'no_channel_total': 0, 'backend_contract_scoring_zero': 173}（172 → 净增 1；四条用例里只有一条落入本读数口径，其余三条的 `data_checks` 命中了机器判红标记）。四条用例的机器判红通道 = `traces.tests` 的真实文件（本机实跑过：QualityCheckTargetsTest 7 passed / quality-inspections.test.tsx 7 passed / QualityCheckPanel.test.tsx 4 passed / ProductionProgressTable-worktype.test.tsx 3 passed），`traces.ci` = `pr-check.yml`。真债务 `no_channel_total` 仍为 **0**。"
+    },
+    {
+      "sha": "pending-pr-7163",
+      "date": "2026-10-17",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 174,
+      "note": "issue #7162（工人端质检：扫水洗唛录判定、生成质检单）新增 2 条用例（PG-082 / UI-121），其中 1 条落入本读数口径（`[backend-contract]` 且无 runner 计分断言）⇒ 173 → 174。本行按 `_how_to_regen` 在**同一 PR 内实测重锚**（不按号推算）：CI job `ci workflow helper unit tests（后半）` 实跑 `test_case_machine_fail_channel.py` 报 {'no_channel_total': 0, 'backend_contract_scoring_zero': 174}。两条用例的机器判红通道 = `traces.tests` 的真实文件（后端 WorkerQualityControllerTest / QualityCheckServiceTest / WorkerPageCatalogControllerTest；H5 worker-h5-quality.test.mjs + worker-h5-pages.test.mjs；admin-web WorkerProfilesPanel.test.tsx），`traces.ci` = `pr-check.yml`。真债务 `no_channel_total` 仍为 **0**。"
+    },
+    {
+      "sha": "pending-pr-7168",
+      "date": "2026-10-17",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 175,
+      "note": "issue #7165（发货单/质检单联动完成对应工序）新增 1 条 `[backend-contract]` 用例 PG-083（无 runner 计分断言）⇒ 174 → 175。本行按 `_how_to_regen` 在**同一 PR 内实测重锚**（不按号推算）：本树实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 报 {'no_channel_total': 0, 'backend_contract_scoring_zero': 175}。机器判红通道 = `traces.tests` 的三个真文件（DocumentOperationLinkageTest / ProductionServiceCompleteByDocumentTest / QualityCheckServiceTest，本机实跑过），`traces.ci` = `pr-check.yml`。真债务 `no_channel_total` 仍为 **0**。"
+    },
+    {
+      "sha": "fix/6961-resume",
+      "date": "2026-10-17",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 178,
+      "note": "issue #6961 在 main（含 #7168 单据联动）之上重做分支后实测重锚：175 → 178。读数取自本树实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 的报错行本身。`no_channel_total` 恒为 0：本单新增 MC-115（类级元守卫）与 PG-084（真库并发判据）的机器判红通道都是真实测试类 `ProductStatusCasMetaGuardTest` / `ProductStatusCasRaceRealDbTest`。"
+    },
+    {
+      "sha": "fix/6962-resume",
+      "date": "2026-10-17",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 182,
+      "note": "issue #6962 在 main（含 #7164 商品 CAS 与 #7168 单据联动）之上 rebase 后实测重锚：178 → 182。读数取自本树实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 的报错行本身。`no_channel_total` 恒为 0（本单 5 条用例的机器判红通道都是真实类）。让号链：本单原 PG-077 ⇒ 082 ⇒ 083 均被 main 占用（#7162 / #7168）⇒ 现取 **PG-085**（084 已由 #7164 占用；MC-106 ⇒ MC-116，115 已由 #7164 占用）。"
+    },
+    {
+      "sha": "fix/6956-t3-delete-rowcount",
+      "date": "2026-10-17",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 183,
+      "note": "issue #6956 · 现象 C 的类级固化新增 1 条 [backend-contract] 用例 MC-117 ⇒ 读数 182 → 183（读数取自本 PR 的 CI 报错行 `实测读数 {'no_channel_total': 0, 'backend_contract_scoring_zero': 183}`）。`no_channel_total` 恒为 0：MC-117 的机器判红通道是真实测试类 T3LogicalDeleteRowCountMetaGuardTest.java。"
+    },
+    {
+      "sha": "fix/7186-quality-single-action",
+      "date": "2026-10-18",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 184,
+      "note": "issue #7186 新增 1 条 [backend-contract] 用例 PG-086（质检工序没有报工动作）⇒ 读数 183 → 184（读数取自本树实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 的报错行）。`no_channel_total` 恒为 0：PG-086 的机器判红通道是真实测试类 ProductionReportQualityGuardTest.java / ProductionScanCompleteServiceTest.java。⚠️ 并行单 #7192 也新增 1 条 [backend-contract] 用例（PG-087）⇒ 两单谁后合谁再重锚到 185。"
+    },
+    {
+      "sha": "feat/quality-metrics-p0p1",
+      "date": "2026-10-18",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 185,
+      "note": "issue #7192 新增 1 条 [backend-contract] 用例 PG-087（质检指标读面 P0+P1）⇒ 读数 184 → 185（184 已含同日合并的 #7186 / PG-086；读数取自本树实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 的报错行）。`no_channel_total` 恒为 0：PG-087 的机器判红通道是真实测试类 QualityCheckStatsTest.java（− 前端 QualityMetricsPanel.test.tsx）。"
+    },
+    {
+      "sha": "fix/7216-worktree-lock-liveness",
+      "date": "2026-10-18",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 186,
+      "note": "issue #7216 新增 1 条 [backend-contract] 用例 MC-118（dev-worktree 会话锁判活）⇒ 读数 185 → 186（读数取自本分支 CI 报错行 `实测读数 {'no_channel_total': 0, 'backend_contract_scoring_zero': 186}`，本地同口径实跑一致）。`no_channel_total` 恒为 0：MC-118 的机器判红通道是真实测试文件 tests/unit_ci_workflows/test_dev_worktree_lock_liveness.py（7 条 pytest）。"
+    },
+    {
+      "sha": "fix/7251-worker-h5-idle-timer",
+      "date": "2026-10-18",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 187,
+      "note": "issue #7251（工人端 H5 闲置登出定时器 30 天延时溢出 2^31-1 ⇒ 分片排期）新增 1 条 `[backend-contract]` 用例 **PG-089**（`expectations: []` ⇒ 按设计不进 agent-eval，`scoring_assertion_count == 0`）⇒ 读数 186 → 187（读数取自本树实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` 的报错行 `实测读数 {'no_channel_total': 0, 'backend_contract_scoring_zero': 187}`，不按号推算）。`no_channel_total` 恒为 0：PG-089 的机器判红通道 = `traces.tests` 的真实测试文件 frontend/worker-h5/tests/worker-h5-7251-idle-timer.test.mjs（6 条判据、已实测「改前 4 failed / 改后 6 passed」）与 frontend/worker-h5/tests/worker-h5-6749-stale-login-error.test.mjs；`traces.ci` = worker-h5-tests.yml。"
+    },
+    {
+      "sha": "fix/7222-saleform",
+      "date": "2026-10-19",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 188,
+      "note": "issue #7222 新增 1 条 [backend-contract] 用例 PG-088（卖布单缺 saleForm ⇒ 作业单/派单池/发货守卫三段静默放行的判据收敛 + 布料事实兜底）。**合流重锚**：本分支原锚 187（= 不含同日 PG-089 时的 186 → 187），rebase 到含 PG-089（#7251）的 main 后两条用例同时存在 ⇒ 读数 187 → 188（读数取自本树实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 的报错行，不按号推算）。`no_channel_total` 恒为 0：PG-088 的机器判红通道是真实测试文件 OrderShipGuardTest.java / ProcessingOrderRouteSourceTest.java（5 条判据，均带红证）。"
+    },
+    {
+      "sha": "feat/7359-domain-modeling-guards",
+      "date": "2026-10-20",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 189,
+      "note": "issue #7359 新增 1 条 [backend-contract] 用例 MC-119（schema 形态健康：列预算/孤儿列/JSONB 登记，expectations: [] ⇒ 按设计不进 agent-eval，scoring_assertion_count == 0）⇒ 读数 188 → 189（读数取自本树实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` 的报错行，不按号推算）。`no_channel_total` 恒为 0：MC-119 的机器判红通道 = 真实测试文件 tests/unit_ci_workflows/test_schema_health_guards.py（3 条真语料判据 + 4 条注入式红证 + 1 条负控）；traces.ci = pr-check.yml。"
+    },
+    {
+      "sha": "feat/7370-customer-credit-terms",
+      "date": "2026-10-20",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 190,
+      "note": "issue #7370 新增 1 条 [backend-contract] 用例 CU-013（客户授信额度/账期：超限拒单 + 未启用不拦 + 零额度语义）⇒ expectations 为空，不进 agent-eval，scoring_assertion_count == 0 ⇒ 读数 189 → 190（读数取自本树实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` 的报错行，不按号推算）。`no_channel_total` 恒为 0：CU-013 的机器判红通道 = CreditPolicyTest.java（7 条，含 TDD 编译级红证）+ customer-detail.test.tsx（4 条页面判据）。"
+    },
+    {
+      "sha": "feat/7369-supplier-master",
+      "date": "2026-10-20",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 191,
+      "note": "issue #7369（P0-1 段 1 供应商主数据）新增 1 条 [backend-contract] 用例 SP-001（供应商档案 CRUD + 菜单三源/路由守卫同构）⇒ expectations 为空，不进 agent-eval ⇒ 读数 190 → 191（取自实跑 i3 判据的报错行，不按号推算）。`no_channel_total` 恒为 0：SP-001 的机器判红通道 = SupplierServiceTest.java（6 条）+ suppliers.test.tsx（5 条）。"
+    },
+    {
+      "sha": "feat/7369-inbound-supplier-ref",
+      "date": "2026-10-20",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 192,
+      "note": "issue #7369 段 2（入库单挂供应商档案）新增 1 条 [backend-contract] 用例 SP-002 ⇒ 191 → 192（取自实跑报错行）。机器判红通道 = InboundOrderSupplierLinkTest(6) + SupplierServiceTest(7) + suppliers.test.tsx(8)。"
+    },
+    {
+      "sha": "feat/7369-supplier-payables",
+      "date": "2026-10-20",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 193,
+      "note": "issue #7369 段 3-A（应付对账只读视图）新增 1 条 [backend-contract] 用例 SP-003 ⇒ 192 → 193（取自实跑报错行）。机器判红通道 = SupplierServiceTest(8) + SupplierControllerTest(7) + suppliers.test.tsx(10)。"
+    },
+    {
+      "sha": "feat/7369-supplier-payments",
+      "date": "2026-10-20",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 194,
+      "note": "issue #7369 段 3-B（付款：一笔冲抵多单）新增 1 条 [backend-contract] 用例 SP-004 ⇒ 193 → 194。判红通道 = SupplierPaymentServiceTest(8) + SupplierPaymentControllerTest(4) + suppliers.test.tsx(12)。"
+    },
+    {
+      "sha": "feat/7369-purchase-orders",
+      "date": "2026-10-20",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 195,
+      "note": "issue #7369 段 4（采购单 + 收货）新增 1 条 [backend-contract] 用例 SP-005 ⇒ 194 → 195。判红通道 = PurchaseOrderServiceTest(7) + PurchaseOrderControllerTest(4) + 三个 Mapper 判据(9)。"
+    },
+    {
+      "sha": "feat/7369-purchase-orders-ui",
+      "date": "2026-10-20",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 196,
+      "note": "issue #7369 段 4-B（采购单页面 + 菜单）新增 [frontend-contract] 用例 SP-006 ⇒ 195 → 196。判红通道 = purchase-orders.test.tsx(8) + menu-nav / menu-icons / Sidebar / SidebarRedesign / CommandPalette / production-board / processing-merged / remnants-menu-isomorphic。"
+    },
+    {
+      "sha": "feat/7370-receivable-aging",
+      "date": "2026-10-20",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 197,
+      "note": "issue #7370 段 2（应收账龄）新增 1 条 [backend-contract] 用例 AR-001 ⇒ 196 → 197。判红通道 = ReceivableAgingTest(7) + ReceivableAgingControllerTest(3)。"
+    },
+    {
+      "sha": "feat/7370-receipt-allocation",
+      "date": "2026-10-20",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 198,
+      "note": "issue #7370 段 3（收款核销）新增 1 条 [backend-contract] 用例 AR-002 ⇒ 197 → 198。判红通道 = ReceiptAllocationPolicyTest(7) + ServiceTest(8) + ControllerTest(3) + MapperTest(3)。"
+    },
+    {
+      "sha": "feat/7371-order-gross-margin",
+      "date": "2026-10-21",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 199,
+      "note": "issue #7371 段 1（订单毛利）新增 1 条 [backend-contract] 用例 AR-003 ⇒ 198 → 199。判红通道 = OrderMarginTest(7) + ServiceTest(5) + ControllerTest(3)。"
+    },
+    {
+      "sha": "feat/7372-data-scope",
+      "date": "2026-10-21",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 200,
+      "note": "issue #7372 段 1（数据范围）新增 1 条 [backend-contract] 用例 AR-004 ⇒ 199 → 200。判红通道 = DataScopeTest(6) + OrderDataScopeGuardTest(3)。"
+    },
+    {
+      "sha": "feat/7375-price-resolution",
+      "date": "2026-10-21",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 201,
+      "note": "issue #7375 段 1（价格解析）新增 1 条 [backend-contract] 用例 PR-001 ⇒ 200 → 201。判红通道 = PriceResolutionTest(7) + PriceServiceTest(6) + PricingControllerTest(3)。"
+    },
+    {
+      "sha": "feat/7375-order-price-server-truth",
+      "date": "2026-10-21",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 202,
+      "note": "issue #7375 段 2（下单服务端定价 + 留痕）新增 1 条 [backend-contract] 用例 PRC-002 ⇒ 201 → 202。判红通道 = OrderPriceOverrideTest(4) + OrderPricingServiceTest(6)。"
+    },
+    {
+      "sha": "feat/7374-approvals",
+      "date": "2026-10-21",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 203,
+      "note": "issue #7374 段 1（具名审批流 + 超授信闸门）新增 1 条 [backend-contract] 用例 APP-001 ⇒ 202 → 203。判红通道 = ApprovalStateTest(5) + ApprovalServiceTest(11) + CreditApprovalGateTest(5) + ApprovalControllerTest(4)。"
+    },
+    {
+      "sha": "feat/7373-warehouse-transfer",
+      "date": "2026-10-21",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 204,
+      "note": "issue #7373 段 1（多仓 + 调拨）新增 1 条 [backend-contract] 用例 WH-001 ⇒ 203 → 204。判红通道 = WarehouseServiceTest(5) + StockTransferPolicyTest(6) + StockTransferServiceTest(6) + WarehouseControllerTest(3) + StockTransferMapperTest(5)。"
+    },
+    {
+      "sha": "feat/7373-migration-visibility",
+      "date": "2026-10-21",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 205,
+      "note": "issue #7373 复盘（云上采购单 500 根因）新增 1 条 [backend-contract] 用例 OPS-001 ⇒ 204 → 205。判红通道 = PurchaseOrderListRealDbTest(3) + LogicDeleteColumnTypeGuardTest(2)。"
+    },
+    {
+      "sha": "feat/7373-stocktake",
+      "date": "2026-10-21",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 206,
+      "note": "issue #7373 段 2（盘点单 + stocktake_diff 闸门）新增 1 条 [backend-contract] 用例 ST-001 ⇒ 205 → 206。判红通道 = StocktakePolicyTest(6) + StocktakeServiceTest(10) + StocktakeRealDbTest(1) + StocktakeControllerTest(4) + StocktakeMapperTest(4)。"
+    },
+    {
+      "sha": "feat/7375-price-books-api",
+      "date": "2026-10-21",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 207,
+      "note": "issue #7375 段 3（价格本可维护）新增 1 条 [backend-contract] 用例 PRC-003 ⇒ 206 → 207。判红通道 = PriceBookServiceTest(5)。"
+    },
+    {
+      "sha": "feat/7375-price-change-approval",
+      "date": "2026-10-21",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 208,
+      "note": "issue #7375 段 4（改价闸门）新增 1 条 [backend-contract] 用例 PRC-004 ⇒ 207 → 208。判红通道 = PriceFloorPolicyTest(4) + PriceBookFloorGateTest(5)。"
+    },
+    {
+      "sha": "feat/7376-report-center",
+      "date": "2026-10-22",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 209,
+      "note": "issue #7376 段 1（订单毛利报表）新增 1 条 [backend-contract] 用例 RPT-001 ⇒ 208 → 209。判红通道 = ReportTotalsTest(4) + ReportServiceTest(5) + ReportControllerTest(3)。"
+    },
+    {
+      "sha": "feat/7376-report-inventory-staff",
+      "date": "2026-10-22",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 210,
+      "note": "issue #7376 段 2（库存周转与滞销报表）新增 1 条 [backend-contract] 用例 RPT-002 ⇒ 209 → 210。判红通道 = InventoryAgePolicyTest(5) + InventoryReportServiceTest(5)。"
+    },
+    {
+      "sha": "feat/7376-staff-report",
+      "date": "2026-10-22",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 211,
+      "note": "issue #7376 段 3（员工业绩报表）新增 1 条 [backend-contract] 用例 RPT-003 ⇒ 210 → 211。判红通道 = StaffPerformanceReportTest(5)。"
+    },
+    {
+      "sha": "feat/7377-quality-cost",
+      "date": "2026-10-22",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 212,
+      "note": "issue #7377 段 1（质量成本报表）新增 1 条 [backend-contract] 用例 QC-001 ⇒ 211 → 212。判红通道 = QualityCostPolicyTest(5) + QualityCostReportTest(5)。"
+    },
+    {
+      "sha": "feat/7377-rework-order",
+      "date": "2026-10-22",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 213,
+      "note": "issue #7377 段 2（返工单 + 闭环唯一）新增 1 条 [backend-contract] 用例 QC-002 ⇒ 212 → 213。判红通道 = ReworkStateTest(4) + ReworkOrderServiceTest(8) + ReworkOrderControllerTest(4) + ReworkOrderMapperTest(5)。"
+    },
+    {
+      "sha": "feat/7376-reports-page",
+      "date": "2026-10-22",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 213,
+      "note": "issue #7376 段 4（报表中心页面 + 菜单归位）新增 1 条 [frontend-contract] 用例 RPT-004 ⇒ 用例库 860（backend_contract_scoring_zero 不变，本用例走 frontend 通道）。"
+    },
+    {
+      "sha": "feat/7376-reports-page",
+      "date": "2026-10-22",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 214,
+      "note": "issue #7376 段 4（报表中心页面 + 菜单）新增 1 条用例 RPT-004 ⇒ 口径计数 213 → 214（本用例 tags 含 frontend-contract，但台账按 misc.yml 全量口径计）。"
+    },
+    {
+      "sha": "feat/7375-price-book-page",
+      "date": "2026-10-22",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 215,
+      "note": "issue #7375 段 3 前端（价格本页）新增 1 条用例 PRC-005 ⇒ 口径计数 214 → 215。"
+    },
+    {
+      "sha": "feat/7373-stocktake-page",
+      "date": "2026-10-22",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 216,
+      "note": "issue #7373 段 3 前端（盘点单页面）新增 1 条 [frontend-contract] 用例 STK-002 ⇒ 口径计数 215 → 216（用例库 861 → 862；STK-001 已被 #7458 后端用例占用 ⇒ 本用例改号 STK-002）。"
+    },
+    {
+      "sha": "feat/7376-reports-aging",
+      "date": "2026-10-23",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 217,
+      "note": "issue #7376 段 5（账龄进报表中心 + CSV 导出）新增 1 条 [frontend-contract] 用例 RPT-005 ⇒ 口径计数 216 → 217（用例库 862 → 863）。"
+    },
+    {
+      "sha": "feat/7377-rework-page",
+      "date": "2026-10-23",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 218,
+      "note": "issue #7377 段 3（返工单页面）新增 1 条 [frontend-contract] 用例 RWK-001 ⇒ 口径计数 217 → 218（用例库 863 → 864）。"
+    },
+    {
+      "sha": "feat/7377-rework-entry",
+      "date": "2026-10-23",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 219,
+      "note": "issue #7377 段 4（售后详情一键发起返工）新增 1 条 [frontend-contract] 用例 RWK-002 ⇒ 口径计数 218 → 219（用例库 864 → 865）。"
+    },
+    {
+      "sha": "feat/7377-qc-breakdown",
+      "date": "2026-10-23",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 220,
+      "note": "issue #7377 段 5（质量成本维度汇总）新增 1 条 [frontend-contract] 用例 QC-003 ⇒ 口径计数 219 → 220（用例库 865 → 866）。"
+    },
+    {
+      "sha": "feat/7376-report-filters",
+      "date": "2026-10-23",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 221,
+      "note": "issue #7376 段 6（报表中心统一时间区间）新增 1 条 [frontend-contract] 用例 RPT-007 ⇒ 口径计数 220 → 221（用例库 867 → 868）。"
+    },
+    {
+      "sha": "feat/7374-approvals-page",
+      "date": "2026-10-23",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 222,
+      "note": "issue #7374 段 2（审批中心页面）新增 1 条 [frontend-contract] 用例 APV-001 ⇒ 口径计数 221 → 222。"
+    },
+    {
+      "sha": "feat/7374-approval-entry",
+      "date": "2026-10-23",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 224,
+      "note": "issue #7374 段 3（业务页就地申请审批）新增 1 条 [frontend-contract] 用例 APV-002 ⇒ 口径计数 223 → 224。"
+    },
+    {
+      "sha": "feat/7377-qc-product",
+      "date": "2026-10-23",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 225,
+      "note": "issue #7377 段 6（质量成本商品维度，按比例摊）新增 1 条 [frontend-contract] 用例 QC-004 ⇒ 口径计数 224 → 225。"
+    },
+    {
+      "sha": "feat/7377-report-filters",
+      "date": "2026-10-23",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 226,
+      "note": "issue #7377 段 7（报表筛选只挂吃该维度的表：库存滞销按仓库筛）新增 1 条 [frontend-contract] 用例 RPT-008 ⇒ 口径计数 225 → 226。"
+    },
+    {
+      "sha": "feat/7377-scrap-labor",
+      "date": "2026-10-23",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 227,
+      "note": "issue #7377 段 8（质量成本补「报废工时」，料仍未采集）新增 1 条 [frontend-contract] 用例 QC-005 ⇒ 口径计数 226 → 227。"
+    },
+    {
+      "sha": "feat/default-warehouse-7592",
+      "date": "2026-10-24",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 228,
+      "note": "issue #7592（开租默认主仓 + 盘点默认仓收「未指定仓」批次）新增 1 条 [backend-contract] 用例 WH-002 ⇒ 口径计数 227 → 228。"
+    },
+    {
+      "sha": "dd332541e531a4cd91537f455cbfc11d60f05904",
+      "date": "2026-10-24",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 229,
+      "note": "issue #7597（商品档案不再设置库存：表单/建品接口/Excel 导入三面下线，存量按真实单据重算）新增 1 条 `[backend-contract]` 用例 PR-132 —— 按设计**不进 agent-eval**（`expectations: []`），机器判红通道是 `traces.tests` 里的 10 个引用（admin-web vitest ×2 / Java 单测 ×3 / pytest 迁移守卫 ×2 / 真库验收脚本 ×1 等，逐条非空且真实存在）⇒ 合并 main（#7592 已把读数推到 228）后读数 228 → 229 是**合法新增**（#5079 已裁定的口径），真债务 `no_channel_total` 仍为 **0**（不变）。按本文件 `_how_to_regen` 在同一 PR 内重锚。"
     }
   ]
 }

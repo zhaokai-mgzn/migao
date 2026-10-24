@@ -711,6 +711,9 @@ public class ProductionService {
                 ? List.of()
                 : listWorkLogs(po.getId(), tenantId);
         Map<String, List<String>> workers = po == null ? Map.of() : workersByOperation(logs);
+        // 报工三态数量（issue #7140）：与 `worklog()` 读面的三键**同一口径**
+        //（合格 = normal 的合格数；返工 / 报废 = 该笔报工数量）—— 只内存归集，不参与计价。
+        Map<String, QtyByType> qtyByOp = qtyByOperation(logs);
 
         // 规格可见面（issue #4459 §3.1）：**逐字取订单行**；本单再追加派工批次两键（V116 / #5145）
         Map<String, Map<String, Object>> specByItemId = orderSpecByItemId(order, tenantId);
@@ -722,7 +725,7 @@ public class ProductionService {
         // 樘窗组键（issue #4784）：**复用 #4725 的既有实现**（`windowGroupKeyByItemId` + `setKey`）
         // —— 套维口径只有一份；本参数只用于给每个部位**追加** `set_no`（不改分组）。
         result.put("positions", buildPositions(operations, workers, specByItemId,
-                windowGroupKeyByItemId(order, tenantId), partTokensByItemId(po, tenantId)));
+                windowGroupKeyByItemId(order, tenantId), partTokensByItemId(po, tenantId), qtyByOp));
         result.put("progress", progressOf(operations));
         // 操作记录（issue #4347 §3.2）：**服务端**报工流水，不是本机缓存。
         // 工人端原来只显示本机 storage 里的报工（换设备就没了，也看不到别人做的工序）；
@@ -782,8 +785,13 @@ public class ProductionService {
      *
      * <p>键**只在真的指派过时才加**（缺键就缺 —— 与规格可见面同一条口径：不补默认值、不显示占位符）；
      * 作废后净额归零的行不出现在结果里（工人不该被指去裁一个已经不扣账的批次）。</p>
+     *
+     * <p>🔴 包内可见（issue #7233）：**两个**工人读面都要这一份，各写一份 = 迟早不同 ——
+     * {@code getOperations} 与工人**扫码详情**面（{@code ProductionScanService#specByItemIdOf}）。
+     * 扫码面此前漏调本方法 ⇒ {@code set_overview.positions[].batch_no} 恒 null ⇒
+     * 裁床屏上「本部位生产信息」没有批号（用户 2026-10-18 逐字「没有批次号工人裁剪哪块布」）。</p>
      */
-    private void stampBatchAssignments(Map<String, Map<String, Object>> specByItemId,
+    void stampBatchAssignments(Map<String, Map<String, Object>> specByItemId,
                                        ProcessingOrder po, Long tenantId) {
         Map<String, StockBatchConsumptionService.BatchAssignment> assignments =
                 batchAssignmentsOf(po, tenantId);
@@ -856,6 +864,12 @@ public class ProductionService {
             // 宽/高：V63 列（下单页必填，issue #4420 起真的会写）
             spec.put("width", item.getWidth());
             spec.put("height", item.getHeight());
+            // 整卷卷数（issue #7523）：`order_items.roll_count` 是列、不在 processing_info 里
+            // （`PositionDetailFields.PROCESSING_INFO_SOURCE_KEYS` 取不到它）⇒ 这里显式补；
+            // 缺值不写（散剪单不渲染该行，不造 0）。
+            if (item.getRollCount() != null) {
+                spec.put("roll_count", item.getRollCount());
+            }
             // 工艺规格：**唯一映射点**（OrderLineCraftFields）—— 不在此另写一份键名翻译
             spec.putAll(OrderLineCraftFields.toSnapshotKeys(item));
             // 算料输出（单一真值 = ai-agent 引擎）：逐字取 processing_info 里已落的值
@@ -1199,6 +1213,9 @@ public class ProductionService {
         Order order = resolveOrder(orderId, tenantId);
         ProcessingOrder po = requireActiveProcessingOrder(order, tenantId);
         ProcessingPositionOperation op = requireActiveOperation(po.getId(), operationId, tenantId);
+        // 🔴 「质检」工序没有报工动作（issue #7186）：判定即报工 —— 先报工会绕过判定，
+        // 并让判定侧的自动报工被「只做未做满的」幂等判据静默跳过（判据唯一实现见 DocumentOperationLinkage）。
+        DocumentOperationLinkage.rejectManualReport(op);
 
         String workType = str(body == null ? null : body.get("work_type"), "normal");
         if (!WORK_TYPES.contains(workType)) {
@@ -1295,6 +1312,53 @@ public class ProductionService {
         // Controller 就 401 了 ⇒ identity 恒非 null。这是「三列由 C 模式预留**转正**为默认路径写入」
         // 的落点（列 V92 已建 ⇒ 不新增迁移）。
         return applyReport(order, po, op, qty, qualifiedQty, workType, identity, tenantId);
+    }
+
+    /**
+     * **单据联动完成一道工序**（发货单 / 质检单，issue #7165）。
+     *
+     * <p>🔴 两条口径（用户 2026-10-17 裁定）：</p>
+     * <ul>
+     *   <li><b>有工人身份</b>（工人端发货 / 工人端质检）⇒ 走既有 {@link #applyReport} ——
+     *       与扫码报工**同一份**记账口径（单价快照 / 完工时刻 / 报工身份 / 旁路账）⇒ 产生计件工资，
+     *       记给该工人；</li>
+     *   <li><b>无工人身份</b>（商家/生产端发货、观星台员工录质检）⇒ 只推进工序
+     *       （CAS + {@code done_at} + 加工单完工判定），**不写 {@code production_work_logs}、不计件**
+     *       —— 「商家端不计件」是裁定，不是漏写。</li>
+     * </ul>
+     *
+     * <p>数量 = 该工序剩余应做（{@code qty - done_qty}），与扫码「做完扫一次」同口径。</p>
+     *
+     * @return 1 = 本次推进；0 = 已做满 / 已被并发推进（幂等空操作）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public int completeByDocument(Order order, ProcessingOrder po, ProcessingPositionOperation op,
+                                  WorkerIdentity identity, Long tenantId) {
+        BigDecimal qty = nz(op.getQty()).subtract(nz(op.getDoneQty()));
+        if (qty.signum() <= 0) {
+            return 0;
+        }
+        if (identity != null) {
+            // 工人端：复用唯一记账口径（计件 / 身份 / 完工判定都在里面，不另写第二份）
+            applyReport(order, po, op, qty, qty, "normal", identity, tenantId);
+            return 1;
+        }
+        // 商家/生产端：只推进工序，不产生任何报工与计件（裁定：商家端不计件）
+        BigDecimal previousDoneQty = nz(op.getDoneQty());
+        String previousStatus = op.getStatus() == null ? "pending" : op.getStatus();
+        BigDecimal doneQty = previousDoneQty.add(qty);
+        int rows = positionOperationMapper.advanceDoneQtyIfUnchanged(
+                op.getId(), tenantId, previousDoneQty, previousStatus, doneQty, OffsetDateTime.now());
+        if (rows == 0) {
+            return 0;
+        }
+        if (isDoneQty(doneQty, op.getQty())) {
+            positionOperationMapper.recordCompletionIfDone(op.getId(), tenantId, OffsetDateTime.now());
+        }
+        if (allInstancesDone(po.getId(), tenantId)) {
+            processingOrderMapper.markCompletedIfActive(po.getId(), tenantId, OffsetDateTime.now());
+        }
+        return 1;
     }
 
     /**
@@ -1555,8 +1619,92 @@ public class ProductionService {
             byId.put(op.getId(), op);
         }
 
-        PieceworkTotals totals = aggregate(listWorkLogs(po.getId(), tenantId), byId::get,
+        return assemblePiecework(listWorkLogs(po.getId(), tenantId), byId::get,
                 windowGroupKeyByItemId(order, tenantId));
+    }
+
+    /**
+     * **批量**计件汇总（issue #7582，报表中心的订单毛利）：SQL 条数与订单数**无关**
+     * （活跃加工单 / 工序实例 / 报工 / 订单明细行各一条），替代原来「每单 5 条」的 N+1。
+     *
+     * <p>🔴 取数变了、**算法没变**：每条单仍走 {@link #assemblePiecework} → {@link #aggregate}
+     * 这唯一一份聚合 ⇒ 批量路径与 {@link #piecework} 逐分相同。判据 =
+     * {@code backend/admin-api/src/test/java/com/migao/admin/service/OrderMarginBatchTest.java}
+     * 对同一批订单逐键比对「批量 vs 逐单」，任一键不等即红。</p>
+     *
+     * @param orders 调用方已查出的订单（本方法**不回查**订单 —— 单条路径在这里还要多一条）
+     * @return 订单 id → 与 {@link #piecework} 同形状的聚合；没有活跃加工单的单是空态（键齐全）
+     */
+    public Map<String, Map<String, Object>> pieceworkByOrders(List<Order> orders, Long tenantId) {
+        Map<String, Map<String, Object>> byOrderId = new HashMap<>();
+        if (orders == null || orders.isEmpty()) {
+            return byOrderId;
+        }
+        List<String> orderIds = new ArrayList<>(orders.size());
+        for (Order order : orders) {
+            orderIds.add(order.getId());
+            byOrderId.put(order.getId(), emptyPiecework());
+        }
+        // ① 活跃加工单：口径与 selectActiveByOrderId 逐字相同（非取消态 + 未软删 + 同租户）
+        Map<String, ProcessingOrder> poByOrderId = new HashMap<>();
+        for (ProcessingOrder po : processingOrderMapper.selectActiveByOrderIds(orderIds, tenantId)) {
+            // 同一订单理论上只有一条活跃加工单（唯一键）⇒ putIfAbsent = 单条版 LIMIT 1 的同解
+            poByOrderId.putIfAbsent(po.getOrderId(), po);
+        }
+        if (poByOrderId.isEmpty()) {
+            return byOrderId;
+        }
+        List<String> poIds = new ArrayList<>(poByOrderId.size());
+        for (ProcessingOrder po : poByOrderId.values()) {
+            poIds.add(po.getId());
+        }
+        // ② 工序实例 ③ 报工（按加工单分桶；排序与 listWorkLogs 的 created_at asc 一致 ⇒ 逐键可对）
+        Map<String, List<ProcessingPositionOperation>> opsByPo = new HashMap<>();
+        for (ProcessingPositionOperation op : positionOperationMapper.selectList(
+                new LambdaQueryWrapper<ProcessingPositionOperation>()
+                        .in(ProcessingPositionOperation::getProcessingOrderId, poIds)
+                        .eq(ProcessingPositionOperation::getTenantId, tenantId)
+                        .eq(ProcessingPositionOperation::getDeleted, 0))) {
+            opsByPo.computeIfAbsent(op.getProcessingOrderId(), k -> new ArrayList<>()).add(op);
+        }
+        Map<String, List<ProductionWorkLog>> logsByPo = new HashMap<>();
+        for (ProductionWorkLog log : list(new LambdaQueryWrapper<ProductionWorkLog>()
+                .in(ProductionWorkLog::getProcessingOrderId, poIds)
+                .eq(ProductionWorkLog::getTenantId, tenantId)
+                .eq(ProductionWorkLog::getDeleted, 0)
+                .orderByAsc(ProductionWorkLog::getCreatedAt))) {
+            logsByPo.computeIfAbsent(log.getProcessingOrderId(), k -> new ArrayList<>()).add(log);
+        }
+        // ④ 订单明细行（樘窗组键来源）：按 order_id 分桶后各自 windowGroupKeys —— 与单条路径同一份映射
+        Map<String, List<OrderItem>> itemsByOrderId = new HashMap<>();
+        for (OrderItem item : orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
+                .in(OrderItem::getOrderId, orderIds)
+                .eq(OrderItem::getTenantId, tenantId)
+                .eq(OrderItem::getDeleted, 0))) {
+            itemsByOrderId.computeIfAbsent(item.getOrderId(), k -> new ArrayList<>()).add(item);
+        }
+        for (Order order : orders) {
+            ProcessingOrder po = poByOrderId.get(order.getId());
+            if (po == null) {
+                continue;
+            }
+            Map<String, ProcessingPositionOperation> byId = new HashMap<>();
+            for (ProcessingPositionOperation op : opsByPo.getOrDefault(po.getId(), List.of())) {
+                byId.put(op.getId(), op);
+            }
+            byOrderId.put(order.getId(), assemblePiecework(
+                    logsByPo.getOrDefault(po.getId(), List.of()), byId::get,
+                    windowGroupKeys(itemsByOrderId.getOrDefault(order.getId(), List.of()))));
+        }
+        return byOrderId;
+    }
+
+    /** 计件汇总的**唯一装配处**：单条 {@link #piecework} 与批量 {@link #pieceworkByOrders} 共用。 */
+    private Map<String, Object> assemblePiecework(
+            List<ProductionWorkLog> logs,
+            java.util.function.Function<String, ProcessingPositionOperation> operationLookup,
+            Map<String, String> windowGroupKeyByItemId) {
+        PieceworkTotals totals = aggregate(logs, operationLookup, windowGroupKeyByItemId);
 
         Map<String, Object> perWorkerRounded = new LinkedHashMap<>();
         totals.workerAmount().forEach((worker, amount) -> perWorkerRounded.put(worker, money(amount)));
@@ -1603,8 +1751,9 @@ public class ProductionService {
             wrapper.eq("worker_name", workerName.trim());
         }
 
-        Map<String, ProcessingPositionOperation> instancesById = activeOperationsById(tenantId);
         List<ProductionWorkLog> logs = list(wrapper);
+        Map<String, ProcessingPositionOperation> instancesById =
+                activeOperationsById(tenantId, processingOrderIdsOf(logs));
         PieceworkTotals totals = aggregate(logs, instancesById::get,
                 windowGroupKeyByItemId(logs, instancesById, tenantId));
 
@@ -1935,12 +2084,25 @@ public class ProductionService {
      * <p>判据与 {@link #listOperations}（per-order）一致 = {@code tenant_id + deleted=0}：
      * 若改用 {@code selectById} 逐条查，已软删实例会被算进来 ⇒ 同一笔报工在报表里计价、
      * 在 per-order 里不计价（两套端点数值不等，正是 #4205 验收判据要防的漂移）。</p>
+     *
+     * <p>🔴 **必须按加工单收窄**（2026-10-20 索引审查）：旧实现只带 {@code tenant_id + deleted=0}，
+     * 无加工单、无期间、无 LIMIT ⇒ 每次打开计件页都把**本租户全部工序实例**
+     * （≈ 加工单 × 部位 × 工序）拉进 JVM，成本随租户历史线性增长。
+     * 调用方拿到的报工行自带 {@code processing_order_id} ⇒ 由它反推加工单集合，
+     * 把扫描面收窄到**这一批报工真正用到的那几张单**。聚合取值口径不变（仍按 {@code instancesById::get}）。</p>
      */
-    private Map<String, ProcessingPositionOperation> activeOperationsById(Long tenantId) {
+    private Map<String, ProcessingPositionOperation> activeOperationsById(Long tenantId,
+                                                                        Set<String> processingOrderIds) {
+        if (processingOrderIds == null || processingOrderIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
         List<ProcessingPositionOperation> rows = positionOperationMapper.selectList(
-                new LambdaQueryWrapper<ProcessingPositionOperation>()
-                        .eq(ProcessingPositionOperation::getTenantId, tenantId)
-                        .eq(ProcessingPositionOperation::getDeleted, 0));
+                // 字符串列名（非 Lambda）：与上方期间报表同款 —— 收窄谓词要能被 Standalone 单测
+                // 取到 SQL 段（Lambda 列引用需要 MyBatis-Plus 的 lambda cache，纯单测里取不到）。
+                new QueryWrapper<ProcessingPositionOperation>()
+                        .eq("tenant_id", tenantId)
+                        .eq("deleted", 0)
+                        .in("processing_order_id", processingOrderIds));
         Map<String, ProcessingPositionOperation> byId = new HashMap<>();
         if (rows != null) {
             for (ProcessingPositionOperation op : rows) {
@@ -1948,6 +2110,17 @@ public class ProductionService {
             }
         }
         return byId;
+    }
+
+    /** 本批报工涉及的加工单 id 集合（去重、保序、跳过 NULL）—— 供 {@link #activeOperationsById} 收窄扫描面。 */
+    private static Set<String> processingOrderIdsOf(List<ProductionWorkLog> logs) {
+        if (logs == null || logs.isEmpty()) {
+            return Collections.emptySet();
+        }
+        return logs.stream()
+                .map(ProductionWorkLog::getProcessingOrderId)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     /**
@@ -2047,8 +2220,9 @@ public class ProductionService {
                 .lt("work_date", next.atDay(1))
                 .orderByAsc("work_date");
 
-        Map<String, ProcessingPositionOperation> instancesById = activeOperationsById(tenantId);
         List<ProductionWorkLog> logs = list(wrapper);
+        Map<String, ProcessingPositionOperation> instancesById =
+                activeOperationsById(tenantId, processingOrderIdsOf(logs));
         PieceworkTotals totals = aggregate(logs, instancesById::get,
                 windowGroupKeyByItemId(logs, instancesById, tenantId));
 
@@ -2220,7 +2394,8 @@ public class ProductionService {
                                                      Map<String, List<String>> workersByOperation,
                                                      Map<String, Map<String, Object>> specByItemId,
                                                      Map<String, String> windowGroupKeyByItemId,
-                                                     Map<String, ProcessingSetPartToken> partTokensByItemId) {
+                                                     Map<String, ProcessingSetPartToken> partTokensByItemId,
+                                                     Map<String, QtyByType> qtyByOp) {
         Map<String, List<Map<String, Object>>> grouped = new LinkedHashMap<>();
         Map<String, ProcessingPositionOperation> headByKey = new LinkedHashMap<>();
         Set<String> seen = new HashSet<>();
@@ -2231,7 +2406,8 @@ public class ProductionService {
             seen.add(key);
             headByKey.putIfAbsent(key, op);
             grouped.computeIfAbsent(key, k -> new ArrayList<>())
-                    .add(operationView(op, workersByOperation.getOrDefault(op.getId(), List.of())));
+                    .add(operationView(op, workersByOperation.getOrDefault(op.getId(), List.of()),
+                            qtyByOp.get(op.getId())));
         }
         List<Map<String, Object>> positions = new ArrayList<>();
         for (String key : seen) {
@@ -2344,7 +2520,43 @@ public class ProductionService {
         return result;
     }
 
-    private Map<String, Object> operationView(ProcessingPositionOperation op, List<String> workers) {
+    /**
+     * 报工三态数量（**唯一一份**规则）：合格 = {@code work_type='normal'} 的**合格数**；
+     * 返工 / 报废 = 该笔的**报工数量**。
+     *
+     * <p>与 {@code worklog()} 读面的 {@code qualified_qty} / {@code rework_qty} / {@code scrap_qty}
+     * **同一口径**（两处都只读 {@code production_work_logs}、不折算、不进计件 —— 返工/报废不计件是
+     * 报工侧既有口径，本单一个字没改）。键 = 工序实例 id；无报工 ⇒ 该键缺席，消费方按 0 读
+     *（「没有这一笔」本身就是事实）。</p>
+     */
+    private Map<String, QtyByType> qtyByOperation(List<ProductionWorkLog> logs) {
+        Map<String, QtyByType> out = new HashMap<>();
+        for (ProductionWorkLog log : logs) {
+            if (log.getOperationId() == null) {
+                continue;
+            }
+            QtyByType qty = out.computeIfAbsent(log.getOperationId(), k -> new QtyByType());
+            String type = log.getWorkType();
+            if ("normal".equals(type)) {
+                qty.qualified = qty.qualified.add(nz(log.getQualifiedQty()));
+            } else if ("rework".equals(type)) {
+                qty.rework = qty.rework.add(nz(log.getQty()));
+            } else if ("scrap".equals(type)) {
+                qty.scrap = qty.scrap.add(nz(log.getQty()));
+            }
+        }
+        return out;
+    }
+
+    /** 逐工序的三态数量累加器（可变；只在本类内存归集里流转，不上读面）。 */
+    private static final class QtyByType {
+        private BigDecimal qualified = BigDecimal.ZERO;
+        private BigDecimal rework = BigDecimal.ZERO;
+        private BigDecimal scrap = BigDecimal.ZERO;
+    }
+
+    private Map<String, Object> operationView(ProcessingPositionOperation op, List<String> workers,
+                                              QtyByType qty) {
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("id", op.getId());
         view.put("seq", op.getSeq());
@@ -2371,6 +2583,13 @@ public class ProductionService {
         view.put("is_start_marker", Boolean.TRUE.equals(op.getIsStartMarker()));
         view.put("status", op.getStatus() == null ? "pending" : op.getStatus());
         view.put("done_qty", nz(op.getDoneQty()));
+        // 报工三态数量（issue #7140，**只加不改**）：合格 / 返工 / 报废。
+        // 🔴 返工 / 报废**既不推进进度也不计件**（既有口径，一字未改）—— 但它们是**质量读数**：
+        // 此前只有米宝答得出（agent 的 worklog 读面），商家在观星台的生产明细上**看不到**。
+        // 缺报工 ⇒ 0（「没有这一笔」是真事实，与本面 `done_qty` 的既有读法一致）。
+        view.put("qualified_qty", qty == null ? BigDecimal.ZERO : qty.qualified);
+        view.put("rework_qty", qty == null ? BigDecimal.ZERO : qty.rework);
+        view.put("scrap_qty", qty == null ? BigDecimal.ZERO : qty.scrap);
         // 追加键（issue #4309）：既有键名/含义/顺序一字不改
         view.put("workers", workers);
         return view;

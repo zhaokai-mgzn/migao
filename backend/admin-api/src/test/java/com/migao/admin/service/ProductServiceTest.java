@@ -82,6 +82,15 @@ class ProductServiceTest {
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, ""), ProductSku.class);
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, ""), Category.class);
 
+        // 🔴 issue #6961：本类覆盖的写面已改 —— 状态迁移走 CAS（`updateStatusIfFrom`，按受影响行数判赢家）、
+        // 改品走「只写自己负责的列」（`update(null, wrapper)`）。两条都默认返回 1（= 抢到了/写成功），
+        // 否则每个既有用例都会在「CAS 0 行 ⇒ 409」上失败。失败分支由各自的用例显式覆盖。
+        lenient().when(productMapper.updateStatusIfFrom(
+                        any(), any(), any(), anyBoolean(), any(), any(), any()))
+                .thenReturn(1);
+        lenient().when(productMapper.update(isNull(), any(com.baomidou.mybatisplus.core.conditions.Wrapper.class)))
+                .thenReturn(1);
+
         testCategory = Category.builder()
                 .id("cat-001")
                 .tenantId(1L)
@@ -101,6 +110,22 @@ class ProductServiceTest {
                 .status("on_sale")
                 .build();
     }
+
+    /**
+     * 抓「改品只写自己负责的列」的那次写（issue #6961 的写面：`update(null, wrapper)`）。
+     *
+     * <p>修前是整实体 `updateById(product)`，断言直接读实体；现在列清单由 wrapper 决定
+     * ⇒ 用 `sqlSet` 判「写了哪几列」、用参数值判「写进去的值对不对」，
+     * **status / tenant_id / deleted 不得出现在列清单里**（那是并发行被回滚的形态）。</p>
+     */
+    @SuppressWarnings("unchecked")
+    private com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<Product> captureOwnedColumnsWrite() {
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.Wrapper> wc =
+                ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.Wrapper.class);
+        verify(productMapper).update(isNull(), wc.capture());
+        return (com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<Product>) wc.getValue();
+    }
+
 
     // ======================== 分页查询测试 ========================
 
@@ -446,7 +471,6 @@ class ProductServiceTest {
 
         when(productMapper.selectById("prod-001")).thenReturn(testProduct);
         when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
-        when(productMapper.updateById(any(Product.class))).thenReturn(1);
 
         // getProductById 调用
         Product updatedProduct = Product.builder()
@@ -463,7 +487,11 @@ class ProductServiceTest {
 
         // Then
         assertThat(result).isNotNull();
-        verify(productMapper).updateById(any(Product.class));
+        // 🔴 issue #6961：改品只写自己负责的列（不再整实体回写）
+        com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<Product> owned =
+                captureOwnedColumnsWrite();
+        assertThat(owned.getSqlSet()).contains("name");
+        assertThat(owned.getSqlSet()).doesNotContain("status");
     }
 
     @Test
@@ -478,7 +506,6 @@ class ProductServiceTest {
 
         when(productMapper.selectById("prod-001")).thenReturn(testProduct);
         when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
-        when(productMapper.updateById(any(Product.class))).thenReturn(1);
 
         // getProductById 内部会再读一次商品（同 updateProduct_Success 的口径）
         Product updatedProduct = Product.builder()
@@ -575,7 +602,6 @@ class ProductServiceTest {
         request.setImages(List.of("https://img.example.com/new1.jpg", "https://img.example.com/new2.jpg"));
 
         when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
-        when(productMapper.updateById(any(Product.class))).thenReturn(1);
         Product updatedProduct = Product.builder()
                 .id("prod-001")
                 .name("遮光窗帘")
@@ -592,9 +618,10 @@ class ProductServiceTest {
         ProductResponse result = productService.updateProduct("prod-001", request, 1L);
 
         // Then：落库实体与返回响应的主图都等于新首图
-        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
-        verify(productMapper).updateById(captor.capture());
-        assertThat(captor.getValue().getMainImage()).isEqualTo("https://img.example.com/new1.jpg");
+        com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<Product> owned =
+                captureOwnedColumnsWrite();
+        assertThat(owned.getSqlSet()).contains("main_image");
+        assertThat(owned.getParamNameValuePairs().values()).contains("https://img.example.com/new1.jpg");
         assertThat(result.getMainImage()).isEqualTo("https://img.example.com/new1.jpg");
     }
 
@@ -609,7 +636,6 @@ class ProductServiceTest {
         request.setImages(List.of("https://img.example.com/new1.jpg"));
 
         when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
-        when(productMapper.updateById(any(Product.class))).thenReturn(1);
         Product updatedProduct = Product.builder()
                 .id("prod-001")
                 .name("遮光窗帘")
@@ -625,9 +651,10 @@ class ProductServiceTest {
         productService.updateProduct("prod-001", request, 1L);
 
         // Then：原主图保留，不被新首图覆盖
-        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
-        verify(productMapper).updateById(captor.capture());
-        assertThat(captor.getValue().getMainImage()).isEqualTo("https://example.com/img.jpg");
+        com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<Product> owned =
+                captureOwnedColumnsWrite();
+        assertThat(owned.getSqlSet()).contains("main_image");
+        assertThat(owned.getParamNameValuePairs().values()).contains("https://example.com/img.jpg");
     }
 
     @Test
@@ -642,7 +669,6 @@ class ProductServiceTest {
         request.setImages(List.of("https://img.example.com/new1.jpg"));
 
         when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
-        when(productMapper.updateById(any(Product.class))).thenReturn(1);
         Product updatedProduct = Product.builder()
                 .id("prod-001")
                 .name("遮光窗帘")
@@ -657,9 +683,10 @@ class ProductServiceTest {
         productService.updateProduct("prod-001", request, 1L);
 
         // Then：显式 mainImage 胜出
-        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
-        verify(productMapper).updateById(captor.capture());
-        assertThat(captor.getValue().getMainImage()).isEqualTo("https://img.example.com/explicit.jpg");
+        com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<Product> owned =
+                captureOwnedColumnsWrite();
+        assertThat(owned.getSqlSet()).contains("main_image");
+        assertThat(owned.getParamNameValuePairs().values()).contains("https://img.example.com/explicit.jpg");
     }
 
     @Test
@@ -795,7 +822,6 @@ class ProductServiceTest {
 
         when(productMapper.selectById("prod-001")).thenReturn(testProduct).thenReturn(testProduct);
         when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
-        when(productMapper.updateById(any(Product.class))).thenReturn(1);
         when(productColorMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(existingColor));
         when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(existingSku));
         when(productColorMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(1L);
@@ -833,7 +859,6 @@ class ProductServiceTest {
 
         when(productMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testProduct);
         when(productMapper.selectById("prod-001")).thenReturn(testProduct);
-        when(productMapper.updateById(any(Product.class))).thenReturn(1);
         when(productColorMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(existingColor));
         when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(existingSku));
         when(productColorMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(1L);
@@ -897,7 +922,6 @@ class ProductServiceTest {
 
         when(productMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testProduct);
         when(productMapper.selectById("prod-001")).thenReturn(testProduct);
-        when(productMapper.updateById(any(Product.class))).thenReturn(1);
         when(productColorMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(existingColor));
         when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(legacySku));
         when(productColorMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(1L);
@@ -918,13 +942,13 @@ class ProductServiceTest {
     void updateProductStatus_OffShelf() {
         // Given: 商品当前状态为 on_sale
         when(productMapper.selectById("prod-001")).thenReturn(testProduct);
-        when(productMapper.updateById(any(Product.class))).thenReturn(1);
 
         // When: 合法流转 on_sale → off_sale
         productService.updateProductStatus("prod-001", "off_sale", 1L);
 
         // Then
-        verify(productMapper).updateById(argThat((Product p) -> "off_sale".equals(p.getStatus())));
+        verify(productMapper).updateStatusIfFrom(any(), any(), any(), anyBoolean(),
+                argThat((String t) -> "off_sale".equals(t)), any(), any());
     }
 
     @Test
@@ -940,13 +964,13 @@ class ProductServiceTest {
                 .status("off_sale")
                 .build();
         when(productMapper.selectById("prod-002")).thenReturn(offSaleProduct);
-        when(productMapper.updateById(any(Product.class))).thenReturn(1);
 
         // When: 合法流转 off_sale → on_sale
         productService.updateProductStatus("prod-002", "on_sale", 1L);
 
         // Then
-        verify(productMapper).updateById(argThat((Product p) -> "on_sale".equals(p.getStatus())));
+        verify(productMapper).updateStatusIfFrom(any(), any(), any(), anyBoolean(),
+                argThat((String t) -> "on_sale".equals(t)), any(), any());
     }
 
     @Test
@@ -962,13 +986,13 @@ class ProductServiceTest {
                 .status("draft")
                 .build();
         when(productMapper.selectById("prod-003")).thenReturn(draftProduct);
-        when(productMapper.updateById(any(Product.class))).thenReturn(1);
 
         // When: 合法流转 draft → on_sale
         productService.updateProductStatus("prod-003", "on_sale", 1L);
 
         // Then
-        verify(productMapper).updateById(argThat((Product p) -> "on_sale".equals(p.getStatus())));
+        verify(productMapper).updateStatusIfFrom(any(), any(), any(), anyBoolean(),
+                argThat((String t) -> "on_sale".equals(t)), any(), any());
     }
 
     @Test
@@ -1005,7 +1029,6 @@ class ProductServiceTest {
     @DisplayName("上架商品可设为推荐")
     void updateRecommended_OnSaleProduct() {
         when(productMapper.selectById("prod-001")).thenReturn(testProduct);
-        when(productMapper.updateById(any(Product.class))).thenReturn(1);
 
         productService.updateProductRecommended("prod-001", true, 1L);
 
@@ -1023,7 +1046,6 @@ class ProductServiceTest {
                 .recommended(true)
                 .build();
         when(productMapper.selectById("prod-004")).thenReturn(recProduct);
-        when(productMapper.updateById(any(Product.class))).thenReturn(1);
 
         productService.updateProductRecommended("prod-004", false, 1L);
 
@@ -1102,13 +1124,13 @@ class ProductServiceTest {
                 .status("off_sale")
                 .build();
         when(productMapper.selectById("prod-off")).thenReturn(offSaleProduct);
-        when(productMapper.updateById(any(Product.class))).thenReturn(1);
 
         BatchOperationResult result = productService.batchOnShelf(List.of("prod-off"), 1L);
 
         assertThat(result.getSuccess()).isEqualTo(1);
         assertThat(result.getFailed()).isEqualTo(0);
-        verify(productMapper).updateById(argThat((Product p) -> "on_sale".equals(p.getStatus())));
+        verify(productMapper).updateStatusIfFrom(any(), any(), any(), anyBoolean(),
+                argThat((String t) -> "on_sale".equals(t)), any(), any());
     }
 
     @Test
@@ -1135,13 +1157,13 @@ class ProductServiceTest {
     @DisplayName("批量下架 - on_sale 状态可下架")
     void batchOffShelf_AllSuccess() {
         when(productMapper.selectById("prod-001")).thenReturn(testProduct);
-        when(productMapper.updateById(any(Product.class))).thenReturn(1);
 
         BatchOperationResult result = productService.batchOffShelf(List.of("prod-001"), 1L);
 
         assertThat(result.getSuccess()).isEqualTo(1);
         assertThat(result.getFailed()).isEqualTo(0);
-        verify(productMapper).updateById(argThat((Product p) -> "off_sale".equals(p.getStatus())));
+        verify(productMapper).updateStatusIfFrom(any(), any(), any(), anyBoolean(),
+                argThat((String t) -> "off_sale".equals(t)), any(), any());
     }
 
     @Test
@@ -1496,7 +1518,9 @@ class ProductServiceTest {
         request.setName("库存口径测试帘");
         request.setCategoryId("cat-001");
         request.setBasePrice(new BigDecimal("68.00"));
-        request.setStock(BigDecimal.valueOf(999)); // 非权威的请求值：不得成为商品级列的最终值
+        // issue #7597：建品请求里的 stock 与 skus[].stock 都已被忽略 ⇒ 本判据改钉为
+        // 「派生列 = SKU 汇总」这条不变量本身（两边都是 0，且请求值 999 / 30 / 70 一个都不许漏进库）
+        request.setStock(BigDecimal.valueOf(999));
         ProductSkuInput s1 = new ProductSkuInput();
         s1.setDoorWidth("2.8米");
         s1.setStock(BigDecimal.valueOf(30));
@@ -1525,8 +1549,10 @@ class ProductServiceTest {
         // When
         productService.createProduct(request, 1L);
 
-        // Then: 商品级 stock 被回写为 SKU 汇总 100（而非请求值 999）
+        // Then: 商品级 stock = SKU 汇总（issue #7597 后两边都是 0；请求值 999 / 30 / 70 全部被忽略）
         assertThat(insertedSkus).as("应生成 2 个 SKU").hasSize(2);
+        assertThat(insertedSkus).allSatisfy(sku ->
+                assertThat(sku.getStock()).as("建品的 SKU 库存入参必须被忽略").isEqualByComparingTo("0"));
         ArgumentCaptor<Product> updateCaptor = ArgumentCaptor.forClass(Product.class);
         verify(productMapper, atLeastOnce()).updateById(updateCaptor.capture());
         Product synced = updateCaptor.getAllValues().stream()
@@ -1535,7 +1561,7 @@ class ProductServiceTest {
                 .orElseThrow(() -> new AssertionError("SKU 变更后未回写商品级 stock"));
         assertThat(synced.getStock())
                 .as("商品级 stock 必须等于 SKU 汇总（权威）")
-                .isEqualTo(BigDecimal.valueOf(100));
+                .isEqualByComparingTo("0");
     }
 
     @Test
@@ -1697,7 +1723,6 @@ class ProductServiceTest {
     private void stubUpdateWithStoredSku(ProductSku stored) {
         when(productMapper.selectById("prod-001")).thenReturn(testProduct);
         when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
-        when(productMapper.updateById(any(Product.class))).thenReturn(1);
         when(productColorMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(
                 ProductColor.builder().id(42L).tenantId(1L).productId("prod-001").colorName("米白").build()));
         when(productColorMapper.updateById(any(ProductColor.class))).thenReturn(1);
@@ -1886,8 +1911,7 @@ class ProductServiceTest {
         request.setBasePrice(new BigDecimal("399.00"));
 
         when(productMapper.selectById("prod-001")).thenReturn(testProduct);
-        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
-        when(productMapper.updateById(captor.capture())).thenReturn(1);
+        // （写面已改 wrapper，桩由 @BeforeEach 的 lenient 默认桩提供）
         when(productMapper.selectById("prod-001"))
                 .thenReturn(testProduct)
                 .thenReturn(Product.builder().id("prod-001").name("更新后的商品")
@@ -1896,8 +1920,14 @@ class ProductServiceTest {
         // When
         productService.updateProduct("prod-001", request, 1L);
 
-        // Then
-        assertThat(captor.getValue().getCategoryId()).isNull();
+        // Then：空串归一化为 null ⇒ 与 `updateById` 的 NOT_NULL 策略同口径，**该列不进 SET**
+        //（清空分类真正落库需要显式 `set(category_id, null)`，属既有边界：修前整实体回写同样跳过 null，
+        //  本单只做并发收口、不夹带语义变更 —— 见 ProductStatusCasMetaGuardTest 的列清单断言）。
+        com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<Product> owned =
+                captureOwnedColumnsWrite();
+        assertThat(owned.getSqlSet()).doesNotContain("category_id");
+        // 更关键：空串**不得**被当成 '' 写进去（FK 违例的形态）
+        assertThat(owned.getParamNameValuePairs().values()).doesNotContain((Object) "");
         verify(categoryMapper, never()).selectById(any());
     }
 

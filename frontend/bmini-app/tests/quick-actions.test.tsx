@@ -1,4 +1,4 @@
-// case_ids: BM-028
+// case_ids: BM-028, PR-053
 /**
  * B 端「问黄金策」快捷入口组件测试（issue #5747 建，issue #6468 改内容来源）
  *
@@ -111,5 +111,38 @@ describe('QuickActions（B 端六格 · 内容来自服务端单一真值）', (
     expect(code).not.toMatch(/ACTIONS\s*[:=]\s*\[/)
     // emoji 图标字面量 —— 图标同样由服务端下发（旧形态的六条各带一个 emoji）
     expect(code).not.toMatch(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u)
+  })
+})
+
+
+describe('QuickActions 工具类入口（issue #7351：营销海报）', () => {
+  const mockOnAction = jest.fn()
+  const tools = [
+    { id: 'marketing_poster', name: '营销海报', icon: 'image', emoji: '🖼️', prompt: '我要给商品做一张营销海报' },
+  ]
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+  })
+
+  it('六格数量/形态不变，工具入口独立一行', () => {
+    const { container } = render(
+      <QuickActions actions={SERVER_ACTIONS} tools={tools} onAction={mockOnAction} />,
+    )
+    expect(container.querySelectorAll('.quick-actions__item').length).toBe(6)
+    expect(container.querySelectorAll('.quick-actions__tool').length).toBe(1)
+    expect(screen.getByText('营销海报')).toBeTruthy()
+    for (const item of Array.from(container.querySelectorAll('.quick-actions__item'))) {
+      expect(item.className).not.toContain('quick-actions__item--wide')
+    }
+  })
+
+  it('点工具入口发送服务端下发的 prompt', () => {
+    const { container } = render(
+      <QuickActions actions={SERVER_ACTIONS} tools={tools} onAction={mockOnAction} />,
+    )
+    const tool = container.querySelector('.quick-actions__tool') as HTMLElement
+    fireEvent.click(tool)
+    expect(mockOnAction).toHaveBeenCalledWith('我要给商品做一张营销海报')
   })
 })

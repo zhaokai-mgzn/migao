@@ -740,8 +740,8 @@ public class RemnantService {
      * 分母为零 ⇒ 比率回 {@code null}（**不是 0** —— 「算不出来」与「是零」必须能分开）。</p>
      */
     public RemnantViews.Summary summary(Long tenantId) {
-        List<FabricRemnant> all = remnantMapper.selectList(new LambdaQueryWrapper<FabricRemnant>()
-                .eq(FabricRemnant::getTenantId, tenantId));
+        // issue #7408：聚合下推到 SQL（改前是 `selectList(tenant_id = ?)` 全量读进 JVM 再 switch 累加）。
+        // 口径逐项不变 —— 终身计数/米数/金额，未知状态照旧忽略（`default -> {}`）。
         int available = 0;
         int used = 0;
         int scrapped = 0;
@@ -750,24 +750,25 @@ public class RemnantService {
         BigDecimal recoveredMeters = BigDecimal.ZERO;
         BigDecimal scrappedMeters = BigDecimal.ZERO;
         BigDecimal recoveredAmount = BigDecimal.ZERO;
-        for (FabricRemnant row : all) {
-            BigDecimal meters = row.getLengthM() == null ? BigDecimal.ZERO : row.getLengthM();
+        for (FabricRemnantMapper.RemnantStatusSum row : remnantMapper.sumByStatus(tenantId)) {
+            BigDecimal meters = row.getMeters() == null ? BigDecimal.ZERO : row.getMeters();
+            long count = row.getCnt() == null ? 0L : row.getCnt();
             switch (row.getStatus() == null ? "" : row.getStatus()) {
                 case FabricRemnant.STATUS_AVAILABLE -> {
-                    available++;
+                    available += (int) count;
                     availableMeters = availableMeters.add(meters);
                 }
                 case FabricRemnant.STATUS_USED -> {
-                    used++;
+                    used += (int) count;
                     recoveredMeters = recoveredMeters.add(meters);
                     recoveredAmount = recoveredAmount.add(
                             row.getRecoveredAmount() == null ? BigDecimal.ZERO : row.getRecoveredAmount());
                 }
                 case FabricRemnant.STATUS_SCRAPPED -> {
-                    scrapped++;
+                    scrapped += (int) count;
                     scrappedMeters = scrappedMeters.add(meters);
                 }
-                case FabricRemnant.STATUS_CUSTOMER_TAKEN -> customerTaken++;
+                case FabricRemnant.STATUS_CUSTOMER_TAKEN -> customerTaken += (int) count;
                 default -> { /* 未知状态由 DB 约束挡在写面；读面不猜 */ }
             }
         }
@@ -785,15 +786,9 @@ public class RemnantService {
      * ⇒ 分母是「**已知均价**那部分领料成本」，照实登记在字段名 {@code issuedCostTotal} 上。</p>
      */
     private BigDecimal issuedCostTotal(Long tenantId) {
-        BigDecimal total = BigDecimal.ZERO;
-        for (StockBatchConsumption row : consumptionMapper.selectList(
-                new LambdaQueryWrapper<StockBatchConsumption>()
-                        .eq(StockBatchConsumption::getTenantId, tenantId)
-                        .isNotNull(StockBatchConsumption::getUnitCost)
-                        .isNotNull(StockBatchConsumption::getPlannedMeters))) {
-            total = total.add(row.getPlannedMeters().abs().multiply(row.getUnitCost()));
-        }
-        return total;
+        // issue #7408：同上，改为标量聚合（空表回 0；`unit_cost` / `planned_meters` 为 NULL 的行不参与）。
+        BigDecimal total = consumptionMapper.sumIssuedCost(tenantId);
+        return total == null ? BigDecimal.ZERO : total;
     }
 
     /** 比率（分母 ≤ 0 ⇒ {@code null}：算不出来 ≠ 是零）；保留 4 位。 */

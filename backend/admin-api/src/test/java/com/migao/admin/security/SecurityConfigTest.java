@@ -148,6 +148,27 @@ class SecurityConfigTest {
     // ⇒ 不顶替整个上下文起不来 —— 本族坑第 4 次，判据 = tests/unit_ci_workflows/test_security_config_mapper_mocks.py）。
     @MockBean
     private com.migao.admin.mapper.QualityCheckMapper qualityCheckMapper;
+    // 供应商主数据（issue #7369，V170）：同为 MyBatis-Plus 自动扫描到的 Mapper（无 sqlSessionFactory
+    // ⇒ 不顶替整个上下文起不来 —— 本族坑第 5 次，判据 = tests/unit_ci_workflows/test_security_config_mapper_mocks.py）。
+    @MockBean
+    private com.migao.admin.mapper.SupplierMapper supplierMapper;
+
+    // issue #7369 段 3-B：付款单与其冲抵明细（Spring 上下文装配需要，同 mapper 同款）
+    @MockBean
+    private com.migao.admin.mapper.SupplierPaymentMapper supplierPaymentMapper;
+
+    @MockBean
+    private com.migao.admin.mapper.SupplierPaymentAllocationMapper supplierPaymentAllocationMapper;
+
+    // issue #7369 段 4：采购单三表（Spring 上下文装配需要）
+    @MockBean
+    private com.migao.admin.mapper.PurchaseOrderMapper purchaseOrderMapper;
+
+    @MockBean
+    private com.migao.admin.mapper.PurchaseOrderItemMapper purchaseOrderItemMapper;
+
+    @MockBean
+    private com.migao.admin.mapper.PurchaseOrderReceiptMapper purchaseOrderReceiptMapper;
     @MockBean
     private com.migao.admin.service.AfterSalesTicketService afterSalesTicketService;
 
@@ -518,6 +539,72 @@ class SecurityConfigTest {
     private com.migao.admin.mapper.PlatformAdminMapper platformAdminMapper;
     @MockBean
     private com.migao.admin.mapper.FinanceTransactionMapper financeTransactionMapper;
+
+    // 客户收款核销（issue #7370 段 3）：`ReceiptAllocationService` 的构造依赖 ⇒ 本上下文必须能装配它。
+    // Mapper **与** Service 都要 mock（同上方计件结算单那条的实测口径）：本上下文
+    // `@EnableAutoConfiguration(exclude = {MybatisPlusAutoConfiguration})` ⇒ 真 Mapper 建不出来
+    // （`Property 'sqlSessionFactory' or 'sqlSessionTemplate' are required`）⇒ 整个上下文起不来、
+    // 本类全部判据变 error（不是一条红）。
+    @MockBean
+    private com.migao.admin.mapper.ReceiptAllocationMapper receiptAllocationMapper;
+    @MockBean
+    private com.migao.admin.service.ReceiptAllocationService receiptAllocationService;
+
+    // 订单毛利（issue #7371 段 2）：它现在依赖 `ProductionService` ⇒ 在这个「排除 MyBatis 自动配置」的
+    // 上下文里，真身会把整条计件聚合链拉起来（判据要的是鉴权面，不是车间聚合）⇒ 按本文件既有口径 mock。
+    @MockBean
+    private com.migao.admin.service.OrderMarginService orderMarginService;
+
+    // 报价（issue #7375 段 1）：`PricingController` 的构造依赖 ⇒ 本上下文必须能装配它。
+    // 真身依赖 `JdbcTemplate` + 两个 Mapper（本上下文排除 MyBatis 自动配置）⇒ 按既有口径 mock。
+    @MockBean
+    private com.migao.admin.service.PriceService priceService;
+
+    // 价格本录入（issue #7375 段 3）：`PricingController` 的新依赖 ⇒ 本上下文要能装配。
+    @MockBean
+    private com.migao.admin.service.PriceBookService priceBookService;
+
+    // 报表中心（issue #7376 段 1）：`ReportController` 的构造依赖 ⇒ 本上下文要能装配。
+    @MockBean
+    private com.migao.admin.service.ReportService reportService;
+
+    // 返工单（issue #7377 段 2）：`ReworkOrderController` 的构造依赖 + 新 Mapper（本上下文排除 MyBatis 自动配置）。
+    @MockBean
+    private com.migao.admin.service.ReworkOrderService reworkOrderService;
+    @MockBean
+    private com.migao.admin.mapper.ReworkOrderMapper reworkOrderMapper;
+
+    // 具名审批（issue #7374 段 1）：`ApprovalController` 的构造依赖 + `CustomerService`/`OrderService`
+    // 的可空注入点 ⇒ 本上下文要能装配（真身只依赖一个 Mapper，仍按既有口径 mock）。
+    @MockBean
+    private com.migao.admin.service.ApprovalService approvalService;
+    @MockBean
+    private com.migao.admin.mapper.ApprovalMapper approvalMapper;
+
+    // 多仓与调拨（issue #7373 段 1）：`WarehouseController` 的构造依赖 ⇒ 本上下文要能装配。
+    @MockBean
+    private com.migao.admin.service.WarehouseService warehouseService;
+    @MockBean
+    private com.migao.admin.service.StockTransferService stockTransferService;
+
+    // 盘点（issue #7373 段 2）：`StocktakeController` 的构造依赖 + 两个 Mapper 都要 mock ——
+    // 本上下文排除 MyBatis 自动配置，真 Mapper 建不出来（`sqlSessionFactory` 缺失）⇒ 59 条判据全 error。
+    @MockBean
+    private com.migao.admin.service.StocktakeService stocktakeService;
+    @MockBean
+    private com.migao.admin.mapper.StocktakeMapper stocktakeMapper;
+    @MockBean
+    private com.migao.admin.mapper.StocktakeItemMapper stocktakeItemMapper;
+
+    // 三个 Mapper 也要 mock：本上下文排除了 MyBatis 自动配置，真 Mapper 建不出来
+    // （`Property 'sqlSessionFactory' or 'sqlSessionTemplate' are required`）⇒ 整个上下文起不来、
+    // 59 条判据全 error（不是一条红）。
+    @MockBean
+    private com.migao.admin.mapper.WarehouseMapper warehouseMapper;
+    @MockBean
+    private com.migao.admin.mapper.StockTransferMapper stockTransferMapper;
+    @MockBean
+    private com.migao.admin.mapper.StockTransferItemMapper stockTransferItemMapper;
 
     @MockBean
     private com.migao.admin.service.FinanceService financeService;

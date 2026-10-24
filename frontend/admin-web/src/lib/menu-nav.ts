@@ -8,12 +8,15 @@
 // 抽成纯函数后，判据可以直接对**全部菜单项 × 全部路由**跑（见 `tests/unit/lib/menu-nav.test.ts`）。
 //
 // 行为**逐字沿用**重设计前的实现（不是重写口径）：
-//   · 过滤三条件 = `adminOnly` ∧ `briefingToggle` ∧ `permissionCode`；
+//   · 过滤两条件 = `adminOnly` ∧ `permissionCode`
+//     （2026-10-17 issue #7087 撤掉第三条 `briefingToggle` —— 「每日简报」菜单项已删除，
+//      企业开关从此只驱动**经营看板上的结论卡**，不再参与菜单显隐）；
 //   · 高亮 = **最长前缀胜出**（`/dashboard` 同时命中 `/` 与 `/dashboard`）；
 //   · 空组剔除（组内一项不剩 ⇒ 整组不渲染）。
 
 import {
   menuGroups,
+  standaloneHeadItems,
   standaloneTopItems,
   standaloneItems,
   STANDALONE_TOP_AFTER_GROUP_KEY,
@@ -24,8 +27,6 @@ import {
 export interface MenuFilterOptions {
   permissions: string[]
   roles?: string[]
-  /** 智能每日经营简报的企业开关（issue #3468）；未传 = 关（与重设计前 Sidebar 的初值一致） */
-  briefingEnabled?: boolean
 }
 
 /** 权限判定：无码 = 全员可见；`*` = 超管通配 */
@@ -35,10 +36,9 @@ export function hasPermission(code: string | undefined, permissions: string[]): 
   return permissions.includes(code)
 }
 
-/** 单个菜单项是否可见（三条件） */
+/** 单个菜单项是否可见（两条件） */
 export function isItemVisible(item: MenuItem, opts: MenuFilterOptions): boolean {
   if (item.adminOnly && !(opts.roles || []).includes('admin')) return false
-  if (item.briefingToggle && !opts.briefingEnabled) return false
   return hasPermission(item.permissionCode, opts.permissions)
 }
 
@@ -236,7 +236,7 @@ export function resolveActivePath(paths: string[], pathname: string | null): str
  * 🔴 **必须与 `resolveActivePath` 同源**：先按「最长前缀」定出**唯一激活项**，再取它所属的组。
  * 曾经的实现是「取**首个**含命中项的组」，被实测证伪（issue #5271 的自动验收抓出）：
  * `/production/remnants`（余料台账，属**仓储与物料**组）会被**生产管理**组的 `/production`
- * （生产看板）**前缀命中**，而生产管理组在数组里更靠前 ⇒ 展开的是生产管理组、仓储与物料组收起，
+ * （作业看板）**前缀命中**，而生产管理组在数组里更靠前 ⇒ 展开的是生产管理组、仓储与物料组收起，
  * **当前项被高亮却看不见**（违反交互契约②）。穷举 20 项实测：只有 `/production/remnants`
  * 与 `/production/saving-board` 两条命中该形态（`/production/processing-fees` 是同族但属重定向页）。
  */
@@ -296,29 +296,42 @@ export function splitGroupsAtTopItemSlot(
 }
 
 /**
- * 拍平（命令面板 ⌘K 用）：**head 组 → 一级项 → tail 组 → 尾部独立项**。
+ * 拍平（命令面板 ⌘K 用）：**最前席位 → head 组 → 尾席位一级项 → tail 组 → 尾部独立项**。
  *
  * 顺序 == 侧边栏渲染顺序 ⇒ ⌘K 空查询时的「全量索引」与侧边栏逐项对齐（不同源会让用户
  * 在面板里看到的顺序与菜单对不上）。
  *
- * 两级独立项：`standaloneTop` = 一级项（如「商品管理」，用户 2026-10-06 裁定起排在**所有分组之后**；
- * ⚠️ 席位组不可见时**也不跳到最前**，而是挂在「当前可见分组」的末尾 —— 见 `splitGroupsAtTopItemSlot`）；
- * `standaloneBottom` = 尾部独立项（如「通知中心」，渲染在所有分组之后）。
- * 两者都**不是**分组，`groupKey`/`groupName` 留空（面板上不显示「组名」标签）。
+ * 三个独立项参数（都不是分组，`groupKey`/`groupName` 留空 ⇒ 面板上不显示「组名」标签）：
+ *   · `standaloneHead`（2026-10-17 issue #7087 新增）= **最前席位**（如「经营看板」），渲染在
+ *     **所有分组之前** —— 登录落点 = 本函数的第 1 项（`landingPath`），故它的位置决定「一进来看到哪一页」；
+ *   · `standaloneTop` = **尾席位**一级项（如「商品管理」「企业基础设置」），排在
+ *     `topSlotKey` 那个组之后；⚠️ 席位组不可见时**也不跳到最前**，而是挂在「当前可见分组」的末尾
+ *     —— 见 `splitGroupsAtTopItemSlot`；
+ *   · `standaloneBottom` = 尾部独立项（如「通知中心」），渲染在所有分组之后。
  *
+ * ⚠️ 三个独立项参数**都是必填**（不设默认值）：漏传 ⇒ `admin-web tsc` 当场报错。
+ *    这是**有意**的 —— 默认成空表会让「⌘K 里搜不到经营看板」这种漂移**静默**通过
+ *    （菜单项漏进索引 = 用户搜不到，没有任何东西会红）。
  * ⚠️ `topSlotKey` 的默认值取自 `@/config/menu` 的**同一个常量**（三源表达同一位置，不许各写一份）。
  */
 export function flattenMenu(
   groups: MenuGroup[],
-  standaloneTop: MenuItem[] = [],
-  standaloneBottom: MenuItem[] = [],
+  standaloneHead: MenuItem[],
+  standaloneTop: MenuItem[],
+  standaloneBottom: MenuItem[],
   topSlotKey: string | null = STANDALONE_TOP_AFTER_GROUP_KEY,
 ): FlatMenuItem[] {
   const { head, tail } = splitGroupsAtTopItemSlot(groups, topSlotKey)
   const fromGroups = (gs: MenuGroup[]) =>
     gs.flatMap((g) => g.children.map((c) => ({ ...c, groupKey: g.key, groupName: g.name })))
   const flat = (items: MenuItem[]) => items.map((c) => ({ ...c, groupKey: '', groupName: '' }))
-  return [...fromGroups(head), ...flat(standaloneTop), ...fromGroups(tail), ...flat(standaloneBottom)]
+  return [
+    ...flat(standaloneHead),
+    ...fromGroups(head),
+    ...flat(standaloneTop),
+    ...fromGroups(tail),
+    ...flat(standaloneBottom),
+  ]
 }
 
 /** 登录落点兜底（issue #6758）：一个可见菜单项都没有 ⇒ 落到这里（见 `landingPath`） */
@@ -348,6 +361,8 @@ export const FALLBACK_LANDING_PATH = '/dashboard'
 export function landingPath(opts: MenuFilterOptions): string {
   const first = flattenMenu(
     visibleMenuGroups(menuGroups, opts),
+    // 最前席位（「经营看板」）：持 `dashboard:view` 时它就是登录落点（用户 2026-10-17 要的形态）
+    filterMenuItems(standaloneHeadItems, opts),
     filterMenuItems(standaloneTopItems, opts),
     filterMenuItems(standaloneItems, opts),
   )[0]

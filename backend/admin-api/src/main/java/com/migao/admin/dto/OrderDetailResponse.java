@@ -2,6 +2,7 @@ package com.migao.admin.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -142,6 +143,40 @@ public class OrderDetailResponse {
     private String createdByName;
 
     /**
+     * **该订单发货前是否有需要报工的作业**（issue #7079 第 5 包）：{@code true} = 含加工项 **或** 有卖布行。
+     *
+     * <p>后端判据的**唯一实现点** = {@code com.migao.admin.service.OrderShipGuard.needsWork}
+     * （发货守卫 {@code assertProcessingCompletedBeforeShip} 与生产待办读的是同一份）——
+     * 本键只是把**同一个答案**交给读面，<b>不是</b>第二份口径。</p>
+     *
+     * <p>🔴 下它的理由（不是「顺手加」）：前端在此之前只有「含加工项」这**单侧**信号
+     * （{@code processingItems} 的长度），于是卖布单在订单详情**没有生成出口**、空态还写着
+     * 「无加工项订单无需加工环节」（对卖布单**不实**），发货页的前置守卫也**完全不拦**
+     * —— 用户填完整张表单才在提交时撞服务端拒绝，而服务端文案说的正是「须先完成出库作业单的裁剪与打包报工」。</p>
+     *
+     * <p>⚠️ 键名**冻结**为 {@code needs_work}：本类已在**读面 JSON 键**类级元守卫
+     * {@code tests/unit_ci_workflows/test_read_face_json_key_guard.py} 的射程内 ⇒ 新键一律显式
+     * {@code @JsonProperty} 的 snake_case，且**同 PR** 登记
+     * {@code tests/unit_ci_workflows/read_face_json_key_ledger.json}（漏一处即判红）。</p>
+     */
+    @JsonProperty("needs_work")
+    private Boolean needsWork;
+
+    /**
+     * **没有作业单时该生成哪一型**（issue #7079 第 5 包）：{@code processing} 加工单 /
+     * {@code outbound} 出库作业单；{@code null}（缺键）= 无需要报工的作业（订单直发）。
+     *
+     * <p>取值常量 = {@code ProcessingOrderService.ORDER_KIND_*}（与 {@code order_kind} 同一份词表，
+     * 本单**不改**它）；判定 = {@code OrderShipGuard.requiredOrderKind}，与生成那一刻落库的
+     * {@code deriveOrderKind} **同源** ⇒ 屏上说的「要生成哪一型」与真生成出来的那一型不会分叉。</p>
+     *
+     * <p>为什么读面要给型而不只给布尔：卖布单与含加工项单的**动作文案不同**
+     * （「生成出库作业单」vs「生成加工单」），前端自己按「有没有加工项」推型 = 第四份口径。</p>
+     */
+    @JsonProperty("work_order_kind")
+    private String workOrderKind;
+
+    /**
      * 订单明细列表
      */
     private List<OrderItemResponse> items;
@@ -160,6 +195,33 @@ public class OrderDetailResponse {
      * 创建时间
      */
     private OffsetDateTime createdAt;
+
+    /**
+     * **收款时刻**（列 {@code orders.paid_at}，V160；issue #7078 起下发）。
+     *
+     * <p>取值与实体同名字段，由 {@code BeanUtils.copyProperties(order, response)} 带出 —— 不另立第二份口径。
+     * {@code null} = 未采集（从未确认收款 / 存量无收款流水）⇒ 屏幕显示「-」，**不猜**。</p>
+     *
+     * <p>🔴 下它的理由（不是"顺手加"）：在这之前详情页读的是**后端从不下发的键**，
+     * 「支付时间」**恒 `-`**，而状态引导第 1 步「已付款 ✓」却是从 {@code status} 推出来的
+     * ⇒ 同屏自相矛盾（#7078 / #6882 同类）。</p>
+     */
+    private OffsetDateTime paidAt;
+
+    /**
+     * **发货时刻**（列 {@code orders.shipped_at}，V148 / #6262；issue #7078 起**下发**）。
+     *
+     * <p>该列此前只在库里有、详情响应没透出 ⇒ 「发货时间」行与状态引导第 3 步**恒空**。
+     * 取值与实体同名字段（{@code BeanUtils} 带出）。{@code null} = 未采集（存量回填不全 / 从未发货）。</p>
+     */
+    private OffsetDateTime shippedAt;
+
+    /**
+     * **完成（收货）时刻**（列 {@code orders.received_at}，V160；issue #7078 起下发）。
+     *
+     * <p>{@code null} = 未采集（存量 completed 单不回填）。自动完成的单本列 = 自动完成时刻。</p>
+     */
+    private OffsetDateTime receivedAt;
 
     /**
      * 更新时间

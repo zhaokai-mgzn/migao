@@ -83,6 +83,10 @@ class OrderStockSkuKeyFamilyTest {
     /** 线上形态的 payload 序列化器（测试侧独立于注入 OrderService 的 ObjectMapper） */
     private static final ObjectMapper WIRE_JSON = new ObjectMapper();
 
+    /** issue #7370：OrderService 的授信闸门调 customerService（真实类实例化 ⇒ 不声明就 NPE）。 */
+    @Mock
+    private CustomerService customerService;
+
     @InjectMocks
     private OrderService orderService;
     /**

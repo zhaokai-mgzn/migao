@@ -44,7 +44,7 @@ export const REPRINT_REVOKED_MESSAGE =
 
 /** 网络 / 服务端其它故障（既不是"没有这个码"也不是"已撤销" ⇒ 不许冒充那两种） */
 export const REPRINT_DETAIL_ERROR_MESSAGE =
-  '读取单据详情失败（网络问题或服务端暂时不可用）。请重试；若反复失败，请把纸面上的 8 位短码报给文员在电脑端处理。'
+  '读取单据详情失败（网络问题或系统暂时不可用）。请重试；若反复失败，请把纸面上的 8 位短码报给文员在电脑端处理。'
 
 /**
  * 「谁可以查入库详情」的**登记表**（类级守卫 `tests/inbound-reprint-code-space.test.ts` 的 G2 逐值核验）。

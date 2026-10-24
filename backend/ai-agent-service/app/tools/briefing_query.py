@@ -11,6 +11,7 @@ from app.briefing.proactive import (
     INCOMPLETE,
     NOT_ENABLED,
     NOT_WIRED,
+    WIRED,
     daily_findings,
     daily_findings_total,
     proactive_status,
@@ -31,6 +32,15 @@ TODAY_ENDPOINT = "/api/admin/briefing/today"
 SNAPSHOT_ENDPOINT = "/api/admin/briefing/snapshot"
 
 
+def _merchant_display(entry: Dict[str, Any]) -> str:
+    """商家话术（引擎 `display`，issue #7195 产出 / #7201 在消息侧消费）。
+
+    🔴 缺省时**不退回 `reason`** —— 那里是诊断面（快照键 / 字段名 / 截断上限 / 文件路径），
+    而消息是模型的**唯一摘要**：给它 reason 等于给它一份「照着念给商家」的稿子。
+    """
+    return str(entry.get("display") or "这项检查本次没有数据")
+
+
 class BriefingQueryTool(BaseTool):
     """经营日报查询 Tool（只读；含具名跨域视图的**按需**下钻）"""
 
@@ -45,7 +55,8 @@ class BriefingQueryTool(BaseTool):
     )
 
     # 权限码（admin-api 目录）：`BriefingController.GET /api/admin/briefing/today` 方法级
-    # `@RequirePermission("dashboard:view")` —— 与侧边栏「每日简报」节点同码。
+    # `@RequirePermission("dashboard:view")` —— 与侧边栏**「经营看板」节点**同码
+    #（2026-10-17 issue #7087：原「每日简报」菜单项已撤，该码现只由「经营看板」节点承载）。
     required_permissions = ["dashboard:view"]
     read_only = True
     destructive = False
@@ -75,7 +86,7 @@ class BriefingQueryTool(BaseTool):
                 success=False,
                 error="权限不足",
                 message="您没有权限查看经营日报",
-                suggestion="请联系管理员为您开通「每日简报」查看权限后重试",
+                suggestion="请联系管理员为您开通「经营看板」查看权限后重试",
             )
         if view and view not in VALUED_VIEWS:
             # 白名单之外一律拒绝（不猜、不降级）：具名视图的契约就是「一个高频问题一个视图」
@@ -168,30 +179,28 @@ class BriefingQueryTool(BaseTool):
                 " —— 这些方面本次没有检查数据，请勿理解为均已检查"
             )
         if incomplete:
-            # 同上：本次**检查了但不完整**（行数被上限截断 / 维度缺值 / 有行未判定）⇒ 也不得读成「没问题」。
-            detail = "；".join(entry["reason"] for entry in incomplete)
+            # 本次**检查了但不完整**（行数被上限截断 / 维度缺值 / 有行未判定）⇒ 也不得读成「没问题」。
+            # 🔴 只点名 + 一句商家话术（issue #7201）：reason 里的行数 / 字段名 / 截断上限是**诊断面**，
+            # 拼进来模型就会照着念（商家的原话：「这里很多信息我都看不懂」）。
             message += (
-                f"。⚠️ 以下能力本次数据不完整，空命中不代表没有问题："
-                f"{'、'.join(entry['rule_name'] for entry in incomplete)} —— {detail}"
+                "。⚠️ 以下能力本次数据不完整（可能有遗漏，空命中不代表没有问题）："
+                f"{'、'.join(entry['rule_name'] for entry in incomplete)}"
             )
         if not_enabled:
             # 🔴 与「尚未接入」那句**分开说**（#5348）：本态是**可行动**的 —— 说清「是**你**没开」，
-            # 并把 reason（= 开启引导）原样给出去；不这么说，用户只会以为系统没这个能力。
-            detail = "；".join(entry["reason"] for entry in not_enabled)
-            message += (
-                f"。⚠️ 以下能力本次没有检查："
-                f"{'、'.join(entry['rule_name'] for entry in not_enabled)} —— {detail}"
-            )
-        # 数据源**固有边界**（issue #5388）：`wired`（无 reason）与 `not_wired`（上面只点名、
-        # 不给 reason）两态在消息里看不到边界 ⇒ 这里补说；`incomplete` / `not_enabled` 的 reason
-        # 已并入同一份边界（引擎侧 `proactive_status`）⇒ 不重复。
-        # 🔴 为什么 `wired` 也要说：审计是 **fail-open** 旁路 —— 空命中只代表「窗口内没有可判定的
-        # 改价记录」，不代表绝对无事（**只可能漏报、不会误报**）。
-        caveated = [(entry["rule_name"], entry["caveats"]) for entry in status.values()
-                    if entry["caveats"] and (entry["reason"] is None or entry["status"] == NOT_WIRED)]
+            # 并给**商家指引**（`display`）。不抛 `reason`：那里有快照键 / 「成本核算」这类内部口径（#7201）。
+            detail = "；".join(
+                f"{entry['rule_name']}（{_merchant_display(entry)}）" for entry in not_enabled)
+            message += f"。⚠️ 以下能力本次没有检查 —— 你还没开启，开启后就能查：{detail}"
+        # 数据源**固有边界**（issue #5388）：只对**本次真的检查过**的规则说（`wired`）——
+        # 未接线 / 没开启 / 不完整各自已有专句，再叠一句边界只是噪音（#7201）。
+        # 🔴 只说**人话**：披露「可能漏报 / 空结果不等于绝对没有」，
+        # 不抛 fail-open / #5303 / 表名这些工程口径（它们仍留在 `data` 供按需下钻）。
+        caveated = [entry["rule_name"] for entry in status.values()
+                    if entry["caveats"] and entry["status"] == WIRED]
         if caveated:
-            message += ("。⚠️ 以下规则的**数据源有固有边界**（空命中不等于绝对无事）："
-                        + "；".join(f"{name}：{'；'.join(items)}" for name, items in caveated))
+            message += ("。⚠️ 以下检查只覆盖系统记录到的范围（可能漏报，空结果不等于绝对没有）："
+                        + "、".join(caveated))
         return ToolResult(
             success=True,
             data=dict(data, proactive=findings, proactive_status=status),
@@ -220,7 +229,7 @@ def render_view_result(view: str, snapshot: Dict[str, Any], context: ToolContext
     fields = result["fields"]
     unwired = [FIELD_LABELS.get(name, name) for name, entry in fields.items()
                if entry["status"] == NOT_WIRED]
-    incomplete = [(FIELD_LABELS.get(name, name), entry["reason"]) for name, entry in fields.items()
+    incomplete = [FIELD_LABELS.get(name, name) for name, entry in fields.items()
                   if entry["status"] == INCOMPLETE]
 
     count = result["count"]
@@ -247,9 +256,10 @@ def render_view_result(view: str, snapshot: Dict[str, Any], context: ToolContext
         message += (f"。⚠️ 以下字段本次未接线：{'、'.join(unwired)}"
                     " —— 这些方面本次没有数据，请勿理解为均为 0")
     if incomplete:
-        detail = "；".join(f"{label}：{reason}" for label, reason in incomplete if reason)
+        # 🔴 只点名（issue #7201）：`reason` 里是「快照未提供 xxx 行数组（装配层未接线）」
+        # 「上限 N 行」这类工程口径 —— 消息是模型的唯一摘要，它会照着念给商家。
         message += (f"。⚠️ 以下字段本次数据不完整，其结论不可当作「没问题」："
-                    f"{'、'.join(label for label, _ in incomplete)} —— {detail}")
+                    f"{'、'.join(incomplete)}")
     # data 就是**视图本体**（`view` 键 = 视图标识字符串）—— 不再包一层，也不回灌原始快照：
     # 工具结果是有界的（≤ MAX_VIEW_ROWS 行），原始快照（每个数组 ≤500 行）不进这里。
     return ToolResult(success=True, data=dict(result), message=message)

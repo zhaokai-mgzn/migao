@@ -22,8 +22,13 @@
  * | 4 | **空台账 fail-closed**：台账为空（或被清空「消红」）⇒ 红 | 清空台账 ⇒ 红 |
  * | 5 | **单一真值**：底栏那一侧的条高算式与页面预留算式同源（`MerchantTabBar.scss` 逐字） | 改一边不改另一边 ⇒ 红 |
  * | 6 | **判别力自证**：五种坏形态在内存里各自判红，且**合法形态不误报** | 守卫退化成绿 ⇒ 红 |
+ * | 7 | 🔴 **底栏实用高度 == 页面预留**（issue #7252）：按 CSS 盒模型把 SCSS 在安全区 `0` / `34` **两档**求值，逐值与每个挂条页面的 `padding-bottom` 比对 | 底栏丢掉 `box-sizing: border-box` ⇒ 34 档偏大 34px（真机输入条被压一半）⇒ 红 |
  *
  * ## 边界（照实登记，§19.1）
+ *
+ * 判据 7 是**盒模型求解**（`height` / `padding` / `margin` / `box-sizing` 四类声明）；块里一旦出现
+ * `border`（本组件没有）就**抛错**，逼人同步建模，不静默算错。它判不了「真机上到底压没压住」——
+ * 几何读数由 `tests/e2e/specs/bmini/bmini-chat-input-geometry.spec.ts` 的 safe=34 档承担。
  *
  * 本文件是**文本/形态级**：它判「预留算式在不在位」，判不了「真机上到底压没压住」——
  * 后者是几何读数，承载体 = `acceptance/2026-10-09-bmini-three-fixes/bmini-geometry-probe.mjs`
@@ -143,6 +148,59 @@ function auditInset(
   return problems
 }
 
+// ── 实用高度复算（issue #7252）────────────────────────────────────────────────
+// 既有判据只校验「算式在不在位」，而 `.merchant-tabbar` **同时**写
+// `height: calc(50PX + env(...))` 与 `padding-bottom: env(...)` ⇒ 实用高度由**盒模型**决定：
+// content-box 下 padding **加到** height 之上（iPhone 2026-10-18 线上实测 84 + 34 = **118**），
+// border-box 下才是 84。页面预留按 `calc(50PX + env(...))` 算 ⇒ 两档之间只差一个 `box-sizing`，
+// **任何只看算式的判据都看不出来**（Chromium `env=0` 时两者又都是 50 ⇒ 连几何腿也看不出来）。
+
+/** 长度表达式求值（本仓底栏/页面只用到 `calc(...)` / `env(safe-area-inset-bottom)` / 数值） */
+function evalLength(expr: string, safeBottom: number): number {
+  const substituted = expr.replace(/env\(\s*safe-area-inset-bottom\s*\)/g, String(safeBottom))
+  const inner = substituted.replace(/^calc\(([\s\S]*)\)$/, '$1').replace(/\s+/g, '')
+  const terms = inner.match(/[+-]?\d+(?:\.\d+)?(?:PX|px)?/g) ?? []
+  if (terms.join('') !== inner) {
+    throw new Error(`长度表达式含未识别项（判据需同步扩展）：${expr}`)
+  }
+  return terms.reduce((sum, term) => sum + Number(term.replace(/[^\d.+-]/g, '')), 0)
+}
+
+/**
+ * 从一条 SCSS 规则块算**实用高度**：`height` + `margin`，content-box 还要再加 `padding`。
+ * 出现 `border` ⇒ **抛**（不假装支持，逼人同步建模）。
+ */
+function usedHeight(block: string, safeBottom: number): number {
+  if (/(?:^|[;{\s])border(?:-(?:top|bottom|left|right|width))?\s*:/.test(block)) {
+    throw new Error('底栏出现 border 声明 —— 实用高度复算需同步建模（本判据不假装支持）')
+  }
+  const decl = (prop: string): string | undefined =>
+    block.match(new RegExp(`(?:^|[;{\\s])${prop}\\s*:\\s*([^;]+);`))?.[1]?.trim()
+  const heightExpr = decl('height')
+  if (!heightExpr) throw new Error('取不到底栏的 height 声明')
+  const height = evalLength(heightExpr, safeBottom)
+  const padding =
+    (decl('padding-top') ? evalLength(decl('padding-top') as string, safeBottom) : 0) +
+    (decl('padding-bottom') ? evalLength(decl('padding-bottom') as string, safeBottom) : 0)
+  const margin =
+    (decl('margin-top') ? evalLength(decl('margin-top') as string, safeBottom) : 0) +
+    (decl('margin-bottom') ? evalLength(decl('margin-bottom') as string, safeBottom) : 0)
+  const borderBox = /(?:^|[;{\s])box-sizing\s*:\s*border-box\s*;/.test(block)
+  return borderBox ? height + margin : height + padding + margin
+}
+
+/** 取页面根块的 `padding-bottom` 预留表达式（必须含安全区项，否则读数口径不对） */
+function reserveExprOf(scss: string, rootClass: string): string {
+  const block = rootBlock(scssCode(scss), rootClass)
+  if (!block) throw new Error(`取不到 .${rootClass} 根块`)
+  const expr = block.match(/padding-bottom:\s*([^;]+);/)?.[1]?.trim()
+  if (!expr) throw new Error(`.${rootClass} 没有 padding-bottom 预留`)
+  if (!expr.includes('safe-area-inset-bottom')) {
+    throw new Error(`.${rootClass} 的 padding-bottom 不含安全区项（读数口径不对）：${expr}`)
+  }
+  return expr
+}
+
 const ledger: Ledger = JSON.parse(fs.readFileSync(LEDGER_PATH, 'utf-8'))
 const discovered = discoverMountingPages()
 
@@ -159,6 +217,34 @@ describe('类级守卫：挂底栏的页面必须按条高留位（issue #6666 �
   it('🔴 底栏条高算式是单一真值：页面预留与 MerchantTabBar.scss 逐字同源', () => {
     const bar = scssCode(fs.readFileSync(BAR_SCSS, 'utf-8'))
     expect(bar).toMatch(BAR_HEIGHT)
+  })
+})
+
+describe('🔴 底栏**实用高度** == 页面预留（issue #7252：安全区只补一次的盒模型那一半）', () => {
+  const barBlock = rootBlock(scssCode(fs.readFileSync(BAR_SCSS, 'utf-8')), 'merchant-tabbar')
+
+  it('安全区 0 / 34 两档：每个挂底栏页面的预留都与底栏实用高度逐值相等', () => {
+    if (!barBlock) throw new Error('取不到 .merchant-tabbar 根块')
+    for (const entry of Object.values(ledger.pages)) {
+      const reserve = reserveExprOf(readFile(entry.scss), entry.root_class)
+      for (const safe of [0, 34]) {
+        expect(usedHeight(barBlock, safe)).toBe(evalLength(reserve, safe))
+      }
+    }
+  })
+
+  it('判别力自证：删掉 `box-sizing`（= 2026-10-18 线上形态）⇒ 34 档偏大 34px，与真机读数 118 vs 84 逐值相同', () => {
+    if (!barBlock) throw new Error('取不到 .merchant-tabbar 根块')
+    const online = barBlock.replace(/box-sizing:\s*border-box\s*;/, '')
+    if (online === barBlock) throw new Error('注入未生效：底栏本来就没有 box-sizing 可删')
+    const reserve = reserveExprOf(
+      readFile(ledger.pages['src/pages/chat/index/index.tsx'].scss),
+      'chat-page',
+    )
+    // 真机档：118 − 84 = 34 = 安全区高度（输入条 63px 被压掉一半的**全部**来源）
+    expect(usedHeight(online, 34) - evalLength(reserve, 34)).toBe(34)
+    // 0 安全区档仍然相等 —— 这正是它能穿过 #6596 线上探针与既有几何腿的原因（Chromium 里看不出来）
+    expect(usedHeight(online, 0)).toBe(evalLength(reserve, 0))
   })
 })
 

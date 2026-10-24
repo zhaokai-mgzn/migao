@@ -34,13 +34,17 @@ public class ProcessingOrderController {
      *
      * <p>issue #5167：请求体可带 {@code assignmentRule}（{@code fifo} 缺省 / {@code best_fit}）——
      * 只对**没有**指定 {@code batchNo} 的行按该规则补位；不传它时行为与上面逐字相同。</p>
+     *
+     * <p>🔴 issue #7507（用户裁定「默认走智能派单」）：本端点 = 订单详情页 / agent 的**直派**入口，
+     * **非加急订单**逐单拒绝并指路「智能派单」（加急订单沿用 #5177 的例外）。智能派单页走
+     * {@code /api/admin/production/pool/dispatch}（{@link ProductionPoolController}），不受本闸影响。</p>
      */
     @PostMapping("/generate")
     @RequirePermission("processing:update")
     public ApiResponse<List<ProcessingOrderService.GenerateResult>> generate(
             @RequestBody ProcessingOrderGenerateRequest request) {
         Long tenantId = TenantContext.getTenantId();
-        return ApiResponse.success(processingOrderService.generate(request.getOrderIds(),
+        return ApiResponse.success(processingOrderService.generateDirect(request.getOrderIds(),
                 request.getBatches(), tenantId, null, request.getAssignmentRule()));
     }
 

@@ -90,7 +90,7 @@ class NotificationMixedTableOwnershipTest extends BaseControllerTest {
     void setUp() {
         super.baseSetUp();
         ownership = new TenantResourceOwnership(null, null, null, null, null, null,
-                templateService, ruleService, null);
+                templateService, ruleService, null, null, null, null, null, null);
         ownership.registerChecks();
     }
 

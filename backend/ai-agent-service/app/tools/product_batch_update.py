@@ -1,4 +1,4 @@
-"""商品批量更新 Tool —— 批量改价 / 批量上下架 + 撤销（issue #5314 的 Agent 侧）。
+"""商品批量更新 Tool —— 批量改价 / 批量库存调整 + 撤销（issue #5314 的 Agent 侧）。
 
 **契约**（`gh issue view 5314` 的评论「批量更新能力 —— 设计 + 冻结契约（2026-09-24）」，
 服务端由另一个包按同一份契约实现，双方只靠契约对齐）：
@@ -42,29 +42,25 @@ from app.tools.base import (
 )
 from app.utils.http_client import get_admin_api_client
 
-#: batchType 白名单 —— **只有这三个**（契约 §三 + issue #5950 库存扩面）。通用批量有意不做：
-#: 具名批量的可逆性与预览形态是确定的，通用批量不是；批量**创建**类也不做（用户裁定 2026-10-02
-#: 「用户体验很差，不如页面直接操作」）。
+#: batchType 白名单 —— **只有这两个**（契约 §三 + issue #5950 库存扩面；#7334 裁定 A 移除上下架）。
+#: 通用批量有意不做：具名批量的可逆性与预览形态是确定的，通用批量不是；批量**创建**类也不做
+#: （用户裁定 2026-10-02「用户体验很差，不如页面直接操作」）。
 BATCH_TYPE_PRICE = "product_price"
-BATCH_TYPE_STATUS = "product_status"
 BATCH_TYPE_STOCK = "inventory_stock"
-BATCH_TYPES: Tuple[str, ...] = (BATCH_TYPE_PRICE, BATCH_TYPE_STATUS, BATCH_TYPE_STOCK)
+BATCH_TYPES: Tuple[str, ...] = (BATCH_TYPE_PRICE, BATCH_TYPE_STOCK)
 
 #: 每个 batchType 对应的唯一字段（类别与字段错配 ⇒ 拒绝，不让服务端去猜）。
 #: 每个 batchType 对应的 wire 字段名（**服务端实测真值**，不是猜的）：
 #: `product_price` → `basePrice`（= admin-api `products.base_price` 的 wire 名，与逐条写
-#: `product_update` 的 `basePrice` **同名字段**）；`product_status` → `status`
-#: （取值只认 `on_sale` / `off_sale`）；`inventory_stock` → `stock`
+#: `product_update` 的 `basePrice` **同名字段**）；`inventory_stock` → `stock`
 #: （= admin-api `products.stock` 的 wire 名，**与逐条改库存同一个字段词**，
 #: 精度口径 `NUMERIC(12,1)` 最多 1 位小数，issue #5063）。
-_FIELD_OF_BATCH_TYPE = {BATCH_TYPE_PRICE: "basePrice", BATCH_TYPE_STATUS: "status",
-                        BATCH_TYPE_STOCK: "stock"}
+_FIELD_OF_BATCH_TYPE = {BATCH_TYPE_PRICE: "basePrice", BATCH_TYPE_STOCK: "stock"}
 
 #: 字段别名（模型很容易把改价字段写成 `price`，而 wire 字段是 `basePrice`）：
 #: 收下别名并**归一成 wire 名**再下发 —— 让 LLM 的用词习惯不至于变成一次无谓失败。
 #: 库存字段词**只收 `stock`**（服务端契约字面 + 逐条写的同一字段），不收臆造词。
 _FIELD_ALIASES = {BATCH_TYPE_PRICE: {"basePrice", "price"},
-                  BATCH_TYPE_STATUS: {"status"},
                   BATCH_TYPE_STOCK: {"stock"}}
 
 #: 单批上限（契约 §四）：N > 50 ⇒ 拒绝并提示分批（本单不做后台任务，最小实现）。
@@ -85,15 +81,13 @@ def _missing_before_value_reason(batch_type: str, item: Dict[str, Any]) -> str:
     """改前值缺席的判据（合规返回 ""）。
 
     改价类型复用 `confirm_value.price_preview_missing`（#5303 的单一源）；
-    改状态 / 改库存类型是同一口径的镜像 —— `old_value` 是撤销的唯一依据，都必须在预览阶段采集。
+    改库存类型是同一口径的镜像 —— `old_value` 是撤销的唯一依据，都必须在预览阶段采集。
     """
     if batch_type == BATCH_TYPE_PRICE:
         return confirm_value.price_preview_missing(
             {"price": item.get("newValue"), "before_price": item.get("oldValue")})
     if not _present(item.get("oldValue")):
-        if batch_type == BATCH_TYPE_STOCK:
-            return "本次批量改库存没有带改前值 oldValue（改前 → 改后的另一半，也是撤销的唯一依据）"
-        return "本次批量改状态没有带改前值 oldValue（改前 → 改后的另一半，也是撤销的唯一依据）"
+        return "本次批量改库存没有带改前值 oldValue（改前 → 改后的另一半，也是撤销的唯一依据）"
     return ""
 
 
@@ -111,18 +105,17 @@ def _preview_row(batch_type: str, item: Dict[str, Any]) -> Dict[str, Any]:
         args = {"product_id": resource_id,
                 "before_stock": item.get("oldValue"), "stock": item.get("newValue")}
     else:
-        args = {"product_id": resource_id,
-                "before_status": item.get("oldValue"), "status": item.get("newValue")}
+        raise ValueError(f"unknown batch_type: {batch_type!r}")
     return {"resourceId": resource_id, "fields": confirm_value.confirm_card_fields(args)}
 
 
 class ProductBatchUpdateTool(BaseTool):
-    """商品批量更新 —— 批量改价 / 批量上下架（先预览后执行，可撤销）"""
+    """商品批量更新 —— 批量改价 / 批量库存调整（先预览后执行，可撤销）"""
 
     name = "product_batch_update"
     description = (
-        "【触发】商家要**一次改多条**商品时用：'把这几款都改成…'、'这批全部下架'、'统一改价'、"
-        "'批量调整价格/上下架'，或商家已用多选卡勾选完一批商品后。"
+        "【触发】商家要**一次改多条**商品时用：'把这几款都改成…'、'统一改价'、"
+        "'批量调整价格/库存'，或商家已用多选卡勾选完一批商品后。"
         "【前置】必须走完**两段确认**才允许执行（本工具强制，不是建议）："
         "① 第一段（改哪些）：先用 product_search / product_detail 拿真实候选与**改前值真值**，"
         "再发 `interact(component=choice, multiSelect=true, …)` 让商家**勾选集合** —— "
@@ -136,10 +129,10 @@ class ProductBatchUpdateTool(BaseTool):
         "resourceId 用 product_search / product_detail 返回的真实商品标识（禁止自造）；"
         "oldValue 必须取自 product_detail 的**当前值**真值（不得凭记忆或推算）—— 它是撤销的唯一依据，"
         "缺席一律被拒；newValue 是商家明确给出的值（不得自行推算幅度）。"
-        "【批量类型·只有三个】batch_type=product_price（商品级统一定价批量改价，field=basePrice）"
-        "/ product_status（批量上/下架，field=status，取值 on_sale / off_sale）"
+        "【批量类型·只有两个】batch_type=product_price（商品级统一定价批量改价，field=basePrice）"
         "/ inventory_stock（批量库存调整，field=stock，单位米，最多 1 位小数；口径 = **该商品每个规格都调到该值**，故**要求该商品各规格库存一致**，不一致时 preview 阶段会被服务端拒绝并给出实际值，如实转述并引导到商品管理页；与逐条改库存同一字段词，issue #5950）。"
-        "其它类型（改名 / 改图 / 自由字段）**不支持** —— 如实说明并引导到商品管理页 /products。"
+        "其它类型（改名 / 改图 / 上下架 / 自由字段）**不支持** —— 上下架按 2026-10-16 裁定（单件与批量都 ❌）"
+        "如实说明并引导到商品管理页 /products；其余类型同样引导到商品管理页。"
         "【阈值】单批最多 50 条：N>50 一律拒绝并提示**分批**（本工具不做后台异步任务）。"
         "【撤销】执行成功后**必须告诉商家可以撤销**：action=revert + batch_id 会逐条还原为改前值 "
         "old_value；部分失败**逐条报告、不做整体回滚**（回滚会掩盖真问题）—— 把失败条目与原因如实转述。"
@@ -156,7 +149,7 @@ class ProductBatchUpdateTool(BaseTool):
     read_only = False
     requires_confirmation = True   # #3594：高风险非 destructive 写操作必须显式表态（走确认门禁）
     destructive = False            # 可撤销（revert 逐条还原），不是不可逆破坏
-    idempotent = True              # 写的是**绝对目标值**（价格 155 / 下架）⇒ 重放收敛到同一状态
+    idempotent = True              # 写的是**绝对目标值**（价格 155 / 库存 1200）⇒ 重放收敛到同一状态
                                    # （与 `product_update` 同口径）；批次状态由服务端状态机把关
     # `preview` = **预演**（契约原话「创建批次（= 预演）」）：只落一条 preview 批次，
     # **不改变任何商品数据** ⇒ 免确认拦截（`_requires_confirmation` 的既有豁免口）。
@@ -188,15 +181,14 @@ class ProductBatchUpdateTool(BaseTool):
             "batch_type": {
                 "type": "string",
                 # 同为字面量（可被静态读取；与 `BATCH_TYPES` 的一致性由单测钉住）
-                "enum": ["product_price", "product_status", "inventory_stock"],
+                "enum": ["product_price", "inventory_stock"],
                 "description": "批量类型（action=preview 必填）：product_price=商品级统一定价批量改价；"
-                               "product_status=批量上/下架；"
-                               "inventory_stock=批量库存调整（field=stock，单位米，最多 1 位小数；要求该商品各规格库存一致，不一致 ⇒ 服务端在 preview 阶段拒绝）。只有这三个",
+                               "inventory_stock=批量库存调整（field=stock，单位米，最多 1 位小数；要求该商品各规格库存一致，不一致 ⇒ 服务端在 preview 阶段拒绝）。只有这两个；上下架不在 B 端能力内",
             },
             "items": {
                 "type": "array",
                 "description": "要改的条目（action=preview 必填，最多 50 条）。每项一条："
-                               "resourceId=商品标识；field=字段（product_price→basePrice / product_status→status / "
+                               "resourceId=商品标识；field=字段（product_price→basePrice / "
                                "inventory_stock→stock）；"
                                "oldValue=改前值（product_detail 的真值，撤销依据）；newValue=改后值（商家给定）",
                 "items": {
@@ -204,13 +196,13 @@ class ProductBatchUpdateTool(BaseTool):
                     "properties": {
                         "resourceId": {"type": "string",
                                        "description": "商品标识（product_search / product_detail 返回的真值，禁止自造）"},
-                        "field": {"type": "string", "enum": ["basePrice", "status", "stock"],
+                        "field": {"type": "string", "enum": ["basePrice", "stock"],
                                   "description": "要改的字段：改价传 basePrice（写 price 也收，会归一成 basePrice）"
-                                                 "/ 上下架传 status / 库存传 stock"},
+                                                 "/ 库存传 stock（上下架不在 B 端能力内，不传 status）"},
                         "oldValue": {"type": "string",
-                                     "description": "改前值（元 / on_sale|off_sale / 米），取自 product_detail 的当前值真值；必填（撤销依据）"},
+                                     "description": "改前值（元 / 米），取自 product_detail 的当前值真值；必填（撤销依据）"},
                         "newValue": {"type": "string",
-                                     "description": "改后值（元 / on_sale|off_sale / 米），必须是商家明确给出的值"},
+                                     "description": "改后值（元 / 米），必须是商家明确给出的值"},
                     },
                     "required": ["resourceId", "field", "oldValue", "newValue"],
                 },
@@ -236,7 +228,7 @@ class ProductBatchUpdateTool(BaseTool):
             return permission_denied(
                 error="权限不足",
                 message="您没有权限批量修改商品",
-                suggestion=("批量改价 / 上下架与逐条写**同码**（product:create）：请如实告知商家当前账号"
+                suggestion=("批量改价 / 库存调整与逐条写**同码**（product:create）：请如实告知商家当前账号"
                             "缺少该权限，并指引其联系管理员在管理后台（「员工管理 → 编辑员工 → 权限」"
                             "或「组织管理 → 岗位权限」）开通后重试 —— 这是权限限制，不是参数问题。"),
             )
@@ -266,8 +258,9 @@ class ProductBatchUpdateTool(BaseTool):
                 error="batch_type_unsupported",
                 message=f"不支持的批量类型：{batch_type or '（未提供）'}",
                 suggestion=(f"batch_type 只支持 {BATCH_TYPE_PRICE}（商品级批量改价）/ "
-                            f"{BATCH_TYPE_STATUS}（批量上/下架）/ {BATCH_TYPE_STOCK}（批量库存调整）"
-                            "—— 请从这三个里选一个。"
+                            f"{BATCH_TYPE_STOCK}（批量库存调整）"
+                            "—— 请从这两个里选一个。"
+                            "上下架（单件与批量）按 2026-10-16 裁定不在 B 端能力内；"
                             "改名 / 改图 / 自由字段的批量**不在**本工具范围，"
                             "请如实告知商家并引导到商品管理页 /products 操作。"),
             )
@@ -307,7 +300,7 @@ class ProductBatchUpdateTool(BaseTool):
                     error="batch_field_mismatch",
                     message=f"条目字段 {item.get('field')} 与批量类型 {batch_type} 不匹配",
                     suggestion=(f"batch_type={batch_type} 的每项 field 必须是 {expected_field} —— "
-                                "改价与上下架不能混在同一批里，请拆成两次批量（各自走两段确认）。"),
+                                "改价与库存调整不能混在同一批里，请拆成两次批量（各自走两段确认）。"),
                 )
             if not _present(item.get("newValue")):
                 return ToolResult(

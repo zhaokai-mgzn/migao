@@ -64,28 +64,29 @@ export interface AgentMonitor {
 
 /**
  * 查询人工会话列表（status=waiting 为待接管队列）
+ *
+ * 🔴 2026-10-18：改前这里把**任何失败**吞成「空清单」⇒ 没有 `agent:session` 的员工
+ * 拿到 403 也被画成「队列空闲，AI 正在处理中」= **把「看不到」说成「没有」**
+ * （用户同日裁定「底栏 4 项一律可见」之后，这条路径第一次会被无权限的岗位走到）。
+ * 现在失败**上抛**（403 的 `statusCode` 一路带到页面），由页面分三态显示：
+ * `forbidden` ⇒「没有移动坐席权限」，`error` ⇒「加载失败，点此重试」。
  */
 export async function getAgentSessions(
   status: 'waiting' | 'active' | 'ended' | 'transferred' | '',
   page = 1,
   size = 20,
 ): Promise<PageResponse<AgentSessionItem>> {
-  try {
-    const res = await get<ApiResponse<PageResponse<AgentSessionItem>>>(
-      '/api/admin/agent-sessions',
-      {
-        baseURL: API_BASE_URL,
-        params: { page, size, ...(status ? { status } : {}) },
-      },
-    )
-    if (!res.success || !res.data) {
-      return { items: [], total: 0, page: 1, size }
-    }
-    return res.data
-  } catch (e) {
-    console.error('获取人工会话列表失败:', e)
-    return { items: [], total: 0, page: 1, size }
+  const res = await get<ApiResponse<PageResponse<AgentSessionItem>>>(
+    '/api/admin/agent-sessions',
+    {
+      baseURL: API_BASE_URL,
+      params: { page, size, ...(status ? { status } : {}) },
+    },
+  )
+  if (!res.success || !res.data) {
+    throw new Error('获取人工会话列表失败')
   }
+  return res.data
 }
 
 /**

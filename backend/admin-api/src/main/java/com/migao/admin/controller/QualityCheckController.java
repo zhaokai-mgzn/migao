@@ -75,6 +75,27 @@ public class QualityCheckController {
         return ApiResponse.success(record);
     }
 
+    /**
+     * 待检成品帘清单（商家「质检记录」页的**第一屏**，issue #7140）。
+     *
+     * <p>query：{@code keyword}（加工单号，可选）· {@code status}（{@code all} / {@code pending} /
+     * {@code pass} / {@code rework} / {@code scrap}，缺省 {@code all}）· {@code page}（1 起，缺省 1）·
+     * {@code size}（缺省 20、服务端封顶 100）。</p>
+     *
+     * <p>权限与本类另外两个端点**逐字同码**（{@code production:inspect}）：写与读同一把尺子
+     * —— 质检判定在其它岗位的界面上没有入口，也没有读数（用户 2026-10-17 裁定「保持现状」）。</p>
+     */
+    @GetMapping("/targets")
+    @RequirePermission("production:inspect")
+    public ApiResponse<Map<String, Object>> targets(
+            @RequestParam(name = "keyword", required = false) String keyword,
+            @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "page", required = false) Integer page,
+            @RequestParam(name = "size", required = false) Integer size) {
+        return ApiResponse.success(qualityInspectionService.targets(
+                TenantContext.getTenantId(), keyword, status, page, size));
+    }
+
     /** 质检记录读面（按加工单 / 成品帘过滤，时间倒序；同件可多条 = 返工后重检）。 */
     @GetMapping
     @RequirePermission("production:inspect")
@@ -83,6 +104,25 @@ public class QualityCheckController {
             @RequestParam(name = "order_item_id", required = false) String orderItemId) {
         return ApiResponse.success(qualityInspectionService.list(
                 TenantContext.getTenantId(), processingOrderId, orderItemId));
+    }
+
+    /**
+     * 质检**指标**读面（P0 + P1，issue #7192）：合格率 / 趋势 / 分组 Top-N / 待检积压。
+     *
+     * <p>权限与清单读面**逐字同码**（{@code production:inspect}）：指标与清单来自同一批记录、
+     * 同一副颗粒度 —— 能看清单的人才能看它的率（不另造一个「只看率」的窄权限）。</p>
+     *
+     * <p>只读：不写、不改任何判定口径；{@code from}/{@code to} 为左闭右开窗口（缺省 = 本月），
+     * {@code bucket} ∈ {@code day/week/month}。</p>
+     */
+    @GetMapping("/stats")
+    @RequirePermission("production:inspect")
+    public ApiResponse<Map<String, Object>> stats(
+            @RequestParam(name = "from", required = false) String from,
+            @RequestParam(name = "to", required = false) String to,
+            @RequestParam(name = "bucket", required = false) String bucket) {
+        return ApiResponse.success(qualityInspectionService.stats(
+                TenantContext.getTenantId(), from, to, bucket));
     }
 
     /** body 取值（缺键 ⇒ null；**不**从 body 取租户 / 检验人身份）。 */

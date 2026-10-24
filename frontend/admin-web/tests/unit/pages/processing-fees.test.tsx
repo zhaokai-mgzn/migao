@@ -342,11 +342,13 @@ describe('加工费组合 tab（issue #4386；issue #4490 合并后为 /producti
     expect(allItems.find((c) => c.path === '/production/routings')).toBeUndefined()
     expect(production!.children.map((c) => c.name)).not.toContain('加工项管理')
     expect(production!.children.map((c) => c.name)).not.toContain('工艺配置')
-    // #6580 后本组 = 生产看板 → 智能派单 → 计件工资
+    // #6580 后本组 = 作业看板 → 智能派单 → 计件工资；🔴 #7140 再加「质检记录」
     expect(production!.children.map((c) => c.path)).toEqual([
       '/production',
       '/production/pool',
       '/production/piecework',
+      '/quality-inspections',
+      '/rework-orders',   // issue #7377：返工单（紧跟质检记录）
     ])
     // 原「商品与加工项」组已撤销 ⇒ 不得再存在（商品管理表现为独立一级项，不属任何组）
     expect(menuGroups.find((g) => g.key === 'product-center')).toBeUndefined()

@@ -11,7 +11,7 @@ export interface RefundOrderModalProps {
   onClose: () => void
   onConfirm: (data: { refundAmount: number; refundReason: string }) => void
   loading?: boolean
-  /** 🔴 issue #6882：调用方来自**订单列表**（列表形态 `OrderBrief`）—— 不是详情形态。 */
+  /** 🔴 issue #6882：调用方来自**销售订单**（列表形态 `OrderBrief`）—— 不是详情形态。 */
   order?: OrderBrief | null
 }
 

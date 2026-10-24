@@ -2,16 +2,29 @@
 
 import { cn } from '@/lib/utils'
 import { Loader2 } from 'lucide-react'
-import { ButtonHTMLAttributes, forwardRef } from 'react'
+import { ButtonHTMLAttributes, ReactNode, forwardRef } from 'react'
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost'
   size?: 'sm' | 'md' | 'lg'
   loading?: boolean
+  /**
+   * 前置图标（**统一入口**，issue #7184）。
+   *
+   * 🔴 为什么必须有这个 slot：改前图标靠调用方手写 `<Icon className="mr-1.5" />` 塞进 children ——
+   * 于是同一层级的按钮各自长出自己的间距（`mr-1` / `mr-1.5` / `mr-2` / 没有），
+   * 用户 2026-10-18 四张截图里「同一动作层级三种形态」有一半来自这里。
+   *
+   * 🔴 语义：`loading` 时 spinner **顶替** icon（**不是并排**）。并排 = 双图标 —— 真机被读成
+   * 「图标重叠」（issue #7180 同族观感）。
+   *
+   * 图标本身按 **16px** 传（`w-4 h-4`）；slot 给 `mr-1.5` 与 `shrink-0`，图标不参与收缩。
+   */
+  icon?: ReactNode
 }
 
 const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant = 'primary', size = 'md', loading, children, disabled, ...props }, ref) => {
+  ({ className, variant = 'primary', size = 'md', loading, icon, children, disabled, ...props }, ref) => {
     // 🔴 `whitespace-nowrap`（issue #5558）：按钮在 flex 行里是**可收缩项**，没有它时 min-content
     // = **一个汉字** ⇒ 空间紧张时（长说明段 / `w-full` 的 Input·Select 同一行）会被压到 ~1 字宽，
     // 标签在固定 `h-9` 的盒子里换行 —— 用户实测「入库单页按钮样式不对」（查询/重置竖排）。
@@ -35,9 +48,19 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         className={cn(baseStyles, variants[variant], sizes[size], className)}
         disabled={disabled || loading}
+        aria-busy={loading || undefined}
         {...props}
       >
-        {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+        {/* loading ⇒ spinner **顶替** icon（不并排，issue #7184）；无 loading ⇒ 走 icon slot */}
+        {loading ? (
+          <Loader2 className="w-4 h-4 mr-2 animate-spin" aria-hidden />
+        ) : (
+          icon && (
+            <span className="mr-1.5 inline-flex shrink-0 items-center" aria-hidden>
+              {icon}
+            </span>
+          )
+        )}
         {children}
       </button>
     )

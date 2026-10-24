@@ -186,12 +186,13 @@ test.describe('发货单 — 真实浏览器打印旅程（UI-040）', () => {
 
     await page.goto(`/orders/${ORDER_ID}`)
 
-    // 补打入口可见（发货页对 shipped 有状态守卫，重打只能从这里）
-    const printBtn = page.getByRole('button', { name: /打印发货单/ })
-    await expect(printBtn).toBeVisible()
-
-    // 点击不报错（真实 window.print 在无头环境会静默返回）
-    await printBtn.click()
+    // 补打入口（发货页对 shipped 有状态守卫，重打只能从这里）。
+    // 🔴 issue #7544：详情页不再有独立的「打印发货单」按钮 —— 页面级唯一「打印」入口里选「发货单」，
+    //    先看纸面预览，「打印」才真正置位打印目标（真实 window.print 在无头环境静默返回）。
+    await page.getByTestId('order-print-entry').click()
+    await expect(page.getByTestId('print-preview')).toBeVisible()
+    await page.getByTestId('print-preview-doc-shipment').click()
+    await page.getByTestId('print-preview-print').click()
 
     await page.emulateMedia({ media: 'print' })
     await page.waitForTimeout(600) // 同上：等 transition-all 结束，避免拍到过渡中间态

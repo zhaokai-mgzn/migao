@@ -27,14 +27,18 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { menuGroups, standaloneTopItems, standaloneItems, type MenuItem } from '@/config/menu'
+import { LayoutDashboard } from 'lucide-react'
+import { menuGroups, standaloneHeadItems, standaloneTopItems, standaloneItems, type MenuItem } from '@/config/menu'
 import { menuIconMap, resolveMenuIcon, registeredIconNames } from '@/config/menu-icons'
 
 const MENU_TS = readFileSync(join(process.cwd(), 'src/config/menu.ts'), 'utf-8')
 
-// #5778：**两个**独立项数组都要计入（顶部一级项「商品管理」+ 尾部「通知中心」）——
+// #5778：**三个**独立项数组都要计入（最前席位「经营看板」+ 尾席位一级项 + 尾部「通知中心」）——
 // 漏一个会让节点数少 1、且「注册表 ⇄ 使用面」双向判据假红。
+// 顺序与渲染同源（最前席位 → 组头 → 组内项 → 尾席位 → 尾部项）：判据④ 的碰撞名单按**首次出现**
+// 拼接，顺序不同会让同一处重复报出不同的字符串。
 const allItems = (): MenuItem[] => [
+  ...standaloneHeadItems,
   ...menuGroups.map((g) => ({ key: g.key, name: g.name, icon: g.icon, path: '' }) as MenuItem),
   ...menuGroups.flatMap((g) => g.children),
   ...standaloneTopItems,
@@ -55,8 +59,11 @@ function unregisteredIcons(names: string[], registered: readonly string[]): stri
 describe('菜单图标注册表（issue #5271 / PR-106 / MC-019）', () => {
   it('判据① 正向不漏：`menu.ts` 的每个图标名都已注册（漏注册 = 静默回落 BarChart3）', () => {
     // 面非空自检：解析失灵（0 条）时下面的断言会恒真 ⇒ 先自证
-    expect(iconNamesFromSource(MENU_TS).length).toBeGreaterThanOrEqual(25)
-    expect(allItems().length).toBe(27) // 6 组头 + 2 一级项 + 18 组内项 + 1 独立项（#5939 +「发货单」；#6404 +「库存明细」；#6580 生产组收拢 + 一级项改「企业基础设置」）
+    expect(iconNamesFromSource(MENU_TS).length).toBeGreaterThanOrEqual(27)
+    // 2026-10-20（issue #7369 段 4 / 新 IA）：**29 个节点** = **6 组头**（新增「供应链」）+ 19 组内项
+    //（+供应商 / +采购单）+ 最前席位 1 项 + 尾席位 2 项 + 尾部独立项 1 项
+    //（「工作台」组整组撤销 ⇒ 组头 6→5；issue #7369 新增「供应链」组 ⇒ 组头 5→6；组内项总数不变）
+    expect(allItems().length).toBe(33)
 
     const usedFromSource = Array.from(new Set(iconNamesFromSource(MENU_TS)))
     const usedFromObjects = Array.from(new Set(allItems().map((i) => i.icon)))
@@ -67,7 +74,7 @@ describe('菜单图标注册表（issue #5271 / PR-106 / MC-019）', () => {
   it('判据② 反向无死映射：`menuIconMap` 的键集合 == `menu.ts` 用到的图标名集合（双向相等）', () => {
     const used = Array.from(new Set(allItems().map((i) => i.icon))).sort()
     // 面非空自检 + 精确相等：既拦「漏注册」也拦「用不到的死映射」
-    expect(registeredIconNames().length).toBeGreaterThanOrEqual(25)
+    expect(registeredIconNames().length).toBeGreaterThanOrEqual(26)
     expect([...registeredIconNames()].sort()).toEqual(used)
     expect(registeredIconNames().filter((n) => !used.includes(n))).toEqual([])
   })
@@ -78,7 +85,12 @@ describe('菜单图标注册表（issue #5271 / PR-106 / MC-019）', () => {
     const fallback = menuIconMap['Bell']
     // 未注册名 ⇒ 用传入的 fallback（默认 LayoutDashboard，此处显式传以证明参数生效）
     expect(resolveMenuIcon('NotRegisteredIcon', fallback)).toBe(fallback)
-    expect(resolveMenuIcon('NotRegisteredIcon')).toBe(menuIconMap['LayoutDashboard'])
+    // 🔴 2026-10-17（issue #7087）：`LayoutDashboard`（原「工作台」组图标）随该组撤销而**销账**
+    //（判据② 双向相等 ⇒ 注册表里不得留死映射）；默认兜底仍是它，但兜底直接引用 lucide 组件、
+    // 不经注册表 ⇒ 这里按**组件同一性**判（比 `menuIconMap['LayoutDashboard']` 更强：
+    // 它同时会红在「有人把死映射加回去」上）。
+    expect(menuIconMap['LayoutDashboard']).toBeUndefined()
+    expect(resolveMenuIcon('NotRegisteredIcon')).toBe(LayoutDashboard)
   })
 
   it('判据③ 注入式红证：把 `icon: \'Recycle\'` 改成未注册值 ⇒ 判据① 的检查函数当场返回该名字', () => {
@@ -120,10 +132,10 @@ describe('菜单图标注册表（issue #5271 / PR-106 / MC-019）', () => {
       .map(([icon, names]) => `${icon} → ${names.join('、')}`)
   }
 
-  it('🔴 判据④ 图标两两不同：27 个节点（6 组 + 2 一级项 + 18 子项 + 1 独立项）的图标互不重复（issue #5582）', () => {
+  it('🔴 判据④ 图标两两不同：30 个节点（6 组 + 2 最前席位 + 2 尾席位 + 19 子项 + 1 独立项；#7593 撤审批中心）的图标互不重复（issue #5582）', () => {
     const items = allItems()
     // 面非空自证：解析失灵（0 条）时下面的断言会恒真 ⇒ 先自证，并点名几个已知节点
-    expect(items.length).toBe(27)
+    expect(items.length).toBe(33)
     expect(items.map((i) => i.name)).toEqual(
       expect.arrayContaining(['经营看板', '省料看板', '售后工单', '岗位权限', '财务对账', '计件工资', '组织管理', '企业基础设置']),
     )

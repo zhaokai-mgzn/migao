@@ -188,7 +188,7 @@ class BusinessDayWindowTest {
         when(orderMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
         orderService.getOrderPage(1, 20, null, null, null, null,
-                DAY.toString(), DAY.toString(), null, null, null, null, 1L, null, null);
+                DAY.toString(), DAY.toString(), null, null, null, null, 1L, null, null, null);
         ArgumentCaptor<Wrapper<Order>> captor = ArgumentCaptor.forClass(Wrapper.class);
         org.mockito.Mockito.verify(orderMapper).selectPage(any(Page.class), captor.capture());
         return captor.getValue();

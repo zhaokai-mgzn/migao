@@ -20,8 +20,9 @@ name: Worker H5 Tests
 #   · 独立 `paths:` 过滤 ⇒ **pr-check.yml 的既有触发面一个字节都没动**，本 PR 的
 #     「改坏全流水线」风险面因此为 0（`frontend/admin-web/**` 的既有过滤更不可能被弄坏）。
 #
-# ── 触发面（`paths:` 只含本目录 + 本 workflow 自身）──
+# ── 触发面（`paths:` = 本目录 + 它的调色板真值源 + 本 workflow 自身）──
 #   · `frontend/worker-h5/**` —— 被测对象。
+#   · `frontend/admin-web/tailwind.config.ts` —— 调色板真值源（issue #7237 起工人端逐值对账它）。
 #   · 本 workflow 自身 —— 否则「只改这条腿」的 PR 不会触发它 ⇒ 改坏了没有证据。
 #   ⚠️ 路径过滤同时解决「历史分支 / 该目录不存在时不许红」：目录不存在的 ref 上
 #      不可能有 PR 命中 `frontend/worker-h5/**` ⇒ 本 workflow 根本不触发 ⇒ 天然不会红。
@@ -51,6 +52,9 @@ on:
     branches: [main]
     paths:
       - 'frontend/worker-h5/**'
+      # 工人端调色板的**真值源**（issue #7237）：tests/worker-h5-theme-parity.test.mjs 逐值对账
+      # 商家端 tailwind 的 primary/neutral/accent ⇒ 商家端改一阶，本腿必须重跑（否则漏面）。
+      - 'frontend/admin-web/tailwind.config.ts'
       - '.github/workflows/worker-h5-tests.yml'
   workflow_dispatch:
 

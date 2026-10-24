@@ -24,7 +24,7 @@ import Taro from '@tarojs/taro'
 import MessageInput from '../src/components/chat/MessageInput'
 import { startRecording, stopAndTranscribe, isVoiceSupported } from '../src/utils/voice'
 import { chooseImages, uploadImages } from '../src/utils/imageUpload'
-import { H5_VOICE_UNAVAILABLE_HINT } from '../src/utils/platform'
+import { H5_VOICE_UNAVAILABLE_HINT, ALIPAY_VOICE_UNAVAILABLE_HINT } from '../src/utils/platform'
 
 jest.mock('../src/utils/voice', () => ({
   startRecording: jest.fn(),
@@ -245,6 +245,34 @@ describe('MessageInput — 录音不可用时的显式出路（issue #5650）', 
       fireEvent.click(screen.getByLabelText('发送'))
       expect(props.onSend).toHaveBeenCalledWith('你好')
     } finally {
+      if (prevEnv === undefined) delete envBag.TARO_ENV
+      else envBag.TARO_ENV = prevEnv
+    }
+  })
+
+  it('支付宝内置浏览器：回落文字模式，切换键点名支付宝（issue #7310 真机对照）', () => {
+    ;(isVoiceSupported as jest.Mock).mockReturnValue(false)
+    const prevEnv = process.env.TARO_ENV
+    const envBag = process.env as unknown as Record<string, string | undefined>
+    envBag.TARO_ENV = 'h5'
+    const prevUa = navigator.userAgent
+    Object.defineProperty(window.navigator, 'userAgent', {
+      value:
+        'Mozilla/5.0 (OpenHarmony 2; ALN-AL00) AppleWebKit/537.36 (KHTML, like Gecko) ' +
+        'Chrome/114.0.0.0 Safari/537.36 ArkWeb/4.1.6.1 AliApp(AP/12.12.30.5600) AlipayClient/12.12.30.5600',
+      configurable: true,
+    })
+    try {
+      renderInput()
+      // 不摆按不动的「按住说话」——支付宝 webview 拿不到麦克风数据
+      expect(screen.queryByLabelText('按住说话')).toBeNull()
+      fireEvent.click(screen.getByLabelText('切换到语音输入'))
+      // 点名支付宝：用户才知道「换 App 打开」，而不是以为设备坏了
+      expect(mockToast).toHaveBeenCalledWith({ title: ALIPAY_VOICE_UNAVAILABLE_HINT, icon: 'none' })
+      expect(mockStartRecording).not.toHaveBeenCalled()
+      expect(screen.getByLabelText('消息输入框')).toBeInTheDocument()
+    } finally {
+      Object.defineProperty(window.navigator, 'userAgent', { value: prevUa, configurable: true })
       if (prevEnv === undefined) delete envBag.TARO_ENV
       else envBag.TARO_ENV = prevEnv
     }

@@ -58,8 +58,8 @@ class SSEEvent:
         卡片事件
         
         Args:
-            card_type: 卡片类型 (product_list / product_detail / logistics / order / quotation /
-                production_progress / payment / batch_stock)
+            card_type: 卡片类型 (product_list / product_detail / marketing_poster / generated_image /
+                logistics / order / quotation / production_progress / payment / batch_stock)
                 = 后端**可产出**卡型集合，真值 = `backend/ai-agent-service/app/api/chat.py`
                 的 `_detect_card_type` 在工具注册表上的求值
                 （单一源与判据 = `backend/ai-agent-service/tests/test_card_type_cross_end_contract.py`；

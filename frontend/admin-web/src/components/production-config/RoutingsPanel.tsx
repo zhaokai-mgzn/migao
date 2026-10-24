@@ -17,7 +17,7 @@
  * `embedded=true` 只影响**区块标题**，其余一字不变。
  */
 import { AlertCircle, ArrowDown, ArrowUp, Check, Pencil, Plus, RefreshCw, Star, Trash2, X } from 'lucide-react'
-import { Button, Modal } from '@/components/ui'
+import { Button, Modal, SELECT_CONTROL } from '@/components/ui'
 import { conditionText, inputCls, money, RulePriceCell } from '@/components/production-config/utils'
 import { useRoutingsFeature, type RoutingsFeature } from '@/components/production-config/features'
 import { cn } from '@/lib/utils'
@@ -72,14 +72,13 @@ export function RoutingsPanel({
         <div>
           <h2 className="text-base font-medium text-neutral-900">工艺路线（路线与规则）</h2>
           <p className="mt-0.5 text-sm text-neutral-500">
-            一条路线 = 一条有序主线；订单按命中的主线走。
+            一条路线 = 一条有序主线，作业单按命中的主线走；基础的两条分别是成品帘加工与卖布单出库作业（裁剪 / 打包）。
           </p>
         </div>
       )}
       {!hideActions && (
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <Button variant="secondary" size="sm" onClick={load} disabled={loading}>
-            <RefreshCw className={cn('w-4 h-4 mr-1.5', loading && 'animate-spin')} />
+          <Button variant="secondary" size="sm" onClick={load} disabled={loading} icon={<RefreshCw className="w-4 h-4" />}>
             刷新
           </Button>
           <Button
@@ -88,8 +87,8 @@ export function RoutingsPanel({
             /* 域写面出口标记（issue #6825）：类级守卫要求「可编辑控件 + 本域写出口」成对出现 */
             data-write-exit="craft-route"
             onClick={() => setNewRouteOpen(true)}
+            icon={<Plus className="w-4 h-4" />}
           >
-            <Plus className="w-4 h-4 mr-1.5" />
             新建路线
           </Button>
         </div>
@@ -300,7 +299,7 @@ export function RoutingsPanel({
                               data-testid={`routing-add-select-${id}`}
                               value={picked}
                               onChange={(e) => setPicked(e.target.value)}
-                              className="h-9 min-w-56 flex-1 rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500"
+                              className={cn(SELECT_CONTROL, 'min-w-56', 'flex-1')}
                             >
                               <option value="">从工序库选择要添加的工序…</option>
                               {paletteOps.map((o) => (
@@ -553,7 +552,7 @@ export function RoutingsPanel({
             </p>
             <p className="text-neutral-500">
               删除后，订单命中这个条件时<strong>不再</strong>增删「{deleteRuleTarget.operation ?? '—'}」这道工序
-              （加工单按当前主线生成）。历史加工单一字不变。
+              （作业单按当前主线生成）。历史作业单一字不变。
             </p>
             {ruleDeleteReasons && (
               <ul className="space-y-0.5 text-xs text-red-600" data-testid="route-rule-delete-reasons">

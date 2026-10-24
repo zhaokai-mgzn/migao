@@ -36,8 +36,15 @@ jest.mock('../src/store/authStore', () => ({
   useAuthStore: jest.fn(() => ({ user: { id: 'u1', nickname: '王老板', tenantId: 1 } })),
 }))
 
+// 底栏 tab（服务端 `mobileTabs`）：默认给「数据」这一格 —— 全页权限门（2026-10-18 裁定）
+// 只在**服务端说没有这一格**时才拦；本文件其余用例测的是「有权限」的正常路径。
+let mockMenu: { state: string; surfaces: any[]; tabs: any[] } = {
+  state: 'ok',
+  surfaces: [],
+  tabs: [{ key: 'dashboard', title: '数据', route: '/pages/dashboard/index/index' }],
+}
 jest.mock('../src/components/admin/useMobileMenu', () => ({
-  useMobileMenu: () => ({ state: 'ok', surfaces: [], tabs: [] }),
+  useMobileMenu: () => mockMenu,
 }))
 
 jest.mock('../src/utils/roleGuard', () => ({
@@ -109,6 +116,12 @@ const statsCalls = () => mockGet.mock.calls.filter((c) => String(c[0]).includes(
 
 beforeEach(() => {
   jest.clearAllMocks()
+  // 每个用例都从「有权限」起跑（个别用例自己改）
+  mockMenu = {
+    state: 'ok',
+    surfaces: [],
+    tabs: [{ key: 'dashboard', title: '数据', route: '/pages/dashboard/index/index' }],
+  }
 })
 
 describe('「数据」页三态（issue #6666 判据 6）', () => {
@@ -168,5 +181,30 @@ describe('「数据」页三态（issue #6666 判据 6）', () => {
     expect(screen.getByText('今日订单')).toBeInTheDocument()
     expect(screen.queryByTestId('dashboard-stats-error')).toBeNull()
     expect(screen.queryByTestId('dashboard-stats-forbidden')).toBeNull()
+  })
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 底栏常驻（用户 2026-10-18 裁定）⇒ 没权限也能点进「数据」页：整页给
+  // **与「问黄金策」同一做法**的授权缺失态（逐字「需要管理员授权」+ 可行动引导），
+  // 而不是让几张卡各印一句「无权限」。——判定只读服务端 `mobileTabs`。
+  // ══════════════════════════════════════════════════════════════════════════
+  it('🔴 服务端说没有「数据」这一格 ⇒ 整页「需要管理员授权」+ 引导，不渲染经营数据', async () => {
+    mockMenu = { state: 'ok', surfaces: [], tabs: [{ key: 'chat', title: '问黄金策', route: '/pages/chat/index/index' }] }
+    stub()
+    render(<DashboardPage />)
+
+    await waitFor(() => expect(screen.getByTestId('dashboard-gate-denied')).toBeInTheDocument())
+    expect(screen.getByText('需要管理员授权')).toBeInTheDocument()
+    expect(screen.getByText('请联系企业管理员在「员工管理」中为你开通「经营数据」权限')).toBeInTheDocument()
+    expect(screen.queryByText('今日销售额')).toBeNull()
+  })
+
+  it('对照读数：拿不到菜单（loading / error）⇒ **不拦**（拿不到 ≠ 没权限）', async () => {
+    mockMenu = { state: 'error', surfaces: [], tabs: [] }
+    stub()
+    render(<DashboardPage />)
+
+    await waitFor(() => expect(screen.getByText('今日销售额')).toBeInTheDocument())
+    expect(screen.queryByTestId('dashboard-gate-denied')).toBeNull()
   })
 })

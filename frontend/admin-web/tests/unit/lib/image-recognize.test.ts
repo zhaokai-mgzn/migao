@@ -23,6 +23,9 @@
  * 红证：把任一侧的路径改一个字（或前端 `valueOf(fields,'name')` 写成内核没有的 key）⇒ 本文件红。
  */
 import { describe, expect, it } from 'vitest'
+import { SPEC_EN_TO_CN } from '@/lib/attribute-keys'
+import { SPEC_ATTRIBUTE_GROUPS } from '@/lib/product-attribute-options'
+import { declaredCellsOf } from '@/lib/declared-facts'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
@@ -109,11 +112,11 @@ describe('图片识别 · 字段 key 契约同步 (#5321)', () => {
   }
 
   /**
-   * 「前端声称要从**响应**里读」的 key —— **五种写法**都收。
+   * 「前端声称要从**响应**里读」的 key —— **六种写法**都收。
    *
    * ⚠️ 这是本守卫的**扫描面**：新增一种读法而不补这里 ⇒ 那部分消费就是**盲区**
    * （守卫绿、而"读了一个内核不返回的 key"照样溜过去）。判别力由下面的
-   * `扫描器对五种消费写法都有判别力` 逐条钉住（红证式自检）。
+   * `扫描器对六种消费写法都有判别力` 逐条钉住（红证式自检）。
    */
   function consumedKeys(src: string): Set<string> {
     const consumed = new Set<string>()
@@ -130,10 +133,15 @@ describe('图片识别 · 字段 key 契约同步 (#5321)', () => {
     for (const m of src.matchAll(/ORDER_DERIVATION_INPUT_KEYS\s*=\s*\{([\s\S]*?)\n\}/g)) {
       for (const k of m[1].matchAll(/:\s*'([a-z_]+)'/g)) consumed.add(k[1])
     }
+    // ⑥ **常量键集引用式**消费（issue #7528）：`for (const key of Object.keys(SPEC_EN_TO_CN))`
+    //    —— 键集不写在调用点上，而是引用登记表；前五种写法都看不见它。
+    if (/Object\.keys\(SPEC_EN_TO_CN\)/.test(src)) {
+      for (const k of Object.keys(SPEC_EN_TO_CN)) consumed.add(k)
+    }
     return consumed
   }
 
-  it('扫描器对五种消费写法都有判别力（缺一种 ⇒ 那一种的消费是盲区）', () => {
+  it('扫描器对六种消费写法都有判别力（缺一种 ⇒ 那一种的消费是盲区）', () => {
     const samples: Array<[string, string]> = [
       ["const a = valueOf(fields, 'name')", 'name'],
       ["for (const key of ['material']) { void key }", 'material'],
@@ -143,6 +151,7 @@ describe('图片识别 · 字段 key 契约同步 (#5321)', () => {
         "const ORDER_DERIVATION_INPUT_KEYS = {\n  width: 'curtain_width',\n} as const",
         'curtain_width',
       ],
+      ['for (const key of Object.keys(SPEC_EN_TO_CN)) { void key }', 'material'],
     ]
     for (const [src, key] of samples) {
       expect({ src, hit: consumedKeys(src).has(key) }).toEqual({ src, hit: true })
@@ -177,19 +186,35 @@ describe('图片识别 · 字段 key 契约同步 (#5321)', () => {
     expect(overlap).toEqual([])
   })
 
-  it('前端读的每个 key 都在内核字段表里（读一个不存在的 key = 那格永远填不上且不报错）', () => {
+  it('前端读的每个 key 都在内核字段表或「商家填写」来源里（读一个不存在的 key = 那格永远填不上且不报错）', () => {
     const known = new Set(Object.values(targetKeys()).flat())
     const front = read(PREFILL)
 
     const consumed = consumedKeys(front)
 
+    // 🔴 **第二来源**（issue #7528）：`[商家填写]` 的键由前端自己的解析器产出，内核字段表里没有。
+    // 键集**从产出方现取**（不在这里再抄一份清单 —— 抄一份必然漂）：
+    const declared = new Set(
+      declaredCellsOf({
+        skuCode: 'X',
+        doorWidths: ['2.8'],
+        colorRule: null,
+        attributes: SPEC_ATTRIBUTE_GROUPS.map((group) => ({ key: group.key, value: '雪尼尔' })),
+      }).map((cell) => cell.key),
+    )
+    // 登记表本身的自证：解析器能产出的键 = 货号 + 门幅 + 六个规格属性（多/少一个都要红）
+    expect([...declared].sort()).toEqual([
+      'craft', 'door_width', 'function', 'material', 'pattern', 'sku_code', 'style', 'weight',
+    ])
+
     // 逐值钉住（不是"非空"）：少读一个键 / 多读一个键都要变红
     expect([...consumed].sort()).toEqual([
       'color', 'craft', 'curtain_height', 'curtain_width', 'customer_address',
-      'customer_name', 'customer_phone', 'description', 'door_width', 'items',
-      'material', 'name', 'open_count', 'processing_items', 'quantity', 'style',
+      'customer_name', 'customer_phone', 'description', 'door_width', 'function',
+      'items', 'material', 'name', 'open_count', 'pattern', 'processing_items',
+      'quantity', 'sku_code', 'style', 'weight',
     ])
-    expect([...consumed].filter((k) => !known.has(k))).toEqual([])
+    expect([...consumed].filter((k) => !known.has(k) && !declared.has(k))).toEqual([])
   })
 
   it('`[图片识别]` 标注串两端逐字一致（前端徽标文案 === 内核 FIELD_MARKER）', () => {

@@ -129,6 +129,15 @@ describe('KnowledgePage（LLM WIKI 知识卡片管理）', () => {
     expect(screen.getByText(/管理 AI 客服的知识卡片/)).toBeInTheDocument()
   })
 
+  it('筛选条：三个下拉有最小宽度、行距 gap-3（issue #7217）', async () => {
+    render(<KnowledgePage />);
+    const row = await screen.findByTestId('knowledge-filter-row');
+    expect(row.className).toContain('gap-3');
+    const selects = row.querySelectorAll('select');
+    expect(selects).toHaveLength(3);
+    selects.forEach((s) => expect(s.className).toContain('min-w-[9rem]'));
+  });
+
   it('should display entries from API in table (no hardcode)', async () => {
     render(<KnowledgePage />)
     await waitFor(() => {

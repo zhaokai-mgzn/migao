@@ -68,6 +68,15 @@ public class VersionController {
 
     private final Environment environment;
 
+    /**
+     * 迁移执行器（用 {@code ObjectProvider} 延迟取：它 {@code implements CommandLineRunner}，
+     * 构造期硬注入会与启动顺序纠缠；本端点只读它**已经发生**的事实）。
+     *
+     * <p>取不到（切片上下文 / 未装配）⇒ 端点报 `unknown`，**不报 0** —— 0 会被读成「跑了且全过」。</p>
+     */
+    private final org.springframework.beans.factory.ObjectProvider<com.migao.admin.config.MigrationRunner>
+            migrationRunner;
+
     // ⚠️ 占位符写**环境变量原名**（不写 `migao.build.sha` 那种点号形态）：本仓的既有形态是
     //    `application.yml` 里 `${RDS_HOST:…}` 直引环境变量 ⇒ 这条路径**不依赖** Spring Boot 的
     //    环境变量宽松绑定（relaxed binding）是否覆盖 `@Value` 解析 —— 少一个"可能不成立"的假设。
@@ -75,7 +84,10 @@ public class VersionController {
             @Value("${MIGAO_BUILD_SHA:}") String sha,
             @Value("${MIGAO_BUILD_TAG:}") String tag,
             @Value("${MIGAO_BUILT_AT:}") String builtAt,
-            Environment environment) {
+            Environment environment,
+            org.springframework.beans.factory.ObjectProvider<com.migao.admin.config.MigrationRunner>
+                    migrationRunner) {
+        this.migrationRunner = migrationRunner;
         this.sha = sha == null ? "" : sha.trim();
         this.tag = tag == null ? "" : tag.trim();
         this.builtAt = builtAt == null ? "" : builtAt.trim();
@@ -101,6 +113,51 @@ public class VersionController {
                     + "部署腿的 served-version 判据会判「探不到」(exit 3)");
         }
         return ResponseEntity.ok(body);
+    }
+
+    /**
+     * {@code GET /api/version/migrations} —— **迁移事实**（只读、只计数、无鉴权，nginx 已放行 `/api/` 前缀）。
+     *
+     * <p>为什么单独一个端点，而不是塞进 {@code /api/version}：后者的字段面被既有判据**冻结为 4 个**
+     * （issue #6951：往响应里加任何东西都要当场红）—— 那是部署腿比对 served sha 的契约，
+     * 不该为了可观测性去动它。</p>
+     *
+     * <p>为什么需要它：{@code MigrationRunner} 对非连接类失败是「跳过这条、继续跑」⇒ 库里少一张表时
+     * 服务照常 UP、部署 success、页面 500，**没人看得见**（云上「采购单加载失败」排查时，
+     * 最先要回答的就是「那几条迁移到底跑没跑」）。</p>
+     */
+    @GetMapping(value = "/api/version/migrations", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Map<String, String>> migrations() {
+        return ResponseEntity.ok(migrationFacts());
+    }
+
+    /**
+     * 迁移事实（只读、只计数）：
+     * <ul>
+     *   <li>{@code migrationsFailedReal} —— 真正需要修的失败条数（排除已知存量非幂等）；</li>
+     *   <li>{@code migrationsFailedBenign} —— 属已知存量非幂等的条数（目标态已达成，重跑亦复现）；</li>
+     *   <li>{@code migrationsAppliedByLedger} —— 本轮按台账**已应用**（跳过）的条数。</li>
+     * </ul>
+     *
+     * <p>⚠️ 语义边界：**不参与健康判定**（与 {@code MigrationHealthIndicator} 同口径）——
+     * 让探活 DOWN 会把「历史非幂等迁移每次起栈必失败」变成「整个环境打挂」，比原问题更糟。
+     * 这三个数只回答一个问题：**「这次部署，迁移层干净吗」**。</p>
+     */
+    private Map<String, String> migrationFacts() {
+        Map<String, String> facts = new LinkedHashMap<>();
+        com.migao.admin.config.MigrationRunner runner = migrationRunner == null
+                ? null : migrationRunner.getIfAvailable();
+        if (runner == null) {
+            // 「没跑」必须长得像「没跑」：不写 0（那会被读成「跑了且全过」）
+            facts.put("migrationsFailedReal", "unknown");
+            facts.put("migrationsFailedBenign", "unknown");
+            facts.put("migrationsAppliedByLedger", "unknown");
+            return facts;
+        }
+        facts.put("migrationsFailedReal", String.valueOf(runner.getLastFailedRealCount()));
+        facts.put("migrationsFailedBenign", String.valueOf(runner.getLastFailedBenignCount()));
+        facts.put("migrationsAppliedByLedger", String.valueOf(runner.getLastSkippedByLedger()));
+        return facts;
     }
 
     /** 应用名（{@code spring.application.name}）；取不到 ⇒ 空串（消费方可据此判「不是这个服务」）。 */

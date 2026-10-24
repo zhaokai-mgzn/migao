@@ -1,4 +1,4 @@
-// case_ids: BM-026
+// case_ids: BM-026, AU-013
 /**
  * **落地页深链被消费且按码空间分流**（issue #5052 实现 PR；设计 §5.4 / §7.1）
  *
@@ -229,12 +229,16 @@ describe('落地页深链：商家首页不抢路由（D6）', () => {
     }
   })
 
-  it('D6 行为面反证：**没有**落地码时首页照旧排那个跳转（证明上一条的"绿"不是空跑）', () => {
+  it('D6 行为面反证：**没有**落地码时首页照旧排那个跳转（证明上一条的"绿"不是空跑）', async () => {
     jest.useFakeTimers()
     try {
       gotoLanding('')
       const ChatPage = loadChatPage()
       render(<ChatPage />)
+      // 🔴 `checkAuth()` 自 issue #7249 起是异步的（exp 过期时先续期）⇒ 跳转定时器排在
+      //    `await checkAuth()` 之后的微任务里。判据不放宽（仍断言真的排了跳转），只让微任务跑完。
+      await Promise.resolve()
+      await Promise.resolve()
       jest.advanceTimersByTime(1000)
       expect(Taro.redirectTo).toHaveBeenCalledWith({ url: '/pages/auth/login/index' })
     } finally {

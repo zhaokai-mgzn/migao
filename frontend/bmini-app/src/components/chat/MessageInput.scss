@@ -10,7 +10,10 @@
   flex-direction: column;
   background: $bg-primary;
   border-top: 1px solid $border-color;
-  padding: $space-sm $space-md 0;
+  // 🔴 底部与顶部同值（issue #7252）：整条在页面预留的那一条里**垂直居中**，
+  //    浅灰输入容器的圆角下缘不贴着底栏（用户 2026-10-18「让整体页面协调」）。
+  //    ⚠️ 这里**只**是呼吸位，**不是**安全区 —— 安全区由 `.chat-page` 的预留补一次。
+  padding: $space-sm $space-md $space-sm;
 
   // ── 单容器（浅灰底大圆角）──
   &__container {

@@ -50,6 +50,8 @@ MIGRATION = MIGRATION_DIR / "V93__backfill_route_rules_for_empty_catalogs.sql"
 V71 = MIGRATION_DIR / "V71__normalize_routing_model_structure.sql"
 V72 = MIGRATION_DIR / "V72__switch_routing_model_consumers.sql"
 V84 = MIGRATION_DIR / "V84__seed_processing_item_route_rules.sql"
+#: issue #7523：整卷出库规则（活目录迁移；本块只镜像它自己的 2 条 sales_form 规则）
+V186 = REPO / "backend/admin-api/src/main/resources/db/migration/V186__roll_outbound_operation.sql"
 SCHEMA = REPO / "backend/admin-api/src/main/resources/db/init/schema.sql"
 
 #: 规则字段（**不含 id**：id 是各迁移自己的槽位命名，出厂知识比的是业务字段）。
@@ -202,6 +204,7 @@ _RULE_BLOCK_SOURCES = {
     "rr-v72": V72,
     "rr-v84": V84,
     "rr-v93": MIGRATION,
+    "rr-v186": V186,
 }
 
 

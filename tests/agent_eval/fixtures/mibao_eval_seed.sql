@@ -224,8 +224,11 @@ BEGIN
   -- 读数改为**ERP 加工项目录**（issue #4572：编造夹具 `pi_eval_embroidery` 已按用户裁定删除
   -- ⇒ 不能再拿它当「目录非空」的读数）。前提口径不变：目录非空即会询问加工项（#4371 解耦后
   -- 加工项是店铺级目录，与商品是否绑过无关）。
-  -- 目录 = **16 项**（#4572 裁定后：**V83 提供全部 16 项**，其中 `打孔`/`韩褶`/`定型`
-  -- 三行被本种子的**目录夹具**替换 —— 故整表仍是 16 行）。
+  -- 目录 = **15 项存活**（#4572 裁定后：V83 提供 16 项，其中 `打孔`/`韩褶`/`定型`
+  -- 三行被本种子的**目录夹具**替换；**V123（issue #5230）又把「接高」撤出目录** ⇒ 存活 15）。
+  -- ⚠️ 该阈值与迁移链的存活目录**同源**，由 `tests/unit_ci_workflows/`
+  -- `test_onboarding_processing_catalog_seed.py::test_eval_seed_catalog_threshold_converges_with_live_migrations`
+  -- 双向对账（新撤一项而漏改这里 ⇒ 当场红，而不是等评测腿在 seed 阶段 rc=3）。
   SELECT count(*) INTO v_pi     FROM processing_items  WHERE tenant_id = 1 AND deleted = 0;
   SELECT count(*) INTO v_cust   FROM customer_profiles WHERE id = 'cust_eval_zhangsan';
   SELECT count(*) INTO v_emp    FROM agent_employees   WHERE id = 'emp_eval_wangwu' AND deleted = 0;
@@ -239,7 +242,7 @@ BEGIN
   -- OR-016 的前提改为「店铺加工项目录非空」（v_pi 即该前提的读数）。
   RAISE NOTICE 'B 端评测 fixture 核对: 2699商品=% 颜色=% 加工项目录=% 客户张三=% 员工王五=% 客户王五=%',
     v_prod, v_colors, v_pi, v_cust, v_emp, v_cust_w;
-  IF v_prod < 1 OR v_colors < 1 OR v_pi < 16 THEN   -- 16 = ERP 目录项数（见上）
+  IF v_prod < 1 OR v_colors < 1 OR v_pi < 15 THEN   -- 15 = 今天存活的 ERP 目录项数（16 − V123 撤出的「接高」；见上）
     RAISE EXCEPTION 'B 端 fixture 注入失败：2699 商品/颜色/加工项目录 缺失（prod=% colors=% pi=%）',
       v_prod, v_colors, v_pi;
   END IF;

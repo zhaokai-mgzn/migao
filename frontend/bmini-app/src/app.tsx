@@ -18,8 +18,8 @@ function App({ children }: PropsWithChildren) {
     // 初始化网络状态监听
     setupNetworkListener()
 
-    // 初始化认证状态
-    useAuthStore.getState().initialize()
+    // 初始化认证状态（异步：exp 过期时先续期，issue #7249）
+    void useAuthStore.getState().initialize()
 
     // 🔴 **落地页深链**（issue #5052 实现 PR；设计 §5.4）：纸上的码
     // `https://app.migaozn.com/i/<短码>` 由服务端 302 到 `/b/?code=<短码>&tenant_id=…`，

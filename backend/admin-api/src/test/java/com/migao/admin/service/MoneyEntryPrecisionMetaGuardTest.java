@@ -147,6 +147,40 @@ class MoneyEntryPrecisionMetaGuardTest {
                         Admission.EQUIVALENT_GATED,
                         "特殊选项对客单价经 optionalCustomerPrice 的 setScale(2, UNNECESSARY) 准入"),
 
+                site("com/migao/admin/service/ReceiptAllocationService.java", "setAmount", Admission.GATED,
+                        "客户收款核销（issue #7370 段 3）：核销金额落库前过 MoneyScale.requireTwoDecimalsOrNull"
+                                + "（超精度输入直接拒，不静默四舍五入）"),
+                site("com/migao/admin/service/OrderPricingService.java", "setUnitPrice", Admission.GATED,
+                        "下单服务端定价（issue #7375 段 2）：改写单价的值来自 PriceResolution（纯函数内已 setScale(2)"
+                                + " 两位小数）⇒ 落库前不缺准入；此处登记的是「写面只有一个、且值只从解析结果来」"),
+                site("com/migao/admin/service/ApprovalService.java", "Approval.builder()", Admission.GATED,
+                        "具名审批（issue #7374 段 1）：审批金额入库前过 MoneyScale.requireTwoDecimalsOrNull"
+                                + "（「批了多少钱」是凭据，超精度直接拒，不静默四舍五入）"),
+                site("com/migao/admin/service/StockTransferService.java", "StockTransferItem.builder()", Admission.NO_NEW_INPUT_SOURCE,
+                        "调拨明细（issue #7373 段 1）：成本是 **stock_batches.unit_cost 的库列回读搬运**，"
+                                + "该列是 NUMERIC(12,4)（元/米 四位小数）⇒ **不套 2 位准入**（套了会把合法进价 12.3456 判成超精度）；"
+                                + "调拨不重算成本、不引入新的超精度输入源"),
+                site("com/migao/admin/service/StocktakeService.java", "StocktakeItem.builder()", Admission.NO_NEW_INPUT_SOURCE,
+                        "盘点明细（issue #7373 段 2）：`unit_cost` 是 **stock_batches.unit_cost 的库列回读搬运**"
+                                + "（NUMERIC(12,4) 元/米），不套 2 位准入；盘点只改数量、不动成本"),
+                site("com/migao/admin/service/SupplierPaymentService.java", "SupplierPayment.builder()",
+                        Admission.GATED,
+                        "供应商付款金额（issue #7369 段 3-B）：落库前过 "
+                        + "MoneyScale.requireTwoDecimalsOrNull(amount, \"付款金额\")"),
+                site("com/migao/admin/service/SupplierPaymentService.java",
+                        "SupplierPaymentAllocation.builder()", Admission.GATED,
+                        "付款冲抵金额（issue #7369 段 3-B）：逐行落库前过 "
+                        + "MoneyScale.requireTwoDecimalsOrNull(part, \"冲抵金额\")"),
+
+                site("com/migao/admin/service/PurchaseOrderService.java", "PurchaseOrder.builder()",
+                        Admission.GATED,
+                        "采购单总额（issue #7369 段 4）：逐行 amount 由已准入的 unitPrice × 数量算得并 setScale(2)，"
+                        + "总额再 setScale(4)"),
+                site("com/migao/admin/service/PurchaseOrderService.java", "PurchaseOrderItem.builder()",
+                        Admission.GATED,
+                        "采购明细单价/金额（issue #7369 段 4）：单价落库前过 "
+                        + "MoneyScale.requireTwoDecimalsOrNull(price, \"采购单价\")，金额由它算出"),
+
                 // ── ③ #6228 补齐的金额入口（GATED：落库前复用 MoneyScale 单点准入）────
                 site("com/migao/admin/service/AfterSalesTicketService.java", "setRefundAmount", Admission.GATED,
                         "建单入口 createTicket 开头过 MoneyScale：工单 refund_amount 列 NUMERIC(10,2)；"
@@ -198,6 +232,13 @@ class MoneyEntryPrecisionMetaGuardTest {
                 site("com/migao/admin/service/CustomerService.java", "CustomerProfile.builder()",
                         Admission.NO_NEW_INPUT_SOURCE,
                         "客户画像的累计退款额由订单退款额聚合而来（库列回读值），不引入新的外部精度"),
+                // issue #7257：建档写面抽到单一实现点后，`CustomerProfile.builder()` 从这里发出 ——
+                // 与上面 CustomerService 那条**同一件事**（同一条建档路径挪了位置），不是新增的金额输入源：
+                // candidate() 只写入 totalConsumption = BigDecimal.ZERO（常量占位，随后由订单退款/消费聚合覆盖）。
+                site("com/migao/admin/service/CustomerProfileWriter.java", "CustomerProfile.builder()",
+                        Admission.NO_NEW_INPUT_SOURCE,
+                        "建档种子（issue #7257）：totalConsumption 恒为代码常量 ZERO，真实累计值由订单聚合写回；"
+                                + "根条目 = CustomerService.java :: CustomerProfile.builder()"),
                 site("com/migao/admin/service/InboundOrderService.java", "StockBatch.builder()",
                         Admission.NO_NEW_INPUT_SOURCE,
                         "同一入库请求的 unitCost/amount 落到批次（根条目 = 本文件的 InboundOrderItem.builder()）"),

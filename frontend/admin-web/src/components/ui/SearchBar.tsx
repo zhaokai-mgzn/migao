@@ -76,7 +76,16 @@ const SearchBar = ({ fields, onSearch, onReset, loading, className }: SearchBarP
     <div className={cn('bg-neutral-50 p-4 rounded-lg', className)} data-testid="search-area">
       <div className="flex flex-wrap items-end gap-4">
         {fields.map((field) => (
-          <div key={field.key} className="min-w-[200px]">
+          // 字段**参与伸缩**（issue #7397）：旧版是定宽 `min-w-[200px]` 且不 grow ⇒
+          // 占位文案比 200px 长就必然被截断（知识库「搜索标题 / 关键词 / 常见问法 / 回答内容」），
+          // 而按钮被 `ml-auto` 推到最右、中间留下整片空白。`flex-1` 让它吃掉那段空白，
+          // `basis-[22rem]` 只定**换行前的初始宽度**（约等于最长占位文案 + 内边距），
+          // 窄视口仍会正常换行（不写死最小宽度，免得在小屏撑出横向滚动）。
+          <div
+            key={field.key}
+            data-testid={`search-field-${field.key}`}
+            className="flex-1 basis-[22rem] min-w-0"
+          >
             {field.type === 'input' ? (
               <Input
                 label={field.label}

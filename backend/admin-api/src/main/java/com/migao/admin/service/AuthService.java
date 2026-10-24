@@ -89,9 +89,6 @@ public class AuthService {
      */
     private static final String REFRESH_TOKEN_COOKIE = "refresh_token";
 
-    /** Refresh Token Cookie 有效期（秒）：7 天，与 JWT refresh-token-expiration 对齐 */
-    private static final int REFRESH_TOKEN_COOKIE_MAX_AGE = 604800;
-
     @Value("${jwt.cookie.name:access_token}")
     private String cookieName;
 
@@ -942,7 +939,9 @@ public class AuthService {
                         // 字段名与结构一字未动（/api/auth/me 的消费者很多，只改取值）。
                         .username(StringUtils.hasText(user.getUsername()) ? user.getUsername() : user.getPhone())
                         .nickname(user.getNickname())
-                        .position(user.getPosition())
+                        // 展示口径（2026-10-18 用户截图「这里的岗位不要用英文」）：存量行里 position
+                        // 存的是**角色码**（API / 脚本建号）⇒ 解析成岗位名再上屏；字段名/结构一字未动。
+                        .position(roleService.displayPosition(user.getPosition(), user.getTenantId()))
                         .avatar(user.getAvatar())
                         .tenantId(user.getTenantId())
                         .tenantName(tenantName)
@@ -1180,11 +1179,15 @@ public class AuthService {
     }
 
     /**
-     * 设置 Refresh Token Cookie（HttpOnly+Secure+SameSite，7 天）。
+     * 设置 Refresh Token Cookie（HttpOnly+Secure+SameSite；有效期 = `jwt.refresh-token-expiration`）。
      * refresh token 仅经此通道下发（审计 07 P1-5），不进入响应体。
+     *
+     * <p>🔴 有效期**只有 `JwtTokenProvider` 一个来源**（issue #7249）：此前这里另抄了一份
+     * `604800` 字面量 ⇒ 与配置构成第二份真值（改一处漏一处 = 一类缺陷，不是一处笔误）。</p>
      */
     private void setRefreshTokenCookie(HttpServletResponse response, String refreshToken) {
-        setCookie(response, REFRESH_TOKEN_COOKIE, refreshToken, REFRESH_TOKEN_COOKIE_MAX_AGE);
+        setCookie(response, REFRESH_TOKEN_COOKIE, refreshToken,
+                (int) jwtTokenProvider.getRefreshTokenExpiration());
     }
 
     /**
@@ -1315,22 +1318,22 @@ public class AuthService {
         // 判据：tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py。
         // 🔴 issue #5217 裁决：**图标是前端专属**（服务端不下发 icon）—— `menuItem` 只有 key/name/path。
 
-        // 工作台（#5271：由「独立项」改为**组**，含 经营看板 + 每日简报 两项）
-        List<UserInfoResponse.MenuItem> workspaceChildren = new java.util.ArrayList<>();
-        // 经营看板（issue #5699 **P4**）：子菜单粒度 = 节点码 ≡ 该页第一屏读码 `dashboard:view`
+        // 🔴 2026-10-17（issue #7087，用户裁定）：原「工作台」组**整组撤销** ——
+        //   · 「经营看板」升为**顶层一级项**、落**最前席位**（本方法**首个**顶层 `menus.add`）；
+        //   · 「每日简报」菜单项**删除**（那一行结论已在经营看板上，企业开关驱动那张卡即可）。
+        // 经营看板（issue #5699 **P4**）：节点码 ≡ 该页第一屏读码 `dashboard:view`
         // —— 此前节点**无码**（全员可见），而该页 5 个读端点与前端路由守卫都取 `dashboard:view`
-        // ⇒ 「菜单看得见、点进去 403」（零权限的自建岗位即真受害者）；本次收敛为同码。
+        // ⇒ 「菜单看得见、点进去 403」（零权限的自建岗位即真受害者）；该码本次**一字未动**。
+        // ⚠️ 位置在**三处**同批表达：本处 add 的文档位置（**最前**）/ `MenuController.MENU_TREE`
+        // 的顶层**首个**节点 / 前端 `menu.ts` 的 `standaloneHeadItems`（三源同构守卫按顶层布局序列比对，含位置）。
         if (isAll || permissions.contains("dashboard:view")) {
-            workspaceChildren.add(menuItem("dashboard", "经营看板", "/dashboard"));
+            menus.add(menuItem("dashboard", "经营看板", "/dashboard"));
         }
-        // 每日简报（issue #3468）：按 dashboard:view 判定（与 menu.ts 的 permissionCode 同码）。
-        // ⚠️ **企业开关有意不在此实现** —— 服务端拿不到该开关；开关由前端按 `menu.ts` 的
-        // `briefingToggle` 读取后过滤显隐，服务端只负责权限这一维。
+
+        // 报表中心（issue #7376 / #7377）：与经营看板同属经营数据面 ⇒ 紧随其后；同码零 delta。
+        // ⚠️ 位置在三处同批表达：本处 / `MenuController.MENU_TREE` 顶层第二节点 / 前端 `standaloneHeadItems`。
         if (isAll || permissions.contains("dashboard:view")) {
-            workspaceChildren.add(menuItem("briefing", "每日简报", "/briefing"));
-        }
-        if (!workspaceChildren.isEmpty()) {
-            menus.add(menuGroup("workspace", "工作台", workspaceChildren));
+            menus.add(menuItem("reports", "报表中心", "/reports"));
         }
 
         // 商品管理（2026-09-29 用户裁定「商品列表改成商品管理，直接作为一级菜单使用」）：
@@ -1374,14 +1377,23 @@ public class AuthService {
 
         // 交易管理分组（本轮 2026-09-29 收窄为**「下单 → 收款」两项**：客户列表 / 售后工单
         // 已移入「客户服务」组 —— 用户原话「客户管理也不属于交易管理」）。
-        // 顺序 = 订单列表 → 财务对账（与 `menu.ts` 的 `trade-center` 组逐值一致）。
+        // 顺序 = 销售订单 → 财务对账（与 `menu.ts` 的 `trade-center` 组逐值一致）。
         List<UserInfoResponse.MenuItem> tradeChildren = new java.util.ArrayList<>();
+        // 价格本（issue #7375 段 3）：**交易前置**（先定价，再开单）⇒ 组内第一项；
+        // 读面码 `order:list`（= `PricingController` 的类级码 = 该页第一屏读码，repo 规则「每页恰好一个码」）。
         if (isAll || permissions.contains("order:list")) {
-            tradeChildren.add(menuItem("orders", "订单列表", "/orders"));
+            tradeChildren.add(menuItem("price-books", "价格本", "/price-books"));
+        }
+        if (isAll || permissions.contains("order:list")) {
+            tradeChildren.add(menuItem("orders", "销售订单", "/orders"));
         }
         if (isAll || permissions.contains("finance:view")) {
             tradeChildren.add(menuItem("finance", "财务对账", "/finance"));
         }
+        // 🔴 2026-10-24（issue #7593，用户裁定「审批中心菜单放置到右上角……不要单独搞个菜单」）：
+        // 「审批中心」**菜单节点已撤除**（原 issue #7374 在此下发 `approvals`）—— 页面 `/approvals`
+        // 与路由守卫（`finance:view`）一字不动，入口改到顶栏待办入口（前端 `ApprovalBell`）。
+        // ⇒ 有 `finance:view` 的岗位仍是「看得见财务对账、点得进审批中心」，**零授权 delta**。
         if (!tradeChildren.isEmpty()) {
             menus.add(menuGroup("trade-center", "交易管理", tradeChildren));
         }
@@ -1391,19 +1403,19 @@ public class AuthService {
         // 🔴 2026-10-09（issue #6580，用户裁定）：本组**再收拢为 3 项** —— 「加工项管理」
         // `/production/processing` 与「工艺配置」`/production/routings` 两个**菜单项已移除**
         //（功能体并入 `/settings` 企业基础设置页内的配置域；旧路径保留为重定向），
-        // 本组现为「生产看板 → 智能派单 → 计件工资」。
+        // 本组现为「作业看板 → 智能派单 → 计件工资」。
         // 三个节点**必须与 MenuController 的静态权限树、前端 config/menu.ts 三处同构**；漏一处
         // 就是「岗位权限页勾得动、侧边栏看不到」（#4203 点名的同族坑）。
         List<UserInfoResponse.MenuItem> productionChildren = new java.util.ArrayList<>();
-        // issue #5291：生产看板 / 计件工资按生产域**读**码门控；智能派单沿用 processing:view。
+        // issue #5291：作业看板 / 计件工资按生产域**读**码门控；智能派单沿用 processing:view。
         // 🔴 注释必须写在 `if` **之外**：`tests/unit_ci_workflows/` 的
         // `test_agent_permission_parity.py` 的 `_iter_menu_auth`（RBAC 单一真值源 P1~P5 的**唯一**
         // auth 菜单解析器）用的形态是 `permissions.contains("X")) {` **紧跟** `var.add(menuItem(...))`
         // —— `{` 与 `.add` 之间插入任何一行（注释也一样）⇒ 该项**静默从读数里消失**（实测：一行注释
-        // 曾让「生产看板」从 `rbac/readings.json` 的 `menus.auth` 里消失，「清单 == 生成物」对账因此判红）。
-        // /production = 加工单唯一入口（issue #4357 与原「加工单」菜单合并）。
+        // 曾让「作业看板」从 `rbac/readings.json` 的 `menus.auth` 里消失，「清单 == 生成物」对账因此判红）。
+        // /production = 作业单唯一入口（issue #4357 与原「加工单」菜单合并）。
         if (isAll || permissions.contains("production:view")) {
-            productionChildren.add(menuItem("production-board", "生产看板", "/production"));
+            productionChildren.add(menuItem("production-board", "作业看板", "/production"));
         }
         // 智能派单（issue #5177）：池化派单的决策屏。issue #5699 **P4** 起节点码 = 该页第一屏**读**码
         // `processing:view`（`ProductionPoolController` 的两个读端点同码）—— 此前节点挂
@@ -1414,19 +1426,43 @@ public class AuthService {
         if (isAll || permissions.contains("production:view")) {
             productionChildren.add(menuItem("production-piecework", "计件工资", "/production/piecework"));
         }
+        // 质检记录（issue #7140 = #5652 的商家面）：节点码 = 该页三个端点的**方法级**
+        // `production:inspect`（写与读同一把尺子）—— 只授质检员 + 管理员（用户 2026-10-17 裁定）。
+        // 🔴 注释必须写在这个 `if` **之外**（`_iter_menu_auth` 的形态要求，见上方 #5291 的盲区说明）。
+        if (isAll || permissions.contains("production:inspect")) {
+            productionChildren.add(menuItem("quality-inspections", "质检记录", "/quality-inspections"));
+        }
+        // 返工单（issue #7377）：节点码 = 该页第一屏读端点码 `after_sales:view`（与售后工单同码）
+        // ⇒ 有售后读权就能看到（零授权 delta）；写动作走 `order:refund`，不在菜单码里体现。
+        if (isAll || permissions.contains("after_sales:view")) {
+            productionChildren.add(menuItem("rework-orders", "返工单", "/rework-orders"));
+        }
         if (!productionChildren.isEmpty()) {
             menus.add(menuGroup("production-center", "生产管理", productionChildren));
         }
 
         // 仓储与物料分组（#5271 **新组**）：用户 2026-10-06 组内重排为
         // **单据（进 → 账 → 出）→ 台账 → 分析**，与「生产管理」组拆开（一个仓管找「入库单」时
-        // 不该在「生产看板」旁边找）。
+        // 不该在「作业看板」旁边找）。
         // 🔴 入库单（V111，issue #5034）权限码**独立**（inbound:view）且必须落在**自己的 if** 里：
         // 入库是仓储动作、不是加工动作 —— 塞进下面 processing:manage 的判定会让
         // 「有 inbound:view、没有 processing:manage」的仓管看不到菜单（#4203 同族坑）。
+        // 供应链（issue #7369，用户 2026-10-20 裁定「得加个新大菜单」）：谁供货 → 买什么 → 到货登记
+        List<UserInfoResponse.MenuItem> supplyChainChildren = new java.util.ArrayList<>();
         List<UserInfoResponse.MenuItem> inventoryChildren = new java.util.ArrayList<>();
+        // 供应商（issue #7369）：档案面，码与 MenuController / menu.ts 三处逐字一致（inbound:view）。
+        // 与「入库单」**各自一个 if**：本仓的菜单解析器认「`permissions.contains(...)` 之后紧接
+        // `xxx.add(menuItem(...))`」这一形态（每条 add 一个 if 是既有写法，两个 add 塞一个 if 会让
+        // 解析器只认第一条 —— 实测 `auth:入库单` 与 `auth:供应商` 同时读成 None）。
         if (isAll || permissions.contains("inbound:view")) {
-            inventoryChildren.add(menuItem("inbound-orders", "入库单", "/inbound-orders"));
+            supplyChainChildren.add(menuItem("inbound-orders", "入库单", "/inbound-orders"));
+        }
+        if (isAll || permissions.contains("inbound:view")) {
+            supplyChainChildren.add(menuItem("suppliers", "供应商", "/suppliers"));
+        }
+        // 采购单（issue #7369 段 4）：一条 add 一个 if —— 合并进上面的 if 会让解析器只读到第一条（#6781 同族）。
+        if (isAll || permissions.contains("inbound:view")) {
+            supplyChainChildren.add(menuItem("purchase-orders", "采购单", "/purchase-orders"));
         }
         // 库存明细（issue #6404）：SKU 级库存**变化流水**的读面 —— 后端端点（issue #4055）与 agent
         // 工具（issue #5247）早就有，页面是该控制器 javadoc 里逐字登记的显式延后项。
@@ -1436,6 +1472,11 @@ public class AuthService {
         // ⚠️ 用户 2026-10-06 方案 A1：本项**紧跟「入库单」**（进仓之后第一件要看的就是账）。
         if (isAll || permissions.contains("product:list")) {
             inventoryChildren.add(menuItem("stock-ledger", "库存明细", "/stock-ledger"));
+        }
+        // 盘点单（issue #7373 段 3 前端）：读码 `inbound:view`（与仓 / 入库同域；仓管做账实核对）。
+        // 与 MenuController 的 `stocktakes`、前端 `config/menu.ts` 的 `stocktakes` 三处同构。
+        if (isAll || permissions.contains("inbound:view")) {
+            inventoryChildren.add(menuItem("stocktakes", "盘点单", "/stocktakes"));
         }
         // 发货单（issue #5939）：与按单读面（GET /api/admin/orders/{id}/shipments）**逐字同码**
         // `order:list` ⇒ 零授权 delta（能看订单的人就能看发货单）；新造码会让菜单对所有人不可见
@@ -1453,6 +1494,9 @@ public class AuthService {
         // ⇒ 按子菜单粒度把节点码收敛到该读码（此前节点挂 processing:manage = 节点码 ≠ 页面读码）。
         if (isAll || permissions.contains("product:list")) {
             inventoryChildren.add(menuItem("production-saving-board", "省料看板", "/production/saving-board"));
+        }
+        if (!supplyChainChildren.isEmpty()) {
+            menus.add(menuGroup("supply-chain", "供应链", supplyChainChildren));
         }
         if (!inventoryChildren.isEmpty()) {
             menus.add(menuGroup("inventory-center", "仓储与物料", inventoryChildren));
