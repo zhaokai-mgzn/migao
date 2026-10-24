@@ -2832,10 +2832,10 @@ COMMENT_CLAIMS: tuple[CommentClaim, ...] = (
     ),
     CommentClaim(
         source="java:controller/StockBatchController.java",
-        anchor="**7 个 GET 端点**",
+        anchor="**8 个 GET 端点**",
         kind="get-endpoint-count",
-        arg=("/api/admin/batch-stock/", 7),
-        why="该控制器的读面条数（本单改准：原写「四个读面……另有一个」而实测 7 个）",
+        arg=("/api/admin/batch-stock/", 8),
+        why="该控制器的读面条数（#5675 改准为 7 个；#7604 增加批次余量分页读面 ⇒ 8 个）",
     ),
 )
 
@@ -3219,10 +3219,10 @@ AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
     ),
     "product:list": AuthorizationCensusEntry(
         roles=('sales',),
-        endpoints=('GET /api/admin/batch-stock/batches', 'GET /api/admin/batch-stock/candidates', 'GET /api/admin/batch-stock/consumptions', 'GET /api/admin/batch-stock/distribution', 'GET /api/admin/batch-stock/reconcile', 'GET /api/admin/batch-stock/saving-board', 'GET /api/admin/batch-stock/saving-trend', 'GET /api/admin/products', 'GET /api/admin/products/export', 'GET /api/admin/products/import-template', 'GET /api/admin/products/low-stock-by-color', 'GET /api/admin/products/{}', 'GET /api/admin/stock-ledger'),
+        endpoints=('GET /api/admin/batch-stock/batches', 'GET /api/admin/batch-stock/batches/page', 'GET /api/admin/batch-stock/candidates', 'GET /api/admin/batch-stock/consumptions', 'GET /api/admin/batch-stock/distribution', 'GET /api/admin/batch-stock/reconcile', 'GET /api/admin/batch-stock/saving-board', 'GET /api/admin/batch-stock/saving-trend', 'GET /api/admin/products', 'GET /api/admin/products/export', 'GET /api/admin/products/import-template', 'GET /api/admin/products/low-stock-by-color', 'GET /api/admin/products/{}', 'GET /api/admin/stock-ledger'),
         menu_nodes=('auth:商品管理', 'controller:商品管理', 'frontend:商品管理'),
         tools=('batch_stock_query', 'inventory_manage', 'order_create', 'product_detail', 'product_search', 'stock_ledger_query'),
-        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「商品管理」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；13 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/batch-stock/batches；GET /api/admin/batch-stock/candidates；GET /api/admin/batch-stock/consumptions 等）；Agent 侧 6 个工具声明本码 ⇒ 黄金策对这批账号由「权限不足」变为可达（batch_stock_query / inventory_manage / order_create / product_detail / product_search / stock_ledger_query）。'),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「商品管理」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；14 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/batch-stock/batches；GET /api/admin/batch-stock/batches/page；GET /api/admin/batch-stock/candidates；GET /api/admin/batch-stock/consumptions 等）；Agent 侧 6 个工具声明本码 ⇒ 黄金策对这批账号由「权限不足」变为可达（batch_stock_query / inventory_manage / order_create / product_detail / product_search / stock_ledger_query）。'),
     ),
 }
 

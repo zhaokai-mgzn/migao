@@ -146,6 +146,9 @@ public class StockBatchConsumptionService {
      */
     private static final int SHARE_SCALE = 10;
 
+    /** 分页读面的上限（issue #7604）：再大就不是"一屏"了，而是一次拉全量的另一种写法 */
+    private static final long MAX_PAGE_SIZE = 200;
+
     private final StockBatchMapper stockBatchMapper;
     private final StockBatchConsumptionMapper consumptionMapper;
     private final ProductSkuMapper productSkuMapper;
@@ -632,16 +635,70 @@ public class StockBatchConsumptionService {
         List<BatchStockViews.BatchRemaining> rows = new ArrayList<>();
         for (StockBatch b : batches) {
             BigDecimal used = consumed.getOrDefault(b.getId(), BigDecimal.ZERO);
-            BigDecimal inbound = StockQuantity.orZero(b.getQuantity());
-            BigDecimal rest = inbound.add(used);
-            if (onlyAvailable && rest.compareTo(BigDecimal.ZERO) <= 0) {
+            if (onlyAvailable && StockQuantity.orZero(b.getQuantity()).add(used)
+                    .compareTo(BigDecimal.ZERO) <= 0) {
                 continue;
             }
-            rows.add(new BatchStockViews.BatchRemaining(b.getId(), b.getBatchNo(), b.getProductId(),
-                    b.getSkuId(), b.getSkuCode(), b.getInboundNo(), b.getDyeLot(), b.getReceivedDate(),
-                    b.getUnitCost(), plain(inbound), plain(used.negate()), plain(rest)));
+            rows.add(toRemaining(b, used));
         }
         return rows;
+    }
+
+    /**
+     * 批次余量**分页**读面（issue #7604）：库存明细页「批次余量」视图的默认列表。
+     *
+     * <p>与 {@link #remaining} 的分工是**场景**、不是口径：</p>
+     * <ul>
+     *   <li>{@code remaining} = 「按商品取它的全部批次」—— 派工候选 / 剩余量分布 / 对账 / Agent 工具
+     *       都带明确商品上下文（几百批次以内），一次取完再在内存里筛 {@code onlyAvailable}；</li>
+     *   <li>本方法 = 「全租户**分页浏览**」—— 商家进页面先问「我有哪些布、各剩多少」，**没有**商品上下文。
+     *       改前那个读面必须传 {@code productId}（否则一次拉整个租户），页面只好反过来要求先选商品
+     *       ⇒ 首屏永远是空态（用户 2026-10-24 逐字：「这里是不是应该默认给个分页查询展示当前批次库存」）。
+     *       分页下推到这里，页面直接可看。</li>
+     * </ul>
+     *
+     * <p>🔴 余量口径**只有一处**：两处都走 {@link #toRemaining}（派生 = 入库量 + Σ消耗），
+     * 不各自减一遍 —— 那正是「同一列两种算法」的开始。</p>
+     *
+     * <p>排序 = **收货日期倒序、id 倒序**（最近进的布在最上面；未记收货日期的排最后 —— 不猜日期，
+     * 与 {@code listBatches} 的 FIFO 序是**两个用途**，各自在注释里写明）。</p>
+     *
+     * @param keyword 命中批号 / 旧系统批次号 / 缸号 / 入库单号 / 货号（服务端 LIKE，前端不自己过滤）
+     */
+    public PageResponse<BatchStockViews.BatchRemaining> remainingPage(Long tenantId, String productId,
+            Long skuId, String keyword, long page, long size) {
+        long safePage = Math.max(1, page);
+        long safeSize = Math.min(Math.max(1, size), MAX_PAGE_SIZE);
+        String kw = StringUtils.hasText(keyword) ? keyword.trim() : null;
+        LambdaQueryWrapper<StockBatch> wrapper = new LambdaQueryWrapper<StockBatch>()
+                .eq(StockBatch::getTenantId, tenantId)
+                .eq(StockBatch::getDeleted, 0)
+                .eq(StringUtils.hasText(productId), StockBatch::getProductId, productId)
+                .eq(skuId != null, StockBatch::getSkuId, skuId)
+                .and(kw != null, query -> query
+                        .like(StockBatch::getBatchNo, kw).or()
+                        .like(StockBatch::getLegacyBatchNo, kw).or()
+                        .like(StockBatch::getSkuCode, kw).or()
+                        .like(StockBatch::getDyeLot, kw).or()
+                        .like(StockBatch::getInboundNo, kw))
+                .orderByDesc(StockBatch::getReceivedDate)
+                .orderByDesc(StockBatch::getId);
+        Page<StockBatch> result = stockBatchMapper.selectPage(new Page<>(safePage, safeSize), wrapper);
+        Map<Long, BigDecimal> consumed = consumedByBatchId(tenantId, ids(result.getRecords()));
+        List<BatchStockViews.BatchRemaining> rows = new ArrayList<>();
+        for (StockBatch b : result.getRecords()) {
+            rows.add(toRemaining(b, consumed.getOrDefault(b.getId(), BigDecimal.ZERO)));
+        }
+        return PageResponse.of(result.getTotal(), result.getCurrent(), result.getSize(), rows);
+    }
+
+    /** 一行的余量三值（**唯一**派生点：入库量 / 已消耗 / 剩余 = 入库 + Σdelta） */
+    private static BatchStockViews.BatchRemaining toRemaining(StockBatch b, BigDecimal used) {
+        BigDecimal inbound = StockQuantity.orZero(b.getQuantity());
+        BigDecimal rest = inbound.add(used);
+        return new BatchStockViews.BatchRemaining(b.getId(), b.getBatchNo(), b.getProductId(),
+                b.getSkuId(), b.getSkuCode(), b.getInboundNo(), b.getDyeLot(), b.getReceivedDate(),
+                b.getUnitCost(), plain(inbound), plain(used.negate()), plain(rest));
     }
 
     /**
