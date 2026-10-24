@@ -1,13 +1,19 @@
-// case_ids: PRC-005, APV-002
+// case_ids: PRC-005, APV-002, UI-038
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import PriceBooksPage from '@/app/(dashboard)/price-books/page'
 
 /**
- * 价格本页面（issue #7375 段 3）—— 三条纪律的**前端**判据。
+ * 价格本页面（issue #7375 段 3；交互改版 = issue #7622）—— 三条纪律的**前端**判据。
  *
  * 后端已保证「价必须 > 0」「低于成本要审批」，但页面若把这些错误吞掉（只显示「保存失败」），
  * 运营就不知道该怎么办 —— 而价格是毛利的第一变量。
+ *
+ * ## issue #7622（用户 2026-10-24 两张截图）改的三件事
+ *
+ * 1. 新增价格 = **弹窗**（改前是插在页面中间原地展开的一条横排表单，把页面撑长、离入口按钮很远）；
+ * 2. 三层价格**平铺**（改前「价格类型」是下拉，选一项才出现对应字段）；
+ * 3. 客户**只能是选出来的**（改前协议价与「只看这个客户」都是手填客户 id 的文本框）。
  */
 const priceBookApi = vi.hoisted(() => ({
   list: vi.fn(),
@@ -19,7 +25,8 @@ const priceBookApi = vi.hoisted(() => ({
 
 const approvalApi = vi.hoisted(() => ({ submit: vi.fn() }))
 const productApi = vi.hoisted(() => ({ getProducts: vi.fn(), getProduct: vi.fn() }))
-vi.mock('@/lib/api', () => ({ priceBookApi, approvalApi, productApi }))
+const customerApi = vi.hoisted(() => ({ getCustomers: vi.fn() }))
+vi.mock('@/lib/api', () => ({ priceBookApi, approvalApi, productApi, customerApi }))
 vi.mock('@/lib/permission', () => ({ usePermission: () => ({ has: () => true, permissions: [], isAdmin: true }) }))
 
 const wrap = <T,>(data: T) => Promise.resolve({ data: { success: true, data } })
@@ -28,11 +35,32 @@ const wrap = <T,>(data: T) => Promise.resolve({ data: { success: true, data } })
 const SKU_ID = '2097126615461462018'
 const EMPTY_BOOK = { skuId: SKU_ID, protocol: [], vipLevels: [], tiers: [] }
 
+/** 客户候选（客户选择器的数据源）：姓名三种字段都可能缺，手机号用于消歧 */
+const CUSTOMERS = [
+  { id: 'c-1', wechatNickname: '王芳', phone: '13800001111' },
+  { id: 'c-2', name: '李强', phone: '13900002222' },
+]
+
 /** 选 SKU 的走法（issue #7567）：搜商品 → 点商品 → 单选那个 SKU（**没有**手打编号的输入框） */
 async function pickSku() {
   fireEvent.change(screen.getByLabelText('搜索商品'), { target: { value: '遮光' } })
   fireEvent.click(await screen.findByRole('button', { name: /遮光窗帘布/ }, { timeout: 3000 }))
   fireEvent.click(await screen.findByRole('radio', undefined, { timeout: 3000 }))
+}
+
+/** 打开「新增价格」弹窗（改版后它是**弹窗**，页面里不再原地展开表单） */
+async function openAddDialog(): Promise<HTMLElement> {
+  fireEvent.click(await screen.findByRole('button', { name: /新增价格/ }))
+  return screen.getByRole('dialog')
+}
+
+/** 在弹窗的「协议价」块里用**客户选择器**选一个客户（不是手填 id） */
+async function pickProtocolCustomer() {
+  const testId = 'price-books-protocol-customer'
+  const input = screen.getByTestId(`${testId}-input`)
+  fireEvent.focus(input)
+  fireEvent.change(input, { target: { value: '王' } })
+  fireEvent.click(await screen.findByTestId(`${testId}-option-c-1`, undefined, { timeout: 3000 }))
 }
 
 describe('价格本页面', () => {
@@ -51,6 +79,9 @@ describe('价格本页面', () => {
         },
       },
     })
+    customerApi.getCustomers.mockImplementation(() =>
+      wrap({ items: CUSTOMERS, total: CUSTOMERS.length, page: 1, size: 20 }),
+    )
   })
 
   it('🔴 没选 SKU 时只给提示，不打接口；页面上**没有**手打 SKU 编号的输入框（issue #7567）', async () => {
@@ -101,18 +132,79 @@ describe('价格本页面', () => {
     expect(screen.getByTestId('price-books-list-tier').textContent).toContain('满 50 米')
   })
 
-  it('🔴 价格 ≤ 0 时前端先拦（0 元等于白送），且不打保存接口', async () => {
+  it('🔴「新增价格」开的是**弹窗**，三层价格**平铺**（没有「价格类型」下拉，issue #7622）', async () => {
     render(<PriceBooksPage />)
     await pickSku()
     await waitFor(() => expect(screen.getByTestId('price-books-empty-protocol')).toBeInTheDocument())
 
-    fireEvent.click(screen.getByText('新增价格'))
-    fireEvent.change(screen.getByTestId('price-books-target'), { target: { value: 'c-9' } })
-    fireEvent.change(screen.getByTestId('price-books-price'), { target: { value: '0' } })
-    fireEvent.click(screen.getByTestId('price-books-save'))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    const dialog = await openAddDialog()
 
-    await waitFor(() => expect(screen.getByTestId('price-books-form-error')).toBeInTheDocument())
-    expect(screen.getByTestId('price-books-form-error').textContent).toContain('必须大于 0')
+    // ① 弹窗：表单在 dialog 里，页面正文不再被撑出一条常驻表单
+    expect(dialog).toHaveAttribute('aria-modal', 'true')
+    expect(dialog).toHaveTextContent('新增价格')
+    // ② 三层**同时**在位（改前靠「价格类型」下拉切换，选一项才出现一层）
+    expect(screen.getByTestId('price-books-section-protocol')).toBeInTheDocument()
+    expect(screen.getByTestId('price-books-section-vip')).toBeInTheDocument()
+    expect(screen.getByTestId('price-books-section-tier')).toBeInTheDocument()
+    expect(screen.queryByTestId('price-books-kind')).not.toBeInTheDocument()
+    // ③ 三层各自的保存入口都在（互不串层）
+    expect(screen.getByTestId('price-books-save-protocol')).toBeInTheDocument()
+    expect(screen.getByTestId('price-books-save-vip')).toBeInTheDocument()
+    expect(screen.getByTestId('price-books-save-tier')).toBeInTheDocument()
+  })
+
+  it('🔴 协议价的客户**从选择器里选**（不再手填客户 id），选完按该客户 id 提交（issue #7622）', async () => {
+    priceBookApi.upsertProtocol.mockResolvedValue({ data: { success: true } })
+    render(<PriceBooksPage />)
+    await pickSku()
+    await waitFor(() => expect(screen.getByTestId('price-books-empty-protocol')).toBeInTheDocument())
+    await openAddDialog()
+
+    await pickProtocolCustomer()
+    expect(screen.getByTestId('price-books-protocol-customer-selected')).toHaveTextContent('王芳')
+
+    fireEvent.change(screen.getByTestId('price-books-protocol-price'), { target: { value: '80' } })
+    fireEvent.click(screen.getByTestId('price-books-save-protocol'))
+
+    await waitFor(() =>
+      expect(priceBookApi.upsertProtocol).toHaveBeenCalledWith({ customerId: 'c-1', skuId: SKU_ID, price: 80 }),
+    )
+    // 保存后只清这一层，弹窗留着继续录下一层
+    await waitFor(() => expect(screen.getByTestId('price-books-protocol-customer-input')).toBeInTheDocument())
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('🔴 三层各自录、各自存：等级价只打等级价接口（不捎带另外两层，issue #7622）', async () => {
+    priceBookApi.upsertVipLevel.mockResolvedValue({ data: { success: true } })
+    render(<PriceBooksPage />)
+    await pickSku()
+    await waitFor(() => expect(screen.getByTestId('price-books-empty-protocol')).toBeInTheDocument())
+    await openAddDialog()
+
+    fireEvent.click(screen.getByTestId('price-books-vip-level-vip2'))
+    fireEvent.change(screen.getByTestId('price-books-vip-price'), { target: { value: '92' } })
+    fireEvent.click(screen.getByTestId('price-books-save-vip'))
+
+    await waitFor(() =>
+      expect(priceBookApi.upsertVipLevel).toHaveBeenCalledWith({ vipLevel: 'vip2', skuId: SKU_ID, price: 92 }),
+    )
+    expect(priceBookApi.upsertProtocol).not.toHaveBeenCalled()
+    expect(priceBookApi.upsertTier).not.toHaveBeenCalled()
+  })
+
+  it('🔴 价格 ≤ 0 时前端先拦（0 元等于白送），且不打保存接口', async () => {
+    render(<PriceBooksPage />)
+    await pickSku()
+    await waitFor(() => expect(screen.getByTestId('price-books-empty-protocol')).toBeInTheDocument())
+    await openAddDialog()
+
+    await pickProtocolCustomer()
+    fireEvent.change(screen.getByTestId('price-books-protocol-price'), { target: { value: '0' } })
+    fireEvent.click(screen.getByTestId('price-books-save-protocol'))
+
+    await waitFor(() => expect(screen.getByTestId('price-books-error-protocol')).toBeInTheDocument())
+    expect(screen.getByTestId('price-books-error-protocol').textContent).toContain('必须大于 0')
     expect(priceBookApi.upsertProtocol).not.toHaveBeenCalled()
   })
 
@@ -123,14 +215,14 @@ describe('价格本页面', () => {
     render(<PriceBooksPage />)
     await pickSku()
     await waitFor(() => expect(screen.getByTestId('price-books-empty-protocol')).toBeInTheDocument())
+    await openAddDialog()
 
-    fireEvent.click(screen.getByText('新增价格'))
-    fireEvent.change(screen.getByTestId('price-books-target'), { target: { value: 'c-9' } })
-    fireEvent.change(screen.getByTestId('price-books-price'), { target: { value: '80' } })
-    fireEvent.click(screen.getByTestId('price-books-save'))
+    await pickProtocolCustomer()
+    fireEvent.change(screen.getByTestId('price-books-protocol-price'), { target: { value: '80' } })
+    fireEvent.click(screen.getByTestId('price-books-save-protocol'))
 
-    await waitFor(() => expect(screen.getByTestId('price-books-form-error')).toBeInTheDocument())
-    expect(screen.getByTestId('price-books-form-error').textContent).toContain('改价')
+    await waitFor(() => expect(screen.getByTestId('price-books-error-protocol')).toBeInTheDocument())
+    expect(screen.getByTestId('price-books-error-protocol').textContent).toContain('改价')
   })
 
   it('🔴 低于成本被拒 ⇒ 就地开「改价」审批：ref = 当前 SKU id（不必手抄）', async () => {
@@ -147,14 +239,14 @@ describe('价格本页面', () => {
     render(<PriceBooksPage />)
     await pickSku()
     await waitFor(() => expect(screen.getByTestId('price-books-empty-protocol')).toBeInTheDocument())
+    await openAddDialog()
 
-    fireEvent.click(screen.getByText('新增价格'))
-    fireEvent.change(screen.getByTestId('price-books-target'), { target: { value: 'c-9' } })
-    fireEvent.change(screen.getByTestId('price-books-price'), { target: { value: '50' } })
-    fireEvent.click(screen.getByTestId('price-books-save'))
+    await pickProtocolCustomer()
+    fireEvent.change(screen.getByTestId('price-books-protocol-price'), { target: { value: '50' } })
+    fireEvent.click(screen.getByTestId('price-books-save-protocol'))
 
     // 服务端原话照旧上屏
-    await waitFor(() => expect(screen.getByTestId('price-books-form-error').textContent).toContain('改价'))
+    await waitFor(() => expect(screen.getByTestId('price-books-error-protocol').textContent).toContain('改价'))
     // 申请入口自动摆出来：对象 = 选中的 SKU（展示名），金额不预填（前端拿不到成本价）但提示点名门槛
     expect((await screen.findByTestId('approval-request-target')).textContent).toContain('遮光窗帘布')
     expect((screen.getByTestId('approval-request-amount') as HTMLInputElement).value).toBe('')
@@ -173,5 +265,28 @@ describe('价格本页面', () => {
         }),
       ),
     )
+  })
+
+  it('🔴「只看这个客户」也走客户选择器：选中后按该客户重查（不再手填客户 id，issue #7622）', async () => {
+    render(<PriceBooksPage />)
+    await pickSku()
+    await waitFor(() => expect(priceBookApi.list).toHaveBeenCalled())
+
+    const testId = 'price-books-customer-filter'
+    const input = screen.getByTestId(`${testId}-input`)
+    fireEvent.focus(input)
+    fireEvent.change(input, { target: { value: '李' } })
+    fireEvent.click(await screen.findByTestId(`${testId}-option-c-2`, undefined, { timeout: 3000 }))
+
+    await waitFor(() => {
+      const last = priceBookApi.list.mock.calls.at(-1)?.[0] as { customerId?: string }
+      expect(last.customerId).toBe('c-2')
+    })
+    // 清掉筛选 ⇒ 回到「全部客户」的读法（不残留上一次的 customerId）
+    fireEvent.click(screen.getByTestId(`${testId}-clear`))
+    await waitFor(() => {
+      const last = priceBookApi.list.mock.calls.at(-1)?.[0] as { customerId?: string }
+      expect(last.customerId).toBeUndefined()
+    })
   })
 })
