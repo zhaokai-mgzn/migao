@@ -308,7 +308,7 @@ export default function AdminPoolPage() {
                 ))}
               </View>
               <Text className='admin-card__note'>
-                米数全部由服务端求解（与派单落账同一条路径），本页不重算
+                米数全部由系统算好（与派单入账同一条路径），本页不重算
               </Text>
             </View>
           )}

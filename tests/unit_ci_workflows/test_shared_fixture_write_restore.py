@@ -267,6 +267,13 @@ PRODUCT_ATTR_WRITERS: dict = {
     #   · 写的是**收件人自己的通知状态**（`PUT /api/admin/notifications/{id}/read`），
     #     **不触达任何商品属性** ⇒ 属性键 = `""`（与 `order_create` / `aftersale_create` 同档）；
     #     据此判据 ②③（要不要复位）对它**不适用**，而不是被豁免。
+    # ── #7027（2026-10-19）：`CH-050` 让「定时提醒」第一次成为**活写方** ──────────
+    # 写的是**待办行**（`scheduled_tasks`：fire_at / task_type / criterion / 落点文案），
+    # **不触达任何商品属性** ⇒ 属性键 = `""`（与 `order_create` / `aftersale_create` 同档）；
+    # 判据 ②③（要不要复位）对它**不适用**，而不是被豁免。
+    # 前置等价性由用例自己承担（CH-050 声明 `namespaces: scheduled_task:…` 并行互斥，
+    # 且第 3 轮就地把该提醒**取消**掉 ⇒ 重跑前置等价）。
+    ("scheduled_task_manage", ""): "",
     ("notification_manage", "mark_read"): "",
     ("notification_manage", "read_all"): "",
     # ── 具名批量写方（issue #5314）：属性由**用例声明的 `batch_type`** 决定 ⇒ 3 元组键 ──
@@ -354,7 +361,7 @@ REGISTERED_RESTORE_GAPS: dict = {}
 # ══════════════════════════════════════════════════════════════════════════════
 
 #: **具名批量**工具（issue #5314）：它们的写 action 是 execute/revert，但**改的是哪个属性**
-#: 由 `batch_type` **参数**决定（`product_price` → `base_price` / `product_status` → `status`）
+#: 由 `batch_type` **参数**决定（`product_price` → `base_price` / `inventory_stock` → `stock`）
 #: ⇒ 归类键在 `(tool, action)` 之外**多带一维**。判别值取**用例级**（用例在任一期望里声明
 #: `batch_type` 即可，不必每次调用都带 —— 生产里 `execute`/`revert` 只带 `batch_id`）：
 #: 「这条用例驱动的是哪类批量」是用例的**意图**，逐调用去要参数会造出假红（模型合理地不重复传）。
@@ -363,7 +370,9 @@ NAMED_BATCH_TOOLS = frozenset({"product_batch_update"})
 #: 具名批量的 `batch_type` **白名单**（与工具侧 `app/tools/product_batch_update.py` 同源口径；
 #: `tests/unit_ci_workflows/test_gate_coverage_and_same_source.py` 逐项比对两侧 ——
 #: 新增一个批类型必须两处同改）。
-NAMED_BATCH_TYPES = ("product_price", "product_status", "inventory_stock")
+NAMED_BATCH_TYPES = ("product_price", "inventory_stock")
+# `product_status` 按 2026-10-16 裁定（#7334 裁定 A）从工具侧移除 ⇒ 不再入白名单；
+# 历史批次若仍被用例声明，按「未声明」路径（unknown，可见）处理，不静默归类。
 
 
 def _case_batch_type(pairs) -> tuple:

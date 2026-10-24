@@ -50,7 +50,8 @@ _CONFIRM_FIELD_LABELS = {
     # 卡片上必须与人话标签成对出现 —— 否则商家看到的只是一个孤零零的"价格"，
     # 「改前 → 改后」的"改前"整个缺失（= 没有预览就让人确认改钱）。
     "before_price": "改前价",
-    # 批量上下架预览（issue #5314）：与 `before_price` **同一形态的镜像** ——
+    # 批量上下架预览（issue #5314；**历史兼容**：B 端已按 2026-10-16 裁定移除 product_status）：
+    # 与 `before_price` **同一形态的镜像** ——
     # 批量 `product_status` 的预览必须成对呈现「改前状态 → 改后状态」，
     # 而 `old_value` 同时是撤销（revert）的唯一依据 ⇒ 卡片上不能只出现改后状态。
     "before_status": "改前状态",
@@ -63,13 +64,78 @@ _CONFIRM_FIELD_LABELS = {
     "stock": "库存",
 }
 
+#: 算料配置的中文字段名（issue #7514）：工具参数形态 = `changes`（键 → 新值）/
+#: `before`（键 → 改前值）两个扁平映射，确认卡必须**逐项**呈现「改前 → 改后」，
+#: 且**不得**把内部键名摆给商家（§31 P3）。键集与 admin-api `CraftCalcConfig.toConfigMap()`
+#: 逐字同名，跨源漂移由 `tests/unit_ci_workflows/test_craft_calc_config_contract.py` 对账。
+CRAFT_CALC_CONFIG_FIELD_LABELS = {
+    "per_fold_single": "单色每折吃布",
+    "per_fold_mixed_times": "拼色配布长度",
+    "margin_single": "单开余量",
+    "margin_mixed_single": "拼色单开余量",
+    "margin_mixed_multi": "拼色多开余量",
+    "margin_multi": "多开余量",
+    "min_fullness": "褶倍下限",
+    "tiers": "工艺档位",
+    "default_formula": "兜底用料公式",
+    "hem_margin": "上下卷边合计",
+    "meters_rounding_step": "进位步长",
+    "oversize_width_threshold": "超宽阈值",
+    "oversize_height_threshold": "超高阈值",
+}
+
+_CONFIRM_FIELD_LABELS.update(CRAFT_CALC_CONFIG_FIELD_LABELS)
+#: 成对口径（与 `before_price` / `before_status` / `before_stock` 同款）：改前值必须与改后值
+#: **成对**出现在卡上 —— 否则商家看到的是一个孤零零的「单开余量 = 0.25」，没有「改前」。
+_CONFIRM_FIELD_LABELS.update({
+    f"before_{_key}": f"改前{_label}"
+    for _key, _label in CRAFT_CALC_CONFIG_FIELD_LABELS.items()
+})
+
 #: 改价预览里 `price` 的语义是**改后价**。仅在 `before_price` 在场时生效
 #: （其余工具如 `product_manage` 的 `price` 仍是「价格」—— 口径只对改价这一对收窄）。
 _PRICE_AFTER_LABEL = "改后价"
 
-#: 同款镜像（issue #5314 的批量上下架）：`status` 在 `before_status` 在场时读作**改后状态**。
+#: 同款镜像（issue #5314 的批量上下架；**历史兼容**，B 端已不再写 status）：`status` 在 `before_status` 在场时读作**改后状态**。
 #: 判据必须在**本模块**（字段投影的单一源）里，否则批量预览就会另立第二份投影。
 _STATUS_AFTER_LABEL = "改后状态"
+
+#: 算料配置变更的**成对预览**入口（issue #7514）：工具参数 = `changes`（键 → 新值）+
+#: `before`（键 → 改前值），两者都是扁平映射 ⇒ 卡面按上面那份标签表展开成
+#: 「改前单开余量 / 改后单开余量」两行。其它工具的参数里没有这两个键 ⇒ 零影响。
+CONFIG_CHANGES_KEY = "changes"
+CONFIG_BEFORE_KEY = "before"
+
+
+def config_key_label(key) -> str:
+    """算料配置键 → 商家人话名（未登记的回退原键名 —— 调用方**不得**把内部键名展示给商家）。"""
+    return CRAFT_CALC_CONFIG_FIELD_LABELS.get(str(key or ""), str(key or ""))
+
+
+def _render_card_value(value) -> str:
+    """卡片字段值 → 文本（结构化值按 JSON 回显，其余原样字符串化）。"""
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, default=str)
+    return str(value)
+
+
+def _config_change_fields(a: dict) -> list:
+    """`changes` × `before` → 逐键「改前 → 改后」（issue #7514 的卡面投影，P3：不摆内部键名）。
+
+    只在两个键**都是**非空映射时生效；某个键缺 `before` 时退化成只展示「改后」
+    （缺改前值的拦截不在这里，而在工具侧：`before_required` + 服务端逐键核对）。
+    """
+    changes = a.get(CONFIG_CHANGES_KEY)
+    before = a.get(CONFIG_BEFORE_KEY)
+    if not isinstance(changes, dict) or not isinstance(before, dict) or not changes:
+        return []
+    fields = []
+    for key, new_value in changes.items():
+        label = config_key_label(key)
+        if key in before:
+            fields.append({"label": f"改前{label}", "value": _render_card_value(before[key])})
+        fields.append({"label": f"改后{label}", "value": _render_card_value(new_value)})
+    return fields
 
 
 def price_preview_missing(args: dict) -> str:
@@ -134,6 +200,10 @@ def confirm_card_fields(args: dict) -> list:
             fields.append({"label": "合计", "value": f"{_facts['total']:g}"})
     except Exception as e:
         logger.debug(f"[confirm-card] 金额字段渲染跳过（非致命）: {e}")
+    # 算料配置成对预览（issue #7514）：必须在**通用兜底之前**展开 —— 通用兜底会把
+    # `changes` / `before` 两个 dict 各自以 JSON 回显（内部键名直接上屏，§31 P3 违规）。
+    if not fields:
+        fields.extend(_config_change_fields(a))
     if not fields:
         # 控制键是动作指令/路由元数据，不是"要执行的内容"，不进卡片回显
         # （issue #3882：action/operation/op/target_tool/target_action/params/
@@ -146,7 +216,7 @@ def confirm_card_fields(args: dict) -> list:
             if key in _CONFIRM_CARD_CONTROL_KEYS or value is None:
                 continue
             if isinstance(value, (dict, list)):
-                rendered = json.dumps(value, ensure_ascii=False, default=str)
+                rendered = _render_card_value(value)
             else:
                 rendered = str(value)
             label = _CONFIRM_FIELD_LABELS.get(key, key)
@@ -323,6 +393,17 @@ CARD_DB_CONSISTENCY_LEDGER: dict = {
                   "参数面只有 `notification_id`（无金额、无数量、无价格字段）⇒ 没有卡值比对载体；"
                   "落库改的是**通知的已读状态**（幂等的状态置位），业务账在该域不存在 —— "
                   "是「结构上无从比对」，不是「没登记」。",
+    },
+    "craft_calc_config_update": {
+        "stance": UNDECIDABLE,
+        "anchor": "#7514",
+        "issue": "#7514",
+        "owner": "算料配置域写路径 owner（craft_calc_config_update）",
+        "reason": "参数面只有 `changes` / `before` 两个**算料配置键值映射**（每折吃布 / 余量 / "
+                  "档位…），没有 CARD_ONLY_VALUE_FIELDS 里的涉钱面字段（price / before_price / "
+                  "batch_id）⇒ 没有卡值比对载体；卡值与落库值的一致性由**服务端逐键核对**承担"
+                  "（`before` ↔ GET 当前真值逐键比对，不符即零写入），不在本台账的比对载体射程内 ——"
+                  " 是「结构上无从比对」，不是「没登记」。",
     },
     "order_manage": {
         "stance": UNDECIDABLE,

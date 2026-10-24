@@ -272,7 +272,9 @@ class UserServiceTest {
         // assignRoleToUser 内部查询角色
         Role adminRole = Role.builder().id("role-001").code("admin").tenantId(1L).build();
         when(roleMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(adminRole);
-        when(userRoleMapper.insert(any(UserRole.class))).thenReturn(1);
+        // issue #7256：授权走 UserRoleWriter（复活 → 条件插入）；本用例没有软删行 ⇒ 复活 0 行、插入命中
+        when(userRoleMapper.reviveSoftDeleted(any(), anyString(), anyString())).thenReturn(0);
+        when(userRoleMapper.insertIfAbsent(any(UserRole.class))).thenReturn(1);
 
         // when
         User result = userService.createUser("13900139000", "password123", "新用户", "admin", "管理员", null, 1L);

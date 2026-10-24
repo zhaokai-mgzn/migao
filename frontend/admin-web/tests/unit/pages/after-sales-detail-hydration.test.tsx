@@ -35,6 +35,11 @@ const mockGetTicket = vi.hoisted(() => vi.fn())
 const mockUpdateTicketStatus = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/api', () => ({
+  // issue #7377 段 4：本页新增「发起返工」入口 ⇒ 返工读面也必须桩住
+  reworkOrderApi: {
+    list: () => Promise.resolve({ data: { data: [] } }),
+    create: () => Promise.resolve({ data: { data: {} } }),
+  },
   afterSalesApi: {
     getTicket: (...args: unknown[]) => mockGetTicket(...args),
     updateTicketStatus: (...args: unknown[]) => mockUpdateTicketStatus(...args),

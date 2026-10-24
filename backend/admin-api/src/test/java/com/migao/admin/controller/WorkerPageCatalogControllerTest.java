@@ -42,13 +42,19 @@ class WorkerPageCatalogControllerTest extends BaseControllerTest {
     void returnsTheWholeClosedVocabularyWithLabels() throws Exception {
         mockMvc().perform(get(URL))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.pages.length()").value(WorkerPages.defaultPages().size()))
+                .andExpect(jsonPath("$.data.pages.length()").value(WorkerPages.ALL.size()))
                 .andExpect(jsonPath("$.data.pages[0]").value("report"))
                 // issue #6767：`piecework`（我的计件，含金额）在闭词表里排第 2
                 .andExpect(jsonPath("$.data.pages[1]").value("piecework"))
                 .andExpect(jsonPath("$.data.pages[2]").value("order"))
                 .andExpect(jsonPath("$.data.pages[3]").value("cut_calc"))
                 .andExpect(jsonPath("$.data.pages[4]").value("shipment"))
+                // issue #7162：质检在闭词表里、但**不在默认集合**（逐人开；同时是服务端写准入）
+                .andExpect(jsonPath("$.data.pages[5]").value("inspect"))
+                .andExpect(jsonPath("$.data.default_pages.length()").value(WorkerPages.defaultPages().size()))
+                .andExpect(jsonPath("$.data.default_pages").value(
+                        org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasItem("inspect"))))
+                .andExpect(jsonPath("$.data.optional_pages[0]").value("inspect"))
                 .andExpect(jsonPath("$.data.labels.report").value(WorkerPages.labels().get("report")))
                 .andExpect(jsonPath("$.data.labels.shipment").value(WorkerPages.labels().get("shipment")));
     }

@@ -11,6 +11,15 @@ export interface TableColumn<T> {
   width?: string
   align?: 'left' | 'center' | 'right'
   sortable?: boolean
+  /**
+   * 允许数据格折行（issue #7217）。
+   *
+   * 默认 **false = 不折行**（`whitespace-nowrap`）：`table-layout: auto` 下中文数据格的
+   * min-content = 一个汉字，表格被容器压窄时姓名 / 操作按钮会逐字竖排（用户实测截图）。
+   * ⇒ 只有**长文本列**（知识卡片标题 / 商品标题）显式 `wrap: true`；其余列一律单行，
+   * 表格过宽由外层 `overflow-x-auto` 横向滚动（与表头同一口径）。
+   */
+  wrap?: boolean
   render?: (record: T, index: number) => ReactNode
 }
 
@@ -129,6 +138,7 @@ function Table<T extends Record<string, any>>({
                     key={`${getRowKey(record)}-${column.key}`}
                     className={cn(
                       'px-4 py-4 text-sm text-neutral-700',
+                      !column.wrap && 'whitespace-nowrap',
                       column.align === 'center' && 'text-center',
                       column.align === 'right' && 'text-right'
                     )}

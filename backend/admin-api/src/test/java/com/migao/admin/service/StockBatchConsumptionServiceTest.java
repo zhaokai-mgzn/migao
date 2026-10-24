@@ -2,7 +2,12 @@ package com.migao.admin.service;
 
 // case_ids: PR-055, PR-065, PR-063, PR-066
 
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.migao.admin.dto.BatchStockViews;
+import com.migao.admin.dto.PageResponse;
 import com.migao.admin.entity.ProductSku;
 import com.migao.admin.entity.StockBatch;
 import com.migao.admin.entity.StockBatchConsumption;
@@ -11,6 +16,7 @@ import com.migao.admin.mapper.ProductSkuMapper;
 import com.migao.admin.mapper.StockBatchConsumptionMapper;
 import com.migao.admin.mapper.StockBatchMapper;
 import com.migao.admin.mapper.StockLedgerMapper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -516,7 +522,9 @@ class StockBatchConsumptionServiceTest {
                     "-2.7", "60", "57.3", StockBatchConsumptionService.REASON_PROCESSING_ORDER);
             StockBatchConsumption already = consumption(77L, "PC-1", 2L, "item-1",
                     "2.7", "57.3", "60", StockBatchConsumptionService.REASON_PROCESSING_ORDER_CANCELLED);
-            when(consumptionMapper.selectList(any())).thenReturn(List.of(consumed), List.of(already));
+            // V191 / issue #7647 起 reverse 走**净额口径**：一次查出该单全部耗料族行（含已回补行），
+            // 净额 = 0 ⇒ 零写入。「重跑幂等」的判据未变，只是不再靠「两次查询 + 去重表」。
+            when(consumptionMapper.selectList(any())).thenReturn(List.of(consumed, already));
             stubBatches(batch(77L, "PC-1", "60"));
             stubConsumed(77L, "0"); // 已回补 ⇒ 净额 0 ⇒ 余量回到 60
 
@@ -561,6 +569,53 @@ class StockBatchConsumptionServiceTest {
             assertThat(all.get(1).remainingMeters()).isEqualByComparingTo("0");
 
             assertThat(service.remaining(TENANT, PRODUCT_ID, SKU_ID, true)).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("🔴 分页读面（#7604）：服务端分页（selectPage，不是 selectList 再切片）+ 余量口径与 remaining() 同一个派生点")
+        void remainingPageIsServerSidePagedAndSharesDerivation() {
+            // 见证批次：入库 67、已消耗 20 ⇒ 服务端余量 46.5（本用例把 67−20 的 47 做成"另一种算法"的反面）
+            StockBatch witness = batch(77L, "PC-20261001-0001", "67.0");
+            witness.setReceivedDate(LocalDate.of(2026, 10, 1));
+            witness.setDyeLot("G-77");
+            Page<StockBatch> pageResult = new Page<>(2, 1);
+            pageResult.setRecords(List.of(witness));
+            pageResult.setTotal(5);
+            when(stockBatchMapper.selectPage(any(), any())).thenReturn(pageResult);
+            StockBatchConsumptionMapper.BatchDeltaSum sum =
+                    new StockBatchConsumptionMapper.BatchDeltaSum();
+            sum.setBatchId(77L);
+            sum.setDeltaSum(new BigDecimal("-20.5"));
+            when(consumptionMapper.sumDeltaByBatchIds(eq(TENANT), any())).thenReturn(List.of(sum));
+
+            PageResponse<BatchStockViews.BatchRemaining> result =
+                    service.remainingPage(TENANT, null, null, "  PC-20261001  ", 2, 1);
+
+            assertThat(result.getTotal()).isEqualTo(5);
+            assertThat(result.getPage()).isEqualTo(2);
+            assertThat(result.getSize()).isEqualTo(1);
+            assertThat(result.getItems()).hasSize(1);
+            BatchStockViews.BatchRemaining row = result.getItems().get(0);
+            assertThat(row.inboundMeters()).isEqualByComparingTo("67");
+            assertThat(row.consumedMeters()).isEqualByComparingTo("20.5");
+            // 派生 = 入库 + Σdelta（67 − 20.5 = 46.5）—— 与 remaining() 同一个 toRemaining()
+            assertThat(row.remainingMeters()).isEqualByComparingTo("46.5");
+            assertThat(row.remainingMeters()).isNotEqualByComparingTo("47");
+
+            // 服务端分页：只读**一页**（selectList = 拉全量再内存切片 ⇒ 本断言红）
+            verify(stockBatchMapper, never()).selectList(any());
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<LambdaQueryWrapper<StockBatch>> captor =
+                    ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+            verify(stockBatchMapper).selectPage(any(), captor.capture());
+            // lambda 列名解析需要一个暖好的 TableInfo（真实运行时由 Mapper 扫描完成）
+            TableInfoHelper.initTableInfo(
+                    new MapperBuilderAssistant(new MybatisConfiguration(), ""), StockBatch.class);
+            String sql = captor.getValue().getSqlSegment();
+            assertThat(sql).as("浏览序 = 收货日期倒序、id 倒序，且未记收货日期的排最后（PG 的 DESC 会把 NULL 排最前）")
+                    .contains("received_date IS NULL").contains("received_date DESC").contains("id DESC");
+            assertThat(sql).as("keyword 是服务端 LIKE（批号 / 缸号 / 入库单 / 货号）")
+                    .contains("batch_no LIKE").contains("dye_lot LIKE").contains("inbound_no LIKE");
         }
 
         @Test

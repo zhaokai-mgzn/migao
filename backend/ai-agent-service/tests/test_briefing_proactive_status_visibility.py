@@ -103,10 +103,13 @@ class TestStatusNotFromLlmExit:
     async def test_injected_status_is_the_engine_object_untouched(self):
         briefing = await _run(ALL_WIRED_NO_HIT)
         entry = briefing[PROACTIVE_STATUS_KEY]["low_stock"]
-        # 原样透传：键集与引擎逐字相同（少一个键 = 消费方读不到原因/边界）
-        assert set(entry) == {"rule_id", "rule_name", "status", "reason", "missing", "gaps", "caveats"}
+        # 原样透传：键集与引擎逐字相同（少一个键 = 消费方读不到原因/边界/商家话术）
+        assert set(entry) == {
+            "rule_id", "rule_name", "status", "reason", "missing", "gaps", "caveats", "display",
+        }
         assert entry["status"] == "wired"
         assert entry["reason"] is None
+        assert entry["display"] is None
 
     @pytest.mark.asyncio
     async def test_snapshot_is_not_mutated(self):
@@ -160,6 +163,43 @@ class TestWiredCaveatsStayVisible:
         # 不变式：`reason is None` ⟺ `wired`（caveats 不借用 reason 通道 —— 它有自己的键）
         for entry in status.values():
             assert (entry["reason"] is None) == (entry["status"] == "wired")
+
+
+class TestMerchantDisplay:
+    """issue #7195：商家面只读 `display`（一句大白话）—— 诊断面（reason/caveats）不上屏。"""
+
+    def test_display_is_none_only_when_wired(self):
+        status = proactive_status(_snapshot())
+        for entry in status.values():
+            assert (entry["display"] is None) == (entry["status"] == "wired")
+
+    def test_display_never_carries_internal_markers(self):
+        """🔴 类级判据：六条规则 × 四种状态，`display` 一律不得出现内部标识。
+
+        内部标识 = 文件路径 / issue 号 / 列名 / 装配层术语 —— 它们属于 `reason` / `caveats`。
+        """
+        internal = ("装配层", "快照", ".py", "/api/", "row_", "_fields", "agent_", "#", "审计",
+                    "fail-open", "SQL", "字段")
+        for snapshot in (_snapshot(), {}, _snapshot(audit_tool_logging=False)):
+            for entry in proactive_status(snapshot).values():
+                display = entry["display"]
+                if entry["status"] == "wired":
+                    continue
+                assert display, f"{entry['rule_id']} 非 wired 必须有商家话术"
+                for token in internal:
+                    assert token not in display, (
+                        f"{entry['rule_id']} 的商家话术泄漏了内部标识「{token}」：{display}"
+                    )
+
+    def test_not_enabled_display_is_actionable(self):
+        snapshot = _snapshot(audit_tool_logging=False)
+        snapshot["row_fields"]["price_changes"] = [
+            "change_no", "tool_name", "product_id", "before_price", "new_price", "changed_at",
+        ]
+        snapshot["price_changes"] = []
+        entry = proactive_status(snapshot)["price_change_over"]
+        assert entry["status"] == "not_enabled"
+        assert "改价" in entry["display"], "可行动状态要告诉用户**做什么**能开启"
 
 
 class TestUnknownIsNotNoProblem:

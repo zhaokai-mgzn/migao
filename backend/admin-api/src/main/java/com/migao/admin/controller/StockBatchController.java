@@ -26,13 +26,14 @@ import java.util.List;
 /**
  * 批次账只读查询（V116，issue #5145 阶段 1）。
  *
- * <p>**7 个 GET 端点**（逐条可数；⚠️ 原写「四个读面……另有一个消耗台账分页端点」是 #5159 之前的
+ * <p>**8 个 GET 端点**（逐条可数；⚠️ 原写「四个读面……另有一个消耗台账分页端点」是 #5159 之前的
  * 旧账 —— 两个省料端点长进来后没人改这句。条数现由
  * `tests/unit_ci_workflows/test_agent_permission_parity.py` 判据 13 钉住：**增删端点必须同批改这里**）：
  * ① 批次余量（派生 = 入库量 − Σ消耗）；② 剩余量分布（四档）；③ 对账
  * （{@code Σ批次余量} vs {@code product_skus.stock} 的差额 —— 路线 A 的交换条件）；
  * ④ 派工候选 + 建议值（生成加工单界面用）；⑤ 消耗台账分页（按批次 / 加工单 / 订单都能查回来）；
- * ⑥ 省料度量看板 + ⑦ 省料趋势（issue #5159，见下方两条端点各自的 javadoc）。</p>
+ * ⑥ 省料度量看板 + ⑦ 省料趋势（issue #5159，见下方两条端点各自的 javadoc）；
+ * ⑧ **批次余量分页**（issue #7604，库存明细页首屏的默认列表 —— 与 ① 的分工见该端点 javadoc）。</p>
  *
  * <p><b>写端点只有 1 个</b>（V143 / issue #5865）：{@code POST /stocktake} 按批次盘点。
  * 它**不自己写库**：差异经 {@code StockBatchConsumptionService#applyStocktake} 落批次分录，
@@ -104,6 +105,39 @@ public class StockBatchController {
         Long tenantId = TenantContext.getTenantId();
         return ApiResponse.success(
                 stockBatchConsumptionService.remaining(tenantId, productId, skuId, onlyAvailable));
+    }
+
+    /**
+     * 批次余量**分页**读面（issue #7604）—— 库存明细页「批次余量」视图的默认列表。
+     *
+     * GET /api/admin/batch-stock/batches/page?keyword=PC-20261001&page=1&size=20
+     *
+     * <p>与上面的 {@code /batches} **场景不同、口径相同**（都走
+     * {@code StockBatchConsumptionService#remainingPage} / {@code #remaining} 的同一个派生点）：</p>
+     * <ul>
+     *   <li>{@code /batches}：按商品取它的**全部**批次 —— 派工候选 / 分布 / 对账 / Agent 工具用，
+     *       调用方本来就有商品上下文；</li>
+     *   <li>本端点：**可以不带 productId** 的分页浏览 —— 商家进页面先问「我有哪些布、各剩多少」，
+     *       服务端分页（不选中商品也不再是"一次拉整个租户"）。</li>
+     * </ul>
+     *
+     * <p>排序 = 收货日期倒序（未记收货日期的排最后）；{@code keyword} 命中批号 / 缸号 / 入库单号 / 货号。</p>
+     *
+     * @param keyword 批次关键字（服务端 LIKE；空白 = 不过滤）
+     * @param page    页码（从 1 起；&lt;1 按 1）
+     * @param size    每页条数（默认 20，上限 200）
+     */
+    @RequirePermission("product:list")
+    @GetMapping("/batches/page")
+    public ApiResponse<PageResponse<BatchStockViews.BatchRemaining>> batchesPage(
+            @RequestParam(required = false) String productId,
+            @RequestParam(required = false) Long skuId,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "1") long page,
+            @RequestParam(defaultValue = "20") long size) {
+        Long tenantId = TenantContext.getTenantId();
+        return ApiResponse.success(stockBatchConsumptionService.remainingPage(
+                tenantId, productId, skuId, keyword, page, size));
     }
 
     /**

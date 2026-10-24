@@ -663,3 +663,68 @@ class TestShippedLedgerBackwardCompatibility:
         fresh = dict(_flaky_entry(run_id=999999))
         FL.append_entries(ledger, [fresh])
         assert ledger["entries"][:len(before)] == before, "既有条目被改写（只追加被破坏）"
+
+
+class TestTrackingIssuePostShape:
+    """#7614：`labels` **必须**发成数组形态（`-f 'labels[]=v'`），否则机械开单必 422。
+
+    实测（2026-10-24，main 上每次必红，日志逐字）：
+
+        gh api -X POST repos/<repo>/issues -f title=… -f labels=flaky/tracking
+        → {"message":"Invalid request.\\n\\nFor 'properties/labels',
+           \\"flaky/tracking\\" is not an array.","status":"422"}
+
+    ⚠️ 与 #7632（仓库缺 `flaky/tracking` 标签）是**两个独立成因**：补了标签、形态仍是字符串 ⇒ 照样 422
+    —— 所以「标签已自愈」**不能**反推「开单能成」。
+
+    判据三条（反向变异各自会红）：① 序列化层 list ⇒ `key[]=` 逐项；② 负控：标量维持 `key=value`；
+    ③ 调用层：建单那一步真的传 list（而不是让 ① 成为死代码）。
+    """
+
+    @staticmethod
+    def _capture_argv(monkeypatch, payload=b'{"number": 7614}'):
+        calls = []
+
+        class _Out:
+            stdout = payload
+
+        def fake_run(cmd, **_kwargs):
+            calls.append(list(cmd))
+            return _Out()
+
+        monkeypatch.setattr(FL.subprocess, "run", fake_run)
+        return calls
+
+    def test_list_field_is_sent_as_array(self, monkeypatch):
+        calls = self._capture_argv(monkeypatch)
+        FL._gh_api("repos/o/r/issues", method="POST",
+                   fields={"title": "t", "labels": [FL.TRACKING_LABEL]})
+        argv = calls[-1]
+        assert "labels[]=flaky/tracking" in argv, argv
+        assert "labels=flaky/tracking" not in argv, "字符串形态会被 GitHub 判 422（#7614 的根因）"
+
+    def test_scalar_fields_stay_strings(self, monkeypatch):
+        """负控：标量字段不得被改写成数组形态（`body` 里的 `#`/`@` 仍走 `-f` 字符串语义）。"""
+        calls = self._capture_argv(monkeypatch)
+        FL._gh_api("repos/o/r/issues", method="POST", fields={"title": "t#1", "body": "a@b"})
+        argv = calls[-1]
+        assert "title=t#1" in argv and "body=a@b" in argv, argv
+        assert "title[]=t#1" not in argv, argv
+
+    def test_ensure_tracking_issue_passes_labels_as_list(self, monkeypatch):
+        seen = []
+
+        def fake_api(path, *, method="GET", fields=None):
+            seen.append((path, method, fields))
+            return {"number": 7614}
+
+        monkeypatch.setattr(FL, "find_tracking_issue", lambda *a, **k: None)
+        monkeypatch.setattr(FL, "_gh_api", fake_api)
+        got = FL.ensure_tracking_issue("o/r", "j", kind=FL.SUSPECT_WINDOW_KIND)
+        assert got["number"] == 7614
+        posts = [f for (p, _m, f) in seen if p == "repos/o/r/issues"]
+        assert len(posts) == 1, seen
+        assert posts[0]["labels"] == [FL.TRACKING_LABEL], posts[0]
+        # 顺序（#7632）：先自愈标签、再建单；反过来会因未知标签照样 422
+        paths = [p for (p, _m, _f) in seen]
+        assert paths.index("repos/o/r/labels") < paths.index("repos/o/r/issues"), paths

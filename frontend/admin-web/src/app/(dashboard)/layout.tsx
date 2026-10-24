@@ -34,9 +34,9 @@ const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
   // 顺序敏感：必须在 /processing 之前（前缀匹配会先命中 /processing）
   { prefix: '/processing-orders', code: 'production:view' },
   { prefix: '/processing', code: 'production:view' },
-  // issue #4357：加工单唯一入口（生产看板）此前**没有**前端权限守卫，而它承接的
+  // issue #4357：作业单唯一入口（作业看板）此前**没有**前端权限守卫，而它承接的
   // 原 /processing-orders 是有的 ⇒ 合并后守卫必须跟着入口走，否则等于砍掉既有护栏。
-  // 🔴 issue #5291：生产域拆出**读**码 `production:view` ⇒ 生产看板 / 工艺配置 / 计件工资按读码；
+  // 🔴 issue #5291：生产域拆出**读**码 `production:view` ⇒ 作业看板 / 工艺配置 / 计件工资按读码；
   // **智能派单 / 余料台账 / 省料看板仍是 `processing:manage`**（同组不同权）⇒ 更具体的子路径
   // 必须排在 `/production` 之前（前缀匹配先命中），否则会把它们一起收权。
   // issue #5699（P4）：与 menu.ts 的节点码同批收敛到页面读码（节点码 ≠ 页面读码 = 判据 12 的残留）。
@@ -53,6 +53,26 @@ const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
   { prefix: '/production/processing', code: 'production:view' },
   { prefix: '/production/routings', code: 'production:view' },
   { prefix: '/production', code: 'production:view' },
+  // 质检记录（issue #7140）：页面守卫码 = 菜单节点码 = 该页三个端点的**方法级**
+  // `production:inspect`（读待检清单 / 读流水 / 录判定同码）—— 取**既有**码、零新造。
+  // 没有这一条就只有菜单一道防线：无该码者地址栏直达 `/quality-inspections` 不被拦
+  //（同 #5976 入库单、#6404 库存明细的现场形态）。
+  { prefix: '/quality-inspections', code: 'production:inspect' },
+  // 返工单（issue #7377）：读 `after_sales:view`（与售后工单同码）——
+  // 没有这一条就只有菜单一道防线：无该码者地址栏直达 `/rework-orders` 不被拦
+  { prefix: '/rework-orders', code: 'after_sales:view' },
+  // 审批中心（issue #7374；2026-10-24 issue #7593 撤掉侧边栏菜单项、入口改顶栏 `ApprovalBell`）：
+  // 读 `finance:view`（与财务对账同码）—— 没有这一条就只剩顶栏入口一道防线（无该码者不渲染入口），
+  // 地址栏直达 `/approvals` 也就不被拦
+  { prefix: '/approvals', code: 'finance:view' },
+  // 报表中心（issue #7376）：页面守卫码 = 菜单节点码 = 该页第一屏四个报表端点的码
+  //（`ReportController` 类级 `dashboard:view`）—— 取**既有**码、与经营看板同一把尺子。
+  // 没有这一条就只有菜单一道防线：无该码者地址栏直达 `/reports` 不被拦（同 #5976 的现场形态）。
+  { prefix: '/reports', code: 'dashboard:view' },
+  // 价格本（issue #7375 段 3）：守卫码 = 菜单节点码 = 该页第一屏读码（`GET /api/admin/pricing/books`
+  // 的类级 `order:list`）—— 三处**同一个码**（repo 规则「每页恰好一个码」），零授权 delta：
+  // `order:list` 是现网四个岗位已持有的读码，不新造码。
+  { prefix: '/price-books', code: 'order:list' },
   { prefix: '/customers', code: 'customer:view' },
   { prefix: '/finance', code: 'finance:view' },
   // 发货单（issue #5939）：页面守卫码 = 菜单节点码 = 该页第一屏读端点码（GET /api/admin/shipments）
@@ -62,12 +82,18 @@ const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
   // 此前只有菜单一道防线 ⇒ 无 `inbound:view` 者地址栏直达 `/inbound-orders` 不被拦。
   // 一条前缀同时覆盖 `/inbound-orders/new`（**不单列** —— 更宽的父前缀排在前面会让子路径成为
   // `find()` 永不命中的死条目，判据 11① 判红）。
+  // 供应商（issue #7369）：档案面与入库单同码（inbound:view）—— 菜单隐藏时地址栏直达也要被拦。
+  { prefix: '/suppliers', code: 'inbound:view' },
+  { prefix: '/purchase-orders', code: 'inbound:view' },
   { prefix: '/inbound-orders', code: 'inbound:view' },
   // 库存明细（issue #6404）：页面守卫码 = 菜单节点码 = 该页第一屏读端点码
   //（`StockLedgerController` 的**方法级** `product:list`）—— 取**既有**码，不新造。
   // 没有这一条就只有菜单一道防线：无 `product:list` 者地址栏直达 `/stock-ledger` 不被拦
   //（同 #5976 入库单的现场形态）。
   { prefix: '/stock-ledger', code: 'product:list' },
+  // 盘点单（issue #7373）：守卫码 = 菜单节点码 = 该页第一屏读端点码（`StocktakeController` 的
+  // 方法级 `inbound:view`）—— 三处同一个码，零授权 delta（与入库单/仓库同域）。
+  { prefix: '/stocktakes', code: 'inbound:view' },
   { prefix: '/employees', code: 'employee:list' },
   // 🔴 2026-10-09（issue #6580）：`/settings/params`（原「参数总览」一级项）是**旧入口兼容**前缀
   // —— 该一级项已撤掉（内容回到 `/settings` 页内的配置域）⇒ 路由保留、守卫码取新入口的页面码。

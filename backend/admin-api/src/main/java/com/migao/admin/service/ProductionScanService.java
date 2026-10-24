@@ -458,6 +458,10 @@ public class ProductionScanService {
         result.put("operation", chosen == null
                 ? null
                 : operationView(chosen, determinedBy, rerouted));
+        // 裁剪报工确认批次（issue #7647，**只加三个键**）：`batch_required` / `batch_no`（派工预填）/
+        // `batch_candidates`。判定与记账面**同一个** `ProductionService#cuttingBatchItem`（不在解析面
+        // 按工序名重写一套）；非「裁剪」/ 零批次入库的 SKU ⇒ false / null / []（键恒在）。
+        result.putAll(productionService.cuttingBatchView(po, orderItemId, chosen, tenantId));
         result.put("alternatives", alternativeViews(sorted, chosen));
         result.put("set_progress", productionService.progressOf(setOperations));
         // ④ 卡点判据（切片 ③，issue #4776；设计 §3.1 逐字：「"stalled": { "kind": null }} // §6：
@@ -513,6 +517,11 @@ public class ProductionScanService {
         result.put("completed_at", null);
         result.put("needs_selection", DEGRADED_NEEDS_SELECTION);
         result.put("selections", po == null ? List.of() : selectionView(po, tenantId));
+        // 裁剪批次三键（issue #7647）：旧码降级形态判不出是哪一套 / 哪一道 ⇒ 一律「不需要批次」
+        // （键恒在，页面按缺键就缺渲染；工人选完套+部位再解析时才会带上真实判定）
+        result.put("batch_required", Boolean.FALSE);
+        result.put("batch_no", null);
+        result.put("batch_candidates", List.of());
         return result;
     }
 
@@ -610,13 +619,23 @@ public class ProductionScanService {
      * （规格可见面的唯一取数实现），本类不另建第二份。
      *
      * <p>取不到订单（脏数据）⇒ 空索引 ⇒ 明细键**键恒在且为 null**（不猜、不崩）。</p>
+     *
+     * <p>🔴 派工指定批次（issue #7233）：与 {@code ProductionService#getOperations} 走**同一份**盖章实现
+     * （{@link ProductionService#stampBatchAssignments}）+ 同一份台账取数（{@code #batchAssignmentsOf}）。
+     * 这里另查一次台账就是第二份口径；不盖章 ⇒ 工人「本部位生产信息」里**永远没有批号** ——
+     * 裁床不知道去哪一批拿料（用户 2026-10-18 逐字「没有批次号工人裁剪哪块布？」）。</p>
      */
     private Map<String, Map<String, Object>> specByItemIdOf(ProcessingOrder po, Long tenantId) {
         if (po == null || po.getOrderId() == null) {
             return Map.of();
         }
         Order order = orderMapper.selectById(po.getOrderId());
-        return order == null ? Map.of() : productionService.orderSpecByItemId(order, tenantId);
+        if (order == null) {
+            return Map.of();
+        }
+        Map<String, Map<String, Object>> specByItemId = productionService.orderSpecByItemId(order, tenantId);
+        productionService.stampBatchAssignments(specByItemId, po, tenantId);
+        return specByItemId;
     }
 
     /**

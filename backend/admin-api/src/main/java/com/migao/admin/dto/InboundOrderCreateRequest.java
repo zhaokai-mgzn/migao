@@ -25,6 +25,15 @@ public class InboundOrderCreateRequest {
     /** 供应商（可空） */
     private String supplier;
 
+    /**
+     * 供应商档案 id（可选，issue #7369 段 2）。
+     *
+     * <p>给了 ⇒ 服务端校验「本租户在用档案」，停用/跨租户一律拒；
+     * 没给但 {@link #supplier} 文本能**精确匹配**到唯一一家在用档案 ⇒ 自动补上；
+     * 都不成 ⇒ 留 NULL（进「待指派」清单，绝不猜）。
+     */
+    private String supplierId;
+
     /** 供应商送货单号（可空） */
     private String supplierDocNo;
 

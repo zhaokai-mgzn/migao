@@ -96,9 +96,11 @@ def scoring_zero_total(cases):
 
 
 #: 「像测试」的引用 = 代码扩展名 + 文件名含 test/spec（不含 conftest）。
-#: 判据源与 `growth_gate._is_test_file` 同口径（**不另造一套**）：它已在别处被
-#: 「弱断言扫描 / G5 用例追溯」共用，此处只做形状判定，不复制其过滤逻辑。
-TEST_FILE_EXTS = (".py", ".java", ".ts", ".tsx", ".js")
+#: 形状判定沿用 `growth_gate._is_test_file` 的同一思路（不复制其过滤逻辑），但扩展名按**本仓
+#: 实际在用的判据形态**收全：`.js` / `.mjs` 是 `frontend/worker-h5/**` 的 `node --test` 判据
+#: （issue #7251：长延时定时器溢出那条用例只有 `.test.mjs` 形态）⇒ 若不收 `.mjs`，**真实且诚实**的
+#: worker-h5 用例会被判「没有任何像测试文件的引用」，反而逼人拿无关的 `.py` 文件冒充通道。
+TEST_FILE_EXTS = (".py", ".java", ".ts", ".tsx", ".js", ".mjs")
 _NOT_A_TEST_BASENAME = ("conftest.py", "conftest.ts")
 
 
@@ -129,8 +131,9 @@ def exempt_channel_problems(cases, repo_root):
     problems = []
     for c in cases:
         cid = str(c.get("id") or "?")
-        if not str(c.get("skip_reason") or "").strip().startswith(tax.BACKEND_CONTRACT_MARKER):
-            problems.append(f"{cid}: 走了豁免通道却没有 `{tax.BACKEND_CONTRACT_MARKER}` skip_reason")
+        if not tax.is_backend_contract_case(c):
+            problems.append(
+                f"{cid}: 走了豁免通道却没有契约标记 skip_reason（{tax.CONTRACT_MARKERS}）")
             continue
         refs = [str(r) for r in ((c.get("traces") or {}).get("tests") or [])]
         if not refs:

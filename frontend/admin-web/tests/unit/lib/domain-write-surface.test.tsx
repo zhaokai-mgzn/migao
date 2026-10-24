@@ -252,7 +252,17 @@ describe('判据 4：每个登记域的写面**真的可交互**（域退回展�
 // （真机实测 ≈670px 宽 / 整页 ≈2900px 高）。仓内既有基准 = 余料尺寸域的 `w-40`/`w-28`。
 // 这条守护钉的是**形态**，不是某一个文件：本域任何数值输入/下拉再写回 `w-full` 即红。
 // ══════════════════════════════════════════════════════════════════════════════
-describe('判据 5：算料域的数值输入必须**定宽**（不得整列宽）', () => {
+/**
+ * 判据 5（**2026-10-18 改判，issue #7176**）：算料域的字段一律是**标准字段**——
+ * 满列（`w-full`，宽度由 `FormGrid` 的列宽给）+ 本仓控件铬，**不再**用定宽 token。
+ *
+ * 改判理由（用户逐字）：「第二张图（阈值试算）可以作为一个标准来参考 …… 一个产品不要出现多种设计
+ * 和风格样式」。`w-36` / `w-40` / `w-64` 那套（#6857 / #7124）是「标签在上 + 定宽框」的产物：
+ * 一列里框只有 160px、右边空一片（真机截图）；标准改成「控件满列」后，**定宽反而成了偏离**。
+ * ⇒ 判据**反转**，不是放宽：任何 `calc-caliber-*` 字段丢了 `w-full` / 丢了控件铬 / 又冒出定宽
+ * ⇒ 当场红。
+ */
+describe('判据 5：算料域的字段一律是标准字段（满列 + 控件铬，非定宽）', () => {
   it('自证：`boundedInputCls` 的替换真的生效（`inputCls` 丢了 `w-full` 时会静默退化成整列宽）', () => {
     expect(inputCls).toMatch(/\bw-full\b/)
     const bounded = boundedInputCls('w-28')
@@ -260,7 +270,7 @@ describe('判据 5：算料域的数值输入必须**定宽**（不得整列宽�
     expect(bounded, '替换没生效 ⇒ 所有定宽调用点静默变整列宽').not.toMatch(/\bw-full\b/)
   })
 
-  it('🔴 本域所有输入/下拉都带定宽 token（写回 `w-full` ⇒ 红）', async () => {
+  it('🔴 本域所有输入/下拉都是标准字段（满列 + 控件铬；丢了 `w-full` 或又冒出定宽 ⇒ 红）', async () => {
     mockSearchParams.mockReturnValue(new URLSearchParams('domain=calc'))
     render(<SettingsPage />)
     const panel = await screen.findByTestId('config-domain-panel-calc')
@@ -271,14 +281,18 @@ describe('判据 5：算料域的数值输入必须**定宽**（不得整列宽�
       (el.getAttribute('data-testid') ?? '').startsWith('calc-caliber-'),
     )
     expect(fields.length, '本域必须真有可编辑字段（否则本判据在对空气放行）').toBeGreaterThanOrEqual(8)
-    const offenders = fields
-      .filter((el) => /\bw-full\b/.test(el.className))
+    const notFull = fields
+      .filter((el) => !/\bw-full\b/.test(el.className))
       .map((el) => el.getAttribute('data-testid'))
-    expect(offenders, '这些字段是整列宽（`w-full`）—— #6857 的病灶形态').toEqual([])
-    const unbounded = fields
-      .filter((el) => !/\bw-(28|40|64)\b/.test(el.className))
+    expect(notFull, '这些字段不是满列（`w-full`）—— 标准字段的宽度由栅格列给').toEqual([])
+    const noChrome = fields
+      .filter((el) => !(/\bh-9\b/.test(el.className) && /\brounded-lg\b/.test(el.className) && /border-neutral-300/.test(el.className)))
       .map((el) => el.getAttribute('data-testid'))
-    expect(unbounded, '这些字段没有定宽 token ⇒ 宽度靠父容器决定，改布局就会变宽').toEqual([])
+    expect(noChrome, '这些字段不是本仓控件铬（h-9 + rounded-lg + border-neutral-300）').toEqual([])
+    const fixed = fields
+      .filter((el) => /\bw-(24|28|32|36|40|64)\b/.test(el.className))
+      .map((el) => el.getAttribute('data-testid'))
+    expect(fixed, '这些字段又冒出定宽 token —— 标签在上的版式里定宽会留一排空白（#7176）').toEqual([])
   })
 })
 

@@ -64,10 +64,12 @@ interface Ledger {
 const ledger = JSON.parse(readFileSync(LEDGER_PATH, 'utf-8')) as Ledger
 
 /**
- * 🔴 **冻结基线（只许缩短）**：现取读数 = `risk 21 / benign 6`。
+ * 🔴 **冻结基线（只许缩短）**：现取读数 = `risk 20 / benign 6`。
  * 放宽这两条 = 把已知漏点合法化 ⇒ 必须同时在 PR body 说明并**下调**，不能上调。
+ * 本次下调（21 → 20）来自 issue #7589：销售单移除收款码后 `PAYMENT_TYPE_LABELS[type] || type`
+ * 一并退场 ⇒ 台账里 `src/components/orders/SalesDoc.tsx` 那条**当场删除**（只许缩短）。
  */
-const FROZEN_RISK_MAX = 21
+const FROZEN_RISK_MAX = 20
 const FROZEN_BENIGN_MAX = 6
 
 const { files, sites } = scanFallbackSites(ROOT)

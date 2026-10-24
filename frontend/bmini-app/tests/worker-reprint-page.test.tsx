@@ -1,4 +1,4 @@
-// case_ids: BM-023, BM-024, BM-026
+// case_ids: BM-023, BM-024, BM-026, BM-051
 /**
  * 工人**拍照补打**页的行为判据（issue #5640；验收判据 2~11）
  *
@@ -189,6 +189,16 @@ describe('工人拍照补打页', () => {
   it('P2 安卓 Chrome + HTTPS ⇒ 正向提示（可打印）', () => {
     render(<WorkerReprintPage />)
     expect(screen.getByTestId('reprint-print-capability').textContent).toBe(PRINT_READY_HINT)
+  })
+
+  it('P10 拍照步文案是给工人看的纯文本（无 markdown 标记、无研发术语，issue #7316）', () => {
+    render(<WorkerReprintPage />)
+    const photo = screen.getByTestId('reprint-step-photo').textContent || ''
+    expect(photo).toContain('手机当场就能认出来')
+    expect(photo).toContain('手输短码')
+    // 🔴 红证：写回 `**不会**` ⇒ 星号上屏，本断言当场红（同 worker-copy-plain-text-guard.test.ts）
+    expect(photo).not.toContain('*')
+    expect(photo).not.toMatch(/识别模型|服务端|解码/)
   })
 
   it('P3 解码出 /i/<短码> ⇒ 查详情并上屏；此时**不**调打印留痕', async () => {

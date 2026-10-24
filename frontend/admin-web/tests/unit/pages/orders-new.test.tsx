@@ -1,4 +1,4 @@
-// case_ids: OR-009, OR-014, UI-038, CU-009, OR-038, OR-035
+// case_ids: OR-009, OR-014, UI-038, CU-009, OR-038, OR-035, APV-002
 // OR-014（issue #3005 回滚 #2986）：下单加工项数量规则——per_meter→面料米数；per_set/fixed/per_area→1，
 // 商品数量变化联动重算；加工项行显示「名称+数量+金额」供对账，无数量输入框（数量由计价方式派生）
 // ⚠️ issue #5202（下单页数字输入框修「打不出 `0.`」）：改用保留原始文本的实现
@@ -20,6 +20,7 @@ import { toast } from 'sonner'
 
 // Mock API
 const mockCreateOrder = vi.fn()
+const mockApprovalSubmit = vi.fn()
 const mockGetProducts = vi.fn()
 const mockGetProduct = vi.fn()
 const mockGetProcessingItems = vi.fn()
@@ -81,6 +82,8 @@ const FEE_UNIT_PRICE: Record<string, number> = {
 }
 
 vi.mock('@/lib/api', () => ({
+  // 超授信就地申请（issue #7374 段 4）：弹窗提交走这个 —— **必须挂在顶层**（弹窗 import { approvalApi }）
+  approvalApi: { submit: (...args: any[]) => mockApprovalSubmit(...args) },
   orderApi: {
     createOrder: (...args: any[]) => mockCreateOrder(...args),
   },  productApi: {
@@ -2231,4 +2234,43 @@ describe('NewOrderPage', () => {
       expect(payload.logisticsCompany).toBe('顺丰')
     })
   })
+
+  it('🔴 超授信被拦 ⇒ 就地弹授信申请：ref = 客户手机号、金额 = 尚缺额（issue #7374 段 4）', async () => {
+    mockGetProducts.mockResolvedValue({
+      data: { data: { items: [{ id: 'p1', name: '遮光窗帘', code: 'CUR-1', category: '布帘',
+        unit: '米', basePrice: 100, skus: [{ id: 's1', skuCode: 'CUR-1-A', doorWidth: 2.8,
+          sellingPrice: 100, colorName: '米白' }] }] } },
+    })
+    mockCreateOrder.mockRejectedValue({
+      response: { status: 400, data: { message:
+        '超出客户授信额度：本单 ¥8,600 + 已欠 ¥2,000 > 额度 ¥10,000，尚缺 ¥600。' +
+        '如需放行，请先申请 credit_override 审批（objectType=credit_override，objectRef=客户手机号，金额 ≥ 尚缺额）' } },
+    })
+    mockApprovalSubmit.mockResolvedValue({ data: { success: true, data: { id: 'ap-c1' } } })
+
+    render(<NewOrderPage />)
+    expandFee()
+    await pickProduct('遮光窗帘')
+    await fillCustomerAndSubmit()
+
+    // 弹窗自动出来：对象显示客户名（人看的），**提交的 ref 仍是手机号**（闸门找审批的键），
+    // 金额 = 尚缺 600（不是订单总额 —— 批多了会白占客户额度）
+    // CI 负载下这条链（多步向导 → 建单失败 → 弹窗）会更慢，给 10s（不是放宽判据，是等同一个确定性结果）
+    const target = await screen.findByTestId('approval-request-target', undefined, { timeout: 10000 })
+    expect(target.textContent).toContain('张三')
+    // 金额是弹窗 `useEffect` 里按 draft 预填的 ⇒ 必须等一拍再读（实测：高并发下同步读会拿到空串）
+    await waitFor(() =>
+      expect((screen.getByTestId('approval-request-amount') as HTMLInputElement).value).toBe('600'),
+    )
+
+    fireEvent.change(screen.getByTestId('approval-request-reason'), { target: { value: '老客户集中下单' } })
+    fireEvent.click(screen.getByTestId('approval-request-submit'))
+    await waitFor(() =>
+      expect(mockApprovalSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ objectType: 'credit_override', objectRef: '13800138000', amount: 600 }),
+        ),
+        { timeout: 10000 },
+      )
+    // 多步向导 + 建单失败 + 弹窗：这条链比同文件的单点判据重，给足超时（默认 5s 会在负载下假红）
+  }, 20000)
 })

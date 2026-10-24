@@ -74,12 +74,25 @@ JAVA_GLOB = "backend/**/src/main/java/**/*.java"
 #: 守卫的「扫描确实覆盖到被测对象」锚点 = issue #4608 的三处软删点。
 #: 改方法名 / 挪文件 ⇒ 本守卫会红（锚点要同步，不许静默失锚）。
 KNOWN_SITES = (
-    ("backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java",
-     "deleteRouting"),
-    ("backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java",
-     "deleteRouteRule"),
+    # 路线 / 条件工序规则：issue #6962 起软删落库下沉到 mapper 的 **default 方法**
+    # （`markDeletedByIdAndTenant(id, tenantId)` —— CAS，按受影响行数判结果），
+    # 显式写列的片段因此在这两个方法体里，而不是 service 里。**这是加强不是搬走**：
+    # 判据同时要求「service 真的调了它」（见下面的 CALL_SITES），删功能 / 退回整实体写都会红。
+    ("backend/admin-api/src/main/java/com/migao/admin/mapper/ProductionRouteTemplateMapper.java",
+     "markDeletedByIdAndTenant"),
+    ("backend/admin-api/src/main/java/com/migao/admin/mapper/ProductionRouteRuleMapper.java",
+     "markDeletedByIdAndTenant"),
     ("backend/admin-api/src/main/java/com/migao/admin/service/ProductionOperationCommandService.java",
      "delete"),
+)
+
+#: 软删**调用点**（issue #6962）：谓词写对了但没人调 = 删功能。
+#: 每条 = (service 文件, 必须逐字出现的调用片段)。
+CALL_SITES = (
+    ("backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java",
+     "productionRouteTemplateMapper.markDeletedByIdAndTenant(id, tenantId)"),
+    ("backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java",
+     "productionRouteRuleMapper.markDeletedByIdAndTenant(id, tenantId)"),
 )
 
 #: 禁用形态 = 逻辑删除字段走**实体 setter**（会被 MP 从 SET 里剔除）。
@@ -296,6 +309,16 @@ def test_three_soft_delete_sites_write_deleted_explicitly():
         "三处软删必须用 `update(null, LambdaUpdateWrapper … .set(::getDeleted, 1).set(::getUpdatedAt, …))` "
         "显式写列：\n" + "\n".join(f"  · {p}" for p in problems)
     )
+
+
+def test_soft_delete_call_sites_actually_call_the_cas_method():
+    """正向判据：两处路线软删**真的调了** CAS 方法（谓词写对但没人调 = 删功能仍可让上面恒绿）。"""
+    problems: list[str] = []
+    for rel, needle in CALL_SITES:
+        src = (REPO / rel).read_text(encoding="utf-8")
+        if needle not in src:
+            problems.append(f"{rel}: 找不到调用 `{needle}`（改名 / 退回无谓词写 ⇒ 同步本守卫）")
+    assert not problems, "软删调用点必须仍在：\n" + "\n".join(f"  · {p}" for p in problems)
 
 
 # ══════════════════ ③ 注入式自证（红 / 不误报，双向） ══════════════════

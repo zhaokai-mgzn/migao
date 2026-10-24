@@ -169,7 +169,8 @@ describe('PieceworkTable 未定价显式可见（issue #4696）', () => {
     expect(screen.getByTestId('piecework-unpriced-detail')).toHaveTextContent('5')
     expect(screen.getByTestId('piecework-unpriced-pricing-link')).toHaveAttribute(
       'href',
-      '/production/routings',
+      // issue #7182：旧「工艺配置」页已下架 ⇒ 落点 = 唯一写面（作业定价域）
+      '/settings?domain=operation-prices',
     )
   })
 

@@ -6,8 +6,9 @@ import { render, cleanup, screen } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-// SalesDoc 与 ProcessingDoc 都会（经 hook / 组件）触到 `@/lib/api` —— 打桩成「无码」，
-// 避免 jsdom 真发 XHR（噪音）。「无码 ⇒ 整块不出现」的判据仍由组件行为决定。
+// ProcessingDoc 经 `useCompanyName` 触到 `@/lib/api`（企业名回落读面）—— 这里打一个**部分**替身，
+// 让 jsdom 落到「取不到 ⇒ 空串」分支，避免真发 XHR（噪音）。
+// （收款码与本单据无关：加工单自 issue #7219 起不印二维码、销售单自 issue #7589 起不印收款码。）
 const mockGetPaymentQrcodes = vi.fn()
 vi.mock('@/lib/api', () => ({
   settingsApi: { getPaymentQrcodes: (...args: unknown[]) => mockGetPaymentQrcodes(...args) },
@@ -16,11 +17,8 @@ vi.mock('@/lib/api', () => ({
 import ProcessingDoc, {
   MISSING,
   NOT_COLLECTED,
-  OPERATIONS_DOC_COLUMNS,
   PROCESSING_DOC_COLUMNS,
   PROCESSING_DOC_NOT_COLLECTED_FIELDS,
-  operationsByItem,
-  operationStatusText,
 } from '@/components/orders/ProcessingDoc'
 import type {
   Order,
@@ -41,20 +39,19 @@ import {
  * 加工单（**A4 可打印纸质文档**，issue #5651）—— 照客户现行实物制式（issue #5651 实证表 #3）。
  *
  * 断言的是**纸面内容与版面契约**：
- * ① 表头九栏逐条命中（订单日期 / 客户 / 电话 / 地址 / 备注 / 制单人 / 单号 / 交付日期 / 货运）+ 右上 QR；
- * ② **按套分块**，每块 `第N套/共M套` + 一张 8 列表（列清单 = `PROCESSING_DOC_COLUMNS`，全仓唯一一份）；
- * ③ `@page { size: A4; margin: 12mm; }`（由介质矩阵生成）+ 分页不裁切（`break-inside: avoid`）
+ * ① 表头九栏逐条命中（订单日期 / 客户 / 电话 / 地址 / 备注 / 制单人 / 单号 / 交付日期 / 货运）；
+ * ② **按套分块**，每块 `第N套/共M套` + 一张 **9 列表**（列清单 = `PROCESSING_DOC_COLUMNS`，全仓唯一一份）；
+ * ③ `@page { size: A4; margin: 0; }`（由介质矩阵生成；边距 0 = 浏览器页眉页脚无处可画，
+ *    版面内缩 12mm 由容器 padding 承担 —— issue #7309）+ 分页不裁切（`break-inside: avoid`）
  *    且长单分页时**表头重复**（`thead { display: table-header-group }`）；
  * ④ 🔴 **缺值不许静默留空**：一律显式占位 `—`；本系统**没有采集**的字段（制单人 / 批号）
  *    另标「未采集」——「客户没填」与「我们没有这个列」必须可区分；
- * ⑤ 🔴 **缺码不画假码**（洗水码既有判据）：拿不到 QR 值 ⇒ 虚线占位框，不编码、不拿别的串顶替；
+ * ⑤ 🔴 **纸面不印 QR**（issue #7219：扫码入口不属于加工单）—— QR / 无码占位 / 可读短码行三种形态**都不出现**；
  * ⑥ 打印隔离沿用 #4983 / #4965 范式（共享 `print-doc` + 限定本次打印目标的 visibility 防御）；
  * ⑦ **列宽按内容预算**（issue #6600）：批号是**固定 17 字符**的 `PC-yyyyMMdd-####`，原先只给 10%
- *    ⇒ `table-layout: fixed` 下折成 3 行、把数据行撑高（真浏览器实测 63px）。现在 ≥16%（两行放得下）。
- * ⑧ 🔴 **码的内容 = 加工单级稳定短链，不再是加工单号纯文本**（issue #6867，设计 §11.3「前端 · admin-web」）：
- *    QR 值 = 调用方给的 `scan_url`（`{base}/o/{短码}`）；纸面**再印一行人可读短码**
- *    （`processingOrder.short_code`，形态照 `TaskCardPrint` 的 `task-card-label-short-code-*`），
- *    **缺码印 `—`、绝不编**（与既有「缺码不画假码」同口径；§11.7「手可输的兜底」）。
+ *    ⇒ `table-layout: fixed` 下折成 3 行、把数据行撑高（真浏览器实测 63px）。现在 ≥16%（两行放得下）；
+ * ⑧ 🔴 **纸面不印工序清单**（issue #7274）：工序细节不上纸（老调用方形态传进来的 `operations` 也不得渲染）——
+ *    见文件尾「ProcessingDoc 纸面不印工序（issue #7274）」。
  */
 function buildItem(overrides: Partial<OrderItem> = {}): OrderItem {
   return {
@@ -134,10 +131,6 @@ function buildPosition(overrides: Partial<ProductionPosition> = {}): ProductionP
   }
 }
 
-/** QR 的**确切内容**：`qrcode.react` 把值渲染成 `<title>`（与 `TaskCardPrint` 测试同款读法） */
-const qrPayload = (): string | undefined =>
-  document.querySelector('[data-testid="processing-doc-qr"] title')?.textContent ?? undefined
-
 const doc = (): HTMLElement | null => document.querySelector('.processing-print-area')
 const css = (): string =>
   Array.from(doc()?.querySelectorAll('style') ?? [])
@@ -154,7 +147,7 @@ const headerWidthOf = (label: string): number => {
   )
   return Number((th?.className ?? '').match(/\bw-\[(\d+)%\]/)?.[1] ?? NaN)
 }
-/** 8 列表头声明的宽度百分比（按表头顺序） */
+/** 9 列表头声明的宽度百分比（按表头顺序） */
 const headerWidths = (): number[] => PROCESSING_DOC_COLUMNS.map(headerWidthOf)
 
 describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
@@ -184,8 +177,9 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
       />
     )
     const area = document.querySelector('.processing-print-area')
-    // 判据面 = 8 列表的**用料列**（index 5，唯一由「数量是否算得出」决定的那一格）
-    const metersColumn = paperNumericColumn(area, { column: 5 })
+    // 判据面 = 9 列表的**用料列**（index 5，唯一由「数量是否算得出」决定的那一格）
+    // issue #7625：数量列 index = 6（品名0 货号1 颜色2 门幅3 帘种4 尺寸5 数量6）
+    const metersColumn = paperNumericColumn(area, { column: 6 })
     // 单据：加工单 ProcessingDoc
     assertNoPaperZeroFill(metersColumn.slice(0, 1), {
       label: '加工单 ProcessingDoc',
@@ -203,7 +197,6 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
       <ProcessingDoc
         order={buildOrder()}
         processingOrder={buildProcessingOrder()}
-        qrValue="PO260926-0007"
       />
     )
     const text = doc()?.textContent || ''
@@ -261,12 +254,14 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
       '货号',
       '颜色',
       '门幅',
+      '帘种',
       '尺寸',
       '数量',
-      '组件',
       '批号',
       '备注',
     ])
+    // issue #7625（用户 2026-10-24「不要组件这一列 … 加一列区分布帘还是纱帘」）：
+    // 「组件」列退场、同位置附近补「帘种」（紧跟门幅）⇒ 仍 9 列。
   })
 
   it('② issue #6869：逐格印商品 SKU 四件套（品名/货号/颜色/门幅）—— 货号取响应真字段 `skuCode`', () => {
@@ -279,12 +274,39 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
       '0012', // 货号（`skuCode` —— 夹具**没有** `productCode`：读幽灵字段的旧实现这里必空 ⇒ 红证）
       '米白', // 颜色（`processingInfo.colorName`）
       '2.8米', // 门幅（`processingInfo.doorWidth`，经 `craftSpecRows` 同一份格式化）
+      '布帘', // 帘种（`processingInfo.curtainType`）
       '3.2×2.6', // 尺寸
       '12.5', // 数量(米)
-      '主布', // 组件
       '—', // 批号（无快照行 ⇒ 未指派，显式占位）
       '', // 备注（未填行级备注 ⇒ 留白供手写）
     ])
+  })
+
+  it('帘种列（issue #7625）：显式 `curtainType=纱帘` ⇒ 印「纱帘」；布料单（无帘）⇒ 占位「—」', () => {
+    render(
+      <ProcessingDoc
+        order={buildOrder({
+          items: [
+            buildItem({
+              id: 'item-sheer',
+              processingInfo: { curtainType: '纱帘', colorName: '象牙白', doorWidth: '3.0米' },
+            }),
+            buildItem({
+              id: 'item-fabric',
+              processingInfo: { colorName: '米白', saleForm: '布料' },
+            }),
+          ],
+        })}
+        processingOrder={buildProcessingOrder()}
+      />
+    )
+    const blocks = Array.from(document.querySelectorAll('.processing-set'))
+    // 帘种列 index = 4（品名0 货号1 颜色2 门幅3 帘种4）
+    const curtainOf = (block: Element): string =>
+      block.querySelectorAll('tbody tr')[0]?.querySelectorAll('td')[4]?.textContent?.trim() ?? ''
+    // 🔴 注入式红证：两张都落回同一个缺省值（写死「布帘」）⇒ 下面两条必红
+    expect(curtainOf(blocks[0])).toBe('纱帘')
+    expect(curtainOf(blocks[1])).toBe(MISSING)
   })
 
   it('② issue #6869：工艺说明行承载原「部位信息」，且「部位」并入其中（不再单独成列）', () => {
@@ -348,7 +370,12 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
 
   it('③ 版面：@page A4（由介质矩阵生成）+ 分页不裁切 + 表头重复', () => {
     render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} printTarget="processing" />)
-    expect(css()).toContain('@page { size: A4; margin: 12mm; }')
+    // 🔴 issue #7309：A4 的 `@page` 边距是 **0**（浏览器把页眉页脚画在页边距里，够大就照画），
+    // 版面内缩 12mm 由容器 padding 承担（下一行的断言）。
+    expect(css()).toContain('@page { size: A4; margin: 0; }')
+    expect(css()).toMatch(/\.processing-print-area\[data-print-target='processing'\]\s*\{[^}]*padding:\s*12mm/)
+    // 内缩必须**逐页重复**（第 2 页起也留边；不 clone ⇒ 内容贴到纸边）
+    expect(css()).toContain('box-decoration-break: clone')
     expect(doc()?.getAttribute('data-print-media')).toBe('a4')
     expect(css()).toMatch(/\.processing-set\s*\{[^}]*break-inside:\s*avoid/)
     // 长单跨页时表头重复（否则第 2 页起认不出列）
@@ -437,85 +464,20 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
     expect(cellText('processing-doc-batch')).toBe(MISSING)
   })
 
-  it('🔴 ⑤ QR：给了值 ⇒ 出码；**不给 ⇒ 出占位框、不画假码**', () => {
+  it('🔴 ⑤ 加工单**不再印 QR**（issue #7219：扫码入口不属于加工单）', () => {
     render(
       <ProcessingDoc
         order={buildOrder()}
-        processingOrder={buildProcessingOrder()}
-        qrValue={SCAN_URL}
+        processingOrder={buildProcessingOrder({ short_code: SHORT_CODE, scan_url: SCAN_URL })}
       />
     )
-    expect(document.querySelector('[data-testid="processing-doc-qr"]')?.tagName.toLowerCase()).toBe('svg')
-    cleanup()
-    render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
+    // QR / 无码占位 / 短码行三种形态**都不出现**（移除是整块移除，不是隐藏）
     expect(document.querySelector('[data-testid="processing-doc-qr"]')).toBeNull()
-    const placeholder = document.querySelector('[data-testid="processing-doc-qr-placeholder"]')
-    expect(placeholder?.textContent).toContain('无码')
+    expect(document.querySelector('[data-testid="processing-doc-qr-placeholder"]')).toBeNull()
+    expect(document.querySelector('[data-testid="processing-doc-short-code"]')).toBeNull()
   })
 
-  it('⑤ QR 判据可红：给不出值却硬画一个码（拿别处的串顶替）⇒ 必红', () => {
-    render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
-    // 缺值分支下不许存在任何 SVG 码（旧写法若回落成 order.orderNo 就会在这里出现）
-    expect(document.querySelectorAll('.processing-print-area svg')).toHaveLength(0)
-  })
-
-  it('🔴 ⑧ QR 的内容 = 传入的 `scan_url`（加工单级稳定短链），**不是**加工单号纯文本（issue #6867）', () => {
-    render(
-      <ProcessingDoc
-        order={buildOrder()}
-        processingOrder={buildProcessingOrder({ short_code: SHORT_CODE, scan_url: SCAN_URL })}
-        qrValue={SCAN_URL}
-      />
-    )
-    expect(qrPayload()).toBe(SCAN_URL)
-    // 反向：扫出来**不再是**加工单号纯文本（旧形态 = 相机只显示一串文本、打不开任何页面）
-    expect(qrPayload()).not.toBe('PO260926-0007')
-  })
-
-  it('🔴 ⑧ 短码行印 `processingOrder.short_code`（人可读兜底：扫码失败 / 无扫码工具时手输）', () => {
-    render(
-      <ProcessingDoc
-        order={buildOrder()}
-        processingOrder={buildProcessingOrder({ short_code: SHORT_CODE, scan_url: SCAN_URL })}
-        qrValue={SCAN_URL}
-      />
-    )
-    expect(screen.getByTestId('processing-doc-short-code')).toHaveTextContent(SHORT_CODE)
-  })
-
-  it('🔴 ⑧ 红证：没有短码 ⇒ 短码行印 `—`，**绝不编造**（也不把加工单号顶上去）', () => {
-    render(
-      <ProcessingDoc
-        order={buildOrder()}
-        // 只有单号、没有短码/短链（存量单 / 读面未实例化）—— 与 `null` 逐字同款
-        processingOrder={buildProcessingOrder({ short_code: null, scan_url: null })}
-      />
-    )
-    expect(screen.getByTestId('processing-doc-short-code')).toHaveTextContent(MISSING)
-    // 「缺码不画假码」同口径：短码行不许出现任何**加工单号**的片段
-    expect(screen.getByTestId('processing-doc-short-code').textContent).not.toContain('PO')
-    expect(screen.getByTestId('processing-doc-short-code').textContent).not.toMatch(/\d/)
-  })
-
-  it('🔴 ⑧ 红证（注入式自证）：把短码源写成加工单号 / 拿别的串顶替 ⇒ 上面那两条判据必红', () => {
-    render(
-      <ProcessingDoc
-        order={buildOrder()}
-        processingOrder={buildProcessingOrder({ short_code: SHORT_CODE, scan_url: SCAN_URL })}
-        qrValue={SCAN_URL}
-      />
-    )
-    // ① 旧形态（QR 值 = 加工单号纯文本）⇒ 「QR = scan_url」那条红
-    const regressedQr = 'PO260926-0007'
-    expect(regressedQr).not.toBe(SCAN_URL)
-    // ② 编造短码（拿加工单号顶替短码行）⇒ 「短码行 = 服务端短码」那条红
-    const fabricated = 'PO260926-0007'
-    expect(screen.getByTestId('processing-doc-short-code').textContent).not.toBe(fabricated)
-    // ③ 短码行挂上单号串 ⇒ 「无短码不许出现加工单号片段」那条红
-    expect(fabricated).toContain('PO')
-  })
-
-  it('⑥ 加工单**不印金额**（实证 #3 无金额列）⇒ 天然没有第二份金额真值', () => {
+  it('加工单**不印金额**（实证 #3 无金额列）⇒ 天然没有第二份金额真值', () => {
     render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
     const text = doc()?.textContent || ''
     for (const money of ['本单应收', '单价', '金额', '小计']) {
@@ -523,7 +485,7 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
     }
   })
 
-  it('⑦ 打印隔离：portal 到 body + 共享标记类 + 隔离选择器排除所有打印单据 + 屏幕态隐藏', () => {
+  it('⑥ 打印隔离：portal 到 body + 共享标记类 + 隔离选择器排除所有打印单据 + 屏幕态隐藏', () => {
     render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
     const el = doc()
     expect(el?.parentElement).toBe(document.body)
@@ -534,7 +496,7 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
     expect(css()).toMatch(/\.processing-print-area\[data-print-target='processing'\]/)
   })
 
-  it('⑦ 未置位打印目标 ⇒ 不加 data-print-target（点别的单据时本单不参与显形）', () => {
+  it('⑥ 未置位打印目标 ⇒ 不加 data-print-target（点别的单据时本单不参与显形）', () => {
     render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
     expect(doc()?.getAttribute('data-print-target')).toBeNull()
     cleanup()
@@ -578,88 +540,44 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
 })
 
 /**
- * 工序清单 + 数量单位（issue #6901）—— 用户逐字「加工单缺乏订单中的规格尺寸和加工信息，
- * 工人需要这些信息+商品信息来决定如何生产」。
+ * 纸面**不印**工序清单（issue #7274，用户 2026-10-18 逐字「工序细节不用在打印单上，
+ * 移除掉工序相关的表格信息」）。
  *
- * 纸面此前只有**商品 + 工艺规格**，**没有**「这张单要做哪几道工序」（显示名 / 单位 / 应做数量 / 状态）。
- * 判据面两条形态：
- * ① 有工序实例（读面 `positions[]` 按 `order_item_id` 对得上本行）⇒ 逐行印**服务端真值**；
- * ② 无/对不上 ⇒ **整块不出现**（不印空表、不印占位表头）。
+ * 判据形态 = **回归探针**：按 issue #6901 时代的调用方形态把 `operations` 传进来（TS 面上已退场），
+ * 纸面必须**零**工序节点。若有人把工序块接回纸面 ⇒ 本文件立即红。
  */
-describe('ProcessingDoc 工序清单（issue #6901）', () => {
-  it('🔴 逐道印工序：显示名（logical_name）/ 应做（数量+单位）/ 状态 —— 取读面真值，不重算', () => {
+describe('ProcessingDoc 纸面不印工序（issue #7274）', () => {
+  it('🔴 旧调用方仍传工序实例 ⇒ 纸面也**零**工序表 / 工序行 / 工序文案', () => {
+    // 旧 props 形态（issue #6901 的 `operations`）—— TS 面上已不存在，这里按旧调用方**照原样**传，
+    // 让「重新接回纸面」这件事可被判红（而不是只靠注释约定）。
+    const legacyCaller = { operations: [buildPosition()] } as unknown as Record<string, never>
     render(
-      <ProcessingDoc
-        order={buildOrder()}
-        processingOrder={buildProcessingOrder()}
-        operations={[buildPosition()]}
-      />
+      <ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} {...legacyCaller} />
     )
-    // 块头一行 + 每道一行（数据行 = `processing-doc-operation`）
-    expect(screen.getByTestId('processing-doc-operations')).toBeInTheDocument()
-    const rows = screen.getAllByTestId('processing-doc-operation')
-    expect(rows).toHaveLength(2)
-    const cellsOf = (row: HTMLElement): string[] =>
-      Array.from(row.querySelectorAll('td')).map((td) => td.textContent?.trim() ?? '')
-    expect(cellsOf(rows[0])).toEqual(['精裁', '12.5 米', '待做'])
-    expect(cellsOf(rows[1])).toEqual(['韩褶', '52 折', '已完成'])
-    // 🔴 纸面**不得**出现工人端快照名（读面键 `operation`，变体名）——只许印逻辑名
-    expect(doc()?.textContent).not.toContain('精裁-布')
-    // 块头列清单 = 唯一真值（乱序/漏列都会让这条红）
-    expect(screen.getByTestId('processing-doc-operations').textContent).toBe(
-      OPERATIONS_DOC_COLUMNS.join('')
-    )
+    const el = doc()
+    expect(el?.querySelector('[data-testid="processing-doc-operations"]')).toBeNull()
+    expect(el?.querySelectorAll('[data-testid="processing-doc-operation"]')).toHaveLength(0)
+    const text = el?.textContent || ''
+    // 工序实例里的显示名 / 状态 / 列标签一律不上纸（`韩褶` 是**工艺**值，纸面本该有，故不列）
+    for (const forbidden of ['工序', '精裁', '应做', '待做']) {
+      expect(text).not.toContain(forbidden)
+    }
   })
 
-  it('🔴 红证（注入式）：把显示名写成快照名 `operation` / 状态只印英文键 ⇒ 上面那条必红', () => {
-    render(
-      <ProcessingDoc
-        order={buildOrder()}
-        processingOrder={buildProcessingOrder()}
-        operations={[buildPosition()]}
-      />
-    )
-    const row = screen.getAllByTestId('processing-doc-operation')[0]
-    // ① 旧形态（直读 `operation`）⇒ 纸面会出现 `精裁-布`，上面那条 `not.toContain` 立即红
-    expect(row.textContent).toContain('精裁')
-    expect(row.textContent).not.toContain('精裁-布')
-    // ② 读面 `status` 是机器键：直接渲染会印 `pending` / `done`（工人看不懂）
-    expect(row.textContent).toContain('待做')
-    expect(row.textContent).not.toContain('pending')
-    // ③ 单位与数量同格（不是只印数字 —— 米/折是这道工序的**计量口径**）
-    expect(row.textContent).toContain('12.5 米')
+  it('🔴 起算点自证：纸面正文照旧渲染（上面那条不是「纸面整个没了」的空跑）', () => {
+    render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
+    const text = doc()?.textContent || ''
+    expect(text).toContain('布艺遮光帘A')
+    expect(text).toContain('工艺')
+    expect(text).not.toContain('工序')
   })
+})
 
-  it('🔴 无工序 / 挂不上订单行 ⇒ 工序块**整块不出现**（不印空表、不印占位表头）', () => {
-    const { unmount } = render(
-      <ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />
-    )
-    // ① 没传读面（订单还没生成加工单）⇒ 一行都不出现
-    expect(screen.queryByTestId('processing-doc-operations')).toBeNull()
-    expect(screen.queryAllByTestId('processing-doc-operation')).toHaveLength(0)
-    unmount()
-
-    // ② 读面给了实例，但 `order_item_id` 与本订单行对不上 ⇒ **不猜**（不许把别人的工序印到这张单上）
-    render(
-      <ProcessingDoc
-        order={buildOrder()}
-        processingOrder={buildProcessingOrder()}
-        operations={[buildPosition({ order_item_id: 'another-item' })]}
-      />
-    )
-    expect(screen.queryByTestId('processing-doc-operations')).toBeNull()
-    // ③ 分组在、但 `operations` 为空 ⇒ 同样整块不出现（不是空表）
-    cleanup()
-    render(
-      <ProcessingDoc
-        order={buildOrder()}
-        processingOrder={buildProcessingOrder()}
-        operations={[buildPosition({ operations: [] })]}
-      />
-    )
-    expect(screen.queryByTestId('processing-doc-operations')).toBeNull()
-  })
-
+/**
+ * 数量列的单位随行（issue #6901）—— 列名与值**同出**
+ * `frontend/admin-web/src/lib/order-item-sku.ts::orderItemQuantity()`（口径收敛一处）。
+ */
+describe('ProcessingDoc 数量列单位（issue #6901）', () => {
   it('🔴 数量列单位随行：快照 `unit` 是套 ⇒ 列名印「数量(套)」且逐值同口径（口径收敛一处）', () => {
     render(
       <ProcessingDoc
@@ -690,33 +608,5 @@ describe('ProcessingDoc 工序清单（issue #6901）', () => {
     expect(headers).not.toContain('数量(米)')
     // 起算点：纸面**不许**出现任何自行断言的单位
     expect(doc()?.textContent).not.toContain('数量(米)')
-  })
-
-  it('🔴 负控：工序块上线后纸面仍**不印金额**（实证 #3 无金额列，issue #5651 硬约束）', () => {
-    render(
-      <ProcessingDoc
-        order={buildOrder()}
-        processingOrder={buildProcessingOrder()}
-        operations={[buildPosition()]}
-      />
-    )
-    const text = doc()?.textContent || ''
-    // 工序块带来「应做 / 状态」，**不得**顺手把读面的 `unit_price` / `price_state` 印上纸
-    expect(screen.getAllByTestId('processing-doc-operation')).toHaveLength(2)
-    for (const money of ['本单应收', '单价', '金额', '小计', '未定价', '¥']) {
-      expect(text).not.toContain(money)
-    }
-  })
-
-  it('🔴 纯函数判据（口径可复算）：`operationsByItem` 跳过无 `order_item_id` / 空工序，`operationStatusText` 二态', () => {
-    // 挂不到订单行 ⇒ 不索引（挂不上就不上纸面，不猜）
-    expect(operationsByItem([buildPosition({ order_item_id: null })]).size).toBe(0)
-    expect(operationsByItem([buildPosition({ operations: [] })]).size).toBe(0)
-    expect(operationsByItem(undefined).size).toBe(0)
-    expect(operationsByItem([buildPosition()]).get('item-1')?.operations).toHaveLength(2)
-    // 状态二态（读面只有 done / 其余；缺值按「待做」印，**不显示空**）
-    expect(operationStatusText('done')).toBe('已完成')
-    expect(operationStatusText('pending')).toBe('待做')
-    expect(operationStatusText(null)).toBe('待做')
   })
 })

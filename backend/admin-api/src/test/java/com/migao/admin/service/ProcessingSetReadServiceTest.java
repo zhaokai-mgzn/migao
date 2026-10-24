@@ -410,14 +410,18 @@ class ProcessingSetReadServiceTest {
      * `positionEntry` 本来就给），剥掉反而会让两侧不等。</p>
      */
     private static final List<String> SCAN_POSITION_DETAIL_KEYS = List.of(
-            "product_name", "sku", "color_name", "door_width", "selling_method", "unit",
+            // 货号 = **商品货号**（`products.sku_code`，issue #7636）；SKU 码（`sku`）不再下发工人面
+            "product_name", "product_code", "color_name", "door_width", "selling_method", "unit",
             "width", "height",
             "curtain_type", "craft", "cutting_mode", "open_count", "is_shaped", "style",
-            "fullness", "fullness_actual", "pleat_count", "per_panel_pleats", "panels",
-            "has_pattern", "pattern_repeat", "formula", "craft_tier", "special_options",
+            // 理论褶倍 `fullness` 与 用料公式 / 算料档位（`formula` / `craft_tier`）已按 issue #7636 删除
+            "fullness_actual", "pleat_count", "per_panel_pleats", "panels",
+            "has_pattern", "pattern_repeat", "special_options",
             "processing_meters", "formula_text",
             "fabric_meters",
-            "batch_no", "batch_meters", "component_role");
+            "batch_no", "batch_meters", "component_role",
+            // 整卷卷数（issue #7523）：扫码面在共享聚合上追加的标量键
+            "roll_count");
 
     @Test
     @DisplayName("🔴 工人扫码面与套件读面同源：同一份聚合逐值相等 + 扫码面**只**多出既定的明细键")

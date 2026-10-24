@@ -51,9 +51,14 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
   // 工人端菜单（issue #6788）：`pages === null` = **未收窄** = 全勾（= 全部页面，零回归）。
   // 🔴 用 null 而不是 `menuPages.map(...)` 快照：目录还没拉回来时不会把「不限制」误判成空集
   // （空集在工人端会被读成「没读到权限 ⇒ 全开」，与「一页都不给」正好相反）。
-  const [form, setForm] = useState<{ workerNo: string; name: string; pin: string; pages: string[] | null }>(
-    { workerNo: '', name: '', pin: '', pages: null },
-  )
+  const [form, setForm] = useState<{
+    workerNo: string
+    name: string
+    pin: string
+    pages: string[] | null
+    /** 逐人开放的能力页键（issue #7162；与 `pages` 分开 ⇒ 默认集合的语义不受影响） */
+    optional: string[]
+  }>({ workerNo: '', name: '', pin: '', pages: null, optional: [] })
   const [creating, setCreating] = useState(false)
   const [togglingId, setTogglingId] = useState<string | null>(null)
 
@@ -64,6 +69,11 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
    * 页面清单；读不到（如当前岗位没有生产域读码）⇒ 留空 = 这一节不显示（**不**自己编一份默认页集）。
    */
   const [menuPages, setMenuPages] = useState<{ key: string; label: string }[]>([])
+  /** 默认页面键（未收窄时的勾选态；issue #7162：「未收窄」= 默认页，不含逐人开放的能力页）。 */
+  const [defaultPageKeys, setDefaultPageKeys] = useState<string[]>([])
+  /** 非默认、逐人开放的能力页（issue #7162：质检 —— 同时是服务端写准入）。 */
+  const [optionalPages, setOptionalPages] = useState<{ key: string; label: string }[]>([])
+  const [togglingOptional, setTogglingOptional] = useState<string | null>(null)
 
   // 重置 PIN（issue #6432）：弹窗两态 —— ① 输入 / 随机生成新 PIN ② 明文展示新 PIN（只显示这一次）
   const [pinTarget, setPinTarget] = useState<WorkerProfile | null>(null)
@@ -101,7 +111,17 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
       .then((res) => {
         const data = res.data?.data
         if (!alive || !data?.pages) return
-        setMenuPages(data.pages.map((key) => ({ key, label: data.labels?.[key] || key })))
+        // 默认页 / 可选能力页都取服务端（issue #7162）：选择器只列默认页，
+        // inspect 这类「逐人开放 + 服务端写准入」的页单独一栏，不与默认集合混在「全勾」里。
+        const defaults = data.default_pages?.length ? data.default_pages : data.pages
+        const optional = (data.optional_pages ?? []).filter((key) => data.pages.includes(key))
+        setDefaultPageKeys(defaults)
+        setOptionalPages(optional.map((key) => ({ key, label: data.labels?.[key] || key })))
+        setMenuPages(
+          data.pages
+            .filter((key) => defaults.includes(key))
+            .map((key) => ({ key, label: data.labels?.[key] || key })),
+        )
       })
       .catch(() => { if (alive) setMenuPages([]) })
     return () => { alive = false }
@@ -124,7 +144,7 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
   const handleOpenCreate = () => {
     // 默认**未收窄**（= 不限制，看全部页面）。存 null 而不是 menuPages 的快照 ⇒ 目录还没拉回来、
     // 或目录在弹窗打开后到达，都不会把「不限制」误判成「一页都没勾」。
-    setForm({ workerNo: '', name: '', pin: '', pages: null })
+    setForm({ workerNo: '', name: '', pin: '', pages: null, optional: [] })
     setFormOpen(true)
   }
 
@@ -142,7 +162,43 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
   const menuSummary = (record: WorkerProfile): string | null => {
     const assigned = record.workerPages
     if (assigned == null || assigned.length === 0) return null
-    return assigned.map((key) => menuPages.find((p) => p.key === key)?.label || key).join('、')
+    return assigned
+      .map((key) => menuPages.find((p) => p.key === key)?.label
+        || optionalPages.find((p) => p.key === key)?.label
+        || key)
+      .join('、')
+  }
+
+  /**
+   * 表单 → `worker_pages`（issue #7162）：**默认页全选且没开能力页 ⇒ null**（未收窄，存量形态）；
+   * 其余情况 ⇒ 逐键列表（默认页的收窄 + 逐人开放的能力页并成一份）。
+   */
+  const pagesPayload = (pages: string[] | null, optional: string[]): string[] | null => {
+    const base = pages === null ? defaultPageKeys : pages
+    const selected = [...base, ...optional]
+    const sameAsDefault = optional.length === 0
+      && selected.length === defaultPageKeys.length
+      && defaultPageKeys.every((key) => selected.includes(key))
+    return sameAsDefault ? null : selected
+  }
+
+  /** 逐人开/关一个**非默认能力页**（issue #7162：质检）。全选默认页且没开 ⇒ 回 null（未收窄）。 */
+  const handleToggleOptional = async (record: WorkerProfile, key: string) => {
+    if (togglingOptional !== null) return
+    setTogglingOptional(record.id)
+    try {
+      const current = record.workerPages?.length ? record.workerPages : defaultPageKeys
+      const next = current.includes(key) ? current.filter((k) => k !== key) : [...current, key]
+      const sameAsDefault = next.length === defaultPageKeys.length
+        && defaultPageKeys.every((k) => next.includes(k))
+      await workerApi.updateWorkerPages(record.id, sameAsDefault ? null : next)
+      toast.success(record.workerPages?.includes(key) ? '已关闭该能力' : '已开放该能力')
+      loadWorkers()
+    } catch (e) {
+      toastRequestError(e, '设置工人端菜单失败')
+    } finally {
+      setTogglingOptional(null)
+    }
   }
 
   /** 建号：工号（租户内唯一）+ 姓名 + PIN + 工人端菜单。冲突由服务端 409 明确拒绝，页面**不**替它改写文案。 */
@@ -164,11 +220,11 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
         name: form.name.trim(),
         pin: form.pin.trim(),
         // null（未收窄）或全勾 ⇒ 发 null = 不限制；只勾了一部分 ⇒ 发那一部分
-        workerPages: form.pages === null || form.pages.length === menuPages.length ? null : form.pages,
+        workerPages: pagesPayload(form.pages, form.optional),
       })
       toast.success('工人档案已创建，请把工号与 PIN 告知本人')
       setFormOpen(false)
-      setForm({ workerNo: '', name: '', pin: '', pages: null })
+      setForm({ workerNo: '', name: '', pin: '', pages: null, optional: [] })
       loadWorkers()
     } catch (e) {
       // 失败**不关弹窗**：工号冲突是可修正的错误；文案由拦截器统一展示服务端原文（UI-024 去重口径）
@@ -236,8 +292,8 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
       render: (record) => {
         const summary = menuSummary(record)
         if (summary === null) {
-          // 未设收窄 = 不限制（默认口径；也是存量档案的形态）
-          return <span className="text-sm text-neutral-500" data-testid={`worker-menu-${record.id}`}>全部页面</span>
+          // 未设收窄 = 默认页面（不是「全部能力」：质检页逐人开，issue #7162）
+          return <span className="text-sm text-neutral-500" data-testid={`worker-menu-${record.id}`}>默认页面</span>
         }
         return (
           <span className="text-sm text-neutral-700" data-testid={`worker-menu-${record.id}`}>
@@ -259,9 +315,21 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
     {
       key: 'actions',
       title: '操作',
-      width: '180px',
+      width: '220px',
       render: (record) => (
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 whitespace-nowrap">
+          {optionalPages.map((page) => (
+            <button
+              key={page.key}
+              type="button"
+              onClick={() => void handleToggleOptional(record, page.key)}
+              disabled={!canWrite || togglingOptional === record.id}
+              data-testid={`worker-optional-${page.key}-${record.id}`}
+              className="text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm disabled:text-neutral-400 disabled:no-underline disabled:cursor-not-allowed"
+            >
+              {record.workerPages?.includes(page.key) ? `关${page.label}` : `开${page.label}`}
+            </button>
+          ))}
           <button
             type="button"
             onClick={() => handleOpenResetPin(record)}
@@ -403,7 +471,7 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
                   onClick={() => setForm({ ...form, pages: null })}
                   className="text-xs text-primary-600 hover:text-primary-700 hover:underline"
                 >
-                  全部页面
+                  默认页面
                 </button>
               </div>
               <div className="space-y-1">
@@ -439,9 +507,39 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
                 </p>
               ) : (
                 <p className="text-xs text-neutral-400 mt-1.5">
-                  只勾这一位工人要用的页面，他就只在工人端看到这些入口；全部勾选 = 不限制（看到全部页面）。
+                  只勾这一位工人要用的页面，他就只在工人端看到这些入口；全部勾选 = 默认页面（不含下面单独开放的质检）。
                 </p>
               )}
+            </div>
+          )}
+
+          {/* 逐人开放的能力页（issue #7162）：质检不在默认菜单里，且服务端把这一项当写准入 */}
+          {optionalPages.length > 0 && (
+            <div className="pt-3 border-t border-neutral-100" data-testid="worker-optional-pages">
+              <span className="text-sm font-medium text-neutral-700">单独开放</span>
+              <div className="space-y-1 mt-1.5">
+                {optionalPages.map((page) => (
+                  <label
+                    key={page.key}
+                    className="flex items-center gap-3 p-1.5 rounded hover:bg-neutral-50 cursor-pointer"
+                    data-testid={`worker-page-optional-${page.key}`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4"
+                      checked={form.optional.includes(page.key)}
+                      onChange={() => setForm({
+                        ...form,
+                        optional: form.optional.includes(page.key)
+                          ? form.optional.filter((k) => k !== page.key)
+                          : [...form.optional, page.key],
+                      })}
+                    />
+                    <span className="text-sm text-neutral-800">{page.label}</span>
+                    <span className="text-xs text-neutral-400">扫水洗唛后录判定、生成质检单</span>
+                  </label>
+                ))}
+              </div>
             </div>
           )}
         </div>

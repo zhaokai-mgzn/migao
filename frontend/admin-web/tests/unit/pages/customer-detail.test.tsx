@@ -1,4 +1,4 @@
-// case_ids: CU-002, CU-009, CU-010
+// case_ids: CU-002, CU-009, CU-010, CU-013
 // 追加（issue #6669 第 1 条）：客户详情「未完成页签不出入口」。
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -114,6 +114,13 @@ vi.mock('@/lib/api', () => {
     customerApi: {
       getCustomer: vi.fn().mockResolvedValue({ data: { data: mockDetail } }),
       getCustomerTags: vi.fn().mockResolvedValue({ data: { data: mockAllTags } }),
+      // 授信（issue #7370）：未启用与零额度是两件事，这里给「已启用」形态
+      getCredit: vi.fn().mockResolvedValue({
+        data: { data: { customerId: 'cus-001', creditLimit: 10000, paymentTermsDays: 30, outstanding: 6000, available: 4000 } },
+      }),
+      updateCredit: vi.fn().mockResolvedValue({
+        data: { data: { customerId: 'cus-001', creditLimit: 20000, paymentTermsDays: 45, outstanding: 6000, available: 14000 } },
+      }),
       addTagToCustomer: vi.fn().mockResolvedValue({ data: { success: true } }),
       removeTagFromCustomer: vi.fn().mockResolvedValue({ data: { success: true } }),
       updateCustomer: vi.fn().mockResolvedValue({ data: { success: true } }),
@@ -401,5 +408,70 @@ describe('CustomerDetailPage', () => {
       expect(toast.success).toHaveBeenCalledWith('收货信息已保存')
     })
     expect(toast.warning).not.toHaveBeenCalled()
+  })
+
+  // ── 授信与往来（issue #7370，P0-2 段 1）─────────────────────────────────────
+  // 判据口径：页面必须**如实显示服务端读数**（额度/已欠/可用），保存时把「留空」翻成 null
+  // （= 显式停用授信），而不是 0 —— 0 是「启用但零额度」，两者业务语义不同。
+
+  it('显示服务端授信读数：额度 / 账期 / 已欠 / 可用', async () => {
+    render(<CustomerDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByTestId('credit-limit')).toHaveValue(10000)
+    })
+    expect(screen.getByTestId('credit-terms')).toHaveValue(30)
+    expect(screen.getByTestId('credit-available')).toHaveTextContent('可用 ¥4,000.00')
+    expect(screen.getByText('已欠 ¥6,000.00')).toBeInTheDocument()
+  })
+
+  it('保存授信：把输入数字发给服务端（不是字符串）', async () => {
+    render(<CustomerDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByTestId('credit-limit')).toHaveValue(10000)
+    })
+    fireEvent.change(screen.getByTestId('credit-limit'), { target: { value: '20000' } })
+    fireEvent.change(screen.getByTestId('credit-terms'), { target: { value: '45' } })
+    fireEvent.click(screen.getByText('保存授信'))
+
+    await waitFor(() => {
+      expect(customerApi.updateCredit).toHaveBeenCalledWith('cus-001', {
+        creditLimit: 20000,
+        paymentTermsDays: 45,
+      })
+    })
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalledWith('授信设置已保存')
+    })
+  })
+
+  it('清空额度 = 停用授信：发 null 而不是 0（0 是「零额度」）', async () => {
+    render(<CustomerDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByTestId('credit-limit')).toHaveValue(10000)
+    })
+    fireEvent.change(screen.getByTestId('credit-limit'), { target: { value: '' } })
+    fireEvent.change(screen.getByTestId('credit-terms'), { target: { value: '' } })
+    fireEvent.click(screen.getByText('保存授信'))
+
+    await waitFor(() => {
+      expect(customerApi.updateCredit).toHaveBeenCalledWith('cus-001', {
+        creditLimit: null,
+        paymentTermsDays: null,
+      })
+    })
+  })
+
+  it('负额度在前端就被拦（不发请求、给可行动提示）', async () => {
+    render(<CustomerDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByTestId('credit-limit')).toHaveValue(10000)
+    })
+    fireEvent.change(screen.getByTestId('credit-limit'), { target: { value: '-1' } })
+    fireEvent.click(screen.getByText('保存授信'))
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith('授信额度必须是不小于 0 的数字（留空 = 不启用授信）')
+    })
+    expect(customerApi.updateCredit).not.toHaveBeenCalled()
   })
 })

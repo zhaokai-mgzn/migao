@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// case_ids: PG-001, PG-005, PG-019, UI-019, UI-030, PR-057, PR-065
+// case_ids: PG-001, PG-005, PG-019, PG-090, PG-092, UI-019, UI-030, UI-094, PR-065, UI-115
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -23,6 +23,25 @@ vi.mock('@/lib/api', () => ({
 }))
 
 import { processingOrderApi, batchStockApi } from '@/lib/api'
+
+// issue #7507：非加急单的出口是**跳转**智能派单页 ⇒ 导航必须可断言（setup.ts 的全局桩每次返回
+// 新的 `vi.fn()`，断言不到调用；这里换成同一实例）。
+const { routerPush } = vi.hoisted(() => ({ routerPush: vi.fn() }))
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: routerPush,
+    replace: vi.fn(),
+    back: vi.fn(),
+    forward: vi.fn(),
+    refresh: vi.fn(),
+    prefetch: vi.fn(),
+  }),
+  usePathname: () => '/',
+  useSearchParams: () => new URLSearchParams(),
+  useParams: () => ({}),
+  redirect: vi.fn(),
+  notFound: vi.fn(),
+}))
 
 const mockedDetail = processingOrderApi.detail as unknown as ReturnType<typeof vi.fn>
 const mockedGenerate = processingOrderApi.generate as unknown as ReturnType<typeof vi.fn>
@@ -54,6 +73,32 @@ const poIssued = {
 
 // 待发加工（generated）状态：展示「发加工」入口
 const poGenerated = { ...poIssued, id: 'po-gen', status: 'generated', processor: undefined, expectedDeliveryDate: undefined }
+
+/**
+ * 卖布单的**出库作业单**（issue #7079）：`order_kind='outbound'` ⇒ **没有加工方、没有交期**。
+ *
+ * `order_kind` 是**读面机器键**（键名冻结，与同 DTO 上的 `short_code` / `scan_url` 同族）：
+ * 上屏一律是中文业务名「出库作业单」，`processing` / `outbound` / `order_kind` 不得出现。
+ */
+const poOutbound = {
+  id: 'po-out',
+  orderId: 'order-002',
+  orderNo: 'ORD-2',
+  customerName: '王五',
+  processingOrderNo: 'CK-20261017-0001',
+  order_kind: 'outbound',
+  status: 'issued',
+  items: [
+    {
+      productName: '雪尼尔遮光布',
+      colorName: '灰蓝',
+      sellingMethod: '散剪',
+      quantity: 12,
+      unit: '米',
+      processingItems: [{ id: 'p1', name: '裁剪', quantity: 12, unit: '米' }],
+    },
+  ],
+}
 
 /**
  * 快照携带工艺规格的加工单（issue #4355 / 设计文档 §4.9 ③）。
@@ -123,40 +168,59 @@ describe('ProcessingOrderBlock', () => {
     vi.useRealTimers()
   })
 
-  it('含加工项且无加工单 → 展示「生成加工单」入口（PG-001）', async () => {
-    mockedDetail.mockRejectedValueOnce(new Error('404'))
-    render(<ProcessingOrderBlock orderId="order-001" orderStatus="confirmed" hasProcessing />)
-    expect(await screen.findByText('生成加工单')).toBeInTheDocument()
-  })
 
-  it('生成成功 → 结果可见：加工单号 + 状态时间线 + 快照明细 + 复制全部（PG-001）', async () => {
-    mockedDetail.mockRejectedValueOnce(new Error('404'))
-    mockedGenerate.mockResolvedValueOnce({
-      data: { data: [{ orderRef: 'order-001', success: true, processingOrderNo: 'JG-20260912-0001' }] },
-    })
-    // 生成后重新拉取详情 → 已生成状态
-    mockedDetail.mockResolvedValueOnce({ data: { data: { ...poIssued, status: 'generated', processor: undefined, expectedDeliveryDate: undefined } } })
 
-    render(<ProcessingOrderBlock orderId="order-001" orderStatus="confirmed" hasProcessing />)
-    await userEvent.click(await screen.findByText('生成加工单'))
 
-    expect(mockedGenerate).toHaveBeenCalledWith(['order-001'])
-    expect(await screen.findByText('JG-20260912-0001')).toBeInTheDocument()
-    expect(screen.getAllByText('已生成').length).toBeGreaterThan(0)
-    expect(screen.getByText(/打孔/)).toBeInTheDocument()
-    expect(screen.getByText(/四爪钩/)).toBeInTheDocument()
-    expect(screen.getByText('复制全部')).toBeInTheDocument()
-  })
+  // ── issue #7079：作业单两型（加工单 / 出库作业单）在订单详情块的可见面 ──────────────
 
-  it('已有加工单 issued → 展示加工方/交期/状态 + 开始加工按钮（PG-005）', async () => {
+  it('#7079 缺键 = 存量单 ⇒ 按加工单渲染（不把存量单读成出库，加工方/交期照旧可见）', async () => {
     mockedDetail.mockResolvedValueOnce({ data: { data: poIssued } })
-    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" workOrderKind="processing" />)
 
-    expect(await screen.findByText('JG-20260912-0001')).toBeInTheDocument()
+    await screen.findByText('JG-20260912-0001')
+    expect(screen.getByTestId('processing-order-kind')).toHaveTextContent('加工单')
     expect(screen.getByText(/朝阳加工厂/)).toBeInTheDocument()
     expect(screen.getByText(/2026-09-20/)).toBeInTheDocument()
-    expect(screen.getAllByText('已发加工').length).toBeGreaterThan(0)
-    expect(screen.getByText('开始加工')).toBeInTheDocument()
+    expect(screen.queryByTestId('processing-order-outbound-note')).toBeNull()
+  })
+
+  it('#7079 出库作业单：类型显示中文业务名，且**不渲染**加工方/交期（含「发加工」写面）', async () => {
+    mockedDetail.mockResolvedValueOnce({ data: { data: poOutbound } })
+    render(<ProcessingOrderBlock orderId="order-002" orderStatus="producing" workOrderKind="processing" />)
+
+    await screen.findByText('CK-20261017-0001')
+    // ① 类型可见 = 中文业务名（不是机器键）
+    expect(screen.getByTestId('processing-order-kind')).toHaveTextContent('出库作业单')
+    // ② 无加工方 / 无交期：写面与展示都不出现，改为如实说明原因
+    expect(screen.getByTestId('processing-order-outbound-note')).toBeInTheDocument()
+    expect(screen.queryByText(/加工方：/)).toBeNull()
+    expect(screen.queryByPlaceholderText('加工方（如：朝阳加工厂）')).toBeNull()
+    expect(screen.queryByPlaceholderText('交期 yyyy-MM-dd')).toBeNull()
+    // ③ 本块**只读**（issue #7634）：发加工 / 开始加工 / 加工完成 / 取消 四个写动作一个都不渲染
+    for (const label of ['发加工', '开始加工', '加工完成', '取消加工单', '取消作业单']) {
+      expect(screen.queryByRole('button', { name: label })).toBeNull()
+    }
+    // ④ 只给去处：生产明细页（状态流转在那里做）
+    expect(screen.getByTestId('po-go-production')).toBeInTheDocument()
+    // ⑤ 🔴 机器键绝不上屏
+    expect(document.body.textContent ?? '').not.toContain('outbound')
+    expect(document.body.textContent ?? '').not.toContain('order_kind')
+  })
+
+  it('#7079 出库作业单「复制全部」：抬头用中文业务名，且不出现加工方/交期行', async () => {
+    mockedDetail.mockResolvedValueOnce({ data: { data: poOutbound } })
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+
+    render(<ProcessingOrderBlock orderId="order-002" orderStatus="producing" workOrderKind="processing" />)
+    await userEvent.click(await screen.findByText('复制全部'))
+
+    await waitFor(() => expect(writeText).toHaveBeenCalled())
+    const text = writeText.mock.calls[0][0] as string
+    expect(text).toContain('出库作业单：CK-20261017-0001')
+    expect(text).not.toContain('加工方')
+    expect(text).not.toContain('交期')
+    expect(text).not.toContain('outbound')
   })
 
   it('复制全部 → 剪贴板文本含加工单号与加工项 options（PG-005）', async () => {
@@ -164,7 +228,7 @@ describe('ProcessingOrderBlock', () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.assign(navigator, { clipboard: { writeText } })
 
-    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" workOrderKind="processing" />)
     await userEvent.click(await screen.findByText('复制全部'))
 
     await waitFor(() => expect(writeText).toHaveBeenCalled())
@@ -197,7 +261,7 @@ describe('ProcessingOrderBlock 排料结果展示（V119 / issue #5158）', () =
 
   it('PR-065 快照带排料结果 ⇒ 显示「应领 X 米（公式 Y 米 · 省 Z 米）」（0.1 米粒度口径）', async () => {
     mockedDetail.mockResolvedValueOnce({ data: { data: poWithCuttingPlan } })
-    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" workOrderKind="processing" />)
 
     const plan = await screen.findByTestId('po-item-cutting-plan-0')
     // 应领 1.5（排料口径）；公式 3；省 1.5 —— 三个数分列，读的人不会把公式米数当成要领的米数
@@ -215,7 +279,7 @@ describe('ProcessingOrderBlock 排料结果展示（V119 / issue #5158）', () =
         },
       },
     })
-    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" workOrderKind="processing" />)
 
     const plan = await screen.findByTestId('po-item-cutting-plan-0')
     expect(plan.textContent).toContain('应领 2.7 米')
@@ -225,7 +289,7 @@ describe('ProcessingOrderBlock 排料结果展示（V119 / issue #5158）', () =
 
   it('PR-065 未指派批次 / 排不了料（无排料键）⇒ 整块不渲染（缺值不渲染，也不画成「省 0 米」）', async () => {
     mockedDetail.mockResolvedValueOnce({ data: { data: poIssued } })
-    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" workOrderKind="processing" />)
 
     expect(await screen.findByText('布艺遮光帘A')).toBeInTheDocument()
     expect(screen.queryByTestId('po-item-cutting-plan-0')).toBeNull()
@@ -236,7 +300,7 @@ describe('ProcessingOrderBlock 排料结果展示（V119 / issue #5158）', () =
 
   it('快照明细展示工艺规格：部位/工艺/加工类型/打开方式/是否定型/款式/特殊选项（PG-019）', async () => {
     mockedDetail.mockResolvedValueOnce({ data: { data: poWithCraft } })
-    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" workOrderKind="processing" />)
 
     const spec = await screen.findByTestId('po-item-craft-spec')
     expect(within(spec).getByText('工艺规格')).toBeInTheDocument()
@@ -251,7 +315,7 @@ describe('ProcessingOrderBlock 排料结果展示（V119 / issue #5158）', () =
 
   it('快照明细展示算料口径：总褶数/褶数（每片）/幅数/褶倍/米数/是否对花/花距（PG-019）—— ⚠️ #4876 起**不再渲染「褶距」**', async () => {
     mockedDetail.mockResolvedValueOnce({ data: { data: poWithCraft } })
-    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" workOrderKind="processing" />)
 
     const spec = await screen.findByTestId('po-item-craft-spec')
     expect(within(spec).getByText('52')).toBeInTheDocument()
@@ -274,7 +338,7 @@ describe('ProcessingOrderBlock 排料结果展示（V119 / issue #5158）', () =
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.assign(navigator, { clipboard: { writeText } })
 
-    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" workOrderKind="processing" />)
     await userEvent.click(await screen.findByText('复制全部'))
 
     await waitFor(() => expect(writeText).toHaveBeenCalled())
@@ -294,7 +358,7 @@ describe('ProcessingOrderBlock 排料结果展示（V119 / issue #5158）', () =
   it('#5022 + #6893：加工单上看得到「门幅」（属性行承担），规格块不再重复同一行', async () => {
     mockedDetail.mockResolvedValueOnce({ data: { data: poWithCraft } })
     const { container } = render(
-      <ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />
+      <ProcessingOrderBlock orderId="order-001" orderStatus="producing" workOrderKind="processing" />
     )
 
     // #5022 的意图**不砍**：门幅在加工单上看得见（`加工单纸面看得到系统按几米算的`）
@@ -310,7 +374,7 @@ describe('ProcessingOrderBlock 排料结果展示（V119 / issue #5158）', () =
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.assign(navigator, { clipboard: { writeText } })
 
-    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" workOrderKind="processing" />)
     await userEvent.click(await screen.findByText('复制全部'))
 
     await waitFor(() => expect(writeText).toHaveBeenCalled())
@@ -324,7 +388,7 @@ describe('ProcessingOrderBlock 排料结果展示（V119 / issue #5158）', () =
 
   it('#4555 判据 3（红证）：快照带 formula_text ⇒ 加工单区块渲染「算料公式」行（逐字）', async () => {
     mockedDetail.mockResolvedValueOnce({ data: { data: poWithFormula } })
-    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" workOrderKind="processing" />)
 
     const spec = await screen.findByTestId('po-item-craft-spec')
     expect(within(spec).getByText('算料公式')).toBeInTheDocument()
@@ -336,7 +400,7 @@ describe('ProcessingOrderBlock 排料结果展示（V119 / issue #5158）', () =
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.assign(navigator, { clipboard: { writeText } })
 
-    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" workOrderKind="processing" />)
     await userEvent.click(await screen.findByText('复制全部'))
 
     await waitFor(() => expect(writeText).toHaveBeenCalled())
@@ -349,7 +413,7 @@ describe('ProcessingOrderBlock 排料结果展示（V119 / issue #5158）', () =
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.assign(navigator, { clipboard: { writeText } })
 
-    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" workOrderKind="processing" />)
     await userEvent.click(await screen.findByText('复制全部'))
 
     await waitFor(() => expect(writeText).toHaveBeenCalled())
@@ -363,7 +427,7 @@ describe('ProcessingOrderBlock 排料结果展示（V119 / issue #5158）', () =
   it('onStatusChange 携带加载到的加工单状态', async () => {
     const onStatusChange = vi.fn()
     mockedDetail.mockResolvedValueOnce({ data: { data: poIssued } })
-    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing onStatusChange={onStatusChange} />)
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" workOrderKind="processing" onStatusChange={onStatusChange} />)
 
     await screen.findByText('JG-20260912-0001')
     expect(onStatusChange).toHaveBeenCalledWith(expect.objectContaining({ status: 'issued' }))
@@ -372,59 +436,49 @@ describe('ProcessingOrderBlock 排料结果展示（V119 / issue #5158）', () =
   it('onStatusChange 查询失败时上报 null', async () => {
     const onStatusChange = vi.fn()
     mockedDetail.mockRejectedValueOnce(new Error('404'))
-    render(<ProcessingOrderBlock orderId="order-001" orderStatus="confirmed" hasProcessing onStatusChange={onStatusChange} />)
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="confirmed" workOrderKind="processing" onStatusChange={onStatusChange} />)
 
-    await screen.findByText('生成加工单')
+    await screen.findByTestId('po-go-pool')
     expect(onStatusChange).toHaveBeenCalledWith(null)
   })
 
-  // ── issue #3901：发加工交期改日期控件且禁止过去日期 ──────────────
 
-  it('发加工表单：交期为 date 控件且 min=今天（#3901）', async () => {
-    mockedDetail.mockResolvedValueOnce({ data: { data: poGenerated } })
-    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
-    await userEvent.click(await screen.findByText('发加工'))
 
-    const dateInput = screen.getByPlaceholderText('交期 yyyy-MM-dd')
-    expect(dateInput).toHaveAttribute('type', 'date')
-    expect(dateInput).toHaveAttribute('min', todayLocal())
+})
+
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// issue #7079 第 5 包（UI-115）：**卖布单的生成出口** —— 判据 = 订单详情读面键 `work_order_kind`
+//
+// 病根：本块原先的门是 `hasProcessing`（= `order.processingItems.length > 0`）这**单侧**信号。
+// 卖布单（按米卖布、行上**没有加工项**）在那一侧恒为 false ⇒ **没有「生成」按钮**，并落到一句
+// 对卖布单**不实**的空态文案「无加工项订单无需加工环节」；而它其实必须生成**出库作业单**、
+// 做完裁剪 + 打包报工才能发货（后端 `OrderShipGuard.needsWork` = 含加工项 **或** 有卖布行）。
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+
+describe('ProcessingOrderBlock 卖布单的生成出口（issue #7079 第 5 包）', () => {
+  beforeEach(() => {
+    vi.setSystemTime(FROZEN_NOW)
+    vi.clearAllMocks()
   })
 
-  it('发加工：过去交期提交被拦截（setError、不发请求）（#3901）', async () => {
-    mockedDetail.mockResolvedValueOnce({ data: { data: poGenerated } })
-    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
-    await userEvent.click(await screen.findByText('发加工'))
-
-    fireEvent.change(screen.getByPlaceholderText('交期 yyyy-MM-dd'), { target: { value: '2020-01-01' } })
-    await userEvent.click(screen.getByText('确认发加工'))
-
-    expect(await screen.findByText('交付日期不能早于今天')).toBeInTheDocument()
-    expect(mockedUpdate).not.toHaveBeenCalled()
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
-  it('发加工：今天/未来交期放行并提交，结果可见状态更新（#3901）', async () => {
-    mockedDetail.mockResolvedValueOnce({ data: { data: poGenerated } })
-    mockedUpdate.mockResolvedValueOnce({
-      data: { data: { ...poGenerated, status: 'issued', processor: '朝阳加工厂', expectedDeliveryDate: todayLocal() } },
-    })
-    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
-    await userEvent.click(await screen.findByText('发加工'))
 
-    fireEvent.change(screen.getByPlaceholderText('加工方（如：朝阳加工厂）'), { target: { value: '朝阳加工厂' } })
-    fireEvent.change(screen.getByPlaceholderText('交期 yyyy-MM-dd'), { target: { value: todayLocal() } })
-    await userEvent.click(screen.getByText('确认发加工'))
 
-    await waitFor(() =>
-      expect(mockedUpdate).toHaveBeenCalledWith('po-gen', {
-        action: 'issue',
-        processor: '朝阳加工厂',
-        expectedDeliveryDate: todayLocal(),
-        reason: undefined,
-      }),
-    )
-    // 结果可见：提交成功后状态时间线/头部渲染「已发加工」，表单收起
-    await waitFor(() => expect(screen.getAllByText('已发加工').length).toBeGreaterThan(0))
-    expect(screen.queryByPlaceholderText('交期 yyyy-MM-dd')).not.toBeInTheDocument()
+
+
+  it('UI-115 判据 4（反向护栏）：无作业的订单（work_order_kind 缺键）⇒ 不出现生成入口，空态说「无需作业单」', async () => {
+    mockedDetail.mockRejectedValueOnce(new Error('404'))
+    render(<ProcessingOrderBlock orderId="order-plain" orderStatus="confirmed" workOrderKind={null} />)
+
+    expect(await screen.findByText(/该订单无需作业单（没有加工项，也不是卖布单）/)).toBeInTheDocument()
+    // issue #7222：只宣判不够 —— 必须给可行动出口（没标售卖形态的卖布单该去哪儿补）
+    expect(document.body.textContent ?? '').toContain('售卖形态')
+    expect(screen.queryByText(/^生成/)).toBeNull()
+    expect(document.body.textContent ?? '').not.toContain('无加工项订单无需加工环节')
   })
 })
 
@@ -515,117 +569,16 @@ const mixedCandidates = (params: { skuId?: string }) =>
       : candidatesPayload({ requiredMeters: '1.5' }),
   )
 
-describe('ProcessingOrderBlock 派工指定批次（issue #5145 阶段 1）', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
 
-  it('PR-054 判据①（红证）：本单所有行都没有可用批次 ⇒ 不弹空对话框、按原路径生成（请求只有 orderIds）', async () => {
-    mockedDetail.mockRejectedValueOnce(new Error('404'))
-    mockedGenerate.mockResolvedValueOnce({
-      data: { data: [{ orderRef: 'order-001', success: true, processingOrderNo: 'JG-20260912-0001' }] },
-    })
-    mockedDetail.mockResolvedValueOnce({ data: { data: poGenerated } })
-    // 两行都无候选（库存里没有批次可用）
-    mockedCandidates.mockImplementation(() => Promise.resolve(candidatesPayload()))
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// issue #7507：**直派收敛** —— 非加急订单默认走智能派单（订单详情页不再直派）
+//
+// 用户 2026-10-23：「为什么从订单可以直接生成加工单，而不是默认走智能派单流程？这里得限制下」。
+// 口径（用户裁定 = 选项 A）：非加急单在详情页只给「去智能派单」入口；**加急单保留直派**
+// （既有裁定「允许加急的订单直接派」）。默认（漏传 `isUrgent`）必须落在**受限**一侧 ——
+// 新调用方不许靠漏传属性绕过限制。
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
 
-    render(<ProcessingOrderBlock orderId="order-001" orderStatus="confirmed" hasProcessing items={orderItems} />)
-    await userEvent.click(await screen.findByText('生成加工单'))
-
-    await waitFor(() => expect(mockedGenerate).toHaveBeenCalled())
-    // 候选确实按「行商品 + 行 SKU + 行米数」取过（不是跳过候选直接生成）
-    expect(mockedCandidates).toHaveBeenCalledWith({ productId: 'prod-1', skuId: '2097126615461462018', meters: 2.7 })
-    // 单参调用 ⇒ 请求体只有 orderIds（不指派 ⇒ 与今天逐字相同）
-    expect(mockedGenerate.mock.calls[0]).toHaveLength(1)
-    expect(mockedGenerate).toHaveBeenCalledWith(['order-001'])
-    // 不弹空对话框挡路
-    expect(screen.queryByRole('dialog')).toBeNull()
-  })
-
-  it('PR-054 判据②③：弹框逐行列候选（建议值默认选中、可改、不足本行的不可选），确认后 batches 逐字正确', async () => {
-    mockedDetail.mockRejectedValueOnce(new Error('404'))
-    mockedGenerate.mockResolvedValueOnce({
-      data: { data: [{ orderRef: 'order-001', success: true, processingOrderNo: 'JG-20260912-0001' }] },
-    })
-    mockedDetail.mockResolvedValueOnce({ data: { data: poGenerated } })
-    mockedCandidates.mockImplementation(mixedCandidates as never)
-
-    render(<ProcessingOrderBlock orderId="order-001" orderStatus="confirmed" hasProcessing items={orderItems} />)
-    await userEvent.click(await screen.findByText('生成加工单'))
-
-    // 判据③：后端建议值默认选中；候选文案 = 批次号 + 剩余米数 + 收货日期
-    const selectA = await screen.findByTestId('batch-select-item-a')
-    expect(selectA).toHaveValue('PC-20260901-0001')
-    expect(screen.getByText('PC-20260901-0001（余 10 米 · 收货 2026-09-01）')).toBeInTheDocument()
-    // 余量不够本行的候选在列表里但**不可选**（选了必被后端 409 拒 ⇒ 提前挡住）
-    expect(screen.getByText(/PC-20260910-0009/)).toBeDisabled()
-    // item-b 没有可用批次 ⇒ 显式标注「无可用批次」且**不给下拉**（该行不指派）
-    expect(screen.getByTestId('batch-unavailable-item-b')).toHaveTextContent('无可用批次')
-    expect(screen.queryByTestId('batch-select-item-b')).toBeNull()
-
-    // 文员可改：换成另一个够用的批次
-    fireEvent.change(selectA, { target: { value: 'PC-20260905-0002' } })
-    await userEvent.click(screen.getByText('确认生成'))
-
-    // 判据②：指派 ⇒ batches 内容逐字正确；不可指派的行**不进** batches
-    await waitFor(() =>
-      expect(mockedGenerate).toHaveBeenCalledWith(['order-001'], [
-        { orderId: 'order-001', itemId: 'item-a', batchNo: 'PC-20260905-0002' },
-      ]),
-    )
-  })
-
-  it('PR-054 判据④（红证）：生成失败 ⇒ message 与 suggestion 原样展示（不吞可行动建议）', async () => {
-    mockedDetail.mockRejectedValueOnce(new Error('404'))
-    mockedCandidates.mockImplementation(mixedCandidates as never)
-    mockedGenerate.mockResolvedValueOnce({
-      data: {
-        data: [
-          {
-            orderRef: 'order-001',
-            success: false,
-            code: 'BATCH_STOCK_INSUFFICIENT',
-            message: '批次 PC-20260901-0001 余量不足：可用 0.5 米，本行需要 2.7 米',
-            suggestion: '可改用批次 PC-20260905-0002（余 5 米）',
-          },
-        ],
-      },
-    })
-
-    render(<ProcessingOrderBlock orderId="order-001" orderStatus="confirmed" hasProcessing items={orderItems} />)
-    await userEvent.click(await screen.findByText('生成加工单'))
-    expect(await screen.findByTestId('batch-select-item-a')).toBeInTheDocument()
-    await userEvent.click(screen.getByText('确认生成'))
-
-    // 后端 message 逐字
-    expect(
-      await screen.findByText('批次 PC-20260901-0001 余量不足：可用 0.5 米，本行需要 2.7 米'),
-    ).toBeInTheDocument()
-    // 后端 suggestion 逐字（缺料 fail-closed 的落点：文员据此改选，不被吞掉）
-    expect(screen.getByText('可改用批次 PC-20260905-0002（余 5 米）')).toBeInTheDocument()
-  })
-
-  it('PR-054 回归：下单明细行没带 SKU 标识 ⇒ 该行「无可用批次」（不猜 SKU，避免串色/串门幅）', async () => {
-    mockedDetail.mockRejectedValueOnce(new Error('404'))
-    mockedGenerate.mockResolvedValueOnce({
-      data: { data: [{ orderRef: 'order-001', success: true, processingOrderNo: 'JG-20260912-0001' }] },
-    })
-    mockedDetail.mockResolvedValueOnce({ data: { data: poGenerated } })
-    mockedCandidates.mockImplementation(mixedCandidates as never)
-
-    const legacyItems = [
-      { ...(orderItems[0] as Record<string, unknown>), processingInfo: { saleForm: '成品帘', processingItems: [{ name: '打孔' }] } },
-      orderItems[1],
-    ] as never[]
-
-    render(<ProcessingOrderBlock orderId="order-001" orderStatus="confirmed" hasProcessing items={legacyItems} />)
-    await userEvent.click(await screen.findByText('生成加工单'))
-
-    // 无 SKU 标识的行不查候选（无从核对批次归属）
-    expect(mockedCandidates).toHaveBeenCalledTimes(1)
-    expect(mockedCandidates).toHaveBeenCalledWith({ productId: 'prod-1', skuId: '2098712345678901234', meters: 1.5 })
-  })
-})
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 // issue #5685：物品行（部位行）的**部位备注** —— 快照行键 `remark`
@@ -649,7 +602,7 @@ describe('ProcessingOrderBlock 部位备注（issue #5685）', () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.assign(navigator, { clipboard: { writeText } })
 
-    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" workOrderKind="processing" />)
     await screen.findByText('JG-20260912-0001')
 
     // ① 屏幕上（物品行 = 部位行）
@@ -671,7 +624,7 @@ describe('ProcessingOrderBlock 部位备注（issue #5685）', () => {
         data: { data: { ...poIssued, items: [{ ...poIssued.items[0], remark }] } },
       })
       const { unmount } = render(
-        <ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />
+        <ProcessingOrderBlock orderId="order-001" orderStatus="producing" workOrderKind="processing" />
       )
       await screen.findByText('JG-20260912-0001')
       // 前提自证：本态下既有内容照常渲染（防「整块没渲染 ⇒ 假绿」）
@@ -693,7 +646,7 @@ describe('加工单门幅不重复（issue #6893）', () => {
     Object.assign(navigator, { clipboard: { writeText } })
 
     const { container } = render(
-      <ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />
+      <ProcessingOrderBlock orderId="order-001" orderStatus="producing" workOrderKind="processing" />
     )
     await screen.findByText('JG-20260912-0001')
     await userEvent.click(screen.getByText('复制全部'))
@@ -736,7 +689,7 @@ describe('加工单块补货号与工序清单（issue #6901）', () => {
   it('🔴 屏幕明细块印出货号（快照键 `sku`，同一行属性里，**只印一处**）', async () => {
     mockedDetail.mockResolvedValueOnce({ data: { data: poWithSku } })
     const { container } = render(
-      <ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />
+      <ProcessingOrderBlock orderId="order-001" orderStatus="producing" workOrderKind="processing" />
     )
     await screen.findByText('JG-20260912-0001')
     const text = container.textContent ?? ''
@@ -751,7 +704,7 @@ describe('加工单块补货号与工序清单（issue #6901）', () => {
   it('🔴 缺货号 ⇒ 不渲染（不印空标签 —— 与同块 `colorName` 缺值口径一致）', async () => {
     mockedDetail.mockResolvedValueOnce({ data: { data: poIssued } })
     const { container } = render(
-      <ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />
+      <ProcessingOrderBlock orderId="order-001" orderStatus="producing" workOrderKind="processing" />
     )
     await screen.findByText('JG-20260912-0001')
     // 前提自证：本态确实渲染了快照块
@@ -768,7 +721,7 @@ describe('加工单块补货号与工序清单（issue #6901）', () => {
       <ProcessingOrderBlock
         orderId="order-001"
         orderStatus="producing"
-        hasProcessing
+        workOrderKind="processing"
         operations={operationsFixture}
       />
     )
@@ -794,7 +747,7 @@ describe('加工单块补货号与工序清单（issue #6901）', () => {
       <ProcessingOrderBlock
         orderId="order-001"
         orderStatus="producing"
-        hasProcessing
+        workOrderKind="processing"
         operations={operationsFixture}
       />
     )
@@ -812,7 +765,7 @@ describe('加工单块补货号与工序清单（issue #6901）', () => {
     // 没传读面（订单还没生成加工单）⇒ 不出现工序块，也不印空标题
     mockedDetail.mockResolvedValueOnce({ data: { data: poWithSku } })
     const second = render(
-      <ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />
+      <ProcessingOrderBlock orderId="order-001" orderStatus="producing" workOrderKind="processing" />
     )
     await screen.findByText('JG-20260912-0001')
     expect(second.container.querySelectorAll('[data-testid="po-item-operation"]')).toHaveLength(0)
@@ -825,7 +778,7 @@ describe('加工单块补货号与工序清单（issue #6901）', () => {
       <ProcessingOrderBlock
         orderId="order-001"
         orderStatus="producing"
-        hasProcessing
+        workOrderKind="processing"
         operations={operationsFixture}
       />
     )
@@ -843,3 +796,85 @@ describe('加工单块补货号与工序清单（issue #6901）', () => {
   })
 })
 
+// ══════════════════════════════════════════════════════════════════════════════
+// issue #7634：销售订单「作业单」块**只读**（用户 2026-10-24 裁定 A）
+//   「销售订单为什么还是可以直接加工，让你改成统一走智能派单，为什么还是老样子」
+//   ⇒ 派单只在「智能派单」页；状态流转只在生产明细页。红证 = 把任一写动作按钮加回块里 ⇒ 判据 1 红。
+// ══════════════════════════════════════════════════════════════════════════════
+
+describe('ProcessingOrderBlock 只读（issue #7634）', () => {
+  beforeEach(() => {
+    vi.setSystemTime(FROZEN_NOW)
+    vi.clearAllMocks()
+    routerPush.mockClear()
+  })
+
+  /** 五个写动作的商家可见文案 —— 一个都不许出现在销售订单块里 */
+  const WRITE_ACTIONS = [
+    '生成加工单',
+    '生成作业单',
+    '发加工',
+    '开始加工',
+    '加工完成',
+    '取消加工单',
+    '取消作业单',
+  ]
+
+  function expectNoWriteActions() {
+    for (const label of WRITE_ACTIONS) {
+      // 按**按钮**判（`加工完成` 也是状态时间线上的文字，那一步是只读的）
+      expect(screen.queryByRole('button', { name: label }), `销售订单块不得再渲染「${label}」按钮（issue #7634）`).toBeNull()
+    }
+  }
+
+  it('PG-092 判据 1（红证）：销售订单块只读 —— 五个写动作一个都不渲染', async () => {
+    mockedDetail.mockResolvedValueOnce({ data: { data: poIssued } })
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" workOrderKind="processing" />)
+
+    expect(await screen.findByText('JG-20260912-0001')).toBeInTheDocument()
+    expectNoWriteActions()
+  })
+
+  it('PG-092 判据 2：无作业单 ⇒ 「去智能派单」；有作业单 ⇒ 「去生产明细」', async () => {
+    mockedDetail.mockRejectedValueOnce(new Error('404'))
+    const first = render(
+      <ProcessingOrderBlock orderId="order-001" orderStatus="confirmed" workOrderKind="processing" />,
+    )
+    await userEvent.click(await screen.findByTestId('po-go-pool'))
+    expect(routerPush).toHaveBeenCalledWith('/production/pool')
+    first.unmount()
+
+    mockedDetail.mockResolvedValueOnce({ data: { data: poIssued } })
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" workOrderKind="processing" />)
+    await userEvent.click(await screen.findByTestId('po-go-production'))
+    expect(routerPush).toHaveBeenCalledWith('/processing-orders/JG-20260912-0001/production')
+    expectNoWriteActions()
+  })
+
+  it('🔴 待付款单也走智能派单：直派生成入口已收走（#7626 的入口不再出现在订单页）', async () => {
+    mockedDetail.mockRejectedValueOnce(new Error('404'))
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="pending" workOrderKind="processing" />)
+
+    expect(await screen.findByTestId('po-go-pool')).toBeInTheDocument()
+    expect(screen.queryByText('生成作业单')).toBeNull()
+    expectNoWriteActions()
+  })
+
+  it('不可派单的状态（已关闭）⇒ 只给「当前状态还不能派单」空态，不给入口', async () => {
+    mockedDetail.mockRejectedValueOnce(new Error('404'))
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="cancelled" workOrderKind="processing" />)
+
+    expect(await screen.findByTestId('processing-order-generate-not-yet')).toBeInTheDocument()
+    expect(screen.queryByTestId('po-go-pool')).toBeNull()
+  })
+
+  it('UI-115 判据 1（红证）：卖布单无作业单 ⇒ 「去智能派单」+ 按型业务名（机器键不上屏）', async () => {
+    mockedDetail.mockRejectedValueOnce(new Error('404'))
+    render(<ProcessingOrderBlock orderId="order-002" orderStatus="confirmed" workOrderKind="outbound" />)
+
+    expect(await screen.findByText(/该订单需要出库作业单/)).toBeInTheDocument()
+    expect(screen.getByTestId('po-go-pool')).toBeInTheDocument()
+    expect(document.body.textContent ?? '').not.toContain('outbound')
+    expectNoWriteActions()
+  })
+})

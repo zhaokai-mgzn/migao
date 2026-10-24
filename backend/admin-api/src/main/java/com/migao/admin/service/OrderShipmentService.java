@@ -22,6 +22,7 @@ import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.time.BusinessClock;
 import com.migao.admin.worker.WorkerIdentity;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -145,6 +146,10 @@ public class OrderShipmentService {
     private final OrderShipmentMapper orderShipmentMapper;
     private final OrderShipmentItemMapper orderShipmentItemMapper;
     private final ProcessingOrderMapper processingOrderMapper;
+
+    /** 单据联动工序（issue #7165）：字段注入的理由 = 本类构造签名被多处测试显式装配。 */
+    @Autowired(required = false)
+    private DocumentOperationLinkage documentOperationLinkage;
     private final ClientRequestIdService clientRequestIdService;
     private final ImageRecognitionClient imageRecognitionClient;
     private final ObjectMapper objectMapper;
@@ -315,6 +320,12 @@ public class OrderShipmentService {
         //    不是两次独立校验 —— 实测 6+6 对上限 10 曾被放行）；两侧夹住：恰好发满放行、超一分拒绝；
         // ② 列精度不容吃数据：0.001 被 numeric(10,2) 吃成 0.00 且仍 200 = 「已发货但实发 0」⇒ 拒绝。
         assertQuantities(orderId, tenantId, orderItems, details);
+
+        // issue #7165：发货单 = 发货工序的完成动作 —— 先联动完成「发货/外帘发货」工序（工人端计件），
+        // 再走加工单守卫（否则有发货工序的单会被守卫先拒）。无该工序 ⇒ 零副作用。
+        if (documentOperationLinkage != null) {
+            documentOperationLinkage.completeShippingOperations(order, identity, tenantId);
+        }
 
         // 🔴 加工单守卫（issue #3340）——**在任何写之前**。判定本体与商家侧那条路同一份实现。
         OrderShipGuard.assertProcessingCompletedBeforeShip(

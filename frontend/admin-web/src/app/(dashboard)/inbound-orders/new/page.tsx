@@ -19,15 +19,15 @@
 //   草稿**不发号**（批次号 = 「真的收货了」的标识）⇒ 本页明细列的批次号恒为「过账后生成」，
 //   列在这里是为了让商家建单时就知道「这批货将来靠哪个号追溯」。
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, FileText, Layers, Package, Search } from 'lucide-react'
+import { ArrowLeft, FileText, Package } from 'lucide-react'
 import { toast } from 'sonner'
-import { inboundOrderApi, productApi } from '@/lib/api'
+import { inboundOrderApi } from '@/lib/api'
 import { Button, PageCard, PageHeader, Input, Select } from '@/components/ui'
-import type { Product, ProductSku } from '@/types'
+import SkuPicker, { type SkuPickerChoice, skuLineLabel } from '@/components/products/SkuPicker'
 import { cn } from '@/lib/utils'
-import { checkStockQuantity, formatStockQuantity } from '@/lib/stock-quantity'
+import { checkStockQuantity } from '@/lib/stock-quantity'
 
 /** 入库明细行（含 SKU 的展示快照，提交时只取 productId/skuId/quantity/unitCost/dyeLot/legacyBatchNo/rollLengthM） */
 interface DraftLine {
@@ -37,6 +37,15 @@ interface DraftLine {
   skuId: string
   label: string
   stock: number
+  /**
+   * 卷数（可选；issue #7644）—— 与「卷长(米/卷)」一起构成**按卷录入**：
+   * 两者齐备 ⇒ `quantity` 由「卷数 × 卷长」自动算出（数量格只读，换算写在格下）；
+   * 留空 ⇒ 回到「数量（米）」手填（散剪 / 尾料按米买走这条路）。
+   *
+   * 🔴 换算只发生在**提交前的前端**：`inbound_order_items.quantity` 的口径仍是**米**
+   * （#5034「卷长仅记录」；服务端乘会把「60.5 米 + 卷长 60」变成 3630 米）。
+   */
+  rollCount: string
   quantity: string
   unitCost: string
   dyeLot: string
@@ -53,6 +62,24 @@ const SOURCE_OPTIONS: { value: 'purchase' | 'opening'; label: string }[] = [
 
 /** 明细行输入框：与 `Input` 同族（h-9 / rounded-lg / 同一 focus ring），只是窄一档放进表格 */
 const CELL_INPUT = 'h-9 px-2 text-sm'
+
+/**
+ * 卷数 × 卷长 ⇒ 入库米数（商家端「按卷录入」的**唯一换算点**，issue #7644）。
+ *
+ * 为什么在**前端**换算、而不是服务端乘：`inbound_order_items.quantity` 的口径是**米**
+ * （#5034「卷长仅记录」——服务端乘会把「数量 60.5 米 + 卷长 60」算成 3630 米）。
+ * 这里把换算**显式摆在格下**给商家核对，提交的仍是米数 ⇒ 服务端契约一字不动。
+ *
+ * 不静默取整：`1 卷 × 67.25 米 = 67.25` 原样返回，交给 `checkStockQuantity` 显式拒绝
+ * （0.1 米粒度）；只把浮点尾差（`3 × 0.1 = 0.30000000000000004`）按 2 位归一。
+ */
+function metersFromRolls(rollCount: string, rollLengthM: string): string | null {
+  if (rollCount.trim() === '' || rollLengthM.trim() === '') return null
+  const count = Number(rollCount)
+  const len = Number(rollLengthM)
+  if (!Number.isFinite(count) || !Number.isFinite(len) || count <= 0 || len <= 0) return null
+  return String(Number((count * len).toFixed(2)))
+}
 
 /**
  * **本地当天** `YYYY-MM-DD`（`<input type="date">` 的取值口径，issue #5912）。
@@ -73,15 +100,6 @@ function localToday(): string {
 export default function NewInboundOrderPage() {
   const router = useRouter()
 
-  const [productKeyword, setProductKeyword] = useState('')
-  const [productOptions, setProductOptions] = useState<Product[]>([])
-  /** 商品搜索读失败（issue #6691）：与「输入关键词搜索商品」空态**互斥** */
-  const [productSearchFailed, setProductSearchFailed] = useState(false)
-  const [pickedProduct, setPickedProduct] = useState<Product | null>(null)
-  const [productSkus, setProductSkus] = useState<ProductSku[]>([])
-  const [skuLoading, setSkuLoading] = useState(false)
-  /** 规格明细读失败（issue #6691）：与「该商品还没有 SKU」空态**互斥** */
-  const [skuLoadFailed, setSkuLoadFailed] = useState(false)
   const [draftLines, setDraftLines] = useState<DraftLine[]>([])
   const [form, setForm] = useState({
     supplier: '',
@@ -93,65 +111,10 @@ export default function NewInboundOrderPage() {
   })
   const [submitting, setSubmitting] = useState(false)
 
-  /**
-   * 商品搜索（防抖）。
-   *
-   * 读失败 ⇒ `productSearchFailed`（issue #6691）：改前只 `setProductOptions([])` ⇒ 那格
-   * 显示「输入关键词搜索商品」，把**故障**说成「你还没搜」。
-   */
-  const searchProducts = useCallback(async () => {
-    try {
-      const res = await productApi.getProducts({
-        keyword: productKeyword || undefined,
-        page: 1,
-        size: 20,
-      })
-      setProductOptions(res.data.data?.items ?? [])
-      setProductSearchFailed(false)
-    } catch {
-      // 拦截器已 toast；此处只标失败态（列表保持不清零 —— 故障不冒充「搜不到」）
-      setProductSearchFailed(true)
-    }
-  }, [productKeyword])
-
-  useEffect(() => {
-    const t = setTimeout(() => void searchProducts(), 300)
-    return () => clearTimeout(t)
-  }, [searchProducts])
-
-  /**
-   * 选中商品的**规格明细**读面。
-   *
-   * 读失败 ⇒ `skuLoadFailed`（issue #6691）：改前只 `setProductSkus([])` ⇒ 显示
-   * 「该商品还没有 SKU，请先在商品详情维护 SKU」，把**读故障**说成**数据事实**
-   * ⇒ 商家会去商品详情白找一遍。
-   */
-  const loadSkus = useCallback(async (p: Product) => {
-    setSkuLoading(true)
-    try {
-      const res = await productApi.getProduct(p.id)
-      setProductSkus(res.data.data?.skus ?? [])
-      setSkuLoadFailed(false)
-    } catch {
-      // 拦截器已 toast；只标失败态（不冒充「没有规格」）
-      setSkuLoadFailed(true)
-    } finally {
-      setSkuLoading(false)
-    }
-  }, [])
-
-  const pickProduct = async (p: Product) => {
-    setPickedProduct(p)
-    await loadSkus(p)
-  }
-
-  /** 勾选 SKU ⇒ 加入/移出草稿行（保留已填的数量/单价/缸号/旧系统批次号） */
-  const toggleSku = (sku: ProductSku) => {
-    const product = pickedProduct
-    if (!product) return
+  /** 勾选 SKU ⇒ 加入/移出草稿行（勾选器只报「哪个商品的哪个 SKU」，留不留原文不动） */
+  const toggleSku = ({ product, sku }: SkuPickerChoice) => {
     setDraftLines((prev) => {
-      const exists = prev.some((l) => l.skuId === sku.id)
-      if (exists) {
+      if (prev.some((l) => l.skuId === sku.id)) {
         return prev.filter((l) => l.skuId !== sku.id)
       }
       return [
@@ -159,8 +122,9 @@ export default function NewInboundOrderPage() {
         {
           productId: product.id,
           skuId: sku.id,
-          label: `${product.name} / ${sku.colorName || '默认色'} / ${sku.doorWidth || '默认门幅'}`,
+          label: skuLineLabel(product, sku),
           stock: sku.stock ?? 0,
+          rollCount: '',
           quantity: '1',
           unitCost: '',
           dyeLot: '',
@@ -171,8 +135,25 @@ export default function NewInboundOrderPage() {
     })
   }
 
+  /** 行内「×」：按 skuId 摘掉这一行（不经勾选器 —— 勾选器只认它自己右栏里列出的 SKU） */
+  const removeLine = (skuId: string) => {
+    setDraftLines((prev) => prev.filter((l) => l.skuId !== skuId))
+  }
+
   const patchLine = (skuId: string, patch: Partial<DraftLine>) => {
-    setDraftLines((prev) => prev.map((l) => (l.skuId === skuId ? { ...l, ...patch } : l)))
+    setDraftLines((prev) =>
+      prev.map((l) => {
+        if (l.skuId !== skuId) return l
+        const next = { ...l, ...patch }
+        // 卷数/卷长任一变化 ⇒ 数量（米）由换算决定；卷数被清空 ⇒ 回到按米手填（issue #7644）
+        if (patch.rollCount !== undefined || patch.rollLengthM !== undefined) {
+          if (next.rollCount.trim() !== '') {
+            next.quantity = metersFromRolls(next.rollCount, next.rollLengthM) ?? ''
+          }
+        }
+        return next
+      }),
+    )
   }
 
   const draftTotal = useMemo(
@@ -195,6 +176,24 @@ export default function NewInboundOrderPage() {
     // 下限由「≥1 米」放宽（issue #5153）：0.5 米的尾料是**实物事实**，挡在门外 = 系统说谎。
     // 超 1 位小数**显式拒绝**，绝不静默取整/截断（账面库存要照米数对得上）。
     for (const l of draftLines) {
+      // 按卷录入（issue #7644）：卷数必须是正整数；填了卷数就必须有卷长，且两者之积要能落成米数
+      if (l.rollCount.trim() !== '') {
+        const count = Number(l.rollCount)
+        if (!Number.isInteger(count) || count <= 0) {
+          toast.error(
+            `「${l.label}」的卷数必须是正整数（散剪 / 尾料按米入库：卷数留空，数量（米）直接填）`,
+          )
+          return
+        }
+        if (l.rollLengthM.trim() === '') {
+          toast.error(`「${l.label}」填了卷数就要填每卷米数（卷长）`)
+          return
+        }
+        if (l.quantity === '') {
+          toast.error(`「${l.label}」的卷数 × 卷长换算不出合法的入库米数`)
+          return
+        }
+      }
       const reason = checkStockQuantity(l.quantity)
       if (reason) {
         toast.error(`「${l.label}」的${reason}`)
@@ -342,118 +341,15 @@ export default function NewInboundOrderPage() {
               </span>
             </div>
 
-            {/* 选品：左「搜商品」/ 右「勾 SKU」—— 两栏各自滚动，不再被页脚截断 */}
-            <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <div className="rounded-lg border border-neutral-200 overflow-hidden">
-                <div className="flex items-center gap-2 px-3 h-10 border-b border-neutral-100 bg-neutral-50/60">
-                  <Search className="w-4 h-4 text-neutral-400 shrink-0" />
-                  <input
-                    aria-label="搜索商品"
-                    placeholder="商品名称 / 货号"
-                    value={productKeyword}
-                    onChange={(e) => setProductKeyword(e.target.value)}
-                    className="flex-1 min-w-0 bg-transparent text-sm focus:outline-none placeholder:text-neutral-400"
-                  />
-                </div>
-                <div className="max-h-72 overflow-auto">
-                  {productOptions.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => void pickProduct(p)}
-                      className={cn(
-                        'w-full text-left px-3 py-2 text-sm border-b border-neutral-100 last:border-0 hover:bg-neutral-50',
-                        pickedProduct?.id === p.id && 'bg-primary-50',
-                      )}
-                    >
-                      {p.name}
-                      {p.skuCode ? <span className="text-neutral-400 ml-2">({p.skuCode})</span> : null}
-                    </button>
-                  ))}
-                  {productSearchFailed ? (
-                    // 失败态与空态**分离**（issue #6691）：说清「没读到」+ 重试出口
-                    <div
-                      data-testid="inbound-product-search-error"
-                      role="alert"
-                      className="px-3 py-6 text-sm text-center text-neutral-600"
-                    >
-                      商品搜索失败 —— 没读到数据，请检查网络后重试
-                      <button
-                        type="button"
-                        data-testid="inbound-product-search-retry"
-                        onClick={() => void searchProducts()}
-                        className="ml-2 text-primary-600 underline"
-                      >
-                        重试
-                      </button>
-                    </div>
-                  ) : (
-                    productOptions.length === 0 && (
-                      <div className="px-3 py-6 text-sm text-neutral-400 text-center">输入关键词搜索商品</div>
-                    )
-                  )}
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-neutral-200 overflow-hidden">
-                <div className="flex items-center gap-2 px-3 h-10 border-b border-neutral-100 bg-neutral-50/60">
-                  <Layers className="w-4 h-4 text-neutral-400 shrink-0" />
-                  <span className="text-sm text-neutral-600">
-                    选择入库 SKU（勾选即加入明细，一行 = 一个批次）
-                  </span>
-                </div>
-                <div className="max-h-72 overflow-auto">
-                  {!pickedProduct && (
-                    <div className="px-3 py-6 text-sm text-neutral-400 text-center">
-                      先在左侧选一个商品
-                    </div>
-                  )}
-                  {pickedProduct &&
-                    productSkus.map((sku) => {
-                      const checked = draftLines.some((l) => l.skuId === sku.id)
-                      return (
-                        <label
-                          key={sku.id}
-                          className="flex items-center gap-3 px-3 py-2 text-sm border-b border-neutral-100 last:border-0 hover:bg-neutral-50 cursor-pointer"
-                        >
-                          <input type="checkbox" checked={checked} onChange={() => toggleSku(sku)} />
-                          <span className="flex-1 min-w-0">
-                            {sku.colorName || '默认色'} / {sku.doorWidth || '默认门幅'}
-                          </span>
-                          <span className="text-neutral-500 shrink-0">
-                            当前库存 {formatStockQuantity(sku.stock ?? 0)}
-                          </span>
-                        </label>
-                      )
-                    })}
-                  {pickedProduct && !skuLoading && skuLoadFailed && (
-                    // 读失败 ⇒ 说「没读到」（**不**说「该商品还没有 SKU」——那是数据事实，issue #6691）
-                    <div
-                      data-testid="inbound-sku-error"
-                      role="alert"
-                      className="px-3 py-6 text-sm text-center text-neutral-600"
-                    >
-                      规格读取失败 —— 没读到这个商品的规格，请检查网络后重试
-                      <button
-                        type="button"
-                        data-testid="inbound-sku-retry"
-                        onClick={() => pickedProduct && void loadSkus(pickedProduct)}
-                        className="ml-2 text-primary-600 underline"
-                      >
-                        重试
-                      </button>
-                    </div>
-                  )}
-                  {pickedProduct && !skuLoading && !skuLoadFailed && productSkus.length === 0 && (
-                    <div className="px-3 py-6 text-sm text-neutral-400 text-center">
-                      该商品还没有 SKU，请先在商品详情维护 SKU
-                    </div>
-                  )}
-                  {pickedProduct && skuLoading && (
-                    <div className="px-3 py-6 text-sm text-neutral-400 text-center">加载中…</div>
-                  )}
-                </div>
-              </div>
+            {/* 选品：公共件（issue #7567）—— 左「搜商品」/ 右「勾 SKU」，两栏各自滚动。
+                交互与读失败/空态的分离规则都收在 `SkuPicker` 里（采购单 / 价格本共用同一份）。 */}
+            <div className="mt-4">
+              <SkuPicker
+                testIdPrefix="inbound"
+                title="选择入库 SKU（勾选即加入明细，一行 = 一个批次）"
+                selectedSkuIds={draftLines.map((l) => l.skuId)}
+                onToggle={toggleSku}
+              />
             </div>
 
             {/* 明细表 */}
@@ -462,16 +358,17 @@ export default function NewInboundOrderPage() {
                 <table className="w-full text-sm">
                   <thead className="bg-neutral-50 text-neutral-600">
                     <tr>
-                      <th className="text-left px-3 py-2 font-medium">货号 / 颜色 / 门幅</th>
-                      <th className="text-right px-3 py-2 font-medium w-28">数量*</th>
-                      <th className="text-right px-3 py-2 font-medium w-32">单价(元)</th>
-                      <th className="text-left px-3 py-2 font-medium w-36">缸号</th>
+                      <th className="text-left px-3 py-2 font-medium whitespace-nowrap">货号 / 颜色 / 门幅</th>
+                      <th className="text-right px-3 py-2 font-medium w-24 whitespace-nowrap">卷数</th>
+                      <th className="text-right px-3 py-2 font-medium w-32 whitespace-nowrap">卷长(米/卷)</th>
+                      <th className="text-right px-3 py-2 font-medium w-28 whitespace-nowrap">数量（米）*</th>
+                      <th className="text-right px-3 py-2 font-medium w-32 whitespace-nowrap">单价(元)</th>
+                      <th className="text-left px-3 py-2 font-medium w-36 whitespace-nowrap">缸号</th>
                       {form.source === 'opening' && (
-                        <th className="text-left px-3 py-2 font-medium w-40">旧系统批次号</th>
+                        <th className="text-left px-3 py-2 font-medium w-40 whitespace-nowrap">旧系统批次号</th>
                       )}
-                      <th className="text-right px-3 py-2 font-medium w-32">卷长(米)</th>
-                      <th className="text-left px-3 py-2 font-medium w-36">批次号</th>
-                      <th className="w-12" />
+                      <th className="text-left px-3 py-2 font-medium w-36 whitespace-nowrap">批次号</th>
+                      <th className="w-12 whitespace-nowrap" />
                     </tr>
                   </thead>
                   <tbody>
@@ -479,15 +376,50 @@ export default function NewInboundOrderPage() {
                       <tr key={l.skuId} className="border-t border-neutral-100">
                         <td className="px-3 py-2 text-neutral-700">{l.label}</td>
                         <td className="px-3 py-2">
+                          {/* 卷数（issue #7644）：填了它 + 卷长 ⇒ 数量（米）自动换算并只读 */}
+                          <Input
+                            type="number"
+                            min={1}
+                            step={1}
+                            aria-label={`${l.label} 卷数`}
+                            placeholder="按卷填"
+                            value={l.rollCount}
+                            onChange={(e) => patchLine(l.skuId, { rollCount: e.target.value })}
+                            className={cn(CELL_INPUT, 'text-right')}
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <Input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            aria-label={`${l.label} 卷长`}
+                            placeholder="每卷米数"
+                            value={l.rollLengthM}
+                            onChange={(e) => patchLine(l.skuId, { rollLengthM: e.target.value })}
+                            className={cn(CELL_INPUT, 'text-right')}
+                          />
+                        </td>
+                        <td className="px-3 py-2">
                           <Input
                             type="number"
                             min={0.1}
                             step={0.1}
-                            aria-label={`${l.label} 数量`}
+                            aria-label={`${l.label} 数量（米）`}
                             value={l.quantity}
+                            readOnly={l.rollCount.trim() !== ''}
                             onChange={(e) => patchLine(l.skuId, { quantity: e.target.value })}
-                            className={cn(CELL_INPUT, 'text-right')}
+                            className={cn(
+                              CELL_INPUT,
+                              'text-right',
+                              l.rollCount.trim() !== '' && 'bg-neutral-50 text-neutral-600',
+                            )}
                           />
+                          {l.rollCount.trim() !== '' && l.quantity !== '' && (
+                            <p className="mt-1 text-xs text-neutral-400 text-right whitespace-nowrap">
+                              {l.rollCount} 卷 × {l.rollLengthM} 米
+                            </p>
+                          )}
                         </td>
                         <td className="px-3 py-2">
                           <Input
@@ -519,17 +451,6 @@ export default function NewInboundOrderPage() {
                             />
                           </td>
                         )}
-                        <td className="px-3 py-2">
-                          <Input
-                            type="number"
-                            min={0}
-                            step="0.01"
-                            aria-label={`${l.label} 卷长`}
-                            value={l.rollLengthM}
-                            onChange={(e) => patchLine(l.skuId, { rollLengthM: e.target.value })}
-                            className={cn(CELL_INPUT, 'text-right')}
-                          />
-                        </td>
                         {/* 批次号：草稿不发号（过账时逐行生成）—— 列出来是为了建单时就知道追溯标识 */}
                         <td className="px-3 py-2 text-xs text-neutral-400 whitespace-nowrap">
                           过账后生成
@@ -538,7 +459,7 @@ export default function NewInboundOrderPage() {
                           <button
                             type="button"
                             aria-label={`移除 ${l.label}`}
-                            onClick={() => toggleSku({ id: String(l.skuId) } as ProductSku)}
+                            onClick={() => removeLine(l.skuId)}
                             className="text-neutral-400 hover:text-red-600 px-2"
                           >
                             ×
@@ -549,7 +470,10 @@ export default function NewInboundOrderPage() {
                   </tbody>
                 </table>
                 <p className="text-xs text-neutral-400 mt-2 leading-relaxed">
-                  数量按 0.1 米粒度、大于 0 即可（0.5 米的尾料能登记；0 与 2.755 会被拒绝；
+                  <strong className="text-neutral-500">按卷采购</strong>：填「卷数 + 卷长」⇒
+                  数量（米）自动换算成 <span className="font-mono">卷数 × 每卷米数</span>（提交的是米数）；
+                  <strong className="text-neutral-500">散剪 / 尾料按米买</strong>：卷数留空，
+                  数量（米）直接填。数量按 0.1 米粒度、大于 0（0.5 米的尾料能登记；0 与 2.755 会被拒绝；
                   超 1 位小数不会四舍五入）；单价留空 = 只加数量、不算成本（均价保持原值）；
                   缸号与旧系统批次号都是外部事实，与系统生成的批次号是三件不同的事。
                 </p>

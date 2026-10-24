@@ -10,7 +10,7 @@ import * as TreeCheckboxModule from '../../../src/components/ui/TreeCheckbox'
 const MOCK_MENUS: TreeNode[] = [
   { code: 'dashboard', label: '工作台', children: [{ code: 'dashboard.view', label: '数据看板' }] },
   { code: 'orders', label: '订单管理', children: [
-    { code: 'orders.list', label: '订单列表' }, { code: 'orders.detail', label: '订单详情' }, { code: 'orders.refund', label: '退换货' },
+    { code: 'orders.list', label: '销售订单' }, { code: 'orders.detail', label: '订单详情' }, { code: 'orders.refund', label: '退换货' },
   ]},
   { code: 'products', label: '商品管理', children: [
     { code: 'products.list', label: '商品列表' }, { code: 'products.create', label: '新增商品' },
@@ -110,13 +110,13 @@ describe('TreeCheckbox #6083 同码多节点', () => {
       { code: 'dashboard:view', label: '每日简报' },
     ]},
     { code: 'production-center', label: '生产中心', children: [
-      { code: 'production:view', label: '生产看板' },
+      { code: 'production:view', label: '作业看板' },
       { code: 'production:view', label: '加工项管理' },
       { code: 'production:view', label: '工艺配置' },
       { code: 'production:view', label: '计件工资' },
     ]},
   ]
-  const ALL_LEAF_LABELS = ['经营看板', '每日简报', '生产看板', '加工项管理', '工艺配置', '计件工资']
+  const ALL_LEAF_LABELS = ['经营看板', '每日简报', '作业看板', '加工项管理', '工艺配置', '计件工资']
 
   afterEach(() => {
     cleanup()
@@ -166,7 +166,7 @@ describe('TreeCheckbox #6759 手机端可见面标注', () => {
   const MOBILE_TREE: TreeNode[] = [
     { code: 'production-center', label: '生产管理', children: [
       { code: 'processing:view', label: '智能派单', mobileTitles: ['智能派单'] },
-      { code: 'production:view', label: '生产看板', mobileTitles: [] },
+      { code: 'production:view', label: '作业看板', mobileTitles: [] },
     ]},
     { code: 'inventory-center', label: '仓储与物料', children: [
       { code: 'inbound:view', label: '入库单', mobileTitles: ['入库过账'] },

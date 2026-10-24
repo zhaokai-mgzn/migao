@@ -5,6 +5,11 @@ import './QuickActions.scss'
 interface QuickActionsProps {
   /** 服务端下发的快捷入口（**内容唯一真值** —— 本组件不定义任何入口文案） */
   actions: QuickAction[]
+  /**
+   * 工具类快捷入口（issue #7351：营销海报等「动作」入口）。
+   * 与六格问句**分开渲染** —— 六格的 2×3 等权形态一字不动。
+   */
+  tools?: QuickAction[]
   onAction: (prompt: string) => void
 }
 
@@ -24,10 +29,10 @@ interface QuickActionsProps {
  * 布局沿革（勿按中间态改回来）：#5747 与 C 端现行形态对齐（`--wide` 全宽主入口已删、无分组结构），
  * 这条**视觉**判据不变；本单只换**内容**与**来源**。
  */
-export default function QuickActions({ actions, onAction }: QuickActionsProps) {
+export default function QuickActions({ actions, tools = [], onAction }: QuickActionsProps) {
   // 内容拿不到（接口失败 / 尚未加载）⇒ **不渲染**，而不是退回到一份本地兜底清单
   // —— 兜底清单就是 #6468 的病灶本身（又抄一份，且无人知道它过期了）。
-  if (actions.length === 0) return null
+  if (actions.length === 0 && tools.length === 0) return null
 
   return (
     <View className='quick-actions'>
@@ -44,6 +49,23 @@ export default function QuickActions({ actions, onAction }: QuickActionsProps) {
           </View>
         ))}
       </View>
+      {/* 工具类入口（issue #7351）：独立一行，不占六格 —— 「做海报」是动作，不是问句。 */}
+      {tools.length > 0 && (
+        <View className='quick-actions__tools'>
+          {tools.map((tool) => (
+            <View
+              key={tool.id}
+              className='quick-actions__tool'
+              data-testid='quick-tool-action'
+              onClick={() => onAction(tool.prompt)}
+            >
+              <Text className='quick-actions__tool-icon'>{tool.emoji}</Text>
+              <Text className='quick-actions__tool-label'>{tool.name}</Text>
+              <Text className='quick-actions__tool-hint'>做一张可保存的营销海报</Text>
+            </View>
+          ))}
+        </View>
+      )}
     </View>
   )
 }

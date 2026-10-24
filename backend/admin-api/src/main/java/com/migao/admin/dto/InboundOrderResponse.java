@@ -25,6 +25,9 @@ public class InboundOrderResponse {
 
     private String supplier;
 
+    /** 供应商档案引用（issue #7369 段 2）：NULL = 未建档 / 待指派（前端据此显示「待指派」） */
+    private String supplierId;
+
     private String supplierDocNo;
 
     private String warehouse;

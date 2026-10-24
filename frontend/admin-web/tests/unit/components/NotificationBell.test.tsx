@@ -307,6 +307,25 @@ describe('NotificationBell', () => {
     })
   })
 
+  it('面板头部「全部已读」的图标是单勾（与通知中心页同一字形，issue #7180）', async () => {
+    mockGetUnreadCount.mockResolvedValue({ data: { data: { count: 3 } } })
+    mockGetNotifications.mockResolvedValue({
+      data: { data: { items: [createNotification()], total: 1, page: 1, size: 5 } },
+    })
+    render(<NotificationBell />)
+    const bell = screen.getByTestId('icon-bell').closest('button')!
+    await user.click(bell)
+    const label = await screen.findByText('全部已读')
+    const btn = label.closest('button') as HTMLElement
+    const icon = btn.querySelector('svg, [data-testid^="icon-"]') as HTMLElement | null
+    // 🔴 弱断言收口（#7198 同批，解除 required 检查 `ci workflow helper unit tests` 的阻塞）：
+    // `not.toBeNull()` 只证明「取到了个东西」，失败原因读起来像「null」——改用语义存在性断言，
+    // 与同文件其它用例同口径（存量账本 `.github/weak-assert-baseline.json` 只许缩短，不新增条目）。
+    expect(icon, '按钮必须带图标').toBeInTheDocument()
+    expect(icon?.getAttribute('class') ?? '', '不得再用双勾字形').not.toMatch(/check-check/i)
+    expect(icon?.getAttribute('class') ?? '', '图标是单勾').toMatch(/check/i)
+  })
+
   it('未读数为 0 时面板头部不显示"全部已读"按钮', async () => {
     mockGetNotifications.mockResolvedValue({
       data: { data: { items: [createNotification()], total: 1, page: 1, size: 5 } },
@@ -483,5 +502,49 @@ describe('NotificationBell', () => {
       expect(mockGetUnreadCount).toHaveBeenCalled()
     })
     expect(screen.queryByText('0')).not.toBeInTheDocument()
+  })
+
+  // ─── #7524 结构化通知：点开回到单据 ───
+
+  it('#7524 有落地页的通知：点开先标已读、再跳单据页并收起面板', async () => {
+    mockGetNotifications.mockResolvedValue({
+      data: {
+        data: {
+          items: [createNotification({
+            id: 'n1',
+            status: 'sent',
+            bizType: 'inbound_order',
+            bizNo: 'RK-20261023-0001',
+            targetPath: '/inbound-orders?keyword=RK-20261023-0001',
+            severity: 'info',
+          })],
+          total: 1,
+          page: 1,
+          size: 5,
+        },
+      },
+    })
+    render(<NotificationBell />)
+    await user.click(screen.getByTestId('icon-bell').closest('button')!)
+    const item = await screen.findByTestId('notification-bell-item')
+    await user.click(item)
+
+    await waitFor(() => expect(mockMarkAsRead).toHaveBeenCalledWith('n1'))
+    await waitFor(() => expect(mockRouterPush).toHaveBeenCalledWith('/inbound-orders?keyword=RK-20261023-0001'))
+    // 点开即离开：面板收起（不留在「已读但没动」的半态）
+    await waitFor(() => expect(screen.queryByText('通知')).not.toBeInTheDocument())
+  })
+
+  it('#7524 没有落地页的通知：点开只标已读、不跳转（老通知不假装可点）', async () => {
+    mockGetNotifications.mockResolvedValue({
+      data: { data: { items: [createNotification({ id: 'n2', status: 'sent' })], total: 1, page: 1, size: 5 } },
+    })
+    render(<NotificationBell />)
+    await user.click(screen.getByTestId('icon-bell').closest('button')!)
+    const item = await screen.findByTestId('notification-bell-item')
+    await user.click(item)
+
+    await waitFor(() => expect(mockMarkAsRead).toHaveBeenCalledWith('n2'))
+    expect(mockRouterPush).not.toHaveBeenCalled()
   })
 })

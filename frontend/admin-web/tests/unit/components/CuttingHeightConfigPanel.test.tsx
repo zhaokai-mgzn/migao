@@ -14,7 +14,10 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
  *   ⑤ **线上形态**同样留空（后端 `spring.jackson.default-property-inclusion: non_null` 把 `value=null`
  *      的键**整个丢掉** ⇒ 前端拿到的是 `undefined` 而不是 `null`）—— 判据 = 取值框不得显示
  *      `undefined` 字面量。红证：把 `undefined` 也当空值的兜底摘掉 ⇒ ⑤ 红（旧实现只判 `=== null`）。
+ *   ⑥ **预演的取值域是闭词表**（issue #7213）：安装工艺 = 单选 `CRAFT_OPTIONS`、特殊选项 = 多选
+ *      `SPECIAL_OPTIONS`（默认折叠）。红证：把任一改回 `<input>` 自由文本 ⇒ ⑥ 红（`tagName` / 默认折叠）。
  */
+import { CRAFT_OPTIONS, SPECIAL_OPTIONS } from '@/lib/order-craft-fields'
 
 const mockGet = vi.fn()
 const mockUpdate = vi.fn()
@@ -134,18 +137,52 @@ describe('CuttingHeightConfigPanel', () => {
     await waitFor(() => expect(screen.getByTestId('cutting-height-preview')).toBeTruthy())
 
     fireEvent.change(screen.getByLabelText('预演成品高'), { target: { value: '2.92' } })
-    fireEvent.change(screen.getByLabelText('预演特殊选项'), { target: { value: '布贴, 画线' } })
+    fireEvent.change(screen.getByLabelText('预演工艺'), { target: { value: '打孔' } })
+    fireEvent.click(screen.getByLabelText('预演特殊选项'))
+    fireEvent.click(screen.getByLabelText('特殊选项-拼2次'))
+    fireEvent.click(screen.getByLabelText('特殊选项-接高'))
     fireEvent.click(screen.getByTestId('cutting-height-preview'))
 
     await waitFor(() => expect(screen.getByTestId('cutting-height-preview-result')).toBeTruthy())
     expect(mockPreview.mock.calls[0][0]).toMatchObject({
       position: '布帘',
       finished_height: '2.92',
-      special_options: ['布贴', '画线'],
+      craft: '打孔',
+      special_options: ['拼2次', '接高'],
     })
     const result = screen.getByTestId('cutting-height-preview-result')
     expect(result.textContent).toContain('2.935')
     expect(result.textContent).toContain('未配置取值')
+  })
+
+  it('⑥ 预演的「安装工艺 / 特殊选项」是闭词表选择器（不是自由文本）—— 默认折叠、清单与下单页同源', async () => {
+    render(<CuttingHeightConfigPanel />)
+    await waitFor(() => expect(screen.getByTestId('cutting-height-preview')).toBeTruthy())
+
+    // 安装工艺：单选，取值逐字 = CRAFT_OPTIONS（外加「不指定」空值）
+    const craft = screen.getByLabelText('预演工艺') as HTMLSelectElement
+    expect(craft.tagName).toBe('SELECT')
+    expect(Array.from(craft.options).map((o) => o.textContent)).toEqual(['不指定', ...CRAFT_OPTIONS])
+
+    // 特殊选项：多选下拉 —— 默认只占一行，点开才渲染 19 项复选（§31 P1 常驻面克制）
+    const options = screen.getByLabelText('预演特殊选项')
+    expect(options.tagName).toBe('BUTTON')
+    expect(options.getAttribute('aria-expanded')).toBe('false')
+    expect(options.textContent).toContain('未选择')
+    expect(screen.queryByLabelText('特殊选项-拼2次')).toBeNull()
+
+    fireEvent.click(options)
+    expect(options.getAttribute('aria-expanded')).toBe('true')
+    for (const name of SPECIAL_OPTIONS) {
+      expect(screen.getByLabelText(`特殊选项-${name}`)).toBeTruthy()
+    }
+    fireEvent.click(screen.getByLabelText('特殊选项-拼2次'))
+    fireEvent.click(screen.getByLabelText('特殊选项-接高'))
+    expect(options.textContent).toContain('已选 2 项')
+
+    // 点外部 ⇒ 收起（不是「打开就关不掉」的常驻块）
+    fireEvent.mouseDown(document.body)
+    expect(screen.queryByLabelText('特殊选项-拼2次')).toBeNull()
   })
 
   it('④ 保存失败不冒充成功：不弹成功 toast，来源徽标不变', async () => {
@@ -175,5 +212,32 @@ describe('CuttingHeightConfigPanel', () => {
       expect((input as HTMLInputElement).value).not.toBe('undefined')
     }
     expect((screen.getByLabelText('部位-1') as HTMLSelectElement).value).toBe('')
+  })
+
+  it('⑥ 列宽显式 + 表头不竖排（#7153：下拉与「启用 / 删除」不得被压到裁字）', async () => {
+    mockGet.mockResolvedValue(configResponse('stored'))
+    render(<CuttingHeightConfigPanel />)
+
+    const table = await screen.findByTestId('cutting-height-items')
+    // ① 固定布局 + 最小宽度：窄屏走横向滚动，不再把控件压到内容宽度以下
+    //    （注入：把 `table-fixed` 或 `min-w-[…]` 删掉 ⇒ 下面两条红 —— 那正是「特殊选: / 布厂」的成因）
+    expect(table.className).toContain('table-fixed')
+    expect(table.className).toMatch(/min-w-/)
+    // ② 列宽显式给：colgroup 的列数必须等于表头列数（漏一列 ⇒ 那一列又回到 auto 被压扁）
+    const cols = table.querySelectorAll('colgroup > col')
+    const heads = table.querySelectorAll('thead th')
+    expect(heads.length).toBe(7)
+    expect(cols.length).toBe(heads.length)
+    // ③ 表头不竖排（「启用」曾折成两行）、操作按钮不竖排（「删除」曾折成两行）
+    for (const th of Array.from(heads)) {
+      expect((th as HTMLElement).className, `表头「${th.textContent}」缺 whitespace-nowrap`).toContain(
+        'whitespace-nowrap',
+      )
+    }
+    const removeButtons = table.querySelectorAll('tbody button')
+    expect(removeButtons.length).toBeGreaterThan(0)
+    for (const btn of Array.from(removeButtons)) {
+      expect((btn as HTMLElement).className).toContain('whitespace-nowrap')
+    }
   })
 })

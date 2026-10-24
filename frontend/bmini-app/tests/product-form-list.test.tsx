@@ -3,7 +3,7 @@
  * 商品表单列表测试 — 瑞幸式选品列表（参考 C 端 agent 选品交互）
  *
  * 覆盖：多商品紧凑行渲染（图/名称/规格/价格）、可点规格 chips（点击发送规格选择）、
- * 「预计到手」划线价、「去下单」CTA、空列表不渲染。
+ * 「预计到手」划线价、「查看」CTA（issue #7264：商家端不下单）、空列表不渲染。
  */
 import React from 'react'
 import '@testing-library/jest-dom'
@@ -51,11 +51,13 @@ describe('ProductFormList — 瑞幸式商品表单列表', () => {
     expect(screen.getByText('¥299.00')).toBeInTheDocument()
   })
 
-  it('点击「去下单」触发 onInteract（携带商品名）', () => {
+  it('点击「查看」触发 onInteract（携带商品名）', () => {
     render(<ProductFormList products={products} onInteract={onInteract} />)
-    const orderBtns = screen.getAllByText('去下单')
-    fireEvent.click(orderBtns[0])
-    expect(onInteract).toHaveBeenCalledWith('我要下单遮光窗帘')
+    const viewBtns = screen.getAllByText('查看')
+    fireEvent.click(viewBtns[0])
+    expect(onInteract).toHaveBeenCalledWith('查看遮光窗帘')
+    // 商家端不下单：旧的「去下单」入口零残留
+    expect(screen.queryByText('去下单')).toBeNull()
   })
 
   it('点击规格 chip 触发 onInteract（发送规格选择）', () => {
@@ -73,15 +75,15 @@ describe('ProductFormList — 瑞幸式商品表单列表', () => {
   })
 })
 
-describe('ProductFormList — 去下单防连点锁（issue #3040 收尾）', () => {
+describe('ProductFormList — 查看防连点锁（issue #3040 收尾）', () => {
   afterEach(() => {
     jest.clearAllMocks()
   })
 
-  it('点「去下单」后锁卡：同一商品第二次点击不再触发 onInteract', () => {
+  it('点「查看」后锁卡：同一商品第二次点击不再触发 onInteract', () => {
     render(<ProductFormList products={[{ id: 'p-1', name: '遮光窗帘', price: 199 }]} onInteract={onInteract} />)
-    fireEvent.click(screen.getByText(/去下单/))
-    fireEvent.click(screen.getByText(/去下单/))
+    fireEvent.click(screen.getByText('查看'))
+    fireEvent.click(screen.getByText('查看'))
     expect(onInteract).toHaveBeenCalledTimes(1)
   })
 })

@@ -117,7 +117,9 @@ PERMISSION_SERVICE = (
 
 #: 豁免条数上限（**只许缩短**）：与台账 `baseline_frozen` **两处一致**才放行。
 #: ⚠️ 这不是「页面数」——它是**豁免**条数（菜单页总数永远现取）。
-EXEMPT_COUNT_MAX = 13
+#: 🔴 2026-10-17（issue #7087）：13 → 12 —— 「每日简报」菜单项删除 ⇒ `/briefing` 挂不到任何
+#: 菜单项（= 悬挂登记）⇒ 连同台账 `exemptions` / `exempt_routes_frozen` / `baseline_frozen` 同批销账。
+EXEMPT_COUNT_MAX = 12
 #: 覆盖面（`coverage_boundary`）条数上限（同上：只许缩短；与台账 `coverage_boundary_frozen` 两处一致）。
 COVERAGE_BOUNDARY_COUNT_MAX = 4
 

@@ -927,19 +927,21 @@ cases:
       - tool: direct_reply
     data_checks:
       - "判据 1·🔴 空态**不得**出现 C 端商品推荐卡（修复前渲染 `.new-arrivals` 商品卡并提示「点一下问问元元」= 把顾客端入口与顾客端 agent 名搬进商家端）：结构性判据 = 空态无 `.new-arrivals` / `.new-arrivals__card` / `.new-arrivals__img`、无「新品推荐」文本、无 `¥`。红证：把该组件挂回 frontend/bmini-app/src/components/chat/MessageList.tsx 的空态 ⇒ frontend/bmini-app/tests/chat-empty-state.test.tsx 判红（实跑过）"
-      - "判据 2·🔴 **快捷入口 = 六格等权（2 列 × 3 行）**：`.quick-actions__item` 恰好 6 个、每个都不带 `quick-actions__item--wide`、无 `.quick-actions__group` / `__row` 残留；六条 prompt 逐格可断言（渲染出的内容 = 服务端下发的那份）。红证：给任一项加回 `wide: true` ⇒ frontend/bmini-app/tests/quick-actions.test.tsx 判红（实跑过）"
+      - "判据 2·🔴 **快捷入口 = 六格等权（2 列 × 3 行）**：`.quick-actions__item` 恰好 6 个（#7358 起按当前用户权限投影：6 = 管理员满额，其他岗位可能更少；布局契约 = 等权网格，格子数 = 服务端下发数）、每个都不带 `quick-actions__item--wide`、无 `.quick-actions__group` / `__row` 残留；六条 prompt 逐格可断言（渲染出的内容 = 服务端下发的那份）。红证：给任一项加回 `wide: true` ⇒ frontend/bmini-app/tests/quick-actions.test.tsx 判红（实跑过）"
       - "判据 3·🔴 **入口内容单一真值 = 服务端**（issue #6468：此前 H5 组件里硬编码六条 **C 端顾客口吻**的入口，而服务端那份从没被消费）：服务端 `GET /api/chat/quick-actions`（backend/ai-agent-service/app/api/chat.py 的 `QUICK_ACTIONS`）是唯一内容源，H5 只渲染传入的 `actions`；组件源码不得再自带清单 / prompt / emoji 字面量；`actions` 为空 ⇒ **不渲染**（不退回一份本地兜底清单 —— 那正是病灶形态）。红证：把硬编码六条写回 frontend/bmini-app/src/components/chat/QuickActions.tsx ⇒ frontend/bmini-app/tests/quick-actions.test.tsx 的「类级元守卫」判红"
       - "判据 4·🔴 **每条入口必须能追溯到真实能力**（机械投影，「引导了却做不到，比不引导更伤」）：backend/ai-agent-service/tests/test_chat.py::TestQuickActions::test_every_entry_maps_to_a_real_mibao_capability 要求每条的 skill 在黄金策绑定面内、且 tool 在该 skill 的 tool_names 里。红证：把任一条 skill 改成已解绑的 `settings` 或把 tool 改成顾客端专用的 `aftersale_query` ⇒ 具名判红（实跑过）"
       - "判据 5·**agent 名用 B 端口径**：空态欢迎语不含「元元」、含「商家经营助手」；「思考中」默认文案 = 「黄金策正在思考...」（frontend/bmini-app/src/components/chat/TypingIndicator.tsx）"
       - "判据 7·🔴 **空态那句「都可以问我」与快捷入口指向同一组业务域**（issue #6476：文案原文是「查订单、查库存、**算料报价**、售后与物流」——与六格**没有任何交集**，且「算料报价」在 B 端没有对应能力）：frontend/bmini-app/tests/chat-empty-state.test.tsx **现取**服务端 `QUICK_ACTIONS` 的 id 清单，要求空态文案逐组覆盖其业务域词（经营 / 交付 / 库存 / 商品 / 售后 / 客户），并负向断言不含「算料报价」。红证（实跑过）：把文案改回旧那句 ⇒ 具名判红；服务端新增第 7 条入口而不补映射/文案 ⇒ 同样红（服务端 id 集 != 映射表键集）"
       - "判据 6·**类级元守卫（让同类进不来）**：B 端全量 `frontend/bmini-app/src/**` 的**代码**不得引用顾客端商品推荐端点 `new-arrivals`；聊天面（components/chat 与 pages/chat）的代码不得出现顾客端 agent 名，也不得出现 C 端顾客口吻的快捷问句（「推荐一下热门窗帘产品」「帮我查一下物流」「我想咨询售后问题」「帮我算一下窗帘用料和价格」）—— 「再抄一次顾客端页面」当场变红。边界：只扫代码（块注释与整行 `//` 注释先剔除），注释与文档不在面内"
+      - "判据 8·🔴 **快捷入口 = 当前用户权限的机械投影**（issue #7358：改前 7 条对**所有岗位**原样下发，与 8 个内置岗位默认权限比对实测 **56 格里 27 格是死的** —— inspector 1/7、finance 3/7）：服务端按 `BaseTool.check_permission`（**与工具执行同一个谓词**，不新写权限逻辑）过滤 `actions`/`tools`；按 **`permissions` 而非岗位**判（权限自 #2969 起是快照式）。判据双侧：行为 = backend/ai-agent-service/tests/test_chat.py::TestQuickActions（inspector 只剩「交付风险」；customer_service 4 条；空权限 0 条；管理员 7 条）；结构 = tests/unit_ci_workflows/test_quick_actions_permission_projection.py（能力锚 / 权限锚 / 过滤接线 / 每岗非空且无全局死项 + 注入式红证）。红证：删掉端点里的 `_quick_action_visible` 调用 ⇒ 结构判据具名判红；把 inspector 的权限喂成 `[]` ⇒ 行为判据判红（均已实跑）"
     skip_reason: "[backend-contract] 确定性前端/结构判据（jest: frontend/bmini-app/tests/chat-empty-state.test.tsx + frontend/bmini-app/tests/quick-actions.test.tsx；pytest: backend/ai-agent-service/tests/test_chat.py::TestQuickActions），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-28 新增（issue #5747）：用户在 B 端 H5 看到顾客端 agent 入口（新品推荐卡「点一下问问元元」），且 B 端快捷入口仍是顾客端旧版（算料报价全宽 + 2×2 共 5 格）⇒ 与顾客端现行形态对齐，并落「顾客端内容不得混入商家端」的实例判据 + 类级元守卫；同批删除 NewArrivals 组件/样式与只为它存在的旁路服务。2026-10-07 修订（issue #6468，用户：「快捷菜单直接抄袭的 C 端设计，应该和 B 端需求场景相结合」）：#5747 只对齐了**形态**，**内容**仍是抄 C 端的顾客问句（「推荐一下热门窗帘产品」「帮我查一下物流」…）⇒ 六格换成 B 端商家场景（今日经营 / 交付风险 / 库存告急 / 商品健康度 / 售后待办 / 客户回访），并消除双源：内容真值收到服务端 `QUICK_ACTIONS`（H5 与 admin-web 同一份），同批落「每条入口必须追溯到真实能力」的机械投影判据与「H5 不得再硬编码入口内容」的类级元守卫。 2026-10-07 再修订（issue #6476，用户：「下面的文案和快捷对话没对上」）：空态那句自我介绍是 #5747 只换了 agent 名、**没换能力面**的残留（「算料报价」B 端根本没有）⇒ 换成与六格逐组对应的域词，并落「空态文案与服务端 QUICK_ACTIONS 同源」的判据（服务端改入口集而文案没跟上即红）。"
+    merge_log: "2026-09-28 新增（issue #5747）：用户在 B 端 H5 看到顾客端 agent 入口（新品推荐卡「点一下问问元元」），且 B 端快捷入口仍是顾客端旧版（算料报价全宽 + 2×2 共 5 格）⇒ 与顾客端现行形态对齐，并落「顾客端内容不得混入商家端」的实例判据 + 类级元守卫；同批删除 NewArrivals 组件/样式与只为它存在的旁路服务。2026-10-07 修订（issue #6468，用户：「快捷菜单直接抄袭的 C 端设计，应该和 B 端需求场景相结合」）：#5747 只对齐了**形态**，**内容**仍是抄 C 端的顾客问句（「推荐一下热门窗帘产品」「帮我查一下物流」…）⇒ 六格换成 B 端商家场景（今日经营 / 交付风险 / 库存告急 / 商品健康度 / 售后待办 / 客户回访），并消除双源：内容真值收到服务端 `QUICK_ACTIONS`（H5 与 admin-web 同一份），同批落「每条入口必须追溯到真实能力」的机械投影判据与「H5 不得再硬编码入口内容」的类级元守卫。 2026-10-07 再修订（issue #6476，用户：「下面的文案和快捷对话没对上」）：空态那句自我介绍是 #5747 只换了 agent 名、**没换能力面**的残留（「算料报价」B 端根本没有）⇒ 换成与六格逐组对应的域词，并落「空态文案与服务端 QUICK_ACTIONS 同源」的判据（服务端改入口集而文案没跟上即红）。 2026-10-20 修订（issue #7358，用户：「快捷方式面向每个岗位都是一样的，应该针对不同岗位定义」）：入口从**静态清单**改为**当前用户权限的机械投影**（复用 `BaseTool.check_permission` 单一谓词；按 `permissions` 而非岗位 —— 权限是快照式），实测消除 27/56 个「点下去必然被拒」的死格子（inspector 1/7 → 只剩它真能做的交付风险）；同批落结构判据（能力锚 / 权限锚 / 过滤接线 / 每岗非空且无全局死项 + 注入式红证）与行为判据（四类身份逐条钉住），并明确「六格 = 管理员满额，格子数 = 服务端下发数」。"
     traces:
       tests:
         - "frontend/bmini-app/tests/chat-empty-state.test.tsx"
         - "frontend/bmini-app/tests/quick-actions.test.tsx"
         - "backend/ai-agent-service/tests/test_chat.py"
+        - "tests/unit_ci_workflows/test_quick_actions_permission_projection.py"
       ci:
         - bmini-app.yml
         - ai-agent-tests.yml
@@ -1272,7 +1274,7 @@ cases:
     data_checks:
       - "判据 1·三类待办的落脚页 = 加工单详情：backend/admin-api/src/main/java/com/migao/admin/service/ProductionTodoService.java 的 `processingOrderDetailPage(orderId)` 逐字产出 `/pages/production/order-detail/index?orderId=<orderId>`；页面在 frontend/bmini-app/src/app.config.ts 在册、并登记进入口台账（via=url，viaBinding=该 Java 文件）。红证：改回报工页 ⇒ frontend/bmini-app/tests/page-entry-reachability.test.ts 的 L4 绑定判红 + backend/admin-api/src/test/java/com/migao/admin/service/ProductionTodoServiceTest.java 的三类 link 断言判红"
       - "判据 2·🔴 新页**纯只读**：frontend/bmini-app/tests/processing-order-detail-page.test.tsx 的源码级断言（去注释后不得出现「扫一扫 / 去登录工人身份 / scanResolve( / completeByScan( / getWorkerOrderOperations / hasWorkerSession / WORKER_TAB_LOGIN_ROUTE / PRODUCTION_WORKER_LOGIN_REQUIRED / workerSessionHeaders」任一记号）+ 反向自证（源码确实消费 `getProcessingOrderBrief(` / `getOrderOperations(`）。红证：往页面注入一个「扫一扫」按钮 ⇒ 该用例判红"
-      - "判据 3·页面三态分开（403 ⇒「无「生产看板」查看权限（需要权限码 production:view）」/ 这笔订单还没有加工单 / 加载失败可重试）+ 抬头缺键的行不渲染：同文件四条用例。红证：删掉 forbidden 分支 ⇒ 落到「加载失败」⇒ 红"
+      - "判据 3·页面三态分开（403 ⇒「无「作业看板」查看权限（需要权限码 production:view）」/ 这笔订单还没有加工单 / 加载失败可重试）+ 抬头缺键的行不渲染：同文件四条用例。红证：删掉 forbidden 分支 ⇒ 落到「加载失败」⇒ 红"
       - "判据 4·🔴 商家面身份护栏：frontend/bmini-app/tests/role-guard.test.tsx —— 有工人 session、无商家凭据 ⇒ `Taro.redirectTo(WORKER_HOME_ROUTE)`；有商家凭据（哪怕同时有工人 session）**不跳**（负控：共用 PAD 的正常动线）；工人页 / 公开登录页**不许**挂护栏（负控：挂了工人会被自己的页面弹走）"
       - "判据 5·**类级**（新增商家页不挂护栏 ⇒ 红）：商家页清单**现取** —— tabBar 四页来自 frontend/bmini-app/src/app.config.ts 的 `tabBar.list`、管理面 4 项来自 frontend/bmini-app/src/utils/adminPermission.ts 的 `ADMIN_SURFACES`、外加坐席会话详情页 —— 每页都必须挂 `useMerchantSurfaceGuard`（证据：同文件的「商家页清单」组，含反空跑断言）"
       - "判据 6·**按部位补生产信息**（issue #6901）：frontend/bmini-app/tests/processing-order-detail-info.test.tsx 逐部位渲染商品身份（品名 / 货号 / 颜色 / 门幅 / 售卖方式 / 单位）、规格尺寸（宽 × 高，两位小数 + 米）、加工信息（走 `src/utils/craft-display.ts::craftSpecRows()` —— **不新造标签表**）、派工（批号 + 指派米数**两键都在才显示**；只有批号 = 未指派 ⇒ 不渲染）、部位备注；🔴 **键缺席 ⇒ 该行不渲染**（不补默认值、不折 0）。红证（实跑读数）：去掉 `craftSpecRows` 的「部位」过滤 ⇒ **1 failed / 7 passed**（判据 4+5）；`sizeText` 不判有限数 ⇒ **2 failed**（正文含 NaN）；`batchText` 删「两键都在」守卫 ⇒ **2 failed**"
@@ -1486,7 +1488,7 @@ cases:
       - "判据 1·**服务端投影逐值**（真值 = backend/admin-api/src/main/java/com/migao/admin/service/MobileSurfaces.java 的 `ALL` + `visibleFor`）：期望值**逐字取自线上真账号读数**（2026-10-08 19:58~20:09 +08，租户 25 四岗位在 `/b/` 的实拍）—— 通配 `*` ⇒ 5 项；客服（12 码，**无** `production:view`）⇒ pool/inbound/after-sales；商品管理员（8 码）⇒ pool/piecework/production-todos；财务（9 码）⇒ pool/inbound；空集合/null ⇒ 空清单（不是「全给」）。红证：把任一面的读码改一个字母 ⇒ 对应键序列对不上。证据：backend/admin-api/src/test/java/com/migao/admin/service/MobileSurfacesTest.java"
       - "判据 2·**`/me` 字段与缺键语义**：`$.data.mobileSurfaces[0].key/title/route` 逐值；无独立页面的能力位（`production-todos`）⇒ `route` **缺键**（`doesNotExist`，不是 null、不是空串）—— 端侧据此只开页面内的块。红证：字段名改名/改蛇形 ⇒ 端侧菜单全灭（端侧读的就是这个键）+ 本判据红。证据：backend/admin-api/src/test/java/com/migao/admin/controller/AuthIntegrationTest.java"
       - "判据 3·🔴 **端侧只渲染服务端给的面**：给 4 面 ⇒ 逐字按服务端顺序与标题渲染（端侧不自造、不排序）；只给 1 面 ⇒ 只出 1 个；给**空数组** ⇒ 一个入口都没有且**不是**错误态（服务端的明确答复 ≠ 失败）；🔴 **拉不到 ⇒ 显式「菜单没加载出来，点这里重试」+ 一个面都不渲染**（既不静默隐藏，也不照显）；点重试**真的**再拉一次 `/me`。红证：退回「未知 ⇒ 照显」⇒ 该用例红。证据：frontend/bmini-app/tests/mobile-menu-server-driven.test.tsx"
-      - "判据 4·**「数据」页生产待办块 = 同一份服务端清单开关**：清单含 `production-todos` ⇒ 渲染（每件可点即办）；🔴 **不含**（没有 `production:view` 的岗位 = 客服 / 财务实拍）⇒ **整块不渲染**（那块「无权限查看生产待办（需生产看板权限）」的噪音消失）；菜单**拉不到** ⇒ 照渲染（数据优先：不静默吞掉今天的待办）。红证：仍按权限码判 ⇒ 该用例红。证据：同判据 3 的文件"
+      - "判据 4·**「数据」页生产待办块 = 同一份服务端清单开关**：清单含 `production-todos` ⇒ 渲染（每件可点即办）；🔴 **不含**（没有 `production:view` 的岗位 = 客服 / 财务实拍）⇒ **整块不渲染**（那块「无权限查看生产待办（需作业看板权限）」的噪音消失）；菜单**拉不到** ⇒ 照渲染（数据优先：不静默吞掉今天的待办）。红证：仍按权限码判 ⇒ 该用例红。证据：同判据 3 的文件"
       - "判据 5·**类级守卫（服务端清单 ⇄ 端侧落地，双向）**：后端清单现取 5 项（反空跑）；有路由的面必须 ① 逐字在 `frontend/bmini-app/src/app.config.ts` 的 pages 在册 ② 在入口台账 `frontend/bmini-app/src/utils/pageEntries.ts` 登记过 ③ 读码与端侧台账 `ADMIN_SURFACES[].readPermission` 逐值相等；无路由的能力位必须被「数据」页**真的消费**（登记而不接线 = 台账自我复制）。红证：给 Java 清单加一条 bmini 没登记的 `new Surface(...)` ⇒ 判红。证据：frontend/bmini-app/tests/admin-surfaces-guard.test.ts（判据 8）"
       - "判据 6·**源级：端侧不再自己判菜单码**：「我的」页源码不含 `visibleAdminSurfaces` / `useAdminPermissions` / `permissions.includes`，且确实调用 `useMobileMenu()`（反向自证，防空跑）；「数据」页的开关取 `s.key === 'production-todos'`。证据：同判据 3 的文件"
     skip_reason: "[backend-contract] 确定性判据（Java 单测 + jest + 源码守卫），非 LLM 行为，不进入 agent-eval 冒烟"
@@ -1504,7 +1506,7 @@ cases:
       verifies: []
   - id: BM-047
     legacy_id: ""
-    title: "B 端 H5 底栏按岗位权限裁剪：服务端下发 mobileTabs + 端侧自绘 + 收起原生条（无坐席权限的岗位不再看到「坐席」）"
+    title: "B 端 H5 底栏 4 项一律可见 + 端侧自绘 + 收起原生条（2026-10-18 裁定；旧「按权限裁剪」退场）"
     domains:
       - bmini
       - frontend
@@ -1519,25 +1521,31 @@ cases:
     truths_ref: []
     # ⚠️ 真值暂缺（照实登记，不粉饰）：本用例是**确定性**判据（服务端投影 + 端侧渲染 + 几何腿 + 类级守卫），
     # 不新增 LLM 真值 —— 与 BM-009 / BM-046 同一处置。
+    # ⚠️ 刻意只写**一条** user_inputs：本用例是确定性判据（`traces.tests` 计分通道），两条会被
+    # 判成「2 轮 ⇒ 必须给前置断言」（CASE-TRUST-NO-PRECONDITION-ASSERTION，而本用例没有 Agent 前置）。
     user_inputs:
-      - "员工在手机端：没有坐席权限的岗位，底部不该出现「坐席」那一格（由服务端按岗位下发）"
+      - "员工在手机端：底部 4 项（问黄金策 / 数据 / 坐席 / 我的）一律可见（用户 2026-10-18 逐字「跟问黄金策那个菜单一样都可见」），没权限的底栏页走「问黄金策」式的「需要管理员授权」；「我的」页的子菜单（智能派单 / 入库过账 / 售后处理 / 计件工资报表）仍按权限控制可见性（服务端 mobileSurfaces 投影）；数据面仍按权限拦"
     expectations:
       - tool: direct_reply
     data_checks:
       - "判据 1·**服务端投影逐值**（真值 = `MobileSurfaces.visibleTabsFor`）：商品管理员（8 码）/ 财务（9 码，均**无** `agent:session`）⇒ chat/dashboard/profile（**没有 sessions**）；客服（12 码，持 `agent:session`）⇒ 4 项齐全；一个码都没有的员工 ⇒ chat/profile（无码项）；`*` 通配 ⇒ 4 项。红证（实跑过）：把 `sessions` 的码改成 `null` ⇒ 同文件 `Tests run: 14, Failures: 4`。证据：backend/admin-api/src/test/java/com/migao/admin/service/MobileSurfacesTest.java"
       - "判据 2·**`/me` 的 `mobileTabs` 字段与序列化**：`$.data.mobileTabs[0].key/route`、`[1].title` 逐值（字段名 = 端侧依赖：改名/改蛇形 ⇒ 端侧底栏退回「照显 4 项」+ 本判据红）。证据：backend/admin-api/src/test/java/com/migao/admin/controller/AuthIntegrationTest.java"
-      - "判据 3·🔴 **端侧只渲染服务端给的 tab**：给 3 项（无 `sessions`）⇒ 底栏**只有 3 格**且 `merchant-tab-sessions` 不存在；给 4 项 ⇒ 4 格（标题与顺序都取服务端，端侧不自造）。红证（实跑过）：端侧改回静态 4 项 ⇒ jest 1 failed / 12。证据：frontend/bmini-app/tests/merchant-tabbar.test.tsx"
-      - "判据 4·🔴 **拿不到菜单 / 空清单 ⇒ 照显 4 格**（tab 是**功能入口**：藏掉用户有的功能比露出一个点进去 403 的入口更糟 —— 与「数据」页待办块 `error ⇒ 照渲染` 同一条规则；入口与内容的 fail-closed 口径见 BM-046）。红证（实跑过）：把 `error` 当「一个都没有」⇒ jest 2 failed / 12。证据：同判据 3"
+      - "判据 3·🔴 **底栏 4 项一律可见**（用户 2026-10-18 裁定「跟问黄金策那个菜单一样都可见」）：服务端给 3 项（无 `sessions`）⇒ 端侧**仍画 4 格**（`merchant-tab-sessions` 照显）；标题取服务端、顺序取静态表（= 服务端 TABS 的逐值镜像）。红证（实跑过）：端侧跟着服务端删格 ⇒ jest 1 failed / 12。证据：frontend/bmini-app/tests/merchant-tabbar.test.tsx"
+      - "判据 4·**可见性不依赖那次 fetch**：拿不到菜单 / 空清单 ⇒ 同样 4 格（与判据 3 同形）—— 改前 loading 与 error 共用 fail-open 兜底，导致没有 `agent:session` 的账号「先看到坐席、点进去后那一格又消失」（用户 2026-10-18 实测）。证据：同判据 3"
+      - "判据 4b·**「我的」页子菜单无权限不可见**（同一裁定里的另一半）：`GET /api/auth/me` 的 `mobileSurfaces` 由服务端 `MobileSurfaces.visibleFor` 按生效权限过滤，端侧只渲染服务端给的面 + `error` 显式重试。证据：frontend/bmini-app/tests/profile-page.test.tsx + frontend/bmini-app/tests/mobile-menu-server-driven.test.tsx"
+      - "判据 4c·🔴 **没权限的底栏页 = 「问黄金策」同一做法**：服务端 `mobileTabs` 里没有该 tab（或接口 403）⇒ 整页「需要管理员授权」+ 可行动引导（「请联系企业管理员在「员工管理」中为你开通「X」权限」），**不白屏、不静默隐藏、不画成空态**；`loading` / `error` 一律不拦（拿不到菜单 ≠ 没权限）。呈现实现只有一份：`frontend/bmini-app/src/components/admin/SurfaceAccessGate.tsx`（`MibaoAccessGate` 复用它）。红证（实跑过）：让界面无视 `mobileTabs` ⇒ 数据页 `dashboard-gate-denied` / 坐席页 `sessions-gate-denied` 判红。证据：frontend/bmini-app/tests/dashboard-three-state.test.tsx + frontend/bmini-app/tests/sessions-page.test.tsx"
       - "判据 5·🔴 **原生条必须被收起**（自绘底栏挂载即调 `Taro.hideTabBar({animation:false})`）：否则**两条底栏叠着**（自绘底栏上线后最容易出的形态）。红证（实跑过）：去掉该调用 ⇒ jest 1 failed / 12 + 几何腿 2 failed（`toBeHidden` Expected hidden / Received **visible**）。证据：frontend/bmini-app/tests/merchant-tabbar.test.tsx + tests/e2e/specs/bmini/bmini-tabbar.spec.ts 判据 7"
       - "判据 6·**几何一格不放宽**（判据对象从原生条换成自绘条）：条贴底 ±1px / 条高 ∈[49,51]（页面高度算式按 Taro 的 50 留白）/ 每格图标与文字上下留白对称且都 > 0 / 水平居中 ±1px / 渲染出的四张图标 `src` 两两不同 / 当前页那一格 active。证据：tests/e2e/specs/bmini/bmini-tabbar.spec.ts + frontend/bmini-app/tests/tabbar-layout.test.ts（自绘底栏块：安全区只补一次、条不吃 `margin-bottom`、字面量 == Taro 现取的 50PX、flex 纵列居中、每格 `flex:1`）"
       - "判据 7·**类级守卫（三处同源 + 接线 + 图标）**：服务端 `MobileSurfaces.TABS` ⇄ 端侧 `ALL_MERCHANT_TABS` ⇄ `app.config.ts` 的 `tabBar.list`（key/title/route 逐值，两处现取 4 项反空跑）；4 个 tab 页都必须接线 `<MerchantTabBar current='<自己的 key>' />`（新加 tab 页不接线 / 传错 key ⇒ 红）；8 张图标导入互不相同。红证（实跑过）：坐席页传 `current='chat'` ⇒ jest 1 failed / 12。证据：frontend/bmini-app/tests/merchant-tabbar.test.tsx"
     skip_reason: "[backend-contract] 确定性判据（Java 单测 + jest + playwright 几何腿），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-10-08 新增（issue #6574；用户逐字回答 #6570 第 1 问「**1，按权限隐藏**」，同日第 2 问答「有意授权」⇒ 不动任何角色种子）：底栏此前是**构建期静态 4 项**（`setTabBarItem` 只能改文字/图标、`hideTabBar` 只能整条收起 ⇒ 删不掉某一格）⇒ 没有 `agent:session` 的岗位（实测：商品管理员 8 码 / 财务 9 码）照样看到「坐席」。修法 = ① 服务端在 `GET /api/auth/me` 下发 `mobileTabs`（`MobileSurfaces.visibleTabsFor`，沿用 #6570「服务端按岗位投影、端侧零口径」）；② 端侧自绘底栏（`src/components/MerchantTabBar.tsx`）并调 `Taro.hideTabBar()` 收起原生条 —— `app.config.ts` 的 `tabBar` **保留不动**（`Taro.switchTab` 只能落 tabBar 页；Taro 的 `.taro_page.taro_tabbar_page` 页面高度算式依赖 `--taro-tabbar-height`）。同批：`MobileSurfaces` 的 `readPermission` 允许 `null`（= **无需任何码**的 tab；**不**用 `*` —— 那是 `RoleService` 给管理员的通配标记，拿来当「人人可见」会让语义撞车）。**未固化项**：weapp 只有构建判据、**无真机读数**（两端同源码：原生条 `hideTabBar` + 自绘；小程序侧未实机验证）。"
+    merge_log: "2026-10-08 新增（issue #6574；用户逐字回答 #6570 第 1 问「**1，按权限隐藏**」，同日第 2 问答「有意授权」⇒ 不动任何角色种子）：底栏此前是**构建期静态 4 项**（`setTabBarItem` 只能改文字/图标、`hideTabBar` 只能整条收起 ⇒ 删不掉某一格）⇒ 没有 `agent:session` 的岗位（实测：商品管理员 8 码 / 财务 9 码）照样看到「坐席」。修法 = ① 服务端在 `GET /api/auth/me` 下发 `mobileTabs`（`MobileSurfaces.visibleTabsFor`，沿用 #6570「服务端按岗位投影、端侧零口径」）；② 端侧自绘底栏（`src/components/MerchantTabBar.tsx`）并调 `Taro.hideTabBar()` 收起原生条 —— `app.config.ts` 的 `tabBar` **保留不动**（`Taro.switchTab` 只能落 tabBar 页；Taro 的 `.taro_page.taro_tabbar_page` 页面高度算式依赖 `--taro-tabbar-height`）。同批：`MobileSurfaces` 的 `readPermission` 允许 `null`（= **无需任何码**的 tab；**不**用 `*` —— 那是 `RoleService` 给管理员的通配标记，拿来当「人人可见」会让语义撞车）。**未固化项**：weapp 只有构建判据、**无真机读数**（两端同源码：原生条 `hideTabBar` + 自绘；小程序侧未实机验证）。 ｜ 2026-10-18 改判（用户逐字「跟问黄金策那个菜单一样都可见，参考问黄金策那个菜单的做法即可」+「底座我的菜单的子菜单则根据权限来控制可见性」）：底栏**不再按权限删格**，4 项一律可见（判据 3/4 改写）；「我的」页子菜单仍由服务端 `mobileSurfaces` 按权限投影（判据 4b）。同批补：① 坐席页在没有 `agent:session` 时给**与「问黄金策」同一形态**的授权缺失态（改前 403 会永远转圈或画成「队列空闲」）；② 「数据」页同样按 `mobileTabs` 判整页授权缺失态。**这不是授权放宽**：数据面仍由 `@RequirePermission` 拦。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/MobileSurfacesTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/controller/AuthIntegrationTest.java"
         - "frontend/bmini-app/tests/merchant-tabbar.test.tsx"
+        - "frontend/bmini-app/tests/sessions-page.test.tsx"
+        - "frontend/bmini-app/tests/dashboard-three-state.test.tsx"
         - "frontend/bmini-app/tests/tabbar-layout.test.ts"
         - "tests/e2e/specs/bmini/bmini-tabbar.spec.ts"
       ci:
@@ -1656,6 +1664,42 @@ cases:
         - "frontend/bmini-app/tests/worker-shipment-service.test.ts"
         - "frontend/bmini-app/tests/worker-home-page.test.tsx"
         - "frontend/bmini-app/tests/page-entry-reachability.test.ts"
+      ci:
+        - bmini-app.yml
+      verifies: []
+  - id: BM-051
+    legacy_id: ""
+    title: "手机端页面文案：工人 / 商家可见纯文本（零 markdown 标记、零研发术语）"
+    domains:
+      - bmini
+      - ui
+    tier: normal
+    tags:
+      - bmini
+      - worker
+      - copy
+      - inbound
+    truths_ref:
+      - frontend-fix.no-api-change
+    user_inputs:
+      - "工人 / 商家在手机上打开拍照入库 / 拍照补打入库标签 / 拍照发货 / 计件工资 / 派单 / 数据页：看到的字是能直接读懂的话（二维码拍清楚 ⇒ 手机当场就能认出来；认不出 ⇒ 换一种方式再认，会稍慢一点），屏幕上不出现 `**` 星号，也不出现「识别模型 / 服务端 / 解码 / 接口」这类研发术语"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**零 markdown 标记**：手机端页面（frontend/bmini-app/src/pages/** + src/components/**）的 JSX 文本与字面量里没有 `**` / `__` / 行内反引号 / 行首标题，**含被拆到多个 JSX 子节点的裸标记**（`<Text>{'**'}{n}{'**'}</Text>`）—— Taro `<Text>` 不渲染 markdown ⇒ 星号原样印在手机上。红证（实跑：`git checkout origin/main -- frontend/bmini-app/src` 后跑本判据）：frontend/bmini-app/tests/worker-copy-plain-text-guard.test.ts 判据 1 判红并逐条具名 **3** 处（inbound:337 / reprint:319 / shipment:182，逐字含 `**不会**` 与 `**实发**`）；修后 3 passed。证据：frontend/bmini-app/tests/worker-copy-plain-text-guard.test.ts"
+      - "判据 2·**零研发术语**（识别模型 / 大模型 / LLM / 服务端 / 后端 / 解码 / 接口 / 安全上下文 / 落库 / 幂等 / 裁定 / 判据 / 快照）：同一次红证实跑具名 **19** 处 —— 4 处商家手机端页面（计件工资 2 / 派单 1 / 数据页 1）、4 条打印失败提示、2 条打印回执（「服务端记第 N 次」）、5 条识别链文案源（recognizeFlow / barcodeDecode ×4 / recognizeGate / reprintFlow）；修后同一判据 0 命中。证据：同判据 1 + frontend/bmini-app/tests/worker-inbound-page.test.tsx（C9）+ frontend/bmini-app/tests/worker-reprint-page.test.tsx（P10）"
+      - "判据 3·**过程不静默**（既有口径不弱化）：解码失败 / 降级仍给一句明说 + 下一步（「系统换一种方式再认了一次（会稍慢一点）。请核对下面的结果，不对就手工改。」）；补打的详情读失败仍是可行动的话（网络问题或系统暂时不可用 ⇒ 重试 / 报短码给文员）。证据：frontend/bmini-app/tests/inbound-decode-first.test.ts（C4）+ frontend/bmini-app/tests/inbound-reprint-flow.test.ts（F5b）"
+      - "判据 4·**射程可复核**（防假绿 / 防假红）：判别力自证 = 抽到 > 20 条文案、三个被点名页面与每个登记文案源都在射程内（路径写错 ⇒ 当场红）；`exported` 模式只扫**顶层导出字符串常量** ⇒ 同文件里混着的研发台账字段（gaps.ts / reprintFlow.ts 的 why / audience，本来就用 markdown 写实现细节、且从不上屏）不误报。证据：同判据 1"
+    skip_reason: "[backend-contract] 确定性文案守卫（jest: frontend/bmini-app/tests/worker-copy-plain-text-guard.test.ts + worker-inbound-page / worker-reprint-page / inbound-decode-first / inbound-reprint-flow / inbound-print-channel），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-19 新增（issue #7316）：用户逐字「手机端的拍照入库功能页面文案有个mardown语法未正确渲染，显示成了**不会**」「不会调用识别模型这句文案应该改一下，改成工人能理解的文字，补打入库标签页面也有类似问题」。类级处置 = 实例判据（两页 + 解码链）+ 类级元守卫（扫全部手机端页面与共享组件 + 登记文案源；markdown 标记 / 研发术语两条规则）。**首版射程只到工人页，被独立复核指出两处实证漏洞**（printCapability 的打印失败提示与 gaps.ts 的上屏引导文案在射程外、守卫头把 gaps.ts 整体写成「从不上屏」与事实相反）⇒ 第二版把射程扩到 `src/pages/**` + `src/components/**`，并引入 `exported` 模式区分上屏常量与研发台账；同批收口商家手机端 4 处（计件工资 2 / 派单 1 / 数据页 1）、打印失败提示 4 条、打印回执 2 条。边界（照实登记）：只判「会不会被手机用户看到」——注释 / JSDoc 不在射程；`productionOffline.ts` 的「补传被服务端拒绝」目前无入队调用点（本仓不可达），未登记。"
+    traces:
+      tests:
+        - "frontend/bmini-app/tests/worker-copy-plain-text-guard.test.ts"
+        - "frontend/bmini-app/tests/worker-inbound-page.test.tsx"
+        - "frontend/bmini-app/tests/worker-reprint-page.test.tsx"
+        - "frontend/bmini-app/tests/inbound-decode-first.test.ts"
+        - "frontend/bmini-app/tests/inbound-reprint-flow.test.ts"
+        - "frontend/bmini-app/tests/inbound-print-channel.test.ts"
       ci:
         - bmini-app.yml
       verifies: []

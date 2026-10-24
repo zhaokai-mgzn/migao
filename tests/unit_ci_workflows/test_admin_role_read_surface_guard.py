@@ -13,7 +13,7 @@ issue #5980 只修了那两条端点。**本条判据做的是类级固化**：�
 钉成一张**逐条现取**的台账 —— 将来有人给这个（或另一个商户可见的）controller 加一个读端点
 却忘了加注解，**当场红**，不必等下一个人来审计。
 
-## 判什么（六条，逐条可归因）
+## 判什么（七条，逐条可归因）
 
 1. **controller 里每个端点的生效码必须登记在台账里**（未登记即红；台账只管这一个 controller）；
 2. **登记 = 声明**：台账里**声明 `@RequirePermission`** 的条目，其现取生效码必须**非空**且**逐字等于**登记值
@@ -23,13 +23,18 @@ issue #5980 只修了那两条端点。**本条判据做的是类级固化**：�
 3. **端点级豁免台账**：`GET /api/admin/roles{,/all,/{}}` 三条必须**在场**且带 `view` 码（漏掉一条 ⇒ 红）——
    这是「岗位下拉 / 岗位权限页回显仍有码可依」的**最低保证**（只许收紧，不许整条删除）；
 4. **码必须在权限目录里**（`RegistrationService` 的种子目录；码名字打错 ⇒ 该端点对所有人恒 403 ⇒ 红）；
+4b. **类级尺度（2026-10-22 加，issue #7375 段 3）**：**全注解面**（剥注释后扫 `controller` 目录下
+   全部 java，类级 / 方法级一视同仁）的码都必须在权限目录里 —— 现场 = `PricingController` 类级
+   `order:view`（目录里**没有**这个码 ⇒ 报价与价格本端点对所有人恒 403），而旧判据 4 只裁
+   `AdminRoleController` ⇒ **没有任何东西会红**。解析器复用 `PARITY.parse_catalog`（不造第二份）；
 5. **austere 面的元判据**：`/api/admin/**` 面上「无任何生效码」的端点**总数**必须 **≤ ADMIN_SCOPE_UNANNOTATED_CEILING**
    （现取、只许缩短）—— 对照组读数写进台账，让「沉默放行」的存量**可见**；
 6. **判别力自证**：五种坏形态在**内存构造的源码**上各自判红 + 「只改注释 ⇒ 不红」的对照。
 
 ## 覆盖面边界（照实登记，不粉饰）
 
-- **只裁 `AdminRoleController`**：`/api/admin/**` 上其余无码端点由**既有**台账管
+- **判据 1~3 只裁 `AdminRoleController`**；**判据 4b 覆盖全部 controller 的注解面**（它不写信封、只核码）；
+  `/api/admin/**` 上其余无码端点由**既有**台账管
   （`tests/unit_ci_workflows/test_agent_permission_parity.py` 的判据 8 + `UNANNOTATED_ENDPOINTS`，
   逐条带理由）—— 本条判据**不复制**那份台账（同一事实两处登记 = 又一处并行真值）；
 - **判「注解面」不判运行时授权**：本机无真库 / 无 admin-api 环境（与 #4727 的审计同口径）；
@@ -42,6 +47,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -53,6 +59,9 @@ ROLE_CONTROLLER_FILE = "com/migao/admin/controller/AdminRoleController.java"
 ATTRIBUTION_PATH = AI_SERVICE / "tests" / "tool_http_attribution.py"
 PARITY_GUARD = REPO_ROOT / "tests" / "unit_ci_workflows" / "test_agent_permission_parity.py"
 LEDGER_PATH = REPO_ROOT / "tests" / "unit_ci_workflows" / "admin_role_read_surface_ledger.json"
+
+#: `@RequirePermission("码")` 的**字面量**扫描（剥注释后扫；类级 / 方法级一视同仁）。
+_ANN_RE = re.compile(r'@RequirePermission\(\s*"([^"]+)"\s*\)')
 
 REGISTRATION_SERVICE = CONTROLLER_DIR.parent / "service" / "RegistrationService.java"
 PERMISSION_SERVICE = CONTROLLER_DIR.parent / "service" / "PermissionService.java"
@@ -234,6 +243,20 @@ def guard_problems(java_sources: dict[str, str], ledger: dict | None = None) -> 
         if code and code not in catalog:
             out.append(f"端点 `{key}` 的生效码 `{code}` 不在权限目录里（拼错 ⇒ 该端点对所有角色恒 403）")
 
+    # 判据 4b（类级尺度，issue #7375 段 3 现场）：**全注解面**的码都必须在权限目录里 ——
+    # 含**类级** `@RequirePermission`。判据 4 只裁 AdminRoleController ⇒ 漏掉了
+    # `PricingController` 类级 `order:view`（目录里没有这个码 ⇒ 报价与价格本对所有人恒 403）。
+    # 口径 = **按注解文本**（`PARITY.java_code` 剥注释后）扫全部 controller，类级/方法级一视同仁。
+    for path in sorted(java_sources):
+        if not path.startswith("com/migao/admin/controller/"):
+            continue
+        for code in sorted(set(_ANN_RE.findall(PARITY.java_code(java_sources[path])))):
+            if code not in catalog:
+                out.append(
+                    f"`{path}` 上的 `@RequirePermission(\"{code}\")` 不在权限目录里"
+                    " —— 目录无此码 ⇒ 该端点对所有人恒 403（类级注解同样受本条约束）"
+                )
+
     # 判据 5：对照读数只许缩短（不达上限不红；超上限 ⇒ 红 —— 「沉默放行」的存量不许增长）
     live_unannotated = _control_admin_unannotated(index)
     if live_unannotated > ADMIN_SCOPE_UNANNOTATED_CEILING:
@@ -349,6 +372,31 @@ class TestGuardDiscriminates:
                 e["effective_code"] = None
         problems = guard_problems(_live_sources(), ledger)
         assert any("exempt" in p for p in problems), problems
+
+    def test_class_level_code_outside_catalog_is_red(self):
+        """坏形态 ⑥（issue #7375 段 3 现场）：**类级**注解写了目录里不存在的码。
+
+        `PricingController` 曾写 `@RequirePermission("order:view")` —— 两处种子目录都没有这个码
+        ⇒ 报价与价格本端点对所有人恒 403，而判据 1~4（只裁 AdminRoleController）看不见它。
+        """
+        srcs = _mutate(
+            _live_sources(),
+            "com/migao/admin/controller/PricingController.java",
+            '@RequirePermission("order:list")',
+            '@RequirePermission("order:view")',
+        )
+        problems = guard_problems(srcs)
+        assert any("order:view" in p and "PricingController.java" in p for p in problems), problems
+
+    def test_ghost_code_in_a_comment_is_not_red(self):
+        """对照读数：幽灵码只写在**注释**里 ⇒ 不红（剥注释后扫，防「写个注记就红」）。"""
+        srcs = _mutate(
+            _live_sources(),
+            "com/migao/admin/controller/PricingController.java",
+            '@RequirePermission("order:list")',
+            '// 历史注记：@RequirePermission("ghost:code") 曾被误用\n@RequirePermission("order:list")',
+        )
+        assert not [p for p in guard_problems(srcs) if "ghost:code" in p]
 
     def test_comment_only_change_does_not_fire(self):
         """对照读数：只改散文（注释）⇒ 不红（守卫不被自己的文案喂红）。"""

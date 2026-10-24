@@ -1,7 +1,20 @@
 // @vitest-environment jsdom
-// case_ids: UI-019, UI-030
+// case_ids: UI-019, UI-030, UI-115
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
+
+// issue #7276：订单详情页的**页面码 = order:detail**（判据见 tests/unit/pages/order-detail-permission-gate.test.tsx）
+// ⇒ 本文件渲染的是「有权限的商家」形态，必须给登录态一份 `*` 权限；否则页面走拒绝态，
+// 本文件的全部断言会凭空变红（那不是被测行为）。
+const authMock = vi.hoisted(() => ({
+  state: {
+    user: { id: '1', username: 'tester', name: '测试账号', permissions: ['*'] as string[], roles: [] as string[] },
+  },
+}))
+vi.mock('@/store/auth', () => ({
+  useAuthStore: (selector?: (s: unknown) => unknown) =>
+    typeof selector === 'function' ? selector(authMock.state) : authMock.state,
+}))
 
 /**
  * OrderDetail 发货入口守卫（issue #3889）：
@@ -65,6 +78,8 @@ const baseOrder = {
     },
   ],
   processingItems: [{ name: '打孔', quantity: 2 }],
+  // issue #7079 第 5 包：发货入口判据 = 读面键 `work_order_kind`（后端 OrderShipGuard.needsWork 的同一份）
+  work_order_kind: 'processing',
 }
 
 const po = (status: string) => ({
@@ -86,7 +101,7 @@ describe('OrderDetail 发货入口守卫', () => {
   it('生产中 + 加工单未完成 → 引导文案替代可点发货按钮，且展示「生产中」状态', async () => {
     render(<OrderDetailPage />)
     await waitFor(() => {
-      expect(screen.getByText(/先完成加工单再发货/)).toBeInTheDocument()
+      expect(screen.getByText(/先完成加工单的加工报工，再发货/)).toBeInTheDocument()
     })
     expect(screen.queryByRole('button', { name: /^发货$/ })).not.toBeInTheDocument()
     // issue #3916：producing 订单向导第 2 步显示「生产中」，与 amber chip（#3889）同文案 → 至少 1 处
@@ -99,7 +114,7 @@ describe('OrderDetail 发货入口守卫', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /^发货$/ })).toBeInTheDocument()
     })
-    expect(screen.queryByText(/先完成加工单再发货/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/先完成加工单的加工报工，再发货/)).not.toBeInTheDocument()
   })
 
   it('confirmed 含加工项且无加工单 → 同样引导（后端 countCompleted==0 也会拦）', async () => {
@@ -107,18 +122,67 @@ describe('OrderDetail 发货入口守卫', () => {
     mockGetOrder.mockResolvedValue({ data: { data: { ...baseOrder, status: 'confirmed' } } })
     render(<OrderDetailPage />)
     await waitFor(() => {
-      expect(screen.getByText(/先完成加工单再发货/)).toBeInTheDocument()
+      expect(screen.getByText(/先完成加工单的加工报工，再发货/)).toBeInTheDocument()
     })
     expect(screen.queryByRole('button', { name: /^发货$/ })).not.toBeInTheDocument()
   })
 
   it('无加工项订单 → 发货按钮正常（不因加工单状态而阻断）', async () => {
     mockPODetail.mockRejectedValue(new Error('404'))
-    mockGetOrder.mockResolvedValue({ data: { data: { ...baseOrder, processingItems: [] } } })
+    mockGetOrder.mockResolvedValue({ data: { data: { ...baseOrder, processingItems: [], work_order_kind: null } } })
     render(<OrderDetailPage />)
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /^发货$/ })).toBeInTheDocument()
     })
-    expect(screen.queryByText(/先完成加工单再发货/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/先完成加工单的加工报工，再发货/)).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * issue #7079 第 5 包（UI-115）：订单详情的**发货入口**对卖布单也要有前置提示。
+ *
+ * 改前判据 = `order.processingItems.length > 0` ⇒ 卖布单直接渲染可点的「发货」按钮，
+ * 用户点进去、填完表单、提交时才被后端拦（入口没有任何前置提示）。
+ */
+describe('OrderDetail 发货入口守卫：卖布单（issue #7079 第 5 包）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('UI-115 判据 5（红证）：卖布单 + 无作业单 ⇒ 引导句按型换成「卖布单 / 出库作业单」，发货按钮不可点', async () => {
+    mockGetOrder.mockResolvedValue({
+      data: { data: { ...baseOrder, processingItems: [], work_order_kind: 'outbound' } },
+    })
+    mockPODetail.mockRejectedValue(new Error('404'))
+    render(<OrderDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByText(/该订单是卖布单：先完成出库作业单的裁剪与打包报工，再发货/)).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('button', { name: /^发货$/ })).not.toBeInTheDocument()
+    expect(document.body.textContent ?? '').not.toContain('outbound')
+  })
+
+  it('UI-115 判据 6（红证）：卖布单 + 作业单已完成 ⇒ 发货按钮可点（与后端 countCompleted>0 放行一致）', async () => {
+    mockGetOrder.mockResolvedValue({
+      data: { data: { ...baseOrder, processingItems: [], work_order_kind: 'outbound' } },
+    })
+    mockPODetail.mockResolvedValue({ data: { data: po('completed') } })
+    render(<OrderDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^发货$/ })).toBeInTheDocument()
+    })
+  })
+
+  it('UI-115 判据 7（反向护栏）：无作业的普通单（缺键）⇒ 不出现任何引导句，发货按钮照常', async () => {
+    mockGetOrder.mockResolvedValue({
+      data: { data: { ...baseOrder, processingItems: [], work_order_kind: null } },
+    })
+    mockPODetail.mockRejectedValue(new Error('404'))
+    render(<OrderDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^发货$/ })).toBeInTheDocument()
+    })
+    expect(screen.queryByText(/先完成加工单的加工报工/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/先完成出库作业单的裁剪与打包报工/)).not.toBeInTheDocument()
   })
 })

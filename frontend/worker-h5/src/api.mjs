@@ -364,9 +364,11 @@ export function createApi(opts = {}) {
      *        **只在旧码路径**由 `render.mjs` 的 `legacySelection()` 给出（新码恒 null ⇒ body 只带
      *        token）。它**不**决定工序：工序仍由服务端推断（防呆⑤）。
      * @param {number} [p.qty] 省略 = 服务端取「剩余应做」（A 模式：做完扫一次 = 完工）
+     * @param {string} [p.batchNo] 裁剪批次（issue #7647）：**只有** `batch_required` 为真的屏才传，
+     *        trim 后非空才进请求体；合法性与归属（该批次是否属于本行商品 / SKU）由服务端硬闸（422）。
      * @param {string} [p.clientRequestId] 幂等键（**同一次提交必须复用同一个**）
      */
-    async completeByScan({ token, operationId, qty, qualifiedQty, workType, selection, clientRequestId } = {}) {
+    async completeByScan({ token, operationId, qty, qualifiedQty, workType, batchNo, selection, clientRequestId } = {}) {
       // 🔴 白名单式构造（**不是**把入参展开）：默认**只带 token** —— 调用方硬塞
       // `unit_price` / `factor` / `worker_id` / 顶层 `setId`/`orderItemId` 也进不去请求体。
       // 历史计件单价在**报工那一刻**由服务端固化（§3.6 W6 红线），前端永远不参与定价。
@@ -385,6 +387,9 @@ export function createApi(opts = {}) {
       if (qty !== undefined && qty !== null) body.qty = qty
       if (qualifiedQty !== undefined && qualifiedQty !== null) body.qualified_qty = qualifiedQty
       if (workType) body.work_type = workType
+      // 🔴 裁剪批次（issue #7647）：同样**白名单式**——只有 trim 后非空才进 body。
+      //    非裁剪工序调用方根本不传 ⇒ 请求体与改前**逐字节相同**；批次号是否合法 / 属于本行由服务端硬闸。
+      if (typeof batchNo === 'string' && batchNo.trim()) body.batch_no = batchNo.trim()
       const data = await request('/api/worker/production/scan/complete', {
         method: 'POST',
         // 刻意**不含** worker_id / worker_name：身份由 X-Worker-Session-Id 解（设计 §3.1）
@@ -403,7 +408,53 @@ export function createApi(opts = {}) {
         setProgress: data.set_progress,
         setCompleted: data.set_completed,
         nextOperation: data.next_operation,
+        // 裁剪批次回执（issue #7647）：三键**可能缺键**（老后端 / 非裁剪工序）⇒ 原样透出，
+        // 由渲染层按「缺键就缺」处理（绝不把 `undefined` / `NaN` 印上屏）。
+        batchNo: data.batch_no,
+        batchRemaining: data.batch_remaining,
+        batchShortageMeters: data.batch_shortage_meters,
+        // 下一屏的批次判据（issue #7647）：服务端已经用**同一次重解析**算好（报「裁剪」后下一道通常是
+        // 「打包」⇒ 不需要批次；报废不推进进度 ⇒ 下一道仍是「裁剪」⇒ 仍需要）。页面据此渲染下一屏，
+        // **不沿用上一屏的旧值**（那会让打包屏多出输入框、或让裁剪屏填不了批次）。缺键 ⇒ false/null/[]。
+        nextBatchRequired: data.next_batch_required === true,
+        nextBatchNo: typeof data.next_batch_no === 'string' ? data.next_batch_no : null,
+        nextBatchCandidates: Array.isArray(data.next_batch_candidates) ? data.next_batch_candidates : [],
       }
+    },
+
+    // ════════════════════════════════════════════════════════════════════════════════
+    // 质检（issue #7162）：扫水洗唛后读「这一件」的最新判定 / 录判定（生成质检单）。
+    //
+    // 🔴 走 `/api/worker/quality/**`（**不是** `/api/admin/quality-inspections`）：
+    //    工人 session 恒无 RBAC 权限码、`/api/admin/**` 对 worker 一律 403；
+    //    服务端把「工人档案里有 inspect 页」当写准入（见 WorkerQualityController）。
+    // 🔴 身份只由 `X-Worker-Session-Id` 解：body 里不带 worker_id / inspector_id。
+
+    /**
+     * 这一件成品帘的最新质检判定（无记录 ⇒ `latest = null` = 「未检」，**不是**「合格」）。
+     *
+     * @param {string} orderItemId 成品帘（`order_items.id`）—— 水洗唛扫码结果里的 `position.order_item_id`
+     */
+    async qualityLatest(orderItemId) {
+      const q = new URLSearchParams({ order_item_id: orderItemId })
+      const data = await request(`/api/worker/quality/latest?${q.toString()}`)
+      return { orderItemId: data?.order_item_id ?? orderItemId, latest: data?.latest ?? null }
+    },
+
+    /**
+     * 录一条质检判定 ⇒ 生成一张**质检单**（`POST /api/worker/quality/inspections`）。
+     *
+     * 判定 ≠ 合格时服务端要求原因（缺 ⇒ 422，零写入）；前端先拦一次只为不白跑网络。
+     */
+    async createQuality({ orderItemId, result, reason } = {}) {
+      if (!session?.sessionId) {
+        const err = new Error('尚未登录工人身份，请先用工号 + PIN 登录')
+        err.code = SESSION_EXPIRED
+        throw err
+      }
+      const body = { order_item_id: orderItemId, result }
+      if (reason) body.reason = reason
+      return request('/api/worker/quality/inspections', { method: 'POST', body })
     },
 
     // ════════════════════════════════════════════════════════════════════════════════

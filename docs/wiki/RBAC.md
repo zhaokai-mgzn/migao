@@ -96,6 +96,25 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 | AI Tool | `required_permissions`（与 admin-api 权限目录**同源**）+ 工具内按 action 二次校验（如 `employee_manage`：查询需 employee:list，写操作需 employee:create）。**#4106 铺开 + #5246 收口**：`app/tools/*.py` 里每个 B 端可达工具都声明了码（纯本地工具走显式白名单），且与端点生效码/菜单节点码/岗位矩阵**四方对账** —— 判据 = `tests/unit_ci_workflows/test_agent_permission_parity.py`（九条，各带注入式红证） |
 | 前端 | `lib/permission.ts usePermission()`：菜单过滤 + `(dashboard)/layout.tsx` 路由守卫 + 员工页按钮级权限 |
 
+### 「订单详情」码（`order:detail`）自 issue #7276 起真正生效
+
+改前它是**死码**：在权限树里是个可勾选的动作节点、还进了各岗位默认权限种子，但 admin-api
+**没有任何端点消费它**、前端也没有任何 `has('order:detail')` ⇒ **取消勾选它，后台一个字都不变**
+（用户 2026-10-18 现场：「虽然页面上提示我没权限操作，但是我仍然能访问，RBAC权限没控制住？」）。
+当时它只以**散文**形式登记在 `test_agent_permission_parity.py` 的「权限码零消费」条目里，
+去向单 #5236 关闭后无人承接。
+
+现按人类裁定「让它真正生效」：`GET /api/admin/orders/{id}` 与同页发货读面
+`GET /api/admin/orders/{id}/shipments` 的生效码改挂 `order:detail`（**列表**仍是 `order:list`）；
+订单详情页无该码 ⇒ 渲染拒绝态且**不发任何读请求**；页内加工单块（端点码 `production:view`）
+无该码时不渲染。**零回归**：种子岗位里持 `order:list` 的四个（客服/运营/销售/财务）本就都持
+`order:detail`；只有「只勾订单列表、不勾订单详情」的自定义岗位会打不开详情，且**不做存量回填**。
+类级元守卫 = `tests/unit_ci_workflows/test_rbac_derived_pages.py` 的
+`test_action_node_codes_are_consumed_by_at_least_one_endpoint`（动作码节点的码必须在 admin-api
+至少命中一个 `@RequirePermission`，否则具名判红；豁免台账 `CODE_WITHOUT_ENFORCEMENT` 只许缩短，**issue #7282 起现取 = 0**）。
+
+> **同批普查的结论**（2026-10-18）：全目录 33 个可授予码里只有两个「可授予但服务端零消费」——`order:detail`（本单**接线**）与 `product:manage`（issue #7282 **删码**，用户裁定「可以删」）。`agent:chat` 一度被误判成第三个，复核发现它是 `AdminGate` 的**手写门**（黄金策唤出入口，不看 `@RequirePermission`）⇒ 已登记进 `EXPLICIT_GATES` 并做**活体校验**（门删了登记还在 ⇒ 红）。
+
 ## `/api/admin/**` 放行策略现状（issue #4727 实测，2026-09-20）
 
 `SecurityConfig.securityFilterChain()` 把 `/api/admin/**` 交给 `adminApiAuthorizationManager`（**唯一门禁**），
@@ -167,7 +186,7 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 > `AgentProductionController` 的三个 GET、`ProcessingOrderSetController` 三个读端点、
 > `ProcessingItemController` 两个 GET、`ProductionController` 的 `/operations-catalog`、`/routings`
 > 与 **`/piecework/summary`**（最后一条由 issue #5675 补齐 —— 它是「计件工资」页的**第一屏读端点**，
-> #5291 漏改了它）、`CraftCalcConfigController` 的 GET），侧边栏「生产看板 / 工艺配置 / 计件工资 /
+> #5291 漏改了它）、`CraftCalcConfigController` 的 GET），侧边栏「作业看板 / 工艺配置 / 计件工资 /
 > 加工项管理」四个节点同码；
 > 写面仍是 `processing:manage` / `processing:update`。现存唯一仍用 `processing:view` 的端点是
 > `ProductionPoolController` 的两个读端点（无 Agent 工具调用，已登记为残留）。**方向只收窄**：
@@ -309,7 +328,7 @@ ai-agent 调用 admin-api **始终**带 `X-Service-Token` + `X-Tenant-Id` + `X-U
 
 ## 菜单过滤
 
-前端侧边栏（#2969 建立七大组；**#5271 按业务动线重排**：工作台 / 智能客服 / **商品与加工项** / **交易管理**（订单列表+售后工单+客户列表+财务对账）/ 生产管理 / **仓储与物料**（入库单+余料台账+省料看板）/ 组织管理 / 通知中心（独立项）—— 组 key / 组名 / 组顺序在 `frontend/admin-web/src/config/menu.ts`、`MenuController.MENU_TREE`、`AuthService.buildMenusByPermissions` **三处逐值同构**，判据见 `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py`）根据 `permissions` 动态渲染（`Sidebar.tsx`），
+前端侧边栏（#2969 建立七大组；**#5271 按业务动线重排**；**2026-10-17 issue #7087 用户裁定**：撤销「工作台」组 —— 组内「经营看板」升为**最前席位一级项**（渲染在所有分组之前、也是登录落点）、「每日简报」菜单项删除 ⇒ 现为 **5 组**：客户服务 / 交易管理 / 生产管理 / 仓储与物料 / 组织管理，外加三个一级项（经营看板 / 商品管理 / 企业基础设置）与尾部独立项「通知中心」—— 组 key / 组名 / 组顺序在 `frontend/admin-web/src/config/menu.ts`、`MenuController.MENU_TREE`、`AuthService.buildMenusByPermissions` **三处逐值同构**，判据见 `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py`）根据 `permissions` 动态渲染（`Sidebar.tsx`），
 `admin`/`super_admin`/`*` 显示全部菜单；
 `/api/auth/me` 的 `buildMenusByPermissions` 与侧边栏口径一致。
 

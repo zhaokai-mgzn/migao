@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Bell, Check, CheckCheck, Inbox } from 'lucide-react'
+import { Bell, Check, Inbox } from 'lucide-react'
 import { notificationApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { Notification } from '@/types'
@@ -30,6 +30,13 @@ function formatRelativeTime(dateStr: string): string {
 }
 
 const POLL_INTERVAL = 30_000
+
+/** 严重级圆点（#7524）：urgent 红 / warn 琥珀 / info 主色；老数据为空按 info */
+const SEVERITY_DOT: Record<string, string> = {
+  info: 'bg-primary-500',
+  warn: 'bg-amber-500',
+  urgent: 'bg-red-500',
+}
 
 export default function NotificationBell() {
   const router = useRouter()
@@ -109,6 +116,26 @@ export default function NotificationBell() {
     }
   }, [])
 
+  // 点开通知（#7524）：先标已读，再跳到对应单据；
+  // 没有 targetPath 的通知**保持改前行为**（只标已读，不跳转 —— 不假装可点）。
+  const handleOpenNotification = useCallback(async (notification: Notification) => {
+    if (notification.status !== 'read') {
+      try {
+        await notificationApi.markAsRead(notification.id)
+        setNotifications(prev =>
+          prev.map(n => n.id === notification.id ? { ...n, status: 'read', readAt: new Date().toISOString() } : n)
+        )
+        setUnreadCount(prev => Math.max(0, prev - 1))
+      } catch (e) {
+        // 跳转优先：标已读失败不阻塞打开单据
+      }
+    }
+    if (notification.targetPath) {
+      setOpen(false)
+      router.push(notification.targetPath)
+    }
+  }, [router])
+
   // 全部标记已读
   const handleMarkAllAsRead = useCallback(async () => {
     try {
@@ -165,7 +192,8 @@ export default function NotificationBell() {
                 onClick={handleMarkAllAsRead}
                 className="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 transition-colors"
               >
-                <CheckCheck className="w-3.5 h-3.5" />
+                {/* issue #7180：与通知中心页同一个字形收口（单勾；14px 下双勾更糊） */}
+                <Check className="w-3.5 h-3.5" aria-hidden />
                 全部已读
               </button>
             )}
@@ -187,7 +215,8 @@ export default function NotificationBell() {
               notifications.map(notification => (
                 <button
                   key={notification.id}
-                  onClick={() => handleMarkAsRead(notification)}
+                  data-testid="notification-bell-item"
+                  onClick={() => handleOpenNotification(notification)}
                   className={cn(
                     'w-full text-left px-4 py-3 border-b border-neutral-100 last:border-b-0',
                     'hover:bg-neutral-50 transition-colors',
@@ -200,7 +229,9 @@ export default function NotificationBell() {
                       <div
                         className={cn(
                           'w-2 h-2 rounded-full',
-                          notification.status !== 'read' ? 'bg-primary-500' : 'bg-transparent'
+                          notification.status !== 'read'
+                            ? (SEVERITY_DOT[notification.severity || 'info'] || 'bg-primary-500')
+                            : 'bg-transparent'
                         )}
                       />
                     </div>

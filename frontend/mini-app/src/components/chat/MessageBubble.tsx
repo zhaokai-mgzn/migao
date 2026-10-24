@@ -1,5 +1,5 @@
 import { useMemo, useCallback } from 'react'
-import { View, Text, Image } from '@tarojs/components'
+import { View, Text, Image, ScrollView } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import type { Message, CardData, InteractiveData } from '../../types'
 import ProductCard from '../cards/ProductCard'
@@ -12,7 +12,12 @@ import ProductionProgressCard from '../cards/ProductionProgressCard'
 import ConfirmCard from '../cards/ConfirmCard'
 import ChoiceCard from '../cards/ChoiceCard'
 import FormCard from '../cards/FormCard'
-import { parseRichText } from '../../utils/richText'
+import {
+  parseRichContent,
+  type RichSegment,
+  type RichTable,
+  type TableAlign,
+} from '../../utils/richText'
 import './MessageBubble.scss'
 
 interface MessageBubbleProps {
@@ -187,6 +192,58 @@ function renderInteractive(
   }
 }
 
+/** 行内片段渲染（普通段落与表格单元格共用；表格单元格不要 `pre-wrap`） */
+function renderSegments(segments: RichSegment[], textClass = 'message-bubble__text') {
+  return segments.map((seg, si) =>
+    seg.bold ? (
+      <Text key={si} className={`${textClass} message-bubble__text-strong`}>
+        {seg.text}
+      </Text>
+    ) : (
+      <Text key={si} className={textClass}>
+        {seg.text}
+      </Text>
+    ),
+  )
+}
+
+/**
+ * GFM 表格渲染（issue #7235）：与 B 端同口径 —— 横向可滑、表头浅底、单元格细线。
+ */
+function RichTableBlock({ table }: { table: RichTable }) {
+  const cellStyle = (align: TableAlign) => (align ? { textAlign: align } : undefined)
+  return (
+    <ScrollView className='message-bubble__table-scroll' scrollX>
+      <View className='message-bubble__table'>
+        <View className='message-bubble__table-row message-bubble__table-row--header'>
+          {table.header.map((cell, ci) => (
+            <View
+              key={ci}
+              className='message-bubble__table-cell message-bubble__table-cell--header'
+              style={cellStyle(table.align[ci])}
+            >
+              {renderSegments(cell, 'message-bubble__table-text')}
+            </View>
+          ))}
+        </View>
+        {table.rows.map((row, ri) => (
+          <View key={ri} className='message-bubble__table-row'>
+            {row.map((cell, ci) => (
+              <View
+                key={ci}
+                className='message-bubble__table-cell'
+                style={cellStyle(table.align[ci])}
+              >
+                {renderSegments(cell, 'message-bubble__table-text')}
+              </View>
+            ))}
+          </View>
+        ))}
+      </View>
+    </ScrollView>
+  )
+}
+
 export default function MessageBubble({ message, onInteract }: MessageBubbleProps) {
   const {
     role, content, isStreaming, cards, cardData,
@@ -205,8 +262,10 @@ export default function MessageBubble({ message, onInteract }: MessageBubbleProp
     [content],
   )
 
-  // UI-042：富文本按行解析（**粗体** / - 列表），流式安全（未闭合 ** 原样保留）
-  const richLines = useMemo(() => parseRichText(cleanContent), [cleanContent])
+  // UI-042 / #7235：富文本按**块**解析（**粗体** / - 列表 / GFM 表格），流式安全
+  // （未闭合 ** 与「分隔行还没到的表格」都原样保留，不闪出解析产物）
+  const blocks = useMemo(() => parseRichContent(cleanContent), [cleanContent])
+  const hasTable = useMemo(() => blocks.some((block) => block.kind === 'table'), [blocks])
 
   const handlePreviewImage = useCallback((current: string) => {
     if (images?.length) {
@@ -218,7 +277,8 @@ export default function MessageBubble({ message, onInteract }: MessageBubbleProp
 
   return (
     <View className={bubbleClass}>
-      <View className='message-bubble__wrapper'>
+      {/* 有表格的气泡放宽到 94%（78% 下 3 列必然挤成一列）；纯文本气泡维持原宽 */}
+      <View className={`message-bubble__wrapper${hasTable ? ' message-bubble__wrapper--wide' : ''}`}>
         {/* GB-02（GB/T 47746-2026, issue #2780）：消息来源标识——AI 助手 / 人工客服
             AI 标识仅在文本回复上显示（纯卡片/纯工具消息不显示，避免干扰卡片语义）；
             人工客服消息显式打标（转人工后由 chatStore 轮询映射写入 source='human'） */}
@@ -242,24 +302,20 @@ export default function MessageBubble({ message, onInteract }: MessageBubbleProp
         {/* 文本内容（纯图消息 content 为空时不渲染空文本区；tool_call 有 content 时也显示） */}
         {content && (
           <View className='message-bubble__content'>
-            {richLines.map((line, li) => (
-              <View
-                key={li}
-                className={`message-bubble__line${line.bullet ? ' message-bubble__line--bullet' : ''}${line.segments.length === 1 && line.segments[0].text === '' ? ' message-bubble__line--empty' : ''}`}
-              >
-                {line.segments.map((seg, si) =>
-                  seg.bold ? (
-                    <Text key={si} className='message-bubble__text message-bubble__text-strong'>
-                      {seg.text}
-                    </Text>
-                  ) : (
-                    <Text key={si} className='message-bubble__text'>
-                      {seg.text}
-                    </Text>
-                  ),
-                )}
-              </View>
-            ))}
+            {blocks.map((block, bi) =>
+              block.kind === 'table' ? (
+                <RichTableBlock key={`table-${bi}`} table={block.table} />
+              ) : (
+                block.lines.map((line, li) => (
+                  <View
+                    key={`line-${bi}-${li}`}
+                    className={`message-bubble__line${line.bullet ? ' message-bubble__line--bullet' : ''}${line.segments.length === 1 && line.segments[0].text === '' ? ' message-bubble__line--empty' : ''}`}
+                  >
+                    {renderSegments(line.segments)}
+                  </View>
+                ))
+              ),
+            )}
             {isStreaming && <Text className='message-bubble__cursor'>|</Text>}
           </View>
         )}

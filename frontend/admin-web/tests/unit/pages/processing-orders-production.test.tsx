@@ -643,18 +643,28 @@ describe('加工单生产明细页', () => {
     expect(screen.getByTestId('production-print-button')).toBeInTheDocument()
   })
 
-  it('#6439 免驱动直连入口接线在：与「打印任务卡」并存；无网页蓝牙时动手前就说清并指向系统打印兜底', async () => {
+  it('#6439 + #7288 免驱动直连入口**搬进打印预览页脚**（页面上不再常驻）；无网页蓝牙时动手前就说清并指向系统打印兜底', async () => {
     render(<ProductionDetailPage />)
     await waitFor(() => expect(screen.getByTestId('task-card-qr')).toBeInTheDocument())
 
-    // ① 入口真挂在页面上（**接线判据**：组件单测绿 ≠ 页面接上了 —— 见 migao-dev-flow §28.2）
-    expect(screen.getByTestId('production-direct-print-button')).toBeInTheDocument()
+    // ① **搬家判据**：页面上不再常驻直连入口（改前它就在 header 下方）——
+    //    红证：把 `<DirectLabelPrint>` 挪回页面 ⇒ 本条必红。
+    expect(screen.queryByTestId('production-direct-print-button')).toBeNull()
     // ② 浏览器打印那条路**仍在**（两条通道并存，不是替换）
     expect(screen.getByTestId('production-print-button')).toBeInTheDocument()
-    // ③ jsdom 里没有 `navigator.bluetooth` ⇒ 能力探测判不可用 ⇒ 按钮禁用 + 文案给系统打印兜底。
+
+    // ③ 入口真接在**预览页脚**里（接线判据：组件单测绿 ≠ 页面接上了 —— 见 migao-dev-flow §28.2）
+    await userEvent.click(screen.getByTestId('production-print-button'))
+    const dialog = await screen.findByRole('dialog', { name: '水洗唛打印预览' })
+    const direct = within(dialog).getByTestId('production-direct-print-button')
+    // 用户点名的文案是「蓝牙无线打印」；且落在**页脚动作行**里（右下角 —— 与「复制截图 / 打印」同一行）
+    expect(direct).toHaveTextContent('蓝牙无线打印')
+    expect(within(dialog).getByTestId('print-preview-actions').contains(direct)).toBe(true)
+
+    // ④ jsdom 里没有 `navigator.bluetooth` ⇒ 能力探测判不可用 ⇒ 按钮禁用 + 文案给系统打印兜底。
     //    红证：把探测结果恒置 ok（不看环境）⇒ 本条的 disabled 与 hint 两条断言必红。
-    expect(screen.getByTestId('production-direct-print-button')).toBeDisabled()
-    expect(screen.getByTestId('direct-print-hint')).toHaveTextContent('打印任务卡')
+    expect(direct).toBeDisabled()
+    expect(within(dialog).getByTestId('direct-print-hint')).toHaveTextContent('系统打印')
   })
 
   it('#4240 无二维码（qr_token 为空）：不渲染撤销入口（无可撤销对象）', async () => {

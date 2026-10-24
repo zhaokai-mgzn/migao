@@ -1,19 +1,23 @@
 // case_ids: PP-011
 //
-// PP-011（issue #6439）：生产明细页的「直连打印机」入口（**与浏览器打印并存**）。
+// PP-011（issue #6439 建入口 → **issue #7288 搬进「水洗唛 · 打印预览」页脚并改名「蓝牙无线打印」**）：
+// 免驱动直连通道的入口组件（**与系统打印并存**）。
 //
 // 用户 2026-10-06：「不要做成打印机定制功能 … 只要功能支持能连接上不同类型的打印机即可」
 // 「需要考虑用户有通过 window 电脑安装打印机驱动或者蓝牙连接，或者 usb 连接各种情况」。
+// 用户 2026-10-18（#7288）：「把这个直连打印机这个功能不如做到水洗唛打印预览中，在右下角加个按钮叫蓝牙无线打印」。
 //
 // 逐条判据（都能判红）：
 // ① **环境不支持 ⇒ 动手前就说清**（按钮禁用 + 可行动文案），不是点下去才失败
-//    —— 文案里必须含**系统打印兜底路径**（装驱动的机器照样能打，这才叫「不绑定机型」）；
+//    —— 文案里必须含**系统打印兜底路径**，且指的是页脚里那个「打印」（#7288 后旧名「打印任务卡」已不适用）；
 // ② **成功路径的调用序**：留痕 → 加载 provider → 连接 → 渲染位图 → 送印（顺序即语义）；
 // ③ 取消选设备（`user-cancelled`）⇒ 状态行给**取消**的文案（不是「连不上」），且**不送印**；
 // ④ 打印失败（`print-failed`）⇒ 状态行给**打不出**的文案（不是「连不上」）—— 两类出口完全不同；
 // ⑤ 直连这条**不得碰** `window.print()`（两条通道并存、互不干扰；
 //    浏览器打印那条路由 `lib/print-doc.ts` 的 `usePrintDoc` 单点负责，守卫在
-//    `tests/unit_ci_workflows/test_print_single_doc_on_paper.py`）。
+//    `tests/unit_ci_workflows/test_print_single_doc_on_paper.py`）；
+// ⑥ **页脚形态**：按钮文案 = 「蓝牙无线打印」，说明是一行（与按钮并排，不摊开成一段）——
+//    页脚动作行只有一行高，长段落会把「打印」挤出视野（#7288 的搬家前提）。
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -85,9 +89,14 @@ describe('DirectLabelPrint — 环境不支持时动手前说清（issue #6439 �
       env: { secureContext: true, hasBluetoothApi: false, isIos: false, isWechat: false },
       loadProvider: vi.fn(),
     })
-    expect(screen.getByTestId('production-direct-print-button')).toBeDisabled()
+    const button = screen.getByTestId('production-direct-print-button')
+    expect(button).toBeDisabled()
+    // #7288：按钮文案 = 用户点名的「蓝牙无线打印」（改回旧名「直连打印机打印」⇒ 本行必红）
+    expect(button).toHaveTextContent('蓝牙无线打印')
     const hint = screen.getByTestId('direct-print-hint')
-    expect(hint.textContent).toContain('打印任务卡')
+    // #7288：兜底路径指的是页脚里那个「打印」——旧措辞「打印任务卡」在弹层里点不到
+    expect(hint.textContent).toContain('系统打印')
+    expect(hint.textContent).not.toContain('打印任务卡')
   })
 
   it('环境可用 ⇒ 按钮可用，不显示失败文案（不制造噪音）', () => {
@@ -104,6 +113,8 @@ describe('DirectLabelPrint — 环境不支持时动手前说清（issue #6439 �
     const ready = screen.getByTestId('direct-print-ready')
     expect(ready.textContent).toContain('免驱动')
     expect(ready.textContent).not.toContain('*')
+    // ⑥ 页脚形态：这行说明与按钮**并排**在动作行里 ⇒ 必须是一行短句（改回改前那段 40+ 字长说明 ⇒ 必红）
+    expect(ready.textContent!.length).toBeLessThanOrEqual(32)
   })
 })
 

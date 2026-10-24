@@ -18,7 +18,8 @@
 3. **逐条 before → after 的字段投影只此一处**：预览行由 `app/tools/confirm_value.py`
    派生（`confirm_card_fields`），**不新立第二份字段投影**（#5303 的同一套单一源）。
 4. **阈值**：`N > 50` ⇒ 拒绝并提示分批（不做后台任务）；`N == 50` 放行（边界双侧）。
-5. **batchType 白名单只有两个**：`product_price` / `product_status`（通用批量不做）。
+5. **batchType 白名单只有两个**：`product_price` / `inventory_stock`（通用批量不做；
+   上下架按 2026-10-16 裁定单件/批量都 ❌，#7334 裁定 A 移除 `product_status`）。
 6. **撤销入口可用**：`revert` 逐条还原 `old_value`，且执行成功的话术里就告诉用户「可以撤销」。
 7. **部分失败逐条报告，不做整体回滚**（回滚会掩盖真问题）。
 8. 权限码与逐条写**同码**（`product:create`，= `product_update` 的写码）。
@@ -30,7 +31,6 @@ from app.tools import confirm_value
 from app.tools.base import ToolContext
 from app.tools.product_batch_update import (
     BATCH_TYPE_PRICE,
-    BATCH_TYPE_STATUS,
     BATCH_TYPE_STOCK,
     BATCH_TYPES,
     MAX_BATCH_ITEMS,
@@ -41,10 +41,6 @@ from app.tools.product_batch_update import (
 PRICE_ITEMS = [
     {"resourceId": "prod_eval_blackout", "field": "price", "oldValue": 168, "newValue": 155},
     {"resourceId": "prod_eval_dark_green", "field": "price", "oldValue": 128, "newValue": 155},
-]
-STATUS_ITEMS = [
-    {"resourceId": "prod_eval_blackout", "field": "status", "oldValue": "on_sale", "newValue": "off_sale"},
-    {"resourceId": "prod_eval_dark_green", "field": "status", "oldValue": "on_sale", "newValue": "off_sale"},
 ]
 #: 第三个具名批量（issue #5950）：库存调整 —— field 是 `stock`（与逐条写同一个字段词）。
 STOCK_ITEMS = [
@@ -142,15 +138,19 @@ class TestPreview:
         assert result.data["preview"][0]["fields"] == expected
 
     @pytest.mark.asyncio
-    async def test_status_batch_shows_before_and_after_status(self, tool):
-        """`product_status` 的预览同样成对（改前状态 → 改后状态），口径来自同一模块。"""
-        client = _client(_ok({"batchId": "b2", "itemCount": 2, "status": "preview"}))
+    async def test_status_batch_type_is_rejected(self, tool):
+        """上下架按裁定 A 不做：`product_status` 必须被判 `batch_type_unsupported` 且不发请求。"""
+        client = _client(_ok({"batchId": "b2"}))
+        items = [{"resourceId": "p1", "field": "status",
+                  "oldValue": "on_sale", "newValue": "off_sale"}]
         with patch("app.tools.product_batch_update.get_admin_api_client", return_value=client):
             result = await tool.execute(_ctx(), action="preview",
-                                        batch_type=BATCH_TYPE_STATUS, items=STATUS_ITEMS)
-        fields = result.data["preview"][0]["fields"]
-        assert [f["label"] for f in fields] == ["商品ID", "改前状态", "改后状态"]
-        assert [f["value"] for f in fields] == ["prod_eval_blackout", "on_sale", "off_sale"]
+                                        batch_type="product_status", items=items)
+        assert result.success is False
+        assert result.error == "batch_type_unsupported"
+        assert "product_status" not in (result.suggestion or "")
+        assert "上下架" in (result.suggestion or "") or "上下架" in (result.message or "")
+        client.post.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_preview_message_asks_for_confirm_card(self, tool):
@@ -176,7 +176,7 @@ class TestPreview:
 class TestInventoryStockBatch:
     @pytest.mark.asyncio
     async def test_preview_posts_inventory_stock_batch_type(self, tool):
-        """库存批量与另两种**走同一端点、同一契约**（payload 的 field 归一成 `stock`）。"""
+        """库存批量与改价批量**走同一端点、同一契约**（payload 的 field 归一成 `stock`）。"""
         client = _client(_ok({"batchId": "b-stock", "itemCount": 2, "status": "preview"}))
         with patch("app.tools.product_batch_update.get_admin_api_client", return_value=client):
             result = await tool.execute(_ctx(), action="preview",
@@ -274,19 +274,19 @@ class TestThreshold:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 三、batchType 白名单（三个）+ 入参 fail-closed
+# 三、batchType 白名单（两个）+ 入参 fail-closed
 # ══════════════════════════════════════════════════════════════════════════════
 
 
 class TestWhitelistAndInputGuards:
-    def test_only_three_batch_types_are_declared(self, tool):
-        """白名单只有 `product_price` / `product_status` / `inventory_stock`（通用批量有意不做）。
+    def test_only_two_batch_types_are_declared(self, tool):
+        """白名单只有 `product_price` / `inventory_stock`（通用批量有意不做）。
 
-        （原断言名 `test_only_two_batch_types_are_declared` + 期望两条 —— #5950 扩面后更新；
+        （#5950 扩面后曾三条；#7334 裁定 A 移除 `product_status` ⇒ 两条。
         判据形状不变：**闭集**相等，多一个 / 少一个都红。）
         """
         declared = set(tool.parameters["properties"]["batch_type"]["enum"])
-        assert declared == {BATCH_TYPE_PRICE, BATCH_TYPE_STATUS, BATCH_TYPE_STOCK}
+        assert declared == {BATCH_TYPE_PRICE, BATCH_TYPE_STOCK}
 
     def test_enums_are_literals_for_the_static_action_catalog(self, tool):
         """🔴 action / batch_type 的 enum 必须与常量一致**且是字面量列表**。
@@ -299,7 +299,7 @@ class TestWhitelistAndInputGuards:
         props = tool.parameters["properties"]
         assert props["action"]["enum"] == ["preview", "execute", "revert"]
         assert set(props["action"]["enum"]) == set(VALID_ACTIONS)
-        assert props["batch_type"]["enum"] == ["product_price", "product_status", "inventory_stock"]
+        assert props["batch_type"]["enum"] == ["product_price", "inventory_stock"]
         assert set(props["batch_type"]["enum"]) == set(BATCH_TYPES)
 
     @pytest.mark.asyncio
@@ -310,8 +310,8 @@ class TestWhitelistAndInputGuards:
                                         items=PRICE_ITEMS)
         assert result.success is False
         assert result.error == "batch_type_unsupported"
-        assert BATCH_TYPE_PRICE in result.suggestion and BATCH_TYPE_STATUS in result.suggestion
-        assert BATCH_TYPE_STOCK in result.suggestion
+        assert BATCH_TYPE_PRICE in result.suggestion and BATCH_TYPE_STOCK in result.suggestion
+        assert "product_status" not in result.suggestion
         client.post.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -337,17 +337,6 @@ class TestWhitelistAndInputGuards:
         client.post.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_status_item_without_old_value_is_rejected(self, tool):
-        """`product_status` 同样必须带改前状态（撤销依据与预览的另一半，不是价格专属）。"""
-        client = _client(_ok({"batchId": "b1"}))
-        items = [{"resourceId": "p1", "field": "status", "newValue": "off_sale"}]
-        with patch("app.tools.product_batch_update.get_admin_api_client", return_value=client):
-            result = await tool.execute(_ctx(), action="preview",
-                                        batch_type=BATCH_TYPE_STATUS, items=items)
-        assert result.success is False and result.error == "batch_preview_required"
-        client.post.assert_not_awaited()
-
-    @pytest.mark.asyncio
     async def test_item_missing_new_value_is_rejected(self, tool):
         client = _client(_ok({"batchId": "b1"}))
         items = [{"resourceId": "p1", "field": "price", "oldValue": 168}]
@@ -361,10 +350,12 @@ class TestWhitelistAndInputGuards:
     @pytest.mark.asyncio
     async def test_item_field_must_match_batch_type(self, tool):
         """改价批次里塞 status 字段 = 类别与字段错配 ⇒ 拒绝（不让服务端去猜）。"""
+        status_items = [{"resourceId": "p1", "field": "status",
+                         "oldValue": "on_sale", "newValue": "off_sale"}]
         client = _client(_ok({"batchId": "b1"}))
         with patch("app.tools.product_batch_update.get_admin_api_client", return_value=client):
             result = await tool.execute(_ctx(), action="preview", batch_type=BATCH_TYPE_PRICE,
-                                        items=STATUS_ITEMS)
+                                        items=status_items)
         assert result.success is False and result.error == "batch_field_mismatch"
         client.post.assert_not_awaited()
 
@@ -573,6 +564,14 @@ class TestPermissionAndAnnotations:
         assert "50" in d
         assert "撤销" in d
 
+    def test_description_does_not_advertise_status(self, tool):
+        """裁定 A：描述不得再把「批量下架」当触发词 / 不得出现状态取值（工具面也不接受）。"""
+        d = tool.description
+        assert "这批全部下架" not in d
+        assert "product_status" not in d
+        assert "on_sale" not in d and "off_sale" not in d
+        assert "上下架" in d  # 只允许作为「不在能力内」的显式拒绝出现
+
 
 class TestWiring:
     def test_registered_and_exported(self):
@@ -605,6 +604,7 @@ class TestWiring:
         assert "product_batch_update" in PRODUCT_SYSTEM_PROMPT
         assert "multiSelect" in PRODUCT_SYSTEM_PROMPT
         assert "product_price" in PRODUCT_SYSTEM_PROMPT
-        assert "product_status" in PRODUCT_SYSTEM_PROMPT
+        assert "product_status" not in PRODUCT_SYSTEM_PROMPT
+        assert "上下架" in PRODUCT_SYSTEM_PROMPT
         assert "撤销" in PRODUCT_SYSTEM_PROMPT
         assert "50" in PRODUCT_SYSTEM_PROMPT

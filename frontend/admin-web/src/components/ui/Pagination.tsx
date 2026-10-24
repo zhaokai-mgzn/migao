@@ -1,6 +1,7 @@
 'use client'
 
 import { cn } from '@/lib/utils'
+import { SELECT_CHEVRON } from './Select'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import Button from './Button'
 
@@ -85,7 +86,11 @@ const Pagination = ({
               aria-label="每页条数"
               value={pageSize}
               onChange={(e) => onPageSizeChange(Number(e.target.value))}
-              className="h-8 px-2 text-sm border border-neutral-300 rounded focus:outline-none focus:border-primary-500"
+              className={cn(
+                'h-8 pl-2 pr-7 text-sm border border-neutral-300 rounded bg-white appearance-none',
+                'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15',
+                SELECT_CHEVRON
+              )}
             >
               {pageSizeOptions.map((size) => (
                 <option key={size} value={size}>

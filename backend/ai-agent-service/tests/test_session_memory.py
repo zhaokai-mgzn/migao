@@ -8,8 +8,11 @@ get_session, delete_session 等
 
 import pytest
 import json
+from types import SimpleNamespace
 from unittest.mock import patch, AsyncMock, MagicMock, PropertyMock
 from datetime import datetime, timezone
+
+from sqlalchemy.exc import IntegrityError
 
 from app.memory.session_memory import SessionMemory
 
@@ -105,6 +108,19 @@ class TestCreateSession:
                 customer_id="user_001",
             )
 
+        mock_db.rollback.assert_called_once()
+
+    async def test_create_session_logs_tenant_fk_constraint(self, memory, mock_db):
+        """#7340：建会话的外键违例必须把约束名写进日志（不再只剩 500）"""
+        orig = SimpleNamespace(constraint_name="sessions_tenant_id_fkey", sqlstate="23503")
+        mock_db.execute.side_effect = IntegrityError("INSERT INTO sessions ...", {}, orig)
+
+        with patch("app.memory.session_memory.logger") as logger:
+            with pytest.raises(IntegrityError):
+                await memory.create_session(tenant_id=25, customer_id="user_001")
+            logged = " ".join(str(c) for c in logger.error.call_args_list)
+            assert "sessions_tenant_id_fkey" in logged
+            assert "23503" in logged
         mock_db.rollback.assert_called_once()
 
 

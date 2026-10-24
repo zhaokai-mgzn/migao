@@ -31,6 +31,23 @@ mkdirSync(join(OUT, 'screenshots'), { recursive: true })
 
 const results = []
 const failReasons = new Map()
+// 🔴 整轮预算到点后**必须停止开新旅程**（issue #6790 看门狗的同族缺口，2026-10-24 实测）：
+//    旧形态 `runAll` 在预算到点后仍在后台继续跑，而 `main()` 已往下走（补记 skip → SDQS 快照 → 关浏览器）
+//    ⇒ 同一条旅程既被补记 skip、又真的跑出记录（`results` 出现**重名**，
+//    `tests/unit_ci_workflows/test_ui_smoke_name_ledger.py` 判据 ⑦ 当场红；实测 12/13/14/15 各重复一次）。
+//    口径：预算到点 = 本轮结束 ⇒ 在飞那条记 skip、后续 `jrun` / `journey` 一律不再开跑。
+let ABORTED = false
+let CURRENT_REC = null
+// ── 冒烟自造对象台账（SDQS D4，docs/testing/smoke-data-quality.md）──────────────
+// 为什么需要它：自造数据要能**枚举 / 体检 / 清理自证**。旧形态里 `productsNew` 建完就不管
+// （商品列表长期被「冒烟SKU商品…」占据），而「自造了几件 / 几件有 SKU / 清掉了几件」没有任何读数
+// ⇒ `scripts/smoke_data_quality.py` 的 DQ-2 / DQ-5 无从判定（数据面只能靠人看）。
+const FIXTURES = { products: [], orders: [] }
+const recordFixture = (kind, rec) => { FIXTURES[kind].push(rec); return rec }
+const markFixtureCleaned = (id) => {
+  const f = FIXTURES.products.find((x) => x.id === id)
+  if (f) f.cleaned = true
+}
 // 失败响应账本（本轮新增）：`console.error` 只说「401」不说是**谁**返回的 —— 没有 URL 就无法归因
 // （2026-10-14 实测：单看 console 文案分不清是 admin-api 还是 ai-agent，归因卡死）。
 const failedResponses = []
@@ -139,8 +156,16 @@ function journey(name, opts = {}) {
       // 过滤掉的旅程返回哨兵，避免调用方解构崩溃
       return { page, rec: null, done: async () => null, skipped: true }
     }
+    // 预算到点后不再开新旅程（哨兵形态同上，调用方的 done 变成 no-op）
+    if (ABORTED) return { page, rec: null, done: async () => null, skipped: true }
     const rec = { journey: name, pass: true, errors: [], notes: [], evidence: [], skipped: false, unconfigured: false, error_class: null }
+    // 同一旅程名**只允许一条记录**：整轮看门狗到点后会先给「没跑到的」补记 skip，而 `runAll`
+    // 仍在继续 —— 跑到时再 push 就是同名两条（汇总计数与名册对账都会失真）。
+    // 口径：真跑出来的记录**顶替**那条占位 skip（它证明「其实跑到了」）。
+    const prior = results.findIndex((r) => r.journey === name)
+    if (prior >= 0) results.splice(prior, 1)
     results.push(rec)
+    CURRENT_REC = rec
     const errs = []
     // 判据红证的注入点（issue #6942 ①）：`SMOKE_PRODUCT_404_STRICT=1` 时把这一条塞进本旅程的错误面
     // ⇒ `product404Missing()` 必须判红。**只在显式开了这个开关时**才注入（默认零影响）。
@@ -157,6 +182,8 @@ function journey(name, opts = {}) {
     page.on('console', onConsole)
     page.on('pageerror', onPageError)
     const done = async (ok, why, ev, errClass) => {
+      // 预算到点后已由 `main()` 把在飞那条记成 skip ⇒ 迟到的 done 不许再改读数（否则 skip 又被改成 pass/fail）
+      if (rec._aborted) return rec
       page.removeListener('console', onConsole)
       page.removeListener('pageerror', onPageError)
       // 把本旅程窗口内的**失败响应**（带 URL）并进错误清单，让 401 可归因（上述账本）
@@ -225,6 +252,7 @@ function journey(name, opts = {}) {
         try { await page.screenshot({ path: shot, fullPage: false }) } catch {}
         rec.evidence.push(shot)
       }
+      CURRENT_REC = null
       return rec
     }
     return { page, done, rec }
@@ -240,8 +268,6 @@ const markSkipped = (h, why) => h.done(true, why, undefined, 'skip')
 // `orderId` 恒空 ⇒ `16` 报「无目标订单」、`17` 导航到 `/orders//ship` 让前端把订单 id 拼成 `ship`
 // ⇒ api 日志 `请求的资源不存在: GET /api/admin/orders/ship`（issue #6790 B 类 ③）。
 // 现在一律用**浏览器会话的 cookie** 走 node 侧 `adminApi`（本文件既有形态）自造。
-const SMOKE_PRODUCT_ID = 'deff0be6c885cbf0469abe4f7b8da608'
-
 /** 建品/建单要一个**真存在的分类 id**（探针实测：`分类ID不能为空` ⇒ 422）。 */
 let _categoryId = ''
 async function defaultCategoryId(page) {
@@ -254,16 +280,38 @@ async function defaultCategoryId(page) {
   return _categoryId
 }
 
+// ⚠️ 2026-10-24 现取实测：旧形态写死的 `deff0be6c885cbf0469abe4f7b8da608` 在云 dev/生产共用库里
+//    **已不存在**（`select ... where id='deff0be6…'` 空集）⇒ 前置单要么 422、要么挂一条**指向不存在商品**的脏明细。
+//    ⇒ 改成**现取本租户**一件有价商品（同一族：不要把「别人的对象 / 历史对象」当自己的前置，见 issue #6942 ①）。
+let _orderProduct = null
+async function defaultOrderProduct(page) {
+  if (_orderProduct) return _orderProduct
+  const api = await adminApi(page)
+  const res = await api.get('/api/admin/products?page=1&size=20')
+  const items = res?.data?.items ?? res?.data ?? []
+  // 🔴 2026-10-24 真栈实测：列表**按创建时间倒序** ⇒ 本冒烟自己刚造的「冒烟…」商品排在首位，
+  //    而它们没有工艺属性（无路线 ⇒ 不自动生成加工单、直派也被拒 [DIRECT_DISPATCH_POOL_REQUIRED]）
+  //    ⇒ 32- 旅程据此建出来的单「既没按钮也没加工单」。⇒ 取数**优先真实种子商品**，排除冒烟自造件。
+  const isSmoke = (x) => String(x?.name ?? '').startsWith('冒烟')
+  const priced = items.filter((x) => Number(x.price ?? x.basePrice ?? 0) > 0)
+  const p = priced.find((x) => !isSmoke(x)) || priced[0] || items[0]
+  if (!p?.id) throw new Error(`建单前置失败：/api/admin/products 无可用商品（${JSON.stringify(res).slice(0, 180)}）`)
+  _orderProduct = p
+  return p
+}
+
 /** 自造一张含加工项的订单（pending），返回订单 id；调用方负责在跑完后 `cleanupOrder`。 */
 async function createOrderFixture(page, tag) {
   const api = await adminApi(page)
+  const prod = await defaultOrderProduct(page)
+  const unitPrice = Number(prod.price ?? prod.basePrice ?? 23.8) || 23.8
   const created = await api.post('/api/admin/orders', {
     customerName: tag, customerPhone: '13900002222', customerAddress: '杭州市西湖区冒烟路 2 号',
     // 探针实测：`常用物流/快递不能为空` + `常用物流公司不能为空`（422）
     logisticsType: 'express', logisticsCompany: '顺丰速运',
     discountAmount: 0, items: [{
-      productId: SMOKE_PRODUCT_ID, productName: '2699系列雪尼尔窗帘面料',
-      quantity: 2, unitPrice: 23.8, subtotal: 47.6,
+      productId: prod.id, productName: prod.name,
+      quantity: 2, unitPrice, subtotal: Number((unitPrice * 2).toFixed(2)),
       processingInfo: { sellingMethod: 'bulk_cut', doorWidth: '2.8', processingFee: 15,
         processingItems: [{ id: 'proc_item_1', name: '锁边', quantity: 2, unit: '米' }] }
     }],
@@ -307,9 +355,19 @@ async function processingRouteAvailable(page) {
   // 生成加工单要求订单**已确认**（服务端逐字：「当前状态 [pending] 不允许生成加工单，须为已确认」）⇒
   // 前置**自造**：先确认收款（pending → confirmed）再探生成能力（不自造就会把「没确认」误判成「租户没配路线」）。
   await api.put(`/api/admin/orders/${probeId}/payment`).catch(() => {})
+  // 🔴 2026-10-24 真栈读数：默认直派对**非加急**单会被拒（#7507「默认走智能派单」），
+  //    服务端逐字「该订单未加急：请到「智能派单」合并派单」[DIRECT_DISPATCH_POOL_REQUIRED]。
+  //    探针按该规则的**加急例外**走（与 `ProcessingOrderController` 的注释同源），
+  //    否则会把「业务规则正常工作」误读成「本租户没有工艺路线」⇒ 17/32 以错误理由 skip。
+  await api.put(`/api/admin/orders/${probeId}/urgency`, { isUrgent: true }).catch(() => {})
   const gen = await api.post('/api/admin/processing-orders/generate', { orderIds: [probeId] })
   const results = Array.isArray(gen?.data) ? gen.data : []
+  // 🔴 2026-10-24 真栈实测：**下单即自动生成加工单**（服务端返回 `data.id` 与 JG 号），
+  //    于是本探针的显式 generate 会回 `success:false` + 「已有加工单 JG-…，请勿重复生成」。
+  //    旧判据把它当「能力不可用」⇒ 16/17/32 以**错误理由 skip**（skip = 未覆盖）。
+  //    「已有加工单」本身就是**能力可用**的证据 ⇒ 计入 ok。
   const ok = results.some((r) => r && r.success !== false)
+    || results.some((r) => String(r?.message ?? '').includes('已有加工单'))
   // 归因**只用服务端逐字**（禁止再抄历史叙事 —— 那是 2026-10-14 实测过的错归因来源）
   const detail = results
     .map((r) => `${r?.orderRef ?? '?'} → ${r?.message ?? '(服务端未给 message)'}${r?.code ? ` [${r.code}]` : ''}`)
@@ -393,6 +451,7 @@ async function cleanupProductStrict(page, rec, id, phase) {
     await ensureLoggedIn(page).catch(() => {})
     res = await cleanupProduct(page, id)
   }
+  if (res.after === 404) markFixtureCleaned(id)
   const cnt = await productCount(page).catch(() => null)
   if (res.after !== 404) {
     rec.pass = false
@@ -415,15 +474,152 @@ async function cleanupProductStrict(page, rec, id, phase) {
  */
 async function createProductFixture(page, { name, skuCode }) {
   const api = await adminApi(page)
+  // 🔴 SDQS D1/D2（docs/testing/smoke-data-quality.md）：商品夹具**必须**带 SKU 矩阵
+  //    （颜色 × 门幅 × 价格 × 库存 × 货号）。旧形态只 POST 商品级字段 ⇒ `product_skus` 零行
+  //    ⇒「SKU 选择 / 价格本 / 采购单 / 库存」全链没有数据可测，而页面照样渲染、冒烟照样绿。
+  //    2026-10-23 用户投诉的「冒烟数据商品 SKU 都没有」就是这条。
+  const colors = [{ colorName: '米白', mainColorHex: '#F5EFE0' }, { colorName: '浅灰', mainColorHex: '#C9C9C9' }]
+  const doorWidths = ['2.8', '3.2']
+  const basePrice = 30.8
+  const skus = colors.flatMap((c) => doorWidths.map((w) => ({
+    colorName: c.colorName,
+    doorWidth: w,
+    price: basePrice,
+    stock: 120,
+    skuCode: `${skuCode}-${c.colorName}-${w}`,
+  })))
   const created = await api.post('/api/admin/products', {
     name, skuCode, unit: '米', pricingType: 'per_meter',
-    categoryId: process.env.SMOKE_CATEGORY_ID || await defaultCategoryId(page), basePrice: 10,
-    status: 'on_sale', doorWidths: ['2.8'], colors: [{ colorName: '冒烟红', mainColorHex: '#ff0000' }],
-    sellingMethods: ['bulk_cut'],
+    categoryId: process.env.SMOKE_CATEGORY_ID || await defaultCategoryId(page), basePrice,
+    status: 'on_sale', doorWidths, colors, sellingMethods: ['bulk_cut'], skus,
   })
   const id = created?.data?.id || created?.id || ''
   if (!id) throw new Error(`前置建品失败（未返回 id）：${JSON.stringify(created).slice(0, 200)}`)
+  recordFixture('products', { id, name, withSkus: skus.length, cleaned: false })
   return id
+}
+
+/** 按名字读回商品（建品旅程用：DOM 可见 ≠ 数据落地，SDQS D5）。 */
+async function readProductByName(page, name) {
+  const api = await adminApi(page)
+  const res = await api.get(`/api/admin/products?page=1&size=100&keyword=${encodeURIComponent(name)}`)
+  const items = res?.data?.items ?? res?.data?.records ?? []
+  return items.find((p) => p.name === name) || items[0] || null
+}
+
+/** 读回商品的 SKU 行（`ProductResponse.skus`；取不到返回空数组，不猜）。 */
+async function readProductSkus(page, id) {
+  const api = await adminApi(page)
+  const res = await api.get(`/api/admin/products/${id}`)
+  const detail = res?.data ?? res
+  return Array.isArray(detail?.skus) ? detail.skus : []
+}
+
+/**
+ * 数据质量快照（SDQS §3.1）：跑完从**管理端 API 现读**各实体面，写 `smoke-data.json`。
+ *
+ * 🔴 为什么不从 DOM 统计：DOM 只能证明「渲染了」，证明不了「数据在」——
+ *    2026-10-23 那次 33/33 绿，DOM 上是「商品列表 1 行」，而数据面 `product_skus` 是 0 行。
+ * 🔴 任何一片读不到都写 `collected: false` + `why`（fail-closed）：`smoke_data_quality.py`
+ *    会把它判成 `DQ-U` 不可判定（退出码 3），**不许**当通过。
+ */
+async function collectDataSnapshot(page) {
+  const snap = {
+    schema_version: 1,
+    collected_at: new Date().toISOString(),
+    base_url: BASE,
+    ran_journeys: [...new Set(results.map((r) => r.journey))],
+    run: { journeys_total: results.length, journeys_pass: results.filter((r) => r.pass).length },
+    entities: {},
+    fixtures: {},
+    collection_errors: [],
+  }
+  const finishFixtures = () => {
+    const created = FIXTURES.products
+    snap.fixtures = {
+      products_created: created.length,
+      products_with_skus: created.filter((f) => Number(f.withSkus) > 0).length,
+      products_residue: created.filter((f) => !f.cleaned).length,
+      residue_samples: created.filter((f) => !f.cleaned).map((f) => f.name || f.id).slice(0, 5),
+      orders_created: FIXTURES.orders.length,
+    }
+  }
+  const items = (res) => {
+    const d = res?.data
+    if (Array.isArray(d)) return d
+    if (Array.isArray(d?.items)) return d.items
+    if (Array.isArray(d?.records)) return d.records
+    return []
+  }
+  const totalOf = (res, list) => Number(res?.data?.total ?? res?.data?.pagination?.total ?? list.length)
+
+  let api
+  try {
+    api = await adminApi(page)
+  } catch (e) {
+    const why = `登录态不可用，数据快照无法采集：${String(e).slice(0, 160)}`
+    for (const name of ['products', 'skus', 'orders', 'customers', 'after_sales']) {
+      snap.entities[name] = { collected: false, why }
+    }
+    snap.collection_errors.push(why)
+    finishFixtures()
+    return snap
+  }
+
+  // 商品 + SKU（SKU 只在商品详情里）
+  try {
+    const listRes = await api.get('/api/admin/products?page=1&size=100')
+    const list = items(listRes)
+    const sampled = list.slice(0, 60)
+    const skuRows = []
+    let withSkus = 0
+    for (const p of sampled) {
+      try {
+        const rows = await readProductSkus(page, p.id)
+        if (rows.length) withSkus++
+        skuRows.push(...rows)
+      } catch (e) {
+        snap.collection_errors.push(`product/${p.id}: ${String(e).slice(0, 120)}`)
+      }
+    }
+    snap.entities.products = { collected: true, total: totalOf(listRes, list), sampled: sampled.length, with_skus: withSkus }
+    // 门幅 canonical = 裸数值（与 SkuMatrix.tsx 的 normalizeDoorWidth 同口径）
+    const canonical = (v) => /^[0-9]+(\.[0-9]+)?$/.test(String(v ?? ''))
+    const bad = skuRows.filter((s) => !canonical(s.doorWidth ?? s.door_width))
+    snap.entities.skus = {
+      collected: true,
+      total: skuRows.length,
+      door_width_noncanonical: bad.length,
+      door_width_noncanonical_samples: [...new Set(bad.map((s) => String(s.doorWidth ?? s.door_width ?? '')))].slice(0, 5),
+      without_price: skuRows.filter((s) => !(Number(s.price) > 0)).length,
+    }
+  } catch (e) {
+    const why = `商品面读取失败：${String(e).slice(0, 160)}`
+    snap.entities.products = { collected: false, why }
+    snap.entities.skus = { collected: false, why }
+    snap.collection_errors.push(why)
+  }
+
+  // 订单 / 客户 / 售后（分页 total 读数；订单另记「有明细」条数）
+  for (const [name, path] of [
+    ['orders', '/api/admin/orders?page=1&size=100'],
+    ['customers', '/api/admin/customers?page=1&size=1'],
+    ['after_sales', '/api/admin/after-sales?page=1&size=100'],
+  ]) {
+    try {
+      const res = await api.get(path)
+      const list = items(res)
+      const ent = { collected: true, total: totalOf(res, list) }
+      if (name === 'orders') ent.with_items = list.filter((o) => Array.isArray(o.items) && o.items.length > 0).length
+      snap.entities[name] = ent
+    } catch (e) {
+      snap.entities[name] = { collected: false, why: `${name} 读取失败：${String(e).slice(0, 160)}` }
+      snap.collection_errors.push(`${name}: ${String(e).slice(0, 160)}`)
+    }
+  }
+
+  finishFixtures()
+  return snap
 }
 
 
@@ -740,8 +936,13 @@ async function chatPage(page) {
     await nav(page, '/chat', '')
     await page.waitForTimeout(1500)
     const input = page.locator('textarea, input[type="text"]').first()
-    const hasInput = await input.isVisible().catch(() => false)
-    if (!hasInput) throw new Error('对话输入框不可见')
+    // 🔴 2026-10-24 真栈实测：旧形态「定长 1.5s 后盲取」⇒ 页面还在「加载中…」（会话列表首屏）就判红，
+    //    是**假红**（同 issue #4226② 的「定长 sleep 后盲取」纪律）。改成有界等待；超时则把页面文案
+    //    印进错误面，便于区分「卡加载」/「需要管理员授权」/「空态」。
+    if (!(await waitVisible(input, 20000))) {
+      const bodyText = (await page.evaluate(() => document.body.innerText).catch(() => '')).replace(/\s+/g, ' ').slice(0, 200)
+      throw new Error(`对话输入框 20s 内未出现（页面文案：${bodyText || '<空>'}）`)
+    }
     await h.done(true, '', '对话页输入框可用（ai-agent 未起）— UI-only')
   } catch (e) {
     await h.done(false, `对话页失败: ${String(e).slice(0, 300)}`)
@@ -762,16 +963,23 @@ async function productsList(page) {
       }
     }
     // 列表有行（种子/存量商品）
+    // 🔴 SDQS D1/D5（docs/testing/smoke-data-quality.md）：**空态/加载态不得冒充通过**。
+    //    旧形态在 0 行时记 ✅（「列表为空（允许），仅验证渲染」），且截图可能拍在「加载中…」——
+    //    「没加载完」被读成「数据空」、又被读成「通过」。现在：有界等待**有内容的行**；
+    //    等不到 ⇒ 判红（数据前置不合格，由 DQ-1/DQ-4 与旅程**双面**兜住）。
     const rows = page.locator('tbody tr, [class*="Table"] [class*="row"], [role="row"]')
-    const n = await rows.count().catch(() => 0)
-    if (n === 0) {
-      // 允许空列表（干净环境），但标题必须渲染
-      const title = await page.getByText('商品列表').first().isVisible().catch(() => false)
-      if (!title) throw new Error('商品列表页标题不可见')
-      await h.done(true, '列表为空（允许），仅验证渲染', `rows=${n}`)
-      return
+    let n = 0
+    let firstRowText = ''
+    for (let i = 0; i < 20; i++) {
+      const texts = (await rows.allInnerTexts().catch(() => [])).map((t) => t.trim()).filter((t) => t && !t.includes('加载中'))
+      if (texts.length > 0) { n = texts.length; firstRowText = texts[0]; break }
+      await page.waitForTimeout(500)
     }
-    await h.done(true, '', `商品列表渲染 ${n} 行`)
+    if (n === 0) {
+      throw new Error('商品列表 10s 内没有任何数据行 —— 空态/加载态不是有效结论（SDQS D1/D5；'
+        + '先确认冒烟环境有商品种子，再跑本旅程）')
+    }
+    await h.done(true, '', `商品列表渲染 ${n} 行；首行：${firstRowText.replace(/\s+/g, ' ').slice(0, 40)}`)
   } catch (e) {
     await h.done(false, `商品列表失败: ${String(e).slice(0, 300)}`)
   }
@@ -779,8 +987,12 @@ async function productsList(page) {
 
 async function productsNew(page) {
   // `--group` 过滤掉的旅程记 skip（没跑 ≠ 失败）；这几条**没接在 `jrun` 上**，故各自守卫（#6790）
-  if (!inGroup('09-products-new')) { await markSkipped(h, '--group 09-products-new 过滤（本轮未跑）'); return }
+  // ⚠️ `h` 必须在 guard **之前**取：旧形态先 `markSkipped(h, …)` 后 `const h` ⇒ 过滤档命中时
+  //    `h` 还在 TDZ 里（ReferenceError）——「没跑」变成了「崩了」。
   const h = await journey('09-products-new')(page)
+  if (!inGroup('09-products-new')) { await markSkipped(h, '--group 09-products-new 过滤（本轮未跑）'); return }
+  // 自造对象台账（SDQS D4）：建了哪件、几件有 SKU、清掉了没有 —— 快照据此判 DQ-2/DQ-5
+  const fixture = recordFixture('products', { id: '', name: '', withSkus: 0, cleaned: false })
   try {
     await ensureLoggedIn(page)
     await nav(page, '/products/new', '')
@@ -826,6 +1038,29 @@ async function productsNew(page) {
     const catOpts = await catSelect.locator('option').allTextContents().catch(() => [])
     const catIdx = catOpts.findIndex(t => t && !t.includes('请选择'))
     if (catIdx > 0) await catSelect.selectOption({ index: catIdx })
+    // ── SDQS D1（docs/testing/smoke-data-quality.md）：建品**必须**把 SKU 矩阵填出来 ──
+    // 旧形态只填标题 + 一档门幅就「存草稿」⇒ 造出来的商品 `product_skus` **零行**，而旅程照记 ✅
+    // （2026-10-23 用户投诉「冒烟数据商品 SKU 都没有」）。这里填「2 颜色 × 1 门幅」= 2 条 SKU：
+    // 颜色走批量输入框（`BatchColorInput`），价格走批量填写（`SkuMatrix` 的批量工具栏）。
+    // 🔴 issue #7597：库存不再由商品档案录入（批量工具栏的「数量」框已删除）⇒ 这里只批量填价格。
+    const colorInput = page.locator('textarea[placeholder*="每行一个颜色名称"]').first()
+    if (!(await waitVisible(colorInput, 10000))) throw new Error('建品页 10s 内未见「批量添加颜色」输入框')
+    await colorInput.fill('米白,浅灰')
+    await page.getByRole('button', { name: '添加颜色', exact: true }).first().click()
+    await page.waitForTimeout(600)
+    const priceInput = page.locator('input[placeholder="价格"]').first()
+    if (!(await waitVisible(priceInput, 8000))) throw new Error('建品页未见 SKU 批量「价格」输入框')
+    await priceInput.fill('30.8')
+    await page.getByRole('button', { name: '批量填写', exact: true }).first().click()
+    await page.waitForTimeout(600)
+    // SKU 矩阵逐行非空（只数行数会被「空行」骗过 —— 价格/库存是逐格 input）
+    const matrixRows = page.locator('table:has(th:has-text("价格（元）")) tbody tr')
+    const skuRowCount = await matrixRows.count()
+    if (skuRowCount < 2) throw new Error(`SKU 矩阵应 ≥2 行（2 颜色 × 1 门幅），现取 ${skuRowCount} 行`)
+    const cellValues = await matrixRows.evaluateAll((rows) => rows.map((r) => [...r.querySelectorAll('input')].map((i) => i.value)))
+    // issue #7597：每行只剩价格一个输入框（库存列已退场）⇒ 非空判据按 1 格算
+    const emptyCells = cellValues.filter((vals) => vals.length < 1 || !vals[0]).length
+    if (emptyCells > 0) throw new Error(`SKU 矩阵有 ${emptyCells} 行价格为空：${JSON.stringify(cellValues).slice(0, 200)}`)
     await page.getByRole('button', { name: /存草稿|存为草稿/ }).first().click().catch(() => {})
     await page.waitForTimeout(2500)
     await nav(page, '/products', '')
@@ -835,12 +1070,42 @@ async function productsNew(page) {
         throw new Error(`商品列表 20s 内未就位（url=${page.url()}）`)
       }
     }
-    await page.waitForTimeout(1800)
-    const visible = await page.locator(`text=${pname}`).first().isVisible().catch(() => false)
-    if (!visible) throw new Error('新建商品未出现在列表（结果不可见）')
-    await h.done(true, '', `门幅 值/显示分离 ✓(${JSON.stringify(optInfo)}→'${storedValue}') + 建品可见 ✓(${pname})`)
+    // 🔴 2026-10-24 真栈实测：表头「商品标题」先渲染、**行数据仍在「加载中…」** ⇒ 定长 1.8s 后
+    //    判可见是**假红**（截图：列表区 spinner 仍在转，本旅程却判红）。改成有界等待自造商品名出现。
+    if (!(await waitVisible(page.locator(`text=${pname}`).first(), 20000))) {
+      const bodyText = (await page.evaluate(() => document.body.innerText).catch(() => '')).replace(/\s+/g, ' ').slice(0, 160)
+      throw new Error(`新建商品未出现在列表（20s 内未见「${pname}」；页面文案：${bodyText || '<空>'}）`)
+    }
+    // ── 读回（SDQS D5：DOM 可见 ≠ 数据落地）──
+    // 列表里能看到 ≠ `product_skus` 有行：2026-10-23 那次正是「列表可见 + SKU 零行」还记了 ✅。
+    const rec = await readProductByName(page, pname)
+    if (!rec?.id) throw new Error(`建品后 API 读不到「${pname}」（列表可见、接口读不到 ⇒ 数据没落地）`)
+    fixture.id = rec.id
+    fixture.name = pname
+    const skus = await readProductSkus(page, rec.id)
+    fixture.withSkus = skus.length
+    if (skus.length < 2) throw new Error(`自造商品 ${rec.id} 只有 ${skus.length} 条 SKU（应 ≥2）：冒烟数据不合格（SDQS D1）`)
+    const badPrice = skus.filter((s) => !(Number(s.price) > 0))
+    const badDoor = skus.filter((s) => !/^[0-9]+(\.[0-9]+)?$/.test(String(s.doorWidth ?? '')))
+    if (badPrice.length || badDoor.length) {
+      throw new Error(`SKU 数据不合格：价格≤0 ${badPrice.length} 条 / 门幅非 canonical ${badDoor.length} 条：${JSON.stringify(skus).slice(0, 240)}`)
+    }
+    await h.done(true, '', `门幅 值/显示分离 ✓(${JSON.stringify(optInfo)}→'${storedValue}') + 建品可见 ✓(${pname})`
+      + ` + 读回 SKU ${skus.length} 条 ✓(${skus.map((s) => `${s.colorName}/${s.doorWidth}/¥${s.price}/${s.stock}`).join('; ')})`)
   } catch (e) {
     await h.done(false, `新建商品页失败: ${String(e).slice(0, 300)}`)
+  } finally {
+    // 清理自证（SDQS D4/DQ-5）：草稿可删；删不掉 ⇒ 本旅程判红（**不是** note —— 旧形态正是「建完不管」）
+    if (fixture.id) {
+      const res = await cleanupProduct(page, fixture.id)
+      if (res.after === 404) {
+        markFixtureCleaned(fixture.id)
+        h.rec.notes.push(`自造商品 ${fixture.id} 已清理（GET 404）`)
+      } else {
+        h.rec.pass = false
+        h.rec.errors.push(`自造商品清理失败：id=${fixture.id} DELETE→${res.del} / 清理后 GET→${res.after}（${res.why}）`)
+      }
+    }
   }
 }
 
@@ -1072,7 +1337,9 @@ async function ordersListJourney(page) {
   const h = await journey('14-orders-list')(page)
   try {
     await ensureLoggedIn(page)
-    await nav(page, '/orders', '订单列表')
+    // ⚠️ 2026-10-24 真栈实测：页面标题已从「订单列表」改为「销售订单」
+    //    ⇒ 旧断言 `expectText('订单列表')` 8s 超时，页面明明是好的却判红（截图里标题就是「销售订单」）。
+    await nav(page, '/orders', '销售订单')
     await page.waitForTimeout(1500)
     const rows = page.locator('tbody tr, [role="row"]')
     const n = await rows.count().catch(() => 0)
@@ -1173,11 +1440,29 @@ async function ordersNewJourney(page) {
     //   DELETE 401，上一版就是这么漏掉一件的：`清理失败 —— 留痕由残留计数断言承接` 却没人红）
     const nAfterClean = await cleanupFixture('选品后立刻清')
     // 提交订单
-    await page.getByRole('button', { name: /提交订单/ }).first().click().catch(() => {})
+    // 🔴 2026-10-24 真栈实测（同一轮暴露两处缺陷）：
+    //   ① 按钮找不到时 `.catch(() => {})` 把失败**吞掉** ⇒ 一次都没点；
+    //   ② 成功判据 `url.includes('/orders')` 对 `/orders/new` **同样成立** ⇒ 提交失败停在新单页也记 ✅
+    //      （证据：同轮 `14-orders-list` 读到「共 0 条」，本旅程却绿）。
+    // ⇒ 按钮找不到**出声**；成功判据改为「到达订单详情 `/orders/<id>`」（或成功 toast）。
+    const submitBtn = page.getByRole('button', { name: /提交订单|创建订单|确认下单/ }).first()
+    if (!(await waitVisible(submitBtn, 8000))) {
+      const names = await page
+        .evaluate(() =>
+          Array.from(document.querySelectorAll('button'))
+            .map((e) => (e.textContent || '').trim())
+            .filter(Boolean)
+            .slice(0, 12),
+        )
+        .catch(() => [])
+      throw new Error(`未找到提交按钮（/提交订单|创建订单|确认下单/）；页面按钮=${JSON.stringify(names).slice(0, 240)}`)
+    }
+    await submitBtn.click()
     await page.waitForTimeout(2500)
     const url = page.url()
-    if (url.includes('/orders')) {
-      await h.done(true, '', `新建订单提交后跳转 ${url}（自造商品 ${fxName} 已清理，商品总数 ${n0}→${nAfterClean ?? '?'}）`)
+    const onDetail = /\/orders\/[^/]+$/.test(new URL(url).pathname) && !url.endsWith('/orders/new')
+    if (onDetail) {
+      await h.done(true, '', `新建订单提交后到达详情 ${url}（自造商品 ${fxName} 已清理，商品总数 ${n0}→${nAfterClean ?? '?'}）`)
     } else {
       const toastOk = await page.getByText('订单创建成功').first().isVisible().catch(() => false)
       if (toastOk) { await h.done(true, '', '新建订单 toast 成功') }
@@ -1344,13 +1629,16 @@ async function productionQrJourney(page) {
     if (!dep.ok) { await markSkipped(h, `前置不满足（生产路线/默认工艺未配置）：${dep.why}`); return }
 
     // ① 建单（含加工项）—— 独立数据，不污染存量
+    // 商品**现取本租户**的：写死 id 在云库已不存在（见 createOrderFixture 的同一条注释）
+    const prod32 = await defaultOrderProduct(page)
+    const up32 = Number(prod32.price ?? prod32.basePrice ?? 23.8) || 23.8
     const created = await api.post('/api/admin/orders', {
       customerName: '生产旅程', customerPhone: '13900003333', customerAddress: '杭州市西湖区生产路 1 号',
       // ⚠️ 真栈 422 逐字：「常用物流/快递不能为空」+「常用物流公司不能为空」⇒ 必填（与 createOrderFixture 同法）
       logisticsType: 'express', logisticsCompany: '顺丰速运',
       discountAmount: 0, items: [{
-        productId: 'deff0be6c885cbf0469abe4f7b8da608', productName: '2699系列雪尼尔窗帘面料',
-        quantity: 2, unitPrice: 23.8, subtotal: 47.6,
+        productId: prod32.id, productName: prod32.name,
+        quantity: 2, unitPrice: up32, subtotal: Number((up32 * 2).toFixed(2)),
         processingInfo: { sellingMethod: 'bulk_cut', doorWidth: '2.8', processingFee: 15,
           processingItems: [{ id: 'proc_item_1', name: '锁边', quantity: 2, unit: '米' }] }
       }],
@@ -1379,11 +1667,27 @@ async function productionQrJourney(page) {
     // 等按钮出现而不是定长 sleep：确认收款 → 订单转 confirmed → 加工单块才渲染生成按钮
     const genBtn = page.getByRole('button', { name: /生成加工单/ }).first()
     const canGen = await genBtn.waitFor({ state: 'visible', timeout: 12000 }).then(() => true).catch(() => false)
-    if (!canGen) {
-      const st = (await api.get(`/api/admin/orders/${orderId}`).catch(() => ({})))?.data?.status
-      throw new Error(`[② 生成加工单] 确认付款后 12s 内仍未出现「生成加工单」按钮（order.status=${st}，期望 confirmed/producing）`)
+    if (canGen) {
+      await safeClick(page, genBtn, '生成加工单')
+    } else {
+      // 🔴 2026-10-24 真栈：本租户**下单即自动生成加工单**（创建响应就带 JG 号）⇒ 详情页没有
+      //    「生成加工单」按钮是**正确形态**，不是缺陷。判据改成「加工单真的存在」（API 读面），
+      //    存在即继续（并刷新页面让加工单块渲染）；不存在才判红。
+      // ⏱ 自动生成是**异步**的（库里实测：付款后数秒才落加工单）⇒ 有界轮询 20s，别用一次性读数判死。
+      let hasPo = false
+      for (let i = 0; i < 20 && !hasPo; i++) {
+        const list = await api.get('/api/admin/processing-orders?keyword=&status=&page=1&size=100').catch(() => null)
+        // ⚠️ 该端点**两种形状**都见过：本参数组合下 `data` 是**数组**，另一些调用点回 `{items}` ⇒ 两种都收。
+        const rows32 = Array.isArray(list?.data) ? list.data : (list?.data?.items ?? [])
+        hasPo = rows32.some((x) => x.orderId === orderId)
+        if (!hasPo) await page.waitForTimeout(1000)
+      }
+      if (!hasPo) {
+        const st = (await api.get(`/api/admin/orders/${orderId}`).catch(() => ({})))?.data?.status
+        throw new Error(`[② 生成加工单] 确认付款后既无「生成加工单」按钮、API 也查不到本单加工单（order.status=${st}）`)
+      }
+      await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {})
     }
-    await safeClick(page, genBtn, '生成加工单')
     // 等生成效果可见（加工单块渲染出加工单号）再读 API：生成是后端点 + 前端 load()，定长 sleep 会假红
     await page.getByText(/JG-\d{8}-\d+/).first().waitFor({ state: 'visible', timeout: 12000 }).catch(() => {})
 
@@ -1493,12 +1797,15 @@ async function orderShipJourney(page, orderId) {
 /** 建一张**不含加工项**的订单（发货表单可提交；含加工项的单走加工单守卫 ⇒ 由 `17-` 承担）。 */
 async function createPlainOrderFixture(page, tag) {
   const api = await adminApi(page)
+  // 商品**现取本租户**的（写死 id 在云库已不存在，见 createOrderFixture 的同一条注释）
+  const prod = await defaultOrderProduct(page)
+  const unitPrice = Number(prod.price ?? prod.basePrice ?? 23.8) || 23.8
   const created = await api.post('/api/admin/orders', {
     customerName: tag, customerPhone: '13900002223', customerAddress: '杭州市西湖区冒烟路 3 号',
     logisticsType: 'express', logisticsCompany: '顺丰速运',
     discountAmount: 0, items: [{
-      productId: SMOKE_PRODUCT_ID, productName: '2699系列雪尼尔窗帘面料',
-      quantity: 2, unitPrice: 23.8, subtotal: 47.6,
+      productId: prod.id, productName: prod.name,
+      quantity: 2, unitPrice, subtotal: Number((unitPrice * 2).toFixed(2)),
     }],
   })
   const id = created?.data?.id
@@ -1770,12 +2077,18 @@ async function afterSalesDetailJourney(page, ticketId) {
       const remarkInput = page.locator('textarea, input[placeholder*="原因"], input[placeholder*="备注"]').first()
       await remarkInput.fill(reason).catch(() => {})
       await page.getByRole('button', { name: /确认/ }).last().click().catch(() => {})
-      await page.waitForTimeout(1800)
-      // 结果可见：详情页展示关闭原因
+      // 🔴 2026-10-24 真栈实测：定长 1.8s 就 reload ⇒ 关闭请求可能**还在飞**（同一份代码三轮里
+      //    两绿一红 = 假红）。改成等「服务端真的关了」（API 轮询 status=closed）再 reload，
+      //    然后**有界等待**原因文本出现。
+      let closed = false
+      for (let i = 0; i < 15 && !closed; i++) {
+        const st = (await api.get(`/api/admin/after-sales/${ticketId}`).catch(() => null))?.data?.status
+        closed = st === 'closed'
+        if (!closed) await page.waitForTimeout(1000)
+      }
       await page.reload({ waitUntil: 'domcontentloaded' })
-      await page.waitForTimeout(1800)
-      const reasonVisible = await page.getByText(reason).first().isVisible().catch(() => false)
-      await h.done(reasonVisible, reasonVisible ? '' : '关闭原因未回显', `关闭原因落库回显=${reasonVisible}`)
+      const reasonVisible = await waitVisible(page.getByText(reason).first(), 15000)
+      await h.done(reasonVisible, reasonVisible ? '' : `关闭原因未回显（服务端 status=closed? ${closed}）`, `关闭原因落库回显=${reasonVisible}`)
     } else {
       await h.done(true, '工单状态不可关闭（可能已终态），仅验证渲染', '')
     }
@@ -2093,6 +2406,8 @@ const J_TIMEOUT = 45000
 async function jrun(name, fn, page, deps) {
   // `--group <前缀>` 过滤掉的旅程**记 skip、不记失败**（issue #6790）：skip ≠ pass、也 ≠ fail。
   if (!inGroup(name)) { recordSkip(name); return }
+  // 预算到点 ⇒ 冻结运行面：不再开新旅程（补记 skip 由 finalize 统一做，防同一条旅程记两次）
+  if (ABORTED) return
   // 前置数据/依赖不满足 ⇒ 同样记 skip 并印出缺什么（`depends_on`，issue #6790 判据 ④）
   const missing = Object.entries(deps || {}).filter(([, v]) => !v).map(([k]) => k)
   if (missing.length) { recordSkip(name, `前置不满足（缺 ${missing.join(' / ')}）：未跑，不是失败`); return }
@@ -2102,7 +2417,13 @@ async function jrun(name, fn, page, deps) {
   } catch (e) {
     const msg = String(e.message || e).slice(0, 200)
     console.log(`❌ ${name}\n   超时/异常: ${msg}`)
-    results.push({ journey: name, pass: false, skipped: false, unconfigured: false, error_class: null, errors: [`超时/异常: ${msg}`], notes: [], evidence: [] })
+    // 🔴 SDQS D5（docs/testing/smoke-data-quality.md；issue #7583 缺陷 8）：失败路径也要留**现场图**。
+    //    截图此前只写在 `journey().done` 里，而抛错/超时的旅程**走不到 done** ⇒ 零证据，
+    //    下一次再出现只能靠人复跑。独立文件名（`-failed.png`）以免覆盖同名旅程的正常截图；
+    //    拍不到不阻塞（可能浏览器已崩），但**必须尝试**并登记进 evidence。
+    const shot = join(OUT, 'screenshots', `${name}-failed.png`)
+    try { await page.screenshot({ path: shot, fullPage: false }) } catch {}
+    results.push({ journey: name, pass: false, skipped: false, unconfigured: false, error_class: null, errors: [`超时/异常: ${msg}`], notes: [], evidence: [shot] })
   }
 }
 
@@ -2132,6 +2453,14 @@ async function main() {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } })
   const page = await ctx.newPage()
   page.on('response', (r) => { if (r.status() >= 400) failedResponses.push(`${r.status()} ${r.request().method()} ${r.url()}`) })
+  // 🔴 网络级失败（DNS / 连接被拒 / TLS 握手）此前**只留下一条不带 URL 的 console 文案**
+  //    ⇒ 2026-10-24 实测把「某资源域名解析不了」读成了「整站挂了」（33 旅程全红、无归因）。
+  //    这里把 host 一起记进 `failedResponses`，让 `[netfail]` 与 `[http]` 一样**可指名**。
+  page.on('requestfailed', (r) => {
+    let host = ''
+    try { host = new URL(r.url()).host } catch { host = r.url().slice(0, 60) }
+    failedResponses.push(`netfail ${host} ${r.failure()?.errorText ?? ''} ${r.url().slice(0, 160)}`)
+  })
 
   // 登录 + 会话保持（同一上下文内完成，保证后续旅程带登录态）
   await jrun('01-login', async (p) => {
@@ -2188,7 +2517,14 @@ async function main() {
     recordSkip('16-order-detail-processing-order')
   }
   // #4186 收口：加工单二维码 / 工序列 / 计件的**正向**分支（自带建单，不依赖 16- 的数据）
-  await jrun('32-production-qr-and-piecework', productionQrJourney, page)
+  // 🔴 2026-10-24：本旅程**不再走 `jrun` 的 45s 硬超时**（与 16-/17b- 同范式）—— 本租户「下单即自动
+  //    生成加工单」且生成是**异步**的（库里实测付款后数秒才落 JG），故它要**有界轮询 20s** 才判得出
+  //    「按钮不出现是正确形态」；45s 上限会把这段合法等待切成「超时」= 假红。内部每一步仍有显式等待。
+  if (inGroup('32-production-qr-and-piecework')) {
+    await productionQrJourney(page)
+  } else {
+    recordSkip('32-production-qr-and-piecework')
+  }
   if (inGroup('17-order-ship')) {
     await orderShipJourney(page, detOrderId)
   } else {
@@ -2221,7 +2557,20 @@ async function main() {
   await jrun('31-register', registerJourney, page)
   })()
 
-  await Promise.race([runAll, runWatchdog])
+  const finished = await Promise.race([runAll, runWatchdog])
+  // 预算到点 ⇒ 冻结运行面（防「补记 skip + 真记录」重名，见文件头 ABORTED 注释）
+  if (finished === 'budget') {
+    ABORTED = true
+    if (CURRENT_REC && !CURRENT_REC.skipped) {
+      CURRENT_REC._aborted = true
+      CURRENT_REC.skipped = true
+      CURRENT_REC.pass = false
+      CURRENT_REC.error_class = 'skip'
+      CURRENT_REC.errors = []
+      CURRENT_REC.notes.push(`整轮预算 ${RUN_BUDGET_MS / 1000}s 到点：在飞旅程未完成（记 skip，不冒充通过/失败）`)
+    }
+    CURRENT_REC = null
+  }
   // 预算到点：剩下的旅程显式记 skip（不是失败）
   const recorded = new Set(results.map((r) => r.journey))
   for (const n of ALL_JOURNEY_NAMES) {
@@ -2236,6 +2585,24 @@ async function main() {
       error_class: null, errors: [why], notes: [], evidence: [] })
     console.log(`❌ journey-name-ledger\n   ${why}`)
   }
+
+  // ── 数据质量快照（SDQS，docs/testing/smoke-data-quality.md）──────────────
+  // 🔴 旅程绿 ≠ 数据可用：2026-10-23 报 33/33 绿，而同轮自造商品一条 SKU 都没有。
+  //    快照从**管理端 API 现读**各实体面；壳脚本用 scripts/smoke_data_quality.py 判 DQ-*，
+  //    非零即折进整体退出码（数据不合格 = 冒烟红）。
+  const snap = await collectDataSnapshot(page).catch((e) => ({
+    schema_version: 1,
+    collected_at: new Date().toISOString(),
+    ran_journeys: [...new Set(results.map((r) => r.journey))],
+    run: { journeys_total: results.length, journeys_pass: results.filter((r) => r.pass).length },
+    entities: {},
+    fixtures: {},
+    collection_errors: [`快照采集异常：${String(e).slice(0, 300)}`],
+  }))
+  wfs(join(OUT, 'smoke-data.json'), JSON.stringify(snap, null, 2))
+  console.log(`\n== 数据质量快照: ${join(OUT, 'smoke-data.json')}`
+    + `（商品 ${snap.entities?.products?.total ?? '?'} 件 / 有 SKU ${snap.entities?.products?.with_skus ?? '?'} 件`
+    + ` / 自造 ${snap.fixtures?.products_created ?? '?'} 件·带 SKU ${snap.fixtures?.products_with_skus ?? '?'} 件）`)
 
   await browser.close()
 

@@ -1,0 +1,94 @@
+{
+  "tenant_id": 46,
+  "title": "售后新工单待办（回归）",
+  "notifications": [
+    {
+      "id": "3dc90dc4df9b078912c740178f91d758",
+      "title": "售后新工单待办（回归）",
+      "content": "新售后工单：AS-20261018-0005（其他），请及时处理。",
+      "channel": "internal",
+      "status": "read",
+      "recipientType": "employee",
+      "createdAt": "2026-10-18 07:43:34",
+      "readAt": "2026-10-18 07:43:45"
+    },
+    {
+      "id": "a23696ae69029bb3fc5e9f0bbcd7f7c6",
+      "title": "售后新工单待办（回归）",
+      "content": "新售后工单：AS-20261018-0004（维修），请及时处理。",
+      "channel": "internal",
+      "status": "sent",
+      "recipientType": "employee",
+      "createdAt": "2026-10-18 07:43:34"
+    }
+  ],
+  "db_rows": [
+    "新售后工单：AS-20261018-0004（维修），请及时处理。",
+    "新售后工单：AS-20261018-0005（其他），请及时处理。"
+  ],
+  "unread": 1,
+  "sent_total": 1,
+  "read_total": 1,
+  "checks": [
+    {
+      "name": "通知中心有 2 条事件生成的真实站内信",
+      "pass": true,
+      "detail": {
+        "total": 2,
+        "ours": 2
+      }
+    },
+    {
+      "name": "DB 中同一规则生成 2 行",
+      "pass": true,
+      "detail": {
+        "db": [
+          "新售后工单：AS-20261018-0004（维修），请及时处理。",
+          "新售后工单：AS-20261018-0005（其他），请及时处理。"
+        ]
+      }
+    },
+    {
+      "name": "通知内容含工单号 AS-20261018-0004",
+      "pass": true,
+      "detail": {
+        "contents": [
+          "新售后工单：AS-20261018-0005（其他），请及时处理。",
+          "新售后工单：AS-20261018-0004（维修），请及时处理。"
+        ]
+      }
+    },
+    {
+      "name": "通知内容含工单号 AS-20261018-0005",
+      "pass": true,
+      "detail": {
+        "contents": [
+          "新售后工单：AS-20261018-0005（其他），请及时处理。",
+          "新售后工单：AS-20261018-0004（维修），请及时处理。"
+        ]
+      }
+    },
+    {
+      "name": "保留 1 条未读",
+      "pass": true,
+      "detail": {
+        "unread": 1
+      }
+    },
+    {
+      "name": "sent 筛选 = 1（未读）",
+      "pass": true,
+      "detail": {
+        "total": 1
+      }
+    },
+    {
+      "name": "read 筛选 = 1（已读）",
+      "pass": true,
+      "detail": {
+        "total": 1
+      }
+    }
+  ],
+  "all_pass": true
+}

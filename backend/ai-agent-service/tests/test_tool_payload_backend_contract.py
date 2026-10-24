@@ -173,6 +173,19 @@ DYNAMIC_KEY_SITES: dict[str, dict[str, str]] = {
         "issue": "#3543",
         "covered_by": "backend/ai-agent-service/tests/test_tools_processing_item_manage.py",
     },
+    # issue #7514：算料配置写面 —— 与上面 processing_item_manage **同一形态**（全量替换语义）。
+    "app/tools/craft_calc_config_update.py|PUT /api/admin/production/craft-calc-config": {
+        "reason": (
+            "算料配置写面是 upsert + **全量替换**（admin-api `CraftCalcConfigService.put`）："
+            "payload = GET 取回的当前配置**原样** + `changes` 点名的键覆盖"
+            "（`{**current_config, **changes}`）⇒ 键集来自接收端 `toCraftConfigMap()` 的返回"
+            "（11 个键），静态不可解析。运行期补偿控制 = 本工具的实例判据逐值钉住"
+            "「其余 10 个键原样写回」"
+        ),
+        "owner": "算料配置域归属包（issue #7514）",
+        "issue": "#7514",
+        "covered_by": "backend/ai-agent-service/tests/test_tools_craft_calc_config_update.py",
+    },
     "app/tools/settings_manage.py|PUT /api/admin/tenant/ai-config": {
         "reason": (
             "`json_data.update(ai_config)`：ai_config 是 schema 里的自由字典（key 由 LLM 直供）→ "

@@ -25,8 +25,13 @@
 import Taro from '@tarojs/taro'
 import { getToken } from './auth'
 import { AI_API_BASE_URL } from './constants'
-import { isH5 } from './platform'
-import { startBrowserRecording, supportsBrowserRecording, type BrowserRecording } from './voiceBrowserRecorder'
+import { isH5, isAlipayWebview } from './platform'
+import {
+  startBrowserRecording,
+  supportsBrowserRecording,
+  NO_AUDIO_MESSAGE,
+  type BrowserRecording,
+} from './voiceBrowserRecorder'
 
 export interface VoiceResult {
   text: string
@@ -38,6 +43,8 @@ interface TranscribeResponse {
   text?: string
   duration_ms?: number
   error?: { message?: string }
+  /** 服务端 4xx/5xx 的用户可读原因（`app/api/asr.py` 逐条维护，issue #7310） */
+  detail?: string
 }
 
 // ── 录音器懒加载单例（顶层禁止调用）──
@@ -67,11 +74,15 @@ function getRecorder(): any {
  *
  * - **h5**：现取浏览器能力（`MediaRecorder` + `getUserMedia`）—— 有就是有，**不写死**。
  *   微信 webview / Safari / Chrome 都具备 ⇒ B 端默认语音模式在真机上才是真的。
+ *   ⚠️ 例外 = **支付宝内置浏览器**：内核有这两个 API，但流里拿不到有效音频（issue #7310 真机对照：
+ *   上传 0 字节）⇒ 判为不可用（回落文字模式），见 `isAlipayWebview()`。
  * - **weapp**：`RecorderManager` 具备 `onStop` / `start`。
  * - 其余编译目标：无语音入口。
  */
 export function isVoiceSupported(): boolean {
-  if (isH5()) return supportsBrowserRecording()
+  // 支付宝内置浏览器：内核**有** MediaRecorder，但流里没有有效音频（上传 0 字节，issue #7310 真机对照）
+  // ⇒ 按「不摆按不动的键」判为不可用，输入条回落文字模式 + 点名支付宝的解释
+  if (isH5()) return !isAlipayWebview() && supportsBrowserRecording()
   const rm = getRecorder()
   return !!rm && typeof rm.onStop === 'function' && typeof rm.start === 'function'
 }
@@ -181,6 +192,8 @@ export async function transcribeFile(tempFilePath: string): Promise<VoiceResult 
 
   if (isH5()) {
     const blob = await resolveAudioBlob(tempFilePath)
+    // 0 字节音频**不出网**（issue #7310：服务端只会 400「音频文件为空」，再被 UI 吞成「未听清」）
+    if (blob.size === 0) throw new Error(NO_AUDIO_MESSAGE)
     const form = new FormData()
     form.append('audio', blob, audioFileName(blob))
     form.append('language', 'zh')
@@ -221,6 +234,10 @@ export async function transcribeFile(tempFilePath: string): Promise<VoiceResult 
   }
 
   if (statusCode !== 200 || !parsed.text) {
+    // 400/503 的 detail 是**面向商家的可行动文案**（去重录音 / 靠近麦克风 / 稍后重试）；
+    // 401/403 等鉴权 detail 是英文（Not authenticated），**不透传** —— 仍走调用方的「未听清」（issue #7310）
+    const detail = statusCode === 400 || statusCode === 503 ? String(parsed.detail || '').trim() : ''
+    if (detail) throw new Error(detail)
     return null
   }
 

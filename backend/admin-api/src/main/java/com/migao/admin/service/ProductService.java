@@ -14,6 +14,8 @@ import com.migao.admin.mapper.ProductColorMapper;
 import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.toolkit.support.SFunction;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import jakarta.servlet.http.HttpServletResponse;
@@ -100,14 +102,14 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      * 售卖方式是**商品级基础属性**，不得回退成 SKU 维度。</p>
      */
     static final String[] IMPORT_HEADERS =
-            {"商品名称", "货号", "分类ID", "价格", "库存", "描述", "颜色", "门幅", "SKU编码"};
+            {"商品名称", "货号", "分类ID", "价格", "描述", "颜色", "门幅", "SKU编码"};
 
     /** 导入**必填**表头：缺列 ⇒ 整包拒绝（列都不在时逐行报错只会刷屏，且没有一行是能修的）。 */
     private static final List<String> REQUIRED_IMPORT_HEADERS = List.of("商品名称", "货号", "价格");
 
     /** 导入可列表头（缺了不报错；文案里列出来让商家知道模板该长什么样）。 */
     private static final List<String> OPTIONAL_IMPORT_HEADERS =
-            List.of("分类ID", "库存", "描述", "颜色", "门幅", "SKU编码");
+            List.of("分类ID", "描述", "颜色", "门幅", "SKU编码");
 
     /**
      * 商品品牌存储在 product_attributes 表的 attr_key
@@ -154,6 +156,132 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      * 收回状态机后即可走正常流转（off_sale → on_sale）。
      */
     private static final List<String> STATUS_RECOVERY_TARGETS = List.of("off_sale", "draft");
+
+    /**
+     * 类级行为开关（默认关，毫秒）：把「读旧实体 → 写」之间的窗口**显式放大**，供真库并发判据
+     * （{@code ProductStatusCasRaceRealDbTest}）确定性地命中 #6961 的两条读-判-写窗口。
+     *
+     * <p><b>为什么必须有它</b>：CAS 保护的是微秒级窗口，靠 {@code CyclicBarrier} 同刻起跑也常撞不到
+     * （#6928 的 HTTP 实测 20 轮只命中 3 轮）⇒ 判据会变成 load-dependent 的 flake，而 flake 的
+     * 「红」不能当证据。范式照抄 {@code ProcessingOrderService#setStatusUpdateProbePauseMillisForTest}
+     * （#6955）。</p>
+     *
+     * <p><b>生产恒为 0</b>：不设即不暂停；暂停点位于 {@code updateProduct} 的写之前与
+     * {@link ProductMapper#updateStatusIfFrom}（CAS）之前 —— 只放大窗口，不改变任何判据本身。</p>
+     */
+    private static final StatusMigrationProbe statusMigrationProbe = new StatusMigrationProbe();
+
+    /**
+     * 🔴 <b>仅用于守卫判别力红证</b>的注入孔（生产恒 {@code 0}，不设即零影响）。
+     *
+     * <p>取值：{@code 1} = 把两条批量入口的 CAS 退回无谓词 {@code updateById}（去行数判定）；
+     * {@code 2} = 把改品退回整实体回写 + 把读到的旧 status 写回（T2b 形态）。
+     * 红证读数 = {@code ProductStatusCasMetaGuardTest#guardHasDiscriminatingPower} 的
+     * 『判别力自证（真语料注入）』节（逐字读数见 PR body）。</p>
+     */
+    private static final int GUARD_MUTATION = Integer.getInteger("migao.guard.mutation", 0);
+
+    /** 注入孔读数（生产 0）。 */
+    static int guardMutationForTest() {
+        return GUARD_MUTATION;
+    }
+
+    /** 探针（{@link #statusMigrationProbe} 的实现；测试可读「是否已进入窗口」，生产不读）。 */
+    static final class StatusMigrationProbe {
+
+        private final Object monitor = new Object();
+
+        private long pauseMillis;
+        private boolean paused;
+
+        private void pauseIfEnabled() {
+            long millis;
+            synchronized (monitor) {
+                millis = pauseMillis;
+                if (millis <= 0) {
+                    return;
+                }
+                paused = true;
+                monitor.notifyAll();
+            }
+            try {
+                Thread.sleep(millis);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                synchronized (monitor) {
+                    paused = false;
+                    monitor.notifyAll();
+                }
+            }
+        }
+
+        void setPauseMillisForTest(long millis) {
+            synchronized (monitor) {
+                pauseMillis = millis;
+                monitor.notifyAll();
+            }
+        }
+
+        long pauseMillisForTest() {
+            synchronized (monitor) {
+                return pauseMillis;
+            }
+        }
+
+        boolean isPausedForTest() {
+            synchronized (monitor) {
+                return paused;
+            }
+        }
+
+        /**
+         * 等**新的一次**进入窗口（要求 `paused` 先从 true 回到 false，再变 true）。
+         *
+         * <p>⚠️ 不能只等 `paused == true`：判据的**上一轮**或**上一条腿**刚进过窗口 ⇒ 残留的 true 会让
+         * 等待**立刻返回** ⇒ 竞争腿在「被暂停那条腿」还没停住时起跑（本判据初版实测：竞争腿跑完了整条路，
+         * 落败落成 422 读判兜底而不是 409 CAS 落败 ⇒ 测不到 CAS 那一跳）。</p>
+         *
+         * @return 是否真的等到了一次**新的**进入窗口
+         */
+        boolean awaitFreshPauseForTest(long timeoutMillis) throws InterruptedException {
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+            synchronized (monitor) {
+                while (paused && System.nanoTime() < deadline) {
+                    monitor.wait(20L);
+                }
+                while (!paused && System.nanoTime() < deadline) {
+                    monitor.wait(20L);
+                }
+                return paused;
+            }
+        }
+    }
+
+    /** 探针注入孔（生产不调用）：测试用，语义见 {@link StatusMigrationProbe}。 */
+    static void setStatusMigrationProbePauseMillisForTest(long millis) {
+        statusMigrationProbe.setPauseMillisForTest(millis);
+    }
+
+    /** 测试读数：本类是否**正停在**状态迁移窗口里（生产不调用）。 */
+    static boolean statusMigrationProbePausedForTest() {
+        return statusMigrationProbe.isPausedForTest();
+    }
+
+    /** 测试读数：当前注入的窗口时长（0 = 关）。 */
+    static long statusMigrationProbeMillisForTest() {
+        return statusMigrationProbe.pauseMillisForTest();
+    }
+
+    /**
+     * 测试装置：等探针**新的一次**进入窗口（超时 = 判据装置坏了，由调用方 fail-closed）。
+     *
+     * @return 是否真的等到（{@code false} = 超时，调用方必须显式判红而不是静默继续）
+     */
+    static boolean awaitStatusMigrationProbeFreshPauseForTest(long timeoutMillis) throws InterruptedException {
+        return statusMigrationProbe.awaitFreshPauseForTest(timeoutMillis);
+    }
+
 
     /** 合法状态的可读枚举清单（错误文案用；顺序 = {@link #STATUS_TRANSITIONS} 的登记顺序）。 */
     static String productStatusChoices() {
@@ -498,12 +626,10 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      */
     @Transactional(rollbackFor = Exception.class)
     public ProductResponse doCreateProduct(ProductCreateRequest request, Long tenantId) {
-        // issue #5063（V115）：库存是 1 位小数口径（0.1 米粒度）⇒ **超过 1 位小数显式拒绝**
-        // （fail-closed；静默取整 = 账面与实物不符且无人发现，正是本单要治的形态）。
-        // issue #6199：`products.stock` 是**绝对值**（实物米数）⇒ 同一次准入**还要拒负数**
-        // （改前这里只过 `requireOneDecimalOrNull`：只校精度、不校符号 ⇒ 传 -5 得 200 且落库）。
-        // 判据单点在 StockQuantity；这里只做入口归一，不在 Service 里另写一套小数位/符号判断。
-        request.setStock(StockQuantity.requireNonNegativeOrNull(request.getStock(), "库存 stock"));
+        // 🔴 issue #7597（用户裁定 2026-10-24）：商品档案不再设置库存数值 —— 建品请求里的 `stock`
+        // 一律**不使用**（不校验、不落库），新建 SKU 从 0 起算；库存只由真实单据产生
+        // （入库单过账 / 订单扣减 / 售后回补 / 批次盘点）。
+        request.setStock(BigDecimal.ZERO);
         // 金额精度准入（issue #6228）：`products.base_price` / `product_skus.price` 是 NUMERIC(·,2)，
         // 超 2 位有效小数会被 PG 静默四舍五入。**判在入口**（本方法会先 insert `products` 行、
         // 之后才走 saveColorsAndSkus 收口）⇒ 这样"拒绝"才发生在任何写之前。`null` = 不改，透传。
@@ -578,7 +704,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         saveColorsAndSkus(product.getId(), product.getSkuCode(), tenantId,
                 request.getColors(),
                 request.getSellingMethods(), request.getDoorWidths(),
-                product.getBasePrice(), product.getStock(),
+                product.getBasePrice(),
                 request.getSkus(), true);
 
         // 保存商品属性（brand + specifications，存入 product_attributes 表）
@@ -638,7 +764,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // 校验分类是否存在
         validateCategory(request.getCategoryId());
 
-        // 保存原始状态，防止 BeanUtils.copyProperties 绕过状态机
+        // 注入孔 2 需要「读到的旧 status」；生产路径不使用它（新形态不写 status 列）
         String originalStatus = product.getStatus();
         // 保存原始主图（issue #3884）：BeanUtils.copyProperties 会把请求里的 null mainImage 覆写到实体，
         // 不先记下原值，主图兜底就无法区分「从未设置过」与「已设置过」→ 会误覆盖已设置的主图
@@ -647,8 +773,19 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // 更新商品属性（categoryId 已在方法开头归一化：'' → null，不得再漏到实体）
         BeanUtils.copyProperties(request, product);
         product.setId(id);
-        // 恢复状态：状态变更必须通过 updateProductStatus 接口（含状态机校验）
-        product.setStatus(originalStatus);
+        // 🔴 issue #6961（T2b 类级根因）：这里**不再**把内存里的旧 status 写回实体。
+        // 修前是 `product.setStatus(originalStatus)` + 尾部 `productMapper.updateById(product)`（整实体回写）：
+        // 「改品字段」会把**读到的旧 status 一起写回**⇒ 静默回滚并发的状态迁移（迁移那条腿 CAS 赢了，
+        // 随后这次改名把 status 改回旧值；两个请求都回 200）。现在两件事：
+        //   ① 实体上的 status 置 null ⇒ MyBatis-Plus 默认更新策略跳过 null 字段（本仓未声明
+        //      update-strategy）⇒ status **根本不进 SET 子句**；
+        //   ② 尾部改走只写「本方法负责的列」的 UPDATE（构建器显式点名列）⇒ status / stock /
+        //      sales_count / sales_amount / recommended 一律不在它的 SET 里。
+        if (GUARD_MUTATION == 2) {
+            product.setStatus(originalStatus);
+        } else {
+            product.setStatus(null);
+        }
 
         // 处理图片列表
         if (request.getImages() != null) {
@@ -674,19 +811,26 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         product.setEditedBy(getCurrentUsername());
         product.setEditedAt(OffsetDateTime.now());
 
-        productMapper.updateById(product);
+        // 🔴 issue #6961：改品**只写自己负责的列**（见 updateProductOwnedColumns 的列清单）——
+        // 不再整实体回写。窗口探针（生产恒 0）在这里把「读旧实体 → 写」之间的窗口放大，
+        // 让「与状态迁移并发 ⇒ status 不被回滚」成为**确定性**判据而不是 flake。
+        statusMigrationProbe.pauseIfEnabled();
+        if (GUARD_MUTATION == 2) {
+            productMapper.update(product, new LambdaUpdateWrapper<Product>().eq(Product::getId, id));
+        } else {
+            productMapper.update(null, updateProductOwnedColumns(product));
+        }
 
         // 更新销售信息（upsert：按 id/组合匹配原地更新，缺失才删；不再先删后插，
         // 保证订单 processingInfo 里存的旧 skuId/colorId 仍可被 OrderService.matchSkuId 寻址恢复库存）
         if (request.getColors() != null || request.getSkus() != null
                 || request.getSellingMethods() != null || request.getDoorWidths() != null) {
-            // price/stock 优先取请求值，否则用商品当前值
+            // 价格优先取请求值，否则用商品当前值；库存不随改品写入（issue #7597）
             BigDecimal skuPrice = request.getBasePrice() != null ? request.getBasePrice() : product.getBasePrice();
-            BigDecimal skuStock = request.getStock() != null ? request.getStock() : product.getStock();
             saveColorsAndSkus(id, product.getSkuCode(), tenantId,
                     request.getColors(),
                     request.getSellingMethods(), request.getDoorWidths(),
-                    skuPrice, skuStock,
+                    skuPrice,
                     request.getSkus(), true);
         } else if (request.getBasePrice() != null) {
             // 改价必须落到 SKU（issue #3743 / OR-014）：只给 basePrice、不给
@@ -777,7 +921,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                                     List<String> sellingMethods,
                                     List<String> doorWidths,
                                     BigDecimal basePrice,
-                                    BigDecimal stock,
                                     List<ProductSkuInput> skuInputs,
                                     boolean pruneMissing) {
         // 金额精度准入（issue #6228）：`products.base_price` / `product_skus.price` 是 NUMERIC(·,2)，
@@ -787,13 +930,13 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // 这里是建品/改品/导入/Agent 四条路径写 SKU 价的**唯一收口**，判在这里才无死角。
         basePrice = MoneyScale.requireTwoDecimalsOrNull(basePrice, "商品基础价 basePrice");
         requireSkuPrices(skuInputs);
-        // issue #5063（V115）：SKU 库存是库存链路的**权威列**，逐行准入（最多 1 位小数）——
-        // 这里是所有建品/改品路径（表单 / Agent / 矩阵式生成）写 SKU stock 的**唯一收口**；
-        // issue #6199：同一次准入还要拒**负数**（SKU 库存也是绝对值）。
+        // 🔴 issue #7597：商品档案不再设置库存 —— 请求里的 SKU 库存**一律忽略**（置 null）：
+        // 新建 SKU 从 0 起算、既有 SKU 保持现值。这里是建品/改品/导入/Agent 四条路径写 SKU 的
+        // 唯一收口 ⇒ 判在这里即无死角；同时不再对一个「不会被采纳的数值」做精度/符号准入。
         if (skuInputs != null) {
             for (ProductSkuInput input : skuInputs) {
                 if (input != null) {
-                    input.setStock(StockQuantity.requireNonNegativeOrNull(input.getStock(), "SKU 库存 stock"));
+                    input.setStock(null);
                     // 文本列长度准入（issue #6302）：SKU 行落 `product_skus` 的 varchar 列
                     // （编码 / 门幅 / 颜色名）。判在本方法开头 = 本方法内任何写之前；Excel 导入与
                     // agent 路径也经过这条收口（它们同样手工构造 ProductSkuInput）。
@@ -925,8 +1068,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                     sku.setColorName(colorName);
                     sku.setDoorWidth(dw);
                     sku.setPrice(basePrice);
-                    sku.setStock(stock != null && stock.compareTo(BigDecimal.ZERO) > 0
-                            ? stock : BigDecimal.valueOf(100));
+                    // issue #7597：删掉「未给库存 ⇒ 默认 100」这条**凭空造库存**的路径（新 SKU 从 0 起算）
+                    sku.setStock(BigDecimal.ZERO);
                     // 自动生成 SKU 编码
                     Integer colorSeq = colorSeqMap.get(colorName);
                     sku.setSkuCode(generateSkuCode(productId, productSkuCode,
@@ -963,7 +1106,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                     matched.setColorName(input.getColorName());
                     matched.setDoorWidth(input.getDoorWidth());
                     matched.setPrice(input.getPrice() != null ? input.getPrice() : matched.getPrice());
-                    matched.setStock(input.getStock() != null ? input.getStock() : matched.getStock());
+                    // 库存不随改品写入（issue #7597）：既有 SKU 保持现值
                     if (StringUtils.hasText(input.getSkuCode())) {
                         matched.setSkuCode(input.getSkuCode());
                     }
@@ -977,7 +1120,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                     entity.setColorName(input.getColorName());
                     entity.setDoorWidth(input.getDoorWidth());
                     entity.setPrice(input.getPrice() != null ? input.getPrice() : BigDecimal.ZERO);
-                    entity.setStock(input.getStock() != null ? input.getStock() : BigDecimal.ZERO);
+                    entity.setStock(BigDecimal.ZERO);   // issue #7597：新建 SKU 一律从 0 起算
                     // 优先使用传入的 skuCode，未传入则自动生成
                     String skuCode = StringUtils.hasText(input.getSkuCode())
                             ? input.getSkuCode()
@@ -1222,7 +1365,10 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                     "当前状态[" + statusLabel + "]不允许删除，请先下架后再删除" + statusRecoveryHint(currentStatus));
         }
 
-        productMapper.deleteById(id);
+        // issue #6956 · 现象 C：判影响行数（并发双删只许一次成功；0 行 = 已被别人删掉）
+        if (productMapper.deleteById(id) == 0) {
+            throw BusinessException.notFound("商品");
+        }
         log.info("删除商品成功: id={}", id);
     }
 
@@ -1249,7 +1395,12 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     }
 
     /**
-     * 更新商品状态（含状态流转校验）
+     * 更新商品状态（含状态流转校验）。
+     *
+     * <p>🔴 issue #6961：写面改成 <b>DB 原子条件更新（CAS）</b>。修前是「{@code selectById} 读旧 status
+     * 过状态机 → {@code updateById}（WHERE 仅主键）」⇒ 校验与写入不在同一条语句上，并发
+     * on/off_sale <b>两个请求都成功</b>、终态由后写者决定。现在按<b>受影响行数</b>判谁抢到迁移权，
+     * 0 行 ⇒ <b>409</b> + 实际当前态（谓词/范式见 {@link ProductMapper#updateStatusIfFrom}）。</p>
      */
     @Transactional(rollbackFor = Exception.class)
     public void updateProductStatus(String id, String status, Long tenantId) {
@@ -1257,8 +1408,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         if (product == null) {
             throw BusinessException.notFound("商品");
         }
-        applyStatusTransition(product, status);
-        productMapper.updateById(product);
+        applyStatusTransition(product, status, id, tenantId);
 
         log.info("更新商品状态成功: id={}, status={}", id, status);
     }
@@ -1305,13 +1455,32 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     }
 
     /**
-     * 状态流转校验并就地落到实体（不写库，由调用方统一持久化）。
+     * 状态流转校验 + <b>条件更新落库</b>（issue #6961；状态机唯一收口）。
+     *
+     * <p>调用方必须先 {@code selectById} 拿到<b>当前态</b>（状态机的授权前驱）—— 校验本身仍然基于
+     * 读到的值，但<b>写入带同一前驱谓词</b>：并发对手若在「读 → 写」之间改了状态，本次 CAS 影响行数
+     * 为 0 ⇒ fail-closed 409，而不是把对手的迁移覆盖掉（这正是修前的病根）。</p>
+     *
+     * <p>0 行的三种成因都收敛到同一句可行动文案（不存在 / 跨租户 / 已软删 / 前驱态不符），
+     * 文案带<b>实际当前态</b>；后两种成因要回读一次才拿得到真值（回读不可得时如实说明「已被删除」）。</p>
      */
-    private void applyStatusTransition(Product product, String status) {
+    private void applyStatusTransition(Product product, String status, String id, Long tenantId) {
         validateStatusTransition(product.getStatus(), status);
-        product.setStatus(status);
-        product.setEditedBy(getCurrentUsername());
-        product.setEditedAt(OffsetDateTime.now());
+        String editedBy = getCurrentUsername();
+        // 探针（生产恒 0）：把「读 → CAS 写」之间的窗口放大，供真库并发判据确定性命中
+        statusMigrationProbe.pauseIfEnabled();
+        int affected = productMapper.updateStatusIfFrom(id, tenantId, product.getStatus(),
+                product.getStatus() == null, status, editedBy, OffsetDateTime.now());
+        if (affected == 0) {
+            Product latest = productMapper.selectById(id);
+            String actual = latest == null
+                    ? "已被删除或不属于当前租户"
+                    : PRODUCT_STATUS_LABELS.getOrDefault(latest.getStatus(), String.valueOf(latest.getStatus()));
+            throw BusinessException.conflict(
+                    "商品状态已被其他操作变更，本次「" + PRODUCT_STATUS_LABELS.getOrDefault(status, status)
+                            + "」未生效（当前状态: " + actual + "）",
+                    "请刷新商品详情后按当前状态重新操作");
+        }
     }
 
     /**
@@ -1338,8 +1507,93 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         product.setRecommended(recommended);
         product.setEditedBy(getCurrentUsername());
         product.setEditedAt(OffsetDateTime.now());
+        // 🔴 issue #6961（T2b 同族形态）：**不得**把这次读到的旧 status 一起写回 —— 本仓未声明
+        // update-strategy ⇒ null 不进 SET ⇒ 并发的状态迁移不会被这次「改推荐标记」静默回滚。
+        // （与 `updateProduct` 同一处置；只写自己负责的列 = recommended / edited_*。）
+        product.setStatus(null);
         productMapper.updateById(product);
         log.info("更新商品推荐标记成功: id={}, recommended={}, tenantId={}", id, recommended, tenantId);
+    }
+
+    /**
+     * 改品**自己负责的列**（issue #6961）—— 只点名列，绝不整实体回写。
+     *
+     * <p>为什么要有它（本单 T2b 的类级根因）：修前 {@code updateProduct} 走
+     * {@code productMapper.updateById(product)}，把内存里**从库里读到的整行**又写回去
+     * （其中就有 status）⇒ 「与状态迁移并发」时把对手刚提交的新 status 用旧值覆盖回去，
+     * <b>静默回滚</b>了一次成功的迁移，而两个请求都回 200。</p>
+     *
+     * <p><b>不写</b>（有意为之，逐个点名）：{@code status}（唯一写面 =
+     * {@link ProductMapper#updateStatusIfFrom} 的条件更新）、{@code stock}（派生冗余列，
+     * 唯一写面 = {@link #syncProductStockFromSkus}）、{@code sales_count} /
+     * {@code sales_amount}（唯一写面 = {@link ProductMapper#increaseSales} /
+     * {@link ProductMapper#decreaseSales} 的 SQL 自增）、{@code recommended}（唯一写面 =
+     * {@link #updateProductRecommended}，它自带「仅上架商品可推荐」的前置校验）、
+     * {@code tenant_id} / {@code deleted}（租户与软删列不在改品语义内）。</p>
+     *
+     * <p>列清单**全部**取自 {@code db/init/schema.sql} 的 {@code products} DDL（已逐列自证存在），
+     * 不是从别处抄来的模板：{@code name} / {@code sku_code} / {@code unit} / {@code pricing_type} /
+     * {@code category_id} / {@code base_price} / {@code description} / {@code main_image} /
+     * {@code images} / {@code detail_images} / {@code knowledge_base_id} /
+     * {@code stock_warning_threshold} / {@code allow_return_restock} / {@code selling_methods} /
+     * {@code roll_length_m} / {@code edited_by} / {@code edited_at}。</p>
+     *
+     * <p>条件 = {@code id} + {@code tenant_id} + {@code deleted = 0}（软删行不许被改品复活）；
+     * 审计列 {@code updated_at} 在此显式写（{@code updateById} 那条路上它由
+     * {@code MyMetaObjectHandler} 自动填充，这条 SQL 路不经过填充器）。</p>
+     */
+    private LambdaUpdateWrapper<Product> updateProductOwnedColumns(Product product) {
+        // 🔴 逐列复刻 MyBatis-Plus `updateById` 的默认策略（FieldStrategy.NOT_NULL）：**值为 null 的列不进 SET**。
+        // 少了这条，「只给了 stock / 只给了 skus 的改品请求」会把 `BeanUtils.copyProperties` 覆写成 null 的
+        // name / sku_code / base_price 一起写下去 ⇒ 真库 `products.name` 的 NOT NULL 约束当场报
+        // `null value in column "name"`（issue #6961 真库判据实测；修前整实体 `updateById` 天然不会写 null）。
+        LambdaUpdateWrapper<Product> wrapper = new LambdaUpdateWrapper<Product>()
+                .eq(Product::getId, product.getId())
+                .eq(Product::getTenantId, product.getTenantId())
+                .eq(Product::getDeleted, 0);
+        setIfPresent(wrapper, Product::getName, product.getName());
+        setIfPresent(wrapper, Product::getSkuCode, product.getSkuCode());
+        setIfPresent(wrapper, Product::getUnit, product.getUnit());
+        setIfPresent(wrapper, Product::getPricingType, product.getPricingType());
+        setIfPresent(wrapper, Product::getCategoryId, product.getCategoryId());
+        setIfPresent(wrapper, Product::getBasePrice, product.getBasePrice());
+        setIfPresent(wrapper, Product::getDescription, product.getDescription());
+        setIfPresent(wrapper, Product::getMainImage, product.getMainImage());
+        // JSON 列必须带 typeHandler：Wrapper 的 `.set(col, val)` 没有实体字段的 typeHandler，
+        // PG 拿不到 javaType ⇒ `Can't infer the SQL type ... ImmutableCollections$List12`
+        //（issue #6961 真库判据实测）。这里显式点名与实体注解同一个 handler。
+        setIfPresentWithHandler(wrapper, Product::getImages, product.getImages(), JSON_TYPE_HANDLER);
+        setIfPresentWithHandler(wrapper, Product::getDetailImages, product.getDetailImages(), JSON_TYPE_HANDLER);
+        setIfPresent(wrapper, Product::getKnowledgeBaseId, product.getKnowledgeBaseId());
+        setIfPresent(wrapper, Product::getStockWarningThreshold, product.getStockWarningThreshold());
+        setIfPresent(wrapper, Product::getAllowReturnRestock, product.getAllowReturnRestock());
+        setIfPresentWithHandler(wrapper, Product::getSellingMethods, product.getSellingMethods(), JSON_TYPE_HANDLER);
+        setIfPresent(wrapper, Product::getRollLengthM, product.getRollLengthM());
+        setIfPresent(wrapper, Product::getEditedBy, product.getEditedBy());
+        setIfPresent(wrapper, Product::getEditedAt, product.getEditedAt());
+        wrapper.set(Product::getUpdatedAt, OffsetDateTime.now());
+        return wrapper;
+    }
+
+    /** `@TableField(typeHandler = JacksonTypeHandler.class)` 的 JSON 列在 Wrapper 写面上要显式点名同一 handler。 */
+    private static final String JSON_TYPE_HANDLER =
+            "typeHandler=com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler";
+
+    /** 非 null 才进 SET 子句（= MyBatis-Plus `updateById` 的 NOT_NULL 策略，逐列复刻）。 */
+    private static <V> void setIfPresent(LambdaUpdateWrapper<Product> wrapper,
+                                        SFunction<Product, V> column, V value) {
+        if (value != null) {
+            wrapper.set(column, value);
+        }
+    }
+
+    /** 同上，但带上 typeHandler（JSON 列专用）。 */
+    private static <V> void setIfPresentWithHandler(LambdaUpdateWrapper<Product> wrapper,
+                                                   SFunction<Product, V> column, V value,
+                                                   String typeHandler) {
+        if (value != null) {
+            wrapper.set(column, value, typeHandler);
+        }
     }
 
     // ========== 批量操作 ==========
@@ -1368,10 +1622,15 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                 result.addError(id, "当前状态[" + statusLabel + "]不允许上架" + statusRecoveryHint(currentStatus));
                 continue;
             }
-            product.setStatus("on_sale");
-            product.setEditedBy(getCurrentUsername());
-            product.setEditedAt(OffsetDateTime.now());
-            productMapper.updateById(product);
+            // issue #6961：条件更新（CAS），按**影响行数**判定 —— 并发下同一商品只允许一次上架成功，
+            // 落败方记为该商品的错误（不是 500、也不是静默成功）。
+            if (GUARD_MUTATION == 1
+                    ? productMapper.update(product, new LambdaUpdateWrapper<Product>().eq(Product::getId, id)) == 0
+                    : productMapper.updateStatusIfFrom(id, tenantId, currentStatus, currentStatus == null,
+                    "on_sale", getCurrentUsername(), OffsetDateTime.now()) == 0) {
+                result.addError(id, "商品状态已被并发修改，本次上架未生效（请刷新后重试）");
+                continue;
+            }
             result.addSuccess();
         }
 
@@ -1402,10 +1661,14 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                 result.addError(id, "当前状态[" + statusLabel + "]不允许下架" + statusRecoveryHint(currentStatus));
                 continue;
             }
-            product.setStatus("off_sale");
-            product.setEditedBy(getCurrentUsername());
-            product.setEditedAt(OffsetDateTime.now());
-            productMapper.updateById(product);
+            // issue #6961：条件更新（CAS），按**影响行数**判定 —— 并发下同一商品只允许一次下架成功。
+            if (GUARD_MUTATION == 1
+                    ? productMapper.update(product, new LambdaUpdateWrapper<Product>().eq(Product::getId, id)) == 0
+                    : productMapper.updateStatusIfFrom(id, tenantId, currentStatus, currentStatus == null,
+                    "off_sale", getCurrentUsername(), OffsetDateTime.now()) == 0) {
+                result.addError(id, "商品状态已被并发修改，本次下架未生效（请刷新后重试）");
+                continue;
+            }
             result.addSuccess();
         }
 
@@ -1437,7 +1700,12 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                 result.addError(id, "当前状态[" + statusLabel + "]不允许删除" + statusRecoveryHint(currentStatus));
                 continue;
             }
-            productMapper.deleteById(id);
+            // issue #6956 · 现象 C：批量里也判行数 —— 抢不到的那条记为该商品的错误行，
+            // 不能算 success（否则「批量删 3 件、成功 3 件」里有一件其实早已被删）
+            if (productMapper.deleteById(id) == 0) {
+                result.addError(id, "商品已被删除，本次未生效（请刷新后重试）");
+                continue;
+            }
             result.addSuccess();
         }
 
@@ -1643,12 +1911,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                     "价格必须大于 0，当前值 " + parsedRow.price.toPlainString());
         }
 
-        // issue #5063（V115）：库存是 1 位小数口径（0.1 米粒度）⇒ 复用 StockQuantity 的准入判据，
-        // **不在这里另写一套小数位判断**；超过 1 位小数显式拒绝（禁止静默取整/截断）。
-        // issue #6199：导入的库存列同样是**绝对值** ⇒ 负数一并拒绝（导入面此前与改品面同款漏了符号）。
-        parsedRow.stock = StockQuantity.requireNonNegativeOrNull(
-                readCellNumber(row, header.get("库存"), "库存", rowNo), "第 " + rowNo + " 行库存");
-
+        // 🔴 issue #7597：导入模板已移除「库存」列（商品档案不再设置库存数值）。
+        // 旧文件里若仍带该列，按「未知列」忽略 —— 库存只能由真实单据产生（入库单 / 批次盘点）。
         parsedRow.colorName = normalizeBlankToNull(cellByHeader(row, header, "颜色"));
         parsedRow.doorWidth = normalizeBlankToNull(cellByHeader(row, header, "门幅"));
         if ((parsedRow.colorName == null) != (parsedRow.doorWidth == null)) {
@@ -1775,8 +2039,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         head.name = ColumnTextLength.requireWithinOrNull(head.name, 255, "导入行商品名称 name");
         head.skuCode = ColumnTextLength.requireWithinOrNull(head.skuCode, 30, "导入行商品货号 skuCode");
         head.categoryId = ColumnTextLength.requireWithinOrNull(head.categoryId, 64, "导入行分类 categoryId");
-        boolean groupHasSku = group.stream().anyMatch(r -> r.hasSku);
-
         // 幂等键查询：命中 ⇒ 原地更新（不新建行）；未命中 ⇒ 新建
         Product existing = productMapper.selectByTenantAndSkuCode(tenantId, head.skuCode);
 
@@ -1788,8 +2050,9 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             product.setCategoryId(head.categoryId);
             product.setBasePrice(head.price);
             product.setDescription(head.description);
-            // 有 SKU 组时该列是**派生列**（#4038，写完 SKU 由 syncProductStockFromSkus 回写汇总）
-            product.setStock(StockQuantity.orZero(head.stock));
+            // 有 SKU 组时该列是**派生列**（#4038，写完 SKU 由 syncProductStockFromSkus 回写汇总）；
+            // 无 SKU 组时也恒为 0（issue #7597：商品档案不建立库存）
+            product.setStock(BigDecimal.ZERO);
             product.setTenantId(tenantId);
             // 导入一律 draft（与既有导入口径一致）：上架是商家的显式动作，不由导入代劳
             product.setStatus("draft");
@@ -1805,10 +2068,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             patch.setCategoryId(head.categoryId);
             patch.setBasePrice(head.price);
             patch.setDescription(head.description);
-            // 「未填 = 不改」：无 SKU 组且库存列留空时不动既有库存（不得把留空当 0 清零）
-            if (!groupHasSku && head.stock != null) {
-                patch.setStock(head.stock);
-            }
             patch.setEditedBy(getCurrentUsername());
             patch.setEditedAt(OffsetDateTime.now());
             productMapper.updateById(patch);
@@ -1833,13 +2092,14 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             sku.setColorName(row.colorName);
             sku.setDoorWidth(row.doorWidth);
             sku.setPrice(row.price);
-            sku.setStock(row.stock);        // null = 未填 ⇒ 既有 SKU 保留原库存（saveColorsAndSkus 的既有语义）
+            // issue #7597：导入不再建立库存（库存列已从模板移除）
+            sku.setStock(null);
             sku.setSkuCode(row.skuCodeOfSku);
             skuInputs.add(sku);
         }
 
         saveColorsAndSkus(productId, head.skuCode, tenantId, colorInputs, null,
-                new ArrayList<>(doorWidths), head.price, StockQuantity.orZero(head.stock),
+                new ArrayList<>(doorWidths), head.price,
                 skuInputs, false);
     }
 
@@ -1853,7 +2113,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         private String skuCode;
         private String categoryId;
         private BigDecimal price;
-        private BigDecimal stock;
         private String description;
         private String colorName;
         private String doorWidth;
@@ -1952,10 +2211,11 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             }
 
             // 示例行
+            // issue #7597：模板不再有「库存」列（商品档案不建立库存；期初/进货走入库单）
             Object[][] examples = {
-                    {"雪尼尔遮光帘", "MH-001", "", 128.5, 60.5, "米白色雪尼尔", "米白", "2.8m", "MH-001-01-28"},
-                    {"雪尼尔遮光帘", "MH-001", "", 128.5, 12, "米白色雪尼尔", "米白", "3.2m", "MH-001-01-32"},
-                    {"罗马杆配件", "PJ-001", "", 35, 8, "2.8m 铝合金杆", "", "", ""},
+                    {"雪尼尔遮光帘", "MH-001", "", 128.5, "米白色雪尼尔", "米白", "2.8m", "MH-001-01-28"},
+                    {"雪尼尔遮光帘", "MH-001", "", 128.5, "米白色雪尼尔", "米白", "3.2m", "MH-001-01-32"},
+                    {"罗马杆配件", "PJ-001", "", 35, "2.8m 铝合金杆", "", "", ""},
             };
             for (int r = 0; r < examples.length; r++) {
                 Row row = sheet.createRow(r + 1);
@@ -2366,17 +2626,18 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // → Jackson 静默忽略 → hasUpdate 保持 false → 上一行 !hasUpdate 分支返回商品详情
         // （HTTP 200 + success）→ 黄金策回「已下架」而 products.status 未变。与 stock 同型的"假成功"。
         //
-        // 为什么放在 updateProduct 之后：updateProduct 内部刻意 `product.setStatus(originalStatus)`
-        // （注释「状态变更必须通过 updateProductStatus 接口（含状态机校验）」）——它靠 BeanUtils
-        // 拷贝请求到实体，而 ProductUpdateRequest 也有 status 字段，会绕过状态机。故状态只能由本方法
-        // 在商品更新完成后单独落库；非法流转抛错时整方法 @Transactional 回滚，不留部分写入。
+        // 为什么放在 updateProduct 之后：updateProduct **不写 status**（issue #6961：它只 set 自己
+        // 负责的列，status 被显式置 null 后不进 SET；修前是「整实体回写 + 把旧 status 写回」），
+        // 而 ProductUpdateRequest 也有 status 字段。故状态只能由本方法在商品更新完成后单独落库；
+        // 非法流转抛错时整方法 @Transactional 回滚，不留部分写入。
         if (request.getStatus() != null) {
             Product latest = productMapper.selectById(id);
             if (latest == null) {
                 throw BusinessException.notFound("商品");
             }
-            applyStatusTransition(latest, request.getStatus());
-            productMapper.updateById(latest);
+            // issue #6961：状态落库由 applyStatusTransition 内部的条件更新（CAS）收口 ——
+            // 修前是「就地改实体 + updateById 无谓词回写」。
+            applyStatusTransition(latest, request.getStatus(), id, tenantId);
         }
 
         return response;
@@ -2494,9 +2755,17 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                         before, after, StockLedger.REASON_MANUAL, null, reason);
             }
         }
-        // 商品级 stock 仅作冗余展示，同步为 SKU 汇总值
-        product.setStock(newTotal);
-        productMapper.updateById(product);
+        // 商品级 stock 仅作冗余展示，同步为 SKU 汇总值。
+        // 🔴 issue #6961（T2b 同族收口）：这里**只写 stock 这一列**（+ updated_at），不再整实体回写 ——
+        // 修前是把状态列显式置空后整实体回写：状态靠「NOT_NULL 跳过」躲过去，但 name / base_price /
+        // main_image 等列仍按**读到的陈旧实体**回写 ⇒ 并发的改品会被这条库存同步静默回滚
+        //（与 updateProduct 同一个病根，只是宿主换了）。列清单与 `syncProductStockFromSkus` 同口径。
+        productMapper.update(null, new LambdaUpdateWrapper<Product>()
+                .eq(Product::getId, productId)
+                .eq(Product::getTenantId, tenantId)
+                .eq(Product::getDeleted, 0)
+                .set(Product::getStock, newTotal)
+                .set(Product::getUpdatedAt, OffsetDateTime.now()));
 
         log.info("[Agent] 库存调整: product={}, adjustment={}, reason={}, total={}->{}, tenant={}",
                 productId, adjustment, reason, total, newTotal, tenantId);

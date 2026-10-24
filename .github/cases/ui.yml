@@ -387,7 +387,7 @@ cases:
 
   - id: UI-012
     legacy_id: ""
-    title: "订单列表页「刷新」按钮 — 保持当前筛选条件重新拉取（演示实时可见新订单）"
+    title: "销售订单页「刷新」按钮 — 保持当前筛选条件重新拉取（演示实时可见新订单）"
     domains:
       - ui
       - frontend
@@ -402,7 +402,7 @@ cases:
       - frontend-fix.vitest
       - frontend-fix.e2e
     user_inputs:
-      - "老板在订单列表页，顾客刚下单 → 点「刷新」按钮，新订单出现在列表（无需 F5/切 tab）"
+      - "老板在销售订单页，顾客刚下单 → 点「刷新」按钮，新订单出现在列表（无需 F5/切 tab）"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -645,7 +645,7 @@ cases:
 
   - id: UI-020
     legacy_id: ""
-    title: "订单列表采购明细 — 含加工项订单展示加工项计费（加工费合计 + 加工项明细行）"
+    title: "销售订单采购明细 — 含加工项订单展示加工项计费（加工费合计 + 加工项明细行）"
     domains:
       - ui
       - frontend
@@ -659,19 +659,21 @@ cases:
     truths_ref:
       - frontend-fix.no-api-change
     user_inputs:
-      - "订单包含加工项（如打孔、韩式打褶定型）时，订单列表「采购明细」列应展示该项加工费与加工项明细，与详情页口径一致"
+      - "订单包含加工项（如打孔、韩式打褶定型）时，销售订单「采购明细」列应展示该项加工费与加工项明细，与详情页口径一致"
     expectations:
       - tool: direct_reply
     data_checks:
-      - "OrderTable 采购明细列从 processingInfo.processingFee（非 totalAmount/totalFee）取加工费，商品行后展示「+ 加工费{金额}元」"
-      - "processingInfo 无 processingFee 字段时，按 processingInfo.processingItems 的 amount/subtotal 求和兜底展示加工费"
-      - "含加工项订单逐项展示加工项明细行：名称 × 单价元/米 × 数量米 = 金额元（数据源 item.processingInfo.processingItems）"
-      - "不含加工项订单不出现「+ 加工费0元」等误导信息"
-    skip_reason: "[backend-contract] 纯前端列表展示由 vitest 单测验证（OrderTable.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-05 新增：订单列表采购明细漏加工项计费修复（issue #2916）"
+      - "OrderTable 采购明细列的加工费与订单详情「费用构成」读**同一份权威落库值**（`processingInfo.processingFeeDetail.amount`，唯一实现点 = frontend/admin-web/src/lib/order-fee-display.ts::processingFeeOf），商品行后展示「+ 加工费{金额}元」"
+      - "processingInfo 里的客户端副本（`processingFee`）**不采信**：副本 15 元 / 权威 0 元（fee_source=unpriced）时不得渲染「+ 加工费15元」（issue #7138 实证的不一致）"
+      - "存量单（#4406 接线前生成、无 processingFeeDetail）才回落：先取顶层 processingFee，再按 processingInfo.processingItems 的 amount/subtotal 求和兜底展示"
+      - "权威值 > 0 时「+ 加工费{金额}元」与详情逐分一致；权威未定价 ⇒ 列表不出现加工费字样（不写「+ 加工费0元」）"
+      - "空数据态下表头不被压成竖排：「采购明细」表头与数据格共用同一宽度契约（whitespace-nowrap + min-w-[280px]），tbody 只有 colSpan 空态行时也不塌"
+    skip_reason: "[backend-contract] 纯前端列表展示由 vitest 单测验证（OrderTable.test.tsx / order-fee-source-guard.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-05 新增：订单列表采购明细漏加工项计费修复（issue #2916）；2026-10-17 口径改为**权威 detail 优先**、客户端副本不采信 + 空态表头宽度契约（issue #7138）"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/components/OrderTable.test.tsx"
+        - "frontend/admin-web/tests/unit/order-fee-source-guard.test.ts"
       ci:
         - pr-check.yml
       verifies: []
@@ -844,8 +846,8 @@ cases:
       - tool: direct_reply
     data_checks:
       - "request.ts 响应拦截器 toast 后端具体错误（success:false 业务错误 / HTTP 错误 / 网络错误 / 登录已过期）后，给错误对象打已提示标记（api-error.ts 的 markErrorToastShown / isErrorToastShown，Symbol.for 稳定键，frozen 对象不抛错）"
-      - "页面 catch 统一走 toastRequestError(e, fallback, {id?})：拦截器已提示 → 不再重复弹 fallback；传入 loading toast id 且已提示时先 dismiss（订单列表页「操作中…」不滞留）；未标记错误（客户端校验等本地错误）→ 弹 fallback"
-      - "订单域页面（订单详情/订单列表/发货/新建订单）请求失败 catch 不再重复 toast 通用错误；客户端校验类提示（如「请输入快递单号」「请完善订单信息」）保留不变，不回归"
+      - "页面 catch 统一走 toastRequestError(e, fallback, {id?})：拦截器已提示 → 不再重复弹 fallback；传入 loading toast id 且已提示时先 dismiss（销售订单页「操作中…」不滞留）；未标记错误（客户端校验等本地错误）→ 弹 fallback"
+      - "订单域页面（订单详情/销售订单/发货/新建订单）请求失败 catch 不再重复 toast 通用错误；客户端校验类提示（如「请输入快递单号」「请完善订单信息」）保留不变，不回归"
     skip_reason: "[backend-contract] 纯前端错误提示行为由 vitest 单测验证（api-error/request/order-detail 三套），toast 链路由 request 拦截器单测覆盖，非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-09-05 新增：拦截器与页面 catch 双重 toast 导致错误提示重复弹出（issue #2923），订单域落地去重模式，其余模块批量清理留后续 issue"
     traces:
@@ -916,13 +918,13 @@ cases:
       - tool: direct_reply
     data_checks:
       - "「角色权限」页整站改名「岗位权限」（页面标题/新增按钮/编辑弹窗/删除确认/空态，侧边栏入口与 Header 面包屑同步），URL /roles 不变"
-      - "侧边栏七大组（#5271 按业务动线重排）：工作台(经营看板+每日简报) / 智能客服(在线接待+知识库) / 商品与加工项(商品列表+加工项管理) / 交易管理(订单列表+售后工单+客户列表+财务对账) / 生产管理(生产看板+智能派单+工艺配置+计件工资) / 仓储与物料(入库单+余料台账+省料看板) / 组织管理(员工管理+岗位权限+企业基础信息) / 通知中心（独立）；**菜单项一项不少不减（21 项）**，只改分组归属与组名（原「客户管理」组并入交易管理组、原生产管理组的物料三项拆入新组「仓储与物料」）；权限过滤不回归（组内无可见子项则整组隐藏）"
+      - "侧边栏七大组（#5271 按业务动线重排）：工作台(经营看板+每日简报) / 智能客服(在线接待+知识库) / 商品与加工项(商品列表+加工项管理) / 交易管理(订单列表+售后工单+客户列表+财务对账) / 生产管理(作业看板+智能派单+工艺配置+计件工资) / 仓储与物料(入库单+余料台账+省料看板) / 组织管理(员工管理+岗位权限+企业基础信息) / 通知中心（独立）；**菜单项一项不少不减（21 项）**，只改分组归属与组名（原「客户管理」组并入交易管理组、原生产管理组的物料三项拆入新组「仓储与物料」）；权限过滤不回归（组内无可见子项则整组隐藏）"
       - "侧边栏交互（#5271）：分组默认**只展开当前路由所在组**（组标题显示项数徽标，收起不等于丢项）；路由变化 ⇒ 自动展开新所在组；折叠态仍按组渲染锚点（组图标 + title=组名，分组信息不丢）；小屏为抽屉式浮层（遮罩点击关闭、内容区不占宽度），桌面端常驻可折叠"
-      - "🔴 **2026-09-29 改判（issue #5778，用户逐条裁定）**：上面的七组清单**已作废**，现为 **6 组 + 2 一级项**：工作台(经营看板+每日简报) / **客户服务**(在线接待+客户列表+知识库+售后工单) / 交易管理(订单列表+财务对账) / 生产管理(生产看板+智能派单+**加工项管理**+工艺配置+计件工资) / 仓储与物料(入库单+余料台账+省料看板) / 组织管理(员工管理+岗位权限+企业基础信息)；**一级项** = 分组之前的「商品管理」(`/products`，原「商品与加工项」组撤销后升为一级项) 与分组之后的「通知中心」。仍 **22 项一项不少不减**（🔴 2026-10-02 issue #5939 起 +「发货单」：仓储与物料组内、与「入库单」对称，权限码取**既有** `order:list` ⇒ 零授权 delta）；权限码 / 路径 / 门控一字未动（合并只改分组归属）。新增「常用（收藏）」= 用户自钉 4~6 项 pin 在侧边栏最顶部（权限被收回则该项自动消失）。 🔴 **2026-10-09 再改判（issue #6580，用户逐字「移除加工项管理和工艺配置这两个菜单」「企业基础信息改成企业基础设置，这个菜单和通知中心是一个类型的放到通知中心的上面，并且和通知中心一起沉底」）**：生产管理组**由 5 项收拢为 3 项**（生产看板 → 智能派单 → 计件工资）——「加工项管理」「工艺配置」两个菜单项从**四处载体**（`config/menu.ts` / `MenuController.MENU_TREE` / `AuthService.buildMenusByPermissions` / `menu_navigator.py` 的 `MENU_TREE`）同批移除，功能体并入 `/settings`「企业基础设置」页内的配置域；两个旧路径 `/production/processing`、`/production/routings` 保留为**重定向薄壳**（不 404）；组织管理组的「企业基础信息」改名「企业基础设置」并**升为尾部一级项**（与「通知中心」同为沉底项、紧排在它之前）。整树 **24 项 → 21 项**（6 组 18 组内项 + 2 一级项 + 1 尾部独立项）。**本改判不削弱任何既有断言**：更新后的判据与红证在 UI-066 / UI-067，旧 IA 的反向钉子（「客户管理」组与 `customer-center` 不得长回来）逐条保留并新增 `product-center` / `smart-customer-service` 两条。"
-      - "菜单搜索 / 命令面板（#5271）：⌘K（Ctrl+K）打开、侧边栏顶部入口亦可打开；空查询列出**当前用户有权访问**的全部菜单项；命中面 = 菜单名 ∪ 组名 ∪ 拼音首字母别名（如 ddlb→订单列表）；↑/↓ 选择、Enter 跳转、Esc/点遮罩关闭；无权限的项**不得**出现在结果里（搜索不是绕过权限的口子）"
+      - "🔴 **2026-09-29 改判（issue #5778，用户逐条裁定）**：上面的七组清单**已作废**，现为 **6 组 + 2 一级项**：工作台(经营看板+每日简报) / **客户服务**(在线接待+客户列表+知识库+售后工单) / 交易管理(订单列表+财务对账) / 生产管理(作业看板+智能派单+**加工项管理**+工艺配置+计件工资) / 仓储与物料(入库单+余料台账+省料看板) / 组织管理(员工管理+岗位权限+企业基础信息)；**一级项** = 分组之前的「商品管理」(`/products`，原「商品与加工项」组撤销后升为一级项) 与分组之后的「通知中心」。仍 **22 项一项不少不减**（🔴 2026-10-02 issue #5939 起 +「发货单」：仓储与物料组内、与「入库单」对称，权限码取**既有** `order:list` ⇒ 零授权 delta）；权限码 / 路径 / 门控一字未动（合并只改分组归属）。新增「常用（收藏）」= 用户自钉 4~6 项 pin 在侧边栏最顶部（权限被收回则该项自动消失）。 🔴 **2026-10-09 再改判（issue #6580，用户逐字「移除加工项管理和工艺配置这两个菜单」「企业基础信息改成企业基础设置，这个菜单和通知中心是一个类型的放到通知中心的上面，并且和通知中心一起沉底」）**：生产管理组**由 5 项收拢为 3 项**（作业看板 → 智能派单 → 计件工资）——「加工项管理」「工艺配置」两个菜单项从**四处载体**（`config/menu.ts` / `MenuController.MENU_TREE` / `AuthService.buildMenusByPermissions` / `menu_navigator.py` 的 `MENU_TREE`）同批移除，功能体并入 `/settings`「企业基础设置」页内的配置域；两个旧路径 `/production/processing`、`/production/routings` 保留为**重定向薄壳**（不 404）；组织管理组的「企业基础信息」改名「企业基础设置」并**升为尾部一级项**（与「通知中心」同为沉底项、紧排在它之前）。整树 **24 项 → 21 项**（6 组 18 组内项 + 2 一级项 + 1 尾部独立项）。**本改判不削弱任何既有断言**：更新后的判据与红证在 UI-066 / UI-067，旧 IA 的反向钉子（「客户管理」组与 `customer-center` 不得长回来）逐条保留并新增 `product-center` / `smart-customer-service` 两条。"
+      - "菜单搜索 / 命令面板（#5271）：⌘K（Ctrl+K）打开、侧边栏顶部入口亦可打开；空查询列出**当前用户有权访问**的全部菜单项；命中面 = 菜单名 ∪ 组名 ∪ 拼音首字母别名（如 ddlb→销售订单）；↑/↓ 选择、Enter 跳转、Esc/点遮罩关闭；无权限的项**不得**出现在结果里（搜索不是绕过权限的口子）"
       - "创建/编辑员工：岗位改为下拉选择（岗位=角色体系，来自 /api/admin/roles/all），选岗位自动把该岗位默认权限（role_permissions codes）预填进权限树；仍可手动增删；编辑切岗位则重置为新岗位默认"
       - "员工权限快照式（#2969）：提交时携带 position+permissions（permissions=最终勾选），不携带 role 字段（#2907 契约），后端按岗位名解析角色"
-      - "岗位权限弹窗「权限分配」按真实侧边栏菜单同构渲染（#3002；🔴 2026-10-01 改判，#5895）：权限树必须覆盖 `frontend/admin-web/src/config/menu.ts` 的**全部三个梯队** —— ① 一级项 `standaloneTopItems`（「商品管理」= `product:list`，渲染在**所有分组之前**、不在任何分组里，专属容器 `perm-standalone-top`）② 分组 `menuGroups` 的组名与组内菜单名（工作台：经营看板/每日简报；客户服务：在线接待/客户列表/知识库/售后工单；交易管理：订单列表/财务对账；生产管理：生产看板/智能派单/计件工资（🔴 #6580 起收拢为 3 项，加工项管理/工艺配置已移除）；仓储与物料：入库单/库存明细/发货单/余料台账/省料看板；组织管理：员工管理/岗位权限）③ 一级项（`standaloneTopItems`：「商品管理」+「企业基础设置」）+ 尾部项 `standaloneItems`（通知中心，全员可见**无码** ⇒ 不可授予、不进树）；勾选即授予对应权限码（roles 保存权限 ID，前端做码→ID 映射）；非菜单操作权限（仪表板查看/新增商品/商品分类/订单详情/新增员工等）单独一节「操作权限」；旧口径不再出现（英文 resourceType 组头 / 会话监控 / 快捷回复 / AI 客服配置 等旧名；组名「智能客服」「商品与加工项」随 #5778 作废）；保存契约不变（permissionIds = 权限 ID）。🔴 **#5895 的缺陷形态（本条原判据漏网）**：#5778 把「商品列表」升为一级项时只跟了侧边栏与 ⌘K，弹窗仍只遍历 `menuGroups` ⇒ 该菜单**整项不可勾选**（且因「省料看板」同持 `product:list`，它连「操作权限」兜底节也被过滤掉，一个入口都没有）；判据 = `frontend/admin-web/tests/unit/pages/roles.test.tsx` 的类级元守卫「`config/menu` 的菜单梯队全部已并入权限树」+「三梯队里每个带码菜单节点都能在权限树里勾到」+ 实例判据两条；红证（临时摘掉修复）= 3 failed / 1 passed，恢复后 14/14 绿"
+      - "岗位权限弹窗「权限分配」按真实侧边栏菜单同构渲染（#3002；🔴 2026-10-01 改判，#5895）：权限树必须覆盖 `frontend/admin-web/src/config/menu.ts` 的**全部三个梯队** —— ① 一级项 `standaloneTopItems`（「商品管理」= `product:list`，渲染在**所有分组之前**、不在任何分组里，专属容器 `perm-standalone-top`）② 分组 `menuGroups` 的组名与组内菜单名（工作台：经营看板/每日简报；客户服务：在线接待/客户列表/知识库/售后工单；交易管理：销售订单/财务对账；生产管理：作业看板/智能派单/计件工资（🔴 #6580 起收拢为 3 项，加工项管理/工艺配置已移除）；仓储与物料：入库单/库存明细/发货单/余料台账/省料看板；组织管理：员工管理/岗位权限）③ 一级项（`standaloneTopItems`：「商品管理」+「企业基础设置」）+ 尾部项 `standaloneItems`（通知中心，全员可见**无码** ⇒ 不可授予、不进树）；勾选即授予对应权限码（roles 保存权限 ID，前端做码→ID 映射）；非菜单操作权限（仪表板查看/新增商品/商品分类/订单详情/新增员工等）单独一节「操作权限」；旧口径不再出现（英文 resourceType 组头 / 会话监控 / 快捷回复 / AI 客服配置 等旧名；组名「智能客服」「商品与加工项」随 #5778 作废）；保存契约不变（permissionIds = 权限 ID）。🔴 **#5895 的缺陷形态（本条原判据漏网）**：#5778 把「商品列表」升为一级项时只跟了侧边栏与 ⌘K，弹窗仍只遍历 `menuGroups` ⇒ 该菜单**整项不可勾选**（且因「省料看板」同持 `product:list`，它连「操作权限」兜底节也被过滤掉，一个入口都没有）；判据 = `frontend/admin-web/tests/unit/pages/roles.test.tsx` 的类级元守卫「`config/menu` 的菜单梯队全部已并入权限树」+「三梯队里每个带码菜单节点都能在权限树里勾到」+ 实例判据两条；红证（临时摘掉修复）= 3 failed / 1 passed，恢复后 14/14 绿"
     skip_reason: "[backend-contract] 岗位权限/菜单重构/选岗位带权限均由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-09-06 新增：岗位权限体系改造（issue #2969）；2026-09-07 补：#3002 权限弹窗菜单同构渲染——复用侧边栏 menuGroups/standaloneItems 单源（@/config/menu），弹窗分组/名称与真实侧边栏一致，操作权限单独一节，修复原按 resourceType 英文码分组 + 旧权限名的口径漂移；2026-09-23 改判（issue #5271）：侧边栏七大组**按业务动线重排**（商品管理→商品与加工项、订单管理+客户管理→交易管理、生产管理拆出仓储与物料；菜单项一项不少不减 21 项），并补四项交互口径（分组默认只展开当前组 / 路由联动自动展开 / 折叠态分组可见 / ⌘K 命令面板搜全部有权访问项 + 小屏抽屉）；2026-10-01 改判（issue #5895，用户会话报「权限分配功能上缺了商品管理菜单？」）：该 data_check 的组名清单**整格改判**为 #5778 后的 IA，并补**三梯队全覆盖**判据（一级项 / 分组 / 尾部项）+ 专属容器 `perm-standalone-top`；同批把 `tests/e2e/specs/admin/roles.spec.ts` 里停在 #5271 的过期组名（「智能客服」「商品与加工项」）改判并补一级项断言 —— 该 spec **不在 pr-check 的跑测面**（pr-check 只跑 quality specs + dashboard），所以档期漂移此前无人发现"
     traces:
@@ -1378,11 +1380,12 @@ cases:
       - "更新已有物流时**仅**在显式传入非空才覆盖发货人：改运单号/纠错不等于换经手人；存量订单（shipper_name 为 NULL）不为历史数据猜经手人"
       - "order_logistics.shipper_name 必须 nullable：存量已发货订单历史上无此数据，纸面「发货人」栏显示「-」（#3818 裁定，不得留白、不得 undefined/null），不得回填假值（否则迁移失败或纸面出现伪造经手人）"
       - "新增可打印「发货单」（ShipmentDoc）：A4（@page size: A4）+ body visibility 隔离；纸面含 订单号/下单时间/收货人/电话/地址/商品明细（品名·货号·颜色·规格·数量·单价·金额）/合计（总数量+总金额）/加工费合计（`ShipmentDoc.tsx` 的纸面标签真值）/备注/发货人（存量空值显示「-」）/物流公司·运单号（发货前留空供手写，发货后带出）"
-      - "入口两处：发货页（发货前打印，发货人取当前输入值，未保存也印）+ 订单详情页 shipped/completed 状态「打印发货单」（补打——发货页有状态守卫，shipped 后进不去）；待付款等未发货状态不显示该入口"
+      - "入口两处：发货页（发货前打印，发货人取当前输入值，未保存也印）+ 订单详情页页面级「打印」入口里选**发货单**（补打——发货页有状态守卫，shipped 后进不去）。🔴 issue #7544 改判：详情页不再有独立的「打印发货单」按钮，也不再按状态显隐（待付款等未发货状态同样能补打，只是纸面物流 / 发货人栏为空）"
       - "发货单渲染在页面级，**不得**放进 Modal（Modal 为 max-h-full + 内部 overflow-y-auto，打印只会打出可视一屏、多页明细被裁）；每页只挂一份（.shipment-print-area 为全局选择器，挂两份会打印出两套单据）"
       - "不向 C 端顾客泄漏发货人：customer_logistics_track 按白名单字段构造返回（order_id/order_no/tracking_number/company/status/status_text/latest/traces），响应中不含 shipperName"
+      - "加工项区（issue #7275 + #7605）：纸面「加工项」压成**一行**（区头 = `加工项（数量：米）`，单位只写一次），加工费合计同行右对齐（过长自动折行，不裁项）；行文案由 `frontend/admin-web/src/components/orders/ShipmentDoc.tsx` 的 `processingItemsText()` **单一构建器**产出、按**数据二态**：数量全等 ⇒ `定型、韩褶 各 6`（数字只说一遍）；数量不等 ⇒ `定型 6 + 韩褶 2`；单项 ⇒ `定型 6`（不写「各」）；缺数量 ⇒ 该项显式印 `—`（`打孔 —`）。🔴 **不得**用 `（A+B）×6`（用户 2026-10-24 裁定）：纯文本有运算优先级歧义（`定型 + 韩褶×6`），且与同行「加工费合计」并排会诱导客户拿它去乘出加工费（真值 = 组合价 元/米 × 加工费米数）；各加工项 quantity 可以不等、可以缺 ⇒ 无条件提公因子 = 把不等的数压成一个 = 报错数。执行点 = `frontend/admin-web/tests/unit/components/ShipmentDoc.test.tsx` 的「#4882 / #7275 / #7605」+「#7605：数量全等」+「#7275 / #7605：缺数量」；类级判据 = `tests/unit_ci_workflows/test_print_media_matrix_guard.py::test_c9_shipment_processing_items_stay_on_one_line`（构建器缺失 / 全等形态缺失 / 构建器里出现 `×` 均判红，含注入式红证）"
     skip_reason: "[backend-contract] 纯前端 UI + 后端字段落库，由 vitest 单测（ShipmentDoc/ship-order/order-detail/data-adapter）与 MockMvc/Service 单测（OrderControllerTest/AgentOrderServiceTest/UserServiceTest）验证；非 LLM 行为（agent 工具参数未变，发货人由后端按 X-User-Id 兜底），不进入 agent-eval 冒烟"
-    merge_log: "2026-09-15 新增（issue #3768）：发货单闭环 —— 发货人落库（预填登录人可改 + 后端 userId 兜底；更新不覆盖原经手人）+ 可打印纸质发货单（A4，发货前打 / 发货后补打）+ C 端不泄漏发货人；2026-09-15（#3818）口径裁定：存量发货人纸面显示「-」（原「留空」口径作废；留空只给运单号/物流公司）"
+    merge_log: "2026-09-15 新增（issue #3768）：发货单闭环 —— 发货人落库（预填登录人可改 + 后端 userId 兜底；更新不覆盖原经手人）+ 可打印纸质发货单（A4，发货前打 / 发货后补打）+ C 端不泄漏发货人；2026-09-15（#3818）口径裁定：存量发货人纸面显示「-」（原「留空」口径作废；留空只给运单号/物流公司） ｜ 2026-10-18（issue #7275）：加工项由逐项两列表压成一行 `名称×数量 + …`（加工费合计同行右对齐；真值不变），类级判据 C9  ｜ 2026-10-24（issue #7605）：加工项一行的**写法**改钉为二态 —— 数量全等 ⇒ `定型、韩褶 各 6`、不等 ⇒ `定型 6 + 韩褶 2`，单位提到区头一次（`加工项（数量：米）`），行内不再出现 `×`；文案收进 `processingItemsText()` 单一构建器，C9 同步改钉（构建器缺失 / 全等形态缺失 / 构建器里出现 `×` 均判红）。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/components/ShipmentDoc.test.tsx"
@@ -1786,7 +1789,7 @@ cases:
 
   - id: UI-053
     legacy_id: ""
-    title: "订单详情页「打印报价单」A4 — 按商品行成套 + 部位/部位信息/部位备注/宽*高/组件/货号/用料/价格/小计 + 金额汇总 + 扫码支付（issue #4965）"
+    title: "订单详情页「打印报价单」A4 — 按商品行成套 + 组件/货号/颜色/门幅/尺寸/数量/单价/小计 + 金额汇总 + 扫码支付（issue #4965 / #7527）"
     domains:
       - ui
       - frontend
@@ -1807,17 +1810,18 @@ cases:
     expectations:
       - tool: direct_reply
     data_checks:
-      - "订单详情页 shipped/completed 操作区在「打印发货单」旁并列新增「打印报价单」（`window.print()`，与既有按钮同一权限口径与写法）；`QuotationDoc` 在**页面级**挂载一份（不进 Modal、每页只挂一份）"
-      - "纸面四段齐全（A4，`@page { size: A4 }`）：① 表头 = 报价单 / 单号 `orderNo` / 货运（`logisticsType` + `logisticsCompany`，两者都缺 ⇒ 该栏不印）/ 客户·电话·地址 / 备注；② 正文 = **每个商品行自成一套**（用户裁定：不做樘窗分组），段头 `第N套/共M套` + `本套金额`，每段一张 10 列表 `部位 | 部位信息 | 部位备注 | 宽*高 | 组件 | 货号 | 用料 | 价格 | 小计 | 备注`；③ 汇总 = 本单总金额 / 优惠金额 / 本单应收；④ 页脚 = 温馨提示常量 + 扫码支付码"
-      - "逐列映射：部位 = `processingInfo.curtainType`；部位信息 / 部位备注 = `lib/craft-display.ts` 的 `craftSpecRows()`（§4.9 单一真值，不另写推导；「部位」行已有自己的列 ⇒ 从两列排除；两列切分沿用既有「原始输入 / 算料输出」分组）；宽*高 = `width`×`height`（米，任一缺 ⇒ 不印）；组件 = 面料行 `processingInfo.componentRole`（缺省即主布）/ 加工费行「加工费」；货号 = `productCode` + `processingInfo.colorName`；用料 = `quantity`（米）；价格/小计 = 面料行 `unitPrice`/`subtotal`、加工费行 `processingFee`/`processingFee`"
+      - "订单详情页点页面级唯一「打印」入口 → 在打印层里选**报价单**标签，先看纸面预览再出纸（`window.print()` 仍只在 `usePrintDoc` 一处；issue #7544 起入口与订单状态无关，任何状态都能补打）—— 改前是 shipped/completed 操作区的「打印报价单」按钮（issue #4965 的形态，2026-10-23 改判）；`QuotationDoc` 在**页面级**挂载一份（不进 Modal、每页只挂一份）"
+      - "纸面四段齐全（A4，`@page { size: A4 }`）：① 表头 = 报价单 / 单号 `orderNo` / 货运（`logisticsType` + `logisticsCompany`，两者都缺 ⇒ 该栏不印）/ 客户·电话·地址 / 备注；② 正文 = **每个商品行自成一套**（用户裁定：不做樘窗分组），段头 `第N套/共M套` + `本套金额`，每段一张 8 列表 `组件 | 货号 | 颜色 | 门幅 | 尺寸 | 数量(米) | 单价(元/米) | 小计`（🔴 issue #7527：**品名列与工艺行不印** —— 用户 2026-10-23 逐字「报价单不要品名列和工艺行」）；③ 汇总 = 本单总金额 / 优惠金额 / 本单应收；④ 页脚 = 温馨提示常量 + 扫码支付码"
+      - "逐列映射（issue #7527 后 8 列）：组件 = 面料行 `processingInfo.componentRole`（缺省即主布）/ 加工费行「加工费」；货号 = `skuCode`（经 `lib/order-item-sku.ts::orderItemSku()` 唯一取值口；原读的 `productCode` 不在响应里 ⇒ 纸面恒空，issue #6869）；颜色 = `processingInfo.colorName`；门幅 = `processingInfo.doorWidth`（同一取值口格式化为 `2.8米`）；尺寸 = `width`×`height`（米，任一缺 ⇒ 不印）；数量 = `quantity`（米）；单价 / 小计 = 面料行 `unitPrice`/`subtotal`、加工费行 `processingFee`/`processingFee`。**品名与工艺文案都不上纸**（issue #7527）：品名在面料行 / 加工费行连印两遍（产品设计原则 P2「信息不重复」），工艺（部位 / 加工类型 / 用料公式 / 算料）属生产侧信息，留在订单详情页与 `ProcessingDoc`"
       - "加工费**单独成行**（`processingFee > 0` 才出）：与参照物的一处**有意差异** —— 参照物把加工费并进面料单价，而我们 `unitPrice` 与 `processingFee` 是两笔真实金额，必须分别列示，否则商家对不上账"
       - "金额口径单一真值：行小计（本套金额）= `lib/order-amount.ts` 的 `lineSubtotal(item)` = `subtotal + processingFee`，与 `OrderItemList` 的明细行小计**同一份**实现（不各算一套）；汇总三个数字只读订单字段 `totalAmount` / `discountAmount` / `actualAmount`，**不自己求和**"
       - "缺值不渲染（用户裁定 ①）：上期余额 / 预存抵扣 / 账户余额 / 交付日期 / 制单人一律不印；键缺席 / null / 空串 / 空数组 ⇒ 该行不出现；纸面绝不出现 `undefined` / `null` / `NaN`（含整单缺值扫描）"
       - "页脚扫码支付码 = `TenantPaymentQrcode`（`GET /api/admin/settings/payment-qrcodes`，`settingsApi.getPaymentQrcodes`）：有码 ⇒ 印图片 + 收款方；**没有码 / 缺 `imageUrl` / 拉取失败 ⇒ 整块不出现、不画假码**；常驻组件**不在挂载时**拉码（`beforeprint` 时才拉，避免每次打开订单详情页都发请求）"
+      - "收款码标签逐字 `微信支付`（issue #7605，用户 2026-10-24 逐字「这里把微信改成微信支付是否更好？」）：白纸上「二维码 + 微信」在中文语境里默认指「加微信好友」，而这里印的是收款码 ⇒ caption = `微信支付`、`alt` = `微信支付收款码`；对侧仍是 `支付宝`（**不加**「支付」——本词自带支付语义，不是漏改）。执行点 = frontend/admin-web/tests/unit/components/QuotationDoc.test.tsx 的「预览层（inline）挂载即出码」；红证：标签改回 `微信` ⇒ `toContain('微信支付')` 与 caption 逐字断言同时红（旧写法 `toContain('微信')` 对新旧两种文案都绿 = 零判别力）"
       - "打印隔离沿用 `components/orders/ShipmentDoc.tsx` 的范式 6 条：portal 到 `document.body` 直接子级 + 容器自身 class `quotation-print-area` + `display:none` 与 `@media print` 显形 + `body > *:not(.quotation-print-area){display:none!important}` + visibility 防御 + 不进 Modal + 每页只挂一份"
     skip_reason: "[backend-contract] 纯前端打印纸面 + 既有端点只读（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/QuotationDoc.test.tsx、tests/unit/pages/order-detail.test.tsx、tests/unit/lib/logistics.test.ts 执行"
     precondition: "本用例是 [backend-contract] 纯前端纸面用例：前置（订单对象含明细/物流/备注、收款码 map）由单测自建（frontend/admin-web/tests/unit/components/QuotationDoc.test.tsx 直接构造 Order/OrderItem 并注入 paymentQrcodes；tests/unit/pages/order-detail.test.tsx mock `orderApi.getOrder`；`settingsApi.getPaymentQrcodes` 打桩），不依赖共享夹具 ⇒ 前置不成立时单测直接红；agent-eval 栈不跑它"
-    merge_log: "2026-09-21 新增（issue #4965）：订单详情页新增「打印报价单」A4 —— 照真实报价单制式（按商品行成套 + 10 列明细 + 金额汇总 + 页脚扫码支付）；缺值不印（我们没有的字段一律不印）、加工费单独成行（与参照物的有意差异）、行小计与 OrderItemList 同源（`lib/order-amount.ts`）"
+    merge_log: "2026-09-21 新增（issue #4965）：订单详情页新增「打印报价单」A4 —— 照真实报价单制式（按商品行成套 + 10 列明细 + 金额汇总 + 页脚扫码支付）；缺值不印（我们没有的字段一律不印）、加工费单独成行（与参照物的有意差异）、行小计与 OrderItemList 同源（`lib/order-amount.ts`）。2026-10-23（issue #7527）纸面收窄：撤「品名」列（9 列 → 8 列，列宽重新归一）+ 撤整条「工艺」行（部位 / 算料不再上纸）—— 用户逐字「报价单不要品名列和工艺行」  ｜ 2026-10-24（issue #7605）：收款码 caption 由 `微信` 改为 `微信支付`、`alt` 改 `微信支付收款码`（白纸上「二维码 + 微信」默认被读成「加微信好友」；支付宝仍不加「支付」），并把 `toContain('微信')` 这条零判别力的断言收紧为逐字断言。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/components/QuotationDoc.test.tsx"
@@ -1856,12 +1860,14 @@ cases:
       - "算料口径读面失败（权限拒绝等）⇒ 渲染可行动话术（含「请联系管理员」），不静默空白"
       - "行式配置（加工费组合 / 特殊选项价 / 工序库 / 工序管理 / 计件）只给入口链接与「钱在哪」说明，不在本页做列表编辑"
       - "阈值试算（§22 P4）：双列对照「按当前口径」与「按你改的阈值」；判定依据逐字来自服务端 auto-features（config 透传，不本地判、不本地拼文案）；改阈值 ⇒ 用新值重发试算；服务端不可用 ⇒ 可行动话术（**不得**显示成「不判任何特征」）；本块**不发任何 PUT**"
-      - "**算料口径域 = 算料配置的唯一写面**（issue #6825）：域内就地可改 8 标量 + 档位表（显示名 + 满度逐行可改）+ 拼色每折吃布表 + `default_formula` select，**只有一个**保存按钮；保存 `PUT` 带**全量 11 键**（缺键 ⇒ 后端静默回默认值）；422 ⇒ `details[].message` 逐条上屏、**草稿不回滚**、不谎报「已保存」；数字格清空 ⇒ 空框（不得出现字面量 `NaN`）"
+      - "**数字框精度与 0 值**（issue #7548，用户 2026-10-23 裁定「算料口径的输入框都允许设置3位小数」「另外还要都允许设置为0」）：算料口径所有数字框（10 标量 + 档位褶倍 + 拼色配布 + 阈值试算 4 格）失焦按 **3 位小数**归一（`0.125` 原样留住、`0.1234` ⇒ `0.123`；改前按 2 位 ⇒ 被改成 `0.13`）；单/多开余量、上下卷边、超宽/超高阈值、褶倍下限、用料进位步长**允许设 0**（0 = 不留边 / 全部按超额 / 关闭护栏 / 不进位），单色每折用料与档位褶倍仍须 > 0（0 米 = 0 元报价）"
+      - "**算料口径域 = 算料配置的唯一写面**（issue #6825）：域内就地可改 **10 标量**（含**拼色单开 / 拼色多开余量**两项独立参数）+ 档位表（显示名 + 满度逐行可改）+ 拼色配布长度表 + `default_formula` select，**只有一个**保存按钮；保存 `PUT` 带**全量 13 键**（缺键 ⇒ 后端静默回默认值）；422 ⇒ `details[].message` 逐条上屏、**草稿不回滚**、不谎报「已保存」；数字格清空 ⇒ 空框（不得出现字面量 `NaN`）"
       - "**板子退役**（issue #6825）：`/production/routings` 的 tab 收敛为「工序管理 / 裁高配置」两个（`process-config-tab-calc` 与全部 `craft-calc-config-*` DOM 不得存在）；就绪度第 ④ 步「去处理」是**跨页链接** `/settings?domain=calc`（不是页内切 tab、不是死按钮）；旧深链 `?tab=calc` ⇒ `router.replace` 到 `/settings?domain=calc` **恰好一次**、不 404 不落空白"
       - "**类级守卫：每个配置域都有写面**（issue #6825 判据 6）：遍历 `CONFIG_DOMAINS`（含 `mainlineSteps`）断言 `config-domain-panel-*` 内有可交互控件，且该域有 `[data-write-exit]` 写出口（两者成对 ⇒ **只留试算框**那种「有输入框、没保存」的形态必红）；台账未登记即抛错（fail-closed）"
       - "**行式紧凑版式**（issue #6857，用户裁定方案 B）：算料域的数值输入**与名称同一行**（输入框紧邻的前一个兄弟 = 名称元素）、定宽 `w-28` + 数字右对齐（`tabular-nums`）、**不得** `w-full`；行间细分割线、**不再用卡片**；档位表 显示名 `w-40` / 褶倍 `w-28`、拼色表 `w-28`、备用公式 `select` `w-64`"
       - "**行内不标默认态**（issue #6857，用户裁定方案 C）：`param-unset-*` / `param-is-default-*` / `param-changed-*` **一个都不在**；替代 = 域级信号（横幅 + 口径徽标）+ 「恢复为默认值」按钮（把**整份**草稿写回 `defaults`；`defaults_source !== 'engine'` ⇒ 禁用；**不自动保存**）"
       - "**类级守护：配置页数值输入必须定宽**（issue #6857 判据 5）：本域每个 `calc-caliber-*` 输入/下拉都带定宽 token（`w-28`/`w-40`/`w-64`）且**不得** `w-full`；`boundedInputCls` 的替换必须真的生效（`inputCls` 丢了 `w-full` ⇒ 自证红，防静默退化成整列宽）"
+      - "🔴 **2026-10-17 用户裁定（两条）**：① 「把算料口径里面的这行字都拿掉吧」—— 参数行内**整行**「改它会怎样：… 说明」退场（含行尾 `param-doc-*` 锚点），影响说明的唯一载体是同屏术语区块的「参数当前值」表；承载体 = `frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx`（逐条断言页面上取不到 `改它会怎样`、`param-doc-*` 为 `null`，并反向自证 `glossary-param-*` 目标行仍在）。② 「两个参数一行排列的布局是否更美观」⇒ 常用 / 高级参数容器改为 `grid grid-cols-1 gap-x-8 xl:grid-cols-2`（窄屏单列），判据 = 同文件的「两列排布（xl+）」用例（把 `divide-y` 单列写回 ⇒ 红）。三件套口径（人话名 / 口径提示 / 就地可改）一条不放宽。"
     skip_reason: "[backend-contract] 纯前端页面与只读展示（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx（算料口径域面板；它承接的是 #6826 删掉的那个死代码组件的面）、frontend/admin-web/tests/unit/pages/settings-params.test.tsx（新页面 + 配置主线）、frontend/admin-web/tests/unit/lib/config-readiness.test.ts（三态判据）、frontend/admin-web/tests/unit/lib/tenant-params.test.ts 执行"
     precondition: "本用例是 [backend-contract] 纯前端用例：前置（算料配置读面与 AI 配置读面）由单测 mock `@/lib/api` 自建（#6573 起算料域读面由**页面**发起、以 props 注入面板），不依赖共享夹具 ⇒ 前置不成立时单测直接红；agent-eval 栈不跑它"
     merge_log: "2026-09-22 新增（issue #5131）：用户 2026-09-22 裁定 D6′ = 方案 A（整合落在页面与信息架构，存储保持结构化列），并逐字强调「我们的配置类页面务必要考虑配置复杂度和用户体验」⇒ 按 migao-dev-flow §22 配置类页面规范落增量 1：P1 按域分组 / P2 每参数三件套 / P3 默认值可见 / **P4 阈值试算**（双列对照，服务端判定真值 —— 只覆盖超高与超宽两个阈值键，其余算料参数的服务端试算不收 config）。**未闭环（照实登记）**：P6 变更留痕登记为后续增量。 ｜ 2026-10-08（issue #6573，用户裁定方案 C）**改判**：参数总览由 `/settings` 的 tab **升为一级菜单项** `/settings/params` —— 旧形态把配置中心绑在 `system:manage` 上，持 `production:view` 的生产岗根本进不去，而缺配置的正是他们要配的东西；同批落「配置主线」（跨页就绪度：工序与单价 → 工艺路线 → 默认路线 → 加工费组合 → 算料配置）与**域级权限**（不持码的域不渲染也不请求）。判据口径同步改判：第一屏读端点由**页面**的 effect 驱动面承担（`MENU_READ_ENDPOINT_ANCHORS` 新增该页一条，5 个读面全是 `production:view` ⇒ 第一屏码集恰好一个码）。**未实装（照实登记）**：服务端聚合就绪度端点、跨页的「加工项 / 余料尺寸」两步、以及真实浏览器点击 E2E 均未做 ｜ 2026-10-09（issue #6580，用户裁定）**再改判**：「参数总览」**不再单独立菜单**（用户逐字「参数总揽不要单独搞个菜单」）——它的一级项席位由「企业基础设置」（原「企业基础信息」，同批改名）占用，内容并入 `/settings` 页内的配置域；`/settings/params` 保留为旧链兼容（重定向，不 404）。本例的**页面级判据**（四区八域 / 配置主线 / 域级权限 / 阈值试算）随页迁移继续有效， ｜ 2026-10-09（issue #6585，v2）**域拆到功能粒度**：域数 **8 → 11** —— `processing-fee`（一个域两件事：加工项 + 加工费组合）拆成 `processing-items` + `fee-combinations`，`craft-route`（一个域四件事）拆出 `operation-prices`（工序与部位单价是**同一张表** ⇒ 不拆成两域），并新增 `cutting-height`（裁高配置）；算料的**公式编辑**并入「算料口径」域（消灭与 board 内 calc tab 的重复入口）。**新增类级守卫「域内零 tab」**：遍历全部域断言 `config-domain-panel-*` 内无 `role=tablist`（ARIA 角色不得再出现），未拆域进**只许缩短**的台账（`TABS_NOT_YET_SPLIT`）+ 无幽灵断言 ⇒ 每搬完一个域必须从台账删一行。旧 `?domain=processing-fee` 由 `LEGACY_DOMAIN_ALIASES` + `resolveDomainKey` 兜住（域 key = 可分享的 URL 契约，不许落空白）。执行点 = `frontend/admin-web/tests/unit/pages/settings.test.tsx`（判据 7）+ `lib/config-center-domains.test.ts` + `tests/unit/components/{ProcessingItemsPanel,FeeCombinationsPanel,OperationPricePanel,RoutingsPanel,CuttingHeightPanel,CalcCaliberPanel}.test.tsx` ｜ 2026-10-13（issue #6825，用户裁定**方案 B**）**收口算料写面**：`/settings?domain=calc` 的「算料口径」域此前**只有读面**（标签 / 提示 / 影响面 + 只读值 + 阈值试算），真正的写面（8 标量 + 档位表 + 拼色每折吃布表 + 备用公式 + 保存）只存在于 `/production/routings?tab=calc`，而那个菜单入口早在 #6580 就被删了（登记在 `tests/unit_ci_workflows/test_agent_permission_parity.py::ROUTE_WITHOUT_MENU_NODE`）、#6585 又摘掉了「去算料配置」外链 ⇒ **商家从任何导航都到不了这些参数**（同一份配置两个入口 = 设计判死线第 1 条）。本轮把唯一写面收敛进算料口径域：就地可改 8 标量（`NumberInput`，issue #5198/#5218 口径）+ 档位表（显示名 + 满度**逐行可改**）+ 拼色每折吃布表 + `default_formula` select（复用 `CRAFT_CALC_FORMULA_LABELS`，不造第二份映射）+ **一个**保存按钮（`PUT` **全量 11 键**；422 ⇒ `details[].message` **逐条**上屏、**草稿不回滚**、不谎报已保存）；术语与口径区块（`CraftCalcGlossary`）与阈值试算随功能体一并迁入；三态纪律不变（`loading` 不画「未配置」、读失败只剩**一处**失败信号 + 重试、无参数卡）。板子那侧：`ProcessConfigBoard` 的 tab 由「工序管理 / 算料配置 / 裁高配置」收敛为**两个**（算料 tab 与它的全部 `craft-calc-config-*` DOM 整体删除），就绪度第 ④ 步的「去处理」从**页内切 tab** 改成**跨页深链** `/settings?domain=calc`（死按钮不许留）；旧深链 `?tab=calc` 由 `production/routings/page.tsx` `router.replace` 重定向（不 404、不落空白）。`frontend/admin-web/src/components/production-config/CalcFormulaPanel.tsx`（唯一消费者是 `/settings` 算料域）**删除**，其行为判据（读失败单一信号 / 全量 `PUT` 键 / 422 逐条理由）迁进 `CalcCaliberPanel.test.tsx`；`CRAFT_CALC_ENTRY` 改指 `/settings?domain=calc`，并把 `meters-formula-legend.test.ts` 里那条钉死值同批改准。**新增类级守卫**（issue #6825 冻结判据 6）：`tests/unit/lib/domain-write-surface.test.tsx` 遍历 `CONFIG_DOMAINS`（及其 `mainlineSteps`）断言每个域在 `config-domain-panel-*` 内有**可交互写面锚点**、且有**本域写出口**（`[data-write-exit]` 与锚点成对 —— 只留试算框那种形态必红），台账 = `tests/unit/lib/domain-write-surface-ledger.ts`（未登记即抛错，fail-closed）。"
@@ -1905,7 +1911,7 @@ cases:
       - "判据 1·**控件形态**：共享组件 `frontend/admin-web/src/components/ui/NumberInput.tsx` 用 `type=\"text\"` + `inputMode=\"decimal\"`（**不用** `type=\"number\"`：浏览器对 `0.` / `.` / `-` 这类中间态按非法浮点数处理，受控回写即吞键），内部持有**字符串草稿**，`onChange(v: number | null)` 在草稿可解析成有限数时回调该数、**0 原样回调**（不得出现 `value={n || ''}` / `Number(raw) || 0` 这类把 0 与空混为一谈的归一化）；`forwardRef` 透传真实 input；默认 className 与仓库既有输入框逐字一致（UI 回退检测比对 neutral token）。证据：frontend/admin-web/tests/unit/components/NumberInput.test.tsx 的「控件用 type=\"text\" + inputMode=\"decimal\"」「默认 className …逐字一致」「forwardRef 拿到真实 input 元素」（**红证**：把组件换回 `type=\"number\"` + `value={n || ''}` 形态 ⇒ 判据 1/2 全红，实测 `AssertionError: expected '' to be '0'`）"
       - "判据 2·**中间态逐键不丢**（用户原始 bug 的正身）：输入序列 `0` ⇒ **DOM 值仍为 \"0\"**、回调 `0`；续输 `0.` ⇒ DOM `\"0.\"`、回调 `null`（不谎报成 0）；再输 `0.5` ⇒ 回调 `0.5`；清空 ⇒ DOM `\"\"`、回调 `null`；负号中间态 `-` ⇒ DOM `\"-\"` 不被吞；`abc` 等非法字符 ⇒ 草稿与 DOM 都不变（不静默变 0）。证据：NumberInput.test.tsx 的 ①②③⑥ 与「非法字符被忽略」。**红证（真实浏览器 + 真实 React 19，Chrome for Testing 实测）**：旧形态 `value={n || ''}` + `onChange(Number(raw))` 在 `0 → . → 5` 序列上 `dom=\"\"` / `state=0`（输入框敲下 \"0\" 当刻被清空 ⇒ 永远打不出 0.x）；本组件同序列 `dom=\"0\"/\"0.\"/\"0.5\"`"
       - "判据 3·**失焦归一化与边界**：`decimals`（默认 2）截断 —— `0.567` 失焦 ⇒ DOM `0.57`、回调 `0.57`；尾随小数点 `2.` ⇒ `2`；`min` / `max` 夹紧（`1.2` + min=5 ⇒ 5；`99` + max=10 ⇒ 10）；空草稿失焦 ⇒ `null`（`allowEmpty` 默认 true），`allowEmpty={false}` ⇒ 回上一个有效值（不落 null、不落 0）；外部 `value` 变化同步草稿（1 ⇒ 2 时 DOM 变 `\"2\"`），但**用户正在输入的中间态优先**（外部 value 未变时输入 `\"2.\"` 不被洗回 `\"2\"`）。证据：NumberInput.test.tsx 的 ④⑤a⑤b⑤c 与 blur 组。**红证（issue #5218 #7 订正）**：承重的守卫**只有一条** —— `NumberInput.tsx` 的 `if (editingRef.current && value === lastEmittedRef.current) return`；删掉它 ⇒ ⑤c「外部回传「空」不得吞掉正在输入的中间态」必红（单点变异实测）。⚠️ 原声明「去掉「草稿解析值等于外部值则不覆盖」这条守卫 ⇒ ④ 必红」**是假的**（独立复核两次实测：删任一条守卫 19/19 仍全绿）⇒ 那条守卫已按最少代码阶梯**删除**，声明同步订正（假红证比没有红证更坏）"
-      - "判据 4·**站点落地（改前必红的存量站点）**：① `components/products/SkuMatrix.tsx` 价格/库存单元格（旧 `value={sku?.price || ''}` + `parseFloat(raw) || 0`）⇒ 输入 `0` 后 DOM 仍为 `0`、可连续打出 `0.5`；库存 `0`（无库存）同样是合法值；**缺行**（矩阵未重建）显示占位符 `0.00`/`0`，**已存在的行 `price=0`** 显示 `0`（「0 = 未填写」由校验表达，输入框不再替商家藏起来，issue #5218 #1 的可见面变化如实登记）；`onChange` 载荷形状（`{colors,doorWidths,skus}` 且带 colorId/colorName/doorWidth 定位）与 #2908 的 `border-red-400` + `aria-invalid` 标红行为**不变**。证据：frontend/admin-web/tests/unit/components/SkuMatrixNumbers.test.tsx（**红证**：改前实测 `AssertionError: expected '' to be '0'`，三条全红）③ **编辑既有值方向**（issue #5218 判据 1/2，同一文件单开一组）：价格已是 `12.5` ⇒ 全选输入 `0` ⇒ DOM 仍为 `\"0\"`；库存已是 `30` ⇒ 输入 `0` ⇒ DOM 仍为 `\"0\"`；既有值 ⇒ 逐键 `0 → . → 5` 打出 `0.5`。**红证（单点变异实测）**：把接线改回 `value={sku?.price ? sku.price : null}` / `value={sku?.stock ? sku.stock : null}` ⇒ 这 4 条必红（0 是 falsy ⇒ 外部值变 null ⇒ 草稿被洗成 `''`）② `app/(dashboard)/production/routings/page.tsx` 算料配置三处（标量参数 / 档位 fullness / 拼次数，旧 `value={String(v ?? '')}` + 清空落 `NaN` 哨兵 ⇒ 输入框渲染出**字面量 `NaN`** 且清不掉）⇒ 清空即空框、`0.5` 可逐键录入、面板内任何输入框都不以 `NaN` 为值。证据：frontend/admin-web/tests/unit/pages/production-routings.test.tsx「清空算料参数 ⇒ 空框（不许变成字面量 `NaN`），且 0.x 小数能正常录入」（**红证**：还原旧代码后该条实测红 —— `toHaveValue('0.5')` 收到空值；`NaN` 兜底断言同因）"
+      - "判据 4·**站点落地（改前必红的存量站点）**：① `components/products/SkuMatrix.tsx` 价格单元格（旧 `value={sku?.price || ''}` + `parseFloat(raw) || 0`）⇒ 输入 `0` 后 DOM 仍为 `0`、可连续打出 `0.5`（🔴 库存格已随 issue #7597（用户裁定 2026-10-24「商品中设置了库存数值，这个要移除了，要根据真实库存数据来」）从商品表单移除：商品档案不再设置库存，新 SKU 从 0 起算；库存只由真实单据产生。移除判据 = frontend/admin-web/tests/unit/components/SkuMatrixStockRemoved.test.tsx）；**缺行**（矩阵未重建）显示占位符 `0.00`/`0`，**已存在的行 `price=0`** 显示 `0`（「0 = 未填写」由校验表达，输入框不再替商家藏起来，issue #5218 #1 的可见面变化如实登记）；`onChange` 载荷形状（`{colors,doorWidths,skus}` 且带 colorId/colorName/doorWidth 定位）与 #2908 的 `border-red-400` + `aria-invalid` 标红行为**不变**。证据：frontend/admin-web/tests/unit/components/SkuMatrixNumbers.test.tsx（**红证**：改前实测 `AssertionError: expected '' to be '0'`，三条全红）③ **编辑既有值方向**（issue #5218 判据 1/2，同一文件单开一组）：价格已是 `12.5` ⇒ 全选输入 `0` ⇒ DOM 仍为 `\"0\"`；既有值 ⇒ 逐键 `0 → . → 5` 打出 `0.5`（库存格已随 issue #7597 移除 ⇒ 原「库存已是 30 ⇒ 输入 0」那条随格一起退场，不是放宽）。**红证（单点变异实测）**：把接线改回 `value={sku?.price ? sku.price : null}` ⇒ 这 3 条必红（0 是 falsy ⇒ 外部值变 null ⇒ 草稿被洗成 `''`）② `app/(dashboard)/production/routings/page.tsx` 算料配置三处（标量参数 / 档位 fullness / 拼次数，旧 `value={String(v ?? '')}` + 清空落 `NaN` 哨兵 ⇒ 输入框渲染出**字面量 `NaN`** 且清不掉）⇒ 清空即空框、`0.5` 可逐键录入、面板内任何输入框都不以 `NaN` 为值。证据：frontend/admin-web/tests/unit/pages/production-routings.test.tsx「清空算料参数 ⇒ 空框（不许变成字面量 `NaN`），且 0.x 小数能正常录入」（**红证**：还原旧代码后该条实测红 —— `toHaveValue('0.5')` 收到空值；`NaN` 兜底断言同因）"
       - "判据 5·**同一病灶在 bmini 侧**（2026-10-14 更新：原承载页已删 ⇒ 实例改为商家面 FormCard）：原承载页 `frontend/bmini-app/src/pages/production/index/index.tsx`（报工数量输入框 `digit`，**已于 2026-10-14 随 issue #6868 实现包 D1 整页删除**）（微信小程序 `number` 键盘**没有小数点键**，而报工数量按米常有小数如 60.5 ⇒ 改前小数点根本打不出来）；数量仍走既有「默认 = 应做数量 / 上限 = 应做数量」校验，请求体字段与幂等键一字未变。证据：frontend/bmini-app/tests/form-card.test.tsx「数字字段（数量(米)）键盘用 digit」（原实例随报工页退场后，商家面 FormCard 是同一判据的现役承载体）（**红证**：还原旧代码后实测 `Expected: \"digit\" / Received: \"number\"`）。② **同一机制的第二处（2026-09-29 补漏）**：`frontend/mini-app/src/components/cards/FormCard.tsx` 与 `frontend/bmini-app/src/components/cards/FormCard.tsx` 的数字字段键盘 = `digit`（改前是 `const inputType = isNumber ? 'number' : 'text'` ⇒ 黄金策在小程序里收集的尺寸 / 数量 / 金额**在真机上打不出小数点**，用户 2026-09-29 报障「商家后台输入框无法输入小数点」；字段面 = `NUMBER_KEYS` = quantity / price / amount / stock / width / height / meter / …，手机号字段不受影响）；本地校验（必填 / 手机号 / 数字 > 0）与 `__FORM__|json` 序列化一字未改。证据：`frontend/mini-app/tests/form-card.test.tsx` 与 `frontend/bmini-app/tests/form-card.test.tsx` 的「数字字段（数量(米)）键盘用 digit ⇒ 小数点打得出来，且 0.5 原样进值 / 原样提交」（**红证**：改前实测 `Expected: digit / Received: number`）；**类级判据** = `frontend/mini-app/tests/numeric-input-keyboard-guard.test.ts`（全仓扫 Taro `Input` 上 `type=number`，豁免**纯数字字段**：字段名 phone / mobile / tel / pin / captcha 或中文标签 验证码 / 手机号 / 短信 / 密码 / PIN / 工号 / 账号；红证样本 ①~③ + 真仓零命中 ⑥；**判别力实测**：修复前的直写形态被扫出、修复后零命中）。**已知不覆盖（钉成可执行断言 ④⑤）**：`type={x}` 间接形态（本仓 FormCard 恰是这种 ⇒ 由实例判据承担）/ `Textarea` 与原生 input / admin-web 桌面侧（浏览器 `type=number` 不挡小数点键，挡的是中间态，另有判据 1/6）"
       - "判据 6·**防新形态复发（静态扫描；判据是「语义」而非某一种写法）**：命中 = **表达式在 `x` 为假值时会产出一个「空」值**（`0` 被当空 = 病根本体）—— 这正是 #5198 漏网的形态（它只机械扫了 `value={x || ''}` **一种写法**）。两种**等价**形态都纳入判定：① **三元** `x ? x : <空>` —— 条件与真分支**规范化后同一表达式**（`?.` 与 `.` 视为同一形态），且假分支是空值；② **短路或** `x || <空>`（≡ `x ? x : <空>`）；`<空>` = `null` / `undefined` / `''` / `\"\"`。**两个分支都纳入判定**：真分支必须与条件同一表达式（`x ? x : …` 才是「拿 x 自己当 x 的真值判据」），假分支必须是空值。**分档作用域（#5228 实测数据逼出来的，不是随手选的）**：三元形态在**全仓** `src/**`（admin-web / mini-app / bmini-app，剥掉注释后）判红 —— 实测 `x ? x : null` / `: undefined` / `: ''` 三种写法**各 0 处** ⇒ 全仓扫描零假红，沿用既有严格度；短路或形态**只在「数值输入接线」面**判红（`value=` / `defaultValue=` 落在带数值标记的控件上：`type=\"number\"` / `inputMode=\"decimal\"` / `step=` / `min=` / `NumberInput`）—— **分档理由是实测的**：裸 `||` 兜底全仓 **223 处**（`|| ''` 166 / `|| undefined` 45 / `|| null` 12），几乎全是**合法**的字符串 / nullable 兜底（`data.content || ''`、`res.data.session || null`）⇒ 全仓判红就是**假红机器**（假红 = 假证据，比漏报更坏：它会逼后人去改合法代码）。**已知不覆盖（判据边界，与判据本体一起登记）**：以下三条**都不是留白** —— 实现侧已把它们各自钉成**可执行断言** ⑨（防后人把「没扫到」读成「没违规」）：① 非「数值输入接线」面的裸 `||` 兜底**有意不判红**（= 上面那 223 处合法兜底，这是判据的**边界**不是漏）；② 经中间变量 / 解构 / `{...props}` 展开传递的**间接接线**（静态文本扫描**不追数据流**）；③ issue #5228 表里字面写的「跨行 `x &&` 接 `x : null`」**不是合法 JS**（`&&` 后不能直接接 `:`）⇒ 无法作判据样本；其可判的等价形态（跨行的 `?:`）**已覆盖且有红证**。扫描器自身可红：四个变体（`x ? x : null` / `x ? x : undefined` / `x ? x : ''` / 数值接线上的 `x || null`）**各一条红证样本**必须被扫出、`typeof m === 'string' && m ? m : null`（字符串守卫）与注释里的旧形态不判红、全仓真扫零命中。证据：frontend/admin-web/tests/unit/components/NumberInputWiring.test.ts（**红证**：把 `findFalsyWiring` 换成 `() => []` ⇒ ①~⑤ 必红）"
       - "判据 7·**下单页工艺字段同一病灶**（issue #5218 #2/#3）：① 花距（占位符写着「米，如 0.6」）逐键 `0 → . → 6` ⇒ DOM 依次 `\"0\"` / `\"0.\"` / `\"0.6\"`，且 `0` 是合法值（旧 `numberOrNull` 的 `parsed > 0 ? parsed : null` 把它判成空 ⇒ 框当场清空）；② 配布边米数输入 `0` ⇒ **不落 0**（`null` = 跟随主布，算料口径不变）但**显式告知**（`craft-edge-meters-zero-rejected`：按主布米数 N 米计算 + 留空即跟随主布），不再无声跳回；③ 配布边单价 `0` 不落库但框里保留输入。证据：frontend/admin-web/tests/unit/components/OrderCraftFields.test.tsx 的「判据 3」「判据 4」与配布边单价一条（**红证（单点变异实测）**：花距改回 `type=\"number\"` + `> 0` 强转 ⇒ 判据 3 必红；删掉显式告知块 ⇒ 判据 4 必红）"
@@ -1913,12 +1919,13 @@ cases:
       - "判据 9·**发现 #9 的复核结论（不降级）**：独立复核称 `orders-new-plan.test.tsx` 的 `meters-manual-stale` 在删掉算料 effect 的 `continue` 守卫后**仍绿** —— 本包实测**不成立**：删掉 `orders/new/page.tsx` 的 `if (line.metersSource !== METERS_SOURCE_FORMULA) continue` ⇒ 该条**红**（`Tests 1 failed | 23 passed`，失败者即该条），同批「自动态下改宽 ⇒ 用料自动跟着变」保持绿 ⇒ 原「（红证）」标注属实。实测留痕已写进测试文件内注释，下次复核不必重跑。证据：tests/unit/pages/orders-new-plan.test.tsx 的「根因 2（红证）：人工指定后改宽/高…」"
     skip_reason: "[backend-contract] 纯前端输入控件 + 既有端点透传（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/NumberInput.test.tsx、tests/unit/components/SkuMatrixNumbers.test.tsx、tests/unit/pages/production-routings.test.tsx、frontend/bmini-app/tests/form-card.test.tsx 执行"
     precondition: "本用例是 [backend-contract] 纯前端控件用例：前置（受控夹具的 value/onChange、SKU 矩阵的 colors×doorWidths 组合、算料配置 GET 的引擎默认值、工人端工序夹具）全部由单测自建或打桩（`mockGetCraftCalcConfig` 等），不依赖共享夹具与真实服务 ⇒ 前置不成立时单测直接红；agent-eval 栈不跑它"
-    merge_log: "2026-09-23 新增（issue #5198，用户实测报告「不能直接输入 0，所以导致无法输入 0.？」）：把「数字输入框 0 打不进去 / 小数点吞键 / 中间态丢失」这一族反模式收敛到共享组件 NumberInput（`type=\"text\"` + `inputMode=\"decimal\"` + 字符串草稿），并就地修掉三处真缺陷（SkuMatrix 价格库存格、算料配置参数、工人端报工键盘）。2026-09-23（issue #5218，独立复核推翻 #5198 声称的「其余站点已核无缺陷」）：**补判据 6/7 并订正判据 3 的假红证** —— ① `SkuMatrix` 的 `sku?.price ? sku.price : null` 是同一 bug 家族的**新形态**（0 为 falsy ⇒ 编辑既有值时框当场清空），改判为「只有真缺值才映射成空」；② 下单页工艺字段（花距 / 配布边米数 / 配布边单价）迁 `NumberInput` 并删掉 `numberOrNull` 的 `> 0` 强转，配布边 `0` 改为**显式告知**（不再无声跳回主布）；③ 删掉 `NumberInput` 里那条「删了也不会有任何测试变红」的守卫（假红证）并同步订正判据 3；④ 新增判据 6 的静态扫描（`x ? x : null` 数值接线全仓零命中，含扫描器自身的红证）；⑤ 判据 8 收口另外三处漏网站点（ProductForm 卷长 / OversizeThresholdPreview 四框 / routings 规则单价），其中规则单价按 issue 许可用「逐字保留原文」等效实现（改用 NumberInput 会让失焦归一化把该被拒绝的三位小数静默改成合法值）；⑥ 判据 9 复核发现 #9 —— 实测该红证**成立**（删 `continue` 守卫 ⇒ 该条红），故不降级、只补留痕。同时**如实登记未改站点**（`orders/new/page.tsx` 由另一工作包整体重写，缺陷只登记；inbound-orders / finance / RefundOrderModal / ProductDetail 行内改价 / ProductForm「1 卷 = 多少米」/ OrderCraftFields / OversizeThresholdPreview 经真实浏览器实测「0 → . → 5 得 0.5」判为无缺陷 ⇒ 按最少代码阶梯**不为了统一而改**）。2026-09-23（issue #5250，用例库同步：判据文字落后于实现）：判据 6 的文字改成与 #5228 实现（PR #5249）**同口径** —— 从「不得再有 `x ? x : null` 形态的数值接线」扩成「**语义判定 + 分档作用域**」，并**把判据边界与判据本体一起登记**：分档理由（裸 `||` 全仓 223 处 ⇒ 全仓判红即假红机器）、已知不覆盖 3 条（裸 `||` 非接线面 / 经中间变量与 `{...props}` 的间接接线 / #5228 表里字面的跨行 `&&` 写法不是合法 JS），三条各**指回实现侧可执行断言 ⑨**（不是留白）；红证标注同步订正为 ①~⑤（旧文字只写 ①④，落后于扩成四变体 + 跨行的实现）。本单**只同步文字 + 重渲染**，判据实现与其它用例条目一字未动。2026-09-29（线上用户报障：商家后台输入框无法输入小数点、最新发现的是「用料米数」⇒ 按要求做了一轮**面扫描**）：**admin-web 侧复审无新缺陷** —— `orders/new` 的「用料米数」是共享 `NumberInput`（`decimals={3}` + `inputMode=decimal` + 字符串草稿，**生产包实测**内含该实现），逐键 0 → . → 0.5 与提交 payload `quantity=0.5` 由 `tests/unit/pages/orders-new-number-parity.test.tsx` 全绿复核；其余 `type=number` 站点经复核**不挡小数点键**（只丢「0.」中间态）⇒ 按最少代码阶梯**不动**。**真缺陷在小程序侧 `FormCard`**（见判据 5 ②）：同一机制（小程序 `number` 键盘没有小数点键）UI-055 判据 5 只修了报工数量**一处**，`FormCard` 整批漏网 ⇒ 本次补齐 ① 实例判据（两个 app 各一条：逐键 + 提交序列化）② **类级判据** `frontend/mini-app/tests/numeric-input-keyboard-guard.test.ts`（未豁免的 `type=number` 即红 + 红证样本 + 已知不覆盖 3 条）。**未实装 / 边界（照实登记）**：类级扫描只认**字面量** `type=number`（经变量传入的形态由实例判据承担）；手机号字段现为 `text` 键盘（不是数字键盘）—— 该 UX 缺口**不在本单**，由实例判据显式钉住「没被带偏」；admin-web 侧既有 `type=number` 站点**本单不动**。"
+    merge_log: "2026-09-23 新增（issue #5198，用户实测报告「不能直接输入 0，所以导致无法输入 0.？」）：把「数字输入框 0 打不进去 / 小数点吞键 / 中间态丢失」这一族反模式收敛到共享组件 NumberInput（`type=\"text\"` + `inputMode=\"decimal\"` + 字符串草稿），并就地修掉三处真缺陷（SkuMatrix 价格库存格、算料配置参数、工人端报工键盘）。2026-09-23（issue #5218，独立复核推翻 #5198 声称的「其余站点已核无缺陷」）：**补判据 6/7 并订正判据 3 的假红证** —— ① `SkuMatrix` 的 `sku?.price ? sku.price : null` 是同一 bug 家族的**新形态**（0 为 falsy ⇒ 编辑既有值时框当场清空），改判为「只有真缺值才映射成空」；② 下单页工艺字段（花距 / 配布边米数 / 配布边单价）迁 `NumberInput` 并删掉 `numberOrNull` 的 `> 0` 强转，配布边 `0` 改为**显式告知**（不再无声跳回主布）；③ 删掉 `NumberInput` 里那条「删了也不会有任何测试变红」的守卫（假红证）并同步订正判据 3；④ 新增判据 6 的静态扫描（`x ? x : null` 数值接线全仓零命中，含扫描器自身的红证）；⑤ 判据 8 收口另外三处漏网站点（ProductForm 卷长 / OversizeThresholdPreview 四框 / routings 规则单价），其中规则单价按 issue 许可用「逐字保留原文」等效实现（改用 NumberInput 会让失焦归一化把该被拒绝的三位小数静默改成合法值）；⑥ 判据 9 复核发现 #9 —— 实测该红证**成立**（删 `continue` 守卫 ⇒ 该条红），故不降级、只补留痕。同时**如实登记未改站点**（`orders/new/page.tsx` 由另一工作包整体重写，缺陷只登记；inbound-orders / finance / RefundOrderModal / ProductDetail 行内改价 / ProductForm「1 卷 = 多少米」/ OrderCraftFields / OversizeThresholdPreview 经真实浏览器实测「0 → . → 5 得 0.5」判为无缺陷 ⇒ 按最少代码阶梯**不为了统一而改**）。2026-09-23（issue #5250，用例库同步：判据文字落后于实现）：判据 6 的文字改成与 #5228 实现（PR #5249）**同口径** —— 从「不得再有 `x ? x : null` 形态的数值接线」扩成「**语义判定 + 分档作用域**」，并**把判据边界与判据本体一起登记**：分档理由（裸 `||` 全仓 223 处 ⇒ 全仓判红即假红机器）、已知不覆盖 3 条（裸 `||` 非接线面 / 经中间变量与 `{...props}` 的间接接线 / #5228 表里字面的跨行 `&&` 写法不是合法 JS），三条各**指回实现侧可执行断言 ⑨**（不是留白）；红证标注同步订正为 ①~⑤（旧文字只写 ①④，落后于扩成四变体 + 跨行的实现）。本单**只同步文字 + 重渲染**，判据实现与其它用例条目一字未动。2026-09-29（线上用户报障：商家后台输入框无法输入小数点、最新发现的是「用料米数」⇒ 按要求做了一轮**面扫描**）：**admin-web 侧复审无新缺陷** —— `orders/new` 的「用料米数」是共享 `NumberInput`（`decimals={3}` + `inputMode=decimal` + 字符串草稿，**生产包实测**内含该实现），逐键 0 → . → 0.5 与提交 payload `quantity=0.5` 由 `tests/unit/pages/orders-new-number-parity.test.tsx` 全绿复核；其余 `type=number` 站点经复核**不挡小数点键**（只丢「0.」中间态）⇒ 按最少代码阶梯**不动**。**真缺陷在小程序侧 `FormCard`**（见判据 5 ②）：同一机制（小程序 `number` 键盘没有小数点键）UI-055 判据 5 只修了报工数量**一处**，`FormCard` 整批漏网 ⇒ 本次补齐 ① 实例判据（两个 app 各一条：逐键 + 提交序列化）② **类级判据** `frontend/mini-app/tests/numeric-input-keyboard-guard.test.ts`（未豁免的 `type=number` 即红 + 红证样本 + 已知不覆盖 3 条）。**未实装 / 边界（照实登记）**：类级扫描只认**字面量** `type=number`（经变量传入的形态由实例判据承担）；手机号字段现为 `text` 键盘（不是数字键盘）—— 该 UX 缺口**不在本单**，由实例判据显式钉住「没被带偏」；admin-web 侧既有 `type=number` 站点**本单不动**。2026-10-24（issue #7597，用户裁定「商品中设置了库存数值，这个要移除了，要根据真实库存数据来」）：SkuMatrix 的**库存列退场**（商品档案不再设置库存）⇒ 本用例判据 4 的库存格断言随之收窄为价格格 （「库存已是 30 ⇒ 输入 0」那条随格退场，**不是放宽**：库存已无录入面可测），新增移除判据 frontend/admin-web/tests/unit/components/SkuMatrixStockRemoved.test.tsx（表头无库存列 / 每行只有价格输入框 / 批量填写区无数量框 / 静态扫描无库存接线）；SkuMatrixNumbers.test.tsx 同步删去库存两条、保留价格逐键与编辑既有值判据。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/components/NumberInput.test.tsx"
         - "frontend/admin-web/tests/unit/components/SkuMatrixNumbers.test.tsx"
         - "frontend/admin-web/tests/unit/components/SkuMatrix.test.tsx"
+        - "frontend/admin-web/tests/unit/components/SkuMatrixStockRemoved.test.tsx"
         - "frontend/admin-web/tests/unit/pages/production-routings.test.tsx"
         - "frontend/admin-web/tests/unit/components/NumberInputWiring.test.ts"
         - "frontend/admin-web/tests/unit/components/OrderCraftFields.test.tsx"
@@ -2112,7 +2119,7 @@ cases:
 
   - id: UI-061
     legacy_id: ""
-    title: "A4 加工单打印：表头九栏（订单日期/客户/电话/地址/备注/制单人/单号/交付日期/货运）+ 右上 QR；按套分块，每块 9 列 品名|货号|颜色|门幅|尺寸|数量|组件|批号|备注 + 每套一张工序子表；@page A4 + 分页不裁切 + 表头重复（issue #5651 / #6901）"
+    title: "A4 加工单打印：表头九栏（订单日期/客户/电话/地址/备注/制单人/单号/交付日期/货运）；按套分块，每块 9 列 品名|货号|颜色|门幅|尺寸|数量|组件|批号|备注（🔴 纸面不印工序清单、不印 QR）；@page A4 + 分页不裁切 + 表头重复（issue #5651 / #6901 / #7219 / #7274）"
     domains:
       - ui
       - frontend
@@ -2135,15 +2142,15 @@ cases:
     data_checks:
       - "判据 1·**表头九栏逐条命中实证 #3**：订单日期 / 客户 / 电话 / 地址 / 备注 / 制单人 / 单号 / 交付日期 / 货运 九栏全部渲染，取值取服务端字段（订单日期 = order.createdAt；单号 = 加工单号、缺则回落订单号；交付日期 = 加工单交期、缺则回落订单「要求到货日」；货运 = logisticsType · logisticsCompany）。执行点 = frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx 的「① 表头九栏逐条命中实证 #3 的制式」+「① 交付日期回落链」+「① 加工单缺失 ⇒ 单号回落订单号」。"
       - "判据 2·**按套分块**：N 个商品行 ⇒ N 块，每块段头 `第N套/共M套`，块内一张 **9 列表**，列序逐字等于 PROCESSING_DOC_COLUMNS = ['品名','货号','颜色','门幅','尺寸','数量','组件','批号','备注']。🔴 2026-10-14 同批纠正一处**散文漂移**（非本批引入）：本条此前写的是「8 列表 = ['部位','部位信息','尺寸','组件','货号','用料','批号','备注']」，与真值（代码常量 + CI 守卫 C5 的钉住元组）**早已不符** —— 该判据执行点断言的本来就是当前版式，故不构成假绿，但散文必须与真值对齐。执行点 = 同文件「② 按套分块：3 个商品行 ⇒ 3 块」。"
-      - "判据 3·**A4 版面与分页不裁切**：样式里 `@page { size: A4; margin: 12mm; }`（由 `lib/print-media.ts` 的 printPageRule('a4') 生成，本组件不自写纸型）；`.processing-set { break-inside: avoid }` + `.processing-doc-table thead { display: table-header-group }`（长单跨页时表头重复）。执行点 = 同文件「③ 版面：@page A4（由介质矩阵生成）+ 分页不裁切 + 表头重复」。"
+      - "判据 3·**A4 版面与分页不裁切**：样式里 `@page { size: A4; margin: 0; }`（由 `lib/print-media.ts` 的 printPageRule('a4') 生成，本组件不自写纸型；🔴 issue #7309：边距 0 = 浏览器页眉页脚无处可画，版面内缩 12mm 由容器 padding + `box-decoration-break: clone` 承担）；`.processing-set { break-inside: avoid }` + `.processing-doc-table thead { display: table-header-group }`（长单跨页时表头重复）。执行点 = 同文件「③ 版面：@page A4（由介质矩阵生成）+ 分页不裁切 + 表头重复」。"
       - "判据 4·**缺值不许静默留空**：客户名 / 电话 / 地址缺失 ⇒ 单元格为显式占位 `—`（不是空串）；本系统**未采集**的字段（制单人 / 批号）标「未采集」并出脚注 —— 二者必须可区分。执行点 = 同文件「🔴 ④ 缺字段可见」+「🔴 ④ 本系统未采集的字段必须显式标注」。"
-      - "判据 5·🔴 **缺码不画假码**（洗水码既有判据）：qrValue 缺席 ⇒ 虚线占位框 + 「无码」字样，渲染树里**零个** svg 码，不拿订单号等别的串顶替。执行点 = 同文件「🔴 ⑤ QR：给了值 ⇒ 出码；不给 ⇒ 出占位框、不画假码」+「⑤ QR 判据可红」。"
+      - "判据 5·🔴 **纸面不印 QR**（issue #7219，本批收口死参数）：加工单纸面**零**扫码形态 —— `processing-doc-qr` / `processing-doc-qr-placeholder` / `processing-doc-short-code` 三者都取不到（即使夹具给了 `scan_url` / `short_code`）；`ProcessingDoc` 的 `qrValue` prop 同批退场（调用方不再传）。执行点 = 同文件「🔴 ⑤ 加工单不再印 QR」。⚠️ 原判据 5（缺码不画假码 / 虚线占位框）随 #7219 退场，不再是本用例的判据面。"
       - "判据 6·**加工单不印金额**（实证 #3 无金额列）⇒ 天然没有第二份金额真值：纸面文本不含「本单应收 / 单价 / 金额 / 小计」。执行点 = 同文件「⑥ 加工单不印金额」。"
-      - "判据 7·🔴 **每套工序块**（issue #6901）：逐道印 显示名 / 应做（数量 + 单位）/ 状态；显示名走 `frontend/admin-web/src/lib/operation-display.ts::operationDisplayName()`（**不得**渲染工人端快照名 `operation`）；按 `position.order_item_id` 与订单行对齐（与洗水码 / 批号同一把钥匙）；🔴 无工序实例 / `order_item_id` 对不上 / 读面失败 ⇒ **整块不出现**（不印空表、不印占位表头）。执行点 = 同文件工序用例（`data-testid=processing-doc-operations`）；红证 = 删掉工序块整段 JSX ⇒ **3 failed**（实跑读数）"
+      - "判据 7·🔴 **纸面不印工序清单**（issue #7274，用户 2026-10-18 逐字「工序细节不用在打印单上，移除掉工序相关的表格信息」）：加工单纸面**零**工序节点 —— 即使按旧调用方形态（issue #6901 的 `operations` prop）传入工序实例，也不得出现 `processing-doc-operations` / `processing-doc-operation`，纸面文本不含「工序 / 精裁 / 应做 / 待做」。工序信息改在**屏幕**加工单块（`frontend/admin-web/src/components/orders/ProcessingOrderBlock.tsx`）与工人扫码面呈现（读面 / 显示名口径不变）。执行点 = `frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx` 的「ProcessingDoc 纸面不印工序（issue #7274）」；类级判据 = `tests/unit_ci_workflows/test_print_media_matrix_guard.py::test_c8_paper_must_not_carry_the_operation_list`。红证（实跑）：把 `ProcessingDoc.tsx` **与** `ShipmentDoc.tsx` 一起换回 origin/main 版（测试留本分支版本）⇒ 组件用例 **2 failed / 49 passed**（两个文件各挂 1 条）、C8/C9 守卫 **2 failed / 7 passed"
       - "判据 8·**数量列名按本行单位**：快照行 `unit` 有 ⇒ `数量(套)`；**没采集到单位 ⇒ 只写「数量」**（不编「米」）；列名与值**同出** `frontend/admin-web/src/lib/order-item-sku.ts::orderItemQuantity()`。红证 = 把 CI 守卫 C5 的元组改回 `数量(米)` ⇒ **1 failed / 6 passed**（实跑读数）"
-      - "🔴 红证（注入式，随测试文件常驻）：把 `.processing-set` 的 break-inside 与 thead 的 table-header-group 抹掉 ⇒ 判据 3 必须红（同文件「③ 分页判据可红」）；把占位换回 `value || ''` 的静默留空 ⇒ 判据 4 必须红（同文件「④ 缺字段判据可红」）；缺值分支硬画一个码 ⇒ 判据 5 必须红。⚠️ 取不到真机读数（针打/三联纸）的部分不在本用例的判据里，如实登记在 docs/design/print-media-matrix.md 的待实测清单。"
+      - "🔴 红证（注入式，随测试文件常驻）：把 `.processing-set` 的 break-inside 与 thead 的 table-header-group 抹掉 ⇒ 判据 3 必须红（同文件「③ 分页判据可红」）；把占位换回 `value || ''` 的静默留空 ⇒ 判据 4 必须红（同文件「④ 缺字段判据可红」）；把工序块接回纸面 ⇒ 判据 7 必须红（同文件「ProcessingDoc 纸面不印工序」）。⚠️ 取不到真机读数（针打/三联纸）的部分不在本用例的判据里，如实登记在 docs/design/print-media-matrix.md 的待实测清单。"
     skip_reason: "[backend-contract] 纯前端打印版式（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx 执行"
-    merge_log: "2026-09-26 新增（issue #5651）：补客户现行四张单据里的 A4 加工单 —— 表头九栏 + 右上 QR + 按套分块 8 列 + 分页不裁切/表头重复 + 缺值显式占位（制单人/批号为本系统未采集，标「未采集」不编值）。 ｜ 2026-10-14 追加（母单 #6901）：① 补**每套工序块**（取数走既有读面 `GET /api/admin/production/orders/{id}/operations`；纸面**不取数**，由调用方按 `order_item_id` 对齐后向下传）；② 数量列名不再写死单位（`数量` / `数量(米)` 按本行 `unit`）；③ 同批纠正判据 2 的**散文漂移**（旧 8 列 → 真值 9 列，非本批引入）。"
+    merge_log: "2026-09-26 新增（issue #5651）：补客户现行四张单据里的 A4 加工单 —— 表头九栏 + 右上 QR + 按套分块 8 列 + 分页不裁切/表头重复 + 缺值显式占位（制单人/批号为本系统未采集，标「未采集」不编值）。 ｜ 2026-10-14 追加（母单 #6901）：① 补**每套工序块**（取数走既有读面 `GET /api/admin/production/orders/{id}/operations`；纸面**不取数**，由调用方按 `order_item_id` 对齐后向下传）；② 数量列名不再写死单位（`数量` / `数量(米)` 按本行 `unit`）；③ 同批纠正判据 2 的**散文漂移**（旧 8 列 → 真值 9 列，非本批引入）。 ｜ 2026-10-18（issue #7274，用户逐字「工序细节不用在打印单上，移除掉工序相关的表格信息」）：**工序块整块移除**（`OPERATIONS_DOC_COLUMNS` / `operations` prop / 纸面节点一并退场）；工序信息改由屏幕加工单块与工人扫码面承载。判据 7 改判为「纸面零工序节点」回归探针 + 类级守卫 C8。 ｜ 2026-10-18 同批收口 **#7219 遗留**：`qrValue` 死 prop 与旧 QR 用例退场，判据 5 改判「纸面不印 QR」（原「缺码不画假码」随码一起退场）；title 去掉「右上 QR」并补 issue #7219。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx"
@@ -2155,7 +2162,7 @@ cases:
 
   - id: UI-062
     legacy_id: ""
-    title: "销售单打印（三联纸 241mm × 140mm 两等分）：@page 241mm 140mm + 只渲染一页（复写由压感纸承担）+ 明细 序号|货号|数量|单位|单价|金额|备注 + 金额一律取服务端字段 + 缺口金额栏不编数（issue #5651）"
+    title: "销售单打印（三联纸 241mm × 140mm 两等分）：@page 241mm 140mm + 只渲染一页（复写由压感纸承担）+ 明细 序号|货号|颜色|门幅|数量|单位|单价|金额（「品名」列自 issue #7530 退场）+ 金额一律取服务端字段 + 缺口金额栏不编数（issue #5651）"
     domains:
       - ui
       - frontend
@@ -2179,13 +2186,14 @@ cases:
     data_checks:
       - "判据 1·**三联纸纸型**：样式里 `@page { size: 241mm 140mm; margin: 6mm 12mm; }`（由 printPageRule('continuous-241x140') 生成），容器带 data-print-media='continuous-241x140'。执行点 = frontend/admin-web/tests/unit/components/SalesDoc.test.tsx 的「① 介质：@page 241mm × 140mm（两等分）」。"
       - "判据 2·🔴 **只渲染一页**（复写是纸的特性，不是软件的事）：DOM 里 `.sales-sheet` **恰好一份**；容器高度 = printUsableHeightMm('continuous-241x140') = 128mm（页长 140 − 上下边距 12）且 overflow: hidden ⇒ 浏览器不会再分页（跨联 = 纸面与账目对不上）。执行点 = 同文件「① 介质」+「① 红证：改坏只渲染一页 ⇒ 必红」。"
-      - "判据 3·**介质是参数不是副本**：`media` 是 prop，切到 'a4' 后 @page 变 A4，而**逐格取值（序号/货号/数量/单位/单价/金额/备注）、表头、金额汇总逐字不变** —— 复制一份字段映射给 A4 版本 ⇒ 必红。执行点 = 同文件「② 介质是参数不是副本：切 A4 后 @page 变、而逐格取值逐字不变」+「② 列清单 = SALES_DOC_COLUMNS」。"
+      - "判据 3·**介质是参数不是副本**：`media` 是 prop，切到 'a4' 后 @page 变 A4，而**逐格取值（序号/货号/颜色/门幅/数量/单位/单价/金额）、表头、金额汇总、扫码报工码值逐字不变** —— 复制一份字段映射给 A4 版本 ⇒ 必红。执行点 = 同文件「② 介质是参数不是副本：切 A4 后 @page 变、而逐格取值逐字不变」+「② 列清单 = SALES_DOC_COLUMNS」。"
       - "判据 4·🔴 **金额一律取服务端字段**（前端现算 = 第二份真值）：构造的服务端值与前端求和**故意不同**（行 unitPrice×quantity = 30 而服务端 amount = 500；行金额之和 = 500 而 actualAmount = 888.88）⇒ 纸面必须印 500.00 / 888.88 / 999.99 / 111.11。执行点 = 同文件「🔴 ③ 金额取服务端字段」+「🔴 ③ 红证：让前端现算 ⇒ 必红」。"
       - "判据 5·🔴 **缺口金额栏不编数**：上期余额 / 预存抵扣 / 账户余额 服务端无字段（Order DTO 与 SystemSettings 均无余额面）⇒ 纸面标「未采集」，**不含任何数字**（印 0.00 = 把「没有这个数」画成「余额为零」）。执行点 = 同文件「🔴 ④ 缺口金额栏标未采集且不含数字」+「🔴 ④ 红证：编成 0.00 ⇒ 必红」。"
       - "判据 6·**缺值可见 / 长名截断可见**：客户 / 电话 / 地址缺失 ⇒ 显式占位 `—`（不是空串）；长客户名**不裁字符串**（全文仍在 DOM）且截断走 CSS 省略号（sales-cut 的 text-overflow: ellipsis + overflow: hidden）。执行点 = 同文件「🔴 ⑤ 缺值可见」+「⑤ 长名截断可见」+两条对应的红证用例。"
+      - "判据 7·🔴 **纸面不印收款码**（issue #7589）：销售单页脚只留温馨提示 —— 纸面 `img` 数 = 0、无 `sales-qr-*` 节点、正文不含「微信 / 支付宝」，且组件**不再订阅**收款码读取口（`usePaymentQrcodes` 零调用 ⇒ 打印销售单不多发一次 `payment-qrcodes` 请求）。执行点 = frontend/admin-web/tests/unit/components/SalesDoc.test.tsx 的「⑥ 销售单纸面**不印收款码**」+「⑥ 销售单**不读**收款码」；类级守卫 = tests/unit_ci_workflows/test_print_doc_convention_guard.py 的 C6（收款码只属于报价单）。"
       - "🔴 红证（注入式，随测试文件常驻）：渲三份 .sales-sheet ⇒ 判据 2 红；前端现算行金额/汇总 ⇒ 判据 4 红；缺口栏印 0.00 ⇒ 判据 5 红；长名 slice(0,8) 或去掉 text-overflow ⇒ 判据 6 红。⚠️ **未完成项如实登记**：销售单「挂发货链」（数量与实发同源）的真值载体 order_shipment_items（issue #5648 / PR #5664）**已合入 main**，但它今天**只有工人读面**（GET /api/worker/shipment/orders/{id}，工人 session 准入），**admin 端没有读面** ⇒ 跑在 admin-web 的销售单拿不到实发数量，接线需新增 admin 端读面（后端改动）。⇒ 本版数量取订单行 order.items[].quantity（与报价单/发货单**同一份**投影，**不**自造发货明细表、不照工人读面猜 DTO），消费入口由该表 owner 指定 = OrderShipmentService.readShipment。"
     skip_reason: "[backend-contract] 纯前端打印版式与金额取值（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/SalesDoc.test.tsx 执行"
-    merge_log: "2026-09-26 新增（issue #5651）：补客户现行四张单据里的销售单 —— 三联纸 241mm × 140mm（针式 + 连续纸 + 压感复写，全仓此前零支持）；介质做成 prop（切 A4 不产生第二份字段映射）；金额一律取服务端字段；上期余额/预存抵扣/账户余额 服务端无字段 ⇒ 标「未采集」不编数；挂发货链待 order_shipment_items（#5648/#5664）落地。"
+    merge_log: "2026-09-26 新增（issue #5651）：补客户现行四张单据里的销售单 —— 三联纸 241mm × 140mm（针式 + 连续纸 + 压感复写，全仓此前零支持）；介质做成 prop（切 A4 不产生第二份字段映射）；金额一律取服务端字段；上期余额/预存抵扣/账户余额 服务端无字段 ⇒ 标「未采集」不编数；挂发货链待 order_shipment_items（#5648/#5664）落地。｜2026-10-23 更新（issue #7530）：用户逐字「销售单不要品名」⇒ 列清单 9 → 8（撤「品名」，列宽重分配）；「品名」不再出现在纸面任何位置（去表头却留单元格 = 串列 ⇒ 必红）。｜2026-10-24 更新（issue #7589）：用户逐字「销售单打印处右下角的二维码移除掉」⇒ 页脚收款码整块移除（销售单不再读收款码；报价单的收款码保留）—— 类级守卫 = test_print_doc_convention_guard.py 的 C6。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/components/SalesDoc.test.tsx"
@@ -2260,8 +2268,9 @@ cases:
       - "判据 5·🔴 **截图复制产出真尺寸 PNG**：点「复制截图」⇒ 剪贴板拿到 image/png，尺寸 ≈ 纸型 × 3 倍（241mm ≈ 911px ⇒ ≈2733px，宽高比 1.72±0.15）；剪贴板不可用 ⇒ 下载 PNG + 明示提示（不许静默失败）。执行点 = 同 spec 的「④ 复制截图」（真实 Chrome + clipboard 权限 + createImageBitmap 读尺寸）。"
       - "判据 6·🔴 **纸面读的字段必须真的下发**（本单修的正是这一类）：订单详情面四份单据里每个 `order.<字段>` 都要在 backend/admin-api/src/main/java/com/migao/admin/dto/OrderDetailResponse.java 里有声明；删掉 `createdByName` ⇒ 必红。执行点 = tests/unit_ci_workflows/test_print_single_doc_on_paper.py 的 test_c4（红证 = test_c5 的注入 C，豁免台账为空且只许缩短）。"
       - "判据 7·**加工单纸面印真值**：制单人 = `order.createdByName`、批号 = 快照行 `batchNo`（按 `itemId` 对齐）；缺值印 `—`，**纸面不再出现「未采集」**（那是「系统没有这个字段」的说法）。执行点 = frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx 的「🔴 ④ 制单人 / 批号 印服务端真值」+「🔴 ④ 红证：批号挂不到订单行 ⇒ 不猜」。"
+      - "判据 8·🔴 **表头企业名不得对无 system:manage 的岗位发请求**（issue #7285）：四张纸面在订单详情页**常驻挂载** ⇒ 企业名读口若无条件回落 `GET /api/admin/settings`（该端点要 `system:manage`），客服/销售/财务**一进详情页就吃一次 403**、屏上弹「没有权限执行此操作」而数据照常渲染。口径 = 登录态 `user.tenantName` 有值 ⇒ **一次请求都不发**（`try/catch` 吞不掉 `request.ts` 的 403 toast ⇒ 唯一干净修法是不发）。执行点 = frontend/admin-web/tests/unit/lib/use-company-name.test.ts 的判据 ④（登录态有值 ⇒ `getSettings` 零调用）+ 判据 ⑤ 对照（登录态为空 ⇒ 仍回落，防「永远不发」作弊）。"
     skip_reason: "[backend-contract] 纯前端打印链路 + 一条 DTO 字段透出（无 LLM 环节，不进 agent-eval 冒烟）：断言由 tests/e2e/specs/orders/print-preview.spec.ts、frontend/admin-web/tests/unit/{lib/print-doc,components/PrintDocPreview,components/ProcessingDoc}.test.tsx 与 tests/unit_ci_workflows/test_print_single_doc_on_paper.py 执行"
-    merge_log: "2026-10-01 新增（issue #5914）：把「打印前先看见纸面」与「一次只放一份单据上纸」落成机器可判的口径 —— print 唯一入口 + 目标提交后才开印、@page 条件化到本次目标、纸面自检（溢出/页数）、截图复制写剪贴板、纸面字段必须在详情 DTO 里真的下发。编号由 `scripts/next_case_id.py` 分配：先取 UI-026，但该号已被并发包 #5913 占用（§26.3 ⑫ 的撞号形态）⇒ rebase 后改判为 **UI-027**（main:001-026,028-077 ⇒ 最小空闲号）。**只增不减**：既有 UI-061/062/063/065 的打印判据一条不放宽（本单另加 C1/C4 两条类级元守卫）。"
+    merge_log: "2026-10-01 新增（issue #5914）：把「打印前先看见纸面」与「一次只放一份单据上纸」落成机器可判的口径 —— print 唯一入口 + 目标提交后才开印、@page 条件化到本次目标、纸面自检（溢出/页数）、截图复制写剪贴板、纸面字段必须在详情 DTO 里真的下发。编号由 `scripts/next_case_id.py` 分配：先取 UI-026，但该号已被并发包 #5913 占用（§26.3 ⑫ 的撞号形态）⇒ rebase 后改判为 **UI-027**（main:001-026,028-077 ⇒ 最小空闲号）。**只增不减**：既有 UI-061/062/063/065 的打印判据一条不放宽（本单另加 C1/C4 两条类级元守卫）。 ｜ 2026-10-18（issue #7285）补**判据 8**：用户「回收销售」账号线上验证「提示没有权限，但是页面又能看见」，实测 403 = `system:manage`，来源是四张纸面表头的企业名读口无条件回落 `GET /api/admin/settings`（纸面常驻挂载 ⇒ 一进详情页就发）⇒ 修法 = 登录态已有 `tenantName` 时不发该请求。"
     traces:
       tests:
         - "tests/e2e/specs/orders/print-preview.spec.ts"
@@ -2272,7 +2281,7 @@ cases:
 
   - id: UI-064
     legacy_id: ""
-    title: "商家后台「企业设置」页手机端入口二维码 —— 地址单一配置、内容逐字等于该值、未配置不画假码（issue #5668）"
+    title: "商家后台「手机端入口」二维码 —— 顶栏唯一入口（设置页不再有入口块）；地址单一配置、内容逐字等于该值、未配置不画假码（issue #5668 / #7198 / #7212）"
     domains:
       - ui
       - frontend
@@ -2290,16 +2299,19 @@ cases:
     expectations:
       - tool: direct_reply
     data_checks:
-      - "判据 1·**有值 ⇒ 内容逐字等于配置值**：`NEXT_PUBLIC_BMINI_H5_URL` = `https://bmini-entry.invalid/b/`（哨兵值，与线上域名不同）时，二维码 svg 的 `<title>` 与可复制链接都逐字等于该值。红证：把 `QRCodeSVG` 的 value 改成硬编码线上地址 ⇒ 本格判红（实测：夹具用线上域名时该变异**判不出来** ⇒ 那是空断言方向，故改用哨兵值）。执行点 = frontend/admin-web/tests/unit/pages/settings.test.tsx 的「配置了 NEXT_PUBLIC_BMINI_H5_URL ⇒ 二维码内容逐字等于该值（哨兵值 ⇒ 硬编码实现必红）」。"
-      - "判据 2·**无值 ⇒ 明确「未配置」且不画码**：配置为空/纯空白时渲染 `data-testid=bmini-h5-unconfigured`（文案含「移动端地址未配置」），且入口卡片内 `querySelector('svg') === null`（不是「没找到 testid」，是确实没画）。红证：把渲染条件改成恒真 ⇒ 2 格判红（实测）。执行点 = 同文件「未配置 ⇒ 明确「未配置」提示，且**不生成二维码**」+「只有空白字符的配置值同样按「未配置」处理」。"
+      - "判据 1·**有值 ⇒ 内容逐字等于配置值**：`NEXT_PUBLIC_BMINI_H5_URL` = `https://bmini-entry.invalid/b/`（哨兵值，与线上域名不同）时，二维码 svg 的 `<title>` 与可复制链接都逐字等于该值。红证：把 `QRCodeSVG` 的 value/title 改成硬编码线上地址 ⇒ 本格判红（实测：夹具用线上域名时该变异**判不出来** ⇒ 那是空断言方向，故改用哨兵值）。执行点 = frontend/admin-web/tests/unit/components/MobileEntry.test.tsx 的「点击 ⇒ 展开弹层，二维码的标题与可复制地址逐字等于配置值（哨兵值 ⇒ 硬编码必红）」+「点「复制链接」⇒ 复制的是**配置值**（不是硬编码地址）+ 成功提示」。"
+      - "判据 2·**无值 ⇒ 明确「未配置」且不画码**：配置为空/纯空白时渲染 `data-testid=bmini-h5-unconfigured`（文案含「尚未开通手机版」），且面板内 `querySelector('svg') === null`（不是「没找到 testid」，是确实没画）。红证：把渲染条件改成恒真 ⇒ 本格判红（实测）。执行点 = frontend/admin-web/tests/unit/components/MobileEntry.test.tsx 的「未配置 ⇒ 不画假码：零 svg + 逐字说明「未配置」」。"
       - "判据 3·**唯一读取点**：`process.env.NEXT_PUBLIC_BMINI_H5_URL` 在全前端只允许出现在 frontend/admin-web/src/lib/bmini-h5-url.ts；组件经 `getBminiH5Url()` 取。红证：在第二个文件里再读一次 ⇒ 判红。执行点 = tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py。"
       - "判据 4·**前端源码零硬编码域名**：`frontend/admin-web/src/**` 与 `frontend/bmini-app/{src,config}/**` 的**代码**（注释不算 —— 否则判据会被自己的文档喂红）里不得出现 app.migaozn.com；豁免台账为空、未登记即红。执行点 = 同文件（含「注释剥离但字符串保留」的状态机，防 `https://` 被当注释切掉的假绿）。"
-      - "判据 5·**发布链三环在案**：Dockerfile 的 `ARG`+`ENV`、deploy-frontend.yml 的 `--build-arg`、.env.example 的说明 —— 任一环缺失 ⇒ 镜像里没有这个值 ⇒ 设置页永远显示「未配置」而没人会发现。红证：删任一环 ⇒ 判红（实测）。执行点 = 同文件。"
-      - "判据 6·**既有页零回归**：设置页既有 tab（基本设置 / AI 客服设置 / 工人端页面 / 通知设置）全在、既有 vitest 全绿（本单只加卡片，不动导航与保存逻辑）。⚠️ 2026-10-08（issue #6573）改判：原口径里的「参数总览」已**搬出本页**成为一级菜单项 ⇒ 本判据的 tab 清单不再含它（设置页的 tab 数 4 → 4，但成员变了）。"
-    skip_reason: "[backend-contract] 纯前端渲染 + 接线判据（无 LLM 环节，不进 agent-eval 冒烟）：由 vitest（frontend/admin-web/tests/unit/pages/settings.test.tsx，39 格）与 pytest（tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py）执行"
-    merge_log: "2026-09-26 新增（issue #5668）：B 端 h5 的发布腿落位 app.migaozn.com/b/ 的同时，在商家后台「企业设置」页给出扫码入口。地址走单一配置 NEXT_PUBLIC_BMINI_H5_URL（反面教材 = craft-display 三份副本 #4393）；未配置时不画假码（同族：洗水码「缺码不画假码」）。取号 UI-064（**改号记录**：本包原先取 UI-061，而 #5651 的「A4 加工单打印」先合并并占用了 UI-061 ⇒ 按当前最大号 UI-063 顺延为 UI-064）。 ｜ 2026-10-08（issue #6573）**判据 6 改判**：设置页的 tab 清单里「参数总览」换成「工人端页面」（前者已升为一级菜单项 `/settings/params`）—— 同批把判据的**静态断言**加严两条：该页**不得**再出现 `label: '参数总览'`（两处入口 = 入口分裂）、且必须保留 `router.replace('/settings/params')`（旧深链不 404）；执行点 = tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py 的 test_qr_entry_is_on_the_settings_page_and_keeps_existing_tabs（前端侧同批改判见 frontend/admin-web/tests/unit/pages/settings.test.tsx）。"
+      - "判据 5·**发布链三环在案**：Dockerfile 的 `ARG`+`ENV`、deploy-frontend.yml 的 `--build-arg`、.env.example 的说明 —— 任一环缺失 ⇒ 镜像里没有这个值 ⇒ 顶栏永远显示「未配置」而没人会发现。红证：删任一环 ⇒ 判红（实测）。执行点 = 同文件。"
+      - "判据 6·**既有页零回归**：设置页既有域（企业信息 / AI 客服 / 通知设置）全在、既有 vitest 全绿（本单只换入口形态，不动域目录与保存逻辑）。⚠️ 2026-10-08（issue #6573）改判：原口径里的「参数总览」已**搬出本页**成为一级菜单项 ⇒ 本判据不再含它。"
+      - "判据 7·**落位（issue #7198 / #7212）**：① 顶栏右上角挂「手机端入口」按钮（`aria-label`，`< lg` 隐藏），点击才画码、点击外部收起；② 设置页**不再有**手机端入口（issue #7212 整块移除 —— 用户 2026-10-18 逐字「这块直接移除吧，已经迁移到右上角了」）：`data-testid=bmini-h5-entry` / `MobileEntryInline` / `QRCodeSVG` / `qrcode.react` / `getBminiH5Url` 任一在设置页代码里出现即红；③ 二维码只由 `MobileEntry.tsx` 的 `MobileEntryPanel` 渲染一处。红证：从 Header 摘掉 `<MobileEntryHeader />` ⇒ 单源守卫判红（实测）；把入口块塞回设置页 ⇒ 单源守卫判红（实测）。执行点 = frontend/admin-web/tests/unit/components/MobileEntry.test.tsx + frontend/admin-web/tests/unit/components/Header.test.tsx 的「顶栏带「手机端入口」按钮」+ frontend/admin-web/tests/unit/pages/settings.test.tsx 的「企业信息域**不再**渲染入口块」+ tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py 的 test_qr_entry_is_in_the_header_only_and_keeps_existing_tabs。"
+    skip_reason: "[backend-contract] 纯前端渲染 + 接线判据（无 LLM 环节，不进 agent-eval 冒烟）：由 vitest（frontend/admin-web/tests/unit/components/MobileEntry.test.tsx、frontend/admin-web/tests/unit/pages/settings.test.tsx）与 pytest（tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py）执行"
+    merge_log: "2026-09-26 新增（issue #5668）：B 端 h5 的发布腿落位 app.migaozn.com/b/ 的同时，在商家后台「企业设置」页给出扫码入口。地址走单一配置 NEXT_PUBLIC_BMINI_H5_URL（反面教材 = craft-display 三份副本 #4393）；未配置时不画假码（同族：洗水码「缺码不画假码」）。取号 UI-064（**改号记录**：本包原先取 UI-061，而 #5651 的「A4 加工单打印」先合并并占用了 UI-061 ⇒ 按当前最大号 UI-063 顺延为 UI-064）。 ｜ 2026-10-08（issue #6573）**判据 6 改判**：设置页的 tab 清单里「参数总览」换成「工人端页面」；执行点 = tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py 的 test_qr_entry_is_on_the_settings_page_and_keeps_existing_tabs。 ｜ 2026-10-18（issue #7198）**落位改判**：用户逐字「这里的二维码放置到右上角是否合适？当前地方是临时放置的，需要有个更好的位置让用户方便扫码」⇒ 裁定「顶栏图标 + 按需弹层，设置页留一行入口」；主入口搬到**顶栏**（点击弹层；常驻面只多一个图标，§31 P1），设置页收成**一行**入口；二维码收敛到 `frontend/admin-web/src/components/layout/MobileEntry.tsx` 唯一渲染。判据 1/2/7 的执行点同批改判，判据只搬位置、不放宽。 ｜ 2026-10-18（issue #7212）**整块移除**：用户逐字「这块直接移除吧，已经迁移到右上角了」「企业信息设置里面的那部分」⇒ 设置页「企业信息」域里的入口块连同 `MobileEntryInline` 退场，扫码入口只在**顶栏**；判据 7 改为「设置页不得再现任何形态的入口 / 二维码痕迹」（出现即红），顶栏入口与单源 / 缺码判据不变。"
     traces:
       tests:
+        - "frontend/admin-web/tests/unit/components/MobileEntry.test.tsx"
+        - "frontend/admin-web/tests/unit/components/Header.test.tsx"
         - "frontend/admin-web/tests/unit/pages/settings.test.tsx"
         - "tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py"
       ci:
@@ -2358,7 +2370,7 @@ cases:
 
   - id: UI-066
     legacy_id: ""
-    title: "商家后台大菜单重排：6 组 + **两个**一级项（「商品管理」「参数总览」）+ 尾部「通知中心」= **24 项**一项不少不减（🔴 2026-10-02 issue #5939 起 **+「发货单」**：仓储与物料组内、与「入库单」对称；🔴 2026-10-08 issue #6573 起 **+一级项「参数总览」** `/settings/params`；加工项归生产管理 / 客户侧独立成组）"
+    title: "商家后台大菜单信息架构：**5 组 + 三个一级项**（**最前席位「经营看板」** / 尾席位「商品管理」「企业基础设置」）+ 尾部「通知中心」= **20 项**（🔴 2026-10-17 issue #7087 用户裁定「经营看板直接作为一级菜单，移除工作台」⇒「工作台」组撤销、「每日简报」菜单项删除；沿革：#5939 +「发货单」、#6573 +「参数总览」、#6580 收拢生产组并撤「参数总览」⇒ 24→21）"
     domains:
       - ui
       - frontend
@@ -2377,17 +2389,19 @@ cases:
     expectations:
       - tool: direct_reply
     data_checks:
-      - "判据 1·**三源同构（组层）**：`frontend/admin-web/src/config/menu.ts` 的 `menuGroups` / `backend/admin-api/src/main/java/com/migao/admin/controller/MenuController.java` 的 `MENU_TREE` / `backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java` 的 `buildMenusByPermissions` 的「组 key + 组名 + 顺序」逐值相等，且为 **6 组**：`workspace 工作台 / customer-service 客户服务 / trade-center 交易管理 / production-center 生产管理 / inventory-center 仓储与物料 / org-center 组织管理`。执行点 = tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py 的 test_menu_is_isomorphic_across_three_sources（#5778 起含「一级项层 / 独立项层」两段判据；**#5877 起再含「顶层布局序列」**——**位置**也参与三源比对，注入式红证第 ⑥~⑩ 条）。"
-      - "判据 2·**加工项管理归生产管理组**（用户第 1 条）：`production-center` 组内顺序 = 生产看板 → 智能派单 → **加工项管理** → 工艺配置 → 计件工资（5 项），且 `product-center` 组**不再存在**。执行点 = frontend/admin-web/tests/unit/pages/processing-merged.test.tsx（「加工项管理由生产管理组承载」）+ tests/unit/pages/processing-fees.test.tsx + backend/admin-api/src/test/java/com/migao/admin/controller/MenuControllerTest.java 的 productionCenterGroupMirrorsMenuTs / productCenterGroupIsGone。"
-      - "判据 3·**客户侧独立成「客户服务」组**（用户第 2/3 条）：该组成员与顺序 = 在线接待 → 客户列表 → 知识库 → 售后工单；`trade-center` 收窄为 订单列表 → 财务对账。执行点 = frontend/admin-web/tests/unit/components/Sidebar.test.tsx（「客户服务」组内顺序）+ backend/admin-api/src/test/java/com/migao/admin/service/AuthServiceTest.java 的 currentUserMenusDropRemovedChatEntry / currentUserMenusAbsorbCustomerCenterIntoTrade。"
-      - "判据 4·🔴 **「商品管理」是顶层一级项**（用户 2026-09-29「直接作为一级菜单使用」）：它**保留为一级菜单**（不折叠、一屏直达）、不属于任何组（服务端 = `MenuController` 顶层节点 + `AuthService` 顶层 `menuItem`）。**位置在四处同批表达**：frontend/admin-web/src/config/menu.ts 的 `STANDALONE_TOP_AFTER_GROUP_KEY`、backend/admin-api/src/main/java/com/migao/admin/controller/MenuController.java 的 `MENU_TREE` 顶层节点顺序、backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java 的 `buildMenusByPermissions` 里该 `menus.add(...)` 的文档位置、以及 Sidebar 的渲染序。且**不得**与任何组内项重名同路径。**席位组不可见时的回落**：`dashboard:view` 被整组过滤掉 ⇒ 一级项**回落到所有分组之前**（绝不跟着消失，最坏退回旧位置）。⚠️ **位置改判（2026-10-06，issue #6457）**：本判据原写「位置 = 「工作台」组之后、下一个组之前」（#5877 口径）—— 用户 2026-10-06 改判为「**所有分组之后**」（理由：组名即「分组」，一级项渲染在组与组之间会让「大菜单并列」自相矛盾）⇒ `STANDALONE_TOP_AFTER_GROUP_KEY` 现取**最后一个组** `org-center`；三源同构守卫的「顶层布局序列」判据同步含**位置**。执行点 = 三源同构守卫的「顶层布局序列」判据（注入 ⑦ MenuController 挪回最前 / ⑧ 前端席位常量改判 / ⑨⑩ AuthService 挪回首尾与组之间）+ frontend/admin-web/tests/unit/lib/menu-nav.test.ts 的 `splitGroupsAtTopItemSlot` 专条用例 + frontend/admin-web/tests/unit/components/Sidebar.test.tsx 的 DOM 顺序用例 + MenuControllerTest 的 topLevelStandaloneItemMirrorsFrontend。"
-      - "判据 9·🔴 **第二个一级项「参数总览」**（issue #6573，用户 2026-10-08 裁定方案 C）：`frontend/admin-web/src/config/menu.ts` 的 `standaloneTopItems` 第 2 项 = 「参数总览」(`/settings/params`，节点码取**既有**读码 `production:view`)，与「商品管理」**并列**、同排**所有分组之后**、通知中心之前；四处载体同批（menu.ts / `MenuController.MENU_TREE` / `AuthService.buildMenusByPermissions` / `backend/ai-agent-service/app/context/menu_navigator.py` 的 `MENU_TREE`）。**权限**：不新造码、不改任何端点的权限码 ⇒ 新增的只是**一个入口的可见面**（持 `production:view` 的生产岗此前进不去 `/settings`）。执行点 = tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py（一级项层 / 顶层布局序列）+ test_agent_permission_parity.py（`ROUTE_MENU_ANCHORS` / `MENU_READ_ENDPOINT_ANCHORS` 成对登记）+ backend/admin-api/src/test/java/com/migao/admin/service/AuthServiceTest.java"
-      - "判据 5·**面包屑与侧边栏一致（§15.2）**：`/products` ⇒ **单级**「商品管理」（一级项**没有父组**，与「通知中心」同口径；旧口径「商品管理 > 商品管理」是两个同名项，已收口）；`/customers`、`/after-sales`、`/knowledge`、`/agent-workspace*`、`/chat` ⇒ 首项「客户服务」；`/production/processing` 与旧路径 `/processing` ⇒ 首项「生产管理」。执行点 = frontend/admin-web/tests/unit/components/Header.test.tsx + frontend/admin-web/tests/unit/lib/menu-breadcrumb-coverage.test.tsx（PG-038 按菜单项 path 穷举）。"
-      - "判据 6·**RBAC 单一真值源同批对齐**：`rbac/manifest.json` 的 `menu_nodes` / `menus.{frontend,controller,auth}` 与本 IA 逐值相等，产物 `rbac/readings.json` 新鲜（`python3 rbac/generate_readings.py --check`）；菜单树上的两个商品域动作码节点（`新增商品` / `商品分类管理`）随 `product-center` 撤销而删除（**权限码本身仍在权限目录里**）。执行点 = tests/unit_ci_workflows/test_rbac_single_source_manifest.py + test_rbac_derived_pages.py（ACTION_NODE_CODES 只许缩短）。"
-      - "判据 7·**权限码 / 路径 / 门控一字不动（零可见性 delta）**：纯信息架构调整，不改任何端点的码；后端 `AuthServiceTest` 的角色可见性用例（负控 / inbound 独立门控 / 客户侧）+ frontend/admin-web/tests/unit/lib/menu-nav.test.ts 的权限过滤表逐条精确断言。"
-      - "判据 8·**一级项不进「常用」**（#5877）：一级项**不再渲染星标按钮**（`sidebar-pin-products` 不存在），可收藏面 = 组内项 ∪ 尾部独立项；用户 localStorage 里残留的 `products` key **静默丢弃**（不出现第二条一模一样的入口），而一级项本身照旧渲染一次；视觉改为**板块入口**规格（与组头同级排版 + 与上方之间的分隔线 + 不旋转的 ChevronRight）。执行点 = frontend/admin-web/tests/unit/lib/menu-pinned.test.ts + frontend/admin-web/tests/unit/components/Sidebar.test.tsx 的「无星标 / 不进常用 / 板块入口规格」用例。"
+      - "判据 1·**三源同构（组层）**：`frontend/admin-web/src/config/menu.ts` 的 `menuGroups` / `backend/admin-api/src/main/java/com/migao/admin/controller/MenuController.java` 的 `MENU_TREE` / `backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java` 的 `buildMenusByPermissions` 的「组 key + 组名 + 顺序」逐值相等，且为 **5 组**：`customer-service 客户服务 / trade-center 交易管理 / production-center 生产管理 / inventory-center 仓储与物料 / org-center 组织管理`。🔴 **2026-10-17（issue #7087）**：原第 1 组 `workspace 工作台` 已**整组撤销**（不再是组、也不是空组）⇒ 6 组 → 5 组。执行点 = tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py 的 test_menu_is_isomorphic_across_three_sources（#5778 起含「席位项层 / 独立项层」两段判据；**#5877 起再含「顶层布局序列」**——**位置**也参与三源比对；**#7087 起该序列的前端侧含三个席位**，注入式红证第 ⑥~⑭ 条）。"
+      - "判据 1b·🔴 **最前席位「经营看板」（issue #7087）**：`menu.ts` 的 `standaloneHeadItems` 第 1 项 = 「经营看板」(`/dashboard`，节点码 `dashboard:view` **一字不动** ⇒ 零授权 delta)，渲染在**所有分组之前**；三源同批表达同一位置（`MenuController.MENU_TREE` 顶层**首个**节点 / `AuthService.buildMenusByPermissions` **首个**顶层 `menus.add` / 前端 `standaloneHeadItems`）。**为什么必须最前**：`lib/menu-nav.ts` 的 `landingPath()` = **第一个可见菜单项**（issue #6758）⇒ 放尾席位会让登录落点变成「在线接待」，与用户逐字要的「一进来就很直观的看到经营看板」正好相反。执行点 = tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py（顶层布局序列 + 注入 ⑪~⑭）+ backend/ai-agent-service/app/context/menu_navigator.py 的 `MENU_TREE` 首节点（镜像判据 tests/unit_ci_workflows/test_menu_navigator.py）。"
+      - "判据 1c·🔴 **「每日简报」菜单项已删除（issue #7087）**：`briefingToggle` 这一菜单级过滤机制**一并撤掉**（`MenuItem` 接口不再有该字段）；`/briefing` 保留为**重定向薄壳** → `/dashboard`（旧深链不 404），守卫前缀 `/briefing` 仍在 `ROUTE_PERMISSION_MAP`（= `dashboard:view`）但**不再有菜单节点**（登记在 test_agent_permission_parity.py 的 `ROUTE_WITHOUT_MENU_NODE` 与 test_rbac_derived_pages.py 的 `ROUTE_PREFIX_EXCEPTIONS`）。企业开关 `GET/PUT /api/admin/briefing/config` **继续存在**，只驱动**经营看板上的结论卡**（`BriefingCard enabled=…`）：开关关 = 看板无结论文字；开关开 = 有结论文字。执行点 = 同上两条守卫 + UI-085 判据 3。"
+      - "判据 2·**加工项管理归生产管理组**（用户第 1 条）：`production-center` 组内顺序 = 作业看板 → 智能派单 → 计件工资（3 项；🔴 #6580 起「加工项管理」「工艺配置」两个菜单项已移除），且 `product-center` 组**不再存在**。执行点 = frontend/admin-web/tests/unit/pages/processing-merged.test.tsx（「加工项管理由生产管理组承载」）+ tests/unit/pages/processing-fees.test.tsx + backend/admin-api/src/test/java/com/migao/admin/controller/MenuControllerTest.java 的 productionCenterGroupMirrorsMenuTs / productCenterGroupIsGone。"
+      - "判据 3·**客户侧独立成「客户服务」组**（用户第 2/3 条）：该组成员与顺序 = 在线接待 → 知识库 → 售后工单 → 客户列表；`trade-center` = 销售订单 → 财务对账。执行点 = frontend/admin-web/tests/unit/components/Sidebar.test.tsx（「客户服务」组内顺序）+ backend/admin-api/src/test/java/com/migao/admin/service/AuthServiceTest.java 的 currentUserMenusDropRemovedChatEntry / currentUserMenusAbsorbCustomerCenterIntoTrade。"
+      - "判据 4·🔴 **尾席位一级项「商品管理」与「企业基础设置」**（用户 2026-09-29「直接作为一级菜单使用」）：两项**保留为一级菜单**（不折叠、一屏直达）、不属于任何组（服务端 = `MenuController` 顶层节点 + `AuthService` 顶层 `menuItem`），渲染在 **`STANDALONE_TOP_AFTER_GROUP_KEY`（现取最后一个组 `org-center`）之后**、尾部「通知中心」之前。⚠️ 不要把「最前席位」（经营看板）与它混为一谈：**两个席位的位置语义不同**，见 `menu.ts` 文件头「三个席位」节。**席位组不可见时的回落**：`org-center` 被整组权限过滤掉 ⇒ 尾席位项**回落到当前可见分组的末尾**（绝不跟着消失）；**最前席位**不依赖任何常量、恒在**所有分组之前**。执行点 = 三源同构守卫的「顶层布局序列」判据（注入 ⑦ MenuController 挪位 / ⑧ 前端尾席位常量改判 / ⑨⑩ AuthService 挪首尾与组之间 / ⑪~⑭ 最前席位）+ frontend/admin-web/tests/unit/lib/menu-nav.test.ts 的 `splitGroupsAtTopItemSlot` 专条用例 + frontend/admin-web/tests/unit/components/Sidebar.test.tsx 的 DOM 顺序用例 + MenuControllerTest 的 topLevelStandaloneItemMirrorsFrontend。"
+      - "判据 9·🔴 **「参数总览」一级项已撤（issue #6580）**：`standaloneTopItems` 不再含 `/settings/params`（内容回到 `/settings` 页内的配置域）；旧路径 `/settings/params` 保留为重定向。当前一级项 = **3 项**（最前席位：经营看板；尾席位：商品管理 / 企业基础设置）。执行点 = tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py（席位项层 / 顶层布局序列）+ test_agent_permission_parity.py（`ROUTE_MENU_ANCHORS` / `MENU_READ_ENDPOINT_ANCHORS` 成对登记）。"
+      - "判据 5·**面包屑与侧边栏一致（§15.2）**：`/` 与 `/dashboard` ⇒ **单级**「经营看板」（issue #7087；旧口径是「工作台 > 经营看板」，组名「工作台」自此**不再出现在任何商家可见面**）；未知路径兜底 ⇒ 单级「经营看板」（可回首页）。`/products`、`/settings` ⇒ **单级**（一级项**没有父组**，与「通知中心」同口径）；`/customers`、`/after-sales`、`/knowledge`、`/agent-workspace*`、`/chat` ⇒ 首项「客户服务」。执行点 = frontend/admin-web/tests/unit/components/Header.test.tsx + frontend/admin-web/tests/unit/lib/menu-breadcrumb-coverage.test.tsx（PG-038 按菜单项 path 穷举，末项 == 菜单名）。"
+      - "判据 6·**RBAC 单一真值源同批对齐**：`rbac/manifest.json` 的 `menu_nodes`（25 条，**首条 = 经营看板**） / `menus.{frontend,controller,auth}`（分别 25 / 23 / 19 条） / `pages[]`（20 页，「每日简报」条已销账）与本 IA 逐值相等，产物 `rbac/readings.json` 新鲜（`python3 rbac/generate_readings.py --check`）。执行点 = tests/unit_ci_workflows/test_rbac_single_source_manifest.py + test_rbac_derived_pages.py（`ACTION_NODE_CODES` / `ROUTE_PREFIX_EXCEPTIONS` 只许缩短）。"
+      - "判据 7·**权限码 / 路径 / 门控一字不动（零可见性 delta）**：纯信息架构调整，不改任何端点的码（`dashboard:view` 一字未动）；后端 `AuthServiceTest` 的角色可见性用例（负控 / inbound 独立门控 / 客户侧）+ frontend/admin-web/tests/unit/lib/menu-nav.test.ts 的权限过滤表逐条精确断言。"
+      - "判据 8·**一级项不进「常用」**（#5877）：一级项**不再渲染星标按钮**，可收藏面 = 组内项 ∪ 尾部独立项；用户 localStorage 里残留的 `products` key **静默丢弃**（不出现第二条一模一样的入口），而一级项本身照旧渲染一次。🔴 #7087 新增的**最前席位**同样遵守本条（它是一级项的一种，不进「常用」）。执行点 = frontend/admin-web/tests/unit/lib/menu-pinned.test.ts + frontend/admin-web/tests/unit/components/Sidebar.test.tsx 的「无星标 / 不进常用 / 板块入口规格」用例。"
     skip_reason: "[backend-contract] 纯前端信息架构 + 三处菜单源同构（无 LLM 环节，不进 agent-eval 冒烟）：由 vitest（前端）与 pytest（tests/unit_ci_workflows 的三源同构守卫）执行"
-    merge_log: "2026-09-29 新增（issue #5778）：用户逐条裁定菜单重排。**判据一格不放宽** —— 旧 IA 的钉子（`customer-center` 不再存在、旧组名不得长回来、21 项一项不少不减）逐条保留并新增 `product-center` / `smart-customer-service` 两条反向钉子；RBAC 的两个动作码节点台账按「只许缩短」口径同批收缩。2026-10-01 改判（issue #5877）：一级项由「所有分组**之前**」改为「**工作台**组之后」（用户「商品管理的菜单不应该作为第一行」），判据 4/5/8 同步改口径并新增「顶层布局序列」三源判据（注入 ⑦~⑩）；席位组不可见时的**回落**口径同日写明。2026-10-02 追加（issue #5939）：菜单项由 21 → **22 项**（+「发货单」`/shipments`），本用例的「一项不少不减」计数随之改判；新节点的三源同构与页面判据另立 **UI-078**（不在本用例重复表达）。 ｜ 2026-10-08（issue #6573，用户裁定方案 C）：新增**第二个一级项「参数总览」**（`/settings/params`，码取既有读码 `production:view`）⇒ 菜单项 22 → **24 项**（6 组 21 子项 + **2** 一级项 + 1 尾部独立项）；同批把**判据 4 的位置口径**从 #5877 的「工作台组之后」校正到 #6457 的「**所有分组之后**」（该处此前已随 #6457 过期，本单顺手改准，**判据只增不减**：新增判据 9，其余八条一字未删）。"
+    merge_log: "2026-09-29 新增（issue #5778）：用户逐条裁定菜单重排。**判据一格不放宽** —— 旧 IA 的钉子（`customer-center` 不再存在、旧组名不得长回来、项数一项不少不减）逐条保留并新增 `product-center` / `smart-customer-service` 两条反向钉子；RBAC 的动作码节点台账按「只许缩短」口径同批收缩。2026-10-01 改判（issue #5877）：一级项由「所有分组**之前**」改为「**工作台**组之后」（用户「商品管理的菜单不应该作为第一行」），判据 4/5/8 同步改口径并新增「顶层布局序列」三源判据（注入 ⑦~⑩）；席位组不可见时的**回落**口径同日写明。2026-10-02 追加（issue #5939）：+「发货单」`/shipments`（新节点的三源同构与页面判据另立 **UI-078**）。 ｜ 2026-10-08（issue #6573）：新增第二个一级项「参数总览」⇒ 24 项；同批把判据 4 的位置口径从 #5877 的「工作台组之后」校正到 #6457 的「**所有分组之后**」，新增判据 9。 ｜ 2026-10-09（issue #6580）：生产组由 5 项收拢为 3 项（「加工项管理」「工艺配置」移除，功能体并入 `/settings`）、「企业基础信息」改名「企业基础设置」并升为尾部一级项、撤掉「参数总览」⇒ 整树 24 → **21 项**；判据 2/9 同批改判。 ｜ 🔴 **2026-10-17 改判（issue #7087，用户逐字两条裁定）**：①「**经营看板直接作为一级菜单，移除工作台**，这样用户一进来就很直观的看到经营看板了」⇒「工作台」组（组 key `workspace`）**整组撤销**（既不是组、也不是空组），「经营看板」升为**最前席位**一级项（`standaloneHeadItems`，渲染在**所有分组之前** —— 为什么必须最前：`landingPath()` = 第一个可见菜单项，放尾席位会让登录落点变成「在线接待」）；②「**不要新增每日简报的菜单了**……那一行分析结论本来就在经营看板上，不需要额外一个菜单，移除掉」⇒「每日简报」菜单项删除、`briefingToggle` 机制整维撤销、`/briefing` 改为重定向薄壳（守卫前缀保留）。整树 21 → **20 项**（5 组 16 项 + 3 个一级项 + 尾部 1 项）。**本改判同样一格不放宽**：判据 1 的**组数/组名逐值相等**与判据 1b/1c（最前席位 / 简报项已删）都是**新增**判据；权限码一字未动（零授权 delta）；旧 IA 的反向钉子逐条保留。同批对齐的面 = `menu.ts` / `MenuController` / `AuthService` / `menu_navigator.py` / `rbac/manifest.json`（+ `readings.json` 重生成）/ 本用例 + 生成物。"
     traces:
       tests:
         - "tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py"
@@ -2638,12 +2652,12 @@ cases:
       verifies: []
 
   # ==========================================================================
-  # UI-073（issue #5792 口径②）：订单列表下钻口径 —— 「待发货」是两个后端状态之和
+  # UI-073（issue #5792 口径②）：销售订单下钻口径 —— 「待发货」是两个后端状态之和
   # ==========================================================================
 
   - id: UI-073
     legacy_id: ""
-    title: "订单列表状态筛选支持逗号分隔多值：前端「待发货」= `confirmed,producing`（与看板卡计数取齐）"
+    title: "销售订单状态筛选支持逗号分隔多值：前端「待发货」= `confirmed,producing`（与看板卡计数取齐）"
     domains:
       - ui
       - frontend
@@ -2712,12 +2726,12 @@ cases:
         - "frontend/admin-web/tests/unit/lib/menu-nav.test.ts"
 
   # ==========================================================================
-  # UI-075（issue #5841）：订单列表查询区第二行横向溢出 —— 「查询/重置/刷新」被挤出卡片
+  # UI-075（issue #5841）：销售订单查询区第二行横向溢出 —— 「查询/重置/刷新」被挤出卡片
   # ==========================================================================
 
   - id: UI-075
     legacy_id: ""
-    title: "订单列表查询区在窄屏既不横向溢出（issue #5841）也不把筛选框压到不可读（issue #5850）：行必须可换行（flex-wrap）、每个字段格必须有 min-w-[…]；同行控件不得 flex-1 + 固定 min-w"
+    title: "销售订单查询区在窄屏既不横向溢出（issue #5841）也不把筛选框压到不可读（issue #5850）：行必须可换行（flex-wrap）、每个字段格必须有 min-w-[…]；同行控件不得 flex-1 + 固定 min-w"
     domains:
       - ui
       - frontend
@@ -2844,7 +2858,7 @@ cases:
 
   - id: UI-026
     legacy_id: ""
-    title: "跨权限域跳转入口按目标域守卫码显隐（生产看板「订单详情」+ 售后工单「订单号」）"
+    title: "跨权限域跳转入口按目标域守卫码显隐（作业看板「订单详情」+ 售后工单「订单号」）"
     domains:
       - ui
       - frontend
@@ -2857,10 +2871,10 @@ cases:
       - navigation
     truths_ref: []
     user_inputs:
-      - "生产看板里点「查看」跳转到订单详情，这设计合理吗（用户 2026-10-01 走查；裁定改法 A：正名 + 按权限显隐 + 提示上移）"
+      - "作业看板里点「查看」跳转到订单详情，这设计合理吗（用户 2026-10-01 走查；裁定改法 A：正名 + 按权限显隐 + 提示上移）"
     expectations: []
     data_checks:
-      - "判据 1·**入口文案有确定宾语**：生产看板行内入口 = 「订单详情」（「查看」在本行没有确定宾语 —— 与同行的「生产明细」互换也不违和，即命名失败的直接判据）；点击仍跳 `/orders/{orderId}`。执行点 = frontend/admin-web/tests/unit/pages/production-board.test.tsx 的「合并能力⑥订单详情」"
+      - "判据 1·**入口文案有确定宾语**：作业看板行内入口 = 「订单详情」（「查看」在本行没有确定宾语 —— 与同行的「生产明细」互换也不违和，即命名失败的直接判据）；点击仍跳 `/orders/{orderId}`。执行点 = frontend/admin-web/tests/unit/pages/production-board.test.tsx 的「合并能力⑥订单详情」"
       - "判据 2·**可见却 403 的红线（双向对照）**：持 `order:list` ⇒ 渲染该入口；**不持** ⇒ **不渲染**（默认岗位 product_manager 即持 production:view、不持 order:list 的形态）。⚠️ 反向用例必须同时清空 `roles` —— `usePermission()` 把 `roles:['admin']` 判为全权限（isAdmin），只改 permissions 会让红线**恒真**。执行点 = 同文件「无 order:list ⇒ 不渲染」+「持 order:list ⇒ 照常渲染」"
       - "判据 3·**引导文案是页面级的**：「状态流转请在订单详情操作」全页**恰 1 条**且**不在 `<table>` 内**（改前 = 每行一份，挤在 8 列中最挤的「操作」格里）；无 `order:list` 时同一句标明「需订单查看权限」（不把人指向去不了的地方）。执行点 = 同文件「引导文案是页面级的」+「无 order:list 时引导文案标明需订单查看权限」"
       - "判据 4·**类级元守卫（未登记即红）**：`src/app` 下 `(dashboard)` 路由组内的**跨权限域**字面量 `router.push/replace`，源文件必须出现目标守卫码（`has('<码>')`）；守卫码表**现取** `layout.tsx` 的 ROUTE_PERMISSION_MAP（不硬编码）。豁免台账当前为空且只许缩短。执行点 = frontend/admin-web/tests/unit/cross-domain-nav-permission-guard.test.ts 的「每个跨权限域跳转入口都按目标域守卫码显隐」"
@@ -2934,7 +2948,7 @@ cases:
 
   - id: UI-079
     legacy_id: ""
-    title: "黄金策对话「客户端打字机」：服务端整段下发 ⇒ 客户端按节奏揭示（真实事件序下逐字 / 单调不回退 / 收口替换不卡 / 有界收敛 / 历史·中断·减少动画立刻全文）"
+    title: "黄金策对话「客户端打字机」：服务端整段下发 ⇒ 客户端按节奏揭示（真实事件序下逐字 / 单调不回退 / 收口替换不卡 / 有界收敛 / 历史·中断·减少动画立刻全文）；PC 与**手机端（bmini）**同口径（issue #7235）"
     domains:
       - ui
       - frontend
@@ -2946,6 +2960,7 @@ cases:
       - streaming
       - typewriter
       - admin-web
+      - bmini
     truths_ref:
       - frontend-fix.mibao-client-typewriter
       - frontend-fix.vitest
@@ -2961,14 +2976,17 @@ cases:
       - "🔴 判据 4·**服务端不被改动（本单边界）**：本用例只判展示面 —— `git diff origin/main...HEAD -- backend/` 为空。执行点 = PR 的改动清单（本包零后端改动）"
       - "🔴 判据 5·**真实事件序下必须逐字（issue #7086）**：正文以**一个** `text` 事件整段到达、紧随 `done`（store 同批把 `isStreaming` 置假并落库）⇒ 结束之后**仍在逐字**（t 时刻可见字符数**严格少于**全长、且恒为全文前缀），最终 == 全长；且整段揭示**有界**（≤ TYPEWRITER_MAX_REVEAL_MS，长文自动加速、不无限拖尾）。执行点 = frontend/admin-web/tests/unit/components/MessageList-typewriter.test.tsx「🔴 UI-079 真实事件序」+ frontend/admin-web/tests/unit/hooks/use-typewriter.test.tsx「🔴 UI-079-1 真实事件序」「UI-079-3 有界收敛」。类级元守卫 = tests/unit_ci_workflows/test_typewriter_reveal_not_lifecycle_bound.py（揭示层再读外部生命周期开关 / 真实事件序判据被摘掉 ⇒ 判红）"
       - "🔴 红证（改前实测）：本单落地前全仓 `grep -rn \"typewriter\\|useTypewriter\" frontend/admin-web/src` = 0 命中 ⇒ 组件测试 import 即失败；把 hook 换成直返全文（等效「无打字机」）⇒ 判据 1/2/3 的「中途可见 < 全长」「维持替换过程单调」「流式结束立刻等于全文」三条当场红（本机实测 3 failed / 6 passed）；把组件的 `data-revealed` 接入摘掉 ⇒ 组件侧两条红"
+      - "🔴 判据 6·**手机端（bmini）同口径执行点**（issue #7235）：同一组不变量在 frontend/bmini-app 上成立 —— 直播消息从 0 起逐字（t 时刻 `data-revealed` < 全长且恒为全文前缀）、结束之后仍逐字、历史回放 / 中断（`wasAborted`）/ 减少动画立刻全文、长文按上界有界收敛。执行点 = frontend/bmini-app/tests/chat-typewriter.test.tsx「UI-079 手机端打字机」6 条 + frontend/bmini-app/tests/store-chat.test.ts「stopStreaming 给被中断的消息打 wasAborted」（负控：已结束消息不打标记）"
       - "🔴 红证（#7086，2026-10-17 实测）：把实现回退到 origin/main（旧 hook 的 `instant = !streaming || …` + 组件传 `streaming: !!message.isStreaming`）⇒ 本用例 19 条里 **5 条红**，其中「真实事件序」的读数是 `expected 37 to be less than 37`（= done 之后第一次读数已是全长，一帧未播，与用户现场一致）；改后 19 条全绿。复算：`git stash push -- frontend/admin-web/src/hooks/use-typewriter.ts frontend/admin-web/src/components/chat/MessageList.tsx` ⇒ `cd frontend/admin-web && npx vitest run --dir tests/unit use-typewriter.test.tsx MessageList-typewriter.test.tsx` ⇒ `git stash pop`（回退后 5 红、恢复后 19 绿，本机 2026-10-17 复算）"
     skip_reason: "[backend-contract] 纯前端揭示层（服务端一字未改：仍整段下发）由 vitest（jsdom）执行，不进入 agent-eval 冒烟；LLM 行为面不变，故无 agent 用例"
     precondition: "本用例是 [backend-contract] 纯前端用例：前置由单测自建 —— frontend/admin-web/tests/unit/hooks/use-typewriter.test.tsx 用 `vi.useFakeTimers()` 直接驱动 hook 的揭示时钟；frontend/admin-web/tests/unit/components/MessageList-typewriter.test.tsx `vi.mock('@/store/chat')` 注入带 `isStreaming/tool_calls` 的消息夹具。前置不成立时单测直接红（找不到 `data-revealed` / 找不到文案），不依赖共享夹具；agent-eval 栈不跑它"
-    merge_log: "2026-10-02 新增（issue #5952）：黄金策对话从「服务端整段下发、界面一次性刷出」改为「客户端按节奏揭示」（用户同日裁定「选 2」）。服务端真逐字**有意不做**（节点级 astream + finalize_turn 后置收口 + C 端跨片脱敏三重结构性冲突，见 user_inputs）。取号 UI-079（现取 ui.yml 最大 = UI-078 的下一号）。 ｜ 2026-10-17 改判 + 新增判据 5（issue #7086）：用户现场「电脑端就是一次性返回，不是打字效果」⇒ 根因 = 判据 3 原文的「流式结束（isStreaming=false）⇒ 立刻全文」把揭示窗口压成 ≈ 0（正文整段到达 + 紧随 done）；判据 3 收窄为「立刻收敛只对非直播面」，新增判据 5 钉真实事件序 + 有界收敛。原判据 3 的「组件卸载 ⇒ 立刻全文」一条按实现事实移除（卸载后无可见面；另有「定时器被清掉、无状态更新」的泄漏判据留在 hook 文件）。"
+    merge_log: "2026-10-02 新增（issue #5952）：黄金策对话从「服务端整段下发、界面一次性刷出」改为「客户端按节奏揭示」（用户同日裁定「选 2」）。服务端真逐字**有意不做**（节点级 astream + finalize_turn 后置收口 + C 端跨片脱敏三重结构性冲突，见 user_inputs）。取号 UI-079（现取 ui.yml 最大 = UI-078 的下一号）。 ｜ 2026-10-17 改判 + 新增判据 5（issue #7086）：用户现场「电脑端就是一次性返回，不是打字效果」⇒ 根因 = 判据 3 原文的「流式结束（isStreaming=false）⇒ 立刻全文」把揭示窗口压成 ≈ 0（正文整段到达 + 紧随 done）；判据 3 收窄为「立刻收敛只对非直播面」，新增判据 5 钉真实事件序 + 有界收敛。原判据 3 的「组件卸载 ⇒ 立刻全文」一条按实现事实移除（卸载后无可见面；另有「定时器被清掉、无状态更新」的泄漏判据留在 hook 文件）。 ｜ 2026-10-18 扩执行点（issue #7235）：手机端 bmini 此前**全仓零 `typewriter` 命中** ⇒ 后端整段下发时商家看到「一次性刷出」；本单按 PC 同口径补 `frontend/bmini-app/src/hooks/use-typewriter.ts` + `MessageBubble` 接入 `data-revealed`，并给「用户中断」补 `Message.wasAborted`（stopStreaming 打标）⇒ 判据 6 新增；红证 = 实现退回 origin/main 后本用例执行点 **2 suites failed / 7 failed（chat-typewriter 6 + store-chat 1）/ 21 passed**。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/hooks/use-typewriter.test.tsx"
         - "frontend/admin-web/tests/unit/components/MessageList-typewriter.test.tsx"
+        - "frontend/bmini-app/tests/chat-typewriter.test.tsx"
+        - "frontend/bmini-app/tests/store-chat.test.ts"
       ci:
         - pr-check.yml
       verifies: []
@@ -3166,6 +3184,48 @@ cases:
         - pr-check.yml
       verifies: []
 
+  - id: UI-126
+    legacy_id: ""
+    title: "手机端（B 端黄金策 / C 端元元）助手消息的 **GFM 表格**渲染 —— 表格成组件（窄屏可横滑 / 表头-数据行逐格 / 列数按分隔行）+ PC 端同族回归判据（用户 2026-10-18 手机端实测：一排 `|---|`）"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - chat
+      - rich-text
+      - table
+      - bmini
+    truths_ref:
+      - frontend-fix.no-api-change
+    user_inputs:
+      - "用户 2026-10-18 逐字：「手机端的黄金策返回的表格样式没有正常渲染，还是原声markdown」（原声 = 原生 / raw）；同一句里要求「顺便把pc端的也一起检查下」"
+      - "同一轮的 DB 证据（session_messages，session sess_742201cbf83f4f58）：assistant 正文逐字含 `| 工单号 | 关联订单 | 客户 | 类型 | 状态 | 优先级 | 创建时间 |` 与 `|---|---|---|---|` —— 黄金策的清单类回复大量使用 GFM 表格，手机端把这排竖线原样上屏"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**解析口径（B/C 两端同口径）**：表头行 + 分隔行（列数一致）⇒ 一个 table 块（header / align / rows 逐值）；列数按分隔行定（数据行缺格补空、多格截断）；单元格内 `**粗体**` 仍解析；空行结束表格；首尾竖线可省略。执行点 = frontend/bmini-app/tests/chat-rich-text-table.test.ts（9 条）与 frontend/mini-app/tests/message-bubble-table.test.tsx"
+      - "判据 2·**流式安全负控**：只有表头、分隔行还没到 ⇒ 仍是普通文本（不闪半张表）；普通句子里的 `a | b` 不判成表格；**揭示期（打字机逐字中）尾部未成表的行先不画** —— 表头到了、分隔行没到 ⇒ DOM 里没有裸 `|`（旧形态会闪一两百毫秒裸管道符）。执行点 = 同上两个文件 + frontend/bmini-app/tests/chat-typewriter.test.tsx 判据 ⑦"
+      - "判据 3·**渲染**：`.message-bubble__table` 在场、DOM 文本零字面 `|` / `---`；表头 3 格 + 数据行 N 行且列数不错位；包在 `scrollX` 容器里（窄屏可横滑）；有表格的气泡放宽到 94%。执行点 = frontend/bmini-app/tests/chat-table-render.test.tsx（6 条）+ frontend/mini-app/tests/message-bubble-table.test.tsx"
+      - "判据 4·**PC 同族核查**（用户要求「顺便检查 PC」）：admin-web 走 react-markdown + remark-gfm ⇒ 同一段表格渲染出 `<table>` / `<th>` / `<td>`，且 remark-breaks 在场时仍成表（不折成 `<br>` 裸文本）、对齐标记不错位。执行点 = frontend/admin-web/tests/unit/components/chat-markdown-table.test.tsx（5 条）"
+      - "判据 5·**类级元守卫（两端同口径）**：同一组语料（含单列表格）喂给两端解析器，输出必须**逐值相等**（`toEqual`），且语料自证「lines 与 table 两种块都出现」（防两边都空 ⇒ 相等假绿）。判据 = frontend/mini-app/tests/chat-rich-text-parity.test.ts（3 条；放在 C 端腿里跑 —— 避免 bmini 腿跨目录依赖 C 端源码而污染本地门禁矩阵的触发面）。判别力自证：只改 C 端一处口径（单列表格判定加 `header.length > 1`）⇒ 该条当场红（`1 failed / 2 passed`）；还原 ⇒ 3 passed。这条防的正是本缺陷的**类**：两份本地实现「一端修、一端漏」（UI-042 漏 B 端 → #6346；#7235 若只修 B 端则 C 端继续裸奔）。另有**接线普查**类级守卫 tests/unit_ci_workflows/test_chat_richtext_surface_guard.py 判据 2：每个小程序气泡包必须引用 `parseRichContent` 且渲染 `message-bubble__table`（摘掉表格组件 ⇒ 红）"
+      - "🔴 红证（改前实测，migao-dev-flow §28.1 出口① 临时反转）：把两端实现退回 origin/main（`git stash push -- src/utils/richText.ts src/components/chat/MessageBubble.tsx`，在 frontend/bmini-app 下）⇒ 表格两条执行点 **2 suites failed / 5 failed / 1 passed**（`chat-rich-text-table` 因 `parseRichContent` 不存在整 suite 失败；`chat-table-render` 的 ①③⑤⑥ 红、负控 ④ 仍绿）；恢复后两文件 **15/15 全绿**。PC 侧判别力自证：摘掉 `remarkGfm` ⇒ 判据 4 的 `<table>` 零命中当场红"
+    skip_reason: "[backend-contract] 纯前端渲染（vitest / jest jsdom），不进 agent-eval 冒烟；服务端一字未改（表格是既有 LLM 输出形态，只改展示层）"
+    precondition: "两端 jest 夹具自建消息对象（role='assistant' + 带表格的 content），PC 侧 vi.mock('@/store/chat') 注入消息、**不 mock** react-markdown（判据打在真实渲染管线上）"
+    merge_log: "2026-10-18 新增（issue #7235）：用户手机端实测黄金策表格裸 markdown；根因 = 两端最小 richText 解析器只认 `**粗体**` + 列表（#6346 落的口径），表格不在子集内（同一份实现的 B/C 两端各持一份，#6306 不建跨 App 共享模块 ⇒ 两端同批补）。取号 UI-126（`python3 scripts/next_case_id.py ui` 现取 = UI-126；候选集 = main ∪ 全部 open PR ∪ 本工作区）。PC 侧经核查**本就渲染**（react-markdown + remark-gfm）⇒ 本单补回归判据把守（#6346 挂的 remark-breaks 与表格同属换行敏感结构）。"
+    traces:
+      tests:
+        - "frontend/bmini-app/tests/chat-rich-text-table.test.ts"
+        - "frontend/bmini-app/tests/chat-table-render.test.tsx"
+        - "frontend/mini-app/tests/chat-rich-text-parity.test.ts"
+        - "tests/unit_ci_workflows/test_chat_richtext_surface_guard.py"
+        - "frontend/mini-app/tests/message-bubble-table.test.tsx"
+        - "frontend/admin-web/tests/unit/components/chat-markdown-table.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
   - id: UI-085
     legacy_id: ""
     title: "岗位 × 侧边栏菜单：种子权限集 × menu.ts 三条件 ⇒ 可见项逐值相等（岗位矩阵）"
@@ -3188,14 +3248,14 @@ cases:
     expectations:
       - tool: direct_reply
     data_checks:
-      - "判据 1·岗位矩阵：6 个岗位的种子权限集（逐字写死于用例内）各自渲染出的可见项 key（**顺序敏感**）逐值相等 —— 客服 10 / 销售 9 / 财务 8 / 知识编辑 5 / 商品管理员 10 / 运营 19 项。执行点 = frontend/admin-web/tests/unit/lib/menu-nav.test.ts 的 describe「岗位矩阵：role_permissions（种子）× menu.ts 三条件」"
-      - "判据 2·三条件组合：`adminOnly` ∧ `briefingToggle` ∧ `permissionCode` 的 11 种组合表驱动（真实菜单无人用 adminOnly ⇒ 用合成项取证；同文件既有 describe）"
-      - "判据 3·开关语义：`briefingEnabled=false`（新租户默认）时「每日简报」不在任何岗位清单里、`true` 时才出现（同文件 toggle 用例）"
+      - "判据 1·岗位矩阵：6 个岗位的种子权限集（逐字写死于用例内）各自渲染出的可见项 key（**顺序敏感**）逐值相等 —— 客服 **10** / 销售 **10** / 财务 **8** / 知识编辑 **6** / 商品管理员 **10** / 运营 **19** 项。执行点 = frontend/admin-web/tests/unit/lib/menu-nav.test.ts 的 describe「岗位矩阵：role_permissions（种子）× menu.ts **两条件**」。🔴 **2026-10-17（issue #7087）计数改判的现取口径**：过滤条件由**三条降为两条**（`adminOnly` ∧ `permissionCode`；`briefingToggle` 机制连同「每日简报」菜单项已删）⇒ 与旧读数相比：客服 10→10（少「每日简报」1 项、但「经营看板」在，且它现在是清单**第 1 项**）、销售 9→**10**、财务 8→8、知识编辑 5→**6**、商品管理员 10→10、运营 19→19。**读数出处（两处独立同源）**：① 本人按 `parse_role_defaults(RegistrationService) ∪ parse_role_fallback(RoleService)` ∩ `parse_menu_ts_nodes(menu.ts)` 复算；② 与 `frontend/admin-web/tests/unit/lib/menu-nav.test.ts` 的 `ROLES[].expected` **逐项相等**（该文件的期望值是**独立写死**的，不由本用例反推）。"
+      - "判据 2·**两条件**组合：`adminOnly` ∧ `permissionCode` 的组合表驱动（真实菜单无人用 adminOnly ⇒ 用合成项取证；同文件既有 describe）。🔴 2026-10-17（issue #7087）：原「三条件」里的 `briefingToggle` **已随「每日简报」菜单项整维撤销**（`Menu item` 接口不再有该字段、`isItemVisible` 不再读它）⇒ 本判据的组合表**同批收窄为两条件**（撤销一维是**实现面的事实**，不是放宽门禁：任何仍在读 `briefingToggle` 的代码路径都会因字段不存在而当场红）。"
+      - "判据 3·🔴 **企业简报开关不再作用于侧边栏**（issue #7087 口径改判）：`briefingEnabled` 开关**只驱动经营看板上的结论卡**（`BriefingCard enabled=…`），**不再有任何菜单项受它影响** ⇒ 原「`briefingEnabled=false` 时「每日简报」不出现 / `true` 才出现」这条**已随菜单项撤销**，改为钉新形态：菜单元数据里不存在 `briefingToggle` 字段、`/briefing` 不是任何岗位可见项清单的成员（该 path 已无菜单节点）。"
       - "判据 4·判别力自证：摘掉**非菜单码**（knowledge:manage）可见项不变；摘掉**菜单码**（product:list）必少「商品管理」「省料看板」两项"
-      - "🔴 红证（改前实测，2026-10-06）：把 frontend/admin-web/src/config/menu.ts 的 `permissionCode: 'knowledge:view'` 改成 `'knowledge:list'` ⇒ 本文件 **102 条里 5 条红**（客服 / 知识编辑 / 运营等矩阵行）；恢复后 **102 passed**。复算命令（在 `frontend/admin-web` 目录下执行）= `npx vitest run --dir tests/unit/lib menu-nav.test`"
+      - "🔴 红证（2026-10-24 本包实测，§28.1 出口① 临时反转）：把页面换回改前形态（`git show origin/main:frontend/admin-web/src/app/(dashboard)/stock-ledger/page.tsx`，md5 `e9d04bddbe5cce1c36e4748c1fc48b60` ≠ 新版 `7e1dcfa57d062e003b8337d08b2c9cb1`）⇒ 本包新增的 ⑨⑩⑪⑫⑬⑭ 六条**全红**（`Unable to find an element by: [data-testid=\"batch-row\"]`），而流水 ①~⑧ **全绿** ⇒ 红只归因于本包判据；恢复新版（md5 一致）⇒ 14 条全绿。后端判据红证：把 `remainingPage` 的 `selectPage` 换成 `selectList` + 内存切片 ⇒ `StockBatchConsumptionServiceTest` 唯一红 = `remainingPageIsServerSidePagedAndSharesDerivation`（Tests run: 42, Failures: 1）；还原（md5 `84a263f1d2a7188493ff8b54c08e016c` 一致）⇒ 绿。复算（仓库根）：`npx --prefix frontend/admin-web vitest run frontend/admin-web/tests/unit/pages/stock-ledger.test.tsx`；`cd backend/admin-api && ./mvnw -Dtest=StockBatchConsumptionServiceTest test`。"
     skip_reason: "[backend-contract] 纯前端纯函数（菜单过滤）由 vitest 验证；不依赖 LLM / 网络 / DB ⇒ 不进入 agent-eval 冒烟"
-    precondition: "前置由测试自身持有：frontend/admin-web/src/config/menu.ts 与 src/lib/menu-nav.ts 同时存在且被 vitest 正常收集（缺文件 / 改名 ⇒ 直接红，不表现成「agent 不干活」）"
-    merge_log: "2026-10-06 新增（issue #6392）：把 2026-10-06「岗位 × 页面」深度验收的 **7 岗位菜单 DOM 读数**固化成判据（原读数 = acceptance/2026-10-06/out/p2-roles-ui.json：7 岗位菜单与「role_permissions × menu.ts 三条件」逐项相等；同一轮还抓出验收脚本自身两处菜单判据缺陷 D1 折叠分组 / D2 briefingToggle 未建模）。取号 UI-085（`python3 scripts/next_case_id.py ui`，现取 main 最大 = UI-084）。"
+    precondition: "前置由测试自身持有：frontend/admin-web/src/config/menu.ts 与 src/lib/menu-nav.ts 同时存在且被 vitest 正常收集（缺文件 / 改名 ⇒ 直接红，不表现成「agent 不干活」）。🔴 2026-10-17（issue #7087）：`menu.ts` 的三个独立项数组（`standaloneHeadItems` / `standaloneTopItems` / `standaloneItems`）都必须被 `flattenMenu` 纳入过滤面 —— 最前席位（经营看板）漏进过滤面会让**所有**岗位的矩阵行当场红。"
+    merge_log: "2026-10-06 新增（issue #6392）：把 2026-10-06「岗位 × 页面」深度验收的 **7 岗位菜单 DOM 读数**固化成判据（原读数 = acceptance/2026-10-06/out/p2-roles-ui.json：7 岗位菜单与「role_permissions × menu.ts 三条件」逐项相等；同一轮还抓出验收脚本自身两处菜单判据缺陷 D1 折叠分组 / D2 briefingToggle 未建模）。取号 UI-085（`python3 scripts/next_case_id.py ui`，现取 main 最大 = UI-084）。 ｜ 2026-10-17 改判（issue #7087，用户裁定「经营看板直接作为一级菜单，移除工作台」「不要新增每日简报的菜单」）：「工作台」组撤销（6 组 → **5 组**）、「经营看板」升为**最前席位**一级项、「每日简报」菜单项与 `briefingToggle` 机制删除 ⇒ 过滤条件**三条降为两条**，判据 1/2/3 同批改判（各岗位可见项 key 清单按现取重算，**最前席位不进「常用」**的既有红线一字未动）。本判据的执行点是 `frontend/admin-web/tests/unit/lib/menu-nav.test.ts`（该文件由**并行包**同步改判；本条与之**逐项对齐**，交付前需复核两侧一致）。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/lib/menu-nav.test.ts"
@@ -3319,7 +3379,7 @@ cases:
 
   - id: UI-089
     legacy_id: ""
-    title: "库存明细页的「批次余量」视图（/stock-ledger）：每卷剩余米数可见 + 不重算（见证批次）+ 未选商品不拉全量 + 两本账不串"
+    title: "库存明细页的「批次余量」视图（/stock-ledger）：每卷剩余米数可见 + 不重算（见证批次）+ **默认分页列表**（不必先选商品）+ 两本账不串"
     domains:
       - ui
       - frontend
@@ -3337,14 +3397,15 @@ cases:
     data_checks:
       - "判据 1·批次余量可见：视图② 一行 = 一个批次，八列逐值渲染（批次号 / 货号·SKU / 缸号 / 入库单 / 入库米数 / 已消耗 / **剩余米数** / 收货日期）；缺值不空白（缸号 null ⇒ 「—」）；余量 0 的批次**照样列出**（用尽本身是要看的信息）。执行点 = frontend/admin-web/tests/unit/pages/stock-ledger.test.tsx 的「⑨ 每卷一行…」"
       - "🔴 判据 2·**不重算**（见证批次）：服务端下发 inboundMeters '67.0' / consumedMeters '20.0' / remainingMeters '46.5'，而 67−20 = **47** ⇒ 页面必须渲染服务端的 46.5，渲染里**不得出现 47**（页面若自己减一遍 ⇒ 本判据红）。余量是**派生值**，单一真值在服务端。执行点 = 同文件「⑩ 不重算…」"
-      - "判据 3·未选商品 ⇒ 显式可行动提示（`batch-need-product`）**且不发请求**（`batchStockApi.batches` 调用次数 = 0、无批次行）—— 批次端点（`GET /api/admin/batch-stock/batches`）**无分页参数**，不选商品即拉整个租户 ⇒ 宁可不查。执行点 = 同文件「⑪ 未选商品…」"
-      - "判据 4·两本账**不串** + 失败可行动：批次视图下不渲染 SKU 流水行（`stock-ledger-row` 数 = 0）、不渲染只对流水有意义的「业务单据号」筛选；批次读面失败 ⇒ `batch-error` 话术含「权限」且无批次行。执行点 = 同文件「⑫ 两个读面不串…」"
+      - "判据 3·**默认分页列表**（issue #7604，用户 2026-10-24 逐字「这里是不是应该默认给个分页查询展示当前批次库存」）：切到批次视图 ⇒ **不选商品就查第 1 页**（`batchStockApi.batchesPage` 收到 `page=1` / `size=20`），首屏直接是可读的表 + 「共 N 条」+「第 1 / y 页」；🔴 旧全量端点 `batchStockApi.batches` **一次都不调用**（那才是一次拉全量）。红证：把页面改回「必须先选商品」⇒ 本判据红（零请求 / 无批次行）。执行点 = 同文件「⑨ 默认就展示…」「⑪ 只发分页读面…」"
+      - "判据 3b·**翻页与关键字**：点「下一页」⇒ 请求带 `page=2`；批次关键字（批次号 / 缸号 / 入库单号 / 货号）交给**服务端**（`keyword=` 下传、页码重置 1、前端不自己过滤）；商品是**可选**收窄（选中后同一分页读面带 `productId`）。执行点 = 同文件「⑫ 翻页与关键字…」「⑬ 商品是可选收窄…」"
+      - "判据 4·两本账**不串** + 失败可行动：批次视图下不渲染 SKU 流水行（`stock-ledger-row` 数 = 0）、不渲染只对流水有意义的「业务单据号」筛选；批次读面失败 ⇒ `batch-error` 话术含「权限」且无批次行、计数印「共 — 条」（读不到 ≠ 共 0 条）。执行点 = 同文件「⑭ 两个读面不串…」"
       - "判据 5·**类级**（由 #6398 的元守卫自动覆盖，无需本包另写）：本包新增的批次表必须「每个 th 带 `whitespace-nowrap`」且「表格在横向逃逸口里」—— 违反即具名红。执行点 = frontend/admin-web/tests/unit/list-table-nowrap-guard.test.ts（每次 PR 的 admin-web 单测面真跑）"
-      - "判据 6·**效果层**（真实浏览器 + 真实布局，jsdom 判不了的那一半）：每卷一行可见（46.5 / 0 / 120 三条读数）+ 表头八列**全部单行**（列不许被压成竖排，同 #6398 那一族）+ 卡片不裁切 + 1280 下 8 列直接装得下（最右「剩余米数」列无需横滚即在视口内）+ 1024 下装不下则**滚到底必达**（实测读数：表 813px / 容器 684px / overflow-x=auto）+ 未选商品时**一次批次请求都不发**。执行点 = tests/e2e/specs/warehouse/stock-ledger-batch-view.spec.ts"
+      - "判据 6·**效果层**（真实浏览器 + 真实布局，jsdom 判不了的那一半）：每卷一行可见（46.5 / 0 / 120 三条读数）+ 表头八列**全部单行**（列不许被压成竖排，同 #6398 那一族）+ 卡片不裁切 + 1280 下 8 列直接装得下（最右「剩余米数」列无需横滚即在视口内）+ 1024 下装不下则**滚到底必达**（实测读数：表 813px / 容器 684px / overflow-x=auto）+ **不选商品就发分页请求**（`page=1&size=20` 真下传、旧 `/batches` 零调用、首屏有表与「共 N 条」）。执行点 = tests/e2e/specs/warehouse/stock-ledger-batch-view.spec.ts"
       - "🔴 红证（改前实测，2026-10-06，migao-dev-flow §28.1 出口① 临时反转）：把`批次余量`视图整段从页面移除（= 改前形态，用 `git show origin/main:<path>` 换入并自证 md5 不同）⇒ 单测 ⑨⑩⑪⑫ 四条**全红**（`Unable to find an element by: [data-testid=\"view-batch\"]`），而原有 ⑧ 条**全绿** ⇒ 红只归因于本包新增判据；恢复 ⇒ 12 条全绿。复算（在 frontend/admin-web 目录下执行）= `npx vitest run --dir tests/unit/pages stock-ledger`；效果层复算（在 tests 目录下执行）= `npx playwright test --project=web --no-deps warehouse/stock-ledger-batch-view --reporter=list`"
     skip_reason: "[backend-contract] 纯前端页面与纯函数由 vitest 验证，非 LLM 行为，不进入 agent-eval 冒烟"
-    precondition: "前置由测试自身持有：frontend/admin-web/src/app/(dashboard)/stock-ledger/page.tsx 含 `批次余量` 视图（`data-testid=view-batch` / `batch-row` / `batch-remaining`）且测试 mock 了 `batchStockApi.batches`（视图被删 / 改名 / mock 缺失 ⇒ 直接红，不表现成「agent 不干活」）"
-    merge_log: "2026-10-06 新增（issue #6417，用户实测报告）：用户 2026-10-06「库存明细还是缺乏单批次的剩余量，比如 1 卷 = 67 米，经过加工裁剪后应该有个剩余米数」。诊断（读码）：库存明细页（PR #6407）是 SKU 级流水；批次余量读面（`GET /api/admin/batch-stock/batches`，`BatchRemaining`：inboundMeters / consumedMeters / remainingMeters）与商品详情 →「批次账」面板**早就有**，但商家在「库存明细」里点不出来 ⇒ 属**可达性缺口**，不是数据缺口。本包补视图②（八列 + 不重算见证批次 + 未选商品不拉全量 + 两本账不串），**权限不新造码**（批次读面与页面菜单节点码逐字同码 `product:list`）。取号 UI-089（`python3 scripts/next_case_id.py ui`，现取 main 最大 = UI-088）。"
+    precondition: "前置由测试自身持有：frontend/admin-web/src/app/(dashboard)/stock-ledger/page.tsx 含 `批次余量` 视图（`data-testid=view-batch` / `batch-row` / `batch-remaining` / `batch-total` / `batch-page-info`）且测试 mock 了 `batchStockApi.batchesPage`（视图被删 / 改名 / mock 缺失 ⇒ 直接红，不表现成「agent 不干活」）"
+    merge_log: "2026-10-06 新增（issue #6417，用户实测报告）：用户 2026-10-06「库存明细还是缺乏单批次的剩余量，比如 1 卷 = 67 米，经过加工裁剪后应该有个剩余米数」。诊断（读码）：库存明细页（PR #6407）是 SKU 级流水；批次余量读面（`GET /api/admin/batch-stock/batches`，`BatchRemaining`：inboundMeters / consumedMeters / remainingMeters）与商品详情 →「批次账」面板**早就有**，但商家在「库存明细」里点不出来 ⇒ 属**可达性缺口**，不是数据缺口。本包补视图②（八列 + 不重算见证批次 + 未选商品不拉全量 + 两本账不串），**权限不新造码**（批次读面与页面菜单节点码逐字同码 `product:list`）。取号 UI-089（`python3 scripts/next_case_id.py ui`，现取 main 最大 = UI-088）。2026-10-24 改判/扩写（issue #7604）：用户逐字「这里是不是应该默认给个分页查询展示当前批次库存」—— #6417 的「未选商品不拉全量」在用户体验上是**首屏空态 + 黄色提示**，而它要防的其实是**无分页的全量拉取**。服务端补分页读面 `GET /api/admin/batch-stock/batches/page` 后，判据 3 由「不发请求」改成「默认就查第 1 页（page/size 下传）且旧全量端点零调用」，并新增判据 3b（翻页 / 关键字 / 商品可选收窄）；判据 4/6 与前置同步改名。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/pages/stock-ledger.test.tsx"
@@ -3355,7 +3416,7 @@ cases:
 
   - id: UI-090
     legacy_id: ""
-    title: "订单详情打印入口 × 订单状态矩阵：待付款出报价单；待发货/生产中出报价单+加工单+销售单；已发货/已完成四单齐全；已关闭零入口（issue #6434）"
+    title: "订单详情打印收口成**单一入口**：任何状态（含已关闭 / 退款中）都只有一个「打印」，点开后选单据（销售单/加工单/报价单/发货单）先预览再打印（issue #6434 → #7544 改判）"
     domains:
       - ui
       - frontend
@@ -3365,28 +3426,33 @@ cases:
       - ui
       - order
       - print
-      - entry-matrix
+      - single-entry
       - red-proof
-    precondition: "本用例是 [backend-contract] 纯前端入口面：前置由单测自建 —— frontend/admin-web/tests/unit/pages/order-detail.test.tsx mock 了 `@/lib/api` 的 `orderApi.getOrder`（逐状态给 status）与组件桶；页面里的 `PRINT_TARGETS_BY_STATUS` 矩阵是判据的唯一真值源。文件缺失 / 矩阵被删 / 状态键漂移 ⇒ 判据当场红（不会表现成「agent 不干活」）；agent-eval 栈不跑它"
+    precondition: "本用例是 [backend-contract] 纯前端入口面：前置由单测自建 —— frontend/admin-web/tests/unit/pages/order-detail.test.tsx mock 了 `@/lib/api` 的 `orderApi.getOrder`（逐状态给 status）与组件桶；页面的 `ORDER_PRINT_DOCS` 清单与唯一入口锚点 `data-testid=\"order-print-entry\"` 是判据的抓手。文件缺失 / 清单被删 / 锚点漂移 ⇒ 判据当场 fail-closed 判红（不会表现成「agent 不干活」）；agent-eval 栈不跑它"
     truths_ref:
       - frontend-fix.print-single-doc-on-paper
       - frontend-fix.no-api-change
     user_inputs:
-      - "「之前让你设计过打印销售单，报价单等功能，我在订单详情中没有看到打印功能」（2026-10-06 用户报障；追问确认场景 = 待发货订单 / merchant.migaozn.com）；用户同时裁定要覆盖的状态 = 待付款（报价单先行）+ 待发货 + 生产中（车间要加工单、随货要销售单）"
+      - "「这几个打印按钮不要跟状态挂钩，允许任何状态都能进行打印这些单据，另外把按钮收拢到一个打印统一入口中？作业单区域也有两个按钮，应该都统一收口到打印中，点击打印后可以选择不同的单据预览再进行打印」（2026-10-23 用户逐字，附两张截图：状态卡右侧四个打印按钮、作业单区块右侧「复制全部 | 打印」）"
     expectations:
       - tool: direct_reply
     data_checks:
-      - "病根读数（现取 `origin/main`）：订单详情页的四个打印入口只在 `status === 'shipped'` 与 `status === 'completed'` 两个分支里渲染；`pending_payment` / `pending_shipment`（含 `producing`）分支里**一个打印按钮都没有**，而 `CHANGELOG` 的 #5651 条目声称的是「在「待发货」与「已完成」两个状态区」⇒ **声称与实现不符**（`git log -S 打印销售单` 只有一个提交 = 引入提交 #5669）。复算 = `git show origin/main:frontend/admin-web/src/app/\\(dashboard\\)/orders/\\[id\\]/OrderDetail.tsx | grep -n \"打印销售单\\|pending_shipment\"`。"
-      - "判据 1·🔴 **状态 × 入口矩阵**（表驱动）：待付款 ⇒ 只有「打印报价单」（且不得出现发货单/加工单/销售单）；待发货 ⇒ 报价单 + 加工单 + 销售单（**不得**出现发货单：未发货谈不上补打）；生产中（`producing`）⇒ 同待发货；已发货 / 已完成 ⇒ 四单齐全；已关闭 ⇒ 零入口。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx::「打印入口矩阵：…」六条（`it.each`）。"
-      - "判据 2·🔴 **红证（改前实测，`migao-dev-flow` §28.1 出口①）**：判据 1 先在 `origin/main` 上跑 ⇒ **3 红 3 绿**（红 = 待付款/待发货/生产中；绿 = 已发货/已完成/已关闭）—— 红只归因于本包缺口，同时证明矩阵**不是空断言**；落实现后 ⇒ 该文件 46/46 全绿。复算（在 frontend/admin-web 目录下执行）= `npx vitest run --dir tests/unit/pages order-detail -t 打印入口矩阵`。"
-      - "判据 3·**类级元守卫（唯一声明处）**：① 矩阵覆盖 `OrderStatus` 全部取值（新增状态忘登记 ⇒ 红）② 四个「有单据可出」的状态非空（清空 ⇒ 红）③ 页面代码里不得再出现手写的 `打印发货单/报价单/加工单/销售单` 字面量（再抄一份 ⇒ 红）④ `<PrintActions>` 接线 ≥4 且定义只有一份。判据 = tests/unit_ci_workflows/test_order_print_entry_matrix.py（5 条真语料 + 5 条判别力自证，含「只加注释 ⇒ 不红」的对照读数）。"
-      - "判据 4·**文案单一真值**：按钮文案 = `打印${PRINT_TARGET_SPECS[target].title}`（与纸面自检层标题**同一份**），页面不手写字面量 ⇒ 改文案 / 新增单据只改 frontend/admin-web/src/lib/print-doc.ts 一处。"
-    skip_reason: "[backend-contract] 纯前端入口面（零 LLM、零网络、零后端契约改动：矩阵只决定按钮渲染，打印仍走 #5914 的共享入口 usePrintDoc），不进入 agent-eval 冒烟"
-    merge_log: "2026-10-06 新增（issue #6434，用户实测报告「订单详情中没有看到打印功能」）。修法 = 把四个入口从两个状态分支里的**字面量副本**收敛成 `PRINT_TARGETS_BY_STATUS` 一张表 + `<PrintActions>` 一个渲染器（文案取 `PRINT_TARGET_SPECS[*].title`），并把入口补到待付款（报价单）/ 待发货 / 生产中（报价单 + 加工单 + 销售单）；已发货 / 已完成四单口径**一字未变**（只做加法，不回归既有入口）。取号 UI-090（`python3 scripts/next_case_id.py UI`，现取 main 最大 = UI-089）。⚠️ **未固化 / 有意不做（照实登记）**：① 「真机上点得开、纸出得来」仍属 #5688 的现场待办（本用例只判**入口可达与矩阵覆盖**）；② 不为打印入口新造权限码（沿用既有页面口径 `order:list`）；③ 待付款**不加**发货单入口（未发货谈不上补打，既有判据「待付款订单没有发货单入口」保持绿）。"
+      - "改判说明（写清为什么反向）：issue #6434 曾把四个打印按钮收敛成「状态 × 可打单据」矩阵并给 待付款/待发货/生产中 补入口；2026-10-23 用户裁定**打印不该跟状态挂钩**、且要**收拢成一个入口**。旧矩阵的两个可见病灶：① `closed` / `refund` 状态**一张单据都打不出来**；② 四个按钮常驻把状态卡操作行铺满。⇒ 新形态 = 页面级唯一「打印」入口（与状态无关）+ 打印层内单据标签选择。"
+      - "判据 1·🔴 **任何状态都有且只有一个入口**（表驱动 7 条）：待付款 / 待发货 / 生产中 / 已发货 / 已完成 / 已关闭 / 退款中 —— 每个状态断言「以『打印』开头的按钮**恰好 1 个**」（改前：前五个状态分别 1/3/3/4/4 个，后两个 0 个）。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx::「打印不跟订单状态挂钩（issue #7544）…」。"
+      - "判据 2·🔴 **入口 → 预览 → 选单据 → 打印**（接线）：点「打印」打开打印层（此时**不出纸**）⇒ 四份单据各一签（文案取 `PRINT_TARGET_SPECS`）、默认选中销售单（纸型读数 241mm × 140mm）⇒ 点「加工单」标签后纸型变 210mm × 297mm 且**仍未出纸** ⇒ 点「打印」才 `window.print()` 一次。另有一条「已关闭订单也能打开打印层」（旧矩阵下这是死路）。执行点 = 同文件::「点「打印」→ 在预览层里换单据 → 打印…」/「已关闭订单也能打开打印层」。"
+      - "判据 3·**选择器本体**（组件级）：frontend/admin-web/tests/unit/components/PrintDocPreview.test.tsx::「打印层的单据选择器（issue #7544）」三条 —— 一单一签且纸型读介质矩阵、点标签只回调 `onSelect` 不触发打印、不传 `docs` 时没有选择器（发货页 / 加工单生产页形态不变）；frontend/admin-web/tests/unit/lib/print-doc.test.tsx::「`selectPreview` 只换预览、不动打印目标」。"
+      - "判据 4·**类级元守卫**（让「再加一个打印入口」进不来）：页面不得有状态矩阵、入口恰好一处且不在 `StatusSection`、不手写单据名、选择器接线齐全且清单每项都是真实 target、作业单区块不得再有打印入口。判据 = tests/unit_ci_workflows/test_order_print_entry_matrix.py（5 条真语料 + 7 条注入式判别力自证，含「只加注释 ⇒ 不红」的对照读数），用例 MC-085。"
+      - "判据 5·**真浏览器**：tests/e2e/specs/orders/print-preview.spec.ts 的「已关闭的单子照样能打开打印层、能选单据、能出纸」—— 抓 `beforeprint` 那一刻的 `data-print-target`，断言换到加工单后出纸的正是 `processing`（纸型/目标不是默认那份）。"
+      - "🔴 **覆盖边界（照实登记）**：① 单测只判「入口唯一 / 可打开 / 选中的单据与纸型对」，**不判**真机点击与真纸输出（由 Playwright 那条 + 现场承接）；② 单据的**展示顺序**（销售单 → 加工单 → 报价单 → 发货单，用得最多的在前）是产品口径，判据只钉「四份都在」；③ 作业单区块的「复制全部」**有意保留**（文本通道：作业单文本发加工方 / 贴 Excel；塞进打印层会把一键复制变成三步）—— 本用例只收口**打印**通道。"
+    skip_reason: "[backend-contract] 纯前端入口面（零 LLM、零网络、零后端契约改动：入口只是前端可见面的收口，打印仍走 #5914 的共享入口 usePrintDoc；端点 / 权限 / 纸型矩阵一字未动），不进入 agent-eval 冒烟"
+    merge_log: "2026-10-06 新增（issue #6434，用户实测「订单详情中没有看到打印功能」）：四个入口从两个状态分支里的字面量副本收敛成 `PRINT_TARGETS_BY_STATUS` 一张表 + `<PrintActions>` 渲染器。 ｜ 2026-10-23（issue #7544，**改判 + 判据反向**，用户逐字「不要跟状态挂钩…收拢到一个打印统一入口中」）：矩阵与四个常驻按钮一起退场 ⇒ 页面级唯一「打印」入口（任何状态可点，含已关闭 / 退款中）+ 打印层内的单据标签（`docs` / `onSelect`）选择，先预览再出纸；「作业单」区块的打印按钮同批退场（加工单走同一入口），**「复制全部」保留**（文本通道）。实例判据由「状态 × 应有/不该有」改为「每个状态恰好一个入口」+ 换单据预览 + 已关闭可打开；类级元守卫（MC-085）判据反向，判别力自证 5 → 7 条。**判据一格不放宽**（唯一入口 / 不跟状态走 / 不写字面量 / 选择器接线只增不减）。取号不变（本用例即 #6434 的同一个面，改判而非新开）。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/pages/order-detail.test.tsx"
+        - "frontend/admin-web/tests/unit/components/PrintDocPreview.test.tsx"
+        - "frontend/admin-web/tests/unit/lib/print-doc.test.tsx"
         - "tests/unit_ci_workflows/test_order_print_entry_matrix.py"
+        - "tests/e2e/specs/orders/print-preview.spec.ts"
       ci:
         - pr-check.yml
       verifies: []
@@ -3500,7 +3566,7 @@ cases:
       - "🔴 判据·**豁免台账只许缩短 + 不空转**：`EXEMPT` 每条必须**仍然**命中某条规则，失效当场判红（逼着删干净）。当前唯一一条 = 岗位编码输入框的 placeholder（`admin、customer_service` 是编码**内容本身**，不是散文里的研发腔）。"
       - "判据·**三条既有规则原样迁入**（不削弱）：R6 `L1/L2/L3` 代号（UI-057）、R7 「池」隐喻（UI-058）、R8 服务端分组标签（UI-092）由行扫描改为同一份 AST 口径后**仍逐条判红**，且各自保留原出口话术。"
       - "判据·**假红清理有实测**：`value=\"pending_review\"` / `fieldKey=\"door_width\"` / `stopColor=\"#6366f1\"` 三个 JSX 属性值曾被误判成文案/issue 号 ⇒ 改为**属性白名单**（只认 label/title/hint/placeholder/…）+ 十六进制颜色排除，命中 91 → 78。"
-      - "**不回归**：口径/接口/字段名/权限/算料行为一字未动（`frontend-fix.no-api-change`）；被改写的文案所承载的承诺与边界**逐条保留**（未定价 ≠ ¥0.00、「拼接/接高要手选，系统不推算」+「不触发工序」、算例数字仍由真值渲染）。"
+      - "**不回归**：口径/接口/字段名/权限/算料行为一字未动（`frontend-fix.no-api-change`）；被改写的文案所承载的承诺与边界**逐条保留**（未定价 ≠ ¥0.00、「拼接/接高要手选，系统不推算」+「不会多排一道工序」、算例数字仍由真值渲染）。"
     skip_reason: "[backend-contract] 纯前端文案 + 静态守卫，非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-10-07 新增（issue #6488，用户逐字两轮 + 6 张截图）：商家后台用户可见文案去「研发腔」—— 全量扫描器（AST 抽文案例，227 文件 / 6409 条候选）+ 文案规范 `docs/design/user-facing-copy-standard.md`（三档处置 + P1~P5）+ 类级守卫扩容到八条规则（R1~R5 新增，R6~R8 由 #5565/#5576/#6459 的三条原样迁入同一份单一源）。红证（实现前实测）：守卫测试 `frontend/admin-web/tests/unit/user-copy-jargon-guard.test.ts` 得 **5 failed / 11 passed**（在 `frontend/admin-web` 目录下跑 vitest），R1~R5 各判红并逐条具名 file:line（78 处 / 25 个文件）；修复后同命令全绿。取号 = `python3 scripts/next_case_id.py ui`（main 最大 UI-092）。⚠️ 如实登记（未固化 / 有意不做）：服务端**下发**字符串的渲染面（如黄金策会话卡还原样渲染 `cohortLabel`）不在本守卫射程内（它扫源码字面量）—— 与 UI-092 的登记同源，另单跟踪。 ｜ 2026-10-08 续（用户验收线上页面提的两条）：① 副标题回归「讲这个功能干什么」，落 S1~S4 四条判据 + 规范 §6；② 新增 R9「占位符字母 / 模式代号上屏」（`X 变成 Y` / `A 模式`）—— 顺带清掉 `A 模式`（#6492 第 1 条）；③ 「按移动加权平均重算成本」「0.5 米级尾料」这类机制/口径措辞改为讲用途，关键规则改 `<strong>` 加粗。 ｜ 2026-10-13 续（issue #6826 的 B2 面）：**新增 R12「已移除的页面名」**（`#6580` 撤掉「参数总览」一级项与「加工项管理」/「工艺配置」两个菜单项后，前端上屏文案仍逐字写着旧页名 ⇒ 商家照着点找不到页面；服务端那一半由 `tests/unit_ci_workflows/test_removed_page_copy_guard.py` 承担，两面互补才覆盖这个类）。判据 = 文案里出现**已移除集合**里的页面名即红；集合**现取**（`src/config/menu.ts` 菜单名 ∪ `src/lib/config-center-domains.ts` 域 label），不硬编码目标名；豁免台账 3 条具名（两个旧路径兼容页页头 + `session-insight` 内部审计标签）**只许缩短**。同批修 5 处上屏字面量（`register` / `OrderCraftFields` ×2 / `UnpricedNotice` / `route-source` / `meters-formula-legend`）红证 = 注入式（把旧指针塞回源码 ⇒ R12 当场命中）+ 判别力自证；本包为改「文案与判据」⇒ 按铁律 7 的**用户可见面**入 CHANGELOG。"
     traces:
@@ -3812,7 +3878,7 @@ cases:
     data_checks:
       - "🔴 判据 1·**只改展示名，口径零变更（会红）**：`frontend/admin-web/tests/unit/lib/craft-calc-glossary.test.ts` 的键集同源判据（`CALC_SCALAR_KEYS` 逐值等于引擎 `DEFAULT_CRAFT_CALC_CONFIG` 的标量键）+ `frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx` 的「保存发**全量键**（11 键）」判据 —— 改展示名若顺手动了键名 / 公式 / 数值，这两条当场红。**实测修后 `183 passed`**（P3 射程 11 个文件）。"
       - "🔴 判据 2·**展示名逐字为改后值（会红）**：`frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx` 断言 `单色每折用料（米）` 在位（改前为 `单色每折吃布（米）`）。同批把 `CalcCaliberPanel.tsx` 里拼次输入框的 `aria-label` 由「拼N次 每折吃布」改为「拼N次 每折用料」—— 无障碍名与可见名**同一套词**，避免屏幕阅读器读到另一个说法。"
-      - "🔴 判据 3·**逐条术语压到 2~4 行（会红）**：`frontend/admin-web/tests/unit/components/CraftCalcGlossary.test.tsx` 的渲染面（`glossary-term-<名>` 锚点在、算例带真实数字、`拼接` 含「不触发工序」、`接高` 含「还没确认」）+ `frontend/admin-web/tests/unit/lib/copy-no-markdown-emphasis.test.ts`（带 `**` 的文件必须登记且接线渲染器）。结构改法 = 术语名与一句话定义**同一段**（此前名 / 定义 / 判定 / 影响各占一段 ⇒ 一条最多 5 行小字、六组三四十行）。"
+      - "🔴 判据 3·**逐条术语压到 2~4 行（会红）**：`frontend/admin-web/tests/unit/components/CraftCalcGlossary.test.tsx` 的渲染面（`glossary-term-<名>` 锚点在、算例带真实数字、`拼接` 含「不会多排一道工序」、`接高` 含「系统不推算」；2026-10-17 #7147 起另加**类级口语词表守卫** —— 口语 / 说不准 / 替你猜 / 看着像 / 真值 / 名义 / 系数档 任一上屏 ⇒ 红）+ `frontend/admin-web/tests/unit/lib/copy-no-markdown-emphasis.test.ts`（带 `**` 的文件必须登记且接线渲染器）。结构改法 = 术语名与一句话定义**同一段**（此前名 / 定义 / 判定 / 影响各占一段 ⇒ 一条最多 5 行小字、六组三四十行）。"
       - "🔴 判据 4·**用户裁定的边界照实登记（有意不做）**：① **不改** `每折吃布` 这个算料术语本身 —— 它同时是引擎响应字段名（`per_fold`）与下单页用料公式说明（`frontend/admin-web/src/lib/meters-formula-legend.ts`）里的用词，只改配置页展示名会让配置页与公式说明对不上；重启条件 = 公式说明的词一并统一时（属另一包）。② **保留** `倒幅`/`正幅`/`定型`/`拼N次`/`接高`/`双眼皮接高` 业务词（与 ERP、工序目录、工人端同源，改名会让三方分叉）。两条都写在 `frontend/admin-web/src/lib/craft-calc-glossary.ts` 的模块头注释里。"
     skip_reason: "[backend-contract] 纯前端展示名与说明文案（服务端一字未改）：配置键 / 公式 / 米数 / 加工费组合键逐值不变，由 vitest（jsdom）+ §15.7 真机多模态验收执行，不进 agent-eval 冒烟"
     merge_log: "2026-10-16 新增（issue #7007，用户逐字「算料口径里面的术语也重构一下，现在给人一种乱七八糟的感觉，文案也是非常乱，应该精简美化」）。取号 = `python3 scripts/next_case_id.py ui` ⇒ 工作区已有 UI-100 ⇒ **UI-101**。**用户当场裁定**：术语深度 = **方案 B**（改叫法 + 去内部腔，**保留业务词**）；行为边界 = **只改展示，不动任何计算与落库**。**诊断到的四处「乱」（可逐条对照截图 `acceptance/2026-10-14/main-ui/out/screenshots/25-settings.png`）**：① **术语重叠** —— 域标题 `算料口径` / 徽标 `已配置` / `已保存为您的配置` / 空态 `本企业尚未保存过算料口径` 同屏四处都在说「配置好没好」；参数区标题又写一遍 `算料口径`，而它下面的说明区块标题是 `算料口径与术语说明`；② **信息重复** —— 每个参数渲染 `hint` + `改它会怎样` + 「说明」链接跳到再说一遍的区块；③ **逐行挤** —— label 与输入框宽窄不一、行间靠 `mt-1` 硬凑（五个框左右参差）；④ **内部腔** —— `进加工费组合` / `档位褶倍` / `真值是这里的褶倍`。**修法**：说明区块标题改 `术语与算法说明`（与参数区不再同名）、术语名与定义合段、逐条固定 2~4 行、公式名由算法名（`褶数法`/`倍数法`）改为「按什么算」（`按褶数算（韩褶）`/`按褶倍算（打孔一类）`）、「进加工费组合」改说人话。"
@@ -4158,7 +4224,7 @@ cases:
     expectations:
       - tool: direct_reply
     data_checks:
-      - "🔴 **判据 1（会红）**：射程（`src/app/(dashboard)/**` + `src/components/**` 的 `.tsx`，现取 400+ 文件）内，凡形态为「白底 + 圆角 + 中性边框」（`bg-white rounded-{lg,xl,2xl} border border-neutral-200`）的**内层白卡容器**，**必须**带 `shadow-card`；缺即**点名 `文件:行号`** 判红（判红文案直接给出复算命令与出口）。**红证（实跑、逐字节还原）**：摘掉「生产看板」页查询区容器的 `shadow-card`（定位 = 该页 `bg-white rounded-lg border border-neutral-200 shadow-card p-5` 那个 div）⇒ 判据 1 红并点名该处所在的 `文件:行号`。"
+      - "🔴 **判据 1（会红）**：射程（`src/app/(dashboard)/**` + `src/components/**` 的 `.tsx`，现取 400+ 文件）内，凡形态为「白底 + 圆角 + 中性边框」（`bg-white rounded-{lg,xl,2xl} border border-neutral-200`）的**内层白卡容器**，**必须**带 `shadow-card`；缺即**点名 `文件:行号`** 判红（判红文案直接给出复算命令与出口）。**红证（实跑、逐字节还原）**：摘掉「作业看板」页查询区容器的 `shadow-card`（定位 = 该页 `bg-white rounded-lg border border-neutral-200 shadow-card p-5` 那个 div）⇒ 判据 1 红并点名该处所在的 `文件:行号`。"
       - "🔴 **判据 2（反空转）**：射程内白卡容器**实存 ≥ 15 处**（现取 **22**）⇒ 防「把 className 改写成别的形态」绕过判据 1。"
       - "🔴 **判据 3**：`shadow-card` 这个 token **真的被定义**（`tailwind.config.ts` 的 `boxShadow.card`）⇒ 防「写了个不存在的类」（本仓曾出现「声明存在 ≠ 可达」的形态，铁律 11）。"
       - "🔴 **判据 4（判别力自证）**：坏形态判红、好形态放行；且**不该命中的形态不被命中**（`divide-y divide-neutral-200` 分隔线 / `input` 的 `border-neutral-300` 边框 / Tab 下划线都**不是**白卡容器）。"
@@ -4172,6 +4238,1024 @@ cases:
     traces:
       tests:
         - "frontend/admin-web/tests/unit/inner-card-layer-guard.test.ts"
+      ci:
+        - pr-check.yml
+      verifies: []
+  - id: UI-112
+    legacy_id: ""
+    title: "失败原因 = 业务文案：传输层读数不得上屏（智能派单报 422 显示 Request failed with status code 422；2026-10-17 用户裁定）"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - copy
+      - error-message
+    truths_ref:
+      - frontend-fix.no-api-change
+      - frontend-fix.vitest
+    user_inputs:
+      - "用户 2026-10-17 逐字：「点击一键合并派单后页面报错了，你看下服务器上的日志，这个错误提示非常低级，用户完全看不懂，得把报错原因用业务文案写清楚，而不是技术语言」（截图 = 智能派单页 `合并预览失败：Request failed with status code 422`）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "🔴 **两层归因**：① 调用面 `frontend/admin-web/src/app/(dashboard)/production/pool/page.tsx` 的 `dispatchErrorText` 取的是 `e.message`，而 axios 错误的 `.message` **就是**传输层读数（`Request failed with status code 422`）；服务端业务原因在 `error.response.data.error.message`（`GlobalExceptionHandler` 的 `ApiResponse.error(code, message, details)`）里、被那一行丢掉。② 共享原语 `frontend/admin-web/src/lib/api-error.ts` 的 `extractApiErrorMessage` 兜底链里也留着 `err.message` 一格 ⇒ 服务端文案缺失时照样端出技术语言。"
+      - "🔴 **判据（行为面）**：服务端文案优先（业务原因逐字透出）；**传输层原文绝不外传**（缺服务端文案 ⇒ 落到业务兜底话术）；反向自证 —— 非传输层的本地错误（客户端校验等）仍用自己的 `message`（不是把 `message` 一律禁掉）。承载体 = `frontend/admin-web/tests/unit/lib/server-error-copy.test.ts`。"
+      - "🔴 **判据（形态面，类级）**：`src/app` + `src/components` 全域扫描，禁止「`instanceof Error ? <x>.message`」这种把错误对象 message 当展示文案的写法（改前 9 处：智能派单 1 / 知识库 8 / 省料看板 1）—— 注入任一形态 ⇒ 具名报出该文件。"
+      - "⚠️ **本次未固化的那一半（照实登记）**：服务端 2026-10-17 那次 422 的**具体业务原因**要在真实环境复现才能定名（本机两个 admin-api 实例的日志里都没有该请求：:8080 的实例自 03:53 起连不上云 dev RDS、:8180 的实例 07:15~07:22 只有定时任务的 SQL）⇒ 本条只保证「服务端给了什么文案，商家就看到什么」；改后同一次失败会把服务端原文打在卡片上（报错原因具备可见性）。"
+    skip_reason: "[backend-contract] 纯前端错误文案 / 纯函数，由 vitest 单测覆盖，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-17 新增（用户逐字裁定，见 user_inputs）。取号 = `python3 scripts/next_case_id.py ui` 现取 main 最大 + 1 = UI-112。红证：把 `dispatchErrorText` 与 `extractApiErrorMessage` 换回 `git show origin/main:<path>` 的旧实现 ⇒ 行为面用例红（`extractApiErrorMessage` 返回 `Request failed with status code 422`）；把任一 `toast.error(extractApiErrorMessage(...))` 改回 `e instanceof Error ? e.message : 'X失败'` ⇒ 形态面用例具名报出该文件。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/lib/server-error-copy.test.ts"
+  # UI-116（issue #7079，2026-10-17）——「作业单」两型的**商家可见面**。
+  #
+  # 病根（用户逐字）：「**单布料售卖是不应该生成加工单的**」—— 而卖布单改前在「生产看板」
+  # 与订单详情的作业单区块里**就**叫「加工单」，商家读到的单据名与业务不符。
+  #
+  # 口径（用户 2026-10-17 裁定）：上位概念统一为**作业单**；实体按 `order_kind` 分两型
+  # （`processing` = 加工 / `outbound` = 出库），**商家可见面一律用中文业务名**：
+  # 「加工单」（成品帘）与「出库作业单」（卖布单）；`outbound` 型**没有加工方、没有交期**
+  # ⇒ 相关写面不得渲染。
+  #
+  # 取号：`python3 scripts/next_case_id.py UI` 现取 = 113（main 最大 111，PR #7081 占 112）。
+  #
+  # ⚠️ **本轮只覆盖商家端 admin-web**；工人端（worker-h5 / bmini-app）里「加工单」措辞的
+  # 同族收敛**不在本条**，如实登记为未覆盖面（见 data_checks 末条）。
+  # ══════════════════════════════════════════════════════════════════════════
+  - id: UI-116
+    legacy_id: ""
+    title: "作业单两型可见面：作业看板 / 订单详情统一「作业单」+ 中文类型标签；`outbound` 型不显示加工方与交期；机器键不上屏"
+    domains:
+      - ui
+      - frontend
+      - processing-order
+    tier: normal
+    persona: ""
+    tags:
+      - ui
+      - production
+      - processing-order
+      - copy
+      - order-kind
+    truths_ref: []
+    user_inputs:
+      - "用户 2026-10-17 逐字：「……原设计是想规定好成品帘加工路线和单布料售卖的路线……但是单布料售卖是不应该生成加工单的，现在仍然是个功能缺口」（附「工艺路线」页截图）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·🔴 **类型必须在界面上看得见，且是中文**：`order_kind='outbound'` 的作业单在作业看板/订单详情渲染**「出库作业单」**，`processing` 渲染**「加工单」**。红证：把标签渲染去掉 ⇒ 该行取不到该文案（`queryByText` 为 null）。"
+      - "判据 2·🔴 **机器键绝不上屏**：页面上**不得**出现 `processing` / `outbound` / `order_kind` 这些标识（本仓既有「JSX 文本位机器键」跨页面元守卫会上红）。红证：把 `{po.order_kind}` 直接渲染进 JSX ⇒ 具名报出。"
+      - "判据 3·**`outbound` 型不渲染加工方 / 交期**：卖布单没有加工方与交期这两个概念 ⇒ 相关字段与写面（含「发加工」动作）在 `outbound` 型上不出现；`processing` 型**照旧全渲染**（反向护栏：不许把成品帘面砍掉）。"
+      - "判据 4·**缺键 = 存量单，按加工单处理**：读面 `order_kind` 缺席（存量单）时按 `processing` 渲染，**不得**渲染成空白或未知态。"
+      - "判据 5·**工艺路线页口径同步**：「布料工序路线」的说明文案改成「卖布单的**出库作业**（裁剪 / 打包）」这一口径（改前写「这两条是窗帘单与布料单各自的主线」）。"
+      - "**未覆盖面（照实登记，不粉饰）**：工人端 `frontend/worker-h5/**` 与 `frontend/bmini-app/**` 里「加工单」措辞的同族收敛**不在本条** —— 那条面（洗水码/扫码页/离线报工）本轮未改，重启条件 = 工人端做一次同族文案巡检时一并收口。"
+    skip_reason: "[backend-contract] 纯前端渲染与文案（vitest 单测覆盖），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "（**集成侧改号**：合入前 main 已被 #7116 用掉 `UI-113`（筛选区元守卫，其 merge_log 记「首次取到 112 但在飞 PR #7113 已占用 ⇒ 改用 113」），而本单的在飞分支对 `next_case_id.py` 不可见 ⇒ 撞号。规矩 = 后合者改号 ⇒ 本用例 113 → **UI-116**；判据内容逐字不变。）2026-10-17 新增（issue #7079；用户裁定见 user_inputs 与 PG-078 的注释）。取号 = `python3 scripts/next_case_id.py UI` 现取 = 113。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/production-board.test.tsx"
+        - "frontend/admin-web/tests/unit/components/ProcessingOrderBlock.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # UI-114（issue #7079 的**类级固化**，2026-10-17）—— demo path spec 的**占位符选择器活性**。
+  #
+  # 病灶（真发生，非假想）：本单把生产看板搜索占位从「请输入加工单号或订单号」改成
+  # 「请输入作业单号或订单号」，源码与 vitest 都跟了，**但 `tests/e2e/specs/orders/processing-orders.spec.ts`
+  # 这个消费方漏了** ⇒ CI `Demo path specs (admin-web, fixture mode)` 腿红、具名到
+  # 该文件那两处 `fill(getByPlaceholder('请输入加工单号或订单号'))`（报 `waiting for …` 超时，2 failed / 59 passed）。
+  #
+  # 结构原因：仓里**已有**同族守卫 `test_ui_smoke_selector_liveness.py`（判据 A 文案活性），
+  # 但它的射程**只有冒烟 spec**（`scripts/ui-smoke-merchant/spec.mjs`）——
+  # `tests/e2e/**` 这条载体的选择器活性**此前零守卫**。
+  #
+  # 口径：新增 `test_e2e_placeholder_liveness.py`，射程**故意只到占位符**（现取 12 处 / 6 个不同字面量）——
+  # `getByText` 397 / `getByRole` 330 / `getByLabel` 14 的字面量大量是运行期数据或动态拼装，
+  # 静态活性判据对它们会大面积假红。**更宽的那一档留在它自己的载体上**（两条守卫不互为副本）。
+  #
+  # 取号：`python3 scripts/next_case_id.py UI` 现取报 113，但 **113 已被本单的 UI-113 占用**
+  # （取号工具的候选 = main ∪ open PR ∪ 本工作区 ⇒ **尚未开 PR 的分支它看不见**，故此处手工 +1 取 114）。
+  # ══════════════════════════════════════════════════════════════════════════
+  - id: UI-114
+    legacy_id: ""
+    title: "demo path spec 的占位符选择器活性：`tests/e2e/**` 里每个 `getByPlaceholder(...)` 字面量必须在 admin-web 源码里逐字活着"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    persona: ""
+    tags:
+      - ui
+      - e2e
+      - selector-liveness
+      - copy-drift
+      - class-level-guard
+    truths_ref: []
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "判据 L1·🔴 **射程内每个占位符字面量必须在被驱动面里活着**：`tests/e2e/**/*.ts` 的 `getByPlaceholder('X')` / `getByPlaceholderText('X')` 的 `X`，必须在 `frontend/admin-web/src/**` 的 `.ts`/`.tsx` 里**逐字**出现。证据 = tests/unit_ci_workflows/test_e2e_placeholder_liveness.py::test_every_e2e_placeholder_literal_is_alive_in_admin_web。**红证（真回归实跑，2026-10-17）**：四包集成树里（源码已改、e2e 未修）该判据红，具名逐字为 `tests/e2e/specs/orders/processing-orders.spec.ts 的 getByPlaceholder('请输入加工单号或订单号') 在 frontend/admin-web/src/** 里取不到逐字文案`（该文件两处 fill 同因）—— 与 CI 那条腿点的**同一个文件**。"
+      - "判据 L2·**反空跑（fail-closed）**：射程（`getByPlaceholder` 字面量）为空 ⇒ 红 —— spec 被改名/搬走、或调用换成了变量时，不许把「没有可比对的东西」读成通过。"
+      - "判据 L3·**判别力自证（反恒真）**：好形态（字面量在源码里）不报；坏形态具名报出（含本次真实漏网的那个字面量）；且 `getByPlaceholder` / `getByPlaceholderText`、单双引号两种拼写都认。"
+      - "**边界（照实登记）**：① 射程只到**占位符**这一档 —— `getByText` / `getByRole(name)` / `getByLabel` 的同族字面量**不在本条**（现取 397 / 330 / 14 处，多数是运行期数据，静态判据会假红）；② 判据是「字面量在不在源码里」，**不是**「Playwright 真能定位到它」—— 运行期真实定位由 CI 的 `Demo path specs (admin-web, fixture mode)` 腿承担，本条的绿**不能**替代它；③ 不含 `scripts/ui-smoke-merchant/spec.mjs`（那是 test_ui_smoke_selector_liveness.py 的射程，两处不互为副本）。"
+    skip_reason: "[backend-contract] 纯静态源码判据（读 `tests/e2e/**` 与 `frontend/admin-web/src/**` 的字面量对账），零网络、非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-17 新增（issue #7079 的类级固化；病灶 = 本单自己的真实漏网，CI demo path 腿实测 2 failed）。取号 = 手工 +1 = 114（取号工具看不见未开 PR 的分支，它报的 113 已被本单 UI-113 占用）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_e2e_placeholder_liveness.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+  - id: UI-115
+    legacy_id: ""
+    title: "**卖布单在订单详情的「生成作业单」出口**：发货前是否需要作业由读面给出（`needs_work` / `work_order_kind`），详情空态/生成按钮、发货页守卫、详情发货入口三处都用它（issue #7079 第 5 包）"
+    domains:
+      - ui
+      - admin-web
+      - order
+    tier: normal
+    tags:
+      - ui
+      - processing-order
+      - fabric-sale
+      - read-face-signal
+      - ship-guard
+      - dead-end-exit
+      - red-proof
+    truths_ref: []
+    precondition: "前置 = 四样都在仓里可读：① 判据本体 `backend/admin-api/src/main/java/com/migao/admin/service/OrderShipGuard.java`（`needsWork` = 含加工项 **或** 有卖布行；`requiredOrderKind` = 该判据的读面形态）；② 读面键 `backend/admin-api/src/main/java/com/migao/admin/dto/OrderDetailResponse.java` 的 `@JsonProperty(\"needs_work\")` / `@JsonProperty(\"work_order_kind\")`；③ 前端唯一读点 `frontend/admin-web/src/lib/processing-order.ts` 的 `workOrderKindOf`；④ 三处消费面组件（`ProcessingOrderBlock` / `ship/ShipOrder` / `OrderDetail`）。**前置不成立时不许读成通过**：接线判据取不到 `convertToDetailResponse` 方法体 ⇒ fail-closed 判红（不许读成「没有违规」）。"
+    user_inputs:
+      - "卖布单（按米卖布）在订单详情里为什么没有生成作业单的按钮？空态还写着「无加工项订单无需加工环节」，可它明明要先裁剪打包报工。"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "🔴 **判据 1（会红，前端可见面）**：卖布单（`work_order_kind = outbound`、`processingItems` 为空）且无作业单 ⇒ 订单详情「作业单」区块必须出现**「去智能派单」**入口 + 按型说明（业务名取 `ORDER_KIND_LABELS`，不新造词），且屏上**不出现**机器键 `outbound` / `work_order_kind`。🔴 issue #7634 起生成入口**一律**收走（不再按型/按加急给「生成…」按钮）⇒ 判据看的是「按型说明 + 派单页入口」，不是「生成按钮」。执行点 = `frontend/admin-web/tests/unit/components/ProcessingOrderBlock.test.tsx`（`UI-115 判据 1`）。**红证**：把按型说明换回无型文案（丢掉 `ORDER_KIND_LABELS`）⇒ 红。"
+      - "🔴 **判据 2（会红，不实文案）**：空态文案**不得**再出现「无加工项订单无需加工环节」——它对卖布单**不实**（卖布单正需要裁剪/打包作业）。需要作业但当前状态还不能派单 ⇒ 显示按型的**可行动**说明（「该订单需要作业单（出库作业单），当前状态还不能派单」+ 下一步是什么）；无需要报工的作业 ⇒ 「该订单无需作业单（没有加工项，也不是卖布单）」。执行点 = 同文件 `UI-115 判据 3/4`。**红证**：把空态改回那句旧文案 ⇒ 判据 3 红。"
+      - "🔴 **判据 3（会红，发货页前置守卫）**：卖布单在 `/orders/{id}/ship` 必须被**前置阻断**（不渲染发货表单「确认发货 / 确认物流」）+ 可行动出口（「返回订单详情」）+ 按型引导句（「该订单是卖布单：先完成出库作业单的裁剪与打包报工，再发货」）；作业单已完成 ⇒ 放行；**无作业**的普通单（`work_order_kind` 缺键）⇒ 不查作业单、直接渲染表单（不许误拦）。执行点 = `frontend/admin-web/tests/unit/components/ShipOrderGuard.test.tsx`（`UI-115 判据 1~4`）。**红证**：把守卫退回 `order.processingItems?.length > 0` ⇒ 卖布单那 3 条红。"
+      - "🔴 **判据 4（会红，详情页发货入口）**：订单详情的发货入口对卖布单同样有前置提示（按型引导句），作业单已完成才出可点的「发货」。执行点 = `frontend/admin-web/tests/unit/components/OrderDetailShipGuard.test.tsx`（`UI-115 判据 5~7`）。**红证**：退回 `processingItems` 单侧判据 ⇒ 卖布单直接渲染「发货」按钮 ⇒ 红。"
+      - "🔴 **判据 5（会红，读面同源）**：`OrderShipGuard.requiredOrderKind` 与 `needsWork` **必须同源**（有型 ⇔ 需要作业），且逐值：全卖布行 ⇒ `outbound` / 含加工项或混合 ⇒ `processing` / 无作业 ⇒ `null`；卖布行以 JSON **字符串** 形态出现时仍判出库。执行点 = `backend/admin-api/src/test/java/com/migao/admin/service/OrderShipGuardTest.java`（`requiredOrderKind*` 6 条）。**红证**：让 `hasFabricSaleLine` 恒假 / 按 `processingItems` 单侧判 ⇒ 红。"
+      - "🔴 **判据 6（会红，读面接线）**：`OrderService.convertToDetailResponse` 必须真的调用 `OrderShipGuard.requiredOrderKind` 并把结果落到响应（`setNeedsWork` / `setWorkOrderKind`），DTO 上两个键必须是显式 `@JsonProperty`（snake_case 冻结键）。执行点 = `backend/admin-api/src/test/java/com/migao/admin/service/OrderDetailWorkSignalReadFaceTest.java`（含判别力自证：判据本体不接线 / 结果不落响应 / 摘掉 `@JsonProperty` / 方法体取不到，四种坏形态各自判红；只往注释里加字面量 ⇒ 一条都不红）。**红证**：把 `requiredOrderKind(` 换成 `hasProcessingItems(` ⇒ 红。"
+      - "📌 **为什么这是缺陷不是新需求**：卖布单生成作业单的**能力早就有**（`ProcessingOrderService.prepare` 的门是 `snapshot.isEmpty()`，而 `buildSnapshot` 对 `saleForm=布料` 的行使**保留**），派单池与 AI 工具两条出口都通；断的只是**读面没把「要不要作业」交给前端** ⇒ 商家在订单详情看不到出口，而刚被发货守卫拦下时收到的却正是「须先完成出库作业单的裁剪与打包报工」——两个面互相矛盾。"
+      - "📌 **边界（照实登记）**：本用例**不判**「作业单该由谁生成」（派单池 / AI 工具 / 详情按钮三条路都合法）；也**不判**「卖布单该不该走作业」（那是 issue #7079 ②/③ 的产品裁定，已定）；`order_kind` 的三源词表（后端常量 / V159 的 CHECK / 前端联合类型）本包**未动**。"
+    skip_reason: "[backend-contract] 前端可见面判据（vitest 渲染断言）+ 后端行为/接线判据（JUnit）；零网络、零时钟、非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-17 新增（issue #7079 的第 5 包）。**发现路径** = 集成复核 #7079 的「可行动出口」时发现三条路只有两条通：订单详情「作业单」区块的门是 `canGenerate = notFound && hasProcessing && …`（`hasProcessing` 只覆盖「含加工项」）⇒ 卖布单没有生成按钮、空态还写着对卖布单**不实**的「无加工项订单无需加工环节」；同一单侧信号还导致发货页守卫**完全不拦**卖布单、详情发货入口无前置提示。用例号 = `NCI_MAIN_REF=HEAD python3 scripts/next_case_id.py UI` ⇒ 该工具报 `UI-113`，但 `UI-113` / `UI-114` 已被本单在飞分支 `test/20261017-work-order-kind-guard`（未开 PR ⇒ 工具看不见）占用 ⇒ **按内容核对后取 UI-115**（main 上最大 `UI-111`）。**报告型说明**：承载体 = 前端单测（vitest，`admin-web 单测` 腿）+ 后端单测（JUnit，`admin-api` 腿）。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/ProcessingOrderBlock.test.tsx"
+        - "frontend/admin-web/tests/unit/components/ShipOrderGuard.test.tsx"
+        - "frontend/admin-web/tests/unit/components/OrderDetailShipGuard.test.tsx"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderShipGuardTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderDetailWorkSignalReadFaceTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+  - id: UI-113
+    legacy_id: ""
+    title: "**「页面声明的筛选区必须由原语承载」的类级元守卫**：凡页面自报 `search-area` 的筛选区，承载标签必须是 `SearchPanel` / `SearchBar` / `PageCard`，不得是裸 `div`（issue #7116，承接 #7007 根因③）"
+    domains:
+      - ui
+      - admin-web
+    tier: normal
+    tags:
+      - ui
+      - design-consistency
+      - filter-area
+      - shared-primitive
+      - class-guard
+      - red-proof
+    truths_ref: []
+    precondition: "前置 = 三样都在仓里可读：① 无状态筛选原语 `frontend/admin-web/src/components/ui/SearchPanel.tsx`（`fields[].control` 由页面渲染、单一响应式 grid、`testId` 默认 `search-area`）；② 有状态轻量筛选条 `frontend/admin-web/src/components/ui/SearchBar.tsx`；③ 守卫本体 `frontend/admin-web/tests/unit/filter-area-primitive-guard.test.ts`。**前置不成立时不许读成通过**：射程目录取不到 ⇒ `walk()` 抛（fail-closed）；页面数 ≤ 40、或「声明 + 原语」合计 < 5 ⇒ 反空跑判红。"
+    user_inputs:
+      - "为什么只有订单页看起来精致，其它页面没有这种感觉？"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "🔴 **判据 1（会红）**：射程 = `frontend/admin-web/src/app/(dashboard)/**` 下**每个页面**。凡页面上**自己声明**了筛选区（`data-testid=\"search-area\"` 或 `PageCard` 的 `testId=\"search-area\"`），其**承载标签必须是原语**（`SearchPanel` / `SearchBar` / `PageCard`）——**不得是裸 `<div>`/`<section>`**，否则判红并点名「文件 + 承载标签」。**红证（实跑、逐字节还原）**：迁移前实测 `orders/page.tsx` 与 `after-sales/page.tsx` 各自以裸 `<div>` 承载 ⇒ 判据 1 红并点名两页；迁完两个原语后转绿。"
+      - "🔴 **判据 2（反空转）**：射程内「显式声明」**加**「用了 `SearchPanel` 的页面」合计 **≥ 5**（现取：显式 2 + 用原语 3）⇒ 防「把声明或原语都删掉」让判据 1 空转；另断言三个原语文件真实存在。"
+      - "🔴 **判据 3（判别力自证）**：坏形态（`<div … data-testid=\"search-area\">`）判红、好形态（`<SearchPanel … testId=` / `<PageCard testId=`）放行；**没有声明 ⇒ 不产生任何判定**（不猜 —— 见下条）。"
+      - "📌 **为什么只认「页面自己声明的」**（射程**有意收窄**）：本仓标记「筛选区」的方式不统一，靠「这页有没有查询按钮 / 搜索框」去猜**会把新建单据表单误判成筛选区** —— 实测 `orders/new/page.tsx` 有搜索框 + 查询 + 重置，但它是**下单表单**、不是筛选区。⇒ 判据只承认页面自报的意图，不猜。"
+      - "📌 **病灶（#7007 根因③）**：用户原话「只有订单管理精美」。`#7012` 抽出了 `SearchPanel` 原语，但**落地只有 1 页**（`customers`），而 `PageCard` 被 9 页拿去做筛选外壳 —— 共享件造出来没落地。"
+      - "📌 **本单交付**：`orders` / `after-sales` / `employees` 三页迁到 `SearchPanel`（无状态原语，页面自持筛选 state），迁移后 `SearchPanel` 落地从 **1 页 → 4 页**。`orders` 那页正是「单一响应式 grid / 标签左置 / 按钮独占一行」这一版的**母版**（`#5880` 打磨出来的就是它）—— 迁回去等于把母版接回原语，而不是发明新形态。"
+      - "📌 **`products` 有意未迁（照实登记）**：它用的是**两行独立栅格**（`md:grid-cols-2` + `md:grid-cols-[1fr_1fr_auto]`）+ 防抖 URL 同步，与 `SearchPanel` 的单一 grid 版式不同；且它**已经用 `PageCard` 承载**（判据 1 认可的合法形态）⇒ 不属本判据的违规面。重启条件：真要做「筛选区版式全统一」时，先给 `SearchPanel` 定「多行栅格」形态。"
+      - "📌 **迁移过程中的一处真实性修正（值得记）**：`employees` 迁移后有 1 条断言翻红，我一度误判为「迁移引入行为变化」。实测请求序列迁移前后**逐字相同**（`[{page,size}, {page,size,keyword:'张'}]`），真因是**交互与挂载请求的竞争**：断言 `waitFor(toHaveBeenCalled())` 被**挂载那次**满足 ⇒ 读到的是挂载入参（不带 keyword）。修法 = 交互前**先等挂载请求落地**（不是放宽断言、不是改产品代码）。\n  ⚠️ 过程中我一度把「测试超时」误读成「通过」（`vitest` 对 `-t` 过滤时把未选中用例显示为 skipped），差点据此得出错误结论 —— **判读测试结果必须看 `Tests N passed/failed` 汇总行，不能只看有没有 ×**。"
+    skip_reason: "[backend-contract] 前端静态判据（扫 TSX 源码判承载标签 + 冻结下界对账），零网络、零时钟、非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-17 新增（issue #7116，承接 #7007 根因③）。根因① 由 #7065（页头）、根因② 由 #7069（卡片层级）分别收口。用例号 = `NCI_MAIN_REF=HEAD python3 scripts/next_case_id.py UI`；**首次取到 UI-112 但发现在飞 PR #7113 已占用**（`next_case_id.py` 的已知边界：它在飞面只认能解析到的 PR 列表，本次未命中 #7113 的 diff）⇒ 现取复核后改用 **UI-113**（main 与 #7113 均未占用）。**报告型说明**：承载体是前端单测（vitest），由 `admin-web 单测` 腿收集。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/filter-area-primitive-guard.test.ts"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: UI-117
+    legacy_id: ""
+    title: "岗位权限页默认菜单 = 后台 + 手机端（一份权限码两面投影）+ 只读工人卡；岗位描述只留职责（issue #7146）"
+    domains:
+      - ui
+      - frontend
+      - hr
+    tier: normal
+    tags:
+      - ui
+      - position
+      - role
+      - menu
+      - mobile
+      - worker
+    truths_ref:
+      - frontend-fix.role-default-menu-pc-mobile
+    user_inputs:
+      - "手机端可见面要不要作为「默认岗位默认菜单」的一部分，当然需要，把 PC 和手机端当一个整体"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "岗位权限页每张岗位卡：同一处同时给「后台 N 项」与「手机端 M 个入口」（默认收起 = §31 P1；展开看两份清单）；后台名逐字取 config/menu（与侧边栏同源），手机端面名逐字取服务端 GET /api/admin/menus 的 mobileTitles（夹具改名 ⇒ 页面跟着改，证明前端无第二张表）；没有手机端码的岗位显示 0（不是「全给」、不是报错）"
+      - "岗位描述 roles.description 只承载「职责：…」散文：不得再出现「默认可用模块：」（模块清单必须派生，否则是第二份会漂的真值）；判据 = tests/unit_ci_workflows/test_role_descriptions.py 判据 A（注入「默认可用模块：」⇒ 具名红）"
+      - "只读「工人」卡：工人端默认 5 页（页键 + 人话名取 GET /api/admin/worker-pages），卡内**没有**编辑/删除按钮、给出「员工管理 → 工人档案」链接；目录读失败 ⇒ 显式失败态 + 重试（不画成「没有页面」）"
+      - "零授权 delta：本单不改 role_permissions / users.permissions；手机端写码仍由商家在权限树逐人勾（#6759）"
+      - "存量租户：V162 只改「仍是 V161 默认文案」的行（商家自定义描述不动），终态对账 fail-closed；V161 渲染输入冻结（活清单前进不动它）"
+    skip_reason: "[backend-contract] 前端派生/只读卡由 vitest 验证；岗位描述职责-only 由 pytest 常驻判据验证；均零网络、零 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-17 新增（issue #7146；用户逐字「手机端可见面要不要作为『默认岗位默认菜单』的一部分，当然需要，把 PC 和手机端当一个整体」+ 同轮裁定「加一张只读『工人』卡」「不动授权（零 delta）」）。落地：roles.description 去模块清单（职责-only）→ 默认菜单改派生（后台 × 手机端一份权限码）→ 岗位卡同屏两面 + 只读工人卡；V162 迁移刷存量（只改旧默认文案）。判据 = frontend/admin-web/tests/unit/lib/role-default-menu.test.ts + tests/unit/pages/roles.test.tsx + tests/unit_ci_workflows/test_role_descriptions.py。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/lib/role-default-menu.test.ts"
+        - "frontend/admin-web/tests/unit/pages/roles.test.tsx"
+        - "tests/unit_ci_workflows/test_role_descriptions.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+  # ══════════════════════════════════════════════════════════════════════════
+  # UI-118 / UI-119 / UI-120（issue #7140 = #5652 的**商家面**，2026-10-17）——
+  # 质检在观星台上的三个可见面。
+  #
+  # 病根（用户逐字）：「之前让你做过质检流程，我看在观星台上没有任何地方体现出来了」。
+  # 实测证据：`grep -rIn "quality|质检" frontend/admin-web/src` ⇒ **0 处**；
+  # `grep -rIn "rework_qty|scrap_qty" frontend/admin-web` ⇒ **0 处**（只有米宝的 agent 读面消费）。
+  #
+  # 用户 2026-10-17 三项裁定：① 落位 = 生产管理组新增「质检记录」菜单 **+** 作业单生产明细内嵌质检区；
+  # ② 范围 = 一起补（生产明细显示 合格/返工/报废 三列）；③ 读权限**保持现状**
+  # （`production:inspect` 只授质检员 + 管理员，零放宽）。
+  #
+  # 取号：`python3 scripts/next_case_id.py UI` 本机超时 ⇒ 现取 `origin/main:.github/cases/ui.yml`
+  # 最大 = UI-116，复核 open PR 无占用 ⇒ 117/118/119。
+  # ══════════════════════════════════════════════════════════════════════════
+  - id: UI-118
+    legacy_id: ""
+    title: "质检记录页（`/quality-inspections`）：待检成品帘清单（未检 ≠ 合格、带订单号）+ 弹窗录入三态判定（返工/报废原因必填）+ 质检流水；读失败不印「未检 0 件」（issue #7140 / #7160）"
+    domains:
+      - ui
+      - frontend
+      - production
+    tier: normal
+    persona: ""
+    tags:
+      - ui
+      - production
+      - quality-inspection
+      - read-failure
+      - copy
+    truths_ref: []
+    user_inputs:
+      - "用户 2026-10-17 逐字：「之前让你做过质检流程，我看在观星台上没有任何地方体现出来了」"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·🔴 **待检清单看得见，且未检不折成合格**：一条 = 一件成品帘（加工单号 / **订单号** / 成品帘名 / 最新判定；issue #7160 —— 原「数量」列已移除）；无记录 ⇒ 该行判定位渲染**「未检」**、操作位是**「录入判定」**；已判行渲染服务端判定（含原因 / 检验人 / 时刻）且操作位是「复检」。红证：把「未检」改渲染成「合格」⇒ 判据当场红。证据：frontend/admin-web/tests/unit/pages/quality-inspections.test.tsx"
+      - "判据 2·🔴 **判定 ≠ 合格 ⇒ 原因必填**：选「返工」后不填原因点提交 ⇒ 出现具名提示且**不调提交端点**（`create` 零调用）。证据：同文件（② 用例）"
+      - "判据 3·**提交体逐字段正确**：`order_item_id` / `result` / `reason` 三键逐值；判定为「合格」时**不带**空原因键（空串不送）。证据：同文件（③ ④ 用例）"
+      - "判据 4·🔴 **读失败不印计数**：待检清单读失败 ⇒ 失败锚（`role=alert`）常驻 + 摘要行说「数量读不到」，**绝不出现「未检 0 件」**，且**不出现空态**（「读不到」与「一件都没有」是两句话）。红证：把失败分支的计数渲染去掉 ⇒ 判据当场红。证据：同文件（⑤ ⑦ 用例）+ frontend/admin-web/src/lib/quality-check.ts 的 `countsReliable` 口径"
+      - "判据 5·**真的没有待检行才是空态**（并如实显示 0）。证据：同文件（⑥ 用例）"
+      - "判据 6·🔴 **录入 = 弹窗**（issue #7160）：点「录入判定」⇒ `role=dialog`（标题写明是哪一件成品帘）**当场**出现；取消后关闭且零请求。旧形态把表单渲染在整张列表卡片**最底部**（分页之后）⇒ 点击后视口内毫无变化，用户读成「点了没反应」（用户逐字：「交互在下面显示了，这个体验不太好，不如弹窗」）。红证：把弹窗改回行内展开 ⇒ ⑧ 用例当场红。证据：同文件（⑧ 用例）+ frontend/admin-web/tests/unit/components/QualityCheckForm.test.tsx（⑦ 用例）"
+      - "**边界（照实登记）**：流水读面（`GET /api/admin/quality-inspections`）没有分页 ⇒ 本页**截断展示最近 20 条**并在标题上写明（不假装是全部）；重启条件 = 该读面加分页。不做时间范围筛选（读面无该入参，前端过滤 = 第二份口径）。"
+    skip_reason: "[backend-contract] 纯前端渲染与交互（vitest 单测覆盖），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-17 新增（issue #7140；用户三项裁定见文首注释）。落码：`frontend/admin-web/src/app/(dashboard)/quality-inspections/page.tsx` + `src/lib/quality-check.ts`（展示口径唯一实现）+ 三源同构菜单项（`menu.ts` / `MenuController` / `AuthService`）+ `rbac/manifest.json` + ai-agent 镜像（`menu_navigator.py` / `page_registry.py`）。取号：见文首注释。2026-10-17 issue #7160 订正：判定录入改**弹窗**、清单「数量」列换成「订单号」（服务端 targets 行追加 `order_no`）。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/quality-inspections.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: UI-119
+    legacy_id: ""
+    title: "作业单生产明细内嵌**质检区**：逐件成品帘最新判定（未检 = 未检）+ 录入/复检入口；读失败不画成「没有质检」（issue #7140）"
+    domains:
+      - ui
+      - frontend
+      - production
+    tier: normal
+    persona: ""
+    tags:
+      - ui
+      - production
+      - quality-inspection
+      - read-failure
+    truths_ref: []
+    user_inputs:
+      - "用户 2026-10-17 裁定①：落位 = 生产管理组新增菜单 **+** 作业单生产明细内嵌质检区"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**逐件成品帘显示最新判定**：有记录 ⇒ 渲染服务端判定（含原因 / 检验人 / 检验时刻）；无记录 ⇒ **「未检」**（不是空白、不是「合格」）。证据：frontend/admin-web/tests/unit/components/QualityCheckPanel.test.tsx"
+      - "判据 2·🔴 **最新一条胜出**：同一件多条记录时取读面给的**第一条**（服务端已按时间倒序）—— 见证行故意让第二条的时间更晚，组件仍取第一条 ⇒ 证明前端**没有**第二份排序口径。证据：同文件（② 用例）"
+      - "判据 3·**录入口在单上**：未检 ⇒「录入判定」、已判 ⇒「复检」，点开同一表单；提交体带上**这一件成品帘**的 id。证据：同文件（③ 用例）"
+      - "判据 4·🔴 **读失败不画成「本单没有质检」**：失败锚常驻，空态**不出现**、逐件行不渲染。证据：同文件（④ 用例）"
+      - "**权限面（不在本用例的断言里，登记在此）**：质检区只在持 `production:inspect` 时渲染（权限门在**调用方** `processing-orders/[id]/production/page.tsx`，组件自己不再判一次 —— 避免两处口径）；读权限**零放宽**（用户裁定③）。"
+    skip_reason: "[backend-contract] 纯前端渲染与交互（vitest 单测覆盖），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-17 新增（issue #7140）。落码：`frontend/admin-web/src/components/production/QualityCheckPanel.tsx` + `QualityCheckForm.tsx`（页面与单上共用同一表单）+ 生产明细页挂载（按码渲染）。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/QualityCheckPanel.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: UI-120
+    legacy_id: ""
+    title: "工序进度表**三态数量列**（合格 / 返工 / 报废）：返工报废不进进度、与「已完成数量」分列、缺报工渲染 0（issue #7140）"
+    domains:
+      - ui
+      - frontend
+      - production
+    tier: normal
+    persona: ""
+    tags:
+      - ui
+      - production
+      - quality-inspection
+      - worklog
+    truths_ref: []
+    user_inputs:
+      - "用户 2026-10-17 裁定②：范围 = 一起补 —— 生产明细显示「合格/返工/报废」三列"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**三列表头都在**（合格 / 返工 / 报废）—— 此前 `rework_qty` / `scrap_qty` 在 admin-web **零消费者**（只有米宝读面能看到）。证据：frontend/admin-web/tests/unit/components/ProductionProgressTable-worktype.test.tsx"
+      - "判据 2·**逐工序渲染服务端下发的三态数量（含单位）**；缺报工 ⇒ 服务端给 0 ⇒ 渲染 `0`（不是空白、不是 `undefined`）。证据：同文件（② 用例）"
+      - "判据 3·🔴 **合格与「已完成数量」是两列**（见证行：`done_qty=10` / `qualified_qty=7` 故意不等）—— 返工 / 报废**既不推进进度也不计件**（既有口径），本表**不为它们做合计**（避免被读成「已完成 = 合格 + 返工 + 报废」）。三天不做合计这件事**不在**本用例的机器断言里（它是「没有写」的事实）⇒ 靠本条的方案注释 + 代码评审承担。"
+    skip_reason: "[backend-contract] 纯前端渲染（vitest 单测覆盖），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-17 新增（issue #7140）。落码：`frontend/admin-web/src/components/production/ProductionProgressTable.tsx`（+3 列；**只加不改**既有列）+ 后端 `ProductionService.operationView` 增三键（与 `worklog()` 同口径，抽出 `qtyByOperation`）。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/ProductionProgressTable-worktype.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # UI-121（issue #7162，2026-10-17）—— 工人档案上的「质检」页逐人开。
+  #
+  # 背景：工人端质检的服务端准入 = 该工人档案的页面集含 `inspect`（WorkerPages 的唯一例外条）。
+  # 商家要有地方把它打开/关掉：工人档案列表行上的「开质检 / 关质检」+ 新建弹窗的「单独开放」一栏。
+  #
+  # 取号：`python3 scripts/next_case_id.py UI` 本机超时 ⇒ 现取 origin/main 最大 = UI-120，
+  # 复核 open PR（#7161 只改用例内容、不新增号）未占用 ⇒ 121。
+  # ══════════════════════════════════════════════════════════════════════════
+  - id: UI-121
+    legacy_id: ""
+    title: "工人档案：质检页逐人开（新建弹窗「单独开放」一栏 + 列表行「开/关质检」）；默认页面不含质检、未收窄显示「默认页面」"
+    domains:
+      - ui
+      - frontend
+      - production
+      - permission
+    tier: normal
+    persona: ""
+    tags:
+      - worker-profile
+      - quality-inspection
+      - permission
+      - ui
+    truths_ref: []
+    user_inputs:
+      - "用户 2026-10-17 裁定：「工人档案逐人开质检页，服务端同时当写准入」"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**质检不在默认菜单里**：新建弹窗的默认页勾选栏（`worker-page-option-*`）不含 `inspect`；它出现在「单独开放」一栏（`worker-page-optional-inspect`），默认未勾。红证：把 inspect 加进默认集合 ⇒ 判据当场红。证据：frontend/admin-web/tests/unit/components/WorkerProfilesPanel.test.tsx（⑨）"
+      - "判据 2·**勾上 ⇒ 建号请求带它**：默认四页 + 单独勾质检 ⇒ `workerPages = [report, order, cut_calc, shipment, inspect]`（收窄列表，不是 null）。证据：同文件（⑨）"
+      - "判据 3·**已有工人可开/关**：列表行「开质检」⇒ `PUT /api/admin/workers/{id}/pages` 带默认页 + inspect；「关质检」⇒ 去掉 inspect（回到收窄集）。证据：同文件（⑨ 第二条）"
+      - "判据 4·**口径显示**：未收窄（null / 空数组）⇒「默认页面」（不再是「全部页面」—— 全部能力还包含逐人开的质检）。证据：同文件（⑧）"
+      - "**上游形状**：`GET /api/admin/worker-pages` 回 `{pages, default_pages, optional_pages, labels}`（服务端唯一真值）；`inspect` 在 pages、不在 default_pages、在 optional_pages。证据：backend/admin-api/src/test/java/com/migao/admin/controller/WorkerPageCatalogControllerTest.java"
+      - "**边界（照实登记）**：本页只决定「开不开放」；真正的写准入在 `/api/worker/quality/**`（服务端 403），不是前端隐藏按钮。"
+    skip_reason: "[backend-contract] 纯前端配置面（vitest 单测覆盖），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-17 新增（issue #7162）。落码：`WorkerProfilesPanel`（catalog 的 default_pages / optional_pages 消费 + 行内开/关 + 新建弹窗「单独开放」）+ `WorkerPageCatalogController`（追加两键）+ `WorkerPages.optionalPages()`。取号：见文首注释。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/WorkerProfilesPanel.test.tsx"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/WorkerPageCatalogControllerTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+  # ══════════════════════════════════════════════════════════════════════════
+  # 取号：origin/main 现取最大 = UI-121，复核 open PR（本单期间）无 UI-12x 占用 ⇒ 122。
+  # ══════════════════════════════════════════════════════════════════════════
+  - id: UI-122
+    legacy_id: ""
+    title: "配置面的字段只有一种写法：区块 = 浅底面板 + 标题 + 说明，字段 = 标签在上 + 控件满列 + 单位入框（共享原语 + 类级守卫）"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    persona: ""
+    tags:
+      - design-system
+      - settings
+      - form-field
+      - ui
+    truths_ref: []
+    user_inputs:
+      - "用户 2026-10-18 裁定：「第二张图（阈值试算）可以作为一个标准来参考，后续都要形成固定的设计风格和组件，我们一个产品不要出现多种设计和风格样式」"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**区块形态**：配置面的区块 = `FormPanel`（`rounded-lg border border-neutral-200 bg-neutral-50/50 p-4` + `h4.text-sm.font-semibold` + 可选一句 `text-xs` 说明）。证据：frontend/admin-web/src/components/ui/FormPanel.tsx"
+      - "判据 2·**字段形态**：标签在上（`label.text-xs`）、控件满列（`FIELD_CONTROL` 带 `w-full h-9 rounded-lg border border-neutral-300` + 主色聚焦环）、单位做**框内后缀**（带单位时 `pr-9`）。证据：同文件 + frontend/admin-web/src/components/settings/OversizeThresholdPreview.tsx（基准面，by construction 不改像素）"
+      - "判据 3·**受管面必须继续用原语**：算料口径全域（标量 / 档位与拼色 / 备用用料公式）、阈值试算、裁剪高度「预演（只读）」都从 `components/ui/FormPanel` 取字段版式（改回手拼 ⇒ 红）。证据：frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx、frontend/admin-web/tests/unit/design-system-form-fields.test.tsx"
+      - "判据 4·**「档位与拼色」不再是贴内容的小表**：两张 `w-fit` 小表在内容宽 764 时右侧空出 79px（读数）；改成两个并排 `FormPanel` 后 blank = 0，且每档 = 两个字段（显示名 / 褶倍）、拼 N 次 = 一个字段（单位入框）。证据：前端单测的 `calc-caliber-group-tiers` / `calc-caliber-group-mixed` 锚点 + PR 截图"
+      - "判据 5·**类级守卫**：业务面自己拼控件铬（`h-9 ... rounded-lg ... border-neutral-300` 字符串）⇒ 红；「标签顺排在控件左边」（`ml-1 inline-block`）⇒ 红；两处存量按台账**双向相等 + 只许缩短**。红证：守卫内有内存注入自证（造一份第二铬 / 一段旧形态源码 ⇒ 当场红并具名）。证据：frontend/admin-web/tests/unit/design-system-form-fields.test.tsx"
+      - "**边界**：本单不改字段、默认值、保存语义、422 逐条理由与算料口径（纯版式）；美化本身仍由 §15.7 读图 + 人裁定。"
+    skip_reason: "[backend-contract] 纯前端配置面（vitest 单测覆盖），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-18 新增（issue #7176）。落码：`components/ui/FormPanel.tsx`（FormPanel / FormGrid / Field / FIELD_CONTROL）+ 三个受管面迁移 + 类级守卫 `design-system-form-fields.test.tsx` + 设计真值源 §9。取号：见文首注释。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/design-system-form-fields.test.tsx"
+        - "frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # UI-125（issue #7183，2026-10-18）—— 算料口径「改完即保存」：保存 / 恢复默认两个按钮退场。
+  #
+  # 用户逐字：「这里的两个按钮应该移除，一是不需要恢复默认功能，而是应该让用户在输入框变更后即保存，
+  # 这样增加界面简洁程度提高了用户体验」。
+  #
+  # 取号：`ui.yml` 现值最大 = UI-122（`next_case_id.py` 本机超时 ⇒ 直读 origin/main 现查）；
+  # 123/124 留给同批在飞的包 ⇒ 取 125（号稀疏不是问题，重复号才是）。
+  # ══════════════════════════════════════════════════════════════════════════
+  - id: UI-125
+    legacy_id: ""
+    title: "算料口径改「变更即保存」：删掉保存 / 恢复默认两个按钮，防抖 0.6 秒自动 PUT（422 逐条理由、草稿不回滚）"
+    domains:
+      - ui
+      - frontend
+      - settings
+    tier: normal
+    persona: ""
+    tags:
+      - settings
+      - craft-calc
+      - autosave
+      - ui
+    truths_ref: []
+    user_inputs:
+      - "用户 2026-10-18 裁定：「这里的两个按钮应该移除，一是不需要恢复默认功能，而是应该让用户在输入框变更后即保存，这样增加界面简洁程度提高了用户体验」"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**全域零保存 / 恢复默认按钮与吸底条**（`calc-caliber-save` / `calc-caliber-restore-defaults` / `calc-caliber-save-dock` 取不到），且「没有保存按钮」这件事被写出来（「修改后自动保存（约 0.6 秒），无需手动提交」）。证据：frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx（判据 9·a）"
+      - "判据 2·**变更即保存 600ms**：改一个标量 ⇒ 599ms 时 0 次、600ms 后 `onCalcSave` 恰好 1 次；期间输入框**不**禁用。证据：同文件（判据 9·b）"
+      - "判据 3·**防抖合并**：窗口内连改两处 ⇒ 只发 1 次，正文带两处新值。证据：同文件（判据 9·c）"
+      - "判据 4·**首屏 / 读面刷新不写库**（基线 = 读面给的整份配置）：挂载后 5s 内 0 次；换一份新配置对象（页面读面落地同步草稿）后仍 0 次。证据：同文件（判据 9·d）"
+      - "判据 5·**在飞闸**：第 1 次未回来前再改两次 ⇒ 仍只有 1 次；回来后按最新草稿补发 1 次（不排队）。证据：同文件（判据 9·e）"
+      - "判据 6·**422 语义不变**：`details[].message` 逐条上屏、草稿不回滚（输入值仍在）、保存态「保存失败 · N 条理由」；改对后再改一次自动重试。证据：同文件（判据 9·f / f2）"
+      - "判据 7·**只读退化零请求**：不给保存回调（只给草稿回调）⇒ 5s 内 0 写请求、无保存态与自动保存说明。证据：同文件（判据 9·g）"
+      - "判据 8·**页面这一跳也是全量键**：`PUT` 正文逐键齐全（11 键），改的键是新值 —— 触发方式改为防抖自动保存。证据：frontend/admin-web/tests/unit/pages/settings.test.tsx（算料口径域保存）"
+      - "判据 9·**类级写面守卫口径不变**：域写面出口标记从保存按钮迁到保存态（`data-write-exit` 仍带 `calc`），逐域 traversal 与「写出口成对」判据仍绿。证据：frontend/admin-web/tests/unit/lib/domain-write-surface.test.tsx（判据 4 / 写出口成对）"
+      - "**边界**：不碰后端、不改 422 理由结构；「恢复为默认值」**不给替代入口**（用户明确不要），引擎默认值仍由 `source` 徽标与「本企业尚未保存过算料口径」横幅承担；面板卸载（切域）时待发的那一次仍会发出。证据：同文件（判据 9·h）"
+    skip_reason: "[backend-contract] 纯前端配置面（vitest 单测覆盖），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-18 新增（issue #7183）。落码：`frontend/admin-web/src/components/settings/CalcCaliberPanel.tsx`（防抖自动保存 + 保存态 + 删保存条）+ 设置页注释同步。取号：见文首注释。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/settings.test.tsx"
+        - "frontend/admin-web/tests/unit/lib/domain-write-surface.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+  - id: UI-123
+    legacy_id: ""
+    title: "旧「工艺配置」页已下架：/production/routings 重定向到唯一写面，且全仓不再有写死的旧链接"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    persona: ""
+    tags:
+      - navigation
+      - settings
+      - route-retirement
+      - ui
+    truths_ref: []
+    user_inputs:
+      - "用户 2026-10-18 报障：「原工艺配置页面怎么未下架，从计件工资提示链接可以跳转到原页面，这里应该跳转到新页面了」"
+    expectations:
+      - tool: direct_reply
+    skip_reason: "[backend-contract] 本用例判的是 admin-web 的**旧路由下架 + 链接面**（/production/routings → 重定向 /settings?domain=operation-prices、全仓无写死旧链接），**没有 Agent 面可跑**：user_inputs 是用户 2026-10-18 的报障原文，expectations 的 direct_reply 只是占位。承载体 = traces.tests 里的 6 个前端单测。2026-10-19 mibao 基线实测它被当成 LLM 用例跑（agent 调 nav_guide / craft_calc_config_query 等 ⇒ 误判红灯，issue #7027）。"
+    data_checks:
+      - "判据 1·**旧路由重定向**：渲染 `/production/routings` ⇒ `router.replace('/settings?domain=operation-prices')`，且不渲染任何内容（不 404、不落空白）。证据：frontend/admin-web/tests/unit/pages/production-routings-legacy.test.tsx"
+      - "判据 2·**旧链接不再存在**：`src/` 里没有写死的 `href` / `redirect(` / `router.push|replace(` 指向 `/production/routings`（注释里的历史说明、`page-context` 的路由映射、`layout.tsx` 的权限前缀不算链接）。证据：同测试文件的 `linksToRetiredRoute()`"
+      - "判据 3·**定价入口与文案同源**：计件工资「去定价」的落点常量 = `/settings?domain=operation-prices`（文案写的是「企业基础设置 → 工序与部位单价」）。证据：frontend/admin-web/tests/unit/components/UnpricedNotice.test.tsx、ProductionProgressTable.test.tsx、PieceworkTable.test.tsx"
+      - "判据 4·**功能体仍有覆盖**：原借旧页当壳的两个测试改为直接渲染 `ProcessConfigBoard`（覆盖不随页面下架一起消失）。证据：OperationsScopeColumn.test.tsx、OperationsProvenance.test.tsx"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/production-routings-legacy.test.tsx"
+        - "frontend/admin-web/tests/unit/components/UnpricedNotice.test.tsx"
+        - "frontend/admin-web/tests/unit/components/ProductionProgressTable.test.tsx"
+        - "frontend/admin-web/tests/unit/components/PieceworkTable.test.tsx"
+        - "frontend/admin-web/tests/unit/components/OperationsScopeColumn.test.tsx"
+        - "frontend/admin-web/tests/unit/components/OperationsProvenance.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+  - id: UI-124
+    legacy_id: ""
+    title: "按钮只有一种形态：icon slot 统一间距、loading 时 spinner 顶替图标（不并排）、裸 button 不得自拼主色 chrome"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    persona: ""
+    tags:
+      - design-system
+      - button
+      - ui
+    truths_ref: []
+    user_inputs:
+      - "用户 2026-10-18 裁定：「还是老问题，按钮样式未统一 …… 制定一个统一规范并执行落地」「这个规范包含观星台所有功能，PC&手机端」"
+    expectations:
+      - tool: direct_reply
+    skip_reason: "[backend-contract] 本用例判的是 admin-web 的**设计系统按钮形态**（icon slot / loading 顶替 / 尺寸 token / 裸 button 冻结台账），**没有 Agent 面可跑**：user_inputs 是用户 2026-10-18 的裁定原文，expectations 的 direct_reply 只是占位。承载体 = traces.tests 里的前端单测。2026-10-19 mibao 基线里它同样被当成 LLM 用例跑（issue #7027）。"
+    data_checks:
+      - "判据 1·**icon slot**：前置图标走 `Button` 的 `icon` prop（slot 给 `mr-1.5 shrink-0` 且 `aria-hidden`），调用方不再手写 `mr-*`。证据：frontend/admin-web/tests/unit/design-system-buttons.test.tsx"
+      - "判据 2·**loading 顶替**：`loading` 时只渲染 spinner，页面自带图标不出现（并排 = 双图标，真机读成「图标重叠」）；`aria-busy` 随 loading。证据：同文件"
+      - "判据 3·**尺寸 token**：sm=h-8 / md=h-9 / lg=h-10，圆角 rounded-lg（改映射 ⇒ 红）。证据：同文件"
+      - "判据 4·**类级**：裸 `<button>` 不得自带主色 chrome（`bg-primary-600`）；存量 10 处按冻结台账只许缩短，新增文件/同文件变多 ⇒ 红并具名。证据：同文件 `NAKED_PRIMARY_LEDGER`"
+      - "迁移面：工艺配置（刷新/新增工序/新建路线）、加工项与分类（加工分类/新增加工项）、加工费组合（新建组合）、工序与部位单价（刷新/新增工序）—— 全部改走 `icon` slot。证据：frontend/admin-web/src/components/production-config/*.tsx"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/design-system-buttons.test.tsx"
+        - "frontend/admin-web/tests/unit/components/ProcessConfigBoard.test.tsx"
+        - "frontend/admin-web/tests/unit/components/ProcessingItemsPanel.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ==========================================================================
+  # UI-127（issue #7276，2026-10-18）——RBAC：「订单详情」这个权限码从**死码**变成**真码**。
+  #   用户现场逐字：「虽然页面上提示我没权限操作，但是我仍然能访问，RBAC权限没控制住？」
+  #   裁定 = 方案 A（让它真正生效）。⚠️ 纯权限/门控面，不进 agent-eval 冒烟。
+
+  - id: UI-127
+    legacy_id: ""
+    title: "订单详情权限（order:detail）真正生效：详情/发货两读面收码 + 页面拒绝态 + 无权限的加工单块不发起请求（issue #7276）"
+    domains:
+      - ui
+      - frontend
+      - order
+    tier: normal
+    persona: ""
+    tags:
+      - rbac
+      - permission
+      - order-detail
+      - class-level-guard
+    truths_ref: []
+    user_inputs:
+      - 「虽然页面上提示我没权限操作，但是我仍然能访问，RBAC权限没控制住？」（用户 2026-10-18）→ 裁定：让「订单详情」这个码真正生效
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·前端（会红）：frontend/admin-web/tests/unit/pages/order-detail-permission-gate.test.tsx —— 无 order:detail ⇒ 渲染拒绝态且零读请求；有 order:detail 无 production:view ⇒ 页可看、加工单块不渲染；两码都在 ⇒ 加工单块渲染（对照组）。修前实测 3 failed。证据：该文件三条用例"
+      - "判据 2·后端（会红）：AdminOrderShipmentReadTest#adminReadFaceCarriesTheSameReadCodeAsTheOrderDetailPage —— GET /api/admin/orders/{id} 与 .../shipments 的生效码都必须是 order:detail（改回 order:list ⇒ 红）。"
+      - "判据 3·台账：tests/unit_ci_workflows/test_agent_permission_parity.py 的 census —— order:detail.endpoints 非空、order:list 同步移除两条；工具 logistics_track 的 required_permissions ≡ 端点生效码（order:list + order:detail）。"
+      - "判据 4·类级元守卫（新增，目录级）：tests/unit_ci_workflows/test_rbac_derived_pages.py::test_every_grantable_code_has_a_server_side_enforcement_point —— 目录里**每个可授予的码**（含动作节点码）都必须在服务端强制面（admin-api 的 @RequirePermission，行首锚定）至少命中一次，否则具名判红；豁免台账 CODE_WITHOUT_ENFORCEMENT 只许缩短（现取 0：最后一条 product:manage 已按用户裁定删除），已接线或陈旧登记同样红；**手写门**（不在注解体系里的判定点，如 AdminGate 承载的 agent:chat）走 EXPLICIT_GATES 登记 + **活体校验**（门删了登记还在 ⇒ 红）—— 这是上一轮普查的真实盲区。UI 面（路由守卫/页面 has/菜单节点）**不算**强制点 —— 直接调 API 就绕过。"
+    skip_reason: "[backend-contract] 权限/门控面（前端拒绝态 + Java 注解 + 静态台账）由 vitest 与 Java 单测验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-18 新增（issue #7276）。取号 = 本地复算 origin/main 现取最大 UI-126 ⇒ UI-127。病：order:detail 只活在权限树与岗位种子里（census 端点数 = 0；去向单 #5236 已关 ⇒ 无人承接）⇒ 岗位权限页勾了不生效；详情读面挂 order:list ⇒ 用户「提示没权限却仍能访问」。修：两读面收码 + 页面拒绝态 + 加工单块按 production:view 门控 + 工具码同批对齐 + 类级元守卫。零回归：种子岗位里持 order:list 的四个（客服/运营/销售/财务）本就都持 order:detail。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/order-detail-permission-gate.test.tsx"
+        - "backend/admin-api/src/test/java/com/migao/admin/shipment/AdminOrderShipmentReadTest.java"
+        - "tests/unit_ci_workflows/test_agent_permission_parity.py"
+        - "tests/unit_ci_workflows/test_rbac_derived_pages.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ==========================================================================
+  # UI-128（issue #7309，2026-10-19）—— 纸面不带**浏览器页眉页脚**。
+  #   用户逐字：「我建议拿掉打印的页头和页脚」（附 A4 报价单打印成品截图：顶部版式日期 +
+  #   「观星台 - AI经营管理平台」，底部订单 URL + 1/1 —— 四样都被红框圈出）。
+
+  - id: UI-128
+    legacy_id: ""
+    title: "A4 纸面不带浏览器页眉页脚：@page 边距写 0（浏览器无可画之处）+ 版面内缩 12mm 由单据容器承担、box-decoration-break: clone 逐页重复（issue #7309）"
+    domains:
+      - ui
+      - frontend
+      - print
+    tier: normal
+    persona: ""
+    tags:
+      - print
+      - a4
+      - browser-chrome
+      - class-level-guard
+    truths_ref: []
+    user_inputs:
+      - 「我建议拿掉打印的页头和页脚」（用户 2026-10-19，附 A4 报价单打印成品截图）
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**结构性去页眉页脚**（会红）：介质矩阵 frontend/admin-web/src/lib/print-media.json 的 a4 必须是 pageMargin=0 + contentInset=12mm；printPageRule('a4') === '@page { size: A4; margin: 0; }'、printContentInsetCss('a4') === '12mm'、可用版面仍 = 186 × 273mm（与改前逐值一致）。执行点 = frontend/admin-web/tests/unit/lib/print-media.test.ts 的「⑤ 纸面不带浏览器页眉页脚」+「③ @page 规则由 printPageRule 唯一生成」。"
+      - "判据 2·**类级元守卫**（会红）：tests/unit_ci_workflows/test_print_media_matrix_guard.py::test_c10_browser_chrome_stays_off_the_paper —— 浏览器打印介质的上下 @page 边距不得 ≥ 8.7mm（实测：8.7mm 不画 / 8.8mm 画）；边距 0 必须登记 contentInset；contentInset 存在 ⇒ 边距必须为 0；且受管 A4 单据的打印 CSS 必须带 printContentInsetCss( + box-decoration-break: clone（缺一即红）。"
+      - "判据 3·**逐页内缩**（会红）：四份单据（发货单 / 报价单 / 加工单 / 销售单）的 @media print 容器规则里 padding 取介质内缩、并带 box-decoration-break: clone。执行点 = frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx 的「③ 版面：@page A4（由介质矩阵生成）+ 分页不裁切 + 表头重复」、frontend/admin-web/tests/unit/components/SalesDoc.test.tsx 的「② 介质是**参数**不是副本：切 A4 后 @page 变、而逐格取值**逐字不变**」。"
+      - "🔴 红证（实跑）：① 把 a4 的 pageMargin 改回 12mm ⇒ 判据 1/2 必红（本机读数：vitest 4 failed / 5 passed）；② 抹掉容器的 printContentInsetCss( 与 box-decoration-break: clone ⇒ C10 的单据侧必红（内存变异逐条常驻，见该测试的「判别力自证」）。"
+      - "真机读数（Chromium 1243 = Chrome 14x；displayHeaderFooter: true + preferCSSPageSize: true；A4；两页样张）：改前 @page margin 12mm ⇒ 纸面出现 `10/19/26, 11:08 AM 观星台 - AI经营管理平台` + `about:blank 1/2`（= 用户截图同款四行）；改后 margin 0 + 容器内缩 12mm + clone ⇒ 零浏览器页眉页脚，且第 1 / 第 2 页首行 y 坐标**相同**（798.42pt）= 逐页内缩成立、版面未变。"
+    skip_reason: "[backend-contract] 纯前端打印版式（无 LLM 环节）：断言由 vitest 与 tests/unit_ci_workflows/test_print_media_matrix_guard.py 执行"
+    merge_log: "2026-10-19 新增（issue #7309）。病：A4 的 @page 边距 12mm ≥ Chrome 画页眉页脚的分界（实测 8.7/8.8mm）⇒ 客户拿到的凭证顶部多出日期与后台标题、底部多出订单 URL 与页码。修：A4 的 @page 边距写 0（结构性、不依赖阈值），版面内缩 12mm 走 contentInset + 单据容器 padding（box-decoration-break: clone 逐页重复）⇒ 纸面版式与改前逐毫米一致。另：销售单可切 A4，同批补 padding（continuous 介质取 0，纸面不变）。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/lib/print-media.test.ts"
+        - "frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx"
+        - "frontend/admin-web/tests/unit/components/SalesDoc.test.tsx"
+        - "tests/unit_ci_workflows/test_print_media_matrix_guard.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ==========================================================================
+  # UI-129（issue #7335，2026-10-19；issue #7533，2026-10-23 改判）—— 建品页「AI 生成商品图」。
+  #   用户逐字：「当前缺乏商品的主图和明细图，你能否根据用户提供的样本图通过大模型来
+  #   补充一份接近商品的样品图」+「如果效果可以的话，我希望做成商品创建中的功能的一部分」。
+  #   形态：样图（已上传的任意一张主图/详情图）→ 主图/材质/工艺/场景 四选一 → 生成 1 张（约 40s）→
+  #   **生成成功即自动填入图片位**（主图插 images[0] / 细节图追加 detailImages；再生成 = 替换上一张）。
+  #   2026-10-23 改判：改前多一步「用这张」，商家漏点 ⇒ 表单没变 ⇒ 保存后也没有（issue #7533）。不自动落库。
+
+  - id: UI-129
+    legacy_id: ""
+    title: "建品页 AI 生成商品图：样图 → 百炼图生图 → 生成即自动填入图片位（再生成替换，不落库；issue #7335 / #7533）"
+    domains:
+      - ui
+      - frontend
+      - product
+    tier: normal
+    tags:
+      - ai-image
+      - product-create
+      - image-generation
+    truths_ref: []
+    user_inputs:
+      - 「当前缺乏商品的主图和明细图，你能否根据用户提供的样本图通过大模型来补充一份接近商品的样品图」（用户 2026-10-19）
+      - 「如果效果可以的话，我希望做成商品创建中的功能的一部分」（用户 2026-10-19）
+    precondition: "本用例是 [backend-contract] 纯前端/接口契约用例：前置（已上传样图、admin-api 端点、ai-agent 内部端点）由三端单测自建或 mock（admin-web mock `@/lib/api`；admin-api mock ProductImageClient/FileStorageService；ai-agent mock httpx），不依赖共享夹具与真实服务 ⇒ 前置不成立时对应单测直接红；agent-eval 栈不跑它"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·后端不落库（会红）：POST /api/admin/products/ai-images 只回 {url, model}（data 恰好两个键）；控制器依赖面恰好 ProductImageGenerationService（无 ProductService / Mapper）。执行点 = ProductImageControllerTest + ProductImageGenerationServiceTest。"
+      - "判据 2·链路收口（会红）：临时 URL 只允许从 *.aliyuncs.com 下载并转存 OSS（非百炼域名 ⇒ 422 且不下载）；样图必须 https；用途白名单 main/texture/craft/scene 之外 ⇒ 422 且不发起生成请求。"
+      - "判据 3·ai-agent 模型轮换（会红）：配额类错误（429 / AllocationQuota）与「模型接不了该请求」（HTTP 400 InvalidParameter）自动切下一个模型；审核类 400（DataInspectionFailed）不切模型；**默认链 = qwen-image-3.0-pro、端点 = 阿里云 MaaS token-plan 的原生多模态路径（用户 2026-10-24 裁定，issue #7661）**，旧百炼模型与旧 host 不得回流（类级守卫 = tests/unit_ci_workflows/test_maas_audio_image_single_source.py 的 G1/G3）；全链不可用时报「模型不接这类请求（非配额原因）」而不是「额度用尽」；全部用尽 ⇒ 503；未配置 Key ⇒ 503 且不发外部请求（**不回落 PRIMARY 的 DeepSeek key**）。执行点 = backend/ai-agent-service/tests/test_generator.py。"
+      - "判据 4·前端（会红，issue #7533 改判）：无样图 ⇒ 按钮 disabled + 先上传提示；默认用第 1 张、多图可切换样图（生成携带所选样图 URL + kind）；**生成成功即自动填入图片位**（主图 ⇒ onApplyMain / images[0]；细节·工艺·场景 ⇒ onApplyDetail / detailImages 末位），**不存在「用这张」按钮**（回归守卫）；**再生成一张 ⇒ 携带上一次自动填入的 URL 作为 replaceUrl**（替换、不叠加；换用途跨槽位同样先摘旧位）；生成中 loading；失败**不落位**且错误可见可行动。执行点 = frontend/admin-web/tests/unit/components/ProductImageAI.test.tsx。"
+      - "判据 5·落位闭环（会红，issue #7533）：渲染真实 `ProductForm` ⇒ 生成成功**无需任何额外点击**主图位即变为 [生成图, 原图]；点「提交并上架」⇒ `onSubmit` 载荷 `images` 带上该 URL（= 用户逐字「保存后也没有」的判据）；再生成 ⇒ 替换不叠加；细节用途 ⇒ `detailImages` 末位；**生成期间（~40s）商家改过图片列表 ⇒ 落位基于最新列表**（删掉的图不复活、新图不丢，靠函数式更新）。执行点 = frontend/admin-web/tests/unit/components/ProductFormAIImage.test.tsx；编辑态样图候选去重 = ProductForm.test.tsx。"
+    skip_reason: "[backend-contract] 纯页面 AI 辅助入口（不经过 LLM 对话/工具），由 admin-api 单测 + ai-agent pytest + 前端 vitest 执行，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-19 新增（issue #7335）。数据侧：同日已为测试租户 46 的 6 个无图商品生成 24 张（6 主图 + 18 明细图）并写入 products.main_image / images / detail_images（qwen-image-3.0 封面 + 2.1-pro/mt-image-2.0/2.1-turbo 明细图自动切换）。功能侧：模型/提示词内核在 ai-agent（不落库、配额轮换），转存与页面入口在 admin-api/admin-web；平台统一 Key（用户 2026-10-19 裁定）。2026-10-19 追加（issue #7341）：默认回落链去掉图片翻译模型 qwen-mt-image-2.0，400 InvalidParameter 转为「切下一个模型」。2026-10-19 追加（issue #7344，用户 20:21 建议「编辑页也支持补图」）：入口本就在共享 ProductForm（编辑页可用），本次补多图切换样图 + 用这张后面板不收起。2026-10-23 追加（issue #7538，用户裁定）：默认链切到 qwen-mt-image-2.0（qwen-image-* 免费额度用尽）；它是图片翻译模型、不接图生图（#7341）⇒ 生成返回 503「模型不接这类请求（非配额原因）」，恢复 = 换回可用模型（裁定断言会提示同步配置注释 / .env.example / 本判据）。2026-10-23 改判（issue #7533，用户逐字「商品的AI生图点击生成后，不会自动设置到对应图片位置，而且保存后也没有」）：**生成成功即自动填入图片位**，取消「用这张」这一步（实测：改前生成后 images 不变、点用这张后才变、提交载荷正常 ⇒ 缺的只是自动落位）；再生成 = 替换上一张（replaceUrl 从两个列表摘除，不叠加）。2026-10-24 追加（issue #7661，用户裁定「主推理模型不要更换，只更换语音识别和图片生成的模型的 key endpoint 和模型名」）：生图默认链改判为 qwen-image-3.0-pro、端点改判为 MaaS token-plan 原生多模态路径；同一批把语音识别切到 qwen-audio-3.0-realtime-plus + MaaS 实时端点并**退役旧百炼 key**（缺 key fail-closed，不再回落主推理的 DeepSeek key）。判据 3 随之改判；类级守卫 = tests/unit_ci_workflows/test_maas_audio_image_single_source.py（G1 默认值 / G2 无 key 回落 / G3 旧模型名退场）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_generator.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/ProductImageControllerTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductImageGenerationServiceTest.java"
+        - "frontend/admin-web/tests/unit/components/ProductImageAI.test.tsx"
+        - "frontend/admin-web/tests/unit/components/ProductFormAIImage.test.tsx"
+      ci:
+        - pr-check.yml
+        - ai-agent-tests.yml
+      verifies: []
+
+  # ==========================================================================
+  # UI-130（issue #7388，2026-10-20）—— 销售订单列表：查询区域默认折叠。
+  #   用户逐字（截图圈出整块查询区）：「这里的查询区域默认折叠起来」。
+  #   形态：常驻一行（标题「筛选」+ 摘要「近一个月 · 收货人…」+「展开筛选」）→ 点开才渲染
+  #   7 个字段 + 查询/重置/刷新；**折叠态的字段不进 DOM**（不是 CSS 隐藏）。
+
+  - id: UI-130
+    legacy_id: ""
+    title: "销售订单列表查询区默认折叠：常驻一行摘要 + 展开才渲染筛选项（issue #7388）"
+    domains:
+      - ui
+      - frontend
+      - order
+    tier: normal
+    tags:
+      - search-panel
+      - collapse
+      - orders-list
+    truths_ref: []
+    user_inputs:
+      - 「这里的查询区域默认折叠起来」（用户 2026-10-20，销售订单页截图）
+    precondition: "本用例是 [backend-contract] 纯前端版式/交互契约用例：页面渲染时 mock `@/lib/api` 与 `@/components/orders`，不依赖共享夹具与真实服务 ⇒ 前置不成立时对应单测直接红；agent-eval 栈不跑它"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·原语 opt-in（会红）：不传 `collapsible` 的 `SearchPanel` 字段常驻且无折叠开关（客户 / 售后 / 品检 / 员工四页行为零变化）。执行点 = frontend/admin-web/tests/unit/components/SearchPanel.test.ts（describe「collapsible（issue #7388）」）。"
+      - "判据 2·折叠态 DOM 在场性（会红）：`collapsible` 默认收起时 `fields[].control` 与「查询/重置/刷新」三个按钮 `queryBy*` 为 null，`search-panel-toggle` 的 `aria-expanded=false` 且 `search-panel-summary` 在。执行点同上。"
+      - "判据 3·两态往返（会红）：点「展开筛选」⇒ 字段与三个按钮逐个回来、`aria-expanded=true`、摘要不再渲染；再点 ⇒ 字段又消失。执行点同上 + frontend/admin-web/tests/unit/pages/orders.test.tsx。"
+      - "判据 4·订单页默认收起且摘要说清时间范围（会红）：首屏取不到「请输入订单ID」与「查询」按钮，`search-panel-summary` 含「近一个月」；展开后 5 个文本框 + 2 个日期框 + 查询/重置/刷新全在。执行点 = orders.test.tsx。"
+      - "判据 5·版式判据不被折叠绕过（会红）：`orders-query-area-overflow.test.tsx` 的单一 grid / 无溢出 / label 定宽 / 字段格可缩在**展开态**逐条仍成立（不是靠容器里没有 grid 而假绿）。"
+      - "判据 6·收起态要**引导**用户去查询（会红，用户 2026-10-20 追加「折叠状态需要引导用户可以打开区域查询」）：收起时入口必须是**按钮形态**（`search-panel-toggle-label` 带 `border` + `rounded-lg`）且文案「展开筛选」、`title` 含「展开筛选区」；展开后同一位置降级成弱文字「收起」（无描边，不与「查询」抢 primary）。执行点 = SearchPanel.test.ts（判据 2/3）+ orders.test.tsx。"
+    skip_reason: "[backend-contract] 纯前端版式与交互契约（不经过 LLM 对话/工具），由 admin-web vitest 执行，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-20 新增（issue #7388）；同日追加「收起态引导」（用户逐字「折叠状态需要引导用户可以打开区域查询」⇒ 入口做成描边按钮形态 + title）。折叠能力落在共享原语 `SearchPanel`（`collapsible` / `defaultCollapsed` / `summary`），订单页显式传 `collapsible`；其它使用该原语的页面（客户 / 售后 / 品检 / 员工）本轮**有意不动**，重启条件 = 它们各自的筛选区字段数增长到压掉首屏列表时。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/SearchPanel.test.ts"
+        - "frontend/admin-web/tests/unit/pages/orders.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/orders-query-area-overflow.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/orders-creator-filter.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # UI-131（issue #7397，2026-10-20）—— 全站下拉框收口到「共享控件铬」+ 筛选条字段可增长。
+  #   用户逐字（三张截图）：「输入框长度不够，文字被遮住了」「我们所有页面的下拉框都看着很别扭，不协调」
+  #   「都是这种不协调的问题」。
+  #   病：业务面 38 处原生 <select> 各页自拼铬 —— 一部分没 appearance-none（系统原生箭头，
+  #   macOS 上是带框的小箭头，正是截图③红框圈住的那个）；写了 appearance-none 的几处又没有自绘箭尖
+  #   （下拉看起来「没有箭头」）；共享原语 Select 是第三种形态（rounded-lg + 叠层 ChevronDown）。
+  #   同时 SearchBar 的字段容器定宽 min-w-[200px] 且不 grow ⇒ 长占位文案被截断、按钮左侧留大片空白。
+
+  - id: UI-131
+    legacy_id: ""
+    title: "全站下拉框只有一种形态（共享 SELECT_CONTROL / 自绘箭尖）+ 筛选条字段参与伸缩（issue #7397）"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - design-system
+      - select
+      - search-bar
+      - control-chrome
+    truths_ref: []
+    user_inputs:
+      - 「输入框长度不够，文字被遮住了」（用户 2026-10-20，知识库关键词输入框截图红框）
+      - 「我们所有页面的下拉框都看着很别扭，不协调」（用户 2026-10-20，作业看板状态筛选截图红框）
+      - 「都是这种不协调的问题」（用户 2026-10-20，第三张下拉截图）
+    precondition: "本用例是 [backend-contract] 纯前端版式契约用例：源码扫描 + jsdom 渲染，不依赖共享夹具与真实服务 ⇒ 前置不成立时对应单测直接红；agent-eval 栈不跑它"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·业务面下拉必须引用共享铬（会红）：`src/**`（除 `src/components/ui/**`）里每个真实 `<select>` 开标签必须含 `SELECT_CONTROL`；只借箭尖（`SELECT_CHEVRON`）的面必须登记在冻结台账且台账只许缩短。执行点 = frontend/admin-web/tests/unit/select-control-unification.test.tsx（describe「判据 1」）。"
+      - "判据 2·共享铬不许被削弱（会红）：`SELECT_CONTROL` 仍带 `appearance-none` / `h-9` / `border-neutral-300` / `pr-9` / `rounded` / 自绘箭尖背景 / 焦点环 / disabled 态；表单面 `SELECT_CONTROL_FIELD` = 同一套 + `rounded-lg`。执行点同上（判据 2）。"
+      - "判据 3·单一份箭尖图形（会红）：`Select` 原语不再 import `ChevronDown`、不再叠第二个箭头，改用 `SELECT_CONTROL_FIELD`。执行点同上（判据 3）。"
+      - "判据 4·筛选条字段参与伸缩（会红）：`SearchBar` 字段容器带 `flex-1` + `basis-[22rem]`、不再有定宽 `min-w-[200px]`；输入框 `w-full` 吃满容器 ⇒ 长占位文案（「搜索标题 / 关键词 / 常见问法 / 回答内容」）不再被截断。执行点同上（判据 4）。"
+      - "判据 5·判别力自证（会红）：注入「自己拼铬」「台账外的 SELECT_CHEVRON」「注释里的 <select> 字样」三种形态，纯函数必须在内存里分别判红 / 判红 / 放行（不制造假红）。执行点同上（describe「判别力自证」）。"
+    skip_reason: "[backend-contract] 纯前端版式契约（不经过 LLM 对话/工具），由 admin-web vitest 执行，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-20 新增（issue #7397）。38 处业务 `<select>` 全部改引用 `SELECT_CONTROL`（`Select.tsx` 唯一真值：appearance-none + 自绘暖色箭尖 + h-9 + 焦点环），`Pagination` 紧凑档与 `register` 大字面只借 `SELECT_CHEVRON`（后者登记台账，理由：h-11 表单硬塞 h-9 会与同页输入框不齐）。顺带修 `SearchBar` 定宽字段（占位文案截断）。`Select` 原语去掉叠层 `ChevronDown`（同一份箭尖图形）。判据 = 新增类级元守卫 + 既有 design-system-form-fields / filter-area-primitive-guard 全绿。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/select-control-unification.test.tsx"
+        - "frontend/admin-web/tests/unit/components/SearchBar.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/knowledge.test.tsx"
+        - "frontend/admin-web/tests/unit/design-system-form-fields.test.tsx"
+        - "frontend/admin-web/tests/unit/filter-area-primitive-guard.test.ts"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: UI-132
+    legacy_id: ""
+    title: "黄金策悬浮助手「全屏（最大化）」必须铺满视口 —— 历史拖拽 px 尺寸不得覆盖全屏布局，全屏不渲染缩放手柄（issue #7508）"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - admin-web
+      - floating-assistant
+      - fullscreen
+      - resize
+    truths_ref:
+      - frontend-fix.no-api-change
+    user_inputs:
+      - "这里最大化之后显示的有问题，没有呈现最大化的状态"
+      - "我看只有我电脑是这样的，我换一台电脑就正常了"
+    precondition: "本用例是 [backend-contract] 纯前端布局契约用例（jsdom 渲染 + 源码行为），不依赖真实服务与共享夹具；前置不成立时对应单测直接红，agent-eval 栈不跑它"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·全屏铺满（会红）：localStorage 残留 `mibao_chat_panel_width/height`（620×480）时点「全屏」⇒ 面板根 `chat-panel-resize-container` 的 style 必须是 `width:100%` / `height:100%`（修前实测 `620px` / `480px`，即左上角小窗 + 右上露出底层页面）。执行点 = frontend/admin-web/tests/unit/floating-assistant.test.tsx（describe「全屏」）"
+      - "判据 2·全屏无缩放手柄（会红）：全屏态四个手柄（`chat-panel-resize-handle` / `-top` / `-horizontal` / `-corner`）全部不渲染；退出全屏后全部恢复（最大化窗口不可再被拖成小窗，也阻断在最大化态把 px 写回 localStorage）。执行点同上"
+      - "判据 3·退出全屏可逆（会红）：退出全屏后遮罩 `float-assistant-overlay` 回来、面板回到历史 px（620/480）；无历史 px 时全屏同样 100%（对照：不是靠清缓存才正常）。执行点同上"
+      - "判据 4·模式外观契约矩阵（类级，未登记即红）：closed / centered / fullscreen / minimized 四模式 × {面板根 / 模态遮罩 / 悬浮球 / 最小化浮窗 / 缩放手柄} 逐格断言 —— 新增或改动任一模式必须在该表加行。执行点 = 同文件 describe「模式外观契约」的 it.each"
+      - "既有判据零放宽：UI-021 / UI-022 / UI-023 / UI-029 的拖拽缩放、持久化、双击复位、最小化浮窗行为全绿（MibaoChatPanel.test.tsx / floating-assistant.test.tsx 一条断言都没改弱）"
+    skip_reason: "[backend-contract] 纯前端 React 组件/布局契约，由 admin-web vitest 执行（jsdom + 真机截图取证），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-23 新增（issue #7508，用户真机截图 + 逐字「这里最大化之后显示的有问题，没有呈现最大化的状态」「我看只有我电脑是这样的，我换一台电脑就正常了」）：`MibaoChatPanel` 的 `containerStyle` 里 hooks 残留 px **优先于** `defaultWidth/defaultHeight` ⇒ 拖过一次面板后，`FloatingAssistant` 全屏分支传的 `100%/100vh` 被判无效，面板停在左上角旧 px 尺寸。修法 = 新增显式 `fullscreen` 模式位（尺寸归视口所有：`100%`/`100%`）+ 全屏不渲染缩放手柄；持久化语义与四模式状态机一字未改（退出全屏仍回到用户拖过的尺寸）。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/floating-assistant.test.tsx"
+        - "frontend/admin-web/tests/unit/components/MibaoChatPanel.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: UI-133
+    legacy_id: ""
+    title: "客户详情「标签」：没有标签可加时点「+」必须给出可见反馈 + 去处（系统无标签 / 客户已打满两种空态）"
+    domains:
+      - ui
+      - frontend
+      - customer
+    tier: normal
+    tags:
+      - ui
+      - admin-web
+      - customer-tag
+      - empty-state
+      - inert-trigger
+    truths_ref:
+      - frontend-fix.no-api-change
+    user_inputs:
+      - "当系统没有标签时，点击+号无反应，应该引导客户去添加标签"
+    precondition: "本用例是 [backend-contract] 纯前端交互契约用例（jsdom 渲染 + 源码形态扫描），不依赖真实服务与共享夹具；前置不成立时对应单测直接红，agent-eval 栈不跑它"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·系统无标签时点「+」有反馈（会红）：`getCustomerTags` 返回空数组时点触发器 ⇒ 面板 `customer-tag-empty` 在场、文案说明「系统还没有标签」、入口「去添加标签」把路由推到 `/customers?manageTags=1`。修前形态 = 面板被 `availableTags.length > 0` 门控 ⇒ 点「+」零反馈（触发器可点、DOM 无任何变化）。执行点 = frontend/admin-web/tests/unit/pages/customer-detail-tags-empty.test.tsx"
+      - "判据 2·两种空态不混（会红）：标签存在但该客户已全部关联 ⇒ 文案是「全部标签」、不得说成「系统还没有标签」，入口换为「管理标签」且同样推到 `/customers?manageTags=1`。执行点同上"
+      - "判据 3·负控（会红）：未点击时无空态面板且 `aria-expanded=false`；有可加标签时不出空态、选择器照常列出可加的那一条（空态不得掩盖正常选择器）。执行点同上"
+      - "判据 4·深链一步到位（会红）：`/customers?manageTags=1` ⇒ 客户列表页直接打开「标签管理」模态（「新建标签」表单 / 「已有标签」块在场）；不带参数 ⇒ 不自动打开（进客户列表不该被弹窗打断）。执行点 = frontend/admin-web/tests/unit/pages/customers-tag-deeplink.test.tsx"
+      - "判据 5·类级元守卫（会红）：`frontend/admin-web/src/**` 里 0 处「state 开合的浮层被 `列表.length > 0` 门控」的形态（`{showXxx && 某处.length > 0 && (`）—— 修前恰 1 处 = 本单病灶；判别力自证 = 修前那一行原样注入必须命中、良性写法（只由 state 门控 / 只判列表非空 / 整行注释里的反例）必须放行；扫描面非空（文件数 > 100）防「空集比空集」的假绿。执行点 = frontend/admin-web/tests/unit/popover-empty-gate-guard.test.ts"
+    skip_reason: "[backend-contract] 纯前端交互 + 源码形态契约（不经过 LLM 对话/工具），由 admin-web vitest 执行，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-23 新增（issue #7526，用户客户详情截图 + 逐字「当系统没有标签时，点击+号无反应，应该引导客户去添加标签」）：面板渲染条件由 `showTagPicker && availableTags.length > 0` 改为「`showTagPicker` 每次都渲染」+ 内容三分支（可加标签列表 / 系统无标签空态 / 客户已打满空态），空态里给「去添加标签 | 管理标签」→ `/customers?manageTags=1`；客户列表页按该参数直接打开标签管理模态（`window.location` 读参，与入库单 #7524 深链同口径）。触发器补 `aria-label`/`aria-expanded`/`aria-haspopup`（纯图标按钮的无障碍名）。类级固化 = 源码形态守卫 `popover-empty-gate-guard.test.ts`（修前 1 处、修后 0 处）。不改后端、不改标签数据模型，标签绑定语义一字未动。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/customer-detail-tags-empty.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/customers-tag-deeplink.test.tsx"
+        - "frontend/admin-web/tests/unit/popover-empty-gate-guard.test.ts"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: UI-134
+    legacy_id: ""
+    title: "销售单左上角「作业单扫码报工」二维码：码值逐字取服务端 processingOrder.scan_url（前端不拼域名/路径）+ 纸面只留**竖排**「扫码报工」（短码不上产品面，issue #7608）+ 缺码不画假码（不回落作业单号），工人扫码进报工页（issue #7530）"
+    domains:
+      - ui
+      - frontend
+      - order
+      - print
+    tier: normal
+    tags:
+      - ui
+      - order
+      - print
+      - sales-doc
+      - work-order-qr
+    truths_ref:
+      - frontend-fix.no-api-change
+      - frontend-fix.vitest
+    user_inputs:
+      - "销售单不要品名，并且把作业出库单手机端链接对应的二维码信息放置在左上角，工人可以通过扫码进入报工页面"
+    precondition: "本用例是 [backend-contract] 纯前端打印版式契约（jsdom 渲染），不依赖真实服务与共享夹具；前置不成立时对应单测直接红，agent-eval 栈不跑它"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·码值只认服务端下发（会红）：纸面二维码的内容逐字 = `processingOrder.scan_url`（示例域刻意不用 app.migaozn.com）⇒ 前端自己拼 `{base}/o/{短码}` 会印出另一个地址 ⇒ 必红。执行点 = frontend/admin-web/tests/unit/components/SalesDoc.test.tsx 的「⑬ 有作业单扫码短链 ⇒ 纸面左上角出码，码值逐字 = 服务端 scan_url」+「⑬ 红证：前端自己拼 `{base}/o/{短码}` ⇒ 码值与服务端下发值不同 ⇒ 上面那条必红」"
+      - "判据 2·位置在纸面左上角（会红）：二维码块属于 `.sales-sheet` 的第一段（与抬头并排），且文档顺序在「销售单」标题之前；不与页脚收款码混在一处。执行点 = 同文件「⑬ 有作业单扫码短链…」"
+      - "判据 3·纸面只留**竖排**「扫码报工」、短码不上产品面（会红，issue #7608）：标签带 `writing-mode: vertical-rl`（改成横排 ⇒ 红），且 `sales-work-order-short-code` 节点取不到（把短码行加回去 ⇒ 红）。兜底不靠这张纸：工人报工页有「输码（短码 / 加工单号 / 订单号）」输入框，短码仍印在任务卡上（`TaskCardPrint` 的 `part_short_code`），本单纸面本来就印「单号」。执行点 = 同文件「⑬ 纸面只留**竖排**「扫码报工」，短码不印在销售单上（issue #7608）」"
+      - "判据 4·缺码不画假码（会红）：无 `scan_url`（存量单未实例化短码 / 没有作业单 / 读面没取到）⇒ 零二维码、零占位框，纸面既不出现作业单号也不出现裸短码（扫出来只有一串文本、打不开任何页面 = issue #6867 治过的病）。执行点 = 同文件「⑬ 缺码不画假码」"
+      - "判据 5·**类级元守卫**（让同类进不来）：受管打印单据里不得出现扫码短链路径段（`/o/` 作业单级 · `/s/` 部位级）—— 谁再在纸面拼域名 / 路径段 ⇒ 红（含内存注入自证：拼路径段的样本判红、逐字取 `scan_url` 的样本判绿，防「空判据」）。执行点 = tests/unit_ci_workflows/test_print_media_matrix_guard.py 的 C11（test_c11_print_docs_never_assemble_scan_short_links）；另一条类级判据 = 同文件 C12（test_c12_customer_visible_docs_never_print_internal_short_code）：客户可见纸面（销售单 / 报价单 / 发货单 / 加工单）不得读取或渲染 `short_code` —— 把短码行加回销售单即红"
+    skip_reason: "[backend-contract] 纯前端打印版式与扫码入口取值（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/SalesDoc.test.tsx 执行"
+    merge_log: "2026-10-23 新增（issue #7530，用户逐字「销售单不要品名，并且把作业出库单手机端链接对应的二维码信息放置在左上角，工人可以通过扫码进入报工页面」）：销售单抬头左侧加作业单扫码报工码 —— 码值 = 服务端 `scan_url`（`{base}/o/{短码}` ⇒ 服务端 302 到工人报工页 `/w/`），短码印在码旁作手输兜底，无码整块不出现；数据来源 = 订单详情页既有的 `processingOrder` 读面（与 `ProcessingDoc` 同一份，不新增后端接口）。2026-10-24 改判（issue #7608，用户逐字「不要在产品上体现短码了，工人端还有输入短码的地方」）：短码从销售单纸面退场、标签改竖排（省 ≈9mm 横向、高度不变），兜底移到工人端输入框 / 任务卡 / 本单「单号」。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/SalesDoc.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/order-detail.test.tsx"
+        - "tests/e2e/specs/orders/print-preview.spec.ts"
+        - "tests/unit_ci_workflows/test_print_media_matrix_guard.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: UI-135
+    legacy_id: ""
+    title: "纸面收款码：预览层与真打印都出码（打印前等异步取码）+ 上传图自动裁白边 + 缺码不画假码（issue #7536）"
+    domains:
+      - ui
+      - frontend
+      - order
+      - print
+    tier: normal
+    tags:
+      - ui
+      - admin-web
+      - print
+      - quotation
+      - sales-doc
+      - payment-qrcode
+    truths_ref:
+      - frontend-fix.vitest
+    user_inputs:
+      - "我上传了微信二维码，为什么报价单上没有展示收款码"
+      - "我上传的二维码周围有白色区域，在报价单上不要展示白色区域，只把二维码展示上去"
+    precondition: "本用例是 [backend-contract] 纯前端取数/图片处理契约用例：收款码 map 由单测自建并注入 settingsApi 打桩（不碰真库、不依赖共享夹具）；前置不成立时对应单测直接红，agent-eval 栈不跑它"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**取码时点**（会红）：预览层（`inline`）或「本次打印目标就是本单据」⇒ **立刻**取码；常驻挂载的屏幕态**零请求**（该读端点要 `order:list`，在无该码的页面上会变成「一进页面弹一条 403」，与 use-company-name 的 #7285 同族）。执行点 = frontend/admin-web/tests/unit/lib/use-payment-qrcodes.test.ts 的「② 未注入 + 未要出纸 ⇒ 零请求」「③ 🔴 红证：active（预览层 / 本次打印目标）⇒ 挂载即取」"
+      - "判据 2·🔴 **打印前等码**（会红）：`usePrintDoc` 在 `window.print()` 之前 await 同一份取码 Promise（上限 `PRINT_ASSET_WAIT_MS` = 2.5s，超时也出纸），并让出一帧等 React 提交；**没有码在飞**时走同步路径（发货单 / 洗水唛的既有读数一字未变）。执行点 = frontend/admin-web/tests/unit/lib/print-doc.test.tsx 的「⑤ 🔴 红证（issue #7536）：收款码在飞 ⇒ print 等它 resolve 之后才调用」"
+      - "判据 3·🔴 **裁白边发生在上传时**（会红，用户 2026-10-23 追加裁定「直接改成上传时裁」）：`settings/page.tsx` 的收款码上传先过 `trimWhiteMarginFile(file)` —— canvas 亮度扫描（阈值 `QR_CONTENT_LUMINANCE` = 245，亮度 ≥ 阈值为背景）取内容外接框后重绘成 PNG；四边留白不对称也裁对；无白边（整帧即内容）⇒ 原文件不重编码；**任何失败（无 canvas / 解码超时或失败 / 编码失败 / 全白）一律退回原文件**（上传宁可有白边，不许传不上去）。执行点 = frontend/admin-web/tests/unit/lib/qr-image.test.ts（①~⑫）+ tests/unit/pages/settings.test.tsx 的「🔴 收款码上传前先裁白边」「裁边失败 ⇒ 照常上传」"
+      - "判据 4·**缺码不画假码 / 注入优先仍然成立**：调用方注入 map ⇒ 一次请求都不发、连裁边都不做；拉取失败或空响应 ⇒ 整块不渲染。执行点 = use-payment-qrcodes.test.ts 的「① 注入」「⑥ 失败 ⇒ 空 map」+ QuotationDoc.test.tsx 的「收款码缺 imageUrl ⇒ 不画假码」"
+      - "🔴 红证（真实 Chromium 实测读数，修前）：预览纸框内 img = 0、收款码请求 0 次；模拟 `beforeprint` 当帧 img = 0，1.5s 后才是 1（纸面快照早已完成）⇒ 预览永远无码、第一次打印纸上无码。修后：预览纸框内出码、`window.print()` 在取码 resolve 之后才调用。"
+      - "边界（照实登记）：① 裁边只作用于**新上传**的图 —— **存量带白边的图不会自动变干净**，需在「企业基础设置 → 收款码」重新上传一次（界面文案已提示）；② 不做服务端重编码（无新依赖）；③ 渲染口不碰像素（不依赖 OSS 的 CORS，口径对所有人一致）。"
+    skip_reason: "[backend-contract] 纯前端取数时点 + 图片裁边（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/use-payment-qrcodes.test.ts、tests/unit/lib/qr-image.test.ts、tests/unit/lib/print-doc.test.tsx、tests/unit/components/QuotationDoc.test.tsx 执行"
+    merge_log: "2026-10-23 新增（issue #7536，用户两次逐字报障：报价单没有收款码 / 二维码白边要裁掉）。根因两条：① `usePaymentQrcodes` 只在 `beforeprint` 取码，而预览层不派发该事件、真打印的纸面快照又在 `beforeprint` 当帧完成（异步请求来不及）⇒ 预览永远空、第一次打印无码；② 上传原图原样塞进 22mm 方框，白边一起印上。修法：模块级缓存取码（预览/打印目标时触发、`usePrintDoc` 打印前 await）+ **上传时** canvas 裁到内容外接框（失败退回原文件）。口径改动登记：① 取消「第二次打印才带码」；② 裁边由「渲染时」改为「上传时」（用户裁定）。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/lib/use-payment-qrcodes.test.ts"
+        - "frontend/admin-web/tests/unit/lib/qr-image.test.ts"
+        - "frontend/admin-web/tests/unit/lib/print-doc.test.tsx"
+        - "frontend/admin-web/tests/unit/components/QuotationDoc.test.tsx"
+        - "frontend/admin-web/tests/unit/components/SalesDoc.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ==========================================================================
+  # UI-136（issue #7633）：父订单已删的作业单行不再扇出 404，订单号列写「订单已删除」
+  # ==========================================================================
+  - id: UI-136
+    legacy_id: ""
+    title: "作业看板：父订单已删（列表 orderNo 缺失）的行不再发 operations/piecework（404 toast 风暴），订单号列写「订单已删除」（issue #7633）"
+    domains:
+      - ui
+      - frontend
+      - processing-order
+    tier: normal
+    tags:
+      - ui
+      - admin-web
+      - production-board
+      - orphan
+      - backend-contract
+    truths_ref:
+      - frontend-fix.vitest
+    user_inputs:
+      - "用户 2026-10-24 PC 端截图：打开作业看板就弹 toast「请求的资源不存在」（可叠多层），列表里出现订单号 / 客户都是「—」的作业单行；点「刷新」仍复现"
+    precondition: "本用例是 [backend-contract] 纯前端取数/渲染契约用例：列表与两个详情端点都由单测打桩（不碰真库、不依赖共享夹具）；前置不成立时对应单测直接红，agent-eval 栈不跑它"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·🔴 **父订单缺失的行零请求**（会红）：判定口径 = 列表响应里 `!po.orderNo`（`processing_orders.order_id` 是 NOT NULL 外键、列表与明细同租户 ⇒ `orderNo == null` 当且仅当父订单已软删 / 不可解析），这类行**不进**懒加载 `pending` ⇒ 对 `/production/orders/{orderId}/operations` 与 `/production/orders/{orderId}/piecework` 各 **0 次**调用。执行点 = frontend/admin-web/tests/unit/pages/production-board.test.tsx 的「#7633 父订单已删的行：不扇出 operations/piecework，订单号列显示「订单已删除」」（红证：改前实测 `expected 1 to be +0`，即该行确实发了一次 `getOrderOperations('order-uuid-gone')`）"
+      - "判据 2·**同一用例内的负控**：正常行（`orderNo` 有值）**照常**请求两个端点 —— 否则「一个都不发」也能让判据 1 变绿（空跑式假绿）。"
+      - "判据 3·**可见文案是业务话**：该行订单号单元格渲染「订单已删除」（不是「—」、不是内部键）；客户列保持「—」（不编造客户）；**不新增**常驻告警条 / 红块、**不给**这类行「重试」入口（§31 P1/P3）。"
+      - "边界（照实登记）：① 「父订单缺失」的判定依赖 `orderNo` 缺失去推断，**不是**显式契约字段（若后续要 `orderMissing: true` 这类显式位，另立单改契约）；② 这些行仍在列表里（本 PR 不删数据 —— 存量孤儿子行的软删由 #7633 主会话在数据侧完成，物理清理涉钱需人工裁定）；③ 进度 / 计件两列对这类行仍显示 `0%（0/0）` / `¥0.00`（既有「详情缺失」形态，未改）。"
+    skip_reason: "[backend-contract] 纯前端取数 + 渲染契约（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/pages/production-board.test.tsx 执行"
+    merge_log: "2026-10-24 新增（issue #7633）。取号 = `scripts/next_case_id.py UI` 现取（main 001-135）⇒ **UI-136**。病根：懒加载对当前页每一行都发 `operations` + `piecework`，父订单已软删的行让 `ProductionService.resolveOrder` 返回 404「订单不存在」（该语义正确、不改），而全局 404 分支弹 toast ⇒ 每行 2 次、一进页面 N 次。修法 = 列表响应里 `!po.orderNo` 的行不进 `pending`（不请求、不重试），订单号列写「订单已删除」。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/production-board.test.tsx"
+
+  - id: UI-137
+    legacy_id: ""
+    title: "工人端裁剪报工确认批次：派工批次预填可改 / 未指派空着必须手输 / 回执带批次与余量（issue #7647）"
+    domains:
+      - ui
+      - frontend
+      - production
+    tier: normal
+    tags:
+      - ui
+      - worker-h5
+      - production
+      - scan-report
+      - batch-stock
+    truths_ref:
+      - frontend-fix.vitest
+    user_inputs:
+      - "裁剪报工的时候需要工人裁剪的哪个批次，如果通过智能派单的就默认展示指定批次，允许工人改，如果没指定批次就需要工人手输才能完成报工"
+    precondition: "本用例是 [backend-contract] 纯前端契约用例：服务端解析响应（`batch_required` / `batch_no` / `batch_candidates`）与报工回执由单测自建并打桩（假 DOM + fetch 替身，不碰真库），前置不成立时单测直接红；agent-eval 栈不跑它"
+    expectations: []
+    data_checks:
+      - "**判据 1·区块只在需要批次时出现（会红）**：`batch_required === true` ⇒ 报工主屏出「批次（这次从哪一批裁）」输入框 `#wh5-batch-input`；缺键 / false ⇒ 批次区块**一个字节都不渲染**、报工按钮与请求体与改前逐字一致（老响应零回归）。执行点 = frontend/worker-h5/tests/worker-h5-cutting-batch.test.mjs 的用例 ①②④。**红证**：把 `isBatchRequired` 改成恒 true ⇒ ④ 红；区块恒不渲染 ⇒ ①②③ 等 7 条红。"
+      - "**判据 2·派工批次预填且可改（会红）**：有派工批次 ⇒ 输入框 `value` = 该批次，工人可改成别的批次并原样进入请求体；没有 ⇒ 输入框为空。执行点 = 同文件用例 ①②③。**红证**：`currentBatchNo` 忽略工人输入（恒用预填）⇒ ③⑥⑦⑧-b 红。"
+      - "**判据 3·没填不让报工（会红）**：`batch_required` 且输入 trim 后为空 ⇒ 报工按钮 `disabled` + 一句可行动提示；硬点（模拟绕过 disabled）也**一个写请求都不发**。执行点 = 同文件用例 ②③-b。**红证**：去掉 render 侧的 `batchBlocked` 分支 ⇒ ②⑧ 红；去掉 app 侧闸 ⇒ ③-b 红（发出了请求）。"
+      - "**判据 4·请求体带工人确认的批次（会红）**：点报工时请求体含 `batch_no`（= 输入框/候选点选后的值，trim 过）；非裁剪工序**不带**该键（白名单构造）。执行点 = 同文件用例 ③④ + frontend/worker-h5/src/api.mjs 的 `completeByScan`。**红证**：api 侧不写 `body.batch_no` ⇒ ③ 红。"
+      - "**判据 5·候选批次可点选（会红）**：`batch_candidates[]` 渲染成 chip（批次号 + 余量 + 余量不足标记），点一下填入输入框；候选为空 ⇒ 整块候选区不渲染。执行点 = 同文件用例 ⑤。**红证**：不接线候选点击 ⇒ ⑤ 红；候选为空仍渲染空壳 ⇒ ⑤'' 红。"
+      - "**判据 6·回执显示批次与余量、缺键不印假数据（会红）**：报工成功回执句追加「批次 X · 余量 Y 米」；`batch_shortage_meters > 0` 追加缺口说明；三键缺键 / null ⇒ 整句不渲染（屏上不出现 `undefined` / `NaN` / `null`）。执行点 = 同文件用例 ⑥⑦。**红证**：把回执尾部改成 naive 插值 ⇒ ⑦ 红；不追加批次尾 ⇒ ⑥⑦ 红。"
+      - "**判据 7·下一屏只认服务端重解析（会红）**：报工成功后的下一屏按回执的 `next_batch_required` / `next_batch_no` / `next_batch_candidates` 渲染 —— 下一道不要批次（车位/打包）⇒ 批次区块**不出现**且按钮可点；仍要批次（报废不推进 ⇒ 仍是裁剪）⇒ 输入框空 + 按钮禁用 + 候选来自服务端；服务端给了预填值 ⇒ 预填。工人手输的值**不带到下一屏**（`state.batchNo` 清回 null）。执行点 = 同文件用例 ⑧ / ⑧′ / ⑧″ / ⑧-b。**红证**：沿用上一屏的 `batch_required` ⇒ ⑧ 红（打包屏多出输入框、按钮被禁死）；清空成 false ⇒ ⑧′ 红（裁剪屏填不了批次）；`resolved` 不清 `batchNo` ⇒ ⑧-b 红。"
+      - "**判据 8·一体机不被新规则卡死（会红）**：机台页（`machine.mjs` / `machine-app.mjs`）对裁剪工序：有派工批次 ⇒ 报工请求自动带 `batch_no`（屏面一字不变）；没有 ⇒ **零请求** + 大字「本单未指派批次：请到报工页填写批次后再报工」+ 去报工页入口；非裁剪 ⇒ 请求体不带该键。执行点 = frontend/worker-h5/tests/worker-h5-machine.test.mjs 的 ⑦ / ⑦′ / ⑦″。**红证**：机台不带 `batch_no` ⇒ ⑦ 红；去掉机台批次闸 ⇒ ⑦′ 红（发了请求）；恒显阻断提示 ⇒ ⑦″ 红。"
+    skip_reason: "[backend-contract] 纯前端（假 DOM + fetch 替身驱动真实装配层；无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/worker-h5/tests/worker-h5-cutting-batch.test.mjs 与 worker-h5-machine.test.mjs 执行"
+    merge_log: "2026-10-24 新增（issue #7647，用户逐字见 PG-092）。形态按用户裁定：派工指定批次默认展示、允许改；未指定必须手输才能完成报工；回执当场给「批次 + 余量 + 缺口」。前端**不按工序名猜**适用面（只认服务端 `batch_required`）—— 判定与记账面**同一个** `ProductionService#cuttingBatchItem`。同批处理一体机回归（机台页刻意无文本输入元素 ⇒ 无派工批次时指路报工页，不新增输入框）。"
+    traces:
+      tests:
+        - "frontend/worker-h5/tests/worker-h5-cutting-batch.test.mjs"
+        - "frontend/worker-h5/tests/worker-h5-machine.test.mjs"
       ci:
         - pr-check.yml
       verifies: []

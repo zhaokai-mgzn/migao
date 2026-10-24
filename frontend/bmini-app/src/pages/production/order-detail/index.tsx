@@ -52,7 +52,7 @@ import './index.scss'
 type PageState = 'loading' | 'ok' | 'missing-id' | 'forbidden' | 'no-processing-order' | 'error'
 
 /** 权限文案与电脑端同口径（权限码真值在后端 `@RequirePermission`） */
-const PERMISSION_TEXT = '无「生产看板」查看权限（需要权限码 production:view）'
+const PERMISSION_TEXT = '无「作业看板」查看权限（需要权限码 production:view）'
 
 /**
  * 「商品身份」组的行（issue #6901 包 B）：品名 / 货号 / 颜色 / 售卖方式 / 单位。

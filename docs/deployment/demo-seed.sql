@@ -33,23 +33,23 @@ WHERE NOT EXISTS (SELECT 1 FROM categories WHERE id = 'cat-fabric' AND tenant_id
 INSERT INTO products (id, tenant_id, name, category_id, base_price, description, unit, pricing_type, sku_code, status)
 SELECT 'p-zg-001', :tenant_id, '星空全遮光窗帘', 'cat-curtain', 98.00,
        '高精密涤纶三层织造，遮光率99%以上，物理遮光无甲醛，双面同色，垂感优良',
-       '米', 'per_meter', 'MG-ZG-001', 'active'
+       '米', 'per_meter', 'MG-ZG-001', 'on_sale'
 WHERE NOT EXISTS (SELECT 1 FROM products WHERE id = 'p-zg-001' AND tenant_id = :tenant_id);
 
 INSERT INTO products (id, tenant_id, name, category_id, base_price, description, unit, pricing_type, sku_code, status)
 SELECT 'p-zg-002', :tenant_id, '云朵半遮光窗帘', 'cat-curtain', 68.00,
        '涤纶高密度编织，遮光率75%-85%，莫兰迪色系，柔软细腻，适合客厅书房',
-       '米', 'per_meter', 'MG-ZG-002', 'active'
+       '米', 'per_meter', 'MG-ZG-002', 'on_sale'
 WHERE NOT EXISTS (SELECT 1 FROM products WHERE id = 'p-zg-002' AND tenant_id = :tenant_id);
 
 INSERT INTO products (id, tenant_id, name, category_id, base_price, description, unit, pricing_type, sku_code, status)
 SELECT 'p-sl-001', :tenant_id, '雾霭柔光纱帘', 'cat-sheer', 35.00,
        '涤纶雪纺纱，透光不透人，2.8米超宽幅减少拼接，轻盈飘逸',
-       '米', 'per_meter', 'MG-SL-001', 'active'
+       '米', 'per_meter', 'MG-SL-001', 'on_sale'
 WHERE NOT EXISTS (SELECT 1 FROM products WHERE id = 'p-sl-001' AND tenant_id = :tenant_id);
 
 -- ──────────────────────────────────────────────
--- 3. 颜色 + SKU 矩阵（颜色×售卖方式×门幅）
+-- 3. 颜色 + SKU 矩阵（颜色 × 门幅；售卖方式已在 V111 上移为商品级，不再是 SKU 维度）
 -- ──────────────────────────────────────────────
 -- 星空全遮光：象牙白/浅灰/藏蓝
 INSERT INTO product_colors (tenant_id, product_id, color_name, main_color_hex, sort_order)
@@ -86,24 +86,102 @@ INSERT INTO product_colors (tenant_id, product_id, color_name, main_color_hex, s
 SELECT :tenant_id, 'p-sl-001', '米白', '#F5EFE0', 2
 WHERE NOT EXISTS (SELECT 1 FROM product_colors WHERE tenant_id = :tenant_id AND product_id = 'p-sl-001' AND color_name = '米白');
 
--- SKU：星空全遮光（象牙白 × 2.8米）
+-- SKU 矩阵（issue #7583 缺陷 2）：**每个颜色至少一行**，主销两档门幅（2.8 / 3.2）；
+-- 星空白/云朵 3 色 × 2 门幅，雾霭柔光纱（2.8 超宽幅）2 色 × 1 门幅。
+-- 为什么**逐行显式**（不写成 JOIN product_colors 的生成式）：判据要能**逐行静态读**
+--   `tests/unit_ci_workflows/test_seed_data_quality.py`（每个 color 有 SKU / 单价 ∈ SKU 价集 /
+--   门幅 canonical 都是**值**层面的判断，生成式只能靠 SQL 求值，离线判不了 ⇒ 判不了就成了假绿）。
 -- 色号用**相关子查询**取（`FROM product_colors c`），不是 `DO` 块里的 `SELECT … INTO`：
--- 后者要把 `:tenant_id` 带进 dollar-quoted 体内，而 psql 在体内不做替换（issue #5502）。
--- 写法与 tests/agent_eval/fixtures/*.sql 的 SKU 段同源：`price` 取货号 `base_price`。
-INSERT INTO product_skus (tenant_id, product_id, color_id, color_name, door_width, price, stock, sku_code)
-SELECT :tenant_id, c.product_id, c.id, c.color_name, '2.8米', p.base_price, 500, 'ZG001-象牙白-2.8米'
-FROM product_colors c
-JOIN products p ON p.id = c.product_id
-WHERE c.tenant_id = :tenant_id AND c.product_id = 'p-zg-001' AND c.color_name = '象牙白'
-  AND NOT EXISTS (SELECT 1 FROM product_skus WHERE tenant_id = :tenant_id AND product_id = 'p-zg-001' AND color_id = c.id AND door_width = '2.8米');
+--   后者要把 `:tenant_id` 带进 dollar-quoted 体内，而 psql 在体内不做替换（issue #5502）。
+-- ⚠️ `door_width` 落 **canonical 裸数值**（与 `SkuMatrix.tsx` 的 `normalizeDoorWidth`、
+--    eval 种子 `'2.8'` 同口径）；带单位的 `2.8米` 只允许出现在**显示层**。
 
--- SKU：雾霭柔光纱（白色 × 2.8米）
+-- 星空全遮光（p-zg-001，¥98.00/米）：象牙白 / 浅灰 / 藏蓝 × 2.8 / 3.2
 INSERT INTO product_skus (tenant_id, product_id, color_id, color_name, door_width, price, stock, sku_code)
-SELECT :tenant_id, c.product_id, c.id, c.color_name, '2.8米', p.base_price, 800, 'SL001-白色-2.8米'
+SELECT :tenant_id, 'p-zg-001', c.id, '象牙白', '2.8', 98.00, 500, 'MG-ZG-001-象牙白-2.8'
 FROM product_colors c
-JOIN products p ON p.id = c.product_id
+WHERE c.tenant_id = :tenant_id AND c.product_id = 'p-zg-001' AND c.color_name = '象牙白'
+  AND NOT EXISTS (SELECT 1 FROM product_skus s WHERE s.tenant_id = :tenant_id AND s.product_id = 'p-zg-001' AND s.color_id = c.id AND s.door_width = '2.8');
+
+INSERT INTO product_skus (tenant_id, product_id, color_id, color_name, door_width, price, stock, sku_code)
+SELECT :tenant_id, 'p-zg-001', c.id, '象牙白', '3.2', 98.00, 400, 'MG-ZG-001-象牙白-3.2'
+FROM product_colors c
+WHERE c.tenant_id = :tenant_id AND c.product_id = 'p-zg-001' AND c.color_name = '象牙白'
+  AND NOT EXISTS (SELECT 1 FROM product_skus s WHERE s.tenant_id = :tenant_id AND s.product_id = 'p-zg-001' AND s.color_id = c.id AND s.door_width = '3.2');
+
+INSERT INTO product_skus (tenant_id, product_id, color_id, color_name, door_width, price, stock, sku_code)
+SELECT :tenant_id, 'p-zg-001', c.id, '浅灰', '2.8', 98.00, 500, 'MG-ZG-001-浅灰-2.8'
+FROM product_colors c
+WHERE c.tenant_id = :tenant_id AND c.product_id = 'p-zg-001' AND c.color_name = '浅灰'
+  AND NOT EXISTS (SELECT 1 FROM product_skus s WHERE s.tenant_id = :tenant_id AND s.product_id = 'p-zg-001' AND s.color_id = c.id AND s.door_width = '2.8');
+
+INSERT INTO product_skus (tenant_id, product_id, color_id, color_name, door_width, price, stock, sku_code)
+SELECT :tenant_id, 'p-zg-001', c.id, '浅灰', '3.2', 98.00, 400, 'MG-ZG-001-浅灰-3.2'
+FROM product_colors c
+WHERE c.tenant_id = :tenant_id AND c.product_id = 'p-zg-001' AND c.color_name = '浅灰'
+  AND NOT EXISTS (SELECT 1 FROM product_skus s WHERE s.tenant_id = :tenant_id AND s.product_id = 'p-zg-001' AND s.color_id = c.id AND s.door_width = '3.2');
+
+INSERT INTO product_skus (tenant_id, product_id, color_id, color_name, door_width, price, stock, sku_code)
+SELECT :tenant_id, 'p-zg-001', c.id, '藏蓝', '2.8', 98.00, 300, 'MG-ZG-001-藏蓝-2.8'
+FROM product_colors c
+WHERE c.tenant_id = :tenant_id AND c.product_id = 'p-zg-001' AND c.color_name = '藏蓝'
+  AND NOT EXISTS (SELECT 1 FROM product_skus s WHERE s.tenant_id = :tenant_id AND s.product_id = 'p-zg-001' AND s.color_id = c.id AND s.door_width = '2.8');
+
+INSERT INTO product_skus (tenant_id, product_id, color_id, color_name, door_width, price, stock, sku_code)
+SELECT :tenant_id, 'p-zg-001', c.id, '藏蓝', '3.2', 98.00, 260, 'MG-ZG-001-藏蓝-3.2'
+FROM product_colors c
+WHERE c.tenant_id = :tenant_id AND c.product_id = 'p-zg-001' AND c.color_name = '藏蓝'
+  AND NOT EXISTS (SELECT 1 FROM product_skus s WHERE s.tenant_id = :tenant_id AND s.product_id = 'p-zg-001' AND s.color_id = c.id AND s.door_width = '3.2');
+
+-- 云朵半遮光（p-zg-002，¥68.00/米）：奶白 / 雾蓝 / 豆沙粉 × 2.8 / 3.2
+INSERT INTO product_skus (tenant_id, product_id, color_id, color_name, door_width, price, stock, sku_code)
+SELECT :tenant_id, 'p-zg-002', c.id, '奶白', '2.8', 68.00, 600, 'MG-ZG-002-奶白-2.8'
+FROM product_colors c
+WHERE c.tenant_id = :tenant_id AND c.product_id = 'p-zg-002' AND c.color_name = '奶白'
+  AND NOT EXISTS (SELECT 1 FROM product_skus s WHERE s.tenant_id = :tenant_id AND s.product_id = 'p-zg-002' AND s.color_id = c.id AND s.door_width = '2.8');
+
+INSERT INTO product_skus (tenant_id, product_id, color_id, color_name, door_width, price, stock, sku_code)
+SELECT :tenant_id, 'p-zg-002', c.id, '奶白', '3.2', 68.00, 480, 'MG-ZG-002-奶白-3.2'
+FROM product_colors c
+WHERE c.tenant_id = :tenant_id AND c.product_id = 'p-zg-002' AND c.color_name = '奶白'
+  AND NOT EXISTS (SELECT 1 FROM product_skus s WHERE s.tenant_id = :tenant_id AND s.product_id = 'p-zg-002' AND s.color_id = c.id AND s.door_width = '3.2');
+
+INSERT INTO product_skus (tenant_id, product_id, color_id, color_name, door_width, price, stock, sku_code)
+SELECT :tenant_id, 'p-zg-002', c.id, '雾蓝', '2.8', 68.00, 600, 'MG-ZG-002-雾蓝-2.8'
+FROM product_colors c
+WHERE c.tenant_id = :tenant_id AND c.product_id = 'p-zg-002' AND c.color_name = '雾蓝'
+  AND NOT EXISTS (SELECT 1 FROM product_skus s WHERE s.tenant_id = :tenant_id AND s.product_id = 'p-zg-002' AND s.color_id = c.id AND s.door_width = '2.8');
+
+INSERT INTO product_skus (tenant_id, product_id, color_id, color_name, door_width, price, stock, sku_code)
+SELECT :tenant_id, 'p-zg-002', c.id, '雾蓝', '3.2', 68.00, 480, 'MG-ZG-002-雾蓝-3.2'
+FROM product_colors c
+WHERE c.tenant_id = :tenant_id AND c.product_id = 'p-zg-002' AND c.color_name = '雾蓝'
+  AND NOT EXISTS (SELECT 1 FROM product_skus s WHERE s.tenant_id = :tenant_id AND s.product_id = 'p-zg-002' AND s.color_id = c.id AND s.door_width = '3.2');
+
+INSERT INTO product_skus (tenant_id, product_id, color_id, color_name, door_width, price, stock, sku_code)
+SELECT :tenant_id, 'p-zg-002', c.id, '豆沙粉', '2.8', 68.00, 320, 'MG-ZG-002-豆沙粉-2.8'
+FROM product_colors c
+WHERE c.tenant_id = :tenant_id AND c.product_id = 'p-zg-002' AND c.color_name = '豆沙粉'
+  AND NOT EXISTS (SELECT 1 FROM product_skus s WHERE s.tenant_id = :tenant_id AND s.product_id = 'p-zg-002' AND s.color_id = c.id AND s.door_width = '2.8');
+
+INSERT INTO product_skus (tenant_id, product_id, color_id, color_name, door_width, price, stock, sku_code)
+SELECT :tenant_id, 'p-zg-002', c.id, '豆沙粉', '3.2', 68.00, 260, 'MG-ZG-002-豆沙粉-3.2'
+FROM product_colors c
+WHERE c.tenant_id = :tenant_id AND c.product_id = 'p-zg-002' AND c.color_name = '豆沙粉'
+  AND NOT EXISTS (SELECT 1 FROM product_skus s WHERE s.tenant_id = :tenant_id AND s.product_id = 'p-zg-002' AND s.color_id = c.id AND s.door_width = '3.2');
+
+-- 雾霭柔光纱（p-sl-001，¥35.00/米）：白色 / 米白 × 2.8（超宽幅，2.8 单档）
+INSERT INTO product_skus (tenant_id, product_id, color_id, color_name, door_width, price, stock, sku_code)
+SELECT :tenant_id, 'p-sl-001', c.id, '白色', '2.8', 35.00, 800, 'MG-SL-001-白色-2.8'
+FROM product_colors c
 WHERE c.tenant_id = :tenant_id AND c.product_id = 'p-sl-001' AND c.color_name = '白色'
-  AND NOT EXISTS (SELECT 1 FROM product_skus WHERE tenant_id = :tenant_id AND product_id = 'p-sl-001' AND color_id = c.id AND door_width = '2.8米');
+  AND NOT EXISTS (SELECT 1 FROM product_skus s WHERE s.tenant_id = :tenant_id AND s.product_id = 'p-sl-001' AND s.color_id = c.id AND s.door_width = '2.8');
+
+INSERT INTO product_skus (tenant_id, product_id, color_id, color_name, door_width, price, stock, sku_code)
+SELECT :tenant_id, 'p-sl-001', c.id, '米白', '2.8', 35.00, 700, 'MG-SL-001-米白-2.8'
+FROM product_colors c
+WHERE c.tenant_id = :tenant_id AND c.product_id = 'p-sl-001' AND c.color_name = '米白'
+  AND NOT EXISTS (SELECT 1 FROM product_skus s WHERE s.tenant_id = :tenant_id AND s.product_id = 'p-sl-001' AND s.color_id = c.id AND s.door_width = '2.8');
 
 -- ──────────────────────────────────────────────
 -- 4. 加工项（6 个布艺核心加工项）
@@ -160,33 +238,57 @@ SELECT 'cu-003', :tenant_id, '陈阿姨', '13700137003', 'female', '宁波市', 
 WHERE NOT EXISTS (SELECT 1 FROM customer_profiles WHERE id = 'cu-003' AND tenant_id = :tenant_id);
 
 -- ──────────────────────────────────────────────
--- 6. 订单（4 个不同状态）
+-- 6. 订单（4 个不同状态 + 金额链闭合，issue #7583 缺陷 3）
+--    口径（判据 = tests/unit_ci_workflows/test_seed_data_quality.py）：
+--      ① `orders.total_amount` == Σ 该单 `order_items.subtotal`（逐单闭合，演示对账/报表才不会穿帮）；
+--      ② 每单**至少一条明细**（旧形态 o-003 / o-004 有单无明细）；
+--      ③ 明细 `unit_price` ∈ 该商品的 SKU 价集（p-zg-001 = 98.00 / p-zg-002 = 68.00 / p-sl-001 = 35.00）；
+--      ④ `quantity × unit_price` == `subtotal`；`actual_amount`（已收）≤ `total_amount`。
+--    ⇒ 改动任一金额时必须同步改另一半，否则判据当场红。
 -- ──────────────────────────────────────────────
 INSERT INTO orders (id, tenant_id, order_no, customer_name, customer_phone, customer_address, total_amount, actual_amount, status, follow_status, remark, created_at)
-SELECT 'o-001', :tenant_id, 'YK20260801001', '林女士', '13800138001', '杭州市西湖区文三路100号', 1280.50, 1280.50, 'completed', 'completed', '星空全遮光窗帘 2 套，打孔加工', NOW() - INTERVAL '20 days'
+SELECT 'o-001', :tenant_id, 'YK20260801001', '林女士', '13800138001', '杭州市西湖区文三路100号', 1234.80, 1234.80, 'completed', 'completed', '星空全遮光窗帘 2 套（象牙白 + 藏蓝），打孔加工', NOW() - INTERVAL '20 days'
 WHERE NOT EXISTS (SELECT 1 FROM orders WHERE id = 'o-001' AND tenant_id = :tenant_id);
 
 INSERT INTO orders (id, tenant_id, order_no, customer_name, customer_phone, customer_address, total_amount, actual_amount, status, follow_status, remark, created_at)
-SELECT 'o-002', :tenant_id, 'YK20260820002', '王先生', '13900139002', '杭州市滨江区江南大道200号', 3560.00, 3000.00, 'producing', 'following', '雪尼尔窗帘 3 套，韩式褶加工，对花（已付定金 3000，尾款 560 赊账）', NOW() - INTERVAL '3 days'
+SELECT 'o-002', :tenant_id, 'YK20260820002', '王先生', '13900139002', '杭州市滨江区江南大道200号', 3560.00, 3000.00, 'producing', 'following', '云朵半遮光窗帘 3 套 + 雾霭柔光纱帘，韩式褶加工，对花（已付定金 3000，尾款 560 赊账）', NOW() - INTERVAL '3 days'
 WHERE NOT EXISTS (SELECT 1 FROM orders WHERE id = 'o-002' AND tenant_id = :tenant_id);
 
 INSERT INTO orders (id, tenant_id, order_no, customer_name, customer_phone, customer_address, total_amount, actual_amount, status, follow_status, remark, created_at)
-SELECT 'o-003', :tenant_id, 'YK20260828003', '陈阿姨', '13700137003', '宁波市鄞州区', 890.00, 0.00, 'confirmed', 'pending', '雾霭柔光纱帘 1 套（未付款，赊账待收）', NOW() - INTERVAL '1 day'
+SELECT 'o-003', :tenant_id, 'YK20260828003', '陈阿姨', '13700137003', '宁波市鄞州区', 889.00, 0.00, 'confirmed', 'pending', '雾霭柔光纱帘 1 套（未付款，赊账待收）', NOW() - INTERVAL '1 day'
 WHERE NOT EXISTS (SELECT 1 FROM orders WHERE id = 'o-003' AND tenant_id = :tenant_id);
 
 INSERT INTO orders (id, tenant_id, order_no, customer_name, customer_phone, customer_address, total_amount, actual_amount, status, follow_status, remark, created_at)
-SELECT 'o-004', :tenant_id, 'YK20260829004', '林女士', '13800138001', '杭州市西湖区文三路100号', 2200.00, 0.00, 'pending', 'pending', '云朵半遮光窗帘 1 套，待确认尺寸（未付款）', NOW()
+SELECT 'o-004', :tenant_id, 'YK20260829004', '林女士', '13800138001', '杭州市西湖区文三路100号', 2040.00, 0.00, 'pending', 'pending', '云朵半遮光窗帘 1 套，待确认尺寸（未付款）', NOW()
 WHERE NOT EXISTS (SELECT 1 FROM orders WHERE id = 'o-004' AND tenant_id = :tenant_id);
 
--- 订单明细（o-001）
+-- 订单明细：o-001（星空全遮光 × 2 套 = 646.80 + 588.00 = 1234.80）
 INSERT INTO order_items (id, tenant_id, order_id, product_id, product_name, quantity, unit_price, width, height, subtotal, created_at)
 SELECT 'oi-001', :tenant_id, 'o-001', 'p-zg-001', '星空全遮光窗帘', 6.6, 98.00, 3.0, 2.5, 646.80, NOW() - INTERVAL '20 days'
 WHERE NOT EXISTS (SELECT 1 FROM order_items WHERE id = 'oi-001' AND tenant_id = :tenant_id);
 
--- 订单明细（o-002）
 INSERT INTO order_items (id, tenant_id, order_id, product_id, product_name, quantity, unit_price, width, height, subtotal, created_at)
-SELECT 'oi-002', :tenant_id, 'o-002', 'p-zg-001', '星空全遮光窗帘', 9.0, 128.00, 3.0, 2.7, 1152.00, NOW() - INTERVAL '3 days'
+SELECT 'oi-003', :tenant_id, 'o-001', 'p-zg-001', '星空全遮光窗帘', 6.0, 98.00, 3.2, 2.6, 588.00, NOW() - INTERVAL '20 days'
+WHERE NOT EXISTS (SELECT 1 FROM order_items WHERE id = 'oi-003' AND tenant_id = :tenant_id);
+
+-- 订单明细：o-002（云朵半遮光 40 米 × 68.00 + 雾霭柔光纱 24 米 × 35.00 = 3560.00）
+INSERT INTO order_items (id, tenant_id, order_id, product_id, product_name, quantity, unit_price, width, height, subtotal, created_at)
+SELECT 'oi-002', :tenant_id, 'o-002', 'p-zg-002', '云朵半遮光窗帘', 40.0, 68.00, 2.8, 2.7, 2720.00, NOW() - INTERVAL '3 days'
 WHERE NOT EXISTS (SELECT 1 FROM order_items WHERE id = 'oi-002' AND tenant_id = :tenant_id);
+
+INSERT INTO order_items (id, tenant_id, order_id, product_id, product_name, quantity, unit_price, width, height, subtotal, created_at)
+SELECT 'oi-004', :tenant_id, 'o-002', 'p-sl-001', '雾霭柔光纱帘', 24.0, 35.00, 2.8, 2.7, 840.00, NOW() - INTERVAL '3 days'
+WHERE NOT EXISTS (SELECT 1 FROM order_items WHERE id = 'oi-004' AND tenant_id = :tenant_id);
+
+-- 订单明细：o-003（雾霭柔光纱 25.4 米 × 35.00 = 889.00）
+INSERT INTO order_items (id, tenant_id, order_id, product_id, product_name, quantity, unit_price, width, height, subtotal, created_at)
+SELECT 'oi-005', :tenant_id, 'o-003', 'p-sl-001', '雾霭柔光纱帘', 25.4, 35.00, 3.0, 2.6, 889.00, NOW() - INTERVAL '1 day'
+WHERE NOT EXISTS (SELECT 1 FROM order_items WHERE id = 'oi-005' AND tenant_id = :tenant_id);
+
+-- 订单明细：o-004（云朵半遮光 30 米 × 68.00 = 2040.00）
+INSERT INTO order_items (id, tenant_id, order_id, product_id, product_name, quantity, unit_price, width, height, subtotal, created_at)
+SELECT 'oi-006', :tenant_id, 'o-004', 'p-zg-002', '云朵半遮光窗帘', 30.0, 68.00, 3.0, 2.6, 2040.00, NOW()
+WHERE NOT EXISTS (SELECT 1 FROM order_items WHERE id = 'oi-006' AND tenant_id = :tenant_id);
 
 -- ──────────────────────────────────────────────
 -- 完成
