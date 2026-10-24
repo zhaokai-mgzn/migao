@@ -14,6 +14,9 @@ import { createApi, PAGES_UNREAD, SESSION_EXPIRED } from './api.mjs'
 import { deviceHomeFromLocation, enterpriseCodeFromLocation, normalizeEnterpriseCode, parseScanInput } from './scan-input.mjs'
 import {
   afterComplete,
+  batchBlocked,
+  BATCH_GATE_HINT,
+  currentBatchNo,
   DEFAULT_WORKER_IDLE_MINUTES,
   DEFAULT_WORK_TYPE,
   doneNotice,
@@ -434,7 +437,8 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
     on('wh5-switch', async () => {
       // 一步切换：**保留** state.view（不丢扫码上下文）—— 只把身份换掉
       await api.logout()
-      state = { ...state, worker: null, mode: 'login', notice: '请登录要切换到的工人（扫码结果已保留）' }
+      // 换人 ⇒ 上一班手输的批次**不带走**（批次归属涉钱：绝不能把 A 的批次留给 B 报工）
+      state = { ...state, worker: null, mode: 'login', batchNo: null, notice: '请登录要切换到的工人（扫码结果已保留）' }
       draw()
     })
 
@@ -474,6 +478,15 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
       //    ⇒ 没有闸就会被连点。抄机台页那一把（machine-app.mjs::reportWork 的 `if (state.reporting) return`）。
       //    叠在既有幂等键之上：键保证「服务端只算一次」，闸保证「客户端只发一次」——两道都要。
       if (state.reporting) return
+      // 🔴 裁剪批次门禁（issue #7647）：要批次却没填 ⇒ **一个请求都不发**（服务端也有硬闸，但先拦一次
+      //    免得工人干等一个注定 422 的答复）。非裁剪工序 `batchBlocked` 恒 false ⇒ 这段是 no-op。
+      if (batchBlocked(state, state.view)) {
+        dispatch({ type: 'error', error: BATCH_GATE_HINT })
+        return
+      }
+      // 这一笔的批次在**按下那一刻**取值（早于 await / 重绘 ⇒ 送出的就是工人看到的那个值）。
+      // 非裁剪工序 ⇒ `''` ⇒ api 侧不写 `batch_no` 键（请求体与改前逐字节相同）。
+      const batchNo = currentBatchNo(state, state.view)
       // 🔴 幂等键**同一屏复用**（重试 = 服务端回放首次结果，绝不重复计件）；成功换屏 ⇒ 换新键。
       // 刻意**不**每次点击都新造一个：那样「第一次其实成功了、响应丢了，工人再点一次」= 第二笔报工。
       // 🔴 跨刷新（#4814）：屏上的键随刷新消失 ⇒ 补第二条通道 —— 上次**没收到服务端答复**的那一次
@@ -499,6 +512,7 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
           // 会把**报废**那笔记成**满额合格**。非「正常」一律显式 `qualified_qty: 0`
           // （不猜数量：`qty` 仍缺省 ⇒ 服务端照旧按「剩余应做」推进进度，"这次做了多少"不由前端编）。
           qualifiedQty: workType === DEFAULT_WORK_TYPE ? undefined : 0,
+          batchNo,
           clientRequestId,
         })
         // 服务端已答复（首次成功或回放）⇒ 这一笔有结论：下一笔必须换新键
@@ -531,6 +545,35 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
     // 形态与上面的工序选择器同一把（`data-*` 委派 + `is-on` 标记当前选中）。
     for (const el of doc.querySelectorAll('[data-work-type]')) {
       el.addEventListener('click', () => dispatchWorkType(el.dataset.workType))
+    }
+
+    // ── 裁剪报工：确认批次（issue #7647）──
+    // 🔴 **不整页重渲染**：每敲一个字就 `draw()` 会重建输入框 ⇒ 焦点丢失、光标跳走
+    //    （现场表现为「批次号打不进字」）。⇒ `input` 事件只做两件事：把值记进状态 + **就地**同步
+    //    报工按钮的禁用态与门禁提示（元素句柄不变，输入框保持可用）。
+    const syncBatchGate = () => {
+      const blocked = batchBlocked(state, state.view)
+      const report = doc.getElementById('wh5-report')
+      if (report && report.disabled !== blocked) report.disabled = blocked
+      const hint = doc.getElementById('wh5-batch-hint')
+      if (hint) hint.textContent = blocked ? BATCH_GATE_HINT : ''
+    }
+    const batchInput = doc.getElementById('wh5-batch-input')
+    if (batchInput) {
+      batchInput.addEventListener('input', () => {
+        state = reduce(state, { type: 'batch', batchNo: String(batchInput.value ?? '') })
+        syncBatchGate()
+      })
+    }
+    // 候选批次（服务端下发的本次可用批次 + 本批余量）：点一下就填入，同样不重绘。
+    for (const el of doc.querySelectorAll('[data-batch-no]')) {
+      el.addEventListener('click', () => {
+        const no = el.dataset.batchNo ?? ''
+        state = reduce(state, { type: 'batch', batchNo: no })
+        const input = doc.getElementById('wh5-batch-input')
+        if (input) input.value = no
+        syncBatchGate()
+      })
     }
   }
 

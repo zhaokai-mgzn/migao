@@ -50,6 +50,9 @@ export function initialState() {
     // 质检（issue #7162）：最新判定 / 读取中 / 读失败；qualityForm = 展开中的录入表单
     quality: null,
     qualityForm: null,
+    // 裁剪报工确认批次（issue #7647）：`null` = 工人还没动过输入框（⇒ 用服务端预填的派工批次）；
+    // 字符串 = 工人当前输入的原样值。只对 `batch_required` 为真的屏有意义（其余屏一个字节都不看）。
+    batchNo: null,
   }
 }
 
@@ -210,6 +213,8 @@ export function reduce(state, action) {
         mode: !view ? 'scan' : (needsSelection ? 'select' : 'main'),
         // 新一屏 = 新的一笔 ⇒ in-flight 闸归零（否则上一屏残留的「提交中」会把这一屏的按钮禁死）
         reporting: false,
+        // 新一屏 = 新的一张码 ⇒ 工人上一屏手输的批次**不带走**（预填值重新来自服务端）
+        batchNo: null,
       }
     }
     // 报工在飞（issue #6667 第 4 条）：置位在按钮点下的那一刻、清位在下面三处（换了屏 / 有了结论 / 登出）
@@ -238,6 +243,8 @@ export function reduce(state, action) {
         error: null,
         mode: 'main',
         reporting: false, // 有了结论 ⇒ 闸放开（否则接着领下一道时按钮是禁的）
+        // 这一笔的批次已记账 ⇒ 下一笔的输入框回到「没动过」（预填只来自服务端，绝不带上一笔的值）
+        batchNo: null,
       }
     // 报工三态选择（issue #5652 第二刀）：**只记在 view 上**（不进 `state.selection` ——
     // 那个键是**旧码的套 / 部位**选择，语义不同，混用会让"半截选择"判据失真）。
@@ -245,6 +252,11 @@ export function reduce(state, action) {
     // 「不把报废悄悄留给下一笔」是状态机自己保证的，不靠人记得清。
     case 'workType':
       return { ...state, view: { ...(state.view ?? {}), work_type: normalizeWorkType(action.workType) } }
+    // 裁剪批次输入（issue #7647）：**纯状态**动作（不发请求）+ 由装配层**就地**同步按钮禁用态 ——
+    // 刻意**不**走整页重渲染：那会重建输入框 ⇒ 焦点丢失、光标跳走（现场表现为「批次打不进字」）。
+    // `null` = 回到「没动过输入框」（预填重新取服务端的派工批次）。
+    case 'batch':
+      return { ...state, batchNo: action.batchNo === null ? null : String(action.batchNo ?? '') }
     // ── 质检（issue #7162）：读最新判定 / 录判定（生成质检单） ──
     // 🔴 「未检 ≠ 合格」：无记录 ⇒ latest=null，界面写「未检」，不折成「合格」。
     case 'qualityLoading':
@@ -342,6 +354,66 @@ export function normalizeWorkType(v) {
   return WORK_TYPES.includes(v) ? v : DEFAULT_WORK_TYPE
 }
 
+// ════════════════════════════════════════════════════════════════════════════════
+// 裁剪报工：确认批次（issue #7647，用户 2026-10-24 逐字）
+//   「裁剪报工的时候需要工人裁剪的哪个批次，如果通过智能派单的就默认展示指定批次，允许工人改，
+//     如果没指定批次就需要工人手输才能完成报工，并且实时更新库存」
+//
+// 🔴 适用面**只由服务端**给（`batch_required`）：裁剪是当前唯一的适用工序，但「哪一行要不要批次」
+//    是本单的业务判定（未指派 / 无批次入库的 SKU 会有例外，见 issue 的「边界」）——前端**不按工序名猜**，
+//    也不自己写第二份「裁剪」字面。缺键 / 非 true ⇒ **一个字节都不变**（老后端 / 非裁剪工序零回归）。
+// ════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 本屏这次报工是否必须确认批次（**唯一判据** = 服务端 `batch_required === true`）。
+ *
+ * @param {object} view 扫码解析结果
+ * @returns {boolean}
+ */
+export function isBatchRequired(view) {
+  return view?.batch_required === true
+}
+
+/** 派工指定批次（输入框预填值）：缺键 / 非字符串 / 空串 ⇒ `''`（绝不把 `undefined` 印上屏）。 */
+export function assignedBatchNo(view) {
+  const raw = view?.batch_no
+  return typeof raw === 'string' ? raw.trim() : ''
+}
+
+/**
+ * 工人当前**实际**的批次值（渲染预填 / 门禁 / 提交取值共用这**一份**判据）。
+ *
+ * `state.batchNo === null` = 还没动过输入框 ⇒ 用服务端预填的派工批次；否则用工人输入的原样值（`trim`）。
+ * **不**在这里校验批次号格式：那是服务端的硬闸（`BATCH_NOT_FOUND` / `BATCH_SKU_MISMATCH` 422），
+ * 前端凭一份会漂的正则提前拒绝，只会把「批次能改」变成「改不了」。
+ */
+export function currentBatchNo(state, view) {
+  if (!isBatchRequired(view)) return ''
+  if (typeof state?.batchNo === 'string') return state.batchNo.trim()
+  return assignedBatchNo(view)
+}
+
+/**
+ * 报工门禁：要批次却（trim 后）没填。
+ *
+ * 🔴 门禁只**禁用**按钮（与既有 in-flight 禁用态同一套样式），不把按钮藏起来 ——
+ * 藏起来工人会以为「这一屏不能报工」，而他要的动作恰恰是**先填批次**。
+ */
+export function batchBlocked(state, view) {
+  return isBatchRequired(view) && currentBatchNo(state, view) === ''
+}
+
+/** 候选批次（快捷项）：脏项（非字符串 / 空串）逐个丢掉；非裁剪工序 ⇒ 空数组（整块候选区不渲染）。 */
+export function batchCandidates(view) {
+  if (!isBatchRequired(view)) return []
+  return (Array.isArray(view?.batch_candidates) ? view.batch_candidates : []).filter(
+    (c) => typeof c?.batch_no === 'string' && c.batch_no.trim() !== '',
+  )
+}
+
+/** 门禁提示（可行动，不责备；`render` 与装配层**共用同一句**，两处不会漂）。 */
+export const BATCH_GATE_HINT = '请先填批次号再报工（这次从哪一批裁，就填哪一批）。'
+
 const esc = (v) =>
   String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
 
@@ -408,9 +480,53 @@ function workTypePicker(state, view) {
 
 function reportButton(state, view) {
   if (!canReport(state, view)) return ''
-  return state.reporting
-    ? '<button id="wh5-report" class="wh5-primary" type="button" disabled>提交中…</button>'
-    : '<button id="wh5-report" class="wh5-primary" type="button">报 工</button>'
+  if (state.reporting) return '<button id="wh5-report" class="wh5-primary" type="button" disabled>提交中…</button>'
+  // 裁剪批次门禁（issue #7647）：要批次却没填 ⇒ 与 in-flight **同一套**禁用态（`.wh5-primary[disabled]`）。
+  // 非裁剪工序 / 已填 ⇒ 与改前**逐字节相同**。
+  if (batchBlocked(state, view)) return '<button id="wh5-report" class="wh5-primary" type="button" disabled>报 工</button>'
+  return '<button id="wh5-report" class="wh5-primary" type="button">报 工</button>'
+}
+
+/**
+ * 「批次」区块（issue #7647）：输入框（预填派工批次、可改）+ 候选快捷项 + 一句说明 + 门禁提示。
+ *
+ * <p>🔴 只在 `batch_required === true` 时渲染；候选为空 ⇒ **整块候选区不渲染**（不摆空壳）。
+ * 输入事件**不**整页重渲染（由 `app.mjs` 就地同步），所以这里的 `value` 就是工人当前的值。</p>
+ *
+ * <p>为什么候选做成「点一下就填入」而不是下拉：车间戴手套 + 弱光，下拉要两次精确点击；
+ * 而且候选带**本批余量**——工人据此直接看出这一批够不够裁。</p>
+ */
+function batchBlock(state, view) {
+  if (!isBatchRequired(view)) return ''
+  const value = currentBatchNo(state, view)
+  const cands = batchCandidates(view)
+  // 说明只承诺**屏上真有**的动作（没有候选就不提候选 —— 让工人去找一个不存在的按钮是坏出口）
+  const note = assignedBatchNo(view)
+    ? '派工指定了这一批：按实际裁的批次改一下（这次从哪一批裁，就填哪一批）。'
+    : cands.length > 0
+      ? '本单没有指派批次：这次从哪一批裁，就填哪一批（点下面的候选可直接填入）。'
+      : '本单没有指派批次：这次从哪一批裁，就填哪一批（必填，不填不能报工）。'
+  const candHtml = cands.length === 0
+    ? ''
+    : `<div class="wh5-batch-cands" id="wh5-batch-candidates" role="group" aria-label="候选批次">${cands
+        .map((c) => {
+          const no = esc(c.batch_no.trim())
+          // 余量 / 够不够都由服务端给（`remaining_meters` / `enough`）；缺键 ⇒ 这一句不渲染
+          const rem = typeof c.remaining_meters === 'number' && Number.isFinite(c.remaining_meters)
+            ? ` · 余 ${esc(fmtQty(c.remaining_meters))} 米`
+            : ''
+          const short = c.enough === false ? ' · 余量不足' : ''
+          return `<button type="button" class="wh5-choice" data-batch-no="${no}">${no}${rem}${short}</button>`
+        })
+        .join('')}</div>`
+  return `<div class="wh5-batch" id="wh5-batch">
+      <label class="wh5-label">批次（这次从哪一批裁）
+        <input id="wh5-batch-input" class="wh5-input" inputmode="text" autocomplete="off" placeholder="例如：PC-20261020-0007" value="${esc(value)}" />
+      </label>
+      <p class="wh5-sub" id="wh5-batch-note">${esc(note)}</p>
+      ${candHtml}
+      <p class="wh5-batch-hint" id="wh5-batch-hint">${batchBlocked(state, view) ? esc(BATCH_GATE_HINT) : ''}</p>
+    </div>`
 }
 
 /**
@@ -428,7 +544,10 @@ function reportButton(state, view) {
 export function afterComplete(view, receipt) {
   // `work_type` 与 `__requestId` 同族：**丢掉** ⇒ 下一屏回到默认「正常」
   // （否则「报废」会悄悄留在屏上，下一笔正常做出来的活被记成报废）。
-  const { __requestId, work_type: _workType, ...rest } = view ?? {}
+  // 批次（issue #7647）同族但**只丢值、留判据**：`batch_no`（这一笔实际裁的批次）与
+  // `batch_candidates`（余量是记账**前**的读数，已经过期）丢掉；`batch_required` 留着 ——
+  // 它是「这一行要不要批次」的属性，丢了工人连输入框都没有（只能重扫），而留着只是要他重填一次。
+  const { __requestId, work_type: _workType, batch_no: _batchNo, batch_candidates: _batchCandidates, ...rest } = view ?? {}
   return {
     ...rest,
     set_no: receipt.setNo ?? view?.set_no ?? null,
@@ -459,6 +578,34 @@ export function legacySelection(view, selection) {
 
 /** 报工回执 ⇒ 给工人的一句话（`replayed` 必须显式说清「没有新增计件」，不谎报一笔新报工）。 */
 export function doneNotice(receipt) {
+  return `${doneNoticeBase(receipt)}${batchReceiptTail(receipt)}`
+}
+
+/**
+ * 回执里的**批次尾部**（issue #7647）：本次批次 + 该批次记账后余量，余量不足时补一句缺口。
+ *
+ * <p>🔴 「缺键就缺」（本仓工人端纪律）：三键任一缺失 / 形状不对 ⇒ 对应那一句**整句不出现**，
+ * 绝不渲染 `undefined` / `null` / `NaN`。非裁剪工序 ⇒ 三键都缺 ⇒ 返回 `''`（文案与改前逐字节相同）。</p>
+ *
+ * <p>余量不足照实说、不责备、不惊叹号（`migao-dev-flow` §31 P4）：不挡工人记工钱，
+ * 只让他知道这一批已经透支了多少米。</p>
+ */
+function batchReceiptTail(receipt) {
+  const no = typeof receipt?.batchNo === 'string' ? receipt.batchNo.trim() : ''
+  const remaining = typeof receipt?.batchRemaining === 'number' && Number.isFinite(receipt.batchRemaining)
+    ? receipt.batchRemaining
+    : null
+  const shortage = typeof receipt?.batchShortageMeters === 'number' && Number.isFinite(receipt.batchShortageMeters)
+    && receipt.batchShortageMeters > 0
+    ? receipt.batchShortageMeters
+    : null
+  const parts = []
+  if (no) parts.push(remaining === null ? `批次 ${no}` : `批次 ${no} · 余量 ${fmtQty(remaining)} 米`)
+  if (shortage !== null) parts.push(`本批余量不足，缺口 ${fmtQty(shortage)} 米已如实记账`)
+  return parts.length === 0 ? '' : ` · ${parts.join(' · ')}`
+}
+
+function doneNoticeBase(receipt) {
   if (receipt.replayed) return '这次没有新增计件：重复提交已回放（同一次扫码只算一次）'
   if (receipt.orderCompleted) return '已报工 · 本单工序都报完了 🎉'
   if (receipt.setCompleted === true) return '已报工 · 本套工序都报完了 🎉'
@@ -735,6 +882,7 @@ function mainView(state) {
     ${picker}
     ${qualityOnlyNote(state, v)}
     ${workTypePicker(state, v)}
+    ${batchBlock(state, v)}
     ${reportButton(state, v)}
     ${overviewView(v, v.position?.order_item_id ?? null)}
     ${cutPlanView(v)}
