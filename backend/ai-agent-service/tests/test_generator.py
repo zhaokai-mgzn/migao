@@ -201,6 +201,35 @@ def test_all_models_unsupported_is_not_reported_as_quota(monkeypatch):
     assert "额度" not in message
 
 
+@pytest.mark.parametrize("status,code", [(401, "InvalidApiKey"), (403, "AccessDenied")])
+def test_credential_failure_is_unavailable_and_never_rotates(monkeypatch, status, code):
+    """凭证 / 权限失败（401 `InvalidApiKey` / 403 `AccessDenied`）⇒ **能力不可用**，且不空转切模型。
+
+    形态来源 = 2026-10-25 线上实测：现役 MaaS key 打真实端点回
+    `HTTP 401 {"code": "InvalidApiKey"}`（端点可达、key 无效）。这类错误是**账号级**的：
+    同一个 Key 换 `IMAGE_GEN_MODELS` 里下一个模型还是 401 ⇒
+    ① 轮换只白烧请求与时间；② 汇总话术会把它说成「模型都不接这类图生图请求」（**错的理由**）。
+    判据三条：异常归到 `ImageGenerationUnavailable`（503 语义）、**恰好一次** HTTP 调用（不逐模型重试）、
+    原因里带 `code` 且不含「额度」。
+    """
+    _settings(monkeypatch)  # 默认链 = model-a,model-b（两个模型 ⇒ 才判得出"有没有轮换"）
+    calls = []
+
+    def handler(request):
+        calls.append(request.read().decode())
+        return httpx.Response(status, json={
+            "request_id": "rid-cred", "code": code, "message": "Invalid API-key provided."})
+
+    with pytest.raises(gen.ImageGenerationUnavailable) as excinfo:
+        asyncio.run(gen.generate_product_image(
+            "https://oss/sample.png", "某商品", "main", client=_client(handler)))
+
+    message = str(excinfo.value)
+    assert len(calls) == 1, f"凭证失败不得逐模型重试，实调 {len(calls)} 次"
+    assert code in message                      # 原因如实透传到日志（用户面由工具固定话术承接）
+    assert "额度" not in message
+
+
 def test_internal_endpoint_returns_only_preview_fields(monkeypatch):
     from app.api.internal import ImageGenerateRequest, image_generate
 
@@ -213,3 +242,38 @@ def test_internal_endpoint_returns_only_preview_fields(monkeypatch):
         resp = asyncio.run(image_generate(request, authorized=True))
     assert resp["success"] is True
     assert resp["data"] == {"image_url": "https://dashscope.oss/out.png", "model": "model-a"}
+
+
+def test_internal_endpoint_credential_failure_is_503_not_502(monkeypatch):
+    """内部端点：**凭证失效必须 503**（能力不可用），不能是 502（供应商偶发故障）。
+
+    admin-api 侧按状态码决定给商家的动作（503 = 「先手工上传 / 找平台」，502 = 「稍后再试」，
+    见 issue #7552 的三端码改造）⇒ 两边口径不一致时，商家会被引向一个不会成功的动作。
+    改前读数 = **502**（401 落进「其它错误」⇒ `ImageGenerationError`），改后 = 503。
+    本用例走真内核 + `MockTransport`（不打桩内核），所以钉的是「401 一路传到状态码」。
+    """
+    from fastapi import HTTPException
+
+    from app.api.internal import ImageGenerateRequest, image_generate
+
+    for key, value in {
+        "IMAGE_GEN_ENABLED": True,
+        "IMAGE_GEN_API_KEY": "sk-invalid-online-key",
+        "ASR_API_KEY": "",
+        "IMAGE_GEN_MODELS": "qwen-image-3.0-pro",
+        "IMAGE_GEN_BASE_URL": "https://example.test/generate",
+        "IMAGE_GEN_TIMEOUT": 5,
+    }.items():
+        monkeypatch.setattr(gen.settings, key, value)
+
+    real_client = httpx.AsyncClient
+    transport = httpx.MockTransport(lambda request: httpx.Response(
+        401, json={"code": "InvalidApiKey", "message": "Invalid API-key provided."}))
+    request = ImageGenerateRequest(
+        tenant_id=46, image_url="https://oss/sample.png", product_name="某商品", kind="main")
+    with patch("app.images.generator.httpx.AsyncClient",
+               side_effect=lambda **kw: real_client(transport=transport)):
+        with pytest.raises(HTTPException) as excinfo:
+            asyncio.run(image_generate(request, authorized=True))
+
+    assert excinfo.value.status_code == 503

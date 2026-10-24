@@ -14,6 +14,7 @@
 
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 
 from app.api.chat import _detect_card_type, _should_send_card
@@ -301,6 +302,42 @@ class TestFailureSemantics:
         assert result.success is False
         assert result.error == "IMAGE_GEN_FAILED"
         assert result.suggestion
+
+    @pytest.mark.asyncio
+    async def test_credential_failure_is_capability_unavailable_not_retryable(self, tool, monkeypatch):
+        """凭证失效（真实 401 `InvalidApiKey`，2026-10-25 线上读数）⇒ 能力不可用，**不给「再生成一次」这种假出路**。
+
+        本用例**不打桩生图内核**（走真内核 + MockTransport），所以它钉的是「401 一路传到商家的那句人话」：
+        改前 = `IMAGE_GEN_FAILED`「没生成成功，可以让我再生成一次」（对一个无效 Key 永远不会成功）；
+        改后 = `IMAGE_GEN_UNAVAILABLE`（配置/凭证问题，可行动出路 = 平台换 Key + 商家先手工上传）。
+        """
+        from app.images import generator as gen
+
+        for key, value in {
+            "IMAGE_GEN_ENABLED": True,
+            "IMAGE_GEN_API_KEY": "sk-invalid-online-key",
+            "ASR_API_KEY": "",
+            "IMAGE_GEN_MODELS": "qwen-image-3.0-pro",
+            "IMAGE_GEN_BASE_URL": "https://example.test/generate",
+            "IMAGE_GEN_TIMEOUT": 5,
+        }.items():
+            monkeypatch.setattr(gen.settings, key, value)
+
+        real_client = httpx.AsyncClient  # 必须在 patch 之前取真类（patch 的是同一个 httpx 模块属性）
+        transport = httpx.MockTransport(lambda request: httpx.Response(
+            401, json={"code": "InvalidApiKey", "message": "Invalid API-key provided."}))
+        client = _mock_client(_product())
+        with patch("app.tools.product_image_generate.get_admin_api_client", return_value=client), \
+             patch("app.images.generator.httpx.AsyncClient",
+                   side_effect=lambda **kw: real_client(transport=transport)):
+            result = await tool.execute(context=_context(), product_id="prod_001")
+
+        assert result.success is False
+        assert result.error == "IMAGE_GEN_UNAVAILABLE"      # 改前 = IMAGE_GEN_FAILED（红）
+        assert "额度" not in (result.message or "")
+        assert "再生成一次" not in (result.suggestion or "")   # 重试永远不会成功 ⇒ 不许这么建议
+        assert "晚些再让我生成" not in (result.suggestion or "")
+        assert "商品管理" in (result.suggestion or "")        # 可行动出路仍在
 
     @pytest.mark.asyncio
     async def test_same_text_alone_would_not_distinguish(self, tool):
