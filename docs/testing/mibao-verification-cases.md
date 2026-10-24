@@ -10810,7 +10810,7 @@
 
 ### PR-074. 商品图生成 - 对已选商品生成商品图（先定位再生成；成功发卡：PC 下载 / 手机保存相册；缺主图/不可用都可行动拒绝） 🔵
 ```
-你: 帮我把「星空全遮光」这款商品生成一张主图
+你: 搜索遮光窗帘，然后给第一个商品生成一张主图
 期望: product_search
 期望: product_image_generate(kind=main)
 数据: 判据 0·**机器可判**：缺 `product_id` / `kind` 不在白名单 / 商品没有可用主图 ⇒ `success=False`（`missing_params` 或工具错误码 `IMAGE_SOURCE_MISSING`）；成功时 `success=true`、`data.image_url` 非空、`data.product.name` 逐字等于 admin-api 返回的商品名（判据源 = `backend/ai-agent-service/tests/test_product_image_generate.py`）。

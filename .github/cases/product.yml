@@ -5591,7 +5591,7 @@ cases:
       - behavior
     truths_ref: []
     user_inputs:
-      - "帮我把「星空全遮光」这款商品生成一张主图"
+      - "搜索遮光窗帘，然后给第一个商品生成一张主图"
     expectations:
       - tool: product_search
       - tool: product_image_generate
