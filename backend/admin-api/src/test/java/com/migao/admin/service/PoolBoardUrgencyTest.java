@@ -1,4 +1,4 @@
-// case_ids: PR-079, PR-080, PR-081
+// case_ids: PR-079, PR-080, PR-081, PG-091
 //
 // 2026-10-08（issue #6523 / #6524）追加两组判据（`materialKey` 逐字不变是它们的**负控**）：
 //   ① 料组标题不许把内部键摆给商家看 —— 展示名与标识分离（服务端下发 `materialLabel`）；
@@ -464,7 +464,36 @@ class PoolBoardUrgencyTest {
         assertThat(warning.waitHours()).isEqualByComparingTo("30.0");
     }
 
+    // ─────────────────────────────────────────── 判据 6：待付款单也进池（issue #7634）
+
+    @Test
+    @DisplayName("🔴 #7634 待付款单也在池里：池收 pending + confirmed（派单页是唯一派单面）")
+    void pendingOrderSitsInPoolToo() {
+        OffsetDateTime now = businessClock.nowOffset();
+        when(orderMapper.selectList(any())).thenReturn(List.of(
+                orderOfStatus("o-pending", "ORD-7001", now.minusHours(5), "pending"),
+                orderOfStatus("o-paid", "ORD-7002", now.minusHours(2), "confirmed")));
+        when(processingOrderMapper.selectActiveOrderIds(eq(TENANT), anyCollection())).thenReturn(List.of());
+        when(orderItemMapper.selectList(any())).thenReturn(
+                itemsOf("o-pending", "i-pending"), itemsOf("o-paid", "i-paid"));
+
+        ProductionPoolViews.Pool pool = processingOrderService.pool(TENANT, null);
+
+        assertThat(pool.groups()).hasSize(1);
+        assertThat(pool.groups().get(0).lines()).extracting(ProductionPoolViews.PoolLine::orderId)
+                .as("待付款单不在池里 ⇒ 未收款单就**没有**任何派单面（订单页的直派入口已收走）。"
+                        + "红证：把 `pool()` 的状态集合退回 `Set.of(\"confirmed\")` ⇒ 本断言只剩一张单")
+                .containsExactly("o-pending", "o-paid");
+        assertThat(pool.orderCount()).as("池口径含待付款：两张都在").isEqualTo(2);
+    }
+
     // ─────────────────────────────────────────── 夹具
+
+    /** 只有状态不同的单（issue #7634：池要收 pending + confirmed）。 */
+    private Order orderOfStatus(String id, String orderNo, OffsetDateTime createdAt, String status) {
+        return Order.builder().id(id).tenantId(TENANT).orderNo(orderNo).status(status)
+                .createdAt(createdAt).isUrgent(false).build();
+    }
 
     private Order orderOf(String id, String orderNo, OffsetDateTime createdAt, boolean urgent,
                           LocalDate requiredDeliveryDate) {
