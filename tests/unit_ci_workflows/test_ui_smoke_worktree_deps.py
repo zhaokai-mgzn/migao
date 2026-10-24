@@ -415,7 +415,11 @@ def test_empty_array_guard_has_discriminating_power():
 
 # ── 判据 2：「没跑」必须长得像「没跑」—— 真语料（段落实跑）+ 桩 spec/node ──────────────
 SMOKE_SPEC_START = "# ── 4. 跑冒烟 spec"
-SMOKE_SPEC_END = "# ── 5. 停栈"
+# ⚠️ 段尾取 **4b**（SDQS 数据质量体检）之前：本腿判的是「spec 真被调起 + 参数逐字转发」，
+#    而桩 node 不产出 `smoke-data.json` ⇒ 4b 必然判 `DQ-U` 并折成非零（那是**正确**行为，
+#    但它会让本腿的 `returncode == 0` 断言失去判别力）。4b 的接线由
+#    `tests/unit_ci_workflows/test_smoke_data_quality.py` 判据 D 单独守着，两腿不互相冒充。
+SMOKE_SPEC_END = "# ── 4b. 数据质量体检"
 
 STUB_NODE = """#!/usr/bin/env bash
 # 桩 node：① 记录 argv（= spec 真被调起的**标记**）② 按 spec.mjs 的成功路径落两个汇总文件。
