@@ -112,9 +112,12 @@ export default function ReportsPage() {
     aging: true,
   })
   const [loadError, setLoadError] = useState<string | null>(null)
-  // 时间区间（issue #7376 段 6）：空串 = 该侧不设界；默认全部（不传参）
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
+  // 时间区间（issue #7376 段 6）：空串 = 该侧不设界。
+  // 默认 = **本月**（issue #7601，用户裁定）：打开页面就是「本月」这个预置（本月 1 日 ~ 今天），
+  // 与点「本月」按钮**完全同态** —— 原来默认空（= 全部时间），商家每次还得手动点一下，
+  // 且容易忘了自己看的是哪段时间。「全部」按钮照旧可切回不设界。
+  const [from, setFrom] = useState(() => presetRange('thisMonth').from)
+  const [to, setTo] = useState(() => presetRange('thisMonth').to)
   const rangeParams = useMemo(
     () => ({ ...(from ? { startDate: from } : {}), ...(to ? { endDate: to } : {}) }),
     [from, to],
