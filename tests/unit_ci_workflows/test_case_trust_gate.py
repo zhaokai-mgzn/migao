@@ -457,6 +457,27 @@ class TestKnownDefectFixturesAreBlocked:
             f"{case['id']} 形态（散文唯一判据 ⇒ 恒绿）未被判违规，实际={v}"
         )
 
+    def test_frontend_contract_marker_is_equivalent(self, tmp_path):
+        """issue #7369 段 4-B：`[frontend-contract]` 与 `[backend-contract]` 同等成立（计分通道都在 traces.tests）。
+
+        红证方向：把标记换成 `[backend-contract]` 之外的任意字样（如 `[contract]`）⇒ 不再豁免，
+        本条与 `test_prose_only_case_is_flagged` 一起证明「放宽的是**两条具名标记**，不是任何含 contract 的字样」。
+        """
+        test_file = tmp_path / "frontend_spec.test.ts"
+        test_file.write_text("// 判据\n", encoding="utf-8")
+        case = dict(fixture_ch_009())
+        case["skip_reason"] = "[frontend-contract] 由 vitest 判据承担，不进 agent-eval"
+        case["traces"] = {"tests": ["frontend_spec.test.ts"], "ci": ["pr-check.yml"], "verifies": []}
+
+        assert tax.backend_contract_scoring_channel(case, repo_root=tmp_path) is True
+        # 结构性条件不放松：引用的测试文件不存在 ⇒ 照旧不豁免
+        case["traces"] = {"tests": ["missing_spec.test.ts"], "ci": [], "verifies": []}
+        assert tax.backend_contract_scoring_channel(case, repo_root=tmp_path) is False
+        # 非具名标记 ⇒ 不豁免（放宽的是两条具名标记，不是任何含 contract 的字样）
+        case["skip_reason"] = "[contract] 随便一个标记"
+        case["traces"] = {"tests": ["frontend_spec.test.ts"], "ci": [], "verifies": []}
+        assert tax.backend_contract_scoring_channel(case, repo_root=tmp_path) is False
+
     def test_single_leg_without_persona_is_flagged(self):
         """#3822：纯元元工具集用例缺 persona 标注。"""
         v = tax.judge_case(fixture_single_leg_unmarked(), catalog=_seed_catalog())

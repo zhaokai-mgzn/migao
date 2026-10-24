@@ -1,4 +1,4 @@
-// case_ids: PR-057
+// case_ids: PR-055, PR-057
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 /**
@@ -81,5 +81,18 @@ describe('batchStockApi 只读端点（PR-054）', () => {
       '/api/admin/batch-stock/distribution',
       '/api/admin/batch-stock/reconcile',
     ])
+  })
+
+  it('批次余量**分页**读面（#7604）：路径与参数名与后端逐字一致（page/size/keyword 交给服务端，前端不自己切片）', async () => {
+    await batchStockApi.batchesPage({
+      productId: 'prod-1',
+      keyword: 'PC-20261001',
+      page: 2,
+      size: 20,
+    })
+
+    expect(mockGet).toHaveBeenCalledWith('/api/admin/batch-stock/batches/page', {
+      params: { productId: 'prod-1', keyword: 'PC-20261001', page: 2, size: 20 },
+    })
   })
 })

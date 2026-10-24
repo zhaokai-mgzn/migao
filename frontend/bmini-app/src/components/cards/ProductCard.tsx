@@ -20,8 +20,8 @@ interface ProductCardProps {
     sales_count?: number
     description?: string
   }
-  /** 点击「去下单」回调：把商品名带入对话下单流程 */
-  onOrder?: (productName: string) => void
+  /** 点击「查看」回调（issue #7264）：把商品名带进对话，让黄金策介绍商品（商家端不下单） */
+  onView?: (productName: string) => void
 }
 
 /** 默认占位图 */
@@ -51,9 +51,9 @@ function buildSpecLine(data: ProductCardProps['data']): string {
   return parts.join(' · ')
 }
 
-export default function ProductCard({ data, onOrder }: ProductCardProps) {
-  // 下单防连点锁：点击后锁卡（issue #3040 收尾 #3038，防重复下单）
-  const [ordered, setOrdered] = useState(false)
+export default function ProductCard({ data, onView }: ProductCardProps) {
+  // 查看防连点锁：点击后锁卡（issue #3040 收尾 #3038；issue #7264 改为「查看」语义）
+  const [sent, setSent] = useState(false)
   const imageUrl = data.image || data.main_image || (data.images && data.images[0]) || PLACEHOLDER_IMAGE
   const price = typeof data.price === 'number' ? data.price.toFixed(2) : data.price || '0.00'
   const originalPrice =
@@ -65,10 +65,10 @@ export default function ProductCard({ data, onOrder }: ProductCardProps) {
   const showOriginal = originalPrice !== '' && originalPrice !== price
   const specLine = buildSpecLine(data)
 
-  const handleOrder = () => {
-    if (ordered) return
-    setOrdered(true)
-    onOrder?.(data.name || '这个商品')
+  const handleView = () => {
+    if (sent) return
+    setSent(true)
+    onView?.(data.name || '这个商品')
   }
 
   const handleImageError = () => {
@@ -113,11 +113,12 @@ export default function ProductCard({ data, onOrder }: ProductCardProps) {
       )}
 
       <View className='product-card__actions'>
-        {/* issue #6666 判据 3：原「查看详情」点了只弹一句「开发中」提示 —— 试用现场点一次就等于
-            把「没做完」写在脸上 ⇒ **收起入口**（本轮不做详情页）。卡片唯一动作 = 「去下单」，
-            它把商品名带进对话下单流程；要更多商品信息，商家直接在对话里问黄金策。 */}
-        <View className={`product-card__btn product-card__btn--primary${ordered ? ' product-card__btn--locked' : ''}`} onClick={handleOrder}>
-          <Text className='product-card__btn-text product-card__btn-text--primary'>去下单</Text>
+        {/* issue #7264（用户 2026-10-18 逐字「商品列表控件带上了『去下单』按钮，这个不符合黄金策的
+            定位和功能，可以改成查看」）：黄金策是商家经营助手，商家不是下单方 ⇒ 按钮 =「查看」，
+            点击发 `查看<商品名>` 让 agent 在对话里介绍商品（与 PC 端商品卡的「查看商品」同口径）。
+            issue #6666 判据 3 的「查看详情」死入口仍不复活：这里不是空 Toast，是真发消息。 */}
+        <View className={`product-card__btn product-card__btn--primary${sent ? ' product-card__btn--locked' : ''}`} onClick={handleView}>
+          <Text className='product-card__btn-text product-card__btn-text--primary'>查看</Text>
         </View>
       </View>
     </View>

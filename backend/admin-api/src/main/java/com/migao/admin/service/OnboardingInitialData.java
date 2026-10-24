@@ -25,7 +25,8 @@ import java.util.List;
  *
  * <h2>约定（新增必需初始数据时照此办）</h2>
  * 入驻链路里任何名字形如 {@code *Seed*Service} 的播种协作者的调用（本仓现有形态：
- * `productCategorySeedService.seedDefaultCategory(...)` / `productionSeedTemplateService.applyTemplate(...)`）
+ * `productCategorySeedService.seedDefaultCategory(...)` /
+ * `processingItemSeedService.seedDefaultCatalog(...)` / `productionSeedTemplateService.applyTemplate(...)`）
  * <b>必须</b>在本清单登记一条 {@link Item}：写明 {@code key}、{@code description}、
  * {@code seedAnchor}（= 调用点里逐字出现的 `<接收者>.<方法>`），并声明是否 {@code enforced}。
  * 非 enforced（尽力而为）项必须在
@@ -42,8 +43,34 @@ public final class OnboardingInitialData {
      */
     public static final String DEFAULT_PRODUCT_CATEGORY_NAME = "窗帘成品";
 
+    /**
+     * 默认加工分类名（<b>默认值的唯一来源</b>，issue #7148）。
+     *
+     * <p>与库里的既有分类**同名**（建库脚本 / V83 种的 `加工费`）⇒ 新老租户的目录同构；
+     * 商家可随时改名 / 增删（不是不可变的系统保留项）。</p>
+     */
+    public static final String DEFAULT_PROCESSING_CATEGORY_NAME = "加工费";
+
+    /**
+     * 默认主仓编码（<b>默认值的唯一来源</b>，issue #7592）。
+     *
+     * <p>用 ASCII 编码而不是「主仓」二字：商家面会把编码展示在仓名旁边（「主仓（MAIN）」），
+     * 编码与名称同值会读成重复信息。⚠️ {@code stock_batches.warehouse} 是**文本**（不是外键）——
+     * 出任务时按「批次文本 = 编码 **或** = 仓名」匹配，改这两个常量都要迁存量文本。</p>
+     */
+    public static final String DEFAULT_WAREHOUSE_CODE = "MAIN";
+
+    /** 默认主仓名称（商家面展示的是这一栏）。 */
+    public static final String DEFAULT_WAREHOUSE_NAME = "主仓";
+
     /** 清单键：默认商品分类（{@link ProductCategorySeedService#seedDefaultCategory}）。 */
     public static final String PRODUCT_CATEGORY_KEY = "product_category";
+
+    /** 清单键：默认加工项目录（{@link ProcessingItemSeedService#seedDefaultCatalog}）。 */
+    public static final String PROCESSING_CATALOG_KEY = "processing_catalog";
+
+    /** 清单键：默认主仓（{@link WarehouseSeedService#seedDefaultWarehouse}）。 */
+    public static final String WAREHOUSE_KEY = "default_warehouse";
 
     /** 清单键：行业生产种子模板（{@link RegistrationService} 的 `applyProductionSeedTemplate`）。 */
     public static final String PRODUCTION_TEMPLATE_KEY = "production_template";
@@ -70,6 +97,14 @@ public final class OnboardingInitialData {
             new Item(PRODUCT_CATEGORY_KEY,
                     "默认商品分类：不种 ⇒ 新租户首建商品必撞 422「分类ID不能为空」（issue #6295）",
                     "productCategorySeedService.seedDefaultCategory",
+                    true),
+            new Item(PROCESSING_CATALOG_KEY,
+                    "默认加工项目录：不种 ⇒ 新租户「加工项与分类」是空的，下单页选不到任何加工项（issue #7148）",
+                    "processingItemSeedService.seedDefaultCatalog",
+                    true),
+            new Item(WAREHOUSE_KEY,
+                    "默认主仓：不种 ⇒ 盘点单「出盘点任务」的仓库下拉为空，一张盘点单也出不了（issue #7592）",
+                    "warehouseSeedService.seedDefaultWarehouse",
                     true),
             new Item(PRODUCTION_TEMPLATE_KEY,
                     "行业生产种子模板：不种 ⇒ 新租户建单 fail-closed 422 ERR_ROUTING_NOT_FOUND（issue #4361/#4316）",

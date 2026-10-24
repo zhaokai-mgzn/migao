@@ -41,11 +41,17 @@ from app.agents.customer_service_agent import (
 from app.tools import ToolRegistry, get_tool_registry
 from app.tools.base import CUSTOMER_ONLY_ROLES, ToolContext  # 角色口径单点（#4013 A10）
 # 页面上下文（issue #5371 族 4）：route→真值源登记表 + **默认拒绝**的注入面
-from app.context.page_registry import build_page_context, render_page_context
+from app.context.page_registry import (
+    build_page_context,
+    render_page_context,
+    strip_page_context_envelope,
+)
 # 主动新手引导（issue #5989 · P2）：route→功能登记表（复用 P1 真值源）+ 推送判定（纯函数）
-from app.context.menu_navigator import build_proactive_push
+from app.context.menu_navigator import build_proactive_push, is_legacy_proactive_tip
 from app.utils.auth import get_current_user, UserIdentity
 import app.utils.error_incident as _err_inc
+# 内部路由清洗（issue #7236）：出站展示文案只写中文页面名，不得带前端路由
+from app.utils.route_hygiene import strip_internal_routes
 # 图片管线（URL 校验 / CDN 重写 / 文本提示）的**单一事实源**（issue #5321 包 1）：
 # 这段规则原先是本文件的三个私有函数，页面入口（建品页 / 建单页）无法独立使用
 # ⇒ 抽到 `app/vision/pipeline.py`，对话路径改为**调用它**（下面保留同名别名，
@@ -351,6 +357,27 @@ async def _save_message_or_report(
         return None
 
 
+def _history_user_text(role: Any, content: Any) -> Any:
+    """历史里**用户消息**的文本：剥掉页面上下文注入信封（issue #7112）。
+
+    信封是**元数据**（「用户在哪一页」），不是用户说的话 —— 落库侧自 #7112 起不再写它，
+    旧行则由**读**这一侧归一（不改写历史数据）。展示面（`get_history`）与 LLM 历史
+    （`_convert_history_to_agent_format`）**共用本函数**：两处各写一份口径 = 迟早漂移。
+    """
+    if role == "user" and isinstance(content, str):
+        return strip_page_context_envelope(content)
+    return content
+
+
+def _is_legacy_proactive_tip_row(msg: Dict[str, Any]) -> bool:
+    """历史里的一条**存量主动导航提示**（issue #7324）：读侧消化，不回放、不进模型历史。
+
+    这类行是 #6030 起落库的（后缀带「（只给导航：…）」元指令）。**新行已不再落库**；旧行**不回写**，
+    只在读的两处（`get_history` / `_convert_history_to_agent_format`）跳过 —— 与 #7112 同口径。
+    """
+    return msg.get("role") == "assistant" and is_legacy_proactive_tip(msg.get("content"))
+
+
 def _format_datetime(dt: Any) -> str:
     """格式化日期时间为 ISO 8601 字符串（UTC，以 Z 结尾）"""
     if isinstance(dt, datetime):
@@ -441,10 +468,14 @@ def _convert_history_to_agent_format(messages: List[Dict[str, Any]]) -> List[Dic
     import re
     history = []
     for msg in messages:
+        if _is_legacy_proactive_tip_row(msg):
+            continue  # 存量主动导航提示不进模型历史（issue #7324）
         role = msg.get("role", "user")
         content = msg.get("content", "")
         if role == "assistant":
             content = re.sub(r"<think>[\s\S]*?</think>", "", content).strip()
+        else:
+            content = _history_user_text(role, content)
         entry: Dict[str, Any] = {
             "role": role,
             "content": content,
@@ -489,6 +520,14 @@ def _detect_card_type(tool_name: str, result: Dict[str, Any]) -> Optional[str]:
         return "product_list"
     elif tool_name == "product_detail":
         return "product_detail"
+    elif tool_name == "marketing_poster":
+        # 营销海报卡（issue #7351）：工具返回的 `data` 就是卡载荷
+        # （`{product: {...}, copy: {title, selling_points}}`），前端渲染成 750×1000 PNG。
+        return "marketing_poster"
+    elif tool_name == "product_image_generate":
+        # 商品图生成卡（issue #7541）：工具返回的 `data` 就是卡载荷
+        # （`{image_url, model, product: {id, name, kind}}`），前端预览 + PC 下载 / 手机存相册。
+        return "generated_image"
     elif tool_name in ("logistics_track", "customer_logistics_track"):
         return "logistics"
     elif tool_name in ("order_query", "customer_order_query"):
@@ -532,7 +571,29 @@ def _should_send_card(tool_name: str, result: Dict[str, Any]) -> bool:
     if tool_name == "product_detail":
         data = result.get("data", {})
         return data.get("product") is not None
+
+    # 营销海报（issue #7351）：**文案缺一不发卡** —— 载荷必须同时有商品事实与商家确认的文案，
+    # 否则前端会渲染一张没有主标题的海报（「空头海报」= 误导）。
+    if tool_name == "marketing_poster":
+        data = result.get("data", {})
+        if not isinstance(data, dict):
+            return False
+        copy = data.get("copy")
+        return (
+            isinstance(data.get("product"), dict)
+            and isinstance(copy, dict)
+            and bool(str(copy.get("title") or "").strip())
+            and bool(copy.get("selling_points"))
+        )
     
+    # 商品图生成（issue #7541）：**成功且真有图才发卡** —— 失败或空图一律不发，
+    # 否则前端会渲染一个空图片框（「说好了生成、却没有图」= 凭空承诺）。
+    if tool_name == "product_image_generate":
+        data = result.get("data", {})
+        if not isinstance(data, dict):
+            return False
+        return bool(str(data.get("image_url") or "").strip())
+
     # 物流查询有结果时发送卡片
     # - B 端 logistics_track: 单笔物流（data.tracking_number）
     # - C 端 customer_logistics_track: 在途订单列表（data.logistics_list 非空；卡片取第一笔 data.logistics）
@@ -826,6 +887,21 @@ def _mask_for_customer(text: str, context) -> str:
         return text
 
 
+def _sanitize_outbound_text(text: str, context) -> str:
+    """**出站文本单一收口**：C 端脱敏 + 双端内部路由清洗（issue #7236）。
+
+    与 `_mask_for_customer` 的分工：脱敏只对 C 端（B 端客服要照实号码联系顾客），
+    内部路由清洗**双端都要**——商家同样看不懂技术路径原文（2026-10-18 实测：黄金策回复
+    『发货需要在后台「销售订单」页…找到该订单』把前端路由当成了展示文案；
+    页面 2026-10-20 由「订单列表」正名为「销售订单」，issue #7354）。追加这一层
+    **不改变**脱敏语义（先脱敏、后清洗；清洗只动前端路由 token，不动手机号掩码）。
+
+    清洗点必须在下发/落库**之前**：SSE 是边流边发，收尾再清追不上已经流出去的气泡；
+    落库侧在写前清洗 ⇒ 历史回放（读库）不会把路由再带出来。
+    """
+    return strip_internal_routes(_mask_for_customer(text, context))
+
+
 def _mask_card_for_customer(data: dict, context) -> dict:
     """**出站**卡片脱敏（issue #3379）：顾客看到的卡片字段脱敏，模型上下文保持原值。
 
@@ -893,9 +969,13 @@ def _mask_card_for_customer(data: dict, context) -> dict:
 # 误判代价可控（只在「本轮确实没发卡」时生效，最坏是改写话术），且**补卡分支严格 gated**
 # （见 _pending_confirm_action / _reissue_confirm_card），不得凭空造卡。
 _CARD_ACTION_WORDS = "点击|点选|勾选|选择|点"
-_CARD_NOUNS = "卡片|卡"
+# ⚠️ 「卡」不得越过**颜色词**：布艺域高频词「卡其色」（用户 2026-10-19 报障的形态）里也有
+# 「卡」⇒ 裸 `卡` 会让「选择卡其色」被判成「指向卡片」、进而被改写成「回复『确认』其色」。
+# 用负向前瞻排除「卡其」、用**后顾**排除「色卡」（布艺域另一个高频词：语料里 16 处「色卡建品」）
+# —— 否则「请选择色卡上的米白色」会被改成「请回复『确认』上的米白色」。其余含「卡」的词仍按卡片名词处理。
+_CARD_NOUNS = "卡片|(?<!色)卡(?!其)"
 # 控件实物名词（本系统真会渲染成可点控件的实体）：「表单已发出」形态**不含"卡"字**
-_CARD_WIDGET_NOUNS = "表单|卡片|卡|控件|按钮|选项"
+_CARD_WIDGET_NOUNS = "表单|卡片|(?<!色)卡(?!其)|控件|按钮|选项"
 _CARD_DELIVERED_VERBS = "发出|调出|弹出|展示|生成|下发|推送|提供|显示"
 # 近邻窗口（字）：`(?:动作){0,8}` 的量词作用在**零宽分组**上 ⇒ 等价"零个动作词"，
 # 故必须写成**有界通配** `[\s\S]{0,8}`（历史踩坑：写成量词后只要句中出现卡片实物就命中）。
@@ -903,7 +983,12 @@ _CARD_ACTION_GAP = 8
 # ① 控件手势：纯文本回复**做不到**的动作（点/点击/勾选）——刻意不含「选择/确认」，
 #    它们可用文字完成（负例「请您选择需要的加工项」不得命中）。
 #    「点确认/点确定」是手势的省略写法（= 点确认按钮），既有「请点确认。」形态。
-_CARD_POINT_RE = re.compile(r"点(?:击)?(?:确认|确定)")
+# ⚠️ 「点确认」也可能是**页面动作**（「点击确认收货」/「点确认订单」——用户 2026-10-19 报障
+# 的形态之一）：那不是"指向聊天卡片"，不该被改写成「回复『确认』」+ 追加"确认卡片未显示"提示。
+# 负向前瞻排除已知的**业务宾语**（收货/签收/订单/付款/支付/发货/到货/评价）；「点确认。」这类
+# 无宾语的形态仍然命中（它才真是"请点确认按钮"的省略写法）。
+_CARD_POINT_RE = re.compile(
+    r"点(?:击)?(?:确认|确定)(?!收货|签收|订单|付款|支付|发货|到货|评价)")
 _CARD_GESTURE_RE = re.compile("|".join((
     rf"点击[\s\S]{{0,4}}?(?:选择|多选|选项|加工项|表单|按钮|{_CARD_NOUNS})",
     rf"勾选[\s\S]{{0,4}}?(?:加工项|选项|{_CARD_NOUNS})",
@@ -1070,6 +1155,8 @@ async def _agent_stream_to_sse(
     session_id: str,
     tenant_id: int,
     user_id: str,
+    *,
+    display_message: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     """
     将 Agent 的流式输出转换为 SSE 事件
@@ -1183,11 +1270,11 @@ async def _agent_stream_to_sse(
                                     _mask_card_for_customer(xml_payload, context))
                             clean = _strip_interact_xml(clean)
                             if clean:
-                                # ⚠️ 只脱敏**出站**（SSE），`full_response` 保持原值：
+                                # ⚠️ 只脱敏/清洗**出站**（SSE），`full_response` 保持原值：
                                 # 它是给**模型**看的上下文（下一轮还要用），脱敏会让模型
                                 # 以为顾客号码不完整（run 34736385849 实证：反过来问顾客要号码）。
                                 full_response.append(clean)
-                                yield SSEEvent.text(_mask_for_customer(clean, context))
+                                yield SSEEvent.text(_sanitize_outbound_text(clean, context))
 
                     elif response.type == "tool_call":
                         # Tool 调用通知（AgentExecutor 内部已处理执行）
@@ -1315,13 +1402,16 @@ async def _agent_stream_to_sse(
         import re
         assistant_content = "".join(full_response)
         assistant_content = re.sub(r"<think>[\s\S]*?</think>", "", assistant_content).strip()
+        # 内部路由清洗在**写库前**（issue #7236）：历史回放读的是这一行 —— 清洗晚于落库
+        # 就等于把路由原文永久写进会话记录（刷新/重开会话又上屏一次）。
+        assistant_content = strip_internal_routes(assistant_content)
         if not assistant_content:
             # LLM 未生成文本回复，进行容错降级
             if tool_calls_info:
                 assistant_content = "我已为您查询了相关信息，请查看上方的结果卡片。如需更多帮助请继续提问。"
             else:
                 assistant_content = "抱歉，我暂时无法生成回复，请稍后重试或联系人工客服。"
-            yield SSEEvent.text(_mask_for_customer(assistant_content, context))
+            yield SSEEvent.text(_sanitize_outbound_text(assistant_content, context))
 
         # 超时/异常时清除 tool_calls 元数据，避免泄漏到前端
         # （#4052：tool_results 与 tool_calls **逐项对齐**，必须一起清 ——
@@ -1420,9 +1510,12 @@ async def _agent_stream_to_sse(
 
         # 异步提取用户记忆（fire-and-forget，不阻塞 SSE 流）
         # user_message 提取自 message 参数（可能为 str 或 list）
-        user_msg_text = message if isinstance(message, str) else (
-            " ".join(p.get("text", "") for p in message if isinstance(p, dict) and p.get("type") == "text")
-        ) if isinstance(message, list) else ""
+        # 记忆抽取 / 会话标题取**用户原话**（`display_message`）—— 不取注入了页面上下文的文本
+        # （issue #7112：信封不该变成「用户记忆」或会话标题）。
+        _text_source = message if display_message is None else display_message
+        user_msg_text = _text_source if isinstance(_text_source, str) else (
+            " ".join(p.get("text", "") for p in _text_source if isinstance(p, dict) and p.get("type") == "text")
+        ) if isinstance(_text_source, list) else ""
         if assistant_content and user_msg_text:
             try:
                 # 登记在途任务：会话关闭 flush 前会 drain 它们（issue #3357——
@@ -1953,7 +2046,12 @@ async def _handle_page_ctx_request(
         images=request.images,
         # page_context 不再下发（本轮已消费：防重复注入，也防入口再分派成自递归）
     )
-    return await send_message(injected_request, current_user)
+    # 🔴 信封**只进本轮 LLM 文本**，落库/展示用用户原话（issue #7112）：
+    # 「页面上下文是元数据，不是用户说的话」（`app/context/page_registry.py` 的纪律），
+    # 落库带上它 ⇒ 切回会话时整段内部提示上屏（并污染标题生成 / 记忆抽取）。
+    return await _send_plain_message(
+        injected_request, current_user, display_message=request.message,
+    )
 
 
 # ============ API 路由 ============
@@ -2102,10 +2200,12 @@ async def _handle_page_enter_request(
     1. route ↔ 功能**唯一**对应（未登记 / 歧义 ⇒ 不推）；
     2. 该页在**服务端会话权限**下可见（客户端递交的 role / permissions **一律不读**）；
     3. 「**每页每会话最多 1 次**」——**服务端**判（`session_states`），不靠前端自觉；
-    4. **可行动性**：文案必须带「在哪一页 + 这页能做什么」，否则不发。
+    4. **可行动性**：文案必须带「你在哪一页 + 入口怎么走」，否则不发。
 
-    命中时**不经 LLM**（文案来自登记表 ⇒ 结构上不含步骤）：只回一条 `text` + `done`，并落进
-    会话历史（用户下次打开会话仍能看到这条导航）。
+    命中时**不经 LLM**（文案来自登记表 ⇒ 结构上不含步骤）：只回一条 `text` + `done`。
+    🔴 **不落库**（issue #7324，用户裁定）：主动导航提示是**当次进页**的轻提示 —— 落进历史后会在
+    换端 / 退出重登时以普通「AI 助手」气泡回放（内容还说「你在【X】」，而用户当下在对话页），
+    与 #7112（页面上下文信封被落库）同一形态。频率上限记在会话状态里，**不依赖**历史。
     """
     from app.memory.session_service import SessionService
     from app.utils.log_sanitizer import LogSanitizer
@@ -2156,11 +2256,8 @@ async def _handle_page_enter_request(
     text = verdict.push.render()
 
     async def _push_stream():
-        # 落进会话历史（用户重开会话时仍能看到这条导航）；落库失败不打断 —— 文案已经能推给他
-        await _save_message_or_report(
-            session_memory, source="chat.proactive",
-            session_id=session_id, role="assistant", content=text, tenant_id=tenant_id,
-        )
+        # 🔴 **不落库**（issue #7324）：见 handler docstring —— 历史里回放会让「你在【X】」永远停在
+        # 重登后的对话区。提示只属于当次进页；频率上限由上面 `_commit_pushed_feature` 保证。
         yield SSEEvent.text(text)
         yield SSEEvent.done(session_id, None)
 
@@ -2170,6 +2267,8 @@ async def _handle_page_enter_request(
 async def _send_plain_message(
     request: ChatSendRequest,
     current_user: UserIdentity,
+    *,
+    display_message: Optional[str] = None,
 ):
     """普通文本路径：会话守卫 → 落库 → Agent 流式 SSE。**不含任何前缀分派**。
 
@@ -2180,6 +2279,10 @@ async def _send_plain_message(
     """
     tenant_id = current_user.tenant_id
     user_id = current_user.user_id
+
+    # 落库 / 展示 / 标题 / 记忆抽取用的**用户原话**：可与「本轮送给 LLM 的文本」不同
+    # （页面上下文信封只属于后者，issue #7112）。
+    user_text = request.message if display_message is None else display_message
 
     logger.info(
         f"[chat/send] Message received | tenant={tenant_id} user={user_id} session={request.session_id or 'new'} msg_len={len(request.message)}"
@@ -2244,7 +2347,7 @@ async def _send_plain_message(
                 session_memory, source="chat.user", fail_open=False,
                 session_id=session_id,
                 role="user",
-                content=request.message,
+                content=user_text,
                 tenant_id=tenant_id,
                 content_type=content_type,
                 extra_metadata=extra_metadata,
@@ -2331,6 +2434,7 @@ async def _send_plain_message(
                 session_id=session_id,
                 tenant_id=tenant_id,
                 user_id=user_id,
+                display_message=user_text,
             ):
                 yield event
                 
@@ -2613,6 +2717,9 @@ async def get_history(
     # 格式化响应
     formatted_messages = []
     for msg in messages:
+        # 存量主动导航提示不回放（issue #7324）：#6030 起这类行曾落库，读侧消化、不回写库
+        if _is_legacy_proactive_tip_row(msg):
+            continue
         # 解析 metadata 获取 images
         metadata = msg.get("metadata")
         msg_images = None
@@ -2660,7 +2767,10 @@ async def get_history(
             # C 端历史是**展示面**：顾客刷新页面走的就是这里回放（issue #3386）。
             # 出站脱敏此前只做在 SSE 流上 → 同一份对话「流上脱敏、历史里明文」两种口径。
             # 落库保持原文（模型下一轮/复核对账都要真号），脱敏只在这一层做。
-            "content": _mask_for_customer(msg["content"], current_user),
+            # 内部路由清洗同在此处（issue #7236）：新行写库前已清，这一层兜**存量旧行**
+            # （如 sess_742201cbf83f4f58）—— 存量数据不回写，但回放不得再带出。
+            "content": _sanitize_outbound_text(
+                _history_user_text(msg.get("role"), msg["content"]), current_user),
             "content_type": msg.get("content_type", "text"),
             "images": msg_images if msg_images else None,
             "tool_calls": msg.get("tool_calls"),
@@ -2754,8 +2864,46 @@ QUICK_ACTIONS: tuple[dict, ...] = (
     },
 )
 
+#: 快捷入口里的**工具类**入口（issue #7351）：与上面的「问句型」六格分开下发 ——
+#: 「做海报」不是提问，而是一个需要引导补文案的动作。前端把 `tools` 渲染成独立的工具行，
+#: 六格 `actions` 的数量/形态**一字不动**（既有 #5747/#6468 的 2×3 契约不受影响）。
+#: 能力锚判据同 `TestQuickActions`：必须有真实注册、且黄金策已绑定的能力。
+TOOL_SHORTCUTS: tuple[dict, ...] = (
+    {
+        "id": "marketing_poster",
+        "name": "营销海报",
+        "icon": "image",
+        "emoji": "🖼️",
+        "prompt": "我要给商品做一张营销海报",
+        "skill": "product",
+        "tool": "marketing_poster",
+    },
+)
+
 #: 能力锚字段 —— **只用于服务端自证**（`tests/test_chat.py` 的机械投影判据），不进响应体
 _CAPABILITY_ANCHOR_KEYS = ("skill", "tool")
+
+
+def _quick_action_visible(action: dict, current_user: UserIdentity) -> bool:
+    """该快捷入口对当前用户是否可见（issue #7358）。
+
+    **判定谓词唯一 = `BaseTool.check_permission`**（`app/tools/base.py`）—— 入口下发与
+    工具执行用同一个谓词，才不会出现「看得见却做不了」的第二份口径。
+
+    为什么按 `permissions` 而不是按岗位：权限自 issue #2969 起是**快照式**
+    （`users.permissions`，与岗位脱钩）⇒ 同一岗位两名员工权限可不同，岗位清单会漂移。
+
+    工具未注册 ⇒ 不可见（fail-closed；与能力锚判据同向：引导必须能追溯到真实能力）。
+    """
+    tool = get_tool_registry().get_tool(action["tool"])
+    if tool is None:
+        return False
+    return tool.check_permission(ToolContext(
+        tenant_id=current_user.tenant_id,
+        user_id=current_user.user_id,
+        role=current_user.role,
+        permissions=current_user.permissions,
+    ))
 
 
 @router.get("/quick-actions")
@@ -2765,18 +2913,40 @@ async def get_quick_actions(
     """
     获取快捷功能菜单（B 端场景入口，单一真值见 `QUICK_ACTIONS`）
 
+    每条的可见性 = 其 `tool` 在当前用户权限下的可执行性（issue #7358）——
+    「引导了却做不到，比不引导更伤」（`docs/agent-feature-design.md` §九）。
+
     Returns:
         快捷功能列表（id / name / icon / emoji / prompt）
     """
     logger.debug(f"[chat/quick-actions] Fetching | tenant={current_user.tenant_id}")
 
+    all_entries = (*QUICK_ACTIONS, *TOOL_SHORTCUTS)
+    visible_ids = {a["id"] for a in all_entries if _quick_action_visible(a, current_user)}
+    # 观测口径（只进日志、不进 UI）：被过滤掉的入口 = 「该员工缺哪些授权」的可发现面。
+    # 没有它，漏授权会从「点下去报错」退化成「根本看不见」，从此没人发现（#7358 的已知风险）。
+    dropped = [a["id"] for a in all_entries if a["id"] not in visible_ids]
+    if dropped:
+        logger.info(
+            f"[chat/quick-actions] 按权限过滤 | tenant={current_user.tenant_id} "
+            f"role={current_user.role} dropped={dropped}"
+        )
+
     actions = [
         {k: v for k, v in action.items() if k not in _CAPABILITY_ANCHOR_KEYS}
         for action in QUICK_ACTIONS
+        if action["id"] in visible_ids
     ]
-    
+    tools = [
+        {k: v for k, v in tool.items() if k not in _CAPABILITY_ANCHOR_KEYS}
+        for tool in TOOL_SHORTCUTS
+        if tool["id"] in visible_ids
+    ]
+
     return make_response(True, data={
         "actions": actions,
+        # 工具类快捷入口（issue #7351）：与六格 actions 分开 —— 六格「问句」契约不动。
+        "tools": tools,
     })
 
 

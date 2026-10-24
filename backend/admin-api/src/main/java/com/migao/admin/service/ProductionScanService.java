@@ -610,13 +610,23 @@ public class ProductionScanService {
      * （规格可见面的唯一取数实现），本类不另建第二份。
      *
      * <p>取不到订单（脏数据）⇒ 空索引 ⇒ 明细键**键恒在且为 null**（不猜、不崩）。</p>
+     *
+     * <p>🔴 派工指定批次（issue #7233）：与 {@code ProductionService#getOperations} 走**同一份**盖章实现
+     * （{@link ProductionService#stampBatchAssignments}）+ 同一份台账取数（{@code #batchAssignmentsOf}）。
+     * 这里另查一次台账就是第二份口径；不盖章 ⇒ 工人「本部位生产信息」里**永远没有批号** ——
+     * 裁床不知道去哪一批拿料（用户 2026-10-18 逐字「没有批次号工人裁剪哪块布？」）。</p>
      */
     private Map<String, Map<String, Object>> specByItemIdOf(ProcessingOrder po, Long tenantId) {
         if (po == null || po.getOrderId() == null) {
             return Map.of();
         }
         Order order = orderMapper.selectById(po.getOrderId());
-        return order == null ? Map.of() : productionService.orderSpecByItemId(order, tenantId);
+        if (order == null) {
+            return Map.of();
+        }
+        Map<String, Map<String, Object>> specByItemId = productionService.orderSpecByItemId(order, tenantId);
+        productionService.stampBatchAssignments(specByItemId, po, tenantId);
+        return specByItemId;
     }
 
     /**

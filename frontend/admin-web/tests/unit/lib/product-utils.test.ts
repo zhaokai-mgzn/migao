@@ -165,7 +165,7 @@ describe('validateProductForm', () => {
 
   // ─── SKU 校验 ───
 
-  it('requires all SKUs to have price > 0 and stock >= 0', () => {
+  it('requires all SKUs to have price > 0（库存不在表单录入，issue #7597）', () => {
     const errs = validateProductForm(
       baseForm({
         skus: [
@@ -182,7 +182,7 @@ describe('validateProductForm', () => {
       }),
       'on_sale',
     )
-    expect(errs.skus).toBe('请完整填写所有 SKU 的价格与库存')
+    expect(errs.skus).toBe('请完整填写所有 SKU 的价格')
   })
 
   it('rejects when SKU count < expected cells', () => {
@@ -210,7 +210,7 @@ describe('validateProductForm', () => {
       }),
       'on_sale',
     )
-    expect(errs.skus).toBe('请完整填写所有 SKU 的价格与库存')
+    expect(errs.skus).toBe('请完整填写所有 SKU 的价格')
   })
 
   it('passes when all SKUs are valid', () => {

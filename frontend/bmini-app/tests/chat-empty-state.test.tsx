@@ -94,7 +94,12 @@ function serverQuickActionIds(): string[] {
     path.resolve(__dirname, '../../../backend/ai-agent-service/app/api/chat.py'),
     'utf-8',
   )
-  const block = py.slice(py.indexOf('QUICK_ACTIONS'), py.indexOf('async def get_quick_actions'))
+  // 只取**问句六格** `QUICK_ACTIONS` 这一段：issue #7351 起文件里还有 `TOOL_SHORTCUTS`
+  // （工具类入口，独立一行渲染，不进六格、也不该被空态文案覆盖）⇒ 切片终点优先取它。
+  const start = py.indexOf('QUICK_ACTIONS')
+  const toolShortcuts = py.indexOf('TOOL_SHORTCUTS', start)
+  const end = toolShortcuts > 0 ? toolShortcuts : py.indexOf('async def get_quick_actions', start)
+  const block = py.slice(start, end)
   return [...block.matchAll(/"id":\s*"([a-z_]+)"/g)].map((m) => m[1])
 }
 

@@ -38,6 +38,8 @@
  * （{@link feeFormula} / {@link isUnpriced} / {@link readFeeDetail}，issue #5843 由该组件上移到本文件）。
  */
 
+import { isFabricSaleLine } from './sale-form'
+
 /** 一行特殊选项的展示数据 */
 export interface SpecialOptionDisplayRow {
   /** React key（同一行内选项名唯一，服务端已按 Unicode 码点升序去重） */
@@ -131,6 +133,38 @@ export function readFeeDetail(info: unknown): ProcessingFeeDetail | null {
   const raw = (info as Record<string, unknown>).processingFeeDetail
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null
   return raw as ProcessingFeeDetail
+}
+
+/**
+ * 一行明细的加工费（元）—— **权威口径优先**（issue #7138）。**读加工费的单一入口**。
+ *
+ * ```
+ * 有 processingFeeDetail        ⇒ 只信 detail.amount（服务端取价落库值，与详情「费用构成」同一份）
+ * 没有 detail = #4406 前的存量单 ⇒ #2916 兜底：顶层 processingFee → 加工项明细 amount / subtotal 求和
+ * ```
+ *
+ * 🔴 **不许先读 `processingInfo.processingFee`**：那是**客户端副本**（下单页 / 探针脚本写进来，
+ * 服务端既不校验也不覆盖）⇒ 与权威值可以是两个数 —— dev 实证（2026-10-17，tenant 32）：
+ * 副本 15 元 / 权威 0 元·`fee_source=unpriced` ⇒ 销售订单「+ 加工费15元」与详情「未定价」自相矛盾。
+ *
+ * ⚠️ 别处再拼一份取值判定 = 迟早与详情分叉（判据 = `tests/unit/order-fee-source-guard.test.ts`）。
+ */
+export function processingFeeOf(info: unknown): number {
+  const detail = readFeeDetail(info)
+  if (detail) {
+    const amount = nullableNumber(detail.amount)
+    return amount === null ? 0 : amount
+  }
+  if (info === null || typeof info !== 'object' || Array.isArray(info)) return 0
+  const blob = info as Record<string, unknown>
+  const declared = nullableNumber(blob.processingFee)
+  if (declared !== null && declared > 0) return declared
+  const list = Array.isArray(blob.processingItems) ? blob.processingItems : []
+  return list.reduce<number>((sum, row) => {
+    const entry = row !== null && typeof row === 'object' ? (row as Record<string, unknown>) : {}
+    const amount = nullableNumber(entry.amount) ?? nullableNumber(entry.subtotal)
+    return sum + (amount ?? 0)
+  }, 0)
 }
 
 /**
@@ -371,6 +405,11 @@ export function buildOrderFeeComposition(
     const unpriced = isUnpriced(detail)
     // 布料单：金额 0 且不是「未定价」⇒ 这一行不进费用构成（不渲染空行 / ¥0.00 行）
     if (amount === 0 && !unpriced) return
+    // 布料单**不涉及加工费**（issue #7320）：定价引擎把「没有选配加工项」一律记 `unpriced`
+    // （它不认售卖形态）⇒ 布料行的落库 detail 就是 `fee_source=unpriced`。那不是「未定价」，
+    // 是「本来就没有这笔费用」⇒ 不进费用构成、不计入未定价（下单页早有同一豁免，此处补齐读面）。
+    // ⚠️ 只在金额为 0 时豁免：真落了非零加工费的行照常展示（不藏钱）。
+    if (amount === 0 && isFabricSaleLine(row?.processingInfo)) return
     const label = typeof row?.productName === 'string' && row.productName !== '' ? row.productName : `第 ${index + 1} 行`
     const unpricedLabel = unpriced ? unpricedCombinationLabel(detail ?? undefined) : null
     if (unpricedLabel !== null && !unpricedLabels.includes(unpricedLabel)) {

@@ -1,4 +1,4 @@
-// case_ids: BM-018, BM-019, BM-032
+// case_ids: BM-018, BM-019, BM-032, BM-051
 /**
  * 工人**拍照入库页**的行为判据（issue #5052 P3；验收判据 10 / 11 + 页面级联调；
  * 卷数 × 卷长口径改判见 issue #6812）
@@ -178,6 +178,16 @@ describe('工人拍照入库页', () => {
   it('C2 安卓 Chrome 且 HTTPS ⇒ 显示正向提示（可打印）', () => {
     render(<WorkerInboundPage />)
     expect(screen.getByTestId('inbound-print-capability').textContent).toBe(PRINT_READY_HINT)
+  })
+
+  it('C9 拍照步文案是给工人看的纯文本（无 markdown 标记、无研发术语，issue #7316）', () => {
+    render(<WorkerInboundPage />)
+    const photo = screen.getByTestId('inbound-step-photo').textContent || ''
+    expect(photo).toContain('手机当场就能认出来')
+    expect(photo).toContain('拍完整')
+    // 🔴 红证：写回 `**不会**` ⇒ 星号上屏，本断言当场红（同 worker-copy-plain-text-guard.test.ts）
+    expect(photo).not.toContain('*')
+    expect(photo).not.toMatch(/识别模型|服务端|解码/)
   })
 
   it('C3 h5 下不调 Taro.login（工人身份走工号 + PIN）', async () => {

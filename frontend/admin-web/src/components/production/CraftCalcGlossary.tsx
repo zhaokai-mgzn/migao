@@ -73,11 +73,10 @@ function TermBlock({ term, anchor, meta }: { term: GlossaryTerm; anchor?: string
           </>
         )}
       </p>
-      {term.boundary !== undefined && (
-        <p className="mt-0.5 text-xs text-amber-700">
-          <InlineMarkdown text={term.boundary} />
-        </p>
-      )}
+      {/* 🔴 2026-10-17 用户裁定：原先这里渲染 `term.boundary`（琥珀色「边界」行）——
+          用户逐字「术语怎么判里面的红色文案都拿掉，这些都是开发过程的产物，不是产品的需求」。
+          算料域的术语**已全部不带 boundary**（见 `@/lib/craft-calc-glossary` 的 `GlossaryTerm`），
+          故本行整段删除；真属于产品行为的那几条已并入 definition / impact（**不留红字载体**）。 */}
     </div>
   )
 }
@@ -142,7 +141,7 @@ export function CraftCalcGlossary({ config }: { config: CraftCalcConfig }) {
     >
       <h2 className="text-base font-medium text-neutral-900">术语与算法说明</h2>
       <p className="mt-1 text-sm text-neutral-500">
-        <InlineMarkdown text="上面的参数回答「我家这套口径是多少」；这里回答「每个词是什么意思、系统按什么判、改了什么会变」。下面的数字都按**当前配置**渲染 —— 参数保存后，这里的数字跟着变。" />
+        <InlineMarkdown text="上面的参数是本企业的算料口径；这里说明每个术语的含义、系统的判定方式，以及改动后会影响到什么。下面的数值按**当前配置**显示 —— 参数保存后，数值会同步变化。" />
       </p>
 
       <details
@@ -151,7 +150,7 @@ export function CraftCalcGlossary({ config }: { config: CraftCalcConfig }) {
         open
         className="mt-3 border-t border-neutral-100 pt-3"
       >
-        <summary className="cursor-pointer text-sm font-medium text-neutral-800">公式怎么算</summary>
+        <summary className="cursor-pointer text-sm font-medium text-neutral-800">用料公式</summary>
         <ol className="mt-2 space-y-2 text-sm">
           {GLOSSARY_FORMULAS.map((f) => (
             <li key={f.name} data-testid={`glossary-formula-${f.name}`}>
@@ -178,7 +177,7 @@ export function CraftCalcGlossary({ config }: { config: CraftCalcConfig }) {
                 data-testid={`glossary-param-${key}`}
                 className="border-b border-neutral-100 last:border-b-0"
               >
-                <td className="py-1.5 pr-3 align-top text-neutral-700">
+                <td className="py-1.5 pr-3 align-top text-neutral-700 whitespace-nowrap">
                   <InlineMarkdown text={CALC_PARAM_COPY[key].label} />
                 </td>
                 <td
@@ -201,10 +200,10 @@ export function CraftCalcGlossary({ config }: { config: CraftCalcConfig }) {
         data-testid="glossary-terms"
         className="mt-3 border-t border-neutral-100 pt-3"
       >
-        <summary className="cursor-pointer text-sm font-medium text-neutral-800">术语怎么判</summary>
+        <summary className="cursor-pointer text-sm font-medium text-neutral-800">术语判定规则</summary>
 
         <h3 className="mt-2 text-sm font-medium text-neutral-700">
-          系统自动推算（会进加工费组合）
+          系统自动推算（影响加工费档位）
         </h3>
         {examplesError !== null && (
           <p data-testid="glossary-examples-error" className="mt-1 text-xs text-amber-700">
@@ -238,7 +237,7 @@ export function CraftCalcGlossary({ config }: { config: CraftCalcConfig }) {
         </div>
 
         <h3 className="mt-4 text-sm font-medium text-neutral-700">
-          最容易混的几个词（看着像一回事，其实不在同一层）
+          容易混淆的术语（名称相近、影响不同）
         </h3>
         <div className="mt-1">
           {TERM_FAMILY.map((term) => (
@@ -250,7 +249,7 @@ export function CraftCalcGlossary({ config }: { config: CraftCalcConfig }) {
             （用料 / 工序 / 对客价 / 计件），所以与上面三组分开列 */}
         <h3 className="mt-4 text-sm font-medium text-neutral-700">特殊选项（下单时勾选）</h3>
         <p className="mt-1 text-xs text-neutral-500">
-          <InlineMarkdown text="这六项影响的东西**各不相同** —— 有的改用料、有的加一道工序、有的只影响计件的历史口径。每项对应哪道工序，以生产里的工序路线表为准（不是这里自己编的）。" />
+          <InlineMarkdown text="这六项的影响范围不同：有的改变每折用料，有的增加工序，有的只涉及计件。每项对应的工序以生产工序路线为准。" />
         </p>
         <div className="mt-1">
           {SPECIAL_OPTION_TERMS.map((term) => (
@@ -258,10 +257,12 @@ export function CraftCalcGlossary({ config }: { config: CraftCalcConfig }) {
               key={term.name}
               term={term}
               anchor={glossaryOptionAnchorOf(term.name)}
+              // ⚠️ 只给**有工序**的选项补工序行（`null` ⇒ 说明里的「不加工序」已经承载，
+              // 再补一行是 P2 信息重复）；措辞与 impact 内不再重复同一句（#7147）。
               meta={
                 term.operation === null
-                  ? '不加工序'
-                  : `插工序「${term.operation}」（在「${term.after}」之后）`
+                  ? undefined
+                  : `工序：插「${term.operation}」（在「${term.after}」之后）`
               }
             />
           ))}

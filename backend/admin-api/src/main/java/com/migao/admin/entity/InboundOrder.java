@@ -59,6 +59,14 @@ public class InboundOrder {
     /** 供应商（文本，MVP 不建主数据） */
     private String supplier;
 
+    /**
+     * 供应商档案引用（issue #7369 段 2）：NULL = 未建档 / 待指派。
+     *
+     * <p>⚠️ 与 {@link #supplier} **不是**同一件东西：那是**单据快照**（当时收货写的什么），
+     * 这是**主数据引用**（哪家档案）。供应商改名后文本不变、本列不变 —— 要按供应商聚合就看本列。
+     */
+    private String supplierId;
+
     /** 供应商送货单号（对账用） */
     private String supplierDocNo;
 

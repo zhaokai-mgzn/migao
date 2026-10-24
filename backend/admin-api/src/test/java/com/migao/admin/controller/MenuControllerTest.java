@@ -1,6 +1,6 @@
 package com.migao.admin.controller;
 
-// case_ids: PG-021, MC-091
+// case_ids: PG-021, MC-091, STK-002
 
 import com.migao.admin.config.GlobalExceptionHandler;
 import com.migao.admin.dto.MenuNode;
@@ -57,31 +57,47 @@ class MenuControllerTest {
 
     /** #5271 新 IA 的顶层**组** key（顺序即真值 = 前端 `menuGroups` 顺序）。
      *  2026-09-29（issue #5778）：七组 → **六组**（`smart-customer-service` → `customer-service`；
-     *  `product-center` 撤销）—— 另有一个**顶层一级项**（商品管理）不在本表（它不是组，
-     *  见 `topLevelStandaloneItemMirrorsFrontend`）。 */
+     *  `product-center` 撤销）。
+     *  🔴 2026-10-17（issue #7087，用户裁定「经营看板直接作为一级菜单，移除工作台」）：
+     *  「**工作台**」组**整组撤销** ⇒ **五组**；顶层另混有**三个一级项**（最前席位「经营看板」+
+     *  尾席位「商品管理」「企业基础设置」），它们**不是组**（见 `topLevelStandaloneItemMirrorsFrontend`）。 */
     private static final List<String> GROUP_KEYS = List.of(
-            "workspace", "customer-service", "trade-center",
-            "production-center", "inventory-center", "org-center");
+            "customer-service", "trade-center",
+            "production-center", "supply-chain", "inventory-center", "org-center");
 
     /** 顶层组名（与 GROUP_KEYS 同序）。 */
     private static final List<String> GROUP_LABELS = List.of(
-            "工作台", "客户服务", "交易管理", "生产管理", "仓储与物料", "组织管理");
+            "客户服务", "交易管理", "生产管理", "供应链", "仓储与物料", "组织管理");
 
-    /** #5778 的 **23 个菜单项名**（一项不少不减；「通知中心」是一级独立项、不在本权限树内）。
+    /** 菜单项名总表（一项不少不减；「通知中心」是一级独立项、不在本权限树内）。
      *  ⚠️ #6404：菜单项 21 → 22（+「库存明细」`/stock-ledger`）。
      *  ⚠️ #6573：菜单项 22 → 23（+顶层一级项「参数总览」`/settings/params`，取既有读码 `production:view`）。
-     *  ⚠️ 含两个顶层一级项「商品管理」「参数总览」（它们不属于任何组，但仍是菜单项）。
+     *  ⚠️ 含**顶层一级项**（它们不属于任何组，但仍是菜单项）——由 `TOP_LEVEL_STANDALONE_LABELS` 分流。
      *  🔴 2026-10-06（issue #6457，用户裁定方案 A1）：**顺序重排**（项数不变）——
      *  客户服务组「接待与工具 → 售后 → 档案」、生产管理组「先备资料 → 再生产」、
-     *  仓储组「单据（进 → 账 → 出）→ 台账 → 分析」，且一级项「商品管理」沉到**所有分组之后**。 */
+     *  仓储组「单据（进 → 账 → 出）→ 台账 → 分析」，且一级项「商品管理」沉到**所有分组之后**。
+     *  🔴 2026-10-17（issue #7087，用户裁定）：**「每日简报」删除**（那行结论就在经营看板上）；
+     *  **「经营看板」由「工作台」组内项升为最前席位一级项** ⇒ 仍在本表、但落到顶层一级项那一支。 */
     private static final List<String> MENU_ITEM_LABELS = List.of(
-            "经营看板", "每日简报",
+            "经营看板",
             "在线接待", "知识库", "售后工单", "客户列表",
-            "订单列表", "财务对账",
+            // 🔴 2026-10-22（issue #7375 段 3）：交易管理组新增「价格本」（组内第一项，码 order:list）
+            "价格本",
+            "销售订单", "财务对账",
             // 🔴 2026-10-09（issue #6580，用户裁定「移除加工项管理和工艺配置这两个菜单」）：
             // 「加工项管理」「工艺配置」两个菜单项已移除（功能体并入「企业基础设置」页内的配置域）。
-            "生产看板", "智能派单", "计件工资",
-            "入库单", "库存明细", "发货单", "余料台账", "省料看板",
+            "作业看板", "智能派单", "计件工资",
+            // 🔴 2026-10-17（issue #7140）：生产管理组新增「质检记录」（读码 production:inspect）
+            "质检记录",
+            // 🔴 2026-10-23（issue #7377）：生产管理组新增「返工单」（复用售后读码 after_sales:view）
+            "返工单",
+            // 🔴 2026-10-24（issue #7593，用户裁定）：原「审批中心」菜单项**已撤除** —— 入口改顶栏
+            // 待办入口（`ApprovalBell`）；页面 `/approvals` 与路由守卫保留 ⇒ 本表不再有这一项。
+            // 🔴 2026-10-20（issue #7369 段 4）：仓储与物料组新增「采购单」（同取 inbound:view，紧随供应商）
+            "入库单", "供应商", "采购单", "库存明细",
+            // 🔴 2026-10-22（issue #7373）：仓储与物料组新增「盘点单」（读码 inbound:view，紧随库存明细）
+            "盘点单",
+            "发货单", "余料台账", "省料看板",
             "员工管理", "岗位权限",
             // 组内的**权限码节点**（无 path、不是菜单项）：只为让经营域的码仍可授予
             "企业基础设置（经营域）",
@@ -103,9 +119,11 @@ class MenuControllerTest {
             "加工单操作", "入库单操作"));
 
     /** 顶层**一级项**名（`children` 为空、直接跳转的那些，**不属于任何组**）。
-     *  🔴 #6580 起两个：商品管理 / 企业基础设置（原「参数总览」的席位）—— 它们不参与
-     *  `allChildren` 的组内计数，由 `topLevelStandaloneItems` 单独断言（避免两处都算它们 ⇒ 重复计数）。 */
-    private static final List<String> TOP_LEVEL_STANDALONE_LABELS = List.of("商品管理", "企业基础设置");
+     *  🔴 2026-10-17（issue #7087）起**三个**：**最前席位**「经营看板」（前端 `standaloneHeadItems`
+     *  的对应物）+ 尾席位「商品管理」「企业基础设置」（#6580 的席位）—— 它们不参与 `allChildren`
+     *  的组内计数，由 `topLevelStandaloneItems` 单独断言（避免两处都算它们 ⇒ 重复计数）。 */
+    private static final List<String> TOP_LEVEL_STANDALONE_LABELS =
+            List.of("经营看板", "商品管理", "企业基础设置");
 
     /**
      * 拉取菜单树 DOM —— jsonPath 的过滤表达式对「单元素结果是否解包」语义不稳，
@@ -184,48 +202,62 @@ class MenuControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data").isArray())
-                // issue #5271：七大组（旧树是 9 个顶层条目）。
-                // 🔴 2026-10-09（issue #6580）：**六大组 + 两个顶层一级项「商品管理」「企业基础设置」= 8 个顶层条目**
-                //（`product-center` 撤销、`smart-customer-service` → `customer-service`、商品列表升为一级项；
-                //  「参数总览」由 issue #6573 从 `/settings` 的 tab 升为一级项）。
-                .andExpect(jsonPath("$.data.length()").value(8));
+                // 🔴 2026-10-17（issue #7087）：**最前席位一级项「经营看板」+ 五大组 + 两个尾席位一级项
+                // 「商品管理」「企业基础设置」= 8 个顶层条目**（与「六大组 + 两个一级项」同数不同序：
+                //  「工作台」组撤销、经营看板由组内项升为最前席位一级项、「每日简报」项删除）。
+                .andExpect(jsonPath("$.data.length()").value(10));
     }
 
     @Test
-    @DisplayName("新 IA：顶层一级项（商品管理 / 企业基础设置，后者由 #6580 从组织管理组升上来）不在任何组内，且排在**所有分组之后**")
+    @DisplayName("新 IA（#7087 + #7376）：四个顶层一级项 —— 最前席位「经营看板」（码 dashboard:view）+ 尾席位「商品管理」「企业基础设置」；五个组紧跟在「经营看板」之后")
     void topLevelStandaloneItemMirrorsFrontend() throws Exception {
         JsonNode tree = fetchTree();
         var tops = topLevelStandaloneItems(tree);
-        assertEquals(2, tops.size(), "顶层一级项应恰有 2 个（商品管理 / 企业基础设置）—— 实得 = " + labels(tree));
-        assertEquals("商品管理", tops.get(0).path("label").asText(),
-                "第 1 个顶层一级项必须是「商品管理」—— 实得 = " + labels(tree));
-        // 🔴 issue #6580：第 2 个一级项 = 「企业基础设置」（由组织管理组升上来，席位即原「参数总览」；
-        // 码取既有读码 `production:view`，不新造码）。
-        assertEquals("企业基础设置", tops.get(1).path("label").asText(),
-                "第 2 个顶层一级项必须是「企业基础设置」—— 实得 = " + labels(tree));
-        // 🔴 2026-10-06（issue #6457，用户裁定方案 A1）：一级项**排在所有分组之后**（原「工作台组之后」）
-        // —— 组名即「分组」，渲染在组与组之间会让「大菜单并列」自相矛盾。
-        // 顶层**位次**：第 0 项 = 「工作台」组、第 6 项（末项）= 一级项「商品管理」。
-        // 判据 = 三源同构守卫的顶层布局序列（tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py）。
-        assertEquals("workspace", tree.get(0).path("code").asText(),
-                "顶层第 0 项必须是「工作台」组 —— 实得 = " + codes(tree));
+        assertEquals(4, tops.size(),
+                "顶层一级项应恰有 4 个（经营看板 / 报表中心 / 商品管理 / 企业基础设置）—— 实得 = " + labels(tree));
+        // 🔴 2026-10-17（issue #7087，用户裁定「经营看板直接作为一级菜单，移除工作台」）：
+        // 第 1 个顶层一级项 = 「经营看板」，落在**最前席位**（= 整个顶层序列的第 0 项）——
+        // 前端 `menu.ts` 的 `standaloneHeadItems` 的对应物。为什么**必须最前**：`landingPath()` =
+        // **第一个可见菜单项**（issue #6758）⇒ 与「商品管理」并列的尾席位会让登录落点变成「在线接待」。
+        // 码 = `dashboard:view`（与升为一级项之前**一字未动** ⇒ 零授权 delta）。
+        assertEquals("经营看板", tops.get(0).path("label").asText(),
+                "第 1 个顶层一级项必须是「经营看板」—— 实得 = " + labels(tree));
+        // 🔴 issue #7376：第 2 个一级项 = 「报表中心」（同为**最前席位**，紧跟经营看板）
+        assertEquals("报表中心", tops.get(1).path("label").asText(),
+                "第 2 个顶层一级项必须是「报表中心」—— 实得 = " + labels(tree));
+        // 🔴 issue #6580：第 3 / 4 个一级项 = 「商品管理」「企业基础设置」（尾席位，排在所有分组之后）
+        assertEquals("商品管理", tops.get(2).path("label").asText(),
+                "第 3 个顶层一级项必须是「商品管理」—— 实得 = " + labels(tree));
+        assertEquals("企业基础设置", tops.get(3).path("label").asText(),
+                "第 4 个顶层一级项必须是「企业基础设置」—— 实得 = " + labels(tree));
+        // 顶层**位次**：第 0 项 = 最前席位一级项「经营看板」→ 第 1~5 项 = 五个组 → 末两项 = 尾席位一级项
+        //（#7087 起「工作台」组不再占第 0 项）。判据 = 三源同构守卫的顶层布局序列
+        //（tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py）。
+        assertEquals("dashboard:view", tree.get(0).path("code").asText(),
+                "顶层第 0 项必须是**最前席位**一级项「经营看板」—— 实得 = " + codes(tree));
+        // 最前席位是**两项**（经营看板 → 报表中心，#7376）⇒ 组从下标 2 开始
+        assertEquals(GROUP_KEYS, codes(tree).subList(2, 2 + GROUP_KEYS.size()),
+                "顶层第 2~" + (1 + GROUP_KEYS.size()) + " 项必须依次是五个组（「工作台」组已撤销）—— 实得 = " + codes(tree));
         assertEquals("org-center", tree.get(tree.size() - 3).path("code").asText(),
-                "顶层倒数第 3 项必须是「组织管理」组（两个一级项紧跟在它之后）—— 实得 = " + codes(tree));
+                "顶层倒数第 3 项必须是「组织管理」组（两个尾席位一级项紧跟在它之后）—— 实得 = " + codes(tree));
         assertEquals("product:list", tree.get(tree.size() - 2).path("code").asText(),
                 "顶层倒数第 2 项必须是「商品管理」（排在**所有分组之后**）—— 实得 = " + codes(tree));
         // 🔴 issue #6580：末项 = 「企业基础设置」（与「商品管理」并列、同排在所有分组之后）
         assertEquals("production:view", tree.get(tree.size() - 1).path("code").asText(),
                 "顶层末项必须是「企业基础设置」—— 实得 = " + codes(tree));
-        assertEquals("product:list", tops.get(0).path("code").asText());
+        assertEquals("dashboard:view", tops.get(1).path("code").asText(),
+                "报表中心与经营看板同码（报表是看板的下钻）");
+        assertEquals("product:list", tops.get(2).path("code").asText());
         assertEquals(0, tops.get(0).path("children").size(),
                 "一级项不得有子节点（它不是组）—— 有子节点说明它被写成了组");
     }
 
     @Test
-    @DisplayName("#5271 新 IA：七个顶层组的 key 与组名按 menu.ts 顺序逐值一致")
+    @DisplayName("#5271 新 IA：顶层五个组的 key 与组名按 menu.ts 顺序逐值一致（#7087 起「工作台」组不再存在）")
     void topLevelGroupsMirrorFrontendOrder() throws Exception {
         JsonNode tree = fetchTree();
-        // #5778：顶层混有一个**一级项**（商品管理）⇒ 组序列取「有 key 的那些」
+        // #5778 起顶层混有**一级项**（#7087 起三个：最前席位「经营看板」+ 尾席位两项）
+        // ⇒ 组序列取「有 children 的那些」
         assertEquals(GROUP_KEYS, codes(topLevelGroups(tree)),
                 "顶层组 key / 顺序与前端 config/menu.ts 的 menuGroups 不一致");
         assertEquals(GROUP_LABELS, labels(topLevelGroups(tree)),
@@ -233,12 +265,32 @@ class MenuControllerTest {
     }
 
     @Test
-    @DisplayName("工作台组：经营看板 + 每日简报（同码 dashboard:view，企业开关不在服务端过滤）")
-    void workspaceGroupMirrorsMenuTs() throws Exception {
-        JsonNode workspace = group(fetchTree(), "workspace");
-        assertEquals("工作台", workspace.path("label").asText());
-        assertEquals(List.of("经营看板", "每日简报"), labels(workspace.path("children")));
-        assertEquals(List.of("dashboard:view", "dashboard:view"), codes(workspace.path("children")));
+    @DisplayName("🔴 #7087：经营看板 = 顶层**一级项**（最前席位），码 dashboard:view（与前端 standaloneHeadItems 同构）")
+    void dashboardIsTopLevelHeadStandaloneItem() throws Exception {
+        JsonNode tree = fetchTree();
+        JsonNode head = tree.get(0);
+        assertEquals("dashboard:view", head.path("code").asText(),
+                "最前席位一级项的码必须是 dashboard:view（升为一级项**不改码**）—— 实得 = " + codes(tree));
+        assertEquals("经营看板", head.path("label").asText(),
+                "最前席位一级项必须是「经营看板」—— 实得 = " + labels(tree));
+        assertEquals(0, head.path("children").size(),
+                "「经营看板」必须是无子节点的**一级项**（升为一级菜单后不再是组）—— 有子节点 = 写回了组形态");
+    }
+
+    @Test
+    @DisplayName("🔴 #7087 反向断言：树里没有「工作台」组（含空组形态），也没有「每日简报」节点")
+    void workspaceGroupAndDailyBriefingAreGone() throws Exception {
+        JsonNode tree = fetchTree();
+        assertFalse(codes(tree).contains("workspace"),
+                "旧「工作台」组（key `workspace`）仍在顶层（#7087 整组撤销）—— 实得 = " + codes(tree));
+        assertFalse(labels(tree).contains("工作台"),
+                "「工作台」组名不得再出现在权限树上 —— 实得 = " + labels(tree));
+        List<String> all = labels(allNodes(tree));
+        assertFalse(all.contains("每日简报"),
+                "「每日简报」菜单项仍在树上（#7087 已撤销：那行结论就在经营看板上）—— 实得全表 = " + all);
+        // 同码承载节点只剩一处（旧形态是「工作台」组里两个 dashboard:view）—— 反向对照的**对象**还在
+        assertEquals(1, all.stream().filter("经营看板"::equals).count(),
+                "「经营看板」在树上必须**恰好一处**（顶层一级项）—— 实得全表 = " + all);
     }
 
     @Test
@@ -266,34 +318,40 @@ class MenuControllerTest {
     }
 
     @Test
-    @DisplayName("交易管理组（#5778 收窄）：订单列表 + 财务对账 + 组尾动作码（订单详情）")
+    @DisplayName("交易管理组（#5778 收窄 + #7375）：价格本 + 销售订单 + 财务对账 + 组尾动作码（订单详情）")
     void tradeCenterGroupMirrorsMenuTs() throws Exception {
         JsonNode trade = group(fetchTree(), "trade-center");
         assertEquals("交易管理", trade.path("label").asText());
-        // 本轮：客户列表 / 售后工单已移入「客户服务」组 ⇒ 只剩「下单 → 收款」两项 + 组尾动作码
-        assertEquals(List.of("订单列表", "财务对账", "订单详情"),
+        // 本轮：客户列表 / 售后工单已移入「客户服务」组 ⇒ 只剩「定价 → 下单 → 收款」+ 组尾动作码
+        // 🔴 2026-10-22（issue #7375 段 3）：新增组内第一项「价格本」（码 order:list —— 与销售订单同码，
+        // 因为价格本页第一屏读的就是 PricingController 的类级 `order:list`）。
+        // 🔴 2026-10-24（issue #7593，用户裁定）：「审批中心」撤出侧边栏（入口改顶栏待办入口）⇒ 本组只剩
+        // 价格本 / 销售订单 / 财务对账 + 组尾动作码（订单详情）。
+        assertEquals(List.of("价格本", "销售订单", "财务对账", "订单详情"),
                 labels(trade.path("children")));
-        assertEquals(List.of("order:list", "finance:view", "order:detail"),
+        assertEquals(List.of("order:list", "order:list", "finance:view", "order:detail"),
                 codes(trade.path("children")));
     }
 
     @Test
-    @DisplayName("生产管理组（#6580 收拢为 3 项 + #5291/#5699 P4 + #6759 组尾动作码）：生产看板/计件工资 production:view、智能派单 processing:view、加工单操作 processing:update")
+    @DisplayName("生产管理组（#6580 收拢为 3 项 + #5291/#5699 P4 + #6759 组尾动作码）：作业看板/计件工资 production:view、智能派单 processing:view、加工单操作 processing:update")
     void productionCenterGroupMirrorsMenuTs() throws Exception {
         JsonNode production = group(fetchTree(), "production-center");
         assertEquals("生产管理", production.path("label").asText());
         // 🔴 2026-10-09（issue #6580）：本组**由 5 项收拢为 3 项** —— 「加工项管理」「工艺配置」
-        // 两个菜单项按用户裁定移除 ⇒ 只剩「生产看板 → 智能派单 → 计件工资」。
+        // 两个菜单项按用户裁定移除 ⇒ 只剩「作业看板 → 智能派单 → 计件工资」。
         // 🔴 2026-10-12（issue #6759）：**组尾**追加动作码节点「加工单操作」（`processing:update`
         // = 手机端派单的写码）—— 动作节点统一追加在组尾，导航项仍是它之前的连续前缀。
-        assertEquals(List.of("生产看板", "智能派单", "计件工资", "加工单操作"),
+        assertEquals(List.of("作业看板", "智能派单", "计件工资", "质检记录", "返工单", "加工单操作"),
                 labels(production.path("children")));
         // issue #5699（P4，子菜单粒度）：每个节点码 ≡ 该页第一屏读码 —— 智能派单 = processing:view
         //（ProductionPoolController 两个读端点同码）；工艺配置 = production:view（该页第一屏 6 个读端点
         // 本次整页收敛到该码；两码持有岗位集合逐值相同 ⇒ 零 delta）；#5291 的 production:view
-        // 仍覆盖生产看板与计件工资。
-        // 🔴 #6580：两项移除后组内码为 [生产看板, 智能派单, 计件工资]；#6759 追加 processing:update。
-        assertEquals(List.of("production:view", "processing:view", "production:view", "processing:update"),
+        // 仍覆盖作业看板与计件工资。
+        // 🔴 #6580：两项移除后组内码为 [作业看板, 智能派单, 计件工资]；#6759 追加 processing:update。
+        // 🔴 2026-10-23（issue #7377）：追加「返工单」= after_sales:view（复用售后读码 ⇒ 零授权 delta）
+        assertEquals(List.of("production:view", "processing:view", "production:view",
+                        "production:inspect", "after_sales:view", "processing:update"),
                 codes(production.path("children")));
     }
 
@@ -305,15 +363,18 @@ class MenuControllerTest {
         // 🔴 2026-10-06（issue #6457，方案 A1）：单据（进 → 账 → 出）→ 台账 → 分析。
         // 🔴 2026-10-12（issue #6759）：**组尾**追加动作码节点「入库单操作」（`inbound:create`
         // = 手机端过账的写码）。
-        assertEquals(List.of("入库单", "库存明细", "发货单", "余料台账", "省料看板", "入库单操作"),
+        assertEquals(List.of("库存明细", "盘点单", "发货单", "余料台账", "省料看板", "入库单操作"),
                 labels(inventory.path("children")));
         // 入库单是**仓储**动作、权限码独立为 inbound:view —— 并进 processing:manage 会让
         // 「有 inbound:view、没有 processing:manage」的仓管看不到菜单（#4203 点名的同族坑）。
         // issue #5699（P4）：省料看板节点码 = 该页第一屏读码 product:list（StockBatchController）。
-        // issue #5939：「发货单」取**既有** order:list（与订单列表同码、与页面/端点同码）⇒ 零授权 delta。
+        // issue #5939：「发货单」取**既有** order:list（与销售订单同码、与页面/端点同码）⇒ 零授权 delta。
         // 🔴 issue #6404：「库存明细」同样取**既有** product:list（与省料看板同码；
         // 码不唯一是有意的 —— 两个页面各自的读端点注解就是这个码）。
-        assertEquals(List.of("inbound:view", "product:list", "order:list", "processing:manage", "product:list",
+        // issue #7369：「供应商」与「入库单」同码（inbound:view）—— 档案面与单据面同群，零授权 delta。
+        // 用户 2026-10-20：单据类节点（入库单/供应商/采购单）已移到「供应链」组 ⇒ 本组只剩库存与出库。
+        // #7373：「盘点单」取**既有** inbound:view（与入库/仓库同域；该页第一屏读端点就是这个码）。
+        assertEquals(List.of("product:list", "inbound:view", "order:list", "processing:manage", "product:list",
                         "inbound:create"),
                 codes(inventory.path("children")));
     }
@@ -335,13 +396,15 @@ class MenuControllerTest {
     }
 
     @Test
-    @DisplayName("旧顶层组（dashboard/orders/products/employees/customers/finance/settings/agent/production）不再存在")
+    @DisplayName("旧顶层组（dashboard/orders/products/employees/customers/finance/settings/agent/production/customer-center/**workspace**）不再存在")
     void legacyTopLevelGroupsAreGone() throws Exception {
         List<String> topKeys = codes(fetchTree());
+        // 🔴 2026-10-17（issue #7087）：「工作台」组（`workspace`）加入本表 —— 它与上面那些旧组同为
+        // 「不再作为**任何形态**存在」的组（既不是组，也不是空组）。
         for (String legacy : List.of("dashboard", "orders", "products", "employees", "customers",
-                "finance", "settings", "agent", "production", "customer-center")) {
+                "finance", "settings", "agent", "production", "customer-center", "workspace")) {
             assertFalse(topKeys.contains(legacy),
-                    "旧顶层组 `" + legacy + "` 仍在菜单树里（#5271 已并入七大组）—— 实得 = " + topKeys);
+                    "旧顶层组 `" + legacy + "` 仍在菜单树里（#5271 / #7087 已撤销）—— 实得 = " + topKeys);
         }
     }
 
@@ -357,17 +420,18 @@ class MenuControllerTest {
     }
 
     @Test
-    @DisplayName("菜单项一项不少不减（21 组内菜单项 + 1 个组内权限码节点 + 2 顶层一级项各恰好一次）+ 4 个动作码节点（#6759 起）")
+    @DisplayName("菜单项一项不少不减（组内 17 个节点 = 16 菜单项 + 1 权限码节点；3 个顶层一级项各恰好一次）+ 4 个动作码节点（#6759 起）")
     void everyMenuItemAppearsExactlyOnce() throws Exception {
-        List<String> all = labels(allChildren(fetchTree()));
+        JsonNode tree = fetchTree();
+        List<String> all = labels(allChildren(tree));
         for (String name : MENU_ITEM_LABELS) {
             int expected = 1;
-            // 顶层**一级项**（「商品管理」「企业基础设置」）是**叶子** ⇒ 不在 `allChildren`
+            // 顶层**一级项**（「经营看板」「商品管理」「企业基础设置」）是**叶子** ⇒ 不在 `allChildren`
             // （它们不属于任何组），改在顶层一级项集合里各断言恰好一次。
             // ⚠️ 这里按**名单**判断而不是按名字硬编码：将来再加一级项，忘了登记就会落到下面那条
             // 「组内节点出现次数不是 1」上 ⇒ 当场红（不会静默跳过）。
             if (TOP_LEVEL_STANDALONE_LABELS.contains(name)) {
-                assertEquals(1, topLevelStandaloneItems(fetchTree()).stream()
+                assertEquals(1, topLevelStandaloneItems(tree).stream()
                                 .filter(n -> name.equals(n.path("label").asText())).count(),
                         "顶层一级项「" + name + "」的出现次数不是 1");
                 continue;
@@ -379,15 +443,19 @@ class MenuControllerTest {
             assertEquals(1, all.stream().filter(action::equals).count(),
                     "动作码节点「" + action + "」缺失或重复（实得全表 = " + all + "）");
         }
-        // 组内节点总数 = **21 个组内菜单项**（`MENU_ITEM_LABELS` 23 项 − 2 个顶层一级项
-        // 「商品管理」「企业基础设置」）+ **4 个动作码节点** = 25。
+        // 组内节点总数 = **17 个组内菜单项**（`MENU_ITEM_LABELS` 20 项 − 3 个顶层一级项
+        // 「经营看板」「商品管理」「企业基础设置」）+ **4 个动作码节点** = 21。
         // （#5939：菜单项 21 → 22；#6404：+「库存明细」；#6573：新增的是顶层一级项 ⇒ 组内项不变；
         //   🔴 #6759：动作码节点 2 → 4 —— 运行时追加「加工单操作」/「入库单操作」⇒ 这里按**现取表长**
-        //   算，两处都不会漏算或重复计数。）
+        //   算，两处都不会漏算或重复计数。
+        //   🔴 #7087（issue #7087）：「工作台」组撤销、「经营看板」升为最前席位一级项、「每日简报」删除
+        //   ⇒ 组内项 21 → 17、顶层一级项 2 → 3；故减数取 `TOP_LEVEL_STANDALONE_LABELS.size()`
+        //   **而不是写死的 2** —— 名单变了公式自己跟着变。）
         // ⚠️ 顶层一级项是**叶子**（不在任何组内）⇒ 不被 `allChildren` 收录，它们的存在由
         // `topLevelStandaloneItemMirrorsFrontend` 单独断言（避免两处都算它 ⇒ 重复计数）。
-        assertEquals(MENU_ITEM_LABELS.size() - 2 + ACTION_NODE_LABELS.size(), all.size(),
-                "组内节点总数 = 21 组内菜单项 + 4 动作码节点（实得全表 = " + all + "）");
+        assertEquals(MENU_ITEM_LABELS.size() - TOP_LEVEL_STANDALONE_LABELS.size() + ACTION_NODE_LABELS.size(),
+                all.size(),
+                "组内节点总数 = 19 组内菜单项 + 4 动作码节点（实得全表 = " + all + "）");
         // 🔴 #6759：动作码节点由 2 → 4（+「加工单操作」`processing:update` / 「入库单操作」`inbound:create`）
         assertEquals(4, ACTION_NODE_LABELS.size(),
                 "动作码节点台账应恰有 4 条（订单详情 / 新增员工 / 加工单操作 / 入库单操作）");
@@ -436,9 +504,9 @@ class MenuControllerTest {
         }
 
         // ③ 两个**导航项**仍是动作节点之前的连续前缀（动作节点只许在组尾）
-        assertEquals(List.of("生产看板", "智能派单", "计件工资"),
+        assertEquals(List.of("作业看板", "智能派单", "计件工资", "质检记录", "返工单"),
                 labels(processed).subList(0, processed.size() - 1));
-        assertEquals(List.of("入库单", "库存明细", "发货单", "余料台账", "省料看板"),
+        assertEquals(List.of("库存明细", "盘点单", "发货单", "余料台账", "省料看板"),
                 labels(inventory).subList(0, inventory.size() - 1));
     }
 
@@ -476,7 +544,7 @@ class MenuControllerTest {
         assertEquals(List.of("入库过账"), actual.get("inbound:view"),
                 "`inbound:view` 的手机端面必须是「入库过账」（MobileSurfaces 的 inbound）");
         assertFalse(actual.containsKey("order:list"),
-                "`order:list`（订单列表 / 发货单）在手机端没有任何面 ⇒ 不得有标注（不在手机上多一个入口）");
+                "`order:list`（销售订单 / 发货单）在手机端没有任何面 ⇒ 不得有标注（不在手机上多一个入口）");
         assertFalse(actual.containsKey("employee:create"),
                 "`employee:create`（新增员工）在手机端没有任何面 ⇒ 不得有标注");
     }
@@ -500,7 +568,7 @@ class MenuControllerTest {
                         new MenuNode("order:list", "发货单"))),
                 new MenuNode("production-center", "生产管理", List.of(
                         new MenuNode("processing:view", "智能派单"),
-                        new MenuNode("production:view", "生产看板"))));
+                        new MenuNode("production:view", "作业看板"))));
         MenuController.annotateMobileTitles(scratch, mutated);
 
         Map<String, List<String>> got = new LinkedHashMap<>();
@@ -567,15 +635,20 @@ class MenuControllerTest {
                 "名实不符的标注（节点名与面名没有任何公共子串，却把该面挂在它头上）：" + mislabeled);
 
         // ③ 真语料读数：真树上被标注的恰好是这 6 处（同码后继节点一个都不许再带标注）
-        assertEquals(List.of("经营看板", "在线接待", "售后工单", "生产看板", "智能派单", "入库单"),
+        assertEquals(List.of("经营看板", "在线接待", "售后工单", "作业看板", "智能派单", "入库单"),
                 new ArrayList<>(annotated.keySet()),
                 "真树上的标注点必须收敛到这 6 处（实得 = " + annotated + "）");
-        assertEquals(List.of("经营看板", "每日简报"), carriers.get("dashboard:view"),
-                "`dashboard:view` 在真树上的承载节点（本单「同屏重复」的语料）");
-        assertEquals(List.of("生产看板", "计件工资", "企业基础设置"), carriers.get("production:view"),
-                "`production:view` 在真树上的承载节点（本单「名实不符」的语料）");
-        // 逐点反向对照：三个同码后继节点在树上存在、但不得带任何标注
-        for (String label : List.of("每日简报", "计件工资", "企业基础设置")) {
+        // 🔴 2026-10-17（issue #7087）：「每日简报」删除、「经营看板」升为顶层一级项 ⇒ `dashboard:view`
+        // 在真树上**只剩一处**承载节点（旧语料是「工作台」组里两个）——「同屏重复」的真语料因此
+        // 改由 `production:view`（三处承载）承担，见下一个测试。
+        // 🔴 2026-10-22（issue #7376）：`dashboard:view` 现由**两个**顶层一级项承载
+        //（经营看板 + 报表中心 —— 报表是看板的下钻，同码零授权 delta）；手机端标注仍只打在第一处。
+        assertEquals(List.of("经营看板", "报表中心"), carriers.get("dashboard:view"),
+                "`dashboard:view` 在真树上的承载节点（#7376 起为最前席位两项）");
+        assertEquals(List.of("作业看板", "计件工资", "企业基础设置"), carriers.get("production:view"),
+                "`production:view` 在真树上的承载节点（「同屏重复 / 名实不符」的语料）");
+        // 逐点反向对照：两个同码后继节点在树上存在、但不得带任何标注
+        for (String label : List.of("计件工资", "企业基础设置")) {
             List<JsonNode> flat = allNodes(tree);
             assertEquals(1, flat.stream().filter(n -> label.equals(n.path("label").asText())).count(),
                     "前置：真树上应恰有一个「" + label + "」节点（没有它这条对照就没有对象）");
@@ -586,42 +659,45 @@ class MenuControllerTest {
     }
 
     @Test
-    @DisplayName("🔴 #6781 红证①：未修形态的**真语料**（按码复制到每个承载节点）⇒ 同屏重复 2 个码 + 名实不符 3 条当场红")
+    @DisplayName("🔴 #6781 红证①：未修形态的**真语料**（按码复制到每个承载节点）⇒ 同屏重复 1 个码 + 名实不符 2 条当场红")
     void mobileTitlesCopiedPerNodeAreRejected() throws Exception {
-        // 未修形态的**真语料**（issue #6781 的逐字实测读数：真栈上 40 行里 9 行带标注）
+        // 未修形态的**真语料**（issue #6781 的逐字实测读数：真栈上 40 行里 9 行带标注）。
+        // 🔴 2026-10-17（issue #7087）：原语料里「每日简报」（与「经营看板」同码 `dashboard:view`）
+        // 随菜单撤销删除 ⇒ 同屏重复的**真语料**只剩 `production:view` 那一族（三处承载）；
+        // 「经营看板」保留在语料里作**反向对照**（该码只有它一处承载 ⇒ 判据①不得命中它）。
         Map<String, List<String>> perNodeAnnotations = new LinkedHashMap<>();
         perNodeAnnotations.put("经营看板", List.of("数据"));
-        perNodeAnnotations.put("每日简报", List.of("数据"));
-        perNodeAnnotations.put("生产看板", List.of("计件工资报表", "生产待办"));
+        perNodeAnnotations.put("作业看板", List.of("计件工资报表", "生产待办"));
         perNodeAnnotations.put("计件工资", List.of("计件工资报表", "生产待办"));
         perNodeAnnotations.put("企业基础设置", List.of("计件工资报表", "生产待办"));
 
         // 真值（承载关系）现取自真树 —— 注入的只是「标注怎么落」，不是另抄一张承载表
         Map<String, List<String>> carriers = carrierLabelsByCode(fetchTree());
 
-        // 判据①（同屏重复）当场红：`dashboard:view` 两处、`production:view` 三处（= 同屏两条一模一样的标注）
+        // 判据①（同屏重复）当场红：`production:view` 三处（= 同屏三条一模一样的标注）；
+        // 「经营看板」的码只承载一次 ⇒ **不得**出现在这份清单里（反向对照）
         Map<String, Long> perCode = new LinkedHashMap<>();
         for (String label : perNodeAnnotations.keySet()) {
             perCode.merge(codeOf(label), 1L, Long::sum);
         }
-        assertEquals(List.of("dashboard:view × 2", "production:view × 3"),
+        assertEquals(List.of("production:view × 3"),
                 perCode.entrySet().stream().filter(e -> e.getValue() > 1)
                         .map(e -> e.getKey() + " × " + e.getValue()).toList(),
-                "未修形态下同码必然多处标注 —— 判据①必须当场红");
+                "未修形态下同码必然多处标注 —— 判据①必须当场红（且只此一个码）");
 
         // 判据②（名实不符）当场红：未修形态下，**树序非首承载节点**（= 该码还有别的承载节点、
-        // 本该什么都不标的节点）恰好是这三个 —— 逐字取自真树（承载关系现取，不另抄一张表）。
+        // 本该什么都不标的节点）恰好是这两个 —— 逐字取自真树（承载关系现取，不另抄一张表）。
         List<String> offenders = perNodeAnnotations.keySet().stream()
                 .filter(label -> !carriers.getOrDefault(codeOf(label), List.of()).isEmpty())
                 .filter(label -> carriers.get(codeOf(label)).indexOf(label) > 0)
                 .toList();
-        assertEquals(List.of("每日简报", "计件工资", "企业基础设置"), offenders,
-                "名实不符的**非首承载节点**必须恰是这三个（实得 = " + offenders + "）");
+        assertEquals(List.of("计件工资", "企业基础设置"), offenders,
+                "名实不符的**非首承载节点**必须恰是这两个（实得 = " + offenders + "）");
         List<String> unrelated = offenders.stream()
                 .filter(label -> perNodeAnnotations.get(label).stream().noneMatch(title -> sharesAChar(label, title)))
                 .toList();
-        assertEquals(List.of("每日简报", "企业基础设置"), unrelated,
-                "三条 issue 语料里「无任何公共子串」的两个节点（企业基础设置命中两个面）—— 判据②当场红");
+        assertEquals(List.of("企业基础设置"), unrelated,
+                "真语料里「无任何公共子串」的那个节点（企业基础设置命中两个面）—— 判据②当场红");
 
         // 判据④（相关的一律不许判红）：节点名与面名有公共子串 ⇒ 不在上面任何一份清单里
         for (String[] related : List.of(new String[]{"售后工单", "售后处理"}, new String[]{"入库单", "入库过账"})) {
@@ -635,11 +711,14 @@ class MenuControllerTest {
     @Test
     @DisplayName("🔴 #6781 红证②（注入式 · 不读磁盘）：把标注按码复制到每个承载节点 ⇒ 落在非首承载节点上即刻可判红；改回修后形态 ⇒ 绿")
     void injectedPerNodeCopyIsCaughtByTheFirstCarrierRule() {
-        // 用真机制（`annotateMobileTitles`）造两棵树：同一组「承载节点」，唯一变量 = **回落策略**
+        // 用真机制（`annotateMobileTitles`）造两棵树：同一组「承载节点」，唯一变量 = **回落策略**。
+        // 承载节点取**真语料**里的一对同码节点：`production:view` = 作业看板（树序首个）+ 计件工资
+        // （🔴 2026-10-17 issue #7087：原用 `dashboard:view` 的「经营看板 + 每日简报」，但
+        //  「每日简报」与「工作台」组已撤销 ⇒ 换成仍在树上的这一对，判据语义一字未变）。
         List<MenuNode> duplicated = List.of(
-                new MenuNode("workspace", "工作台", List.of(
-                        new MenuNode("dashboard:view", "经营看板"),
-                        new MenuNode("dashboard:view", "每日简报"))));
+                new MenuNode("production-center", "生产管理", List.of(
+                        new MenuNode("production:view", "作业看板"),
+                        new MenuNode("production:view", "计件工资"))));
         MenuController.annotateMobileTitles(duplicated, MOBILE_SURFACES);
         // 注入「未修形态」：把树序首承载节点的标注按**同一个码**复制到它的同码后继节点上
         MenuNode first = duplicated.get(0).getChildren().get(0);
@@ -647,8 +726,8 @@ class MenuControllerTest {
         first.getMobileTitles().forEach(second::addMobileTitle);
 
         // 判据（注入形态）：同一个码 → 两处一模一样的标注（同屏重复）+ 后一处是**非首承载节点**（名实不符）
-        assertEquals(List.of("数据"), first.getMobileTitles());
-        assertEquals(List.of("数据"), second.getMobileTitles(),
+        assertEquals(List.of("计件工资报表", "生产待办"), first.getMobileTitles());
+        assertEquals(List.of("计件工资报表", "生产待办"), second.getMobileTitles(),
                 "前置：注入式复制已生效（同码后继节点上出现了同一串标注）");
         assertEquals(2, duplicated.get(0).getChildren().stream()
                         .filter(n -> !n.getMobileTitles().isEmpty()).count(),
@@ -656,13 +735,13 @@ class MenuControllerTest {
 
         // 修后形态（本单实现）：同一个码只标注树序首个承载节点 ⇒ 后继节点零标注
         List<MenuNode> fixed = List.of(
-                new MenuNode("workspace", "工作台", List.of(
-                        new MenuNode("dashboard:view", "经营看板"),
-                        new MenuNode("dashboard:view", "每日简报"))));
+                new MenuNode("production-center", "生产管理", List.of(
+                        new MenuNode("production:view", "作业看板"),
+                        new MenuNode("production:view", "计件工资"))));
         MenuController.annotateMobileTitles(fixed, MOBILE_SURFACES);
-        assertEquals(List.of("数据"), fixed.get(0).getChildren().get(0).getMobileTitles());
+        assertEquals(List.of("计件工资报表", "生产待办"), fixed.get(0).getChildren().get(0).getMobileTitles());
         assertTrue(fixed.get(0).getChildren().get(1).getMobileTitles().isEmpty(),
-                "修后形态：非首承载节点「每日简报」不得带任何标注（实得 = "
+                "修后形态：非首承载节点「计件工资」不得带任何标注（实得 = "
                         + fixed.get(0).getChildren().get(1).getMobileTitles() + "）");
         assertEquals(1, fixed.get(0).getChildren().stream()
                         .filter(n -> !n.getMobileTitles().isEmpty()).count(),
@@ -719,11 +798,12 @@ class MenuControllerTest {
         return left.codePoints().anyMatch(cp -> right.contains(new String(Character.toChars(cp))));
     }
 
-    /** 真语料里用到的码（与真树逐值一致；写在判据侧的**语料**，不是实现里的映射表）。 */
+    /** 真语料里用到的码（与真树逐值一致；写在判据侧的**语料**，不是实现里的映射表）。
+     *  🔴 2026-10-17（issue #7087）：「每日简报」已删除 ⇒ 语料里只剩它一处承载的「经营看板」。 */
     private static String codeOf(String label) {
         return switch (label) {
-            case "经营看板", "每日简报" -> "dashboard:view";
-            case "生产看板", "计件工资", "企业基础设置" -> "production:view";
+            case "经营看板" -> "dashboard:view";
+            case "作业看板", "计件工资", "企业基础设置" -> "production:view";
             case "智能派单" -> "processing:view";
             case "入库单" -> "inbound:view";
             case "在线接待" -> "agent:session";
@@ -741,16 +821,17 @@ class MenuControllerTest {
         return List.copyOf(all);
     }
 
-    /** 从响应树里现取「权限码 → [手机端面名…]」（只收**非空**的那些 —— 空 = 「没有手机端入口」）。 */
+    /** 从响应树里现取「权限码 → [手机端面名…]」（只收**非空**的那些 —— 空 = 「没有手机端入口」）。
+     *  🔴 2026-10-17（issue #7087）：遍历面由「组内子节点」改为**整棵树** —— 「经营看板」升为
+     *  **顶层一级项**后不再属于任何组，只扫组内会把它整条漏掉（而它的码 `dashboard:view` 在
+     *  `MobileSurfaces.TABS` 里有面「数据」）⇒ 与判据侧现取的 `expected` 不等而**假红**。 */
     private static Map<String, List<String>> mobileTitlesOf(JsonNode tree) {
         Map<String, List<String>> out = new LinkedHashMap<>();
-        for (JsonNode group : tree) {
-            for (JsonNode node : group.path("children")) {
-                List<String> titles = new ArrayList<>();
-                node.path("mobileTitles").forEach(t -> titles.add(t.asText()));
-                if (!titles.isEmpty()) {
-                    out.put(node.path("code").asText(), titles);
-                }
+        for (JsonNode node : allNodes(tree)) {
+            List<String> titles = new ArrayList<>();
+            node.path("mobileTitles").forEach(t -> titles.add(t.asText()));
+            if (!titles.isEmpty()) {
+                out.put(node.path("code").asText(), titles);
             }
         }
         return out;

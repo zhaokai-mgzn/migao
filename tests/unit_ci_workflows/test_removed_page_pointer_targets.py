@@ -19,7 +19,7 @@
 | 1 | 6 个承包文件的服务端字面量里**零** `REMOVED_PAGE_NAMES`（改前红：逐条具名报出） |
 | 2 | **逐域正控**：4 个目标域 label 各被对应的服务读到（「企业基础设置 → 加工费组合 / 加工项与分类 / 工艺路线 / 工序与部位单价」） |
 | 3 | **两处假出口**改写后**不再含**该页名、且给出的是**真边界**（工艺词的写面不存在 ⇒ 不许出现新的页面坐标） |
-| 4 | 台账 = **3 条 / 3 处**（只剩能力名）且 `FROZEN_MAX_*` 与台账**逐值一致**（常量与台账不许各说一套） |
+| 4 | 台账 = **2 条 / 2 处**（只剩能力名，issue #7111 起）且 `FROZEN_MAX_*` 与台账**逐值一致**（常量与台账不许各说一套） |
 | 5 | 域 label 真值源现取非空（fail-closed；域被改名 ⇒ 红而不是静默空集） |
 | 6 | **§31 P3 类级**：admin-api 字面量里「商家答复型提示 + 内部端点」的命中必须逐条在 `restricted_literal_leaks_ledger.json` 里（未登记即红 / 幽灵条目即红 / 条数 ≤ 冻结基线） |
 | 7 | `REMOVED_NAMES` 与 MC-096 守卫的 `REMOVED_PAGE_NAMES` **逐值相等**（本文件是镜像 ⇒ 镜像漂了要红，不许静默用旧集合） |
@@ -80,9 +80,12 @@ DOMAIN_POSITIVE_CONTROLS = {
     "ProductionService.java": "企业基础设置 → 工序与部位单价",
 }
 
-#: 台账清到只剩能力名（3 条 / 3 处）。
-EXPECTED_LEDGER_ENTRIES = 3
-EXPECTED_LEDGER_HITS = 3
+#: 台账清到只剩能力名（2 条 / 2 处）。
+#: 🔻 2026-10-17（issue #7111）：岗位描述改成「职责 + 默认可用模块」后，`RegistrationService` 的
+#: **加工项管理**那条能力名（旧商品管理员描述整句）在扫描面上不再存在 ⇒ 按「只许缩短」销账
+#: （3 条 / 3 处 ⇒ 2 条 / 2 处）；本常量与 `test_removed_page_copy_guard` 的 `FROZEN_MAX_*` 同步收窄。
+EXPECTED_LEDGER_ENTRIES = 2
+EXPECTED_LEDGER_HITS = 2
 
 #: 内部端点泄漏台账的冻结基线（**只许缩短**；跟踪单 issue #6841）。
 LEAK_LEDGER_BASELINE = 9
@@ -176,7 +179,7 @@ def test_false_exits_no_longer_name_a_nonexistent_coordinate():
 
 
 def test_ledger_shrunk_to_capability_names_only():
-    """判据 4：台账 = 3 条 / 3 处（只剩能力名），且 `FROZEN_MAX_*` 与台账**逐值一致**。"""
+    """判据 4：台账 = 2 条 / 2 处（只剩能力名，issue #7111 起），且 `FROZEN_MAX_*` 与台账**逐值一致**。"""
     ledger = json.loads(LEDGER_PATH.read_text(encoding="utf8"))
     entries = list(ledger.get("entries", []))
     total = sum(int(e.get("hits", 0)) for e in entries)

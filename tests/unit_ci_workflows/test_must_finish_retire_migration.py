@@ -466,8 +466,8 @@ def test_bootstrap_matches_migration_chain_terminal_state(psql):
     schema = _read(SCHEMA_SQL)
     boot_block = schema[schema.index("INSERT INTO production_operations"):]
     boot_rows = _seed_rows(boot_block)
-    assert len(boot_rows) == 41, (
-        f"schema.sql 的工序库种子解析出 {len(boot_rows)} 行，期望 41 ⇒ 解析失效或种子被改")
+    assert len(boot_rows) == 42, (
+        f"schema.sql 的工序库种子解析出 {len(boot_rows)} 行，期望 42 ⇒ 解析失效或种子被改（#7523 新增「出库」）")
 
     # ① bootstrap 侧：终态取值集合
     boot_terminal = {r["must"] for r in boot_rows if r["deleted"] in (None, "0")}

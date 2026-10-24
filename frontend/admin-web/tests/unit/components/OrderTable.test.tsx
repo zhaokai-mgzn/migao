@@ -182,6 +182,70 @@ describe('OrderTable', () => {
     })
   })
 
+  // issue #7138：列表「采购明细」的加工费必须与订单详情**同一份权威值**
+  // （`processingInfo.processingFeeDetail.amount`，服务端取价落库）。
+  // `processingInfo.processingFee` 是**客户端副本**（下单页 / 探针脚本写进来，服务端既不校验
+  // 也不覆盖）⇒ 采信它就会与详情自相矛盾（dev 实证：副本 15 元 / 权威 0 元·unpriced）。
+  describe('采购明细列加工费口径（#7138：权威 detail 优先）', () => {
+    const detailCell = () => document.querySelector('td.min-w-\\[280px\\]') as HTMLElement
+    const orderWith = (processingInfo: Record<string, unknown>) => ({
+      ...mockOrder,
+      items: [{ ...mockOrder.items![0], processingInfo }],
+    })
+
+    it('副本 15 元 / 权威 0 元·未定价 ⇒ 不渲染「加工费15元」（与详情「未定价」同口径）', () => {
+      render(
+        <OrderTable
+          {...defaultProps}
+          orders={[
+            orderWith({
+              processingFee: 15,
+              processingItems: [{ id: 'pi-1', name: '锁边', quantity: 2 }],
+              processingFeeDetail: { fee_source: 'unpriced', amount: 0, composition: '锁边' },
+            }),
+          ]}
+        />
+      )
+      const cellText = detailCell().textContent || ''
+      // 红证：改前这里渲染「+ 加工费15元」——那正是与详情「未定价」打架的那一行
+      expect(cellText).not.toMatch(/加工费/)
+      expect(cellText).not.toMatch(/15/)
+    })
+
+    it('权威命中（amount 15 元）⇒ 渲染「+ 加工费15元」，不采信副本里的别的数', () => {
+      render(
+        <OrderTable
+          {...defaultProps}
+          orders={[
+            orderWith({
+              processingFee: 99,
+              processingFeeDetail: {
+                fee_source: 'matched',
+                amount: 15,
+                unit_price: 7.5,
+                meters: 2,
+              },
+            }),
+          ]}
+        />
+      )
+      const cellText = detailCell().textContent || ''
+      expect(cellText).toMatch(/\+\s*加工费15元/)
+      // 副本里的 99 不得被当成加工费（`99元` 只允许出现在商品单价位）
+      expect(cellText).not.toMatch(/加工费99元/)
+    })
+  })
+
+  // issue #7138（第二处）：空数据态下表头「采购明细」被压成一字一行（竖排）。
+  // 有数据时是数据格的 `min-w-[280px]` 撑住列宽 ⇒ 规则必须是**表头与数据格共用同一宽度下限**。
+  it('空数据态：采购明细表头与数据格共用同一宽度下限（不被压成竖排）', () => {
+    render(<OrderTable {...defaultProps} orders={[]} />)
+    const th = screen.getByText('采购明细').closest('th') as HTMLElement
+    expect(th).toBeTruthy()
+    expect(th.className).toContain('min-w-[280px]')
+    expect(th.className).toContain('whitespace-nowrap')
+  })
+
   it('空列表显示"暂无数据"', () => {
     render(<OrderTable {...defaultProps} orders={[]} />)
     expect(screen.getByText('暂无数据')).toBeTruthy()

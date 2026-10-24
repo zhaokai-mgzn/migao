@@ -13,13 +13,17 @@
  */
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { AlertCircle } from 'lucide-react'
+import { AlertCircle, ChevronDown } from 'lucide-react'
 
 import { formatDraft } from '@/components/ui/NumberInput'
+// issue #7176：配置面表单的**唯一版式原语**（与「阈值试算」同一套：浅底面板 + 栅格 + 标签在上 + 单位入框）
+import FormPanel, { FIELD_CONTROL, Field, FormGrid, fieldControl } from '@/components/ui/FormPanel'
 import { cuttingHeightApi } from '@/lib/api'
+import { CRAFT_OPTIONS, SPECIAL_OPTIONS } from '@/lib/order-craft-fields'
 import { cn } from '@/lib/utils'
+import { SELECT_CONTROL, SELECT_CONTROL_FIELD } from '@/components/ui'
 import type {
   CuttingHeightConfigBody,
   CuttingHeightConfigResponse,
@@ -56,6 +60,65 @@ function newItem(order: number): CuttingHeightItem {
   }
 }
 
+/**
+ * 特殊选项多选下拉（issue #7213）—— 19 项**闭词表**（与下单页 `OrderExtraOptions` 同一份
+ * `SPECIAL_OPTIONS`；选项名是 join key，手输错一个字就不命中 ⇒ 这里不给自由文本）。
+ * §31 P1：常驻面只一行（未选择 / 已选 N 项），点开才渲染复选项。
+ */
+function OptionsMultiSelect({ value, onChange }: { value: string[]; onChange: (next: string[]) => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    function onMouseDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [open])
+
+  const toggle = (name: string) => {
+    onChange(value.includes(name) ? value.filter((v) => v !== name) : [...value, name])
+  }
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        id="cutting-height-probe-options"
+        aria-label="预演特殊选项"
+        aria-expanded={open}
+        title={value.length > 0 ? value.join('、') : undefined}
+        onClick={() => setOpen((v) => !v)}
+        className={cn(FIELD_CONTROL, 'flex items-center justify-between text-left')}
+      >
+        <span className={value.length === 0 ? 'text-neutral-400' : undefined}>
+          {value.length === 0 ? '未选择' : `已选 ${value.length} 项`}
+        </span>
+        <ChevronDown className="h-4 w-4 shrink-0 text-neutral-400" />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-40 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-neutral-200 bg-white p-1 shadow-card-hover">
+          {SPECIAL_OPTIONS.map((name) => (
+            <label
+              key={name}
+              className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
+            >
+              <input
+                type="checkbox"
+                checked={value.includes(name)}
+                onChange={() => toggle(name)}
+                aria-label={`特殊选项-${name}`}
+              />
+              {name}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function CuttingHeightConfigPanel() {
   const [config, setConfig] = useState<CuttingHeightConfigBody | null>(null)
   const [source, setSource] = useState('')
@@ -63,7 +126,7 @@ export function CuttingHeightConfigPanel() {
   const [saving, setSaving] = useState(false)
   const [preview, setPreview] = useState<CuttingHeightPreview | null>(null)
   const [previewError, setPreviewError] = useState('')
-  const [probe, setProbe] = useState({ position: '布帘', finishedHeight: '', craft: '', options: '' })
+  const [probe, setProbe] = useState({ position: '布帘', finishedHeight: '', craft: '', options: [] as string[] })
 
   const load = useCallback(async () => {
     try {
@@ -124,9 +187,7 @@ export function CuttingHeightConfigPanel() {
         position: probe.position,
         finished_height: probe.finishedHeight,
         craft: probe.craft || undefined,
-        special_options: probe.options
-          ? probe.options.split(/[,，\s]+/).filter(Boolean)
-          : [],
+        special_options: probe.options,
       })
       setPreview(res.data.data)
     } catch {
@@ -175,21 +236,37 @@ export function CuttingHeightConfigPanel() {
         {config && (
           <div className="mt-4 space-y-4">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm" data-testid="cutting-height-items">
+              {/* 列宽**显式**给（issue #7153）：此前 `w-full` + auto 布局 + 每格 `w-full` 控件 ⇒
+                  宽输入框吃掉余量后把 select 列压到**低于内容宽度**（真机实测「特殊选:」「布厂」被裁、
+                  「启用」「删除」竖排）。现在 `table-fixed` + `colgroup` 定比例、`min-w` 兜底：
+                  窄屏走横向滚动，**不压缩控件到裁字**。 */}
+              <table
+                className="w-full min-w-[700px] table-fixed text-sm"
+                data-testid="cutting-height-items"
+              >
+                <colgroup>
+                  <col className="w-[20%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[11%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[12%]" />
+                </colgroup>
                 <thead>
                   <tr className="text-left text-neutral-500">
-                    <th className="py-1 pr-2">名称</th>
-                    <th className="py-1 pr-2">取值（米）</th>
-                    <th className="py-1 pr-2">触发</th>
-                    <th className="py-1 pr-2">触发值</th>
-                    <th className="py-1 pr-2">部位</th>
-                    <th className="py-1 pr-2">启用</th>
-                    <th className="py-1" />
+                    <th className="whitespace-nowrap py-1 pr-2">名称</th>
+                    <th className="whitespace-nowrap py-1 pr-2">取值（米）</th>
+                    <th className="whitespace-nowrap py-1 pr-2">触发</th>
+                    <th className="whitespace-nowrap py-1 pr-2">触发值</th>
+                    <th className="whitespace-nowrap py-1 pr-2">部位</th>
+                    <th className="whitespace-nowrap py-1 pr-2 text-center">启用</th>
+                    <th className="whitespace-nowrap py-1" />
                   </tr>
                 </thead>
                 <tbody>
                   {config.items.map((item, index) => (
-                    <tr key={item.key} className="border-t border-neutral-100">
+                    <tr key={item.key} className="border-t border-neutral-100 align-middle">
                       <td className="py-1 pr-2">
                         <input
                           className={inputCls}
@@ -203,7 +280,8 @@ export function CuttingHeightConfigPanel() {
                           className={inputCls}
                           aria-label={`取值-${index}`}
                           value={formatDraft(item.value)}
-                          placeholder="留空 = 有项无值"
+                          placeholder="可留空"
+                          title="取值留空 = 有项无值：会命中，但会显式报出「未配置取值」，不按 0 算"
                           onChange={(e) =>
                             patchItem(index, { value: e.target.value.trim() === '' ? null : Number(e.target.value) })
                           }
@@ -211,7 +289,7 @@ export function CuttingHeightConfigPanel() {
                       </td>
                       <td className="py-1 pr-2">
                         <select
-                          className={inputCls}
+                          className={cn(SELECT_CONTROL, 'w-full')}
                           aria-label={`触发类型-${index}`}
                           value={item.hit.trigger_kind}
                           onChange={(e) => patchHit(index, { trigger_kind: e.target.value })}
@@ -233,7 +311,7 @@ export function CuttingHeightConfigPanel() {
                       </td>
                       <td className="py-1 pr-2">
                         <select
-                          className={inputCls}
+                          className={cn(SELECT_CONTROL, 'w-full')}
                           aria-label={`部位-${index}`}
                           value={item.hit.position ?? ''}
                           onChange={(e) => patchHit(index, { position: e.target.value || null })}
@@ -246,7 +324,7 @@ export function CuttingHeightConfigPanel() {
                           ))}
                         </select>
                       </td>
-                      <td className="py-1 pr-2">
+                      <td className="py-1 pr-2 text-center">
                         <input
                           type="checkbox"
                           aria-label={`启用-${index}`}
@@ -254,10 +332,10 @@ export function CuttingHeightConfigPanel() {
                           onChange={(e) => patchItem(index, { enabled: e.target.checked })}
                         />
                       </td>
-                      <td className="py-1">
+                      <td className="whitespace-nowrap py-1">
                         <button
                           type="button"
-                          className="text-neutral-400 underline"
+                          className="whitespace-nowrap text-neutral-400 underline"
                           data-testid={`cutting-height-remove-${index}`}
                           onClick={() =>
                             setConfig((prev) =>
@@ -292,7 +370,7 @@ export function CuttingHeightConfigPanel() {
               <label className="text-sm text-neutral-600">
                 取整
                 <select
-                  className={cn(inputCls, 'ml-1 inline-block w-auto')}
+                  className={cn(SELECT_CONTROL, 'ml-1 inline-block w-auto')}
                   aria-label="取整方式"
                   value={config.rounding.mode}
                   onChange={(e) =>
@@ -307,7 +385,7 @@ export function CuttingHeightConfigPanel() {
               <label className="text-sm text-neutral-600">
                 保留
                 <select
-                  className={cn(inputCls, 'ml-1 inline-block w-auto')}
+                  className={cn(SELECT_CONTROL, 'ml-1 inline-block w-auto')}
                   aria-label="保留位数"
                   value={String(config.rounding.digits)}
                   onChange={(e) =>
@@ -335,16 +413,22 @@ export function CuttingHeightConfigPanel() {
         )}
       </section>
 
-      <section className="rounded-lg border border-neutral-200 bg-white p-5">
-        <h3 className="text-base font-medium text-neutral-900">预演（只读）</h3>
-        <p className="text-sm text-neutral-500">
-          填入一单的成品高与选配，看这次会给机器输什么值。<strong>不会写机器</strong>。
-        </p>
-        <div className="mt-3 flex flex-wrap items-end gap-3 text-sm">
-          <label>
-            部位
+      {/* 🔴 issue #7176：本块与「阈值试算」是**同一套字段语言**（此前是「标签顺排在控件左边 + 定宽框」，
+          与同页/同产品的其它配置面长得不一样 —— 用户逐字「一个产品不要出现多种设计和风格样式」）。 */}
+      <FormPanel
+        title="预演（只读）"
+        hint={
+          <>
+            填入一单的成品高与选配，看这次会给机器输什么值。<strong>不会写机器</strong>。
+          </>
+        }
+      >
+        {/* 列数按**标签长度**选（本组标签较长 ⇒ 两列，与「阈值试算」的四列同一个 `FormGrid`） */}
+        <FormGrid cols={2}>
+          <Field label="部位" htmlFor="cutting-height-probe-position">
             <select
-              className={cn(inputCls, 'ml-1 inline-block w-auto')}
+              id="cutting-height-probe-position"
+              className={cn(SELECT_CONTROL_FIELD, 'w-full')}
               aria-label="预演部位"
               value={probe.position}
               onChange={(e) => setProbe({ ...probe, position: e.target.value })}
@@ -355,34 +439,40 @@ export function CuttingHeightConfigPanel() {
                 </option>
               ))}
             </select>
-          </label>
-          <label>
-            成品高（米）
+          </Field>
+          <Field label="成品高" unit="米" htmlFor="cutting-height-probe-height">
             <input
-              className={cn(inputCls, 'ml-1 inline-block w-24')}
+              id="cutting-height-probe-height"
+              className={fieldControl('米')}
               aria-label="预演成品高"
               value={probe.finishedHeight}
               onChange={(e) => setProbe({ ...probe, finishedHeight: e.target.value })}
             />
-          </label>
-          <label>
-            安装工艺
-            <input
-              className={cn(inputCls, 'ml-1 inline-block w-24')}
+          </Field>
+          <Field label="安装工艺" htmlFor="cutting-height-probe-craft">
+            <select
+              id="cutting-height-probe-craft"
+              className={cn(SELECT_CONTROL_FIELD, 'w-full')}
               aria-label="预演工艺"
               value={probe.craft}
               onChange={(e) => setProbe({ ...probe, craft: e.target.value })}
-            />
-          </label>
-          <label>
-            特殊选项（逗号分隔）
-            <input
-              className={cn(inputCls, 'ml-1 inline-block w-40')}
-              aria-label="预演特殊选项"
+            >
+              <option value="">不指定</option>
+              {CRAFT_OPTIONS.map((craft) => (
+                <option key={craft} value={craft}>
+                  {craft}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="特殊选项" htmlFor="cutting-height-probe-options">
+            <OptionsMultiSelect
               value={probe.options}
-              onChange={(e) => setProbe({ ...probe, options: e.target.value })}
+              onChange={(options) => setProbe({ ...probe, options })}
             />
-          </label>
+          </Field>
+        </FormGrid>
+        <div className="mt-3">
           <button
             type="button"
             className="rounded border border-neutral-300 px-3 py-1.5"
@@ -422,7 +512,7 @@ export function CuttingHeightConfigPanel() {
             )}
           </div>
         )}
-      </section>
+      </FormPanel>
     </div>
   )
 }

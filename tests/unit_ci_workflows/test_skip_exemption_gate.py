@@ -93,6 +93,12 @@ import render_cases  # noqa: E402
 # 它**允许无到期**，但"没有钉住它的测试"就不成立（否则 = 永远不跑的借口）。
 SKIP_CATEGORIES: dict[str, dict] = {
     "backend-contract": {"debt": False, "needs_pinned_test": True},
+    # 🔴 issue #7369 段 4-B（有意识决策，本轮新增类别）：`[frontend-contract]` = 该用例的
+    # 正确判定层在**前端单测**（vitest），不在 LLM 层 —— 与 `backend-contract` 同形：
+    # 不进 agent-eval、**允许无到期**，但必须给出钉住它的测试（`traces.tests` 非空，
+    # 否则就是「永远不跑的借口」）。它与 `backend-contract` 的差别只在判据跑在哪条腿上，
+    # 不是宽松：判据同样是每次 CI 都真跑的 vitest 用例。
+    "frontend-contract": {"debt": False, "needs_pinned_test": True},
     "no-data-source": {"debt": True, "needs_pinned_test": False},
     "deprecated": {"debt": True, "needs_pinned_test": False},
     "wip": {"debt": True, "needs_pinned_test": False},

@@ -555,9 +555,9 @@ cases:
       - "今天有什么异常"
     expectations: []
     data_checks:
-      - "工具消息逐条点名**非 `wired`** 的能力（规则名）并给出**各自**的措辞：`not_wired` ⇒ 「尚未接入」（不可行动）；`not_enabled` ⇒ 「你还没开启<能力>」+ 开启引导（**可行动**，与「尚未接入」**分开说、不合并**）；`incomplete` ⇒ 本次数据不完整 + 原因；当天 0 条命中时也不得出现「今日无异常 / 无异常 / 一切正常 / 未发现异常」这类表述（消息是模型的唯一输入源，消息里没有的兜底模型编不出来）"
+      - "工具消息逐条点名**非 `wired`** 的能力（规则名）并给出**各自**的措辞：`not_wired` ⇒ 「尚未接入」（不可行动）；`not_enabled` ⇒ 「你还没开启<能力>」+ 开启引导（**可行动**，与「尚未接入」**分开说、不合并**）；`incomplete` ⇒ 本次数据不完整 + **只点名规则**（截断上限 / 字段名不进消息）；当天 0 条命中时也不得出现「今日无异常 / 无异常 / 一切正常 / 未发现异常」这类表述（消息是模型的唯一输入源，消息里没有的兜底模型编不出来）。🔴 issue #7201：消息**只读引擎 `display`**（商家话术）；`reason` / `caveats` 的工程原文（`fail-open` / `#5303` / 表名 / 快照键 / 「装配层」）**一个字都不进消息** —— 它们只在 `data.proactive_status` 里供按需下钻（判据 = `TestMerchantWordingOnly::test_message_never_carries_engineering_text`，五类快照逐一扫）"
       - "逐规则状态进 data（`proactive_status`），调用方自己可分**四态**：`wired`（已接入**且本次完整**但当天无命中）/ `incomplete`（已接入但**本次不完整**）/ `not_enabled`（系统**有**、**该租户没开**，可行动）/ `not_wired`（系统**未实现**，不可行动）；全部 `wired` 时**不得**出现未接线措辞（披露不能因为总是出现而失去信息量）"
-      - "本次**不完整**（行数被上限截断 / 分组维度缺值）时同样如实说明（「本次数据不完整，空命中不代表没有问题」+ 点名规则 + 原因），与未接线披露并列；注入式红证：抹掉截断标志 ⇒ 该判据必红"
+      - "本次**不完整**（行数被上限截断 / 分组维度缺值）时同样如实说明（「本次数据不完整，空命中不代表没有问题」+ 点名规则），与未接线披露并列；注入式红证：抹掉截断标志 ⇒ 该判据必红"
       - "注入式红证：从消息里抹掉某条未接线能力的名字、或往消息里塞「今日无异常」⇒ 同一判据必须变红"
     skip_reason: "[backend-contract] 未接线话术由 ai-agent 单测验证（tests/test_tools_briefing_query.py 的 TestNotWiredDisclosure），非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-09-24 新增（issue #5358）：族 3 跨域视图内核包 1 — 未接线如实说明；2026-09-24 文本刷新（issue #5387，容器核查发现的**第三处**同类陈旧口径）：披露面由「未接线」一态扩为**三态各有各的说法**（`not_wired` 不可行动 / `not_enabled` 可行动且与前者分开说 / `incomplete` 本次不完整），枚举句由三态改判为**四态** —— 旧口径「调用方自己可分『未接线 / 本次不完整 / 已接入且完整但无命中』」整条退场"
@@ -687,12 +687,12 @@ cases:
       - "经营日报卡片面自检（主动检查面板）"
     expectations: []
     data_checks:
-      - "卡片面**逐规则一行**显示状态 + **原因**，四态各有各的说法：`wired` = 「已检查、无命中」；`not_wired` = 「系统尚未接入」（**不可行动**）；`not_enabled` = 「你还没开启」+ 开启引导（**可行动**，与「尚未接入」**分开说、不合并**）；`incomplete` = 「本次数据不完整」。**互斥红**：某规则未接线的快照 ⇒ 具名报出该规则 + 原因（**不是**「今天没问题」）；规则齐全且无命中的快照 ⇒ 「已检查、无命中」且**不出现**任何未接线/没开启/不完整的措辞；把状态注入摘掉（或把面板渲染摘掉）⇒ 两条判据分别变红"
-      - "`wired` 的规则其 `caveats`（数据源固有边界，如审计 fail-open）**也必须在场**（不许因为「绿」就不显示边界）；`proactive_status` 为 NULL / 缺失（本列面世前的存量行）⇒ **不渲染**该面板（未知 ≠ 没问题，也不许用空壳冒充「已检查」）"
+      - "卡片面**只列「本次没有结果」的规则**（每条至多一行，§31 P1/P2）：`not_wired` = 「本次没有检查」；`not_enabled` = 「还没开启」+ **做什么能开启**（**可行动**，与「没有检查」**分开说、不合并**）；`incomplete` = 「数据不完整」；`wired` 只进汇总。**互斥红**：有规则没检查到 ⇒ 汇总说「N 项本次没有结果（不代表没问题）」并具名列出该规则（**不是**「今天没问题」）；规则齐全且无命中 ⇒ 只剩「全部已检查，无命中」一行、**无逐条列表**"
+      - "🔴 **商家面只读引擎给的 `display`**：`reason` / `caveats`（含文件路径 / issue 号 / 列名 / 「装配层」/ `fail-open`）**一个字都不上屏**（§31 P3/P4）；旧载荷（无 `display`）只显示状态标签、**不拿 `reason` 顶替**；`proactive_status` 为 NULL / 缺失（本列面世前的存量行）⇒ **不渲染**该面板（未知 ≠ 没问题，也不许用空壳冒充「已检查」）"
       - "🔴 **状态字段不来自 LLM 出口**：`sanitize_briefing` 是**白名单**（只返回 summary/review/todo/risks/suggestions）⇒ 把 `proactive_status` 塞进 LLM 输出**被丢弃是预期**（断言对象），而**挂载点之后**的注入必须成功；挂上去的值 = 引擎 `proactive_status(snapshot)` 的**原样**（零重算、零改写、不改快照），且 admin-api 侧**数值回填校验层不得把它对账掉**（它不是数字、也不许混进 content）"
       - "跨端契约：键名 `proactive_status`、规则 id（`below_cost_price`/`unshipped_overdue`/`low_stock`/`repeat_returns`/`price_change_over`/`discount_over`）与四个枚举值（`wired`/`not_wired`/`not_enabled`/`incomplete`）三端一致；卡片面**只读** —— 面板内无任何按钮/链接（不给「一键处置」入口）"
     skip_reason: "[backend-contract] 卡片面渲染与挂载点由三端确定性单测验证（ai-agent：tests/test_briefing_proactive_status_visibility.py；admin-api：DailyBriefingServiceTest 的 ProactiveStatusPassThrough / BriefingControllerTest 的 GetToday；admin-web：tests/unit/components/ProactiveStatusPanel.test.tsx + tests/unit/components/BriefingProactiveStatus.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-10-02 新增（issue #5955）：日报卡片面 proactive 四态可视化（对话面此前已具备、卡片面零渲染）。取号 DA-021：现取 .github/cases/ 最大号 = DA-020（main ∪ 全部在飞 ref，逐 ref 核过，见 PR body）。**未覆盖面（如实登记）**：Playwright 页面多模态验收（真实登录 + 截图 + AI 读图）由集成方收口，本包不跑；面板在真实浏览器下的排版/对比度不在本单确定性判据面内。"
+    merge_log: "2026-10-02 新增（issue #5955）：日报卡片面 proactive 四态可视化（对话面此前已具备、卡片面零渲染）。取号 DA-021：现取 .github/cases/ 最大号 = DA-020（main ∪ 全部在飞 ref，逐 ref 核过，见 PR body）。**未覆盖面（如实登记）**：Playwright 页面多模态验收（真实登录 + 截图 + AI 读图）由集成方收口，本包不跑；面板在真实浏览器下的排版/对比度不在本单确定性判据面内。｜2026-10-18 修订（issue #7195）：判据从「逐条显示原因 + caveats 恒在」改成「只列没结果的规则 + 只读 `display`」—— 用户实测反馈「这里很多信息我都看不懂，用户更看不明白了」，工程原文不再上屏。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_briefing_proactive_status_visibility.py"
@@ -810,13 +810,13 @@ cases:
       - tool: direct_reply
     data_checks:
       - "🔴 源码面未登记即红：backend/ai-agent-service/app/utils/auth.py 与 tests/agent_eval/local_runner.py 的**代码行**里不得再出现裸 `tenant_id=1` / `tenant_id = 1`（注释豁免；判据 = tests/unit_ci_workflows/test_eval_tenant_single_source.py 的 audit_bare_tenant_literals）。红证：把本地运行器的一处参数化改回 `tenant_id = 1` ⇒ 该判据必红。"
-      - "配置面逐值：注入 EVAL_TENANT_ID=7 / 25 / 1000 ⇒ 运行器的 SQL 模板逐值落到注入租户（不是断言「非空」）；缺省/非法/越界（''、abc、0、-3、25.5）⇒ fail-closed 回落默认 25。判据 = 同文件 test_injected_tenant_value_is_used / test_sql_targets_use_the_configured_tenant。"
+      - "配置面逐值：注入 EVAL_TENANT_ID=7 / 25 / 1000 ⇒ 运行器的 SQL 模板逐值落到注入租户（不是断言「非空」）；缺省/非法/越界（''、abc、0、-3、25.5）⇒ fail-closed 回落默认 1。判据 = 同文件 test_injected_tenant_value_is_used / test_sql_targets_use_the_configured_tenant。"
       - "🔴 反向护栏（缺一不可）：生产路径（settings.DEBUG=False）下即使注入租户（配置值 / X-Debug-Role 头）也**不生效** —— auth.py 的每一次 `tenant_id=DEBUG_FALLBACK_TENANT_ID` 都必须落在「settings.DEBUG + debug_role」守卫的 if 体内；非 DEBUG 路径的租户只来自 JWT payload（源码里不得出现 os.environ/getenv 租户回落）。红证：把身份构造挪出守卫 ⇒ audit_debug_tenant_is_guarded 必红；给 payload 分支加环境变量兜底 ⇒ audit_non_debug_tenant_from_payload_only 必红。"
-      - "单一真值不漂移：app/config.py 的 EVAL_TENANT_ID 字段默认值 ≡ local_runner.py 的 EVAL_TENANT_ID 默认值 ≡ 云测试租户 25（2026-10-04 环境重建后的 tenant「米高测试环境」）；只改一侧即红。"
-      - "已部署入口显式钉住：.github/workflows/agent-eval.yml（唯一打已部署云环境的入口）的评测步骤 EVAL_TENANT_ID == '25'；本地临时栈两条 workflow（post-deploy-eval / xiaobu-acceptance）显式回落 '1'（栈内种子租户），否则复位/校验「查不到对象」。"
+      - "单一真值不漂移：app/config.py 的 EVAL_TENANT_ID 字段默认值 ≡ local_runner.py 的 EVAL_TENANT_ID 默认值 ≡ seed 租户 1（2026-10-19 / #7340 收口：共享云库恢复 seed 租户 1；旧的 tenant 25 已不存在）；只改一侧即红。"
+      - "已部署入口显式钉住：.github/workflows/agent-eval.yml（唯一打已部署云环境的入口）的评测步骤 EVAL_TENANT_ID == '1'；本地临时栈两条 workflow（post-deploy-eval / xiaobu-acceptance）显式回落 '1'（栈内种子租户），三处同值。"
       - "行为面（真请求对象）：DEBUG=true + X-Debug-Role ⇒ 返回身份的 tenant_id == 配置值（管理员与 C 端 customer 两条各一）；DEBUG=false + 注入的调试头 ⇒ 401 fail-closed（生产路径永不产生「配置租户」的身份）。判据 = backend/ai-agent-service/tests/test_eval_tenant_config.py。"
     skip_reason: "[backend-contract] 本用例是基建/安全护栏判据（非 LLM 行为）：静态与结构判据由 tests/unit_ci_workflows/test_eval_tenant_single_source.py 验证（零 LLM，pr-check 的 ci workflow helper unit tests job 每次 PR 都跑），行为面由 backend/ai-agent-service/tests/test_eval_tenant_config.py 验证（真 Request 打桩 + 真 auth 分支）。不进入 agent-eval 冒烟（它本身不产生 LLM 行为证据，且评测入口正在改的正是它自己）。"
-    merge_log: "2026-10-09 新增（issue #6288）：云测试环境重建（2026-10-04，tenant 1「词元通达」连同全部数据清空 ⇒ 新云测试租户 = tenant 25「米高测试环境」）后，评测链路把租户写死成 1 —— auth.py 的 DEBUG 降级身份两处 + local_runner.py 的 8 处 SQL 字面量（前置复位 4 处 + db 校验 3 处 + 内联查询 3 处）。**未覆盖面（如实登记）**：① 「改后能否真打到 tenant 25」需一次人工择时的手动 workflow_dispatch（真实 LLM 成本，按 #4262 不自动派发）⇒ 本用例只钉可注入与护栏，不声称已打到；② 部署侧 .env.ai-agent 的 DEBUG 取值不在本机可得（外部输入）⇒ 服务端实际走哪条分支未取证；③ 默认值 25 的依据是仓内 durable 证据（tests/smoke/config.py 的 CLOUD_TENANT_ID=25 + acceptance/2026-10-04/BRIEF.md + .github/cases/bmini.yml 的 #6564 记录），非本机复探。"
+    merge_log: "2026-10-09 新增（issue #6288）：云测试环境重建后，评测链路把租户写死成 1 —— auth.py 的 DEBUG 降级身份两处 + local_runner.py 的 8 处 SQL 字面量（前置复位 4 处 + db 校验 3 处 + 内联查询 3 处）。2026-10-19（issue #7340）再次收口：共享库实际只剩 tenant 46，旧的 tenant 25 已不存在；建会话在 sessions.tenant_id 外键上 500。现统一回 seed 租户 1（config.py / local_runner / agent-eval 三处同值），并给 create_session 的 IntegrityError 日志点名约束。**未覆盖面（如实登记）**：① 共享云端 tenant 1 需由 seed 恢复；本用例只钉静态真值与护栏，不声称共享云已 seed；② 部署侧 .env.ai-agent 的 DEBUG 取值不在本机可得（外部输入）⇒ 服务端实际走哪条分支未取证。"
     traces:
       tests:
         - "tests/unit_ci_workflows/test_eval_tenant_single_source.py"

@@ -92,8 +92,10 @@ RESTORED_VALUE = "布帘"
 #: 那条规则的**形态**（谓词的业务部分；id 前缀因租户而异 ⇒ 不能按 id 匹配）
 SHAPE = [("trigger_kind", "craft"), ("trigger_value", "韩褶"),
          ("action", "insert"), ("operation", "上车布"), ("after_operation", "韩褶")]
-#: V109 放开后的闭词表（逐字；与 `backend/admin-api/src/main/resources/db/init/schema.sql` 的 CHECK 同款）
+#: V109 放开后的闭词表（逐字；V109 是**归档迁移、逐字节冻结** ⇒ 它只有这 5 个值）
 TRIGGER_KIND_VOCAB = "('craft', 'option', 'shaped', 'processing_item', 'position')"
+#: bootstrap（schema.sql）的**当前终态**闭词表：V109 的 5 值 + issue #7523 的 `sales_form`
+SCHEMA_TRIGGER_KIND_VOCAB = "('craft', 'option', 'shaped', 'processing_item', 'position', 'sales_form')"
 
 #: `rr-v70-*` 种子行形态（V71 与 `backend/admin-api/src/main/resources/db/init/schema.sql` 同形；`position` / `operation` /
 #: `after_operation` 三列可能是裸 `NULL`，也可能是自带引号的字面量）。
@@ -919,15 +921,16 @@ def test_bootstrap_trigger_kind_vocabulary_includes_position():
     """
     schema = _read(SCHEMA_SQL)
     v109 = _read(V109)
-    assert TRIGGER_KIND_VOCAB in schema, (
-        f"backend/admin-api/src/main/resources/db/init/schema.sql 的 `trigger_kind` CHECK 不是逐字 `{TRIGGER_KIND_VOCAB}`")
+    assert SCHEMA_TRIGGER_KIND_VOCAB in schema, (
+        f"backend/admin-api/src/main/resources/db/init/schema.sql 的 `trigger_kind` CHECK 不是逐字 `{SCHEMA_TRIGGER_KIND_VOCAB}`")
     assert TRIGGER_KIND_VOCAB in v109, (
         f"V109 的 `ADD CONSTRAINT` 不是逐字 `{TRIGGER_KIND_VOCAB}`")
     # 逐字同款的反面（自证判据非空跑）：把 `position` 从任一侧拿掉，本判据即红
-    for label, text in (("bootstrap", schema), ("V109", v109)):
-        doctored = text.replace(TRIGGER_KIND_VOCAB, TRIGGER_KIND_VOCAB.replace(", 'position'", ""))
+    for label, text, vocab in (("bootstrap", schema, SCHEMA_TRIGGER_KIND_VOCAB),
+                               ("V109", v109, TRIGGER_KIND_VOCAB)):
+        doctored = text.replace(vocab, vocab.replace(", 'position'", ""))
         assert doctored != text, f"{label} 侧的锚点没匹配上 ⇒ 本判据是空断言"
-        assert TRIGGER_KIND_VOCAB not in doctored, f"{label} 侧的闭词表判据可被绕过"
+        assert vocab not in doctored, f"{label} 侧的闭词表判据可被绕过"
 
 
 def test_v108_written_value_matches_the_bootstrap_literal_exactly():

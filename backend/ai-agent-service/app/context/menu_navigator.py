@@ -77,14 +77,27 @@ from dataclasses import dataclass
 from typing import Any, Dict, FrozenSet, Iterable, Optional, Sequence, Tuple
 
 #: 菜单组（`menu.ts` 的 `menuGroups`）—— key 与组名逐字同源，顺序即渲染顺序。
+#: 🔴 2026-10-17（issue #7087，用户裁定）：「**工作台**」组整组撤销（原 `("workspace", "工作台")`
+#: 已删除）⇒ 现为**五组**。原组内两项的去向：「经营看板」升为**最前席位一级项**（见 `MENU_TREE`
+#: 首节点），「每日简报」菜单项**删除**（那一行结论已在经营看板上，企业开关驱动那张卡）。
 MENU_GROUPS: Tuple[Tuple[str, str], ...] = (
-    ("workspace", "工作台"),
     ("customer-service", "客户服务"),
     ("trade-center", "交易管理"),
     ("production-center", "生产管理"),
+    # 供应链（issue #7369，用户 2026-10-20 裁定新增大菜单）：组 key → **商家可见**显示名。
+    # 🔴 这张表是菜单的**第五份副本**（menu.ts / MenuController / AuthService / MENU_TREE / 本表），
+    # 漏登记不会让菜单出错，但会让主动引导**静默不发**：`page_capabilities` 查不到组名 ⇒ 返回空元组 ⇒
+    # `build_proactive_push` 按「说不出入口在哪」fail-closed。判据 = tests/test_proactive_onboarding.py
+    # 的判据 4/9（逐功能遍历 NAV_FEATURES，漏一组即红）。
+    ("supply-chain", "供应链"),
     ("inventory-center", "仓储与物料"),
     ("org-center", "组织管理"),
 )
+
+#: 菜单组 key → **商家可见**的组名（上表的显示名一列）。
+#: 🔴 上屏文案**只许用显示名**（issue #7324）：`trade-center` / `production-center` 这类内部 key
+#: **不得**进商家可见面（`migao-dev-flow` §31 P3「不摆内部标识」）。
+MENU_GROUP_LABELS: Dict[str, str] = dict(MENU_GROUPS)
 
 #: 一级独立菜单项（`menu.ts` 的 `standaloneTopItems` / `standaloneItems`）的组归属哨兵。
 #: 它们**不在任何组里** —— 用字面量而不是空串，避免「漏填」与「真的没有组」长得一样。
@@ -105,50 +118,84 @@ class MenuNode:
     permission_code: str
 
 
-#: `menu.ts` 的**全量导航节点**（现取：6 组 20 项 + 3 个一级独立项 = 23）。
+#: `menu.ts` 的**全量导航节点**（现取 2026-10-24：**27 项** = 5 组 22 项 + 一级独立项 5
+#: —— 经营看板 / 报表中心 / 商品管理 / 企业基础设置 / 通知中心）。
+#: 🔴 2026-10-24（issue #7593，用户裁定）：「审批中心」菜单项**撤除**（入口改顶栏待办入口）
+#: ⇒ 组内 23 → 22（本镜像同批删）；`/approvals` 页面仍在（`page_registry.py` 的页面知识照旧有效）。
 #: 🔴 2026-10-09（issue #6580）：「企业基础设置」由组内项变为独立项、并撤掉 #6573 的「参数总览」
 #: ⇒ 组内 21 → 20、独立项仍 3（商品管理 / 企业基础设置 / 通知中心）。
+#: 🔴 2026-10-17（issue #7087，用户裁定）：「工作台」组撤销 + 「经营看板」升为**最前席位**一级项
+#: + 「每日简报」菜单项删除 ⇒ 组内 20 → 16、独立项 3 → 4（**经营看板** / 商品管理 /
+#: 企业基础设置 / 通知中心）；首节点（`STANDALONE_GROUP` 的「经营看板」）即**登录落点**。
 #: 顺序 = `menu.ts` 的渲染顺序；判据按 `MENU_TREE_ORDER_LOCKED` 比对（**顺序也锁**，
 #: 因为「一级项与各组的相对位次」在 `menu.ts` 里是一门被用户裁定过的信息架构）。
 #: 🔴 2026-10-06（issue #6457，用户裁定方案 A1）：组内顺序重排 + 一级项「商品管理」沉到
 #: **所有分组之后** —— 本镜像**必须同批跟改**（判据 tests/unit_ci_workflows/test_menu_navigator.py
 #: 的「MENU_TREE 的顺序与 menu.ts 的渲染顺序不同」就是本文件漏跟时的真红形态）。
 MENU_TREE: Tuple[MenuNode, ...] = (
-    # 工作台
-    MenuNode("workspace", "经营看板", "/dashboard", "dashboard:view"),
-    MenuNode("workspace", "每日简报", "/briefing", "dashboard:view"),
+    # 最前席位一级项（2026-10-17 issue #7087）：渲染在**所有分组之前** —— 用户要的「一进来就
+    # 很直观看到经营看板」靠它实现（登录落点 = 第一个可见菜单项）。
+    MenuNode(STANDALONE_GROUP, "经营看板", "/dashboard", "dashboard:view"),
+    # 报表中心（issue #7376 / #7377）：与经营看板同属经营数据面 ⇒ 紧随其后；同码零授权 delta。
+    MenuNode(STANDALONE_GROUP, "报表中心", "/reports", "dashboard:view"),
     # 客户服务（2026-10-06：接待与工具相邻 → 售后出口 → 客户档案）
     MenuNode("customer-service", "在线接待", "/agent-workspace/human-sessions", "agent:session"),
     MenuNode("customer-service", "知识库", "/knowledge", "knowledge:view"),
     MenuNode("customer-service", "售后工单", "/after-sales", "after_sales:view"),
     MenuNode("customer-service", "客户列表", "/customers", "customer:view"),
     # 交易管理
-    MenuNode("trade-center", "订单列表", "/orders", "order:list"),
+    # 2026-10-20（issue #7354）：菜单正名「销售订单」（旧名「订单列表」保留为说法）。
+    # 价格本（issue #7375 段 3）：交易前置 ⇒ 组内第一项；读面码 product:list。
+    MenuNode("trade-center", "价格本", "/price-books", "order:list"),
+    MenuNode("trade-center", "销售订单", "/orders", "order:list"),
     MenuNode("trade-center", "财务对账", "/finance", "finance:view"),
+    # 🔴 2026-10-24（issue #7593）：`MenuNode("trade-center", "审批中心", "/approvals", "finance:view")`
+    # **已撤除** —— 该页入口改到顶栏待办入口（无侧边栏节点），本镜像必须同批删（判据 1b 双向相等）。
+    # ⇒ AI 不再能把用户「导航」到 `/approvals`；⚠️ **页面口径也同批失去**（`page_registry.py` 的
+    # PageEntry 与 `approval-decision` 真值源因「悬挂登记 / 死条目」两条判据必须销账）—— 见 issue #7593；
+    # 重启条件见 issue #7593 的「已知缺口」节。
     # 生产管理（2026-10-06：先备资料 → 再生产与派单 → 最末结算）
     # 🔴 2026-10-09（issue #6580，用户裁定）：「加工项管理」「工艺配置」两个菜单项**移除**
     #（功能体并入 `/settings` 企业基础设置页内的配置域；旧路径保留为重定向）⇒ 本组只剩三项。
-    MenuNode("production-center", "生产看板", "/production", "production:view"),
+    MenuNode("production-center", "作业看板", "/production", "production:view"),
     MenuNode("production-center", "智能派单", "/production/pool", "processing:view"),
     MenuNode("production-center", "计件工资", "/production/piecework", "production:view"),
-    # 仓储与物料（2026-10-06：单据（进 → 账 → 出）→ 台账 → 分析）
-    MenuNode("inventory-center", "入库单", "/inbound-orders", "inbound:view"),
+    # 质检记录（issue #7140 = #5652 的商家面）：节点码 = 该页第一屏读端点码
+    # （`GET /api/admin/quality-inspections/targets` 的**方法级** `production:inspect`）。
+    # ⚠️ 该码只授质检员 + 管理员 ⇒ 本节点对其它岗位**必然不可见**（有意，用户 2026-10-17 裁定）。
+    MenuNode("production-center", "质检记录", "/quality-inspections", "production:inspect"),
+    # 返工单（issue #7377）：节点码 = 该页第一屏读端点码 `after_sales:view`（与售后工单同码）。
+    MenuNode("production-center", "返工单", "/rework-orders", "after_sales:view"),
+    # 供应链（issue #7369，用户 2026-10-20 裁定「得加个新大菜单」）：谁供货 → 买什么 → 到货登记。
+    # 三项同码 inbound:view（采购与收货同岗位，零授权 delta）；入库单排第一（#6781 手机端标注）。
+    MenuNode("supply-chain", "入库单", "/inbound-orders", "inbound:view"),
+    MenuNode("supply-chain", "供应商", "/suppliers", "inbound:view"),
+    MenuNode("supply-chain", "采购单", "/purchase-orders", "inbound:view"),
+    # 仓储与物料（2026-10-20 起只留库存与出库：单据类节点已移到「供应链」）
+
     # issue #6404：库存明细（与省料看板同码 `product:list` —— 两者都是该页的**读**码；
-    # 先例 = 「发货单」与「订单列表」同取 `order:list`，issue #5939）
+    # 先例 = 「发货单」与「销售订单」同取 `order:list`，issue #5939）
     MenuNode("inventory-center", "库存明细", "/stock-ledger", "product:list"),
+    # 盘点单（issue #7373）：读码 `inbound:view` —— 与 menu.ts / MenuController / AuthService 逐字同码。
+    MenuNode("inventory-center", "盘点单", "/stocktakes", "inbound:view"),
     MenuNode("inventory-center", "发货单", "/shipments", "order:list"),
     MenuNode("inventory-center", "余料台账", "/production/remnants", "processing:manage"),
     MenuNode("inventory-center", "省料看板", "/production/saving-board", "product:list"),
-    # 组织管理
+    # 组织管理（2026-10-17 issue #7087：本组实际成员 = 「员工管理」「岗位权限」两项）
+    # ⚠️ 组内**不再含**「企业基础设置」—— 它自 issue #6580 起已移出本组、改挂 `STANDALONE_GROUP`
+    # 的**尾席位**（`standaloneTopItems`，见下方独立项段），本注释此前误写成组内成员。
     MenuNode("org-center", "员工管理", "/employees", "employee:list"),
     MenuNode("org-center", "岗位权限", "/roles", "system:view"),
-    # 一级独立项（`standaloneTopItems` 的「商品管理」「企业基础设置」+ `standaloneItems` 的「通知中心」）
+    # 独立项 —— #7087 起为**三个席位**（键 `STANDALONE_GROUP` 只表示「不属于任何组」，不区分席位）：
+    #   · **最前席位** = `standaloneHeadItems`：经营看板（已上移为 `MENU_TREE` **首节点**）；
+    #   · **尾席位**   = `standaloneTopItems`：商品管理 → 企业基础设置（下面两条）；
+    #   · **尾部项**   = `standaloneItems`：通知中心（无权限码，全员可见）。
     # 🔴 2026-10-06（issue #6457）：「商品管理」排在**所有分组之后**（原「工作台组之后」）
     # 🔴 2026-10-09（issue #6580）：「企业基础信息」由 `org-center` 组**移出** → 尾部独立项、改名
     # 「企业基础设置」、排在「通知中心」**上面**（用户逐字：「放到通知中心的上面，并且和通知中心
     # 一起沉底」）；同日撤掉 #6573 新增的「参数总览」一级项（内容回到 `/settings` 页内的配置域，
     # 设计见 `docs/design/enterprise-settings-redesign.md`）
-    # ⇒ 顺序 =「6 组 20 项 → 商品管理 → 企业基础设置 → 通知中心」。
+    # ⇒ 顺序 =「5 组 16 项 → 商品管理 → 企业基础设置 → 通知中心」。
     MenuNode(STANDALONE_GROUP, "商品管理", "/products", "product:list"),
     # 企业基础设置（原「企业基础信息」）：路径不变（`/settings`）；**节点码改 `production:view`**
     #（issue #6580 用户裁定选 A：它是合并后生产配置面唯一入口，真实配置者 operator /
@@ -216,15 +263,36 @@ class NavFeature:
 #: `problems_shadowed_aliases`）。推论：同一功能**不得**登记 `("发货单", "发货单列表")`
 #: 这种「短说法是长说法子串」的形态（旧的 `…页` / `…列表` **装饰性变体**即属此列，已清掉）。
 NAV_FEATURES: Tuple[NavFeature, ...] = (
-    NavFeature("dashboard", "经营看板（经营数据）", (("workspace", "经营看板"),), ("经营看板", "经营数据")),
-    NavFeature("briefing", "每日简报（日报）", (("workspace", "每日简报"),), ("每日简报", "日报")),
+    # 🔴 2026-10-17（issue #7087）：「经营看板」现为**最前席位一级项**（不再属于 `workspace` 组，
+    # 该组已撤销）⇒ 归属哨兵改 `STANDALONE_GROUP`；「每日简报」那条登记**同批删除**（菜单项已撤，
+    # 登记项与菜单项必须一一对应 —— 判据 ①「每个菜单节点至少一条可命中的说法」/②「没有空登记」）。
+    # ⚠️ 不登记「工作台」这类旧组名当说法：判据「接地」要求说法与所属节点菜单名 / 本功能 label
+    # 有包含关系 —— 已不存在的组名既不接地、也会把「说到一个没有的页面」变成可命中路径。
+    NavFeature("dashboard", "经营看板（经营数据）", ((STANDALONE_GROUP, "经营看板"),), ("经营看板", "经营数据")),
+    # 价格本（issue #7375 段 3）：用户问「这个客户什么价 / 能不能便宜 / 阶梯价怎么设」时引导到这里。
+    # ⚠️ 说法里必须**逐字**含菜单名「价格本」（判据要求每个菜单节点都有一条能被问到的说法）。
+    NavFeature("price-books", "价格本（协议价 / 等级价 / 阶梯价）",
+               (("trade-center", "价格本"),),
+               ("价格本", "价格本协议价", "价格本等级价", "价格本阶梯价", "价格本改价")),
+    # 报表中心（issue #7376 / #7377）：经营数据面的「下钻」—— 用户问「毛利多少 / 哪些货压着 /
+    # 谁卖得多 / 质量成本多少」时引导到这里（四张表都在这一页）。
+    NavFeature("reports", "报表中心（毛利 / 滞销 / 业绩 / 质量成本）",
+               ((STANDALONE_GROUP, "报表中心"),),
+               ("报表", "报表中心", "毛利", "滞销", "业绩", "质量成本")),
     NavFeature("human-sessions", "在线接待（人工接待）", (("customer-service", "在线接待"),), ("在线接待", "人工接待")),
     NavFeature("customers", "客户列表（客户）", (("customer-service", "客户列表"),), ("客户列表", "客户")),
     NavFeature("knowledge", "知识库", (("customer-service", "知识库"),), ("知识库",)),
     NavFeature("after-sales", "售后工单（退换货）", (("customer-service", "售后工单"),), ("售后工单", "退换货")),
-    NavFeature("orders", "订单列表（订单）", (("trade-center", "订单列表"),), ("订单列表", "订单")),
+    # 2026-10-20（issue #7354）：菜单正名「销售订单」；旧名「订单列表」保留为说法（老用户按旧叫法仍能命中）。
+    NavFeature("orders", "销售订单（订单列表 / 订单）", (("trade-center", "销售订单"),), ("销售订单", "订单列表", "订单")),
     NavFeature("finance", "财务对账（对账）", (("trade-center", "财务对账"),), ("财务对账", "对账")),
-    NavFeature("production-board", "生产看板（加工单）", (("production-center", "生产看板"),), ("生产看板", "加工单")),
+    # 🔴 2026-10-24（issue #7593）：`NavFeature("approvals", …)` **同批删除** —— 判据 9 要求
+    # 「登记项的主节点必须在 `menu.ts` 里」，节点撤除后留着它就是编出来的页面（判红）。
+    # ⚠️ 用户问「审批」的**页面口径**也已失去（同批销账，见 issue #7593 的已知缺口），
+    # 只是不再有「带你去那一页」的导航动作（顶栏入口不参与菜单接地判据，见 issue #7593 已知缺口）。
+    # 2026-10-19（issue #7332）：菜单正名「作业看板」。登记名里保留「作业单 / 加工单 / 原生产看板」三个旧说法：
+    # 判据 6b（problems_aliases_grounded）要求说法与登记名有包含关系；菜单本身只叫「作业看板」。
+    NavFeature("production-board", "作业看板（作业单 / 加工单 / 原生产看板）", (("production-center", "作业看板"),), ("作业看板", "作业单", "加工单", "生产看板")),
     NavFeature("production-pool", "智能派单（派单）", (("production-center", "智能派单"),), ("智能派单", "派单")),
     # 🔴 2026-10-09（issue #6580）：「加工项管理」「工艺配置」两个菜单项已**移除**（功能体并入
     # 「企业基础设置」页内的配置域）⇒ 它们原来的两个登记项**同批删除**，不改成指向 `/settings`：
@@ -232,11 +300,26 @@ NAV_FEATURES: Tuple[NavFeature, ...] = (
     # `企业基础设置` 这条说法**互相遮蔽**（`problems_shadowed_aliases` 实测判红，见 issue #6062 的
     # 「说法不许与别家成子串」口径）—— 登记项与菜单项必须**一一对应**。
     NavFeature("piecework", "计件工资（计件）", (("production-center", "计件工资"),), ("计件工资", "计件")),
-    NavFeature("inbound-orders", "入库单（入库）", (("inventory-center", "入库单"),), ("入库单", "入库")),
+    # 质检记录（issue #7140）：说法必须**逐字落在菜单名里**（判据「接地」）⇒ 只登记
+    # 「质检记录」与它的子串「质检」；「合格判定」这类不在菜单名里的说法**不登记**
+    #（它命中不了节点 = 不可达，登记了会变成空断言）。
+    NavFeature("quality-inspection", "质检记录（质检判定）", (("production-center", "质检记录"),), ("质检记录", "质检")),
+    # 返工单（issue #7377）：说法必须**逐字落在菜单名里**（判据「接地」）⇒ 只登记「返工单」「返工」，
+    # 「返修」这类不在菜单名里的**不作为别名**（命中不了节点 = 不可达，登记了会变成空断言）。
+    NavFeature("rework-order", "返工单（售后返工）", (("production-center", "返工单"),), ("返工单", "返工")),
+    NavFeature("suppliers", "供应商档案", (("supply-chain", "供应商"),), ("供应商", "供应商档案")),
+    # 采购单（issue #7369 段 4）：说法必须**逐字落在菜单名里**（「采购单」的子串），
+    # 「采购」「下单」「到货」这类更宽的说法不登记 —— 命中不了节点就是空断言（判据「接地」）。
+    NavFeature("purchase-orders", "采购单（采购与收货）", (("supply-chain", "采购单"),), ("采购单",)),
+    NavFeature("inbound-orders", "入库单（入库）", (("supply-chain", "入库单"),), ("入库单", "入库")),
     NavFeature("shipments", "发货单（出库）", (("inventory-center", "发货单"),), ("发货单", "出库")),
     NavFeature("remnants", "余料台账（余料）", (("inventory-center", "余料台账"),), ("余料台账", "余料")),
     NavFeature("saving-board", "省料看板（省料）", (("inventory-center", "省料看板"),), ("省料看板", "省料")),
     NavFeature("stock-ledger", "库存明细（库存流水）", (("inventory-center", "库存明细"),), ("库存明细", "库存流水")),
+    # 盘点单（issue #7373）：账实核对的落点 —— 用户问「盘亏怎么办 / 怎么对账」时引到这里。
+    NavFeature("stocktakes", "盘点单（账实核对）",
+               (("inventory-center", "盘点单"),),
+               ("盘点单", "盘点", "账实核对")),
     NavFeature("employees", "员工管理（员工开账号）", (("org-center", "员工管理"),), ("员工管理", "员工开账号")),
     NavFeature("roles", "岗位权限（角色权限）", (("org-center", "岗位权限"),), ("岗位权限", "角色权限")),
     # 企业基础设置（原「企业基础信息」，issue #6580 改名 + 升为独立项）。
@@ -571,11 +654,14 @@ PUSH_REASONS: Tuple[str, ...] = (
     PUSH_REASON_AMBIGUOUS_ROUTE,
 )
 
-#: 主动推送的**步骤禁令**（常量；结构上推不出步骤 ⇒ 本句只是「文案里也别写成步骤」的机械落点）。
-PROACTIVE_STEPS_NOTICE = "（只给导航：在哪一页 / 这页有什么。操作步骤不在本轮。）"
+#: 存量旧行的**读侧签名**（issue #7324 之前，主动提示曾被落进会话历史）：整句里含这一句即可机械识别。
+#: 只用于**读**侧消化（不回放、不进模型历史），**不回写数据库**（与 #7112 / #7236 同口径）。
+LEGACY_PROACTIVE_TIP_MARK = "（只给导航："
 
-#: 「这一页能做什么」的自述前缀（**可行动性判据的结构锚**：说不出它 ⇒ 这条推送不该发）。
-PROACTIVE_CAPABILITY_PREFIX = "这页能做："
+
+def is_legacy_proactive_tip(content: Any) -> bool:
+    """一条**历史消息文本**是不是 #7324 之前落库的主动导航提示（读侧消化用）。"""
+    return isinstance(content, str) and LEGACY_PROACTIVE_TIP_MARK in content
 
 
 @dataclass(frozen=True)
@@ -590,11 +676,12 @@ class ProactivePush:
     route: str
     #: 页面所属菜单组（`STANDALONE_GROUP` = 一级独立项）
     group: str
-    #: 「这页能做什么」的自述（导航级：能看到什么、入口在哪 —— **不含**操作顺序）
+    #: 「这一页在哪儿」的自述（导航级：入口怎么走 —— **不含**操作顺序）
     capabilities: Tuple[str, ...]
 
     @property
     def citation(self) -> str:
+        """追溯锚（**只进 `to_data` / 审计，不上屏**，issue #7324）：登记项 → 菜单节点。"""
         where = "一级项" if self.group == STANDALONE_GROUP else f"菜单组「{self.group}」"
         return f"登记项 #{self.feature_id} → {where}「{self.label}」"
 
@@ -610,12 +697,15 @@ class ProactivePush:
         }
 
     def render(self) -> str:
-        """上屏文案 —— 「你在【X】，这页能做 A、B」+ citation。**只给导航，不给步骤。**"""
-        caps = "、".join(self.capabilities)
-        return (
-            f"你在【{self.label}】（{self.route}）。{PROACTIVE_CAPABILITY_PREFIX}{caps}。"
-            f"（{self.citation}）{PROACTIVE_STEPS_NOTICE}"
-        )
+        """上屏文案（**商家话术**）：先说「你在哪一页」，再说「入口怎么走」。
+
+        🔴 **内部标识不上屏**（issue #7324；`migao-dev-flow` §31 P2/P3/P4）：登记项 id（`#orders`）、
+        菜单组 key（`trade-center`）、route（`/orders`）与「只给导航…」这类元指令**一律不写** ——
+        前两者是**追溯锚**（留在 `citation` / `to_data` 与审计里），后者是**研发口径**，都不是商家该读的话。
+        **只给导航，不给步骤**（不写点击顺序，判据核受控步骤词）。
+        """
+        caps = "；".join(self.capabilities)
+        return f"你在【{self.label}】。{caps}。想了解这一页怎么用，直接问我就行。"
 
 
 @dataclass(frozen=True)
@@ -627,18 +717,25 @@ class ProactiveVerdict:
 
     @property
     def should_push(self) -> bool:
-        """可行动性判据的入口：`True` ⇒ 一定带得出「在哪一页 + 这页能做什么」。"""
+        """可行动性判据的入口：`True` ⇒ 一定带得出「你在哪一页 + 入口怎么走」。"""
         return self.push is not None
 
 
 def page_capabilities(node: MenuNode) -> Tuple[str, ...]:
-    """「这页能做什么」——**导航级**自述（能看到什么 / 从哪进）。
+    """「这一页在哪儿」——**导航级**自述：入口在左侧菜单的哪个位置。
 
-    🔴 **不是操作步骤**：不写点击顺序、不写字段名、不写「第一步」。文案由**结构**生成
-    （菜单组 + 菜单名），判据核「文案里不含受控步骤词」。
+    🔴 **不是操作步骤**：不写点击顺序、不写字段名、不写「第一步」（判据核受控步骤词）。
+    🔴 **不是内部标识**（issue #7324）：只写**显示名**（`交易管理`），不写菜单组 key（`trade-center`）——
+    文案由**结构**生成（`MENU_GROUPS` 的显示名 + 菜单名）。
+    组名未登记 ⇒ 返回空元组 ⇒ 调用方按「说不出可行动信息」**不发**（fail-closed）。
     """
-    where = "菜单" if node.group == STANDALONE_GROUP else f"菜单组「{node.group}」"
-    return (f"查看「{node.label}」", f"从{where}进入这一页")
+    if node.group == STANDALONE_GROUP:
+        # 一级独立项没有父组可指 ⇒ 只说「在左侧菜单」（再说一遍菜单名就是同屏重复，§31 P2）
+        return ("入口在左侧菜单",)
+    group_label = MENU_GROUP_LABELS.get(node.group, "")
+    if not group_label:
+        return ()
+    return (f"入口在左侧菜单「{group_label}」→「{node.label}」",)
 
 
 def _route_feature_ids() -> Dict[str, Tuple[str, ...]]:
@@ -734,7 +831,7 @@ def build_proactive_push(
     2. 该节点在**当前会话权限**下可见 —— 看不到 ⇒ `not_visible`
        （推了就是让用户去看他看不到的页面，既越权又不可行动）；
     3. 本会话还没推过这一页（`already_pushed`）—— 推过 ⇒ `already_pushed`（每页每会话 ≤ 1 次）；
-    4. 🔴 **可行动性**：文案必须能说出「**在哪一页**（label + route）+ **这页能做什么**」
+    4. 🔴 **可行动性**：文案必须能说出「**你在哪一页**」+「**入口怎么走**」
        —— 任一为空 ⇒ **不发**（`unregistered`，宁可静默）。
 
     ⚠️ `permissions` **只能来自服务端会话**（`ToolContext.permissions` / `UserIdentity.permissions`）；
@@ -752,10 +849,11 @@ def build_proactive_push(
         return ProactiveVerdict(PUSH_REASON_NOT_VISIBLE)
     if feature_id in set(already_pushed or ()):
         return ProactiveVerdict(PUSH_REASON_ALREADY_PUSHED)
-    # 可行动性：说不出「在哪一页」或「这页能做什么」⇒ 不发（宁可静默）
+    # 可行动性：说不出「你在哪一页」或「入口怎么走」⇒ 不发（宁可静默）
     # ⚠️ 判的是**即将上屏的那两个值**（`record`），不是登记表字段 —— 判登记表字段的话，
     # 构造时把 route/label 弄空也不会有东西红（实测：一条 `push.route in text` 的弱断言
     # 对空串恒真 ⇒ 红证 `⑥ 可行动性` **跑不红**）。本仓口径：**不会红的判据 = 空断言**。
+    # 🔴 route 只做**判定入参**、不上屏（issue #7324）：可行动性看的是 "label + 入口文案"，不是 URL。
     capabilities = page_capabilities(node)
     record = ProactivePush(
         feature_id=feature_id, label=node.label, route=node.path,

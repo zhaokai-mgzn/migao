@@ -124,6 +124,19 @@ CLAIMED_AT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 REQUIRED_FIELDS = ("id", "pr", "title", "claimed_at")
 #: 注入点（与 `NCI_MAIN_REF` / `MG_GH_BIN` 同先例）：当前 PR 号 + **main 侧用例库目录**。
 PR_ENV = "MIGAO_CASE_CLAIMS_PR"
+#: 🔴 issue #6980（2026-10-17 用户裁定 **A**）：Actions 的**非 PR 事件**下**没有「本 PR」这个对象**
+#: ——`GITHUB_REF` 恒为 `refs/heads/**`、事件载荷里没有 `number`。这些事件下**不得**退回
+#: 「台账最大 claim 号」启发式：它会取到一个**刚合并、已关闭**的 PR ⇒「本 PR 不在 open 列表里」
+#: 在**每一次 main push** 上恒红（实测读数见 issue #6980：同一机理换过 `#6634` / `#6974` 两个号）。
+NON_PR_EVENTS = frozenset(
+    {"push", "schedule", "workflow_dispatch", "workflow_run", "release", "delete"}
+)
+#: 非 PR 上下文的**具名出声**（判据 7 的对象不存在 ⇒ 整条不适用）——出声，不判红；
+#: 判据 2 要求这句**可 grep**（见 issue #6980 的冻结判据 2）。
+NO_PR_CONTEXT_NOTE = (
+    "本腿无 PR 对象（非 PR 上下文：push/schedule 等）⇒ 判据 7（跨在飞 PR 重号）整条不适用"
+    "（出声，不判红）"
+)
 MAIN_DIR_ENV = "MIGAO_CASE_CLAIMS_MAIN_DIR"
 #: 本判据**不得**出现的依赖（CI 那个 job 只装 pytest + pyyaml）。
 FORBIDDEN_IMPORTS = ("pydantic", "langchain_core", "langchain", "fastapi", "app")
@@ -271,6 +284,18 @@ def current_pr(claims: list[Claim], env: dict[str, str] | None = None) -> int | 
 
     最后那一步是**现取启发式**（不是魔法数）：并行 PR 的号随时间递增 ⇒ main 侧遗留的 claim
     号一定小于当前在飞的那个。取不到（无 claim）⇒ `None`。
+
+    🔴 **非 PR 上下文（issue #6980 裁定 A，2026-10-17）**：Actions 的 `push` / `schedule` /
+    `workflow_dispatch` / `workflow_run` 等事件上**没有「本 PR」这个对象**（`GITHUB_REF` 是
+    `refs/heads/main`，载荷里没有 `number`）⇒ 这里**显式返回 `None`**（= 判据 7 整条不适用，
+    见 `cross_pr_claims_problems` 的首行），**不**退回上面那条启发式。
+
+    为什么不能退（实测，别改回去）：启发式在 main 上必然指向**刚合并、已关闭**的那个 PR ⇒
+    `cross_pr_claims_problems` 判「本 PR #N 不在 open PR 列表里」⇒ **每一次合并后的 push run 都红 2 条**，
+    且每合并一个 PR 就换一个新号（`#6634` → `#6974`，同一机理）⇒ 常驻假红。
+    ⚠️ **这不是放宽**：真 PR 上下文（事件载荷 / `refs/pull/<n>/` / 注入）里「读不到 / 不在列表」照旧判红
+    （负控 = `test_red_proof_real_cross_pr_collision_still_reds`）；本机无事件上下文时启发式**照旧保留**
+    （红证与判别力自证依赖它，见 `test_local_context_keeps_the_heuristic`）。
     """
     env = os.environ if env is None else env
     raw = env.get(PR_ENV)
@@ -290,7 +315,31 @@ def current_pr(claims: list[Claim], env: dict[str, str] | None = None) -> int | 
     m = re.match(r"refs/pull/(\d+)/", ref)
     if m:
         return int(m.group(1))
+    # 🔴 非 PR 事件 ⇒ **没有本 PR**（不是「取不到」）：见 docstring 与 `NO_PR_CONTEXT_NOTE`。
+    if (env.get("GITHUB_EVENT_NAME") or "").strip() in NON_PR_EVENTS:
+        return None
     return max((c.pr for c in claims), default=None)
+
+
+def pr_context_note(claims: list[Claim] | None = None,
+                    env: dict[str, str] | None = None) -> str:
+    """判据 7 的**对象读数**（一行，可 grep）：本 PR 是谁 / 为什么这轮不判。
+
+    issue #6980 冻结判据 2「出口口径（不许静默）」：非 PR 上下文里必须**出声**说明
+    「本腿无 PR 对象」并**不计失败** —— 静默跳过与「没有重号」长得一样，正是要消灭的形态。
+    调用点 = `.github/workflows/post-merge-verify.yml` 判定步的诊断探针（接线判据 =
+    `tests/unit_ci_workflows/test_post_merge_verify_leg.py::test_judging_step_voices_the_no_pr_context_exit`）。
+    """
+    env = os.environ if env is None else env
+    if claims is None:
+        claims = parse_claims(scan_claims(REPO_ROOT / CLAIMS_REL)[0])
+    number = current_pr(claims, env)
+    event = (env.get("GITHUB_EVENT_NAME") or "").strip()
+    if number is not None:
+        return f"本 PR = #{number}（判据 7 的对象已确定）"
+    if event in NON_PR_EVENTS:
+        return f"{NO_PR_CONTEXT_NOTE}（事件 = {event}）"
+    return "本 PR 不可判定（本环境没有 PR 对象）⇒ 判据 7 整条不适用（出声，不判红）"
 
 
 def duplicate_problems(claims: list[Claim]) -> list[str]:
@@ -318,6 +367,10 @@ def duplicate_problems(claims: list[Claim]) -> list[str]:
 #   病：两个**同时在飞**的 PR 各自 claim 同一个号 ⇒ **两边 CI 都绿**（各自的工作树里只有自己那份），
 #   要等其中一个合入 main / 另一个 rebase 才现形。本轮实测撞了 3 次（AS-011/012、PG-059/069、MC-076），
 #   每次都要人工跨 refs 核对。判据 2 只看**本地工作树** ⇒ 结构上看不见另一个在飞分支。
+#   🔴 **作用域（issue #6980 裁定 A）**：它只对「**有本 PR**」的上下文成立 —— PR 事件载荷 /
+#   `refs/pull/<n>/` / 显式注入。push / schedule / workflow_dispatch 上**没有本 PR** ⇒ 整条不适用
+#   （`current_pr()` 返回 `None`，`cross_pr_claims_problems` 首行直接 `[]`）并**出声**
+#   （`pr_context_note()`），**不判红**；PR 面（含真·跨 PR 重号）牙齿一条不松。
 # ─────────────────────────────────────────────────────────────────────────────
 @dataclass(frozen=True)
 class OpenPrClaims:
@@ -949,13 +1002,20 @@ def test_repo_corpus_face_is_clean() -> None:
     assert problems == [], "跨在飞 PR 的语料取号面判红：\n" + "\n".join(f"  - {p}" for p in problems)
 
 
-def test_cross_pr_check_is_wired_into_the_repo_exit() -> None:
+def test_cross_pr_check_is_wired_into_the_repo_exit(monkeypatch) -> None:
     """**接线判据（§28.2：判据本体绿 ≠ 接线在）**：`repo_problems()` 必须**真的**把判据 7 接上。
 
     🔴 事实：判据 7 的**行为**只在他处测（桩），它完全可以「实现正确但**没接进常驻出口**」——
     那时上面那条 `test_repo_case_id_claims_are_clean` 照旧全绿，而 issue #6245 的病**原样复发**。
     这里用**注入一个念过**的桩把接线本身判红：桩被调用 ⇒ 接线在。
+
+    🔴 **必须显式造出 PR 上下文**（issue #6980）：判据 7 在 push/schedule 腿上**整条不适用**
+    （`current_pr()` = `None` ⇒ 取数面**不发起**）⇒ 不注入时这条判据会**随 CI 事件漂移**：
+    本机（无事件上下文，走启发式）绿，而 main 的 push run 红 —— 实测 2026-10-17 run `39017108085`：
+    `AssertionError: repo_problems() 没有把判据 7 接进常驻出口`（1 failed, 5656 passed）。
+    ⇒ 用 `MIGAO_CASE_CLAIMS_PR` 钉住「这一轮有本 PR」，本判据就与触发事件无关。
     """
+    monkeypatch.setenv(PR_ENV, "1")
     called: list[int] = []
 
     def probe() -> tuple[list[OpenPrClaims], list[str]]:
@@ -1096,6 +1156,74 @@ def test_negative_control_no_claims_is_green(tmp_path: Path) -> None:
     assert all_problems(tmp_path, used, current=None, injected=None) == []
     assert scan_claims(tmp_path / "not-there") == ([], [])
     assert all_problems(tmp_path / "not-there", used, current=None, injected=None) == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 判据 7 的**对象**（issue #6980 裁定 A，2026-10-17）：非 PR 上下文没有「本 PR」⇒ 整条不适用（出声）
+#   病（实测）：push 到 main ⇒ `current_pr()` 退回「台账最大 claim 号」⇒ 取到**刚合并、已关闭**的 PR
+#   ⇒ `cross_pr_claims_problems` 判「本 PR #N 不在 open PR 列表里」⇒ **每次合并后的 push run 恒红 2 条**，
+#   且每合并一个 PR 就换一个新号（`#6634` → `#6974`）。修法 = 把「非 PR 上下文」与「本机取不到」
+#   分开：前者**没有对象**（不判，出声），后者保留启发式（红证 / 判别力自证依赖它）。
+# ─────────────────────────────────────────────────────────────────────────────
+def _claims_6974() -> list[Claim]:
+    return [Claim(file=".github/cases/claims/6974-MC-900.json", pr=6974, cid="MC-900", title="示范")]
+
+
+def test_non_pr_events_have_no_current_pr_and_never_fetch_the_in_flight_face():
+    """正向（#6980 冻结判据 1）：push/schedule 腿上 `current_pr()` == `None`，且判据 7 **不发起取数**。
+
+    修前形态（复现）：`current_pr` 返回 `max(claims)` = 6974 ⇒ 判「本 PR #6974 不在 open 列表」⇒ 恒红。
+    """
+    claims = _claims_6974()
+    for event in sorted(NON_PR_EVENTS):
+        env = {"GITHUB_EVENT_NAME": event, "GITHUB_REF": "refs/heads/main", "GITHUB_ACTIONS": "true"}
+        current = current_pr(claims, env)
+
+        def _boom() -> None:
+            raise AssertionError("非 PR 上下文 ⇒ 判据 7 整条不适用，**不许**发起取数")
+
+        problems = cross_pr_claims_problems(claims, current, fetch=_boom)
+        assert (current is None) and problems == [], (
+            f"{event} 上不得有『本 PR』（现取 {current}）；判据 7 必须整条不适用（现取 {problems}）"
+        )
+
+
+def test_local_and_pr_contexts_keep_their_existing_paths_boundary_not_loosened():
+    """边界（反向对照）：收口**只到**「Actions 的非 PR 事件」——本机启发式与 PR 事件载荷都不许误伤。"""
+    claims = _claims_6974()
+    assert current_pr(claims, {}) == 6974, "本机没有事件上下文 ⇒ 启发式必须照旧（红证依赖它）"
+    assert current_pr(claims, {"GITHUB_REF": "refs/heads/main"}) == 6974
+    assert current_pr(claims, {"GITHUB_EVENT_NAME": "pull_request",
+                               "GITHUB_REF": "refs/pull/7123/merge"}) == 7123
+
+
+def test_red_proof_real_cross_pr_collision_still_reds(tmp_path: Path) -> None:
+    """负控（#6980 冻结判据 3）：**真 PR 上下文**里真·跨在飞 PR 重号 ⇒ 仍必须红并点名两个号。
+
+    ⇒ 本单只去掉「非 PR 上下文的假红」，**没有**把跨 PR 重号面一起放宽。
+    """
+    _write_claim(tmp_path, "7123-MC-900.json", pr=7123, id="MC-900")
+    claims = parse_claims(scan_claims(tmp_path)[0])
+    (tmp_path / "event.json").write_text('{"number": 7123}', encoding="utf-8")
+    env = {"GITHUB_EVENT_NAME": "pull_request", "GITHUB_EVENT_PATH": str(tmp_path / "event.json")}
+    current = current_pr(claims, env)
+    assert current == 7123, f"PR 事件载荷没被读到（现取 {current}）"
+    stub = (
+        [OpenPrClaims(pr=7123, ids=frozenset({"MC-900"}), added_ids=frozenset()),
+         OpenPrClaims(pr=7199, ids=frozenset({"MC-900"}), added_ids=frozenset())],
+        [],
+    )
+    problems = cross_pr_claims_problems(claims, current, fetch=lambda: stub)
+    joined = "\n".join(problems)
+    assert any("MC-900" in p and "#7123" in p and "#7199" in p for p in problems), joined
+
+
+def test_no_pr_context_note_is_grepable_and_names_the_reason():
+    """判据 2（出声）：非 PR 上下文的读数必须**具名 + 可 grep**，且与「有本 PR」的读数可区分。"""
+    claims = _claims_6974()
+    note = pr_context_note(claims, {"GITHUB_EVENT_NAME": "push", "GITHUB_REF": "refs/heads/main"})
+    assert "本腿无 PR 对象" in note and "push" in note and "不判红" in note, note
+    assert pr_context_note(claims, {}) == "本 PR = #6974（判据 7 的对象已确定）"
 
 
 def test_control_clean_claim_is_green(tmp_path: Path) -> None:

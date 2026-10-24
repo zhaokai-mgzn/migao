@@ -1,4 +1,4 @@
-// case_ids: PG-018, PG-035
+// case_ids: PG-018, PG-035, PG-091
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -124,17 +124,27 @@ class ProductionRouteParityTest {
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(conf, "");
         TableInfoHelper.initTableInfo(assistant, Order.class);
 
-        // ── 规范种子（与 V71/V72/V79 迁移逐行同值）──
+        // ── 规范种子（与 V71/V72/V79 迁移逐行同值；#7523 追加布料路线 + 出库 + 售卖方式规则）──
         when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of(
-                RoutingModelFixture.defaultTemplateAllPositions(TENANT)));
-        when(productionRouteRuleMapper.selectList(any())).thenReturn(
+                RoutingModelFixture.defaultTemplateAllPositions(TENANT), fabricTemplate()));
+        List<ProductionRouteRule> rules = new ArrayList<>(
                 RoutingModelFixture.rulesWithFactors(TENANT));
+        rules.add(salesFormRule("rr-sf-270", "insert", "出库", "裁剪", 270));
+        rules.add(salesFormRule("rr-sf-280", "remove", "裁剪", null, 280));
+        when(productionRouteRuleMapper.selectList(any())).thenReturn(rules);
         when(productionOperationPositionMapper.selectList(any())).thenReturn(
                 RoutingModelFixture.canonicalPositions84(TENANT));
         when(productionCraftMapper.selectList(any())).thenReturn(List.of(
                 RoutingModelFixture.defaultCraft(TENANT, "韩褶")));
-        when(productionOperationMapper.selectList(any())).thenReturn(
+        List<ProductionOperation> operations = new ArrayList<>(
                 RoutingModelFixture.operationEntities(TENANT));
+        operations.add(ProductionOperation.builder()
+                .id("op-outbound").tenantId(TENANT).name("出库").groupName("后道")
+                .position(null).scope("position").unit("卷")
+                .unitPrice(java.math.BigDecimal.ZERO)
+                .isMustFinish(false).isStartMarker(false).sortOrder(42)
+                .status("active").source("占位待确认").deleted(0).build());
+        when(productionOperationMapper.selectList(any())).thenReturn(operations);
 
         ProductionOperationQueryService queryService = new ProductionOperationQueryService(
                 productionOperationMapper, productionRouteTemplateMapper, productionRouteRuleMapper,
@@ -152,9 +162,17 @@ class ProductionRouteParityTest {
             for (Map<String, Object> position : request) {
                 Map<String, BigDecimal> qty = new LinkedHashMap<>();
                 Map<String, String> source = new LinkedHashMap<>();
+                Map<String, Object> calc = (Map<String, Object>) position.get("calc_info");
                 for (Object raw : (List<?>) position.get("operations")) {
-                    qty.put(String.valueOf(raw), BigDecimal.ONE);
-                    source.put(String.valueOf(raw), "fallback");
+                    String name = String.valueOf(raw);
+                    if ("出库".equals(name) && calc != null && calc.get("roll_count") != null) {
+                        // 整卷出库（issue #7523）：应做数量 = 订单行卷数
+                        qty.put(name, new BigDecimal(String.valueOf(calc.get("roll_count"))));
+                        source.put(name, "roll_count");
+                    } else {
+                        qty.put(name, BigDecimal.ONE);
+                        source.put(name, "fallback");
+                    }
                 }
                 resolved.add(new ProductionOperationQtyClient.PositionQty(
                         (String) position.get("position_name"), qty, source));
@@ -431,5 +449,77 @@ class ProductionRouteParityTest {
         assertThat(cloth.stream().map(RoutingModelFixture::logicalName).toList())
                 .as("注入后布帘×韩褶 的序列应等于「无 上车布」的 10 道（部位不匹配 ⇒ 规则被筛掉）")
                 .doesNotContain("上车布");
+    }
+
+    // ══════════════════ 整卷布料单：出库独立工序（issue #7523，用户裁定 2026-10-23）══════════════════
+
+    /** 布料路线模板（V186 终态）：主线 `裁剪 → 打包`；整卷的 `出库` 由 sales_form 规则插入。 */
+    private static ProductionRouteTemplate fabricTemplate() {
+        return ProductionRouteTemplate.builder()
+                .id("rt-fabric").tenantId(TENANT).name("布料工序路线").isDefault(false)
+                .positions(List.of("布料")).mainline(List.of("裁剪", "打包"))
+                .status("active").deleted(0).build();
+    }
+
+    /** 售卖方式规则（V186 的两条终态）：`full_roll` ⇒ insert 出库 after 裁剪 → remove 裁剪。 */
+    private static ProductionRouteRule salesFormRule(String id, String action, String operation,
+                                                     String after, int priority) {
+        return ProductionRouteRule.builder()
+                .id(id).tenantId(TENANT).triggerKind("sales_form").triggerValue("full_roll")
+                .position(null).action(action).operation(operation).afterOperation(after)
+                .priority(priority).status("active").deleted(0).build();
+    }
+
+    /** 卖布行订单（无加工项）+ 售卖方式 → 派生 payload。 */
+    private List<Map<String, Object>> instantiateFabric(String sellingMethod, int rollCount) {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("saleForm", "布料");
+        info.put("sellingMethod", sellingMethod);
+        info.put("rollCount", rollCount);
+        OrderItem item = OrderItem.builder()
+                .id("item-fabric").tenantId(TENANT).orderId("order-001")
+                .productName("遮光布料").quantity(BigDecimal.valueOf(rollCount * 70L))
+                .sellingMethod(sellingMethod).rollCount(rollCount)
+                .processingInfo(info)
+                .build();
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(item));
+        return service.derivePositionPayload("order-001", TENANT);
+    }
+
+    @Test
+    @DisplayName("#7523 整卷布料单 = 出库 → 打包（不裁剪），应做数量 = 卷数")
+    @SuppressWarnings("unchecked")
+    void fabricFullRollIsOutboundThenPacking() {
+        List<Map<String, Object>> positions = instantiateFabric("full_roll", 2);
+        org.mockito.ArgumentCaptor<List<Map<String, Object>>> captor =
+                org.mockito.ArgumentCaptor.forClass(List.class);
+        org.mockito.Mockito.verify(productionOperationQtyClient).resolve(captor.capture());
+        assertThat((Map<String, Object>) captor.getValue().get(0).get("calc_info"))
+                .as("算料输入必须带订单行卷数（键 = routing.py::ROLL_KEYS）")
+                .containsEntry("roll_count", 2);
+        assertThat(positions).hasSize(1);
+        List<Map<String, Object>> operations =
+                (List<Map<String, Object>>) positions.get(0).get("operations");
+        assertThat(operations).extracting(op -> op.get("logical_name"))
+                .as("整卷 = 出库 → 打包；出现 `裁剪` 就是本单要治的旧形态")
+                .containsExactly("出库", "打包");
+        assertThat(operations.get(0))
+                .containsEntry("logical_name", "出库")
+                .containsEntry("unit", "卷");
+        assertThat((BigDecimal) operations.get(0).get("qty"))
+                .as("应做数量 = 订单行卷数（2 卷）").isEqualByComparingTo("2");
+        assertThat(operations.get(0).get("qty_source")).isEqualTo("roll_count");
+    }
+
+    @Test
+    @DisplayName("#7523 散剪布料单 = 裁剪 → 打包（没有出库）—— 对照判据")
+    @SuppressWarnings("unchecked")
+    void fabricBulkCutKeepsCutting() {
+        List<Map<String, Object>> positions = instantiateFabric("bulk_cut", 0);
+        List<Map<String, Object>> operations =
+                (List<Map<String, Object>>) positions.get(0).get("operations");
+        assertThat(operations).extracting(op -> op.get("logical_name"))
+                .as("散剪单不得出现 `出库`（那是整卷专属工序）")
+                .containsExactly("裁剪", "打包");
     }
 }

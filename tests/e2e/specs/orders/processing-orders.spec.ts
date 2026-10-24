@@ -1,5 +1,5 @@
 // case_ids: PG-005, PG-008, PG-038, UI-012
-// PG-038（issue #4357 / 本文件头部补声明 issue #4431 B8）：本 spec 的「生产看板 /production」
+// PG-038（issue #4357 / 本文件头部补声明 issue #4431 B8）：本 spec 的「作业看板 /production」
 // describe 块**确实覆盖** PG-038 的判据 —— 「旧入口 /processing-orders 重定向到 /production（旧深链
 // 不 404）」（对应 PG-038 第 3 条 data_check）与「唯一入口不再提供状态流转入口」（第 4 条，五种状态
 // 逐行负向断言）两条断言都在此执行；PG-038 的 traces.tests 早已引用本文件，缺的只是文件头声明。
@@ -189,7 +189,7 @@ async function mockProcessingOrderApis(page: import('@playwright/test').Page) {
     await route.fallback()
   })
 
-  // 生产看板每行的「工序进度 + 计件合计」（issue #4357：加工单唯一入口 = /production，
+  // 作业看板每行的「工序进度 + 计件合计」（issue #4357：作业单唯一入口 = /production，
   // 它逐行调这两个端点）。未 mock ⇒ 落到真实网络（fixture 模式无后端）⇒ 行内进度/计件显示「—」
   // 且请求悬挂拖慢旅程。给确定性响应，让「合并后看板仍渲染真实数据行」可断言。
   await page.route('**/api/admin/production/orders/**', async (route) => {
@@ -270,7 +270,7 @@ function rowBy(page: import('@playwright/test').Page, processingOrderNo: string)
   return page.locator('tbody tr', { hasText: processingOrderNo })
 }
 
-test.describe('生产看板 /production（加工单唯一入口）', () => {
+test.describe('作业看板 /production（作业单唯一入口）', () => {
   // 共享 mock 捕获（beforeEach 注册一次，测试内只读）
   let api: { patchBodies: PatchCall[] }
 
@@ -309,7 +309,7 @@ test.describe('生产看板 /production（加工单唯一入口）', () => {
     // 正信号等待（防竞态：'加载中… not visible' 可能在首次渲染前就通过）：
     // 标题出现 = 页面挂载；首行加工单号可见 = 列表数据已渲染。
     // 60s 容忍 Next dev on-demand 编译（冷启动/负载下可达数十秒）
-    await expect(page.getByRole('heading', { name: '生产看板' })).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByRole('heading', { name: '作业看板' })).toBeVisible({ timeout: 60_000 })
     await expect(page.getByText('JG-20260601-0001')).toBeVisible({ timeout: 60_000 })
   })
 
@@ -318,10 +318,10 @@ test.describe('生产看板 /production（加工单唯一入口）', () => {
     // #4357 前 /production 没有任何面包屑条目 ⇒ 曾回落成「工作台 > 经营看板」。
     // 侧边栏 IA（加工单不再作为独立菜单项）由 vitest 单测断言 —— e2e 的 auth fixture
     // 不带 permissions ⇒ 侧边栏里所有带权限码的项都被过滤掉，此处断言不了菜单项。
-    await expect(page.getByRole('heading', { name: '生产看板' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '作业看板' })).toBeVisible()
     const breadcrumb = page.getByRole('banner').getByRole('navigation')
     await expect(breadcrumb).toContainText('生产管理')
-    await expect(breadcrumb).toContainText('生产看板')
+    await expect(breadcrumb).toContainText('作业看板')
 
     for (const po of MOCK_POS) {
       await expect(page.getByText(po.processingOrderNo)).toBeVisible()
@@ -365,29 +365,29 @@ test.describe('生产看板 /production（加工单唯一入口）', () => {
 
   test('关键词搜索：按加工单号/订单号精确匹配（结果可见）', async ({ page }) => {
     // 按加工单号
-    await page.getByPlaceholder('请输入加工单号或订单号').fill('JG-20260602-0002')
+    await page.getByPlaceholder('请输入作业单号或订单号').fill('JG-20260602-0002')
     await page.getByRole('button', { name: '查询' }).click()
     await page.waitForTimeout(300)
     await expect(page.getByText('JG-20260602-0002')).toBeVisible()
     await expect(page.getByText('JG-20260601-0001')).not.toBeVisible()
 
     // 按订单号
-    await page.getByPlaceholder('请输入加工单号或订单号').fill('YK20260601003')
+    await page.getByPlaceholder('请输入作业单号或订单号').fill('YK20260601003')
     await page.getByRole('button', { name: '查询' }).click()
     await page.waitForTimeout(300)
     await expect(page.getByText('JG-20260603-0003')).toBeVisible()
     await expect(page.getByText('JG-20260602-0002')).not.toBeVisible()
 
     // 空结果 → 空态
-    await page.getByPlaceholder('请输入加工单号或订单号').fill('不存在的单号')
+    await page.getByPlaceholder('请输入作业单号或订单号').fill('不存在的单号')
     await page.getByRole('button', { name: '查询' }).click()
     await page.waitForTimeout(300)
-    await expect(page.getByText(/暂无加工单/)).toBeVisible()
+    await expect(page.getByText(/暂无作业单/)).toBeVisible()
   })
 
   test('重置按钮清空筛选并恢复全量列表', async ({ page }) => {
     // 关键词精确命中 issued 行（keyword 命中时后端忽略 status，等价于单条件筛选）
-    await page.getByPlaceholder('请输入加工单号或订单号').fill('JG-20260602-0002')
+    await page.getByPlaceholder('请输入作业单号或订单号').fill('JG-20260602-0002')
     await page.getByRole('button', { name: '查询' }).click()
     await page.waitForTimeout(300)
     await expect(page.getByText('JG-20260602-0002')).toBeVisible()
@@ -395,7 +395,7 @@ test.describe('生产看板 /production（加工单唯一入口）', () => {
 
     await page.getByRole('button', { name: '重置' }).click()
     await page.waitForTimeout(300)
-    await expect(page.getByPlaceholder('请输入加工单号或订单号')).toHaveValue('')
+    await expect(page.getByPlaceholder('请输入作业单号或订单号')).toHaveValue('')
     await expect(page.getByLabel('状态筛选')).toHaveValue('')
     await expect(page.getByText('JG-20260601-0001')).toBeVisible()
   })
@@ -459,9 +459,9 @@ test.describe('生产看板 /production（加工单唯一入口）', () => {
 
   test('旧入口 /processing-orders 重定向到 /production（旧深链不 404，issue #4357）', async ({ page }) => {
     await page.goto('/processing-orders')
-    // 重定向后落到唯一入口：URL 与页面标题都是 /production 的生产看板
+    // 重定向后落到唯一入口：URL 与页面标题都是 /production 的作业看板
     await page.waitForURL(/\/production$/, { timeout: 30_000 })
-    await expect(page.getByRole('heading', { name: '生产看板' })).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByRole('heading', { name: '作业看板' })).toBeVisible({ timeout: 60_000 })
     await expect(page.getByText('JG-20260601-0001')).toBeVisible({ timeout: 60_000 })
   })
 })

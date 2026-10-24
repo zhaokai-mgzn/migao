@@ -10,8 +10,8 @@
 //
 // ## 三条不变量（与 `styles/tabbar.scss` 同款，issue #5754 的教训）
 //
-// ① **安全区只补一次**：条高 = `50PX + env(safe-area-inset-bottom)`，且**不再**给条加 `margin-bottom`
-//    （两处都补 ⇒ 条被抬起 + 文字下方留白，线上实测过的病灶）；
+// ① **安全区只补一次**：条高 = `50PX + env(safe-area-inset-bottom)`（**border-box**，安全区是条内衬垫），
+//    且**不再**给条加 `margin-bottom`（两处都补 ⇒ 条被抬起 + 文字下方留白，线上实测过的病灶）；
 // ② **图标 + 文字在可视区垂直居中**（flex 纵列居中，不靠「上 5 下 0」的固定留白）；
 // ③ 每格 `flex: 1`（等宽；隐藏某格后其余自动等分整条）。
 //
@@ -33,7 +33,15 @@
   bottom: 0;
   z-index: 100;
   display: flex;
-  // ① 安全区只补一次（条自己覆盖它）
+  // 🔴 `box-sizing: border-box` 不能少（issue #7252，2026-10-18 用户真机「按住说话被遮住一半」）：
+  //    本元素同时写 `height: calc(50PX + env(...))` 与 `padding-bottom: env(...)`。默认的 content-box 下
+  //    **padding 会加到 height 之上** ⇒ iPhone（安全区 34）实测实用高 **118px**，而页面预留只有 84px
+  //    ⇒ 输入条被压 34px（超过它 63px 高度的一半）。Chromium（env=0）两种盒模型都是 50px ⇒
+  //    issue #6596 的线上探针与既有几何腿都读到 coveredPx=0（**绿了但没覆盖真机那一档**）。
+  //    border-box ⇒ 实用高 = 50 + 安全区，与页面预留逐值相等；内容区 = 安全区之上的 50px（同原生条）。
+  //    判据 = tests/tabbar-content-inset.test.ts 的「底栏实用高度复算」（safe=0/34 两档）+ 几何腿 safe=34 档。
+  box-sizing: border-box;
+  // ① 安全区只补一次（条自己覆盖它；padding 在条内，不外扩）
   height: calc(50PX + env(safe-area-inset-bottom));
   padding-bottom: env(safe-area-inset-bottom);
   background-color: #ffffff;

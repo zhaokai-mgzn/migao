@@ -42,10 +42,11 @@ from app.utils.auth import UserIdentity
 from app.agents.customer_service_agent import AgentContext, AgentResponse
 
 
-def _user(tenant_id=1, user_id="user_1", role="customer"):
+def _user(tenant_id=1, user_id="user_1", role="customer", permissions=None):
     return UserIdentity(
         user_id=user_id, tenant_id=tenant_id,
         identity_type="wechat_mini", role=role,
+        permissions=list(permissions or []),
     )
 
 
@@ -710,7 +711,10 @@ class TestQuickActions:
 
     @pytest.mark.asyncio
     async def test_quick_actions(self):
-        result = await get_quick_actions(current_user=_user())
+        # issue #7358：入口已按权限投影（见下面 `test_*_sees_*` 三条）⇒
+        # 本判据钉「**内容与形态**」（六格顺序 / emoji / 锚点不下发），故用恒持 `["*"]` 的管理员身份。
+        # B 端入口：C 端（`role=customer`）不消费本端点，且其 JWT 无权限码 ⇒ 过滤后为空是预期。
+        result = await get_quick_actions(current_user=_user(role="admin", permissions=["*"]))
         assert result["success"] is True
         actions = result["data"]["actions"]
         # 逐条钉住 B 端场景入口（顺序 = 客户端渲染顺序）
@@ -727,6 +731,74 @@ class TestQuickActions:
         assert all(a["icon"] and a["name"] and a["prompt"].endswith("？") for a in actions)
         # 能力锚（skill / tool）只用于服务端自证，不进响应体
         assert all(set(a) == {"id", "name", "icon", "emoji", "prompt"} for a in actions)
+        # 工具类快捷入口（issue #7351）：与六格 actions **分开下发** —— 六格数量/形态一字不动。
+        tools = result["data"]["tools"]
+        assert [(t["id"], t["name"], t["prompt"]) for t in tools] == [
+            ("marketing_poster", "营销海报", "我要给商品做一张营销海报"),
+        ]
+        assert all(set(t) == {"id", "name", "icon", "emoji", "prompt"} for t in tools)
+
+    # ── issue #7358：入口按**当前用户权限**投影（不按岗位写清单）────────────────────
+    # 依据（AI 裁定，记在 issue body）：权限自 #2969 起是**快照式**（`users.permissions`，
+    # 与岗位脱钩）⇒ 同一岗位两名员工权限可不同，「按岗位定义一套快捷方式」在语义上不成立。
+    # 判定谓词**复用** `BaseTool.check_permission`（`app/tools/base.py`），不新写权限逻辑。
+
+    @pytest.mark.asyncio
+    async def test_admin_sees_every_entry(self):
+        """`*` = 全权限（admin 恒持）：七条一条不少。"""
+        from app.api.chat import TOOL_SHORTCUTS
+
+        result = await get_quick_actions(current_user=_user(role="admin", permissions=["*"]))
+        assert [a["id"] for a in result["data"]["actions"]] == [a["id"] for a in QUICK_ACTIONS]
+        assert [t["id"] for t in result["data"]["tools"]] == [t["id"] for t in TOOL_SHORTCUTS]
+
+    @pytest.mark.asyncio
+    async def test_inspector_only_sees_what_it_can_do(self):
+        """质检员（`production:view` + `production:inspect`）：只剩「交付风险」。
+
+        改前实测：七条全下发 ⇒ 六条点下去必然被工具层拒绝（8 岗位 × 7 条 = 56 格，27 格无效）。
+        """
+        result = await get_quick_actions(
+            current_user=_user(role="inspector", permissions=["production:view", "production:inspect"])
+        )
+        assert [a["id"] for a in result["data"]["actions"]] == ["delivery_risk"]
+        assert result["data"]["tools"] == []
+
+    @pytest.mark.asyncio
+    async def test_customer_service_sees_own_domain(self):
+        """客服（`rbac/manifest.json` 的 `roles.seed.customer_service`）：4 条。
+
+        售后可见；库存（`product:list`）、交付风险（`production:view`）、海报（`product:list`）不可见
+        —— 客服持 `production:execute` 但**不持** `production:view`，这正是「按读/写码分别判」的实据。
+        """
+        result = await get_quick_actions(
+            current_user=_user(
+                role="customer_service",
+                permissions=[
+                    "after_sales:view", "agent:session", "agent:session:manage", "customer:view",
+                    "dashboard:view", "inbound:view", "knowledge:view", "order:detail", "order:list",
+                    "order:refund", "processing:view", "production:execute",
+                ],
+            )
+        )
+        assert [a["id"] for a in result["data"]["actions"]] == [
+            "daily_business", "product_health", "after_sales_todo", "customer_churn",
+        ]
+        assert result["data"]["tools"] == []
+
+    @pytest.mark.asyncio
+    async def test_empty_permissions_see_nothing(self):
+        """无权限码 ⇒ **一条都不下发**：与工具层拦截面逐字一致（不猜、不放行）。"""
+        for role in ("inspector", "sales"):
+            result = await get_quick_actions(current_user=_user(role=role, permissions=[]))
+            assert result["data"] == {"actions": [], "tools": []}, role
+
+    @pytest.mark.asyncio
+    async def test_filter_keeps_response_shape(self):
+        """过滤不改变响应体形状：仍不含 `skill` / `tool` 能力锚（#6468 既有契约）。"""
+        result = await get_quick_actions(current_user=_user(role="admin", permissions=["*"]))
+        for row in (*result["data"]["actions"], *result["data"]["tools"]):
+            assert "skill" not in row and "tool" not in row
 
     def test_prompts_are_b_side_scenarios_not_c_side_copy(self):
         """负向：#6468 的形态是「B 端入口抄了 C 端的顾客问句」⇒ 这些串不得回填。"""
@@ -752,7 +824,8 @@ class TestQuickActions:
 
         registry = get_skill_registry()
         offenders: list[str] = []
-        for action in QUICK_ACTIONS:
+        from app.api.chat import TOOL_SHORTCUTS
+        for action in (*QUICK_ACTIONS, *TOOL_SHORTCUTS):
             skill_name, tool_name = action["skill"], action["tool"]
             if skill_name not in MIBAO_CONFIG.skill_names:
                 offenders.append(

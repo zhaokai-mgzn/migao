@@ -118,7 +118,9 @@ concurrency:
 jobs:
   verify:
     name: Post-Merge Verify (定向跑判据面)
-    runs-on: ubuntu-latest
+    # 钉版（issue #7365）：ubuntu-latest 已滚到 26.04，不再自带 PG 二进制（initdb/pg_ctl）
+    # ⇒ 真库判据的前置断言会失败。装 PG 不可行（apt 装到 18，BIN_DIRS 只认 14/15/16）。
+    runs-on: ubuntu-24.04
     # 上限（**不是判据**）：最坏情形 = 水位取不到退回 40 个提交的窗口，而该窗口实测命中
     # `tests/unit_ci_workflows` 的**绝大部分**（现取 371 个判据文件里 296 个）⇒ 本腿在**一个** runner 上
     # 要干 `pr-check.yml` **两片**的活（`ci workflow helper unit tests` 两个 matrix 分片各自
@@ -357,6 +359,11 @@ jobs:
               entries, _ = t.scan_claims(t.REPO_ROOT / t.CLAIMS_REL)
               creds = {k: len(os.environ.get(k) or "") for k in t.TOKEN_ENVS}
               print("creds =", creds, "| current_pr =", t.current_pr(t.parse_claims(entries)))
+              # 🔴 issue #6980 冻结判据 2「出声，不判红」：push/schedule 腿上**没有「本 PR」这个对象**
+              # ⇒ 判据 7 整条不适用；这一行把那个「未判定」**具名打出来**（可 grep），免得它与
+              # 「在飞面没有重号」长得一样。接线判据 =
+              # tests/unit_ci_workflows/test_post_merge_verify_leg.py::test_judging_step_voices_the_no_pr_context_exit
+              print(t.pr_context_note())
           except Exception as exc:  # noqa: BLE001 —— 诊断面：把失败**打出来**（由下面那条判据判红）
               print("探针自身失败:", type(exc).__name__, exc)
           print("GITHub_REF =", os.environ.get("GITHUB_REF"), "| EVENT =", os.environ.get("GITHUB_EVENT_NAME"),

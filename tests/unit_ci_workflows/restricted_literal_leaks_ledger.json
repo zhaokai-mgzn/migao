@@ -60,11 +60,11 @@
     {
       "path": "backend/admin-api/src/main/java/com/migao/admin/service/CraftCalcConfigService.java",
       "literal": "GET /api/admin/production/craft-calc-config（source='default' 的那一份）。",
-      "line": 367,
+      "line": 408,
       "hits": 1,
       "issue": "#6841",
       "kind": "登记（跟踪 #6841，B1 射程外）",
-      "reason": "算料配置整份拒绝时的 suggestion 让商家去看 `GET /api/admin/production/craft-calc-config`（source='default'）—— 端点对商家不可读；而该域**有页面**（企业基础设置 → 算料口径）⇒ 应不指路或改指现域。（现取命中 1 处）"
+      "reason": "算料配置整份拒绝时的 suggestion 让商家去看 `GET /api/admin/production/craft-calc-config`（source='default'）—— 端点对商家不可读；而该域**有页面**（企业基础设置 → 算料口径）⇒ 应不指路或改指现域。（现取命中 1 处）⚠️ 行号 367→405 = issue #7548 在 `validate()` 上方补了两份护栏键清单的注释所致；405→408 = issue #7560 给拼色余量加 `margin_mixed_single` / `margin_mixed_multi` 两个数值键（`NUMERIC_KEYS` / `NON_NEGATIVE_KEYS` 各多两行）所致 —— 未新增泄漏，字面量一字未动。"
     },
     {
       "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingFeeCombinationCommandService.java",
@@ -87,7 +87,7 @@
     {
       "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionSeedTemplateService.java",
       "literal": "POST /api/admin/production/seed-templates/{templateId}/apply 手动补套）",
-      "line": 373,
+      "line": 379,
       "hits": 1,
       "issue": "#6841",
       "kind": "登记（跟踪 #6841，B1 射程外）",

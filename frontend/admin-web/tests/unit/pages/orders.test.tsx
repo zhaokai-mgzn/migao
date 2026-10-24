@@ -1,4 +1,4 @@
-// case_ids: OR-001, OR-002, OR-003, OR-004, OR-005, UI-057, UI-058
+// case_ids: OR-001, OR-002, OR-003, OR-004, OR-005, UI-057, UI-058, UI-130
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -205,7 +205,7 @@ describe('OrdersPage', () => {
 
   it('should render page title', () => {
     render(<OrdersPage />)
-    expect(screen.getByText('订单列表')).toBeInTheDocument()
+    expect(screen.getByText('销售订单')).toBeInTheDocument()
   })
 
   it('should render create order button', () => {
@@ -233,10 +233,48 @@ describe('OrdersPage', () => {
     })
   })
 
-  it('should render search filters', () => {
+  it('should render search filters（筛选区默认收起：展开后才在）', async () => {
+    // issue #7388：筛选区默认折叠 ⇒ 字段默认**不进 DOM**，展开后才在（折叠不是 CSS 隐藏）。
     render(<OrdersPage />)
+    expect(screen.queryByPlaceholderText('请输入订单ID')).not.toBeInTheDocument()
+    await user.click(screen.getByTestId('search-panel-toggle'))
     expect(screen.getByPlaceholderText('请输入订单ID')).toBeInTheDocument()
     expect(screen.getByPlaceholderText('请输入收货人姓名或手机号')).toBeInTheDocument()
+  })
+
+  it('筛选区默认收起：一行摘要（当前在筛什么）+ 展开入口；字段/查询按钮都不进 DOM', () => {
+    render(<OrdersPage />)
+    const toggle = screen.getByTestId('search-panel-toggle')
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    // 默认时间范围一直在生效 ⇒ 收起态必须说出来，否则看着像「全部订单」。
+    expect(screen.getByTestId('search-panel-summary').textContent).toContain('近一个月')
+    // 收起态要**引导**「这里能打开去查询」（用户 2026-10-20 追加要求）。
+    expect(screen.getByTestId('search-panel-toggle-label').textContent).toContain('展开筛选')
+    expect(screen.queryByPlaceholderText('请输入订单ID')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '查询' })).not.toBeInTheDocument()
+  })
+
+  it('展开筛选 ⇒ 7 个筛选项全在 + 查询/重置/刷新三个动作；再点收起 ⇒ 全部消失', async () => {
+    render(<OrdersPage />)
+    await user.click(screen.getByTestId('search-panel-toggle'))
+    for (const placeholder of [
+      '请输入订单ID',
+      '请输入收货人姓名或手机号',
+      '请输入制单人姓名',
+      '请输入商品货号',
+      '请输入商品标题',
+    ]) {
+      expect(screen.getByPlaceholderText(placeholder)).toBeInTheDocument()
+    }
+    // 日期区间两框（placeholder = 开始/结束日期）与「是否加工」下拉
+    expect(screen.getAllByPlaceholderText('开始日期').length).toBe(1)
+    expect(screen.getAllByPlaceholderText('结束日期').length).toBe(1)
+    for (const name of ['查询', '重置', '刷新']) {
+      expect(screen.getByRole('button', { name })).toBeInTheDocument()
+    }
+
+    await user.click(screen.getByTestId('search-panel-toggle'))
+    expect(screen.queryByPlaceholderText('请输入订单ID')).not.toBeInTheDocument()
   })
 
   it('should render pagination', async () => {
@@ -267,14 +305,17 @@ describe('OrdersPage', () => {
     // onView should trigger router navigation
   })
 
-  it('should show reset and search buttons', () => {
+  it('should show reset and search buttons（展开筛选后可见）', async () => {
     render(<OrdersPage />)
+    await user.click(screen.getByTestId('search-panel-toggle'))
     expect(screen.getByText('重置')).toBeInTheDocument()
     expect(screen.getByText('查询')).toBeInTheDocument()
   })
 
-  it('查询和重置按钮都应使用 inline-flex items-center 保证图标与文字垂直居中对齐 (#1831)', () => {
+  it('查询和重置按钮都应使用 inline-flex items-center 保证图标与文字垂直居中对齐 (#1831)', async () => {
     render(<OrdersPage />)
+    // issue #7388：按钮行在折叠区里 ⇒ 先展开，否则这里量的是「不存在」而不是「对齐」。
+    await user.click(screen.getByTestId('search-panel-toggle'))
     const searchBtn = screen.getByText('查询').closest('button')
     const resetBtn = screen.getByText('重置').closest('button')
 

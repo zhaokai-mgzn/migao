@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// case_ids: PG-072, HR-001, HR-002, UI-024, UI-091
+// case_ids: PG-072, HR-001, HR-002, UI-024, UI-091, UI-121
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { toast } from 'sonner'
@@ -30,6 +30,7 @@ const mockCreateWorker = vi.fn()
 const mockSetWorkerStatus = vi.fn()
 const mockResetWorkerPin = vi.fn()
 const mockGetWorkerPageCatalog = vi.fn()
+const mockUpdateWorkerPages = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   workerApi: {
@@ -37,6 +38,7 @@ vi.mock('@/lib/api', () => ({
     createWorker: (...a: unknown[]) => mockCreateWorker(...a),
     setWorkerStatus: (...a: unknown[]) => mockSetWorkerStatus(...a),
     resetWorkerPin: (...a: unknown[]) => mockResetWorkerPin(...a),
+    updateWorkerPages: (...a: unknown[]) => mockUpdateWorkerPages(...a),
   },
   workerPageCatalogApi: {
     get: (...a: unknown[]) => mockGetWorkerPageCatalog(...a),
@@ -48,12 +50,20 @@ import { markErrorToastShown } from '@/lib/api-error'
 
 const okPage = (items: unknown[]) => ({ data: { data: { items, total: items.length } } })
 
-/** 工人端页面目录（读面形状：pages + labels；issue #6828）。 */
+/**
+ * 工人端页面目录（读面形状：pages + default_pages + optional_pages + labels；
+ * issue #6828 建立，issue #7162 追加后两键）。
+ *
+ * `inspect`（质检）在闭词表里但**不在默认集合** ⇒ 单独一栏逐人开；
+ * 写准入在服务端（`/api/worker/quality/**`）。
+ */
 const catalog = () => ({
   data: {
     data: {
-      pages: ['report', 'order', 'cut_calc', 'shipment'],
-      labels: { report: '报工', order: '订单', cut_calc: '裁高计算器', shipment: '发货' },
+      pages: ['report', 'order', 'cut_calc', 'shipment', 'inspect'],
+      default_pages: ['report', 'order', 'cut_calc', 'shipment'],
+      optional_pages: ['inspect'],
+      labels: { report: '报工', order: '订单', cut_calc: '裁高计算器', shipment: '发货', inspect: '质检' },
     },
   },
 })
@@ -74,6 +84,7 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
     mockSetWorkerStatus.mockReset()
     mockResetWorkerPin.mockReset()
     mockGetWorkerPageCatalog.mockReset()
+    mockUpdateWorkerPages.mockReset()
     ;(toast.error as ReturnType<typeof vi.fn>).mockClear()
     mockListWorkers.mockResolvedValue(okPage([worker()]))
     // 缺省：企业四页全开（逐人菜单的选项来源）
@@ -265,11 +276,65 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
     ]))
     render(<WorkerProfilesPanel canWrite />)
 
-    expect(await screen.findByTestId('worker-menu-w-1')).toHaveTextContent('全部页面')
+    expect(await screen.findByTestId('worker-menu-w-1')).toHaveTextContent('默认页面')
     expect(screen.getByTestId('worker-menu-w-2')).toHaveTextContent('裁高计算器')
     // 🔴 空数组（历史脏数据）显示成「全部页面」—— 与**读面契约**一致（`WorkerPages.effectiveFor`
     // 对归一后为空集一律回落全部页面，issue #6828 复核发现旧的「未开放任何页面」与契约相反）
-    expect(screen.getByTestId('worker-menu-w-3')).toHaveTextContent('全部页面')
+    expect(screen.getByTestId('worker-menu-w-3')).toHaveTextContent('默认页面')
+  })
+
+  it('⑨ 🔴 质检是逐人开的能力页（issue #7162）：单独一栏、勾上后建号带 inspect；默认不勾', async () => {
+    mockCreateWorker.mockResolvedValue({ data: { data: worker({ id: 'w-6' }) } })
+    render(<WorkerProfilesPanel canWrite />)
+
+    fireEvent.click(await screen.findByText('新建工人档案'))
+    // 质检**不在**默认菜单栏里（否则等于所有工人都被开了质检）
+    expect(screen.queryByTestId('worker-page-option-inspect')).not.toBeInTheDocument()
+    // 它单独一栏，默认未勾
+    const option = await screen.findByTestId('worker-page-optional-inspect')
+    expect(option).toBeInTheDocument()
+    expect((option.querySelector('input') as HTMLInputElement).checked).toBe(false)
+
+    fireEvent.change(screen.getByPlaceholderText(/W-1002/), { target: { value: 'W-1006' } })
+    fireEvent.change(screen.getByPlaceholderText(/李四/), { target: { value: '质检员甲' } })
+    fireEvent.change(screen.getByPlaceholderText(/位数字/), { target: { value: '246810' } })
+    fireEvent.click(option.querySelector('input') as HTMLInputElement)
+    fireEvent.click(screen.getByText('创建'))
+
+    await waitFor(() => {
+      expect(mockCreateWorker).toHaveBeenCalledWith({
+        workerNo: 'W-1006',
+        name: '质检员甲',
+        pin: '246810',
+        // 默认四页（目录给的 default_pages）+ 单独开的质检 = 收窄列表（不是 null）
+        workerPages: ['report', 'order', 'cut_calc', 'shipment', 'inspect'],
+      })
+    })
+  })
+
+  it('⑨ 已有工人：列表行上「开质检 / 关质检」⇒ 调页面收窄端点（默认页 + inspect / 还原 null）', async () => {
+    mockListWorkers.mockResolvedValue(okPage([
+      worker({ id: 'w-7', workerNo: 'W-1007', name: '质检员乙' }),
+      worker({ id: 'w-8', workerNo: 'W-1008', name: '质检员丙', workerPages: ['report', 'inspect'] }),
+    ]))
+    mockUpdateWorkerPages.mockResolvedValue({ data: { data: {} } })
+    render(<WorkerProfilesPanel canWrite />)
+
+    // 操作列数据格默认 nowrap（issue #7217）：开质检 / 重置 PIN / 停用 不得逐字竖排
+    expect((await screen.findByTestId('worker-optional-inspect-w-7')).closest('td')?.className)
+      .toContain('whitespace-nowrap')
+
+    // 默认（未收窄）⇒ 开质检 = 默认四页 + inspect
+    fireEvent.click(await screen.findByTestId('worker-optional-inspect-w-7'))
+    await waitFor(() => {
+      expect(mockUpdateWorkerPages).toHaveBeenCalledWith('w-7', ['report', 'order', 'cut_calc', 'shipment', 'inspect'])
+    })
+
+    // 已开 ⇒ 关质检 = 回到收窄集（去掉 inspect）
+    fireEvent.click(await screen.findByTestId('worker-optional-inspect-w-8'))
+    await waitFor(() => {
+      expect(mockUpdateWorkerPages).toHaveBeenCalledWith('w-8', ['report'])
+    })
   })
 
   it('⑧ 企业级页面读不到（如岗位没有生产域读码）⇒ 建号主流程照旧，只是不显示菜单一节', async () => {

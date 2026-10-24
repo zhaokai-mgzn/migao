@@ -7,6 +7,7 @@ import { productApi } from '@/lib/api'
 import type { RecognizedField } from '@/lib/api'
 import { buildProductPrefill } from '@/lib/image-recognize'
 import {
+  PAGE_FILL_SOURCE_DECLARED,
   PAGE_FILL_SOURCE_INTERPRETED,
   PAGE_FILL_SOURCE_RECOGNIZED,
   fieldsOfSource,
@@ -35,9 +36,18 @@ export default function NewProductPage() {
   const applyFields = useCallback((all: RecognizedField[], interpretedKeys: string[]) => {
     const next = buildProductPrefill(all)
     const interpreted = new Set(interpretedKeys)
+    // 「商家填写」的格子（issue #7528：货号 / 门幅 / 规格属性）**不挂徽标** ——
+    // 它们不是从图上抄的、也不是米宝推的，商人自己刚写的，不需要再提醒他复核自己（§31 信息不重复）。
+    const declared = new Set(
+      all.filter((field) => field.source === PAGE_FILL_SOURCE_DECLARED).map((field) => field.key),
+    )
     setPrefill(next.initialData)
-    setRecognizedFields(next.recognizedFields.filter((key) => !interpreted.has(key)))
-    setInterpretedFields(next.recognizedFields.filter((key) => interpreted.has(key)))
+    setRecognizedFields(
+      next.recognizedFields.filter((key) => !interpreted.has(key) && !declared.has(key)),
+    )
+    setInterpretedFields(
+      next.recognizedFields.filter((key) => interpreted.has(key) && !declared.has(key)),
+    )
   }, [])
 
   /**

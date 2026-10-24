@@ -188,6 +188,7 @@ vi.mock('lucide-react', async (importOriginal) => {
   Mail: iconStub('mail'),
   MapPin: iconStub('map-pin'),
   Truck: iconStub('truck'),
+  Handshake: iconStub('handshake'),
   // #3102: 下单选客户（选择客户入口）
   UserPlus: iconStub('user-plus'),
   Building2: iconStub('building2'),
@@ -204,6 +205,7 @@ vi.mock('lucide-react', async (importOriginal) => {
   ShoppingCart: iconStub('shopping-cart'),
   FileText: iconStub('file-text'),
   BarChart3: iconStub('bar-chart3'),
+  FileSpreadsheet: iconStub('table2'),
   BookOpen: iconStub('book-open'),
   Scissors: iconStub('scissors'),
   Bot: iconStub('bot'),
@@ -229,7 +231,7 @@ vi.mock('lucide-react', async (importOriginal) => {
   FolderTree: iconStub('folder-tree'),
   Zap: iconStub('zap'),
   Printer: iconStub('printer'),
-  // 免驱动直连通道（issue #6439）：生产明细页「直连打印机打印」按钮用 Bluetooth 图标
+  // 免驱动直连通道（issue #6439 / #7288）：打印预览页脚的「蓝牙无线打印」按钮用 Bluetooth 图标
   Bluetooth: iconStub('bluetooth'),
   Calculator: iconStub('calculator'),
   AlertTriangle: iconStub('alert-triangle'),

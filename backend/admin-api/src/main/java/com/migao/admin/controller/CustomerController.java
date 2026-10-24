@@ -2,11 +2,14 @@ package com.migao.admin.controller;
 
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
+import com.migao.admin.dto.CreditSettingsRequest;
+import com.migao.admin.dto.CreditStatusResponse;
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.entity.CustomerProfile;
 import com.migao.admin.entity.CustomerTag;
 import com.migao.admin.service.CustomerService;
 import com.migao.admin.security.RequirePermission;
+import com.migao.admin.security.TenantOwnedResource;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -36,6 +39,12 @@ public class CustomerController {
 
     private final CustomerService customerService;
 
+    /**
+     * 数据范围（issue #7372 段 2）：客户列表与详情按角色范围收窄。取数复用
+     * {@code RoleService.getUserRoles}（「用户有哪些角色」的单一实现点）。
+     */
+    private final com.migao.admin.service.RoleService roleService;
+
     // ==================== 客户档案 ====================
 
     /**
@@ -58,7 +67,10 @@ public class CustomerController {
             @RequestParam(required = false) String keyword) {
         Long tenantId = TenantContext.getTenantId();
         log.info("查询客户列表: page={}, size={}, keyword={}, tenantId={}", page, size, keyword, tenantId);
-        PageResponse<CustomerProfile> result = customerService.getCustomerPage(page, size, sourceChannel, vipLevel, keyword, tenantId);
+        // 数据范围（issue #7372 段 2）：本人范围 ⇒ 只看自己负责 / 自己出过单的客户（null = 不收窄）
+        String scopeOwnerId = com.migao.admin.security.DataScope.ownerFilter(
+                roleService.resolveDataScope(currentUserId()), currentUserId());
+        PageResponse<CustomerProfile> result = customerService.getCustomerPage(page, size, sourceChannel, vipLevel, keyword, tenantId, scopeOwnerId);
         return ApiResponse.success(result);
     }
 
@@ -85,6 +97,24 @@ public class CustomerController {
     }
 
     /**
+     * 指派 / 撤回客户负责人（issue #7372 段 2）。
+     *
+     * <p>`PUT /api/admin/customers/{id}/owner`，body `{"ownerUserId": "..."}`；
+     * **不传 / 传空 = 撤回指派**（回到未指派）。写面用 `customer:create`（与改档案同码）。</p>
+     */
+    @PutMapping("/api/admin/customers/{id}/owner")
+    @RequirePermission("customer:create")
+    // 归属认定（#6158）：带 {id} 的写端点必须声明归属键，否则越权面无人认领
+    @com.migao.admin.security.TenantOwnedResource("customer")
+    public ApiResponse<Void> assignOwner(@PathVariable String id,
+                                         @RequestBody(required = false) Map<String, String> body) {
+        String ownerUserId = body == null ? null : body.get("ownerUserId");
+        log.info("指派客户负责人: customerId={}, ownerUserId={}", id, ownerUserId);
+        customerService.assignOwner(id, ownerUserId);
+        return ApiResponse.success(null);
+    }
+
+    /**
      * 查询客户详情
      *
      * GET /api/admin/customers/{id}
@@ -93,7 +123,10 @@ public class CustomerController {
     @RequirePermission("customer:view")
     public ApiResponse<Map<String, Object>> getCustomer(@PathVariable String id) {
         log.info("查询客户详情: id={}", id);
-        Map<String, Object> detail = customerService.getCustomerDetail(id);
+        // 数据范围（issue #7372 段 2）：范围外 ⇒ 与「不存在」同一个 404（不 403，不泄露存在性）
+        String scopeOwnerId = com.migao.admin.security.DataScope.ownerFilter(
+                roleService.resolveDataScope(currentUserId()), currentUserId());
+        Map<String, Object> detail = customerService.getCustomerDetail(id, scopeOwnerId);
         return ApiResponse.success(detail);
     }
 
@@ -110,6 +143,41 @@ public class CustomerController {
         log.info("更新客户档案: id={}", id);
         CustomerProfile updated = customerService.updateCustomer(id, profile);
         return ApiResponse.success(updated);
+    }
+
+    /**
+     * 客户授信读数（issue #7370）：额度 / 账期 / 已欠 / 可用。
+     *
+     * <p>「未启用授信」与「额度 0」在响应上必须可区分（前者 creditLimit/available 为 null）。
+     */
+    /**
+     * 应收账龄（issue #7370，P0-2 段 2）：五档（未到期 / 1-30 / 31-60 / 61-90 / 90+），
+     * 全局合计 + 按客户分行。码复用既有 {@code customer:view}（欠款结构是客户档案的延伸面，
+     * 不新造 {@code credit:view} —— 新码今天没人持有，页面会对所有人不可见）。
+     */
+    @GetMapping("/api/admin/customers/receivable-aging")
+    @RequirePermission("customer:view")
+    public ApiResponse<com.migao.admin.dto.ReceivableAgingResponse> receivableAging() {
+        return ApiResponse.success(customerService.receivableAging(TenantContext.getTenantId()));
+    }
+
+    @GetMapping("/api/admin/customers/{id}/credit")
+    @RequirePermission("customer:view")
+    public ApiResponse<CreditStatusResponse> getCredit(@PathVariable String id) {
+        return ApiResponse.success(customerService.creditStatus(id));
+    }
+
+    /**
+     * 设置/清空客户授信（显式 null = 停用授信）。issue #7370。
+     */
+    @PutMapping("/api/admin/customers/{id}/credit")
+    @RequirePermission("customer:create")
+    @TenantOwnedResource("customer")
+    public ApiResponse<CreditStatusResponse> updateCredit(
+            @PathVariable String id,
+            @RequestBody CreditSettingsRequest request) {
+        log.info("设置客户授信: id={}", id);
+        return ApiResponse.success(customerService.updateCreditSettings(id, request));
     }
 
     /**
@@ -212,5 +280,19 @@ public class CustomerController {
         log.info("删除客户标签: id={}", id);
         customerService.deleteTag(id);
         return ApiResponse.success();
+    }
+
+    /**
+     * 当前登录用户 id（数据范围的判定主体）：只从服务端安全上下文取，不接受客户端递交；
+     * 拿不到（内部服务令牌 / 匿名）⇒ null ⇒ 范围解析按最宽处理。
+     */
+    private String currentUserId() {
+        var authentication = org.springframework.security.core.context.SecurityContextHolder
+                .getContext().getAuthentication();
+        if (authentication != null
+                && authentication.getPrincipal() instanceof com.migao.admin.security.SecurityUser user) {
+            return user.getUserId();
+        }
+        return null;
     }
 }

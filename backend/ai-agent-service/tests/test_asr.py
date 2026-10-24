@@ -278,3 +278,42 @@ class TestAsrLogger:
         from app.api import asr
         from loguru import logger as loguru_logger
         assert asr.logger is loguru_logger
+
+
+class TestAsrRejectLogging:
+    """#7310 生产排查教训：拒收必须把**原因 + 读数**打进日志
+
+    2026-10-19 生产：7 次 400 在 ai-agent 日志里只留 `status=400 | duration=3ms`，
+    真实原因（0 字节音频）只能靠 **nginx 响应体字节数反解**才定位到 ⇒ 四个拒收分支
+    各补一条带 `size` / `filename` / `content_type` 的 warning。
+
+    判据覆盖**全部四条**拒收分支；新增一条拒收分支却不记日志时这里不会自动红
+    （PR body 已按 §8 登记「未固化项」，不粉饰）。
+    """
+
+    @pytest.mark.parametrize(
+        "data,expect",
+        [
+            (b"", "音频为空"),
+            (b"\x00" * 120, "音频过小"),
+            (b"\x00" * (11 * 1024 * 1024), "音频过大"),
+            (b"\x00" * (2 * 1024 * 1024), "时长超限"),
+        ],
+        ids=["empty", "tiny", "oversize", "too-long"],
+    )
+    @patch("app.api.asr._transcribe_audio", new_callable=AsyncMock)
+    async def test_each_reject_branch_logs_reason_and_size(self, mock_transcribe, data, expect):
+        from app.api.asr import transcribe_audio
+        from fastapi import HTTPException
+
+        with patch("app.api.asr.logger") as mock_logger:
+            with pytest.raises(HTTPException):
+                await transcribe_audio(
+                    audio=_mock_file(data),
+                    current_user=MagicMock(tenant_id=1),
+                )
+
+        logged = " ".join(str(call.args[0]) for call in mock_logger.warning.call_args_list)
+        assert expect in logged, f"拒收日志缺少原因「{expect}」：{logged}"
+        assert f"size={len(data)}" in logged, f"拒收日志缺少读数 size={len(data)}：{logged}"
+        mock_transcribe.assert_not_called()

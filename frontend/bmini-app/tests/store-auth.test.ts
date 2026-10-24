@@ -1,8 +1,9 @@
-// case_ids: AU-001, AU-003, AU-006, BM-001, BM-003, BM-005
+// case_ids: AU-001, AU-003, AU-006, AU-013, BM-001, BM-003, BM-005
 /**
  * Auth Zustand Store 测试（B 端小程序基建，issue #2977）
  *
- * 覆盖: 初始化、登录、登出、状态持久化、Token检查
+ * 覆盖: 初始化、登录、登出、状态持久化、Token检查、
+ *       exp 过期时先续期（HttpOnly refresh_token cookie，issue #7249）
  */
 import Taro from '@tarojs/taro'
 import { STORAGE_KEYS } from '../src/utils/constants'
@@ -16,6 +17,11 @@ jest.mock('../src/utils/auth', () => ({
   getUser: jest.fn(() => null),
   logout: jest.fn(),
   checkTokenValidity: jest.fn(() => false),
+}))
+
+// 会话续期（issue #7249）：store 的 initialize / checkAuth 在 exp 过期时**先续期**、失败才登出
+jest.mock('../src/utils/request', () => ({
+  refreshAccessToken: jest.fn(async () => null),
 }))
 
 import { miniAppLogin, getToken, getUser, checkTokenValidity, logout as authLogout } from '../src/utils/auth'
@@ -36,6 +42,9 @@ function getAuthStore() {
     getUser: jest.fn(() => null),
     logout: jest.fn(),
     checkTokenValidity: jest.fn(() => false),
+  }))
+  jest.mock('../src/utils/request', () => ({
+    refreshAccessToken: jest.fn(async () => null),
   }))
   const { useAuthStore } = require('../src/store/authStore')
   return useAuthStore
@@ -293,36 +302,57 @@ describe('authStore', () => {
   })
 
   describe('checkAuth', () => {
-    it('无 Token 时返回 false', () => {
+    it('无 Token 时返回 false', async () => {
       const useAuthStore = getAuthStore()
       const { getToken: mockGt } = require('../src/utils/auth')
       mockGt.mockReturnValue(null)
 
-      const result = useAuthStore.getState().checkAuth()
+      const result = await useAuthStore.getState().checkAuth()
 
       expect(result).toBe(false)
       expect(useAuthStore.getState().isLoggedIn).toBe(false)
     })
 
-    it('Token 有效时返回 true', () => {
+    it('Token 有效时返回 true（不触发续期）', async () => {
       const useAuthStore = getAuthStore()
       const { getToken: mockGt, checkTokenValidity: mockCtv } = require('../src/utils/auth')
+      const { refreshAccessToken: mockRefresh } = require('../src/utils/request')
       mockGt.mockReturnValue('valid-token')
       mockCtv.mockReturnValue(true)
 
-      const result = useAuthStore.getState().checkAuth()
+      const result = await useAuthStore.getState().checkAuth()
 
       expect(result).toBe(true)
       expect(useAuthStore.getState().isLoggedIn).toBe(true)
+      expect(mockRefresh).not.toHaveBeenCalled()
     })
 
-    it('Token 过期时登出', () => {
+    it('Token 过期 + 续期成功 ⇒ 保持登录并写回新 token（issue #7249）', async () => {
       const useAuthStore = getAuthStore()
       const { getToken: mockGt, checkTokenValidity: mockCtv, logout: mockLogout } = require('../src/utils/auth')
+      const { refreshAccessToken: mockRefresh } = require('../src/utils/request')
       mockGt.mockReturnValue('expired-token')
       mockCtv.mockReturnValue(false)
+      mockRefresh.mockResolvedValueOnce('fresh-token')
 
-      const result = useAuthStore.getState().checkAuth()
+      const result = await useAuthStore.getState().checkAuth()
+
+      expect(result).toBe(true)
+      expect(mockRefresh).toHaveBeenCalledTimes(1)
+      expect(mockLogout).not.toHaveBeenCalled()
+      expect(useAuthStore.getState().token).toBe('fresh-token')
+      expect(useAuthStore.getState().isLoggedIn).toBe(true)
+    })
+
+    it('Token 过期 + 续期失败 ⇒ 登出（行为与改前一致）', async () => {
+      const useAuthStore = getAuthStore()
+      const { getToken: mockGt, checkTokenValidity: mockCtv, logout: mockLogout } = require('../src/utils/auth')
+      const { refreshAccessToken: mockRefresh } = require('../src/utils/request')
+      mockGt.mockReturnValue('expired-token')
+      mockCtv.mockReturnValue(false)
+      mockRefresh.mockResolvedValueOnce(null)
+
+      const result = await useAuthStore.getState().checkAuth()
 
       expect(result).toBe(false)
       expect(mockLogout).toHaveBeenCalled()
@@ -330,7 +360,7 @@ describe('authStore', () => {
   })
 
   describe('initialize', () => {
-    it('有效 Token + User 应恢复登录状态', () => {
+    it('有效 Token + User 应恢复登录状态', async () => {
       const useAuthStore = getAuthStore()
       const { getToken: mockGt, getUser: mockGu, checkTokenValidity: mockCtv } = require('../src/utils/auth')
 
@@ -339,7 +369,7 @@ describe('authStore', () => {
       mockGu.mockReturnValue(user)
       mockCtv.mockReturnValue(true)
 
-      useAuthStore.getState().initialize()
+      await useAuthStore.getState().initialize()
 
       const state = useAuthStore.getState()
       expect(state.token).toBe('valid-token')
@@ -347,15 +377,36 @@ describe('authStore', () => {
       expect(state.isLoggedIn).toBe(true)
     })
 
-    it('Token 过期时应执行登出', () => {
+    it('Token 过期 + 续期成功 ⇒ 恢复登录（不登出，issue #7249）', async () => {
       const useAuthStore = getAuthStore()
       const { getToken: mockGt, getUser: mockGu, checkTokenValidity: mockCtv, logout: mockLogout } = require('../src/utils/auth')
+      const { refreshAccessToken: mockRefresh } = require('../src/utils/request')
+
+      const user = { id: 'u1', nickname: '用户', avatar: null, tenantId: 1 }
+      mockGt.mockReturnValue('expired')
+      mockGu.mockReturnValue(user)
+      mockCtv.mockReturnValue(false)
+      mockRefresh.mockResolvedValueOnce('fresh-token')
+
+      await useAuthStore.getState().initialize()
+
+      const state = useAuthStore.getState()
+      expect(state.token).toBe('fresh-token')
+      expect(state.isLoggedIn).toBe(true)
+      expect(mockLogout).not.toHaveBeenCalled()
+    })
+
+    it('Token 过期 + 续期失败 ⇒ 执行登出', async () => {
+      const useAuthStore = getAuthStore()
+      const { getToken: mockGt, getUser: mockGu, checkTokenValidity: mockCtv, logout: mockLogout } = require('../src/utils/auth')
+      const { refreshAccessToken: mockRefresh } = require('../src/utils/request')
 
       mockGt.mockReturnValue('expired')
       mockGu.mockReturnValue(null)
       mockCtv.mockReturnValue(false)
+      mockRefresh.mockResolvedValueOnce(null)
 
-      useAuthStore.getState().initialize()
+      await useAuthStore.getState().initialize()
 
       expect(mockLogout).toHaveBeenCalled()
     })

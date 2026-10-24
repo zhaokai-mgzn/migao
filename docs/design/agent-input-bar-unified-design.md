@@ -66,6 +66,7 @@
 | R2 | **默认语音模式**：中间是「按住说话」，点键盘图标 ⇒ 文字输入，再点 ⇒ 回语音 | **删除** 🎤/⌨️ 模式切换键（消灭模式制） |
 | R3 | 语音可达性按**浏览器能力**分流：h5 用 `getUserMedia` + `MediaRecorder` 真录音；只有浏览器**确实没有**这两个 API 时才回落文字模式 + 显式解释 | #6476：h5 一律不承诺录音（Taro h5 的 `RecorderManager` 是 stub） |
 | R4 | 输入条不再自己补 `env(safe-area-inset-bottom)`；安全区由**页面**补一次（`.chat-page` 预留 = 底栏条高） | B 端输入条自己补安全区，页面没为浮层底栏留位 ⇒ 被压住 |
+| R5 | **「条高」指实用高度**：自绘底栏 `box-sizing: border-box`（`height: 50 + env()`，`padding-bottom: env()` 在条内），`.chat-page` 的预留与它逐值相等；输入条底部留与顶部同值的呼吸位（不贴底栏） | 2026-10-18：底栏 content-box 把安全区算了两遍（iPhone 实用高 118 vs 预留 84）⇒ 输入条被压 34px、「按住说话」只剩半截（issue #7252） |
 
 **为什么 R2 推翻了 v1.2 的「删除模式切换键」**：那条结论是**C 端**（元元）在 2026-09-14 定的，
 当时的论据是「双输入条 + 模式制」。B 端的形态与 C 端不同（B 端是桌面对话式工作台、语音是次路径），
@@ -75,7 +76,8 @@ C 端的 v1.2 结论（`[加图][输入框][按住说话宽胶囊]`、无切换�
 **判据（会红）**：`frontend/bmini-app/tests/chat-input-bar-layout.test.tsx`（单行结构 / 默认语音模式 / 切换往返 / 底栏不遮）、
 `frontend/bmini-app/tests/chat-input-surface.test.tsx`（h5 按浏览器能力分流）、
 `frontend/bmini-app/tests/voice-browser-recorder.test.ts`（浏览器录音链路 + 权限拒绝文案）、
-`tests/e2e/specs/bmini/bmini-chat-input-geometry.spec.ts`（几何：`coveredPx ≤ 0` 且整页不高于视口）。
+`frontend/bmini-app/tests/tabbar-content-inset.test.ts`（R5：底栏实用高度在安全区 0/34 两档都等于页面预留）、
+`tests/e2e/specs/bmini/bmini-chat-input-geometry.spec.ts`（几何：`coveredPx ≤ 0` 且整页不高于视口，**安全区 0 与 34 两档**）。
 
 ---
 

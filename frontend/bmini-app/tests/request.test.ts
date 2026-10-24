@@ -1,11 +1,12 @@
-// case_ids: BM-004, BM-036
+// case_ids: BM-004, BM-036, AU-013
 /**
  * HTTP 请求层测试（B 端小程序基建，issue #2977）
  *
- * 覆盖: Token注入、401处理、请求重试、错误处理、快捷方法
+ * 覆盖: Token注入、401处理、请求重试、错误处理、快捷方法、
+ *       401 会话续期（HttpOnly refresh_token cookie → 新 accessToken → 重放一次，issue #7249）
  */
 import Taro from '@tarojs/taro'
-import { get, post, put, del } from '../src/utils/request'
+import { get, post, put, del, refreshAccessToken } from '../src/utils/request'
 import { STORAGE_KEYS, REQUEST_CONFIG } from '../src/utils/constants'
 
 describe('request utils', () => {
@@ -163,10 +164,10 @@ describe('request utils', () => {
   describe('错误处理', () => {
     it('401 应清除 Token 并跳转登录页', async () => {
       Taro.setStorageSync(STORAGE_KEYS.TOKEN, 'expired-token')
-      ;(Taro.request as jest.Mock).mockResolvedValueOnce({
-        statusCode: 401,
-        data: { message: 'Unauthorized' },
-      })
+      ;(Taro.request as jest.Mock)
+        .mockResolvedValueOnce({ statusCode: 401, data: { message: 'Unauthorized' } })
+        // 续期也失败（refresh cookie 过期 / 被吊销）⇒ 才落回「清态 + 跳登录页」
+        .mockResolvedValueOnce({ statusCode: 401, data: {} })
 
       await expect(get('/api/protected')).rejects.toThrow('Request failed with status 401')
 
@@ -294,10 +295,10 @@ describe('request utils', () => {
     it('商家端点 401 行为**逐字不变**：清商家 token/user + 弹「登录已过期」+ 跳商家登录页', async () => {
       Taro.setStorageSync(STORAGE_KEYS.TOKEN, 'expired-token')
       Taro.setStorageSync(STORAGE_KEYS.USER, { id: 'u1' })
-      ;(Taro.request as jest.Mock).mockResolvedValueOnce({
-        statusCode: 401,
-        data: { message: 'Unauthorized' },
-      })
+      ;(Taro.request as jest.Mock)
+        .mockResolvedValueOnce({ statusCode: 401, data: { message: 'Unauthorized' } })
+        // 续期失败 ⇒ 行为与改前逐字一致（清态 + 提示 + 跳登录页）
+        .mockResolvedValueOnce({ statusCode: 401, data: {} })
 
       await expect(get('/api/admin/orders')).rejects.toThrow('Request failed with status 401')
 
@@ -372,6 +373,108 @@ describe('request utils', () => {
 
       const callArgs = (Taro.request as jest.Mock).mock.calls[0][0]
       expect(callArgs.url).toStartWith('https://custom.api.com/api/test')
+    })
+  })
+
+  // ========== 401 会话续期（issue #7249） ==========
+  //
+  // 现场（2026-10-18）：扫顶栏「手机端」二维码打开 /b/ 后，隔一段时间再打开必被踢回登录页。
+  // 根因 = access token 只有 2 小时（`jwt.access-token-expiration: 7200`），而手机端 401
+  // 只做「清态 + 跳登录页」（PC 端 admin-web 早就有 refresh，手机端一直没有）。
+  //
+  // 口径：401（商家会话）⇒ 用 HttpOnly `refresh_token` cookie 换新 accessToken 并**重放一次**；
+  // 续期失败 / 重放仍 401 ⇒ 落回既有 401 行为（一字不变）；工人端点与登录面（skipAuth）不续期。
+  describe('401 会话续期（issue #7249）', () => {
+    const REFRESH_OK = {
+      statusCode: 200,
+      data: { success: true, data: { accessToken: 'fresh-token' } },
+    }
+
+    it('access token 过期（401）⇒ 换新 token 并重放一次（重放带新 token、storage 已更新）', async () => {
+      Taro.setStorageSync(STORAGE_KEYS.TOKEN, 'expired-token')
+      ;(Taro.request as jest.Mock)
+        .mockResolvedValueOnce({ statusCode: 401, data: { error: { code: 'AUTH_FAILED' } } })
+        .mockResolvedValueOnce(REFRESH_OK)
+        .mockResolvedValueOnce({ statusCode: 200, data: { items: [1] } })
+
+      const result = await get('/api/admin/orders')
+
+      expect(result).toEqual({ items: [1] })
+      const calls = (Taro.request as jest.Mock).mock.calls.map((call) => call[0])
+      expect(calls).toHaveLength(3)
+      // ② 续期请求：走 refresh 端点、**不带**过期 Authorization
+      expect(calls[1].url).toContain('/api/auth/refresh')
+      expect(calls[1].method).toBe('POST')
+      expect(calls[1].header.Authorization).toBeUndefined()
+      // ③ 重放：同一份请求，带新 token
+      expect(calls[2].url).toContain('/api/admin/orders')
+      expect(calls[2].header.Authorization).toBe('Bearer fresh-token')
+      expect(Taro.getStorageSync(STORAGE_KEYS.TOKEN)).toBe('fresh-token')
+      // 不弹过期提示、不跳登录页
+      expect(Taro.showToast).not.toHaveBeenCalled()
+      expect(Taro.redirectTo).not.toHaveBeenCalled()
+    })
+
+    it('续期失败（cookie 过期 / 被吊销）⇒ 落回既有 401 行为：清态 + 提示 + 跳登录页', async () => {
+      Taro.setStorageSync(STORAGE_KEYS.TOKEN, 'expired-token')
+      ;(Taro.request as jest.Mock)
+        .mockResolvedValueOnce({ statusCode: 401, data: { message: 'Unauthorized' } })
+        .mockResolvedValueOnce({ statusCode: 401, data: {} })
+
+      await expect(get('/api/admin/orders')).rejects.toThrow('Request failed with status 401')
+
+      expect(Taro.request).toHaveBeenCalledTimes(2)
+      expect(Taro.removeStorageSync).toHaveBeenCalledWith(STORAGE_KEYS.TOKEN)
+      expect(Taro.showToast).toHaveBeenCalledWith(
+        expect.objectContaining({ title: expect.stringContaining('登录已过期') }),
+      )
+      await jest.advanceTimersByTimeAsync(1500)
+      expect(Taro.redirectTo).toHaveBeenCalledWith({ url: '/pages/auth/login/index' })
+    })
+
+    it('单飞：并发续期只发一次刷新请求，两个调用拿到同一枚新 token', async () => {
+      let resolveRefresh!: (value: any) => void
+      ;(Taro.request as jest.Mock).mockImplementationOnce(
+        () => new Promise((resolve) => { resolveRefresh = resolve }),
+      )
+
+      const first = refreshAccessToken()
+      const second = refreshAccessToken()
+      expect(Taro.request).toHaveBeenCalledTimes(1)
+
+      resolveRefresh(REFRESH_OK)
+
+      await expect(first).resolves.toBe('fresh-token')
+      await expect(second).resolves.toBe('fresh-token')
+      expect(Taro.request).toHaveBeenCalledTimes(1)
+      expect(Taro.getStorageSync(STORAGE_KEYS.TOKEN)).toBe('fresh-token')
+    })
+
+    it('工人端点 401 不触发续期（那是工人身份，不是商家会话过期）', async () => {
+      Taro.setStorageSync(STORAGE_KEYS.TOKEN, 'merchant-token')
+      ;(Taro.request as jest.Mock).mockResolvedValueOnce({
+        statusCode: 401,
+        data: { error: { message: '尚未登录工人身份' } },
+      })
+
+      await expect(get('/api/worker/production/current-worker')).rejects.toThrow()
+
+      expect(Taro.request).toHaveBeenCalledTimes(1)
+      expect((Taro as any).__getStorage()[STORAGE_KEYS.TOKEN]).toBe('merchant-token')
+    })
+
+    it('登录端点（skipAuth）401 不触发续期（凭据错 ≠ 会话过期）', async () => {
+      Taro.setStorageSync(STORAGE_KEYS.TOKEN, 'old-token')
+      ;(Taro.request as jest.Mock).mockResolvedValueOnce({
+        statusCode: 401,
+        data: { error: { code: 'AUTH_FAILED', message: '账号或密码错误' } },
+      })
+
+      await expect(
+        post('/api/auth/employee/login', { identifier: 'zhangsan@acme', password: 'x' }, { skipAuth: true }),
+      ).rejects.toThrow('Request failed with status 401')
+
+      expect(Taro.request).toHaveBeenCalledTimes(1)
     })
   })
 })

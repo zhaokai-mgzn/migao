@@ -11,7 +11,8 @@
  *    （宁缺勿滥），而不是补一个默认值 —— 编出来的数就是第二份算料逻辑。
  *
  * 公式串的两种形态与参数顺序（真值源 = `backend/ai-agent-service/app/tools/curtain_calc.py::_formula_text`）：
- * - 韩褶公式（褶数法）：`韩褶公式：(窗宽+余量)×褶倍 → N折 → 每折吃布×N折+余量 = 米数米`；
+ * - 韩褶公式（褶数法）：`韩褶公式：窗宽×褶倍−余量 = 净布 ÷ 每折吃布 = 原始折数 → N折 →
+ *   每折吃布×N折+余量 = 米数米`（进位/分幅另起一段，issue #7560）；
  * - 褶倍数公式（倍数法）：`褶倍数公式：(窗宽÷开数)×褶倍 → 每片 每片宽×褶倍=每片米 ×开数片 = 米数米`
  *   —— 后一条里的「每片宽 / 每片米 / 总数」是**引擎算出来的中间量**，前端**不复算**
  *   （复算 = 第二份算料逻辑）⇒ 只说明**输入侧**的那三个数（窗宽 / 开数 / 褶倍）。
@@ -40,7 +41,7 @@ export interface MetersFormulaLegendInput {
   perFold?: number | null
   /** 算料响应 `fullness`（理论褶倍，随档位） */
   fullness?: number | null
-  /** 算料配置（取不到 ⇒ 「每片余量」那条不出现 —— 不编数） */
+  /** 算料配置（取不到 ⇒ 「整幅余量」那条不出现 —— 不编数） */
   config?: Pick<CraftCalcConfig, 'margin_single' | 'margin_multi'> | null
 }
 
@@ -82,7 +83,7 @@ const FORMULA_PLEAT = 'pleat'
 /** 数字 → 与公式串同形的文本（`6` / `0.25`）；**缺值 / 非有限值 ⇒ `null`**（该条不出现） */
 function num(value: number | null | undefined): string | null {
   // ⚠️ 必须先挡 `null` / `undefined`：`Number(null) === 0`（有限！）⇒ 漏这一挡就会把
-  // 「算料配置未加载 ⇒ 余量取不到」渲染成 **`0=每片余量`**（一个凭空造出来的参数值）。
+  // 「算料配置未加载 ⇒ 余量取不到」渲染成 **`0=整幅余量`**（一个凭空造出来的参数值）。
   // 红证：tests/unit/lib/meters-formula-legend.test.ts「判据 ②：缺值不编」。
   if (value === null || value === undefined) return null
   const n = Number(value)
@@ -90,10 +91,12 @@ function num(value: number | null | undefined): string | null {
 }
 
 /**
- * 「每片余量」的取值 —— 与引擎**同一口径**（`curtain_calc.py` 的 `_margin_for`：
+ * 「整幅余量」的取值 —— 与引擎**同一口径**（`curtain_calc.py` 的 `_margin_for`：
  * `open_count <= 1` ⇒ `margin_single`，否则 `margin_multi`）。
  *
  * ⚠️ 这是「取配置里的数」不是「算料」：本函数不产生任何数值，只按开数**选一个键**。
+ * 🔴 它取的是**整幅**余量（引擎公式串里出现的也正是这个数）——
+ * 逐片口径的「每片余量 = 整幅余量 ÷ 开数」只在引擎内部用，**不出现**在公式串里（issue #7560）。
  * 配置取不到 ⇒ `null`（宁可不说明，也不说一个错的余量）。
  */
 export function marginForOpenCount(
@@ -120,16 +123,17 @@ export function metersFormulaLegend(
   const where: MetersFormulaWhere = {
     prefix:
       '改参数：净窗宽 / 净窗高 → 上方「净尺寸」；开数（打开方式）与用料公式 →「改工艺参数」；' +
-      '每片余量 / 每折吃布 / 褶倍 → ',
+      '整幅余量 / 每折吃布 / 褶倍 → ',
     linkLabel: '算料口径',
     linkHref: CRAFT_CALC_ENTRY,
   }
 
   if (formula === FORMULA_PLEAT) {
-    // 顺序 = 公式串里出现的先后：窗宽 → 余量 → 褶倍 → 褶数 → 每折吃布
+    // 顺序 = 公式串里出现的先后（issue #7560 改判；改前是「窗宽+余量」再乘褶倍，串算不通）：
+    // 窗宽 → 褶倍 → 整幅余量 → 褶数 → 每折吃布
     push(input.width, '净窗宽（米）')
-    push(marginForOpenCount(input.openCount, input.config), '每片余量（米 · 算料配置）')
     push(input.fullness, '褶倍（算料配置）')
+    push(marginForOpenCount(input.openCount, input.config), '整幅余量（米 · 算料配置）')
     push(input.pleatCount, '自动算出的褶数')
     push(input.perFold, '每折吃布（米 · 算料配置）')
     return params.length === 0 ? null : { params, where }

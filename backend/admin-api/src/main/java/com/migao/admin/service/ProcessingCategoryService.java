@@ -137,7 +137,10 @@ public class ProcessingCategoryService extends ServiceImpl<ProcessingCategoryMap
             throw BusinessException.validationError("该分类下有关联加工项，无法删除");
         }
 
-        processingCategoryMapper.deleteById(id);
+        // issue #6956 · 现象 C：判影响行数（并发双删只许一次成功）
+        if (processingCategoryMapper.deleteById(id) == 0) {
+            throw BusinessException.notFound("加工分类");
+        }
         log.info("删除加工分类成功: id={}", id);
     }
 

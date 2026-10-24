@@ -1,0 +1,68 @@
+{
+  "generated_at": "2026-10-18T07:45:00+08:00",
+  "environment": "https://api.migaozn.com",
+  "sha": "fabcba31ea971803a0075b9f4252348f1563dc14",
+  "tenant": {"id": 46, "code": "f-l9lu", "name": "米高全链路回归企业"},
+  "core": {"checks": 70, "pass": 70, "fail": 0, "skip": 0, "api_calls": 313,
+           "evidence": "out/results.json"},
+  "supplements": [
+    {"name": "worker pack/unpack/ship/complete", "checks": 7, "pass": 7,
+     "evidence": "out/worker-shipment-postcheck.json"},
+    {"name": "notification center event-driven", "checks": 7, "pass": 7,
+     "evidence": "out/notification-center-backfill.json"}
+  ],
+  "final_db_counts": {
+    "products": 6,
+    "product_colors": 16,
+    "product_skus": 34,
+    "processing_items_active": 15,
+    "processing_fee_combinations_active": 7,
+    "priced_special_options": 8,
+    "users": 11,
+    "roles": 8,
+    "orders": 7,
+    "orders_completed": 2,
+    "orders_cancelled": 1,
+    "orders_confirmed": 4,
+    "processing_orders": 4,
+    "production_work_logs": 36,
+    "quality_inspections": 3,
+    "inbound_orders": 2,
+    "stock_batches": 2,
+    "stock_ledger_entries": 36,
+    "order_shipments": 2,
+    "after_sales_tickets": 5,
+    "finance_transactions": 10,
+    "piecework_settlements": 1,
+    "notifications": 2,
+    "notification_templates": 1,
+    "notification_rules": 1,
+    "knowledge_cards": 1,
+    "tenant_param_audit": 13
+  },
+  "notification_center": {
+    "real_messages": 2,
+    "unread": 1,
+    "read": 1,
+    "messages": [
+      {"ticket": "AS-20261018-0004", "type": "维修", "status": "sent"},
+      {"ticket": "AS-20261018-0005", "type": "其他", "status": "read"}
+    ],
+    "template": "售后新工单待办（回归）",
+    "rule_event": "after_sales_created"
+  },
+  "artifacts": [
+    "SUMMARY.md",
+    "REPORT.md",
+    "out/results.json",
+    "out/api_calls.jsonl",
+    "out/worker-shipment-postcheck.json",
+    "out/notification-center-backfill.json",
+    "evidence/register-response.json",
+    "evidence/wipe-tenants.json",
+    "tools/regression.py",
+    "tools/worker_shipment_finalize.py",
+    "tools/notification_center_backfill.py",
+    "tools/notification_center_finalize.py"
+  ]
+}

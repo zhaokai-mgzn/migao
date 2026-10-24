@@ -1,3 +1,4 @@
+// case_ids: UI-131
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
@@ -61,9 +62,11 @@ describe('Select Component', () => {
     expect(screen.getByRole('combobox')).toBeDisabled()
   })
 
-  it('renders ChevronDown icon', () => {
+  it('箭尖来自共享铬的单一份图形（issue #7397：不再叠 ChevronDown 图标）', () => {
     render(<Select options={defaultOptions} />)
-    // ChevronDown is mocked in setup.ts
-    expect(screen.getByTestId('icon-chevron-down')).toBeInTheDocument()
+    // 箭尖 = `globals.css` 的 `.select-chevron`（内联 SVG 背景）—— 由 `SELECT_CONTROL_FIELD` 带进来。
+    // 旧写法在控件上再叠一个 `ChevronDown`（两套箭头）正是「下拉看着别扭」的成因之一。
+    expect(screen.getByRole('combobox').className).toContain('select-chevron')
+    expect(screen.queryByTestId('icon-chevron-down')).not.toBeInTheDocument()
   })
 })

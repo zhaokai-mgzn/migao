@@ -417,7 +417,9 @@ class ProcessingSetReadServiceTest {
             "has_pattern", "pattern_repeat", "formula", "craft_tier", "special_options",
             "processing_meters", "formula_text",
             "fabric_meters",
-            "batch_no", "batch_meters", "component_role");
+            "batch_no", "batch_meters", "component_role",
+            // 整卷卷数（issue #7523）：扫码面在共享聚合上追加的标量键
+            "roll_count");
 
     @Test
     @DisplayName("🔴 工人扫码面与套件读面同源：同一份聚合逐值相等 + 扫码面**只**多出既定的明细键")

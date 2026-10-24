@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, ChevronDown, Layers, RefreshCw, XCircle, Zap } from 'lucide-react'
 import { toast } from 'sonner'
-import { toastRequestError } from '@/lib/api-error'
+import { extractApiErrorMessage, toastRequestError } from '@/lib/api-error'
 import { poolBoardApi } from '@/lib/api'
 import { Badge, Button, Card, PageHeader } from '@/components/ui'
 import { cn } from '@/lib/utils'
@@ -669,9 +669,14 @@ export default function ProductionPoolPage() {
  * 🔴 与 `src/lib/pool-board.ts` 的 `mustSurfaceDispatchError` 是**同一格的另一半**：
  * 本函数负责「拿到文案」，那个函数负责「非空就必须上屏」。两者都不得被静默吞掉
  * （「整批显式拒绝，不静默少派」—— PR-080 判据 3）。
+ *
+ * 🔴 **2026-10-17 收口**（用户逐字「这个错误提示非常低级，用户完全看不懂，得把报错原因用
+ * 业务文案写清楚，而不是技术语言」）：改前这里是 `e.message` —— 而 axios 错误的 `.message`
+ * 是**传输层读数**（`Request failed with status code 422`），服务端的业务原因躺在
+ * `error.response.data.error.message` 里、却被这一行丢掉 ⇒ 页面上只剩技术语言。
+ * 现在走共享原语 `extractApiErrorMessage`：服务端文案优先，**传输层原文一律不上屏**，
+ * 没有服务端文案时落到业务话术 `fallback`。
  */
 function dispatchErrorText(e: unknown, fallback: string): string {
-  if (e instanceof Error && e.message) return e.message
-  if (typeof e === 'string' && e) return e
-  return fallback
+  return extractApiErrorMessage(e, fallback)
 }

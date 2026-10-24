@@ -6,7 +6,6 @@
   "codes": {
     "registration": [
       "dashboard:view",
-      "product:manage",
       "product:list",
       "product:create",
       "product:category",
@@ -41,7 +40,6 @@
     ],
     "permission_service": [
       "dashboard:view",
-      "product:manage",
       "product:list",
       "product:create",
       "product:category",
@@ -76,7 +74,6 @@
     ],
     "names": {
       "dashboard:view": "仪表板查看",
-      "product:manage": "商品管理",
       "product:list": "商品管理",
       "product:create": "新增商品",
       "product:category": "商品分类",
@@ -296,28 +293,44 @@
       "super_admin": [
         "*"
       ]
+    },
+    "descriptions": {
+      "admin": "职责：企业最高管理岗位，负责员工、岗位与权限配置以及企业基础信息维护，统筹商品、客户、订单、生产、仓储与财务各模块的审核与异常处理。",
+      "customer_service": "职责：在线接待客户咨询与投诉，跟进订单进度，处理售后工单与退款，维护客户档案与知识库内容，并承担成品帘加工执行（建加工单、报工、打任务卡、发货）。",
+      "finance": "职责：登记与核对收支流水，跟踪订单收款与对账差异，核对入库、发货与加工工价的成本口径，并按需执行加工单与报工操作。",
+      "inspector": "职责：负责成品帘质检判定录入（合格、返工、报废），核对计件工价与工序数据，为返工与报废的结算提供依据。",
+      "knowledge_editor": "职责：维护客服知识库，新增、修订与下线知识卡片，按商品资料校对对外答复口径，保证客服答复准确一致。",
+      "operator": "职责：统筹日常经营：建单、改单、退款与售后处理，维护客户档案、商品与分类，管理加工项与入库单，登记财务流水，并兼顾在线接待。",
+      "product_manager": "职责：维护商品资料、分类与上下架，管理加工项与加工费口径，为智能派单、生产看板与库存、省料分析提供准确的商品与工序数据。",
+      "sales": "职责：接待客户并促成下单，负责新建订单、订单跟进与详情核对，跟踪生产与发货进度，维护客户档案。"
     }
   },
   "menus": {
     "frontend": {
-      "工作台": null,
       "经营看板": "dashboard:view",
-      "每日简报": "dashboard:view",
+      "报表中心": "dashboard:view",
       "客户服务": null,
       "在线接待": "agent:session",
       "知识库": "knowledge:view",
       "售后工单": "after_sales:view",
       "客户列表": "customer:view",
       "交易管理": null,
-      "订单列表": "order:list",
+      "价格本": "order:list",
+      "销售订单": "order:list",
       "财务对账": "finance:view",
       "生产管理": null,
-      "生产看板": "production:view",
+      "作业看板": "production:view",
       "智能派单": "processing:view",
       "计件工资": "production:view",
-      "仓储与物料": null,
+      "质检记录": "production:inspect",
+      "返工单": "after_sales:view",
+      "供应链": null,
       "入库单": "inbound:view",
+      "供应商": "inbound:view",
+      "采购单": "inbound:view",
+      "仓储与物料": null,
       "库存明细": "product:list",
+      "盘点单": "inbound:view",
       "发货单": "order:list",
       "余料台账": "processing:manage",
       "省料看板": "product:list",
@@ -330,18 +343,22 @@
     },
     "controller": {
       "经营看板": "dashboard:view",
-      "每日简报": "dashboard:view",
       "在线接待": "agent:session",
       "知识库": "knowledge:view",
       "商品管理": "product:list",
-      "订单列表": "order:list",
+      "价格本": "order:list",
+      "销售订单": "order:list",
       "售后工单": "after_sales:view",
       "客户列表": "customer:view",
       "财务对账": "finance:view",
       "订单详情": "order:detail",
-      "生产看板": "production:view",
+      "作业看板": "production:view",
       "智能派单": "processing:view",
       "计件工资": "production:view",
+      "质检记录": "production:inspect",
+      "返工单": "after_sales:view",
+      "供应商": "inbound:view",
+      "采购单": "inbound:view",
       "入库单": "inbound:view",
       "发货单": "order:list",
       "余料台账": "processing:manage",
@@ -352,22 +369,29 @@
       "企业基础设置（经营域）": "system:manage",
       "新增员工": "employee:create",
       "加工单操作": "processing:update",
-      "入库单操作": "inbound:create"
+      "入库单操作": "inbound:create",
+      "盘点单": "inbound:view"
     },
     "auth": {
       "经营看板": "dashboard:view",
-      "每日简报": "dashboard:view",
+      "报表中心": "dashboard:view",
       "在线接待": "agent:session",
       "知识库": "knowledge:view",
       "售后工单": "after_sales:view",
       "客户列表": "customer:view",
-      "订单列表": "order:list",
+      "价格本": "order:list",
+      "销售订单": "order:list",
       "财务对账": "finance:view",
-      "生产看板": "production:view",
+      "作业看板": "production:view",
       "智能派单": "processing:view",
       "计件工资": "production:view",
+      "质检记录": "production:inspect",
+      "返工单": "after_sales:view",
       "入库单": "inbound:view",
+      "供应商": "inbound:view",
+      "采购单": "inbound:view",
       "库存明细": "product:list",
+      "盘点单": "inbound:view",
       "发货单": "order:list",
       "余料台账": "processing:manage",
       "省料看板": "product:list",
@@ -380,21 +404,15 @@
   },
   "menu_nodes": [
     {
-      "key": "workspace",
-      "name": "工作台",
-      "path": null,
-      "code": null
-    },
-    {
       "key": "dashboard",
       "name": "经营看板",
       "path": "/dashboard",
       "code": "dashboard:view"
     },
     {
-      "key": "briefing",
-      "name": "每日简报",
-      "path": "/briefing",
+      "key": "reports",
+      "name": "报表中心",
+      "path": "/reports",
       "code": "dashboard:view"
     },
     {
@@ -434,8 +452,14 @@
       "code": null
     },
     {
+      "key": "price-books",
+      "name": "价格本",
+      "path": "/price-books",
+      "code": "order:list"
+    },
+    {
       "key": "orders",
-      "name": "订单列表",
+      "name": "销售订单",
       "path": "/orders",
       "code": "order:list"
     },
@@ -453,7 +477,7 @@
     },
     {
       "key": "production-board",
-      "name": "生产看板",
+      "name": "作业看板",
       "path": "/production",
       "code": "production:view"
     },
@@ -470,8 +494,20 @@
       "code": "production:view"
     },
     {
-      "key": "inventory-center",
-      "name": "仓储与物料",
+      "key": "quality-inspections",
+      "name": "质检记录",
+      "path": "/quality-inspections",
+      "code": "production:inspect"
+    },
+    {
+      "key": "rework-orders",
+      "name": "返工单",
+      "path": "/rework-orders",
+      "code": "after_sales:view"
+    },
+    {
+      "key": "supply-chain",
+      "name": "供应链",
       "path": null,
       "code": null
     },
@@ -482,10 +518,34 @@
       "code": "inbound:view"
     },
     {
+      "key": "suppliers",
+      "name": "供应商",
+      "path": "/suppliers",
+      "code": "inbound:view"
+    },
+    {
+      "key": "purchase-orders",
+      "name": "采购单",
+      "path": "/purchase-orders",
+      "code": "inbound:view"
+    },
+    {
+      "key": "inventory-center",
+      "name": "仓储与物料",
+      "path": null,
+      "code": null
+    },
+    {
       "key": "stock-ledger",
       "name": "库存明细",
       "path": "/stock-ledger",
       "code": "product:list"
+    },
+    {
+      "key": "stocktakes",
+      "name": "盘点单",
+      "path": "/stocktakes",
+      "code": "inbound:view"
     },
     {
       "key": "shipments",
@@ -600,6 +660,26 @@
       "production:view"
     ],
     [
+      "/quality-inspections",
+      "production:inspect"
+    ],
+    [
+      "/rework-orders",
+      "after_sales:view"
+    ],
+    [
+      "/approvals",
+      "finance:view"
+    ],
+    [
+      "/reports",
+      "dashboard:view"
+    ],
+    [
+      "/price-books",
+      "order:list"
+    ],
+    [
       "/customers",
       "customer:view"
     ],
@@ -612,12 +692,24 @@
       "order:list"
     ],
     [
+      "/suppliers",
+      "inbound:view"
+    ],
+    [
+      "/purchase-orders",
+      "inbound:view"
+    ],
+    [
       "/inbound-orders",
       "inbound:view"
     ],
     [
       "/stock-ledger",
       "product:list"
+    ],
+    [
+      "/stocktakes",
+      "inbound:view"
     ],
     [
       "/employees",
@@ -670,18 +762,6 @@
         "agent:session": [
           "GET /api/admin/agent-sessions",
           "GET /api/admin/agent-sessions/{}"
-        ]
-      },
-      "visibility_rule": "all"
-    },
-    {
-      "key": "briefing",
-      "name": "每日简报",
-      "path": "/briefing",
-      "gate": "dashboard:view",
-      "units": {
-        "dashboard:view": [
-          "GET /api/admin/briefing/config"
         ]
       },
       "visibility_rule": "all"
@@ -780,7 +860,7 @@
     },
     {
       "key": "orders",
-      "name": "订单列表",
+      "name": "销售订单",
       "path": "/orders",
       "gate": "order:list",
       "units": {
@@ -791,8 +871,20 @@
       "visibility_rule": "all"
     },
     {
+      "key": "price-books",
+      "name": "价格本",
+      "path": "/price-books",
+      "gate": "order:list",
+      "units": {
+        "order:list": [
+          "GET /api/admin/pricing/books"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
       "key": "production-board",
-      "name": "生产看板",
+      "name": "作业看板",
       "path": "/production",
       "gate": "production:view",
       "units": {
@@ -864,6 +956,58 @@
       "visibility_rule": "all"
     },
     {
+      "key": "purchase-orders",
+      "name": "采购单",
+      "path": "/purchase-orders",
+      "gate": "inbound:view",
+      "units": {
+        "inbound:view": [
+          "GET /api/admin/purchase-orders"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "quality-inspections",
+      "name": "质检记录",
+      "path": "/quality-inspections",
+      "gate": "production:inspect",
+      "units": {
+        "production:inspect": [
+          "GET /api/admin/quality-inspections",
+          "GET /api/admin/quality-inspections/targets"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "reports",
+      "name": "报表中心",
+      "path": "/reports",
+      "gate": "dashboard:view",
+      "units": {
+        "dashboard:view": [
+          "GET /api/admin/reports/inventory-aging",
+          "GET /api/admin/reports/order-margins",
+          "GET /api/admin/reports/quality-cost",
+          "GET /api/admin/reports/staff-performance"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "rework-orders",
+      "name": "返工单",
+      "path": "/rework-orders",
+      "gate": "after_sales:view",
+      "units": {
+        "after_sales:view": [
+          "GET /api/admin/rework-orders"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
       "key": "roles",
       "name": "岗位权限",
       "path": "/roles",
@@ -915,6 +1059,30 @@
         ]
       },
       "visibility_rule": "all"
+    },
+    {
+      "key": "stocktakes",
+      "name": "盘点单",
+      "path": "/stocktakes",
+      "gate": "inbound:view",
+      "units": {
+        "inbound:view": [
+          "GET /api/admin/stocktakes"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "suppliers",
+      "name": "供应商",
+      "path": "/suppliers",
+      "gate": "inbound:view",
+      "units": {
+        "inbound:view": [
+          "GET /api/admin/suppliers"
+        ]
+      },
+      "visibility_rule": "all"
     }
   ],
   "ledger_counts": {
@@ -924,7 +1092,7 @@
     "ROLE_FALLBACK_DIVERGENCES": 0,
     "AUTHORIZATION_CENSUS": 19,
     "UNANNOTATED_ENDPOINTS": 24,
-    "REGISTERED_RESIDUALS": 10,
+    "REGISTERED_RESIDUALS": 9,
     "A7_CODES_BEYOND_CATALOG": 0,
     "A7_VS_MIRROR_DIVERGENCES": 0,
     "PAGE_VISIBILITY_GAPS": 1

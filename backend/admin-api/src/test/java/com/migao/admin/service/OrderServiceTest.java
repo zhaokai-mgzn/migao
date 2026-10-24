@@ -2,6 +2,7 @@ package com.migao.admin.service;
 // case_ids: OR-006, FN-001, OR-001, PG-003, PG-009, PG-010, PG-042, OR-023, OR-046, OR-053, FN-006
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.migao.admin.config.TenantContext;
+import com.migao.admin.time.BusinessClock;
 import com.migao.admin.dto.*;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
@@ -54,7 +55,11 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class OrderServiceTest {
 
-    @InjectMocks
+        /** issue #7370：OrderService 的授信闸门调 customerService（真实类实例化 ⇒ 不声明就 NPE）。 */
+    @org.mockito.Mock
+    private com.migao.admin.service.CustomerService customerService;
+
+@InjectMocks
     private OrderService orderService;
 
     @Mock
@@ -188,7 +193,7 @@ class OrderServiceTest {
                 .thenReturn(mockPage);
 
         // when
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, null);
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, null, null);
 
         // then
         assertThat(result).isNotNull();
@@ -209,7 +214,7 @@ class OrderServiceTest {
                 .thenReturn(mockPage);
 
         // when
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 10, "pending", "张三", null, null, null, null, null, null, null, null, 1L, null, null);
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 10, "pending", "张三", null, null, null, null, null, null, null, null, 1L, null, null, null);
 
         // then
         assertThat(result).isNotNull();
@@ -229,7 +234,7 @@ class OrderServiceTest {
                 .thenReturn(emptyPage);
 
         // when
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, null);
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, null, null);
 
         // then
         assertThat(result.getTotal()).isEqualTo(0);
@@ -262,7 +267,7 @@ class OrderServiceTest {
 
         // when
         PageResponse<OrderListResponse> result = orderService.getOrderPage(
-                1, 20, null, null, null, null, null, null, null, null, "SKU-9", null, 1L, null, null);
+                1, 20, null, null, null, null, null, null, null, null, "SKU-9", null, 1L, null, null, null);
 
         // then：过滤条件 = 「按 sku_code 查出来的商品主键」
         ArgumentCaptor<LambdaQueryWrapper<OrderItem>> captor =
@@ -284,7 +289,7 @@ class OrderServiceTest {
 
         // when
         PageResponse<OrderListResponse> result = orderService.getOrderPage(
-                1, 20, null, null, null, null, null, null, null, null, "NO-SUCH-SKU", null, 1L, null, null);
+                1, 20, null, null, null, null, null, null, null, null, "NO-SUCH-SKU", null, 1L, null, null, null);
 
         // then
         assertThat(result.getItems()).isEmpty();
@@ -308,7 +313,7 @@ class OrderServiceTest {
 
         // when
         PageResponse<OrderListResponse> result = orderService.getOrderPage(
-                1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, null);
+                1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, null, null);
 
         // then：余料「按商品行搜索」靠这个 id 指认「是哪一行」
         OrderListResponse.OrderItemBrief brief = result.getItems().get(0).getItems().get(0);
@@ -336,7 +341,7 @@ class OrderServiceTest {
                 .thenReturn(mockPage);
 
         // when：C 端查询必须传 userId（数据隔离强制点）
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, "user-abc", null);
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, "user-abc", null, null);
 
         // then：wrapper 必须含 user_id 条件，且绑定值 = user-abc（值存于 paramNameValuePairs）
         assertThat(result).isNotNull();
@@ -350,7 +355,7 @@ class OrderServiceTest {
     @DisplayName("订单分页查询 - 含加工项过滤：子查询投影必须包含 processing_info（回归：漏投影导致恒为空集）")
     void getOrderPage_HasProcessingFilter_SubQueryProjectionIncludesProcessingInfo() {
         // when：hasProcessing=true 触发 order_items 子查询过滤
-        orderService.getOrderPage(1, 20, null, null, null, true, null, null, null, null, null, null, 1L, null, null);
+        orderService.getOrderPage(1, 20, null, null, null, true, null, null, null, null, null, null, 1L, null, null, null);
 
         // then：子查询 SELECT 必须同时取回 processingInfo 列。
         //   根因（2026-08-29 真实数据复现）：之前只 select(orderId)，MyBatis-Plus 只投影 order_id 一列，
@@ -419,7 +424,7 @@ class OrderServiceTest {
         mockPage.setTotal(0);
         when(orderMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class))).thenReturn(mockPage);
 
-        orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, "蒋");
+        orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, "蒋", null);
 
         ArgumentCaptor<LambdaQueryWrapper<Order>> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
         verify(orderMapper).selectPage(any(Page.class), captor.capture());
@@ -428,8 +433,9 @@ class OrderServiceTest {
                 .as("过滤必须落在 created_by_name 快照列上（LIKE 模糊匹配）")
                 .contains("created_by_name")
                 .contains("LIKE");
-        assertThat(wrapper.getParamNameValuePairs().values())
-                .as("绑定值 = LIKE 的 `%值%`（两端通配由 MyBatis-Plus 的 like 语义补）")
+        assertThat(wrapper.getParamNameValuePairs().values().stream().filter(String.class::isInstance).toList())
+                .as("绑定值 = LIKE 的 `%值%`（两端通配由 MyBatis-Plus 的 like 语义补）；"
+                        + "只挑字符串形态 —— issue #7404 的窗口兜底会额外绑定两个时间值")
                 .containsExactly("%蒋%");
     }
 
@@ -441,7 +447,7 @@ class OrderServiceTest {
         mockPage.setTotal(0);
         when(orderMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class))).thenReturn(mockPage);
 
-        orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, "   ");
+        orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, "   ", null);
 
         ArgumentCaptor<LambdaQueryWrapper<Order>> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
         verify(orderMapper).selectPage(any(Page.class), captor.capture());
@@ -2327,7 +2333,7 @@ class OrderServiceTest {
         mockPage.setTotal(1);
         when(orderMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class))).thenReturn(mockPage);
         PageResponse<OrderListResponse> page = orderService.getOrderPage(
-                1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, null);
+                1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, null, null);
         assertThat(page.getItems().get(0).getProcessingFee()).isEqualByComparingTo("98.40");
     }
 
@@ -3111,7 +3117,9 @@ class OrderServiceTest {
         testOrderItem.setProcessingInfo(new LinkedHashMap<>());   // 无加工项 ⇒ 守卫放行
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
         when(orderItemMapper.selectList(any())).thenReturn(List.of(testOrderItem));
-        when(orderLogisticsMapper.selectByOrderId("order-001", 1L)).thenReturn(List.of());
+        // issue #7174：写面不再读改写（先条件更新，影响 0 行才建行）⇒ 更新命中 0 行的默认值即"无既有行"
+        when(orderLogisticsMapper.updateShippingDetails(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(0);
         when(orderMapper.update(any(), any())).thenReturn(1);
 
         orderService.shipWithLogistics("order-001", "SF123456", "顺丰");
@@ -3140,13 +3148,14 @@ class OrderServiceTest {
                         .logisticsCompany("德邦").trackingNo("OLD").status("in_transit").build()));
         when(orderMapper.update(any(), any())).thenReturn(1);
 
+        when(orderLogisticsMapper.updateShippingDetails(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(1);   // 既有行 ⇒ 条件更新命中
+
         orderService.shipWithLogistics("order-001", "DB999", null);
 
-        // 既有记录被更新（不新建），承运商保留「德邦」
-        ArgumentCaptor<OrderLogistics> captor = ArgumentCaptor.forClass(OrderLogistics.class);
-        verify(orderLogisticsMapper).updateById(captor.capture());
-        assertThat(captor.getValue().getLogisticsCompany()).isEqualTo("德邦");
-        assertThat(captor.getValue().getTrackingNo()).isEqualTo("DB999");
+        // 既有记录被更新（不新建），承运商保留「德邦」；「显式才覆盖」的三列传 null（SQL 侧保留原值）
+        verify(orderLogisticsMapper).updateShippingDetails(1L, "order-001", "德邦", "DB999", null, null, null);
+        verify(orderLogisticsMapper, never()).insert(any(OrderLogistics.class));
     }
 
     @Test
@@ -3442,6 +3451,82 @@ class OrderServiceTest {
         assertThat(captor.getValue().getActualAmount().toPlainString()).isEqualTo("0.01");
     }
 
+    // ── issue #7219：processing_info 缺颜色/门幅时按 SKU 兜底 ──────────────────────
+
+    @Test
+    void backfillSkuIdentity_fillsMissingColorAndWidthFromSoleSku() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("colorName", "");
+        ProductSku sku = ProductSku.builder().id(7L).colorName("米白").doorWidth("2.8米").build();
+        Map<String, Object> out = OrderService.backfillSkuIdentity(info, List.of(sku), null);
+        assertThat(out.get("colorName")).isEqualTo("米白");
+        assertThat(out.get("doorWidth")).isEqualTo("2.8米");
+    }
+
+    @Test
+    void backfillSkuIdentity_doesNotOverrideExistingSnapshot() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("colorName", "雾霾蓝");
+        info.put("doorWidth", "3.2米");
+        ProductSku sku = ProductSku.builder().id(7L).colorName("米白").doorWidth("2.8米").build();
+        Map<String, Object> out = OrderService.backfillSkuIdentity(info, List.of(sku), null);
+        assertThat(out.get("colorName")).isEqualTo("雾霾蓝");
+        assertThat(out.get("doorWidth")).isEqualTo("3.2米");
+    }
+
+    @Test
+    void backfillSkuIdentity_usesSkuIdWhenMultipleSkus() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("skuId", 12L);
+        List<ProductSku> skus = List.of(
+                ProductSku.builder().id(11L).colorName("米白").doorWidth("2.8米").build(),
+                ProductSku.builder().id(12L).colorName("象牙白").doorWidth("3.2米").build());
+        Map<String, Object> out = OrderService.backfillSkuIdentity(info, skus, null);
+        assertThat(out.get("colorName")).isEqualTo("象牙白");
+        assertThat(out.get("doorWidth")).isEqualTo("3.2米");
+    }
+
+    @Test
+    void backfillSkuIdentity_doesNotGuessWithMultipleSkusAndNoSkuId() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        List<ProductSku> skus = List.of(
+                ProductSku.builder().id(11L).colorName("米白").doorWidth("2.8米").build(),
+                ProductSku.builder().id(12L).colorName("象牙白").doorWidth("3.2米").build());
+        Map<String, Object> out = OrderService.backfillSkuIdentity(info, skus, null);
+        assertThat(out).doesNotContainKeys("colorName", "doorWidth");
+    }
+
+    @Test
+    void backfillSkuIdentity_matchesSkuByProductNameSuffixWhenMultipleSkus() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        List<ProductSku> skus = List.of(
+                ProductSku.builder().id(11L).colorName("米白").doorWidth("2.8米").build(),
+                ProductSku.builder().id(12L).colorName("深灰").doorWidth("3.2米").build());
+        Map<String, Object> out = OrderService.backfillSkuIdentity(info, skus, "回归帘头-平幔-深灰-3.2米");
+        assertThat(out.get("colorName")).isEqualTo("深灰");
+        assertThat(out.get("doorWidth")).isEqualTo("3.2米");
+    }
+
+    @Test
+    void backfillSkuIdentity_doesNotGuessWhenSuffixIsAmbiguous() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        List<ProductSku> skus = List.of(
+                ProductSku.builder().id(11L).colorName("米白").doorWidth("2.8米").build(),
+                ProductSku.builder().id(12L).colorName("米白").doorWidth("2.8米").build());
+        Map<String, Object> out = OrderService.backfillSkuIdentity(info, skus, "回归帘头-平幔-米白-2.8米");
+        assertThat(out).doesNotContainKeys("colorName", "doorWidth");
+    }
+
+    @Test
+    void backfillSkuIdentity_keepsPresentHalfAndFillsMissingHalf() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("colorName", "雾霾蓝");
+        ProductSku sku = ProductSku.builder().id(7L).colorName("米白").doorWidth("2.8米").build();
+        Map<String, Object> out = OrderService.backfillSkuIdentity(info, List.of(sku), null);
+        assertThat(out.get("colorName")).isEqualTo("雾霾蓝");
+        assertThat(out.get("doorWidth")).isEqualTo("2.8米");
+    }
+
     /**
      * 从「只写自己负责的列」的条件更新（issue #6955 的 T2b 形态）里取出**字符串实参**。
      *
@@ -3458,5 +3543,59 @@ class OrderServiceTest {
         Object v = w.getParamNameValuePairs().values().stream()
                 .filter(String.class::isInstance).reduce((a, b) -> b).orElse(null);
         return v == null ? fallback : (String) v;
+    }
+
+    // ── issue #7404：订单列表「不允许查全部」的时间窗兜底 ──────────────────────
+    // 用户裁定：「需要做个兜底，不允许查全部」「最多回溯 近3年」。
+    // 红证（会怎么红）：把 `OrderService.resolveListWindow` 的兜底分支删掉（只保留显式区间）⇒
+    // `noDatesYieldsThreeYearWindow` / `endOnlyAnchorsAtEndDate` / `getOrderPageAppliesTheWindow` 必红；
+    // 把 `DEFAULT_LOOKBACK_MONTHS` 从 36 改成 12 ⇒ 前两条的窗口断言必红。
+
+    @Test
+    @DisplayName("#7404 不给日期 ⇒ 窗口 = 最近 36 个月（而不是没有任何时间谓词）")
+    void noDatesYieldsThreeYearWindow() {
+        BusinessClock clock = new BusinessClock();
+        OrderService.ListDateWindow window = OrderService.resolveListWindow(null, null, clock);
+
+        assertThat(window.start()).isEqualTo(clock.startOfDay(clock.today().minusMonths(36)));
+        assertThat(window.end()).isEqualTo(clock.startOfDay(clock.today().plusDays(1)));
+    }
+
+    @Test
+    @DisplayName("#7404 只给截止日 ⇒ 起点 = 截止日往前 36 个月（以截止日为准，不是以今天）")
+    void endOnlyAnchorsAtEndDate() {
+        BusinessClock clock = new BusinessClock();
+        OrderService.ListDateWindow window = OrderService.resolveListWindow(null, "2024-03-31", clock);
+
+        assertThat(window.start()).isEqualTo(clock.startOfDay(java.time.LocalDate.parse("2021-03-31")));
+        assertThat(window.end()).isEqualTo(clock.startOfDay(java.time.LocalDate.parse("2024-04-01")));
+    }
+
+    @Test
+    @DisplayName("#7404 显式区间原样透传（查更早的单不被静默截断到 3 年）")
+    void explicitRangePassesThrough() {
+        BusinessClock clock = new BusinessClock();
+        OrderService.ListDateWindow window = OrderService.resolveListWindow("2019-01-01", "2019-12-31", clock);
+
+        assertThat(window.start()).isEqualTo(clock.startOfDay(java.time.LocalDate.parse("2019-01-01")));
+        assertThat(window.end()).isEqualTo(clock.startOfDay(java.time.LocalDate.parse("2020-01-01")));
+    }
+
+    @Test
+    @DisplayName("#7404 列表查询真的带上这个窗口（不是只算不用）")
+    void getOrderPageAppliesTheWindow() {
+        when(orderMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class)))
+                .thenReturn(new Page<>());
+
+        orderService.getOrderPage(1, 20, null, "张三", null, null, null, null, null,
+                null, null, null, 1L, null, null, null);
+
+        ArgumentCaptor<LambdaQueryWrapper> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(orderMapper).selectPage(any(Page.class), captor.capture());
+        String sql = captor.getValue().getSqlSegment();
+        assertThat(sql)
+                .as("关键词查询必须同时有下界与上界（下界 = 最近 36 个月）")
+                .contains("created_at >=")
+                .contains("created_at < ");
     }
 }

@@ -21,7 +21,7 @@
  * `embedded=true` 只影响**区块标题**（指挥台的域标题已经回答「这是什么」），其余一字不变。
  */
 import { Check, Pencil, Plus, RefreshCw, AlertCircle, X } from 'lucide-react'
-import { Button, Modal } from '@/components/ui'
+import { Button, Modal, SELECT_CONTROL } from '@/components/ui'
 import {
   inputCls,
   metaInconsistentOf as metaInconsistent,
@@ -217,19 +217,17 @@ export function OperationPricePanel({
       )}
       {!hideActions && (
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <Button variant="secondary" size="sm" onClick={load} disabled={loading}>
-            <RefreshCw className={cn('w-4 h-4 mr-1.5', loading && 'animate-spin')} />
+          <Button variant="secondary" size="sm" onClick={load} disabled={loading} icon={<RefreshCw className="w-4 h-4" />}>
             刷新
           </Button>
           <Button
-            variant="secondary"
             size="sm"
             data-testid="routings-new-operation"
             /* 域写面出口标记（issue #6825）：类级守卫要求「可编辑控件 + 本域写出口」成对出现 */
             data-write-exit="operation-prices"
             onClick={openCreateOperation}
+            icon={<Plus className="w-4 h-4" />}
           >
-            <Plus className="w-4 h-4 mr-1.5" />
             新增工序
           </Button>
         </div>
@@ -713,6 +711,7 @@ export function OperationPricePanel({
                       { key: 'option', label: '特殊选项' },
                       { key: 'processing_item', label: '加工项' },
                       { key: 'position', label: '部位' },
+                      { key: 'sales_form', label: '售卖方式' },
                     ] as const).map((k) => (
                       <button
                         key={k.key}
@@ -736,7 +735,7 @@ export function OperationPricePanel({
                     id="condition-value"
                     aria-label="什么时候生效"
                     data-testid="condition-value"
-                    className={cn(inputCls, 'mt-2')}
+                    className={cn(SELECT_CONTROL, 'w-full', 'mt-2')}
                     value={conditionDraft.trigger_value}
                     onChange={(e) => setConditionDraft((d) => ({ ...d, trigger_value: e.target.value }))}
                   >
@@ -745,16 +744,22 @@ export function OperationPricePanel({
                         ? '从加工项列表里选…'
                         : conditionDraft.trigger_kind === 'position'
                           ? '从部位列表里选…'
-                          : '从特殊选项列表里选…'}
+                          : conditionDraft.trigger_kind === 'sales_form'
+                            ? '整卷还是散剪…'
+                            : '从特殊选项列表里选…'}
                     </option>
                     {(conditionDraft.trigger_kind === 'processing_item'
                       ? ruleOptions.processing_items
                       : conditionDraft.trigger_kind === 'position'
                         ? ruleOptions.positions
-                        : optionNames
+                        : conditionDraft.trigger_kind === 'sales_form'
+                          ? ['full_roll', 'bulk_cut']
+                          : optionNames
                     ).map((name) => (
                       <option key={name} value={name}>
-                        {name}
+                        {conditionDraft.trigger_kind === 'sales_form'
+                          ? ({ full_roll: '整卷', bulk_cut: '散剪' } as Record<string, string>)[name] ?? '—'
+                          : name}
                       </option>
                     ))}
                   </select>
@@ -767,7 +772,7 @@ export function OperationPricePanel({
                   <select
                     id="condition-action"
                     data-testid="condition-action"
-                    className={inputCls}
+                    className={cn(SELECT_CONTROL, 'w-full')}
                     value={conditionDraft.action}
                     onChange={(e) => {
                       const action = e.target.value as 'insert' | 'remove'
@@ -787,7 +792,7 @@ export function OperationPricePanel({
                     <select
                       id="condition-anchor"
                       data-testid="condition-anchor"
-                      className={inputCls}
+                      className={cn(SELECT_CONTROL, 'w-full')}
                       value={conditionDraft.after_operation}
                       onChange={(e) => setConditionDraft((d) => ({ ...d, after_operation: e.target.value }))}
                     >
@@ -970,7 +975,7 @@ export function OperationPricePanel({
                 <select
                   id="new-option-operation"
                   data-testid="routings-create-option-operation"
-                  className={inputCls}
+                  className={cn(SELECT_CONTROL, 'w-full')}
                   value={newOption.operation}
                   onChange={(e) =>
                     setNewOption({
@@ -995,7 +1000,7 @@ export function OperationPricePanel({
                 <select
                   id="new-option-after_operation"
                   data-testid="routings-create-option-after_operation"
-                  className={inputCls}
+                  className={cn(SELECT_CONTROL, 'w-full')}
                   value={newOption.after_operation}
                   onChange={(e) => setNewOption({ ...newOption, after_operation: e.target.value })}
                 >

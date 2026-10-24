@@ -378,7 +378,11 @@ public class SettingsController {
      * GET /api/admin/settings/payment-qrcodes
      * 返回按 payment_type 分组的 map：{wechat: {...}, alipay: {...}}
      */
-    @RequirePermission("system:manage")
+    // 🔴 读 = `order:list`（issue #7225，用户裁定「销售也要打印带码报价单，不然没意义」）：
+    // 收款码是**订单收款信息**（给客户扫的图片 + 收款主体），不是系统配置；销售/客服/运营/财务
+    // 四个持 `order:list` 的岗位打印报价单时都必须能读到。与 `AgentPaymentController` 的读码同口径。
+    // ⚠️ 写端点（PUT）仍 = `system:manage`：只有管理员能上传/更换。
+    @RequirePermission("order:list")
     @GetMapping("/api/admin/settings/payment-qrcodes")
     public ApiResponse<Map<String, Object>> getPaymentQrcodes() {
         Long tenantId = TenantContext.getTenantId();

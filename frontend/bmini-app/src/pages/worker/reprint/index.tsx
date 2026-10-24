@@ -242,7 +242,7 @@ export default function WorkerReprintPage() {
     setBusy(false)
     if (result.ok) {
       // 计数**原样转发**服务端回执（前端不 +1、不累加）
-      setPrintState(`已送出打印（服务端记第 ${result.printCount} 次）`)
+      setPrintState(`已送出打印（系统记第 ${result.printCount} 次）`)
       const refreshed = await getInboundLabel(shortCode)
       if (refreshed.success && refreshed.data) setLabel(refreshed.data)
       return
@@ -316,7 +316,7 @@ export default function WorkerReprintPage() {
               <Text>拍照（对着标签上的二维码）</Text>
             </View>
             <Text className='admin-card__meta'>
-              照片清楚时本机直接解码（**不会**调用识别模型）；标签磨花解不出来也没关系 —— 可以手输短码
+              二维码拍清楚，手机当场就能认出来；标签磨花认不出也没关系 —— 可以手输短码
             </Text>
             <View
               className={`admin-action admin-action--gold${busy || !photo ? ' admin-action--disabled' : ''}`}

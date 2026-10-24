@@ -115,6 +115,18 @@ completed                                        （冻结：不可取消/改状
 - 有加工项 → 必须走加工单，订单停在 producing
 - 无加工项（现货成品）→ 维持现状 `confirmed → shipped` 直跳
 
+### 4.5 派单入口（唯一化，issue #7507）
+
+- **默认 = 智能派单**（`/production/pool`）：同料订单跨单合并排料、与自动成批同一套口径
+  （`AUTO_BATCH_DEFAULT_ENABLED`）。订单详情页**不再提供**普通订单的直派入口。
+- **加急例外**：`orders.is_urgent = true` 的订单不参与合并（派单页走插队区单派），
+  保留订单详情页直派（沿用 issue #5177 的裁定）。
+- **闸在服务端**：`POST /api/admin/processing-orders/generate` 对非加急订单逐单返回
+  `success=false` + `code=DIRECT_DISPATCH_POOL_REQUIRED`（message / suggestion 指路智能派单），
+  **一行不写**；`POST /api/admin/production/pool/dispatch`（派单页）不受影响 —— 它是唯一派单面。
+- **边界**：详情页因此不再是「逐行挑批次」的入口（派单页按 `fifo` 由服务端补位）；
+  如商家确需挑批次，另开单把该能力搬进派单页。
+
 ## 五、权限与安全
 
 | # | 项 | 决定 |
@@ -142,7 +154,7 @@ completed                                        （冻结：不可取消/改状
 
 ## 七、前端交付
 
-1. **admin-web 订单详情**：加工单区块（状态时间线 generated→…→completed + 快照查看 + 生成/发加工/开始/完成按钮 + 打印入口）
+1. **admin-web 订单详情**：加工单区块（状态时间线 generated→…→completed + 快照查看 + 生成/发加工/开始/完成按钮 + 「复制全部」文本按钮）；**纸面加工单不再由本区块出自己的打印按钮** —— 走页面级唯一「打印」入口 → 选「加工单」（issue #7544，与订单状态解耦）
 2. **加工单卡（interact document 形态）**：手机长按截图发微信；PC `@media print` 打印 A4（注意多明细分页）
 3. **「复制全部」纯文本模板**：规范成一行一加工项（商品/颜色/门幅/宽×高/数量/加工项+options/备注）
 4. **不做 PDF/后端图片**：前端卡片渲染 + 截图/打印为 MVP 交付通道；PDF 等出现批量/归档/凭证需求再加（数据已是结构化 JSON，届时只是换渲染器）

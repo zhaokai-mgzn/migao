@@ -309,6 +309,16 @@ class TestPersonaBoundaryIsHard:
         ③ 与 `interact` / `image_recognize` 同口径**不声明权限码**（授权面落在**答案级**裁剪）。
         口径一字未改；「C 端零改动」同样由此**量化**：C 端任一域的 `set_tool_scope` 里出现
         `nav_guide` ⇒ 本用例红。
+
+        🔴 **2026-10-19 改判（issue #7351 进场，实测；营销海报工具）**：26 → **27**，
+        进场的是 `marketing_poster`（商品事实 + 操作员确认的文案 → 前端渲染 750×1000 PNG）。
+        它绑在 B 端 `product` / `general` 两个 skill 上，元元（C 端）一个都不绑，且声明
+        `product:list` ⇒ 按本见证既有口径自然进场；「C 端零改动」同样由此量化。
+
+        🔴 **2026-10-23 改判（issue #7541 进场，实测；商品图生成工具）**：27 → **28**，
+        进场的是 `product_image_generate`（取该商品主图做样图 → 既有生图内核出图 → 商品图卡）。
+        它绑在 B 端 `product` / `general` 两个 skill 上，元元（C 端）一个都不绑，且声明
+        `product:list` ⇒ 按本见证既有口径自然进场；「C 端零改动」同样由此量化。
         """
         by_persona = _tools_by_persona()
         assert {"mibao", "xiaobu"} <= set(by_persona), (
@@ -346,8 +356,16 @@ class TestPersonaBoundaryIsHard:
             #    ① `read_only = True`；② 元元（C 端）一个 skill 都不绑；
             #    ③ 不声明权限码（与 `interact` / `image_recognize` 同口径）⇒ 授权靠**答案级**裁剪。
             "nav_guide",
+            # ── #7351 进场（营销海报）：只读，绑 B 端 product / general；C 端零绑定 ──
+            # 三条逐条成立：① `read_only = True`；② 只绑 B 端两个 skill（元元一个都不绑）；
+            # ③ 声明 `product:list`（C 端 JWT 无权限码 ⇒ 即便可达也会被工具层拒绝）。
+            "marketing_poster",
+            # ── #7541 进场（商品图生成）：只读，绑 B 端 product / general；C 端零绑定 ──
+            # 三条逐条成立：① `read_only = True`（不写库、不改商品主图）；② 只绑 B 端两个 skill；
+            # ③ 声明 `product:list`（C 端 JWT 无权限码 ⇒ 即便可达也会被工具层拒绝）。
+            "product_image_generate",
         }, (
-            f"B 端专属只读工具集实测 {sorted(b_only_readonly)} —— 与见证集（26 把）不等，口径漂移"
+            f"B 端专属只读工具集实测 {sorted(b_only_readonly)} —— 与见证集（28 把）不等，口径漂移"
             "（进场/退场都必须在本见证里显式改判，见 docstring 的 2026-09-21 / 2026-09-23 /"
             "2026-09-24 / 2026-09-25 / 2026-09-24(#5368) / 2026-10-02(#4923) /"
             "2026-10-02(#5989) 七次改判说明）")

@@ -82,7 +82,7 @@
 | 后端读权限 | 看板全部端点**类级** `@RequirePermission("dashboard:view")`（`DashboardController`） |
 | 简报 | `/briefing/today`、`/briefing/config`(GET) = `dashboard:view`；PUT config / generate = `system:manage` |
 | 前端路由守卫 | `/dashboard`、`/briefing` 均 `dashboard:view`；无权限渲染 403 面板（不重定向） |
-| 侧边栏 | 「经营看板」`dashboard:view`；「每日简报」同码 + `briefingToggle`（企业开关） |
+| 侧边栏 | 「经营看板」`dashboard:view`（**一级项、最前席位**；2026-10-17 issue #7087 起）。原「每日简报」菜单项**已撤**（结论卡就在经营看板上，企业开关驱动它；`/briefing` 现为重定向薄壳） |
 | 页内分角色 | **无** —— 除简报开关外，页面没有任何按角色 / 行业 / 企业配置切换区块的逻辑（只有 `loading` / `briefingEnabled` / `trendDays` 三个状态） |
 
 ## 5. 下钻入口

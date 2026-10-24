@@ -3,19 +3,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertCircle, RefreshCw, Search } from 'lucide-react'
-import { Button, Pagination, PageHeader } from '@/components/ui'
+import { Button, Pagination, PageHeader, RowActionLink, SELECT_CONTROL } from '@/components/ui'
 import StatusBadge from '@/components/ui/StatusBadge'
 import { chipToneClasses } from '@/lib/status-chip'
 import {
+  ORDER_KIND_LABELS,
   PROCESSING_ORDER_STATUS_LABELS,
+  orderKindOf,
   processingOrderStatusChipFor,
 } from '@/lib/processing-order'
 import { processingOrderApi, productionApi } from '@/lib/api'
 import { usePermission } from '@/lib/permission'
 import type { PieceworkSummary, ProcessingOrder, ProductionProgress } from '@/types'
+import { cn } from '@/lib/utils'
 
 /**
- * 生产看板 /production（issue #4203；分页 + 懒加载 issue #4360；**加工单唯一入口** issue #4357）
+ * 作业看板 /production（issue #4203；分页 + 懒加载 issue #4360；**作业单唯一入口** issue #4357）
  *
  * 一屏回答「今天有多少加工单在产、各做到哪一道、各单计件多少钱」：
  * 加工单列表（复用 GET /api/admin/processing-orders）+ 每单工序进度与计件合计
@@ -33,7 +36,7 @@ import type { PieceworkSummary, ProcessingOrder, ProductionProgress } from '@/ty
  * 真值源：docs/curtain-production-rules.md §4 计件 / §5 扫码报工闭环。
  *
  * issue #4357：原「加工单」菜单项（订单管理组）与本页是**同一实体、同一端点**
- * （processingOrderApi.list）的两份渲染 ⇒ 合并为单一入口，本页即加工单唯一入口。
+ * （processingOrderApi.list）的两份渲染 ⇒ 合并为单一入口，本页即作业单唯一入口。
  * 原加工单列表页的能力**一条不丢**地并入本页：关键词/状态筛选、重置、商品与数量快照摘要、
  * 「查看」跳订单详情、筛选空态；其请求时序保护（issue #4303）随搜索能力一并迁入（`reqSeq`）。
  * issue #5913：那个入口**正名为「订单详情」**（「查看」在本行没有确定宾语），且按 `/orders` 的
@@ -42,6 +45,10 @@ import type { PieceworkSummary, ProcessingOrder, ProductionProgress } from '@/ty
  * 旧路径 /processing-orders 保留为重定向（旧深链不 404）；子路由
  * /processing-orders/{id}/production（生产明细）**不变**。
  * #4305 的入口收敛不回归：本页**不渲染**发加工/开始加工/加工完成/取消四个按钮。
+ *
+ * issue #7079：上位概念统一叫**作业单**（本页是它的唯一入口），实体两型按中文业务名可见 ——
+ * 「加工单」（成品帘，`order_kind='processing'`）/「出库作业单」（卖布，`order_kind='outbound'`）。
+ * 🔴 机器键（`processing` / `outbound` / `order_kind`）**绝不上屏**；缺键 = 存量单，按加工单处理。
  */
 interface BoardRow {
   po: ProcessingOrder
@@ -121,7 +128,7 @@ export default function ProductionBoardPage() {
       if (seq !== reqSeq.current) return
       console.error(e)
       setRows([])
-      setError('加载加工单失败，请稍后重试')
+      setError('加载作业单失败，请稍后重试')
     } finally {
       if (seq === reqSeq.current) setLoading(false)
     }
@@ -203,8 +210,8 @@ export default function ProductionBoardPage() {
   return (
     <div className="p-6 space-y-4">
       <PageHeader
-        title="生产看板"
-        subtitle="加工单在产进度与计件合计"
+        title="作业看板"
+        subtitle="作业单在产进度与计件合计"
         actions={
           <Button variant="secondary" size="sm" onClick={refresh} disabled={loading}>
             <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
@@ -221,7 +228,7 @@ export default function ProductionBoardPage() {
               关键词
             </label>
             <input
-              placeholder="请输入加工单号或订单号"
+              placeholder="请输入作业单号或订单号"
               value={keywordInput}
               onChange={(e) => setKeywordInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
@@ -236,7 +243,7 @@ export default function ProductionBoardPage() {
               aria-label="状态筛选"
               value={statusInput}
               onChange={(e) => setStatusInput(e.target.value)}
-              className="min-w-[140px] h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+              className={cn(SELECT_CONTROL, 'min-w-[140px]')}
             >
               {STATUS_FILTER_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -267,12 +274,20 @@ export default function ProductionBoardPage() {
 
       {/* issue #6717：本表 `rounded-lg border ... overflow-x-auto` —— 边框在**滚动容器自己**身上。
           `position: sticky` 在带 `border-radius` 的滚动容器内**不**失效（圆角只影响裁剪形状，
-          不影响 sticky 的包含块）⇒ 右缘冻结照常生效；两档视口按钮中心点实测均命中自身。 */}
+          不影响 sticky 的包含块）⇒ 右缘冻结照常生效；两档视口按钮中心点实测均命中自身。
+          🔴 2026-10-17 用户逐字「作业看板的表头风格和其他单据的不一致」⇒ 表头改为与**销售订单**
+          （`frontend/admin-web/src/components/orders/OrderTable.tsx`）逐字同源：
+          `bg-neutral-50` 底 + `text-neutral-600` 表头字，字号回到表格的 `text-sm`
+          （改前是 `text-xs text-neutral-500` + 无底色 ⇒ 同一仓两种表头）。
+          冻结格必须跟着换成同一底色（否则横滚时表头会露出白块）。 */}
       <div className="rounded-lg border border-neutral-200 bg-white overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-neutral-200 text-left text-xs text-neutral-500">
-              <th className="pl-5 pr-4 py-3 font-medium whitespace-nowrap">加工单号</th>
+            <tr className="bg-neutral-50 text-left text-neutral-600">
+              <th className="pl-5 pr-4 py-3 font-medium whitespace-nowrap">作业单号</th>
+              {/* 类型（issue #7079）：两型用**中文业务名**可见 —— 「加工单」/「出库作业单」。
+                  机器键（`processing` / `outbound`）绝不上屏。 */}
+              <th className="px-4 py-3 font-medium whitespace-nowrap">类型</th>
               <th className="px-4 py-3 font-medium whitespace-nowrap">订单号</th>
               <th className="px-4 py-3 font-medium whitespace-nowrap">客户</th>
               <th className="px-4 py-3 font-medium">商品与数量</th>
@@ -281,14 +296,14 @@ export default function ProductionBoardPage() {
               <th className="px-4 py-3 font-medium whitespace-nowrap">计件合计</th>
               {/* 操作（issue #6717）：右缘冻结 —— 改前 1280×800 实测本列表头 left = 1368
                   （容器右缘 1280）⇒ 「订单详情 / 生产明细」两个按钮都够不到。
-                  冻结后 `z-20` + **不透明** `bg-white`（本表头行没有底色，取卡片底色同值）。 */}
-              <th className="sticky right-0 z-20 border-l border-neutral-200 bg-white px-4 py-3 font-medium whitespace-nowrap">操作</th>
+                  冻结后 `z-20` + **不透明**底色（与表头行同值 `bg-neutral-50`）。 */}
+              <th className="sticky right-0 z-20 border-l border-neutral-200 bg-neutral-50 px-4 py-3 font-medium whitespace-nowrap">操作</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-neutral-400" data-testid="production-board-loading">
+                <td colSpan={9} className="px-4 py-8 text-center text-neutral-400" data-testid="production-board-loading">
                   加载中…
                 </td>
               </tr>
@@ -296,7 +311,7 @@ export default function ProductionBoardPage() {
 
             {!loading && error && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center" data-testid="production-board-error">
+                <td colSpan={9} className="px-4 py-8 text-center" data-testid="production-board-error">
                   <span className="mb-2 flex items-center justify-center gap-2 text-red-500">
                     <AlertCircle className="w-4 h-4" />
                     {error}
@@ -310,8 +325,8 @@ export default function ProductionBoardPage() {
 
             {!loading && !error && rows.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-10 text-center text-neutral-400" data-testid="production-board-empty">
-                  暂无加工单{filtered ? '（当前筛选条件下）' : ''}
+                <td colSpan={9} className="px-4 py-10 text-center text-neutral-400" data-testid="production-board-empty">
+                  暂无作业单{filtered ? '（当前筛选条件下）' : ''}
                 </td>
               </tr>
             )}
@@ -332,18 +347,24 @@ export default function ProductionBoardPage() {
                     data-testid={`production-row-${po.id}`}
                   >
                     <td className="pl-5 pr-4 py-4 whitespace-nowrap font-medium text-neutral-900">{po.processingOrderNo}</td>
+                    <td className="px-4 py-4 whitespace-nowrap text-neutral-600" data-testid={`production-row-kind-${po.id}`}>
+                      {ORDER_KIND_LABELS[orderKindOf(po)]}
+                    </td>
                     <td className="px-4 py-4 whitespace-nowrap text-neutral-600">{po.orderNo ?? '—'}</td>
                     <td className="px-4 py-4 whitespace-nowrap text-neutral-900">{po.customerName ?? '—'}</td>
                     {/* 商品与数量：宽度必须收紧 —— 本列是 #4357 合并时新增的第 8 列，过宽会把
                         「操作」列挤出容器右缘（§15.3：vitest 看不见，几何探针实测 1440px 视口
-                        横向溢出 100px、末行「生产明细」按钮被裁）。收紧后实测无横向溢出。 */}
-                    <td className="px-4 py-4 min-w-[120px]">
+                        横向溢出 100px、末行「生产明细」按钮被裁）。
+                        2026-10-17：操作列由两个描边按钮改成**行内链接**（窄了一大截）⇒ 本列与
+                        进度条各放宽一档（`max-w-[130px]` → `200px`、`min-w-[120px]` → `160px`），
+                        商品名不再一律截断成「2699系列雪尼尔窗…」。 */}
+                    <td className="px-4 py-4 min-w-[160px]">
                       {summary.length === 0 ? (
                         <span className="text-neutral-400">—</span>
                       ) : (
                         <div className="space-y-0.5 text-neutral-700">
                           {summary.slice(0, 2).map((line, i) => (
-                            <div key={i} className="truncate max-w-[130px]">
+                            <div key={i} className="truncate max-w-[200px]">
                               {line}
                             </div>
                           ))}
@@ -360,11 +381,10 @@ export default function ProductionBoardPage() {
                       <div className="flex items-center gap-2">
                         {/* w-12（原 w-24，经 w-16 再收紧）：#4357 为容纳第 8 列而收窄。
                             ⚠️ 本表是**内容驱动**（`table-layout: auto`，与全仓其余 18 处密集表格
-                            同一约定，不引入 `table-fixed`）⇒ 列宽随数据浮动。实测：3 行数据
-                            （客户名 2 字）下 8 列合计 1100 = 容器宽（无横向滚动）；客户名 3~4 字时
-                            曾溢出 12px —— 收窄进度条后复测为 0。数据再宽时容器横向滚动（by design），
-                            「操作」列不会画在可视区外——这正是本节段要防的形态（§15.3 几何探针）。 */}
-                        <div className="h-2 w-12 overflow-hidden rounded-full bg-neutral-100">
+                            同一约定，不引入 `table-fixed`）⇒ 列宽随数据浮动。
+                            2026-10-17：操作列的按钮换成行内链接后腾出的宽度回到这里（w-12 → w-16），
+                            进度条不再是一根「小短棍」；横向溢出由 §15.3 几何探针复测。 */}
+                        <div className="h-2 w-16 overflow-hidden rounded-full bg-neutral-100">
                           <div className="h-full rounded-full bg-primary-600" style={{ width: `${percent}%` }} />
                         </div>
                         <span className="text-neutral-700" data-testid={`production-row-progress-${po.id}`}>
@@ -381,23 +401,28 @@ export default function ProductionBoardPage() {
                         ⚠️ 本单元格内容是 `flex-wrap`（窄列宽时按钮会换到第二行）⇒ 冻结后**列宽会收窄到
                         按钮的 max-content**，不再把整表撑出容器；这正是「操作列不再需要横向滚动」的形态。 */}
                     <td className="sticky right-0 z-10 border-l border-neutral-100 bg-white px-4 py-4 whitespace-nowrap">
-                      <div className="flex flex-wrap items-center gap-2">
+                      {/* 行内动作（2026-10-17 用户裁定「不要有多种风格设计」）：与销售订单
+                          （`frontend/admin-web/src/components/orders/OrderTable.tsx`）**同一个**
+                          共享原语 `RowActionLink`（链接式），不再是两个描边按钮。
+                          角色仍是 `button`（既有判据按 `getByRole('button', { name })` 定位，未变），
+                          也不再换行 ⇒ 本列宽 = 两个动作的正文宽，不再把整表撑出容器。 */}
+                      <div className="flex items-center gap-3">
                         {/* 订单详情（订单详情已含加工单块：快照 + 状态流转 + 打印）。
                             issue #5913：文案由「查看」正名为「订单详情」—— 本行主键是**加工单**，
                             「查看」没有确定宾语（与「生产明细」互换也不违和）；并按 `/orders` 的
                             守卫码 `order:list` 显隐（无该码 ⇒ 不渲染，避免"点进去 403"）。 */}
                         {canViewOrder && (
-                          <Button variant="secondary" size="sm" onClick={() => router.push(`/orders/${po.orderId}`)}>
+                          <RowActionLink onClick={() => router.push(`/orders/${po.orderId}`)}>
                             订单详情
-                          </Button>
+                          </RowActionLink>
                         )}
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => router.push(`/processing-orders/${po.processingOrderNo}/production`)}
+                        <RowActionLink
+                          onClick={() =>
+                            router.push(`/processing-orders/${po.processingOrderNo}/production`)
+                          }
                         >
                           生产明细
-                        </Button>
+                        </RowActionLink>
                       </div>
                     </td>
                   </tr>

@@ -6,6 +6,7 @@ import { Plus, RotateCcw, Settings2, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button, Input, Loading, Modal, NumberInput, Select } from '@/components/ui'
 import ImageUploader from './ImageUploader'
+import ProductImageAI from './ProductImageAI'
 import SkuMatrix from './SkuMatrix'
 import ProductAttributes from './ProductAttributes'
 import RichTextEditor from './RichTextEditor'
@@ -231,6 +232,35 @@ export default function ProductForm({
         return next
       })
     }
+  }
+
+  /**
+   * AI 生成图落位（issue #7533）：主图 ⇒ 封面位 `images[0]`；细节 / 工艺 / 场景 ⇒ 详情图末位。
+   *
+   * `replaceUrl` = 上一次自动填入的那张：**先摘掉再写入**（替换，不叠加），否则连点两次
+   * 「再生成一张」会在图片位留一串近似图。容量仍沿用既有口径（主图 5 / 详情图 9）。
+   *
+   * 🔴 必须走**函数式**更新：生图要 ~40s，落位发生在那之后 —— 若按点击时的 `form` 快照计算，
+   * 这 40 秒里商家新加 / 删除的图会被覆盖（删掉的图复活、新图丢失）。判据见
+   * `ProductFormAIImage.test.tsx` 的「生成中改过图片列表」。
+   */
+  const applyAiImage = (slot: 'main' | 'detail', url: string, replaceUrl?: string) => {
+    setForm((prev) => {
+      const images = (prev.images || []).filter((item) => item !== replaceUrl)
+      const detailImages = (prev.detailImages || []).filter((item) => item !== replaceUrl)
+      return slot === 'main'
+        ? { ...prev, images: [url, ...images].slice(0, 5), detailImages }
+        : { ...prev, images, detailImages: [...detailImages, url].slice(0, 9) }
+    })
+    dirtyRef.current = true
+    setDirty(true)
+    // 落位后「请上传商品主图」这类错误立即失效（与 updateField 同一口径）
+    setErrors((prev) => {
+      if (!prev.images) return prev
+      const next = { ...prev }
+      delete next.images
+      return next
+    })
   }
 
   const titleCount = form.name.length
@@ -636,6 +666,12 @@ export default function ProductForm({
                 showOrderBadge
                 confirmRemove
               />
+              <ProductImageAI
+                sampleImages={Array.from(new Set([...(form.images || []), ...(form.detailImages || [])]))}
+                productName={form.name}
+                onApplyMain={(url, replaceUrl) => applyAiImage('main', url, replaceUrl)}
+                onApplyDetail={(url, replaceUrl) => applyAiImage('detail', url, replaceUrl)}
+              />
               {errors.images && (
                 <p className="text-sm text-red-600 mt-2">{errors.images}</p>
               )}
@@ -751,7 +787,7 @@ export default function ProductForm({
           </div>
 
           {/* 总库存（只读） */}
-          <FieldRow label="总库存" required alignTop>
+          <FieldRow label="总库存" alignTop>
             <div className="flex items-center gap-2">
               <div className="relative w-44">
                 <input
@@ -765,7 +801,8 @@ export default function ProductForm({
               </div>
             </div>
             <p className="mt-1.5 text-xs text-neutral-500">
-              此处是商品所有销售规格总库存数量，若需修改请在销售规格表格内修改对应库存
+              各销售规格的账面合计（只读）。商品资料不再录入库存：新商品从 0 起算，
+              库存以入库单 / 库存明细为准
             </p>
           </FieldRow>
 

@@ -4,7 +4,7 @@
  *
  * 覆盖：商品名/价格/销量渲染、规格行（specifications/规格数组）、
  * 「预计到手」价（original_price 划线）与到手价展示、
- * 「去下单」CTA 触发 onOrder（把商品名带入对话下单流程）。
+ * 「查看」CTA 触发 onView（把商品名带进对话，让黄金策介绍商品；商家端不下单，issue #7264）。
  */
 import React from 'react'
 import fs from 'fs'
@@ -55,12 +55,12 @@ describe('ProductCard — 瑞幸式商品卡交互', () => {
     expect(screen.getByText('¥199.00')).toBeInTheDocument()
   })
 
-  it('点击「去下单」CTA 触发 onOrder（携带商品名）', () => {
-    const onOrder = jest.fn()
-    render(<ProductCard data={baseProduct} onOrder={onOrder} />)
-    fireEvent.click(screen.getByText('去下单'))
-    expect(onOrder).toHaveBeenCalledTimes(1)
-    expect(onOrder).toHaveBeenCalledWith('遮光窗帘')
+  it('点击「查看」CTA 触发 onView（携带商品名）', () => {
+    const onView = jest.fn()
+    render(<ProductCard data={baseProduct} onView={onView} />)
+    fireEvent.click(screen.getByText('查看'))
+    expect(onView).toHaveBeenCalledTimes(1)
+    expect(onView).toHaveBeenCalledWith('遮光窗帘')
   })
 
   it('无 original_price 时不显示划线原价', () => {
@@ -69,17 +69,17 @@ describe('ProductCard — 瑞幸式商品卡交互', () => {
   })
 })
 
-describe('ProductCard — 下单防连点锁（issue #3040 收尾）', () => {
+describe('ProductCard — 查看防连点锁（issue #3040 收尾）', () => {
   afterEach(() => {
     jest.clearAllMocks()
   })
 
-  it('点「下单」后锁卡：第二次点击不再触发 onOrder（防重复下单）', () => {
-    const onOrder = jest.fn()
-    render(<ProductCard data={{ id: 'p-001', name: '遮光窗帘', price: 199 }} onOrder={onOrder} />)
-    fireEvent.click(screen.getByText(/去下单/))
-    fireEvent.click(screen.getByText(/去下单/))
-    expect(onOrder).toHaveBeenCalledTimes(1)
+  it('点「查看」后锁卡：第二次点击不再触发 onView（防重复发消息）', () => {
+    const onView = jest.fn()
+    render(<ProductCard data={{ id: 'p-001', name: '遮光窗帘', price: 199 }} onView={onView} />)
+    fireEvent.click(screen.getByText('查看'))
+    fireEvent.click(screen.getByText('查看'))
+    expect(onView).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -87,10 +87,12 @@ describe('商品卡不摆「没做完」的入口（issue #6666 判据 3）', ()
   const baseProduct = { id: 'p-001', name: '遮光窗帘', price: 199 }
 
   it('🔴 卡上不再有「查看详情」这条空入口（点它只弹一句「功能开发中」= 把没做完写在脸上）', () => {
-    render(<ProductCard data={baseProduct} onOrder={jest.fn()} />)
+    render(<ProductCard data={baseProduct} onView={jest.fn()} />)
     expect(screen.queryByText('查看详情')).toBeNull()
-    // 卡片唯一动作仍是「去下单」（把商品名带进对话下单流程）
-    expect(screen.getByText('去下单')).toBeInTheDocument()
+    // 卡片唯一动作 =「查看」（issue #7264：真发消息让黄金策介绍商品，不是空 Toast）
+    expect(screen.getByText('查看')).toBeInTheDocument()
+    // 商家端不下单：旧的「去下单」入口零残留
+    expect(screen.queryByText('去下单')).toBeNull()
   })
 
   it('🔴 该文案在 bmini 源码里零出现（不留第二处占位入口）', () => {

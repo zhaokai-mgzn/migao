@@ -56,9 +56,8 @@
  * 五个生产域读面与三个企业级读面**全部**在本文的 effect 里发起（不藏进子组件）。
  */
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Building2, Bot, Bell, Newspaper, Smartphone, AlertCircle } from 'lucide-react'
+import { AlertCircle, Bell, Bot, Building2, Newspaper, QrCode } from 'lucide-react'
 import Image from 'next/image'
-import { QRCodeSVG } from 'qrcode.react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button, PageHeader } from '@/components/ui'
@@ -72,7 +71,7 @@ import { OperationPricePanel } from '@/components/production-config/OperationPri
 import { RoutingsPanel } from '@/components/production-config/RoutingsPanel'
 import { CuttingHeightPanel } from '@/components/production-config/CuttingHeightPanel'
 import { readImageDimensions } from '@/lib/image-dimensions'
-import { getBminiH5Url } from '@/lib/bmini-h5-url'
+import { trimWhiteMarginFile } from '@/lib/qr-image'
 import { usePermission } from '@/lib/permission'
 import { useAuthStore } from '@/store/auth'
 import { REMNANT_PARAM_COPY } from '@/lib/tenant-params'
@@ -100,6 +99,7 @@ import {
 } from '@/lib/config-readiness'
 import type {
   SystemSettings,
+  PaymentQrcodeMap,
   AiConfig,
   BriefingConfig,
   CraftCalcConfig,
@@ -436,9 +436,10 @@ export default function SettingsPage() {
 
             {activeDomain.key === 'calc' && (
               <div className="space-y-6">
-                {/* 算料口径 = 算料配置的**唯一写面**（issue #6825）：8 标量 + 档位 + 拼色 + 公式就地可改，
-                    保存出口全域只有一个。取数仍在本页（`load` 已读 `craft-calc-config`），
-                    草稿与写面分别由本页持有 / 提供 —— 设计判死线第 1 条：同一份配置不许两个入口。 */}
+                {/* 算料口径 = 算料配置的**唯一写面**（issue #6825）：8 标量 + 档位 + 拼色 + 公式就地可改。
+                    issue #7183 起**变更即保存**（面板内防抖 0.6 秒自动 `PUT`，没有保存按钮）——
+                    取数仍在本页（`load` 已读 `craft-calc-config`），草稿与写面分别由本页持有 / 提供
+                    —— 设计判死线第 1 条：同一份配置不许两个入口。 */}
                 <CalcCaliberPanel
                   calc={calc}
                   calcError={calcError}
@@ -479,8 +480,8 @@ export default function SettingsPage() {
  * （`tests/unit_ci_workflows/test_agent_permission_parity.py` 的 `page_first_screen_text`）。
  */
 
-/** 简报配置的初值（关闭态）；真值由读面回填 */
-const EMPTY_BRIEFING: BriefingConfig = { enabled: false, generateTime: '06:00' }
+/** 简报配置的初值（**默认开启**，2026-10-18 裁定）；真值由读面回填 */
+const EMPTY_BRIEFING: BriefingConfig = { enabled: true, generateTime: '06:00' }
 
 function EnterpriseDomainPanel() {
   // ============ 基本设置（企业信息）============
@@ -495,6 +496,10 @@ function EnterpriseDomainPanel() {
   const [uploadingLogo, setUploadingLogo] = useState(false)
   // Logo 预览加载失败标记：URL 失效/过期时回退到占位图标
   const [logoPreviewError, setLogoPreviewError] = useState(false)
+  // 收款码（issue #7219）：企业信息域内上传微信/支付宝收款码，上传即落库（仅管理员可见本域）
+  const [paymentQrcodes, setPaymentQrcodes] = useState<PaymentQrcodeMap>({})
+  const [uploadingPaymentQr, setUploadingPaymentQr] = useState<'wechat' | 'alipay' | null>(null)
+  const paymentQrInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
   const [loadingSettings, setLoadingSettings] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   // #5899：已落库基线 —— 字段失焦时用它判「到底改没改」：没改就不发请求（点进点出不写库）
@@ -610,17 +615,44 @@ function EnterpriseDomainPanel() {
     }
   }
 
-  // 手机端入口（issue #5668）：地址来自**单一配置** `NEXT_PUBLIC_BMINI_H5_URL`
-  // （唯一读取点 = @/lib/bmini-h5-url，组件里不硬编码域名）；未配置 ⇒ 空串、**不画码**。
-  const bminiH5Url = getBminiH5Url()
-
-  const handleCopyBminiUrl = async () => {
+  const loadPaymentQrcodes = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(bminiH5Url)
-      toast.success('链接已复制')
+      const res = await settingsApi.getPaymentQrcodes()
+      setPaymentQrcodes((res.data?.data as PaymentQrcodeMap) ?? {})
     } catch {
-      // jsdom / 非安全上下文里没有 clipboard —— 不让复制失败变成一个未捕获异常
-      toast.error('复制失败，请手动选择链接复制')
+      // 无 system:manage 的账号读不到（本域本身也不可见）⇒ 空表，不弹错、不画假码
+      setPaymentQrcodes({})
+    }
+  }, [])
+
+  const handlePaymentQrUpload = async (type: 'wechat' | 'alipay', e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      toast.error('仅支持 JPG、PNG、WebP 格式')
+      e.target.value = ''
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('图片大小不能超过 5MB')
+      e.target.value = ''
+      return
+    }
+    setUploadingPaymentQr(type)
+    try {
+      // 🔴 上传前先裁掉白边（issue #7536，用户裁定「直接改成上传时裁」）：
+      //    输入是**本地文件**，没有跨域限制；裁失败 ⇒ 原文件照传（不因裁边失败而传不上去）
+      const prepared = await trimWhiteMarginFile(file)
+      const up = await uploadApi.uploadImage(prepared)
+      const imageUrl = up.data.data.url
+      await settingsApi.updatePaymentQrcode(type, { imageUrl })
+      setPaymentQrcodes((prev) => ({ ...prev, [type]: { ...(prev[type] ?? {}), imageUrl } }))
+      toast.success(`${type === 'wechat' ? '微信' : '支付宝'}收款码已更新`)
+    } catch {
+      toast.error('收款码上传失败')
+    } finally {
+      setUploadingPaymentQr(null)
+      e.target.value = ''
     }
   }
 
@@ -665,7 +697,8 @@ function EnterpriseDomainPanel() {
   useEffect(() => {
     void loadSettings()
     void loadBriefingConfig()
-  }, [loadSettings, loadBriefingConfig])
+    void loadPaymentQrcodes()
+  }, [loadSettings, loadBriefingConfig, loadPaymentQrcodes])
 
   return (
     <div className="space-y-6">
@@ -762,46 +795,64 @@ function EnterpriseDomainPanel() {
             </div>
           </div>
 
-          {/* 手机端入口（issue #5668）：B 端 h5 落位 `app.migaozn.com/b/`，让商家**扫码就能用**。
-              地址取自单一配置 NEXT_PUBLIC_BMINI_H5_URL（唯一读取点 = @/lib/bmini-h5-url）。
-              🔴 未配置时**不画二维码**（只给一句明确说明）—— 画一个指向空/错地址的码，
-              用户扫出来是白屏或别的站点，而页面上一切看起来正常（同族判据：缺码不画假码）。 */}
-          <div className="border-t border-neutral-100 pt-6" data-testid="bmini-h5-entry">
+          {/* 收款码（issue #7219）：企业信息域内上传；端点 system:manage ⇒ 仅管理员可改。
+              报价单右上角直接印这张码（缺码整块不出现，不画假码）。 */}
+          <div className="border-t border-neutral-100 pt-6" data-testid="settings-payment-qrcodes">
             <div className="flex items-start gap-3 mb-4">
               <div className="w-9 h-9 rounded-lg bg-primary-50 flex items-center justify-center flex-shrink-0">
-                <Smartphone className="w-5 h-5 text-primary-600" />
+                <QrCode className="w-5 h-5 text-primary-600" />
               </div>
               <div>
-                <h3 className="text-base font-semibold text-neutral-900">手机端入口</h3>
-                <p className="text-sm text-neutral-500 mt-0.5">手机浏览器扫码使用黄金策商家端</p>
+                <h3 className="text-base font-semibold text-neutral-900">收款码</h3>
+                <p className="text-sm text-neutral-500 mt-0.5">
+                  上传微信 / 支付宝收款码，打印报价单时自动印在右上角（顾客扫码直接付给企业，平台不经手资金）；
+                  图片四周的白边会在上传时自动裁掉 —— 之前上传的图如带白边，重新上传一次即可
+                </p>
               </div>
             </div>
-            {bminiH5Url ? (
-              <div className="flex items-start gap-4">
-                <div className="p-2 bg-white border border-neutral-200 rounded-lg">
-                  <QRCodeSVG value={bminiH5Url} size={112} title={bminiH5Url} data-testid="bmini-h5-qr" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs text-neutral-500">用手机相机或「扫一扫」打开：</p>
-                  <code className="block mt-1 text-xs text-neutral-700 break-all" data-testid="bmini-h5-url">
-                    {bminiH5Url}
-                  </code>
-                  <Button variant="secondary" size="sm" className="mt-2" onClick={handleCopyBminiUrl}>
-                    复制链接
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              /* 🔴 issue #6663：改前这里写的是给运维看的话（env 名 `NEXT_PUBLIC_BMINI_H5_URL` +
-                 「部署时设置后重新构建」）—— 商家**既改不了也不该看到**构建细节（§31 P3 不摆内部标识）。
-                 改成商家可行动的话：说清「还没开通」+「找谁」。
-                 ⚠️ **保留「未配置」逐字**：`tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py`
-                 的判据 4 要求无值分支**逐字**说明「未配置」（不许静默什么都不画）——
-                 去运维腔 ≠ 可以把这个锚点删掉（既有元守卫的张力，本包只动措辞、不动锚点）。 */
-              <p className="text-sm text-neutral-500" data-testid="bmini-h5-unconfigured">
-                手机端入口未配置 —— 尚未开通手机版，需要开通时请联系服务方；开通后这里会出现扫码入口。
-              </p>
-            )}
+            <div className="grid gap-4 sm:grid-cols-2">
+              {([
+                { type: 'wechat' as const, label: '微信收款码' },
+                { type: 'alipay' as const, label: '支付宝收款码' },
+              ]).map(({ type, label }) => {
+                const qr = paymentQrcodes[type]
+                return (
+                  <div key={type} className="rounded-lg border border-neutral-200 p-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-20 h-20 bg-neutral-50 rounded-lg border border-neutral-200 flex items-center justify-center overflow-hidden">
+                        {qr?.imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={qr.imageUrl} alt={label} className="w-full h-full object-contain" />
+                        ) : (
+                          <QrCode className="w-8 h-8 text-neutral-300" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-neutral-900">{label}</div>
+                        <div className="mt-1.5">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => paymentQrInputRefs.current[type]?.click()}
+                            loading={uploadingPaymentQr === type}
+                          >
+                            {qr?.imageUrl ? '更换收款码' : '上传收款码'}
+                          </Button>
+                        </div>
+                        <input
+                          ref={(el) => { paymentQrInputRefs.current[type] = el }}
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          className="hidden"
+                          onChange={(e) => void handlePaymentQrUpload(type, e)}
+                        />
+                        <p className="text-xs text-neutral-400 mt-1">JPG / PNG / WebP，≤ 5MB</p>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           </div>
 
           {/* 智能每日经营简报（issue #3468，企业开关） */}
@@ -845,7 +896,7 @@ function EnterpriseDomainPanel() {
                   <div>
                     <div className="text-sm font-medium text-neutral-700">启用智能每日经营简报</div>
                     <div className="text-xs text-neutral-500">
-                      开启后：立即生成今日简报、此后每日定时生成、侧边栏显示「每日简报」入口；关闭后：停止生成、入口隐藏（历史保留）
+                      开启后：立即生成今日简报、此后每日定时生成，经营看板显示每日经营结论；关闭后：停止生成、经营看板上不再显示结论（历史保留）
                     </div>
                   </div>
                   <button

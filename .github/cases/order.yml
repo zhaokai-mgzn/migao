@@ -2955,11 +2955,12 @@ cases:
     # `CraftCalcClient` / `POST /api/admin/orders/craft-calc`（试算，不落库）。
     # 口径 = 用户 2026-09-19 裁定：褶数法（标准档 2.0）——`褶数 = round((W×N − margin)/0.25)`
     # 再按开数取整；`用料 = 每折吃布 × 褶数 + margin`（单开 0.2 / 多开 0.3）。
-    # **每折吃布随款式/拼次变化**（同一次裁定，纸质速查表表头原文「拼色下料 1个折 0.65 / 2个折 1.2」，
-    # 是**用料**口径）：单色 0.25 / 拼色·拼1次 0.65 / 拼色·拼2次 1.2 米每折；余量不随拼色变化。
+    # **拼色 = 主布 + 配布**（issue #7560 改判；纸表表头「拼色下料 1个折 0.65 / 2个折 1.2」= **配布定长**）：
+    # 主布仍 0.25 米/折（四条列斜率同为 0.25），主布余量 = 单色余量 − 0.05×开数（单开 0.15 / 对开 0.20），
+    # 另加配布定长 0.65（拼1次）/ 1.2（拼2次）米，**整幅一次**。
     # 纸表逐值复现（本单的锚）：单开 0.25n+0.2、对开 0.25n+0.3；
     # 抽验 4折=1.2 / 8折=2.3 / 48折=12.3 / 52折=13.3 / 56折=14.3；6.6m 双开标准档 ⇒ 52 折 / 13.3 米；
-    # 拼色 52 折双开 ⇒ 拼1次 34.1 米 / 拼2次 62.7 米。
+    # 拼色 52 折双开 ⇒ 拼1次 13.9 米（13.2+0.65 进位）/ 拼2次 14.4 米（改前 34.1 / 62.7 = 按米/折乘 52 折）。
     # ⚠️ 缺口（不猜不插值）：纸表未登记 `拼3次` 的用料系数 ⇒ 端点 fail-closed `MIXED_PER_FOLD_NOT_REGISTERED`。
     # 架构口径：**不新增第二份算料逻辑** —— 端点只调 `curtain_calc.build_quote`，
     # `formula_text` 由后端按同一份数字产出（前端/Java 侧自拼 = 第二份算料逻辑）。
@@ -2970,10 +2971,10 @@ cases:
     data_checks:
       - "（散文、**不计分**）褶数法纸表逐值复现：单开 0.25n+0.2、对开 0.25n+0.3（4折=1.2/8折=2.3/48折=12.3/52折=13.3/56折=14.3）"
       - "（散文、**不计分**）单一真值：端点返回值 === 直调 curtain_calc.build_quote 逐值相等；formula_text 与数值同源（后端产出）"
-      - "（散文、**不计分**）拼色用料系数（用户 2026-09-19 裁定）：拼1次 0.65 / 拼2次 1.2 米每折；52 折双开 ⇒ 34.1 / 62.7 米；拼3次未登记 ⇒ fail-closed 显式报缺口"
+      - "（散文、**不计分**）拼色用料（issue #7560）：主布 0.25 米/折 + 拼色余量（单开 0.15 / 对开 0.20）+ 配布定长（拼1次 0.65 / 拼2次 1.2 米，整幅一次）；52 折双开 ⇒ 13.9 / 14.4 米；拼3次未登记 ⇒ fail-closed 显式报缺口"
       - "（散文、**不计分**）响应算料键 = **snake_case**（设计文档 §4.5 / CALC_INFO_KEYS 同口径）：fabric_meters / pleat_count / per_panel_pleats / per_fold / fullness / fullness_actual / formula_used / formula_text / source / craft_tier / warning —— 前端可原样塞进 processingInfo，零映射"
     skip_reason: "[backend-contract] 内部端点 + Java 客户端由 pytest（tests/test_production/test_craft_calc.py）与 JUnit（CraftCalcClientTest / CraftCalcControllerTest）验证，非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-19 新增（issue #4421 后端半边）：算料试算端点 + 褶数法单一真值 + 纸表逐值复现。前端（下单页试算接线）由另一会话承担，本用例只锚后端契约。同日追加用户裁定：拼色每折吃布系数（拼1次 0.65 / 拼2次 1.2 米每折，纸表表头原文，是**用料**而非计价）—— 与真值源 §10 旧措辞冲突，已按裁定改正 docs §10；`拼3次` 纸表未登记 ⇒ 显式缺口 fail-closed，不插值。"
+    merge_log: "2026-09-19 新增（issue #4421 后端半边）：算料试算端点 + 褶数法单一真值 + 纸表逐值复现。前端（下单页试算接线）由另一会话承担，本用例只锚后端契约。同日追加用户裁定：拼色每折吃布系数（拼1次 0.65 / 拼2次 1.2 米每折，纸表表头原文，是**用料**而非计价）—— 与真值源 §10 旧措辞冲突，已按裁定改正 docs §10；`拼3次` 纸表未登记 ⇒ 显式缺口 fail-closed，不插值。 ｜ 2026-10-23（issue #7560，用户裁定「按纸表」）**改判**：前述「米/折」读法作废 —— 0.65/1.2 是**配布定长**；主布不改每折吃布、余量每幅 −0.05；52 折双开 34.1/62.7 → **13.9 / 14.4** 米。依据 = 同页纸表「主布拼色对开」52 折写 13.2 米（与 34.1 不可能同时成立）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_production/test_craft_calc.py"
@@ -3038,7 +3039,7 @@ cases:
 
   - id: OR-034
     legacy_id: ""
-    title: "工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染"
+    title: "工艺规格「一份 spec，多处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染（issue #7527 起报价单纸面不再渲染工艺行）"
     domains:
       - order
       - product
@@ -3054,14 +3055,14 @@ cases:
       - "（无 LLM 环节：本用例的判据由前端 vitest 单测直接执行，见 traces.tests）"
     expectations: []
     data_checks:
-      - "**一份定义吃两种键名口径**（设计文档 §4.9「一份 spec，三处渲染」）：`craft-display` 的 `craftSpecRows` 同时吃**订单/快照层 camelCase**（`order_items.processing_info` / `items_snapshot`）与**报价单 snake_case**（`curtain_calc` 输出）—— 两处各写一套定义 = 第二份口径，漂移的那一份不会变红。"
+      - "**一份定义吃两种键名口径**（设计文档 §4.9「一份 spec，三处渲染」）：`craft-display` 的 `craftSpecRows` 同时吃**订单/快照层 camelCase**（`order_items.processing_info` / `items_snapshot`）与**报价单 snake_case**（`curtain_calc` 输出）—— 两处各写一套定义 = 第二份口径，漂移的那一份不会变红。⚠️ **2026-10-23 起（issue #7527）报价单纸面不再渲染工艺行**（用户 2026-10-23 逐字「报价单不要品名列和工艺行」）⇒ 渲染面由三处收敛为**订单详情页 + 加工单**（`ProcessingDoc`）两处；`craftSpecRows` 的**两种键名口径不变**（函数仍吃 snake_case，只是纸面不再调用它）。"
       - "**§4.9 字段表逐项渲染**：**17** 个字段按表出（部位 / 工艺 / 加工类型 / 打开方式 / 是否定型 / 款式 / 特殊选项 / 总褶数 / 褶数（每片）/ 幅数 / 褶倍 / 实际褶倍 / 米数 / 加工费米数 / 算料公式 / 是否对花 / 花距）；格式化口径 = 布尔 → 是/否、米数带单位、倍数带单位、选项数组顿号连接。⚠️ **2026-09-21 改判（issue #4876）**：原表里的「**褶距**」行**已整体删除**（用户裁定「应该直接删除这个字段，要做就做干净」）⇒ 字段数由 18 变 17，且**存量单也不再渲染褶距**（载荷里仍带 `pleatSpacing` 时断言它**不被渲染** —— 见 `craft-display.test.ts` 的 #4876 判据与三个组件测试的反向断言）。工位口径：`OrderLineCraftFields.materialize` / `order_items.pleat_spacing` 列**仍在**（DB 列与 Java 读面未删，属数据层存量；删的是**展示行**）。"
       - "**打开方式 1/2/3/4 → 单开/双开/三开/四开**（issue #4387 判据 1：候选必须含三开）；未知开数如实标「N 开」（不猜、不落默认值）。"
       - "**加工类型取真值来源 `formula_used`**：`fixed_height*` → 定高买宽、`fixed_width*` / `roman_panel` → 定宽买高；未知 formula **fail-closed**（宁少一行，不漏内部代号给顾客）；订单层 `cuttingMode` 直存中文时优先于 `formula_used`。"
       - "**缺值不渲染（§4.9 硬约束 2）**：键缺席 / `null` / 空串 / 空数组 / 非有限数 ⇒ 该行**不出现**，绝不出现 `undefined` / `null` / `NaN`，也不补默认值；部分缺值只渲染有值的行（存量单形态：完全没有工艺键 ⇒ 无「工艺规格」块，页面仍正常渲染）。"
       - "**订单详情直读不二次推导**：真值来源 = `order_items.processing_info`（camelCase，§4.5），`OrderDetail` 的「商品明细」表按它渲染工艺规格与算料口径两块；`processingInfo=null`（存量单）时页面正常且无工艺块。"
     skip_reason: "[backend-contract] 前端展示契约（admin-web 组件 + 纯函数，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/craft-display.test.ts 与 frontend/admin-web/tests/unit/components/OrderDetailCraftSpec.test.tsx 执行"
-    merge_log: "2026-09-19 新增（issue #4431 B7 的用例追溯补正）：#4355（三处展示工艺规格）的行为此前**零评测用例**，新增测试借 `OR-001`（订单列表查询）与 `UI-020`（订单列表采购明细的**加工费**展示）过门禁 —— 后者虽在订单页但测的是加工费行，**不覆盖**工艺规格字段的渲染/格式化/缺值口径。本用例把判据挂到真实行为上：展示映射是**三处共用的同一份定义**，故它的判据必须覆盖两种键名口径 + 缺值硬约束。**不改运行时行为、不改断言强度**。"
+    merge_log: "2026-09-19 新增（issue #4431 B7 的用例追溯补正）：#4355（三处展示工艺规格）的行为此前**零评测用例**，新增测试借 `OR-001`（订单列表查询）与 `UI-020`（订单列表采购明细的**加工费**展示）过门禁 —— 后者虽在订单页但测的是加工费行，**不覆盖**工艺规格字段的渲染/格式化/缺值口径。本用例把判据挂到真实行为上：展示映射是**多处共用的同一份定义**，故它的判据必须覆盖两种键名口径 + 缺值硬约束。**不改运行时行为、不改断言强度**。2026-10-23（issue #7527）同步事实：报价单纸面撤掉工艺行 ⇒ 渲染面收敛为两处（订单详情页 + 加工单），映射定义与判据强度均未变。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/lib/craft-display.test.ts"
@@ -3433,7 +3434,7 @@ cases:
     # ⑤ 默认公式：不传 formula / 未指定工艺 ⇒ 韩褶公式，且 `formula_text` 串首写明所用公式（静默走另一支 ⇒ 红）；
     # ⑥ 开数系数不得翻倍：同一成品宽下 单开与双开的 fullness 结果**相等**（总宽再×开数 ⇒ 22.0 ⇒ 红）；
     # ⑦ 既有 fail-closed 不变：缺宽/缺高/无自动算料口径工艺/纱帘 ⇒ 不发请求（前端 fail-closed 回归）；
-    # ⑧ 其余算料输出（褶数/幅数/金额）逐值回归：与改前一致（52 折 / 13.3 米 / 34.1 / 62.7 / 11.8）。
+    # ⑧ 其余算料输出（褶数/幅数/金额）逐值回归：单色与改前一致（52 折 / 13.3 米 / 11.8）；拼色按 issue #7560 改判（13.9 / 14.4）。
     # 配置可注入：`build_quote(..., config=None)` ⇒ 默认值 = 既有常量逐值不变（显式传默认配置 == 不传）；
     # 非法配置显式报错（**不静默回退默认值**）；配置**沿调用链传递**，不读进模块级可变全局。
     # ⚠️ 架构口径：**不新增第二份算料逻辑** —— 推导表唯一口径在算料引擎（`CRAFT_FORMULA`），
@@ -4472,6 +4473,86 @@ cases:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderCancelRaceRealDbTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderStatusCasMetaGuardTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ==========================================================================
+  # OR-067（issue #7078，屏幕面幽灵字段）：订单详情「支付 / 发货 / 确认收货时间」恒 "-"，
+  # 而状态引导第 1 步的「已付款 ✓」是从 status 推出来的 ⇒ 同屏自相矛盾
+  # ==========================================================================
+  - id: OR-067
+    legacy_id: ""
+    title: "订单详情三个时刻（收款 / 发货 / 完成）显示服务端真值：paid_at 只在 pending→confirmed 边写、received_at 两条完成路都写（issue #7078）"
+    domains:
+      - order
+      - ui
+      - backend
+    tier: normal
+    tags:
+      - order
+      - order-detail
+      - phantom-field
+      - data-quality
+      - backend-contract
+      - migration
+    truths_ref: []
+    user_inputs:
+      - "用户 2026-10-17 真机截图（订单 20261016769570012）：订单详情这里的状态引导和实际的不一致了？—— 引导第 1 步「已付款 ✓」，而同屏「支付时间 / 支付交易号」都是 `-`"
+    expectations: []
+    data_checks:
+      - "判据 1·🔴 **结构：paid_at 只在 pending → confirmed 这条边上写**（回退边不得写）：`OrderService.transitionStatusAtomic` 必须同时出现「新态 confirmed」与「**期望前驱 pending**」两个限定 —— 该方法被 producing → confirmed（作废加工单退回待发货）复用，在那里写会把「支付时间」顶成当天而屏幕上看不出异常。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderPaidAndReceivedAtWriteGuardTest.java 的 `paidAtIsWrittenOnlyOnTheConfirmEdge`（含判别力自证：摘掉前驱限定 / 多出第二个写面 ⇒ 各自判红）"
+      - "判据 2·🔴 **结构：received_at 由两条完成路各写一次** —— 商家「确认收货」= `transitionStatusAtomic`（to=completed）；「发货后 N 天自动完成」**不经**该方法，必须在 `OrderMapper.autoCompleteShippedOrders` 自己的条件 UPDATE 里同写（漏写那条腿 ⇒ 那批单永远空值，且不会有别的东西变红）。执行点 = 同文件 `receivedAtIsWrittenOnBothCompletedPaths`（自证注入：把 `received_at = NOW()` 换成 `updated_at = NOW()` ⇒ 判红）"
+      - "判据 3·**详情响应必须透出三个时刻**（否则屏幕退回「恒 -」）：`OrderDetailResponse` 同时含 `private OffsetDateTime paidAt;` / `shippedAt;` / `receivedAt;`。执行点 = 同文件 `detailResponseExposesTheThreeTimestamps`（自证注入：删任一键 ⇒ 判红）"
+      - "判据 4·**屏幕面渲染真值**（用户可见的那一面）：基础信息「支付时间 / 发货时间 / 确认收货时间」三行显示服务端下发的时刻（期望值用与 `DateTimeCell` 同一份格式化口径算，不写死字符串 ⇒ 跨时区不假红）；缺值仍渲染 `-`（存量未采集 ⇒ 占位，不崩不猜）。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx 的「基础信息渲染服务端下发的 支付时间 / 发货时间 / 确认收货时间（不再是恒 -）」与存量未采集占位那条"
+      - "判据 5·**「支付交易号」行撤下**（后端无真值源 ⇒ 建了也恒 `-`）：屏幕不再渲染该行；前端类型面删掉 `paymentNo`（#6882 同款：让编译器成为类级守卫，再读即编译期红）。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx 的「不再渲染支付交易号行」"
+      - "判据 6·**迁移只搬已存在的事实**（V160）：`paid_at` 从 `finance_transactions` 的 `type='income'`（全仓唯一写入点 = `confirmPayment` 的「订单确认收款」）取最早一笔回填；`received_at` **不回填**（存量 completed 单无 durable 完成时刻）⇒ 老单该行仍为 `-`（登记，不是缺口）。迁移幂等 = `ADD COLUMN IF NOT EXISTS` + `WHERE paid_at IS NULL`。"
+    skip_reason: "[backend-contract] 结构判据（Java 源码面）+ 数据迁移 + 前端展示判据（admin-web vitest）：零 LLM 环节 ⇒ 不进 agent-eval 冒烟；机器判红通道 = traces.tests"
+    merge_log: "2026-10-17 新增（issue #7078，用户裁定 A：补真值）。取号 = `scripts/next_case_id.py OR` 现取（main 001-066）⇒ **OR-067**。病根（读源，不是漏列）：详情页读 `order.paidAt / paymentNo / shippedAt / receivedAt`，而 `OrderDetailResponse` 全文只有 `LogisticsInfo.shippedAt` 一处时间键、`orders` 表也没有对应列 ⇒ 那几行**恒 `-`**，与订单走到哪一步无关（与 #6882「屏幕面读后端未下发的字段」同类；那一包只清了行级字段）。而状态引导第 1 步的勾是 `OrderProgressSteps.getStepStates()` 从 `status` 推出来的 ⇒「已付款 ✓」与「支付时间 -」必然同屏自相矛盾。修法：① V160 加 `paid_at` / `received_at` 两列（`shipped_at` 是 V148 已有列，本单只**透出**）；② 写入点 = `transitionStatusAtomic` 的 pending→confirmed 边（用期望前驱限定，避开回退边）与 completed 边 + `autoCompleteShippedOrders` 的 SQL；③ `OrderDetailResponse` 补三键（`BeanUtils` 同名带出，不另立第二份口径）；④ 支付交易号行撤下、前端类型面删 `paymentNo`。边界：存量 completed 单不回填 `received_at`；自动完成的单 `received_at` = 自动完成时刻（列注释与判据里写明）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderPaidAndReceivedAtWriteGuardTest.java"
+        - "frontend/admin-web/tests/unit/pages/order-detail.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ==========================================================================
+  # OR-068（issue #7110，屏幕面幽灵字段的**类级收口**）：订单详情「待付款」那个
+  # 「支付倒计时」读的 `paymentDeadline` 后端从不下发（无列 / 无写入点 / 无超时规则）
+  # ⇒ 从未启动；本包撤下 UI + 类型键，并落「读面键 ⊆ DTO 字段」类级守卫
+  # ==========================================================================
+  - id: OR-068
+    legacy_id: ""
+    title: "订单详情撤下「支付倒计时」（其 paymentDeadline 后端从不下发、倒计时从未启动）+ 落「读面键 ⊆ OrderDetailResponse」类级守卫（issue #7110）"
+    domains:
+      - order
+      - ui
+      - backend
+    tier: normal
+    tags:
+      - order
+      - order-detail
+      - phantom-field
+      - class-guard
+      - backend-contract
+      - frontend
+    truths_ref: []
+    user_inputs:
+      - "用户 2026-10-17「这个继续做 #7110」—— 该单由 #7078 的边界声明登记而来（同一个病第二次长出来）"
+    expectations: []
+    data_checks:
+      - "判据 1·🔴 **类级守卫：订单详情读面键必须逐个有后端来源** —— `OrderDetail.tsx` 里每个 `order.<键>` / `order?.<键>`（含解构）都必须是 `OrderDetailResponse` 的**顶层字段**，或登记进 `EXEMPT` **并写明理由**；豁免表 fail-closed（空理由 / 已不再被读取的陈旧条目 ⇒ 判红）；解析不许空转（字段数 / 读点数**下限**断言 —— 正则失配必须红，不许在「零读点」上静默变绿）。执行点 = tests/unit_ci_workflows/test_order_detail_reads_have_backend_source.py（A/B/C/D 四条；D 含四种坏形态注入 + 「只改注释 ⇒ 不红」负控）。口径依据：本仓 Jackson 未开 SNAKE_CASE 且该 DTO 无 `@JsonProperty` 改名 ⇒ Java 字段名 = 下发 JSON 键。"
+      - "判据 2·**屏幕面不再渲染「支付倒计时」**（撤的是那一行，不是整块）：待付款订单即使**注入** `paymentDeadline` 也不出现倒计时文案，而「待买家付款」与「修改订单 / 关闭订单 / 打印报价单」入口**仍在**。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx 的「待付款订单不渲染「支付倒计时」（后端无该真值，issue #7110）」"
+      - "判据 3·**e2e 断言同口径**（防「不先补真值源就把倒计时加回来」）：两条 spec 的 mock 去掉 `paymentDeadline`，断言由「应显示支付倒计时」改为「不再渲染支付倒计时」。执行点 = tests/e2e/specs/orders/order-detail.spec.ts 与 tests/e2e/specs/orders/screen-product-identity.spec.ts（⚠️ `tests/e2e/specs/orders/**` 不在 CI 的 demo manifest 里 ⇒ 这两条是**同口径登记**，机器判红由判据 1 与 2 承担）"
+      - "判据 4·**类型面撤键**：`frontend/admin-web/src/types/index.ts` 不再有 `paymentDeadline`（再读即编译期红 —— 编译器当类级守卫，同 #7078 撤 `paymentNo` 的处理）。"
+      - "判据 5·**边界（照实登记）**：本守卫只覆盖 `OrderDetail.tsx` 一份文件（历史上两次事故都在这里），**不是**全仓前端↔后端字段对账；只判**存在性**（字段存在但值恒 null 判不了，那一半归 #6890 的读面键台账 + §15.7 真机验收）；判不了 `order?.[动态键]` / `as any` 强转后的读取。"
+    skip_reason: "[backend-contract] 结构判据（TSX↔DTO 静态对账 + 前端展示判据）：零 LLM 环节 ⇒ 不进 agent-eval 冒烟；机器判红通道 = traces.tests"
+    merge_log: "2026-10-17 新增（issue #7110）。取号 = `scripts/next_case_id.py OR` 现取（main 001-067）⇒ **OR-068**。病根（读源）：`OrderDetail.tsx` 的「待付款倒计时」前置判断是 `displayStatus !== 'pending_payment' || !order.paymentDeadline` —— 而 `paymentDeadline` 在 `OrderDetailResponse` 里**根本不存在**（`orders` 表也无该列、全仓无写入点、无「超时未付 ⇒ 自动取消」规则）⇒ 恒为假 ⇒ **倒计时从未渲染过**（连「--:--」都不会出现）。它与 #7078 是**同一个病第二次长出来**（屏幕面读后端不存在的键；可选键谁都能加，运行时读到 undefined 既不报错也不渲染 ⇒ 编译器与测试都不拦）。修法：① 撤下倒计时 UI（`calcCountdown` / state / 定时器 / prop / JSX 那一行）与 `Order.paymentDeadline` 类型键；② 两条 e2e spec 的 mock 与断言同口径；③ **类级固化** = 新守卫 test_order_detail_reads_have_backend_source.py（真语料零漂移 + 豁免 fail-closed + 解析不空转 + 判别力/负控）。边界：本页 20 个读点在撤下后**零豁免**；若产品日后真要「支付截止」，那是**新功能**（先补后端真值源再回加键），不是本单的缺口。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_order_detail_reads_have_backend_source.py"
+        - "frontend/admin-web/tests/unit/pages/order-detail.test.tsx"
       ci:
         - pr-check.yml
       verifies: []

@@ -68,6 +68,15 @@ export function supportsBrowserRecording(): boolean {
 export const MIC_DENIED_MESSAGE = '没有麦克风权限：请在浏览器设置里允许后重试，也可以直接用文字发送'
 export const MIC_UNAVAILABLE_MESSAGE = '没有找到可用的麦克风：请检查设备后用文字发送'
 
+/**
+ * 一次录音**一个可上传的字节都没有**时的文案（issue #7310）
+ *
+ * 生产实证（2026-10-19，华为 ArkWeb / 支付宝 webview）：某些内核在 `stop()` 时补发一个
+ * **空 Blob** → 旧实现只判 `chunks.length` ⇒ 0 字节音频出网 → 服务端 400「音频文件为空」
+ * → 客户端又把它吞成「未听清，请重试」。⇒ 0 字节必须在**本地**拒收。
+ */
+export const NO_AUDIO_MESSAGE = '未检测到声音，已取消转写'
+
 function describeMicError(error: unknown): Error {
   const name = (error as { name?: string } | null)?.name
   if (name === 'NotAllowedError' || name === 'SecurityError') return new Error(MIC_DENIED_MESSAGE)
@@ -139,8 +148,10 @@ export function startBrowserRecording(): BrowserRecording | null {
           reject(failed)
           return
         }
-        if (chunks.length === 0) {
-          reject(new Error('未检测到声音，已取消转写'))
+        const bytes = chunks.reduce((total, chunk) => total + (chunk?.size || 0), 0)
+        // 0 字节 = 内核补发的空 chunk（issue #7310）；**不上传**，否则服务端 400 会被 UI 吞成「未听清」
+        if (chunks.length === 0 || bytes === 0) {
+          reject(new Error(NO_AUDIO_MESSAGE))
           return
         }
         const type = active.mimeType || chunks[0].type || 'audio/webm'

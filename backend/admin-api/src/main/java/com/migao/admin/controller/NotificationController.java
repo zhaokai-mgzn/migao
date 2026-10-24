@@ -49,15 +49,18 @@ public class NotificationController {
             @RequestParam(defaultValue = "1") long page,
             @RequestParam(defaultValue = "20") long size,
             @RequestParam(required = false) String status,
-            @RequestParam(required = false) String channel) {
+            @RequestParam(required = false) String channel,
+            @RequestParam(required = false) String bizType) {
         String userId = getCurrentUserId();
-        log.info("查询通知列表: userId={}, page={}, size={}, status={}, channel={}", userId, page, size, status, channel);
+        log.info("查询通知列表: userId={}, page={}, size={}, status={}, channel={}, bizType={}",
+                userId, page, size, status, channel, bizType);
 
         NotificationQueryRequest queryRequest = new NotificationQueryRequest();
         queryRequest.setPage(page);
         queryRequest.setSize(size);
         queryRequest.setStatus(status);
         queryRequest.setChannel(channel);
+        queryRequest.setBizType(bizType);
 
         PageResponse<NotificationDTO> result = notificationService.queryNotifications(userId, queryRequest);
         return ApiResponse.success(result);
