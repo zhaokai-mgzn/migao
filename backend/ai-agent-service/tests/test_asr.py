@@ -348,6 +348,7 @@ class TestMaasEndpointAndCredential:
         monkeypatch.setattr(asr, "_convert_to_wav", lambda data, fmt: b"wav-bytes")
 
         captured = {}
+        built = []
 
         class _Sentence:
             def get_sentence(self):
@@ -357,15 +358,18 @@ class TestMaasEndpointAndCredential:
             def __init__(self, **kwargs):
                 captured.update(kwargs)
                 self._cb = kwargs["callback"]
+                self.frames = []
+                self.stopped = False
+                built.append(self)
 
             def start(self):
                 self._cb.on_event(_Sentence())
 
-            def send_audio_frame(self, _data):
-                pass
+            def send_audio_frame(self, data):
+                self.frames.append(data)
 
             def stop(self):
-                pass
+                self.stopped = True
 
         monkeypatch.setattr(asr, "Recognition", _FakeRecognition)
 
@@ -377,6 +381,9 @@ class TestMaasEndpointAndCredential:
             "wss://token-plan.cn-beijing.maas.aliyuncs.com/api-ws/v1/inference"
         )
         assert text == "帮我查订单"
+        # 送帧/收尾确实发生（否则「识别成功」可能只是一次空跑）
+        assert built[0].frames == [b"wav-bytes"]
+        assert built[0].stopped
 
     def test_missing_key_fails_closed_and_never_uses_primary(self, monkeypatch):
         import asyncio
