@@ -43,11 +43,24 @@ class ImageGenerationError(Exception):
 
 
 class ImageGenerationUnavailable(ImageGenerationError):
-    """开关关闭 / 未配置 Key（对外 503，不重试、不回落）。"""
+    """开关关闭 / 未配置 Key / 全链都接不了这类请求（对外 503，不重试、不回落）。
+
+    `code` = 503 响应体的**机器可读**失败码（issue #7552）：admin-api 据此分叉话术，
+    不再从中文 detail 里猜成因。默认值 = 「模型接不了这类请求」，开关 / 缺 Key 用显式 code。
+    """
+
+    code = "IMAGE_GEN_MODEL_UNSUPPORTED"
+
+    def __init__(self, message: str, code: str = ""):
+        super().__init__(message)
+        if code:
+            self.code = code
 
 
 class ImageGenerationQuotaExceeded(ImageGenerationError):
     """配置的所有模型都因配额不可用（对外 503 + 可行动 suggestion）。"""
+
+    code = "IMAGE_GEN_QUOTA_EXCEEDED"
 
 
 class ImageGenerationAuthError(ImageGenerationUnavailable):
@@ -61,6 +74,11 @@ class ImageGenerationAuthError(ImageGenerationUnavailable):
     （账号级问题，换模型同一个 Key 还是 401），而普通 `ImageGenerationUnavailable`
     （模型接不了这类请求）仍需继续试下一个模型。
     """
+
+    # 对外失败码（issue #7552）复用「凭证不可用」这一格：与「未配置 Key」同属**平台侧**凭证问题，
+    # 商家的下一个动作相同（找平台换 Key，别重试）；不新增第五个码（与 #7680 的码位口径一致）。
+    # detail 里仍如实写明「生图凭证无效（HTTP 401/403）：InvalidApiKey」。
+    code = "IMAGE_GEN_NO_KEY"
 
 
 #: 按商品名里的品类给「主图」一个**贴近真实用途**的场景（不按名称硬编码商品，只选场景）。
@@ -217,9 +235,11 @@ async def generate_product_image(
 ) -> Dict[str, str]:
     """样图 → 一张商品图：返回 `{"image_url", "model"}`（不落盘、不落库）。"""
     if not settings.IMAGE_GEN_ENABLED:
-        raise ImageGenerationUnavailable("商品图生成未启用（IMAGE_GEN_ENABLED=false）")
+        raise ImageGenerationUnavailable(
+            "商品图生成未启用（IMAGE_GEN_ENABLED=false）", code="IMAGE_GEN_DISABLED")
     if not _api_key():
-        raise ImageGenerationUnavailable("未配置 IMAGE_GEN_API_KEY / ASR_API_KEY")
+        raise ImageGenerationUnavailable(
+            "未配置 IMAGE_GEN_API_KEY / ASR_API_KEY", code="IMAGE_GEN_NO_KEY")
     if not (image_url or "").startswith(("http://", "https://")):
         raise ValueError("image_url 必须是 http(s) 图片地址")
 

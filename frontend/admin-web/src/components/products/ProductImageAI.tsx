@@ -32,6 +32,28 @@ const KINDS: Array<{ value: AiProductImageKind; label: string }> = [
 
 const FAILURE_MESSAGE = '生成失败，请稍后重试，或直接上传图片'
 
+/**
+ * 失败话术（issue #7552）：按 admin-api 的 `error.code` 分叉，**不在前端切字符串**。
+ *
+ * 三类不同的下一个动作：模型/能力不可用（该找平台）≠ 额度用尽（该等额度）≠ 真·瞬时（该重试）。
+ * 话术里不出现服务名 / 内部地址（§31 P3）—— 那些只进日志。
+ */
+const PLATFORM_UNAVAILABLE = '该能力暂不可用，已反馈平台；可先上传图片继续建品。'
+
+const FAILURE_MESSAGES: Record<string, string> = {
+  AI_PRODUCT_IMAGE_MODEL_UNSUPPORTED: PLATFORM_UNAVAILABLE,
+  AI_PRODUCT_IMAGE_DISABLED: PLATFORM_UNAVAILABLE,
+  AI_PRODUCT_IMAGE_NOT_CONFIGURED: PLATFORM_UNAVAILABLE,
+  AI_PRODUCT_IMAGE_QUOTA_EXCEEDED: '今日额度已用完，可明天再试；也可直接上传图片。',
+}
+
+/** 失败话术：认 `error.code`；没有码（网络 / 超时）才用「稍后重试」兜底。 */
+function failureMessage(error: unknown): string {
+  const code = (error as { response?: { data?: { error?: { code?: string } } } })?.response?.data
+    ?.error?.code
+  return (code && FAILURE_MESSAGES[code]) || FAILURE_MESSAGE
+}
+
 interface ProductImageAIProps {
   /** 样图候选 = 已上传的主图与详情图（色卡 / 面料实拍，调用方去重）；为空时入口不可用。默认用第 1 张，可切换。 */
   sampleImages?: string[]
@@ -98,9 +120,10 @@ export default function ProductImageAI({
       // 生成成功即落位（issue #7533）：多一步「用这张」= 商家漏点即白生成。
       apply(url, kind)
     } catch (e) {
-      setError(FAILURE_MESSAGE)
+      const message = failureMessage(e)
+      setError(message)
       // 拦截器已统一提示时这里不重复弹（toastRequestError 内部判定）
-      toastRequestError(e, FAILURE_MESSAGE)
+      toastRequestError(e, message)
     } finally {
       setLoading(false)
     }
