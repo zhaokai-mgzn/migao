@@ -151,7 +151,8 @@ MENU_TREE: Tuple[MenuNode, ...] = (
     MenuNode("trade-center", "财务对账", "/finance", "finance:view"),
     # 🔴 2026-10-24（issue #7593）：`MenuNode("trade-center", "审批中心", "/approvals", "finance:view")`
     # **已撤除** —— 该页入口改到顶栏待办入口（无侧边栏节点），本镜像必须同批删（判据 1b 双向相等）。
-    # ⇒ AI 不再能把用户「导航」到 `/approvals`（页面知识仍在 `page_registry.py`，问答不受影响）；
+    # ⇒ AI 不再能把用户「导航」到 `/approvals`；⚠️ **页面口径也同批失去**（`page_registry.py` 的
+    # PageEntry 与 `approval-decision` 真值源因「悬挂登记 / 死条目」两条判据必须销账）—— 见 issue #7593；
     # 重启条件见 issue #7593 的「已知缺口」节。
     # 生产管理（2026-10-06：先备资料 → 再生产与派单 → 最末结算）
     # 🔴 2026-10-09（issue #6580，用户裁定）：「加工项管理」「工艺配置」两个菜单项**移除**
@@ -287,7 +288,7 @@ NAV_FEATURES: Tuple[NavFeature, ...] = (
     NavFeature("finance", "财务对账（对账）", (("trade-center", "财务对账"),), ("财务对账", "对账")),
     # 🔴 2026-10-24（issue #7593）：`NavFeature("approvals", …)` **同批删除** —— 判据 9 要求
     # 「登记项的主节点必须在 `menu.ts` 里」，节点撤除后留着它就是编出来的页面（判红）。
-    # 用户问「审批」的**页面知识**仍走 `page_registry.py` 的 `/approvals` 条目（问答不受影响），
+    # ⚠️ 用户问「审批」的**页面口径**也已失去（同批销账，见 issue #7593 的已知缺口），
     # 只是不再有「带你去那一页」的导航动作（顶栏入口不参与菜单接地判据，见 issue #7593 已知缺口）。
     # 2026-10-19（issue #7332）：菜单正名「作业看板」。登记名里保留「作业单 / 加工单 / 原生产看板」三个旧说法：
     # 判据 6b（problems_aliases_grounded）要求说法与登记名有包含关系；菜单本身只叫「作业看板」。

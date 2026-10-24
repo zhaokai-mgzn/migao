@@ -199,9 +199,11 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     // 🔴 2026-10-17（issue #7087）：本判据**不受影响** —— 撤销的「工作台」组两项里，
     // 「经营看板」升为**最前席位一级项**（不入任何组）、「每日简报」菜单项删除 ⇒ 组内项 18 → 16）
     // #7369：+「供应商」⇒ 组内项 17 → 18；段 4 再 +「采购单」⇒ 18 → 19；
-    // #7375 段 3：交易管理 +「价格本」⇒ 19 → 20
-    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).toHaveLength(23)
-    expect(allNames).toHaveLength(23)
+    // #7375 段 3：交易管理 +「价格本」⇒ 19 → 20；
+    // 🔴 2026-10-24（issue #7593，用户裁定）：「审批中心」撤出侧边栏（入口改顶栏 `ApprovalBell`）
+    // ⇒ 组内项 23 → **22**（只减这一项，其它组一项不少）
+    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).toHaveLength(22)
+    expect(allNames).toHaveLength(22)
   })
 })
 

@@ -7,7 +7,7 @@
  * 重设计前「权限过滤 / 高亮选中 / 分组展开」三件事全内联在 `Sidebar.tsx` 里 ——
  * 只能靠渲染整个 Sidebar 才能验证（依赖 auth store / next-navigation / lucide 白名单三个替身），
  * 且**无法对「同一路由下哪个项高亮」做表驱动穷举**。issue #5271 把它们抽成
- * `frontend/admin-web/src/lib/menu-nav.ts` 的纯函数 ⇒ 本文件对**全部 25 项 × 若干路由**
+ * `frontend/admin-web/src/lib/menu-nav.ts` 的纯函数 ⇒ 本文件对**全部 27 项 × 若干路由**
  * 逐条断言（渲染面另有 `Sidebar.test.tsx` / `SidebarRedesign.test.tsx`）。
  *
  * ## 本文件同时是新 IA 的**表驱动事实源**
@@ -68,7 +68,8 @@ const EXPECTED_GROUPS: { key: string; name: string; keys: string[] }[] = [
     keys: ['human-sessions', 'knowledge', 'after-sales', 'customers'],
   },
   // 价格本（#7375 段 3）：交易前置 ⇒ 组内第一项
-  { key: 'trade-center', name: '交易管理', keys: ['price-books', 'orders', 'finance', 'approvals'] },
+  // 🔴 2026-10-24（issue #7593，用户裁定）：'approvals'（审批中心）撤出侧边栏 ⇒ 本组三项
+  { key: 'trade-center', name: '交易管理', keys: ['price-books', 'orders', 'finance'] },
   {
     key: 'production-center',
     name: '生产管理',
@@ -151,7 +152,7 @@ const allItems = (opts: MenuFilterOptions = adminFor()) =>
     filterMenuItems(standaloneItems, opts),
   )
 
-describe('新 IA 事实（issue #5778 + #6404 + #6457 + #6573 + #6580 + #7087 + #7140 + #7369：6 组 + 三个一级项 + 尾部独立项 = 25 项，一项不少不减）', () => {
+describe('新 IA 事实（issue #5778 + #6404 + #6457 + #6573 + #6580 + #7087 + #7140 + #7369：6 组 + 三个一级项 + 尾部独立项 = 27 项，一项不少不减）', () => {
   it('组 key / 组名 / 组顺序逐值相等，且无 `customer-center` / `product-center` / 旧 `production`', () => {
     expect(menuGroups.map((g) => g.key)).toEqual(EXPECTED_GROUPS.map((g) => g.key))
     expect(menuGroups.map((g) => g.name)).toEqual(EXPECTED_GROUPS.map((g) => g.name))
@@ -169,7 +170,7 @@ describe('新 IA 事实（issue #5778 + #6404 + #6457 + #6573 + #6580 + #7087 + 
     expect(
       menuGroups.map((g) => ({ key: g.key, keys: g.children.map((c) => c.key) })),
     ).toEqual(EXPECTED_GROUPS.map((g) => ({ key: g.key, keys: g.keys })))
-    expect(ALL_KEYS).toHaveLength(28)
+    expect(ALL_KEYS).toHaveLength(27)
     expect(visibleKeys(ADMIN)).toEqual(ALL_KEYS)
   })
 
@@ -271,7 +272,7 @@ describe('isItemVisible：两条件（adminOnly ∧ permissionCode）', () => {
     const withAdminOnly = menuGroups.flatMap((g) => g.children).filter((c) => c.adminOnly)
     expect(withAdminOnly).toEqual([])
     // 面非空自检：上面的空数组不是因为解析失灵（issue #7140 后 = 19 个组内项）
-    expect(menuGroups.flatMap((g) => g.children)).toHaveLength(23)
+    expect(menuGroups.flatMap((g) => g.children)).toHaveLength(22)
   })
 
   it('🔴 过滤**只有两条件**（adminOnly ∧ permissionCode）：`briefingToggle` 随「每日简报」菜单项撤掉（issue #7087）', () => {
@@ -349,7 +350,7 @@ describe('岗位矩阵：role_permissions（种子）× menu.ts 两条件 ⇒ �
         'dashboard:view', 'order:list', 'order:detail', 'customer:view', 'finance:view',
         'processing:view', 'inbound:view', 'finance:create', 'production:execute',
       ],
-      expected: ['dashboard', 'reports', 'customers', 'price-books', 'orders', 'finance', 'approvals', 'production-pool',
+      expected: ['dashboard', 'reports', 'customers', 'price-books', 'orders', 'finance', 'production-pool',
         'inbound-orders', 'suppliers', 'purchase-orders', 'stocktakes', 'shipments', 'notifications'],
     },
     {
@@ -377,7 +378,7 @@ describe('岗位矩阵：role_permissions（种子）× menu.ts 两条件 ⇒ �
         'agent:session', 'agent:session:manage', 'employee:list', 'after_sales:view', 'knowledge:view',
       ],
       expected: ['dashboard', 'reports', 'human-sessions', 'knowledge', 'after-sales', 'customers',
-        'price-books', 'orders', 'finance', 'approvals', 'production-board', 'production-pool',
+        'price-books', 'orders', 'finance', 'production-board', 'production-pool',
         'production-piecework', 'rework-orders', 'inbound-orders', 'suppliers', 'purchase-orders', 'stock-ledger', 'stocktakes',
         'shipments', 'production-remnants',
         'production-saving-board', 'employees', 'products', 'settings', 'notifications'],
@@ -424,7 +425,7 @@ describe('filterMenuItems / visibleMenuGroups：过滤保持顺序 + 空组剔�
     expect(filterMenuItems(items, { permissions: ['finance:view', 'order:list'] }).map((i) => i.key)).toEqual([
       'price-books',
       'orders',
-      'finance', 'approvals',
+      'finance',
     ])
   })
 
@@ -546,7 +547,7 @@ describe('resolveActivePath：命中项里取**最长**（否则会出现两项�
 })
 
 describe('resolveActiveGroupKey / initialExpandedGroups：默认只展开当前组', () => {
-  it('每个菜单项的路径都归到它**自己所属**的组（19 个组内项逐条穷举；一级项两个席位都不入组）', () => {
+  it('每个菜单项的路径都归到它**自己所属**的组（22 个组内项逐条穷举；一级项两个席位都不入组）', () => {
     // ⚠️ 这张表**不留豁免**：曾经 `/production/remnants` 与 `/production/saving-board` 被列为
     // 「已知偏差」（同前缀的 `/production` 抢走归组）—— 该偏差已修（见下方专条），
     // 于是两条回归契约表。**留豁免就等于把 bug 写成规格**。
@@ -556,8 +557,8 @@ describe('resolveActiveGroupKey / initialExpandedGroups：默认只展开当前�
         return [item.path, g.key] as const
       }),
     )
-    expect(cases).toHaveLength(23)
-    expect(menuGroups.flatMap((g) => g.children)).toHaveLength(23)
+    expect(cases).toHaveLength(22)
+    expect(menuGroups.flatMap((g) => g.children)).toHaveLength(22)
     for (const [path, groupKey] of cases) {
       expect(`${path} ⇒ ${resolveActiveGroupKey(menuGroups, path)}`).toBe(`${path} ⇒ ${groupKey}`)
     }
@@ -624,9 +625,9 @@ describe('resolveActiveGroupKey / initialExpandedGroups：默认只展开当前�
 describe('flattenMenu：最前席位 → 全部分组 → 尾席位 → 尾部独立项（命令面板的索引面）', () => {
   const flat = flattenMenu(menuGroups, standaloneHeadItems, standaloneTopItems, standaloneItems)
 
-  it('顺序 = 25 项全部，且与组结构逐项对齐', () => {
+  it('顺序 = 27 项全部，且与组结构逐项对齐', () => {
     expect(flat.map((i) => i.key)).toEqual(ALL_KEYS)
-    expect(flat).toHaveLength(28)
+    expect(flat).toHaveLength(27)
     const expected = EXPECTED_GROUPS.flatMap((g) => g.keys.map((k) => ({ key: k, groupKey: g.key, groupName: g.name })))
     // 🔴 issue #7087：最前席位（「经营看板」）由 `head` 参数承载、**排在最前**；
     // 尾席位一级项仍排在**所有分组之后**（席位组可见与否**同序** —— 见 `ALL_KEYS` 的注释）
@@ -702,8 +703,8 @@ describe('splitGroupsAtTopItemSlot：一级项的插入位（#5877）', () => {
 describe('searchMenu：命中面 = 菜单名 ∪ 组名 ∪ keywords（+ 排序档位）', () => {
   const items = allItems()
 
-  it('面非空自检：可搜索面 = 26 项', () => {
-    expect(items).toHaveLength(28)
+  it('面非空自检：可搜索面 = 27 项', () => {
+    expect(items).toHaveLength(27)
   })
 
   it('空查询 / 纯空白 ⇒ 空数组（面板的「空查询列全量」由调用方实现，不是本函数）', () => {
@@ -798,7 +799,7 @@ describe('权限过滤的端到端口径（可见项 key 集合，逐条精确�
 
   it.each([
     [
-      '超管 `*` + admin 角色 ⇒ 25 项全可见（含最前席位「经营看板」+「报表中心」）',
+      '超管 `*` + admin 角色 ⇒ 27 项全可见（含最前席位「经营看板」+「报表中心」）',
       { permissions: ['*'], roles: ['admin'] },
       ALL_KEYS,
     ],

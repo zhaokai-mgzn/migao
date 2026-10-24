@@ -141,12 +141,11 @@ TRUTH_SOURCES: Dict[str, TruthSource] = {
         citation="依据：返工单口径说明（同一售后单同时只能有一张未完结返工单；完工才回写售后状态；本单不产生金额）",
         path="backend/admin-api/src/main/java/com/migao/admin/service/ReworkOrderService.java",
     ),
-    # 审批（issue #7374）：四态状态机 + 「批一次用一次」的 CAS + 不能自批 —— 全部口径在服务层 javadoc。
-    "approval-decision": TruthSource(
-        label="审批口径（待审/已通过/已驳回/已撤回 · 批一次用一次 · 不能自批）",
-        citation="依据：审批口径说明（通过后业务用一次就失效；已裁决的不能再裁；不能裁决自己提交的申请）",
-        path="backend/admin-api/src/main/java/com/migao/admin/service/ApprovalService.java",
-    ),
+    # 🔴 2026-10-24（issue #7593）：`approval-decision` **真值源已删** —— 它唯一的引用者 =
+    # `/approvals` 的 PageEntry，该页撤出侧边栏后登记被销账 ⇒ 留着就是「死条目」
+    # （判据 `truth_sources_are_registered` 会红：没有任何登记项引用的真值源）。
+    # ⚠️ 代价如实登记：黄金策**不再持有「审批四态 / 批一次用一次 / 不能自批」的口径引用**。
+    # 重启条件见 issue #7593：给「顶栏入口页」这一类节点一个登记位后，把本真值源与 PageEntry 一起恢复。
     "supplier-master-data": TruthSource(
         label="供应商档案（供应商主数据）",
         citation="依据：供应商档案口径（服务层说明）",
@@ -252,13 +251,13 @@ PAGE_REGISTRY: Tuple[PageEntry, ...] = (
         page_permissions=("after_sales:view",),
         entity_permissions=(),
     ),
-    # 审批中心（issue #7374）：问「为什么不能再批 / 谁批的 / 为什么我的撤回不了」⇒ 引服务层口径。
-    PageEntry(
-        route="/approvals",
-        truth_source="approval-decision",
-        page_permissions=("finance:view",),
-        entity_permissions=(),
-    ),
+    # 🔴 2026-10-24（issue #7593）：`/approvals` 的 **PageEntry 已删** —— 该页撤出侧边栏（入口改顶栏
+    # `ApprovalBell`）⇒ 判据 2「登记表里有、挂不到任何菜单项 = 悬挂登记」会红，而豁免台账 `exemptions`
+    # **只许缩短**（不能把新页塞进豁免）⇒ 只能销账。
+    # ⚠️ 代价如实登记：黄金策**不再在审批页注入该页口径**，且 `approval-decision` 真值源因无人引用
+    # 已同批删除（「死亡条目」判据会红）⇒ **审批口径问答也随之失去**（不只「导航」）。
+    # 重启条件与修法见 issue #7593 的「已知缺口」节（与「AI 导航缺口」同一张单：
+    # 需要给「顶栏入口页」这一类节点一个登记位，恢复 PageEntry + 真值源）。
     # 供应商档案（issue #7369）：页面上问「账期怎么算 / 停用是什么意思」⇒ 引服务层口径。
     PageEntry(
         route="/suppliers",
