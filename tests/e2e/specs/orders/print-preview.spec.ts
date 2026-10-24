@@ -309,9 +309,15 @@ test.describe('商家后台打印链路（UI-026 / issue #5914）', () => {
     await expect(qr).toBeVisible()
     // 码值**逐字** = 服务端下发值（qrcode.react 把 value 写进 <svg><title>）
     await expect(qr.locator('svg title')).toHaveText('https://app.migaozn.com/o/7K3M9QP2')
-    // 短码人可读（扫码枪 / 相机读不出时手输兜底）
+    // 纸面只留**竖排**「扫码报工」，8 位短码不印在销售单上（issue #7608，用户 2026-10-24 逐字
+    // 「不要在产品上体现短码了，工人端还有输入短码的地方」）—— 手输兜底在工人端输入框 /
+    // 任务卡 / 本单本来就印的「单号」，不在这块；竖排是**机制**，横排会让这一列再宽 ≈9mm
     await expect(qr).toContainText('扫码报工')
-    await expect(qr).toContainText('7K3M9QP2')
+    await expect(qr.locator('[data-testid="sales-work-order-qr-label"]')).toHaveCSS(
+      'writing-mode',
+      'vertical-rl'
+    )
+    await expect(qr.locator('[data-testid="sales-work-order-short-code"]')).toHaveCount(0)
 
     // 位置 = 纸面**左上角**：码块相对单联纸框的左上偏移都在 20px 内（纸框本身是缩放适配的）
     const sheet = preview.locator('[data-testid="sales-sheet"]')
