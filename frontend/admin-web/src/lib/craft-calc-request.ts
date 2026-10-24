@@ -318,7 +318,7 @@ export function derivedSpecialOptionsOf(input: {
  *
  * ⚠️ **不回写** `line.craft.specialOptions`（那是②特殊选项选择器的勾选态，改它就是替商家勾选）；
  * 也**不进算料请求**（拼次/接高不参与算料：契约 #5200 §三 R2/R3 —— 送进去反而会在拼色款式下走
- * `MIXED_COLOR_PER_FOLD_BY_TIMES`）。生效值只在**落库 / 计价**这一侧合成。
+ * `MIXED_COLOR_PATCH_METERS_BY_TIMES`）。生效值只在**落库 / 计价**这一侧合成。
  */
 export function effectiveSpecialOptionsOf(input: {
   manualOptions?: string[]

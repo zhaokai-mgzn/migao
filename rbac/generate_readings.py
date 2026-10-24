@@ -159,6 +159,11 @@ def build_readings(sources: dict[str, str] | None = None, parity=None) -> dict:
             "seed": _sorted_role_map(p.parse_role_defaults(src["java:service/RegistrationService.java"])),
             "fallback": _sorted_role_map(p.parse_role_fallback(src["java:service/RoleService.java"])),
             "login": login,
+            # 岗位**描述**（issue #7111）：与 `roles.seed` 同一份 `Role.builder()` 块现取 ⇒
+            # 声明（清单 `roles.descriptions`）与现值（`RegistrationService`）逐值对账。
+            "descriptions": dict(
+                sorted(p.parse_role_descriptions(src["java:service/RegistrationService.java"]).items())
+            ),
         },
         "menus": {
             label: {name: code for name, code in nodes_.items()}

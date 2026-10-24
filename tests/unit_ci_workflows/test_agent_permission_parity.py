@@ -544,6 +544,26 @@ def _java_string_arg(body: str, callee: str) -> str:
     return ""
 
 
+def parse_role_descriptions(reg_text: str) -> dict[str, str]:
+    """S4（描述面）：内置岗位的**描述**（`Role.builder()...description("x")`）。
+
+    与 `parse_role_defaults` **同一份定位与词法**（先剥注释 `java_code`、再 `java_literals`
+    按前缀归属到 `description(`）—— 不另写第二套解析实现（issue #3570 的教训）。
+    返回 `{角色码: 描述}`；取不到描述的角色不进表（空表由调用方 fail-closed）。
+    """
+    code = java_code(reg_text)
+    out: dict[str, str] = {}
+    for var, body in dict(
+        re.findall(r'Role\s+(\w+)\s*=\s*Role\.builder\(\)(.*?)\.build\(\);', code, re.S)
+    ).items():
+        role_code = _java_string_arg(body, "code(")
+        desc = _java_string_arg(body, "description(")
+        if role_code and desc:
+            out[role_code] = desc
+    assert len(out) >= 5, f"内置岗位描述解析出 {len(out)} 条 ⇒ 判据会空跑（fail-closed）：{sorted(out)}"
+    return out
+
+
 def parse_role_defaults(reg_text: str) -> dict[str, frozenset[str]]:
     """S4：内置岗位默认权限（`Role.builder()...code("x")` 变量 + `attachDefaultPermissions` 列表）。
 
@@ -745,10 +765,10 @@ def parse_agent_skills(sources: dict[str, str], agent: str) -> tuple[frozenset[s
 #: 取值口径（issue #5246 的裁定）：**节点的码就是该工具应当持有的码**；
 #: 节点无码（全员可见）⇒ 该工具只受端点层约束。
 TOOL_MENU_NODE: dict[str, str] = {
-    "order_query": "订单列表",
-    "order_manage": "订单列表",
-    "logistics_track": "订单列表",
-    "order_create": "订单列表",
+    "order_query": "销售订单",
+    "order_manage": "销售订单",
+    "logistics_track": "销售订单",
+    "order_create": "销售订单",
     "after_sales_manage": "售后工单",
     "customer_manage": "客户列表",
     "dashboard_stats": "经营看板",
@@ -765,37 +785,48 @@ TOOL_MENU_NODE: dict[str, str] = {
     "product_manage": "商品管理",
     "product_update": "商品管理",
     "sku_update": "商品管理",
-    # issue #5314：批量改价 / 批量上下架（`product:create` = 商品列表页的写码）
+    # issue #5314：批量改价 / 批量库存调整（`product:create` = 商品列表页的写码）
     "product_batch_update": "商品管理",
     "inventory_manage": "商品管理",
     "batch_stock_query": "商品管理",
     "category_manage": "商品管理",
     "processing_item_query": "企业基础设置",
     "processing_item_manage": "企业基础设置",
-    "processing_order_query": "生产看板",
-    "processing_order_generate": "生产看板",
-    "processing_order_update": "生产看板",
-    "production_progress_query": "生产看板",
-    "production_worklog_query": "生产看板",
+    "processing_order_query": "作业看板",
+    "processing_order_generate": "作业看板",
+    "processing_order_update": "作业看板",
+    "production_progress_query": "作业看板",
+    "production_worklog_query": "作业看板",
     "piecework_query": "计件工资",
     "knowledge_search": "知识库",
     # ── B 端只读模块覆盖（issue #5247）：新增只读工具 → 逐个登记「它的码属于哪个菜单节点」──
     "stock_ledger_query": "商品管理",            # product:list
     "inbound_order_query": "入库单",             # inbound:view
     "operation_catalog_query": "企业基础设置",   # 端点方法级 processing:manage（#5247 新增，收窄）
-    "briefing_query": "每日简报",                # dashboard:view
+    # 🔴 2026-10-17（issue #7087）：「每日简报」菜单项已删除 ⇒ 本工具（码 `dashboard:view`）
+    # 的锚点改钉**仍在树上的**「经营看板」节点（该码现在只由它承载，零授权 delta）。
+    "briefing_query": "经营看板",                # dashboard:view
     "craft_calc_config_query": "企业基础设置",   # processing:manage（生产域无专属读码）
-    "processing_order_set_query": "生产看板",    # processing:manage（套件读面 = 加工单读面同码，#5246 收尾）
+    # issue #7514：算料配置**写面**（`processing:manage` = 该页的页内写码，见 PAGE_WRITE_CODES
+    # 的 `production:view` 键）⇒ 判据 3 的「写工具可持页内写码」口径成立，零授权面改动。
+    "craft_calc_config_update": "企业基础设置",
+    "processing_order_set_query": "作业看板",    # processing:manage（套件读面 = 加工单读面同码，#5246 收尾）
     # 工艺配置读面聚合（issue #4923）：6 个读端点；工具声明生产域**读**码 `production:view`
     # （与「企业基础设置」节点同码）。⚠️ 端点侧生效码仍分三档（order:list / processing:manage /
     # production:view）⇒ 判据 2 的「工具码 ≡ 端点码」现为**具名缺口**，见 `CODE_DIVERGENCE_EXCEPTIONS`。
     "craft_config_query": "企业基础设置",
+    # 营销海报（issue #7351）：只读，码 `product:list` 与「商品管理」节点逐字同码
+    # （它读的就是商品档案；海报是商品素材的衍生，不新增页面/权限面）。
+    "marketing_poster": "商品管理",
+    # 商品图生成（issue #7541）：只读，码 `product:list` 与「商品管理」节点逐字同码
+    # （它读的就是商品档案的主图；生成图是商品素材的衍生，不新增页面/权限面）。
+    "product_image_generate": "商品管理",
 }
 
 #: 该菜单**页**允许的写码（判据 3 的「写工具可持页内写码」口径）：
 #: 页面读码 → 从该页发起的写动作所用的码。
 PAGE_WRITE_CODES: dict[str, frozenset[str]] = {
-    "product:list": frozenset({"product:create", "product:category", "product:manage"}),
+    "product:list": frozenset({"product:create", "product:category"}),
     # issue #5246 第二批（用户裁定本轮一并收口）：订单/客户/财务/会话四域**拆出真写码** ——
     # 此前写动作挂在读码上（只读持有者因此拿到写能力）。写码**没有菜单节点**（按钮级），
     # 故在此登记「它属于哪个页」；判据 4 会按所属页的读码反查岗位可见性。
@@ -922,6 +953,31 @@ CODE_DIVERGENCE_EXCEPTIONS: dict[str, dict[str, object]] = {
             "要么按 #5699 P4 的口径继续具名保留）；收口后本条目必须**删除**（陈旧即红）。"
         ),
     },
+    # ── issue #7514（第三条；上限同批显式 2 → 3）────────────────────────────────
+    # 「**写工具**的读前校验与写面同路径、但生效码不同」——`GET` 按 issue #5291 挂方法级
+    # **读**码 `production:view`，`PUT` 仍是类级**写**码 `processing:manage`。
+    # 这不是漂移，是**读写分码**的必然结果：本工具既要取「改前真值」（读面，只读权限即可）
+    # 又要写回（写面）。
+    "craft_calc_config_update": {
+        "code": "processing:manage",
+        "diverges": ["/api/admin/production/craft-calc-config"],
+        "live": {"/api/admin/production/craft-calc-config": "production:view"},
+        "why": (
+            "issue #7514：算料配置的写面必须「先 GET 取当前真值 → 逐键核对 before → 整体 PUT」"
+            "（`PUT` 是 upsert + 全量替换，少带一个键就等于把它清空）。GET 与 PUT 是**同一路径"
+            "不同方法**、生效码不同：`CraftCalcConfigController.get` 挂方法级读码 "
+            "`production:view`（issue #5291），`put` 走类级写码 `processing:manage`。"
+            "工具声明写面码（A 档可逆写的写权限口径），工具层 `check_permission` 只放行持 "
+            "`processing:manage` 的岗位 = {operator, product_manager}（⊂ 持 `production:view` 的"
+            "岗位集合）⇒ **零授权面放宽**；读前校验那一步由端点侧读码在服务端再兜一次。"
+        ),
+        "where": (
+            "**本单不改任何权限面**（`CraftCalcConfigController` 零改动）⇒ 工具声明的写码 ≠ GET 的"
+            "既有读码，是**接受的缺口**。重启条件 = 该控制器读写面收敛到同一码（届时按语义改判本条："
+            "若读面回到 `processing:manage`，`diverges` 变空 ⇒ 本条目**必须删除**，陈旧即红）；"
+            "若将来把写面拆出独立写码，也在同一次改动里改判本条目。"
+        ),
+    },
     # ── issue #5980（第二条；上限同批显式 1 → 2）────────────────────────────────
     # 「同一条 API 被**两个守卫码不同的页面/消费者**共用」——这是**结构事实**，不是漂移：
     # `GET /api/admin/roles/all` 的唯一前端调用方是「员工管理」页岗位下拉
@@ -1000,7 +1056,9 @@ CODE_DIVERGENCE_EXCEPTIONS: dict[str, dict[str, object]] = {
 #: `CODE_DIVERGENCE_EXCEPTIONS` 的**条数上限**（**现取** ⇒ 加条目必须在同一 diff 里改这一行）。
 #: issue #5980：1 → 2（新增 `role_manage` 那条；上限本身就是「例外表只许缩短」的闸门）。
 #: issue #6217：2 → 3（新增 `customer_manage` 那条 —— 跨域视图横跨三个权限面，仓内无单码可覆盖）。
-CODE_DIVERGENCE_EXCEPTIONS_CEILING = 3
+#: issue #7514：3 → 4（新增 `craft_calc_config_update` 那条 —— 写工具的「读前校验 + 写面」
+#: 同路径不同方法、读写分码，工具声明写面码后与 GET 的读码结构性不等）。
+CODE_DIVERGENCE_EXCEPTIONS_CEILING = 4
 
 #: **在飞端点**的显式登记（判据 1/2 的补集；issue #5314）。
 #:
@@ -1043,7 +1101,11 @@ UNANNOTATED_ENDPOINTS: dict[str, str] = {
     # **不含**任何租户/业务/实例数据 ⇒ 拿不到越权面（加码反而会让判据退化：401 = 探不到）。
     # ⚠️ 它**没有** `@RequirePermission`：本守卫只读注解 ⇒ 必须在此显式登记（沉默放行 = 本单要治的失效模式）。
     # 判据 = `tests/unit_ci_workflows/test_agent_permission_parity.py::test_every_judgement_is_green`。
-    "GET /api/version": "版本探针（issue #6951）：只读、无鉴权、只回构建身份 5 字段，无租户/业务数据",
+    # issue #6951 + #7373 复盘：**探针族**（`/api/version` 与 `/api/version/migrations`）—— 同源同性质：
+    # 只读、无鉴权（部署后要能被**未带凭据**的探针读到；加权限码 ⇒ 探不到 ⇒ 判据退化成假绿），
+    # 只回构建身份 / 迁移计数，**不含**迁移文件名、租户、业务数据、实例路径。
+    # 两条共用**一条前缀登记**（不是两条）：台账只许缩短，探针族本质是一件事，不该各占一行。
+    "GET /api/version*": "探针族（#6951 版本 + #7373 迁移事实）：只读、无鉴权、只回构建身份与迁移计数",
     "GET /api/admin/notifications*": "自助通知中心：收件人一律取 `SecurityContext` 当前用户（#4727 第 4 行）",
     "PUT /api/admin/notifications*": "同上（标记已读）",
     "DELETE /api/admin/notifications*": "同上（删除自己的通知）",
@@ -1191,20 +1253,21 @@ REGISTERED_RESIDUALS: dict[str, dict[str, str]] = {
     "MenuController 省略的节点": {
         "what": "**只剩「通知中心」**：它不在 `MenuController.MENU_TREE`（该树每个节点都必须有权限码，"
                 "而通知中心是全员可见项）—— 但它在 `AuthService` 的下发面里。"
-                "issue #5271 起服务端两处已镜像侧边栏全部 7 组（含 在线接待/知识库/岗位权限/"
-                "企业基础信息/每日简报），本条残留原先列的其它节点**均已消除**",
+                "issue #5271 起服务端两处已镜像侧边栏（当时的 7 组；🔴 2026-10-17 issue #7087 起为"
+                "**5 组 + 3 个一级项**：经营看板 / 商品管理 / 企业基础设置），本条残留原先列的其它节点"
+                "**均已消除**",
         "why": "通知中心无权限码 ⇒ 结构上不进权限树（不是漏改）；三处菜单源（前端 / `MenuController` / "
                "`AuthService`）现已是**全树同构**，判据见 `test_menu_three_sources_are_isomorphic.py`"
                "（#5271 升级）；第四处源已于 issue #5236 **整段删除**（本单，不再是待统一的残留）",
         "where": "交集覆盖度由 `problems_menu_parity` 的 `CROSS_CHECKED_FLOOR` 自检；去向：#5236",
     },
-    "权限码零消费": {
-        "what": "`order:detail` / `product:manage` 在目录里且被岗位授予/菜单使用，但没有任何 "
-                "`@RequirePermission` 消费它们（`product:manage` 原只出现在第四处菜单源，"
-                "该源已于 issue #5236 删除 ⇒ 它现在只剩目录 / 岗位面）",
-        "why": "删码/改码会动岗位矩阵（产品裁定）；本单不动",
-        "where": "去向：#5236",
-    },
+    # 「权限码零消费」**已于 issue #7276 + #7282 消项**（2026-10-18）：
+    #   · `order:detail` —— **接线**（订单详情 / 发货两条读面收码 + 页面拒绝态）；
+    #   · `product:manage` —— **删码**（用户 2026-10-18 裁定「可以删」，迁移 V168 删库存量行与快照成员）。
+    # 按「登记表只许缩短」从本表**删除**该条；这一类从此由**机械判据**兜住（不再是散文台账）：
+    # `tests/unit_ci_workflows/test_rbac_derived_pages.py`
+    # `test_every_grantable_code_has_a_server_side_enforcement_point`（可授予码必须有服务端强制点，
+    # 台账 `CODE_WITHOUT_ENFORCEMENT` 现取 = 0）。
     "行为评测用例未补": {
         "what": "本单未新增/修改 `.github/cases/**` 的行为用例（如「客服经黄金策查售后不再 403」的正向对照）",
         "why": "B 端 skill 工具绑定与提示词属 #5247（在其上 rebase），行为面用例应与绑定同批落地",
@@ -1837,7 +1900,7 @@ class ReadCodeAnchor:
 #:   ① `auth` 源只登记**解析器看得见**的节点（`_iter_menu_auth` 只取 `permissions.contains(...)` 块内
 #:      **首个** `menuItem`，而生产组那三个节点的 `if` 块以注释开头 ⇒ 解析面看不见它们）。
 #:      `AuthService` 侧的同码由 `AuthServiceTest` 的**渲染面**断言兜住（按 `production:view` 拿菜单，
-#:      断言「生产看板/工艺配置/计件工资」可见、按 `processing:manage` 拿只剩池看板）—— 那是行为级判据，
+#:      断言「作业看板/工艺配置/计件工资」可见、按 `processing:manage` 拿只剩池看板）—— 那是行为级判据，
 #:      不是文本级判据。本表**不**用「源码里出现过这个字符串」来假装覆盖。
 #:   ② `system:view` 的 `role_holders` 为空是**有意**：内置岗位里只有 admin 持 `system:manage`（恒 `*`），
 #:      其余岗位**一个都不给** —— 给 operator 就是让运营看见「岗位权限」页并读到权限目录（放宽，禁止）。
@@ -1865,7 +1928,7 @@ READ_CODE_ANCHORS: dict[str, ReadCodeAnchor] = {
         domain="生产域",
         tool="processing_order_query",
         node_sources=(
-            ("frontend", "生产看板"), ("controller", "生产看板"),
+            ("frontend", "作业看板"), ("controller", "作业看板"),
             ("frontend", "计件工资"), ("controller", "计件工资"),
             # 🔴 2026-10-09（issue #6580）：「加工项管理」「工艺配置」两个节点已**移除**，
             # 合并后的入口 = 尾部独立项「企业基础设置」（节点码即本读码）。
@@ -2022,8 +2085,13 @@ ROUTE_MENU_ANCHORS: dict[str, str] = {
     # `ROUTE_WITHOUT_MENU_NODE`）；P4 把节点码补成 `dashboard:view`（= 该页第一屏读码 = 守卫码）
     # ⇒ 销账后回到「有节点锚」这一侧。
     "/dashboard": "经营看板",
+    # issue #7375 段 3：价格本（`/price-books`）的守卫码锚到它自己的菜单节点（product:list）。
+    "/price-books": "价格本",
+    # issue #7376：报表中心（`/reports`）的守卫码锚到它自己的菜单节点（同码 `dashboard:view`，
+    # 与经营看板同一把尺子 —— 报表是看板的下钻）。
+    "/reports": "报表中心",
     "/after-sales": "售后工单",
-    "/orders": "订单列表",
+    "/orders": "销售订单",
     "/products": "商品管理",
     # 🔴 2026-10-09（issue #6580）：「加工项管理」节点已移除 ⇒ 本前缀改钉**合并后的入口节点**
     # 「企业基础设置」（旧路径 `/production/processing` 现为重定向到该页的兼容前缀）。
@@ -2033,21 +2101,39 @@ ROUTE_MENU_ANCHORS: dict[str, str] = {
     "/production/pool": "智能派单",
     "/production/remnants": "余料台账",
     "/production/saving-board": "省料看板",
-    "/production": "生产看板",
+    "/production": "作业看板",
+    # 质检记录（issue #7140 = #5652 的商家面）：守卫码 = 菜单节点码 = 该页三个端点的**方法级**
+    # `production:inspect`（读待检清单 / 读流水 / 录判定同码 —— 写面也在该码下，故不登记写例外）。
+    "/quality-inspections": "质检记录",
+    # 返工单（issue #7377）：守卫码 = 菜单节点码 = 该页第一屏读端点（GET /api/admin/rework-orders）的
+    # 方法级 `after_sales:view`（与售后工单同码）—— 写动作走 `order:refund`，不在菜单码里体现。
+    "/rework-orders": "返工单",
     "/customers": "客户列表",
     "/finance": "财务对账",
+    # 🔴 2026-10-24（issue #7593，用户裁定「审批中心菜单放置到右上角……不要单独搞个菜单」）：
+    # 「审批中心」菜单项**已撤除** ⇒ 本锚点**销账**（陈旧登记即红），改登记进 `ROUTE_WITHOUT_MENU_NODE`。
+    # 守卫前缀 `/approvals` 与码 `finance:view` **一字未动**（页面仍在、地址栏直达仍被拦）；
+    # 入口 = 顶栏 `ApprovalBell`（前端组件，不参与菜单节点判据）。
     "/employees": "员工管理",
     # 🔴 2026-10-09（issue #6580）：节点改名「企业基础信息」→「**企业基础设置**」、节点码改
     # `production:view`（守卫码同批改，见 `(dashboard)/layout.tsx` 的 `ROUTE_PERMISSION_MAP`）。
     "/settings": "企业基础设置",
     "/knowledge": "知识库",
     "/roles": "岗位权限",
-    "/briefing": "每日简报",
+    # 🔴 2026-10-17（issue #7087）：「每日简报」**菜单项已删除**（结论卡改挂在「经营看板」上、
+    # 由企业开关驱动）⇒ 本锚点**销账**（陈旧登记即红），改登记进 `ROUTE_WITHOUT_MENU_NODE`
+    # —— 守卫前缀 `/briefing` 仍在 `ROUTE_PERMISSION_MAP` 里（= `dashboard:view`，旧深链不 404、
+    # 重定向薄壳进得去），只是**不再有菜单节点**可钉。
+    # ⚠️ `/dashboard` 那条一字未动：节点码仍是 `dashboard:view`（零授权 delta）。
     # 发货单（issue #5939）：新菜单节点 ⇒ 路由守卫（`(dashboard)/layout.tsx` 的 ROUTE_PERMISSION_MAP）
     # 与节点必须成对登记（判据 11 ③：未登记即红）。
     "/shipments": "发货单",
     # 入库单（issue #5976）：菜单节点早有码 `inbound:view`，而守卫表此前**没有这一项** ⇒
     # 「菜单隐藏、地址栏直达不被拦」。本前缀同时覆盖 `/inbound-orders/new`。
+    # 供应商（issue #7369）：新菜单节点 ⇒ 守卫与节点成对登记（判据 11 ③）。
+    "/suppliers": "供应商",
+    # 采购单（issue #7369 段 4）：页面守卫码 = 菜单节点码 = 第一屏读端点码（三处逐字同码）。
+    "/purchase-orders": "采购单",
     "/inbound-orders": "入库单",
     # 在线接待（issue #5977）：守卫表此前只有 `/chat` ⇒ 覆盖不到 `/agent-workspace/*`。
     # 登记的是**父前缀** `/agent-workspace`（子树唯一菜单节点 = 「在线接待」；根 = 重定向占位页、
@@ -2056,6 +2142,8 @@ ROUTE_MENU_ANCHORS: dict[str, str] = {
     # 库存明细（issue #6404）：新菜单节点 + 新路由守卫**成对登记**（判据 11 ③：未登记即红）。
     # 节点码 = 守卫码 = 该页第一屏读端点码（`StockLedgerController` 方法级 `product:list`）。
     "/stock-ledger": "库存明细",
+    # 盘点单（issue #7373）：节点码 = 守卫码 = 该页第一屏读端点码（`StocktakeController` 方法级 `inbound:view`）。
+    "/stocktakes": "盘点单",
     # 🔴 2026-10-09（issue #6580）：`/settings/params`（「参数总览」一级项）已撤掉 ⇒ 本锚点
     # **删除**（陈旧登记即红：该 path 已不在 `config/menu.ts`）；旧链 `/settings/params` 保留为
     # 重定向（其守卫前缀 `/settings/params` 随之登记进 `ROUTE_WITHOUT_MENU_NODE`）。
@@ -2065,7 +2153,7 @@ ROUTE_MENU_ANCHORS: dict[str, str] = {
 ROUTE_WITHOUT_MENU_NODE: dict[str, str] = {
     "/chat": "会话页没有侧边栏节点（「在线接待」的路径是 `/agent-workspace/human-sessions`）⇒ 守卫码 `agent:session` 无节点可钉",
     "/categories": "分类管理**没有独立侧边栏节点**（入口在商品列表页内，同 `READ_CODE_ANCHORS`）⇒ 该码由判据 10 的 `PAGE_READ_CODES['product:list']` 承担",
-    "/processing-orders": "加工单唯一入口已并入「生产看板」（issue #4357）⇒ 本前缀只作旧链接兼容，节点归「生产看板」",
+    "/processing-orders": "作业单唯一入口已并入「作业看板」（issue #4357）⇒ 本前缀只作旧链接兼容，节点归「作业看板」",
     # 🔴 2026-10-09（issue #6580）：下面三条都是「**旧入口保留、不再有菜单项**」的兼容前缀 ——
     # 仓内口径 = 旧深链不 404 ⇒ 页面/重定向保留、守卫码保留，但**菜单项已移除**（故无节点可钉）。
     # ⚠️ 判据 11③ 的「无节点必须逐条带理由」正是为这种形态设的：删菜单项时**必须**来这里登记，
@@ -2078,6 +2166,20 @@ ROUTE_WITHOUT_MENU_NODE: dict[str, str] = {
     # 本条的用途不变（该前缀没有菜单节点可钉），但不许再把「部分重定向」写成「整体重定向」。
     "/production/routings": "「工艺配置」菜单项已移除（issue #6580：功能体并入 `/settings`）⇒ 本前缀没有菜单节点可钉、节点归「企业基础设置」；⚠️ **只有** `?tab=calc` 这一支是旧链兼容重定向（issue #6825 → `/settings?domain=calc`），其余形态仍在 `/production/routings` 渲染本页功能体",
     "/settings/params": "「参数总览」一级项已撤掉（issue #6580：内容回到 `/settings` 页内的配置域）⇒ 本前缀只作旧链兼容（重定向 `/settings`），节点归「企业基础设置」",
+    # 🔴 2026-10-17（issue #7087）：「每日简报」**菜单项已删除** ⇒ 本前缀**不再有菜单节点可钉**
+    # （与上面四条同族形态 = 「旧入口保留、菜单项移除」）。守卫前缀 `/briefing` 仍在
+    # `(dashboard)/layout.tsx` 的 `ROUTE_PERMISSION_MAP` 里、码一字不动（`dashboard:view`），
+    # 页面已是**重定向薄壳** → `/dashboard`（`briefing/page.tsx`，正文删除）⇒ 旧深链不 404。
+    # ⚠️ 判据 11③ 要求「无节点必须逐条带理由」：这条就是那个理由（不许删守卫前缀来「对齐」）。
+    "/briefing": "「每日简报」菜单项已移除（issue #7087：结论卡改挂在「经营看板」上、由企业开关驱动）⇒ 本前缀只作旧深链兼容（重定向薄壳 → `/dashboard`），**无菜单节点可钉**（节点归「经营看板」，同码 `dashboard:view`）",
+    # 🔴 2026-10-24（issue #7593，用户裁定「审批中心菜单放置到右上角……不要单独搞个菜单」）：
+    # 这是**新形态**（不是旧链兼容）—— 页面完整保留、**入口本身**就是顶栏待办入口（`ApprovalBell`），
+    # 菜单里没有它、也**不该**有它。守卫前缀与码一字不动（`finance:view`，与「财务对账」同码
+    # ⇒ 有财务读权的岗位照旧进得去；无码者地址栏直达仍被拦）。
+    # ⚠️ 判据 11③ 要求「无节点必须逐条带理由」：这条就是那个理由（**不许**为了「对齐」把页面或守卫删掉）。
+    # 该页第一屏读端点（`approvalApi.list`，类级 `finance:view`）的码一致性由 `ApprovalController`
+    # 的类级注解 + `approvals.test.tsx` 承担（菜单节点已不存在 ⇒ 判据 12 的命题在此页不适定）。
+    "/approvals": "「审批中心」菜单项已移除（issue #7593：入口改为**顶栏待办入口** `ApprovalBell`）⇒ 页面与守卫保留、**无菜单节点可钉**；码仍为 `finance:view`（与「财务对账」同码，零授权 delta）",
 }
 
 
@@ -2184,19 +2286,35 @@ MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
         "dashboardApi.getStats", "dashboardApi.getOrderTrend",
         "dashboardApi.getProductRanking", "dashboardApi.getRecentOrders",
         "briefingApi.getConfig")),
-    "/briefing": MenuReadAnchor("每日简报", "briefing/page.tsx", ("briefingApi.getConfig",)),
+    # 🔴 issue #7376：报表中心（`/reports`）第一屏读四个只读报表端点，全部 `dashboard:view`
+    # ⇒ 节点码与第一屏读码同一把尺子（`dashboard:view`，与经营看板同码 —— 报表是看板的下钻）。
+    # 🔴 issue #7375 段 3：价格本（`/price-books`）第一屏读 `GET /api/admin/pricing/books`
+    # （类级 `order:list`）；节点码取同一把尺子 `order:list`（「每页恰好一个码」）。
+    "/price-books": MenuReadAnchor("价格本", "price-books/page.tsx", ("priceBookApi.list",)),
+    "/reports": MenuReadAnchor("报表中心", "reports/page.tsx", (
+        "reportApi.orderMargins", "reportApi.inventoryAging",
+        "reportApi.staffPerformance", "reportApi.qualityCost")),
+    # 🔴 2026-10-17（issue #7087）：`/briefing` 的锚点**销账** —— 该页只剩 `redirect('/dashboard')`
+    # （正文删除）⇒ **第一屏没有任何读端点调用**，而本台账的每个 `path` 都必须对应一个菜单节点
+    # （「节点码 ≡ 该页第一屏读端点码」这条判据在**没有节点**时无从成立）。
+    # ⇒ 销账（陈旧登记即红），而不是给它硬凑一个 zero-call 的形态 ——
+    # 路由/守卫/重定向仍由判据 11 的 `ROUTE_WITHOUT_MENU_NODE['/briefing']` 承接。
+    # ⚠️ `/dashboard` 那条一字未动（含 `briefingApi.getConfig`：结论卡仍在经营看板上，开关驱动它）。
     "/agent-workspace/human-sessions": MenuReadAnchor(
         "在线接待", "agent-workspace/human-sessions/page.tsx",
         ("agentSessionApi.getSessions", "agentSessionApi.getSession")),
     "/knowledge": MenuReadAnchor("知识库", "knowledge/page.tsx", ("knowledgeApi.getCards",)),
     "/products": MenuReadAnchor("商品管理", "products/page.tsx", ("productApi.getProducts",)),
-    "/orders": MenuReadAnchor("订单列表", "orders/page.tsx", ("orderApi.getOrders",)),
+    "/orders": MenuReadAnchor("销售订单", "orders/page.tsx", ("orderApi.getOrders",)),
     "/after-sales": MenuReadAnchor("售后工单", "after-sales/page.tsx", ("afterSalesApi.getTickets",)),
     "/customers": MenuReadAnchor("客户列表", "customers/page.tsx", (
         "customerApi.getCustomers", "customerApi.getCustomerTags")),
     "/finance": MenuReadAnchor("财务对账", "finance/page.tsx", (
         "financeApi.getSummary", "financeApi.getTransactions", "financeApi.getReconciliation")),
-    "/production": MenuReadAnchor("生产看板", "production/page.tsx", ("processingOrderApi.list",)),
+    # 🔴 2026-10-24（issue #7593）：「审批中心」菜单项已撤除（入口改顶栏 `ApprovalBell`）⇒ 页面第一屏
+    # 读端点（`approvalApi.list`，类级 `finance:view`）**不再有菜单节点可对**，本锚点同批销账。
+    # 该页的读码仍由 `ROUTE_WITHOUT_MENU_NODE['/approvals']` 的理由承担（与 `/briefing` 同族形态）。
+    "/production": MenuReadAnchor("作业看板", "production/page.tsx", ("processingOrderApi.list",)),
     "/production/pool": MenuReadAnchor("智能派单", "production/pool/page.tsx",
                                        ("poolBoardApi.getBoard",)),
     # 计件工资（issue #5653 追加）：本页第一屏**两块读面** —— 报表（`summary`）+ 结算单列表
@@ -2205,6 +2323,21 @@ MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
     "/production/piecework": MenuReadAnchor("计件工资", "production/piecework/page.tsx",
                                             ("productionApi.getPieceworkSummary",
                                              "productionApi.getPieceworkSettlements")),
+    # 质检记录（issue #7140 = #5652 的商家面）：节点码 = 本页第一屏读端点码
+    # （`GET /api/admin/quality-inspections/targets`，`QualityCheckController` 的**方法级**
+    # `@RequirePermission("production:inspect")`）。写面（POST 录入）与流水读面同码 ⇒ 码集仍是一个，
+    # 不需要 `MULTI_READ_ENDPOINT_PAGES`。本页**没有写码**：判定录入本身就是该码授权的动作。
+    "/quality-inspections": MenuReadAnchor("质检记录", "quality-inspections/page.tsx",
+                                           ("qualityInspectionApi.targets",
+                                            "qualityInspectionApi.list")),
+    # 返工单（issue #7377）：节点码 `after_sales:view` = 本页第一屏读端点（`reworkOrderApi.list`）的
+    # 方法级码 —— 与售后工单同域复用，零授权 delta。
+    "/rework-orders": MenuReadAnchor("返工单", "rework-orders/page.tsx", ("reworkOrderApi.list",)),
+    # 供应商（issue #7369）：节点码 inbound:view = 本页第一屏读端点（GET /api/admin/suppliers）的
+    # 方法级 @RequirePermission（逐字同码，不新造 supplier:view）。
+    "/suppliers": MenuReadAnchor("供应商", "suppliers/page.tsx", ("supplierApi.list",)),
+    # 采购单（issue #7369 段 4）：节点码 inbound:view = 本页第一屏读端点（GET /api/admin/purchase-orders）的方法级码。
+    "/purchase-orders": MenuReadAnchor("采购单", "purchase-orders/page.tsx", ("purchaseOrderApi.list",)),
     "/inbound-orders": MenuReadAnchor("入库单", "inbound-orders/page.tsx", ("inboundOrderApi.list",)),
     # 发货单（issue #5939）：菜单节点码 `order:list` = 本页第一屏读端点码（GET /api/admin/shipments）
     # —— 取**既有**码（不新造 shipment:view），与「订单列表」同一把尺子。
@@ -2223,6 +2356,8 @@ MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
     # 商品搜索框的 `productApi.getProducts` 是**点击才跑**，按本节口径**不收**（否则会把交互面的码
     # 算成第一屏的码 —— 节注释里记着实测踩过的同款坑）。
     "/stock-ledger": MenuReadAnchor("库存明细", "stock-ledger/page.tsx", ("stockLedgerApi.ledger",)),
+    # 盘点单（issue #7373）：第一屏只有列表一个读端点（明细是**点击行**才拉的，按本节口径不收）。
+    "/stocktakes": MenuReadAnchor("盘点单", "stocktakes/page.tsx", ("stocktakeApi.list",)),
     "/employees": MenuReadAnchor("员工管理", "employees/page.tsx", (
         "employeeApi.getEmployees", "employeeApi.loadPositions")),
     "/roles": MenuReadAnchor("岗位权限", "roles/page.tsx", (
@@ -2660,7 +2795,7 @@ COMMENT_CLAIMS: tuple[CommentClaim, ...] = (
         kind="menu-node-count",
         arg=("production:view", 3),
         why=(
-            "生产域读码的三个侧边栏节点（生产看板 / 计件工资 / 企业基础设置）"
+            "生产域读码的三个侧边栏节点（作业看板 / 计件工资 / 企业基础设置）"
             "—— 🔴 2026-10-09（issue #6580）：原五个里的「加工项管理」「工艺配置」两个菜单项已移除、"
             "「参数总览」一级项已撤掉，合并后的唯一入口「企业基础设置」节点码由 system:manage 改为本读码"
         ),
@@ -2697,10 +2832,10 @@ COMMENT_CLAIMS: tuple[CommentClaim, ...] = (
     ),
     CommentClaim(
         source="java:controller/StockBatchController.java",
-        anchor="**7 个 GET 端点**",
+        anchor="**8 个 GET 端点**",
         kind="get-endpoint-count",
-        arg=("/api/admin/batch-stock/", 7),
-        why="该控制器的读面条数（本单改准：原写「四个读面……另有一个」而实测 7 个）",
+        arg=("/api/admin/batch-stock/", 8),
+        why="该控制器的读面条数（#5675 改准为 7 个；#7604 增加批次余量分页读面 ⇒ 8 个）",
     ),
 )
 
@@ -2950,9 +3085,9 @@ AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
     "dashboard:view": AuthorizationCensusEntry(
         roles=('customer_service', 'finance', 'sales'),
         endpoints=('DELETE /api/admin/files/{}', 'DELETE /api/admin/upload/image', 'GET /api/admin/briefing/config', 'GET /api/admin/briefing/snapshot', 'GET /api/admin/briefing/today', 'GET /api/admin/dashboard/active-sessions', 'GET /api/admin/dashboard/order-status', 'GET /api/admin/dashboard/order-trend', 'GET /api/admin/dashboard/pending-shipment-count', 'GET /api/admin/dashboard/pending-tasks', 'GET /api/admin/dashboard/processing-shipment-count', 'GET /api/admin/dashboard/product-ranking', 'GET /api/admin/dashboard/recent-orders', 'GET /api/admin/dashboard/stats', 'POST /api/admin/files/upload', 'POST /api/admin/files/upload-batch', 'POST /api/admin/upload/image', 'POST /api/admin/upload/images'),
-        menu_nodes=('auth:每日简报', 'controller:每日简报', 'controller:经营看板', 'frontend:每日简报'),
+        menu_nodes=('auth:经营看板', 'controller:经营看板', 'frontend:经营看板'),
         tools=('briefing_query', 'dashboard_stats'),
-        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「每日简报 / 经营看板」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；18 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（DELETE /api/admin/files/{}；DELETE /api/admin/upload/image；GET /api/admin/briefing/config 等）；Agent 侧 2 个工具声明本码 ⇒ 黄金策对这批账号由「权限不足」变为可达（briefing_query / dashboard_stats）。'),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「经营看板」菜单节点（三处菜单源一致；2026-10-17 issue #7087 起它是**最前席位**一级项，原并列的「每日简报」菜单项已删除）对这些岗位**由不可见变可见**；18 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（DELETE /api/admin/files/{}；DELETE /api/admin/upload/image；GET /api/admin/briefing/config 等）；Agent 侧 2 个工具声明本码 ⇒ 黄金策对这批账号由「权限不足」变为可达（briefing_query / dashboard_stats）。'),
     ),
     "finance:create": AuthorizationCensusEntry(
         roles=('finance',),
@@ -2970,15 +3105,18 @@ AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
     ),
     "inbound:create": AuthorizationCensusEntry(
         roles=('operator',),
-        endpoints=('GET /api/admin/inbound-orders/opening-template', 'PATCH /api/admin/inbound-orders/{}', 'POST /api/admin/inbound-orders', 'POST /api/admin/inbound-orders/opening-import'),
+        # issue #7369：供应商建档/更新两个写端点复用本码（档案写面与入库单写面同群）。
+        endpoints=('GET /api/admin/inbound-orders/opening-template', 'PATCH /api/admin/inbound-orders/{}', 'POST /api/admin/inbound-orders', 'POST /api/admin/inbound-orders/opening-import', 'POST /api/admin/purchase-orders', 'POST /api/admin/purchase-orders/{}/close', 'POST /api/admin/purchase-orders/{}/receive', 'POST /api/admin/suppliers', 'PUT /api/admin/suppliers/{}'),
         menu_nodes=(),
         tools=(),
         reachable=('建单 / 改单 / 期初导入三个写端点（外加期初模板读端点，注解口径如实照录）改用本码 ⇒ 补码前回退账号进得去「入库单」页（若已持 `inbound:view`）却**建不了单**；补码后与种子路径的运营同权。本码不挂菜单节点、无 Agent 工具声明它。'),
     ),
     "inbound:view": AuthorizationCensusEntry(
         roles=('customer_service', 'finance', 'operator', 'sales'),
-        endpoints=('GET /api/admin/inbound-orders', 'GET /api/admin/inbound-orders/batches', 'GET /api/admin/inbound-orders/{}'),
-        menu_nodes=('auth:入库单', 'controller:入库单', 'frontend:入库单'),
+        # issue #7369：供应商档案页的第一屏读端点（`GET /api/admin/suppliers`）也挂本码。
+        endpoints=('GET /api/admin/inbound-orders', 'GET /api/admin/inbound-orders/batches', 'GET /api/admin/inbound-orders/{}', 'GET /api/admin/purchase-orders', 'GET /api/admin/purchase-orders/{}', 'GET /api/admin/suppliers'),
+        # issue #7369：节点「供应商」与「采购单」在三处菜单源上与本码同码（同一岗位群：仓管/采购）。
+        menu_nodes=('auth:入库单', 'auth:采购单', 'auth:供应商', 'controller:入库单', 'controller:采购单', 'controller:供应商', 'frontend:入库单', 'frontend:采购单', 'frontend:供应商'),
         tools=('inbound_order_query',),
         reachable=('「入库单」菜单节点的**节点码就是本码**（三处菜单源一致）⇒ 补码前回退账号**根本看不见该节点**（issue #5271 新增的页面 = 菜单凭空消失）；补码后节点出现且三个读端点同时可读。Agent 侧 `inbound_order_query`（只读）同批对回退账号开放。'),
     ),
@@ -2995,17 +3133,26 @@ AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
     ),
     "order:detail": AuthorizationCensusEntry(
         roles=('customer_service', 'finance', 'sales'),
-        endpoints=(),
+        # 🔴 issue #7276（人类 2026-10-18 裁定「让订单详情这个码真正生效」）：本码此前是**零消费死码**
+        # （`endpoints=()`，只作菜单节点码）⇒ 岗位权限页里勾了不生效。现由**两条读面**承载：
+        # 详情 `GET /api/admin/orders/{id}` 与同页发货读面 `.../shipments`（改前这两条挂 `order:list`）。
+        endpoints=('GET /api/admin/orders/{}', 'GET /api/admin/orders/{}/shipments'),
         menu_nodes=('controller:订单详情',),
-        tools=(),
-        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「订单详情」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**。'),
+        # `logistics_track` 同批补本码（它调详情读面拿运单号）⇒ 工具码 ≡ 端点生效码（判据 2）。
+        tools=('logistics_track',),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「订单详情」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**。'
+                   '🔴 issue #7276 起本码**真正拦得住人**：两条读面的生效码就是它 ⇒ 无本码的岗位读详情/发货明细一律 403（改前挂 `order:list`，'
+                   '「只勾订单列表」的岗位照样读得到详情 —— 这正是用户报的「提示没权限却仍能访问」）。'
+                   '页外消费方同批对齐：发货单页 / 发货操作页（前端读面）+ 黄金策 `logistics_track`（工具声明 `order:list` + `order:detail`）。'),
     ),
     "order:list": AuthorizationCensusEntry(
         roles=('customer_service', 'finance', 'sales'),
-        endpoints=('GET /api/admin/agent/orders/mine', 'GET /api/admin/agent/orders/resolve', 'GET /api/admin/agent/payment-qrcodes', 'GET /api/admin/orders', 'GET /api/admin/orders/follow-status/stats', 'GET /api/admin/orders/statistics', 'GET /api/admin/orders/{}', 'GET /api/admin/orders/{}/follow-status', 'GET /api/admin/orders/{}/shipments', 'GET /api/admin/production/orders/{}/operations', 'GET /api/admin/production/orders/{}/piecework', 'GET /api/admin/production/route-signals', 'GET /api/admin/production/routing-gaps', 'GET /api/admin/production/scan', 'GET /api/admin/production/stuck-points', 'POST /api/admin/orders/auto-features', 'POST /api/admin/orders/craft-calc', 'POST /api/admin/orders/door-width-plan', 'POST /api/admin/orders/fee-preview'),
-        menu_nodes=('auth:订单列表', 'controller:订单列表', 'frontend:订单列表'),
+        # 🔴 issue #7276：详情读面 `GET /api/admin/orders/{}` 与同页发货读面 `.../shipments`
+        # **移出**本码（改挂 `order:detail`）—— 本码从此只管「列表 + 统计 + 改单/建单的试算族」。
+        endpoints=('GET /api/admin/agent/orders/mine', 'GET /api/admin/agent/orders/resolve', 'GET /api/admin/agent/payment-qrcodes', 'GET /api/admin/orders', 'GET /api/admin/orders/follow-status/stats', 'GET /api/admin/orders/statistics', 'GET /api/admin/orders/{}/follow-status', 'GET /api/admin/production/orders/{}/operations', 'GET /api/admin/production/orders/{}/piecework', 'GET /api/admin/production/route-signals', 'GET /api/admin/production/routing-gaps', 'GET /api/admin/production/scan', 'GET /api/admin/production/stuck-points', 'POST /api/admin/orders/auto-features', 'POST /api/admin/orders/craft-calc', 'POST /api/admin/orders/door-width-plan', 'POST /api/admin/orders/fee-preview'),
+        menu_nodes=('auth:销售订单', 'controller:销售订单', 'frontend:销售订单'),
         tools=('logistics_track', 'order_query'),
-        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「订单列表」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；19 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/agent/orders/mine；GET /api/admin/agent/orders/resolve；GET /api/admin/agent/payment-qrcodes 等）；Agent 侧 2 个工具声明本码 ⇒ 黄金策对这批账号由「权限不足」变为可达（logistics_track / order_query）。'),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「销售订单」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；17 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/agent/orders/mine；GET /api/admin/agent/orders/resolve；GET /api/admin/agent/payment-qrcodes 等）；Agent 侧 2 个工具声明本码 ⇒ 黄金策对这批账号由「权限不足」变为可达（logistics_track / order_query）。'),
     ),
     "order:create": AuthorizationCensusEntry(
         # issue #5988（2026-10-02 人类裁定「应允许」）：销售**下单**是本职。
@@ -3015,7 +3162,7 @@ AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
         tools=('order_create',),
         reachable=('issue #5988（人类 2026-10-02 裁定「应允许」）：销售此前持 `order:list`/`order:detail`'
                    '（看得见订单）却没有 `order:create` ⇒ 建单 403（#5246 有意把写码只给运营）。'
-                   '本码不挂菜单节点（订单列表的节点码是 `order:list`）⇒ 补它**不改变任何菜单可见性**，'
+                   '本码不挂菜单节点（销售订单的节点码是 `order:list`）⇒ 补它**不改变任何菜单可见性**，'
                    '只把「下单」这个动作打通：2 个端点的生效码就是本码 ⇒ 由 403 变为可写'
                    '（POST /api/admin/agent/orders；POST /api/admin/orders）；'
                    'Agent 侧 1 个工具声明本码 ⇒ 黄金策的建单工具对销售由「权限不足」变为可达（order_create）。'),
@@ -3072,10 +3219,10 @@ AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
     ),
     "product:list": AuthorizationCensusEntry(
         roles=('sales',),
-        endpoints=('GET /api/admin/batch-stock/batches', 'GET /api/admin/batch-stock/candidates', 'GET /api/admin/batch-stock/consumptions', 'GET /api/admin/batch-stock/distribution', 'GET /api/admin/batch-stock/reconcile', 'GET /api/admin/batch-stock/saving-board', 'GET /api/admin/batch-stock/saving-trend', 'GET /api/admin/products', 'GET /api/admin/products/export', 'GET /api/admin/products/import-template', 'GET /api/admin/products/low-stock-by-color', 'GET /api/admin/products/{}', 'GET /api/admin/stock-ledger'),
+        endpoints=('GET /api/admin/batch-stock/batches', 'GET /api/admin/batch-stock/batches/page', 'GET /api/admin/batch-stock/candidates', 'GET /api/admin/batch-stock/consumptions', 'GET /api/admin/batch-stock/distribution', 'GET /api/admin/batch-stock/reconcile', 'GET /api/admin/batch-stock/saving-board', 'GET /api/admin/batch-stock/saving-trend', 'GET /api/admin/products', 'GET /api/admin/products/export', 'GET /api/admin/products/import-template', 'GET /api/admin/products/low-stock-by-color', 'GET /api/admin/products/{}', 'GET /api/admin/stock-ledger'),
         menu_nodes=('auth:商品管理', 'controller:商品管理', 'frontend:商品管理'),
         tools=('batch_stock_query', 'inventory_manage', 'order_create', 'product_detail', 'product_search', 'stock_ledger_query'),
-        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「商品管理」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；13 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/batch-stock/batches；GET /api/admin/batch-stock/candidates；GET /api/admin/batch-stock/consumptions 等）；Agent 侧 6 个工具声明本码 ⇒ 黄金策对这批账号由「权限不足」变为可达（batch_stock_query / inventory_manage / order_create / product_detail / product_search / stock_ledger_query）。'),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「商品管理」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；14 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/batch-stock/batches；GET /api/admin/batch-stock/batches/page；GET /api/admin/batch-stock/candidates；GET /api/admin/batch-stock/consumptions 等）；Agent 侧 6 个工具声明本码 ⇒ 黄金策对这批账号由「权限不足」变为可达（batch_stock_query / inventory_manage / order_create / product_detail / product_search / stock_ledger_query）。'),
     ),
 }
 
@@ -3442,14 +3589,17 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
             lambda s: _add_role_code(s, "financeRole", "product:category:view"),
             problems_leakage,
         ),
-        "③b 码没有任何菜单节点（改掉『售后工单』节点码）⇒ 判据 4 红": (
+        "③b 码没有任何菜单节点（改掉『售后工单』+『返工单』两个节点码）⇒ 判据 4 红": (
             # 锚点口径（issue #5247 改判）：**被改的节点码必须是「某个 B 端可达工具仍声明的码」**，
             # 否则判据 4 连这个码都不看（原锚改成的 `order:refund` 随 `after_sales_manage`
             # 收窄而退出 B 端声明面 ⇒ 注入变空断言）。现锚改成的 `order:list` 仍是 B 端声明码
             # （`order_query`/`logistics_track`），且改完后 `after_sales:view` 在四处菜单源里
             # **一个节点都没有** ⇒ 「Agent 查得到、页面里看不到」成立。
+            # 🔴 issue #7377 起 `after_sales:view` 有**两个**节点（售后工单 + 返工单）⇒ 只改第一个
+            # 留下一半，注入就变成空断言（实测：「判据没有变红 ⇒ 它是空断言」）⇒ 这里**全量替换**
+            # （不带 count），把这个码从菜单面上真正清空。
             "menu:frontend",
-            lambda s: s.replace("permissionCode: 'after_sales:view'", "permissionCode: 'order:list'", 1),
+            lambda s: s.replace("permissionCode: 'after_sales:view'", "permissionCode: 'order:list'"),
             problems_leakage,
         ),
         "④ 只改一处菜单源的节点码 ⇒ 判据 3 红": (
@@ -3524,22 +3674,22 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
             lambda s: _drop_role_code(s, "operatorRole", "product:list"),
             problems_leakage,
         ),
-        "⑬ 把生产读码从**前端菜单源**删掉（生产看板 → 无码）⇒ 判据 10 红": (
+        "⑬ 把生产读码从**前端菜单源**删掉（作业看板 → 无码）⇒ 判据 10 红": (
             # issue #5291 的**真实回归形态**：节点仍在、只是 `permissionCode` 没了 ⇒
             # 判据 3 的锚定会**跳过**它（无码节点被读成「全员可见」）、交会同构也不再比它
             # ⇒ 只有判据 10 能拦（这正是「删读码必须有一条能红的判据」的理由）。
             "menu:frontend",
-            # 锚点 = **生产看板**那一行（`path: '/production'`）—— 与注入名逐字对应；
+            # 锚点 = **作业看板**那一行（`path: '/production'`）—— 与注入名逐字对应；
             # 用「第一个 production:view」当锚会让失败文案点名另一个节点（读数与结论不符）。
             lambda s: s.replace(
                 "path: '/production', permissionCode: 'production:view', ", "path: '/production', ", 1),
             problems_read_code_anchoring,
         ),
-        "⑭ 生产读码只在**一处菜单源**回退成管理码（MenuController 生产看板）⇒ 判据 10 红": (
+        "⑭ 生产读码只在**一处菜单源**回退成管理码（MenuController 作业看板）⇒ 判据 10 红": (
             "menu:controller",
             lambda s: s.replace(
-                'new MenuNode("production:view", "生产看板")',
-                'new MenuNode("processing:manage", "生产看板")', 1),
+                'new MenuNode("production:view", "作业看板")',
+                'new MenuNode("processing:manage", "作业看板")', 1),
             problems_read_code_anchoring,
         ),
         "⑮ 承载工具退回管理码（processing_order_query → processing:manage）⇒ 判据 10 红": (
@@ -3811,16 +3961,16 @@ def _regrow_fourth_source_renamed(text: str) -> str:
 
 
 def _diverge_shared_node(text: str) -> str:
-    """把 `MenuController` 的『生产看板』节点码改成**与其它菜单源不同**的值。
+    """把 `MenuController` 的『作业看板』节点码改成**与其它菜单源不同**的值。
 
-    选『生产看板』而不是『售后工单』：前者在三处菜单源里**同名**（才落在交集判据的射程内），
+    选『作业看板』而不是『售后工单』：前者在三处菜单源里**同名**（才落在交集判据的射程内），
     后者在 `MenuController` 里叫「退换货」—— 名字都不同的节点本就不参与同构比对
     （这正是 `REGISTERED_RESIDUALS` 所登记「菜单源不做全树同构」的含义）。
     """
-    m = re.search(r'new MenuNode\("([^"]+)", "生产看板"\)', text)
-    assert m, "注入锚点失配：`MenuController` 里找不到『生产看板』节点（同步本判据）"
+    m = re.search(r'new MenuNode\("([^"]+)", "作业看板"\)', text)
+    assert m, "注入锚点失配：`MenuController` 里找不到『作业看板』节点（同步本判据）"
     other = "order:list" if m.group(1) != "order:list" else "processing:manage"
-    return text.replace(m.group(0), f'new MenuNode("{other}", "生产看板")', 1)
+    return text.replace(m.group(0), f'new MenuNode("{other}", "作业看板")', 1)
 
 
 def test_fourth_source_comment_mention_stays_green() -> None:

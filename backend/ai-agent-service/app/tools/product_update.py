@@ -1,4 +1,8 @@
-"""商品快速更新 Tool — 改价格/名称等单个字段，轻量无负担"""
+"""商品快速更新 Tool — 改价格/名称等单个字段，轻量无负担。
+
+⚠️ 商品上下架**不在 B 端能力内**（用户 2026-10-16 裁定「上下架都 ❌」，#7054/#7334 裁定 A）：
+本工具不再声明 / 下发 `status`；单件与批量的上下架都引导商家到后台「商品管理」页。
+"""
 
 from typing import Any, Dict, Optional
 from loguru import logger
@@ -13,19 +17,23 @@ class ProductUpdateTool(BaseTool):
 
     name = "product_update"
     description = (
-        "【触发】用户说'改价格''改名称''价格改成XX''改名''设置退货回补库存''上架/下架'时**直接调用**，无需 validate_input。"
+        "【触发】用户**明确要求执行**改价格/改名称/设置退货回补库存（给出具体商品 + 新价格/新名称）时**直接调用**，无需 validate_input。"
+        "【反例·能力询问】用户只是问「能改名吗？」「可以改价吗？」「支持改名吗？」⇒ **直接回答能力**，"
+        "不要先调用本工具或 product_search；等用户给出具体商品和新名称/价格后再走确认流程。"
         "【参数】product_id 必填（支持名称/序号/UUID，服务端自动解析）；只传要改的字段，其他字段保持不变。"
         "【注意】改的是商品统一定价，影响所有 SKU。单独调某个 SKU 价格请引导去商品管理页。"
         "支持设置「退货是否回补库存」（allow_return_restock：true=退货后回补库存/可再售，"
         "false=定制商品退货不回补）。"
         "【反例】单独 SKU 调价本工具不支持（用 sku_update）；加工项与商品无关，不在本工具范围。"
-        "【反例】本工具不支持图片字段；设置/修改商品主图、详情图**不在 B 端能力内**（改图不代做）——如实说明并引导商家到后台「商品管理」页面(/products)操作。"
+        "【反例】本工具不支持图片字段；设置/修改商品主图、详情图**不在 B 端能力内**（改图不代做）——如实说明并引导商家到后台「商品管理」页面操作。"
+        "【反例】商品上架/下架**不在 B 端能力内**（用户 2026-10-16 裁定，单件与批量都不做）——"
+        "如实说明并引导商家到后台「商品管理」页操作；**禁止**再传 status 或声称已上下架。"
         "【必填·改价】传 price 时必须同时传 before_price（改前价，取自 product_detail 的真值）——"
         "确认卡据此呈现「改前 → 改后」；漏传一律被拒（price_preview_required，issue #5303）。"
         "**服务端会拿 before_price 与当前价按值核对，不符即拒**（issue #5317）⇒ 编一个改前价只会白烧一轮。"
         "【确认形态·改价】改价是**涉钱面**：确认形态**只认点卡**——判据 = 商家消息**逐字等于**你刚发出的确认卡 confirmValue（点卡回传的原文），其它文本（含「确认」二字）都不算（issue #5317）；**点卡之后必须立即调用本工具执行**，不得重发卡片、不得再问一次。"
         "【标注】WRITE|IDEMPOTENT — 写操作；用户确认后立即执行，禁止只查询/展示就停"
-        "【铁律】用户明确要求设置/修改商品（回补库存开关/价格/名称/上下架等）时：先查商品拿真实 product_id → 展示操作预览 + 确认卡 → 用户确认后立即调用本工具执行，禁止只查询/展示就停（PR-017 实拍：设置退货回补库存只 product_search 不 update 判失败）。"
+        "【铁律】用户明确要求设置/修改商品（回补库存开关/价格/名称等）时：先查商品拿真实 product_id → 展示操作预览 + 确认卡 → 用户确认后立即调用本工具执行，禁止只查询/展示就停（PR-017 实拍：设置退货回补库存只 product_search 不 update 判失败）。"
     )
     # 权限码（admin-api 目录）：商品写取写码 `product:create`（ProductController 的 PUT/PATCH）。
     # 该 agent 端点自身只挂类级读码 `product:list` —— 按读码放行会让只读持有者拿到写权限。
@@ -50,11 +58,6 @@ class ProductUpdateTool(BaseTool):
             },
             "name": {"type": "string", "description": "新名称（可选）"},
             "description": {"type": "string", "description": "新描述（可选）"},
-            "status": {
-                "type": "string",
-                "enum": ["on_sale", "off_sale"],
-                "description": "上下架 status=on_sale（上架）/ off_sale（下架）。null 不修改",
-            },
             "allow_return_restock": {
                 "type": "boolean",
                 "description": "退货后是否回补库存（可选，issue #2991）：true=退货回补/可再售，false=定制商品退货不回补。null 不修改",
@@ -71,7 +74,6 @@ class ProductUpdateTool(BaseTool):
         before_price: Optional[float] = None,
         name: Optional[str] = None,
         description: Optional[str] = None,
-        status: Optional[str] = None,
         allow_return_restock: Optional[bool] = None,
     ) -> ToolResult:
         # 权限检查：改价/改名属对商品定价的承诺修改，仅限商户角色（admin/tenant_admin）
@@ -110,7 +112,7 @@ class ProductUpdateTool(BaseTool):
         if before_price is not None: json_data["beforePrice"] = before_price
         if name: json_data["name"] = name
         if description: json_data["description"] = description
-        if status: json_data["status"] = status
+        # status 刻意不下发：上下架不在 B 端能力内（2026-10-16 裁定 / #7334 裁定 A）
         # allow_return_restock 透传（issue #2991）：None 不传（=不修改），true/false 显式传
         if allow_return_restock is not None:
             json_data["allowReturnRestock"] = allow_return_restock

@@ -373,7 +373,7 @@ class AgentProductionControllerTest {
     @Test
     @DisplayName("三个 GET 各自的方法级 @RequirePermission(production:view) 护栏不可丢（#5246 已移除类级；#5291 改读码）")
     void agentControllerDeclaresPermission() throws Exception {
-        // issue #5246：类级 @RequirePermission("order:list") 已移除 —— 本控制器是「生产看板 / 计件工资」
+        // issue #5246：类级 @RequirePermission("order:list") 已移除 —— 本控制器是「作业看板 / 计件工资」
         // 侧边栏节点的 agent 侧数据面，码必须与那两个节点同码（issue #5291 起 = production:view），否则
         // 「有 order:list、没有 processing:manage」的角色能绕过菜单直达生产数据。
         // 判据落在**每个端点**上（不是类级一个码）：类级盖全类时，日后新增端点会静默继承一个过期的码。

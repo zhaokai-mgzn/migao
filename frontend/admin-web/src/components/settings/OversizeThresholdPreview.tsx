@@ -25,6 +25,12 @@ import { InlineMarkdown } from '@/lib/inline-markdown'
 import type { CraftCalcConfig } from '@/types'
 // issue #5218 #5：数字输入统一走共享组件（`type="text"` + 字符串草稿，中间态不丢）
 import NumberInput from '@/components/ui/NumberInput'
+// issue #7176：本块的版式**就是标准**（浅底面板 + 栅格 + 标签在上 + 单位入框）。
+// 把它抽成原语后由本块第一个改用：其余配置面跟着它对齐，而不是各写一份。
+import FormPanel, { Field, FormGrid, fieldControl } from '@/components/ui/FormPanel'
+// issue #7548：小数位与配置面**同一口径**（3 位 = 毫米）；本块与配置项同屏，两边精度不一致会被读成
+// 「同一个参数两套精度」。
+import { CALC_INPUT_DECIMALS } from '@/lib/craft-calc-glossary'
 
 /** 一个示例窗（默认值只是**举例**，商家可改；它是值、不是文案） */
 const EXAMPLE = { width: 5.5, height: 3.2 } as const
@@ -124,37 +130,45 @@ export function OversizeThresholdPreview({ config }: Props) {
   )
 
   return (
-    <div
-      data-testid="threshold-preview"
-      className="mt-4 border border-neutral-200 rounded-lg p-4 bg-neutral-50/50"
+    <FormPanel
+      testid="threshold-preview"
+      title="阈值试算"
+      className="mt-4"
+      hint={
+        /* 🔴 2026-10-17（issue #7124）：本块**紧跟在「超高 / 超宽阈值」之后**，而旧文案写的是
+            「本页**不保存任何改动**」—— 在能保存的写面上会被读成「上面的改动也不保存」（误导）。
+            改为「**这里只试算** + 要改口径去哪改」，既不承诺保存、又给出动作。
+            🔴 2026-10-17（issue #7147）：去口语与内部机制名 —— 「加工费组合 / 收不到这笔钱」改为
+            商家可读的「按哪一档计价 / 那一档没配价时按未定价处理」。 */
+        <InlineMarkdown text="超高 / 超宽会影响加工费按哪一档计价（那一档没配价时按未定价处理，不会自动补价）。改阈值前先在这里试算一扇窗，看看会不会变。判定由系统给出；**这里只试算** —— 要改口径请改上面的阈值（改完自动保存，无需手动提交）。" />
+      }
     >
-      <h4 className="text-sm font-semibold text-neutral-900">阈值试算 —— 改完先看，不保存</h4>
-      <p className="text-xs text-neutral-500 mt-1">
-        <InlineMarkdown text="超高 / 超宽会进加工费组合（组合没配价就收不到这笔钱）。改阈值前先在这里试一扇窗，看看会不会变。判定由系统给，本页**不保存任何改动**。" />
-      </p>
-
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
+      <FormGrid cols={4}>
         {(
           [
-            ['试算窗宽（米）', 'preview-width', width, setWidth],
-            ['试算窗高（米）', 'preview-height', height, setHeight],
-            ['超宽阈值（米）', 'preview-threshold-width', widthThreshold, setWidthThreshold],
-            ['超高阈值（米）', 'preview-threshold-height', heightThreshold, setHeightThreshold],
+            ['试算窗宽', '米', 'preview-width', width, setWidth],
+            ['试算窗高', '米', 'preview-height', height, setHeight],
+            // 🔴 与上面的配置字段**同名会被读成「同一个框」**（独立复核读图实测：同屏两处
+            //    「超宽阈值（米）」可编辑框，一处改配置、一处只影响试算）⇒ 标题写明「试算用」。
+            ['试算用超宽阈值', '米', 'preview-threshold-width', widthThreshold, setWidthThreshold],
+            ['试算用超高阈值', '米', 'preview-threshold-height', heightThreshold, setHeightThreshold],
           ] as const
-        ).map(([label, testid, value, setter]) => (
-          <label key={testid} className="block">
-            <span className="block text-xs text-neutral-600 mb-1">{label}</span>
+        ).map(([label, unit, testid, value, setter]) => (
+          /* 单位与上面的配置字段**同一套写法**：标签不拖括号，单位做框内后缀（`Field` 负责） */
+          <Field key={testid} label={label} unit={unit} htmlFor={testid}>
             {/* issue #5218 #5：同 #4 —— `type="number"` + `Number()` 往返吞中间态（"0."）；
                 `''` 与本组件的 `number | null` 语义一一对应（空 = 不试算）。 */}
             <NumberInput
+              id={testid}
               data-testid={testid}
               value={value === '' ? null : value}
               onChange={(v) => (setter as (v: number | '') => void)(v === null ? '' : v)}
-              className="w-full h-8 px-2 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500"
+              decimals={CALC_INPUT_DECIMALS}
+              className={`${fieldControl(unit)} text-left tabular-nums`}
             />
-          </label>
+          </Field>
         ))}
-      </div>
+      </FormGrid>
 
       {error && (
         <div
@@ -182,7 +196,7 @@ export function OversizeThresholdPreview({ config }: Props) {
           {renderRows(adjusted, 'preview-adjusted')}
         </div>
       </div>
-    </div>
+    </FormPanel>
   )
 }
 

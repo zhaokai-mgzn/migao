@@ -31,6 +31,7 @@
  * 报价单留空、加工单印 `—`（两份单据既有口径不同，属**有意**差异，本模块不替它们选）。
  */
 import { craftSpecRows, type CraftSpecRow } from './craft-display'
+import { isFabricSaleLine } from './sale-form'
 
 /**
  * 取值口接受的**最小形态** —— 详情行 `OrderItem` 与列表行 `OrderBriefItem` **都**满足它
@@ -119,7 +120,11 @@ export function quantityWithUnit(source: { quantity?: unknown; unit?: unknown })
  * `craftSpecRows` 直读键，两种形态都能取到值（加工单快照的行是**扁平**的：`it.doorWidth`）。
  */
 export function craftRowsWithoutDoorWidth(source: unknown): CraftSpecRow[] {
-  return craftSpecRows(source).filter((row) => row.label !== '门幅')
+  const rows = craftSpecRows(source)
+  // 布料行**没有工艺规格**（issue #7320）：`processingMeters` 是加工费口径的字段（展示名「加工费米数」），
+  // 而布料单不涉及加工费 ⇒ 该行不出现（与「门幅」同一套「本行另有口径」的过滤）。
+  const fabric = isFabricSaleLine(source)
+  return rows.filter((row) => row.label !== '门幅' && !(fabric && row.label === '加工费米数'))
 }
 
 export function orderItemSku(item: OrderItemSkuSource): OrderItemSku {
@@ -132,4 +137,41 @@ export function orderItemSku(item: OrderItemSkuSource): OrderItemSku {
     doorWidth: rows.find((row) => row.label === '门幅')?.value ?? '',
     specRows: craftRowsWithoutDoorWidth(item.processingInfo),
   }
+}
+
+/** 帘种取值「布帘」—— 与后端 `ProcessingOrderService.CURTAIN_TYPE_CLOTH` **逐字一致** */
+export const CURTAIN_TYPE_CLOTH = '布帘'
+/** 帘种取值「纱帘」—— 与后端 `ProcessingOrderService.CURTAIN_TYPE_SHEER` **逐字一致** */
+export const CURTAIN_TYPE_SHEER = '纱帘'
+
+/**
+ * 订单行的**帘种**（布帘 / 纱帘）—— 纸面「这一行是布还是纱」的**唯一**取值口（issue #7625）。
+ *
+ * 用户 2026-10-24 逐字：「不要组件这一列，另外给所有打印预览表格都加一列用来区分是布帘还是纱帘」
+ * ⇒ 四张纸面单据（报价单 / 加工单 / 发货单 / 销售单）都**只**从这里取值，不在组件里各写一份
+ * 会漂的别名链（同族：`orderItemSku` / `orderItemQuantity`）。
+ *
+ * ## 取值顺序（与写侧 + 后端派生的**同一套**口径，不是本模块自创）
+ *
+ * ① **显式声明** `processingInfo.curtainType`（写侧 issue #4521：主帘缺省即布帘 ⇒ **不写**；
+ *    只有「只买纱帘」显式写 `curtainType=纱帘`）—— 真值原样回显（含 `帘头` / `外帘` 等受控部位值，
+ *    **不**把它们硬改成布帘/纱帘）；
+ * ② **受控枚举** `componentRole`（写侧 enum：主布 / 配布边 / 纱）：`纱` ⇒ 纱帘，
+ *    主布 / 配布边 ⇒ 布帘 —— 与后端 `COMPONENT_ROLE_POSITIONS` **同一张映射**
+ *    （存量 AI 下单单没有 `curtainType`，只有这个键）；
+ * ③ **布料单没有帘**（`saleForm=fabric`，issue #4493 卖布单不写工艺）⇒ 返回**空串**
+ *    —— 纸面由各单据按自己的缺值口径印占位（`—` / 留白），**不冒充「布帘」**；
+ * ④ 其余帘类明细缺键 ⇒ **布帘**（写侧「主帘缺省即布帘」的口径，issue #4521）。
+ *
+ * 未知取值一律**不猜**：②里未登记的 componentRole 不进任何一个分支，落到 ③/④ 的同一套缺省。
+ */
+export function orderItemCurtainType(item: OrderItemSkuSource): string {
+  const info = (item.processingInfo ?? {}) as Record<string, unknown>
+  const explicit = text(info.curtainType) || text(info.curtain_type)
+  if (explicit !== '') return explicit
+  const role = text(info.componentRole) || text(info.component_role)
+  if (role === '纱') return CURTAIN_TYPE_SHEER
+  if (role === '主布' || role === '配布边') return CURTAIN_TYPE_CLOTH
+  if (isFabricSaleLine(info)) return ''
+  return CURTAIN_TYPE_CLOTH
 }

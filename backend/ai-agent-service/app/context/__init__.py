@@ -20,6 +20,7 @@ from app.context.page_registry import (
     render_page_context,
     resolve_page_entry,
     resolve_truth_source,
+    strip_page_context_envelope,
 )
 
 __all__ = [
@@ -39,4 +40,5 @@ __all__ = [
     "render_page_context",
     "resolve_page_entry",
     "resolve_truth_source",
+    "strip_page_context_envelope",
 ]

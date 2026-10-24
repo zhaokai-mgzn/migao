@@ -26,6 +26,14 @@ public class NotificationTemplate {
 
     private String name;
 
+    /**
+     * 标题模板（issue #7524，可空）。
+     *
+     * <p>改前标题恒等于 {@link #name}（如「新订单通知」）⇒ 铃铛里看不到单号，必须点开才知道是哪一单。
+     * 本列支持变量（如「入库单 {{inboundNo}} 已过账」）；为空时回落到 {@code name}（老模板零改动）。</p>
+     */
+    private String titleTemplate;
+
     /** ticket_assigned / ticket_status_changed / refund_success / shipment / etc. */
     private String type;
 

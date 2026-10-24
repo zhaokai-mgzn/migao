@@ -179,7 +179,7 @@ export default function WorkerShipmentPage() {
     const quantity = String(draft?.quantity || '').trim()
     const unit = String(draft?.unit || '').trim()
     if (!quantity || Number(quantity) <= 0) {
-      setError('请填写**实发**数量（识别不确定时手输，系统不替你猜）。')
+      setError('请填写实发数量（识别不确定时手输，系统不替你猜）。')
       return
     }
     if (!unit) {

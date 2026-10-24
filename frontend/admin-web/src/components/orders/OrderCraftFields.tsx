@@ -93,6 +93,8 @@ import {
   defaultCraftCalcTier,
 } from '@/lib/craft-calc-request'
 import type { CraftCalcConfig } from '@/types'
+import { SELECT_CONTROL } from '@/components/ui'
+import { cn } from '@/lib/utils'
 
 const LABEL_CLASS = 'block text-sm font-medium text-neutral-700 mb-1.5'
 
@@ -125,10 +127,6 @@ const TRI_STATE_CHIPS: ChipOption<boolean | undefined>[] = [
   { value: true, label: '是' },
   { value: false, label: '否' },
 ]
-
-/** 下拉的统一样式（与页面其它 select 同形） */
-const SELECT_CLASS =
-  'w-full h-9 px-2 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15'
 
 /**
  * `<option value>` 的编码：字符串档**直接用它自己**（判据可读 `toHaveValue('pleat')`）；
@@ -194,7 +192,7 @@ function SelectGroup<T>({
           const picked = options[e.target.selectedIndex]
           if (picked) onChange(picked.value)
         }}
-        className={SELECT_CLASS}
+        className={cn(SELECT_CONTROL, 'w-full')}
       >
         {options.map((option) => (
           <option key={option.label} value={optionValue(option)}>

@@ -34,11 +34,12 @@ B 端 `prod_eval_2699` 因 `created_at` 更新而排在首条 → 用例的「�
 | `mibao` | C 端 `xiaobu_eval_seed.sql` + B 端 `mibao_eval_seed.sql` | B 端点名数据缺失（2699 商品/ERP 加工项目录 16 项/客户张三/员工王五）会被误判成能力回归（#3496/#3511） |
 
 两条纪律：
-1. **一个栈只服务一个 persona**：`post-deploy-eval` 用 persona matrix（每条腿 = 独立 runner +
-   独立栈 + 独立新库 + 该 persona 的种子，#3515）；`xiaobu-acceptance` 吃**单值** persona 输入
-   （一次 run 一套栈）。⚠️ 原第三个载体 `agent-behavior-eval`（persona matrix）已随该 workflow
-   在 **#4275** 整体删除；**载体少了、判据没少** —— 仍由
-   `test_eval_stack_seed_parity.py` 逐项钉住（含「一个栈只服务一个 persona」）；
+1. **一个栈只服务一个 persona**：`post-deploy-eval` 默认用 persona matrix（每条腿 = 独立 runner +
+   独立栈 + 独立新库 + 该 persona 的种子，#3515）；dispatch 可选 `persona=mibao` / `xiaobu`
+   收成单腿（#7340：B 端只跑 mibao，不连带 C 端），但**单腿只允许 `purpose=debug`**，判定用途
+   仍必须 `persona=both`；`xiaobu-acceptance` 吃**单值** persona 输入（一次 run 一套栈）。⚠️ 原第三个载体
+   `agent-behavior-eval`（persona matrix）已随该 workflow 在 **#4275** 整体删除；**载体少了、判据没少** ——
+   仍由 `test_eval_stack_seed_parity.py` 逐项钉住（含「一个栈只服务一个 persona」）；
 2. **能 L0 拦的不许流到 L2+**：口径漂移由
    `tests/unit_ci_workflows/test_eval_stack_seed_parity.py` 秒级静态锁拦
    （workflow 只许调单一源、xiaobu 栈不许含 B 端、同栈不许混 persona、
@@ -123,6 +124,11 @@ group 名不带 workflow 前缀即**跨 workflow 生效**。
 | `agent-behavior-eval.yml` | 🗑️ **已删除**（#4275，2026-09-21；此前 #4034 已退出槽位） | 该 workflow 已按用户裁定**整体删除**（承接 #4262；它的唯一产物是 PR 评论、绑死 PR 上下文）⇒ 不在 workflow 集合里 ⇒ 既不占槽位、也不再产出映射信号 | 槽位持有者由**三处收敛为两处**；「谁真起栈谁进」由 `test_eval_stack_seed_parity.py` 的**双向相等**判据钉住（凡起栈必登记） |
 | `xiaobu-acceptance.yml` | ✅ **已落**（2026-09-25 复核：`jobs.xiaobu-acceptance.concurrency = {group: eval-stack-global, cancel-in-progress: false}` 已在文件里；核实命令 `python3 -c "import yaml;d=yaml.safe_load(open('.github/workflows/xiaobu-acceptance.yml'));print(d['jobs']['xiaobu-acceptance'].get('concurrency'))"`） | 文件级 `concurrency`（`on:` 下那段）**保持不变**；在 **`jobs.xiaobu-acceptance:` 下、`timeout-minutes` 之后**新增 job 级 `concurrency: { group: eval-stack-global, cancel-in-progress: false }`（**用锚点定位，不写行号** —— 活跃编辑文件的裸行号几分钟就会失效，本仓已因此返工过） | PR 级取消语义**完全保留**（新 push 仍能立刻杀掉排队中的旧 run —— 它还没起栈，杀掉最省）；真正起栈的 job 进入全局槽位，**同一时刻仓库内只有一套评测栈在构建** |
 
+> ⚠️ **共享云端前置（#7340）**：`agent-eval.yml` 打已部署环境，库里的评测租户必须是
+> **seed 租户 1**（`tests/agent_eval/fixtures/*_eval_seed.sql`）；`config.py` /
+> `local_runner.py` / `agent-eval.yml` 三处 `EVAL_TENANT_ID` 同值 1，且共享云
+> `deploy/swas/docker-compose.yml` 的 `environment` 显式覆盖为 1（防止 `.env.ai-agent`
+> 残留旧值）。库重建后若没 seed，建会话会在 `sessions_tenant_id_fkey` 上 500（不是用例行为红）。
 > ℹ️ **`agent-eval.yml` 有意**不在**本表（#4821 裁定，见 §3.9）**：它**不打独立栈**（打的是
 > **已部署**的云测试环境，是该环境上唯一的 normal 全量入口）⇒ 按「谁真起栈谁进槽位」，
 > 它**不应**占用 `eval-stack-global`；同时它**有意保持严格串行**（共享环境不可安全并发）。

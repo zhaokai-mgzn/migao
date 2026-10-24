@@ -1,4 +1,4 @@
-// case_ids: UI-027
+// case_ids: UI-027, UI-134, UI-062
 /**
  * 打印链路（issue #5914）—— 真实浏览器判据。
  *
@@ -101,7 +101,7 @@ test.describe('商家后台打印链路（UI-026 / issue #5914）', () => {
       })
     })
 
-    await page.getByRole('button', { name: /打印销售单/ }).click()
+    await page.getByTestId('order-print-entry').click()
     // 打印前的**纸面自检层**（先看见再上纸）
     await expect(page.getByTestId('print-preview')).toBeVisible()
     await page.getByTestId('print-preview-print').click()
@@ -114,16 +114,54 @@ test.describe('商家后台打印链路（UI-026 / issue #5914）', () => {
     ])
   })
 
+  test('①-2 打印不跟状态挂钩（issue #7544）：已关闭的单子照样能打开打印层、能选单据、能出纸', async ({ page }) => {
+    // 改前（#6434 的状态矩阵）`closed` / `refund` ⇒ **一张单据都打不出来**（入口被状态吃掉）
+    await mockOrderApi(page, { ...baseOrder(), status: 'closed' })
+    await page.goto(`/orders/${ORDER_ID}`)
+
+    await page.evaluate(() => {
+      const marks: string[] = []
+      ;(window as unknown as { __printMarks: string[] }).__printMarks = marks
+      window.addEventListener('beforeprint', () => {
+        const targets = Array.from(document.querySelectorAll('[data-print-target]'))
+          .map((el) => el.getAttribute('data-print-target'))
+          .join(',')
+        marks.push(targets || 'NONE')
+      })
+    })
+
+    await page.getByTestId('order-print-entry').click()
+    const docs = page.getByTestId('print-preview-docs')
+    await expect(docs).toBeVisible()
+    // 四份单据都在选择器里（一单一签）
+    for (const target of ['sales', 'processing', 'quotation', 'shipment']) {
+      await expect(page.getByTestId(`print-preview-doc-${target}`)).toBeVisible()
+    }
+
+    // 换单据 = 换预览：纸型读数跟着换（销售单三联纸 241×140 → 加工单 A4 210×297）
+    await expect(page.getByTestId('print-preview-media')).toContainText('241mm × 140mm')
+    await page.getByTestId('print-preview-doc-processing').click()
+    await expect(page.getByTestId('print-preview-media')).toContainText('210mm × 297mm')
+    await expect(page.getByTestId('print-preview-doc-processing')).toHaveAttribute('aria-pressed', 'true')
+
+    // 出纸的仍是**所选**那一份
+    await page.getByTestId('print-preview-print').click()
+    const marks = await page.evaluate(
+      () => (window as unknown as { __printMarks: string[] }).__printMarks
+    )
+    expect(marks).toEqual(['processing'])
+  })
+
   test('② 同页四份单据只放一份上纸：文档里恰好一条 @page，且是本次那张纸', async ({ page }) => {
     await mockOrderApi(page, baseOrder())
     await page.goto(`/orders/${ORDER_ID}`)
-    await expect(page.getByRole('button', { name: /打印销售单/ })).toBeVisible()
+    await expect(page.getByTestId('order-print-entry')).toBeVisible()
 
     // 🔴 打印前：文档里**一条 @page 都没有**（没有任何单据在抢纸型）
     const before = await readPageRules(page)
     expect(before.count).toBe(0)
 
-    await page.getByRole('button', { name: /打印销售单/ }).click()
+    await page.getByTestId('order-print-entry').click()
     await expect(page.getByTestId('print-preview')).toBeVisible()
 
     // 点「打印」之后：只有销售单发表纸型 —— 恰好一条，且是三联纸 241×140
@@ -152,7 +190,7 @@ test.describe('商家后台打印链路（UI-026 / issue #5914）', () => {
     // 8 行明细：实测内容 ≈136.5mm > 单联可用 128mm ⇒ 必须报溢出（旧实现是**静默裁掉**金额与收款码）
     await mockOrderApi(page, baseOrder(8))
     await page.goto(`/orders/${ORDER_ID}`)
-    await page.getByRole('button', { name: /打印销售单/ }).click()
+    await page.getByTestId('order-print-entry').click()
 
     const media = page.getByTestId('print-preview-media')
     await expect(media).toContainText('241mm × 140mm')
@@ -163,7 +201,7 @@ test.describe('商家后台打印链路（UI-026 / issue #5914）', () => {
   test('③ 5 行明细装得下 ⇒ 不许报溢出（判据不是「恒报警」）', async ({ page }) => {
     await mockOrderApi(page, baseOrder(5))
     await page.goto(`/orders/${ORDER_ID}`)
-    await page.getByRole('button', { name: /打印销售单/ }).click()
+    await page.getByTestId('order-print-entry').click()
     await expect(page.getByTestId('print-preview-check')).toContainText('装得下')
   })
 
@@ -171,7 +209,7 @@ test.describe('商家后台打印链路（UI-026 / issue #5914）', () => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write'])
     await mockOrderApi(page, baseOrder(2))
     await page.goto(`/orders/${ORDER_ID}`)
-    await page.getByRole('button', { name: /打印销售单/ }).click()
+    await page.getByTestId('order-print-entry').click()
     await expect(page.getByTestId('print-preview')).toBeVisible()
 
     await page.getByTestId('print-preview-capture').click()
@@ -231,6 +269,87 @@ test.describe('商家后台打印链路（UI-026 / issue #5914）', () => {
     // 纵向**只做下界限**：销售单单联固定 128mm，明细少的单子底部本来就是空白
     // （实测 2 行 ⇒ inkH≈0.64），拿它当「铺满」判据会假红；缩在左上角的截图会同时掉到 <0.55。
     expect(shot.inkHeightRatio).toBeGreaterThan(0.5)
+  })
+
+  // 🔴 issue #7530（用户 2026-10-23「把作业出库单手机端链接对应的二维码信息放置在左上角，
+  //    工人可以通过扫码进入报工页面」）：jsdom 判得了「码值 / 位置 / 缺码不画」，判不了
+  //    「真浏览器里它到底在不在纸框左上角」—— 这里用真 Chrome 量一遍相对纸框的偏移并截图留证。
+  test('⑤ 销售单左上角：作业单扫码报工码（有码 ⇒ 出图且贴左上角；无码 ⇒ 不画假码）', async ({ page }) => {
+    await mockOrderApi(page, baseOrder(2))
+    // 作业单读面（GET /api/admin/processing-orders/{orderId}）：服务端下发的短链 + 短码
+    const workOrder = (scanUrl: string | null) => ({
+      success: true,
+      data: {
+        id: 'po-1',
+        orderId: ORDER_ID,
+        orderNo: 'ORD20261001001',
+        processingOrderNo: 'CK-20261023-0001',
+        order_kind: 'outbound',
+        status: 'generated',
+        short_code: '7K3M9QP2',
+        scan_url: scanUrl,
+        items: [],
+      },
+    })
+    await page.route('**/api/admin/processing-orders/**', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(workOrder('https://app.migaozn.com/o/7K3M9QP2')),
+      })
+    )
+
+    await page.goto(`/orders/${ORDER_ID}`)
+    // issue #7544：入口收敛成页面级唯一的「打印」，打印层默认选中销售单（`PRINT_SPEC_DEFAULT`）
+    await page.getByTestId('order-print-entry').click()
+    const preview = page.getByTestId('print-preview')
+    await expect(preview).toBeVisible()
+
+    const qr = preview.locator('[data-testid="sales-work-order-qr"]')
+    await expect(qr).toBeVisible()
+    // 码值**逐字** = 服务端下发值（qrcode.react 把 value 写进 <svg><title>）
+    await expect(qr.locator('svg title')).toHaveText('https://app.migaozn.com/o/7K3M9QP2')
+    // 纸面只留**竖排**「扫码报工」，8 位短码不印在销售单上（issue #7608，用户 2026-10-24 逐字
+    // 「不要在产品上体现短码了，工人端还有输入短码的地方」）—— 手输兜底在工人端输入框 /
+    // 任务卡 / 本单本来就印的「单号」，不在这块；竖排是**机制**，横排会让这一列再宽 ≈9mm
+    await expect(qr).toContainText('扫码报工')
+    await expect(qr.locator('[data-testid="sales-work-order-qr-label"]')).toHaveCSS(
+      'writing-mode',
+      'vertical-rl'
+    )
+    await expect(qr.locator('[data-testid="sales-work-order-short-code"]')).toHaveCount(0)
+
+    // 位置 = 纸面**左上角**：码块相对单联纸框的左上偏移都在 20px 内（纸框本身是缩放适配的）
+    const sheet = preview.locator('[data-testid="sales-sheet"]')
+    await expect(sheet).toBeVisible()
+    const sheetBox = (await sheet.boundingBox())!
+    const qrBox = (await qr.boundingBox())!
+    expect(qrBox.x - sheetBox.x).toBeLessThan(20)
+    expect(qrBox.y - sheetBox.y).toBeLessThan(20)
+
+    // 🔴 销售单纸面**不印收款码**（issue #7589）：真浏览器里连图片节点都不该有
+    //（收款码只属于报价单；旧形态这里会出现 `sales-qr-wechat` / `sales-qr-alipay` 两张图）
+    await expect(preview.locator('[data-testid^="sales-qr-"]')).toHaveCount(0)
+    await expect(preview.locator('[data-testid="sales-sheet"] img')).toHaveCount(0)
+
+    // 多模态取证（真浏览器截图，人工读图用）
+    await preview.screenshot({ path: '/tmp/ui7530-sales-doc-work-order-qr.png' })
+
+    // 缺码**不画假码**：读面没有 scan_url ⇒ 整块不出现（不画占位框、不印作业单号冒充可扫码）
+    await page.unroute('**/api/admin/processing-orders/**')
+    await page.route('**/api/admin/processing-orders/**', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(workOrder(null)),
+      })
+    )
+    await page.reload()
+    await page.getByTestId('order-print-entry').click()
+    const preview2 = page.getByTestId('print-preview')
+    await expect(preview2).toBeVisible()
+    await expect(preview2.locator('[data-testid="sales-work-order-qr"]')).toHaveCount(0)
+    await expect(preview2.locator('[data-testid="sales-sheet"]')).not.toContainText('CK-20261023-0001')
   })
 })
 

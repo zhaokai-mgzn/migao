@@ -80,4 +80,11 @@ describe('OperationPricePanel（工序与部位单价域，issue #6585）', () =
     expect(screen.getByTestId('routings-new-operation')).toBeInTheDocument()
     expect(screen.getByTestId('matrix-row-精裁')).toBeInTheDocument()
   })
+
+  it('③ 新增工序与同屏「新建」动作同级：primary（描边 secondary ⇒ 红，issue #7217）', async () => {
+    render(<OperationPricePanel />)
+    const btn = await screen.findByTestId('routings-new-operation')
+    expect(btn.className).toContain('bg-primary-600')
+    expect(btn.className).not.toContain('bg-white')
+  })
 })

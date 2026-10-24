@@ -1,7 +1,7 @@
 // case_ids: UI-026
 // 类级元守卫（issue #5913）：**跨权限域**的页内跳转入口，必须按目标域的守卫码显隐。
 //
-// 病（真实缺陷，issue #5913）：生产看板 `/production`（守卫 `production:view`）操作列的「查看」
+// 病（真实缺陷，issue #5913）：作业看板 `/production`（守卫 `production:view`）操作列的「查看」
 // 跳 `/orders/{id}`（守卫 `order:list`），而默认岗位 `product_manager` **持前者、不持后者**
 // （`backend/admin-api/.../RegistrationService.java` 的 productManagerRole 默认码表）
 // ⇒ 按钮照渲染，点进去得「无权访问该页面」。**可见却 403** 是一类，不是一处：
@@ -127,13 +127,13 @@ describe('跨权限域跳转入口守卫（issue #5913）', () => {
     expect(offenders([sample("router.push('/orders/1')", '/login')], g)).toEqual([])
   })
 
-  it('每个跨权限域跳转入口都按目标域守卫码显隐（本单实例 = 生产看板的「订单详情」）', () => {
+  it('每个跨权限域跳转入口都按目标域守卫码显隐（本单实例 = 作业看板的「订单详情」）', () => {
     const bad = offenders(files, guards)
     expect(
       bad,
       '这些入口会渲染成「点进去 403」—— 源页守卫码不蕴含目标页守卫码，且入口未按目标码显隐：\n'
         + `${bad.join('\n')}\n`
-        + "出口：按 `has('<目标码>')` 显隐该入口（生产看板「订单详情」即先例），"
+        + "出口：按 `has('<目标码>')` 显隐该入口（作业看板「订单详情」即先例），"
         + '或把该文件登记进 EXEMPT 并写明理由。',
     ).toEqual([])
   })

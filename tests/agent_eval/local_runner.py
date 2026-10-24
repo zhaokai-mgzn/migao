@@ -80,20 +80,15 @@ def _env_int(name: str, default: int, *, min_value: int = 1,
 
 
 # ── 评测目标租户的**单一真值**（issue #6288）─────────────────────────────────
-# 环境变量 `EVAL_TENANT_ID`（**整型校验后**才进 SQL / 落身份），默认 25。
-# 取值真值（2026-10-04 云测试环境重建）：tenant 1「词元通达」连同全部数据已清空，
-# 当前云测试租户 = **tenant 25「米高测试环境」**（企业编码 `shop-8yn7`）⇒ 默认指向它，
-# 与 `backend/ai-agent-service/app/config.py` 的 `EVAL_TENANT_ID` 同值同变量名
-# （服务端 DEBUG 降级身份与本运行器的 SQL 定位口径必须是同一个租户 —— 否则
-# 「复位哪个租户」「db 校验查哪个租户」与「请求落到哪个租户」三者会悄悄分叉）。
-# ⚠️ **本地/CI docker 标准考场的租户 1 由栈内种子创建**（`scripts/eval_stack_seed.sh`
-# 注入 `fixtures/*_eval_seed.sql`，逐行写 tenant_id=1），与本重建无关 ⇒ 起本地栈的评测
-# workflow 显式设 `EVAL_TENANT_ID=1`（先例：`tests/smoke/config.py` 的 `TENANT_ID`
-# = local `1` / 云端 `CLOUD_TENANT_ID=25`）。
-# ⚠️ 默认值落在**云端测试租户**：本运行器的复位 / db 校验只对「它真正打的那套环境」有意义，
-# 而唯一打**已部署**云环境的是 `agent-eval.yml`（`ai-api.migaozn.com`）；本地运维裸跑时
-# 显式传 `EVAL_TENANT_ID=1` 才不会「查不到对象」。
-EVAL_TENANT_ID = _env_int("EVAL_TENANT_ID", 25)
+# 环境变量 `EVAL_TENANT_ID`（**整型校验后**才进 SQL / 落身份），默认 1。
+# 取值真值（2026-10-19，issue #7340 收口）：评测租户统一为 **tenant 1**
+# （= 本地/CI 栈内种子租户；`fixtures/*_eval_seed.sql` 逐行写 tenant_id=1）。
+# 2026-10-04 曾把云测试租户改到 25；2026-10-19 共享库只剩 tenant 46，25 不存在
+# ⇒ 建会话 `sessions_tenant_id_fkey` 违例（#7340）。现把服务端 `app/config.py`、
+# 本运行器、`agent-eval.yml` 三处收敛到同一个 seed 租户 1。
+# ⚠️ 本运行器的复位 / db 校验只对「它真正打的那套环境」有意义；本地/云端都必须是
+# «已 seed 出 tenant 1» 的那套库（`scripts/eval_stack_seed.sh` / 共享云一次 seed）。
+EVAL_TENANT_ID = _env_int("EVAL_TENANT_ID", 1)
 
 
 # ── C 端用例集选择（纯逻辑拆到 eval_case_filter，issue #3266）──
@@ -482,8 +477,8 @@ async def _reset_processing_order(order_no: str) -> str:
 
 # ── 夹具 ⇄ 运行器「租户口径」一致性自检（issue #7048，**跑前 fail-closed**）─────────
 # 病灶（2026-10-16 实测，单变量对照）：夹具 `fixtures/*_eval_seed.sql` 逐行写 **tenant 1**，
-# 而本运行器的 `EVAL_TENANT_ID` **缺省 = 25（云端测试租户）** ⇒ 本地裸跑（不显式给变量）
-# 时，前置探针 / 复位 SQL 查的是 **tenant 25 = 空** ⇒ `capture=0` ⇒ 被折进
+# 而本运行器的 `EVAL_TENANT_ID` **缺省 = 1（seed 租户）** ⇒ 本地裸跑（不显式给变量）
+# 时，前置探针 / 复位 SQL 查的是 **tenant 1 = 已 seed** ⇒ `capture>0`（反向对照）
 # 「📦 用例资产缺陷（前置未成立/漂移）」——**归因错人**：真因是**环境变量错配**，不是用例
 # 资产缺陷（实测：缺省 25 ⇒ AS-004 0%；显式 `EVAL_TENANT_ID=1` ⇒ 100%；
 # 真库 tenant1 该工单 = 1 行 / tenant25 = 0 行）。连带：复位落到错误租户 ⇒ 还会造出
@@ -526,7 +521,7 @@ def tenant_scope_mismatch_message(label: str, key: str, tenants) -> str:
         f"用例会被误判成「📦 用例资产缺陷（前置未成立）」，而真因是环境变量错配。\n"
         f"    · 夹具口径：tests/agent_eval/fixtures/*_eval_seed.sql 逐行写 tenant {where}；\n"
         f"    · 本地 / CI 临时栈请显式 `EVAL_TENANT_ID={ids[0]}` 重跑"
-        f"（**已部署**云环境才是 25，由 .github/workflows/agent-eval.yml 显式设定）。"
+        f"（**已部署**云环境也使用同一个 seed 租户，由 .github/workflows/agent-eval.yml 显式设定）。"
     )
 
 
@@ -4718,6 +4713,13 @@ FLAKE_HISTORY_ENV = "AGENT_EVAL_FLAKE_HISTORY"
 # 同一用例的首跑上连续出现已经不是随机的表现。
 CROSS_RUN_RECURRENCE_MIN_PRIOR = 1
 
+#: **连续**未绿阈值（issue #7327，用户 2026-10-19 裁定 N=3）——
+#: 与上面 `CROSS_RUN_RECURRENCE_MIN_PRIOR` 是**两个不同的问**：
+#:   · 前者问「这个指纹**出现过**吗」（≥2 次同指纹即复发，判「不按波动放行」）；
+#:   · 本常量问「它**连续**多少次没绿」—— 中间只要通过一次，streak 就清零（见
+#:     `merge_flake_history` 的 `passed_case_ids`）。达到本值即**主动出声**（不只进桶）。
+SYSTEMIC_RECURRENCE_MIN_STREAK = 3
+
 
 def flake_fingerprint_key(entry: dict) -> tuple:
     """复发判定的键 = `(用例, 首跑指纹)`。
@@ -4746,15 +4748,24 @@ def load_flake_history(path: str) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def merge_flake_history(history: dict, entries: list, run_id: str = "") -> dict:
+def merge_flake_history(
+    history: dict, entries: list, run_id: str = "",
+    passed_case_ids: "set[str] | list[str] | None" = None,
+) -> dict:
     """把本次台账并入索引（返回**新**索引，不改入参）。
 
     去重键 = run_id（同一个 run 重复并入是幂等的）；`run_id` 为空时按"本次"记一个
     占位符 —— 宁可少记一次也不能把同一份台账重复计入（重复会把"出现过 1 次"算成 2 次
     ⇒ 自己把自己判成复发）。
+
+    `passed_case_ids`（issue #7327，用户裁定 N=3）：**本次通过的用例，其全部指纹条目清零**。
+    为什么必须清零：索引原本只记「失败出现过」，于是一个用例「失败/失败/通过/失败/失败」会被
+    数成 4 次连续未绿 —— 那正是不存在的东西。清零后 `len(runs)` 就等价于**连续**未绿次数。
     """
     out = {cid: {fp: dict(info) for fp, info in (fps or {}).items()}
            for cid, fps in (history or {}).items()}
+    for _cid in (passed_case_ids or ()):
+        out.pop(str(_cid), None)
     rid = str(run_id or "unknown-run")
     for e in entries or []:
         cid, fp = flake_fingerprint_key(e)
@@ -4784,7 +4795,10 @@ def cross_run_recurrence(entry: dict, history: dict) -> dict | None:
     if len(runs) < CROSS_RUN_RECURRENCE_MIN_PRIOR:
         return None
     return {"case_id": cid, "fingerprint": fp, "prior_runs": runs,
-            "prior_count": len(runs)}
+            "prior_count": len(runs),
+            # 连续未绿次数：本次尚未并入索引 ⇒ +1 就是「含本次」的连续次数
+            "streak_with_current": len(runs) + 1,
+            "systemic": len(runs) + 1 >= SYSTEMIC_RECURRENCE_MIN_STREAK}
 
 
 def annotate_cross_run_recurrence(results: list, ledger: list, history: dict) -> list:
@@ -10028,14 +10042,32 @@ async def run_suite(cases, label: str, classify: bool = True, retry_budget: int 
                 print(f"\n🔁 未提供跨 run 指纹索引（{FLAKE_HISTORY_ENV} 为空）"
                       f"—— 本次不判复发（历史取不到不等于没有；CI 由 "
                       f".github/scripts/flake_history.py 提供）")
+            # ── 连续 N 次未绿 ⇒ **主动出声**（issue #7327，用户 2026-10-19 裁定 N=3）──
+            # 与上面的「跨 run 复发」分开：复发问"出现过吗"，本条问"**连续**几次没绿"。
+            _systemic = [m for m in _marked if m.get("systemic")]
+            if _systemic:
+                print(f"\n🚨 连续 {SYSTEMIC_RECURRENCE_MIN_STREAK} 次未绿（用户裁定 N=3，"
+                      f"**必须出声**，不许当偶发）：{len(_systemic)} 条")
+                for _m in _systemic:
+                    print(f"   - {_m['case_id']} streak={_m.get('streak_with_current')} "
+                          f"fp={_m['fingerprint'][:120]}")
+                    # GitHub annotation：跑完就在 run 页面上醒目显示，不必等人去翻日志
+                    print(f"::warning title=连续 {SYSTEMIC_RECURRENCE_MIN_STREAK} 次未绿"
+                          f"::{_m['case_id']} 连续 {_m.get('streak_with_current')} 次同一指纹失败"
+                          f"（{_m['fingerprint'][:120]}）—— 请归因，不要按偶发放行")
             _cross_case = cross_case_fingerprint_cases(_history)
             if _cross_case:
                 print(f"   ℹ️ 同一指纹跨**多个用例**（信息性，不进判定）：")
                 for _fp, _cases in list(_cross_case.items())[:5]:
                     print(f"      {_fp[:100]} ← {', '.join(_cases)}")
             if _hist_path:
+                # 本次**通过**的用例（= 出现在 results 里但不在台账里）⇒ 清零其 streak。
+                # 不清零的话「失败/失败/通过/失败/失败」会被数成 4 次连续未绿（不存在的东西）。
+                _failed_ids = {str(e.get("case_id") or "") for e in (flake_ledger or [])}
+                _passed_ids = {str(r.get("case_id") or "") for r in (results or [])} - _failed_ids
                 _updated = merge_flake_history(
-                    _history, flake_ledger, os.environ.get("GITHUB_RUN_ID", "local"))
+                    _history, flake_ledger, os.environ.get("GITHUB_RUN_ID", "local"),
+                    passed_case_ids=_passed_ids)
                 with open(_hist_path, "w", encoding="utf-8") as _hf:
                     import json as _json3
                     _json3.dump(_updated, _hf, ensure_ascii=False, indent=1)

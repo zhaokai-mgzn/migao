@@ -34,4 +34,24 @@ public interface ProductionRouteRuleMapper extends BaseMapper<ProductionRouteRul
                 .set(ProductionRouteRule::getCustomerUnitPrice, price)
                 .set(ProductionRouteRule::getUpdatedAt, OffsetDateTime.now()));
     }
+
+    /**
+     * 软删条件工序规则 = <b>带谓词的条件更新</b>（issue #6962 P5-③）：谓词 = {@code id + tenant_id +
+     * deleted = 0}，按<b>影响行数</b>判是否真删到。
+     *
+     * <p><b>修前的两个洞</b>：{@code ProductionRoutingCommandService#deleteRouteRule} 的落库语句
+     * 只有 {@code .eq(id)} —— ① <b>缺 tenant 限定</b>（跨租户误删）；② <b>无 {@code deleted = 0}</b>、
+     * <b>不判影响行数</b>（已软删 / 不存在也回「deleted=true」= 0 行当成功）。与
+     * {@link ProductionRouteTemplateMapper#markDeletedByIdAndTenant} 同口径、同形态。</p>
+     *
+     * @return 受影响行数（{@code 0} = 不存在 / 跨租户 / 已软删过）
+     */
+    default int markDeletedByIdAndTenant(String id, Long tenantId) {
+        return update(null, new LambdaUpdateWrapper<ProductionRouteRule>()
+                .eq(ProductionRouteRule::getId, id)
+                .eq(ProductionRouteRule::getTenantId, tenantId)
+                .eq(ProductionRouteRule::getDeleted, 0)
+                .set(ProductionRouteRule::getDeleted, 1)
+                .set(ProductionRouteRule::getUpdatedAt, OffsetDateTime.now()));
+    }
 }

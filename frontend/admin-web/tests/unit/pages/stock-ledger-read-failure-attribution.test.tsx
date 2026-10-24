@@ -38,7 +38,8 @@ const mockGetProducts = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   stockLedgerApi: { ledger: (...a: unknown[]) => mockLedger(...a) },
-  batchStockApi: { batches: (...a: unknown[]) => mockBatches(...a) },
+  // 批次视图现在默认就走分页读面（issue #7604）；变量名沿用 `mockBatches` 指代"批次读面"
+  batchStockApi: { batchesPage: (...a: unknown[]) => mockBatches(...a) },
   productApi: { getProducts: (...a: unknown[]) => mockGetProducts(...a) },
 }))
 
@@ -97,21 +98,20 @@ describe('#6707 /stock-ledger 读失败归因：按状态分流（403 才谈权�
     async () => {
       const user = userEvent.setup()
       mockLedger.mockResolvedValue(ok({ items: [], total: 0 }))
-      mockGetProducts.mockResolvedValue(ok({ items: [{ id: 'p-1', name: '雪尼尔遮光布' }], total: 1 }))
       mockBatches.mockRejectedValueOnce(apiErr(500))
       render(<StockLedgerPage />)
 
+      // 批次视图默认就发请求（#7604 起不再要求先选商品）⇒ 失败面当场可见
       await user.click(screen.getByRole('tab', { name: /批次余量/ }))
-      await user.type(screen.getByLabelText('搜索商品'), '遮光')
-      await user.click(screen.getByRole('button', { name: /搜索商品/ }))
-      await user.click(await screen.findByTestId('product-option'))
 
       await waitFor(() => expect(mockBatches).toHaveBeenCalled())
       const batchSurface = await screen.findByTestId('batch-error')
       expect(batchSurface.textContent).toContain('批次余量暂时读不到')
       expect(PERM_BLAME_RE.test(batchSurface.textContent || '')).toBe(false)
-      // 批次空态话术的守卫（`!batchError`）仍在位：读不到不说「暂无批次记录」
-      expect(screen.queryByText(/该商品暂无批次记录/)).not.toBeInTheDocument()
+      // 批次空态话术的守卫（`!batchError`）仍在位：读不到不说「没有匹配的批次」
+      expect(screen.queryByText(/没有匹配的批次/)).not.toBeInTheDocument()
+      // 计数行同款：读不到不印「共 0 条」
+      expect(screen.getByTestId('batch-total').textContent).toContain('共 — 条')
     },
     TEST_TIMEOUT,
   )

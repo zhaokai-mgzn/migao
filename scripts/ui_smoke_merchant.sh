@@ -351,6 +351,29 @@ PYEOF
   fi
 fi
 
+# ── 4b. 数据质量体检（SDQS，docs/testing/smoke-data-quality.md）──
+# 🔴 旅程绿 ≠ 数据可用：2026-10-23 报 33/33 绿，而同轮自造商品**一条 SKU 都没有**。
+#    判定只看 spec 产出的 API 现读快照（smoke-data.json）；**没产出 = 不可判定**（不是通过）。
+DQ_EXIT=0
+if [ -f "$OUT_DIR/smoke-data.json" ]; then
+  set +e
+  "${PYTHON_BIN:-python3}" "${REPO_ROOT:-$SCRIPT_DIR/..}/scripts/smoke_data_quality.py" \
+    --snapshot "$OUT_DIR/smoke-data.json" --md "$OUT_DIR/smoke-data-quality.md"
+  DQ_EXIT=$?
+  set -e
+  case "$DQ_EXIT" in
+    0) echo "==> ✅ 数据质量：通过（见 $OUT_DIR/smoke-data-quality.md）" ;;
+    1) echo "==> ❌ 数据质量：不合格（具名 DQ-* 见 $OUT_DIR/smoke-data-quality.md）—— 冒烟不得记通过"
+       EXIT=1 ;;
+    *) echo "==> ⚠️ 数据质量：不可判定（DQ-U，退出码 ${DQ_EXIT}）—— **不得当通过**"
+       EXIT=1 ;;
+  esac
+else
+  echo "==> ❌ 数据质量：未产出 smoke-data.json ⇒ 不可判定，**不得当通过**"
+  DQ_EXIT=3
+  EXIT=1
+fi
+
 # ── 5. 停栈（默认）──
 if [ "$KEEP" = "1" ]; then
   echo "==> --keep：保留服务（admin-api pid=$(cat /tmp/ui-smoke-admin-api.pid 2>/dev/null || echo '-')）"

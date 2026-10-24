@@ -10,7 +10,7 @@
 # 用法（在 migao 仓库根目录执行）：
 #   ./scripts/dev-worktree.sh add <branch> [路径]   # 为分支创建独立工作区（默认 ../migao-wt/<分支>）
 #   ./scripts/dev-worktree.sh list                  # 列出所有工作区 + 会话锁状态
-#   ./scripts/dev-worktree.sh lock                  # 查看/清理会话锁（多会话并发时先查锁）
+#   ./scripts/dev-worktree.sh lock [--prune]        # 查看会话锁（--prune：清理失效锁；多会话并发时先查锁）
 #   ./scripts/dev-worktree.sh rm <分支|路径> [--delete-branch]  # 移除工作区（可选连带删分支）
 #   ./scripts/dev-worktree.sh rebase <分支|路径>    # rebase origin/main（+ 顺带把活锚镜像带到预设仓 main）
 #   ./scripts/dev-worktree.sh preset-guard [--source both|index|worktree]  # 提交路径守卫（版本下降 / 同号不同内容撞车 / 活锚落后即非零退出）
@@ -354,21 +354,57 @@ wt_registry_assert_for_entry() {
 }
 
 # ── 会话锁（v1.3）：锁文件 = .git/sessions/<slug>.lock，内容 "PID|时间戳|分支|工作区路径"
+# v1.16（issue #7216）：**存活判据 = PID 仍活着 或 登记的工作区仍在**。
+#   病：`add` 是短命进程，锁里记的 `$$` 在 `add` 返回时就已退出 ⇒ 只按 PID 判活时，
+#   每把锁**一建出来就是「💀 进程已退出」**（2026-10-18 实测 84 把全是这种形态）⇒
+#   「同一分支已有活跃锁 ⇒ 拒绝建区」永不触发、`list` 永远读不到真状态、锁只增不减。
+#   语义应是「这个分支还有人占着」：PID 活着（两个 add 并发重叠的窗口）或 工作区仍在
+#   （且**仍检出该锁的分支**；会话可能还在里面干活 —— 保守：宁可不判「可安全移除」）。
+#   两个消费者必须同一口径：本文件的 lock_file_alive / scripts/agent-presets-guard.py::_locked_branches
+#   （跨消费者一致性 = tests/unit_ci_workflows/test_dev_worktree_lock_liveness.py）。
 lock_path() { echo "$LOCK_DIR/$(slug "$1").lock"; }
 
-# 锁是否活跃：文件存在且记录 PID 对应的进程存活
-lock_alive() {
-  local f; f="$(lock_path "$1")"
-  [ -f "$f" ] || return 1
-  local pid; pid="$(cut -d'|' -f1 "$f" 2>/dev/null || true)"
-  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
+# PID 判据的唯一实现（别处只许调用它 —— 判活口径只能有一套）
+pid_alive() {
+  local pid="${1:-}"
+  [ -n "${pid}" ] || return 1
+  kill -0 "${pid}" 2>/dev/null
 }
 
-# 登记锁（add 成功后调用）
+# 单个锁文件是否仍活跃：PID 活着 或 登记的工作区仍是本仓的 worktree
+lock_file_alive() {
+  local f="$1" pid path
+  [ -f "$f" ] || return 1
+  pid="$(cut -d'|' -f1 "$f" 2>/dev/null || true)"
+  path="$(cut -d'|' -f4 "$f" 2>/dev/null || true)"
+  if pid_alive "${pid}"; then
+    return 0
+  fi
+  [ -n "${path}" ] || return 1
+  # 归一化：默认 WT_BASE 是 `$REPO_ROOT/../migao-wt`（含 `..`），而 `git worktree list` 报解析后的路径。
+  path="$(cd "${path}" 2>/dev/null && pwd -P || true)"
+  [ -n "${path}" ] || return 1
+  [ -e "${path}/.git" ] || return 1
+  # 「工作区仍在」必须**仍检出该锁的分支**：一个指向主工作区（或其他分支）的死锁不是占用
+  # （否则每次 `add` 都会把一行旧锁读成「有会话在用」；实测 84 条旧锁里就有这种形态）。
+  local lock_branch cur_branch
+  lock_branch="$(cut -d'|' -f3 "$f" 2>/dev/null || true)"
+  [ -n "${lock_branch}" ] || return 1
+  cur_branch="$(git -C "${path}" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  [ "${cur_branch}" = "${lock_branch}" ] || return 1
+  return 0
+}
+
+# 锁是否活跃（按分支名）：与 lock_file_alive 同源，不另写判据
+lock_alive() { lock_file_alive "$(lock_path "$1")"; }
+
+# 登记锁（add 成功后调用）。PID 只是**创建瞬间**的证据；之后靠「工作区仍在」判活。
 lock_register() {
   local branch="$1" path="$2"
+  # 归一化再落盘：默认 WT_BASE 含 `..`，而 `git worktree list` 报解析后的路径（判活要能对上）
+  path="$(cd "${path}" 2>/dev/null && pwd -P || path)"
   echo "$$|$(date '+%Y-%m-%d %H:%M:%S')|${branch}|${path}" > "$(lock_path "$branch")"
-  echo "🔒 会话锁已登记：${branch}（PID $$）"
+  echo "🔒 会话锁已登记：${branch}（PID $$；之后按工作区是否存在判活）"
 }
 
 # 清理锁（rm / 手动）
@@ -390,10 +426,12 @@ lock_list() {
     ts="$(cut -d'|' -f2 "$f" 2>/dev/null || true)"
     branch="$(cut -d'|' -f3 "$f" 2>/dev/null || true)"
     path="$(cut -d'|' -f4 "$f" 2>/dev/null || true)"
-    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    if pid_alive "$pid"; then
       echo "🔒 $(basename "$f" .lock) | PID $pid | ${ts} | ${path}"
+    elif lock_file_alive "$f"; then
+      echo "🔒 $(basename "$f" .lock) | PID ${pid:-?}（已退出）| ${ts} | ${path}（工作区仍在且检出该分支 ⇒ 视为占用）"
     else
-      echo "💀 $(basename "$f" .lock) | PID ${pid:-?} | ${ts} | ${path}（进程已退出，锁失效）"
+      echo "💀 $(basename "$f" .lock) | PID ${pid:-?} | ${ts} | ${path}（进程已退出，工作区也不在，锁失效）"
     fi
   done
   # 🔴 issue #6243：**末行必须是显式的 `return 0`**。这里曾写成 `[ "$found" = "0" ] && echo "（无会话锁）"`
@@ -407,19 +445,20 @@ lock_list() {
   return 0
 }
 
-# 清理失效锁（进程已退出的）
+# 清理失效锁（PID 已退出 **且** 登记的工作区已不在）
+# v1.16（issue #7216）：判据与 lock_file_alive 同一实现（不写第二套）；`--quiet` 供 add 静默自愈
 lock_prune() {
-  local pruned=0
+  local quiet="${1:-}" pruned=0 f
   for f in "$LOCK_DIR"/*.lock; do
     [ -f "$f" ] || continue
-    local pid; pid="$(cut -d'|' -f1 "$f" 2>/dev/null || true)"
-    if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
-      echo "🧹 清理失效锁：$(basename "$f" .lock)"
-      rm -f "$f"
-      pruned=$((pruned + 1))
+    if lock_file_alive "$f"; then
+      continue
     fi
+    [ "${quiet}" = "--quiet" ] || echo "🧹 清理失效锁：$(basename "$f" .lock)"
+    rm -f "$f"
+    pruned=$((pruned + 1))
   done
-  echo "已清理 ${pruned} 个失效锁"
+  [ "${quiet}" = "--quiet" ] || echo "已清理 ${pruned} 个失效锁"
 }
 
 # ── 活锚镜像刷新（v1.10，issue #4026）：让活锚**跟随 main**，而不是停在某个时刻 ──
@@ -482,6 +521,24 @@ cmd_rebase() {
   echo "✅ rebase 完成：$(git -C "$path" log -1 --format='%h %s')"
 }
 
+cmd_hooks_install() {
+  # issue #7229：仓内 pre-commit 守卫（主工作树 × 非 main 分支 ⇒ 拒提交；见 .githooks/pre-commit）。
+  # `core.hooksPath` 写在主仓 .git/config ⇒ 对**所有工作区**同时生效；重复执行幂等。
+  # `MIGAO_HOOKS_GIT_DIR` / `MIGAO_HOOKS_DIR` 是**测试缝**（判据要能在临时仓库上验证幂等，
+  # 而 `REPO_ROOT` 由脚本位置推导、无法被 env 改向）—— 不是用户接口，正常用法不设。
+  # 判据 9（tests/unit_ci_workflows/test_dev_worktree_registry_drift.py）：**每个** cmd_* 入口
+  # 都必须先过「登记表 × 磁盘」前置断言 —— 本命令虽是写配置而非写工作区，也照同一入口纪律走
+  # （不给自己开豁免：豁免名单只许缩短）。
+  wt_registry_assert_for_entry "hooks-install" || exit 1
+  local git_dir="${MIGAO_HOOKS_GIT_DIR:-$REPO_ROOT}"
+  local hooks_dir="${MIGAO_HOOKS_DIR:-$REPO_ROOT/.githooks}"
+  git -C "$git_dir" config core.hooksPath .githooks
+  chmod +x "$hooks_dir/pre-commit" 2>/dev/null || true
+  echo "✅ 已启用仓内钩子：core.hooksPath=$(git -C "$git_dir" config --get core.hooksPath)"
+  echo "   守的是：主工作树里非 main 分支的提交（防提交落到别的会话的分支）+ acceptance/out 产物软警告"
+  echo "   逃逸口：MIGAO_MAIN_TREE_COMMIT=1 git commit ..."
+}
+
 cmd_add() {
   [ $# -ge 1 ] || usage
   local branch="$1"
@@ -498,6 +555,10 @@ cmd_add() {
   # 🔴 地雷 D（issue #6235）：**前置断言** —— 登记表里的每个路径必须在磁盘上真的存在；
   #    命中漂移 ⇒ 打印将删清单 → 自愈 → 复检；仍红则 fail-closed（见 wt_registry_assert_for_entry）。
   wt_registry_assert_for_entry "add ${branch}" || exit 1
+
+  # v1.16（issue #7216）：事件驱动自愈（铁律 10「清理挂在事件上」，不新增 cron）——
+  # 失效锁不再靠人记得跑 `lock --prune`；`add` 是最常见的入口，顺手清掉。
+  lock_prune --quiet
 
   # 会话锁检查（v1.3）：同一分支已有活跃会话锁 → 拒绝重复建工作区（防多会话踩脚）
   if lock_alive "$branch" && [ "${FORCE_LOCK:-0}" != "1" ]; then
@@ -545,6 +606,11 @@ cmd_add() {
     git -C "$REPO_ROOT" worktree add --track -b "$branch" "$path" "origin/$branch"
   fi
   lock_register "$branch" "$path"
+  # issue #7229：建工作区的时机顺带把仓内钩子接上（幂等；失败不阻塞建工作区）
+  if ! git -C "$REPO_ROOT" config --get core.hooksPath >/dev/null 2>&1; then
+    git -C "$REPO_ROOT" config core.hooksPath .githooks 2>/dev/null \
+      && echo "   🔐 已启用仓内 pre-commit 钩子（.githooks；见 ./scripts/dev-worktree.sh hooks-install）"
+  fi
 
   # v1.10（issue #4026）：与主干同步的时机顺带把**活锚镜像**带上预设仓 main ——
   # 否则「预设 PR 合并后活锚落后一格」会一直留到有人手动刷（改进到不了加载点）。
@@ -656,8 +722,9 @@ cmd_rm() {
   git -C "$REPO_ROOT" worktree remove "$path" --force
   echo "✅ 已移除工作区：${path}"
 
-  # 会话锁清理（v1.3）：移除工作区后释放对应锁
-  if [ -n "$branch" ] && lock_alive "$branch" 2>/dev/null; then
+  # 会话锁清理（v1.3 / v1.16 #7216）：工作区已移除 ⇒ 该锁必然「不再活跃」（判活含「工作区仍在」）
+  # ⇒ 不能再以 lock_alive 作前提（旧写法在 add 之后永远为假，锁从不在 rm 时释放）。
+  if [ -n "$branch" ] && [ -f "$(lock_path "$branch")" ]; then
     lock_clean "$branch"
   fi
 
@@ -683,6 +750,7 @@ case "${1:-}" in
   list) cmd_list ;;
   rm)   shift; cmd_rm "$@" ;;
   rebase) shift; cmd_rebase "$@" ;;
+  hooks-install) cmd_hooks_install ;;
   preset-guard)
     # v1.8（issue #3851）：提交路径 fail-closed 守卫 —— 判定**业务仓** .agent-presets/** 是否构成版本下降。
     # v1.10（issue #4026）：同一守卫同时判**活锚新鲜度**（内容 + sha；落后/悬空即非零退出）

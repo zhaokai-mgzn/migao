@@ -1,0 +1,433 @@
+[
+  {
+    "journey": "01-login",
+    "pass": true,
+    "errors": [],
+    "notes": [
+      "已知环境限制：发码被后端拒（400 POST 发码端点）—— 本机 `sms.bypass-code` 非空（万能码）⇒ 登录**不依赖发码**，该响应不计入本旅程失败"
+    ],
+    "evidence": [
+      "login → /dashboard，刷新后会话保持",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/01-login.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "02-dashboard",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "看板渲染数字片段: 4|4|5|3|5",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/02-dashboard.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "03-briefing",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "简报页渲染，body 文本长度 1261",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/03-briefing.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "04-agent-workspace-redirect",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "重定向到 /agent-workspace/human-sessions",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/04-agent-workspace-redirect.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "05-human-sessions",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "在线接待页渲染（ai-agent 未起，空态）— UI-only",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/05-human-sessions.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "06-agent-sessions",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "会话历史页渲染（ai-agent 未起，空态）— UI-only",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/06-agent-sessions.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "07-chat",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "对话页输入框可用（ai-agent 未起）— UI-only",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/07-chat.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "08-products-list",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "商品列表渲染 1 行",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/08-products-list.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "09-products-new",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "门幅 值/显示分离 ✓([\"|请选择\",\"2.8|2.8米\",\"3.2|3.2米\",\"3.4|3.4米\"]→'2.8') + 建品可见 ✓(冒烟SKU商品1792782109843)",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/09-products-new.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "10-product-detail",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "商品详情渲染（http://localhost:3001/products/c4be96295488418c92211d6762e7d28b）",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/10-product-detail.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "11-product-edit-doorwidth",
+    "pass": true,
+    "errors": [],
+    "notes": [
+      "自造商品 d0443318334173875d5006e9a99a7b93 已清理（门幅回显后；下架 200 / DELETE 200 / GET 404，商品总数 14）"
+    ],
+    "evidence": [
+      "门幅下拉回显: value=2.8, 选项=[\"|请选择\",\"2.8|2.8米\",\"3.2|3.2米\",\"3.4|3.4米\"]（自造商品 d0443318334173875d5006e9a99a7b93 已清理）",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/11-product-edit-doorwidth.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "12-processing",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "加工项 新建→列表可见→编辑→删除 完成；启停toggle可见=false",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/12-processing.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "13-categories",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "分类 新建→可见→行内删除",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/13-categories.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "14-orders-list",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "订单列表 20 行（无分页按钮或单页）",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/14-orders-list.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "15-orders-new",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "表单校验提示可见",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/15-orders-new.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "16-order-detail-processing-order",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "加工单生成+流转:  [发加工→徽标「已发加工」✓;按钮切换✓] [开始加工→徽标「加工中」✓;按钮切换✓] [加工完成→徽标「加工完成」✓;按钮切换✓]; 加工单 JG-20261024-3223 可见=true；前置自造订单 f7332291358bf6d557337a523fa0682b（下游 17- 复用，不清理）",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/16-order-detail-processing-order.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "32-production-qr-and-piecework",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "订单 5a0d5b297219c39192a3181b53cbcbc5 / 加工单 JG-20261024-3225：qr_token=6d52490e49df45c9bce6a170744b1b27；工序 12 道；DOM qr=1 占位=0 行=12；报工「精裁-布」2米 → 进度 8%（已完成 1/12 道工序）、计件 ¥0.80",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/32-production-qr-and-piecework.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "17-order-ship",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "发货页表单渲染（7 控件）",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/17-order-ship.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "17b-ship-order-real",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "订单 d7f5bfaca8adb8d4872f5481f6b64098：UI 提交（X-Client-Request-Id=f9573c1e…） → API 读回 status=shipped/trackingNo=SF1792782267405；order_shipments 库 0→1（API 读面 0→1）；同键重放 replayed=true 且库仍 1 行、运单号未变",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/17b-ship-order-real.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "18-after-sales-list",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "售后工单列表渲染 14 行",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/18-after-sales-list.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "19-after-sales-detail",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/19-after-sales-detail.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "20-customers-list",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "客户列表 7 行",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/20-customers-list.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "21-customer-detail",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/21-customer-detail.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "22-finance",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "财务对账页渲染",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/22-finance.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "23-employees",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "员工 新建→可见→改手机号落库=false→删除；空提交校验=false",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/23-employees.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "24-roles",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "岗位权限页 11 行，行内「编辑」（button[title=\"编辑\"]）打开权限弹窗 ✓",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/24-roles.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "25-settings",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "设置页只读校验：Tab 数=17、自动保存提示=true、意外「保存」按钮=false、密码字段=0、4xx=0",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/25-settings.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "26-notifications",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "通知中心渲染，已读操作可用",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/26-notifications.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "27-corporate-home",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "/ 渲染（4238 字符）",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/27-corporate-home.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "28-corporate-about",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "/about 渲染（1911 字符）",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/28-corporate-about.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "29-corporate-contact",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "/contact 渲染（1152 字符）",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/29-corporate-contact.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "30-corporate-services",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "/services 渲染（4110 字符）",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/30-corporate-services.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "31-register",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "注册页渲染，输入控件=2",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/31-register.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  }
+]

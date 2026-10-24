@@ -1082,34 +1082,40 @@ class TestMixedColorSurcharge:
                       craft_tier="standard")
 
     def test_sec10_case_52_folds_single_mix(self):
-        """算例（§10）：52 折双开 · 拼1次 ⇒ 用料 34.1 米 ⇒ 加价 34.1 × 2.4 = 81.84 元。"""
+        """算例（§10）：52 折双开 · 拼1次 ⇒ 用料 13.9 米 ⇒ 加价 13.9 × 2.4 = 33.36 元。
+
+        ⚠️ 米数口径 = issue #7560（2026-10-23 用户裁定「按纸表」）：主布 0.25×52+0.2 = 13.2 米
+        + 配布 0.65 米 = 13.85 ⇒ 进位 **13.9** 米（改前按「0.65 米/折」算出 34.1 米）。
+        """
         q = build_quote(style="拼色", special_options=["拼1次"], **self.DOUBLE_6_6)
-        assert q["per_fold"] == 0.65, "拼色**用料**系数（0.65 米/折）不得被本包改动"
-        assert q["fabric_meters"] == 34.1
-        assert q["mixed_color_surcharge"] == 81.84
-        # 总价 = 面料 1023.0 + 加工 341.0 + 安装 126.0 + 拼色加价 81.84（韩褶无默认辅料）
-        assert q["total"] == 1571.84
+        assert q["per_fold"] == 0.25, "拼色**不改**每折吃布（四列纸表斜率同为 0.25）"
+        assert q["patch_meters"] == 0.65
+        assert q["fabric_meters"] == 13.9
+        assert q["mixed_color_surcharge"] == 33.36
+        # 总价 = 面料 417.0 + 加工 139.0 + 安装 126.0 + 拼色加价 33.36（韩褶无默认辅料）
+        assert q["total"] == 715.36
 
     def test_sec10_case_52_folds_double_mix(self):
-        """算例（§10）：52 折双开 · 拼2次 ⇒ 用料 62.7 米 ⇒ 加价 62.7 × 2.4 = 150.48 元。"""
+        """算例（§10）：52 折双开 · 拼2次 ⇒ 用料 14.4 米 ⇒ 加价 14.4 × 2.4 = 34.56 元。"""
         q = build_quote(style="拼色", special_options=["拼2次"], **self.DOUBLE_6_6)
-        assert q["fabric_meters"] == 62.7
-        assert q["mixed_color_surcharge"] == 150.48
-        assert q["total"] == 2784.48
+        assert q["patch_meters"] == 1.2
+        assert q["fabric_meters"] == 14.4
+        assert q["mixed_color_surcharge"] == 34.56
+        assert q["total"] == 736.56
 
     def test_surcharge_is_a_separate_line_not_a_unit_price_bump(self):
         """加价**另立一行**：面料/加工行金额仍 = 米数 × **原**单价（改单价 = 双算 + 动既有契约）。"""
         q = build_quote(style="拼色", special_options=["拼1次"], **self.DOUBLE_6_6)
         rows = {b["name"]: b["cost"] for b in q["breakdown"]}
-        assert rows["面料"] == round(34.1 * 30.0, 2), "面料行被加了价（应另立一行，不改单价）"
-        assert rows["加工费"] == round(34.1 * 10.0, 2), "加工费行被加了价（应另立一行）"
-        assert rows["拼色加价"] == 81.84
+        assert rows["面料"] == round(13.9 * 30.0, 2), "面料行被加了价（应另立一行，不改单价）"
+        assert rows["加工费"] == round(13.9 * 10.0, 2), "加工费行被加了价（应另立一行）"
+        assert rows["拼色加价"] == 33.36
         assert rows["安装费"] == round((6.6 + 0.4) * 18.0, 2)
 
     def test_breakdown_rows_sum_to_total(self):
         """明细行之和 = 总价（加价行必须**真的进总价**，不许只显示不收费）。"""
         q = build_quote(style="拼色", special_options=["拼2次"], **self.DOUBLE_6_6)
-        assert round(sum(b["cost"] for b in q["breakdown"]), 2) == q["total"] == 2784.48
+        assert round(sum(b["cost"] for b in q["breakdown"]), 2) == q["total"] == 736.56
 
     def test_single_color_quote_is_unchanged(self):
         """**单色款不受影响**（回归）：§7 算例逐值对齐真值源、明细无加价行、加价键 = 0.0。
@@ -1187,8 +1193,8 @@ class TestMixedColorSurcharge:
             **self.DOUBLE_6_6,
         )
         assert mixed.success is True
-        assert mixed.data["mixed_color_surcharge"] == 81.84
-        assert "拼色加价¥81.84" in mixed.summary
+        assert mixed.data["mixed_color_surcharge"] == 33.36
+        assert "拼色加价¥33.36" in mixed.summary
 
         single = await tool.execute(context=sample_tool_context, **self.DOUBLE_6_6)
         assert "拼色加价" not in single.summary, "单色款的 summary 一字不得变"

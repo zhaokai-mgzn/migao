@@ -204,16 +204,29 @@ def _truncate_snapshot(snapshot_text: str) -> str:
     return head + ellipsis + tail
 
 
+def _prompt_view(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    """LLM 提示词视图：**只含** `metrics` + `facts`（红线 4 的「纯数字 + 脱敏事实」口径）。
+
+    行级数组（`orders` / `skus` / `returns` / `price_changes` / `order_discounts` 与
+    `row_fields` / `row_meta`）是**规则引擎**的输入，不是模型上下文：塞进去既涨成本、又会被
+    `MAX_SNAPSHOT_CHARS` 截成半截 JSON。🔴 投影只在这里做一次 —— 调用方发的是**全量快照**
+    （issue #7195：在调用方投影会把引擎的输入也一起摘掉 ⇒ 六条规则永远 `not_wired`）。
+    """
+    return {"metrics": snapshot.get("metrics"), "facts": snapshot.get("facts")}
+
+
 async def generate_briefing(snapshot: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """根据聚合指标快照生成四区块简报（异常降级返回 None，不编造数据）。
 
-    snapshot 结构：{"metrics": {key: value, ...}, "facts": [{...业务事实条目...}]}
+    snapshot = admin-api 的**全量**落库快照（`metrics` / `facts` / 行级数组 / `row_fields` /
+    `row_meta` / 租户级事实）。提示词只吃 `metrics` + `facts`（见 `_prompt_view`）；
+    引擎的 `proactive_status` 吃全量（它逐规则判「输入接没接上」）。
     """
     if not snapshot:
         logger.warning("[briefing] 快照为空，跳过生成")
         return None
     try:
-        snapshot_text = json.dumps(snapshot, ensure_ascii=False, default=str)
+        snapshot_text = json.dumps(_prompt_view(snapshot), ensure_ascii=False, default=str)
         snapshot_text = _truncate_snapshot(snapshot_text)
         prompt = (
             f"{BRIEFING_SYSTEM_PROMPT}\n\n"

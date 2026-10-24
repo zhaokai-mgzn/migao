@@ -69,13 +69,19 @@ describe('label-print/capability — 打印通道能力探测（issue #6439）',
     }
   })
 
-  it('判据 ③：系统打印那条路必须被点明（直连不可用 ≠ 打不了）', () => {
+  it('判据 ③：系统打印那条路必须被点明（直连不可用 ≠ 打不了），且指的是**眼前能点的按钮**', () => {
     // 这条是「不做打印机定制功能」的核心：不装 SDK、不接蓝牙的打印机照样要能打
     expect(SYSTEM_PRINT_HINT).toContain('驱动')
-    expect(SYSTEM_PRINT_HINT).toContain('打印任务卡')
+    expect(SYSTEM_PRINT_HINT).toContain('系统打印')
     for (const reason of REASONS) {
       // 每一类直连失败都要把用户指回系统打印那条路
-      expect(DIRECT_PRINT_HINTS[reason], `${reason} 未指出系统打印兜底路径`).toContain('打印任务卡')
+      expect(DIRECT_PRINT_HINTS[reason], `${reason} 未指出系统打印兜底路径`).toContain('系统打印')
+      // 🔴 issue #7288：入口搬进「水洗唛 · 打印预览」页脚后，**眼前能点的**系统打印按钮叫「打印」；
+      //    文案若还指向页面上的「打印任务卡」= 指一个被弹层挡住、点不到的地方；
+      //    指向旧按钮名「直连打印机打印」= 指一个已经不存在的按钮。
+      //    红证：把任一 hint 的「打印」改回这两种措辞 ⇒ 本条必红。
+      expect(DIRECT_PRINT_HINTS[reason], `${reason} 仍指向被弹层遮住的页面按钮`).not.toContain('打印任务卡')
+      expect(DIRECT_PRINT_HINTS[reason], `${reason} 仍指向已改名的入口`).not.toContain('直连打印机打印')
     }
   })
 

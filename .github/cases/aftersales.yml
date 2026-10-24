@@ -892,3 +892,35 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: AS-016
+    legacy_id: ""
+    title: "售后如实引导：客户说窗帘收到时有破洞 → 先查那单 + 说清后台怎么走，不承诺代办"
+    domains:
+      - aftersales
+    tier: normal
+    persona: mibao
+    tags:
+      - aftersales
+      - journey
+      - capability-boundary
+    truths_ref: []
+    user_inputs:
+      - "张三那单收到的窗帘布边上有个破洞，这怎么处理？"
+    expectations:
+      - tool: order_query or customer_manage
+    forbidden_text:
+      - "已为您提交售后"
+      - "已帮您申请售后"
+      - "已登记售后"
+    precondition: "前置 = 客户「张三」名下有夹具订单（`EVAL-MB-ORD-0001/0002`，customer_name=张三 / 13800138000，见 mibao_eval_seed.sql 的订单夹具块）；前置不成立 ⇒ agent 查不到单、判红会伪装成「不会处理售后」"
+    data_checks:
+      - "前置（precondition）：订单夹具 `EVAL-MB-ORD-0001` 在库且客户名为「张三」（success=true；真值 = tests/agent_eval/fixtures/mibao_eval_seed.sql 的订单 INSERT 块）"
+      - "必须先**真的查**（order_query 按客户名/订单号定位张三的单，或 customer_manage 查档案），不得凭空说「已为您登记」"
+      - "售后**写面**已随 #5247 只读化下线 ⇒ 回复必须引导后台「售后」页面自行处理，且不得承诺代办（机器断言 = forbidden_text）"
+    skip_reason: ""
+    merge_log: "2026-10-19 新增（issue #7027 的用例补齐）：售后域现有用例集中在工单状态机与退款口径（AS-001~015），缺「客户报损 → 商家问怎么处理」这条**商家视角**的真实旅程；且它与能力边界段（#7291）同源 —— 只读化之后模型最容易在这里承诺代办。"
+    traces:
+      tests:
+      ci:
+      verifies: []

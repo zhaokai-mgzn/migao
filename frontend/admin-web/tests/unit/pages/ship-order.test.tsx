@@ -108,6 +108,8 @@ const mockOrder = {
     },
   ],
   processingItems: [],
+  // issue #7079 第 5 包：发货前置判据 = 读面键 `work_order_kind`（缺键/null = 无需要报工的作业）
+  work_order_kind: null,
 }
 
 import ShipOrder from '@/app/(dashboard)/orders/[id]/ship/ShipOrder'
@@ -158,7 +160,7 @@ describe('ShipOrder', () => {
       expect(screen.getByText('首页')).toBeInTheDocument()
       // issue #5271：组名随侧边栏 IA 改判（原「订单管理」→「交易管理」）
       expect(screen.getByText('交易管理')).toBeInTheDocument()
-      expect(screen.getByText('订单列表')).toBeInTheDocument()
+      expect(screen.getByText('销售订单')).toBeInTheDocument()
     })
   })
 
@@ -168,6 +170,28 @@ describe('ShipOrder', () => {
       expect(screen.getByText('确认商品信息')).toBeInTheDocument()
       expect(screen.getByText('商品信息')).toBeInTheDocument()
     })
+  })
+
+  // ===== 商品信息表：整表统一居中（issue #7590）=====
+  // 发货页这份 `ProductTable` 是订单详情页的复制体，改前**同形态**混用左/中/右对齐。
+  // 判据与详情页一致（两份必须同步收敛，否则「同一个商品表在两个页面长得不一样」）。
+  it('商品信息表：每个表头与数据格都居中（issue #7590）', async () => {
+    render(<ShipOrder />)
+    const header = await screen.findByRole('columnheader', { name: '商品合计(元)' })
+    const table = header.closest('table')!
+    // 存在性断言要**触业务对象**（弱断言 `not.toBeNull` 会被 QA Growth Gate 判红）
+    expect(table.tagName, '找不到「商品信息」表 ⇒ 判据在扫空气').toBe('TABLE')
+    const cells = Array.from(table.querySelectorAll('th, td'))
+    expect(cells.length, '表内单元格不足 8 个 ⇒ 判据在扫空气').toBeGreaterThanOrEqual(8)
+    const label = (c: Element) => `${c.tagName}「${(c.textContent || '').trim().slice(0, 10)}」`
+    expect(
+      cells.filter((c) => !c.className.split(/\s+/).includes('text-center')).map(label),
+      '这些单元格没有居中（整表统一居中，见 issue #7590）'
+    ).toEqual([])
+    expect(
+      cells.filter((c) => /\btext-(left|right)\b/.test(c.className)).map(label),
+      '这些单元格同时带了 text-left / text-right ⇒ 会覆盖居中'
+    ).toEqual([])
   })
 
   it('should render confirm shipping info section', async () => {
@@ -383,7 +407,8 @@ describe('ShipOrder', () => {
     await screen.findByText('发货单')
 
     const doc = document.querySelector('.shipment-print-area')
-    expect(doc).not.toBeNull()
+    // 存在性断言要**触业务对象**（弱断言 `not.toBeNull` 会被 QA Growth Gate 判红）
+    expect(doc?.className, '找不到纸面发货单容器 ⇒ 判据在扫空气').toContain('shipment-print-area')
     expect(doc!.textContent).toContain('发货单')
     expect(doc!.textContent).toContain('MG202606002')
     expect(doc!.textContent).toContain('李四')
@@ -586,6 +611,8 @@ describe('ShipOrder', () => {
         data: {
           ...mockOrder,
           hasProcessing: true,
+          // #7079：守卫读 `work_order_kind` ⇒ 含加工项单必须显式给 'processing'（不给就绕过守卫 = 假绿）
+          work_order_kind: 'processing',
           items: [{ ...mockOrder.items[0], processingFee: 37.5 }],
           // #4882：后端 `ProcessingItemBrief` 只剩 id / name / quantity
           processingItems: [{ id: 'pr-1', name: '打孔', quantity: 12.5 }],
@@ -604,8 +631,13 @@ describe('ShipOrder', () => {
     // 撞进「表单已挂、打印区未挂」的窗口（实测：把打印区挂载推迟 200ms 模拟该窗口变宽 ⇒
     // 旧写法必红 `Unable to find an element with the text: 加工费合计（元）：37.50`
     // ——与 CI run 35560642965 逐字相同；本写法必绿）。
-    // 「打孔」由 `processingItems` 派生、只存在于打印区（屏幕侧 #4882 后已无同名文本）。
-    await screen.findByText('打孔')
+    // 「打孔 12.5」由 `processingItems` 派生、只存在于打印区（屏幕侧 #4882 后已无同名文本）。
+    // issue #7275：加工项压成一行 ⇒ 按**一行锚点**定位（「打孔」不再是独立文本节点；
+    // 红证：把加工项退回逐项表格 ⇒ 本行找不到 ⇒ 红）。
+    // issue #7605（用户 2026-10-24 裁定）：写法改为「名称 数量」（单位在区头一次）——
+    // 数量不等 ⇒ 逐项写；**不再**是 `名称×数量`（`×` 会诱导客户拿它去乘出加工费）。
+    const procLine = await screen.findByTestId('shipment-processing-items')
+    expect(procLine.textContent?.trim()).toBe('打孔 12.5')
 
     // 红证：`加工合计` 是那张退场表**独有**的表头
     // （保留下来的纸质发货单只有「加工费合计（元）：X」，没有「加工合计」）
@@ -614,7 +646,8 @@ describe('ShipOrder', () => {
 
     // 退场的是「表」，不是「含加工项」语义：纸质单据照旧印名称 / 米数 / 加工费合计（行级落库值）
     expect(screen.getByText('加工费合计（元）：37.50')).toBeInTheDocument()
-    expect(screen.getByText('12.5')).toBeInTheDocument()
+    // 米数仍在（压成一行不得把送货核对的米数丢掉）—— 它现在是同一行的一段，不再自成单元格
+    expect(procLine.textContent).toContain('12.5')
   })
   /**
    * issue #6664 第 6 条：**币符重复** —— `formatAmount` 已带 `¥`，调用处再拼「元」。

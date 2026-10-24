@@ -109,7 +109,7 @@ def tool():
 
 #: 商户员工 JWT 的 `permissions` claim —— 过程明细端点 = AgentProductionController 方法级的
 #: `@RequirePermission`（与 /progress、/piecework 同一授权面）。
-# issue #5246：码从 `order:list` 对齐到页面节点『生产看板』的码
+# issue #5246：码从 `order:list` 对齐到页面节点『作业看板』的码
 # （`AgentProductionController` 同批改为方法级）。
 # issue #5291：该码 = 生产域读码 `production:view`（此前与写面同用 `processing:manage`）。
 SELLER_PERMISSIONS = ["production:view"]
@@ -141,7 +141,7 @@ class TestMetadataContract:
 
     def test_b_end_only_by_permission_code(self, tool):
         assert tool.required_permissions == ["production:view"], (
-            "过程明细端点 = AgentProductionController 的读码 production:view（与菜单节点『生产看板』同码，issue #5291）"
+            "过程明细端点 = AgentProductionController 的读码 production:view（与菜单节点『作业看板』同码，issue #5291）"
         )
         customer = ToolContext(tenant_id=1, user_id="c1", session_id="s", role="customer")
         assert tool.check_permission(customer) is False, "C 端顾客必须被拒（报工人/计件不对顾客开放）"
@@ -267,7 +267,7 @@ class TestPermission:
 
     def test_operator_allowed_others_denied_after_node_alignment(self, tool):
         """issue #5246 的**有意收窄**（issue #5291 改挂读码）：只有运营岗（+ admin 通配）能查过程明细；
-        客服 / 销售 / 财务被拒（他们看不见『生产看板』菜单，此前却能经 Agent 查到）。"""
+        客服 / 销售 / 财务被拒（他们看不见『作业看板』菜单，此前却能经 Agent 查到）。"""
         ctx = ToolContext(
             tenant_id=1, user_id="u_001", session_id="s", role="operator",
             permissions=list(SELLER_PERMISSIONS),
@@ -279,7 +279,7 @@ class TestPermission:
                 permissions=["order:list", "processing:view"],   # 岗位真实默认码（不含 production:view）
             )
             assert tool.check_permission(ctx) is False, (
-                f"{role} 没有 production:view（看不见『生产看板』菜单）⇒ 经 Agent 也不得查"
+                f"{role} 没有 production:view（看不见『作业看板』菜单）⇒ 经 Agent 也不得查"
             )
 
     def test_role_without_the_code_is_denied(self, tool):

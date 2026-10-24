@@ -41,8 +41,14 @@ jest.mock('../src/store/authStore', () => ({
   useAuthStore: jest.fn(() => ({ user: { id: 'u1', nickname: '王老板', tenantId: 1 } })),
 }))
 
+// 底栏 tab（服务端 `mobileTabs`）：必须含「数据」这一格 —— 2026-10-18 裁定后「数据」页在
+// 服务端明确答复「没有这一格」时整页给授权缺失态；本文件测的是**有权限**的数字卡占位口径。
 jest.mock('../src/components/admin/useMobileMenu', () => ({
-  useMobileMenu: () => ({ state: 'ok', surfaces: [], tabs: [] }),
+  useMobileMenu: () => ({
+    state: 'ok',
+    surfaces: [],
+    tabs: [{ key: 'dashboard', title: '数据', route: '/pages/dashboard/index/index' }],
+  }),
 }))
 
 jest.mock('../src/utils/roleGuard', () => ({

@@ -15,7 +15,7 @@
     "② **豁免只覆盖 `getByRole` 形态**；`locator('xpath=…')` / `locator('text=…')` 链上的 `.first()` 由判据 C 的登记面承担；",
     "③ 动作面口径 = `.first().<click|fill|selectOption|check|press>(` 或「该变量随后被点」——见 `_first_match_action_sites`。"
   ],
-  "baseline_count": 20,
+  "baseline_count": 22,
   "entries": [
     {
       "journey": "01-login",
@@ -91,7 +91,7 @@
     },
     {
       "journey": "15-orders-new",
-      "matcher": "/提交订单/",
+      "matcher": "/提交订单|创建订单|确认下单/",
       "anchor": "提交订单",
       "anchor_kind": "text",
       "where": "frontend/admin-web/src/app/(dashboard)/orders/new/page.tsx",
@@ -184,6 +184,22 @@
       "anchor_kind": "text",
       "where": "frontend/admin-web/src/app/(dashboard)/notifications/page.tsx",
       "note": "通知中心顶部唯一批量已读按钮（全仓唯一）。"
+    },
+    {
+      "journey": "09-products-new",
+      "matcher": "'添加颜色', exact: true",
+      "anchor": "添加颜色",
+      "anchor_kind": "text",
+      "where": "frontend/admin-web/src/components/products/SkuMatrix.tsx::BatchColorInput 的「添加颜色」按钮",
+      "note": "建品页批量颜色区只有这一个「添加颜色」按钮；同页另有「添加颜色分类」（单色逐条添加）——用 exact 名区分，首个匹配就是批量入口（把 textarea 里的颜色一次加进矩阵）。"
+    },
+    {
+      "journey": "09-products-new",
+      "matcher": "'批量填写', exact: true",
+      "anchor": "批量填写",
+      "anchor_kind": "text",
+      "where": "frontend/admin-web/src/components/products/SkuMatrix.tsx::批量填写工具栏",
+      "note": "SKU 矩阵工具栏只有这一个「批量填写」按钮（提示文案里的同名字样不是按钮）；它在颜色/门幅就位后一次性写价格与库存，首个匹配就是目标。"
     }
   ],
   "exemptions": [

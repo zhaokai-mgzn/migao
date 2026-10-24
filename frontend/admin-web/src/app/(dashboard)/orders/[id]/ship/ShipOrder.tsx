@@ -7,7 +7,7 @@ import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
 import { orderApi, productionApi, processingOrderApi, customerApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
-import { Button, Loading } from '@/components/ui'
+import { Button, Loading, SELECT_CONTROL } from '@/components/ui'
 import { PrintDocPreview, ShipmentDoc, PRINT_TARGET_SPECS, usePrintDoc } from '@/components/orders'
 import { useAuthStore } from '@/store/auth'
 import type { Order, OrderItem } from '@/types'
@@ -15,6 +15,8 @@ import { cn } from '@/lib/utils'
 import { LOGISTICS_COMPANIES, LOGISTICS_TYPES } from '@/lib/logistics'
 // 商品身份（品名/货号/颜色/门幅）的**唯一读取口**（issue #6882：原先这里直读三个不存在的键）
 import { orderItemSku } from '@/lib/order-item-sku'
+// 「发货前要不要作业」的唯一读点 + 按型分岔的阻断文案（issue #7079 第 5 包）
+import { WORK_ORDER_NEEDED_COPY, workOrderKindOf } from '@/lib/processing-order'
 
 // 可发货订单状态（后端枚举：pending/confirmed/producing/shipped/completed/cancelled；
 // producing = 加工单流转后订单进入「生产中」，仍属待发货；'processing' 是历史误写，从不产生）
@@ -129,15 +131,20 @@ export default function ShipOrder() {
 
   const shippable = !!order && SHIPPABLE_STATUSES.has(order.status)
 
-  // 加工单状态查询：仅「可发货状态 + 含加工项」的订单需要（其余短路为已检查）
+  // 该订单**发货前要不要作业**（issue #7079 第 5 包）：一律取订单详情读面键 `work_order_kind`
+  // （后端 `OrderShipGuard.needsWork` 的同一份判据：含加工项 **或** 有卖布行）——
+  // 🔴 不再按 `order.processingItems` 推（那只覆盖「含加工项」一半 ⇒ 卖布单**完全不拦**，
+  // 用户填完整张表单、提交时才撞服务端那句「须先完成出库作业单的裁剪与打包报工」）。
+  const needsWorkOrder = workOrderKindOf(order ?? {}) !== null
+
+  // 作业单状态查询：仅「可发货状态 + 需要作业单」的订单需要（其余短路为已检查）
   useEffect(() => {
     if (!order || !shippable) {
       setPoChecked(true)
       setProcessingBlocked(false)
       return
     }
-    const hasProcessing = (order.processingItems?.length ?? 0) > 0
-    if (!hasProcessing) {
+    if (!needsWorkOrder) {
       setPoChecked(true)
       setProcessingBlocked(false)
       return
@@ -160,7 +167,7 @@ export default function ShipOrder() {
     return () => {
       cancelled = true
     }
-  }, [order, shippable])
+  }, [order, shippable, needsWorkOrder])
 
   /**
    * 订单自带的**常用物流两列**（issue #4874；后端 #4872 在 `orders` 上新增，
@@ -295,7 +302,7 @@ export default function ShipOrder() {
     return (
       <div className="p-6 text-center py-12">
         <p className="text-neutral-500 mb-4">订单不存在或已被删除</p>
-        <Button onClick={() => router.push('/orders')}>返回订单列表</Button>
+        <Button onClick={() => router.push('/orders')}>返回销售订单</Button>
       </div>
     )
   }
@@ -310,19 +317,22 @@ export default function ShipOrder() {
     )
   }
 
-  // 加工单前置守卫（issue #3889）：含加工项且加工单未完成 → 明确阻断，不再渲染发货表单
-  const hasProcessing = (order.processingItems?.length ?? 0) > 0
-  if (hasProcessing && !poChecked) {
+  // 发货前置守卫（issue #3889；issue #7079 第 5 包扩到**卖布单**）：**需要作业单**且作业单未完成
+  // → 明确阻断并给可行动出口，不再渲染发货表单 —— 判据 = 读面键 `work_order_kind`（与后端
+  // `OrderShipGuard.needsWork` 同一份），阻断文案按型分岔（加工单 / 出库作业单）。
+  if (needsWorkOrder && !poChecked) {
     return (
       <div className="p-6 flex items-center justify-center min-h-[400px]">
         <Loading size="lg" text="加载订单详情..." />
       </div>
     )
   }
-  if (hasProcessing && processingBlocked) {
+  if (needsWorkOrder && processingBlocked) {
     return (
       <div className="p-6 text-center py-12">
-        <p className="text-neutral-500 mb-4">该订单含加工项，须先完成加工单后再发货，请返回订单详情处理加工单</p>
+        <p className="text-neutral-500 mb-4">
+          {WORK_ORDER_NEEDED_COPY[workOrderKindOf(order) ?? 'processing'].shipBlocked}，请返回订单详情处理作业单
+        </p>
         <Button onClick={() => router.push(`/orders/${order.id}`)}>返回订单详情</Button>
       </div>
     )
@@ -341,7 +351,7 @@ export default function ShipOrder() {
         <span>交易管理</span>
         <ChevronRight className="w-3.5 h-3.5" />
         <button onClick={() => router.push('/orders')} className="hover:text-primary-600 transition-colors">
-          订单列表
+          销售订单
         </button>
         <ChevronRight className="w-3.5 h-3.5" />
         <button
@@ -484,15 +494,7 @@ export default function ShipOrder() {
                     setLogisticsCompany(e.target.value)
                     setLogisticsTouched(true)
                   }}
-                  className={cn(
-                    'h-9 px-3 pr-9 rounded border border-neutral-300 bg-white text-sm appearance-none min-w-[220px]',
-                    'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15',
-                    'bg-no-repeat bg-[right_0.75rem_center]'
-                  )}
-                  style={{
-                    backgroundImage:
-                      "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E\")",
-                  }}
+                  className={cn(SELECT_CONTROL, 'min-w-[220px]')}
                 >
                   {logisticsCompanyOptions.map((c) => (
                     <option key={c} value={c}>
@@ -536,7 +538,7 @@ export default function ShipOrder() {
       {/*
         纸质发货单：屏幕上隐藏（display:none），仅 @media print 呈现 ——
         本页屏幕布局已有商品/收货信息，再显示一份会重复；发货前打印时物流栏留空供手写，
-        发货后如需带运单号/发货人的单据，到订单详情页「打印发货单」补打。
+        发货后如需带运单号/发货人的单据，到订单详情页点「打印」→ 选「发货单」补打（issue #7544）。
       */}
       <ShipmentDoc order={order} shipperName={shipperName} printTarget={printTarget} />
 
@@ -602,14 +604,16 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
       <table className="w-full text-sm">
         <thead className="bg-neutral-50 text-neutral-600">
           <tr>
-            <Th className="pl-0">商品</Th>
-            <Th className="pl-0">商品货号</Th>
+            {/* 整表统一居中（issue #7590）：与订单详情页「商品信息」表同一形态 —— 改前 商品/货号/颜色/
+                门幅 左对齐、数量居中、金额三列右对齐 ⇒ 三种对齐并存。对齐由下面的 `Th` / `Td` 一处承担。 */}
+            <Th>商品</Th>
+            <Th>商品货号</Th>
             <Th>颜色</Th>
             <Th>门幅</Th>
-            <Th align="right">单价(元/米)</Th>
-            <Th align="center">数量(米)</Th>
-            <Th align="right">金额(元)</Th>
-            <Th align="right">商品合计(元)</Th>
+            <Th>单价(元/米)</Th>
+            <Th>数量(米)</Th>
+            <Th>金额(元)</Th>
+            <Th>商品合计(元)</Th>
           </tr>
         </thead>
         <tbody className="divide-y divide-neutral-100">
@@ -625,27 +629,27 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
                 {rowIdx === 0 && (
                   <td
                     rowSpan={group.rows.length}
-                    className="pl-0 pr-3 py-3 align-top border-r border-neutral-100 font-medium text-neutral-900"
+                    className="px-3 py-3 text-center align-top border-r border-neutral-100 font-medium text-neutral-900"
                   >
                     {group.productName}
                   </td>
                 )}
-                <Td className="pl-0">{sku.code || '-'}</Td>
+                <Td>{sku.code || '-'}</Td>
                 <Td>{sku.color || '-'}</Td>
                 <Td>{sku.doorWidth || '-'}</Td>
-                <Td align="right" className="text-red-500 font-medium">
+                <Td className="text-red-500 font-medium">
                   {formatAmount(row.unitPrice)}
                 </Td>
-                <Td align="center" className="text-primary-600 font-medium">
+                <Td className="text-primary-600 font-medium">
                   {row.quantity}
                 </Td>
-                <Td align="right" className="text-primary-600 font-medium">
+                <Td className="text-primary-600 font-medium">
                   {formatAmount(row.amount)}
                 </Td>
                 {rowIdx === 0 && (
                   <td
                     rowSpan={group.rows.length}
-                    className="px-3 py-3 text-right align-top border-l border-neutral-100 text-primary-600 font-semibold"
+                    className="px-3 py-3 text-center align-top border-l border-neutral-100 text-primary-600 font-semibold"
                   >
                     {formatAmount(group.groupTotal)}
                   </td>
@@ -660,22 +664,15 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
   )
 }
 
-function Th({
-  children,
-  align = 'left',
-  className,
-}: {
-  children: React.ReactNode
-  align?: 'left' | 'right' | 'center'
-  className?: string
-}) {
+/** 表头 / 数据格（issue #7590）：**整表一律居中**（口径同订单详情页 `ProductTable`）。
+ *
+ *  改前对齐是逐列参数（商品/货号/颜色/门幅 左、数量 中、金额三列 右）⇒ 同一张表三种对齐并存。
+ *  这两个组件只服务这一张发货页商品表（非导出）⇒ 对齐只有这一处，调用点不再有可漂移的旋钮。 */
+function Th({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <th
       className={cn(
-        'px-3 py-2.5 text-xs font-semibold text-neutral-600 whitespace-nowrap',
-        align === 'right' && 'text-right',
-        align === 'center' && 'text-center',
-        align === 'left' && 'text-left',
+        'px-3 py-2.5 text-xs font-semibold text-neutral-600 whitespace-nowrap text-center',
         className
       )}
     >
@@ -684,26 +681,6 @@ function Th({
   )
 }
 
-function Td({
-  children,
-  align = 'left',
-  className,
-}: {
-  children: React.ReactNode
-  align?: 'left' | 'right' | 'center'
-  className?: string
-}) {
-  return (
-    <td
-      className={cn(
-        'px-3 py-3 text-neutral-700',
-        align === 'right' && 'text-right',
-        align === 'center' && 'text-center',
-        align === 'left' && 'text-left',
-        className
-      )}
-    >
-      {children}
-    </td>
-  )
+function Td({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <td className={cn('px-3 py-3 text-neutral-700 text-center', className)}>{children}</td>
 }

@@ -23,7 +23,7 @@ export interface ProductFormItem {
 
 interface ProductFormListProps {
   products: ProductFormItem[]
-  /** 点击去下单/规格 chip 的回调（发消息给 LLM） */
+  /** 点击查看/规格 chip 的回调（发消息给 LLM） */
   onInteract: (value: string) => void
 }
 
@@ -41,8 +41,9 @@ function buildSpecChips(p: ProductFormItem): string[] {
 }
 
 export default function ProductFormList({ products, onInteract }: ProductFormListProps) {
-  // 去下单防连点锁：任一商品点击「去下单」后整列表锁卡（message already sent, issue #3040）
-  const [ordered, setOrdered] = useState(false)
+  // 查看防连点锁：任一商品点击「查看」后整列表锁卡（message already sent, issue #3040；
+  // issue #7264 起语义从「下单」改为「查看」——商家端不下单，只是让黄金策介绍商品）
+  const [sent, setSent] = useState(false)
   if (!products || products.length === 0) return null
 
   return (
@@ -97,15 +98,15 @@ export default function ProductFormList({ products, onInteract }: ProductFormLis
             </View>
 
             <View
-              className={`product-form-list__order${ordered ? ' product-form-list__order--locked' : ''}`}
-              hoverClass={ordered ? undefined : 'product-form-list__order--hover'}
+              className={`product-form-list__order${sent ? ' product-form-list__order--locked' : ''}`}
+              hoverClass={sent ? undefined : 'product-form-list__order--hover'}
               onClick={() => {
-                if (ordered) return
-                setOrdered(true)
-                onInteract(`我要下单${p.name}`)
+                if (sent) return
+                setSent(true)
+                onInteract(`查看${p.name}`)
               }}
             >
-              <Text className='product-form-list__order-text'>去下单</Text>
+              <Text className='product-form-list__order-text'>查看</Text>
             </View>
           </View>
         )

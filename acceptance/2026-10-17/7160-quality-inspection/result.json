@@ -1,0 +1,64 @@
+{
+  "ok": true,
+  "apiMode": "route-mocked（本机 admin-api 无 /targets）",
+  "checks": {
+    "loggedIn": true,
+    "url": "http://localhost:3001/quality-inspections",
+    "headers": [
+      "加工单号",
+      "订单号",
+      "成品帘",
+      "最新判定",
+      "操作"
+    ],
+    "hasOrderNoColumn": true,
+    "hasNoQuantityColumn": true,
+    "columnOrder": [
+      "加工单号",
+      "订单号",
+      "成品帘",
+      "最新判定",
+      "操作"
+    ],
+    "firstRows": [
+      [
+        "JG-20261016-4441",
+        "DD-20261016-4411",
+        "2699系列雪尼尔窗帘面料（米白）",
+        "未检",
+        "录入判定"
+      ],
+      [
+        "JG-20261016-4440",
+        "DD-20261016-4410",
+        "2699系列雪尼尔窗帘面料（浅灰）",
+        "合格",
+        "复检"
+      ]
+    ],
+    "orderNoRendered": true,
+    "formAbsentBeforeClick": true,
+    "dialogBox": {
+      "x": 460,
+      "y": 312,
+      "w": 520,
+      "h": 357
+    },
+    "dialogInViewport": true,
+    "dialogTitle": "为「2699系列雪尼尔窗帘面料（米白）」录入质检判定",
+    "dialogTitleHasSubject": true,
+    "dialogHasForm": true,
+    "bodyScrollLocked": true,
+    "dialogButtons": [
+      "取消",
+      "提交判定"
+    ],
+    "dialogClosed": true,
+    "bodyScrollRestored": true
+  },
+  "consoleErrors": [],
+  "apiProbe": {
+    "status": 404,
+    "body": "{\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"请求的资源不存在: /api/admin/quality-inspections/targets\"},\"requestId\":\"req_5e45886d441749f9\",\"timestamp\":179224"
+  }
+}

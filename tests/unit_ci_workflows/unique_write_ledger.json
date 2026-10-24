@@ -16,6 +16,10 @@
       "table": "craft_calc_configs",
       "handling": "none"
     },
+    "backend/admin-api/src/main/java/com/migao/admin/service/CustomerProfileWriter.java::mapper": {
+      "table": "customer_profiles",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/mapper/CustomerProfileMapper.java"
+    },
     "backend/admin-api/src/main/java/com/migao/admin/service/CuttingHeightConfigService.java::cuttingHeightConfigMapper": {
       "table": "cutting_height_configs",
       "handling": "none"
@@ -31,6 +35,14 @@
     "backend/admin-api/src/main/java/com/migao/admin/service/InboundOrderService.java::inboundOrderMapper": {
       "table": "inbound_orders",
       "handling": "backend/admin-api/src/main/java/com/migao/admin/service/InboundOrderService.java"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/OrderLogisticsService.java::orderLogisticsMapper": {
+      "table": "order_logistics",
+      "handling": "none"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/OrderLogisticsWriter.java::orderLogisticsMapper": {
+      "table": "order_logistics",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/OrderLogisticsWriter.java"
     },
     "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java::financeTransactionMapper": {
       "table": "finance_transactions",
@@ -80,6 +92,10 @@
       "table": "processing_set_part_tokens",
       "handling": "backend/admin-api/src/main/java/com/migao/admin/mapper/ProcessingSetPartTokenMapper.java"
     },
+    "backend/admin-api/src/main/java/com/migao/admin/service/PurchaseOrderService.java::orderMapper": {
+      "table": "purchase_orders",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/PurchaseOrderService.java"
+    },
     "backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java::rolePermissionMapper": {
       "table": "role_permissions",
       "handling": "none"
@@ -104,6 +120,18 @@
       "table": "stock_batch_consumptions",
       "handling": "backend/admin-api/src/main/java/com/migao/admin/mapper/StockBatchConsumptionMapper.java"
     },
+    "backend/admin-api/src/main/java/com/migao/admin/service/SupplierPaymentService.java::allocationMapper": {
+      "table": "supplier_payment_allocations",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/SupplierPaymentService.java"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/SupplierPaymentService.java::paymentMapper": {
+      "table": "supplier_payments",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/SupplierPaymentService.java"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/UserRoleWriter.java::userRoleMapper": {
+      "table": "user_roles",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/mapper/UserRoleMapper.java"
+    },
     "backend/admin-api/src/main/java/com/migao/admin/service/UserService.java::userMapper": {
       "table": "users",
       "handling": "backend/admin-api/src/main/java/com/migao/admin/service/UserService.java"
@@ -111,6 +139,45 @@
     "backend/admin-api/src/main/java/com/migao/admin/service/WorkerAdminService.java::userMapper": {
       "table": "users",
       "handling": "backend/admin-api/src/main/java/com/migao/admin/service/WorkerAdminService.java"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/ReceiptAllocationService.java::allocationMapper": {
+      "table": "receipt_allocations",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/ReceiptAllocationService.java",
+      "note": "同一流水对同一单至多一行（部分唯一索引 uk_receipt_allocations_pair）；服务层先按「同批重复订单直接拒」+ 双上限准入再 insert，冲突映射留给唯一索引兜底（连点双击 ⇒ DuplicateKeyException 由 GlobalExceptionHandler 映射 409）"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/ApprovalService.java::approvalMapper": {
+      "table": "approvals",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/ApprovalService.java",
+      "note": "同一对象同一类型只允许一个待审（部分唯一索引 uk_approvals_pending WHERE status='pending'）；服务层先查 pending 给出可读提示，并发下由唯一索引兜底（连点两次提交 ⇒ DuplicateKeyException 由 GlobalExceptionHandler 映射 409），状态流转/消费另走 CAS 条件更新按影响行数判成败"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/WarehouseService.java::warehouseMapper": {
+      "table": "warehouses",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/WarehouseService.java",
+      "note": "两个部分唯一索引：uk_warehouses_code（同租户编码唯一）与 uk_warehouses_single_default（同租户只能一个默认仓）。服务层先取消旧默认仓再插入；并发下任一冲突由 DuplicateKeyException 映射成可读 409（「仓编码已存在，或并发设置了第二个默认仓」）"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/StockTransferService.java::transferMapper": {
+      "table": "stock_transfers",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/StockTransferService.java",
+      "note": "单号 TT+业务日期+4 位随机，同租户唯一索引 uk_stock_transfers_no 兜底；本段是即时调拨（无重试/幂等键需求），撞车概率 = 同日 9000 分之一，冲突由 GlobalExceptionHandler 映射（handling=none 已如实登记）"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/StocktakeService.java::stocktakeMapper": {
+      "table": "stocktakes",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/StocktakeService.java",
+      "note": "两个部分唯一索引：uk_stocktakes_no（单号唯一，同租户）与 uk_stocktakes_one_open_per_warehouse（同仓只能一个进行中）。服务层先查进行中给出可读提示；并发下由索引兜底，DuplicateKeyException 映射成可读 409（「该仓刚有另一个盘点被发起」）"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/StocktakeService.java::itemMapper": {
+      "table": "stocktake_items",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/StocktakeService.java",
+      "note": "uk_stocktake_items_batch（同一次盘点同批次只一行）：出任务时按批次快照、每批次只插一次；重复插入由唯一索引兜底（GlobalExceptionHandler 映射），录实盘走 updateById 不改批次归属"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/ReworkOrderService.java::reworkOrderMapper": {
+      "table": "rework_orders",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/ReworkOrderService.java",
+      "note": "两个部分唯一索引：uk_rework_orders_no（单号唯一）与 uk_rework_orders_open_per_ticket（同一售后单只能一个未完结）。服务层开单前先查未完结给可读提示；并发下由索引兜底，DuplicateKeyException 映射成可读 409（「刚有另一个返工单被开出来」）；状态流转走 CAS 条件更新"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/WarehouseSeedService.java::warehouseMapper": {
+      "table": "warehouses",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/WarehouseSeedService.java"
     }
   }
 }

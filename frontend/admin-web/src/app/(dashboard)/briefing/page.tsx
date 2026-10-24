@@ -1,68 +1,24 @@
-'use client'
-
-import { useEffect, useState } from 'react'
-import { Newspaper } from 'lucide-react'
-import { briefingApi } from '@/lib/api'
-import { PageCard, PageHeader } from '@/components/ui'
-import BriefingCard from '@/components/dashboard/BriefingCard'
+import { redirect } from 'next/navigation'
 
 /**
- * 智能每日经营简报页（issue #3468）
- * 侧边栏「每日简报」入口（企业开关开启才显示菜单）。
- * 页面内复用 BriefingCard 组件；开关关闭时显示引导（菜单已隐藏，直达 URL 兜底）。
+ * 旧「每日简报」入口 → /dashboard（2026-10-17，issue #7087）。
+ *
+ * 用户逐字：「**不要新增每日简报的菜单了**，每日简报开关开启后，那一行分析结论本来就在经营看板上了，
+ * 不需要额外一个菜单，移除掉，用户不开启简报开关那么经营看板就没结论文字，开启后就有结论文字，
+ * 这样的形态就很好了」。
+ *
+ * ⇒ `config/menu.ts` 的「每日简报」菜单项**已删除**（连同 `briefingToggle` 这一菜单级过滤机制）；
+ * 企业开关（`GET/PUT /api/admin/briefing/config`）继续只驱动**经营看板上的结论卡**
+ * （`app/(dashboard)/dashboard/page.tsx` 的 `<BriefingCard enabled={briefingEnabled} />`）：
+ * 开关关 = 看板无结论文字；开关开 = 有结论文字。
+ *
+ * 本页因此不再渲染任何内容，直接重定向到经营看板（旧书签 / 外部深链不 404）——
+ * 先例 = `/processing`（加工项管理）、`/production/routings`（工艺配置）、`/settings/params`（参数总览）
+ * 三个被移除的菜单项各自保留的重定向薄壳。
+ *
+ * ⚠️ `BriefingCard` / `ProactiveStatusPanel` 的 `variant="page"`（逐规则展开原因，issue #5955）
+ * 随之在生产面**不再被调用**（组件与其既有单测保留，不在本单射程 —— 已登记在 PR body 的边界）。
  */
-export default function BriefingPage() {
-  const [enabled, setEnabled] = useState<boolean | null>(null)
-
-  useEffect(() => {
-    briefingApi.getConfig()
-      .then((res) => setEnabled(!!res.data.data?.enabled))
-      .catch(() => setEnabled(false))
-  }, [])
-
-  // 加载中（避免开关状态未就绪时闪空态）
-  if (enabled === null) {
-    return (
-      <div className="p-5 sm:p-6">
-        <div className="mb-6">
-          <PageHeader title="每日经营简报" subtitle="加载中..." />
-        </div>
-      </div>
-    )
-  }
-
-  if (!enabled) {
-    return (
-      <div className="p-5 sm:p-6">
-        <div className="mb-6">
-          <PageHeader
-            title="每日经营简报"
-            subtitle="数据更新时间：—"
-          />
-        </div>
-        <PageCard className="flex flex-col items-center justify-center py-16 text-center">
-          <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-50 to-accent-50">
-            <Newspaper className="h-6 w-6 text-primary-400" />
-          </div>
-          <p className="text-sm font-medium text-neutral-600">智能每日经营简报未开启</p>
-          <p className="mt-1 max-w-md text-xs text-neutral-400">
-            请在「企业基础信息 → 基本设置」中开启「智能每日经营简报」企业开关。开启后系统将在每日生成时刻自动整理经营要点，本页面与侧边栏入口将同步显示。
-          </p>
-        </PageCard>
-      </div>
-    )
-  }
-
-  return (
-    <div className="p-5 sm:p-6">
-      <div className="mb-6">
-        <PageHeader
-          title="每日经营简报"
-          subtitle="每天的经营数据摘要，系统自动整理"
-        />
-      </div>
-      {/* variant="page"：日报页逐规则展开原因（issue #5955）——看板首页保持紧凑 */}
-      <BriefingCard enabled variant="page" />
-    </div>
-  )
+export default function BriefingRedirectPage() {
+  redirect('/dashboard')
 }

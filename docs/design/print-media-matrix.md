@@ -24,9 +24,19 @@
 
 | 介质 id | 打印技术 | `@page` | 连续走纸 | 复写份数 | 版面预算（正文基准） | 实测状态 |
 |---|---|---|---|---|---|---|
-| `a4` | 激光 / 喷墨（浏览器 `window.print()`） | `size: A4; margin: 12mm` | 否 | 1 | 9pt（= 既有 12px 口径） | 已实测（既有单据在用） |
+| `a4` | 激光 / 喷墨（浏览器 `window.print()`） | `size: A4; margin: 0`（版面内缩 12mm 走容器 padding，issue #7309） | 否 | 1 | 9pt（= 既有 12px 口径） | 已实测（既有单据在用） |
 | `label-50x60` | 热敏 / 热转印（BLE 直打，通道归 #5052） | `size: 50mm 60mm; margin: 0` | 否 | 1 | 6pt | **已实测**（#5646：容器 49.998×59.998mm、PDF MediaBox 142.08×169.92pt） |
 | `continuous-241x140` | **针式点阵 + 连续纸 + 压感复写** | `size: 241mm 140mm; margin: 6mm 12mm` | **是** | **3**（纸承担） | 9pt（**通用下限**，待实测） | 🚧 **待现场实测**（见 §5） |
+
+
+🔴 **A4 的 `@page` 边距必须是 0**（issue #7309，用户 2026-10-19 逐字「我建议拿掉打印的页头和页脚」）：
+Chrome 把自己的页眉页脚（版式日期 / 文档标题 / 页面 URL / 页码）**画在 `@page` 的页边距里** ——
+实测（Chromium 1243 = Chrome 14x，A4）：`8.7mm` 不画、`8.8mm` 画、`12mm` 画（= 改前值）。
+⇒ 边距 0 时**没有可画之处**，页眉页脚必然不出（不依赖那条未文档化的阈值）。
+版面内缩 12mm 是**真值**，登记在 `contentInset`，由单据容器的 `padding` 承担；
+`box-decoration-break: clone` 让**第 2 页起**也重复这段内缩（实测：不 clone 时 `padding-top`
+不重复 ⇒ 内容贴到纸边）。可用版面仍 = 186 × 273mm，与「边距 12mm」时**逐值一致**。
+判据 = `print-media.ts::BROWSER_CHROME_MARGIN_MM` + `tests/unit_ci_workflows/test_print_media_matrix_guard.py` 的 C10。
 
 **四条技术要点（三联纸，实现前必读）**
 
@@ -46,38 +56,54 @@
 | 层 | 是什么 | 落在哪 | 判据 |
 |---|---|---|---|
 | ① 内容 / 字段映射 | 这张单据**印什么**（列清单 + 取值口径） | 各 `*Doc.tsx`，每张**只有一份** | `test_print_media_matrix_guard.py` C5（列清单全仓**恰好一个文件**命中）+ **C7**（商品身份走 `lib/order-item-sku.ts` 的 `orderItemSku()`、物流方式走 `lib/logistics.ts` 的 `freightText()`） |
-| ② 介质 | 印在**什么纸**上（尺寸 / 边距 / 技术 / 复写 / 字号） | `lib/print-media.json` + `.ts` | 同上 C2（单据 `@page` 与矩阵同源）、C4（待实测登记） |
+| ② 介质 | 印在**什么纸**上（尺寸 / 边距 / 技术 / 复写 / 字号） | `lib/print-media.json` + `.ts` | 同上 C2（单据 `@page` 与矩阵同源）、C4（待实测登记）、**C10**（纸面不带浏览器页眉页脚：A4 的 `@page` 边距必须为 0 + 内缩走容器 padding） |
 | ③ 打印隔离 | 一次只放**一份**单据上纸 | `body > *:not(.print-doc)`（#4983） | `test_print_doc_convention_guard.py` |
 | ④ 打印入口 / 纸型唯一 | `window.print()` 只在 `lib/print-doc.ts`（且**目标提交后**才调用）；`@page` 只在「本次目标是本单据」时发表 | `lib/print-doc.ts` + 各 `*Doc.tsx` 的条件 `<style>` | `test_print_single_doc_on_paper.py`（C1 / C2 / C3） |
 | ⑤ 打印前自检 + 截图 | 真尺寸纸框 + 溢出/页数 + 本次纸型；「打印」「复制截图」两个出口 | `components/orders/PrintDocPreview.tsx` + `lib/print-capture.ts` | `PrintDocPreview.test.tsx` + `tests/e2e/specs/orders/print-preview.spec.ts` |
+| ⑥ 打印入口（商家可见面） | **一处**入口，且与订单状态**解耦**：订单详情页只有一个「打印」（页面级，不在任何状态分支里），进来后在自检层顶部以**单据标签**选（销售单 / 加工单 / 报价单 / 发货单），先预览再出纸 | `OrderDetail.tsx` 的 `ORDER_PRINT_DOCS`（清单唯一声明处）+ `PrintDocPreview.tsx` 的 `docs` / `onSelect` | `tests/unit_ci_workflows/test_order_print_entry_matrix.py`（G1~G5）+ `frontend/admin-web/tests/unit/pages/order-detail.test.tsx` |
 
 🔴 **介质是参数，不是复制粘贴出来的页面**：同一份字段映射可以落不同介质 ⇒
 `SalesDoc` 把介质做成 **prop**（缺省三联纸，可切 A4）。判据两条：
 ① 「切介质后逐格取值逐字相同」（`SalesDoc.test.tsx`）；
 ② 「列清单全仓唯一」（C5，复制一份映射 ⇒ 红）。
 
-### 3.1 加工单的字段映射（列清单 = 唯一真值，改动必须同批改本表 + C5 的钉住元组）
+### 3.1 单据的字段映射（列清单 = 唯一真值，改动必须同批改本表 + C5 的钉住元组）
 
-`frontend/admin-web/src/components/orders/ProcessingDoc.tsx` 的 `PROCESSING_DOC_COLUMNS`
-（打印介质守卫 C5 逐字钉住同一串，**两处必须一致**）：
+各单据组件里的 `*_DOC_COLUMNS` 常量（打印介质守卫 C5 逐字钉住同一串，**两处必须一致**）：
 
 | 单据 | 列清单（有序） | 说明 |
 |---|---|---|
-| 加工单 | `品名 / 货号 / 颜色 / 门幅 / 尺寸 / 数量 / 组件 / 批号 / 备注` | 每套一张 9 列表 |
-| 加工单 · 工序块 | `工序 / 名称 / 应做 / 状态` | 同表内、每套一张子表（issue #6901） |
+| 加工单 | `品名 / 货号 / 颜色 / 门幅 / 帘种 / 尺寸 / 数量 / 批号 / 备注` | 每套一张 9 列表（`frontend/admin-web/src/components/orders/ProcessingDoc.tsx`）；🔴 纸面**不印**工序清单（issue #7274）；「组件」列自 issue #7625 退场、「帘种」补在门幅后 |
+| 销售单 | `序号 / 货号 / 颜色 / 门幅 / 帘种 / 数量 / 单位 / 单价 / 金额` | 三联纸单联 9 列表（`frontend/admin-web/src/components/orders/SalesDoc.tsx`）；「品名」列自 issue #7530 退场、「帘种」自 issue #7625 加入 |
+
+🔴 **2026-10-24（issue #7625）「组件」退场 + 四张单据统一加「帘种」**：用户逐字
+「不要组件这一列，另外给所有打印预览表格都加一列用来区分是布帘还是纱帘」⇒ 报价单 / 加工单删掉
+`组件` 列，四张纸面（报价单 / 加工单 / 发货单 / 销售单）的明细表都加 `帘种` 列（值 `布帘` / `纱帘`，
+布料单印占位）。取值口 = `frontend/admin-web/src/lib/order-item-sku.ts` 的 `orderItemCurtainType()`
+（`curtainType` 显式声明 → `componentRole` 受控枚举 → 布料单空串 → 缺省布帘，与后端
+`ProcessingOrderService.COMPONENT_ROLE_POSITIONS` 同一张映射）；判据 = 四份单据测试的列清单断言 +
+`tests/unit_ci_workflows/test_print_media_matrix_guard.py` 的 C5。
+
+🔴 **2026-10-23（issue #7530）销售单左上角「作业单扫码报工」码**：销售单抬头左侧印
+`processingOrder.scan_url` 的二维码（= `{base}/o/{短码}`，服务端 302 到工人报工页 `/w/`），
+短码印在码旁作**手输兜底**；**缺码不画假码**（没有 `scan_url` ⇒ 整块不出现，不回落作业单号 ——
+回落就退回「扫出来只有一串文本、打不开任何页面」的旧形态）。码值与短码都取自订单详情页既有的
+`processingOrder` 读面（与 `ProcessingDoc` **同一份**来源，不新增后端接口），前端**不拼**域名 / 路径段。
+判据 = `frontend/admin-web/tests/unit/components/SalesDoc.test.tsx` 的「⑬」四条 + 红证；用例登记 = UI-134。
+⚠️ 加工单纸面**仍不印** QR（issue #7219 的裁定**未**被本单改动）。
 
 🔴 **2026-10-14（issue #6901）「数量(米)」→「数量」**：列名不能写死单位 —— `quantity` 的单位随行
 （快照行 `unit` 可能是米 / 件 / 套）。同一行的**列名与值**都出自
 `frontend/admin-web/src/lib/order-item-sku.ts::orderItemQuantity()`：有单位 ⇒ 印 `数量(米)`，
 **没采集到单位 ⇒ 只印 `数量`**（不编「米」）。
 
-🔴 **工序块的取数口径（issue #6901）**：纸面**不取数**，由调用方
-（`frontend/admin-web/src/app/(dashboard)/orders/[id]/OrderDetail.tsx`）读**既有读面**
-`GET /api/admin/production/orders/{id}/operations` 后向下传（`operations` prop）；
-按 `position.order_item_id` = 订单行 id 对齐（与洗水码 / 批号**同一把钥匙**）；
-缺值 / 无工序实例（订单还没生成加工单）⇒ **整块不出现**（不印空表、不印占位表头）。
-显示名走 `frontend/admin-web/src/lib/operation-display.ts::operationDisplayName()`
-（**不得**渲染工人端变体名 `operation`）。
+🔴 **2026-10-18（issue #7274）工序块从纸面移除**：用户逐字「工序细节不用在打印单上，移除掉工序相关的
+表格信息」⇒ `ProcessingDoc` 的 `operations` prop 与 `工序 / 名称 / 应做 / 状态` 子表**整块退场**
+（issue #6901 曾是它的来由）。工序清单仍在**屏幕**上的加工单块
+（`frontend/admin-web/src/components/orders/ProcessingOrderBlock.tsx`）与「复制全部」文本、以及工人扫码面呈现；
+读面 `GET /api/admin/production/orders/{id}/operations` 与显示名口径
+`frontend/admin-web/src/lib/operation-display.ts::operationDisplayName()` **不变**。
+判据 = `test_print_media_matrix_guard.py` 的 C8（把工序接回纸面 ⇒ 红）。
 
 
 ## 4. 字段缺口（**如实登记，不编数**）
@@ -165,7 +191,11 @@
    `visibility` 防御**限定本单据的 `data-print-target`**（#4983 / #4965）；
 4. 在 `tests/unit_ci_workflows/test_print_media_matrix_guard.py` 的 `PRINT_DOCS` 登记
    （**未登记 ⇒ C3 判红**）；若该单据有列清单，登记进 `SINGLE_PROJECTION`；
-5. 在 `components/orders/index.ts` 的 `PrintTarget` 加 target，并在页面**点谁置谁**；
+5. 在 `lib/print-doc.ts` 的 `PRINT_TARGETS` 加 target（标题与介质的**唯一真值**），并在页面的
+   **可打印清单**（订单详情 = `OrderDetail.tsx` 的 `ORDER_PRINT_DOCS`）里登记 ——
+   🔴 **不要再加一个按钮**（issue #7544）：同页多份单据的入口是**页面级唯一那个「打印」**，
+   加的是菜单里的一项；入口与订单状态无关（`closed` / `refund` 同样能补打），
+   所以也不许把入口塞进任何一个 `status === …` 分支（判据 = `test_order_print_entry_matrix.py` 的 G2）；
 6. 测试要带**红证**（把实现改坏 ⇒ 判据必红）；缺值/缺码/长名的处置见 §4 与
    `SalesDoc.test.tsx` / `ProcessingDoc.test.tsx` 的判据。
 
@@ -174,11 +204,13 @@
 浏览器自带的打印预览**答不了**三件事，所以打印前多一层「纸面自检」（Preview / `PrintDocPreview.tsx`）：
 
 1. **内容会不会被裁** —— 销售单固定单联 128mm（`overflow: hidden`），实测明细 **>6 行**即溢出，
-   被裁掉的恰好是「本单应收 / 账户余额 / 收款码」；自检量 `[data-print-sheet]` 的 `scrollHeight`
+   被裁掉的恰好是「本单应收 / 账户余额 / 页脚温馨提示」；自检量 `[data-print-sheet]` 的 `scrollHeight`
    报「超出 N mm」；
 2. **本次是哪张纸** —— 非标纸型（241×140 / 50×60）在驱动里没登记自定义纸型时会有落差，自检把
    纸型与版心（mm）明写在标题行；
-3. **这次到底打哪一份** —— 同页四份单据时，自检层只摆**本次那一份**。
+3. **这次到底打哪一份** —— 同页四份单据时，自检层只摆**本次那一份**；换一份不用退出重进：
+   自检层顶部那排**单据标签**就是选择器（issue #7544，点标签只换预览、**不改这次的打印目标**，
+   也不会因此出纸 —— 只有点「打印」才 `requestPrint`）。
 
 两个出口：**打印**（走 `usePrintDoc().requestPrint()`，目标提交后才 `window.print()`）与
 **复制截图**（`lib/print-capture.ts`：计算样式内联 → `SVG foreignObject` → canvas → PNG → 剪贴板；

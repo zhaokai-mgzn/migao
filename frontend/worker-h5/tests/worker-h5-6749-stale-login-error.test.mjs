@@ -160,7 +160,7 @@ test('🔴 ① 其它成功迁移的同族口径没有被本单改坏（清错�
 // ② 屏面层：真跑一次「失败 → 点登录成功」⇒ 红字必须从屏上消失
 // ══════════════════════════════════════════════════════════════════════════════
 
-test('🔴 ② 真装配层：失败红字上屏后第二次登录成功 ⇒ 屏上必须没有 `#wh5-error`（只清 state 不重渲染也红）', async () => {
+test('🔴 ② 真装配层：失败红字上屏后第二次登录成功 ⇒ 屏上必须没有 `#wh5-error`（只清 state 不重渲染也红）', async (t) => {
   // 同一份假 DOM、同一个 app 实例、**同一条真按钮路径**（`#wh5-login` → `api.login` → `fail()`）：
   //   第一次 ⇒ 服务端 401（红字上屏）  第二次 ⇒ 服务端 200（登录成功）
   // 用**n 发式**答复（第 1 次 401、第 2 次 200）驱动真实错误路径，而不是手工 dispatch 一个 action。
@@ -186,6 +186,9 @@ test('🔴 ② 真装配层：失败红字上屏后第二次登录成功 ⇒ 屏
   const doc = makeDom('worker-h5-root')
   const api = createApi({ storage: makeStorage(), fetchImpl: statefulFetch })
   const app = createApp({ doc, api, location: { href: 'https://app.migaozn.com/w/', replace() {} }, storage: makeStorage() })
+  // 登录成功会按 30 天排「闲置登出」定时器（issue #7251 分片后是**真实长延时**，不再是 1ms 立即触发）
+  // ⇒ 用例结束必须显式销毁；用 `t.after` 而不是末尾一行：断言失败时也要清掉，否则测试进程被长定时器挂住。
+  t.after(() => app.destroy())
   app.dispatch({ type: 'notice', notice: null }) // 触发一次 draw ⇒ bind() 挂上按钮
   doc.setValue('wh5-worker-no', 'wuitest')
   doc.setValue('wh5-pin', 'wrongpin')

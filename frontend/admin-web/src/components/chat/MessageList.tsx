@@ -25,17 +25,29 @@ import InteractiveMessage from './InteractiveMessage'
 import { resolveInteractiveState } from '@/lib/interactive-render'
 import WelcomePanel from './WelcomePanel'
 import { useTypewriter } from '@/hooks/use-typewriter'
+import { useStickToBottom } from '@/hooks/use-stick-to-bottom'
 
 export default function MessageList() {
   const { messages, isLoadingMessages, currentSessionId, sessions } =
     useChatStore()
-  const messagesEndRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
 
-  // 自动滚动到底部
+  // 贴底跟随（issue #7263）：**内容长高就跟随**，不是只绑 `messages` ——
+  // 打字机在气泡内部逐字揭示（本地 state，20ms/字），`messages` 引用不变 ⇒ 旧实现一次都不触发。
+  // 用户主动滑离底部（> 80px）⇒ 停止跟随；滑回底部附近/切会话/发新消息 ⇒ 恢复。
+  const { scrollToBottom } = useStickToBottom(
+    containerRef,
+    contentRef,
+    `${currentSessionId ?? ''}:${messages.length}`,
+  )
+  const prevSessionRef = useRef(currentSessionId)
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    // 切会话 ⇒ 即时回底；同一会话内新增消息 ⇒ 平滑回底
+    const sessionChanged = prevSessionRef.current !== currentSessionId
+    prevSessionRef.current = currentSessionId
+    scrollToBottom(sessionChanged ? 'auto' : 'smooth')
+  }, [currentSessionId, messages.length, scrollToBottom])
 
   // 时间分组（钉钉风格）：相邻消息时间差 > 5 分钟即插入时间分隔线
   // 必须在任何条件 return 之前计算，避免 hook 数量变化
@@ -111,7 +123,7 @@ export default function MessageList() {
 
   return (
     <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-4">
-      <div className="w-full max-w-3xl mx-auto space-y-4">
+      <div ref={contentRef} className="w-full max-w-3xl mx-auto space-y-4">
         {groupedMessages.map((group, gi) => (
           <div key={gi} className="space-y-4">
             {group.date && <TimeDivider date={group.date} />}
@@ -120,7 +132,6 @@ export default function MessageList() {
             ))}
           </div>
         ))}
-        <div ref={messagesEndRef} />
       </div>
     </div>
   )

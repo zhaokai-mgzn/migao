@@ -12,7 +12,7 @@ AI 智能客服系统 - 加工套件 / 扫码循环查询 Tool（issue #5247 模
 禁止在工具侧填 0 或估算。
 
 权限码：三个端点（#5246 收尾，**issue #5291 改码**）为方法级 `@RequirePermission("production:view")` ——
-与侧边栏「生产看板」节点、兄弟读端点（`ProcessingOrderController` 的两个 GET）**逐字同码**
+与侧边栏「作业看板」节点、兄弟读端点（`ProcessingOrderController` 的两个 GET）**逐字同码**
 （生产域读码，issue #5291 新增）。
 """
 
@@ -93,7 +93,7 @@ class ProcessingOrderSetQueryTool(BaseTool):
                 success=False,
                 error="权限不足",
                 message="您没有权限查询加工套件与扫码进度",
-                suggestion="请联系管理员为您开通「生产看板」查看权限后重试",
+                suggestion="请联系管理员为您开通「作业看板」查看权限后重试",
             )
 
         if action not in VALID_ACTIONS:

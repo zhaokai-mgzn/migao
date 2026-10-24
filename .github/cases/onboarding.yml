@@ -228,3 +228,46 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: OB-007
+    legacy_id: ""
+    title: "开租即种默认加工项目录 —— 新租户「加工项与分类」开箱即有（韩褶/打孔/定型…共 15 项）"
+    domains:
+      - onboarding
+      - processing
+    tier: normal
+    tags:
+      - onboarding
+      - required-initial-data
+      - default-processing-catalog
+      - idempotent
+      - red-proof
+      - backend-contract
+    truths_ref:
+      - registration-approval.required-initial-data
+      - registration-approval.approve-side-effects
+    user_inputs:
+      - "商家入驻通过后第一次打开「生产配置 → 加工项与分类」时，他应该已经有行业常用的加工项（韩褶 / 打孔 / 定型…），可以直接选、也可以改；而不是从 0 项开始自己建。"
+      - "同一个租户若被重复开通 / 重试，不应该种出两份加工项目录；商家改过 / 删过的项也不应该被复活。"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**病（issue #7148 的形态）**：加工项目录的两条种子路径（backend/admin-api/src/main/resources/db/migration-archive/V83__seed_processing_item_catalog.sql 与 backend/admin-api/src/main/resources/db/init/schema.sql 的 V83 终态块）都是「对**当时**的租户循环」⇒ 迁移之后新入驻的租户 processing_categories / processing_items 都是 0 行（形态同 #4316 的工序库、#6295 的商品分类）—— 「生产配置 → 加工项与分类」页显示 0 项，下单页选不到任何加工项、加工费组合配不出来。"
+      - "**判据 1（真库主判据）**：空库真跑入驻链路 ⇒ 该租户 processing_items 恰 15 行存活项（= 建库脚本 16 项 − V123 撤出的「接高」）、全部挂在 OnboardingInitialData.DEFAULT_PROCESSING_CATEGORY_NAME（「加工费」）分类下（真外键 REFERENCES processing_categories(id)）、craft_hint 逐条照目录；再调播种 ⇒ 返回 0、行数不变。判据 = backend/admin-api/src/test/java/com/migao/admin/service/NewTenantOnboardingCategoryRealDbTest.java::onboardingSeedsProcessingCatalogOnRealDatabase。"
+      - "**判据 2（mock 面）**：空目录租户 ⇒ 种 1 个「加工费」分类 + 整份目录（字段逐条正确、tenantId / categoryId 正确）；已有目录 ⇒ 返回 0 且零写操作；已有同名分类 ⇒ 复用不重复建；countProcessingItems 对 null 归 0。判据 = backend/admin-api/src/test/java/com/migao/admin/service/ProcessingItemSeedServiceTest.java。"
+      - "**判据 3（注入式红证 · 双向）**：只把加工项目录那步摘掉（seedDefaultCatalog spy 成 no-op）、保留后置条件校验 ⇒ 入驻当场 fail-closed（ONBOARDING_REQUIRED_DATA_MISSING）—— 「目录漏种」从静默变成开租当场红。判据 = NewTenantOnboardingCategoryRealDbTest::neuteredProcessingCatalogSeedFailsOnboarding + backend/admin-api/src/test/java/com/migao/admin/service/RegistrationServiceTest.java::failsClosedWhenProcessingCatalogMissing。"
+      - "**判据 4（调用点具名断言 · mock 面）**：approveApplication 必须对新租户 id 调 seedDefaultCatalog（删掉那一行即红）—— 同 #4430 / #6295 的教训（调用点没有具名断言 ⇒ 删掉调用 CI 全绿）。判据 = RegistrationServiceTest::successSeedsDefaultProcessingCatalog。"
+      - "**类级固化（本用例的元守卫）**：Java 种子目录 ⇄（建库脚本目录 − 活迁移的撤出项 + 改名映射）**双向对账** —— 以后再加 / 撤一个目录项或改 craftHint 而漏改 Java 种子 ⇒ 当场判红；判别力在内存语料上自证（删行 / 改名 / 改工艺 / 清空 / 漏读撤出迁移各自判红，「只改注释」不红）。判据 = tests/unit_ci_workflows/test_onboarding_processing_catalog_seed.py（用例 MC-114）。另：本项已登记进 OnboardingInitialData.REQUIRED ⇒ 既有元守卫 tests/unit_ci_workflows/test_onboarding_required_seed_guard.py（用例 MC-083）自动按锚对账「漏种 / 未登记 / 后置条件接线」。"
+      - "🔴 **未固化 / 边界（照实登记）**：① **既有租户不自动补种**（本单只改入驻链路、不新增回填迁移：迁移链之后入驻且至今目录为空的存量租户仍为空）；② 「接高」**不种**（V123 已把它撤出目录，种下 = 复活一个商家不该勾到的项）；③ 目录项的 description / unit **逐字照既有租户**（与 V83 那批行同值），商家可读文案的进一步措辞打磨属另一面（见 #6492）；④ 目录**不落价**（R10 口径不变：价只在「加工费组合」上）。"
+    precondition: "本用例是 [backend-contract] 纯后端契约用例：前置 = 真 PG 二进制（CI 由 admin-api-test job 的「Assert PostgreSQL binaries exist」保证，缺失即 job 失败）+ bootstrap 终态 schema（backend/admin-api/src/main/resources/db/init/schema.sql）+ 活迁移 backend/admin-api/src/main/resources/db/migration/V123__retire_join_height_processing_item.sql（撤出项的真值源）；前置由测试自身持有（PgCluster.startOrAbort 缺 PG 时 CI 判红 / 本机显式 skip），不依赖共享夹具与远端环境 ⇒ 不会表现成「agent 不干活」；agent-eval 栈不跑它"
+    skip_reason: "[backend-contract] 由 admin-api 单测（真库 NewTenantOnboardingCategoryRealDbTest + mock ProcessingItemSeedServiceTest / RegistrationServiceTest）+ 静态元守卫（test_onboarding_processing_catalog_seed.py）验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-17 新增（issue #7148，新租户开箱缺口）。取号 OB-007：main 上 onboarding 域为 OB-001~OB-006 ⇒ 取 OB-007。本单 = ① 入驻即种默认加工项目录（1 个「加工费」分类 + 15 项存活目录，韩褶/打孔/定型…；幂等、不覆盖、不复活）② 入驻后置条件新增 enforced 项（目录为空 ⇒ 开租 fail-closed）③ 真库实例判据（含注入红证）④ 类级元守卫（Java 目录 ⇄ 库里目录双向对账，用例 MC-114）。⚠️ 未固化（照实登记）：见 data_checks 末条四条边界（既有租户不回填 / 接高不种 / 文案照旧 / 不落价）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/NewTenantOnboardingCategoryRealDbTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingItemSeedServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/RegistrationServiceTest.java"
+        - "tests/unit_ci_workflows/test_onboarding_processing_catalog_seed.py"
+      ci:
+        - pr-check.yml
+      verifies: []

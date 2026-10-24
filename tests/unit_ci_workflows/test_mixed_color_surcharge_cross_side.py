@@ -69,8 +69,9 @@ FEE_TEST_JAVA = REPO_ROOT / "backend/admin-api/src/test/java/com/migao/admin/ser
 CONST = "MIXED_COLOR_SURCHARGE_PER_METER"
 #: 订单侧「改按元/米」的拼次集合（用户裁定只覆盖这两项）
 PER_METER_OPTIONS = ("拼1次", "拼2次")
-#: 同价算例向量（真值源 §10：52 折双开 拼1次 34.1 米 / 拼2次 62.7 米）
-VECTORS: tuple[tuple[float, str], ...] = ((34.1, "81.84"), (62.7, "150.48"))
+#: 同价算例向量（真值源 §10：52 折双开 拼1次 **13.9** 米 / 拼2次 **14.4** 米 —— issue #7560 改判；
+#: 改前是 34.1 / 62.7，那两条属于「0.65/1.2 当米/折」的旧读法）
+VECTORS: tuple[tuple[float, str], ...] = ((13.9, "33.36"), (14.4, "34.56"))
 
 _NUM = re.compile(r"^\s*(?:static\s+final\s+)?(?:public\s+|private\s+)?(?:BigDecimal\s+)?" + CONST
                   + r"\s*=\s*(?:new\s+BigDecimal\(\s*)?\"?([0-9]+(?:\.[0-9]+)?)\"?", re.M)
@@ -383,11 +384,12 @@ class TestGuardSelfProof:
 
     def test_detects_one_sided_vector_change(self) -> None:
         """只改一侧的算例期望值 ⇒ G5 必报（两侧算出的加价不再相等）。"""
-        py_test = "assert q['mixed_color_surcharge'] == 81.84\nassert q['total'] == 150.48\n"
-        java_test = ('assertThat(x).isEqualByComparingTo("81.84");\n'
-                     'assertThat(y).isEqualByComparingTo("150.48");\n')
+        # 载荷取**当前**算例向量（13.9 米 ⇒ 33.36 / 14.4 米 ⇒ 34.56，issue #7560）
+        py_test = "assert q['mixed_color_surcharge'] == 33.36\nassert q['total'] == 34.56\n"
+        java_test = ('assertThat(x).isEqualByComparingTo("33.36");\n'
+                     'assertThat(y).isEqualByComparingTo("34.56");\n')
         assert vector_defects(2.4, 2.4, py_test, java_test) == [], "干净向量被判红 ⇒ G5 误红"
-        assert vector_defects(2.4, 2.4, py_test.replace("== 81.84", "== 99.99"), java_test), \
+        assert vector_defects(2.4, 2.4, py_test.replace("== 33.36", "== 99.99"), java_test), \
             "只改一侧期望值没报 ⇒ G5 是空断言"
         assert vector_defects(2.4, 2.5, py_test, java_test), "只改一侧常量没报 ⇒ G5 是空断言"
 

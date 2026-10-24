@@ -2,6 +2,15 @@
 
 import { useEffect, useState } from 'react'
 import { Input, Select } from '@/components/ui'
+import {
+  CRAFT_OPTIONS,
+  CUSTOM_OPTION_VALUE,
+  FUNCTION_OPTIONS,
+  MATERIAL_OPTIONS,
+  PATTERN_OPTIONS,
+  STYLE_OPTIONS,
+  WEIGHT_OPTIONS,
+} from '@/lib/product-attribute-options'
 
 interface ProductAttributesProps {
   value: {
@@ -26,8 +35,12 @@ interface ProductAttributesProps {
  * 属性 key 与 PRD 截图保持一致：
  * - 货号(skuCode)、品牌(brand)、计价单位(unit) 落入根字段
  * - 其余落入 specifications: { weight, material, function, craft, style, pattern }
+ *
+ * 🔴 六个规格属性的**选项表**在 `@/lib/product-attribute-options`（issue #7528）——
+ * 「从商家写的那句话里认出材质/功能/…」也要读同一份表；写两份 = 组件新增选项、
+ * 匹配器认不出来，而没有任何东西会变红。
  */
-const CUSTOM = '__custom__'
+const CUSTOM = CUSTOM_OPTION_VALUE
 
 const BRAND_OPTIONS = [
   { value: '', label: '请选择' },
@@ -44,72 +57,6 @@ const UNIT_OPTIONS = [
   { value: '件', label: '件' },
   { value: '套', label: '套' },
   { value: '平方米', label: '平方米' },
-]
-
-const WEIGHT_OPTIONS = [
-  { value: '', label: '请选择' },
-  { value: '100g以下', label: '100g以下' },
-  { value: '100-200g', label: '100-200g' },
-  { value: '200-300g', label: '200-300g' },
-  { value: '300-400g', label: '300-400g' },
-  { value: '400g以上', label: '400g以上' },
-  { value: CUSTOM, label: '其他' },
-]
-
-const MATERIAL_OPTIONS = [
-  { value: '', label: '请选择' },
-  { value: '涤纶', label: '涤纶' },
-  { value: '棉', label: '棉' },
-  { value: '麻', label: '麻' },
-  { value: '丝绸', label: '丝绸' },
-  { value: '混纺', label: '混纺' },
-  { value: '绒布', label: '绒布' },
-  { value: '雪尼尔', label: '雪尼尔' },
-  { value: CUSTOM, label: '其他' },
-]
-
-const FUNCTION_OPTIONS = [
-  { value: '', label: '请选择' },
-  { value: '遮光', label: '遮光' },
-  { value: '隔热', label: '隔热' },
-  { value: '防紫外线', label: '防紫外线' },
-  { value: '防水', label: '防水' },
-  { value: '防霉', label: '防霉' },
-  { value: '隔音', label: '隔音' },
-  { value: CUSTOM, label: '其他' },
-]
-
-const CRAFT_OPTIONS = [
-  { value: '', label: '请选择' },
-  { value: '提花', label: '提花' },
-  { value: '印花', label: '印花' },
-  { value: '绣花', label: '绣花' },
-  { value: '烫金', label: '烫金' },
-  { value: '植绒', label: '植绒' },
-  { value: '色织', label: '色织' },
-  { value: CUSTOM, label: '其他' },
-]
-
-const STYLE_OPTIONS = [
-  { value: '', label: '请选择' },
-  { value: '现代简约', label: '现代简约' },
-  { value: '北欧', label: '北欧' },
-  { value: '中式', label: '中式' },
-  { value: '欧式', label: '欧式' },
-  { value: '田园', label: '田园' },
-  { value: '轻奢', label: '轻奢' },
-  { value: CUSTOM, label: '其他' },
-]
-
-const PATTERN_OPTIONS = [
-  { value: '', label: '请选择' },
-  { value: '纯色', label: '纯色' },
-  { value: '条纹', label: '条纹' },
-  { value: '格子', label: '格子' },
-  { value: '花卉', label: '花卉' },
-  { value: '几何', label: '几何' },
-  { value: '卡通', label: '卡通' },
-  { value: CUSTOM, label: '其他' },
 ]
 
 interface FieldCellProps {

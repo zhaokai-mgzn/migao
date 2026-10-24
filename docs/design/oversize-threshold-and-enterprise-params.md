@@ -178,7 +178,7 @@ bootstrap 终态同步在 `docs/sql/schema.sql`）。**9 个配置键**：
 | `per_fold_single` | 单色每折吃布（米） |
 | `per_fold_mixed_times` | 拼色「拼次 → 每折吃布」（JSONB） |
 | `margin_single` / `margin_multi` | 单开 / 多开余量（米） |
-| `min_fullness` | 褶倍下限（**护栏，可配不可关**） |
+| `min_fullness` | 褶倍下限（**护栏**：issue #7548 起 **0 = 关闭**，其余不得低于 1.5） |
 | `tiers` | 工艺档位（JSONB：档位 → 名义褶倍） |
 | `default_formula` | 兜底用料公式（`pleat` / `fullness`） |
 | `hem_margin` | 上下卷边（米）—— **超高判据就用它** |

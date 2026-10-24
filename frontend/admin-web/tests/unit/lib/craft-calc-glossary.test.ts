@@ -31,6 +31,7 @@ import { AUTO_FEATURE_NAMES } from '@/lib/craft-auto-features'
 import { SPECIAL_OPTIONS } from '@/lib/order-craft-fields'
 import {
   AUTO_FEATURE_TERMS,
+  CALC_FIELD_GROUPS,
   CALC_PARAM_COPY,
   CALC_SCALAR_KEYS,
   GLOSSARY_FORMULAS,
@@ -102,6 +103,8 @@ const ENGINE_DEFAULT_CALC_CONFIG: CraftCalcConfig = {
   per_fold_mixed_times: { '1': 0.65, '2': 1.2 },
   margin_single: 0.2,
   margin_multi: 0.3,
+  margin_mixed_single: 0.15,
+  margin_mixed_multi: 0.2,
   min_fullness: 1.5,
   tiers: { standard: { fullness: 2.0, label: '标准工艺' }, economy: { fullness: 1.8, label: '经济工艺' } },
   default_formula: 'pleat',
@@ -309,18 +312,27 @@ describe('算料配置页·口径与术语说明（issue #4975）', () => {
     expect(names).toEqual([...AUTO_FEATURE_NAMES])
   })
 
-  it('判据 7：拼接 / 接高写明「系统不推算」+「不触发工序」（死亡条件绑 #4569）', () => {
+  it('判据 7：拼接 / 接高写明「系统不推算」+「只计价、不多排工序」（死亡条件绑 #4569）', () => {
     const joined = MANUAL_FEATURE_TERMS.map((t) => `${t.definition}${t.impact}${t.boundary ?? ''}`).join('')
     // 注入：删掉「系统不推算」⇒ 红（否则商家以为勾了加工项就会自动排工序）
     expect(joined).toContain('系统不推算')
     // ⚠️ 死亡条件：issue #4569 一旦裁定「加工项也触发工序」⇒ 本断言必须改判（当前口径 = 只计价）
-    expect(joined).toContain('不触发工序')
+    // 2026-10-17（#7147）：措辞由「不触发工序」改为商家可读的「不会多排一道工序」——判据强度不变
+    //（承诺仍是「勾了只影响加工费、不排工序」；文案规范 P4 的原文就是「不会多排一道工序」）。
+    expect(joined).toContain('不会多排一道工序')
   })
 
-  it('判据 7b：接高的「双眼皮接高」照实写「还没确认」，不凭字面编解释', () => {
-    const jiegao = MANUAL_FEATURE_TERMS.find((t) => t.name === '接高')
-    if (!jiegao) throw new Error('手选术语里缺「接高」')
-    expect(jiegao.boundary ?? '').toContain('还没确认')
+  it('判据 7b：双眼皮接高只写系统处理口径，不把研发待办（含义待查明）搬上屏', () => {
+    // 2026-10-17（#7147，用户裁定「不能在产品上含有这类口语用词和不模糊的说明文案」）：
+    // 旧文「具体指什么还没确认（客户也说不准）；系统不按字面猜」是**研发待办 + 口语**
+    // ⇒ 从产品文案撤下（登记在 issue #7147 / 词汇底座）。注入：把这句话加回 ⇒ 红。
+    const b = SPECIAL_OPTION_TERMS.find((t) => t.name === '双眼皮接高')
+    if (!b) throw new Error('特殊选项术语里缺「双眼皮接高」')
+    expect(b.definition).not.toContain('还没确认')
+    expect(b.definition).not.toContain('客户')
+    // 反向自证（撤的是"待查明"，不是整条说明）：处理口径必须还在
+    expect(b.definition).toContain('「接高」')
+    expect(b.definition).toContain('计价')
   })
 
   it('判据 8：术语覆盖清单齐全（自动推算三项 + 手选两项 + 近义词族）', () => {
@@ -362,6 +374,16 @@ describe('算料配置页·口径与术语说明（issue #4975）', () => {
     expect(GLOSSARY_EXAMPLE).not.toHaveProperty('doorWidth')
     expect(GLOSSARY_EXAMPLE.width).toBeGreaterThan(0)
     expect(GLOSSARY_EXAMPLE.height).toBeGreaterThan(0)
+  })
+
+  it('判据 10：拼N次写明「单色款式按单色公式、拼接只加工序」（2026-09-22 裁定 R3）', () => {
+    const t = TERM_FAMILY.find((x) => x.name === '拼N次')
+    if (!t) throw new Error('近义词族里缺「拼N次」')
+    // 注入：删掉「单色公式」⇒ 红（旧文只讲了拼色那一半 ⇒ 商家会以为单色下拼N次也改每折用料）。
+    // 真值源 = `docs/design/order-auto-derivation.md` §4 概念表 / R3（用户 2026-09-22 逐字
+    // 「这里的拼几次和拼色是不同的概念，拼几次默认都按单色韩折公式或者倍数公式算」）。
+    expect(t.impact).toContain('单色公式')
+    expect(t.impact).toContain('只加工序')
   })
 })
 
@@ -450,24 +472,30 @@ describe('特殊选项术语（issue #4986）', () => {
     expect(offenders).toEqual([])
   })
 
-  it('判据 3：拼3次写明「用料系数未登记 ⇒ 不会替你估系数、也不退回按单色算」', () => {
+  it('判据 3：拼3次写明「该拼次未设置每折用料 ⇒ 勾选即报错、不估算、不按单色替代」', () => {
     const t = SPECIAL_OPTION_TERMS.find((x) => x.name === '拼3次')
     if (!t) throw new Error('特殊选项术语里缺「拼3次」')
-    const text = `${t.impact}${t.boundary ?? ''}`
-    // 注入：把这段边界删掉 ⇒ 红（商家会以为拼3次与拼2次一样有系数）
-    expect(text).toContain('未登记')
-    expect(text).toContain('不会替你估系数')
+    const text = `${t.definition}${t.impact}${t.boundary ?? ''}`
+    // 注入：把这段删掉 ⇒ 红（商家会以为拼3次与拼2次一样有系数）
+    expect(text).toContain('未设置每折用料')
+    expect(text).toContain('不估算')
+    // 🔴 2026-10-17（#7147，读源纠错）：门禁**不看款式** —— `backend/ai-agent-service/app/api/internal.py`
+    // 的 `mixed_patch_gap(request.special_options, config)` 只读 special_options
+    // ⇒ 不得再写成「拼色 + 拼3次」才算料报错（旧文把条件写窄了）。
+    expect(text).not.toContain('拼色 + 拼3次')
   })
 
-  it('判据 4：双眼皮接高 = 与「接高」同一道工序 + 含义还没确认', () => {
+  it('判据 4：双眼皮接高 = 与「接高」同一道工序 + 不得发明独立工艺', () => {
     const a = SPECIAL_OPTION_TERMS.find((x) => x.name === '接高')
     const b = SPECIAL_OPTION_TERMS.find((x) => x.name === '双眼皮接高')
     if (!a || !b) throw new Error('特殊选项术语里缺「接高」或「双眼皮接高」')
     // 注入：给「双眼皮接高」编一道自己的工序 ⇒ 红（真值源里它映射到同一道）
     expect(b.operation).toBe(a.operation)
     expect(b.after).toBe(a.after)
-    // 含义还没弄清楚 ⇒ 照实写，不凭字面猜
-    expect(b.boundary ?? '').toContain('还没确认')
+    // 2026-10-17（#7147）：产品文案只写系统处理口径（「含义待查明」留在词汇底座/设计单，不上屏）。
+    // 注入：把它写成独立工艺（如「双层接高」）⇒ 下面两条红。
+    expect(b.definition).not.toContain('还没确认')
+    expect(`${b.definition}${b.impact}`).toContain('不按名称另外增加工艺')
   })
 
   it('判据 5：一分为二 = 不加工序 / 只有历史计件系数（三层写清）', () => {
@@ -477,7 +505,17 @@ describe('特殊选项术语（issue #4986）', () => {
     expect(t.operation).toBeNull()
     expect(t.layers).toEqual(['计件'])
     // 自 #4589 起这一档对新报工不再生效（只对以前报过的工有效）—— 不写这句会让商家以为现在还乘系数
-    expect(`${t.definition}${t.impact}${t.boundary ?? ''}`).toContain('新报工不再乘它')
+    expect(`${t.definition}${t.impact}${t.boundary ?? ''}`).toContain('新报工不再乘系数')
+  })
+
+  it('判据 5b：特殊选项的 layers 与 #4855 的计价形态一致（拼1/2 不再按套，拼3 仍按套）', () => {
+    const byName = Object.fromEntries(SPECIAL_OPTION_TERMS.map((t) => [t.name, t]))
+    // 用户 2026-09-21 裁定（#4855）：拼1次 / 拼2次的元/套价停用，改按拼色加价元/米（由**款式**触发）
+    // ⇒ 这两项不再挂「对客价」层（挂上会让页面暗示它们单独加价）。
+    expect(byName['拼1次'].layers).not.toContain('对客价')
+    expect(byName['拼2次'].layers).not.toContain('对客价')
+    // 拼3次不在 #4855 范围（仍按元/套）⇒ 必须挂「对客价」层（漏了会让它看起来"不花钱"）。
+    expect(byName['拼3次'].layers).toContain('对客价')
   })
 
   it('判据 6：文案里不出现**数值**（沿用 #4975 的纪律）', () => {
@@ -508,5 +546,146 @@ describe('特殊选项术语（issue #4986）', () => {
     // 注入：把特殊选项也挂到 `glossary-term-*` ⇒ 与「手选特征」组的「接高」抢同一个 DOM id ⇒ 红
     const manual = MANUAL_FEATURE_TERMS.map((t) => glossaryTermAnchorOf(t.name))
     expect(anchors.filter((a) => manual.includes(a))).toEqual([])
+  })
+})
+
+/**
+ * **文案语气**：「术语与算法说明」区块是**给商家看的**，不得出现口语 / 研发过程措辞
+ * （issue #7147，用户 2026-10-17 逐字「不能在产品上含有这类口语用词和不模糊的说明文案」）。
+ *
+ * ## 为什么是**类级**守卫
+ *
+ * 旧文案里这类词是**逐处冒出来的**（「口语」「客户也说不准」「不替你猜」「收不到这笔钱」
+ * 「真值来源」「窗帘的常态」…），改一处不解决复发 ⇒ 这里把**整个区块的可见文案**当扫描面，
+ * 新增一条术语说明时不慎带回旧腔 ⇒ 当场红（`migao-dev-flow` §23 类级固化）。
+ *
+ * ⚠️ **边界**（照实登记）：这是**词表**判据，判不了「句子是否啰嗦 / 是否设计辩解」——
+ * 那一半仍靠 `docs/design/user-facing-copy-standard.md` §3 的三档处置与评审。
+ */
+const COLLOQUIAL_MARKERS = [
+  '口语',
+  '说不准',
+  '替你猜',
+  '替你估',
+  '看着像',
+  '收不到这笔钱',
+  '自己编的',
+  '还没确认',
+  '按设计',
+  '真值',
+  '常态',
+  '名义',
+  '历史口径',
+  '系数档',
+] as const
+
+describe('文案语气：算料说明区不得出现口语 / 研发过程措辞（#7147）', () => {
+  /** 扫描面 = 该区块**全部可见文案**（参数文案 + 三组术语 + 公式说明 + 特殊选项六条） */
+  const surface: string[] = [
+    ...Object.values(CALC_PARAM_COPY).flatMap((c) => [c.label, c.hint, c.impact]),
+    ...[...AUTO_FEATURE_TERMS, ...MANUAL_FEATURE_TERMS, ...TERM_FAMILY].flatMap((t) => [
+      t.name,
+      t.definition,
+      t.impact,
+      t.criterion ?? '',
+      t.boundary ?? '',
+    ]),
+    ...GLOSSARY_FORMULAS.flatMap((f) => [f.name, f.formula, f.note]),
+    ...SPECIAL_OPTION_TERMS.flatMap((t) => [t.name, t.definition, t.impact]),
+  ]
+
+  it('判据 1：扫描面非空（否则本守卫在扫空气 —— 假绿）', () => {
+    expect(surface.length).toBeGreaterThan(50)
+    // 自证抽取的是**真文案**（不是一堆空串）
+    expect(surface.filter((s) => s.length > 8).length).toBeGreaterThan(30)
+  })
+
+  it('判据 2：无命中（任一 marker 出现 ⇒ 红，并报出是哪一条）', () => {
+    const hits = surface
+      .map((s) => ({ s, m: COLLOQUIAL_MARKERS.find((m) => s.includes(m)) }))
+      .filter((x) => x.m !== undefined)
+      .map((x) => `[${x.m}] ${x.s}`)
+    expect(hits).toEqual([])
+  })
+
+  it('判据 3（判别力自证）：把旧文案逐句喂进来 ⇒ 每句都必须被抓到', () => {
+    // 这些是 #7147 撤下的原句（旧文案的**逐字留档**）—— 每条至少要命中一个 marker，
+    // 否则说明 marker 表漏了那一族（本守卫退化成绿）。
+    const removedCopy = [
+      '拼色时的一条拼接缝（口语「拼一次」）',
+      '具体指什么还没确认（客户也说不准）',
+      '没登记过的拼次，系统如实报错，不替你猜',
+      '不会替你估系数，也不会退回按单色算',
+      '最容易混的几个词（看着像一回事，其实不在同一层）',
+      '把它算进去，默认订单就配不到加工费（收不到这笔钱）',
+      '每档一个名义褶倍',
+      '对客价按设计未定价',
+      '勾选态就是「是否定型」的真值来源',
+      '价格以那张系数档为准',
+    ]
+    for (const line of removedCopy) {
+      expect(
+        COLLOQUIAL_MARKERS.some((m) => line.includes(m)),
+        `marker 表漏了这一族：${line}`,
+      ).toBe(true)
+    }
+    // 反向对照（不过度收紧）：本次改后的**新文案**不得被 marker 表误伤
+    const keptCopy = [
+      '拼色帘的拼次选项：勾选后按「拼1次」取每折用料，并加一道拼接工序',
+      '系统按与「接高」相同的工序与计价口径处理，不按名称另外增加工艺',
+      '款式为单色时，拼接只加工序、每折用料仍按单色公式',
+    ]
+    for (const line of keptCopy) {
+      expect(COLLOQUIAL_MARKERS.some((m) => line.includes(m)), `误伤新文案：${line}`).toBe(false)
+    }
+  })
+})
+
+/**
+ * 算料表单的**字段分组**（issue #7124）。
+ *
+ * ## 病灶（为什么分组需要守卫）
+ *
+ * 分组清单（`CALC_FIELD_GROUPS`）决定「哪个参数出现在表单的哪一块」。它漏一个键的后果**不是排得难看**，
+ * 而是**那个参数在写面上隐身**：商家改不到、页面也不提示少了什么（而 `PUT` 是全量替换 ⇒
+ * 隐身键会按服务端当前值原样回传，看起来「没坏」，实际是**配不了**）。
+ * ⇒ 分组与标量键集必须**双向相等**；引擎新增键而没分组 ⇒ 本文件当场红。
+ */
+describe('算料表单字段分组（issue #7124）', () => {
+  it('判据 1：分组里的每个键都必须是标量键（拼错键名 ⇒ 那个参数改不到 ⇒ 红）', () => {
+    const grouped = CALC_FIELD_GROUPS.flatMap((g) => [...g.keys])
+    for (const key of grouped) {
+      expect(
+        (CALC_SCALAR_KEYS as readonly string[]).includes(key),
+        `分组里出现了不是标量键的键：${key}`,
+      ).toBe(true)
+    }
+    // ⚠️ 「分组 ∪ 是否覆盖**全部**键」由挂载点判（`CalcCaliberPanel.test.tsx`：
+    //   常用键 ≡ 分组 ∪，高级键另有其位）—— 本模块拿不到「哪些键归高级」，
+    //   在这里写死一份键集就是造第二份清单。
+  })
+
+  it('判据 2：同一个键只能属于一个分组（两组抢同一个键 ⇒ 同一参数渲染两遍 ⇒ 红）', () => {
+    const grouped = CALC_FIELD_GROUPS.flatMap((g) => [...g.keys])
+    expect(new Set(grouped).size).toBe(grouped.length)
+  })
+
+  it('判据 3：分组 key / 标题唯一且非空（空标题 = 一块没有名字的表单）', () => {
+    const keys = CALC_FIELD_GROUPS.map((g) => g.key)
+    const titles = CALC_FIELD_GROUPS.map((g) => g.title)
+    expect(new Set(keys).size).toBe(keys.length)
+    expect(new Set(titles).size).toBe(titles.length)
+    for (const g of CALC_FIELD_GROUPS) {
+      expect(g.title.trim().length, `分组 ${g.key} 的标题为空`).toBeGreaterThan(0)
+      expect(g.keys.length, `分组 ${g.key} 没有字段`).toBeGreaterThan(0)
+    }
+  })
+
+  it('判据 4（判别力自证）：分组里出现一个不在键集的键 ⇒ 同一比较式必须判红', () => {
+    // 注入形态 = 分组里拼错一个键（或引擎删了该键）⇒ 那个框渲染的是**不存在的配置项**
+    const injected = [...CALC_FIELD_GROUPS.flatMap((g) => [...g.keys]), 'new_engine_scalar']
+    expect(
+      injected.filter((k) => !(CALC_SCALAR_KEYS as readonly string[]).includes(k)),
+    ).toEqual(['new_engine_scalar'])
   })
 })

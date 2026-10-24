@@ -81,7 +81,7 @@
 多会话并发（多 Agent / 多分支同时开发）时的铁律：**一个会话一个独立工作区，会话之间零共享写路径**。
 
 1. **会话必须建在独立 worktree**：`./scripts/dev-worktree.sh add <branch>`（默认 `../migao-wt/<分支>`）。禁止多会话共用一个工作目录——同时改文件互相覆盖、`git add` 互带对方文件、同时跑 verify 抢资源。
-2. **会话锁**：`dev-worktree.sh add` 自动登记 `.sessions/<branch>.lock`（含 PID+时间戳）；同一分支已有活跃锁时**禁止**重复建工作区/推分支。提交/推送前先 `./scripts/dev-worktree.sh list` 确认锁状态。
+2. **会话锁**：`dev-worktree.sh add` 自动登记 `.git/sessions/<branch>.lock`（含 PID+时间戳+工作区路径）；存活判据 = **PID 仍活着 或 登记的工作区仍在且仍检出该分支**（`add` 是短命进程、PID 必先退出 —— issue #7216）；同一分支仍有活锁时**禁止**重复建工作区。`add` 入口会自动清掉失效锁（事件驱动，不新增 cron）；提交/推送前先 `./scripts/dev-worktree.sh list` 确认锁状态。
 3. **端口隔离**：本地服务端口用环境变量覆盖（`API_PORT`/`AGENT_PORT`/`WEB_PORT`），会话各自 `.env.local`，杜绝 8080/8001/3001 互抢。
 4. **主工作区只读**：主仓库（migao/）只做 `fetch/rebase/merge` 与 PR 管理，**不在主工作区直接改文件**（防止未提交改动静默携带）。
 5. **分支卫生**：验证完即 PR，CI 绿即合并，分支存活 < 1-2 天；定期 `git branch --merged origin/main` 全删 + 清理 `origin gone` 的本地分支。
@@ -313,7 +313,7 @@ python3.11 -m pytest tests/unit_ci_workflows/test_case_trust_gate.py -q # L0 守
   curl -s -o /dev/null -w "%{http_code}\n" -X POST https://api.migaozn.com/api/auth/sms-code -H 'Content-Type: application/json' -d '{}'  # admin-api → 401（存活+鉴权）
   ```
 - 冒烟失败若为全量 502/Connection refused 且后续部署已覆盖 → 多为**部署滚动重启瞬态**，以最新一次部署结论为准（见 §7.3 的 mergeStateStatus 思路）。
-- 云测试环境登录：13800138000 / 万能码 123456（短信网关仍 bypass，上线前需接入）；账号属「米高测试环境」（**tenant 25**，2026-10-04 环境重建后经入驻流程新建）——原 tenant 1「词元通达」连同全部数据已清空。
+- 云测试环境登录：**13900001025** / 万能码 123456（短信网关仍 bypass，上线前需接入）；账号属**租户 46**「词元通达」的管理员（2026-10-18 起，见 issue #7179 —— 旧的 `13800138000` 已不在 `users` 表，导致部署后的 P0 冒烟腿结构上必然红；同时去掉了「tenant 25 = 米高测试环境」的旧口径）。workflow 侧由 `.github/workflows/smoke-test.yml` 的 `ADMIN_PHONE` / `TENANT_ID` 显式钉住。
 
 ## 5. 相关文档
 - `migao-dev-flow` 技能（**权威源**，本页只是它的历史节选）— 预设仓 `zhaokai-mgzn/migao-agent-presets` 的 `skills/migao-dev-flow/SKILL.md`（本机经活锚 `~/.dsh/.agent-presets/migao` 读到只读镜像）
@@ -352,6 +352,9 @@ cd .github && python3 render_cases.py --cases cases --out-eval /tmp/ec.py --out-
 - **同文件组串行合并**：多个 PR 改同一文件（requirements.txt / pom.xml / package.json）时逐个合并，避免同时合并互相冲突；可用后台循环脚本轮询 `mergeStateStatus`，CLEAN/UNSTABLE 才合并。
 - `mergeStateStatus` 含义：`UNKNOWN`=GitHub 重算中（main 刚更新），等 30~60s；`BLOCKED`=CI 重跑中或有 pending check；`UNSTABLE`=有 failed check 但非 required，通常可合并；`CLEAN`=直接可合并。
 - **分支落后（DIRTY/CONFLICTING）**：`gh pr update-branch <PR>` 触发 rebase；若 update 报冲突，本地 fetch PR 分支 merge origin/main 解决后 push（dependabot 分支同名推送即可）。
+- **提交前禁止 `git add -A`（主工作区是跨会话共享写面）**：实测两次把**别人正在用的未跟踪产物**带进提交 —— `acceptance/**`（含**活 JWT** ⇒ 被 `Plaintext credential guard` + `gitleaks` 判红）与 `backend/**/tools/*.py`。主树里同时有别的会话在干活，`-A` / `git add .` 会无差别收走。**一律显式列文件**：`git add <path1> <path2>`，提交后再用 `git show --stat HEAD` 自证只含预期文件。
+- **主工作树是多会话共享写面：提交前先确认 HEAD 是自己的分支**（issue #7229）：两个会话同时用主树时，另一个会话 `git checkout` 会换掉 HEAD，你的提交就**落到别人的分支**（实测被推到 `fix/7222-fabric-sale-form`）。已装仓内钩子：`./scripts/dev-worktree.sh hooks-install`（`add` 时自动接线）—— 主树 × 非 main 分支提交会被**拒绝**，出口是建独立工作区 `./scripts/dev-worktree.sh add <分支>`；确有需要 `MIGAO_MAIN_TREE_COMMIT=1 git commit …`。
+- **分支落后但检查已全绿（`mergeStateStatus = BEHIND`，`strict = true` 下的高频竞速）**：用 `./scripts/pr-merge-when-clean.sh <PR>` 一条命令收敛（issue #7206）—— 它按「先 update-branch 再等、**从不带着 BEHIND 或红项调 merge**」的顺序重试：`0` 已合并 / `1` 不能合并（required 红或 update 冲突，具名打印）/ `3` 无法判定（读不到 / 轮次耗尽）。⚠️ 「取不到 = 未判定」不许当 0 读；`update-branch` 冲突时它**不会**替你本地解冲突（那要人看），只给出手工解法。
 - 合并前先 `gh pr checks <PR>` 确认无 required check 失败；改 workflow 文件的 PR 若报 `without workflow scope` 即属 §7.1 保留类。
 
 ## 8. CI/本地环境差异已知坑（v1.1 新增，issue #2693 全量教训）

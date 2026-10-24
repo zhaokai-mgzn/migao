@@ -91,7 +91,7 @@ hero 标题单行、眉标 / 正文 / 法务三级分布与后台不同），但
 
 | 面 | 口径 |
 |---|---|
-| 圆角 | `rounded-sm` 2px（Badge/小标签）· `rounded-md` 6px（下拉）· **`rounded-lg` 8px（按钮 / 输入框 / 卡片，最常用）** · `rounded-xl` 12px（Modal / 大卡） |
+| 圆角 | `rounded-sm` 2px（Badge/小标签）· **`rounded-lg` 8px（按钮 / 输入框 / 卡片，最常用）** · `rounded-xl` 12px（Modal / 大卡）· 下拉**跟所在面**：筛选面 `rounded` 4px（与同面输入框一致）/ 表单字段面 `rounded-lg`（与 `Input` 一致）—— 真值源 `frontend/admin-web/src/components/ui/Select.tsx` 的 `SELECT_CONTROL` / `SELECT_CONTROL_FIELD`（issue #7397） |
 | 阴影 | `shadow-card`（卡片默认）· `shadow-card-hover`（悬浮）· `shadow-modal`（弹层）· `shadow-float`（浮窗）；色相取自暖中性 `rgba(36,31,24,…)`，**不用**纯黑 |
 | 间距 | 页面容器 `p-4`/`gap-4`；表头/单元格 `px-4 py-3`；区块间 `space-y-5`；**不写任意值** |
 | 边框 | `border-neutral-200`（分隔）/ `border-neutral-100`（极浅分隔）；**软分层**优先于重边框 |

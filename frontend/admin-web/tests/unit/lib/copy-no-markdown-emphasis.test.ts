@@ -1,4 +1,7 @@
-// case_ids: PR-105
+// case_ids: PR-105, UI-094
+// ⚠️ UI-094 的关联点（issue #7079）：就绪度②那条 hint 走的渲染点是**纯文本** `<p>{hint}</p>`
+// （不经 InlineMarkdown）⇒ 它里面的 `**` 会原样上屏。本包按「作业单两型」口径改写该文案时
+// 删掉了标记 ⇒ 两张登记表里的 `ProcessConfigBoard.tsx` 条目**同步销账**（④「登记陈旧即红」当场报出）。
 /**
  * 商家可见文案的 markdown 强调：**准写，但必须经 `@/lib/inline-markdown` 上屏**
  * （issue #5194 **改判** —— 用户 2026-09-23 裁定「渲染」，本文件原判据「源码零 `**`」= #5206 的
@@ -78,7 +81,9 @@ const REGISTERED_MARKER_FILES = [
   // issue #6580（配置指挥台）：下面这些是**搬运后**仍然带强调的载体 ——
   // 旧路由 `production/routings/page.tsx` 已变薄壳（不再带任何文案）⇒ 条目随之销账。
   'src/components/settings/CalcCaliberPanel.tsx',
-  'src/components/production-config/ProcessConfigBoard.tsx',
+  // ⚠️ `src/components/production-config/ProcessConfigBoard.tsx` 已从本表销账（issue #7079）：
+  // 它唯一的 `**` 在就绪度②的 hint 里，而 hint 走的是**纯文本** `<p>{hint}</p>`（不经 InlineMarkdown）
+  // ⇒ 星号原样上屏；口径改写时已删掉该标记（本表「登记陈旧即红」当场报出了这个死条目）。
 ] as const
 
 /**
@@ -94,7 +99,9 @@ const WIRED_FILES = [
   // ⚠️ `production/routings/page.tsx` 已从本表销账 —— 它现在是只渲染 board 的薄壳，**不含任何文案**，
   // 留着会让「接线」判据读一个不存在的渲染点（陈旧条目即红）。
   'src/components/settings/CalcCaliberPanel.tsx',
-  'src/components/production-config/ProcessConfigBoard.tsx',
+  // ⚠️ `src/components/production-config/ProcessConfigBoard.tsx` 已从本表销账（issue #7079）：
+  // 该文件已无 `**` 标记（见上表同一处的说明），其 `InlineMarkdown` import 也从源码删掉了
+  // —— 留着会让「接线」判据读一个不存在的渲染点。
   // ⚠️ `src/components/settings/TenantParamsPanel.tsx` 已从本表销账（#6826 判定死代码后删除：
   // 零生产渲染点、唯一消费者是它自己的测试）。留着会让「接线」判据读一个不存在的渲染点（陈旧条目即红）。
   'src/components/settings/RemnantItemSizesPanel.tsx',

@@ -701,7 +701,10 @@ public class UserService implements UserDetailsService {
         // 目标侧 ⊆ 检查（issue #4104）：不能删掉一个权限高于自己的账号（含管理员）
         permissionInterceptor.assertManagesTarget(userId, "删除员工");
         User user = getUserById(userId);
-        userMapper.deleteById(userId);
+        // issue #6956 · 现象 C：判影响行数（并发双删只许一次成功）
+        if (userMapper.deleteById(userId) == 0) {
+            throw BusinessException.notFound("用户");
+        }
 
         // 同时删除 user_roles 关联
         LambdaQueryWrapper<UserRole> wrapper = new LambdaQueryWrapper<>();
@@ -729,12 +732,9 @@ public class UserService implements UserDetailsService {
             return;
         }
 
-        UserRole userRole = UserRole.builder()
-                .tenantId(tenantId)
-                .userId(userId)
-                .roleId(role.getId())
-                .build();
-        userRoleMapper.insert(userRole);
+        // issue #7256：同一条写面收口（复活软删行 → 条件插入 → 撞键幂等收敛）。
+        // 原先是裸 insert：`updateUserRole` 先逻辑删旧行再插同一角色时会撞全表唯一键 ⇒ 500。
+        UserRoleWriter.ensureGranted(userRoleMapper, tenantId, userId, role.getId());
     }
 
     /**

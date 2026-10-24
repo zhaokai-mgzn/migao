@@ -16,12 +16,15 @@ name: Post-Deploy Eval (部署后全量回归)
 # ── 档位矩阵（本入口）────────────────────────────────────────────────────────
 # | tier 输入 | 触发 | persona | 用途 / 判定效力 | 失败留痕 |
 # |---|---|---|---|---|
-# | `normal`（**只跑 NORMAL 档**，不含 SMOKE/ADVERSARIAL） | **仅手动**（#4974 删除每周一 `0 3 * * 1`） | 双端（matrix，各自独立栈） | 宽度覆盖 + **唯一判定档** | `[Post-Deploy] 部署后回归失败 — <date>`（去重守卫） |
-# | `smoke` | 手动 | 双端 | 门禁级快档；**非判定**（runner 三档互斥） | 同上 |
-# | `adversarial` | 手动 | 双端 | 安全/对抗；信息性（只追踪不阻塞） | 同上 |
-# | `case_ids` 定点 | 手动 + `purpose=debug` | 双端 | 复现/调试；**不构成判定结论** | — |
-# ⚠️ 单腿窄跑**不在**本入口内（本入口一次覆盖两条腿，且 runner 的 `--case-ids` **逐 ID 校验**
-#    ⇒ 单端专属用例会弄红另一腿，#3822）⇒ 单腿走 `xiaobu-acceptance.yml` 的 `persona` 输入（手动）。
+# | `normal`（**只跑 NORMAL 档**，不含 SMOKE/ADVERSARIAL） | **仅手动**（#4974 删除每周一 `0 3 * * 1`） | both（默认，matrix 双端） | 宽度覆盖 + **唯一判定档** | `[Post-Deploy] 部署后回归失败 — <date>`（去重守卫） |
+# | `smoke` | 手动 | both | 门禁级快档；**非判定**（runner 三档互斥） | 同上 |
+# | `adversarial` | 手动 | both | 安全/对抗；信息性（只追踪不阻塞） | 同上 |
+# | `case_ids` 定点 | 手动 + `purpose=debug` | both | 复现/调试；**不构成判定结论** | — |
+# | `persona=mibao` | 手动 + `purpose=debug` | **仅 B 端**（#7340） | B 端单腿复验；**不构成判定结论** | — |
+# | `persona=xiaobu` | 手动 + `purpose=debug` | **仅 C 端** | C 端单腿复验；**不构成判定结论** | — |
+# ⚠️ **单腿** = dispatch 的 `persona` 输入（mibao / xiaobu）；**判定用途必须 both**（守卫会在
+#    `purpose=determination` + 单腿时直接 fail）。runner 的 `--case-ids` 仍逐 ID 校验 ⇒ 单端专属
+#    case_ids 会弄红另一腿（#3822）；单腿复验优先留空 case_ids 跑该端全量。
 #
 # ── 其它真实 LLM 入口（**全部手动专用工具**；均无自动触发）────────────────────
 # | workflow | 触发（after） | 用途 | 边界 |
@@ -184,6 +187,15 @@ on:
           - normal
           - smoke
           - adversarial
+      persona:
+        description: '评测端：both（默认，B 端黄金策 + C 端元元）| mibao（仅 B 端黄金策）| xiaobu（仅 C 端元元）。⚠️ 单腿只允许 purpose=debug，不构成判定结论'
+        required: false
+        default: both
+        type: choice
+        options:
+          - both
+          - mibao
+          - xiaobu
       case_ids:
         description: '【定点复现/调试专用 · ⚠️ 非判定用途】只跑这些用例（逗号分隔，如 OR-016,AS-007）——留空=按 tier 全库跑。传了它 summary 的 total 只反映这几条；配合 purpose=determination 会被「派发合规守卫」**直接 fail**（#3769：判定用途只允许全库跑）'
         required: false
@@ -268,8 +280,23 @@ jobs:
       # 互为独立证据，任何一端退化都要能看见（与 xiaobu-acceptance 的分片同理）。
       fail-fast: false
       matrix:
-        persona: [mibao, xiaobu]
+        # 单腿由 dispatch 的 persona 输入收窄（B 端只跑 mibao，避免连带跑 C 端）；
+        # both 保持原行为（两腿并行、各自独立结论）。空值按 both 回落。
+        persona: ${{ fromJSON((github.event.inputs.persona || 'both') == 'both' && '["mibao","xiaobu"]' || format('["{0}"]', github.event.inputs.persona || 'both')) }}
     steps:
+      - name: 单腿仅允许 debug（判定必须双端）
+        # #7340：persona 单腿给 B 端专用调试/复验用；判定用途仍必须 both ——
+        # 单腿结论只覆盖一端，不能冒充「部署后全量回归判定」。
+        if: (github.event.inputs.persona || 'both') != 'both'
+        env:
+          PERSONA: ${{ github.event.inputs.persona }}
+          PURPOSE: ${{ github.event.inputs.purpose || 'determination' }}
+        run: |
+          if [ "$PURPOSE" = "determination" ]; then
+            echo "::error::persona=${PERSONA} 只允许 purpose=debug；判定用途必须 persona=both"
+            exit 1
+          fi
+
       - name: Checkout（手动/定时触发按触发时默认分支 HEAD 取代码）
         uses: actions/checkout@v7
         with:
@@ -890,7 +917,7 @@ jobs:
     if: always() && needs.eval.result != 'skipped'
     runs-on: ubuntu-latest
     steps:
-      - name: Download 两 persona 汇总（issue 要点来源）
+      - name: Download 所选 persona 汇总（issue 要点来源）
         # 取不到 artifact 不能挡住建 issue（否则又回到"静默"）→ continue-on-error
         continue-on-error: true
         uses: actions/download-artifact@v8
@@ -918,6 +945,22 @@ jobs:
           # 无 artifact = 该腿在写汇总前就挂了（栈/依赖/infra），必须显式说出来
           [ "$found" = "1" ] || echo "⚠️ 未取到任何 persona 汇总（评测腿在产出前失败，属环境问题）"
           echo "eval 聚合结果: ${{ needs.eval.result }}"
+
+      - name: 单腿/调试留档（#7340：单腿不构成判定）
+        if: always() && (github.event.inputs.persona || 'both') != 'both'
+        run: |
+          PERSONA="${{ github.event.inputs.persona }}"
+          PURPOSE="${{ github.event.inputs.purpose || 'debug' }}"
+          MSG="⚠️ 本次 persona=${PERSONA}、purpose=${PURPOSE}：只覆盖一端，**不构成「部署后全量回归」判定结论**。"
+          echo "::warning::${MSG}"
+          echo "${MSG}"
+          {
+            echo "## ⚠️ 单腿/调试 run（不构成判定）"
+            echo ""
+            echo "${MSG}"
+            echo ""
+            echo "B 端专用复验请用 \`persona=mibao\` + \`purpose=debug\`；判定用途必须 \`persona=both\`。"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 被抑制留档（#3587/#3709：本 run 未评测，结论档的链接链，非静默跳过）
         # ① #3587：抑制必须**留档**，否则"某次部署时行为到底怎样"这条审计线索就断了
@@ -974,7 +1017,7 @@ jobs:
         # 原条件让"被派发侧互杀取消"的 run 也建/追加 issue（实证：issue #3534 的 3 条假失败
         # 评论）。取消的可追溯性由 eval job 的「被取消记录」与本 job 的「被取消留档」承担
         # （`::warning::` + summary），**不靠红 issue**——否则真失败会被噪音淹没。
-        if: needs.eval.result == 'failure'
+        if: needs.eval.result == 'failure' && (github.event.inputs.purpose || 'determination') != 'debug' && (github.event.inputs.persona || 'both') == 'both'
         uses: actions/github-script@v9
         env:
           EVAL_RESULT: ${{ needs.eval.result }}

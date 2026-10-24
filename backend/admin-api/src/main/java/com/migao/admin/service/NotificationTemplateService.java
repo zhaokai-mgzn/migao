@@ -103,6 +103,7 @@ public class NotificationTemplateService {
         NotificationTemplate template = NotificationTemplate.builder()
                 .tenantId(tenantId)
                 .name(request.getName().trim())
+                .titleTemplate(request.getTitleTemplate())
                 .type(request.getType())
                 .channel(StringUtils.hasText(request.getChannel()) ? request.getChannel().trim() : "internal")
                 .templateContent(request.getTemplateContent().trim())
@@ -129,6 +130,7 @@ public class NotificationTemplateService {
         assertTenantOwned(tenantId, existing.getTenantId(), "模板");
 
         existing.setName(request.getName().trim());
+        existing.setTitleTemplate(request.getTitleTemplate());
         existing.setType(request.getType());
         existing.setChannel(StringUtils.hasText(request.getChannel()) ? request.getChannel().trim() : "internal");
         existing.setTemplateContent(request.getTemplateContent().trim());
@@ -158,7 +160,10 @@ public class NotificationTemplateService {
             throw BusinessException.validationError("模板已被通知规则引用，请先解除关联后再删除");
         }
 
-        templateMapper.deleteById(id);
+        // issue #6956 · 现象 C：判影响行数（并发双删只许一次成功）
+        if (templateMapper.deleteById(id) == 0) {
+            throw BusinessException.notFound("通知模板");
+        }
         log.info("删除通知模板成功: id={}, tenantId={}", id, tenantId);
     }
 

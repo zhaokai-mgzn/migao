@@ -385,3 +385,57 @@ describe('订单级费用构成（issue #5843）', () => {
     expect(composition.showRemainder).toBe(false)
   })
 })
+
+/**
+ * issue #7320：**布料单不涉及加工费**。
+ *
+ * 用户报障（2026-10-19 截图）：卖布单的「费用构成」挂着
+ * 「回归帘头-平幔 未定价 · 没有可匹配的组合（缺选配信息）」+ 黄条「有 1 行加工费未定价…请到
+ * 「加工费组合」定价后再核对」—— 而这是一张**按米卖布、无加工**的单，根本没有组合可定价。
+ *
+ * 根因：定价引擎只看「有没有选配加工项」（不认售卖形态），布料行天然没有加工项 ⇒ 落库
+ * `processingFeeDetail.fee_source='unpriced'`；而本条展示口径此前只按 `fee_source` 判
+ * （下单页早就有布料豁免，详情页没有）⇒ 每张布料单都挂一条假警报。
+ */
+describe('费用构成 · 布料单不涉及加工费（issue #7320）', () => {
+  const fabricItem = {
+    id: 'fabric-1',
+    productName: '回归帘头-平幔',
+    quantity: 10,
+    unitPrice: 320,
+    amount: 3200,
+    subtotal: 3200,
+    processingFee: 0,
+    processingInfo: {
+      saleForm: '布料',
+      processingMeters: 10,
+      processingFeeDetail: {
+        composition: '',
+        items: [],
+        fee_source: 'unpriced',
+        amount: 0,
+        hint: '本行没有选配任何加工项 ⇒ 组合那半没有可收的加工费',
+      },
+    },
+  }
+
+  it('布料行（金额 0 + fee_source=unpriced）⇒ 不计入未定价、整块不渲染', () => {
+    const composition = buildOrderFeeComposition([fabricItem], { goodsTotal: 3200, orderTotal: 3200 })
+
+    expect(composition.unpricedCount).toBe(0)
+    expect(composition.lines).toEqual([])
+    expect(composition.visible).toBe(false)
+  })
+
+  it('反向护栏：成品帘行缺加工项 ⇒ 仍是未定价、仍可见（不许把这条闸门一起砍掉）', () => {
+    const curtain = {
+      ...fabricItem,
+      id: 'curtain-1',
+      processingInfo: { ...fabricItem.processingInfo, saleForm: '成品帘' },
+    }
+    const composition = buildOrderFeeComposition([curtain], { goodsTotal: 3200, orderTotal: 3200 })
+
+    expect(composition.unpricedCount).toBe(1)
+    expect(composition.visible).toBe(true)
+  })
+})

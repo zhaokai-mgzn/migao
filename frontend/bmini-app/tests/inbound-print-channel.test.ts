@@ -345,7 +345,7 @@ describe('打印通道：必留痕 / 不自行计数 / 逐种文案', () => {
     expect(new Set(values).size).toBe(values.length)
     // 逐种文案必须点名各自的**可行动出口**，不能都是一句"打印失败"
     expect(PRINT_FAILURE_HINTS['ios-unsupported']).toMatch(/iPhone|iPad/)
-    expect(PRINT_FAILURE_HINTS['insecure-context']).toMatch(/HTTPS/)
+    expect(PRINT_FAILURE_HINTS['insecure-context']).toMatch(/https:\/\//)
     expect(PRINT_FAILURE_HINTS['no-bluetooth-api']).toMatch(/Chrome/)
     // 微信里没有蓝牙接口 ⇒ 出口是「在浏览器打开」（**不是**"换个浏览器" —— 人要的是怎么离开微信）
     expect(PRINT_FAILURE_HINTS['wechat-webview']).toMatch(/浏览器打开/)

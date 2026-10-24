@@ -591,15 +591,15 @@ def test_position_seed_is_visible_and_matches_truth_source():
     ② 没有任何一行被可见性过滤挡在端点之外（种成 `status='disabled'` 即红）。
     """
     raw_seed = _position_seed_rows()
-    assert len(raw_seed) == 120, (
-        f"部位价目**字面量**种子行数 = {len(raw_seed)}，期望 120（30 逻辑工序 × 4 部位）—— "
+    assert len(raw_seed) == 124, (
+        f"部位价目**字面量**种子行数 = {len(raw_seed)}，期望 124（31 逻辑工序 × 4 部位；#7523 新增「出库」）—— "
         f"行数不对时下面的逐值比对会退化成「比较两个残缺集合」"
     )
     # 🔴 issue #4937：终态 = 一道逻辑工序一行（四档选行收敛）⇒ 与真值源按**单键**逐值比对
     seed = _collapse_seed_rows()
     truth = _truth_positions()
-    assert len(seed) == 30, f"收敛后的价目行数 = {len(seed)}，期望 30（一道逻辑工序一行）"
-    assert len(truth) == 30, f"真值源 OPERATION_POSITION_PRICES 的行数 = {len(truth)}，期望 30"
+    assert len(seed) == 31, f"收敛后的价目行数 = {len(seed)}，期望 31（一道逻辑工序一行；#7523 新增「出库」）"
+    assert len(truth) == 31, f"真值源 OPERATION_POSITION_PRICES 的行数 = {len(truth)}，期望 31（#7523 新增「出库」）"
     drifted = {key: (seed.get(key), truth.get(key)) for key in set(seed) | set(truth)
                if seed.get(key, (None, None, None))[:2] != truth.get(key)}
     assert not drifted, (

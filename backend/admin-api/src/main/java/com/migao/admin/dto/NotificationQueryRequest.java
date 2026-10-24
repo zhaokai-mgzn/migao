@@ -21,6 +21,11 @@ public class NotificationQueryRequest {
     private String channel;
 
     /**
+     * 业务对象类型：order / after_sales / inbound_order（issue #7524）
+     */
+    private String bizType;
+
+    /**
      * 开始日期
      */
     private OffsetDateTime dateFrom;

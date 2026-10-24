@@ -274,7 +274,7 @@ describe('宽表「操作」列可达性守卫（issue #6717）', () => {
     expect(CORPUS.length, '扫不到页面源码 ⇒ 判据在扫空气').toBeGreaterThanOrEqual(30)
     const tables = CORPUS.reduce((n, f) => n + (f.source.match(/<table\b/g)?.length ?? 0), 0)
     expect(tables, '扫不到表格 ⇒ 判据在扫空气').toBeGreaterThanOrEqual(10)
-    // 已知对象必须在场：本单现场（订单列表的共享表格件）
+    // 已知对象必须在场：本单现场（销售订单的共享表格件）
     const orders = CORPUS.find((f) => f.path.endsWith('components/orders/OrderTable.tsx'))
     expect(orders?.path, '找不到共享表格件 OrderTable.tsx ⇒ 本判据的坐标系已漂移').toBe(
       'src/components/orders/OrderTable.tsx',

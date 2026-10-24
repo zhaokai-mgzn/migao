@@ -49,11 +49,11 @@ public class AgentProductionController {
      * 订单生产进度（按订单号，租户隔离）
      *
      * 权限（issue #5246 移除类级 {@code order:list}；issue #5291 改挂读码）：本控制器是
-     * 生产看板 / 计件工资侧边栏节点的 agent 侧数据面，三个 GET 的方法级码 = 那些节点当前的码
+     * 作业看板 / 计件工资侧边栏节点的 agent 侧数据面，三个 GET 的方法级码 = 那些节点当前的码
      * {@code production:view}（生产域**读**码）⇒ 「没有该码、只有 order:list」的角色不能绕过菜单直达生产数据。
      */
     // issue #5291：三个 GET 的方法级码由 `processing:manage` 改为生产域读码 `production:view`
-    //（与侧边栏「生产看板 / 计件工资」节点同码；工具侧三个只读工具同批收口）。
+    //（与侧边栏「作业看板 / 计件工资」节点同码；工具侧三个只读工具同批收口）。
     @GetMapping("/progress")
     @RequirePermission("production:view")
     public ApiResponse<Map<String, Object>> progress(
@@ -77,7 +77,7 @@ public class AgentProductionController {
      * <p>订单解析与 {@code /progress} 同口径（{@code resolveOrder} 四形态：内部 order_id /
      * 订单号 / 加工单 qr_token / 加工单号），租户隔离同口径。**只读**。</p>
      *
-     * <p>同 {@code /progress} —— 生产看板数据面，码 = {@code production:view}（issue #5291 读码）。</p>
+     * <p>同 {@code /progress} —— 作业看板数据面，码 = {@code production:view}（issue #5291 读码）。</p>
      */
     @GetMapping("/worklog")
     @RequirePermission("production:view")

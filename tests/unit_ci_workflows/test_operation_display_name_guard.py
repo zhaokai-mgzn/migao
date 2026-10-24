@@ -122,17 +122,19 @@ FACES: tuple[str, ...] = (
     "frontend/admin-web/src/components/production/PieceworkTable.tsx",
     "frontend/admin-web/src/components/chat/ProductionProgressCard.tsx",
     "frontend/admin-web/src/app/(dashboard)/processing-orders/[id]/production/page.tsx",
-    # issue #6901：**A4 纸质加工单**补「工序清单」块（逐道 显示名 / 应做 / 状态）—— 显示名走
-    # `operationDisplayName()`（纸面不得渲染工人端变体名）。本清单与
-    # `tests/unit_ci_workflows/test_op_name_registry_guard.py` 的 `MANAGED_FACES` **必须双向一致**。
-    "frontend/admin-web/src/components/orders/ProcessingDoc.tsx",
-    # issue #6901：商家端**加工单块**（屏幕明细块 + 「复制全部」纯文本）同批补工序清单 —— 同上。
+    # 🔴 issue #7274（用户 2026-10-18 逐字「工序细节不用在打印单上，移除掉工序相关的表格信息」）：
+    # `ProcessingDoc.tsx`（A4 纸质加工单）**已退役** —— 纸面不再印工序清单 ⇒ 它不是工序名消费面
+    # （S1 的 `RETIRED_FACES` 反向钉住它不得被加回；`test_op_name_registry_guard.py` 的
+    # `MANAGED_FACES` 同步退役 ⇒ 两处清单仍双向一致）。
+    # issue #6901：商家端**加工单块**（屏幕明细块 + 「复制全部」纯文本）工序清单 —— 同上。
     "frontend/admin-web/src/components/orders/ProcessingOrderBlock.tsx",
 )
 
 #: **已退役面**（issue #4964）：曾在 `FACES` 里、现在**明确不得**再渲染工序的界面
 RETIRED_FACES: tuple[str, ...] = (
     "frontend/admin-web/src/components/production/TaskCardPrint.tsx",
+    # issue #7274：A4 纸质加工单的工序清单整块移除（工序细节不上纸）⇒ 纸面一个工序名都不印。
+    "frontend/admin-web/src/components/orders/ProcessingDoc.tsx",
 )
 
 #: 面必须 import 的符号（C2 的反空跑锚点：面文件真的在用那一份实现）
@@ -442,7 +444,8 @@ def test_c1_helper_is_the_single_composition_point():
 
 def test_c2_every_face_imports_the_shared_helper():
     """C2：每个受管面都 import 了 helper —— 面文件必须是「真的那一个」（反空跑）。"""
-    assert len(FACES) >= 7, "受管面清单被清空 ⇒ 本守卫会空跑通过（判据必须能判红）"
+    # issue #7274：ProcessingDoc（A4 纸质加工单）退役 ⇒ 受管面 7 → 6（阈值同步下调，防空跑）。
+    assert len(FACES) >= 6, "受管面清单被清空 ⇒ 本守卫会空跑通过（判据必须能判红）"
     for rel in FACES:
         src = _read(rel)
         assert REQUIRED_IMPORT in src, (
@@ -569,7 +572,7 @@ def test_c4_assignment_bypass_is_not_an_escape_hatch(tmp_path: Path):
 # ── C5：已退役面不得再渲染工序（退役 ≠ 无人管）──────────────────────────────
 
 def test_c5_retired_face_no_longer_renders_operations():
-    """C5：洗水码纸面**不再印工序**（issue #4964 的退场两项之一）—— 退役面不得被偷偷加回。
+    """C5：**纸面不再印工序**（洗水码 issue #4964 / A4 加工单 issue #7274）—— 退役面不得被偷偷加回。
 
     判据形态 = 退役面源码（**剥注释后**）里不得出现 `operationDisplayName`、不得出现「工序」字样、
     也不得在渲染位置直接渲染变体名。**为什么必须有这条**：面一旦移出 `FACES`，C2/C3 就不再管它 ⇒
@@ -580,10 +583,12 @@ def test_c5_retired_face_no_longer_renders_operations():
         code = _strip_comments(src)
         assert REQUIRED_IMPORT not in code, (
             f"`{rel}` 又用回了 `{REQUIRED_IMPORT}` ⇒ 工序被加回纸面了？确要加回：**同时**把它加回 "
-            "`FACES`（本守卫的覆盖面靠白名单，不加回 = #4630 的漏改形态复发）"
+            "`FACES`（本守卫的覆盖面靠白名单，不加回 = #4630 的漏改形态复发；"
+            "洗水码的退场来由 = issue #4964，A4 加工单 = issue #7274）"
         )
         assert "工序" not in code, (
-            f"`{rel}` 的纸面源码里出现了「工序」字样 ⇒ issue #4964 的退场项（工序摘要）被加回；"
+            f"`{rel}` 的纸面源码里出现了「工序」字样 ⇒ 纸面工序清单被加回"
+            "（洗水码 issue #4964 / A4 加工单 issue #7274）；"
             "确要加回请**同时**把它加回 `FACES` 并走 `operationDisplayName`"
         )
         assert _violations(src) == [], (

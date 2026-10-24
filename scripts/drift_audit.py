@@ -17,6 +17,7 @@
   python3 scripts/drift_audit.py --check               # 门禁：**新增**漂移 ⇒ exit 1；存量放行
   python3 scripts/drift_audit.py --check --json out.json
   python3 scripts/drift_audit.py --regen-baseline --reason "PR #xxxx：销账 xxx"
+  python3 scripts/drift_audit.py --prune-zeroed --reason "…"   # 只删**实测归零**的条目（不重建清单）
   python3 scripts/drift_audit.py --list-checks         # 打印判据集合（护栏清单，机器可读）
   python3 scripts/drift_audit.py --repo <path> --base <rev> --offline   # 供 L0 夹具使用
   # 定时腿：**逐条点名**哪条判据的"未知"不折成非零（可重复；只影响 `--fail-on-unknown` 这一关）
@@ -726,9 +727,17 @@ def check_sync_copy(a: Audit) -> CheckResult:
     src_txt = a.read(DEV_FLOW_SKILL) or preset_skill_text(a.repo, "skills/migao-dev-flow/SKILL.md")
     cp_txt = a.read(DEV_FLOW_COPY)
     if src_txt is None:
-        r.status = "unknown"
-        r.notes.append(_preset_moved_note("权威源 `migao-dev-flow/SKILL.md`"))
-        return r
+        # 🔴 #6640 尾部：**对象结构性不在本环境** ⇒ 具名 `not_applicable`，不是 `unknown`。
+        # 旧写法的代价是实测过的：定时腿 `--fail-on-unknown` 把这条折成 `3`，与「确实漂移」
+        # 同码 ⇒ 即使全仓零漂移也永远红（run 39993089601 即此形态）。判别力不放宽 —— 预设语料
+        # 可达时照常比版本/章节（下面所有断言一个字没动）。
+        return not_applicable(
+            r,
+            "预设语料（权威源 `migao-dev-flow/SKILL.md`）",
+            "本仓已不承载 `.agent-presets/**`（S4 / issue #6020），本环境也取不到预设镜像 "
+            "⇒ 判据没有可比对象（evaluated=0；**未跑 ≠ 通过**）",
+            "本机建镜像（`$MIGAO_PRESET_MIRROR` / `~/migao-dev-preset-anchor`）或 CI 检出预设仓",
+        )
     if cp_txt is None:
         r.status = "error"
         r.error = f"缺文件：{DEV_FLOW_COPY}（副本在本仓，它不该消失）"
@@ -2033,7 +2042,11 @@ def run_audit(a: Audit, baseline: dict, only: list[str] | None,
         # · 判定面为空（`empty-surface`）：这条判据的输入没了，结论无从谈起；
         # · 需要网络而本次离线：`heartbeat` 的 gh 查询全返「未知」⇒ `never-succeeded`
         #   这类条目看起来归零，无条件判陈旧就是**凭空判红**。
-        unverifiable = res.status in ("error", "unknown") or (c.network and a.offline)
+        # ⚠️ `not_applicable` 也算「本轮没能重算」：判定对象不在本环境 ⇒ 它名下的旧基线条目
+        # 不得被读成「已不漂移」（#6640 实测：`sync-copy` 的两条 `sections-diverged` / `version`
+        # 差一步被归零未删阻塞；而"没跑"必须长得像"没跑"）。
+        unverifiable = res.status in ("error", "unknown", "not_applicable") \
+            or (c.network and a.offline)
         cmp_ = compare_baseline(res, base_entries, changed, recorded_entries=recorded,
                                 base_check_entries=(base_entries_all or {}).get(c.id, {}),
                                 unverifiable=unverifiable)
@@ -2383,6 +2396,92 @@ def build_baseline(rep: dict, reason: str) -> dict:
     }
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# 归零条目的**外科手术式销账**（`--prune-zeroed`，issue #7127；实例 #7117）
+# ═══════════════════════════════════════════════════════════════════════════
+def prunable_zeroed(rep: dict, baseline: dict, *,
+                    offline: bool) -> tuple[dict[str, list[str]], list[str]]:
+    """本次审计**实测归零**的基线条目 ⇒ `({判据 id: [key, …]}, [拒绝理由, …])`。
+
+    **为什么需要一条命令**：有一族基线条目是**运行态**的（`heartbeat` 判据的
+    `<wf>|paused` / `<wf>|never-succeeded` / `<wf>|stale`）—— 某个 workflow 首次成功 /
+    被解停 / 恢复心跳 ⇒ 条目**归零**，而**没有任何提交**会去删它 ⇒ `--check` 此后每次 run
+    都红、每次都往值班 issue 追一条评论（实测：`c-end-h5-publish.yml|never-succeeded`
+    归零后近 40 次 run 里 **39 红**）。**归零是外部事件的结果，不该靠人记得删。**
+
+    **为什么不能用 `--regen-baseline` 交差**（#5151 治过的形态）：那是**全量重建**，
+    会把「本轮**没能重算**」的判据（CI 上 `sync-copy` 恒 `unknown` / 判据崩溃 / `--offline`）
+    名下的**合法豁免一起删掉** —— 凭一次"没跑出结论"永久销掉真豁免。本函数只认**点名**：
+
+    · 采取面 = 报告里 `stale_baseline_blocking` 点名的 key。该名单已由 `compare_baseline`
+      按「该判据**本轮真的重算过**」筛过一遍（没跑出结论的走 `stale_baseline_unverifiable`），
+      这里**再核一次**（双重保险：名单与状态不同源 ⇒ 拒绝，而不是照删）。
+    · fail-closed（调用方**一个字都不许写**）：新增漂移 / 被删条目 / burn-down 阻塞 /
+      任一判据 `error` / 被点名条目所属判据本轮没跑出结论（`error` / `unknown` /
+      `not_applicable` / 判定面为空 / 需网络而本次离线）⇒ 返回具名理由。
+      理由：**归零 ≠ 已不再漂移**（`#5151` 的教训）—— "没跑" 必须长得像 "没跑"。
+    · 幂等：没有点名条目 ⇒ `({}, [])`（调用方零动作，exit 0）。
+    """
+    s = rep.get("summary") or {}
+    blockers: list[str] = []
+    if s.get("new_drift"):
+        blockers.append(f"本次审计有**新增漂移** {s['new_drift']} 条（面内阻塞）⇒ 先修漂移，别动基线")
+    if s.get("dropped_baseline_entry"):
+        blockers.append(f"本次审计有 **被删但仍漂移** 的条目 {s['dropped_baseline_entry']} 条"
+                        f"（反向对账阻塞：删条目 = 偷偷缩短）")
+    if (s.get("burn_down") or {}).get("blocking"):
+        blockers.append("burn-down 预算未达标（阻塞）⇒ 那是「本次该净缩」的事，不是本命令的事")
+    for c in rep.get("checks", []):
+        if c["status"] == "error":
+            blockers.append(f"[{c['id']}] 判据**自身异常**（{c.get('error') or '?'}）⇒ 先修判据")
+
+    named: dict[str, list[str]] = {}
+    for c in rep.get("checks", []):
+        keys = list(c.get("stale_baseline_blocking") or [])
+        if not keys:
+            continue
+        why = None
+        if c["status"] in ("error", "unknown", "not_applicable"):
+            why = f"本轮状态 `{c['status']}`（没跑出结论）"
+        elif c.get("env_findings"):
+            why = "判定面为空（`empty-surface`：结论无从谈起）"
+        elif c.get("network") and offline:
+            why = "本判据需要网络而本次 `--offline`（gh 不可达 ⇒ 不是「已归零」）"
+        if why:
+            blockers.append(f"[{c['id']}] 被点名的条目 {keys} 所属判据**本轮没跑出结论**：{why}"
+                            f" ⇒ 一条都不许动（先修判据 / 去掉 `--offline`）")
+            continue
+        cur = (baseline.get("entries") or {}).get(c["id"]) or {}
+        absent = [k for k in keys if k not in cur]
+        if absent:
+            blockers.append(f"[{c['id']}] 报告点名了 {absent}，而当前清单里没有这些条目"
+                            f"（读数与清单不同源）⇒ 拒绝动手")
+            continue
+        named[c["id"]] = sorted(keys)
+    return named, blockers
+
+
+def prune_baseline(baseline: dict, named: dict[str, list[str]], reason: str,
+                   rep: dict) -> dict:
+    """把点名条目**逐条删掉**（其余字段与条目**逐字保留** —— 这不是重建，是外科手术）。
+
+    `reason` / `generated_at` / `anchor_sha` 按既有字段口径更新（与 `build_baseline` 同源）：
+    销账必须留下**为什么**（这个字段是读者唯一能看到的原因），且 `generated_at` 必须是
+    **本次审计**的时刻（否则"上次重生成是什么时候"会过期成假真值）。
+    """
+    out = json.loads(json.dumps(baseline, ensure_ascii=False))   # 深拷贝：只改点名的那几个桶
+    entries = out.setdefault("entries", {})
+    for cid, keys in named.items():
+        bucket = dict(entries.get(cid) or {})
+        for k in keys:
+            bucket.pop(k, None)
+        entries[cid] = bucket
+    out["generated_at"] = rep["generated_at"]
+    out["anchor_sha"] = rep["base"]
+    out["reason"] = reason
+    return out
+
+
 def tri_state(rep: dict, *, check: bool, strict_stale: bool, fail_on_unknown: bool,
               allow_unknown: tuple[str, ...] = ()) -> int:
     """**三态退出码**（`0` 通过 / `1` 判红 / `3` **不可判**）—— 单一实现，与报告同源（#5151）。
@@ -2458,6 +2557,13 @@ def main(argv: list[str] | None = None) -> int:
                     help="是否按 PR 上下文判阻塞（默认 diff）；`none` = 无 PR 上下文"
                          "（纯审计 / 定时树）⇒ 陈旧条目与面外新增都只报告不阻塞")
     ap.add_argument("--regen-baseline", action="store_true", help="重生成基线（必须带 --reason）")
+    ap.add_argument("--prune-zeroed", action="store_true",
+                    help="**只**删本次审计**实测归零**的基线条目（= 报告里 "
+                         "`stale_baseline_blocking` 点名的那些 key；issue #7127）。"
+                         "与 `--regen-baseline` 不同：它**不重建**清单 ⇒ 不会连带删掉"
+                         "「本轮没跑出结论」的判据名下的合法豁免（#5151）。"
+                         "fail-closed：有其它阻塞 / 被点名条目所属判据没跑出结论 ⇒ 拒绝动手"
+                         "（exit 1，一个字都不写）；没有可删的条目 ⇒ 零动作 exit 0（幂等）。")
     ap.add_argument("--reason", default="", help="重生成基线的理由（写进基线 JSON，PR 里要说明）")
     ap.add_argument("--json", dest="json_out", default=None, help="机器可读报告输出路径")
     ap.add_argument("--only", default=None, help="只跑这些判据（逗号分隔）")
@@ -2529,6 +2635,54 @@ def main(argv: list[str] | None = None) -> int:
         print("❌ 用法错误（exit 2）：`--allow-unknown` **只许**登记『本次真的是 `unknown`』的判据 —— "
               "判据改名 / 活锚真的装上了 / 判据崩成 `error`，都必须把名单改回来（豁免只许缩短）。")
         return 2
+
+    if args.prune_zeroed:
+        # ── 归零条目的**外科手术式销账**（issue #7127；`.github/workflows/drift-baseline-reconcile.yml` 调用）──
+        # 顺序即安全顺序：**先判能不能动，再决定动不动，最后才写盘**（fail-closed 的写盘只有一处）。
+        if args.regen_baseline:
+            print("❌ `--prune-zeroed` 与 `--regen-baseline` 互斥：前者只删点名条目（外科手术），"
+                  "后者**全量重建**清单（会连带删掉没跑出结论的判据名下的豁免，#5151）"
+                  "—— 口径不同，不许混用")
+            return 2
+        if args.stale_scope != "diff":
+            # `--stale-scope none` 下 `stale_baseline_blocking` **结构性恒为空** ⇒ 「没有可删的」与
+            # 「无法判定」不可区分 ⇒ 那正是"静默当绿"的入口，必须在入口处拒绝。
+            print(f"❌ `--prune-zeroed` 需要 PR 上下文（当前 `--stale-scope {args.stale_scope}`）"
+                  f"⇒ 本轮 `stale_baseline_blocking` 恒为空，「没有可删的」与「无法判定」不可区分")
+            return 2
+        named, blockers = prunable_zeroed(rep, baseline, offline=args.offline)
+        if blockers:
+            print(render_summary(rep, baseline))
+            for b in blockers:
+                print(f"❌ 拒绝销账（fail-closed，**一个字都没写**）：{b}")
+            print("   ⇒ 本命令**只**删「实测归零且该判据本轮真跑出结论」的条目；"
+                  "其它阻塞按各自的出口处置（修漂移 / 修判据 / 需要重建时才走 "
+                  f"`{REGEN_COMMAND}`，且理由要写进 PR）。")
+            return 1
+        if not named:
+            print(render_summary(rep, baseline))
+            print("✅ 没有「实测归零」的基线条目 ⇒ **零动作**（幂等：文件未被改动，exit 0）")
+            return 0
+        total = sum(len(v) for v in named.values())
+        # 销账清单既进 stdout（可 grep：`PRUNED <判据 id> <key>`）也进 `reason`（**落进文件**）——
+        # 只打 stdout 的话，事后读基线的人看不到"为什么少了这几条"。
+        listing = "、".join(f"{cid}|{k}" for cid, ks in sorted(named.items()) for k in ks)
+        reason = args.reason.strip() or (
+            f"自动销账（`--prune-zeroed`）：本次审计**实测归零**的基线条目 {total} 条"
+            f"（{listing}）⇒ 按「台账只许缩短」的全量对账逐条删掉；**未**重建清单"
+            f"（`--regen-baseline` 会连带删掉没跑出结论的判据名下的合法豁免，#5151）")
+        new_baseline = prune_baseline(baseline, named, reason, rep)
+        baseline_path.parent.mkdir(parents=True, exist_ok=True)
+        baseline_path.write_text(
+            json.dumps(new_baseline, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8")
+        print(render_summary(rep, baseline))
+        for cid, ks in sorted(named.items()):
+            for k in ks:
+                print(f"PRUNED {cid} {k}")
+        print(f"✓ 基线条目已销账：{total} 条 → {baseline_path}"
+              f"（anchor={rep['base'][:12]}，reason={reason!r}）")
+        return 0
 
     if args.regen_baseline:
         if not args.reason.strip():

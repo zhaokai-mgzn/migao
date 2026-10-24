@@ -42,15 +42,23 @@ import type { BatchRemaining, StockLedgerEntry } from '@/types'
  * 对应实体 javadoc；余量是**派生值** `入库量 + Σ消耗`，本页不自己再减一遍）；
  * 展示口径的纯函数在 `frontend/admin-web/src/lib/stock-ledger.ts`。
  *
+ * ## 🔴 批次余量**默认就是一张分页列表**（issue #7604）
+ *
+ * 改前（#6417）这一屏必须先选商品：`GET /api/admin/batch-stock/batches` **没有分页参数**，
+ * 不选商品 = 一次拉整个租户的批次 ⇒ 页面宁可"不查 + 一句黄色提示"。用户 2026-10-24 逐字：
+ * 「这里是不是应该默认给个分页查询展示当前批次库存」。
+ *
+ * ⇒ 服务端补了分页读面 `GET /api/admin/batch-stock/batches/page`（`PageResponse<BatchRemaining>`，
+ * 排序 = 收货日期倒序；`keyword` 命中批号 / 缸号 / 入库单号 / 货号），本页：
+ *   · 切到「批次余量」即拉第 1 页（**不要求先选商品**），首屏直接是可读的表 + 「共 N 条」；
+ *   · 商品搜索仍在，但只是**可选的收窄**（选中 ⇒ 按 `productId` 查该商品的批次）；
+ *   · 旧端点 `/batches` 本页**不再调用** —— 它按商品取全量，给派工候选 / 分布 / 对账 / Agent 工具用。
+ *
  * ## 🔴 商品筛选为什么分两步
  *
  * `GET /api/admin/stock-ledger` **没有关键词参数**（`skuId` / `productId` / `refNo` 三个精确过滤）
  * ⇒ 传关键词会被服务端**静默丢弃** = 拿全量冒充过滤结果。所以商品侧必须先走**既有商品搜索**
- *（`productApi.getProducts`）拿到 `productId`，再按 id 查流水。
- *
- * 批次余量视图**要求先选商品**：`GET /api/admin/batch-stock/batches` **没有分页参数**
- *（只有 `productId` / `skuId` / `onlyAvailable` 三个过滤）⇒ 不选商品就是拉**整个租户**的批次，
- * 一个响应里几百上千行 ⇒ 页面卡住。宁可不查 + 明确提示，也不做「一次拉全量」的假方便。
+ *（`productApi.getProducts`）拿到 `productId`，再按 id 查流水（批次视图同理）。
  *
  * ## 只读
  *
@@ -63,7 +71,7 @@ const PAGE_SIZE = 20
  *
  * 判据只有一条：**话术说的原因必须是真原因**。
  * · `403` ⇒ 是权限（终态，给去处：找管理员开**本页**对应的读码 —— 本页两个读面
- *   （`GET /api/admin/stock-ledger` / `GET /api/admin/batch-stock/batches`）的方法级读码
+ *   （`GET /api/admin/stock-ledger` / `GET /api/admin/batch-stock/batches/page`）的方法级读码
  *   都是 `product:list`，对商家的可见名 = 菜单「商品管理」）；
  * · 其余（服务未起 / 超时 / 5xx / 网络）⇒ 是**服务侧**，只说事实 + 下一步，并**明说不是权限问题**
  *   —— 改前两处 `catch` 一律说「可能是当前岗位没有「商品管理」权限」，把 500 说成权限，
@@ -104,8 +112,10 @@ export default function StockLedgerPage() {
 
   // ── 草稿态（用户正在敲，点「查询」才生效）──
   const [refNoInput, setRefNoInput] = useState('')
+  const [batchKeywordInput, setBatchKeywordInput] = useState('')
+  const [appliedBatchKeyword, setAppliedBatchKeyword] = useState('')
 
-  // ── 商品搜索（两步走：先搜商品，再按 productId 查流水）──
+  // ── 商品搜索（两步走：先搜商品，再按 productId 查）──
   const [keyword, setKeyword] = useState('')
   const [options, setOptions] = useState<ProductOption[]>([])
   const [searching, setSearching] = useState(false)
@@ -123,8 +133,10 @@ export default function StockLedgerPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  // ── 批次余量（issue #6417）──
+  // ── 批次余量（issue #6417；默认分页列表 = issue #7604）──
   const [batches, setBatches] = useState<BatchRemaining[]>([])
+  const [batchTotal, setBatchTotal] = useState(0)
+  const [batchPage, setBatchPage] = useState(1)
   const [batchLoading, setBatchLoading] = useState(false)
   const [batchError, setBatchError] = useState('')
 
@@ -152,24 +164,25 @@ export default function StockLedgerPage() {
   }, [product, appliedRefNo, page])
 
   const loadBatches = useCallback(async () => {
-    // 没选商品 ⇒ 不查（端点是全量、无分页；见页头注释「为什么要求先选商品」）
-    if (!product) {
-      setBatches([])
-      setBatchError('')
-      return
-    }
     setBatchLoading(true)
     setBatchError('')
     try {
-      const res = await batchStockApi.batches({ productId: product.id })
-      setBatches((res.data?.data ?? []) as BatchRemaining[])
+      const res = await batchStockApi.batchesPage({
+        productId: product?.id,
+        keyword: appliedBatchKeyword.trim() || undefined,
+        page: batchPage,
+        size: PAGE_SIZE,
+      })
+      const data = res.data?.data
+      setBatches((data?.items ?? []) as BatchRemaining[])
+      setBatchTotal(Number(data?.total ?? 0))
     } catch (e) {
       setBatches([])
       // 🔴 issue #6707：与流水读面**同一范式**（本页两个读面同一读码 `product:list`）。
       setBatchError(stockLedgerReadErrorCopy(e, '批次余量'))
     }
     setBatchLoading(false)
-  }, [product])
+  }, [product, appliedBatchKeyword, batchPage])
 
   useEffect(() => {
     void load()
@@ -182,7 +195,7 @@ export default function StockLedgerPage() {
   const searchProducts = useCallback(async () => {
     const kw = keyword.trim()
     if (!kw) {
-      setSearchHint('请先输入商品关键词，再从搜索结果里点选一个商品 —— 库存流水要按选中的商品查')
+      setSearchHint('请先输入商品关键词，再从搜索结果里点选一个商品 —— 库存要用选中的商品查')
       setOptions([])
       return
     }
@@ -208,26 +221,37 @@ export default function StockLedgerPage() {
     setKeyword('')
     setSearchHint('')
     setPage(1)
+    setBatchPage(1)
   }, [])
 
   const clearProduct = useCallback(() => {
     setProduct(null)
     setPage(1)
+    setBatchPage(1)
   }, [])
 
+  /** 查询 = 让**当前视图**的草稿生效（两个视图各有一个可查询的过滤条件） */
   const applyQuery = useCallback(() => {
+    if (view === 'batch') {
+      setAppliedBatchKeyword(batchKeywordInput)
+      setBatchPage(1)
+      return
+    }
     setAppliedRefNo(refNoInput)
     setPage(1)
-  }, [refNoInput])
+  }, [view, batchKeywordInput, refNoInput])
 
   const reset = useCallback(() => {
     setRefNoInput('')
     setAppliedRefNo('')
+    setBatchKeywordInput('')
+    setAppliedBatchKeyword('')
     setProduct(null)
     setKeyword('')
     setOptions([])
     setSearchHint('')
     setPage(1)
+    setBatchPage(1)
   }, [])
 
   /** 刷新 = 刷新**当前视图**（刷错了会让人以为「刷新没反应」） */
@@ -237,6 +261,7 @@ export default function StockLedgerPage() {
   }, [view, load, loadBatches])
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const batchTotalPages = Math.max(1, Math.ceil(batchTotal / PAGE_SIZE))
 
   return (
     <div data-testid="stock-ledger-page" className="p-6 space-y-4">
@@ -252,7 +277,7 @@ export default function StockLedgerPage() {
             text={
               view === 'flow'
                 ? '每次库存变动都记在这里：**什么时候、因为哪张单、从多少变成多少** —— 想查库存为什么变，按时间往下看。'
-                : '按商品查每一卷布还剩多少米：**由入库米数减去已消耗算出**，不另立库存数。'
+                : '每一卷布还剩多少米：**由入库米数减去已消耗算出**，不另立库存数。'
             }
           />
         }
@@ -299,12 +324,12 @@ export default function StockLedgerPage() {
         </button>
       </div>
 
-      {/* 筛选：商品（两步走）+ 业务单据号（单据号只对流水视图有意义） */}
+      {/* 筛选：商品（两步走，批次视图下为**可选**收窄）+ 各视图自己的关键字 */}
       <div className="bg-neutral-50 rounded-lg p-4 space-y-3">
         <div className="flex flex-wrap items-end gap-3">
           <div>
             <label htmlFor="ledger-product" className="block text-xs text-neutral-500 mb-1">
-              {view === 'flow' ? '商品（按商品查某项货号的流水）' : '商品（按商品查它有哪些批次）'}
+              {view === 'flow' ? '商品（按商品查某项货号的流水）' : '商品（可选：只看某个商品的批次）'}
             </label>
             <div className="flex gap-2">
               <input
@@ -325,7 +350,7 @@ export default function StockLedgerPage() {
             </div>
           </div>
 
-          {view === 'flow' && (
+          {view === 'flow' ? (
             <div>
               <label htmlFor="ledger-refno" className="block text-xs text-neutral-500 mb-1">
                 业务单据号（订单号 / 工单号 / 入库单号）
@@ -342,9 +367,26 @@ export default function StockLedgerPage() {
                 }}
               />
             </div>
+          ) : (
+            <div>
+              <label htmlFor="ledger-batch-keyword" className="block text-xs text-neutral-500 mb-1">
+                批次关键字（批次号 / 缸号 / 入库单号 / 货号）
+              </label>
+              <input
+                id="ledger-batch-keyword"
+                aria-label="批次关键字"
+                className="border border-neutral-300 rounded-md px-3 py-2 text-sm w-64"
+                placeholder="如 PC-20261001-0001"
+                value={batchKeywordInput}
+                onChange={(e) => setBatchKeywordInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') applyQuery()
+                }}
+              />
+            </div>
           )}
 
-          {view === 'flow' && <Button onClick={applyQuery}>查询</Button>}
+          <Button onClick={applyQuery}>查询</Button>
           <Button variant="secondary" onClick={reset}>
             重置
           </Button>
@@ -366,7 +408,7 @@ export default function StockLedgerPage() {
           </div>
         )}
 
-        {/* 商品候选：**必须点选**（端点没有关键词参数，绝不把关键词发下去） */}
+        {/* 商品候选：**必须点选**（流水端点没有关键词参数，绝不把关键词发下去） */}
         {options.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {options.map((o) => (
@@ -503,78 +545,95 @@ export default function StockLedgerPage() {
         </>
       )}
 
-      {/* ── 视图 ②：批次余量（每卷剩多少，issue #6417）────────────────────── */}
+      {/* ── 视图 ②：批次余量（每卷剩多少，issue #6417；默认分页列表 = issue #7604）────── */}
       {view === 'batch' && (
         <>
-          {!product ? (
-            <div
-              data-testid="batch-need-product"
-              className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700"
-            >
-              批次余量要按商品查：先在上方搜一个商品再点选。
-            </div>
-          ) : (
-            <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
-              <table className="min-w-full text-sm">
-                <thead className="bg-neutral-50 text-neutral-500">
-                  <tr>
-                    <th className="px-3 py-2 text-left font-medium whitespace-nowrap">批次号</th>
-                    <th className="px-3 py-2 text-left font-medium whitespace-nowrap">货号 / SKU</th>
-                    <th className="px-3 py-2 text-left font-medium whitespace-nowrap">缸号</th>
-                    <th className="px-3 py-2 text-left font-medium whitespace-nowrap">入库单</th>
-                    <th className="px-3 py-2 text-right font-medium whitespace-nowrap">入库米数</th>
-                    <th className="px-3 py-2 text-right font-medium whitespace-nowrap">已消耗</th>
-                    <th className="px-3 py-2 text-right font-medium whitespace-nowrap">剩余米数</th>
-                    <th className="px-3 py-2 text-left font-medium whitespace-nowrap">收货日期</th>
+          <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
+            <table className="min-w-full text-sm">
+              <thead className="bg-neutral-50 text-neutral-500">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium whitespace-nowrap">批次号</th>
+                  <th className="px-3 py-2 text-left font-medium whitespace-nowrap">货号 / SKU</th>
+                  <th className="px-3 py-2 text-left font-medium whitespace-nowrap">缸号</th>
+                  <th className="px-3 py-2 text-left font-medium whitespace-nowrap">入库单</th>
+                  <th className="px-3 py-2 text-right font-medium whitespace-nowrap">入库米数</th>
+                  <th className="px-3 py-2 text-right font-medium whitespace-nowrap">已消耗</th>
+                  <th className="px-3 py-2 text-right font-medium whitespace-nowrap">剩余米数</th>
+                  <th className="px-3 py-2 text-left font-medium whitespace-nowrap">收货日期</th>
+                </tr>
+              </thead>
+              <tbody>
+                {batches.map((b) => (
+                  <tr key={b.batchId} data-testid="batch-row" className="border-t border-neutral-100">
+                    <td data-testid="batch-no" className="px-3 py-2 whitespace-nowrap font-medium">
+                      {b.batchNo || '—'}
+                    </td>
+                    <td data-testid="batch-sku" className="px-3 py-2 whitespace-nowrap">
+                      {b.skuCode || '—'}
+                    </td>
+                    <td data-testid="batch-dyelot" className="px-3 py-2 whitespace-nowrap text-neutral-600">
+                      {b.dyeLot || '—'}
+                    </td>
+                    <td data-testid="batch-inbound-no" className="px-3 py-2 whitespace-nowrap text-neutral-600">
+                      {b.inboundNo || '—'}
+                    </td>
+                    {/* 三列一律**原样**渲染服务端值（余量是派生值，本页不再减一遍） */}
+                    <td data-testid="batch-inbound" className="px-3 py-2 text-right tabular-nums text-neutral-600">
+                      {formatQty(b.inboundMeters)}
+                    </td>
+                    <td data-testid="batch-consumed" className="px-3 py-2 text-right tabular-nums text-neutral-600">
+                      {formatQty(b.consumedMeters)}
+                    </td>
+                    <td
+                      data-testid="batch-remaining"
+                      className={
+                        'px-3 py-2 text-right tabular-nums font-medium ' +
+                        (Number(b.remainingMeters) <= 0 ? 'text-amber-600' : 'text-neutral-900')
+                      }
+                    >
+                      {formatQty(b.remainingMeters)}
+                    </td>
+                    <td data-testid="batch-received" className="px-3 py-2 whitespace-nowrap text-neutral-600">
+                      {b.receivedDate || '—'}
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {batches.map((b) => (
-                    <tr key={b.batchId} data-testid="batch-row" className="border-t border-neutral-100">
-                      <td data-testid="batch-no" className="px-3 py-2 whitespace-nowrap font-medium">
-                        {b.batchNo || '—'}
-                      </td>
-                      <td data-testid="batch-sku" className="px-3 py-2 whitespace-nowrap">
-                        {b.skuCode || '—'}
-                      </td>
-                      <td data-testid="batch-dyelot" className="px-3 py-2 whitespace-nowrap text-neutral-600">
-                        {b.dyeLot || '—'}
-                      </td>
-                      <td data-testid="batch-inbound-no" className="px-3 py-2 whitespace-nowrap text-neutral-600">
-                        {b.inboundNo || '—'}
-                      </td>
-                      {/* 三列一律**原样**渲染服务端值（余量是派生值，本页不再减一遍） */}
-                      <td data-testid="batch-inbound" className="px-3 py-2 text-right tabular-nums text-neutral-600">
-                        {formatQty(b.inboundMeters)}
-                      </td>
-                      <td data-testid="batch-consumed" className="px-3 py-2 text-right tabular-nums text-neutral-600">
-                        {formatQty(b.consumedMeters)}
-                      </td>
-                      <td
-                        data-testid="batch-remaining"
-                        className={
-                          'px-3 py-2 text-right tabular-nums font-medium ' +
-                          (Number(b.remainingMeters) <= 0 ? 'text-amber-600' : 'text-neutral-900')
-                        }
-                      >
-                        {formatQty(b.remainingMeters)}
-                      </td>
-                      <td data-testid="batch-received" className="px-3 py-2 whitespace-nowrap text-neutral-600">
-                        {b.receivedDate || '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                ))}
+              </tbody>
+            </table>
 
-              {!batchLoading && batches.length === 0 && !batchError && (
-                <p className="px-4 py-8 text-center text-sm text-neutral-400">
-                  该商品暂无批次记录（批次来自入库过账 —— 没有按批次入库的商品，余量只能看 SKU 级流水）
-                </p>
-              )}
-              {batchLoading && <p className="px-4 py-8 text-center text-sm text-neutral-400">批次余量加载中…</p>}
+            {!batchLoading && batches.length === 0 && !batchError && (
+              <p className="px-4 py-8 text-center text-sm text-neutral-400">
+                没有匹配的批次（批次来自入库过账 —— 按批次入库后，这里才有每卷的剩余米数）
+              </p>
+            )}
+            {batchLoading && <p className="px-4 py-8 text-center text-sm text-neutral-400">批次余量加载中…</p>}
+          </div>
+
+          {/* 分页（职责同流水视图：计数 + 翻页；读失败时计数印 `—`，不印 0） */}
+          <div className="flex items-center justify-between text-sm text-neutral-500">
+            <span data-testid="batch-total">共 {batchError ? '—' : batchTotal} 条</span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                aria-label="上一页"
+                disabled={batchPage <= 1}
+                onClick={() => setBatchPage((p) => Math.max(1, p - 1))}
+              >
+                上一页
+              </Button>
+              <span data-testid="batch-page-info">
+                第 {batchPage} / {batchTotalPages} 页
+              </span>
+              <Button
+                variant="secondary"
+                aria-label="下一页"
+                disabled={batchPage >= batchTotalPages}
+                onClick={() => setBatchPage((p) => p + 1)}
+              >
+                下一页
+              </Button>
             </div>
-          )}
+          </div>
 
           <p className="text-xs text-neutral-400">
             「剩余米数」= 入库米数 − 已派工消耗：入库时按批次记账，派加工单指定批次时扣减、作废时回补。

@@ -1,4 +1,5 @@
 package com.migao.admin.mapper;
+// case_ids: ST-004
 
 import com.migao.admin.entity.Notification;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
@@ -23,7 +24,7 @@ class NotificationMapperTest {
     @DisplayName("selectByRecipientId — SQL 不含手写 tenant_id")
     void selectByRecipientId_noManualTenantId() throws Exception {
         Method method = NotificationMapper.class.getMethod(
-                "selectByRecipientId", String.class, String.class, String.class,
+                "selectByRecipientId", String.class, String.class, String.class, String.class,
                 com.baomidou.mybatisplus.core.metadata.IPage.class);
 
         Select select = method.getAnnotation(Select.class);

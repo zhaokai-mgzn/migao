@@ -303,16 +303,24 @@ def idempotent_tools() -> dict[str, bool]:
 
 
 def page_labels() -> frozenset:
-    """真实侧边栏**页面**（菜单项 ∪ 独立项）—— 复用菜单三源同构守卫的解析函数，不另立第二套。
+    """真实侧边栏**页面**（组内项 ∪ 独立项 ∪ **一级项**）—— 复用菜单三源同构守卫的解析函数，
+    不另立第二套。
 
     ⚠️ issue #5454 修：原实现只取 `_parse_frontend` 的**组内项**，漏掉 `standaloneItems`
     （`Sidebar.tsx` 渲染的是两者之和）⇒ 「通知中心」这类独立项被判「不在侧边栏」（**假红**）。
     真值源缺项会让判据把**正确**话术判红，与射程不足同样有害。
+
+    🔴 issue #7541 链内修（同一病灶的**第三个**数组）：`standaloneTopItems`（**一级项**）也漏了，
+    而现役一级项「商品管理」正是商品域话术的落点 —— 正确话术被判「不在真实侧边栏」。
+    本文件此前给出的出路（把「商品管理」改写成「商品列表」）**现在同样不在菜单里**（实测两名字都不在），
+    等于把一条真话术换成一个更错的名字。判据 = `test_page_label_truth_source_includes_standalone_top_items`。
     """
     src = menu.MENU_TS.read_text(encoding="utf8")
     groups = menu._parse_frontend(src)
     out = {name for _key, _group, items in groups for name in items}
     out |= set(menu._parse_standalone(src))
+    # 一级项（`standaloneTopItems`）同样是 `Sidebar.tsx` 渲染的可导航节点 ⇒ 必须进真值源
+    out |= set(_standalone_top_labels(src))
     assert out, "侧边栏菜单项解析为 0 ⇒ 页面入口判据会空跑（fail-closed）"
     return frozenset(out)
 
@@ -334,7 +342,8 @@ def derived_retry(code: str, scope: str) -> bool:
 # 的运行期话术、`app/graph/skills/base_skill.py` 注入 system prompt 的权限范围段 ——
 # **从未被核过**，而它们恰恰是「用户照着找不到入口」的现场（§23 G5：扩面时存量逐条处置）。
 #
-# 判据本体**复用**：真值源 = 上方的 `page_labels()` / `sidebar_nodes()`（`menu.ts` 是唯一真值源）；
+# 判据本体**复用**：真值源 = 上方的 `page_labels()` / `sidebar_nodes()`（`menu.ts` 是唯一真值源；
+# 页面可达集 = 组内项 ∪ 独立项 ∪ 一级项 —— 见 issue #7541 链内修的说明）；
 # 口径 = 同一条「点名的入口必须真实存在」。**不另立第二套页面词汇、不另写扫描器**。
 
 AGENT_SERVICE_ROOT = REPO_ROOT / "backend" / "ai-agent-service"
@@ -932,3 +941,55 @@ def test_every_judgement_can_go_red() -> None:
     assert any("「角色管理 → 岗位权限」" in p and "找不到入口" in p for p in problems), (
         "把既有话术改成指向**不存在的菜单项**「角色管理」却没有变红 ⇒ 本判据是空断言"
         "（它只覆盖了新增文本、没有覆盖存量）。")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 一·B·2、页面标签真值源必须含**一级项**（issue #7541 链内修）
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# 病灶（本单实测读数）：`page_labels()` 只取组内项 + `standaloneItems`，漏了
+# `standaloneTopItems`（`menu.ts` 的**一级项**，现役含「商品管理」）⇒「请先在「商品管理」里
+# 上传主图」这类**正确**话术被 `entry_problems` 判「不在真实侧边栏」；当时判据打印的
+# 23 个真实菜单项里既没有「商品管理」、也没有本文件早年建议改写的「商品列表」。
+# 与 #5454 是同一个病灶的**第三个**数组 —— 真值源缺项与射程不足同样有害。
+
+
+def test_page_label_truth_source_includes_standalone_top_items() -> None:
+    """一级项必须进页面真值源；缺了它，**正确**的指路话术会被判红。
+
+    三条断言各管一件事：
+    ① 常驻不变式 —— 一级项 ⊆ `page_labels()`（谁再把它拿掉 ⇒ 立刻红）；
+    ② 逐项可达 —— 每个一级项作为 `entry=` 都不被判冗余（不是只进了集合、判据却不认）；
+    ③ 判别力红证 —— 真值源**去掉**一级项后同一行必须判红（证明 ① 不是空断言），
+       外加一个菜单里根本不存在的标签必须判红（入口可达性判据不恒绿）。
+    """
+    src = menu.MENU_TS.read_text(encoding="utf8")
+    top = _standalone_top_labels(src)
+    assert top, "解析不出一级项 ⇒ 本判据会空跑（fail-closed）"
+
+    labels = page_labels()
+    missing = sorted(set(top) - set(labels))
+    assert not missing, (
+        f"一级项没进页面真值源：{missing}｜真值源={sorted(labels)}"
+        f" ⇒ 指向它们的正确话术会被判「不在真实侧边栏」。{REPRO}"
+    )
+
+    for label in top:
+        probe = Row(code="PROBE", reason="探测", remedy="探测", entry=f"page:{label}")
+        assert entry_problems(probe, frozenset(), labels, frozenset()) == [], (
+            f"一级项「{label}」仍被判不可达 ⇒ 真值源补了但判据没吃上。{REPRO}"
+        )
+
+    without_top = frozenset(labels) - set(top)
+    downgraded = entry_problems(
+        Row(code="PROBE", reason="探测", remedy="探测", entry=f"page:{top[0]}"),
+        frozenset(), without_top, frozenset())
+    assert any("不在真实侧边栏" in p for p in downgraded), (
+        "去掉一级项后本判据仍认它可达 ⇒ 上面那条不变式是空断言（判据不判别）。"
+    )
+
+    ghost = Row(code="PROBE", reason="探测", remedy="探测", entry="page:菜单里不存在的页面")
+    assert any("不在真实侧边栏" in p
+               for p in entry_problems(ghost, frozenset(), labels, frozenset())), (
+        "菜单里根本不存在的页面入口没有被判红 ⇒ 入口可达性判据是空断言。"
+    )
