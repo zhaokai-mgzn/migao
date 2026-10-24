@@ -374,13 +374,42 @@ describe('报表中心页面', () => {
     expect((screen.getByTestId('reports-filter-to') as HTMLInputElement).value).toBe(expected.to)
   })
 
+  it('🔴 默认区间 = 本月：挂载即带「本月 1 号 ~ 今天」，不是「全部」', async () => {
+    emptyAll()
+    render(<ReportsPage />)
+    const expected = presetRange('thisMonth')
+
+    // 首屏请求就带上了本月起止（改回空默认 ⇒ 本判据红）
+    await waitFor(() =>
+      expect(reportApi.orderMargins).toHaveBeenCalledWith({
+        startDate: expected.from,
+        endDate: expected.to,
+      }),
+    )
+    expect(reportApi.staffPerformance).toHaveBeenCalledWith({ startDate: expected.from, endDate: expected.to })
+    expect(reportApi.qualityCost).toHaveBeenCalledWith({ startDate: expected.from, endDate: expected.to })
+    // 两个输入框回填成人能读到的日期（默认值不能只存在于请求参数里）
+    expect((screen.getByTestId('reports-filter-from') as HTMLInputElement).value).toBe(expected.from)
+    expect((screen.getByTestId('reports-filter-to') as HTMLInputElement).value).toBe(expected.to)
+    // 此刻读数两张表**不受区间影响**（默认值不许顺手传给它俩）
+    expect(reportApi.inventoryAging).toHaveBeenCalledWith(undefined)
+    expect(reportApi.receivableAging).toHaveBeenCalledWith()
+  })
+
   it('点「全部」⇒ 清空区间，请求不带日期参数（不是传两个空串）', async () => {
     emptyAll()
     render(<ReportsPage />)
     await waitFor(() => expect(reportApi.orderMargins).toHaveBeenCalledTimes(1))
 
+    // 默认已填本月，「到」那侧仍有值 ⇒ 只改「从」时请求里仍带 endDate（默认值不许被静默丢掉）
+    const defaultTo = presetRange('thisMonth').to
     fireEvent.change(screen.getByTestId('reports-filter-from'), { target: { value: '2026-10-01' } })
-    await waitFor(() => expect(reportApi.orderMargins).toHaveBeenLastCalledWith({ startDate: '2026-10-01' }))
+    await waitFor(() =>
+      expect(reportApi.orderMargins).toHaveBeenLastCalledWith({
+        startDate: '2026-10-01',
+        endDate: defaultTo,
+      }),
+    )
 
     fireEvent.click(screen.getByTestId('reports-filter-all'))
     await waitFor(() => expect(reportApi.orderMargins).toHaveBeenLastCalledWith({}))
