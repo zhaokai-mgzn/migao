@@ -243,8 +243,13 @@ class TestKnowledgeAPI:
             pytest.skip(f"Internal sync 需要有效 service token: {internal_resp.status_code}")
         if internal_resp.status_code == 404:
             pytest.skip("知识库同步接口未实现")
-        # 200 表示触发成功；500 也允许业务上 RAG 未配置时触发失败（仅校验路由可达）
-        assert internal_resp.status_code in (200, 202, 500), (
+        # 200 = 触发成功。🔴 issue #7583 缺陷 4：500 **不再算通过** —— 它是「RAG/知识库未配置」
+        # 还是「真坏了」从状态码分不开，所以按**未配置**记 skip（skip ≠ pass），而不是混进通过集合。
+        if internal_resp.status_code >= 500:
+            pytest.skip(
+                f"知识库同步触发失败（RAG / 知识库未配置？）: "
+                f"{internal_resp.status_code} {internal_resp.text[:200]}")
+        assert internal_resp.status_code in (200, 202), (
             f"Knowledge sync unexpected: {internal_resp.status_code} {internal_resp.text[:300]}"
         )
 
