@@ -73,8 +73,16 @@ Chrome 把自己的页眉页脚（版式日期 / 文档标题 / 页面 URL / 页
 
 | 单据 | 列清单（有序） | 说明 |
 |---|---|---|
-| 加工单 | `品名 / 货号 / 颜色 / 门幅 / 尺寸 / 数量 / 组件 / 批号 / 备注` | 每套一张 9 列表（`frontend/admin-web/src/components/orders/ProcessingDoc.tsx`）；🔴 纸面**不印**工序清单（issue #7274） |
-| 销售单 | `序号 / 货号 / 颜色 / 门幅 / 数量 / 单位 / 单价 / 金额` | 三联纸单联 8 列表（`frontend/admin-web/src/components/orders/SalesDoc.tsx`）；「品名」列自 issue #7530 退场 |
+| 加工单 | `品名 / 货号 / 颜色 / 门幅 / 帘种 / 尺寸 / 数量 / 批号 / 备注` | 每套一张 9 列表（`frontend/admin-web/src/components/orders/ProcessingDoc.tsx`）；🔴 纸面**不印**工序清单（issue #7274）；「组件」列自 issue #7625 退场、「帘种」补在门幅后 |
+| 销售单 | `序号 / 货号 / 颜色 / 门幅 / 帘种 / 数量 / 单位 / 单价 / 金额` | 三联纸单联 9 列表（`frontend/admin-web/src/components/orders/SalesDoc.tsx`）；「品名」列自 issue #7530 退场、「帘种」自 issue #7625 加入 |
+
+🔴 **2026-10-24（issue #7625）「组件」退场 + 四张单据统一加「帘种」**：用户逐字
+「不要组件这一列，另外给所有打印预览表格都加一列用来区分是布帘还是纱帘」⇒ 报价单 / 加工单删掉
+`组件` 列，四张纸面（报价单 / 加工单 / 发货单 / 销售单）的明细表都加 `帘种` 列（值 `布帘` / `纱帘`，
+布料单印占位）。取值口 = `frontend/admin-web/src/lib/order-item-sku.ts` 的 `orderItemCurtainType()`
+（`curtainType` 显式声明 → `componentRole` 受控枚举 → 布料单空串 → 缺省布帘，与后端
+`ProcessingOrderService.COMPONENT_ROLE_POSITIONS` 同一张映射）；判据 = 四份单据测试的列清单断言 +
+`tests/unit_ci_workflows/test_print_media_matrix_guard.py` 的 C5。
 
 🔴 **2026-10-23（issue #7530）销售单左上角「作业单扫码报工」码**：销售单抬头左侧印
 `processingOrder.scan_url` 的二维码（= `{base}/o/{短码}`，服务端 302 到工人报工页 `/w/`），

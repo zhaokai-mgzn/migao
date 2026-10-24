@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import dayjs from 'dayjs'
 import { freightText } from '@/lib/logistics'
-import { orderItemQuantity, orderItemSku } from '@/lib/order-item-sku'
+import { orderItemCurtainType, orderItemQuantity, orderItemSku } from '@/lib/order-item-sku'
 import { printBodyFontPt, printContentInsetCss, printPageRule } from '@/lib/print-media'
 import { useCompanyName } from '@/lib/use-company-name'
 import { cn } from '@/lib/utils'
@@ -20,7 +20,7 @@ import type { Order, OrderItem, ProcessingOrder, ProcessingOrderItem } from '@/t
  * ① **表头**：订单日期 / 客户 / 电话 / 地址 / 备注 / **制单人** / **单号** / **交付日期** /
  *    **货运**（🔴 纸面**不印** QR / 短码，issue #7219）；
  * ② **正文**：**按套分块** —— 每块段头 `第N套/共M套`，块内一张 9 列表
- *    （{@link PROCESSING_DOC_COLUMNS}：品名 | 货号 | 颜色 | 门幅 | 尺寸 | 数量 | 组件 | 批号 | 备注）
+ *    （{@link PROCESSING_DOC_COLUMNS}：品名 | 货号 | 颜色 | 门幅 | 帘种 | 尺寸 | 数量 | 批号 | 备注）
  *    ＋ 一行「工艺：…」（原「部位信息」列的内容，issue #6869）；
  *    品名 / 货号 / 颜色 / 门幅 取 `lib/order-item-sku.ts` 的 `orderItemSku()`；
  * ③ **分页**：每套 `break-inside: avoid`（不跨页裁切）、`thead` 用
@@ -107,9 +107,9 @@ export const PROCESSING_DOC_COLUMNS = [
   '货号',
   '颜色',
   '门幅',
+  '帘种',
   '尺寸',
   '数量',
-  '组件',
   '批号',
   '备注',
 ] as const
@@ -329,8 +329,9 @@ function SetBlock({
   const height = typeof item.height === 'number' && Number.isFinite(item.height) ? item.height : null
   // 尺寸：两边都是有限数才出（半个尺寸没有意义）
   const size = width !== null && height !== null ? `${width}×${height}` : ''
-  // 组件：面料行 = componentRole（缺省即主布）
-  const componentRole = paperText(info.componentRole, '主布')
+  // 帘种（issue #7625）：布帘 / 纱帘 —— 唯一取值口（`orderItemCurtainType`）；
+  // 「组件」（componentRole）列自本单退场（用户 2026-10-24「不要组件这一列」）
+  const curtainType = orderItemCurtainType(item) || MISSING
   // 数量 + 单位（issue #6901）：**一个**取值口（`lib/order-item-sku.ts`）同时喂「列名」与「值」——
   // 原先列名写死「数量(米)」而 `quantity` 的单位可能是件/套（快照行 `unit`）
   // ⇒ 同一行里列名与值各说一份单位。缺值 ⇒ 显式占位 `—`（不静默留空）。
@@ -353,13 +354,13 @@ function SetBlock({
             <DocTh className="w-[11%]">{PROCESSING_DOC_COLUMNS[1]}</DocTh>
             <DocTh className="w-[8%]">{PROCESSING_DOC_COLUMNS[2]}</DocTh>
             <DocTh className="w-[7%]">{PROCESSING_DOC_COLUMNS[3]}</DocTh>
-            <DocTh className="w-[10%]">{PROCESSING_DOC_COLUMNS[4]}</DocTh>
+            <DocTh className="w-[8%]">{PROCESSING_DOC_COLUMNS[4]}</DocTh>
+            <DocTh className="w-[9%]">{PROCESSING_DOC_COLUMNS[5]}</DocTh>
             <DocTh align="right" className="w-[11%]">
               {quantityLabel}
             </DocTh>
-            <DocTh className="w-[8%]">{PROCESSING_DOC_COLUMNS[6]}</DocTh>
-            <DocTh className="w-[17%]">{PROCESSING_DOC_COLUMNS[7]}</DocTh>
-            <DocTh className="w-[12%]">{PROCESSING_DOC_COLUMNS[8]}</DocTh>
+            <DocTh className="w-[16%]">{PROCESSING_DOC_COLUMNS[7]}</DocTh>
+            <DocTh className="w-[14%]">{PROCESSING_DOC_COLUMNS[8]}</DocTh>
           </tr>
         </thead>
         <tbody>
@@ -368,9 +369,9 @@ function SetBlock({
             <DocTd>{sku.code || MISSING}</DocTd>
             <DocTd>{sku.color || MISSING}</DocTd>
             <DocTd>{sku.doorWidth || MISSING}</DocTd>
+            <DocTd testId="processing-doc-curtain-type">{curtainType}</DocTd>
             <DocTd>{size || MISSING}</DocTd>
             <DocTd align="right">{quantity.quantity ?? MISSING}</DocTd>
-            <DocTd>{componentRole}</DocTd>
             {/* 批号 = 快照行的 `batchNo`（指派批次时写入）。缺值印 `—`（= 未指派），
                 与「我们没有这个字段」是两件事（issue #5914；登记见 PROCESSING_DOC_NOT_COLLECTED_FIELDS） */}
             <DocTd testId="processing-doc-batch">{paperText(snapshot?.batchNo)}</DocTd>

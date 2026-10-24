@@ -13,7 +13,7 @@ import {
   type PrintMediaId,
 } from '@/lib/print-media'
 import { useCompanyName } from '@/lib/use-company-name'
-import { orderItemSku } from '@/lib/order-item-sku'
+import { orderItemCurtainType, orderItemSku } from '@/lib/order-item-sku'
 import {
   resolveSalesQuantity,
   SALES_QTY_NOT_SHIPPED,
@@ -54,9 +54,10 @@ import type { Order, OrderItem, ProcessingOrder } from '@/types'
  * ## 制式（四段，逐条对实证 #4）
  *
  * ① 表头：**左上角作业单扫码报工码** + 销售单 / 单号 / 日期 / 客户 / 电话 / 地址 / 订货电话；
- * ② 明细：{@link SALES_DOC_COLUMNS}（序号 | 货号 | 颜色 | 门幅 | 数量 | 单位 | 单价 | 金额）——
+ * ② 明细：{@link SALES_DOC_COLUMNS}（序号 | 货号 | 颜色 | 门幅 | 帘种 | 数量 | 单位 | 单价 | 金额）——
  *    **商品行粒度**（与报价单的「按套」粒度**不是同一个数据投影**，不许互套）；
  *    货号 / 颜色 / 门幅 取 `lib/order-item-sku.ts` 的 `orderItemSku()`（issue #6869）；
+ *    帘种（布帘 / 纱帘）取同一模块的 `orderItemCurtainType()`（issue #7625）；
  *    🔴 「品名」列自 issue #7530 起**退场**（用户 2026-10-23 逐字「销售单不要品名」）——
  *    单据身份由货号 / 颜色 / 门幅承载，不印商品名；
  * ③ 汇总：上期余额 / 预存抵扣 / 优惠金额 / **本单应收** / 账户余额；
@@ -191,6 +192,8 @@ export const SALES_DOC_COLUMNS = [
   '货号',
   '颜色',
   '门幅',
+  // 帘种（issue #7625，用户 2026-10-24「给所有打印预览表格都加一列用来区分是布帘还是纱帘」）
+  '帘种',
   '数量',
   '单位',
   '单价',
@@ -385,7 +388,7 @@ export default function SalesDoc({
           </tbody>
         </table>
 
-        {/* ===== ② 明细：商品行粒度（序号|货号|颜色|门幅|数量|单位|单价|金额；「品名」自 #7530 退场） ===== */}
+        {/* ===== ② 明细：商品行粒度（序号|货号|颜色|门幅|帘种|数量|单位|单价|金额；「品名」自 #7530 退场、帘种自 #7625 加入） ===== */}
         {/* 🔴 数量列的**口径**必须印在纸面上（印的是实发还是订单数量、单据处于什么状态）——
             静默留空 / 印 0 都会让「账实不符」在纸上不可判（issue #5651 硬约束）。 */}
         <div className="text-[0.85em] text-neutral-600 mb-0.5" data-testid="sales-qty-basis">
@@ -398,18 +401,19 @@ export default function SalesDoc({
           <thead>
             <tr>
               <DocTh className="w-[6%]">{SALES_DOC_COLUMNS[0]}</DocTh>
-              <DocTh className="w-[14%]">{SALES_DOC_COLUMNS[1]}</DocTh>
-              <DocTh className="w-[16%]">{SALES_DOC_COLUMNS[2]}</DocTh>
-              <DocTh className="w-[12%]">{SALES_DOC_COLUMNS[3]}</DocTh>
-              <DocTh align="right" className="w-[10%]">
-                {SALES_DOC_COLUMNS[4]}
+              <DocTh className="w-[13%]">{SALES_DOC_COLUMNS[1]}</DocTh>
+              <DocTh className="w-[14%]">{SALES_DOC_COLUMNS[2]}</DocTh>
+              <DocTh className="w-[11%]">{SALES_DOC_COLUMNS[3]}</DocTh>
+              <DocTh className="w-[8%]">{SALES_DOC_COLUMNS[4]}</DocTh>
+              <DocTh align="right" className="w-[9%]">
+                {SALES_DOC_COLUMNS[5]}
               </DocTh>
-              <DocTh className="w-[8%]">{SALES_DOC_COLUMNS[5]}</DocTh>
-              <DocTh align="right" className="w-[14%]">
-                {SALES_DOC_COLUMNS[6]}
-              </DocTh>
-              <DocTh align="right" className="w-[20%]">
+              <DocTh className="w-[8%]">{SALES_DOC_COLUMNS[6]}</DocTh>
+              <DocTh align="right" className="w-[13%]">
                 {SALES_DOC_COLUMNS[7]}
+              </DocTh>
+              <DocTh align="right" className="w-[18%]">
+                {SALES_DOC_COLUMNS[8]}
               </DocTh>
             </tr>
           </thead>
@@ -428,6 +432,8 @@ export default function SalesDoc({
                 // 货号 / 颜色 / 门幅 = 纸面身份三件套（issue #6869；「品名」自 #7530 退场）——
                 // 唯一取值口，缺值一律显式占位 `—`（不静默留空，见文件头硬约束）
                 const sku = orderItemSku(item)
+                // 帘种（issue #7625）：布帘 / 纱帘 —— 唯一取值口；布料单没有帘 ⇒ 占位 `—`
+                const curtainType = orderItemCurtainType(item)
                 return (
                   <tr key={item.id || idx} data-testid={`sales-item-${idx}`}>
                     <DocTd align="right">{idx + 1}</DocTd>
@@ -439,6 +445,9 @@ export default function SalesDoc({
                     </DocTd>
                     <DocTd testId={`sales-door-width-${idx}`}>
                       {sku.doorWidth || SALES_DOC_MISSING}
+                    </DocTd>
+                    <DocTd testId={`sales-curtain-type-${idx}`}>
+                      {curtainType || SALES_DOC_MISSING}
                     </DocTd>
                     {/* 数量：**实发**（后端 admin 读面；真值 owner = `order_shipment_items`）。
                         未发行 ⇒ 显式「未发」；未发货 / 读面没取到 ⇒ 订单数量（口径已印在表上方）。

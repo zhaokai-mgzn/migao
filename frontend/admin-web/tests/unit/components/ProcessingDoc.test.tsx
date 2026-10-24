@@ -178,7 +178,8 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
     )
     const area = document.querySelector('.processing-print-area')
     // 判据面 = 9 列表的**用料列**（index 5，唯一由「数量是否算得出」决定的那一格）
-    const metersColumn = paperNumericColumn(area, { column: 5 })
+    // issue #7625：数量列 index = 6（品名0 货号1 颜色2 门幅3 帘种4 尺寸5 数量6）
+    const metersColumn = paperNumericColumn(area, { column: 6 })
     // 单据：加工单 ProcessingDoc
     assertNoPaperZeroFill(metersColumn.slice(0, 1), {
       label: '加工单 ProcessingDoc',
@@ -253,12 +254,14 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
       '货号',
       '颜色',
       '门幅',
+      '帘种',
       '尺寸',
       '数量',
-      '组件',
       '批号',
       '备注',
     ])
+    // issue #7625（用户 2026-10-24「不要组件这一列 … 加一列区分布帘还是纱帘」）：
+    // 「组件」列退场、同位置附近补「帘种」（紧跟门幅）⇒ 仍 9 列。
   })
 
   it('② issue #6869：逐格印商品 SKU 四件套（品名/货号/颜色/门幅）—— 货号取响应真字段 `skuCode`', () => {
@@ -271,12 +274,39 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
       '0012', // 货号（`skuCode` —— 夹具**没有** `productCode`：读幽灵字段的旧实现这里必空 ⇒ 红证）
       '米白', // 颜色（`processingInfo.colorName`）
       '2.8米', // 门幅（`processingInfo.doorWidth`，经 `craftSpecRows` 同一份格式化）
+      '布帘', // 帘种（`processingInfo.curtainType`）
       '3.2×2.6', // 尺寸
       '12.5', // 数量(米)
-      '主布', // 组件
       '—', // 批号（无快照行 ⇒ 未指派，显式占位）
       '', // 备注（未填行级备注 ⇒ 留白供手写）
     ])
+  })
+
+  it('帘种列（issue #7625）：显式 `curtainType=纱帘` ⇒ 印「纱帘」；布料单（无帘）⇒ 占位「—」', () => {
+    render(
+      <ProcessingDoc
+        order={buildOrder({
+          items: [
+            buildItem({
+              id: 'item-sheer',
+              processingInfo: { curtainType: '纱帘', colorName: '象牙白', doorWidth: '3.0米' },
+            }),
+            buildItem({
+              id: 'item-fabric',
+              processingInfo: { colorName: '米白', saleForm: '布料' },
+            }),
+          ],
+        })}
+        processingOrder={buildProcessingOrder()}
+      />
+    )
+    const blocks = Array.from(document.querySelectorAll('.processing-set'))
+    // 帘种列 index = 4（品名0 货号1 颜色2 门幅3 帘种4）
+    const curtainOf = (block: Element): string =>
+      block.querySelectorAll('tbody tr')[0]?.querySelectorAll('td')[4]?.textContent?.trim() ?? ''
+    // 🔴 注入式红证：两张都落回同一个缺省值（写死「布帘」）⇒ 下面两条必红
+    expect(curtainOf(blocks[0])).toBe('纱帘')
+    expect(curtainOf(blocks[1])).toBe(MISSING)
   })
 
   it('② issue #6869：工艺说明行承载原「部位信息」，且「部位」并入其中（不再单独成列）', () => {

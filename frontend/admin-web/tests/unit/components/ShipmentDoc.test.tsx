@@ -65,7 +65,8 @@ function buildOrder(overrides: Partial<Order> = {}): Order {
         productId: 'p-2',
         productName: '纱帘B',
         skuCode: '0020',
-        processingInfo: { colorName: '象牙白', doorWidth: '3.0米' },
+        // issue #7625：帘种真值（写侧只对「只买纱帘」显式写 `curtainType`；主帘缺省即布帘）
+        processingInfo: { colorName: '象牙白', doorWidth: '3.0米', curtainType: '纱帘' },
         quantity: 5,
         unitPrice: 50,
         amount: 250,
@@ -229,7 +230,7 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
   it('商品明细表的「单价(元/米)」「金额(元)」列**不受影响**（商品行语义，非加工项）', () => {
     render(<ShipmentDoc order={buildOrder()} />)
 
-    // 商品表仍是 7 列（含单价与金额）—— 防止 #4882 收口时误伤商品行
+    // 商品表是 8 列（含单价与金额；issue #7625 起「门幅」后补「帘种」）—— 防止 #4882 收口时误伤商品行
     const productTable = screen.getByText('布艺遮光帘A').closest('table') as HTMLElement
     expect(Array.from(productTable.querySelectorAll('th')).map((th) => th.textContent)).toEqual([
       '商品',
@@ -238,11 +239,24 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
       // issue #6869：原「规格尺寸」列读的是 `item.specification`（**不在响应里** ⇒ 恒空）；
       // 改成印真值「门幅」（`processingInfo.doorWidth`）—— 夹具里那句 `门幅2.8米` 本来就是它。
       '门幅',
+      '帘种',
       '单价(元/米)',
       '数量(米)',
       '金额(元)',
     ])
     expect(within(productTable).getByText('1,250.00')).toBeInTheDocument()
+  })
+
+  it('帘种列（issue #7625）：「纱帘B」行印「纱帘」/ 普通主帘行印「布帘」', () => {
+    render(<ShipmentDoc order={buildOrder()} />)
+    const curtainOf = (name: string): string =>
+      Array.from(
+        (screen.getByText(name).closest('tr') as HTMLElement).querySelectorAll('td')
+      )[4]?.textContent ?? ''
+    // 夹具 item-1 未写 curtainType（写侧缺省即布帘）/ item-2 显式写「纱帘」。
+    // 🔴 注入式红证：两张都会落回同一值（缺省/写死）⇒ 下面两条必红。
+    expect(curtainOf('布艺遮光帘A')).toBe('布帘')
+    expect(curtainOf('纱帘B')).toBe('纱帘')
   })
 
   it('备注为空时不编造内容，表头仍在（纸面留白供手写）', () => {
@@ -298,7 +312,7 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
     subtotal: undefined as unknown as number,
   }
   const zeroLine: OrderItem = { ...buildOrder().items![0], amount: 0, quantity: 0, unitPrice: 0 }
-  /** 某个商品行的 7 个单元格（与被测实现的写法解耦：按品名定位那一行） */
+  /** 某个商品行的 8 个单元格（与被测实现的写法解耦：按品名定位那一行） */
   const rowCells = (name: string): string[] =>
     Array.from(
       (screen.getByText(name).closest('tr') as HTMLElement).querySelectorAll('td')
@@ -309,11 +323,12 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
 
     const cells = rowCells('缺值布')
     // 行本身**必须**在（否则下面几条会退化成「找不到元素」的假红）
-    expect(cells).toHaveLength(7)
+    expect(cells).toHaveLength(8)
     // 单价格 / 数量 / 金额三栏逐栏判 —— 修前实测印的是 `0.00` / `0` / `0.00`
-    expect(cells.slice(4)).not.toContain('0.00')
-    expect(cells.slice(4)).not.toContain('0')
-    expect(cells.slice(4).filter((c) => c === SHIPMENT_DOC_MISSING)).toHaveLength(3)
+    // （帘种 index 4 ⇒ 价格/数量/金额从 index 5 起）
+    expect(cells.slice(5)).not.toContain('0.00')
+    expect(cells.slice(5)).not.toContain('0')
+    expect(cells.slice(5).filter((c) => c === SHIPMENT_DOC_MISSING)).toHaveLength(3)
   })
 
   it('缺值行的合计**不可知** ⇒ 印「—」，不把缺的行当 0 摊进合计（假总额）', () => {
@@ -329,7 +344,7 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
     render(<ShipmentDoc order={buildOrder({ items: [zeroLine] })} />)
 
     const cells = rowCells('布艺遮光帘A')
-    expect(cells.slice(4)).toEqual(['0.00', '0', '0.00'])
+    expect(cells.slice(5)).toEqual(['0.00', '0', '0.00'])
     // 合计同样是**真 0**（逐行都有值 ⇒ 算得出来）
     const totalRow = screen.getByText('合计').closest('tr') as HTMLElement
     expect(Array.from(totalRow.querySelectorAll('td')).map((td) => td.textContent)).toEqual([
@@ -343,14 +358,15 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
     render(<ShipmentDoc order={buildOrder({ items: [missingLine, zeroLine] })} />)
     // 判据面 = **缺值那一行**（真 0 的对照行在另一行：缺值行不得有 0.00，真 0 行不得有「—」）
     const area = document.querySelector('.shipment-print-area')
-    const amountColumn = paperNumericColumn(area, { column: 6 })
+    // 金额列 index = 7（商品0 货号1 颜色2 门幅3 帘种4 单价5 数量6 金额7）
+    const amountColumn = paperNumericColumn(area, { column: 7 })
     // 单据：发货单 ShipmentDoc
     assertNoPaperZeroFill(amountColumn.slice(0, 1), {
       label: '发货单 ShipmentDoc',
       presence: ['缺 amount 的订单行（金额列第 1 行）'],
     })
     // 单据：发货单 ShipmentDoc
-    assertPaperKeepsMissingDistinct(paperNumericColumn(area, { column: 6 }), {
+    assertPaperKeepsMissingDistinct(paperNumericColumn(area, { column: 7 }), {
       label: '发货单 ShipmentDoc',
       presence: ['金额列：缺值行（—）与真 0 行（0.00）'],
     })
