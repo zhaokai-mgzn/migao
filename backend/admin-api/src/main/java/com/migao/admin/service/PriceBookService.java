@@ -55,10 +55,20 @@ public class PriceBookService {
         if (skuId == null) {
             throw BusinessException.validationError("必须指定 skuId（价格本是按 SKU 维护的）");
         }
+        // 🔴 展示名与标识分离（issue #7623 / 研发模式 §31 P3）：协议价的行要能读出「这是给谁定的价」，
+        // 而客户 id 是内部编号（雪花号 / 64 位串）—— 必须由**服务端**给展示名，前端不拿 id 切字符串、
+        // 也不回查第二份口径。兜底两级：档案里的微信昵称 → 手机号 → 「未命名客户」；
+        // 客户档案已不存在（join 不到）⇒「客户已移除」，绝不把 id 当名字印上屏。
         view.setProtocol(jdbcTemplate.queryForList(
-                "SELECT id::text AS id, customer_id, price FROM customer_sku_prices"
-                        + " WHERE tenant_id = ? AND sku_id = ? AND deleted = 0"
-                        + (customerId == null ? "" : " AND customer_id = ?") + " ORDER BY customer_id",
+                "SELECT p.id::text AS id, p.customer_id, p.price,"
+                        + " CASE WHEN c.id IS NULL THEN '客户已移除'"
+                        + " ELSE COALESCE(NULLIF(c.wechat_nickname, ''), NULLIF(c.phone, ''), '未命名客户')"
+                        + " END AS customer_name"
+                        + " FROM customer_sku_prices p"
+                        + " LEFT JOIN customer_profiles c ON c.id = p.customer_id AND c.tenant_id = p.tenant_id"
+                        + " WHERE p.tenant_id = ? AND p.sku_id = ? AND p.deleted = 0"
+                        + (customerId == null ? "" : " AND p.customer_id = ?")
+                        + " ORDER BY customer_name, p.customer_id",
                 customerId == null
                         ? new Object[]{tenantId, skuId}
                         : new Object[]{tenantId, skuId, customerId}).stream()

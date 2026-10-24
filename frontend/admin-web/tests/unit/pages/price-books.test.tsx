@@ -116,10 +116,10 @@ describe('价格本页面', () => {
     expect(document.body.textContent).not.toContain('¥0.00')
   })
 
-  it('有价时按层列出（协议价显示客户、等级价显示等级、阶梯价显示门槛）', async () => {
+  it('🔴 有价时按层列出：协议价显示**客户名**、等级价显示等级、阶梯价显示门槛', async () => {
     priceBookApi.list.mockImplementation(() => wrap({
       skuId: SKU_ID,
-      protocol: [{ id: 'p1', customer_id: 'c-9', price: 88 }],
+      protocol: [{ id: 'p1', customer_id: 'c-9', customer_name: '王芳', price: 88 }],
       vipLevels: [{ id: 'v1', vip_level: 'vip2', price: 92 }],
       tiers: [{ id: 't1', min_qty: 50, max_qty: 99, price: 85 }],
     }))
@@ -127,9 +127,26 @@ describe('价格本页面', () => {
     await pickSku()
 
     await waitFor(() => expect(screen.getByTestId('price-books-list-protocol')).toBeInTheDocument())
-    expect(screen.getByTestId('price-books-list-protocol').textContent).toContain('c-9')
+    expect(screen.getByTestId('price-books-list-protocol').textContent).toContain('王芳')
+    // 🔴 内部标识不上屏（issue #7623）：客户 id 只给程序用，页面上只写名字
+    expect(screen.getByTestId('price-books-list-protocol').textContent).not.toContain('c-9')
     expect(screen.getByTestId('price-books-list-vip-level').textContent).toContain('vip2')
     expect(screen.getByTestId('price-books-list-tier').textContent).toContain('满 50 米')
+  })
+
+  it('🔴 展示名缺失时写「未命名客户」，仍不把客户 id 顶上屏（issue #7623）', async () => {
+    priceBookApi.list.mockImplementation(() => wrap({
+      skuId: SKU_ID,
+      protocol: [{ id: 'p1', customer_id: 'c-9', price: 88 }],
+      vipLevels: [],
+      tiers: [],
+    }))
+    render(<PriceBooksPage />)
+    await pickSku()
+
+    await waitFor(() => expect(screen.getByTestId('price-books-list-protocol')).toBeInTheDocument())
+    expect(screen.getByTestId('price-books-list-protocol').textContent).toContain('未命名客户')
+    expect(screen.getByTestId('price-books-list-protocol').textContent).not.toContain('c-9')
   })
 
   it('🔴「新增价格」开的是**弹窗**，三层价格**平铺**（没有「价格类型」下拉，issue #7622）', async () => {
