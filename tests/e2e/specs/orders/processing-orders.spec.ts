@@ -493,8 +493,8 @@ test.describe('订单详情页作业单块（只读，issue #7634）', () => {
       await expect(block.getByRole('button', { name: label })).toHaveCount(0)
     }
     await expect(block.getByRole('button', { name: '去生产明细' })).toBeVisible()
-    // 「复制全部」仍是真的文本通道（只读能力不能被一起删掉）
-    await expect(block.getByRole('button', { name: '复制全部' })).toBeVisible()
+    // 「复制全部」仍是真的文本通道（只读能力不能被一起删掉）—— 它在区块**头部**（`.po-print-area` 之外）
+    await expect(page.getByRole('button', { name: '复制全部' })).toBeVisible()
   })
 
   test('去生产明细：跳到该加工单的生产页（状态流转的唯一写面）', async ({ page }) => {
