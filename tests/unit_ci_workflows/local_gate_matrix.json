@@ -76,6 +76,22 @@
       "note": "本单新增：只在 gate 档（merge gate），按变更集命中触发面时派发；缺依赖 ⇒ fail-closed 记 ❌（不走 ⏭️），四件命令与 CI bmini-app.yml 两条腿逐字一致"
     }
   },
+  "extra_legs": [
+    {
+      "module": "frontend/admin-web",
+      "leg_names": ["admin-web 类型检查（gate 档 · 与 CI 同一命令）"],
+      "tiers": ["gate"],
+      "forms": ["typecheck"],
+      "trigger": {
+        "kind": "diff-face-hit",
+        "hit_fn": "admin_web_face_hit",
+        "predicate_fn": "admin_web_face_paths",
+        "env": "admin-web-tsc",
+        "fail_closed": true
+      },
+      "note": "issue #7653：同一模块在前端三档已有 `report_gated` 的常跑腿（tiers=quick/full/frontend，覆盖强度不变），这条是**另一形态**——gate 档按变更集**派发**的 fail-closed 腿（bmini 范式）。不能塞进模块的 `leg_names`：C3 要求「腿名的实际档位集合 == 声称的档位」，而这两条腿的档位集合不同。为什么 gate 需要它：web 的类型错本地 vitest 看不见，只有 CI 的 required 腿会红（实测 PR #7648：本机 4/4 全绿 / CI 红 TS2339）"
+    }
+  ],
   "uncovered_modules": {
     "frontend/mini-app": {
       "reason": "本地门禁矩阵里没有它的腿 —— CI 有 mini-app.yml 的两条腿兜（typecheck+单测 / xiaobu H5 视觉回归），本单只登记不扩面（扩面 = 一条新的本地腿，体量超本单；边界见 PR body 的「未做与存疑」）",
