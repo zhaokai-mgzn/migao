@@ -37,6 +37,15 @@ interface DraftLine {
   skuId: string
   label: string
   stock: number
+  /**
+   * 卷数（可选；issue #7644）—— 与「卷长(米/卷)」一起构成**按卷录入**：
+   * 两者齐备 ⇒ `quantity` 由「卷数 × 卷长」自动算出（数量格只读，换算写在格下）；
+   * 留空 ⇒ 回到「数量（米）」手填（散剪 / 尾料按米买走这条路）。
+   *
+   * 🔴 换算只发生在**提交前的前端**：`inbound_order_items.quantity` 的口径仍是**米**
+   * （#5034「卷长仅记录」；服务端乘会把「60.5 米 + 卷长 60」变成 3630 米）。
+   */
+  rollCount: string
   quantity: string
   unitCost: string
   dyeLot: string
@@ -53,6 +62,24 @@ const SOURCE_OPTIONS: { value: 'purchase' | 'opening'; label: string }[] = [
 
 /** 明细行输入框：与 `Input` 同族（h-9 / rounded-lg / 同一 focus ring），只是窄一档放进表格 */
 const CELL_INPUT = 'h-9 px-2 text-sm'
+
+/**
+ * 卷数 × 卷长 ⇒ 入库米数（商家端「按卷录入」的**唯一换算点**，issue #7644）。
+ *
+ * 为什么在**前端**换算、而不是服务端乘：`inbound_order_items.quantity` 的口径是**米**
+ * （#5034「卷长仅记录」——服务端乘会把「数量 60.5 米 + 卷长 60」算成 3630 米）。
+ * 这里把换算**显式摆在格下**给商家核对，提交的仍是米数 ⇒ 服务端契约一字不动。
+ *
+ * 不静默取整：`1 卷 × 67.25 米 = 67.25` 原样返回，交给 `checkStockQuantity` 显式拒绝
+ * （0.1 米粒度）；只把浮点尾差（`3 × 0.1 = 0.30000000000000004`）按 2 位归一。
+ */
+function metersFromRolls(rollCount: string, rollLengthM: string): string | null {
+  if (rollCount.trim() === '' || rollLengthM.trim() === '') return null
+  const count = Number(rollCount)
+  const len = Number(rollLengthM)
+  if (!Number.isFinite(count) || !Number.isFinite(len) || count <= 0 || len <= 0) return null
+  return String(Number((count * len).toFixed(2)))
+}
 
 /**
  * **本地当天** `YYYY-MM-DD`（`<input type="date">` 的取值口径，issue #5912）。
@@ -97,6 +124,7 @@ export default function NewInboundOrderPage() {
           skuId: sku.id,
           label: skuLineLabel(product, sku),
           stock: sku.stock ?? 0,
+          rollCount: '',
           quantity: '1',
           unitCost: '',
           dyeLot: '',
@@ -113,7 +141,19 @@ export default function NewInboundOrderPage() {
   }
 
   const patchLine = (skuId: string, patch: Partial<DraftLine>) => {
-    setDraftLines((prev) => prev.map((l) => (l.skuId === skuId ? { ...l, ...patch } : l)))
+    setDraftLines((prev) =>
+      prev.map((l) => {
+        if (l.skuId !== skuId) return l
+        const next = { ...l, ...patch }
+        // 卷数/卷长任一变化 ⇒ 数量（米）由换算决定；卷数被清空 ⇒ 回到按米手填（issue #7644）
+        if (patch.rollCount !== undefined || patch.rollLengthM !== undefined) {
+          if (next.rollCount.trim() !== '') {
+            next.quantity = metersFromRolls(next.rollCount, next.rollLengthM) ?? ''
+          }
+        }
+        return next
+      }),
+    )
   }
 
   const draftTotal = useMemo(
@@ -136,6 +176,24 @@ export default function NewInboundOrderPage() {
     // 下限由「≥1 米」放宽（issue #5153）：0.5 米的尾料是**实物事实**，挡在门外 = 系统说谎。
     // 超 1 位小数**显式拒绝**，绝不静默取整/截断（账面库存要照米数对得上）。
     for (const l of draftLines) {
+      // 按卷录入（issue #7644）：卷数必须是正整数；填了卷数就必须有卷长，且两者之积要能落成米数
+      if (l.rollCount.trim() !== '') {
+        const count = Number(l.rollCount)
+        if (!Number.isInteger(count) || count <= 0) {
+          toast.error(
+            `「${l.label}」的卷数必须是正整数（散剪 / 尾料按米入库：卷数留空，数量（米）直接填）`,
+          )
+          return
+        }
+        if (l.rollLengthM.trim() === '') {
+          toast.error(`「${l.label}」填了卷数就要填每卷米数（卷长）`)
+          return
+        }
+        if (l.quantity === '') {
+          toast.error(`「${l.label}」的卷数 × 卷长换算不出合法的入库米数`)
+          return
+        }
+      }
       const reason = checkStockQuantity(l.quantity)
       if (reason) {
         toast.error(`「${l.label}」的${reason}`)
@@ -301,13 +359,14 @@ export default function NewInboundOrderPage() {
                   <thead className="bg-neutral-50 text-neutral-600">
                     <tr>
                       <th className="text-left px-3 py-2 font-medium">货号 / 颜色 / 门幅</th>
-                      <th className="text-right px-3 py-2 font-medium w-28">数量*</th>
+                      <th className="text-right px-3 py-2 font-medium w-24">卷数</th>
+                      <th className="text-right px-3 py-2 font-medium w-32">卷长(米/卷)</th>
+                      <th className="text-right px-3 py-2 font-medium w-28">数量（米）*</th>
                       <th className="text-right px-3 py-2 font-medium w-32">单价(元)</th>
                       <th className="text-left px-3 py-2 font-medium w-36">缸号</th>
                       {form.source === 'opening' && (
                         <th className="text-left px-3 py-2 font-medium w-40">旧系统批次号</th>
                       )}
-                      <th className="text-right px-3 py-2 font-medium w-32">卷长(米)</th>
                       <th className="text-left px-3 py-2 font-medium w-36">批次号</th>
                       <th className="w-12" />
                     </tr>
@@ -317,15 +376,50 @@ export default function NewInboundOrderPage() {
                       <tr key={l.skuId} className="border-t border-neutral-100">
                         <td className="px-3 py-2 text-neutral-700">{l.label}</td>
                         <td className="px-3 py-2">
+                          {/* 卷数（issue #7644）：填了它 + 卷长 ⇒ 数量（米）自动换算并只读 */}
+                          <Input
+                            type="number"
+                            min={1}
+                            step={1}
+                            aria-label={`${l.label} 卷数`}
+                            placeholder="按卷填"
+                            value={l.rollCount}
+                            onChange={(e) => patchLine(l.skuId, { rollCount: e.target.value })}
+                            className={cn(CELL_INPUT, 'text-right')}
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <Input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            aria-label={`${l.label} 卷长`}
+                            placeholder="每卷米数"
+                            value={l.rollLengthM}
+                            onChange={(e) => patchLine(l.skuId, { rollLengthM: e.target.value })}
+                            className={cn(CELL_INPUT, 'text-right')}
+                          />
+                        </td>
+                        <td className="px-3 py-2">
                           <Input
                             type="number"
                             min={0.1}
                             step={0.1}
-                            aria-label={`${l.label} 数量`}
+                            aria-label={`${l.label} 数量（米）`}
                             value={l.quantity}
+                            readOnly={l.rollCount.trim() !== ''}
                             onChange={(e) => patchLine(l.skuId, { quantity: e.target.value })}
-                            className={cn(CELL_INPUT, 'text-right')}
+                            className={cn(
+                              CELL_INPUT,
+                              'text-right',
+                              l.rollCount.trim() !== '' && 'bg-neutral-50 text-neutral-600',
+                            )}
                           />
+                          {l.rollCount.trim() !== '' && l.quantity !== '' && (
+                            <p className="mt-1 text-[11px] text-neutral-400 text-right whitespace-nowrap">
+                              {l.rollCount} 卷 × {l.rollLengthM} 米
+                            </p>
+                          )}
                         </td>
                         <td className="px-3 py-2">
                           <Input
@@ -357,17 +451,6 @@ export default function NewInboundOrderPage() {
                             />
                           </td>
                         )}
-                        <td className="px-3 py-2">
-                          <Input
-                            type="number"
-                            min={0}
-                            step="0.01"
-                            aria-label={`${l.label} 卷长`}
-                            value={l.rollLengthM}
-                            onChange={(e) => patchLine(l.skuId, { rollLengthM: e.target.value })}
-                            className={cn(CELL_INPUT, 'text-right')}
-                          />
-                        </td>
                         {/* 批次号：草稿不发号（过账时逐行生成）—— 列出来是为了建单时就知道追溯标识 */}
                         <td className="px-3 py-2 text-xs text-neutral-400 whitespace-nowrap">
                           过账后生成
@@ -387,7 +470,10 @@ export default function NewInboundOrderPage() {
                   </tbody>
                 </table>
                 <p className="text-xs text-neutral-400 mt-2 leading-relaxed">
-                  数量按 0.1 米粒度、大于 0 即可（0.5 米的尾料能登记；0 与 2.755 会被拒绝；
+                  <strong className="text-neutral-500">按卷采购</strong>：填「卷数 + 卷长」⇒
+                  数量（米）自动换算成 <span className="font-mono">卷数 × 每卷米数</span>（提交的是米数）；
+                  <strong className="text-neutral-500">散剪 / 尾料按米买</strong>：卷数留空，
+                  数量（米）直接填。数量按 0.1 米粒度、大于 0（0.5 米的尾料能登记；0 与 2.755 会被拒绝；
                   超 1 位小数不会四舍五入）；单价留空 = 只加数量、不算成本（均价保持原值）；
                   缸号与旧系统批次号都是外部事实，与系统生成的批次号是三件不同的事。
                 </p>
