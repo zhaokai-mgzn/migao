@@ -36,6 +36,12 @@ import type { ApprovalItem } from '@/types/approval'
  *
  * 交互壳（30s 轮询 + 徽标 + 下拉 + 点击外部收起）照 `NotificationBell.tsx` 的既有形态，
  * 不抽公共组件：两者面板内容与动作语义不同，抽出来的只有定位这几行 class。
+ *
+ * ## 已知边界（照实登记）
+ *
+ * 后端**没有**「待审条数」端点 ⇒ 这里复用列表接口（`GET /api/admin/approvals?status=pending`）拿全量再计数。
+ * 审批条数是十位数级时这是最省的一步；**若单租户待审过百**，应改成 count 端点 + 面板按需拉前 5 条
+ * （那时才会有「每 30 秒拉一次长列表」的代价）。重启条件写在这里，不靠人记得。
  */
 const POLL_INTERVAL = 30_000
 
