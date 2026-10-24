@@ -5560,7 +5560,7 @@ cases:
       - "**判据 4（驳回必须写原因）**：驳回不写原因 ⇒ 当场拦、**不发请求**（申请人会看到这句）；通过可以留空。判据 = `#驳回必须写原因`。"
       - "**判据 5（服务端原话上屏）**：自批 / 已裁决过 ⇒ 服务端拒绝的 message 原样显示。判据 = `#服务端拒绝原话上屏`。"
       - "**判据 6（金额为空写「—」）**：审批不对金额设限时 `amount=null` ⇒ 「—」，整页不出现 ¥0.00（没有金额约束 ≠ 金额为零）。判据 = `#金额为空写「—」`。"
-      - "**判据 7（三源同码 · 零授权 delta）**：菜单节点码 = 页面第一屏读端点码 = 路由守卫码 = `finance:view`（与财务对账同码）；写动作走 `finance:create`（与后端 ApprovalController 逐字同码）。判据 = `test_agent_permission_parity` 的两个锚点 + `MenuControllerTest` / `AuthServiceTest` 的交易组序 + 前端五个菜单用例。"
+      - "**判据 7（零授权 delta）**：路由守卫码 = 页面第一屏读端点码 = `finance:view`（与财务对账同码）；写动作走 `finance:create`（与后端 ApprovalController 逐字同码）。🔴 **2026-10-24（issue #7593，用户裁定）**：本页**不再有侧边栏菜单节点**（入口改顶栏 `ApprovalBell`）⇒ 原「菜单节点码」那一跳销账，`/approvals` 改登记进 `test_agent_permission_parity` 的 `ROUTE_WITHOUT_MENU_NODE`（逐条带理由）。判据 = 该登记 + `MenuControllerTest` / `AuthServiceTest` 的交易组序（撤项后 3 项）+ 前端待办入口用例。"
       - "**边界（照实登记）**：① 本页**不发起**申请（发起在各自的业务页）；② 不展示 `payload` 原文（内部 JSON 不上屏）；③ 不做「谁有权批哪一类」的具名配置（统一由 `finance:create` 决定）—— 具名到人是 #7374 的后续段。"
     precondition: "本用例是 [frontend-contract]：前置 = 审批后端（#7374 段 1：`ApprovalController` / `ApprovalService` / `ApprovalState`）。零网络、零 LLM。"
     skip_reason: "[frontend-contract] 审批中心的裁决动作口径（只对待审、批一次用一次、不能自批），由前端单测 + 菜单三源判据验证，非 LLM 行为，不进 agent-eval 冒烟"
@@ -5568,6 +5568,7 @@ cases:
     traces:
       tests:
         - "frontend/admin-web/tests/unit/pages/approvals.test.tsx"
+        - "frontend/admin-web/tests/unit/components/ApprovalBell.test.tsx"
       ci:
         - pr-check.yml
       verifies: []

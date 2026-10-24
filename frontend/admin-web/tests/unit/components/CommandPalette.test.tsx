@@ -56,7 +56,7 @@ const ALL_KEYS = [
   // 价格本（#7375 段 3）：交易管理组内第一项
   'price-books',
   'orders',
-  'finance', 'approvals',
+  'finance',
   'production-board',
   'production-pool',
   'production-piecework',
@@ -109,14 +109,14 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
 
   it('空查询 = 全量索引：列出全部 25 项（含独立项「通知中心」），顺序 = 菜单自身顺序', async () => {
     render(<CommandPalette open onClose={mockOnClose} />)
-    await waitFor(() => expect(renderedKeys()).toHaveLength(28))
+    await waitFor(() => expect(renderedKeys()).toHaveLength(27))
     expect(renderedKeys()).toEqual(ALL_KEYS)
     expect(input().value).toBe('')
   })
 
   it('🔴 索引**第 1 项** = 最前席位「经营看板」（issue #7087，判据 = `flattenMenu` 的 head 参数）', async () => {
     render(<CommandPalette open onClose={mockOnClose} />)
-    await waitFor(() => expect(renderedKeys()).toHaveLength(28))
+    await waitFor(() => expect(renderedKeys()).toHaveLength(27))
     // ① 第 1 项就是它（旧形态是「工作台」组的第一项 —— 也是它，但那时它属一个**组**）
     // ① 第 1 项仍是经营看板（登录落点不变）
     expect(renderedKeys()[0]).toBe('dashboard')
@@ -133,7 +133,7 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
 
   it('🔴 ⌘K 里取不到「工作台」与「每日简报」（issue #7087）', async () => {
     render(<CommandPalette open onClose={mockOnClose} />)
-    await waitFor(() => expect(renderedKeys()).toHaveLength(28))
+    await waitFor(() => expect(renderedKeys()).toHaveLength(27))
     // 已撤销的组名 / 已删除的菜单项都不在（`queryByText` 是**精确**文本匹配 ⇒ 不会误命中
     // 含「工作台」三字的其它文案，如别处的「客服工作台」）
     expect(screen.queryByText('工作台')).toBeNull()
@@ -275,7 +275,7 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
 
   it('🔴 ⌘K **不再**拉企业简报配置（issue #7087：旧接线回潮 ⇒ 当场红）', async () => {
     render(<CommandPalette open onClose={mockOnClose} />)
-    await waitFor(() => expect(renderedKeys()).toHaveLength(28))
+    await waitFor(() => expect(renderedKeys()).toHaveLength(27))
     // 旧形态：面板打开时调一次 `briefingApi.getConfig()`，用返回值决定「每日简报」是否进索引。
     // 菜单项与菜单级开关机制一起撤掉后，这次请求必须**消失**（过滤器只剩权限一维）。
     expect(mockBriefingGetConfig).not.toHaveBeenCalled()
@@ -289,7 +289,7 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
     rerender(<CommandPalette open={false} onClose={mockOnClose} />)
     rerender(<CommandPalette open onClose={mockOnClose} />)
 
-    await waitFor(() => expect(renderedKeys()).toHaveLength(28))
+    await waitFor(() => expect(renderedKeys()).toHaveLength(27))
     expect(input().value).toBe('')
   })
 })

@@ -104,7 +104,7 @@ const ALL_MENU_KEYS = [
   'after-sales',
   'customers',
   'price-books', 'orders',
-  'finance', 'approvals',
+  'finance',
   'production-board',
   'production-pool',
   'production-piecework',
@@ -169,7 +169,7 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
       // 且因它排在**所有分组之后** ⇒ 落在「交易管理」两项之后、「通知中心」之前；
       // 🔴 #7087：最前席位「经营看板」恒渲染（在**所有分组之前**）—— 旧形态下它此时**不渲染**
       //（属「工作台」组且该组收起）。
-      expect(menuKeys()).toEqual(['dashboard', 'reports', 'price-books', 'orders', 'finance', 'approvals', 'products',
+      expect(menuKeys()).toEqual(['dashboard', 'reports', 'price-books', 'orders', 'finance', 'products',
         'settings', 'notifications']),
     )
     expect(toggle('trade-center').getAttribute('aria-expanded')).toBe('true')
@@ -288,7 +288,7 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
   it('③ 折叠态：**5 个** `sidebar-group-anchor-<key>` 都在，`title` == 组名', async () => {
     render(<Sidebar collapsed onToggle={() => {}} />)
     await waitFor(() =>
-      expect(menuKeys()).toHaveLength(28),
+      expect(menuKeys()).toHaveLength(27),
     )
     for (const key of GROUP_KEYS) {
       const anchor = screen.getByTestId(`sidebar-group-anchor-${key}`)
@@ -304,7 +304,7 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
 
   it('③ 折叠态：**组名文本**与**菜单名文本**都不渲染（原判据仍须成立）', async () => {
     render(<Sidebar collapsed onToggle={() => {}} />)
-    await waitFor(() => expect(menuKeys()).toHaveLength(28))
+    await waitFor(() => expect(menuKeys()).toHaveLength(27))
     for (const name of Object.values(GROUP_NAMES)) {
       expect(screen.queryByText(name)).toBeNull()
     }
@@ -316,13 +316,14 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
     // 🔴 #7087：最前席位同样按「图标栏」处理（图标在、文本剥掉）
     expect(document.querySelector('[data-menu-key="dashboard"]')!.textContent).toBe('')
     // #5778：交易管理组只剩 2 项（销售订单 / 财务对账），客户侧已移入「客户服务」组
-    // 价格本（#7375 段 3）加入后三项；#7374 再加「审批中心」⇒ 四项：价格本 → 销售订单 → 财务对账 → 审批中心
-    expect(within(groupEl('trade-center')).getAllByRole('link')).toHaveLength(4)
+    // 价格本（#7375 段 3）加入后三项；#7374 曾加「审批中心」⇒ 四项；🔴 #7593（用户裁定）撤掉审批中心
+    //（入口改顶栏 `ApprovalBell`）⇒ 回到**三项**：价格本 → 销售订单 → 财务对账
+    expect(within(groupEl('trade-center')).getAllByRole('link')).toHaveLength(3)
   })
 
-  it('③ 折叠态：**所有组**的项都渲染（图标栏），项 key 序列 == 25 项全量（#6404 +库存明细；#6580 生产组收拢；#7087 撤工作台组 + 最前席位）', async () => {
+  it('③ 折叠态：**所有组**的项都渲染（图标栏），项 key 序列 == 27 项全量（#6404 +库存明细；#6580 生产组收拢；#7087 撤工作台组 + 最前席位）', async () => {
     render(<Sidebar collapsed onToggle={() => {}} />)
-    await waitFor(() => expect(menuKeys()).toHaveLength(28))
+    await waitFor(() => expect(menuKeys()).toHaveLength(27))
     expect(menuKeys()).toEqual(ALL_MENU_KEYS)
     // 每组项数与其组内项数一致（分组信息没丢）；「工作台」组已撤销 ⇒ 探针换成首组
     expect(within(groupEl('customer-service')).getAllByRole('link')).toHaveLength(4)
@@ -344,7 +345,7 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
   it('③ 折叠态高亮仍生效：/production/pool ⇒ 该项带 `bg-primary-600`，且只有它一个', async () => {
     mockPathname = '/production/pool'
     render(<Sidebar collapsed onToggle={() => {}} />)
-    await waitFor(() => expect(menuKeys()).toHaveLength(28))
+    await waitFor(() => expect(menuKeys()).toHaveLength(27))
     const active = document.querySelector('[data-menu-key="production-pool"]') as HTMLElement
     expect(active.className).toContain('bg-primary-600')
     expect(

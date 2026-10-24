@@ -144,9 +144,11 @@ public class MenuController {
         MenuNode f1 = new MenuNode("finance:view", "财务对账");
         // 动作码节点：组尾追加（与权限页「操作权限」一节单独勾选的形态一致）
         MenuNode o2 = new MenuNode("order:detail", "订单详情");
-        // 审批中心（issue #7374，P1-2）：节点码 = 该页第一屏读端点码 = 路由守卫码 `finance:view`
-        // （与后端 ApprovalController 的类级码逐字同码）；写动作走 finance:create ⇒ 零授权 delta。
-        MenuNode approvals = new MenuNode("finance:view", "审批中心");
+        // 🔴 2026-10-24（issue #7593，用户裁定）：原「审批中心」节点（`approvals`）**已撤除** ——
+        // 它是五类业务闸门共用的裁决屏，跨交易 / 供应链 / 仓储三域，挂在「交易管理」下会误导；
+        // 入口改到顶栏待办入口（前端 `components/layout/ApprovalBell.tsx`）。
+        // `/approvals` 页面与路由守卫保留，读码仍是 `finance:view` ⇒ **零授权 delta**。
+        // 三源同批：`config/menu.ts` / 本文件 / `AuthService.buildMenusByPermissions`。
         // 生产管理（issue #4203/#4205/#4308/#5177）：本组现有**作业看板 / 智能派单 / 计件工资**
         // 三项（🔴 2026-10-09 issue #6580：「加工项管理」「工艺配置」两个菜单项已移除 ⇒ 原四项降为三项）。
         // 「作业看板 / 计件工资」按 issue #5291 挂生产域**读**码 `production:view`（「看得见这一页」与
@@ -239,7 +241,8 @@ public class MenuController {
             new MenuNode("customer-service", "客户服务", List.of(cs1, cs2, o3, c1)),
             // 交易管理（本轮收窄为「下单 → 收款」两项）
             // 价格本（issue #7375 段 3）：交易前置 ⇒ 排在「销售订单」之前（同组，码 order:list）
-            new MenuNode("trade-center", "交易管理", List.of(priceBooks, o1, f1, approvals, o2)),
+            // 🔴 2026-10-24（issue #7593）：`approvals` 节点已撤除（入口改顶栏）⇒ 本组只剩价格本 / 销售订单 / 财务对账。
+            new MenuNode("trade-center", "交易管理", List.of(priceBooks, o1, f1, o2)),
             // 生产管理（用户 2026-10-06 组内重排后，再随 issue #6580 收拢为**作业看板 → 智能派单
             // → 计件工资**三项 —— 「加工项管理」「工艺配置」两个菜单项按用户裁定**移除**，
             // 功能体并入 `/settings`（企业基础设置）页内的配置域；旧路径保留为重定向）。
