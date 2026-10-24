@@ -1619,8 +1619,92 @@ public class ProductionService {
             byId.put(op.getId(), op);
         }
 
-        PieceworkTotals totals = aggregate(listWorkLogs(po.getId(), tenantId), byId::get,
+        return assemblePiecework(listWorkLogs(po.getId(), tenantId), byId::get,
                 windowGroupKeyByItemId(order, tenantId));
+    }
+
+    /**
+     * **批量**计件汇总（issue #7582，报表中心的订单毛利）：SQL 条数与订单数**无关**
+     * （活跃加工单 / 工序实例 / 报工 / 订单明细行各一条），替代原来「每单 5 条」的 N+1。
+     *
+     * <p>🔴 取数变了、**算法没变**：每条单仍走 {@link #assemblePiecework} → {@link #aggregate}
+     * 这唯一一份聚合 ⇒ 批量路径与 {@link #piecework} 逐分相同。判据 =
+     * {@code backend/admin-api/src/test/java/com/migao/admin/service/OrderMarginBatchTest.java}
+     * 对同一批订单逐键比对「批量 vs 逐单」，任一键不等即红。</p>
+     *
+     * @param orders 调用方已查出的订单（本方法**不回查**订单 —— 单条路径在这里还要多一条）
+     * @return 订单 id → 与 {@link #piecework} 同形状的聚合；没有活跃加工单的单是空态（键齐全）
+     */
+    public Map<String, Map<String, Object>> pieceworkByOrders(List<Order> orders, Long tenantId) {
+        Map<String, Map<String, Object>> byOrderId = new HashMap<>();
+        if (orders == null || orders.isEmpty()) {
+            return byOrderId;
+        }
+        List<String> orderIds = new ArrayList<>(orders.size());
+        for (Order order : orders) {
+            orderIds.add(order.getId());
+            byOrderId.put(order.getId(), emptyPiecework());
+        }
+        // ① 活跃加工单：口径与 selectActiveByOrderId 逐字相同（非取消态 + 未软删 + 同租户）
+        Map<String, ProcessingOrder> poByOrderId = new HashMap<>();
+        for (ProcessingOrder po : processingOrderMapper.selectActiveByOrderIds(orderIds, tenantId)) {
+            // 同一订单理论上只有一条活跃加工单（唯一键）⇒ putIfAbsent = 单条版 LIMIT 1 的同解
+            poByOrderId.putIfAbsent(po.getOrderId(), po);
+        }
+        if (poByOrderId.isEmpty()) {
+            return byOrderId;
+        }
+        List<String> poIds = new ArrayList<>(poByOrderId.size());
+        for (ProcessingOrder po : poByOrderId.values()) {
+            poIds.add(po.getId());
+        }
+        // ② 工序实例 ③ 报工（按加工单分桶；排序与 listWorkLogs 的 created_at asc 一致 ⇒ 逐键可对）
+        Map<String, List<ProcessingPositionOperation>> opsByPo = new HashMap<>();
+        for (ProcessingPositionOperation op : positionOperationMapper.selectList(
+                new LambdaQueryWrapper<ProcessingPositionOperation>()
+                        .in(ProcessingPositionOperation::getProcessingOrderId, poIds)
+                        .eq(ProcessingPositionOperation::getTenantId, tenantId)
+                        .eq(ProcessingPositionOperation::getDeleted, 0))) {
+            opsByPo.computeIfAbsent(op.getProcessingOrderId(), k -> new ArrayList<>()).add(op);
+        }
+        Map<String, List<ProductionWorkLog>> logsByPo = new HashMap<>();
+        for (ProductionWorkLog log : list(new LambdaQueryWrapper<ProductionWorkLog>()
+                .in(ProductionWorkLog::getProcessingOrderId, poIds)
+                .eq(ProductionWorkLog::getTenantId, tenantId)
+                .eq(ProductionWorkLog::getDeleted, 0)
+                .orderByAsc(ProductionWorkLog::getCreatedAt))) {
+            logsByPo.computeIfAbsent(log.getProcessingOrderId(), k -> new ArrayList<>()).add(log);
+        }
+        // ④ 订单明细行（樘窗组键来源）：按 order_id 分桶后各自 windowGroupKeys —— 与单条路径同一份映射
+        Map<String, List<OrderItem>> itemsByOrderId = new HashMap<>();
+        for (OrderItem item : orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
+                .in(OrderItem::getOrderId, orderIds)
+                .eq(OrderItem::getTenantId, tenantId)
+                .eq(OrderItem::getDeleted, 0))) {
+            itemsByOrderId.computeIfAbsent(item.getOrderId(), k -> new ArrayList<>()).add(item);
+        }
+        for (Order order : orders) {
+            ProcessingOrder po = poByOrderId.get(order.getId());
+            if (po == null) {
+                continue;
+            }
+            Map<String, ProcessingPositionOperation> byId = new HashMap<>();
+            for (ProcessingPositionOperation op : opsByPo.getOrDefault(po.getId(), List.of())) {
+                byId.put(op.getId(), op);
+            }
+            byOrderId.put(order.getId(), assemblePiecework(
+                    logsByPo.getOrDefault(po.getId(), List.of()), byId::get,
+                    windowGroupKeys(itemsByOrderId.getOrDefault(order.getId(), List.of()))));
+        }
+        return byOrderId;
+    }
+
+    /** 计件汇总的**唯一装配处**：单条 {@link #piecework} 与批量 {@link #pieceworkByOrders} 共用。 */
+    private Map<String, Object> assemblePiecework(
+            List<ProductionWorkLog> logs,
+            java.util.function.Function<String, ProcessingPositionOperation> operationLookup,
+            Map<String, String> windowGroupKeyByItemId) {
+        PieceworkTotals totals = aggregate(logs, operationLookup, windowGroupKeyByItemId);
 
         Map<String, Object> perWorkerRounded = new LinkedHashMap<>();
         totals.workerAmount().forEach((worker, amount) -> perWorkerRounded.put(worker, money(amount)));

@@ -1,4 +1,4 @@
-// case_ids: RPT-001, RPT-007, RPT-008
+// case_ids: RPT-001, RPT-004, RPT-007, RPT-008
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import ReportsPage, { presetRange } from '@/app/(dashboard)/reports/page'
@@ -93,6 +93,28 @@ describe('报表中心页面', () => {
     await waitFor(() => expect(screen.getByTestId('reports-margin-body')).toBeInTheDocument())
     expect(screen.getByTestId('reports-margin-gross').textContent).toContain('350.00')
     expect(screen.getByTestId('reports-margin-unknown').textContent).toContain('2 单成本未知')
+  })
+
+  it('🔴 一张表慢不拖累其余四张：毛利未返回时，账龄已有读数（issue #7582）', async () => {
+    emptyAll()
+    // 订单毛利「永不返回」= 最慢的那张卡（改了 N+1 之后它也不该再锁住整页）
+    reportApi.orderMargins.mockImplementation(() => new Promise(() => {}))
+    reportApi.receivableAging.mockImplementation(() =>
+      wrap({
+        asOf: '2026-10-23',
+        hasData: true,
+        customerCount: 1,
+        buckets: [{ bucket: 'NOT_DUE', label: '未到期', amount: 1200, orderCount: 1 }],
+        customers: [],
+        totals: { outstanding: 1200, overdue: 0, orderCount: 1 },
+      }),
+    )
+    render(<ReportsPage />)
+
+    // 断言的是「同时」：毛利仍显示加载中，账龄那张已经出了读数
+    await waitFor(() => expect(screen.getByTestId('reports-aging-outstanding')).toBeInTheDocument())
+    expect(screen.getByTestId('reports-margin-loading')).toBeInTheDocument()
+    expect(screen.getByTestId('reports-aging-outstanding').textContent).toContain('1,200.00')
   })
 
   it('🔴 质量成本未知分项显示「未采集 / 未知」，并标注合计不完整', async () => {
