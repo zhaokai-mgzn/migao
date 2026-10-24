@@ -2314,8 +2314,9 @@ cases:
       - "判据 3·**对账可读且可解释**（路线 A 的交换条件）：批次入 60 米、销售已扣 2.7、**未派工** ⇒ `diff = 60 − 57.3 = 2.7` = 已售未派，且恒等式 `diff == (soldDeducted − dispatched − otherLedgerDelta) − unbatched` 成立（`reconciled = true`）；派工之后差额归零；退货回补（aftersales）造成的差额如实反映为 −2.7；**不平的夹具 ⇒ `reconciled = false` 且 `unreconciledCount` 报数**。红证：把 `reconciled` 恒置 true ⇒ 不平夹具那条必红。"
       - "判据 4·**派工候选建议值 = 朴素先进先出**（`suggestionRule = FIFO_RECEIVED_DATE`）：入库早但余量不够的批次 `enough=false` 且不被建议，建议落在第一个**够用**的批次；口径随响应显式回传，免得被读成 best-fit（**缺省**口径不变；best-fit 自 issue #5167 起可**显式**切换，见 PR-066/PR-067）。"
       - "判据 5·**工人端指派读面取净额**：同一明细行既有扣减又有回补 ⇒ 取净额；净额归零的行**不出现**在结果里（工人不该被指去裁一个已经不扣账的批次）。"
+      - "判据 6·**批次余量分页读面（issue #7604）**：`GET /api/admin/batch-stock/batches/page` 回 `PageResponse<BatchRemaining>`（items/total/page/size 四字段，`total` = 服务端总数而非本页行数）；**服务端分页** —— 只对当页批次走 `selectPage`（不是 `selectList` 拉全量再内存切片），且余量三值走 `remaining()` 同一个派生点（入库 67 / 消耗 20.5 ⇒ 46.5，不是 47）；浏览序 = 收货日期倒序、id 倒序；`keyword` 是服务端 LIKE（批号 / 旧系统批号 / 缸号 / 入库单号 / 货号）。红证：把分页实现换成 `selectList` + 内存切片、或让页面自己算余量 ⇒ 本判据红。执行点 = StockBatchConsumptionServiceTest 的「分页读面」用例 + StockBatchControllerTest 的 `GET /batches/page` 用例。"
     skip_reason: "[backend-contract] 批次账服务与只读端点契约（真值断言在 Java 单测，非 LLM 行为）：由 StockBatchConsumptionServiceTest + StockBatchControllerTest 执行（Mockito 假 Mapper，无真实 DB）"
-    merge_log: "2026-09-22 新增：#5145 阶段 1（派加工单扣批次库存 + 消耗台账 + 余量/分布/对账读面）。取号 PR-055（原 PR-052 与 #5150 撞号，rebase 后顺延）。"
+    merge_log: "2026-09-22 新增：#5145 阶段 1（派加工单扣批次库存 + 消耗台账 + 余量/分布/对账读面）。取号 PR-055（原 PR-052 与 #5150 撞号，rebase 后顺延）。2026-10-24 扩写（issue #7604）：新增判据 6（批次余量分页读面 / 服务端分页 / 浏览序 / 服务端 keyword）—— 库存明细页要「默认就展示」，而旧读面没有分页参数；本判据钉住分页真的下推到 SQL、余量仍走同一个派生点。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/StockBatchConsumptionServiceTest.java"
