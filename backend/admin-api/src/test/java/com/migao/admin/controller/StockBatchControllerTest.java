@@ -7,6 +7,7 @@ package com.migao.admin.controller;
 
 import com.migao.admin.dto.BatchStockViews;
 import com.migao.admin.dto.BatchStocktakeRequest;
+import com.migao.admin.dto.PageResponse;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.service.BatchStocktakeService;
 import com.migao.admin.service.StockBatchConsumptionService;
@@ -91,6 +92,27 @@ class StockBatchControllerTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.data[0].consumedMeters").value(2.7))
                 .andExpect(jsonPath("$.data[0].remainingMeters").value(57.3));
         verify(stockBatchConsumptionService).remaining(TEST_TENANT_ID, "prod-1", 12L, true);
+    }
+
+    @Test
+    @DisplayName("GET /batches/page —— 200 分页信封（page/size/keyword 原样下传；items/total/page/size 四字段）")
+    void batchesPageOk() throws Exception {
+        when(stockBatchConsumptionService.remainingPage(TEST_TENANT_ID, null, null, "PC-20261001", 2L, 1L))
+                .thenReturn(PageResponse.of(3L, 2L, 1L, List.of(new BatchStockViews.BatchRemaining(
+                        77L, "PC-20261001-0001", "prod-1", 12L, "SKU-A", "RK-1", "L1",
+                        LocalDate.of(2026, 10, 1), new BigDecimal("24.8"),
+                        new BigDecimal("67.0"), new BigDecimal("20.0"), new BigDecimal("46.5")))));
+
+        mockMvc.perform(get(BASE + "/batches/page")
+                        .param("keyword", "PC-20261001").param("page", "2").param("size", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.total").value(3))
+                .andExpect(jsonPath("$.data.page").value(2))
+                .andExpect(jsonPath("$.data.size").value(1))
+                .andExpect(jsonPath("$.data.items[0].batchNo").value("PC-20261001-0001"))
+                .andExpect(jsonPath("$.data.items[0].remainingMeters").value(46.5));
+        verify(stockBatchConsumptionService).remainingPage(TEST_TENANT_ID, null, null, "PC-20261001", 2L, 1L);
     }
 
     @Test
