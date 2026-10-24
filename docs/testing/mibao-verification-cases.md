@@ -12896,20 +12896,20 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-10-23 新增（issue #7526，用户客户详情截图 + 逐字「当系统没有标签时，点击+号无反应，应该引导客户去添加标签」）：面板渲染条件由 `showTagPicker && availableTags.length > 0` 改为「`showTagPicker` 每次都渲染」+ 内容三分支（可加标签列表 / 系统无标签空态 / 客户已打满空态），空态里给「去添加标签 | 管理标签」→ `/customers?manageTags=1`；客户列表页按该参数直接打开标签管理模态（`window.location` 读参，与入库单 #7524 深链同口径）。触发器补 `aria-label`/`aria-expanded`/`aria-haspopup`（纯图标按钮的无障碍名）。类级固化 = 源码形态守卫 `popover-empty-gate-guard.test.ts`（修前 1 处、修后 0 处）。不改后端、不改标签数据模型，标签绑定语义一字未动。 ｜ tags: ui, admin-web, customer-tag, empty-state, inert-trigger
 
-### UI-134. 销售单左上角「作业单扫码报工」二维码：码值逐字取服务端 processingOrder.scan_url（前端不拼域名/路径）+ 短码人可读 + 缺码不画假码（不回落作业单号），工人扫码进报工页（issue #7530） 🔵
+### UI-134. 销售单左上角「作业单扫码报工」二维码：码值逐字取服务端 processingOrder.scan_url（前端不拼域名/路径）+ 纸面只留**竖排**「扫码报工」（短码不上产品面，issue #7608）+ 缺码不画假码（不回落作业单号），工人扫码进报工页（issue #7530） 🔵
 ```
 你: 销售单不要品名，并且把作业出库单手机端链接对应的二维码信息放置在左上角，工人可以通过扫码进入报工页面
 期望: direct_reply
 数据: 判据 1·码值只认服务端下发（会红）：纸面二维码的内容逐字 = `processingOrder.scan_url`（示例域刻意不用 app.migaozn.com）⇒ 前端自己拼 `{base}/o/{短码}` 会印出另一个地址 ⇒ 必红。执行点 = frontend/admin-web/tests/unit/components/SalesDoc.test.tsx 的「⑬ 有作业单扫码短链 ⇒ 纸面左上角出码，码值逐字 = 服务端 scan_url」+「⑬ 红证：前端自己拼 `{base}/o/{短码}` ⇒ 码值与服务端下发值不同 ⇒ 上面那条必红」
 数据: 判据 2·位置在纸面左上角（会红）：二维码块属于 `.sales-sheet` 的第一段（与抬头并排），且文档顺序在「销售单」标题之前；不与页脚收款码混在一处。执行点 = 同文件「⑬ 有作业单扫码短链…」
-数据: 判据 3·短码人可读（会红）：码旁印 `processingOrder.short_code`（8 位）与「扫码报工」标签 —— 扫码枪 / 相机读不出时工人可手输。执行点 = 同文件「⑬ 短码人可读」
+数据: 判据 3·纸面只留**竖排**「扫码报工」、短码不上产品面（会红，issue #7608）：标签带 `writing-mode: vertical-rl`（改成横排 ⇒ 红），且 `sales-work-order-short-code` 节点取不到（把短码行加回去 ⇒ 红）。兜底不靠这张纸：工人报工页有「输码（短码 / 加工单号 / 订单号）」输入框，短码仍印在任务卡上（`TaskCardPrint` 的 `part_short_code`），本单纸面本来就印「单号」。执行点 = 同文件「⑬ 纸面只留**竖排**「扫码报工」，短码不印在销售单上（issue #7608）」
 数据: 判据 4·缺码不画假码（会红）：无 `scan_url`（存量单未实例化短码 / 没有作业单 / 读面没取到）⇒ 零二维码、零占位框，纸面既不出现作业单号也不出现裸短码（扫出来只有一串文本、打不开任何页面 = issue #6867 治过的病）。执行点 = 同文件「⑬ 缺码不画假码」
 数据: 判据 5·**类级元守卫**（让同类进不来）：受管打印单据里不得出现扫码短链路径段（`/o/` 作业单级 · `/s/` 部位级）—— 谁再在纸面拼域名 / 路径段 ⇒ 红（含内存注入自证：拼路径段的样本判红、逐字取 `scan_url` 的样本判绿，防「空判据」）。执行点 = tests/unit_ci_workflows/test_print_media_matrix_guard.py 的 C11（test_c11_print_docs_never_assemble_scan_short_links）
 前置: 本用例是 [backend-contract] 纯前端打印版式契约（jsdom 渲染），不依赖真实服务与共享夹具；前置不成立时对应单测直接红，agent-eval 栈不跑它
 跳过: [backend-contract] 纯前端打印版式与扫码入口取值（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/SalesDoc.test.tsx 执行
 ```
 真值: frontend-fix.no-api-change, frontend-fix.vitest
-溯源: 2026-10-23 新增（issue #7530，用户逐字「销售单不要品名，并且把作业出库单手机端链接对应的二维码信息放置在左上角，工人可以通过扫码进入报工页面」）：销售单抬头左侧加作业单扫码报工码 —— 码值 = 服务端 `scan_url`（`{base}/o/{短码}` ⇒ 服务端 302 到工人报工页 `/w/`），短码印在码旁作手输兜底，无码整块不出现；数据来源 = 订单详情页既有的 `processingOrder` 读面（与 `ProcessingDoc` 同一份，不新增后端接口）。 ｜ tags: ui, order, print, sales-doc, work-order-qr
+溯源: 2026-10-23 新增（issue #7530，用户逐字「销售单不要品名，并且把作业出库单手机端链接对应的二维码信息放置在左上角，工人可以通过扫码进入报工页面」）：销售单抬头左侧加作业单扫码报工码 —— 码值 = 服务端 `scan_url`（`{base}/o/{短码}` ⇒ 服务端 302 到工人报工页 `/w/`），短码印在码旁作手输兜底，无码整块不出现；数据来源 = 订单详情页既有的 `processingOrder` 读面（与 `ProcessingDoc` 同一份，不新增后端接口）。2026-10-24 改判（issue #7608，用户逐字「不要在产品上体现短码了，工人端还有输入短码的地方」）：短码从销售单纸面退场、标签改竖排（省 ≈9mm 横向、高度不变），兜底移到工人端输入框 / 任务卡 / 本单「单号」。 ｜ tags: ui, order, print, sales-doc, work-order-qr
 
 ### UI-135. 纸面收款码：预览层与真打印都出码（打印前等异步取码）+ 上传图自动裁白边 + 缺码不画假码（issue #7536） 🔵
 ```
