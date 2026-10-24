@@ -41,25 +41,26 @@ import {
  *  issue #5271 重设计：全表按新 IA 校正（原名多为**组名而非菜单名**，如 `/products` 写「商品管理」、
  *  `/employees` 写「客服团队」—— 那些名字在侧边栏里根本点不到，属既有 stale）。 */
 const SIDEBAR_MENU: Record<string, string> = {
-  // 工作台
+  // 最前席位一级项（2026-10-17 issue #7087）：渲染在**所有分组之前**
+  //（原「工作台」组已整组撤销、原组内第二项「每日简报」菜单项已删除 ⇒ 本表不再有 `/briefing`
+  // —— 该路由保留为**重定向薄壳** → `/dashboard`，但它**不是菜单项**，菜单名也就无从谈起）
   '/dashboard': '经营看板',
-  '/briefing': '每日简报',
   // 智能客服
   '/agent-workspace/human-sessions': '在线接待',
   '/knowledge': '知识库',
-  // 商品管理（#5877：一级项 —— 菜单名「商品管理」，渲染在「工作台」组之后；
+  // 商品管理（#5877：一级项 —— 菜单名「商品管理」，#6457 起渲染在**所有分组之后**；
   // 页面正文标题也同步改成「商品管理」）# noqa: E501
   '/products': '商品管理',
   // issue #4490：「加工项管理」+「加工费管理」合并为单一入口 /production/processing（商品与加工项组）；
   // issue #4542：菜单名 =「加工项管理」（与服务端同名，页面仍是两个 tab）
   '/production/processing': '加工项管理',
   // 交易管理（issue #5271：原「订单管理」+「客户列表/财务对账」并为一行）
-  '/orders': '订单列表',
+  '/orders': '销售订单',
   '/after-sales': '售后工单',
   '/customers': '客户列表',
   '/finance': '财务对账',
   // 生产管理
-  '/production': '生产看板',
+  '/production': '作业看板',
   '/production/pool': '池看板',
   '/production/routings': '工艺配置',
   '/production/piecework': '计件工资',
@@ -70,7 +71,8 @@ const SIDEBAR_MENU: Record<string, string> = {
   // 组织管理
   '/employees': '员工管理',
   '/roles': '岗位权限',
-  '/settings': '企业基础信息',
+  // 🔴 2026-10-09（issue #6580）改名：「企业基础信息」→「**企业基础设置**」（尾席位一级项）。
+  '/settings': '企业基础设置',
   // 独立项
   '/notifications': '通知中心',
 }

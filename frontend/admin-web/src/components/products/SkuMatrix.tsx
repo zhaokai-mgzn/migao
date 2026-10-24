@@ -11,7 +11,6 @@ import { rebuildSkus, nextTempId, DOOR_WIDTH_OPTIONS, doorWidthSelectOptions, no
 // 三处上限抽到 `lib/product-limits.ts`（issue #6354）：图片识别预填按**同一个数**裁剪识别结果，
 // 不再是「组件里一份、预填侧再写一份」的第二份口径。
 import { COLOR_NAME_MAX, MAX_COLORS, MAX_SKUS } from '@/lib/product-limits'
-import { STOCK_UNIT } from '@/lib/product-roll-length'
 
 interface SkuMatrixProps {
   value: {
@@ -33,7 +32,11 @@ interface SkuMatrixProps {
    * 已被**图片识别**预填的字段键（issue #5321 包 1）—— **可选**，只影响渲染：
    * 在「颜色分类」/「规格尺寸」两处标题旁显示 `[图片识别]` 徽标提醒商家复核。
    * 颜色与门幅都是**列表字段**（没有单一输入框可挂），故徽标挂在区块标题上 ——
-   * 商家据此知道这两列是识别来的、要逐行核对（价格 / 库存不预填，仍由商家填）。
+   * 商家据此知道这两列是识别来的、要逐行核对（价格不预填，仍由商家填；
+   * 库存不在本表录入，见下一条）。
+   *
+   * 🔴 本表**没有库存列**（issue #7597，用户裁定 2026-10-24）：商品档案不再设置库存数值，
+   * 库存只由真实单据（入库单 / 订单 / 售后回补 / 批次盘点）产生 —— 建品时 SKU 一律从 0 起算。
    */
   recognizedFields?: string[]
 }
@@ -255,18 +258,17 @@ export default function SkuMatrix({ value, onChange, errors, recognizedFields }:
       )
     })
 
-  // 未填写的价格/库存单元格计数（与 validateProductForm 规则一致：价格>0、库存>=0）
+  // 未填写的价格单元格计数（与 validateProductForm 规则一致：价格>0）。
+  // 库存不在本表录入（issue #7597：库存只由真实单据产生）⇒ 计数里也没有库存这一项。
   const invalidCounts = useMemo(() => {
     let price = 0
-    let stock = 0
     for (const color of colors) {
       for (const width of validDoorWidths) {
         const sku = findSku(color, width)
         if (!sku || Number(sku.price) <= 0) price++
-        if (!sku || Number(sku.stock) < 0) stock++
       }
     }
-    return { price, stock, total: price + stock }
+    return { price, total: price }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [colors, validDoorWidths, skus])
 
@@ -274,7 +276,7 @@ export default function SkuMatrix({ value, onChange, errors, recognizedFields }:
     colorId: string,
     colorName: string,
     width: string,
-    field: 'price' | 'stock',
+    field: 'price',
     val: number
   ) => {
     const nextSkus = skus.map((s) => {
@@ -293,9 +295,6 @@ export default function SkuMatrix({ value, onChange, errors, recognizedFields }:
   const [batchScope, setBatchScope] = useState<BatchScope>('all')
   const [batchTarget, setBatchTarget] = useState<string>('')
   const [batchPrice, setBatchPrice] = useState('')
-  // issue #5237：库存草稿由共享 NumberInput 直接给 `number | null`（价格那条仍是 `string` +
-  // parseFloat，本单**不动**它 —— 它的精度本来就是对的，见测试「价格框逐值不变」）。
-  const [batchStock, setBatchStock] = useState<number | null>(null)
 
   const handleBatchFill = () => {
     if (skus.length === 0) {
@@ -303,13 +302,8 @@ export default function SkuMatrix({ value, onChange, errors, recognizedFields }:
       return
     }
     const priceNum = batchPrice === '' ? null : parseFloat(batchPrice)
-    // issue #5237：旧形态 `parseInt(batchStock, 10)` 把 `60.5` **静默截成 `60`** —— 丢 0.5 米，
-    // 无报错、无提示、无痕迹（截断发生在提交之前 ⇒ 后端收到的就是 `60`，无从察觉）。
-    // 库存值现在由共享 `NumberInput` 给：`decimals={1}` ⇒ 失焦按 1 位小数归一，
-    // 与列口径 `NUMERIC(12,1)`（V115 / #5063）同源。此处**不再自行解析**。
-    const stockNum = batchStock
-    if (priceNum === null && stockNum === null) {
-      toast.warning('请填写价格或数量')
+    if (priceNum === null) {
+      toast.warning('请填写价格')
       return
     }
     const isMatch = (s: ProductSku): boolean => {
@@ -328,8 +322,7 @@ export default function SkuMatrix({ value, onChange, errors, recognizedFields }:
       touched++
       return {
         ...s,
-        price: priceNum !== null && !isNaN(priceNum) ? priceNum : s.price,
-        stock: stockNum !== null && !isNaN(stockNum) ? stockNum : s.stock,
+        price: !isNaN(priceNum) ? priceNum : s.price,
       }
     })
     onChange({ ...value, skus: nextSkus })
@@ -562,24 +555,6 @@ export default function SkuMatrix({ value, onChange, errors, recognizedFields }:
               元
             </span>
           </div>
-          <div className="relative">
-            {/* issue #5237：旧形态是裸 `<input type="number" step="1">` + `parseInt` ⇒ 输入
-                `60.5` 静默变 `60`。改用共享 NumberInput（`type="text"` + 字符串草稿，与 #5218
-                的订正段口径一致），`decimals={1}` 对齐列口径 `NUMERIC(12,1)` = 0.1 米粒度。
-                ⚠️ 单位文案仍是「件」：#5237 已把「库存到底按米还是按件」登记为**待用户裁定**项
-                （`backend/admin-api/src/main/resources/db/init/schema.sql` 的列注释口径写的是「米」）⇒ 本单**只落数值精度、不擅改文案**。 */}
-            <NumberInput
-              min={0}
-              decimals={1}
-              placeholder="数量"
-              value={batchStock}
-              onChange={setBatchStock}
-              className="h-9 w-28 pl-2 pr-8 text-sm rounded border border-neutral-300 bg-white focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-            />
-            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-neutral-400">
-              件
-            </span>
-          </div>
           <Button
             type="button"
             size="sm"
@@ -592,7 +567,7 @@ export default function SkuMatrix({ value, onChange, errors, recognizedFields }:
 
         {/* 批量填写提示 */}
         <p className="text-xs text-neutral-400 mb-2">
-          提示：选择目标范围并填入价格/库存，点击&ldquo;批量填写&rdquo;即可统一设置。多个规格请分批次填写。
+          提示：选择目标范围并填入价格，点击&ldquo;批量填写&rdquo;即可统一设置。多个规格请分批次填写。
         </p>
 
         {/* #2908: SKU 校验失败醒目提示（带计数 + 锚点供滚动定位） */}
@@ -607,7 +582,7 @@ export default function SkuMatrix({ value, onChange, errors, recognizedFields }:
               <span className="font-medium">{errors.skus}</span>
               {invalidCounts.total > 0 && (
                 <>
-                  ，还有 <span className="font-semibold">{invalidCounts.total}</span> 处价格/库存未填写
+                  ，还有 <span className="font-semibold">{invalidCounts.total}</span> 处价格未填写
                 </>
               )}
             </p>
@@ -623,17 +598,14 @@ export default function SkuMatrix({ value, onChange, errors, recognizedFields }:
             <table className="w-full text-sm border-collapse">
               <thead className="bg-neutral-50/80">
                 <tr className="text-neutral-600">
-                  <th className="px-3 py-2.5 text-left font-medium border-b border-neutral-200 w-[30%]">
+                  <th className="px-3 py-2.5 text-left font-medium border-b border-neutral-200 whitespace-nowrap w-[35%]">
                     颜色分类
                   </th>
-                  <th className="px-3 py-2.5 text-left font-medium border-b border-neutral-200 w-[20%]">
+                  <th className="px-3 py-2.5 text-left font-medium border-b border-neutral-200 whitespace-nowrap w-[25%]">
                     规格尺寸
                   </th>
-                  <th className="px-3 py-2.5 text-left font-medium border-b border-neutral-200 w-[25%]">
+                  <th className="px-3 py-2.5 text-left font-medium border-b border-neutral-200 whitespace-nowrap w-[40%]">
                     <span className="text-red-500 mr-0.5">*</span>价格（元）
-                  </th>
-                  <th className="px-3 py-2.5 text-left font-medium border-b border-neutral-200 w-[25%]">
-                    <span className="text-red-500 mr-0.5">*</span>库存（{STOCK_UNIT}）
                   </th>
                 </tr>
               </thead>
@@ -642,9 +614,8 @@ export default function SkuMatrix({ value, onChange, errors, recognizedFields }:
                   const colorRowSpan = validDoorWidths.length || 1
                   return validDoorWidths.map((width, wIdx) => {
                     const sku = findSku(color, width)
-                    // 与 validateProductForm 规则一致：价格必须 >0，库存必须 >=0
+                    // 与 validateProductForm 规则一致：价格必须 >0（库存不在本表录入，issue #7597）
                     const priceInvalid = !sku || Number(sku.price) <= 0
-                    const stockInvalid = !sku || Number(sku.stock) < 0
                     const validationOn = !!errors?.skus
                     const cellCls =
                       'w-full h-8 px-2 text-sm rounded border focus:outline-none focus:ring-2'
@@ -676,7 +647,7 @@ export default function SkuMatrix({ value, onChange, errors, recognizedFields }:
                         <td className="px-3 py-2 border-r border-neutral-100 text-neutral-700">
                           {formatDoorWidth(width)}
                         </td>
-                        <td className="px-3 py-2 border-r border-neutral-100">
+                        <td className="px-3 py-2">
                           {/* issue #5198：旧形态 `value={sku?.price || ''}` + `parseFloat(raw) || 0`
                               会把合法的 0 与空值混为一谈 ⇒ 用户敲下 "0" 的当刻输入框被清空。
                               issue #5218 #1：`sku?.price ? sku.price : null` 是**同一个 bug 的新形态**
@@ -704,37 +675,6 @@ export default function SkuMatrix({ value, onChange, errors, recognizedFields }:
                             aria-invalid={validationOn && priceInvalid ? true : undefined}
                             className={`${cellCls} ${
                               validationOn && priceInvalid ? cellClsError : cellClsNormal
-                            }`}
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          {/* issue #5198：同族形态（`sku?.stock || ''` + `parseInt(raw) || 0`）——
-                              库存 0（无库存）是合法值，改前敲 "0" 会被清空。
-                              issue #5218 #2：`sku?.stock ? sku.stock : null` 同为新形态（0 falsy）⇒ 拆掉。
-                              issue #5237：缺 `decimals` ⇒ 取默认 2 位，而库存列口径是
-                              `stock NUMERIC(12,1)`（1 位 = 0.1 米粒度）⇒ 输入框邀请了一个后端
-                              `StockQuantity.requireOneDecimalOrNull` **必拒**（422）的值 ⇒ 补
-                              `decimals={1}`。同排价格格是 `decimals={2}`（对齐 `price DECIMAL(10,2)`）
-                              —— 两格**各按自己的列精度**，不互相「顺手统一」。 */}
-                          <NumberInput
-                            min={0}
-                            decimals={1}
-                            placeholder="0"
-                            value={
-                              typeof sku?.stock === 'number' && Number.isFinite(sku.stock) ? sku.stock : null
-                            }
-                            onChange={(v) =>
-                              handleSkuChange(
-                                color.id,
-                                color.colorName,
-                                width,
-                                'stock',
-                                v ?? 0
-                              )
-                            }
-                            aria-invalid={validationOn && stockInvalid ? true : undefined}
-                            className={`${cellCls} ${
-                              validationOn && stockInvalid ? cellClsError : cellClsNormal
                             }`}
                           />
                         </td>

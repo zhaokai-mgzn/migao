@@ -46,6 +46,9 @@ services:
     restart: "no"
     env_file: .env.ai-agent
     environment:
+      # #7340：共享云建会话必须落到已 seed 的 tenant 1；environment 覆盖 .env.ai-agent
+      # 里可能残留的旧 EVAL_TENANT_ID=25（compose 的 environment 优先于 env_file）。
+      EVAL_TENANT_ID: "1"
       TZ: Asia/Shanghai
       JWT_PUBLIC_KEY: |
         -----BEGIN PUBLIC KEY-----

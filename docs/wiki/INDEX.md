@@ -5,15 +5,18 @@ LLM 开发时按需加载对应页面 (~50 行/页，按场景索引)：
 | 场景 | 先读 |
 |------|------|
 | 不了解项目整体 | [Home](Home.md) |
+| **跑冒烟 / 引用冒烟结论（数据质量 SDQS：空态不得冒充绿 / 必须带 SKU / 清理自证）** | **[smoke-data-quality](../testing/smoke-data-quality.md)** |
 | 首次搭建/运行 | [Quick-Start](Quick-Start.md) |
 | 写代码前确认规范 | [Development](Development.md) |
 | **改了某个面 ⇒ 还该跑哪几条具名判据（窄集由射程反推）** | **[Change-Blast-Radius](Change-Blast-Radius.md)** |
 | **写码最少化（防过度建设/加依赖前）** | **[Code-Minimalism](Code-Minimalism.md)** |
+| **加表/加列/加 JSONB 前（防 ERP 化：事实/派生/视图、列预算、孤儿列、JSONB 登记）** | **[Domain-Modeling](Domain-Modeling.md)** |
 | **并行开发/契约一致性** | **[CONTRACT-LEDGER](CONTRACT-LEDGER.md)** + **[DEV-FLOW](DEV-FLOW.md)** |
 | 改前端/小程序 | [Frontend](Frontend.md) |
 | **设计基线（颜色/字号/阴影真值源在哪 + 四态契约 + 自检五问）** | **[design-baseline](../design/design-baseline.md)**（真值 = `frontend/admin-web/tailwind.config.ts` + `frontend/admin-web/src/lib/design-tokens.ts`） |
 | 改 AI 服务/Tool/Skill | [AI-Agent](AI-Agent.md) |
 | **Skill/Tool 设计范式** | **[Agent-Design-Standard](agent-design-standard.md)** |
+| **Agent 能力研发范式（声明=投影 / 元守卫 / 现实快照）** | **[agent-capability-paradigm](agent-capability-paradigm.md)** |
 | **B 端 Agent 写操作边界（去留清单 / 补回前提）** | **[agent-write-boundary](agent-write-boundary.md)** |
 | **B 端 Agent 功能设计（能力地图 / 判据来源）** | **[agent-feature-design](../agent-feature-design.md)** |
 | 改架构/数据模型/路由 | [Architecture](Architecture.md) |

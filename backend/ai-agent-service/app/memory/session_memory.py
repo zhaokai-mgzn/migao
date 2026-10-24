@@ -9,6 +9,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 from loguru import logger
 
 from app.memory.session_state_store import SessionStateStore
@@ -129,6 +130,21 @@ class SessionMemory:
                 await db.commit()
                 logger.info(f"[session-memory] Session created | session_id={session_id} tenant={tenant_id}")
                 return session_id
+            except IntegrityError as e:
+                # #7340：共享云建会话 500 的根因常是 constraints（如
+                # `sessions_tenant_id_fkey`）= 评测租户不存在。先把约束名打进日志，
+                # 避免下一次只看到裸 `Internal Server Error` 再从头猜。
+                await db.rollback()
+                orig = getattr(e, "orig", None)
+                constraint = getattr(orig, "constraint_name", None) or "unknown"
+                sqlstate = getattr(orig, "sqlstate", None) or "unknown"
+                logger.error(
+                    "[session-memory] IntegrityError | session_id=%s tenant=%s "
+                    "constraint=%s sqlstate=%s error=%s",
+                    session_id, tenant_id, constraint, sqlstate, e,
+                    exc_info=True,
+                )
+                raise
             except Exception as e:
                 await db.rollback()
                 logger.warning(f"[session-memory] Transaction rolled back | session_id={session_id} error={e}")
@@ -256,6 +272,21 @@ class SessionMemory:
                 logger.debug(f"[session-memory] Message saved | session_id={session_id} role={role}")
                 logger.debug(f"[session-memory] Session updated | session_id={session_id}")
                 return message_id
+            except IntegrityError as e:
+                # #7340：共享云建会话 500 的根因常是 constraints（如
+                # `sessions_tenant_id_fkey`）= 评测租户不存在。先把约束名打进日志，
+                # 避免下一次只看到裸 `Internal Server Error` 再从头猜。
+                await db.rollback()
+                orig = getattr(e, "orig", None)
+                constraint = getattr(orig, "constraint_name", None) or "unknown"
+                sqlstate = getattr(orig, "sqlstate", None) or "unknown"
+                logger.error(
+                    "[session-memory] IntegrityError | session_id=%s tenant=%s "
+                    "constraint=%s sqlstate=%s error=%s",
+                    session_id, tenant_id, constraint, sqlstate, e,
+                    exc_info=True,
+                )
+                raise
             except Exception as e:
                 await db.rollback()
                 logger.warning(f"[session-memory] Transaction rolled back | session_id={session_id} error={e}")
@@ -983,6 +1014,21 @@ class SessionMemory:
                 await db.commit()
                 logger.info(f"[session-memory] Session deleted | session_id={session_id}")
                 return True
+            except IntegrityError as e:
+                # #7340：共享云建会话 500 的根因常是 constraints（如
+                # `sessions_tenant_id_fkey`）= 评测租户不存在。先把约束名打进日志，
+                # 避免下一次只看到裸 `Internal Server Error` 再从头猜。
+                await db.rollback()
+                orig = getattr(e, "orig", None)
+                constraint = getattr(orig, "constraint_name", None) or "unknown"
+                sqlstate = getattr(orig, "sqlstate", None) or "unknown"
+                logger.error(
+                    "[session-memory] IntegrityError | session_id=%s tenant=%s "
+                    "constraint=%s sqlstate=%s error=%s",
+                    session_id, tenant_id, constraint, sqlstate, e,
+                    exc_info=True,
+                )
+                raise
             except Exception as e:
                 await db.rollback()
                 logger.warning(f"[session-memory] Transaction rolled back | session_id={session_id} error={e}")

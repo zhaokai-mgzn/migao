@@ -72,7 +72,7 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
     expect(screen.getByText('窗帘算料报价：按尺寸与工艺算用料，给出估算报价')).toBeInTheDocument()
     expect(screen.getByText('售后受理：售后咨询与申请，工单恒为待商家审核')).toBeInTheDocument()
     // 能力边界写在明处（不把 AI 说成万能）
-    expect(screen.getByText(/写操作只有三类：改价、批量上下架、批量库存调整/)).toBeInTheDocument()
+    expect(screen.getByText(/可写的动作：改价、商品改名、批量改价与批量库存调整、通知标记已读、定时提醒/)).toBeInTheDocument()
     expect(
       screen.getByText(/不改价、不取消订单、不退款、不承诺优惠折扣，也不报库存数量/)
     ).toBeInTheDocument()
@@ -88,9 +88,10 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
     }
     // 六步里的行业真值：工序三段用行业正名
     expect(screen.getByText(/裁剪（裁床）→ 车位（缝制）→ 后整（烫工及后整）/)).toBeInTheDocument()
-    // 未落地的术语不得出现（「拼版」全仓无实现；「质检」未进任何工艺路线）
+    // 未落地的术语不得出现（「拼版」全仓无实现）
     expect(screen.queryByText(/拼版/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/质检/)).not.toBeInTheDocument()
+    // 🔴 #7140 起「质检」**已落地**（观星台 /quality-inspections + 作业单质检区）⇒ 反向断言转正向
+    expect(screen.getAllByText(/质检/).length).toBeGreaterThan(0)
   })
 
   it('renders 行业纵深四块（算料 / SKU / 工序计件 / 批次余料）', () => {

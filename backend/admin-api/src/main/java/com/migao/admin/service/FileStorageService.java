@@ -27,6 +27,21 @@ public interface FileStorageService {
     }
 
     /**
+     * 服务端字节流上传入口（issue #7335：AI 生成图下载后转存 OSS）。
+     *
+     * <p>与 {@link #upload(MultipartFile, String)} 共用**同一条**准入护栏（同一个
+     * {@link UploadGuard}）—— 不因为「图是服务端自己下载的」就绕过类型/大小校验。</p>
+     *
+     * @param bytes     图片字节（魔数决定类型）
+     * @param filename  文件名（扩展名必须与内容同类，如生成图用 {@code .png}/{@code .jpg}）
+     * @param directory 存储目录（服务端给定，非法目录同样 422）
+     * @return 上传结果
+     */
+    default UploadedFileInfo uploadBytes(byte[] bytes, String filename, String directory) {
+        return upload(new InMemoryMultipartFile(filename, bytes), directory);
+    }
+
+    /**
      * 落库动作（只对**已通过 {@link #upload} 准入校验**的输入负责）。
      *
      * @param file                已校验的文件

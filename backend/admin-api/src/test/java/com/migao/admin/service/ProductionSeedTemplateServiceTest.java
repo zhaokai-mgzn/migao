@@ -1,6 +1,6 @@
 package com.migao.admin.service;
 
-// case_ids: PG-036
+// case_ids: PG-036, PG-091
 
 import com.migao.admin.config.IndustryCodes;
 import com.migao.admin.config.TenantContext;
@@ -151,7 +151,7 @@ class ProductionSeedTemplateServiceTest {
         }
 
         @Test
-        @DisplayName("套用成功：35 工序 + 9 路线 + 16 选项映射 + 1 系数，逐条带 source")
+        @DisplayName("套用成功：42 工序 + 9 路线 + 16 选项映射 + 1 系数，逐条带 source")
         void apply_createsAllSeedRows() {
             wireOperationLibrary();
 
@@ -159,11 +159,11 @@ class ProductionSeedTemplateServiceTest {
 
             assertThat(result.get("templateId")).isEqualTo("curtain");
             assertThat(result.get("applied")).isEqualTo(true);
-            assertThat(result.get("created_operations")).isEqualTo(41);
+            assertThat(result.get("created_operations")).isEqualTo(42);
             assertThat(result.get("skipped")).isEqualTo(0);
 
             ArgumentCaptor<ProductionOperation> opCaptor = ArgumentCaptor.forClass(ProductionOperation.class);
-            verify(productionOperationMapper, times(41)).insert(opCaptor.capture());
+            verify(productionOperationMapper, times(42)).insert(opCaptor.capture());
             // 每道工序都必须带 source（provenance 可见 = 本单的诚实性核心）
             assertThat(opCaptor.getAllValues())
                     .allSatisfy(op -> assertThat(op.getSource())
@@ -198,17 +198,17 @@ class ProductionSeedTemplateServiceTest {
             assertThat(craftCaptor.getValue().getIsDefault())
                     .as("恰一条默认工艺（缺 craft 的订单取它；不得写死常量）").isTrue();
 
-            // 部位价目：规范矩阵 ∩ 该租户工序库 —— **116 行**（issue #4676 改判）。
+            // 部位价目：规范矩阵 ∩ 该租户工序库 —— **120 行**（#4676 退场 `配料` 4 行；#7523 追加 `出库` 4 行）。
             // 改前 120（30 逻辑工序 × 4 部位，issue #4529）；V88 让 `配料` 退场
-            // ⇒ 开租播种也不再种 `配料 × 4 部位` 这 4 行（120 − 4 = 116）。
+            // ⇒ 开租播种也不再种 `配料 × 4 部位` 这 4 行（124 − 4 = 120）。
             // ⚠️ 规范矩阵常量 `CANONICAL_POSITION_PRICES` **仍是 120 行**（与
             // `routing.py::_POSITION_PRICE_ROWS` 逐行同值、被
             // `test_routing_model_p2_consumers.py::test_seed_service_canonical_matrix_matches_truth_source`
             // 冻结）⇒ 退场只在**播种这一层**显式过滤，不改常量。本判据是**计数**，不是放宽：
-            // 少/多一行都红（`times(116)` 是精确匹配）。
+            // 少/多一行都红（`times(120)` 是精确匹配）。
             ArgumentCaptor<com.migao.admin.entity.ProductionOperationPosition> positionCaptor =
                     ArgumentCaptor.forClass(com.migao.admin.entity.ProductionOperationPosition.class);
-            verify(productionOperationPositionMapper, times(116)).insert(positionCaptor.capture());
+            verify(productionOperationPositionMapper, times(120)).insert(positionCaptor.capture());
             List<com.migao.admin.entity.ProductionOperationPosition> seededPositions =
                     positionCaptor.getAllValues();
             assertThat(seededPositions.stream()
@@ -228,10 +228,18 @@ class ProductionSeedTemplateServiceTest {
                     .containsExactlyInAnyOrder("布帘", "布料", "纱帘", "帘头");
             // 规则表：工艺变体 **7**（原 10 条里 `craft='四爪钩'` 的 3 条随 issue #4365 退场 ——
             // 四爪钩是加工项/配件、不是工艺；存量库由 V135__retire_craft_sig_hook.sql 软删）
-            // + 特殊选项 16 + 加工项触发 3（issue #4577）+ 计件系数档 1 = **27**（逐条按该租户工序库过滤）
+            // + 特殊选项 16 + 加工项触发 3（issue #4577）+ 售卖方式 2（issue #7523）+ 计件系数档 1 = **29**（逐条按该租户工序库过滤）
             ArgumentCaptor<com.migao.admin.entity.ProductionRouteRule> ruleCaptor =
                     ArgumentCaptor.forClass(com.migao.admin.entity.ProductionRouteRule.class);
-            verify(productionRouteRuleMapper, times(27)).insert(ruleCaptor.capture());
+            verify(productionRouteRuleMapper, times(29)).insert(ruleCaptor.capture());
+            assertThat(ruleCaptor.getAllValues().stream()
+                    .filter(r -> "sales_form".equals(r.getTriggerKind()))
+                    .map(r -> r.getTriggerValue() + ":" + r.getAction() + ":" + r.getOperation()
+                            + "@" + r.getAfterOperation() + "#" + r.getPriority())
+                    .toList())
+                    .as("整卷布料单 = insert 出库 after 裁剪 → remove 裁剪（顺序敏感，#7523）")
+                    .containsExactly("full_roll:insert:出库@裁剪#270",
+                            "full_roll:remove:裁剪@null#280");
             // 加工项触发规则逐值（与 V84 迁移 / backend/admin-api/src/main/resources/db/init/schema.sql 三源同值；`拼接`/`双眼皮` 不建行）
             assertThat(ruleCaptor.getAllValues().stream()
                     .filter(r -> "processing_item".equals(r.getTriggerKind()))
@@ -252,7 +260,7 @@ class ProductionSeedTemplateServiceTest {
             service.applyTemplate(TENANT, IndustryCodes.CURTAIN);
 
             // ① 工序库落库的行**仍是库口径旧名**（`精裁-布`）—— 归一发生在派生侧，不改库（本单行为零变更）
-            assertThat(library).as("播种 41 道（35 旧名 + 配料/打包 + issue #4937 的 4 道纱帘变体），库口径名一字不改").hasSize(41);
+            assertThat(library).as("播种 42 道（35 旧名 + 配料/打包 + issue #4937 的 4 道纱帘变体 + #7523 的出库），库口径名一字不改").hasSize(42);
             assertThat(library.stream().map(ProductionOperation::getName).toList())
                     .as("库口径仍是旧名：归一不得顺手改写落库数据（改了 ⇒ 迁移链终态对不上）")
                     .contains("精裁-布", "布三边", "布帘车被");
@@ -307,7 +315,7 @@ class ProductionSeedTemplateServiceTest {
             service.applyTemplate(TENANT, IndustryCodes.CURTAIN);
 
             ArgumentCaptor<ProductionOperation> opCaptor = ArgumentCaptor.forClass(ProductionOperation.class);
-            verify(productionOperationMapper, times(41)).insert(opCaptor.capture());
+            verify(productionOperationMapper, times(42)).insert(opCaptor.capture());
             Map<String, String> seeded = opCaptor.getAllValues().stream()
                     .collect(Collectors.toMap(ProductionOperation::getName, ProductionOperation::getScope,
                             (a, b) -> a, LinkedHashMap::new));
@@ -322,7 +330,7 @@ class ProductionSeedTemplateServiceTest {
                     .containsEntry("外帘装袋", "set")
                     .containsEntry("外帘发货", "set")
                     .containsEntry("打包", "set");
-            assertThat(seeded).hasSize(41);
+            assertThat(seeded).hasSize(42);
             assertThat(seeded.values())
                     .as("scope 取值必须 ⊆ 闭词表 {position, set}（与写面校验同口径）")
                     .allSatisfy(scope -> assertThat(scope).isIn("position", "set"));
@@ -381,7 +389,7 @@ class ProductionSeedTemplateServiceTest {
                     opCalls.getAndIncrement() == 0 ? List.of() : existingOperations());
 
             Map<String, Object> first = service.applyTemplate(TENANT, IndustryCodes.CURTAIN);
-            assertThat(first.get("created_operations")).isEqualTo(41);
+            assertThat(first.get("created_operations")).isEqualTo(42);
             assertThat(first.get("created_routings")).as("恰两条基础路线（窗帘默认 + 布料，issue #4529）")
                     .isEqualTo(2);
             assertThat(first.get("created_crafts")).as("恰一条默认工艺").isEqualTo(1);
@@ -395,10 +403,10 @@ class ProductionSeedTemplateServiceTest {
             assertThat(second.get("created_positions")).as("第二次不得再插部位价目（幂等）").isEqualTo(0);
             assertThat(second.get("created_route_rules")).as("第二次不得再插规则（幂等）").isEqualTo(0);
             assertThat(second.get("skipped"))
-                    .as("第二次全部跳过：41 工序 + 2 路线模板（窗帘默认 + 布料，issue #4529）"
+                    .as("第二次全部跳过：42 工序 + 2 路线模板（窗帘默认 + 布料，issue #4529）"
                             + " + 16 选项映射 + 1 系数档")
-                    .isEqualTo(41 + 2 + 16 + 1);
-            verify(productionOperationMapper, times(41)).insert(any(ProductionOperation.class));
+                    .isEqualTo(42 + 2 + 16 + 1);
+            verify(productionOperationMapper, times(42)).insert(any(ProductionOperation.class));
             verify(productionRouteTemplateMapper, times(2)).insert(
                     org.mockito.ArgumentMatchers.<ProductionRouteTemplate>any());
             verify(productionCraftMapper, times(1)).insert(
@@ -418,7 +426,7 @@ class ProductionSeedTemplateServiceTest {
             assertThat(result.get("created_operations")).isEqualTo(0);
             assertThat(result.get("created_routings"))
                     .as("P2b：新结构里「路线」= 两条基础模板（窗帘默认 + 布料，issue #4529）").isEqualTo(2);
-            assertThat(result.get("skipped")).isEqualTo(41);
+            assertThat(result.get("skipped")).isEqualTo(42);
         }
 
         @Test
@@ -454,8 +462,8 @@ class ProductionSeedTemplateServiceTest {
                     .as("第二个租户套用必须同样成功 —— 撞主键的形态在这里变红")
                     .isEqualTo(true);
             assertThat(store.operationIdsOf(42L)).as("42 号租户落库工序数 = 模板工序数")
-                    .hasSize(41);
-            assertThat(store.operationIdsOf(77L)).hasSize(41);
+                    .hasSize(42);
+            assertThat(store.operationIdsOf(77L)).hasSize(42);
             assertThat(store.operationNamesOf(42L)).isEqualTo(templateOperationNames());
             assertThat(store.operationNamesOf(77L)).isEqualTo(templateOperationNames());
             assertThat(store.operationIdsOf(42L))
@@ -507,7 +515,7 @@ class ProductionSeedTemplateServiceTest {
             Map<String, Object> result = service.applyTemplate(TENANT, "布艺纺织");
 
             assertThat(result.get("applied")).isEqualTo(true);
-            assertThat(result.get("created_operations")).isEqualTo(41);
+            assertThat(result.get("created_operations")).isEqualTo(42);
         }
 
         @Test

@@ -122,6 +122,21 @@ const CALC_OK = {
   },
 }
 
+/** 双开 / 经济档 1.8 的算料结果（6.6 × 1.8 = 11.88 → 向上进位 11.9；#7649：档位真的参与倍数） */
+const CALC_ECONOMY = {
+  data: {
+    data: {
+      fabric_meters: 11.9,
+      fullness: 1.8,
+      fullness_actual: 1.8,
+      formula_used: 'fixed_height_fullness',
+      formula_text: '褶倍数公式：(6.6÷2)×1.8 → 每片 3.3×1.8=5.94米 ×2片 = 11.9米',
+      source: '公式计算',
+      craft_tier: 'economy',
+    },
+  },
+}
+
 /** 按 label 文本定位其所在容器里的 input（`Label` 无 htmlFor 关联） */
 const inputOf = (label: string, idx = 0) =>
   screen
@@ -517,6 +532,32 @@ describe('#4874 用料公式 / 档位（与「工艺配置 → 算料配置」�
     expect(optionLabels('档位')).toEqual(['标准档（2.0倍）', '经济档（1.8倍）'])
     // 褶数块只在韩褶公式下出现
     expect(screen.queryByTestId('craft-pleat-count')).toBeNull()
+  })
+
+  it('判据 3b（接线，#7649）：切档位 ⇒ 新试算的 `fabric_meters` **写回「用料米数」**（不只换请求）', async () => {
+    // 用户 2026-10-24：「切换倍数法的档位没有再去算用料米数」。
+    // 真因在**引擎**（`backend/ai-agent-service/app/tools/curtain_calc.py::build_quote` 的倍数法分支
+    // 只回显 `craft_tier`、不按档位取倍数）—— 口径判据 =
+    // `backend/ai-agent-service/tests/test_craft_calc_formula.py::test_fullness_follows_craft_tier`。
+    // 本条守**页面这半**：档位一变就重发试算，并把新结果的米数**写回输入框**
+    // （只重发不写回 = 服务端算对了、商家看到的仍是旧数）。
+    mockCraftCalcPreview.mockImplementation((p: { craft_tier?: string }) =>
+      Promise.resolve(p?.craft_tier === 'economy' ? CALC_ECONOMY : CALC_OK)
+    )
+    render(<NewOrderPage />)
+    await pickProduct()
+    openStep1()
+    fireEvent.change(inputOf('窗宽 (米)'), { target: { value: '6.6' } })
+    fireEvent.change(inputOf('窗高 (米)'), { target: { value: '2.6' } })
+    await waitFor(() => expect(qtyInput()).toHaveValue('13.3'))
+
+    pickOption('用料公式', '褶倍数公式（倍数法）')
+    await screen.findByTestId('craft-tier-options')
+    pickOption('档位', '经济档（1.8倍）')
+
+    // 红证：把「写回 / 重发」任一半退回去 ⇒ 输入框停在 13.3 ⇒ 本断言红
+    await waitFor(() => expect(qtyInput()).toHaveValue('11.9'))
+    expect(mockCraftCalcPreview.mock.calls.at(-1)![0].craft_tier).toBe('economy')
   })
 
   it('判据 3（红证）：改档位 ⇒ 算料请求 `craft_tier` 与落库 `processingInfo.craftTier` 都是所选档', async () => {

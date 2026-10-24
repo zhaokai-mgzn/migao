@@ -123,7 +123,8 @@ public class UserController {
                         .id(user.getId())
                         .username(user.getPhone())
                         .nickname(user.getNickname())
-                        .position(user.getPosition())
+                        // 展示口径（2026-10-18）：与 `/api/auth/me` 同一实现 —— 角色码解析成岗位名
+                        .position(roleService.displayPosition(user.getPosition(), user.getTenantId()))
                         .avatar(user.getAvatar())
                         .tenantId(user.getTenantId())
                         .tenantName(tenantName)

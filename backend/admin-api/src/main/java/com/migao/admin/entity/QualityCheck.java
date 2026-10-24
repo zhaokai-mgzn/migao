@@ -54,6 +54,15 @@ public class QualityCheck {
 
     private String inspectorName;
 
+    /**
+     * 检验人身份类别（V163，issue #7162）：{@code employee} 观星台员工 / {@code worker} 工人端。
+     *
+     * <p>为什么要单列：工人 session 与观星台员工是**两套 id 空间**（工人也会落 {@code users.id}，
+     * 但登录与授权路径完全不同）⇒ 只靠 {@code inspector_id} 分不清「这条是谁录的」。
+     * 既有行（全部来自观星台）默认 {@code employee}。</p>
+     */
+    private String inspectorKind;
+
     /** 质检三态：{@code pass} 合格 / {@code rework} 返工 / {@code scrap} 报废 */
     private String inspectionResult;
 

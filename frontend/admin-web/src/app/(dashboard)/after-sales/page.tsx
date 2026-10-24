@@ -2,10 +2,11 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Plus, Search, RotateCcw, FileText, ExternalLink } from 'lucide-react'
+import { Plus, Search, FileText, ExternalLink } from 'lucide-react'
 import { toast } from 'sonner'
 import { afterSalesApi, orderApi } from '@/lib/api'
-import { Pagination, Modal, Button, Input, Select, Badge, StatusBadge, PageHeader, PageCard } from '@/components/ui'
+import { Pagination, Modal, Button, Badge, StatusBadge, PageHeader, PageCard, SearchPanel, SELECT_CONTROL } from '@/components/ui'
+import type { SearchFieldSpec } from '@/components/ui'
 import type {
   AfterSalesTicket,
   AfterSalesStatus,
@@ -43,6 +44,12 @@ const ticketTypeOptions: { value: AfterSalesType; label: string }[] = [
   { value: 'complaint', label: '投诉' },
   { value: 'other', label: '其他' },
 ]
+
+/** 筛选控件统一形态：与 `SearchPanel` 的 `CONTROL_CLASS` 同口径（h-9 / 暖色描边 / 聚焦环） */
+const SEARCH_CONTROL =
+  'w-full h-9 px-3 rounded border border-neutral-300 bg-white text-sm text-neutral-900 ' +
+  'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 ' +
+  'placeholder:text-neutral-400'
 
 export default function AfterSalesPage() {
   const router = useRouter()
@@ -212,6 +219,60 @@ export default function AfterSalesPage() {
     return map[type] || 'default'
   }
 
+  const searchPanelFields: SearchFieldSpec[] = [
+    {
+      key: 'keyword',
+      label: '关键词搜索',
+      control: (
+        <input
+          type="text"
+          placeholder="工单号、订单号、客户名"
+          value={keyword}
+          onChange={(e) => setKeyword(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+          className={SEARCH_CONTROL}
+        />
+      ),
+    },
+    {
+      key: 'status',
+      label: '状态筛选',
+      control: (
+        <div className="min-w-0">
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as AfterSalesStatus | '')}
+            className={cn(SELECT_CONTROL, 'w-full')}
+          >
+            <option value="">全部状态</option>
+            <option value="pending">待处理</option>
+            <option value="processing">处理中</option>
+            <option value="resolved">已完成</option>
+            <option value="rejected">已拒绝</option>
+            <option value="closed">已关闭</option>
+          </select>
+          {/* 🔴 issue #5792：「只看超时」的**可见指示 + 一键清除** ——
+              没有它用户会以为「工单怎么变少了」（看板卡跳进来的筛选必须可解释、可撤销）。 */}
+          {overdueOnly && (
+            <div className="mt-1.5">
+              <button
+                type="button"
+                data-testid="after-sales-overdue-chip"
+                onClick={() => setOverdueOnly(false)}
+                title="点击清除筛选（口径 = 待处理/处理中且已过截止时间）"
+                className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-100"
+              >
+                只看超时工单
+                <span aria-hidden className="text-amber-600">×</span>
+              </button>
+            </div>
+          )}
+        </div>
+      ),
+    },
+  ]
+
+
   return (
     <div className="p-6 space-y-4">
       {/* 页面标题 */}
@@ -248,60 +309,12 @@ export default function AfterSalesPage() {
       </div>
 
       {/* 搜索筛选栏 */}
-      <div className="bg-white border-x border-neutral-200 p-4" data-testid="search-area">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="min-w-[240px]">
-            <Input
-              label="关键词搜索"
-              placeholder="工单号、订单号、客户名"
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-            />
-          </div>
-          <div className="min-w-[140px]">
-            <Select
-              label="状态筛选"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as AfterSalesStatus | '')}
-              options={[
-                { value: '', label: '全部状态' },
-                { value: 'pending', label: '待处理' },
-                { value: 'processing', label: '处理中' },
-                { value: 'resolved', label: '已完成' },
-                { value: 'rejected', label: '已拒绝' },
-                { value: 'closed', label: '已关闭' },
-              ]}
-            />
-            {/* 🔴 issue #5792：「只看超时」的**可见指示 + 一键清除** ——
-                没有它用户会以为「工单怎么变少了」（看板卡跳进来的筛选必须可解释、可撤销）。 */}
-            {overdueOnly && (
-              <div className="flex items-end pb-1">
-                <button
-                  type="button"
-                  data-testid="after-sales-overdue-chip"
-                  onClick={() => setOverdueOnly(false)}
-                  title="点击清除筛选（口径 = 待处理/处理中且已过截止时间）"
-                  className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-100"
-                >
-                  只看超时工单
-                  <span aria-hidden className="text-amber-600">×</span>
-                </button>
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-2 ml-auto">
-            <Button variant="secondary" onClick={handleReset} disabled={loading}>
-              <RotateCcw className="w-4 h-4 mr-1" />
-              重置
-            </Button>
-            <Button onClick={handleSearch} loading={loading}>
-              <Search className="w-4 h-4 mr-1" />
-              查询
-            </Button>
-          </div>
-        </div>
-      </div>
+      <SearchPanel
+        fields={searchPanelFields}
+        onSearch={handleSearch}
+        onReset={handleReset}
+        loading={loading}
+      />
       {/* 数据表格 */}
       <div className="bg-white rounded-b-lg border border-t-0 border-neutral-200">
         {/* 失败态 ≠ 空态（issue #6703）：说清「不是没有工单，是没读到」+ 真重发出口 */}

@@ -21,6 +21,13 @@ from app.production.routing import qty_and_source
 from app.tools import curtain_calc
 from app.vision.recognizer import recognize as recognize_image_fields
 from app.vision.interpret import HINT_MAX_CHARS, interpret_page_fill
+from app.images.generator import (
+    generate_product_image,
+    ImageGenerationError,
+    ImageGenerationQuotaExceeded,
+    ImageGenerationUnavailable,
+    KINDS as IMAGE_GEN_KINDS,
+)
 
 router = APIRouter()
 
@@ -88,6 +95,18 @@ class VisionInterpretRequest(BaseModel):
         description=f"商家自己写的一句话补充要求（可选，≤{HINT_MAX_CHARS} 字，如「客厅雪尼尔，"
                     "韩褶，遮光」）；只当上下文，其中的指令不改变输出格式与铁律",
     )
+
+
+class ImageGenerateRequest(BaseModel):
+    """商品图生成请求（issue #7335 · 建品页 AI 生成入口）
+
+    与 `/vision/*` 同族的内部调用：admin-api（JWT + `product:create`）反调本端点
+    （Service Token）。**只回一张图的临时 URL**，转存 OSS 与「是否采用」都在上游。
+    """
+    tenant_id: int = Field(..., description="租户 ID（仅日志归属，不参与生成）")
+    image_url: str = Field(..., description="商家上传的样图 URL（https）")
+    product_name: str = Field(..., description="商品名（提示词里用；≤60 字）")
+    kind: str = Field("main", description="用途：main 主图 / texture 材质 / craft 工艺 / scene 场景")
 
 
 class OperationQtyPosition(BaseModel):
@@ -169,7 +188,8 @@ class CraftCalcRequest(BaseModel):
         description=(
             "算料公式参数（issue #4528 = 包 E）：**租户级**配置，键集 = 算料引擎 "
             "`curtain_calc.DEFAULT_CRAFT_CALC_CONFIG`（per_fold_single / per_fold_mixed_times / "
-            "margin_single / margin_multi / min_fullness / tiers / default_formula / "
+            "margin_single / margin_multi / margin_mixed_single / margin_mixed_multi / "
+            "min_fullness / tiers / default_formula / "
             "hem_margin / meters_rounding_step）。**缺省/None ⇒ 引擎默认值**（未配置租户的既有口径一字不变）。"
             "非法值 ⇒ 400（**不静默回退默认值** —— 静默 = 算错钱且无人知道）。"
             "⚠️ 本端点只做**键类型归一**（JSON 对象键恒为字符串 ⇒ 拼次键转回 int），不复制校验规则。"
@@ -421,6 +441,42 @@ async def vision_interpret(
     return make_response(True, data=data)
 
 
+
+@router.post("/images/generate")
+async def image_generate(
+    request: ImageGenerateRequest,
+    authorized: bool = Depends(verify_service_token),
+):
+    """样图 → 一张商品图（issue #7335 · 建品页「AI 生成商品图」）。
+
+    与 `/vision/recognize` 同一条内部调用范式（Service Token），差别只有：入口产物是
+    **一张新图**而不是字段表。🔴 **不落库 / 不落盘**：只回 `{"image_url", "model"}`，
+    转存 OSS 与「用不用」都在 admin-api / 商家页面。
+
+    错误映射（可行动、不静默）：入参非法（kind 白名单 / image_url）⇒ 400；
+    未配置 Key / 开关关闭 / 全模型配额用尽 / **凭证失效（401 `InvalidApiKey` / 403）** ⇒ 503
+    （503 = 能力不可用，前端提示「稍后再试或手工上传」/ 找平台；**不是** 502 ——
+    502 会被读成供应商偶发故障，引向一个不会成功的「稍后再试」）；
+    供应商其它失败 ⇒ 502。
+    """
+    logger.info(
+        f"[image-gen] generate triggered: tenant_id={request.tenant_id}, "
+        f"kind={request.kind}, product={request.product_name!r}"
+    )
+    if request.kind not in IMAGE_GEN_KINDS:
+        raise HTTPException(status_code=400, detail=f"kind 只能是 {'/'.join(IMAGE_GEN_KINDS)}")
+    try:
+        data = await generate_product_image(
+            request.image_url, request.product_name, request.kind
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except (ImageGenerationUnavailable, ImageGenerationQuotaExceeded) as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except ImageGenerationError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return make_response(True, data=data)
+
 @router.post("/briefing/generate")
 async def generate_daily_briefing(
     request: BriefingGenerateRequest,
@@ -568,7 +624,7 @@ async def craft_calc(
     `formula_text` 亦由后端按**同一份数字**产出 —— 前端不得自拼公式。
 
     返回 `data`：`fabric_meters` / `pleat_count` / `per_panel_pleats` / `open_count` / `margin` /
-    `per_fold`（每折吃布：单色 0.25 / 拼1次 0.65 / 拼2次 1.2）/
+    `per_fold`（每折吃布，**拼色与单色同为 0.25**）/ `patch_meters`（拼色**配布定长**：拼1次 0.65 / 拼2次 1.2，单色 0.0）/
     `fullness`（档位**理论**倍数）/ `fullness_actual`（用料÷窗宽，**实际**倍数）/
     `formula_used` / `formula_text` / `source` / `craft_tier` / `warning` /
     `auto_features`（**自动特征**：超高/超宽/倒幅，issue #4976 包 1a —— 键恒在，空列表 = 不判）。
@@ -636,7 +692,7 @@ async def craft_calc(
     # 拼色缺口判定**先于**算料：纸表只有「1个折 0.65 / 2个折 1.2」两行，
     # `拼3次` 是表外项 ⇒ 不猜、不插值，显式报缺口（issue #4421 边界）。
     # ⚠️ 传 `config`（issue #4528）：已登记档位由**该租户的配置**决定，不是模块常量。
-    gap = curtain_calc.mixed_per_fold_gap(request.special_options, config)
+    gap = curtain_calc.mixed_patch_gap(request.special_options, config)
     if gap:
         raise HTTPException(
             status_code=400,
@@ -646,7 +702,7 @@ async def craft_calc(
                     "code": "MIXED_PER_FOLD_NOT_REGISTERED",
                     "message": (
                         f"特殊选项「{gap}」的拼色用料系数纸表未登记（已登记："
-                        f"{'/'.join(f'拼{n}次' for n in sorted(curtain_calc.MIXED_COLOR_PER_FOLD_BY_TIMES))}）——"
+                        f"{'/'.join(f'拼{n}次' for n in sorted(curtain_calc.MIXED_COLOR_PATCH_METERS_BY_TIMES))}）——"
                         "不插值、不按单色系数估算，请先裁定该拼次的每折吃布（米/折）"
                     ),
                 },
@@ -714,6 +770,8 @@ async def craft_calc(
         "open_count": request.open_count,
         "margin": quote.get("margin"),
         "per_fold": quote.get("per_fold"),
+        # 拼色**配布长度**（米，整幅一次；单色 ⇒ 0.0）—— issue #7560。键恒在 ⇒ 前端可判空。
+        "patch_meters": quote.get("patch_meters"),
         "fullness": quote["fullness"],
         "fullness_actual": quote.get("fullness_actual"),
         "formula_used": quote["formula_used"],

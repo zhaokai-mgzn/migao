@@ -1,4 +1,4 @@
-// case_ids: UI-011, UI-023
+// case_ids: UI-011, UI-023, UI-132
 /**
  * FloatingAssistant 组件测试 — 重构后版本
  *
@@ -182,5 +182,112 @@ describe('FloatingAssistant', () => {
     const win = openMinimized()
     expect(win.style.left).toBe('624px')
     expect(win.style.top).toBe('0px')
+  })
+
+  // ── 全屏（最大化）模式：尺寸归视口所有 — 历史 px 残留不得覆盖（issue #7508） ──
+  //
+  // 缺陷类：模式自有布局契约（全屏 = 铺满视口）被持久化的用户控件状态（拖拽过的 px 宽高）覆盖 ⇒
+  // 「点了最大化却还是一个小窗，右上角还露着底下的页面」。之所以「换一台电脑就正常」：
+  // mibao_chat_panel_width/height 存在**本机** localStorage，别的机器没有残留。
+  function openFullscreen() {
+    render(<FloatingAssistant />)
+    fireEvent.click(screen.getByTitle('打开黄金策'))
+    fireEvent.click(screen.getByTitle('全屏'))
+    return screen.getByTestId('chat-panel-resize-container')
+  }
+
+  it('全屏铺满视口 —— 历史 px 宽高（mibao_chat_panel_*）不得覆盖', () => {
+    setViewport(1440, 900)
+    localStorage.setItem('mibao_chat_panel_width', '620')
+    localStorage.setItem('mibao_chat_panel_height', '480')
+    const panel = openFullscreen()
+    expect(panel.style.width).toBe('100%')
+    expect(panel.style.height).toBe('100%')
+  })
+
+  it('全屏不渲染任何缩放手柄（最大化态不该还能被拖成小窗）', () => {
+    setViewport(1440, 900)
+    localStorage.setItem('mibao_chat_panel_width', '620')
+    localStorage.setItem('mibao_chat_panel_height', '480')
+    openFullscreen()
+    expect(screen.queryByTestId('chat-panel-resize-handle-top')).toBeNull()
+    expect(screen.queryByTestId('chat-panel-resize-handle')).toBeNull()
+    expect(screen.queryByTestId('chat-panel-resize-handle-horizontal')).toBeNull()
+    expect(screen.queryByTestId('chat-panel-resize-handle-corner')).toBeNull()
+  })
+
+  it('全屏无遮罩（最大化不留模态底）、退出全屏恢复遮罩与历史尺寸', () => {
+    setViewport(1440, 900)
+    localStorage.setItem('mibao_chat_panel_width', '620')
+    localStorage.setItem('mibao_chat_panel_height', '480')
+    const panel = openFullscreen()
+    expect(screen.queryByTestId('float-assistant-overlay')).toBeNull()
+
+    fireEvent.click(screen.getByTitle('退出全屏'))
+    expect(screen.getByTestId('float-assistant-overlay')).toBeInTheDocument()
+    expect(panel.style.width).toBe('620px')
+    expect(panel.style.height).toBe('480px')
+    // 退出全屏后缩放手柄回来（恢复可调整）
+    expect(screen.getByTestId('chat-panel-resize-handle')).toBeInTheDocument()
+  })
+
+  it('无历史尺寸时全屏同样铺满（对照：不是靠清缓存才正常）', () => {
+    setViewport(1440, 900)
+    const panel = openFullscreen()
+    expect(panel.style.width).toBe('100%')
+    expect(panel.style.height).toBe('100%')
+  })
+
+  // ── 类级元守卫：面板**四个模式**的「外观契约」逐格成立（不是只钉全屏那一格） ──
+  //
+  // 面板是四模式状态机（closed / centered / fullscreen / minimized）。模式一旦**串味**，用户看到的就是
+  // 「功能坏了」——本单正是这个形态：fullscreen 的状态确实生效了（无遮罩 + 图标变「退出全屏」），
+  // 但几何被历史 px 顶翻 ⇒ 看起来像「点了最大化没反应」。
+  // 本文即**登记面**：新增/改动任一模式必须在这张表里加行，否则该模式的外观没有任何断言。
+  type ModeChrome = {
+    panel: boolean     // 居中大窗 / 全屏 的面板根节点
+    overlay: boolean   // 模态遮罩（只有居中态有）
+    fab: boolean       // 悬浮球（只有关闭态有）
+    minimized: boolean // 最小化浮窗
+    handles: boolean   // 缩放手柄（最大化态不许有：否则还能被拖成小窗）
+  }
+
+  const MODE_MATRIX: Array<{ mode: string; enter: () => void; chrome: ModeChrome }> = [
+    {
+      mode: 'closed',
+      enter: () => {},
+      chrome: { panel: false, overlay: false, fab: true, minimized: false, handles: false },
+    },
+    {
+      mode: 'centered',
+      enter: () => fireEvent.click(screen.getByTitle('打开黄金策')),
+      chrome: { panel: true, overlay: true, fab: false, minimized: false, handles: true },
+    },
+    {
+      mode: 'fullscreen',
+      enter: () => {
+        fireEvent.click(screen.getByTitle('打开黄金策'))
+        fireEvent.click(screen.getByTitle('全屏'))
+      },
+      chrome: { panel: true, overlay: false, fab: false, minimized: false, handles: false },
+    },
+    {
+      mode: 'minimized',
+      enter: () => {
+        fireEvent.click(screen.getByTitle('打开黄金策'))
+        fireEvent.click(screen.getByTitle('收起'))
+      },
+      chrome: { panel: false, overlay: false, fab: false, minimized: true, handles: false },
+    },
+  ]
+
+  it.each(MODE_MATRIX)('模式外观契约 —— $mode', ({ enter, chrome }) => {
+    render(<FloatingAssistant />)
+    enter()
+    expect(screen.queryByTestId('chat-panel-resize-container') !== null).toBe(chrome.panel)
+    expect(screen.queryByTestId('float-assistant-overlay') !== null).toBe(chrome.overlay)
+    expect(screen.queryByTitle('打开黄金策') !== null).toBe(chrome.fab)
+    expect(screen.queryByTestId('float-minimized-window') !== null).toBe(chrome.minimized)
+    expect(screen.queryByTestId('chat-panel-resize-handle') !== null).toBe(chrome.handles)
   })
 })

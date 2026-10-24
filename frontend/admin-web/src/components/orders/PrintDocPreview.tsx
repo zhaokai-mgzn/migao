@@ -5,13 +5,15 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui'
 import {
   printBodyFontPt,
+  printContentInsetMm,
   printPageBoxMm,
-  printPageMarginMm,
   printUsableBoxMm,
   type PrintMediaId,
 } from '@/lib/print-media'
 import { captureNodeToPngBlob, copyPngToClipboard, downloadPng } from '@/lib/print-capture'
+import { extractApiErrorMessage } from '@/lib/api-error'
 import type { PrintTarget } from '@/lib/print-doc'
+import { PRINT_TARGET_SPECS } from '@/lib/print-doc'
 
 /**
  * 打印前的**纸面自检层**（issue #5914 的功能③）—— 真尺寸纸框 + 溢出/页数自检 + 纸型提示。
@@ -104,6 +106,23 @@ export interface PrintDocPreviewProps {
    * 而提示本身又不该印到纸上（它是屏幕态的操作入口）。放页脚 ⇒ 纸面读数与纸面元素都不受影响。
    */
   notice?: ReactNode
+  /**
+   * 单据级的**附加动作**（issue #7288）：某张单据除了系统打印之外还有第二条通道时放这里 ——
+   * 洗水唛的「蓝牙无线打印」（免驱动 Web Bluetooth）就挂在这个槽里。
+   *
+   * 🔴 位置 = 页脚动作行、**「复制截图」之前**（右下角）；不传 ⇒ 页脚与改前逐字一致，
+   * 其它单据（销售单 / 发货单 / 报价单）不受影响。
+   */
+  actions?: ReactNode
+  /**
+   * 本页可打印的单据与**展示顺序**（issue #7544）—— 给了它就长出一排「单据标签」，
+   * 商家在**同一个层里**换单据看，而不是先在页面上找对应的那个按钮。
+   *
+   * 不传 ⇒ 本层与改前逐字一致（发货页 / 加工单生产页各只有一份单据，不需要选择器）。
+   */
+  docs?: readonly PrintTarget[]
+  /** 换单据（配合 `docs`）：调用方应当只切预览目标、**不置位打印目标**（`usePrintDoc().selectPreview`） */
+  onSelect?: (target: PrintTarget) => void
 }
 
 export default function PrintDocPreview({
@@ -114,9 +133,13 @@ export default function PrintDocPreview({
   onPrint,
   onClose,
   notice,
+  actions,
+  docs,
+  onSelect,
 }: PrintDocPreviewProps) {
   const box = printPageBoxMm(media)
-  const margin = printPageMarginMm(media)
+  // 纸框的**版面内缩**（不是 `@page` 边距：A4 的 `@page` 边距是 0、内缩在单据容器 padding 上，issue #7309）
+  const margin = printContentInsetMm(media)
   const usable = printUsableBoxMm(media)
   const stageRef = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(1)
@@ -183,7 +206,9 @@ export default function PrintDocPreview({
         toast.warning(`浏览器不允许写剪贴板，已改为下载 PNG${note}`)
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '截图失败')
+      // 2026-10-17：并入共享原语（UI-112 的形态面判据）—— 本地错误仍用它的 message，
+      // 传输层错误（axios）的 `Request failed with status code NNN` 不再当失败原因上屏。
+      toast.error(extractApiErrorMessage(error, '截图失败'))
     } finally {
       setCapturing(false)
     }
@@ -228,7 +253,45 @@ export default function PrintDocPreview({
           </Button>
         </div>
 
-        {/* ② 真尺寸纸框（按 mm），外层只做缩放适配 */}
+        {/* ② 单据标签（issue #7544）：同页多份单据时**唯一**的选择入口 ——
+            商家不必先在页面上找到「打印哪一份」的按钮，进来就能换。
+            ⚠️ 标签只换预览目标（`onSelect`），**不置位打印目标** ⇒ 「换一份看看」不会改掉这次要印的纸。 */}
+        {docs && docs.length > 1 && onSelect && (
+          <div
+            className="flex flex-wrap items-center gap-2 border-b border-neutral-200 px-4 py-2"
+            role="group"
+            aria-label="选择单据"
+            data-testid="print-preview-docs"
+          >
+            {docs.map((doc) => {
+              const spec = PRINT_TARGET_SPECS[doc]
+              const active = doc === target
+              const box = printPageBoxMm(spec.media)
+              return (
+                <button
+                  key={doc}
+                  type="button"
+                  aria-pressed={active}
+                  data-testid={`print-preview-doc-${doc}`}
+                  onClick={() => onSelect(doc)}
+                  className={`inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 text-sm transition-colors ${
+                    active
+                      ? 'border-primary-500 bg-primary-50 font-medium text-primary-700'
+                      : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50'
+                  }`}
+                >
+                  {spec.title}
+                  {/* 纸型**从介质矩阵取**（不是标签自带的第二份字面量）—— 换纸后这里跟着变 */}
+                  <span className="text-xs font-normal text-neutral-400">
+                    {box.widthMm}×{box.heightMm}mm
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        {/* ③ 真尺寸纸框（按 mm），外层只做缩放适配 */}
         <div className="flex-1 overflow-auto bg-neutral-100 p-4">
           <div
             className="print-preview-stage mx-auto"
@@ -253,7 +316,7 @@ export default function PrintDocPreview({
           </div>
         </div>
 
-        {/* ③ 自检结论 + 出口 */}
+        {/* ④ 自检结论 + 出口 */}
         <div className="border-t border-neutral-200 px-4 py-3">
           {/* 单据级提示槽（issue #6867）：在出口**之前**、纸框**之外** —— 商家先看见「这张纸扫不了」，
               再决定是打还是先补码（放进纸框会污染纸面自检读数，见 `notice` 的 props 注释）。 */}
@@ -276,7 +339,8 @@ export default function PrintDocPreview({
               </span>
             )}
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2" data-testid="print-preview-actions">
+            {actions}
             <Button variant="secondary" onClick={handleCapture} loading={capturing} data-testid="print-preview-capture">
               复制截图
             </Button>

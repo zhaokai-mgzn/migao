@@ -86,6 +86,8 @@ SHEER_VARIANTS = (("熨烫-纱", "熨烫-布"), ("定型-纱", "定型-布"),
 MATRIX_LITERAL_SOURCES = (
     "V71__normalize_routing_model_structure.sql",
     "V79__seed_fabric_route_and_packing_operation.sql",
+    # issue #7523：整卷出库（活目录迁移；4 格价目，布料适用且未定价）
+    "V186__roll_outbound_operation.sql",
 )
 
 
@@ -1103,19 +1105,22 @@ def test_bootstrap_matrix_terminal_equals_the_four_tier_collapse_of_the_migratio
     """
     literals = []
     for name in MATRIX_LITERAL_SOURCES:
-        literals += _matrix_rows(_read(MIGRATION_DIR / name))
-    assert len(literals) == 120, f"迁移字面量解析出 {len(literals)} 行，期望 120"
+        path = MIGRATION_DIR / name
+        if not path.exists():
+            path = _LIVE_MIGRATION_DIR / name
+        literals += _matrix_rows(_read(path))
+    assert len(literals) == 124, f"迁移字面量解析出 {len(literals)} 行，期望 124"
     assert {r["del"] for r in literals} == {None}, (
         "迁移字面量里出现了 `deleted` 列 ⇒ 解析口径变了（迁移侧的字面量没有该列）")
     assert {r["tenant"] for r in literals} == {"1"}, "迁移字面量不止一个租户（bootstrap 是单租户脚本）"
 
     boot = _matrix_rows(_read(SCHEMA_SQL))
-    assert len(boot) == 120, f"bootstrap 的矩阵字面量解析出 {len(boot)} 行，期望 120"
+    assert len(boot) == 124, f"bootstrap 的矩阵字面量解析出 {len(boot)} 行，期望 124"
     assert {r["del"] for r in boot} <= {"0", "1"} and None not in {r["del"] for r in boot}, (
         "bootstrap 的矩阵行必须显式带 `deleted` 列（退场只能靠显式标记表达，不能删行）")
 
     survivors = _four_tier_survivors(literals)
-    assert len(survivors) == 30, f"字面量按四档塌缩出 {len(survivors)} 行，期望 30"
+    assert len(survivors) == 31, f"字面量按四档塌缩出 {len(survivors)} 行，期望 31"
     live = {r["id"]: r for r in boot if r["del"] == "0"}
     dead = {r["id"] for r in boot if r["del"] == "1"}
 
@@ -1123,7 +1128,7 @@ def test_bootstrap_matrix_terminal_equals_the_four_tier_collapse_of_the_migratio
         f"bootstrap 的存活行集合 ≠ 四档选出的幸存行集合：\n"
         f"  仅 bootstrap 存活 = {sorted(set(live) - {r['id'] for r in survivors.values()})}\n"
         f"  仅四档选中 = {sorted({r['id'] for r in survivors.values()} - set(live))}")
-    assert len(live) == 30 and len(dead) == 90, f"存活 {len(live)} / 退场 {len(dead)}，期望 30 / 90"
+    assert len(live) == 31 and len(dead) == 93, f"存活 {len(live)} / 退场 {len(dead)}，期望 31 / 93"
     assert set(live) | dead == {r["id"] for r in literals}, (
         "bootstrap 的行集合 ≠ 迁移字面量的行集合（行整个消失 / 凭空多出）⇒ 两条口径不可比对")
 
@@ -1153,13 +1158,13 @@ def test_bootstrap_matches_migration_chain_terminal_state(psql):
     boot_sql = _schema_matrix_sql(schema)
     # ⚠️ 行数自证要读**整份** `schema.sql`（`boot_sql` 是喂库用的片段，右边界刻意止于
     # `ON CONFLICT` 之前 ⇒ 它没有语句终止符，不是本解析器的输入形态）。
-    assert len(_matrix_rows(schema)) == 120, (
-        f"schema.sql 的矩阵字面量解析出 {len(_matrix_rows(schema))} 行，期望 120")
+    assert len(_matrix_rows(schema)) == 124, (
+        f"schema.sql 的矩阵字面量解析出 {len(_matrix_rows(schema))} 行，期望 124")
 
     psql(_DDL + "INSERT INTO tenants (id) VALUES (1);")
     psql(boot_sql)
     seeded = psql("SELECT count(*) FROM production_operation_positions;").strip()
-    assert seeded == "120", f"schema.sql 的 120 行没真插进去（实际 {seeded}）⇒ 本判据会空跑"
+    assert seeded == "124", f"schema.sql 的 124 行没真插进去（实际 {seeded}）⇒ 本判据会空跑"
 
     psql(_as_runner_would(_migration()))
 
@@ -1197,9 +1202,9 @@ def test_bootstrap_matches_migration_chain_terminal_state(psql):
     assert set(chain_alive) == set(boot_alive), (
         f"存活**逻辑工序集合**分裂：仅迁移链有 = {sorted(set(chain_alive) - set(boot_alive))}，"
         f"仅 bootstrap 有 = {sorted(set(boot_alive) - set(chain_alive))}")
-    assert len(chain_alive) == 30, f"迁移链终态的存活逻辑工序 = {len(chain_alive)}，期望 30"
-    assert len(chain_deleted) == 30, (
-        f"迁移链终态被软删的逻辑工序 = {len(chain_deleted)}，期望 30（120 行 = 30 逻辑工序 × 4 部位）")
+    assert len(chain_alive) == 31, f"迁移链终态的存活逻辑工序 = {len(chain_alive)}，期望 31"
+    assert len(chain_deleted) == 31, (
+        f"迁移链终态被软删的逻辑工序 = {len(chain_deleted)}，期望 31（124 行 = 31 逻辑工序 × 4 部位）")
     drift = {k: (boot_alive[k], chain_alive[k]) for k in chain_alive if boot_alive[k] != chain_alive[k]}
     assert drift == {}, f"逐逻辑工序（价/适用/部位）分裂（前 = bootstrap，后 = 迁移链）：{drift}"
     assert {v[2] for v in chain_alive.values()} == {"通用"}, (
@@ -1207,13 +1212,13 @@ def test_bootstrap_matches_migration_chain_terminal_state(psql):
     assert {v[1] for v in chain_alive.values()} == {"true"}, (
         f"迁移链终态的存活行 applicable 不是全 TRUE：{sorted({v[1] for v in chain_alive.values()})}")
     deleted_rows = psql("SELECT count(*) FROM production_operation_positions WHERE deleted = 1;").strip()
-    assert deleted_rows == "90", f"退场行 = {deleted_rows}，期望 90（120 − 30）"
+    assert deleted_rows == "93", f"退场行 = {deleted_rows}，期望 93（124 − 31）"
     assert set(chain_deleted) == set(chain_alive), (
         f"软删逻辑工序集合 ≠ 存活集合：仅软删 = {sorted(set(chain_deleted) - set(chain_alive))}，"
         f"仅存活 = {sorted(set(chain_alive) - set(chain_deleted))}")
-    assert len(chain_alive) + int(deleted_rows) == 120, "存活 30 + 退场 90 必须 = 120（可机械核验）"
+    assert len(chain_alive) + int(deleted_rows) == 124, "存活 31 + 退场 93 必须 = 124（可机械核验）"
     # ── 真库读数（PR 证据直接引这段输出） ──
-    print("[#4937 真库 · schema.sql 120 行字面量跑合并后的 V102]")
+    print("[#4937 真库 · schema.sql 124 行字面量跑合并后的 V102]")
     print(f"  存活 = {len(chain_alive)} 行 / 退场 = {deleted_rows} 行 / 总 = "
           f"{psql('SELECT count(*) FROM production_operation_positions;').strip()} 行")
     print(f"  存活行的 position 取值集 = {sorted({v[2] for v in chain_alive.values()})}")
@@ -1254,13 +1259,13 @@ def _schema_alive_matrix_rows(schema: str) -> list:
 def test_collapsed_matrix_judgement_detects_a_resurrected_cell():
     """红证（静态）：把一行**已软删**的矩阵格改成存活 ⇒ 存活行数判据必红。
 
-    钉的是上面两条 bootstrap 判据的**判别力**：它们断言「bootstrap 的存活行 = 30」——
+    钉的是上面两条 bootstrap 判据的**判别力**：它们断言「bootstrap 的存活行 = 31」——
     本红证证明「复活一格」这个漂移**真的**会被照出来，不是恒真的空断言。
     """
     schema = _read(SCHEMA_SQL)
     alive = _schema_alive_matrix_rows(schema)
-    assert len(alive) == 30, f"bootstrap 的存活矩阵行 = {len(alive)}，期望 30（红证前提不成立）"
-    assert len({r[1] for r in alive}) == 30, "存活行应恰好 30 个逻辑工序（一工序一行）"
+    assert len(alive) == 31, f"bootstrap 的存活矩阵行 = {len(alive)}，期望 31（红证前提不成立）"
+    assert len({r[1] for r in alive}) == 31, "存活行应恰好 31 个逻辑工序（一工序一行）"
 
     # 复活一格：找一条**已软删**的矩阵行，把它的 `deleted` 由 1 改成 0（逐字节替换，
     # 不用正则做替换 —— 行形态里有 8 列，正则容易在引号/逗号上失手）
@@ -1272,15 +1277,18 @@ def test_collapsed_matrix_judgement_detects_a_resurrected_cell():
     assert injected != schema, "注入没生效 ⇒ 本红证是空断言"
 
     after = _schema_alive_matrix_rows(injected)
-    assert len(after) == 31, (
-        f"复活一格后存活行数 = {len(after)}（期望 31）⇒ 存活行数判据对「复活」无判别力")
+    assert len(after) == 32, (
+        f"复活一格后存活行数 = {len(after)}（期望 32 = 31 + 1）⇒ 存活行数判据对「复活」无判别力")
     assert {r[1] for r in after} == {r[1] for r in alive}, (
         "复活同一逻辑工序的另一格 ⇒ 逻辑工序集合不变（判据的判别力落在**行数**上，不是集合上）"
         "—— 这正是本判据要说明的边界")
     # 迁移字面量侧同款：把一条**本该退场**的行改成存活 ⇒ 存活集合 ≠ 四档选中的幸存行集合
     literals = []
     for name in MATRIX_LITERAL_SOURCES:
-        literals += _matrix_rows(_read(MIGRATION_DIR / name))
+        path = MIGRATION_DIR / name
+        if not path.exists():
+            path = _LIVE_MIGRATION_DIR / name
+        literals += _matrix_rows(_read(path))
     survivors = {r["id"] for r in _four_tier_survivors(literals).values()}
     live_ids = {r["id"] for r in _matrix_rows(injected) if r["del"] == "0"}
     assert live_ids != survivors, "复活一格后存活集合仍等于四档幸存集 ⇒ 那条判据是空断言"

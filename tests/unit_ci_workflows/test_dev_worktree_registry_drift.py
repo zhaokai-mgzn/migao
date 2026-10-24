@@ -62,7 +62,9 @@ ENTRY_ASSERT_FN = "wt_registry_assert_for_entry"
 GUARD_FN = "wt_registry_guard"
 DOCTOR_FN = "wt_registry_doctor"
 #: 必须过断言的命令函数（新增会动 worktree 存量的命令 ⇒ 必须同批加进这里）。
-ENTRY_COMMANDS = ("cmd_add", "cmd_rm", "cmd_rebase")
+ENTRY_COMMANDS = ("cmd_add", "cmd_rm", "cmd_rebase",
+                  # issue #7229：写 git 配置（core.hooksPath）而非工作区，仍走同一入口纪律
+                  "cmd_hooks_install")
 #: **只读**命令函数（逐条写明它凭什么不过这道断言 —— 名单只许按此口径增长）。
 READ_ONLY_COMMANDS = {
     "cmd_list": "只 `git worktree list` + 打印会话锁，不改任何状态",

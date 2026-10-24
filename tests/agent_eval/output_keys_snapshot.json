@@ -133,7 +133,7 @@
    "shape_notes": [
     "data=dict(data, proactive=findings, proactive_status=status)"
    ],
-   "source_sha256": "973fb044c2b76ef72a802bcfe799e83757c26e99136067a12c663aa7226143fc"
+   "source_sha256": "14f05880ba78476f84ffa6a2e61004874d01e3136902532a599581e54ce9e3dc"
   },
   "category_manage": {
    "actions": {
@@ -164,6 +164,24 @@
     "data=response.get('data') or {}"
    ],
    "source_sha256": "cb63b3256f1079550c94ae4be45644c1c1d72d61ee410458c1130d29e36678be"
+  },
+  "craft_calc_config_update": {
+   "actions": null,
+   "dynamic": false,
+   "file": "backend/ai-agent-service/app/tools/craft_calc_config_update.py",
+   "keys": [
+    "after",
+    "before",
+    "keys",
+    "source_before"
+   ],
+   "literal_keys": [
+    "after",
+    "before",
+    "keys",
+    "source_before"
+   ],
+   "source_sha256": "5b36373e963b5c8b49d326e011d4de972fd81e43691b5eea5fcfe0396658b7bc"
   },
   "craft_config_query": {
    "actions": null,
@@ -224,7 +242,7 @@
     "**{'panels': panels} if panels is not None else {}",
     "data=(None, meters_fixed_height, f'fixed_height{suffix}', '')"
    ],
-   "source_sha256": "100073a78198e557ece63a73d6aca987571d34cf80c2795c883683bff8edc6e6"
+   "source_sha256": "960c85104cb224f9d2904b496df8a78a6084627c181b186901be9cc901f6ded5"
   },
   "customer_address_query": {
    "actions": null,
@@ -673,7 +691,21 @@
     "data=await get_logistics_trace_cache().get(context.tenant_id, tra",
     "data=self._transform_api_response(api_result, tracking_number, co"
    ],
-   "source_sha256": "cfbde6ef43bdaf165b6fdbd448cdff038a278aa3a212f620c96434507560474f"
+   "source_sha256": "14951e249fbfd96d7d3ef1d5eef778b6c3dbfe533b672e19b31766cae4e2238b"
+  },
+  "marketing_poster": {
+   "actions": null,
+   "dynamic": false,
+   "file": "backend/ai-agent-service/app/tools/marketing_poster.py",
+   "keys": [
+    "copy",
+    "product"
+   ],
+   "literal_keys": [
+    "copy",
+    "product"
+   ],
+   "source_sha256": "299974d7361e6c3099d663a4d23d516338d251fbcadf7906d0e500351e1bbcef"
   },
   "nav_guide": {
    "actions": null,
@@ -772,7 +804,7 @@
     "data=response.get('data', {})",
     "order_data ← response.get('data', {})"
    ],
-   "source_sha256": "da778ab34bc6611af504510bfb61eea8e8390b838513509e9cd73453bedb017b"
+   "source_sha256": "1fc26a95ecce7573440250892ec3eeedb256e7b07ea14c91224b91c3c2c45215"
   },
   "order_manage": {
    "actions": null,
@@ -836,7 +868,7 @@
     "data ← response.get('data', {})",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "9387b87b05a78492d4a5bdad5fc0cd4b113e7452ffbebcdfb62762a02e38dc5b"
+   "source_sha256": "a1f0a5d9dd210916e43f92542ca6b2778357dd28b18994bc4c0e5a05e6d68261"
   },
   "payment_qrcode_query": {
    "actions": null,
@@ -957,7 +989,7 @@
     "total",
     "total_pages"
    ],
-   "source_sha256": "3317a1d815e917964b0a659bae1dfcd0529a4ee1416794653f5e3fd88df04639"
+   "source_sha256": "6b3c4cb041a40669f711a2ca106d8ea46e19d3420295998ac5f91f77d98e689f"
   },
   "processing_order_generate": {
    "actions": null,
@@ -969,7 +1001,7 @@
    "literal_keys": [
     "results"
    ],
-   "source_sha256": "764579235de50706fde2cb69e1ff238dac3724f705bd97ae2f23fd9b33216b9d"
+   "source_sha256": "9747aeee412a2d24e3a1e137e66cab804939af55981ce0fb1891de19abcc90ff"
   },
   "processing_order_query": {
    "actions": {
@@ -992,7 +1024,7 @@
    "shape_notes": [
     "data=dict(result)"
    ],
-   "source_sha256": "1c8d53198a6bbd6ca1e5a0d6251d2ed5821f26ba5324c72abcd0a112f2c977ef"
+   "source_sha256": "6441e10ed8abedf17e7542a53a40916f244246b94889c01ecaca82cf5977080b"
   },
   "processing_order_set_query": {
    "actions": null,
@@ -1013,7 +1045,7 @@
     "data ← response.get('data')",
     "data=response.get('data')"
    ],
-   "source_sha256": "67e7ed0ccdeb62b6ba442d21f7d190cb00dd62e449cdd828a4580932281e97ed"
+   "source_sha256": "762db6524e53eb22ecb2b34aba60478768cc60ac005681563c6fca99e232e677"
   },
   "processing_order_update": {
    "actions": null,
@@ -1080,7 +1112,7 @@
    "shape_notes": [
     "data=dict(response.get('data') or {})"
    ],
-   "source_sha256": "e0fdb950af5be55e868739b234051d33a591bbbdc21ec681a0944505d04602aa"
+   "source_sha256": "4e790119241266923346e7605d61921e45dbacb801d608f76d4e85ef62883747"
   },
   "product_detail": {
    "actions": null,
@@ -1097,6 +1129,22 @@
     "product ← self._format_product(data)"
    ],
    "source_sha256": "4bb1144c6443bfdc4abbd1947b4b825d4c44f9bd918d4b272a3e145466ffe175"
+  },
+  "product_image_generate": {
+   "actions": null,
+   "dynamic": false,
+   "file": "backend/ai-agent-service/app/tools/product_image_generate.py",
+   "keys": [
+    "image_url",
+    "model",
+    "product"
+   ],
+   "literal_keys": [
+    "image_url",
+    "model",
+    "product"
+   ],
+   "source_sha256": "1c227869f937200534e07759f774adfa0714db61a25948732de3b572cf10b8ff"
   },
   "product_manage": {
    "actions": {
@@ -1167,7 +1215,7 @@
    "shape_notes": [
     "data=response.get('data', {})"
    ],
-   "source_sha256": "9f11188462cb2bbeb81200cacbb79b42a24ca53e94d56f9a728a971531370f47"
+   "source_sha256": "29683309e606cabd197e354b93e9ece5ee2f54fbad5ff39fda79f4605f92efd3"
   },
   "production_progress_query": {
    "actions": null,
@@ -1411,7 +1459,7 @@
     "params",
     "validated"
    ],
-   "source_sha256": "22a15cdcc1458afdd0b3d9fc67d2a1c0fe32af25d1c01cf3fb49a38190ffe5ce"
+   "source_sha256": "a08135cc31e95017d067ecf2fd1939a3f0fda5c36a55326bc61450716cb5af67"
   }
  }
 }

@@ -42,7 +42,8 @@ public class ProductSkuInput {
     private BigDecimal price;
 
     /**
-     * 库存
+     * 🔴 已下线（issue #7597）：商品档案不再设置 SKU 库存 —— 该字段被**忽略**
+     * （新建 SKU 从 0 起算、既有 SKU 保持现值）。保留字段仅为兼容旧客户端载荷。
      */
     private BigDecimal stock;
 

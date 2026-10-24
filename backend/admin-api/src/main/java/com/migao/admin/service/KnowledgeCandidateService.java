@@ -71,17 +71,26 @@ public class KnowledgeCandidateService {
         return adoptInternal(id, patch);
     }
 
-    /** 拒绝：记录拒绝原因，不产生卡片 */
+    /**
+     * 拒绝：记录拒绝原因，不产生卡片。
+     *
+     * <p><b>并发闸 = 条件更新（issue #6962 P5-②）</b>：修前 {@code getOwned} 读出 {@code pending}
+     * 判完、再 {@code updateById}（WHERE 仅主键 ⇒ <b>无谓词</b>）⇒ 同一个候选被并发「采纳 × 拒绝」
+     * 时两个都过读判、两个都成功，终态由后写者决定。修后置态走
+     * {@link KnowledgeCandidateMapper#markReviewedIfPending}（谓词
+     * {@code id + tenant_id + status='pending'}），按<b>影响行数</b>判归属；0 行 ⇒ 409 + 实际当前态。</p>
+     */
     public void reject(String id, String note) {
         KnowledgeCandidate candidate = getOwned(id);
         if (!"pending".equals(candidate.getStatus())) {
             throw BusinessException.validationError("仅待确认的候选可拒绝");
         }
-        candidate.setStatus("rejected");
-        candidate.setStatusNote(StringUtils.hasText(note) ? note : "商家拒绝");
-        candidate.setReviewedBy("admin");
-        candidate.setReviewedAt(OffsetDateTime.now());
-        knowledgeCandidateMapper.updateById(candidate);
+        int affected = knowledgeCandidateMapper.markReviewedIfPending(
+                id, candidate.getTenantId(), "rejected",
+                StringUtils.hasText(note) ? note : "商家拒绝", "admin", OffsetDateTime.now());
+        if (affected == 0) {
+            throw conflictOnStaleStatus(id, "拒绝");
+        }
         log.info("拒绝提炼候选: id={}, tenantId={}, note={}", id, candidate.getTenantId(), note);
     }
 
@@ -95,6 +104,16 @@ public class KnowledgeCandidateService {
         String category = patch != null ? patch.getSuggestedCategory() : candidate.getSuggestedCategory();
         String keywords = patch != null ? patch.getSuggestedKeywords() : candidate.getSuggestedKeywords();
 
+        // ① 抢「发布权」：条件更新（谓词 id + tenant_id + status='pending'），按影响行数判归属。
+        //    必须**先**抢到再插卡 —— 否则并发双采纳会各自插一张卡（修前实测 2 张）。
+        int affected = knowledgeCandidateMapper.markReviewedIfPending(
+                id, candidate.getTenantId(), patch != null ? "edited" : "adopted", null, "admin",
+                OffsetDateTime.now());
+        if (affected == 0) {
+            throw conflictOnStaleStatus(id, "采纳");
+        }
+
+        // ② 抢到发布权的那一次才插卡
         KnowledgeCard card = KnowledgeCard.builder()
                 .tenantId(candidate.getTenantId())
                 .title(title)
@@ -110,13 +129,36 @@ public class KnowledgeCandidateService {
                 .createdBy("adopt")
                 .build();
         knowledgeCardMapper.insert(card);
-
-        candidate.setStatus(patch != null ? "edited" : "adopted");
-        candidate.setReviewedBy("admin");
-        candidate.setReviewedAt(OffsetDateTime.now());
-        knowledgeCandidateMapper.updateById(candidate);
         log.info("采纳提炼候选: id={}, tenantId={}, cardId={}, edited={}", id, candidate.getTenantId(), card.getId(), patch != null);
         return card;
+    }
+
+    /**
+     * 抢发布权落败 ⇒ 409 + <b>实际当前态</b>（回读最新行，不拿读判时的旧值充当现状）。
+     *
+     * <p>文案<b>不指内部端点</b>（{@code restricted_literal_leaks_ledger} 的射程）：只说该做什么。</p>
+     */
+    private BusinessException conflictOnStaleStatus(String id, String action) {
+        KnowledgeCandidate fresh = knowledgeCandidateMapper.selectById(id);
+        String actual = fresh != null ? fresh.getStatus() : "未知";
+        return BusinessException.conflict(
+                "该候选已被他人" + ("adopted".equals(actual) || "edited".equals(actual) ? "采纳" : "处理")
+                        + "（当前状态「" + statusLabel(actual) + "」），无法再次" + action,
+                "请刷新待确认队列后查看最新状态");
+    }
+
+    /** 候选状态的中文标签（409 文案只说实际当前态，不暴露内部枚举值）。 */
+    private static String statusLabel(String status) {
+        if (status == null) {
+            return "未知";
+        }
+        return switch (status) {
+            case "pending" -> "待确认";
+            case "adopted" -> "已采纳";
+            case "edited" -> "编辑后已采纳";
+            case "rejected" -> "已拒绝";
+            default -> status;
+        };
     }
 
     /** 取候选并做租户归属校验（IDOR 防护） */

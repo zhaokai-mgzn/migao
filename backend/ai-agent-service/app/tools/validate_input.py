@@ -353,7 +353,7 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
         "preview": {
             "required": ["batch_type", "items"],
             "batch_type": {"type": str, "min_len": 1,
-                           "label": "批量类型（product_price / product_status / inventory_stock）"},
+                           "label": "批量类型（product_price / inventory_stock）"},
             "items": {"type": list, "min_len": 1,
                       "label": "要改的条目（每项 resourceId/field/oldValue/newValue）"},
         },
@@ -399,6 +399,15 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
             "greeting_template": {"type": str, "min_len": 1, "label": "AI 问候语模板"},
             "business_hours": {"type": str, "min_len": 1, "label": "营业时间描述"},
             "ai_config": {"type": dict, "label": "AI 配置字段（字典）"},
+        },
+    },
+    # issue #7514：算料口径变更（A 档可逆写）—— 规则键 = 工具的隐含动作名 `update`
+    # （与 `product_update` / `sku_update` 同款；判据 = tests/test_validation_rules_invariants.py 的 F6）。
+    "craft_calc_config_update": {
+        "update": {
+            "required": ["changes", "before"],
+            "changes": {"type": dict, "min_len": 1, "label": "要改的算料参数（键 → 新值）"},
+            "before": {"type": dict, "min_len": 1, "label": "同一批键的改前值（逐键核对用）"},
         },
     },
     "sku_update": {

@@ -93,7 +93,9 @@ jwt:
   public-key: ${JWT_PUBLIC_KEY:classpath:rsa/public.pem}
   # Token 过期时间（秒）
   access-token-expiration: 7200  # 2 小时
-  refresh-token-expiration: 604800  # 7 天
+  # 刷新令牌 = 30 天（issue #7249；用户 2026-10-18 裁定「登录态改为1个月」）：
+  # access token 仍是 2 小时（短凭据面不延长），靠 refresh 续；refresh 每次轮换并重新下发 30 天 cookie。
+  refresh-token-expiration: 2592000  # 30 天
   # Cookie 配置
   cookie:
     name: access_token

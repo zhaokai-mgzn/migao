@@ -104,18 +104,31 @@ MIN_FULLNESS = 1.5                 # 褶皱倍数下限（低于影响美观，�
 OVERSIZE_WIDTH_THRESHOLD = 6.0     # 超宽阈值（净窗宽，米）—— 配置键 oversize_width_threshold
 OVERSIZE_HEIGHT_THRESHOLD = 4.0    # 超高阈值（净窗高，米）—— 配置键 oversize_height_threshold
 
-# ── 拼色每折吃布系数（用户 2026-09-19 裁定；纸质「韩折下料速查表」表头原文）──
-# 表头原文：「拼色下料 **1个折 0.65** ／ **2个折 1.2**」——用户明确这是**用料**口径（不是计价）。
-# ⚠️ 与真值源冲突并已按用户裁定改正：`docs/curtain-fabric-quote-rules.md` §10 曾把同一行记成
-# 「拼色**计价** = 按褶数加价（1 折 0.65、2 折 1.2 ≈ 0.6 元/折）」；本表是**用料**（米/折）。
-# 拼色计价（元/折）属 issue #4341 的待裁定项，**本模块不实现**。
-# 余量与单色**同一套**（单开 0.2 / 多开 0.3）：52 折双开 ⇒ 单色 13.3 / 拼1次 34.1 / 拼2次 62.7。
+# ── 拼色（款式）用料：**主布** 与 **配布** 是两段（用户 2026-10-23 裁定，issue #7560）──────────
+# 纸质「韩折下料速查表」表头原文：「拼色下料 **1个折 0.65** ／ **2个折 1.2**」。
+# 🔴 这两个数是**配布定长**（米/幅），**不是**米/折 —— 纸表同页四列（单开/对开 × 下料/主布拼色）
+# 逐行精确复现出了这一支的口径（50 行残差全 0）：
+#   · **主布**仍按 `PLEAT_FABRIC_PER_FOLD`（0.25 米/折）：四条列（含两条拼色列）斜率**同为 0.25**
+#     ⇒ 拼色**不改每折吃布**。按米/折算会自相矛盾：52 折双开 = 34.1 米，而同页纸表
+#     「主布拼色对开」52 折只写 **13.2 米**（旧口径 = 2026-09-19 的误读，本单改正）；
+#   · 拼色**主布余量**是与单色**并列的两个独立参数**：`MARGIN_MIXED_SINGLE`（单开 0.15）
+#     / `MARGIN_MIXED_MULTI`（对开 0.20）；四开与对开同键（与 `MARGIN_MULTI` 同口径）；
+#   · 另配一段**定长**配布 `MIXED_COLOR_PATCH_METERS_BY_TIMES[拼次]`（0.65 / 1.2 米，整幅一次）。
+# 复现读数（6.6m / 52 折双开）：单色 13.3 米；拼1次 13.2+0.65 = 13.85 → 进位 **13.9**；
+# 拼2次 13.2+1.2 = **14.4** 米。（改前 34.1 / 62.7 = 按米/折乘 52 折，超量 2.4~4.4 倍。）
 STYLE_MIXED = "拼色"                # 款式枚举取值（与 frontend order-craft-fields.ts 的 STYLE_OPTIONS 逐字一致）
-# 拼次（**数字**）→ 每折吃布（米）。键刻意是数字：纸表给的是「1 个折 / 2 个折」这两个**档位**，
+# 拼次（**数字**）→ **配布长度**（米）。键刻意是数字：纸表给的是「1 个折 / 2 个折」这两个**档位**，
 # 用中文选项名当键会把「措辞」变成判据（改一个字系数就静默失效 —— CI 判据 ②
 # `tests/unit_ci_workflows/test_tool_input_contract_guards.py` 明令不得新增该类站点），
 # 而**拼次本身是数字**。选项名只是**载体**（`拼N次` 里的 N 才是参数），见 `mixed_times`。
-MIXED_COLOR_PER_FOLD_BY_TIMES: Dict[int, float] = {1: 0.65, 2: 1.2}
+# ⚠️ 配置键名**仍是** `per_fold_mixed_times`（跨端冻结：DB 列 / Java 字段 / 前端类型逐字同名）——
+# 改名 = 列迁移 + 三端同步，属独立包（登记在 issue #7560 的边界段）；键名与语义的错位在键注释里说明。
+MIXED_COLOR_PATCH_METERS_BY_TIMES: Dict[int, float] = {1: 0.65, 2: 1.2}
+#: 拼色**主布**余量（米）—— 与单开的 `MARGIN_SINGLE` / 多开的 `MARGIN_MULTI` **并列的独立参数**
+#: （用户 2026-10-23 逐字：「单开和对开的参数不太一样，在参数上要体现出来」）。
+#: 纸表读数：单开 0.15 / 对开 0.20（每幅比单色少 5cm：拼缝处不再重复留边）。
+MARGIN_MIXED_SINGLE = 0.15
+MARGIN_MIXED_MULTI = 0.20
 # 选项名 → 拼次。选项名是**冻结的 join key**（与 `routing.SPECIAL_OPTION_ROUTINGS` /
 # frontend `SPECIAL_OPTIONS` 逐字一致；改它就是少发工人钱），这里读的是**契约标识符**，
 # 不是从散文里猜语义。
@@ -131,7 +144,7 @@ def mixed_times(option: str) -> Optional[int]:
 # ── 拼色**报价加价**（用户 2026-09-21 裁定；真值源 `docs/curtain-fabric-quote-rules.md` §10 / §11）──
 # 逐字裁定（经 issue #4848）：「**拼色计价规则就是拼色款另加 2.4 元/米 先按这个算吧**」。
 #
-# ⚠️ **与上面的 `MIXED_COLOR_PER_FOLD_BY_TIMES` 是两件事，别搅在一起**：
+# ⚠️ **与上面的 `MIXED_COLOR_PATCH_METERS_BY_TIMES` 是两件事，别搅在一起**：
 #   · 那张表 = 拼色**用料**（米/折，0.65 / 1.2）⇒ 改的是**米数**（已落码、正确，本包不动）；
 #   · 本常量 = 拼色**计价**（元/米）⇒ 改的是**钱**（本包落码）。
 #   旧措辞把纸表那一行记成「拼色**计价** = 按折加价（0.65 / 1.2 ≈ 0.6 元/折）」是**误记** ——
@@ -208,9 +221,12 @@ def resolve_craft_rule(craft: Optional[str]) -> tuple:
 # （并发请求会互相污染）；要改口径请传自己的 config（`resolve_craft_calc_config` 会**深拷贝**嵌套字典）。
 DEFAULT_CRAFT_CALC_CONFIG: MappingProxyType = MappingProxyType({
     "per_fold_single": PLEAT_FABRIC_PER_FOLD,                  # 单色每折吃布（米）
-    "per_fold_mixed_times": dict(MIXED_COLOR_PER_FOLD_BY_TIMES),  # 拼次 → 每折吃布（米）
+    # ⚠️ 键名 `per_fold_mixed_times` 是**历史名**（跨端冻结，issue #7560 边界）；值语义 = **配布长度**（米）
+    "per_fold_mixed_times": dict(MIXED_COLOR_PATCH_METERS_BY_TIMES),
     "margin_single": MARGIN_SINGLE,                            # 单开余量（米）
     "margin_multi": MARGIN_MULTI,                              # 多开余量（米）
+    "margin_mixed_single": MARGIN_MIXED_SINGLE,                # 拼色单开余量（米；与单开并列的独立参数）
+    "margin_mixed_multi": MARGIN_MIXED_MULTI,                  # 拼色多开余量（米）
     "min_fullness": MIN_FULLNESS,                              # 褶倍下限（护栏）
     "tiers": {k: dict(v) for k, v in DEFAULT_CRAFT_TIERS.items()},
     "default_formula": FORMULA_PLEAT,                          # 默认公式 = 韩褶公式
@@ -220,11 +236,20 @@ DEFAULT_CRAFT_CALC_CONFIG: MappingProxyType = MappingProxyType({
     "oversize_height_threshold": OVERSIZE_HEIGHT_THRESHOLD,    # 超高阈值（净窗高，米；issue #5130）
 })
 
-#: 配置里必须是**正数**的键（0/负数 ⇒ 显式报错，不静默回退默认值）
-_POSITIVE_CONFIG_KEYS = (
-    "per_fold_single", "margin_single", "margin_multi",
-    "min_fullness", "hem_margin", "meters_rounding_step",
-    "oversize_width_threshold", "oversize_height_threshold",
+#: 配置里必须是**正数**的键（0/负数 ⇒ 显式报错，不静默回退默认值）。
+#: 🔴 issue #7548（用户 2026-10-23 裁定「都允许设置为0」）后**只剩这一项**：0 米/折 ⇒ 用料 0 米
+#: ⇒ 0 元报价，且 `derive_pleat_count` 要除以它（数学上也不成立）⇒ 有意不放开。
+_POSITIVE_CONFIG_KEYS = ("per_fold_single",)
+
+#: 配置里允许 **0** 的键（负数仍报错）—— 用户 2026-10-23 裁定（issue #7548）。
+#: 每一项的 0 都有明确语义、且不会把用料算成 0：
+#: 余量 / 上下卷边（0 = 不留边）、两个超阈（0 = 全部按超宽/超高）、
+#: 褶倍下限（0 = **关闭**该护栏）、进位步长（0 = **不进位**，见 `ceil_to_step`）。
+#: ⚠️ 与 Java 侧 `CraftCalcConfigService.NON_NEGATIVE_KEYS` 同集合（写面护栏同口径）。
+_NON_NEGATIVE_CONFIG_KEYS = (
+    "margin_single", "margin_multi", "margin_mixed_single", "margin_mixed_multi",
+    "min_fullness", "hem_margin",
+    "meters_rounding_step", "oversize_width_threshold", "oversize_height_threshold",
 )
 
 
@@ -586,7 +611,7 @@ def derive_plan(
         join_h, join_w = win["join_height_m"], win["join_width_m"]
 
     # ── 拼N次（R3/R5）：N = 实际拼接次数，**用单色公式**（调用方传进来的 T 本就是单色口径）──
-    # ⚠️ `MIXED_COLOR_PER_FOLD_BY_TIMES` 是**拼色款式**的每折吃布系数，与「拼N次」**是两件事**
+    # ⚠️ `MIXED_COLOR_PATCH_METERS_BY_TIMES` 是**拼色款式**的每折吃布系数，与「拼N次」**是两件事**
     # （用户 2026-09-22 裁定 2 逐字区分）⇒ 这里**一个字都不加**。
     splice_option = splice_option_for(win_splice)
     if win_splice is not None and win_splice >= 4:
@@ -673,7 +698,8 @@ def resolve_craft_calc_config(config: Optional[Dict[str, Any]] = None) -> Dict[s
     **fail-closed**：配置来自商家（**不可信输入**）⇒ 非法值**显式报错**，
     **不得**静默回退默认值（静默 = 算错钱且无人知道）。校验项：
 
-    - 数值键必须 > 0（`per_fold_single` / 余量 / `min_fullness` / `hem_margin` / 进位步长）；
+    - 数值键：`per_fold_single` 必须 > 0；其余（余量 / `min_fullness` / `hem_margin` / 进位步长 /
+      两个超阈）允许 **0**（issue #7548：0 = 不留边 / 关闭护栏 / 不进位 / 全部按超额），负数仍拒；
     - `per_fold_mixed_times` 的键必须是**正整数**、值必须 > 0；
     - `tiers` 非空，且每档 `fullness` > 0；
     - `default_formula` 必须是已登记的公式名。
@@ -685,6 +711,10 @@ def resolve_craft_calc_config(config: Optional[Dict[str, Any]] = None) -> Dict[s
         value = merged.get(key)
         if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
             raise ValueError(f"算料配置 {key} 必须是正数（收到 {value!r}）")
+    for key in _NON_NEGATIVE_CONFIG_KEYS:
+        value = merged.get(key)
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
+            raise ValueError(f"算料配置 {key} 必须是非负数（0 允许、负数不行；收到 {value!r}）")
     mixed = merged.get("per_fold_mixed_times")
     if not isinstance(mixed, dict) or not mixed:
         raise ValueError(f"算料配置 per_fold_mixed_times 必须是非空映射（收到 {mixed!r}）")
@@ -717,9 +747,15 @@ def ceil_to_step(value: float, step: float) -> float:
     ⚠️ 二进制噪声：`2.3 * 10 == 22.999999999999996`、`13.3 * 10 == 133.00000000000003`
     —— 若直接 `ceil`，前者会被当成「要进位」（纸表 12.3 → 12.4）。故先用
     `round(..., 9)` 把 1e-9 级的表示误差吸掉，**再**进位（1e-9 米 = 1 纳米，物理上无意义）。
+
+    🔴 `step == 0` ⇒ **不进位**（原值返回，同样只吸 1e-9 级噪声）—— 用户 2026-10-23 裁定
+    「都允许设置为0」（issue #7548）：商家把「用料进位步长」设 0 就是「我不要求按 0.1 米进位」。
+    负数仍是配置错误（写面已拒，引擎也 fail-closed）。
     """
-    if step <= 0:
-        raise ValueError(f"进位步长必须是正数（收到 {step}）")
+    if step < 0:
+        raise ValueError(f"进位步长不能为负数（收到 {step}）")
+    if step == 0:
+        return round(value, 9)
     units = round(value / step, 9)
     return round(math.ceil(units) * step, 9)
 
@@ -730,51 +766,72 @@ def margin_for_open_count(open_count: int = 1, config: Optional[Dict[str, Any]] 
     return cfg["margin_single"] if open_count <= 1 else cfg["margin_multi"]
 
 
-def per_panel_margin(open_count: int = 1, config: Optional[Dict[str, Any]] = None) -> float:
+def mixed_margin_for_open_count(
+    open_count: int = 1,
+    config: Optional[Dict[str, Any]] = None,
+) -> float:
+    """拼色**主布**的余量（米）：单开读 `margin_mixed_single`、多开读 `margin_mixed_multi`。
+
+    🔴 **单开与多开是两套参数**（用户 2026-10-23 逐字：「单开和对开的参数不太一样，在参数上要体现出来」）——
+    与 `margin_single` / `margin_multi` 并列、各自可改，**不是**从单色余量减一个固定值推导出来的。
+    默认值 = 纸表读数（单开 0.15 / 对开 0.20；四开与对开同键，与单色的余量口径一致）。
+    """
+    cfg = config or DEFAULT_CRAFT_CALC_CONFIG
+    return cfg["margin_mixed_single"] if open_count <= 1 else cfg["margin_mixed_multi"]
+
+
+def per_panel_margin(
+    open_count: int = 1,
+    config: Optional[Dict[str, Any]] = None,
+    margin_total: Optional[float] = None,
+) -> float:
     """打开方式开数 → **每片**余量（米）= 总余量 ÷ 开数。
 
     逐片口径（issue #4527）要求 `总用料 = 每片用料 × 开数` 成立。余量是**整幅窗帘**的包边量
     （单开：两侧包边各 10cm；多开：每片外侧包边 10cm + 内侧对缝 5cm —— 真值源 §8），
     若**每片都加满**再乘开数，等于把包边量按开数翻倍（6.6m 双开 13.3 → 13.6 米，
     改钱且无依据）⇒ 每片余量取 `总余量 ÷ 开数`，使 `每片 × 开数` 与既有的总余量**逐值一致**。
+
+    `margin_total` 非 None ⇒ 用调用方给的总余量（拼色主布 = `mixed_margin_for_open_count`，
+    issue #7560）—— 除的仍是**开数**，逐片口径不变。
     """
-    return margin_for_open_count(open_count, config) / open_count
+    total = margin_for_open_count(open_count, config) if margin_total is None else margin_total
+    return total / open_count
 
 
-def resolve_per_fold(
+def mixed_patch_meters(
     style: Optional[str] = None,
     special_options: Optional[List[str]] = None,
     config: Optional[Dict[str, Any]] = None,
 ) -> float:
-    """款式/拼次 → 每折吃布（米）。
+    """款式/拼次 → **配布长度**（米）；`0.0` = 这一单没有配布（非拼色 / 没给拼次 / 拼次未登记）。
 
-    口径（用户 2026-09-19 裁定，纸质速查表表头）：
-      · `style=拼色` 且部位级特殊选项含 `拼1次` / `拼2次` ⇒ 0.65 / 1.2 米每折；
-      · 其余（含 `style=拼色` 但**没给**拼次）⇒ 单色口径 0.25。
+    口径（用户 2026-10-23 裁定，issue #7560；纸表表头「拼色下料 1个折 0.65 / 2个折 1.2」）：
+      · `style=拼色` 且特殊选项含**纸表已登记的拼次** `拼1次` / `拼2次` ⇒ 0.65 / 1.2 米（整幅一次）；
+      · 其余 ⇒ 0.0（主布仍按单色每折公式走）。
 
-    ⚠️ **纸表未登记的拼次**（如 `拼3次`：`mixed_times` 解析得出 3，但配置里没有 3）
-    **不在此静默兜底** —— 本函数只负责「有登记系数就取它」，**缺口判定由调用方显式做**
-    （`mixed_per_fold_gap`），以免把「未登记」与「单色」混成同一个数（那就是**少算用料**）。
+    ⚠️ **纸表未登记的拼次**（如 `拼3次`）**不在此静默兜底** —— 本函数只负责「有登记就取它」，
+    **缺口判定由调用方显式做**（`mixed_patch_gap`），以免把「未登记」与「单色」混成同一个数。
     """
     cfg = config or DEFAULT_CRAFT_CALC_CONFIG
     if style != STYLE_MIXED:
-        return cfg["per_fold_single"]
+        return 0.0
     for option in special_options or []:
         times = mixed_times(option)
         if times in cfg["per_fold_mixed_times"]:
-            return cfg["per_fold_mixed_times"][times]
-    return cfg["per_fold_single"]
+            return float(cfg["per_fold_mixed_times"][times])
+    return 0.0
 
 
-def mixed_per_fold_gap(
+def mixed_patch_gap(
     special_options: Optional[List[str]] = None,
     config: Optional[Dict[str, Any]] = None,
 ) -> Optional[str]:
-    """拼色下**未登记用料系数**的拼次（如 `拼3次`）→ 该选项名；无缺口 → None。
+    """拼色下**未登记配布长度**的拼次（如 `拼3次`）→ 该选项名；无缺口 → None。
 
-    判据与系数表**同源**：`mixed_times` 解析得出拼次 N，而 N 不在配置的
+    判据与配布表**同源**：`mixed_times` 解析得出拼次 N，而 N 不在配置的
     `per_fold_mixed_times` 里 ⇒ 缺口。**没有**平行的「未登记清单」可漂移
-    （改一处忘一处 = 将来加 `拼4次` 时静默退回单色系数 ⇒ 少算用料）。
+    （改一处忘一处 = 将来加 `拼4次` 时静默退回单色口径 ⇒ 少算用料）。
 
     为什么不猜：纸表表头只有「1个折 0.65 / 2个折 1.2」两行，`拼3次` 是**表外**项
     ⇒ 插值（0.65→1.2 线性外推）或退回单色 0.25 都是**发明口径**。调用方据此 fail-closed。
@@ -841,11 +898,25 @@ def explicit_accessories(
     return rows, total
 
 
+def _require_min_fullness(fullness: float, config: Dict[str, Any]) -> None:
+    """褶倍**护栏**（唯一实现）：低于 `min_fullness` ⇒ fail-closed（可配但**不可关**）。
+
+    倍数法（`build_quote` 的 `fullness` 分支，issue #7649）与褶数法（{@link derive_pleat_count}）
+    **同一把尺子**：两处各写一份判定的后果 = 同一份 `tiers` 配置在两条公式下结论不一致
+    （一条 400、一条静默放行）。
+    """
+    if fullness < config["min_fullness"]:
+        raise ValueError(
+            f"褶皱倍数 {fullness} 低于行业下限 {config['min_fullness']}，影响美观，请选择更高倍数档位"
+        )
+
+
 def derive_pleat_count(
     width: float,
     fullness: float,
     open_count: int = 1,
     config: Optional[Dict[str, Any]] = None,
+    margin_total: Optional[float] = None,
 ) -> tuple[int, str]:
     """倍数意图 → 褶数实现（按开数取整：对开偶数 / 四开 4 的倍数）。
 
@@ -857,13 +928,12 @@ def derive_pleat_count(
     Returns: (褶数, 告警) — 告警非空表示做过取整调整。
     """
     cfg = config or DEFAULT_CRAFT_CALC_CONFIG
-    if fullness < cfg["min_fullness"]:
-        raise ValueError(
-            f"褶皱倍数 {fullness} 低于行业下限 {cfg['min_fullness']}，影响美观，请选择更高倍数档位"
-        )
-    pleats = int(
-        round((width * fullness - margin_for_open_count(open_count, cfg)) / cfg["per_fold_single"])
-    )
+    _require_min_fullness(fullness, cfg)
+    # 余量：单色走 `margin_single` / `margin_multi`；拼色由调用方传 `margin_total`
+    # （= `mixed_margin_for_open_count`）—— **算折数用的余量与算用料用的余量必须同一个**
+    # （否则公式串里的推导链与末段用料对不上，issue #7560 实测：串里印 0.2、折数却按 0.3 反算）
+    margin = margin_for_open_count(open_count, cfg) if margin_total is None else margin_total
+    pleats = int(round((width * fullness - margin) / cfg["per_fold_single"]))
     pleats = max(pleats, open_count)
     if open_count > 1:
         adjusted = math.ceil(pleats / open_count) * open_count
@@ -883,6 +953,8 @@ def calculate_fabric_by_pleats(
     width: Optional[float] = None,
     per_fold: Optional[float] = None,
     config: Optional[Dict[str, Any]] = None,
+    patch_meters: float = 0.0,
+    margin_total: Optional[float] = None,
 ) -> tuple[float, str, dict]:
     """褶数法算料（**逐片**口径，issue #4527）：总用料 = 每片用料 × 开数。
 
@@ -890,8 +962,9 @@ def calculate_fabric_by_pleats(
     每片褶数 = 总褶数 ÷ 开数。**每片余量 = 总余量 ÷ 开数** ⇒ `每片 × 开数` 与既有的
     「`per_fold × 总褶数 + 总余量`」**逐值一致**（不改钱；见 `per_panel_margin` 的口径说明）。
 
-    `per_fold` = 每折吃布（米）：单色 `per_fold_single`（缺省 0.25）；拼色走
-    `per_fold_mixed_times`（拼1次 0.65 / 拼2次 1.2 —— 用户 2026-09-19 裁定）。**余量不随拼色变化**。
+    `per_fold` = 每折吃布（米）：缺省 `per_fold_single`。**拼色不改每折吃布**（issue #7560：
+    四列纸表斜率同为 0.25）—— 拼色改的是**余量**（`margin_total` 传
+    `mixed_margin_for_open_count`）与另加的**配布**（`patch_meters` 传 `mixed_patch_meters`）。
 
     用料米数**向上进位**到 `meters_rounding_step`（默认 0.1，issue #4527 判据 3）——
     进位在**总用料**上做一次，**不得**先对每片进位再乘开数（那会多算 ≤ 0.2 米）。
@@ -906,17 +979,21 @@ def calculate_fabric_by_pleats(
         warning = f"褶数 {pleat_count} 无法被开数 {open_count} 整除，已取最近可行 {adjusted} 折"
         pleat_count = adjusted
     coefficient = cfg["per_fold_single"] if per_fold is None else per_fold
+    margin = margin_for_open_count(open_count, cfg) if margin_total is None else margin_total
     per_panel_pleats = pleat_count // open_count if open_count > 1 else pleat_count
-    margin_per_panel = per_panel_margin(open_count, cfg)
+    margin_per_panel = per_panel_margin(open_count, cfg, margin_total=margin)
     per_panel_meters = coefficient * per_panel_pleats + margin_per_panel
-    meters = ceil_to_step(per_panel_meters * open_count, cfg["meters_rounding_step"])
+    # 配布（拼色）是**整幅一次**的定长，不与开数相乘（纸表表头未按开数区分 —— issue #7560 边界）
+    meters = ceil_to_step(per_panel_meters * open_count + patch_meters,
+                          cfg["meters_rounding_step"])
     info = {
         "pleat_count": pleat_count,
         "per_panel_pleats": per_panel_pleats,
         "per_panel_meters": round(per_panel_meters, 4),
         "open_count": open_count,
-        "margin": margin_for_open_count(open_count, cfg),
+        "margin": margin,
         "per_fold": coefficient,
+        "patch_meters": round(patch_meters, 4),
         "source": source,
     }
     if width:
@@ -1522,12 +1599,16 @@ def _formula_text(
     open_count: int,
     meters: float,
     per_fold: float,
+    patch_meters: float = 0.0,
 ) -> str:
     """可读公式串 —— **后端产出**，与数值同源（issue #4421 交付物 1 / issue #4527 判据 4）。
 
     必须**明确写出所用公式**（`韩褶公式：` / `褶倍数公式：`）—— 静默走另一支 = 红。
 
-    - 韩褶公式（褶数法）：`韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米`；
+    - 韩褶公式（褶数法）：`韩褶公式：6.6×2−0.3 = 12.9 ÷ 0.25 = 51.6 → 52折 → 0.25×52+0.3 = 13.3米`
+      （推导链 = **纸表口径**：`折数 = (窗宽×褶倍 − 余量) ÷ 每折吃布`，再 `用料 = 每折吃布×折数 + 余量`；
+      🔴 改前写的是 `(窗宽+余量)×褶倍` —— 余量被**加到窗宽上再乘褶倍**，与右边的结果算不通
+      （3m/2 倍实测：左边 6.4、右边 5.95），issue #7560 用户截图指出）；
     - 褶倍数公式（倍数法）：`褶倍数公式：(5.5÷2)×2 → 每片 2.75×2=5.5米 ×2片 = 11米`。
 
     数字全部取自**同一次算料** ⇒ 公式串不可能与米数不一致；前端**不得**自拼。
@@ -1540,10 +1621,32 @@ def _formula_text(
             f"{label}：({window_width:g}÷{open_count:g})×{fullness:g} → "
             f"每片 {per_panel_width:g}×{fullness:g}={per_panel_meters:g}米 ×{open_count:g}片 = {meters:.1f}米"
         )
-    return (
-        f"{label}：({window_width:g}+{margin:g})×{fullness:g} → {pleat_count:g}折 → "
-        f"{per_fold:g}×{pleat_count:g}+{margin:g} = {meters:g}米"
+    # 折数的**真实推导链**（纸表口径）：先 `窗宽×褶倍`，再**减**余量，除以每折吃布后取整
+    after_margin = window_width * fullness - margin
+    raw_pleats = (after_margin / per_fold) if per_fold else 0.0
+    # 主布米数（**进位前**的原始和）—— 进位另起一段说明，不让「= 6米」冒充 5.95 的算式结果
+    main_meters = per_fold * pleat_count + margin
+    text = (
+        f"{label}：{window_width:g}×{fullness:g}−{margin:g} = {after_margin:g} ÷ {per_fold:g} = {raw_pleats:g}"
+        f" → {pleat_count:g}折 → {per_fold:g}×{pleat_count:g}+{margin:g} = {main_meters:g}米"
     )
+    raw_total = main_meters
+    if patch_meters:
+        raw_total += patch_meters
+        text += f" + 配布{patch_meters:g}米 = {raw_total:g}米"
+    # 用料一律**向上进位到 meters_rounding_step**（默认 0.1）：进位真的发生时写明，
+    # 否则串尾的米数与前面算式的和不一致（截图里 `(3+0.2)×2 → 23折 → … = 5.95米` 那类「算不通」）。
+    # ⚠️ 只在**进位级**差异（≤ 进位步长）时写「进位」：差值更大说明米数被**分幅/倒幅**改过
+    # （`_resolve_plan` 换了做法），那不是进位 —— 本串按真值源 §8 只表达**单幅推导链**，
+    # 不把分幅结果伪装成进位（分幅数由响应 `panels` 承担，前端不复算公式）。
+    step = DEFAULT_CRAFT_CALC_CONFIG["meters_rounding_step"]
+    if 1e-9 < (meters - raw_total) <= step + 1e-9:
+        text += f" → 进位 {meters:g}米"
+    elif abs(meters - raw_total) > step + 1e-9:
+        # 米数被**分幅/倒幅**改过（`_resolve_plan` 换了做法）：如实写出最终米数，
+        # 不伪装成进位，也不让串尾与响应 `fabric_meters` 分叉。
+        text += f" → 分幅后 = {meters:g}米"
+    return text
 
 
 def build_quote(
@@ -1646,7 +1749,22 @@ def build_quote(
         mounting = craft_mounting
 
     # 褶皱倍数默认值
-    N = fullness if fullness is not None else DEFAULT_FULLNESS.get(mounting, 2.0)
+    # 🔴 档位 ⇒ 倍数（issue #7649；用户 2026-10-24 逐字「切换倍数法的档位没有再去算用料米数」）：
+    # 真值源 `docs/design/order-craft-spec-design.md` 写明 `craft_tier`「**倍数 `fullness` 与褶数
+    # 都由它推出**」，下单页也只在**倍数法**下摆档位 chips ⇒ 倍数法必须按档位取倍数。
+    # 此前 `craft_tier → cfg["tiers"]` 的解析**只写在褶数法分支**（下面的 `elif pleat_mode:`）里，
+    # 倍数法只把档位**回显**成 `craft_tier` ⇒ 商家切档位，用料米数一动不动（静默）。
+    # 优先级：显式 `fullness` 入参 > 档位倍数 > `DEFAULT_FULLNESS[mounting]`
+    # （未传档位的既有调用方逐值不变；未知档位键 ⇒ 标准档，与褶数法同一回落）。
+    if fullness is not None:
+        N = fullness
+    elif craft_tier is not None:
+        tier_row = cfg["tiers"].get(craft_tier) or cfg["tiers"]["standard"]
+        # 护栏与褶数法**同一把尺子**（同一份 tiers 配置在两条公式下判定必须一致）
+        _require_min_fullness(tier_row["fullness"], cfg)
+        N = tier_row["fullness"]
+    else:
+        N = DEFAULT_FULLNESS.get(mounting, 2.0)
 
     # 韩褶褶数法（工艺档位或客户自报褶数触发）：用料 = 每折吃布 × 褶数 + 余量
     pleat_mode = (
@@ -1680,7 +1798,7 @@ def build_quote(
         v is not None for v in (fabric_width, splice_times, join_height_m, join_width_m)
     )
     # ⚠️ **拼色款式把推导关掉**（`style=拼色`）：它的每折吃布是**另一套系数**
-    # （`MIXED_COLOR_PER_FOLD_BY_TIMES`，纸表表头，用户 2026-09-19 裁定），塞进单色候选表会改已裁定的
+    # （`MIXED_COLOR_PATCH_METERS_BY_TIMES`，纸表表头，用户 2026-09-19 裁定），塞进单色候选表会改已裁定的
     # 拼色米数（**改钱**）。而契约 R4（裁定 1）本来就规定「出现拼接时款式只能是单色」⇒
     # 拼色行的正确处置是**告知冲突 + 不自动推导**（下面按 `fabric_meters` 回填结构化 `plan`，
     # `auto=False` + R4 告知），**不是**静默按单色重算。
@@ -1698,7 +1816,7 @@ def build_quote(
             # **优先** ⇒ 否则 `_plan_inputs`（门幅已定）⇒ 否则**既有单门幅口径**（逐值不变）。
             # 口径真值源 = `derive_plan`（契约 §三 候选枚举表 + 选优顺序 + R1~R7）。
             # ⚠️ `T` 就是上方按**选定用料公式 + 单色口径**算出的 `meters_fixed_height`
-            # （R3：拼N次 ≠ 拼色 ⇒ 这里**不加** `MIXED_COLOR_PER_FOLD_BY_TIMES` 的任何系数）——
+            # （R3：拼N次 ≠ 拼色 ⇒ 这里**不加** `MIXED_COLOR_PATCH_METERS_BY_TIMES` 的任何系数）——
             # 候选表与最终米数**同源同一变量** ⇒ `plan.meters` 与 `fabric_meters` 不可能分叉。
             # ⚠️ **拼色款式不走这里**（见下方 `_effective_plan_inputs`）：拼色的每折吃布系数是
             # **另一套用料**（纸表表头，用户 2026-09-19 裁定），把它当单色 `T` 塞进候选表会
@@ -1771,18 +1889,21 @@ def build_quote(
         # 取值来源/档位**如实回显**（与褶数法同一契约：用料必须带来源 —— 真值源 §8）
         pleat_fields = {"source": source, "craft_tier": craft_tier}
     elif pleat_mode:
+        # 拼色用料（用户 2026-10-23 裁定，issue #7560；纸表四列逐行反解）：
+        #   · 主布 = 0.25 米/折（**与单色同一系数**）× 折数 + 拼色余量（单开 0.15 / 多开 0.20）；
+        #   · 配布 = 定长 0.65（拼1次）/ 1.2（拼2次）米，**整幅一次**；
+        # ⇒ 52 折双开：单色 13.3 / 拼1次 13.2+0.65 = 13.9 / 拼2次 14.4 米（改前 34.1 / 62.7）。
+        # ⚠️ 先定余量再定折数：拼色的折数也用**拼色余量**反算（同一个数只出现一次来源）。
+        patch_meters = mixed_patch_meters(style, special_options, cfg)
+        margin_total = mixed_margin_for_open_count(open_count, cfg) if patch_meters else None
         if pleat_count is None:
             tier = cfg["tiers"].get(craft_tier or "standard", cfg["tiers"]["standard"])
             pleat_count, tier_warning = derive_pleat_count(
-                window_width, tier["fullness"], open_count, cfg)
+                window_width, tier["fullness"], open_count, cfg, margin_total=margin_total)
             N = tier["fullness"]
         else:
             tier_warning = ""
-        # 拼色每折吃布系数（用户 2026-09-19 裁定）：`style=拼色` + 特殊选项 `拼1次`/`拼2次`
-        # ⇒ 0.65 / 1.2 米每折；其余（含只给 style 没给拼次）⇒ 单色 0.25。余量不随拼色变化。
-        # ⚠️ 褶数**仍按单色系数反算**（`derive_pleat_count`，既有口径）：拼色只改「每折吃布」这一项
-        # ⇒ 52 折双开拼1次 = 0.65×52+0.3 = 34.1 米（改褶数就是改既有的拼色数值，不在本包）。
-        per_fold = resolve_per_fold(style, special_options, cfg)
+        per_fold = cfg["per_fold_single"]
         # 单色口径的同一批褶数/余量 ⇒ 单色用料（**只读**计算，不进任何金额字段）：
         # 拼色行的结构化 `plan` 需要「若按单色算会是多少」来做候选可行性判断（见回填段）。
         estimate["single_color_meters"] = (
@@ -1791,17 +1912,18 @@ def build_quote(
         meters, pleat_warning, info = calculate_fabric_by_pleats(
             pleat_count, open_count, source=source, width=window_width,
             per_fold=per_fold, config=cfg,
+            patch_meters=patch_meters, margin_total=margin_total,
         )
         warning = " ".join(w for w in [tier_warning, pleat_warning] if w)
-        # 「拼色但没给拼次」不得静默：无系数依据时如实告警（本单不发明口径，按单色算但说出来）。
-        if style == STYLE_MIXED and per_fold == cfg["per_fold_single"]:
-            gap = mixed_per_fold_gap(special_options, cfg)
+        # 「拼色但没给拼次」不得静默：无配布依据时如实告警（本单不发明口径，按单色算但说出来）。
+        if style == STYLE_MIXED and not patch_meters:
+            gap = mixed_patch_gap(special_options, cfg)
             warning = (warning + " " if warning else "") + (
                 f"款式为拼色但未给出纸表已登记的拼次（{'/'.join(f'拼{n}次' for n in sorted(cfg['per_fold_mixed_times']))}），"
-                f"本次按单色每折 {cfg['per_fold_single']:g} 米计算，非拼色用料系数。"
+                f"本次按单色每折 {cfg['per_fold_single']:g} 米计算，未加配布。"
             )
             if gap:
-                warning += f"（{gap} 的用料系数纸表未登记，需先裁定）"
+                warning += f"（{gap} 的配布长度纸表未登记，需先裁定）"
         _plan_panels, meters, formula_used, _plan_over = _resolve_plan(meters, "_pleats")
         panels = _plan_panels
         if _plan_over:
@@ -1812,6 +1934,7 @@ def build_quote(
             "open_count": open_count,
             "margin": info["margin"],
             "per_fold": info["per_fold"],
+            "patch_meters": info["patch_meters"],
             "source": source,
             "craft_tier": craft_tier,
         }
@@ -2016,6 +2139,7 @@ def build_quote(
         open_count,
         round(meters, 2),
         pleat_fields.get("per_fold", cfg["per_fold_single"]),
+        pleat_fields.get("patch_meters", 0.0),
     )
 
     quote = {

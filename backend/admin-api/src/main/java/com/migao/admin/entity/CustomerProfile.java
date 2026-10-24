@@ -49,7 +49,19 @@ public class CustomerProfile {
 
     // --- 客户等级与状态 ---
     /** normal / vip1 / vip2 / vip3 */
+    /**
+     * 客户负责人（V178，issue #7372 段 2）：`null` = **未指派**（有意义的业务态，不是缺省）。
+     * 数据范围 `self` 下本人可见 = 自己是负责人，或未指派但自己有该客户（按 phone）的单。
+     */
+    private String ownerUserId;
+
     private String vipLevel;
+
+    /** 授信额度（issue #7370）：null = 未启用授信；0 = 启用但零额度；正数 = 额度 */
+    private BigDecimal creditLimit;
+
+    /** 账期天数（issue #7370）：null = 未设置；0 = 现结；正数 = 账期 */
+    private Integer paymentTermsDays;
 
     /** active / silent / churn_warning / churned */
     private String customerStatus;

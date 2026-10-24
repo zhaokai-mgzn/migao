@@ -102,15 +102,25 @@ Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app。
     **多包并发**：同一轮多派必须**逐个核实落地**（实测同轮 3 派仅 1 落地）。
     全文与理由见 `migao-dev-flow` §24 / §24.1（2026-09-25 裁定；2026-09-30 改判的现行口径见 §24.0）。
 
+13. **冒烟数据质量（SDQS）**：跑冒烟 / 引用冒烟结论 / 新增冒烟夹具之前，先读
+    [docs/testing/smoke-data-quality.md](docs/testing/smoke-data-quality.md)。四条硬口径：
+    ① **空态/加载态不得冒充通过**（`DQ-1/DQ-4` 判红）；② **自造商品必须带 SKU 矩阵**
+    （颜色 × 门幅 × 价格 × 库存，`DQ-2`）；③ **可删对象跑完必须清理并自证 `GET` 404**（`DQ-5`）；
+    ④ 数据面读不到 ⇒ `DQ-U` **不可判定**（不得当通过）。
+    冒烟结论 = **两个**汇总（`smoke-summary.md` 旅程面 + `smoke-data-quality.md` 数据面），
+    缺一个不算通过。判据 = `python3 -m pytest tests/unit_ci_workflows/test_smoke_data_quality.py -q`。
+
 ## 按场景找文档（先查索引，按需 Read）
 
 | 场景 | 入口 |
 |---|---|
 | 全部场景索引 | [docs/wiki/INDEX.md](docs/wiki/INDEX.md) |
+| **跑冒烟 / 引用冒烟结论（数据质量 SDQS）** | [docs/testing/smoke-data-quality.md](docs/testing/smoke-data-quality.md) |
 | 开发流程 / 验证命令清单 | [docs/wiki/Development.md](docs/wiki/Development.md) |
 | 写码最少化（防过度建设/加依赖前） | [docs/wiki/Code-Minimalism.md](docs/wiki/Code-Minimalism.md) |
 | 测试工程规范（拆分/ignore/脱敏/分层） | [docs/testing/test-engineering-standards.md](docs/testing/test-engineering-standards.md) |
 | **验收/评测（下"验收通过"结论前必读）** | [docs/testing/acceptance-protocol.md](docs/testing/acceptance-protocol.md)（配套 DSH 技能 `migao-acceptance`） |
+| **Agent 能力开发（加工具/改能力/改 prompt 前）** | [docs/wiki/agent-capability-paradigm.md](docs/wiki/agent-capability-paradigm.md) |
 | CI/CD / 部署 | [docs/wiki/CI-CD.md](docs/wiki/CI-CD.md) |
 | 行为用例单一源 | `.github/cases/`（改后必须跑 `render_cases.py` 并提交生成物） |
 

@@ -15,6 +15,15 @@
 #   ① **只追加**（O_APPEND 是原子的，短行 < PIPE_BUF）⇒ 并发写不互相踩、也不丢历史；
 #   ② 判据要能「只看新增的那一条」而不必解析整份文件（`tail -1`）。
 #
+# ## 缺头自愈（issue #7655）
+#
+# 首行不是 schema 头时**不直接判 3**：先**逐行结构校验**（每行可解析 JSON 对象且带
+# `id/ts/role/decision` 四键）—— 全部合格 ⇒ 补写首行头后继续追加（幂等、可重入）；
+# 任何一行不合格 ⇒ 仍 `exit 3` + 原文案（**拒绝往一份不认识的账上追加**）。
+# 判据是**逐行结构**，不是文件名 / 路径：换了路径的同一种账照样认，别人的账一行都不合格就照样拒。
+# 边界：补头是「读 → 写临时文件 → rename」，**并发自愈**的窄窗口里另一侧追加可能落空
+# （重启条件 = 观测到同一台账的并发自愈；届时再加锁，不提前造）。
+#
 # ## 幂等（同一次调用不重复计数）
 #
 # 键 = `MIGAO_ROLE_LEDGER_ID`（`verify-all.sh` 在**顶层**初始化一次并 export）。
@@ -67,19 +76,61 @@ _die_undecidable() {
   exit 3
 }
 
-#: 首行 schema 头（**创建时写一次**；已存在且首行不同 ⇒ 判 3，绝不覆盖别人的台账）。
+#: 首行 schema 头（**单一出处**）：空台账创建与「缺头自愈」都只从这里取。
+_header() {
+  printf '%s\n' \
+    "{\"_kind\":\"${LEDGER_KIND}\",\"_what\":\"套件内全量入口的角色判定台账（只追加）：每次 verify-all.sh 被角色守卫拒绝 / 被显式 --allow-package-heavy 放行，记一条。\",\"_judged_by\":\"tests/unit_ci_workflows/test_package_heavy_entry_ban.py · tests/unit_ci_workflows/test_package_heavy_entry_ledger_header.py\",\"_idempotency\":\"键 = MIGAO_ROLE_LEDGER_ID（同一进程树内只记一笔）\",\"_count\":\"./scripts/package-heavy-entry-ledger.sh count\"}"
+}
+
+#: 逐行结构校验（**只在「首行不是头」那条自愈分支上跑**）：每一行都是可解析的 JSON 对象且带
+#: `id` / `ts` / `role` / `decision` 四键 ⇒ 0；否则 1（stderr 指出首条不合格行）。
+#: ⚠️ 正常追加路径**不经过**这里 ⇒ 本文件「append 不引 python3」的约束不变。
+_records_are_wellformed() {
+  python3 - "$LEDGER" <<'PY'
+import json
+import sys
+
+KEYS = ("id", "ts", "role", "decision")
+for no, line in enumerate(open(sys.argv[1], encoding="utf-8"), 1):
+    if not line.strip():
+        print(f"第 {no} 行是空行（JSONL 不允许空行）", file=sys.stderr)
+        sys.exit(1)
+    try:
+        rec = json.loads(line)
+    except ValueError:
+        print(f"第 {no} 行不是合法 JSON", file=sys.stderr)
+        sys.exit(1)
+    if not isinstance(rec, dict):
+        print(f"第 {no} 行不是 JSON 对象", file=sys.stderr)
+        sys.exit(1)
+    missing = [k for k in KEYS if k not in rec]
+    if missing:
+        print(f"第 {no} 行缺键 {missing}（不是本台账的记录）", file=sys.stderr)
+        sys.exit(1)
+sys.exit(0)
+PY
+}
+
+#: 文件不存在 / 空 ⇒ 写一次头；首行是头 ⇒ 直接继续；首行**不是**头 ⇒ **逐行结构校验全部合格才补头**
+#: （自愈，issue #7655），任何一行不合格 ⇒ `exit 3`（绝不覆盖别人的台账）。
 _ensure_header() {
   local dir
   dir="$(dirname "$LEDGER")"
   [ -d "$dir" ] || mkdir -p "$dir" 2>/dev/null || _die_undecidable "台账目录建不出来：$dir"
   if [ -s "$LEDGER" ]; then
-    head -1 "$LEDGER" | grep -q "\"${LEDGER_KIND}\"" \
+    head -1 "$LEDGER" | grep -q "\"${LEDGER_KIND}\"" && return 0
+    command -v python3 >/dev/null 2>&1 \
+      || _die_undecidable "台账首行不是 ${LEDGER_KIND}（${LEDGER}）—— 无 python3 无法逐行校验，拒绝往一份不认识的账上追加"
+    _records_are_wellformed \
       || _die_undecidable "台账首行不是 ${LEDGER_KIND}（${LEDGER}）—— 拒绝往一份不认识的账上追加"
+    local tmp
+    tmp="$(mktemp "${LEDGER}.heal.XXXXXX")" || _die_undecidable "台账自愈临时文件建不出来：${LEDGER}"
+    { _header; cat "$LEDGER"; } > "$tmp" && mv -f "$tmp" "$LEDGER" \
+      || { rm -f "$tmp"; _die_undecidable "台账首行补写失败：${LEDGER}"; }
+    echo "🩹 自愈：台账首行缺 schema 头，已按逐行结构校验补齐后继续追加（${LEDGER}）" >&2
     return 0
   fi
-  printf '%s\n' \
-    "{\"_kind\":\"${LEDGER_KIND}\",\"_what\":\"套件内全量入口的角色判定台账（只追加）：每次 verify-all.sh 被角色守卫拒绝 / 被显式 --allow-package-heavy 放行，记一条。\",\"_judged_by\":\"tests/unit_ci_workflows/test_package_heavy_entry_ban.py\",\"_idempotency\":\"键 = MIGAO_ROLE_LEDGER_ID（同一进程树内只记一笔）\",\"_count\":\"./scripts/package-heavy-entry-ledger.sh count\"}" \
-    >> "$LEDGER" || _die_undecidable "台账首行写不进去：$LEDGER"
+  _header >> "$LEDGER" || _die_undecidable "台账首行写不进去：${LEDGER}"
 }
 
 #: 本 id 是否已在账上（幂等）。⚠️ `grep -F` 用**整串**（id 形如 `<epoch>.<pid>.<rand>`，

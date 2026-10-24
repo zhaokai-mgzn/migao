@@ -126,6 +126,7 @@ def derived_reader_problems(sources: dict[str, str], registry: tuple[str, ...]) 
 
 #: 盘点来源所在的表（判断「这条迁移是否在讲盘点来源」的对象面）
 STOCKTAKE_TABLE = "stock_batch_consumptions"
+STOCKTAKE_RUN_ID_COLUMN = "stocktake_run_id"
 
 
 def touches_stocktake_source(name: str, text: str) -> bool:
@@ -141,9 +142,14 @@ def touches_stocktake_source(name: str, text: str) -> bool:
     """
     if STOCKTAKE_REASON not in text:
         return False
-    return (f"ALTER TABLE {STOCKTAKE_TABLE}" in text
-            or f"ON {STOCKTAKE_TABLE}" in text
-            or f"CREATE TABLE IF NOT EXISTS {STOCKTAKE_TABLE}" in text)
+    # 🔴 2026-10-24（issue #7647，V191 的形态）：**仅仅扩展 reason 取值集合**的迁移（把 'stocktake'
+    # 连同 'cutting_report' 一起重写进 CHECK）也满足上面那条「改表 + 提到 stocktake」——
+    # 但它**不引入**盘点来源，要求它带幂等闸是**假红**（实测：V191 被点名要求
+    # `uk_batch_consumption_stocktake`，而那条闸是 V143 建的、仍然在）。
+    # ⇒ 判据收窄成「这条迁移**引入**盘点来源」：加 `stocktake_run_id` 列，或建幂等闸。
+    return (f"ADD COLUMN IF NOT EXISTS {STOCKTAKE_RUN_ID_COLUMN}" in text
+            or f"ALTER TABLE {STOCKTAKE_TABLE} ADD COLUMN {STOCKTAKE_RUN_ID_COLUMN}" in text
+            or STOCKTAKE_IDEMPOTENCY_INDEX in text)
 
 
 def source_shape_problems(schema_text: str, migration_texts: dict[str, str],
@@ -338,3 +344,20 @@ def test_injected_bad_corpora_are_named(monkeypatch: pytest.MonkeyPatch) -> None
         "Java 常量与 DB 取值漂移必须红"
     assert source_shape_problems(schema_ok, mig, {"REASON_STOCKTAKE": STOCKTAKE_REASON}, {}), \
         "活动迁移未登记指纹账本必须红"
+
+    # ⑥′ 判据收窄的自证（issue #7647）：**只扩展 reason 取值集合**的迁移（V191 形态）不算「引入盘点来源」
+    #     ⇒ 不该被要求带幂等闸（否则每加一个新来源都会假红一次）；而**引入列却没有闸**仍必须红。
+    only_reason = (
+        "ALTER TABLE stock_batch_consumptions DROP CONSTRAINT IF EXISTS ck_batch_consumption_reason;\n"
+        "ALTER TABLE stock_batch_consumptions ADD CONSTRAINT ck_batch_consumption_reason\n"
+        "    CHECK (reason IN ('processing_order', 'processing_order_cancelled', 'stocktake', 'cutting_report'));\n")
+    assert touches_stocktake_source("V191__add_reason.sql", only_reason) is False, \
+        "只扩展取值集合的迁移不得被当成「引入盘点来源」（否则每加一个来源就假红一次）"
+    introduced_only = (
+        "ALTER TABLE stock_batch_consumptions ADD COLUMN IF NOT EXISTS stocktake_run_id VARCHAR(64);\n")
+    assert touches_stocktake_source("V999__intro.sql", introduced_only) is True, \
+        "引入 stocktake_run_id 列的迁移必须被认成「引入盘点来源」"
+    assert source_shape_problems(
+        schema_ok, {"V999__intro.sql": introduced_only},
+        {"REASON_STOCKTAKE": STOCKTAKE_REASON}, {"V999__intro.sql": "sha256:x"}), \
+        "引入盘点列却没有幂等闸必须红"

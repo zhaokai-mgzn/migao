@@ -10,6 +10,7 @@ import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 import java.math.BigDecimal;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 /**
@@ -17,6 +18,40 @@ import java.util.List;
  */
 @Mapper
 public interface ProductMapper extends BaseMapper<Product> {
+
+    /**
+     * 商品状态迁移的**唯一写面**（issue #6961）：判断与写入压进同一条语句 ⇒ 并发下只有一个赢家。
+     *
+     * <p>范式照抄 {@code ProcessingOrderMapper#markStatusIfFrom}（#6955）与
+     * {@code InboundOrderMapper#markPosted}（#6928）：谓词 = {@code id} + {@code tenant_id}
+     * + {@code deleted = 0} + **状态机授权的前驱态**，按<b>受影响行数</b>判定谁抢到迁移权
+     * （0 行 ⇒ 调用方 fail-closed 409，文案带<b>实际当前态</b>）。</p>
+     *
+     * <p>修前的形态是「先 {@code selectById} 读旧 status 过状态机、再 {@code updateById}
+     * （WHERE 仅主键 ⇒ 无谓词）」⇒ 校验在<b>读</b>之后、写入没有谓词：并发 on/off_sale
+     * <b>两个请求都成功</b>，终态由后写者决定。列 {@code status} / {@code tenant_id} /
+     * {@code deleted} 的存在性已对 {@code db/init/schema.sql} 的 {@code products} DDL 自证。</p>
+     *
+     * <p>先判「前驱态为空」再判 {@code status = #{fromStatus}}：{@code status} 可空
+     * （历史行 / 建品未填），而 <b>PG 里 {@code status = NULL} 求值为 NULL（永假）</b> ——
+     * 少了这一支，那些行会被误判成「被别人抢先改过」。⚠️ 这一支**必须**用布尔参数
+     * {@code #{fromStatusIsNull} = TRUE}，<b>不能</b>写成 {@code #{fromStatus} IS NULL}：后者
+     * PG 会报「无法确定参数 $N 的数据类型」（`PARAMETER-TYPE-UNAMBIGUOUS` 的同族，
+     * 真库实测逐字：`错误: 无法确定参数 $7 的数据类型`）。软删（{@code deleted}）同样被
+     * {@code @TableLogic} 的行级谓词覆盖，此处显式写出以对齐范式。</p>
+     *
+     * @return 受影响行数：0 = 不存在 / 跨租户 / 已软删 / 前驱态不符（调用方据此判 409）
+     */
+    @Update("UPDATE products SET status = #{targetStatus}, edited_by = #{editedBy}, edited_at = #{editedAt}, "
+            + "updated_at = #{editedAt} WHERE id = #{id} AND tenant_id = #{tenantId} AND deleted = 0 "
+            + "AND ((#{fromStatusIsNull} = TRUE AND status IS NULL) OR status = #{fromStatus})")
+    int updateStatusIfFrom(@Param("id") String id,
+                           @Param("tenantId") Long tenantId,
+                           @Param("fromStatus") String fromStatus,
+                           @Param("fromStatusIsNull") boolean fromStatusIsNull,
+                           @Param("targetStatus") String targetStatus,
+                           @Param("editedBy") String editedBy,
+                           @Param("editedAt") OffsetDateTime editedAt);
 
     @Update("UPDATE products SET sales_count = COALESCE(sales_count, 0) + #{quantity}, " +
             "sales_amount = COALESCE(sales_amount, 0) + #{amount} WHERE id = #{productId}")

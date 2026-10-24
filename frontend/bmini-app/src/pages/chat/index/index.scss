@@ -10,13 +10,16 @@
   box-sizing: border-box;
   // 🔴 为底栏留位（issue #6596）：`MerchantTabBar` 是 `position: fixed; bottom: 0` 的**浮层**，
   //    不占流内空间 ⇒ 页面不预留就会被它压住（用户真机实测：整条输入条看不见）。
-  //    预留量必须与 `frontend/bmini-app/src/components/MerchantTabBar.scss` 的条高**逐值相等**
+  //    预留量必须与 `frontend/bmini-app/src/components/MerchantTabBar.scss` 的**实用高度逐值相等**
   //    （判据 = `frontend/bmini-app/tests/chat-input-bar-layout.test.tsx` 的「底栏不遮输入条」）。
+  //    🔴 「实用高度」含盒模型（issue #7252）：底栏必须是 `border-box` —— content-box 下它的
+  //    `padding-bottom: env(...)` 会**加到** `height` 之上（iPhone 实测条高 118 vs 这里预留 84
+  //    ⇒ 输入条被压 34px）。复算判据 = `frontend/bmini-app/tests/tabbar-content-inset.test.ts`。
   padding-bottom: calc(50PX + env(safe-area-inset-bottom));
   background: $bg-secondary;
   overflow: hidden;
 
-  // ── 自定义导航栏（瑞幸式深蓝渐变品牌头）──
+  // ── 自定义导航栏（瑞幸式深蓝渐变品牌头；issue #7265 起可向上折叠）──
   &__navbar {
     padding: 12px 24px 16px;
     background: $gradient-brand;
@@ -25,6 +28,31 @@
     box-shadow: $shadow-pop;
     position: relative;
     z-index: 10;
+    transition: padding 0.18s ease;
+  }
+
+  // 收起态：只留「logo + 名称 + 展开键」细品牌条（高度收益 ≈ 40-50 CSS px）
+  &__navbar--collapsed {
+    padding: 6px 24px 8px;
+  }
+
+  // 折叠/展开键（手动入口；滚动联动见 pages/chat/index/index.tsx）
+  &__navbar-toggle {
+    margin-left: auto;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: $radius-full;
+    background: rgba(255, 255, 255, 0.14);
+  }
+
+  &__navbar-toggle-icon {
+    font-size: 26px;
+    line-height: 1;
+    color: rgba(255, 255, 255, 0.85);
   }
 
   &__navbar-title {
@@ -85,6 +113,16 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
+    max-height: 80px;
+    opacity: 1;
+    overflow: hidden;
+    transition: max-height 0.18s ease, opacity 0.12s ease;
+  }
+
+  // 收起态：副标题 + 新对话整块收掉（保留品牌身份，入口可展开后再用）
+  &__navbar--collapsed &__navbar-right {
+    max-height: 0;
+    opacity: 0;
   }
 
   &__new-chat {

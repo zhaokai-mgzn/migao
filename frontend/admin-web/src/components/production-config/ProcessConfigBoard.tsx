@@ -19,7 +19,10 @@ import { isErrorToastShown, toastRequestError } from '@/lib/api-error'
 import { toast } from 'sonner'
 import { Button, Modal, NumberInput } from '@/components/ui'
 import { productionApi } from '@/lib/api'
-import { InlineMarkdown } from '@/lib/inline-markdown'
+// ⚠️ 本文件曾 import `@/lib/inline-markdown`，但**没有任何调用点**（issue #7079 发现）：
+// 那段带 `**` 的文案（就绪度②的 hint）走的是纯文本 `<p>{hint}</p>` ⇒ 星号**原样上屏**。
+// 该标记已随 #7079 的口径改写删除，`InlineMarkdown` 的 import 由本文件销账
+// （`tests/unit/lib/copy-no-markdown-emphasis.test.ts` 的两张登记表同步移除本文件）。
 import { cn } from '@/lib/utils'
 // 域的 URL 深链**单一口径**（issue #6825）：第 ④ 步「去处理」跨页到算料口径域，不在本页拼字面量
 import { domainHref } from '@/lib/config-center-domains'
@@ -219,7 +222,10 @@ import {
  */
 const conditionText = (rule: RouteRule) => {
   const kind = TRIGGER_KIND_LABEL[rule.trigger_kind ?? ''] ?? rule.trigger_kind ?? '—'
-  const value = rule.trigger_value ?? '—'
+  const rawValue = rule.trigger_value ?? '—'
+  const value = rule.trigger_kind === 'sales_form'
+    ? ({ full_roll: '整卷', bulk_cut: '散剪' } as Record<string, string>)[rawValue] ?? '—'
+    : rawValue
   const positionClause = rule.position ? `${TRIGGER_KIND_LABEL.position} = ${rule.position}` : ''
   // `position` 档的「什么时候」**就是**部位（`trigger_value` = `position`）⇒ 只说一遍
   const triggerClause = rule.trigger_kind === 'position' ? '' : `${kind} = ${value}`
@@ -943,8 +949,9 @@ export default function ProcessConfigBoard({ embedded = false }: { embedded?: bo
   const routingsHint =
     missingBaseRoutes.length > 0
       ? `缺 ${missingBaseRoutes.length} 条基础路线：${missingBaseRoutes.join(' / ')} —— ` +
-        '这两条是窗帘单与布料单各自的主线，缺了对应形态的订单就没有工序可走。' +
-        '这两条是**开租时自动生成**的种子路线（这里是异常形态）—— 请联系我们核实补齐；也可先用右上「新建路线」手工建一条顶上。'
+        '这两条分别是成品帘加工（布帘 / 纱帘）与卖布单出库作业（裁剪 / 打包）的主线，' +
+        '缺了对应形态的订单就没有工序可走。' +
+        '这两条是开租时自动生成的种子路线（这里是异常形态）—— 请联系我们核实补齐；也可先用右上「新建路线」手工建一条顶上。'
       : emptyShells.length > 0
         ? `有 ${emptyShells.length} 条「空壳」路线（主线为空）：该路线命中后一道工序都没有，请点「编辑主线」把工序排进去。`
         : ''
@@ -994,8 +1001,13 @@ export default function ProcessConfigBoard({ embedded = false }: { embedded?: bo
           </div>
         )}
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="secondary" size="sm" onClick={() => void load()} disabled={loading}>
-            <RefreshCw className={cn('w-4 h-4 mr-1.5', loading && 'animate-spin')} />
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => void load()}
+            disabled={loading}
+            icon={<RefreshCw className="w-4 h-4" />}
+          >
             刷新
           </Button>
           <Button
@@ -1003,12 +1015,16 @@ export default function ProcessConfigBoard({ embedded = false }: { embedded?: bo
             size="sm"
             data-testid="routings-new-operation"
             onClick={() => opFeature.openCreateOperation()}
+            icon={<Plus className="w-4 h-4" />}
           >
-            <Plus className="w-4 h-4 mr-1.5" />
             新增工序
           </Button>
-          <Button size="sm" data-testid="routings-new-route" onClick={() => rtFeature.setNewRouteOpen(true)}>
-            <Plus className="w-4 h-4 mr-1.5" />
+          <Button
+            size="sm"
+            data-testid="routings-new-route"
+            onClick={() => rtFeature.setNewRouteOpen(true)}
+            icon={<Plus className="w-4 h-4" />}
+          >
             新建路线
           </Button>
         </div>

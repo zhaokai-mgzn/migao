@@ -43,6 +43,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -79,6 +80,8 @@ class InboundOrderServiceTest {
     @Mock private ProductSkuMapper productSkuMapper;
     @Mock private ProductMapper productMapper;
     @Mock private StockLedgerService stockLedgerService;
+    /** 站内信（issue #7524）：入库过账/作废必须发通知 —— mock 只验「有没有按口径喊」，不验发送实现。 */
+    @Mock private NotificationService notificationService;
 
     @InjectMocks private InboundOrderService service;
     /**
@@ -98,6 +101,10 @@ class InboundOrderServiceTest {
 
     @BeforeEach
     void setUp() {
+        // #7524：NotificationService 是**非 final** 的 `@Autowired(required = false)` 字段，
+        // 而 @InjectMocks 走的是构造器注入（@RequiredArgsConstructor）⇒ **不会**再对这个字段做注入。
+        // 不显式塞进来，notifyInboundEvent 会因 null 直接跳过 —— 通知类用例会变成「零交互却全绿」（空断言）。
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "notificationService", notificationService);
         // LambdaQueryWrapper 需要实体元数据缓存，否则抛
         // MybatisPlusException: can not find lambda cache for this entity
         // （同 AgentProductServiceTest 的既有口径）
@@ -506,6 +513,39 @@ class InboundOrderServiceTest {
             l.setUnitCost(new BigDecimal("12.50"));
             l.setDyeLot("G-2026-0912");
             return l;
+        }
+
+        @Test
+        @DisplayName("#7524 过账 → 发站内信：biz 挂单据、标题可点、米数/金额/操作人一次说清")
+        void postNotifiesTenantAdmins() {
+            InboundOrder order = draftOrder();
+            order.setTotalAmount(new BigDecimal("375.00"));
+            InboundOrderItem l = line(100L, 11L);
+            when(inboundOrderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(order);
+            when(inboundOrderItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenReturn(List.of(l))
+                    .thenReturn(List.of(l));
+            when(productSkuMapper.selectById(11L)).thenReturn(sku(11L, "prod-1", 5, null));
+            when(productSkuMapper.receiveStock(eq(11L), eq(new BigDecimal("30")), any(), anyString(), any()))
+                    .thenReturn(java.util.Map.of("beforeQuantity", new BigDecimal("5"),
+                            "afterQuantity", new BigDecimal("35")));
+
+            service.post("RK-20260923-0001", TENANT, "13800000000");
+
+            // 通知是「过账之后的事实广播」：单号/供应商/行数/米数/金额/操作人一次说清，
+            // biz 三元组让铃铛能点回这张单（落地页 = 入库单列表 + 单号搜索）
+            verify(notificationService).triggerForTenantAdmins(eq(TENANT), eq("inbound_posted"),
+                    argThat(vars -> "RK-20260923-0001".equals(vars.get("inboundNo"))
+                            && "柯桥××布行".equals(vars.get("supplier"))
+                            && "1".equals(vars.get("lineCount"))
+                            && "30".equals(vars.get("totalMeters"))
+                            && "375.00".equals(vars.get("amount"))
+                            && "13800000000".equals(vars.get("operator"))),
+                    argThat(event -> "inbound_order".equals(event.getBizType())
+                            && "inbound-uuid-1".equals(event.getBizId())
+                            && "RK-20260923-0001".equals(event.getBizNo())
+                            && "/inbound-orders?keyword=RK-20260923-0001".equals(event.getTargetPath())
+                            && "info".equals(event.getSeverity())));
         }
 
         @Test
@@ -997,6 +1037,14 @@ class InboundOrderServiceTest {
                     eq("inbound-uuid-1"), eq(TENANT), eq("op"), eq("送货单录错"), atCap.capture());
             assertThat(atCap.getValue()).as("作废时刻与状态同一句写入").isNotNull();
             verify(inboundOrderMapper, never()).updateById(any(InboundOrder.class));
+
+            // #7524：作废 = warn 级站内信（「单据没进库存」必须让负责的人看见），biz 仍挂这张单
+            verify(notificationService).triggerForTenantAdmins(eq(TENANT), eq("inbound_cancelled"),
+                    argThat(vars -> "送货单录错".equals(vars.get("reason"))
+                            && "op".equals(vars.get("operator"))),
+                    argThat(event -> "inbound_order".equals(event.getBizType())
+                            && "inbound-uuid-1".equals(event.getBizId())
+                            && "warn".equals(event.getSeverity())));
         }
 
         @Test

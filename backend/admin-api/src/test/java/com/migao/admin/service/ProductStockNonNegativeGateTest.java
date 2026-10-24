@@ -3,9 +3,11 @@
 // ⇒ `PUT /api/admin/products/{id}` 传 `stock=-5` 得 200 且落库（`products.stock` / `product_skus.stock` / 台账全为负）。
 // 同族的盘点盘亏（422 INSUFFICIENT_STOCK）与入库/库存调整（`StockQuantity` 精度准入）**都有护栏** —— 漏的就是这一处。
 //
+// 🔴 issue #7597（2026-10-24）后范围收窄：商品档案不再设置库存 ⇒ 建品/SKU 入参的库存**已被忽略**
+// （行为判据在 ProductCreateStockIgnoredTest），本文件只裁**仍在的**绝对库存写面 = 改品 stock 分支。
 // 本文件按铁律 8 分两层：
-//   ① 实例判据：create / update / SKU 库存**三处写面同源**拒绝负值（同源断言，避免只修一处）；
-//      端点面 `PUT /products/{id}` ⇒ 4xx 且**零写入**；边界 `0` 合法、`-0.1` 拒绝。
+//   ① 实例判据：update 库存写面拒绝负值；端点面 `PUT /products/{id}` ⇒ 4xx 且**零写入**；
+//      边界 `0` 合法、`-0.1` 拒绝。
 //   ② 类级元守卫：「凡 `ProductService` 里写 `products/product_skus.stock` 的绝对库存准入，
 //      必须过**同一个**非负收口」—— 精度-only 的可空调用点**未登记即红**（登记表 = 空），
 //      非负收口的调用点数 = 现取台账（少了 ⇒ 某个写面掉了收口）。
@@ -89,10 +91,13 @@ class ProductStockNonNegativeGateTest {
     private static final List<String> PRECISION_ONLY_NULLABLE_CALL_SITES_ALLOWED = List.of();
 
     /**
-     * 非负收口的调用点数（**现取台账**）：create 商品级 / update 商品级 / SKU 库存 / 导入行 —— 共 4 处。
-     * 少了 ⇒ 某个写面掉了收口；多了 ⇒ 新增写面，必须显式抬这个数（评审可见）。
+     * 非负收口的调用点数（**现取台账**）：update 商品级 —— 共 1 处（导入行的库存列随 issue #7597 退场）。
+     *
+     * <p>🔴 issue #7597 后从 4 降到 2：**create 商品级**与 **SKU 库存入参**两处不再接受库存
+     * （请求里的 `stock` / `skus[].stock` 一律忽略，新 SKU 从 0 起算）⇒ 也就没有「拒绝负值」这一步。
+     * 少了 ⇒ 某个写面掉了收口；多了 ⇒ 新增写面，必须显式抬这个数（评审可见）。</p>
      */
-    private static final int REQUIRED_NON_NEGATIVE_GATE_CALL_SITES = 4;
+    private static final int REQUIRED_NON_NEGATIVE_GATE_CALL_SITES = 1;
 
     @InjectMocks
     private ProductService productService;
@@ -155,29 +160,18 @@ class ProductStockNonNegativeGateTest {
     }
 
     @Test
-    @DisplayName("判据2：create / update / SKU 库存 三处写面**同源**拒绝 -5（避免只修一处）")
-    void allAbsoluteStockWriteFacesRejectNegativeFromOneGate() {
-        Map<String, Executable> writeFaces = new LinkedHashMap<>();
-        writeFaces.put("createProduct → products.stock", () -> {
-            productService.createProduct(createRequestWithStock(new BigDecimal("-5")), 1L);
-            verify(productMapper, never()).insert(any(Product.class));
-        });
-        writeFaces.put("updateProduct → products.stock", () -> {
-            productService.updateProduct("prod-001", updateRequestWithStock(new BigDecimal("-5")), 1L);
-            verify(productMapper, never()).updateById(any(Product.class));
-        });
-        writeFaces.put("saveColorsAndSkus → product_skus.stock", () -> {
-            productService.createProduct(createRequestWithSkuStock(new BigDecimal("-5")), 1L);
-            verify(productSkuMapper, never()).insert(any(ProductSku.class));
-        });
-
-        assertThat(writeFaces).as("三处写面缺一不可").hasSize(3);
-        for (Map.Entry<String, Executable> face : writeFaces.entrySet()) {
-            assertThatThrownBy(face.getValue()::execute)
-                    .as("写面「%s」必须与其它写面**同源**拒绝负库存", face.getKey())
-                    .isInstanceOf(BusinessException.class)
-                    .hasMessageContaining("不能为负");
-        }
+    @DisplayName("判据2：改品库存（唯一仍在的绝对库存写面）拒绝 -5 —— 建品/SKU 入参已随 #7597 下线")
+    void updateStockFaceRejectsNegative() {
+        // 🔴 issue #7597（用户裁定 2026-10-24）：商品档案不再设置库存 —— 建品请求里的 `stock`
+        // 与 `skus[].stock` **一律忽略**（不校验、不落库）；仍在射程内的只剩「批量库存调整 /
+        // Agent 调整」所走的改品 stock 分支。建品侧的行为判据见 ProductCreateStockIgnoredTest。
+        assertThatThrownBy(() ->
+                productService.updateProduct("prod-001", updateRequestWithStock(new BigDecimal("-5")), 1L))
+                .as("改品的绝对库存写面仍必须拒绝负值")
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("不能为负");
+        verify(productMapper, never()).updateById(any(Product.class));
+        verify(productSkuMapper, never()).update(any(), any());
     }
 
     @Test

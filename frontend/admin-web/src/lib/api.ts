@@ -5,9 +5,34 @@ import {
   buildCloseOrderPayload,
   buildRefundPayload,
 } from './data-adapter'
+import type {
+  CustomerCreditStatus,
+  Supplier,
+  SupplierPayableSummary,
+  SupplierPaymentRequest,
+  PurchaseOrderCreateRequest,
+  PurchaseOrderView,
+  SupplierPaymentView,
+  UnassignedInboundSupplier,
+} from '@/types'
 import type { RefundOrderParams } from './data-adapter'
 // 发货读面（issue #5651）：真值 owner = `OrderShipmentService.readShipment`，这里只声明形状
 import type { OrderShipmentRead } from './sales-shipment'
+import type { PriceBookView } from '@/types/pricing'
+// 报表读面类型（issue #7376 / #7377）：单列一个文件，避免 api.ts 继续膨胀
+import type {
+  ReportInventoryAging,
+  ReportOrderMargins,
+  ReportQualityCost,
+  ReportQualityCostBreakdown,
+  ReportReceivableAging,
+  ReportStaffPerformance,
+} from '@/types/reports'
+// 返工单读面类型（issue #7377）：与后端 `ReworkOrderView` 字段逐字对齐
+import type { ApprovalItem } from '@/types/approval'
+import type { ReworkOrder, ReworkOrderCreateRequest } from '@/types/rework'
+// 盘点读面类型（issue #7373 段 3 前端）：与后端 `StocktakeView` 字段逐字对齐
+import type { Stocktake, Warehouse } from '@/types/stocktake'
 // 「识别 + 一次性推理」端点回的是**同一条字段计划**（issue #6367 包 P3）—— 复用它的形状，
 // 不另造第二份（两份定义迟早让 `source` / `fields` 漂移）。**类型导入**，运行时零依赖。
 import type { PageFillPlan } from './agent-page-fill'
@@ -128,6 +153,7 @@ import type {
   CustomerTagFormData,
   AiConfig,
   SystemSettings,
+  PaymentQrcode,
   LoginLog,
   UploadedFile,
   Employee,
@@ -163,6 +189,12 @@ import type {
   StockLedgerEntry,
 } from '@/types'
 import type { OrderContentUpdateParams } from '@/types'
+import type {
+  QualityInspectionRecord,
+  QualityInspectionResult,
+  QualityStats,
+  QualityTargetsResponse,
+} from '@/types'
 import { FrontendToBackendStatus } from '@/types'
 
 // 认证 API
@@ -426,7 +458,7 @@ export interface CraftCalcResult {
   pleat_count: number
   /** 每片褶数 */
   per_panel_pleats?: number
-  /** 每折吃布（米）：单色 0.25 / 拼色·拼1次 0.65 / 拼色·拼2次 1.2 */
+  /** 每折吃布（米）：恒为单色系数 —— **拼色不改每折吃布**（issue #7560），配布另计 */
   per_fold: number
   /** **理论**褶倍（随档位） */
   fullness: number
@@ -435,7 +467,7 @@ export interface CraftCalcResult {
   formula_used?: string
   /**
    * 可读公式串（**后端产出，前端只渲染**）—— 串首写明所用公式，issue #4527：
-   * `韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米` /
+   * `韩褶公式：6.6×2−0.3 = 12.9 ÷ 0.25 = 51.6 → 52折 → 0.25×52+0.3 = 13.3米` /
    * `褶倍数公式：(5.5÷2)×2 → 每片 2.75×2=5.5米 ×2片 = 11.0米`
    */
   formula_text: string
@@ -670,6 +702,54 @@ export const knowledgeApi = {
 }
 
 // 售后工单 API
+/**
+ * 返工单（issue #7377，P1-5 质量闭环）：售后单 → 返工单 → 完工回写售后状态。
+ *
+ * 🔴 读码 `after_sales:view`（＝菜单节点码＝路由守卫码）、写码 `order:refund` —— 与售后工单同域复用，
+ * 零授权 delta。开单参数是**查询串**（服务端 `@RequestParam`），不是 JSON body。
+ */
+/**
+ * 审批中心（issue #7374，P1-2）：读继承类级 `finance:view`、写走 `finance:create`。
+ * 与后端 `ApprovalController` 逐字对齐；「撤回」只对申请人本人有效（服务端也这样判）。
+ */
+export const approvalApi = {
+  list: (params?: { objectType?: string; status?: string }) =>
+    request.get<ApiResponse<ApprovalItem[]>>('/api/admin/approvals', { params }),
+  detail: (id: string) => request.get<ApiResponse<ApprovalItem>>(`/api/admin/approvals/${id}`),
+  // 提交申请（issue #7374 段 3）：五类对象共用；金额门槛与 objectRef 口径见 `lib/approval-request.ts`
+  submit: (data: {
+    objectType: string
+    objectRef: string
+    objectLabel?: string
+    amount?: number | null
+    reason?: string
+  }) => request.post<ApiResponse<ApprovalItem>>('/api/admin/approvals', data),
+  approve: (id: string, note?: string) =>
+    request.post<ApiResponse<ApprovalItem>>(`/api/admin/approvals/${id}/approve`, note ? { note } : null),
+  reject: (id: string, note?: string) =>
+    request.post<ApiResponse<ApprovalItem>>(`/api/admin/approvals/${id}/reject`, note ? { note } : null),
+  withdraw: (id: string) => request.post<ApiResponse<ApprovalItem>>(`/api/admin/approvals/${id}/withdraw`),
+}
+
+export const reworkOrderApi = {
+  list: (afterSalesTicketId?: string) =>
+    request.get<ApiResponse<ReworkOrder[]>>('/api/admin/rework-orders', {
+      params: afterSalesTicketId ? { afterSalesTicketId } : undefined,
+    }),
+  detail: (id: string) => request.get<ApiResponse<ReworkOrder>>(`/api/admin/rework-orders/${id}`),
+  create: (data: ReworkOrderCreateRequest) =>
+    request.post<ApiResponse<ReworkOrder>>('/api/admin/rework-orders', null, {
+      params: {
+        afterSalesTicketId: data.afterSalesTicketId,
+        ...(data.reason ? { reason: data.reason } : {}),
+        ...(data.processingOrderId ? { processingOrderId: data.processingOrderId } : {}),
+      },
+    }),
+  start: (id: string) => request.post<ApiResponse<ReworkOrder>>(`/api/admin/rework-orders/${id}/start`),
+  complete: (id: string) => request.post<ApiResponse<ReworkOrder>>(`/api/admin/rework-orders/${id}/complete`),
+  cancel: (id: string) => request.post<ApiResponse<ReworkOrder>>(`/api/admin/rework-orders/${id}/cancel`),
+}
+
 export const afterSalesApi = {
   getTickets: (params?: AfterSalesListParams) =>
     request.get<ApiResponse<PageResponse<AfterSalesTicket>>>('/api/admin/after-sales', { params }),
@@ -846,6 +926,29 @@ export const imageRecognizeApi = {
     }),
 }
 
+/** AI 生成的商品图（`url` = 已转存 OSS 的永久地址；`model` = 实际模型，排障用）。 */
+export interface AiProductImageResult {
+  url: string
+  model: string
+}
+
+/** 生成用途（与 admin-api `ProductImageGenerationService.KINDS` 同源）。 */
+export type AiProductImageKind = 'main' | 'texture' | 'craft' | 'scene'
+
+/**
+ * 商品图生成 API（issue #7335）—— 建品页「AI 生成商品图」。
+ *
+ * 请求 = 已上传的**样图 URL** + 商品名 + 用途；响应 = 一张**已转存 OSS** 的永久 URL。
+ * 🔴 **不落库**：生成结果只进表单预览，提交仍走既有建品保存链路。
+ * 🔴 超时单独放宽到 210s：生图实测 30~60s（长尾 ~120s），沿用全局 30s 会必然超时。
+ */
+export const aiProductImageApi = {
+  generate: (payload: { imageUrl: string; productName?: string; kind: AiProductImageKind }) =>
+    request.post<ApiResponse<AiProductImageResult>>('/api/admin/products/ai-images', payload, {
+      timeout: 210000,
+    }),
+}
+
 /**
  * 智能派单 API（issue #5177；消费 #5169 已交付的三个端点）。
  *
@@ -950,7 +1053,7 @@ export const inboundOrderApi = {
 /**
  * 发货单**列表**读面（issue #5939）—— 大菜单「仓储与物料 ▸ 发货单」的第一屏数据源。
  *
- * `GET /api/admin/shipments?keyword=`；权限码 `order:list`（与订单列表/按单发货读面**同一把尺子**）。
+ * `GET /api/admin/shipments?keyword=`；权限码 `order:list`（与销售订单/按单发货读面**同一把尺子**）。
  * 关键词匹配 发货单号 / 订单号 / 客户名；不传 = 本租户最近的 200 张（服务端 `LIST_LIMIT`）。
  *
  * 🔴 「实发」的消费口径：`shippedTotals` 由服务端 `OrderShipmentService.totals()` 给出
@@ -971,6 +1074,12 @@ export const batchStockApi = {
   // 批次余量（派生 = 入库量 − 已派工消耗）；onlyAvailable=true ⇒ 只回余量 > 0 的批次
   batches: (params: { productId?: string; skuId?: number; onlyAvailable?: boolean }) =>
     request.get<ApiResponse<BatchRemaining[]>>('/api/admin/batch-stock/batches', { params }),
+
+  // 批次余量**分页**（issue #7604）：库存明细页「批次余量」视图的默认列表。
+  // 与 `batches` 的区别是**场景**不是口径：这里可以不带 productId（服务端分页，不再"一次拉全量"），
+  // 排序 = 收货日期倒序；keyword 命中批号 / 缸号 / 入库单号 / 货号（服务端 LIKE）。
+  batchesPage: (params: { productId?: string; skuId?: number; keyword?: string; page?: number; size?: number }) =>
+    request.get<ApiResponse<PageResponse<BatchRemaining>>>('/api/admin/batch-stock/batches/page', { params }),
 
   // 剩余量分布（恒四档：≤0.2 / 0.2~0.5 / 0.5~1 / >1 米；空档回 0）
   distribution: (params: { productId?: string }) =>
@@ -1072,6 +1181,47 @@ export const processingOrderSetApi = {
 
 // 生产报工 API（issue #4000，M4-H；后端 ProductionController，权限 order:list）
 // + 工序库/工艺路线只读消费者、计件工资报表、补生成工序、打印计数（issue #4202~#4205）
+// ── 质检记录（**成品帘级**；issue #7140 = #5652 的商家面）──
+//
+// 三个端点**同码** `production:inspect`（写与读同一把尺子；用户 2026-10-17 裁定「保持现状」⇒
+// 零权限放宽）：该码只授给独立质检员 + 管理员。前端不自己判三态合法性 ——
+// 取值域与「判定 ≠ 合格 ⇒ 原因必填」都由服务端裁定（缺原因 ⇒ 422 具名报错）。
+export const qualityInspectionApi = {
+  /** 待检清单（一条 = 一件成品帘）；`status` 传 `all` = 不过滤（**不传**给服务端，省一次判断） */
+  targets: (params: { keyword?: string; status?: string; page?: number; size?: number } = {}) => {
+    const q = new URLSearchParams()
+    if (params.keyword) q.set('keyword', params.keyword)
+    if (params.status && params.status !== 'all') q.set('status', params.status)
+    if (params.page) q.set('page', String(params.page))
+    if (params.size) q.set('size', String(params.size))
+    const suffix = q.toString() ? '?' + q.toString() : ''
+    return request.get<ApiResponse<QualityTargetsResponse>>('/api/admin/quality-inspections/targets' + suffix)
+  },
+
+  /** 质检指标（P0+P1，issue #7192）：合格率 / 趋势 / 分组 Top-N / 待检积压；`from`/`to` 左闭右开 */
+  stats: (params: { from?: string; to?: string; bucket?: 'day' | 'week' | 'month' } = {}) => {
+    const q = new URLSearchParams()
+    if (params.from) q.set('from', params.from)
+    if (params.to) q.set('to', params.to)
+    if (params.bucket) q.set('bucket', params.bucket)
+    const suffix = q.toString() ? '?' + q.toString() : ''
+    return request.get<ApiResponse<QualityStats>>('/api/admin/quality-inspections/stats' + suffix)
+  },
+
+  /** 记录流水（按加工单 / 成品帘过滤；时间倒序 —— 同件可多条 = 返工后重检） */
+  list: (params: { processingOrderId?: string; orderItemId?: string } = {}) => {
+    const q = new URLSearchParams()
+    if (params.processingOrderId) q.set('processing_order_id', params.processingOrderId)
+    if (params.orderItemId) q.set('order_item_id', params.orderItemId)
+    const suffix = q.toString() ? '?' + q.toString() : ''
+    return request.get<ApiResponse<QualityInspectionRecord[]>>('/api/admin/quality-inspections' + suffix)
+  },
+
+  /** 录入一条判定；判定 ≠ 合格 ⇒ `reason` 必填（缺 ⇒ 服务端 422，不静默存） */
+  create: (data: { order_item_id: string; result: QualityInspectionResult; reason?: string }) =>
+    request.post<ApiResponse<QualityInspectionRecord>>('/api/admin/quality-inspections', data),
+}
+
 export const productionApi = {
   // 加工单工序树 + 进度（含加工单二维码 token）
   getOrderOperations: (orderId: string) =>
@@ -1558,6 +1708,103 @@ export const chatApi = {
   AI_SERVICE_URL,
 }
 
+// 供应商主数据（issue #7369）：档案 CRUD；停用/启用走同一条 update（不单独开端点）。
+/**
+ * 采购单（issue #7369 段 4）：一单可分多次收货；`status` 由后端派生，前端只读。
+ *
+ * <p>与 `supplierApi` **分开**：采购单不是供应商的子资源（它挂的是 purchase_orders 自己的端点），
+ * 混在一个对象里会让「谁的端点」在调用处看不出来。</p>
+ */
+/**
+ * 报表中心（issue #7376 / #7377）：四张只读报表。
+ *
+ * 🔴 响应里**空数据时 totals 为 null**（不是 0）—— 页面必须区分「没有数据」与「合计为零」；
+ * 未定价/未采集/未发生的分项也各自是 null，并带 `complete=false` + `unknownComponents`。
+ */
+/**
+ * 价格本（issue #7375 段 3）：协议价 / 等级价 / 阶梯价的录入与读面。
+ *
+ * 🔴 写面价必须 > 0（0 元 = 白送）；低于该 SKU 成本时后端还会要求「改价」审批。
+ */
+export const priceBookApi = {
+  // 🔴 `skuId` 是**雪花号字符串**（≈2.1e18 > 2^53）—— 全程原样透传，不许 `Number()`
+  //    （一转换就吞末位 ⇒ 服务端查不到该 SKU；#5904 同族，issue #7567）。
+  list: (params: { skuId: string; customerId?: string }) =>
+    request.get<ApiResponse<PriceBookView>>('/api/admin/pricing/books', { params }),
+  upsertProtocol: (data: { customerId: string; skuId: string; price: number; note?: string }) =>
+    request.put<ApiResponse>('/api/admin/pricing/books/protocol', data),
+  upsertVipLevel: (data: { vipLevel: string; skuId: string; price: number }) =>
+    request.put<ApiResponse>('/api/admin/pricing/books/vip-level', data),
+  upsertTier: (data: { skuId: string; minQty: number; maxQty?: number; price: number }) =>
+    request.put<ApiResponse>('/api/admin/pricing/books/tier', data),
+  remove: (kind: 'protocol' | 'vip-level' | 'tier', id: string) =>
+    request.delete<ApiResponse>(`/api/admin/pricing/books/${kind}/${id}`),
+}
+
+export const reportApi = {
+  orderMargins: (params?: { startDate?: string; endDate?: string }) =>
+    request.get<ApiResponse<ReportOrderMargins>>('/api/admin/reports/order-margins', { params }),
+  inventoryAging: (params?: { thresholdDays?: number; warehouseCode?: string }) =>
+    request.get<ApiResponse<ReportInventoryAging>>('/api/admin/reports/inventory-aging', { params }),
+  staffPerformance: (params?: { startDate?: string; endDate?: string }) =>
+    request.get<ApiResponse<ReportStaffPerformance>>('/api/admin/reports/staff-performance', { params }),
+  qualityCost: (params?: { startDate?: string; endDate?: string }) =>
+    request.get<ApiResponse<ReportQualityCost>>('/api/admin/reports/quality-cost', { params }),
+  // 质量成本维度汇总（issue #7377 段 5）：维度必填（customer / process），日期可选
+  qualityCostBreakdown: (dimension: 'customer' | 'process' | 'product', params?: { startDate?: string; endDate?: string }) =>
+    request.get<ApiResponse<ReportQualityCostBreakdown>>('/api/admin/reports/quality-cost/breakdown', {
+      params: { dimension, ...(params ?? {}) },
+    }),
+  // 账龄报表（issue #7376 段 5）：零入参 —— 数据范围与租户都由服务端取（客户端传范围 = 范围形同虚设）
+  receivableAging: () =>
+    request.get<ApiResponse<ReportReceivableAging>>('/api/admin/reports/receivable-aging'),
+}
+
+export const purchaseOrderApi = {
+  list: (params?: { status?: string; supplierId?: string }) =>
+    request.get<ApiResponse<PurchaseOrderView[]>>('/api/admin/purchase-orders', { params }),
+  detail: (id: string) =>
+    request.get<ApiResponse<PurchaseOrderView>>(`/api/admin/purchase-orders/${id}`),
+  create: (data: PurchaseOrderCreateRequest) =>
+    request.post<ApiResponse<PurchaseOrderView>>('/api/admin/purchase-orders', data),
+  receive: (
+    id: string,
+    data: { receivedAt?: string | null; remark?: string | null; lines: { itemId: string; quantity: number; inboundOrderId?: string | null }[] },
+  ) => request.post<ApiResponse<PurchaseOrderView>>(`/api/admin/purchase-orders/${id}/receive`, data),
+  close: (id: string, reason: string) =>
+    request.post<ApiResponse<PurchaseOrderView>>(`/api/admin/purchase-orders/${id}/close`, { reason }),
+}
+
+export const supplierApi = {
+  list: (keyword?: string) =>
+    request.get<ApiResponse<Supplier[]>>('/api/admin/suppliers', {
+      params: keyword ? { keyword } : undefined,
+    }),
+
+  create: (data: Partial<Supplier>) =>
+    request.post<ApiResponse<Supplier>>('/api/admin/suppliers', data),
+
+  update: (id: string, data: Partial<Supplier>) =>
+    request.put<ApiResponse<Supplier>>(`/api/admin/suppliers/${id}`, data),
+
+  // 「待指派」清单（issue #7369 段 2）：入库单上有供应商文本、但没挂档案的（A 口径不猜的人工出口）
+  unassignedInbound: () =>
+    request.get<ApiResponse<UnassignedInboundSupplier[]>>('/api/admin/suppliers/unassigned-inbound'),
+
+  // 应付对账（issue #7369 段 3-A）：累计收货额 / 单据数 / 尚欠（A 段无付款登记）
+  payables: () =>
+    request.get<ApiResponse<SupplierPayableSummary>>('/api/admin/suppliers/payables'),
+
+  // 付款（issue #7369 段 3-B）：一笔付款可冲抵多张入库单；不传 allocations = 挂账/预付
+  createPayment: (data: SupplierPaymentRequest) =>
+    request.post<ApiResponse<SupplierPaymentView>>('/api/admin/supplier-payments', data),
+  voidPayment: (id: string, reason: string) =>
+    request.post<ApiResponse<SupplierPaymentView>>(`/api/admin/supplier-payments/${id}/void`, { reason }),
+  listPayments: (supplierId?: string) =>
+    request.get<ApiResponse<SupplierPaymentView[]>>('/api/admin/supplier-payments',
+      supplierId ? { params: { supplierId } } : undefined),
+}
+
 // 客户管理 API
 export const customerApi = {
   getCustomers: (params?: CustomerListParams) =>
@@ -1575,6 +1822,13 @@ export const customerApi = {
     }
     return request.put<ApiResponse<Customer>>(`/api/admin/customers/${id}`, payload)
   },
+
+  // 客户授信（issue #7370）：额度 / 账期 / 已欠 / 可用。null = 未启用授信（与额度 0 可区分）。
+  getCredit: (id: string) =>
+    request.get<ApiResponse<CustomerCreditStatus>>(`/api/admin/customers/${id}/credit`),
+
+  updateCredit: (id: string, data: { creditLimit: number | null; paymentTermsDays: number | null }) =>
+    request.put<ApiResponse<CustomerCreditStatus>>(`/api/admin/customers/${id}/credit`, data),
 
   getCustomerTags: () =>
     request.get<ApiResponse<CustomerTag[]>>('/api/admin/customer-tags'),
@@ -1619,6 +1873,16 @@ export const settingsApi = {
    */
   getPaymentQrcodes: () =>
     request.get<ApiResponse<PaymentQrcodeMap>>('/api/admin/settings/payment-qrcodes'),
+
+  /**
+   * 保存某类型收款码（issue #7219）：企业设置「收款码」上传后即时落库。
+   * 端点权限 = `system:manage`（仅管理员），前端入口由「企业信息」域的 requiredCode 同码门控。
+   */
+  updatePaymentQrcode: (
+    type: 'wechat' | 'alipay',
+    data: { imageUrl: string; payeeName?: string; remark?: string },
+  ) =>
+    request.put<ApiResponse<PaymentQrcode>>(`/api/admin/settings/payment-qrcodes/${type}`, data),
 }
 
 // 智能每日经营简报 API（issue #3468）
@@ -1902,6 +2166,7 @@ const api = {
   batchStock: batchStockApi,
   remnant: remnantApi,
   production: productionApi,
+  qualityInspection: qualityInspectionApi,
   dashboard: dashboardApi,
   upload: uploadApi,
   file: fileApi,
@@ -1944,4 +2209,38 @@ export const cuttingHeightApi = {
 // 页面的开放范围由每位工人档案上的收窄决定（`PUT /api/admin/workers/{id}/pages`）。
 export const workerPageCatalogApi = {
   get: () => request.get<ApiResponse<WorkerPageCatalogResponse>>('/api/admin/worker-pages'),
+}
+
+// ── 盘点（issue #7373 段 3 前端）──
+// 授权零 delta：读挂 `inbound:view`、写挂 `inbound:create`（与仓 / 库存同域，`StocktakeController` 同码）。
+export const warehouseApi = {
+  /** 仓库列表（默认仓排最前）：`GET /api/admin/warehouses`，码 `inbound:view`。 */
+  list: () => request.get<ApiResponse<Warehouse[]>>('/api/admin/warehouses'),
+}
+
+/**
+ * 盘点单（`StocktakeController`）：出任务 → 录实盘 → 完成（有差异须先审批）/ 作废。
+ *
+ * ⚠️ 列表接口只回**单头**（`items` 恒空数组、`warehouseCode` 恒 null）⇒ 逐批次明细走 `detail`；
+ * 仓名由页面用 `warehouseApi.list()` 自己查（服务端 `view(.., null, ..)` 没回填仓编码）。
+ */
+export const stocktakeApi = {
+  list: () => request.get<ApiResponse<Stocktake[]>>('/api/admin/stocktakes'),
+
+  detail: (id: string) => request.get<ApiResponse<Stocktake>>(`/api/admin/stocktakes/${id}`),
+
+  /** 出任务：`POST /api/admin/stocktakes?warehouseId=&note=`（账面数 = 当刻快照）。 */
+  open: (warehouseId: number, note?: string) =>
+    request.post<ApiResponse<Stocktake>>('/api/admin/stocktakes', undefined, {
+      params: note ? { warehouseId, note } : { warehouseId },
+    }),
+
+  /** 录实盘：body `{"counts": {"<batchId>": 12.5}}`。 */
+  count: (id: string, counts: Record<string, number>) =>
+    request.post<ApiResponse<Stocktake>>(`/api/admin/stocktakes/${id}/count`, { counts }),
+
+  /** 完成：有差异且没有已通过的 `stocktake_diff` 审批 ⇒ 服务端拒绝（原样展示其文案）。 */
+  complete: (id: string) => request.post<ApiResponse<Stocktake>>(`/api/admin/stocktakes/${id}/complete`),
+
+  cancel: (id: string) => request.post<ApiResponse<Stocktake>>(`/api/admin/stocktakes/${id}/cancel`),
 }

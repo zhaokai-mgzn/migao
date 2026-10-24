@@ -138,6 +138,13 @@ class TestCeilToOneTenth:
         """`2.3×10 = 22.999999999999996` 这类二进制噪声**不得**被当成「要进位」（否则纸表 12.3 → 12.4）。"""
         assert ceil_to_step(2.3 * 10, 1.0) == 23.0
 
+    def test_ceil_to_step_zero_step_means_no_rounding(self):
+        """issue #7548：进位步长 **0 = 不进位**（原值返回）；负数仍是配置错误。"""
+        assert ceil_to_step(6.35, 0) == 6.35
+        assert ceil_to_step(13.3449, 0) == 13.3449
+        with pytest.raises(ValueError):
+            ceil_to_step(6.35, -0.1)
+
     def test_fabric_meters_is_a_whole_tenth(self):
         """端到端：用料米数一律落在 0.1 的格点上（构造 x.xx5 的输入 ⇒ 进位可见）。"""
         q = build_quote(formula="pleat", **DOUBLE_6_6)
@@ -177,7 +184,9 @@ class TestDefaultFormula:
         """`formula_text` 必须**明确写出所用公式**（韩折），不得只有算式没有公式名。"""
         q = build_quote(**DOUBLE_6_6)
         assert q["formula_text"].startswith("韩褶公式：")
-        assert q["formula_text"] == "韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米"
+        assert q["formula_text"] == (
+            "韩褶公式：6.6×2−0.3 = 12.9 ÷ 0.25 = 51.6 → 52折 → 0.25×52+0.3 = 13.3米"
+        )
     def test_fullness_formula_text_names_the_formula(self):
         """`fullness` 的公式串同样写明公式名 + 逐片表达式 + 米数（与数值同源）。"""
         q = build_quote(formula="fullness", **ANCHOR)
@@ -203,12 +212,19 @@ class TestDefaultFormula:
 
         判别性：若把 `pleat_mode` 判据写在 `formula` 判据之前（或漏了 `selected_formula` 判断），
         下面三条会全部落回褶数法（`formula='pleat'` / 13.3 米 / 有 pleat_count）⇒ 红。
+
+        ⚠️ 期望米数**分档**（issue #7649）：`craft_tier` 现在真的参与倍数 ⇒ economy 档是
+        `5.5 × 1.8 = 9.9` 米（改前两档都是 11.0 —— 那正是「切档位不算料」的缺陷形态）。
+        **本判据守的东西一字未变**：显式 `formula` 不被抢回褶数法。
         """
-        for extra in ({"craft_tier": "standard"}, {"pleat_count": 48},
-                      {"craft_tier": "economy", "pleat_count": 48}):
+        for extra, expected_meters in (
+            ({"craft_tier": "standard"}, 11.0),
+            ({"pleat_count": 48}, 11.0),
+            ({"craft_tier": "economy", "pleat_count": 48}, 9.9),
+        ):
             q = build_quote(formula="fullness", **{**ANCHOR, **extra})
             assert q["formula"] == FORMULA_FULLNESS, f"显式 formula 被 {extra} 遮蔽"
-            assert q["fabric_meters"] == 11.0, f"显式 formula 被 {extra} 遮蔽"
+            assert q["fabric_meters"] == expected_meters, f"显式 formula 被 {extra} 遮蔽"
             assert "pleat_count" not in q, f"褶倍数公式不该产出褶数（收到 {extra}）"
 
     def test_pleat_formula_still_needs_a_tier_or_pleat_count(self):
@@ -245,14 +261,50 @@ class TestFullnessIndependentOfOpenCount:
             q = build_quote(formula="fullness", **{**ANCHOR, "window_width": width})
             assert q["fabric_meters"] == expected, f"宽 {width} ⇒ 期望 {expected}，得到 {q['fabric_meters']}"
 
-    def test_fullness_ignores_craft_tier(self):
-        """褶倍数公式**不吃档位**：standard（2.0）与 economy（1.8）都是「总宽×档位倍数」，
-        公式串里写的倍数必须与实际相乘的倍数**同一个数**（档位被静默忽略 ⇒ 红）。"""
+    def test_fullness_follows_craft_tier(self):
+        """🔴 2026-10-24 改判（issue #7649）：倍数法**吃档位** —— 用户逐字「切换倍数法的档位没有再去算用料米数」。
+
+        真值源 `docs/design/order-craft-spec-design.md`（`craftTier` = …送算料引擎的 `craft_tier`，
+        「**倍数 `fullness` 与褶数都由它推出**」）+ 下单页「选倍数法 ⇒ 展示档位 chips」——
+        两处都要求档位改变**倍数与用料**。standard（2.0）⇒ 5.5 × 2.0 = 11.0 米；
+        economy（1.8）⇒ 5.5 × 1.8 = 9.9 米。
+
+        🔴 红证（改前实测）：两档都是 11.0 米 / `fullness` 2.0 —— 商家切档位，用料一动不动。
+        ⚠️ 本用例原名 `test_fullness_ignores_craft_tier`（把 #4527 的实现当成了口径，与上面两处
+        真值源自相矛盾）⇒ 按用户 2026-10-24 的实测反馈改判。
+        """
         std = build_quote(formula="fullness", **{**ANCHOR, "craft_tier": "standard"})
         eco = build_quote(formula="fullness", **{**ANCHOR, "craft_tier": "economy"})
-        assert std["fabric_meters"] == 11.0 and eco["fabric_meters"] == 11.0
-        assert std["fullness"] == eco["fullness"] == 2.0
+        assert std["fabric_meters"] == 11.0
+        assert std["fullness"] == 2.0
+        assert eco["fabric_meters"] == 9.9
+        assert eco["fullness"] == 1.8
+        # 公式串里的倍数必须是**实际相乘**的那个数（串与值不同源 ⇒ 商家照错的数对账）
         assert "×2" in std["formula_text"]
+        assert "×1.8" in eco["formula_text"]
+
+    def test_explicit_fullness_wins_over_craft_tier(self):
+        """显式 `fullness` 入参**优先**（既有调用方逐值不变；档位只在没给 `fullness` 时生效）。"""
+        q = build_quote(formula="fullness", **{**ANCHOR, "fullness": 2.2, "craft_tier": "economy"})
+        assert q["fullness"] == 2.2
+        assert q["fabric_meters"] == 12.1  # 5.5 × 2.2
+
+    def test_unknown_craft_tier_falls_back_to_standard(self):
+        """未知档位键 ⇒ **标准档**（与褶数法同一回落；不猜第三值、也不静默按 1.0 算）。"""
+        q = build_quote(formula="fullness", **{**ANCHOR, "craft_tier": "no-such-tier"})
+        assert q["fullness"] == 2.0
+        assert q["fabric_meters"] == 11.0
+
+    def test_tier_below_min_fullness_is_rejected(self):
+        """护栏与褶数法**同一把尺子**：档位倍数 < `min_fullness`（默认 1.5）⇒ fail-closed。
+
+        不静默降档、也不静默放行 —— 同一张 `tiers` 表在褶数法里已经会 400，
+        倍数法放行就是「同一份配置两种口径」。
+        """
+        cfg = resolve_craft_calc_config(
+            {"tiers": {"standard": {"fullness": 2.0}, "cheap": {"fullness": 1.2}}})
+        with pytest.raises(ValueError, match="低于行业下限"):
+            build_quote(formula="fullness", config=cfg, **{**ANCHOR, "craft_tier": "cheap"})
 
     def test_fullness_expression_is_per_panel(self):
         """逐片**表达**（数值与「总宽×褶倍」逐值一致）：总 = 每片 × 开数，每片 = (宽÷开数)×褶倍。"""
@@ -375,7 +427,8 @@ class TestConfigContract:
         cfg = DEFAULT_CRAFT_CALC_CONFIG
         assert set(REQUIRED_CONFIG_KEYS) <= set(cfg)
         assert cfg["per_fold_single"] == curtain_calc.PLEAT_FABRIC_PER_FOLD == 0.25
-        assert cfg["per_fold_mixed_times"] == curtain_calc.MIXED_COLOR_PER_FOLD_BY_TIMES == {1: 0.65, 2: 1.2}
+        # 值 = **配布长度**（米），键名 `per_fold_mixed_times` 是跨端冻结的历史名（issue #7560）
+        assert cfg["per_fold_mixed_times"] == curtain_calc.MIXED_COLOR_PATCH_METERS_BY_TIMES == {1: 0.65, 2: 1.2}
         assert cfg["margin_single"] == curtain_calc.MARGIN_SINGLE == 0.2
         assert cfg["margin_multi"] == curtain_calc.MARGIN_MULTI == 0.3
         assert cfg["min_fullness"] == curtain_calc.MIN_FULLNESS == 1.5
@@ -430,14 +483,28 @@ class TestConfigGuardrails:
         ("per_fold_single", -0.25),
         ("margin_single", -0.1),
         ("margin_multi", -0.1),
-        ("min_fullness", 0),
+        ("min_fullness", -0.1),
         ("hem_margin", -0.3),
-        ("meters_rounding_step", 0),
         ("meters_rounding_step", -0.1),
+        ("oversize_width_threshold", -1),
     ])
-    def test_non_positive_numbers_rejected(self, key, value):
+    def test_invalid_numbers_rejected(self, key, value):
+        """负数**一律**拒；`per_fold_single=0` 也拒（0 米/折 ⇒ 0 米用料 ⇒ 0 元报价）。
+
+        🔴 issue #7548 改判：`min_fullness` / `meters_rounding_step` 的 **0** 已合法
+        （用户 2026-10-23「另外还要都允许设置为0」）⇒ 从本参数表移出，见下一条正控。
+        """
         with pytest.raises(ValueError):
             resolve_craft_calc_config({**DEFAULT_CRAFT_CALC_CONFIG, key: value})
+
+    @pytest.mark.parametrize("key", [
+        "margin_single", "margin_multi", "min_fullness", "hem_margin",
+        "meters_rounding_step", "oversize_width_threshold", "oversize_height_threshold",
+    ])
+    def test_zero_is_allowed_for_zero_meaningful_keys(self, key):
+        """issue #7548：这 7 个键的 **0 合法**且原样保留（不留边 / 关闭护栏 / 不进位 / 全部按超额）。"""
+        cfg = resolve_craft_calc_config({**DEFAULT_CRAFT_CALC_CONFIG, key: 0})
+        assert cfg[key] == 0
 
     def test_empty_tiers_rejected(self):
         with pytest.raises(ValueError):
@@ -500,12 +567,17 @@ class TestLegacyOutputsRegression:
         q = build_quote(formula="pleat", **{**DOUBLE_6_6, "craft_tier": "economy"})
         assert (q["pleat_count"], q["fabric_meters"]) == (46, 11.8)
 
-    def test_mixed_color_per_fold_unchanged(self):
-        """拼色每折吃布（拼1次 0.65）逐值不变：52 折双开 ⇒ 34.1 米。"""
+    def test_mixed_color_patch_length(self):
+        """拼色**配布定长**（拼1次 0.65 米）：52 折双开 ⇒ 13.2 + 0.65 = 13.85 ⇒ 13.9 米。
+
+        issue #7560（用户 2026-10-23 裁定）：0.65/1.2 是**配布长度**、不是米/折 —— 按米/折算会得 34.1 米，
+        与同页纸表「主布拼色对开 52 折 = 13.2 米」自相矛盾。
+        """
         q = build_quote(formula="pleat", style="拼色",
                         special_options=["拼1次"], **DOUBLE_6_6)
-        assert q["per_fold"] == 0.65
-        assert q["fabric_meters"] == 34.1
+        assert q["per_fold"] == 0.25
+        assert q["patch_meters"] == 0.65
+        assert q["fabric_meters"] == 13.9
 
 
 class TestPatternRepeatReachesTheEngine:

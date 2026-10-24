@@ -276,4 +276,41 @@ class RemnantServiceTest {
     private static String codeOf(Throwable failure) {
         return failure instanceof BusinessException business ? business.getCode() : null;
     }
+
+    // ── 判据 7（issue #7408）：`summary` 的 SQL 聚合与行级口径逐项一致 ──────────────────
+    // 红证：把 `RemnantService#summary` 改回 `selectList` + Java 累加（或把 GROUP BY 去掉只取一行）⇒
+    // 下面每一桶的计数 / 米数 / 回收额都会对不上。
+
+    @Test
+    @DisplayName("🔴 判据7 summary：状态维度聚合逐项正确（计数 / 米数 / 回收额），且只回 4 桶")
+    void summaryAggregatesByStatus() throws Exception {
+        db.newBatch("PC-7408-SUM", RemnantTestDb.DYE_LOT);
+        RemnantViews.Summary before = service.summary(RemnantTestDb.TENANT_ID);
+
+        db.insertRemnant("ORD-7408-A", "PC-7408-SUM", RemnantTestDb.DYE_LOT, "width", "10.00", "0.30",
+                FabricRemnant.STATUS_AVAILABLE);
+        db.insertRemnant("ORD-7408-U", "PC-7408-SUM", RemnantTestDb.DYE_LOT, "width", "4.00", "0.30",
+                FabricRemnant.STATUS_USED);
+        db.insertRemnant("ORD-7408-S", "PC-7408-SUM", RemnantTestDb.DYE_LOT, "width", "2.00", "0.30",
+                FabricRemnant.STATUS_SCRAPPED);
+        db.insertRemnant("ORD-7408-T", "PC-7408-SUM", RemnantTestDb.DYE_LOT, "width", "1.00", "0.30",
+                FabricRemnant.STATUS_CUSTOMER_TAKEN);
+
+        RemnantViews.Summary after = service.summary(RemnantTestDb.TENANT_ID);
+
+        assertThat(after.availableCount() - before.availableCount()).isEqualTo(1);
+        assertThat(after.availableMeters().subtract(before.availableMeters())).isEqualByComparingTo("10.00");
+        assertThat(after.usedCount() - before.usedCount()).isEqualTo(1);
+        assertThat(after.recoveredMetersTotal().subtract(before.recoveredMetersTotal()))
+                .isEqualByComparingTo("4.00");
+        // 夹具的回收额 = length_m × 12.5（RemnantTestDb.insertRemnant 的口径）⇒ 4.00 × 12.5 = 50
+        assertThat(after.recoveredAmountTotal().subtract(before.recoveredAmountTotal()))
+                .isEqualByComparingTo("50.00");
+        assertThat(after.scrappedCount() - before.scrappedCount()).isEqualTo(1);
+        assertThat(after.scrappedMetersTotal().subtract(before.scrappedMetersTotal()))
+                .isEqualByComparingTo("2.00");
+        assertThat(after.customerTakenCount() - before.customerTakenCount()).isEqualTo(1);
+        // 本用例没有新增领料消耗 ⇒ Σ领料成本（另一条标量聚合）必须**逐值不变**
+        assertThat(after.issuedCostTotal()).isEqualByComparingTo(before.issuedCostTotal());
+    }
 }

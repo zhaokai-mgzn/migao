@@ -72,6 +72,9 @@ class KnowledgeCandidateServiceTest {
         void adopt_createsPublishedCard() {
             KnowledgeCandidate candidate = sample("c1");
             when(knowledgeCandidateMapper.selectById("c1")).thenReturn(candidate);
+            // issue #6962 P5-②：发布权 = 条件更新（`status='pending'` 谓词），影响行数 1 = 抢到
+            when(knowledgeCandidateMapper.markReviewedIfPending(eq("c1"), eq(1L), eq("adopted"), isNull(), eq("admin"), any()))
+                    .thenReturn(1);
 
             KnowledgeCard card = knowledgeCandidateService.adopt("c1");
 
@@ -85,10 +88,9 @@ class KnowledgeCandidateServiceTest {
             assertThat(saved.getStatus()).isEqualTo("published");
             assertThat(saved.getQuestion()).isEqualTo("窗帘多久洗一次");
 
-            ArgumentCaptor<KnowledgeCandidate> candidateCaptor = ArgumentCaptor.forClass(KnowledgeCandidate.class);
-            verify(knowledgeCandidateMapper).updateById(candidateCaptor.capture());
-            assertThat(candidateCaptor.getValue().getStatus()).isEqualTo("adopted");
-            assertThat(candidateCaptor.getValue().getReviewedAt()).isNotNull();
+            // 置态走条件更新（CAS）；无谓词 `updateById` 整实体回写是修前的病根形态 ⇒ 显式禁止它回来
+            verify(knowledgeCandidateMapper).markReviewedIfPending(eq("c1"), eq(1L), eq("adopted"), isNull(), eq("admin"), any());
+            verify(knowledgeCandidateMapper, never()).updateById(any(KnowledgeCandidate.class));
         }
 
         @Test
@@ -126,6 +128,8 @@ class KnowledgeCandidateServiceTest {
         void adoptEdited_overridesFields() {
             KnowledgeCandidate candidate = sample("c1");
             when(knowledgeCandidateMapper.selectById("c1")).thenReturn(candidate);
+            when(knowledgeCandidateMapper.markReviewedIfPending(eq("c1"), eq(1L), eq("edited"), isNull(), eq("admin"), any()))
+                    .thenReturn(1);
 
             KnowledgeCandidate patch = KnowledgeCandidate.builder()
                     .suggestedTitle("窗帘清洗周期")
@@ -139,9 +143,8 @@ class KnowledgeCandidateServiceTest {
             assertThat(cardCaptor.getValue().getTitle()).isEqualTo("窗帘清洗周期");
             assertThat(cardCaptor.getValue().getAnswer()).isEqualTo("每 3-6 个月清洗一次（修订版）。");
 
-            ArgumentCaptor<KnowledgeCandidate> candidateCaptor = ArgumentCaptor.forClass(KnowledgeCandidate.class);
-            verify(knowledgeCandidateMapper).updateById(candidateCaptor.capture());
-            assertThat(candidateCaptor.getValue().getStatus()).isEqualTo("edited");
+            verify(knowledgeCandidateMapper).markReviewedIfPending(eq("c1"), eq(1L), eq("edited"), isNull(), eq("admin"), any());
+            verify(knowledgeCandidateMapper, never()).updateById(any(KnowledgeCandidate.class));
         }
 
         @Test
@@ -164,13 +167,14 @@ class KnowledgeCandidateServiceTest {
         void reject_recordsNote() {
             KnowledgeCandidate candidate = sample("c1");
             when(knowledgeCandidateMapper.selectById("c1")).thenReturn(candidate);
+            when(knowledgeCandidateMapper.markReviewedIfPending(eq("c1"), eq(1L), eq("rejected"), eq("非本店业务"), eq("admin"), any()))
+                    .thenReturn(1);
 
             knowledgeCandidateService.reject("c1", "非本店业务");
 
-            ArgumentCaptor<KnowledgeCandidate> captor = ArgumentCaptor.forClass(KnowledgeCandidate.class);
-            verify(knowledgeCandidateMapper).updateById(captor.capture());
-            assertThat(captor.getValue().getStatus()).isEqualTo("rejected");
-            assertThat(captor.getValue().getStatusNote()).isEqualTo("非本店业务");
+            // 拒绝原因随条件更新一并写入（statusNote 参数），不是整实体回写
+            verify(knowledgeCandidateMapper).markReviewedIfPending(eq("c1"), eq(1L), eq("rejected"), eq("非本店业务"), eq("admin"), any());
+            verify(knowledgeCandidateMapper, never()).updateById(any(KnowledgeCandidate.class));
             verify(knowledgeCardMapper, never()).insert(any(KnowledgeCard.class));
         }
 

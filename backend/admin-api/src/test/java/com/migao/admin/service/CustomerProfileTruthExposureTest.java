@@ -199,12 +199,9 @@ class CustomerProfileTruthExposureTest extends BaseServiceTest {
     @Test
     @DisplayName("边界：遮蔽只发生在读面 —— 建档路径的种子值照写（不改写入语义）")
     void creationSeedsAreUntouched() {
-        when(customerProfileMapper.selectOne(any())).thenReturn(null);
-        when(customerProfileMapper.insert(any(CustomerProfile.class))).thenAnswer(invocation -> {
-            CustomerProfile inserted = invocation.getArgument(0);
-            inserted.setId("cust-new");
-            return 1;
-        });
+        // issue #7257：写面收口（findFirstByOpenid 未命中 ⇒ 条件插入命中）
+        when(customerProfileMapper.findFirstByOpenid(any(), any())).thenReturn(null);
+        when(customerProfileMapper.insertIgnoreByOpenid(any(CustomerProfile.class))).thenReturn(1);
 
         CustomerProfile created = customerService.createFromSession(1L, "openid_new", "新客户", "wechat_mini");
 

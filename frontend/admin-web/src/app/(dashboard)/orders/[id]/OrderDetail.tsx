@@ -5,11 +5,14 @@ import { useRouter } from 'next/navigation'
 import { ChevronRight, Printer, Zap, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
-import dayjs from 'dayjs'
 import DateTimeCell from '@/components/common/DateTimeCell'
-// 工序清单读面（issue #6901）：加工单纸面与商家端加工单块要印「这一单要做哪几道工序」——
+// 页面码拒绝态（issue #7276）：无 `order:detail` ⇒ 本页直接给「无权访问」，与 layout 的
+// `ROUTE_PERMISSION_MAP` 拒绝态**同一个组件**（不新造第二套文案/样式）。
+import AccessDenied from '@/components/common/AccessDenied'
+// 工序清单读面（issue #6901）：**屏幕**加工单块要印「这一单要做哪几道工序」——
 // **复用既有读面** `GET /api/admin/production/orders/{id}/operations`（权限码 order:list，
-// 与同页其它读面同码）；**不新造端点、不在打印组件里取数/重算**（组件只负责渲染）。
+// 与同页其它读面同码）；**不新造端点、不在展示组件里取数/重算**（组件只负责渲染）。
+// 🔴 纸面 `ProcessingDoc` 自 issue #7274 起**不印**工序（用户裁定「工序细节不用在打印单上」）。
 import { orderApi, productionApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
 import { Button, Loading, Modal } from '@/components/ui'
@@ -17,13 +20,15 @@ import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, P
 import { PRINT_TARGET_SPECS, usePrintDoc, type PrintTarget } from '@/lib/print-doc'
 // 权限（issue #6867 / B5）：补码入口与端点同码显隐（端点方法级 `processing:manage`）
 import { usePermission } from '@/lib/permission'
+// 「发货前要不要作业」的唯一读点 + 按型分岔的引导句（issue #7079 第 5 包）
+import { WORK_ORDER_NEEDED_COPY, workOrderKindOf } from '@/lib/processing-order'
 // 费用构成（issue #5843）：详情页原先只算商品金额，与页脚订单级总额（**含**加工费）对不上
 // ⇒ 补「商品合计 + 加工费 + 其它构成 = 订单金额」这一块。判定与渲染都在
 // `components/orders/OrderFeeBreakdown.tsx` + `lib/order-fee-display.ts`（本页只接线、不自算）。
 // ⚠️ 直连组件路径（不走 `@/components/orders` 桶）：订单详情页单测把桶整体替身，
 // 直连才能让**真组件**参与渲染（否则「等式可见」这类判据测的是替身 = 空断言）。
 import OrderFeeBreakdown from '@/components/orders/OrderFeeBreakdown'
-import type { Order, OrderItem, LogisticsFormData, ProcessingOrder, OrderStatus, ProductionPosition } from '@/types'
+import type { Order, OrderItem, LogisticsFormData, ProcessingOrder, ProductionPosition } from '@/types'
 import { normalizeOrderStatus, displayOrderStatus } from '@/types'
 import { craftRowsWithoutDoorWidth } from '@/lib/order-item-sku'
 // 整卷售卖的分配文案（issue #5846）：**同一份**渲染实现（含负差额告警）——
@@ -44,16 +49,9 @@ function formatAmount(amount?: number): string {
   })}`
 }
 
-// 倒计时计算
-function calcCountdown(deadline?: string): { h: number; m: number; s: number; expired: boolean } {
-  if (!deadline) return { h: 0, m: 0, s: 0, expired: true }
-  const diff = dayjs(deadline).diff(dayjs(), 'second')
-  if (diff <= 0) return { h: 0, m: 0, s: 0, expired: true }
-  const h = Math.floor(diff / 3600)
-  const m = Math.floor((diff % 3600) / 60)
-  const s = diff % 60
-  return { h, m, s, expired: false }
-}
+// 🔴 issue #7110：这里原本有个 `calcCountdown`（支付倒计时）。后端**没有**「支付截止」真值
+// （`orders` 无列、无写入点、无「超时未付」规则）⇒ 倒计时**从未渲染过**，已连同
+// `Order.paymentDeadline` 类型键一起撤下（同 #7078 撤下 `paymentNo` 的处理）。
 
 // 安全获取明细金额：后端未返回 amount 时依次回退到 subtotal 或 unitPrice*quantity
 // ⚠️ 只管**商品行**（`order_items` 自己的单价/小计）—— 与 #4882 退场的加工项明细无关。
@@ -117,12 +115,12 @@ export default function OrderDetailPage() {
   const [processingOrder, setProcessingOrder] = useState<ProcessingOrder | null>(null)
 
   /**
-   * 工序清单（issue #6901）：加工单纸面（`ProcessingDoc`）与商家端加工单块
-   * （`ProcessingOrderBlock`）要印「这一单要做哪几道工序」—— 两个面**同一份**取数，
-   * 都在本页加载后向下传（组件自己不取数）。
+   * 工序清单（issue #6901 / #7274）：**屏幕**加工单块（`ProcessingOrderBlock`）要印
+   * 「这一单要做哪几道工序」—— 由本页加载后向下传（组件自己不取数）。纸面 `ProcessingDoc`
+   * 自 issue #7274 起**不印**工序 ⇒ 不再向下传。
    *
-   * 取不到 / 空 ⇒ `[]` ⇒ 两个面都**不出现**工序块（缺值不渲染，不印空表）。
-   * 失败**不打扰商家**（本轮不弹 toast）：它只影响纸面的一块内容，而工序读面失败与
+   * 取不到 / 空 ⇒ `[]` ⇒ 屏幕块**不出现**工序清单（缺值不渲染，不印空表）。
+   * 失败**不打扰商家**（本轮不弹 toast）：它只影响屏幕加工单块的一块内容，而工序读面失败与
    * 「订单/加工单读失败」不是一回事（后者必须让商家知道）。
    */
   const [orderOperations, setOrderOperations] = useState<ProductionPosition[]>([])
@@ -140,6 +138,25 @@ export default function OrderDetailPage() {
   const { has: hasPermission } = usePermission()
   const blockReloadRef = useRef<(() => Promise<void>) | null>(null)
   const canManageProcessing = hasPermission('processing:manage')
+  /**
+   * 本页**页面码** = `order:detail`（issue #7276）。
+   *
+   * 病：改前详情读面挂 `order:list` ⇒ 岗位权限页里「订单详情」那个勾选项**勾了不生效**
+   * （用户现场：「虽然页面上提示我没权限操作，但是我仍然能访问，RBAC权限没控制住？」）。
+   * 修：服务端两个读面收码到 `order:detail`，前端同批加**页内拒绝态** —— 无本码时
+   * 直接渲染 `AccessDenied`，且**一个读请求都不发**（不是先请求再看 403）。
+   * ⚠️ 这只是体验层：真正的关口是 admin-api 的 `@RequirePermission("order:detail")` 403
+   * （前端 `has()` 可被绕过，服务端不可）。
+   */
+  const canViewOrderDetail = hasPermission('order:detail')
+  /**
+   * 加工单块（`ProcessingOrderBlock`）的读面码 = `production:view`
+   * （`ProcessingOrderController.GET /{id}`）。无本码 ⇒ **不请求、不渲染**：改前它无条件请求，
+   * 于是客服/销售/财务（持 `order:detail`、**不持** `production:view`）一进详情页就吃一条
+   * 403 「没有权限执行此操作」—— 而同一屏的订单数据却照常渲染，正是用户截图里那句
+   * 「提示没权限，但仍然能访问」。**无权限的面不发请求**才是干净形态。
+   */
+  const canViewProcessingOrder = hasPermission('production:view')
   /** 纸面**确实缺码**（两键都空）—— 有码的单不出现本提示（别对一张有效的纸喊缺码） */
   const processingQrMissing = !processingOrder?.scan_url && !processingOrder?.short_code
 
@@ -160,9 +177,6 @@ export default function OrderDetailPage() {
   const [refundModalOpen, setRefundModalOpen] = useState(false)
   const [refundSubmitting, setRefundSubmitting] = useState(false)
 
-  // 倒计时
-  const [countdown, setCountdown] = useState({ h: 0, m: 0, s: 0, expired: false })
-
   /**
    * 本次打印的目标（issue #4965）：本页**同时挂着两份纸质单据**（发货单 `ShipmentDoc` +
    * 报价单 `QuotationDoc`），它们的 `visibility: visible` 打印防御是**同特异性**的兄弟规则
@@ -171,7 +185,7 @@ export default function OrderDetailPage() {
    */
   // 🔴 打印**只能**走这一个入口（issue #5914）：`window.print()` 已收敛进 `usePrintDoc()`
   // 的 effect —— 在 target 提交进 DOM **之后**才开印（同 tick 调 print = 首次打印空白纸）。
-  const { printTarget, previewTarget, requestPrint, openPreview, closePreview } = usePrintDoc()
+  const { printTarget, previewTarget, requestPrint, openPreview, selectPreview, closePreview } = usePrintDoc()
 
   /**
    * 补码成功后**重新读加工单**（issue #6867 / B5）：纸面读的是 `processingOrder.scan_url` /
@@ -212,8 +226,8 @@ export default function OrderDetailPage() {
    * 端点 = 既有读面 `GET /api/admin/production/orders/{id}/operations`（权限码 `order:list`，
    * 与同页其它读面同码）；**不新造端点**。
    *
-   * 🔴 失败隔离：读不到 ⇒ 空清单（纸面/屏幕块都**不出现**工序块，不编工序、不猜状态），
-   * 且**不打扰商家** —— 它只影响纸面一块内容，与「订单详情读失败」不是一回事。
+   * 🔴 失败隔离：读不到 ⇒ 空清单（**屏幕**块不出现工序清单，不编工序、不猜状态），
+   * 且**不打扰商家** —— 它只影响屏幕加工单块的一块内容，与「订单详情读失败」不是一回事。
    */
   const loadOperations = useCallback(async () => {
     if (!orderId) return
@@ -245,18 +259,13 @@ export default function OrderDetailPage() {
   }, [orderId, loadShipments, loadOperations])
 
   useEffect(() => {
+    // issue #7276：无 `order:detail` ⇒ **一个读请求都不发**（不是先打再吃 403）
+    if (!canViewOrderDetail) {
+      setLoading(false)
+      return
+    }
     loadOrder()
-  }, [loadOrder])
-
-  // 待付款倒计时定时器
-  useEffect(() => {
-    const displayStatus = order ? normalizeOrderStatus(order.status as string) : null
-    if (!order || displayStatus !== 'pending_payment' || !order.paymentDeadline) return
-    const update = () => setCountdown(calcCountdown(order.paymentDeadline))
-    update()
-    const timer = setInterval(update, 1000)
-    return () => clearInterval(timer)
-  }, [order])
+  }, [loadOrder, canViewOrderDetail])
 
   // 关闭订单
   const handleConfirmClose = async (reason: string) => {
@@ -339,6 +348,11 @@ export default function OrderDetailPage() {
 
   const productGroups = useMemo(() => groupItems(order?.items), [order?.items])
 
+  // issue #7276：无页面码 ⇒ **直接拒绝态**（服务端同码 403 是第二道；这条只是让商家一眼看懂）
+  if (!canViewOrderDetail) {
+    return <AccessDenied />
+  }
+
   if (loading) {
     return (
       <div className="p-6 flex items-center justify-center min-h-[400px]">
@@ -351,7 +365,7 @@ export default function OrderDetailPage() {
     return (
       <div className="p-6 text-center py-12">
         <p className="text-neutral-500 mb-4">订单不存在或已被删除</p>
-        <Button onClick={() => router.push('/orders')}>返回订单列表</Button>
+        <Button onClick={() => router.push('/orders')}>返回销售订单</Button>
       </div>
     )
   }
@@ -369,14 +383,27 @@ export default function OrderDetailPage() {
         <span>交易管理</span>
         <ChevronRight className="w-3.5 h-3.5" />
         <button onClick={() => router.push('/orders')} className="hover:text-primary-600 transition-colors">
-          订单列表
+          销售订单
         </button>
         <ChevronRight className="w-3.5 h-3.5" />
         <span className="text-neutral-900">订单详情</span>
       </div>
 
-      {/* 页面标题 */}
-      <h1 className="text-xl font-semibold text-neutral-900 mb-5">订单详情</h1>
+      {/* 页面标题 + **本页唯一的打印入口**（issue #7544）。
+          🔴 入口放在页面级、**不在任何状态分支里**：打印与订单状态无关 —— 已关闭 / 退款中的单子
+          同样要能补打报价单或销售单（改前它由 `PRINT_TARGETS_BY_STATUS` 按状态给出，
+          这两个状态一个按钮都没有）。要打哪一份由预览层里的单据标签选。 */}
+      <div className="flex items-center justify-between gap-3 mb-5">
+        <h1 className="text-xl font-semibold text-neutral-900">订单详情</h1>
+        <Button
+          variant="secondary"
+          icon={<Printer className="w-4 h-4" />}
+          data-testid="order-print-entry"
+          onClick={() => openPreview(DEFAULT_ORDER_PRINT_DOC)}
+        >
+          打印
+        </Button>
+      </div>
 
       {/* 发货明细读失败（issue #6691）：与「还没取到」分开说 —— 这一块读不到时，
           销售单的数量列印的是**订单数量**（不是实发），必须让商家知道 + 给重试出口。 */}
@@ -397,7 +424,6 @@ export default function OrderDetailPage() {
       <StatusSection
         order={order}
         processingOrder={processingOrder}
-        countdown={countdown}
         onClose={() => setCloseModalOpen(true)}
         onEditContent={() => setEditContentOpen(true)}
         onShip={() => router.push(`/orders/${order.id}/ship`)}
@@ -405,7 +431,6 @@ export default function OrderDetailPage() {
         onConfirmReceive={() => setConfirmReceiveOpen(true)}
         onEditLogistics={() => setShowEditLogistics(true)}
         onRefund={() => setRefundModalOpen(true)}
-        onPrint={openPreview}
       />
 
       {/* 基础信息 */}
@@ -414,7 +439,9 @@ export default function OrderDetailPage() {
           <InfoRow label="订单编号" value={order.orderNo} />
           <InfoRow label="下单时间" value={<DateTimeCell value={order.createdAt} />} />
           <InfoRow label="支付时间" value={<DateTimeCell value={order.paidAt} />} />
-          <InfoRow label="支付交易号" value={order.paymentNo || '-'} />
+          {/* issue #7078：原「支付交易号」行已**撤下** —— 系统不走在线支付渠道，没有交易号的真值源，
+              建了也是恒 "-"（#6882「屏幕面读后端未下发的字段」同类）。前端类型面的 `paymentNo`
+              一并删除（编译器成为类级守卫，防再读）。 */}
           <InfoRow label="发货时间" value={<DateTimeCell value={order.shippedAt} />} />
           <InfoRow label="确认收货时间" value={<DateTimeCell value={order.receivedAt} />} />
         </div>
@@ -459,17 +486,18 @@ export default function OrderDetailPage() {
       </SectionCard>
 
       {/* 加工单（issue #3340）：订单 producing 阶段的子进度。
-          items（issue #5145 阶段 1）：生成加工单时据此取逐面料行的派工候选（系统给建议值、文员可改）。 */}
-      <ProcessingOrderBlock
+          🔴 issue #7634：本块**只读** —— 派单在「智能派单」页、状态流转在生产明细页；
+          订单详情不再传 isUrgent / items（不再直派、不再取批次候选）。 */}
+      {canViewProcessingOrder && <ProcessingOrderBlock
         orderId={order.id}
         orderStatus={order.status}
-        hasProcessing={(order.processingItems?.length ?? 0) > 0}
-        items={order.items ?? []}
+        // issue #7079 第 5 包：要不要作业 / 要哪一型，一律取服务端读面（`work_order_kind`）——
+        // 旧写法 `processingItems.length > 0` 只覆盖「含加工项」那一半，卖布单被漏掉 ⇒ 没有生成出口。
+        workOrderKind={workOrderKindOf(order)}
         operations={orderOperations}
         onStatusChange={setProcessingOrder}
-        onPrintProcessing={() => openPreview('processing')}
         onReloadReady={acceptBlockReload}
-      />
+      />}
 
       {/* 纸质发货单（issue #3768）：屏幕上隐藏，仅打印呈现；已发货/已完成可在此补打 */}
       <ShipmentDoc order={order} logistics={order.logistics} printTarget={printTarget} />
@@ -486,14 +514,20 @@ export default function OrderDetailPage() {
       <ProcessingDoc
         order={order}
         processingOrder={processingOrder}
-        qrValue={processingOrder?.scan_url ?? null}
-        operations={orderOperations}
         printTarget={printTarget}
       />
 
       {/* 纸质销售单（**三联纸 241mm × 140mm**，issue #5651）：随货给客户的那张；
-          扫码支付走与报价单**同一份**收款码读取口（`lib/use-payment-qrcodes.ts`）。 */}
-      <SalesDoc order={order} shipments={shipments} printTarget={printTarget} />
+          🔴 页脚**不印收款码**（issue #7589，用户 2026-10-24 逐字「销售单打印处右下角的二维码移除掉」）
+          —— 收款码只留在报价单上。
+          `processingOrder` 只用于左上角的**作业单扫码报工码**（issue #7530）：码值取服务端
+          `scan_url`，与 `ProcessingDoc` **同一份来源**（不新增读面）；无码 ⇒ 该块不出现。 */}
+      <SalesDoc
+        order={order}
+        shipments={shipments}
+        processingOrder={processingOrder}
+        printTarget={printTarget}
+      />
 
       {/* 打印前的**纸面自检层**（issue #5914）：真尺寸纸框 + 溢出/页数自检 + 「打印 / 复制截图」。
           🔴 预览实例**不传 printTarget** ⇒ 打印媒体下仍是 display:none（否则一次会出两份）。 */}
@@ -503,6 +537,8 @@ export default function OrderDetailPage() {
         media={previewTarget ? PRINT_TARGET_SPECS[previewTarget].media : 'a4'}
         onPrint={() => previewTarget && requestPrint(previewTarget)}
         onClose={closePreview}
+        docs={ORDER_PRINT_DOCS}
+        onSelect={selectPreview}
         notice={
           // 加工单预览才挂缺码提示（issue #6867 / B5）：**有码 ⇒ 什么都不渲染**；
           // 缺码 ⇒ 事实照旧可见（读面事实，谁打印谁受影响），**补码按钮**按 `processing:manage`
@@ -526,12 +562,12 @@ export default function OrderDetailPage() {
           <ProcessingDoc
             order={order}
             processingOrder={processingOrder}
-            qrValue={processingOrder?.scan_url ?? null}
-            operations={orderOperations}
             inline
           />
         )}
-        {previewTarget === 'sales' && <SalesDoc order={order} shipments={shipments} inline />}
+        {previewTarget === 'sales' && (
+          <SalesDoc order={order} shipments={shipments} processingOrder={processingOrder} inline />
+        )}
       </PrintDocPreview>
 
       {/* 收货信息 */}
@@ -667,48 +703,24 @@ function ConfirmModal({ open, title, message, loading, onClose, onConfirm }: Con
 // ============== 子组件 ==============
 
 /**
- * 打印入口 × 订单状态（issue #6434）—— **唯一声明处**。
+ * 订单详情可打印的单据与**展示顺序**（issue #7544）—— 与订单状态**无关**：任何状态都能打这几份。
  *
- * 病根（用户 2026-10-06 报告「订单详情里没有打印功能」）：四个入口原先在
- * `shipped` / `completed` 两个分支里**各写一份 JSX 字面量**，于是「待发货 / 生产中 / 待付款」
- * 三个状态区**一个按钮都没有** —— 而这三张单据恰恰是发货**之前**就要用的：
- * 销售单随货给客户、加工单下车间、报价单先行。
+ * 改前这里是一张「订单状态 × 可打单据」的矩阵（#6434），病在两头：
+ * ① 已关闭 / 退款中的单子**一张都打不出来**（商家要补一张报价单给客户对账时是死路）；
+ * ② 四个按钮常驻在状态卡上，单据一多就把操作行铺满 —— 而它们其实是**同一个动作**的四个选项。
  *
- * => 收敛成一张表：新增状态 / 新增单据只改这里；按钮文案取 `PRINT_TARGET_SPECS[*].title`
- * （与纸面自检层的标题**同一份**真值，不手写第二份字面量 —— 手写就会被类级元守卫判红）。
+ * => 收敛成一个入口：页面上只有一个「打印」，进来后在预览层的单据标签里选。
+ * 顺序 = 用得最频繁的两份在前（销售单随货、加工单下车间），其余按纸型从大到小。
  */
-const PRINT_TARGETS_BY_STATUS: Record<OrderStatus, PrintTarget[]> = {
-  // 待付款：报价先行（未付款谈不上销售单/加工单）
-  pending_payment: ['quotation'],
-  // 待发货（含 producing 生产中）：销售单随货、加工单下车间
-  pending_shipment: ['quotation', 'processing', 'sales'],
-  // 已发货 / 已完成：四份单据都可补打（与 #5651 / #5914 的既有口径逐条一致）
-  shipped: ['shipment', 'quotation', 'processing', 'sales'],
-  completed: ['shipment', 'quotation', 'processing', 'sales'],
-  // 已关闭 / 退款售后中：无单据可出
-  closed: [],
-  refund: [],
-}
+const ORDER_PRINT_DOCS = ['sales', 'processing', 'quotation', 'shipment'] as const satisfies readonly PrintTarget[]
 
-/** 打印入口按钮组：文案 / 顺序 / 在哪些状态出现，全部来自上面的矩阵 */
-function PrintActions({ status, onOpen }: { status: OrderStatus; onOpen: (target: PrintTarget) => void }) {
-  return (
-    <>
-      {PRINT_TARGETS_BY_STATUS[status].map((target) => (
-        <Button key={target} variant="secondary" onClick={() => onOpen(target)} className="gap-1.5">
-          <Printer className="w-4 h-4" />
-          {`打印${PRINT_TARGET_SPECS[target].title}`}
-        </Button>
-      ))}
-    </>
-  )
-}
+/** 打开打印层时默认选中的单据：销售单（每一单都必然用到的那张） */
+const DEFAULT_ORDER_PRINT_DOC: PrintTarget = ORDER_PRINT_DOCS[0]
 
 interface StatusSectionProps {
   order: Order
   /** 加工单（ProcessingOrderBlock 上报；null = 无加工单/未生成/查询失败） */
   processingOrder: ProcessingOrder | null
-  countdown: { h: number; m: number; s: number; expired: boolean }
   onClose: () => void
   /** 修改订单内容（issue #5842）—— **只在「待付款」分支渲染入口**（见 StatusSection 的 pending 段） */
   onEditContent: () => void
@@ -717,14 +729,11 @@ interface StatusSectionProps {
   onConfirmReceive: () => void
   onEditLogistics: () => void
   onRefund: () => void
-  /** 打印入口（issue #6434）：点哪份单据由 `PRINT_TARGETS_BY_STATUS` 决定，本页只接到共享打印入口 */
-  onPrint: (target: PrintTarget) => void
 }
 
 function StatusSection({
   order,
   processingOrder,
-  countdown,
   onClose,
   onEditContent,
   onShip,
@@ -732,16 +741,17 @@ function StatusSection({
   onConfirmReceive,
   onEditLogistics,
   onRefund,
-  onPrint,
 }: StatusSectionProps) {
   const status = normalizeOrderStatus(order.status as string)
   const display = displayOrderStatus(order.status as string)
   // issue #3889：producing（生产中）从 pending_shipment 展示中独立（醒目 chip，见 pending_shipment 分支）
   const producing = (order.status as string) === 'producing'
-  // 发货入口守卫：含加工项且无「已完成」加工单 → 引导先完成加工单再发货
-  // （与后端 assertProcessingCompletedBeforeShip「countCompleted==0 拦截」口径一致，不依赖 status 字符串）
-  const hasProcessing = (order.processingItems?.length ?? 0) > 0
-  const processingBlocked = hasProcessing && processingOrder?.status !== 'completed'
+  // 发货入口守卫（issue #3889；issue #7079 第 5 包扩到卖布单）：**需要作业单**且作业单不是「已完成」
+  // → 先引导去做作业单，不渲染可点的「发货」。判据 = 服务端读面键 `work_order_kind`
+  // （后端 `OrderShipGuard.needsWork` = 含加工项 **或** 有卖布行 —— 与 assertProcessingCompletedBeforeShip
+  // 「countCompleted==0 拦截」同一份），不再按 `processingItems` 单侧推。
+  const needsWorkOrder = workOrderKindOf(order) !== null
+  const processingBlocked = needsWorkOrder && processingOrder?.status !== 'completed'
   // 退款展示不再依赖 'refund' 状态：refundAmount > 0 即视为已退款（订单保持原状态）
   const refunded = (order.refundAmount ?? 0) > 0
 
@@ -759,24 +769,8 @@ function StatusSection({
         <div className="flex items-center justify-between">
           <div>
             <div className="text-2xl font-semibold text-red-500 mb-3">待买家付款</div>
-            <div className="flex items-center gap-2 text-sm text-neutral-700">
-              <span className="inline-block w-2 h-2 rounded-full bg-amber-400" />
-              <span>
-                支付倒计时：
-                {countdown.expired ? (
-                  <span className="text-red-500">已超时</span>
-                ) : (
-                  <span className="font-medium">
-                    {countdown.h}h {countdown.m}m {countdown.s}s
-                  </span>
-                )}
-              </span>
-            </div>
           </div>
           <div className="flex items-center gap-3 shrink-0">
-            {/* 打印入口（issue #6434）：待付款阶段「报价先行」—— 原先这里一个打印按钮都没有，
-                商家只能先把订单推成已发货才打得出一张报价单。 */}
-            <PrintActions status={status} onOpen={onPrint} />
             {/* 修改订单（issue #5842）：买家未付款（待付款）时的内容编辑入口 ——
                 收货信息 / 商品明细 / 加工项；金额保存时由服务端重算。
                 只在 pending_payment 分支出现：其余状态后端一律 422，界面不给死路。 */}
@@ -815,11 +809,12 @@ function StatusSection({
                 退款
               </Button>
             )}
-            {/* 打印入口（issue #6434）：待发货 / 生产中就是「销售单随货、加工单下车间」的实际时点 ——
-                原先这里一个打印按钮都没有，货还没发就印不出随货的那张纸。 */}
-            <PrintActions status={status} onOpen={onPrint} />
             {processingBlocked ? (
-              <span className="text-sm text-amber-600">含加工项订单：先完成加工单再发货</span>
+              // 引导句**按型分岔**（issue #7079 第 5 包）：卖布单要的不是「加工单」而是「出库作业单」，
+              // 套用加工单文案会让商家在错的单子里找那张纸。
+              <span className="text-sm text-amber-600">
+                {WORK_ORDER_NEEDED_COPY[workOrderKindOf(order) ?? 'processing'].shipBlocked}
+              </span>
             ) : (
               <Button onClick={onShip} className="gap-1.5">
                 发货
@@ -847,9 +842,6 @@ function StatusSection({
             <Button variant="secondary" onClick={onEditLogistics}>
               编辑物流
             </Button>
-            {/* 打印入口（issue #6434）：四份单据由 `PRINT_TARGETS_BY_STATUS` 统一给出 ——
-                原先这四行在本分支与 completed 分支里**各写一份**，那正是「另一个状态区漏挂」的成因。 */}
-            <PrintActions status={status} onOpen={onPrint} />
             <Button onClick={onConfirmReceive} className="gap-1.5">
               确认收货
               <Zap className="w-4 h-4" />
@@ -872,8 +864,6 @@ function StatusSection({
                 退款
               </Button>
             )}
-            {/* 打印入口（issue #6434）：与已发货同源（同一张矩阵表），已完成同样可补打 */}
-            <PrintActions status={status} onOpen={onPrint} />
           </div>
         </div>
       )}
@@ -941,7 +931,7 @@ function CraftSpecList({ source }: { source?: Record<string, unknown> }) {
     <div className="mt-1 space-y-0.5" data-testid="order-craft-spec">
       <div className="text-xs font-medium text-neutral-500">工艺规格</div>
       {rows.map((row) => (
-        <div key={row.label} className="flex flex-wrap gap-x-1.5 text-xs">
+        <div key={row.label} className="flex flex-wrap justify-center gap-x-1.5 text-xs">
           <span className="text-neutral-400">{row.label}</span>
           <span className="text-neutral-700">{row.value}</span>
         </div>
@@ -960,14 +950,17 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
       <table className="w-full text-sm">
         <thead className="bg-neutral-50 text-neutral-600">
           <tr>
-            <Th className="pl-0">商品</Th>
-            <Th className="pl-0">商品货号</Th>
+            {/* 整表统一居中（issue #7590）：改前 商品/货号/颜色/规格 左对齐、数量居中、金额三列右对齐
+                ⇒ 同一张表三种对齐并存，列与列之间没有稳定参照边（用户截图）。
+                现在对齐由下面的 `Th` / `Td` 一处承担，调用点不再逐列传 `align`。 */}
+            <Th>商品</Th>
+            <Th>商品货号</Th>
             <Th>颜色</Th>
             <Th>规格尺寸</Th>
-            <Th align="right">单价</Th>
-            <Th align="center">数量</Th>
-            <Th align="right">金额</Th>
-            <Th align="right">商品合计</Th>
+            <Th>单价</Th>
+            <Th>数量</Th>
+            <Th>金额</Th>
+            <Th>商品合计</Th>
           </tr>
         </thead>
         <tbody className="divide-y divide-neutral-100">
@@ -977,14 +970,14 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
                 {rowIdx === 0 && (
                   <td
                     rowSpan={group.rows.length}
-                    className="pl-0 pr-3 py-3 align-top border-r border-neutral-100 font-medium text-neutral-900"
+                    className="px-3 py-3 text-center align-top border-r border-neutral-100 font-medium text-neutral-900"
                   >
                     {group.productName}
                   </td>
                 )}
                 {/* 🔴 issue #6882：原读 `row.sku` —— 详情响应里**没有这个键**（真值 = `skuCode`，
                     由 `OrderService.convertToItemResponse` 从 `products.sku_code` 回填）⇒ 这一列恒 `-`。 */}
-                <Td className="pl-0">{row.skuCode || '-'}</Td>
+                <Td>{row.skuCode || '-'}</Td>
                 <Td>{(row.processingInfo as any)?.colorName || '-'}</Td>
                 <Td>
                   {(() => {
@@ -1009,7 +1002,7 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
                     (row.processingInfo as any).remark.trim() !== '' && (
                       <div
                         data-testid="order-item-remark"
-                        className="mt-1 flex flex-wrap gap-x-1.5 text-xs"
+                        className="mt-1 flex flex-wrap justify-center gap-x-1.5 text-xs"
                       >
                         <span className="text-neutral-400">部位备注</span>
                         <span className="text-neutral-700">
@@ -1018,19 +1011,19 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
                       </div>
                     )}
                 </Td>
-                <Td align="right" className="text-red-500 font-medium">
+                <Td className="text-red-500 font-medium">
                   {formatAmount(row.unitPrice)}
                 </Td>
-                <Td align="center" className="text-primary-600 font-medium">
+                <Td className="text-primary-600 font-medium">
                   {row.quantity}
                 </Td>
-                <Td align="right" className="text-primary-600 font-medium">
+                <Td className="text-primary-600 font-medium">
                   {formatAmount(getItemAmount(row))}
                 </Td>
                 {rowIdx === 0 && (
                   <td
                     rowSpan={group.rows.length}
-                    className="px-3 py-3 text-right align-top border-l border-neutral-100 text-primary-600 font-semibold"
+                    className="px-3 py-3 text-center align-top border-l border-neutral-100 text-primary-600 font-semibold"
                   >
                     {formatAmount(group.groupTotal)}
                   </td>
@@ -1044,22 +1037,18 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
   )
 }
 
-function Th({
-  children,
-  align = 'left',
-  className,
-}: {
-  children: React.ReactNode
-  align?: 'left' | 'right' | 'center'
-  className?: string
-}) {
+/**
+ * 表头 / 数据格（issue #7590）：**整表一律居中**。
+ *
+ * 改前对齐是**逐列参数**（商品/货号/颜色/规格 左、数量 中、单价/金额/商品合计 右）⇒ 同一张表
+ * 三种对齐并存。用户裁定「都设计成居中」⇒ 对齐收敛成**表级一条规则**：这两个组件只服务这一张
+ * 订单商品表（非导出），要改对齐就改这里，调用点不再有可漂移的旋钮。
+ */
+function Th({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <th
       className={cn(
-        'px-3 py-2.5 text-xs font-semibold text-neutral-600 whitespace-nowrap',
-        align === 'right' && 'text-right',
-        align === 'center' && 'text-center',
-        align === 'left' && 'text-left',
+        'px-3 py-2.5 text-xs font-semibold text-neutral-600 whitespace-nowrap text-center',
         className
       )}
     >
@@ -1068,28 +1057,8 @@ function Th({
   )
 }
 
-function Td({
-  children,
-  align = 'left',
-  className,
-}: {
-  children: React.ReactNode
-  align?: 'left' | 'right' | 'center'
-  className?: string
-}) {
-  return (
-    <td
-      className={cn(
-        'px-3 py-3 text-neutral-700',
-        align === 'right' && 'text-right',
-        align === 'center' && 'text-center',
-        align === 'left' && 'text-left',
-        className
-      )}
-    >
-      {children}
-    </td>
-  )
+function Td({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <td className={cn('px-3 py-3 text-neutral-700 text-center', className)}>{children}</td>
 }
 
 // ===== 金额汇总：订单金额 / 优惠金额 / 已退款 / 实收款 — issue #672 =====

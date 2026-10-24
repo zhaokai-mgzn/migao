@@ -33,6 +33,8 @@ import { isCraftSpecKey, type CraftSpecRow } from '@/lib/craft-display'
 // 「工艺行但不要门幅」（issue #6893：门幅本行已单独印一处）
 import { craftRowsWithoutDoorWidth, orderItemSku } from '@/lib/order-item-sku'
 import { lineSubtotal } from '@/lib/order-amount'
+// 售卖形态的唯一读点（issue #7320）：布料单不涉及加工费 ⇒ 不印「未定价 / 加工费米数」。
+import { isFabricSaleLine } from '@/lib/sale-form'
 // 加工费的行级展示（读 detail / 编算式 / 判未定价）**issue #5843 起住在共享层** ——
 // 订单详情页的「费用构成」区消费的是**同一份**实现（同一个数不许有两种显示）。
 import {
@@ -237,8 +239,11 @@ export default function OrderItemList({ items, className }: OrderItemListProps) 
   const subtotalSum = items.reduce((sum, item) => sum + item.subtotal, 0)
   const processingFeeSum = items.reduce((sum, item) => sum + (item.processingFee || 0), 0)
   const totalAmount = subtotalSum + processingFeeSum
-  // 未定价行数（#4406：未定价按用户裁定计 0）—— 合计区必须显式提示，不能让它藏在 0 里
-  const unpricedCount = items.filter((it) => isUnpriced(readFeeDetail(it.processingInfo))).length
+  // 未定价行数（#4406：未定价按用户裁定计 0）—— 合计区必须显式提示，不能让它藏在 0 里。
+  // ⚠️ 布料行**不计入**（issue #7320）：落库 `fee_source=unpriced` 是「本来就不收加工费」，不是未定价。
+  const unpricedCount = items.filter(
+    (it) => !isFabricSaleLine(it.processingInfo) && isUnpriced(readFeeDetail(it.processingInfo))
+  ).length
 
   return (
     <div className={className}>
@@ -317,8 +322,10 @@ function ItemRow({ item }: { item: OrderItem }) {
   const doorWidth = orderItemSku(item).doorWidth || undefined
 
   const processingFee = item.processingFee || 0
-  // 加工费构成（#4406）：只展示服务端已算好的数，**不重算**
-  const feeDetail = readFeeDetail(item.processingInfo)
+  // 加工费构成（#4406）：只展示服务端已算好的数，**不重算**。
+  // 布料行**不涉及加工费**（issue #7320）：落库的 `fee_source=unpriced` 是定价引擎「没有加工项」
+  // 的默认态，对布料不是「未定价」⇒ 不读 detail，避免印出「未定价 · 缺选配信息」。
+  const feeDetail = isFabricSaleLine(item.processingInfo) ? null : readFeeDetail(item.processingInfo)
   const feeExpr = feeFormula(feeDetail)
   const unpriced = isUnpriced(feeDetail)
   /** 选项那半（issue #4594）：组合未定价时它**照常计入**行金额 ⇒ 展示面必须报出来 */

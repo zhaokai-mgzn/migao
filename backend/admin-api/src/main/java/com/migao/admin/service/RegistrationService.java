@@ -93,6 +93,18 @@ public class RegistrationService {
      * `tests/unit_ci_workflows/test_onboarding_required_seed_guard.py` 判红。
      */
     private final ProductCategorySeedService productCategorySeedService;
+    /**
+     * 开租默认加工项目录（issue #7148）：加工项目录的两条历史种子路径（V83 迁移 / 建库脚本）
+     * 都只覆盖「当时的租户」⇒ 不种 ⇒ 新租户的「加工项与分类」是空的，
+     * 下单页选不到任何加工项、加工费组合配不出来。同属 {@link OnboardingInitialData#REQUIRED}。
+     */
+    private final ProcessingItemSeedService processingItemSeedService;
+    /**
+     * 开租默认主仓（issue #7592）：不种 ⇒ {@code warehouses} 为空 ⇒ 盘点单「出盘点任务」的
+     * 仓库下拉只有占位项，一张盘点单也出不了（商家面又没有建仓入口）。同属
+     * {@link OnboardingInitialData#REQUIRED}。
+     */
+    private final WarehouseSeedService warehouseSeedService;
 
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -520,12 +532,21 @@ public class RegistrationService {
         //    落库失败就让开租整体回滚（宁可让申请人重试，也不要产出「开箱不可用」的租户）。
         productCategorySeedService.seedDefaultCategory(tenant.getId());
 
-        // ② 按行业套用生产种子模板（issue #4361 交付物 3；收口 #4316）
+        // ② 默认加工项目录（issue #7148）：不种 ⇒ 新租户开箱时「加工项与分类」是空的
+        //    （下单页选不到加工项、加工费组合配不出来）。同属「单行/整份、无合法不种分支」的硬约束
+        //    ⇒ 同样不吞异常（落库失败就让开租整体回滚）。
+        processingItemSeedService.seedDefaultCatalog(tenant.getId());
+
+        // ③ 按行业套用生产种子模板（issue #4361 交付物 3；收口 #4316）
         //    不做这件事的后果（#4316 取证）：种子只种 tenant_id = 1 ⇒ 新租户工序库/路线库为空
         //    ⇒ resolveRoute 两次都不命中 ⇒ 抛 ERR_ROUTING_NOT_FOUND（422）⇒ **一张加工单也生成不了**。
         applyProductionSeedTemplate(tenant);
 
-        // ③ 后置条件校验（fail-closed）：清单里 enforced 的项逐条现取校验，缺一 ⇒ 开租失败
+        // ④ 默认主仓（issue #7592）：不种 ⇒ 盘点单「出盘点任务」的仓库下拉为空（商家面没有建仓入口）
+        //    ⇒ 一张盘点单也出不了。与默认分类/加工项目录同属「无合法不种分支」的硬约束 ⇒ 不吞异常。
+        warehouseSeedService.seedDefaultWarehouse(tenant.getId());
+
+        // ⑤ 后置条件校验（fail-closed）：清单里 enforced 的项逐条现取校验，缺一 ⇒ 开租失败
         assertRequiredInitialData(tenant);
     }
 
@@ -539,12 +560,18 @@ public class RegistrationService {
      *
      * <p>副作用口径（有意）：本方法抛异常 ⇒ 已建的租户 / 管理员 / 角色权限一起回滚。
      * 这里与生产种子模板的「尽力而为、error 日志」口径**相反**是有意的 —— 那一条有合法的
-     * 「本行业没有模板」分支，而默认商品分类没有：缺了就是缺了，租户开箱不可用。</p>
+     * 「本行业没有模板」分支，而默认商品分类与默认加工项目录没有：缺了就是缺了，租户开箱不可用。</p>
      */
     private void assertRequiredInitialData(Tenant tenant) {
         List<String> missing = new ArrayList<>();
         if (productCategorySeedService.countCategories(tenant.getId()) == 0) {
             missing.add(OnboardingInitialData.PRODUCT_CATEGORY_KEY);
+        }
+        if (processingItemSeedService.countProcessingItems(tenant.getId()) == 0) {
+            missing.add(OnboardingInitialData.PROCESSING_CATALOG_KEY);
+        }
+        if (warehouseSeedService.countWarehouses(tenant.getId()) == 0) {
+            missing.add(OnboardingInitialData.WAREHOUSE_KEY);
         }
         if (!missing.isEmpty()) {
             String message = "开通失败：新租户缺少必需初始数据 " + missing
@@ -670,7 +697,7 @@ public class RegistrationService {
                 .tenantId(tenantId)
                 .name("管理员")
                 .code("admin")
-                .description("拥有全部管理权限")
+                .description("职责：企业最高管理岗位，负责员工、岗位与权限配置以及企业基础信息维护，统筹商品、客户、订单、生产、仓储与财务各模块的审核与异常处理。")
                 .status("active")
                 .build();
         roleMapper.insert(adminRole);
@@ -679,7 +706,7 @@ public class RegistrationService {
                 .tenantId(tenantId)
                 .name("客服")
                 .code("customer_service")
-                .description("负责客户服务与咨询")
+                .description("职责：在线接待客户咨询与投诉，跟进订单进度，处理售后工单与退款，维护客户档案与知识库内容，并承担成品帘加工执行（建加工单、报工、打任务卡、发货）。")
                 .status("active")
                 .build();
         roleMapper.insert(csRole);
@@ -688,7 +715,7 @@ public class RegistrationService {
                 .tenantId(tenantId)
                 .name("运营")
                 .code("operator")
-                .description("负责日常运营管理")
+                .description("职责：统筹日常经营：建单、改单、退款与售后处理，维护客户档案、商品与分类，管理加工项与入库单，登记财务流水，并兼顾在线接待。")
                 .status("active")
                 .build();
         roleMapper.insert(operatorRole);
@@ -697,7 +724,7 @@ public class RegistrationService {
                 .tenantId(tenantId)
                 .name("销售")
                 .code("sales")
-                .description("负责销售业务")
+                .description("职责：接待客户并促成下单，负责新建订单、订单跟进与详情核对，跟踪生产与发货进度，维护客户档案。")
                 .status("active")
                 .build();
         roleMapper.insert(salesRole);
@@ -706,7 +733,7 @@ public class RegistrationService {
                 .tenantId(tenantId)
                 .name("财务")
                 .code("finance")
-                .description("负责财务对账")
+                .description("职责：登记与核对收支流水，跟踪订单收款与对账差异，核对入库、发货与加工工价的成本口径，并按需执行加工单与报工操作。")
                 .status("active")
                 .build();
         roleMapper.insert(financeRole);
@@ -721,7 +748,7 @@ public class RegistrationService {
                 .tenantId(tenantId)
                 .name("商品管理员")
                 .code("product_manager")
-                .description("商品与加工项管理（POC 期历史岗位，issue #5699 的 P6 正式定义）")
+                .description("职责：维护商品资料、分类与上下架，管理加工项与加工费口径，为智能派单、生产看板与库存、省料分析提供准确的商品与工序数据。")
                 .status("active")
                 .build();
         roleMapper.insert(productManagerRole);
@@ -730,7 +757,7 @@ public class RegistrationService {
                 .tenantId(tenantId)
                 .name("知识编辑")
                 .code("knowledge_editor")
-                .description("知识库编辑（POC 期历史岗位，issue #5699 的 P6 正式定义）")
+                .description("职责：维护客服知识库，新增、修订与下线知识卡片，按商品资料校对对外答复口径，保证客服答复准确一致。")
                 .status("active")
                 .build();
         roleMapper.insert(knowledgeEditorRole);
@@ -747,17 +774,16 @@ public class RegistrationService {
                 .tenantId(tenantId)
                 .name("质检员")
                 .code("inspector")
-                .description("成品帘质检录入（issue #5652：独立质检员，持 production:inspect / production:view）")
+                .description("职责：负责成品帘质检判定录入（合格、返工、报废），核对计件工价与工序数据，为返工与报废的结算提供依据。")
                 .status("active")
                 .build();
         roleMapper.insert(inspectorRole);
 
         // 创建默认权限目录（RBAC 修复：与代码 @RequirePermission / 前端菜单树 / 内置角色映射
         // 全量对齐——此前仅 5 条大类码，角色管理页无法授予 order:list / employee:create 等细粒度码，
-        // 自定义角色形同虚设。product:manage 保留兼容旧 role_permissions 引用）
+        // 自定义角色形同虚设。旧粗码 product:manage 已于 issue #7282 删除）
         String[][] defaultPermissions = {
                 {"仪表板查看", "dashboard:view", "dashboard", "view", "查看数据概览"},
-                {"商品管理", "product:manage", "product", "manage", "管理商品(旧大类码，兼容)"},
                 {"商品管理", "product:list", "product", "list", "查看商品管理"},
                 {"新增商品", "product:create", "product", "create", "新增/编辑/上下架商品"},
                 {"商品分类", "product:category", "product", "category", "管理商品分类"},

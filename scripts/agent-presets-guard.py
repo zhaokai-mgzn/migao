@@ -1196,7 +1196,7 @@ def _pr_merged_branches(cwd: Path) -> set[str] | None:
 
 
 def _locked_branches(cwd: Path) -> set[str] | None:
-    """活跃会话锁涉及的分支（PID 仍存活）—— 被锁的工作区一律不判「可安全移除」。
+    """活跃会话锁涉及的分支（PID 仍存活 **或** 登记的工作区仍在且仍检出该分支）—— 被锁的工作区一律不判「可安全移除」。
 
     锁目录一律按 **common git dir** 定位（worktree 内的 `$WT/.git` 是指针文件、不是目录，
     直接拼 `.git/sessions` 会永远读不到 —— 那会让守卫**静默失效**）。
@@ -1215,6 +1215,11 @@ def _locked_branches(cwd: Path) -> set[str] | None:
     lock_dir = lock_dir / "sessions"
     if not lock_dir.is_dir():
         return set()
+    # v1.16（issue #7216）：判活口径 = PID 仍活着 **或** 登记的工作区仍是本仓 worktree 且仍检出该分支。
+    # `add` 是短命进程 ⇒ 只按 PID 判活时每把锁一建出来就「失效」（2026-10-18 实测 84 把全如此），
+    # 「有会话在用」这条理由永远不触发。口径必须与 scripts/dev-worktree.sh::lock_file_alive 一致；
+    # 跨消费者一致性由 tests/unit_ci_workflows/test_dev_worktree_lock_liveness.py 钉住。
+    worktrees = {str(Path(e["path"]).resolve()): e["branch"] for e in _worktrees(cwd)}
     alive: set[str] = set()
     for f in lock_dir.glob("*.lock"):
         try:
@@ -1223,11 +1228,18 @@ def _locked_branches(cwd: Path) -> set[str] | None:
             continue
         pid = fields[0].strip() if fields else ""
         branch = fields[2].strip() if len(fields) > 2 else ""
-        if not (pid.isdigit() and branch):
+        path = fields[3].strip() if len(fields) > 3 else ""
+        if not branch:
             continue
-        try:
-            os.kill(int(pid), 0)
-        except (OSError, ValueError):
+        pid_alive = False
+        if pid.isdigit():
+            try:
+                os.kill(int(pid), 0)
+                pid_alive = True
+            except (OSError, ValueError):
+                pass
+        worktree_present = bool(path) and worktrees.get(str(Path(path).resolve())) == branch
+        if not (pid_alive or worktree_present):
             continue
         alive.add(branch)
     return alive

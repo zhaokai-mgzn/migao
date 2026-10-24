@@ -50,7 +50,20 @@ class DailyBriefingMapperTest {
         String schema = java.nio.file.Files.readString(root.resolve("backend/admin-api/src/main/resources/db/init/schema.sql"));
         assertThat(schema).as("schema.sql 应包含 daily_briefings 建表").contains("CREATE TABLE IF NOT EXISTS daily_briefings");
         assertThat(schema).as("schema.sql 应包含 RLS 策略").contains("tenant_isolation_daily_briefings");
-        assertThat(schema).as("schema.sql 应包含 tenants.briefing_enabled").contains("briefing_enabled BOOLEAN DEFAULT FALSE");
+        assertThat(schema).as("schema.sql 应包含 tenants.briefing_enabled（默认开启，2026-10-18 裁定）")
+                .contains("briefing_enabled BOOLEAN DEFAULT TRUE");
+    }
+
+    @Test
+    @DisplayName("V164 把默认值改成开启（只改默认，不 UPDATE 存量）")
+    void migrationV164MakesBriefingDefaultOn() throws Exception {
+        java.nio.file.Path root = findRepoRoot();
+        assertThat(root).isNotNull();
+        String migration = java.nio.file.Files.readString(root.resolve(
+                "backend/admin-api/src/main/resources/db/migration/V164__briefing_enabled_default_true.sql"));
+        assertThat(migration).contains("ALTER COLUMN briefing_enabled SET DEFAULT TRUE");
+        assertThat(migration).as("只改默认值：不许动存量（用户裁定「只改默认，不动存量」）")
+                .doesNotContain("UPDATE tenants");
     }
 
     @Test

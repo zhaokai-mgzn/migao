@@ -86,7 +86,7 @@ class ProductBulkImportServiceTest {
 
     /** 导入模板表头（表头驱动 ⇒ 定位按**名字**，列序无关）。 */
     private static final String[] HEADERS =
-            {"商品名称", "货号", "分类ID", "价格", "库存", "描述", "颜色", "门幅", "SKU编码"};
+            {"商品名称", "货号", "分类ID", "价格", "描述", "颜色", "门幅", "SKU编码"};
 
     // ===== 内存库 =====
     private final List<Product> products = new ArrayList<>();
@@ -202,19 +202,19 @@ class ProductBulkImportServiceTest {
         assertThat(saved.getDescription()).isEqualTo("米白色雪尼尔");
         assertThat(saved.getTenantId()).isEqualTo(TENANT);
         assertThat(saved.getStatus()).isEqualTo("draft");
-        // 商品级库存是**派生列**（#4038）：有 SKU 时 = SKU 汇总
-        assertThat(saved.getStock()).isEqualByComparingTo(new BigDecimal("73"));
+        // 商品级库存是**派生列**（#4038）：导入不建立库存 ⇒ 汇总恒 0（issue #7597）
+        assertThat(saved.getStock()).isEqualByComparingTo(BigDecimal.ZERO);
 
         assertThat(skus).hasSize(3);
         ProductSku first = skuOf("米白", "2.8m");
         assertThat(first.getProductId()).isEqualTo(saved.getId());
         assertThat(first.getTenantId()).isEqualTo(TENANT);
         assertThat(first.getSkuCode()).isEqualTo("MH-001-01-28");
-        // 判据 4：60.5 必须原样落库（不是 60、不是 61）
-        assertThat(first.getStock()).isEqualByComparingTo(new BigDecimal("60.5"));
+        // issue #7597：库存列已从导入模板移除 ⇒ 导入不建立库存（旧文件里的该列被忽略）
+        assertThat(first.getStock()).isEqualByComparingTo(BigDecimal.ZERO);
         assertThat(first.getPrice()).isEqualByComparingTo(new BigDecimal("128.50"));
-        assertThat(skuOf("米白", "3.2m").getStock()).isEqualByComparingTo(new BigDecimal("12"));
-        assertThat(skuOf("浅灰", "2.8m").getStock()).isEqualByComparingTo(new BigDecimal("0.5"));
+        assertThat(skuOf("米白", "3.2m").getStock()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(skuOf("浅灰", "2.8m").getStock()).isEqualByComparingTo(BigDecimal.ZERO);
         // 颜色卡（product_colors）同样落库：SKU 的 colorId 要挂得上
         assertThat(colors).extracting(ProductColor::getColorName)
                 .containsExactlyInAnyOrder("米白", "浅灰");
@@ -222,7 +222,7 @@ class ProductBulkImportServiceTest {
     }
 
     @Test
-    @DisplayName("判据1：无 SKU 维度的行 ⇒ 只落商品（stock 取文件值），不臆造 SKU")
+    @DisplayName("判据1：无 SKU 维度的行 ⇒ 只落商品（stock 恒 0，issue #7597），不臆造 SKU")
     void importsProductWithoutSkuDimensions() throws Exception {
         MockMultipartFile file = workbook(
                 row("罗马杆配件", "PJ-001", null, 35, 8, "2.8m 杆", null, null, null));
@@ -231,7 +231,7 @@ class ProductBulkImportServiceTest {
 
         assertThat(result.getSuccessCount()).isEqualTo(1);
         assertThat(skus).isEmpty();
-        assertThat(onlyProduct().getStock()).isEqualByComparingTo(new BigDecimal("8"));
+        assertThat(onlyProduct().getStock()).isEqualByComparingTo(BigDecimal.ZERO);
     }
 
     @Test
@@ -248,7 +248,7 @@ class ProductBulkImportServiceTest {
         // 红证：把 getCellStringValue 的数字分支换回 `String.valueOf((long) v)` ⇒ 门幅落成 "2"，
         // `skuOf("米白","2.8")` 当场抛「找不到 SKU」（本行即判据）
         ProductSku sku = skuOf("米白", "2.8");
-        assertThat(sku.getStock()).isEqualByComparingTo(new BigDecimal("60.5"));
+        assertThat(sku.getStock()).isEqualByComparingTo(BigDecimal.ZERO);
     }
 
     // ==================== 判据 2：幂等 ====================
@@ -276,7 +276,7 @@ class ProductBulkImportServiceTest {
         verify(productSkuMapper, times(2)).insert(any(ProductSku.class));
         assertThat(skus).extracting(ProductSku::getId).containsExactly(1L, 2L);
         // 逐值不变：重跑不得把 60.5 变成别的数
-        assertThat(skuOf("米白", "2.8m").getStock()).isEqualByComparingTo(new BigDecimal("60.5"));
+        assertThat(skuOf("米白", "2.8m").getStock()).isEqualByComparingTo(BigDecimal.ZERO);
     }
 
     @Test
@@ -306,7 +306,7 @@ class ProductBulkImportServiceTest {
                 row("雪尼尔遮光帘", "MH-003", null, 99, 10, null, "米白", "2.8m", null)), TENANT);
 
         assertThat(skus).hasSize(2);
-        assertThat(skuOf("浅灰", "2.8m").getStock()).isEqualByComparingTo(new BigDecimal("20"));
+        assertThat(skuOf("浅灰", "2.8m").getStock()).isEqualByComparingTo(BigDecimal.ZERO);
     }
 
     @Test
@@ -317,7 +317,7 @@ class ProductBulkImportServiceTest {
         productService.importProducts(workbook(
                 row("雪尼尔遮光帘", "MH-004", null, 99, null, null, "米白", "2.8m", null)), TENANT);
 
-        assertThat(skuOf("米白", "2.8m").getStock()).isEqualByComparingTo(new BigDecimal("60.5"));
+        assertThat(skuOf("米白", "2.8m").getStock()).isEqualByComparingTo(BigDecimal.ZERO);
     }
 
     @Test
@@ -372,7 +372,7 @@ class ProductBulkImportServiceTest {
         assertThat(errorAt(result, 6).getMessage()).contains("门幅");
         // 非法行的货号不得落库（不静默少导，也不静默半导）
         assertThat(products).extracting(Product::getSkuCode).containsExactly("OK-001");
-        assertThat(onlyProduct().getStock()).isEqualByComparingTo(new BigDecimal("1"));
+        assertThat(onlyProduct().getStock()).isEqualByComparingTo(BigDecimal.ZERO);
     }
 
     @Test
@@ -388,7 +388,7 @@ class ProductBulkImportServiceTest {
         assertThat(errorAt(result, 3).getMessage()).contains("重复");
         // 只有第一行落库（5 米），第二行被显式拒绝而不是静默覆盖成 7
         assertThat(skus).hasSize(1);
-        assertThat(skuOf("米白", "2.8m").getStock()).isEqualByComparingTo(new BigDecimal("5"));
+        assertThat(skuOf("米白", "2.8m").getStock()).isEqualByComparingTo(BigDecimal.ZERO);
     }
 
     @Test
@@ -422,24 +422,20 @@ class ProductBulkImportServiceTest {
     // ==================== 判据 4：1 位小数精度 ====================
 
     @Test
-    @DisplayName("判据4：2.755 ⇒ 显式拒绝 + 该行零落库副作用（不静默取整成 2.8）")
-    void twoDecimalStockIsRejectedWithNoSideEffects() throws Exception {
-        MockMultipartFile file = workbook(
-                row("非法精度", "BAD-DEC", null, 10, 2.755, null, "米白", "2.8m", null));
+    @DisplayName("判据4（改钉，issue #7597）：旧文件里的库存列被忽略 —— 2.755 不再报错、也不落库")
+    void legacyStockColumnIsIgnored() throws Exception {
+        // 改前：库存列是导入的绝对值列，2.755 因超 1 位小数被显式拒绝（判据 4）。
+        // 改后：商品档案不再设置库存 ⇒ 模板无该列、旧文件的该列按**未知列**忽略；
+        // 行照常落库，库存恒 0（库存只能由真实单据产生）。
+        MockMultipartFile file = workbookWithHeaders(
+                new String[]{"商品名称", "货号", "价格", "库存", "颜色", "门幅"},
+                new Object[]{"旧模板商品", "BAD-DEC", 10, 2.755, "米白", "2.8m"});
 
         ProductImportResult result = productService.importProducts(file, TENANT);
 
-        assertThat(result.getSuccessCount()).isZero();
-        assertThat(result.getFailCount()).isEqualTo(1);
-        assertThat(errorAt(result, 2).getMessage())
-                .contains("1 位小数").contains("2.755").contains("0.1 米");   // 可行动
-        // 零副作用：商品 / 颜色 / SKU 一张都没写
-        assertThat(products).isEmpty();
-        assertThat(colors).isEmpty();
-        assertThat(skus).isEmpty();
-        verify(productMapper, times(0)).insert(any(Product.class));
-        verify(productSkuMapper, times(0)).insert(any(ProductSku.class));
-        verify(productColorMapper, times(0)).insert(any(ProductColor.class));
+        assertThat(result.getFailCount()).isZero();
+        assertThat(result.getSuccessCount()).isEqualTo(1);
+        assertThat(skuOf("米白", "2.8m").getStock()).isEqualByComparingTo(BigDecimal.ZERO);
     }
 
     @Test
@@ -447,26 +443,27 @@ class ProductBulkImportServiceTest {
     void invalidRowDoesNotBlockValidRowsInSameFile() throws Exception {
         MockMultipartFile file = workbook(
                 row("合法商品", "MIX-OK", null, 10, 60.5, null, "米白", "2.8m", null),
-                row("非法精度", "MIX-BAD", null, 10, 2.755, null, "米白", "2.8m", null));
+                // 非法原因 = 价格 0（库存精度那条判据已随 issue #7597 退场）
+                row("非法行", "MIX-BAD", null, 0, 2.755, null, "米白", "2.8m", null));
 
         ProductImportResult result = productService.importProducts(file, TENANT);
 
         assertThat(result.getSuccessCount()).isEqualTo(1);
         assertThat(result.getFailCount()).isEqualTo(1);
         assertThat(products).extracting(Product::getSkuCode).containsExactly("MIX-OK");
-        assertThat(skuOf("米白", "2.8m").getStock()).isEqualByComparingTo(new BigDecimal("60.5"));
+        assertThat(skuOf("米白", "2.8m").getStock()).isEqualByComparingTo(BigDecimal.ZERO);
     }
 
     @Test
-    @DisplayName("判据4：2.70（书写 2 位 / 有效 1 位）合法 —— 与 StockQuantity 同口径，不另立判据")
-    void twoDotSevenZeroIsAccepted() throws Exception {
+    @DisplayName("判据4（改钉，issue #7597）：库存列已不在模板里 ⇒ 该行的其他字段照常落库")
+    void legacyTwoAndSevenZeroRowStillImports() throws Exception {
         MockMultipartFile file = workbook(
                 row("雪尼尔", "DEC-270", null, 10, 2.70, null, "米白", "2.8m", null));
 
         ProductImportResult result = productService.importProducts(file, TENANT);
 
         assertThat(result.getFailCount()).isZero();
-        assertThat(skuOf("米白", "2.8m").getStock()).isEqualByComparingTo(new BigDecimal("2.7"));
+        assertThat(skuOf("米白", "2.8m").getStock()).isEqualByComparingTo(BigDecimal.ZERO);
     }
 
     // ==================== 表头驱动（一进一出同构） ====================
@@ -482,7 +479,7 @@ class ProductBulkImportServiceTest {
 
         assertThat(result.getFailCount()).isZero();
         assertThat(onlyProduct().getSkuCode()).isEqualTo("HDR-001");
-        assertThat(skuOf("米白", "2.8m").getStock()).isEqualByComparingTo(new BigDecimal("60.5"));
+        assertThat(skuOf("米白", "2.8m").getStock()).isEqualByComparingTo(BigDecimal.ZERO);
     }
 
     @Test
@@ -491,7 +488,9 @@ class ProductBulkImportServiceTest {
         java.util.Set<String> shared = new java.util.LinkedHashSet<>(List.of(ProductService.IMPORT_HEADERS));
         shared.retainAll(new java.util.LinkedHashSet<>(List.of(ProductService.EXPORT_HEADERS)));
 
-        assertThat(shared).containsExactly("商品名称", "货号", "价格", "库存", "描述");
+        assertThat(shared).containsExactly("商品名称", "货号", "价格", "描述");
+        // issue #7597：库存列已从导入模板移除（商品档案不再设置库存）
+        assertThat(ProductService.IMPORT_HEADERS).doesNotContain("库存");
         assertThat(ProductService.IMPORT_HEADERS).contains("颜色", "门幅");
         // #5058：SKU 组合 = 颜色 × 门幅；售卖方式是**商品级**属性 ⇒ 不得成为导入的 SKU 维度
         assertThat(ProductService.IMPORT_HEADERS).doesNotContain("售卖方式");
@@ -515,7 +514,7 @@ class ProductBulkImportServiceTest {
         // 模板示例行：MH-001 两行 = 1 个商品 2 个 SKU；PJ-001 一行 = 1 个无 SKU 商品
         assertThat(products).extracting(Product::getSkuCode).containsExactly("MH-001", "PJ-001");
         assertThat(skus).hasSize(2);
-        assertThat(skuOf("米白", "2.8m").getStock()).isEqualByComparingTo(new BigDecimal("60.5"));
+        assertThat(skuOf("米白", "2.8m").getStock()).isEqualByComparingTo(BigDecimal.ZERO);
     }
 
     // ==================== 辅助 ====================
@@ -539,11 +538,15 @@ class ProductBulkImportServiceTest {
                 .orElseThrow(() -> new AssertionError("第 " + row + " 行没有报错：" + r.getErrors()));
     }
 
-    /** 一行数据：列序与 HEADERS 一致；null = 该单元格留空。 */
+    /** 一行数据：列序与 HEADERS 一致；null = 该单元格留空。
+     *
+     *  🔴 `stock` 形参**已不作数**（issue #7597：商品档案不再设置库存，模板里也没有这一列）——
+     *  保留它只为让既有用例读起来仍是「这一行原本填了库存」，不再写进工作表。
+     *  留着它的另一层用处：证明**旧文件里的库存列不会再生效**。 */
     private static Object[] row(Object name, Object skuCode, Object categoryId, Object price,
                                 Object stock, Object description, Object color,
                                 Object doorWidth, Object skuCodeOfSku) {
-        return new Object[]{name, skuCode, categoryId, price, stock, description, color, doorWidth, skuCodeOfSku};
+        return new Object[]{name, skuCode, categoryId, price, description, color, doorWidth, skuCodeOfSku};
     }
 
     private static MockMultipartFile workbook(Object[]... rows) throws Exception {

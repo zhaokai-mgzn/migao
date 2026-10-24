@@ -207,6 +207,20 @@
       "criterion": "看门人断言：main 上最近一次**已完成**的 run 的注解里存在**绑定该 run id** 的 MECHANISM-LIVENESS 行；缺失或绑定旧 run ⇒ 红。判定只用 run 归属与结论，不用挂钟时长。",
       "consumer": "值班（.github/workflows/mechanism-liveness.yml 定时腿 ⇒ P1 值班 issue）",
       "reading": "instrumented"
+    },
+    {
+      "id": "drift-baseline-reconcile",
+      "name": "归零基线条目自动销账（只剩归零条目 ⇒ 开 bot PR + arm auto-merge）",
+      "workflow": ".github/workflows/drift-baseline-reconcile.yml",
+      "job": "reconcile",
+      "expected_observable": "每轮一条 MECHANISM-LIVENESS 读数（job **最后一步**、独立一步、`if: always()`），`seen=<本轮归零条目数>` / `acted=<本轮真删的条目数>`（由 job 的 `steps.decide.outputs.zeroed` / `steps.prune.outputs.pruned` 交出来）；`why` 写明两者的现取读数。**零动作**（没有归零条目 / 有别的阻塞）时 `seen=<n>`、`acted=0` —— 「零动作」与「没跑」必须长得不一样（§23 G6）；**无法判定**（三态 `3` / 报告缺失）⇒ 上游步骤 `::error::` + 非零退出，读数照出但 rc!=0。",
+      "criterion": "同 automerge（main 上**最近一次已完成** run 的注解里存在**绑定该 run id** 的 MECHANISM-LIVENESS 行，非挂钟）；读数 `rc` 与 run 结论**不得矛盾**（`--outcome \"${{ job.status }}\"` 绑定 ⇒ 自洽，元守卫逐字要求）。本腿的判定力另有实例判据：`tests/unit_ci_workflows/test_drift_audit_contract.py`（`--prune-zeroed` 的红转绿闭环 + 三条负控 + 幂等 + workflow 面：无 cron / 上游结论门控 / timeout 字面量 / gh 步带 token / 权限最小集）。",
+      "consumer": "值班（`mechanism-liveness.yml` 的定时腿 ⇒ P1 值班 issue）+ 上游守护腿：本腿零动作时**红留在上游**（`Post-Merge Verify (main 侧守护腿)` 的漂移审计步），不在本腿被吞。",
+      "reading": "instrumented",
+      "reading_site": "emitter",
+      "boundary": "**判据只有一处**：能不能删由 `scripts/drift_audit.py --prune-zeroed` 自己判（fail-closed：新增漂移 / 被删条目 / burn-down 阻塞 / 任一判据 `error` / 被点名条目所属判据本轮没跑出结论 ⇒ 拒绝动手，一个字都不写）；本 workflow 只做「是不是只剩归零条目」的**保守**粗筛 + 编排。🔴 **不许**改用 `--regen-baseline`：那是全量重建，会连带删掉「本轮没跑出结论」的判据（CI 上 `sync-copy` 恒 `unknown`）名下的合法豁免（#5151）。**触发面**：`workflow_run`（上游 = `Post-Merge Verify (main 侧守护腿)`）+ `workflow_dispatch`；**有意不新增 `schedule`/`cron`**（铁律 10：删除类动作默认禁；而它的输入只在事件上产生）。**未固化**：① 分支推送后的 PR/approve/arm 三段**只能在上线后见**（本机无法真跑 `gh pr create` 那一半，只有 git 推送段被本地 bare-origin harness 实测过）；② 合并者会是 bot（内置 `GITHUB_TOKEN` arm）⇒ 该次合并的 push 面可能被反递归抑制（#6418）；对本腿判定对象无影响，改法是换 arm 凭据而非放宽门禁；③ 销账腿只处理「已归零」这一族，别的一律不动。",
+      "unfixed_note": "**未固化项刻意不写进 `unfixed`**：`unfixed_budget.max_items` 已占满且「只许缩短」⇒ 再加一条 = 把债务搬进台账（G2 封死的正是这条路）。⇒ 逐条登记在 `boundary` 字段与本 workflow 头部。",
+      "unfixed": []
     }
   ],
   "exempt": [

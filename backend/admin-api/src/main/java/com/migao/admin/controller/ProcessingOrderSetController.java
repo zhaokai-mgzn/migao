@@ -34,13 +34,13 @@ import java.util.Map;
  *
  * <h2>🔴 权限锚定（#5246 / #5247 的锚定规则：有菜单节点锚节点码，无节点锚既有生效码）</h2>
  * <p><b>实测事实</b>：加工单（{@code processing_order_sets} 的父实体）在 S1 侧边栏**没有独立菜单节点**
- * —— {@code frontend/admin-web/src/config/menu.ts} 的「加工单」已按 issue #4357 并入「生产看板」
+ * —— {@code frontend/admin-web/src/config/menu.ts} 的「加工单」已按 issue #4357 并入「作业看板」
  * （{@code permissionCode: 'processing:manage'}，路径 {@code /production}），而**加工套件本身零菜单项**。
  * 因此按锚定规则退到第二档：<b>锚「最接近的兄弟读端点」的既有生效码</b>——
  * 兄弟 = {@link ProcessingOrderController} 的 {@code GET /api/admin/processing-orders} 与
  * {@code GET /api/admin/processing-orders/{id}}（同一实体族、同一张表族）。</p>
  * <p>⚠️ <b>本控制器的三个读端点现为 {@code production:view}</b>（issue #5291 新增的生产域**读**码）——
- * 与兄弟读端点（{@link ProcessingOrderController} 的两个 GET）**逐字同码**，也与「生产看板」侧边栏节点同码。
+ * 与兄弟读端点（{@link ProcessingOrderController} 的两个 GET）**逐字同码**，也与「作业看板」侧边栏节点同码。
  * 沿革：issue #5246 曾把兄弟读端点从 {@code processing:view} 改到 {@code processing:manage}（当时该域
  * 没有读码，而 {@code processing:view} 在四处菜单源里没有任何节点 ⇒ 持它的客服/销售/财务能经 API 读到
  * 页面里看不到的生产数据）；issue #5291 读出读码后，本控制器**跟随兄弟锚点**再改挂读码

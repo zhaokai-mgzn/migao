@@ -117,13 +117,23 @@ class TestExtractContent:
         ])
         assert _extract_content(resp) == "图片说明"
 
-    def test_thinking_only_falls_back_to_inner(self):
-        resp = AIMessage(content="<think>只有思考内容</think>")
-        assert _extract_content(resp) == "只有思考内容"
+    def test_thinking_only_never_surfaces(self):
+        """只有思考内容 ⇒ 返回空串，让调用方走兜底话术（issue #7510）。
 
-    def test_empty_falls_back_to_reasoning(self):
+        旧行为是「提取 <think> 内文返回」—— 那会把模型的思考原文当回复发给商家
+        （实证 sess_5742c5b5c43a48b1：商家收到一段「先问文案？先查商品？」的自问自答）。
+        """
+        resp = AIMessage(content="<think>只有思考内容</think>")
+        assert _extract_content(resp) == ""
+
+    def test_reasoning_never_surfaces(self):
+        """正文为空 + reasoning_content 有值 ⇒ 返回空串，**禁止**把 reasoning 当正文。"""
         resp = AIMessage(content="", additional_kwargs={"reasoning_content": "推理内容"})
-        assert _extract_content(resp) == "推理内容"
+        assert _extract_content(resp) == ""
+
+    def test_reasoning_in_response_metadata_never_surfaces(self):
+        resp = AIMessage(content="", response_metadata={"reasoning_content": "推理内容"})
+        assert _extract_content(resp) == ""
 
 
 class TestExtractUsage:

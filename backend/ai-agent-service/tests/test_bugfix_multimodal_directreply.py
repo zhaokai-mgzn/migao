@@ -3,7 +3,9 @@
 
 覆盖两个已确认的线上 Bug：
 - Bug A: 多模态消息被路由到 direct_reply_node（直复模板不处理图片）
-- Bug C: _extract_content 在仅含思考内容时返回空串
+- Bug C: _extract_content 在仅含思考内容时返回空串（issue #7510 起改为**一律**返回空串：
+  旧实现在「只有 <think>」或「正文空 + reasoning_content」时会回退把思考原文当回复，
+  实证 sess_5742c5b5c43a48b1 把模型自问自答发给了商家）
 """
 
 import re
@@ -154,13 +156,13 @@ class TestRouteByIntentMultimodal:
 class TestExtractContentFallback:
     """_extract_content 空响应兜底测试"""
 
-    def test_thinking_only_returns_thought_text(self):
-        """仅 thinking 内容 → 提取标签内文本（非空）"""
+    def test_thinking_only_never_returns_thought_text(self):
+        """仅 thinking 内容 → 返回空串（思考原文不得上屏，issue #7510）"""
         response = AIMessage(content="<think>用户问图片是什么内容，我需要仔细观察图片的特征。图片显示的是一个后台管理系统的界面...</think>")
         result = _extract_content(response)
-        assert result != ""
-        assert "用户问图片是什么内容" in result  # 提取的内容应包含在结果中
-        assert "<think>" not in result  # 不应保留 think 标签
+        assert result == ""
+        assert "用户问图片是什么内容" not in result
+        assert "<think>" not in result
 
     def test_thinking_with_response_returns_response_only(self):
         """thinking + 正式回复 → 仅返回正式回复"""
@@ -188,11 +190,11 @@ class TestExtractContentFallback:
         result = _extract_content(response)
         assert result == "正常回复内容"
 
-    def test_only_think_tags_returns_inner_text(self):
-        """仅 <think>标签</think> → 返回内部文本"""
+    def test_only_think_tags_never_surfaces(self):
+        """仅 <think>标签</think> → 返回空串（思考内容不得上屏，issue #7510）"""
         response = AIMessage(content="<think>一些思考内容</think>")
         result = _extract_content(response)
-        assert result == "一些思考内容"
+        assert result == ""
 
     def test_multimodal_response_with_thinking_only(self):
         """多模态响应仅含 thinking → 仍能提取文本"""
@@ -212,8 +214,8 @@ class TestExtractContentFallback:
         result = _extract_content(response)
         assert result == "这是一段描述性文字。最终结论是好的。"
 
-    def test_thinking_only_fallback_logging(self):
-        """仅 thinking 时应有 warning 日志"""
+    def test_thinking_only_refusal_logging(self):
+        """仅 thinking 时应有 warning 日志（拒绝上屏）"""
         response = AIMessage(content="<think>思考过程</think>")
         with patch("app.graph.skills.base_skill.logger") as mock_logger:
             _extract_content(response)
@@ -221,8 +223,8 @@ class TestExtractContentFallback:
             call_args = str(mock_logger.warning.call_args)
             assert "Only thinking content found" in call_args
 
-    def test_reasoning_content_fallback(self):
-        """additional_kwargs.reasoning_content 作为兜底"""
+    def test_reasoning_content_never_surfaces(self):
+        """additional_kwargs.reasoning_content 只留痕、不上屏（issue #7510）"""
         response = AIMessage(
             content="",
             additional_kwargs={
@@ -231,15 +233,14 @@ class TestExtractContentFallback:
         )
         with patch("app.graph.skills.base_skill.logger") as mock_logger:
             result = _extract_content(response)
-        assert result == "从 additional_kwargs 中提取的思考内容"
+        assert result == ""
         mock_logger.warning.assert_called()
         assert "reasoning_content" in str(mock_logger.warning.call_args)
 
-    def test_final_fallback_returns_original_with_think_tags(self):
-        """终极兜底：返回原始 content（含 think 标签）而非空串"""
+    def test_final_fallback_returns_empty_not_think_tags(self):
+        """终极兜底：返回空串，**不**把带 <think> 标签的原文兜出去"""
         response = AIMessage(content="<think>思考中...</think>")
-        with patch("app.graph.skills.base_skill.logger") as mock_logger:
+        with patch("app.graph.skills.base_skill.logger"):
             result = _extract_content(response)
-        # _strip_think_tags 会清空内容并回退到原文
-        # 所以这里应该是原文（因为 _strip_think_tags 行为：cleaned为空则返回原文）
-        assert result != ""
+        # _strip_think_tags 会清空内容并回退到原文 ⇒ 本函数必须再判一次并返回空
+        assert result == ""

@@ -212,6 +212,7 @@ public class SecurityConfig {
                                 // 泄露面 = 5 个非敏感字段（app/sha/tag/builtAt/servedAt），
                                 // 判据 = tests/unit_ci_workflows/test_served_version_verify.py 的字段白名单判据。
                                 "/api/version",
+                                "/api/version/migrations",
                                 // 健康检查和文档
                                 "/actuator/health",
                                 "/actuator/info",

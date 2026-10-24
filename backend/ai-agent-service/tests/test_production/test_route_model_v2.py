@@ -175,6 +175,8 @@ LOGICAL_UNIT_PRICES = {
     "抱枕": 2.0, "腰靠垫": 2.0, "logo条": 0.6, "立边": 0.5, "扣环": 0.3, "防翘扣": 0.2,
     # issue #4529：两道「**适用但未定价**」的工序（`unit_price is None` ≠ 0 元）
     "配料": None, "打包": None,
+    # issue #7523：整卷出库（`适用但未定价`，单位 卷）
+    "出库": None,
 }
 
 # ── ⑤ 规则表（工艺 7 + 特殊选项 16）；元组 = (触发值, 动作, 工序, 锚点)，**无 position**（#4937 / O2）──
@@ -357,7 +359,7 @@ class TestLogicalNames:
         """键集 == `OPERATION_CATALOG` 的**全部**条目（漏一个 ⇒ 某道工序无逻辑名）。"""
         # 🔴 issue #4937：`配料`/`打包`（本身即逻辑名）+ 4 道纱帘变体**都有**条目 ⇒
         # 排除集只剩「名字本身就是逻辑名」那两道。
-        assert set(OPERATION_LOGICAL_NAMES) == set(OPERATION_CATALOG) - {"配料", "打包"}
+        assert set(OPERATION_LOGICAL_NAMES) == set(OPERATION_CATALOG) - {"配料", "打包", "出库"}
         assert len(OPERATION_LOGICAL_NAMES) == 39
         assert len(set(OPERATION_LOGICAL_NAMES.values())) == 28
 
@@ -399,8 +401,8 @@ class TestPositionPrices:
         与 `V104__deposition_matrix_collapse.sql` / `backend/admin-api/src/main/resources/db/init/schema.sql` 的终态一致。
         """
         assert set(OPERATION_POSITION_PRICES) == set(LOGICAL_UNIT_PRICES)
-        assert len(OPERATION_POSITION_PRICES) == 30, (
-            f"价目行数 = {len(OPERATION_POSITION_PRICES)}，期望 30（一道逻辑工序一行）")
+        assert len(OPERATION_POSITION_PRICES) == 31, (
+            f"价目行数 = {len(OPERATION_POSITION_PRICES)}，期望 31（一道逻辑工序一行）")
         for logical, cell in OPERATION_POSITION_PRICES.items():
             assert set(cell) == {"unit_price", "applicable"}, (
                 f"{logical} 的字段集 = {sorted(cell)}（必须显式落 unit_price + applicable）")
@@ -460,12 +462,13 @@ class TestPositionPrices:
 
 class TestRouteRules:
     def test_rule_count_and_kinds(self):
-        """恰好 = 工艺 7 + 特殊选项 16（`四爪钩` 三条随 issue #4365 退场）；无第三种触发类型。"""
-        assert len(ROUTE_RULES) == len(EXPECTED_CRAFT_RULES) + len(EXPECTED_OPTION_RULES)
+        """恰好 = 工艺 7 + 特殊选项 16 + 售卖方式 2（`四爪钩` 三条随 issue #4365 退场）。"""
+        assert len(ROUTE_RULES) == len(EXPECTED_CRAFT_RULES) + len(EXPECTED_OPTION_RULES) + 2
         kinds = [r["trigger_kind"] for r in ROUTE_RULES]
         assert kinds.count("craft") == len(EXPECTED_CRAFT_RULES)
         assert kinds.count("option") == 16
-        assert set(kinds) == {"craft", "option"}
+        assert kinds.count("sales_form") == 2
+        assert set(kinds) == {"craft", "option", "sales_form"}
 
     def test_exactly_one_rule_carries_a_position_key(self):
         """🔴 **部位维加回**（issue #4962）：活跃规则里**恰好一条**带 `position`，且值逐字冻结。
@@ -516,7 +519,7 @@ class TestRouteRules:
     def test_priorities_are_distinct_and_deterministic(self):
         """优先级两两不同（排序完全确定，不依赖 Python 排序稳定性）。"""
         priorities = [r["priority"] for r in ROUTE_RULES]
-        assert len(set(priorities)) == len(priorities) == len(EXPECTED_CRAFT_RULES) + len(EXPECTED_OPTION_RULES)
+        assert len(set(priorities)) == len(priorities) == len(EXPECTED_CRAFT_RULES) + len(EXPECTED_OPTION_RULES) + 2
 
 
 class TestRuleOrdering:

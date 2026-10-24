@@ -4,10 +4,11 @@ import { ArrowDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { OrderBrief } from '@/types'
 import { normalizeOrderStatus } from '@/types'
-import { Badge } from '@/components/ui'
+import { Badge, RowActionLink } from '@/components/ui'
 import DateTimeCell from '@/components/common/DateTimeCell'
 import OrderStatusBadge from './OrderStatusBadge'
 import { isUrgentFlag, urgentBadgeText } from '@/lib/order-urgency'
+import { processingFeeOf } from '@/lib/order-fee-display'
 import RemarkPopover from './RemarkPopover'
 
 /**
@@ -66,50 +67,11 @@ function getItemAmount(item: { amount?: number; subtotal?: number; unitPrice?: n
   return unit * qty
 }
 
-/**
- * 加工项明细条目（`processingInfo.processingItems` 中的元素）。
- *
- * issue #4882（用户裁定 A）：订单列表「采购明细」列的**加工项明细块整块退场**
- * （逐项的单价 / 数量 / 金额 / 算式不再渲染）⇒ 这里只留 `+ 加工费 X 元` 聚合兜底所需的金额键
- * （#2916：列表接口不下发顶层 `processingFee` 时按明细求和）。
- */
-interface ProcessingDetail {
-  amount?: number
-  subtotal?: number
-}
-
-/**
- * 单个订单明细项的加工费合计（#2916）。
- * 列表接口把加工信息嵌套在每个明细项的 processingInfo 内：
- * `{ processingFee: <该项加工费合计>, processingItems: [{ name, amount, subtotal }] }`
- * 优先取 `processingFee` 字段，缺省时按加工项明细（`amount` / `subtotal`）求和兜底。
- *
- * ⚠️ 逐项明细（单价 / 数量）自 #4882 起只用于**求和**，不再渲染成展示行。
- */
-function getItemProcessingFee(pi: Record<string, unknown> | undefined): number {
-  if (!pi) return 0
-  const direct = Number(pi.processingFee ?? 0)
-  if (Number.isFinite(direct) && direct > 0) return direct
-  const list = Array.isArray(pi.processingItems) ? (pi.processingItems as ProcessingDetail[]) : []
-  return list.reduce((sum, p) => {
-    const amt = Number(p?.amount ?? p?.subtotal ?? 0)
-    return sum + (Number.isFinite(amt) ? amt : 0)
-  }, 0)
-}
-
 function ActionLink({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation()
-        onClick()
-      }}
-      className="text-primary-600 hover:text-primary-700 hover:underline transition-colors"
-    >
-      {children}
-    </button>
-  )
+  // 2026-10-17（用户裁定「不要有多种风格设计」）：形态并入共享原语
+  // （`@/components/ui/RowActionLink`）—— 「单据列表行内动作只有一种长相」的单一真值在那里，
+  // 本处只留一个本地别名，免去全文件改 8 处调用点。
+  return <RowActionLink onClick={onClick}>{children}</RowActionLink>
 }
 
 export default function OrderTable({
@@ -192,7 +154,7 @@ export default function OrderTable({
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-neutral-50 text-neutral-600 text-left">
-            <th className="pl-2 pr-3 py-3 font-medium w-10">
+            <th className="pl-2 pr-3 py-3 font-medium w-10 whitespace-nowrap">
               <input
                 type="checkbox"
                 checked={allSelected}
@@ -216,7 +178,12 @@ export default function OrderTable({
                 🔴 显示的是**服务端值**（`isUrgent` 缺省即库列默认 FALSE）—— 不写死客户端默认。 */}
             <th className="px-4 py-3 font-medium whitespace-nowrap">加急</th>
             <th className="pl-0 pr-4 py-3 font-medium whitespace-nowrap">采购商品</th>
-            <th className="px-4 py-3 font-medium">
+            {/* 采购明细（issue #7138）：**表头必须与数据格共用同一宽度下限**。
+                改前表头没有 `min-w`、也不 nowrap，而这列的表头是全表**唯一**会换行的格 ——
+                `table-layout: auto` 在有数据时靠数据格的 `min-w-[280px]` 撑住，**空数据态**
+                （tbody 只有一条 `colSpan=14` 的空态行）时没有这个约束 ⇒ 列被压到 min-content
+                = 一个汉字宽 ⇒ 表头竖排、整行塌掉（用户 2026-10-17 截图）。 */}
+            <th className="px-4 py-3 font-medium min-w-[280px] whitespace-nowrap">
               <div className="flex flex-col">
                 <span>采购明细</span>
                 <span className="text-xs font-normal text-neutral-400">(名称:单价×数量+加工费)</span>
@@ -333,9 +300,9 @@ export default function OrderTable({
                     {order.items?.length || order.processingItems?.length ? (
                       <div className="space-y-1.5">
                       {order.items?.map((item, itemIdx) => {
-                        // #2916: 加工信息嵌套在明细项 processingInfo 内（列表接口不下发顶层 processingItems）
-                        const pi = item.processingInfo
-                        const fee = getItemProcessingFee(pi)
+                        // #2916 / #7138: 加工信息嵌套在明细项 processingInfo 内（列表接口不下发顶层
+                        // processingItems）；金额一律由 `processingFeeOf` 按**权威 detail** 取。
+                        const fee = processingFeeOf(item.processingInfo)
                         return (
                           // 行主键优先（issue #6883 起后端下发 `order_items.id`）；历史响应缺 id ⇒ 退回「订单 + 序号」
                           <div key={item.id ?? `${order.id}-item-${itemIdx}`} className="space-y-0.5">
@@ -352,7 +319,7 @@ export default function OrderTable({
                             {/* 加工项逐项明细（`定型 0元/米 × 18.3米 = 0元` 一族）已随 #4882 整块退场
                                 （用户裁定 A：单价 / 数量 / 金额 / 算式都不再渲染）。
                                 ⚠️ 行尾 `+ 加工费 X 元` 聚合与商品行本身**保留** —— 前者由
-                                `getItemProcessingFee` 给出（`processingFee` 优先、明细求和兜底）。 */}
+                                `processingFeeOf` 给出（权威 `processingFeeDetail.amount` 优先）。 */}
                           </div>
                         )
                       })}

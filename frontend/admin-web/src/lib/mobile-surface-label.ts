@@ -24,6 +24,41 @@ export const MOBILE_TITLE_PREFIX = '手机端：'
 export const MOBILE_TITLE_SEPARATOR = ' · '
 const MOBILE_TITLE_JOINER = '、'
 
+/** `GET /api/admin/menus` 的节点里、收集手机端标注所需的最小形状（调用方可直接喂页面状态）。 */
+export interface MenuNodeWithMobileTitles {
+  code?: string
+  /** 菜单名（收表时不用，只为让调用方能把整棵 `TreeNode` 直接喂进来）。 */
+  label?: string
+  mobileTitles?: readonly string[] | null
+  children?: readonly MenuNodeWithMobileTitles[] | null
+}
+
+/**
+ * 从**整棵**权限树收集 `权限码 → 手机端面中文名`（服务端在节点上标注，前端只收表）。
+ *
+ * 🔴 为什么必须扫**整棵树**（含顶层独立项）：`dashboard:view`（经营看板）自 issue #7087 起是
+ * **顶层一级项**，只扫 `children` 会让手机端「数据」从岗位/员工的手机端清单里**静默消失**
+ * （2026-10-18 用户截图：权限列回退成 `dashboard:view` 英文码，同一个树扫描口径）。
+ *
+ * 同码多节点（#5699/#5291 的有意设计面）取**树序首个带标注**的节点 —— 与服务端
+ * `MenuController.annotateMobileTitles` 的「标注只落首承载节点」同一条规则。
+ */
+export function mobileTitlesByCodeFromTree(
+  nodes?: readonly MenuNodeWithMobileTitles[] | null,
+): Record<string, string[]> {
+  const map: Record<string, string[]> = {}
+  const visit = (list?: readonly MenuNodeWithMobileTitles[] | null) => {
+    for (const node of list ?? []) {
+      const code = node?.code
+      const titles = (node?.mobileTitles ?? []).map(t => t.trim()).filter(Boolean)
+      if (code && titles.length > 0 && !(code in map)) map[code] = titles
+      visit(node?.children)
+    }
+  }
+  visit(nodes)
+  return map
+}
+
 /**
  * 该节点的手机端标注（**空串** = 没有手机端入口 ⇒ 调用方不追加任何内容）。
  *

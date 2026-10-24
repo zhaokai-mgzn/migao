@@ -165,6 +165,16 @@ public class ProcessingOrderService {
     public static final String TRIGGER_KIND_POSITION = "position";
 
     /**
+     * 触发类型 · **售卖方式**（issue #7523，用户裁定 2026-10-23）。
+     *
+     * <p>取值 = 订单行 {@code sellingMethod}：{@code full_roll}（整卷）/ {@code bulk_cut}（散剪）。
+     * **只对布料产品形态生效**：整卷 ⇒ {@code 出库 → 打包}（不裁剪，工人按卷/批次拣货）；
+     * 散剪 ⇒ 主线原样 {@code 裁剪 → 打包}。与真值源 {@code routing.py::ROUTE_RULES} 的两条
+     * sales_form 规则逐条同源（insert 出库 after 裁剪 → remove 裁剪，priority 270/280）。</p>
+     */
+    public static final String TRIGGER_KIND_SALES_FORM = "sales_form";
+
+    /**
      * 路线引用的工序在工序库无活跃行时的错误码（fail-closed）。
      * 可见位置同 {@link #ERR_ROUTING_NOT_FOUND}。
      */
@@ -214,12 +224,54 @@ public class ProcessingOrderService {
      * 起落库）⇒ 该行走**布料路线**：部位维 = {@link #FABRIC_POSITION}（第 4 个部位），
      * 主线 = {@code 配料 → 打包}（2 道）。</p>
      *
-     * <p>⚠️ <b>缺键的存量单不得改变既有行为</b>（回归不变量）：判据是**逐字相等**的
-     * {@code "布料"}，缺键 / 其它取值（含 {@code 成品帘}）一律走原派生链。</p>
+     * <p>⚠️ 判据**不再只看这一个键**（issue #7222）：缺键时由
+     * {@link #isFabricSaleLine(Map)} 按已落库的布料专属事实（{@code sellingMethod} / {@code rollCount}）
+     * 兜底 —— API / 米宝 / 回归脚本漏写 {@code saleForm} 时，整条作业链会**三段同时静默放行**。</p>
      */
     public static final String SALE_FORM_FABRIC = "布料";
     /** 第 4 个部位（布料单专用）—— 与 {@code routing.py::FABRIC_POSITION} 逐字同源。 */
     public static final String FABRIC_POSITION = "布料";
+
+    /**
+     * **卖布行判据 —— 唯一实现点**（issue #4493 / #7079 / #7222）。
+     *
+     * <p>① **显式声明优先**：{@code processing_info.saleForm == 布料} ⇒ 卖布行；
+     * 非空且不是布料（如 {@code 成品帘}）⇒ **不是**卖布行 —— 有明确声明就不许被派生信号覆盖。</p>
+     *
+     * <p>② **缺键时按已落库的布料专属事实兜底**（issue #7222）：{@code sellingMethod}
+     * （{@code bulk_cut} 散剪 / {@code full_roll} 整卷）或 {@code rollCount}（整卷售卖，issue #5846）
+     * 非空 ⇒ 卖布行。这两项**只有布料行才有**（下单页上「卷数 / 每卷实际米数」只出现在布料行，
+     * 服务端也只用它做布料整卷分摊）⇒ 不是猜业务，而是把客户端（API / 米宝 / 回归脚本）
+     * **漏写**的声明按已落库事实补回来。漏写的后果 = 作业单 / 派单池 / 发货守卫**三段同时静默放行**，
+     * 工人拿不到裁剪活且不报错。</p>
+     *
+     * <p>③ 两者都没有 ⇒ 返回 {@code false}，保持存量语义（**缺键就是缺，不造值**）。</p>
+     */
+    public static boolean isFabricSaleLine(Map<String, Object> processingInfo) {
+        if (processingInfo == null) {
+            return false;
+        }
+        Object rawSaleForm = processingInfo.get("saleForm");
+        String saleForm = rawSaleForm == null ? null : String.valueOf(rawSaleForm).trim();
+        if (SALE_FORM_FABRIC.equals(saleForm)) {
+            return true;
+        }
+        if (saleForm != null && !saleForm.isEmpty()) {
+            return false;
+        }
+        // 🔴 **有加工项 ⇒ 一定不是卖布行**（卖布行按米卖，行上从无加工项 —— 这是它最硬的形态特征）。
+        // 不加这道闸，AI 建单时顺手带的「整卷发货偏好」（sellingMethod）会让一张**成品帘**
+        // 被误判成卖布单 ⇒ 走布料路线（只有裁剪/打包两道）、丢掉缝制工序，比原缺陷更糟。
+        if (processingInfo.get("processingItems") instanceof List<?> items && !items.isEmpty()) {
+            return false;
+        }
+        Object rawSellingMethod = processingInfo.get("sellingMethod");
+        String sellingMethod = rawSellingMethod == null ? null : String.valueOf(rawSellingMethod).trim();
+        if ("bulk_cut".equals(sellingMethod) || "full_roll".equals(sellingMethod)) {
+            return true;
+        }
+        return processingInfo.get("rollCount") != null;
+    }
 
     /**
      * 作业单类型 · **加工**（成品帘；**混合单**也在这一档）—— 与迁移 V159 的 CHECK / 前端联合类型逐值同源。
@@ -254,7 +306,9 @@ public class ProcessingOrderService {
      */
     private static final List<String> CALC_INFO_KEYS = List.of(
             "fabric_meters", "meters", "pleat_count", "holes", "panels", "set_count", "source",
-            "per_panel_pleats", "fullness", "fullness_actual");
+            "per_panel_pleats", "fullness", "fullness_actual",
+            // 整卷出库（issue #7523）：出库工序的应做数量 = 订单行卷数（真实订单事实）
+            "roll_count");
 
     /**
      * 加工单快照要固化的**算料输出**键（issue #4354，设计文档 §4.9）：订单侧下单时已落库的算料输出
@@ -398,6 +452,19 @@ public class ProcessingOrderService {
     private static final String CURTAIN_TYPE_SHEER = "纱帘";
 
     /**
+     * **可生成作业单**的订单状态（issue #7626，用户 2026-10-24 裁定 A）：
+     * {@code pending}（待付款）/ {@code confirmed}（已确认）。
+     *
+     * <p>为什么把待付款放进来：作业单是**生产计划**，不扣库存、不记资金 —— 扣减与收款流水
+     * 仍只发生在 {@code OrderService.confirmPayment}；而销售单上的「扫码报工」码取作业单
+     * {@code scan_url}，旧闸门让待付款单永远没有作业单 ⇒ 纸面永远没有码，用户实测报
+     * 「只有在确认付款后，打印预览才会出现二维码」。</p>
+     *
+     * <p>⚠️ 已取消 / 已完成等状态**仍拒绝**（闸门只放宽到待付款，不是全放开）。</p>
+     */
+    private static final Set<String> GENERATABLE_ORDER_STATUSES = Set.of("pending", "confirmed");
+
+    /**
      * **部件角色 → 部位**（V78，issue #4452）：受控枚举
      * （`order_create.py` 的工具 schema 里就是 enum：主布 / 配布边 / 纱）⇒ 它是**结构化输入**，
      * 不是「名词解释」。
@@ -496,8 +563,11 @@ public class ProcessingOrderService {
      * 待派池视图（issue #5169 判据 5 的可查面）。
      *
      * <h2>池的定义（唯一口径）</h2>
-     * <b>已确认支付</b>（{@code orders.status = 'confirmed'} —— 与「仅已确认订单可生成加工单」同一道闸）
-     * 且 **无活跃加工单**（排除口径与 {@code uk_processing_orders_active} 逐字相同）。
+     * <b>待付款 + 已确认</b>（{@code orders.status ∈ }{@link #GENERATABLE_ORDER_STATUSES}）且
+     * **无活跃加工单**（排除口径与 {@code uk_processing_orders_active} 逐字相同）。
+     * 🔴 issue #7634（用户 2026-10-24 裁定「只需要能让未付款的订单也能去生产即可，也要统一走智能派单」）：
+     * 待付款单**入池** —— 订单详情页的直派入口已全部收走，派单页成为**唯一**派单面；
+     * 作业单是生产计划（不扣库存、不记资金，扣减仍在 {@code confirmPayment}），故未收款也能进生产。
      * 无加工部位的单（配件/赠品行、无加工项）**不进池**：它们本来就不会生成加工单，
      * 进池只会让「池里有单却派不了」变成噪声。
      *
@@ -518,17 +588,17 @@ public class ProcessingOrderService {
      */
     public ProductionPoolViews.Pool pool(Long tenantId, BigDecimal maxWaitHoursRaw) {
         BigDecimal maxWaitHours = maxWaitHours(maxWaitHoursRaw);
-        List<Order> confirmed = orderMapper.selectList(new LambdaQueryWrapper<Order>()
+        List<Order> poolable = orderMapper.selectList(new LambdaQueryWrapper<Order>()
                 .eq(Order::getTenantId, tenantId)
                 .eq(Order::getDeleted, 0)
-                .eq(Order::getStatus, "confirmed")
+                .in(Order::getStatus, GENERATABLE_ORDER_STATUSES)
                 .orderByAsc(Order::getCreatedAt)
                 .orderByAsc(Order::getId));
-        if (confirmed == null) {
-            confirmed = List.of();
+        if (poolable == null) {
+            poolable = List.of();
         }
         List<String> ids = new ArrayList<>();
-        for (Order order : confirmed) {
+        for (Order order : poolable) {
             if (order.getId() != null) {
                 ids.add(order.getId());
             }
@@ -547,7 +617,7 @@ public class ProcessingOrderService {
         Set<String> urgentOrders = new LinkedHashSet<>();
         List<ProductionPoolViews.PoolLine> urgentLines = new ArrayList<>();
         int lineCount = 0;
-        for (Order order : confirmed) {
+        for (Order order : poolable) {
             if (order.getId() == null || dispatched.contains(order.getId())) {
                 continue;
             }
@@ -1497,6 +1567,78 @@ public class ProcessingOrderService {
     }
 
     /**
+     * **直派关闸**的机器可判错误码（issue #7507）。
+     *
+     * <p>与「生成失败」区分开：调用方（订单详情页 / agent）据此知道该**换个入口**（去智能派单），
+     * 而不是去修订单或工序库 —— 同族口径见 {@code ERR_ROUTING_NOT_FOUND} 的「码 + suggestion」。</p>
+     */
+    public static final String ERR_DIRECT_DISPATCH_POOL_REQUIRED = "DIRECT_DISPATCH_POOL_REQUIRED";
+
+    /** 直派被拒的商家可见文案（单一真值：@see #generateDirect）。 */
+    public static final String DIRECT_DISPATCH_POOL_REQUIRED_MESSAGE =
+            "作业单统一在「智能派单」生成：请到「智能派单」勾选该单派单（同料合并更省料）";
+
+    /** 直派被拒时的可行动建议（#7634：待付款 / 加急同样走派单页 —— 不再有直派例外）。 */
+    public static final String DIRECT_DISPATCH_POOL_REQUIRED_SUGGESTION =
+            "到后台「智能派单」页勾选该单派单；待付款与加急订单同样在派单页派，不再从订单详情直派。";
+
+    /**
+     * 订单详情页 / agent 的**直派**入口 —— issue #7634 起对**所有**订单关闸（原 #7507 只拦非加急）。
+     *
+     * <h2>为什么要在这里关闸（而不是只藏按钮）</h2>
+     * {@code POST /api/admin/processing-orders/generate} 与智能派单的
+     * {@code POST /api/admin/production/pool/dispatch} 最终都落到 {@link #generate}，但前者的
+     * {@code pooled} 缺省 = 关 ⇒ 只做逐单排料、**不做跨单同料合并**；而且它会在自动成批
+     * （{@code AUTO_BATCH_DEFAULT_ENABLED}，事件驱动）评估之前把订单派走 ⇒ 那一单永久离开池子、
+     * 失去合并省料的机会（用户 2026-10-23：「为什么从订单可以直接生成加工单，而不是默认走智能派单流程」）。
+     * 只藏前端按钮挡不住 API / agent ⇒ 闸落在服务端这一处。
+     *
+     * <h2>加急单也不再放行（issue #7634，2026-10-24 用户裁定）</h2>
+     * 旧口径（issue #5177 / #7507）给加急单留了直派出口。用户 2026-10-24 裁定「一起收，也要统一走
+     * 智能派单」⇒ 本入口对**所有**订单关闸；加急单改在派单页的**插队区单派**
+     * （{@code /dispatch} + {@code pooled=false}），能力不受影响。
+     *
+     * <h2>结果面</h2>
+     * 与 {@link #generate} 逐单同一形状：被拒的单记 {@code GenerateResult.fail(rawId, code, message,
+     * suggestion)}，**一行都不写**；未加急的单被拒不影响同批里的加急单（顺序 = {@code orderIds} 顺序）。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public List<GenerateResult> generateDirect(List<String> orderIds, List<BatchAssignment> batches,
+                                               Long tenantId, String operator, String assignmentRule) {
+        if (orderIds == null || orderIds.isEmpty()) {
+            throw BusinessException.validationError("orderIds 不能为空");
+        }
+        // 与 generate() 同一道「未匹配指派」校验（在任何写库之前）—— 语义不得因为多一层闸而漂移。
+        Map<String, List<BatchAssignment>> byOrder = assignmentsByOrder(orderIds, batches);
+        GenerateResult[] slots = new GenerateResult[orderIds.size()];
+        List<String> allowed = new ArrayList<>();
+        List<Integer> allowedSlots = new ArrayList<>();
+        List<BatchAssignment> allowedBatches = new ArrayList<>();
+        for (int i = 0; i < orderIds.size(); i++) {
+            String rawId = orderIds.get(i);
+            Order order = resolveOrder(rawId, tenantId);
+            // 解析不到的订单**不在这里另造文案**：留给 generate() 的既有 ORDER_NOT_FOUND 分支
+            // （两处文案必然漂移；「哪一步先失败」也是既有契约的一部分）。
+            if (order != null) {
+                slots[i] = GenerateResult.fail(rawId, ERR_DIRECT_DISPATCH_POOL_REQUIRED,
+                        DIRECT_DISPATCH_POOL_REQUIRED_MESSAGE, DIRECT_DISPATCH_POOL_REQUIRED_SUGGESTION);
+                continue;
+            }
+            allowed.add(rawId);
+            allowedSlots.add(i);
+            allowedBatches.addAll(byOrder.getOrDefault(rawId, List.of()));
+        }
+        if (!allowed.isEmpty()) {
+            List<GenerateResult> generated = generate(allowed, allowedBatches, tenantId, operator,
+                    assignmentRule);
+            for (int k = 0; k < allowedSlots.size(); k++) {
+                slots[allowedSlots.get(k)] = generated.get(k);
+            }
+        }
+        return new ArrayList<>(java.util.Arrays.asList(slots));
+    }
+
+    /**
      * 批次指派 → {@code orderId → 逐行指派}（**任何写库之前**的唯一装配点；
      * 逐单派、池化派、成批预览三条路径共用 ⇒ ① 的 fail-closed 不可能只在一处生效）。
      *
@@ -1642,10 +1784,12 @@ public class ProcessingOrderService {
         if (order == null) {
             throw new BusinessException("ORDER_NOT_FOUND", "无法找到订单：" + rawId, 404);
         }
-        // 仅已确认订单可生成加工单（pending 未付款 / 已取消不允许）
-        if (!"confirmed".equals(order.getStatus())) {
+        // 作业单可在**待付款 / 已确认**生成（issue #7626）—— 作业单是生产计划，
+        // 不扣库存、不记资金；收款与扣减仍只在 `OrderService.confirmPayment`。
+        if (!GENERATABLE_ORDER_STATUSES.contains(order.getStatus())) {
             throw BusinessException.validationError(
-                    String.format("订单 %s 当前状态 [%s] 不允许生成加工单，须为已确认", order.getOrderNo(), order.getStatus()));
+                    String.format("订单 %s 当前状态 [%s] 不允许生成加工单（须为待付款 / 已确认）",
+                            order.getOrderNo(), order.getStatus()));
         }
         List<OrderItem> items = loadOrderItems(order.getId(), tenantId);
         List<Map<String, Object>> snapshot = buildSnapshot(items, tenantId);
@@ -1721,7 +1865,8 @@ public class ProcessingOrderService {
             return ORDER_KIND_PROCESSING;
         }
         for (Map<String, Object> row : snapshot) {
-            if (!SALE_FORM_FABRIC.equals(str(row.get("saleForm")))) {
+            // 判据委托给唯一实现点（issue #7222）：显式 saleForm 优先，缺键按布料专属事实兜底。
+            if (!isFabricSaleLine(row)) {
                 return ORDER_KIND_PROCESSING;
             }
         }
@@ -1910,9 +2055,18 @@ public class ProcessingOrderService {
                 batchNo = batchStock().suggestedBatchNo(tenantId, productIdByItemId.get(itemId),
                         skuCode, meters, assignmentRule);
                 if (!StringUtils.hasText(batchNo)) {
+                    // 🔴 2026-10-17（issue #7077，用户逐字「得把报错原因用业务文案写清楚，而不是技术语言」）：
+                    // 旧文案把**内部规则码**（`fifo` / `best_fit`）与**明细行 id**（UUID）端给商家
+                    // —— 两句都是他照着做不了的读数。现在说清四件事：哪一行（商品名）/ 要多少米 /
+                    // 为什么补不上（按「先到先用」也找不到能整行裁出的批次）/ 下一步做什么（入库或核对余量）。
+                    // ⚠️ 判据 `ProcessingOrderServiceTest#noCandidateUnderTheRuleFailsClosed` 同时钉
+                    // 「新文案在」与「内部标识符不在」两条（把任一句写回去 ⇒ 红）。
+                    String productName = str(row.get("productName"));
+                    String lineLabel = StringUtils.hasText(productName) ? productName : "这一行";
                     throw BusinessException.validationError(String.format(
-                            "明细行 %s 在指派规则 %s 下没有可满足的批次（该行需要 %s 米）",
-                            itemId, assignmentRule, meters.toPlainString()));
+                            "「%s」这行需要 %s 米，库存里没有能裁出它的批次（按「先到先用」也补不上）"
+                                    + "—— 请先把这批布入库，或核对库存里对应门幅与颜色的余量后重试",
+                            lineLabel, meters.toPlainString()));
                 }
             }
             designations.add(new StockBatchConsumptionService.Designation(
@@ -2369,6 +2523,11 @@ public class ProcessingOrderService {
         if ("processing_item".equals(kind)) {
             return processingItems.contains(rule.getTriggerValue());
         }
+        if (TRIGGER_KIND_SALES_FORM.equals(kind)) {
+            // 售卖方式规则由 `buildRoute` 统一处理（与 `craft` 同款：这里返回 false = 不重复插入，
+            // **不是**「未实现」—— 挪到下面的显式失败会让每张布料单实例化时 422）。
+            return false;
+        }
         if (TRIGGER_KIND_POSITION.equals(kind)) {
             // 部位维（issue #4962）：`trigger_value` = 部位名，写面把它**镜像**进 `position` 列
             // ⇒ 「这条规则限哪个部位」只有**一处**判据（{@link #rulePositionMatches}，见两个调用方的
@@ -2602,6 +2761,12 @@ public class ProcessingOrderService {
                 calc.put(key, value);
             }
         }
+        // ①b 整卷出库（issue #7523）：快照键是 camelCase `rollCount`，算料口径键是 `roll_count`
+        //     （与 routing.py::ROLL_KEYS 逐字同源）。缺键 ⇒ 不落（Python 侧兜底 1，绝不落 0）。
+        Object rollCount = entry.get("rollCount");
+        if (rollCount != null) {
+            calc.put("roll_count", rollCount);
+        }
         // ② 该订单行是米类（判据见 isMeterBasedLine 的三段契约）⇒ 订单行数量即米数
         if (!calc.containsKey("fabric_meters") && isMeterBasedLine(entry)) {
             Object quantity = entry.get("quantity");
@@ -2616,7 +2781,7 @@ public class ProcessingOrderService {
         //    ⇒ 10 米的布单只做 1 米、计件按 1 米算 —— 正是 #4208 红线要治的形态。
         //    取法与 ② 同源（**订单行 quantity 即米数**），不新增第二份口径；数量 ≤ 0（脏数据）
         //    时**不落键**：「绝不落 0」是端点的硬不变量（应做 0 ⇒ `done_qty ≥ qty` 恒真 ⇒ 假完工）。
-        if (!calc.containsKey("fabric_meters") && SALE_FORM_FABRIC.equals(str(entry.get("saleForm")))) {
+        if (!calc.containsKey("fabric_meters") && isFabricSaleLine(entry)) {
             Object quantity = entry.get("quantity");
             if (quantity != null && new BigDecimal(String.valueOf(quantity)).signum() > 0) {
                 calc.put("fabric_meters", quantity);
@@ -2913,8 +3078,11 @@ public class ProcessingOrderService {
                 .thenComparing(r -> r.getId() == null ? "" : r.getId()));
         for (ProductionRouteRule rule : ordered) {
             String kind = rule.getTriggerKind();
-            if (isFabricForm) {
-                // 布料产品形态不套用工艺规则（见上方注释；与真值源同一份口径）
+            // 产品形态分派（issue #7523）：布料单**只**吃 `sales_form`（售卖方式）规则；
+            // 窗帘单**不**吃 sales_form（售卖方式只属于卖布行）。其余规则维持原口径 ——
+            // 布料单不套用窗帘工艺规则（与真值源 `routing.py::build_route_v2` 同款）。
+            boolean salesFormRule = TRIGGER_KIND_SALES_FORM.equals(kind);
+            if (isFabricForm != salesFormRule) {
                 continue;
             }
             if ("craft".equals(kind)) {
@@ -2923,6 +3091,12 @@ public class ProcessingOrderService {
                 }
             } else if ("option".equals(kind)) {
                 if (!options.contains(rule.getTriggerValue())) {
+                    continue;
+                }
+            } else if (TRIGGER_KIND_SALES_FORM.equals(kind)) {
+                // 售卖方式（issue #7523）：整卷 full_roll / 散剪 bulk_cut，与订单行**精确相等**
+                // （快照键 sellingMethod；缺键 ⇒ 不命中，存量单行为不变）
+                if (!Objects.equals(rule.getTriggerValue(), str(entry.get("sellingMethod")))) {
                     continue;
                 }
             } else if ("processing_item".equals(kind)) {
@@ -3139,7 +3313,7 @@ public class ProcessingOrderService {
         //    （主布/配布边/纱、布/纱/帘头…），用在布料单上必然错配成窗帘路线。
         //    工艺维对布料单无意义（布料主线只有 配料/打包）⇒ 仍取该租户默认工艺，仅为满足
         //    T3 的既有护栏（缺 `craft` 且无默认工艺 ⇒ fail-closed，本单不放宽该护栏）。
-        if (SALE_FORM_FABRIC.equals(str(entry.get("saleForm")))) {
+        if (isFabricSaleLine(entry)) {
             String fabricCraft = directCraft != null
                     ? directCraft : productionOperationQueryService.defaultCraft(tenantId);
             return new RouteKey(FABRIC_POSITION, fabricCraft, "direct");
@@ -3478,7 +3652,17 @@ public class ProcessingOrderService {
             // 于是 `buildPositionPayload` 的布料路线分支（`deriveRouteKey`，issue #4529）**永不执行**
             // ⇒ 整件商品零工序（真库实证：加工单 JG-20260921-8237 缺「9231 遮光窗帘」的裁剪/打包，issue #4909）。
             // 其余「无加工项」行仍按旧语义跳过（配件 / 赠品行不成部位，行为逐字不变）。
-            if (procs.isEmpty() && !SALE_FORM_FABRIC.equals(str(pi.get("saleForm")))) {
+            // 卖布判据（issue #7222）：缺 `saleForm` 时按**订单行已落库的布料专属事实**兜底 ——
+            // API / 米宝 / 回归脚本漏写 `saleForm` 时，这一行仍必须进快照，否则
+            // `buildPositionPayload` 的布料分支永不执行 ⇒ 工人拿不到裁剪 / 打包活（#4909 的同族形态）。
+            Map<String, Object> fabricEvidence = new LinkedHashMap<>(pi);
+            if (item.getSellingMethod() != null) {
+                fabricEvidence.put("sellingMethod", item.getSellingMethod());
+            }
+            if (item.getRollCount() != null) {
+                fabricEvidence.put("rollCount", item.getRollCount());
+            }
+            if (procs.isEmpty() && !isFabricSaleLine(fabricEvidence)) {
                 continue;
             }
             Map<String, Object> entry = new LinkedHashMap<>();
@@ -3493,6 +3677,14 @@ public class ProcessingOrderService {
             copyIfPresent(pi, entry, "skuCode", "sku");
             copyIfPresent(pi, entry, "colorName");
             copyIfPresent(pi, entry, "sellingMethod");
+            // 布料专属事实（issue #7222）：列值 = **服务端落库的事实**，优先于 processing_info 的同名键
+            // ⇒ 客户端漏写 `saleForm` 时，路线键与单据类型仍能认出这一行是卖布行。
+            if (item.getSellingMethod() != null) {
+                entry.put("sellingMethod", item.getSellingMethod());
+            }
+            if (item.getRollCount() != null) {
+                entry.put("rollCount", item.getRollCount());
+            }
             copyIfPresent(pi, entry, "doorWidth");
             copyIfPresent(pi, entry, "unit");
             // 特殊选项（issue #4230 v1a）：订单侧**新携带** specialOptions: string[]，

@@ -235,7 +235,7 @@ export function createLpapiProvider(api: LpapiPrinterLike): LabelPrinterProvider
  * 而 npm 依赖走 `node_modules`，既不在守卫射程内、又不进仓库。
  *
  * 取不到 ⇒ `null`（**不抛**）：调用方翻成 `sdk-unavailable` 文案（可行动：保持联网刷新重试）。
- * 动态 `import()` ⇒ 这个包只在**用户点「直连打印机打印」时**才下载（不影响首屏）。
+ * 动态 `import()` ⇒ 这个包只在**用户点「蓝牙无线打印」时**才下载（不影响首屏）。
  */
 export async function loadLpapiApi(): Promise<LpapiPrinterLike | null> {
   try {

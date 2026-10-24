@@ -132,6 +132,23 @@ def test_scan_surface_is_not_empty():
     ], "唯一实现点必须在这个文件里（否则上面的判据在守一个不存在的东西）"
 
 
+#: 补写的**等价合法形态**（issue #7174）：当写面改成一条条件 UPDATE 时，「为空才补、补的值取该行
+#: created_at」这条件写进同一条 SQL —— `shipped_at = COALESCE(shipped_at, created_at)`。
+#: 它比"先调补写再去 updateById"**更强**（不存在"补完又被整实体回写盖回去"的顺序面），
+#: 所以判据必须接受它，否则会把更安全的写法判红（判据变成绊线）。
+INLINE_SQL_BACKFILL = "COALESCE(shipped_at, created_at)"
+INLINE_SQL_CALL = "updateShippingDetails"
+
+
+def has_backfill_guard(sources: dict[str, str], rel: str) -> bool:
+    """该写面是否守住了「首次发货时刻」—— 两种合法形态之一即可。"""
+    code = sources[rel]
+    if BACKFILL_ANCHOR in code:
+        return True
+    return INLINE_SQL_CALL in code and INLINE_SQL_BACKFILL in sources.get(
+        "backend/admin-api/src/main/java/com/migao/admin/mapper/OrderLogisticsMapper.java", "")
+
+
 def test_both_known_update_paths_are_in_scope_and_compliant():
     """两侧先例（本单修的两条 update 路径）必须**在射程内且合规** —— 防判据偷偷把它们排除掉。"""
     sources = live_sources()
@@ -140,7 +157,9 @@ def test_both_known_update_paths_are_in_scope_and_compliant():
         "backend/admin-api/src/main/java/com/migao/admin/controller/OrderController.java",
     ):
         assert rel in sources, f"{rel} 不在射程内 ⇒ 判据没在守本单修的那两条路径"
-        assert BACKFILL_ANCHOR in sources[rel], f"{rel} 的补写锚点被摘掉了"
+        assert has_backfill_guard(sources, rel), (
+            f"{rel} 的补写守卫被摘掉了：既没有 `{BACKFILL_ANCHOR}`（两步形态），"
+            f"也没有「`{INLINE_SQL_CALL}` + mapper 里的 `{INLINE_SQL_BACKFILL}`」（一条 SQL 的形态，issue #7174）")
 
 
 # ══════════════════════════════════════════════════════════════════════════════

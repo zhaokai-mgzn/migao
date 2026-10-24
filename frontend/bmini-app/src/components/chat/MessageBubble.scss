@@ -41,6 +41,11 @@
     max-width: 78%;
     display: flex;
     flex-direction: column;
+
+    // issue #7235：有表格的气泡放宽到 94% —— 78% 宽度下 3 列必然被挤成一列
+    &--wide {
+      max-width: 94%;
+    }
   }
 
   &__content {
@@ -78,6 +83,60 @@
 
   &__text-strong {
     font-weight: 600;
+  }
+
+  // issue #7235：GFM 表格 —— 手机屏幕放不下 3~6 列 ⇒ 横向可滑，宁滑不挤。
+  // 表头浅底 + 单元格细线；单元格不继承 `pre-wrap`（会撑出奇怪空格）。
+  &__table-scroll {
+    width: 100%;
+    margin: 8px 0;
+  }
+
+  &__table {
+    display: inline-flex;
+    flex-direction: column;
+    min-width: 100%;
+    border: 1px solid $border-color;
+    border-radius: $radius-sm;
+    overflow: hidden;
+  }
+
+  &__table-row {
+    display: flex;
+    align-items: stretch;
+
+    &--header {
+      background: $bg-secondary;
+    }
+
+    & + & {
+      border-top: 1px solid $border-color;
+    }
+  }
+
+  &__table-cell {
+    flex: 1 0 auto;
+    min-width: 112px;
+    padding: 8px 12px;
+    border-left: 1px solid $border-color;
+    font-size: 24px;
+    line-height: 1.45;
+    word-break: break-all;
+
+    &:first-child {
+      border-left: none;
+    }
+
+    &--header {
+      font-weight: 600;
+      color: $text-primary;
+      white-space: nowrap;
+    }
+  }
+
+  &__table-text {
+    white-space: normal;
+    word-break: break-all;
   }
 
   // 流式光标

@@ -712,10 +712,14 @@ class TestCoverageGateRunsOnCiDependencies:
 
     def test_baseline_loader_needs_no_pyyaml(self, tmp_path):
         """单点回归：`load_baseline` 本身不得 import yaml（比 CLI 更快定位到根因）。"""
+        # ⚠️ 取**两端之和**而不是单独 mibao：2026-10-19（issue #7027）B 端的最后一条豁免
+        # 随 CH-050 销账删除 ⇒ mibao 切片合法地变成 0 条。判据的意图是「yaml_light 能读这份
+        # 文件」，所以证据必须取**全体条目**；只看一端会在清单清零时把「解析器正常」误判成红。
         code = (
             f"import sys; sys.path.insert(0, {str(REPO_ROOT / 'scripts')!r});"
             "from case_coverage import BASELINE_PATH, load_baseline;"
-            "print(len(load_baseline(BASELINE_PATH, 'mibao', None)['entries']))"
+            "print(sum(len(load_baseline(BASELINE_PATH, p, None)['entries'])"
+            " for p in ('mibao', 'xiaobu')))"
         )
         proc = subprocess.run(
             [sys.executable, "-c", code], cwd=str(REPO_ROOT),

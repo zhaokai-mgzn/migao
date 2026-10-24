@@ -16,7 +16,7 @@
     "processing": {
       "name": "加工单",
       "entry": "embedded:/orders",
-      "why": "订单详情页「打印加工单」（#5651）；生产侧另有加工单实体入口（生产看板 /production，属同一实体的第二份渲染，不新增菜单项 —— #4357 裁定）"
+      "why": "订单详情页「打印加工单」（#5651）；生产侧另有加工单实体入口（作业看板 /production，属同一实体的第二份渲染，不新增菜单项 —— #4357 裁定）"
     },
     "sales": {
       "name": "销售单",
@@ -26,7 +26,7 @@
     "labels": {
       "name": "洗水码",
       "entry": "embedded:/production",
-      "why": "生产明细页（/processing-orders/{id}/production，从「生产看板」下钻）按套打印；它不是业务单据而是车间标签，入口挂在生产执行面"
+      "why": "生产明细页（/processing-orders/{id}/production，从「作业看板」下钻）按套打印；它不是业务单据而是车间标签，入口挂在生产执行面"
     }
   }
 }

@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -40,7 +41,11 @@ public class WorkerPageCatalogController {
     @GetMapping
     public ApiResponse<Map<String, Object>> catalog() {
         Map<String, Object> data = new LinkedHashMap<>();
-        data.put("pages", WorkerPages.defaultPages());
+        // pages = 可勾选全集（含 issue #7162 的 inspect）；default_pages = 未收窄时的默认勾选态
+        data.put("pages", new ArrayList<>(WorkerPages.ALL));
+        data.put("default_pages", WorkerPages.defaultPages());
+        // 非默认、逐人开放的能力页（issue #7162：inspect 同时是服务端写准入）
+        data.put("optional_pages", WorkerPages.optionalPages());
         data.put("labels", WorkerPages.labels());
         return ApiResponse.success(data);
     }

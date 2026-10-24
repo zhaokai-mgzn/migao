@@ -1,4 +1,4 @@
-// case_ids: AS-004
+// case_ids: AS-004, RWK-002
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
@@ -7,8 +7,15 @@ import userEvent from '@testing-library/user-event'
 // Mock API
 const mockGetTicket = vi.fn()
 const mockUpdateTicketStatus = vi.fn()
+// issue #7377 段 4：售后详情页新增「发起返工」入口（读这张单的返工单 + 就地开单）
+const mockReworkList = vi.fn()
+const mockReworkCreate = vi.fn()
 
 vi.mock('@/lib/api', () => ({
+  reworkOrderApi: {
+    list: (...args: any[]) => mockReworkList(...args),
+    create: (...args: any[]) => mockReworkCreate(...args),
+  },
   afterSalesApi: {
     getTicket: (...args: any[]) => mockGetTicket(...args),
     updateTicketStatus: (...args: any[]) => mockUpdateTicketStatus(...args),
@@ -179,6 +186,9 @@ describe('AfterSalesDetailPage', () => {
       data: { data: mockTicket },
     })
     mockUpdateTicketStatus.mockResolvedValue({ data: { success: true } })
+    mockReworkList.mockReset()
+    mockReworkCreate.mockReset()
+    mockReworkList.mockResolvedValue({ data: { data: [] } })
   })
 
   it('should show loading state initially', () => {
@@ -363,5 +373,104 @@ describe('AfterSalesDetailPage', () => {
 
     const sourceRow = (await screen.findByText('来源')).parentElement as HTMLElement
     expect(within(sourceRow).getByText(label)).toBeInTheDocument()
+  })
+
+  // ── 发起返工（issue #7377 段 4，case RWK-002）────────────────────────────────
+  //
+  // 口径与后端 `ReworkState.canOpenFor` 同源：已闭环（closed / resolved / rejected）不许开；
+  // 这张单已有未完结返工单也不许开 —— 入口上先讲清，服务端仍照拒。
+
+  it('🔴 无 `order:refund` 写权 ⇒ 不显示「发起返工」（读权不等于能开单）', async () => {
+    authMock.state.user.permissions = ['after_sales:view']
+    render(<AfterSalesDetailPage />)
+
+    await screen.findAllByText('工单信息')
+    expect(screen.queryByTestId('after-sales-rework-create')).toBeNull()
+    // 反恒真：同页的状态动作照旧（不是整块动作区都没渲染）
+    expect(screen.getByRole('button', { name: '接受处理' })).toBeInTheDocument()
+  })
+
+  it('有写权 + 待处理 ⇒ 显示入口；原因留空当场拦、不发请求', async () => {
+    const user = userEvent.setup()
+    authMock.state.user.permissions = ['order:refund']
+    render(<AfterSalesDetailPage />)
+
+    await user.click(await screen.findByTestId('after-sales-rework-create'))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByTestId('after-sales-rework-submit'))
+
+    expect(await screen.findByTestId('after-sales-rework-error')).toHaveTextContent('返工原因')
+    expect(mockReworkCreate).not.toHaveBeenCalled()
+  })
+
+  it('填了原因就开单：带上本单 id + 原因（加工单号留空则不传空串）', async () => {
+    const user = userEvent.setup()
+    authMock.state.user.permissions = ['order:refund']
+    mockReworkCreate.mockResolvedValue({ data: { data: { id: 'rw1' } } })
+    render(<AfterSalesDetailPage />)
+
+    await user.click(await screen.findByTestId('after-sales-rework-create'))
+    const dialog = await screen.findByRole('dialog')
+    await user.type(within(dialog).getByTestId('after-sales-rework-reason'), '帘头褶皱不齐')
+    await user.click(within(dialog).getByTestId('after-sales-rework-submit'))
+
+    await waitFor(() =>
+      expect(mockReworkCreate).toHaveBeenCalledWith({
+        afterSalesTicketId: 'ticket-001',
+        reason: '帘头褶皱不齐',
+        processingOrderId: undefined,
+      }),
+    )
+    // 开完刷新（返工列表再读一次）
+    await waitFor(() => expect(mockReworkList).toHaveBeenCalledTimes(2))
+  })
+
+  it('🔴 已有未完结返工单 ⇒ 入口显示但不可点，并说明是哪一张', async () => {
+    authMock.state.user.permissions = ['order:refund']
+    mockReworkList.mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: 'rw9',
+            reworkNo: 'FG202610230009',
+            afterSalesTicketId: 'ticket-001',
+            orderId: 'order-001',
+            processingOrderId: null,
+            status: 'in_progress',
+            reason: '轨道卡顿',
+            createdByName: '王小美',
+            startedAt: '2026-10-23T09:00:00+08:00',
+            completedAt: null,
+          },
+        ],
+      },
+    })
+    render(<AfterSalesDetailPage />)
+
+    const button = await screen.findByTestId('after-sales-rework-create')
+    expect(button).toBeDisabled()
+    expect(await screen.findByTestId('after-sales-rework-hint')).toHaveTextContent('FG202610230009')
+    // 返工单也列出来（能看到在路上的那张）
+    expect(screen.getByTestId('after-sales-rework-list')).toHaveTextContent('返工中')
+  })
+
+  it('🔴 已闭环的售后单 ⇒ 不显示入口（服务端也拒，这里先不给按钮）', async () => {
+    authMock.state.user.permissions = ['order:refund']
+    mockGetTicket.mockResolvedValue({ data: { data: closedTicket } })
+    render(<AfterSalesDetailPage />)
+
+    await screen.findAllByText('工单信息')
+    expect(screen.queryByTestId('after-sales-rework-create')).toBeNull()
+  })
+
+  it('返工接口读不到 ⇒ 工单本身照常看（只在返工区块写一行失败提示）', async () => {
+    authMock.state.user.permissions = ['order:refund']
+    mockReworkList.mockRejectedValue({ response: { status: 500, data: {} } })
+    render(<AfterSalesDetailPage />)
+
+    await screen.findAllByText('工单信息')
+    expect(await screen.findByTestId('after-sales-rework-load-error')).toHaveTextContent('返工单没读到')
+    // 🔴 不拖垮主业务：状态动作仍在
+    expect(screen.getByRole('button', { name: '接受处理' })).toBeInTheDocument()
   })
 })

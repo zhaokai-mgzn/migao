@@ -43,7 +43,7 @@ import static org.mockito.Mockito.*;
  * 覆盖：AI 通过/驳回/系统繁忙降级、蜜罐、频率限制、手机号/企业名查重、驳回冷却、
  * 审批副作用（租户+管理员）、审核元数据落库
  */
-// case_ids: OB-001, OB-002, OB-003, OB-006, HR-006
+// case_ids: OB-001, OB-002, OB-003, OB-006, OB-007, HR-006
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 @DisplayName("RegistrationService 入驻申请服务测试（AI 自动甄别）")
@@ -73,6 +73,18 @@ class RegistrationServiceTest extends BaseServiceTest {
      * 有**具名断言**（`verify(...).seedDefaultCategory(新租户 id)`），否则删掉那一行调用 CI 全绿。
      */
     @Mock private ProductCategorySeedService productCategorySeedService;
+    /**
+     * 开租默认加工项目录（issue #7148）：`approveApplication` 里把「新租户加工项与分类为空 ⇒
+     * 下单页选不到加工项」堵住的调用点。同 #4430 / #6295 的教训 —— 必须对该服务有**具名断言**，
+     * 否则删掉那一行调用 CI 全绿。
+     */
+    @Mock private ProcessingItemSeedService processingItemSeedService;
+    /**
+     * 开租默认主仓（issue #7592）：`approveApplication` 里把「新租户没有仓 ⇒ 盘点单『出盘点任务』
+     * 的仓库下拉为空」堵住的调用点。同 #4430 / #6295 的教训 —— 必须对该服务有**具名断言**，
+     * 否则删掉那一行调用 CI 全绿。
+     */
+    @Mock private WarehouseSeedService warehouseSeedService;
 
     @InjectMocks private RegistrationService registrationService;
 
@@ -97,8 +109,12 @@ class RegistrationServiceTest extends BaseServiceTest {
         when(applicationMapper.rejectIfPending(anyLong(), any(), any(), any(), any(), any(), any())).thenReturn(1);
         // 短信验证码默认通过
         when(smsService.verifyCode(anyString(), anyString())).thenReturn(true);
-        // 入驻后置条件（#6295）：默认「种下了」——需要验 fail-closed 的用例自己改 stub
+        // 入驻后置条件（#6295 / #7148）：默认「种下了」——需要验 fail-closed 的用例自己改 stub
         when(productCategorySeedService.countCategories(anyLong())).thenReturn(1L);
+        when(processingItemSeedService.countProcessingItems(anyLong()))
+                .thenReturn((long) ProcessingItemSeedService.CATALOG.size());
+        // 入驻后置条件（#7592）：默认「有仓」——验 fail-closed 的用例自己改 stub
+        when(warehouseSeedService.countWarehouses(anyLong())).thenReturn(1L);
         // 落库后回填自增 ID，并让 selectById 返回同一实例（审批副作用链路）
         java.util.concurrent.atomic.AtomicReference<TenantApplication> insertedRef =
                 new java.util.concurrent.atomic.AtomicReference<>();
@@ -461,6 +477,8 @@ class RegistrationServiceTest extends BaseServiceTest {
             // 调用点**确实存在**（删掉 `seedRequiredInitialData` 里的那一行本断言即红；
             // 端到端读数「首建商品不再 422」由 NewTenantOnboardingCategoryRealDbTest 承担）
             verify(productCategorySeedService).seedDefaultCategory(100L);
+            // 默认主仓同理（#7592）：删掉播种那一行 ⇒ 本断言红；真库读数由同名的真库判据承担
+            verify(warehouseSeedService).seedDefaultWarehouse(100L);
         }
 
         /**
@@ -480,6 +498,53 @@ class RegistrationServiceTest extends BaseServiceTest {
                     .thenReturn(new User());
             // 注入：种了但库里查不到（= 漏种 / 被条件化 / 被吞掉的形态）
             when(productCategorySeedService.countCategories(100L)).thenReturn(0L);
+
+            assertThatThrownBy(() -> registrationService.approveApplication(1L, "reviewer-001"))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getCode())
+                    .isEqualTo("ONBOARDING_REQUIRED_DATA_MISSING");
+            assertThat(pendingApp.getStatus()).as("开租失败 ⇒ 申请单不得落到 approved").isNotEqualTo("approved");
+        }
+
+        /**
+         * 开租播种（issue #7148）：审批通过必须为新租户种默认加工项目录 ——
+         * 这一行调用是「新租户加工项与分类非空」的唯一来源，删掉它没有任何测试会红
+         * （同 #4430 / #6295 的教训），而线上后果是下单页选不到任何加工项。
+         */
+        @Test
+        @DisplayName("开租播种（#7148）：审批通过 → 为新租户种默认加工项目录（入参 = 新租户 id）")
+        void successSeedsDefaultProcessingCatalog() {
+            when(applicationMapper.selectById(1L)).thenReturn(pendingApp);
+            doAnswer(inv -> { ((com.migao.admin.entity.Tenant) inv.getArgument(0)).setId(100L); return 1; })
+                    .when(tenantMapper).insert(any(com.migao.admin.entity.Tenant.class));
+            mockRoleInsertIds();
+            when(userService.createUser(anyString(), anyString(), anyString(), eq("admin"), anyString(), isNull(), eq(100L)))
+                    .thenReturn(new User());
+
+            registrationService.approveApplication(1L, "reviewer-001");
+
+            // 调用点**确实存在**（删掉 `seedRequiredInitialData` 里的那一行本断言即红；
+            // 端到端读数「入驻后目录恰 15 项」由 NewTenantOnboardingCategoryRealDbTest 承担）
+            verify(processingItemSeedService).seedDefaultCatalog(100L);
+        }
+
+        /**
+         * 入驻后置条件的元守卫（issue #7148）：默认加工项目录为空 ⇒ <b>开租当场 fail-closed</b>，
+         * 不许产出「开箱选不到加工项」的租户。
+         *
+         * <p>反向红线：把 {@code assertRequiredInitialData} 里那条检查摘掉（或把异常改成只打日志）⇒ 本断言必红。</p>
+         */
+        @Test
+        @DisplayName("入驻后置条件（#7148）：默认加工项目录为空 → 开租 fail-closed（ONBOARDING_REQUIRED_DATA_MISSING）")
+        void failsClosedWhenProcessingCatalogMissing() {
+            when(applicationMapper.selectById(1L)).thenReturn(pendingApp);
+            doAnswer(inv -> { ((com.migao.admin.entity.Tenant) inv.getArgument(0)).setId(100L); return 1; })
+                    .when(tenantMapper).insert(any(com.migao.admin.entity.Tenant.class));
+            mockRoleInsertIds();
+            when(userService.createUser(anyString(), anyString(), anyString(), eq("admin"), anyString(), isNull(), eq(100L)))
+                    .thenReturn(new User());
+            // 注入：分类照常种了、但加工项目录现取为空（= 漏种 / 被条件化 / 被吞掉的形态）
+            when(processingItemSeedService.countProcessingItems(100L)).thenReturn(0L);
 
             assertThatThrownBy(() -> registrationService.approveApplication(1L, "reviewer-001"))
                     .isInstanceOf(BusinessException.class)
