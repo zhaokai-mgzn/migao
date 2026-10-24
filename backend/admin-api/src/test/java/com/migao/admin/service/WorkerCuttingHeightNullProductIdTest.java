@@ -409,7 +409,7 @@ class WorkerCuttingHeightNullProductIdTest {
                 // 两个 List 都是本方法内直接构造的可变 ArrayList/stream().toList()，
                 // 下标由 `for (int i = 0; i < items.size(); i++)` 给出 ⇒ 永不为 null，也不查不可变表。
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/StocktakeService.java|items",
-                        new IndexSite("items", "itemsOf", "i", "循环下标 i（0 <= i < items.size()）", 237,
+                        new IndexSite("items", "itemsOf", "i", "循环下标 i（0 <= i < items.size()）", 249,
                                 Verdict.KEY_PROVABLY_NON_NULL,
                                 "同源同长：items 与 lines 由同一批明细一次构造，按下标配对；下标不可能为 null")),
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/PurchaseOrderService.java|itemsById",
