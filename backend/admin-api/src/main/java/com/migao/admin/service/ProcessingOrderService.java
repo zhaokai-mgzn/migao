@@ -452,6 +452,19 @@ public class ProcessingOrderService {
     private static final String CURTAIN_TYPE_SHEER = "纱帘";
 
     /**
+     * **可生成作业单**的订单状态（issue #7626，用户 2026-10-24 裁定 A）：
+     * {@code pending}（待付款）/ {@code confirmed}（已确认）。
+     *
+     * <p>为什么把待付款放进来：作业单是**生产计划**，不扣库存、不记资金 —— 扣减与收款流水
+     * 仍只发生在 {@code OrderService.confirmPayment}；而销售单上的「扫码报工」码取作业单
+     * {@code scan_url}，旧闸门让待付款单永远没有作业单 ⇒ 纸面永远没有码，用户实测报
+     * 「只有在确认付款后，打印预览才会出现二维码」。</p>
+     *
+     * <p>⚠️ 已取消 / 已完成等状态**仍拒绝**（闸门只放宽到待付款，不是全放开）。</p>
+     */
+    private static final Set<String> GENERATABLE_ORDER_STATUSES = Set.of("pending", "confirmed");
+
+    /**
      * **部件角色 → 部位**（V78，issue #4452）：受控枚举
      * （`order_create.py` 的工具 schema 里就是 enum：主布 / 配布边 / 纱）⇒ 它是**结构化输入**，
      * 不是「名词解释」。
@@ -550,7 +563,9 @@ public class ProcessingOrderService {
      * 待派池视图（issue #5169 判据 5 的可查面）。
      *
      * <h2>池的定义（唯一口径）</h2>
-     * <b>已确认支付</b>（{@code orders.status = 'confirmed'} —— 与「仅已确认订单可生成加工单」同一道闸）
+     * <b>已确认支付</b>（{@code orders.status = 'confirmed'} —— 池**仍只收已确认单**：池是「催派」口径，
+     * 待付款单入池会立刻被算成超时未派（issue #7626 只放宽了**生成闸门**，未改池的定义；
+     * 待付款单在订单详情页可直接生成作业单）。
      * 且 **无活跃加工单**（排除口径与 {@code uk_processing_orders_active} 逐字相同）。
      * 无加工部位的单（配件/赠品行、无加工项）**不进池**：它们本来就不会生成加工单，
      * 进池只会让「池里有单却派不了」变成噪声。
@@ -1767,10 +1782,12 @@ public class ProcessingOrderService {
         if (order == null) {
             throw new BusinessException("ORDER_NOT_FOUND", "无法找到订单：" + rawId, 404);
         }
-        // 仅已确认订单可生成加工单（pending 未付款 / 已取消不允许）
-        if (!"confirmed".equals(order.getStatus())) {
+        // 作业单可在**待付款 / 已确认**生成（issue #7626）—— 作业单是生产计划，
+        // 不扣库存、不记资金；收款与扣减仍只在 `OrderService.confirmPayment`。
+        if (!GENERATABLE_ORDER_STATUSES.contains(order.getStatus())) {
             throw BusinessException.validationError(
-                    String.format("订单 %s 当前状态 [%s] 不允许生成加工单，须为已确认", order.getOrderNo(), order.getStatus()));
+                    String.format("订单 %s 当前状态 [%s] 不允许生成加工单（须为待付款 / 已确认）",
+                            order.getOrderNo(), order.getStatus()));
         }
         List<OrderItem> items = loadOrderItems(order.getId(), tenantId);
         List<Map<String, Object>> snapshot = buildSnapshot(items, tenantId);

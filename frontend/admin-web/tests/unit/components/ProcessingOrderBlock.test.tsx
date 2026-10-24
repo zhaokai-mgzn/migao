@@ -570,14 +570,31 @@ describe('ProcessingOrderBlock 卖布单的生成出口（issue #7079 第 5 包�
     expect(mockedGenerate.mock.calls[0][0]).toEqual(['order-fabric'])
   })
 
-  it('UI-115 判据 3（红证）：卖布单在「还不能生成」的状态 ⇒ 空态**不许**再说「无加工项订单无需加工环节」', async () => {
+  it('🔴 issue #7626（用户 2026-10-24 裁定 A）：待付款单也能生成作业单 —— 销售单的扫码报工码不再等确认收款', async () => {
     mockedDetail.mockRejectedValueOnce(new Error('404'))
+    mockedGenerate.mockResolvedValueOnce({
+      data: { data: [{ orderRef: 'order-fabric', success: true, processingOrderNo: 'CK-20261024-0001' }] },
+    })
+    mockedCandidates.mockImplementation(() => Promise.resolve(candidatesPayload()))
+
     render(<ProcessingOrderBlock orderId="order-fabric" orderStatus="pending_payment" workOrderKind="outbound" />)
 
-    const block = await screen.findByTestId('processing-order-generate-not-yet')
-    expect(block.textContent).toContain('出库作业单')
+    // 修前：待付款只出「当前状态还不能生成」空态、没有按钮 ⇒ 下面两条会红
+    expect(await screen.findByText('生成出库作业单')).toBeInTheDocument()
+    expect(screen.queryByTestId('processing-order-generate-not-yet')).toBeNull()
     // 旧文案对卖布单**不实**（卖布单正需要裁剪/打包作业）⇒ 逐字不得出现
     expect(document.body.textContent ?? '').not.toContain('无加工项订单无需加工环节')
+
+    await userEvent.click(await screen.findByText('生成出库作业单'))
+    await waitFor(() => expect(mockedGenerate).toHaveBeenCalled())
+    expect(mockedGenerate.mock.calls[0][0]).toEqual(['order-fabric'])
+  })
+
+  it('🔴 issue #7626 反向护栏：闸门只放宽到待付款 —— 已关闭订单仍是空态、无生成入口', async () => {
+    mockedDetail.mockRejectedValueOnce(new Error('404'))
+    render(<ProcessingOrderBlock orderId="order-closed" orderStatus="cancelled" workOrderKind="outbound" />)
+
+    expect(await screen.findByTestId('processing-order-generate-not-yet')).toBeInTheDocument()
     expect(screen.queryByText('生成出库作业单')).toBeNull()
   })
 
