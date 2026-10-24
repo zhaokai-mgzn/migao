@@ -1796,7 +1796,9 @@ class TestTrackingIssueLabelSelfHeal:
         assert label_posts[0]["fields"]["name"] == FL.TRACKING_LABEL, label_posts[0]
         issue_posts = [c for c in api_calls if c["path"] == "repos/o/r/issues" and c["method"] == "POST"]
         assert len(issue_posts) == 1, api_calls
-        assert issue_posts[0]["fields"]["labels"] == FL.TRACKING_LABEL, issue_posts[0]
+        # 🔴 #7614：`labels` 必须是**列表** —— 发成字符串 GitHub 回 422（"is not an array"），
+        # 本断言此前写的是 `== FL.TRACKING_LABEL`（字符串形态），会把缺陷当成期望值钉住。
+        assert issue_posts[0]["fields"]["labels"] == [FL.TRACKING_LABEL], issue_posts[0]
         assert api_calls.index(label_posts[0]) < api_calls.index(issue_posts[0]), \
             f"标签自愈必须早于建单：{api_calls}"
 
