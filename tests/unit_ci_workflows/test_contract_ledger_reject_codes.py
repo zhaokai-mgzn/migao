@@ -216,7 +216,9 @@ def _codes_thrown(class_name: str, method_name: str) -> dict[str, int]:
     out: dict[str, int] = {}
     for m in re.finditer(r'new\s+BusinessException\(', body):
         args = _exception_call_args(body, m.end() - 1)
-        assert args is not None, f"读不出 {class_name}#{method_name} 的 BusinessException 构造实参（源码结构变了）"
+        if args is None:
+            raise AssertionError(
+                f"读不出 {class_name}#{method_name} 的 BusinessException 构造实参（源码结构变了）")
         status = int(args[2]) if len(args) >= 3 and re.fullmatch(r"\d{3}", args[2]) else 400
         first = args[0]
         literal = re.fullmatch(r'"([A-Z][A-Z0-9_]*)"', first)

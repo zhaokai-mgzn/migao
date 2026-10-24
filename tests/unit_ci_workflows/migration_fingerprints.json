@@ -185,7 +185,7 @@
     "V188__add_craft_calc_mixed_margins.sql": "sha256:1afc6a9f08e021f69545afa845921c626e98f585020799579f6dc925dd74e05f",
     "V189__seed_default_warehouse_for_existing_tenants.sql": "sha256:f24c715d507c680989d3b5ba372f2664d75fe5cc1bd56a03b73d3b04ac75c980",
     "V190__reset_product_stock_to_real_documents.sql": "sha256:40c35a1df26f3a38e76de6c27213898898ad3df885c1553268b33d62b8ea9d0e",
-    "V191__add_cutting_report_reason_to_batch_consumptions.sql": "sha256:a06cc26daea259e091d8b3f455111855bc75d6573244c9bbfc367c7e3a5175f6",
+    "V191__add_cutting_report_reason_to_batch_consumptions.sql": "sha256:be81319aaf95b619bf1484b201b0e62c492c1bde75ad42613285958f89caeb94",
     "schema.sql": "sha256:66676f6e52e83c9011c0e8d6f60a6c5b066a19538b8078c53675002ff61edd24"
   }
 }

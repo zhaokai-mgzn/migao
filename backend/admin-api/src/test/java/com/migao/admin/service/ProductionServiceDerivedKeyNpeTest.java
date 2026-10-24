@@ -347,8 +347,8 @@ class ProductionServiceDerivedKeyNpeTest {
         List<String> lines = real.get(path);
         assertThat(lines).as("扫描面里必须真有 " + path).isNotNull();
 
-        int siteA = 281;   // `ProcessingOrderSet set = derivedKey == null ? null : setByGroup.get(derivedKey);`
-        int keyA = 280;    // `String derivedKey = spec.orderItemId() == null ? null : itemGroupKey.get(spec.orderItemId());`
+        int siteA = 291;   // `ProcessingOrderSet set = derivedKey == null ? null : setByGroup.get(derivedKey);`（issue #7647 常量插入后 281→291）
+        int keyA = 290;    // `String derivedKey = spec.orderItemId() == null ? null : itemGroupKey.get(spec.orderItemId());`（同上 280→290）
         assertThat(lines.get(siteA - 1)).as("站点 A 行号自证").contains("setByGroup.get(derivedKey)");
         assertThat(lines.get(keyA - 1)).as("站点 A 派生键行号自证").contains("itemGroupKey.get(spec.orderItemId())");
 
@@ -431,7 +431,7 @@ class ProductionServiceDerivedKeyNpeTest {
          * （站点 A / 站点 B 就是），变量级键装不下两条，这正是旧判据「每个变量只取首个命中」的根因。</p>
          */
         static final Map<String, LedgerRow> LEDGER = Map.ofEntries(
-                Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java|setByGroup|281",
+                Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java|setByGroup|291",
                         new LedgerRow("setByGroup", "itemGroupKey.get(spec.orderItemId())", "spec.orderItemId()",
                                 "站点 A（instantiate 取套处；issue #6878；外层取值在第 281 行，派生键第 280 行先落局部变量）。"
                                         + "**登记面事实**：交给 `setByGroup.get(...)` 的键是派生值 —— `derivedKey` ← "
@@ -440,7 +440,7 @@ class ProductionServiceDerivedKeyNpeTest {
                                         + "⇒ 派生键为 null；`setByGroup` ← `ensureSetsFor` 的早返回分支 = 不可变空表 "
                                         + "`Map.of()` ⇒ `Map.of().get(null)` 抛 NPE。改前那句是直接把派生式内联在参数里"
                                         + "（只判了里层部位 id、外层无人守）。")),
-                Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java|setByGroup|411",
+                Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java|setByGroup|421",
                         new LedgerRow("setByGroup", "itemGroupKey.get(itemId)", "itemId",
                                 "站点 B（ensurePartTokens；issue #6878；外层取值在第 411 行，派生键第 410 行先落局部变量）。"
                                         + "改前是 `setByGroup.get(itemGroupKey.get(itemId))` —— **完全没有判空**的单键读法；"

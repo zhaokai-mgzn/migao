@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 230
+    "backend_contract_scoring_zero": 232
   },
   "history": [
     {
@@ -967,6 +967,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 230,
       "note": "issue #7633（删除待付款订单前查活跃作业单 + 作业看板对父订单已删的行不再扇出 404）新增 1 条 `[backend-contract]` 用例 OR-069 —— 按设计**不进 agent-eval**（`expectations: []`），机器判红通道 = `traces.tests` 的 backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java（`deleteOrder_RejectedWhenActiveProcessingOrderExists` + 负控 `deleteOrder_SucceedsWhenNoActiveProcessingOrder`，文件真实存在、改前实测判红）；同 PR 的 UI-136 有 `direct_reply` 计分占位、不计入本读数 ⇒ 口径计数 229 → 230 是**合法新增**（#5079 已裁定的口径），真债务 `no_channel_total` 仍为 **0**（不变）。按本文件 `_how_to_regen` 在同一 PR 内重锚。"
+    },
+    {
+      "sha": "feat/7647-cutting-report-batch",
+      "date": "2026-10-24",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 232,
+      "note": "issue #7647（裁剪报工确认批次 + 批次库存实时纠偏）新增 2 条 `[backend-contract]` 用例 PG-092 / UI-137 —— 按设计**不进 agent-eval**（`expectations: []`），机器判红通道 = 各自的 `traces.tests`（后端 StockBatchConsumptionCuttingReportTest / ProductionScanCompleteServiceTest / ProductionScanServiceDetailFieldsTest / WorkerCuttingHeightServiceTest / BatchConsumptionLedgerRealDbTest；前端 worker-h5-cutting-batch.test.mjs / worker-h5-machine.test.mjs，文件全部真实存在且红证逐条写在用例里）⇒ 合并 main（#7633 已把读数推到 230）后读数 230 → 232 是**合法新增**（#5079 已裁定的口径），真债务 `no_channel_total` 仍为 **0**（不变）。按本文件 `_how_to_regen` 在同一 PR 内重锚。"
     }
   ]
 }

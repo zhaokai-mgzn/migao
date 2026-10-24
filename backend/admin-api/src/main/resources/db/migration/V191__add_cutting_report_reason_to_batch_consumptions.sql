@@ -26,7 +26,7 @@
 --   报工行用**净额**语义（同一行同一批次多行，读面按 Σdelta 聚合）。谓词加 `reason <> 'cutting_report'`：
 --   派工侧的唯一性一字未动（判据见 `BatchConsumptionLedgerRealDbTest` 的 23505 用例）。
 --
-# ## 列形状（无需改约束）
+-- ## 列形状（无需改约束）
 -- 本族行与 `processing_order` 同形：`stocktake_run_id` 为 NULL、`processing_order_no` / `order_item_id`
 -- 非空 ⇒ 现有 `ck_batch_consumption_source_shape` 原样成立（它把 stocktake 族与非 stocktake 族钉成互斥，
 -- 不枚举具体 reason）。
