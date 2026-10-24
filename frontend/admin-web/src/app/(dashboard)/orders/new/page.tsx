@@ -5439,6 +5439,8 @@ function LineItemBlock({
         composition?: unknown
         items?: unknown
         unit_price?: unknown
+        /** 被本单改价覆盖的那条组合价目价（issue #7642；只有「已配置组合 + 本单改价」才下发） */
+        configured_unit_price?: unknown
       }
     | undefined
   /** 组合键（**空 = 缺选配信息**）——「改单价」入口的准入条件之一（没有 key 就没法同步） */
