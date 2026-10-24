@@ -2,7 +2,6 @@
 package com.migao.admin.service;
 
 import com.migao.admin.entity.StockBatch;
-import com.migao.admin.entity.StockBatchConsumption;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.StockBatchConsumptionMapper;
 import com.migao.admin.mapper.StockBatchMapper;
@@ -41,7 +40,7 @@ class InventoryReportServiceTest {
         consumptionMapper = Mockito.mock(StockBatchConsumptionMapper.class);
         service = new ReportService(orderMapper, stockBatchMapper, null, null, consumptionMapper, null,
                 new com.migao.admin.time.BusinessClock(), null, null, null);
-        when(consumptionMapper.selectList(any())).thenReturn(List.of());
+        when(consumptionMapper.selectMaps(any())).thenReturn(List.of());
     }
 
     private static StockBatch batch(Long id, String qty, java.time.LocalDate received) {
@@ -72,14 +71,29 @@ class InventoryReportServiceTest {
     }
 
     @Test
+    @DisplayName("取数形态（issue #7586）：最后出库日是一条聚合查询（GROUP BY batch_id），不是整表拉回内存")
+    void lastOutboundIsOneAggregateQuery() {
+        when(stockBatchMapper.selectList(any())).thenReturn(List.of(
+                batch(1L, "10", new com.migao.admin.time.BusinessClock().today().minusDays(200))));
+
+        service.inventoryAging(null, null);
+
+        // 聚合腿只发 1 次；退回「整表 selectList + 内存求最大」⇒ 本判据红
+        org.mockito.Mockito.verify(consumptionMapper,
+                org.mockito.Mockito.times(1)).selectMaps(any());
+        org.mockito.Mockito.verify(consumptionMapper, org.mockito.Mockito.never()).selectList(any());
+    }
+
+    @Test
     @DisplayName("最近出过库 ⇒ 不判滞销（出库日现算，不靠派生列）")
     void recentOutboundClearsSlowMoving() {
         ZoneId zone = new com.migao.admin.time.BusinessClock().zone();
-        StockBatchConsumption recent = new StockBatchConsumption();
-        recent.setBatchId(1L);
-        recent.setDelta(new BigDecimal("-5"));
-        recent.setCreatedAt(OffsetDateTime.now(zone).minusDays(3));
-        when(consumptionMapper.selectList(any())).thenReturn(List.of(recent));
+        // 取数形态（issue #7586）：聚合读数 = batch_id + 最后出库时刻（不再是整表流水行）
+        java.util.Map<String, Object> recent = new java.util.HashMap<>();
+        recent.put("batch_id", 1L);
+        recent.put("last_outbound_at", java.sql.Timestamp.from(
+                OffsetDateTime.now(zone).minusDays(3).toInstant()));
+        when(consumptionMapper.selectMaps(any())).thenReturn(List.of(recent));
         // 🔴 业务日期只经 BusinessClock（issue #5651 收口）：测试里也不许裸 `LocalDate.now()`
         // —— 那在 UTC 16:00–24:00 与 +08 业务日差一天，判据会随跑测时刻飘。
         when(stockBatchMapper.selectList(any())).thenReturn(List.of(
