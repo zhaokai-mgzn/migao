@@ -192,6 +192,19 @@ def create_app() -> FastAPI:
     # 注册路由
     app.include_router(api_router, prefix=settings.API_PREFIX)
 
+    # 生图失败（503）：响应体 `{"code", "detail"}` 并存（issue #7552）。
+    # 为什么不直接 raise HTTPException：默认处理器只透传 detail，会把机器可读失败码丢掉，
+    # admin-api 就只能从中文 detail 里拆字符串猜成因（「模型不支持」被劝「稍后重试」）。
+    from app.api.internal import ImageGenerationFailure
+
+    @app.exception_handler(ImageGenerationFailure)
+    async def _image_generation_failure(request, exc: ImageGenerationFailure):
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"code": exc.code, "detail": exc.detail},
+        )
+
     # 健康检查
     @app.get("/health")
     async def health_check():

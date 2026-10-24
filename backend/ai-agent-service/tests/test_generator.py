@@ -8,11 +8,14 @@
 - 全链都「接不了这类请求」⇒ 报不可用而非「额度用尽」（2026-10-23 起的默认链即此形态）；
 - 默认链 = 用户 2026-10-24 的裁定（qwen-image-3.0-pro，issue #7661 切到 MaaS token-plan）；
 - 缺 key 不回落 PRIMARY（DeepSeek key）；端点主机 = MaaS（旧 dashscope 痕迹退场）；
-- 内部端点只回 `image_url` / `model`（不落库、不返回临时凭据）。
+- 内部端点只回 `image_url` / `model`（不落库、不返回临时凭据）；
+- 503 响应体带稳定机器可读 `code`（issue #7552）：四类失败各回不同码，`detail` 仍可读，
+  状态码语义不变（其它供应商失败仍是 502）。
 """
 # case_ids: UI-129
 
 import asyncio
+import json
 from unittest.mock import patch
 
 import httpx
@@ -277,3 +280,107 @@ def test_internal_endpoint_credential_failure_is_503_not_502(monkeypatch):
             asyncio.run(image_generate(request, authorized=True))
 
     assert excinfo.value.status_code == 503
+
+
+# =============================================================================
+# 失败码合同（issue #7552）：503 响应体必须带稳定机器可读 `code`，`detail` 并存
+#
+# 判据：四类失败（开关关闭 / 未配 Key / 额度用尽 / 模型接不了这类请求）各回**不同** code，
+# 且 `detail` 仍是原来那句人类可读理由 —— admin-api 据此分叉话术，不再靠正则猜。
+# 凭证失效（401/403，issue #7680）复用 `IMAGE_GEN_NO_KEY`：同属平台侧凭证问题、动作一致。
+# =============================================================================
+
+def _image_request():
+    from app.api.internal import ImageGenerateRequest
+
+    return ImageGenerateRequest(
+        tenant_id=46, image_url="https://oss/sample.png", product_name="某商品", kind="main")
+
+
+def _failure_of(monkeypatch, *, enabled=True, key="sk-test", asr="", response=None):
+    """跑一次**真实**生成内核，把该场景抛出的异常捕获出来。"""
+    _settings(monkeypatch, IMAGE_GEN_ENABLED=enabled, IMAGE_GEN_API_KEY=key,
+              ASR_API_KEY=asr, IMAGE_GEN_MODELS="model-a")
+
+    def handler(request):
+        return response()
+
+    with pytest.raises(gen.ImageGenerationError) as excinfo:
+        asyncio.run(gen.generate_product_image(
+            "https://oss/sample.png", "某商品", "main", client=_client(handler)))
+    return excinfo.value
+
+
+def _raised_failure(failure):
+    """把内核异常经内部端点抛出，返回 `ImageGenerationFailure`（HTTP 503 + code）。"""
+    from fastapi import HTTPException
+
+    from app.api.internal import image_generate
+
+    async def fake_generate(*args, **kwargs):
+        raise failure
+
+    with patch("app.api.internal.generate_product_image", fake_generate), \
+            pytest.raises(HTTPException) as excinfo:
+        asyncio.run(image_generate(_image_request(), authorized=True))
+    return excinfo.value
+
+
+def _failure_body(exc):
+    """真实响应体 = `app.main` 为该失败类注册的处理器输出（`{code, detail}` 并存）。"""
+    from app.api.internal import ImageGenerationFailure
+    from app.main import app
+
+    handler = app.exception_handlers[ImageGenerationFailure]
+    return asyncio.run(handler(None, exc))
+
+
+@pytest.mark.parametrize("expected,options", [
+    ("IMAGE_GEN_DISABLED", dict(enabled=False)),
+    ("IMAGE_GEN_NO_KEY", dict(key="", asr="")),
+    ("IMAGE_GEN_QUOTA_EXCEEDED", dict(response=lambda: httpx.Response(
+        429, json={"code": "Throttling.RateQuota", "message": "quota"}))),
+    ("IMAGE_GEN_MODEL_UNSUPPORTED", dict(response=lambda: httpx.Response(
+        400, json={"code": "InvalidParameter", "message": "model does not support messages"}))),
+])
+def test_internal_endpoint_503_carries_stable_failure_code(monkeypatch, expected, options):
+    failure = _failure_of(monkeypatch, **options)
+    assert failure.code == expected
+
+    exc = _raised_failure(failure)
+    assert exc.status_code == 503
+    assert exc.code == expected
+    # detail 并存：仍是那句人类可读理由（排障与日志都靠它）
+    assert str(failure) in exc.detail
+
+    resp = _failure_body(exc)
+    assert resp.status_code == 503
+    assert json.loads(resp.body) == {"code": expected, "detail": str(failure)}
+
+
+def test_credential_failure_reports_no_key_code(monkeypatch):
+    """凭证失效（401/403，issue #7680）在端点上归到 `IMAGE_GEN_NO_KEY`（平台侧凭证问题，不重试）。"""
+    failure = _failure_of(monkeypatch, response=lambda: httpx.Response(
+        401, json={"code": "InvalidApiKey", "message": "Invalid API-key provided."}))
+
+    assert isinstance(failure, gen.ImageGenerationAuthError)
+    exc = _raised_failure(failure)
+    assert exc.status_code == 503
+    assert exc.code == "IMAGE_GEN_NO_KEY"
+    assert "凭证" in exc.detail
+
+
+def test_internal_endpoint_other_failures_stay_502():
+    """不改状态码语义：供应商其它失败仍是 502（只有可区分的四类是 503 + code）。"""
+    from fastapi import HTTPException
+
+    async def fake_generate(*args, **kwargs):
+        raise gen.ImageGenerationError("供应商 HTTP 500")
+
+    from app.api.internal import image_generate
+
+    with patch("app.api.internal.generate_product_image", fake_generate), \
+            pytest.raises(HTTPException) as excinfo:
+        asyncio.run(image_generate(_image_request(), authorized=True))
+    assert excinfo.value.status_code == 502
+    assert excinfo.value.detail == "供应商 HTTP 500"
