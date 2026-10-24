@@ -98,13 +98,14 @@ afterEach(() => {
 const localDayOf = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
-/** 建单页走法：选商品 → 勾 SKU → 返回三格（数量 / 单价 / 卷长） */
+/** 建单页走法：选商品 → 勾 SKU → 返回四格（卷数 / 数量（米） / 单价 / 卷长） */
 async function openWithLine() {
   fireEvent.change(screen.getByPlaceholderText('商品名称 / 货号'), { target: { value: '遮光' } })
   fireEvent.click(await screen.findByRole('button', { name: /遮光窗帘布/ }))
   fireEvent.click(await screen.findByRole('checkbox'))
   return {
-    qty: (await screen.findByLabelText(/数量$/)) as HTMLInputElement,
+    rolls: (await screen.findByLabelText(/卷数$/)) as HTMLInputElement,
+    qty: (await screen.findByLabelText(/数量（米）$/)) as HTMLInputElement,
     cost: screen.getByLabelText(/单价$/) as HTMLInputElement,
     roll: screen.getByLabelText(/卷长$/) as HTMLInputElement,
   }
@@ -478,5 +479,94 @@ describe('入库三格（数量 / 单价 / 卷长）的数值语义 —— 与�
       expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('入库单价必须大于 0')),
     )
     expect(mockCreate).not.toHaveBeenCalled()
+  })
+})
+
+// ========== 按卷录入（issue #7644）：卷数 × 卷长 ⇒ 数量（米）==========
+//
+// 用户 2026-10-24 报障：按「1 卷 × 70 米」登记，系统只 +1 米（当时明细表只有「数量」一格，
+// 单位是米，而旁边的「卷长」只是留档）。同日选择的口径：采购入库也按「卷数 × 卷长」算米数
+// **＋** 把表单的单位写清楚。
+// 🔴 换算只发生在**提交前的前端**：提交的仍是米数（服务端契约、以及 #5034「卷长仅记录」
+// 的防误乘保障一字不动）；卷数留空 = 按米手填（散剪 / 尾料走这条路）。
+describe('按卷录入：卷数 × 卷长 ⇒ 数量（米）自动换算（issue #7644）', () => {
+  it('卷数 1 + 卷长 70 ⇒ 数量（米）自动 70 且只读，提交 quantity=70（改前只加 1 米）', async () => {
+    mockCreate.mockResolvedValue({ data: { data: createdOrder } })
+    render(<NewInboundOrderPage />)
+    const { rolls, qty, roll } = await openWithLine()
+
+    fireEvent.change(rolls, { target: { value: '1' } })
+    fireEvent.change(roll, { target: { value: '70' } })
+
+    expect(qty.value).toBe('70')
+    expect(qty.readOnly).toBe(true)
+    // 换算式摆在格下（商家提交前能核对「这是 1 卷 × 70 米」）
+    expect(screen.getByText('1 卷 × 70 米')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
+    expect(mockCreate.mock.calls[0][0].items[0]).toMatchObject({ quantity: 70, rollLengthM: 70 })
+  })
+
+  it('卷数 3 + 卷长 60 ⇒ 180 米（多卷同样按乘积）', async () => {
+    mockCreate.mockResolvedValue({ data: { data: createdOrder } })
+    render(<NewInboundOrderPage />)
+    const { rolls, qty, roll } = await openWithLine()
+    fireEvent.change(rolls, { target: { value: '3' } })
+    fireEvent.change(roll, { target: { value: '60' } })
+    expect(qty.value).toBe('180')
+  })
+
+  it('卷数留空 ⇒ 数量（米）可手填，payload 与改前逐字一致（负控）', async () => {
+    mockCreate.mockResolvedValue({ data: { data: createdOrder } })
+    render(<NewInboundOrderPage />)
+    const { qty } = await openWithLine()
+    expect(qty.readOnly).toBe(false)
+    fireEvent.change(qty, { target: { value: '30' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
+    expect(mockCreate.mock.calls[0][0].items[0]).toMatchObject({ quantity: 30, rollLengthM: null })
+  })
+
+  it('卷数 0.5 ⇒ 显式拒绝（半卷按米入库：卷数留空、数量填米）', async () => {
+    render(<NewInboundOrderPage />)
+    const { rolls, roll } = await openWithLine()
+    fireEvent.change(rolls, { target: { value: '0.5' } })
+    fireEvent.change(roll, { target: { value: '70' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
+
+    const { toast } = await import('sonner')
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('卷数必须是正整数')),
+    )
+    expect(mockCreate).not.toHaveBeenCalled()
+  })
+
+  it('卷数 × 卷长 不是 0.1 米粒度（1 × 67.25）⇒ 显式拒绝，不静默取整', async () => {
+    render(<NewInboundOrderPage />)
+    const { rolls, roll } = await openWithLine()
+    fireEvent.change(rolls, { target: { value: '1' } })
+    fireEvent.change(roll, { target: { value: '67.25' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
+
+    const { toast } = await import('sonner')
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('1 位小数')),
+    )
+    expect(mockCreate).not.toHaveBeenCalled()
+  })
+
+  // 类级守卫（issue #7644）：本页的「数量」输入**必须带单位** —— 裸「数量」正是这次踩坑的形态
+  // （商家无从知道它按米还是按卷）。将来谁再加一格不带单位的数量/米数输入 ⇒ 红。
+  it('类级守卫：明细表头写明单位，页面里不存在裸的「数量」输入', async () => {
+    render(<NewInboundOrderPage />)
+    await openWithLine()
+    const headers = Array.from(screen.getByRole('table').querySelectorAll('thead th')).map(
+      (th) => th.textContent,
+    )
+    expect(headers).toContain('数量（米）*')
+    expect(headers).toContain('卷长(米/卷)')
+    expect(screen.queryByLabelText(/ 数量$/)).toBeNull()
   })
 })
