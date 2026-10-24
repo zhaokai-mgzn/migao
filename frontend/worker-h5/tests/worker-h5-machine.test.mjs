@@ -1,4 +1,4 @@
-// case_ids: PG-018, BM-006, DF-017, UI-136
+// case_ids: PG-018, BM-006, DF-017, UI-137
 //
 // 一体机「机台模式」判据（母单 #5161；设计 docs/design/cutting-height-config-and-terminal.md §2.6
 // + 2026-09-29 追加裁定「一体机本期要做报工，且是一条链」）。
