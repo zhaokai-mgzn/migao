@@ -201,6 +201,35 @@ def test_all_models_unsupported_is_not_reported_as_quota(monkeypatch):
     assert "额度" not in message
 
 
+@pytest.mark.parametrize("status,code", [(401, "InvalidApiKey"), (403, "AccessDenied")])
+def test_credential_failure_is_unavailable_and_never_rotates(monkeypatch, status, code):
+    """凭证 / 权限失败（401 `InvalidApiKey` / 403 `AccessDenied`）⇒ **能力不可用**，且不空转切模型。
+
+    形态来源 = 2026-10-25 线上实测：现役 MaaS key 打真实端点回
+    `HTTP 401 {"code": "InvalidApiKey"}`（端点可达、key 无效）。这类错误是**账号级**的：
+    同一个 Key 换 `IMAGE_GEN_MODELS` 里下一个模型还是 401 ⇒
+    ① 轮换只白烧请求与时间；② 汇总话术会把它说成「模型都不接这类图生图请求」（**错的理由**）。
+    判据三条：异常归到 `ImageGenerationUnavailable`（503 语义）、**恰好一次** HTTP 调用（不逐模型重试）、
+    原因里带 `code` 且不含「额度」。
+    """
+    _settings(monkeypatch)  # 默认链 = model-a,model-b（两个模型 ⇒ 才判得出"有没有轮换"）
+    calls = []
+
+    def handler(request):
+        calls.append(request.read().decode())
+        return httpx.Response(status, json={
+            "request_id": "rid-cred", "code": code, "message": "Invalid API-key provided."})
+
+    with pytest.raises(gen.ImageGenerationUnavailable) as excinfo:
+        asyncio.run(gen.generate_product_image(
+            "https://oss/sample.png", "某商品", "main", client=_client(handler)))
+
+    message = str(excinfo.value)
+    assert len(calls) == 1, f"凭证失败不得逐模型重试，实调 {len(calls)} 次"
+    assert code in message                      # 原因如实透传到日志（用户面由工具固定话术承接）
+    assert "额度" not in message
+
+
 def test_internal_endpoint_returns_only_preview_fields(monkeypatch):
     from app.api.internal import ImageGenerateRequest, image_generate
 
