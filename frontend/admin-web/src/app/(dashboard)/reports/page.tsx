@@ -214,7 +214,16 @@ export default function ReportsPage() {
   }, [])
 
   useEffect(() => {
-    load()
+    // 🔴 五张表**逐个**调（不经过 `load()` 再转一手）：判据 12（`test_agent_permission_parity.py`）
+    // 的「第一屏读端点」只看**本页 effect 驱动面**、且只跟**一跳** —— 多转一层就拿不到
+    // `reportApi.*` 的调用点，会被判成「这页第一屏不读它」（红得对：这类转手最容易把调用挪出首屏
+    // 而没人发现）。行为与 `load()` 相同：同一批请求、各自 settle。
+    setLoadError(null)
+    void loadMargins()
+    void loadInventory()
+    void loadStaff()
+    void loadQuality()
+    void loadAging()
     // ⚠️ 只在挂载时整页取一次；换区间走下面的三个 `load*`（见 `skipFirstRangeRun`）
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
