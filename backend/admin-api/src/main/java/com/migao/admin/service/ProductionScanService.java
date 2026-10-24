@@ -458,6 +458,10 @@ public class ProductionScanService {
         result.put("operation", chosen == null
                 ? null
                 : operationView(chosen, determinedBy, rerouted));
+        // 裁剪报工确认批次（issue #7647，**只加三个键**）：`batch_required` / `batch_no`（派工预填）/
+        // `batch_candidates`。判定与记账面**同一个** `ProductionService#cuttingBatchItem`（不在解析面
+        // 按工序名重写一套）；非「裁剪」/ 零批次入库的 SKU ⇒ false / null / []（键恒在）。
+        result.putAll(productionService.cuttingBatchView(po, orderItemId, chosen, tenantId));
         result.put("alternatives", alternativeViews(sorted, chosen));
         result.put("set_progress", productionService.progressOf(setOperations));
         // ④ 卡点判据（切片 ③，issue #4776；设计 §3.1 逐字：「"stalled": { "kind": null }} // §6：
@@ -513,6 +517,11 @@ public class ProductionScanService {
         result.put("completed_at", null);
         result.put("needs_selection", DEGRADED_NEEDS_SELECTION);
         result.put("selections", po == null ? List.of() : selectionView(po, tenantId));
+        // 裁剪批次三键（issue #7647）：旧码降级形态判不出是哪一套 / 哪一道 ⇒ 一律「不需要批次」
+        // （键恒在，页面按缺键就缺渲染；工人选完套+部位再解析时才会带上真实判定）
+        result.put("batch_required", Boolean.FALSE);
+        result.put("batch_no", null);
+        result.put("batch_candidates", List.of());
         return result;
     }
 

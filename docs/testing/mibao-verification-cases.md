@@ -4402,7 +4402,7 @@
 数据: **边界（如实登记）**：判据只认仓内文本形态 `<mapper 标识符>.insert(`（标识符由 `StockBatchConsumptionMapper <名>` 的声明取得）与 `getMapper(StockBatchConsumptionMapper.class).insert(`；用反射 / 裸 SQL / `JdbcTemplate` 写台账的代码不在射程内（本仓没有这种写法，出现时也不会有东西提醒）；它判不了「盘点的业务口径对不对」（那是 PR-119 的真库/mock 判据）
 跳过: [backend-contract] 静态结构守卫（只读仓内文件，零网络、零时钟、不起真库）由 tests/unit_ci_workflows/test_batch_stocktake_write_point.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
-溯源: 2026-10-01 新增（issue #5865 判据 8「类级元守卫：批次调整的写入点唯一」；照 `OrderRollAllocationAuthorityTest` 的先例）：本单给批次台账加了第三个来源（`stocktake`）⇒ 同批落类级元守卫，把「写入点唯一 / 余量口径唯一 / 来源族列形状互斥」钉成未登记即红。取号 MC-053（现取 main + 全部在飞分支的 `- id:` 差集：本单**先取 MC-052**，同步 main 时该号已被 #5853 的包占用 ⇒ 按「后合入者让号」顺延为 **MC-053**）。 ｜ tags: ci, guard, inventory, ledger
+溯源: 2026-10-01 新增（issue #5865 判据 8「类级元守卫：批次调整的写入点唯一」；照 `OrderRollAllocationAuthorityTest` 的先例）：本单给批次台账加了第三个来源（`stocktake`）⇒ 同批落类级元守卫，把「写入点唯一 / 余量口径唯一 / 来源族列形状互斥」钉成未登记即红。取号 MC-053（现取 main + 全部在飞分支的 `- id:` 差集：本单**先取 MC-052**，同步 main 时该号已被 #5853 的包占用 ⇒ 按「后合入者让号」顺延为 **MC-053**）。 ｜ 2026-10-24（issue #7647，同 PR 内**收窄判据口径**，不是放宽）：给批次台账加第四个来源 `cutting_report`（V191）时，该迁移只是把 `ck_batch_consumption_reason` 的取值集合**重写**成四值 —— 判据原先的「改表 + 提到 stocktake」判定把它误认成「引入盘点来源的迁移」，要求它带 `uk_batch_consumption_stocktake`（假红：那条闸由 V143 建、仍在）。⇒ `touches_stocktake_source` 收窄为「**引入**盘点来源」＝加 `stocktake_run_id` 列或建幂等闸；并在判别力自证里补两条（只扩展取值集合 ⇒ **不**认作引入；引入列却无闸 ⇒ 仍红）。写入点唯一 / 余量口径唯一 / 形状互斥三条判据**一条没动**。 ｜ tags: ci, guard, inventory, ledger
 
 ### MC-054. worktree 删除不许穿过软链 + 禁止「跨工作区 node_modules 软链」成为约定（issue #5930）：解链调用必须**可执行且先于** `git worktree remove`、外部目标逐字节完好、仓内不许把这个姿势教成步骤 🔵
 ```
@@ -7922,7 +7922,7 @@
 ```
 溯源: 2026-10-18 新增（issue #7251）：只修**调度**，不改 30 天口径 —— `armIdle()` 改为按 `idleSlices()` 分片排队（每片 ≤ `MAX_TIMER_DELAY_MS`，前 N-1 片只续排、末片到期才 `checkAlive()`），并新增同文件 ⑥ 的全区间类级判据；同批修好测试侧因「长定时器不再 1ms 立即触发」而挂住测试进程的一处（frontend/worker-h5/tests/worker-h5-6749-stale-login-error.test.mjs 用 `t.after(() => app.destroy())` 显式销毁）。取号 = PG-089（`python3 scripts/next_case_id.py pg` 实跑：PG → main:001-087 · PR #7224:088 → 取 PG-089）。 ｜ tags: processing, worker, session, timer, backend-contract
 
-## 加工单域（78 case）
+## 加工单域（79 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -8985,6 +8985,27 @@
 跳过: [backend-contract] 前端 vitest 渲染/交互断言 + 后端池口径单测；零网络、零时钟、非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-24 新增（issue #7634，用户逐字「销售订单为什么还是可以直接加工，让你改成统一走智能派单，为什么还是老样子」；裁定 = 选项 A「销售订单只读，四个动作全收走」+ 待付款单也走智能派单）。取号 = 当时 origin/main 已占号最大 PG-091 ⇒ 本单取 PG-092。 ｜ tags: dispatch, pool-board, ui, red-proof
+
+### PG-093. 裁剪报工必须确认批次：派工批次预填可改 / 未指派必须手输 / 批次账同事务纠偏（issue #7647） 🔵
+```
+你: 裁剪报工的时候需要工人裁剪的哪个批次，如果通过智能派单的就默认展示指定批次，允许工人改，如果没指定批次就需要工人手输才能完成报工，并且实时更新库存
+你: 只有整卷售卖的时候才需要出库，裁剪不需要生成出库
+数据: **判据 1·缺批次即拒绝（会红，Java 写面）**：工序名恰好是「裁剪」且该商品 × SKU 有批次行时，报工不带 `batch_no` ⇒ 422 `BATCH_REQUIRED`，且**零写入**（不落 `production_work_logs`、不推进进度、不记账）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanCompleteServiceTest.java 的 `cuttingWithoutBatchIsRejectedBeforeAnyWrite`。**红证**：把 `ProductionService#applyScanComplete` 里的必填校验删掉 ⇒ 该用例红（会以成功路径走完）。
+数据: **判据 2·批次号错了不落账（会红）**：批次不存在 ⇒ 422 `BATCH_NOT_FOUND`；批次属于别的商品 / 别的 SKU ⇒ 422 `BATCH_SKU_MISMATCH`；两种都**一行都不写**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/StockBatchConsumptionCuttingReportTest.java 的 `unknownBatchIsRejectedWithoutWriting` / `foreignSkuBatchIsRejectedWithoutWriting`。**红证**：把 `applyCuttingReport` 的存在性/SKU 校验删掉 ⇒ 两条用例红（脏批次会落成账）。
+数据: **判据 3·派工批次一致 ⇒ 零写入（会红）**：智能派单已扣过该批次的该行，工人填的批次与之一致时**不重复扣**，该行净额与余量逐值不变（排料省下的米数不受影响）。执行点 = 同文件 `sameBatchAsDispatchWritesNothing`。**红证**：去掉「同批次直接返回」分支（改成每次都扣）⇒ 该用例红（`insert` 被调用一次）。
+数据: **判据 4·换批次 ⇒ 同一事务两条分录（会红）**：工人填的批次与派工批次不同 ⇒ 先回补原批次（+净额）、再扣实裁批次（−净额），该行净额**不变**、两批次余量各自正确。执行点 = 同文件 `differentBatchMovesTheNet`。**红证**：只扣新批次不回补旧批次 ⇒ 用例红（该行净额翻倍）。
+数据: **判据 5·派工未指定 ⇒ 报工时按本次米数扣（会红）**：该行从来没有派工族分录时，按本次报工米数扣工人填的批次；分次报工累计正确（11 + 4 = 15）。执行点 = 同文件 `unassignedDeductsReportedMeters`。**红证**：把 `dispatchAssigned` 分支的判断写反 ⇒ 用例红（第一次就零写入）。
+数据: **判据 6·余量不足放行 + 显式缺口（会红）**：余量不够时**不挡报工**（不挡工人记工钱），台账如实落负余量，回执给 `batch_shortage_meters`。执行点 = 同文件 `insufficientStockIsAllowedWithExplicitShortage` + `ProductionScanCompleteServiceTest#cuttingWithBatchReconcilesAndReturnsReceipt`（回执三键）。**红证**：改成 fail-closed（余量不足抛错）⇒ 用例红；回执不传缺口键 ⇒ 断言红。
+数据: **判据 7·豁免与零回归（会红）**：该 SKU 从未按批次入库 ⇒ 不强制批次、也不落账（存量商品不能报不上工）；非「裁剪」工序（`精裁-布`）传了 `batch_no` 也不读、不落账。执行点 = `ProductionScanCompleteServiceTest#cuttingWithoutAnyBatchRowsIsExempt` / `#nonCuttingOperationIgnoresBatchNo`。**红证**：把 `tracksBatches` 豁免删掉 ⇒ 第一条红；去掉工序名判定 ⇒ 第二条红。
+数据: **判据 8·作废按净额归零（会红）**：换过批次的加工单作废 ⇒ 按 (批次 × 订单行) 净额回补（净额归零，**不二次回补**），重跑零写入；纯派工单的回补量与改前逐值相同。执行点 = `StockBatchConsumptionCuttingReportTest#reverseRestoresNetToZeroAfterBatchMove` / `#reverseKeepsPureDispatchBehavior`。**红证**：回补改回「只回 reason=processing_order 的行」⇒ 换批次的那条用例红（B 批次的扣减永远回补不掉，A 批次被回补两次）。
+数据: **判据 9·读面两键先下发（会红）**：扫码解析响应对「裁剪」追加 `batch_required` / `batch_no`（派工批次，预填值）/ `batch_candidates`（余量 + `enough`），其余工序三键为 false / null / []（键恒在）；一体机裁高读面**原样透传** `batch_required` / `batch_no`。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanServiceDetailFieldsTest.java 的 `cuttingScanCarriesBatchView` / `nonCuttingScanHasNoBatchRequirement` + WorkerCuttingHeightServiceTest.java 的 `cuttingBatchKeysArePassedThroughToTheMachineScreen` / `missingCuttingBatchKeysDegradeToFalseAndNull`。**报工回执的下一屏判据**：`scan/complete` 回执**追加** `next_batch_required` / `next_batch_no` / `next_batch_candidates`（服务端用**同一次重解析**算出：报完「裁剪」通常下一道是「打包」⇒ false；报废不推进进度 ⇒ 仍是「裁剪」⇒ true），页面渲染下一屏**只认这三个键**、不沿用上一屏。执行点 = ProductionScanCompleteServiceTest 的 `cuttingWithBatchReconcilesAndReturnsReceipt` / `nonCuttingOperationIgnoresBatchNo`。**红证**：从 `ProductionScanService#resolve` 删掉 `cuttingBatchView` 三键 ⇒ 前两条红；从 `WorkerCuttingHeightService#read` 删掉两键 ⇒ 机台用例红。
+数据: **判据 10·幂等闸收窄是 DB 对象（真库，会红）**：`uk_batch_consumption_line` 的谓词加 `reason <> 'cutting_report'` —— 报工纠偏行天然多行（分次报工 / 换批次后再换回），而派工两族的唯一性**一字未动**。真库判据 = backend/admin-api/src/test/java/com/migao/admin/service/BatchConsumptionLedgerRealDbTest.java 的 `cuttingReportRowsMayRepeatButDispatchRowsMayNot`：同一 (批次 × 明细行 × cutting_report) 两张扣减行 + 「回补 + 再扣减」两张行都必须落库；同一元组的 `processing_order` 第二行仍 **23505**。**红证**：把 V191 的谓词收回 `WHERE deleted = 0` ⇒ 前两段当场 23505（分次报工第二次就报不上工）；把谓词写成恒假 ⇒ 派工行的 23505 断言红。
+数据: **边界（照实登记）**：① 只覆盖工人扫码报工写入口（`/api/worker/production/scan/complete`），商家端逐道报工不改；② 余量允许为负（对账读面能读出负余量批次，不做自动平账）；③ 报告时**不**回写派工计划的米数（「同批次零写入」是有意的：报工米数与排料口径不是一回事）；④ 该 SKU 零批次入库 ⇒ 不强制批次（安全默认）。
+前置: 本用例是 [backend-contract] 确定性单测：前置（工序实例「裁剪」+ 该商品 × SKU 的批次行 + 派工扣减行 / 零批次商品）由各测试类**自建并打桩**（Mockito；真库判据用 PgCluster 现造批次行，跑完随临时库销毁），不依赖共享夹具或种子真值；前置不成立时对应单测直接红（落点方法找不到 / mock 未命中 / 真库缺表），agent-eval 栈不跑它
+跳过: [backend-contract] admin-api 单测（无 LLM 行为面；批次判定、纠偏与回补全部是确定性规则）
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: 2026-10-24 新增（issue #7647）。🔴 **让号**：同步 main 时 PG-092 已被 #7634 占用 ⇒ 按「后合入者让号」改 **PG-093**（测试文件头部 `// case_ids:` 与 claim 同名同步）。用户逐字：「裁剪报工的时候需要工人裁剪的哪个批次，如果通过智能派单的就默认展示指定批次，允许工人改，如果没指定批次就需要工人手输才能完成报工，并且实时更新库存」+「只有整卷售卖的时候才需要出库，裁剪不需要生成出库」。三条口径经用户当场裁定：① 保留 #5144「派工即扣」，报工做核对 + 纠偏；② 批次不存在挡住报工、余量不足放行并显式记缺口；③ 仅工序名恰好「裁剪」。实现面：新台账来源 `cutting_report`（V191）+ 纠偏写面 + 作废回补改净额口径 + 扫码/机台读面三键 + worker-h5 批次输入（见 UI-136）。 ｜ tags: processing-order, production, scan-report, batch-stock
 
 ## 商品域（132 case）
 
@@ -11010,7 +11031,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（136 case）
+## 前端 UI 域（137 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -12992,6 +13013,23 @@
 真值: frontend-fix.vitest
 溯源: 2026-10-24 新增（issue #7633）。取号 = `scripts/next_case_id.py UI` 现取（main 001-135）⇒ **UI-136**。病根：懒加载对当前页每一行都发 `operations` + `piecework`，父订单已软删的行让 `ProductionService.resolveOrder` 返回 404「订单不存在」（该语义正确、不改），而全局 404 分支弹 toast ⇒ 每行 2 次、一进页面 N 次。修法 = 列表响应里 `!po.orderNo` 的行不进 `pending`（不请求、不重试），订单号列写「订单已删除」。 ｜ tags: ui, admin-web, production-board, orphan, backend-contract
 
+### UI-137. 工人端裁剪报工确认批次：派工批次预填可改 / 未指派空着必须手输 / 回执带批次与余量（issue #7647） 🔵
+```
+你: 裁剪报工的时候需要工人裁剪的哪个批次，如果通过智能派单的就默认展示指定批次，允许工人改，如果没指定批次就需要工人手输才能完成报工
+数据: **判据 1·区块只在需要批次时出现（会红）**：`batch_required === true` ⇒ 报工主屏出「批次（这次从哪一批裁）」输入框 `#wh5-batch-input`；缺键 / false ⇒ 批次区块**一个字节都不渲染**、报工按钮与请求体与改前逐字一致（老响应零回归）。执行点 = frontend/worker-h5/tests/worker-h5-cutting-batch.test.mjs 的用例 ①②④。**红证**：把 `isBatchRequired` 改成恒 true ⇒ ④ 红；区块恒不渲染 ⇒ ①②③ 等 7 条红。
+数据: **判据 2·派工批次预填且可改（会红）**：有派工批次 ⇒ 输入框 `value` = 该批次，工人可改成别的批次并原样进入请求体；没有 ⇒ 输入框为空。执行点 = 同文件用例 ①②③。**红证**：`currentBatchNo` 忽略工人输入（恒用预填）⇒ ③⑥⑦⑧-b 红。
+数据: **判据 3·没填不让报工（会红）**：`batch_required` 且输入 trim 后为空 ⇒ 报工按钮 `disabled` + 一句可行动提示；硬点（模拟绕过 disabled）也**一个写请求都不发**。执行点 = 同文件用例 ②③-b。**红证**：去掉 render 侧的 `batchBlocked` 分支 ⇒ ②⑧ 红；去掉 app 侧闸 ⇒ ③-b 红（发出了请求）。
+数据: **判据 4·请求体带工人确认的批次（会红）**：点报工时请求体含 `batch_no`（= 输入框/候选点选后的值，trim 过）；非裁剪工序**不带**该键（白名单构造）。执行点 = 同文件用例 ③④ + frontend/worker-h5/src/api.mjs 的 `completeByScan`。**红证**：api 侧不写 `body.batch_no` ⇒ ③ 红。
+数据: **判据 5·候选批次可点选（会红）**：`batch_candidates[]` 渲染成 chip（批次号 + 余量 + 余量不足标记），点一下填入输入框；候选为空 ⇒ 整块候选区不渲染。执行点 = 同文件用例 ⑤。**红证**：不接线候选点击 ⇒ ⑤ 红；候选为空仍渲染空壳 ⇒ ⑤'' 红。
+数据: **判据 6·回执显示批次与余量、缺键不印假数据（会红）**：报工成功回执句追加「批次 X · 余量 Y 米」；`batch_shortage_meters > 0` 追加缺口说明；三键缺键 / null ⇒ 整句不渲染（屏上不出现 `undefined` / `NaN` / `null`）。执行点 = 同文件用例 ⑥⑦。**红证**：把回执尾部改成 naive 插值 ⇒ ⑦ 红；不追加批次尾 ⇒ ⑥⑦ 红。
+数据: **判据 7·下一屏只认服务端重解析（会红）**：报工成功后的下一屏按回执的 `next_batch_required` / `next_batch_no` / `next_batch_candidates` 渲染 —— 下一道不要批次（车位/打包）⇒ 批次区块**不出现**且按钮可点；仍要批次（报废不推进 ⇒ 仍是裁剪）⇒ 输入框空 + 按钮禁用 + 候选来自服务端；服务端给了预填值 ⇒ 预填。工人手输的值**不带到下一屏**（`state.batchNo` 清回 null）。执行点 = 同文件用例 ⑧ / ⑧′ / ⑧″ / ⑧-b。**红证**：沿用上一屏的 `batch_required` ⇒ ⑧ 红（打包屏多出输入框、按钮被禁死）；清空成 false ⇒ ⑧′ 红（裁剪屏填不了批次）；`resolved` 不清 `batchNo` ⇒ ⑧-b 红。
+数据: **判据 8·一体机不被新规则卡死（会红）**：机台页（`machine.mjs` / `machine-app.mjs`）对裁剪工序：有派工批次 ⇒ 报工请求自动带 `batch_no`（屏面一字不变）；没有 ⇒ **零请求** + 大字「本单未指派批次：请到报工页填写批次后再报工」+ 去报工页入口；非裁剪 ⇒ 请求体不带该键。执行点 = frontend/worker-h5/tests/worker-h5-machine.test.mjs 的 ⑦ / ⑦′ / ⑦″。**红证**：机台不带 `batch_no` ⇒ ⑦ 红；去掉机台批次闸 ⇒ ⑦′ 红（发了请求）；恒显阻断提示 ⇒ ⑦″ 红。
+前置: 本用例是 [backend-contract] 纯前端契约用例：服务端解析响应（`batch_required` / `batch_no` / `batch_candidates`）与报工回执由单测自建并打桩（假 DOM + fetch 替身，不碰真库），前置不成立时单测直接红；agent-eval 栈不跑它
+跳过: [backend-contract] 纯前端（假 DOM + fetch 替身驱动真实装配层；无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/worker-h5/tests/worker-h5-cutting-batch.test.mjs 与 worker-h5-machine.test.mjs 执行
+```
+真值: frontend-fix.vitest
+溯源: 2026-10-24 新增（issue #7647，用户逐字见 PG-092）。形态按用户裁定：派工指定批次默认展示、允许改；未指定必须手输才能完成报工；回执当场给「批次 + 余量 + 缺口」。前端**不按工序名猜**适用面（只认服务端 `batch_required`）—— 判定与记账面**同一个** `ProductionService#cuttingBatchItem`。同批处理一体机回归（机台页刻意无文本输入元素 ⇒ 无派工批次时指路报工页，不新增输入框）。 ｜ tags: ui, worker-h5, production, scan-report, batch-stock
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -13021,8 +13059,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：885（活跃 141，跳过 744）
-- tier 分布：smoke 12 / normal 817 / adversarial 32
+- 用例总数：887（活跃 141，跳过 746）
+- tier 分布：smoke 12 / normal 819 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -13042,12 +13080,12 @@
 - 领域本体域：4
 - 订单域：69
 - 加工项域：31
-- 加工单域：78
+- 加工单域：79
 - 商品域：132
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：136
+- 前端 UI 域：137
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -13341,6 +13379,7 @@
 - PG-090: 直派全关：任何订单（含加急 / 待付款）都不得从订单详情直接生成作业单 —— 服务端逐单拒绝并指路智能派单（issue #7507 → #7634）
 - PG-091: 整卷布料单「出库」独立工序：散剪 裁剪→打包 / 整卷 出库→打包（批次号即卷号）
 - PG-092: 销售订单不再直接加工：作业单块只读（五个写动作全收走），发加工/开始加工/加工完成/取消 搬到生产明细页；待付款单走智能派单（issue #7634）
+- PG-093: 裁剪报工必须确认批次：派工批次预填可改 / 未指派必须手输 / 批次账同事务纠偏（issue #7647）
 - PP-007: 黄金策加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）
 - PP-008: 黄金策加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 加工项已无单价与计价方式 ⇒ calculate_price 端点与 action 整体退场（退场守卫）

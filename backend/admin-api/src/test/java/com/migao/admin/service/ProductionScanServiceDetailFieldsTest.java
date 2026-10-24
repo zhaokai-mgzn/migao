@@ -1,4 +1,4 @@
-// case_ids: PG-046, PG-058, PG-060
+// case_ids: PG-046, PG-058, PG-060, PG-093
 package com.migao.admin.service;
 
 import com.migao.admin.config.TenantContext;
@@ -8,6 +8,7 @@ import com.migao.admin.entity.ProcessingOrder;
 import com.migao.admin.entity.ProcessingOrderSet;
 import com.migao.admin.entity.ProcessingPositionOperation;
 import com.migao.admin.entity.ProcessingSetPartToken;
+import com.migao.admin.dto.BatchStockViews;
 import com.migao.admin.entity.Product;
 import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
@@ -29,12 +30,14 @@ import org.mockito.quality.Strictness;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 /**
@@ -433,6 +436,57 @@ class ProductionScanServiceDetailFieldsTest {
     }
 
     // ============================================================ 夹具
+
+    // ============================================================ ④ 裁剪批次三键（issue #7647）
+
+    @Test
+    @DisplayName("④ 裁剪工序 ⇒ batch_required=true + 派工批次（预填）+ 候选（余量 / 够不够）")
+    void cuttingScanCarriesBatchView() {
+        stubScan(CODE_CLOTH, ITEM_CLOTH,
+                List.of(op("op-cut", ITEM_CLOTH, "布帘", "布艺遮光帘A", 1, "裁剪", "11", "0")));
+        when(orderItemMapper.selectById(ITEM_CLOTH)).thenReturn(OrderItem.builder()
+                .id(ITEM_CLOTH).tenantId(TENANT).productId("prod-1").skuId(12L).skuCode("SKU-A")
+                .deleted(0).build());
+        when(stockBatchConsumptionService.tracksBatches(TENANT, "prod-1", 12L)).thenReturn(true);
+        when(stockBatchConsumptionService.assignmentsOf(TENANT, PO_NO)).thenReturn(Map.of(ITEM_CLOTH,
+                new StockBatchConsumptionService.BatchAssignment("PC-A", new BigDecimal("11"))));
+        when(stockBatchConsumptionService.remaining(eq(TENANT), eq("prod-1"), eq(12L), eq(true)))
+                .thenReturn(List.of(
+                        batchRow(1L, "PC-A", "30", "-11"),  // 余量 19 ≥ 应做 11 ⇒ 够
+                        batchRow(2L, "PC-B", "5", "0")));    // 余量 5 < 11 ⇒ 不够
+
+        Map<String, Object> view = service.resolve(CODE_CLOTH, null, TENANT);
+
+        assertThat(view.get("batch_required")).isEqualTo(true);
+        assertThat(view.get("batch_no")).isEqualTo("PC-A");
+        List<?> candidates = (List<?>) view.get("batch_candidates");
+        assertThat(candidates).hasSize(2);
+        Map<?, ?> first = (Map<?, ?>) candidates.get(0);
+        assertThat(first.get("batch_no")).isEqualTo("PC-A");
+        assertThat((BigDecimal) first.get("remaining_meters")).isEqualByComparingTo("19");
+        assertThat(first.get("enough")).isEqualTo(true);
+        Map<?, ?> second = (Map<?, ?>) candidates.get(1);
+        assertThat(second.get("enough")).isEqualTo(false);
+    }
+
+    @Test
+    @DisplayName("④ 非「裁剪」工序 / 零批次商品 ⇒ batch_required=false（三键恒在，页面按缺键就缺渲染）")
+    void nonCuttingScanHasNoBatchRequirement() {
+        stubScan(CODE_CLOTH, ITEM_CLOTH, standardOps());
+
+        Map<String, Object> view = service.resolve(CODE_CLOTH, null, TENANT);
+
+        assertThat(view).containsEntry("batch_required", false).containsEntry("batch_no", null);
+        assertThat((List<?>) view.get("batch_candidates")).isEmpty();
+    }
+
+    private static BatchStockViews.BatchRemaining batchRow(long id, String batchNo, String inbound,
+                                                           String consumed) {
+        BigDecimal in = new BigDecimal(inbound);
+        BigDecimal used = new BigDecimal(consumed);
+        return new BatchStockViews.BatchRemaining(id, batchNo, "prod-1", 12L, "SKU-A", "RK-1", "L1",
+                LocalDate.of(2026, 10, 1), new BigDecimal("12.5"), in, used, in.add(used));
+    }
 
     private void stubScan(String code, String itemId, List<ProcessingPositionOperation> ops) {
         when(setPartTokenMapper.selectOne(any())).thenReturn(partToken(code, itemId));

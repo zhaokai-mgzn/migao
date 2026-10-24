@@ -52,6 +52,11 @@ ROW_SITES: dict[str, list[tuple[str, str]]] = {
         # 只是 `@Transactional` 薄壳，**逐字**委派给它；两条报工路径共用同一份记账实现）。
         # 判据要落在**真抛点**上，故映射取 `applyReport`。
         ("ProductionService", "applyReport"),
+        # 裁剪报工确认批次（issue #7647）：批次必填闸单独成一个具名方法（不是内联在 `applyScanComplete`
+        # 的重载里 —— 契约守卫按**符号**读真抛点，重载会让它抓不到这个码）。
+        ("ProductionService", "requireCuttingBatch"),
+        # 批次号不存在 / 不属于该商品或 SKU 的两条码在批次账服务里抛（同一处校验，写面唯一）。
+        ("StockBatchConsumptionService", "applyCuttingReport"),
     ],
 }
 
@@ -148,19 +153,86 @@ def _factories() -> tuple[dict[str, int], dict[str, tuple[str, ...]]]:
 _FACTORY_STATUSES, _FACTORY_CODES = _factories()
 
 
+#: 常量形态的第一个实参（`new BusinessException(SomeClass.ERR_X, …)` / 同类内 `ERR_X`）。
+#: 🔴 为什么必须认这一族（issue #7647 实证）：本仓的拒绝码几乎都是 `public static final String ERR_*`
+#: 常量，只认字符串字面量会让「码全部走常量」的新实现**整族不可见** ⇒ 账本与源码的漂移守卫假绿。
+_CONST_ARG = re.compile(
+    r'new\s+BusinessException\(\s*(?:(?P<cls>[A-Z][A-Za-z0-9_]*)\.)?(?P<name>[A-Z][A-Z0-9_]{3,})\s*[,)]')
+_STATIC_CODE = re.compile(r'static\s+final\s+String\s+(?P<name>[A-Z][A-Z0-9_]{3,})\s*=\s*"(?P<value>[A-Z][A-Z0-9_]*)"')
+
+
+def _exception_call_args(body: str, start: int) -> list[str] | None:
+    """取 `new BusinessException(` 起的一次构造的**顶层实参**（按括号/字符串感知地切逗号）。"""
+    depth = 0
+    quote = ""
+    arg = ""
+    args: list[str] = []
+    for idx in range(start, len(body)):
+        ch = body[idx]
+        if quote:
+            arg += ch
+            if ch == quote and body[idx - 1] != "\\":
+                quote = ""
+            continue
+        if ch in "\"'":
+            quote = ch
+            arg += ch
+            continue
+        if ch == "(":
+            depth += 1
+            if depth == 1:
+                continue
+            arg += ch
+            continue
+        if ch == ")":
+            depth -= 1
+            if depth == 0:
+                args.append(arg.strip())
+                return args
+            arg += ch
+            continue
+        if ch == "," and depth == 1:
+            args.append(arg.strip())
+            arg = ""
+            continue
+        arg += ch
+    return None
+
+
+def _constant_code(owner_class: str, const_name: str) -> str | None:
+    """把 `ERR_*` 常量解析成它的字符串值（读源码；查不到 ⇒ `None`，由调用方判红）。"""
+    path = SERVICE_DIR / f"{owner_class}.java"
+    if not path.is_file():
+        return None
+    for m in _STATIC_CODE.finditer(path.read_text(encoding="utf8")):
+        if m.group("name") == const_name:
+            return m.group("value")
+    return None
+
+
 def _codes_thrown(class_name: str, method_name: str) -> dict[str, int]:
-    """方法体里**实际抛出**的 `码 → 状态码`（字面量构造 + 工厂方法两种形态）。"""
+    """方法体里**实际抛出**的 `码 → 状态码`（字面量 / 常量 / 工厂方法三种形态）。"""
     body = _method_body(class_name, method_name)
     out: dict[str, int] = {}
-    for code in _CODE_LITERAL.findall(body):
-        m = re.search(
-            rf'new\s+BusinessException\(\s*"{re.escape(code)}"\s*,(?P<rest>[^;]*?)\)\s*;',
-            body,
-            re.S,
-        )
-        assert m, f"读不出 {class_name}#{method_name} 里 {code} 的构造实参（源码结构变了）"
-        status = re.search(r",\s*(\d{3})\s*(?:,|\))", m.group("rest"))
-        out[code] = int(status.group(1)) if status else 400  # 2 参构造 = 400（BusinessException 源码真值）
+    for m in re.finditer(r'new\s+BusinessException\(', body):
+        args = _exception_call_args(body, m.end() - 1)
+        if args is None:
+            raise AssertionError(
+                f"读不出 {class_name}#{method_name} 的 BusinessException 构造实参（源码结构变了）")
+        status = int(args[2]) if len(args) >= 3 and re.fullmatch(r"\d{3}", args[2]) else 400
+        first = args[0]
+        literal = re.fullmatch(r'"([A-Z][A-Z0-9_]*)"', first)
+        if literal:
+            out[literal.group(1)] = status
+            continue
+        const = re.fullmatch(r'(?:(?P<cls>[A-Z][A-Za-z0-9_]*)\.)?(?P<name>[A-Z][A-Z0-9_]{3,})', first)
+        if const:
+            owner = const.group("cls") or class_name
+            value = _constant_code(owner, const.group("name"))
+            assert value, (
+                f"读不出 {class_name}#{method_name} 里常量 {first} 的字符串值"
+                "（常量被改名/搬到别的类/不再是 String 字面量 ⇒ 请同步解析口径）")
+            out[value] = status
     for name in set(_CODE_FACTORY.findall(body)):
         if name not in _FACTORY_STATUSES:
             continue  # 非「码工厂」（如 assertXxx 之类）不是抛出点

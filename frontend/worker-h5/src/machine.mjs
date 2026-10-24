@@ -419,25 +419,56 @@ function missingText(missing) {
 }
 
 /**
+ * 本次报工是否必须确认批次（issue #7647）—— 判据**只**取服务端下发的 `batch_required`
+ * （机台页不许按工序名猜：哪一行要不要批次是业务判定，例外见 issue 的「边界」）。
+ */
+export function machineBatchRequired(data) {
+  return data?.batch_required === true
+}
+
+/** 派工指定的批次（机台页的**唯一**来源）：缺键 / 非字符串 / 空串 ⇒ `''`（绝不把 undefined 印上屏）。 */
+export function machineBatchNo(data) {
+  const raw = data?.batch_no
+  return typeof raw === 'string' ? raw.trim() : ''
+}
+
+/** 本屏「要批次却没有派工批次」—— 机台页**没有文本输入元素**（刻意的 IME 护栏）⇒ 只能指路到报工页。 */
+export function machineBatchBlocked(data) {
+  return machineBatchRequired(data) && machineBatchNo(data) === ''
+}
+
+/** 机台页的批次阻断文案（大字、可行动、不责备；`reportBlock` 与测试共用同一句，两处不会漂）。 */
+const MACHINE_BATCH_BLOCKED_HINT = '本单未指派批次：请到报工页填写批次后再报工'
+
+/**
  * 报工区（**与裁高值同屏**，但两件事）：
  *   ① 大字「请在机器屏输入 X.XXX 米」（值 = 调用方给的显示值：屏一 = 服务端规则值；屏二 = 本次合计）
  *   ② 【完成】= 报工（`POST /api/worker/production/scan/complete`）：**工序由服务端推断**，
  *      前端只发 token + 幂等键 ⇒ 屏上这个数**不会**被写进报工请求（给机器的值与报工是两件事）
  *   ③ 失败**大字显式**（不假装成功）；成功 ⇒「已报工 · 下一道 = X」（下一道也由服务端给）
+ *   ④ 🔴 裁剪批次（issue #7647）：后端对「裁剪」缺 `batch_no` 一律 422 ⇒ 有派工批次就**自动带**
+ *      （屏面一字不变）；没有 ⇒ 按钮禁用 + 大字指路到报工页（本页刻意**不**加文本输入框，
+ *      IME 兜底依赖「机台页没有任何文本输入元素」这一条）。
  */
 function reportBlock(state, { value, digits, missingNote }) {
   const ready = value !== null && value !== undefined && Number.isFinite(Number(value))
   const big = ready
     ? `<p class="wh5-machine__big">请在机器屏输入 <b>${esc(fmtNumber(value, digits))}</b> 米</p>`
     : `<p class="wh5-machine__missing">⚠ ${esc(dataOr(missingNote))} ⇒ <b>算不出裁剪高度</b>，请在机器上按工艺复核（本页不猜数）</p>`
+  const batchBlocked = machineBatchBlocked(state.data)
+  const batchNote = batchBlocked
+    ? `<p class="wh5-machine__big wh5-machine__big--error" id="wh5-machine-batch-blocked">${esc(MACHINE_BATCH_BLOCKED_HINT)}</p>
+      <p class="wh5-machine__hint"><a class="wh5-machine__back" id="wh5-machine-to-report" href="${MACHINE_REPORT_HREF}">去报工页（本机不记住）</a></p>`
+    : ''
   const button = state.receipt
     ? '<button type="button" class="wh5-machine__cta" disabled>已报工</button>'
-    : `<button type="button" class="wh5-machine__cta" data-machine-report${state.reporting ? ' disabled' : ''}>${state.reporting ? '报工中…' : '完成'}</button>`
+    : `<button type="button" class="wh5-machine__cta" data-machine-report${state.reporting || batchBlocked ? ' disabled' : ''}>${state.reporting ? '报工中…' : '完成'}</button>`
   return `
     <div class="wh5-machine__report">
       ${big}
       ${state.reportError ? `<p class="wh5-machine__big wh5-machine__big--error">报工失败：${esc(dataOr(state.reportError))}</p>` : ''}
       ${state.receipt ? `<p class="wh5-machine__done">✅ ${esc(dataOr(reportNotice(state.receipt)))}</p>` : ''}
+      ${batchNote}
       <div class="wh5-machine__actions">${button}</div>
       ${state.receipt ? '<p class="wh5-machine__hint">继续下一件请再扫一次水洗唛（同一张码再扫 = 领下一道）</p>' : ''}
     </div>`

@@ -135,6 +135,12 @@ public class WorkerCuttingHeightService {
         header.put("set_count", setCount(orderId, tenantId));
         out.put("order", header);
         out.put("positions", rows);
+        // 裁剪报工确认批次（issue #7647）：机台页报工走**同一个**写入口，后端对「裁剪」缺批次一律 422
+        // ⇒ 这两个键必须跟着这一屏下发，否则一体机在裁剪工序上会被硬挡。
+        // 🔴 原样透传解析面的那一份（`ProductionScanService#resolve` → `ProductionService#cuttingBatchView`），
+        //    本类不重算判定（两处各写一份必然漂）。
+        out.put("batch_required", Boolean.TRUE.equals(scan.get("batch_required")));
+        out.put("batch_no", scan.get("batch_no"));
         return out;
     }
 

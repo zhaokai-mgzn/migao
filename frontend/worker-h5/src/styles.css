@@ -213,6 +213,16 @@ html, body {
 .wh5-pick { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 15px; }
 .wh5-pick-label { color: var(--wh5-muted); }
 
+/* ---- 裁剪报工：确认批次（issue #7647）----
+   只在「裁剪」工序出现（服务端 `batch_required` 为真）。输入框沿用 `.wh5-input`，候选沿用
+   `.wh5-choice` —— 这里只补「区块 / 候选行 / 门禁提示」三条版面规则，不新造设计语言。
+   门禁提示用 accent（`--wh5-warn`）：它是**待办**（先填批次），不是错误（红字会读成「这单做不了」）。
+   空串时整行不占位（`:empty`）—— `render` 恒渲染这个元素（就地更新要用它），没有内容就不许留个空洞。 */
+.wh5-batch { display: flex; flex-direction: column; gap: 8px; }
+.wh5-batch-cands { display: flex; flex-wrap: wrap; gap: 8px; }
+.wh5-batch-hint { margin: 0; color: var(--wh5-warn); font-size: 15px; line-height: 1.5; }
+.wh5-batch-hint:empty { display: none; }
+
 /* ---- 本部位生产信息（母单 #6901，工人诉求：「需要这些信息 + 商品信息来决定如何生产」）----
    标签在左、值在右的紧凑网格；`overflow-wrap: anywhere` 让长公式串在窄屏折行（不撑破卡片）。
    长自由文本（用料公式 / 算料公式）**全文**上屏 —— 截断成省略号 = 工人看不到完整依据。 */
@@ -323,6 +333,8 @@ html, body {
   .wh5-choice { min-height: 72px; min-width: 140px; font-size: 22px; }
   .wh5-op-choice { min-height: 64px; font-size: 20px; }
   .wh5-ghost { min-height: 64px; font-size: 20px; }
+  /* 门禁提示在 PAD 上要**远距离**可读（与 `.wh5-sub` 同阶；这条会让工人少走两步） */
+  .wh5-batch-hint { font-size: 18px; }
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
