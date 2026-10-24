@@ -1,4 +1,4 @@
-// case_ids: OR-009, OR-014, UI-038, OR-039, OR-065
+// case_ids: OR-009, OR-014, UI-038, OR-039, OR-044, OR-065
 // @vitest-environment jsdom
 /**
  * 下单页「加工费计价预览」接线（issue #4450 · 前置 #4406）。
@@ -365,13 +365,66 @@ describe('下单页加工费计价预览接线（#4450）', () => {
     expect(within(block).getByTestId('fee-combination-no-composition')).toBeInTheDocument()
   })
 
-  it('#4874 已定价行 ⇒ 单价**只读**（无改单价入口），且保留去「加工费组合」的定价入口', async () => {
-    await setupLine() // stub = feeMatched()：fee_source=matched、unit_price=10
+  // ── #7642（用户 2026-10-24 逐字「新增订单中的加工费组合需要允许修改」）─────────────
+  // 改判：已配置（`fee_source='matched'`）的行**也**给「改本单单价」入口 —— 旧口径「已定价 ⇒ 只读」
+  // 的后果是商家配了价目之后、某一单要按谈好的价收**没有任何入口**。
+  // 语义边界（用户选定的选项）：**只改本单单价，组合价目不动** ⇒ 服务端回 `manual` 且 detail 带
+  // `configured_unit_price`（被覆盖的那条价目价），页面据此把「组合价目 ¥X/米」一直摆着。
+  it('#7642 已配置行 ⇒ 组合价目 + **改本单单价**入口在位；改价后预览/提交同价、来源变手动改价、价目不变可见', async () => {
+    const feeManualOnConfigured = (unitPrice: number, configured: number) => ({
+      data: {
+        data: {
+          items: [
+            {
+              processingFee: unitPrice * 13.3,
+              processingFeeDetail: {
+                composition: '韩式褶',
+                items: ['韩式褶'],
+                unit_price: unitPrice,
+                price_source: 'manual',
+                meters: 13.3,
+                meters_source: 'processingMeters',
+                fee_source: 'manual',
+                amount: unitPrice * 13.3,
+                // 服务端记下「被本单改价覆盖的那条价目价」—— 页面据此保留价目参考价
+                configured_unit_price: configured,
+                hint: null,
+              },
+            },
+          ],
+          processingFeeTotal: unitPrice * 13.3,
+        },
+      },
+    })
+    mockFeePreview.mockImplementation((payload: any) => {
+      const override = Number(payload?.items?.[0]?.processingInfo?.processingFeeOverride)
+      return Promise.resolve(override > 0 ? feeManualOnConfigured(override, 10) : feeMatched())
+    })
+    await setupLine() // 首轮 = feeMatched()：fee_source=matched、unit_price=10
+
     const block = await screen.findByTestId('processing-fee-combinations')
-    expect(within(block).getByTestId('fee-unit-price')).toHaveTextContent('¥10.00/米')
-    expect(within(block).queryByTestId('fee-unit-price-override')).toBeNull()
-    // 已定价 ⇒ 不再需要「去定价」入口（那正是「未定价」才要做的事）
-    expect(within(block).queryByRole('link', { name: /加工费组合/ })).toBeNull()
+    await waitFor(() => expect(within(block).getByTestId('fee-unit-price')).toHaveTextContent('¥10.00/米'))
+    // 红证：恢复「已定价 ⇒ 单价只读」⇒ 下面这条必红（入口消失，本单再也改不了价）
+    const override = within(block).getByTestId('fee-unit-price-override') as HTMLInputElement
+    fireEvent.change(override, { target: { value: '12.5' } })
+
+    // ① 立刻以该价重发 feePreview（300ms 防抖后）—— 预览与提交同一份 `buildLineProcessingInfo`
+    await waitFor(() =>
+      expect(
+        mockFeePreview.mock.calls.at(-1)![0].items[0].processingInfo.processingFeeOverride
+      ).toBe(12.5)
+    )
+
+    // ② 来源列变「手动改价」，并显式写明**组合价目不变**（钱的口径要看得见）
+    const after = screen.getByTestId('processing-fee-combinations')
+    await waitFor(() => expect(within(after).getByText(/手动改价/)).toBeInTheDocument())
+    expect(within(after).getByTestId('fee-override-scope')).toHaveTextContent('本单改价，组合价目不变')
+    // ③ 参考价仍是**组合价目**（10.00），不是被改后的 12.50（否则「价目不变」是假的）
+    expect(within(after).getByTestId('fee-unit-price')).toHaveTextContent('¥10.00/米')
+
+    // ④ 随建单提交同一份价
+    await submit()
+    expect(mockCreateOrder.mock.calls[0][0].items[0].processingInfo.processingFeeOverride).toBe(12.5)
   })
 
   it('#4874 没有选配任何加工项（也未触发自动识别）⇒ 整块不渲染（无组合可展示、也无价可改）', async () => {
