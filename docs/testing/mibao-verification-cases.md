@@ -4402,7 +4402,7 @@
 数据: **边界（如实登记）**：判据只认仓内文本形态 `<mapper 标识符>.insert(`（标识符由 `StockBatchConsumptionMapper <名>` 的声明取得）与 `getMapper(StockBatchConsumptionMapper.class).insert(`；用反射 / 裸 SQL / `JdbcTemplate` 写台账的代码不在射程内（本仓没有这种写法，出现时也不会有东西提醒）；它判不了「盘点的业务口径对不对」（那是 PR-119 的真库/mock 判据）
 跳过: [backend-contract] 静态结构守卫（只读仓内文件，零网络、零时钟、不起真库）由 tests/unit_ci_workflows/test_batch_stocktake_write_point.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
-溯源: 2026-10-01 新增（issue #5865 判据 8「类级元守卫：批次调整的写入点唯一」；照 `OrderRollAllocationAuthorityTest` 的先例）：本单给批次台账加了第三个来源（`stocktake`）⇒ 同批落类级元守卫，把「写入点唯一 / 余量口径唯一 / 来源族列形状互斥」钉成未登记即红。取号 MC-053（现取 main + 全部在飞分支的 `- id:` 差集：本单**先取 MC-052**，同步 main 时该号已被 #5853 的包占用 ⇒ 按「后合入者让号」顺延为 **MC-053**）。 ｜ tags: ci, guard, inventory, ledger
+溯源: 2026-10-01 新增（issue #5865 判据 8「类级元守卫：批次调整的写入点唯一」；照 `OrderRollAllocationAuthorityTest` 的先例）：本单给批次台账加了第三个来源（`stocktake`）⇒ 同批落类级元守卫，把「写入点唯一 / 余量口径唯一 / 来源族列形状互斥」钉成未登记即红。取号 MC-053（现取 main + 全部在飞分支的 `- id:` 差集：本单**先取 MC-052**，同步 main 时该号已被 #5853 的包占用 ⇒ 按「后合入者让号」顺延为 **MC-053**）。 ｜ 2026-10-24（issue #7647，同 PR 内**收窄判据口径**，不是放宽）：给批次台账加第四个来源 `cutting_report`（V191）时，该迁移只是把 `ck_batch_consumption_reason` 的取值集合**重写**成四值 —— 判据原先的「改表 + 提到 stocktake」判定把它误认成「引入盘点来源的迁移」，要求它带 `uk_batch_consumption_stocktake`（假红：那条闸由 V143 建、仍在）。⇒ `touches_stocktake_source` 收窄为「**引入**盘点来源」＝加 `stocktake_run_id` 列或建幂等闸；并在判别力自证里补两条（只扩展取值集合 ⇒ **不**认作引入；引入列却无闸 ⇒ 仍红）。写入点唯一 / 余量口径唯一 / 形状互斥三条判据**一条没动**。 ｜ tags: ci, guard, inventory, ledger
 
 ### MC-054. worktree 删除不许穿过软链 + 禁止「跨工作区 node_modules 软链」成为约定（issue #5930）：解链调用必须**可执行且先于** `git worktree remove`、外部目标逐字节完好、仓内不许把这个姿势教成步骤 🔵
 ```
