@@ -25,6 +25,22 @@
 > 未变的：正数改价仍按「本单单价」（价目不变）；未配置的组合仍按原口径在建单后记入价目；
 > agent 通道仍不允许改写价。
 
+### 语音识别与商品生图切到阿里云 MaaS（token-plan）：`qwen-audio-3.0-realtime-plus` / `qwen-image-3.0-pro`，旧百炼 Key 退役（2026-10-24，issue #7661）
+
+**改前**：语音识别走百炼 `paraformer-realtime-8k-v2`；商品生图走 `qwen-mt-image-2.0`（图片翻译模型，
+不接图生图 ⇒ 商家点「AI 生成商品图」必得 503，见 #7538）；两者共用同一个旧百炼 Key；语音缺 Key 时
+还会静默回落到主推理的 DeepSeek Key（必然 401，错因被「有 Key」掩盖）。
+
+**改后**（**主推理 / 视觉模型不动**，仍是 DeepSeek `deepseek-flash` —— 用户 2026-10-24 逐字
+「主推理模型不要更换，只更换语音识别和图片生成的模型的 key endpoint 和模型名」）：
+- 语音识别 = `qwen-audio-3.0-realtime-plus`，实时端点 `wss://token-plan.cn-beijing.maas.aliyuncs.com/api-ws/v1/inference`；
+- 商品生图 = `qwen-image-3.0-pro`，端点 = MaaS 原生多模态 `https://token-plan.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation`；
+- 两面共用同一个 MaaS Key（`ASR_API_KEY`；`IMAGE_GEN_API_KEY` 留空即复用）；
+- **旧百炼 Key 退役**：语音缺 Key 直接 503「未配置」，不再回落 DeepSeek Key。
+
+**边界（如实登记）**：新 Key 实测 401（端点本身可达）⇒ **首次成功识别 / 首次成功出图仍待确认**；
+本次不含任何配额或错误语义改动（既有判据一字未动）。
+
 ### 工人报工屏「本部位生产信息」按现场口径收口：只显示实际褶倍、去掉无效的 0、删用料公式与算料档位、货号显示商品货号（2026-10-24，issue #7636）
 
 **改前**（用户 2026-10-24 截图逐字四条）：同一块里既有「理论褶倍 2 倍」又有「实际褶倍 2.1 倍」；
