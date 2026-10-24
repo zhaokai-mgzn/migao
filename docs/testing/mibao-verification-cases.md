@@ -6215,7 +6215,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（68 case）
+## 订单域（69 case）
 
 ### OR-061. 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262） 🔵
 ```
@@ -7428,6 +7428,16 @@
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-10-17 新增（issue #7110）。取号 = `scripts/next_case_id.py OR` 现取（main 001-067）⇒ **OR-068**。病根（读源）：`OrderDetail.tsx` 的「待付款倒计时」前置判断是 `displayStatus !== 'pending_payment' || !order.paymentDeadline` —— 而 `paymentDeadline` 在 `OrderDetailResponse` 里**根本不存在**（`orders` 表也无该列、全仓无写入点、无「超时未付 ⇒ 自动取消」规则）⇒ 恒为假 ⇒ **倒计时从未渲染过**（连「--:--」都不会出现）。它与 #7078 是**同一个病第二次长出来**（屏幕面读后端不存在的键；可选键谁都能加，运行时读到 undefined 既不报错也不渲染 ⇒ 编译器与测试都不拦）。修法：① 撤下倒计时 UI（`calcCountdown` / state / 定时器 / prop / JSX 那一行）与 `Order.paymentDeadline` 类型键；② 两条 e2e spec 的 mock 与断言同口径；③ **类级固化** = 新守卫 test_order_detail_reads_have_backend_source.py（真语料零漂移 + 豁免 fail-closed + 解析不空转 + 判别力/负控）。边界：本页 20 个读点在撤下后**零豁免**；若产品日后真要「支付截止」，那是**新功能**（先补后端真值源再回加键），不是本单的缺口。 ｜ tags: order, order-detail, phantom-field, class-guard, backend-contract, frontend
+
+### OR-069. 删除待付款订单前先查活跃作业单：命中则 422 并给出作业单号（否则作业单悬挂 ⇒ 作业看板对已删父订单扇出 404）(issue #7633) 🔵
+```
+你: 用户 2026-10-24 截图：作业看板一进页面就弹「请求的资源不存在」（可叠多层），列表里出现订单号 / 客户都是「—」的作业单行；点「刷新」仍复现
+数据: 判据 1·🔴 **有活跃作业单 ⇒ 拒绝删除**（会红）：`OrderService.deleteOrder` 在状态闸门之后、`orderMapper.deleteById` 之前调 `processingOrderMapper.selectActiveByOrderId(order.getId(), order.getTenantId())`；命中 ⇒ `BusinessException.validationError`，文案含**作业单号**（可归因到具体那张单）且含「**作废**」这个动作词（用户 2026-10-24 口径：订单不做物理删除，出口是作废；实测文案 =「订单已生成作业单（<单号>），不能删除；请先作废该作业单」），订单与明细都不得被软删。`deleteById` 仍是 `@TableLogic` 逻辑删除（本单未改成物理删）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java 的 `deleteOrder_RejectedWhenActiveProcessingOrderExists`（红证：摘掉该闸门 ⇒ 本条不抛 ⇒ 红；实测改前 = 该用例不抛异常）
+数据: 判据 2·**负控：无作业单的待付款单仍可删**（闸门不许把既有能力打成一律 422）。执行点 = 同文件 `deleteOrder_SucceedsWhenNoActiveProcessingOrder`
+数据: 判据 3·**覆盖范围（照实登记）**：`selectActiveByOrderId` 的活跃集 = `deleted = 0 AND status IN ('generated','issued','in_processing','completed')`（backend/admin-api/src/main/java/com/migao/admin/mapper/ProcessingOrderMapper.java，租户由拦截器注入）⇒ **已取消（cancelled）/ 已软删**的作业单不挡删单 —— 那正是「先作废该作业单再删单」的合法路径。
+跳过: [backend-contract] Java 单测契约（零 LLM 环节）⇒ 不进 agent-eval 冒烟；机器判红通道 = traces.tests
+```
+溯源: 2026-10-24 新增（issue #7633）。取号 = `scripts/next_case_id.py OR` 现取（main 001-068）⇒ **OR-069**。病根：`ProcessingOrderService.GENERATABLE_ORDER_STATUSES` 自 #7626 起 = {pending, confirmed} ⇒ 待付款订单也能先有作业单，而 `deleteOrder` 的准入只有「状态必须是 pending」一道闸 ⇒ 删单成功、作业单悬挂（看板对已删父订单扇出 404）。修法 = 抄同文件 `updatePendingOrderContent` 的正面先例（同一 `selectActiveByOrderId` 口径），在状态闸门与 `deleteById` 之间加一道闸。 ｜ tags: order, processing-order, orphan, backend-contract
 
 ## 加工项域（31 case）
 
@@ -10981,7 +10991,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（135 case）
+## 前端 UI 域（136 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -12949,6 +12959,20 @@
 真值: frontend-fix.vitest
 溯源: 2026-10-23 新增（issue #7536，用户两次逐字报障：报价单没有收款码 / 二维码白边要裁掉）。根因两条：① `usePaymentQrcodes` 只在 `beforeprint` 取码，而预览层不派发该事件、真打印的纸面快照又在 `beforeprint` 当帧完成（异步请求来不及）⇒ 预览永远空、第一次打印无码；② 上传原图原样塞进 22mm 方框，白边一起印上。修法：模块级缓存取码（预览/打印目标时触发、`usePrintDoc` 打印前 await）+ **上传时** canvas 裁到内容外接框（失败退回原文件）。口径改动登记：① 取消「第二次打印才带码」；② 裁边由「渲染时」改为「上传时」（用户裁定）。 ｜ tags: ui, admin-web, print, quotation, sales-doc, payment-qrcode
 
+### UI-136. 作业看板：父订单已删（列表 orderNo 缺失）的行不再发 operations/piecework（404 toast 风暴），订单号列写「订单已删除」（issue #7633） 🔵
+```
+你: 用户 2026-10-24 PC 端截图：打开作业看板就弹 toast「请求的资源不存在」（可叠多层），列表里出现订单号 / 客户都是「—」的作业单行；点「刷新」仍复现
+期望: direct_reply
+数据: 判据 1·🔴 **父订单缺失的行零请求**（会红）：判定口径 = 列表响应里 `!po.orderNo`（`processing_orders.order_id` 是 NOT NULL 外键、列表与明细同租户 ⇒ `orderNo == null` 当且仅当父订单已软删 / 不可解析），这类行**不进**懒加载 `pending` ⇒ 对 `/production/orders/{orderId}/operations` 与 `/production/orders/{orderId}/piecework` 各 **0 次**调用。执行点 = frontend/admin-web/tests/unit/pages/production-board.test.tsx 的「#7633 父订单已删的行：不扇出 operations/piecework，订单号列显示「订单已删除」」（红证：改前实测 `expected 1 to be +0`，即该行确实发了一次 `getOrderOperations('order-uuid-gone')`）
+数据: 判据 2·**同一用例内的负控**：正常行（`orderNo` 有值）**照常**请求两个端点 —— 否则「一个都不发」也能让判据 1 变绿（空跑式假绿）。
+数据: 判据 3·**可见文案是业务话**：该行订单号单元格渲染「订单已删除」（不是「—」、不是内部键）；客户列保持「—」（不编造客户）；**不新增**常驻告警条 / 红块、**不给**这类行「重试」入口（§31 P1/P3）。
+数据: 边界（照实登记）：① 「父订单缺失」的判定依赖 `orderNo` 缺失去推断，**不是**显式契约字段（若后续要 `orderMissing: true` 这类显式位，另立单改契约）；② 这些行仍在列表里（本 PR 不删数据 —— 存量孤儿子行的软删由 #7633 主会话在数据侧完成，物理清理涉钱需人工裁定）；③ 进度 / 计件两列对这类行仍显示 `0%（0/0）` / `¥0.00`（既有「详情缺失」形态，未改）。
+前置: 本用例是 [backend-contract] 纯前端取数/渲染契约用例：列表与两个详情端点都由单测打桩（不碰真库、不依赖共享夹具）；前置不成立时对应单测直接红，agent-eval 栈不跑它
+跳过: [backend-contract] 纯前端取数 + 渲染契约（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/pages/production-board.test.tsx 执行
+```
+真值: frontend-fix.vitest
+溯源: 2026-10-24 新增（issue #7633）。取号 = `scripts/next_case_id.py UI` 现取（main 001-135）⇒ **UI-136**。病根：懒加载对当前页每一行都发 `operations` + `piecework`，父订单已软删的行让 `ProductionService.resolveOrder` 返回 404「订单不存在」（该语义正确、不改），而全局 404 分支弹 toast ⇒ 每行 2 次、一进页面 N 次。修法 = 列表响应里 `!po.orderNo` 的行不进 `pending`（不请求、不重试），订单号列写「订单已删除」。 ｜ tags: ui, admin-web, production-board, orphan, backend-contract
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -12978,8 +13002,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：882（活跃 141，跳过 741）
-- tier 分布：smoke 12 / normal 814 / adversarial 32
+- 用例总数：884（活跃 141，跳过 743）
+- tier 分布：smoke 12 / normal 816 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12997,14 +13021,14 @@
 - 杂项域：156
 - 商家入驻域：7
 - 领域本体域：4
-- 订单域：68
+- 订单域：69
 - 加工项域：31
 - 加工单域：77
 - 商品域：132
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：135
+- 前端 UI 域：136
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -13222,6 +13246,7 @@
 - OR-066: 入库单「过账 × 作废」交叉竞态：至多一个赢家 + 「已作废的单」不得改库存 / 不得留入库台账（issue #6928）
 - OR-067: 订单详情三个时刻（收款 / 发货 / 完成）显示服务端真值：paid_at 只在 pending→confirmed 边写、received_at 两条完成路都写（issue #7078）
 - OR-068: 订单详情撤下「支付倒计时」（其 paymentDeadline 后端从不下发、倒计时从未启动）+ 落「读面键 ⊆ OrderDetailResponse」类级守卫（issue #7110）
+- OR-069: 删除待付款订单前先查活跃作业单：命中则 422 并给出作业单号（否则作业单悬挂 ⇒ 作业看板对已删父订单扇出 404）(issue #7633)
 - PG-001: 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）
 - PG-002: 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成
 - PG-003: 生成加工单 - 无加工项订单不生成（现货成品直跳发货）

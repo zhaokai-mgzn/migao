@@ -1,4 +1,4 @@
-// case_ids: PP-014, PG-024, PG-038, PG-041, PR-106, PG-021, UI-094
+// case_ids: PP-014, PG-024, PG-038, PG-041, PR-106, PG-021, UI-094, UI-136
 //
 // PP-014（issue #4307 前端半边）：菜单组第 4 项「工艺路线」—— 页面存在但侧边栏进不去等于没交付；
 //   本文件的链接清单 + 权限码断言随加项改判（红证：加项后旧断言即红）。
@@ -396,6 +396,42 @@ describe('作业看板页 /production（作业单唯一入口，PG-038）', () =
       expect(mockGetOrderOperations).toHaveBeenCalledWith('order-uuid-2')
       expect(mockGetPiecework).toHaveBeenCalledWith('order-uuid-1')
     })
+  })
+
+  // ── issue #7633（UI-136）：父订单已删（列表响应里 `orderNo` 缺失）的行不得再扇出 404 ──────
+  //
+  // 病根：懒加载对**当前页每一行**都发 `operations` + `piecework`，而父订单软删后
+  // `ProductionService.resolveOrder` 返回 404「订单不存在」⇒ 全局 toast 每行弹两次。
+  // 判据 = **调用次数**（「没发请求」在渲染结果里看不见）；负控 = 正常行照常请求。
+  it('#7633 父订单已删的行：不扇出 operations/piecework，订单号列显示「订单已删除」', async () => {
+    // 列表仍返回该行（`processing_orders` 未动），但父订单不可解析 ⇒ orderNo / customerName 为 null
+    const ORPHAN = {
+      id: 'po-orphan',
+      orderId: 'order-uuid-gone',
+      orderNo: null,
+      customerName: null,
+      processingOrderNo: 'JG-20261024-3226',
+      status: 'generated',
+    } as unknown as ProcessingOrder
+    mockList.mockResolvedValue(ok([ORDERS[0], ORPHAN]))
+    render(<ProductionBoardPage />)
+
+    // 负控：正常行**照常**请求（否则「一个都不发」也能让下面的断言变绿）
+    await waitFor(() => expect(mockGetOrderOperations).toHaveBeenCalledWith('order-uuid-1'))
+    expect(mockGetPiecework).toHaveBeenCalledWith('order-uuid-1')
+
+    // 判据 1：父订单缺失的那一行对**两个端点**都零请求（不再 404）
+    const callsFor = (fn: typeof mockGetOrderOperations) =>
+      fn.mock.calls.filter((c) => c[0] === 'order-uuid-gone').length
+    expect(callsFor(mockGetOrderOperations)).toBe(0)
+    expect(callsFor(mockGetPiecework)).toBe(0)
+
+    // 判据 2：显式业务文案（不是「—」，也不是内部键）；客户列保持「—」（不编造客户）
+    await waitFor(() => expect(screen.getByTestId('production-row-po-orphan')).toBeInTheDocument())
+    expect(screen.getByTestId('production-row-orderno-po-orphan')).toHaveTextContent('订单已删除')
+    expect(screen.getByTestId('production-row-po-orphan')).toHaveTextContent('—')
+    // 不新增常驻告警条 / 红块（§31 P1/P3）：只在那一行的订单号单元格说一句
+    expect(screen.queryByText('请求的资源不存在')).not.toBeInTheDocument()
   })
 
   it('无加工单：空态提示，不报错', async () => {
