@@ -15,7 +15,7 @@
     "② **豁免只覆盖 `getByRole` 形态**；`locator('xpath=…')` / `locator('text=…')` 链上的 `.first()` 由判据 C 的登记面承担；",
     "③ 动作面口径 = `.first().<click|fill|selectOption|check|press>(` 或「该变量随后被点」——见 `_first_match_action_sites`。"
   ],
-  "baseline_count": 21,
+  "baseline_count": 23,
   "entries": [
     {
       "journey": "01-login",
@@ -192,6 +192,22 @@
       "anchor_kind": "text",
       "where": "frontend/admin-web/src/app/(dashboard)/orders/new/page.tsx::提交订单",
       "note": "新单页底部唯一的提交按钮（正则含历史三种文案）；按钮找不到时**不再吞错**，而是打印页面按钮名后判红 ⇒ 首个匹配即目标。"
+    },
+    {
+      "journey": "09-products-new",
+      "matcher": "name: '添加颜色', exact: true",
+      "anchor": "添加颜色",
+      "anchor_kind": "text",
+      "where": "frontend/admin-web/src/components/products/SkuMatrix.tsx::<Button>添加颜色</Button>",
+      "note": "SKU「批量添加颜色」面板内唯一的提交按钮（exact 已登记进名字台账）⇒ 首个匹配即目标。"
+    },
+    {
+      "journey": "09-products-new",
+      "matcher": "name: '批量填写', exact: true",
+      "anchor": "批量填写",
+      "anchor_kind": "text",
+      "where": "frontend/admin-web/src/components/products/SkuMatrix.tsx::<Button>批量填写</Button>",
+      "note": "批量工具栏内唯一的提交按钮；同页另一处「批量填写」是提示文本（非 button）⇒ 首个匹配即目标。"
     }
   ],
   "exemptions": [
