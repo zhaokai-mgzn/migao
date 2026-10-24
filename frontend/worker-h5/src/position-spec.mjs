@@ -57,7 +57,10 @@ export function dataOr(value) {
 export const POSITION_SPEC_KEYS = [
   // ── 组 1 商品身份 ──
   { key: 'product_name', label: '商品名称' },
-  { key: 'sku', label: '货号' },
+  // 货号 = **商品货号**（`products.sku_code`，issue #7636）：用户 2026-10-24 逐字「货号实际是2659」。
+  // 不是 SKU 码（`{货号}-{色序2位}-{门幅}` = 颜色 × 门幅 的组合，屏上印成 2659-01-28）——
+  // 颜色 / 门幅已在相邻两行各印一次 ⇒ 再印组合码 = 重复 + 内部标识（`migao-dev-flow` §31 P2 / P3）。
+  { key: 'product_code', label: '货号' },
   { key: 'color_name', label: '颜色' },
   { key: 'door_width', label: '门幅' },
   { key: 'selling_method', label: '售卖方式' },
@@ -74,15 +77,16 @@ export const POSITION_SPEC_KEYS = [
   { key: 'open_count', label: '开数', format: 'int' },
   { key: 'is_shaped', label: '是否定型', format: 'bool' },
   { key: 'style', label: '款式' },
-  { key: 'fullness', label: '理论褶倍', unit: '倍', format: 'number' },
+  // 褶倍只印**这一单实际用的**那一个（issue #7636，用户 2026-10-24 逐字「为什么有理论和实际褶倍，
+  // 就展示该订单用的实际哪个褶倍」）⇒ 理论褶倍 `fullness` 已从本表删除。
   { key: 'fullness_actual', label: '实际褶倍', unit: '倍', format: 'number' },
   { key: 'pleat_count', label: '总褶数', format: 'int' },
   { key: 'per_panel_pleats', label: '每片褶数', format: 'int' },
   { key: 'panels', label: '幅数', format: 'int' },
   { key: 'has_pattern', label: '是否对花', format: 'bool' },
   { key: 'pattern_repeat', label: '花距', format: 'number' },
-  { key: 'formula', label: '用料公式' },
-  { key: 'craft_tier', label: '算料档位' },
+  // 🔴 `formula`（用料公式 = `pleat`）/ `craft_tier`（算料档位 = `standard`）**已删**（issue #7636）：
+  //    它们是算料引擎的内部标识，屏上是英文 —— 用户 2026-10-24 逐字「这里显示英文了，直接删除这两个字段」。
   { key: 'special_options', label: '特殊选项' },
   // ── 组 4 算料 / 排料 ──
   { key: 'fabric_meters', label: '面料米数', unit: '米', format: 'm' },
@@ -118,6 +122,19 @@ export function formatSpecValue(value, format) {
 }
 
 /**
+ * 报工屏数值口径：**去掉无效的 0**（`3.000` → `3`、`6.300` → `6.3`、`12.500` → `12.5`）。
+ *
+ * <p>用户 2026-10-24 逐字（issue #7636）：「小数点后面的 3.600 就展示 3.6，不要把无效的 0 展示出来」。
+ * 只裁尾零 —— **不改精度、不四舍五入**（`2.8` 仍是 `2.8`，不会被补成 `2.80`；`0.32` 仍是 `0.32`）。</p>
+ *
+ * <p>🔴 只接在**报工屏**（{@link specRows}）上：机台屏的 `m` 三位小数是**机器读数**（mm 级，
+ * 既有真值，见文件头）⇒ **不得**接进 {@code machine.mjs} 的 `kvRows` / `detailRows`。</p>
+ */
+export function trimTrailingZeros(text) {
+  return text.includes('.') ? text.replace(/0+$/, '').replace(/\.$/, '') : text
+}
+
+/**
  * **报工屏的「本部位生产信息」块不渲染**的键（母单 #6901）。
  *
  * <p>本表仍**登记**它们（后端 {@code PositionDetailFields.DETAIL_KEYS} 里有，后端守卫要求本表 ⊇ 那份
@@ -148,7 +165,8 @@ export function specRows(position) {
   const rows = []
   for (const spec of POSITION_SPEC_KEYS) {
     if (SCAN_BLOCK_EXCLUDED_KEYS.has(spec.key)) continue
-    const shown = formatSpecValue(position?.[spec.key], spec.format)
+    // 报工屏数值**去尾零**（issue #7636）：`3.000米` → `3米`；机台屏仍走 `formatSpecValue` 原样
+    const shown = trimTrailingZeros(formatSpecValue(position?.[spec.key], spec.format))
     if (shown === EMPTY) continue
     rows.push({ key: spec.key, label: spec.label, text: `${shown}${spec.unit ?? ''}` })
   }

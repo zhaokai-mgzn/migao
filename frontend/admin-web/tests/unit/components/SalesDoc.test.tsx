@@ -247,13 +247,55 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
     // issue #6869：商品 SKU 四件套里补过「品名」与「颜色 / 门幅」，撤掉恒空的「备注」；
     // 🔴 issue #7530（用户 2026-10-23 逐字「销售单不要品名」）：「品名」列**退场**，
     // 单据身份改由货号 / 颜色 / 门幅承载 ⇒ 9 列变 8 列。
-    expect([...SALES_DOC_COLUMNS]).toEqual(['序号', '货号', '颜色', '门幅', '数量', '单位', '单价', '金额'])
+    // 🔴 issue #7625（用户 2026-10-24「给所有打印预览表格都加一列用来区分是布帘还是纱帘」）：
+    // 「门幅」后插入「帘种」⇒ 8 列变 9 列（帘种紧跟门幅，与其余三张纸面同一相对位置）。
+    expect([...SALES_DOC_COLUMNS]).toEqual([
+      '序号',
+      '货号',
+      '颜色',
+      '门幅',
+      '帘种',
+      '数量',
+      '单位',
+      '单价',
+      '金额',
+    ])
     expect(rowCells()).toHaveLength(1)
     // 🔴 货号取响应真字段 `skuCode` —— 夹具**没有** `productCode`（幽灵字段）：
     // 旧实现（`productCode || productName`）在这一格印的是品名 ⇒ 本判据即红证
-    expect(rowCells()[0]).toEqual(['1', '0012', '米白', '2.8米', '3', '米', '10.00', '500.00'])
+    // 帘种第 5 格：夹具 `processingInfo` 没写 `curtainType`（写侧口径「主帘缺省即布帘」）⇒ 布帘
+    expect(rowCells()[0]).toEqual(['1', '0012', '米白', '2.8米', '布帘', '3', '米', '10.00', '500.00'])
     // 🔴 品名**整列退场**：纸面任何一处都不再印商品名（去掉表头却留着单元格 = 串列）
     expect(doc()?.textContent).not.toContain('布艺遮光帘A')
+  })
+
+  it('帘种列（issue #7625）：显式 `curtainType=纱帘` ⇒ 印「纱帘」；布料单（无帘）⇒ 占位 `—`', () => {
+    render(
+      <SalesDoc
+        order={buildOrder({
+          items: [
+            buildItem({
+              id: 'item-sheer',
+              productName: '纱帘B',
+              processingInfo: { colorName: '象牙白', doorWidth: '3.0米', curtainType: '纱帘' },
+            }),
+            buildItem({
+              id: 'item-fabric',
+              processingInfo: { colorName: '米白', doorWidth: '2.8米', saleForm: '布料' },
+            }),
+          ],
+        })}
+        shipments={NO_SHIPMENT}
+      />
+    )
+    const cellsOf = (idx: number): string[] =>
+      Array.from(document.querySelectorAll(`[data-testid="sales-item-${idx}"] td`)).map(
+        (td) => td.textContent ?? ''
+      )
+    // 帘种列 index = 4（序号0 货号1 颜色2 门幅3 帘种4）
+    // 🔴 注入式红证：纱帘行回落「布帘」/ 布料单被默认成「布帘」⇒ 下面两条必红
+    expect(cellsOf(0)[4]).toBe('纱帘')
+    expect(cellsOf(1)[4]).toBe(SALES_DOC_MISSING)
   })
 
   it('🔴 ③ 金额取服务端字段：行金额 = item.amount（≠ 单价×数量），本单应收 = order.actualAmount', () => {
@@ -318,8 +360,8 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
       />
     )
     // 判据面 = **缺值那一行**（真 0 的对照行在另一行：缺值行不得有 0.00，真 0 行不得有「—」）
-    // 金额列 index = 7（issue #7530 起 8 列表：序号0 货号1 颜色2 门幅3 数量4 单位5 单价6 金额7）
-    const amountColumn = paperNumericColumn(doc(), { column: 7 })
+    // 金额列 index = 8（issue #7625 起 9 列表：序号0 货号1 颜色2 门幅3 帘种4 数量5 单位6 单价7 金额8）
+    const amountColumn = paperNumericColumn(doc(), { column: 8 })
     // 单据：销售单 SalesDoc
     assertNoPaperZeroFill(amountColumn.slice(0, 1), {
       label: '销售单 SalesDoc',
@@ -553,7 +595,7 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
     expect(qr!.closest('[data-testid^="sales-qr-"]')).toBeNull()
   })
 
-  it('⑬ 短码人可读：扫码枪 / 相机读不出时由印在码旁的短码兜底', () => {
+  it('⑬ 纸面只留**竖排**「扫码报工」，短码不印在销售单上（issue #7608）', () => {
     render(
       <SalesDoc
         order={buildOrder()}
@@ -561,8 +603,14 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
         processingOrder={buildProcessingOrder()}
       />
     )
+    const label = document.querySelector('[data-testid="sales-work-order-qr-label"]') as HTMLElement | null
     expect(text('sales-work-order-qr-label')).toBe('扫码报工')
-    expect(text('sales-work-order-short-code')).toBe('7K3M9QP2')
+    // 竖排是**机制**不是装饰：`writing-mode: vertical-rl` 让这一列只占一行字宽（≈3mm）。
+    // 换成横排 ⇒ 这条必红（4 个字横排 ≈9mm，正是本单要省掉的那一段）。
+    expect(label?.style.writingMode).toBe('vertical-rl')
+    // 短码从产品面退场（用户 2026-10-24 逐字「不要在产品上体现短码了，工人端还有输入短码的地方」）：
+    // 节点不渲染。手输兜底仍在工人端输入框 / 任务卡 / 本单纸面本来就印的「单号」，兜底没断。
+    expect(document.querySelector('[data-testid="sales-work-order-short-code"]')).toBeNull()
   })
 
   it('⑬ 缺码**不画假码**：无 scan_url ⇒ 整块不出现（零 QR / 零占位框 / 不回落作业单号）', () => {

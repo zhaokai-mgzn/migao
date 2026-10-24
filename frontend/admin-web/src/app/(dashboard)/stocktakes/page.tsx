@@ -20,7 +20,9 @@ import type { Stocktake, StocktakeLine, StocktakeStatus, Warehouse } from '@/typ
  *
  * ## 它是什么
  *
- * 一张盘点单 = **某个仓**的账面快照（出任务当刻逐批次抄 `bookQty`）+ 逐批次录实盘。
+ * 一张盘点单 = **某个仓**的账面快照（出任务当刻逐批次抄 `bookQty` = **这一卷还剩多少米**，
+ * 派生 = 入库米数 − 已派工消耗；issue #7618 改前抄的是原始入库量，裁剪过的批次账面偏高）
+ * + 逐批次录实盘。
  * 完成时服务端按差异调整 `stock_batches.quantity`；**有差异必须有已通过的「盘点差异」审批**，
  * 否则**写面直接拒**（不是前端提示）—— 本页把那句服务端原文原样显示，不吞成「操作失败」。
  *
@@ -111,8 +113,11 @@ export default function StocktakesPage() {
   const warehouseLabel = useCallback(
     (id: number) => {
       const w = warehouses.find((x) => x.id === id)
+      // 只显示**仓名**（issue #7616，用户 2026-10-24：「直接叫主仓即可，不要带括号和 main」）：
+      // 编码是内部键，拼在商家面前既重复又像内部标识；同名消歧是将来有多仓时的事，
+      // 届时用业务字段（仓名 + 位置），不拿编码顶上。
       // 查不到就照实写「未知仓库」——不猜、不拿 id 当名字冒充
-      return w ? (w.code ? `${w.name}（${w.code}）` : w.name) : `未知仓库 #${id}`
+      return w ? w.name : `未知仓库 #${id}`
     },
     [warehouses],
   )
@@ -425,7 +430,7 @@ export default function StocktakesPage() {
                     <tr className="text-left text-xs text-neutral-500 border-b border-neutral-200">
                       <th className="py-2 whitespace-nowrap">批次号</th>
                       <th className="py-2 whitespace-nowrap">SKU</th>
-                      <th className="py-2 whitespace-nowrap">账面量</th>
+                      <th className="py-2 whitespace-nowrap">账面剩余</th>
                       <th className="py-2 whitespace-nowrap">实盘量</th>
                       <th className="py-2 whitespace-nowrap">差异</th>
                     </tr>
@@ -464,6 +469,11 @@ export default function StocktakesPage() {
                   </tbody>
                 </table>
               </div>
+
+              <p className="mt-3 text-xs text-neutral-400" data-testid="stocktake-book-basis">
+                「账面剩余」= 入库米数 − 已派工消耗（出任务那一刻的数）—— 与「库存明细 ▸ 批次余量」是同一个数。
+                已经用完的批次不会出现在这张单里。
+              </p>
             </>
           )}
         </PageCard>
@@ -487,7 +497,7 @@ export default function StocktakesPage() {
       >
         <div className="space-y-3">
           <p className="text-sm text-neutral-600">
-            账面数是出任务那一刻的数；之后入库的变化不会算进这张单。
+            账面数取出任务那一刻的剩余米数（入库米数 − 已派工消耗）；之后入库的变化不会算进这张单。
           </p>
           <label className="block text-sm font-medium text-neutral-700">
             仓库
@@ -500,7 +510,7 @@ export default function StocktakesPage() {
               <option value="">选择仓库</option>
               {warehouses.map((w) => (
                 <option key={w.id} value={w.id}>
-                  {w.name}（{w.code}）
+                  {w.name}
                 </option>
               ))}
             </select>

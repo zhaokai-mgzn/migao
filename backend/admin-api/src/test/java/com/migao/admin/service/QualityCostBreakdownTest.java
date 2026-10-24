@@ -24,6 +24,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -91,17 +95,42 @@ class QualityCostBreakdownTest {
         return txn;
     }
 
+    /** 累计到本测试的订单 / 加工单，供**一条 IN 查询**（issue #7586 的取数形态）整批返回。 */
+    private final java.util.List<Order> orders = new java.util.ArrayList<>();
+    private final java.util.List<ProcessingOrder> processingOrders = new java.util.ArrayList<>();
+
     private void customer(String orderId, String processingOrderId, String name, String phone) {
         Order order = new Order();
         order.setId(orderId);
         order.setCustomerName(name);
         order.setCustomerPhone(phone);
-        when(orderMapper.selectById(orderId)).thenReturn(order);
+        orders.add(order);
+        when(orderMapper.selectByIds(any())).thenReturn(orders);
 
         ProcessingOrder po = new ProcessingOrder();
         po.setId(processingOrderId);
         po.setOrderId(orderId);
-        when(processingOrderMapper.selectById(processingOrderId)).thenReturn(po);
+        processingOrders.add(po);
+        when(processingOrderMapper.selectByIds(any())).thenReturn(processingOrders);
+    }
+
+    @Test
+    @DisplayName("取数形态（issue #7586）：报工 → 加工单 → 订单 各用一条 IN 查询，SQL 次数与报工行数无关")
+    void lookupsAreBatchQueriesNotPerRow() {
+        customer("o1", "po1", "张记布艺", "13800000001");
+        java.util.List<ProductionWorkLog> many = new java.util.ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            many.add(rework("缝制", "po1", "1", "10", "priced", "2026-10-20"));
+        }
+        when(workLogMapper.selectList(any())).thenReturn(many);
+
+        service.qualityCostBreakdown("customer", null, null);
+
+        // 两条 IN 查询各 1 次（行数从 1 涨到 5，SQL 次数不变）；退回按行点查 ⇒ 本判据红
+        verify(processingOrderMapper, times(1)).selectByIds(any());
+        verify(processingOrderMapper, never()).selectById(anyString());
+        verify(orderMapper, times(1)).selectByIds(any());
+        verify(orderMapper, never()).selectById(anyString());
     }
 
     @Test

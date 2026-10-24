@@ -1,3 +1,4 @@
+{"_kind":"migao.package-heavy-entry-ledger","_what":"套件内全量入口的角色判定台账（只追加）：每次 verify-all.sh 被角色守卫拒绝 / 被显式 --allow-package-heavy 放行，记一条。","_judged_by":"tests/unit_ci_workflows/test_package_heavy_entry_ban.py · tests/unit_ci_workflows/test_package_heavy_entry_ledger_header.py","_idempotency":"键 = MIGAO_ROLE_LEDGER_ID（同一进程树内只记一笔）","_count":"./scripts/package-heavy-entry-ledger.sh count"}
 {"id":"1792230781.81018.30750","ts":"2026-10-17T09:53:01Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/7148-onboarding-processing-items","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1792230810.86120.18884","ts":"2026-10-17T09:53:30Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7148-onboarding-processing-items","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1792230898.93665.29581","ts":"2026-10-17T09:54:58Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7148-onboarding-processing-items","why":"--allow-package-heavy（命令行显式）"}
@@ -7,3 +8,6 @@
 {"id":"1792230647.71392.20400","ts":"2026-10-17T09:50:48Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/quality-inspection-admin","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1792231662.53616.24332","ts":"2026-10-17T10:07:42Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/quality-inspection-admin","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1792233158.59439.23448","ts":"2026-10-17T10:32:38Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/quality-inspection-admin","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1792828930.43471.10135","ts":"2026-10-24T08:02:11Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/7655-ledger-header","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1792828933.43552.15529","ts":"2026-10-24T08:02:13Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7655-ledger-header","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1792829840.17347.24055","ts":"2026-10-24T08:17:20Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7655-ledger-header","why":"--allow-package-heavy（命令行显式）"}

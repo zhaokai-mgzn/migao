@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { Order, OrderItem, LogisticsInfo } from '@/types'
+import type { Order, OrderItem, LogisticsInfo, OrderProcessingItem } from '@/types'
 import type { PrintTarget } from './index'
 import { printBodyFontPt, printContentInsetCss, printPageRule } from '@/lib/print-media'
 import { useCompanyName } from '@/lib/use-company-name'
-import { orderItemSku } from '@/lib/order-item-sku'
+import { orderItemCurtainType, orderItemSku } from '@/lib/order-item-sku'
 import { cn, formatFullDateTime } from '@/lib/utils'
 
 /**
@@ -108,6 +108,31 @@ export function formatAmount(amount?: number | null): string {
 export function formatQty(qty?: number | null): string {
   const value = paperNumber(qty)
   return value === null ? SHIPMENT_DOC_MISSING : String(value)
+}
+
+/**
+ * 「加工项」一行的文案（issue #7605，用户 2026-10-24 逐字「这里的加工项应该改成A+B 然后乘以数量
+ * 是否更好，或者你是否有更好的展示方案」⇒ 裁定 = 按数据二态）。
+ *
+ * 两种形态（按**数据**选，不按猜测）：
+ * - 数量**全等** ⇒ `定型、韩褶 各 6` —— 数字只说一遍（用户要的省法）
+ * - 数量**不等** / 有缺值 ⇒ `定型 6 + 韩褶 2`（缺值项仍印 `—`，不静默吞掉）
+ * - 单项 ⇒ `定型 6`（不写「各」——「定型 各 6」是病句）
+ *
+ * 🔴 **不采用** `（A+B）×6` 这类"提公因子再乘"：① 纯文本有运算优先级歧义（`定型 + 韩褶×6`）；
+ * ② 它与同行「加工费合计（元）」并排，会诱导客户按 ×N 去乘出一个**算不出来**的数（加工费真值 =
+ * 加工费组合价 元/米 × 加工费米数，**不是**这些加工项数量相乘）；③ 各加工项的 `quantity`
+ * **可以不等、也可以缺**（后端 `non_null` 让键整个缺席）⇒ 无条件提公因子 = 把不等的数压成一个 = 报错数。
+ *
+ * 单位「米」**只在区头出现一次**（`加工项（数量：米）`）⇒ 行内不再逐项重复单位、也不再出现 `×`。
+ * ⚠️ 单位口径沿用旧表头「数量(米)」：本行消费的 `OrderProcessingItem` **没有** `unit` 字段
+ * （只有 `ProcessingItemSnapshot` 有）—— 将来出现按件/按孔的加工项，需**后端先补字段**再改口径。
+ */
+export function processingItemsText(items: readonly OrderProcessingItem[]): string {
+  const qty = items.map((it) => formatQty(it.quantity))
+  const uniform = qty.length > 1 && !qty.includes(SHIPMENT_DOC_MISSING) && qty.every((q) => q === qty[0])
+  if (uniform) return `${items.map((it) => it.name).join('、')} 各 ${qty[0]}`
+  return items.map((it, idx) => `${it.name} ${qty[idx]}`).join(' + ')
 }
 
 /** 纸面合计：**有任一缺值 ⇒ 合计不可知**（不拿「缺的行按 0 算」的假合计糊纸面，issue #6720） */
@@ -243,19 +268,21 @@ export default function ShipmentDoc({
       <table className="w-full border-collapse mb-2" style={{ tableLayout: 'fixed' }}>
         <thead>
           <tr>
-            <DocTh className="w-[26%]">商品</DocTh>
+            <DocTh className="w-[24%]">商品</DocTh>
             <DocTh className="w-[9%]">货号</DocTh>
             <DocTh className="w-[9%]">颜色</DocTh>
-            <DocTh className="w-[12%]">门幅</DocTh>
-            <DocTh align="right" className="w-[13%]">单价(元/米)</DocTh>
+            <DocTh className="w-[11%]">门幅</DocTh>
+            {/* 帘种（issue #7625）：布帘 / 纱帘 —— 用户 2026-10-24「给所有打印预览表格都加一列」 */}
+            <DocTh className="w-[8%]">帘种</DocTh>
+            <DocTh align="right" className="w-[12%]">单价(元/米)</DocTh>
             <DocTh align="right" className="w-[11%]">数量(米)</DocTh>
-            <DocTh align="right" className="w-[14%]">金额(元)</DocTh>
+            <DocTh align="right" className="w-[16%]">金额(元)</DocTh>
           </tr>
         </thead>
         <tbody>
           {items.length === 0 && (
             <tr>
-              <td className="border border-neutral-400 px-2 py-3 text-center text-neutral-500" colSpan={7}>
+              <td className="border border-neutral-400 px-2 py-3 text-center text-neutral-500" colSpan={8}>
                 暂无商品明细
               </td>
             </tr>
@@ -271,6 +298,7 @@ export default function ShipmentDoc({
                 <DocTd>{sku.code}</DocTd>
                 <DocTd>{sku.color}</DocTd>
                 <DocTd>{sku.doorWidth}</DocTd>
+                <DocTd>{orderItemCurtainType(item)}</DocTd>
                 <DocTd align="right">{formatAmount(item.unitPrice)}</DocTd>
                 <DocTd align="right">{formatQty(item.quantity)}</DocTd>
                 <DocTd align="right">{formatAmount(item.amount)}</DocTd>
@@ -279,7 +307,7 @@ export default function ShipmentDoc({
           })}
           {items.length > 0 && (
             <tr>
-              <td className="border border-neutral-400 px-2 py-1.5 text-right font-semibold" colSpan={5}>
+              <td className="border border-neutral-400 px-2 py-1.5 text-right font-semibold" colSpan={6}>
                 合计
               </td>
               <DocTd align="right" bold>
@@ -295,7 +323,7 @@ export default function ShipmentDoc({
 
       {processingItems.length > 0 && (
         <>
-          <SectionTitle>加工项</SectionTitle>
+          <SectionTitle>加工项（数量：米）</SectionTitle>
           {/* issue #4882：**单价列退场** —— 数据源 `ProcessingItemBrief.unitPrice` 已从后端 DTO 删除
               ⇒ 新单恒为空/0，逐项印价必然误导（与 R10「价只在组合上」同因）；逐项 `金额` 同因退场
               （`amount` 亦随 DTO 删除，印出来只会是 0.00）。
@@ -303,17 +331,16 @@ export default function ShipmentDoc({
               （数量单位沿用旧表头「数量(米)」的口径；压成一行后不再逐项重复单位）。
               加工费总额走行级落库 `processingFee` 汇总（不是逐项金额相加）。
               🔴 issue #7275（用户 2026-10-18 逐字「加工项表格应该用一行表达，这样节省空间，比如改成a+b+c这样？」）：
-              逐项一张表在纸面吃掉半屏 ⇒ 压成**一行** `名称×数量 + 名称×数量 …`，加工费合计同行右对齐
+              逐项一张表在纸面吃掉半屏 ⇒ 压成**一行**，加工费合计同行右对齐
               （内容过长时自动折行 —— `flex-wrap`，不裁掉任何一项）。
+              🔴 issue #7605（用户 2026-10-24）：一行的**写法**改成按数据二态 —— 数量全等 ⇒
+              `定型、韩褶 各 6`；不等 ⇒ `定型 6 + 韩褶 2`；单位提到区头一次、行内不再出现 `×`
+              （理由见 `processingItemsText()` 的注释：`（A+B）×6` 有运算优先级歧义，且会诱导客户
+              拿它去乘出加工费）。
               逐项名称 / 数量仍是服务端快照真值（不聚合重名行、不重算）；缺数量仍印 `—`。 */}
           <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border border-neutral-400 px-2 py-1.5 mb-2">
             <span className="break-words" data-testid="shipment-processing-items">
-              {processingItems.map((item, idx) => (
-                <span key={item.id || idx}>
-                  {idx > 0 && ' + '}
-                  {item.name}×{formatQty(item.quantity)}
-                </span>
-              ))}
+              {processingItemsText(processingItems)}
             </span>
             <span className="font-semibold whitespace-nowrap">
               加工费合计（元）：{formatAmount(processingFeeTotal)}

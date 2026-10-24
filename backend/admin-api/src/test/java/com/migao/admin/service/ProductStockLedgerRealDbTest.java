@@ -92,8 +92,6 @@ class ProductStockLedgerRealDbTest {
     private static final Long TENANT_ID = 1L;
     private static final String DOOR_WIDTH = "2.8米";
     private static final String COLOR_NAME = "2699-01";
-    /** 基线行的 note（与 {@code ProductService} 里的常量逐字一致；note 是读面可见的来源说明） */
-    private static final String NOTE_BASELINE = "商品建档/编辑：新 SKU 初始库存（基线行）";
 
     private static PgCluster cluster;
     private static DataSource dataSource;
@@ -160,70 +158,66 @@ class ProductStockLedgerRealDbTest {
         }
     }
 
-    // ══════════════════════════════════ 判据 1：建品 ⇒ 基线行
+    // ══════════════════════════════════ 判据 1：建品不再建立库存（issue #7597）
 
     @Test
-    @DisplayName("判据1·建品 ⇒ 新 SKU 首行是**基线行**（0 → 30，delta=30，reason=manual）")
-    void createProductWritesBaselineLedgerRow() throws Exception {
+    @DisplayName("判据1·建品 ⇒ 不建立库存、不落基线行（历史口径「建档写 stock」已下线）")
+    void createProductDoesNotEstablishStock() throws Exception {
+        // 🔴 issue #7597（用户裁定 2026-10-24）：商品档案不再设置库存 ⇒ 建品请求里的 stock 被忽略，
+        // 新 SKU 从 0 起算；库存只能由真实单据（入库单 / 订单 / 售后回补 / 批次盘点）产生。
+        // 改前本判据断言的是反面（建品 stock=30 落一条基线行 0→30）—— 那是被下线的那条路径。
         String productId = createProduct("SG-4157-A", "30");
         long skuId = skuIdOf(productId);
 
         List<LedgerRow> rows = ledgerOf(skuId);
-        System.out.println("[#4157 判据1] 建品后台账行 = " + rows);
-        assertThat(rows)
-                .as("建品直写 SKU 库存必须落账（改前本路径 0 行 ⇒ 台账链在「新 SKU 首次库存」处断头）")
-                .hasSize(1);
-        assertRow(rows.get(0), "0", "30", "30");
-        assertThat(rows.get(0).reason()).as("reason 复用既有枚举（表上有 ck_stock_ledger_reason CHECK）")
-                .isEqualTo("manual");
-        assertThat(rows.get(0).note()).as("基线行必须可识别（读面要能区分「建档基线」与「改品编辑」）")
-                .isEqualTo(NOTE_BASELINE);
-        assertThat(stockOf(skuId)).as("台账 after 必须等于库里的实际库存（账实一致）")
-                .isEqualByComparingTo("30");
+        System.out.println("[#7597 判据1] 建品后 SKU 行 = " + skuRowsOf(productId) + "，台账行 = " + rows);
+        assertThat(stockOf(skuId))
+                .as("建品请求里的库存必须被忽略（新商品从 0 起算）")
+                .isEqualByComparingTo("0");
+        assertThat(rows).as("建品不建立库存 ⇒ 不得落「初始库存基线行」（0 变更 = 噪声行）").isEmpty();
     }
 
     @Test
-    @DisplayName("判据1b·初始库存为 0 的新 SKU 不落 delta=0 噪声行（与手工调整同一口径）")
-    void createProductWithZeroStockWritesNoNoiseRow() throws Exception {
-        // 显式 SKU 行给 0（自动生成的笛卡尔积路径把「0 / 未填」当「未填」⇒ 默认 100，见
-        // saveColorsAndSkus 的自动生成分支；本判据要的是「初始库存真的为 0」这一形态）
+    @DisplayName("判据1b·库存由改品 stock 分支建立时首行 before=0（链条仍有前驱）")
+    void firstStockChangeStartsFromZero() throws Exception {
         String productId = createProductWithSku("SG-4157-Z", "0");
         long skuId = skuIdOf(productId);
 
         List<LedgerRow> rows = ledgerOf(skuId);
-        System.out.println("[#4157 判据1b] 初始库存 0 的台账行 = " + rows + "，SKU 行 = " + skuRowsOf(productId));
+        System.out.println("[#4157 判据1b] 建品后台账行 = " + rows + "，SKU 行 = " + skuRowsOf(productId));
         assertThat(rows).as("0 变更行会被误读成「动过库存」⇒ 不落行").isEmpty();
         assertThat(stockOf(skuId)).isEqualByComparingTo("0");
 
-        // 反向自证（防空断言）：不落基线行**不等于**断链 —— 该 SKU 的第一次真实变更落下来时，
-        // 它的 before 就是 0（首行仍有前驱）。缺了「改品落账」这条腿 ⇒ 本行读数必红。
-        updateSkuStock(productId, skuId, "5");
+        // 第一次真实变更（批量库存调整 / Agent 调整走的 stock 分支）⇒ 首行 before 必须是 0
+        updateStock(productId, "5");
         List<LedgerRow> afterEdit = ledgerOf(skuId);
-        System.out.println("[#4157 判据1b] 0 库存 SKU 首次变更后的台账行 = " + afterEdit);
-        assertThat(afterEdit).as("初始库存 0 的 SKU 首次变更必须落一行").hasSize(1);
+        System.out.println("[#4157 判据1b] 首次变更后的台账行 = " + afterEdit);
+        assertThat(afterEdit).as("首次库存变更必须落一行").hasSize(1);
         assertRow(afterEdit.get(0), "0", "5", "5");
     }
 
-    // ══════════════════════════════════ 判据 2：改品 ⇒ 变更行 + 首尾相接
+    // ══════════════════════════════════ 判据 2：改品 stock 分支 ⇒ 变更行 + 首尾相接
 
     @Test
-    @DisplayName("判据2·改品 ⇒ 变更行，且 before == 首行 after（链条从基线行接上、不在首行断头）")
-    void updateProductChainsAfterBaselineRow() throws Exception {
+    @DisplayName("判据2·改品 stock 分支 ⇒ 每次变更一条行，且 before == 上一行 after（链条不断）")
+    void updateProductStockChainsLedgerRows() throws Exception {
         String productId = createProduct("SG-4157-B", "30");
         long skuId = skuIdOf(productId);
-        assertThat(ledgerOf(skuId)).as("前置：建品已落基线行").hasSize(1);
-        System.out.println("[#4157 判据2] 改品前 SKU 行 = " + skuRowsOf(productId));
 
-        updateSkuStock(productId, skuId, "12.5");
-
+        updateStock(productId, "12.5");
         List<LedgerRow> rows = ledgerOf(skuId);
-        System.out.println("[#4157 判据2] 改品后 SKU 行 = " + skuRowsOf(productId)
-                + "，该 SKU 台账行 = " + rows);
-        assertThat(rows).as("改品直写 SKU 库存必须落一条变更行").hasSize(2);
+        System.out.println("[#4157 判据2] 首改后 SKU 行 = " + skuRowsOf(productId) + "，台账行 = " + rows);
+        assertThat(rows).as("首次库存变更必须落一条行").hasSize(1);
+        assertRow(rows.get(0), "0", "12.5", "12.5");
+
+        updateStock(productId, "30");
+        rows = ledgerOf(skuId);
+        System.out.println("[#4157 判据2] 再改后台账行 = " + rows);
+        assertThat(rows).hasSize(2);
         assertChain(rows);
-        assertRow(rows.get(1), "30", "12.5", "-17.5");
+        assertRow(rows.get(1), "12.5", "30", "17.5");
         assertThat(stockOf(skuId)).as("账实一致：台账 after 必须等于库里的实际库存")
-                .isEqualByComparingTo("12.5");
+                .isEqualByComparingTo("30");
     }
 
     // ══════════════════════════════════ 判据 3：重复提交同一库存 ⇒ 不增行（幂等）
@@ -234,13 +228,12 @@ class ProductStockLedgerRealDbTest {
         String productId = createProduct("SG-4157-C", "30");
         long skuId = skuIdOf(productId);
 
-        updateSkuStock(productId, skuId, "12.5");
+        updateStock(productId, "12.5");
         int afterFirstEdit = ledgerOf(skuId).size();
-        assertThat(afterFirstEdit).as("前置：首改确实落了行（基线行 + 变更行）—— 否则本判据是空断言")
-                .isEqualTo(2);
+        assertThat(afterFirstEdit).as("前置：首改确实落了行 —— 否则本判据是空断言").isEqualTo(1);
 
-        updateSkuStock(productId, skuId, "12.5");   // 同值重放
-        updateSkuStock(productId, skuId, "12.5");   // 再放一次
+        updateStock(productId, "12.5");   // 同值重放
+        updateStock(productId, "12.5");   // 再放一次
         List<LedgerRow> rows = ledgerOf(skuId);
         System.out.println("[#4157 判据3] 重复提交后的台账行 = " + rows + "（首改后行数 = " + afterFirstEdit + "）");
 
@@ -290,11 +283,15 @@ class ProductStockLedgerRealDbTest {
         return sku;
     }
 
-    /** 改品（表单路径：颜色 + SKU 一起提交 —— 与商品页编辑表单同形）。 */
-    private static void updateSkuStock(String productId, long skuId, String stock) {
+    /**
+     * 改品库存 = **商品级 stock 分支**（批量库存调整 `inventory_stock` / Agent 调整走的就是这条）。
+     *
+     * <p>issue #7597 后 SKU 入参里的 `stock` 已被忽略（商品档案不再设置库存），
+     * 仍在射程内的绝对库存写面只剩这一条 ⇒ 本文件的落账判据挂在它上面。</p>
+     */
+    private static void updateStock(String productId, String stock) {
         ProductUpdateRequest request = new ProductUpdateRequest();
-        request.setColors(List.of(colorInput()));
-        request.setSkus(List.of(skuInput(skuId, stock)));
+        request.setStock(new BigDecimal(stock));
         productService.updateProduct(productId, request, TENANT_ID);
     }
 

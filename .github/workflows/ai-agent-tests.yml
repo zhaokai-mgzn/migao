@@ -88,7 +88,7 @@ jobs:
           VISION_BASE_URL: https://api.deepseek.com/v1
           VISION_MODEL: deepseek-flash
           ASR_API_KEY: ${{ secrets.ASR_API_KEY || 'ci-dummy' }}
-          ASR_MODEL: paraformer-realtime-8k-v2
+          ASR_MODEL: qwen-audio-3.0-realtime-plus
           DASHVECTOR_API_KEY: ci-dummy
           DASHVECTOR_ENDPOINT: https://ci-dummy.dashvector.cn-hangzhou.aliyuncs.com
           DASHVECTOR_COLLECTION: ci

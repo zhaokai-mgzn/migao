@@ -30,16 +30,23 @@ import java.util.Map;
  *
  * <h3>四个动作，各自判在写之前</h3>
  * <ol>
- *   <li>{@link #open}：按仓库出任务 —— **账面数快照**（该仓全部有货批次的当前量）；</li>
+ *   <li>{@link #open}：按仓库出任务 —— **账面数快照**（该仓全部**还有剩余**的批次，取
+ *       **当前剩余米数** = 入库量 + Σdelta，与「库存明细 ▸ 批次余量」同一口径）；</li>
  *   <li>{@link #record}：录实盘（逐批次，可分批录）；</li>
  *   <li>{@link #complete}：完成盘点 —— 有差异时**必须**有已通过的 `stocktake_diff` 审批，
  *       否则写面直接拒（不是前端提示）；无差异直接完成（不逼人审批「账实相符」）；</li>
  *   <li>{@link #cancel}：作废（只有进行中的能作废）。</li>
  * </ol>
  *
- * <h3>调整只改数量</h3>
+ * <h3>调整只改数量（且数学上使「剩余」= 实盘）</h3>
  * <p>差异调整改的是 `stock_batches.quantity`，**不动成本快照**（`unit_cost`）：盘点是「账实对齐」，
  * 不是重估成本（那是 P0-3 的口径）。改成本会让毛利凭空变化而没人能解释。</p>
+ *
+ * <h3>账面量是**派生剩余**，不是入库量（issue #7618）</h3>
+ * <p>改前快照的是 `stock_batches.quantity`（原始入库量）：批次被裁剪消耗后账面偏高，且已用尽的批次
+ * 仍被要求盘。现取 `quantity + Σdelta`（唯一派生入口 = {@link StockBatchConsumptionService#remainingMeters}）。
+ * 由于 `diff = 实盘 − 剩余`、且剩余 = `quantity + Σdelta`，把 `diff` 落到 `quantity` 后
+ * **剩余恰等于实盘**；判负准入也相应改按**剩余**判（否则「quantity 够、剩余不够」的盘亏会漏判）。</p>
  */
 @Slf4j
 @Service
@@ -52,6 +59,9 @@ public class StocktakeService {
     private final WarehouseService warehouseService;
     private final ApprovalService approvalService;
     private final com.migao.admin.time.BusinessClock businessClock;
+
+    /** 余量派生的**唯一入口**（issue #7618）：账面量取「剩余米数」，不在这里自己聚合 Σdelta。 */
+    private final StockBatchConsumptionService stockBatchConsumptionService;
 
     /**
      * 出盘点任务：把该仓**当前有货**的批次快照成账面行。
@@ -105,15 +115,23 @@ public class StocktakeService {
             batchQuery.eq(StockBatch::getWarehouse, warehouse.getCode());
         }
         List<StockBatch> batches = stockBatchMapper.selectList(batchQuery);
+        // 🔴 账面量 = **当前剩余米数**（入库量 + Σdelta），且只盘还有剩余的批次（issue #7618）：
+        //    改前快照的是原始入库量 ⇒ 裁剪过的批次账面偏高、已用尽的批次还要盘。
+        Map<Long, BigDecimal> remaining = stockBatchConsumptionService
+                .remainingMeters(warehouse.getTenantId(), batches);
         List<StocktakeItem> items = new ArrayList<>();
         for (StockBatch batch : batches) {
+            BigDecimal rest = remaining.getOrDefault(batch.getId(), BigDecimal.ZERO);
+            if (rest.signum() <= 0) {
+                continue; // 已经用尽 ⇒ 没有可盘的东西（它也不该出现在清单里）
+            }
             StocktakeItem item = StocktakeItem.builder()
                     .tenantId(warehouse.getTenantId())
                     .stocktakeId(stocktake.getId())
                     .batchId(batch.getId())
                     .batchNo(batch.getBatchNo())
                     .skuCode(batch.getSkuCode())
-                    .bookQty(batch.getQuantity())
+                    .bookQty(rest)
                     .unitCost(batch.getUnitCost())
                     .build();
             itemMapper.insert(item);
@@ -197,7 +215,7 @@ public class StocktakeService {
                                 + "objectType=stocktake_diff，objectRef=%s，金额 ≥ %s",
                         totalAbsDiff.toPlainString(), stocktake.getStocktakeNo(), totalAbsDiff.toPlainString()));
             }
-            applyDiffs(items, lines);
+            applyDiffs(items, lines, stocktake.getTenantId());
             log.info("[stocktake] 差异经审批后调整 | no={} approval={} total_diff={}",
                     stocktake.getStocktakeNo(), approvalId, totalAbsDiff.toPlainString());
         }
@@ -244,7 +262,7 @@ public class StocktakeService {
                 .toList();
     }
 
-    private void applyDiffs(List<StocktakeItem> items, List<StocktakePolicy.Line> lines) {
+    private void applyDiffs(List<StocktakeItem> items, List<StocktakePolicy.Line> lines, Long tenantId) {
         for (int i = 0; i < items.size(); i++) {
             StocktakeItem item = items.get(i);
             BigDecimal diff = lines.get(i).diff();
@@ -255,10 +273,15 @@ public class StocktakeService {
             if (batch == null) {
                 throw BusinessException.notFound("批次");
             }
-            if (!StocktakePolicy.adjustable(batch.getQuantity(), diff)) {
+            // 🔴 判负基准 = **剩余**（不是 quantity）：diff 是「实盘 − 剩余」算出来的，
+            //    拿入库量判会让「quantity 够、剩余不够」的盘亏漏判（issue #7618）。
+            BigDecimal rest = stockBatchConsumptionService
+                    .remainingMeters(tenantId, List.of(batch))
+                    .getOrDefault(batch.getId(), StockQuantity.orZero(batch.getQuantity()));
+            if (!StocktakePolicy.adjustable(rest, diff)) {
                 throw BusinessException.validationError(String.format(
-                        "批次 %s 调整后会变成负数（账面 %s + 差异 %s）—— 请先核对实盘数",
-                        batch.getBatchNo(), batch.getQuantity().toPlainString(), diff.toPlainString()));
+                        "批次 %s 调整后会变成负数（账面剩余 %s + 差异 %s）—— 请先核对实盘数",
+                        batch.getBatchNo(), rest.toPlainString(), diff.toPlainString()));
             }
             // 🔴 只改数量，不动 unit_cost（盘点不是成本重估，见类注释）
             batch.setQuantity(batch.getQuantity().add(diff));

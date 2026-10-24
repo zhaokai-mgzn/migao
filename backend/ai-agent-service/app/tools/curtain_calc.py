@@ -898,6 +898,19 @@ def explicit_accessories(
     return rows, total
 
 
+def _require_min_fullness(fullness: float, config: Dict[str, Any]) -> None:
+    """褶倍**护栏**（唯一实现）：低于 `min_fullness` ⇒ fail-closed（可配但**不可关**）。
+
+    倍数法（`build_quote` 的 `fullness` 分支，issue #7649）与褶数法（{@link derive_pleat_count}）
+    **同一把尺子**：两处各写一份判定的后果 = 同一份 `tiers` 配置在两条公式下结论不一致
+    （一条 400、一条静默放行）。
+    """
+    if fullness < config["min_fullness"]:
+        raise ValueError(
+            f"褶皱倍数 {fullness} 低于行业下限 {config['min_fullness']}，影响美观，请选择更高倍数档位"
+        )
+
+
 def derive_pleat_count(
     width: float,
     fullness: float,
@@ -915,10 +928,7 @@ def derive_pleat_count(
     Returns: (褶数, 告警) — 告警非空表示做过取整调整。
     """
     cfg = config or DEFAULT_CRAFT_CALC_CONFIG
-    if fullness < cfg["min_fullness"]:
-        raise ValueError(
-            f"褶皱倍数 {fullness} 低于行业下限 {cfg['min_fullness']}，影响美观，请选择更高倍数档位"
-        )
+    _require_min_fullness(fullness, cfg)
     # 余量：单色走 `margin_single` / `margin_multi`；拼色由调用方传 `margin_total`
     # （= `mixed_margin_for_open_count`）—— **算折数用的余量与算用料用的余量必须同一个**
     # （否则公式串里的推导链与末段用料对不上，issue #7560 实测：串里印 0.2、折数却按 0.3 反算）
@@ -1739,7 +1749,22 @@ def build_quote(
         mounting = craft_mounting
 
     # 褶皱倍数默认值
-    N = fullness if fullness is not None else DEFAULT_FULLNESS.get(mounting, 2.0)
+    # 🔴 档位 ⇒ 倍数（issue #7649；用户 2026-10-24 逐字「切换倍数法的档位没有再去算用料米数」）：
+    # 真值源 `docs/design/order-craft-spec-design.md` 写明 `craft_tier`「**倍数 `fullness` 与褶数
+    # 都由它推出**」，下单页也只在**倍数法**下摆档位 chips ⇒ 倍数法必须按档位取倍数。
+    # 此前 `craft_tier → cfg["tiers"]` 的解析**只写在褶数法分支**（下面的 `elif pleat_mode:`）里，
+    # 倍数法只把档位**回显**成 `craft_tier` ⇒ 商家切档位，用料米数一动不动（静默）。
+    # 优先级：显式 `fullness` 入参 > 档位倍数 > `DEFAULT_FULLNESS[mounting]`
+    # （未传档位的既有调用方逐值不变；未知档位键 ⇒ 标准档，与褶数法同一回落）。
+    if fullness is not None:
+        N = fullness
+    elif craft_tier is not None:
+        tier_row = cfg["tiers"].get(craft_tier) or cfg["tiers"]["standard"]
+        # 护栏与褶数法**同一把尺子**（同一份 tiers 配置在两条公式下判定必须一致）
+        _require_min_fullness(tier_row["fullness"], cfg)
+        N = tier_row["fullness"]
+    else:
+        N = DEFAULT_FULLNESS.get(mounting, 2.0)
 
     # 韩褶褶数法（工艺档位或客户自报褶数触发）：用料 = 每折吃布 × 褶数 + 余量
     pleat_mode = (

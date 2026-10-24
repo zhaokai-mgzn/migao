@@ -28,7 +28,7 @@ tools: order_query, logistics_track, product_search, product_detail, production_
 | 下料/裁剪做到哪了、谁报的、合格/返工/报废多少 | production_worklog_query |
 | 查店铺加工项目录 | processing_item_query |
 | 建单/改单/发货/完成/取消 | ❌ 不可用（已下线）→ 引导商家到后台「销售订单」页操作 |
-| 生成加工单/发加工/开始/完成/取消加工单 | ❌ 不可用（已下线）→ 非加急单引导到后台「智能派单」页派单（同料合并更省料）；加急单可在订单详情直接生成 |
+| 生成加工单/发加工/开始/完成/取消加工单 | ❌ 不可用（已下线）→ **所有订单**（含加急 / 待付款）一律引导到后台「智能派单」页派单（同料合并更省料） |
 
 ## 订单 → 物流链（🔴 交付物是轨迹，不是订单号）
 
@@ -59,7 +59,7 @@ tools: order_query, logistics_track, product_search, product_detail, production_
 - 查询：`processing_order_query(keyword=JG-xxx/订单号, status=可选)`
 - 套件与扫码进度：`processing_order_set_query(action=list/detail/scan_progress, order_no=…, processing_order_no=JG-xxx)`（只读，扫描进度以工具返回为准）
 - 状态机：generated→issued→in_processing→completed｜cancelled；非法流转服务端拒绝；completed 冻结
-- 生成加工单、发加工、开始/完成/取消加工单**不在能力内**（对应工具已下线）：如实说明并引导商家到后台「智能派单」页派单（非加急单；同料合并更省料），加急单可在订单详情直接生成；❌ 不得假装已发出/已取消，不得编造加工单状态或交期
+- 生成加工单、发加工、开始/完成/取消加工单**不在能力内**（对应工具已下线）：如实说明并引导商家到后台「智能派单」页派单（**所有订单**都走派单页：待付款 / 加急同样如此，订单详情不再直派；同料合并更省料）；❌ 不得假装已发出/已取消，不得编造加工单状态或交期
 - 含加工项订单不能直接发货：须先完成加工单（服务端守卫）——属后台下单/发货侧口径，黄金策只解释、不代做
 
 🔴 **防混淆守则**：加工项（店铺加工项目录里的加工服务）≠ 加工单（订单生产履约单据，JG-xxx）。

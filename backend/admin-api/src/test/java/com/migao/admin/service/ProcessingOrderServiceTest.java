@@ -534,17 +534,17 @@ class ProcessingOrderServiceTest {
                 .apply(eq(TENANT), anyString(), eq("ORD-20260912-0001"), anyList());
     }
 
-    // ── 直派收敛（issue #7507）：非加急订单必须走智能派单 ──────────────────────
+    // ── 直派全关（issue #7507 → #7634）：作业单统一在智能派单页生成 ──────────────
     //
-    // 用户 2026-10-23 裁定「为什么从订单可以直接生成加工单，而不是默认走智能派单流程？这里得限制下」
-    // ⇒ 订单详情页 / agent 的**直派**入口对非加急订单关闸（加急单沿用 2026-10-09 裁定「允许加急的
-    // 订单直接派」）。红证：摘掉 `generateDirect` 里的非加急判定 ⇒ 下面第一条当场红（它会真的落
-    // 加工单），第二条保证「加急例外」不是把闸整个拆掉。
+    // 用户 2026-10-23「为什么从订单可以直接生成加工单，而不是默认走智能派单流程？这里得限制下」
+    // ⇒ #7507 先关非加急单、给加急单留了例外；2026-10-24 用户裁定「一起收，也要统一走智能派单」
+    // ⇒ #7634 把例外也去掉：**所有订单**（含加急 / 待付款）都从派单页派。
+    // 红证：把 `generateDirect` 的闸摘掉（或把加急例外加回去）⇒ 下面第二/第三条当场红。
 
     @Test
-    @DisplayName("🔴 #7507 直派关闸：非加急单直接生成 ⇒ 拒绝 + 指路智能派单（一行不写）")
-    void directGenerateRejectsNonUrgentOrderAndPointsToPool() {
-        // 只走到「解析订单 → 判加急」这一步：被拒的单**连快照都不该准备**（更不该写库）
+    @DisplayName("🔴 #7507/#7634 直派关闸：任何订单直接生成 ⇒ 拒绝 + 指路智能派单（一行不写）")
+    void directGenerateRejectsOrderAndPointsToPool() {
+        // 只走到「解析订单」这一步：被拒的单**连快照都不该准备**（更不该写库）
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
 
         var results = realChainService().generateDirect(List.of("order-001"), List.of(), TENANT, "文员", null);
@@ -555,45 +555,34 @@ class ProcessingOrderServiceTest {
                 .as("机器可判的拒绝码：调用方要能分辨「该走智能派单」而不是「生成失败」")
                 .isEqualTo(ProcessingOrderService.ERR_DIRECT_DISPATCH_POOL_REQUIRED);
         assertThat(results.get(0).getMessage()).contains("智能派单");
-        assertThat(results.get(0).getSuggestion()).contains("加急");
+        assertThat(results.get(0).getSuggestion())
+                .as("建议里要同时说清「待付款 / 加急也去派单页」——不再有直派例外")
+                .contains("待付款")
+                .contains("加急");
         verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
     }
 
     @Test
-    @DisplayName("🔴 #7507 加急例外：加急单仍可直接生成（沿用「允许加急订单直接派」的既有裁定）")
-    void directGenerateAllowsUrgentOrder() {
-        stubLibrary();
-        stubGenerate(List.of(orderItemWithProcessing("米白")));
+    @DisplayName("🔴 #7634 加急单不再有直派例外：同样被拒、同样一行不写")
+    void directGenerateRejectsUrgentOrderToo() {
         confirmedOrder.setIsUrgent(true);
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
 
         var results = realChainService().generateDirect(List.of("order-001"), List.of(), TENANT, "文员", null);
 
         assertThat(results).hasSize(1);
-        assertThat(results.get(0).isSuccess())
-                .as("加急单不参与合并（派单页走插队区单派）⇒ 直派这条出口必须留着")
-                .isTrue();
-        verify(processingOrderMapper).insert(any(ProcessingOrder.class));
+        assertThat(results.get(0).isSuccess()).as("加急单改在派单页插队区单派（能力不丢）").isFalse();
+        assertThat(results.get(0).getCode()).isEqualTo(ProcessingOrderService.ERR_DIRECT_DISPATCH_POOL_REQUIRED);
+        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
     }
 
     @Test
-    @DisplayName("🔴 #7507 批量混合：非加急单逐单被拒、加急单照常生成（结果顺序 = 入参顺序）")
-    void directGenerateRejectsOnlyNonUrgentOrdersInMixedBatch() {
-        stubLibrary();
+    @DisplayName("🔴 #7634 批量混合：加急 + 非加急逐单都被拒（结果顺序 = 入参顺序，一行不写）")
+    void directGenerateRejectsEveryOrderInMixedBatch() {
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
         Order urgent = Order.builder().id("order-002").tenantId(TENANT)
                 .orderNo("ORD-20260912-0002").status("confirmed").isUrgent(true).build();
         when(orderMapper.selectById("order-002")).thenReturn(urgent);
-        when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItemWithProcessing("米白")));
-        // 与 stubGenerate 同款：插入后按订单回读得到**刚插入的那一张**（工序实例化要读它）
-        Map<String, ProcessingOrder> poByOrder = new HashMap<>();
-        when(processingOrderMapper.selectActiveByOrderId(anyString(), eq(TENANT)))
-                .thenAnswer(inv -> poByOrder.get(inv.getArgument(0)));
-        when(processingOrderMapper.insert(any(ProcessingOrder.class))).thenAnswer(inv -> {
-            ProcessingOrder inserted = inv.getArgument(0);
-            inserted.setId("po-" + inserted.getOrderId());
-            poByOrder.put(inserted.getOrderId(), inserted);
-            return 1;
-        });
 
         var results = realChainService().generateDirect(
                 List.of("order-001", "order-002"), List.of(), TENANT, "文员", null);
@@ -602,11 +591,12 @@ class ProcessingOrderServiceTest {
         assertThat(results.get(0).isSuccess()).isFalse();
         assertThat(results.get(0).getCode()).isEqualTo(ProcessingOrderService.ERR_DIRECT_DISPATCH_POOL_REQUIRED);
         assertThat(results.get(1).isSuccess())
-                .as("加急单必须放行：message=%s, code=%s",
+                .as("加急单也必须从派单页派：message=%s, code=%s",
                         results.get(1).getMessage(), results.get(1).getCode())
-                .isTrue();
-        // 被拒的那一单**一行都没写**（不静默少派、也不留半成品）
-        verify(processingOrderMapper, times(1)).insert(any(ProcessingOrder.class));
+                .isFalse();
+        assertThat(results.get(1).getCode()).isEqualTo(ProcessingOrderService.ERR_DIRECT_DISPATCH_POOL_REQUIRED);
+        // 整批**一行都没写**（不静默少派、也不留半成品）
+        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
     }
 
     // ── 部位级备注（issue #5685）：订单行 processing_info.remark ⇒ 加工单快照（固化真相）────────
@@ -3613,14 +3603,33 @@ class ProcessingOrderServiceTest {
     // ── PG-004 未确认订单 ──────────────────────────────────────────
 
     @Test
-    @DisplayName("PG-004 pending 订单 → 拒绝生成")
-    void generatePendingOrderRejected() {
+    @DisplayName("PG-004（issue #7626）待付款（pending）订单 → 允许生成（作业单是生产计划，不扣库存 / 不记资金）")
+    void generatePendingOrderAllowed() {
+        stubLibrary();
         Order pending = Order.builder()
                 .id("order-pending").tenantId(TENANT).orderNo("ORD-P")
                 .status("pending").build();
         when(orderMapper.selectById("order-pending")).thenReturn(pending);
+        when(orderItemMapper.selectList(any()))
+                .thenReturn(List.of(orderItemWithProcessing("米白")));
+        when(processingOrderMapper.selectActiveByOrderId("order-pending", TENANT)).thenReturn(null);
+        when(processingOrderMapper.insert(any(ProcessingOrder.class))).thenReturn(1);
 
         var results = processingOrderService.generate(List.of("order-pending"), TENANT, "u1");
+
+        // 用户 2026-10-24 裁定 A：「销售单的扫码报工码不要跟确认收款挂钩」⇒ 待付款单也能先生成作业单
+        assertThat(results.get(0).isSuccess()).isTrue();
+    }
+
+    @Test
+    @DisplayName("PG-004 反向护栏（issue #7626）：闸门只放宽到待付款 —— 已取消订单仍拒绝生成")
+    void generateCancelledOrderRejected() {
+        Order cancelled = Order.builder()
+                .id("order-cancelled").tenantId(TENANT).orderNo("ORD-C")
+                .status("cancelled").build();
+        when(orderMapper.selectById("order-cancelled")).thenReturn(cancelled);
+
+        var results = processingOrderService.generate(List.of("order-cancelled"), TENANT, "u1");
 
         assertThat(results.get(0).isSuccess()).isFalse();
         assertThat(results.get(0).getMessage()).contains("不允许生成加工单");

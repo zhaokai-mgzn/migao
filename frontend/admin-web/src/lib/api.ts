@@ -1075,6 +1075,12 @@ export const batchStockApi = {
   batches: (params: { productId?: string; skuId?: number; onlyAvailable?: boolean }) =>
     request.get<ApiResponse<BatchRemaining[]>>('/api/admin/batch-stock/batches', { params }),
 
+  // 批次余量**分页**（issue #7604）：库存明细页「批次余量」视图的默认列表。
+  // 与 `batches` 的区别是**场景**不是口径：这里可以不带 productId（服务端分页，不再"一次拉全量"），
+  // 排序 = 收货日期倒序；keyword 命中批号 / 缸号 / 入库单号 / 货号（服务端 LIKE）。
+  batchesPage: (params: { productId?: string; skuId?: number; keyword?: string; page?: number; size?: number }) =>
+    request.get<ApiResponse<PageResponse<BatchRemaining>>>('/api/admin/batch-stock/batches/page', { params }),
+
   // 剩余量分布（恒四档：≤0.2 / 0.2~0.5 / 0.5~1 / >1 米；空档回 0）
   distribution: (params: { productId?: string }) =>
     request.get<ApiResponse<BatchDistribution>>('/api/admin/batch-stock/distribution', { params }),

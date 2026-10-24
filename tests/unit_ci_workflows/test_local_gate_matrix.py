@@ -341,26 +341,99 @@ def leg_problems(script_text: str, ledger: dict) -> list[str]:
             continue
         if trigger.get("kind") != "diff-face-hit":
             continue
-        env = trigger.get("env") or ""
-        hit_fn = trigger.get("hit_fn") or ""
-        if env not in declared_envs:
-            problems.append(f"{rel}：触发条目的 env {env!r} 未在 probe_ready() 里声明（未声明的 key ⇒ 运行时记脚本配置错误）")
-        for mode in entry.get("tiers") or []:
-            branch = branches[mode]
-            if f"if {hit_fn}; then" not in branch:
-                problems.append(f"{rel}：{mode} 档的派发没有按 `if {hit_fn}; then` 判定就派发（会卡住不碰该模块的 PR，或漏跑）")
-            if f"report_strict {env} " not in branch:
-                problems.append(
-                    f"{rel}：{mode} 档没有用 `report_strict {env}` 派发 —— fail-closed 条目**不许**走 "
-                    "report_env 的「未就绪 ⇒ ⏭️ 跳过」那条路（跳过会被读成通过）"
-                )
-            if f"report_env {env} " in branch:
-                problems.append(f"{rel}：{mode} 档同时存在 `report_env {env}`（⏭️ 那条路）—— 两条路并存 ⇒ 缺依赖时行为不确定")
-            if "未跑" not in branch:
-                problems.append(f"{rel}：{mode} 档未命中触发面时必须显式声明「未跑」（不许静默 ✅）")
-            if "✅" in branch:
-                problems.append(f"{rel}：{mode} 档的「未命中」声明里出现 ✅ —— 「没跑」与「通过」必须可区分")
+        problems += diff_face_hit_problems(rel, entry.get("tiers"), trigger, branches, declared_envs)
     return problems
+
+
+def diff_face_hit_problems(label: str, tiers, trigger: dict, branches: dict,
+                           declared_envs: set) -> list[str]:
+    """C3/C4（`kind=diff-face-hit`，bmini 范式）：腿按变更集派发 + fail-closed + 未命中**显式**「未跑」。
+
+    `label` = 台账里的对象名（模块 rel 或 `extra_legs[i]`）—— 报错必须指认「哪一条」，否则读者要去翻台账。
+    """
+    problems: list[str] = []
+    env = trigger.get("env") or ""
+    hit_fn = trigger.get("hit_fn") or ""
+    if env not in declared_envs:
+        problems.append(f"{label}：触发条目的 env {env!r} 未在 probe_ready() 里声明（未声明的 key ⇒ 运行时记脚本配置错误）")
+    for mode in tiers or []:
+        branch = branches[mode]
+        if f"if {hit_fn}; then" not in branch:
+            problems.append(f"{label}：{mode} 档的派发没有按 `if {hit_fn}; then` 判定就派发（会卡住不碰该模块的 PR，或漏跑）")
+        if f"report_strict {env} " not in branch:
+            problems.append(
+                f"{label}：{mode} 档没有用 `report_strict {env}` 派发 —— fail-closed 条目**不许**走 "
+                "report_env 的「未就绪 ⇒ ⏭️ 跳过」那条路（跳过会被读成通过）"
+            )
+        if f"report_env {env} " in branch:
+            problems.append(f"{label}：{mode} 档同时存在 `report_env {env}`（⏭️ 那条路）—— 两条路并存 ⇒ 缺依赖时行为不确定")
+        if "未跑" not in branch:
+            problems.append(f"{label}：{mode} 档未命中触发面时必须显式声明「未跑」（不许静默 ✅）")
+        if "✅" in branch:
+            problems.append(f"{label}：{mode} 档的「未命中」声明里出现 ✅ —— 「没跑」与「通过」必须可区分")
+    return problems
+
+
+def extra_leg_problems(script_text: str, ledger: dict) -> list[str]:
+    """C3/C4 的**另一形态**（issue #7653）：同一模块在**别的档位**按变更集派发的腿（`extra_legs`）。
+
+    为什么单列一段：模块条目的 `leg_names` 共享一组 `tiers`，而 C3 要求「腿名的实际档位集合 == 声称的档位」
+    —— quick/full/frontend 的常跑腿（`report_gated`）与 gate 的派发腿（`report_strict` + 未命中「未跑」）
+    档位集合天然不同 ⇒ 把后者塞进 `leg_names` 会让 C3 **恒红**（那会把真判据变成噪音）。
+    """
+    code = _code_of(script_text)
+    branches = {mode: _mode_branch(script_text, mode) for mode in TIERS}
+    declared_envs = set(re.findall(r"^\s{4}([A-Za-z0-9_-]+)\)", _extract(script_text, "probe_ready"), re.M))
+    problems: list[str] = []
+    for i, extra in enumerate(ledger.get("extra_legs") or []):
+        label = f"extra_legs[{i}]"
+        for key in ("leg_names", "tiers", "forms", "trigger"):
+            if not extra.get(key):
+                problems.append(f"{label}：登记缺 {key!r}（覆盖面必须写清「哪一档 / 哪条腿 / 什么形态 / 怎么派发」）")
+        for tier in extra.get("tiers") or []:
+            if tier not in TIERS:
+                problems.append(f"{label}：档位 {tier!r} 不是 verify-all.sh 的档位（现取 {TIERS}）")
+        for form in extra.get("forms") or []:
+            if form not in FORMS:
+                problems.append(f"{label}：覆盖形态 {form!r} 不在冻结枚举 {FORMS} 里")
+        for leg in extra.get("leg_names") or []:
+            if f'"{leg}"' not in code:
+                problems.append(f"{label}：登记的腿 {leg!r} 在 verify-all.sh 里**不存在**（腿名未逐字出现）—— 登记必须活着")
+        actual = [m for m in TIERS if any(f'"{leg}"' in branches[m] for leg in extra.get("leg_names") or [])]
+        if sorted(actual) != sorted(extra.get("tiers") or []):
+            problems.append(
+                f"{label}：声称的档位 {sorted(extra.get('tiers') or [])} != 腿名实际出现的档位 {sorted(actual)}"
+                "（挪档位/改腿名必须同改台账）"
+            )
+        trigger = extra.get("trigger") or {}
+        if trigger.get("kind") != "diff-face-hit":
+            problems.append(
+                f"{label}：trigger.kind={trigger.get('kind')!r} —— `extra_legs` 只承载 `diff-face-hit`"
+                "（按变更集派发）形态；常跑腿请登记进模块的 `leg_names`"
+            )
+            continue
+        problems += diff_face_hit_problems(label, extra.get("tiers"), trigger, branches, declared_envs)
+    return problems
+
+
+def unregistered_gate_legs(script_text: str, ledger: dict) -> list[str]:
+    """C11（issue #7653）：`gate` 档里**每一条** `report_strict` 腿都必须在台账登记（未登记即红）。
+
+    为什么需要：`gate` 是合并门禁，新加一条腿若只写进脚本、不进台账，它就是矩阵**看不见**的射程
+    —— 本仓最忌的「机制静默失效」（本案 = 本地没有 tsc 腿 ⇒ 类型错只有 CI 能红）。
+    登记出口 = 模块的 `leg_names`（常跑腿）或 `extra_legs`（按变更集派发的腿）。
+    """
+    registered: set[str] = set()
+    for entry in (ledger.get("modules") or {}).values():
+        registered |= set(entry.get("leg_names") or [])
+    for extra in ledger.get("extra_legs") or []:
+        registered |= set(extra.get("leg_names") or [])
+    branch = _mode_branch(script_text, "gate")
+    return [
+        f"gate 档的腿 {leg!r} 未在矩阵台账登记（`leg_names` / `extra_legs`）—— 未登记即红"
+        for leg in re.findall(r'report_strict\s+\S+\s+"([^"]+)"', branch)
+        if leg not in registered
+    ]
 
 
 def control_flow_depths(branch: str) -> list[tuple[int, str]]:
@@ -1170,3 +1243,139 @@ def test_admin_web_face_covers_its_cross_directory_inputs():
     assert any("migration-archive" in p for p in inputs), (
         "现取的跨目录输入里没有目录形态（`migration-archive`）—— 判据的形态覆盖与现场不符，同步本判据"
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# C11（issue #7653）：gate 档的 admin-web 类型检查腿 —— 未登记即红 + fail-closed + 与 CI 同源
+# ══════════════════════════════════════════════════════════════════════════════
+
+PR_CHECK = REPO / ".github" / "workflows" / "pr-check.yml"
+GATE_TSC_ENV = "admin-web-tsc"
+GATE_TSC_LEG = "admin-web 类型检查（gate 档 · 与 CI 同一命令）"
+GATE_TSC_CMD = "cd '$ROOT/frontend/admin-web' && npx tsc --noEmit"
+GATE_HIT_PATH = "frontend/admin-web/src/app/(dashboard)/orders/new/page.tsx"
+GATE_MISS_PATH = "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java"
+
+
+def gate_tsc_leg_block(script_text: str) -> str:
+    """从 gate 分支里**原样**取出 admin-web 类型检查腿的 dispatch 块（`if … else … fi`）。"""
+    lines = _mode_branch(script_text, "gate").splitlines()
+    start = next(i for i, ln in enumerate(lines) if "if admin_web_face_hit; then" in ln)
+    end = next(i for i in range(start + 1, len(lines)) if lines[i].strip() == "fi")
+    return "\n".join(lines[start:end + 1])
+
+
+def _gate_tsc_harness(script_text: str, root: Path, change_set: str) -> str:
+    """最小 harness：装**脚本里真实的**函数 + gate 分支里**原样取出**的腿块（只注入 ROOT / CHANGE_SET）。
+
+    ⚠️ 不替身掉被测函数（替身 = 自证）：判的是「命中 ⇒ report_strict / 未命中 ⇒ 显式未跑」这条真实现。
+    """
+    return (
+        "set -uo pipefail\n"
+        f"ROOT={shlex.quote(str(root))}\n"
+        f"CHANGE_SET={shlex.quote(change_set)}\n"
+        "PASS=0; FAIL=0; READY=0; declare -a FAILED; declare -a NOT_READY\n"
+        + _extract(script_text, "probe_ready") + "\n"
+        + _extract(script_text, "report") + "\n"
+        + _extract(script_text, "report_strict") + "\n"
+        + _extract(script_text, "admin_web_face_paths") + "\n"
+        + _extract(script_text, "admin_web_face_hit") + "\n"
+        + gate_tsc_leg_block(script_text) + "\n"
+        + 'echo "COUNTERS PASS=$PASS FAIL=$FAIL READY=$READY"\n'
+        + "rm -f /tmp/verify-all-$$-*.log\n"
+    )
+
+
+def _fake_npx(tmp_path: Path, rc: int) -> tuple[Path, Path]:
+    """假 `npx`（把 PWD + 参数记进日志再按 rc 退出）—— 让「腿真的跑了 tsc 吗」可判且零网络。"""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    log = tmp_path / "npx.log"
+    script = bin_dir / "npx"
+    script.write_text(
+        '#!/bin/sh\nprintf "%s|%s\\n" "$PWD" "$*" >> "$NPX_LOG"\nexit "${NPX_RC:-0}"\n',
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+    return bin_dir, log
+
+
+def _npx_env(bin_dir: Path, log: Path, rc: int) -> dict:
+    import os
+
+    return {"PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            "NPX_LOG": str(log), "NPX_RC": str(rc)}
+
+
+def test_gate_tier_legs_are_registered():
+    """C11：gate 档每条 `report_strict` 腿都在台账里；`extra_legs` 自身的形态也合格。"""
+    text = SCRIPT.read_text(encoding="utf-8")
+    assert extra_leg_problems(text, _ledger()) == [], "extra_legs 登记不合格"
+    assert unregistered_gate_legs(text, _ledger()) == [], "gate 档出现了未登记的腿"
+
+
+def test_gate_tsc_leg_is_fail_closed_and_says_when_it_did_not_run(tmp_path):
+    """C11 行为：命中缺依赖 ⇒ ❌（不是 ⏭️）；未命中 ⇒ 显式「未跑」且不计通过。"""
+    text = SCRIPT.read_text(encoding="utf-8")
+    missing = _fake_module_root(tmp_path / "missing", env=GATE_TSC_ENV, ready=False)
+    hit = _run(_gate_tsc_harness(text, missing, GATE_HIT_PATH)).stdout
+    assert "COUNTERS PASS=0 FAIL=1 READY=0" in hit, f"命中触发面 + 依赖缺：必须记 ❌（fail-closed）：\n{hit}"
+    assert "npm ci" in hit, f"文案必须可行动（给出恢复命令）：\n{hit}"
+    assert "⏭️" not in hit, f"命中触发面却出现 ⏭️（跳过会被读成通过）：\n{hit}"
+    miss = _run(_gate_tsc_harness(text, missing, GATE_MISS_PATH)).stdout
+    assert "未跑" in miss and "不是「通过」" in miss, f"未命中必须显式说清「没跑」：\n{miss}"
+    assert "✅" not in miss, f"未命中时出现 ✅（没跑被记成通过）：\n{miss}"
+    assert "COUNTERS PASS=0 FAIL=0 READY=0" in miss, f"未命中不得计通过：\n{miss}"
+
+
+def test_gate_tsc_leg_really_runs_tsc_and_fails_on_a_type_error(tmp_path):
+    """C11 行为（issue #7653 判据 1）：腿真的在 `frontend/admin-web` 里跑 `npx tsc --noEmit`；
+    它非零 ⇒ gate 记 ❌（类型错不许在本地静默绿）。"""
+    text = SCRIPT.read_text(encoding="utf-8")
+    ready = _fake_module_root(tmp_path / "ready", env=GATE_TSC_ENV, ready=True)
+    ok_bin, ok_log = _fake_npx(tmp_path / "ok", rc=0)
+    ok = _run(_gate_tsc_harness(text, ready, GATE_HIT_PATH), env=_npx_env(ok_bin, ok_log, 0)).stdout
+    assert "COUNTERS PASS=1 FAIL=0 READY=0" in ok, f"依赖齐备 + tsc 绿 ⇒ 必须记 ✅：\n{ok}"
+    line = ok_log.read_text(encoding="utf-8").strip()
+    assert line.endswith("|tsc --noEmit"), f"腿必须原样跑 `npx tsc --noEmit`：{line!r}"
+    assert line.split("|")[0].endswith("/frontend/admin-web"), f"cwd 必须是 frontend/admin-web：{line!r}"
+
+    bad_bin, bad_log = _fake_npx(tmp_path / "bad", rc=1)
+    bad = _run(_gate_tsc_harness(text, ready, GATE_HIT_PATH), env=_npx_env(bad_bin, bad_log, 1)).stdout
+    assert "COUNTERS PASS=0 FAIL=1 READY=0" in bad, f"tsc 非零 ⇒ gate 必须非零（类型错不许静默绿）：\n{bad}"
+
+
+def test_gate_tsc_command_matches_ci():
+    """C11 同源：本地腿的**命令 + 工作目录**与 CI `TypeScript type check` 步骤一致（两侧漂移即红）。"""
+    data = yaml.safe_load(PR_CHECK.read_text(encoding="utf-8")) or {}
+    steps = [s for job in (data.get("jobs") or {}).values() for s in (job.get("steps") or [])]
+    checks = [s for s in steps if (s.get("name") or "").strip() == "TypeScript type check"]
+    assert len(checks) == 1, f"CI 的 TypeScript type check 步骤现取 {len(checks)} 处（改了步骤名就同步本判据）"
+    step = checks[0]
+    assert (step.get("run") or "").strip() == "npx tsc --noEmit", step
+    assert (step.get("working-directory") or "").strip() == "frontend/admin-web", step
+    assert GATE_TSC_CMD in gate_tsc_leg_block(SCRIPT.read_text(encoding="utf-8")), (
+        "本地腿的命令与 CI 不再同源（必须同为 `npx tsc --noEmit`、cwd = frontend/admin-web）"
+    )
+
+
+def test_unregistered_gate_leg_is_detected():
+    """C11 判别力：往 gate 分支插一条未登记的 `report_strict` 腿 ⇒ 必须红（未登记即红）。"""
+    text = SCRIPT.read_text(encoding="utf-8")
+    anchor = "if admin_web_face_hit; then"
+    assert text.count(anchor) == 1, f"锚点必须唯一（只在 gate 档）：现取 {text.count(anchor)} 处"
+    mutated = _mutate(text, anchor, f'report_strict {GATE_TSC_ENV} "伪造的 gate 腿" true\n    {anchor}')
+    problems = unregistered_gate_legs(mutated, _ledger())
+    assert any("伪造的 gate 腿" in p for p in problems), f"未登记的 gate 腿没让判据变红 ⇒ C11 是空断言：{problems}"
+    assert unregistered_gate_legs(text, _ledger()) == [], "对照组失效：真实脚本必须先是合规的"
+
+
+def test_removed_gate_tsc_leg_is_detected():
+    """C11 判别力（删掉必红自证）：把 gate 的 admin-web 类型检查腿整块删掉 ⇒ 台账登记变「死腿」必红。"""
+    text = SCRIPT.read_text(encoding="utf-8")
+    block = gate_tsc_leg_block(text)
+    assert GATE_TSC_LEG in block, "抽出来的块里没有腿名（抽取器认错对象了）"
+    mutated = _mutate(text, block, "")
+    problems = extra_leg_problems(mutated, _ledger())
+    assert any(GATE_TSC_LEG in p for p in problems), f"腿被删掉却没红（腿死了没人管）：{problems}"
+    assert extra_leg_problems(text, _ledger()) == [], "对照组失效：真实脚本必须先是合规的"

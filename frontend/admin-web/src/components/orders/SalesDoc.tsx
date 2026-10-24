@@ -13,7 +13,7 @@ import {
   type PrintMediaId,
 } from '@/lib/print-media'
 import { useCompanyName } from '@/lib/use-company-name'
-import { orderItemSku } from '@/lib/order-item-sku'
+import { orderItemCurtainType, orderItemSku } from '@/lib/order-item-sku'
 import {
   resolveSalesQuantity,
   SALES_QTY_NOT_SHIPPED,
@@ -54,9 +54,10 @@ import type { Order, OrderItem, ProcessingOrder } from '@/types'
  * ## 制式（四段，逐条对实证 #4）
  *
  * ① 表头：**左上角作业单扫码报工码** + 销售单 / 单号 / 日期 / 客户 / 电话 / 地址 / 订货电话；
- * ② 明细：{@link SALES_DOC_COLUMNS}（序号 | 货号 | 颜色 | 门幅 | 数量 | 单位 | 单价 | 金额）——
+ * ② 明细：{@link SALES_DOC_COLUMNS}（序号 | 货号 | 颜色 | 门幅 | 帘种 | 数量 | 单位 | 单价 | 金额）——
  *    **商品行粒度**（与报价单的「按套」粒度**不是同一个数据投影**，不许互套）；
  *    货号 / 颜色 / 门幅 取 `lib/order-item-sku.ts` 的 `orderItemSku()`（issue #6869）；
+ *    帘种（布帘 / 纱帘）取同一模块的 `orderItemCurtainType()`（issue #7625）；
  *    🔴 「品名」列自 issue #7530 起**退场**（用户 2026-10-23 逐字「销售单不要品名」）——
  *    单据身份由货号 / 颜色 / 门幅承载，不印商品名；
  * ③ 汇总：上期余额 / 预存抵扣 / 优惠金额 / **本单应收** / 账户余额；
@@ -117,8 +118,16 @@ import type { Order, OrderItem, ProcessingOrder } from '@/types'
  * 2. **缺码不画假码**：没有 `scan_url`（存量单未实例化短码 / 没有作业单 / 读面没取到）⇒
  *    **整块不出现**，不画占位框、**不回落作业单号**（回落 = 扫出来只有一串文本、打不开任何页面，
  *    正是 #6867 治过的病）；
- * 3. **短码人可读**：码旁印 `processingOrder.short_code`（8 位）—— 扫码枪 / 相机读不出时
- *    工人可**手输**（#6867 设计 §11.7「不是可选项」）。
+ * 3. **短码不上销售单纸面**（issue #7608，用户 2026-10-24 逐字「不要在产品上体现短码了，
+ *    工人端还有输入短码的地方」）：本单是**随货给客户**的那张，印内部短码属 §31 P3
+ *    「不摆内部标识」⇒ 码旁只留一行**竖排**「扫码报工」（`writing-mode: vertical-rl`，
+ *    4 字高 ≈34px < 码高 56px，不额外占高度；横向只占一行字宽）。
+ *    **手输兜底仍在三处**：工人报工页的「输码（短码 / 加工单号 / 订单号）」输入框
+ *    （`frontend/worker-h5/src/render.mjs`）、任务卡上的 `part_short_code`
+ *    （`frontend/admin-web/src/components/production/TaskCardPrint.tsx`）、
+ *    以及本单纸面本来就印的「单号」（订单号，H5 四形态之一）。
+ *    ⚠️ §11.7 的「码旁必须印短码」是**加工单纸**口径（`ProcessingDoc` 另有「加工单纸面不承载
+ *    扫码入口」）—— **不要**据此把短码「顺手」补回销售单。
  *
  * 🔴 版面预算：二维码块与抬头**并排**（≈15mm 见方、`level="M"`），不额外起一段 ——
  * 三联纸单联可用高只有 128mm，多起一段会挤掉「本单应收 / 页脚提示」。
@@ -135,8 +144,8 @@ interface SalesDocProps {
   shipments: OrderShipmentRead | null
   /**
    * 作业单读面（订单详情页已加载，与 `ProcessingDoc` **同一份**来源）—— 左上角扫码报工码的
-   * **唯一**取值来源，只读两个服务端字段：
-   * `scan_url`（码值，前端**不拼**）与 `short_code`（码旁人可读短码）。
+   * **唯一**取值来源，只读 `scan_url`（码值，前端**不拼**）；`short_code` 自 issue #7608 起
+   * **不印在销售单上**（见文件头「左上角…」第 3 条），本组件不读它。
    *
    * 缺省 / `null` = 没有作业单或读面没取到 ⇒ 二维码**整块不出现**（不画假码，见文件头）。
    */
@@ -183,6 +192,8 @@ export const SALES_DOC_COLUMNS = [
   '货号',
   '颜色',
   '门幅',
+  // 帘种（issue #7625，用户 2026-10-24「给所有打印预览表格都加一列用来区分是布帘还是纱帘」）
+  '帘种',
   '数量',
   '单位',
   '单价',
@@ -262,10 +273,9 @@ export default function SalesDoc({
   const hasDiscount = typeof order.discountAmount === 'number'
   /**
    * 左上角作业单扫码报工码（issue #7530）—— 码值**逐字**取服务端 `scan_url`，前端不拼；
-   * 短码只用于码旁人可读（手输兜底）。两者都缺 ⇒ 整块不渲染（缺码不画假码）。
+   * 无码 ⇒ 整块不渲染（缺码不画假码）。短码自 issue #7608 起不再印在销售单上。
    */
   const workOrderQrValue = (processingOrder?.scan_url ?? '').trim()
-  const workOrderShortCode = (processingOrder?.short_code ?? '').trim()
 
   const doc = (
     <div
@@ -334,18 +344,15 @@ export default function SalesDoc({
                 title={workOrderQrValue}
                 data-testid="sales-work-order-qr-svg"
               />
-              <div className="leading-tight text-neutral-500">
-                <div className="text-[0.7em]" data-testid="sales-work-order-qr-label">
-                  扫码报工
-                </div>
-                {workOrderShortCode !== '' && (
-                  <div
-                    className="font-mono text-[0.85em] leading-tight font-semibold text-neutral-700"
-                    data-testid="sales-work-order-short-code"
-                  >
-                    {workOrderShortCode}
-                  </div>
-                )}
+              {/* 「扫码报工」竖排（issue #7608）：4 字高 ≈34px < 码高 56px ⇒ 不额外占高度；
+                  横向只占一行字宽（≈3mm）—— 原来是那 8 位短码把它撑到 ≈13mm。
+                  短码不上销售单纸面（用户 2026-10-24 裁定），见文件头「左上角…」第 3 条。 */}
+              <div
+                className="text-[0.7em] leading-tight text-neutral-500"
+                style={{ writingMode: 'vertical-rl' }}
+                data-testid="sales-work-order-qr-label"
+              >
+                扫码报工
               </div>
             </div>
           )}
@@ -381,7 +388,7 @@ export default function SalesDoc({
           </tbody>
         </table>
 
-        {/* ===== ② 明细：商品行粒度（序号|货号|颜色|门幅|数量|单位|单价|金额；「品名」自 #7530 退场） ===== */}
+        {/* ===== ② 明细：商品行粒度（序号|货号|颜色|门幅|帘种|数量|单位|单价|金额；「品名」自 #7530 退场、帘种自 #7625 加入） ===== */}
         {/* 🔴 数量列的**口径**必须印在纸面上（印的是实发还是订单数量、单据处于什么状态）——
             静默留空 / 印 0 都会让「账实不符」在纸上不可判（issue #5651 硬约束）。 */}
         <div className="text-[0.85em] text-neutral-600 mb-0.5" data-testid="sales-qty-basis">
@@ -394,18 +401,19 @@ export default function SalesDoc({
           <thead>
             <tr>
               <DocTh className="w-[6%]">{SALES_DOC_COLUMNS[0]}</DocTh>
-              <DocTh className="w-[14%]">{SALES_DOC_COLUMNS[1]}</DocTh>
-              <DocTh className="w-[16%]">{SALES_DOC_COLUMNS[2]}</DocTh>
-              <DocTh className="w-[12%]">{SALES_DOC_COLUMNS[3]}</DocTh>
-              <DocTh align="right" className="w-[10%]">
-                {SALES_DOC_COLUMNS[4]}
+              <DocTh className="w-[13%]">{SALES_DOC_COLUMNS[1]}</DocTh>
+              <DocTh className="w-[14%]">{SALES_DOC_COLUMNS[2]}</DocTh>
+              <DocTh className="w-[11%]">{SALES_DOC_COLUMNS[3]}</DocTh>
+              <DocTh className="w-[8%]">{SALES_DOC_COLUMNS[4]}</DocTh>
+              <DocTh align="right" className="w-[9%]">
+                {SALES_DOC_COLUMNS[5]}
               </DocTh>
-              <DocTh className="w-[8%]">{SALES_DOC_COLUMNS[5]}</DocTh>
-              <DocTh align="right" className="w-[14%]">
-                {SALES_DOC_COLUMNS[6]}
-              </DocTh>
-              <DocTh align="right" className="w-[20%]">
+              <DocTh className="w-[8%]">{SALES_DOC_COLUMNS[6]}</DocTh>
+              <DocTh align="right" className="w-[13%]">
                 {SALES_DOC_COLUMNS[7]}
+              </DocTh>
+              <DocTh align="right" className="w-[18%]">
+                {SALES_DOC_COLUMNS[8]}
               </DocTh>
             </tr>
           </thead>
@@ -424,6 +432,8 @@ export default function SalesDoc({
                 // 货号 / 颜色 / 门幅 = 纸面身份三件套（issue #6869；「品名」自 #7530 退场）——
                 // 唯一取值口，缺值一律显式占位 `—`（不静默留空，见文件头硬约束）
                 const sku = orderItemSku(item)
+                // 帘种（issue #7625）：布帘 / 纱帘 —— 唯一取值口；布料单没有帘 ⇒ 占位 `—`
+                const curtainType = orderItemCurtainType(item)
                 return (
                   <tr key={item.id || idx} data-testid={`sales-item-${idx}`}>
                     <DocTd align="right">{idx + 1}</DocTd>
@@ -435,6 +445,9 @@ export default function SalesDoc({
                     </DocTd>
                     <DocTd testId={`sales-door-width-${idx}`}>
                       {sku.doorWidth || SALES_DOC_MISSING}
+                    </DocTd>
+                    <DocTd testId={`sales-curtain-type-${idx}`}>
+                      {curtainType || SALES_DOC_MISSING}
                     </DocTd>
                     {/* 数量：**实发**（后端 admin 读面；真值 owner = `order_shipment_items`）。
                         未发行 ⇒ 显式「未发」；未发货 / 读面没取到 ⇒ 订单数量（口径已印在表上方）。

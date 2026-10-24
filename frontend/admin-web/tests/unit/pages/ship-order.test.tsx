@@ -631,11 +631,13 @@ describe('ShipOrder', () => {
     // 撞进「表单已挂、打印区未挂」的窗口（实测：把打印区挂载推迟 200ms 模拟该窗口变宽 ⇒
     // 旧写法必红 `Unable to find an element with the text: 加工费合计（元）：37.50`
     // ——与 CI run 35560642965 逐字相同；本写法必绿）。
-    // 「打孔×12.5」由 `processingItems` 派生、只存在于打印区（屏幕侧 #4882 后已无同名文本）。
-    // issue #7275：加工项压成一行 `名称×数量` ⇒ 按**一行锚点**定位（「打孔」不再是独立文本节点；
+    // 「打孔 12.5」由 `processingItems` 派生、只存在于打印区（屏幕侧 #4882 后已无同名文本）。
+    // issue #7275：加工项压成一行 ⇒ 按**一行锚点**定位（「打孔」不再是独立文本节点；
     // 红证：把加工项退回逐项表格 ⇒ 本行找不到 ⇒ 红）。
+    // issue #7605（用户 2026-10-24 裁定）：写法改为「名称 数量」（单位在区头一次）——
+    // 数量不等 ⇒ 逐项写；**不再**是 `名称×数量`（`×` 会诱导客户拿它去乘出加工费）。
     const procLine = await screen.findByTestId('shipment-processing-items')
-    expect(procLine.textContent?.trim()).toBe('打孔×12.5')
+    expect(procLine.textContent?.trim()).toBe('打孔 12.5')
 
     // 红证：`加工合计` 是那张退场表**独有**的表头
     // （保留下来的纸质发货单只有「加工费合计（元）：X」，没有「加工合计」）

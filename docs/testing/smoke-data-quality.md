@@ -151,12 +151,12 @@
 | 6 | 建单前置写死外部商品 id | 修复单 #7580 缺陷 2（云库已无该 id） | 422 假红 | 已在 #7580 改「现取 + 排除冒烟自造件」；规范 Q4 固化 |
 | 7 | 冒烟默认跑**共享云库**（租户 46） | `scripts/ui_smoke_merchant.sh`（`PHONE=13900001025`，staging 同账号） | 数据不受控、跨轮残留、别人的对象混入 | **登记**：短中期以「快照体检 + 清理自证」兜住；长期见 §6 未固化项 |
 | 8 | 环境数据本身不合格 | #7580 顺带发现：租户 46 `logo` 域名 NXDOMAIN；租户 1 无工艺路线/岗位 | 每页破图、加工单/员工页结构性不可用 | 已由 #7580 置空 logo；规范 §5 增加「环境前置体检」 |
-| 9 | **demo-seed 商品状态落在应用枚举外**（`active` 不在 `draft/under_review/on_sale/off_sale` 里） | `docs/deployment/demo-seed.sql` 的 products 段；`ProductService.STATUS_TRANSITIONS` | 演示租户商品在按 `on_sale` 过滤的列表/库存预警里查不到，状态变更走 recovery 分支 | **本单修**（改 `on_sale`）；跟进 #7583 |
-| 10 | demo-seed SKU 矩阵残缺（`p-zg-002` 三颜色 0 SKU；`p-zg-001` 三颜色仅 1 行） | `docs/deployment/demo-seed.sql` 的 `product_colors` / `product_skus` 段 | 「颜色 × 门幅」在演示环境选不全 | 登记 #7583（矩阵完备判据） |
-| 11 | demo-seed 金额链不闭合（总额 ≠ 明细合计；有单无明细；明细单价 ≠ SKU 价） | `docs/deployment/demo-seed.sql` 的 orders / order_items 段 | 对账/报表读数是错的 | 登记 #7583（金额闭合判据） |
-| 12 | P1 API 冒烟对**生产**写入、断言接受 5xx、无清理 | `.github/workflows/nightly-verification.yml` 的 `smoke-p1`；`tests/smoke/test_10_aftersales_notifications.py` | 生产库残留测试单；500 也能绿 | 登记 #7583（写用例 finally 复探 + 禁 5xx） |
-| 13 | 种子核对只数 `products`；SKU 段可静默 0 行 | `scripts/eval_stack_seed.sh` 的「数据核对」段 | 夹具缺数据时评测假红/假绿 | 登记 #7583（五类计数断言） |
-| 14 | 失败旅程无截图（`jrun` catch 不拍） | `scripts/ui-smoke-merchant/spec.mjs::jrun` | 抛错旅程零证据 | 登记 #7583 |
+| 9 | **demo-seed 商品状态落在应用枚举外**（`active` 不在 `draft/under_review/on_sale/off_sale` 里） | `docs/deployment/demo-seed.sql` 的 products 段；`ProductService.STATUS_TRANSITIONS` | 演示租户商品在按 `on_sale` 过滤的列表/库存预警里查不到，状态变更走 recovery 分支 | **已修**（#7585 改 `on_sale`）+ **判据**（#7583）：枚举**现取** `ProductService.STATUS_TRANSITIONS`，越界即红 |
+| 10 | demo-seed SKU 矩阵残缺（`p-zg-002` 三颜色 0 SKU；`p-zg-001` 三颜色仅 1 行） | `docs/deployment/demo-seed.sql` 的 `product_colors` / `product_skus` 段 | 「颜色 × 门幅」在演示环境选不全 | **已修**（#7583）：8 色 × 门幅 = 14 行逐行显式 + 判据（每色有 SKU / 字段有效） |
+| 11 | demo-seed 金额链不闭合（总额 ≠ 明细合计；有单无明细；明细单价 ≠ SKU 价） | `docs/deployment/demo-seed.sql` 的 orders / order_items 段 | 对账/报表读数是错的 | **已修**（#7583）：4 单 6 明细全部闭合 + 判据（总额=Σ明细 / 单价∈SKU 价集 / 无空明细 / 已收≤总额） |
+| 12 | P1 API 冒烟对**生产**写入、断言接受 5xx、无清理 | `.github/workflows/nightly-verification.yml` 的 `smoke-p1`；`tests/smoke/test_10_aftersales_notifications.py` | 生产库残留测试单；500 也能绿 | **部分修**（#7583）：**禁 5xx 已落地**（两个用例收紧 + 类级判据 G）；「finally 复探/清理」与「生产写入口径」见 §6 未固化第 6 条 |
+| 13 | 种子核对只数 `products`；SKU 段可静默 0 行 | `scripts/eval_stack_seed.sh` 的「数据核对」段 | 夹具缺数据时评测假红/假绿 | **已修**（#7583）：五类计数（商品/颜色/SKU/用户/金额）0 行即非零退出 + 判据（stub `docker` 跑真脚本） |
+| 14 | 失败旅程无截图（`jrun` catch 不拍） | `scripts/ui-smoke-merchant/spec.mjs::jrun` | 抛错旅程零证据 | **已修**（#7583）：`jrun` 的 catch 拍 `<旅程>-failed.png` 并进 evidence + 判据 H |
 
 ---
 
@@ -204,6 +204,21 @@ python3 scripts/smoke_data_quality.py --snapshot acceptance/<日期>/<目录>/ou
    商品 SKU 覆盖率仍应在 `smoke-data.json` 里如实透出（`with_skus / total`），供人看趋势。
 5. **UI 旅程的「空态收紧」尚未全部改完**：本单先落「数据面判红」（`DQ-1/DQ-4`）+ 两个夹具修复；
    其余旅程的 `用词`（如「允许为空」）在下一轮真栈回归时逐个收紧 —— 不假装一次改完。
+6. **#7583 仍未收口的两条**（有承载体，不是"已解决"）：
+   ① **写用例 `finally` 复探/清理**（P1 冒烟）：本轮只落了「断言禁 5xx」（`test_10` / `test_11` + 判据 G）；
+      订单类写用例**创建后不删**的形态仍在（`tests/smoke/test_09_order_lifecycle.py` 多条用例各建一单），
+      修它要一次**真实 P1 跑**来验「清理后 `GET 404` + 计数回基线」⇒ 重启条件 = 下一次
+      `nightly-verification` 的 `smoke-p1` 手动触发（schedule 当前停用），届时把 cleanup 断言补进同一个判据 G；
+   ② **UI 旅程的「空态=pass」与「清理自证」**（`spec.mjs` 的 `categoriesJourney` 未见按钮仍 `done(true)`、
+      `financeJourney`/`notificationsJourney`/`corporatePage` 只判 `bodyLen`、`cleanupOrder` 只返回 `res.ok`
+      且 16/17/17b/19 四条旅程不清）：这些断言只能在**真栈**（云 dev 库 + 商家账号）上验，
+      本轮不做无真栈的"改了就算修"⇒ 重启条件 = 下一次真栈冒烟（`./scripts/ui_smoke_merchant.sh --keep`），
+      届时按 SDQS D5/Q1/Q5 逐个收紧并把 `cleanupOrder` 的自证（`GET 404`）补齐。
+   ③ **观察项（登记不算缺陷已修）**：建库脚本 `backend/admin-api/src/main/resources/db/init/schema.sql`
+      的 `products.status` **默认值**仍是 `active`（应用枚举外）—— 本单只把 seed 的**行**改成 `on_sale`，
+      默认值还会给下一条 raw SQL 造出同类「来历不明的行」。改默认值要对**存量库**同批一条
+      `ALTER TABLE … SET DEFAULT` 迁移（跨模块、需迁移指纹账本跟随）⇒ 不塞进本单；
+      重启条件 = 下一次 schema 迁移批次。
 
 ---
 
@@ -212,6 +227,8 @@ python3 scripts/smoke_data_quality.py --snapshot acceptance/<日期>/<目录>/ou
 ```bash
 # 判据守卫（离线，零网络零 DB；红证含注入式判别力自证）
 python3 -m pytest tests/unit_ci_workflows/test_smoke_data_quality.py -q
+# 活 seed 的数据面判据（状态枚举 / SKU 矩阵 / 金额链 / 评测栈五类计数；同为离线）
+python3 -m pytest tests/unit_ci_workflows/test_seed_data_quality.py -q
 
 # 体检器单独跑（任意快照）
 python3 scripts/smoke_data_quality.py --snapshot <path>/smoke-data.json --json

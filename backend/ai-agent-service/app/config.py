@@ -106,25 +106,31 @@ class Settings(BaseSettings):
 
     # ===== 功能开关与模型参数（有合理默认值，无需外部注入）=====
 
-    # 语音识别（ASR）— 百炼 DashScope
-    ASR_API_KEY: str = ""                                  # ASR API Key（默认复用 PRIMARY_API_KEY）
-    ASR_MODEL: str = "paraformer-realtime-8k-v2"          # 实时语音识别模型（免费 36,000s）
+    # ===== 语音识别（ASR）+ 商品生图：阿里云 MaaS（token-plan 订阅）=====
+    # 🔴 2026-10-24 用户裁定（issue #7661）：这两面切到 MaaS host，**主推理 / 视觉（DeepSeek）不动**。
+    # **旧百炼 key 退役**：语音不再回落 PRIMARY_API_KEY（那是 DeepSeek 的 key，打到百炼只会 401）；
+    # 未配置 ASR_API_KEY ⇒ 语音直接 fail-closed（503「未配置」），不静默拿错 key 去试。
+    # 端点形态不是自创：dashscope SDK 的 MaaS 形态（dashscope/common/env.py）即
+    #   http  → https://<host>/api/v1        实时 → wss://<host>/api-ws/v1/inference
+    ASR_API_KEY: str = ""                                  # MaaS API Key（语音/生图共用；空 ⇒ fail-closed）
+    ASR_MODEL: str = "qwen-audio-3.0-realtime-plus"        # 实时语音识别模型
+    ASR_WEBSOCKET_BASE_URL: str = (
+        "wss://token-plan.cn-beijing.maas.aliyuncs.com/api-ws/v1/inference"
+    )                                                      # 空 ⇒ 用 SDK 默认端点（回滚口）
     ASR_LANGUAGE_HINTS: str = "zh"                         # 默认语言/方言
 
-    # 商品图生成（issue #7335）— 百炼图生图（qwen-image 系列）。
-    # Key 未单独配置时复用 ASR_API_KEY（同一个百炼账号）；**不回落 PRIMARY_API_KEY**（DeepSeek Key）。
+    # 商品图生成（issue #7335）— MaaS 图生图（qwen-image 系列，原生多模态端点）。
+    # Key 未单独配置时复用 ASR_API_KEY（同一个 MaaS 账号）；**不回落 PRIMARY_API_KEY**（DeepSeek Key）。
     # 模型按顺序轮换：配额类错误与「模型接不了该请求」才切下一个（见 app/images/generator.py 的边界 2）。
     IMAGE_GEN_ENABLED: bool = True
     IMAGE_GEN_API_KEY: str = ""
-    # 🔴 2026-10-23 用户裁定：qwen-image-* 的免费额度已用尽 ⇒ 切到 qwen-mt-image-2.0。
-    # **已知代价（如实登记，不粉饰）**：qwen-mt-image-2.0 是「图片翻译」模型（把图内文字翻成目标语言），
-    # **不接**本模块的图生图载荷 —— issue #7341 实测回 HTTP 400 InvalidParameter。⇒ 在额度恢复 /
-    # 换回可用模型之前，商家点「AI 生成商品图」会得到 503「模型不接这类请求（非配额原因）」，而不是一张图。
-    # **恢复方式 = 改这一行**（换成已确认可图生图的模型），并同步 .env.example +
-    # tests/test_generator.py 的裁定断言 + .github/cases/ui.yml 的 UI-129 判据 3。
-    IMAGE_GEN_MODELS: str = "qwen-mt-image-2.0"
+    # 2026-10-24 用户裁定（issue #7661）：qwen-image-3.0-pro（随 MaaS token-plan 一并开通）。
+    # 改这一行请**同时**更新 .env.example、tests/test_generator.py 的裁定断言与
+    # .github/cases/ui.yml 的 UI-129 判据 3 —— 四处同一个口径，缺一处就是漂移。
+    IMAGE_GEN_MODELS: str = "qwen-image-3.0-pro"
     IMAGE_GEN_BASE_URL: str = (
-        "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
+        "https://token-plan.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/"
+        "multimodal-generation/generation"
     )
     IMAGE_GEN_TIMEOUT: int = 180                           # 单次生图读超时（实测 30~60s）
 

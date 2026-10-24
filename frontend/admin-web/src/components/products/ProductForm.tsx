@@ -787,7 +787,7 @@ export default function ProductForm({
           </div>
 
           {/* 总库存（只读） */}
-          <FieldRow label="总库存" required alignTop>
+          <FieldRow label="总库存" alignTop>
             <div className="flex items-center gap-2">
               <div className="relative w-44">
                 <input
@@ -801,7 +801,8 @@ export default function ProductForm({
               </div>
             </div>
             <p className="mt-1.5 text-xs text-neutral-500">
-              此处是商品所有销售规格总库存数量，若需修改请在销售规格表格内修改对应库存
+              各销售规格的账面合计（只读）。商品资料不再录入库存：新商品从 0 起算，
+              库存以入库单 / 库存明细为准
             </p>
           </FieldRow>
 

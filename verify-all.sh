@@ -638,6 +638,12 @@ ci_helper_face_hit() {
   hit="$(printf '%s\n' "${CHANGE_SET:-}" | ci_helper_face_paths)"
   [ -n "$hit" ]
 }
+admin_web_face_hit() {
+  # issue #7653：gate 档的 admin-web 类型检查腿按变更集派发（与 bmini 腿同形：未命中 ⇒ 不派发 + 显式「未跑」）。
+  local hit
+  hit="$(printf '%s\n' "${CHANGE_SET:-}" | admin_web_face_paths)"
+  [ -n "$hit" ]
+}
 ci_helper_leg() {
   # 与 CI 的 `Run ci workflow helper tests` **同一条 pytest 命令**（argv 逐字一致；
   # 判据 = tests/unit_ci_workflows/test_ci_helper_leg.py 现取 pr-check.yml 比对）。
@@ -1111,6 +1117,16 @@ case "$MODE" in
       report "ci workflow helper 判据集（本地跑 CI 同名 job）" ci_helper_leg
     else
       echo "— ci workflow helper 腿**未跑**：本次变更集未命中它的触发面（.github/** 与 tests/unit_ci_workflows/**）—— 这不是「通过」（CI 那条 job 对每个 PR 都跑；命中判据 = ci_helper_face_paths()）"
+    fi
+    # admin-web 类型检查腿（issue #7653）：命中 web 面才派发；未命中 ⇒ 显式声明「未跑」（不许静默 ✅）。
+    # 为什么 gate 需要这一条：admin-web 的**类型错**本地 vitest 看不见（它不做类型检查），只有 CI 的
+    # required 腿会红（2026-10-24 实测 PR #7648：本机 4/4 全绿、CI 红 TS2339）⇒ 一轮 CI + 返工。
+    # 成本 ~23s；**不**把 frontend 全档塞进 gate（vitest 全量是分钟级，会顶掉 D 口径的收益）。
+    # ⚠️ 缺依赖时**不跳过**：走 report_strict ⇒ ❌ + 可行动文案（fail-closed）。
+    if admin_web_face_hit; then
+      report_strict admin-web-tsc "admin-web 类型检查（gate 档 · 与 CI 同一命令）" bash -c "cd '$ROOT/frontend/admin-web' && npx tsc --noEmit"
+    else
+      echo "— admin-web 类型检查腿**未跑**：本次变更集未命中 frontend/admin-web/** 及其跨目录输入 —— 这不是「通过」（CI 的 admin-web typecheck 腿对每个 PR 都跑；命中判据 = admin_web_face_paths()）"
     fi
     ;;
   redproof)

@@ -137,7 +137,7 @@
 | `margin_single` | `0.2` | 单开余量（米） |
 | `margin_multi` | `0.3` | 多开余量（米） |
 | `min_fullness` | `1.5` | 褶倍下限（**护栏**，行业美学红线） |
-| `tiers` | `{standard:{fullness:2.0}, economy:{fullness:1.8}}` | 工艺档位 |
+| `tiers` | `{standard:{fullness:2.0}, economy:{fullness:1.8}}` | 工艺档位（**两条公式都读它**：褶数法据它反算折数、倍数法据它取倍数 —— issue #7649；档位倍数低于 `min_fullness` 时两条公式**同一条** fail-closed） |
 | `default_formula` | `"pleat"` | **craft 推导表缺失时的兜底**（不是恒定默认值） |
 | `hem_margin` | `0.3` | **高方向**上下卷边（米，脚位+止口）—— 超高判据与定宽买高每幅长用它（issue #4976 包 1b 落码） |
 | ~~`side_margin`~~ | ~~`0.3`~~ | 🔴 **该键已按 issue #5030 整体退场**（用户 2026-09-21 裁定：订单宽高 = 窗户宽高 ⇒ 成品宽 = 净窗宽 ⇒ **宽方向没有余量**；新迁移 `backend/admin-api/src/main/resources/db/migration/V112__drop_craft_calc_side_margin.sql`）。⚠️ 改前本行的语义列写「定宽买高上下卷边」是**错的**（引擎里它是宽方向左右覆盖余量）—— 登记见 `docs/design/craft-calc-glossary-and-terms.md`。跨源守卫 = `tests/unit_ci_workflows/test_craft_calc_config_contract.py`（该键在任一源的**代码**里出现即红） |
@@ -323,6 +323,7 @@
 | 11 | **每租户恰好两条路线**，且**恰好一条 `is_default`** | 0/2 条默认 ⇒ 红 |
 | 12 | **`unit_price=NULL` 时计件 = 0 且显式可见**，且与「不适用」**可区分** | 静默 0 / 混淆 ⇒ 红 |
 | 13 | 三源收敛：`routing.py` ↔ 新迁移 ↔ `schema.sql` 逐行逐值 | 漂移 ⇒ 红 |
+| 14 | **档位 ⇒ 倍数**（issue #7649，用户 2026-10-24「切换倍数法的档位没有再去算用料米数」）：`formula='fullness'` + `craft_tier='economy'`（1.8）⇒ 倍数为 1.8、用料 = 宽 × 1.8（5.5m 双开 ⇒ 9.9 米；改前恒 11.0 米）；显式 `fullness` 入参优先；未知档位键回落标准档 | 仍按默认 2.0 ⇒ 红（`test_fullness_follows_craft_tier`） |
 | 14 | 三把工具全绿（`verify-all.sh gate` / `check-ui-regression.sh` / `contract-check.sh`） | — |
 
 > ⚠️ **口径变更（issue #4678，2026-09-20）—— 判据 #10 的旧口径已作废**：

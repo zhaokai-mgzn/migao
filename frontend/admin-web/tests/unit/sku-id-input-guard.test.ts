@@ -27,7 +27,8 @@
 // - 判的是**源码形态**，不解析 AST：跨行拼字符串 / 运行时拼出来的 placeholder 抓不到；
 // - 只管 `src/`（测试夹具与脚本不在射程）；`components/products/SkuPicker.tsx` 自己也**不许**出现这三类形态
 //   （共用件只回传 `{product, sku}` 对象，不落输入框）；
-// - 价格本的「客户 id」手填框**不在本守卫射程**（那是客户选择器的活，PRC-005 边界 ② 已登记）。
+// - 客户侧不在本守卫射程：价格本原有的「客户 id」手填框已随 issue #7622 撤掉，
+//   改为公共件 `components/customers/CustomerPicker`（按姓名 / 手机号选，不让人抄内部标识）。
 import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, sep } from 'node:path'

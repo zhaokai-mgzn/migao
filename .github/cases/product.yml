@@ -1816,8 +1816,9 @@ cases:
       - tool: direct_reply
     data_checks:
       - "页面渲染列表（单号/状态/行数·总数量/**批次号列**）；建单入口**导航到独立整页** `/inbound-orders/new`（issue #5844：不再是弹窗），整页按「一行 = 一个批次」提交明细（含数量/单价/缸号/卷长），明细有「批次号」列且草稿态为「过账后生成」（草稿不发号）；数量 **0** 与超 1 位小数在**提交前**被挡（不调建单接口）—— 下限自 issue #5153 起为「大于 0 米」，**0.5 米可通过**（见 PR-062）；列表批次号列：已过账显示真值、草稿「过账后生成」、作废「-」、多批次「首个 等 N 个」；详情草稿显示「过账后生成」且有过账按钮，过账后显示批次号且过账/作废入口消失；详情明细有「卷长(米)」列（1 卷 = 多少米，原值直读 —— `58.55` 就是 `58.55`，**不得**套用库存米数的 0.1 米粒度格式化器渲染成 `58.6`；未填 ⇒ `-`，不写 0）；🔴 **2026-10-01 追加（issue #5904）**：建单明细里的 `skuId` 是**雪花号字符串**（实测 `2097126615461462018` ≈ 2.1e18 > JS 的 2^53）⇒ 提交体里必须**逐字原样**，**不得**被 `Number()` 截断（截断后服务端查不到该 SKU，建单恒失败：「商品明细第 1 项的 SKU 不属于该商品」）；判据 = `frontend/admin-web/tests/unit/pages/inbound-orders-new.test.tsx` 的「#5904 靶心」用例（用真实量级 id）+ 源码面元守卫 `frontend/admin-web/tests/unit/lib/snowflake-id-not-number.test.ts`（`Number()/parseInt()/parseFloat()` 作用在 `.id` 上即红，未登记即红）"
+      - "🔴 **2026-10-24 追加（issue #7644，用户报障）**：建单明细新增「卷数」一格 ⇒ 卷数 + 卷长（每卷米数）两者齐备时，**数量（米）自动 = 卷数 × 卷长**且该格只读（换算式 `1 卷 × 70 米` 显示在格下），提交的仍是**米数**（服务端契约与 #5034「卷长仅记录」一字不动）；卷数留空 = 按米手填（散剪 / 尾料，payload 与改前逐字相同）；卷数必须是**正整数**（0.5 ⇒ 显式拒绝）；卷数 × 卷长不是 0.1 米粒度（1 × 67.25）⇒ 显式拒绝、**不静默取整**。判据 = `frontend/admin-web/tests/unit/pages/inbound-orders-new.test.tsx` 的「按卷录入：卷数 × 卷长 ⇒ 数量（米）自动换算（issue #7644）」5 条（含负控：卷数留空 payload 逐字不变）"
     skip_reason: "[backend-contract] 入库单是后台/仓储单据流（无黄金策工具面，AI 侧未接）⇒ 由 admin-api 单测与 admin-web 组件测覆盖，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ 2026-09-24 改判（issue #5153，GAP-12）：原「数量 0.5 在提交前被挡」随下限放宽而**陈腐**，订正为「0 与超精度仍被挡、0.5 可通过」（改后判据不弱化：仍要求提交前拦截且不调接口）。 ｜ 2026-10-01 新增（issue #5904）：新增入库单**保存恒失败**的根因 = SKU 雪花号被 `Number()` 截断（前端 `skuId: Number(sku.id)` / `DraftLine.skuId: number`）⇒ 改为**全程字符串原样透传**（含 `lib/api.ts` 的 candidates 参数类型与 `ProcessingOrderBlock` 的派工候选行，同一类共 2 处）；判据补齐：实例（真实量级 id 的提交体逐字断言）+ 类级元守卫（源码面禁止把 `.id` 交给数字转换）；测试夹具 id 由玩具值（`11`）换成真实雪花号 —— 玩具 id 正是这个洞当初溜过去的原因。"
+    merge_log: "2026-10-24 追加（issue #7644）：商家按「1 卷 × 70 米」登记却只加 1 米（数量格单位是米、卷长仅留档）⇒ 建单页新增「卷数」并按乘积自动换算数量（米）+ 表头写明单位；服务端口径不变 ｜ 2026-09-23 新增（issue #5034，V111）：商品布料入库单 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本 + 左侧菜单入口 ｜ 2026-09-24 改判（issue #5153，GAP-12）：原「数量 0.5 在提交前被挡」随下限放宽而**陈腐**，订正为「0 与超精度仍被挡、0.5 可通过」（改后判据不弱化：仍要求提交前拦截且不调接口）。 ｜ 2026-10-01 新增（issue #5904）：新增入库单**保存恒失败**的根因 = SKU 雪花号被 `Number()` 截断（前端 `skuId: Number(sku.id)` / `DraftLine.skuId: number`）⇒ 改为**全程字符串原样透传**（含 `lib/api.ts` 的 candidates 参数类型与 `ProcessingOrderBlock` 的派工候选行，同一类共 2 处）；判据补齐：实例（真实量级 id 的提交体逐字断言）+ 类级元守卫（源码面禁止把 `.id` 交给数字转换）；测试夹具 id 由玩具值（`11`）换成真实雪花号 —— 玩具 id 正是这个洞当初溜过去的原因。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/pages/inbound-orders.test.tsx"
@@ -2314,8 +2315,9 @@ cases:
       - "判据 3·**对账可读且可解释**（路线 A 的交换条件）：批次入 60 米、销售已扣 2.7、**未派工** ⇒ `diff = 60 − 57.3 = 2.7` = 已售未派，且恒等式 `diff == (soldDeducted − dispatched − otherLedgerDelta) − unbatched` 成立（`reconciled = true`）；派工之后差额归零；退货回补（aftersales）造成的差额如实反映为 −2.7；**不平的夹具 ⇒ `reconciled = false` 且 `unreconciledCount` 报数**。红证：把 `reconciled` 恒置 true ⇒ 不平夹具那条必红。"
       - "判据 4·**派工候选建议值 = 朴素先进先出**（`suggestionRule = FIFO_RECEIVED_DATE`）：入库早但余量不够的批次 `enough=false` 且不被建议，建议落在第一个**够用**的批次；口径随响应显式回传，免得被读成 best-fit（**缺省**口径不变；best-fit 自 issue #5167 起可**显式**切换，见 PR-066/PR-067）。"
       - "判据 5·**工人端指派读面取净额**：同一明细行既有扣减又有回补 ⇒ 取净额；净额归零的行**不出现**在结果里（工人不该被指去裁一个已经不扣账的批次）。"
+      - "判据 6·**批次余量分页读面（issue #7604）**：`GET /api/admin/batch-stock/batches/page` 回 `PageResponse<BatchRemaining>`（items/total/page/size 四字段，`total` = 服务端总数而非本页行数）；**服务端分页** —— 只对当页批次走 `selectPage`（不是 `selectList` 拉全量再内存切片），且余量三值走 `remaining()` 同一个派生点（入库 67 / 消耗 20.5 ⇒ 46.5，不是 47）；浏览序 = 收货日期倒序、id 倒序；`keyword` 是服务端 LIKE（批号 / 旧系统批号 / 缸号 / 入库单号 / 货号）。红证：把分页实现换成 `selectList` + 内存切片、或让页面自己算余量 ⇒ 本判据红。执行点 = StockBatchConsumptionServiceTest 的「分页读面」用例 + StockBatchControllerTest 的 `GET /batches/page` 用例。"
     skip_reason: "[backend-contract] 批次账服务与只读端点契约（真值断言在 Java 单测，非 LLM 行为）：由 StockBatchConsumptionServiceTest + StockBatchControllerTest 执行（Mockito 假 Mapper，无真实 DB）"
-    merge_log: "2026-09-22 新增：#5145 阶段 1（派加工单扣批次库存 + 消耗台账 + 余量/分布/对账读面）。取号 PR-055（原 PR-052 与 #5150 撞号，rebase 后顺延）。"
+    merge_log: "2026-09-22 新增：#5145 阶段 1（派加工单扣批次库存 + 消耗台账 + 余量/分布/对账读面）。取号 PR-055（原 PR-052 与 #5150 撞号，rebase 后顺延）。2026-10-24 扩写（issue #7604）：新增判据 6（批次余量分页读面 / 服务端分页 / 浏览序 / 服务端 keyword）—— 库存明细页要「默认就展示」，而旧读面没有分页参数；本判据钉住分页真的下推到 SQL、余量仍走同一个派生点。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/StockBatchConsumptionServiceTest.java"
@@ -5600,13 +5602,56 @@ cases:
       - "判据 5·**卡发射条件**：`_detect_card_type('product_image_generate')` → `generated_image`；`_should_send_card` 只在 `success=true` **且** `data.image_url` 非空时为真（失败 / 空图不发卡，避免前端画空图框）。注入红证：去掉 image_url 判据 ⇒ 变红。"
       - "判据 6·**跨端契约**：该工具只绑黄金策 `product` / `general` ⇒ B 端桌面 `ToolResultCard` 与 B 端移动 `MessageBubble` 都必须有 `generated_image` 渲染分支，C 端（元元）不可达（判据 = `backend/ai-agent-service/tests/test_card_type_cross_end_contract.py` 现算）。注入红证：删掉任一端的分支 ⇒ 变红。"
       - "判据 7·**PC 下载 / 手机保存到相册**：桌面卡点「下载图片」走「取文件再按 `商品图-<商品名>.png` 存盘」，取不到时打开原图并明说可「图片另存为」（不谎报已下载）；移动卡在微信内置浏览器弹「长按图片保存」（JS 无法直接写相册，不谎报已保存）。注入红证：微信分支改成提示「已保存」⇒ 变红。"
-    skip_reason: "[backend-contract] 工具 + 两端渲染契约（无 LLM 环节）：断言由 backend/ai-agent-service/tests/test_product_image_generate.py、test_card_type_cross_end_contract.py 与 frontend/admin-web/tests/unit/components/GeneratedImageCard.test.tsx 执行；真实出图还依赖生图模型可用性（#7538：qwen-mt-image-2.0 不接图生图），合入时**不跑**端到端生成"
-    merge_log: "2026-10-23 新增（issue #7541：黄金策「对已选商品生成商品图」—— 工具 + 对话卡预览；PC 下载 / 手机保存相册；不写表单、不落库；失败语义三分）。按 #4262，本用例不在合入时自动跑，留给下一次手动集中评测。"
+      - "判据 8·🔴 **凭证失效 = 能力不可用，且不给「再生成一次」**（2026-10-25 线上实测：现役 MaaS key 打真实端点回 `HTTP 401 InvalidApiKey`，端点可达 ⇒ 失败是凭证问题，不是配额、也不是「这次运气不好」）：`401` / `403` 与 `InvalidApiKey` / `AccessDenied` 归入 `ImageGenerationAuthError`（`ImageGenerationUnavailable` 族 ⇒ 对外码仍是 `IMAGE_GEN_UNAVAILABLE`，**不新增第五个码**，三端契约不变），并且**不逐模型重试**（`IMAGE_GEN_MODELS` 配两个模型也只发 **1** 次请求 —— 账号级问题换模型还是 401）；商家可见话术里**不得**出现「再生成一次」/「晚些再让我生成」/「额度」，可行动出路「先在『商品管理』里手工上传」必须保留。判据 = `backend/ai-agent-service/tests/test_generator.py::test_credential_failure_is_unavailable_and_never_rotates`（401 / 403 两参）与 `backend/ai-agent-service/tests/test_product_image_generate.py::TestFailureSemantics::test_credential_failure_is_capability_unavailable_not_retryable`（走真内核 + `MockTransport`，钉「401 一路传到商家那句人话」）。内部端点 `/images/generate` 同口径：凭证失效 ⇒ **503**（不是 502 —— 502 会被 admin-api 读成供应商偶发故障、引向「稍后再试」），判据 = `backend/ai-agent-service/tests/test_generator.py::test_internal_endpoint_credential_failure_is_503_not_502`。回退红证（实测）：撤掉 `_is_auth_failure` 分支 ⇒ `4 failed, 35 passed`（工具侧读数 `assert 'IMAGE_GEN_FAILED' == 'IMAGE_GEN_UNAVAILABLE'`；端点侧读数 `502 = HTTPException(status_code=502, ... 生图失败（HTTP 401）：InvalidApiKey)`）；恢复 ⇒ `39 passed`。"
+    skip_reason: "[backend-contract] 工具 + 两端渲染契约（无 LLM 环节）：断言由 backend/ai-agent-service/tests/test_product_image_generate.py、test_card_type_cross_end_contract.py 与 frontend/admin-web/tests/unit/components/GeneratedImageCard.test.tsx 执行；真实出图还依赖生图模型可用性（#7661 已切到 qwen-image-3.0-pro + MaaS 端点，但新 key 实测 401（2026-10-25 复测仍 `InvalidApiKey`，端点可达）⇒ 可用性未证实），合入时**不跑**端到端生成"
+    merge_log: "2026-10-23 新增（issue #7541：黄金策「对已选商品生成商品图」—— 工具 + 对话卡预览；PC 下载 / 手机保存相册；不写表单、不落库；失败语义三分）。按 #4262，本用例不在合入时自动跑，留给下一次手动集中评测。2026-10-25 补判据 8（关联 #7541：凭证类失败 401/403 语义修正 —— 线上实测现役 key 回 401 `InvalidApiKey`；工具侧不再说「再生成一次」、内核不再逐模型重试、内部端点 503 而非 502；红证 4 failed / 35 passed ⇄ 恢复后 39 passed）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_product_image_generate.py"
+        - "backend/ai-agent-service/tests/test_generator.py"
         - "backend/ai-agent-service/tests/test_card_type_cross_end_contract.py"
         - "frontend/admin-web/tests/unit/components/GeneratedImageCard.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PR-132
+    legacy_id: ""
+    title: "商品档案不再设置库存：表单 / 建品接口 / Excel 导入三面下线，存量按真实单据净额重算（V190）"
+    domains:
+      - product
+    tier: normal
+    persona: ""
+    tags:
+      - product
+      - stock
+      - product_contract
+      - data_migration
+    truths_ref:
+      - product-sku-stock.status-flow
+    user_inputs:
+      - "我们现在商品中设置了库存数值，这个要移除了，要根据真实库存数据来"
+    expectations: []
+    data_checks:
+      - "判据 1·**商品表单无库存录入口**（改前必红）：SKU 矩阵表头不含「库存」列、每行只有价格一个输入框、批量填写区没有「数量」框；源码（剥注释后）不再出现 `STOCK_UNIT` / `'stock'` / `batchStock` / 「库存（」任何一个。注入红证：把 `<th>库存（米）</th>` 与库存 `NumberInput` 加回去 ⇒ 判据红。判据本体 = frontend/admin-web/tests/unit/components/SkuMatrixStockRemoved.test.tsx（4 条行为 + 1 条静态扫描）；连带 = SkuMatrixNumbers.test.tsx 只剩价格逐键与编辑既有值，ProductForm.test.tsx 的「总库存」断言改成只读说明。"
+      - "判据 2·**建品接口忽略库存**（改前必红）：`ProductCreateRequest.stock=500` + `skus[].stock=300` ⇒ 落库 `products.stock=0`、`product_skus.stock=0`，且**不落**「新 SKU 初始库存（基线行）」台账行；`colors × doorWidths` 自动生成的 SKU 同样为 0（改前默认 100）。注入红证：把 `input.getStock()` 透传 / 恢复默认 100 ⇒ ProductCreateStockIgnoredTest 两条各红。"
+      - "判据 3·**Excel 导入不再建立库存**（改前必红）：`IMPORT_HEADERS` 不含「库存」（模板与解析同源）；旧文件仍带「库存」列时按未知列忽略 —— 行照常落库、库存 0，且不再因 2.755 被拒。注入红证：把库存加回 `IMPORT_HEADERS` 并恢复精度准入 ⇒ 判据红。判据本体 = ProductBulkImportServiceTest 的 legacyStockColumnIsIgnored / importHeaderFaceIsIsomorphicToExport / templateCanBeImportedBackAsIs。"
+      - "判据 4·**存量按真实单据净额重算**（V190，真库执行）：SKU 库存 = `reason IN (inbound, order, aftersales) OR (reason='manual' AND note LIKE '库存盘点：%')` 的台账净额，clamp ≥ 0；手工基线 / 表单改库存 / 手工调整**不计**。6 种形态实测：纯手工 30 ⇒ 0；入库 100 + 订单 -10 ⇒ 90；入库 50 + 手工调整 -20 ⇒ 50；入库 20 + 批次盘点 +5 ⇒ 25；净额 -7 ⇒ 0 且不落 0 变更行；无 SKU 商品 ⇒ 0。有变化的 SKU 各落一条 `manual` 补偿行（before=改前 / after=重算值），第二遍执行 0 行新增（幂等），且所有补偿行 `after_qty == product_skus.stock`。可重放证据 = acceptance/2026-10-24-7597-product-stock-from-documents/verify_v190_migration.py（真起临时 PG + schema.sql）；静态守卫 = tests/unit_ci_workflows/test_migration_immutability.py / test_migration_idempotency.py / test_migration_references_exist_in_schema.py。"
+      - "判据 5·**读面仍是只读余额、写面边界不清算**：商品列表 / 详情继续返回 `stock`（= SKU 汇总）且表单「总库存」为只读说明；**保留**改品 stock 分支（批量库存调整 / Agent 调整）作为唯一还在的绝对库存写面，其落账链条与幂等由 ProductStockLedgerRealDbTest 判据 1b/2/3 在真库上钉住（首行 before=0、逐次首尾相接、同值重放不增行）；订单侧库存校验**未改**（库存 0 ⇒ 拒绝下单，这是「只认真实入库」的有意后果）。"
+    skip_reason: "[backend-contract] 商品档案口径 + 破坏性数据迁移（前端组件 + Java 单测 + 真库迁移脚本，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/SkuMatrixStockRemoved.test.tsx、backend/admin-api/src/test/java/com/migao/admin/service/ProductCreateStockIgnoredTest.java、ProductBulkImportServiceTest.java、ProductStockLedgerRealDbTest.java、ProductUpdatePruneScopeRealDbTest.java 与 tests/unit_ci_workflows/test_migration_*.py 执行；V190 的真库执行证据见 acceptance/2026-10-24-7597-product-stock-from-documents/（CI 的迁移判据是静态的，不执行 SQL）"
+    merge_log: "2026-10-24 新增（用户裁定逐字：「我们现在商品中设置了库存数值，这个要移除了，要根据真实库存数据来」；同日两问的选择：① 移除范围 = A「表单不再录入，库存只由真实单据产生」；② 存量数据 = C「清零，只认真实入库」，该选项原文写明「会改变现网可售数量，风险最高」）。为什么是「按真实单据净额重算」而不是无脑置 0：置 0 会让「入库 60 米」的商品变成 0 而 `stock_batches` 仍有 60 米，`BatchStockViews` 的 `diff = batchRemaining − skuStock` 恒等式当场破；纯手工库存的商品算出 0 = 用户选择的「清零」。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/SkuMatrixStockRemoved.test.tsx"
+        - "frontend/admin-web/tests/unit/components/SkuMatrixNumbers.test.tsx"
+        - "frontend/admin-web/tests/unit/components/ProductForm.test.tsx"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductCreateStockIgnoredTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductBulkImportServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductStockLedgerRealDbTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductUpdatePruneScopeRealDbTest.java"
+        - "tests/unit_ci_workflows/test_migration_immutability.py"
+        - "tests/unit_ci_workflows/test_migration_idempotency.py"
+        - "acceptance/2026-10-24-7597-product-stock-from-documents/verify_v190_migration.py"
       ci:
         - pr-check.yml
       verifies: []

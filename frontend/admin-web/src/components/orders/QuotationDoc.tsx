@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { freightText } from '@/lib/logistics'
-import { orderItemSku } from '@/lib/order-item-sku'
+import { orderItemCurtainType, orderItemSku } from '@/lib/order-item-sku'
 import { paperLineSubtotal } from '@/lib/order-amount'
 import { usePaymentQrcodes } from '@/lib/use-payment-qrcodes'
 import { useCompanyName } from '@/lib/use-company-name'
@@ -19,11 +19,13 @@ import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
  * 这是 A4 大小，这个用来参考设计我们的打印制式」。四段制式：
  *   ① 表头：报价单 / 单号 / 货运 / 客户·电话·地址 / 备注
  *   ② 正文：**每个商品行自成一套**（用户裁定 ②）—— 段头 `第N套/共M套` + `本套金额`，
- *      每段一张 8 列表：组件 | 货号 | 颜色 | 门幅 | 尺寸 | 数量(米) | 单价(元/米) | 小计
+ *      每段一张 8 列表：货号 | 颜色 | 门幅 | 帘种 | 尺寸 | 数量(米) | 单价(元/米) | 小计
  *      （列清单改自 issue #6869：用户 2026-10-14 逐字「缺了商品 sku 的信息」+
  *      「报价单展示部位是啥意思」）
- *      🔴 **「品名」列与「工艺」行已退场**（issue #7527，用户 2026-10-23 逐字「报价单不要品名列和工艺行」）：
- *      品名在面料行 / 加工费行**连印两遍**（加工费行本来就靠「组件 = 加工费」区分）；
+ *      🔴 **「品名」列与「工艺」行已退场**（issue #7527，用户 2026-10-23 逐字「报价单不要品名列和工艺行」）；
+ *      🔴 **「组件」列已退场、「帘种」补在门幅后**（issue #7625，用户 2026-10-24 逐字
+ *      「不要组件这一列，另外给所有打印预览表格都加一列用来区分是布帘还是纱帘」）——
+ *      加工费行不再靠「组件 = 加工费」区分 ⇒ 改由前四列合并的**行标签**承载（`colSpan=4`）；
  *      工艺行是**生产侧**信息（加工类型 / 用料公式 / 算料），出现在发给客户的凭证上只占版面。
  *      ⇒ 本组件**不再**消费 `craftSpecRows()`：部位 / 算料只在**订单详情页**与**加工单**
  *      （`ProcessingDoc`）上印。
@@ -140,7 +142,10 @@ function numberOrNull(value: unknown): number | null {
 }
 
 const PAYMENT_TYPE_LABELS: Record<string, string> = {
-  wechat: '微信',
+  // issue #7605（用户 2026-10-24 逐字「这里把微信改成微信支付是否更好？」）：白纸上「二维码 + 微信」
+  // 在中文语境里默认指「加微信好友」，而这里印的是**收款码** ⇒ 必须说清是**支付通道**。
+  // ⚠️ 支付宝**不加**「支付」：本词自带支付语义，加了是重复（**不是漏改**，别"统一"成 `支付宝支付`）。
+  wechat: '微信支付',
   alipay: '支付宝',
 }
 
@@ -245,7 +250,12 @@ export default function QuotationDoc({
                   alt={`${entry.label}收款码`}
                   className="w-[22mm] h-[22mm] object-contain border border-neutral-300"
                 />
-                <div className="text-[10px] text-neutral-500 mt-0.5">{entry.label}</div>
+                <div
+                  className="text-[10px] text-neutral-500 mt-0.5"
+                  data-testid={`payment-qr-label-${entry.type}`}
+                >
+                  {entry.label}
+                </div>
                 {entry.payeeName && (
                   <div className="text-[10px] text-neutral-500">{entry.payeeName}</div>
                 )}
@@ -330,10 +340,10 @@ function SetBlock({ item, index, total }: { item: OrderItem; index: number; tota
   // 商品身份（货号 / 颜色 / 门幅）—— **唯一**取值口，见文件头第 5 条
   // （品名不印：issue #7527；`sku.name` 仍由发货单 / 销售单等其它纸面消费）
   const sku = orderItemSku(item)
-  const info = (item.processingInfo ?? {}) as Record<string, unknown>
 
-  // 组件：面料行 = componentRole（缺省即主布）/ 加工费行 = 加工费
-  const componentRole = textOrNull(info.componentRole) || '主布'
+  // 帘种（issue #7625）：布帘 / 纱帘 —— 唯一取值口（`orderItemCurtainType`）；
+  // 布料单没有帘 ⇒ 空串（本单据「缺值不印」，故不留占位符）
+  const curtainType = orderItemCurtainType(item)
   const width = numberOrNull(item.width)
   const height = numberOrNull(item.height)
   const size = width !== null && height !== null ? `${width}×${height}` : ''
@@ -349,14 +359,14 @@ function SetBlock({ item, index, total }: { item: OrderItem; index: number; tota
         <span>本套金额 {formatAmount(paperLineSubtotal(item))}</span>
       </div>
       {/* table-layout: fixed —— 列宽由表头声明的百分比决定（auto 布局按内容分配，
-          纸面每单都可能不一样）。8 列宽度合计 100%（issue #7527：品名列出场后其余列重新归一）。 */}
+          纸面每单都可能不一样）。8 列宽度合计 100%（issue #7527 品名出场、#7625 组件退场改帘种）。 */}
       <table className="w-full border-collapse" style={{ tableLayout: 'fixed' }}>
         <thead>
           <tr>
-            <DocTh className="w-[9%]">组件</DocTh>
-            <DocTh className="w-[16%]">货号</DocTh>
-            <DocTh className="w-[11%]">颜色</DocTh>
-            <DocTh className="w-[8%]">门幅</DocTh>
+            <DocTh className="w-[15%]">货号</DocTh>
+            <DocTh className="w-[12%]">颜色</DocTh>
+            <DocTh className="w-[9%]">门幅</DocTh>
+            <DocTh className="w-[8%]">帘种</DocTh>
             <DocTh className="w-[10%]">尺寸</DocTh>
             <DocTh align="right" className="w-[11%]">
               数量(米)
@@ -370,25 +380,26 @@ function SetBlock({ item, index, total }: { item: OrderItem; index: number; tota
           </tr>
         </thead>
         <tbody>
-          {/* 面料行（品名不再成列 —— issue #7527；商品身份由「货号 + 颜色 + 门幅」承担） */}
+          {/* 面料行（品名不再成列 —— issue #7527；商品身份由「货号 + 颜色 + 门幅」承担；
+              帘种 = 这块布是布帘还是纱帘 —— issue #7625） */}
           <tr>
-            <DocTd>{componentRole}</DocTd>
             <DocTd>{sku.code}</DocTd>
             <DocTd>{sku.color}</DocTd>
             <DocTd>{sku.doorWidth}</DocTd>
+            <DocTd>{curtainType}</DocTd>
             <DocTd>{size}</DocTd>
             <DocTd align="right">{quantity ?? ''}</DocTd>
             <DocTd align="right">{formatAmount(item.unitPrice)}</DocTd>
             <DocTd align="right">{formatAmount(item.subtotal)}</DocTd>
           </tr>
           {/* 加工费行：processingFee > 0 才出（与参照物的**有意差异**：我们两笔真实金额
-              必须分别列示，否则商家对不上账 —— 见文件头第 7 条） */}
+              必须分别列示，否则商家对不上账 —— 见文件头第 7 条）。
+              🔴 「组件」列自 issue #7625 退场 ⇒ 加工费行的**行标签**改由前四列合并承载
+              （`colSpan=4`，与面料行的列宽同栅格：Σ=4+1+1+1+1=8）；不标它 = 这一行看起来
+              就是重复的面料行（单价/小计一致 ⇒ 读不出哪行是加工费）。 */}
           {processingFee > 0 && (
             <tr>
-              <DocTd>加工费</DocTd>
-              <DocTd>{sku.code}</DocTd>
-              <DocTd>{sku.color}</DocTd>
-              <DocTd>{''}</DocTd>
+              <DocTd colSpan={4}>加工费</DocTd>
               <DocTd>{''}</DocTd>
               <DocTd align="right">{quantity ?? ''}</DocTd>
               <DocTd align="right">{formatAmount(processingFee)}</DocTd>

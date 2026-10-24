@@ -1,4 +1,4 @@
-// case_ids: PG-046, PG-058, PG-060
+// case_ids: PG-046, PG-058, PG-060, PG-093
 package com.migao.admin.service;
 
 import com.migao.admin.config.TenantContext;
@@ -8,12 +8,15 @@ import com.migao.admin.entity.ProcessingOrder;
 import com.migao.admin.entity.ProcessingOrderSet;
 import com.migao.admin.entity.ProcessingPositionOperation;
 import com.migao.admin.entity.ProcessingSetPartToken;
+import com.migao.admin.dto.BatchStockViews;
+import com.migao.admin.entity.Product;
 import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.mapper.ProcessingOrderSetMapper;
 import com.migao.admin.mapper.ProcessingPositionOperationMapper;
 import com.migao.admin.mapper.ProcessingSetPartTokenMapper;
+import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.mapper.ProductionWorkLogMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,12 +30,14 @@ import org.mockito.quality.Strictness;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 /**
@@ -98,11 +103,15 @@ class ProductionScanServiceDetailFieldsTest {
      */
     private static final List<String> DETAIL_KEYS = PositionDetailFields.DETAIL_KEYS;
 
-    /** 母单 #6901 在 P0-C 的 9 键之外**新增**的键（本文件不再维护第二份清单：由真值集推出来）。 */
+    /** 母单 #6901 在 P0-C 的 9 键之外**新增**的键（本文件不再维护第二份清单：由真值集推出来）。
+     *
+     * <p>🔴 issue #7636（用户 2026-10-24 逐字）：删 `sku`（货号改印商品货号 `product_code`）、
+     * `formula`（用料公式）/ `craft_tier`（算料档位）—— 后两个是引擎内部标识，屏上是英文。</p>
+     */
     private static final List<String> ADDED_IN_6901 = List.of(
-            "product_name", "sku", "color_name", "door_width", "selling_method", "unit",
+            "product_name", "product_code", "color_name", "door_width", "selling_method", "unit",
             "style", "fullness_actual", "pleat_count", "per_panel_pleats", "panels",
-            "has_pattern", "pattern_repeat", "formula", "craft_tier", "special_options",
+            "has_pattern", "pattern_repeat", "special_options",
             "processing_meters", "formula_text",
             "batch_no", "batch_meters", "component_role");
 
@@ -128,6 +137,10 @@ class ProductionScanServiceDetailFieldsTest {
     @Mock
     private StockBatchConsumptionService stockBatchConsumptionService;
 
+    /** 商品表（**只读**，issue #7636）：工人屏「货号」= 商品货号 `products.sku_code`。 */
+    @Mock
+    private ProductMapper productMapper;
+
     private ProductionService productionService;
     private ProductionScanService service;
 
@@ -140,6 +153,10 @@ class ProductionScanServiceDetailFieldsTest {
                 positionOperationMapper, workLogMapper, orderMapper, orderItemMapper, clientRequestIdService);
         // 批次可见面（issue #7233）：与 `ProductionServiceTest` 同一注入方式（字段是 `@Autowired(required=false)`）。
         ReflectionTestUtils.setField(productionService, "stockBatchConsumptionService", stockBatchConsumptionService);
+        // 商品货号（issue #7636）：字段注入的只读依赖 ⇒ 反射挂上（不挂 = 该键恒 null，值断言会红，不是被跳过）
+        ReflectionTestUtils.setField(productionService, "productMapper", productMapper);
+        when(productMapper.selectBatchIds(any())).thenReturn(List.of(
+                Product.builder().id("p-1").tenantId(TENANT).skuCode("2659").build()));
         ProductionStuckPointService stuckPointService = new ProductionStuckPointService(
                 productionService, positionOperationMapper, orderSetMapper, 4.0);
         service = new ProductionScanService(setPartTokenMapper, orderSetMapper, processingOrderMapper,
@@ -179,8 +196,8 @@ class ProductionScanServiceDetailFieldsTest {
         assertThat(cloth.get("open_count")).isEqualTo(2);
         assertThat(cloth.get("cutting_mode")).isEqualTo("定高买宽");
         assertThat(cloth.get("is_shaped")).isEqualTo(true);
-        // 褶倍 = 算料快照键（列 > 引擎输出：本夹具只给列，快照里就没有 `fullness` 覆盖 ⇒ 取列值）
-        assertThat(cloth.get("fullness")).isEqualTo(new BigDecimal("2.0"));
+        // 理论褶倍 `fullness` 已按 issue #7636 删除（工人屏只印实际褶倍 `fullness_actual`）
+        assertThat(cloth).doesNotContainKey("fullness");
         // 用料 = 算料快照键（单一真值 = ai-agent 引擎，Java 侧不重算）
         assertThat(cloth.get("fabric_meters")).isEqualTo(new BigDecimal("12.35"));
     }
@@ -200,7 +217,7 @@ class ProductionScanServiceDetailFieldsTest {
         Map<String, Object> cloth = positionOf(overviewPositions(service.resolve(CODE_CLOTH, null, TENANT)),
                 ITEM_CLOTH);
 
-        assertThat(cloth.get("fullness")).isEqualTo(new BigDecimal("2.5"));
+        // 引擎输出（`processing_info`）覆盖同名列：`fabric_meters` 来自引擎快照而不是工艺列
         assertThat(cloth.get("fabric_meters")).isEqualTo(new BigDecimal("13.80"));
     }
 
@@ -219,7 +236,9 @@ class ProductionScanServiceDetailFieldsTest {
 
         // 组 1 商品身份（与加工单快照 `ProcessingOrderItemBrief` 逐字同名）
         assertThat(cloth.get("product_name")).isEqualTo("布艺遮光帘A");
-        assertThat(cloth.get("sku")).isEqualTo("MG-006901");
+        // 货号 = **商品货号**（`products.sku_code`）；SKU 码（`MG-006901`）不再下发到工人面
+        assertThat(cloth.get("product_code")).isEqualTo("2659");
+        assertThat(cloth).doesNotContainKey("sku");
         assertThat(cloth.get("color_name")).isEqualTo("雾霾蓝");
         assertThat(cloth.get("door_width")).isEqualTo("2.8");
         assertThat(cloth.get("selling_method")).isEqualTo("bulk_cut");
@@ -232,8 +251,8 @@ class ProductionScanServiceDetailFieldsTest {
         assertThat(cloth.get("panels")).isEqualTo(2);
         assertThat(cloth.get("has_pattern")).isEqualTo(true);
         assertThat(cloth.get("pattern_repeat")).isEqualTo(new BigDecimal("0.32"));
-        assertThat(cloth.get("formula")).isEqualTo("窗宽×褶倍÷门幅");
-        assertThat(cloth.get("craft_tier")).isEqualTo("标准");
+        // 用料公式 / 算料档位已按 issue #7636 删除（引擎内部标识）
+        assertThat(cloth).doesNotContainKeys("formula", "craft_tier");
         assertThat(cloth.get("special_options")).isEqualTo(List.of("加线", "包边"));
         assertThat(cloth.get("processing_meters")).isEqualTo(new BigDecimal("8.10"));
         assertThat(cloth.get("formula_text")).isEqualTo("2.8×2÷1.5=3.73→4");
@@ -260,8 +279,10 @@ class ProductionScanServiceDetailFieldsTest {
 
         for (String key : ADDED_IN_6901) {
             assertThat(position).containsKey(key);
-            if ("product_name".equals(key)) {
-                continue; // 它取自 `order_items.product_name` **列**（不是快照键族）⇒ 有值是正确形态
+            // 这两键**不来自订单行快照**：`product_name` 取 `order_items.product_name` 列、
+            // `product_code` 取 `products.sku_code`（issue #7636）⇒ 本夹具缺的是快照键族，不是它们
+            if ("product_name".equals(key) || "product_code".equals(key)) {
+                continue;
             }
             assertThat(position.get(key))
                     .as("键 %s 的源缺失 ⇒ 必须是 null，不得折成 0 / false / 空串", key)
@@ -343,7 +364,7 @@ class ProductionScanServiceDetailFieldsTest {
         assertThat(position.get("open_count")).isEqualTo(0);
         // 源缺失 ⇒ 键**恒在**、值为 null（不省键 ⇒ 消费方不必写分支；不猜 0 / false）
         for (String key : List.of("width", "height", "craft", "curtain_type", "cutting_mode",
-                "fullness", "is_shaped", "fabric_meters")) {
+                "is_shaped", "fabric_meters")) {
             assertThat(position).containsKey(key);
             assertThat(position.get(key))
                     .as("键 %s 的源缺失 ⇒ 必须是 null，不得折成 0 / false", key)
@@ -415,6 +436,57 @@ class ProductionScanServiceDetailFieldsTest {
     }
 
     // ============================================================ 夹具
+
+    // ============================================================ ④ 裁剪批次三键（issue #7647）
+
+    @Test
+    @DisplayName("④ 裁剪工序 ⇒ batch_required=true + 派工批次（预填）+ 候选（余量 / 够不够）")
+    void cuttingScanCarriesBatchView() {
+        stubScan(CODE_CLOTH, ITEM_CLOTH,
+                List.of(op("op-cut", ITEM_CLOTH, "布帘", "布艺遮光帘A", 1, "裁剪", "11", "0")));
+        when(orderItemMapper.selectById(ITEM_CLOTH)).thenReturn(OrderItem.builder()
+                .id(ITEM_CLOTH).tenantId(TENANT).productId("prod-1").skuId(12L).skuCode("SKU-A")
+                .deleted(0).build());
+        when(stockBatchConsumptionService.tracksBatches(TENANT, "prod-1", 12L)).thenReturn(true);
+        when(stockBatchConsumptionService.assignmentsOf(TENANT, PO_NO)).thenReturn(Map.of(ITEM_CLOTH,
+                new StockBatchConsumptionService.BatchAssignment("PC-A", new BigDecimal("11"))));
+        when(stockBatchConsumptionService.remaining(eq(TENANT), eq("prod-1"), eq(12L), eq(true)))
+                .thenReturn(List.of(
+                        batchRow(1L, "PC-A", "30", "-11"),  // 余量 19 ≥ 应做 11 ⇒ 够
+                        batchRow(2L, "PC-B", "5", "0")));    // 余量 5 < 11 ⇒ 不够
+
+        Map<String, Object> view = service.resolve(CODE_CLOTH, null, TENANT);
+
+        assertThat(view.get("batch_required")).isEqualTo(true);
+        assertThat(view.get("batch_no")).isEqualTo("PC-A");
+        List<?> candidates = (List<?>) view.get("batch_candidates");
+        assertThat(candidates).hasSize(2);
+        Map<?, ?> first = (Map<?, ?>) candidates.get(0);
+        assertThat(first.get("batch_no")).isEqualTo("PC-A");
+        assertThat((BigDecimal) first.get("remaining_meters")).isEqualByComparingTo("19");
+        assertThat(first.get("enough")).isEqualTo(true);
+        Map<?, ?> second = (Map<?, ?>) candidates.get(1);
+        assertThat(second.get("enough")).isEqualTo(false);
+    }
+
+    @Test
+    @DisplayName("④ 非「裁剪」工序 / 零批次商品 ⇒ batch_required=false（三键恒在，页面按缺键就缺渲染）")
+    void nonCuttingScanHasNoBatchRequirement() {
+        stubScan(CODE_CLOTH, ITEM_CLOTH, standardOps());
+
+        Map<String, Object> view = service.resolve(CODE_CLOTH, null, TENANT);
+
+        assertThat(view).containsEntry("batch_required", false).containsEntry("batch_no", null);
+        assertThat((List<?>) view.get("batch_candidates")).isEmpty();
+    }
+
+    private static BatchStockViews.BatchRemaining batchRow(long id, String batchNo, String inbound,
+                                                           String consumed) {
+        BigDecimal in = new BigDecimal(inbound);
+        BigDecimal used = new BigDecimal(consumed);
+        return new BatchStockViews.BatchRemaining(id, batchNo, "prod-1", 12L, "SKU-A", "RK-1", "L1",
+                LocalDate.of(2026, 10, 1), new BigDecimal("12.5"), in, used, in.add(used));
+    }
 
     private void stubScan(String code, String itemId, List<ProcessingPositionOperation> ops) {
         when(setPartTokenMapper.selectOne(any())).thenReturn(partToken(code, itemId));
@@ -489,6 +561,7 @@ class ProductionScanServiceDetailFieldsTest {
         item.setId(id);
         item.setTenantId(TENANT);
         item.setOrderId(ORDER_ID);
+        item.setProductId("p-1");
         item.setProductName(productName);
         item.setWidth(width == null ? null : new BigDecimal(width));
         item.setHeight(height == null ? null : new BigDecimal(height));

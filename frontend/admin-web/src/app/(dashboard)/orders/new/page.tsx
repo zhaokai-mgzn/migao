@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, ChevronDown, ChevronRight, Ruler, Search, Package, User, Receipt, Settings2, Plus, Trash2, UserPlus, Phone, MapPin, Zap } from 'lucide-react'
+import { ArrowLeft, Check, ChevronDown, ChevronRight, Pencil, Ruler, Search, Package, User, Receipt, Settings2, Plus, Trash2, UserPlus, Phone, MapPin, X, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import { loadErrorMessage, toastRequestError } from '@/lib/api-error'
 import RequestApprovalModal from '@/components/approvals/RequestApprovalModal'
@@ -275,15 +275,24 @@ interface OrderLineItem {
   /** 配布边单价；`null` = 未填 ⇒ 不生成配布边明细行（后端单价必须 > 0，不凭空造价） */
   edgeUnitPrice: number | null
   /**
-   * **加工费就地改单价**（issue #4874，用户 2026-09-21：「订单中加工费组合**未配置**的情况下，
-   * **允许更改该单价**」）—— 元/米，`null` = 没改过。
+   * **加工费就地改本单单价**（issue #4874 起「未配置」可改；🔴 issue #7642 起**已配置也可改**，
+   * 用户 2026-10-24 逐字「新增订单中的加工费组合需要允许修改」）—— 元/米，`null` = 没改过。
    *
-   * 只在「`fee_source='unpriced'` **且组合键非空**」时可填；填了就：
+   * 只在**组合键非空**时可填；填了就：
    * ① 立刻以该价重发 `feePreview`（页面金额跟着变）② 随建单写进
-   * `processingInfo.processingFeeOverride`（后端 #4872 采用后 `fee_source='manual'`，
-   * 并在建单成功后同步进「加工费组合」配置）。
+   * `processingInfo.processingFeeOverride`（后端采用后 `fee_source='manual'`、金额 = 本单价 × 米数）。
    *
-   * ⚠️ 组合键为空（缺选配信息）⇒ **不给**改单价入口：没有 key 可同步，改了也无处落地。
+   * 🔴 **`0` 是一个有效值**（issue #7658，用户 2026-10-24：「在订单中改成 0 后，费用明细的展示费用
+   * 未联动更改」）＝ **本单免加工费**（金额 ¥0.00，并当帧联动费用明细）。**`null`（空框）才表示
+   * 「不改价、按组合价目」** —— 两者在数据上分得开：`null` ⇒ 不发该键；`0` ⇒ 发 0。
+   *
+   * ⚠️ **价目的命运分三种**（钱的边界，别混）：
+   * - 组合**未配置** + 正价 ⇒ 建单成功后同步进「加工费组合」价目（#4872：商家自建价目的唯一通路）；
+   * - 组合**已配置** ⇒ **只改本单**，价目那一份一字不动（#7642；后端在
+   *   `processingFeeDetail.configured_unit_price` 里留下被覆盖的那条价目价，回写侧跳过）；
+   * - **`0`** ⇒ 同样只改本单，且**永不回写**（否则一个免费单就把整条组合价清零 —— #7658）。
+   *
+   * ⚠️ 组合键为空（缺选配信息）⇒ **不给**改单价入口：没有 key 可落地，改了也无处可去。
    */
   processingFeeOverride: number | null
   /**
@@ -1281,7 +1290,10 @@ function buildLineProcessingInfo(
   // 也只在这时出现）—— 组合键为空时改了也无处同步（后端的 key 就是它）。
   // ⚠️ 它与 `processingItems` **同一份构造** ⇒ 试算（`feePreview`）与提交看到的是同一个价。
   const override = Number(line.processingFeeOverride)
-  if (Number.isFinite(override) && override > 0) info.processingFeeOverride = override
+  // #7658：`0` 是有效单价（本单免加工费）⇒ 只有 `null` / 非数值才表示「不改价」
+  if (line.processingFeeOverride != null && Number.isFinite(override) && override >= 0) {
+    info.processingFeeOverride = override
+  }
 
   return info
 }
@@ -1378,6 +1390,17 @@ function mergePlanOverrides(
  */
 function positiveOrNull(value: number | null): number | null {
   return value !== null && Number.isFinite(value) && value > 0 ? value : null
+}
+
+/**
+ * 「本单加工费单价」的取值口径（issue #7658）：**0 是有效价**（免加工费），负数 / 非数值 = 没填。
+ *
+ * ⚠️ 与 {@link positiveOrNull} **刻意分开**：那 8 个数字框里 0 是「没填」（单价 0 元 / 米数 0 是不成立
+ * 的输入），而加工费单价填 0 是商家的**明确意思**（这一单不收加工费）⇒ 用同一个口径会把 0 丢掉，
+ * 正是用户 2026-10-24 报的「改成 0 后费用明细未联动」。
+ */
+function nonNegativeOrNull(value: number | null): number | null {
+  return value !== null && Number.isFinite(value) && value >= 0 ? value : null
 }
 
 /**
@@ -5101,6 +5124,13 @@ function LineItemBlock({
    */
   const [activeCategoryId, setActiveCategoryId] = useState('')
   const [processingQuery, setProcessingQuery] = useState('')
+  /**
+   * 「加工费组合」块的**改价编辑态**（issue #7658，用户 2026-10-24「样式改成工艺项 · 计件单价的样式」）：
+   * 读态只显示「价 + ✏️」，点铅笔才出输入框，✓ 保存 / ✕ 取消。草稿只活在本地 ⇒ 录入过程中
+   * **不发预览**（与「工序库 / 工艺项」改计件单价同一交互：改完点保存才生效）。
+   */
+  const [feeEditing, setFeeEditing] = useState(false)
+  const [feeDraft, setFeeDraft] = useState<number | null>(null)
   const stepProps = (n: number) => ({
     open: openStep === n,
     onToggle: () => setOpenStep(openStep === n ? 0 : n),
@@ -5435,6 +5465,8 @@ function LineItemBlock({
         composition?: unknown
         items?: unknown
         unit_price?: unknown
+        /** 被本单改价覆盖的那条组合价目价（issue #7642；只有「已配置组合 + 本单改价」才下发） */
+        configured_unit_price?: unknown
       }
     | undefined
   /** 组合键（**空 = 缺选配信息**）——「改单价」入口的准入条件之一（没有 key 就没法同步） */
@@ -5456,8 +5488,41 @@ function LineItemBlock({
           ? UNPRICED_NO_COMPOSITION
           : '—'
   const feeUnitPrice = Number(feeDetail?.unit_price)
-  /** 未定价 **且组合键非空** ⇒ 可就地改单价 */
-  const canOverrideFee = feeIsUnpriced && feeCompositionKey !== ''
+  /**
+   * **本单单价可改**（issue #7642）：组合键非空就够 —— 已配置的组合也允许改**本单**单价
+   * （用户 2026-10-24「新增订单中的加工费组合需要允许修改」；旧口径「只给未定价行」= 配了价目之后
+   * 某一单要按谈好的价收**没有任何入口**）。组合键为空（缺选配信息）⇒ 没有 key 可落地 ⇒ 不给入口。
+   */
+  const canOverrideFee = feeCompositionKey !== ''
+  /**
+   * 被本单改价**覆盖**的那条组合价目价（issue #7642）—— 只有「已配置的组合被本单改价」时服务端才下发
+   * （`processingFeeDetail.configured_unit_price`）；`NaN` = 没有价目可覆盖（未配置行 / 没改价）。
+   */
+  const feeOverriddenConfiguredPrice = Number(feeDetail?.configured_unit_price)
+  /**
+   * **组合价目参考价**：改价前 = 命中价（`matched` 的 `unit_price`）；改价后 = 被覆盖的价目价
+   * （服务端 `configured_unit_price`）。两个时刻都能回答「价目是多少」—— 否则商家改完价就再也看不到
+   * 自己改的是哪一条价目，「价目不变」也就无从核对。
+   */
+  const feeReferencePrice =
+    Number.isFinite(feeOverriddenConfiguredPrice) && feeOverriddenConfiguredPrice > 0
+      ? feeOverriddenConfiguredPrice
+      : feeSource === 'matched' && Number.isFinite(feeUnitPrice) && feeUnitPrice > 0
+        ? feeUnitPrice
+        : null
+  /**
+   * **读态显示的本单单价**（issue #7658）：已改价 ⇒ 商家填的价（**`0` 也显示 `¥0.00/米`**，不是「未定价」）；
+   * 未改价 ⇒ 已配置组合的价（`matched` 的 `unit_price`）；两者都没有 ⇒ `null`（渲染「未定价」）。
+   *
+   * ⚠️ 与 {@link feeReferencePrice} 分工：那是**价目**参考价（改价后仍摆着，用于核对「价目不变」），
+   * 这是**本单生效价** —— 同一屏两个数，语义不同，不互相顶替。
+   */
+  const feeReadPrice =
+    line.processingFeeOverride != null && Number.isFinite(line.processingFeeOverride)
+      ? line.processingFeeOverride
+      : feeSource === 'matched' && Number.isFinite(feeUnitPrice)
+        ? feeUnitPrice
+        : null
   /**
    * 该行**有没有任何选配**（手选加工项 ∪ 自动识别特征）—— 没有 ⇒ 组合键必然为空，
    * 「加工费组合」块整块不渲染（无组合可展示、也无价可改），与「缺选配信息」是两回事。
@@ -6426,11 +6491,14 @@ function LineItemBlock({
                 </div>
               )}
 
-              {/* ===== **加工费组合**明细块（issue #4874）=====
+              {/* ===== **加工费组合**明细块（issue #4874；#7642 起已配置的组合也能改**本单**单价）=====
                   用户 2026-09-21：「订单中加工费组合**未配置**的情况下，**允许更改该单价**，
-                  并且在**加工项下面添加具体的组合名**」。
+                  并且在**加工项下面添加具体的组合名**」；
+                  🔴 用户 2026-10-24（issue #7642）：「**新增订单中的加工费组合需要允许修改**」⇒ 已配置的行
+                  **也给**「改本单单价」入口（价目那一份不动；未配置行仍按 #4872 在建单后记入价目）。
                   逐行 = 组合名（`feeDetail.items.join(' + ')`，与「加工费组合」页**逐字同源**）
-                  + 单价（元/米）+ 来源 + 操作；单价与来源**只读**，未定价行给「改单价」输入。
+                  + 单价（**读态价 + ✏️**，点铅笔才出输入框 —— 用户 2026-10-24：「样式改成工艺项 ·
+                  计件单价的样式」，issue #7658）+ 组合价目参考价 + 来源。
                   ⚠️ 改完立刻以该价**重发 `feePreview`**（同一份 `buildLineProcessingInfo` ⇒ 页面金额
                   与提交口径一致），并以 `processingInfo.processingFeeOverride` 随建单提交（后端 #4872）。 */}
               {hasAnyProcessingSelection && (
@@ -6443,41 +6511,107 @@ function LineItemBlock({
                     <span data-testid="fee-combination-name" className="text-neutral-700">
                       {feeCombinationLabel}
                     </span>
-                    <span className="text-neutral-400">单价</span>
-                    {/* 改单价入口的**两条准入**（缺一不可；issue #4878 独立复核 P1 补第二条）：
-                        ① 本行组合**未定价** ∧ 组合键非空（原本的唯一准入）；
-                        ② 本行**已经带着商家输入的 override** —— 改价后预览会返回 `fee_source='manual'`
-                           ⇒ `feeIsUnpriced` 变 false ⇒ 若只按 ① 渲染，输入框**当场消失**：
-                           商家打错一个字就再也改不了（唯一出路是把售卖形态切到布料再切回来，
-                           而那会连带清空尺寸/工艺）。⇒ **override 是商家输的，入口就一直在**。 */}
-                    {(feeIsUnpriced && canOverrideFee) || line.processingFeeOverride != null ? (
-                      <span className="inline-flex items-center gap-1">
-                        <NumberInput
-                          data-testid="fee-unit-price-override"
-                          aria-label="改单价（元/米）"
-                          placeholder="元/米"
-                          value={line.processingFeeOverride}
-                          onChange={(next) => onProcessingFeeOverrideChange(positiveOrNull(next))}
-                          decimals={3}
-                          className="w-24 h-8 px-2 rounded border border-neutral-300 text-xs focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-                        />
-                        <span className="text-neutral-500">元/米</span>
-                      </span>
-                    ) : feeIsUnpriced ? (
-                      <span className="text-amber-600">未定价</span>
-                    ) : (
-                      <span
-                        data-testid="fee-unit-price"
-                        className="text-neutral-700 tabular-nums"
-                      >
-                        {Number.isFinite(feeUnitPrice) ? `${formatAmount(feeUnitPrice)}/米` : '—'}
-                      </span>
-                    )}
+                    <span className="inline-flex items-center gap-1">
+                      <span className="text-neutral-400">单价</span>
+                      {/* 改价（issue #7658）：与「工序库 / 工艺项」的计件单价同一套交互 ——
+                          读态 = `¥7.00/米` + ✏️；点铅笔才出输入框 + ✓ 保存 / ✕ 取消。
+                          ① 草稿只活在本地 ⇒ 录入过程**不发预览**（改完点 ✓ 才生效）；
+                          ② `0` 是有效价（本单免加工费），空框 = 不改价（按组合价目）—— 两者都可达；
+                          ③ issue #4878 P1 的「入口常驻」由「读态一直有铅笔」满足，不会改完就消失。 */}
+                      {feeEditing && canOverrideFee ? (
+                        <>
+                          <NumberInput
+                            data-testid="fee-unit-price-override"
+                            aria-label="改本单单价（元/米）"
+                            placeholder="元/米"
+                            value={feeDraft}
+                            onChange={(next) => setFeeDraft(nonNegativeOrNull(next))}
+                            decimals={3}
+                            className="w-24 h-8 px-2 rounded border border-neutral-300 text-xs focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                          />
+                          <span className="text-neutral-500">元/米</span>
+                          <button
+                            type="button"
+                            aria-label="保存单价"
+                            data-testid="fee-price-save"
+                            title="保存本单单价"
+                            onClick={() => {
+                              onProcessingFeeOverrideChange(feeDraft)
+                              setFeeEditing(false)
+                            }}
+                            className="rounded p-1 text-primary-600 hover:bg-neutral-100"
+                          >
+                            <Check className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label="取消改价"
+                            data-testid="fee-price-cancel"
+                            title="取消（不改这一单的价）"
+                            onClick={() => setFeeEditing(false)}
+                            className="rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <span
+                            data-testid="fee-unit-price"
+                            className={cn(
+                              'tabular-nums',
+                              feeReadPrice == null ? 'text-amber-600' : 'text-neutral-700',
+                            )}
+                          >
+                            {feeReadPrice == null ? '未定价' : `¥${formatAmount(feeReadPrice)}/米`}
+                          </span>
+                          {canOverrideFee && (
+                            <button
+                              type="button"
+                              aria-label="改本单单价"
+                              data-testid="fee-price-edit"
+                              title={
+                                feeReferencePrice != null
+                                  ? `改本单单价（组合价目 ${formatAmount(feeReferencePrice)}/米 不变）`
+                                  : '改本单单价（建单后记入「加工费组合」价目）'
+                              }
+                              onClick={() => {
+                                setFeeDraft(
+                                  line.processingFeeOverride ??
+                                    (Number.isFinite(feeUnitPrice) ? feeUnitPrice : null),
+                                )
+                                setFeeEditing(true)
+                              }}
+                              className="rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-primary-600"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </>
+                      )}
+                      {/* **组合价目**参考价（issue #7642）：只在**本单已改价**时摆出来 ——
+                          读态价本身就是价目时再摆一遍是重复信息（§31 P2）。 */}
+                      {line.processingFeeOverride != null && feeReferencePrice != null && (
+                        <span
+                          data-testid="fee-configured-price"
+                          className="text-neutral-400 tabular-nums"
+                        >
+                          组合价目 {formatAmount(feeReferencePrice)}/米
+                        </span>
+                      )}
+                    </span>
                     <span className="text-neutral-400">
                       来源：
                       {feeSource !== '' ? FEE_SOURCE_LABELS[feeSource] ?? feeSource : '—'}
                     </span>
-                    {/* 缺选配信息（组合键为空）⇒ **不给**改单价入口：没有 key 可同步 */}
+                    {/* #7642：已配置的组合被本单改价 ⇒ 明说「价目不变」（钱的口径要看得见；
+                        未配置行改价会记入价目，故这条提示只对「有价目参考价」的行显示） */}
+                    {line.processingFeeOverride != null && feeReferencePrice != null && (
+                      <span data-testid="fee-override-scope" className="text-neutral-500">
+                        本单改价，组合价目不变
+                      </span>
+                    )}
+                    {/* 缺选配信息（组合键为空）⇒ **不给**改单价入口：没有 key 可落地 */}
                     {feeIsUnpriced && !canOverrideFee && (
                       <span data-testid="fee-combination-no-composition" className="text-amber-600">
                         缺选配信息 ⇒ 这行还没匹配到加工费组合，无法就地改单价

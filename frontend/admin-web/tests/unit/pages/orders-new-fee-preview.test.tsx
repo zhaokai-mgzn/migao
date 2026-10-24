@@ -1,4 +1,4 @@
-// case_ids: OR-009, OR-014, UI-038, OR-039, OR-065
+// case_ids: OR-009, OR-014, UI-038, OR-039, OR-044, OR-065
 // @vitest-environment jsdom
 /**
  * 下单页「加工费计价预览」接线（issue #4450 · 前置 #4406）。
@@ -184,6 +184,21 @@ const submit = async () => {
  * 每个用例的公共桩（两个 `describe` 都要用 —— 桩实现是**跨 describe 粘连**的，
  * 靠「另一个 describe 的 beforeEach 跑过」会让 `-t` 窄跑时静默拿到空目录）。
  */
+/**
+ * 打开「加工费组合」块的**铅笔改价**（issue #7658，用户 2026-10-24：「样式改成工艺项 · 计件单价的样式」）：
+ * 读态只有「价 + ✏️」，点铅笔才出输入框；改完点 ✓ 才生效（✕ 取消不发请求、不落价）。
+ * 返回输入框，便于各判据继续 `fireEvent.change`。
+ */
+const startFeeEdit = (block: HTMLElement) => {
+  fireEvent.click(within(block).getByTestId('fee-price-edit'))
+  return within(block).getByTestId('fee-unit-price-override') as HTMLInputElement
+}
+
+/** ✓ 保存本单改价（issue #7658：与「工艺项 · 计件单价」同款交互） */
+const saveFeePrice = (block: HTMLElement) => {
+  fireEvent.click(within(block).getByTestId('fee-price-save'))
+}
+
 const stubApis = () => {
   vi.clearAllMocks()
   mockGetProducts.mockResolvedValue({
@@ -332,13 +347,13 @@ describe('下单页加工费计价预览接线（#4450）', () => {
     // 加工项区块里**列出具体组合名**（`items.join(' + ')`，与「加工费组合」页逐字同源）
     const block = await screen.findByTestId('processing-fee-combinations')
     expect(within(block).getByTestId('fee-combination-name')).toHaveTextContent('布帘 + 韩褶')
-    // 未定价 ⇒ 来源列显式标「未定价」（不渲染 ¥0.00 —— 仓库硬纪律）
-    expect(within(block).getByText(/未定价/)).toBeInTheDocument()
+    // 未定价 ⇒ **读态价**与**来源列**两处都显式写「未定价」（不渲染 ¥0.00 —— 仓库硬纪律）
+    expect(within(block).getByTestId('fee-unit-price')).toHaveTextContent('未定价')
+    expect(within(block).getAllByText(/未定价/)).toHaveLength(2)
 
-    const override = within(block).getByTestId('fee-unit-price-override') as HTMLInputElement
+    const override = startFeeEdit(block)
     fireEvent.change(override, { target: { value: '12.5' } })
-
-    // ① 立刻以该价重发 feePreview（300ms 防抖后）——「试算与提交必须看到同一份选配」
+    saveFeePrice(block)
     await waitFor(() => {
       const last = mockFeePreview.mock.calls.at(-1)![0]
       expect(last.items[0].processingInfo.processingFeeOverride).toBe(12.5)
@@ -365,13 +380,68 @@ describe('下单页加工费计价预览接线（#4450）', () => {
     expect(within(block).getByTestId('fee-combination-no-composition')).toBeInTheDocument()
   })
 
-  it('#4874 已定价行 ⇒ 单价**只读**（无改单价入口），且保留去「加工费组合」的定价入口', async () => {
-    await setupLine() // stub = feeMatched()：fee_source=matched、unit_price=10
+  // ── #7642（用户 2026-10-24 逐字「新增订单中的加工费组合需要允许修改」）─────────────
+  // 改判：已配置（`fee_source='matched'`）的行**也**给「改本单单价」入口 —— 旧口径「已定价 ⇒ 只读」
+  // 的后果是商家配了价目之后、某一单要按谈好的价收**没有任何入口**。
+  // 语义边界（用户选定的选项）：**只改本单单价，组合价目不动** ⇒ 服务端回 `manual` 且 detail 带
+  // `configured_unit_price`（被覆盖的那条价目价），页面据此把「组合价目 ¥X/米」一直摆着。
+  it('#7642 已配置行 ⇒ 组合价目 + **改本单单价**入口在位；改价后预览/提交同价、来源变手动改价、价目不变可见', async () => {
+    const feeManualOnConfigured = (unitPrice: number, configured: number) => ({
+      data: {
+        data: {
+          items: [
+            {
+              processingFee: unitPrice * 13.3,
+              processingFeeDetail: {
+                composition: '韩式褶',
+                items: ['韩式褶'],
+                unit_price: unitPrice,
+                price_source: 'manual',
+                meters: 13.3,
+                meters_source: 'processingMeters',
+                fee_source: 'manual',
+                amount: unitPrice * 13.3,
+                // 服务端记下「被本单改价覆盖的那条价目价」—— 页面据此保留价目参考价
+                configured_unit_price: configured,
+                hint: null,
+              },
+            },
+          ],
+          processingFeeTotal: unitPrice * 13.3,
+        },
+      },
+    })
+    mockFeePreview.mockImplementation((payload: any) => {
+      const override = Number(payload?.items?.[0]?.processingInfo?.processingFeeOverride)
+      return Promise.resolve(override > 0 ? feeManualOnConfigured(override, 10) : feeMatched())
+    })
+    await setupLine() // 首轮 = feeMatched()：fee_source=matched、unit_price=10
+
     const block = await screen.findByTestId('processing-fee-combinations')
-    expect(within(block).getByTestId('fee-unit-price')).toHaveTextContent('¥10.00/米')
-    expect(within(block).queryByTestId('fee-unit-price-override')).toBeNull()
-    // 已定价 ⇒ 不再需要「去定价」入口（那正是「未定价」才要做的事）
-    expect(within(block).queryByRole('link', { name: /加工费组合/ })).toBeNull()
+    await waitFor(() => expect(within(block).getByTestId('fee-unit-price')).toHaveTextContent('¥10.00/米'))
+    // 红证：恢复「已定价 ⇒ 单价只读（无铅笔）」⇒ 下面这条必红（入口消失，本单再也改不了价）
+    const override = startFeeEdit(block)
+    fireEvent.change(override, { target: { value: '12.5' } })
+    saveFeePrice(block)
+
+    // ① 立刻以该价重发 feePreview（300ms 防抖后）—— 预览与提交同一份 `buildLineProcessingInfo`
+    await waitFor(() =>
+      expect(
+        mockFeePreview.mock.calls.at(-1)![0].items[0].processingInfo.processingFeeOverride
+      ).toBe(12.5)
+    )
+
+    // ② 来源列变「手动改价」，并显式写明**组合价目不变**（钱的口径要看得见）
+    const after = screen.getByTestId('processing-fee-combinations')
+    await waitFor(() => expect(within(after).getByText(/手动改价/)).toBeInTheDocument())
+    expect(within(after).getByTestId('fee-override-scope')).toHaveTextContent('本单改价，组合价目不变')
+    // ③ 读态显示**本单生效价**；被覆盖的组合价目单独摆着（否则「价目不变」无从核对）
+    expect(within(after).getByTestId('fee-unit-price')).toHaveTextContent('¥12.50/米')
+    expect(within(after).getByTestId('fee-configured-price')).toHaveTextContent('组合价目 ¥10.00/米')
+
+    // ④ 随建单提交同一份价
+    await submit()
+    expect(mockCreateOrder.mock.calls[0][0].items[0].processingInfo.processingFeeOverride).toBe(12.5)
   })
 
   it('#4874 没有选配任何加工项（也未触发自动识别）⇒ 整块不渲染（无组合可展示、也无价可改）', async () => {
@@ -417,9 +487,8 @@ describe('下单页加工费计价预览接线（#4450）', () => {
     fireEvent.click(screen.getAllByRole('checkbox')[0])
 
     const block = await screen.findByTestId('processing-fee-combinations')
-    fireEvent.change(within(block).getByTestId('fee-unit-price-override'), {
-      target: { value: '12.5' },
-    })
+    fireEvent.change(startFeeEdit(block), { target: { value: '12.5' } })
+    saveFeePrice(block)
     await waitFor(() =>
       expect(
         mockFeePreview.mock.calls.at(-1)![0].items[0].processingInfo.processingFeeOverride
@@ -470,28 +539,110 @@ describe('下单页加工费计价预览接线（#4450）', () => {
 
     await setupLine()
     const block = await screen.findByTestId('processing-fee-combinations')
-    fireEvent.change(within(block).getByTestId('fee-unit-price-override'), {
-      target: { value: '12.5' },
-    })
+    fireEvent.change(startFeeEdit(block), { target: { value: '12.5' } })
+    saveFeePrice(block)
 
-    // 红证：若入口只在 `fee_source='unpriced'` 时渲染 ⇒ manual 一到，输入框消失、下面两条必红
+    // 红证：若入口只在 `fee_source='unpriced'` 时渲染 ⇒ manual 一到，铅笔消失、下面两条必红
     await waitFor(() =>
       expect(
-        within(screen.getByTestId('processing-fee-combinations')).getByTestId(
-          'fee-unit-price-override'
-        )
+        within(screen.getByTestId('processing-fee-combinations')).getByTestId('fee-price-edit')
       ).toBeInTheDocument()
     )
-    fireEvent.change(
-      within(screen.getByTestId('processing-fee-combinations')).getByTestId(
-        'fee-unit-price-override'
-      ),
-      { target: { value: '9.9' } }
-    )
+    const again = screen.getByTestId('processing-fee-combinations')
+    fireEvent.change(startFeeEdit(again), { target: { value: '9.9' } })
+    saveFeePrice(again)
     await submit()
     expect(
       mockCreateOrder.mock.calls[0][0].items[0].processingInfo.processingFeeOverride
     ).toBe(9.9)
+  })
+
+  // ── #7658（用户 2026-10-24 两张截图）────────────────────────────────────────────────
+  // ① 「样式改成工艺项 · 计件单价的样式」⇒ 读态只有价 + ✏️，点铅笔才出输入框（✓ 保存 / ✕ 取消）；
+  // ② 「在订单中改成 0 后，费用明细的展示费用未联动更改」⇒ **0 是本单有效单价**（不是「没改价」）。
+
+  it('#7658 读态只有「价 + 铅笔」；点铅笔才出输入框；✕ 取消 ⇒ 回读态、**不落价也不发请求**', async () => {
+    await setupLine() // feeMatched()：matched / unit_price=10
+    const block = await screen.findByTestId('processing-fee-combinations')
+    await waitFor(() => expect(within(block).getByTestId('fee-unit-price')).toHaveTextContent('¥10.00/米'))
+    // 红证：常驻输入框（旧形态）⇒ 本断言红
+    expect(within(block).queryByTestId('fee-unit-price-override')).toBeNull()
+
+    const edit = startFeeEdit(block)
+    // 铅笔打开时**预填当前生效价**（与「工序库 / 工艺项」改计件单价同一交互：从现值改起）
+    expect(edit).toHaveValue('10')
+
+    const before = mockFeePreview.mock.calls.length
+    fireEvent.change(edit, { target: { value: '3' } })
+    fireEvent.click(within(block).getByTestId('fee-price-cancel'))
+
+    // 取消 = 什么都没发生：读态回来、没有输入框、请求体里没有 override
+    expect(within(block).queryByTestId('fee-unit-price-override')).toBeNull()
+    expect(within(block).getByTestId('fee-unit-price')).toHaveTextContent('¥10.00/米')
+    await new Promise((r) => setTimeout(r, 400)) // 等过预览防抖窗
+    expect(
+      mockFeePreview.mock.calls
+        .slice(before)
+        .every((c) => c[0]?.items?.[0]?.processingInfo?.processingFeeOverride === undefined)
+    ).toBe(true)
+  })
+
+  it('#7658 本单改成 0 ⇒ 预览带 override=0、**费用明细该行联动到 ¥0.00**、提交同值', async () => {
+    // 服务端按 override 回 manual（0 也是有效价 ⇒ amount = 0 × 米数 = 0），并带回被覆盖的组合价目 10.00
+    mockFeePreview.mockImplementation((payload: any) => {
+      const info = payload?.items?.[0]?.processingInfo ?? {}
+      if ('processingFeeOverride' in info) {
+        const price = Number(info.processingFeeOverride)
+        return Promise.resolve({
+          data: {
+            data: {
+              items: [
+                {
+                  processingFee: price * 13.3,
+                  processingFeeDetail: {
+                    composition: '韩式褶',
+                    items: ['韩式褶'],
+                    unit_price: price,
+                    price_source: 'manual',
+                    meters: 13.3,
+                    meters_source: 'processingMeters',
+                    fee_source: 'manual',
+                    amount: price * 13.3,
+                    configured_unit_price: 10,
+                    hint: null,
+                  },
+                },
+              ],
+              processingFeeTotal: price * 13.3,
+            },
+          },
+        })
+      }
+      return Promise.resolve(feeMatched())
+    })
+    await setupLine()
+
+    const block = await screen.findByTestId('processing-fee-combinations')
+    fireEvent.change(startFeeEdit(block), { target: { value: '0' } })
+    saveFeePrice(block)
+
+    // ① 红证：`positiveOrNull`（旧形态）把 0 丢成 null ⇒ 预览请求不带该键 ⇒ 本断言红
+    await waitFor(() =>
+      expect(
+        mockFeePreview.mock.calls.at(-1)![0].items[0].processingInfo.processingFeeOverride
+      ).toBe(0)
+    )
+    // ② 费用明细该行**联动**到 ¥0.00（用户原话：「改成 0 后，费用明细的展示费用未联动更改」）
+    await waitFor(() => expect(screen.getByText('13.3 米 × ¥0.00/米')).toBeInTheDocument())
+    // ③ 读态显示 ¥0.00/米 + 组合价目参考价，来源变「手动改价」
+    const after = screen.getByTestId('processing-fee-combinations')
+    expect(within(after).getByTestId('fee-unit-price')).toHaveTextContent('¥0.00/米')
+    expect(within(after).getByTestId('fee-configured-price')).toHaveTextContent('组合价目 ¥10.00/米')
+    expect(within(after).getByText(/手动改价/)).toBeInTheDocument()
+
+    // ④ 随建单提交同一份 0（不是缺键）
+    await submit()
+    expect(mockCreateOrder.mock.calls[0][0].items[0].processingInfo.processingFeeOverride).toBe(0)
   })
 })
 

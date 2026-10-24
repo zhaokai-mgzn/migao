@@ -75,7 +75,9 @@ public class ProductCreateRequest {
     private String status = "draft";
 
     /**
-     * 库存数量，默认 0
+     * 🔴 已下线（issue #7597，用户裁定 2026-10-24）：商品档案不再设置库存数值。
+     * 建品时该字段**被忽略**，新建 SKU 一律从 0 起算；库存只由真实单据产生
+     * （入库单过账 / 订单扣减 / 售后回补 / 批次盘点）。保留字段仅为兼容旧客户端载荷。
      */
     private BigDecimal stock = BigDecimal.ZERO;
 
