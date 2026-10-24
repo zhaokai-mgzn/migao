@@ -400,11 +400,13 @@ class WorkerCuttingHeightNullProductIdTest {
         static final Map<String, IndexSite> INDEX_SITES = Map.ofEntries(
                 // ── 本单：修完必须继续容忍空键（否则本单的判据当场红） ──
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/WorkerCuttingHeightService.java|brands",
-                        new IndexSite("brands", "brands", "productId", "item.getProductId()", 164, Verdict.KEY_NULLABLE,
-                                "本单病灶：product_id 可为空（存量明细）⇒ 已显式短路 + 空集改可变表（双重）")),
+                        new IndexSite("brands", "brands", "productId", "item.getProductId()", 170, Verdict.KEY_NULLABLE,
+                                "本单病灶：product_id 可为空（存量明细）⇒ 已显式短路 + 空集改可变表（双重）。"
+                                + "2026-10-24（issue #7647）：`read()` 追加裁剪批次两键后行号下移 6 行（164→170），判定依据未变")),
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/WorkerCuttingHeightService.java|items",
-                        new IndexSite("items", "itemsOf", "itemId", "entry.get(\"order_item_id\")", 152, Verdict.KEY_NULLABLE,
-                                "itemId 来自扫描结果可能为 null ⇒ `itemId == null ? null : items.get(itemId)` 短路")),
+                        new IndexSite("items", "itemsOf", "itemId", "entry.get(\"order_item_id\")", 158, Verdict.KEY_NULLABLE,
+                                "itemId 来自扫描结果可能为 null ⇒ `itemId == null ? null : items.get(itemId)` 短路。"
+                                + "2026-10-24（issue #7647）：同上下移 6 行（152→158），判定依据未变")),
                 // issue #7373 段 2：盘点完成时按**下标**对齐「明细行 ↔ 计算行」——
                 // 两个 List 都是本方法内直接构造的可变 ArrayList/stream().toList()，
                 // 下标由 `for (int i = 0; i < items.size(); i++)` 给出 ⇒ 永不为 null，也不查不可变表。
@@ -434,12 +436,13 @@ class WorkerCuttingHeightNullProductIdTest {
                                 Verdict.READ_IS_NULL_TOLERANT, "getOrDefault(c.getId(), 0L) ⇒ 空键安全")),
                 // ── 存量：get + 可能为 null 的键 ⇒ 由调用点显式短路（本包不改这些文件，仅登记） ──
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/ProductionScanService.java|specByItemId",
-                        new IndexSite("specByItemId", "specByItemIdOf", "op.getOrderItemId()", "op.getOrderItemId()", 594,
+                        new IndexSite("specByItemId", "specByItemIdOf", "op.getOrderItemId()", "op.getOrderItemId()", 603,
                                 Verdict.KEY_NULLABLE,
-                                "调用点已 `specByItemId == null ? null : ...get(op.getOrderItemId())` 短路")),
+                                "调用点已 `specByItemId == null ? null : ...get(op.getOrderItemId())` 短路"
+                                        + "（2026-10-24 / issue #7647：`resolve()` 追加批次三键后行号 594→603，判定未变）")),
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java|itemGroupKey",
                         new IndexSite("itemGroupKey", "itemIdToGroupKey", "itemGroupKey.get(spec.orderItemId())",
-                                "spec.orderItemId()", 268,
+                                "spec.orderItemId()", 278,
                                 Verdict.KEY_NULLABLE,
                                 "⚙️ 登记面事实（issue #6878 订正；**不是**「已安全」结论）：真正交给 `setByGroup.get(...)` 的键是"
                                         + "**派生值** `itemGroupKey.get(spec.orderItemId())`（字段 = 派生键表达式，本轮由"
@@ -454,7 +457,7 @@ class WorkerCuttingHeightNullProductIdTest {
                                         + "`DERIVED_KEY_SITES` 承担（登记站点 A ⇄ 站点 B；未登记 / 摘掉判空 / 换 getOrDefault "
                                         + "⇒ 那里具名判红）—— 本条目只保证「产出方与调用点被登记且不陈旧」。")),
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java|setByGroup",
-                        new IndexSite("setByGroup", "ensureSetsFor", "derivedKey", "itemGroupKey.get(spec.orderItemId())", 269,
+                        new IndexSite("setByGroup", "ensureSetsFor", "derivedKey", "itemGroupKey.get(spec.orderItemId())", 279,
                                 Verdict.KEY_NULLABLE,
                                 "两级取值的外层表（#6878 补登记；产出方 `ensureSetsFor` 同 PR 补登记后本调用点才被扫到）。"
                                         + "键 = 派生值 `itemGroupKey.get(...)`，改后先落局部变量 `derivedKey` 再判空")),

@@ -228,8 +228,12 @@ public class ProductionScanCompleteService {
         }
 
         // ② 一次事务（跨 bean 调用 ⇒ @Transactional 代理生效）：明细 + CAS + done_at + 完工判定
+        //    + 裁剪批次核对（issue #7647）：同事务 ⇒ 批次账写失败则本次报工整体回滚。
+        //    `batch_no` 只在「工序名恰好=裁剪且该 SKU 按批次入库」时被消费（判定在
+        //    `ProductionService#cuttingBatchItem`，本类不复制第二份）；其余工序一个字节都不读。
+        String cuttingBatchNo = ProductionService.str(body == null ? null : body.get("batch_no"));
         Map<String, Object> result = productionService.applyScanComplete(
-                order, po, op, qty, qualifiedQty, workType, identity, tenantId);
+                order, po, op, qty, qualifiedQty, workType, identity, tenantId, cuttingBatchNo);
 
         // ③ 一屏闭环回执：本道完成 + 本套（套号/部位/进度）+ 下一道是什么
         result.put("set_no", scan.get("set_no"));

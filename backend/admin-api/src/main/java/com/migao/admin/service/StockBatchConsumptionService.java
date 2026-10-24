@@ -101,11 +101,18 @@ public class StockBatchConsumptionService {
     /** 变更来源：加工单作废回补 */
     public static final String REASON_PROCESSING_ORDER_CANCELLED =
             StockBatchConsumption.REASON_PROCESSING_ORDER_CANCELLED;
+    /** 变更来源：裁剪报工确认批次（V191 / issue #7647；负 = 扣实裁批次，正 = 回补原批次） */
+    public static final String REASON_CUTTING_REPORT = StockBatchConsumption.REASON_CUTTING_REPORT;
 
     /** 批次不存在 / 不属于当前租户（错误码，可被前端与 agent 判读） */
     public static final String ERR_BATCH_NOT_FOUND = "BATCH_NOT_FOUND";
     /** 批次不属于该 SKU（指定错了货） */
     public static final String ERR_BATCH_SKU_MISMATCH = "BATCH_SKU_MISMATCH";
+    /**
+     * 裁剪报工缺批次（issue #7647）：工人没填 / 派工没指派 ⇒ **422 + 可行动建议**，
+     * 绝不静默拿派工批次顶替（那样「工人实际裁了哪一卷」这个问题永远得不到答案）。
+     */
+    public static final String ERR_BATCH_REQUIRED = "BATCH_REQUIRED";
     /** 批次余量不足（fail-closed：**不得静默少扣**） */
     public static final String ERR_BATCH_STOCK_INSUFFICIENT = "BATCH_STOCK_INSUFFICIENT";
     /** 未知的指派规则（fail-closed：**不得静默回落 fifo**，见 {@link #normalizeAssignmentRule}） */
@@ -521,44 +528,269 @@ public class StockBatchConsumptionService {
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════
+    // 写面 ①b 裁剪报工确认批次（V191 / issue #7647）—— 核对 + 纠偏
+    // ══════════════════════════════════════════════════════════════════════════════════
+
+    /** 本族「耗料」来源（作废回补按这些来源的**净额**回补；盘点行不带加工单号，天然不在此列） */
+    private static final List<String> MATERIAL_REASONS =
+            List.of(REASON_PROCESSING_ORDER, REASON_PROCESSING_ORDER_CANCELLED, REASON_CUTTING_REPORT);
+
+    /** 裁剪报工确认批次的一次结论（回执给工人屏用） */
+    public record CuttingReportResult(String batchNo, BigDecimal batchRemaining, BigDecimal shortageMeters) {
+    }
+
+    /**
+     * 该商品 × SKU 是否**按批次管库存**（= 有过入库批次行）。
+     *
+     * <p>零批次 = 存量商品从未按批次入库 ⇒ 裁剪报工**不强制**批次（否则这些商品永远报不上工，
+     * 直接把生产卡死）；此时传了批次号也不落账（见 {@link #applyCuttingReport} 的调用契约）。
+     * SKU 为空 ⇒ 退到商品级判定（不猜颜色门幅，但也不拦生产）。</p>
+     */
+    public boolean tracksBatches(Long tenantId, String productId, Long skuId) {
+        if (!StringUtils.hasText(productId)) {
+            return false;
+        }
+        Long count = stockBatchMapper.selectCount(new LambdaQueryWrapper<StockBatch>()
+                .eq(StockBatch::getTenantId, tenantId)
+                .eq(StockBatch::getDeleted, 0)
+                .eq(StockBatch::getProductId, productId)
+                .eq(skuId != null, StockBatch::getSkuId, skuId));
+        return count != null && count > 0;
+    }
+
+    /**
+     * 裁剪报工**核对 + 纠偏**该行的批次归属（唯一写入口；同一事务内由报工调用）。
+     *
+     * <h2>三种情形（用户 2026-10-24 裁定；不推翻 #5144「派工即扣」）</h2>
+     * <ol>
+     *   <li><b>派工指定过批次</b>（该行有 {@code processing_order} 族行）：工人填的批次与账上一致 ⇒
+     *       <b>零写入</b>（不重复扣、排料省下的米数一分不动）；不一致 ⇒ 回补原批次 + 扣实裁批次，
+     *       **该行净额不变**（只换批次）；</li>
+     *   <li><b>派工未指定批次</b>（该行从来没有派工族行）：按<u>本次报工米数</u>扣工人填的批次
+     *       ——「实时更新库存」就发生在这一刻（分散报工 ⇒ 每次都只扣这一次的米数，累计自然正确）；</li>
+     *   <li>工人之后又改批次 ⇒ 把该行已消耗的**净额整体**搬到新批次（先回补、后扣减，
+     *       与情形①的搬移同一把口径）。</li>
+     * </ol>
+     *
+     * <h2>fail-closed 与有意放宽</h2>
+     * <ul>
+     *   <li>批次不存在 / 不属于该商品或 SKU ⇒ **422**（错别字不能落成账；调用方整体回滚本次报工）；</li>
+     *   <li>余量不足 ⇒ **放行**，余量如实为负，缺口由 {@link CuttingReportResult#shortageMeters()} 显式回给
+     *       工人屏（车间会裁多 / 损耗 / 批次账记少了 —— 挡报工等于扣工人工资，账可以负、工钱不能丢）；</li>
+     *   <li>无批次行（存量商品）⇒ 返回 {@code null}（调用方按「不启用批次账」处理，不落任何痕）。</li>
+     * </ul>
+     *
+     * @param meters 本次报工米数（{@code ≤ 0} 或批次号为空 ⇒ 返回 {@code null}，零写入）
+     * @return 确认结果；{@code null} = 本次不涉及批次账
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public CuttingReportResult applyCuttingReport(Long tenantId, String processingOrderNo, String orderNo,
+                                                  String orderItemId, String productId, Long skuId, String skuCode,
+                                                  String batchNo, BigDecimal meters) {
+        if (!StringUtils.hasText(processingOrderNo) || !StringUtils.hasText(orderItemId)
+                || !StringUtils.hasText(batchNo) || meters == null || meters.signum() <= 0) {
+            return null;
+        }
+        String wanted = batchNo.trim();
+        // ① 目标批次：先按租户全局找（不存在 / 不是这个商品或 SKU 要分开报错 —— 两种都 422，但文案不同）
+        StockBatch target = null;
+        for (StockBatch b : stockBatchMapper.selectList(new LambdaQueryWrapper<StockBatch>()
+                .eq(StockBatch::getTenantId, tenantId)
+                .eq(StockBatch::getDeleted, 0)
+                .eq(StockBatch::getBatchNo, wanted))) {
+            target = b;
+            break;
+        }
+        if (target == null) {
+            throw new BusinessException(ERR_BATCH_NOT_FOUND,
+                    String.format("批次 %s 不存在（本次未记账）", wanted), 422,
+                    "请照卷上印的批次号重新填写（PC-年月日-序号）；批次只能由入库单过账产生");
+        }
+        if (StringUtils.hasText(productId) && !productId.equals(target.getProductId())) {
+            throw new BusinessException(ERR_BATCH_SKU_MISMATCH,
+                    String.format("批次 %s 不是这一行的布料（本次未记账）", wanted), 422,
+                    "请核对这卷布的颜色与门幅后重新选择批次；批次号错了会把账记到别的布上");
+        }
+        if (skuId != null && target.getSkuId() != null && !skuId.equals(target.getSkuId())) {
+            throw new BusinessException(ERR_BATCH_SKU_MISMATCH,
+                    String.format("批次 %s 的货号与这一行不一致（本次未记账）", wanted), 422,
+                    "请核对这卷布的颜色与门幅后重新填写批次");
+        }
+        if (StringUtils.hasText(skuCode) && StringUtils.hasText(target.getSkuCode())
+                && !skuCode.equals(target.getSkuCode())) {
+            throw new BusinessException(ERR_BATCH_SKU_MISMATCH,
+                    String.format("批次 %s 的货号与这一行不一致（本次未记账）", wanted), 422,
+                    "请核对这卷布的颜色与门幅后重新填写批次");
+        }
+
+        // ② 该行已有的净消耗（逐批次）+ 是否「派工指定过」（决定累加还是只纠偏）
+        List<StockBatchConsumption> rows = consumptionMapper.selectList(
+                new LambdaQueryWrapper<StockBatchConsumption>()
+                        .eq(StockBatchConsumption::getTenantId, tenantId)
+                        .eq(StockBatchConsumption::getProcessingOrderNo, processingOrderNo)
+                        .eq(StockBatchConsumption::getOrderItemId, orderItemId)
+                        .in(StockBatchConsumption::getReason, MATERIAL_REASONS)
+                        .eq(StockBatchConsumption::getDeleted, 0)
+                        .orderByAsc(StockBatchConsumption::getId));
+        Map<Long, BigDecimal> consumedByBatch = new LinkedHashMap<>();
+        Map<Long, String> batchNoById = new LinkedHashMap<>();
+        boolean dispatchAssigned = false;
+        for (StockBatchConsumption row : rows) {
+            consumedByBatch.merge(row.getBatchId(), StockQuantity.orZero(row.getDelta()).negate(),
+                    BigDecimal::add);
+            batchNoById.putIfAbsent(row.getBatchId(), row.getBatchNo());
+            if (REASON_PROCESSING_ORDER.equals(row.getReason())
+                    || REASON_PROCESSING_ORDER_CANCELLED.equals(row.getReason())) {
+                dispatchAssigned = true;
+            }
+        }
+        consumedByBatch.entrySet().removeIf(e -> e.getValue().signum() == 0);
+
+        // ③ 要落的分录（先回补、后扣减 —— 顺序即「余量永远不为负的理由」）
+        BigDecimal consumedTotal = StockQuantity.sum(new ArrayList<>(consumedByBatch.values()));
+        boolean onlyTarget = consumedByBatch.size() == 1 && consumedByBatch.containsKey(target.getId());
+        List<Map.Entry<StockBatch, BigDecimal>> writes = new ArrayList<>();
+        if (dispatchAssigned) {
+            if (!onlyTarget) {
+                for (Map.Entry<Long, BigDecimal> e : consumedByBatch.entrySet()) {
+                    StockBatch from = requireBatch(tenantId, e.getKey(), batchNoById.get(e.getKey()));
+                    writes.add(Map.entry(from, e.getValue())); // 正 = 回补原批次
+                }
+                writes.add(Map.entry(target, consumedTotal.negate()));
+            }
+        } else if (onlyTarget || consumedByBatch.isEmpty()) {
+            writes.add(Map.entry(target, meters.negate()));
+        } else {
+            for (Map.Entry<Long, BigDecimal> e : consumedByBatch.entrySet()) {
+                StockBatch from = requireBatch(tenantId, e.getKey(), batchNoById.get(e.getKey()));
+                writes.add(Map.entry(from, e.getValue()));
+            }
+            writes.add(Map.entry(target, consumedTotal.add(meters).negate()));
+        }
+
+        // ④ 落账（余量派生只在 remainingMeters 一处；这里只推进内存里的 running）
+        //    🔴 即使零写入也要算余量：回执要回「该批次现在的余量」（派工已扣过的那笔必须算进去，
+        //    否则工人屏会看到比实际多的余量 —— 那是会让人多裁一截的假读数）。
+        Map<Long, BigDecimal> remaining = new LinkedHashMap<>();
+        List<StockBatch> involved = new ArrayList<>();
+        involved.add(target);
+        for (Map.Entry<StockBatch, BigDecimal> w : writes) {
+            involved.add(w.getKey());
+        }
+        remaining.putAll(remainingMeters(tenantId, involved));
+        String note = dispatchAssigned
+                ? String.format("裁剪报工确认批次：派工批次 → 实裁 %s（数量 %s 米）", wanted, plain(meters))
+                : String.format("裁剪报工扣减：派工未指定批次，按实裁 %s 扣 %s 米", wanted, plain(meters));
+        for (Map.Entry<StockBatch, BigDecimal> w : writes) {
+            StockBatch batch = w.getKey();
+            BigDecimal delta = w.getValue();
+            BigDecimal before = remaining.getOrDefault(batch.getId(), StockQuantity.orZero(batch.getQuantity()));
+            consumptionMapper.insert(StockBatchConsumption.builder()
+                    .tenantId(tenantId)
+                    .batchId(batch.getId())
+                    .batchNo(batch.getBatchNo())
+                    .productId(batch.getProductId())
+                    .skuId(batch.getSkuId())
+                    .skuCode(batch.getSkuCode())
+                    .delta(delta)
+                    .beforeQty(before)
+                    .afterQty(before.add(delta))
+                    // 两个米数沿用盘点的符号约定（= −delta ⇒ 省料恒 0，报工确认不冒功）；
+                    // 也满足 `ck_batch_consumption_plan_meters`（abs(planned) ≤ abs(formula) 且同号）。
+                    .formulaMeters(delta.negate())
+                    .plannedMeters(delta.negate())
+                    .unitCost(batch.getUnitCost())
+                    .reason(REASON_CUTTING_REPORT)
+                    .processingOrderNo(processingOrderNo)
+                    .orderNo(orderNo)
+                    .orderItemId(orderItemId)
+                    .operator(StockLedgerService.resolveOperator())
+                    .note(note)
+                    .createdAt(OffsetDateTime.now())
+                    .build());
+            remaining.put(batch.getId(), before.add(delta));
+        }
+
+        // ⑤ 回执：该批次记账后余量 + 缺口（>0 = 这次超出余量的米数，如实回给工人屏）
+        BigDecimal after = remaining.getOrDefault(target.getId(),
+                StockQuantity.orZero(target.getQuantity()));
+        BigDecimal shortage = after.signum() < 0 ? after.negate() : null;
+        if (!writes.isEmpty()) {
+            log.info("裁剪报工批次核对: po={}, item={}, tenant={}, batch={}, before={}, after={}, shortage={}, lines={}",
+                    processingOrderNo, orderItemId, tenantId, target.getBatchNo(),
+                    plain(after.add(StockQuantity.sum(writes.stream().map(Map.Entry::getValue).toList())
+                            .negate())), plain(after), shortage == null ? "0" : plain(shortage),
+                    writes.size());
+        }
+        return new CuttingReportResult(target.getBatchNo(), after, shortage);
+    }
+
+    /** 按 id 取批次行（回补腿用；批次行不可删 ⇒ 查不到即账坏了，fail-closed）。 */
+    private StockBatch requireBatch(Long tenantId, Long batchId, String batchNo) {
+        StockBatch batch = batchMapperById(tenantId, batchId);
+        if (batch == null) {
+            throw new BusinessException(ERR_BATCH_NOT_FOUND,
+                    String.format("回补失败：批次 id=%s（%s）不存在 —— 批次行不可删，出现即账目异常",
+                            batchId, batchNo), 409,
+                    "请人工核对 stock_batch_consumptions 与该批次；不要手工删台账行");
+        }
+        return batch;
+    }
+
+    private StockBatch batchMapperById(Long tenantId, Long batchId) {
+        return stockBatchMapper.selectOne(new LambdaQueryWrapper<StockBatch>()
+                .eq(StockBatch::getTenantId, tenantId)
+                .eq(StockBatch::getId, batchId));
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════════
     // 写面 ② reverse —— 作废回补（同事务、幂等、可重跑）
     // ══════════════════════════════════════════════════════════════════════════════════
 
     /**
-     * 加工单作废 ⇒ 回补该单扣过的每一个批次（**逐值对称**：回补量 = 原扣减量的相反数）。
+     * 加工单作废 ⇒ 回补该单**净消耗**（逐 (批次, 订单行) 净额归零）。
      *
-     * <p><b>幂等 / 可重跑</b>：已经回补过的行（按 {@code 批次 × 明细行} 配对）直接跳过 ——
-     * 第二遍调用返回 0 而不是撞唯一键报错。DB 侧另有 {@code uk_batch_consumption_line} 兜底。</p>
+     * <p><b>为什么改成净额口径</b>（V191 / issue #7647）：裁剪报工会对该行的批次归属做纠偏
+     * （回补原批次 + 扣实裁批次），于是同一 (批次, 订单行) 可能有多行；改前的「逐行回补 + 按
+     * (批次, 订单行) 去重」会把派工行与纠偏行漏掉一半 ⇒ 作废后净额不为 0（多回补或少回补）。
+     * 净额口径下「作废 ⇒ 净额归零」由构造保证：重跑时净额已是 0 ⇒ **零写入**（幂等不靠去重表）。</p>
      *
-     * <p><b>fail-closed</b>：原扣减行引用的批次查不到 ⇒ 抛错（批次行不可删，出现即账坏了；
+     * <p><b>对称的两列米数</b>：回补行按同一 (批次, 订单行) 的 {@code formula_meters} /
+     * {@code planned_meters} 净额取相反数 ⇒ 作废后两个口径都归零、省料数不冒功。
+     * 纯派工单（每对只有一行）时与改前**逐值相同**。</p>
+     *
+     * <p><b>fail-closed</b>：净额引用的批次查不到 ⇒ 抛错（批次行不可删，出现即账坏了；
      * 静默跳过会让「回补了」与「没回补」长得一样）。</p>
      *
-     * @return 本次真正回补的行数（0 = 该单没有批次扣减 / 已经全部回补过）
+     * @return 本次真正回补的行数（0 = 该单没有净消耗 / 已经全部回补过）
      */
     @Transactional(rollbackFor = Exception.class)
     public int reverse(Long tenantId, String processingOrderNo, String orderNo, String note) {
-        List<StockBatchConsumption> consumed = consumptionMapper.selectList(
+        List<StockBatchConsumption> rows = consumptionMapper.selectList(
                 new LambdaQueryWrapper<StockBatchConsumption>()
                         .eq(StockBatchConsumption::getTenantId, tenantId)
                         .eq(StockBatchConsumption::getProcessingOrderNo, processingOrderNo)
-                        .eq(StockBatchConsumption::getReason, REASON_PROCESSING_ORDER)
-                        .eq(StockBatchConsumption::getDeleted, 0));
-        if (consumed.isEmpty()) {
+                        .in(StockBatchConsumption::getReason, MATERIAL_REASONS)
+                        .eq(StockBatchConsumption::getDeleted, 0)
+                        .orderByAsc(StockBatchConsumption::getId));
+        if (rows.isEmpty()) {
             return 0;
         }
-        List<StockBatchConsumption> already = consumptionMapper.selectList(
-                new LambdaQueryWrapper<StockBatchConsumption>()
-                        .eq(StockBatchConsumption::getTenantId, tenantId)
-                        .eq(StockBatchConsumption::getProcessingOrderNo, processingOrderNo)
-                        .eq(StockBatchConsumption::getReason, REASON_PROCESSING_ORDER_CANCELLED)
-                        .eq(StockBatchConsumption::getDeleted, 0));
-        Set<String> done = new LinkedHashSet<>();
-        for (StockBatchConsumption r : already) {
-            done.add(lineKey(r.getBatchId(), r.getOrderItemId()));
+        // 逐 (批次, 订单行) 净额：delta 带符号（负 = 消耗）⇒ 净消耗 = −Σdelta
+        Map<String, BigDecimal> net = new LinkedHashMap<>();
+        Map<String, BigDecimal> formulaNet = new LinkedHashMap<>();
+        Map<String, BigDecimal> plannedNet = new LinkedHashMap<>();
+        Map<String, StockBatchConsumption> sample = new LinkedHashMap<>();
+        for (StockBatchConsumption r : rows) {
+            String key = lineKey(r.getBatchId(), r.getOrderItemId());
+            net.merge(key, StockQuantity.orZero(r.getDelta()).negate(), BigDecimal::add);
+            formulaNet.merge(key, StockQuantity.orZero(r.getFormulaMeters()), BigDecimal::add);
+            plannedNet.merge(key, StockQuantity.orZero(r.getPlannedMeters()), BigDecimal::add);
+            sample.putIfAbsent(key, r);
         }
         List<Long> batchIds = new ArrayList<>();
-        for (StockBatchConsumption c : consumed) {
-            batchIds.add(c.getBatchId());
+        for (StockBatchConsumption r : sample.values()) {
+            batchIds.add(r.getBatchId());
         }
         Map<Long, StockBatch> batches = new LinkedHashMap<>();
         for (StockBatch b : stockBatchMapper.selectList(new LambdaQueryWrapper<StockBatch>()
@@ -568,11 +800,13 @@ public class StockBatchConsumptionService {
         }
         Map<Long, BigDecimal> running = new HashMap<>(consumedByBatchId(tenantId, batchIds));
 
-        int rows = 0;
-        for (StockBatchConsumption c : consumed) {
-            if (done.contains(lineKey(c.getBatchId(), c.getOrderItemId()))) {
-                continue; // 幂等：该行已回补过 ⇒ 跳过（可重跑）
+        int written = 0;
+        for (Map.Entry<String, BigDecimal> entry : net.entrySet()) {
+            BigDecimal consumed = entry.getValue();
+            if (consumed.signum() <= 0) {
+                continue; // 净额 ≤ 0 = 该行没有待回补的消耗（重跑时全部为 0 ⇒ 幂等）
             }
+            StockBatchConsumption c = sample.get(entry.getKey());
             StockBatch batch = batches.get(c.getBatchId());
             if (batch == null) {
                 throw new BusinessException(ERR_BATCH_NOT_FOUND,
@@ -582,8 +816,9 @@ public class StockBatchConsumptionService {
             }
             BigDecimal before = StockQuantity.orZero(batch.getQuantity())
                     .add(running.getOrDefault(batch.getId(), BigDecimal.ZERO));
-            BigDecimal delta = c.getDelta().negate();
-            // 回补行**逐值对称**地回写两个米数与当时均价（取相反数）：
+            // 回补量 = 净消耗（正数）⇒ delta 取正（冲销掉那些负的消耗行）
+            BigDecimal delta = consumed;
+            // 回补行**按净额**回写两个米数与当时均价（取相反数）：
             // ① 两列同带符号 ⇒ 作废后整单两个口径都净额归零（读面不必再写第二套减法）；
             // ② saved_meters 于是得到 −(原省数) ⇒ 与扣减行的省数**相加归零**（作废不冒功）；
             // ③ 均价是**同一笔成本基础**的快照，原样搬运（不是「今天的价」）。
@@ -597,8 +832,8 @@ public class StockBatchConsumptionService {
                     .delta(delta)
                     .beforeQty(before)
                     .afterQty(before.add(delta))
-                    .formulaMeters(negated(c.getFormulaMeters()))
-                    .plannedMeters(negated(c.getPlannedMeters()))
+                    .formulaMeters(formulaNet.getOrDefault(entry.getKey(), BigDecimal.ZERO).negate())
+                    .plannedMeters(plannedNet.getOrDefault(entry.getKey(), BigDecimal.ZERO).negate())
                     .unitCost(c.getUnitCost())
                     .reason(REASON_PROCESSING_ORDER_CANCELLED)
                     .processingOrderNo(processingOrderNo)
@@ -611,12 +846,12 @@ public class StockBatchConsumptionService {
             // running 的口径 = 「Σdelta」（不是余量）⇒ 回补一行就是加一次 delta
             // （余量 = stock_batches.quantity + Σdelta，公式只有这一处）
             running.put(batch.getId(), running.getOrDefault(batch.getId(), BigDecimal.ZERO).add(delta));
-            rows++;
+            written++;
         }
-        if (rows > 0) {
-            log.info("加工单作废回补批次库存: po={}, tenant={}, rows={}", processingOrderNo, tenantId, rows);
+        if (written > 0) {
+            log.info("加工单作废回补批次库存: po={}, tenant={}, rows={}", processingOrderNo, tenantId, written);
         }
-        return rows;
+        return written;
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════

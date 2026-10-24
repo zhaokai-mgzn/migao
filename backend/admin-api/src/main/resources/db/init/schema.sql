@@ -2061,7 +2061,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_batch_consumption_stocktake
 ALTER TABLE stock_batch_consumptions DROP CONSTRAINT IF EXISTS ck_batch_consumption_reason;
 ALTER TABLE stock_batch_consumptions
     ADD CONSTRAINT ck_batch_consumption_reason
-    CHECK (reason IN ('processing_order', 'processing_order_cancelled', 'stocktake'));
+    CHECK (reason IN ('processing_order', 'processing_order_cancelled', 'stocktake', 'cutting_report'));
 ALTER TABLE stock_batch_consumptions DROP CONSTRAINT IF EXISTS ck_batch_consumption_source_shape;
 ALTER TABLE stock_batch_consumptions
     ADD CONSTRAINT ck_batch_consumption_source_shape
