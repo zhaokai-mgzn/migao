@@ -893,6 +893,11 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             if (fee.configuredUnitPrice() != null) {
                 continue;
             }
+            // #7658：**0 元是本单语义**（免加工费）⇒ 绝不写进租户共享价目
+            // （写进去 = 之后所有同组合的新单都按 0 元收钱；一个免费单把整条组合价清零）。
+            if (fee.unitPrice() == null || fee.unitPrice().signum() <= 0) {
+                continue;
+            }
             processingFeeCombinationCommandService.upsertFromOrderOverride(
                     fee.compositionKey(), fee.items(), fee.unitPrice(), tenantId);
         }

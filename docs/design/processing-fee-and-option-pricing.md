@@ -160,20 +160,24 @@ fee(行) = comboUnitPrice(元/米) × processingMeters        // 既有 #4406 �
 
 ```
 fee(行) = processingFeeOverride(元/米) × processingMeters
-          // 采用条件：组合键非空 ∧ override 为正数（#7642 起**不再要求**组合未命中）
+          // 采用条件：组合键非空 ∧ override 为**非负数**（#7642 起不再要求组合未命中；#7658 起 0 也有效）
 ```
 
-- **采用条件（#7642 改判后）**：组合键非空 **且** `processingInfo.processingFeeOverride` 是正数 ⇒
-  记 `fee_source='manual'`、`unit_price` = override、`amount` = override × 米数、`price_source` = `manual`、
-  `matched_rule_id` = `null`。组合**是否已配置价目都不影响**（旧口径「仅未配置」的后果 = 商家配了价目
-  之后，某一单要按谈好的价收**没有任何入口**）。
+- **采用条件（#7642 / #7658 改判后）**：组合键非空 **且** `processingInfo.processingFeeOverride` 是
+  **非负数** ⇒ 记 `fee_source='manual'`、`unit_price` = override、`amount` = override × 米数、
+  `price_source` = `manual`、`matched_rule_id` = `null`。组合**是否已配置价目都不影响**
+  （旧口径「仅未配置」的后果 = 商家配了价目之后，某一单要按谈好的价收**没有任何入口**）。
+- 🔴 **`0` 是有效单价**（issue #7658，用户 2026-10-24：「在订单中改成 0 后，费用明细的展示费用未联动更改」）
+  ⇒ 本单**免加工费**（金额 = 0 × 米数 = 0，`fee_source='manual'`）。旧口径「0 与没改价不可区分 ⇒ 视为未改价」
+  **已作废**：它让商家填了 0 却仍按组合价收钱。**「清空改价」由"缺键"表达**（前端空框不发该键）——
+  两者在数据上分得开。负数 / 非数值仍不算改价（负价不是价）。
 - **命中组合时同样采用**（#7642 改判；旧口径「命中一律忽略 override」已作废），并把被覆盖的那条
   价目价记进 `processingFeeDetail.configured_unit_price`（**只加不改**；未配置行**不写**该键）。
 - **无 override 且未命中** ⇒ 与改前**逐字不变**：`unpriced`、组合那半 0、不回落 Σ 加工项。
 - **缺米数** ⇒ 仍是 `unpriced`（override 也救不回来：米数是另一个因子，不猜）。
 
 **建单成功后的回写**（同一事务内）：对每条 `fee_source='manual'` **且该组合本来没有价目**
-（`Fee#configuredUnitPrice()` 为空）的行 `upsert processing_fee_combinations`
+（`Fee#configuredUnitPrice()` 为空）**且单价 > 0** 的行 `upsert processing_fee_combinations`
 （`composition_key` 走 `ProcessingFeeCombinationCommandService.compositionKey`
 **同源口径**、`items` = 规范化特征名、`unit_price` = override、`status='active'`、`source='实证'`
 + 追加版本台账）：
@@ -184,6 +188,9 @@ fee(行) = processingFeeOverride(元/米) × processingMeters
 🔴 **#7642：已配置的组合 ⇒ 零回写**。回写会把这一单的谈定价变成**租户共享价**，之后所有同组合的新单
 都按它算钱 —— 而用户的裁定是「只改本单单价」。判定凭据 = `configured_unit_price` 非空（该组合在活跃
 价目里本来就有价），因此判定与审计用**同一个键**，不会出现「两个口径各说各话」。
+
+🔴 **#7658：`0` 元 ⇒ 零回写**（`unitPrice.signum() <= 0` 直接跳过）。「本单免加工费」是**一单**的意思，
+写进价目就等于把一个免费单变成之后所有同组合订单的 0 元价 —— 那是改钱，不是改这一单。
 
 ⇒ 未配置行：商家的「这一单收多少」与「配置里这个组合多少钱」从此**同一份真值**，不会各说各话；
 已配置行：本单按改价收、价目不动，两者都在 `processingFeeDetail` 里可判（`unit_price` vs
