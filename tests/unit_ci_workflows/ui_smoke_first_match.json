@@ -91,7 +91,7 @@
     },
     {
       "journey": "15-orders-new",
-      "matcher": "/提交订单/",
+      "matcher": "/提交订单|创建订单|确认下单/",
       "anchor": "提交订单",
       "anchor_kind": "text",
       "where": "frontend/admin-web/src/app/(dashboard)/orders/new/page.tsx",
