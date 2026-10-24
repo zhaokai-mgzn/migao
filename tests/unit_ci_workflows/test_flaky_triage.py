@@ -1755,3 +1755,93 @@ class TestApproveFixRedProofs:
         violations = approve_cli_violations(mutant)
         assert violations, "去掉 `action_required` 判定后仍判绿 ⇒ 幂等判据是**空断言**"
         assert any("幂等" in v for v in violations), violations
+
+
+# ── ⑨ #7632：建跟踪单前必须自愈 `flaky/tracking` 标签（仓库设置不在代码里） ──────────
+class TestTrackingIssueLabelSelfHeal:
+    """#7632 实证：仓库**没有** `flaky/tracking` 标签 ⇒ `POST /issues` 带该标签 = 422
+    ⇒ 「打标封 PR」成功、「写台账 + 开跟踪单」全失败（fail-closed 但**没有 durable 记录**）。
+
+    四条判据（注入式红证：把 `ensure_label(repo)` 从 `ensure_tracking_issue` 删掉 ⇒ ①必红）：
+      ① 建单**之前**先 `POST /labels`（顺序 = 语义：先有标签才可能建单成功）；
+      ② 标签自愈失败 ⇒ **抛错**且不继续发 `POST /issues`；
+      ③ 标签已存在（422 already_exists）⇒ `PATCH /labels/<name>` 更新，而不是当失败；
+      ④ 复用既有单 ⇒ **零副作用**（不建标签、不发 POST）。
+    """
+
+    def _stub(self, monkeypatch, *, existing=None, label_error=None):
+        api_calls = []
+
+        def fake_api(path, *, method="GET", fields=None):
+            api_calls.append({"path": path, "method": method, "fields": fields})
+            if path == "repos/o/r/labels" and method == "POST" and label_error is not None:
+                raise label_error
+            if method == "GET":
+                if existing is None:
+                    return []
+                return [{"number": existing, "body": FL.tracking_marker("job-x", "flaky")}]
+            return {"number": 7}
+
+        monkeypatch.setattr(FL, "_gh_api", fake_api)
+        return api_calls
+
+    def test_label_is_ensured_before_issue_creation(self, monkeypatch):
+        """① 顺序：`POST /labels` 必须在 `POST /issues` **之前**（否则 422）。"""
+        api_calls = self._stub(monkeypatch)
+        out = FL.ensure_tracking_issue("o/r", "job-x", subject="PR Check", kind="flaky")
+
+        assert out["created"] is True and out["number"] == 7, out
+        label_posts = [c for c in api_calls if c["path"] == "repos/o/r/labels" and c["method"] == "POST"]
+        assert len(label_posts) == 1, api_calls
+        assert label_posts[0]["fields"]["name"] == FL.TRACKING_LABEL, label_posts[0]
+        issue_posts = [c for c in api_calls if c["path"] == "repos/o/r/issues" and c["method"] == "POST"]
+        assert len(issue_posts) == 1, api_calls
+        assert issue_posts[0]["fields"]["labels"] == FL.TRACKING_LABEL, issue_posts[0]
+        assert api_calls.index(label_posts[0]) < api_calls.index(issue_posts[0]), \
+            f"标签自愈必须早于建单：{api_calls}"
+
+    def test_label_self_heal_is_fail_closed(self, monkeypatch):
+        """② 标签建不出来（403）⇒ 抛错且**不发** POST /issues（不许拿 422 当结果）。"""
+        err = FL.subprocess.CalledProcessError(1, ["gh", "api"], output="",
+                                               stderr="HTTP 403: Resource not accessible")
+        api_calls = self._stub(monkeypatch, label_error=err)
+        try:
+            FL.ensure_tracking_issue("o/r", "job-x", kind="flaky")
+        except RuntimeError as exc:
+            assert FL.TRACKING_LABEL in str(exc) and "fail-closed" in str(exc), str(exc)
+        else:  # pragma: no cover
+            raise AssertionError("标签自愈失败却未抛错 ⇒ fail-closed 缺失")
+        assert [c for c in api_calls if c["path"] == "repos/o/r/issues"] == [], \
+            "标签都没建出来还去 POST /issues ⇒ 必然 422，且把失败点掩盖在更远的地方"
+
+    def test_existing_label_falls_back_to_patch(self, monkeypatch):
+        """③ 已存在（422 already_exists）⇒ PATCH 更新，而不是把「已存在」当失败。"""
+        api_calls = []
+
+        def fake_api(path, *, method="GET", fields=None):
+            api_calls.append({"path": path, "method": method, "fields": fields})
+            if path == "repos/o/r/labels" and method == "POST":
+                raise FL.subprocess.CalledProcessError(
+                    1, ["gh", "api"], output="",
+                    stderr='HTTP 422: Validation Failed ({"errors":[{"code":"already_exists"}]})')
+            if method == "GET":
+                return []
+            return {"number": 7}
+
+        monkeypatch.setattr(FL, "_gh_api", fake_api)
+        out = FL.ensure_tracking_issue("o/r", "job-x", kind="flaky")
+
+        assert out["created"] is True, out
+        patches = [c for c in api_calls if c["method"] == "PATCH"]
+        assert len(patches) == 1, api_calls
+        assert patches[0]["path"] == "repos/o/r/labels/flaky%2Ftracking", patches[0]
+
+    def test_existing_issue_reuses_without_side_effects(self, monkeypatch):
+        """④ 复用既有单 ⇒ 不建标签、不发 POST（零副作用；标签此时本来就在）。"""
+        api_calls = self._stub(monkeypatch, existing=42)
+        out = FL.ensure_tracking_issue("o/r", "job-x", kind="flaky")
+
+        assert out == {"number": 42, "created": False,
+                       "url": "https://github.com/o/r/issues/42"}, out
+        assert [c for c in api_calls if c["path"] in ("repos/o/r/labels", "repos/o/r/issues")
+                and c["method"] in ("POST", "PATCH")] == [], api_calls
