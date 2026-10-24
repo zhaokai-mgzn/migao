@@ -242,3 +242,38 @@ def test_internal_endpoint_returns_only_preview_fields(monkeypatch):
         resp = asyncio.run(image_generate(request, authorized=True))
     assert resp["success"] is True
     assert resp["data"] == {"image_url": "https://dashscope.oss/out.png", "model": "model-a"}
+
+
+def test_internal_endpoint_credential_failure_is_503_not_502(monkeypatch):
+    """内部端点：**凭证失效必须 503**（能力不可用），不能是 502（供应商偶发故障）。
+
+    admin-api 侧按状态码决定给商家的动作（503 = 「先手工上传 / 找平台」，502 = 「稍后再试」，
+    见 issue #7552 的三端码改造）⇒ 两边口径不一致时，商家会被引向一个不会成功的动作。
+    改前读数 = **502**（401 落进「其它错误」⇒ `ImageGenerationError`），改后 = 503。
+    本用例走真内核 + `MockTransport`（不打桩内核），所以钉的是「401 一路传到状态码」。
+    """
+    from fastapi import HTTPException
+
+    from app.api.internal import ImageGenerateRequest, image_generate
+
+    for key, value in {
+        "IMAGE_GEN_ENABLED": True,
+        "IMAGE_GEN_API_KEY": "sk-invalid-online-key",
+        "ASR_API_KEY": "",
+        "IMAGE_GEN_MODELS": "qwen-image-3.0-pro",
+        "IMAGE_GEN_BASE_URL": "https://example.test/generate",
+        "IMAGE_GEN_TIMEOUT": 5,
+    }.items():
+        monkeypatch.setattr(gen.settings, key, value)
+
+    real_client = httpx.AsyncClient
+    transport = httpx.MockTransport(lambda request: httpx.Response(
+        401, json={"code": "InvalidApiKey", "message": "Invalid API-key provided."}))
+    request = ImageGenerateRequest(
+        tenant_id=46, image_url="https://oss/sample.png", product_name="某商品", kind="main")
+    with patch("app.images.generator.httpx.AsyncClient",
+               side_effect=lambda **kw: real_client(transport=transport)):
+        with pytest.raises(HTTPException) as excinfo:
+            asyncio.run(image_generate(request, authorized=True))
+
+    assert excinfo.value.status_code == 503
