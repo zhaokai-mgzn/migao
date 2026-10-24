@@ -79,6 +79,12 @@ class RegistrationServiceTest extends BaseServiceTest {
      * 否则删掉那一行调用 CI 全绿。
      */
     @Mock private ProcessingItemSeedService processingItemSeedService;
+    /**
+     * 开租默认主仓（issue #7592）：`approveApplication` 里把「新租户没有仓 ⇒ 盘点单『出盘点任务』
+     * 的仓库下拉为空」堵住的调用点。同 #4430 / #6295 的教训 —— 必须对该服务有**具名断言**，
+     * 否则删掉那一行调用 CI 全绿。
+     */
+    @Mock private WarehouseSeedService warehouseSeedService;
 
     @InjectMocks private RegistrationService registrationService;
 
@@ -107,6 +113,8 @@ class RegistrationServiceTest extends BaseServiceTest {
         when(productCategorySeedService.countCategories(anyLong())).thenReturn(1L);
         when(processingItemSeedService.countProcessingItems(anyLong()))
                 .thenReturn((long) ProcessingItemSeedService.CATALOG.size());
+        // 入驻后置条件（#7592）：默认「有仓」——验 fail-closed 的用例自己改 stub
+        when(warehouseSeedService.countWarehouses(anyLong())).thenReturn(1L);
         // 落库后回填自增 ID，并让 selectById 返回同一实例（审批副作用链路）
         java.util.concurrent.atomic.AtomicReference<TenantApplication> insertedRef =
                 new java.util.concurrent.atomic.AtomicReference<>();
@@ -469,6 +477,8 @@ class RegistrationServiceTest extends BaseServiceTest {
             // 调用点**确实存在**（删掉 `seedRequiredInitialData` 里的那一行本断言即红；
             // 端到端读数「首建商品不再 422」由 NewTenantOnboardingCategoryRealDbTest 承担）
             verify(productCategorySeedService).seedDefaultCategory(100L);
+            // 默认主仓同理（#7592）：删掉播种那一行 ⇒ 本断言红；真库读数由同名的真库判据承担
+            verify(warehouseSeedService).seedDefaultWarehouse(100L);
         }
 
         /**

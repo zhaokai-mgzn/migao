@@ -99,6 +99,12 @@ public class RegistrationService {
      * 下单页选不到任何加工项、加工费组合配不出来。同属 {@link OnboardingInitialData#REQUIRED}。
      */
     private final ProcessingItemSeedService processingItemSeedService;
+    /**
+     * 开租默认主仓（issue #7592）：不种 ⇒ {@code warehouses} 为空 ⇒ 盘点单「出盘点任务」的
+     * 仓库下拉只有占位项，一张盘点单也出不了（商家面又没有建仓入口）。同属
+     * {@link OnboardingInitialData#REQUIRED}。
+     */
+    private final WarehouseSeedService warehouseSeedService;
 
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -536,7 +542,11 @@ public class RegistrationService {
         //    ⇒ resolveRoute 两次都不命中 ⇒ 抛 ERR_ROUTING_NOT_FOUND（422）⇒ **一张加工单也生成不了**。
         applyProductionSeedTemplate(tenant);
 
-        // ④ 后置条件校验（fail-closed）：清单里 enforced 的项逐条现取校验，缺一 ⇒ 开租失败
+        // ④ 默认主仓（issue #7592）：不种 ⇒ 盘点单「出盘点任务」的仓库下拉为空（商家面没有建仓入口）
+        //    ⇒ 一张盘点单也出不了。与默认分类/加工项目录同属「无合法不种分支」的硬约束 ⇒ 不吞异常。
+        warehouseSeedService.seedDefaultWarehouse(tenant.getId());
+
+        // ⑤ 后置条件校验（fail-closed）：清单里 enforced 的项逐条现取校验，缺一 ⇒ 开租失败
         assertRequiredInitialData(tenant);
     }
 
@@ -559,6 +569,9 @@ public class RegistrationService {
         }
         if (processingItemSeedService.countProcessingItems(tenant.getId()) == 0) {
             missing.add(OnboardingInitialData.PROCESSING_CATALOG_KEY);
+        }
+        if (warehouseSeedService.countWarehouses(tenant.getId()) == 0) {
+            missing.add(OnboardingInitialData.WAREHOUSE_KEY);
         }
         if (!missing.isEmpty()) {
             String message = "开通失败：新租户缺少必需初始数据 " + missing

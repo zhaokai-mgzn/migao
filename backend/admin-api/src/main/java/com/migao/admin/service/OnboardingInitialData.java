@@ -51,11 +51,26 @@ public final class OnboardingInitialData {
      */
     public static final String DEFAULT_PROCESSING_CATEGORY_NAME = "加工费";
 
+    /**
+     * 默认主仓编码（<b>默认值的唯一来源</b>，issue #7592）。
+     *
+     * <p>用 ASCII 编码而不是「主仓」二字：商家面会把编码展示在仓名旁边（「主仓（MAIN）」），
+     * 编码与名称同值会读成重复信息。⚠️ {@code stock_batches.warehouse} 是**文本**（不是外键）——
+     * 出任务时按「批次文本 = 编码 **或** = 仓名」匹配，改这两个常量都要迁存量文本。</p>
+     */
+    public static final String DEFAULT_WAREHOUSE_CODE = "MAIN";
+
+    /** 默认主仓名称（商家面展示的是这一栏）。 */
+    public static final String DEFAULT_WAREHOUSE_NAME = "主仓";
+
     /** 清单键：默认商品分类（{@link ProductCategorySeedService#seedDefaultCategory}）。 */
     public static final String PRODUCT_CATEGORY_KEY = "product_category";
 
     /** 清单键：默认加工项目录（{@link ProcessingItemSeedService#seedDefaultCatalog}）。 */
     public static final String PROCESSING_CATALOG_KEY = "processing_catalog";
+
+    /** 清单键：默认主仓（{@link WarehouseSeedService#seedDefaultWarehouse}）。 */
+    public static final String WAREHOUSE_KEY = "default_warehouse";
 
     /** 清单键：行业生产种子模板（{@link RegistrationService} 的 `applyProductionSeedTemplate`）。 */
     public static final String PRODUCTION_TEMPLATE_KEY = "production_template";
@@ -86,6 +101,10 @@ public final class OnboardingInitialData {
             new Item(PROCESSING_CATALOG_KEY,
                     "默认加工项目录：不种 ⇒ 新租户「加工项与分类」是空的，下单页选不到任何加工项（issue #7148）",
                     "processingItemSeedService.seedDefaultCatalog",
+                    true),
+            new Item(WAREHOUSE_KEY,
+                    "默认主仓：不种 ⇒ 盘点单「出盘点任务」的仓库下拉为空，一张盘点单也出不了（issue #7592）",
+                    "warehouseSeedService.seedDefaultWarehouse",
                     true),
             new Item(PRODUCTION_TEMPLATE_KEY,
                     "行业生产种子模板：不种 ⇒ 新租户建单 fail-closed 422 ERR_ROUTING_NOT_FOUND（issue #4361/#4316）",
