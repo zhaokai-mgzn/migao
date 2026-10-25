@@ -439,6 +439,9 @@ jobs:
           DEV_SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN || 'ci-service-token-placeholder' }}
           # RS256 密钥由上一步注入 GITHUB_ENV（issue #3270）
           PRIMARY_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || 'ci-dummy' }}
+          # 商品生图（PR-074）需要真 Key：没有它，栈内 ai-agent 会
+          # `IMAGE_GEN_UNAVAILABLE`（issue #7541）——那样这条用例只测得到拒绝路径。
+          ASR_API_KEY: ${{ secrets.ASR_API_KEY || '' }}
           PRIMARY_MODEL: deepseek-flash
           DASHVECTOR_API_KEY: ci-dummy
           DASHVECTOR_ENDPOINT: https://ci-dummy.dashvector.cn-hangzhou.aliyuncs.com

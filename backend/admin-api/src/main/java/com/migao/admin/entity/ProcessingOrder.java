@@ -31,8 +31,16 @@ public class ProcessingOrder {
     /** 业务单号 JG-YYYYMMDD-序号（DB 唯一约束防重号） */
     private String processingOrderNo;
 
-    /** 加工方（文本，MVP 不建主数据） */
+    /** 承接方名称快照（派单那一刻写死；事后改名不回写历史单） */
     private String processor;
+
+    /**
+     * 外发承接方档案引用（V193，issue #7723）：{@code null} = 本厂自做 / 存量单。
+     *
+     * <p>与 {@link #processor} 同批写、同批读（名称快照 + 档案引用，同 {@code InboundOrder}
+     * 的 {@code supplier} / {@code supplierId} 分工）。写入口 = 智能派单，**不是**作业单页。</p>
+     */
+    private String processorSupplierId;
 
     /** 交期（手工填写，决策 3） */
     private LocalDate expectedDeliveryDate;

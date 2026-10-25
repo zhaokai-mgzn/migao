@@ -11,7 +11,7 @@ domain: processing-order
 cases:
   - id: PG-001
     legacy_id: ""
-    title: "生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）"
+    title: "生成加工单 - 已确认含加工项订单 → 作业单生成 + 订单进入生产中（派单即生产；issue #7723 改判）"
     domains:
       - processing-order
       - order
@@ -27,10 +27,10 @@ cases:
       - "已确认订单含加工项 → 生成 processing_orders(status=generated)，快照五要素齐全（商品/颜色/门幅/宽×高/数量/加工项）"
       - "快照加工项含 options（生成时从加工项目录补齐，下单时未落库）"
       - "快照不含销售价（决策 2：加工单给加工方只看加工费）"
-      - "**不**联动订单（issue #4305，用户裁定「发加工 = 订单进入生产中」）：生成加工单后订单状态**保持 confirmed** —— 机器判据 = ProcessingOrderServiceTest 断言 never(orderService).updateOrderStatus(any, 「producing」) 且 never revertProducingToConfirmed（订单联动的唯一时点已挪到「发加工」，见 PG-005）"
+      - "**派单即生产**（issue #7723，用户 2026-10-25 裁定 A，取代 #4305 的旧时点）：生成作业单成功后订单 `confirmed → producing` —— 机器判据 = ProcessingOrderServiceTest.generateSuccess 断言 `verify(orderService).updateOrderStatus(\"order-001\", \"producing\")` 且 `never revert`；落库失败时**回退** confirmed（generateConcurrentDuplicateRejectedIdempotently / generateInsertFailurePropagates 各断言 updateOrderStatus + revertProducingToConfirmed ⇒ 无「订单生产中、作业单没生成」孤儿态）"
       - "生成加工单成功（机器断言：$.data[i].success=true，ProcessingOrderServiceTest.generateSuccess / generateInstantiatesOperationsVerbatimFromOperationLibrary）——工序来源 = 工序库（issue #4116 切库）：生成加工单时按 部位×工艺 派生键读 production_routings 取基准路线、按名读 `production_operations` 取分组/单位/单价/is_start_marker —— 工序/单位/单价/起始标记**逐字取库**（**2026-09-21 改判，issue #4961**：`is_must_finish` **不再带出** —— 概念已退场，实例化 payload 里去掉该键；列保留为历史载体、值恒 false，**不许**由它回落或决定完工）；加工项目录**不再**提供工序；派生键库中无该路线 ⇒ 回落默认路线 布帘×韩褶；默认路线也取不到、或路线引用的工序在库中无活跃行 ⇒ 生成失败（$.data[i].success=false + 错误码 PRODUCTION_ROUTING_NOT_FOUND / PRODUCTION_OPERATION_NOT_FOUND + suggestion 指名补救入口），**不回退加工项目录**且**不落加工单行**（不制造「有加工单、无工序、无 qr_token」的孤儿态）—— 证据：ProcessingOrderServiceTest（逐条一致 1 项 + 负例 2 项 + 取法 3 项 + 幂等重放 1 项）"
     skip_reason: "[backend-contract] 由 ProcessingOrderServiceTest 验证（generate 成功路径 + 快照 options/无价格断言 + 切库后的路线解析 fail-closed 与幂等重放）"
-    merge_log: "2026-09-12 新增（issue #3340）。2026-09-18（issue #4116 切库）：新增「工序来源 = 工序库」判据（含失败错误码与 fail-closed 语义）；同日本条补上**机器计分型**断言 —— 此前 4 条 data_check 全是纯散文（CASE-TRUST-EMPTY-ASSERTION，恒绿），case-trust 清单据此整条销账。断言形态 2026-09-18 rebase 时修正：错误码改**散文描述**（PRODUCTION_ROUTING_NOT_FOUND / PRODUCTION_OPERATION_NOT_FOUND 是 admin-api HTTP 层错误码，runner 的 error.code= 只读轮级 SSE error 无法计分 —— 同族能力边界登记见 order.yml #4082），机器断言改为生成成功路径 `success=true`（Java 断言 generateSuccess）。2026-09-18（issue #4305，用户裁定「发加工 = 订单进入生产中」）：原第 4 条判据「联动：订单 confirmed → producing」**已过时**（那是旧时点）⇒ 改判为「生成加工单不推进订单（订单保持 confirmed；never updateOrderStatus / never revert）」，订单联动的唯一时点挪到 issue（PG-005 新增判据）；断言面其余未动。 ｜ 2026-09-21（issue #4961 用例库同步，配套 feat/4960-4961-integration）：第 5 条 data_check 里「按名取 `is_must_finish` ⇒ 工序/单位/单价/**必完标记**逐字取库」**改判**为「取 `is_start_marker`；`is_must_finish` **不再带出**（概念退场、列保留为历史载体、值恒 false）」—— 是**口径迁移不是放宽**：该列已无语义，照旧写「必完标记逐字取库」就是假真值。`user_inputs` / `expectations` / `skip_reason` / `traces` 与其余 data_check **一字未动**，**判据一格不放宽**。"
+    merge_log: "2026-09-12 新增（issue #3340）。2026-09-18（issue #4116 切库）：新增「工序来源 = 工序库」判据（含失败错误码与 fail-closed 语义）；同日本条补上**机器计分型**断言 —— 此前 4 条 data_check 全是纯散文（CASE-TRUST-EMPTY-ASSERTION，恒绿），case-trust 清单据此整条销账。断言形态 2026-09-18 rebase 时修正：错误码改**散文描述**（PRODUCTION_ROUTING_NOT_FOUND / PRODUCTION_OPERATION_NOT_FOUND 是 admin-api HTTP 层错误码，runner 的 error.code= 只读轮级 SSE error 无法计分 —— 同族能力边界登记见 order.yml #4082），机器断言改为生成成功路径 `success=true`（Java 断言 generateSuccess）。2026-09-18（issue #4305，用户裁定「发加工 = 订单进入生产中」）：原第 4 条判据「联动：订单 confirmed → producing」**已过时**（那是旧时点）⇒ 改判为「生成加工单不推进订单（订单保持 confirmed；never updateOrderStatus / never revert）」，订单联动的唯一时点挪到 issue（PG-005 新增判据）；断言面其余未动。 ｜ 2026-09-21（issue #4961 用例库同步，配套 feat/4960-4961-integration）：第 5 条 data_check 里「按名取 `is_must_finish` ⇒ 工序/单位/单价/**必完标记**逐字取库」**改判**为「取 `is_start_marker`；`is_must_finish` **不再带出**（概念退场、列保留为历史载体、值恒 false）」—— 是**口径迁移不是放宽**：该列已无语义，照旧写「必完标记逐字取库」就是假真值。`user_inputs` / `expectations` / `skip_reason` / `traces` 与其余 data_check **一字未动**，**判据一格不放宽**。 ｜ 2026-10-25（issue #7723，用户裁定 A「发加工不再必经 / 外发搬到派单」）：第 4 条 data_check **再次改判** —— #4305 的旧时点（发加工）被本裁定取代，生成路径重新推进订单进 producing（联动先行 + 失败回退）。这是**裁定迁移不是放宽**：改前那条 never 断言在新口径下必红，且新增了「失败必须回退」的负例判据。其余 data_check / expectations / skip_reason / traces 一字未动。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java"
@@ -166,7 +166,7 @@ cases:
 
   - id: PG-007
     legacy_id: ""
-    title: "加工单取消联动 - issued 及之后取消 → 订单 producing→confirmed 回退（generated 取消不再回退；issue #4305）"
+    title: "加工单取消联动 - 订单当前在 producing 就回退（含派单后取消 generated；issue #7723 改判）"
     domains:
       - processing-order
       - order
@@ -179,9 +179,9 @@ cases:
     user_inputs: []
     expectations: []
     data_checks:
-      - "取消加工单（必填原因）→ 加工单 cancelled；**issued 及之后**取消 ⇒ 订单 producing→confirmed 回退（重新可生成）；**generated 取消时订单本就 confirmed ⇒ 不触发回退**（issue #4305：订单进入 producing 的时点已从「生成加工单」挪到「发加工」，故 generated 阶段订单尚未 producing）"
+      - "取消加工单（必填原因）→ 加工单 cancelled；**回退判据 = 订单当前态**：订单在 `producing` ⇒ `producing→confirmed` 回退（重新可派单）。issue #7723 起派单即把已确认单推进 producing ⇒ **取消 `generated` 作业单同样会回退**（`cancelGeneratedRevertsProducingOrder`）；订单仍 `confirmed`（待付款单派单后、存量单）⇒ 不触发回退（`cancelGeneratedDoesNotRevertOrder`）"
     skip_reason: "[backend-contract] 由 ProcessingOrderServiceTest 验证"
-    merge_log: "2026-09-12 新增（issue #3340）。2026-09-18（issue #4305）：取消回退的**触发条件**随订单联动时点一并改判 —— 旧判据把「generated 取消 → 回退」当主例，而新语义下 generated 阶段订单仍是 confirmed（无回退可言）⇒ 改判为「issued 及之后取消才回退」；证据 = ProcessingOrderServiceTest（generated 取消不触发 revert + issued 取消回退正例）。"
+    merge_log: "2026-09-12 新增（issue #3340）。2026-09-18（issue #4305）：取消回退的**触发条件**随订单联动时点一并改判 —— 旧判据把「generated 取消 → 回退」当主例，而当时 generated 阶段订单仍是 confirmed（无回退可言）⇒ 改判为「issued 及之后取消才回退」；证据 = ProcessingOrderServiceTest（generated 取消不触发 revert + issued 取消回退正例）。2026-10-25（issue #7723）：订单 producing 的时点下沉到**派单** ⇒ 回退判据回到「看订单当前态」（作业单态不再是代理）：新增 `cancelGeneratedRevertsProducingOrder`（派单后取消 generated ⇒ 必须回退，否则该单永远停在生产中且不能再派），原 `cancelGeneratedDoesNotRevertOrder` 保留并收窄为「订单仍 confirmed（待付款 / 存量）」。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java"
@@ -3367,7 +3367,7 @@ cases:
 
   - id: PG-090
     legacy_id: ""
-    title: "直派收敛：非加急订单不得从订单详情直接生成作业单（服务端逐单拒绝并指路智能派单）；加急单保留直派（issue #7507）"
+    title: "直派全关：任何订单（含加急 / 待付款）都不得从订单详情直接生成作业单 —— 服务端逐单拒绝并指路智能派单（issue #7507 → #7634）"
     domains:
       - processing-order
       - order
@@ -3378,25 +3378,26 @@ cases:
       - pool-board
       - backend-contract
     truths_ref: []
-    precondition: "两张已确认订单：order-001 未加急（`is_urgent` 缺省 / false）、order-002 加急（`is_urgent=true`）。"
+    precondition: "两张已确认订单：order-001 未加急、order-002 加急（`is_urgent=true`）；第三种形态 = 待付款（`pending`）单。"
     user_inputs:
-      - "在订单详情页给一张普通订单点「生成加工单」（旧入口）"
-      - "把同一张订单标记加急后，再看作业单区块"
+      - "在订单详情页给一张订单点「生成加工单」（旧入口 / 直调端点）"
+      - "把同一张订单标记加急后，再试同一入口"
     expectations: []
     data_checks:
-      - "**判据 1（会红，服务端）**：`POST /api/admin/processing-orders/generate` 对**非加急**订单逐单返回 `success=false` + `code=DIRECT_DISPATCH_POOL_REQUIRED` + message 含「智能派单」+ suggestion 含「加急」，且**一行都不写**（never insert 加工单）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java 的 `directGenerateRejectsNonUrgentOrderAndPointsToPool`。**红证**：把 `generateDirect` 的 `!Boolean.TRUE.equals(order.getIsUrgent())` 判定摘掉（或控制器改回调 `generate`）⇒ 该用例红（会真的落加工单）。"
-      - "**判据 2（加急例外，不许把闸整个拆掉）**：加急订单（`is_urgent=true`）走同一入口 ⇒ `success=true` 且照常落加工单。执行点 = 同文件 `directGenerateAllowsUrgentOrder`。**红证**：去掉加急豁免（一律拒绝）⇒ 该用例红。"
-      - "**判据 3（批量混合：顺序 + 不静默少派）**：入参 `[非加急, 加急]` ⇒ 结果顺序 = 入参顺序（第一行失败带码、第二行成功），且 `insert` 只发生 1 次。执行点 = 同文件 `directGenerateRejectsOnlyNonUrgentOrdersInMixedBatch`。"
-      - "**判据 4（端点透传）**：HTTP 响应逐字带 `code` / `message` / `suggestion`（订单详情页据此上屏指路文案）。执行点 = backend/admin-api/src/test/java/com/migao/admin/controller/ProcessingOrderControllerTest.java 的 `generatePassesThroughDirectDispatchRejection`。"
-      - "**判据 5（前端入口，会红）**：非加急订单在订单详情块**不渲染**「生成…」按钮、渲染「去智能派单」并可跳 `/production/pool`；加急订单相反；漏传 `isUrgent`（缺省）落**受限**一侧。执行点 = frontend/admin-web/tests/unit/components/ProcessingOrderBlock.test.tsx 的「直派收敛（issue #7507）」组。**红证**：把组件的 `{isUrgent ? (` 改回 `{true ? (`（= 改前形态）⇒ 判据 1/3/4 红。"
-      - "**判据 6（B 端 agent 指引）**：`prompts/order.md` 的「生成加工单不在能力内」指引指向「智能派单」（非加急；同料合并更省料）并写明加急例外；工具语义（`ProcessingOrderGenerateTool.description`）同口径。执行点 = backend/ai-agent-service/tests/test_issue_7507_direct_dispatch_pool.py。**红证**：把指引改回「作业看板」⇒ 该用例红。"
-      - "**判据 7（只读口径不许漂移）**：`/api/admin/production/pool/dispatch`（智能派单页，唯一派单面）不受该闸影响 —— 非加急单从派单页 `pooled=true` 仍可派。执行点 = `backend/admin-api/src/test/java/com/migao/admin/controller/ProductionPoolControllerTest.java` 与 `backend/admin-api/src/test/java/com/migao/admin/service/PooledDispatchRealDbTest.java`（本单未改这些路径）。"
+      - "**判据 1（会红，服务端）**：`POST /api/admin/processing-orders/generate` 对**任意**订单返回 `success=false` + `code=DIRECT_DISPATCH_POOL_REQUIRED` + message 含「智能派单」+ suggestion 含「待付款」「加急」，且**一行都不写**（never insert 加工单）。执行点 = `backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java` 的 `directGenerateRejectsOrderAndPointsToPool`。**红证**：把 `generateDirect` 的闸摘掉（或控制器改回调 `generate`）⇒ 该用例红（会真的落加工单）。"
+      - "**判据 2（#7634：加急不再有例外）**：加急订单（`is_urgent=true`）走同一入口 ⇒ 同样 `success=false` + 同一个码，`never insert`。执行点 = 同文件 `directGenerateRejectsUrgentOrderToo`。**红证**：把 `if (order != null && !Boolean.TRUE.equals(order.getIsUrgent()))` 这条旧判定加回去 ⇒ 该用例红（加急单会被放行）。"
+      - "**判据 3（批量混合：顺序 + 不静默少派）**：入参 `[非加急, 加急]` ⇒ 结果顺序 = 入参顺序、两行都带同一个码、整批 `never insert`。执行点 = 同文件 `directGenerateRejectsEveryOrderInMixedBatch`。"
+      - "**判据 4（端点透传）**：HTTP 响应逐字带 `code` / `message` / `suggestion`。执行点 = `backend/admin-api/src/test/java/com/migao/admin/controller/ProcessingOrderControllerTest.java` 的 `generatePassesThroughDirectDispatchRejection`。"
+      - "**判据 5（派单页仍是唯一派单面）**：`POST /api/admin/production/pool/dispatch` 不受该闸影响；且**待付款单也在池里** ⇒ `pendingOrderSitsInPoolToo`（`backend/admin-api/src/test/java/com/migao/admin/service/PoolBoardUrgencyTest.java`）。**红证**：把 `pool()` 的状态集合退回 `Set.of(\"confirmed\")` ⇒ 待付款单从池里消失、该用例红。"
+      - "**判据 6（B 端 agent 指引）**：`prompts/order.md` 与 `ProcessingOrderGenerateTool.description` 去掉「加急可直派」，改「所有订单（含待付款 / 加急）都到智能派单页」。执行点 = `backend/ai-agent-service/tests/test_issue_7507_direct_dispatch_pool.py` 的 `test_prompt_states_no_direct_dispatch_exception` / `test_tool_description_carries_the_restriction`。**红证**：把提示词改回「加急单可在订单详情直接生成」⇒ 该用例红。"
+      - "**判据 7（前端可见面）**：销售订单「作业单」块不再渲染任何生成入口（只有「去智能派单」）。执行点 = `frontend/admin-web/tests/unit/components/ProcessingOrderBlock.test.tsx` 的 `PG-092 判据 1/2`（同一包落地，见 PG-092）。"
     skip_reason: "[backend-contract] admin-api 单测 + 前端 vitest + prompt 文本判据（无 LLM 行为面；B 端 agent 写能力自 #5247 起已下线，本单只同步文案）"
-    merge_log: "2026-10-23 新增（issue #7507，用户原话「为什么从订单可以直接生成加工单，而不是默认走智能派单流程？这里得限制下」；裁定 = 选项 A「统一入口」+ agent 同限）。取号 = 当时 origin/main 已占号最大 PG-089 ⇒ 本单取 PG-090。"
+    merge_log: "2026-10-23 新增（issue #7507，用户原话「为什么从订单可以直接生成加工单，而不是默认走智能派单流程？这里得限制下」；裁定 = 选项 A「统一入口」+ agent 同限）。取号 = 当时 origin/main 已占号最大 PG-089 ⇒ 本单取 PG-090。2026-10-24 随 issue #7634 改写：用户裁定「一起收，也要统一走智能派单」⇒ 删掉加急例外，判据 2 由「加急放行」翻成「加急也拒」。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/controller/ProcessingOrderControllerTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/PoolBoardUrgencyTest.java"
         - "frontend/admin-web/tests/unit/components/ProcessingOrderBlock.test.tsx"
         - "backend/ai-agent-service/tests/test_issue_7507_direct_dispatch_pool.py"
       ci:
@@ -3435,6 +3436,152 @@ cases:
         - "backend/ai-agent-service/tests/test_production/test_operation_qty.py"
         - "frontend/admin-web/tests/unit/components/RollOutboundCondition.test.tsx"
         - "frontend/worker-h5/tests/worker-h5-position-spec.test.mjs"
+      ci:
+        - pr-check.yml
+      verifies: []
+  - id: PG-092
+    legacy_id: ""
+    title: "销售订单不再直接加工：作业单块只读（五个写动作全收走），发加工/开始加工/加工完成/取消 搬到生产明细页；待付款单走智能派单（issue #7634）"
+    domains:
+      - processing-order
+      - order
+      - ui
+      - admin-web
+    tier: normal
+    tags:
+      - dispatch
+      - pool-board
+      - ui
+      - red-proof
+    truths_ref: []
+    precondition: "订单详情页 + 生产明细页（`/processing-orders/{加工单号}/production`）都在仓里可读；三张单：① 无作业单（待付款 / 已确认 / 加急各一张）② `issued` 作业单 ③ `in_processing` 作业单。"
+    user_inputs:
+      - "在销售订单详情里找「开始加工」（用户 2026-10-24 截图：作业单 JG-20261024-6753 仍在订单页给出「开始加工」）"
+      - "给待付款单找「生成作业单」入口"
+    expectations: []
+    data_checks:
+      - "**判据 1（会红，前端只读面）**：销售订单「作业单」块对任何订单状态都**不渲染** `生成加工单 / 生成作业单 / 发加工 / 开始加工 / 加工完成 / 取消加工单 / 取消作业单`。执行点 = `frontend/admin-web/tests/unit/components/ProcessingOrderBlock.test.tsx` 的 `PG-092 判据 1（红证）：销售订单块只读 —— 五个写动作一个都不渲染`。**红证**：把 `开始加工` 那个 `Button` 加回块里 ⇒ 该用例红。"
+      - "**判据 2（入口去向）**：无作业单 ⇒ 只出现「去智能派单」（跳 `/production/pool`；待付款 / 加急同样是这一个入口）；有作业单 ⇒ 出现「去生产明细」（跳 `/processing-orders/{单号}/production`）。执行点 = 同文件 `PG-092 判据 2：无作业单 ⇒ 「去智能派单」；有作业单 ⇒ 「去生产明细」`。**红证**：把 `router.push('/production/pool')` 改回直派调用 ⇒ 用例红。"
+      - "**判据 3（能力不丢，会红）**：生产明细页的作业单状态区把四个动作都做出来 —— `发加工`（加工方 + 交期，过去日期拦截）、`开始加工`（确认弹框）、`加工完成`（确认弹框）、`取消加工单 / 取消作业单`（原因必填），提交分别落 `processingOrderApi.update` 的 `issue/start/complete/cancel`。执行点 = `frontend/admin-web/tests/unit/components/ProcessingOrderActions.test.tsx` 的 `PG-092 判据 3（红证）：四个状态动作在生产明细页可用`。**红证**：删掉任一动作按钮 ⇒ 对应断言红。"
+      - "**判据 4（终态无动作）**：`completed` / `cancelled` 的作业单在生产明细页不渲染任何状态动作。执行点 = 同文件 `PG-092 判据 4：终态没有状态动作`。"
+      - "**判据 5（待付款进池）**：智能派单池收 `pending + confirmed`（见 PG-090 判据 5）。"
+      - "📌 **边界（照实登记）**：订单页因此失去「逐行挑批次」入口（#7507 已为首批收敛登记，本次扩到全部订单）；派单页按 `fifo` 由服务端补位。"
+    skip_reason: "[backend-contract] 前端 vitest 渲染/交互断言 + 后端池口径单测；零网络、零时钟、非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-24 新增（issue #7634，用户逐字「销售订单为什么还是可以直接加工，让你改成统一走智能派单，为什么还是老样子」；裁定 = 选项 A「销售订单只读，四个动作全收走」+ 待付款单也走智能派单）。取号 = 当时 origin/main 已占号最大 PG-091 ⇒ 本单取 PG-092。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/ProcessingOrderBlock.test.tsx"
+        - "frontend/admin-web/tests/unit/components/ProcessingOrderActions.test.tsx"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/PoolBoardUrgencyTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PG-093
+    legacy_id: ""
+    title: "裁剪报工必须确认批次：派工批次预填可改 / 未指派必须手输 / 批次账同事务纠偏（issue #7647）"
+    domains:
+      - processing-order
+      - production
+    tier: normal
+    tags:
+      - processing-order
+      - production
+      - scan-report
+      - batch-stock
+    truths_ref: []
+    user_inputs:
+      - "裁剪报工的时候需要工人裁剪的哪个批次，如果通过智能派单的就默认展示指定批次，允许工人改，如果没指定批次就需要工人手输才能完成报工，并且实时更新库存"
+      - "只有整卷售卖的时候才需要出库，裁剪不需要生成出库"
+    precondition: "本用例是 [backend-contract] 确定性单测：前置（工序实例「裁剪」+ 该商品 × SKU 的批次行 + 派工扣减行 / 零批次商品）由各测试类**自建并打桩**（Mockito；真库判据用 PgCluster 现造批次行，跑完随临时库销毁），不依赖共享夹具或种子真值；前置不成立时对应单测直接红（落点方法找不到 / mock 未命中 / 真库缺表），agent-eval 栈不跑它"
+    expectations: []
+    data_checks:
+      - "**判据 1·缺批次即拒绝（会红，Java 写面）**：工序名恰好是「裁剪」且该商品 × SKU 有批次行时，报工不带 `batch_no` ⇒ 422 `BATCH_REQUIRED`，且**零写入**（不落 `production_work_logs`、不推进进度、不记账）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanCompleteServiceTest.java 的 `cuttingWithoutBatchIsRejectedBeforeAnyWrite`。**红证**：把 `ProductionService#applyScanComplete` 里的必填校验删掉 ⇒ 该用例红（会以成功路径走完）。"
+      - "**判据 2·批次号错了不落账（会红）**：批次不存在 ⇒ 422 `BATCH_NOT_FOUND`；批次属于别的商品 / 别的 SKU ⇒ 422 `BATCH_SKU_MISMATCH`；两种都**一行都不写**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/StockBatchConsumptionCuttingReportTest.java 的 `unknownBatchIsRejectedWithoutWriting` / `foreignSkuBatchIsRejectedWithoutWriting`。**红证**：把 `applyCuttingReport` 的存在性/SKU 校验删掉 ⇒ 两条用例红（脏批次会落成账）。"
+      - "**判据 3·派工批次一致 ⇒ 零写入（会红）**：智能派单已扣过该批次的该行，工人填的批次与之一致时**不重复扣**，该行净额与余量逐值不变（排料省下的米数不受影响）。执行点 = 同文件 `sameBatchAsDispatchWritesNothing`。**红证**：去掉「同批次直接返回」分支（改成每次都扣）⇒ 该用例红（`insert` 被调用一次）。"
+      - "**判据 4·换批次 ⇒ 同一事务两条分录（会红）**：工人填的批次与派工批次不同 ⇒ 先回补原批次（+净额）、再扣实裁批次（−净额），该行净额**不变**、两批次余量各自正确。执行点 = 同文件 `differentBatchMovesTheNet`。**红证**：只扣新批次不回补旧批次 ⇒ 用例红（该行净额翻倍）。"
+      - "**判据 5·派工未指定 ⇒ 报工时按本次米数扣（会红）**：该行从来没有派工族分录时，按本次报工米数扣工人填的批次；分次报工累计正确（11 + 4 = 15）。执行点 = 同文件 `unassignedDeductsReportedMeters`。**红证**：把 `dispatchAssigned` 分支的判断写反 ⇒ 用例红（第一次就零写入）。"
+      - "**判据 6·余量不足放行 + 显式缺口（会红）**：余量不够时**不挡报工**（不挡工人记工钱），台账如实落负余量，回执给 `batch_shortage_meters`。执行点 = 同文件 `insufficientStockIsAllowedWithExplicitShortage` + `ProductionScanCompleteServiceTest#cuttingWithBatchReconcilesAndReturnsReceipt`（回执三键）。**红证**：改成 fail-closed（余量不足抛错）⇒ 用例红；回执不传缺口键 ⇒ 断言红。"
+      - "**判据 7·豁免与零回归（会红）**：该 SKU 从未按批次入库 ⇒ 不强制批次、也不落账（存量商品不能报不上工）；非「裁剪」工序（`精裁-布`）传了 `batch_no` 也不读、不落账。执行点 = `ProductionScanCompleteServiceTest#cuttingWithoutAnyBatchRowsIsExempt` / `#nonCuttingOperationIgnoresBatchNo`。**红证**：把 `tracksBatches` 豁免删掉 ⇒ 第一条红；去掉工序名判定 ⇒ 第二条红。"
+      - "**判据 8·作废按净额归零（会红）**：换过批次的加工单作废 ⇒ 按 (批次 × 订单行) 净额回补（净额归零，**不二次回补**），重跑零写入；纯派工单的回补量与改前逐值相同。执行点 = `StockBatchConsumptionCuttingReportTest#reverseRestoresNetToZeroAfterBatchMove` / `#reverseKeepsPureDispatchBehavior`。**红证**：回补改回「只回 reason=processing_order 的行」⇒ 换批次的那条用例红（B 批次的扣减永远回补不掉，A 批次被回补两次）。"
+      - "**判据 9·读面两键先下发（会红）**：扫码解析响应对「裁剪」追加 `batch_required` / `batch_no`（派工批次，预填值）/ `batch_candidates`（余量 + `enough`），其余工序三键为 false / null / []（键恒在）；一体机裁高读面**原样透传** `batch_required` / `batch_no`。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanServiceDetailFieldsTest.java 的 `cuttingScanCarriesBatchView` / `nonCuttingScanHasNoBatchRequirement` + WorkerCuttingHeightServiceTest.java 的 `cuttingBatchKeysArePassedThroughToTheMachineScreen` / `missingCuttingBatchKeysDegradeToFalseAndNull`。**报工回执的下一屏判据**：`scan/complete` 回执**追加** `next_batch_required` / `next_batch_no` / `next_batch_candidates`（服务端用**同一次重解析**算出：报完「裁剪」通常下一道是「打包」⇒ false；报废不推进进度 ⇒ 仍是「裁剪」⇒ true），页面渲染下一屏**只认这三个键**、不沿用上一屏。执行点 = ProductionScanCompleteServiceTest 的 `cuttingWithBatchReconcilesAndReturnsReceipt` / `nonCuttingOperationIgnoresBatchNo`。**红证**：从 `ProductionScanService#resolve` 删掉 `cuttingBatchView` 三键 ⇒ 前两条红；从 `WorkerCuttingHeightService#read` 删掉两键 ⇒ 机台用例红。"
+      - "**判据 10·幂等闸收窄是 DB 对象（真库，会红）**：`uk_batch_consumption_line` 的谓词加 `reason <> 'cutting_report'` —— 报工纠偏行天然多行（分次报工 / 换批次后再换回），而派工两族的唯一性**一字未动**。真库判据 = backend/admin-api/src/test/java/com/migao/admin/service/BatchConsumptionLedgerRealDbTest.java 的 `cuttingReportRowsMayRepeatButDispatchRowsMayNot`：同一 (批次 × 明细行 × cutting_report) 两张扣减行 + 「回补 + 再扣减」两张行都必须落库；同一元组的 `processing_order` 第二行仍 **23505**。**红证**：把 V191 的谓词收回 `WHERE deleted = 0` ⇒ 前两段当场 23505（分次报工第二次就报不上工）；把谓词写成恒假 ⇒ 派工行的 23505 断言红。"
+      - "**边界（照实登记）**：① 只覆盖工人扫码报工写入口（`/api/worker/production/scan/complete`），商家端逐道报工不改；② 余量允许为负（对账读面能读出负余量批次，不做自动平账）；③ 报告时**不**回写派工计划的米数（「同批次零写入」是有意的：报工米数与排料口径不是一回事）；④ 该 SKU 零批次入库 ⇒ 不强制批次（安全默认）。"
+    skip_reason: "[backend-contract] admin-api 单测（无 LLM 行为面；批次判定、纠偏与回补全部是确定性规则）"
+    merge_log: "2026-10-24 新增（issue #7647）。🔴 **让号**：同步 main 时 PG-092 已被 #7634 占用 ⇒ 按「后合入者让号」改 **PG-093**（测试文件头部 `// case_ids:` 与 claim 同名同步）。用户逐字：「裁剪报工的时候需要工人裁剪的哪个批次，如果通过智能派单的就默认展示指定批次，允许工人改，如果没指定批次就需要工人手输才能完成报工，并且实时更新库存」+「只有整卷售卖的时候才需要出库，裁剪不需要生成出库」。三条口径经用户当场裁定：① 保留 #5144「派工即扣」，报工做核对 + 纠偏；② 批次不存在挡住报工、余量不足放行并显式记缺口；③ 仅工序名恰好「裁剪」。实现面：新台账来源 `cutting_report`（V191）+ 纠偏写面 + 作废回补改净额口径 + 扫码/机台读面三键 + worker-h5 批次输入（见 UI-136）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/StockBatchConsumptionCuttingReportTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanCompleteServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanServiceDetailFieldsTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/WorkerCuttingHeightServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/StockBatchConsumptionServiceTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PG-094
+    legacy_id: ""
+    title: "发加工不再必经：首工序报满即可进「加工中」（A6 后半裁定直达；issue #7723）"
+    domains:
+      - processing-order
+      - production
+    tier: normal
+    tags:
+      - processing-order
+      - production
+      - status-machine
+      - scan-report
+    truths_ref: []
+    user_inputs:
+      - "这里的发加工功能是不是可以移除？当前直接通过智能派单进入加工环节然后联动订单状态，不需要手动发加工吧？"
+      - "选择A，需要支持给其他加工厂做单子的场景"
+    precondition: "本用例是 [backend-contract] 确定性单测：前置（作业单 + 工序实例）由测试类自建并打桩（Mockito），不依赖共享夹具；前置不成立时对应单测直接红，agent-eval 栈不跑它"
+    expectations: []
+    data_checks:
+      - "**判据 1·状态机放开（会红）**：`ProcessingOrderService.STATUS_TRANSITIONS` 允许 `generated → in_processing`（与 `issued → in_processing` 并列），而 `completed / cancelled / null` 仍不可直达。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java 的 `generatedAndIssuedMayEnterInProcessing`。**红证**：把 `generated` 从 `STATUS_TRANSITIONS` 的 `in_processing` 入边删掉 ⇒ 该用例当场红。"
+      - "**判据 2·首工序报满自动推进（会红）**：`generated` 作业单的首工序（`is_start_marker`）报满 ⇒ 作业单进 `in_processing` 且落 `in_processing_at`（走状态机，不裸 UPDATE）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanCompleteServiceTest.java 等既有 D13 用例族（合法性取自同一张表）。**红证**：把 `startProcessingIfAllowed` 的判定改回只认 `issued` ⇒ 该单保持 `generated`、`in_processing_at` 恒空。"
+      - "**边界（照实登记）**：`issued` 态**保留**给存量单与 agent 通道（不再是新单的必经态）；作业单页的「开始加工 / 加工完成 / 取消」三个手工动作不变（只是不再需要先「发加工」）。"
+    skip_reason: "[backend-contract] admin-api 单测（状态机表 + 自动迁移路径；无 LLM 行为面）"
+    merge_log: "2026-10-25 新增（issue #7723）。落在 docs/design/set-code-and-scan-loop.md 的 §8 A6 后半（2026-09-26 起挂「未裁定」）；本次用户裁定「直达」⇒ 只改状态机一条入边，合法性仍只有一张表。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanCompleteServiceTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PG-095
+    legacy_id: ""
+    title: "外发承接方搬到智能派单：整单加工厂 + 回厂日，作业单不再录入/展示（issue #7723）"
+    domains:
+      - processing-order
+      - production
+    tier: normal
+    tags:
+      - processing-order
+      - dispatch
+      - outsourcing
+      - supplier
+    truths_ref: []
+    user_inputs:
+      - "需要支持给其他加工厂做单子的场景，新的问题是这个功能应该在哪里体现，我觉得不应该在作业单上体现"
+      - "复用供应商档案（推荐）"
+    precondition: "本用例是 [backend-contract] 确定性单测：前置（供应商档案 / 订单 / 工序库桩）由测试类自建并打桩（Mockito），不依赖共享夹具或种子真值；前置不成立时对应单测直接红"
+    expectations: []
+    data_checks:
+      - "**判据 1·写面落三列（会红）**：派单请求带 `processorSupplierId` + `expectedDeliveryDate` ⇒ 作业单落 `processor`（供应商**名称快照**）、`processor_supplier_id`（档案引用）、`expected_delivery_date`（回厂日），且订单 `confirmed→producing`。执行点 = ProcessingOrderServiceTest.generateWithProcessorWritesConsignee。**红证**：把 `prepare` 里三个 builder 字段删掉 ⇒ 该用例红（三列全 null）。"
+      - "**判据 2·类型/状态/存在性 fail-closed（会红）**：承接方是采购供应商（`type=material`）⇒ 422 且一行不写；已停用 ⇒ 422 且指名是哪一家；不存在 / 跨租户 ⇒ 422；回厂日早于今天 ⇒ 422。执行点 = 同文件 generateRejectsMaterialSupplier / generateRejectsInactiveSupplier / generateRejectsPastReturnDate。**红证**：把 `resolveConsignee` 的类型或状态判定删掉 ⇒ 对应用例红（会照常落库）。"
+      - "**判据 3·出库作业单拒收承接方（会红）**：卖布单（出库作业单）带承接方 ⇒ 该单 `success=false` + 文案含「不支持外发加工厂」，其余单照常（逐单记账）。执行点 = 同文件 generateRejectsProcessorOnOutboundOrder。**红证**：删掉 `prepare` 里的 outbound 判定 ⇒ 该用例红（卖布单被落成外发单）。"
+      - "**判据 4·只看外发（会红）**：`GET /api/admin/processing-orders?outsourced=true` 只回有承接方档案引用的行；不传 ⇒ 与改造前逐字相同。执行点 = 同文件 listOutsourcedOnly。**红证**：删掉 `list(..., outsourced)` 的 removeIf ⇒ 该用例红（两行都回）。"
+      - "**判据 5·下拉只列在用加工厂（会红）**：`GET /api/admin/production/pool/processors` 只回 `status=active ∧ type=processor` 的 id + 名称（不泄露联系人/账期/欠款），权限 = 派单页同码 `processing:view`。执行点 = 同文件 processorOptionsOnlyActiveProcessors + SupplierService 的 type 过滤用例。**红证**：去掉 type 过滤 ⇒ 采购供应商混进下拉，用例红。"
+      - "**边界（照实登记）**：本期**不做**外发加工费/回厂数量登记/对账结算；粒度 = **整单**（一批派单一个承接方）；待付款单派单后订单仍 `pending`（状态机无 `pending→producing`），付款转 confirmed 时不会自动补 producing —— 存量缺口，不在本单修。"
+    skip_reason: "[backend-contract] admin-api 单测（派单写面 + 校验 + 读面过滤；无 LLM 行为面）"
+    merge_log: "2026-10-25 新增（issue #7723）。用户裁定三条：① 走 A（发加工不再必经）；② 外发粒度 = 整单；③ 加工厂主数据复用供应商档案、本期只做跟踪。设计取舍：承接方是「谁干」而不是「干什么活」⇒ 挂在派单（派单 = 分配承接方 + 批次），作业单只留工序与进度。数据侧复用既有 `processing_orders.processor` / `expected_delivery_date`，新增 `processor_supplier_id`（V193）+ `suppliers.type`。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java"
       ci:
         - pr-check.yml
       verifies: []

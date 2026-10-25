@@ -24,9 +24,9 @@ import java.math.BigDecimal;
  * </ul>
  *
  * <p>数量准入不在本类，也**不**在工人侧另写一份：口径本体全仓唯一一处 =
- * {@code InboundOrderService.requireItemNumbers}（#5063 / #5153）＋ photo 单的
+ * {@code InboundOrderService.requireItemNumbers}（#5063 / #5153）＋ 按卷录入的
  * 卷数 / 卷长 / 米数三条判据（{@code requireRollCount} / {@code requireRollLength} /
- * {@code metersFor}，issue #6812）。</p>
+ * {@code metersOfRolls}，issue #6812 / #7709）。</p>
  */
 @Data
 public class WorkerInboundDraftRequest {
@@ -41,8 +41,9 @@ public class WorkerInboundDraftRequest {
      * **卷数**（issue #6812；工人端默认 1）：必须是**正整数**。
      *
      * <p>工人拍的是**一卷布** ⇒ 这一格记「几卷」；识别到的米数落在 {@link #rollLengthM}。
-     * 入库米数 = 本值 × {@link #rollLengthM}（由 {@code InboundOrderService.metersFor} 一处换算，
-     * 驱动库存 / 批次 / 台账 / 成本）。</p>
+     * 建单时它被映射进 {@code inbound_order_items.roll_count}，入库米数 = 本值 × {@link #rollLengthM}
+     * （由 {@code InboundOrderService.metersOfRolls} 一处换算，驱动库存 / 批次 / 台账 / 成本；
+     * issue #7709 起与商家端「卷数 × 卷长」同一条口径，明细行的 quantity 存的是换算后的米数）。</p>
      */
     private BigDecimal quantity;
 

@@ -86,7 +86,20 @@ public class InboundOrderResponse {
         /** 快照：门幅 */
         private String doorWidth;
 
+        /** 旧的「数量」列（= 库里原值；新行的口径见 {@link #meters}） */
         private BigDecimal quantity;
+
+        /**
+         * **入库米数** —— 这一行真正进了库存多少米（服务端算，issue #7709）。
+         *
+         * <p>有 {@link #rollCount} ⇒ = 卷数 × {@link #rollLengthM}；否则 = {@link #quantity}。
+         * 历史拍照行（`roll_count` 为空且 `source=photo`）按「卷数 × 卷长」补算
+         * （口径一处 = `InboundOrderService.storedMeters`）⇒ 入库单、批次余量、库存流水三处能对上同一批货。</p>
+         */
+        private BigDecimal meters;
+
+        /** 卷数（可空；issue #7709）—— 与 {@link #rollLengthM} 一起决定 {@link #meters} */
+        private Integer rollCount;
 
         private BigDecimal unitCost;
 

@@ -458,7 +458,9 @@ jobs:
           # 承接单在**另一个 step** 里拼 body ⇒ 预算常量必须**传出去**（否则兜底路径只能读未限长的文件）
           echo "ISSUE_EXCERPT_BYTES=$ISSUE_EXCERPT_BYTES" >> "$GITHUB_ENV"
           echo "SUMMARY_EXCERPT_BYTES=$SUMMARY_EXCERPT_BYTES" >> "$GITHUB_ENV"
-          grep -E '^(FAILED|ERROR) ' /tmp/post-merge-verify.txt | head -n "$FAILED_MAX" \
+          # 🔴 判据本体（`scripts/post_merge_verify.py`）把失败判据打成 **`❌ …`**（stderr，已并入同一文件）⇒
+          #    只 grep `^(FAILED|ERROR) ` 会**一条都取不到**（实测：判红但「失败清单」为空，2026-10-25 / #7673）。
+          grep -E '^(FAILED|ERROR) |^❌ ' /tmp/post-merge-verify.txt | head -n "$FAILED_MAX" \
             > /tmp/post-merge-verify-failed.txt || true
           echo "── 失败清单（前 ${FAILED_MAX} 条；判红必须可 grep，**不要**只看 step summary）──"
           cat /tmp/post-merge-verify-failed.txt
@@ -474,7 +476,7 @@ jobs:
             echo "- 窗口起点：\`${BASE:-HEAD~${LOOKBACK}}\`（来源：${BASE_SOURCE}）"
             echo "- 触发事件：\`$EVENT\`"
             echo "- 读数（与负载无关）：变更文件 \`$SEEN\` / 命中判据 \`$ACTED\`"
-            echo "- 失败清单（前 ${FAILED_MAX} 条）已打到**判定步 stdout**（`FM-E21`：别只读摘要）"
+            echo "- 失败清单（前 ${FAILED_MAX} 条）已打到**判定步 stdout**（\`FM-E21\`：别只读摘要）"
             echo ''
             echo '```'
             cat /tmp/post-merge-verify-excerpt.txt

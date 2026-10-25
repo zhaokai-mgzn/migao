@@ -238,14 +238,16 @@ class InboundLabelServiceTest {
     }
 
     @Test
-    @DisplayName("🔴 #6812 拍照单（source=photo）的标签写**米数**：1 卷 × 67.2 米 ⇒ 标签数量 67.2（不是 1）")
+    @DisplayName("🔴 #7709 标签读服务端算好的**米数**（meters），不拿明细行的 quantity 顶替")
     void photoOrderLabelCarriesMetersNotRollCount() {
         when(inboundLabelMapper.selectByCode(LIVE_CODE))
                 .thenReturn(label(LIVE_CODE, TENANT, ITEM_ID, 0));
         InboundOrderResponse photoOrder = orderWithItem();
         photoOrder.setSource(com.migao.admin.entity.InboundOrder.SOURCE_PHOTO);
+        // 历史拍照行：quantity 仍是卷数（1），meters 是服务端还原后的米数（1 卷 × 67.2 米）
         photoOrder.getItems().get(0).setQuantity(BigDecimal.ONE);
         photoOrder.getItems().get(0).setRollLengthM(new BigDecimal("67.2"));
+        photoOrder.getItems().get(0).setMeters(new BigDecimal("67.2"));
         when(inboundOrderService.detail(ORDER_ID, TENANT)).thenReturn(photoOrder);
         when(productMapper.selectById("p-1")).thenReturn(Product.builder().id("p-1").name("遮光布").build());
 
@@ -439,6 +441,8 @@ class InboundLabelServiceTest {
         item.setColorName("米白");
         item.setDoorWidth("2.8m");
         item.setQuantity(new BigDecimal("60.5"));
+        // 入库米数由 InboundOrderService.detail 算好随行下发（issue #7709；卷标读它、不自己乘）
+        item.setMeters(new BigDecimal("60.5"));
         item.setBatchNo("PC-20260926-0001");
         item.setDyeLot("LOT-9");
 

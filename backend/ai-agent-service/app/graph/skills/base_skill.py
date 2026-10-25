@@ -3496,6 +3496,31 @@ def _dropped_args_guidance(tool, tool_args: dict) -> str:
         f"{k}: {_IMAGE_DROP_GUIDANCE[k]}" for k in hit)
 
 
+def tool_timeout_s(tool_name: str) -> float:
+    """该工具的执行预算（秒）：全局默认 `TOOL_TIMEOUT_S`，可按工具名覆盖（issue #7707）。
+
+    为什么必须能按工具放宽：生图是**慢工具**（成功路径实测 30~60s），而这里原本写死 30s ⇒
+    超时出口 `error="timeout"` 和「模型不接这类请求」在读数上不可区分，归因指向错误的层
+    （#7707 的现场：内核读超时 `IMAGE_GEN_TIMEOUT=180s` 根本没被触发）。
+    只放宽**具名慢工具**，不抬全局预算（那会把所有卡死工具一起拖长）。
+    解析不了的条目忽略（预算配置写错不该让工具全挂）；非正值退回默认（安全护栏不能被配成"立刻超时"）。
+    """
+    raw = (getattr(settings, "TOOL_TIMEOUT_OVERRIDES", "") or "").strip()
+    for item in raw.split(","):
+        name, _, value = item.partition("=")
+        if name.strip() != tool_name:
+            continue
+        try:
+            seconds = float(value.strip())
+        except (TypeError, ValueError):
+            logger.warning(f"[tool-exec] TOOL_TIMEOUT_OVERRIDES 里有坏条目，已忽略：{item!r}")
+            break
+        if seconds > 0:
+            return seconds
+        break
+    return float(getattr(settings, "TOOL_TIMEOUT_S", 30.0) or 30.0)
+
+
 async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -> tuple:
     """统一 Tool 执行入口 — normalize + cache + execute + error handling.
 
@@ -3625,14 +3650,15 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
         logger.info(f"[tool-exec] {tool_name} start")
         result = await asyncio.wait_for(
             tool.execute(tool_context, **tool_args),
-            timeout=30.0,
+            timeout=tool_timeout_s(tool_name),
         )
         _audit_ok = bool(result.success)
         logger.info(f"[tool-exec] {tool_name} done success={result.success}")
     except asyncio.TimeoutError:
         logger.error(
-            "[tool-exec] {} TIMEOUT 30s | args={}",
+            "[tool-exec] {} TIMEOUT {}s | args={}",
             tool_name,
+            tool_timeout_s(tool_name),
             json.dumps(LogSanitizer.sanitize_tree(tool_args), ensure_ascii=False, default=str)[:300],
         )
         result_dict["error"] = "timeout"

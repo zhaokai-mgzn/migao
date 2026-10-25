@@ -53,6 +53,24 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
     private final SessionMessageMapper sessionMessageMapper;
 
     /**
+     * 客户档案身份收敛（issue #7711）：建档 / 补空 / 合并的唯一实现点。
+     *
+     * <p>单独成一个类是为了让「同一人双档案」的收敛逻辑只有**一处**可改，且能被真库判据直接实例化
+     * （它只依赖 {@code CustomerProfileMapper} + {@code JdbcTemplate}）。</p>
+     */
+    private final CustomerProfileIdentityService identityService;
+
+    /**
+     * 微信身份表（issue #7711）：订单路径手里只有 {@code userId}，认人还要它的 openid。
+     *
+     * <p>{@code @Autowired(required = false)}：切片上下文与直接 new 的既有单测没有该 mapper
+     * ⇒ 退回「按手机号认人」的改前行为（识别少一维，但**不抛错、不阻断建单**）——
+     * 与同文件的 {@code approvalService} 同一口径。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private UserIdentityMapper userIdentityMapper;
+
+    /**
      * craft_mode 允许值（单一事实源 = V47 迁移的列注释 / {@link CustomerProfile#getCraftMode()} javadoc）。
      * 非法值一律显式拒绝：静默落库会让「工艺画像」在下游算料/报价时按未知模式运行（issue #4115）。
      */
@@ -271,65 +289,89 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
      * @param sourceChannel  来源渠道
      * @return 客户档案
      */
-    @Transactional(rollbackFor = Exception.class)
+    // 🔴 这里**刻意不加 @Transactional**（issue #7711）：写全在 identityService 的独立事务里，
+    // 本方法只做编排；一旦本方法自己参与外层事务，异常仍会把外层标成 rollback-only ⇒
+    // 「建档失败不阻断登录/建单」的 catch 就变成假护栏。
     public CustomerProfile createFromSession(Long tenantId, String wechatOpenid,
-                                              String wechatNickname, String sourceChannel) {
-        // issue #7257：建档收口到单一实现点（回读 → 撞键不插 → 撞并发回读对手那条）。
-        // 原先是「selectOne 判空 + insert」的读改写：本表没有唯一约束 ⇒ 并发会静默建出两条档案。
-        if (!StringUtils.hasText(wechatOpenid)) {
-            CustomerProfile anonymous = CustomerProfileWriter.candidate(tenantId)
-                    .wechatNickname(wechatNickname)
-                    .build();
-            anonymous.setSourceChannel(sourceChannel != null ? sourceChannel : "wechat_mini");
-            // openid 为空 ⇒ 无处去重（保持原有行为），但建行仍只从写面发生
-            return CustomerProfileWriter.createAnonymous(customerProfileMapper, anonymous);
-        }
-        CustomerProfile candidate = CustomerProfileWriter.candidate(tenantId)
-                .wechatNickname(wechatNickname)
-                .build();
-        // 显式赋值（而不是塞进 builder 链）：本表有「字段级真值守卫」（issue #5362），它按
-        // `CustomerProfile x = …` + `x.setXxx(v)` 与 `CustomerProfile.builder()` 链两种形态扫写入点；
-        // 写面抽到 CustomerProfileWriter 之后 builder 链换了入口，故真值级写入在这里显式表达。
-        candidate.setWechatOpenid(wechatOpenid);
-        candidate.setSourceChannel(sourceChannel != null ? sourceChannel : "wechat_mini");
-        CustomerProfileWriter.Result result = CustomerProfileWriter.ensureByOpenid(customerProfileMapper, candidate);
-        log.info("从会话建档{}: id={}, wechatOpenid={}", result.created() ? "成功" : "命中既有档案",
-                result.profile().getId(), wechatOpenid);
-        return result.profile();
+                                              String wechatNickname, String sourceChannel,
+                                              String phone) {
+        // issue #7711：**手机号优先**认人 —— 登录时 users.phone 可能已经有值（授权过手机号），
+        // 而「商户代录下单」建的那条档案只有手机号；只按 openid 去重就会给同一个人再建一条。
+        CustomerProfile profile = identityService.ensure(tenantId, phone, wechatOpenid,
+                new CustomerProfileIdentityService.ProfileSeed(wechatNickname,
+                        sourceChannel != null ? sourceChannel : "wechat_mini", 0), true);
+        log.info("从会话建档/收敛: id={}, wechatOpenid={}, phoneKnown={}",
+                profile == null ? null : profile.getId(), wechatOpenid, StringUtils.hasText(phone));
+        return profile;
+    }
+
+    /**
+     * 手机号绑定后的身份收敛（issue #7711）：此刻**手机号与 openid 同时可知**，是把
+     * 「订单代录那条档案」与「小程序登录那条档案」认成同一个人的唯一时机。
+     *
+     * <p>只收敛既有档案、**不新建**：登录路径已经建过，这里再建只会多一条。</p>
+     */
+    public CustomerProfile convergeIdentity(Long tenantId, String phone, String openid) {
+        return identityService.ensure(tenantId, phone, openid, null, false);
     }
 
     /**
      * 从订单信息自动创建/更新客户档案
      * 首次下单时自动建档；若已存在同手机号的客户，则刷新最后活跃时间并返回。
      *
-     * @param tenantId        租户ID
-     * @param customerName    客户姓名（用于昵称兜底）
-     * @param customerPhone   客户手机号（去重主键）
-     * @param customerAddress 客户收货地址（无统一地址字段，记录到 agentNotes）
+     * <p>issue #7711：① 收货人姓名 / 电话 / 地址与常用物流会**补进档案的空列**
+     * （{@code default_receiver_*} / {@code default_logistics_*}，补空不覆盖 —— 客服维护过的值不动）；
+     * ② 带 {@code userId} 的 C 端自助下单会先解析该用户的微信 openid，与「登录建档那条」认成同一个人，
+     * 不再产出两条档案。</p>
+     *
+     * @param tenantId         租户ID
+     * @param customerName     收货人姓名
+     * @param customerPhone    手机号（认人主键）
+     * @param customerAddress  收货地址
+     * @param logisticsType    常用物流/快递方式（可空 ⇒ 该列不补）
+     * @param logisticsCompany 常用物流公司（可空 ⇒ 该列不补）
+     * @param userId           下单用户（可空；商户代录时为 null）
      * @return 客户档案
      */
-    @Transactional(rollbackFor = Exception.class)
+    // 🔴 同上：不加 @Transactional（写在下层独立事务里），保证失败不影响建单。
     public CustomerProfile createFromOrder(Long tenantId, String customerName,
-                                            String customerPhone, String customerAddress) {
+                                            String customerPhone, String customerAddress,
+                                            String logisticsType, String logisticsCompany,
+                                            String userId) {
         // 手机号为空无法去重，跳过建档
         if (!StringUtils.hasText(customerPhone)) {
             log.warn("createFromOrder 跳过：customerPhone 为空, tenantId={}", tenantId);
             return null;
         }
 
-        // issue #7257：同一条写面（回读 → 撞键不插 → 撞并发回读对手那条）
-        CustomerProfile candidate = CustomerProfileWriter.candidate(tenantId)
-                .wechatNickname(customerName)
-                .phone(customerPhone)
-                .agentNotes(StringUtils.hasText(customerAddress) ? "首单收货地址：" + customerAddress : null)
-                .build();
-        candidate.setSourceChannel("order");
-        // 首单建档的既有口径：订单数从 1 起算（不是 0）—— 原先写在 builder 链里，抽出写面后显式表达
-        candidate.setTotalOrders(1);
-        CustomerProfileWriter.Result result = CustomerProfileWriter.ensureByPhone(customerProfileMapper, candidate);
-        log.info("从订单建档{}: id={}, phone={}, tenantId={}",
-                result.created() ? "成功" : "命中既有档案", result.profile().getId(), customerPhone, tenantId);
-        return result.profile();
+        // issue #7711：同一人只留一条档案（手机号 + openid 一起认人，必要时合并），再补收货/物流空列
+        CustomerProfile profile = identityService.ensure(tenantId, customerPhone,
+                resolveMiniProgramOpenid(tenantId, userId),
+                new CustomerProfileIdentityService.ProfileSeed(customerName, "order", 1), true);
+        identityService.fillOrderContact(profile, tenantId, customerName, customerPhone,
+                customerAddress, logisticsType, logisticsCompany);
+        log.info("从订单建档/收敛: id={}, phone={}, tenantId={}",
+                profile == null ? null : profile.getId(), customerPhone, tenantId);
+        return profile;
+    }
+
+    /**
+     * 解析 C 端下单用户的微信 openid（issue #7711）：订单路径手里只有 {@code userId}，认人要用 openid。
+     *
+     * <p>{@code userIdentityMapper} 未注入（切片 / 直接 new 的单测）或取不到身份 ⇒ 返回 null，
+     * 退回「只按手机号认人」—— 识别维度少一维，但不抛错、不阻断建单。</p>
+     */
+    private String resolveMiniProgramOpenid(Long tenantId, String userId) {
+        if (userIdentityMapper == null || !StringUtils.hasText(userId) || "internal-service".equals(userId)) {
+            return null;
+        }
+        UserIdentity identity = userIdentityMapper.selectOne(new LambdaQueryWrapper<UserIdentity>()
+                .eq(UserIdentity::getUserId, userId)
+                .eq(UserIdentity::getTenantId, tenantId)
+                .eq(UserIdentity::getIdentityType, "mini_program")
+                .eq(UserIdentity::getDeleted, 0)
+                .last("LIMIT 1"));
+        return identity == null ? null : identity.getOpenid();
     }
 
     /**

@@ -55,7 +55,7 @@ import type { Order, OrderItem } from '@/types'
  */
 
 function buildItem(overrides: Partial<OrderItem> = {}): OrderItem {
-  return {
+  const merged: OrderItem = {
     id: 'item-1',
     productId: 'p-1',
     productName: '布艺遮光帘A',
@@ -82,6 +82,39 @@ function buildItem(overrides: Partial<OrderItem> = {}): OrderItem {
     },
     ...overrides,
   }
+  // 夹具口径（issue #7724）：`amount`（面料金额 = 单价 × 数量）缺省与 `subtotal` 同源 ——
+  // 只改 subtotal 的老用例不必逐个补 amount；要造「subtotal 已含加工费」的形态就**显式**给 amount。
+  if (overrides.amount === undefined) merged.amount = merged.subtotal as number
+  return merged
+}
+
+/**
+ * issue #7716 的**真 wire 形态**夹具：报价单截图那张单的算术 —— 7.3 米面料 @30.80 = 224.84，
+ * 加工费 = 组合价 7.00 元/米 × 7.3 米 = 51.10（`processingFee`），落库构成在
+ * `processing_info.processingFeeDetail`（`unit_price` / `meters` / `amount` / `fee_source`）。
+ */
+function buildFeeItem(overrides: Partial<OrderItem> = {}): OrderItem {
+  return buildItem({
+    quantity: 7.3,
+    unitPrice: 30.8,
+    amount: 224.84,
+    subtotal: 224.84,
+    processingFee: 51.1,
+    processingInfo: {
+      curtainType: '布帘',
+      colorName: '月落雾灰',
+      doorWidth: '2.8米',
+      componentRole: '主布',
+      processingFeeDetail: {
+        composition: '韩褶+定型+锁边',
+        unit_price: 7,
+        meters: 7.3,
+        amount: 51.1,
+        fee_source: 'matched',
+      },
+    },
+    ...overrides,
+  })
 }
 
 function buildOrder(overrides: Partial<Order> = {}): Order {
@@ -117,6 +150,18 @@ const printStyleEl = (el: Element | null | undefined): HTMLStyleElement =>
   ) as HTMLStyleElement
 /** 单据内文本（限定在单据子树内查询，避免与测试外壳/页面其它节点歧义） */
 const docText = () => doc()?.textContent || ''
+
+/**
+ * 「加工费」数据行的逐格文本（按 DOM 顺序；含 `colSpan=4` 的行标签格）。
+ * 用途：单价格必须逐字等于**组合价**，而不是总额（issue #7716）。
+ */
+const feeRowCells = (): string[] => {
+  const row = Array.from(doc()?.querySelectorAll('.quotation-set tbody tr') ?? []).find(
+    (tr) => tr.querySelector('td')?.textContent?.trim() === '加工费'
+  )
+  if (!row) throw new Error('纸面上没有「加工费」数据行 —— 单据没渲染或行被吞掉了')
+  return Array.from(row.querySelectorAll('td')).map((td) => td.textContent?.trim() ?? '')
+}
 
 describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
   // 类级固化（issue #6595）：本单据的每一张表逐行自洽（Σ(colSpan) = 表头列数）。
@@ -340,7 +385,7 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
       expect(doc()!.querySelectorAll('.quotation-set tbody tr')).toHaveLength(1)
     })
 
-    it('加工费行：processingFee > 0 才出，帘种同行 = 布帘 / 数量 = quantity 米 / 单价 = 小计 = processingFee', () => {
+    it('加工费行：processingFee > 0 才出，帘种同行 = 布帘 / 小计 = processingFee', () => {
       render(
         <QuotationDoc
           order={buildOrder({ items: [buildItem({ processingFee: 250, subtotal: 1250 })] })}
@@ -349,6 +394,102 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
       const text = docText()
       expect(text).toContain('加工费')
       expect(text).toContain('250.00')
+    })
+
+    // 🔴 issue #7716（用户 2026-10-25 截图）：报价单加工费行「数量 7.3 / 单价 51.10 / 小计 51.10」
+    // —— 单价格印的是**总额**。真单价 = 组合价 7.00 元/米（7.3 × 7.00 = 51.10），
+    // 真值源 = 服务端落库快照 `processingFeeDetail.unit_price` / `.meters`
+    // （屏幕面 `OrderItemList` 的算式 `feeFormula(detail)` 读的就是同一份，纸面不许另算）。
+    it('🔴 加工费行单价 = 组合价 元/米（7.00），不是总额（issue #7716）', () => {
+      render(<QuotationDoc order={buildOrder({ items: [buildFeeItem()] })} />)
+      // 修前这一行 = ['加工费', '', '7.3', '51.10', '51.10']（单价拿总额充数）⇒ 当场红
+      expect(feeRowCells()).toEqual(['加工费', '', '7.3', '7.00', '51.10'])
+      // 面料行不受影响（同一条据把「改错面料行」也挡住）
+      expect(docText()).toContain('30.80')
+    })
+
+    it('加工费行数量 = 加工费米数（detail.meters），不是面料米数（两者可不同）', () => {
+      render(
+        <QuotationDoc
+          order={buildOrder({
+            items: [
+              buildFeeItem({
+                processingFee: 57.4,
+                processingInfo: {
+                  ...buildFeeItem().processingInfo,
+                  processingFeeDetail: {
+                    unit_price: 7,
+                    meters: 8.2,
+                    amount: 57.4,
+                    fee_source: 'matched',
+                  },
+                },
+              }),
+            ],
+          })}
+        />
+      )
+      // 单价 × 数量 = 小计 自洽：8.2 × 7.00 = 57.40
+      expect(feeRowCells()).toEqual(['加工费', '', '8.2', '7.00', '57.40'])
+    })
+
+    it('加工费行缺 detail（存量单）⇒ 单价印缺值占位「—」、数量回落面料米数、小计照印（不编价）', () => {
+      render(
+        <QuotationDoc
+          order={buildOrder({
+            items: [buildItem({ quantity: 12.5, processingFee: 250, subtotal: 1250 })],
+          })}
+        />
+      )
+      expect(feeRowCells()).toEqual(['加工费', '', '12.5', PAPER_MISSING, '250.00'])
+    })
+
+    it('加工费行有按套选项时：单价仍是组合价、小计仍是整笔加工费（不编「平均单价」）', () => {
+      render(
+        <QuotationDoc
+          order={buildOrder({
+            items: [
+              buildFeeItem({
+                processingFee: 63.1,
+                processingInfo: {
+                  ...buildFeeItem().processingInfo,
+                  processingFeeDetail: {
+                    unit_price: 7,
+                    meters: 7.3,
+                    amount: 51.1,
+                    special_options_total: 12,
+                    fee_source: 'matched',
+                  },
+                },
+              }),
+            ],
+          })}
+        />
+      )
+      // 51.10（组合那半）+ 12.00（按套选项）= 63.10；单价不摊成 8.64（纸面从没有过这个价）
+      expect(feeRowCells()).toEqual(['加工费', '', '7.3', '7.00', '63.10'])
+    })
+
+    // 🔴 issue #7724（同一张用户截图）：纸面同时印着「本套金额 327.04」与「本单应收 275.94」——
+    // 「新增订单」页把加工费并进了 `order_items.subtotal`，而纸面又在它上面 + 加工费 ⇒ 双算。
+    // 修法：面料行小计 / 本套金额都取服务端 `amount`（= 单价 × 数量）作为面料金额。
+    it('🔴 面料行小计 = amount（单价×数量）：「subtotal 已含加工费」的单不双算（issue #7724）', () => {
+      render(
+        <QuotationDoc
+          order={buildOrder({
+            items: [buildFeeItem({ subtotal: 275.94 })], // amount 仍是 224.84
+          })}
+        />
+      )
+      const rows = Array.from(doc()!.querySelectorAll('.quotation-set tbody tr'))
+      const fabricCells = Array.from(rows[0].querySelectorAll('td')).map((td) => td.textContent?.trim() ?? '')
+      // 面料行：数量 7.3 / 单价 30.80 / 小计 224.84（修前印 subtotal = 275.94，加工费印了两遍）
+      expect(fabricCells.slice(-3)).toEqual(['7.3', '30.80', '224.84'])
+      // 本套金额 = 224.84 + 51.10 = 275.94（修前 327.04），与「本单应收」同源
+      expect(docText()).toContain('本套金额 275.94')
+      expect(docText()).not.toContain('327.04')
+      // 加工费行仍是「单价 7.00 / 小计 51.10」（#7716 的口径不回退）
+      expect(feeRowCells()).toEqual(['加工费', '', '7.3', '7.00', '51.10'])
     })
 
     it('processingFee = 0 / 缺省 ⇒ 不出现加工费行', () => {

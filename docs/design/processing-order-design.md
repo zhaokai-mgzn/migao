@@ -85,8 +85,9 @@ deleted INT DEFAULT 0
 ### 4.1 加工单状态机（服务端单一写入者，照 `OrderService.STATUS_TRANSITIONS` Map 模式）
 
 ```
-generated → issued → in_processing → completed   （主链）
-generated → cancelled                             （未发加工可直取消，reason 必填）
+generated → in_processing → completed             （主链：首工序报满即进加工中，issue #7723）
+generated → issued → in_processing → completed   （存量 / agent 通道的旧主链，issued 不再是必经态）
+generated → cancelled                             （未开工可直取消，reason 必填）
 issued → cancelled                                （需人工确认，可能已有加工费损失）
 in_processing → cancelled                         （需人工确认）
 completed                                        （冻结：不可取消/改状态）
@@ -96,8 +97,8 @@ completed                                        （冻结：不可取消/改状
 
 | 触发 | 加工单 | 订单 |
 |---|---|---|
-| 生成加工单（订单有加工项；幂等：无 active 加工单） | `generated` | `confirmed → producing` |
-| 发加工（填加工方+交期，写操作 confirm） | `issued` | 保持 producing |
+| **派单**（智能派单生成作业单；幂等：无 active 加工单；可带外发承接方 + 回厂日） | `generated` | `confirmed → producing`（**唯一时点**，issue #7723 起；落库失败回退） |
+| 发加工（**已不再是必经动作**，issue #7723：外发改在派单录入） | `issued`（仅存量 / agent 通道） | 保持 producing |
 | 开始加工 / 加工完成 | `in_processing` / `completed` | producing（**不自动 shipped**，发货需物流单号，仅提示"可发货"） |
 | 订单取消（加工单 `generated`） | **自动** `cancelled` | → `cancelled`（顺延现有库存恢复规则） |
 | 订单取消（加工单 `issued` 及以上） | **拦截，需人工确认** | 保持（加工费损失风险） |
@@ -115,17 +116,25 @@ completed                                        （冻结：不可取消/改状
 - 有加工项 → 必须走加工单，订单停在 producing
 - 无加工项（现货成品）→ 维持现状 `confirmed → shipped` 直跳
 
-### 4.5 派单入口（唯一化，issue #7507）
+### 4.5 派单入口（唯一化，issue #7507 → #7634）
 
-- **默认 = 智能派单**（`/production/pool`）：同料订单跨单合并排料、与自动成批同一套口径
-  （`AUTO_BATCH_DEFAULT_ENABLED`）。订单详情页**不再提供**普通订单的直派入口。
-- **加急例外**：`orders.is_urgent = true` 的订单不参与合并（派单页走插队区单派），
-  保留订单详情页直派（沿用 issue #5177 的裁定）。
-- **闸在服务端**：`POST /api/admin/processing-orders/generate` 对非加急订单逐单返回
+- **唯一派单面 = 智能派单**（`/production/pool`）：同料订单跨单合并排料、与自动成批同一套口径
+  （`AUTO_BATCH_DEFAULT_ENABLED`）。**订单详情页没有任何直派入口**（2026-10-23 先收非加急单，
+  2026-10-24 用户裁定「一起收，也要统一走智能派单」⇒ 加急 / 待付款同样收）。
+- **加急单**：不参与合并，派单页把它放**插队区**「立即派单」（`/dispatch` + `pooled=false`）——
+  能力不丢，只是入口换到派单页。
+- **待付款单也在池里**（#7634）：`pool()` 收 `pending + confirmed`。作业单是生产计划（不扣库存、
+  不记资金，扣减仍在 `confirmPayment`）⇒ 未收款单也能进生产，销售单上的扫码报工码照旧可出。
+- **闸在服务端**：`POST /api/admin/processing-orders/generate` 对**所有**订单逐单返回
   `success=false` + `code=DIRECT_DISPATCH_POOL_REQUIRED`（message / suggestion 指路智能派单），
   **一行不写**；`POST /api/admin/production/pool/dispatch`（派单页）不受影响 —— 它是唯一派单面。
-- **边界**：详情页因此不再是「逐行挑批次」的入口（派单页按 `fifo` 由服务端补位）；
-  如商家确需挑批次，另开单把该能力搬进派单页。
+- **销售订单只读**（#7634）：订单详情的「作业单」块只渲染状态 / 快照 / 工序进度 / 「复制全部」，
+  另给两个**入口**：无作业单 ⇒「去智能派单」；有作业单 ⇒「去生产明细」。
+  `开始加工 / 加工完成 / 取消加工单` 三个写动作**只在生产明细页**（`发加工` 已于 issue #7723 移除：
+  外发 = 派单的承接方 + 回厂日，不再挂在作业单上）
+  （`/processing-orders/{加工单号}/production`）—— 它们不再能绕过派单从订单页推进生产。
+- **边界**：详情页因此不再是「逐行挑批次」的入口（派单页按 `fifo` 由服务端补位，该结论自 #7507 起；
+  本次扩到全部订单）。如商家确需挑批次，另开单把该能力搬进派单页。
 
 ## 五、权限与安全
 
@@ -154,7 +163,7 @@ completed                                        （冻结：不可取消/改状
 
 ## 七、前端交付
 
-1. **admin-web 订单详情**：加工单区块（状态时间线 generated→…→completed + 快照查看 + 生成/发加工/开始/完成按钮 + 「复制全部」文本按钮）；**纸面加工单不再由本区块出自己的打印按钮** —— 走页面级唯一「打印」入口 → 选「加工单」（issue #7544，与订单状态解耦）
+1. **admin-web 订单详情**：作业单区块 = **只读**（状态时间线 generated→…→completed + 快照查看 + 工序进度 + 「复制全部」文本按钮 + 两个出口：无作业单「去智能派单」/ 有作业单「去生产明细」）；四个状态动作在**生产明细页**（issue #7634）**纸面加工单不再由本区块出自己的打印按钮** —— 走页面级唯一「打印」入口 → 选「加工单」（issue #7544，与订单状态解耦）
 2. **加工单卡（interact document 形态）**：手机长按截图发微信；PC `@media print` 打印 A4（注意多明细分页）
 3. **「复制全部」纯文本模板**：规范成一行一加工项（商品/颜色/门幅/宽×高/数量/加工项+options/备注）
 4. **不做 PDF/后端图片**：前端卡片渲染 + 截图/打印为 MVP 交付通道；PDF 等出现批量/归档/凭证需求再加（数据已是结构化 JSON，届时只是换渲染器）

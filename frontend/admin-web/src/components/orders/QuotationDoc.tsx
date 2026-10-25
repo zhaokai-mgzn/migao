@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { freightText } from '@/lib/logistics'
 import { orderItemCurtainType, orderItemSku } from '@/lib/order-item-sku'
-import { paperLineSubtotal } from '@/lib/order-amount'
+import { fabricSubtotal, paperLineSubtotal } from '@/lib/order-amount'
+import { readFeeDetail } from '@/lib/order-fee-display'
 import { usePaymentQrcodes } from '@/lib/use-payment-qrcodes'
 import { useCompanyName } from '@/lib/use-company-name'
 import { printBodyFontPt, printContentInsetCss, printPageRule } from '@/lib/print-media'
@@ -65,8 +66,10 @@ import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
  *    🔴 **品名与工艺说明都不再上纸**（issue #7527）⇒ 本组件不再读 `orderItemSku().name`
  *    与 `craftSpecRows()`（部位 / 用料公式属**生产侧**信息，留在订单详情页与加工单）。
  *    「缺值不印」这条口径不变：纸面**绝不**出现 `undefined` / `null` / `NaN`。
- * 6. **金额口径单一来源**：行小计 = `lib/order-amount.ts` 的 `paperLineSubtotal(item)`
- *    （= `subtotal + processingFee`，与屏幕 `OrderItemList` 同处一个模块、**只在「面料小计不可知」
+ * 6. **金额口径单一来源**：面料行「小计」= `lib/order-amount.ts` 的 `fabricSubtotal(item)`
+ *    （= 服务端 `amount`（单价 × 数量），`subtotal` 仅在它缺席时兜底 —— 直读 `subtotal` 会对
+ *    「新增订单」页建的单双算，issue #7724）；段头「本套金额」= `paperLineSubtotal(item)`
+ *    （= 面料小计 + `processingFee`，与屏幕 `OrderItemList` 同处一个模块、**只在「面料小计不可知」
  *    那一格分叉**：屏幕折 `0`、本纸面印 `—`）；汇总三个数字只读订单字段
  *    （`totalAmount` / `discountAmount` / `actualAmount`），**不自己求和**。
  * 7. **我们没有的字段一律不印**（用户裁定 ①）：上期余额 / 预存抵扣 / 账户余额 / 交付日期 /
@@ -82,6 +85,14 @@ import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
  *    **整段小计不可知** ⇒ 印 `—`（不许 `0 + 0` 印成 `0.00`）。判据 =
  *    `frontend/admin-web/tests/unit/components/QuotationDoc.test.tsx` 的「红证（issue #6731）」一组
  *    + 聚合不变量 `assertAggregateUnknownIsContagious`。
+ * 11. 🔴 **加工费行的「单价」是元/米，不是总额**（issue #7716，用户 2026-10-25 截图：数量 7.3 /
+ *    单价 51.10 / 小计 51.10 —— 单价格印的是 `processingFee` 总额）。单价 / 数量取服务端**落库快照**
+ *    `processingInfo.processingFeeDetail` 的 `unit_price`（组合价 / 本单改价后的价）与 `meters`
+ *    （加工费米数）—— 与屏幕面 `OrderItemList` 的算式 `feeFormula(detail)` **同一份真值**，纸面不另算；
+ *    `processingFee` 只进「小计」格（它仍并进「本套金额」，见第 6 条）。缺 detail（#4406 前的存量单）
+ *    ⇒ 单价印 `—`、数量回落面料米数（缺值不编价，同第 9 条）。
+ *    ⚠️ 已知边界（**有意接受**）：`processingFee` 含按套特殊选项 / 拼色加价（#4526）时，
+ *    `单价 × 数量 ≠ 小计`（纸面不展开选项行）；单价**不摊成平均价** —— 那会是纸面上从没出现过的价。
  */
 interface QuotationDocProps {
   order: Order
@@ -349,6 +360,11 @@ function SetBlock({ item, index, total }: { item: OrderItem; index: number; tota
   const size = width !== null && height !== null ? `${width}×${height}` : ''
   const quantity = numberOrNull(item.quantity)
   const processingFee = numberOrNull(item.processingFee) ?? 0
+  // 加工费行的单价 / 数量（issue #7716）：**只读服务端落库快照**，纸面不重算 ——
+  // 与屏幕面 `OrderItemList` 的算式 `feeFormula(detail)` 同一份真值（见文件头第 11 条）。
+  const feeDetail = readFeeDetail(item.processingInfo)
+  const feeUnitPrice = numberOrNull(feeDetail?.unit_price)
+  const feeMeters = numberOrNull(feeDetail?.meters)
 
   return (
     <div className="quotation-set mb-3">
@@ -390,19 +406,24 @@ function SetBlock({ item, index, total }: { item: OrderItem; index: number; tota
             <DocTd>{size}</DocTd>
             <DocTd align="right">{quantity ?? ''}</DocTd>
             <DocTd align="right">{formatAmount(item.unitPrice)}</DocTd>
-            <DocTd align="right">{formatAmount(item.subtotal)}</DocTd>
+            {/* 面料行小计 = **面料金额**（服务端 `amount` 优先，见 `fabricSubtotal`）——
+                🔴 不许直读 `item.subtotal`：对「新增订单」页建的单它已含加工费，再单列加工费行 = 双算（issue #7724）。 */}
+            <DocTd align="right">{formatAmount(fabricSubtotal(item))}</DocTd>
           </tr>
           {/* 加工费行：processingFee > 0 才出（与参照物的**有意差异**：我们两笔真实金额
               必须分别列示，否则商家对不上账 —— 见文件头第 7 条）。
               🔴 「组件」列自 issue #7625 退场 ⇒ 加工费行的**行标签**改由前四列合并承载
               （`colSpan=4`，与面料行的列宽同栅格：Σ=4+1+1+1+1=8）；不标它 = 这一行看起来
-              就是重复的面料行（单价/小计一致 ⇒ 读不出哪行是加工费）。 */}
+              就是重复的面料行（单价/小计一致 ⇒ 读不出哪行是加工费）。
+              🔴 issue #7716：**单价格取组合价（元/米）、数量取加工费米数**（落库快照
+              `processingFeeDetail.unit_price` / `.meters`）—— 修前两格都印 `processingFee`
+              ⇒ 7.3 米 × 51.10 元/米的假象（单价 = 总额）。 */}
           {processingFee > 0 && (
             <tr>
               <DocTd colSpan={4}>加工费</DocTd>
               <DocTd>{''}</DocTd>
-              <DocTd align="right">{quantity ?? ''}</DocTd>
-              <DocTd align="right">{formatAmount(processingFee)}</DocTd>
+              <DocTd align="right">{feeMeters ?? quantity ?? ''}</DocTd>
+              <DocTd align="right">{formatAmount(feeUnitPrice)}</DocTd>
               <DocTd align="right">{formatAmount(processingFee)}</DocTd>
             </tr>
           )}

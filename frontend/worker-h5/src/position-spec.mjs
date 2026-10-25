@@ -57,7 +57,10 @@ export function dataOr(value) {
 export const POSITION_SPEC_KEYS = [
   // ── 组 1 商品身份 ──
   { key: 'product_name', label: '商品名称' },
-  { key: 'sku', label: '货号' },
+  // 货号 = **商品货号**（`products.sku_code`，issue #7636）：用户 2026-10-24 逐字「货号实际是2659」。
+  // 不是 SKU 码（`{货号}-{色序2位}-{门幅}` = 颜色 × 门幅 的组合，屏上印成 2659-01-28）——
+  // 颜色 / 门幅已在相邻两行各印一次 ⇒ 再印组合码 = 重复 + 内部标识（`migao-dev-flow` §31 P2 / P3）。
+  { key: 'product_code', label: '货号' },
   { key: 'color_name', label: '颜色' },
   { key: 'door_width', label: '门幅' },
   { key: 'selling_method', label: '售卖方式' },
@@ -68,21 +71,25 @@ export const POSITION_SPEC_KEYS = [
   { key: 'width', label: '宽', unit: '米', format: 'm' },
   { key: 'height', label: '高', unit: '米', format: 'm' },
   // ── 组 3 加工信息 ──
-  { key: 'curtain_type', label: '部位' },
+  // 帘种（issue #7739，用户逐字「工人报工详情页面也缺失帘种这一关键信息，需要告诉工人是布帘还是纱帘」）：
+  // 值 = 布帘 / 纱帘 / 帘头。⚠️ 本表**登记**它（后端键集守卫要求表 ⊇ 真源键集），但报工屏**不在本块**印 ——
+  // 由 `render.mjs::ternLine` 紧跟「第 N 套 · 货号」那一行单独给（见 `SCAN_BLOCK_EXCLUDED_KEYS`）。
+  { key: 'curtain_type', label: '帘种' },
   { key: 'craft', label: '安装工艺' },
   { key: 'cutting_mode', label: '加工类型' },
   { key: 'open_count', label: '开数', format: 'int' },
   { key: 'is_shaped', label: '是否定型', format: 'bool' },
   { key: 'style', label: '款式' },
-  { key: 'fullness', label: '理论褶倍', unit: '倍', format: 'number' },
+  // 褶倍只印**这一单实际用的**那一个（issue #7636，用户 2026-10-24 逐字「为什么有理论和实际褶倍，
+  // 就展示该订单用的实际哪个褶倍」）⇒ 理论褶倍 `fullness` 已从本表删除。
   { key: 'fullness_actual', label: '实际褶倍', unit: '倍', format: 'number' },
   { key: 'pleat_count', label: '总褶数', format: 'int' },
   { key: 'per_panel_pleats', label: '每片褶数', format: 'int' },
   { key: 'panels', label: '幅数', format: 'int' },
   { key: 'has_pattern', label: '是否对花', format: 'bool' },
   { key: 'pattern_repeat', label: '花距', format: 'number' },
-  { key: 'formula', label: '用料公式' },
-  { key: 'craft_tier', label: '算料档位' },
+  // 🔴 `formula`（用料公式 = `pleat`）/ `craft_tier`（算料档位 = `standard`）**已删**（issue #7636）：
+  //    它们是算料引擎的内部标识，屏上是英文 —— 用户 2026-10-24 逐字「这里显示英文了，直接删除这两个字段」。
   { key: 'special_options', label: '特殊选项' },
   // ── 组 4 算料 / 排料 ──
   { key: 'fabric_meters', label: '面料米数', unit: '米', format: 'm' },
@@ -118,6 +125,19 @@ export function formatSpecValue(value, format) {
 }
 
 /**
+ * 报工屏数值口径：**去掉无效的 0**（`3.000` → `3`、`6.300` → `6.3`、`12.500` → `12.5`）。
+ *
+ * <p>用户 2026-10-24 逐字（issue #7636）：「小数点后面的 3.600 就展示 3.6，不要把无效的 0 展示出来」。
+ * 只裁尾零 —— **不改精度、不四舍五入**（`2.8` 仍是 `2.8`，不会被补成 `2.80`；`0.32` 仍是 `0.32`）。</p>
+ *
+ * <p>🔴 只接在**报工屏**（{@link specRows}）上：机台屏的 `m` 三位小数是**机器读数**（mm 级，
+ * 既有真值，见文件头）⇒ **不得**接进 {@code machine.mjs} 的 `kvRows` / `detailRows`。</p>
+ */
+export function trimTrailingZeros(text) {
+  return text.includes('.') ? text.replace(/0+$/, '').replace(/\.$/, '') : text
+}
+
+/**
  * **报工屏的「本部位生产信息」块不渲染**的键（母单 #6901）。
  *
  * <p>本表仍**登记**它们（后端 {@code PositionDetailFields.DETAIL_KEYS} 里有，后端守卫要求本表 ⊇ 那份
@@ -126,9 +146,12 @@ export function formatSpecValue(value, format) {
  *   <li>{@code remark}（部位备注）—— 工人端另有一条**更精确**的呈现（`render.mjs::positionRemark`：
  *       「部位备注：<原文>」紧跟**它自己那个部位**的标题，issue #5685 的既有判据逐字钉住）。
  *       在规格块里再印一遍 = 同一屏同一事实两次（`migao-dev-flow` §31 P2）。</li>
+ *   <li>{@code curtain_type}（帘种，issue #7739）—— 由 `render.mjs::ternLine` 紧跟「第 N 套 · 货号」
+ *       那一行给（`#wh5-tern`）：它是**关键识别信息**，不能被「本块缺值即整行消失」的规则吞掉；
+ *       放在识别行旁边（而不是规格网格里）也让它在规格数据全缺时**照样看得见**。</li>
  * </ul>
  */
-export const SCAN_BLOCK_EXCLUDED_KEYS = new Set(['remark'])
+export const SCAN_BLOCK_EXCLUDED_KEYS = new Set(['remark', 'curtain_type'])
 
 /**
  * 一个部位 → **报工屏**的行（缺值**不渲染**：整行不出现 ⇒ 工人手机上不摆空占位）。
@@ -148,7 +171,13 @@ export function specRows(position) {
   const rows = []
   for (const spec of POSITION_SPEC_KEYS) {
     if (SCAN_BLOCK_EXCLUDED_KEYS.has(spec.key)) continue
-    const shown = formatSpecValue(position?.[spec.key], spec.format)
+    // 帘种：`curtain_type`（订单行快照）与 `position_kind`（工序实例）是**同一件事实的两处发源**，
+    // 任一在场就够（issue #7739）；别的位置键照旧只读自己的键。
+    const raw = spec.key === 'curtain_type'
+      ? (position?.curtain_type ?? position?.position_kind)
+      : position?.[spec.key]
+    // 报工屏数值**去尾零**（issue #7636）：`3.000米` → `3米`；机台屏仍走 `formatSpecValue` 原样
+    const shown = trimTrailingZeros(formatSpecValue(raw, spec.format))
     if (shown === EMPTY) continue
     rows.push({ key: spec.key, label: spec.label, text: `${shown}${spec.unit ?? ''}` })
   }

@@ -839,7 +839,11 @@ export interface ProcessingOrder {
    * 走 `orderKindLabelOf()` 的单一真值。
    */
   order_kind?: 'processing' | 'outbound' | null
+  /** 承接方名称快照（派单时写死；事后改名不回写历史单）—— 由**智能派单**录入，作业单页不再录入/展示。 */
   processor?: string
+  /** 外发承接方档案引用（issue #7723）：null/缺键 = 本厂自做 / 存量单。 */
+  processorSupplierId?: string | null
+  /** 回厂日（外发时由派单写入；任务卡「交期」读它）。 */
   expectedDeliveryDate?: string
   status: 'generated' | 'issued' | 'in_processing' | 'completed' | 'cancelled'
   /**
@@ -1239,17 +1243,18 @@ export interface PieceworkSummary {
  * 精裁输出清单的一行（issue #5693）—— 给裁床的「**裁多长（米）× 几片**」。
  *
  * 服务端唯一实现在后端 `ProcessingSetReadService`，与工人端扫码详情**同一份**
- * （同一实现 ⇒ 两处读面逐字段一致）。🔴 十键**恒在**（issue #6754 起含 `batch_no`）：算不出来时
+ * （同一实现 ⇒ 两处读面逐字段一致）。🔴 十一键**恒在**（issue #6754 起含 `batch_no`，
+ * issue #7722 起含 `batch_meters`）：算不出来时
  * `fabric_meters` / `panel_count` / `panel_length_m` 一律 `null`（服务端**不用 0 / 1 冒充**），
  * 并由 `missing_reason` 指名缺的是什么 ⇒ 前端按「显式留空」渲染，不造值。
  */
 export interface CutPlanRow {
   order_item_id: string
-  /** 部位（布帘 / 纱帘 / 帘头 / 布料） */
+  /** 帘种（布帘 / 纱帘 / 帘头 / 布料）—— 界面**不再单列**（数据常整列为空，issue #7737）；键仍下发 */
   position_kind?: string | null
-  /** 部位名 / 货号（商品名） */
+  /** 部位名 / 货号（商品名）—— 界面列头「货号」，格内只印这一个（issue #7737） */
   position_name?: string | null
-  /** 组件（明细行角色：主布 / 配布边 / 纱） */
+  /** 组件（明细行角色：主布 / 配布边 / 纱）—— 界面**不再展示**（issue #7737）；键仍下发 */
   component?: string | null
   /**
    * **派工指定批次**（issue #6754）：这一行「**从哪一批裁**」（`PC-yyyyMMdd-NNNN`）。
@@ -1259,7 +1264,17 @@ export interface CutPlanRow {
    * ⚠️ 与加工单**快照**行的 `batchNo`（纸面「批号」列读的那一个）**是两件事**，不得互相冒充。
    */
   batch_no?: string | null
-  /** 用料（米）—— 唯一来源 = 「精裁」工序实例的 qty（且 qty_source = fabric_meters） */
+  /**
+   * **从该批裁多少布**（issue #7722）：该行在 `batch_no` 那一批的**净额米数**。
+   *
+   * 与 `batch_no` **同一份取数**（批次消耗台账，与工人端**部位规格面**的 `batch_meters` 逐值一致）
+   * ⇒ 裁床「裁哪一批 + 这一批裁多少米」两个数都齐。未指派 / 作废后净额归零 ⇒ `null`（键恒在）。
+   */
+  batch_meters?: number | null
+  /**
+   * 用料（米）—— **订单行算料口径优先**（`processing_info.fabric_meters`，issue #7722）；
+   * 缺该键才回落「精裁」工序实例的 qty（且 `qty_source = fabric_meters`）。两处都没有 ⇒ `null`。
+   */
   fabric_meters?: number | null
   /** 几片（定高买宽 = 1 片整窗；定宽买高 = 算料输出的 panels） */
   panel_count?: number | null
@@ -2455,9 +2470,17 @@ export interface Supplier {
   contactPhone?: string | null
   paymentTermsDays?: number | null
   status: 'active' | 'inactive'
+  /** 档案类型（issue #7723）：material 采购供应商（缺省）/ processor 外发加工厂。 */
+  type?: 'material' | 'processor'
   remark?: string | null
   createdAt?: string
   updatedAt?: string
+}
+
+/** 派单页「承接方」下拉选项（issue #7723）：只含在用的加工厂（id + 名称）。 */
+export interface ProcessorOption {
+  id: string
+  name: string
 }
 
 /** 「待指派」的入库单供应商名（issue #7369 段 2）：文本有、档案没挂。 */
@@ -3642,10 +3665,20 @@ export interface InboundOrderItem {
   colorName?: string
   /** 快照：门幅 */
   doorWidth?: string
+  /** 库里原值（新行恒为米数；口径见 {@link meters}） */
   quantity: number
+  /**
+   * **入库米数** —— 这一行真正进了多少米库存（服务端算，issue #7709）。
+   *
+   * 有卷数 ⇒ = 卷数 × 卷长；否则 = `quantity`。入库单明细、批次余量、库存流水说的是同一个米数
+   * ⇒ 展示侧**原样渲染**，不在浏览器里再算一遍。
+   */
+  meters?: number | null
+  /** 卷数（可空；issue #7709）—— 与 `rollLengthM` 一起决定 `meters` */
+  rollCount?: number | null
   /** 入库单价；null = 未记单价（只加数量不算成本） */
   unitCost?: number | null
-  /** 行金额 = quantity × unitCost；null 单价 ⇒ null */
+  /** 行金额 = 入库米数 × unitCost；null 单价 ⇒ null */
   amount?: number | null
   /** 批次号（**过账后才有**；草稿为 null） */
   batchNo?: string | null
@@ -3653,7 +3686,7 @@ export interface InboundOrderItem {
   dyeLot?: string | null
   /** 旧系统批次号（可空；仅期初建账的单会有；V118 / issue #5153） */
   legacyBatchNo?: string | null
-  /** 每卷米数（仅记录/打印卷标） */
+  /** 每卷米数（卷长；与 rollCount 成对时参与换算） */
   rollLengthM?: number | null
   remark?: string
 }
@@ -3710,6 +3743,7 @@ export interface InboundOrderItemInput {
   productId: string
   /** 🔴 issue #5904：SKU id 是**雪花号字符串**（≈2.1e18 > 2^53）—— 原样透传，不许 Number() */
   skuId: string
+  /** 按米录入时的入库米数；**带了 rollCount 时服务端不采信它**（由卷数 × 卷长算出，issue #7709） */
   quantity: number
   unitCost?: number | null
   dyeLot?: string | null
@@ -3718,7 +3752,10 @@ export interface InboundOrderItemInput {
    * 采购收货填了会被服务端拒绝（系统批次号与旧系统批次号不得互相冒充）。
    */
   legacyBatchNo?: string | null
+  /** 每卷米数（卷长）：与 `rollCount` 成对时参与换算（入库米数 = 卷数 × 卷长） */
   rollLengthM?: number | null
+  /** 卷数（正整数，可空；issue #7709）—— 填了就必须填 `rollLengthM`，入库米数由服务端算 */
+  rollCount?: number | null
   remark?: string | null
 }
 
@@ -4200,6 +4237,14 @@ export interface PoolDispatchRequest {
   batches: PoolBatchAssignment[]
   assignmentRule: string | null
   pooled: boolean
+  /**
+   * 外发承接方（供应商档案 id，issue #7723）：`null`/缺键 = **本厂自做**。
+   *
+   * <p>粒度 = 整批一个（用户裁定「整单外发」）；要分给两家就分两次派。</p>
+   */
+  processorSupplierId?: string | null
+  /** 回厂日（yyyy-MM-dd，issue #7723）：早于今天会被服务端拒（422）。 */
+  expectedDeliveryDate?: string | null
 }
 
 /** 成批预览（全是 JSON number = 服务端 BigDecimal 聚合；**服务端口径，前端只渲染不算**） */

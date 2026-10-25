@@ -39,4 +39,21 @@ public class ProductionPoolRequest {
      * 在 DTO 上再写一个 {@code false} 字面量就是第二份会漂的缺省值。</p>
      */
     private Boolean pooled;
+
+    /**
+     * 外发承接方（供应商档案 id；{@code null} / 空白 = **本厂自做**）。
+     *
+     * <p>issue #7723（用户裁定 A）：外发信息从作业单搬到派单 —— 粒度 = **整单**，
+     * 一次派单一个承接方。服务端校验「存在 / 本租户 / 在用 / {@code type = processor}」，
+     * 未知或类型不对 ⇒ 整批显式拒绝（不静默忽略，否则商家以为派出去了）。</p>
+     */
+    private String processorSupplierId;
+
+    /**
+     * 回厂日（{@code yyyy-MM-dd}；{@code null} = 不设）。
+     *
+     * <p>写进 {@code processing_orders.expected_delivery_date}（既有列，任务卡上的「交期」读它）。
+     * 早于今天 ⇒ 显式拒绝（沿用 issue #3901 的交期边界口径）。</p>
+     */
+    private java.time.LocalDate expectedDeliveryDate;
 }

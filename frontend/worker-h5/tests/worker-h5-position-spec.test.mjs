@@ -20,6 +20,10 @@
 //   ③ 同一 `order_item_id` 在 `mainView` + `overviewView` 恰好上屏一次 ⇒ 注入 A 红；
 //   ④ 机台屏新增行上屏 + 缺值 `—`（既有 12 行逐字不变 = **负控**）⇒ 注入 C 红；
 //   ⑤ 未登记键不上工人屏（`migao-dev-flow` §31 P3：不摆内部标识）⇒ 让未知键透传的注入红。
+//   ⑥ 报工屏数值**去尾零**（`3.000` → `3`、`6.300` → `6.3`），机台屏仍三位小数 ⇒ 摘掉去尾零即红。
+//
+// 2026-10-24（issue #7636，用户逐字四条）：① 只印实际褶倍（删理论褶倍）；② 去掉无效的 0；
+// ③ 删用料公式 / 算料档位（屏上是 pleat / standard 这类英文）；④ 货号 = **商品货号**（不是 SKU 码）。
 //
 // 🔴 期望值一律是**手写字面量**，**不** import `POSITION_SPEC_KEYS` 来比对：拿被测表去比被测表 =
 //    恒真（表改了屏上也照改 ⇒ 判据不红 = 空断言）。改标签 / 改单位 / 改精度 / 改顺序 / 删行
@@ -64,7 +68,9 @@ const clothPosition = (over = {}) => ({
   position_kind: '布帘',
   // ── 组 1 商品身份 ──
   product_name: '全遮光布窗帘',
-  sku: 'SKU-2609-001',
+  product_code: PRODUCT_CODE_CLOTH,
+  // SKU 码仍随服务端下发 ⇒ 留在夹具里是为了**反向断言它不上屏**
+  sku: SKU_CLOTH,
   color_name: '米白',
   door_width: '2.8米定宽',
   selling_method: '定高买宽',
@@ -108,7 +114,8 @@ const gauzePosition = (over = {}) => ({
   position_name: '纱帘',
   position_kind: '纱帘',
   product_name: '雪纺纱',
-  sku: 'SKU-2609-002',
+  product_code: PRODUCT_CODE_GAUZE,
+  sku: SKU_GAUZE,
   color_name: '本白',
   width: 2.8,
   height: 2.4,
@@ -147,8 +154,16 @@ const specBlock = (rows) =>
     .map(([label, text]) => specRow(label, text))
     .join('')}</dl>`
 
-const SKU_CLOTH = 'SKU-2609-001'
-const SKU_GAUZE = 'SKU-2609-002'
+/** 商品货号（`products.sku_code`）—— 屏上「货号」取它（2026-10-24 用户逐字「货号实际是2659」）。 */
+const PRODUCT_CODE_CLOTH = '2659'
+const PRODUCT_CODE_GAUZE = '2740'
+/**
+ * **SKU 码**（`{货号}-{色序2位}-{门幅}` = 颜色 × 门幅 的组合，`ProductService#generateSkuCode`）——
+ * 服务端仍下发（工序读面 `sku` 键还在用），但**工人屏不再印它**：颜色 / 门幅已各自成行，
+ * 再印一串组合码 = 重复 + 内部标识（`migao-dev-flow` §31 P2 / P3）。
+ */
+const SKU_CLOTH = '2659-01-28'
+const SKU_GAUZE = '2740-01-29'
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ① 扫后屏：组 1/2/3/5 代表键 label + 值**逐字**上屏
@@ -164,37 +179,59 @@ const SKU_GAUZE = 'SKU-2609-002'
 const EXPECTED_CLOTH_SPEC_BLOCK = specBlock([
   // 组 1 商品身份
   ['商品名称', '全遮光布窗帘'],
-  ['货号', SKU_CLOTH],
+  // 货号 = **商品货号**（不是 SKU 码 2659-01-28，见文件里 SKU_CLOTH 的说明）
+  ['货号', PRODUCT_CODE_CLOTH],
   ['颜色', '米白'],
   ['门幅', '2.8米定宽'],
   ['售卖方式', '定高买宽'],
   ['卷数', '3卷'],
   ['数量单位', '片'],
-  // 组 2 规格尺寸（`m` = 机器精度三位小数，与机台屏同一份口径）
-  ['宽', '2.800米'],
-  ['高', '2.650米'],
+  // 组 2 规格尺寸（报工屏口径 = **去掉无效的 0**：2.800 → 2.8、2.650 → 2.65；机台屏仍三位小数）
+  ['宽', '2.8米'],
+  ['高', '2.65米'],
   // 组 3 加工信息
-  ['部位', '布帘'],
+  // ⚠️ 帘种（`curtain_type`）**不在本块**（issue #7739）：它由 `#wh5-tern` 单独给（关键识别信息，
+  // 不能受「本块缺值即整行消失」的规则影响）⇒ 本块的期望里没有它，判据见本文件 ⑨。
   ['安装工艺', '韩褶'],
   ['加工类型', '定高买宽'],
   ['开数', '2'],
   ['是否定型', '是'],
   ['款式', '韩式'],
-  ['理论褶倍', '2倍'],
+  // 褶倍只印**这一单实际用的**那一个（理论褶倍已删，2026-10-24 用户逐字裁定）
   ['实际褶倍', '2.05倍'],
   ['总褶数', '48'],
   ['每片褶数', '24'],
   ['幅数', '2'],
   ['是否对花', '是'],
   ['花距', '0.32'],
-  ['用料公式', 'W×F÷门幅'],
-  ['算料档位', 'B'],
+  // 用料公式 / 算料档位**已删**（引擎内部标识：屏上是 pleat / standard 这类英文）
   ['特殊选项', '加铅线'],
   // 组 5 派工
   ['批号', 'B-20261014-01'],
-  ['指派米数', '12.500米'],
+  ['指派米数', '12.5米'],
   ['组件', '主帘'],
 ])
+
+test('🔴 ⑨ 帘种（issue #7739）：缺 `curtain_type` 时回落 `position_kind`；两处都缺 ⇒ 不编（不印「帘种 —」）', () => {
+  // ① 订单行没填帘种、扫码解析给了 `position_kind` ⇒ 仍要告诉工人是布帘还是纱帘
+  const fellBack = renderPage(LOGGED_IN(), viewWith(
+    [{ ...clothPosition(), curtain_type: null, position_kind: null }],
+    { position: { order_item_id: 'oi-cloth', position_kind: '纱帘', position_name: '布帘' } },
+  ))
+  assert.match(fellBack, /id="wh5-tern">帘种 纱帘</, '帘种必须从 `position_kind` 回落显示')
+
+  // ② 规格块里**不再**印帘种（同一屏同一事实两次 = §31 P2）
+  assert.equal(firstSpecBlock(fellBack).includes('帘种'), false, '帘种不得在规格块里重复')
+
+  // ③ 两处都没有 ⇒ 这一行不出现（不编值；「关键信息」也不等于可以印 `帘种 —`）
+  const unknown = renderPage(LOGGED_IN(), viewWith(
+    [{ ...clothPosition(), curtain_type: null, position_kind: null }],
+    { position: { order_item_id: 'oi-cloth', position_kind: null, position_name: '布帘' } },
+  ))
+  assert.equal(unknown.includes('id="wh5-tern"'), false, '两处都缺 ⇒ 不印空占位')
+  // 反向：本表**不再**印「部位」这个词（用户口径统一叫帘种）
+  assert.equal(fellBack.includes('<dt>部位</dt>'), false, '「部位」标签必须退场')
+})
 
 test('🔴 ① 扫后屏「本部位生产信息」：组 1/2/3/5 代表键的 label + 值 + 单位 + 顺序**逐字**上屏（注入 A ⇒ 红）', () => {
   const html = renderPage(LOGGED_IN(), viewWith([clothPosition(), gauzePosition()]))
@@ -210,6 +247,15 @@ test('🔴 ① 扫后屏「本部位生产信息」：组 1/2/3/5 代表键的 l
 
   // 反向：组 6「部位备注」**不在本块**（同一屏同一事实两次 = §31 P2 禁；它由 `positionRemark` 另承）
   assert.equal(block.includes('<dt>部位备注</dt>'), false, '部位备注不得在规格块里再印一遍')
+
+  // 反向：三行**按现场口径删掉**的键一个都不许回来（2026-10-24 用户逐字裁定）
+  for (const gone of ['理论褶倍', '用料公式', '算料档位']) {
+    assert.equal(block.includes(`<dt>${gone}</dt>`), false, `「${gone}」不得再上工人屏（用户 2026-10-24 逐字删除）`)
+  }
+  // 反向：**SKU 码**不上屏（货号那一行取的是商品货号；颜色 / 门幅已各自成行 ⇒ 组合码 = 重复 + 内部标识）
+  assert.equal(block.includes(SKU_CLOTH), false, `SKU 码 ${SKU_CLOTH} 不得上屏（货号 = 商品货号 ${PRODUCT_CODE_CLOTH}）`)
+  // 反向：报工屏不印三位小数的无效 0（`2.800米` / `12.500米` 这类形态）
+  assert.equal(block.includes('2.800米'), false, '报工屏数值必须去尾零（2.800米 ⇒ 2.8米）')
 })
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -289,21 +335,24 @@ test('🔴 ③ 同一 order_item_id 在 mainView + overviewView **只出现一�
 
   // 两块 = 顶上（扫到的那个部位）+ 本套工序里**另一个**部位；扫到那一份不得在里面再来一遍
   assert.equal(html.split('id="wh5-position-spec"').length - 1, 2, '屏上恰好两块规格（一个部位一块）')
-  assert.equal(html.split(SKU_CLOTH).length - 1, 1, `扫到那个部位的规格（${SKU_CLOTH}）在整屏只出现一次`)
-  assert.equal(html.split(SKU_GAUZE).length - 1, 1, `另一个部位的规格（${SKU_GAUZE}）也只出现一次`)
+  assert.equal(html.split(PRODUCT_CODE_CLOTH).length - 1, 1, `扫到那个部位的货号（${PRODUCT_CODE_CLOTH}）在整屏只出现一次`)
+  assert.equal(html.split(PRODUCT_CODE_GAUZE).length - 1, 1, `另一个部位的货号（${PRODUCT_CODE_GAUZE}）也只出现一次`)
+  // 反向：两块的**SKU 码**一个都不许出现（服务端下发了也不印 —— 见文件里 SKU_CLOTH 的说明）
+  assert.equal(html.includes(SKU_CLOTH), false, `SKU 码 ${SKU_CLOTH} 不得上屏`)
+  assert.equal(html.includes(SKU_GAUZE), false, `SKU 码 ${SKU_GAUZE} 不得上屏`)
 
   const [head, tail] = html.split('id="wh5-set-overview"')
   assert.equal(head.split('id="wh5-position-spec"').length - 1, 1, 'mainView 顶部恰好一块')
   assert.equal(tail.split('id="wh5-position-spec"').length - 1, 1, '本套工序里恰好一块（扫到的那个部位被排除）')
-  assert.equal(head.includes(SKU_CLOTH), true, '顶部那块 = 扫到的那个部位')
-  assert.equal(head.includes(SKU_GAUZE), false, '顶部不得混进别的部位的规格')
-  assert.equal(tail.includes(SKU_CLOTH), false, '本套工序里不得把扫到那一份再印一遍（同一屏同一事实两次）')
+  assert.equal(head.includes(PRODUCT_CODE_CLOTH), true, '顶部那块 = 扫到的那个部位')
+  assert.equal(head.includes(PRODUCT_CODE_GAUZE), false, '顶部不得混进别的部位的规格')
+  assert.equal(tail.includes(PRODUCT_CODE_CLOTH), false, '本套工序里不得把扫到那一份再印一遍（同一屏同一事实两次）')
 
   // 另一条分支：工序未确定（`operation == null`）⇒ `overviewView` 不带排除参数 ⇒ 仍不得重复
   const noOp = viewWith([clothPosition(), gauzePosition()], { operation: null })
   const noOpHtml = renderPage({ ...LOGGED_IN(), view: noOp }, noOp)
-  assert.equal(noOpHtml.split(SKU_CLOTH).length - 1, 1, '工序未确定态照旧只出现一次（该分支不另印一份）')
-  assert.equal(noOpHtml.split(SKU_GAUZE).length - 1, 1, '另一个部位同样只出现一次')
+  assert.equal(noOpHtml.split(PRODUCT_CODE_CLOTH).length - 1, 1, '工序未确定态照旧只出现一次（该分支不另印一份）')
+  assert.equal(noOpHtml.split(PRODUCT_CODE_GAUZE).length - 1, 1, '另一个部位同样只出现一次')
 })
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -341,7 +390,8 @@ const LEGACY_12_ROWS = [
  *    **只由共享表提供**的键（`批号` / `指派米数` / `组件` / `算料公式` …）。
  */
 const ADDED_ROWS = [
-  ['货号', SKU_CLOTH],
+  // 货号 = 商品货号（本单起机台屏手写行也读 `product_code`；SKU 码不再上屏）
+  ['货号', PRODUCT_CODE_CLOTH],
   ['颜色', '米白'],
   ['门幅', '2.8米定宽'],
   ['商品名称', '全遮光布窗帘'],
@@ -356,10 +406,9 @@ const ADDED_ROWS = [
   ['幅数', '2'],
   ['是否对花', '是'],
   ['花距', '0.32'],
-  ['用料公式', 'W×F÷门幅'],
-  ['算料档位', 'B'],
   ['特殊选项', '加铅线'],
   ['批号', 'B-20261014-01'],
+  // 机台屏**不去尾零**（机器精度三位小数 = mm，既有真值）—— 这条同时是报工屏去尾零的**负控**
   ['指派米数', '12.500米'],
   ['组件', '主帘'],
   ['加工费米数', '—'],
@@ -453,4 +502,34 @@ test('🔴 ⑤ 未登记键不上工人屏：服务端多给的键不得把**原
     assert.equal(block.includes(unknown), false, `未登记的键「${unknown}」不得上屏（键名 = 内部标识，人话标签无从谈起）`)
   }
   assert.equal(block.includes('a61daac3'), false, '未登记键的**值**也不得借道任何一行漏上屏')
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ⑥ 报工屏数值去尾零（issue #7636），机台屏仍机器精度三位小数（负控）
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 红证：把 `src/position-spec.mjs::specRows` 里的去尾零摘掉（`shown` 直接用 `formatSpecValue`）
+ * ⇒ 报工屏回到 `3.000米` / `6.300米` ⇒ 本测试红（用户 2026-10-24 逐字「3.600 就展示 3.6，
+ * 不要把无效的 0 展示出来」）。负控：机台屏 `m` 精度**不许**跟着改 —— 那是机器读数（mm）。
+ */
+test('🔴 ⑥ 报工屏去尾零：`3.000` → `3`、`6.300` → `6.3`；机台屏保持三位小数（负控）', () => {
+  const html = renderPage(
+    LOGGED_IN(),
+    viewWith([clothPosition({ width: 3, height: 2.6, fabric_meters: 6.3 })]),
+  )
+  const block = firstSpecBlock(html)
+
+  assert.equal(block.includes(specRow('宽', '3米')), true, '3.000 ⇒ 3米（无效的 0 不展示）')
+  assert.equal(block.includes(specRow('高', '2.6米')), true, '2.600 ⇒ 2.6米')
+  assert.equal(block.includes(specRow('面料米数', '6.3米')), true, '6.300 ⇒ 6.3米')
+  for (const stale of ['3.000米', '2.600米', '6.300米']) {
+    assert.equal(block.includes(stale), false, `报工屏不得再印 ${stale}`)
+  }
+  assert.equal(block.includes(specRow('宽', '3.米')), false, '去尾零不得留下孤立的小数点')
+
+  // 负控：机台屏是机器读数（mm 级三位小数）—— 去尾零只发生在报工屏
+  const machine = renderMachine(machineDetailState())
+  const kvList = machine.match(/<dl class="wh5-machine__kv-list">([\s\S]*?)<\/dl>/)?.[1] ?? ''
+  assert.equal(kvList.includes(kvRow('宽', '2.800米')), true, '机台屏保持三位小数（既有真值，本单不动）')
 })

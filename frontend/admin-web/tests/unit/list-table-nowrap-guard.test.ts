@@ -53,14 +53,14 @@ const FROZEN_TABLES: string[] = [
   'src/app/(dashboard)/dashboard/page.tsx::表[#|商品|成交量|环比]',
   'src/app/(dashboard)/finance/page.tsx::表[支付方式|收入|退款|净额]',
   'src/app/(dashboard)/finance/page.tsx::表[日期|收入|退款|净额]',
-  'src/app/(dashboard)/inbound-orders/new/page.tsx::表[货号 / 颜色 / 门幅|数量*|单价(元)|缸号|旧系统批次号|卷长(米)|批次号|~]',
   'src/app/(dashboard)/inbound-orders/page.tsx::表[行号|货号|剩余米数|缸号|旧系统批次号|校验结果]',
-  'src/app/(dashboard)/inbound-orders/page.tsx::表[货号 / 颜色 / 门幅|数量|单价|金额|批次号|缸号|卷长(米)|旧系统批次号]',
   // 2026-10-17（issue #7079）：作业看板表头首列改名（加工单号 → **作业单号**）并**新增**「类型」列
   // （作业单两型用中文业务名可见）⇒ 锚里的表头顺序 / 文本同步。
   // ⚠️ 这一条**仍是缺陷**（「操作」表头缺 `whitespace-nowrap`，与本单的两型可见面正交）
   // ⇒ 条目**不删**、`TABLE_BASELINE` **不变**（条数未动，只改了锚里的表头文本；同 #6717 的表头顺序变更形态）。
-  'src/app/(dashboard)/production/page.tsx::表[作业单号|类型|订单号|客户|商品与数量|状态|工序进度|计件合计|操作]',
+  // 2026-10-25（issue #7723）：新增「承接方」列（外发在途跟踪）⇒ 锚里的表头同步；
+  // ⚠️ 条目**仍是缺陷**（「操作」表头缺 `whitespace-nowrap`，与本单正交）⇒ 不删条目、基线不变。
+  'src/app/(dashboard)/production/page.tsx::表[作业单号|类型|订单号|客户|商品与数量|状态|承接方|工序进度|计件合计|操作]',
   'src/app/(dashboard)/production/piecework/page.tsx::表[~|计件数量|金额]',
   'src/app/(dashboard)/production/piecework/page.tsx::表[工人|计件数量|金额]',
   'src/app/(dashboard)/production/piecework/page.tsx::表[工序|计件数量|金额]',
@@ -88,7 +88,9 @@ const FROZEN_TABLES: string[] = [
   // 原条目的锚（`*库存（~）`）已不存在 = 死条目；顺手把剩下 3 个 th 补上 `whitespace-nowrap`
   // ⇒ 该表不再是缺陷 ⇒ 条目**删除**（基线下调，与上面 #6754 同形态）。
 ]
-const TABLE_BASELINE = 20
+// 2026-10-24（issue #7644）：入库单**建单页**明细表头改成「卷数 / 卷长(米/卷) / 数量（米）」并补齐 nowrap
+// ⇒ 该表**真修好** ⇒ 条目删除、基线 20 → 19。
+const TABLE_BASELINE = 18
 
 /**
  * 存量台账·规则 ②（手写药丸）：同上，冻结于 2026-10-06（issue #6398），**改前** 6 条 → **5**。

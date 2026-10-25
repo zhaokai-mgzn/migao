@@ -35,9 +35,9 @@ public class ProcessingOrderController {
      * <p>issue #5167：请求体可带 {@code assignmentRule}（{@code fifo} 缺省 / {@code best_fit}）——
      * 只对**没有**指定 {@code batchNo} 的行按该规则补位；不传它时行为与上面逐字相同。</p>
      *
-     * <p>🔴 issue #7507（用户裁定「默认走智能派单」）：本端点 = 订单详情页 / agent 的**直派**入口，
-     * **非加急订单**逐单拒绝并指路「智能派单」（加急订单沿用 #5177 的例外）。智能派单页走
-     * {@code /api/admin/production/pool/dispatch}（{@link ProductionPoolController}），不受本闸影响。</p>
+     * <p>🔴 issue #7507 / #7634（用户裁定「默认走智能派单」）：本端点 = 订单详情页 / agent 的**直派**入口，
+     * 自 #7634 起**所有订单**（含加急 / 待付款）逐单拒绝并指路「智能派单」—— 派单页是**唯一**派单面
+     * （{@code /api/admin/production/pool/dispatch}，{@link ProductionPoolController}），不受本闸影响。</p>
      */
     @PostMapping("/generate")
     @RequirePermission("processing:update")
@@ -62,9 +62,11 @@ public class ProcessingOrderController {
     @RequirePermission("production:view")
     public ApiResponse<List<ProcessingOrderResponse>> list(
             @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) String status) {
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) Boolean outsourced) {
         Long tenantId = TenantContext.getTenantId();
-        return ApiResponse.success(processingOrderService.list(keyword, status, tenantId));
+        // outsourced=true ⇒ 只看外发（issue #7723）：作业看板「只看外发」筛选的唯一真值来源。
+        return ApiResponse.success(processingOrderService.list(keyword, status, tenantId, outsourced));
     }
 
     /**

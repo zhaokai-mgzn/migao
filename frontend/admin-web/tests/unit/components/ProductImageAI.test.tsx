@@ -9,9 +9,11 @@
  *    无需再点任何按钮（issue #7533：改前多一步「用这张」，商家漏点 = 白生成 ⇒ 保存后也没有）；
  * 4. **再生成 = 替换**：第二次落位携带 `replaceUrl` = 上一次自动填入的那张（不叠加）；
  * 5. 多张图可切换样图（生成携带所选样图 URL）；生成中按钮 loading；失败不落位且错误可见。
+ * 6. **失败话术按 admin-api 错误码分叉**（issue #7552）：模型不支持 / 额度用尽 / 真·瞬时三类
+ *    说不同的话；「稍后重试」只出现在真·瞬时那一条；页面上**不出现**服务名与内部地址（§31 P3）。
  */
 import React from 'react'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import ProductImageAI from '@/components/products/ProductImageAI'
 import { aiProductImageApi } from '@/lib/api'
@@ -148,5 +150,62 @@ describe('ProductImageAI', () => {
     reject(new Error('boom'))
     expect(await screen.findByText(/生成失败，请稍后重试/)).toBeInTheDocument()
     expect(onApplyMain).not.toHaveBeenCalled()
+  })
+
+  // ===== 失败话术按错误码分叉（issue #7552：只认 error.code，不切字符串） =====
+
+  /** admin-api 的失败信封 `{success:false, error:{code,message}}`。 */
+  const failure = (code: string | undefined, message = '服务端理由') =>
+    Object.assign(new Error('Request failed with status code 422'), {
+      isAxiosError: true,
+      response: { status: 422, data: { success: false, error: { code, message } } },
+    })
+
+  async function failWith(error: unknown) {
+    generate.mockRejectedValue(error as never)
+    const { onApplyMain } = renderAI()
+    fireEvent.click(screen.getByRole('button', { name: 'AI 生成商品图' }))
+    fireEvent.click(screen.getByRole('button', { name: '生成' }))
+    return { onApplyMain }
+  }
+
+  it('模型不支持 ⇒ 「暂不可用、已反馈平台」+ 手工传图，且不说「稍后重试」', async () => {
+    const { onApplyMain } = await failWith(failure('AI_PRODUCT_IMAGE_MODEL_UNSUPPORTED'))
+
+    const shown = await screen.findByText(/该能力暂不可用，已反馈平台/)
+    expect(shown).toBeInTheDocument()
+    expect(shown.textContent).not.toContain('稍后重试')
+    expect(onApplyMain).not.toHaveBeenCalled()
+  })
+
+  it('额度用尽 ⇒ 说清「今日额度已用完」，与模型不支持的话术不同', async () => {
+    await failWith(failure('AI_PRODUCT_IMAGE_QUOTA_EXCEEDED'))
+    expect(await screen.findByText(/今日额度已用完/)).toBeInTheDocument()
+  })
+
+  it('未启用 / 未配置 ⇒ 与模型不支持同口径（平台侧，不劝「稍后重试」）', async () => {
+    for (const code of ['AI_PRODUCT_IMAGE_DISABLED', 'AI_PRODUCT_IMAGE_NOT_CONFIGURED']) {
+      await failWith(failure(code))
+      const shown = await screen.findByText(/该能力暂不可用，已反馈平台/)
+      expect(shown.textContent).not.toContain('稍后重试')
+      cleanup()
+      generate.mockReset()
+    }
+  })
+
+  it('无失败码（网络 / 超时）⇒ 保留「稍后重试」兜底', async () => {
+    await failWith(new Error('Network Error'))
+    expect(await screen.findByText(/生成失败，请稍后重试/)).toBeInTheDocument()
+  })
+
+  it('失败话术不把服务端内部标识带上屏（服务名 / 地址一律不出现）', async () => {
+    await failWith(
+      failure(
+        'AI_PRODUCT_IMAGE_MODEL_UNSUPPORTED',
+        '商品图生成服务（ai-agent）暂不可用（当前服务地址 http://ai-agent:8001）'
+      )
+    )
+    await screen.findByText(/该能力暂不可用/)
+    expect(document.body.textContent).not.toMatch(/ai-agent|https?:\/\//)
   })
 })

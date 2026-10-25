@@ -19,7 +19,9 @@ const BASE = process.env.BASE_URL || 'http://127.0.0.1:3001'
 // 管理端 API（node 侧直连，见 adminApi 的注释说明为什么不从页面内 fetch）
 const API_BASE = process.env.API_BASE || 'http://127.0.0.1:8090'
 const OUT = process.env.OUT_DIR || '/tmp/ui-smoke/out'
-const PHONE = process.env.PHONE || '13800138000'
+// 🔴 商家后台冒烟必须用**商家管理员**账号（issue #7479：`13800138000` 是 C 端顾客账号，
+//    管理端登录会被服务端拒绝「该账号非管理员」）；值 = docs/testing/demo-readiness.md 的同一口径。
+const PHONE = process.env.PHONE || '13600136000'
 const SMS_CODE = process.env.SMS_CODE || '123456'
 const GROUP = process.argv.includes('--group') ? process.argv[process.argv.indexOf('--group') + 1] : ''
 // .env 值两侧可能带引号（本文件**不用字面量**写那两个引号字符：`tests/unit_ci_workflows/
@@ -1541,21 +1543,15 @@ async function orderDetailJourney(page, orderId) {
     const poBlock = page.locator('.po-print-area').first()
     const poVisible = await waitVisible(poBlock, 12000)
     const poNo = poVisible ? matchProcessingOrderNo(await poBlock.textContent().catch(() => '')) : null
-    // 状态流转：发加工 → 开始加工 → 加工完成
+    // 状态流转：开始加工 → 加工完成（issue #7723：**「发加工」已从作业单移除** —— 外发
+    // （加工厂 + 回厂日）改在智能派单录入，作业单由首工序报工/手工开工直接进「加工中」）
     let flowDone = ''
-    for (const [btn, expectText] of [['发加工', '已发加工'], ['开始加工', '加工中'], ['加工完成', '加工完成']]) {
+    for (const [btn, expectText] of [['开始加工', '加工中'], ['加工完成', '加工完成']]) {
       const b = page.getByRole('button', { name: new RegExp(btn) }).first()
       // ② 等按钮出现（不是定长 sleep 后单次 isVisible）：偶发不可见会让加工单停在未完成态，
       // 下游 `17-order-ship` 被「须先完成加工单后再发货」守卫阻断（A/B 两轮均红 = 噪声淹没真回归）
       if (!(await waitVisible(b, 12000))) { flowDone += ` [${btn}不可见]`; break }
       await b.click()
-      if (btn === '发加工') {
-        // 内联表单：加工方/交期（等表单就位再填，不再定长 sleep 后盲填）
-        const processor = page.locator('input[placeholder*="加工方"]').first()
-        if (await waitVisible(processor, 8000)) await processor.fill('冒烟加工厂').catch(() => {})
-        const issueBtn = page.getByRole('button', { name: /确认发加工/ }).first()
-        if (await waitVisible(issueBtn, 8000)) await issueBtn.click().catch(() => {})
-      }
       // 状态流转**带二次确认弹窗**（实测截图逐字：「确认状态流转 —— 将加工单 JG-… 标记为「开始加工」。
       // 该动作会写入加工单状态、不可撤销，请确认后再提交。」+ 取消/确认）⇒ 不点「确认」等于**没发生**：
       // 徽标停在上一态、下一态按钮永不出现（2026-10-14 实测的假红形态，issue #6940）。
@@ -1576,7 +1572,7 @@ async function orderDetailJourney(page, orderId) {
       await waitVisible(badge, 12000)
       const badgeText = await waitForText(badge, expectText, 12000)
       const badgeOk = badgeText === expectText
-      const nextBtn = { 发加工: '开始加工', 开始加工: '加工完成', 加工完成: null }[btn]
+      const nextBtn = { 开始加工: '加工完成', 加工完成: null }[btn]
       const switched = nextBtn
         ? await waitVisible(page.getByRole('button', { name: new RegExp(nextBtn) }).first(), 12000)
         : true
@@ -2417,7 +2413,13 @@ async function jrun(name, fn, page, deps) {
   } catch (e) {
     const msg = String(e.message || e).slice(0, 200)
     console.log(`❌ ${name}\n   超时/异常: ${msg}`)
-    results.push({ journey: name, pass: false, skipped: false, unconfigured: false, error_class: null, errors: [`超时/异常: ${msg}`], notes: [], evidence: [] })
+    // 🔴 SDQS D5（docs/testing/smoke-data-quality.md；issue #7583 缺陷 8）：失败路径也要留**现场图**。
+    //    截图此前只写在 `journey().done` 里，而抛错/超时的旅程**走不到 done** ⇒ 零证据，
+    //    下一次再出现只能靠人复跑。独立文件名（`-failed.png`）以免覆盖同名旅程的正常截图；
+    //    拍不到不阻塞（可能浏览器已崩），但**必须尝试**并登记进 evidence。
+    const shot = join(OUT, 'screenshots', `${name}-failed.png`)
+    try { await page.screenshot({ path: shot, fullPage: false }) } catch {}
+    results.push({ journey: name, pass: false, skipped: false, unconfigured: false, error_class: null, errors: [`超时/异常: ${msg}`], notes: [], evidence: [shot] })
   }
 }
 

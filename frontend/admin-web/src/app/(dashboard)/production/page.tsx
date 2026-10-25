@@ -59,9 +59,11 @@ interface BoardRow {
 interface SearchParams {
   keyword: string
   status: string
+  /** 只看外发（issue #7723）：外发在途的跟踪面 —— 服务端按「有承接方档案引用」过滤 */
+  outsourced: boolean
 }
 
-const EMPTY_SEARCH: SearchParams = { keyword: '', status: '' }
+const EMPTY_SEARCH: SearchParams = { keyword: '', status: '', outsourced: false }
 
 /** 状态下拉选项（含「全部」）——合并自加工单列表页（issue #4357） */
 const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
@@ -87,6 +89,18 @@ function renderItemsSummary(po: ProcessingOrder): string[] {
   return lines.filter(Boolean)
 }
 
+/**
+ * issue #7633：该行的**父订单已不可解析**（软删 / 缺失）。
+ *
+ * 判定口径 = 列表响应里 `orderNo` 缺失：`processing_orders.order_id` 是 NOT NULL 外键、
+ * 列表与明细同租户，而列表用 `selectBatchIds`（`@TableLogic` 过滤软删）批量取父订单
+ * ⇒ `orderNo == null` **当且仅当**父订单已软删 / 不可解析。
+ * 🔴 这是**推断**、不是显式契约字段（不改 API）；将来若要显式位（如 `orderMissing`）另立单。
+ */
+function isOrderMissing(po: ProcessingOrder): boolean {
+  return !po.orderNo
+}
+
 export default function ProductionBoardPage() {
   const router = useRouter()
   // issue #5913：「订单详情」入口的守卫码与 `/orders` 的前端路由守卫同码（layout.tsx 的
@@ -106,6 +120,8 @@ export default function ProductionBoardPage() {
   // 筛选（合并自加工单列表页，issue #4357）：输入态与已提交态分离 —— 回车/点「查询」才发请求
   const [keywordInput, setKeywordInput] = useState('')
   const [statusInput, setStatusInput] = useState('')
+  /** 「只看外发」输入态（与已提交态分离，同关键词/状态：点「查询」才生效） */
+  const [outsourcedInput, setOutsourcedInput] = useState(false)
   const [search, setSearch] = useState<SearchParams>(EMPTY_SEARCH)
 
   /** 列表请求序号（issue #4303）：只认最新一次请求的响应，旧的在飞响应一律丢弃 */
@@ -119,6 +135,7 @@ export default function ProductionBoardPage() {
       const res = await processingOrderApi.list({
         keyword: search.keyword || undefined,
         status: search.status || undefined,
+        outsourced: search.outsourced || undefined,
       })
       // 时序保护（issue #4303）：旧响应晚到不得覆盖新数据，也不得由它收尾 loading
       if (seq !== reqSeq.current) return
@@ -145,7 +162,9 @@ export default function ProductionBoardPage() {
 
   useEffect(() => {
     if (loading || error) return
-    const pending = pageRows.filter((r) => !detailCache.current.has(r.po.id))
+    // issue #7633：父订单已删的行**不进** pending ⇒ 不再对 operations / piecework 扇出 404
+    //（不进 pending 就天然不重试；它们也不写缓存，对 `pending` 收敛无影响）。
+    const pending = pageRows.filter((r) => !isOrderMissing(r.po) && !detailCache.current.has(r.po.id))
     if (pending.length === 0) return
     let cancelled = false
     Promise.allSettled(
@@ -196,16 +215,17 @@ export default function ProductionBoardPage() {
   }
 
   const handleSearch = () => {
-    setSearch({ keyword: keywordInput.trim(), status: statusInput })
+    setSearch({ keyword: keywordInput.trim(), status: statusInput, outsourced: outsourcedInput })
   }
 
   const handleReset = () => {
     setKeywordInput('')
     setStatusInput('')
+    setOutsourcedInput(false)
     setSearch(EMPTY_SEARCH)
   }
 
-  const filtered = !!(search.keyword || search.status)
+  const filtered = !!(search.keyword || search.status || search.outsourced)
 
   return (
     <div className="p-6 space-y-4">
@@ -252,6 +272,16 @@ export default function ProductionBoardPage() {
               ))}
             </select>
           </div>
+          {/* 只看外发（issue #7723）：外发承接方与回厂日由智能派单录入，本页只做跟踪/筛选。 */}
+          <label className="flex items-center gap-2 h-9 text-sm text-neutral-600 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={outsourcedInput}
+              onChange={(e) => setOutsourcedInput(e.target.checked)}
+              data-testid="production-filter-outsourced"
+            />
+            只看外发
+          </label>
           <div className="flex items-center gap-2">
             <Button variant="primary" size="sm" onClick={handleSearch} disabled={loading}>
               <Search className="w-4 h-4 mr-1.5" />
@@ -292,6 +322,8 @@ export default function ProductionBoardPage() {
               <th className="px-4 py-3 font-medium whitespace-nowrap">客户</th>
               <th className="px-4 py-3 font-medium">商品与数量</th>
               <th className="px-4 py-3 font-medium whitespace-nowrap">状态</th>
+              {/* 承接方（issue #7723）：外发在途怎么跟踪 —— 加工厂 + 回厂日；本厂自做显示「—」。 */}
+              <th className="px-4 py-3 font-medium whitespace-nowrap">承接方</th>
               <th className="px-4 py-3 font-medium whitespace-nowrap">工序进度</th>
               <th className="px-4 py-3 font-medium whitespace-nowrap">计件合计</th>
               {/* 操作（issue #6717）：右缘冻结 —— 改前 1280×800 实测本列表头 left = 1368
@@ -303,7 +335,7 @@ export default function ProductionBoardPage() {
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-neutral-400" data-testid="production-board-loading">
+                <td colSpan={10} className="px-4 py-8 text-center text-neutral-400" data-testid="production-board-loading">
                   加载中…
                 </td>
               </tr>
@@ -311,7 +343,7 @@ export default function ProductionBoardPage() {
 
             {!loading && error && (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center" data-testid="production-board-error">
+                <td colSpan={10} className="px-4 py-8 text-center" data-testid="production-board-error">
                   <span className="mb-2 flex items-center justify-center gap-2 text-red-500">
                     <AlertCircle className="w-4 h-4" />
                     {error}
@@ -325,7 +357,7 @@ export default function ProductionBoardPage() {
 
             {!loading && !error && rows.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-4 py-10 text-center text-neutral-400" data-testid="production-board-empty">
+                <td colSpan={10} className="px-4 py-10 text-center text-neutral-400" data-testid="production-board-empty">
                   暂无作业单{filtered ? '（当前筛选条件下）' : ''}
                 </td>
               </tr>
@@ -350,7 +382,15 @@ export default function ProductionBoardPage() {
                     <td className="px-4 py-4 whitespace-nowrap text-neutral-600" data-testid={`production-row-kind-${po.id}`}>
                       {ORDER_KIND_LABELS[orderKindOf(po)]}
                     </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-neutral-600">{po.orderNo ?? '—'}</td>
+                    {/* issue #7633：父订单已删（`orderNo` 缺失）⇒ 说清「订单已删除」，而不是留一个
+                        「—」让人以为数据坏了。客户列仍「—」（不编造客户）；不给这类行「重试」入口
+                        （重试必然还是 404），也不新增常驻告警条（§31 P1/P3）。 */}
+                    <td
+                      className="px-4 py-4 whitespace-nowrap text-neutral-600"
+                      data-testid={`production-row-orderno-${po.id}`}
+                    >
+                      {isOrderMissing(po) ? '订单已删除' : po.orderNo ?? '—'}
+                    </td>
                     <td className="px-4 py-4 whitespace-nowrap text-neutral-900">{po.customerName ?? '—'}</td>
                     {/* 商品与数量：宽度必须收紧 —— 本列是 #4357 合并时新增的第 8 列，过宽会把
                         「操作」列挤出容器右缘（§15.3：vitest 看不见，几何探针实测 1440px 视口
@@ -376,6 +416,18 @@ export default function ProductionBoardPage() {
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">
                       <StatusBadge label={chip.label} color={chipToneClasses[chip.tone]} dot />
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-neutral-700" data-testid={`production-row-consignee-${po.id}`}>
+                      {po.processor || po.processorSupplierId ? (
+                        <span>
+                          {po.processor ?? '外发'}
+                          {po.expectedDeliveryDate && (
+                            <span className="ml-1 text-xs text-neutral-500">· {po.expectedDeliveryDate} 回厂</span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-neutral-400">本厂</span>
+                      )}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-2">

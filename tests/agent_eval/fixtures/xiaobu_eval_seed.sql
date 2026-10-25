@@ -96,7 +96,10 @@ INSERT INTO products
 VALUES
   ('prod_eval_blackout', 1, '遮光窗帘', 'cat_eval_curtain', 168.00,
    '高遮光面料，适合卧室与客厅，遮光率 95%，支持散剪与加工定制',
-   '[]'::jsonb, '[]'::jsonb, 1000, 10, 'on_sale', '米', 'per_meter', 'EVAL-BLK-28',
+   -- 🔴 issue #7541：本商品是 PR-074（对话里生成商品图）的**唯一取样对象**。
+   --    原值 `'[]'` ⇒ `product_image_generate` 必然 `IMAGE_SOURCE_MISSING`（等于这条用例
+   --    永远只测「缺样图拒绝」而测不到成功路径）。给一张可达的公开样图，成功路径才跑得起来。
+   '["https://dummyimage.com/1024x1024/e8e8e8/333333.png&text=curtain"]'::jsonb, '[]'::jsonb, 1000, 10, 'on_sale', '米', 'per_meter', 'EVAL-BLK-28',
    'on_order', 0, 0, TRUE, '["bulk_cut", "full_roll"]'::jsonb, 60.00),
   ('prod_eval_dark_green', 1, '北欧风窗帘', 'cat_eval_curtain', 128.00,
    '北欧简约风格，棉麻质感，适合客厅与书房',

@@ -17,6 +17,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import org.springframework.test.util.ReflectionTestUtils;
+
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -55,6 +57,14 @@ class CustomerServiceTest {
 
     @Mock
     private SessionMessageMapper sessionMessageMapper;
+
+    /** issue #7711：建档/补空/合并收口到身份收敛服务 —— 本文件只验证**编排**（参数原样下传）。 */
+    @Mock
+    private CustomerProfileIdentityService identityService;
+
+    /** issue #7711：订单路径按 userId 解析 openid（非 final 字段 ⇒ Mockito 字段注入）。 */
+    @Mock
+    private UserIdentityMapper userIdentityMapper;
 
     private CustomerProfile testProfile;
     private CustomerTag testTag;
@@ -546,90 +556,112 @@ class CustomerServiceTest {
     // ======================== 从会话创建客户测试 ========================
 
     @Test
-    @DisplayName("从会话创建客户 - 新客户，自动创建")
-    void createFromSession_NewCustomer() {
-        // given: openid 不存在（issue #7257：findFirstByOpenid 未命中 ⇒ 条件插入命中）
-        when(customerProfileMapper.findFirstByOpenid(eq(1L), anyString())).thenReturn(null);
-        when(customerProfileMapper.insertIgnoreByOpenid(any(CustomerProfile.class))).thenReturn(1);
+    @DisplayName("从会话创建客户 - 委托身份收敛，种子照旧（渠道 / 订单数 0）")
+    void createFromSession_delegatesToIdentityService() {
+        CustomerProfile created = createdProfile("cust-new", "openid_new", "wechat_mini", 0);
+        when(identityService.ensure(eq(1L), isNull(), eq("openid_new"),
+                any(CustomerProfileIdentityService.ProfileSeed.class), eq(true))).thenReturn(created);
 
-        // when
-        CustomerProfile result = customerService.createFromSession(1L, "openid_new", "新客户昵称", "wechat_mini");
+        // when：未授权手机号 ⇒ 手机号参数为 null（改前行为逐字不变）
+        CustomerProfile result = customerService.createFromSession(1L, "openid_new", "新客户昵称",
+                "wechat_mini", null);
 
         // then
-        assertThat(result).isNotNull();
-        assertThat(result.getWechatOpenid()).isEqualTo("openid_new");
-        assertThat(result.getWechatNickname()).isEqualTo("新客户昵称");
-        assertThat(result.getSourceChannel()).isEqualTo("wechat_mini");
-        assertThat(result.getVipLevel()).isEqualTo("normal");
-        verify(customerProfileMapper).insertIgnoreByOpenid(any(CustomerProfile.class));
-        verify(customerProfileMapper, never()).insert(any(CustomerProfile.class));
+        assertThat(result).isSameAs(created);
+        ArgumentCaptor<CustomerProfileIdentityService.ProfileSeed> seed =
+                ArgumentCaptor.forClass(CustomerProfileIdentityService.ProfileSeed.class);
+        verify(identityService).ensure(eq(1L), isNull(), eq("openid_new"), seed.capture(), eq(true));
+        assertThat(seed.getValue().nickname()).isEqualTo("新客户昵称");
+        assertThat(seed.getValue().sourceChannel()).isEqualTo("wechat_mini");
+        assertThat(seed.getValue().totalOrders()).isZero();
     }
 
     @Test
-    @DisplayName("从会话创建客户 - 已存在，更新最后活跃时间")
-    void createFromSession_ExistingCustomer() {
-        // given: openid 已存在 ⇒ 只刷新最后活跃时刻（条件写，不整实体回写）
-        when(customerProfileMapper.findFirstByOpenid(eq(1L), anyString())).thenReturn(testProfile);
-        when(customerProfileMapper.touchLastActiveAt(anyLong(), anyString())).thenReturn(1);
+    @DisplayName("从会话创建客户 - 已绑定手机号 ⇒ 手机号一并下传（与代录下单那条认成同一人）")
+    void createFromSession_passesBoundPhone() {
+        CustomerProfile existing = createdProfile("cust-001", "openid_123", "wechat_mini", 0);
+        when(identityService.ensure(eq(1L), eq("13800138000"), eq("openid_123"),
+                any(CustomerProfileIdentityService.ProfileSeed.class), eq(true))).thenReturn(existing);
 
-        // when
-        CustomerProfile result = customerService.createFromSession(1L, "openid_123", null, null);
+        CustomerProfile result = customerService.createFromSession(1L, "openid_123", "测试客户",
+                "wechat_mini", "13800138000");
 
-        // then
-        assertThat(result).isNotNull();
         assertThat(result.getId()).isEqualTo("cust-001");
-        verify(customerProfileMapper).touchLastActiveAt(1L, "cust-001");
-        verify(customerProfileMapper, never()).updateById(any(CustomerProfile.class));
-        verify(customerProfileMapper, never()).insert(any(CustomerProfile.class));
+        verify(identityService).ensure(eq(1L), eq("13800138000"), eq("openid_123"),
+                any(CustomerProfileIdentityService.ProfileSeed.class), eq(true));
     }
 
     // ======================== 从订单创建客户测试 ========================
 
     @Test
-    @DisplayName("从订单创建客户 - 新客户，自动建档")
-    void createFromOrder_NewCustomer() {
-        // given: 手机号不存在
-        when(customerProfileMapper.findFirstByPhone(eq(1L), anyString())).thenReturn(null);
-        when(customerProfileMapper.insertIgnoreByPhone(any(CustomerProfile.class))).thenReturn(1);
+    @DisplayName("从订单创建客户 - 收货人/地址/物流一并交给档案（补空不覆盖由身份服务保证）")
+    void createFromOrder_fillsOrderContactIntoProfile() {
+        CustomerProfile profile = createdProfile("cust-order", "13600136000", "order", 1);
+        when(identityService.ensure(eq(1L), eq("13600136000"), isNull(),
+                any(CustomerProfileIdentityService.ProfileSeed.class), eq(true))).thenReturn(profile);
 
-        // when
-        CustomerProfile result = customerService.createFromOrder(1L, "李四", "13600136000", "浙江省杭州市");
+        CustomerProfile result = customerService.createFromOrder(1L, "李四", "13600136000",
+                "浙江省杭州市", "express", "顺丰", null);
 
-        // then
-        assertThat(result).isNotNull();
-        assertThat(result.getPhone()).isEqualTo("13600136000");
-        assertThat(result.getSourceChannel()).isEqualTo("order");
-        assertThat(result.getTotalOrders()).isEqualTo(1);
-        assertThat(result.getAgentNotes()).contains("首单收货地址：");
-        verify(customerProfileMapper).insertIgnoreByPhone(any(CustomerProfile.class));
+        assertThat(result).isSameAs(profile);
+        ArgumentCaptor<CustomerProfileIdentityService.ProfileSeed> seed =
+                ArgumentCaptor.forClass(CustomerProfileIdentityService.ProfileSeed.class);
+        verify(identityService).ensure(eq(1L), eq("13600136000"), isNull(), seed.capture(), eq(true));
+        assertThat(seed.getValue().sourceChannel()).isEqualTo("order");
+        assertThat(seed.getValue().totalOrders()).isEqualTo(1);
+        verify(identityService).fillOrderContact(profile, 1L, "李四", "13600136000",
+                "浙江省杭州市", "express", "顺丰");
     }
 
     @Test
-    @DisplayName("从订单创建客户 - 手机号为空，跳过建档")
+    @DisplayName("从订单创建客户 - 带 userId ⇒ 先解析该用户 openid（C 端自助下单不再建第二条档案）")
+    void createFromOrder_resolvesOpenidFromUserId() {
+        ReflectionTestUtils.setField(customerService, "userIdentityMapper", userIdentityMapper);
+        when(userIdentityMapper.selectOne(any())).thenReturn(UserIdentity.builder()
+                .userId("user-c-1").tenantId(1L).openid("openid_from_user")
+                .identityType("mini_program").deleted(0).build());
+        CustomerProfile profile = createdProfile("cust-order", "13600136000", "order", 1);
+        when(identityService.ensure(eq(1L), eq("13600136000"), eq("openid_from_user"),
+                any(CustomerProfileIdentityService.ProfileSeed.class), eq(true))).thenReturn(profile);
+
+        customerService.createFromOrder(1L, "李四", "13600136000", "浙江省杭州市",
+                "express", "顺丰", "user-c-1");
+
+        verify(identityService).ensure(eq(1L), eq("13600136000"), eq("openid_from_user"),
+                any(CustomerProfileIdentityService.ProfileSeed.class), eq(true));
+    }
+
+    @Test
+    @DisplayName("从订单创建客户 - 手机号为空，跳过建档（也不补任何列）")
     void createFromOrder_EmptyPhone() {
-        // when: 手机号为空
-        CustomerProfile result = customerService.createFromOrder(1L, "王五", "", "地址");
+        // when：手机号为空
+        CustomerProfile result = customerService.createFromOrder(1L, "王五", "", "地址", null, null, null);
 
         // then
         assertThat(result).isNull();
-        verify(customerProfileMapper, never()).insert(any(CustomerProfile.class));
-        verify(customerProfileMapper, never()).findFirstByPhone(anyLong(), anyString());
+        verify(identityService, never()).ensure(anyLong(), any(), any(), any(), anyBoolean());
+        verify(identityService, never()).fillOrderContact(any(), anyLong(), any(), any(), any(), any(), any());
     }
 
-    @Test
-    @DisplayName("从订单创建客户 - 手机号已存在，刷新活跃时间")
-    void createFromOrder_ExistingCustomer() {
-        // given: 手机号已存在 ⇒ 只刷新最后活跃时刻
-        when(customerProfileMapper.findFirstByPhone(eq(1L), anyString())).thenReturn(testProfile);
-        when(customerProfileMapper.touchLastActiveAt(anyLong(), anyString())).thenReturn(1);
-
-        // when
-        CustomerProfile result = customerService.createFromOrder(1L, null, "13800138000", null);
-
-        // then
-        assertThat(result).isNotNull();
-        verify(customerProfileMapper).touchLastActiveAt(1L, "cust-001");
-        verify(customerProfileMapper, never()).updateById(any(CustomerProfile.class));
-        verify(customerProfileMapper, never()).insert(any(CustomerProfile.class));
+    /** 身份服务返回的档案（本文件只测编排，不测建档细节）。 */
+    private static CustomerProfile createdProfile(String id, String identity, String channel, int totalOrders) {
+        CustomerProfile profile = CustomerProfile.builder()
+                .id(id)
+                .tenantId(1L)
+                .wechatNickname("李四")
+                .vipLevel("normal")
+                .customerStatus("active")
+                .lifecycleStage("new")
+                .sourceChannel(channel)
+                .totalOrders(totalOrders)
+                .totalConsumption(BigDecimal.ZERO)
+                .registeredAt(OffsetDateTime.now())
+                .build();
+        if (identity.startsWith("openid")) {
+            profile.setWechatOpenid(identity);
+        } else {
+            profile.setPhone(identity);
+        }
+        return profile;
     }
 }

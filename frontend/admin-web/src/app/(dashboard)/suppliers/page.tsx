@@ -7,7 +7,7 @@ import { Button, PageCard, PageHeader } from '@/components/ui'
 import ListLoadError from '@/components/common/ListLoadError'
 import { loadErrorMessage } from '@/lib/api-error'
 import { supplierApi } from '@/lib/api'
-import { SELECT_CONTROL_FIELD } from '@/components/ui/Select'
+import { SELECT_CONTROL, SELECT_CONTROL_FIELD } from '@/components/ui/Select'
 import { usePermission } from '@/lib/permission'
 import type {
   Supplier,
@@ -70,6 +70,8 @@ type PayFormState = {
 type FormState = {
   id?: string
   name: string
+  /** 档案类型（issue #7723）：material 采购供应商 / processor 外发加工厂（派单页的承接方下拉只列它） */
+  type: 'material' | 'processor'
   contactName: string
   contactPhone: string
   paymentTermsDays: string
@@ -79,6 +81,7 @@ type FormState = {
 
 const EMPTY_FORM: FormState = {
   name: '',
+  type: 'material',
   contactName: '',
   contactPhone: '',
   paymentTermsDays: '',
@@ -154,6 +157,7 @@ export default function SuppliersPage() {
   const openEdit = (s: Supplier) => setForm({
     id: s.id,
     name: s.name,
+    type: s.type ?? 'material',
     contactName: s.contactName || '',
     contactPhone: s.contactPhone || '',
     paymentTermsDays: s.paymentTermsDays === null || s.paymentTermsDays === undefined
@@ -178,6 +182,7 @@ export default function SuppliersPage() {
     }
     const payload: Partial<Supplier> = {
       name,
+      type: form.type,
       contactName: form.contactName.trim() || null,
       contactPhone: form.contactPhone.trim() || null,
       paymentTermsDays: terms,
@@ -407,6 +412,7 @@ export default function SuppliersPage() {
             <thead>
               <tr className="text-left text-xs text-neutral-500 border-b border-neutral-200">
                 <th className="py-2 whitespace-nowrap">名称</th>
+                <th className="py-2 whitespace-nowrap">类型</th>
                 <th className="py-2 whitespace-nowrap">联系人</th>
                 <th className="py-2 whitespace-nowrap">电话</th>
                 <th className="py-2 whitespace-nowrap">账期</th>
@@ -418,6 +424,9 @@ export default function SuppliersPage() {
               {suppliers.map((s) => (
                 <tr key={s.id} className="border-b border-neutral-100" data-testid={`supplier-row-${s.id}`}>
                   <td className="py-2 font-medium text-neutral-900">{s.name}</td>
+                  <td className="py-2 text-neutral-600" data-testid={`supplier-type-${s.id}`}>
+                    {s.type === 'processor' ? '加工厂' : '供应商'}
+                  </td>
                   <td className="py-2 text-neutral-600">{s.contactName || '—'}</td>
                   <td className="py-2 text-neutral-600">{s.contactPhone || '—'}</td>
                   <td className="py-2 text-neutral-600" data-testid={`supplier-terms-${s.id}`}>
@@ -531,6 +540,19 @@ export default function SuppliersPage() {
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                   className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                 />
+              </div>
+              <div>
+                <label className="block text-xs text-neutral-500 mb-1">类型</label>
+                <select
+                  data-testid="supplier-form-type"
+                  value={form.type}
+                  onChange={(e) => setForm({ ...form, type: e.target.value as 'material' | 'processor' })}
+                  className={SELECT_CONTROL}
+                >
+                  <option value="material">供应商（采购 / 入库）</option>
+                  <option value="processor">加工厂（外发作业）</option>
+                </select>
+                <p className="mt-1 text-xs text-neutral-400">加工厂会出现在「智能派单」的承接方下拉里</p>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>

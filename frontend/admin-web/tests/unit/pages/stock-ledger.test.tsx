@@ -140,6 +140,11 @@ describe('库存明细页（issue #6404 / UI-087）', () => {
     const cells = (i: number, id: string) =>
       screen.getAllByTestId(id)[i].textContent
 
+    // 列名必须写单位「米」（issue #7709）：本表是 SKU 级米数账，裸「变动」与入库单的卷数同屏时不辨量纲
+    expect(screen.getByText('变动(米)')).toBeInTheDocument()
+    expect(screen.getByText('变动前(米)')).toBeInTheDocument()
+    expect(screen.getByText('变动后(米)')).toBeInTheDocument()
+
     expect(cells(0, 'ledger-sku')).toContain('HZ-001-米白')
     expect(cells(0, 'ledger-delta')).toBe('+50')
     expect(cells(0, 'ledger-before')).toBe('0')

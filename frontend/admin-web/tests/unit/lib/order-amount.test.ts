@@ -1,7 +1,7 @@
 // case_ids: UI-053
 
 import { describe, it, expect } from 'vitest'
-import { lineSubtotal, paperLineSubtotal } from '@/lib/order-amount'
+import { fabricSubtotal, lineSubtotal, paperLineSubtotal } from '@/lib/order-amount'
 import type { OrderItem } from '@/types'
 
 /**
@@ -84,5 +84,46 @@ describe('lineSubtotal 行金额口径（issue #4965）', () => {
     // 纸面/屏幕口径即分叉（此处无法静态判定，故由 OrderItemList.test.tsx 与
     // QuotationDoc.test.tsx 分别断言各自的展示值来自该实现）。
     expect(lineSubtotal({ subtotal: 0.1, processingFee: 0.2 })).toBeCloseTo(0.3, 10)
+  })
+})
+
+/**
+ * 面料金额取数口（issue #7724）—— 直读 `subtotal` 会把加工费算两遍。
+ *
+ * 病根（用户 2026-10-25 截图）：`order_items.subtotal` 语义二义 ——「新增订单」页建单时落的是
+ * `面料 + 加工费`（`subtotal: productSub + lineFee`），而 agent / 开放接口路径落的是面料金额。
+ * 纸面「本套金额」与屏幕行「小计」都在它上面 + `processingFee` ⇒ 前者被双算：
+ * 同一张纸「本套金额 327.04」与「本单应收 275.94」自相矛盾。
+ */
+describe('fabricSubtotal 面料金额取数口（issue #7724）', () => {
+  it('🔴 `amount` 优先：subtotal 已含加工费时也不被采纳（本单 224.84，不是 275.94）', () => {
+    // 本单：7.3 × 30.80 = 224.84（amount）／落库 subtotal = 224.84 + 51.10 = 275.94
+    expect(fabricSubtotal({ amount: 224.84, subtotal: 275.94 })).toBe(224.84)
+  })
+
+  it('`amount` 缺席（存量单 / 非详情响应）⇒ 回落 `subtotal`', () => {
+    expect(fabricSubtotal({ subtotal: 275.94 })).toBe(275.94)
+    expect(fabricSubtotal({ amount: Number.NaN, subtotal: 275.94 })).toBe(275.94)
+  })
+
+  it('两个都不可知 ⇒ `null`（交给展示方决定印 `—` 还是折 0）', () => {
+    expect(fabricSubtotal({})).toBeNull()
+    expect(fabricSubtotal({ amount: undefined, subtotal: undefined })).toBeNull()
+  })
+
+  it('🔴 双算红证：行小计 / 本套金额 = amount + 加工费，**不是** subtotal + 加工费', () => {
+    const item = { amount: 224.84, subtotal: 275.94, processingFee: 51.1 }
+    // 修前两个函数都是 275.94 + 51.10 = 327.04（= 用户截图的「本套金额」）
+    expect(lineSubtotal(item)).toBe(275.94)
+    expect(paperLineSubtotal(item)).toBe(275.94)
+    // 与订单级总额同源：单价 × 数量 + 加工费（`OrderService.computeItemsTotal` 口径）
+    expect(lineSubtotal(item)).toBeCloseTo(7.3 * 30.8 + 51.1, 10)
+  })
+
+  it('分叉表补一行：`amount` 在场时两侧仍只有「面料不可知」这一格不同', () => {
+    expect(lineSubtotal({ amount: 224.84, subtotal: 275.94, processingFee: 51.1 })).toBe(275.94)
+    expect(paperLineSubtotal({ amount: 224.84, subtotal: 275.94, processingFee: 51.1 })).toBe(275.94)
+    expect(lineSubtotal({ amount: undefined, subtotal: undefined, processingFee: 0 })).toBe(0)
+    expect(paperLineSubtotal({ amount: undefined, subtotal: undefined, processingFee: 0 })).toBeNull()
   })
 })

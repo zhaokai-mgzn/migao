@@ -522,7 +522,9 @@ class StockBatchConsumptionServiceTest {
                     "-2.7", "60", "57.3", StockBatchConsumptionService.REASON_PROCESSING_ORDER);
             StockBatchConsumption already = consumption(77L, "PC-1", 2L, "item-1",
                     "2.7", "57.3", "60", StockBatchConsumptionService.REASON_PROCESSING_ORDER_CANCELLED);
-            when(consumptionMapper.selectList(any())).thenReturn(List.of(consumed), List.of(already));
+            // V191 / issue #7647 起 reverse 走**净额口径**：一次查出该单全部耗料族行（含已回补行），
+            // 净额 = 0 ⇒ 零写入。「重跑幂等」的判据未变，只是不再靠「两次查询 + 去重表」。
+            when(consumptionMapper.selectList(any())).thenReturn(List.of(consumed, already));
             stubBatches(batch(77L, "PC-1", "60"));
             stubConsumed(77L, "0"); // 已回补 ⇒ 净额 0 ⇒ 余量回到 60
 

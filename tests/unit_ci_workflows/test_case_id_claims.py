@@ -165,6 +165,9 @@ BUDGET_S = 60.0
 FETCH_CONCURRENCY = 4
 #: 值得重试一次的 HTTP 状态（限流 / 服务端瞬时态）；**4xx 业务错不重试**（重试也不会变）。
 RETRY_STATUSES = (429, 500, 502, 503, 504)
+#: **限流**的 403（issue #7549）：与「真的没权限」的 403 必须分开 —— 前者等一个窗口就会好，
+#: 后者重试一万次也不会好。判据 = 响应头 `X-RateLimit-Remaining: 0` 或报文含 `rate limit`。
+RATE_LIMIT_MAX_SLEEP_S = 2.0
 #: open PR 的取数上限（`per_page` 的硬上限）。命中上限 ⇒ **无法判定**（宁红不绿：可能还有下一页）。
 PR_LIST_LIMIT = 100
 #: 单个 PR 的「改动文件清单」取数上限（`GET /pulls/{n}/files`）。命中上限 ⇒ **无法判定**（同上）。
@@ -435,13 +438,59 @@ def _api_get_retrying(url: str, token: str, timeout: float, attempts: int = 2) -
         except urllib.error.HTTPError as e:
             last = e
             if e.code not in RETRY_STATUSES:
-                raise
+                if not _is_rate_limited(e):
+                    raise
+                # 🔴 限流是**瞬时**态（issue #7549：安装令牌 5000/h 打满时三条 required 腿全判假红）⇒
+                #    等一个**有界**的窗口再试；与「真的 403 没权限」分开（后者上面已经 raise）。
+                time.sleep(_retry_after_s(e))
+                continue
         except urllib.error.URLError as e:
             last = e
         except OSError as e:
             last = e
     assert isinstance(last, Exception), "重试耗尽却没有留下异常 ⇒ 循环逻辑漏了出口"
     raise last
+
+
+def _is_rate_limited(e: urllib.error.HTTPError) -> bool:
+    """这个 403/429 是不是**限流**（而不是没权限）。判据只认两种机械信号，不猜。"""
+    if e.code not in (403, 429):
+        return False
+    try:
+        headers = e.headers or {}
+    except Exception:  # noqa: BLE001 - 拿不到头就按报文判，不因此炸掉判定面
+        headers = {}
+    if str(headers.get("X-RateLimit-Remaining", "")).strip() == "0":
+        return True
+    try:
+        body = e.read().decode("utf-8", errors="replace")
+    except Exception:  # noqa: BLE001 - 读不到报文同样不炸
+        body = ""
+    return "rate limit" in body.lower()
+
+
+def _retry_after_s(e: urllib.error.HTTPError) -> float:
+    """限流后的等待秒数：优先 `Retry-After`，否则 1s；**封顶** `RATE_LIMIT_MAX_SLEEP_S`（CI 不许被拖）。"""
+    try:
+        raw = (e.headers or {}).get("Retry-After")
+        wait = float(raw) if raw not in (None, "") else 1.0
+    except (TypeError, ValueError):
+        wait = 1.0
+    return max(0.0, min(wait, RATE_LIMIT_MAX_SLEEP_S))
+
+
+def _http_error_text(e: urllib.error.HTTPError) -> str:
+    """`HTTP 403` 之外的**可归因**读数（issue #7549：截断的 `HTTP 403` 分不清权限/限流）。"""
+    if not _is_rate_limited(e):
+        return f"HTTP {e.code}"
+    try:
+        headers = e.headers or {}
+        remaining = headers.get("X-RateLimit-Remaining", "?")
+        reset = headers.get("X-RateLimit-Reset", "?")
+        retry_after = headers.get("Retry-After", "?")
+    except Exception:  # noqa: BLE001
+        return f"HTTP {e.code}（疑似限流，但响应头读不到）"
+    return f"HTTP {e.code}（**限流**：X-RateLimit-Remaining={remaining} · Reset={reset} · Retry-After={retry_after}）"
 
 
 def _short(text: str) -> str:
@@ -455,7 +504,7 @@ def _api_json(url: str, token: str, timeout: float) -> tuple[object, str]:
     try:
         return json.loads(_api_get_retrying(url, token, timeout)), ""
     except urllib.error.HTTPError as e:
-        return None, f"HTTP {e.code}"
+        return None, _http_error_text(e)
     except urllib.error.URLError as e:
         return None, f"连接失败（{_short(getattr(e, 'reason', e))}）"
     except (OSError, ValueError) as e:
@@ -1372,13 +1421,21 @@ class _ApiStub:
 
     def __init__(self, pulls: list[dict], contents: dict[str, object], status: int,
                  blobs: dict[str, str] | None = None, fail_first_status: int | None = None,
-                 pr_files: dict[int, list[dict]] | None = None) -> None:
+                 pr_files: dict[int, list[dict]] | None = None,
+                 fail_first_pulls_status: int | None = None,
+                 extra_headers: dict[str, str] | None = None,
+                 fail_first_pulls_message: str = "API rate limit exceeded for installation.") -> None:
         self.pulls = pulls
         self.contents = contents
         self.status = status
         self.blobs = blobs or {}
         self.fail_first_status = fail_first_status
         self.pr_files = pr_files or {}
+        # 限流面（issue #7549）：第一次 `GET /pulls` 直接给 403/429，用来量「等一个窗口再试」这条路径
+        self.fail_first_pulls_status = fail_first_pulls_status
+        self.fail_first_pulls_message = fail_first_pulls_message
+        # 每个响应都附带的头（限流读数：`X-RateLimit-Remaining` / `Retry-After`）
+        self.extra_headers = extra_headers or {}
         self.seen_paths: set[str] = set()
         self.requests: list[str] = []
 
@@ -1394,6 +1451,8 @@ class _ApiStub:
             return 405, {"message": "Method Not Allowed"}, ""
         if not authorized:
             return 401, {"message": "Requires authentication"}, ""
+        if self.fail_first_pulls_status is not None and first_hit and path.endswith("/pulls"):
+            return self.fail_first_pulls_status, {"message": self.fail_first_pulls_message}, ""
         if self.fail_first_status is not None and first_hit and "/git/blobs/" in path:
             return self.fail_first_status, {"message": "transient"}, ""
         if path.endswith("/pulls"):
@@ -1441,6 +1500,8 @@ def _serve_api(monkeypatch, stub: _ApiStub) -> str:
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(payload)))
+            for hname, hvalue in (getattr(stub, "extra_headers", None) or {}).items():
+                self.send_header(hname, hvalue)
             self.end_headers()
             self.wfile.write(payload)
 
@@ -1566,6 +1627,66 @@ def test_http_transient_500_is_retried_once_then_succeeds(monkeypatch) -> None:
             "GET /repos/acme/demo/git/blobs/blob-retry",
             "GET /repos/acme/demo/git/blobs/blob-retry",
         ], blob_reads
+    finally:
+        _release(stub)
+
+
+def test_http_rate_limited_403_is_retried_once_then_succeeds(monkeypatch) -> None:
+    """**限流 403 是瞬时态（issue #7549）**：第一次 `GET /pulls` 被限流、重试后 200 ⇒ 判定照常出读数。
+
+    现场（2026-10-23 15:12~15:32）：安装令牌 5000/h 打满 ⇒ `QA Growth Gate` / gitleaks / Danger Scan /
+    取号台账**同时**判红，外观与「真有缺陷」一模一样 ⇒ 所有人先去查自己的 diff。
+    这条判据钉两件事：① 限流要**退避重试**（等一个**有界**窗口）；② 退避**有界**（≤ `RATE_LIMIT_MAX_SLEEP_S`）。
+    """
+    stub = _ApiStub(
+        [{"number": 7001, "head": {"sha": "sha-a"}}],
+        {"sha-a/" + CLAIMS_API_PATH: []},
+        200,
+        fail_first_pulls_status=403,
+        extra_headers={"X-RateLimit-Remaining": "0", "Retry-After": "1"},
+    )
+    base = _serve_api(monkeypatch, stub)
+    _api_env(monkeypatch, base)
+    sleeps: list[float] = []
+    monkeypatch.setattr("time.sleep", lambda s: sleeps.append(s))
+    try:
+        fetched = fetch_open_pr_claims()
+        assert fetched is not None and fetched[1] == [], fetched
+        pulls_reads = [r for r in stub.snapshot()[1] if r.endswith("/pulls")]
+        assert pulls_reads == [
+            "GET /repos/acme/demo/pulls",
+            "GET /repos/acme/demo/pulls",
+        ], pulls_reads
+        assert sleeps and all(0 <= s <= RATE_LIMIT_MAX_SLEEP_S for s in sleeps), (
+            f"退避必须**有界**（不许把 CI 拖死）：实测 sleeps={sleeps}")
+    finally:
+        _release(stub)
+
+
+def test_http_plain_403_is_not_retried_and_is_attributable(monkeypatch) -> None:
+    """**「没权限」的 403 不许重试**，且红文本要能分清（不是截断的 `HTTP 403`）。"""
+    stub = _ApiStub(
+        [{"number": 7001, "head": {"sha": "sha-a"}}],
+        {},
+        200,
+        fail_first_pulls_status=403,
+        fail_first_pulls_message="Resource not accessible by integration",
+    )
+    base = _serve_api(monkeypatch, stub)
+    _api_env(monkeypatch, base)
+    sleeps: list[float] = []
+    monkeypatch.setattr("time.sleep", lambda s: sleeps.append(s))
+    try:
+        fetched = fetch_open_pr_claims()
+        # 直接解包 = 比 `is not None` 更强的断言（None 会当场 TypeError）；本条是弱断言门禁的硬要求
+        _reading, problems = fetched
+        assert isinstance(problems, list) and problems, fetched
+        assert "HTTP 403" in problems[0], problems
+        assert "限流" not in problems[0], (
+            "非限流的 403 被贴上了「限流」标签 ⇒ 归因错（#7549 的另一半就是归因）")
+        pulls_reads = [r for r in stub.snapshot()[1] if r.endswith("/pulls")]
+        assert pulls_reads == ["GET /repos/acme/demo/pulls"], pulls_reads
+        assert sleeps == [], f"非限流的 403 不该退避：{sleeps}"
     finally:
         _release(stub)
 

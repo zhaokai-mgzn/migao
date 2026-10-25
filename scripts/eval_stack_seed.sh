@@ -122,14 +122,62 @@ for f in "${SEED_FILES[@]}"; do
     psql -v ON_ERROR_STOP=1 -U "$PG_USER" -d "$PG_DB" < "$f"
 done
 
-# ── 数据核对（把"栈里到底有什么"打进日志，供跨 workflow 对照 —— 本 issue 的取证手段）──
+# ── 数据核对（五类计数，0 行即红 —— issue #7583 缺陷 7）──────────────
+# 为什么必须判红：种子缺 SKU / 缺订单明细时，注入**不报错**，于是「数据缺口」要么把应红的
+# 断言逼成假红（用例拿不到数据 ⇒ 能力回归），要么让断言无数据可判 = 假绿。
+# 旧形态只数 products：`product_colors` / `product_skus` / `users` / 订单金额段**静默 0 行也绿**。
+# 五类 = 商品 / 颜色 / SKU / 用户 / 订单明细（金额 = 明细 subtotal 合计 > 0）。
+# 判据 = tests/unit_ci_workflows/test_seed_data_quality.py（stub `docker` 跑本脚本，逐类注入 0）。
 echo "── 数据核对（persona=${PERSONA}）──"
 # 标签在 bash 侧拼：SQL 里不用「两竖线」做字符串拼接 —— CI helper 的管道规模守卫
 # 把两竖线也当管道计数，而 SQL 的连接符不是 shell 管道（本条注释同样避开那两个字
 # 符，否则守卫会把注释也算成一例）
-PRODUCTS=$(docker compose -f "$COMPOSE_FILE" exec -T postgres \
-  psql -U "$PG_USER" -d "$PG_DB" -tAc \
-  "SELECT count(*) FROM products WHERE tenant_id=1")
+# `deleted` 列：users / order_items 走软删（口径与 tests/agent_eval/fixtures/*.sql 一致）
+SEED_COUNTS_SQL="SELECT
+  (SELECT count(*) FROM products WHERE tenant_id=1),
+  (SELECT count(*) FROM product_colors WHERE tenant_id=1),
+  (SELECT count(*) FROM product_skus WHERE tenant_id=1),
+  (SELECT count(*) FROM users WHERE tenant_id=1 AND deleted=0),
+  (SELECT count(*) FROM order_items WHERE tenant_id=1 AND deleted=0),
+  (SELECT coalesce(sum(subtotal),0) FROM order_items WHERE tenant_id=1 AND deleted=0)"
+if ! COUNTS=$(docker compose -f "$COMPOSE_FILE" exec -T postgres \
+  psql -U "$PG_USER" -d "$PG_DB" -tAc "$SEED_COUNTS_SQL"); then
+  echo "::error::种子计数查询失败（DB 不可达 / 列已改名？）—— 核对没跑成 ≠ 核对通过" >&2
+  exit 1
+fi
+IFS='|' read -r -a C <<< "$COUNTS" || true
+if [ "${#C[@]}" -ne 6 ]; then
+  echo "::error::种子计数输出不可解析（期望 6 个数，实得 ${#C[@]}）：'${COUNTS}' —— 读不到 ≠ 通过" >&2
+  exit 1
+fi
+COUNT_LABELS=(products colors skus users order_items)
+for i in 0 1 2 3 4; do
+  v="${C[$i]}"
+  case "$v" in
+    ''|*[!0-9]*)
+      echo "::error::种子计数不可解析：${COUNT_LABELS[$i]}='${v}' —— 读不到 ≠ 通过" >&2
+      exit 1
+      ;;
+  esac
+  if [ "$v" -lt 1 ]; then
+    echo "::error::种子计数不合格：${COUNT_LABELS[$i]}=0（persona=${PERSONA}）—— 夹具缺数据会让评测假红/假绿（issue #7583 缺陷 7）" >&2
+    exit 1
+  fi
+done
+case "${C[5]}" in
+  ''|*[!0-9.]*)
+    echo "::error::种子金额不可解析：order_amount='${C[5]}' —— 读不到 ≠ 通过" >&2
+    exit 1
+    ;;
+esac
+if ! awk -v a="${C[5]}" 'BEGIN{exit !(a+0 > 0)}'; then
+  echo "::error::种子金额不合格：order_amount=${C[5]}（要求 > 0）—— 订单明细金额链没有数据（issue #7583 缺陷 7）" >&2
+  exit 1
+fi
+echo "seed_counts products=${C[0]} colors=${C[1]} skus=${C[2]} users=${C[3]} order_items=${C[4]} order_amount=${C[5]}"
+
+# 既有读数（跨 workflow 对照用；口径不变）
+PRODUCTS="${C[0]}"
 FIRST_PRODUCT=$(docker compose -f "$COMPOSE_FILE" exec -T postgres \
   psql -U "$PG_USER" -d "$PG_DB" -tAc \
   "SELECT name FROM products WHERE tenant_id=1 ORDER BY created_at DESC LIMIT 1")

@@ -186,8 +186,10 @@ export default function AdminInboundPage() {
                           {item.doorWidth || '未填门幅'}
                         </Text>
                         <Text className='admin-card__note'>
-                          数量 {item.quantity ?? '-'} · 单价 {formatYuanAmount(item.unitCost)} ·
-                          金额 {formatYuanAmount(item.amount)} ·
+                          {/* 入库米数（issue #7709）：服务端算好的那个数（卷数 × 卷长）；
+                              `meters` 缺席（旧服务端）时回落到 `quantity`，不自己乘 */}
+                          入库 {item.meters ?? item.quantity ?? '-'} 米 · 单价{' '}
+                          {formatYuanAmount(item.unitCost)} · 金额 {formatYuanAmount(item.amount)} ·
                           {item.batchNo ? ` 批次 ${item.batchNo}` : ' 过账后生成批次号'}
                         </Text>
                       </View>

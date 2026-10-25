@@ -202,13 +202,15 @@ public class InboundOrderService {
                     .doorWidth(sku.getDoorWidth())
                     .quantity(item.getQuantity())
                     .unitCost(item.getUnitCost())
-                    // 行金额按**入库米数**算（issue #6812）：photo 单 = 卷数 × 卷长 × 单价；其余来源 = 数量 × 单价
-                    .amount(amountOf(metersFor(source, item.getQuantity(), item.getRollLengthM()), item.getUnitCost()))
+                    // 行金额按**入库米数**算（issue #7709）：校验阶段已把 quantity 换算成米数
+                    // （按卷录入 = 卷数 × 卷长），这里只做乘法 —— 不在这里第二次换算
+                    .amount(amountOf(item.getQuantity(), item.getUnitCost()))
                     .dyeLot(trimToNull(item.getDyeLot()))
                     // 旧系统批次号（V118 / issue #5153）：**外部事实**，原样透传 —— 与 batch_no
                     // （服务端生成的系统号）两列两义，永不互相赋值（V111 明令不得互相冒充）
                     .legacyBatchNo(item.getLegacyBatchNo())
                     .rollLengthM(item.getRollLengthM())
+                    .rollCount(item.getRollCount())
                     .remark(item.getRemark())
                     .build();
             inboundOrderItemMapper.insert(line);
@@ -329,9 +331,10 @@ public class InboundOrderService {
             // issue #5063（V115）：库存列与入库行数量同为 NUMERIC(12,1) ⇒ 全程 BigDecimal
             // （改前 `int beforeQty = sku.getStock()` / `int quantity = line.getQuantity()`
             //  在入库量是 60.5 米时根本走不到这里 —— 校验阶段就显式拒绝了；本单把两侧一起放开）
-            // 🔴 入库米数 = 库存/批次/台账/成本的**唯一换算源**（issue #6812）：photo 单 = 卷数 × 每卷米数；
-            //    其余来源 = 数量（米，逐字保持现状）。明细行的「数量」列本身不改写 —— photo 单它存的就是卷数。
-            BigDecimal meters = metersFor(order.getSource(), line.getQuantity(), line.getRollLengthM());
+            // 🔴 入库米数 = 库存/批次/台账/成本的**唯一换算源**（issue #7709）：新行建单时已把
+            //    卷数 × 卷长 算进 quantity；只有「本改动之前建的拍照草稿」quantity 还是卷数（读面兼容）。
+            BigDecimal meters = storedMeters(order.getSource(), line.getQuantity(), line.getRollLengthM(),
+                    line.getRollCount());
             totalMeters = totalMeters.add(meters);
             BigDecimal unitCost = line.getUnitCost();
 
@@ -529,6 +532,10 @@ public class InboundOrderService {
         for (InboundOrderItem line : itemMapperList(order.getId(), tenantId)) {
             InboundOrderResponse.Item item = new InboundOrderResponse.Item();
             BeanUtils.copyProperties(line, item);
+            // 入库米数（issue #7709）：入库单明细、批次余量、库存流水必须说同一个米数 ⇒ 由服务端算好下发，
+            // 前端不自己聚合/换算（历史拍照行也按这里还原成米数）
+            item.setMeters(storedMeters(order.getSource(), line.getQuantity(), line.getRollLengthM(),
+                    line.getRollCount()));
             items.add(item);
         }
         resp.setItems(items);
@@ -592,15 +599,29 @@ public class InboundOrderService {
             if (item.getSkuId() == null) {
                 throw BusinessException.validationError("商品明细第 " + idx + " 项缺少 SKU");
             }
-            // 数量/单价判据**只有一处**（requireItemNumbers）：建单与批量建账导入共用同一条口径
-            item.setQuantity(requireItemNumbers(item.getQuantity(), item.getUnitCost(),
-                    "商品明细第 " + idx + " 项的数量", "商品明细第 " + idx + " 项的入库单价"));
-            if (InboundOrder.SOURCE_PHOTO.equals(source)) {
-                // 拍照入库（issue #6812）：数量 = **卷数**（正整数）、卷长 = **每卷米数** ⇒ 米数 = 两者之积。
-                // 卷数/卷长的可读拒绝放在这里（requireItemNumbers 的下限文案是按米写的）；
-                // 米数的 0.1 米粒度由 metersFor 里的 requireOneDecimal 统一守。
-                item.setQuantity(requireRollCount(item.getQuantity(), "商品明细第 " + idx + " 项的卷数"));
-                item.setRollLengthM(requireRollLength(item.getRollLengthM(), "商品明细第 " + idx + " 项的卷长"));
+            // 🔴 入库米数 = **卷数 × 卷长**（issue #7709）—— 全仓唯一换算点 = metersOfRolls。
+            //    卷数从哪来：photo 单（issue #6812）的「数量」格本来就是卷数；其余来源由前端「卷数」
+            //    列显式给出（rollCount）。**有卷数时客户端的 quantity 一律不采信**：改前的换算发生在
+            //    客户端（#7646 的前端自乘），客户端不乘就把「1 卷 × 70 米」记成 1 米
+            //    （RK-20261024-0001 实测：批次/台账/库存全链 1 米，下单报「仅剩 1.0 米」）。
+            boolean byRolls = InboundOrder.SOURCE_PHOTO.equals(source) || item.getRollCount() != null;
+            if (byRolls) {
+                BigDecimal rollCount = requireRollCount(
+                        InboundOrder.SOURCE_PHOTO.equals(source)
+                                ? item.getQuantity()
+                                : new BigDecimal(item.getRollCount()),
+                        "商品明细第 " + idx + " 项的卷数");
+                BigDecimal rollLengthM = requireRollLength(item.getRollLengthM(),
+                        "商品明细第 " + idx + " 项的卷长");
+                item.setRollCount(rollCount.intValueExact());
+                item.setRollLengthM(rollLengthM);
+                item.setQuantity(metersOfRolls(rollCount, rollLengthM));
+                // 单价的「> 0」与按米录入同口径（requireItemNumbers 那一条不能因为换了录入方式而失守）
+                requireUnitCostPositive(item.getUnitCost(), "商品明细第 " + idx + " 项的入库单价");
+            } else {
+                // 数量/单价判据**只有一处**（requireItemNumbers）：建单与批量建账导入共用同一条口径
+                item.setQuantity(requireItemNumbers(item.getQuantity(), item.getUnitCost(),
+                        "商品明细第 " + idx + " 项的数量", "商品明细第 " + idx + " 项的入库单价"));
             }
             // 单价小数位准入（issue #6228）：`inbound_order_items.unit_cost` / `stock_batches.unit_cost`
             // 是 NUMERIC(·,2)，超 2 位有效小数会被 PG 静默四舍五入（占成本、算均价都按被改掉的值）。
@@ -610,9 +631,8 @@ public class InboundOrderService {
             // 金额精度准入（issue #6228）：行金额是**计算值**（"积"）—— 单价 2 位小数 × 数量 1 位小数
             // 可出 3 位小数（`1.5 × 0.01 = 0.015`），而列是 NUMERIC(·,2) ⇒ 逐行显式拒绝。
             // 判在本方法（= 校验阶段，`create()` 的第一条语句）⇒ 拒绝对**任何写**之前。
-            MoneyScale.requireTwoDecimalsOrNull(amountOf(metersFor(source, item.getQuantity(), item.getRollLengthM()), item.getUnitCost()),
-                    "商品明细第 " + idx + " 项的入库金额（"
-                            + (InboundOrder.SOURCE_PHOTO.equals(source) ? "卷数 × 卷长 × 单价" : "数量 × 单价") + "）");
+            MoneyScale.requireTwoDecimalsOrNull(amountOf(item.getQuantity(), item.getUnitCost()),
+                    "商品明细第 " + idx + " 项的入库金额（" + (byRolls ? "卷数 × 卷长 × 单价" : "数量 × 单价") + "）");
             item.setLegacyBatchNo(legacyBatchNoOf(item.getLegacyBatchNo(), source, idx));
             Map<Long, ProductSku> skuById = skuCache.computeIfAbsent(item.getProductId(), this::skusOfProduct);
             if (!skuById.containsKey(item.getSkuId())) {
@@ -670,51 +690,61 @@ public class InboundOrderService {
                             + "0.5 米的尾料可如实登记）");
         }
         BigDecimal normalized = StockQuantity.requireOneDecimal(qty, quantityLabel);
-        if (unitCost != null && unitCost.compareTo(BigDecimal.ZERO) <= 0) {
-            throw BusinessException.validationError(unitCostLabel + "必须大于 0（不记单价请留空）");
-        }
+        requireUnitCostPositive(unitCost, unitCostLabel);
         return normalized;
     }
 
     /**
-     * 明细行的**入库米数** —— 库存 / 批次 / 台账 / 成本的**唯一换算源**（issue #6812）。
+     * 明细行的**入库米数** —— 库存 / 批次 / 台账 / 成本的**唯一换算源**（issue #7709）。
      *
-     * <p>{@code source=photo}（工人拍照入库）：数量是**卷数**、{@code roll_length_m} 是**每卷米数**
-     * ⇒ 米数 = 数量 × 卷长。其余来源（purchase / opening）**逐字保持现状**：数量即米数，
-     * 卷长仍是「仅记录 / 打印卷标」的记录列（用户 2026-09-23 裁定 #5034）。</p>
-     *
-     * <p>米数仍按 <b>0.1 米粒度</b> fail-closed（{@link StockQuantity#requireOneDecimal}）：
+     * <p>卷数 × 卷长。米数按 <b>0.1 米粒度</b> fail-closed（{@link StockQuantity#requireOneDecimal}）：
      * 「3 卷 × 0.33 米」这种乘出来不是 0.1 整数倍的组合**显式拒绝**，不静默取整。</p>
      */
-    static BigDecimal metersFor(String source, BigDecimal quantity, BigDecimal rollLengthM) {
-        BigDecimal meters;
-        if (InboundOrder.SOURCE_PHOTO.equals(source)) {
-            if (rollLengthM == null || rollLengthM.signum() <= 0) {
-                throw BusinessException.validationError("拍照入库的明细行缺少卷长（每卷米数），无法换算入库米数");
-            }
-            meters = StockQuantity.orZero(quantity).multiply(rollLengthM);
-        } else {
-            meters = StockQuantity.orZero(quantity);
+    static BigDecimal metersOfRolls(BigDecimal rollCount, BigDecimal rollLengthM) {
+        return StockQuantity.requireOneDecimal(
+                StockQuantity.orZero(rollCount).multiply(StockQuantity.orZero(rollLengthM)), "入库米数");
+    }
+
+    /**
+     * 明细行**已落库的入库米数** —— 读面（单据详情 / 卷标打印）与本处的写面共用一条口径。
+     *
+     * <p>有 {@code roll_count} ⇒ 明细行的 {@code quantity} 已经是服务端算好的米数，原样返回；
+     * 没有卷数且 {@code source=photo} ⇒ 那是**本改动之前**的拍照行（当时 {@code quantity} 存的是卷数，
+     * 用户 2026-10-25 裁定「历史不动」⇒ 不回填、读面兼容），乘卷长还原米数；
+     * 其余（采购 / 期初，含历史行）⇒ {@code quantity} 本身就是米数（#5034）。</p>
+     */
+    static BigDecimal storedMeters(String source, BigDecimal quantity, BigDecimal rollLengthM, Integer rollCount) {
+        BigDecimal meters = StockQuantity.orZero(quantity);
+        if (rollCount == null && InboundOrder.SOURCE_PHOTO.equals(source)
+                && rollLengthM != null && rollLengthM.signum() > 0) {
+            meters = meters.multiply(rollLengthM);
         }
         return StockQuantity.requireOneDecimal(meters, "入库米数");
     }
 
-    /** 卷数准入（photo 单）：**正整数** —— 半卷不成卷；散米 / 尾料走 purchase 单（数量填米数）。 */
+    /** 单价准入：可空（未记单价），给了必须 {@code > 0}（不记单价请留空，不写 0）。 */
+    private static void requireUnitCostPositive(BigDecimal unitCost, String label) {
+        if (unitCost != null && unitCost.signum() <= 0) {
+            throw BusinessException.validationError(label + "必须大于 0（不记单价请留空）");
+        }
+    }
+
+    /** 卷数准入：**正整数** —— 半卷不成卷；散米 / 尾料按米录入（不填卷数，数量填米数）。 */
     private static BigDecimal requireRollCount(BigDecimal rollCount, String label) {
         BigDecimal count = StockQuantity.orZero(rollCount);
         if (count.signum() <= 0 || count.stripTrailingZeros().scale() > 0) {
             throw BusinessException.validationError(
-                    label + "必须是正整数（收到 " + count.toPlainString() + "）：拍照入库按「卷数 × 每卷米数」记账；"
-                            + "散米 / 尾料请走商家端手工入库（数量填米数）");
+                    label + "必须是正整数（收到 " + count.toPlainString() + "）：按卷入库按「卷数 × 每卷米数」记账；"
+                            + "散米 / 尾料请按米录入（卷数留空，数量填米数）");
         }
         return count;
     }
 
-    /** 卷长准入（photo 单）：&gt; 0 且最多 2 位小数（列 = {@code roll_length_m NUMERIC(8,2)}）。 */
+    /** 卷长准入：&gt; 0 且最多 2 位小数（列 = {@code roll_length_m NUMERIC(8,2)}）。 */
     private static BigDecimal requireRollLength(BigDecimal rollLengthM, String label) {
         if (rollLengthM == null) {
             throw BusinessException.validationError(
-                    label + "不能为空：拍照入库按「卷数 × 每卷米数」记账（识别到的米数就是这一卷的卷长）");
+                    label + "不能为空：按卷入库按「卷数 × 每卷米数」记账（填了卷数就要填每卷多少米）");
         }
         BigDecimal len = rollLengthM.stripTrailingZeros();
         if (len.signum() <= 0 || len.scale() > 2) {

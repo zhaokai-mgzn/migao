@@ -40,7 +40,8 @@ jobs:
         env:
           BASE_URL: ${{ secrets.E2E_ADMIN_API_URL || 'https://api.migaozn.com' }}
           E2E_MOCK_AUTH: 'false'
-          E2E_ADMIN_PHONE: ${{ secrets.E2E_ADMIN_PHONE || '13800138000' }}
+          # 商家管理员账号（issue #7479：`13800138000` 是 C 端顾客，管理端登录会被拒）
+          E2E_ADMIN_PHONE: ${{ secrets.E2E_ADMIN_PHONE || '13600136000' }}
           E2E_SMS_CODE: ${{ secrets.E2E_SMS_CODE || '123456' }}
         run: |
           npx tsx e2e/scripts/record-fixtures.ts

@@ -1822,7 +1822,7 @@ class ProductionServiceTest {
 
     @Test
     @DisplayName("D13/A6 保守读法：加工单还是 generated（未发加工）⇒ 首工序报满**不动它**（不绕过状态机直达）")
-    void generatedProcessingOrderDoesNotJumpIntoProduction() {
+    void generatedProcessingOrderJumpsIntoProduction() {
         PoRow row = stubIssuedProcessingOrder();
         row.status.set("generated");
         when(positionOperationMapper.selectById("op-s"))
@@ -1832,10 +1832,12 @@ class ProductionServiceTest {
 
         service.report(ORDER_ID, "op-s", reportBody("1", "1", "normal"), TENANT, null);
 
+        // issue #7723（用户 2026-10-25 裁定 A）：A6 后半裁定「直达」——「发加工」不再是必经动作
+        // ⇒ generated 作业单首工序报满同样进「加工中」（红证：改前这里断言仍停在 generated）。
         assertThat(row.status.get())
-                .as("generated 不能直达 in_processing（A6 未裁定 ⇒ 保守不动，仍需先「发加工」）")
-                .isEqualTo("generated");
-        verify(processingOrderMapper, never()).markInProcessingIfFrom(any(), any(), any(), any());
+                .as("A6 后半已裁定：generated 可直达 in_processing")
+                .isEqualTo("in_processing");
+        verify(processingOrderMapper).markInProcessingIfFrom(eq(PO_ID), eq(TENANT), eq("generated"), any());
     }
 
     @Test

@@ -104,7 +104,7 @@ class ProcessingOrderControllerTest extends BaseControllerTest {
         resp.setId("po-1");
         resp.setProcessingOrderNo("JG-1");
         resp.setStatus("issued");
-        when(processingOrderService.list(any(), any(), eq(1L))).thenReturn(List.of(resp));
+        when(processingOrderService.list(any(), any(), eq(1L), any())).thenReturn(List.of(resp));
 
         mockMvc.perform(get("/api/admin/processing-orders")
                         .param("keyword", "JG-1").param("status", "issued"))

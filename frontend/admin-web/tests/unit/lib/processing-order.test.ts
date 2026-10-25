@@ -37,7 +37,8 @@ describe('lib/processing-order — 加工单状态机单一来源', () => {
   })
 
   it('状态 → 可行动作与后端 STATUS_TRANSITIONS 对齐（completed/cancelled 为终态）', () => {
-    expect(PROCESSING_ORDER_ACTIONS.generated).toEqual(['issue', 'cancel'])
+    // #7723：发加工从作业单移除 ⇒ generated 只剩「取消」（首工序报工自动进加工中）
+    expect(PROCESSING_ORDER_ACTIONS.generated).toEqual(['cancel'])
     expect(PROCESSING_ORDER_ACTIONS.issued).toEqual(['start', 'cancel'])
     expect(PROCESSING_ORDER_ACTIONS.in_processing).toEqual(['complete', 'cancel'])
     expect(PROCESSING_ORDER_ACTIONS.completed).toEqual([])

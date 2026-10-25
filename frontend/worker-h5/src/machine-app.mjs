@@ -14,7 +14,7 @@
 
 import { createApi, SESSION_EXPIRED } from './api.mjs'
 import { parseScanInput } from './scan-input.mjs'
-import { createScanBuffer, initialMachineState, MACHINE_LOGIN_HREF, reduceMachine, renderMachine, resumePending } from './machine.mjs'
+import { createScanBuffer, initialMachineState, MACHINE_LOGIN_HREF, machineBatchBlocked, machineBatchNo, machineBatchRequired, reduceMachine, renderMachine, resumePending } from './machine.mjs'
 // 未确认提交的幂等键**与手机报工页共用同一把**（同一个 storage 契约、同一份判据）⇒ 键名只有一处
 import { PENDING_REQUEST_KEY } from './app.mjs'
 
@@ -168,13 +168,19 @@ export function createMachineApp({ doc, api, location = globalThis.location, sto
       return
     }
     if (state.reporting) return // in-flight 锁：连点两下不会变成两笔报工
+    // 🔴 裁剪批次（issue #7647）：后端对「裁剪」缺 `batch_no` 一律 422 ⇒ 本页**一个请求都不发**。
+    //    为什么这里不补输入框：机台页刻意「没有任何文本输入元素」（`machine.html` 头注释 = IME 兜底那道保险，
+    //    扫码枪才是唯一输入面）⇒ 冲突由**指路**解决（`reportBlock` 已渲染大字 + 去报工页的入口）。
+    //    也**不**再 dispatch 一条错误：那句话已经在屏上，重复渲染只会让同一件事出现两次。
+    if (machineBatchBlocked(state.data)) return
+    const batchNo = machineBatchRequired(state.data) ? machineBatchNo(state.data) : undefined
     const workerId = api.worker()?.workerId ?? null
     const clientRequestId = resumePending(readPending(), { token, workerId }) ?? newRequestId()
     dispatch({ type: 'reportStart' })
     // 发出**之前**落盘：否则「已发出、答复丢了」这段窗口在刷新后无据可查
     writePending({ token, workerId, requestId: clientRequestId })
     try {
-      const receipt = await api.completeByScan({ token, clientRequestId })
+      const receipt = await api.completeByScan({ token, batchNo, clientRequestId })
       clearPending() // 服务端已答复（首次成功或回放）⇒ 这一笔有结论，下一笔必须换新键
       dispatch({ type: 'reported', receipt })
     } catch (e) {

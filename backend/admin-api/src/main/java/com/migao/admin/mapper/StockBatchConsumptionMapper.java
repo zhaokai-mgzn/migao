@@ -44,6 +44,22 @@ public interface StockBatchConsumptionMapper extends BaseMapper<StockBatchConsum
     String DISPATCH_REASONS_SQL = "'processing_order', 'processing_order_cancelled'";
 
     /**
+     * **耗料族**来源（= 派工两态 + 裁剪报工纠偏，V191 / issue #7647）—— 给「按 SKU 汇总扣减」的
+     * **对账腿**用（{@code sumDeltaBySku}）。
+     *
+     * <p>🔴 为什么它必须与 {@link #DISPATCH_REASONS_SQL} 分开（两把尺子，各有用处）：</p>
+     * <ul>
+     *   <li><b>省料度量</b>（{@code sumSavingByPeriodCohortMaterial}）只认派工：省下的米数由排料
+     *       那一刻确定；报工纠偏行不产生「省料」，混进来只会虚增行数；</li>
+     *   <li><b>对账</b>（{@code sumDeltaBySku}）必须认全部耗料：批次余量是按**所有** delta 派生的，
+     *       漏掉报工扣减，差额就解释不了（「账实不符」恰恰是对账要能说清的那件事）。</li>
+     * </ul>
+     *
+     * <p>新增耗料来源时：<b>默认不进</b>省料腿、**必须显式**决定是否进对账腿 —— 同黑名单改白名单的理由。</p>
+     */
+    String MATERIAL_REASONS_SQL = DISPATCH_REASONS_SQL + ", 'cutting_report'";
+
+    /**
      * **盘点分录的原子落账**（issue #6301）：撞幂等闸
      * {@code uk_batch_consumption_stocktake (tenant_id, stocktake_run_id, batch_id) WHERE stocktake_run_id IS NOT NULL AND deleted = 0}
      * ⇒ <b>不插</b>，并在**同一条语句**里把「谁先到」判出来。
@@ -110,7 +126,7 @@ public interface StockBatchConsumptionMapper extends BaseMapper<StockBatchConsum
             + "COALESCE(SUM(formula_meters), 0) AS formula_sum "
             + "FROM stock_batch_consumptions "
             + "WHERE tenant_id = #{tenantId} AND deleted = 0 AND sku_id IS NOT NULL "
-            + "AND reason IN (" + DISPATCH_REASONS_SQL + ") "
+            + "AND reason IN (" + MATERIAL_REASONS_SQL + ") "
             + "GROUP BY sku_id")
     List<SkuDeltaSum> sumDeltaBySku(@Param("tenantId") Long tenantId);
 

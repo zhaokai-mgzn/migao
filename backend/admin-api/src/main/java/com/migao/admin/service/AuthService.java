@@ -546,8 +546,11 @@ public class AuthService {
         User user = findOrCreateMiniProgramUser(openid, tenantId);
         // C 端登录自动落 CRM 客户档案（issue #3011）：幂等 upsert（openid 已存在则刷新
         // last_active_at 并返回既有档案）；建档失败不阻断登录（客户台账为增量能力）
+        // issue #7711：把 users.phone 一并传下去 —— 用户授权过手机号时，按手机号能认出
+        // 「商户代录下单建的档案」，不会给同一个人再建一条只有 openid 的档案。
         try {
-            customerService.createFromSession(tenantId, openid, user.getNickname(), "wechat_mini");
+            customerService.createFromSession(tenantId, openid, user.getNickname(), "wechat_mini",
+                    user.getPhone());
         } catch (Exception e) {
             log.warn("小程序登录自动建档失败（不阻断登录）: userId={}, openid={}", user.getId(), openid, e);
         }

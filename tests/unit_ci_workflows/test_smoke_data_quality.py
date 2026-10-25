@@ -21,6 +21,8 @@
 | D | 壳脚本 **真的会判** | `ui_smoke_merchant.sh` 不调 `smoke_data_quality.py` 或不把非零折进退出码 ⇒ 红 |
 | E | 种子门幅口径一致 | `demo-seed.sql` 的 `product_skus.door_width` 出现带单位写法（如 `2.8米`）⇒ 红 |
 | F | 规范正文存在且被研发模式索引 | 正文缺失 / `AGENTS.md` 无引用 ⇒ 红 |
+| G | **P1 冒烟不许把 5xx 当通过**（issue #7583 缺陷 4） | `tests/smoke/` 的 `status_code in (…, 5xx)` 回归 ⇒ 红 |
+| H | **失败旅程必须留现场图**（issue #7583 缺陷 8） | `jrun` 的 catch 不再拍截图 ⇒ 红 |
 """
 from __future__ import annotations
 
@@ -33,6 +35,9 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from unit_ci_workflows._seed_sql import literal, rows as seed_rows  # noqa: E402
 SCRIPTS = REPO_ROOT / "scripts"
 SPEC = SCRIPTS / "ui-smoke-merchant" / "spec.mjs"
 SHELL = SCRIPTS / "ui_smoke_merchant.sh"
@@ -228,10 +233,16 @@ def test_shell_runs_data_quality_check_and_folds_exit_code():
 
 # ── E：种子门幅口径一致 ──────────────────────────────────────────
 def test_demo_seed_door_width_is_canonical():
-    source = DEMO_SEED.read_text(encoding="utf-8")
-    literals = re.findall(r"door_width[^;]{0,200}?'([^']+)'", source)
-    bad = [v for v in literals if not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", v)]
-    assert not bad, f"demo-seed 的 product_skus.door_width 出现非 canonical 值：{sorted(set(bad))}"
+    """门幅口径一致（Q3）：落库 = **裸数值**，带单位只出现在显示层。
+
+    ⚠️ 取数方式（issue #7583）：矩阵写成逐行显式后，旧形态「`door_width` 之后第一个引号串」
+    会把**商品 id** 读成门幅（矩阵行以 product_id 开头）；这里改成按列取值（真值 = 列清单）。
+    """
+    skus = seed_rows(DEMO_SEED.read_text(encoding="utf-8"), "product_skus")
+    assert skus, "fail-closed：demo-seed 解析不到 product_skus 行 —— 判不了，不得当通过"
+    bad = sorted({str(literal(s["door_width"])) for s in skus
+                  if not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", str(literal(s["door_width"])))})
+    assert not bad, f"demo-seed 的 product_skus.door_width 出现非 canonical 值：{bad}"
 
 
 # ── F：规范正文与研发模式索引 ────────────────────────────────────
@@ -242,3 +253,121 @@ def test_spec_document_exists_and_is_indexed():
         assert token in body, f"规范正文缺判据 {token}"
     assert "smoke-data-quality.md" in AGENTS.read_text(encoding="utf-8"), \
         "AGENTS.md 没有把规范挂进研发模式（后续执行无入口）"
+
+
+# ── G：P1 冒烟不许把 5xx 当通过（issue #7583 缺陷 4）────────────────────────
+def test_smoke_assertions_must_not_accept_5xx():
+    """`tests/smoke/` 的任何「状态码集合」都不得包含 5xx。
+
+    病灶（issue #7583）：`smoke-p1` 跑的是**生产**栈，而
+    `tests/smoke/test_10_aftersales_notifications.py` 的
+    `assert resp.status_code in (200, 201, 400, 422, 500)` 让**后端 500 也能绿**；
+    同族还有 `test_11` 的 `in (200, 202, 500)`（拿 500 当「RAG 未配置」的合法形态）。
+
+    口径：**4xx 可以是有效结论**（前置/校验被拒，写清理由即可）；**5xx 一律是坏** ——
+    未配置的环境应 `pytest.skip`（skip ≠ pass），真坏了应判红。两类都不许混进通过集合。
+    """
+    offenders = []
+    for path in sorted((REPO_ROOT / "tests" / "smoke").glob("test_*.py")):
+        source = path.read_text(encoding="utf-8")
+        for match in re.finditer(r"status_code\s+in\s*[\(\{]([\s\S]{0,240}?)[\)\}]", source):
+            statuses = [int(n) for n in re.findall(r"(?<![\d.])(\d{3})(?![\d.])", match.group(1))]
+            bad = sorted({s for s in statuses if s >= 500})
+            if bad:
+                line = source[: match.start()].count("\n") + 1
+                offenders.append(f"{path.relative_to(REPO_ROOT)} 第 {line} 行接受 {bad}")
+    assert not offenders, (
+        "以下 P1 冒烟断言把 5xx 当通过了（后端 500 也能绿）：\n  " + "\n  ".join(offenders)
+        + "\n修法：未配置/未实现 ⇒ pytest.skip（skip ≠ pass）；真坏了 ⇒ 判红。")
+
+
+# ── H：失败旅程必须留现场图（issue #7583 缺陷 8）──────────────────────────
+def test_failed_journey_leaves_screenshot():
+    """截图此前只在 `journey().done` 里拍，而**抛错旅程走不到 done** ⇒ 零证据。
+
+    判据：`jrun` 的 catch 必须**先尝试截图**再落结果，且用**独立文件名**（`-failed.png`）
+    —— 与正常路径同名会覆盖掉「本旅程正常时」的截图，两种证据互相抹掉。
+    """
+    source = SPEC.read_text(encoding="utf-8")
+    match = re.search(r"async function jrun\([\s\S]*?\n}\n", source)
+    assert match, "spec.mjs 里找不到 jrun（判据锚点失效 ⇒ 判不了，不得当通过）"
+    body = match.group(0)
+    assert "screenshot" in body, (
+        "jrun 的失败路径不拍截图 ⇒ 抛错/超时旅程零证据（issue #7583 缺陷 8）")
+    assert "-failed.png" in body, (
+        "失败截图没有独立文件名（会覆盖同名旅程的正常截图）")
+    assert "evidence" in body, "失败截图没有进 evidence ⇒ 汇总里看不到它"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 商家后台演示/冒烟凭据的**同一口径**（issue #7479）
+#
+# 病根（2026-10-22 实测）：商家后台登录页用 `13800138000` 被服务端拒绝
+# 「该账号非管理员，请使用员工登录入口」—— 库里该手机号是 **C 端顾客**（role=customer）。
+# 而冒烟 spec / 冒烟脚本 / 三份演示文档**默认**都写着这个号 ⇒ 谁照文档做谁撞墙，
+# 且冒烟默认值本身就是「一定登不上」。
+#
+# 判据（同一口径 = 单一真值，不许三处各写各的）：
+# ① spec.mjs 的默认 PHONE、ui_smoke_merchant.sh 的默认 PHONE、demo-readiness.md 的「演示前用 <号>」三者必须相等；
+# ② 三份商家侧文档里凡出现 C 端顾客号，同一行必须写明「C 端 / 顾客」，避免被当成管理员凭据。
+# ══════════════════════════════════════════════════════════════════════════════
+
+MERCHANT_ADMIN_PHONE = "13600136000"
+CUSTOMER_PHONE = "13800138000"
+MERCHANT_FACING_DOCS = (
+    REPO_ROOT / "docs" / "testing" / "demo-readiness.md",
+    REPO_ROOT / "docs" / "deployment" / "poc-rehearsal-checklist.md",
+    REPO_ROOT / "docs" / "testing" / "frontend-acceptance-checklist.md",
+)
+
+
+def _spec_default_phone() -> str:
+    source = SPEC.read_text(encoding="utf-8")
+    match = re.search(r"const PHONE = process\.env\.PHONE \|\| '(\d{11})'", source)
+    assert match, "spec.mjs 的默认 PHONE 取不到（判据锚点失效 ⇒ 判不了，不得当通过）"
+    return match.group(1)
+
+
+def _shell_default_phone() -> str:
+    source = SHELL.read_text(encoding="utf-8")
+    match = re.search(r'PHONE="\$\{PHONE:-(\d{11})\}"', source)
+    assert match, "ui_smoke_merchant.sh 的默认 PHONE 取不到（判据锚点失效）"
+    return match.group(1)
+
+
+def _documented_merchant_phone() -> str:
+    source = MERCHANT_FACING_DOCS[0].read_text(encoding="utf-8")
+    match = re.search(r"演示前用 (\d{11}) / 万能码", source)
+    assert match, "demo-readiness.md 里找不到「演示前用 <手机号> / 万能码」这句（判据锚点失效）"
+    return match.group(1)
+
+
+class TestMerchantDemoCredentials:
+    def test_smoke_defaults_are_the_merchant_admin(self):
+        spec_phone = _spec_default_phone()
+        shell_phone = _shell_default_phone()
+        doc_phone = _documented_merchant_phone()
+        assert spec_phone == shell_phone == doc_phone == MERCHANT_ADMIN_PHONE, (
+            "商家侧登录号三处不一致（或又写回 C 端顾客号）—— issue #7479："
+            f"spec={spec_phone} shell={shell_phone} doc={doc_phone} 期望={MERCHANT_ADMIN_PHONE}")
+
+    def test_customer_phone_is_always_qualified_as_customer(self):
+        offenders = []
+        for doc in MERCHANT_FACING_DOCS:
+            for lineno, line in enumerate(doc.read_text(encoding="utf-8").splitlines(), 1):
+                if CUSTOMER_PHONE not in line:
+                    continue
+                if "C 端" in line or "顾客" in line:
+                    continue
+                offenders.append(f"{doc.relative_to(REPO_ROOT)}:{lineno}")
+        assert not offenders, (
+            "这些商家侧文档行把 C 端顾客号当成登录凭据写（没写清它是 C 端/顾客）—— issue #7479："
+            + ", ".join(offenders))
+
+    def test_sms_rate_limit_cleanup_uses_the_login_phone(self):
+        """登录前清 SMS 限流键时，必须清**当前登录号**——写死号码 ⇒ 换号后一个都没清到。"""
+        source = SHELL.read_text(encoding="utf-8")
+        block = re.search(r"for phone in \[(.+?)\]:", source)
+        assert block, "找不到 SMS 限流清理的号码列表（判据锚点失效）"
+        assert "sys.argv" in block.group(1), (
+            "SMS 限流清理写死了手机号（issue #7479 现场：写死 C 端顾客号 ⇒ 换号后限流键没清、登录旅程会 400）")

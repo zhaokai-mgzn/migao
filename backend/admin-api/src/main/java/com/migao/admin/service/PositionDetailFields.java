@@ -52,14 +52,21 @@ final class PositionDetailFields {
     }
 
     /**
-     * 商品身份键（母单 #6901 组 1）：品名 / 货号 / 颜色 / 门幅 / 售卖方式 / 数量单位。
+     * 商品身份键（母单 #6901 组 1）：品名 / **货号** / 颜色 / 门幅 / 售卖方式 / 数量单位。
      *
      * <p>取值面 = 订单行 {@code processing_info}（与 {@code ProcessingOrderService#buildSnapshot}
      * 的 {@code copyIfPresent(pi, entry, "skuCode", "sku")} 等**同一批键**）—— 快照是加工单的固化真相，
      * 在扫码侧另算一份就是第二份口径。</p>
+     *
+     * <p>🔴 <b>货号 = 商品货号（{@code product_code} ← {@code products.sku_code}），不是 SKU 码</b>
+     * （issue #7636，用户 2026-10-24 逐字「货号实际是2659」）：{@code order_items.sku_code} 是
+     * {@code ProductService#generateSkuCode} 生成的 <b>SKU 码</b>（{@code {货号}-{色序2位}-{门幅}}，
+     * 如 {@code 2659-01-28}），而颜色 / 门幅已各自成行 ⇒ 屏上印它 = 同一屏同一事实两次 + 内部标识
+     * （{@code migao-dev-flow} §31 P2 / P3）。原 {@code sku} 键已从本表移除（服务端仍照旧下发，
+     * 只是工人屏不再印 —— 工序读面的 {@code skuCode} 一类消费者不受影响）。</p>
      */
     static final List<String> PRODUCT_IDENTITY_KEYS = List.of(
-            "product_name", "sku", "color_name", "door_width", "selling_method", "unit",
+            "product_name", "product_code", "color_name", "door_width", "selling_method", "unit",
             // 整卷卷数（issue #7523）：批次号即卷号 ⇒ 工人屏需要「整卷 N 卷」；散剪单缺键不渲染
             "roll_count");
 
@@ -67,14 +74,18 @@ final class PositionDetailFields {
     static final List<String> SPEC_SIZE_KEYS = List.of("width", "height");
 
     /**
-     * 加工信息键（组 3）：实际褶倍 / 总褶数 / 每片褶数 / 幅数 / 用料公式 / 档位 / 特殊选项 /
-     * 款式 / 是否对花 / 花距 / 加工费米数 / 算料公式 / 部位 / 安装工艺 / 加工类型 / 开数 / 是否定型 / 理论褶倍。
+     * 加工信息键（组 3）：实际褶倍 / 总褶数 / 每片褶数 / 幅数 / 特殊选项 / 款式 / 是否对花 / 花距 /
+     * 加工费米数 / 算料公式 / 部位 / 安装工艺 / 加工类型 / 开数 / 是否定型。
+     *
+     * <p>🔴 issue #7636（用户 2026-10-24 逐字裁定）删掉三键：理论褶倍 {@code fullness}（只留
+     * {@code fullness_actual} = 这一单实际用的）、用料公式 {@code formula} / 算料档位 {@code craft_tier}
+     * （引擎内部标识，屏上是 {@code pleat} / {@code standard} 这类英文）。</p>
      */
     static final List<String> CRAFT_DETAIL_KEYS = List.of(
             "curtain_type", "craft", "cutting_mode", "open_count", "is_shaped",
-            "style", "fullness", "fullness_actual", "pleat_count", "per_panel_pleats",
+            "style", "fullness_actual", "pleat_count", "per_panel_pleats",
             "panels", "has_pattern", "pattern_repeat",
-            "formula", "craft_tier", "special_options",
+            "special_options",
             "processing_meters", "formula_text");
 
     /** 算料 / 排料键（组 4）：面料米数（snake_case，逐字搬自引擎输出）。 */
@@ -90,9 +101,10 @@ final class PositionDetailFields {
     /**
      * 扫码读面下发的**全部**部位明细键（键**恒在**）。
      *
-     * <p>⚠️ P0-C（issue #5161）的 9 键是它的**真子集**（{@code width} / {@code height} / {@code craft} /
-     * {@code curtain_type} / {@code open_count} / {@code cutting_mode} / {@code fullness} /
-     * {@code is_shaped} / {@code fabric_meters}）⇒ 本次是**只加键**，既有 9 键的名字与取值口径一字未动。</p>
+     * <p>⚠️ P0-C（issue #5161）的 9 键里 **8 键**是它的**真子集**（{@code width} / {@code height} /
+     * {@code craft} / {@code curtain_type} / {@code open_count} / {@code cutting_mode} / {@code is_shaped} /
+     * {@code fabric_meters}）—— 例外是 {@code fullness}（理论褶倍），已按 issue #7636 删除
+     * （用户 2026-10-24 逐字「就展示该订单用的实际哪个褶倍」）。其余 8 键的名字与取值口径一字未动。</p>
      */
     static final List<String> DETAIL_KEYS = List.copyOf(allKeys());
 
@@ -105,7 +117,10 @@ final class PositionDetailFields {
     private static final Map<String, String> SNAPSHOT_SOURCE_KEYS = Map.ofEntries(
             // 商品身份
             Map.entry("product_name", "productName"),
-            Map.entry("sku", "skuCode"),
+            // 货号 = 商品货号（`products.sku_code`，issue #7636）—— 由 `ProductionService#orderSpecByItemId`
+            // 以快照源键 `productCode` 落值（与同一批 `colorName` / `doorWidth` 同族）；
+            // 不是 `processing_info.skuCode`（那个是 SKU 码）
+            Map.entry("product_code", "productCode"),
             Map.entry("color_name", "colorName"),
             Map.entry("door_width", "doorWidth"),
             Map.entry("selling_method", "sellingMethod"),
@@ -117,15 +132,12 @@ final class PositionDetailFields {
             Map.entry("open_count", "openCount"),
             Map.entry("is_shaped", "isShaped"),
             Map.entry("style", "style"),
-            Map.entry("fullness", "fullness"),
             Map.entry("fullness_actual", "fullness_actual"),
             Map.entry("pleat_count", "pleat_count"),
             Map.entry("per_panel_pleats", "per_panel_pleats"),
             Map.entry("panels", "panels"),
             Map.entry("has_pattern", "hasPattern"),
             Map.entry("pattern_repeat", "patternRepeat"),
-            Map.entry("formula", "formula"),
-            Map.entry("craft_tier", "craftTier"),
             Map.entry("special_options", "specialOptions"),
             Map.entry("processing_meters", "processingMeters"),
             Map.entry("formula_text", "formulaText"),
@@ -198,8 +210,9 @@ final class PositionDetailFields {
     /**
      * 一个键在快照里的值（**在场才给值**；缺席 ⇒ {@code null}）。
      *
-     * <p>键名翻译见 {@link #SNAPSHOT_SOURCE_KEYS}；{@code sku} 兼容存量单的裸 {@code sku} 键
-     * （快照生成侧 {@code copyIfPresent(pi, entry, "skuCode", "sku")} 的同一容错，issue #5174）。</p>
+     * <p>键名翻译见 {@link #SNAPSHOT_SOURCE_KEYS}；{@code product_code}（货号）的源键是
+     * {@code productCode}（值 = {@code products.sku_code}，由 {@code ProductionService#orderSpecByItemId}
+     * 落值，issue #7636）—— 快照里的 {@code skuCode} 是 SKU 码，两者不是一件事。</p>
      */
     static Object valueOf(Map<String, Object> snapshot, String key) {
         if (snapshot == null) {

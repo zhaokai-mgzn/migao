@@ -16,16 +16,20 @@ import type { CutPlanRow, ProcessingOrderSetRow } from '@/types'
  * 整块在「本单一套都不存在 / 清单全空」时不出现假表格，只给一句可行动的空态文案。
  *
  * <h2>行粒度</h2>
- * 行 = **套 × 部位**（服务端的清单就是按套给的）⇒ 本表按套平铺并保留「套号」列，
- * 表头顺序照 issue 正文的字段面，并带服务端下发的 `batch_no`：
- * `部位 | 组件/货号 | 用料（米） | 裁多长（米） × 几片 | 批次号 | 备注`。
+ * 行 = **套 × 明细行**（服务端的清单就是按套给的，一行 = 一个货号）⇒ 本表按套平铺并保留「套号」列。
+ * 🔴 列面按 2026-10-25 用户裁定收窄（issue #7737，逐字「帘种缺乏数据，移除组件，只保留货号就好了」）：
+ * ① **不设「帘种」列** —— `position_kind` 在真实数据里常整列为空（用户截图整列 `—`），留着只是空占位；
+ * ② **列头「货号」**，格内只渲染 `position_name`（商品名 / 货号），**不再拼** `component`
+ *    （组件同样多为空，且裁床认的是货号）；`position_kind` / `component` 键**仍下发**（读面契约冻结，
+ *    工人端与其它消费者照旧读）。
+ * 表头顺序：`货号 | 用料（米） | 裁多长（米） × 几片 | 批次号 | 从该批裁（米） | 备注`。
  * 数量显示口径与工人端 `render.mjs` 的 `fmtQty` 一致（`toFixed(2)`）——两边同一份清单，
  * 不该出现「商家看 12.3 / 工人看 12.30」这种差。
  *
- * <h2>批次号（issue #6754）</h2>
- * 裁床拿到「裁多长 × 几片」还要知道**去哪一批拿料**：`batch_no` = 服务端下发的**派工指定批次**
- * （真值源 = 批次消耗台账，与工人端**部位规格面**同一份取数）。**未指派 ⇒ `null` ⇒ 印 `—`**
- * （与同表 `component` / `remark` 同款「缺值显式占位」：不猜、不省列）。这一列**不**读加工单快照的
+ * <h2>批次号（issue #6754）+ 从该批裁多少布（issue #7722）</h2>
+ * 裁床要的是两个数：**去哪个批次拿料**（`batch_no`）与**这一批裁多少米**（`batch_meters`）。
+ * 两者真值源同一份（批次消耗台账，与工人端**部位规格面**同一份取数）。**未指派 ⇒ `null` ⇒ 印 `—`**
+ * （与同表 `component` / `remark` 同款「缺值显式占位」：不猜、不省列）。这两列**不**读加工单快照的
  * `batchNo` —— 那是纸面「批号」那一列的口径，两颗概念各有消费者、互不冒充。
  */
 export default function CutPlanTable({ sets }: { sets?: ProcessingOrderSetRow[] }) {
@@ -56,11 +60,11 @@ export default function CutPlanTable({ sets }: { sets?: ProcessingOrderSetRow[] 
                 类级守卫 = `frontend/admin-web/tests/unit/list-table-nowrap-guard.test.ts`（本表因此从它的
                 存量台账里**除名**、基线 23 → 22）。 */}
             <th className="py-2 pr-3 font-normal whitespace-nowrap">套号</th>
-            <th className="py-2 pr-3 font-normal whitespace-nowrap">部位</th>
-            <th className="py-2 pr-3 font-normal whitespace-nowrap">组件 / 货号</th>
+            <th className="py-2 pr-3 font-normal whitespace-nowrap">货号</th>
             <th className="py-2 pr-3 font-normal whitespace-nowrap">用料（米）</th>
             <th className="py-2 pr-3 font-normal whitespace-nowrap">裁多长（米） × 几片</th>
             <th className="py-2 pr-3 font-normal whitespace-nowrap">批次号</th>
+            <th className="py-2 pr-3 font-normal whitespace-nowrap">从该批裁（米）</th>
             <th className="py-2 font-normal whitespace-nowrap">备注</th>
           </tr>
         </thead>
@@ -74,12 +78,8 @@ export default function CutPlanTable({ sets }: { sets?: ProcessingOrderSetRow[] 
                 data-testid={`cut-plan-row-${setNo}-${row.order_item_id}`}
               >
                 <td className="py-2 pr-3 whitespace-nowrap text-neutral-500">{setNo}</td>
-                <td className="py-2 pr-3 whitespace-nowrap text-neutral-900">
-                  {row.position_kind ?? '—'}
-                </td>
                 <td className="py-2 pr-3 text-neutral-700">
-                  <span>{row.component ?? '—'}</span>
-                  <span className="ml-1 text-neutral-500">{row.position_name ?? ''}</span>
+                  {row.position_name ?? '—'}
                 </td>
                 <td
                   className="py-2 pr-3 whitespace-nowrap text-neutral-900"
@@ -104,6 +104,14 @@ export default function CutPlanTable({ sets }: { sets?: ProcessingOrderSetRow[] 
                   data-testid={`cut-plan-batch-${setNo}-${row.order_item_id}`}
                 >
                   {row.batch_no ?? '—'}
+                </td>
+                {/* 从该批裁多少布（issue #7722）：与上一列**同一份取数**（台账净额）；
+                    未指派 ⇒ 服务端 null ⇒ 印 `—`（不把「没指派」折成 0 米） */}
+                <td
+                  className="py-2 pr-3 whitespace-nowrap text-neutral-900"
+                  data-testid={`cut-plan-batch-meters-${setNo}-${row.order_item_id}`}
+                >
+                  {fmtMeters(row.batch_meters, '米')}
                 </td>
                 <td className="py-2 text-neutral-500">{row.remark ?? '—'}</td>
               </tr>

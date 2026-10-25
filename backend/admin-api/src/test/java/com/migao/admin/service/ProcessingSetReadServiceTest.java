@@ -88,10 +88,13 @@ class ProcessingSetReadServiceTest {
      */
     private static final List<String> OVERVIEW_KEYS =
             List.of("set_no", "set_index", "positions", "cut_plan");
-    /** 精裁输出清单的一行（issue #5693 + issue #6754）：十键**恒在**，算不出来 ⇒ null + `missing_reason`。 */
+    /**
+     * 精裁输出清单的一行（issue #5693 + #6754 + #7722）：**十一键恒在**，
+     * 算不出来 ⇒ null + `missing_reason`（`batch_meters` = 从该批裁多少布）。
+     */
     private static final List<String> CUT_PLAN_ROW_KEYS = List.of("order_item_id", "position_kind",
-            "position_name", "component", "batch_no", "fabric_meters", "panel_count", "panel_length_m",
-            "remark", "missing_reason");
+            "position_name", "component", "batch_no", "batch_meters", "fabric_meters", "panel_count",
+            "panel_length_m", "remark", "missing_reason");
     /** ⚠️ `remark`（issue #5685）为**新增键**（部位级备注，未填 ⇒ null）：键恒在。 */
     private static final List<String> POSITION_KEYS =
             List.of("order_item_id", "position_kind", "position_name", "remark", "operations");
@@ -410,11 +413,13 @@ class ProcessingSetReadServiceTest {
      * `positionEntry` 本来就给），剥掉反而会让两侧不等。</p>
      */
     private static final List<String> SCAN_POSITION_DETAIL_KEYS = List.of(
-            "product_name", "sku", "color_name", "door_width", "selling_method", "unit",
+            // 货号 = **商品货号**（`products.sku_code`，issue #7636）；SKU 码（`sku`）不再下发工人面
+            "product_name", "product_code", "color_name", "door_width", "selling_method", "unit",
             "width", "height",
             "curtain_type", "craft", "cutting_mode", "open_count", "is_shaped", "style",
-            "fullness", "fullness_actual", "pleat_count", "per_panel_pleats", "panels",
-            "has_pattern", "pattern_repeat", "formula", "craft_tier", "special_options",
+            // 理论褶倍 `fullness` 与 用料公式 / 算料档位（`formula` / `craft_tier`）已按 issue #7636 删除
+            "fullness_actual", "pleat_count", "per_panel_pleats", "panels",
+            "has_pattern", "pattern_repeat", "special_options",
             "processing_meters", "formula_text",
             "fabric_meters",
             "batch_no", "batch_meters", "component_role",
@@ -559,6 +564,31 @@ class ProcessingSetReadServiceTest {
     }
 
     @Test
+    @DisplayName("🔴 issue #7722：没有「精裁」工序实例、订单行有算料米数 ⇒ 清单照样出数（不再整行留空）")
+    void cutPlanFallsBackToOrderLineMetersWhenCutInstanceMissing() {
+        stubDetail();
+        // 纱帘：ops() 里只有 三边-纱、**没有** 精裁-纱（= 线上截图那一行）；
+        // 订单行带着算料输出 fabric_meters ⇒ 清单必须出数。
+        // 红证：把 `fabricMetersOf` 的订单行分支删掉（退回「唯一来源 = 实例」）⇒ 三格全 null、本判据红。
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("componentRole", "纱");
+        info.put("panels", 4);
+        info.put("fabric_meters", new BigDecimal("9.90"));
+        when(orderItemMapper.selectById(ITEM_GAUZE)).thenReturn(OrderItem.builder()
+                .id(ITEM_GAUZE).tenantId(TENANT).productName("纱帘-白")
+                .cuttingMode("定宽买高").processingInfo(info).build());
+        when(orderItemMapper.selectById(ITEM_CLOTH)).thenReturn(orderItemWithCutting(ITEM_CLOTH, "定宽买高", 2));
+
+        Map<String, Object> gauze = cutPlanRowOf(cutPlanOf(service.setDetail(SET_ID, TENANT)), ITEM_GAUZE);
+
+        assertThat(gauze).as("订单行算料口径就是上游真值（工序实例是它的下游，不是它的前置）")
+                .containsEntry("fabric_meters", new BigDecimal("9.90"))
+                .containsEntry("panel_count", 4)
+                .containsEntry("panel_length_m", new BigDecimal("2.475000"))
+                .containsEntry("missing_reason", null);
+    }
+
+    @Test
     @DisplayName("🔴 缺值不渲染假数据：qty_source 非 fabric_meters / 缺 panels / 未知加工类型 ⇒ 留空 + 指名原因")
     void cutPlanNeverSubstitutesFakeNumbers() {
         when(orderSetMapper.selectById(SET_ID)).thenReturn(set());
@@ -579,7 +609,9 @@ class ProcessingSetReadServiceTest {
         assertThat(cloth.get("panel_count")).as("拿不到用料 ⇒ 不报片数（不放半截数据）").isNull();
         assertThat(cloth.get("panel_length_m")).isNull();
         assertThat((String) cloth.get("missing_reason")).as("要指名缺什么（可行动）")
-                .contains("qty_source", "fallback");
+                .contains("用料米数")
+                .as("🔴 #7722：车间可见的文案不得出现内部标识（`qty_source` / 「工序实例」）")
+                .doesNotContain("qty_source", "工序实例");
 
         Map<String, Object> gauze = cutPlanRowOf(rows, ITEM_GAUZE);
         assertThat(gauze.get("fabric_meters")).as("引擎直接供数 ⇒ 用料照实给").isEqualTo(new BigDecimal("8.00"));
@@ -659,8 +691,13 @@ class ProcessingSetReadServiceTest {
 
         assertThat(cutPlanRowOf(rows, ITEM_CLOTH).get("batch_no"))
                 .as("指派过的行 ⇒ 批次号上屏（裁床据此知道去哪一卷拿料）").isEqualTo("PC-20261008-0003");
+        assertThat(cutPlanRowOf(rows, ITEM_CLOTH).get("batch_meters"))
+                .as("🔴 #7722：从这一批裁多少布（台账净额，与部位规格面同一份取数）")
+                .isEqualTo(new BigDecimal("12.30"));
         assertThat(cutPlanRowOf(rows, ITEM_GAUZE).get("batch_no"))
                 .as("未指派（台账没有这一行）⇒ null（**键恒在**，不省键、也不拿快照 batchNo 顶）").isNull();
+        assertThat(cutPlanRowOf(rows, ITEM_GAUZE).get("batch_meters"))
+                .as("未指派 ⇒ 批次米数也 null（键恒在）").isNull();
 
         // 批次号同样只经共享聚合一处 ⇒ 工人扫码面 / 商家列表行与商家详情**逐值相等**
         assertThat(cutPlanOf(scanService(scoped).resolve(TOKEN, null, TENANT)))
