@@ -106,10 +106,10 @@ public class DocumentOperationLinkage {
             return;
         }
         throw BusinessException.validationError(
-                "工序「质检」没有报工动作：请在质检页录入判定（合格 / 返工 / 报废），提交后自动报工并生成质检单",
+                "工序「质检」没有报工动作：质量默认没问题，其它工序做完即算完工；有问题才记返工",
                 List.of(BusinessException.detail("operation_id",
-                        "「质检」工序的完成由判定驱动（判定 ≠ 合格不完成，还要再检）")),
-                "扫码进入这一件的质检区块 → 选判定（返工 / 报废必填原因）→ 提交；提交即完成报工");
+                        "「质检」工序的完成默认成立（issue #7749）；返工只记问题、不推进进度")),
+                "扫码进入这一件的质检区块 → 有问题点【返工】+ 写明问题 → 提交（生成质检单）；没问题不用点");
     }
 
     private static java.math.BigDecimal remainingQty(ProcessingPositionOperation op) {

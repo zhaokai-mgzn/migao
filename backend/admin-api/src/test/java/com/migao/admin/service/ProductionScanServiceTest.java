@@ -1,4 +1,4 @@
-// case_ids: PG-018, PP-011
+// case_ids: PG-018, PG-096, PP-011
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
@@ -162,6 +162,54 @@ class ProductionScanServiceTest {
                 .containsExactly("op-3", "op-9");
         assertThat(progress(result)).containsEntry("total", 5).containsEntry("done", 2)
                 .containsEntry("percent", 40);
+    }
+
+    // ============================================================ ①′ 绑定工人（issue #7749）
+
+    @Test
+    @DisplayName("#7749 绑定工人 ⇒ 自动选中他绑定的那道（determined_by=worker / 无替代项 ⇒ 屏上不出选择器）")
+    void boundWorkerOperationIsAutoSelected() {
+        stubNewTokenScan(ITEM_CLOTH, standardOps());
+
+        // 未绑定的同一张码会推断出 op-2（定型-布）；绑「复烫」⇒ 必须选 op-3，而不是 seq 最小的那道
+        Map<String, Object> result = service.resolve(NEW_CODE, null, null, null, TENANT, "复烫");
+
+        Map<String, Object> operation = operation(result);
+        assertThat(operation.get("operation_id")).isEqualTo("op-3");
+        assertThat(operation.get("logical_name")).isEqualTo("复烫");
+        assertThat(operation.get("determined_by")).isEqualTo("worker");
+        assertThat(result.get("worker_operation")).isEqualTo("复烫");
+        assertThat(result.get("worker_operation_state")).isNull();
+        assertThat(result.get("alternatives"))
+                .as("绑定工人不列别的工序：列出来会怂恿他报别人的活（计件记错人）")
+                .isEqualTo(List.of());
+        assertThat(result.get("completed")).isEqualTo(false);
+    }
+
+    @Test
+    @DisplayName("#7749 绑定工人的工序在本件**没有** ⇒ operation=null + state=absent（绝不回落成别人的活）")
+    void boundWorkerOperationAbsentOnThisItem() {
+        stubNewTokenScan(ITEM_CLOTH, standardOps());
+
+        Map<String, Object> result = service.resolve(NEW_CODE, null, null, null, TENANT, "打孔");
+
+        assertThat(result.get("operation")).isNull();
+        assertThat(result.get("worker_operation")).isEqualTo("打孔");
+        assertThat(result.get("worker_operation_state")).isEqualTo("absent");
+        assertThat(result.get("alternatives")).isEqualTo(List.of());
+        // 本件还有别人的活 ⇒ 不能谎报「本套都报完了」（旧的 `chosen == null ⇒ completed` 会）
+        assertThat(result.get("completed")).isEqualTo(false);
+    }
+
+    @Test
+    @DisplayName("#7749 绑定工人的工序**已做完** ⇒ operation=null + state=done")
+    void boundWorkerOperationAlreadyDone() {
+        stubNewTokenScan(ITEM_CLOTH, standardOps());
+
+        Map<String, Object> result = service.resolve(NEW_CODE, null, null, null, TENANT, "精裁");
+
+        assertThat(result.get("operation")).isNull();
+        assertThat(result.get("worker_operation_state")).isEqualTo("done");
     }
 
     @Test

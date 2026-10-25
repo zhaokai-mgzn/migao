@@ -1,16 +1,23 @@
 // case_ids: PG-082, PG-086
 //
-// 工人端**质检区块**（issue #7162）：扫水洗唛进报工页后录判定、生成质检单。
+// 工人端**质检区块**（issue #7162；2026-10-25 按 issue #7749 改判）。
 //
 // 用户逐字（2026-10-17）：「工人不能进入观星台，维持这个设计，现在只需要在小程序端扫码进入报工页后
 // 有入口进行质检即可」「因为工人主要通过扫水洗唛进入质检流程」「质检等同发货工序一样，打包发货完成后
 // 生成发货单，质检完成后生成质检单，一样的意思」。
 //
-// 🔴 本文件钉四条（每条能单独变红）：
-//   ① `inspect` ∉ 页面集 ⇒ **不渲染**质检区块（逐人开；默认页不含 inspect）；
-//   ② `inspect` ∈ 页面集 ⇒ 出现「质检」区块：**未检**（🔴 不是「合格」）+「录入质检判定」按钮；
-//   ③ 有记录 ⇒ 显示服务端判定 / 原因 / 检验人 / 时刻；未检不折成合格；
-//   ④ 展开表单 ⇒ 三态 + 原因 +「提交质检单」；提交成功 ⇒「质检单已生成」+ 判定换成回执。
+// 🔴 2026-10-25 改判（issue #7749，用户逐字：「质检不要显示合格，默认都合格，只有出现问题时允许直接
+// 选择返工，只提供一个返工选项，加一些备注说明即可」「这样也不需要质检按钮，尽量少一些动作」）：
+//   ① 没有「合格 / 报废」选项 —— **合格是默认态**，屏上不出现「合格」这个动作；
+//   ② 唯一动作 =【返工】+ 问题说明（必填），提交后生成质检单；
+//   ③ 没有记录 = 「正常」（不写「未检」，也不写「合格」）。
+//
+// 本文件钉五条（每条能单独变红）：
+//   ① `inspect` ∉ 页面集 ⇒ **不渲染**质检区块；
+//   ② `inspect` ∈ 页面集、无记录 ⇒ 出现「质检」区块 + 「正常」+「有问题，记返工」；
+//   ③ 有返工记录 ⇒ 显示「已记返工」/ 原因 / 检验人 / 时刻；
+//   ④ 展开表单 ⇒ **只有一个**返工动作 + 问题说明必填；提交成功 ⇒「质检单已生成」+ 表单收起；
+//   ⑤ 当前工序 = 质检 ⇒ 不出报工按钮 / 报工三态，只说「默认没问题…」。
 //
 // 边界：真栈写入（403 / 原因必填 422 / 落库 inspector_kind）由后端
 // `WorkerQualityControllerTest` + `QualityCheckServiceTest` 钉住；本文件只判**渲染与状态机**
@@ -24,7 +31,6 @@ import {
   initialState,
   PAGE_INSPECT,
   PAGE_REPORT,
-  QUALITY_RESULTS,
   reduce,
   renderPage,
 } from '../src/render.mjs'
@@ -50,16 +56,17 @@ test('① 没开「质检」页 ⇒ 质检区块一个字节都不出现（默�
   assert.equal(effectivePages({ pages: [PAGE_REPORT] }).opened.has(PAGE_INSPECT), false)
 })
 
-test('② 开了「质检」页 ⇒ 出现质检区块：未检（不是「合格」）+ 录入口', () => {
+test('② 开了「质检」页、无记录 ⇒ 质检区块「正常」+「有问题，记返工」（不出现「合格」）', () => {
   const html = renderPage(open())
   assert.match(html, /id="wh5-quality"/)
-  assert.match(html, /id="wh5-quality-state"[^>]*>未检</)
-  assert.match(html, /id="wh5-quality-open"[^>]*>录入质检判定</)
-  // 未检 ≠ 合格：这一屏在拿到记录前不得出现「合格」
-  assert.equal(/id="wh5-quality-state"[^>]*>合格/.test(html), false)
+  assert.match(html, /id="wh5-quality-state"[^>]*>正常</)
+  assert.match(html, /id="wh5-quality-open"[^>]*>有问题，记返工</)
+  // 🔴 用户逐字「质检不要显示合格」：整块（含状态/按钮/说明）不得出现「合格」
+  const block = html.slice(html.indexOf('id="wh5-quality"'))
+  assert.equal(block.includes('合格'), false)
 })
 
-test('③ 有记录 ⇒ 显示服务端判定 / 原因 / 检验人；反向：无记录时不得渲染成「合格」', () => {
+test('③ 有返工记录 ⇒ 显示「已记返工」/ 原因 / 检验人；默认态仍是「正常」', () => {
   let s = open()
   s = reduce(s, {
     type: 'qualityLoaded',
@@ -73,55 +80,54 @@ test('③ 有记录 ⇒ 显示服务端判定 / 原因 / 检验人；反向：�
     },
   })
   const html = renderPage(s)
-  assert.match(html, /id="wh5-quality-state"[^>]*>返工</)
+  assert.match(html, /id="wh5-quality-state"[^>]*>已记返工</)
   assert.match(html, /原因：缝线开裂/)
   assert.match(html, /检验人 张师傅/)
-  assert.equal(/id="wh5-quality-state"[^>]*>未检/.test(html), false)
+  assert.match(html, /id="wh5-quality-open"[^>]*>再记一次返工</)
 
-  // 同一屏的初始态（未加载到记录）仍是「未检」
-  const without = renderPage(open())
-  assert.equal(/id="wh5-quality-state"[^>]*>合格/.test(without), false)
+  // 服务端若给的是 pass（观星台录的），工人屏也只说「正常」——不显示「合格」
+  const passed = reduce(open(), {
+    type: 'qualityLoaded',
+    latest: { result: 'pass', inspector_name: '李质检', inspected_at: '2026-10-17T10:30:00+08:00' },
+  })
+  assert.match(renderPage(passed), /id="wh5-quality-state"[^>]*>正常</)
 })
 
-test('④ 展开表单 ⇒ 三态 + 原因必填提示 +「提交质检单」；提交中禁用', () => {
+test('④ 表单只有一个返工动作 + 问题说明必填；提交中禁用；成功 ⇒ 质检单已生成', () => {
   const formOpen = reduce(open(), { type: 'qualityFormOpen' })
   const html = renderPage(formOpen)
   assert.match(html, /id="wh5-quality-form"/)
-  for (const option of QUALITY_RESULTS) {
-    assert.match(html, new RegExp(`data-quality-result="${option.value}"`))
-  }
-  assert.match(html, /不合格原因（判定为返工 \/ 报废时必填）/)
-  assert.match(html, /id="wh5-quality-submit"[^>]*>提交质检单</)
+  // 🔴 只提供一个返工选项：不再有 pass / scrap 的判定按钮
+  assert.equal(html.includes('data-quality-result'), false)
+  assert.match(html, /id="wh5-quality-hint"[^>]*>这次记为「返工」/)
+  assert.match(html, /问题说明（必填）/)
+  assert.match(html, /id="wh5-quality-submit"[^>]*>提交返工</)
 
   const submitting = renderPage(reduce(formOpen, { type: 'qualitySubmitting' }))
   assert.match(submitting, /id="wh5-quality-submit"[^>]*disabled[^>]*>提交中…</)
+
+  const s = reduce(formOpen, { type: 'qualitySubmitted', latest: { result: 'rework', inspector_name: '张师傅' } })
+  const done = renderPage(s)
+  assert.match(done, /质检单已生成/)
+  assert.match(done, /id="wh5-quality-state"[^>]*>已记返工</)
+  assert.equal(done.includes('id="wh5-quality-form"'), false)
 })
 
-test('⑤ 提交成功 ⇒ 「质检单已生成」+ 判定换成回执（表单收起）', () => {
+test('⑤ 服务端拒绝 ⇒ 表单内具名报错（不关表单、不丢已填说明）', () => {
   let s = reduce(open(), { type: 'qualityFormOpen' })
-  s = reduce(s, { type: 'qualitySubmitted', latest: { result: 'pass', inspector_name: '张师傅' } })
+  s = reduce(s, { type: 'qualityFormError', error: '记返工要写明问题（例如：布面污渍 / 尺寸偏差）' })
   const html = renderPage(s)
-  assert.match(html, /质检单已生成/)
-  assert.match(html, /id="wh5-quality-state"[^>]*>合格</)
-  assert.equal(html.includes('id="wh5-quality-form"'), false)
-  // 再录一次 = 复检（同一件可以返工后再检）
-  assert.match(html, /id="wh5-quality-open"[^>]*>再录一次判定</)
+  assert.match(html, /id="wh5-quality-form-error"[^>]*>记返工要写明问题/)
+  assert.match(html, /id="wh5-quality-form"/)
+  assert.match(html, /id="wh5-quality-reason"/)
 })
 
-test('⑥ 服务端拒绝原因 ⇒ 表单内具名报错（不关表单、不清已填判定）', () => {
-  let s = reduce(open(), { type: 'qualityFormOpen' })
-  s = reduce(s, { type: 'qualityResult', result: 'scrap' })
-  s = reduce(s, { type: 'qualityFormError', error: '判定为「报废」时必须填写不合格原因' })
-  const html = renderPage(s)
-  assert.match(html, /id="wh5-quality-form-error"[^>]*>判定为「报废」时必须填写不合格原因</)
-  assert.match(html, /data-quality-result="scrap"[^>]*aria-pressed="true"/)
-})
-
-// ── issue #7186：质检工序**没有报工动作**（判定即报工） ─────────────────────────────
+// ── issue #7186 / #7749：质检工序**没有报工动作**，且不需要「质检按钮」 ────────────────
 //
-// 用户 2026-10-18 逐字：「质检员不需要报工这个动作，只需要有一个质检动作，完成判定后自动报工，
-// 然后自动生成质检流水」⇒ 当前工序 = 质检时，本屏**不得**出现报工按钮 / 报工三态；
-// 质检区块即唯一动作。服务端那条真闸（422）由 `ProductionReportQualityGuardTest` +
+// 用户 2026-10-18：「质检员不需要报工这个动作，只需要有一个质检动作」；
+// 2026-10-25 追加：「这样也不需要质检按钮，尽量少一些动作，如果工序没有完成随时可以进入质检判定就好」
+// ⇒ 当前工序 = 质检时，本屏**不得**出现报工按钮 / 报工三态；只有一句「默认没问题」的说明 +
+// 可按需展开的返工记录。服务端那条真闸（422）由 `ProductionReportQualityGuardTest` +
 // `ProductionScanCompleteServiceTest` 钉住 —— 藏按钮**不是**授权。
 
 function openWithOperation(operation, pages = [PAGE_REPORT, PAGE_INSPECT]) {
@@ -130,25 +136,25 @@ function openWithOperation(operation, pages = [PAGE_REPORT, PAGE_INSPECT]) {
   return reduce(s, { type: 'resolved', view: { ...VIEW, operation: { ...VIEW.operation, ...operation } } })
 }
 
-test('⑦ 当前工序 = 质检 ⇒ 不出报工按钮 / 报工三态，只说「录入判定即完成报工」', () => {
+test('⑥ 当前工序 = 质检 ⇒ 不出报工按钮 / 报工三态，只说「默认没问题、有问题记返工」', () => {
   const html = renderPage(openWithOperation({ logical_name: '质检' }))
   assert.equal(html.includes('id="wh5-report"'), false)
   assert.equal(html.includes('id="wh5-work-type"'), false)
-  assert.match(html, /id="wh5-quality-only"[^>]*>本道是质检工序：录入判定即完成报工并生成质检单/)
-  // 质检区块仍在 —— 它是本屏**唯一的动作**
+  assert.match(html, /id="wh5-quality-only"[^>]*>本道是质检工序：默认没问题/)
+  // 质检区块仍在 —— 出问题时随时可记返工
   assert.match(html, /id="wh5-quality"/)
 })
 
-test('⑧ 对照：非质检工序 ⇒ 报工按钮照旧出现（守卫不得误伤）', () => {
+test('⑦ 对照：非质检工序 ⇒ 报工按钮照旧出现（守卫不得误伤）', () => {
   const html = renderPage(openWithOperation({ logical_name: '精裁' }))
   assert.match(html, /id="wh5-report"[^>]*>报 工</)
   assert.match(html, /id="wh5-work-type"/)
   assert.equal(html.includes('id="wh5-quality-only"'), false)
 })
 
-test('⑨ 质检工序 + 未开通「质检」页 ⇒ 无报工按钮，且如实说「要谁来录」（不留死页面）', () => {
+test('⑧ 质检工序 + 未开通「质检」页 ⇒ 无报工按钮，且如实说「要记返工需开通」', () => {
   const html = renderPage(openWithOperation({ logical_name: '质检' }, [PAGE_REPORT]))
   assert.equal(html.includes('id="wh5-report"'), false)
   assert.equal(html.includes('id="wh5-quality"'), false)
-  assert.match(html, /id="wh5-quality-only"[^>]*>本道是质检工序：需由质检员录入判定（当前账号未开通「质检」页）/)
+  assert.match(html, /id="wh5-quality-only"[^>]*>本道是质检工序：默认没问题；要记返工需开通「质检」页/)
 })

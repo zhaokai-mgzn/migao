@@ -107,6 +107,15 @@ public class ProductionScanService {
     /** 推断来源：工人一键改（显式指定）。 */
     public static final String DETERMINED_BY_PICKED = "picked";
 
+    /**
+     * 选定来源：按**工人档案绑定的工序**自动选中（issue #7749）。
+     *
+     * <p>与 {@link #DETERMINED_BY_INFERRED} 并列的第三种来源：系统不是「推断下一道」，而是
+     * 「这位工人只做这一道」⇒ 工人屏不出选择器。本件没有这道 / 已做完 ⇒ 不给工序（见
+     * {@code worker_operation_state}），**不**回落到推断 —— 回落到别人的活会把计件记错人。</p>
+     */
+    public static final String DETERMINED_BY_WORKER = "worker";
+
     /** 套级工序的作用域取值（{@code production_operations.scope}，V67 / issue #4384 A1）。 */
     private static final String SCOPE_SET = "set";
 
@@ -228,6 +237,21 @@ public class ProductionScanService {
      */
     public Map<String, Object> resolve(String token, String operationId, String setId, String orderItemId,
                                        Long tenantId) {
+        return resolve(token, operationId, setId, orderItemId, tenantId, null);
+    }
+
+    /**
+     * 同上 + **工人档案绑定的工序**（issue #7749，用户 2026-10-25 裁定「一个工人对应一个工序」）。
+     *
+     * <p>{@code workerOperation} 非空 ⇒ 只在这道工序的待做实例里选（{@code determined_by="worker"}）；
+     * 本件没有 / 已做完 ⇒ {@code operation=null} + {@code worker_operation_state}，<b>不</b>回落到
+     * 「系统推断的下一道」（那是别人的活）。{@code null} / 空白 ⇒ 与改前**逐字相同**（推断 + 选择器）。</p>
+     *
+     * @param workerOperation 逻辑工序名（{@code users.worker_operation}）；由调用方从工人 session 的身份
+     *                        解出，**不**从请求体读
+     */
+    public Map<String, Object> resolve(String token, String operationId, String setId, String orderItemId,
+                                       Long tenantId, String workerOperation) {
         if (!StringUtils.hasText(token)) {
             throw BusinessException.validationError("扫码内容不能为空");
         }
@@ -240,11 +264,12 @@ public class ProductionScanService {
         }
         if (partToken != null) {
             // 🔴 新码**不读** setId/orderItemId：套 × 部位由码给出 ⇒ 契约扩展对已有新码零影响
-            return setPositionView(partToken, operationId, tenantId);
+            return setPositionView(partToken, operationId, tenantId, workerOperation);
         }
         // ①′ 旧码收口（issue #4794）：选完套 + 部位 ⇒ 部位级视图（工序仍由系统推断）
         if (StringUtils.hasText(setId) && StringUtils.hasText(orderItemId)) {
-            return legacySelectionView(key, setId.trim(), orderItemId.trim(), operationId, tenantId);
+            return legacySelectionView(key, setId.trim(), orderItemId.trim(), operationId, tenantId,
+                    workerOperation);
         }
         // ②~⑤ 既有四形态（一字不动）；全不命中 ⇒ 404「订单不存在」（既有行为）
         return degradedView(key, tenantId);
@@ -376,11 +401,11 @@ public class ProductionScanService {
     // ============================================================ 新码：套 × 部位 + 推断
 
     private Map<String, Object> setPositionView(ProcessingSetPartToken partToken, String operationId,
-                                                Long tenantId) {
+                                                Long tenantId, String workerOperation) {
         ProcessingOrderSet set = requireSet(partToken, tenantId);
         ProcessingOrder po = processingSetReadService.requireProcessingOrder(set.getProcessingOrderId(), tenantId);
         return setPositionView(po, set, partToken.getOrderItemId(), partToken.getPositionKind(),
-                operationId, tenantId);
+                operationId, tenantId, workerOperation);
     }
 
     /**
@@ -391,7 +416,7 @@ public class ProductionScanService {
      */
     private Map<String, Object> setPositionView(ProcessingOrder po, ProcessingOrderSet set,
                                                 String orderItemId, String positionKind,
-                                                String operationId, Long tenantId) {
+                                                String operationId, Long tenantId, String workerOperation) {
         List<ProcessingPositionOperation> setOperations =
                 processingSetReadService.listSetOperations(po.getId(), set.getId(), tenantId);
         Map<String, Map<String, Object>> catalog = operationQueryService.operationsByName(tenantId);
@@ -409,6 +434,9 @@ public class ProductionScanService {
 
         ProcessingPositionOperation chosen = null;
         String determinedBy = null;
+        // 绑定工序的状态（issue #7749）：null = 未绑定 / 已选中；否则 done（本件这道已做完）/
+        // absent（本件根本没有这道）。工人端据此说人话，而不是「推断不出工序」。
+        String workerOperationState = null;
         if (!sorted.isEmpty()) {
             if (StringUtils.hasText(operationId)) {
                 // 一键改（§3.3）：显式指定 ⇒ 必须属于本次扫码的部位/套，否则 422（不记账）
@@ -421,6 +449,16 @@ public class ProductionScanService {
                                 422,
                                 "请重新扫码，或在返回的 alternatives 里选择本部位/本套的待做工序"));
                 determinedBy = DETERMINED_BY_PICKED;
+            } else if (StringUtils.hasText(workerOperation)) {
+                // 🔴 绑定工人（issue #7749）：只认档案上那一道。**不**回落到 min(seq) —— 那是「下一道」，
+                // 不是「这位工人的活」；回落到别人的工序会把计件/进度记到错的人头上。
+                chosen = sorted.stream()
+                        .filter(op -> workerOperation.equals(logicalNameOf(op)))
+                        .findFirst()
+                        .orElse(null);
+                if (chosen != null) {
+                    determinedBy = DETERMINED_BY_WORKER;
+                }
             } else {
                 // 🔴 硬约束：工序必须确定 —— seq 重复（脏数据）⇒ 拒绝，不静默取第一道
                 int minSeq = seqOf(sorted.get(0));
@@ -438,6 +476,15 @@ public class ProductionScanService {
                 chosen = ties.get(0);
                 determinedBy = DETERMINED_BY_INFERRED;
             }
+        }
+        if (StringUtils.hasText(workerOperation) && chosen == null) {
+            // 本件（部位级 + 套级）有没有这道工序 ⇒ 决定说「已完成」还是「本件没有这道」。
+            // 判据取**同一份** setOperations（不另查库 = 不造第二份口径）。
+            boolean present = setOperations.stream()
+                    .filter(op -> workerOperation.equals(logicalNameOf(op)))
+                    .anyMatch(op -> orderItemId.equals(op.getOrderItemId())
+                            || SCOPE_SET.equals(scopeOf(op, catalog)));
+            workerOperationState = present ? "done" : "absent";
         }
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -462,7 +509,14 @@ public class ProductionScanService {
         // `batch_candidates`。判定与记账面**同一个** `ProductionService#cuttingBatchItem`（不在解析面
         // 按工序名重写一套）；非「裁剪」/ 零批次入库的 SKU ⇒ false / null / []（键恒在）。
         result.putAll(productionService.cuttingBatchView(po, orderItemId, chosen, tenantId));
-        result.put("alternatives", alternativeViews(sorted, chosen));
+        // 绑定的工序（issue #7749）：**只加两个键**，既有键一字不动。
+        // 未绑定 ⇒ 两个键都在、值是 null（前端据此走改前的「推断 + 选择器」形态）。
+        result.put("worker_operation", StringUtils.hasText(workerOperation) ? workerOperation : null);
+        result.put("worker_operation_state", workerOperationState);
+        // 绑定工人没有可选工序（本件没有 / 已做完）⇒ 不给替代项：列出来会怂恿他报别人的活。
+        result.put("alternatives", StringUtils.hasText(workerOperation)
+                ? List.of()
+                : alternativeViews(sorted, chosen));
         result.put("set_progress", productionService.progressOf(setOperations));
         // ④ 卡点判据（切片 ③，issue #4776；设计 §3.1 逐字：「"stalled": { "kind": null }} // §6：
         //    非空 = 这道卡住了，附判据与阈值来源」）。**只加一个键**，既有键一字不动。
@@ -470,7 +524,10 @@ public class ProductionScanService {
         //    （§6.1 逐字点名它会被任何更新污染 ⇒ 会静默给出错数）。
         result.put("stalled", stuckPointService.stalledView(setOperations, chosen));
         // ③ 本套无活可做 ⇒ 「本套已完成」（含完成时刻），不报错（设计 §3.2）
-        result.put("completed", chosen == null);
+        // 「本（部位/套）待做清单空了」= 完成。绑定工人没有匹配项时 sorted 仍可能非空
+        // ⇒ 不能再用 `chosen == null` 当完成（那会把「你的工序不在这件」谎报成「本套都报完了」）。
+        // 未绑定路径下 chosen != null ⇔ sorted 非空 ⇒ 与改前逐字等价。
+        result.put("completed", sorted.isEmpty());
         result.put("completed_at", processingSetReadService.completedAt(setOperations));
         result.put("needs_selection", List.of());
         return result;
@@ -537,7 +594,8 @@ public class ProductionScanService {
      * 绝不「按别处的单/不存在的部位」静默记账。</p>
      */
     private Map<String, Object> legacySelectionView(String key, String setId, String orderItemId,
-                                                    String operationId, Long tenantId) {
+                                                    String operationId, Long tenantId,
+                                                    String workerOperation) {
         Order order = productionService.resolveOrder(key, tenantId);
         ProcessingOrder po = processingOrderMapper.selectActiveByOrderId(order.getId(), tenantId);
         if (po == null) {
@@ -566,7 +624,7 @@ public class ProductionScanService {
                 .filter(StringUtils::hasText)
                 .findFirst()
                 .orElse(null);
-        return setPositionView(po, set, orderItemId, positionKind, operationId, tenantId);
+        return setPositionView(po, set, orderItemId, positionKind, operationId, tenantId, workerOperation);
     }
 
     /**
@@ -796,6 +854,11 @@ public class ProductionScanService {
         sorted.sort(Comparator.comparingInt(ProductionScanService::seqOf)
                 .thenComparing(op -> op.getId() == null ? "" : op.getId()));
         return sorted;
+    }
+
+    /** 工序实例的逻辑名（与读面**同一份**翻译，issue #7749；不在扫描侧另写一份映射）。 */
+    private static String logicalNameOf(ProcessingPositionOperation op) {
+        return ProductionOperationQueryService.logicalOperationName(op.getOperationName());
     }
 
     private static int seqOf(ProcessingPositionOperation op) {

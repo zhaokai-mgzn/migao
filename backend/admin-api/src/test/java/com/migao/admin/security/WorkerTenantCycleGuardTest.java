@@ -162,6 +162,10 @@ class WorkerTenantCycleGuardTest {
                 // ⇒ 夹具 DDL 缺列会让本守卫在「Column "worker_pages" not found」上假红
                 // （与上面 username 同款，实测踩中）。
                 + "worker_pages VARCHAR(2048),"
+                // V195（issue #7749）：工人档案绑定的逻辑工序。`findOwnedWorker` 的 `selectById`
+                // 是 `SELECT *` ⇒ 夹具 DDL 缺列会让本守卫在「Column "worker_operation" not found」上
+                // 假红（与上面 worker_pages 同款）。
+                + "worker_operation VARCHAR(64),"
                 + "created_at TIMESTAMP WITH TIME ZONE, updated_at TIMESTAMP WITH TIME ZONE,"
                 + "deleted INTEGER NOT NULL DEFAULT 0)");
         // 与 V98 逐列同形（生产 PG 的 DDL；H2 的 PostgreSQL 模式接受同一份类型）
@@ -264,7 +268,8 @@ class WorkerTenantCycleGuardTest {
                 .andExpect(jsonPath("$.data.worker_id").value(WORKER_ID_A));
 
         // production 族 ②：扫码解析（读面；业务实现由 mock 提供，本守卫只判「进得来 + 租户正确」）
-        when(productionScanService.resolve(eq("acc-fix4864-token"), isNull(), eq(TENANT_A)))
+        when(productionScanService.resolve(eq("acc-fix4864-token"), isNull(), isNull(), isNull(),
+                eq(TENANT_A), isNull()))
                 .thenReturn(Map.of("granularity", "order"));
         mockMvc.perform(get("/api/worker/production/scan")
                         .param("token", "acc-fix4864-token")

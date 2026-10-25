@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 236
+    "backend_contract_scoring_zero": 237
   },
   "history": [
     {
@@ -981,6 +981,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 236,
       "note": "issue #7723（发加工不再必经 / 外发搬到智能派单）新增 2 条 `[backend-contract]` 用例 PG-094（A6 后半裁定直达 + 首工序报满）与 PG-095（外发承接方：写面 / 校验 / 出库拒绝 / 只看外发 / 下拉）—— 按设计**不进 agent-eval**（`expectations: []`），机器判红通道 = `traces.tests` 的 backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java（`generatedAndIssuedMayEnterInProcessing` / `generateWithProcessorWritesConsignee` 等，文件真实存在、改前实测判红）；同 PR 未新增计分型用例 ⇒ 口径计数 234 → 236 是**合法新增**（#5079 已裁定的口径），真债务 `no_channel_total` 仍为 **0**（不变）。按本文件 `_how_to_regen` 在同一 PR 内重锚。"
+    },
+    {
+      "sha": "feat/7749-worker-operation-binding",
+      "date": "2026-10-25",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 237,
+      "note": "issue #7749（工人档案绑定工序 + 质检默认合格只记返工）新增 1 条 `[backend-contract]` 用例 PG-096 —— 按设计**不进 agent-eval**（`expectations: []`），机器判红通道 = 它的 `traces.tests`（backend: WorkerAdminServiceTest / AdminWorkerControllerTest / ProductionScanServiceTest / ProductionServiceTest；frontend: worker-h5-worker-operation.test.mjs / worker-h5-quality.test.mjs / WorkerProfilesPanel.test.tsx，文件全部真实存在且红证写在用例里）⇒ 读数 +1 是**合法新增**（#5079 已裁定的口径），真债务 `no_channel_total` 仍为 **0**（不变）。按 `_how_to_regen` 在同一 PR 内重锚。"
     }
   ]
 }

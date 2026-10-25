@@ -121,6 +121,9 @@ class ProductionScanCompleteServiceTest {
     /** 批次账（issue #7647）：裁剪报工的「核对 + 纠偏」腿；其余工序不该碰它（never 断言钉住）。 */
     @Mock
     private StockBatchConsumptionService stockBatchConsumptionService;
+    /** 工人档案（issue #7749）：写面按它读「绑定的工序」；默认 null = 未绑定（旧行为逐字不变）。 */
+    @Mock
+    private WorkerAdminService workerAdminService;
 
     private ProductionService productionService;
     private ProductionScanService scanService;
@@ -141,7 +144,8 @@ class ProductionScanCompleteServiceTest {
                 new ProcessingSetReadService(orderSetMapper, positionOperationMapper, orderItemMapper,
                         processingOrderMapper, orderMapper, productionService),
                 orderMapper);
-        service = new ProductionScanCompleteService(scanService, productionService, clientRequestIdService);
+        service = new ProductionScanCompleteService(scanService, productionService, clientRequestIdService,
+                workerAdminService);
         // 批次账是**字段注入**（构造签名被 27 处既有测试直接装配，不能加参数）⇒ 测试里同样按字段装。
         // 默认 mock 的 `tracksBatches` 返回 false ⇒ 非「裁剪」工序与存量商品行为逐字不变。
         ReflectionTestUtils.setField(productionService, "stockBatchConsumptionService", stockBatchConsumptionService);
@@ -308,7 +312,7 @@ class ProductionScanCompleteServiceTest {
         assertThatThrownBy(() -> service.complete(body(TOKEN), TENANT, "key-1", WORKER))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("质检")
-                .hasMessageContaining("判定")
+                .hasMessageContaining("返工")
                 .hasFieldOrPropertyWithValue("code", "VALIDATION_ERROR")
                 .hasFieldOrPropertyWithValue("httpStatus", 422);
 

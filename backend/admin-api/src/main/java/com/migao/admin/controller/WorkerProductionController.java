@@ -6,6 +6,7 @@ import com.migao.admin.service.ClientRequestIdService;
 import com.migao.admin.service.ProductionScanCompleteService;
 import com.migao.admin.service.ProductionScanService;
 import com.migao.admin.service.ProductionService;
+import com.migao.admin.service.WorkerAdminService;
 import com.migao.admin.service.WorkerCuttingHeightService;
 import com.migao.admin.worker.WorkerIdentity;
 import com.migao.admin.worker.WorkerSessionService;
@@ -57,6 +58,13 @@ public class WorkerProductionController {
     private final ProductionScanCompleteService productionScanCompleteService;
     /** 一体机裁高读面（母单 #5161）：同一个算面 + 同一个码解析，**只读**、不写机器。 */
     private final WorkerCuttingHeightService workerCuttingHeightService;
+    /**
+     * 工人档案（issue #7749）：只读一处 —— 这位工人**绑定的工序**。
+     *
+     * <p>绑定读的是 {@code users.worker_operation}（工人档案），不是请求体：工人端不能自称
+     * 「我这次做的是别的工序」（计件归属是工资凭证，与身份同一条纪律）。</p>
+     */
+    private final WorkerAdminService workerAdminService;
 
     /**
      * 工人扫工页读面：加工单工序树 + 进度。
@@ -131,13 +139,15 @@ public class WorkerProductionController {
             @RequestParam(name = "set_id", required = false) String setId,
             @RequestParam(name = "order_item_id", required = false) String orderItemId,
             @RequestHeader(value = WorkerSessionService.SESSION_HEADER, required = false) String sessionId) {
-        requireWorker(sessionId);
+        WorkerIdentity identity = requireWorker(sessionId);
         Long tenantId = TenantContext.getTenantId();
-        // 旧码收口（issue #4794）：选了（套 + 部位）才走扩展重载；否则**逐字**走既有 3 参签名
-        // （既有调用方/既有响应一字不动 —— 无选择时连方法都不同）。
+        // 工人档案上绑定的工序（issue #7749）：非空 ⇒ 扫描面按它**自动选工序**（工人屏不出选择器）。
+        String workerOperation = boundOperationOf(identity);
+        // 旧码收口（issue #4794）：选了（套 + 部位）才走扩展重载；否则走同一份实现的空选择形态
+        // （既有调用方/既有响应一字不动 —— 无选择时行为完全相同，只是多了一个「绑定工序」入参）。
         Map<String, Object> view = StringUtils.hasText(setId) || StringUtils.hasText(orderItemId)
-                ? productionScanService.resolve(token, operationId, setId, orderItemId, tenantId)
-                : productionScanService.resolve(token, operationId, tenantId);
+                ? productionScanService.resolve(token, operationId, setId, orderItemId, tenantId, workerOperation)
+                : productionScanService.resolve(token, operationId, null, null, tenantId, workerOperation);
         return ApiResponse.success(view);
     }
 
@@ -196,6 +206,18 @@ public class WorkerProductionController {
             @RequestHeader(value = WorkerSessionService.SESSION_HEADER, required = false) String sessionId) {
         requireWorker(sessionId);
         return ApiResponse.success(workerCuttingHeightService.read(token, TenantContext.getTenantId()));
+    }
+
+    /**
+     * 这位工人档案上绑定的逻辑工序（issue #7749）；未绑定 / 档案读不到 ⇒ {@code null}
+     * （= 保持改前的「系统推断 + 工序选择器」行为）。
+     */
+    private String boundOperationOf(WorkerIdentity identity) {
+        if (identity == null) {
+            return null;
+        }
+        var worker = workerAdminService.findOwnedWorker(identity.workerId());
+        return worker == null ? null : worker.getWorkerOperation();
     }
 
     /** 有效工人 session 或 401（fail-closed 的**唯一**一处判据：工人路径上「谁」没有第二条来源）。 */

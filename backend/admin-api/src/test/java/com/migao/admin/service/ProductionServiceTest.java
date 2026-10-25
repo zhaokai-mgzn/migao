@@ -1,4 +1,4 @@
-// case_ids: PG-018, PG-057, PG-060, CH-039, CH-040
+// case_ids: PG-018, PG-057, PG-060, PG-096, CH-039, CH-040
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
@@ -41,6 +41,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -284,6 +285,39 @@ class ProductionServiceTest {
         // 冻结键仍在（只是值变了）；#4117 红线不变：订单表一字不写
         assertThat(result).containsKey("order_completed");
         verify(orderMapper, never()).update(any(), any());
+    }
+
+    /**
+     * 🔴 issue #7749：**质检不阻塞完工 + 默认合格**。
+     *
+     * <p>用户 2026-10-25 逐字「只要所有工序全部完成就算结束了，这样也不需要质检按钮」——
+     * 质检没有「合格」按钮之后，若它仍参与完工判定，订单会永远差最后一道 ⇒ 本用例钉住：
+     * 只剩质检未完成时**照样完工**，并把质检行**默认置完成**（不落报工、不计件）。</p>
+     */
+    @Test
+    @DisplayName("#7749 只剩「质检」未完成 ⇒ 仍完工，且质检被默认置完成（不写报工 ⇒ 不计件）")
+    void pendingQualityOperationDoesNotBlockCompletionAndIsAutoCompleted() {
+        when(positionOperationMapper.selectById("op-2"))
+                .thenReturn(op("op-2", "外帘装袋", "1.00", true, "pending", "0.00", "1.00", "1.00"));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                op("op-2", "外帘装袋", "1.00", true, "done", "1.00", "1.00", "1.00"),
+                op("op-q", "质检", "1.00", false, "pending", "0.00", "1.50", "1.00")));
+        when(processingOrderMapper.markCompletedIfActive(eq(PO_ID), eq(TENANT), any())).thenReturn(1);
+
+        Map<String, Object> result = service.report(ORDER_ID, "op-2", reportBody("1", "1", "normal"), TENANT, null);
+
+        assertThat(result.get("order_completed"))
+                .as("质检缺省合格 ⇒ 它不参与完工判定（旧口径会因 op-q 未完成而 false）")
+                .isEqualTo(true);
+        verify(processingOrderMapper).markCompletedIfActive(eq(PO_ID), eq(TENANT), any());
+        // 默认完成：把未做满的质检行推到做满（CAS）+ 落完成时刻
+        verify(positionOperationMapper).advanceDoneQtyIfUnchanged(eq("op-q"), eq(TENANT),
+                argThat(q -> q.compareTo(BigDecimal.ZERO) == 0), eq("pending"),
+                argThat(q -> q.compareTo(new BigDecimal("1.00")) == 0), any());
+        verify(positionOperationMapper).recordCompletionIfDone(eq("op-q"), eq(TENANT), any());
+        // 不落报工 ⇒ 不计件（默认完成没有「谁做的」）：只允许**本次报的那道**有报工行，质检行没有
+        verify(workLogMapper, never()).insert(argThat(
+                (com.migao.admin.entity.ProductionWorkLog log) -> "op-q".equals(log.getOperationId())));
     }
 
     /** #4961 反向判据：**全部**实例完成 ⇒ 才置加工单 completed（新口径的下界）。 */

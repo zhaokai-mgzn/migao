@@ -1,4 +1,4 @@
-// case_ids: PG-072, HR-002, HR-001, HR-007, UI-091
+// case_ids: PG-072, PG-096, HR-002, HR-001, HR-007, UI-091
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
@@ -84,6 +84,9 @@ class WorkerAdminServiceTest {
     private UserMapper userMapper;
     @Mock
     private WorkerSessionMapper workerSessionMapper;
+    /** 逻辑工序目录（issue #7749）：校验「绑定的工序在本租户工序库里」；不传绑定的用例不会调用它。 */
+    @Mock
+    private ProductionOperationQueryService productionOperationQueryService;
 
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
@@ -103,7 +106,7 @@ class WorkerAdminServiceTest {
         com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(
                 new org.apache.ibatis.builder.MapperBuilderAssistant(configuration, ""), User.class);
 
-        service = new WorkerAdminService(userMapper, passwordEncoder);
+        service = new WorkerAdminService(userMapper, passwordEncoder, productionOperationQueryService);
 
         Map<String, String> store = new HashMap<>();
         StringRedisTemplate redis = org.mockito.Mockito.mock(StringRedisTemplate.class);
@@ -396,9 +399,14 @@ class WorkerAdminServiceTest {
 
     /** 页面收窄的**真写点**：{@code update(null, LambdaUpdateWrapper)} 的 SET 值（已解析回真值）。 */
     private static String storedPagesOf(LambdaUpdateWrapper<User> wrapper) {
+        return storedColumnOf(wrapper, "worker_pages");
+    }
+
+    /** 任一列的 SET 真值（issue #7749：绑定工序与页面收窄共用同一份解析）。 */
+    private static String storedColumnOf(LambdaUpdateWrapper<User> wrapper, String column) {
         for (String fragment : wrapper.getSqlSet().split(",")) {
             String part = fragment.trim();
-            if (!part.startsWith("worker_pages")) {
+            if (!part.startsWith(column)) {
                 continue;
             }
             String value = part.substring(part.indexOf('=') + 1).trim();
@@ -639,4 +647,55 @@ class WorkerAdminServiceTest {
 
         verify(userMapper, never()).update(isNull(), any());
     }
+
+    // ============ ⑥ 绑定逻辑工序（issue #7749）：一个工人对应一个工序 ============
+
+    @Test
+    @DisplayName("⑥ 建号带工序 ⇒ 写入 users.worker_operation（扫码解析读的就是这一列）")
+    void createWorkerStoresTheBoundOperation() {
+        when(productionOperationQueryService.hasLogicalOperation(TENANT, "韩褶")).thenReturn(true);
+
+        User created = service.createWorker(WORKER_NO, NAME, PIN, null, "韩褶");
+
+        assertThat(created.getWorkerOperation()).isEqualTo("韩褶");
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userMapper).insert(captor.capture());
+        assertThat(captor.getValue().getWorkerOperation()).isEqualTo("韩褶");
+    }
+
+    @Test
+    @DisplayName("⑥ 绑定不在工序库里的工序 ⇒ 422 具名拒绝 + 零写入（不静默存一个扫不到的名字）")
+    void unknownOperationIsRejectedWithoutWriting() {
+        when(productionOperationQueryService.hasLogicalOperation(TENANT, "不存在的工序")).thenReturn(false);
+
+        assertThatThrownBy(() -> service.createWorker(WORKER_NO, NAME, PIN, null, "不存在的工序"))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "VALIDATION_ERROR")
+                .hasMessageContaining("不存在的工序");
+
+        verify(userMapper, never()).insert(any(User.class));
+    }
+
+    @Test
+    @DisplayName("⑥ 改绑工序 ⇒ 只写 worker_operation 一列；空白 = 清空绑定（回到扫码后自己选工序）")
+    void updateWorkerOperationRebindsOrClears() {
+        when(productionOperationQueryService.hasLogicalOperation(TENANT, "韩褶")).thenReturn(true);
+        service.createWorker(WORKER_NO, NAME, PIN);
+        stubWorkerRowById();
+
+        User rebound = service.updateWorkerOperation("worker-1", " 韩褶 ");
+        User cleared = service.updateWorkerOperation("worker-1", "   ");
+
+        assertThat(rebound.getWorkerOperation()).isEqualTo("韩褶");
+        assertThat(cleared.getWorkerOperation()).isNull();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<LambdaUpdateWrapper<User>> captor = ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
+        verify(userMapper, times(2)).update(isNull(), captor.capture());
+        assertThat(storedColumnOf(captor.getAllValues().get(0), "worker_operation")).isEqualTo("韩褶");
+        assertThat(storedColumnOf(captor.getAllValues().get(1), "worker_operation"))
+                .as("清空绑定必须真的写 NULL（MyBatis-Plus 默认 NOT_NULL 策略会静默漏掉这一列）")
+                .isNull();
+    }
+
 }

@@ -90,6 +90,24 @@ public class User {
      */
     private String workerPages;
 
+    /**
+     * 工人档案绑定的**逻辑工序**（V195，issue #7749；用户 2026-10-25 裁定「一个工人对应一个工序」）。
+     *
+     * <p>{@code null} = <b>未绑定</b>（存量与新建的默认值）⇒ 保持改前行为：系统推断下一道 + 工人屏出
+     * 工序选择器。非空 = 逻辑工序名（如 {@code 韩褶}）⇒ 扫码报工时按本列**自动选中**这位工人的工序，
+     * 工人屏不再出选择器；本件没有这道 / 已做完 ⇒ 如实告知，<b>不</b>静默改报别的工序
+     * （计件会记到别人头上）。</p>
+     *
+     * <p>为什么是**逻辑名**：工序库里同一道活按部位拆成多行（{@code 韩褶-布} / {@code 韩褶-纱}），
+     * 而一个车位工人布纱都做 ⇒ 绑到某一行会让「扫纱帘没活」变成常态。翻译用既有
+     * {@link com.migao.admin.service.ProductionOperationQueryService#logicalOperationName}，
+     * 不新增第二份映射表。</p>
+     *
+     * <p>⚠️ 与 {@link #workerPages} 同款的 {@code NOT_NULL} 更新策略交互：「清空绑定」必须走
+     * {@link com.migao.admin.service.WorkerAdminService#updateWorkerOperation} 的显式 {@code set}。</p>
+     */
+    private String workerOperation;
+
     private Integer sessionTtl;
 
     private String status;

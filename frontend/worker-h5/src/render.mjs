@@ -266,11 +266,10 @@ export function reduce(state, action) {
     case 'qualityFailed':
       return { ...state, quality: { loading: false, latest: null, error: action.error ?? '质检状态读不到' } }
     case 'qualityFormOpen':
-      return { ...state, qualityForm: { result: 'pass', submitting: false, error: null } }
+      // 唯一可录的判定 = 返工（issue #7749；合格是默认态，屏上不给这个按钮）
+      return { ...state, qualityForm: { result: 'rework', submitting: false, error: null } }
     case 'qualityFormClose':
       return { ...state, qualityForm: null }
-    case 'qualityResult':
-      return { ...state, qualityForm: { ...(state.qualityForm ?? {}), result: action.result, error: null } }
     case 'qualitySubmitting':
       return { ...state, qualityForm: { ...(state.qualityForm ?? {}), submitting: true, error: null } }
     case 'qualityFormError':
@@ -322,16 +321,26 @@ export const DEFAULT_WORK_TYPE = 'normal'
 const WORK_TYPE_LABELS = { normal: '正常', rework: '返工', scrap: '报废' }
 
 /**
- * 质检三态（issue #7162）—— 与后端 `QualityCheckService.RESULTS` **逐字同名**；
- * 与报工三态（`WORK_TYPES`）**不是一回事**：报工说的是数量归属，质检说的是这一件成品帘判了什么。
+ * 质检**只有一个**录入动作 = 返工（issue #7749，用户 2026-10-25 逐字：
+ * 「质检不要显示合格，默认都合格，只有出现问题时允许直接选择返工，只提供一个返工选项，
+ * 加一些备注说明即可」）。
+ *
+ * 🔴 为什么不再有「合格 / 报废」两个选项：
+ * ① 没问题就是**默认**（不点任何东西）⇒ 摆一个「合格」选项只会让工人多点一次；
+ * ② 报废不在工人这一屏处置（真报废走商家侧质量处置）⇒ 工人端只负责「把问题记下来」。
+ * 服务端 `QualityCheckService.RESULTS` 仍保留三态（观星台商家面零回归）—— 端侧只是**不提供**另外两个。
  */
 export const QUALITY_RESULTS = [
-  { value: 'pass', label: '合格', hint: '这件成品帘可以直接进入下一环节' },
-  { value: 'rework', label: '返工', hint: '需要返工后重新检验，必须写明原因' },
-  { value: 'scrap', label: '报废', hint: '这件不投入使用，必须写明原因' },
+  { value: 'rework', label: '返工', hint: '写明问题，提交后生成质检单（同一件返工后再检）' },
 ]
 
-const QUALITY_LABELS = { pass: '合格', rework: '返工', scrap: '报废' }
+/**
+ * 质检状态的显示词。
+ *
+ * 🔴 **不出现「合格」**（用户 2026-10-25 逐字「质检不要显示合格」）：
+ * 合格是默认态、没有「合格」这个动作 ⇒ 屏上只在**有返工记录**时说话；其余一律「正常」。
+ */
+const QUALITY_LABELS = { pass: '正常', rework: '已记返工', scrap: '已记报废' }
 
 /**
  * 本屏这道工序是不是「质检」（issue #7186）。
@@ -766,8 +775,19 @@ function ternLine(v) {
 function qualityOnlyNote(state, view) {
   if (!isQualityOperation(view?.operation)) return ''
   return effectivePages(state).opened.has(PAGE_INSPECT)
-    ? '<p class="wh5-sub" id="wh5-quality-only">本道是质检工序：录入判定即完成报工并生成质检单（不单独报工）。</p>'
-    : '<p class="wh5-sub" id="wh5-quality-only">本道是质检工序：需由质检员录入判定（当前账号未开通「质检」页）。</p>'
+    ? '<p class="wh5-sub" id="wh5-quality-only">本道是质检工序：默认没问题，完成生产即算做完；有问题在下面记返工即可（不用报工）。</p>'
+    : '<p class="wh5-sub" id="wh5-quality-only">本道是质检工序：默认没问题；要记返工需开通「质检」页（当前账号未开通）。</p>'
+}
+
+/**
+ * 「你的工序」一行（issue #7749）：工人档案上绑定的那道工序 —— 扫完码直接告诉他
+ * 「这次系统替你选的是哪道」，不用他去比对工序名（绑定时就已经定下来了）。
+ *
+ * <p>未绑定（`worker_operation` 为 null / 缺键）⇒ 整行**一个字节都不出现**（保持改前的屏）。</p>
+ */
+function workerOperationLine(v) {
+  const name = typeof v?.worker_operation === 'string' ? v.worker_operation.trim() : ''
+  return name ? `<p class="wh5-sub" id="wh5-worker-operation">你的工序：${esc(name)}</p>` : ''
 }
 
 /**
@@ -779,8 +799,8 @@ function qualityOnlyNote(state, view) {
  * 🔴 三条硬约束：
  * ① 只在 `inspect` ∈ 页面集时渲染（逐人开；服务端 `/api/worker/quality/**` 同时做写准入，
  *    藏起 UI **不是**授权）；
- * ② **未检 ≠ 合格**：没有记录 ⇒ 显示「未检」，不折成「合格」；
- * ③ 判定 ≠ 合格 ⇒ 原因必填（前端先拦一次不白跑网络；服务端 422 才是真判据）。
+ * ② **默认没问题**（issue #7749）：没有记录 ⇒ 显示「正常」，屏上**不出现「合格」**这个选项/状态；
+ * ③ 只有一个动作 =【返工】+ 问题说明（必填；前端先拦一次不白跑网络，服务端 422 才是真判据）。
  *
  * <p>成品帘 = `view.position.order_item_id`（水洗唛是部位码 ⇒ 扫码已指到这一件），
  * 不逐工序、不重算报工数量。</p>
@@ -794,7 +814,8 @@ function qualityBlock(state, view) {
   const q = state.quality ?? { loading: true, latest: null, error: null }
   const latest = q.latest ?? null
   const result = latest?.result ?? null
-  const stateText = QUALITY_LABELS[result] ?? '未检'
+  // 没有记录 = **默认没问题**（「正常」，不写「合格」）；有记录才显示记了什么
+  const stateText = QUALITY_LABELS[result] ?? '正常'
   const stateClass = result && QUALITY_LABELS[result] ? `is-${result}` : 'is-pending'
   const moment = typeof latest?.inspected_at === 'string'
     ? latest.inspected_at.slice(0, 16).replace('T', ' ')
@@ -810,7 +831,7 @@ function qualityBlock(state, view) {
   const form = state.qualityForm ? qualityFormView(state) : ''
   const openButton = state.qualityForm
     ? ''
-    : `<button id="wh5-quality-open" class="wh5-ghost" type="button">${latest ? '再录一次判定' : '录入质检判定'}</button>`
+    : `<button id="wh5-quality-open" class="wh5-ghost" type="button">${latest ? '再记一次返工' : '有问题，记返工'}</button>`
 
   return `<section class="wh5-card wh5-quality" id="wh5-quality">
     <div class="wh5-q-head">
@@ -821,30 +842,29 @@ function qualityBlock(state, view) {
     ${reason}
     ${loadingText}
     ${errorText}
-    <p class="wh5-sub">这一件成品帘的质检判定；提交后生成质检单（同一件可以返工后再检）。</p>
+    <p class="wh5-sub">这一件默认按没问题走；只有出问题才需要记返工（写明问题，提交后生成质检单）。</p>
     ${openButton}
     ${form}
   </section>`
 }
 
-/** 质检录入表单（三态 + 原因；原因在提交时由装配层从 DOM 读值，避免每敲一个字重绘丢焦点）。 */
+/**
+ * 质检录入表单（issue #7749：**只有一个动作** —— 返工 + 问题说明）。
+ *
+ * <p>用户逐字「只提供一个返工选项，加一些备注说明即可」⇒ 不再有判定单选组（合格 / 报废都退场）；
+ * 说明在提交时由装配层从 DOM 读值（不在 input 事件里重绘 ⇒ 每敲一个字不会丢焦点）。</p>
+ */
 function qualityFormView(state) {
   const f = state.qualityForm
-  const current = QUALITY_RESULTS.find((o) => o.value === f.result) ?? QUALITY_RESULTS[0]
-  const choices = QUALITY_RESULTS
-    .map((o) => `<button type="button" class="wh5-q-choice${o.value === current.value ? ' is-on' : ''}"
-        data-quality-result="${o.value}" aria-pressed="${o.value === current.value}">${o.label}</button>`)
-    .join('')
   return `<div class="wh5-q-form" id="wh5-quality-form">
-      <div class="wh5-q-choices" role="group" aria-label="质检判定">${choices}</div>
-      <p class="wh5-sub" id="wh5-quality-hint">${current.hint}</p>
-      <label class="wh5-label">不合格原因（判定为返工 / 报废时必填）
+      <p class="wh5-sub" id="wh5-quality-hint">这次记为「返工」：写明问题，提交后生成质检单。</p>
+      <label class="wh5-label">问题说明（必填）
         <textarea id="wh5-quality-reason" class="wh5-input" rows="2"
           placeholder="例如：布面污渍 / 尺寸偏差 / 缝线开裂"></textarea>
       </label>
       ${f.error ? `<p class="wh5-error" id="wh5-quality-form-error">${esc(f.error)}</p>` : ''}
       <div class="wh5-q-actions">
-        <button id="wh5-quality-submit" class="wh5-primary" type="button"${f.submitting ? ' disabled' : ''}>${f.submitting ? '提交中…' : '提交质检单'}</button>
+        <button id="wh5-quality-submit" class="wh5-primary" type="button"${f.submitting ? ' disabled' : ''}>${f.submitting ? '提交中…' : '提交返工'}</button>
         <button id="wh5-quality-cancel" class="wh5-ghost" type="button"${f.submitting ? ' disabled' : ''}>取消</button>
       </div>
     </div>`
@@ -863,7 +883,9 @@ function mainView(state) {
     ${ternLine(v)}
     ${v.completed === true
       ? '<p class="wh5-done" id="wh5-completed">本套工序都已报工 🎉</p>'
-      : '<p class="wh5-sub" id="wh5-no-operation">本部位推断不出待报工序（工序未确定 ⇒ 不得记账）</p>'}
+      : v.worker_operation
+        ? `<p class="wh5-sub" id="wh5-no-operation">你的工序是「${esc(v.worker_operation)}」：本件${v.worker_operation_state === 'done' ? '的这道已经做完' : '没有这道工序'}，不用报工。</p>`
+        : '<p class="wh5-sub" id="wh5-no-operation">本部位推断不出待报工序（工序未确定 ⇒ 不得记账）</p>'}
     ${overviewView(v)}
     ${cutPlanView(v)}
     ${qualityBlock(state, v)}
@@ -882,8 +904,11 @@ function mainView(state) {
   //
   // 🔴 改前的形态（已撤，不要改回去）：候选只挂在「不是这道？」这行小字下 —— 而车间工序本来就
   // **不按固定顺序**做（用户 2026-10-10 逐字：「工人无法选取某个工序报工，因为工序不是固定顺序的」）。
+  //
+  // 🔴 issue #7749：工人**绑定了工序**时服务端已自动选中 ⇒ 不出选择器（alternatives 也恒为空）。
+  //    显式判 `!v.worker_operation` 是刻意的双保险：绑定工人不该看到「改报别的工序」的入口。
   const candidates = [op, ...(v.alternatives ?? [])].filter((c) => c && c.operation_id)
-  const picker = candidates.length > 1
+  const picker = !v.worker_operation && candidates.length > 1
     ? `<div class="wh5-pick" id="wh5-op-picker" role="group" aria-label="选工序">
         <span class="wh5-pick-label">选工序（点哪道就领哪道）</span>
         ${candidates.map((c) => {
@@ -896,6 +921,7 @@ function mainView(state) {
   <section class="wh5-card">
     <div class="wh5-set" id="wh5-set">第 ${esc(v.set_no)} 套 · ${esc(v.position?.position_name ?? '')}</div>
     ${ternLine(v)}
+    ${workerOperationLine(v)}
     <div class="wh5-op" id="wh5-operation">${esc(operationDisplayName(op))}</div>
     <div class="wh5-qty" id="wh5-qty">应做 ${fmtQty(op.qty)} ${esc(op.unit ?? '')}</div>
     <div class="wh5-price-row">${price}</div>
