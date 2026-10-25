@@ -116,6 +116,12 @@ REALDB_FILES: dict[str, str] = {
     _SVC + "CustomerProfileMapperTest.java": "direct",
     # issue #7257：并发 3 次按同一手机号建档 ⇒ 恰 1 条；判别力自证 = 摘索引后按旧形状必须落 2 条
     _SVC + "CustomerProfileDedupeRealDbTest.java": "direct",
+    # issue #7711：**同一人双档案自动收敛 + 订单信息补空不覆盖**的真库判据 —— 三条只真 PG 能证的事：
+    # ① 「已有值不被订单覆盖」是 SQL `COALESCE(NULLIF(BTRIM(列), ''), 新值)` 的行为（mock 面只剩字符串）；
+    # ② 合并要按 `REFERENCES customer_profiles(id)` 的**真实外键**顺序迁引用 —— 顺序写错是外键/唯一键异常，
+    #    不是断言失败（mock 面上这两条约束整个不存在）；
+    # ③ 「先删较晚那条、再补身份键」的顺序只有 V167 的部分唯一索引咬得出来（跳过合并即 DuplicateKey）。
+    _SVC + "CustomerProfileIdentityRealDbTest.java": "direct",
     # issue #7256（由 #7259 合入 main，本 worktree rebase 时补回）：user_roles 唯一性只约束活跃行
     _SVC + "UserRoleReviveRealDbTest.java": "direct",
     # issue #7256：UserRoleMapper 两条条件写的 SQL 行为（ON CONFLICT 谓词必须与 V166 部分唯一索引匹配）
