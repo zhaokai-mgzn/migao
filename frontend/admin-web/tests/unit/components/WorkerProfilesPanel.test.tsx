@@ -422,14 +422,14 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
   // 用户 2026-10-25 逐字：「工人要允许绑定一个工序，一个工人对应一个工序，对工人档案进行重新设计，
   // 工人扫码后直接报工，通过工人自动选择工序」。
 
-  it('⑥ 列表新增「工序」列：未绑定 ⇒ 未绑定；已绑定 ⇒ 服务端回来的那道', async () => {
+  it('⑥ 列表新增「工序」列：不设工序 ⇒ 不设工序（出入库岗位）；已绑定 ⇒ 服务端回来的那道', async () => {
     mockListWorkers.mockResolvedValue(okPage([
       worker({ id: 'w-1' }),
       worker({ id: 'w-2', workerNo: 'W-1002', name: '李四', workerOperation: '韩褶' }),
     ]))
     render(<WorkerProfilesPanel canWrite />)
 
-    expect(await screen.findByTestId('worker-operation-w-1')).toHaveTextContent('未绑定')
+    expect(await screen.findByTestId('worker-operation-w-1')).toHaveTextContent('不设工序')
     expect(screen.getByTestId('worker-operation-w-2')).toHaveTextContent('韩褶')
   })
 
@@ -449,7 +449,7 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
       expect.objectContaining({ workerNo: 'W-1003', workerOperation: '韩褶' })))
   })
 
-  it('⑦ 改工序：存量工人也能改绑；选「未绑定」⇒ 发 null（回到扫码后自己选工序）', async () => {
+  it('⑦ 改工序：存量工人也能改绑；选「不设工序」⇒ 发 null（合法的「这类岗位本来就没有工序」）', async () => {
     mockUpdateWorkerOperation.mockResolvedValue({ data: { data: worker() } })
     render(<WorkerProfilesPanel canWrite />)
 
@@ -469,6 +469,17 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
   it('⑦ 无 employee:create ⇒ 「改工序」不可点（与建号同档写权限）', async () => {
     render(<WorkerProfilesPanel canWrite={false} />)
     expect(await screen.findByTestId('worker-set-operation-w-1')).toBeDisabled()
+  })
+
+
+  it('⑧ 工序是**可选**的：下拉第一项 =「不设工序（出入库/仓库等岗位）」，并写明这类岗位不参与报工（#7766）', async () => {
+    render(<WorkerProfilesPanel canWrite />)
+
+    fireEvent.click(await screen.findByText('新建工人档案'))
+    const picker = await screen.findByTestId('worker-operation-picker')
+    const select = within(picker).getByRole('combobox')
+    expect(within(select).getByRole('option', { name: '不设工序（出入库/仓库等岗位）' })).toBeInTheDocument()
+    expect(within(picker).getByText(/出入库\/仓库等岗位：不设工序即可/)).toBeInTheDocument()
   })
 
 })

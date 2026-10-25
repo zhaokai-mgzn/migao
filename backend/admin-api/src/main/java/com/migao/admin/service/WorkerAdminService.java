@@ -167,7 +167,8 @@ public class WorkerAdminService {
         // 工人端页面收窄（issue #6788）：null = 未收窄（= 全部页面）。与 `users.permissions`
         // **不是同一格** —— 那是商家 RBAC 权限快照，工人页面码永不写进去（V141/V152 红线）。
         List<String> restrictedPages = validateWorkerPages(workerPages);
-        // 绑定的工序（issue #7749）：null = 未绑定（= 保持「系统推断 + 工序选择器」的旧行为）
+        // 绑定的工序（issue #7749 / #7766）：null = 不设工序（出入库/仓库等岗位本来就无工序；
+        // 生产工人留空则保持「系统推断 + 工序选择器」的旧行为）
         String normalizedOperation = validateWorkerOperation(tenantId, workerOperation);
 
         // 刻意**不**设：phone（工人不用手机号登录）／username（那是员工登录名，V128）／
@@ -300,7 +301,8 @@ public class WorkerAdminService {
      * 设/清这位工人**绑定的工序**（issue #7749）—— 用户 2026-10-25 裁定「一个工人对应一个工序」。
      *
      * <p>绑定后，工人扫码报工时由 {@code ProductionScanService} 按本列**自动选中**该工人的工序
-     * （工人屏不再出工序选择器）；未绑定 ⇒ 保持「系统推断 + 选择器」的旧行为。</p>
+     * （工人屏不再出工序选择器）；不设工序 ⇒ 保持「系统推断 + 选择器」的旧行为 ——
+     * 出入库 / 仓库等岗位本来就没有工序（#7766），留空是**合法终态**，不是「还没配完」。</p>
      *
      * @param workerOperation 逻辑工序名（如 {@code 韩褶}）；{@code null} / 空白 = <b>清空绑定</b>
      *                        （= 回到旧行为）。不在本租户活跃工序库里 ⇒ 422 + 可行动出口，零写入。
@@ -330,18 +332,19 @@ public class WorkerAdminService {
                 .eq(User::getTenantId, tenantId)
                 .set(User::getWorkerOperation, normalizedOperation));
         log.info("[工人档案] 绑定工序已更新：tenantId={}, workerNo={}, workerOperation={}",
-                tenantId, worker.getWorkerNo(), normalizedOperation == null ? "未绑定" : normalizedOperation);
+                tenantId, worker.getWorkerNo(), normalizedOperation == null ? "不设工序" : normalizedOperation);
         worker.setWorkerOperation(normalizedOperation);
         worker.setPasswordHash(null);
         return worker;
     }
 
     /**
-     * 校验 + 归一工人绑定的工序（issue #7749）：空白 = 未绑定（合法）；非空必须能在本租户
+     * 校验 + 归一工人绑定的工序（issue #7749 / #7766）：空白 = 不设工序（合法终态，出入库 / 仓库等岗位）；
+     * 非空必须能在本租户
      * **活跃工序库**里按逻辑名找到（判据在 {@link ProductionOperationQueryService#hasLogicalOperation}，
      * 与下拉选项同一份归并口径）。
      *
-     * @return 归一后的逻辑工序名；{@code null} = 未绑定
+     * @return 归一后的逻辑工序名；{@code null} = 不设工序
      */
     private String validateWorkerOperation(Long tenantId, String workerOperation) {
         String normalized = workerOperation == null ? "" : workerOperation.trim();
@@ -358,7 +361,8 @@ public class WorkerAdminService {
                     List.of(BusinessException.detail("workerOperation",
                             "可选项 = 本企业隔离工序库里的活跃工序（与「工人档案」下拉里的工序同一份）")),
                     "先在「企业基础设置 → 工序与部位单价」里建好/启用这道工序，再回来给这位工人绑定；"
-                            + "留空 = 不绑定（工人扫码后自己选工序）");
+                            + "出入库 / 仓库等岗位不需要工序，选「不设工序」即可"
+                            + "（生产工人若留空，扫码后自己选工序）");
         }
         return normalized;
     }

@@ -3240,7 +3240,7 @@ export interface WorkerProfile {
    */
   workerPages?: string[] | null
   /**
-   * 绑定的**逻辑工序**（issue #7749）：`null` / 缺省 = 未绑定（扫码后自己选工序）。
+   * 绑定的**逻辑工序**（issue #7749）：`null` / 缺省 = 不设工序（出入库/仓库等岗位；生产工人留空则扫码后自己选）。
    * 绑定后工人扫码即自动选中这道工序、直接报工（工人屏不再出选择器）。
    */
   workerOperation?: string | null
@@ -3254,7 +3254,7 @@ export interface WorkerFormData {
   pin: string
   /** 工人端页面收窄（issue #6788）：`null` / 缺省 = 全部页面（默认，零回归）。 */
   workerPages?: string[] | null
-  /** 绑定的逻辑工序（issue #7749）：`null` / 缺省 = 未绑定（扫码后自己选工序）。 */
+  /** 绑定的逻辑工序（issue #7749）：`null` / 缺省 = 不设工序（出入库/仓库等岗位；生产工人留空则扫码后自己选）。 */
   workerOperation?: string | null
 }
 

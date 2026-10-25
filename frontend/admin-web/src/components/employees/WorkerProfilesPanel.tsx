@@ -55,7 +55,7 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
     workerNo: string
     name: string
     pin: string
-    /** 绑定的逻辑工序（issue #7749）：'' = 未绑定（扫码后自己选工序） */
+    /** 绑定的逻辑工序（issue #7749）：'' = 不设工序（出入库/仓库等岗位；生产工人留空则扫码后自己选） */
     workerOperation: string
     pages: string[] | null
     /** 逐人开放的能力页键（issue #7162；与 `pages` 分开 ⇒ 默认集合的语义不受影响） */
@@ -80,7 +80,7 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
   /**
    * 可绑定的**逻辑工序**目录（issue #7749）：选项来源 = 服务端
    * （`GET /api/admin/workers/operations`，人事域读码）—— 前端不维护第二份工序清单。
-   * 读不到 / 为空 ⇒ 下拉只剩「未绑定」，并提示先去工序库建工序（不自己编选项）。
+   * 读不到 / 为空 ⇒ 下拉只剩「不设工序」，并提示先去工序库建工序（不自己编选项）。
    */
   const [operationOptions, setOperationOptions] = useState<WorkerOperationOption[]>([])
   // 改绑工序弹窗（存量工人也能改 —— 只在建号时能设等于「绑错了只能重建档案」）
@@ -140,7 +140,7 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
     return () => { alive = false }
   }, [])
 
-  /** 拉「可绑定的逻辑工序」目录（只读）。失败 ⇒ 静默留空（下拉只剩「未绑定」，不影响建号主流程）。 */
+  /** 拉「可绑定的逻辑工序」目录（只读）。失败 ⇒ 静默留空（下拉只剩「不设工序」，不影响建号主流程）。 */
   useEffect(() => {
     let alive = true
     workerApi.listWorkerOperations()
@@ -275,7 +275,7 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
     }
   }
 
-  /** 打开「改工序」弹窗（issue #7749）：[[opValue]] 初值 = 当前绑定（'' = 未绑定）。 */
+  /** 打开「改工序」弹窗（issue #7749）：[[opValue]] 初值 = 当前绑定（'' = 不设工序）。 */
   const handleOpenOperation = (worker: WorkerProfile) => {
     setOpTarget(worker)
     setOpValue(worker.workerOperation ?? '')
@@ -341,7 +341,7 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
       render: (record) => (
         record.workerOperation
           ? <span className="text-sm text-neutral-800" data-testid={`worker-operation-${record.id}`}>{record.workerOperation}</span>
-          : <span className="text-sm text-neutral-500" data-testid={`worker-operation-${record.id}`}>未绑定</span>
+          : <span className="text-sm text-neutral-500" data-testid={`worker-operation-${record.id}`} title="出入库/仓库等岗位本来就没有工序">不设工序</span>
       ),
     },
     {
@@ -423,6 +423,7 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
       <div className="flex items-center justify-between mb-4">
         <p className="text-sm text-neutral-500">
           工人用工号 + PIN 登录工人端扫码报工，不进入管理后台；绑定工序后扫码直接报那一道，不用再选。
+          出入库 / 仓库岗位不需要工序，不设即可（用工人端的入库 / 出库功能）。
         </p>
         {canWrite ? (
           <Button onClick={handleOpenCreate}>
@@ -533,7 +534,7 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
             <Select
               label="工序"
               options={[
-                { value: '', label: '未绑定（扫码后自己选工序）' },
+                { value: '', label: '不设工序（出入库/仓库等岗位）' },
                 ...operationOptions.map((op) => ({ value: op.name, label: `${op.name}（${op.group}）` })),
               ]}
               value={form.workerOperation}
@@ -541,8 +542,8 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
             />
             <p className="text-xs text-neutral-400 mt-1.5">
               {operationOptions.length === 0
-                ? '工序库还没有可用工序 —— 先到「企业基础设置 → 工序与部位单价」建立工序，再回来绑定。'
-                : '绑定后这位工人扫码就自动选中这道工序、直接报工（屏上不再选工序）；同一道活按布帘/纱帘拆的多行已合并。'}
+                ? '工序库还没有可用工序 —— 先到「企业基础设置 → 工序与部位单价」建立工序，再回来绑定（出入库/仓库岗位不需要工序，可不设）。'
+                : '生产工人：绑定一道工序，扫码直接报工（屏上不再选工序；同一道活按布帘/纱帘拆的多行已合并）。出入库/仓库等岗位：不设工序即可，他们用工人端的入库/出库功能，不参与报工。'}
             </p>
           </div>
 
@@ -656,15 +657,15 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
           <Select
             label="工序"
             options={[
-              { value: '', label: '未绑定（扫码后自己选工序）' },
+              { value: '', label: '不设工序（出入库/仓库等岗位）' },
               ...operationOptions.map((op) => ({ value: op.name, label: `${op.name}（${op.group}）` })),
             ]}
             value={opValue}
             onChange={(e) => setOpValue(e.target.value)}
           />
           <p className="text-xs text-neutral-400">
-            绑定后扫码自动选中这道工序、直接报工；改成「未绑定」则回到扫码后自己选。
-            本件没有这道 / 已做完时，工人屏会如实说明，不会改报别的工序。
+            生产工人：绑定后扫码自动选中这道工序、直接报工。出入库/仓库等岗位：选「不设工序」即可
+            （他们用入库/出库功能，不参与报工）。本件没有这道 / 已做完时，工人屏会如实说明，不会改报别的工序。
           </p>
         </div>
       </Modal>
