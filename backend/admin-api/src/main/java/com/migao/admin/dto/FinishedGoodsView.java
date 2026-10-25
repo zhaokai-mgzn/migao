@@ -45,6 +45,12 @@ public class FinishedGoodsView {
     /** 进货的成品入库单（打包时自动建） */
     private String inboundOrderId;
 
+    /**
+     * 入库**单号**（如 {@code RK-20261025-0001}）—— 商家可见面只显示它（issue #7792）。
+     * 缺值（单据被软删 / 历史行没有单据）⇒ {@code null} ⇒ 页面印「—」。
+     */
+    private String inboundNo;
+
     /** 出货的成品出库单（发货时自动建） */
     private String outboundOrderId;
 

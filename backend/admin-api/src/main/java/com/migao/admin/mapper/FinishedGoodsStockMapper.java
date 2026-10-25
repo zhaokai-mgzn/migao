@@ -80,11 +80,23 @@ public interface FinishedGoodsStockMapper extends BaseMapper<FinishedGoodsStock>
     List<FinishedGoodsStock> selectInStockByOrder(@Param("tenantId") Long tenantId,
                                                   @Param("orderId") String orderId);
 
-    /** 在库总览（成品库存页）。 */
+    /**
+     * 在库总览（成品库存页）。
+     *
+     * <p>LEFT JOIN {@code inbound_orders} 取**入库单号**（{@code inbound_no}）：本表
+     * {@code inbound_order_id} 存的是单据 **id**（{@code InboundOrder.id} 是 ASSIGN_UUID ⇒ 32 位 UUID），
+     * 商家可见面要的是 {@code RK-…} 单号（issue #7792）。左连接 + {@code io.deleted = 0} ⇒
+     * 单据被软删 / 历史行没有单据时单号为空（页面印「—」），**库存行本身照样出现**（不能因单号缺失丢货位）。</p>
+     *
+     * <p>列别名必须是 {@code inbound_no}（{@code map-underscore-to-camel-case: true} ⇒ 实体的
+     * {@code inboundNo}；该字段标 {@code @TableField(exist = false)}，本列不在 finished_goods_stock 表里）。</p>
+     */
     @InterceptorIgnore(tenantLine = "true")
-    @Select("SELECT * FROM finished_goods_stock "
-            + "WHERE tenant_id = #{tenantId} AND status = 'in_stock' AND deleted = 0 "
-            + "ORDER BY bin_code LIMIT 500")
+    @Select("SELECT fgs.*, io.inbound_no AS inbound_no "
+            + "FROM finished_goods_stock fgs "
+            + "LEFT JOIN inbound_orders io ON io.id = fgs.inbound_order_id AND io.deleted = 0 "
+            + "WHERE fgs.tenant_id = #{tenantId} AND fgs.status = 'in_stock' AND fgs.deleted = 0 "
+            + "ORDER BY fgs.bin_code LIMIT 500")
     List<FinishedGoodsStock> selectInStock(@Param("tenantId") Long tenantId);
 
     /** 发货出库：在库 → 已发货（仓位释放）+ 记出库单；返回受影响行数。 */

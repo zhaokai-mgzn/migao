@@ -4600,6 +4600,8 @@ export interface FinishedGoods {
   unit: string
   status: 'in_stock' | 'shipped' | 'unpacked'
   inboundOrderId?: string | null
+  /** 入库单号（如 RK-20261025-0001）—— 页面显示它；`inboundOrderId` 是内部 id，不上屏（issue #7792） */
+  inboundNo?: string | null
   outboundOrderId?: string | null
   createdAt?: string | null
 }
