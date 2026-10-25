@@ -39,7 +39,7 @@ class CreditApprovalGateTest {
         customerProfileMapper = Mockito.mock(CustomerProfileMapper.class);
         orderMapper = Mockito.mock(OrderMapper.class);
         approvalService = Mockito.mock(ApprovalService.class);
-        service = new CustomerService(customerProfileMapper, null, null, null, null, orderMapper, null, null);
+        service = new CustomerService(customerProfileMapper, null, null, null, null, orderMapper, null, null, null);
 
         CustomerProfile profile = new CustomerProfile();
         profile.setId("c-1");

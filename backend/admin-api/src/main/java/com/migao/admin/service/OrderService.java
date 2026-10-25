@@ -786,10 +786,13 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
 
         log.info("创建订单成功: id={}, orderNo={}, totalAmount={}", order.getId(), order.getOrderNo(), totalAmount);
 
-        // 首次下单自动创建客户档案（失败不影响订单创建）
+        // 首次下单自动创建/收敛客户档案（失败不影响订单创建）
+        // issue #7711：把订单里填的**收货人姓名/电话/地址 + 常用物流**一并带给档案（补空不覆盖），
+        // 并带上 userId（C 端自助下单 ⇒ 用它解析 openid，和「登录建档那条」认成同一个人）。
         try {
             customerService.createFromOrder(tenantId, request.getCustomerName(),
-                    request.getCustomerPhone(), request.getCustomerAddress());
+                    request.getCustomerPhone(), request.getCustomerAddress(),
+                    order.getLogisticsType(), order.getLogisticsCompany(), request.getUserId());
         } catch (Exception e) {
             log.warn("订单创建后自动建档客户失败，忽略: orderId={}, phone={}, error={}",
                     order.getId(), request.getCustomerPhone(), e.getMessage());

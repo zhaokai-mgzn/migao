@@ -5,7 +5,9 @@ import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.migao.admin.entity.User;
+import com.migao.admin.entity.UserIdentity;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.mapper.UserIdentityMapper;
 import com.migao.admin.mapper.UserMapper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,6 +39,13 @@ class MiniPhoneBindServiceTest {
 
     @Mock
     private OrderService orderService;
+
+    @Mock
+    private UserIdentityMapper userIdentityMapper;
+
+    /** issue #7711：绑定成功后要把「手机号 + openid」交给客户档案收敛。 */
+    @Mock
+    private CustomerService customerService;
 
     @BeforeEach
     void setUp() {
@@ -84,6 +93,23 @@ class MiniPhoneBindServiceTest {
                 org.mockito.ArgumentCaptor.forClass(User.class);
         verify(userMapper).updateById(userCaptor.capture());
         assertThat(userCaptor.getValue().getPhone()).isEqualTo("13900139000");
+    }
+
+    @Test
+    @DisplayName("绑定成功：手机号与 openid 同时可知 ⇒ 通知客户档案收敛（同一人不再两条档案）")
+    void bind_ConvergesCustomerProfile() {
+        User user = miniUser();
+        when(userMapper.selectById("user-mini-001")).thenReturn(user);
+        when(wechatService.getPhoneNumber("wx-phone-code-1")).thenReturn(phoneResult("13900139000"));
+        when(userMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(0L);
+        when(orderService.bindOrdersToUser(1L, "user-mini-001", "13900139000")).thenReturn(0);
+        when(userIdentityMapper.selectOne(any(LambdaQueryWrapper.class)))
+                .thenReturn(UserIdentity.builder().userId("user-mini-001").tenantId(1L)
+                        .identityType("mini_program").openid("openid-mini-001").deleted(0).build());
+
+        miniPhoneBindService.bind("user-mini-001", 1L, "wx-phone-code-1");
+
+        verify(customerService).convergeIdentity(1L, "13900139000", "openid-mini-001");
     }
 
     @Test

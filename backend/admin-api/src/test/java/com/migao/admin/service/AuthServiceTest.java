@@ -443,7 +443,7 @@ class AuthServiceTest {
         // then：登录成功 + 自动创建 CRM 客户档案（幂等 upsert，渠道 wechat_mini）
         assertThat(resp).isNotNull();
         assertThat(resp.getUser().getId()).isEqualTo("user-mini-c-001");
-        verify(customerService).createFromSession(eq(1L), eq("openid_c_end_001"), any(), eq("wechat_mini"));
+        verify(customerService).createFromSession(eq(1L), eq("openid_c_end_001"), any(), eq("wechat_mini"), any());
     }
 
     @Test
@@ -486,7 +486,7 @@ class AuthServiceTest {
         authService.miniProgramLogin("wx-code", 1L, mock(HttpServletResponse.class));
 
         // then：既有用户同样触发建档（刷新 last_active_at 语义）
-        verify(customerService).createFromSession(eq(1L), eq("openid_existing"), any(), eq("wechat_mini"));
+        verify(customerService).createFromSession(eq(1L), eq("openid_existing"), any(), eq("wechat_mini"), any());
     }
 
     // ======================== 菜单 IA（issue #5271 七大组重排） ========================

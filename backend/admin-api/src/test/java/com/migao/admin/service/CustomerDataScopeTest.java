@@ -44,7 +44,7 @@ class CustomerDataScopeTest {
         // 详情读面会顺带取「最近会话」等旁路数据（mock 默认返回空列表即可）
         sessionMapper = Mockito.mock(com.migao.admin.mapper.SessionMapper.class);
         when(sessionMapper.selectList(any())).thenReturn(java.util.List.of());
-        service = new CustomerService(customerProfileMapper, null, null, null, null, orderMapper, sessionMapper, null);
+        service = new CustomerService(customerProfileMapper, null, null, null, null, orderMapper, sessionMapper, null, null);
     }
 
     private CustomerProfile profile(String id, String owner, String phone) {
