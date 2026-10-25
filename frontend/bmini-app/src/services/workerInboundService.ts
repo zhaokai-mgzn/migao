@@ -37,6 +37,8 @@ export const INBOUND_ENDPOINTS = {
   draftPost: '/api/worker/inbound/drafts/{id}/post',
   labelDetail: '/api/worker/inbound/labels/{shortCode}',
   labelPrint: '/api/worker/inbound/labels/{shortCode}/print',
+  /** 只读：按货号 / 色名搜既有货号（issue #7759；零命中时工人的唯一出口） */
+  search: '/api/worker/inbound/skus',
 } as const
 
 /**
@@ -220,6 +222,22 @@ export async function recognizeInbound(payload: {
   }
 }
 
+/**
+ * 按**货号 / 色名**搜已有货号（issue #7759；**只读** —— 不建品、不改库存）。
+ *
+ * 为什么需要它：零命中时页面原来只有一句「请从已有商品里选一个」，而工人面**没有任何可选的地方**。
+ * 搜索词由工人自己输入（货号片段或色名片段），服务端在**既有** product_skus 里找。
+ */
+export async function searchInboundSkus(query: string): Promise<InboundResponse<SkuMatch[]>> {
+  try {
+    const url = `${INBOUND_ENDPOINTS.search}?q=${encodeURIComponent(query)}`
+    const res = await get<any>(url, { baseURL: API_BASE_URL, headers: workerSessionHeaders() })
+    return toResponse<SkuMatch[]>(res, '搜索失败，请重试')
+  } catch (error: any) {
+    return failure<SkuMatch[]>(error, '搜索失败，请重试')
+  }
+}
+
 /** 建入库单草稿（**不动库存**；带幂等键：手机重试不会建出两张单） */
 export async function createInboundDraft(
   payload: InboundDraftRequest,
@@ -303,4 +321,5 @@ export default {
   postInboundDraft,
   getInboundLabel,
   recordInboundLabelPrint,
+  searchInboundSkus,
 }

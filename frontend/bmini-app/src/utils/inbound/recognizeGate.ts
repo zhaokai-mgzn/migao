@@ -34,7 +34,7 @@ export interface SkuMatch {
 
 /** 零命中时给工人看的话（**可行动**：说清「系统不会自动建品」+ 三条出路） */
 export const NO_SKU_MATCH_MESSAGE =
-  '这个识别结果在系统里没有对应的货号/色号，不能入库（系统不会自动建品）。请核对标签是否拍清楚，或从已有商品里选一个，或让文员先建档。'
+  '这个识别结果在系统里没有对应的货号/色号，不能入库（系统不会自动建品）。可以按货号或色名搜一下已有货号，或核对标签是否拍清楚，或让文员先建档。'
 
 /** 多命中时给工人看的话（**不许替他猜**） */
 export const AMBIGUOUS_SKU_MESSAGE = '识别到多个可能的货号/色号，请自己核对实物后选一个（系统不替你挑）。'
@@ -58,6 +58,48 @@ export function evaluateSkuGate(matches: SkuMatch[] | null | undefined): SkuGate
   return { kind: 'ambiguous', matches: list, message: AMBIGUOUS_SKU_MESSAGE }
 }
 
+/** 服务端识别字段表的一格（`WorkerInboundRecognizeResponse.fields` 原样透传，端侧不重建） */
+export interface RecognizeField {
+  /** 字段键（`model_no` / `product_name` / `color_name` / `quantity_meters` / `barcode`） */
+  key?: string | null
+  /** 中文名（页面上屏用这个，不用键） */
+  label?: string | null
+  /** 认出来的值；空 ⇒ 这一格没认出来，要工人自己填 */
+  value?: string | null
+  /** 留空理由（`value` 为空时由识别侧给） */
+  reason?: string | null
+}
+
+/** 没认出来的格子给工人看的话（说清「要自己填」，不是「没有」） */
+export const FIELD_NOT_RECOGNIZED = '没认出来（请自己填）'
+
+/** 逐格结果的展示行（`{ key, label, text }`；`text` 已折好「没认出来」） */
+export interface RecognizedFieldRow {
+  key: string
+  label: string
+  text: string
+}
+
+/**
+ * 识别回执 ⇒ **逐格结果**（issue #7759）。
+ *
+ * 服务端一直在回 `fields`（每格的值 + 来源 + 留空理由），而端侧原来**根本不读它** ——
+ * 工人只看到「没有匹配到任何已有货号」，看不到「系统把这一格读成了什么」，
+ * 于是既没法自查，也没法转述给文员。这里把它变成可上屏的行（**只读展示**：
+ * 不参与预填、不改任何门禁判定 —— 预填仍由 `prefillFromRecognize` 按 §6.4 决定）。
+ */
+export function recognizedFieldRows(response: RecognizeLike | null | undefined): RecognizedFieldRow[] {
+  const list = Array.isArray(response?.fields) ? (response?.fields as RecognizeField[]) : []
+  const rows: RecognizedFieldRow[] = []
+  for (const field of list) {
+    if (!field || !field.key) continue
+    const key = String(field.key)
+    const text = String(field.value ?? '').trim()
+    rows.push({ key, label: String(field.label || key), text: text || FIELD_NOT_RECOGNIZED })
+  }
+  return rows
+}
+
 /** 服务端识别回执里本页用到的字段（其余原样透传，不在端侧重算） */
 export interface RecognizeLike {
   path?: string | null
@@ -67,7 +109,11 @@ export interface RecognizeLike {
   productName?: string | null
   colorName?: string | null
   quantityMeters?: string | null
+  /** 型号 / 货号候选（issue #7759；服务端用它做货号匹配，端侧只展示） */
+  modelNo?: string | null
   skuMatches?: SkuMatch[] | null
+  /** 逐格识别结果（`{ key, label, value, source, reason }`）—— 页面上屏用，见 `recognizedFieldRows` */
+  fields?: RecognizeField[] | null
   message?: string | null
 }
 

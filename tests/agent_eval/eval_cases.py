@@ -2053,6 +2053,24 @@ _CASE_BM_051 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── BM-052 [NORMAL] 供应商侧布料标签拍照入库 - 型号 2659-4 归一后命中货号 2659-04（原来恒零命中）+ 逐格结果上屏 + 只读货号搜索（源: cases/bmini.yml）──
+_CASE_BM_052 = EvalCase(
+    id='BM-052',
+    legacy_id='',
+    title='供应商侧布料标签拍照入库 - 型号 2659-4 归一后命中货号 2659-04（原来恒零命中）+ 逐格结果上屏 + 只读货号搜索',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工人拍一张供应商侧布料标签（型号：雪尼尔2659-4绵绵奶咖、52.4 米）：页面先逐格显示系统读到的内容（型号 / 货号 / 品名 / 色号 / 米数，没认出来的那格明说要自己填），再说明没有匹配到任何已有货号；工人按货号 2659 搜出两个门幅（2659-04-28 / 2659-04-32）自己选一个，填卷长后过账'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**识别面要有「型号 / 货号」这一格**：backend/ai-agent-service/app/vision/targets.py 的 inbound 字段表含 model_no（标签写「雪尼尔2659-4绵绵奶咖」⇒ model_no=2659-4、color_name=绵绵奶咖），提示词带上该格中文名。红证（实跑过）：从 TARGET_FIELDS 的 inbound 删掉 model_no ⇒ backend/ai-agent-service/tests/test_vision/test_targets_inbound.py 的字段键元组与提示词 label 两处同时判红。证据：backend/ai-agent-service/tests/test_vision/test_targets_inbound.py', '判据 2·**匹配面归一化后命中（本条真实读数做夹具）**：品名 雪尼尔2659-4绵绵奶咖 + 色号 2659-4绵绵奶咖 + 库里 products.sku_code=2659 / product_skus 2659-04-28 与 2659-04-32（color_name=2659-04 绵绵奶咖）⇒ 命中 2 条。红证（实跑过）：去掉色号段补零，或摘掉 model_no 这一级，命中数 2 → 0（判据当场红）。证据：backend/admin-api/src/test/java/com/migao/admin/service/WorkerInboundServiceTest.java 的 SupplierLabel 组', '判据 3·**归一化是纯函数且不跨色号猜**：全角 / 分隔符（— · *）/ NO. 前缀 / 空白都归一到 2659-04；型号 2659-05 不得吃进 2659-04 的货号；型号只到 2659 时不去猜更细的 2659-04（商品侧更细 = 标签没说的信息，不补）。证据：同上（normalizationCollapsesEverySupplierSpelling / modelKeyDoesNotBleedAcrossColourNumbers）', '判据 4·**红线不动**：三个键全对不上 ⇒ 空匹配 + requiresManualEntry + products/product_skus 的 insert 零调用、库存零变更（不建品、不猜）；型号命中但色名一条不中 ⇒ 回该型号下的全部货号（交工人选），不是零命中。证据：同上（nothingMatchesStillRefusesToCreateAnything / modelHitWithoutColorHitStillReturnsTheModelCandidates）', '判据 5·**类级元守卫**：工人入库匹配面不得再出现「按商品名 / 色号精确相等匹配」（`.eq(Product::getName` / `.eq(ProductSku::getColorName`），且两条降级腿（sku_code 前缀 / color_name 包含）必须都在。红证（实跑过）：把其中任一句写回 backend/admin-api/src/main/java/com/migao/admin/service/WorkerInboundService.java ⇒ backend/admin-api/src/test/java/com/migao/admin/controller/WorkerInboundSurfaceGuardTest.java 判红。证据：同判据 5 的类', '判据 6·**零命中不再是无路可走（端侧）**：页面把服务端 fields 逐格上屏（空值那格写「没认出来（请自己填）」），并给只读的按货号 / 色名搜索入口 —— 搜到后点选即成为待入库货号，且搜索期间建单 / 过账零调用。红证（实跑过）：页面不读 fields ⇒ inbound-field-* 一个都取不到；删掉搜索区 ⇒ inbound-sku-search 取不到、已选货号恒为「（未选）」。证据：frontend/bmini-app/tests/worker-inbound-page.test.tsx 的 C10 / C11', '判据 7·**只读搜索端点两侧一致**：GET /api/worker/inbound/skus 在后端存在、端侧有常量且方法对得上（端侧 7 个端点全登记）。红证：端侧漏登记 ⇒ frontend/bmini-app/tests/inbound-api-contract.test.ts 的 C2 反向判红；写成 POST ⇒ C3 判红。证据：同文件'],
+    skip_reason='[backend-contract] 确定性判据（pytest: backend/ai-agent-service/tests/test_vision/test_targets_inbound.py；maven: WorkerInboundServiceTest + WorkerInboundSurfaceGuardTest；jest: worker-inbound-page / inbound-api-contract），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'inbound', 'sku-gate', 'supplier-label'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── CT-001 [NORMAL] 分类树（源: cases/category.yml）──
 _CASE_CT_001 = EvalCase(
     id='CT-001',
@@ -13288,7 +13306,7 @@ _CASE_PR_111 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['工人拍上游标签 → 系统回候选（品名 / 色号 / 米数 / 条码原文），不落库、不动库存（非 LLM 行为，由 admin-api 单测覆盖）'],
     expectations=['direct_reply'],
-    data_checks=['🔴 成本守卫：请求带前端解码得到的条码原文 ⇒ 走解码路径且 `ImageRecognitionClient.recognize` **零调用**（`verify(..., never())`）；条码按货号精确匹配既有 SKU，零命中 ⇒ 空匹配 + 提示人工录入', 'vision 兜底：无条码时才调用，且 target 由服务端固定为 `inbound`（`verify(..., times(1)).recognize(eq("inbound"), any())`）—— 客户端结构上选不了 target', '🔴 不确定 ⇒ 不预填：vision 返回 `degraded=true` ⇒ 品名 / 色号 / 米数三格全 `null`、`skuMatches` 空、`requiresManualEntry=true`，只给人工录入提示（**不编造**）', '🔴 零命中不建品：品名 + 色号在 `product_skus` 零命中 ⇒ `skuMatches` 为空数组，且 `productMapper` / `productSkuMapper` 的 `insert` **零调用**、`receiveStock` 零调用（防 AI 幻觉造出假 SKU 还带库存流水）', '张数准入：0 张 / 4 张 ⇒ 400，且一次远端调用都不发生（上限 3 张沿用现状）', 'ai-agent 侧 schema 同源：`inbound` target 的 4 个字段键（product_name / color_name / quantity_meters / barcode）与前两个 target **零交集**，阈值取严档 0.85，低置信度（0.40）的米数**留空 + 给理由**且理由含「入库侧」'],
+    data_checks=['🔴 成本守卫：请求带前端解码得到的条码原文 ⇒ 走解码路径且 `ImageRecognitionClient.recognize` **零调用**（`verify(..., never())`）；条码按货号精确匹配既有 SKU，零命中 ⇒ 空匹配 + 提示人工录入', 'vision 兜底：无条码时才调用，且 target 由服务端固定为 `inbound`（`verify(..., times(1)).recognize(eq("inbound"), any())`）—— 客户端结构上选不了 target', '🔴 不确定 ⇒ 不预填：vision 返回 `degraded=true` ⇒ 品名 / 色号 / 米数三格全 `null`、`skuMatches` 空、`requiresManualEntry=true`，只给人工录入提示（**不编造**）', '🔴 零命中不建品：品名 + 色号在 `product_skus` 零命中 ⇒ `skuMatches` 为空数组，且 `productMapper` / `productSkuMapper` 的 `insert` **零调用**、`receiveStock` 零调用（防 AI 幻觉造出假 SKU 还带库存流水）', '张数准入：0 张 / 4 张 ⇒ 400，且一次远端调用都不发生（上限 3 张沿用现状）', 'ai-agent 侧 schema 同源：`inbound` target 的字段键（issue #7759 起 5 个：model_no / product_name / color_name / quantity_meters / barcode）与 product / order 两个 target **零交集**，阈值取严档 0.85，低置信度（0.40）的米数**留空 + 给理由**且理由含「入库侧」'],
     skip_reason='[backend-contract] 入库识别是后台/仓储单据流（无黄金策工具面，AI 侧未接）⇒ 由 admin-api 单测 + ai-agent vision 单测覆盖，不进入 agent-eval 冒烟',
     tags=['inventory', 'inbound', 'worker', 'vision', 'backend-contract'],
     persona='',
@@ -16802,6 +16820,7 @@ ALL_CASES = (
     _CASE_BM_049,
     _CASE_BM_050,
     _CASE_BM_051,
+    _CASE_BM_052,
     _CASE_CT_001,
     _CASE_CT_002,
     _CASE_CT_003,

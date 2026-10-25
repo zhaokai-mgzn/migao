@@ -1,4 +1,4 @@
-// case_ids: BM-018, BM-019, BM-032, BM-051
+// case_ids: BM-018, BM-019, BM-032, BM-051, BM-052
 /**
  * 工人**拍照入库页**的行为判据（issue #5052 P3；验收判据 10 / 11 + 页面级联调；
  * 卷数 × 卷长口径改判见 issue #6812）
@@ -16,6 +16,11 @@
  * | C8 | **两格数字（#6812）**：数量格 = **卷数**（默认 `1`）、卷长格 = **每卷米数**（识别到的米数落这里）；
  *        载荷 `quantity` + `rollLengthM`；确认文案把两格都念出来 | 米数仍进「数量」格 ⇒ 红（`quantity==='1'`、
  *        页面上取不到 `inbound-roll-length`、`body.quantity==='67.2'` 三条同时红） |
+ * | C10 | **逐格结果上屏（issue #7759）**：服务端回 `fields` ⇒ 页面逐格显示「字段名：读到的值」，
+ *        空值那格明说「没认出来（请自己填）」 | 不读 `fields` ⇒ `inbound-field-*` 一个都取不到（红） |
+ * | C11 | **零命中不再是无路可走（issue #7759）**：零命中时给**只读**货号搜索入口，搜到后点选即成为待入库货号；
+ *        搜索**不建品、不改库存**（只有 `searchInboundSkus` 被调） | 删掉搜索区 ⇒ `inbound-sku-search` 取不到；
+ *        点选不生效 ⇒ 已选货号仍是「（未选）」 |
  */
 import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
@@ -66,6 +71,8 @@ jest.mock('../src/services/workerInboundService', () => ({
   postInboundDraft: jest.fn(),
   getInboundLabel: jest.fn(),
   recordInboundLabelPrint: jest.fn(),
+  // issue #7759：零命中时的**只读**货号搜索（默认空结果，具体用例注入）
+  searchInboundSkus: jest.fn(async () => ({ success: true, message: '', data: [] })),
 }))
 
 import WorkerInboundPage from '../src/pages/worker/inbound/index'
@@ -76,6 +83,8 @@ import {
   createInboundDraft,
   postInboundDraft,
   getInboundLabel,
+  recognizeInbound,
+  searchInboundSkus,
 } from '../src/services/workerInboundService'
 
 const mockHasWorkerSession = hasWorkerSession as jest.Mock
@@ -85,6 +94,8 @@ const mockNavigateTo = Taro.navigateTo as jest.Mock
 const mockCreateDraft = createInboundDraft as jest.Mock
 const mockPostDraft = postInboundDraft as jest.Mock
 const mockGetLabel = getInboundLabel as jest.Mock
+const mockRecognize = recognizeInbound as jest.Mock
+const mockSearchSkus = searchInboundSkus as jest.Mock
 
 function setPrintEnv({ ios, secure = true, bluetooth = true }: { ios: boolean; secure?: boolean; bluetooth?: boolean }) {
   ;(window as any).isSecureContext = secure
@@ -316,12 +327,91 @@ describe('工人拍照入库页', () => {
     // 短码出现在屏上（人可读，工人可抄）
     expect(screen.getByText(/ABCD2345/)).toBeTruthy()
 
-    // 打印：能力可用但 SDK 加载失败 ⇒ sdk-unavailable 的**专属**文案（不是"打印失败"）
+    // 打印：能力可用且 SDK 加载失败 ⇒ sdk-unavailable 的**专属**文案（不是"打印失败"）
     fireEvent.click(screen.getByTestId('inbound-print'))
     await waitFor(() =>
       expect(screen.getByTestId('inbound-print-state').textContent).toBe(
         PRINT_FAILURE_HINTS['sdk-unavailable'],
       ),
     )
+  })
+
+  /** 零命中的供应商标签回执（issue #7759 的真实读数，按它造） */
+  function mockSupplierLabelZeroHit() {
+    mockRecognize.mockResolvedValueOnce({
+      success: true,
+      message: '',
+      data: {
+        path: 'vision',
+        degraded: false,
+        requiresManualEntry: true,
+        modelNo: '2659-4',
+        productName: '雪尼尔2659-4绵绵奶咖',
+        colorName: '2659-4绵绵奶咖',
+        quantityMeters: '52.4',
+        skuMatches: [],
+        fields: [
+          { key: 'model_no', label: '型号 / 货号', value: '2659-4' },
+          { key: 'product_name', label: '品名', value: '雪尼尔2659-4绵绵奶咖' },
+          { key: 'color_name', label: '色号', value: '2659-4绵绵奶咖' },
+          { key: 'quantity_meters', label: '米数', value: '52.4' },
+          { key: 'barcode', label: '条码原文', value: null },
+        ],
+        message: '识别到的型号 / 品名 / 色号在系统里没有匹配到任何已有货号',
+      },
+    })
+  }
+
+  async function driveToZeroHitConfirmStep() {
+    mockSupplierLabelZeroHit()
+    mockChooseImage.mockResolvedValueOnce({ tempFilePaths: ['blob:photo-a'], tempFiles: [{ originalFileObj: null }] })
+    render(<WorkerInboundPage />)
+    fireEvent.click(screen.getByTestId('inbound-pick'))
+    await waitFor(() => expect(screen.getByTestId('inbound-recognize')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('inbound-recognize'))
+    await waitFor(() => expect(screen.getByTestId('inbound-step-confirm')).toBeTruthy())
+  }
+
+  it('C10 逐格识别结果上屏（读服务端 fields，不只说一句「没匹配到」）', async () => {
+    await driveToZeroHitConfirmStep()
+
+    const list = screen.getByTestId('inbound-recognized-fields')
+    expect(list.textContent).toContain('系统读到的内容')
+    // 型号这一格是最关键的那一格（#7759 前它连承载字段都没有）
+    expect(screen.getByTestId('inbound-field-model_no').textContent).toBe('型号 / 货号：2659-4')
+    expect(screen.getByTestId('inbound-field-color_name').textContent).toContain('2659-4绵绵奶咖')
+    // 空值那格明说「没认出来（请自己填）」，不是静默空格
+    expect(screen.getByTestId('inbound-field-barcode').textContent).toContain('没认出来')
+    // 红证：`recognizedFieldRows` 不读 `fields` ⇒ 上面三个 testid 全部取不到
+  })
+
+  it('C11 零命中 ⇒ 只读货号搜索可用：搜到后点选即成为待入库货号（原来工人无路可走）', async () => {
+    mockSearchSkus.mockResolvedValueOnce({
+      success: true,
+      message: '',
+      data: [
+        { skuId: REAL_SNOWFLAKE_SKU_ID, productId: 'p1', productName: '奶油风纯色遮光窗帘 桂月白露系列', skuCode: '2659-04-28', colorName: '2659-04 绵绵奶咖', doorWidth: '2.8' },
+        { skuId: '2106900122848247811', productId: 'p1', productName: '奶油风纯色遮光窗帘 桂月白露系列', skuCode: '2659-04-32', colorName: '2659-04 绵绵奶咖', doorWidth: '3.2' },
+      ],
+    })
+    await driveToZeroHitConfirmStep()
+
+    // 零命中先说清「不能入库」，同屏给出只读搜索入口
+    expect(screen.getByTestId('inbound-sku-gate-none').textContent).toContain('不会自动建品')
+    expect(screen.getByTestId('inbound-sku-search')).toBeTruthy()
+    expect(screen.getByTestId('inbound-chosen-sku').textContent).toContain('未选')
+
+    fireEvent.change(screen.getByTestId('inbound-sku-search-input'), { target: { value: '2659' } })
+    fireEvent.click(screen.getByTestId('inbound-sku-search-submit'))
+    await waitFor(() => expect(mockSearchSkus).toHaveBeenCalledWith('2659'))
+
+    const first = await waitFor(() => screen.getByTestId(`inbound-sku-found-${REAL_SNOWFLAKE_SKU_ID}`))
+    expect(screen.getByTestId('inbound-sku-search-state').textContent).toContain('搜到 2 个货号')
+    fireEvent.click(first)
+    await waitFor(() => expect(screen.getByTestId('inbound-chosen-sku').textContent).toContain('2659-04-28'))
+
+    // 只读：搜索不建单、不过账、不改任何东西
+    expect(mockCreateDraft).not.toHaveBeenCalled()
+    expect(mockPostDraft).not.toHaveBeenCalled()
   })
 })

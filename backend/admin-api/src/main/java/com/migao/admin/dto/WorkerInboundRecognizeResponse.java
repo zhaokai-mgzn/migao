@@ -37,7 +37,16 @@ public class WorkerInboundRecognizeResponse {
     /** 条码原文（前端解码值 或 vision 抄回的原文；都没有 ⇒ null）。**不解析、不猜含义** */
     private String barcode;
 
-    /** 品名候选（null = 没认出来 / 不在图上；**绝不编造**） */
+    /**
+     * 型号 / 货号候选（供应商标签上的**型号**，如 {@code 2659-4}；null = 没认出来）。
+     *
+     * <p>issue #7759：这是**匹配键**（归一化后对 {@code products.sku_code} / {@code product_skus.sku_code}），
+     * 而 {@link #productName} / {@link #colorName} 只是**展示**字段 —— 供应商标签的品名是它自己的命名空间，
+     * 拿去跟内部商品名做匹配只会造出「看起来命中」的候选。</p>
+     */
+    private String modelNo;
+
+    /** 品名候选（null = 没认出来 / 不在图上；**绝不编造**）——**只作展示，不参与匹配** */
     private String productName;
 
     /** 色号候选（null = 同上） */

@@ -8,6 +8,7 @@ import com.migao.admin.dto.WorkerInboundDraftView;
 import com.migao.admin.dto.WorkerInboundPostRequest;
 import com.migao.admin.dto.WorkerInboundRecognizeRequest;
 import com.migao.admin.dto.WorkerInboundRecognizeResponse;
+import com.migao.admin.dto.WorkerInboundSkuMatch;
 import com.migao.admin.entity.InboundOrder;
 import com.migao.admin.entity.InboundOrderItem;
 import com.migao.admin.entity.Product;
@@ -59,7 +60,7 @@ import static org.mockito.Mockito.when;
  * 真实的 {@link WorkerInboundService} + Mock 掉的 Mapper ⇒ 断言的是「工人面走到既有过账服务
  * 之后真正发生了什么」，而不是「某个 mock 被调过」。</p>
  *
- * <h3>本类钉住的五条（每条都能红）</h3>
+ * <h3>本类钉住的六条（每条都能红）</h3>
  * <ol>
  *   <li><b>草稿不动库存</b>：建草稿**不得**调 {@code receiveStock} / 不得落台账 / 不得写批次；</li>
  *   <li><b>过账才动库存，且台账可对账</b>：一行 {@code reason=inbound}，
@@ -67,7 +68,9 @@ import static org.mockito.Mockito.when;
  *   <li><b>零命中不建品</b>（设计 §6.3）：识别零命中 ⇒ 空匹配；建草稿缺 skuId / skuId 不存在 ⇒ 拒绝，
  *       且 {@code products} / {@code product_skus} 的 insert **零调用**（防 AI 幻觉造出假 SKU 带库存流水）；</li>
  *   <li><b>不确定 ⇒ 不预填</b>（§6.4）：vision 降级 ⇒ 三个候选字段全 null，只给人工录入提示；</li>
- *   <li><b>成本守卫</b>（§6.1）：请求带前端解码的条码 ⇒ {@code ImageRecognitionClient} **零调用**。</li>
+ *   <li><b>成本守卫</b>（§6.1）：请求带前端解码的条码 ⇒ {@code ImageRecognitionClient} **零调用**；</li>
+ *   <li><b>供应商标签能入库</b>（issue #7759）：型号 {@code 2659-4} 归一后命中 {@code 2659-04} 的两个门幅
+ *       （2.8 / 3.2 交工人选）—— 用本条缺陷的**真库读数**做夹具，见 {@code SupplierLabel} 组。</li>
  * </ol>
  *
  * <p>红证读数见 PR body 的「注入式红证」表（四条：工人调 /api/admin/** 仍拒、幂等键重放不重复加库存、
@@ -343,6 +346,181 @@ class WorkerInboundServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(400));
             verify(imageRecognitionClient, never()).recognize(any(), any());
+        }
+    }
+
+    // ============================================================ ①' 供应商标签（issue #7759）
+
+    /**
+     * **本条缺陷的真实读数**（云 dev 真库实测，2026-10-25）：
+     *
+     * | 对象 | 真值 |
+     * |---|---|
+     * | 供应商标签 | 型号 `2659-4`、品名 `雪尼尔2659-4绵绵奶咖`、色号 `2659-4绵绵奶咖`、52.4 米 |
+     * | `products` | `name='奶油风纯色遮光窗帘 桂月白露系列'`、`sku_code='2659'` |
+     * | `product_skus` | `2659-04-28`（2.8）/ `2659-04-32`（3.2），`color_name='2659-04 绵绵奶咖'` |
+     *
+     * <p>红证（实跑过，见 PR body 的注入式红证表）：把 {@code normalizeCode} 的补零 / 分隔符 /
+     * 去空白任一条去掉，或把 {@code model_no} 这一级从 {@code matchInboundSkus} 里摘掉
+     * ⇒ 本组全部变红（命中数 2 → 0）。</p>
+     */
+    @Nested
+    @DisplayName("供应商标签（issue #7759）：型号 2659-4 ↔ 货号 2659-04")
+    class SupplierLabel {
+
+        /** 真库读数：一个商品、两个门幅（标签上没有门幅 ⇒ 两条都由工人选）。 */
+        private static final String REAL_PRODUCT_ID = "P-2659";
+        private static final String REAL_PRODUCT_NAME = "奶油风纯色遮光窗帘 桂月白露系列";
+        private static final String REAL_PRODUCT_SKU_CODE = "2659";
+
+        private void stubRealSupplierLabelRows() {
+            Product product = Product.builder()
+                    .id(REAL_PRODUCT_ID).tenantId(TENANT)
+                    .name(REAL_PRODUCT_NAME).skuCode(REAL_PRODUCT_SKU_CODE).build();
+            when(productMapper.selectList(any())).thenReturn(List.of(product));
+            when(productSkuMapper.selectList(any())).thenReturn(List.of(
+                    ProductSku.builder().id(28L).tenantId(TENANT).productId(REAL_PRODUCT_ID)
+                            .skuCode("2659-04-28").colorName("2659-04 绵绵奶咖").doorWidth("2.8")
+                            .stock(new BigDecimal("0")).build(),
+                    ProductSku.builder().id(32L).tenantId(TENANT).productId(REAL_PRODUCT_ID)
+                            .skuCode("2659-04-32").colorName("2659-04 绵绵奶咖").doorWidth("3.2")
+                            .stock(new BigDecimal("0")).build()));
+        }
+
+        @Test
+        @DisplayName("🔴 型号 2659-4 + 色号 2659-4绵绵奶咖 ⇒ 命中 2659-04 的两个门幅（原来恒零命中）")
+        void supplierModelLabelMatchesTheTwoDoorWidths() {
+            stubRealSupplierLabelRows();
+            when(imageRecognitionClient.recognize(eq(WorkerInboundService.TARGET_INBOUND), any()))
+                    .thenReturn(vision(List.of(
+                            field("model_no", "2659-4"),
+                            field("product_name", "雪尼尔2659-4绵绵奶咖"),
+                            field("color_name", "2659-4绵绵奶咖"),
+                            field("quantity_meters", "52.4"),
+                            field("barcode", null)), false));
+
+            WorkerInboundRecognizeResponse resp = service.recognize(recognizeRequest(null, IMAGE_URL), TENANT);
+
+            assertThat(resp.getModelNo()).isEqualTo("2659-4");
+            assertThat(resp.getSkuMatches()).hasSize(2);
+            assertThat(resp.getSkuMatches()).extracting(WorkerInboundSkuMatch::getSkuCode)
+                    .containsExactly("2659-04-28", "2659-04-32");
+            // 多命中 = 交工人选（门幅 2.8 / 3.2 标签上没有 ⇒ 不替工人猜）
+            assertThat(resp.isRequiresManualEntry()).isFalse();
+            assertThat(resp.getMessage()).contains("不替工人猜");
+        }
+
+        @Test
+        @DisplayName("🔴 供应商写法差异（全角 / NO. 前缀 / 空格）⇒ 归一化后照样命中 2 条（去掉归一化 ⇒ 零命中）")
+        void fullWidthSupplierSpellingStillMatches() {
+            stubRealSupplierLabelRows();
+            // 同一块布的另一种写法：全角数字 + 全角连字符 + `NO.` 前缀 + 空格分隔
+            when(imageRecognitionClient.recognize(eq(WorkerInboundService.TARGET_INBOUND), any()))
+                    .thenReturn(vision(List.of(
+                            field("model_no", "NO.２６５９－４"),
+                            field("color_name", "２６５９－４ 绵绵奶咖"),
+                            field("quantity_meters", "52.4")), false));
+
+            WorkerInboundRecognizeResponse resp = service.recognize(recognizeRequest(null, IMAGE_URL), TENANT);
+
+            assertThat(resp.getSkuMatches()).extracting(WorkerInboundSkuMatch::getSkuCode)
+                    .containsExactly("2659-04-28", "2659-04-32");
+        }
+
+        @Test
+        @DisplayName("型号命中但色名一条都不中 ⇒ 回该型号下的全部货号（不是零命中，也不替工人挑）")
+        void modelHitWithoutColorHitStillReturnsTheModelCandidates() {
+            stubRealSupplierLabelRows();
+            // 「奶咖灰」在库里不存在：色名这一级 0 命中 ⇒ 降到「型号命中的全部色号」
+            assertThat(WorkerInboundService.colorMatches("2659-04 绵绵奶咖", "2659-04奶咖灰")).isFalse();
+            when(imageRecognitionClient.recognize(eq(WorkerInboundService.TARGET_INBOUND), any()))
+                    .thenReturn(vision(List.of(
+                            field("model_no", "2659-4"),
+                            field("product_name", "雪尼尔2659-4绵绵奶咖"),
+                            field("color_name", "2659-4奶咖灰"),
+                            field("quantity_meters", "52.4")), false));
+
+            WorkerInboundRecognizeResponse resp = service.recognize(recognizeRequest(null, IMAGE_URL), TENANT);
+
+            assertThat(resp.getSkuMatches()).extracting(WorkerInboundSkuMatch::getSkuCode)
+                    .containsExactly("2659-04-28", "2659-04-32");
+        }
+
+        @Test
+        @DisplayName("🔴 归一化是纯函数：全角 / 分隔符 / NO. 前缀 / 补零 / 空白 都归到同一形态")
+        void normalizationCollapsesEverySupplierSpelling() {
+            for (String spelling : List.of("2659-4", "2659—4", "2659－4", " 2659 - 4 ", "NO.2659-4",
+                    "２６５９－４", "2659*4", "2659·4")) {
+                assertThat(WorkerInboundService.normalizeCode(spelling))
+                        .as("写法 %s 没有归一到 2659-04", spelling)
+                        .isEqualTo("2659-04");
+            }
+            // 库里的色号写法（带空格）与图上写法（连写）归一到同一形态
+            assertThat(WorkerInboundService.normalizeCode("2659-04 绵绵奶咖"))
+                    .isEqualTo(WorkerInboundService.normalizeCode("2659-4绵绵奶咖"));
+            assertThat(WorkerInboundService.productCodeOf("2659-04")).isEqualTo("2659");
+            assertThat(WorkerInboundService.colorTokenOf("2659-04绵绵奶咖")).isEqualTo("绵绵奶咖");
+            // 空白 / 全空白 ⇒ null（不参与匹配，也不拿空串去查库）
+            assertThat(WorkerInboundService.normalizeCode("   ")).isNull();
+            assertThat(WorkerInboundService.normalizeCode(null)).isNull();
+        }
+
+        @Test
+        @DisplayName("🔴 型号键只按「段前缀」命中：2659-05 不得吃进 2659-04 的货号（仍绝不猜）")
+        void modelKeyDoesNotBleedAcrossColourNumbers() {
+            assertThat(WorkerInboundService.modelMatchesProduct("2659", "2659-04")).isTrue();
+            assertThat(WorkerInboundService.modelMatchesProduct("2659-04", "2659-04")).isTrue();
+            // 反向（型号说到 `-04`、商品货号只到 `2659`）由 `productCodeOf` 的第一段负责，不是靠前缀放宽
+            assertThat(WorkerInboundService.productCodeOf("2659-04")).isEqualTo("2659");
+            // 型号只到 `2659` 时**不**去猜 `2659-04` 的货号（商品侧更细 = 标签没说的信息，不补）
+            assertThat(WorkerInboundService.modelMatchesProduct("2659-04", "2659")).isFalse();
+            assertThat(WorkerInboundService.modelMatchesProduct("2659-05", "2659-04")).isFalse();
+            assertThat(WorkerInboundService.modelMatchesProduct("26590", "2659-04")).isFalse();
+            assertThat(WorkerInboundService.colorMatches("2659-04 绵绵奶咖", "绵绵奶咖")).isTrue();
+            assertThat(WorkerInboundService.colorMatches("2659-04 绵绵奶咖", "奶咖")).isTrue();
+            assertThat(WorkerInboundService.colorMatches("2659-04 绵绵奶咖", "奶咖灰")).isFalse();
+        }
+
+        @Test
+        @DisplayName("零命中仍拒绝入库：三个键全对不上 ⇒ 空匹配 + 不建品（红线不动）")
+        void nothingMatchesStillRefusesToCreateAnything() {
+            when(productMapper.selectList(any())).thenReturn(List.of());
+            when(productSkuMapper.selectList(any())).thenReturn(List.of());
+            when(imageRecognitionClient.recognize(any(), any()))
+                    .thenReturn(vision(List.of(
+                            field("model_no", "9999-1"),
+                            field("product_name", "雪尼尔2659-4绵绵奶咖"),
+                            field("color_name", "2659-4绵绵奶咖"),
+                            field("quantity_meters", "52.4")), false));
+
+            WorkerInboundRecognizeResponse resp = service.recognize(recognizeRequest(null, IMAGE_URL), TENANT);
+
+            assertThat(resp.getSkuMatches()).isEmpty();
+            assertThat(resp.isRequiresManualEntry()).isTrue();
+            verify(productMapper, never()).insert(any(Product.class));
+            verify(productSkuMapper, never()).insert(any(ProductSku.class));
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
+        }
+
+        @Test
+        @DisplayName("只读搜索：按货号 / 色名都能搜到既有货号；空白与单字 ⇒ 400（不去扫全表）")
+        void readOnlySearchFindsExistingSkus() {
+            stubRealSupplierLabelRows();
+
+            assertThat(service.searchSkus("2659", TENANT))
+                    .extracting(WorkerInboundSkuMatch::getSkuCode)
+                    .containsExactly("2659-04-28", "2659-04-32");
+            assertThat(service.searchSkus("绵绵奶咖", TENANT)).hasSize(2);
+
+            for (String blank : List.of("", "   ", "布")) {
+                assertThatThrownBy(() -> service.searchSkus(blank, TENANT))
+                        .isInstanceOf(BusinessException.class)
+                        .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(400));
+            }
+            // 只读：搜索不得写任何东西
+            verify(productMapper, never()).insert(any(Product.class));
+            verify(productSkuMapper, never()).insert(any(ProductSku.class));
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
         }
     }
 
