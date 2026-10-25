@@ -7,6 +7,7 @@ import com.migao.admin.service.ProductionScanCompleteService;
 import com.migao.admin.service.ProductionScanService;
 import com.migao.admin.service.ProductionService;
 import com.migao.admin.service.WorkerCuttingHeightService;
+import com.migao.admin.service.WorkerAdminService;
 import com.migao.admin.worker.WorkerIdentity;
 import com.migao.admin.worker.WorkerSessionService;
 import org.junit.jupiter.api.AfterEach;
@@ -90,6 +91,9 @@ class WorkerProductionCuttingHeightTest {
     private ProductionScanCompleteService productionScanCompleteService;
     @Mock
     private WorkerCuttingHeightService workerCuttingHeightService;
+    /** 工人档案（issue #7749）：扫描面按它读「绑定的工序」；本类只测裁高/契约 ⇒ 默认返回 null = 未绑定。 */
+    @Mock
+    private WorkerAdminService workerAdminService;
 
     private MockMvc mockMvc;
 
@@ -101,7 +105,7 @@ class WorkerProductionCuttingHeightTest {
         TenantContext.setTenantId(TENANT);
         WorkerProductionController controller = new WorkerProductionController(productionService,
                 workerSessionService, productionScanService, productionScanCompleteService,
-                workerCuttingHeightService);
+                workerCuttingHeightService, workerAdminService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();

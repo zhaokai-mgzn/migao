@@ -1167,7 +1167,7 @@ class SecurityConfigTest {
                 .andExpect(status().isForbidden());
 
         // 不是「拒绝了但业务已执行」：请求根本没进到服务层
-        verify(workerAdminService, never()).createWorker(any(), any(), any(), any());
+        verify(workerAdminService, never()).createWorker(any(), any(), any(), any(), any());
         verify(workerAdminService, never()).listWorkers(anyLong(), anyLong(), any(), any());
     }
 
@@ -1177,7 +1177,7 @@ class SecurityConfigTest {
         when(roleService.getUserPermissions(any())).thenReturn(List.of("employee:create"));
         // 4 参形态（issue #6788 起建号多了 workerPages）：桩少一个参数 ⇒ Mockito 不匹配 ⇒ 返回 null
         // ⇒ 控制器拿 null 拼视图 ⇒ 500（实测：本类曾因此红，是「改签名没改全桩」的典型形态）
-        when(workerAdminService.createWorker(any(), any(), any(), any()))
+        when(workerAdminService.createWorker(any(), any(), any(), any(), any()))
                 .thenReturn(new com.migao.admin.entity.User());
 
         mockMvc.perform(post("/api/admin/workers")

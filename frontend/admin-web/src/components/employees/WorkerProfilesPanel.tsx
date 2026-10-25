@@ -7,7 +7,7 @@ import { workerApi, workerPageCatalogApi } from '@/lib/api'
 import { toastRequestError } from '@/lib/api-error'
 import { Button, Input, Select, Modal, Table, Badge, Pagination } from '@/components/ui'
 import type { TableColumn } from '@/components/ui'
-import type { EmployeeStatus, WorkerProfile } from '@/types'
+import type { EmployeeStatus, WorkerOperationOption, WorkerProfile } from '@/types'
 
 /**
  * 工人档案（issue #4869）—— **产品路径：第一个工人怎么建出来**。
@@ -55,10 +55,12 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
     workerNo: string
     name: string
     pin: string
+    /** 绑定的逻辑工序（issue #7749）：'' = 未绑定（扫码后自己选工序） */
+    workerOperation: string
     pages: string[] | null
     /** 逐人开放的能力页键（issue #7162；与 `pages` 分开 ⇒ 默认集合的语义不受影响） */
     optional: string[]
-  }>({ workerNo: '', name: '', pin: '', pages: null, optional: [] })
+  }>({ workerNo: '', name: '', pin: '', workerOperation: '', pages: null, optional: [] })
   const [creating, setCreating] = useState(false)
   const [togglingId, setTogglingId] = useState<string | null>(null)
 
@@ -74,6 +76,17 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
   /** 非默认、逐人开放的能力页（issue #7162：质检 —— 同时是服务端写准入）。 */
   const [optionalPages, setOptionalPages] = useState<{ key: string; label: string }[]>([])
   const [togglingOptional, setTogglingOptional] = useState<string | null>(null)
+
+  /**
+   * 可绑定的**逻辑工序**目录（issue #7749）：选项来源 = 服务端
+   * （`GET /api/admin/workers/operations`，人事域读码）—— 前端不维护第二份工序清单。
+   * 读不到 / 为空 ⇒ 下拉只剩「未绑定」，并提示先去工序库建工序（不自己编选项）。
+   */
+  const [operationOptions, setOperationOptions] = useState<WorkerOperationOption[]>([])
+  // 改绑工序弹窗（存量工人也能改 —— 只在建号时能设等于「绑错了只能重建档案」）
+  const [opTarget, setOpTarget] = useState<WorkerProfile | null>(null)
+  const [opValue, setOpValue] = useState('')
+  const [savingOp, setSavingOp] = useState(false)
 
   // 重置 PIN（issue #6432）：弹窗两态 —— ① 输入 / 随机生成新 PIN ② 明文展示新 PIN（只显示这一次）
   const [pinTarget, setPinTarget] = useState<WorkerProfile | null>(null)
@@ -127,6 +140,17 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
     return () => { alive = false }
   }, [])
 
+  /** 拉「可绑定的逻辑工序」目录（只读）。失败 ⇒ 静默留空（下拉只剩「未绑定」，不影响建号主流程）。 */
+  useEffect(() => {
+    let alive = true
+    workerApi.listWorkerOperations()
+      .then((res) => {
+        if (alive) setOperationOptions(res.data?.data?.operations ?? [])
+      })
+      .catch(() => { if (alive) setOperationOptions([]) })
+    return () => { alive = false }
+  }, [])
+
   const handleSearch = () => {
     setCurrent(1)
     setSearchKeyword(keyword)
@@ -144,7 +168,7 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
   const handleOpenCreate = () => {
     // 默认**未收窄**（= 不限制，看全部页面）。存 null 而不是 menuPages 的快照 ⇒ 目录还没拉回来、
     // 或目录在弹窗打开后到达，都不会把「不限制」误判成「一页都没勾」。
-    setForm({ workerNo: '', name: '', pin: '', pages: null, optional: [] })
+    setForm({ workerNo: '', name: '', pin: '', workerOperation: '', pages: null, optional: [] })
     setFormOpen(true)
   }
 
@@ -221,10 +245,12 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
         pin: form.pin.trim(),
         // null（未收窄）或全勾 ⇒ 发 null = 不限制；只勾了一部分 ⇒ 发那一部分
         workerPages: pagesPayload(form.pages, form.optional),
+        // 绑定工序（issue #7749）：空 = 不绑定（扫码后自己选工序的旧行为）
+        workerOperation: form.workerOperation.trim() || null,
       })
       toast.success('工人档案已创建，请把工号与 PIN 告知本人')
       setFormOpen(false)
-      setForm({ workerNo: '', name: '', pin: '', pages: null, optional: [] })
+      setForm({ workerNo: '', name: '', pin: '', workerOperation: '', pages: null, optional: [] })
       loadWorkers()
     } catch (e) {
       // 失败**不关弹窗**：工号冲突是可修正的错误；文案由拦截器统一展示服务端原文（UI-024 去重口径）
@@ -246,6 +272,28 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
       toastRequestError(e, '操作失败')
     } finally {
       setTogglingId(null)
+    }
+  }
+
+  /** 打开「改工序」弹窗（issue #7749）：[[opValue]] 初值 = 当前绑定（'' = 未绑定）。 */
+  const handleOpenOperation = (worker: WorkerProfile) => {
+    setOpTarget(worker)
+    setOpValue(worker.workerOperation ?? '')
+  }
+
+  /** 保存绑定：空 ⇒ 清空（= 回到扫码后自己选工序）。非法工序名由服务端 422 原样展示。 */
+  const handleSaveOperation = async () => {
+    if (!opTarget) return
+    setSavingOp(true)
+    try {
+      await workerApi.updateWorkerOperation(opTarget.id, opValue.trim() || null)
+      toast.success(opValue.trim() ? `已绑定工序：${opValue.trim()}` : '已改为不绑定（扫码后自己选工序）')
+      setOpTarget(null)
+      loadWorkers()
+    } catch (e) {
+      toastRequestError(e, '设置工人工序失败')
+    } finally {
+      setSavingOp(false)
     }
   }
 
@@ -285,7 +333,17 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
         <span className="font-medium text-neutral-900">{record.workerNo}</span>
       ),
     },
-    { key: 'name', title: '姓名', width: '140px', dataIndex: 'name' },
+    { key: 'name', title: '姓名', width: '120px', dataIndex: 'name' },
+    {
+      key: 'workerOperation',
+      title: '工序',
+      width: '140px',
+      render: (record) => (
+        record.workerOperation
+          ? <span className="text-sm text-neutral-800" data-testid={`worker-operation-${record.id}`}>{record.workerOperation}</span>
+          : <span className="text-sm text-neutral-500" data-testid={`worker-operation-${record.id}`}>未绑定</span>
+      ),
+    },
     {
       key: 'workerPages',
       title: '工人端菜单',
@@ -332,6 +390,15 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
           ))}
           <button
             type="button"
+            onClick={() => handleOpenOperation(record)}
+            disabled={!canWrite}
+            data-testid={`worker-set-operation-${record.id}`}
+            className="text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm disabled:text-neutral-400 disabled:no-underline disabled:cursor-not-allowed"
+          >
+            改工序
+          </button>
+          <button
+            type="button"
             onClick={() => handleOpenResetPin(record)}
             disabled={!canWrite}
             className="text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm disabled:text-neutral-400 disabled:no-underline disabled:cursor-not-allowed"
@@ -355,7 +422,7 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
     <div>
       <div className="flex items-center justify-between mb-4">
         <p className="text-sm text-neutral-500">
-          工人用工号 + PIN 登录工人端扫码报工，不进入管理后台；与员工账号分开管理，不会出现在员工列表里。
+          工人用工号 + PIN 登录工人端扫码报工，不进入管理后台；绑定工序后扫码直接报那一道，不用再选。
         </p>
         {canWrite ? (
           <Button onClick={handleOpenCreate}>
@@ -461,6 +528,24 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
             工人不会进入管理后台，也拿不到任何菜单权限。
           </p>
 
+          {/* 绑定工序（issue #7749）：一个工人对应一道工序；不绑 = 扫码后自己选（旧行为） */}
+          <div className="pt-3 border-t border-neutral-100" data-testid="worker-operation-picker">
+            <Select
+              label="工序"
+              options={[
+                { value: '', label: '未绑定（扫码后自己选工序）' },
+                ...operationOptions.map((op) => ({ value: op.name, label: `${op.name}（${op.group}）` })),
+              ]}
+              value={form.workerOperation}
+              onChange={(e) => setForm({ ...form, workerOperation: e.target.value })}
+            />
+            <p className="text-xs text-neutral-400 mt-1.5">
+              {operationOptions.length === 0
+                ? '工序库还没有可用工序 —— 先到「工艺配置 → 工序库」建立工序，再回来绑定。'
+                : '绑定后这位工人扫码就自动选中这道工序、直接报工（屏上不再选工序）；同一道活按布帘/纱帘拆的多行已合并。'}
+            </p>
+          </div>
+
           {menuPages.length > 0 && (
             <div className="pt-3 border-t border-neutral-100" data-testid="worker-pages-picker">
               <div className="flex items-center justify-between mb-1.5">
@@ -542,6 +627,45 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
               </div>
             </div>
           )}
+        </div>
+      </Modal>
+
+      <Modal
+        open={opTarget !== null}
+        onClose={() => setOpTarget(null)}
+        title="设置工人工序"
+        width={520}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setOpTarget(null)} disabled={savingOp}>
+              取消
+            </Button>
+            <Button onClick={handleSaveOperation} loading={savingOp}>
+              保存
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4" data-testid="worker-operation-modal">
+          <p className="text-sm text-neutral-600">
+            工人：
+            <span className="font-medium text-neutral-900">
+              {opTarget?.workerNo} {opTarget?.name}
+            </span>
+          </p>
+          <Select
+            label="工序"
+            options={[
+              { value: '', label: '未绑定（扫码后自己选工序）' },
+              ...operationOptions.map((op) => ({ value: op.name, label: `${op.name}（${op.group}）` })),
+            ]}
+            value={opValue}
+            onChange={(e) => setOpValue(e.target.value)}
+          />
+          <p className="text-xs text-neutral-400">
+            绑定后扫码自动选中这道工序、直接报工；改成「未绑定」则回到扫码后自己选。
+            本件没有这道 / 已做完时，工人屏会如实说明，不会改报别的工序。
+          </p>
         </div>
       </Modal>
 

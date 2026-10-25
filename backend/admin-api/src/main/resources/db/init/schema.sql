@@ -53,6 +53,10 @@ CREATE TABLE users (
     -- 实际下发 = 本列（issue #6828 起企业级页面开关已整层移除 ⇒ 页面集只有这一层）。
     -- 🔴 只承载页面可见性，不是权限码 ⇒ 不参与授权判定，也不写进 users.permissions（恒为 []）。
     worker_pages JSONB,
+    -- 工人档案绑定的**逻辑工序**（V195，issue #7749）：NULL = 未绑定（存量/新建默认，
+    -- 保持「系统推断 + 工序选择器」的旧形态）；'韩褶' = 该工人只报这一道
+    -- （工序库的 韩褶-布 / 韩褶-纱 归并成同一逻辑名，布纱通用）。
+    worker_operation VARCHAR(64),
     session_ttl INTEGER DEFAULT 3600,
     status VARCHAR(32) DEFAULT 'active',
     -- 首登强制改密（V128，issue #5485）：管理员设的初始密码必须首登改掉。
@@ -1402,6 +1406,7 @@ COMMENT ON TABLE production_routings IS '工艺路线模板：部位×工艺 →
 COMMENT ON TABLE processing_position_operations IS '工序实例：加工单×部位×工序（应做数量/单价/系数/必完标记/报工进度），扫码报工的推进单元';
 COMMENT ON TABLE production_work_logs IS '报工记录（明细不可变）：报工三态 normal/rework/scrap；计件 = Σ(合格数量×**报工自己的单价快照**×**系数快照**)，排除返工/报废；单工序一人制；快照见 V61（issue #4351）';
 COMMENT ON COLUMN users.worker_no IS '工人工号（V98，issue #4733）：非 NULL = 工人档案（role=worker）；租户内唯一（uk_users_tenant_worker_no）';
+COMMENT ON COLUMN users.worker_operation IS '工人档案绑定的逻辑工序（V195，issue #7749）：NULL = 未绑定（存量/新建默认，保持系统推断 + 工序选择器）；非空 = 逻辑工序名（如 韩褶，布纱通用），扫码报工时按它自动选中该工人的工序';
 COMMENT ON TABLE worker_sessions IS '工人登录态（V98，issue #4733）：服务端是身份的权威 —— 报工只带 X-Worker-Session-Id，worker_id/worker_name 一律由本表解出，body 同名字段被忽略';
 COMMENT ON COLUMN worker_sessions.idle_expires_at IS '闲置过期时刻（默认 15 分钟，租户可配 5~60）：每次成功请求由服务端顺延；过期 session 报工 ⇒ 401（不静默续期）';
 COMMENT ON COLUMN worker_sessions.end_reason IS '结束原因：logout 主动登出 / idle 闲置超时 / switched 快速切换工人 / revoked 停用撤销';

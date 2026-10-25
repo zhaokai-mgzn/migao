@@ -441,7 +441,7 @@ class WorkerCuttingHeightNullProductIdTest {
                                 Verdict.READ_IS_NULL_TOLERANT, "getOrDefault(c.getId(), 0L) ⇒ 空键安全")),
                 // ── 存量：get + 可能为 null 的键 ⇒ 由调用点显式短路（本包不改这些文件，仅登记） ──
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/ProductionScanService.java|specByItemId",
-                        new IndexSite("specByItemId", "specByItemIdOf", "op.getOrderItemId()", "op.getOrderItemId()", 603,
+                        new IndexSite("specByItemId", "specByItemIdOf", "op.getOrderItemId()", "op.getOrderItemId()", 661,
                                 Verdict.KEY_NULLABLE,
                                 "调用点已 `specByItemId == null ? null : ...get(op.getOrderItemId())` 短路"
                                         + "（2026-10-24 / issue #7647：`resolve()` 追加批次三键后行号 594→603，判定未变）")),
