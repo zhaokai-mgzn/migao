@@ -124,6 +124,15 @@ public class OrderCreateRequest {
     private LocalDate requiredDeliveryDate;
 
     /**
+     * **外发加工标记**（V194，issue #7746 的后续裁定）。
+     *
+     * <p>{@code null} / 不传 ⇒ **不写列**（落默认 FALSE = 本厂自做，与今天逐字相同）；
+     * {@code true} ⇒ 该单不进成批候选、进派单页「外发区」逐单立即派，派单时必须选承接方。
+     * 它**只影响是否入池/派单时机**，不参与任何金额计算。</p>
+     */
+    private Boolean isOutsourced;
+
+    /**
      * 订单明细列表
      */
     @NotEmpty(message = "订单明细不能为空")

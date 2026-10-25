@@ -7922,7 +7922,7 @@
 ```
 溯源: 2026-10-18 新增（issue #7251）：只修**调度**，不改 30 天口径 —— `armIdle()` 改为按 `idleSlices()` 分片排队（每片 ≤ `MAX_TIMER_DELAY_MS`，前 N-1 片只续排、末片到期才 `checkAlive()`），并新增同文件 ⑥ 的全区间类级判据；同批修好测试侧因「长定时器不再 1ms 立即触发」而挂住测试进程的一处（frontend/worker-h5/tests/worker-h5-6749-stale-login-error.test.mjs 用 `t.after(() => app.destroy())` 显式销毁）。取号 = PG-089（`python3 scripts/next_case_id.py pg` 实跑：PG → main:001-087 · PR #7224:088 → 取 PG-089）。 ｜ tags: processing, worker, session, timer, backend-contract
 
-## 加工单域（82 case）
+## 加工单域（83 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 作业单生成 + 订单进入生产中（派单即生产；issue #7723 改判） 🔵
 ```
@@ -9052,6 +9052,21 @@
 跳过: [backend-contract] 服务端写面/读面 + 前端渲染与组件判据（零 LLM 行为），不进 agent-eval 冒烟
 ```
 溯源: 2026-10-25 新增（issue #7749；用户原话见 user_inputs）。落码：迁移 V195 `users.worker_operation` + `WorkerAdminService`（写面校验 / 改绑 / 清空）+ `AdminWorkerController`（目录 `GET /operations` + `PUT /{id}/operation`）+ `ProductionScanService`（`resolve` 追加 `workerOperation` 入参、`determined_by=worker`、`worker_operation_state`）+ `ProductionScanCompleteService`（读面/写面同一判据 + 409 `WORKER_OPERATION_NOT_PENDING`）+ `ProductionService`（质检不阻塞完工 + 默认完成不计件）+ worker-h5（「你的工序」一行 / 隐藏选择器 / 质检只记返工）+ admin-web（工序列 / 新建选工序 / 改绑弹窗）。取号 = 现取全仓 PG 已占号最大 PG-095 ⇒ 本单取 PG-096。 ｜ tags: worker-profile, production, quality-inspection, worker-h5, backend-contract
+
+### PG-097. 外发加工标记：订单打标后不进成批候选、进派单页外发区逐单立即派，且派单必须选承接方（V194） 🔵
+```
+你: 外单应该和加急单一样，所以入口应该放在加急单那块区域
+你: 现在做
+数据: **判据 1·外发单不进池（会红）**：`orders.is_outsourced = TRUE` 的订单**不出现在任何** `groups[].lines`（不是成批候选），而是进 `outsourcedLines`，且 `outsourcedCount` 单列计数。执行点 = ProcessingOrderServiceTest.outsourcedOrdersGoToTheirOwnQueue。**红证**：把 pool() 里外发分支删掉（照旧进 groups）⇒ 该用例红。
+数据: **判据 2·派单必须选承接方（会红）**：外发单派单时 `processorSupplierId` 为空 ⇒ 该单 `success=false` + 文案含「外发加工 / 承接方」+ 可行动 suggestion，**一行不写**（不静默按本厂派）。执行点 = 同文件 dispatchOutsourcedWithoutProcessorRejected。**红证**：删掉 prepare() 的外发闸门 ⇒ 外发单被按本厂派出去。
+数据: **判据 3·不进合并（会红）**：外发单混进 `pooled=true` 批次 ⇒ 整批显式拒绝（`外发单不参与合并派单`），一行不写。执行点 = 同文件 pooledBatchRejectsOutsourcedOrders。**红证**：删掉 assertNoOutsourcedInPooledBatch ⇒ 该用例红。
+数据: **判据 4·外发区 UI 与请求体（会红）**：派单页外发区渲染该单、且成批区**取不到**它；未选承接方时「立即派单」disabled；选中后派单请求体 = 单订单 + `pooled:false` + `processorSupplierId`。执行点 = frontend/admin-web/tests/unit/pages/production-pool-urgent.test.tsx 的外发区两条用例。**红证**：把按钮的 `disabled={!processorId}` 去掉 ⇒ 第一条红；请求体不带 processorSupplierId ⇒ 第二条红。
+数据: **判据 5·订单侧开关（会红）**：订单详情「加急 / 外发 / 到货日」面板的「外发加工」开关打开后保存 ⇒ 请求体带 `isOutsourced: true` 并通知父级重新拉单。执行点 = frontend/admin-web/tests/unit/components/OrderUrgencyPanel.test.tsx。**红证**：面板不提交该键 ⇒ 对应用例红。
+数据: **边界（照实登记）**：外发单**不会**被自动成批派单（自动腿只处理加急立即派与成批条件命中，外发必须人工选厂）；`is_urgent` 与 `is_outsourced` 可同时为真（加急优先进插队区，外发仍要求选承接方）；存量订单不回填该列（默认 FALSE）。
+前置: 本用例是 [backend-contract] 确定性单测：前置（订单 is_outsourced 标记 / 工序库桩 / 供应商档案）由测试类自建并打桩（Mockito），不依赖共享夹具或种子真值；前置不成立时对应单测直接红
+跳过: [backend-contract] admin-api 单测 + admin-web 单测（无 LLM 行为面）
+```
+溯源: 2026-10-25 新增（issue #7746 的后续裁定：用户逐字「外单应该和加急单一样，所以入口应该放在加急单那块区域」+「现在做」）。落地形态：新列 `orders.is_outsourced`（V194）+ 池视图新增 `outsourcedLines/outsourcedCount` + 派单闸门（外发必须选承接方）+ 订单详情开关 + 派单页外发区。 ｜ tags: processing-order, dispatch, outsourcing
 
 ## 商品域（132 case）
 
@@ -13111,8 +13126,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：890（活跃 142，跳过 748）
-- tier 分布：smoke 12 / normal 822 / adversarial 32
+- 用例总数：891（活跃 142，跳过 749）
+- tier 分布：smoke 12 / normal 823 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -13132,7 +13147,7 @@
 - 领域本体域：4
 - 订单域：69
 - 加工项域：31
-- 加工单域：82
+- 加工单域：83
 - 商品域：132
 - 工具注册器域：1
 - 设置域：10
@@ -13435,6 +13450,7 @@
 - PG-094: 发加工不再必经：首工序报满即可进「加工中」（A6 后半裁定直达；issue #7723）
 - PG-095: 外发承接方搬到智能派单：整单加工厂 + 回厂日，作业单不再录入/展示（issue #7723）
 - PG-096: 工人档案绑定工序 ⇒ 扫码自动选中该道直接报工（不出选择器）；质检默认合格、只记返工、不阻塞完工
+- PG-097: 外发加工标记：订单打标后不进成批候选、进派单页外发区逐单立即派，且派单必须选承接方（V194）
 - PP-007: 黄金策加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）
 - PP-008: 黄金策加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 加工项已无单价与计价方式 ⇒ calculate_price 端点与 action 整体退场（退场守卫）

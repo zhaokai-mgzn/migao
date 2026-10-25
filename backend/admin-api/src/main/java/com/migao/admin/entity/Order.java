@@ -69,6 +69,17 @@ public class Order {
     private Boolean isUrgent;
 
     /**
+     * 订单级**外发加工**标记（V194，issue #7746 的后续裁定：外单应该和加急单一样）。
+     *
+     * <p>{@code true} ⇒ 不进成批候选、进派单页「外发区」逐单立即派，且派单时**必须**选承接方
+     * （加工厂）。与 {@link #isUrgent} 可同时为真（加急优先：进插队区，外发标记仍生效在
+     * 「必须选承接方」这一条上）。</p>
+     *
+     * <p>⚠️ 类型必须是 {@code Boolean}（同 {@code isUrgent} 的 Lombok/JavaBeans 命名理由）。</p>
+     */
+    private Boolean isOutsourced;
+
+    /**
      * **客户要求到货日**（V120，issue #5177；{@code orders.required_delivery_date DATE}）。
      *
      * <p>NULL = <b>未指定</b>（**不猜、不回填** —— 存量单从未采集过这个外部事实，

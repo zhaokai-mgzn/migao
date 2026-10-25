@@ -767,6 +767,10 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         if (request.getRequiredDeliveryDate() != null) {
             order.setRequiredDeliveryDate(request.getRequiredDeliveryDate());
         }
+        // 外发加工标记（V194）：与加急同一条纪律 —— 未传 ⇒ 不写列（落默认 FALSE），不猜。
+        if (request.getIsOutsourced() != null) {
+            order.setIsOutsourced(request.getIsOutsourced());
+        }
 
         // 保存订单
         orderMapper.insert(order);
@@ -2286,7 +2290,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * @param requiredDeliveryDateRaw   {@code null} = 不改；{@code ""} = 清空；{@code YYYY-MM-DD} = 设值；其它 ⇒ 422
      */
     @Transactional(rollbackFor = Exception.class)
-    public void updateUrgency(String id, Boolean isUrgent, String requiredDeliveryDateRaw) {
+    public void updateUrgency(String id, Boolean isUrgent, Boolean isOutsourced,
+                              String requiredDeliveryDateRaw) {
         Order order = orderMapper.selectById(id);
         if (order == null) {
             throw BusinessException.notFound("订单");
@@ -2297,6 +2302,10 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             update.set(Order::getIsUrgent, isUrgent);
             changed = true;
         }
+        if (isOutsourced != null) {
+            update.set(Order::getIsOutsourced, isOutsourced);
+            changed = true;
+        }
         if (requiredDeliveryDateRaw != null) {
             update.set(Order::getRequiredDeliveryDate, parseRequiredDeliveryDate(requiredDeliveryDateRaw));
             changed = true;
@@ -2305,12 +2314,12 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             // 两个字段都没传 ⇒ 这次改单什么都没改。**显式拒绝**而不是静默 200：
             // 静默成功会让调用方以为改动生效了（同族纪律：不静默）。
             throw BusinessException.validationError(
-                    "isUrgent 与 requiredDeliveryDate 至少要传一个（本次改单没有任何变更）");
+                    "isUrgent / isOutsourced / requiredDeliveryDate 至少要传一个（本次改单没有任何变更）");
         }
         update.set(Order::getUpdatedAt, OffsetDateTime.now());
         orderMapper.update(null, update);
-        log.info("更新订单加急/到货日成功: id={}, isUrgent={}, requiredDeliveryDate={}",
-                id, isUrgent, requiredDeliveryDateRaw);
+        log.info("更新订单生产标记成功: id={}, isUrgent={}, isOutsourced={}, requiredDeliveryDate={}",
+                id, isUrgent, isOutsourced, requiredDeliveryDateRaw);
         // 🔴 事件驱动自动成批（issue #5182 挂载点 ③-a）：改单会同时改两件事 ——
         // 加急单**永不入池**（改为加急 ⇒ 立刻单派）、到货日变了 ⇒ 兜底的「最晚派单日」跟着变。
         PoolChangeNotifier.notifySafely(poolChangeNotifier, order.getTenantId(),

@@ -60,8 +60,18 @@ public final class ProductionPoolViews {
             BigDecimal waitHours,
             boolean overdue,
             boolean isUrgent,
+            boolean isOutsourced,
             LocalDate requiredDeliveryDate,
             Integer deliveryDaysLeft) {
+
+        /** 兼容旧 arity（未标记外发）：测试与既有调用方不必逐个改签名。 */
+        public PoolLine(String orderId, String orderNo, String itemId, String productId, String productName,
+                        String skuCode, BigDecimal requiredMeters, OffsetDateTime waitingSince,
+                        BigDecimal waitHours, boolean overdue, boolean isUrgent,
+                        LocalDate requiredDeliveryDate, Integer deliveryDaysLeft) {
+            this(orderId, orderNo, itemId, productId, productName, skuCode, requiredMeters, waitingSince,
+                    waitHours, overdue, isUrgent, false, requiredDeliveryDate, deliveryDaysLeft);
+        }
     }
 
     /**
@@ -132,7 +142,17 @@ public final class ProductionPoolViews {
             int urgentCount,
             List<PoolWarning> warnings,
             List<PoolLine> urgentLines,
+            List<PoolLine> outsourcedLines,
+            int outsourcedCount,
             List<PoolGroup> groups) {
+
+        /** 兼容旧 arity（无外发区）：既有调用方与测试不必逐个改签名。 */
+        public Pool(BigDecimal maxWaitHours, boolean poolingEnabled, int orderCount, int lineCount,
+                    int overdueCount, int urgentCount, List<PoolWarning> warnings,
+                    List<PoolLine> urgentLines, List<PoolGroup> groups) {
+            this(maxWaitHours, poolingEnabled, orderCount, lineCount, overdueCount, urgentCount,
+                    warnings, urgentLines, List.of(), 0, groups);
+        }
     }
 
     /**
