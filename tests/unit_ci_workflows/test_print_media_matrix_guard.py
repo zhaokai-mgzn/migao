@@ -22,7 +22,7 @@
 | C9 | **发货单「加工项」是一行、不是表格**（issue #7275：用户逐字「加工项表格应该用一行表达…比如改成a+b+c这样？」） | 退回逐项两列表（出现 `<DocTh>加工项</DocTh>` / 去掉 `shipment-processing-items` 锚点）⇒ 红 |
 | C11 | **纸面扫码码值只取服务端下发**（issue #7530）：受管打印单据里不得出现扫码短链路径段（`/o/` 作业单级 · `/s/` 部位级）—— 前端拼域名 / 路径段 = 第二份真值，而**纸上的码印出去就收不回来** | 把销售单的码值改成 `` `${base}/o/${processingOrder.short_code}` `` ⇒ 红 |
 | C12 | **客户可见纸面不出现内部短码**（issue #7608）：销售单 / 报价单 / 发货单 / 加工单不得读取或渲染`short_code`（客户拿到的那张纸只印「扫码报工」+ 码值；短码归工人侧：任务卡 / 工人端输入框） | 把短码行加回销售单（读 `processingOrder.short_code`）⇒ 红 |
-| C10 | **纸面不带浏览器页眉页脚**（issue #7309：用户逐字「我建议拿掉打印的页头和页脚」，附打印成品截图） | 把浏览器打印介质的上下 `@page` 边距写回「够大」（≥ 8.7mm）/ A4 没有 `contentInset` / 单据容器不带内缩 + `box-decoration-break: clone` ⇒ 红 |
+| C10 | **纸面不带浏览器页眉页脚**（issue #7309：用户逐字「我建议拿掉打印的页头和页脚」，附打印成品截图；**2026-10-25 收口到全矩阵**：用户逐字「我希望做到即使勾着也不要打印出页眉和页脚」） | 浏览器打印介质的上下 `@page` 边距**只要不是 0** 就红（8.7mm 是实测下限、不是容忍度）/ `contentInset` 缺失 / 单据容器不带内缩 + `box-decoration-break: clone` ⇒ 红 |
 
 ⚠️ **判据按「去注释后的代码」判定**：各单据的文件头都**用注释解释**这些坑（会写出反例），
 按原文判定会把解释性注释判成违规 = 假红。故本文件自带字符串感知的注释剥离器。
@@ -50,7 +50,7 @@ PRINT_DOCS: tuple[tuple[str, str], ...] = (
     ("frontend/admin-web/src/components/orders/QuotationDoc.tsx", "a4"),
     ("frontend/admin-web/src/components/orders/ProcessingDoc.tsx", "a4"),
     ("frontend/admin-web/src/components/orders/SalesDoc.tsx", "continuous-241x140"),
-    ("frontend/admin-web/src/components/production/TaskCardPrint.tsx", "label-50x60"),
+    ("frontend/admin-web/src/components/production/TaskCardPrint.tsx", "label-50x70"),
 )
 
 #: 单份字段映射：（单据名, 实现文件, 有序列清单）
@@ -695,8 +695,12 @@ def test_c9_shipment_processing_items_stay_on_one_line():
 # 所以「够大的页边距」是一条**未文档化**的分界；本仓的口径是让 A4 走**结构性**的那一侧
 # （边距 0 ⇒ 没有可画的边距 ⇒ 必然不出），阈值只用来拦住把「够大的边距」写回来的形态。
 #
+# 🔴 **2026-10-25 收口**（用户逐字「我希望做到即使勾着也不要打印出页眉和页脚」）：8.7mm 是**未文档化**
+# 的分界，拿比它小的边距去赌（三联纸原值 6mm）等于把纸面交给浏览器实现细节 ⇒ 现在**全矩阵一律 0**，
+# 判据也随之从「≥8.7mm 才红」收紧成「**非 0 即红**」。
+#
 # 两条判据（缺一即红）：
-# ① **矩阵侧**：浏览器打印介质的上下 `@page` 边距不得 ≥ 8.7mm；上下边距为 0 必须有非零
+# ① **矩阵侧**：浏览器打印介质的上下 `@page` 边距**必须是 0**；上下边距为 0 必须有非零
 #    `contentInset`（否则内容贴到纸边、被打印机不可打区裁掉）；`contentInset` 存在 ⇒ 边距必须为 0
 #    （两层内缩叠加 = 版面悄悄变窄）。
 # ② **单据侧**：浏览器打印的单据必须把内缩写进容器（`printContentInsetCss(`）+ 带
@@ -740,12 +744,13 @@ def _browser_chrome_problems(
         inset = spec.get("contentInset")
         if str(spec.get("technology")) not in BROWSER_PRINT_TECHNOLOGIES:
             continue
-        if vertical >= BROWSER_CHROME_MARGIN_MM:
+        if vertical != 0:
             problems.append(
-                f"介质 `{media_id}` 的上下页边距 {vertical}mm ≥ {BROWSER_CHROME_MARGIN_MM}mm ⇒ "
-                "浏览器会把页眉页脚（日期 / 标题 / URL / 页码）画在纸面上；"
+                f"介质 `{media_id}` 的上下页边距是 {vertical}mm（不是 0）⇒ "
+                "浏览器会把页眉页脚（日期 / 标题 / URL / 页码）画在这段边距里；"
+                f"实测下限虽在 {BROWSER_CHROME_MARGIN_MM}mm，但那是**未文档化**的分界、不作为容忍度；"
                 "浏览器打印的纸应把 `@page` 边距写 0、版面内缩改由 `contentInset` + 单据容器 padding 承担"
-                "（issue #7309）"
+                "（issue #7309 → 2026-10-25 全矩阵收口）"
             )
         if vertical == 0 and not inset:
             problems.append(
@@ -811,6 +816,14 @@ def test_c10_browser_chrome_stays_off_the_paper():
     doubled["pageMargin"] = "12mm"
     assert _browser_chrome_problems({"a4": doubled}) != [], (
         "内缩与 @page 边距叠加（双重内缩）**没判红** ⇒ C10 漏了版面变窄那一半"
+    )
+    # 🔴 2026-10-25 收紧后的**新**判别力：8.7mm 以下的「小边距」同样必红
+    #    （改前 6mm 是放过的 —— 那正是「三联纸仍带着边距」活下来的口子）
+    small = dict(matrix["continuous-241x140"])
+    small["pageMargin"] = "6mm 12mm"
+    small.pop("contentInset", None)
+    assert _browser_chrome_problems({"continuous-241x140": small}) != [], (
+        "把三联纸的边距写回 6mm 12mm（= 改前形态）**没判红** ⇒ C10 仍在拿 8.7mm 当容忍度"
     )
     thermal = {"id": "t", "technology": "thermal-transfer", "pageMargin": "0"}
     assert _browser_chrome_problems({"t": thermal}) == [], (

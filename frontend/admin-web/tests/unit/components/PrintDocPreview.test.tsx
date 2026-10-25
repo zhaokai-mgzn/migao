@@ -140,7 +140,7 @@ describe('纸面自检层 PrintDocPreview（issue #5914）', () => {
       <PrintDocPreview
         target="labels"
         title="水洗唛"
-        media="label-50x60"
+        media="label-50x70"
         onPrint={() => {}}
         onClose={() => {}}
         actions={<button data-testid="extra-action">蓝牙无线打印</button>}
@@ -163,7 +163,7 @@ describe('纸面自检层 PrintDocPreview（issue #5914）', () => {
       <PrintDocPreview
         target="labels"
         title="水洗唛"
-        media="label-50x60"
+        media="label-50x70"
         onPrint={() => {}}
         onClose={() => {}}
       >

@@ -39,7 +39,7 @@ import type { WashLabelInput } from '@/lib/label-print/wash-label'
  * ## 纸面与预览**同一份**（issue #6656）
  *
  * 打出来的位图读的就是预览那份有序行清单（`frontend/admin-web/src/lib/wash-label-content.ts` 的
- * `washLabelRows` + 同读介质 `label-50x60`）⇒ 搬入口**不改版式**；唯一不可统一的仍是纸的物理宽度
+ * `washLabelRows` + 同读介质 `label-50x70`）⇒ 搬入口**不改版式**；唯一不可统一的仍是纸的物理宽度
  * （打印头 384 点 = 48mm < 纸宽 50mm，登记在 `lib/print-media.json`）。
  *
  * ## 可注入面（为什么留这两个口）
