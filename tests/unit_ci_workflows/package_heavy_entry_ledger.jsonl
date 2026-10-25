@@ -26,3 +26,5 @@
 {"id":"1792917815.49377.752","ts":"2026-10-25T08:43:35Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/inbound-supplier-label-7759","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1792919224.56750.25543","ts":"2026-10-25T09:07:04Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/inbound-supplier-label-7759","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1792914991.67371.11300","ts":"2026-10-25T07:56:31Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/7750-stock-in-out","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1792938855.22349.110","ts":"2026-10-25T14:34:16Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/7785-warehouse-bin-management","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1792938878.22480.4537","ts":"2026-10-25T14:34:39Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7785-warehouse-bin-management","why":"--allow-package-heavy（命令行显式）"}

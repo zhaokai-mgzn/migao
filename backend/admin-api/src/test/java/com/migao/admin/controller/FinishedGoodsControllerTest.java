@@ -4,7 +4,7 @@ package com.migao.admin.controller;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.FinishedGoodsView;
 import com.migao.admin.entity.Warehouse;
-import com.migao.admin.entity.WarehouseLocation;
+import com.migao.admin.dto.WarehouseLocationView;
 import com.migao.admin.security.RequirePermission;
 import com.migao.admin.service.FinishedGoodsService;
 import com.migao.admin.service.WarehouseLocationService;
@@ -24,6 +24,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -74,11 +75,12 @@ class FinishedGoodsControllerTest {
     @DisplayName("仓位清单：按仓过滤 + 当前租户")
     void listLocationsScopesTenantAndWarehouse() {
         TenantContext.setTenantId(7L);
-        when(warehouseLocationService.list(any(), any())).thenReturn(List.of(new WarehouseLocation()));
+        when(warehouseLocationService.listView(any(), any(), anyBoolean()))
+                .thenReturn(List.of(new WarehouseLocationView()));
 
-        controller.listLocations(9L);
+        controller.listLocations(9L, false);
 
-        verify(warehouseLocationService).list(eq(7L), eq(9L));
+        verify(warehouseLocationService).listView(eq(7L), eq(9L), eq(false));
     }
 
     @Test
@@ -98,7 +100,7 @@ class FinishedGoodsControllerTest {
     @DisplayName("权限边界：三个读端点都是 inbound:view")
     void permissionCodesAreInboundView() throws Exception {
         assertThat(permissionOf("listInStock")).isEqualTo("inbound:view");
-        assertThat(permissionOf("listLocations", Long.class)).isEqualTo("inbound:view");
+        assertThat(permissionOf("listLocations", Long.class, boolean.class)).isEqualTo("inbound:view");
         assertThat(permissionOf("finishedWarehouse")).isEqualTo("inbound:view");
     }
 

@@ -11,6 +11,7 @@ import com.migao.admin.mapper.SupplierPaymentMapper;
 import com.migao.admin.mapper.ProcessingCategoryMapper;
 import com.migao.admin.mapper.ProcessingItemMapper;
 import com.migao.admin.mapper.ProductMapper;
+import com.migao.admin.mapper.WarehouseLocationMapper;
 import com.migao.admin.service.NotificationRuleService;
 import com.migao.admin.service.NotificationTemplateService;
 import com.migao.admin.service.OrderService;
@@ -78,6 +79,9 @@ public class TenantResourceOwnership {
 
     /** 采购单的归属认定（issue #7369 段 4 的详情/收货/关闭端点）：同上。 */
     private final PurchaseOrderMapper purchaseOrderMapper;
+
+    /** 成品仓仓位的归属认定（issue #7785）：改号 / 启停前先判「这个仓位在本租户可见吗」。 */
+    private final WarehouseLocationMapper warehouseLocationMapper;
 
     /**
      * 资源键 → 归属认定（认定不过 ⇒ 抛 {@code NOT_FOUND}，与既有 404 路径同一份异常与文案）。
@@ -156,6 +160,13 @@ public class TenantResourceOwnership {
         checks.put("processing-category", id -> {
             if (processingCategoryMapper.selectById(id) == null) {
                 throw BusinessException.notFound("加工分类");
+            }
+        });
+        // 成品仓仓位（issue #7785）：与 product/category 同款 —— 只判「本租户可见吗」，
+        // 改号 / 启停 / 删除的业务闸门（占用中禁改禁删）仍只在服务层执行一份。
+        checks.put("warehouse-location", id -> {
+            if (warehouseLocationMapper.selectById(id) == null) {
+                throw BusinessException.notFound("仓位");
             }
         });
         // 订单 `/content`：只判「这个订单在当前租户下可见吗」——**不**顺手带状态闸门

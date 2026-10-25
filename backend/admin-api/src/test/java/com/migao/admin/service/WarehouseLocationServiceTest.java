@@ -3,6 +3,7 @@ package com.migao.admin.service;
 
 import com.migao.admin.entity.WarehouseLocation;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.mapper.FinishedGoodsStockMapper;
 import com.migao.admin.mapper.WarehouseLocationMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -44,6 +45,8 @@ class WarehouseLocationServiceTest {
     private static final Long WAREHOUSE = 9L;
 
     @Mock private WarehouseLocationMapper locationMapper;
+    @Mock private FinishedGoodsStockMapper stockMapper;
+    @Mock private WarehouseService warehouseService;
 
     @InjectMocks private WarehouseLocationService service;
 

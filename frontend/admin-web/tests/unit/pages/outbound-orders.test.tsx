@@ -1,4 +1,4 @@
-// case_ids: WH-004
+// case_ids: WH-004, WH-005, WH-009
 //
 // V194（issue #7750）：出库单页面的**可达性**判据 —— 与后端 WH-004 配对。
 //
@@ -6,7 +6,8 @@
 //   ① 列表能渲染（单号 / 类别 / 来源 / 仓库 / 数量合计），读失败 ≠ 空态（常驻错误 + 重试）；
 //   ② 「新建出库单」受 `inbound:create` 门控；提交体里 SKU id 是**字符串**（雪花号不许 Number()）；
 //   ③ 提交成功后提示「已出库」（出库单无草稿态、无过账按钮）；
-//   ④ 「成品库存」页签显示**仓位号**（打包时自动分配的成品仓仓位）。
+//   ④ 「成品库存」页签显示**仓位号**（打包时自动分配的成品仓仓位）；
+//   ⑤ 「成品库存」空态可进入「仓位管理」视图（issue #7785）。
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
@@ -25,6 +26,7 @@ const mockDetail = vi.fn()
 const mockCreate = vi.fn()
 const mockFinished = vi.fn()
 const mockWarehouses = vi.fn()
+const mockLocations = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   outboundOrderApi: {
@@ -34,7 +36,10 @@ vi.mock('@/lib/api', () => ({
   },
   finishedGoodsApi: {
     listInStock: (...a: unknown[]) => mockFinished(...a),
-    locations: vi.fn(),
+    locations: (...a: unknown[]) => mockLocations(...a),
+    createLocation: vi.fn(),
+    updateLocation: vi.fn(),
+    deleteLocation: vi.fn(),
     finishedWarehouse: vi.fn(),
   },
   warehouseApi: {
@@ -117,6 +122,7 @@ beforeEach(() => {
   mockCreate.mockResolvedValue({ data: { data: orderRow } })
   mockFinished.mockResolvedValue({ data: { data: [finishedRow] } })
   mockWarehouses.mockResolvedValue({ data: { data: [{ id: 1, code: 'MAIN', name: '主仓' }] } })
+  mockLocations.mockResolvedValue({ data: { data: [] } })
 })
 
 describe('出库单列表（WH-004）', () => {
@@ -217,5 +223,21 @@ describe('成品库存页签（WH-005）', () => {
     fireEvent.click(screen.getByTestId('outbound-tab-finished'))
 
     expect(await screen.findByText('成品仓暂时是空的')).toBeTruthy()
+  })
+})
+describe('仓位管理入口（WH-009）', () => {
+  it('成品库存空态提供「管理仓位」，点击后进入仓位管理视图并读清单', async () => {
+    mockFinished.mockResolvedValue({ data: { data: [] } })
+    render(<OutboundOrdersPage />)
+    await waitFor(() => expect(screen.getByText('CK-20261025-0001')).toBeTruthy())
+
+    fireEvent.click(screen.getByTestId('outbound-tab-finished'))
+    const entry = await screen.findByTestId('finished-manage-locations')
+    fireEvent.click(entry)
+
+    await waitFor(() => expect(mockLocations).toHaveBeenCalledTimes(1))
+    expect(await screen.findByTestId('warehouse-location-panel')).toBeTruthy()
+    // 读清单带 includeInactive：停用仓位要能在管理视图里看到并重新启用
+    expect(mockLocations.mock.calls[0][0]).toEqual({ includeInactive: true })
   })
 })
