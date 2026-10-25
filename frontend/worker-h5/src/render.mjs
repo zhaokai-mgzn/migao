@@ -736,6 +736,24 @@ function currentSpecBlock(v) {
 }
 
 /**
+ * 帘种那一行（issue #7739）—— 用户 2026-10-25 逐字「工人报工详情页面也缺失帘种这一关键信息，
+ * 需要告诉工人是布帘还是纱帘」。
+ *
+ * <p>取数顺序 = **同一件事实的可靠度序**：扫码解析给的 `position.position_kind`（服务端直接算）→
+ * 本部位行的 `position_kind`（工序实例）→ 订单行快照的 `curtain_type`。任一在场即上屏。</p>
+ *
+ * <p>🔴 它**不在规格块里**（`SCAN_BLOCK_EXCLUDED_KEYS`）：规格块的规则是「缺值整行不出现」，
+ * 而这一项是识别信息 —— 两处都缺时屏上**不编**（不显示「帘种 —」）；有值就必须看得见。</p>
+ */
+function ternLine(v) {
+  const me = (Array.isArray(v?.set_overview?.positions) ? v.set_overview.positions : [])
+    .find((p) => p && p.order_item_id === v?.position?.order_item_id)
+  const kind = v?.position?.position_kind ?? me?.position_kind ?? me?.curtain_type ?? null
+  const text = typeof kind === 'string' ? kind.trim() : ''
+  return text ? `<p class="wh5-sub" id="wh5-tern">帘种 ${esc(text)}</p>` : ''
+}
+
+/**
  * 质检工序的「这一屏只有一个动作」说明（issue #7186）。
  *
  * <p>用户 2026-10-18 逐字：「质检员不需要报工这个动作，只需要有一个质检动作，完成判定后自动报工，
@@ -842,6 +860,7 @@ function mainView(state) {
     return `${header(state)}
   <section class="wh5-card">
     <div class="wh5-set" id="wh5-set">第 ${esc(v.set_no)} 套 · ${esc(v.position?.position_name ?? '')}</div>
+    ${ternLine(v)}
     ${v.completed === true
       ? '<p class="wh5-done" id="wh5-completed">本套工序都已报工 🎉</p>'
       : '<p class="wh5-sub" id="wh5-no-operation">本部位推断不出待报工序（工序未确定 ⇒ 不得记账）</p>'}
@@ -876,6 +895,7 @@ function mainView(state) {
   return `${header(state)}
   <section class="wh5-card">
     <div class="wh5-set" id="wh5-set">第 ${esc(v.set_no)} 套 · ${esc(v.position?.position_name ?? '')}</div>
+    ${ternLine(v)}
     <div class="wh5-op" id="wh5-operation">${esc(operationDisplayName(op))}</div>
     <div class="wh5-qty" id="wh5-qty">应做 ${fmtQty(op.qty)} ${esc(op.unit ?? '')}</div>
     <div class="wh5-price-row">${price}</div>

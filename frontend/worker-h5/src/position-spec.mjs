@@ -71,7 +71,10 @@ export const POSITION_SPEC_KEYS = [
   { key: 'width', label: '宽', unit: '米', format: 'm' },
   { key: 'height', label: '高', unit: '米', format: 'm' },
   // ── 组 3 加工信息 ──
-  { key: 'curtain_type', label: '部位' },
+  // 帘种（issue #7739，用户逐字「工人报工详情页面也缺失帘种这一关键信息，需要告诉工人是布帘还是纱帘」）：
+  // 值 = 布帘 / 纱帘 / 帘头。⚠️ 本表**登记**它（后端键集守卫要求表 ⊇ 真源键集），但报工屏**不在本块**印 ——
+  // 由 `render.mjs::ternLine` 紧跟「第 N 套 · 货号」那一行单独给（见 `SCAN_BLOCK_EXCLUDED_KEYS`）。
+  { key: 'curtain_type', label: '帘种' },
   { key: 'craft', label: '安装工艺' },
   { key: 'cutting_mode', label: '加工类型' },
   { key: 'open_count', label: '开数', format: 'int' },
@@ -143,9 +146,12 @@ export function trimTrailingZeros(text) {
  *   <li>{@code remark}（部位备注）—— 工人端另有一条**更精确**的呈现（`render.mjs::positionRemark`：
  *       「部位备注：<原文>」紧跟**它自己那个部位**的标题，issue #5685 的既有判据逐字钉住）。
  *       在规格块里再印一遍 = 同一屏同一事实两次（`migao-dev-flow` §31 P2）。</li>
+ *   <li>{@code curtain_type}（帘种，issue #7739）—— 由 `render.mjs::ternLine` 紧跟「第 N 套 · 货号」
+ *       那一行给（`#wh5-tern`）：它是**关键识别信息**，不能被「本块缺值即整行消失」的规则吞掉；
+ *       放在识别行旁边（而不是规格网格里）也让它在规格数据全缺时**照样看得见**。</li>
  * </ul>
  */
-export const SCAN_BLOCK_EXCLUDED_KEYS = new Set(['remark'])
+export const SCAN_BLOCK_EXCLUDED_KEYS = new Set(['remark', 'curtain_type'])
 
 /**
  * 一个部位 → **报工屏**的行（缺值**不渲染**：整行不出现 ⇒ 工人手机上不摆空占位）。
@@ -165,8 +171,13 @@ export function specRows(position) {
   const rows = []
   for (const spec of POSITION_SPEC_KEYS) {
     if (SCAN_BLOCK_EXCLUDED_KEYS.has(spec.key)) continue
+    // 帘种：`curtain_type`（订单行快照）与 `position_kind`（工序实例）是**同一件事实的两处发源**，
+    // 任一在场就够（issue #7739）；别的位置键照旧只读自己的键。
+    const raw = spec.key === 'curtain_type'
+      ? (position?.curtain_type ?? position?.position_kind)
+      : position?.[spec.key]
     // 报工屏数值**去尾零**（issue #7636）：`3.000米` → `3米`；机台屏仍走 `formatSpecValue` 原样
-    const shown = trimTrailingZeros(formatSpecValue(position?.[spec.key], spec.format))
+    const shown = trimTrailingZeros(formatSpecValue(raw, spec.format))
     if (shown === EMPTY) continue
     rows.push({ key: spec.key, label: spec.label, text: `${shown}${spec.unit ?? ''}` })
   }
