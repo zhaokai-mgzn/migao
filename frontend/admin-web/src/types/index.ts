@@ -1246,11 +1246,11 @@ export interface PieceworkSummary {
  */
 export interface CutPlanRow {
   order_item_id: string
-  /** 帘种（布帘 / 纱帘 / 帘头 / 布料）—— 界面列头印「帘种」：用来区分布帘还是纱帘，不是窗位 */
+  /** 帘种（布帘 / 纱帘 / 帘头 / 布料）—— 界面**不再单列**（数据常整列为空，issue #7737）；键仍下发 */
   position_kind?: string | null
-  /** 部位名 / 货号（商品名） */
+  /** 部位名 / 货号（商品名）—— 界面列头「货号」，格内只印这一个（issue #7737） */
   position_name?: string | null
-  /** 组件（明细行角色：主布 / 配布边 / 纱） */
+  /** 组件（明细行角色：主布 / 配布边 / 纱）—— 界面**不再展示**（issue #7737）；键仍下发 */
   component?: string | null
   /**
    * **派工指定批次**（issue #6754）：这一行「**从哪一批裁**」（`PC-yyyyMMdd-NNNN`）。
