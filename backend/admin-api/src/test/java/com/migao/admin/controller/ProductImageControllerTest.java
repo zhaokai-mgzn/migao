@@ -18,6 +18,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -59,7 +60,7 @@ class ProductImageControllerTest extends BaseControllerTest {
     @Test
     @DisplayName("成功：data 恰好 url/model（无 id/saved/created 等落库痕迹）")
     void generate_returnsUrlAndModelOnly() throws Exception {
-        when(service.generate(anyString(), anyString(), anyString()))
+        when(service.generate(anyString(), anyString(), anyString(), anyInt()))
                 .thenReturn(Map.of("url", "https://oss/permanent.png", "model", "qwen-image-3.0"));
 
         mockMvc.perform(post(URL).contentType(MediaType.APPLICATION_JSON).content("""
@@ -97,7 +98,7 @@ class ProductImageControllerTest extends BaseControllerTest {
     @Test
     @DisplayName("服务层 422 原样透传（不吞成 200）")
     void serviceFailure_propagates() throws Exception {
-        when(service.generate(anyString(), anyString(), anyString()))
+        when(service.generate(anyString(), anyString(), anyString(), anyInt()))
                 .thenThrow(new BusinessException("AI_PRODUCT_IMAGE_UNAVAILABLE", "生成服务不可用", 422));
 
         mockMvc.perform(post(URL).contentType(MediaType.APPLICATION_JSON).content("""
@@ -105,7 +106,36 @@ class ProductImageControllerTest extends BaseControllerTest {
                         """))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.success").value(false));
-        verify(service).generate("https://oss/sample.png", "回归布帘", "main");
+        verify(service).generate("https://oss/sample.png", "回归布帘", "main", 0);
+    }
+
+    @Test
+    @DisplayName("白底图 + 主图变体：variant 原样透传；缺省 variant = 0（老客户端不受影响）")
+    void variant_isForwardedAndDefaultsToZero() throws Exception {
+        when(service.generate(anyString(), anyString(), anyString(), anyInt()))
+                .thenReturn(Map.of("url", "https://oss/permanent.png", "model", "qwen-image-3.0-pro"));
+
+        mockMvc.perform(post(URL).contentType(MediaType.APPLICATION_JSON).content("""
+                        {"imageUrl":"https://oss/sample.png","productName":"回归布帘","kind":"white"}
+                        """))
+                .andExpect(status().isOk());
+        verify(service).generate("https://oss/sample.png", "回归布帘", "white", 0);
+
+        mockMvc.perform(post(URL).contentType(MediaType.APPLICATION_JSON).content("""
+                        {"imageUrl":"https://oss/sample.png","productName":"回归布帘","kind":"main","variant":2}
+                        """))
+                .andExpect(status().isOk());
+        verify(service).generate("https://oss/sample.png", "回归布帘", "main", 2);
+    }
+
+    @Test
+    @DisplayName("variant 越界 ⇒ 422（不把非法变体透传给生成内核）")
+    void variantOutOfRange_rejected() throws Exception {
+        mockMvc.perform(post(URL).contentType(MediaType.APPLICATION_JSON).content("""
+                        {"imageUrl":"https://oss/sample.png","productName":"回归布帘","kind":"main","variant":9}
+                        """))
+                .andExpect(status().isUnprocessableEntity());
+        verifyNoInteractions(service);
     }
 
     @Test

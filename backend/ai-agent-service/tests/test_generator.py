@@ -48,17 +48,52 @@ def _ok(image_url="https://dashscope.oss/out.png"):
     })
 
 
-def test_prompt_contains_product_and_scene(monkeypatch):
+def test_main_variants_are_distinct(monkeypatch):
+    """主图连点两次不能是同一张（用户 2026-10-25：「主图图片生成的都一样」）。
+
+    三套构图（正面棚拍 / 半垂坠 / 悬挂近景）必须互不相同，且都带上商品名；
+    variant 越界取模（客户端只负责递增）。
+    """
     _settings(monkeypatch)
-    main = gen.build_prompt("回归布帘-遮光提花", "main")
-    assert "回归布帘-遮光提花" in main
-    assert "主图" in main
-    assert "布帘" in main
+    prompts = [gen.build_prompt("回归布帘-遮光提花", "main", v) for v in (0, 1, 2)]
+    assert len(set(prompts)) == 3, prompts
+    for p in prompts:
+        assert "回归布帘-遮光提花" in p
+        assert "主图" in p
+    assert "正面棚拍" in prompts[0]
+    assert "半垂坠" in prompts[1]
+    assert "悬挂近景" in prompts[2]
+    # 越界一律取模，不抛错
+    assert gen.build_prompt("某商品", "main", 3) == gen.build_prompt("某商品", "main", 0)
 
-    roller = gen.build_prompt("回归卷帘-防水", "main")
-    assert "卷帘" in roller
-    assert "厨房" in roller
 
+def test_detail_kinds_have_distinct_variants(monkeypatch):
+    """详情图也要有变体：整套里 texture 出 2 张、scene 出 2 张，同一用途两张不能一模一样。"""
+    _settings(monkeypatch)
+    for kind in ("texture", "craft", "scene"):
+        a = gen.build_prompt("某商品", kind, 0)
+        b = gen.build_prompt("某商品", kind, 1)
+        assert a != b, kind
+        # 只有两个变体 ⇒ variant 2 取模回到 0
+        assert gen.build_prompt("某商品", kind, 2) == a
+
+
+def test_white_prompt_follows_platform_rules(monkeypatch):
+    """白底图 = 淘宝 5 张主图的第 5 位（合规位 + 免费流量位）：
+    纯白 RGB(255,255,255)、产品居中、无文字/水印/logo/边框。判据按平台硬要求钉住。"""
+    _settings(monkeypatch)
+    white = gen.build_prompt("回归布帘-遮光提花", "white")
+    assert "回归布帘-遮光提花" in white
+    assert "纯白背景" in white and "255,255,255" in white
+    assert "居中" in white
+    for forbidden in ("无水印", "无 logo", "无边框"):
+        assert forbidden in white
+    # variant 对白底图无意义：换 variant 不得换出一套别的口径
+    assert gen.build_prompt("某商品", "white", 2) == gen.build_prompt("某商品", "white", 0)
+
+
+def test_texture_prompt_unchanged(monkeypatch):
+    _settings(monkeypatch)
     texture = gen.build_prompt("回归面料-棉麻混纺", "texture")
     assert "微距" in texture
     assert "回归面料-棉麻混纺" in texture
@@ -236,7 +271,7 @@ def test_credential_failure_is_unavailable_and_never_rotates(monkeypatch, status
 def test_internal_endpoint_returns_only_preview_fields(monkeypatch):
     from app.api.internal import ImageGenerateRequest, image_generate
 
-    async def fake_generate(image_url, product_name, kind):
+    async def fake_generate(image_url, product_name, kind, *, variant=0):
         return {"image_url": "https://dashscope.oss/out.png", "model": "model-a"}
 
     request = ImageGenerateRequest(

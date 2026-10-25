@@ -35,7 +35,7 @@ from loguru import logger
 
 from app.config import settings
 
-KINDS = ("main", "texture", "craft", "scene")
+KINDS = ("main", "white", "texture", "craft", "scene")
 
 
 class ImageGenerationError(Exception):
@@ -95,14 +95,51 @@ _SCENES = (
 
 _COMMON = "保持参考图里的真实颜色、纹理与材质，画面干净、无水印、无文字、无logo，正方形构图"
 
+#: 每个用途的**构图/景别变体**（issue #7782）。
+#:
+#: 用户 2026-10-25 20:51「主图图片生成的都一样，这里怎么优化才好？你先参考淘宝的商品主图
+#: 一般都是如何展示再对这个功能做一些优化」+ 21:09「直接默认生成一套图片，主图 3 张，详细图 5 张」。
+#: ⇒ 一次生成**一套 8 张**：主图取 main 的 3 个变体 + 白底图 1 张，详情图取其余用途的变体。
+#: 变体按 `variant` 取模（客户端只负责给序号，不负责范围），保证同一用途连出两张不会一模一样。
+_COMPOSITIONS = {
+    # 淘宝第 1 位「抢点击」的三个候选：干净背景 + 主体清楚 + 缩小也认得出
+    "main": (
+        "正面棚拍：浅米色纯色背景，整幅商品正面完全展开、主体居中，光影均匀柔和，"
+        "轮廓与主色块清楚（缩略图里也能一眼认出是什么）",
+        "半垂坠展示：自然垂坠的褶皱层次，侧光勾勒布料的厚度与质感，浅色纯净背景，主体居中",
+        "悬挂近景：镜头拉近，重点表现布料纹理、垂坠感与颜色的层次，浅色纯净背景",
+    ),
+    # 淘宝第 3 位「证明做工」的两个角度
+    "texture": (
+        "材质微距特写，能看清表面织纹与纱线肌理，侧光显出立体感",
+        "平铺俯拍，整幅面料平铺展开，纹理与织法均匀清晰，柔光无强烈阴影",
+    ),
+    "craft": (
+        "做工细节特写（褶皱 / 包边 / 缝线 / 五金 / 卷轴等与商品相符的工艺），缝线平整",
+        "悬挂结构特写：卷轴 / 轨道 / 帘头 / 包边的收口与安装方式，安装面干净利落",
+    ),
+    # 淘宝第 4 位「场景代入」：两个真实家居环境
+    "scene": (
+        "在家居客厅里的实际使用效果，自然光，沙发与落地窗，温暖真实的生活氛围",
+        "在卧室里的实际使用效果，暖光，床品与窗帘的层次，安静舒适的氛围",
+    ),
+}
+
+#: 白底图（issue #7782）—— 淘宝/天猫 5 张主图的**第 5 位**：合规位 + 免费流量位。
+#: 硬要求照抄平台口径：纯白 RGB(255,255,255)、产品居中占画面约 70%~80%、无文字/水印/logo/边框。
+_WHITE_PROMPT = (
+    "生成一张电商白底主图：纯白背景（RGB 255,255,255），商品正面居中、占画面约 75%，"
+    "背景干净无杂物、无文字、无水印、无 logo、无边框，专业影棚布光"
+)
+
 _PROMPTS = {
-    "main": "以参考图里的这款商品（{name}）为准，生成一张商品主图：{scene}，{common}。",
-    "texture": "以参考图里的这款商品（{name}）为准，生成一张商品详情图：材质微距特写，"
-               "能看清表面织纹与纱线肌理，侧光显出立体感，摄影棚布光，{common}。",
-    "craft": "以参考图里的这款商品（{name}）为准，生成一张商品详情图：做工与结构细节特写"
-             "（褶皱 / 包边 / 缝线 / 五金 / 卷轴等与商品相符的工艺），缝线平整，摄影棚级商品图，{common}。",
-    "scene": "以参考图里的这款商品（{name}）为准，生成一张商品详情图：在家居空间里的实际使用效果，"
-             "自然光，温暖真实的氛围，{common}。",
+    "main": "以参考图里的这款商品（{name}）为准，生成一张电商商品主图：{composition}，{common}。",
+    "white": "以参考图里的这款商品（{name}）为准，{white}，{common}。",
+    "texture": "以参考图里的这款商品（{name}）为准，生成一张商品详情图：{composition}，"
+               "摄影棚布光，{common}。",
+    "craft": "以参考图里的这款商品（{name}）为准，生成一张商品详情图：{composition}，"
+             "摄影棚级商品图，{common}。",
+    "scene": "以参考图里的这款商品（{name}）为准，生成一张商品详情图：{composition}，{common}。",
 }
 
 
@@ -113,13 +150,27 @@ def _scene_for(product_name: str) -> str:
     return "挂在现代客厅落地窗前的整幅商品"
 
 
-def build_prompt(product_name: str, kind: str) -> str:
-    """按用途生成提示词（`kind` 非白名单 ⇒ ValueError，调用方 bug 不降级）。"""
+def _composition(kind: str, variant: int) -> str:
+    """该用途的构图变体：没有变体的用途（白底图）返回空串；越界一律取模。"""
+    variants = _COMPOSITIONS.get(kind)
+    if not variants:
+        return ""
+    return variants[(variant or 0) % len(variants)]
+
+
+def build_prompt(product_name: str, kind: str, variant: int = 0) -> str:
+    """按用途（+ 构图变体）生成提示词。
+
+    `kind` 非白名单 ⇒ ValueError（调用方 bug 不降级）；`variant` 对该用途的变体列表取模，
+    没有变体的用途（white）忽略它（不因为多传一个字段就换一套话术）。
+    """
     if kind not in _PROMPTS:
         raise ValueError(f"kind 只能是 {'/'.join(KINDS)}，收到 {kind!r}")
     return _PROMPTS[kind].format(
         name=(product_name or "").strip() or "这款商品",
         scene=_scene_for(product_name),
+        composition=_composition(kind, variant),
+        white=_WHITE_PROMPT,
         common=_COMMON,
     )
 
@@ -231,9 +282,14 @@ async def generate_product_image(
     product_name: str,
     kind: str,
     *,
+    variant: int = 0,
     client: Optional[httpx.AsyncClient] = None,
 ) -> Dict[str, str]:
-    """样图 → 一张商品图：返回 `{"image_url", "model"}`（不落盘、不落库）。"""
+    """样图 → 一张商品图：返回 `{"image_url", "model"}`（不落盘、不落库）。
+
+    `variant` 只影响 `main` 的构图（issue #7782）：同一用途连点两次要出不同的图，
+    但**不换用途的含义** —— white / texture / craft / scene 各自已有明确口径。
+    """
     if not settings.IMAGE_GEN_ENABLED:
         raise ImageGenerationUnavailable(
             "商品图生成未启用（IMAGE_GEN_ENABLED=false）", code="IMAGE_GEN_DISABLED")
@@ -243,7 +299,7 @@ async def generate_product_image(
     if not (image_url or "").startswith(("http://", "https://")):
         raise ValueError("image_url 必须是 http(s) 图片地址")
 
-    prompt = build_prompt(product_name, kind)
+    prompt = build_prompt(product_name, kind, variant)
     models = _models()
     if not models:
         raise ImageGenerationUnavailable("IMAGE_GEN_MODELS 为空")

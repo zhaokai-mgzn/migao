@@ -122,11 +122,12 @@ public class ProductImageClient {
      *
      * @param imageUrl    商家上传的样图（https）
      * @param productName 商品名（提示词用）
-     * @param kind        main / texture / craft / scene（调用方已校验）
+     * @param kind        main / white / texture / craft / scene（调用方已校验）
+     * @param variant     主图构图变体（0/1/2，其它用途无意义；见 issue #7782）
      * @return 临时图 URL + 实际使用的模型名
      * @throws BusinessException 422：未配置 token / 端点可达但失败 / 响应缺 {@code data.image_url}
      */
-    public GeneratedImage generate(String imageUrl, String productName, String kind) {
+    public GeneratedImage generate(String imageUrl, String productName, String kind, int variant) {
         String url = endpoint();
         if (!StringUtils.hasText(serviceToken)) {
             throw fail(NOT_CONFIGURED, "未配置 ai-agent.service-token", null);
@@ -137,6 +138,7 @@ public class ProductImageClient {
         payload.put("image_url", imageUrl);
         payload.put("product_name", productName);
         payload.put("kind", kind);
+        payload.put("variant", variant);
 
         try {
             HttpHeaders headers = new HttpHeaders();

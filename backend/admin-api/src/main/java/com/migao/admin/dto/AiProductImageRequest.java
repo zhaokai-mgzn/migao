@@ -1,5 +1,7 @@
 package com.migao.admin.dto;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
@@ -22,7 +24,17 @@ public class AiProductImageRequest {
     @Size(max = 60, message = "商品名不能超过 60 字")
     private String productName;
 
-    /** 用途：main 主图 / texture 材质 / craft 工艺 / scene 场景。 */
+    /** 用途：main 主图 / white 白底图 / texture 材质 / craft 工艺 / scene 场景。 */
     @NotBlank(message = "请选择生成用途")
     private String kind;
+
+    /**
+     * 主图构图变体（issue #7782）：0 正面棚拍 / 1 半垂坠 / 2 悬挂近景。
+     *
+     * <p>同一用途连点「再生成一张」时由前端递增，避免两次出同一张图（用户 2026-10-25
+     * 「主图图片生成的都一样」）。其它用途忽略此值；缺省 = 0（老客户端不受影响）。</p>
+     */
+    @Min(value = 0, message = "主图变体序号不合法")
+    @Max(value = 2, message = "主图变体序号不合法")
+    private Integer variant;
 }

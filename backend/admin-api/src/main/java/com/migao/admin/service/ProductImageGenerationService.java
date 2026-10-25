@@ -47,7 +47,7 @@ import java.util.UUID;
 public class ProductImageGenerationService {
 
     /** 与前端「用这张」的四个入口一一对应（前端另有一份文案，取值只有这一份真值）。 */
-    public static final Set<String> KINDS = Set.of("main", "texture", "craft", "scene");
+    public static final Set<String> KINDS = Set.of("main", "white", "texture", "craft", "scene");
 
     /** 与 {@code UploadGuard} 的图片上限同口径（5MB）；超过则先压成 JPEG。 */
     static final long MAX_IMAGE_BYTES = 5L * 1024 * 1024;
@@ -87,15 +87,15 @@ public class ProductImageGenerationService {
      * @return {@code {"url": OSS 永久地址, "model": 实际模型名}}
      * @throws BusinessException 422：用途非法 / 样图地址非法 / 临时图域名不可信 / 图片过大 / 上传失败
      */
-    public Map<String, String> generate(String imageUrl, String productName, String kind) {
+    public Map<String, String> generate(String imageUrl, String productName, String kind, int variant) {
         if (!StringUtils.hasText(kind) || !KINDS.contains(kind)) {
-            throw BusinessException.validationError("用途只能是 main / texture / craft / scene");
+            throw BusinessException.validationError("用途只能是 main / white / texture / craft / scene");
         }
         if (!StringUtils.hasText(imageUrl) || !imageUrl.startsWith("https://")) {
             throw BusinessException.validationError("样图地址必须是 https 图片地址");
         }
 
-        ProductImageClient.GeneratedImage generated = client.generate(imageUrl, productName, kind);
+        ProductImageClient.GeneratedImage generated = client.generate(imageUrl, productName, kind, variant);
         byte[] bytes = download(generated.imageUrl());
         String extension = detectExtension(bytes);
         if (bytes.length > REENCODE_THRESHOLD) {

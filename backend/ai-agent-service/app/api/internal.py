@@ -106,7 +106,14 @@ class ImageGenerateRequest(BaseModel):
     tenant_id: int = Field(..., description="租户 ID（仅日志归属，不参与生成）")
     image_url: str = Field(..., description="商家上传的样图 URL（https）")
     product_name: str = Field(..., description="商品名（提示词里用；≤60 字）")
-    kind: str = Field("main", description="用途：main 主图 / texture 材质 / craft 工艺 / scene 场景")
+    kind: str = Field(
+        "main",
+        description="用途：main 主图 / white 白底图 / texture 材质 / craft 工艺 / scene 场景",
+    )
+    variant: int = Field(
+        0, ge=0, le=2,
+        description="主图构图变体序号（issue #7782）：0 正面棚拍 / 1 半垂坠 / 2 悬挂近景；其它用途忽略",
+    )
 
 
 class OperationQtyPosition(BaseModel):
@@ -476,13 +483,13 @@ async def image_generate(
     """
     logger.info(
         f"[image-gen] generate triggered: tenant_id={request.tenant_id}, "
-        f"kind={request.kind}, product={request.product_name!r}"
+        f"kind={request.kind}, variant={request.variant}, product={request.product_name!r}"
     )
     if request.kind not in IMAGE_GEN_KINDS:
         raise HTTPException(status_code=400, detail=f"kind 只能是 {'/'.join(IMAGE_GEN_KINDS)}")
     try:
         data = await generate_product_image(
-            request.image_url, request.product_name, request.kind
+            request.image_url, request.product_name, request.kind, variant=request.variant
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
