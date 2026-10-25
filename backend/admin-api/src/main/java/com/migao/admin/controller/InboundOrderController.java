@@ -43,13 +43,18 @@ public class InboundOrderController {
 
     /**
      * 入库单列表（权限 inbound:view）
-     * GET /api/admin/inbound-orders?keyword=&status=
+     * GET /api/admin/inbound-orders?keyword=&status=&bizCategory=
+     *
+     * <p>{@code bizCategory}（V196 / issue #7794）：{@code fabric} 原料仓入库 / {@code finished}
+     * 成品仓入库；缺省 = 两类都返回（向后兼容，既有调用点与站内信深链行为不变）。</p>
      */
     @GetMapping
     @RequirePermission("inbound:view")
     public ApiResponse<List<InboundOrderLine>> list(@RequestParam(required = false) String keyword,
-                                                    @RequestParam(required = false) String status) {
-        return ApiResponse.success(inboundOrderService.list(keyword, status, TenantContext.getTenantId()));
+                                                    @RequestParam(required = false) String status,
+                                                    @RequestParam(required = false) String bizCategory) {
+        return ApiResponse.success(
+                inboundOrderService.list(keyword, status, bizCategory, TenantContext.getTenantId()));
     }
 
     /**

@@ -158,7 +158,7 @@ class InboundOrderListBatchNosRealDbTest {
     private static List<InboundOrderLine> list(Long tenantId, String keyword) {
         try (SqlSession session = factory.openSession(true)) {
             return session.getMapper(InboundOrderQueryMapper.class)
-                    .selectOrderLines(tenantId, keyword, null, 50);
+                    .selectOrderLines(tenantId, keyword, null, null, 50);
         }
     }
 

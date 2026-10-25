@@ -3628,6 +3628,11 @@ export interface InboundOrderLine {
   warehouse?: string
   inboundDate: string
   status: InboundOrderStatus
+  /**
+   * 业务类别（V196，issue #7794）：`fabric` 原料仓 / `finished` 成品仓 ——
+   * 列表页两个视图的分界；缺省（存量响应不返）按原料仓读。
+   */
+  bizCategory?: 'fabric' | 'finished'
   totalAmount: number
   remark?: string
   postedAt?: string
@@ -3637,6 +3642,13 @@ export interface InboundOrderLine {
   itemCount: number
   /** 明细总数量（聚合） */
   totalQuantity: number
+  /**
+   * **套数合计**（聚合，issue #7794）—— 成品视图那一列。
+   *
+   * 成品按「套 × 部位」逐行入库（V197）⇒ 行数 = 部位数、套数 = 套的个数；没有套号的存量行
+   * （V196 订单行粒度：一行 = 一件成品 = 一套）按一行一套计（服务端 SQL 算好，前端不重算）。
+   */
+  setCount?: number
   /**
    * 该单**已生成**的批次号（聚合，逗号分隔；issue #5844）。
    *
@@ -3719,6 +3731,20 @@ export interface InboundOrderItem {
   legacyBatchNo?: string | null
   /** 每卷米数（卷长；与 rollCount 成对时参与换算） */
   rollLengthM?: number | null
+  /**
+   * 以下五个字段**只有成品行**（`bizCategory === 'finished'`）有值（V194 / V197，issue #7794）——
+   * 成品仓入库的意义就是「这件成品在哪个仓位」。
+   */
+  /** 仓位号快照（成品行） */
+  binCode?: string | null
+  /** 套号快照（成品行；V197 / #7762） */
+  setNo?: string | null
+  /** 部位码短码（成品行；V197 / #7762） */
+  shortCode?: string | null
+  /** 品名快照（成品行没有 SKU 货号，展示靠它） */
+  productName?: string | null
+  /** 计量单位：m = 米（布料行）/ set = 套（成品行） */
+  unit?: string | null
   remark?: string
 }
 
@@ -3731,6 +3757,8 @@ export interface InboundOrder {
   warehouse?: string
   inboundDate: string
   status: InboundOrderStatus
+  /** 业务类别（issue #7794）：详情弹窗据此切换明细列（成品单显示套号 / 仓位号 / 短码） */
+  bizCategory?: 'fabric' | 'finished'
   totalAmount: number
   remark?: string
   postedAt?: string
@@ -3847,6 +3875,8 @@ export interface OpeningImportReport {
 export interface InboundOrderListParams {
   keyword?: string
   status?: InboundOrderStatus | ''
+  /** 业务类别（issue #7794）：`fabric` 原料仓 / `finished` 成品仓；缺省 = 两类都返回 */
+  bizCategory?: 'fabric' | 'finished'
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

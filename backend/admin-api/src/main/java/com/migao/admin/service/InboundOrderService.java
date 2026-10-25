@@ -757,9 +757,23 @@ public class InboundOrderService {
 
     // ============================================================ 只读
 
-    /** 列表（关键词匹配 单号/供应商/送货单号；状态精确匹配；按入库日期倒序） */
-    public List<InboundOrderLine> list(String keyword, String status, Long tenantId) {
-        return inboundOrderQueryMapper.selectOrderLines(tenantId, trimToNull(keyword), trimToNull(status), LIST_LIMIT);
+    /**
+     * 列表（关键词匹配 单号/供应商/送货单号；状态与业务类别精确匹配；按入库日期倒序）。
+     *
+     * <p>{@code bizCategory}（V196 / issue #7794）：{@code fabric} 原料仓入库 / {@code finished}
+     * 成品仓入库 —— 页面两个视图的分界；缺省 = 不过滤（向后兼容：既有调用点与站内信深链行为不变）。</p>
+     */
+    public List<InboundOrderLine> list(String keyword, String status, String bizCategory, Long tenantId) {
+        String category = trimToNull(bizCategory);
+        // 未知取值**显式拒绝**：静默当「不过滤」会让成品单继续混进原料仓列表（正是本单要修的形态），
+        // 静默当「空」又会让列表凭空少一批单 —— 两种都不如报错（可读提示 + 让商家刷新重试）。
+        if (category != null
+                && !InboundOrder.BIZ_FABRIC.equals(category)
+                && !InboundOrder.BIZ_FINISHED.equals(category)) {
+            throw BusinessException.validationError("入库单类别只支持 fabric / finished；请刷新页面后重试");
+        }
+        return inboundOrderQueryMapper.selectOrderLines(tenantId, trimToNull(keyword), trimToNull(status),
+                category, LIST_LIMIT);
     }
 
     /** 详情（单号 / UUID / 前缀 均可作为 id） */
