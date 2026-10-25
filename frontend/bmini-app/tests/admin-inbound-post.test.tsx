@@ -7,7 +7,7 @@
  *
  * 判据：
  * ① 能打开能读数据：单号 / 状态（中文）/ 供应商 / 日期 / 行数 / 金额（**元**两位小数）；
- * ② 详情懒加载：点卡片才拉详情，明细逐行渲染（货号 · 颜色 · 门幅 / 数量 / 批次）；
+ * ② 详情懒加载：点卡片才拉详情，明细逐行渲染（货号 · 颜色 · 门幅 / **入库米数** / 批次）；
  * ③ **过账按钮只对草稿出现**（已过账的单不出现按钮，给「已由谁何时过账」）；
  * ④ 二次确认：取消 ⇒ 一次都不调 PATCH；确认 ⇒ 恰好一次 + 参数逐字 `{action:'post'}`；
  * ⑤ **无权限有文案**：403 ⇒ 「无「入库过账」查看权限（需要权限码 inbound:view）」；
@@ -133,7 +133,7 @@ describe('管理面②入库过账（issue #5654）', () => {
     await waitFor(() => expect(mockDetail).toHaveBeenCalledWith('i1'))
     const detail = await screen.findByTestId('inbound-detail-i1')
     expect(detail.textContent).toContain('BL-001 · 米白 · 2.8m')
-    expect(detail.textContent).toContain('数量 200')
+    expect(detail.textContent).toContain('入库 200 米')
     expect(detail.textContent).toContain('过账后生成批次号')
     expect(screen.getByTestId('inbound-post-btn-i1')).toBeTruthy()
   })

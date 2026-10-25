@@ -333,6 +333,10 @@ export interface InboundOrderItem {
   colorName?: string | null
   doorWidth?: string | null
   quantity?: number | null
+  /** **入库米数**（服务端算：卷数 × 卷长；issue #7709）。缺席（旧服务端）时展示回落 quantity */
+  meters?: number | null
+  /** 卷数（可空；issue #7709）—— 与 rollLengthM 一起决定 meters */
+  rollCount?: number | null
   unitCost?: number | null
   amount?: number | null
   /** 批次号（**过账后才有**；草稿为 null） */

@@ -466,9 +466,9 @@ export default function StockLedgerPage() {
                 <tr>
                   <th className="px-3 py-2 text-left font-medium whitespace-nowrap">时间</th>
                   <th className="px-3 py-2 text-left font-medium whitespace-nowrap">货号 / SKU</th>
-                  <th className="px-3 py-2 text-right font-medium whitespace-nowrap">变动</th>
-                  <th className="px-3 py-2 text-right font-medium whitespace-nowrap">变动前</th>
-                  <th className="px-3 py-2 text-right font-medium whitespace-nowrap">变动后</th>
+                  <th className="px-3 py-2 text-right font-medium whitespace-nowrap">变动(米)</th>
+                  <th className="px-3 py-2 text-right font-medium whitespace-nowrap">变动前(米)</th>
+                  <th className="px-3 py-2 text-right font-medium whitespace-nowrap">变动后(米)</th>
                   <th className="px-3 py-2 text-left font-medium whitespace-nowrap">原因</th>
                   <th className="px-3 py-2 text-left font-medium whitespace-nowrap">单据号</th>
                   <th className="px-3 py-2 text-left font-medium whitespace-nowrap">操作人</th>

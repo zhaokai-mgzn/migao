@@ -222,18 +222,24 @@ describe('入库单页面（PR-037 / issue #5034）', () => {
     )
   })
 
-  it('详情明细有「卷长(米)」列：原值直读（58.55 就是 58.55）、未填 ⇒ "-"（不写 0）', async () => {
-    // 🔴 两个断言各自有判别力：
-    //   ① `58.55` ⇒ **不得**被渲染成 `58.6` —— 卷长是 `NUMERIC(8,2)`，而 `formatStockQuantity`
-    //      是**库存米数**的 0.1 米粒度格式化器；拿它渲染卷长 = 静默改数（两个量各有自己的精度）。
-    //   ② 未填 ⇒ `-`，**不是** `0`（「0 米一卷」与「没填卷长」不是一回事）。
+  it('详情明细：卷数 / 卷长(米/卷) / 入库米数(米) 三列 —— 米数用服务端值，卷长原值直读', async () => {
+    // 🔴 三条断言各自有判别力：
+    //   ① **入库米数 = 服务端 `meters`**（issue #7709）：历史拍照行的 `quantity` 还是卷数（1），
+    //      页面必须显示 70 —— 拿 `quantity` 顶替就是「入库单说 1 米、库存也说 1 米」的那个形态；
+    //   ② 卷长 `58.55` ⇒ **不得**被渲染成 `58.6`（卷长是 `NUMERIC(8,2)`，而 `formatStockQuantity`
+    //      是**库存米数**的 0.1 米粒度格式化器；拿它渲染卷长 = 静默改数）；
+    //   ③ 卷长未填 ⇒ `-`，**不是** `0`（「0 米一卷」与「没填卷长」不是一回事）。
     mockDetail.mockResolvedValueOnce({
       data: {
         data: {
           ...draftDetail,
           items: [
-            { ...draftDetail.items[0], id: 100, skuCode: 'SKU-ROLL', rollLengthM: 58.55 },
-            { ...draftDetail.items[0], id: 101, skuCode: 'SKU-NOROLL', rollLengthM: null },
+            // 历史拍照行：quantity 存的是卷数、meters 是还原后的米数
+            { ...draftDetail.items[0], id: 100, skuCode: 'SKU-LEGACY', quantity: 1, rollCount: null, rollLengthM: 70, meters: 70 },
+            // 新行：卷数 1 + 卷长 58.55 ⇒ 米数 58.5
+            { ...draftDetail.items[0], id: 101, skuCode: 'SKU-ROLL', quantity: 58.5, rollCount: 1, rollLengthM: 58.55, meters: 58.5 },
+            // 按米录入（卷长只是留档）
+            { ...draftDetail.items[0], id: 102, skuCode: 'SKU-NOROLL', quantity: 30, rollCount: null, rollLengthM: null, meters: 30 },
           ],
         },
       },
@@ -245,12 +251,19 @@ describe('入库单页面（PR-037 / issue #5034）', () => {
       within(screen.getByText('RK-20260923-0001').closest('tr')!).getByRole('button', { name: '详情' }),
     )
 
-    const detailTable = (await screen.findByText('卷长(米)')).closest('table') as HTMLTableElement
+    const detailTable = (await screen.findByText('卷长(米/卷)')).closest('table') as HTMLTableElement
     const rowOf = (sku: string) =>
       within(within(detailTable).getByText(sku, { exact: false }).closest('tr') as HTMLElement)
-    // 列序：0 货号/颜色/门幅 · 1 数量 · 2 单价 · 3 金额 · 4 批次号 · 5 缸号 · 6 卷长 · 7 旧系统批次号
-    expect(rowOf('SKU-ROLL').getAllByRole('cell')[6].textContent).toBe('58.55')
-    expect(rowOf('SKU-NOROLL').getAllByRole('cell')[6].textContent).toBe('-')
+    // 列序：0 货号/颜色/门幅 · 1 卷数 · 2 卷长(米/卷) · 3 入库米数(米) · 4 单价 · 5 金额 · 6 批次号 · 7 缸号 · 8 旧系统批次号
+    expect(rowOf('SKU-LEGACY').getAllByRole('cell')[1].textContent).toBe('-')
+    expect(rowOf('SKU-LEGACY').getAllByRole('cell')[2].textContent).toBe('70')
+    expect(rowOf('SKU-LEGACY').getAllByRole('cell')[3].textContent).toBe('70')
+    expect(rowOf('SKU-ROLL').getAllByRole('cell')[1].textContent).toBe('1')
+    expect(rowOf('SKU-ROLL').getAllByRole('cell')[2].textContent).toBe('58.55')
+    expect(rowOf('SKU-ROLL').getAllByRole('cell')[3].textContent).toBe('58.5')
+    expect(rowOf('SKU-NOROLL').getAllByRole('cell')[1].textContent).toBe('-')
+    expect(rowOf('SKU-NOROLL').getAllByRole('cell')[2].textContent).toBe('-')
+    expect(rowOf('SKU-NOROLL').getAllByRole('cell')[3].textContent).toBe('30')
   })
 
   it('已过账的单：详情里没有过账/作废入口（库存已进台账，冲销须另开单据）', async () => {

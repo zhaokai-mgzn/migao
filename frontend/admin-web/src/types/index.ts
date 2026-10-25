@@ -3642,10 +3642,20 @@ export interface InboundOrderItem {
   colorName?: string
   /** 快照：门幅 */
   doorWidth?: string
+  /** 库里原值（新行恒为米数；口径见 {@link meters}） */
   quantity: number
+  /**
+   * **入库米数** —— 这一行真正进了多少米库存（服务端算，issue #7709）。
+   *
+   * 有卷数 ⇒ = 卷数 × 卷长；否则 = `quantity`。入库单明细、批次余量、库存流水说的是同一个米数
+   * ⇒ 展示侧**原样渲染**，不在浏览器里再算一遍。
+   */
+  meters?: number | null
+  /** 卷数（可空；issue #7709）—— 与 `rollLengthM` 一起决定 `meters` */
+  rollCount?: number | null
   /** 入库单价；null = 未记单价（只加数量不算成本） */
   unitCost?: number | null
-  /** 行金额 = quantity × unitCost；null 单价 ⇒ null */
+  /** 行金额 = 入库米数 × unitCost；null 单价 ⇒ null */
   amount?: number | null
   /** 批次号（**过账后才有**；草稿为 null） */
   batchNo?: string | null
@@ -3653,7 +3663,7 @@ export interface InboundOrderItem {
   dyeLot?: string | null
   /** 旧系统批次号（可空；仅期初建账的单会有；V118 / issue #5153） */
   legacyBatchNo?: string | null
-  /** 每卷米数（仅记录/打印卷标） */
+  /** 每卷米数（卷长；与 rollCount 成对时参与换算） */
   rollLengthM?: number | null
   remark?: string
 }
@@ -3710,6 +3720,7 @@ export interface InboundOrderItemInput {
   productId: string
   /** 🔴 issue #5904：SKU id 是**雪花号字符串**（≈2.1e18 > 2^53）—— 原样透传，不许 Number() */
   skuId: string
+  /** 按米录入时的入库米数；**带了 rollCount 时服务端不采信它**（由卷数 × 卷长算出，issue #7709） */
   quantity: number
   unitCost?: number | null
   dyeLot?: string | null
@@ -3718,7 +3729,10 @@ export interface InboundOrderItemInput {
    * 采购收货填了会被服务端拒绝（系统批次号与旧系统批次号不得互相冒充）。
    */
   legacyBatchNo?: string | null
+  /** 每卷米数（卷长）：与 `rollCount` 成对时参与换算（入库米数 = 卷数 × 卷长） */
   rollLengthM?: number | null
+  /** 卷数（正整数，可空；issue #7709）—— 填了就必须填 `rollLengthM`，入库米数由服务端算 */
+  rollCount?: number | null
   remark?: string | null
 }
 

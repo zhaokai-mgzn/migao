@@ -219,6 +219,7 @@ describe('建单：一行 = 一个批次，payload 逐字段（PR-037）', () =>
         dyeLot: 'G-2026-0912',
         legacyBatchNo: null,
         rollLengthM: null,
+        rollCount: null,
       },
     ])
     // 建完回列表（新单在列表里是草稿，过账在详情弹窗里做）
@@ -317,6 +318,7 @@ describe('入库数量：1 位小数（PR-046，issue #5063）', () => {
       dyeLot: null,
       legacyBatchNo: null,
       rollLengthM: null,
+      rollCount: null,
     }])
     const { toast } = await import('sonner')
     expect(toast.error).not.toHaveBeenCalled()
@@ -400,8 +402,8 @@ describe('期初建账单条录入（PR-062，V118 / issue #5153）', () => {
     await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
     const payload = mockCreate.mock.calls[0][0]
     expect(payload.source).toBe('opening')
-    // 🔴 **七字段逐值 + 数组长度**（`toEqual`，不是 `toMatchObject`）——迁移**不许降级**：
-    //    只钉两个字段会漏掉「少一个键」「多一行」「unitCost/dyeLot/rollLengthM 写错」这类回归。
+    // 🔴 **八字段逐值 + 数组长度**（`toEqual`，不是 `toMatchObject`）——迁移**不许降级**：
+    //    只钉两个字段会漏掉「少一个键」「多一行」「unitCost/dyeLot/rollLengthM/rollCount 写错」这类回归。
     expect(payload.items).toEqual([
       {
         productId: 'prod-1',
@@ -411,6 +413,7 @@ describe('期初建账单条录入（PR-062，V118 / issue #5153）', () => {
         dyeLot: null,
         legacyBatchNo: 'OLD-2024-0001',
         rollLengthM: null,
+        rollCount: null,
       },
     ])
     const { toast } = await import('sonner')
@@ -482,15 +485,23 @@ describe('入库三格（数量 / 单价 / 卷长）的数值语义 —— 与�
   })
 })
 
-// ========== 按卷录入（issue #7644）：卷数 × 卷长 ⇒ 数量（米）==========
+// ========== 按卷录入（issue #7644 / #7709）：卷数 × 卷长 ⇒ 入库米数 ==========
 //
 // 用户 2026-10-24 报障：按「1 卷 × 70 米」登记，系统只 +1 米（当时明细表只有「数量」一格，
 // 单位是米，而旁边的「卷长」只是留档）。同日选择的口径：采购入库也按「卷数 × 卷长」算米数
 // **＋** 把表单的单位写清楚。
-// 🔴 换算只发生在**提交前的前端**：提交的仍是米数（服务端契约、以及 #5034「卷长仅记录」
-// 的防误乘保障一字不动）；卷数留空 = 按米手填（散剪 / 尾料走这条路）。
-describe('按卷录入：卷数 × 卷长 ⇒ 数量（米）自动换算（issue #7644）', () => {
-  it('卷数 1 + 卷长 70 ⇒ 数量（米）自动 70 且只读，提交 quantity=70（改前只加 1 米）', async () => {
+// 🔴 2026-10-25（issue #7709）改判：换算的**权威在服务端** —— 本页把「卷数」原样提交
+// （`rollCount`），服务端算 `inbound_order_items.quantity`（恒为米）；格下那行只是**预览**。
+// 改前换算在前端（#7646），客户端不乘（旧 bundle / 直接填数量）= 少记 70 倍。
+// 卷数留空 = 按米手填（散剪 / 尾料走这条路，payload 里 `rollCount: null`）。
+describe('按卷录入：卷数 × 卷长 ⇒ 入库米数（issue #7644 / #7709）', () => {
+  /**
+   * 判据 1（**本包红证**）：卷数 1 + 卷长 70 ⇒ payload 带 `rollCount: 1`，数量格显示 70（只读）。
+   *
+   * 改前（#7709 之前）服务端不认卷数、只认随行的 quantity ⇒ 旧 bundle 送 1 就记 1 米；
+   * 现在换算归服务端，前端即使送错也不影响库存 —— 这条钉的是「卷数确实到了服务端」。
+   */
+  it('卷数 1 + 卷长 70 ⇒ payload 带 rollCount=1，数量格预览 70（只读）', async () => {
     mockCreate.mockResolvedValue({ data: { data: createdOrder } })
     render(<NewInboundOrderPage />)
     const { rolls, qty, roll } = await openWithLine()
@@ -505,7 +516,11 @@ describe('按卷录入：卷数 × 卷长 ⇒ 数量（米）自动换算（issu
 
     fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
     await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
-    expect(mockCreate.mock.calls[0][0].items[0]).toMatchObject({ quantity: 70, rollLengthM: 70 })
+    expect(mockCreate.mock.calls[0][0].items[0]).toMatchObject({
+      quantity: 70,
+      rollLengthM: 70,
+      rollCount: 1,
+    })
   })
 
   it('卷数 3 + 卷长 60 ⇒ 180 米（多卷同样按乘积）', async () => {
@@ -526,7 +541,11 @@ describe('按卷录入：卷数 × 卷长 ⇒ 数量（米）自动换算（issu
     fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
 
     await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
-    expect(mockCreate.mock.calls[0][0].items[0]).toMatchObject({ quantity: 30, rollLengthM: null })
+    expect(mockCreate.mock.calls[0][0].items[0]).toMatchObject({
+      quantity: 30,
+      rollLengthM: null,
+      rollCount: null,
+    })
   })
 
   it('卷数 0.5 ⇒ 显式拒绝（半卷按米入库：卷数留空、数量填米）', async () => {

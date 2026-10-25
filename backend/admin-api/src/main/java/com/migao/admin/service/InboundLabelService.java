@@ -179,10 +179,9 @@ public class InboundLabelService {
             view.setSkuCode(item.getSkuCode());
             view.setColorName(item.getColorName());
             view.setDoorWidth(item.getDoorWidth());
-            // 贴在布卷上的标签必须写**米数**：photo 单的明细行「数量」是卷数（issue #6812）⇒
-            // 换算由 InboundOrderService.metersFor 一处给出（其余来源逐字返回数量本身）
-            view.setQuantity(InboundOrderService.metersFor(order.getSource(), item.getQuantity(),
-                    item.getRollLengthM()));
+            // 贴在布卷上的标签必须写**米数**：由单据详情同一处算好（明细行的 meters ——
+            // 按卷录入 = 卷数 × 卷长；历史拍照行也在那里还原，issue #7709）⇒ 标签与库存同一个数
+            view.setQuantity(item.getMeters());
             view.setDyeLot(item.getDyeLot());
             view.setBatchNo(item.getBatchNo());
             view.setProductName(productNameOf(item.getProductId()));

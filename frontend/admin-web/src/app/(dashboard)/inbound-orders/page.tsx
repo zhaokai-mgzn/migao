@@ -561,17 +561,21 @@ export default function InboundOrdersPage() {
               </div>
             </div>
 
+            {/* 窄屏横向滚动逃逸口 + 表头禁折行（issue #6398 的守卫规则 ①）：本包新增「卷数 / 卷长 / 入库米数」
+                三列后列更宽，不这么做表头会被压成一行一个字 */}
+            <div className="overflow-x-auto">
             <table className="w-full text-sm border border-neutral-200 rounded overflow-hidden">
               <thead className="bg-neutral-50 text-neutral-600">
                 <tr>
-                  <th className="text-left px-3 py-2 font-medium">货号 / 颜色 / 门幅</th>
-                  <th className="text-right px-3 py-2 font-medium">数量</th>
-                  <th className="text-right px-3 py-2 font-medium">单价</th>
-                  <th className="text-right px-3 py-2 font-medium">金额</th>
-                  <th className="text-left px-3 py-2 font-medium">批次号</th>
-                  <th className="text-left px-3 py-2 font-medium">缸号</th>
-                  <th className="text-right px-3 py-2 font-medium">卷长(米)</th>
-                  <th className="text-left px-3 py-2 font-medium">旧系统批次号</th>
+                  <th className="text-left px-3 py-2 font-medium whitespace-nowrap">货号 / 颜色 / 门幅</th>
+                  <th className="text-right px-3 py-2 font-medium whitespace-nowrap">卷数</th>
+                  <th className="text-right px-3 py-2 font-medium whitespace-nowrap">卷长(米/卷)</th>
+                  <th className="text-right px-3 py-2 font-medium whitespace-nowrap">入库米数(米)</th>
+                  <th className="text-right px-3 py-2 font-medium whitespace-nowrap">单价</th>
+                  <th className="text-right px-3 py-2 font-medium whitespace-nowrap">金额</th>
+                  <th className="text-left px-3 py-2 font-medium whitespace-nowrap">批次号</th>
+                  <th className="text-left px-3 py-2 font-medium whitespace-nowrap">缸号</th>
+                  <th className="text-left px-3 py-2 font-medium whitespace-nowrap">旧系统批次号</th>
                 </tr>
               </thead>
               <tbody>
@@ -580,7 +584,23 @@ export default function InboundOrdersPage() {
                     <td className="px-3 py-2 text-neutral-700">
                       {it.skuCode || '-'} / {it.colorName || '-'} / {it.doorWidth || '-'}
                     </td>
-                    <td className="px-3 py-2 text-right">{formatStockQuantity(it.quantity)}</td>
+                    {/* 卷数（issue #7709）：按卷录入时才有；按米录入 / 历史行 ⇒ 「-」
+                        （不拿「1」冒充：没记卷数就说没记，别让商家以为入的是 1 卷） */}
+                    <td className="px-3 py-2 text-right">
+                      {it.rollCount != null ? String(it.rollCount) : '-'}
+                    </td>
+                    {/* 卷长「1 卷 = 多少米」：**原值直读**（`NUMERIC(8,2)`）。
+                        ⚠️ 刻意**不用** `formatStockQuantity` —— 那是**库存米数**的 0.1 米粒度格式化器，
+                        拿它渲染卷长会把 58.55 静默变成 58.6（两个不同的量各有自己的精度）。
+                        未填 ⇒ 「-」（不写 0：0 米一卷不是「没填」的意思）。 */}
+                    <td className="px-3 py-2 text-right text-neutral-600">
+                      {it.rollLengthM != null ? String(it.rollLengthM) : '-'}
+                    </td>
+                    {/* 入库米数：**服务端算好的那个数**（卷数 × 卷长；历史拍照行也已在服务端还原）。
+                        库存 / 批次余量 / 库存流水说的是同一个米数 ⇒ 这里不再自己乘一遍 */}
+                    <td className="px-3 py-2 text-right font-medium">
+                      {formatStockQuantity(it.meters ?? it.quantity)}
+                    </td>
                     <td className="px-3 py-2 text-right">
                       {it.unitCost != null ? `¥${Number(it.unitCost).toFixed(2)}` : '未记'}
                     </td>
@@ -589,25 +609,19 @@ export default function InboundOrdersPage() {
                     </td>
                     <td className="px-3 py-2 font-mono text-neutral-900">{it.batchNo || '过账后生成'}</td>
                     <td className="px-3 py-2 text-neutral-600">{it.dyeLot || '-'}</td>
-                    {/* 卷长「1 卷 = 多少米」：**原值直读**（`NUMERIC(8,2)`）。
-                        ⚠️ 刻意**不用** `formatStockQuantity` —— 那是**库存米数**的 0.1 米粒度格式化器，
-                        拿它渲染卷长会把 58.55 静默变成 58.6（两个不同的量各有自己的精度）。
-                        未填 ⇒ 「-」（不写 0：0 米一卷不是「没填」的意思）。 */}
-                    <td className="px-3 py-2 text-right text-neutral-600">
-                      {it.rollLengthM != null ? String(it.rollLengthM) : '-'}
-                    </td>
                     <td className="px-3 py-2 font-mono text-neutral-600">{it.legacyBatchNo || '-'}</td>
                   </tr>
                 ))}
                 {(!detail.items || detail.items.length === 0) && (
                   <tr>
-                    <td colSpan={8} className="px-3 py-6 text-center text-neutral-400">
+                    <td colSpan={9} className="px-3 py-6 text-center text-neutral-400">
                       无明细
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
+            </div>
           </div>
         )}
       </Modal>

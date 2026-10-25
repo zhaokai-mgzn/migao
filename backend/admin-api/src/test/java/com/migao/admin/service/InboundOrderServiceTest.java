@@ -1224,38 +1224,175 @@ class InboundOrderServiceTest {
         }
     }
 
-    // ════════════════ issue #6812：拍照入库的**单位口径**（数量 = 卷数、卷长 = 每卷米数）════════════
+    // ════════════════ issue #6812 / #7709：按卷录入的**单位口径**（卷数 × 卷长 = 入库米数）════════════
 
     @Nested
-    @DisplayName("拍照入库单位口径（issue #6812）")
-    class PhotoUnitSemantics {
+    @DisplayName("入库米数 = 卷数 × 卷长（服务端唯一换算点）")
+    class RollMetersSemantics {
+
+        private InboundOrder draftOrder(String source) {
+            InboundOrder o = new InboundOrder();
+            o.setId("inbound-uuid-1");
+            o.setTenantId(TENANT);
+            o.setInboundNo("RK-20261024-0001");
+            o.setStatus(InboundOrder.STATUS_DRAFT);
+            o.setInboundDate(businessClock.today());
+            o.setSupplier("柯桥××布行");
+            o.setSource(source);
+            return o;
+        }
+
+        private InboundOrderItem line(String quantity, Integer rollCount, String rollLengthM) {
+            InboundOrderItem l = new InboundOrderItem();
+            l.setId(100L);
+            l.setTenantId(TENANT);
+            l.setInboundOrderId("inbound-uuid-1");
+            l.setSkuId(11L);
+            l.setProductId("prod-1");
+            l.setSkuCode("HUOHAO-01");
+            l.setQuantity(new BigDecimal(quantity));
+            l.setUnitCost(new BigDecimal("12.50"));
+            l.setRollCount(rollCount);
+            l.setRollLengthM(rollLengthM == null ? null : new BigDecimal(rollLengthM));
+            return l;
+        }
 
         @Test
-        @DisplayName("🔴 metersFor：photo 单 = 卷数 × 卷长；purchase 单 = 数量（卷长仍是记录列，不参与换算）")
-        void metersForPhotoMultipliesAndPurchaseDoesNot() {
-            assertThat(InboundOrderService.metersFor(InboundOrder.SOURCE_PHOTO,
-                    new BigDecimal("1"), new BigDecimal("67.2")))
-                    .isEqualByComparingTo("67.2");
-            assertThat(InboundOrderService.metersFor(InboundOrder.SOURCE_PHOTO,
-                    new BigDecimal("3"), new BigDecimal("60.5")))
+        @DisplayName("🔴 换算：卷数 × 卷长 = 米数；只填卷长不填卷数 ⇒ 数量本身就是米数（#5034 不变）")
+        void metersOfRollsMultiplies() {
+            assertThat(InboundOrderService.metersOfRolls(new BigDecimal("1"), new BigDecimal("70")))
+                    .isEqualByComparingTo("70");
+            assertThat(InboundOrderService.metersOfRolls(new BigDecimal("3"), new BigDecimal("60.5")))
                     .isEqualByComparingTo("181.5");
-            assertThat(InboundOrderService.metersFor(InboundOrder.SOURCE_PURCHASE,
-                    new BigDecimal("60.5"), new BigDecimal("60")))
-                    .as("采购/期初单：#5034 的「卷长仅记录」逐字保留 —— 60.5 米不能变成 3630 米")
+            assertThat(InboundOrderService.storedMeters(InboundOrder.SOURCE_PURCHASE,
+                    new BigDecimal("60.5"), new BigDecimal("60"), null))
+                    .as("按米录入：卷长只是供应商侧事实，60.5 米不能变成 3630 米")
                     .isEqualByComparingTo("60.5");
         }
 
         @Test
-        @DisplayName("🔴 metersFor：photo 缺卷长 / 米数不是 0.1 米整数倍 ⇒ 显式拒绝（不静默取整）")
-        void metersForPhotoFailsClosed() {
-            assertThatThrownBy(() -> InboundOrderService.metersFor(
-                    InboundOrder.SOURCE_PHOTO, new BigDecimal("1"), null))
+        @DisplayName("🔴 米数 0.1 米粒度 fail-closed：3 卷 × 0.33 米 = 0.99 ⇒ 显式拒绝（不静默取整）")
+        void metersOfRollsFailsClosed() {
+            assertThatThrownBy(() -> InboundOrderService.metersOfRolls(
+                    new BigDecimal("3"), new BigDecimal("0.33")))
+                    .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("🔴 读面兼容：历史拍照行（quantity 存的是卷数）仍还原成米数；新行不再乘第二遍")
+        void storedMetersKeepsLegacyPhotoRowsReadable() {
+            assertThat(InboundOrderService.storedMeters(InboundOrder.SOURCE_PHOTO,
+                    new BigDecimal("1"), new BigDecimal("70"), null))
+                    .as("历史拍照行（本改动之前）：quantity = 卷数 ⇒ 乘卷长还原")
+                    .isEqualByComparingTo("70");
+            assertThat(InboundOrderService.storedMeters(InboundOrder.SOURCE_PHOTO,
+                    new BigDecimal("70"), new BigDecimal("70"), 1))
+                    .as("新行：建单时已换算，quantity 就是米数 ⇒ 不乘第二遍（否则 70 → 4900）")
+                    .isEqualByComparingTo("70");
+            assertThat(InboundOrderService.storedMeters(InboundOrder.SOURCE_PURCHASE,
+                    new BigDecimal("70"), new BigDecimal("70"), 1))
+                    .isEqualByComparingTo("70");
+        }
+
+        @Test
+        @DisplayName("🔴 采购单「卷数 1 + 卷长 70」⇒ 入库米数 70（红证：改前按数量记成 1 米）")
+        void purchaseRollsBecomeMeters() {
+            when(productMapper.selectById("prod-1")).thenReturn(new Product());
+            when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenReturn(List.of(sku(11L, "prod-1", 0, null)));
+            when(inboundOrderMapper.selectOne(any(LambdaQueryWrapper.class)))
+                    .thenAnswer(inv -> lastInsertedOrder);
+            when(inboundOrderItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenAnswer(inv -> lastInsertedLines);
+
+            // 客户端随行的 quantity 仍是 1（旧 bundle / 商家按卷填）—— 服务端必须不采信
+            InboundOrderCreateRequest.Item line = itemQty("prod-1", 11L, "1", "12.50");
+            line.setRollCount(1);
+            line.setRollLengthM(new BigDecimal("70"));
+            service.create(request(line), TENANT, "139000001025");
+
+            ArgumentCaptor<InboundOrderItem> lineCap = ArgumentCaptor.forClass(InboundOrderItem.class);
+            verify(inboundOrderItemMapper).insert(lineCap.capture());
+            InboundOrderItem saved = lineCap.getValue();
+            assertThat(saved.getQuantity())
+                    .as("入库米数 = 卷数 × 卷长 = 70（随行的 quantity=1 一律不采信）")
+                    .isEqualByComparingTo("70");
+            assertThat(saved.getRollCount()).isEqualTo(1);
+            assertThat(saved.getRollLengthM()).isEqualByComparingTo("70");
+            assertThat(saved.getAmount()).as("行金额 = 70 × 12.50 = 875（不是 1 × 12.50）")
+                    .isEqualByComparingTo("875");
+        }
+
+        @Test
+        @DisplayName("🔴 过账：批次 / 库存 / 台账都是 70 米（库存流水不再是 +1）")
+        void postingMovesRollMeters() {
+            InboundOrder order = draftOrder(InboundOrder.SOURCE_PURCHASE);
+            InboundOrderItem l = line("70", 1, "70");
+            when(inboundOrderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(order);
+            when(inboundOrderItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenReturn(List.of(l)).thenReturn(List.of(l));
+            when(productSkuMapper.selectById(11L)).thenReturn(sku(11L, "prod-1", 5, null));
+            when(productSkuMapper.receiveStock(eq(11L), eq(new BigDecimal("70")), any(), anyString(), any()))
+                    .thenReturn(java.util.Map.of("beforeQuantity", new BigDecimal("5"),
+                            "afterQuantity", new BigDecimal("75")));
+
+            service.post("RK-20261024-0001", TENANT, "139000001025");
+
+            // ① 库存：+70 米（改前这里只有 +1）
+            verify(productSkuMapper).receiveStock(eq(11L), eq(new BigDecimal("70")), any(), anyString(), any());
+            // ② 批次：入库米数 70（批次余量页的「入库米数 / 剩余米数」就是它）
+            ArgumentCaptor<StockBatch> batchCap = ArgumentCaptor.forClass(StockBatch.class);
+            verify(stockBatchMapper).update(batchCap.capture());
+            assertThat(batchCap.getValue().getQuantity()).as("批次入库米数 = 70").isEqualByComparingTo("70");
+            assertThat(batchCap.getValue().getRollLengthM()).isEqualByComparingTo("70");
+            // ③ 台账：5 → 75（库存流水的「变动 +70」就是 after − before）
+            verify(stockLedgerService).record(eq(TENANT), eq("prod-1"), eq(11L), eq("HUOHAO-01"),
+                    eq(new BigDecimal("5")), eq(new BigDecimal("75")), eq(StockLedger.REASON_INBOUND),
+                    eq("RK-20261024-0001"), anyString(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("🔴 历史拍照草稿（quantity 还是卷数、无 roll_count）过账 ⇒ 仍按 卷数 × 卷长 记账")
+        void postingLegacyPhotoDraftStillMultiplies() {
+            InboundOrder order = draftOrder(InboundOrder.SOURCE_PHOTO);
+            InboundOrderItem l = line("1", null, "70");
+            when(inboundOrderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(order);
+            when(inboundOrderItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenReturn(List.of(l)).thenReturn(List.of(l));
+            when(productSkuMapper.selectById(11L)).thenReturn(sku(11L, "prod-1", 0, null));
+            when(productSkuMapper.receiveStock(eq(11L), eq(new BigDecimal("70")), any(), anyString(), any()))
+                    .thenReturn(java.util.Map.of("beforeQuantity", new BigDecimal("0"),
+                            "afterQuantity", new BigDecimal("70")));
+
+            service.post("RK-20261024-0001", TENANT, "worker-zhang");
+
+            verify(productSkuMapper).receiveStock(eq(11L), eq(new BigDecimal("70")), any(), anyString(), any());
+        }
+
+        @Test
+        @DisplayName("🔴 卷数缺卷长 / 半卷 / 单价 0 ⇒ 422（任何写之前拒绝）")
+        void rollCountFailsClosed() {
+            InboundOrderCreateRequest.Item noLength = itemQty("prod-1", 11L, "1", "12.50");
+            noLength.setRollCount(1);
+            assertThatThrownBy(() -> service.create(request(noLength), TENANT, "op"))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("卷长");
-            assertThatThrownBy(() -> InboundOrderService.metersFor(
-                    InboundOrder.SOURCE_PHOTO, new BigDecimal("3"), new BigDecimal("0.33")))
-                    .as("3 × 0.33 = 0.99 米 —— 0.1 米粒度之外的值必须显式拒绝")
-                    .isInstanceOf(BusinessException.class);
+
+            InboundOrderCreateRequest.Item halfRoll = itemQty("prod-1", 11L, "1", "12.50");
+            halfRoll.setRollCount(0);
+            halfRoll.setRollLengthM(new BigDecimal("70"));
+            assertThatThrownBy(() -> service.create(request(halfRoll), TENANT, "op"))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("正整数");
+
+            InboundOrderCreateRequest.Item zeroCost = itemQty("prod-1", 11L, "1", "0");
+            zeroCost.setRollCount(1);
+            zeroCost.setRollLengthM(new BigDecimal("70"));
+            assertThatThrownBy(() -> service.create(request(zeroCost), TENANT, "op"))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("必须大于 0");
+
+            verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
         }
 
         @Test
@@ -1272,8 +1409,8 @@ class InboundOrderServiceTest {
         }
 
         @Test
-        @DisplayName("🔴 服务端强制 photo 建单：数量按**卷数**落库、卷长按每卷米数落库、行金额按**米数**算")
-        void forcedPhotoOrderStoresRollFieldsAndComputesAmountByMeters() {
+        @DisplayName("🔴 服务端强制 photo 建单：卷数映射进 roll_count、数量列存**米数**、行金额按米数算")
+        void forcedPhotoOrderStoresRollCountAndMeters() {
             when(productMapper.selectById("prod-1")).thenReturn(new Product());
             when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
                     .thenReturn(List.of(sku(11L, "prod-1", 0, null)));
@@ -1293,7 +1430,10 @@ class InboundOrderServiceTest {
             ArgumentCaptor<InboundOrderItem> lineCap = ArgumentCaptor.forClass(InboundOrderItem.class);
             verify(inboundOrderItemMapper).insert(lineCap.capture());
             InboundOrderItem saved = lineCap.getValue();
-            assertThat(saved.getQuantity()).as("数量列 = 卷数（1 卷）").isEqualByComparingTo("1");
+            assertThat(saved.getRollCount()).as("请求体的「数量」= 卷数 ⇒ 落到 roll_count").isEqualTo(1);
+            assertThat(saved.getQuantity())
+                    .as("数量列存**米数**（与商家端同一条口径，issue #7709）")
+                    .isEqualByComparingTo("67.2");
             assertThat(saved.getRollLengthM()).isEqualByComparingTo("67.2");
             assertThat(saved.getAmount())
                     .as("行金额 = 米数 × 单价 = 67.2 × 38.00（不是 1 × 38.00）")

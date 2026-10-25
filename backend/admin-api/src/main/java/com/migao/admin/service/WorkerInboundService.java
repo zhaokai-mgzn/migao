@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -422,7 +423,12 @@ public class WorkerInboundService {
                 WorkerInboundDraftView.Line line = new WorkerInboundDraftView.Line();
                 line.setSkuId(item.getSkuId());
                 line.setSkuCode(item.getSkuCode());
-                line.setQuantity(item.getQuantity());
+                // 🔴 工人面「数量」= **卷数**（issue #6812 的读面口径，工人核对「我拍了几卷」）：
+                //    issue #7709 起明细行的 quantity 恒为米数、卷数在 roll_count ⇒ 这里映射卷数，
+                //    工人端 UI 与既有判据一字不动；米数由标签 / 商家端明细看
+                line.setQuantity(item.getRollCount() != null
+                        ? BigDecimal.valueOf(item.getRollCount())
+                        : item.getQuantity());
                 line.setBatchNo(item.getBatchNo());
                 // 标签短码（P2）：草稿态没有、过账后每行一个；P3 拿它拼 /i/<短码> 出 50×30mm 标签
                 for (InboundLabel label : labels == null ? List.<InboundLabel>of() : labels) {
