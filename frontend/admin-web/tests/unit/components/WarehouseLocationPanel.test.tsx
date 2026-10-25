@@ -40,6 +40,8 @@ const freeRow = {
   binCode: 'A-01',
   status: 'active' as const,
   occupied: false,
+  capacity: 10,
+  inStockCount: 0,
   remark: null,
 }
 
@@ -51,6 +53,8 @@ const occupiedRow = {
   binCode: 'A-02',
   status: 'active' as const,
   occupied: true,
+  capacity: 10,
+  inStockCount: 3,
   remark: '靠门',
 }
 
@@ -62,6 +66,8 @@ const inactiveRow = {
   binCode: 'B-01',
   status: 'inactive' as const,
   occupied: false,
+  capacity: 10,
+  inStockCount: 0,
   remark: null,
 }
 
@@ -114,6 +120,7 @@ describe('仓位管理清单（WH-009）', () => {
     await screen.findByText('A-01')
 
     expect(screen.queryByTestId('warehouse-location-create')).toBeNull()
+    expect(screen.queryByTestId('warehouse-location-batch')).toBeNull()
     expect(screen.queryByText('编辑')).toBeNull()
     expect(screen.queryByText('停用')).toBeNull()
   })
@@ -145,6 +152,7 @@ describe('新建 / 编辑仓位（WH-009）', () => {
       zoneCode: 'B',
       zoneName: '挂衣区',
       remark: '靠门',
+      capacity: 10,
     })
     const { toast } = await import('sonner')
     expect(toast.success).toHaveBeenCalledWith(expect.stringContaining('已创建'))
@@ -185,6 +193,7 @@ describe('新建 / 编辑仓位（WH-009）', () => {
       zoneCode: 'A',
       zoneName: '成品区',
       remark: '靠近门口',
+      capacity: 10,
     })
   })
 

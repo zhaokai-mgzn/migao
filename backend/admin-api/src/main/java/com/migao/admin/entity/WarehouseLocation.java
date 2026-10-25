@@ -47,6 +47,9 @@ public class WarehouseLocation {
     /** active / inactive */
     private String status;
 
+    /** 每仓容量（件；V198 / issue #7791）—— 同一区域统一，默认 10 */
+    private Integer capacity;
+
     private String remark;
 
     private OffsetDateTime createdAt;

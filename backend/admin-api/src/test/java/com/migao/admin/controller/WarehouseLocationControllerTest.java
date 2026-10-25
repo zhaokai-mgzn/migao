@@ -2,6 +2,8 @@
 package com.migao.admin.controller;
 
 import com.migao.admin.config.TenantContext;
+import com.migao.admin.dto.WarehouseLocationBatchCreateRequest;
+import com.migao.admin.dto.WarehouseLocationBatchCreateResult;
 import com.migao.admin.dto.WarehouseLocationCreateRequest;
 import com.migao.admin.dto.WarehouseLocationUpdateRequest;
 import com.migao.admin.dto.WarehouseLocationView;
@@ -33,7 +35,7 @@ import static org.mockito.Mockito.when;
  *
  * <p>守三条：</p>
  * <ol>
- *   <li>四个端点都把**当前租户**透传（仓位是租户私有主数据）；</li>
+ *   <li>五个端点都把**当前租户**透传（仓位是租户私有主数据）；</li>
  *   <li>读面复用 {@code inbound:view}、写面复用 {@code inbound:create}（零授权 delta）；</li>
  *   <li>管理清单请求把 {@code includeInactive} 原样透传（停用仓位要能被看到并重新启用）。</li>
  * </ol>
@@ -85,6 +87,25 @@ class WarehouseLocationControllerTest {
     }
 
     @Test
+    @DisplayName("批量新建：租户透传 + 回填新建/跳过计数")
+    void batchCreateScopesTenant() {
+        TenantContext.setTenantId(7L);
+        WarehouseLocationBatchCreateRequest request = new WarehouseLocationBatchCreateRequest();
+        request.setZoneCode("A");
+        request.setNumberFrom(1);
+        request.setNumberTo(3);
+        WarehouseLocationBatchCreateResult result =
+                new WarehouseLocationBatchCreateResult(2, 1, "A-01", "A-03", 10);
+        when(warehouseLocationService.batchCreate(request, 7L)).thenReturn(result);
+
+        var res = controller.batchCreateLocations(request);
+
+        assertThat(res.getData().getCreated()).isEqualTo(2);
+        assertThat(res.getData().getSkipped()).isEqualTo(1);
+        verify(warehouseLocationService).batchCreate(request, 7L);
+    }
+
+    @Test
     @DisplayName("编辑 / 删除：租户透传")
     void updateAndDeleteScopeTenant() {
         TenantContext.setTenantId(7L);
@@ -105,6 +126,8 @@ class WarehouseLocationControllerTest {
     void permissionCodes() throws Exception {
         assertThat(permissionOf("listLocations", Long.class, boolean.class)).isEqualTo("inbound:view");
         assertThat(permissionOf("createLocation", WarehouseLocationCreateRequest.class))
+                .isEqualTo("inbound:create");
+        assertThat(permissionOf("batchCreateLocations", WarehouseLocationBatchCreateRequest.class))
                 .isEqualTo("inbound:create");
         assertThat(permissionOf("updateLocation", Long.class, WarehouseLocationUpdateRequest.class))
                 .isEqualTo("inbound:create");

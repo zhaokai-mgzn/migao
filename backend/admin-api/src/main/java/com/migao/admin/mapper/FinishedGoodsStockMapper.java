@@ -2,6 +2,7 @@ package com.migao.admin.mapper;
 
 import com.baomidou.mybatisplus.annotation.InterceptorIgnore;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.migao.admin.dto.BinStockCount;
 import com.migao.admin.entity.FinishedGoodsStock;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -137,6 +138,18 @@ public interface FinishedGoodsStockMapper extends BaseMapper<FinishedGoodsStock>
             + "AND status = 'in_stock' AND deleted = 0")
     int markShippedById(@Param("tenantId") Long tenantId, @Param("id") Long id,
                         @Param("outboundOrderId") String outboundOrderId);
+
+    /**
+     * 本租户每个仓位的在库件数（V198 / issue #7791 的水位分子）。
+     *
+     * <p>一条 {@code GROUP BY} 聚合，不搬整行在库数据、也不受 {@link #selectInStock} 的
+     * {@code LIMIT 500} 影响（第 501 件之后仍会被计入）。</p>
+     */
+    @InterceptorIgnore(tenantLine = "true")
+    @Select("SELECT bin_code AS binCode, count(*) AS inStockCount FROM finished_goods_stock "
+            + "WHERE tenant_id = #{tenantId} AND status = 'in_stock' AND deleted = 0 "
+            + "GROUP BY bin_code")
+    List<BinStockCount> selectInStockCounts(@Param("tenantId") Long tenantId);
 
     /**
      * 本租户所有**被在库成品占用**的仓位号（issue #7785 的「仓位管理」列占用态）。

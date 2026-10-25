@@ -22,14 +22,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>守四条：</p>
  * <ol>
  *   <li>实体字段 ⊆ 建库列；</li>
- *   <li>🔴 <b>一个仓位同一时刻只放一个在库成品</b>是数据库约束（{@code (tenant_id, bin_code) WHERE status='in_stock'}
- *       的部分唯一索引）—— 并发打包会各自算出同一个「空闲号」，靠服务层判空拦不住；</li>
+ *   <li>🔴 <b>一个仓位可放多件到区域容量</b>（V198 / issue #7791）：bin 上不再有唯一索引，
+ *       容量由 {@code warehouse_locations.capacity} + 服务层行锁闸住；同套装/部位仍只一行在库；</li>
  *   <li>🔴 占位是原子的（{@code INSERT … ON CONFLICT DO NOTHING}）：唯一冲突不抛异常（否则 PG 事务 aborted，
  *       服务层「换下一个仓位重试」在同事务内是非法路径）；</li>
  *   <li>状态迁移是**条件更新**（{@code WHERE status='in_stock'}）：发货与撤销打包并发时只有一条能改到。</li>
  * </ol>
  */
-@DisplayName("成品在库 Mapper：一位一件 + 原子占位 + 条件迁移（V196）")
+@DisplayName("成品在库 Mapper：一仓多件到容量 + 原子占位 + 条件迁移（V196/V198）")
 class FinishedGoodsStockMapperTest {
 
     private static final Path SCHEMA = Path.of("src/main/resources/db/init/schema.sql");
@@ -43,10 +43,10 @@ class FinishedGoodsStockMapperTest {
             if (!m.getName().equals(method)) {
                 continue;
             }
-            if (annotation.equals(Select.class)) {
+            if (annotation.equals(Select.class) && m.getAnnotation(Select.class) != null) {
                 return String.join(" ", m.getAnnotation(Select.class).value());
             }
-            if (annotation.equals(Update.class)) {
+            if (annotation.equals(Update.class) && m.getAnnotation(Update.class) != null) {
                 return String.join(" ", m.getAnnotation(Update.class).value());
             }
         }
@@ -68,15 +68,27 @@ class FinishedGoodsStockMapperTest {
     }
 
     @Test
-    @DisplayName("🔴 一个仓位同一时刻只放一个在库成品（局部唯一索引 + 同一订单行只一行在库）")
-    void onePackagePerBinIsAConstraint() throws Exception {
+    @DisplayName("🔴 一个仓位可放多件到区域容量（bin 无唯一索引；容量列有界；同套装/部位仍唯一）")
+    void oneBinHoldsMultiplePackagesUpToCapacity() throws Exception {
         String sql = schemaSql();
-        assertThat(sql).contains("uk_finished_goods_bin_in_stock");
-        assertThat(sql).contains("ON finished_goods_stock (tenant_id, bin_code)")
-                .contains("WHERE status = 'in_stock' AND deleted = 0");
-        // V197（issue #7762）：在库唯一从「订单行」改成「套 × 部位」；V196 遗留行由 set_id IS NULL 那条兜底
+        assertThat(sql).as("V198 起 bin 上不再是唯一索引（一仓可放多件）")
+                .contains("idx_finished_goods_bin_in_stock")
+                .doesNotContain("uk_finished_goods_bin_in_stock");
+        assertThat(sql).contains("capacity INTEGER NOT NULL DEFAULT 10")
+                .contains("ck_warehouse_locations_capacity")
+                .contains("capacity BETWEEN 1 AND 999");
+        // V197（issue #7762）：同套装/部位只一行在库；V196 遗留行由 set_id IS NULL 那条兜底
         assertThat(sql).contains("uk_finished_goods_set_part_in_stock")
                 .contains("uk_finished_goods_legacy_item_in_stock");
+    }
+
+    @Test
+    @DisplayName("水位分子：一次 GROUP BY 查全租户每个仓位的在库件数（不搬整行、不受 500 行截断）")
+    void inStockCountsAreGroupedByBin() throws Exception {
+        String sql = sqlOf("selectInStockCounts", Select.class);
+        assertThat(sql).contains("bin_code AS binCode", "count(*) AS inStockCount")
+                .contains("tenant_id = #{tenantId}")
+                .contains("status = 'in_stock'", "deleted = 0", "GROUP BY bin_code");
     }
 
     @Test

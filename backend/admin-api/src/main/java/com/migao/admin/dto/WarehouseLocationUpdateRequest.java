@@ -23,6 +23,9 @@ public class WarehouseLocationUpdateRequest {
     /** 备注（null = 不改；空串 = 清空） */
     private String remark;
 
+    /** 每仓容量（null = 不改；改了会同步本区域所有仓位；1~999） */
+    private Integer capacity;
+
     /** active / inactive（null = 不改） */
     private String status;
 }

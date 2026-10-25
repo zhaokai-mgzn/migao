@@ -31,9 +31,15 @@ public class WarehouseLocationView {
     /** active / inactive */
     private String status;
 
+    /** 每仓容量（件；与区域统一） */
+    private Integer capacity;
+
+    /** 当前在库件数（水位分子；由 in_stock 行派生，不是仓位表上的计数字段） */
+    private Integer inStockCount;
+
     private String remark;
 
-    /** 是否有在库成品占着它（按 {@code bin_code} 关联 in_stock 行） */
+    /** 是否有在库成品占着它（按 {@code bin_code} 关联 in_stock 行；= inStockCount > 0） */
     private Boolean occupied;
 
     private OffsetDateTime createdAt;

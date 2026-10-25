@@ -3,6 +3,8 @@ package com.migao.admin.controller;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.dto.FinishedGoodsView;
+import com.migao.admin.dto.WarehouseLocationBatchCreateRequest;
+import com.migao.admin.dto.WarehouseLocationBatchCreateResult;
 import com.migao.admin.dto.WarehouseLocationCreateRequest;
 import com.migao.admin.dto.WarehouseLocationUpdateRequest;
 import com.migao.admin.dto.WarehouseLocationView;
@@ -82,12 +84,27 @@ public class FinishedGoodsController {
     public ApiResponse<WarehouseLocationView> createLocation(
             @RequestBody WarehouseLocationCreateRequest request) {
         Long tenantId = TenantContext.getTenantId();
-        log.info("[仓位] 新建请求 | tenant={} bin={}", tenantId, request.getBinCode());
+        log.info("[仓位] 新建请求 | tenant={} bin={} capacity={}",
+                tenantId, request.getBinCode(), request.getCapacity());
         return ApiResponse.success(warehouseLocationService.create(request, tenantId));
     }
 
     /**
-     * 编辑仓位（占用中禁止改仓位号；区域 / 备注 / 停用可改）
+     * 批量新建仓位（issue #7791：输入数字区间，如 A 区 1~20 ⇒ A-01…A-20；已存在的跳过）
+     * POST /api/admin/warehouse-locations/batch
+     */
+    @PostMapping("/warehouse-locations/batch")
+    @RequirePermission("inbound:create")
+    public ApiResponse<WarehouseLocationBatchCreateResult> batchCreateLocations(
+            @RequestBody WarehouseLocationBatchCreateRequest request) {
+        Long tenantId = TenantContext.getTenantId();
+        log.info("[仓位] 批量新建请求 | tenant={} zone={} from={} to={}",
+                tenantId, request.getZoneCode(), request.getNumberFrom(), request.getNumberTo());
+        return ApiResponse.success(warehouseLocationService.batchCreate(request, tenantId));
+    }
+
+    /**
+     * 编辑仓位（占用中禁止改仓位号；区域 / 备注 / 容量 / 停用可改）
      * PATCH /api/admin/warehouse-locations/{id}
      */
     @TenantOwnedResource("warehouse-location")

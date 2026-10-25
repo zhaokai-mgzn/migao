@@ -38,6 +38,7 @@ vi.mock('@/lib/api', () => ({
     listInStock: (...a: unknown[]) => mockFinished(...a),
     locations: (...a: unknown[]) => mockLocations(...a),
     createLocation: vi.fn(),
+    batchCreateLocations: vi.fn(),
     updateLocation: vi.fn(),
     deleteLocation: vi.fn(),
     finishedWarehouse: vi.fn(),
