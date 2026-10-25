@@ -287,17 +287,15 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
     if (!form || !itemId) return
     // 原因由**提交那一刻**从 DOM 读（不在 input 事件里重绘，否则每敲一个字就丢焦点）
     const reason = (doc.getElementById('wh5-quality-reason')?.value ?? '').trim()
-    if (form.result !== 'pass' && !reason) {
-      dispatch({ type: 'qualityFormError', error: '判定为「返工」或「报废」时，必须填写不合格原因。' })
+    // 🔴 工人端只有一个判定 = 返工（issue #7749：合格是默认态，屏上不给这个动作）
+    //    ⇒ 说明必填；这里先拦一次只为不白跑网络，服务端 422 才是真判据。
+    if (!reason) {
+      dispatch({ type: 'qualityFormError', error: '记返工要写明问题（例如：布面污渍 / 尺寸偏差 / 缝线开裂）。' })
       return
     }
     dispatch({ type: 'qualitySubmitting' })
     try {
-      const latest = await api.createQuality({
-        orderItemId: itemId,
-        result: form.result,
-        ...(form.result === 'pass' ? {} : { reason }),
-      })
+      const latest = await api.createQuality({ orderItemId: itemId, result: 'rework', reason })
       dispatch({ type: 'qualitySubmitted', latest })
     } catch (e) {
       // 服务端下发的业务文案原样显示（不把 HTTP 状态码当工人文案）
@@ -452,13 +450,11 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
       draw()
     })
 
-    // 质检（issue #7162）：展开表单 / 选判定 / 取消 / 提交（原因在提交时从 DOM 读）
+    // 质检（issue #7162 / #7749）：展开返工表单 / 取消 / 提交（说明在提交时从 DOM 读）。
+    // 🔴 已无「判定单选」：工人端唯一的判定就是返工（合格是默认态，不点即合格）。
     on('wh5-quality-open', () => dispatch({ type: 'qualityFormOpen' }))
     on('wh5-quality-cancel', () => dispatch({ type: 'qualityFormClose' }))
     on('wh5-quality-submit', () => { void submitQuality() })
-    doc.querySelectorAll?.('[data-quality-result]').forEach((el) => {
-      el.addEventListener('click', () => dispatch({ type: 'qualityResult', result: el.dataset.qualityResult }))
-    })
 
     // 报工三态（issue #5652 第二刀）：选择只落在 `state.view.work_type`（纯状态动作、**不发请求**）。
     // 🔴 放在 in-flight 闸**之前**：正在提交时也能改选 —— 那一笔的 `workType` 在点【报工】那一刻

@@ -121,6 +121,7 @@ import type {
   CuttingHeightConfigResponse,
   CuttingHeightPreview,
   WorkerPageCatalogResponse,
+  WorkerOperationsResponse,
   RoutingGaps,
   // 加工费组合定价（issue #4386）
   FeeCombination,
@@ -1973,6 +1974,22 @@ export const workerApi = {
    */
   updateWorkerPages: (id: string, workerPages: string[] | null) =>
     request.put<ApiResponse<WorkerProfile>>(`/api/admin/workers/${id}/pages`, { workerPages }),
+
+  /**
+   * 可绑定的**逻辑工序**目录（issue #7749）：工人档案「工序」下拉的选项来源。
+   *
+   * 走人事域读码（`employee:list`）而不是生产域 —— 能管工人档案、不能看生产配置的岗位也能设工序。
+   * 同一道活按部位拆成的多行（韩褶-布 / 韩褶-纱）在这里已归并成一个逻辑名。
+   */
+  listWorkerOperations: () =>
+    request.get<ApiResponse<WorkerOperationsResponse>>('/api/admin/workers/operations'),
+
+  /**
+   * 设/清这位工人绑定的工序（issue #7749）：`workerOperation` 传 `null` / 空串 ⇒ 清空绑定
+   * （= 回到「扫码后自己选工序」）。非法工序名由服务端 422 拒绝（前端不自己过滤选项）。
+   */
+  updateWorkerOperation: (id: string, workerOperation: string | null) =>
+    request.put<ApiResponse<WorkerProfile>>(`/api/admin/workers/${id}/operation`, { workerOperation }),
 }
 
 // 角色管理 API

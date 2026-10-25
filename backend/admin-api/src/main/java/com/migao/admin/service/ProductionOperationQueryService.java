@@ -315,6 +315,60 @@ public class ProductionOperationQueryService {
     }
 
     /**
+     * **逻辑工序目录**（issue #7749）：把工序库按逻辑名归并，供「工人档案绑定工序」的下拉选项使用。
+     *
+     * <p>用户 2026-10-25 选定粒度 =「按逻辑工序（如「韩褶」，布帘/纱帘通用）」：库里同一道活按部位
+     * 拆成多行（{@code 韩褶-布} / {@code 韩褶-纱}），工人绑的是**岗位**而不是某一行 ⇒ 这里按
+     * {@link #logicalOperationName} 归并，value = 逻辑名。</p>
+     *
+     * <p>只读、只含活跃工序；归并用的翻译表与读面**同一份**（不新增第二份映射）。</p>
+     *
+     * @return {total（逻辑工序数）, operations:[{name（逻辑名，写入 users.worker_operation 的值）,
+     *         group（车间工位分组，取该组第一行的分组）, variants（库里被归并的行数）}]}
+     */
+    public Map<String, Object> logicalOperations(Long tenantId) {
+        Map<String, Map<String, Object>> byName = new LinkedHashMap<>();
+        for (ProductionOperation op : activeOperations(tenantId)) {
+            String logical = logicalOperationName(op.getName());
+            if (logical == null || logical.isBlank()) {
+                continue;
+            }
+            Map<String, Object> entry = byName.get(logical);
+            if (entry == null) {
+                entry = new LinkedHashMap<>();
+                entry.put("name", logical);
+                entry.put("group", op.getGroupName() == null ? "其他" : op.getGroupName());
+                entry.put("variants", 0);
+                byName.put(logical, entry);
+            }
+            entry.put("variants", (Integer) entry.get("variants") + 1);
+        }
+        List<Map<String, Object>> operations = new ArrayList<>(byName.values());
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("total", operations.size());
+        result.put("operations", operations);
+        return result;
+    }
+
+    /**
+     * 本租户工序库里**有没有**这道逻辑工序（写侧校验的唯一判据，issue #7749）。
+     *
+     * <p>与 {@link #logicalOperations} **同一份**归并口径 ⇒ 工人档案能绑的，恰好是下拉里列出的。</p>
+     */
+    public boolean hasLogicalOperation(Long tenantId, String logicalName) {
+        if (logicalName == null || logicalName.isBlank()) {
+            return false;
+        }
+        String wanted = logicalName.trim();
+        for (ProductionOperation op : activeOperations(tenantId)) {
+            if (wanted.equals(logicalOperationName(op.getName()))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * 工艺路线模板：**具名主线 + 适用帘种 + 默认标记**（新结构的展示口径）。
      *
      * @return {total, routings:[{id, name, is_default, positions, mainline, status}]}

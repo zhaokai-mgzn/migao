@@ -1555,9 +1555,7 @@ public class ProductionService {
         if (isDoneQty(doneQty, op.getQty())) {
             positionOperationMapper.recordCompletionIfDone(op.getId(), tenantId, OffsetDateTime.now());
         }
-        if (allInstancesDone(po.getId(), tenantId)) {
-            processingOrderMapper.markCompletedIfActive(po.getId(), tenantId, OffsetDateTime.now());
-        }
+        completeAndMarkIfAllDone(po.getId(), tenantId);
         return 1;
     }
 
@@ -1688,7 +1686,9 @@ public class ProductionService {
             //    status='completed'（processingOrderMapper.countCompletedByOrderId），
             //    而 shipOrderIfApplicable 只在订单为 confirmed/producing 时流转
             //    ⇒ 加工单置 completed、订单留在 producing，发货链才通。
-            // 判定口径（#4961）= **全部**活跃实例完成，不再看 `is_must_finish`（见 allInstancesDone）。
+            // 判定口径（#4961）= **全部**活跃实例完成，不再看 `is_must_finish`（见 allInstancesDone）；
+            // 质检工序的「默认合格」见 {@link #completeQualityOperationsByDefault}（issue #7749）。
+            completeQualityOperationsByDefault(po.getId(), tenantId);
             int rows = processingOrderMapper.markCompletedIfActive(po.getId(), tenantId, OffsetDateTime.now());
             productionCompleted = rows > 0;
             if (productionCompleted) {
@@ -1791,11 +1791,80 @@ public class ProductionService {
      */
     private boolean allInstancesDone(String processingOrderId, Long tenantId) {
         for (ProcessingPositionOperation op : listOperations(processingOrderId, tenantId)) {
+            // 🔴 质检不阻塞完工（issue #7749，用户 2026-10-25 逐字「只要所有工序全部完成就算结束了，
+            // 这样也不需要质检按钮……如果工序没有完成随时可以进入质检判定就好」）：
+            // 质检的「完成」默认成立（用户同时裁定「默认都合格」）⇒ 判据里跳过它，
+            // 否则会出现「所有活都干完了、单子永远差一道质检」的死角（而工人端已不再有质检按钮）。
+            if (isQualityOperation(op)) {
+                continue;
+            }
             if (!isDone(op)) {
                 return false;
             }
         }
         return true;
+    }
+
+    /**
+     * 质检工序**默认完成**（issue #7749）：把仍未完成的质检实例推到「做满」（{@code done_qty = qty}
+     * + {@code done_at}），在加工单即将置 {@code completed} 的那一刻执行。
+     *
+     * <p><b>为什么必须有这一步</b>：质检不再阻塞完工（{@link #allInstancesDone} 跳过它），若同时不把它
+     * 置完成，就会出现「加工单已完成、质检行永远 pending」的自相矛盾读数（进度条 / 完工判据 / 报表各说一套）。</p>
+     *
+     * <p>🔴 <b>不落报工、不计件</b>（与「不需要质检按钮」一致）：用户裁定质检默认合格 ⇒ 没有一位工人
+     * 对这条完成动作负责，因此不写 {@code production_work_logs}、不产生计件金额。
+     * 观星台/质检员若照旧录「合格」判定，会走 {@code DocumentOperationLinkage#completeQualityOperation}
+     * 的**既有**路径（那条路径有计件，本方法此时看到的已是做满行 ⇒ 幂等跳过）。</p>
+     *
+     * <p>只在 {@code done_qty < qty} 时推进；CAS（{@code advanceDoneQtyIfUnchanged}）兜并发
+     * ⇒ 重复调用 / 并发完工都只生效一次。</p>
+     */
+    private void completeQualityOperationsByDefault(String processingOrderId, Long tenantId) {
+        for (ProcessingPositionOperation op : listOperations(processingOrderId, tenantId)) {
+            if (!isQualityOperation(op) || isDone(op)) {
+                continue;
+            }
+            BigDecimal qty = nz(op.getQty());
+            if (qty.signum() <= 0) {
+                continue;
+            }
+            BigDecimal previousDoneQty = nz(op.getDoneQty());
+            String previousStatus = op.getStatus() == null ? "pending" : op.getStatus();
+            int rows = positionOperationMapper.advanceDoneQtyIfUnchanged(
+                    op.getId(), tenantId, previousDoneQty, previousStatus, qty, OffsetDateTime.now());
+            if (rows > 0) {
+                positionOperationMapper.recordCompletionIfDone(op.getId(), tenantId, OffsetDateTime.now());
+                log.info("[质检默认完成] 加工单完工时把质检工序置完成（不计件）：tenantId={}, po={}, op={}, qty={}",
+                        tenantId, processingOrderId, op.getOperationName(), qty);
+            }
+        }
+    }
+
+    /**
+     * 「全部（非质检）工序完成 ⇒ 质检默认完成 ⇒ 加工单完工」的**唯一**收口（issue #7749）。
+     *
+     * <p>两个调用点（扫码/逐道报工、单据联动）都必须走它 —— 只改一处会让另一条路径继续把
+     * 质检当必完工序（同一张单从两条路进来得到两个完工结论）。</p>
+     */
+    private void completeAndMarkIfAllDone(String processingOrderId, Long tenantId) {
+        if (!allInstancesDone(processingOrderId, tenantId)) {
+            return;
+        }
+        completeQualityOperationsByDefault(processingOrderId, tenantId);
+        processingOrderMapper.markCompletedIfActive(processingOrderId, tenantId, OffsetDateTime.now());
+    }
+
+    /**
+     * 这道工序是不是「质检」（issue #7749）：判据 = 逻辑名与
+     * {@link DocumentOperationLinkage#QUALITY_OPERATION_NAME} 逐字相同。
+     *
+     * <p>译名走既有 {@code logicalOperationName}（与工人屏 {@code isQualityOperation} 同一份口径）；
+     * 在扫描侧再写一份字符串比对 = 第二份会漂的判据。</p>
+     */
+    private static boolean isQualityOperation(ProcessingPositionOperation op) {
+        return op != null && DocumentOperationLinkage.QUALITY_OPERATION_NAME.equals(
+                com.migao.admin.service.ProductionOperationQueryService.logicalOperationName(op.getOperationName()));
     }
 
     // ============================================================ 计件

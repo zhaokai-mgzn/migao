@@ -100,6 +100,8 @@ class TenantOwnershipBeforeValidationTest extends BaseControllerTest {
     @Mock private OrderService orderService;
     /** 工人档案（同类第 9 个实例，issue #6432）：认定读 {@code findOwnedWorker}（与重置落库同一份判据）。 */
     @Mock private com.migao.admin.service.WorkerAdminService workerAdminService;
+    /** 逻辑工序目录（issue #7749）：AdminWorkerController 的第二个构造依赖；本类只钉归属判定，不碰它。 */
+    @Mock private com.migao.admin.service.ProductionOperationQueryService productionOperationQueryService;
 
     private TenantResourceOwnership ownership;
 
@@ -339,7 +341,7 @@ class TenantOwnershipBeforeValidationTest extends BaseControllerTest {
     @DisplayName("跨租户 + 非法载荷 ⇒ 404（工人档案 /pin 重置：同类第 9 个实例，issue #6432）")
     void crossTenantWorkerPinReset_isNotFound_not422() throws Exception {
         when(workerAdminService.findOwnedWorker(anyString())).thenReturn(null);
-        withInterceptor(new AdminWorkerController(workerAdminService))
+        withInterceptor(new AdminWorkerController(workerAdminService, productionOperationQueryService))
                 .perform(put("/api/admin/workers/" + ORDER_ID + "/pin")
                         .contentType(MediaType.APPLICATION_JSON).content("{\"pin\":\"12ab\"}"))
                 .andExpect(status().isNotFound())
@@ -357,7 +359,7 @@ class TenantOwnershipBeforeValidationTest extends BaseControllerTest {
         when(workerAdminService.resetPin(anyString(), any()))
                 .thenThrow(com.migao.admin.exception.BusinessException.validationError("PIN 必须是 4~12 位数字"));
 
-        withInterceptor(new AdminWorkerController(workerAdminService))
+        withInterceptor(new AdminWorkerController(workerAdminService, productionOperationQueryService))
                 .perform(put("/api/admin/workers/" + ORDER_ID + "/pin")
                         .contentType(MediaType.APPLICATION_JSON).content("{\"pin\":\"12ab\"}"))
                 .andExpect(status().isUnprocessableEntity())

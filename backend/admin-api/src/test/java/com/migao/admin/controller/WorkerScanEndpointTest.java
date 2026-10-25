@@ -7,6 +7,7 @@ import com.migao.admin.service.ProductionScanCompleteService;
 import com.migao.admin.service.ProductionScanService;
 import com.migao.admin.service.ProductionService;
 import com.migao.admin.service.WorkerCuttingHeightService;
+import com.migao.admin.service.WorkerAdminService;
 import com.migao.admin.worker.WorkerIdentity;
 import com.migao.admin.worker.WorkerSessionService;
 import org.junit.jupiter.api.AfterEach;
@@ -29,6 +30,7 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -68,6 +70,9 @@ class WorkerScanEndpointTest {
     /** 一体机裁高读面（母单 #5161）同理：本类只测扫描读面契约，故只满足构造签名。 */
     @Mock
     private WorkerCuttingHeightService workerCuttingHeightService;
+    /** 工人档案（issue #7749）：扫描面按它读「绑定的工序」；默认 null = 未绑定（旧行为）。 */
+    @Mock
+    private WorkerAdminService workerAdminService;
 
     private MockMvc mockMvc;
 
@@ -79,7 +84,7 @@ class WorkerScanEndpointTest {
         TenantContext.setTenantId(TENANT);
         WorkerProductionController controller =
                 new WorkerProductionController(productionService, workerSessionService, productionScanService,
-                        productionScanCompleteService, workerCuttingHeightService);
+                        productionScanCompleteService, workerCuttingHeightService, workerAdminService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
@@ -128,7 +133,7 @@ class WorkerScanEndpointTest {
     @DisplayName("🔴 旧码 ⇒ granularity=order + needs_selection=[set,position] 且**不默认第 1 套**（W9）")
     void legacyCodeDegradesWithoutDefaultingToFirstSet() throws Exception {
         when(workerSessionService.resolveIdentity("sess-1")).thenReturn(ZHANG);
-        when(productionScanService.resolve(eq("JG20260920001"), any(), eq(TENANT)))
+        when(productionScanService.resolve(eq("JG20260920001"), any(), isNull(), isNull(), eq(TENANT), isNull()))
                 .thenReturn(degradedView());
 
         mockMvc.perform(get("/api/worker/production/scan")
@@ -160,7 +165,7 @@ class WorkerScanEndpointTest {
         view.put("granularity", ProductionScanService.GRANULARITY_SET_POSITION);
         view.put("set_no", 14);
         view.put("needs_selection", List.of());
-        when(productionScanService.resolve("tok-9", "op-7", TENANT)).thenReturn(view);
+        when(productionScanService.resolve("tok-9", "op-7", null, null, TENANT, null)).thenReturn(view);
 
         mockMvc.perform(get("/api/worker/production/scan")
                         .param("token", "tok-9")
@@ -169,7 +174,7 @@ class WorkerScanEndpointTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.set_no").value(14));
 
-        verify(productionScanService).resolve("tok-9", "op-7", TENANT);
+        verify(productionScanService).resolve("tok-9", "op-7", null, null, TENANT, null);
     }
 
     @Test
@@ -180,7 +185,7 @@ class WorkerScanEndpointTest {
         view.put("granularity", ProductionScanService.GRANULARITY_SET_POSITION);
         view.put("set_no", 14);
         view.put("needs_selection", List.of());
-        when(productionScanService.resolve("JG20260920001", null, "set-14", "oi-1", TENANT))
+        when(productionScanService.resolve("JG20260920001", null, "set-14", "oi-1", TENANT, null))
                 .thenReturn(view);
 
         mockMvc.perform(get("/api/worker/production/scan")
@@ -192,7 +197,7 @@ class WorkerScanEndpointTest {
                 .andExpect(jsonPath("$.data.granularity").value("set_position"))
                 .andExpect(jsonPath("$.data.needs_selection", hasSize(0)));
 
-        verify(productionScanService).resolve("JG20260920001", null, "set-14", "oi-1", TENANT);
+        verify(productionScanService).resolve("JG20260920001", null, "set-14", "oi-1", TENANT, null);
         // 反向护栏：带了选择就**不再**走 3 参签名（无选择那条路径一字不动，见上一个用例）
         verify(productionScanService, never()).resolve(any(), any(), any());
     }

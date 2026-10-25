@@ -127,7 +127,7 @@ class ProductionReportQualityGuardTest {
                 ORDER_ID, OP_ID, body(), TENANT, "key-1", WORKER))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("质检")
-                .hasMessageContaining("判定")
+                .hasMessageContaining("返工")
                 .hasFieldOrPropertyWithValue("code", "VALIDATION_ERROR")
                 .hasFieldOrPropertyWithValue("httpStatus", 422);
 

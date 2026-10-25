@@ -7922,7 +7922,7 @@
 ```
 溯源: 2026-10-18 新增（issue #7251）：只修**调度**，不改 30 天口径 —— `armIdle()` 改为按 `idleSlices()` 分片排队（每片 ≤ `MAX_TIMER_DELAY_MS`，前 N-1 片只续排、末片到期才 `checkAlive()`），并新增同文件 ⑥ 的全区间类级判据；同批修好测试侧因「长定时器不再 1ms 立即触发」而挂住测试进程的一处（frontend/worker-h5/tests/worker-h5-6749-stale-login-error.test.mjs 用 `t.after(() => app.destroy())` 显式销毁）。取号 = PG-089（`python3 scripts/next_case_id.py pg` 实跑：PG → main:001-087 · PR #7224:088 → 取 PG-089）。 ｜ tags: processing, worker, session, timer, backend-contract
 
-## 加工单域（82 case）
+## 加工单域（83 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 作业单生成 + 订单进入生产中（派单即生产；issue #7723 改判） 🔵
 ```
@@ -8854,14 +8854,15 @@
 数据: **判据 1·🔴 服务端准入（不是藏 UI）**：工人档案页面集没有 `inspect`（含「未收窄 = 默认页」）⇒ `POST /api/worker/quality/inspections` 与 `GET /latest` 一律 **403**，且 `QualityCheckService` **零调用**（`verifyNoInteractions`）。红证：把 `requireInspector` 的判据删掉 ⇒ 判据当场红。证据：backend/admin-api/src/test/java/com/migao/admin/controller/WorkerQualityControllerTest.java
 数据: **判据 2·🔴 检验人只来自工人 session**：落库 `inspector_id` = session 解出的 worker_id、`inspector_name` = 工人姓名、`inspector_kind='worker'`；body 里的 `worker_id` / `inspector_id` 一个字节都不读（伪造值不得进库）。证据：WorkerQualityControllerTest.java（grantedWorkerDelegatesWithSessionIdentity）+ backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckServiceTest.java（workerInspectorKindIsPersistedAndReadable）
 数据: **判据 3·身份类别只加不改**：未知 `inspector_kind` ⇒ 422 且零写入；既有员工路径仍落 `employee`；读面 `view` 追加 `inspector_kind`。证据：QualityCheckServiceTest.java（unknownInspectorKindIsRejected）
-数据: **判据 4·🔴 未检 ≠ 合格**：无记录 ⇒ `latest=null`、H5 显示「未检」（不得显示「合格」）；有记录 ⇒ 显示服务端判定 / 原因 / 检验人 / 时刻。证据：frontend/worker-h5/tests/worker-h5-quality.test.mjs（②③）+ QualityCheckServiceTest.java（latestReturnsNewestOrNull）
-数据: **判据 5·录入 = 质检单**：展开表单 ⇒ 三态 + 原因必填提示 +「提交质检单」；提交成功 ⇒ 「质检单已生成」+ 判定换成回执（同一件可复检 = 再录一次）。证据：worker-h5-quality.test.mjs（④⑤⑥）
+数据: **判据 4·🔴 默认没问题（2026-10-25 由 #7749 改判，原「未检 ≠ 合格」不再成立）**：无记录 ⇒ `latest=null`、H5 显示「正常」（**不出现「合格」二字**）；有返工记录 ⇒ 显示「已记返工」/ 原因 / 检验人 / 时刻；服务端给 `pass`（观星台录的）也只显示「正常」。证据：frontend/worker-h5/tests/worker-h5-quality.test.mjs（②③）+ QualityCheckServiceTest.java（latestReturnsNewestOrNull）
+数据: **判据 5·只记返工（#7749 改判）**：展开表单 ⇒ **只有一个**返工动作 + 问题说明（必填）+「提交返工」；提交成功 ⇒「质检单已生成」+ 表单收起（同一件可再记一次）。判定三态仍在服务端（观星台零回归），工人端**不提供**合格/报废选项。证据：worker-h5-quality.test.mjs（④⑤）
 数据: **判据 6·逐人开**：`inspect` 在闭词表里但**不在**默认集合；H5 页面集不含它 ⇒ 质检区块一个字节都不出现。证据：frontend/worker-h5/tests/worker-h5-pages.test.mjs + worker-h5-quality.test.mjs（①）
 数据: **边界（照实登记）**：不做质检单打印（本轮只落记录与两端读面）；不把质检做成可计价工序（报工是数量事实、质检是成品帘判定，两套口径并存）；工人仍**不进** `/api/admin/**`、不获得任何 RBAC 权限码。
 前置: 前置 = ① 一张活跃加工单 + 该件成品帘（`order_item_id`）；② 工人 session（`X-Worker-Session-Id`）；③ 该工人档案的 `users.worker_pages` 里**有** `inspect`（缺 ⇒ 403，不是「看不见入口」）。后端夹具 = Mockito；H5 = 纯渲染/状态机夹具（零 DOM、零网络）。
 跳过: [backend-contract] 服务端准入 + 纯前端渲染/状态机（无 LLM 行为），不进入 agent-eval 冒烟
 ```
-溯源: 2026-10-17 新增（issue #7162；用户三条逐字见 user_inputs）。落码：`WorkerQualityController`（`/api/worker/quality/**`，准入 = 工人档案页面集含 `inspect`）+ `QualityCheckService.create(..., inspectorKind, ...)`（kind 校验 / 读面追加 `inspector_kind` / `latest()`）+ 迁移 V163 `inspector_kind` + `WorkerPages.INSPECT`（不在默认集合）+ worker-h5 质检区块（`render.mjs` / `api.mjs` / `app.mjs`）。取号：见文首注释。 ｜ tags: quality-inspection, worker-h5, backend-contract, permission, finished-curtain
+溯源: 🔴 2026-10-25 改判（issue #7749，用户逐字「质检不要显示合格，默认都合格，只有出现问题时允许直接选择返工，只提供一个返工选项」）⇒ 判据 4/5 的工人端形态改为「默认正常 + 只记返工」，服务端三态与准入不变。
+  2026-10-17 新增（issue #7162；用户三条逐字见 user_inputs）。落码：`WorkerQualityController`（`/api/worker/quality/**`，准入 = 工人档案页面集含 `inspect`）+ `QualityCheckService.create(..., inspectorKind, ...)`（kind 校验 / 读面追加 `inspector_kind` / `latest()`）+ 迁移 V163 `inspector_kind` + `WorkerPages.INSPECT`（不在默认集合）+ worker-h5 质检区块（`render.mjs` / `api.mjs` / `app.mjs`）。取号：见文首注释。 ｜ tags: quality-inspection, worker-h5, backend-contract, permission, finished-curtain
 
 ### PG-083. 单据联动工序：发货单生成 ⇒ 自动完成「发货/外帘发货」工序；质检合格 ⇒ 自动完成「质检」工序（工人端计件、商家端不计件） 🔵
 ```
@@ -8902,12 +8903,13 @@
 数据: **判据 1·两条写入口都拦得住（422 + 零写入）**：逐道报工（`POST /api/worker|admin/production/orders/{orderId}/operations/{operationId}/report`）与扫码完成（`POST /api/worker/production/scan/complete`）对「质检」工序必须 422 具名拒绝（文案指向质检录入 + 给 suggestion），且**不落 `production_work_logs`、不 CAS 推进 `done_qty`**。红证：摘掉 `DocumentOperationLinkage#rejectManualReport` 的任一处调用 ⇒ 该入口变成「报工成功」⇒ 断言红。证据：backend/admin-api/src/test/java/com/migao/admin/service/ProductionReportQualityGuardTest.java（reportingQualityOperationIsRejected）+ ProductionScanCompleteServiceTest.java（qualityOperationIsNotReportable）
 数据: **判据 2·对照不得误伤**：非质检工序（如「精裁-布」）报工照常成功（落报工明细 + 推进工序 + 回执 `status=done`）。证据：ProductionReportQualityGuardTest（reportingNormalOperationStillWorks）
 数据: **判据 3·判定即报工（自动，口径不变）**：判定 = `pass` 且工人身份 ⇒ 走既有报工口径（写 `production_work_logs`、计件记给该工人）+ 完成该件「质检」工序；观星台员工（无工人身份）⇒ 只推进工序、不计件；`rework` / `scrap` ⇒ 照落质检流水、**不**推进工序、不计件（还要再检）。证据：QualityCheckServiceTest + ProductionServiceCompleteByDocumentTest（issue #7165 的既有判据，本单未改口径）
-数据: **判据 4·工人端只有一个动作（无报工按钮）**：当前工序 = 质检 ⇒ 工人端扫码页**不渲染** `wh5-report` / `wh5-work-type`，只出质检区块 + 一句「录入判定即完成报工」；非质检工序仍渲染报工按钮；未开通 `inspect` 页时如实说「需由质检员录入判定」而不是留死页面。证据：frontend/worker-h5/tests/worker-h5-quality.test.mjs（⑦⑧⑨）
+数据: **判据 4·工人端只有一个动作（无报工按钮；2026-10-25 按 #7749 改判）**：当前工序 = 质检 ⇒ 工人端扫码页**不渲染** `wh5-report` / `wh5-work-type`，只出**一句**「本道是质检工序：默认没问题……有问题在下面记返工即可」+ 可按需展开的返工记录（**没有判定按钮**）；非质检工序仍渲染报工按钮；未开通 `inspect` 页时如实说「要记返工需开通」而不是留死页面。证据：frontend/worker-h5/tests/worker-h5-quality.test.mjs（⑥⑦⑧）
 数据: **边界（照实登记）**：① 待检清单读面**不动**（用户同日撤回「报工后才产生待检」那版，读面仍从加工单快照派生）；② bmini 小程序今天没有质检面（`frontend/bmini-app/src` 零「质检」引用）⇒ 它若对质检工序发起报工由服务端 422 兜底，本单不补 UI；③ 藏按钮不构成授权（服务端才是闸）。
 前置: 前置 = 活跃加工单 + 其路由里确有「质检」工序（`V54__seed_production_operations.sql` 的 op-v54-26）；工人端「质检」页（`inspect`）逐人开。无质检工序的单代入本判据 ⇒ 行为必须零变化。
 跳过: [backend-contract] 服务端拒绝码 + 工人端渲染判据（零 LLM 行为），不进 agent-eval 冒烟
 ```
-溯源: 2026-10-18 新增（issue #7186；用户原话见 user_inputs）。落码：`DocumentOperationLinkage#rejectManualReport`（唯一判据，复用 `QUALITY_OPERATION_NAME`）+ `ProductionService.doReport` / `ProductionScanCompleteService.doComplete` 两处调用 + 工人端 `render.mjs`（`isQualityOperation` / `canReport` / `qualityOnlyNote`）。取号 = 现取 origin/main 已占号最大 PG-085 ⇒ 本单取 PG-086。 ｜ tags: quality-inspection, piecework, worker-h5, backend-contract
+溯源: 🔴 2026-10-25 改判（issue #7749）⇒ 工人端不再有判定动作（默认合格、只记返工），且质检工序**不阻塞完工**（其它工序完成即完工、质检行默认置完成、不计件）。
+  2026-10-18 新增（issue #7186；用户原话见 user_inputs）。落码：`DocumentOperationLinkage#rejectManualReport`（唯一判据，复用 `QUALITY_OPERATION_NAME`）+ `ProductionService.doReport` / `ProductionScanCompleteService.doComplete` 两处调用 + 工人端 `render.mjs`（`isQualityOperation` / `canReport` / `qualityOnlyNote`）。取号 = 现取 origin/main 已占号最大 PG-085 ⇒ 本单取 PG-086。 ｜ tags: quality-inspection, piecework, worker-h5, backend-contract
 
 ### PG-087. 质检指标（P0+P1）：按件聚合的首检合格率 / 当前合格率 / 返工报废率 + 时间窗趋势 + 分组 Top-5 + 待检积压（近似待检时长） 🔵
 ```
@@ -9033,6 +9035,23 @@
 跳过: [backend-contract] admin-api 单测（派单写面 + 校验 + 读面过滤；无 LLM 行为面）
 ```
 溯源: 2026-10-25 新增（issue #7723）。用户裁定三条：① 走 A（发加工不再必经）；② 外发粒度 = 整单；③ 加工厂主数据复用供应商档案、本期只做跟踪。设计取舍：承接方是「谁干」而不是「干什么活」⇒ 挂在派单（派单 = 分配承接方 + 批次），作业单只留工序与进度。数据侧复用既有 `processing_orders.processor` / `expected_delivery_date`，新增 `processor_supplier_id`（V193）+ `suppliers.type`。 ｜ tags: processing-order, dispatch, outsourcing, supplier
+
+### PG-096. 工人档案绑定工序 ⇒ 扫码自动选中该道直接报工（不出选择器）；质检默认合格、只记返工、不阻塞完工 🔵
+```
+你: 用户 2026-10-25 逐字：「工人要允许绑定一个工序，一个工人对应一个工序，对工人档案进行重新设计，工人扫码后直接报工，通过工人自动选择工序，质检不要显示合格，默认都合格，只有出现问题时允许直接选择返工，只提供一个返工选项，加一些备注说明即可」
+你: 用户 2026-10-25 补充裁定：「只要所有工序全部完成就算结束了，这样也不需要质检按钮，尽量少一些动作，如果工序没有完成随时可以进入质检判定就好」
+数据: **判据 1·绑定写面（含校验）**：建号 `POST /api/admin/workers` 带 `workerOperation`、改绑 `PUT /api/admin/workers/{id}/operation` ⇒ 落 `users.worker_operation`；不在本租户活跃工序库 ⇒ **422 具名拒绝 + 零写入**；空白 ⇒ 清空绑定（显式写 NULL，不被 MyBatis-Plus NOT_NULL 策略静默漏掉）；跨租户 / 非工人档案 ⇒ 404。证据：backend/admin-api/src/test/java/com/migao/admin/service/WorkerAdminServiceTest.java（createWorkerStoresTheBoundOperation / unknownOperationIsRejectedWithoutWriting / updateWorkerOperationRebindsOrClears）+ backend/admin-api/src/test/java/com/migao/admin/controller/AdminWorkerControllerTest.java（workerOperationCatalogIsServed / updateWorkerOperationReturnsTheBinding）
+数据: **判据 2·扫码自动选工序**：同一张码，未绑定 ⇒ 推断 `determined_by=inferred`（改前形态）；绑定「复烫」⇒ 选中 `op-3` 且 `determined_by=worker`、`alternatives=[]`、`worker_operation="复烫"`。证据：backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanServiceTest.java（boundWorkerOperationIsAutoSelected）
+数据: **判据 3·不回落 / 不谎报完成**：绑定工人在本件没有该工序 ⇒ `operation=null` + `worker_operation_state=absent` + `completed=false`；这道已做完 ⇒ `state=done`；扫码完成入口对这种情形回 409 `WORKER_OPERATION_NOT_PENDING`（说人话，不再落到「推断不出待做工序」）。证据：ProductionScanServiceTest（boundWorkerOperationAbsentOnThisItem / boundWorkerOperationAlreadyDone）
+数据: **判据 4·工人屏不出选择器**：`worker_operation` 在场 ⇒ 出「你的工序：X」、不渲染 `wh5-op-picker`（即使服务端误带 alternatives）；absent / done 两种状态各自说清「不用报工」；未绑定 ⇒ 选择器与改前逐字一致。证据：frontend/worker-h5/tests/worker-h5-worker-operation.test.mjs（①②③④）
+数据: **判据 5·质检默认合格、只记返工**：工人屏质检区块**不出** `data-quality-result`（无合格/报废选项），只有【返工】+ 问题说明必填；无记录显示「正常」且整块不出现「合格」二字。证据：frontend/worker-h5/tests/worker-h5-quality.test.mjs（②③④）
+数据: **判据 6·质检不阻塞完工 + 默认完成**：只剩「质检」未完成 ⇒ 报完最后一道其它工序即 `order_completed=true`，质检行被 CAS 推到 `done_qty=qty` 并落 `done_at`，且**不写报工**（不计件）。证据：backend/admin-api/src/test/java/com/migao/admin/service/ProductionServiceTest.java（pendingQualityOperationDoesNotBlockCompletionAndIsAutoCompleted）
+数据: **判据 7·工人档案面板（商家面）**：新增「工序」列 + 新建/改绑入口，选项来自服务端工序目录（`employee:list`，前端不维护第二份清单）；未绑定显示「未绑定」。证据：frontend/admin-web/tests/unit/components/WorkerProfilesPanel.test.tsx（⑥⑦）
+数据: **边界（照实登记）**：① 绑定粒度 = 逻辑工序（布/纱通用），不是工序库行 id；② 绑定**不是**权限码（只决定「这次报哪道」，不参与授权判定）；③ 质检工序默认完成**不计件**（原按合格判定 1.5 元/套）；④ 观星台商家侧三态质检录入零回归，这些件的质检统计仍显示「未检」；⑤ 不动 `inspect` 页的写准入。
+前置: 前置 = ① 工人档案（`users.worker_no` 非空）且 `users.worker_operation` 绑定了本租户活跃工序库里的一道**逻辑工序**（如「韩褶」）；② 一张带该工序实例的活跃加工单；③ 工人端「质检」页（`inspect`）逐人开（只影响质检区块，不影响绑定与报工）。后端夹具 = Mockito 单测；H5 / admin-web = 纯渲染与组件夹具（零 DOM 网络 / mock API）。
+跳过: [backend-contract] 服务端写面/读面 + 前端渲染与组件判据（零 LLM 行为），不进 agent-eval 冒烟
+```
+溯源: 2026-10-25 新增（issue #7749；用户原话见 user_inputs）。落码：迁移 V195 `users.worker_operation` + `WorkerAdminService`（写面校验 / 改绑 / 清空）+ `AdminWorkerController`（目录 `GET /operations` + `PUT /{id}/operation`）+ `ProductionScanService`（`resolve` 追加 `workerOperation` 入参、`determined_by=worker`、`worker_operation_state`）+ `ProductionScanCompleteService`（读面/写面同一判据 + 409 `WORKER_OPERATION_NOT_PENDING`）+ `ProductionService`（质检不阻塞完工 + 默认完成不计件）+ worker-h5（「你的工序」一行 / 隐藏选择器 / 质检只记返工）+ admin-web（工序列 / 新建选工序 / 改绑弹窗）。取号 = 现取全仓 PG 已占号最大 PG-095 ⇒ 本单取 PG-096。 ｜ tags: worker-profile, production, quality-inspection, worker-h5, backend-contract
 
 ### PG-097. 外发加工标记：订单打标后不进成批候选、进派单页外发区逐单立即派，且派单必须选承接方（V194） 🔵
 ```
@@ -13107,8 +13126,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：890（活跃 142，跳过 748）
-- tier 分布：smoke 12 / normal 822 / adversarial 32
+- 用例总数：891（活跃 142，跳过 749）
+- tier 分布：smoke 12 / normal 823 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -13128,7 +13147,7 @@
 - 领域本体域：4
 - 订单域：69
 - 加工项域：31
-- 加工单域：82
+- 加工单域：83
 - 商品域：132
 - 工具注册器域：1
 - 设置域：10
@@ -13430,6 +13449,7 @@
 - PG-093: 裁剪报工必须确认批次：派工批次预填可改 / 未指派必须手输 / 批次账同事务纠偏（issue #7647）
 - PG-094: 发加工不再必经：首工序报满即可进「加工中」（A6 后半裁定直达；issue #7723）
 - PG-095: 外发承接方搬到智能派单：整单加工厂 + 回厂日，作业单不再录入/展示（issue #7723）
+- PG-096: 工人档案绑定工序 ⇒ 扫码自动选中该道直接报工（不出选择器）；质检默认合格、只记返工、不阻塞完工
 - PG-097: 外发加工标记：订单打标后不进成批候选、进派单页外发区逐单立即派，且派单必须选承接方（V194）
 - PP-007: 黄金策加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）
 - PP-008: 黄金策加工项 LLM 行为：停用加工项（toggle_item_status → inactive）

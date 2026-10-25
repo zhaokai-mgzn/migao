@@ -3239,6 +3239,11 @@ export interface WorkerProfile {
    * 🔴 不是权限码（工人 `permissions` 恒为 `[]`）—— 只决定「菜单/入口显不显」。
    */
   workerPages?: string[] | null
+  /**
+   * 绑定的**逻辑工序**（issue #7749）：`null` / 缺省 = 未绑定（扫码后自己选工序）。
+   * 绑定后工人扫码即自动选中这道工序、直接报工（工人屏不再出选择器）。
+   */
+  workerOperation?: string | null
   createdAt?: string
 }
 
@@ -3249,6 +3254,23 @@ export interface WorkerFormData {
   pin: string
   /** 工人端页面收窄（issue #6788）：`null` / 缺省 = 全部页面（默认，零回归）。 */
   workerPages?: string[] | null
+  /** 绑定的逻辑工序（issue #7749）：`null` / 缺省 = 未绑定（扫码后自己选工序）。 */
+  workerOperation?: string | null
+}
+
+/** 可绑定的逻辑工序目录项（`GET /api/admin/workers/operations`，issue #7749）。 */
+export interface WorkerOperationOption {
+  /** 逻辑工序名（写入 `users.worker_operation` 的值，如「韩褶」） */
+  name: string
+  /** 车间工位分组（裁剪 / 车位 / 后道 / 其他） */
+  group: string
+  /** 工序库里被归并成这一逻辑名的行数（布帘 / 纱帘…） */
+  variants: number
+}
+
+export interface WorkerOperationsResponse {
+  total: number
+  operations: WorkerOperationOption[]
 }
 
 // 员工列表查询参数

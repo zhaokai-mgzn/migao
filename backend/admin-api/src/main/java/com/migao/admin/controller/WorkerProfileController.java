@@ -72,14 +72,12 @@ public class WorkerProfileController {
         // 页面集 = 本工人档案上的收窄（issue #6788）的单层求值（issue #6828 移除企业级层）：
         // 未收窄（null / 坏值）⇒ 全部页面；收窄 ⇒ 收窄集。档案查不到 ⇒ 同上（fail-open：
         // 绝不因读不到档案把工人挡在活外面）。
-        List<String> effective = WorkerPages.effectiveFor(workerPagesOf(identity.workerId()));
+        User worker = workerAdminService.findOwnedWorker(identity.workerId());
+        List<String> effective = WorkerPages.effectiveFor(worker == null ? null : worker.getWorkerPages());
         data.put("pages", effective);
+        // 绑定的逻辑工序（issue #7749）：null = 未绑定（工人端扫码后自己选工序）。
+        // 工人端只把它当**展示/说明**用；真正「这次报哪道」由扫码面按同一列解（不读请求体）。
+        data.put("worker_operation", worker == null ? null : worker.getWorkerOperation());
         return ApiResponse.success(data);
-    }
-
-    /** 本工人档案上的页面收窄原值（{@code null} = 未收窄）；查不到档案 ⇒ {@code null}（fail-open）。 */
-    private String workerPagesOf(String workerId) {
-        User worker = workerAdminService.findOwnedWorker(workerId);
-        return worker == null ? null : worker.getWorkerPages();
     }
 }
