@@ -67,6 +67,17 @@ def test_main_variants_are_distinct(monkeypatch):
     assert gen.build_prompt("某商品", "main", 3) == gen.build_prompt("某商品", "main", 0)
 
 
+def test_detail_kinds_have_distinct_variants(monkeypatch):
+    """详情图也要有变体：整套里 texture 出 2 张、scene 出 2 张，同一用途两张不能一模一样。"""
+    _settings(monkeypatch)
+    for kind in ("texture", "craft", "scene"):
+        a = gen.build_prompt("某商品", kind, 0)
+        b = gen.build_prompt("某商品", kind, 1)
+        assert a != b, kind
+        # 只有两个变体 ⇒ variant 2 取模回到 0
+        assert gen.build_prompt("某商品", kind, 2) == a
+
+
 def test_white_prompt_follows_platform_rules(monkeypatch):
     """白底图 = 淘宝 5 张主图的第 5 位（合规位 + 免费流量位）：
     纯白 RGB(255,255,255)、产品居中、无文字/水印/logo/边框。判据按平台硬要求钉住。"""

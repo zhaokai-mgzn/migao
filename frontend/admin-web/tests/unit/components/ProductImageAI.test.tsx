@@ -119,6 +119,42 @@ describe('ProductImageAI', () => {
     expect(variants).toEqual([0, 1, 2, 0])
   })
 
+  it('一键生成整套：主图 3 张 + 详情图 5 张，全部自动落位（用户 2026-10-25 21:09 改判）', async () => {
+    generate.mockResolvedValue(ok(RESULT))
+    const { onApplyMain, onApplyDetail } = renderAI()
+
+    fireEvent.click(screen.getByRole('button', { name: 'AI 生成商品图' }))
+    fireEvent.click(screen.getByRole('button', { name: '一键生成整套（主图 3 + 详情图 5）' }))
+
+    await waitFor(() => expect(onApplyMain).toHaveBeenCalledTimes(3), { timeout: 15000 })
+    expect(onApplyDetail).toHaveBeenCalledTimes(5)
+    const plan = generate.mock.calls
+      .map((c) => `${(c[0] as { kind: string }).kind}:${(c[0] as { variant?: number }).variant}`)
+      .sort()
+    expect(plan).toEqual(
+      ['craft:0', 'main:0', 'main:1', 'scene:0', 'scene:1', 'texture:0', 'texture:1', 'white:0'].sort()
+    )
+    expect(await screen.findByRole('status')).toHaveTextContent('已生成 8/8')
+  }, 20000)
+
+  it('整套里个别失败：其它照常落位，失败的那几张点名给出路', async () => {
+    let calls = 0
+    generate.mockImplementation(async () => {
+      calls += 1
+      // 第 2 次（主图·半垂坠）失败，其余成功
+      if (calls === 2) throw new Error('boom')
+      return ok(RESULT)
+    })
+    const { onApplyMain, onApplyDetail } = renderAI()
+
+    fireEvent.click(screen.getByRole('button', { name: 'AI 生成商品图' }))
+    fireEvent.click(screen.getByRole('button', { name: '一键生成整套（主图 3 + 详情图 5）' }))
+
+    expect(await screen.findByText(/未成功：/, undefined, { timeout: 15000 })).toBeInTheDocument()
+    expect(onApplyMain).toHaveBeenCalledTimes(2)
+    expect(onApplyDetail).toHaveBeenCalledTimes(5)
+  }, 20000)
+
   it('选「材质细节」生成后自动走 onApplyDetail', async () => {
     const { onApplyMain, onApplyDetail } = renderAI()
 
