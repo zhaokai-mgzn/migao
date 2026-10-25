@@ -173,14 +173,16 @@ describe('ProcessingOrderBlock', () => {
 
   // ── issue #7079：作业单两型（加工单 / 出库作业单）在订单详情块的可见面 ──────────────
 
-  it('#7079 缺键 = 存量单 ⇒ 按加工单渲染（不把存量单读成出库，加工方/交期照旧可见）', async () => {
+  it('#7079 缺键 = 存量单 ⇒ 按加工单渲染（不把存量单读成出库）；#7723 加工方/交期不再上作业单', async () => {
     mockedDetail.mockResolvedValueOnce({ data: { data: poIssued } })
     render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" workOrderKind="processing" />)
 
     await screen.findByText('JG-20260912-0001')
     expect(screen.getByTestId('processing-order-kind')).toHaveTextContent('加工单')
-    expect(screen.getByText(/朝阳加工厂/)).toBeInTheDocument()
-    expect(screen.getByText(/2026-09-20/)).toBeInTheDocument()
+    // 🔴 issue #7723（用户 2026-10-25 裁定）：外发（加工厂 + 回厂日）搬到智能派单 ⇒
+    // 作业单块**不再展示**这两项（红证：改前这里断言「朝阳加工厂 / 2026-09-20 可见」）。
+    expect(screen.queryByText(/朝阳加工厂/)).toBeNull()
+    expect(screen.queryByText(/2026-09-20/)).toBeNull()
     expect(screen.queryByTestId('processing-order-outbound-note')).toBeNull()
   })
 
@@ -234,8 +236,10 @@ describe('ProcessingOrderBlock', () => {
     await waitFor(() => expect(writeText).toHaveBeenCalled())
     const text = writeText.mock.calls[0][0] as string
     expect(text).toContain('JG-20260912-0001')
-    expect(text).toContain('朝阳加工厂')
     expect(text).toContain('打孔（四爪钩）')
+    // issue #7723：加工方 / 交期不再进作业单文本（外发信息由智能派单承载）
+    expect(text).not.toContain('加工方')
+    expect(text).not.toContain('交期')
   })
 
   // ── V119 / issue #5158：快照里的**排料结果**（应领米数 / 公式口径 / 省下的米数）──────

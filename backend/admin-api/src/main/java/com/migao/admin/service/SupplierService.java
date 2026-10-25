@@ -40,15 +40,34 @@ public class SupplierService {
     public static final String STATUS_ACTIVE = "active";
     public static final String STATUS_INACTIVE = "inactive";
 
+    /** 档案类型（V193，issue #7723；与 {@code ck_suppliers_type} 同域）。 */
+    public static final String TYPE_MATERIAL = "material";
+    public static final String TYPE_PROCESSOR = "processor";
+
     private final SupplierMapper supplierMapper;
 
     /** 待指派清单的聚合查询落在单据侧（issue #7369 段 2）—— 语义属入库单，不在这里写第二份 SQL。 */
     private final InboundOrderMapper inboundOrderMapper;
 
-    /** 本租户供应商列表：可按名称/联系人/电话模糊搜；在用在前、名称升序（停用的沉底，不平铺打扰）。 */
+    /** 本租户供应商列表（沿用旧签名：不按类型过滤）。 */
     public List<Supplier> list(Long tenantId, String keyword) {
+        return list(tenantId, keyword, null);
+    }
+
+    /**
+     * 本租户供应商列表：可按名称/联系人/电话模糊搜、按**类型**过滤；
+     * 在用在前、名称升序（停用的沉底，不平铺打扰）。
+     *
+     * <p>{@code type} 缺省/空白 ⇒ 不过滤（与改造前逐字相同）；非空 ⇒ 逐字匹配
+     * {@code material} / {@code processor}（未知取值由 {@link #normalizeType} 显式拒绝，
+     * 不静默回退成「全部」—— 静默回退会让派单下拉混进采购供应商）。</p>
+     */
+    public List<Supplier> list(Long tenantId, String keyword, String type) {
         LambdaQueryWrapper<Supplier> wrapper = new LambdaQueryWrapper<Supplier>()
                 .eq(Supplier::getTenantId, tenantId);
+        if (StringUtils.hasText(type)) {
+            wrapper.eq(Supplier::getType, normalizeType(type));
+        }
         if (StringUtils.hasText(keyword)) {
             String kw = keyword.trim();
             wrapper.and(w -> w.like(Supplier::getName, kw)
@@ -70,6 +89,7 @@ public class SupplierService {
                 .contactPhone(trimToNull(input.getContactPhone()))
                 .paymentTermsDays(input.getPaymentTermsDays())
                 .status(status)
+                .type(normalizeType(input.getType()))
                 .remark(trimToNull(input.getRemark()))
                 .deleted(Boolean.FALSE)
                 .build();
@@ -93,6 +113,11 @@ public class SupplierService {
         existing.setContactPhone(trimToNull(input.getContactPhone()));
         existing.setPaymentTermsDays(input.getPaymentTermsDays());
         existing.setStatus(normalizeStatus(input.getStatus()));
+        // type 缺省 = **保持原值**：老客户端（前端未升级 / 只改联系人）不传 type 时，
+        // 若按缺省值重置成 material，一次改名就把加工厂降级成采购供应商 ⇒ 派单下拉里消失。
+        if (input.getType() != null) {
+            existing.setType(normalizeType(input.getType()));
+        }
         existing.setRemark(trimToNull(input.getRemark()));
         supplierMapper.updateById(existing);
         log.info("[supplier] 更新 | tenant={} id={} status={}", tenantId, id, existing.getStatus());
@@ -180,6 +205,18 @@ public class SupplierService {
         if (days != null && (days < 0 || days > 365)) {
             throw BusinessException.validationError("账期天数须在 0~365 之间（0 = 现结）：" + days);
         }
+    }
+
+    /** 类型归一：缺省 {@code material}；未知取值显式拒绝（不静默回退 —— 会造出「标了加工厂却不在下拉里」的错位）。 */
+    private String normalizeType(String type) {
+        if (!StringUtils.hasText(type)) {
+            return TYPE_MATERIAL;
+        }
+        String t = type.trim();
+        if (!TYPE_MATERIAL.equals(t) && !TYPE_PROCESSOR.equals(t)) {
+            throw BusinessException.validationError("供应商类型只接受 material（采购供应商）/ processor（加工厂）");
+        }
+        return t;
     }
 
     private String normalizeStatus(String raw) {

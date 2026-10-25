@@ -114,12 +114,18 @@ export function processingOrderStatusChipFor(status?: string | null): StatusChip
   }
 }
 
-/** 状态 → 可执行动作（与后端 STATUS_TRANSITIONS 对齐；completed/cancelled 为终态） */
+/**
+ * 状态 → 可执行动作（与后端 STATUS_TRANSITIONS 对齐；completed/cancelled 为终态）。
+ *
+ * 🔴 issue #7723（用户 2026-10-25 裁定 A）：`generated` **不再有 `issue`** —— 「发加工」从作业单
+ * 上移除，外发（加工厂 + 回厂日）改在**智能派单**录入；作业单由首工序报工自动进「加工中」。
+ * `issue` 动作本身保留在 API 里（存量单 / agent 通道），只是不再是新单的必经步骤。
+ */
 export const PROCESSING_ORDER_ACTIONS: Record<
   ProcessingOrder['status'],
   ProcessingOrderUpdateParams['action'][]
 > = {
-  generated: ['issue', 'cancel'],
+  generated: ['cancel'],
   issued: ['start', 'cancel'],
   in_processing: ['complete', 'cancel'],
   completed: [],

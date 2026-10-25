@@ -114,14 +114,6 @@
       "note": "加工单块内生成按钮（confirmed 后才渲染）。"
     },
     {
-      "journey": "16-order-detail-processing-order",
-      "matcher": "/确认发加工/",
-      "anchor": "确认发加工",
-      "anchor_kind": "text",
-      "where": "frontend/admin-web/src/components/orders/ProcessingOrderBlock.tsx",
-      "note": "发加工内联表单的确认键（全仓唯一字面量，实测 1 命中）；同一屏的「发加工」是另一个按钮，文案不同 ⇒ 首个匹配即目标。"
-    },
-    {
       "journey": "17-order-ship",
       "matcher": "/确认发货/",
       "anchor": "确认发货",

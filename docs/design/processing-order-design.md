@@ -85,8 +85,9 @@ deleted INT DEFAULT 0
 ### 4.1 加工单状态机（服务端单一写入者，照 `OrderService.STATUS_TRANSITIONS` Map 模式）
 
 ```
-generated → issued → in_processing → completed   （主链）
-generated → cancelled                             （未发加工可直取消，reason 必填）
+generated → in_processing → completed             （主链：首工序报满即进加工中，issue #7723）
+generated → issued → in_processing → completed   （存量 / agent 通道的旧主链，issued 不再是必经态）
+generated → cancelled                             （未开工可直取消，reason 必填）
 issued → cancelled                                （需人工确认，可能已有加工费损失）
 in_processing → cancelled                         （需人工确认）
 completed                                        （冻结：不可取消/改状态）
@@ -96,8 +97,8 @@ completed                                        （冻结：不可取消/改状
 
 | 触发 | 加工单 | 订单 |
 |---|---|---|
-| 生成加工单（订单有加工项；幂等：无 active 加工单） | `generated` | `confirmed → producing` |
-| 发加工（填加工方+交期，写操作 confirm） | `issued` | 保持 producing |
+| **派单**（智能派单生成作业单；幂等：无 active 加工单；可带外发承接方 + 回厂日） | `generated` | `confirmed → producing`（**唯一时点**，issue #7723 起；落库失败回退） |
+| 发加工（**已不再是必经动作**，issue #7723：外发改在派单录入） | `issued`（仅存量 / agent 通道） | 保持 producing |
 | 开始加工 / 加工完成 | `in_processing` / `completed` | producing（**不自动 shipped**，发货需物流单号，仅提示"可发货"） |
 | 订单取消（加工单 `generated`） | **自动** `cancelled` | → `cancelled`（顺延现有库存恢复规则） |
 | 订单取消（加工单 `issued` 及以上） | **拦截，需人工确认** | 保持（加工费损失风险） |
@@ -129,7 +130,8 @@ completed                                        （冻结：不可取消/改状
   **一行不写**；`POST /api/admin/production/pool/dispatch`（派单页）不受影响 —— 它是唯一派单面。
 - **销售订单只读**（#7634）：订单详情的「作业单」块只渲染状态 / 快照 / 工序进度 / 「复制全部」，
   另给两个**入口**：无作业单 ⇒「去智能派单」；有作业单 ⇒「去生产明细」。
-  `发加工 / 开始加工 / 加工完成 / 取消加工单` 四个写动作**只在生产明细页**
+  `开始加工 / 加工完成 / 取消加工单` 三个写动作**只在生产明细页**（`发加工` 已于 issue #7723 移除：
+  外发 = 派单的承接方 + 回厂日，不再挂在作业单上）
   （`/processing-orders/{加工单号}/production`）—— 它们不再能绕过派单从订单页推进生产。
 - **边界**：详情页因此不再是「逐行挑批次」的入口（派单页按 `fifo` 由服务端补位，该结论自 #7507 起；
   本次扩到全部订单）。如商家确需挑批次，另开单把该能力搬进派单页。

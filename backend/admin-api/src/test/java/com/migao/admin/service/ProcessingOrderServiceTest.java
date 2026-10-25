@@ -1,5 +1,5 @@
 package com.migao.admin.service;
-// case_ids: PG-001, PG-002, PG-003, PG-004, PG-005, PG-006, PG-007, PG-008, PG-011, PG-018, PG-019, PG-022, PG-023, PG-025, PG-060, PG-069, PG-090, UI-030, PR-068, PR-069, PR-070, PR-077
+// case_ids: PG-001, PG-002, PG-003, PG-004, PG-005, PG-006, PG-007, PG-008, PG-011, PG-018, PG-019, PG-022, PG-023, PG-025, PG-060, PG-069, PG-090, PG-094, PG-095, UI-030, PR-068, PR-069, PR-070, PR-077
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -16,6 +16,7 @@ import com.migao.admin.entity.ProductionRouteRule;
 import com.migao.admin.entity.ProductionRouteSignal;
 import com.migao.admin.entity.ProductionRouteTemplate;
 import com.migao.admin.entity.ProductionWorkLog;
+import com.migao.admin.entity.Supplier;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
@@ -23,6 +24,7 @@ import com.migao.admin.mapper.ProcessingItemMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.mapper.ProcessingPositionOperationMapper;
 import com.migao.admin.mapper.ProductionWorkLogMapper;
+import com.migao.admin.mapper.SupplierMapper;
 import com.migao.admin.time.BusinessClock;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
@@ -120,6 +122,10 @@ class ProcessingOrderServiceTest {
      */
     @Mock
     private StockBatchConsumptionService stockBatchConsumptionService;
+
+    /** 承接方档案（V193，issue #7723）：字段注入 ⇒ setUp 里显式装配。 */
+    @Mock
+    private SupplierMapper supplierMapper;
 
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper();
@@ -981,6 +987,9 @@ class ProcessingOrderServiceTest {
         // 批次台账（V116 / issue #5145）：@InjectMocks 只做构造注入 ⇒ 字段注入的那一个要显式装配
         org.springframework.test.util.ReflectionTestUtils.setField(
                 processingOrderService, "stockBatchConsumptionService", stockBatchConsumptionService);
+        // 承接方档案（issue #7723）：同上，字段注入的那个也要显式装配
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                processingOrderService, "supplierMapper", supplierMapper);
     }
 
     // ── 快照构建工具 ──────────────────────────────────────────────
@@ -1338,7 +1347,7 @@ class ProcessingOrderServiceTest {
     // ── PG-001 生成成功 ────────────────────────────────────────────
 
     @Test
-    @DisplayName("PG-001 已确认含加工项订单 → 生成加工单（**不**联动订单，订单仍 confirmed；#4305）")
+    @DisplayName("PG-001 已确认含加工项订单 → 生成作业单 + 订单进入生产中（#7723 派单即生产）")
     void generateSuccess() {
         stubLibrary();
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
@@ -1379,10 +1388,9 @@ class ProcessingOrderServiceTest {
         assertThat(procs).hasSize(1);
         assertThat(procs.get(0).get("options")).isEqualTo(List.of("四爪钩"));
 
-        // 订单联动（issue #4305，用户裁定「发加工 = 订单进入生产中」）：**生成不再推进订单** ——
-        // 时点已挪到发加工（见 updateStatusMainChain 的 issue 分支断言）。
-        // 红证：修复前这里调用 orderService.updateOrderStatus(orderId, "producing") ⇒ 本断言必红。
-        verify(orderService, never()).updateOrderStatus(anyString(), anyString());
+        // 派单即生产（issue #7723，用户 2026-10-25 裁定 A）：订单 confirmed→producing 的**唯一时点**
+        // 从「发加工」（#4305）挪到「派单」。红证：改前这里是 never ⇒ 本断言必红。
+        verify(orderService).updateOrderStatus("order-001", "producing");
         verify(orderService, never()).revertProducingToConfirmed(anyString(), anyString());
     }
 
@@ -3649,8 +3657,8 @@ class ProcessingOrderServiceTest {
         var results = processingOrderService.generate(List.of("ORD-20260912-0001"), TENANT, "u1");
 
         assertThat(results.get(0).isSuccess()).isTrue();
-        // #4305：生成不联动订单（时点在发加工）
-        verify(orderService, never()).updateOrderStatus(anyString(), anyString());
+        // #7723：派单即生产（时点从「发加工」挪到「派单」）
+        verify(orderService).updateOrderStatus("order-001", "producing");
     }
 
     // ── PG-005/006 状态机 ──────────────────────────────────────────
@@ -3778,11 +3786,12 @@ class ProcessingOrderServiceTest {
     }
 
     @Test
-    @DisplayName("PG-007 取消（generated）→ 加工单 cancelled；订单仍 confirmed ⇒ **不触发**回退（#4305 新时点）")
+    @DisplayName("PG-007 取消（generated）→ 加工单 cancelled；订单仍 confirmed（如待付款单）⇒ **不触发**回退")
     void cancelGeneratedDoesNotRevertOrder() {
         when(processingOrderMapper.selectOne(any())).thenReturn(po("po-1", "generated"));
         when(processingOrderMapper.markStatusIfFrom(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(1);
-        // #4305 后：generated 态加工单对应的订单**从未**进入 producing（生成不推进、发加工才推进）
+        // #7723：派单已把**已确认**单推进 producing ⇒ 这里的「订单仍 confirmed」对应的是
+        // 待付款单（派单不动 pending）或存量单；回退判据只看订单当前态，不看作业单态。
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
 
         ProcessingOrderUpdateRequest cancel = new ProcessingOrderUpdateRequest();
@@ -3796,6 +3805,23 @@ class ProcessingOrderServiceTest {
         assertThat(reasonArg.getValue()).isEqualTo("加工方排期冲突");
         // 订单本就 confirmed ⇒ 回退是空动作（revert 会因「非 producing」抛 409）
         verify(orderService, never()).revertProducingToConfirmed(anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("#7723 取消 generated 作业单（订单已由派单推进 producing）⇒ 订单回退已确认（可重新派单）")
+    void cancelGeneratedRevertsProducingOrder() {
+        when(processingOrderMapper.selectOne(any())).thenReturn(po("po-1", "generated"));
+        when(processingOrderMapper.markStatusIfFrom(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(1);
+        Order producing = Order.builder().id("order-001").tenantId(TENANT).status("producing").build();
+        when(orderMapper.selectById("order-001")).thenReturn(producing);
+
+        ProcessingOrderUpdateRequest cancel = new ProcessingOrderUpdateRequest();
+        cancel.setAction("cancel");
+        cancel.setReason("客户改单");
+        processingOrderService.updateStatus("po-1", cancel, TENANT, "u1");
+
+        // 派单已推进订单 ⇒ 取消作业单必须把订单退回已确认，否则该单永远停在「生产中」且不能再派
+        verify(orderService).revertProducingToConfirmed(eq("order-001"), anyString());
     }
 
     @Test
@@ -4111,7 +4137,7 @@ class ProcessingOrderServiceTest {
     }
 
     @Test
-    @DisplayName("并发重复生成（DuplicateKeyException）→ 幂等失败结果；**不**联动订单（#4305）")
+    @DisplayName("并发重复生成（DuplicateKeyException）→ 幂等失败结果；订单联动**回退**（#7723）")
     void generateConcurrentDuplicateRejectedIdempotently() {
         stubLibrary();
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
@@ -4125,13 +4151,13 @@ class ProcessingOrderServiceTest {
 
         assertThat(results.get(0).isSuccess()).isFalse();
         assertThat(results.get(0).getMessage()).contains("已生成");
-        // #4305：生成既不推进订单、也无「先推进后回退」可言（时点在发加工）⇒ 订单状态全程不动
-        verify(orderService, never()).updateOrderStatus(anyString(), anyString());
-        verify(orderService, never()).revertProducingToConfirmed(anyString(), anyString());
+        // #7723：联动先行（confirmed→producing）+ 落库失败 ⇒ 回退，杜绝「订单生产中、作业单没生成」
+        verify(orderService).updateOrderStatus("order-001", "producing");
+        verify(orderService).revertProducingToConfirmed(eq("order-001"), anyString());
     }
 
     @Test
-    @DisplayName("生成落库失败（非重复）→ 异常传播（整批回滚）；订单状态不动（#4305）")
+    @DisplayName("生成落库失败（非重复）→ 异常传播（整批回滚）；订单联动回退（#7723）")
     void generateInsertFailurePropagates() {
         stubLibrary();
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
@@ -4143,8 +4169,9 @@ class ProcessingOrderServiceTest {
 
         assertThatThrownBy(() -> processingOrderService.generate(List.of("order-001"), TENANT, "u1"))
                 .isInstanceOf(RuntimeException.class);
-        verify(orderService, never()).updateOrderStatus(anyString(), anyString());
-        verify(orderService, never()).revertProducingToConfirmed(anyString(), anyString());
+        // #7723：失败不得留「订单生产中、作业单没生成」的孤儿态
+        verify(orderService).updateOrderStatus("order-001", "producing");
+        verify(orderService).revertProducingToConfirmed(eq("order-001"), anyString());
     }
 
     // ══════════════════ 存量单补工序的派生 + 打印计数（issue #4202）══════════════════
@@ -4745,20 +4772,30 @@ class ProcessingOrderServiceTest {
     // ============================================================ 状态机锚点（issue #4695 / D13）
 
     /**
-     * 🔴 **改这一行 = 改裁定**：能走到 `in_processing` 的**只有 `issued`**。
+     * 🔴 **改这一行 = 改裁定**（本行已随 issue #7723 改过一次，裁定留痕）：
      *
-     * <p>首工序报满的自动路径（{@code ProductionService}）按本状态机判合法性 ⇒ 这里多一条
-     * 入边（尤其 `generated → in_processing`）会让「未发加工的单也被首工序报工推进」——
-     * 那正是设计 §8 **A6 未裁定**的那一半，必须**先裁再改**（不是顺手放开）。</p>
+     * <ul>
+     *   <li><b>2026-09-26（issue #4695 / 设计 §8 A6 前半）</b>：首工序报满 ⇒ **加工单**进
+     *       {@code in_processing}（订单不联动）。当时只认 {@code issued} 一个起始态，
+     *       {@code generated} 直达那半**未裁定** ⇒ 保守不动（需先「发加工」）。</li>
+     *   <li><b>2026-10-25（issue #7723，用户裁定 A）</b>：A6 后半**已裁定「直达」** ——
+     *       「发加工」不再是必经动作 ⇒ {@code generated → in_processing} 放开。
+     *       同一裁定把订单 {@code confirmed→producing} 的时点从「发加工」挪到「派单」。</li>
+     * </ul>
+     *
+     * <p>所以本锚点现在守的是：**{@code generated} 与 {@code issued} 都可进「加工中」，
+     * 而 {@code completed / cancelled} 与脏数据（null）永不**。放开前者是裁定、不是顺手放宽。</p>
      */
     @Test
-    @DisplayName("D13 状态机锚点：能走到 in_processing 的只有 issued（放开 generated = 替 A6 裁定 ⇒ 先裁再改）")
-    void onlyIssuedMayEnterInProcessing() {
+    @DisplayName("D13 状态机锚点：generated / issued 都可进 in_processing，终态与脏数据不可（#7723 裁定 A）")
+    void generatedAndIssuedMayEnterInProcessing() {
         assertThat(ProcessingOrderService.STATUS_IN_PROCESSING).isEqualTo("in_processing");
-        assertThat(ProcessingOrderService.allowsTransition("issued", ProcessingOrderService.STATUS_IN_PROCESSING))
-                .as("首工序报满的自动路径只认这一个起始态")
-                .isTrue();
-        for (String from : List.of("generated", "in_processing", "completed", "cancelled")) {
+        for (String from : List.of("generated", "issued")) {
+            assertThat(ProcessingOrderService.allowsTransition(from, ProcessingOrderService.STATUS_IN_PROCESSING))
+                    .as("issue #7723：from=%s 可进加工中（发加工不再必经）", from)
+                    .isTrue();
+        }
+        for (String from : List.of("in_processing", "completed", "cancelled")) {
             assertThat(ProcessingOrderService.allowsTransition(from, ProcessingOrderService.STATUS_IN_PROCESSING))
                     .as("from=%s 不得直达 in_processing", from)
                     .isFalse();
@@ -4766,5 +4803,138 @@ class ProcessingOrderServiceTest {
         assertThat(ProcessingOrderService.allowsTransition(null, ProcessingOrderService.STATUS_IN_PROCESSING))
                 .as("状态缺失（脏数据）⇒ fail-closed，不推进")
                 .isFalse();
+    }
+    // ============================================================ 派单即生产 + 外发承接方（issue #7723）
+
+    /** 承接方档案夹具（V193：type = material / processor）。 */
+    private Supplier supplier(String id, String name, String status, String type) {
+        return Supplier.builder()
+                .id(id)
+                .tenantId(TENANT)
+                .name(name)
+                .status(status)
+                .type(type)
+                .deleted(Boolean.FALSE)
+                .build();
+    }
+
+    @Test
+    @DisplayName("#7723 派单带承接方 ⇒ 作业单落名称快照 + 档案引用 + 回厂日；订单进入生产中")
+    void generateWithProcessorWritesConsignee() {
+        stubLibrary();
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItemWithProcessing("米白")));
+        when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
+        when(processingOrderMapper.insert(any(ProcessingOrder.class))).thenReturn(1);
+        when(supplierMapper.selectById("sup-1"))
+                .thenReturn(supplier("sup-1", "朝阳加工厂", "active", "processor"));
+        LocalDate returnDate = businessClock.today().plusDays(3);
+
+        var results = processingOrderService.generate(List.of("order-001"), List.of(), TENANT, "u1",
+                null, false, "sup-1", returnDate);
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        ArgumentCaptor<ProcessingOrder> captor = ArgumentCaptor.forClass(ProcessingOrder.class);
+        verify(processingOrderMapper).insert(captor.capture());
+        ProcessingOrder written = captor.getValue();
+        assertThat(written.getProcessor()).as("名称快照").isEqualTo("朝阳加工厂");
+        assertThat(written.getProcessorSupplierId()).as("档案引用").isEqualTo("sup-1");
+        assertThat(written.getExpectedDeliveryDate()).as("回厂日").isEqualTo(returnDate);
+        verify(orderService).updateOrderStatus("order-001", "producing");
+    }
+
+    @Test
+    @DisplayName("#7723 承接方是采购供应商（type=material）⇒ 整批拒绝，一行不写")
+    void generateRejectsMaterialSupplier() {
+        when(supplierMapper.selectById("sup-1"))
+                .thenReturn(supplier("sup-1", "布料供应商", "active", "material"));
+
+        assertThatThrownBy(() -> processingOrderService.generate(List.of("order-001"), List.of(), TENANT,
+                "u1", null, false, "sup-1", null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("不是加工厂");
+        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+        verify(orderService, never()).updateOrderStatus(anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("#7723 承接方已停用 ⇒ 整批拒绝（并指名是哪一家）")
+    void generateRejectsInactiveSupplier() {
+        when(supplierMapper.selectById("sup-1"))
+                .thenReturn(supplier("sup-1", "朝阳加工厂", "inactive", "processor"));
+
+        assertThatThrownBy(() -> processingOrderService.generate(List.of("order-001"), List.of(), TENANT,
+                "u1", null, false, "sup-1", null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("已停用")
+                .hasMessageContaining("朝阳加工厂");
+        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+    }
+
+    @Test
+    @DisplayName("#7723 回厂日早于今天 ⇒ 整批拒绝（沿用 #3901 的交期边界）")
+    void generateRejectsPastReturnDate() {
+        assertThatThrownBy(() -> processingOrderService.generate(List.of("order-001"), List.of(), TENANT,
+                "u1", null, false, null, businessClock.today().minusDays(1)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("回厂日不能早于今天");
+        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+    }
+
+    @Test
+    @DisplayName("#7723 出库作业单（卖布）不接受外发承接方 ⇒ 该单失败、其余照常（逐单记账）")
+    void generateRejectsProcessorOnOutboundOrder() {
+        stubLibrary();
+        Map<String, Object> fabricInfo = processingInfo("米白");
+        fabricInfo.put("saleForm", "布料");
+        OrderItem fabricItem = OrderItem.builder()
+                .id("item-1").tenantId(TENANT).orderId("order-001")
+                .productName("布艺遮光帘A").quantity(BigDecimal.valueOf(2))
+                .width(new BigDecimal("2.5")).height(new BigDecimal("2.8"))
+                .processingInfo(fabricInfo)
+                .build();
+        when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(fabricItem));
+        when(processingOrderMapper.selectActiveByOrderId("order-001", TENANT)).thenReturn(null);
+        when(supplierMapper.selectById("sup-1"))
+                .thenReturn(supplier("sup-1", "朝阳加工厂", "active", "processor"));
+
+        var results = processingOrderService.generate(List.of("order-001"), List.of(), TENANT, "u1",
+                null, false, "sup-1", null);
+
+        assertThat(results.get(0).isSuccess()).isFalse();
+        assertThat(results.get(0).getMessage()).contains("不支持外发加工厂");
+        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+    }
+
+    @Test
+    @DisplayName("#7723 只看外发：outsourced=true 只回有承接方引用的行")
+    void listOutsourcedOnly() {
+        ProcessingOrder outsourced = po("po-1", "generated");
+        outsourced.setProcessorSupplierId("sup-1");
+        outsourced.setProcessor("朝阳加工厂");
+        ProcessingOrder inHouse = po("po-2", "generated");
+        when(processingOrderMapper.selectList(any()))
+                .thenReturn(new ArrayList<>(List.of(outsourced, inHouse)));
+        when(orderMapper.selectBatchIds(anyCollection())).thenReturn(List.of(confirmedOrder));
+
+        assertThat(processingOrderService.list(null, null, TENANT, true))
+                .extracting(ProcessingOrderResponse::getId)
+                .containsExactly("po-1");
+        assertThat(processingOrderService.list(null, null, TENANT, null))
+                .as("不传 outsourced ⇒ 与改造前逐字相同（两行都回）")
+                .hasSize(2);
+    }
+
+    @Test
+    @DisplayName("#7723 承接方下拉：只回在用的加工厂（id + 名称）")
+    void processorOptionsOnlyActiveProcessors() {
+        when(supplierMapper.selectList(any())).thenReturn(List.of(
+                supplier("sup-1", "朝阳加工厂", "active", "processor"),
+                supplier("sup-2", "顺达加工厂", "active", "processor")));
+
+        assertThat(processingOrderService.processorOptions(TENANT))
+                .extracting(ProcessingOrderService.ProcessorOption::name)
+                .containsExactly("朝阳加工厂", "顺达加工厂");
     }
 }

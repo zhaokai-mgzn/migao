@@ -45,6 +45,14 @@ public class Supplier {
     /** active 在用 / inactive 停用（停用后不可被新单据选中，由段 2 在写面拦） */
     private String status;
 
+    /**
+     * 档案类型（V193，issue #7723）：{@code material} 采购供应商 / {@code processor} 外发加工厂。
+     *
+     * <p>缺省 {@code material}（存量行全部是采购供应商）—— **不回填、不猜**。消费者 =
+     * 智能派单的「承接方」下拉（只列 {@code processor}）+ 派单写面的类型校验。</p>
+     */
+    private String type;
+
     private String remark;
 
     @TableField(fill = FieldFill.INSERT)

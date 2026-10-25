@@ -86,11 +86,11 @@ class SupplierMapperTest {
     }
 
     @Test
-    @DisplayName("契约列逐值核对：本段声明的 11 列一列不差（PR body 的冻结契约）")
+    @DisplayName("契约列逐值核对：本段声明的 12 列一列不差（PR body 的冻结契约；#7723 加 type）")
     void declaredContractColumnsExist() throws Exception {
         assertThat(columnsOf("suppliers")).containsExactlyInAnyOrder(
                 "id", "tenant_id", "name", "contact_name", "contact_phone",
-                "payment_terms_days", "status", "remark",
+                "payment_terms_days", "status", "type", "remark",
                 "created_at", "updated_at", "deleted");
     }
 

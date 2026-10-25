@@ -909,14 +909,6 @@ public class ProductionService {
             }
             // 工艺规格：**唯一映射点**（OrderLineCraftFields）—— 不在此另写一份键名翻译
             spec.putAll(OrderLineCraftFields.toSnapshotKeys(item));
-            // 帘种（issue #7742，用户 2026-10-25 逐字「从订单就能拿到这个信息」）：显式列缺值时按
-            // **订单侧受控来源**（`componentRole`：纱 ⇒ 纱帘 / 主布·配布边 ⇒ 布帘）补齐 ——
-            // 与加工单实例化**同一份**映射（经 `OrderLineCraftFields#curtainTypeOf`），读面不另立第二份。
-            // 两层都不命中 ⇒ 不写键（读面 null ⇒ 不猜、不折成默认布帘）。
-            String curtainType = OrderLineCraftFields.curtainTypeOf(item);
-            if (curtainType != null) {
-                spec.put("curtainType", curtainType);
-            }
             // 算料输出（单一真值 = ai-agent 引擎）：逐字取 processing_info 里已落的值
             Map<String, Object> pi = OrderLineCraftFields.normalize(item.getProcessingInfo());
             if (pi != null) {

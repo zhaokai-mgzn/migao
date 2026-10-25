@@ -1543,21 +1543,15 @@ async function orderDetailJourney(page, orderId) {
     const poBlock = page.locator('.po-print-area').first()
     const poVisible = await waitVisible(poBlock, 12000)
     const poNo = poVisible ? matchProcessingOrderNo(await poBlock.textContent().catch(() => '')) : null
-    // 状态流转：发加工 → 开始加工 → 加工完成
+    // 状态流转：开始加工 → 加工完成（issue #7723：**「发加工」已从作业单移除** —— 外发
+    // （加工厂 + 回厂日）改在智能派单录入，作业单由首工序报工/手工开工直接进「加工中」）
     let flowDone = ''
-    for (const [btn, expectText] of [['发加工', '已发加工'], ['开始加工', '加工中'], ['加工完成', '加工完成']]) {
+    for (const [btn, expectText] of [['开始加工', '加工中'], ['加工完成', '加工完成']]) {
       const b = page.getByRole('button', { name: new RegExp(btn) }).first()
       // ② 等按钮出现（不是定长 sleep 后单次 isVisible）：偶发不可见会让加工单停在未完成态，
       // 下游 `17-order-ship` 被「须先完成加工单后再发货」守卫阻断（A/B 两轮均红 = 噪声淹没真回归）
       if (!(await waitVisible(b, 12000))) { flowDone += ` [${btn}不可见]`; break }
       await b.click()
-      if (btn === '发加工') {
-        // 内联表单：加工方/交期（等表单就位再填，不再定长 sleep 后盲填）
-        const processor = page.locator('input[placeholder*="加工方"]').first()
-        if (await waitVisible(processor, 8000)) await processor.fill('冒烟加工厂').catch(() => {})
-        const issueBtn = page.getByRole('button', { name: /确认发加工/ }).first()
-        if (await waitVisible(issueBtn, 8000)) await issueBtn.click().catch(() => {})
-      }
       // 状态流转**带二次确认弹窗**（实测截图逐字：「确认状态流转 —— 将加工单 JG-… 标记为「开始加工」。
       // 该动作会写入加工单状态、不可撤销，请确认后再提交。」+ 取消/确认）⇒ 不点「确认」等于**没发生**：
       // 徽标停在上一态、下一态按钮永不出现（2026-10-14 实测的假红形态，issue #6940）。
@@ -1578,7 +1572,7 @@ async function orderDetailJourney(page, orderId) {
       await waitVisible(badge, 12000)
       const badgeText = await waitForText(badge, expectText, 12000)
       const badgeOk = badgeText === expectText
-      const nextBtn = { 发加工: '开始加工', 开始加工: '加工完成', 加工完成: null }[btn]
+      const nextBtn = { 开始加工: '加工完成', 加工完成: null }[btn]
       const switched = nextBtn
         ? await waitVisible(page.getByRole('button', { name: new RegExp(nextBtn) }).first(), 12000)
         : true

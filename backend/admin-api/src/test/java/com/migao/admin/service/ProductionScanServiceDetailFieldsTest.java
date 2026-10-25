@@ -203,26 +203,6 @@ class ProductionScanServiceDetailFieldsTest {
     }
 
     @Test
-    @DisplayName("①-e 帘种（issue #7742）：订单行显式列空 ⇒ 按受控来源 componentRole 补齐（纱 ⇒ 纱帘）")
-    void curtainTypeFallsBackToComponentRole() {
-        stubScan(CODE_CLOTH, ITEM_CLOTH, standardOps());
-        Map<String, Object> info = new LinkedHashMap<>();
-        info.put("fabric_meters", "12.35");
-        // 订单行**没有** V63 的 `curtain_type` 列值，只有组件角色（主布 / 配布边 / 纱 = 受控枚举）
-        info.put("componentRole", "纱");
-        when(orderItemMapper.selectList(any())).thenReturn(List.of(
-                orderItem(ITEM_CLOTH, "雪纺纱", "2.80", "2.40", "韩褶", null, 2, "定高买宽", true, "2.0", info)));
-
-        Map<String, Object> cloth = positionOf(overviewPositions(service.resolve(CODE_CLOTH, null, TENANT)),
-                ITEM_CLOTH);
-
-        assertThat(cloth.get("curtain_type"))
-                .as("用户 2026-10-25：「从订单就能拿到这个信息」—— 订单侧受控来源：组件=纱 ⇒ 帘种=纱帘"
-                        + "（与加工单实例化同一份映射 issue #4452）")
-                .isEqualTo("纱帘");
-    }
-
-    @Test
     @DisplayName("①-b 引擎输出 > 工艺列：`processing_info` 里的算料值覆盖同名列（与 `getOperations` 同一优先级）")
     void engineCalcOutputWinsOverColumn() {
         stubScan(CODE_CLOTH, ITEM_CLOTH, standardOps());

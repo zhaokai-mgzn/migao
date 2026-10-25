@@ -116,28 +116,6 @@ final class OrderLineCraftFields {
     }
 
     /**
-     * 帘种（`curtain_type`）的**订单侧唯一取数**（issue #7742）。
-     *
-     * <p>两层，顺序即优先级：① 显式列 {@code order_items.curtain_type}；② 受控来源
-     * {@code processing_info.componentRole}（{@code 纱} ⇒ 纱帘，{@code 主布} / {@code 配布边} ⇒ 布帘）——
-     * **复用** {@link ProcessingOrderService#positionOfComponentRole}（加工单实例化的同一份映射，不复制）。</p>
-     *
-     * <p>两层都不命中 ⇒ {@code null}（**不猜**）。加工单实例化还有第 3 层「租户默认部位」，
-     * 那是**派生结果**（带 {@code route_source=default} 标记）⇒ 读面不拿它冒充事实。</p>
-     */
-    static String curtainTypeOf(OrderItem item) {
-        if (item == null) {
-            return null;
-        }
-        String direct = item.getCurtainType();
-        if (direct != null && !direct.isBlank()) {
-            return direct;
-        }
-        Map<String, Object> info = normalize(item.getProcessingInfo());
-        return info == null ? null : ProcessingOrderService.positionOfComponentRole(info);
-    }
-
-    /**
      * 读路径：把**列**（结构化显式字段）还原成加工单快照键，只放非空值。
      *
      * <p>键名与 {@code ProcessingOrderService} 的既有白名单**逐字一致**：工艺规格键 camelCase、

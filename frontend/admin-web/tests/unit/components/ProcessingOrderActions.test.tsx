@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
-// case_ids: PG-092
+// case_ids: PG-092, PG-095
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-// 冻结墙钟（issue #4761 同款）：交期「今天」由冻结时刻派生，跨午夜不会假红
+// 冻结墙钟（issue #4761 同款）：跨午夜不会假红
 import { FROZEN_NOW } from '../helpers/frozen-clock'
 import ProcessingOrderActions from '@/components/production/ProcessingOrderActions'
 
@@ -18,13 +18,6 @@ import { processingOrderApi } from '@/lib/api'
 
 const mockedUpdate = processingOrderApi.update as unknown as ReturnType<typeof vi.fn>
 
-/** 本地时区「今天」（yyyy-MM-dd）—— 与组件 `todayLocal()` 同一真值源 */
-function todayLocal(): string {
-  const mm = String(FROZEN_NOW.getMonth() + 1).padStart(2, '0')
-  const dd = String(FROZEN_NOW.getDate()).padStart(2, '0')
-  return `${FROZEN_NOW.getFullYear()}-${mm}-${dd}`
-}
-
 function po(status: string, over: Record<string, unknown> = {}) {
   return {
     id: 'po-1',
@@ -37,7 +30,7 @@ function po(status: string, over: Record<string, unknown> = {}) {
   }
 }
 
-describe('ProcessingOrderActions（issue #7634：状态流转只在生产明细页发生）', () => {
+describe('ProcessingOrderActions（issue #7634 状态流转只在生产明细页；#7723 移除「发加工」）', () => {
   beforeEach(() => {
     vi.setSystemTime(FROZEN_NOW)
     vi.clearAllMocks()
@@ -48,40 +41,34 @@ describe('ProcessingOrderActions（issue #7634：状态流转只在生产明细�
     vi.useRealTimers()
   })
 
-  it('PG-092 判据 3（红证）：四个状态动作在生产明细页可用', async () => {
-    // ① 发加工：加工方 + 交期 ⇒ PATCH action=issue（交期边界校验在生产侧照旧）
-    const { unmount } = render(<ProcessingOrderActions po={po('generated') as never} />)
-    await userEvent.click(screen.getByTestId('po-action-issue'))
-    await userEvent.type(screen.getByPlaceholderText('加工方（如：朝阳加工厂）'), '朝阳加工厂')
-    await userEvent.type(screen.getByPlaceholderText('交期 yyyy-MM-dd'), todayLocal())
-    await userEvent.click(screen.getByText('确认发加工'))
-    await waitFor(() => expect(mockedUpdate).toHaveBeenCalledWith('po-1', {
-      action: 'issue',
-      processor: '朝阳加工厂',
-      expectedDeliveryDate: todayLocal(),
-      reason: undefined,
-    }))
-    unmount()
+  it('#7723 判据（红证）：任何状态下都**没有**「发加工」按钮（外发已搬到智能派单）', () => {
+    for (const status of ['generated', 'issued', 'in_processing']) {
+      const view = render(<ProcessingOrderActions po={po(status) as never} />)
+      expect(screen.queryByTestId('po-action-issue')).toBeNull()
+      expect(screen.queryByText('发加工')).toBeNull()
+      view.unmount()
+    }
+  })
 
-    // ② 开始加工：确认弹框后才发请求
-    mockedUpdate.mockClear()
-    const second = render(<ProcessingOrderActions po={po('issued') as never} />)
+  it('PG-092 判据 3：开始加工 / 加工完成 / 取消 三个动作仍可用', async () => {
+    // ① 开始加工：确认弹框后才发请求
+    const first = render(<ProcessingOrderActions po={po('issued') as never} />)
     await userEvent.click(screen.getByTestId('po-action-start'))
     expect(mockedUpdate).not.toHaveBeenCalled()
     expect(screen.getByText(/标记为「开始加工」/)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: '确认' }))
     await waitFor(() => expect(mockedUpdate).toHaveBeenCalledWith('po-1', { action: 'start' }))
-    second.unmount()
+    first.unmount()
 
-    // ③ 加工完成：同一条确认通道
+    // ② 加工完成：同一条确认通道
     mockedUpdate.mockClear()
-    const third = render(<ProcessingOrderActions po={po('in_processing') as never} />)
+    const second = render(<ProcessingOrderActions po={po('in_processing') as never} />)
     await userEvent.click(screen.getByTestId('po-action-complete'))
     await userEvent.click(screen.getByRole('button', { name: '确认' }))
     await waitFor(() => expect(mockedUpdate).toHaveBeenCalledWith('po-1', { action: 'complete' }))
-    third.unmount()
+    second.unmount()
 
-    // ④ 取消：原因必填（空原因按钮禁用），填了才提交
+    // ③ 取消：原因必填（空原因按钮禁用），填了才提交
     mockedUpdate.mockClear()
     render(<ProcessingOrderActions po={po('issued') as never} />)
     await userEvent.click(screen.getByTestId('po-action-cancel'))
@@ -91,28 +78,11 @@ describe('ProcessingOrderActions（issue #7634：状态流转只在生产明细�
     await userEvent.click(confirmCancel)
     await waitFor(() => expect(mockedUpdate).toHaveBeenCalledWith('po-1', {
       action: 'cancel',
-      processor: undefined,
-      expectedDeliveryDate: undefined,
       reason: '客户改单',
     }))
   })
 
-  it('发加工：过去交期被拦截，不发请求（issue #3901 边界不因搬家而丢）', async () => {
-    const past = new Date(FROZEN_NOW.getTime() - 24 * 3600 * 1000)
-    const yyyy = past.getFullYear()
-    const mm = String(past.getMonth() + 1).padStart(2, '0')
-    const dd = String(past.getDate()).padStart(2, '0')
-
-    render(<ProcessingOrderActions po={po('generated') as never} />)
-    await userEvent.click(screen.getByTestId('po-action-issue'))
-    await userEvent.type(screen.getByPlaceholderText('交期 yyyy-MM-dd'), `${yyyy}-${mm}-${dd}`)
-    await userEvent.click(screen.getByText('确认发加工'))
-
-    expect(await screen.findByText('交付日期不能早于今天')).toBeInTheDocument()
-    expect(mockedUpdate).not.toHaveBeenCalled()
-  })
-
-  it('出库作业单：没有「发加工」，取消文案是「取消作业单」（issue #7079 口径不丢）', async () => {
+  it('出库作业单：取消文案是「取消作业单」（issue #7079 口径不丢）', async () => {
     render(<ProcessingOrderActions po={po('issued', { order_kind: 'outbound' }) as never} />)
 
     expect(screen.queryByTestId('po-action-issue')).toBeNull()

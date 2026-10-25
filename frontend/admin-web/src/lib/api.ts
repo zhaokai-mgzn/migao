@@ -68,6 +68,7 @@ import type {
   OrderUrgencyParams,
   PoolBoard,
   PoolDispatchRequest,
+  ProcessorOption,
   // 省料度量读面（issue #5159）：L2 分档看板 + L3 采购/财务口径趋势
   SavingBoard,
   SavingTrend,
@@ -970,6 +971,15 @@ export const poolBoardApi = {
 
   dispatch: (body: PoolDispatchRequest) =>
     request.post<ApiResponse<PoolDispatchResult[]>>('/api/admin/production/pool/dispatch', body),
+
+  /**
+   * 承接方下拉（issue #7723）：只回**在用加工厂**（`suppliers.type = processor`）的 id + 名称。
+   *
+   * 为什么不复用 `supplierApi.list`：那把码是 `inbound:view`，生产岗通常没有 ⇒ 下拉会空。
+   * 本端点挂派单页同码 `processing:view`，且不暴露联系人/账期/欠款。
+   */
+  processors: () =>
+    request.get<ApiResponse<ProcessorOption[]>>('/api/admin/production/pool/processors'),
 }
 
 // 省料度量读面（issue #5159）：L2 批次结构性看板 + L3 采购/财务口径趋势。
@@ -1147,8 +1157,8 @@ export const processingOrderApi = {
       batches && batches.length > 0 ? { orderIds, batches } : { orderIds },
     ),
 
-  // 加工单列表（keyword=加工单号/订单号，status 可选）
-  list: (params?: { keyword?: string; status?: string }) =>
+  // 加工单列表（keyword=加工单号/订单号，status 可选，outsourced=true 只看外发 —— issue #7723）
+  list: (params?: { keyword?: string; status?: string; outsourced?: boolean }) =>
     request.get<ApiResponse<ProcessingOrder[]>>('/api/admin/processing-orders', { params }),
 
   // 加工单详情（id 可为加工单号/订单号/UUID）
@@ -1776,9 +1786,10 @@ export const purchaseOrderApi = {
 }
 
 export const supplierApi = {
-  list: (keyword?: string) =>
+  // `type`（issue #7723）：material 采购供应商 / processor 外发加工厂；不传 = 不过滤（与改造前逐字相同）
+  list: (keyword?: string, type?: 'material' | 'processor') =>
     request.get<ApiResponse<Supplier[]>>('/api/admin/suppliers', {
-      params: keyword ? { keyword } : undefined,
+      params: { ...(keyword ? { keyword } : {}), ...(type ? { type } : {}) },
     }),
 
   create: (data: Partial<Supplier>) =>

@@ -36,12 +36,21 @@ export const POOL_ASSIGNMENT_RULE = 'fifo'
 export function buildPoolRequest(
   lines: Pick<PoolLine, 'orderId' | 'itemId'>[],
   pooled: boolean,
+  /**
+   * 外发承接方（issue #7723）：`null`/缺省 = 本厂自做。
+   *
+   * 🔴 **留空就不带键**（不是带 `null`）—— 请求体上能核验「没选承接方 ⇒ 与改造前逐字相同」
+   * （与 `batches` 的既有口径同款）。
+   */
+  consignee?: { processorSupplierId?: string | null; expectedDeliveryDate?: string | null },
 ): PoolDispatchRequest {
   return {
     orderIds: lines.map((l) => l.orderId),
     batches: lines.map((l) => ({ orderId: l.orderId, itemId: l.itemId })),
     assignmentRule: POOL_ASSIGNMENT_RULE,
     pooled,
+    ...(consignee?.processorSupplierId ? { processorSupplierId: consignee.processorSupplierId } : {}),
+    ...(consignee?.expectedDeliveryDate ? { expectedDeliveryDate: consignee.expectedDeliveryDate } : {}),
   }
 }
 
