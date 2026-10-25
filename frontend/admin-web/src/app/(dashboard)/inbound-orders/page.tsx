@@ -561,18 +561,21 @@ export default function InboundOrdersPage() {
               </div>
             </div>
 
+            {/* 窄屏横向滚动逃逸口 + 表头禁折行（issue #6398 的守卫规则 ①）：本包新增「卷数 / 卷长 / 入库米数」
+                三列后列更宽，不这么做表头会被压成一行一个字 */}
+            <div className="overflow-x-auto">
             <table className="w-full text-sm border border-neutral-200 rounded overflow-hidden">
               <thead className="bg-neutral-50 text-neutral-600">
                 <tr>
-                  <th className="text-left px-3 py-2 font-medium">货号 / 颜色 / 门幅</th>
-                  <th className="text-right px-3 py-2 font-medium">卷数</th>
-                  <th className="text-right px-3 py-2 font-medium">卷长(米/卷)</th>
-                  <th className="text-right px-3 py-2 font-medium">入库米数(米)</th>
-                  <th className="text-right px-3 py-2 font-medium">单价</th>
-                  <th className="text-right px-3 py-2 font-medium">金额</th>
-                  <th className="text-left px-3 py-2 font-medium">批次号</th>
-                  <th className="text-left px-3 py-2 font-medium">缸号</th>
-                  <th className="text-left px-3 py-2 font-medium">旧系统批次号</th>
+                  <th className="text-left px-3 py-2 font-medium whitespace-nowrap">货号 / 颜色 / 门幅</th>
+                  <th className="text-right px-3 py-2 font-medium whitespace-nowrap">卷数</th>
+                  <th className="text-right px-3 py-2 font-medium whitespace-nowrap">卷长(米/卷)</th>
+                  <th className="text-right px-3 py-2 font-medium whitespace-nowrap">入库米数(米)</th>
+                  <th className="text-right px-3 py-2 font-medium whitespace-nowrap">单价</th>
+                  <th className="text-right px-3 py-2 font-medium whitespace-nowrap">金额</th>
+                  <th className="text-left px-3 py-2 font-medium whitespace-nowrap">批次号</th>
+                  <th className="text-left px-3 py-2 font-medium whitespace-nowrap">缸号</th>
+                  <th className="text-left px-3 py-2 font-medium whitespace-nowrap">旧系统批次号</th>
                 </tr>
               </thead>
               <tbody>
@@ -618,6 +621,7 @@ export default function InboundOrdersPage() {
                 )}
               </tbody>
             </table>
+            </div>
           </div>
         )}
       </Modal>

@@ -54,7 +54,6 @@ const FROZEN_TABLES: string[] = [
   'src/app/(dashboard)/finance/page.tsx::表[支付方式|收入|退款|净额]',
   'src/app/(dashboard)/finance/page.tsx::表[日期|收入|退款|净额]',
   'src/app/(dashboard)/inbound-orders/page.tsx::表[行号|货号|剩余米数|缸号|旧系统批次号|校验结果]',
-  'src/app/(dashboard)/inbound-orders/page.tsx::表[货号 / 颜色 / 门幅|数量|单价|金额|批次号|缸号|卷长(米)|旧系统批次号]',
   // 2026-10-17（issue #7079）：作业看板表头首列改名（加工单号 → **作业单号**）并**新增**「类型」列
   // （作业单两型用中文业务名可见）⇒ 锚里的表头顺序 / 文本同步。
   // ⚠️ 这一条**仍是缺陷**（「操作」表头缺 `whitespace-nowrap`，与本单的两型可见面正交）
@@ -89,7 +88,7 @@ const FROZEN_TABLES: string[] = [
 ]
 // 2026-10-24（issue #7644）：入库单**建单页**明细表头改成「卷数 / 卷长(米/卷) / 数量（米）」并补齐 nowrap
 // ⇒ 该表**真修好** ⇒ 条目删除、基线 20 → 19。
-const TABLE_BASELINE = 19
+const TABLE_BASELINE = 18
 
 /**
  * 存量台账·规则 ②（手写药丸）：同上，冻结于 2026-10-06（issue #6398），**改前** 6 条 → **5**。

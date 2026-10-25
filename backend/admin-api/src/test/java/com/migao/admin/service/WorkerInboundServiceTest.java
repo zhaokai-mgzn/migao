@@ -366,8 +366,9 @@ class WorkerInboundServiceTest {
             assertThat(view.getNeedsConfirmation()).isTrue();
             assertThat(view.getItems()).hasSize(1);
             assertThat(view.getItems().get(0).getBatchNo()).isNull();
-            // #6812：「数量」列是**卷数**（工人端默认 1），识别到的米数落在**卷长**上
-            assertThat(view.getItems().get(0).getQuantity()).isEqualByComparingTo("1");
+            // issue #7709：明细行的「数量」列**恒为米数**（1 卷 × 60.5 米 = 60.5），卷数进 roll_count
+            assertThat(view.getItems().get(0).getMeters()).isEqualByComparingTo("60.5");
+            assertThat(view.getItems().get(0).getRollCount()).isEqualTo(1);
         }
 
         @Test
@@ -393,7 +394,10 @@ class WorkerInboundServiceTest {
             org.mockito.ArgumentCaptor<InboundOrderItem> lineCap =
                     org.mockito.ArgumentCaptor.forClass(InboundOrderItem.class);
             verify(inboundOrderItemMapper).insert(lineCap.capture());
-            assertThat(lineCap.getValue().getQuantity()).isEqualByComparingTo("1");
+            assertThat(lineCap.getValue().getQuantity())
+                    .as("入库米数 = 1 卷 × 0.5 米（issue #7709：数量列恒为米数）")
+                    .isEqualByComparingTo("0.5");
+            assertThat(lineCap.getValue().getRollCount()).isEqualTo(1);
             assertThat(lineCap.getValue().getRollLengthM()).isEqualByComparingTo("0.5");
         }
 
@@ -412,7 +416,10 @@ class WorkerInboundServiceTest {
             org.mockito.ArgumentCaptor<InboundOrderItem> lineCap =
                     org.mockito.ArgumentCaptor.forClass(InboundOrderItem.class);
             verify(inboundOrderItemMapper).insert(lineCap.capture());
-            assertThat(lineCap.getValue().getQuantity()).isEqualByComparingTo("1");
+            assertThat(lineCap.getValue().getQuantity())
+                    .as("入库米数 = 1 卷 × 67.2 米（数量列恒为米数）")
+                    .isEqualByComparingTo("67.2");
+            assertThat(lineCap.getValue().getRollCount()).as("卷数进 roll_count").isEqualTo(1);
             assertThat(lineCap.getValue().getRollLengthM()).isEqualByComparingTo("67.2");
         }
 
@@ -530,11 +537,12 @@ class WorkerInboundServiceTest {
             assertThat(afterCap.getValue().subtract(beforeCap.getValue()))
                     .as("台账 delta 必须是**米数**（卷数 × 卷长），不是卷数")
                     .isEqualByComparingTo("60");
-            // 明细行的「数量」列仍是卷数（口径列与换算列分开）
+            // issue #7709：明细行的「数量」列存**米数**（2 卷 × 30 米 = 60），卷数进 roll_count
             org.mockito.ArgumentCaptor<InboundOrderItem> lineCap =
                     org.mockito.ArgumentCaptor.forClass(InboundOrderItem.class);
             verify(inboundOrderItemMapper).insert(lineCap.capture());
-            assertThat(lineCap.getValue().getQuantity()).isEqualByComparingTo("2");
+            assertThat(lineCap.getValue().getQuantity()).isEqualByComparingTo("60");
+            assertThat(lineCap.getValue().getRollCount()).isEqualTo(2);
             assertThat(lineCap.getValue().getRollLengthM()).isEqualByComparingTo("30");
         }
 

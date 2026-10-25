@@ -477,8 +477,8 @@ export default function NewInboundOrderPage() {
                 </table>
                 <p className="text-xs text-neutral-400 mt-2 leading-relaxed">
                   <strong className="text-neutral-500">按卷采购</strong>：填「卷数 + 卷长」⇒
-                  <span className="font-mono">卷数 × 每卷米数</span> 就是入库米数（格下那行是换算预览，
-                  过账时由服务端按同一口径记账）；<strong className="text-neutral-500">散剪 / 尾料按米买</strong>：
+                  <span className="font-mono">卷数 × 每卷米数</span> 就是入库米数（格下那行是算好的米数，
+                  过账后库存按这个数增加）；<strong className="text-neutral-500">散剪 / 尾料按米买</strong>：
                   卷数留空，数量（米）直接填。数量按 0.1 米粒度、大于 0（0.5 米的尾料能登记；0 与 2.755 会被拒绝；
                   超 1 位小数不会四舍五入）；单价留空 = 只加数量、不算成本（均价保持原值）；
                   缸号与旧系统批次号都是外部事实，与系统生成的批次号是三件不同的事。
