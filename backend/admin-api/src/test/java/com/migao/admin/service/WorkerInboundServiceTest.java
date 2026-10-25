@@ -366,9 +366,14 @@ class WorkerInboundServiceTest {
             assertThat(view.getNeedsConfirmation()).isTrue();
             assertThat(view.getItems()).hasSize(1);
             assertThat(view.getItems().get(0).getBatchNo()).isNull();
-            // issue #7709：明细行的「数量」列**恒为米数**（1 卷 × 60.5 米 = 60.5），卷数进 roll_count
-            assertThat(view.getItems().get(0).getMeters()).isEqualByComparingTo("60.5");
-            assertThat(view.getItems().get(0).getRollCount()).isEqualTo(1);
+            // 工人面视图的「数量」仍是**卷数**（工人核对「我拍了几卷」，issue #6812 / #7709）
+            assertThat(view.getItems().get(0).getQuantity()).isEqualByComparingTo("1");
+            // 而落库的明细行「数量」**恒为米数**（1 卷 × 60.5 米 = 60.5），卷数进 roll_count
+            org.mockito.ArgumentCaptor<InboundOrderItem> persisted =
+                    org.mockito.ArgumentCaptor.forClass(InboundOrderItem.class);
+            verify(inboundOrderItemMapper).insert(persisted.capture());
+            assertThat(persisted.getValue().getQuantity()).isEqualByComparingTo("60.5");
+            assertThat(persisted.getValue().getRollCount()).isEqualTo(1);
         }
 
         @Test
