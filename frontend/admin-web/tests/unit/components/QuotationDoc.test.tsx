@@ -55,7 +55,7 @@ import type { Order, OrderItem } from '@/types'
  */
 
 function buildItem(overrides: Partial<OrderItem> = {}): OrderItem {
-  return {
+  const merged: OrderItem = {
     id: 'item-1',
     productId: 'p-1',
     productName: '布艺遮光帘A',
@@ -82,6 +82,10 @@ function buildItem(overrides: Partial<OrderItem> = {}): OrderItem {
     },
     ...overrides,
   }
+  // 夹具口径（issue #7724）：`amount`（面料金额 = 单价 × 数量）缺省与 `subtotal` 同源 ——
+  // 只改 subtotal 的老用例不必逐个补 amount；要造「subtotal 已含加工费」的形态就**显式**给 amount。
+  if (overrides.amount === undefined) merged.amount = merged.subtotal as number
+  return merged
 }
 
 /**
@@ -464,6 +468,28 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
       )
       // 51.10（组合那半）+ 12.00（按套选项）= 63.10；单价不摊成 8.64（纸面从没有过这个价）
       expect(feeRowCells()).toEqual(['加工费', '', '7.3', '7.00', '63.10'])
+    })
+
+    // 🔴 issue #7724（同一张用户截图）：纸面同时印着「本套金额 327.04」与「本单应收 275.94」——
+    // 「新增订单」页把加工费并进了 `order_items.subtotal`，而纸面又在它上面 + 加工费 ⇒ 双算。
+    // 修法：面料行小计 / 本套金额都取服务端 `amount`（= 单价 × 数量）作为面料金额。
+    it('🔴 面料行小计 = amount（单价×数量）：「subtotal 已含加工费」的单不双算（issue #7724）', () => {
+      render(
+        <QuotationDoc
+          order={buildOrder({
+            items: [buildFeeItem({ subtotal: 275.94 })], // amount 仍是 224.84
+          })}
+        />
+      )
+      const rows = Array.from(doc()!.querySelectorAll('.quotation-set tbody tr'))
+      const fabricCells = Array.from(rows[0].querySelectorAll('td')).map((td) => td.textContent?.trim() ?? '')
+      // 面料行：数量 7.3 / 单价 30.80 / 小计 224.84（修前印 subtotal = 275.94，加工费印了两遍）
+      expect(fabricCells.slice(-3)).toEqual(['7.3', '30.80', '224.84'])
+      // 本套金额 = 224.84 + 51.10 = 275.94（修前 327.04），与「本单应收」同源
+      expect(docText()).toContain('本套金额 275.94')
+      expect(docText()).not.toContain('327.04')
+      // 加工费行仍是「单价 7.00 / 小计 51.10」（#7716 的口径不回退）
+      expect(feeRowCells()).toEqual(['加工费', '', '7.3', '7.00', '51.10'])
     })
 
     it('processingFee = 0 / 缺省 ⇒ 不出现加工费行', () => {

@@ -32,7 +32,7 @@ import { isCraftSpecKey, type CraftSpecRow } from '@/lib/craft-display'
 // 商品身份（货号 / 颜色 / 门幅）的唯一读取口 —— issue #6882；`craftRowsWithoutDoorWidth` = 同一口径
 // 「工艺行但不要门幅」（issue #6893：门幅本行已单独印一处）
 import { craftRowsWithoutDoorWidth, orderItemSku } from '@/lib/order-item-sku'
-import { lineSubtotal } from '@/lib/order-amount'
+import { fabricSubtotal, lineSubtotal } from '@/lib/order-amount'
 // 售卖形态的唯一读点（issue #7320）：布料单不涉及加工费 ⇒ 不印「未定价 / 加工费米数」。
 import { isFabricSaleLine } from '@/lib/sale-form'
 // 加工费的行级展示（读 detail / 编算式 / 判未定价）**issue #5843 起住在共享层** ——
@@ -236,7 +236,9 @@ function SpecGroup({ title, rows }: { title: string; rows: CraftSpecRow[] }) {
 }
 
 export default function OrderItemList({ items, className }: OrderItemListProps) {
-  const subtotalSum = items.reduce((sum, item) => sum + item.subtotal, 0)
+  // 🔴 面料金额走 `fabricSubtotal`（= 服务端 `amount` 优先）—— 直读 `item.subtotal` 会把
+  // 「新增订单」页建的单双算（它落的 subtotal 已含加工费，issue #7724）。
+  const subtotalSum = items.reduce((sum, item) => sum + (fabricSubtotal(item) ?? 0), 0)
   const processingFeeSum = items.reduce((sum, item) => sum + (item.processingFee || 0), 0)
   const totalAmount = subtotalSum + processingFeeSum
   // 未定价行数（#4406：未定价按用户裁定计 0）—— 合计区必须显式提示，不能让它藏在 0 里。

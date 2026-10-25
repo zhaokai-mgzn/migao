@@ -10,9 +10,12 @@
  * 「屏幕显示的金额」与「打给客户的纸面金额」静默不一致 —— 而商家是照纸面对账的。
  *
  * 口径（与后端一致，勿自行加价/推导）：
- * - `subtotal` = 面料行小计（元）
+ * - **面料小计** = 该行面料金额 = `amount`（后端 `unitPrice × quantity`，`OrderService.convertToItemResponse`）
+ *   —— 见 {@link fabricSubtotal}。🔴 `subtotal` 只是**兜底**：它的语义今天**二义**
+ *   （「新增订单」页建单时把加工费并了进去 `subtotal: productSub + lineFee`，agent / 开放接口等路径落的是面料金额）
+ *   ⇒ 直读 `subtotal` 再 + 加工费 = **双算**（issue #7724 实证：本套金额 327.04 vs 本单应收 275.94）。
  * - `processingFee` = **行级落库**的加工费（issue #4406：组合价 × 加工费米数），缺省按 0
- * - 行小计 = 两者之和；**不**参与汇总（订单级数字只读订单字段，见 `QuotationDoc` 汇总段）
+ * - 行小计 = 面料小计 + 加工费；**不**参与汇总（订单级数字只读订单字段，见 `QuotationDoc` 汇总段）
  *
  * ## 两个口径，**只在「面料小计不可知」这一格分叉**（issue #6731）
  *
@@ -25,7 +28,27 @@
  * （`tests/unit/lib/order-amount.test.ts`）—— 谁改动任一侧都会当场红，必须回来重新裁定。
  * 🔴 **不要**把 `lineSubtotal` 也改成严格口径：那会改掉屏幕侧的显示值（本单边界明令不动屏幕）。
  */
-import type { OrderItem } from '@/types'
+/**
+ * **面料小计**（元）= 该行的面料金额，**不含加工费** —— 本文件唯一的「面料金额取数口」。
+ *
+ * 取值顺序（issue #7724）：
+ * 1. `amount` —— 后端 `OrderDetailResponse.OrderItemResponse.amount` = `unitPrice × quantity`，
+ *    是**确定**的「面料金额」，与加工费无关；
+ * 2. `subtotal` —— 只在 `amount` 缺席（存量单 / 非详情响应）时兜底。⚠️ 它的语义**二义**：
+ *    「新增订单」页建单时落的是 `面料 + 加工费`（`frontend/admin-web/src/app/(dashboard)/orders/new/page.tsx`
+ *    的 `subtotal: productSub + lineFee`），而 agent / 开放接口路径落的是 `unitPrice × quantity`
+ *    ⇒ 任何「行金额」都**不得**先读它再自行 + 加工费（那会把前者的加工费算两遍）；
+ * 3. 都没有 ⇒ `null`（= 算不出来，交给调用方决定印 `—` 还是折 0）。
+ *
+ * 判据 = `frontend/admin-web/tests/unit/lib/order-amount.test.ts` 的「面料小计取数口」一组
+ * + 类级守卫 `frontend/admin-web/tests/unit/paper-doc-fabric-amount-guard.test.ts`
+ * （纸面 / 明细行不许直读 `.subtotal`）。
+ */
+export function fabricSubtotal(item: { amount?: number; subtotal?: number }): number | null {
+  if (typeof item.amount === 'number' && Number.isFinite(item.amount)) return item.amount
+  if (typeof item.subtotal === 'number' && Number.isFinite(item.subtotal)) return item.subtotal
+  return null
+}
 
 /**
  * 行小计（元）= 面料小计 + 该行加工费。缺 `processingFee` ⇒ 按 0（存量单没有该字段）。
@@ -40,12 +63,18 @@ import type { OrderItem } from '@/types'
  * ⚠️ 别把这里改回 `|| 0`：那会把「没有这个数」折成「余额为零」，而这张数是**打给客户对账**的
  * （同族硬约束 = `SalesDoc` 的 `formatAmount`：缺值印 `—`、真 0 仍印 `0.00`）。
  */
-export function lineSubtotal(item: Pick<OrderItem, 'subtotal' | 'processingFee'>): number | null {
-  const subtotal = typeof item.subtotal === 'number' && Number.isFinite(item.subtotal) ? item.subtotal : 0
+export function lineSubtotal(item: {
+  /** ⚠️ 三个键都按**运行时可缺席**声明（`OrderItem` 的类型把 `amount` / `subtotal` 说成必填，
+   *  那是类型在说谎：存量行的该列可为 NULL，后端 `non_null` 让键整个缺席）。 */
+  amount?: number
+  subtotal?: number
+  processingFee?: number
+}): number | null {
+  const fabric = fabricSubtotal(item)
   const processingFee =
     typeof item.processingFee === 'number' && Number.isFinite(item.processingFee) ? item.processingFee : 0
-  if (item.subtotal == null && item.processingFee == null) return null
-  return subtotal + processingFee
+  if (fabric === null && item.processingFee == null) return null
+  return (fabric ?? 0) + processingFee
 }
 
 /**
@@ -71,9 +100,11 @@ export function lineSubtotal(item: Pick<OrderItem, 'subtotal' | 'processingFee'>
 export function paperLineSubtotal(item: {
   /** ⚠️ 形参按**运行时可缺席**声明（`OrderItem.subtotal` 的类型是必填的，那是类型在说谎：
    *  存量行的该列可为 NULL，后端 `non_null` 让键整个缺席）—— 这正是本函数存在的理由。 */
+  amount?: number
   subtotal?: number
   processingFee?: number
 }): number | null {
-  if (typeof item.subtotal !== 'number' || !Number.isFinite(item.subtotal)) return null
-  return item.subtotal + (typeof item.processingFee === 'number' && Number.isFinite(item.processingFee) ? item.processingFee : 0)
+  const fabric = fabricSubtotal(item)
+  if (fabric === null) return null
+  return fabric + (typeof item.processingFee === 'number' && Number.isFinite(item.processingFee) ? item.processingFee : 0)
 }
