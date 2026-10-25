@@ -194,6 +194,26 @@ describe('智能派单 · 加急插队区（PR-080）', () => {
     mockPreview.mockResolvedValue(ok(urgentPreview))
   })
 
+  it('外发入口（承接方 + 回厂日）在**加急区**内、加急表格之前，不在成批区（issue #7746）', async () => {
+    const { container } = render(<ProductionPoolPage />)
+    await waitFor(() => expect(screen.getByTestId('pool-urgent-table')).toBeInTheDocument())
+
+    // ① 结构性：与「立即派单」同区 —— 排在加急表格**之前**（生造 DOM 顺序断言，不靠视觉）
+    const html = container.innerHTML
+    const consignee = html.indexOf('data-testid="pool-consignee"')
+    expect(consignee, '外发入口不见了').toBeGreaterThan(-1)
+    expect(consignee, '外发入口必须排在加急表格之前（同区、表格上方）').toBeLessThan(
+      html.indexOf('pool-urgent-table'),
+    )
+
+    // ② 反向：不在成批区里（改前它在 `pool-groups-section` 内 ⇒ 本断言红）
+    const groupsSection = screen.getByTestId('pool-groups-section')
+    expect(within(groupsSection).queryByTestId('pool-consignee')).toBeNull()
+
+    // ③ 标题必须同时覆盖两件事（退回「只有加急」= 红）
+    expect(screen.getByText('加急 / 外发订单（不参与合并，立即派）')).toBeInTheDocument()
+  })
+
   it('加急插队区**结构性**排在成批区之前，且加急单不出现在成批候选里（不进池）', async () => {
     const { container } = render(<ProductionPoolPage />)
     await waitFor(() => expect(screen.getByTestId('pool-urgent-table')).toBeInTheDocument())

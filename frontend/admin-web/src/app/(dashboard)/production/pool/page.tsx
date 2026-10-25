@@ -395,9 +395,47 @@ export default function ProductionPoolPage() {
             <div className="p-5">
               <div className="flex items-center gap-2 mb-3">
                 <Zap className="w-4 h-4 text-amber-600" />
-                <h2 className="text-sm font-medium text-neutral-900">加急订单（不参与合并，立即派）</h2>
+                <h2 className="text-sm font-medium text-neutral-900">加急 / 外发订单（不参与合并，立即派）</h2>
                 <span className="text-xs text-neutral-500">
-                  {urgentLines.length} 行 / {board?.urgentCount ?? 0} 单 —— 不参与合并，立即单独派单
+                  {urgentLines.length} 行 / {board?.urgentCount ?? 0} 单 —— 不参与合并；要外发先选承接方，再点「立即派单」
+                </span>
+              </div>
+              {/*
+                外发（issue #7723；issue #7746 搬到本区）：承接方 + 回厂日 = **派单的属性**，
+                不是作业单的属性。放在**加急区**——两者同属「不参与合并、逐单立即派」的特殊派单；
+                成批派沿用同一组值（不新增第二份状态）。留空 = 本厂自做（请求体不带这两个键）。
+              */}
+              <div
+                data-testid="pool-consignee"
+                className="mb-3 flex flex-wrap items-end gap-4 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3"
+              >
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-neutral-600 whitespace-nowrap">承接方</label>
+                  <select
+                    aria-label="承接方"
+                    value={processorId}
+                    onChange={(e) => setProcessorId(e.target.value)}
+                    className={cn(SELECT_CONTROL, 'min-w-[160px]')}
+                  >
+                    <option value="">本厂自做</option>
+                    {processors.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-neutral-600 whitespace-nowrap">回厂日</label>
+                  <input
+                    type="date"
+                    aria-label="回厂日"
+                    value={returnDate}
+                    onChange={(e) => setReturnDate(e.target.value)}
+                    className="h-9 rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                  />
+                </div>
+                <span className="text-xs text-neutral-500">
+                  发给外部加工厂时填写，再点该行「立即派单」；留空 = 本厂自做（加工厂档案在「供应商」里把类型设为加工厂）
+
                 </span>
               </div>
               {urgentLines.length === 0 ? (
@@ -478,49 +516,13 @@ export default function ProductionPoolPage() {
           */}
           <Card>
             <div className="p-5" data-testid="pool-groups-section">
-              {/*
-                外发（issue #7723）：承接方 + 回厂日 = **派单的属性**，不是作业单的属性。
-                留空 = 本厂自做（请求体不带这两个键）。单派（加急插队区）与成批派共用这一组值。
-              */}
-              <div
-                data-testid="pool-consignee"
-                className="mb-4 flex flex-wrap items-end gap-4 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3"
-              >
-                <div className="flex items-center gap-2">
-                  <label className="text-sm text-neutral-600 whitespace-nowrap">承接方</label>
-                  <select
-                    aria-label="承接方"
-                    value={processorId}
-                    onChange={(e) => setProcessorId(e.target.value)}
-                    className={cn(SELECT_CONTROL, 'min-w-[160px]')}
-                  >
-                    <option value="">本厂自做</option>
-                    {processors.map((p) => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-sm text-neutral-600 whitespace-nowrap">回厂日</label>
-                  <input
-                    type="date"
-                    aria-label="回厂日"
-                    value={returnDate}
-                    onChange={(e) => setReturnDate(e.target.value)}
-                    className="h-9 rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-                  />
-                </div>
-                <span className="text-xs text-neutral-500">
-                  发给外部加工厂时填写；留空 = 本厂自做（加工厂档案在「供应商」里把类型设为加工厂）
-                </span>
-              </div>
-
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <Layers className="w-4 h-4 text-primary-600" />
                   <h2 className="text-sm font-medium text-neutral-900">可合并的待派订单（按料分组）</h2>
                   <span className="text-xs text-neutral-500">
-                    {groups.length} 个料组 / 已选 {selectedIds.length} 单
+                    {groups.length} 个料组 / 已选 {selectedIds.length} 单 —— 本批派给：
+                    {processors.find((p) => p.id === processorId)?.name ?? '本厂自做'}（在上方「加急 / 外发」区选择）
                   </span>
                 </div>
                 <div className="flex items-center gap-2">

@@ -65,7 +65,8 @@ describe('智能派单：命名与去内部隐喻（issue #5576）', () => {
     expect(container.querySelector('[data-testid="pool-status-pooling"]'),
       '池化开关徽标回来了：只读状态不是开关（#6588）').toBeNull()
     // 替换后的**人话**读数（不是"删了就算"）：状态条与两个区块都还在、且用商家的话
-    for (const plain of ['待派订单', '加急订单（不参与合并，立即派）', '可合并的待派订单（按料分组）', '一键合并派单']) {
+    // issue #7746：外发入口搬进加急区 ⇒ 该区标题改为「加急 / 外发」
+    for (const plain of ['待派订单', '加急 / 外发订单（不参与合并，立即派）', '可合并的待派订单（按料分组）', '一键合并派单']) {
       expect(text, `缺人话读数「${plain}」`).toContain(plain)
     }
   })
