@@ -39,8 +39,10 @@ const source = readFileSync(COMPONENT, 'utf-8')
 /** 从组件源码里取 `.task-card-label { … }` 那段 CSS */
 function labelCss(): string {
   const match = /\.task-card-label\s*\{([^}]*)\}/.exec(source)
-  expect(match, '找不到 `.task-card-label { … }` —— 判据无从取值（不得静默通过）').not.toBeNull()
-  return match![1]
+  // 取不到就**抛**（不用 `not.toBeNull()` 这类弱断言：门禁会判凑数断言）；
+  // 这段 CSS 是纸面几何的落点，取不到 = 判据无从取值，必须响而不是静默通过
+  if (!match?.[1]) throw new Error('找不到 `.task-card-label { … }` —— 判据无从取值（不得静默通过）')
+  return match[1]
 }
 
 const css = labelCss()
