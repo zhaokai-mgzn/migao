@@ -2,7 +2,9 @@ package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.migao.admin.entity.User;
+import com.migao.admin.entity.UserIdentity;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.mapper.UserIdentityMapper;
 import com.migao.admin.mapper.UserMapper;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -33,7 +35,9 @@ public class MiniPhoneBindService {
 
     private final WechatService wechatService;
     private final UserMapper userMapper;
+    private final UserIdentityMapper userIdentityMapper;
     private final OrderService orderService;
+    private final CustomerService customerService;
 
     /**
      * 手机号绑定结果
@@ -105,9 +109,31 @@ public class MiniPhoneBindService {
         // 5. 回填名下历史订单（user_id 为空 + customer_phone=该号 → 归属本人）
         int bound = orderService.bindOrdersToUser(tenantId, userId, purePhone);
 
+        // 6. 客户档案身份收敛（issue #7711）：此刻**手机号与 openid 同时可知** —— 这是把
+        //    「商户代录下单建的档案（只有手机号）」与「小程序登录建的档案（只有 openid）」
+        //    认成同一个人的唯一时机；不收敛 ⇒ 客户管理里同一个人两条、消费/订单数被劈开。
+        //    失败不阻断绑定（客户台账为增量能力，与 #3011 / #7257 同口径），下次登录会再收敛。
+        try {
+            customerService.convergeIdentity(tenantId, purePhone, findMiniProgramOpenid(userId, tenantId));
+        } catch (Exception e) {
+            log.warn("[bind-phone] 客户档案身份收敛失败（不阻断绑定）: userId={}, tenantId={}",
+                    userId, tenantId, e);
+        }
+
         BindResult result = new BindResult();
         result.setPhone(purePhone);
         result.setBoundOrders(bound);
         return result;
+    }
+
+    /** 该用户的小程序 openid（认人用的另一半身份键）。 */
+    private String findMiniProgramOpenid(String userId, Long tenantId) {
+        UserIdentity identity = userIdentityMapper.selectOne(new LambdaQueryWrapper<UserIdentity>()
+                .eq(UserIdentity::getUserId, userId)
+                .eq(UserIdentity::getTenantId, tenantId)
+                .eq(UserIdentity::getIdentityType, "mini_program")
+                .eq(UserIdentity::getDeleted, 0)
+                .last("LIMIT 1"));
+        return identity == null ? null : identity.getOpenid();
     }
 }

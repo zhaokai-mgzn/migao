@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -74,5 +75,87 @@ class CustomerProfileWritePathMetaGuardTest {
             }
         }
         assertThat(offenders).as("这些文件仍在用 selectOne 读客户档案：%s（改用 findFirstBy*/selectList）", offenders).isEmpty();
+    }
+
+    // ==================== issue #7711：同一人双档案（身份收敛）====================
+
+    @Test
+    @DisplayName("🔴 登录建档必须把 users.phone 一并传下去（只凭 openid 认人 ⇒ 代录下单那条永远认不回）")
+    void loginProfileCreationCarriesPhone() throws IOException {
+        Path auth = MAIN_JAVA.resolve("com/migao/admin/service/AuthService.java");
+        String code = stripComments(Files.readString(auth, StandardCharsets.UTF_8));
+        List<String> offenders = new ArrayList<>();
+        int calls = 0;
+        int index = 0;
+        while ((index = code.indexOf("createFromSession(", index)) >= 0) {
+            int open = code.indexOf('(', index);
+            List<String> args = callArguments(code, open);
+            calls++;
+            if (args.size() != 5 || args.get(4).isBlank() || "null".equals(args.get(4))) {
+                offenders.add("createFromSession(" + String.join(", ", args) + ")");
+            }
+            index = open + 1;
+        }
+        assertThat(calls).as("扫描没命中任何调用点 ⇒ 本判据空转（判红）").isPositive();
+        assertThat(offenders).as("登录建档必须带手机号（users.phone），只凭 openid 会给同一个人建第二条档案：%s",
+                offenders).isEmpty();
+    }
+
+    @Test
+    @DisplayName("🔴 建档只能经过身份收敛服务（自行调 Writer 的 ensureBy* ⇒ 双档案回来）")
+    void profileCreationGoesThroughIdentityConvergence() throws IOException {
+        Set<String> allowed = Set.of(
+                "CustomerProfileWriter.java",      // 写面本体
+                "CustomerProfileIdentityService.java", // 唯一收敛实现点
+                "CustomerService.java");           // 手工建档（同手机号 422 语义）走 Writer
+        List<String> offenders = new ArrayList<>();
+        try (Stream<Path> files = Files.walk(MAIN_JAVA)) {
+            for (Path p : files.filter(p -> p.toString().endsWith(".java")).toList()) {
+                if (allowed.contains(p.getFileName().toString())) {
+                    continue;
+                }
+                String code = stripComments(Files.readString(p, StandardCharsets.UTF_8));
+                if (code.contains("CustomerProfileWriter.ensureByPhone(")
+                        || code.contains("CustomerProfileWriter.ensureByOpenid(")) {
+                    offenders.add(p.getFileName().toString());
+                }
+            }
+        }
+        assertThat(offenders).as("这些文件绕过了身份收敛服务（issue #7711）：%s", offenders).isEmpty();
+    }
+
+    /** 剥注释：注释掉的调用不得被当成真实调用点（否则判据永远不会红）。 */
+    private static String stripComments(String src) {
+        return src.replaceAll("(?s)/\\*.*?\\*/", "").replaceAll("(?<!:)//[^\n]*", "");
+    }
+
+    /** 取调用括号内的顶层实参（逗号按括号深度切分；不依赖格式化换行）。 */
+    private static List<String> callArguments(String code, int openParen) {
+        List<String> args = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        int depth = 0;
+        for (int i = openParen; i < code.length(); i++) {
+            char c = code.charAt(i);
+            if (c == '(') {
+                depth++;
+                if (depth == 1) {
+                    continue;
+                }
+            } else if (c == ')') {
+                depth--;
+                if (depth == 0) {
+                    args.add(current.toString().trim());
+                    return args;
+                }
+            } else if (c == ',' && depth == 1) {
+                args.add(current.toString().trim());
+                current.setLength(0);
+                continue;
+            }
+            if (depth >= 1) {
+                current.append(c);
+            }
+        }
+        return args;
     }
 }
