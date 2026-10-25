@@ -3586,7 +3586,7 @@ cases:
         - pr-check.yml
       verifies: []
 
-  - id: PG-096
+  - id: PG-097
     legacy_id: ""
     title: "外发加工标记：订单打标后不进成批候选、进派单页外发区逐单立即派，且派单必须选承接方（V194）"
     domains:

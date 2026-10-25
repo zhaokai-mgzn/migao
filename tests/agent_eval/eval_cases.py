@@ -10816,9 +10816,9 @@ _CASE_PG_095 = EvalCase(
     precondition='本用例是 [backend-contract] 确定性单测：前置（供应商档案 / 订单 / 工序库桩）由测试类自建并打桩（Mockito），不依赖共享夹具或种子真值；前置不成立时对应单测直接红',
 )
 
-# ── PG-096 [NORMAL] 外发加工标记：订单打标后不进成批候选、进派单页外发区逐单立即派，且派单必须选承接方（V194）（源: cases/processing-order.yml）──
-_CASE_PG_096 = EvalCase(
-    id='PG-096',
+# ── PG-097 [NORMAL] 外发加工标记：订单打标后不进成批候选、进派单页外发区逐单立即派，且派单必须选承接方（V194）（源: cases/processing-order.yml）──
+_CASE_PG_097 = EvalCase(
+    id='PG-097',
     legacy_id='',
     title='外发加工标记：订单打标后不进成批候选、进派单页外发区逐单立即派，且派单必须选承接方（V194）',
     skill=Skill.PRODUCT,
@@ -17246,7 +17246,7 @@ ALL_CASES = (
     _CASE_PG_093,
     _CASE_PG_094,
     _CASE_PG_095,
-    _CASE_PG_096,
+    _CASE_PG_097,
     _CASE_PP_002,
     _CASE_PP_006,
     _CASE_PP_007,
