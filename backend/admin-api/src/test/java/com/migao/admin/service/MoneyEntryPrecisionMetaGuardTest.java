@@ -229,16 +229,14 @@ class MoneyEntryPrecisionMetaGuardTest {
                                 + "而本单的判据是「与报表读数逐值一致」，静默四舍五入会直接破坏它"),
 
                 // ── ④ 无准入但**不引入新的超精度输入源**（逐条给理由）──────────────
-                site("com/migao/admin/service/CustomerService.java", "CustomerProfile.builder()",
-                        Admission.NO_NEW_INPUT_SOURCE,
-                        "客户画像的累计退款额由订单退款额聚合而来（库列回读值），不引入新的外部精度"),
-                // issue #7257：建档写面抽到单一实现点后，`CustomerProfile.builder()` 从这里发出 ——
-                // 与上面 CustomerService 那条**同一件事**（同一条建档路径挪了位置），不是新增的金额输入源：
-                // candidate() 只写入 totalConsumption = BigDecimal.ZERO（常量占位，随后由订单退款/消费聚合覆盖）。
+                // issue #7257 / #7711：建档写面收口到 CustomerProfileWriter#candidate 之后，
+                // 全仓**唯一**的 `CustomerProfile.builder()` 就只剩这一处（CustomerService 的三处
+                // 建档入口已全部改走身份收敛服务 ⇒ 不再各自拼 builder）。
+                // 它不是新增的金额输入源：candidate() 只写入 totalConsumption = BigDecimal.ZERO
+                // （常量占位，真实累计值由订单退款/消费聚合写回）。
                 site("com/migao/admin/service/CustomerProfileWriter.java", "CustomerProfile.builder()",
                         Admission.NO_NEW_INPUT_SOURCE,
-                        "建档种子（issue #7257）：totalConsumption 恒为代码常量 ZERO，真实累计值由订单聚合写回；"
-                                + "根条目 = CustomerService.java :: CustomerProfile.builder()"),
+                        "建档种子（issue #7257）：totalConsumption 恒为代码常量 ZERO，真实累计值由订单聚合写回"),
                 site("com/migao/admin/service/InboundOrderService.java", "StockBatch.builder()",
                         Admission.NO_NEW_INPUT_SOURCE,
                         "同一入库请求的 unitCost/amount 落到批次（根条目 = 本文件的 InboundOrderItem.builder()）"),

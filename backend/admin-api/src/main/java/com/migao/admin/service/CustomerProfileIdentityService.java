@@ -219,8 +219,14 @@ public class CustomerProfileIdentityService {
 
         moveReferences(tenantId, keeper.getId(), loser.getId());
         fillFromLoser(tenantId, keeper, loser);
-        // 先删 loser 再补身份键：否则 keeper 要拿的 phone/openid 还占在 loser 身上 ⇒ 撞部分唯一索引
-        customerProfileMapper.deleteById(loser.getId());
+        // 先删 loser 再补身份键：否则 keeper 要拿的 phone/openid 还占在 loser 身上 ⇒ 撞部分唯一索引。
+        // 行数必须判（issue #6956 · 现象 C）：并发两次登录/建单会同时认出同一个人 ⇒ 两次合并，
+        // 后到的那次删到 0 行。那不是失败 —— 对手已经完成了同一件事，继续往下补空是幂等的。
+        int removed = customerProfileMapper.deleteById(loser.getId());
+        if (removed == 0) {
+            log.info("[customer-profile] 合并去重：较晚那条已被并发请求删除（keeper={}, loser={}, tenantId={}）",
+                    keeper.getId(), loser.getId(), tenantId);
+        }
         fillIdentityBlanks(tenantId, keeper, trim(loser.getPhone()), trim(loser.getWechatOpenid()));
 
         CustomerProfile merged = customerProfileMapper.selectById(keeper.getId());

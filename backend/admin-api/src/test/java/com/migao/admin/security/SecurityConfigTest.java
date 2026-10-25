@@ -133,6 +133,13 @@ class SecurityConfigTest {
 
     @MockBean
     private com.migao.admin.service.OrderShipmentService orderShipmentService;
+
+    /**
+     * 客户档案身份收敛（issue #7711）：本上下文**排除了 DataSource auto-config** ⇒ 没有
+     * {@code JdbcTemplate} bean，而该服务构造依赖它（与 {@code PriceBookService} 同款）⇒ 必须在这里顶替。
+     */
+    @MockBean
+    private com.migao.admin.service.CustomerProfileIdentityService customerProfileIdentityService;
     // 发货单 / 发货明细（issue #5648，V133 —— 原 V132 让号给 #5642 的 V132 权限码迁移）：MyBatis-Plus 自动扫描到的 Mapper，本上下文无
     // sqlSessionFactory（MybatisPlusAutoConfiguration 已排除）⇒ 不顶替就整个上下文起不来
     // （与上面 StockLedgerMapper / InboundOrderMapper / FabricRemnantMapper 同款口径）。
