@@ -316,8 +316,9 @@ class _HtmlMjsHandler(_QuietHandler):
         return super().guess_type(path)
 
 
-#: 发布集里的 `*.html` 入口（真值在 `deploy/swas/h5-publish-remote.sh`；issue #6767 加入 piecework.html）
-WORKER_HTML_ENTRIES = ("index.html", "machine.html", "piecework.html")
+#: 发布集里的 `*.html` 入口（真值在 `deploy/swas/h5-publish-remote.sh`；issue #6767 加入 piecework.html，
+#: issue #7761 加入 shipment.html）—— 镜像漂移由 `test_worker_h5_hosting.py::test_publish_set_mirrors_repo_entries` 钉住
+WORKER_HTML_ENTRIES = ("index.html", "machine.html", "piecework.html", "shipment.html")
 
 
 def _copy_worker_tree(dest: Path) -> None:
