@@ -996,6 +996,10 @@ function overviewView(v, excludeOrderItemId = null) {
  * 与商家端精裁清单、工人端部位规格面**同一份**取数）—— 裁床据此去拿料。**未指派（`null`）
  * ⇒ 这一格不渲染**（与上面的 `component` 同款：工人端只摆「照着干活要用」的信息，不摆空占位；
  * 服务端也只在真指派过时才给值）。</p>
+ *
+ * <p><b>从该批裁多少布（issue #7722）</b>：`batch_meters` 与 `batch_no` **同一份取数**（台账净额）
+ * ⇒ 这一格显示「批次 PC-… · 裁 12.30 米」，工人一眼知道**裁哪一批、这一批裁多少**。
+ * 两者任一缺失 ⇒ 该子项不渲染（不造 0 米、不摆空占位）。</p>
  */
 function cutPlanView(v) {
   const rows = Array.isArray(v?.set_overview?.cut_plan)
@@ -1016,14 +1020,16 @@ function cutPlanView(v) {
         typeof r.missing_reason === 'string' && r.missing_reason.trim()
           ? `<p class="wh5-cut-reason">${esc(r.missing_reason)}</p>`
           : ''
-      // 派工指定批次（issue #6754）：未指派 / 作废后净额归零 ⇒ `null` ⇒ 这一格不出现
-      // （与 `component` 同款；工人端不摆「批次 —」这种空占位）
+      // 派工指定批次（issue #6754）+ 从该批裁多少布（issue #7722）：未指派 / 作废后净额归零
+      // ⇒ `null` ⇒ 这一格不出现（与 `component` 同款；工人端不摆「批次 —」这种空占位）
       const batch = typeof r.batch_no === 'string' && r.batch_no.trim() ? esc(r.batch_no.trim()) : ''
+      const batchMeters =
+        r.batch_meters === null || r.batch_meters === undefined ? '' : ` · 裁 ${fmtQty(r.batch_meters)} 米`
       return `<li class="wh5-cut-row">
         <span class="wh5-cut-size">裁 ${size}</span>
         <span class="wh5-cut-name">${esc(name)}${component}</span>
         <span class="wh5-cut-meters">用料 ${meters}</span>
-        ${batch ? `<span class="wh5-cut-batch">批次 ${batch}</span>` : ''}
+        ${batch ? `<span class="wh5-cut-batch">批次 ${batch}${batchMeters}</span>` : ''}
         ${reason}
       </li>`
     })
