@@ -14,7 +14,9 @@
 //      混进共用的 styles.css ⇒ 报工页也被印成 50×70）；
 //   ④ **打印只有一个调用点**：点「打印标签」才调 `window.print()`，且**只调一次**；
 //      没打开预览时点不到打印（不出现「点一下打两张」）；
-//   ⑤ 未登录（401）⇒ 显式回落登录页；读面失败**不冒充空态**（「没有单」≠「读不到」）。
+//   ⑤ 未登录（401）⇒ 显式回落登录页；读面失败**不冒充空态**（「没有单」≠「读不到」）；
+//   ⑥ **纸长按内容撑开**（issue #7776）：`shipLabelLengthMm`/`shipLabelPageRule` 上取整 + 夹在
+//      `[70,150]mm`、宽度恒 50mm；预览打开与点打印都按**当前**纸面重量 ⇒ 屏幕上看到的纸 = 打出来的纸。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -22,12 +24,17 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import {
+  SHIP_LABEL_MAX_LENGTH_MM,
   SHIP_LABEL_MEDIA_ID,
+  SHIP_LABEL_MIN_LENGTH_MM,
   SHIP_LABEL_MISSING,
   SHIP_LABEL_PAGE_SIZE,
+  SHIP_LABEL_WIDTH_MM,
   buildShipLabelRows,
   renderReadyOrders,
   renderShipLabel,
+  shipLabelLengthMm,
+  shipLabelPageRule,
 } from '../src/shipment.mjs'
 import { createApi, SESSION_HEADER, STORAGE_KEY } from '../src/api.mjs'
 import { createShipmentApp, SHIPMENT_LOGIN_HREF } from '../src/shipment-app.mjs'
@@ -139,26 +146,72 @@ test('标签 HTML：每行有稳定 data-label-key（纸面判据按 key 取，�
 
 // ── ③ 纸型：单一真值 + 类级守卫 ────────────────────────────────────────────────
 
-test('纸型 = 50mm × 70mm（用户 2026-10-25 裁定），且与介质矩阵的 DP235S 卷纸同宽', () => {
-  // 🔴 用户 2026-10-25 逐字选了「复用现有 50mm × 70mm（DP235S 标签纸）」。
-  //    介质矩阵里的同几何条目由 in-flight 的 #7753 带来（洗水唛 50×60 → 50×70）；
-  //    在它落地之前，矩阵里 50mm 卷纸仍是 label-50x60 ⇒ 这里**只校宽度**并把长度差显式登记，
-  //    #7753 落地后 `ours` 命中 ⇒ 下面的宽/长逐值断言自动生效（不需要再改这个测试）。
-  assert.equal(SHIP_LABEL_PAGE_SIZE, '50mm 70mm', '纸型 = 用户裁定值（改它要同时改 ship-label.css）')
+test('纸型 = 50mm 宽连续卷纸 + **纸长按内容撑开**（issue #7776），宽 / 上下限与介质矩阵逐值一致', () => {
+  // 用户 2026-10-25 逐字选了「复用现有 50mm × 70mm（DP235S 标签纸）」；同一天又裁定
+  // 「字体太小了，可以把长度延长些，因为长度可以无限长……上下两头留白太多了」
+  // ⇒ 70mm 降级为**最短**纸长（驱动里该登记的那档），实际纸长按纸面内容算。
+  assert.equal(SHIP_LABEL_PAGE_SIZE, '50mm 70mm', '静态兜底纸型（ship-label.css）必须与矩阵同值')
 
   const matrix = JSON.parse(fs.readFileSync(PRINT_MEDIA, 'utf8'))
-  const rolls = (matrix.media ?? []).filter((m) => m?.pageBoxMm?.widthMm === 50)
-  assert.ok(rolls.length > 0, '介质矩阵里没有任何 50mm 宽的卷纸（DP235S）—— 纸型凭空出现了')
+  const spec = (matrix.media ?? []).find((m) => m.id === SHIP_LABEL_MEDIA_ID)
+  assert.ok(spec, `介质矩阵里没有 ${SHIP_LABEL_MEDIA_ID}（纸型凭空出现了）`)
+  assert.equal(SHIP_LABEL_WIDTH_MM, spec.pageBoxMm.widthMm, '纸宽必须与矩阵同一份')
+  assert.equal(SHIP_LABEL_MIN_LENGTH_MM, spec.lengthMm?.minMm ?? spec.pageBoxMm.heightMm,
+    '最短纸长必须 = 矩阵的 lengthMm.minMm（缺省退回 pageBoxMm.heightMm）')
+  assert.equal(SHIP_LABEL_MAX_LENGTH_MM, spec.lengthMm?.maxMm ?? SHIP_LABEL_MAX_LENGTH_MM,
+    '最长纸长必须 = 矩阵的 lengthMm.maxMm')
+  assert.equal(SHIP_LABEL_PAGE_SIZE, `50mm ${spec.pageBoxMm.heightMm}mm`, '静态兜底与矩阵 pageSize 同值')
+})
 
-  const ours = (matrix.media ?? []).find((m) => m.pageSize === SHIP_LABEL_PAGE_SIZE)
-  if (ours) {
-    assert.equal(ours.pageBoxMm.widthMm, 50)
-    assert.equal(ours.pageBoxMm.heightMm, 70)
-  } else {
-    // 显式登记的**已知差**（不是静默跳过）：矩阵里 50mm 卷纸的长度还不是 70mm
-    assert.deepEqual(rolls.map((m) => m.pageBoxMm.heightMm).filter((h) => h === 70), [],
-      '矩阵已有 50×70 条目却没命中 pageSize —— 纸型字符串对不上（改这里，不要改矩阵）')
+test('纸长按内容撑开：上取整到 1mm、夹在 [70,150]mm（量不到 ⇒ 最短，绝不裁内容）', () => {
+  // 1 CSS px = 25.4/96 mm：200px ≈ 52.9mm < 下限 ⇒ 70；400px ≈ 105.8mm ⇒ 106（上取整）
+  assert.equal(shipLabelLengthMm(200), 70, '短内容不短于最短纸长')
+  assert.equal(shipLabelLengthMm(400), 106)
+  assert.equal(shipLabelLengthMm(0), 70, '量不到（0 / NaN）⇒ 最短纸长，不退化成 0')
+  assert.equal(shipLabelLengthMm(Number.NaN), 70)
+  assert.equal(shipLabelLengthMm(99999), 150, '超长内容夹在上限（纸不可能无限长）')
+  // 正向对照：**不是**恒返回下限（写死 70 ⇒ 上面那条 106 必红）
+  assert.notEqual(shipLabelLengthMm(400), 70)
+
+  assert.equal(shipLabelPageRule(106), '@page { size: 50mm 106mm; margin: 0; }')
+  assert.equal(shipLabelPageRule(10), '@page { size: 50mm 70mm; margin: 0; }', '非法值夹到最短纸长')
+})
+
+test('装配层：预览打开 / 点打印都按**当前**纸面定纸长（标签高度与 @page 同一个数）', async () => {
+  const injected = []
+  const label = { style: { height: '' }, scrollHeight: 400 }
+  let injectedStyle = null  // 真 DOM：`getElementById('wh5-label-page-size')` 第 2 次起必须命中同一个节点
+  const doc = {
+    ...fakeDoc(),
+    getElementById: (id) => {
+      if (id === 'wh5-ship-label') return label
+      if (id === 'wh5-label-page-size') return injectedStyle
+      if (id === 'shipment-root') return doc._root
+      return null
+    },
+    createElement: () => ({ id: '', textContent: '' }),
+    head: {
+      appendChild: (el) => {
+        injected.push(el)
+        injectedStyle = el
+      },
+    },
   }
+  const api = {
+    sessionId: () => 'sess-1',
+    currentWorker: async () => ({ workerName: '张三' }),
+    listReadyShipments: async () => ({ items: [READY_ROW] }),
+  }
+  const app = createShipmentApp({ doc, api, win: { print: () => {} } })
+  await app.boot()
+  doc._fire('#wh5-label-0')  // 打开预览 ⇒ 立刻定纸长
+  assert.equal(label.style.height, '106mm', '预览纸面高度 = 量到内容换算的纸长')
+  assert.equal(injected.at(-1)?.textContent, '@page { size: 50mm 106mm; margin: 0; }',
+    '`@page` 必须跟着同一个数改（否则预览与纸上对不上）')
+  const count = injected.length
+  doc._fire('#wh5-label-print')  // 打印前重量一次（字体 / 缩放可能变）
+  assert.equal(injected.length, count, '已注入的 style 复用，不重复 append')
+  assert.equal(injected.at(-1)?.textContent, '@page { size: 50mm 106mm; margin: 0; }')
 })
 
 test('类级：`@page` 只在 ship-label.css 出现（混进共用的 styles.css ⇒ 报工页也被印成 50×70）', () => {

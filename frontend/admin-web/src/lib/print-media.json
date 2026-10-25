@@ -45,7 +45,7 @@
       },
       "continuousFeed": false,
       "carbonCopies": 1,
-      "minFontPt": 6,
+      "minFontPt": 9,
       "dotGeometry": {
         "dpi": 203,
         "dotsPerMm": 8,
@@ -53,11 +53,17 @@
         "effectiveWidthPx": 384,
         "headWidthPx": 384,
         "heightPx": 560,
-        "note": "设备侧**点阵口径**（issue #6439 免驱动直连通道）—— 全仓唯一一份，洗水码位图只许从这里取（守卫 frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts 的 C2b）。与 label-30x40.dotGeometry 是**同一台 DP235S** 的读数（那一条是入库标签链路的落点，本条目是洗水码链路的落点；改一处务必核对另一处）。🔴 纸宽 50mm ⇒ 400px，打印头只有 384px(48mm) ⇒ effectiveWidthPx = 384：**右侧约 2mm 打不到**，出图必须按 effectiveWidthPx（越头的像素会被静默丢掉）。🔴 纸长 70mm ⇒ 560px（2026-10-25 用户裁定：加「企业名 / 成品定制」抬头与「特殊选项」行后 60mm 装不下）。dpi 与 headWidthPx 仍是**安全侧待实测**值（同 label-30x40 的 pendingMeasurements 第 1 条），连上机器后按 getPrinterInfo() 自报值覆盖。"
+        "note": "设备侧**点阵口径**（issue #6439 免驱动直连通道）—— 全仓唯一一份，洗水码位图只许从这里取（守卫 frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts 的 C2b）。与 label-30x40.dotGeometry 是**同一台 DP235S** 的读数（那一条是入库标签链路的落点，本条目是洗水码链路的落点；改一处务必核对另一处）。🔴 纸宽 50mm ⇒ 400px，打印头只有 384px(48mm) ⇒ effectiveWidthPx = 384：**右侧约 2mm 打不到**，出图必须按 effectiveWidthPx（越头的像素会被静默丢掉）。🔴 纸长**按内容撑开**（issue #7776）：560px = **最短** 70mm 的点阵高，实际出图高度由 `resolveLabelGeometry(printer, 纸宽, 纸长)` 用 washLabelLengthMm() 算出的纸长换算（同一份口径）。dpi 与 headWidthPx 仍是**安全侧待实测**值（同 label-30x40 的 pendingMeasurements 第 1 条），连上机器后按 getPrinterInfo() 自报值覆盖。"
       },
       "measurement": "measured",
       "pendingMeasurements": [],
-      "note": "热敏 / 热转印 + 蓝牙直打（通道归 #5052）。几何真值 = #5646 实测（容器 49.998mm × 59.998mm、PDF MediaBox 142.08 × 169.92 pt）。🔴 **纸长 60mm → 70mm**（用户 2026-10-25 裁定）：纸面新增「企业名 / 成品定制」抬头块与「特殊选项」行（特殊选项与备注不再合并成一行），60mm 的余量装不下两行 ⇒ 长度按同一裁定口径（#5646「长度根据我们实际需要来定」）加长到 **70mm**；垂直预算账在 frontend/admin-web/src/components/production/TaskCardPrint.tsx 的文件头。⛔ 本矩阵只登记**在用**介质：`label-30x40` 是入库标签链路（#4946/#5052）的落点，不在本单改动范围。"
+      "note": "热敏 / 热转印 + 蓝牙直打（通道归 #5052）。几何真值 = #5646 实测（容器 49.998mm 宽、PDF MediaBox 142.08 × 169.92 pt）。🔴 **纸长改为「按内容撑开」**（issue #7776，用户 2026-10-25 逐字：「字体太小了，可以把长度延长些，因为长度可以无限长，宁愿长点也要把字体和信息都呈现出来……打印预览的时候我就发现上下两头留白太多了」）：`pageBoxMm.heightMm` = **最短**纸长（70mm，也是驱动里该登记的那档），实际纸长由 `frontend/admin-web/src/lib/label-print/wash-label-metrics.ts` 的 `washLabelLengthMm()` 按纸面内容算出 （夹在 `lengthMm.minMm`~`maxMm`），`@page` 用 `printPageRuleForLength()` 现拼 —— **三处（系统打印 / 蓝牙直连 / 打印预览）读同一个数**。正文口径随之由 6pt 抬到 **9pt**（`minFontPt`；纸长不再迁就固定高度 ⇒ 字号不必再压小）；垂直预算账在 frontend/admin-web/src/components/production/TaskCardPrint.tsx 的文件头。⛔ 本矩阵只登记**在用**介质：`label-30x40` 是入库标签链路（#4946/#5052）的落点，不在本单改动范围。",
+      "lengthMm": {
+        "mode": "content",
+        "minMm": 70,
+        "maxMm": 150,
+        "why": "水洗唛是 50mm 宽**连续纸卷**：长度不限 ⇒ 纸长按内容撑开（下限 70mm / 上限 150mm），不再为了迁就固定纸长把字号压到 6pt（用户 2026-10-25 逐字「字体太小了，可以把长度延长些，因为长度可以无限长，宁愿长点也要把字体和信息都呈现出来」）。三处读同一份：frontend/admin-web/src/lib/label-print/wash-label-metrics.ts 的 washLabelLengthMm、TaskCardPrint.tsx 的 @page、直连通道的画布高度。"
+      }
     },
     {
       "id": "label-30x40",
