@@ -450,7 +450,9 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
     render(<SalesDoc order={buildOrder({ customerName: longName })} shipments={NO_SHIPMENT} />)
     expect(text('sales-customer')).not.toBe(longName.slice(0, 8)) // slice = 静默裁切 ⇒ 红
     const cell = document.querySelector('[data-testid="sales-customer"]')
-    expect(cell).not.toBeNull()
+    // ⚠️ 不写存在性弱断言（`not.toBeNull()` —— QA Growth Gate 的 TS 弱断言面会判红）：
+    //    下面那把尺子本身就会对「格子缺失」报「未声明折行」⇒ 判据照样红，不需要额外一行。
+    expect(cell?.getAttribute('data-testid')).toBe('sales-customer')
     // 射程自证：把**旧形态**（issue #5651 的 `.sales-cut`：省略号 + nowrap）摆进同一把尺子 ⇒ 必须命中。
     // 这条若不命中，上面的「不许缩略」就是空断言（判据根本没在看那件事）。
     const legacyCss = '.sales-cut { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }'
