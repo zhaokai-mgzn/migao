@@ -126,6 +126,9 @@ services:
       # 默认 1 = 栈内种子租户；打已部署云环境的 agent-eval.yml 也显式钉 1。
       EVAL_TENANT_ID: ${EVAL_TENANT_ID:-1}
       PRIMARY_API_KEY: ${PRIMARY_API_KEY:-}
+      # 🔴 MaaS Key（语音 + 商品生图共用）：不转发 ⇒ 栈内 ai-agent 生图必然
+      #    `IMAGE_GEN_UNAVAILABLE`（issue #7541 实测：PR-074 在评测栈里只能测到拒绝路径）。
+      ASR_API_KEY: ${ASR_API_KEY:-}
       PRIMARY_MODEL: ${PRIMARY_MODEL:-deepseek-flash}
       DASHVECTOR_API_KEY: ${DASHVECTOR_API_KEY:-}
       DASHVECTOR_ENDPOINT: ${DASHVECTOR_ENDPOINT:-}
