@@ -11,7 +11,8 @@
 //   ③ 清单全空 / 无套件 ⇒ 不渲染假表格，只给一句可行动的空态；
 //   ④ **批次号列**（issue #6754）：派工指定批次上屏；未指派（服务端 `null`）⇒ `—`
 //      （裁床必须看得到「去哪一批拿料」，所以这一列是**常驻列**，不是有值才出现）；
-//   ⑤ **从该批裁（米）列**（issue #7722）：这一批裁多少布上屏；未指派 ⇒ `—`（不折 0 米）。
+//   ⑤ **从该批裁（米）列**（issue #7722）：这一批裁多少布上屏；未指派 ⇒ `—`（不折 0 米）；
+//   ⑥ **第二列列头是「帘种」不是「部位」**（issue #7734）：它用来区分布帘 / 纱帘，不是窗位。
 //
 // ⚠️ 本组件**不重算**：不按 `fabric_meters` 除幅数、不把 `null` 折 0 —— 它只渲染服务端给的键。
 import { describe, expect, it } from 'vitest'
@@ -56,7 +57,7 @@ const SETS: ProcessingOrderSetRow[] = [
 ]
 
 describe('CutPlanTable（issue #5693 精裁输出清单）', () => {
-  it('① 逐条渲染「裁多长 × 几片」+ 用料 + 套号 / 部位 / 组件 / 备注', () => {
+  it('① 逐条渲染「裁多长 × 几片」+ 用料 + 套号 / 帘种 / 组件 / 备注', () => {
     render(<CutPlanTable sets={SETS} />)
 
     const row = screen.getByTestId('cut-plan-row-CSO260915-02615-014-oi-cloth')
@@ -78,6 +79,16 @@ describe('CutPlanTable（issue #5693 精裁输出清单）', () => {
     expect(screen.getByTestId('cut-plan-batch-meters-CSO260915-02615-014-oi-cloth'))
       .toHaveTextContent('12.30 米')
     expect(screen.getAllByTestId(/^cut-plan-row-/)).toHaveLength(2)
+  })
+
+  it('🔴 ⑥ 第二列叫「帘种」而不是「部位」（issue #7734）：那一列装的是布帘 / 纱帘', () => {
+    render(<CutPlanTable sets={SETS} />)
+
+    expect(screen.getByRole('columnheader', { name: '帘种' })).toBeInTheDocument()
+    // 🔴 反向：不得再出现「部位」列头 —— 商家会把它读成窗位（客厅 / 主卧），而这一列装的是帘种
+    expect(screen.queryByRole('columnheader', { name: '部位' })).toBeNull()
+    // 列值仍是帘种取值（键名 `position_kind` 不变，读面契约冻结）
+    expect(screen.getByTestId('cut-plan-row-CSO260915-02615-014-oi-gauze')).toHaveTextContent('纱帘')
   })
 
   it('🔴 ② 缺值不渲染假数据：null ⇒ —（不出现 0.00 / 0 片 / 1 片）+ 原因可见', () => {

@@ -1246,7 +1246,7 @@ export interface PieceworkSummary {
  */
 export interface CutPlanRow {
   order_item_id: string
-  /** 部位（布帘 / 纱帘 / 帘头 / 布料） */
+  /** 帘种（布帘 / 纱帘 / 帘头 / 布料）—— 界面列头印「帘种」：用来区分布帘还是纱帘，不是窗位 */
   position_kind?: string | null
   /** 部位名 / 货号（商品名） */
   position_name?: string | null
