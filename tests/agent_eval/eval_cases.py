@@ -576,6 +576,25 @@ _CASE_AG_013 = EvalCase(
     precondition="前置 = ① 一名 `status != offline`、`max_concurrent_sessions = 3` 的客服员工；② 同租户下 N=6 个 `status='waiting'` 的人工会话。前置由判据自建（一次性真 PG 集群 `PgCluster.startOrAbort()` + 自建 tenant 与行），**不成立时 fail-closed 硬失败**（探针在 10000ms 内等不到即抛 `IllegalStateException`；夹具缺失在建夹具那一步红）。本用例不是 LLM 多轮对话，无 agent 期望 ⇒ 红了只有一个读法：判据或装置坏了。",
 )
 
+# ── AG-008 [NORMAL] 海报/图片的能力边界陈述被下单域守卫当成「下单能力误宣」⇒ relock 到 order、连问 3 轮下单规格；顾客显式撤回后仍无出口（issue #7758）（源: cases/agents.yml）──
+_CASE_AG_008 = EvalCase(
+    id='AG-008',
+    legacy_id='',
+    title='海报/图片的能力边界陈述被下单域守卫当成「下单能力误宣」⇒ relock 到 order、连问 3 轮下单规格；顾客显式撤回后仍无出口（issue #7758）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这海报太简单了，要做的精美一点，缺了好多商品图片（15:43:21）', '但是你上面生成的海报图片没有带上窗帘效果图（15:44:40）', '我不是要下单，我要更新商品（15:48:24）'],
+    expectations=[],
+    data_checks=["**病（修前实测）**：`capability_denial_text_hit('…海报卡的能力是固定的…我这边改不了排版…')` 返回 `'我这边**改不了排版'`（下单域判据命中图片域文本）⇒ `react_turn` 判「在办下单 × 能力可达 × 本 skill 无 order_create」⇒ `_relock_order_skill` 把 `session_states.pending_skill` 写成 `order`（生产库实测）⇒ 下一轮按下单话术问配色/门幅/米数/收货人。", '**判据 1（域隔离）**：backend/ai-agent-service/tests/test_order_lock_cross_domain.py::TestDenialDomainIsolation —— 海报边界句在两个判据上都返回空；#5318 的 4 条图片域拒绝只在图片域命中、下单域必须为空；OR-014 的 5 句下单否定照旧命中。', '**判据 2（跨小句收紧）**：同文件 `test_layout_and_copy_boundaries_are_not_image_denials` —— 整段有「主图」锚点但否定宾语是排版/版式/字体/配色/拼图/文案时不得命中；`test_cross_clause_capability_negation_still_hit` 保住 #3938 的「没有…能力/工具/通道」形态。', '**判据 3（撤回）**：`TestOrderingWithdrawal` + `TestOrderFlowInProgressRespectsWithdrawal` —— 「我不是要下单，我要更新商品」必须为撤回、在办判据必须为假；「确认下单」不得被当撤回。', '**判据 4（解锁）**：`TestRoutingUnlocksOnWithdrawal` + `TestPendingLockReleasedOnWithdrawal` —— 路由不得回 order 且清 state 锁；`finalize_turn` 必须调 `_release_order_lock_on_withdrawal` 清跨轮 `pending_skill`。', '**类级元守卫**：tests/unit_ci_workflows/test_denial_domain_isolation.py —— AST 断言下单域判据不得调用图片域判据、跨小句只认能力资源否定形态、三处撤回接线必须存在；三个 checker 各自喂**注入变异**副本（把缺陷写回去）自证不空跑。', '**边界（照实登记）**：撤回判据是**窄**判据（否定词与动作词相距 ≤4 字）——「不买贵的」这类会漏（宁可漏、不误吞正向推进）；`_TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE` 在模型已如实说明边界的轮次仍会多烧一次重答（#5318 遗留口径），本单不碰。'],
+    skip_reason='[backend-contract] 纯判据/结构面（零 LLM / 零真库）：计分通道 = traces.tests（3 个文件均真实存在），不进 agent-eval 冒烟；按 #4262 裁定不自动跑真实 LLM 评测',
+    tags=['denial-guard', 'domain-isolation', 'routing', 'session-lock', 'zero-llm'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='零 LLM / 零真库：判据直接对 `capability_denial_text_hit` / `_product_image_denial_hit` / `_is_ordering_withdrawal` / `_order_flow_in_progress` / `route_by_intent` 施加生产原文；假 store 只回放会话事实（`grounded_product_detail` + 跨轮 pending 锁）。符号被改名/移动 ⇒ fixture 当场 ImportError 红。',
+)
+
 # ── API-001 [NORMAL] chat 会话生命周期 - 租户隔离 + 用户所有权 + 幂等/重开（源: cases/api.yml）──
 _CASE_API_001 = EvalCase(
     id='API-001',
@@ -16739,6 +16758,7 @@ ALL_CASES = (
     _CASE_AG_011,
     _CASE_AG_012,
     _CASE_AG_013,
+    _CASE_AG_008,
     _CASE_API_001,
     _CASE_API_002,
     _CASE_API_003,

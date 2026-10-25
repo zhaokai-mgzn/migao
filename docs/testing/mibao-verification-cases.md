@@ -239,7 +239,7 @@
 ```
 溯源: 2026-10-19 新增（issue #7027 的用例补齐）：售后域现有用例集中在工单状态机与退款口径（AS-001~015），缺「客户报损 → 商家问怎么处理」这条**商家视角**的真实旅程；且它与能力边界段（#7291）同源 —— 只读化之后模型最容易在这里承诺代办。 ｜ tags: aftersales, journey, capability-boundary
 
-## Agent 核心域（11 case）
+## Agent 核心域（12 case）
 
 ### AG-001. AgentResponse/AgentContext 数据结构 + _extract_msg_content think 剥离 🔵
 ```
@@ -382,6 +382,23 @@
 跳过: [backend-contract] 纯后端真库并发判据（真 PG 一次性集群，走 `PgCluster.startOrAbort()` 收口）+ 类级元守卫：admin-api 单测面，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 AG 号最大（12）⇒ **AG-013**（`scripts/next_case_id.py AG` 亦给 013；对在飞分支有盲区，故另跑一次全 ref 复核）。**本批只做 3 处高危站点**，其余站点照实留档不碰（清单见 PR body）。 ｜ tags: concurrency, cas, quota, backend-contract, realdb
+
+### AG-008. 海报/图片的能力边界陈述被下单域守卫当成「下单能力误宣」⇒ relock 到 order、连问 3 轮下单规格；顾客显式撤回后仍无出口（issue #7758） 🔵
+```
+你: 这海报太简单了，要做的精美一点，缺了好多商品图片（15:43:21）
+你: 但是你上面生成的海报图片没有带上窗帘效果图（15:44:40）
+你: 我不是要下单，我要更新商品（15:48:24）
+数据: **病（修前实测）**：`capability_denial_text_hit('…海报卡的能力是固定的…我这边改不了排版…')` 返回 `'我这边**改不了排版'`（下单域判据命中图片域文本）⇒ `react_turn` 判「在办下单 × 能力可达 × 本 skill 无 order_create」⇒ `_relock_order_skill` 把 `session_states.pending_skill` 写成 `order`（生产库实测）⇒ 下一轮按下单话术问配色/门幅/米数/收货人。
+数据: **判据 1（域隔离）**：backend/ai-agent-service/tests/test_order_lock_cross_domain.py::TestDenialDomainIsolation —— 海报边界句在两个判据上都返回空；#5318 的 4 条图片域拒绝只在图片域命中、下单域必须为空；OR-014 的 5 句下单否定照旧命中。
+数据: **判据 2（跨小句收紧）**：同文件 `test_layout_and_copy_boundaries_are_not_image_denials` —— 整段有「主图」锚点但否定宾语是排版/版式/字体/配色/拼图/文案时不得命中；`test_cross_clause_capability_negation_still_hit` 保住 #3938 的「没有…能力/工具/通道」形态。
+数据: **判据 3（撤回）**：`TestOrderingWithdrawal` + `TestOrderFlowInProgressRespectsWithdrawal` —— 「我不是要下单，我要更新商品」必须为撤回、在办判据必须为假；「确认下单」不得被当撤回。
+数据: **判据 4（解锁）**：`TestRoutingUnlocksOnWithdrawal` + `TestPendingLockReleasedOnWithdrawal` —— 路由不得回 order 且清 state 锁；`finalize_turn` 必须调 `_release_order_lock_on_withdrawal` 清跨轮 `pending_skill`。
+数据: **类级元守卫**：tests/unit_ci_workflows/test_denial_domain_isolation.py —— AST 断言下单域判据不得调用图片域判据、跨小句只认能力资源否定形态、三处撤回接线必须存在；三个 checker 各自喂**注入变异**副本（把缺陷写回去）自证不空跑。
+数据: **边界（照实登记）**：撤回判据是**窄**判据（否定词与动作词相距 ≤4 字）——「不买贵的」这类会漏（宁可漏、不误吞正向推进）；`_TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE` 在模型已如实说明边界的轮次仍会多烧一次重答（#5318 遗留口径），本单不碰。
+前置: 零 LLM / 零真库：判据直接对 `capability_denial_text_hit` / `_product_image_denial_hit` / `_is_ordering_withdrawal` / `_order_flow_in_progress` / `route_by_intent` 施加生产原文；假 store 只回放会话事实（`grounded_product_detail` + 跨轮 pending 锁）。符号被改名/移动 ⇒ fixture 当场 ImportError 红。
+跳过: [backend-contract] 纯判据/结构面（零 LLM / 零真库）：计分通道 = traces.tests（3 个文件均真实存在），不进 agent-eval 冒烟；按 #4262 裁定不自动跑真实 LLM 评测
+```
+溯源: 2026-10-25 新增（issue #7758）。取号 = `scripts/next_case_id.py AG` 现取（main = 001-007 / 010-013 ⇒ 最小空闲号 AG-008）。 ｜ tags: denial-guard, domain-isolation, routing, session-lock, zero-llm
 
 ## API 层域（21 case）
 
@@ -13148,10 +13165,10 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：892（活跃 142，跳过 750）
-- tier 分布：smoke 12 / normal 824 / adversarial 32
+- 用例总数：893（活跃 142，跳过 751）
+- tier 分布：smoke 12 / normal 825 / adversarial 32
 - 售后域：16
-- Agent 核心域：11
+- Agent 核心域：12
 - API 层域：21
 - 登录认证域：13
 - B 端小程序域：49
@@ -13181,6 +13198,7 @@
 - AS-015: 售后工单详情/列表响应不再携带恒空的 refundMethod 键（三个 Java 载体上字段/getter/setter 全无；键不存在而非值为 null）
 - AS-016: 售后如实引导：客户说窗帘收到时有破洞 → 先查那单 + 说清后台怎么走，不承诺代办
 - AG-013: 客服会话并发分配「读计数 × 再写」无互斥 ⇒ max_concurrent_sessions 被突破；改写为条件更新后并发数不超过上限（issue #6962）
+- AG-008: 海报/图片的能力边界陈述被下单域守卫当成「下单能力误宣」⇒ relock 到 order、连问 3 轮下单规格；顾客显式撤回后仍无出口（issue #7758）
 - API-013: 知识知识卡片数据模型 - knowledge_cards 表/实体/Mapper（LLM WIKI 板块 #3051）
 - API-014: 提炼候选数据模型 - knowledge_candidates 表/实体/Mapper（LLM WIKI 板块 #3051）
 - API-015: 知识知识卡片 CRUD + 状态机 - 创建/编辑/发布/归档/删除（LLM WIKI 板块 #3051）
