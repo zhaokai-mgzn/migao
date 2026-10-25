@@ -98,26 +98,26 @@ describe('ProductForm × AI 生成商品图（issue #7533）', () => {
     fireEvent.click(screen.getByRole('button', { name: '生成' }))
 
     // ① 没有任何额外点击，主图位就已经变了
-    await waitFor(() => expect(mainImages()).toBe(`${RESULT}|${SAMPLE}`))
+    await waitFor(() => expect(mainImages()).toBe(`${SAMPLE}|${RESULT}`))
 
     // ② 保存 = 提交载荷带上生成图（改前的「保存后也没有」就在这里）
     fireEvent.click(screen.getByRole('button', { name: '提交并上架' }))
     await waitFor(() => expect(onSubmit).toHaveBeenCalled())
     const payload = onSubmit.mock.calls[0][0]
-    expect(payload.images).toEqual([RESULT, SAMPLE])
+    expect(payload.images).toEqual([SAMPLE, RESULT])
     expect(payload.detailImages).toEqual([])
   })
 
-  it('再生成一张 = 替换上一张，不叠加', async () => {
+  it('再生成一张 = 追加，不替换上一张', async () => {
     generate.mockResolvedValueOnce(ok(RESULT)).mockResolvedValueOnce(ok(RESULT_2))
     renderForm()
 
     fireEvent.click(screen.getByRole('button', { name: 'AI 生成商品图' }))
     fireEvent.click(screen.getByRole('button', { name: '生成' }))
-    await waitFor(() => expect(mainImages()).toBe(`${RESULT}|${SAMPLE}`))
+    await waitFor(() => expect(mainImages()).toBe(`${SAMPLE}|${RESULT}`))
 
     fireEvent.click(screen.getByRole('button', { name: '再生成一张' }))
-    await waitFor(() => expect(mainImages()).toBe(`${RESULT_2}|${SAMPLE}`))
+    await waitFor(() => expect(mainImages()).toBe(`${SAMPLE}|${RESULT}|${RESULT_2}`))
   })
 
   it('生成中商家改过图片列表：落位基于最新列表（不复活已删的图）', async () => {
@@ -137,8 +137,38 @@ describe('ProductForm × AI 生成商品图（issue #7533）', () => {
     await waitFor(() => expect(mainImages()).toBe(RESULT))
   })
 
-  it('细节/工艺/场景用途追加到详情图末位', async () => {
+  it('先出详情图、再出主图：详情图那张不会被摘掉（issue #7773）', async () => {
+    generate.mockResolvedValueOnce(ok(RESULT)).mockResolvedValueOnce(ok(RESULT_2))
     renderForm()
+
+    fireEvent.click(screen.getByRole('button', { name: 'AI 生成商品图' }))
+    fireEvent.click(screen.getByRole('button', { name: '材质细节' }))
+    fireEvent.click(screen.getByRole('button', { name: '生成' }))
+    await waitFor(() => expect(detailImages()).toBe(RESULT))
+
+    fireEvent.click(screen.getByRole('button', { name: '主图' }))
+    fireEvent.click(screen.getByRole('button', { name: '再生成一张' }))
+    await waitFor(() => expect(mainImages()).toBe(`${SAMPLE}|${RESULT_2}`))
+    // 关键：主图落位不得顺手把详情图那张删掉（改前就是这么「存不下来」的）
+    expect(detailImages()).toBe(RESULT)
+  }, 20000)
+
+  it('主图已满 5 张：不静默丢图，提示先删一张', async () => {
+    const full = [SAMPLE, 'https://oss.example.com/b.png', 'https://oss.example.com/c.png',
+      'https://oss.example.com/d.png', 'https://oss.example.com/e.png']
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    render(<ProductForm initialData={{ name: '回归布帘', images: full, detailImages: [] } as never} onSubmit={onSubmit} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'AI 生成商品图' }))
+    fireEvent.click(screen.getByRole('button', { name: '生成' }))
+
+    expect(await screen.findByText(/主图已满 5 张/)).toBeInTheDocument()
+    // 盘里的 5 张一张都没少，也没把生成图硬塞进去
+    expect(mainImages()).toBe(full.join('|'))
+  }, 20000)
+
+  it('细节/工艺/场景用途追加到详情图末位，且提交载荷带它', async () => {
+    const { onSubmit } = renderForm()
 
     fireEvent.click(screen.getByRole('button', { name: 'AI 生成商品图' }))
     fireEvent.click(screen.getByRole('button', { name: '材质细节' }))
@@ -147,5 +177,10 @@ describe('ProductForm × AI 生成商品图（issue #7533）', () => {
     await waitFor(() => expect(detailImages()).toBe(RESULT))
     // 主图位不受影响
     expect(mainImages()).toBe(SAMPLE)
-  })
+
+    // 用户原话「生图不能保存到详情图」：提交载荷里必须真的有它（保存后仍在）
+    fireEvent.click(screen.getByRole('button', { name: '提交并上架' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(onSubmit.mock.calls[0][0].detailImages).toEqual([RESULT])
+  }, 20000)
 })

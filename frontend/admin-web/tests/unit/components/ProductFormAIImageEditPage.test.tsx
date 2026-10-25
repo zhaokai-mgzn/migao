@@ -83,12 +83,12 @@ describe('编辑页 × AI 生图落位（真实 ImageUploader）', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'AI 生成商品图' }))
     fireEvent.click(screen.getByRole('button', { name: '生成' }))
-    await waitFor(() => expect(mainTiles()).toEqual([RESULT, SAMPLE]))
+    await waitFor(() => expect(mainTiles()).toEqual([SAMPLE, RESULT]))
 
     // 真实编辑页只要父组件再渲染一次（任何 state 变化 / router.refresh），
     // `initialData` 就是新对象 ⇒ `ProductForm` 的同步 effect 会把图片列表 merge 回服务端值。
     fireEvent.click(screen.getByRole('button', { name: '父组件再渲染' }))
-    await waitFor(() => expect(mainTiles()).toEqual([RESULT, SAMPLE]))
+    await waitFor(() => expect(mainTiles()).toEqual([SAMPLE, RESULT]))
   }, 20000)
 
   it('内容真的变了（换商品 / 服务端刷新出不同数据）⇒ 仍然同步进表单', async () => {

@@ -37,8 +37,8 @@ const ok = (url = RESULT) =>
   ({ data: { success: true, data: { url, model: 'qwen-image-3.0' } } }) as never
 
 function renderAI(overrides: Partial<React.ComponentProps<typeof ProductImageAI>> = {}) {
-  const onApplyMain = vi.fn()
-  const onApplyDetail = vi.fn()
+  const onApplyMain = vi.fn(() => true)
+  const onApplyDetail = vi.fn(() => true)
   render(
     <ProductImageAI
       sampleImages={[SAMPLE]}
@@ -63,13 +63,13 @@ describe('ProductImageAI', () => {
     expect(screen.getByText(/先上传一张样图/)).toBeInTheDocument()
   })
 
-  it('默认主图：生成成功即自动填入封面位（无需再点「用这张」）', async () => {
+  it('默认主图：生成成功即自动追加到主图（无需再点「用这张」）', async () => {
     const { onApplyMain, onApplyDetail } = renderAI()
 
     fireEvent.click(screen.getByRole('button', { name: 'AI 生成商品图' }))
     fireEvent.click(screen.getByRole('button', { name: '生成' }))
 
-    await waitFor(() => expect(onApplyMain).toHaveBeenCalledWith(RESULT, undefined))
+    await waitFor(() => expect(onApplyMain).toHaveBeenCalledWith(RESULT))
     expect(onApplyDetail).not.toHaveBeenCalled()
     expect(generate).toHaveBeenCalledWith({
       imageUrl: SAMPLE,
@@ -77,7 +77,7 @@ describe('ProductImageAI', () => {
       kind: 'main',
     })
     // 落位反馈可见；旧的「用这张」入口已消失（回归守卫：别再让商家多点一步）
-    expect(await screen.findByRole('status')).toHaveTextContent('已填入主图封面位')
+    expect(await screen.findByRole('status')).toHaveTextContent('已加入主图')
     expect(screen.queryByRole('button', { name: '用这张' })).toBeNull()
   })
 
@@ -88,36 +88,36 @@ describe('ProductImageAI', () => {
     fireEvent.click(screen.getByRole('button', { name: '材质细节' }))
     fireEvent.click(screen.getByRole('button', { name: '生成' }))
 
-    await waitFor(() => expect(onApplyDetail).toHaveBeenCalledWith(RESULT, undefined))
+    await waitFor(() => expect(onApplyDetail).toHaveBeenCalledWith(RESULT))
     expect(onApplyMain).not.toHaveBeenCalled()
     expect(generate).toHaveBeenCalledWith(expect.objectContaining({ kind: 'texture' }))
     expect(await screen.findByRole('status')).toHaveTextContent('已加入「详情图」')
   })
 
-  it('再生成一张 = 替换：第二次携带上一次自动填入的 URL', async () => {
+  it('再生成一张 = 追加（不替换、不摘掉上一张）', async () => {
     generate.mockResolvedValueOnce(ok(RESULT)).mockResolvedValueOnce(ok(RESULT_2))
     const { onApplyMain } = renderAI()
 
     fireEvent.click(screen.getByRole('button', { name: 'AI 生成商品图' }))
     fireEvent.click(screen.getByRole('button', { name: '生成' }))
-    await waitFor(() => expect(onApplyMain).toHaveBeenCalledWith(RESULT, undefined))
+    await waitFor(() => expect(onApplyMain).toHaveBeenCalledWith(RESULT))
 
     fireEvent.click(screen.getByRole('button', { name: '再生成一张' }))
-    await waitFor(() => expect(onApplyMain).toHaveBeenCalledWith(RESULT_2, RESULT))
+    await waitFor(() => expect(onApplyMain).toHaveBeenCalledWith(RESULT_2))
     expect(onApplyMain).toHaveBeenCalledTimes(2)
   })
 
-  it('换用途后再生成：跨槽位也带上上一次的 URL（先摘旧位再写新位）', async () => {
+  it('换用途后再生成：只写对应槽位，不碰上一张', async () => {
     generate.mockResolvedValueOnce(ok(RESULT)).mockResolvedValueOnce(ok(RESULT_2))
     const { onApplyMain, onApplyDetail } = renderAI()
 
     fireEvent.click(screen.getByRole('button', { name: 'AI 生成商品图' }))
     fireEvent.click(screen.getByRole('button', { name: '生成' }))
-    await waitFor(() => expect(onApplyMain).toHaveBeenCalledWith(RESULT, undefined))
+    await waitFor(() => expect(onApplyMain).toHaveBeenCalledWith(RESULT))
 
     fireEvent.click(screen.getByRole('button', { name: '工艺细节' }))
     fireEvent.click(screen.getByRole('button', { name: '再生成一张' }))
-    await waitFor(() => expect(onApplyDetail).toHaveBeenCalledWith(RESULT_2, RESULT))
+    await waitFor(() => expect(onApplyDetail).toHaveBeenCalledWith(RESULT_2))
   })
 
   it('多张图时可切换样图，按选中的样图生成', async () => {
