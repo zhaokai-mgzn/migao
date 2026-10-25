@@ -881,7 +881,6 @@ function mainView(state) {
   <section class="wh5-card">
     <div class="wh5-set" id="wh5-set">第 ${esc(v.set_no)} 套 · ${esc(v.position?.position_name ?? '')}</div>
     ${ternLine(v)}
-    ${workerOperationLine(v)}
     ${v.completed === true
       ? '<p class="wh5-done" id="wh5-completed">本套工序都已报工 🎉</p>'
       : v.worker_operation
