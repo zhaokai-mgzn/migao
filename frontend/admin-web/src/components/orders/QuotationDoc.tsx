@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import { freightText } from '@/lib/logistics'
 import { orderItemCurtainType, orderItemSku } from '@/lib/order-item-sku'
 import { paperLineSubtotal } from '@/lib/order-amount'
+import { readFeeDetail } from '@/lib/order-fee-display'
 import { usePaymentQrcodes } from '@/lib/use-payment-qrcodes'
 import { useCompanyName } from '@/lib/use-company-name'
 import { printBodyFontPt, printContentInsetCss, printPageRule } from '@/lib/print-media'
@@ -82,6 +83,14 @@ import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
  *    **整段小计不可知** ⇒ 印 `—`（不许 `0 + 0` 印成 `0.00`）。判据 =
  *    `frontend/admin-web/tests/unit/components/QuotationDoc.test.tsx` 的「红证（issue #6731）」一组
  *    + 聚合不变量 `assertAggregateUnknownIsContagious`。
+ * 11. 🔴 **加工费行的「单价」是元/米，不是总额**（issue #7716，用户 2026-10-25 截图：数量 7.3 /
+ *    单价 51.10 / 小计 51.10 —— 单价格印的是 `processingFee` 总额）。单价 / 数量取服务端**落库快照**
+ *    `processingInfo.processingFeeDetail` 的 `unit_price`（组合价 / 本单改价后的价）与 `meters`
+ *    （加工费米数）—— 与屏幕面 `OrderItemList` 的算式 `feeFormula(detail)` **同一份真值**，纸面不另算；
+ *    `processingFee` 只进「小计」格（它仍并进「本套金额」，见第 6 条）。缺 detail（#4406 前的存量单）
+ *    ⇒ 单价印 `—`、数量回落面料米数（缺值不编价，同第 9 条）。
+ *    ⚠️ 已知边界（**有意接受**）：`processingFee` 含按套特殊选项 / 拼色加价（#4526）时，
+ *    `单价 × 数量 ≠ 小计`（纸面不展开选项行）；单价**不摊成平均价** —— 那会是纸面上从没出现过的价。
  */
 interface QuotationDocProps {
   order: Order
@@ -349,6 +358,11 @@ function SetBlock({ item, index, total }: { item: OrderItem; index: number; tota
   const size = width !== null && height !== null ? `${width}×${height}` : ''
   const quantity = numberOrNull(item.quantity)
   const processingFee = numberOrNull(item.processingFee) ?? 0
+  // 加工费行的单价 / 数量（issue #7716）：**只读服务端落库快照**，纸面不重算 ——
+  // 与屏幕面 `OrderItemList` 的算式 `feeFormula(detail)` 同一份真值（见文件头第 11 条）。
+  const feeDetail = readFeeDetail(item.processingInfo)
+  const feeUnitPrice = numberOrNull(feeDetail?.unit_price)
+  const feeMeters = numberOrNull(feeDetail?.meters)
 
   return (
     <div className="quotation-set mb-3">
@@ -396,13 +410,16 @@ function SetBlock({ item, index, total }: { item: OrderItem; index: number; tota
               必须分别列示，否则商家对不上账 —— 见文件头第 7 条）。
               🔴 「组件」列自 issue #7625 退场 ⇒ 加工费行的**行标签**改由前四列合并承载
               （`colSpan=4`，与面料行的列宽同栅格：Σ=4+1+1+1+1=8）；不标它 = 这一行看起来
-              就是重复的面料行（单价/小计一致 ⇒ 读不出哪行是加工费）。 */}
+              就是重复的面料行（单价/小计一致 ⇒ 读不出哪行是加工费）。
+              🔴 issue #7716：**单价格取组合价（元/米）、数量取加工费米数**（落库快照
+              `processingFeeDetail.unit_price` / `.meters`）—— 修前两格都印 `processingFee`
+              ⇒ 7.3 米 × 51.10 元/米的假象（单价 = 总额）。 */}
           {processingFee > 0 && (
             <tr>
               <DocTd colSpan={4}>加工费</DocTd>
               <DocTd>{''}</DocTd>
-              <DocTd align="right">{quantity ?? ''}</DocTd>
-              <DocTd align="right">{formatAmount(processingFee)}</DocTd>
+              <DocTd align="right">{feeMeters ?? quantity ?? ''}</DocTd>
+              <DocTd align="right">{formatAmount(feeUnitPrice)}</DocTd>
               <DocTd align="right">{formatAmount(processingFee)}</DocTd>
             </tr>
           )}
