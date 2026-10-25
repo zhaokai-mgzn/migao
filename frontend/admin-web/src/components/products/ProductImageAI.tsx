@@ -15,8 +15,9 @@ import { toastRequestError } from '@/lib/api-error'
  * 改前那一步藏在预览旁，商家漏点就等于**白生成**：表单没变 ⇒ 提交载荷没有该 URL ⇒ 保存后也没有
  * （issue #7533 的实测根因）。
  *
- * 同一面板内再次生成 ⇒ **替换**上一张（把上次自动填入的 URL 从两个列表里摘掉），不叠加 ——
- * 否则连点两次「再生成一张」会在图片位留下一串近似图。
+ * 🔴 用户 2026-10-25 18:00 改判：**只追加，不覆盖** —— 「生成的图片不要直接覆盖，默认添加到主图或者详情图」。
+ * 改前「再生成一张」会把上一张从两个列表里摘掉（先出详情图、再出主图时详情图被悄悄删掉 =「详情图存不下来」），
+ * 主图还会抢封面位。现在一律追加到对应列表末尾；列表满（主图 5 / 详情图 9）⇒ 明确提示先删一张。
  * 仍**不落库**：结果只写进表单，提交永远是商家的动作。
  *
  * 设计口径（§31）：常驻面只有一行提示 + 一个按钮；面板按需展开，生成中禁用按钮，
@@ -40,6 +41,10 @@ const FAILURE_MESSAGE = '生成失败，请稍后重试，或直接上传图片'
  */
 const PLATFORM_UNAVAILABLE = '该能力暂不可用，已反馈平台；可先上传图片继续建品。'
 
+/** 生成成功但图片位已满 ⇒ 不是失败，是「先腾个位置」。不静默丢图，也不假装已填入。 */
+const MAIN_FULL = '主图已满 5 张，先在图片列表里删一张再生成。'
+const DETAIL_FULL = '详情图已满 9 张，先在详情图列表里删一张再生成。'
+
 const FAILURE_MESSAGES: Record<string, string> = {
   AI_PRODUCT_IMAGE_MODEL_UNSUPPORTED: PLATFORM_UNAVAILABLE,
   AI_PRODUCT_IMAGE_DISABLED: PLATFORM_UNAVAILABLE,
@@ -59,13 +64,10 @@ interface ProductImageAIProps {
   sampleImages?: string[]
   /** 商品名（提示词里用；可空） */
   productName?: string
-  /**
-   * 主图：写进 `images[0]`（封面位）。
-   * `replaceUrl` = 本组件上一次自动填入的那张（再生成时替换，不叠加）。
-   */
-  onApplyMain: (url: string, replaceUrl?: string) => void
-  /** 细节图：追加到 `detailImages`（`replaceUrl` 同上）。 */
-  onApplyDetail: (url: string, replaceUrl?: string) => void
+  /** 主图：追加到主图列表末尾；返回 false = 已满（调用方没写进去，需要提示先删一张）。 */
+  onApplyMain: (url: string) => boolean
+  /** 细节 / 工艺 / 场景图：追加到详情图列表末尾；返回 false = 已满。 */
+  onApplyDetail: (url: string) => boolean
 }
 
 export default function ProductImageAI({
@@ -80,12 +82,7 @@ export default function ProductImageAI({
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState('')
   const [error, setError] = useState('')
-  /**
-   * 上一次**自动填入表单**的结果（不是提示文案）。
-   *
-   * 🔴 切换用途 / 切换样图时**不清空**：它记录的是「此刻表单里哪张图是本组件写的」，
-   * 下一次生成据此替换；清空会让第二次生成变成叠加（issue #7533）。
-   */
+  /** 上一次**自动填入表单**的结果（只用于「再生成一张」按钮文案与绿色状态行）。 */
   const [applied, setApplied] = useState<{ url: string; kind: AiProductImageKind } | null>(null)
 
   /** 图片列表变化（上传 / 删除 / 自动填入）时，样图始终指向仍然存在的一张。 */
@@ -98,11 +95,11 @@ export default function ProductImageAI({
     setError('')
   }
 
-  /** 写进表单：主图 ⇒ 封面位；其余 ⇒ 详情图末位。同时记住这张，供下次替换。 */
-  const apply = (url: string, target: AiProductImageKind) => {
-    if (target === 'main') onApplyMain(url, applied?.url)
-    else onApplyDetail(url, applied?.url)
-    setApplied({ url, kind: target })
+  /** 写进表单：主图 ⇒ 主图列表末尾；其余 ⇒ 详情图列表末尾。返回是否写进去了（满了就是 false）。 */
+  const apply = (url: string, target: AiProductImageKind): boolean => {
+    const ok = target === 'main' ? onApplyMain(url) : onApplyDetail(url)
+    if (ok) setApplied({ url, kind: target })
+    return ok
   }
 
   const generate = async () => {
@@ -118,7 +115,9 @@ export default function ProductImageAI({
       }
       setResult(url)
       // 生成成功即落位（issue #7533）：多一步「用这张」= 商家漏点即白生成。
-      apply(url, kind)
+      if (!apply(url, kind)) {
+        setError(kind === 'main' ? MAIN_FULL : DETAIL_FULL)
+      }
     } catch (e) {
       const message = failureMessage(e)
       setError(message)
@@ -221,7 +220,7 @@ export default function ProductImageAI({
             {error && <span className="text-xs text-red-600">{error}</span>}
             {applied && (
               <span role="status" className="text-xs text-green-600">
-                {applied.kind === 'main' ? '已填入主图封面位' : '已加入「详情图」'}；可继续生成其他用途。
+                {applied.kind === 'main' ? '已加入主图' : '已加入「详情图」'}；可继续生成其他用途。
               </span>
             )}
           </div>

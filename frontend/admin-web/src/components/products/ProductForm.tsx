@@ -108,6 +108,9 @@ function flattenCategories(
 }
 
 const TITLE_MAX = 60
+/** 主图 / 详情图张数上限 —— 上传控件与 AI 落位共用这一份（避免「控件 5 张、落位按 9 张算」这类漂移）。 */
+const MAIN_IMAGE_MAX = 5
+const DETAIL_IMAGE_MAX = 9
 const DEFAULT_FORM: ProductFormData = {
   name: '',
   sku: '',
@@ -248,22 +251,35 @@ export default function ProductForm({
   }
 
   /**
-   * AI 生成图落位（issue #7533）：主图 ⇒ 封面位 `images[0]`；细节 / 工艺 / 场景 ⇒ 详情图末位。
+   * AI 生成图落位（issue #7533 / #7773）：**只追加，不覆盖**。
    *
-   * `replaceUrl` = 上一次自动填入的那张：**先摘掉再写入**（替换，不叠加），否则连点两次
-   * 「再生成一张」会在图片位留一串近似图。容量仍沿用既有口径（主图 5 / 详情图 9）。
+   * 用户 2026-10-25 18:00 逐字：「生图不能保存到详情图，主图可以，生成的图片不要直接覆盖，
+   * 默认添加到主图或者详情图」。改前两条都是「覆盖」语义，都会吃掉商家已有的图：
+   *   ① 主图写进 `images[0]`（抢封面，把商家自己的封面挤到第 2 位，满 5 张时还会静默丢掉末位）；
+   *   ② 「再生成一张」按 `replaceUrl` 把上一张从**两个列表里都摘掉** ⇒ 先出详情图、再出主图，
+   *      详情图那张会被悄悄删掉（用户看到的「详情图存不下来」）。
+   * 现在：主图追加到主图末尾、细节/工艺/场景追加到详情图末尾，**任何一张都不会被摘掉**。
    *
-   * 🔴 必须走**函数式**更新：生图要 ~40s，落位发生在那之后 —— 若按点击时的 `form` 快照计算，
-   * 这 40 秒里商家新加 / 删除的图会被覆盖（删掉的图复活、新图丢失）。判据见
+   * 容量沿用既有口径（主图 5 / 详情图 9）：满了 ⇒ 返回 false，由调用方面向商家提示「先删一张」，
+   * **不**静默 slice 丢图。
+   *
+   * 🔴 仍走**函数式**更新：生图要 1~2 分钟，落位发生在那之后 —— 若按点击时的 `form` 快照计算，
+   * 这期间商家新加 / 删除的图会被覆盖（删掉的图复活、新图丢失）。判据见
    * `ProductFormAIImage.test.tsx` 的「生成中改过图片列表」。
    */
-  const applyAiImage = (slot: 'main' | 'detail', url: string, replaceUrl?: string) => {
+  const applyAiImage = (slot: 'main' | 'detail', url: string): boolean => {
+    const target = slot === 'main' ? form.images || [] : form.detailImages || []
+    const max = slot === 'main' ? MAIN_IMAGE_MAX : DETAIL_IMAGE_MAX
+    if (target.length >= max) return false
     setForm((prev) => {
-      const images = (prev.images || []).filter((item) => item !== replaceUrl)
-      const detailImages = (prev.detailImages || []).filter((item) => item !== replaceUrl)
-      return slot === 'main'
-        ? { ...prev, images: [url, ...images].slice(0, 5), detailImages }
-        : { ...prev, images, detailImages: [...detailImages, url].slice(0, 9) }
+      const images = prev.images || []
+      const detailImages = prev.detailImages || []
+      if (slot === 'main') {
+        if (images.length >= MAIN_IMAGE_MAX) return prev
+        return { ...prev, images: [...images, url] }
+      }
+      if (detailImages.length >= DETAIL_IMAGE_MAX) return prev
+      return { ...prev, detailImages: [...detailImages, url] }
     })
     dirtyRef.current = true
     setDirty(true)
@@ -274,6 +290,7 @@ export default function ProductForm({
       delete next.images
       return next
     })
+    return true
   }
 
   const titleCount = form.name.length
@@ -674,7 +691,7 @@ export default function ProductForm({
               <ImageUploader
                 value={form.images}
                 onChange={(urls) => updateField('images', urls)}
-                max={5}
+                max={MAIN_IMAGE_MAX}
                 multiple
                 showOrderBadge
                 confirmRemove
@@ -682,8 +699,8 @@ export default function ProductForm({
               <ProductImageAI
                 sampleImages={Array.from(new Set([...(form.images || []), ...(form.detailImages || [])]))}
                 productName={form.name}
-                onApplyMain={(url, replaceUrl) => applyAiImage('main', url, replaceUrl)}
-                onApplyDetail={(url, replaceUrl) => applyAiImage('detail', url, replaceUrl)}
+                onApplyMain={(url) => applyAiImage('main', url)}
+                onApplyDetail={(url) => applyAiImage('detail', url)}
               />
               {errors.images && (
                 <p className="text-sm text-red-600 mt-2">{errors.images}</p>
@@ -887,7 +904,7 @@ export default function ProductForm({
             <ImageUploader
               value={form.detailImages || []}
               onChange={(urls) => updateField('detailImages', urls)}
-              max={9}
+              max={DETAIL_IMAGE_MAX}
               multiple
               hint="最多 9 张，可拖拽排序"
             />
