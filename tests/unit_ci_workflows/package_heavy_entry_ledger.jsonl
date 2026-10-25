@@ -20,3 +20,4 @@
 {"id":"1792896037.54006.25021","ts":"2026-10-25T02:40:37Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7723-dispatch-consignee","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1792896199.69285.11229","ts":"2026-10-25T02:43:19Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7723-dispatch-consignee","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1792896375.87239.23035","ts":"2026-10-25T02:46:15Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7723-dispatch-consignee","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1792917035.92038.5733","ts":"2026-10-25T08:30:36Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/7761-worker-shipment-ready-label","why":"子包 worktree 直跑全量（无批次标记）"}

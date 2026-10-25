@@ -130,6 +130,8 @@ test('`pages` 未被读过 / 空数组 ⇒ 按默认全开（fail-open，不是"
 })
 
 // ── 判据 ①：pages ⇔ 机台模式入口 ────────────────────────────────────────────────────────
+// ⚠️ 入口栏现在有**三条**（裁高计算 / 我的计件 / 发货，issue #7761 加了第三条）——
+//    「一条入口都没有 ⇒ 不留空入口栏」的 off 夹具因此**不能**再拿 `shipment` 当填充项。
 
 test('🔴 ① `cut_calc` ∈ pages ⇒ 入口栏出现「裁高计算（一体机）」链接；∉ ⇒ 入口栏**不渲染**', () => {
   const on = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_CUT_CALC]), null))
@@ -137,7 +139,7 @@ test('🔴 ① `cut_calc` ∈ pages ⇒ 入口栏出现「裁高计算（一体�
   assert.match(on, /id="wh5-machine-entry"[^>]*href="\/w\/machine\.html"/, '入口必须是真链接（href 在）')
   assert.match(on, />裁高计算（一体机）<\/a>/, '入口文案要在链接里（且是人话 —— 2026-10-10 用户裁定）')
 
-  const off = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_ORDER, PAGE_SHIPMENT]), null))
+  const off = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_ORDER]), null))
   // 「变异真的被读到」的自证：把过滤去掉 ⇒ deglue 后**必然**含这条路径（控件句按此判）
   assert.equal(deglue(off).includes(MACHINE_ENTRY), false, '`cut_calc` 没开却仍在渲染入口（开关形同虚设）')
   assert.ok(!/机台模式|裁高计算/.test(off), '入口区不该出现裁高计算文案')
@@ -152,13 +154,24 @@ test('🔴 ①′ `piecework` ∈ pages ⇒ 入口栏出现「我的计件」真
   assert.match(on, />我的计件<\/a>/, '入口文案必须是人话（不许出现页面键 / 路由字面量）')
   assert.equal(deglue(on).includes(MACHINE_ENTRY), false, '`cut_calc` 没开 ⇒ 不渲染裁高入口')
 
-  const off = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_ORDER, PAGE_SHIPMENT]), null))
+  const off = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_ORDER]), null))
   assert.equal(off.includes('/w/piecework.html'), false, '`piecework` 没开却仍在渲染入口（开关形同虚设）')
   assert.ok(!off.includes('id="wh5-worker-entries"'), '一条入口都没有 ⇒ **不留空入口栏**')
 
   const both = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_PIECEWORK, PAGE_CUT_CALC]), null))
   assert.match(both, /id="wh5-machine-entry"/, '两条都开 ⇒ 两条入口都在')
   assert.match(both, /id="wh5-piecework-entry"/, '两条都开 ⇒ 两条入口都在')
+})
+
+// ── 判据 ①″：`shipment`（发货页，issue #7761）────────────────────────────────────────
+
+test('🔴 ①″ `shipment` ∈ pages ⇒ 入口栏出现「发货」真链接；∉ ⇒ 不渲染（页面键有面 ⇒ 必须有入口）', () => {
+  const on = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_SHIPMENT]), null))
+  assert.match(on, /id="wh5-shipment-entry"[^>]*href="\/w\/shipment\.html"/, '入口必须是真链接')
+  assert.match(on, />发货<\/a>/, '入口文案必须是人话（不许出现页面键 / 路由字面量）')
+
+  const off = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_CUT_CALC, PAGE_PIECEWORK]), null))
+  assert.equal(off.includes('/w/shipment.html'), false, '`shipment` 没开却仍在渲染入口（开关形同虚设）')
 })
 
 test('🔴 ① 红证：去掉入口栏的 `cut_calc` 过滤（无条件出裁高链接）⇒ 同一条判定必红', () => {

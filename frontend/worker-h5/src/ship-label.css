@@ -1,0 +1,56 @@
+/* case_ids: PG-018, BM-006, DF-017 */
+/*
+ * 工人端 H5「发货」页 —— **发货标签纸面样式**（issue #7761）。
+ *
+ * 🔴 为什么单独一份文件（而不是塞进 styles.css）：`@page` 是**文档级**声明 ——
+ *    放进共用的 styles.css，`/w/`（报工）与 `/w/piecework.html` 也会被印成 50mm × 70mm。
+ *    本文件只被 shipment.html 引入 ⇒ 纸型只影响这一页。
+ *
+ * 🔴 纸型的真值源 = `frontend/admin-web/src/lib/print-media.json` 的 `label-50x70`
+ *    （`pageBoxMm 50 × 70` / `pageSize "50mm 70mm"` / `minFontPt 6`）。这里写的是**同一份**数值，
+ *    守卫测试 `tests/worker-h5-shipment-ready.test.mjs` 逐字比对那两份（改一处不改另一处 ⇒ 红）：
+ *    介质矩阵里 50×70 是 2026-10-25 用户裁定后的洗水唛同款卷纸（DP235S，203dpi，有效打宽 48mm）。
+ *
+ * 版面预算（50mm 宽 × 70mm 高，内边距 1.5mm ⇒ 版心 47mm × 67mm）：
+ *   · 抬头「发货标签」8pt 粗体 1 行；
+ *   · 每行 = 标签（10mm）+ 值（37mm），6pt / 行高 1.25 ⇒ 每行 ≈ 2.65mm；
+ *   · 固定 7 行 + 地址折行（2~3 行）+ 可选备注 ⇒ 常规 10~12 行 ≈ 32mm，
+ *     长地址（>20 字）+ 长备注（>20 字）时 ≈ 60mm **仍装得下**；
+ *   · 装不下时**只裁文字块**（`overflow: hidden` 在 `.wh5-label-rows` 上），抬头与订单号永不被裁。
+ */
+
+/* 屏幕态（`.wh5-label-*` / `.wh5-ship-label`）在共用的 `styles.css` 里 —— 类级守卫
+   `tests/worker-h5-style-coverage.test.mjs` 要求「上屏的类在 styles.css 有选择器」；
+   本文件只留**打印专属**规则（@page 与本页的打印隔离）。改屏幕版面请去 styles.css。 */
+
+/* ── 打印态：**只有标签**上纸（列表、页头、按钮一律不出现在纸上） ─────────────────── */
+@page {
+  size: 50mm 70mm;
+  margin: 0;
+}
+
+@media print {
+  /* 清零边距：Chrome 会把页眉页脚（日期 / 标题 / URL / 页码）画在 @page 的页边距里
+     —— 边距为 0 就没有可画的边距（admin-web 侧同一机制的实测见 print-media.json 的 a4.note） */
+  html, body { margin: 0; padding: 0; background: #fff; }
+
+  /* 打印隔离：`display: none` 的元素**不占版面高度**（用 visibility 隐藏会留下空白页，
+     admin-web #3896 实测过这个形态） */
+  body > *:not(#shipment-root) { display: none !important; }
+  #shipment-root > *:not(#wh5-ship-label-sheet) { display: none !important; }
+  #wh5-ship-label-sheet > *:not(#wh5-ship-label) { display: none !important; }
+
+  .wh5-label-sheet,
+  .wh5-ship-label {
+    width: 50mm;
+    height: 70mm;
+    padding: 1.5mm;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    gap: 1mm;
+  }
+  .wh5-label-sheet { background: #fff; }
+  .wh5-label-actions { display: none !important; }
+}

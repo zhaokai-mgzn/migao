@@ -605,3 +605,147 @@ a.wh5-machine__back:active { color: var(--wh5-machine-ink); }
   .wh5-shipment h3 { font-size: 22px; }
   .wh5-unpack { font-size: 18px; }
 }
+
+/* ════════════════════════════════════════════════════════════════════════════════
+   发货页（issue #7761）—— **全完工待发货列表**
+   纸面样式不在这里（`src/ship-label.css`，只被 shipment.html 引入）：
+   `@page` 是文档级声明，混进本文件会把报工页也印成 50mm × 70mm。
+   ════════════════════════════════════════════════════════════════════════════════ */
+.wh5-ready { display: flex; flex-direction: column; gap: 10px; }
+
+.wh5-ready-count { margin: 0; color: var(--wh5-ink-soft); font-size: 15px; }
+
+.wh5-ready-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.wh5-ready-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  background: var(--wh5-card);
+  border: 1px solid var(--wh5-line);
+  border-radius: var(--wh5-radius-lg);
+  box-shadow: var(--wh5-shadow);
+}
+
+.wh5-ready-no {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.wh5-ready-sub { margin: 0; color: var(--wh5-muted); font-size: 14px; line-height: 1.5; }
+
+/* 地址是本页最长的自由文本：折行而不是省略（省略 = 工人不知道发去哪） */
+.wh5-ready-addr { overflow-wrap: anywhere; word-break: break-word; }
+
+.wh5-ready-empty,
+.wh5-ready-more {
+  margin: 0;
+  padding: 12px;
+  border-radius: var(--wh5-radius-lg);
+  background: var(--wh5-surface-soft);
+  color: var(--wh5-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.wh5-ready-more { background: var(--wh5-warn-soft); color: var(--wh5-warn); }
+
+@media (min-width: 768px) {
+  /* 发货页（issue #7761）：PAD 上远距离可读 —— 单号 22px、正文 20px、按钮 ≥88px（由 .wh5-entry 给） */
+  .wh5-ready-count { font-size: 20px; }
+  .wh5-ready-no { font-size: 26px; }
+  .wh5-ready-sub { font-size: 20px; }
+  .wh5-ready-empty, .wh5-ready-more { font-size: 20px; }
+}
+
+/* ── 发货标签（屏幕态；issue #7761）─────────────────────────────────────────────
+   纸型 / 打印隔离在 `src/ship-label.css`（`@page` 是文档级声明，只能由那一页引入）。
+   这里只负责「手机上看这张纸长什么样」：按真尺寸 50mm × 70mm 预览。 */.wh5-label-sheet {
+  background: var(--wh5-card);
+  border: 1px solid var(--wh5-line);
+  border-radius: var(--wh5-radius-lg);
+  box-shadow: var(--wh5-shadow);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.wh5-label-actions { display: flex; gap: 10px; }
+.wh5-label-actions > * { flex: 1 1 0; }
+
+.wh5-ship-label {
+  /* 真尺寸：50mm × 70mm（屏幕上也照这个比例给，工人看到的就是纸上那一块） */
+  width: 50mm;
+  height: 70mm;
+  box-sizing: border-box;
+  padding: 1.5mm;
+  margin: 0 auto;
+  background: #fff;
+  color: #000;
+  border: 1px dashed var(--wh5-line-strong);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 1mm;
+  font-family: inherit;
+}
+
+.wh5-label-title {
+  margin: 0;
+  font-size: 8pt;
+  line-height: 1.2;
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: .1em;
+}
+
+.wh5-label-rows {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .4mm;
+  overflow: hidden;
+}
+
+.wh5-label-row {
+  display: flex;
+  gap: 1mm;
+  font-size: 6pt;
+  line-height: 1.25;
+}
+
+/* 单行行：值不折行（折行会把版面推高，把地址挤出纸外） */
+.wh5-label-row:not(.wh5-label-row-wrap) .wh5-label-value {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wh5-label-key {
+  flex: 0 0 10mm;
+  margin: 0;
+  font-weight: 700;
+  color: #000;
+}
+
+.wh5-label-value {
+  flex: 1 1 auto;
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+

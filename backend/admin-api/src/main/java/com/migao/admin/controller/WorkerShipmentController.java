@@ -6,6 +6,7 @@ import com.migao.admin.exception.BusinessException;
 import com.migao.admin.service.ClientRequestIdService;
 import com.migao.admin.service.ImageRecognitionClient;
 import com.migao.admin.service.OrderShipmentService;
+import com.migao.admin.service.WorkerShipmentReadyService;
 import com.migao.admin.worker.WorkerIdentity;
 import com.migao.admin.worker.WorkerSessionService;
 import lombok.RequiredArgsConstructor;
@@ -45,7 +46,28 @@ import java.util.Map;
 public class WorkerShipmentController {
 
     private final OrderShipmentService orderShipmentService;
+    private final WorkerShipmentReadyService workerShipmentReadyService;
     private final WorkerSessionService workerSessionService;
+
+    /**
+     * **全完工待发货列表**（issue #7761）：工人端发货页的第一屏。
+     *
+     * <p>GET /api/worker/shipment/orders</p>
+     *
+     * <p>只回「本租户 + 可发货状态 + **多套全部完工** + 作业单已完工」的订单，行内含收货信息
+     * （收货人 / 电话 / 地址）与物流方式 / 公司 —— 发货标签读的就是这份读数，不再逐单回查。
+     * 判据全部复用既有单一实现（见 {@link WorkerShipmentReadyService} 类注释），
+     * <b>本端点不新增任何判据</b>。</p>
+     *
+     * <p>准入与其它 {@code /api/worker/shipment/**} 端点**逐字相同**：有效工人 session，
+     * 不查商家权限码；无 session ⇒ 401（fail-closed）。</p>
+     */
+    @GetMapping("/orders")
+    public ApiResponse<Map<String, Object>> readyOrders(
+            @RequestHeader(value = WorkerSessionService.SESSION_HEADER, required = false) String sessionId) {
+        requireWorker(sessionId);
+        return ApiResponse.success(workerShipmentReadyService.listReadyOrders(TenantContext.getTenantId()));
+    }
 
     /**
      * 拍照识别：图 → 订单行 / 商品标签上的**文字**候选（**不落库、不提交**）。
