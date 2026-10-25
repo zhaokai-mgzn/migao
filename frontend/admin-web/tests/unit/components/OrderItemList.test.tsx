@@ -5,15 +5,21 @@ import { render, screen, within, fireEvent } from '@testing-library/react'
 import OrderItemList, { rollAllocationWarning } from '@/components/orders/OrderItemList'
 import type { OrderItem } from '@/types'
 
-const makeItem = (overrides: Partial<OrderItem> = {}): OrderItem => ({
-  id: 'item-1',
-  productName: '测试窗帘布',
-  quantity: 5,
-  unitPrice: 100,
-  amount: 500,
-  subtotal: 500,
-  ...overrides,
-})
+const makeItem = (overrides: Partial<OrderItem> = {}): OrderItem => {
+  const merged: OrderItem = {
+    id: 'item-1',
+    productName: '测试窗帘布',
+    quantity: 5,
+    unitPrice: 100,
+    amount: 500,
+    subtotal: 500,
+    ...overrides,
+  }
+  // 夹具口径（issue #7724）：`amount`（面料金额）缺省与 `subtotal` 同源 —— 只改 subtotal 的
+  // 老用例不必逐个补 amount；要造「subtotal 已含加工费」的形态就**显式**给 amount。
+  if (overrides.amount === undefined) merged.amount = merged.subtotal as number
+  return merged
+}
 
 describe('OrderItemList', () => {
   describe('header rendering', () => {
@@ -165,6 +171,26 @@ describe('OrderItemList', () => {
       ]
       render(<OrderItemList items={items} />)
       expect(screen.queryByText('加工费合计')).not.toBeInTheDocument()
+    })
+
+    it('🔴 面料金额取 amount（单价×数量）：「subtotal 已含加工费」的单不双算（issue #7724）', () => {
+      render(
+        <OrderItemList
+          items={[
+            makeItem({
+              quantity: 7.3,
+              unitPrice: 30.8,
+              amount: 224.84, // 单价 × 数量（面料金额）
+              subtotal: 275.94, // 新增订单页落的「已含加工费」形态
+              processingFee: 51.1,
+            }),
+          ]}
+        />
+      )
+      // 商品金额 = 224.84；订单总金额 = 224.84 + 51.10 = 275.94（修前：275.94 / 327.04）
+      expect(screen.getByText('¥224.84')).toBeInTheDocument()
+      expect(screen.getAllByText('¥275.94').length).toBeGreaterThanOrEqual(1)
+      expect(screen.queryByText('¥327.04')).not.toBeInTheDocument()
     })
 
     it('shows total order amount label', () => {
