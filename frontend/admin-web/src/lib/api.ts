@@ -87,6 +87,7 @@ import type {
   OutboundOrderCreateParams,
   FinishedGoods,
   WarehouseLocation,
+  WarehouseLocationInput,
   InboundBatch,
   InboundOrderCreateParams,
   OpeningImportReport,
@@ -2283,10 +2284,26 @@ export const outboundOrderApi = {
 export const finishedGoodsApi = {
   listInStock: () => request.get<ApiResponse<FinishedGoods[]>>('/api/admin/finished-goods'),
 
-  locations: (warehouseId?: number) =>
+  /**
+   * 仓位清单。管理面要 `includeInactive: true`（停用仓位要能被看到并重新启用）；
+   * 占用态由服务端按 `finished_goods_stock` 的 in_stock 行反推。
+   */
+  locations: (params?: { warehouseId?: number; includeInactive?: boolean }) =>
     request.get<ApiResponse<WarehouseLocation[]>>('/api/admin/warehouse-locations', {
-      params: warehouseId == null ? undefined : { warehouseId },
+      params,
     }),
+
+  /** 新建仓位（码 `inbound:create`；成品仓不存在时服务端自动建，与打包同一口径）。 */
+  createLocation: (data: WarehouseLocationInput) =>
+    request.post<ApiResponse<WarehouseLocation>>('/api/admin/warehouse-locations', data),
+
+  /** 编辑仓位（占用中禁止改仓位号；区域 / 备注 / 启停可改）。 */
+  updateLocation: (id: number, data: WarehouseLocationInput) =>
+    request.patch<ApiResponse<WarehouseLocation>>(`/api/admin/warehouse-locations/${id}`, data),
+
+  /** 删除仓位（软删；占用中 ⇒ 409）。 */
+  deleteLocation: (id: number) =>
+    request.delete<ApiResponse<void>>(`/api/admin/warehouse-locations/${id}`),
 
   finishedWarehouse: () =>
     request.get<ApiResponse<Warehouse | null>>('/api/admin/warehouses/finished'),

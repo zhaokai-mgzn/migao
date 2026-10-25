@@ -7881,6 +7881,25 @@ _CASE_QC_005 = EvalCase(
     precondition='本用例前後端口径：前置 = 质量成本四维（#7377 段 5/6）。零网络、零 LLM。',
 )
 
+# ── WH-009 [NORMAL] 成品仓仓位号管理：出库单页新建 / 编辑 / 启停 / 删除仓位，占用中锁定改号与删除（issue #7785）（源: cases/misc.yml）──
+_CASE_WH_009 = EvalCase(
+    id='WH-009',
+    legacy_id='',
+    title='成品仓仓位号管理：出库单页新建 / 编辑 / 启停 / 删除仓位，占用中锁定改号与删除（issue #7785）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-25，逐字）：「缺个仓位号管理功能吧？允许用户在这个页面上创建和管理」（附图 = 出库单页 / 成品库存空态，红框圈住「系统会自动给每个成品分配成品仓仓位号」）。'],
+    expectations=[],
+    data_checks=['**判据 1（新建）**：`POST /api/admin/warehouse-locations` 仓位号统一大写（`a-01` = `A-01`）、区域缺省 `A / 成品区`、落成品仓（不存在时自动建）；重复仓位号 ⇒ 422 可读提示（DB 唯一索引兜底，不冒 5xx）。判据 = `WarehouseLocationManagementTest#createNormalizesCodeAndDefaultsZone` / `#createDuplicateCodeIsReadableConflict` / `#createRejectsInvalidCodeBeforeCreatingWarehouse`。', '**判据 2（🔴 占用中锁定）**：有 `in_stock` 成品占着仓位时，改仓位号 / 删除 ⇒ 409 且零写入；备注 / 区域名 / 启停仍可改。判据 = `#updateRejectsRenamingOccupiedBin` / `#deleteRejectsOccupiedBin` / `#updateAllowsRemarkAndZoneOnOccupiedBin`。', "**判据 3（停用只影响后续分配）**：停用后 `nextFreeBin` 不再返回它（分配查询只看 `status='active'`），已占用库存不受影响，可重新启用。判据 = `#updateTogglesStatus` + `WarehouseLocationMapper#selectFirstFreeBin` 的 `status = 'active'` 谓词。", '**判据 4（软删可追溯）**：删除 = 软删；历史单据的 `bin_code` 快照不动（V196 列注释）。判据 = `#deleteSoftDeletesFreeBin`。', '**判据 5（租户隔离）**：跨租户改 / 删命中 404 且零写入。判据 = `#crossTenantIsInvisible`。', '**判据 6（清单口径）**：占用态由 `finished_goods_stock` 的 in_stock 行按 `bin_code` 反推（不按 500 行截断）；`includeInactive=true` 带出停用仓位。判据 = `#listViewMarksOccupancyAndIncludesInactive` + `FinishedGoodsStockMapper#selectOccupiedBinCodes`。', '**判据 7（权限 / 端点）**：读 `inbound:view`、写 `inbound:create`（零授权 delta）；四个端点都透传当前租户。判据 = `WarehouseLocationControllerTest#permissionCodes` / `#listLocationsScopesTenantAndPassesIncludeInactive` / `#createLocationScopesTenant` / `#updateAndDeleteScopeTenant`。', '**判据 8（商家面可达）**：出库单页第三页签「仓位管理」可新建 / 编辑 / 启停 / 删除；`inbound:create` 缺失时整块只读；占用中行内删除禁用、编辑弹窗仓位号禁用；成品库存空态有「管理仓位」入口。判据 = `frontend/admin-web/tests/unit/components/WarehouseLocationPanel.test.tsx` + `frontend/admin-web/tests/unit/pages/outbound-orders.test.tsx`「仓位管理入口」。', '**边界（照实登记）**：① 不做移库（把在库成品从 A-01 挪到 A-02）；② 不做批量建号 / 容量 / 货架层级；③ 仓位号只允许字母 / 数字 / 短横线 / 下划线（中文 / 空格拒绝）—— 与自动分配的 `A-01` 同形态。'],
+    skip_reason='[backend-contract] 仓位档案的 CRUD / 占用锁定 / 租户隔离由 Java 单测验证，商家面由前端单测验证，非 LLM 行为',
+    tags=['backend-contract', 'inventory', 'warehouse-location', 'master-data', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract + frontend-contract]：前置 = `warehouse_locations`（V196）+ `finished_goods_stock` 在库行 + `inbound:view/create`。零网络、零 LLM。',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -17264,6 +17283,7 @@ ALL_CASES = (
     _CASE_QC_004,
     _CASE_RPT_008,
     _CASE_QC_005,
+    _CASE_WH_009,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

@@ -8,6 +8,7 @@ import { PackageMinus, Plus, RefreshCw, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button, EmptyState, Input, Modal, PageCard, PageHeader, Select, Table } from '@/components/ui'
 import ListLoadError from '@/components/common/ListLoadError'
+import WarehouseLocationPanel from '@/components/stock/WarehouseLocationPanel'
 import SkuPicker, { type SkuPickerChoice, skuLineLabel } from '@/components/products/SkuPicker'
 import { finishedGoodsApi, outboundOrderApi, warehouseApi } from '@/lib/api'
 import { usePermission } from '@/lib/permission'
@@ -36,9 +37,15 @@ import type { Warehouse } from '@/types/stocktake'
  * 打包时会自动给每个成品行分配成品仓的仓位号（`A-01`…），成品发货后释放。
  * 仓管问「A-03 上那件是谁的」时，答案就在这里 —— 而不是去翻入库单。
  *
+ * ## 第三个页签 = 仓位管理（issue #7785）
+ *
+ * 仓位号此前只能由打包动作自动生成，商家清不掉废号、也没法按现场货架预置仓号。
+ * 这个页签把仓位当主数据来管：新建 / 编辑 / 启停 / 删除；占用中的仓位不能改号或删除。
+ * 自动分配口径不变：优先复用最小空闲号，全占满才新增。
+ *
  * ## 边界（照实登记）
  *
- * - 不在本页建仓 / 建仓位：成品仓与仓位号由打包动作按需自动创建（`A-01` 起顺延）；
+ * - 不做「移库」（把在库成品从 A-01 挪到 A-02）：仓位随打包分配、随发货释放；
  * - 不做「成品手工出库」：成品出库只发生在发货（`source=ship`）；
  * - 出库单**不可作废**：冲销须另开入库单（与「已过账不得作废」同一条留痕口径）。
  */
@@ -70,7 +77,8 @@ export default function OutboundOrdersPage() {
   const { has: hasPermission } = usePermission()
   const canWrite = hasPermission('inbound:create')
 
-  const [tab, setTab] = useState<'documents' | 'finished'>('documents')
+  const [tab, setTab] = useState<'documents' | 'finished' | 'locations'>('documents')
+  const [locationsRefreshKey, setLocationsRefreshKey] = useState(0)
   const [keyword, setKeyword] = useState('')
   const [appliedKeyword, setAppliedKeyword] = useState('')
 
@@ -331,7 +339,14 @@ export default function OutboundOrdersPage() {
         }
         actions={
           <>
-            <Button variant="secondary" onClick={() => void (tab === 'documents' ? loadOrders() : loadFinished())}>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                if (tab === 'documents') void loadOrders()
+                else if (tab === 'finished') void loadFinished()
+                else setLocationsRefreshKey((key) => key + 1)
+              }}
+            >
               <RefreshCw className="mr-1 h-4 w-4" />
               刷新
             </Button>
@@ -345,12 +360,13 @@ export default function OutboundOrdersPage() {
         }
       />
 
-      {/* 视图切换：出库单 × 成品库存两个读面（药丸态 = 本仓既有口径，见库存明细页） */}
+      {/* 视图切换：出库单 × 成品库存 × 仓位管理（药丸态 = 本仓既有口径，见库存明细页） */}
       <div className="flex gap-2" role="tablist" aria-label="出库单视图">
         {(
           [
             ['documents', '出库单'],
             ['finished', '成品库存'],
+            ['locations', '仓位管理'],
           ] as const
         ).map(([key, label]) => (
           <button
@@ -436,7 +452,17 @@ export default function OutboundOrdersPage() {
           ) : finished.length === 0 ? (
             <EmptyState
               title="成品仓暂时是空的"
-              description="工人在手机端完成打包后，系统会自动给每个成品分配成品仓仓位号，这里就能看到。"
+              description="工人在手机端完成打包后，系统会自动给每个成品分配成品仓仓位号，这里就能看到。仓位号也可以先按现场货架建好。"
+              action={
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setTab('locations')}
+                  data-testid="finished-manage-locations"
+                >
+                  {canWrite ? '管理仓位' : '查看仓位'}
+                </Button>
+              }
             />
           ) : (
             <Table
@@ -447,6 +473,10 @@ export default function OutboundOrdersPage() {
             />
           )}
         </PageCard>
+      )}
+
+      {tab === 'locations' && (
+        <WarehouseLocationPanel canWrite={canWrite} refreshKey={locationsRefreshKey} />
       )}
 
       <Modal open={createOpen} onClose={closeCreate} title="新建出库单（布料）" width={960}>

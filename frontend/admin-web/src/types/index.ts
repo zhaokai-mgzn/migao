@@ -4604,7 +4604,7 @@ export interface FinishedGoods {
   createdAt?: string | null
 }
 
-/** 仓位（成品仓的货位） */
+/** 仓位（成品仓的货位；V196 #7750，管理面 #7785） */
 export interface WarehouseLocation {
   id: number
   warehouseId: number
@@ -4612,5 +4612,18 @@ export interface WarehouseLocation {
   zoneName: string
   binCode: string
   status: 'active' | 'inactive'
+  remark?: string | null
+  /** 有在库成品占着它 —— 管理面据此禁用改号 / 删除 */
+  occupied?: boolean
+  createdAt?: string | null
+}
+
+/** 新建 / 编辑仓位入参（null 字段 = 后端不改；issue #7785） */
+export interface WarehouseLocationInput {
+  binCode?: string
+  zoneCode?: string
+  zoneName?: string
+  remark?: string | null
+  status?: 'active' | 'inactive'
 }
 

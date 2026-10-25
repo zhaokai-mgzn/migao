@@ -3,14 +3,22 @@ package com.migao.admin.controller;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.dto.FinishedGoodsView;
+import com.migao.admin.dto.WarehouseLocationCreateRequest;
+import com.migao.admin.dto.WarehouseLocationUpdateRequest;
+import com.migao.admin.dto.WarehouseLocationView;
 import com.migao.admin.entity.Warehouse;
-import com.migao.admin.entity.WarehouseLocation;
 import com.migao.admin.security.RequirePermission;
 import com.migao.admin.service.FinishedGoodsService;
 import com.migao.admin.service.WarehouseLocationService;
 import com.migao.admin.service.WarehouseService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -18,12 +26,20 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * 成品库存与仓位读面（V196，issue #7750）。
+ * 成品库存与仓位（V196，issue #7750；仓位档案管理 = issue #7785）。
  *
- * <p>三个端点的权限码都复用 {@code inbound:view}（仓管/财务既有权限；零授权 delta）：
- * ① 在库成品（带**仓位号**）；② 仓位清单；③ 成品仓（打包自动建的那个）—— 商家面据此解释
- * 「仓位号是从哪来的」。</p>
+ * <p>读面权限码复用 {@code inbound:view}、写面复用 {@code inbound:create}（仓管/财务既有权限；
+ * 零授权 delta，不新造权限码 —— 新码会让现网种子岗位全体失效）：</p>
+ * <ol>
+ *   <li>在库成品（带**仓位号**）；</li>
+ *   <li>仓位清单 / 新建 / 编辑 / 删除（出库单页的「仓位管理」视图）；</li>
+ *   <li>成品仓（打包自动建的那个）—— 商家面据此解释「仓位号是从哪来的」。</li>
+ * </ol>
+ *
+ * <p>🔴 「成品仓」读面**只读不建**（GET 不许有副作用）；第一次新建仓位时由写面自动建成品仓
+ * （与打包同一 {@code ensureFinishedWarehouse}）。</p>
  */
+@Slf4j
 @RestController
 @RequestMapping("/api/admin")
 @RequiredArgsConstructor
@@ -44,14 +60,56 @@ public class FinishedGoodsController {
     }
 
     /**
-     * 仓位清单（可按仓过滤）
-     * GET /api/admin/warehouse-locations?warehouseId=
+     * 仓位清单（可按仓过滤；`includeInactive=true` = 管理模式，带占用态并可看到停用仓位）
+     * GET /api/admin/warehouse-locations?warehouseId=&includeInactive=
      */
     @GetMapping("/warehouse-locations")
     @RequirePermission("inbound:view")
-    public ApiResponse<List<WarehouseLocation>> listLocations(@RequestParam(required = false) Long warehouseId) {
-        return ApiResponse.success(
-                warehouseLocationService.list(TenantContext.getTenantId(), warehouseId));
+    public ApiResponse<List<WarehouseLocationView>> listLocations(
+            @RequestParam(required = false) Long warehouseId,
+            @RequestParam(required = false, defaultValue = "false") boolean includeInactive) {
+        return ApiResponse.success(warehouseLocationService.listView(
+                TenantContext.getTenantId(), warehouseId, includeInactive));
+    }
+
+    /**
+     * 新建仓位（成品仓不存在时自动建；仓位号租户内唯一）
+     * POST /api/admin/warehouse-locations
+     */
+    @PostMapping("/warehouse-locations")
+    @RequirePermission("inbound:create")
+    public ApiResponse<WarehouseLocationView> createLocation(
+            @RequestBody WarehouseLocationCreateRequest request) {
+        Long tenantId = TenantContext.getTenantId();
+        log.info("[仓位] 新建请求 | tenant={} bin={}", tenantId, request.getBinCode());
+        return ApiResponse.success(warehouseLocationService.create(request, tenantId));
+    }
+
+    /**
+     * 编辑仓位（占用中禁止改仓位号；区域 / 备注 / 停用可改）
+     * PATCH /api/admin/warehouse-locations/{id}
+     */
+    @PatchMapping("/warehouse-locations/{id}")
+    @RequirePermission("inbound:create")
+    public ApiResponse<WarehouseLocationView> updateLocation(
+            @PathVariable Long id,
+            @RequestBody WarehouseLocationUpdateRequest request) {
+        Long tenantId = TenantContext.getTenantId();
+        log.info("[仓位] 编辑请求 | tenant={} id={}", tenantId, id);
+        return ApiResponse.success(warehouseLocationService.update(id, request, tenantId));
+    }
+
+    /**
+     * 删除仓位（软删；占用中 ⇒ 409）
+     * DELETE /api/admin/warehouse-locations/{id}
+     */
+    @DeleteMapping("/warehouse-locations/{id}")
+    @RequirePermission("inbound:create")
+    public ApiResponse<Void> deleteLocation(@PathVariable Long id) {
+        Long tenantId = TenantContext.getTenantId();
+        log.info("[仓位] 删除请求 | tenant={} id={}", tenantId, id);
+        warehouseLocationService.delete(id, tenantId);
+        return ApiResponse.success();
     }
 
     /**

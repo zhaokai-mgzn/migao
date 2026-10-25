@@ -3685,7 +3685,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（162 case）
+## 杂项域（163 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -6174,6 +6174,23 @@
 跳过: [frontend-contract] 报废工时的采集口径与分列展示，由 Java 单测 + 前端单测验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-23 新增（issue #7377 段 8，用户「按你建议继续做」）。落码 = `QualityCostPolicy.scrapLabor()` + `ReportService.qualityCost/qualityCostBreakdown` 的 scrap 列 + 报表页分列展示与 CSV 列。 ｜ tags: frontend-contract, quality-cost, scrap, red-proof
+
+### WH-009. 成品仓仓位号管理：出库单页新建 / 编辑 / 启停 / 删除仓位，占用中锁定改号与删除（issue #7785） 🔵
+```
+你: 用户（2026-10-25，逐字）：「缺个仓位号管理功能吧？允许用户在这个页面上创建和管理」（附图 = 出库单页 / 成品库存空态，红框圈住「系统会自动给每个成品分配成品仓仓位号」）。
+数据: **判据 1（新建）**：`POST /api/admin/warehouse-locations` 仓位号统一大写（`a-01` = `A-01`）、区域缺省 `A / 成品区`、落成品仓（不存在时自动建）；重复仓位号 ⇒ 422 可读提示（DB 唯一索引兜底，不冒 5xx）。判据 = `WarehouseLocationManagementTest#createNormalizesCodeAndDefaultsZone` / `#createDuplicateCodeIsReadableConflict` / `#createRejectsInvalidCodeBeforeCreatingWarehouse`。
+数据: **判据 2（🔴 占用中锁定）**：有 `in_stock` 成品占着仓位时，改仓位号 / 删除 ⇒ 409 且零写入；备注 / 区域名 / 启停仍可改。判据 = `#updateRejectsRenamingOccupiedBin` / `#deleteRejectsOccupiedBin` / `#updateAllowsRemarkAndZoneOnOccupiedBin`。
+数据: **判据 3（停用只影响后续分配）**：停用后 `nextFreeBin` 不再返回它（分配查询只看 `status='active'`），已占用库存不受影响，可重新启用。判据 = `#updateTogglesStatus` + `WarehouseLocationMapper#selectFirstFreeBin` 的 `status = 'active'` 谓词。
+数据: **判据 4（软删可追溯）**：删除 = 软删；历史单据的 `bin_code` 快照不动（V196 列注释）。判据 = `#deleteSoftDeletesFreeBin`。
+数据: **判据 5（租户隔离）**：跨租户改 / 删命中 404 且零写入。判据 = `#crossTenantIsInvisible`。
+数据: **判据 6（清单口径）**：占用态由 `finished_goods_stock` 的 in_stock 行按 `bin_code` 反推（不按 500 行截断）；`includeInactive=true` 带出停用仓位。判据 = `#listViewMarksOccupancyAndIncludesInactive` + `FinishedGoodsStockMapper#selectOccupiedBinCodes`。
+数据: **判据 7（权限 / 端点）**：读 `inbound:view`、写 `inbound:create`（零授权 delta）；四个端点都透传当前租户。判据 = `WarehouseLocationControllerTest#permissionCodes` / `#listLocationsScopesTenantAndPassesIncludeInactive` / `#createLocationScopesTenant` / `#updateAndDeleteScopeTenant`。
+数据: **判据 8（商家面可达）**：出库单页第三页签「仓位管理」可新建 / 编辑 / 启停 / 删除；`inbound:create` 缺失时整块只读；占用中行内删除禁用、编辑弹窗仓位号禁用；成品库存空态有「管理仓位」入口。判据 = `frontend/admin-web/tests/unit/components/WarehouseLocationPanel.test.tsx` + `frontend/admin-web/tests/unit/pages/outbound-orders.test.tsx`「仓位管理入口」。
+数据: **边界（照实登记）**：① 不做移库（把在库成品从 A-01 挪到 A-02）；② 不做批量建号 / 容量 / 货架层级；③ 仓位号只允许字母 / 数字 / 短横线 / 下划线（中文 / 空格拒绝）—— 与自动分配的 `A-01` 同形态。
+前置: 本用例是 [backend-contract + frontend-contract]：前置 = `warehouse_locations`（V196）+ `finished_goods_stock` 在库行 + `inbound:view/create`。零网络、零 LLM。
+跳过: [backend-contract] 仓位档案的 CRUD / 占用锁定 / 租户隔离由 Java 单测验证，商家面由前端单测验证，非 LLM 行为
+```
+溯源: 2026-10-25 新增（issue #7785，用户逐字「缺个仓位号管理功能吧？允许用户在这个页面上创建和管理」）。落码 = `WarehouseLocationService`（listView/create/update/delete + 占用判定）+ `FinishedGoodsStockMapper#selectOccupiedBinCodes/countInStockByBinCode` + `FinishedGoodsController` 三写端点 + `finishedGoodsApi.createLocation/updateLocation/deleteLocation` + `WarehouseLocationPanel` + 出库单页第三页签。 ｜ tags: backend-contract, inventory, warehouse-location, master-data, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -13252,8 +13269,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：899（活跃 142，跳过 757）
-- tier 分布：smoke 12 / normal 831 / adversarial 32
+- 用例总数：900（活跃 142，跳过 758）
+- tier 分布：smoke 12 / normal 832 / adversarial 32
 - 售后域：16
 - Agent 核心域：12
 - API 层域：21
@@ -13268,7 +13285,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：162
+- 杂项域：163
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：69
@@ -13475,6 +13492,7 @@
 - QC-004: 质量成本按商品摊开：订单行小计占比分摊、逐分对得上、权重缺失不编（issue #7377 段 6）
 - RPT-008: 报表筛选只挂在「吃该维度」的表上：库存滞销按仓库筛（issue #7377 段 7）
 - QC-005: 质量成本补上「报废工时」：报工 work_type=scrap 可采集，报废「料」仍未采集（issue #7377 段 8）
+- WH-009: 成品仓仓位号管理：出库单页新建 / 编辑 / 启停 / 删除仓位，占用中锁定改号与删除（issue #7785）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

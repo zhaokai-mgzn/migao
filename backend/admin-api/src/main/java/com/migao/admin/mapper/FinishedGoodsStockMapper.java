@@ -125,4 +125,22 @@ public interface FinishedGoodsStockMapper extends BaseMapper<FinishedGoodsStock>
             + "AND status = 'in_stock' AND deleted = 0")
     int markShippedById(@Param("tenantId") Long tenantId, @Param("id") Long id,
                         @Param("outboundOrderId") String outboundOrderId);
+
+    /**
+     * 本租户所有**被在库成品占用**的仓位号（issue #7785 的「仓位管理」列占用态）。
+     *
+     * <p>刻意**不**复用 {@link #selectInStock}（它带 {@code LIMIT 500}，成品多的租户会把
+     * 第 501 件之后的仓位误显示成「空闲」）；这里一条聚合查询、不搬整行数据。</p>
+     */
+    @InterceptorIgnore(tenantLine = "true")
+    @Select("SELECT DISTINCT bin_code FROM finished_goods_stock "
+            + "WHERE tenant_id = #{tenantId} AND status = 'in_stock' AND deleted = 0")
+    List<String> selectOccupiedBinCodes(@Param("tenantId") Long tenantId);
+
+    /** 这个仓位号上是否有在库成品（改号 / 删除前的占用判定）。 */
+    @InterceptorIgnore(tenantLine = "true")
+    @Select("SELECT count(*) FROM finished_goods_stock "
+            + "WHERE tenant_id = #{tenantId} AND bin_code = #{binCode} "
+            + "AND status = 'in_stock' AND deleted = 0")
+    int countInStockByBinCode(@Param("tenantId") Long tenantId, @Param("binCode") String binCode);
 }
