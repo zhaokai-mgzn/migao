@@ -198,11 +198,24 @@ export default function ProductForm({
     load()
   }, [])
 
-  // 编辑场景同步 initialData
+  /**
+   * 编辑场景同步 initialData —— **按「内容」同步，不按对象身份**（issue #7720）。
+   *
+   * 🔴 改前按对象身份（`[initialData]`）触发：调用方 `/products/[id]/edit` 每次渲染都新建一个
+   * `initialData` 字面量 ⇒ **父组件任何一次重渲染**都会把表单 merge 回服务端旧值 ——
+   * 商家刚填的字、以及 AI 生图刚落位的图片位都会被抹掉（2026-10-25 线上实证：生成图 10:57 落位、
+   * 10:58 保存时载荷里已没有它 ⇒ #7533 的落位修复在真实编辑页上「看着没生效」）。
+   *
+   * 按内容比较：同一次加载的 `initialData` 无论渲染多少遍签名都不变 ⇒ 不覆盖；
+   * 真换了商品 / 服务端真刷新出不同内容 ⇒ 签名变了 ⇒ 照旧同步。
+   */
+  const initialSignatureRef = useRef<string | null>(null)
   useEffect(() => {
-    if (initialData) {
-      setForm((prev) => ({ ...prev, ...initialData }))
-    }
+    if (!initialData) return
+    const signature = JSON.stringify(initialData)
+    if (initialSignatureRef.current === signature) return
+    initialSignatureRef.current = signature
+    setForm((prev) => ({ ...prev, ...initialData }))
   }, [initialData])
 
   const updateField = <K extends keyof ProductFormData>(
