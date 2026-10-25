@@ -1,6 +1,6 @@
 // case_ids: PG-018, BM-006, DF-017
 //
-// 工人端 H5 **发货页**（issue #7761）：全完工待发货列表 + 50mm × 70mm 发货标签。
+// 工人端 H5 **发货页**（issue #7761）：全完工待发货列表 + 50mm × 70mm 发货联（整套出库单，issue #7786）。
 //
 // 用户 2026-10-25 逐字：「发货工人要能看到全部完结的订单列表，即订单内的多套窗帘全完工的数据。
 // 支持工人对完工的订单进行发货标签打印，包含客户的收货信息，走哪个物流/快递方式和公司」。
@@ -95,18 +95,19 @@ test('地址折行而不是省略（省略 = 工人不知道发去哪）', () =>
   assert.ok(!/line-clamp|truncate/.test(html), '列表里的地址不得带截断类')
 })
 
-// ── ② 发货标签：行清单是唯一真值 ───────────────────────────────────────────────
+// ── ② 发货联：行清单是唯一真值 ─────────────────────────────────────────────────
 
-test('标签行序与字段面：订单号 / 收货人 / 电话 / 地址 / 物流方式 / 物流公司 / 套数 / 备注', () => {
+test('标签行序与字段面：订单号 / 收货人 / 电话 / 地址 / 物流方式 / 物流公司 / 下单日期 / 套数 / 备注', () => {
   const rows = buildShipLabelRows(READY_ROW)
   assert.deepEqual(rows.map((r) => r.label),
-    ['订单号', '收货人', '电话', '地址', '物流方式', '物流公司', '套数', '备注'])
+    ['订单号', '收货人', '电话', '地址', '物流方式', '物流公司', '下单日期', '套数', '备注'])
   assert.equal(rows[0].value, '0901-000084')
   assert.equal(rows[1].value, '肖风伟')
   assert.equal(rows[2].value, '13849944707')
   assert.equal(rows[4].value, '物流专线', '物流方式取服务端展示名（express/logistics 这类内部键不得上纸）')
   assert.equal(rows[5].value, '四季安')
-  assert.equal(rows[6].value, '3 套（全完工）')
+  assert.equal(rows[6].value, '2026-09-01', '下单日期 = 服务端 created_at 按业务时区的 YYYY-MM-DD（issue #7786）')
+  assert.equal(rows[7].value, '3 套（全完工）')
   // 🔴 信息不重复：客户 = 收货人（同一列），不得印两遍（§31 P2）
   assert.equal(rows.filter((r) => r.value === '肖风伟').length, 1, '「客户」与「收货人」是同一列，印两遍只是白吃版面')
   assert.ok(!rows.some((r) => r.label === '客户'), '不得再有「客户」行')
@@ -128,20 +129,46 @@ test('缺值不编造：null / 空串 ⇒ `—`，且物流方式**不回退「�
   assert.ok(!rows.some((r) => r.value === '0' || r.value === 'undefined'), '缺值不得印成 0 / undefined')
 })
 
+test('下单日期按业务时区（Asia/Shanghai）出 YYYY-MM-DD：跨 UTC 日期的一天不得印成前一天', () => {
+  // 2026-09-01T16:30:00Z = 上海 2026-09-02 00:30 ⇒ 纸面必须是 09-02；
+  // 按 UTC / 按服务器本地时区切字符串都会印成 09-01（这就是本判据要钉住的那一类）。
+  const rows = buildShipLabelRows({ ...READY_ROW, created_at: '2026-09-01T16:30:00Z' })
+  assert.equal(rows.find((r) => r.key === 'order_date').value, '2026-09-02')
+  // 反向对照：带 +08:00 偏移的同一时刻 ⇒ 仍是 09-02（不重复换算）
+  const same = buildShipLabelRows({ ...READY_ROW, created_at: '2026-09-02T00:30:00+08:00' })
+  assert.equal(same.find((r) => r.key === 'order_date').value, '2026-09-02')
+})
+
+test('下单日期缺值 / 坏值 ⇒ `—`（不猜今天、不印 Invalid Date）', () => {
+  for (const bad of [null, undefined, '', '   ', 'not-a-date']) {
+    const row = buildShipLabelRows({ ...READY_ROW, created_at: bad }).find((r) => r.key === 'order_date')
+    assert.equal(row.value, SHIP_LABEL_MISSING, `created_at=${String(bad)} 时必须印 —`)
+  }
+})
+
 test('半完工的套数照实印（纸面也不补算）', () => {
   const rows = buildShipLabelRows(HALF_ROW)
   assert.equal(rows.find((r) => r.key === 'sets').value, '1/3 套')
 })
 
-test('标签 HTML：每行有稳定 data-label-key（纸面判据按 key 取，不按文案）', () => {
+test('发货联 HTML：抬头 + 每行稳定 data-label-key（纸面判据按 key 取，不按文案）', () => {
   const html = renderShipLabel(READY_ROW)
   for (const key of ['order_no', 'consignee', 'customer_phone', 'customer_address',
-    'logistics_type', 'logistics_company', 'sets', 'remark']) {
-    assert.match(html, new RegExp(`data-label-key="${key}"`), `标签缺 ${key} 行`)
+    'logistics_type', 'logistics_company', 'order_date', 'sets', 'remark']) {
+    assert.match(html, new RegExp(`data-label-key="${key}"`), `发货联缺 ${key} 行`)
   }
   assert.match(html, /id="wh5-ship-label"/)
-  assert.match(html, /发货标签/, '抬头缺失（纸上第一眼不知道这是什么单）')
+  assert.match(html, /发货联/, '抬头缺失（纸上第一眼不知道这是什么单）')
+  assert.ok(!html.includes('发货标签'), '旧抬头「发货标签」必须退场（issue #7786 改判为发货联）')
   assert.ok(!html.includes('express') && !html.includes('logistics"'), '内部键不得上纸')
+})
+
+test('列表行内动作叫「发货联」，纸面 = 整套出库单（一单一张，覆盖该订单全部套）', () => {
+  const html = renderReadyOrders({ items: [READY_ROW] })
+  assert.match(html, /id="wh5-label-0"[^>]*>发货联</, '行内动作要叫发货联（不是「发货标签」）')
+  assert.ok(!html.includes('>发货标签<'), '旧动作名必须退场')
+  // 整套 = 纸面自己读得到「共 N 套」，不必回列表核对
+  assert.match(renderShipLabel(READY_ROW), /3 套（全完工）/)
 })
 
 // ── ③ 纸型：单一真值 + 类级守卫 ────────────────────────────────────────────────
@@ -286,7 +313,7 @@ test('API：列表走 GET /api/worker/shipment/orders（身份只由会话头带
   assert.equal(seen[0].init.headers[SESSION_HEADER], 'sess-1')
 })
 
-test('装配层：列表 → 点「发货标签」才出纸面 → 点「打印标签」只调一次 window.print()', async () => {
+test('装配层：列表 → 点「发货联」才出纸面 → 点「打印发货联」只调一次 window.print()', async () => {
   let printed = 0
   const doc = fakeDoc()
   const api = {
