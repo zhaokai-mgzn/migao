@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { toast } from 'sonner'
 import {
-  Badge,
   Button,
   EmptyState,
   Input,
@@ -176,14 +175,21 @@ export default function WarehouseLocationPanel({
     {
       key: 'state',
       title: '状态',
-      render: (row) =>
-        row.status === 'inactive' ? (
-          <Badge>已停用</Badge>
-        ) : row.occupied ? (
-          <Badge variant="warning">占用中</Badge>
-        ) : (
-          <Badge variant="success">空闲</Badge>
-        ),
+      render: (row) => {
+        // 只读状态用「点 + 文字」陈述，不做成孤立状态徽标（#6588：状态该由控件本体表达）
+        const state =
+          row.status === 'inactive'
+            ? { label: '已停用', dot: 'bg-neutral-400', text: 'text-neutral-500' }
+            : row.occupied
+              ? { label: '占用中', dot: 'bg-amber-500', text: 'text-neutral-700' }
+              : { label: '空闲', dot: 'bg-emerald-500', text: 'text-neutral-700' }
+        return (
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+            <span className={`h-1.5 w-1.5 rounded-full ${state.dot}`} aria-hidden />
+            <span className={state.text}>{state.label}</span>
+          </span>
+        )
+      },
     },
     {
       key: 'remark',
@@ -395,7 +401,7 @@ export default function WarehouseLocationPanel({
           <span className="font-mono font-semibold">{deleteTarget?.binCode}</span>？
         </p>
         <p className="mt-1 text-xs leading-5 text-neutral-500">
-          仅空闲仓位可删；历史单据会保留仓位号快照，不受影响。
+          仅空闲仓位可删；已经生成的单据仍会显示原来的仓位号，不受影响。
         </p>
       </Modal>
     </div>
