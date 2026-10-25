@@ -19,7 +19,7 @@
 | # | 判据 | 红证（怎么让它**单独**变红） |
 |---|---|---|
 | C1 | `window.print()` 在 `src/**` 里**恰好**出现在唯一入口文件里 | 任何页面/组件里再写一处裸 `window.print()` ⇒ 红 |
-| C2 | 每份受管单据的 `@page` **条件化到本次目标**（`printTarget === '<target>' && … printPageRule(…)`） | 去掉条件（退回无条件发表）⇒ 红 |
+| C2 | 每份受管单据的 `@page` **条件化到本次目标**（`printTarget === '<target>' && … printPageRule(…)`；纸长按内容撑开的介质用 `printPageRuleForLength(…)`，issue #7776） | 去掉条件（退回无条件发表）⇒ 红 |
 | C3 | 每份受管单据的打印态显形规则带 `[data-print-target='<target>']` | 把限定去掉（退回 `.x-print-area { display:block }`）⇒ 红 |
 | C4 | 🔴 **纸面读的订单字段必须在详情 DTO 里真的下发**（`OrderDetailResponse`） | 删掉 DTO 的 `createdByName` ⇒ 红（这正是本单修的那个「纸面印 `未采集`」的病根） |
 | C5 | 注入式红证 + **内容指纹**自证（禁 mtime / size，issue #4260） | 注入未生效 ⇒ 红（红证自己是空断言） |
@@ -72,7 +72,9 @@ _SKIP_DIRS = {"node_modules", ".next", "coverage", "dist", "build"}
 _WINDOW_PRINT_RE = re.compile(r"window\s*\.\s*print\s*\(")
 #: C2：`printTarget === '<x>' && … printPageRule(…)`（同一个表达式里的条件发表）
 _CONDITIONAL_PAGE_RE = re.compile(
-    r"printTarget\s*===\s*'(?P<target>[a-z-]+)'\s*&&[\s\S]{0,200}?printPageRule\s*\("
+    # 写法两种：静态纸型 `printPageRule('<id>')`；**纸长按内容撑开**（issue #7776）
+    # `printPageRuleForLength('<id>', <纸长>)` —— 条件化要求对两者都成立（动态长度不许绕过条件发表）
+    r"printTarget\s*===\s*'(?P<target>[a-z-]+)'\s*&&[\s\S]{0,200}?printPageRule(?:ForLength)?\s*\("
 )
 #: C3：`.<…>-print-area[data-print-target='<x>'] { … display: block`
 _QUALIFIED_DISPLAY_RE = re.compile(
