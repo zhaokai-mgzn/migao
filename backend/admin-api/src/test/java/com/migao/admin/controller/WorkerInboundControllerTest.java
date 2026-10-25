@@ -106,7 +106,7 @@ class WorkerInboundControllerTest {
 
         InboundOrderService inboundOrderService = new InboundOrderService(
                 inboundOrderMapper, inboundOrderItemMapper, inboundOrderQueryMapper,
-                stockBatchMapper, productSkuMapper, productMapper, stockLedgerService);
+                stockBatchMapper, productSkuMapper, productMapper, stockLedgerService, null, null);
         WorkerInboundService service = new WorkerInboundService(inboundOrderService, imageRecognitionClient,
                 clientRequestIdService, productMapper, productSkuMapper, inboundLabelService);
         WorkerInboundController controller = new WorkerInboundController(service, workerSessionService);

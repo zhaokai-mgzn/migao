@@ -89,7 +89,7 @@ class ShipmentControllerTest {
         return new OrderShipmentService(orderMapper, orderItemMapper, orderLogisticsMapper,
                 orderShipmentMapper, orderShipmentItemMapper, processingOrderMapper,
                 clientRequestIdService, imageRecognitionClient, new ObjectMapper(),
-                orderShipmentQueryMapper);
+                orderShipmentQueryMapper, org.mockito.Mockito.mock(com.migao.admin.service.FinishedGoodsService.class));
     }
 
     private ShipmentListRow row(String id, String shipmentNo) {

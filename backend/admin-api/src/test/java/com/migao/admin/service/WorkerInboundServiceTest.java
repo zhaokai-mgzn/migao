@@ -183,7 +183,7 @@ class WorkerInboundServiceTest {
 
         InboundOrderService inboundOrderService = new InboundOrderService(
                 inboundOrderMapper, inboundOrderItemMapper, inboundOrderQueryMapper,
-                stockBatchMapper, productSkuMapper, productMapper, stockLedgerService);
+                stockBatchMapper, productSkuMapper, productMapper, stockLedgerService, null, null);
         service = new WorkerInboundService(inboundOrderService, imageRecognitionClient,
                 clientRequestIdService, productMapper, productSkuMapper, inboundLabelService);
     }

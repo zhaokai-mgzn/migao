@@ -2,6 +2,7 @@
 package com.migao.admin.mapper;
 
 import com.migao.admin.entity.Warehouse;
+import org.apache.ibatis.annotations.Insert;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -69,10 +70,13 @@ class WarehouseMapperTest {
     }
 
     @Test
-    @DisplayName("类型是封闭集合：实体常量与表 CHECK 逐字一致")
+    @DisplayName("类型是封闭集合：实体常量与表 CHECK 逐字一致（V196 起含原料仓 / 成品仓）")
     void warehouseTypesMatchCheckConstraint() throws Exception {
         String sql = schemaSql();
-        assertThat(sql).contains("'" + Warehouse.TYPE_STORE + "'", "'" + Warehouse.TYPE_PROCESSING + "'");
+        assertThat(sql).contains("'" + Warehouse.TYPE_STORE + "'", "'" + Warehouse.TYPE_PROCESSING + "'",
+                "'" + Warehouse.TYPE_MATERIAL + "'", "'" + Warehouse.TYPE_FINISHED + "'");
+        assertThat(Warehouse.TYPES).containsExactly(Warehouse.TYPE_STORE, Warehouse.TYPE_PROCESSING,
+                Warehouse.TYPE_MATERIAL, Warehouse.TYPE_FINISHED);
     }
 
     @Test
@@ -84,10 +88,15 @@ class WarehouseMapperTest {
     }
 
     @Test
-    @DisplayName("Mapper 只继承 BaseMapper（唯一性交给索引，不在 SQL 里各写一套）")
-    void mapperHasNoCustomSql() {
-        long declared = java.util.Arrays.stream(WarehouseMapper.class.getDeclaredMethods())
-                .filter(m -> !m.isSynthetic()).count();
-        assertThat(declared).isZero();
+    @DisplayName("Mapper 只有一条手写 SQL（原子占号），唯一性仍交给索引：必须是 ON CONFLICT DO NOTHING")
+    void mapperOnlyDeclaresAtomicClaim() {
+        java.lang.reflect.Method[] methods = java.util.Arrays.stream(WarehouseMapper.class.getDeclaredMethods())
+                .filter(m -> !m.isSynthetic()).toArray(java.lang.reflect.Method[]::new);
+        // 唯一性口径仍是「索引说了算」：手写 SQL 只允许一条，且必须是「冲突 ⇒ 0 行」的形态，
+        // 不许写成「先 exists 判重、再 insert」（那正是并发下建出两个仓的那条路）
+        assertThat(methods).hasSize(1);
+        Insert insert = methods[0].getAnnotation(Insert.class);
+        assertThat(insert).as("占号必须走 INSERT ... ON CONFLICT DO NOTHING").isNotNull();
+        assertThat(String.join(" ", insert.value()).toUpperCase()).contains("ON CONFLICT DO NOTHING");
     }
 }

@@ -6,16 +6,21 @@ import com.migao.admin.dto.InboundOrderCreateRequest;
 import com.migao.admin.dto.InboundOrderLine;
 import com.migao.admin.dto.InboundOrderResponse;
 import com.migao.admin.dto.NotificationEvent;
+import com.migao.admin.entity.FinishedGoodsStock;
 import com.migao.admin.entity.InboundOrder;
 import com.migao.admin.entity.InboundOrderItem;
+import com.migao.admin.entity.Order;
+import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.Product;
 import com.migao.admin.entity.ProductSku;
 import com.migao.admin.entity.StockBatch;
 import com.migao.admin.entity.StockLedger;
+import com.migao.admin.entity.WarehouseLocation;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.InboundOrderItemMapper;
 import com.migao.admin.mapper.InboundOrderMapper;
 import com.migao.admin.mapper.InboundOrderQueryMapper;
+import com.migao.admin.mapper.FinishedGoodsStockMapper;
 import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
 import com.migao.admin.mapper.StockBatchMapper;
@@ -72,6 +77,9 @@ public class InboundOrderService {
     /** 批次号序号（PC-yyyyMMdd-NNNN） */
     private static final AtomicInteger BATCH_SEQ = new AtomicInteger(0);
 
+    /** 成品仓位分配的尝试上限（每次「找空闲 → 占位」失败都换下一个候选；正常 1 次内命中）。 */
+    private static final int FINISHED_BIN_ATTEMPTS = 8;
+
     /** 列表一次最多返回的单据数（同族页面口径；入库单是流水型单据，不做深分页） */
     private static final int LIST_LIMIT = 200;
     /** 批次查询一次最多返回的行数 */
@@ -90,6 +98,10 @@ public class InboundOrderService {
     private final ProductSkuMapper productSkuMapper;
     private final ProductMapper productMapper;
     private final StockLedgerService stockLedgerService;
+    /** 成品仓库位（V196）：成品单过账时分配仓位号（布料单用不到它）。 */
+    private final WarehouseLocationService warehouseLocationService;
+    /** 成品在库（V196）：成品单过账的唯一写入方（一行 = 一个订单行 + 一个仓位）。 */
+    private final FinishedGoodsStockMapper finishedGoodsStockMapper;
 
     /**
      * 池化事件通知点（issue #5182）：过账**既有业务完成之后**追加的一句 fail-soft 通知
@@ -226,6 +238,121 @@ public class InboundOrderService {
     }
 
     /**
+     * 成品单过账：逐行分配仓位 + 原子占位写入 {@code finished_goods_stock}。
+     *
+     * <p>占位走 {@code ON CONFLICT DO NOTHING}（{@code FinishedGoodsStockMapper#claimInStock}）：
+     * 唯一冲突不会把事务打成 aborted，抢不到就换下一个空闲仓位（并发打包的互斥点是
+     * {@code uk_finished_goods_bin_in_stock}，不是服务层的判空）。</p>
+     */
+    private void postFinishedLines(InboundOrder order, List<InboundOrderItem> lines, Long tenantId) {
+        Long warehouseId = order.getWarehouseId();
+        if (warehouseId == null) {
+            throw BusinessException.validationError("成品入库单缺少成品仓，无法分配仓位");
+        }
+        for (InboundOrderItem line : lines) {
+            if (!StringUtils.hasText(line.getOrderItemId())) {
+                throw BusinessException.validationError("成品入库单的明细行缺少订单行引用，无法分配仓位");
+            }
+            boolean claimed = false;
+            for (int attempt = 0; attempt < FINISHED_BIN_ATTEMPTS && !claimed; attempt++) {
+                WarehouseLocation bin = warehouseLocationService.nextFreeBin(tenantId, warehouseId);
+                Long stockId = finishedGoodsStockMapper.claimInStock(
+                        tenantId, warehouseId, bin.getId(), bin.getBinCode(),
+                        line.getOrderId(), line.getOrderNo(), line.getOrderItemId(),
+                        line.getProductId(), line.getProductName(),
+                        line.getQuantity() == null ? BigDecimal.ONE : line.getQuantity(), order.getId());
+                if (stockId != null) {
+                    InboundOrderItem patch = new InboundOrderItem();
+                    patch.setId(line.getId());
+                    patch.setLocationId(bin.getId());
+                    patch.setBinCode(bin.getBinCode());
+                    patch.setUnit(FinishedGoodsStock.UNIT_SET);
+                    inboundOrderItemMapper.updateById(patch);
+                    claimed = true;
+                }
+            }
+            if (!claimed) {
+                throw BusinessException.conflict("成品仓位分配失败（连续 " + FINISHED_BIN_ATTEMPTS + " 次占位冲突）",
+                        "请重试；同一个仓位不会被两件成品同时占用");
+            }
+        }
+    }
+
+    // ============================================================ 建单即过账（V196）
+
+    /**
+     * **建单即过账**（V196 / issue #7750，用户 2026-10-25 逐字「做成入库即过账，不要单独再点击过账了」）。
+     *
+     * <p>商家建入库单 = 建单 + 过账**一次请求内**完成：草稿态不再出现在商家流程里
+     * （「先存草稿、核对、再点过账」那两步只增加一次「忘了点」的机会，而不会让库存更准）。
+     * 工人拍照入库仍走 {@link #create} 的草稿路径 —— 那张草稿是**识别结果**、不是待办
+     * （确认后才过账，见 {@code WorkerInboundService}）；过账端点保留给它。</p>
+     *
+     * <p>事务口径：本方法整体一个事务 ⇒ 建单成功而过账失败时**不会留下**一张孤立草稿
+     * （改前「建单 200 + 过账失败」会让列表里多一张永远没人点的草稿）。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public InboundOrderResponse createAndPost(InboundOrderCreateRequest req, Long tenantId, String operator) {
+        InboundOrderResponse created = create(req, tenantId, operator);
+        return post(created.getId(), tenantId, operator);
+    }
+
+    /**
+     * **成品打包入库**（V196）：由 {@code FinishedGoodsService#receiveOnPack} 在**打包动作**的事务里调用。
+     *
+     * <p>单据形态与布料单一致（同表、同号段、同状态机），区别只在过账语义：
+     * {@code biz_category=finished} ⇒ 过账时**分配仓位**并写 {@code finished_goods_stock}，
+     * 不碰 SKU 米数库存、不建批次、不算移动加权成本。</p>
+     *
+     * <p>🔴 数量恒为 1（一件成品 = 一个订单行）：订单行的 {@code quantity} 是**计价数量**
+     * （per_meter 是米数、per_area 是 ㎡），拿它当件数会把「8.4 ㎡」记成 8 件。
+     * 一个订单行对应一件要打包/发走的成品 —— 这也是仓位的载体（见 {@link FinishedGoodsStock}）。</p>
+     *
+     * @return 已过账的入库单（明细行带分配好的 {@code binCode}）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public InboundOrderResponse receiveFinishedGoods(Long tenantId, Order order, List<OrderItem> items,
+                                                     Long warehouseId, String warehouseText, String operator) {
+        if (items == null || items.isEmpty()) {
+            throw BusinessException.validationError("订单没有成品行，无法生成成品入库单");
+        }
+        InboundOrder doc = InboundOrder.builder()
+                .tenantId(tenantId)
+                .inboundNo(nextFreeInboundNo(tenantId))
+                .warehouse(warehouseText)
+                .warehouseId(warehouseId)
+                .inboundDate(businessClock.today())
+                .status(InboundOrder.STATUS_DRAFT)
+                .totalAmount(BigDecimal.ZERO)
+                .source(InboundOrder.SOURCE_PACKING)
+                .bizCategory(InboundOrder.BIZ_FINISHED)
+                .remark("成品打包入库（订单 " + order.getOrderNo() + "）")
+                .createdBy(operator)
+                .build();
+        inboundOrderMapper.insert(doc);
+
+        // 变量名刻意不叫 `item`：`OrderRollAllocationAuthorityTest` 按「本文件里有没有
+        // `OrderItem <名>` 声明」判定写面归属，同名会让别处的 `item.setRollCount(...)`
+        // 被误判成在写 OrderItem 实体（成品入库路径只读订单行、不写整卷两列）。
+        for (OrderItem orderItem : items) {
+            InboundOrderItem line = InboundOrderItem.builder()
+                    .tenantId(tenantId)
+                    .inboundOrderId(doc.getId())
+                    .productId(orderItem.getProductId())
+                    .productName(orderItem.getProductName())
+                    .orderId(order.getId())
+                    .orderNo(order.getOrderNo())
+                    .orderItemId(orderItem.getId())
+                    .quantity(BigDecimal.ONE)
+                    .unit(FinishedGoodsStock.UNIT_SET)
+                    .remark("打包")
+                    .build();
+            inboundOrderItemMapper.insert(line);
+        }
+        return post(doc.getId(), tenantId, operator);
+    }
+
+    /**
      * <b>测试探针</b>（issue #6928，生产恒为 {@code 0}）：在 {@link #cancel} 的「读-判」之后、
      * 「写」之前暂停指定毫秒。
      *
@@ -321,6 +448,15 @@ public class InboundOrderService {
         order.setStatus(InboundOrder.STATUS_POSTED);
         order.setPostedAt(now);
         order.setPostedBy(operator);
+
+        // 成品单（V196）：过账 = 分配仓位 + 写成品在库；**不碰** SKU 米数库存/批次/移动加权成本。
+        // 分支放在 CAS 之后：两条路径共用同一道「只过一次账」的闸。
+        if (InboundOrder.BIZ_FINISHED.equals(order.getBizCategory())) {
+            postFinishedLines(order, lines, tenantId);
+            log.info("成品入库单已过账: tenant={}, inboundNo={}, items={}, operator={}",
+                    tenantId, order.getInboundNo(), lines.size(), operator);
+            return detail(order.getId(), tenantId);
+        }
 
         for (InboundOrderItem line : lines) {
             ProductSku sku = productSkuMapper.selectById(line.getSkuId());
@@ -511,6 +647,24 @@ public class InboundOrderService {
         cancelledVars.put("operator", operator == null ? "" : operator);
         notifyInboundEvent(order, "inbound_cancelled", "warn", cancelledVars);
         return detail(order.getId(), tenantId);
+    }
+
+    /**
+     * **撤销打包时冲销成品入库单**（V196）：{@code posted → cancelled}（仅 {@code biz_category=finished}）。
+     *
+     * <p>与成品在库行的释放**同事务**（调用方 {@code FinishedGoodsService#reverseOnUnpack} 是
+     * {@code @Transactional}）：要么「单作废 + 仓位释放」都发生，要么都不发生。
+     * 返回 0 行 = 该单已不是 posted（重复撤销 / 并发）—— 调用方按幂等处理，不报错。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public int cancelFinishedPosting(String inboundOrderId, Long tenantId, String operator, String reason) {
+        int rows = inboundOrderMapper.markFinishedCancelled(inboundOrderId, tenantId, operator, reason,
+                OffsetDateTime.now());
+        if (rows > 0) {
+            log.info("成品入库单已冲销（撤销打包）: tenant={}, inboundOrderId={}, operator={}, reason={}",
+                    tenantId, inboundOrderId, operator, reason);
+        }
+        return rows;
     }
 
     // ============================================================ 只读

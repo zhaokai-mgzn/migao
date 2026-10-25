@@ -105,6 +105,12 @@ DELETE_PLAN = (
     ("receipt_allocations", (("transaction_id", "transaction"), ("order_id", "order"))),
     # 收款流水（issue #7633）：finance_transactions.order_id 无外键但语义属该订单 ⇒ 早于 orders
     ("finance_transactions", (("order_id", "order"),)),
+    # 成品在库 / 出库单（V196，issue #7750）：order_id 是真外键 ⇒ 必须早于 orders；
+    # 出库明细先于出库单（outbound_order_id 是真外键）；入库明细同列引用 order_id。
+    ("outbound_order_items", (("order_id", "order"),)),
+    ("outbound_orders", (("order_id", "order"),)),
+    ("inbound_order_items", (("order_id", "order"),)),
+    ("finished_goods_stock", (("order_id", "order"),)),
     ("orders", (("id", "order"),)),
 )
 TABLE_LABELS = {
@@ -126,6 +132,10 @@ TABLE_LABELS = {
     "after_sales_tickets": "售后工单",
     "receipt_allocations": "收款核销明细",
     "finance_transactions": "收款流水",
+    "outbound_order_items": "出库单明细",
+    "outbound_orders": "出库单",
+    "inbound_order_items": "入库单明细",
+    "finished_goods_stock": "成品在库",
     "orders": "订单",
 }
 

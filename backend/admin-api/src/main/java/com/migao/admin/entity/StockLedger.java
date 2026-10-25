@@ -41,6 +41,12 @@ public class StockLedger {
      */
     public static final String REASON_INBOUND = "inbound";
 
+    /**
+     * 变更来源：出库单过账（{@code OutboundOrderService}，V196 / issue #7750）。
+     * {@code refNo} = 出库单号 CK-yyyyMMdd-NNNN。
+     */
+    public static final String REASON_OUTBOUND = "outbound";
+
     /** IDENTITY 单调递增：为「同 SKU 相邻两行首尾相接」提供全序（created_at 会撞毫秒） */
     @TableId(type = IdType.AUTO)
     private Long id;

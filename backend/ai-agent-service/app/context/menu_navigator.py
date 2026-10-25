@@ -118,7 +118,7 @@ class MenuNode:
     permission_code: str
 
 
-#: `menu.ts` 的**全量导航节点**（现取 2026-10-24：**27 项** = 5 组 22 项 + 一级独立项 5
+#: `menu.ts` 的**全量导航节点**（现取 2026-10-25：**28 项** = 5 组 23 项 + 一级独立项 5
 #: —— 经营看板 / 报表中心 / 商品管理 / 企业基础设置 / 通知中心）。
 #: 🔴 2026-10-24（issue #7593，用户裁定）：「审批中心」菜单项**撤除**（入口改顶栏待办入口）
 #: ⇒ 组内 23 → 22（本镜像同批删）；`/approvals` 页面仍在（`page_registry.py` 的页面知识照旧有效）。
@@ -178,6 +178,8 @@ MENU_TREE: Tuple[MenuNode, ...] = (
     MenuNode("inventory-center", "库存明细", "/stock-ledger", "product:list"),
     # 盘点单（issue #7373）：读码 `inbound:view` —— 与 menu.ts / MenuController / AuthService 逐字同码。
     MenuNode("inventory-center", "盘点单", "/stocktakes", "inbound:view"),
+    # 出库单（V196 / issue #7750）：与入库单对称的出口单据；读码 `inbound:view`（与三处菜单源逐字同码）。
+    MenuNode("inventory-center", "出库单", "/outbound-orders", "inbound:view"),
     MenuNode("inventory-center", "发货单", "/shipments", "order:list"),
     MenuNode("inventory-center", "余料台账", "/production/remnants", "processing:manage"),
     MenuNode("inventory-center", "省料看板", "/production/saving-board", "product:list"),
@@ -312,7 +314,11 @@ NAV_FEATURES: Tuple[NavFeature, ...] = (
     # 「采购」「下单」「到货」这类更宽的说法不登记 —— 命中不了节点就是空断言（判据「接地」）。
     NavFeature("purchase-orders", "采购单（采购与收货）", (("supply-chain", "采购单"),), ("采购单",)),
     NavFeature("inbound-orders", "入库单（入库）", (("supply-chain", "入库单"),), ("入库单", "入库")),
-    NavFeature("shipments", "发货单（出库）", (("inventory-center", "发货单"),), ("发货单", "出库")),
+    NavFeature("shipments", "发货单（出库）", (("inventory-center", "发货单"),), ("发货单",)),
+    # 出库单（V196 / issue #7750）：与入库单对称的出口单据（布料手工出库 + 成品发货出库同形）。
+    # ⚠️ 泛词「出库」不再归 `shipments`（改登记「发货出库」）：否则「出库单」会被它抢先命中 ——
+    # 「出库单」必须能解出**本页**（`_self_check` 会当场判红「命不中自己」）。
+    NavFeature("outbound-orders", "出库单（布料 / 成品出库）", (("inventory-center", "出库单"),), ("出库单", "出库")),
     NavFeature("remnants", "余料台账（余料）", (("inventory-center", "余料台账"),), ("余料台账", "余料")),
     NavFeature("saving-board", "省料看板（省料）", (("inventory-center", "省料看板"),), ("省料看板", "省料")),
     NavFeature("stock-ledger", "库存明细（库存流水）", (("inventory-center", "库存明细"),), ("库存明细", "库存流水")),

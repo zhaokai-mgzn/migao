@@ -271,7 +271,7 @@ class MerchantShipmentIdempotencyRealDbTest {
         OrderShipmentService orderShipmentService = new OrderShipmentService(orderMapper, orderItemMapper,
                 orderLogisticsMapper, orderShipmentMapper, orderShipmentItemMapper, processingOrderMapper,
                 clientRequestIdService, mock(ImageRecognitionClient.class), new ObjectMapper(),
-                null);
+                null, org.mockito.Mockito.mock(com.migao.admin.service.FinishedGoodsService.class));
         ReflectionTestUtils.setField(orderShipmentService, "productMapper", productMapper);
 
         ProductionController controller = new ProductionController(null, null, null, null, null, orderService);

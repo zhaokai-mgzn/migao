@@ -231,12 +231,13 @@ export default function NewInboundOrderPage() {
           rollCount: l.rollCount === '' ? null : Number(l.rollCount),
         })),
       })
+      // V194（issue #7750，用户 2026-10-25 逐字「做成入库即过账，不要单独再点击过账了」）：
+      // 建单这一次请求里已经完成过账（批次号已生成、库存已加、成本已重算）—— 没有「再点一下过账」这一步。
       toast.success(
         form.source === 'opening'
-          ? '期初建账单已建（草稿，未动库存）—— 核对无误后请过账：过账即冻结基线'
-          : '入库单已建（草稿，未动库存）—— 核对无误后请过账',
+          ? '期初建账单已过账：库存按登记米数增加、基线已冻结'
+          : '已入库：批次号已生成、库存已加、成本已按移动加权平均重算',
       )
-      // 建完回列表：新单在列表里（草稿态）→ 点「详情」核对 → 过账时逐行发批次号
       router.push('/inbound-orders')
     } catch {
       // 拦截器已提示
@@ -260,7 +261,7 @@ export default function NewInboundOrderPage() {
         <PageHeader
           className="flex-1"
           title="新增入库单"
-          subtitle={<>登记一张新的到货入库单 —— <strong>保存草稿不动库存</strong>，过账时才生成批次号并加库存</>}
+          subtitle={<>登记新的到货入库单 —— <strong>提交即入账</strong>（生成批次号、加库存、重算成本），不需要再单独过账</>}
         />
       </div>
 
@@ -330,9 +331,9 @@ export default function NewInboundOrderPage() {
               />
             </div>
             <p className="mt-4 text-xs text-neutral-500 bg-neutral-50 border border-neutral-200 rounded-lg p-3 leading-relaxed">
-              保存为草稿<strong>不会改动库存</strong>；批次号在<strong>过账</strong>时由系统逐行自动生成
+              <strong>提交即入账</strong>：库存与成本当场写入；批次号由系统逐行自动生成
               （形如 <span className="font-mono">PC-20261001-0001</span>，一行 = 一个批次），
-              库存与成本也在过账时一次性写入（可核对后再过账）。
+              提交后不可改：冲销须另开单据（不原地改历史）。
             </p>
           </div>
         </PageCard>
@@ -516,7 +517,7 @@ export default function NewInboundOrderPage() {
               取消
             </Button>
             <Button onClick={() => void submitCreate()} loading={submitting}>
-              保存为草稿
+              确认入库
             </Button>
           </div>
         </div>

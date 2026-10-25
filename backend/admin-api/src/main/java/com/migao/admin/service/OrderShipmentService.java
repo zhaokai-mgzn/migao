@@ -8,6 +8,7 @@ import com.migao.admin.dto.ShipmentListRow;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.OrderShipment;
+import com.migao.admin.entity.FinishedGoodsStock;
 import com.migao.admin.entity.OrderShipmentItem;
 import com.migao.admin.entity.Product;
 import com.migao.admin.exception.BusinessException;
@@ -166,6 +167,14 @@ public class OrderShipmentService {
     /** 发货单**列表**聚合读面（issue #5939）。⚠️ 声明在最后：Lombok 生成的位置参数构造器按字段序。 */
     private final OrderShipmentQueryMapper orderShipmentQueryMapper;
 
+    /**
+     * 成品库存（V196 / issue #7750）：打包 ⇒ 成品入库 + 分配仓位；发货 ⇒ 成品出库；撤销打包 ⇒ 冲销。
+     *
+     * <p>三个时点都**挂在本服务已存在的状态迁移之后/之前**（同一事务）：打包/发货/撤销的状态
+     * CAS 只放行一次 ⇒ 成品单据不会重复生成。见 {@link FinishedGoodsService} 的时点说明。</p>
+     */
+    private final FinishedGoodsService finishedGoodsService;
+
     // ══════════════════════════════════════════════════════════════════════════════
     // 拍照识别（**不落库**，与 #5321 的页面快通道同一份内核）
     // ══════════════════════════════════════════════════════════════════════════════
@@ -240,9 +249,17 @@ public class OrderShipmentService {
         if (rows == 0) {
             throw BusinessException.validationError("订单状态已并发变更，请刷新后重试");
         }
-        log.info("[发货] 打包完成: orderId={}, shipmentNo={}, worker={}",
-                orderId, shipment.getShipmentNo(), identity.workerName());
-        return resultOf(orderId, tenantId, "packed", shipment, List.of());
+        // 成品入库（V196）：打包 = 成品成型 ⇒ 自动分配成品仓仓位号并生成已过账的成品入库单。
+        // 在状态迁移**之后**调用：迁移是幂等闸（只成功一次）⇒ 不会重复入库；
+        // 这里失败 ⇒ 整个打包事务回滚（不留「已打包但没有入库单」的半成品）。
+        List<FinishedGoodsStock> finished = finishedGoodsService.receiveOnPack(
+                order, tenantId, workerOperator(identity));
+        log.info("[发货] 打包完成: orderId={}, shipmentNo={}, worker={}, 成品仓位={}",
+                orderId, shipment.getShipmentNo(), identity.workerName(),
+                finished.stream().map(FinishedGoodsStock::getBinCode).toList());
+        Map<String, Object> result = resultOf(orderId, tenantId, "packed", shipment, List.of());
+        result.put("finished_bins", finishedBins(finished));
+        return result;
     }
 
     // ══════════════════════════════════════════════════════════════════════════════
@@ -360,15 +377,26 @@ public class OrderShipmentService {
                 trackingNo.trim(), new OrderLogisticsWriter.ShippingDetails(identity.workerName(), null, null),
                 () -> identity.workerName());
 
+        // 成品入/出库（V196）：一步发货（未打包）时先补入库（分配仓位），再把在库行出库。
+        // 两件事与发货**同一事务** —— 任一步失败都整体回滚，不会出现「货发了但成品账没动」。
+        List<FinishedGoodsStock> finished = finishedGoodsService.receiveOnPack(
+                order, tenantId, workerOperator(identity));
+        List<FinishedGoodsStock> issued = finishedGoodsService.issueOnShip(
+                order, tenantId, workerOperator(identity));
+
         // 🔴 状态流转是**最后一步**：失败（并发变更）⇒ 抛 ⇒ 整笔回滚 ⇒
         // 「明细写了但状态没变」这个形态在结构上不可能出现。
         int rows = transition(orderId, current, "shipped");
         if (rows == 0) {
             throw BusinessException.validationError("订单状态已并发变更，请刷新后重试");
         }
-        log.info("[发货] 完成: orderId={}, shipmentNo={}, trackingNo={}, worker={}, 明细行={}",
-                orderId, shipment.getShipmentNo(), trackingNo, identity.workerName(), details.size());
-        return resultOf(orderId, tenantId, "shipped", shipment, details);
+        log.info("[发货] 完成: orderId={}, shipmentNo={}, trackingNo={}, worker={}, 明细行={}, 成品仓位={}",
+                orderId, shipment.getShipmentNo(), trackingNo, identity.workerName(), details.size(),
+                issued.stream().map(FinishedGoodsStock::getBinCode).toList());
+        Map<String, Object> result = resultOf(orderId, tenantId, "shipped", shipment, details);
+        // 仓位号用**出库前**的在库行（发货后它们已置 shipped，不再是 in_stock）
+        result.put("finished_bins", finishedBins(issued.isEmpty() ? finished : issued));
+        return result;
     }
 
     // ══════════════════════════════════════════════════════════════════════════════
@@ -447,9 +475,16 @@ public class OrderShipmentService {
         if (rows == 0) {
             throw BusinessException.validationError("订单状态已并发变更，请刷新后重试");
         }
-        log.info("[发货] 撤销打包: orderId={}, shipmentNo={}, worker={}, reason={}",
-                orderId, shipment.getShipmentNo(), identity.workerName(), reason);
-        return resultOf(orderId, tenantId, "producing", shipment, List.of());
+        // 冲销成品入库（V196）：入库单作废 + 仓位释放 —— 撤销打包后货已不在成品仓，
+        // 留着在库行就是账面虚增（与「撤销打包必带理由/留痕」同一条责任口径）。
+        List<String> releasedBins = finishedGoodsService.binsOfOrder(tenantId, orderId);
+        int released = finishedGoodsService.reverseOnUnpack(
+                order, tenantId, workerOperator(identity), reason);
+        log.info("[发货] 撤销打包: orderId={}, shipmentNo={}, worker={}, reason={}, 释放仓位={}, 行数={}",
+                orderId, shipment.getShipmentNo(), identity.workerName(), reason, releasedBins, released);
+        Map<String, Object> result = resultOf(orderId, tenantId, "producing", shipment, List.of());
+        result.put("released_bins", releasedBins);
+        return result;
     }
 
     // ══════════════════════════════════════════════════════════════════════════════
@@ -555,6 +590,13 @@ public class OrderShipmentService {
             detail.setShipmentId(shipment.getId());
             orderShipmentItemMapper.insert(detail);
         }
+        // 成品出库（V196 / issue #7750）：商家发货路同样要出库 —— 否则工人打好包、商家在后台点发货的订单
+        // 会永久留在成品仓「在库」，而货已经发走了。未打包就发的单先补入库（幂等）再出库，
+        // 与工人「一步发货」同一条口径（都保证发走的成品能追到仓位）。
+        // 操作人 = 当前登录用户（StockLedgerService.resolveOperator 的既有口径：无认证上下文 = system）。
+        String operator = StockLedgerService.resolveOperator();
+        finishedGoodsService.receiveOnPack(order, tenantId, operator);
+        finishedGoodsService.issueOnShip(order, tenantId, operator);
         log.info("[发货] 商家路落发货单: orderId={}, shipmentNo={}, trackingNo={}, 明细行={}",
                 orderId, shipment.getShipmentNo(), trackingNo, details.size());
         return shipment;
@@ -649,6 +691,11 @@ public class OrderShipmentService {
         result.put("status", order.getStatus());
         result.put("shipments", shipmentViews);
         result.put("shipped_totals", totals(allItems));
+        // 成品仓位（V196）：打包后货在哪一目了然（工人端/商家端读同一份）。
+        // 读面容忍未注入（既有只读切片单测直接 new 本服务、没有成品库存上下文）：
+        // 缺它就返回空列表而不是 500 —— 仓位列是**追加信息**，读面不该因它整页失败。
+        result.put("finished_bins", finishedGoodsService == null
+                ? List.of() : finishedGoodsService.binAssignments(tenantId, orderId));
         return result;
     }
 
@@ -922,6 +969,24 @@ public class OrderShipmentService {
         result.put("shipped_items", details.stream().map(OrderShipmentService::itemView).toList());
         result.put("shipped_totals", totals(details));
         return result;
+    }
+
+    /** 成品仓位的回执形状（与 {@code readShipment} 的 {@code finished_bins} 同键，前端只认一套）。 */
+    private static List<Map<String, Object>> finishedBins(List<FinishedGoodsStock> rows) {
+        return rows.stream().map(row -> {
+            Map<String, Object> one = new LinkedHashMap<>();
+            one.put("order_item_id", row.getOrderItemId());
+            one.put("product_name", row.getProductName());
+            one.put("bin_code", row.getBinCode());
+            one.put("quantity", row.getQuantity());
+            one.put("unit", row.getUnit());
+            return one;
+        }).toList();
+    }
+
+    /** 单据/留痕的操作人：工人姓名（无姓名时回落 workerId，**不用「系统」冒充人**）。 */
+    private static String workerOperator(WorkerIdentity identity) {
+        return identity.workerName() == null ? identity.workerId() : identity.workerName();
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})

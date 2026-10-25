@@ -108,6 +108,8 @@ class MerchantShipmentAtomicityTest {
     private ProcessingFeeCombinationCommandService processingFeeCombinationCommandService;
     private ProcessingOrderMapper processingOrderMapper;
     private OrderShipmentMapper orderShipmentMapper;
+    /** 成品库存（V196 / issue #7750）：商家发货路也必须出库 —— mock 只验「有没有按口径喊」。 */
+    private com.migao.admin.service.FinishedGoodsService finishedGoodsService;
     private OrderShipmentItemMapper orderShipmentItemMapper;
     private OrderShipmentQueryMapper orderShipmentQueryMapper;
     private ImageRecognitionClient imageRecognitionClient;
@@ -226,6 +228,14 @@ class MerchantShipmentAtomicityTest {
         assertThat(txManager.rolledBack).isZero();
         assertThat(order.getStatus()).isEqualTo("shipped");
         assertThat(store.shipmentRows).as("成功路径真的建了一张发货单").hasSize(1);
+        // 🔴 V194（issue #7750）：商家发货路同样要成品出/入库 —— 否则「工人打包 → 商家后台发货」的订单
+        // 会永久留在成品仓「在库」，而货已经发走了。顺序 = 先补入库（幂等）再出库。
+        org.mockito.Mockito.verify(finishedGoodsService)
+                .receiveOnPack(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(TENANT),
+                        org.mockito.ArgumentMatchers.anyString());
+        org.mockito.Mockito.verify(finishedGoodsService)
+                .issueOnShip(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(TENANT),
+                        org.mockito.ArgumentMatchers.anyString());
     }
 
     @Test
@@ -266,6 +276,7 @@ class MerchantShipmentAtomicityTest {
         context.registerBean(ClientRequestIdService.class, () -> clientRequestIdService);
         context.registerBean(ImageRecognitionClient.class, () -> imageRecognitionClient);
         context.refresh();
+        finishedGoodsService = org.mockito.Mockito.mock(com.migao.admin.service.FinishedGoodsService.class);
 
         OrderService orderService = new OrderService(orderMapper, orderItemMapper, orderLogisticsMapper,
                 customerService, productMapper, null, null, new ObjectMapper(), notificationService,
@@ -274,7 +285,7 @@ class MerchantShipmentAtomicityTest {
         OrderShipmentService shipmentService = new OrderShipmentService(
                 orderMapper, orderItemMapper, orderLogisticsMapper, orderShipmentMapper,
                 orderShipmentItemMapper, processingOrderMapper, clientRequestIdService,
-                imageRecognitionClient, new ObjectMapper(), orderShipmentQueryMapper);
+                imageRecognitionClient, new ObjectMapper(), orderShipmentQueryMapper, finishedGoodsService);
         ReflectionTestUtils.setField(shipmentService, "productMapper", productMapper);
 
         ProductionController controller = new ProductionController(null, null, null, null, null, orderService);

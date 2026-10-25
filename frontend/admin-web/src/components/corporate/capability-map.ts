@@ -18,6 +18,7 @@ import {
   LifeBuoy,
   Newspaper,
   Package,
+  PackageMinus,
   PackageOpen,
   Recycle,
   ScanLine,
@@ -226,6 +227,12 @@ export const capabilityDomains: CapabilityDomain[] = [
         detail:
           '按仓出盘点任务，逐批次录实盘并自动算差异；有差异要先走「盘点差异」审批，完成时按差异调批次数量（不动成本）。',
         icon: ScanLine,
+      },
+      {
+        name: '出库单',
+        detail:
+          '与入库单对称的出口单据：布料出库建单即扣库存并落台账，成品随发货自动出库；单据里带成品仓仓位号，货在哪一位一眼可查。',
+        icon: PackageMinus,
       },
     ],
   },

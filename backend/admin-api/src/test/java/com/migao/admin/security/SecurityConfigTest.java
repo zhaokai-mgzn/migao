@@ -242,6 +242,17 @@ class SecurityConfigTest {
     // ⇒ 新 Mapper 无 sqlSessionFactory，必须与上面几个同款用 @MockBean 顶替（否则整个上下文起不来）
     @MockBean
     private com.migao.admin.mapper.StockBatchConsumptionMapper stockBatchConsumptionMapper;
+    // 仓位 / 成品在库 / 出库单（V196，issue #7750）：同款 @MockBean（上下文里无 sqlSessionFactory）
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private com.migao.admin.mapper.WarehouseLocationMapper warehouseLocationMapper;
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private com.migao.admin.mapper.FinishedGoodsStockMapper finishedGoodsStockMapper;
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private com.migao.admin.mapper.OutboundOrderMapper outboundOrderMapper;
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private com.migao.admin.mapper.OutboundOrderItemMapper outboundOrderItemMapper;
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private com.migao.admin.mapper.OutboundOrderQueryMapper outboundOrderQueryMapper;
 
     /**
      * 余料两表（V122 / issue #5146）：与上面几个 mapper 同款 —— 本上下文排除了

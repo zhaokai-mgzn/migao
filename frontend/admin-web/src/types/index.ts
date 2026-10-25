@@ -4516,3 +4516,101 @@ export interface WorkerPageCatalogResponse {
   /** 页面键 → 商家面人话名（同上，服务端一处给出）。 */
   labels: Record<string, string>
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 出库单 / 成品库存 / 仓位（V194，issue #7750）
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** 单据业务类别：布料（扣 SKU 米数库存）/ 成品（成品在库 + 仓位） */
+export type StockBizCategory = 'fabric' | 'finished'
+
+/** 出库单来源：manual 手工出库（布料）/ ship 发货出库（成品，由发货动作自动建单） */
+export type OutboundOrderSource = 'manual' | 'ship'
+
+/** 出库单明细：布料行 = SKU + 米数；成品行 = 订单行 + 仓位 + 套数 */
+export interface OutboundOrderItem {
+  id?: number
+  skuId?: number | null
+  skuCode?: string | null
+  productName?: string | null
+  orderItemId?: string | null
+  locationId?: number | null
+  /** 仓位号（成品行；布料行为空） */
+  binCode?: string | null
+  quantity: number
+  /** m = 米 / set = 套 */
+  unit: string
+  unitCost?: number | null
+  amount?: number | null
+  remark?: string | null
+}
+
+/** 出库单（列表/详情同形状；列表不含明细） */
+export interface OutboundOrder {
+  id: string
+  /** 出库单号 CK-yyyyMMdd-NNNN */
+  outboundNo: string
+  bizCategory: StockBizCategory
+  source: OutboundOrderSource
+  warehouseId?: number | null
+  warehouse?: string | null
+  outboundDate: string
+  /** 恒为 posted（出库单没有草稿态） */
+  status: 'posted'
+  totalAmount: number
+  orderId?: string | null
+  orderNo?: string | null
+  remark?: string | null
+  postedAt?: string | null
+  postedBy?: string | null
+  createdAt?: string | null
+  itemCount?: number
+  totalQuantity?: number
+  items?: OutboundOrderItem[]
+}
+
+/** 建出库单输入（**建单即过账**；只服务布料手工出库） */
+export interface OutboundOrderCreateParams {
+  warehouseId?: number | null
+  outboundDate?: string | null
+  remark?: string | null
+  items: {
+    /** 🔴 SKU id 是雪花号字符串 —— 原样透传，不许 Number() */
+    skuId: string
+    /** 出库米数（> 0，最多 1 位小数） */
+    quantity: number
+    remark?: string | null
+  }[]
+}
+
+/** 成品在库行（含仓位号） */
+export interface FinishedGoods {
+  id: number
+  /** 仓位号（如 A-01）—— 本页最要紧的一列 */
+  binCode: string
+  warehouseId?: number
+  locationId?: number
+  orderId: string
+  orderNo?: string | null
+  orderItemId: string
+  productId?: string | null
+  productName?: string | null
+  quantity: number
+  /** set = 套 */
+  unit: string
+  status: 'in_stock' | 'shipped' | 'unpacked'
+  inboundOrderId?: string | null
+  outboundOrderId?: string | null
+  createdAt?: string | null
+}
+
+/** 仓位（成品仓的货位） */
+export interface WarehouseLocation {
+  id: number
+  warehouseId: number
+  zoneCode: string
+  zoneName: string
+  binCode: string
+  status: 'active' | 'inactive'
+}
+

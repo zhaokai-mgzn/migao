@@ -168,6 +168,7 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     expect(inventoryGroup()!.children.map((c) => c.path)).toEqual([
       '/stock-ledger',
       '/stocktakes',
+      '/outbound-orders',
       '/shipments',
       '/production/remnants',
       '/production/saving-board',
@@ -177,6 +178,7 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     expect(inventoryGroup()!.children.map((c) => c.permissionCode)).toEqual([
       'product:list',   // 库存明细（#6404：同取既有 product:list ⇒ 零授权 delta）
       'inbound:view',   // 盘点单（#7373：与入库/仓库同域 ⇒ 复用既有码，零授权 delta）
+      'inbound:view',   // 出库单（#7750：与入库单对称 ⇒ 复用既有码，零授权 delta）
       'order:list',     // 发货单（#5939：取既有 order:list ⇒ 与订单列表同码、零授权 delta）
       'processing:manage',
       'product:list',   // 省料看板（#5699 P4）
@@ -202,8 +204,8 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     // #7375 段 3：交易管理 +「价格本」⇒ 19 → 20；
     // 🔴 2026-10-24（issue #7593，用户裁定）：「审批中心」撤出侧边栏（入口改顶栏 `ApprovalBell`）
     // ⇒ 组内项 23 → **22**（只减这一项，其它组一项不少）
-    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).toHaveLength(22)
-    expect(allNames).toHaveLength(22)
+    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).toHaveLength(23)
+    expect(allNames).toHaveLength(23)
   })
 })
 

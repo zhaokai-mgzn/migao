@@ -32,6 +32,7 @@ import {
   LayoutDashboard,
   MessageSquare,
   Package,
+  PackageMinus,
   PackageOpen,
   Recycle,
   Route,
@@ -85,6 +86,8 @@ export const menuIconMap: Record<string, LucideIcon> = {
   LifeBuoy,
   Settings,
   TrendingDown,
+  // 出库单（V194 / issue #7750）：与「入库单」的 PackageOpen 对称的**减号**版本（出 = 减）
+  PackageMinus,
   // 发货单（issue #5939）：与「入库单」的 PackageOpen 对称的出口图标
   Truck,
   // 🔴 2026-10-09（issue #6580）：`Route`（工艺配置）/ `Scissors`（加工项管理）/

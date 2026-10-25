@@ -4,13 +4,13 @@
  *
  * ## 与 `SidebarRedesign.test.tsx` 的分工
  *
- * 本文件守**能力面**：25 项一项不少不减（逐项名 + href + `data-menu-key` 序列）、
+ * 本文件守**能力面**：26 项一项不少不减（逐项名 + href + `data-menu-key` 序列）、
  * 图标、`bg-primary-600` 高亮与互斥单高亮、权限过滤正负控、空组整组隐藏、
  * 折叠态不渲染组名。新交互面（默认展开态 / 路由联动 / 折叠态分组锚点 / 移动端抽屉 / ⌘K 入口）
  * 在 `tests/unit/components/SidebarRedesign.test.tsx`。
  *
- * 🔴 issue #7140 起：**6 组 19 项 + 3 个一级项**（最前席位「经营看板」
- * / 尾席位「商品管理」「企业基础设置」）+ 尾部独立项「通知中心」= **25 项**；
+ * 🔴 issue #7140 起：**6 组 20 项 + 3 个一级项**（最前席位「经营看板」
+ * / 尾席位「商品管理」「企业基础设置」）+ 尾部独立项「通知中心」= **26 项**；
  * （issue #7369：新增「供应链」组，把入库单 / 供应商 / 采购单 从「仓储与物料」搬出 ⇒ 组数 5 → 6，
  *  组内项总数不变）
  * 「工作台」组整组撤销、「每日简报」菜单项删除（企业开关只驱动经营看板上的结论卡）。
@@ -20,7 +20,7 @@
  * 新 IA 下**分组默认只展开当前路由所在组** ⇒ 想断言「其它组的项在不在」就必须
  * **先展开该组**（`data-testid="sidebar-group-toggle-<key>"`）。因此下列用例里凡断言
  * 非当前组项的，都先调 `expandGroups(...)` / `expandAll()` —— 断言本身**一条没删、没放宽**
- * （有 `expect(links).toHaveLength(27)` 这类**更强**的新钉子作反向证明）。
+ * （有 `expect(links).toHaveLength(28)` 这类**更强**的新钉子作反向证明）。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within, cleanup } from '@testing-library/react'
@@ -113,6 +113,7 @@ const GROUPS: { key: string; name: string; items: [string, string][] }[] = [
     items: [
       ['stock-ledger', '库存明细'],
       ['stocktakes', '盘点单'],
+      ['outbound-orders', '出库单'],
       ['shipments', '发货单'],
       ['production-remnants', '余料台账'],
       ['production-saving-board', '省料看板'],
@@ -143,7 +144,7 @@ const STANDALONE_TOP_KEYS = ['products', 'settings']
 const TOP_SLOT_KEY = 'org-center'
 const GROUP_KEYS = GROUPS.map((g) => g.key)
 /**
- * 展开全部组后应渲染的 **27 项**（**最前席位 → 全部分组 → 尾席位 → 尾部独立项**，== `flattenMenu` 顺序）。
+ * 展开全部组后应渲染的 **28 项**（**最前席位 → 全部分组 → 尾席位 → 尾部独立项**，== `flattenMenu` 顺序）。
  * 🔴 🔊 2026-10-17（issue #7087）：`STANDALONE_HEAD_KEYS`（「经营看板」）在**最前**；
  * 尾席位一级项仍落在**末尾附近**（`TOP_SLOT_KEY` = 最后一个组 ⇒ 通知中心之前）。
  */
@@ -269,7 +270,7 @@ describe('Sidebar', () => {
     expect(screen.queryByAltText('企业 Logo')).not.toBeInTheDocument()
   })
 
-  it('should render all menu items（issue #7140 + #7369 新 IA：6 组 + 3 个一级项 + 独立项 = 25 项）', async () => {
+  it('should render all menu items（issue #7140 + #7369 新 IA：6 组 + 3 个一级项 + 独立项 = 26 项）', async () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     // 🔴 分组标题 = **6 组**（「工作台」组已整组撤销；#7369 新增「供应链」组 —— 见下方负断言）
     expect(screen.getByText('客户服务')).toBeInTheDocument()
@@ -288,7 +289,7 @@ describe('Sidebar', () => {
 
     // 非当前组（/dashboard 属**最前席位**、不入任何组 ⇒ 默认**全部组收起**）的项必须先展开该组才可见
     expandAll()
-    // 子菜单项：25 项**一项不少不减**
+    // 子菜单项：26 项**一项不少不减**
     expect(menuKeys()).toEqual(ALL_MENU_KEYS)
     for (const [, name] of GROUPS.flatMap((g) => g.items)) {
       expect(screen.getByText(name)).toBeInTheDocument()
@@ -310,7 +311,7 @@ describe('Sidebar', () => {
     expect(screen.queryByText('角色权限')).not.toBeInTheDocument()
   })
 
-  it('25 项一项不少不减：`data-menu-key` 序列逐值 == 新 IA（最前席位 → 全部分组 → 尾席位 → 独立项）', async () => {
+  it('26 项一项不少不减：`data-menu-key` 序列逐值 == 新 IA（最前席位 → 全部分组 → 尾席位 → 独立项）', async () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     // 🔴 /dashboard 属**最前席位**（不入任何组）⇒ 冷加载时 6 个组**全部收起**（新形态的直接读数）
     await waitFor(() => expect(screen.getByTestId(STANDALONE_HEAD_TESTID)).toBeInTheDocument())
@@ -328,14 +329,14 @@ describe('Sidebar', () => {
       // 🔴 #7593：'approvals' 已撤出侧边栏（入口改顶栏 `ApprovalBell`）
       'price-books', 'orders', 'finance',
       'production-board', 'production-pool', 'production-piecework', 'quality-inspections', 'rework-orders',
-      'inbound-orders', 'suppliers', 'purchase-orders', 'stock-ledger', 'stocktakes', 'shipments', 'production-remnants',
+      'inbound-orders', 'suppliers', 'purchase-orders', 'stock-ledger', 'stocktakes', 'outbound-orders', 'shipments', 'production-remnants',
       'production-saving-board',
       'employees', 'roles',
       'products',
       'settings',
       'notifications',
     ])
-    expect(menuKeys()).toHaveLength(27)
+    expect(menuKeys()).toHaveLength(28)
   })
 
   // ── 🔴 issue #7087 新形态（会红的那几条）────────────────────────────────────────
@@ -512,9 +513,9 @@ describe('Sidebar', () => {
     mockUsePathname.mockReturnValue('/chat')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     // /chat 不属于任何菜单项 ⇒ **全部组默认收起**（这本身就是「无高亮」的一种形态）；
-    // 展开全部组后再断言「27 项都在 DOM 里，仍然一个都不高亮」
+    // 展开全部组后再断言「28 项都在 DOM 里，仍然一个都不高亮」
     expandAll()
-    await waitFor(() => expect(document.querySelectorAll('nav a')).toHaveLength(27))
+    await waitFor(() => expect(document.querySelectorAll('nav a')).toHaveLength(28))
     expect(activeKeys()).toEqual([])
   })
 
@@ -740,7 +741,7 @@ describe('Sidebar', () => {
       expect(screen.getByText('通知中心')).toBeInTheDocument()
       // UI-005/UI-011: admin 可见智能客服大类及其子菜单（#3094 黄金策·在线对话 入口已移除）
       expect(screen.queryByText('黄金策 · 在线对话')).not.toBeInTheDocument()
-      expect(menuKeys()).toHaveLength(27)
+      expect(menuKeys()).toHaveLength(28)
     })
 
     it('should filter out items user has no permission for', () => {
@@ -970,12 +971,12 @@ describe('Sidebar', () => {
 
   // ── 菜单图标两两不同（issue #5582）─────────────────────────────────────────────
 
-  it('🔴 菜单图标两两不同（渲染面）：25 项的图标互不重复（issue #5582）', async () => {
+  it('🔴 菜单图标两两不同（渲染面）：26 项的图标互不重复（issue #5582）', async () => {
     // 用户实测「左侧菜单栏有部分子菜单的图标完全一样」——数据层去重（menu-icons.test.ts 判据④）
     // 只证明**配置**不重复；这里证明**渲染出来**的图标也不重复（§15.1 结果可见）。
     // 🔴 2026-10-17（issue #7087）：本判据**不再**需要「先打开简报开关」那一步 ——
     // 「每日简报」菜单项已删除（旧形态下它是异步 effect 驱动的，曾让本判据踩过
-    // `Unable to find text: 每日简报`），现在 25 项**全部**同步渲染。
+    // `Unable to find text: 每日简报`），现在 26 项**全部**同步渲染。
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     await waitFor(() => expect(screen.getByTestId(STANDALONE_HEAD_TESTID)).toBeInTheDocument())
     expandAll()
@@ -1002,7 +1003,7 @@ describe('Sidebar', () => {
       .filter(([, names]) => names.length > 1)
       .map(([icon, names]) => `${icon} → ${names.join('、')}`)
 
-    expect(items, '面非空自证：27 项（最前席位 2 + 尾席位 2 + 22 组内项 + 通知中心；#7140 / #7369 / #7376 / #7593 撤审批中心）').toHaveLength(27)
+    expect(items, '面非空自证：28 项（最前席位 2 + 尾席位 2 + 22 组内项 + 通知中心；#7140 / #7369 / #7376 / #7593 撤审批中心）').toHaveLength(28)
     expect(
       collisions,
       `以下菜单项在侧边栏里渲染出**同一个图标**（紧挨着出现 = 没有区分度，issue #5582）：\n${collisions.join('\n')}\n`

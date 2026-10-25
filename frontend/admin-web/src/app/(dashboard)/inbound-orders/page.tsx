@@ -243,7 +243,7 @@ export default function InboundOrdersPage() {
             入库单
           </span>
         }
-        subtitle={<>登记布料到货、过账后加库存 —— <strong>过账前不改动库存</strong>，可以先核对再确认。<strong>期初建账</strong>可按实物把在库批次登记进来</>}
+        subtitle={<>登记布料到货 —— <strong>建单即入账</strong>（过账与建单一次完成）。<strong>期初建账</strong>可按实物把在库批次登记进来</>}
         actions={
           <div className="flex gap-2">
             <Button variant="secondary" onClick={openImport}>

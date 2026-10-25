@@ -3685,7 +3685,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（156 case）
+## 杂项域（160 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5744,6 +5744,64 @@
 跳过: [backend-contract] 开租播种与盘点快照口径，由 Java 单测/真库验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-24 新增（issue #7592）。落码 = `WarehouseSeedService`（幂等播种）+ `RegistrationService` 接线 + `OnboardingInitialData.REQUIRED` 登记 + 后置条件探针 + V189（存量租户回填）+ `StocktakeService.open` 默认仓收「未指定仓」。 ｜ tags: backend-contract, inventory, warehouse, onboarding, red-proof
+
+### WH-003. 成品仓位自动分配：先复用已释放的号，占满才顺延新增（issue #7750） 🔵
+```
+你: 用户（2026-10-25，逐字）：「对成品帘打包扫码时要自动给当前的成品进行成品仓区域分配仓位号」。
+数据: **判据 1（先复用后新增）**：存在空闲仓位（没有 `in_stock` 成品占着）⇒ 直接复用最小空闲号，**不**新增行（一进一出不涨号）。判据 = `WarehouseLocationServiceTest#reusesFreeBin`。
+数据: **判据 2（占满才顺延）**：全部占满 ⇒ 新号 = 本区域现有行数 + 1，格式 `A-01` / `A-02`（区域 `A` = 成品区）。判据 = `#createsNextBinWhenAllOccupied`。
+数据: **判据 3（🔴 占号原子、冲突不抛异常）**：新增走 `INSERT … ON CONFLICT DO NOTHING`（唯一冲突不会把 PG 事务打成 aborted），抢不到就重算下一轮；连续 8 次抢不到 ⇒ 显式冲突（可重试），**不**静默返回一个可能被占的号。判据 = `#claimConflictRetriesThenSucceeds` + `#exhaustedAttemptsThrows`。
+数据: **判据 4（「占用」没有第二份真相）**：仓位表**没有**「已占用」标志列 —— 空闲与否由 `finished_goods_stock` 的 `in_stock` 行判定（发货/撤销漏改标志列会永久占位）。判据 = `WarehouseLocationMapper#selectFirstFreeBin` 的 `NOT EXISTS` + 迁移里的局部唯一索引 `uk_finished_goods_bin_in_stock`。
+数据: **边界（照实登记）**：不做货架层级 / 容量 / 混放策略；一个仓位同一时刻只放一个在库成品（DB 局部唯一索引兜住，并发打包的互斥点在那里而不是服务层判空）。
+前置: 本用例是 [backend-contract]：前置 = `warehouse_locations` / `finished_goods_stock`（V196）+ `warehouses.warehouse_type` 含 `finished`。零网络、零 LLM。
+跳过: [backend-contract] 仓位分配口径由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-25 新增（issue #7750）。落码 = `WarehouseLocation`/`WarehouseLocationMapper`（`selectFirstFreeBin` / `claimBin` 原子占号）+ `WarehouseLocationService.nextFreeBin` + V196 的 `uk_finished_goods_bin_in_stock`。 ｜ tags: backend-contract, inventory, warehouse, finished-goods, red-proof
+
+### WH-004. 出库单：布料手工出库「建单即过账」（扣库存 + 落台账），库存不足整笔拒绝（issue #7750） 🔵
+```
+你: 用户（2026-10-25，逐字）：「现在布料也只做了入库，也需要做入库出库，可以统一做成入库出库单，并且做成入库即过账，不要单独再点击过账了」。
+数据: **判据 1（建单即过账）**：`POST /api/admin/outbound-orders` 一次请求内完成扣库存 + 落台账 + 写单据；落库状态恒为 `posted`（DB CHECK 只允许这一个取值，出库单**没有草稿态**）。判据 = `OutboundOrderServiceTest#createAndPostDeductsAndRecordsLedger` + 迁移 `ck_outbound_orders_status`。
+数据: **判据 2（🔴 库存不足不许负库存）**：原子扣减（`WHERE stock >= 本单量 RETURNING`）返回 0 行 ⇒ 422 + 整笔回滚；**不**落台账、**不**落明细。判据 = `#insufficientStockRejected`（同时断言 `stockLedgerService.record` 与明细 insert 一次都没发生）。
+数据: **判据 3（数量粒度）**：> 0 且最多 1 位小数（与 `product_skus.stock` 的 NUMERIC(12,1) 同粒度）；超精度**显式拒绝**、不静默取整。判据 = `#quantityPrecisionGate`。
+数据: **判据 4（台账口径）**：`reason=outbound`、`refNo=出库单号`、before/after 来自扣减语句的 RETURNING（同基链断不了）。判据 = `#createAndPostDeductsAndRecordsLedger`。
+数据: **判据 5（跨租户）**：SKU 不属于本租户 ⇒ 当「不存在」拒绝（不泄露存在性）。判据 = `#foreignTenantSkuRejected`。
+数据: **判据 6（页面可达 + 写码门控 + 雪花号）**：出库单页列表/新建入口在；无 `inbound:create` 不渲染新建；提交体里 `skuId` 是字符串原样（`Number()` 会吞末位）；提交成功提示「已出库」。判据 = `frontend/admin-web/tests/unit/pages/outbound-orders.test.tsx`。
+数据: **边界（照实登记）**：① 布料出库只扣 SKU 库存 + 台账，**不**写 `stock_batch_consumptions`（批次消耗仍由裁剪报工/盘点统计）；② 出库单**不可作废**（冲销须另开入库单）；③ 成品手工出库不支持（成品只随发货出库）。
+前置: 本用例是 [backend-contract]：前置 = `outbound_orders` / `outbound_order_items`（V196）+ `stock_ledger_entries.reason` 含 `outbound`。零网络、零 LLM。
+跳过: [backend-contract] 出库扣减/台账/页面字段面由 Java 单测 + 前端单测验证，非 LLM 行为
+```
+溯源: 2026-10-25 新增（issue #7750）。落码 = `OutboundOrder`/`OutboundOrderItem` + 两个 Mapper + `OutboundOrderQueryMapper` + `OutboundOrderService.createAndPost` + `OutboundOrderController` + 前端 `/outbound-orders` 页 + `outboundOrderApi` + V194（含台账 reason 扩 `outbound`）。 ｜ tags: backend-contract, inventory, outbound, red-proof
+
+### WH-005. 成品帘入/出库闭环：打包 ⇒ 成品入库（分仓位）+ 发货 ⇒ 成品出库 + 撤销打包冲销（issue #7750） 🔵
+```
+你: 用户（2026-10-25，逐字）：「要对成品帘进行入库出库」「对成品帘打包扫码时要自动给当前的成品进行成品仓区域分配仓位号」。
+数据: **判据 1（打包 = 入库）**：打包动作给每个成品订单行分配一个成品仓仓位号，并自动生成一张 `source=packing`、`biz_category=finished` 的**已过账**成品入库单。判据 = `FinishedGoodsServiceTest#packReceivesFinishedGoodsWithBins` + `InboundStockDocumentTest#finishedPostAllocatesBinsOnly`。
+数据: **判据 2（🔴 幂等）**：已有在库行 ⇒ 不重复入库（不建第二张单）；订单没有成品行 ⇒ 不造假单。判据 = `#packIsIdempotent` + `#packWithoutItemsCreatesNothing`。
+数据: **判据 3（发货 = 出库）**：发货 ⇒ 生成 `source=ship` 的已过账成品出库单 + 在库行置 `shipped`（释放仓位）；**没有在库行（一步发货）⇒ 不造空出库单**。判据 = `#shipIssuesFinishedGoods` + `#shipWithoutStockCreatesNoDoc`。
+数据: **判据 4（撤销打包 = 冲销）**：入库单作废 + 在库行置 `unpacked`；同一张入库单只冲一次（两行同一单 ⇒ 一次调用）。判据 = `#unpackReversesInboundOnce` + `#unpackWithoutStockIsNoop`。
+数据: **判据 5（并发显式失败）**：出库时在库行已被并发改掉 ⇒ 409 + 整笔回滚（不静默成功）。判据 = `#shipConcurrentChangeConflicts`。
+数据: **判据 6（工人端可见）**：发货读面带 `finished_bins`（仓位号），工人端拍照发货汇总必须上屏。判据 = `frontend/bmini-app/tests/worker-shipment-page.test.tsx`「成品仓位（V196）」。
+数据: **判据 7（🔴 商家发货路同样出库）**：商家/生产发货路（`OrderShipmentService#recordMerchantShipment`，由 `OrderService#shipWithLogistics` 调）也必须先补入库再出库 —— 否则「工人打包 → 商家后台发货」的订单会永久留在成品仓「在库」，而货已经发走了。判据 = `MerchantShipmentAtomicityTest#happyPathCommitsTheTransaction`（`verify(receiveOnPack|issueOnShip)`）。
+数据: **判据 8（商家面可见）**：出库单页「成品库存」页签显示仓位号 / 品名 / 订单号（打包自动分配的成品仓仓位）。判据 = `frontend/admin-web/tests/unit/pages/outbound-orders.test.tsx`「成品库存页签」。
+数据: **边界（照实登记）**：① 入库时点 = **订单打包动作**（`packed`），**不是**扫码报「打包」工序 —— 报工在本仓的语义是领活（#4967），那一刻货还没打包好；② 一个成品订单行 = 一个在库行（不按套拆，与「一个 SKU 行 = 一个批次」同源）；③ 成品无成本口径（`unit_cost`/`amount` 留 NULL，不伪造 0）。
+前置: 本用例是 [backend-contract]：前置 = `finished_goods_stock` / `warehouse_locations`（V196）+ `inbound_orders.biz_category=finished` + 打包/发货/撤销三个状态迁移。零网络、零 LLM。
+跳过: [backend-contract] 成品入出库编排由 Java 单测 + bmini 页面单测验证，非 LLM 行为
+```
+溯源: 2026-10-25 新增（issue #7750）。落码 = `FinishedGoodsStock`/`FinishedGoodsStockMapper`（原子占位 / markShipped / markUnpacked）+ `FinishedGoodsService`（三个时点）+ `InboundOrderService.receiveFinishedGoods` / `post` 的 finished 分支 / `cancelFinishedPosting` + `OrderShipmentService` 的 pack/ship/unpack 挂钩 + `FinishedGoodsController` + bmini 仓位上屏。 ｜ tags: backend-contract, inventory, finished-goods, shipment, red-proof
+
+### WH-006. 入库即过账（商家建单一次请求完成）+ 成品单过账语义与布料单分道（issue #7750） 🔵
+```
+你: 用户（2026-10-25，逐字）：「做成入库即过账，不要单独再点击过账了」。
+数据: **判据 1（建单即过账）**：`POST /api/admin/inbound-orders` = create → post（同一个事务）；建单失败不留孤立草稿，过账失败整笔回滚。判据 = `InboundStockDocumentTest#createAndPostComposesCreateThenPost` + `InboundOrderController` 的建单端点改为 `createAndPost`。
+数据: **判据 2（🔴 成品单过账不碰布料口径）**：`biz_category=finished` 过账只做两件事 —— 逐行分配仓位（`claimInStock` 原子占位）+ 回写明细分位；**不**建 `stock_batches`、**不**加 SKU 米数库存、**不**落库存台账。判据 = `#finishedPostAllocatesBinsOnly`（四条 never 断言）。
+数据: **判据 3（fail-closed）**：成品单缺仓库 / 明细缺订单行引用 ⇒ 拒绝过账（不猜仓库、不分配孤儿仓位）。判据 = `#finishedPostWithoutWarehouseRejected` + `#finishedPostWithoutOrderItemRejected`。
+数据: **判据 4（页面口径）**：入库单新建页提交后提示「已入库（批次号已生成、库存已加、成本已重算）」，按钮文案 = 「确认入库」（不再有「保存为草稿 → 再点过账」两步）；工人拍照入库的**识别草稿**仍保留过账端点（那张草稿是识别结果，不是待办）。判据 = `frontend/admin-web/tests/unit/pages/inbound-orders-new.test.tsx`。
+数据: **边界（照实登记）**：① 商家端不再能建「草稿态」入库单（工人拍照识别草稿走 `WorkerInboundService` 的独立路径）；② `PATCH /{id}` 的 `post`/`cancel` 动作保留给这些草稿。
+前置: 本用例是 [backend-contract]：前置 = `inbound_orders.biz_category`（V196）+ 现有入库过账链路（V111/#5034）。零网络、零 LLM。
+跳过: [backend-contract] 入库即过账与成品过账分道由 Java 单测验证，非 LLM 行为
+```
+溯源: 2026-10-25 新增（issue #7750）。落码 = `InboundOrderService.createAndPost` / `receiveFinishedGoods` / `post` 的 finished 分支 / `cancelFinishedPosting` + `InboundOrderController` 建单端点 + 入库新建页文案与按钮 + `InboundOrder.bizCategory`/`warehouseId` 与明细四列。 ｜ tags: backend-contract, inventory, inbound, red-proof
 
 ### OPS-001. 云上「采购单加载失败」根因：BOOLEAN 逻辑删列 + 全局整数语义 ⇒ 真库 500（issue #7373 复盘） 🔵
 ```
@@ -13165,8 +13223,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：893（活跃 142，跳过 751）
-- tier 分布：smoke 12 / normal 825 / adversarial 32
+- 用例总数：897（活跃 142，跳过 755）
+- tier 分布：smoke 12 / normal 829 / adversarial 32
 - 售后域：16
 - Agent 核心域：12
 - API 层域：21
@@ -13181,7 +13239,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：156
+- 杂项域：160
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：69
@@ -13360,6 +13418,10 @@
 - APP-001: 具名审批流：四态 + 不能自批 + 单次消费 + 超授信闸门出口（issue #7374 段 1）
 - WH-001: 多仓与调拨：仓库实体 + 默认仓唯一 + 调拨守恒与缸号随行（issue #7373 段 1）
 - WH-002: 开租即种默认主仓 + 盘点默认仓收「未指定仓」的批次（issue #7592）
+- WH-003: 成品仓位自动分配：先复用已释放的号，占满才顺延新增（issue #7750）
+- WH-004: 出库单：布料手工出库「建单即过账」（扣库存 + 落台账），库存不足整笔拒绝（issue #7750）
+- WH-005: 成品帘入/出库闭环：打包 ⇒ 成品入库（分仓位）+ 发货 ⇒ 成品出库 + 撤销打包冲销（issue #7750）
+- WH-006: 入库即过账（商家建单一次请求完成）+ 成品单过账语义与布料单分道（issue #7750）
 - OPS-001: 云上「采购单加载失败」根因：BOOLEAN 逻辑删列 + 全局整数语义 ⇒ 真库 500（issue #7373 复盘）
 - STK-001: 盘点单：账面快照 + 差异必经审批 + 调整只改数量（issue #7373 段 2）
 - PRC-003: 价格本可维护：协议价 / 等级价 / 阶梯价 upsert + 价格必须 > 0（issue #7375 段 3）

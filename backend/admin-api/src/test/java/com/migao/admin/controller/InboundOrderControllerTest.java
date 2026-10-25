@@ -82,11 +82,11 @@ class InboundOrderControllerTest {
     }
 
     @Test
-    @DisplayName("PR-035 列表与建单都把当前租户透传给服务（跨租户读 = 数据泄漏）")
+    @DisplayName("PR-035 列表与建单都把当前租户透传给服务（跨租户读 = 数据泄漏；V196 起建单即过账）")
     void listAndCreatePassTenant() {
         TenantContext.setTenantId(7L);
         when(inboundOrderService.list(any(), any(), any())).thenReturn(List.of(new InboundOrderLine()));
-        when(inboundOrderService.create(any(), any(), any())).thenReturn(new InboundOrderResponse());
+        when(inboundOrderService.createAndPost(any(), any(), any())).thenReturn(new InboundOrderResponse());
 
         ApiResponse<List<InboundOrderLine>> list = controller.list("柯桥", "draft");
         assertThat(list.getData()).hasSize(1);
@@ -94,9 +94,12 @@ class InboundOrderControllerTest {
 
         InboundOrderCreateRequest req = new InboundOrderCreateRequest();
         controller.create(req);
-        verify(inboundOrderService).create(eq(req), eq(7L), any());
+        // V194（issue #7750）：建单端点走 createAndPost（建单 + 过账一次请求）——
+        // 不再是「先建草稿、再点过账」。判据 = 只允许调 createAndPost，调 create 即红。
+        verify(inboundOrderService).createAndPost(eq(req), eq(7L), any());
 
         // 建单的操作人取自认证上下文；无认证时退化为 "system"（不写 null、不抛异常）
-        verify(inboundOrderService).create(eq(req), eq(7L), eq("system"));
+        verify(inboundOrderService).createAndPost(eq(req), eq(7L), eq("system"));
+        verify(inboundOrderService, never()).create(any(), any(), any());
     }
 }

@@ -60,7 +60,8 @@ class WarehouseSeedServiceTest {
         assertThat(saved.getTenantId()).as("租户只从入参来（不猜、不跨租户）").isEqualTo(42L);
         assertThat(saved.getCode()).isEqualTo(OnboardingInitialData.DEFAULT_WAREHOUSE_CODE);
         assertThat(saved.getName()).isEqualTo(OnboardingInitialData.DEFAULT_WAREHOUSE_NAME);
-        assertThat(saved.getWarehouseType()).isEqualTo(Warehouse.TYPE_STORE);
+        // V194（issue #7750）：默认主仓 = 原料仓（存布料）—— 与 V196 对存量默认仓的回填同口径
+        assertThat(saved.getWarehouseType()).isEqualTo(Warehouse.TYPE_MATERIAL);
         assertThat(saved.getIsDefault()).as("默认仓：出任务时不再让商家在多个仓里猜").isTrue();
         assertThat(saved.getStatus()).isEqualTo("active");
     }

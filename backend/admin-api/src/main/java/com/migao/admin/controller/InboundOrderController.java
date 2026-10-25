@@ -109,14 +109,23 @@ public class InboundOrderController {
     }
 
     /**
-     * 建单（权限 inbound:create）—— 草稿态，**不动库存**
-     * POST /api/admin/inbound-orders
+     * 建单（权限 inbound:create）—— **建单即过账**（V196 / issue #7750）。
+     *
+     * <p>POST /api/admin/inbound-orders</p>
+     *
+     * <p>用户 2026-10-25 逐字「做成入库即过账，不要单独再点击过账了」：商家建单一次请求内完成
+     * 「建单 + 过账」（批次号生成、库存增加、台账、移动加权成本都在这一次里），响应 {@code status=posted}。
+     * 想先核对再入账的商家不再有「草稿」这一站 —— 一次请求内的失败会整体回滚（不会留下孤立草稿）。</p>
+     *
+     * <p>⚠️ {@code PATCH /{id}} 的 {@code post} 动作**保留**：工人拍照入库先落识别草稿
+     * （{@code source=photo}，见 {@code WorkerInboundService}），确认后才过账 —— 那张草稿是
+     * **识别结果**而不是待办，与本端点的「建单即过账」不是同一条流程。</p>
      */
     @PostMapping
     @RequirePermission("inbound:create")
     public ApiResponse<InboundOrderResponse> create(@RequestBody InboundOrderCreateRequest request) {
         return ApiResponse.success(
-                inboundOrderService.create(request, TenantContext.getTenantId(), currentOperator()));
+                inboundOrderService.createAndPost(request, TenantContext.getTenantId(), currentOperator()));
     }
 
     /**

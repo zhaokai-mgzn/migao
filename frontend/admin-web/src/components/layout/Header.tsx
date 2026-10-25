@@ -128,6 +128,9 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   // 盘点单（issue #7373）：组名/菜单名与 `config/menu.ts` 的 `stocktakes`、服务端两处菜单节点逐字一致
   //（§15.2「面包屑末项 == 侧边栏菜单名」）。
   { match: (p) => p.startsWith('/stocktakes'), crumbs: [{ label: '仓储与物料' }, { label: '盘点单' }] },
+  // 出库单（V194 / issue #7750）：与「入库单」对称的出口单据；组名/菜单名与 `config/menu.ts`
+  // 的 `outbound-orders`、服务端两处菜单节点逐字一致（§15.2「面包屑末项 == 侧边栏菜单名」）。
+  { match: (p) => p.startsWith('/outbound-orders'), crumbs: [{ label: '仓储与物料' }, { label: '出库单' }] },
 
   // 交易管理组（本轮 2026-09-29 收窄为**「下单 → 收款」两项**：客户列表 / 售后工单已移入
   // 「客户服务」组 —— 用户原话「客户管理也不属于交易管理」「（售后）和客户管理……都属于服务客户的功能」）

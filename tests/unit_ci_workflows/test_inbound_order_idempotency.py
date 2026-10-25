@@ -554,7 +554,7 @@ def test_bootstrap_schema_sql_is_already_terminal():
     assert re.search(r"import_run_id\s+VARCHAR\(128\)", schema), "schema.sql 缺 import_run_id 列"
     assert re.search(r"source\s+VARCHAR\(16\)\s+NOT NULL DEFAULT 'purchase'", schema), (
         "schema.sql 缺 source 列（或丢了 NOT NULL + 缺省值）")
-    assert "source IN ('purchase', 'opening', 'photo')" in schema, (
+    assert "source IN ('purchase', 'opening', 'photo', 'packing')" in schema, (
         "schema.sql 缺 source 取值约束（V117 的 purchase/opening + V153/#6812 的 photo）")
     v153 = REPO / "backend/admin-api/src/main/resources/db/migration/V153__inbound_source_photo.sql"
     assert v153.exists(), "存量升级路径缺 V153（photo 来源）—— 只有新建库路径放行 photo = 两份真相"
