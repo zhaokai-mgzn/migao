@@ -237,11 +237,10 @@ export default function WarehouseLocationPanel({
           <div className="min-w-0">
             <h3 className="text-sm font-semibold text-neutral-900">成品仓仓位</h3>
             <p className="mt-1 text-xs leading-5 text-neutral-500">
-              打包时优先复用空闲仓位，占满才按序号新增。可按现场货架建号、改备注或停用；
-              占用中的仓位不能改号或删除。
+              {'打包时优先复用空闲仓位，占满才按序号新增。可按现场货架建号、改备注或停用；占用中的仓位不能改号或删除。'}
             </p>
           </div>
-          {canWrite && (
+          {canWrite && rows.length > 0 && (
             <Button
               variant="secondary"
               size="sm"
@@ -269,7 +268,7 @@ export default function WarehouseLocationPanel({
           <EmptyState
             icon="package"
             title="还没有仓位"
-            description="打包时会自动建 A-01…；也可以现在按现场货架建号，打包时会被优先复用。"
+            description="打包时会自动建 A-01…；也可以先按货架建号。"
             testId="warehouse-locations-empty"
             action={
               canWrite ? (
@@ -315,17 +314,13 @@ export default function WarehouseLocationPanel({
       >
         <FormPanel
           title="仓位信息"
-          hint="仓位号统一大写，只能包含字母、数字、短横线或下划线（如 A-01）；同租户内不能重号。"
+          hint="仓位号统一大写，用字母 / 数字 / 短横线（如 A-01），同租户唯一。"
         >
           <FormGrid cols={2}>
             <Field
               label="仓位号"
               htmlFor="warehouse-bin-code"
-              hint={
-                editing?.occupied
-                  ? '占用中不能改号：在库成品与已贴标签都认这个号'
-                  : '如 A-01'
-              }
+              hint={editing?.occupied ? '占用中不能改号：在库成品与已贴标签都认这个号' : undefined}
             >
               <Input
                 id="warehouse-bin-code"

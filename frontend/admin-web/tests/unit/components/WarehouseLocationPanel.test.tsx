@@ -105,6 +105,8 @@ describe('仓位管理清单（WH-009）', () => {
 
     expect(await screen.findByTestId('warehouse-locations-empty')).toBeTruthy()
     expect(screen.getByTestId('warehouse-location-create-empty')).toBeTruthy()
+    // 空态不再重复一个同名工具栏按钮（读图判定 2026-10-25：两个一模一样的「新建仓位」相距 ~100px）
+    expect(screen.queryByTestId('warehouse-location-create')).toBeNull()
   })
 
   it('🔴 无 inbound:create ⇒ 只读：没有新建 / 编辑 / 启停 / 删除', async () => {
