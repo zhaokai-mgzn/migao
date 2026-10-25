@@ -3365,8 +3365,12 @@ public class ProcessingOrderService {
      * <p>受控枚举值见 {@link #COMPONENT_ROLE_POSITIONS}（写侧 {@code order_create.py} 的 enum：
      * 主布 / 配布边 / 纱）。**未知取值返回 null**（不猜、不默认成布帘）—— 该维按缺维处理，
      * 由 {@code route_source} 显式标注并在异常订单清单里可见。</p>
+     *
+     * <p>🔴 <b>包内可复用</b>（issue #7742）：工人读面（`ProductionService#orderSpecByItemId` 经
+     * {@code OrderLineCraftFields#curtainTypeOf}）取帘种时走**同一份**映射 —— 读面另抄一张
+     * 「纱⇒纱帘」的表 = 第二份会漂的口径（加工单实例化与工人屏迟早说出不同的帘种）。</p>
      */
-    private static String positionOfComponentRole(Map<String, Object> entry) {
+    static String positionOfComponentRole(Map<String, Object> entry) {
         String role = str(entry.get("componentRole"));
         // 缺键（存量单）/ 未知取值 ⇒ null（**不猜**）：Map.of 也不接受 null 键
         return role == null ? null : COMPONENT_ROLE_POSITIONS.get(role);
