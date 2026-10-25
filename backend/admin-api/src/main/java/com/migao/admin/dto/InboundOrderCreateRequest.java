@@ -68,11 +68,12 @@ public class InboundOrderCreateRequest {
         private Long skuId;
 
         /**
-         * 数量：{@code purchase} / {@code opening} 单 = **入库米数**（必填，&gt;0 且最多 1 位小数，
+         * 数量：{@code purchase} / {@code opening} 单的**按米录入**值（= 入库米数，&gt;0 且最多 1 位小数，
          * V115/#5063）；{@code photo} 单（工人拍照入库，issue #6812）= **卷数**（正整数）。
          *
-         * <p>单位由**来源**决定（服务端强制，请求体无法自称 photo）：photo 单的入库米数 =
-         * 本值 × {@link #rollLengthM}，见 {@code InboundOrderService.metersFor}。</p>
+         * <p>🔴 带了 {@link #rollCount}（或来源是 photo）时本值**不决定库存**：入库米数一律由服务端按
+         * 「卷数 × 卷长」算（{@code InboundOrderService.metersOfRolls}，issue #7709）——
+         * 客户端的乘法曾让「1 卷 × 70 米」记成 1 米。</p>
          */
         private BigDecimal quantity;
 
@@ -93,10 +94,21 @@ public class InboundOrderCreateRequest {
         private String legacyBatchNo;
 
         /**
-         * 每卷米数（卷长）：一般来源**可空、仅记录 / 打印卷标**（#5034 不参与换算）；
-         * {@code photo} 单（issue #6812）**必填**且用参与换算（入库米数 = 数量 × 本值）。
+         * 每卷米数（卷长）：与 {@link #rollCount} 成对时**参与换算**（入库米数 = 卷数 × 本值）；
+         * 只填本值不填卷数 ⇒ 仅记录 / 打印卷标（#5034）。
+         * {@code photo} 单（issue #6812）**必填**。
          */
         private BigDecimal rollLengthM;
+
+        /**
+         * 卷数（可空，正整数；issue #7709）：填了它就必须填 {@link #rollLengthM}，
+         * **入库米数 = 本值 × 卷长**（服务端唯一换算点，{@link #quantity} 一律不采信）。
+         *
+         * <p>它是「1 卷」与「1 米」的**唯一判别器** —— 没有它，服务端只能猜（改前就猜错了：
+         * `RK-20261024-0001` 的「数量 1 / 卷长 70」被记成 1 米）。{@code photo} 单不必填
+         * （它的数量格本来就是卷数，建单时映射进本列）。</p>
+         */
+        private Integer rollCount;
 
         private String remark;
     }

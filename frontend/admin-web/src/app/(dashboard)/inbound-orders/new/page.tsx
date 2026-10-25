@@ -38,12 +38,14 @@ interface DraftLine {
   label: string
   stock: number
   /**
-   * 卷数（可选；issue #7644）—— 与「卷长(米/卷)」一起构成**按卷录入**：
-   * 两者齐备 ⇒ `quantity` 由「卷数 × 卷长」自动算出（数量格只读，换算写在格下）；
+   * 卷数（可选；issue #7644 / #7709）—— 与「卷长(米/卷)」一起构成**按卷录入**：
+   * 两者齐备 ⇒ 数量格只读，格下显示「卷数 × 卷长 = 米数」的换算供核对；
    * 留空 ⇒ 回到「数量（米）」手填（散剪 / 尾料按米买走这条路）。
    *
-   * 🔴 换算只发生在**提交前的前端**：`inbound_order_items.quantity` 的口径仍是**米**
-   * （#5034「卷长仅记录」；服务端乘会把「60.5 米 + 卷长 60」变成 3630 米）。
+   * 🔴 **本页不再负责乘**（issue #7709）：换算的唯一权威是服务端（`InboundOrderService.metersOfRolls`）——
+   * 提交时把卷数原样带上（`rollCount`），由服务端算出 `inbound_order_items.quantity`（恒为米）。
+   * 改前换算在前端（#7646），客户端没乘（旧 bundle / 直接填数量）就把「1 卷 × 70 米」记成 1 米。
+   * 格下那行米数**只是预览**：它不进库存，服务端也不采信随行的 quantity。
    */
   rollCount: string
   quantity: string
@@ -64,11 +66,12 @@ const SOURCE_OPTIONS: { value: 'purchase' | 'opening'; label: string }[] = [
 const CELL_INPUT = 'h-9 px-2 text-sm'
 
 /**
- * 卷数 × 卷长 ⇒ 入库米数（商家端「按卷录入」的**唯一换算点**，issue #7644）。
+ * 卷数 × 卷长 ⇒ 入库米数**预览**（商家端「按卷录入」的显示，issue #7709）。
  *
- * 为什么在**前端**换算、而不是服务端乘：`inbound_order_items.quantity` 的口径是**米**
- * （#5034「卷长仅记录」——服务端乘会把「数量 60.5 米 + 卷长 60」算成 3630 米）。
- * 这里把换算**显式摆在格下**给商家核对，提交的仍是米数 ⇒ 服务端契约一字不动。
+ * 🔴 它**只用于上屏核对**：真正的换算在服务端（`InboundOrderService.metersOfRolls`），
+ * 提交时随行带的是 `rollCount` + `rollLengthM`，服务端据此算 `inbound_order_items.quantity`。
+ * 改前这里是**权威换算**（#7646），客户端不乘就少记 70 倍
+ * （实测 RK-20261024-0001：1 卷 × 70 米 ⇒ 库存 1 米，下单报「仅剩 1.0 米」）。
  *
  * 不静默取整：`1 卷 × 67.25 米 = 67.25` 原样返回，交给 `checkStockQuantity` 显式拒绝
  * （0.1 米粒度）；只把浮点尾差（`3 × 0.1 = 0.30000000000000004`）按 2 位归一。
@@ -223,6 +226,9 @@ export default function NewInboundOrderPage() {
           // 旧系统批次号**只在期初建账时提交**（采购入库填了后端会拒 —— 两列两义，不得互相冒充）
           legacyBatchNo: form.source === 'opening' ? l.legacyBatchNo || null : null,
           rollLengthM: l.rollLengthM === '' ? null : Number(l.rollLengthM),
+          // 卷数（issue #7709）：**服务端据此算入库米数**（卷数 × 卷长），并据此忽略随行的 quantity
+          // —— 换算的唯一权威在服务端，本页只是把商家填的卷数原样带上
+          rollCount: l.rollCount === '' ? null : Number(l.rollCount),
         })),
       })
       toast.success(
@@ -471,9 +477,9 @@ export default function NewInboundOrderPage() {
                 </table>
                 <p className="text-xs text-neutral-400 mt-2 leading-relaxed">
                   <strong className="text-neutral-500">按卷采购</strong>：填「卷数 + 卷长」⇒
-                  数量（米）自动换算成 <span className="font-mono">卷数 × 每卷米数</span>（提交的是米数）；
-                  <strong className="text-neutral-500">散剪 / 尾料按米买</strong>：卷数留空，
-                  数量（米）直接填。数量按 0.1 米粒度、大于 0（0.5 米的尾料能登记；0 与 2.755 会被拒绝；
+                  <span className="font-mono">卷数 × 每卷米数</span> 就是入库米数（格下那行是换算预览，
+                  过账时由服务端按同一口径记账）；<strong className="text-neutral-500">散剪 / 尾料按米买</strong>：
+                  卷数留空，数量（米）直接填。数量按 0.1 米粒度、大于 0（0.5 米的尾料能登记；0 与 2.755 会被拒绝；
                   超 1 位小数不会四舍五入）；单价留空 = 只加数量、不算成本（均价保持原值）；
                   缸号与旧系统批次号都是外部事实，与系统生成的批次号是三件不同的事。
                 </p>

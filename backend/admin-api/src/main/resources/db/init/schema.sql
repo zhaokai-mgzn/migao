@@ -1916,13 +1916,14 @@ CREATE TABLE IF NOT EXISTS inbound_order_items (
     sku_code VARCHAR(64),
     color_name VARCHAR(64),
     door_width VARCHAR(32),
-    quantity NUMERIC(12,1) NOT NULL,                 -- 入库数量（米）：与 product_skus.stock 粒度逐字一致（V115/#5063）
+    quantity NUMERIC(12,1) NOT NULL,                 -- **入库米数**（恒为米）：与 product_skus.stock 粒度逐字一致（V115/#5063）；卷数在 roll_count
     unit_cost NUMERIC(12,4),                         -- NULL = 未记单价 ⇒ 只加数量不算成本
     amount NUMERIC(16,4),                            -- quantity * unit_cost；NULL 单价 ⇒ NULL（不用 0 冒充）
     batch_no VARCHAR(32),                            -- 过账时才写（草稿为 NULL）
     legacy_batch_no VARCHAR(64),                     -- 旧系统批次号（V118/#5153）：仅 source='opening' 的期初单可填，过账时透传到 stock_batches
     dye_lot VARCHAR(64),                             -- 供应商缸号（外部事实，可空）
-    roll_length_m NUMERIC(8,2),                      -- 每卷米数（仅记录/打印，不参与换算）
+    roll_length_m NUMERIC(8,2),                      -- 每卷米数（卷长）：与 roll_count 一起决定入库米数（V192/#7709）
+    roll_count INTEGER,                              -- 卷数（V192/#7709）：入库米数 = roll_count * roll_length_m；NULL = 按米录入
     remark VARCHAR(255),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
