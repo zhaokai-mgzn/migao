@@ -5,6 +5,15 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]` 下累加。**
 
+### 扫水洗唛出库（issue #7762）
+- **成品在库粒度改成「套 × 部位」**：一张水洗唛 = 一个仓位（V197：`finished_goods_stock` 增 `set_id/set_no/set_index/part_token_id/short_code`，在库唯一索引改为 `(tenant_id, set_id, order_item_id)`；V196 的订单行粒度保留 `set_id IS NULL` 兜底索引，存量行不丢）。
+- **打包按部位码逐行入库**：`FinishedGoodsService#receiveOnPack` 枚举该订单的 `processing_order_sets × processing_set_part_tokens` ⇒ 5 套布帘 = 5 行 = 5 个仓位；没有部位码（布料单 / 未印码历史单）退回订单行粒度。
+- **工人扫唛出库**：`GET /api/worker/stock/wash-label`（标签逐行 + `allowed/reason/bin_code`）+ `POST /api/worker/stock/finished-outbound`（在库行 `in_stock → shipped` + 成品出库单 `source=scan` 单行）；授权 = `production_work_logs` 里该加工单做过「打包」工序的工人，幂等 = 条件更新（重复提交 409，不重复扣减）。
+- **报工页「成品出库」卡片**：扫码后显示服务端下发的标签行 + 「打印标签」（独立文档 `@page 50mm 70mm`，只印标签）+ 「出库」；不能出库时按钮 disabled 并显示服务端原因。
+- **标签字段服务端唯一源**：订单编号 / 客户 / 下单日期 / 收货人 / 套数（第 N 套/共 M 套）/ 尺寸 / 开数 / 部位 / 主布货号 / 打包区域（= 仓位号）/ 短码；缺值行不渲染，无稳定来源的「项目名称 / 款式 / 安装工艺 / 扩展选项」不出现。
+- 边界（照实登记）：二维码图形本单不渲染（worker-h5 无生成器，纸面印短码 + 服务端给 `/s/<短码>`），蓝牙标签机不接；打印载体 = 浏览器打印。
+
+
 
 ## [Unreleased]
 

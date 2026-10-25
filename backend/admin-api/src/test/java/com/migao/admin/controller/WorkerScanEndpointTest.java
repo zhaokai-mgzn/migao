@@ -133,7 +133,8 @@ class WorkerScanEndpointTest {
     @DisplayName("🔴 旧码 ⇒ granularity=order + needs_selection=[set,position] 且**不默认第 1 套**（W9）")
     void legacyCodeDegradesWithoutDefaultingToFirstSet() throws Exception {
         when(workerSessionService.resolveIdentity("sess-1")).thenReturn(ZHANG);
-        when(productionScanService.resolve(eq("JG20260920001"), any(), isNull(), isNull(), eq(TENANT), isNull()))
+        when(productionScanService.resolve(eq("JG20260920001"), any(), isNull(), isNull(), eq(TENANT), isNull(),
+                eq("worker-zhang")))
                 .thenReturn(degradedView());
 
         mockMvc.perform(get("/api/worker/production/scan")
@@ -165,7 +166,7 @@ class WorkerScanEndpointTest {
         view.put("granularity", ProductionScanService.GRANULARITY_SET_POSITION);
         view.put("set_no", 14);
         view.put("needs_selection", List.of());
-        when(productionScanService.resolve("tok-9", "op-7", null, null, TENANT, null)).thenReturn(view);
+        when(productionScanService.resolve("tok-9", "op-7", null, null, TENANT, null, "worker-zhang")).thenReturn(view);
 
         mockMvc.perform(get("/api/worker/production/scan")
                         .param("token", "tok-9")
@@ -174,7 +175,7 @@ class WorkerScanEndpointTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.set_no").value(14));
 
-        verify(productionScanService).resolve("tok-9", "op-7", null, null, TENANT, null);
+        verify(productionScanService).resolve("tok-9", "op-7", null, null, TENANT, null, "worker-zhang");
     }
 
     @Test
@@ -185,7 +186,7 @@ class WorkerScanEndpointTest {
         view.put("granularity", ProductionScanService.GRANULARITY_SET_POSITION);
         view.put("set_no", 14);
         view.put("needs_selection", List.of());
-        when(productionScanService.resolve("JG20260920001", null, "set-14", "oi-1", TENANT, null))
+        when(productionScanService.resolve("JG20260920001", null, "set-14", "oi-1", TENANT, null, "worker-zhang"))
                 .thenReturn(view);
 
         mockMvc.perform(get("/api/worker/production/scan")
@@ -197,7 +198,7 @@ class WorkerScanEndpointTest {
                 .andExpect(jsonPath("$.data.granularity").value("set_position"))
                 .andExpect(jsonPath("$.data.needs_selection", hasSize(0)));
 
-        verify(productionScanService).resolve("JG20260920001", null, "set-14", "oi-1", TENANT, null);
+        verify(productionScanService).resolve("JG20260920001", null, "set-14", "oi-1", TENANT, null, "worker-zhang");
         // 反向护栏：带了选择就**不再**走 3 参签名（无选择那条路径一字不动，见上一个用例）
         verify(productionScanService, never()).resolve(any(), any(), any());
     }

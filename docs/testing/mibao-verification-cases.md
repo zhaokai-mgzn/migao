@@ -3685,7 +3685,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（160 case）
+## 杂项域（162 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5789,6 +5789,34 @@
 跳过: [backend-contract] 成品入出库编排由 Java 单测 + bmini 页面单测验证，非 LLM 行为
 ```
 溯源: 2026-10-25 新增（issue #7750）。落码 = `FinishedGoodsStock`/`FinishedGoodsStockMapper`（原子占位 / markShipped / markUnpacked）+ `FinishedGoodsService`（三个时点）+ `InboundOrderService.receiveFinishedGoods` / `post` 的 finished 分支 / `cancelFinishedPosting` + `OrderShipmentService` 的 pack/ship/unpack 挂钩 + `FinishedGoodsController` + bmini 仓位上屏。 ｜ tags: backend-contract, inventory, finished-goods, shipment, red-proof
+
+### WH-007. 扫描水洗唛出库：套×部位粒度 + 打包工序工人授权 + 幂等（issue #7762） 🔵
+```
+你: 用户（2026-10-25，逐字）：「允许工人扫码水洗唛进行成品出库打标签操作，参考图中的格式」。
+你: 用户（2026-10-25，确认口径）：「扫码水洗唛进入手机端报工页面后操作打印出库，只有关联打包工序的工人扫码后才能操作出库」。
+数据: **判据 1（一张唛 = 一个仓位）**：打包按 `processing_order_sets` × `processing_set_part_tokens` 逐行入库 —— 同一订单 5 套的布帘 = 5 行在库、5 个不同仓位号（`uk_finished_goods_set_part_in_stock (tenant_id, set_id, order_item_id)`）。判据 = `FinishedWashLabelTest` 的套数/仓位断言 + `V197__finished_goods_set_part_granularity.sql` 的唯一索引。
+数据: **判据 2（🔴 非打包工序工人被拒）**：授权 = `production_work_logs` 里该加工单存在 `operation_name ILIKE '%打包%'` 且 `worker_id = 当前工人`。非打包工人 ⇒ `allowed=false` + 原因「只有做过打包工序的工人才能扫码出库」，写面 409，**零库存变动、零出库单**。判据 = `FinishedWashLabelTest#nonPackerIsRejectedWithZeroInventoryChange`。
+数据: **判据 3（出库即过账）**：打包工人扫在库唛 ⇒ 在库行 `in_stock → shipped`（释放仓位）+ 成品出库单 `source=scan` 单行（仓位号 = 标签「打包区域」）。判据 = `FinishedWashLabelTest#outboundMarksStockShippedAndCreatesScanDocIdempotently`。
+数据: **判据 4（幂等）**：同一张唛第二次提交 ⇒ 409「已经出库」，不重复扣减、不建第二张单（`clearInvocations` 后 `never()` 断言）。
+数据: **判据 5（标签字段 = 服务端唯一源）**：逐行内容由服务端 `label.rows` 下发；缺值行不渲染（不印 `—`、不编造），无稳定来源的「项目名称 / 款式 / 安装工艺 / 扩展选项」不出现。判据 = `#packerCanOutboundAndLabelCarriesBinAndSetNo`。
+数据: **判据 6（入口在报工页 + 打印）**：扫水洗唛 → 报工页出现「成品出库」卡片（服务端 rows 排版 + 打印 + 出库），打印走独立文档 `@page 50mm 70mm`。判据 = `frontend/worker-h5/tests/worker-h5-finished-label.test.mjs`。
+前置: 本用例是 [backend-contract]：前置 = V196 成品在库/仓位 + V197 套×部位列与唯一索引 + `production_work_logs` 既有报工记录。零网络、零 LLM。
+跳过: [backend-contract] 扫唛出库的授权/幂等/标签内容由 Java 单测 + 页面静态判据验证，非 LLM 行为
+```
+溯源: 2026-10-25 新增（issue #7762）。落码 = `FinishedGoodsService#washLabelView` / `#issueByWashLabel` / `#receiveOnPackByTokens`/`labelOf` + `FinishedGoodsStockMapper#selectInStockByWashLabel`/`markShippedById` + `ProcessingSetPartTokenMapper#selectByTokenOrShortCode`/`selectByOrderId` + `ProductionWorkLogMapper#countPackerLogs` + `OutboundOrderService#createScanOutbound` + `WorkerFinishedStockController`。 ｜ tags: backend-contract, inventory, outbound, wash-label, red-proof
+
+### WH-008. 水洗唛出库标签格式：仓位号即「打包区域」、套数/尺寸/开数/部位/主布货号逐行（issue #7762） 🔵
+```
+你: 用户（2026-10-25，附图）：车间实拍 50×70mm 热敏标签格式（订单编号 / 客户 / 下单日期 / 收货人 / 套数 / 尺寸 / 开数 / 部位 / 主布货号 / 打包区域 / 二维码 + 短码）。
+数据: **判据 1（「打包区域」= 成品仓仓位号）**：标签末行「打包区域」的值 = 在库行 `bin_code`（与成品库存页同值）。判据 = `FinishedWashLabelTest#packerCanOutboundAndLabelCarriesBinAndSetNo` 的 filteredOn(打包区域)。
+数据: **判据 2（套数行）**：`第 N 套 / 共 M 套`，N = `processing_order_sets.set_index`、M = 该加工单的套数（`selectCount`）。判据 = 同方法断言 `第3套/共5套`。
+数据: **判据 3（尺寸 / 开数 / 部位 / 主布货号）**：尺寸 = `order_items.width*height`（去尾零，如 `3*2.7`）；开数 = `order_items.open_count`；部位 = 部位码 `position_kind`；主布货号 = `order_items.sku_code`。判据 = 同方法 + `labelOf` 实现。
+数据: **判据 4（缺值不渲染）**：任一行值为空 ⇒ 该行不出现（不印 `—`、不编造）；「收货人」照实取 `orders.customer_name`（数据模型无独立收货人，不猜人名）。
+数据: **边界（照实登记）**：① 二维码**图形**本单不渲染（worker-h5 无二维码生成器）⇒ 纸面印短码 + `qr_value` 由服务端给出（`/s/<短码>`），图形另单；② 蓝牙标签机（bmini `lpapi`）本单不接，打印载体 = 浏览器 `window.print()`。
+前置: 本用例是 [backend-contract]：前置 = V197 列 + 部位码短码（V99）。零网络、零 LLM。
+跳过: [backend-contract] 标签字段来源与格式由 Java 单测断言，非 LLM 行为
+```
+溯源: 2026-10-25 新增（issue #7762）。落码 = `FinishedGoodsService#labelOf` + `frontend/worker-h5/src/render.mjs#washLabelPrintHtml`。 ｜ tags: backend-contract, inventory, wash-label, label-format
 
 ### WH-006. 入库即过账（商家建单一次请求完成）+ 成品单过账语义与布料单分道（issue #7750） 🔵
 ```
@@ -13223,8 +13251,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：897（活跃 142，跳过 755）
-- tier 分布：smoke 12 / normal 829 / adversarial 32
+- 用例总数：899（活跃 142，跳过 757）
+- tier 分布：smoke 12 / normal 831 / adversarial 32
 - 售后域：16
 - Agent 核心域：12
 - API 层域：21
@@ -13239,7 +13267,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：160
+- 杂项域：162
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：69
@@ -13421,6 +13449,8 @@
 - WH-003: 成品仓位自动分配：先复用已释放的号，占满才顺延新增（issue #7750）
 - WH-004: 出库单：布料手工出库「建单即过账」（扣库存 + 落台账），库存不足整笔拒绝（issue #7750）
 - WH-005: 成品帘入/出库闭环：打包 ⇒ 成品入库（分仓位）+ 发货 ⇒ 成品出库 + 撤销打包冲销（issue #7750）
+- WH-007: 扫描水洗唛出库：套×部位粒度 + 打包工序工人授权 + 幂等（issue #7762）
+- WH-008: 水洗唛出库标签格式：仓位号即「打包区域」、套数/尺寸/开数/部位/主布货号逐行（issue #7762）
 - WH-006: 入库即过账（商家建单一次请求完成）+ 成品单过账语义与布料单分道（issue #7750）
 - OPS-001: 云上「采购单加载失败」根因：BOOLEAN 逻辑删列 + 全局整数语义 ⇒ 真库 500（issue #7373 复盘）
 - STK-001: 盘点单：账面快照 + 差异必经审批 + 调整只改数量（issue #7373 段 2）

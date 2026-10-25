@@ -753,3 +753,11 @@ a.wh5-machine__back:active { color: var(--wh5-machine-ink); }
 }
 
 
+
+/* ── 成品出库卡片（V197 / issue #7762）：扫水洗唛后的标签预览 ── */
+.wh5-finished-label .wh5-fl-rows { margin: 2mm 0; }
+.wh5-finished-label .wh5-fl-row { display: flex; gap: 2mm; font-size: 13px; line-height: 1.5; }
+.wh5-finished-label .wh5-fl-k { flex: 0 0 5.5em; color: #555; }
+.wh5-finished-label .wh5-fl-v { flex: 1 1 auto; font-weight: 600; }
+.wh5-finished-label .wh5-fl-code { margin: 1mm 0 2mm; letter-spacing: .5px; font-weight: 700; }
+.wh5-finished-label .wh5-fl-actions { display: flex; gap: 2mm; }

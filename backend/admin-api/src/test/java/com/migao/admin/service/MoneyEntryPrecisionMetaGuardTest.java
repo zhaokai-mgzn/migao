@@ -197,6 +197,9 @@ class MoneyEntryPrecisionMetaGuardTest {
                 // 成品仓 / 出库单（V196，issue #7750）：**不带金额语义** —— 成品入库单的行金额与
                 // 总额均留 NULL（成本口径缺失，宁缺不造 0）；出库单的单价/金额值来自
                 // `product_skus` 售价列**回读**（无外部输入），且页面只做展示、不参与记账。
+                site("com/migao/admin/service/FinishedGoodsService.java", "InboundOrderItem.builder()",
+                        Admission.NO_NEW_INPUT_SOURCE,
+                        "成品入库明细原型（套×部位，V197/#7762）：只写数量 1 / 单位 set，金额与单价留 NULL"),
                 site("com/migao/admin/service/FinishedGoodsService.java", "InboundOrder.builder()",
                         Admission.NO_NEW_INPUT_SOURCE,
                         "成品入库单（source=packing）不写任何金额：总额/行金额留 NULL，不引入输入源"),

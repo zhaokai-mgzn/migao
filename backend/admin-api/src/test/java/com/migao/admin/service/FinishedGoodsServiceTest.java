@@ -13,6 +13,7 @@ import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.FinishedGoodsStockMapper;
 import com.migao.admin.mapper.OrderItemMapper;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -60,6 +61,17 @@ class FinishedGoodsServiceTest {
     @Mock private WarehouseService warehouseService;
     @Mock private InboundOrderService inboundOrderService;
     @Mock private OutboundOrderService outboundOrderService;
+    // V197 / issue #7762：套 × 部位粒度 + 扫水洗唛出库（新依赖；未 mock 会让既有用例 NPE）
+    @Mock private com.migao.admin.mapper.ProcessingSetPartTokenMapper tokenMapper;
+    @Mock private com.migao.admin.mapper.ProcessingOrderSetMapper setMapper;
+    @Mock private com.migao.admin.mapper.ProductionWorkLogMapper workLogMapper;
+    @Mock private com.migao.admin.mapper.OrderMapper orderMapper;
+
+    @BeforeEach
+    void noWashLabelTokensByDefault() {
+        // 既有用例（V196 订单行粒度）⇒ 该订单没有部位码；本类新增的扫唛用例自己 stub
+        when(tokenMapper.selectByOrderId(anyLong(), any())).thenReturn(java.util.List.of());
+    }
 
     @InjectMocks private FinishedGoodsService service;
 

@@ -36,10 +36,13 @@ public interface FinishedGoodsStockMapper extends BaseMapper<FinishedGoodsStock>
     @Select("WITH ins AS ("
             + "INSERT INTO finished_goods_stock "
             + "(tenant_id, warehouse_id, location_id, bin_code, order_id, order_no, order_item_id, "
-            + " product_id, product_name, quantity, unit, status, inbound_order_id, deleted) "
+            + " product_id, product_name, quantity, unit, status, inbound_order_id, "
+            + " set_id, set_no, set_index, part_token_id, short_code, deleted) "
             + "VALUES (#{tenantId}, #{warehouseId}, #{locationId}, #{binCode}, #{orderId}, #{orderNo}, "
             + "        #{orderItemId}, #{productId}, #{productName}, #{quantity,jdbcType=NUMERIC}, 'set', "
-            + "        'in_stock', #{inboundOrderId}, 0) "
+            + "        'in_stock', #{inboundOrderId}, "
+            + "        #{setId,jdbcType=VARCHAR}, #{setNo,jdbcType=VARCHAR}, #{setIndex,jdbcType=INTEGER}, "
+            + "        #{partTokenId,jdbcType=VARCHAR}, #{shortCode,jdbcType=VARCHAR}, 0) "
             + "ON CONFLICT DO NOTHING RETURNING id) SELECT id FROM ins")
     Long claimInStock(@Param("tenantId") Long tenantId,
                       @Param("warehouseId") Long warehouseId,
@@ -51,7 +54,23 @@ public interface FinishedGoodsStockMapper extends BaseMapper<FinishedGoodsStock>
                       @Param("productId") String productId,
                       @Param("productName") String productName,
                       @Param("quantity") BigDecimal quantity,
-                      @Param("inboundOrderId") String inboundOrderId);
+                      @Param("inboundOrderId") String inboundOrderId,
+                      @Param("setId") String setId,
+                      @Param("setNo") String setNo,
+                      @Param("setIndex") Integer setIndex,
+                      @Param("partTokenId") String partTokenId,
+                      @Param("shortCode") String shortCode);
+
+    /**
+     * V196 形态的占位重载（保留给既有调用方/单测）：套 × 部位五列为空 ⇒ 走「订单行粒度」兜底行
+     * （与 V197 之前的语义逐字相同）。
+     */
+    default Long claimInStock(Long tenantId, Long warehouseId, Long locationId, String binCode,
+                              String orderId, String orderNo, String orderItemId, String productId,
+                              String productName, BigDecimal quantity, String inboundOrderId) {
+        return claimInStock(tenantId, warehouseId, locationId, binCode, orderId, orderNo, orderItemId,
+                productId, productName, quantity, inboundOrderId, null, null, null, null, null);
+    }
 
     /** 本单当前在库的成品行（按仓位号排序，界面直接可读）。 */
     @InterceptorIgnore(tenantLine = "true")
@@ -83,4 +102,27 @@ public interface FinishedGoodsStockMapper extends BaseMapper<FinishedGoodsStock>
             + "WHERE tenant_id = #{tenantId} AND order_id = #{orderId} "
             + "AND status = 'in_stock' AND deleted = 0")
     int markUnpackedByOrder(@Param("tenantId") Long tenantId, @Param("orderId") String orderId);
+
+    /**
+     * 按水洗唛（token 或短码）取**在库**行（V197 / issue #7762：一张水洗唛 = 一个仓位）。
+     *
+     * <p>短码与 token 是同一行的两种表示，故一条 OR 条件即可；两张表都显式写 {@code tenant_id}
+     * （不靠拦截器），{@code deleted = 0} 正向相等 ⇒ 撤销的码查不到。</p>
+     */
+    @InterceptorIgnore(tenantLine = "true")
+    @Select("SELECT f.* FROM finished_goods_stock f "
+            + "JOIN processing_set_part_tokens t ON t.id = f.part_token_id "
+            + "WHERE f.tenant_id = #{tenantId} AND f.status = 'in_stock' AND f.deleted = 0 "
+            + "  AND t.tenant_id = #{tenantId} AND t.deleted = 0 "
+            + "  AND (t.token = #{key} OR t.short_code = #{key}) "
+            + "ORDER BY f.id DESC LIMIT 1")
+    FinishedGoodsStock selectInStockByWashLabel(@Param("tenantId") Long tenantId, @Param("key") String key);
+
+    /** 扫水洗唛出库：在库 → 已发货（按行 id，条件更新 ⇒ 并发只放行一次）；返回受影响行数。 */
+    @InterceptorIgnore(tenantLine = "true")
+    @Update("UPDATE finished_goods_stock SET status = 'shipped', outbound_order_id = #{outboundOrderId}, "
+            + "updated_at = NOW() WHERE tenant_id = #{tenantId} AND id = #{id} "
+            + "AND status = 'in_stock' AND deleted = 0")
+    int markShippedById(@Param("tenantId") Long tenantId, @Param("id") Long id,
+                        @Param("outboundOrderId") String outboundOrderId);
 }

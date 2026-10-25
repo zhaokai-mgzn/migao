@@ -146,8 +146,10 @@ public class WorkerProductionController {
         // 旧码收口（issue #4794）：选了（套 + 部位）才走扩展重载；否则走同一份实现的空选择形态
         // （既有调用方/既有响应一字不动 —— 无选择时行为完全相同，只是多了一个「绑定工序」入参）。
         Map<String, Object> view = StringUtils.hasText(setId) || StringUtils.hasText(orderItemId)
-                ? productionScanService.resolve(token, operationId, setId, orderItemId, tenantId, workerOperation)
-                : productionScanService.resolve(token, operationId, null, null, tenantId, workerOperation);
+                ? productionScanService.resolve(token, operationId, setId, orderItemId, tenantId,
+                        workerOperation, identity.workerId())
+                : productionScanService.resolve(token, operationId, null, null, tenantId,
+                        workerOperation, identity.workerId());
         return ApiResponse.success(view);
     }
 

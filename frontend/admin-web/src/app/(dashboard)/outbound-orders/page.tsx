@@ -1,9 +1,10 @@
 'use client'
 
+import { InlineMarkdown } from '@/lib/inline-markdown'
 import { displayEnum } from '@/lib/enum-display'
 import { SALE_FORM_FABRIC } from '@/lib/sale-form'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Plus, RefreshCw } from 'lucide-react'
+import { PackageMinus, Plus, RefreshCw, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button, EmptyState, Input, Modal, PageCard, PageHeader, Select, Table } from '@/components/ui'
 import ListLoadError from '@/components/common/ListLoadError'
@@ -315,14 +316,18 @@ export default function OutboundOrdersPage() {
   )
 
   return (
-    <div className="space-y-6">
+    <div data-testid="outbound-orders-page" className="p-6 space-y-4">
       <PageHeader
-        title="出库单"
+        title={
+          <span className="flex items-center gap-2">
+            <PackageMinus className="w-5 h-5 text-primary-600" />
+            出库单
+          </span>
+        }
         subtitle={
-          <>
-            与入库单对称的出口单据 —— <strong>建单即过账</strong>（扣库存 + 落台账一次完成）。
-            成品发货出库由发货动作自动生成，不在这里手建。
-          </>
+          <InlineMarkdown
+            text={'与入库单对称的出口单据 —— **建单即过账**（扣库存 + 落台账一次完成）。成品发货出库由发货动作自动生成，不在这里手建。'}
+          />
         }
         actions={
           <>
@@ -340,7 +345,8 @@ export default function OutboundOrdersPage() {
         }
       />
 
-      <div className="flex gap-1 border-b border-neutral-200" role="tablist">
+      {/* 视图切换：出库单 × 成品库存两个读面（药丸态 = 本仓既有口径，见库存明细页） */}
+      <div className="flex gap-2" role="tablist" aria-label="出库单视图">
         {(
           [
             ['documents', '出库单'],
@@ -354,11 +360,12 @@ export default function OutboundOrdersPage() {
             aria-selected={tab === key}
             data-testid={`outbound-tab-${key}`}
             onClick={() => setTab(key)}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm ${
-              tab === key
-                ? 'border-primary-600 font-medium text-primary-700'
-                : 'border-transparent text-neutral-500 hover:text-neutral-700'
-            }`}
+            className={
+              'rounded-md border px-3 py-1.5 text-sm ' +
+              (tab === key
+                ? 'border-primary-300 bg-primary-50 text-primary-700'
+                : 'border-neutral-300 bg-white text-neutral-600 hover:border-primary-300')
+            }
           >
             {label}
           </button>
@@ -366,8 +373,8 @@ export default function OutboundOrdersPage() {
       </div>
 
       {tab === 'documents' && (
-        <PageCard>
-          <div className="mb-4 flex flex-wrap items-center gap-2">
+        <>
+          <PageCard className="flex items-center gap-3">
             <Input
               placeholder="搜索出库单号 / 仓库 / 订单号"
               value={keyword}
@@ -375,13 +382,24 @@ export default function OutboundOrdersPage() {
               onKeyDown={(e) => {
                 if (e.key === 'Enter') setAppliedKeyword(keyword.trim())
               }}
-              className="w-72"
+              className="max-w-xs"
               data-testid="outbound-search"
             />
             <Button variant="secondary" onClick={() => setAppliedKeyword(keyword.trim())}>
-              搜索
+              <Search className="w-4 h-4 mr-1.5" />
+              查询
             </Button>
-          </div>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setKeyword('')
+                setAppliedKeyword('')
+              }}
+            >
+              重置
+            </Button>
+          </PageCard>
+          <PageCard padded={false} className="overflow-hidden">
 
           {ordersError ? (
             <ListLoadError
@@ -400,11 +418,12 @@ export default function OutboundOrdersPage() {
               emptyText="还没有出库单：布料出库点右上角「新建出库单」；成品出库在发货时自动生成"
             />
           )}
-        </PageCard>
+          </PageCard>
+        </>
       )}
 
       {tab === 'finished' && (
-        <PageCard>
+        <PageCard padded={false} className="overflow-hidden">
           {finishedError ? (
             <ListLoadError
               testId="finished-goods-load-error"

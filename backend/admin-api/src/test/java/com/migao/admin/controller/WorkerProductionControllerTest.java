@@ -203,7 +203,7 @@ class WorkerProductionControllerTest {
         verify(productionScanService, never()).resolve(any(), any(), any());
 
         when(workerSessionService.resolveIdentity("sess-1")).thenReturn(ZHANG);
-        when(productionScanService.resolve("t-1", null, null, null, TENANT, null))
+        when(productionScanService.resolve("t-1", null, null, null, TENANT, null, "worker-zhang"))
                 .thenReturn(Map.of("granularity", "set_position", "set_no", "CSO-001"));
         mockMvc.perform(get("/api/worker/production/scan").param("token", "t-1")
                         .header(WorkerSessionService.SESSION_HEADER, "sess-1"))

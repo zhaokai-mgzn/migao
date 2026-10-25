@@ -269,7 +269,7 @@ class WorkerTenantCycleGuardTest {
 
         // production 族 ②：扫码解析（读面；业务实现由 mock 提供，本守卫只判「进得来 + 租户正确」）
         when(productionScanService.resolve(eq("acc-fix4864-token"), isNull(), isNull(), isNull(),
-                eq(TENANT_A), isNull()))
+                eq(TENANT_A), isNull(), eq(WORKER_ID_A)))
                 .thenReturn(Map.of("granularity", "order"));
         mockMvc.perform(get("/api/worker/production/scan")
                         .param("token", "acc-fix4864-token")
