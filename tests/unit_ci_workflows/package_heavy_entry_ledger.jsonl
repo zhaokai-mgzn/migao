@@ -14,3 +14,4 @@
 {"id":"1792858670.82241.5063","ts":"2026-10-24T16:17:51Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/7552-image-gen-failure-codes","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1792858680.82568.10708","ts":"2026-10-24T16:18:00Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/7552-image-gen-failure-codes","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1792889475.46915.31912","ts":"2026-10-25T00:51:16Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/7709-inbound-roll-meters","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1792894413.28510.25001","ts":"2026-10-25T02:13:34Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/fix-7716-quotation-fee-unit-price","why":"子包 worktree 直跑全量（无批次标记）"}
