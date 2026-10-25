@@ -38,14 +38,16 @@ export default function OrderUrgencyPanel({
   onChanged: () => void
 }) {
   const [isUrgent, setIsUrgent] = useState(order.isUrgent === true)
+  const [isOutsourced, setIsOutsourced] = useState(order.isOutsourced === true)
   const [deliveryDate, setDeliveryDate] = useState(order.requiredDeliveryDate ?? '')
   const [saving, setSaving] = useState(false)
 
   // 订单重新加载（或切到另一张单）⇒ 控件同步回**服务端真值**
   useEffect(() => {
     setIsUrgent(order.isUrgent === true)
+    setIsOutsourced(order.isOutsourced === true)
     setDeliveryDate(order.requiredDeliveryDate ?? '')
-  }, [order.id, order.isUrgent, order.requiredDeliveryDate])
+  }, [order.id, order.isUrgent, order.isOutsourced, order.requiredDeliveryDate])
 
   const handleSave = async () => {
     setSaving(true)
@@ -54,9 +56,10 @@ export default function OrderUrgencyPanel({
       // （`''` ⇒ 服务端按「清空到货日」处理，不会误解成「不改」）。
       await orderApi.updateUrgency(order.id, {
         isUrgent,
+        isOutsourced,
         requiredDeliveryDate: deliveryDate,
       })
-      toast.success('加急 / 到货日已更新')
+      toast.success('生产标记已更新')
       onChanged()
     } catch (e) {
       toastRequestError(e, '更新加急 / 到货日失败')
@@ -108,6 +111,30 @@ export default function OrderUrgencyPanel({
             <span className="text-sm text-neutral-700">加急（插队）</span>
           </div>
 
+          {/* 外发加工（V194，issue #7746 后续）：与加急同款「不参与合并、逐单立即派」，
+              区别是派单时**必须**选承接方（加工厂）。用 role="switch"（同「加急」的理由）。 */}
+          <div className="flex items-center gap-2 h-9">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={isOutsourced}
+              aria-label="外发加工"
+              onClick={() => setIsOutsourced((v) => !v)}
+              className={cn(
+                'inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
+                isOutsourced ? 'bg-primary-600' : 'bg-neutral-300'
+              )}
+            >
+              <span
+                className={cn(
+                  'ml-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform',
+                  isOutsourced && 'translate-x-4'
+                )}
+              />
+            </button>
+            <span className="text-sm text-neutral-700">外发加工（交给加工厂）</span>
+          </div>
+
           <div>
             <label
               htmlFor="order-required-delivery-date"
@@ -128,7 +155,8 @@ export default function OrderUrgencyPanel({
             保存
           </Button>
           <span className="text-xs text-neutral-400 pb-2.5">
-            留空 = 未指定（清空后不再参与派单排序）；加急单不参与合并，在智能派单页单独派单
+            留空 = 未指定（清空后不再参与派单排序）；加急 / 外发单都不参与合并，在智能派单页单独派单
+            （外发必须先选承接方）
           </span>
         </div>
       </div>

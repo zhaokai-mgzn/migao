@@ -2,22 +2,24 @@
   "success": true,
   "data": {
     "todayOrders": 0,
-    "todayOrdersChange": 0.0,
+    "todayOrdersChange": -100.0,
     "todaySales": 0,
-    "todaySalesChange": 0.0,
+    "todaySalesChange": -100.0,
     "totalCustomers": 2,
     "newCustomersToday": 0,
     "activeSessions": 0,
     "aiSessionRate": 0.0,
-    "monthRevenue": 1837281,
-    "monthRevenueChange": 4362.1,
-    "totalProducts": 99,
-    "totalOrders": 784,
-    "totalTickets": 47,
-    "pendingShipOrders": 86,
-    "processingPendingOrders": 48,
-    "lowStockItems": 250
+    "monthRevenue": 238,
+    "monthRevenueChange": -94.2,
+    "totalProducts": 5,
+    "totalOrders": 15,
+    "totalTickets": 2,
+    "overdueTickets": 0,
+    "pendingShipOrders": 9,
+    "pendingPaymentOrders": 1,
+    "processingPendingOrders": 8,
+    "lowStockItems": 8
   },
-  "requestId": "req_8b5a4384845c491d",
-  "timestamp": 1790289815
+  "requestId": "req_8bb548b67f87438a",
+  "timestamp": 1792915041
 }

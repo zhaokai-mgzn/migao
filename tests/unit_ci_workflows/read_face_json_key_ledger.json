@@ -191,6 +191,7 @@
         "remark": "remark",
         "closeReason": "closeReason",
         "isUrgent": "isUrgent",
+        "isOutsourced": "isOutsourced",
         "requiredDeliveryDate": "requiredDeliveryDate",
         "createdByName": "createdByName",
         "needsWork": "needs_work",

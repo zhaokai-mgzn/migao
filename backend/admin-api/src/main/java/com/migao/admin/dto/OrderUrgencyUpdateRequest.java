@@ -32,6 +32,12 @@ public class OrderUrgencyUpdateRequest {
     private Boolean isUrgent;
 
     /**
+     * 外发加工标记（V194，issue #7746 的后续裁定）：{@code null} = **不改**；
+     * {@code true}/{@code false} = 显式设值（后者是「收回自做」的真实意图，不是「没填」）。
+     */
+    private Boolean isOutsourced;
+
+    /**
      * 客户要求到货日：{@code null} = 不改；{@code ""} = 清空（未指定）；
      * {@code YYYY-MM-DD} = 设为该日期；其它 ⇒ 显式拒绝（422）。
      */

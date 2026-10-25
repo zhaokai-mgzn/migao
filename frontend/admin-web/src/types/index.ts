@@ -2184,6 +2184,8 @@ export interface Order {
    * （两者只是命名风格相近）。缺省 `false` = 不加急 —— 前端**不做**客户端默认，读服务端值。
    */
   isUrgent?: boolean
+  /** **外发加工**（V194，issue #7746 后续）：true ⇒ 不进成批候选、派单时必须选承接方（加工厂）。 */
+  isOutsourced?: boolean
   /**
    * **要求到货日**（issue #5177；库列 `orders.required_delivery_date`，DATE）。
    * `YYYY-MM-DD`；`null` = **未指定**（不猜、不写死默认）。
@@ -2239,6 +2241,8 @@ export interface OrderFormData {
    * 且页面**不得默认勾上**。与售后 priority 零联动。
    */
   isUrgent?: boolean
+  /** **外发加工**（V194）：`true` ⇒ 派单时必须选承接方；未勾选时本键不得出现（同 isUrgent 的三态纪律）。 */
+  isOutsourced?: boolean
   /**
    * **要求到货日**（issue #5177）：`YYYY-MM-DD`。
    * **缺省 = 不传 = 未指定**（不猜）—— 未填时本键**不得出现**在请求体里。
@@ -2261,6 +2265,11 @@ export interface OrderFormData {
  */
 export interface OrderUrgencyParams {
   isUrgent?: boolean | null
+  /**
+   * 外发加工标记（V194，issue #7746 后续）：`null` / 缺省 ⇒ **本字段不改**；
+   * `true` / `false` ⇒ 显式设值（后者 = 收回自做）。
+   */
+  isOutsourced?: boolean | null
   requiredDeliveryDate?: string | null
 }
 
@@ -4002,6 +4011,8 @@ export interface PoolLine {
   overdue: boolean
   /** 非空列 ⇒ 服务端**总是**下发（缺省 false = 不加急） */
   isUrgent: boolean
+  /** 外发加工标记（V194，issue #7746 后续）：true ⇒ 不进池、进外发区、派单必须选承接方。 */
+  isOutsourced?: boolean
   /**
    * 到货日 `YYYY-MM-DD`。
    * 🔴 后端 Jackson 配了 `default-property-inclusion: non_null` ⇒ **未指定时这个键整个缺席**
@@ -4236,6 +4247,10 @@ export interface PoolBoard {
   warnings?: PoolWarning[]
   /** 加急插队区：这些单**不进池**（不是成批候选），要立刻单派 */
   urgentLines?: PoolLine[]
+  /** 外发区（issue #7746 后续）：订单标记了外发 ⇒ 不进池、逐单立即派，且**必须**选承接方 */
+  outsourcedLines?: PoolLine[]
+  /** = `outsourcedLines` 去重后的订单数 */
+  outsourcedCount?: number
   groups?: PoolGroup[]
 }
 

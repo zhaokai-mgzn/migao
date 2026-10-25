@@ -78,7 +78,7 @@ class OrderUrgencyFieldsTest {
     @Test
     @DisplayName("🔴 判据1/6 改单只写「那两列 + 时间戳」——SET 子句里不得出现任何金额/状态/售后字段")
     void updateUrgencyWritesOnlyTheTwoOwnColumns() {
-        orderService.updateUrgency(ORDER_ID, true, "2026-10-01");
+        orderService.updateUrgency(ORDER_ID, true, null, "2026-10-01");
 
         ArgumentCaptor<LambdaUpdateWrapper<Order>> captor = captorOfWrapper();
         verify(orderMapper).update(isNull(), captor.capture());
@@ -116,7 +116,7 @@ class OrderUrgencyFieldsTest {
     @DisplayName("改单三态：null = 不改 / \"\" = 清空（真的能清）/ 日期 = 设值")
     void updateUrgencyTriState() {
         // ① 只改加急 ⇒ 到货日不进 SET（否则「只改加急」会顺手把到货日抹掉）
-        orderService.updateUrgency(ORDER_ID, true, null);
+        orderService.updateUrgency(ORDER_ID, true, null, null);
         ArgumentCaptor<LambdaUpdateWrapper<Order>> first = captorOfWrapper();
         verify(orderMapper).update(isNull(), first.capture());
         assertThat(first.getValue().getSqlSet()).contains("is_urgent")
@@ -124,7 +124,7 @@ class OrderUrgencyFieldsTest {
 
         // ② 空串 = 清空：必须在 SET 里出现该列（MyBatis-Plus 的 NOT_NULL 策略会跳过 null 字段
         //    ⇒ 走 updateById 永远清不掉，这正是本方法用显式 set 的理由）
-        orderService.updateUrgency(ORDER_ID, null, "");
+        orderService.updateUrgency(ORDER_ID, null, null, "");
         ArgumentCaptor<LambdaUpdateWrapper<Order>> second = captorOfWrapper();
         verify(orderMapper, org.mockito.Mockito.times(2)).update(isNull(), second.capture());
         assertThat(second.getValue().getSqlSet())
@@ -136,15 +136,15 @@ class OrderUrgencyFieldsTest {
     @Test
     @DisplayName("🔴 fail-closed：非法日期 / 全空白串 ⇒ 显式拒绝，且**一次 update 都不发**")
     void malformedOrBlankDateIsRejectedWithoutAnyWrite() {
-        assertThatThrownBy(() -> orderService.updateUrgency(ORDER_ID, null, "2026/10/01"))
+        assertThatThrownBy(() -> orderService.updateUrgency(ORDER_ID, null, null, "2026/10/01"))
                 .as("斜杠格式不得静默回落（回落成清空 = 静默丢数据）")
                 .isInstanceOf(BusinessException.class).hasMessageContaining("到货日格式不正确");
-        assertThatThrownBy(() -> orderService.updateUrgency(ORDER_ID, null, "  "))
+        assertThatThrownBy(() -> orderService.updateUrgency(ORDER_ID, null, null, "  "))
                 .as("⚠️ 全空白串不是「清空」：它更像误输入 ⇒ 拒绝（只有空串才是明确的清空）")
                 .isInstanceOf(BusinessException.class).hasMessageContaining("到货日格式不正确");
-        assertThatThrownBy(() -> orderService.updateUrgency(ORDER_ID, null, "2026-13-45"))
+        assertThatThrownBy(() -> orderService.updateUrgency(ORDER_ID, null, null, "2026-13-45"))
                 .as("不存在的日期同样拒绝").isInstanceOf(BusinessException.class);
-        assertThatThrownBy(() -> orderService.updateUrgency(ORDER_ID, null, null))
+        assertThatThrownBy(() -> orderService.updateUrgency(ORDER_ID, null, null, null))
                 .as("两个字段都不传 ⇒ 显式拒绝（静默 200 会让调用方以为改动生效了）")
                 .isInstanceOf(BusinessException.class).hasMessageContaining("至少要传一个");
 

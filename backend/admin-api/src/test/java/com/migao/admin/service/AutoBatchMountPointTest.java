@@ -231,7 +231,7 @@ class AutoBatchMountPointTest {
         when(orderMapper.selectById("order-001")).thenReturn(confirmed);
         when(orderMapper.update(any(), any())).thenReturn(1);
 
-        orderService.updateUrgency("order-001", Boolean.TRUE, LocalDate.now().plusDays(3).toString());
+        orderService.updateUrgency("order-001", Boolean.TRUE, null, LocalDate.now().plusDays(3).toString());
 
         verify(poolChangeNotifier).notify(TENANT, PoolChangeNotifier.TRIGGER_ORDER_UPDATED);
     }
@@ -260,7 +260,7 @@ class AutoBatchMountPointTest {
         doThrow(new IllegalStateException("夹具：通知点炸了")).when(poolChangeNotifier)
                 .notify(any(), any());
 
-        assertThatCode(() -> orderService.updateUrgency("order-001", Boolean.TRUE, null))
+        assertThatCode(() -> orderService.updateUrgency("order-001", Boolean.TRUE, null, null))
                 .doesNotThrowAnyException();
         verify(orderMapper).update(any(), any());
     }

@@ -422,6 +422,11 @@ class OrderDtoContractTest {
                 "下单用户 ID：**只有 Java 侧**有（C 端数据隔离绑定真实用户）；ai-agent 工具不传它 —— "
                         + "服务端由 ServiceTokenFilter 从请求头 X-User-Id 透传并**覆盖**客户端传值，"
                         + "故它在 agent 的 wire 上是死字段（登记见 issue #4089 清单 §2）");
+        REGISTERED_SINGLE_SIDED_FIELDS.put("isOutsourced",
+                "订单级**外发加工**标记（V194，issue #7746 的后续裁定「外单应该和加急单一样」）："
+                        + "**只有 Java 侧**有人工下单/订单详情采集它；ai-agent 的 order_create 工具 schema "
+                        + "**不采集**（与 isUrgent 同款单侧性）⇒ 服务端在 agent 路径**未传就不写该列**，"
+                        + "落列默认 FALSE = 本厂自做，与今天逐字相同");
         REGISTERED_SINGLE_SIDED_FIELDS.put("logisticsType",
                 "订单收货——物流类型（issue #4872）：**只有 Java 侧**有人工下单表单采集它"
                         + "（`express` 快递 / `logistics` 物流专线，与 order_logistics.logistics_type 同词表）；"

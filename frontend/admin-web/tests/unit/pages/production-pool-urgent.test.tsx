@@ -17,12 +17,14 @@ import { toast } from 'sonner'
 const mockGetBoard = vi.fn()
 const mockPreview = vi.fn()
 const mockDispatch = vi.fn()
+const mockProcessors = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   poolBoardApi: {
     getBoard: (...a: unknown[]) => mockGetBoard(...a),
     preview: (...a: unknown[]) => mockPreview(...a),
     dispatch: (...a: unknown[]) => mockDispatch(...a),
+    processors: (...a: unknown[]) => mockProcessors(...a),
   },
 }))
 
@@ -180,6 +182,7 @@ describe('智能派单 · 加急插队区（PR-080）', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetBoard.mockResolvedValue(ok(board()))
+    mockProcessors.mockResolvedValue(ok([{ id: 'sup-1', name: '朝阳加工厂' }]))
     // 🔴 显式注解成 `PoolPreview`：形状写错（例如把 `perOrderPlannedMeters` 写成 map）⇒ **tsc 红**
     const urgentPreview: PoolPreview = {
         orderCount: 1,
@@ -323,5 +326,42 @@ describe('智能派单 · 加急插队区（PR-080）', () => {
     expect(screen.queryByTestId('pool-status-pooling')).toBeNull()
     expect(screen.getByTestId('pool-status-max-wait')).toHaveTextContent('24')
     expect(screen.getByTestId('pool-status-order-count')).toBeInTheDocument()
+  })
+})
+
+// ============================================================ 外发区（V194，issue #7746 后续）
+
+describe('外发区：订单标记「外发加工」⇒ 不进池、逐单立即派、必须先选承接方', () => {
+  const OUT_A = line({ orderId: 'x1', orderNo: 'MG-OUT-1', itemId: 'ix1', waitHours: 5 })
+  const boardWithOutsourced = (): PoolBoard =>
+    board({ outsourcedLines: [{ ...OUT_A, isOutsourced: true }], outsourcedCount: 1 })
+
+  it('外发单单独成区、不进成批候选；未选承接方时「立即派单」不可用', async () => {
+    mockGetBoard.mockResolvedValue(ok(boardWithOutsourced()))
+    render(<ProductionPoolPage />)
+
+    const section = await screen.findByTestId('pool-outsourced-section')
+    expect(within(section).getByText('MG-OUT-1')).toBeInTheDocument()
+    const groups = screen.getByTestId('pool-groups-section')
+    expect(within(groups).queryByText('MG-OUT-1')).toBeNull()
+    expect(screen.getByTestId('pool-outsourced-dispatch-x1')).toBeDisabled()
+  })
+
+  it('选了承接方 ⇒ 立即派单带 processorSupplierId（单订单 + pooled:false）', async () => {
+    mockGetBoard.mockResolvedValue(ok(boardWithOutsourced()))
+    mockDispatch.mockResolvedValue(ok([{ orderId: 'x1', success: true, processingOrderNo: 'JG-1' }]))
+    render(<ProductionPoolPage />)
+    await screen.findByTestId('pool-outsourced-section')
+
+    fireEvent.change(screen.getByLabelText('承接方'), { target: { value: 'sup-1' } })
+    const btn = screen.getByTestId('pool-outsourced-dispatch-x1')
+    await waitFor(() => expect(btn).not.toBeDisabled())
+    fireEvent.click(btn)
+
+    await waitFor(() => expect(mockDispatch).toHaveBeenCalled())
+    const body = mockDispatch.mock.calls[0][0] as Record<string, unknown>
+    expect(body.orderIds).toEqual(['x1'])
+    expect(body.pooled).toBe(false)
+    expect(body.processorSupplierId).toBe('sup-1')
   })
 })
