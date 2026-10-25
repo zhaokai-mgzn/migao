@@ -635,9 +635,10 @@ class AuthServiceTest {
                 "inbound-orders", "suppliers", "purchase-orders");
         var inventory = groupByKey(menus, "inventory-center");
         assertThat(keysOf(inventory.getChildren())).containsExactly(
-                "stock-ledger", "stocktakes", "shipments", "production-remnants", "production-saving-board");
+                "stock-ledger", "stocktakes", "outbound-orders", "shipments", "production-remnants",
+                "production-saving-board");
         assertThat(pathsOf(inventory.getChildren())).containsExactly(
-                "/stock-ledger", "/stocktakes", "/shipments", "/production/remnants",
+                "/stock-ledger", "/stocktakes", "/outbound-orders", "/shipments", "/production/remnants",
                 "/production/saving-board");
 
         var org = groupByKey(menus, "org-center");
@@ -762,8 +763,9 @@ class AuthServiceTest {
         assertThat(pathsOf(supply.getChildren()))
                 .containsExactly("/inbound-orders", "/suppliers", "/purchase-orders");
         var inventoryGroup = groupByKey(menus, "inventory-center");
-        assertThat(namesOf(inventoryGroup.getChildren())).containsExactly("盘点单");
-        assertThat(pathsOf(inventoryGroup.getChildren())).containsExactly("/stocktakes");
+        // #7750：出库单与盘点单同码 inbound:view ⇒ 同一权限集下两项都在
+        assertThat(namesOf(inventoryGroup.getChildren())).containsExactly("盘点单", "出库单");
+        assertThat(pathsOf(inventoryGroup.getChildren())).containsExactly("/stocktakes", "/outbound-orders");
         // 自证渲染面非空（入库单自己）+ 反向：processing:manage 的两项确实被门控挡在外面
         assertThat(allNames(menus)).contains("入库单");
         assertThat(allNames(menus)).doesNotContain("余料台账", "省料看板", "作业看板");

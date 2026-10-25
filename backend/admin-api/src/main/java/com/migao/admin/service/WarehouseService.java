@@ -33,6 +33,64 @@ public class WarehouseService {
                 .orderByAsc(Warehouse::getCode));
     }
 
+    /** 成品仓编码（V196 自动建的唯一缺省值；商家自建同码时自动顺延 CP2/CP3）。 */
+    public static final String FINISHED_WAREHOUSE_CODE = "CP";
+    /** 成品仓名称。 */
+    public static final String FINISHED_WAREHOUSE_NAME = "成品仓";
+    /** 原料仓编码（成品仓之外给商家参考的建仓缺省值；本服务不自动建原料仓）。 */
+    public static final String MATERIAL_WAREHOUSE_CODE = "MAIN";
+
+    /**
+     * **成品仓（找不到就建一个）** —— 打包入库的前置条件（V196 / issue #7750）。
+     *
+     * <p>为什么要「找或建」而不是要求商家先建：打包是车间动作，工人不该因为「仓库档案没建」
+     * 被打断（与 #7592「开租即种默认主仓」同一条产品口径）。建仓是幂等的：
+     * 已存在 type=finished 的仓 ⇒ 直接用它；没有 ⇒ 用 {@link #FINISHED_WAREHOUSE_CODE} 占号，
+     * 同号被占则顺延（{@code CP2}、{@code CP3}…）。</p>
+     *
+     * <p>并发安全：占号走 {@code ON CONFLICT DO NOTHING}（唯一冲突不会把事务打成 aborted），
+     * 抢不到就回读「已有 type=finished 的仓」—— 两个首次打包请求只会建出一个仓。</p>
+     */
+    @Transactional
+    public Warehouse ensureFinishedWarehouse(Long tenantId) {
+        for (int attempt = 0; attempt < 5; attempt++) {
+            Warehouse existing = firstOfType(tenantId, Warehouse.TYPE_FINISHED);
+            if (existing != null) {
+                return existing;
+            }
+            String code = FINISHED_WAREHOUSE_CODE;
+            int suffix = 1;
+            while (codeTaken(tenantId, code)) {
+                code = FINISHED_WAREHOUSE_CODE + (++suffix);
+            }
+            warehouseMapper.claimWarehouse(tenantId, code, FINISHED_WAREHOUSE_NAME,
+                    Warehouse.TYPE_FINISHED, "成品帘打包入库自动建仓（issue #7750）");
+            Warehouse created = firstOfType(tenantId, Warehouse.TYPE_FINISHED);
+            if (created != null) {
+                log.info("[warehouse] 成品仓就绪 | tenant={} code={}", tenantId, created.getCode());
+                return created;
+            }
+        }
+        throw BusinessException.conflict("成品仓创建失败（并发占号）", "请重试；重复提交不会建出第二个成品仓");
+    }
+
+    /** 某类型的第一个仓（按 id 升序；单租户单成品仓由调用方口径保证）。 */
+    public Warehouse firstOfType(Long tenantId, String warehouseType) {
+        List<Warehouse> rows = warehouseMapper.selectList(new LambdaQueryWrapper<Warehouse>()
+                .eq(Warehouse::getTenantId, tenantId)
+                .eq(Warehouse::getWarehouseType, warehouseType)
+                .eq(Warehouse::getStatus, "active")
+                .orderByAsc(Warehouse::getId)
+                .last("LIMIT 1"));
+        return rows.isEmpty() ? null : rows.get(0);
+    }
+
+    private boolean codeTaken(Long tenantId, String code) {
+        return warehouseMapper.exists(new LambdaQueryWrapper<Warehouse>()
+                .eq(Warehouse::getTenantId, tenantId)
+                .eq(Warehouse::getCode, code));
+    }
+
     /** 建仓（编码同租户唯一；`isDefault` 为真时把旧的默认仓取消）。 */
     @Transactional
     public Warehouse create(WarehouseCreateRequest request, Long tenantId) {
@@ -43,8 +101,9 @@ public class WarehouseService {
             throw BusinessException.validationError("仓名称不能为空");
         }
         String type = request.getWarehouseType() == null ? Warehouse.TYPE_STORE : request.getWarehouseType();
-        if (!List.of(Warehouse.TYPE_STORE, Warehouse.TYPE_PROCESSING).contains(type)) {
-            throw BusinessException.validationError("仓库类型必须是 store 或 processing");
+        if (!Warehouse.TYPES.contains(type)) {
+            // 合法集 = 实体常量（与表 CHECK 同一份），不在这里再抄一遍字面量
+            throw BusinessException.validationError("仓库类型必须是 " + String.join(" / ", Warehouse.TYPES));
         }
         boolean asDefault = Boolean.TRUE.equals(request.getIsDefault());
         if (asDefault) {

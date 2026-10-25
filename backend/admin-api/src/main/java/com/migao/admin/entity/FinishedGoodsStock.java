@@ -1,0 +1,91 @@
+package com.migao.admin.entity;
+
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableLogic;
+import com.baomidou.mybatisplus.annotation.TableName;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+
+/**
+ * 成品在库（V196，issue #7750）—— 一行 = 一个打包后的成品订单行（含仓位号）。
+ *
+ * <h3>为什么粒度是「订单行」而不是「套」</h3>
+ * <p>与入库单的批次粒度同源（V111 用户裁定「一个 SKU 行 = 一个批次」）：仓位的载体是**这一件成品**
+ * （一个订单行就是一件要发走的成品），按套拆行会让「一单 3 套」变成 3 个仓位，
+ * 而车间实际是同一捆布料/同一个包装 —— 拆行只增加搬运成本，不增加可追溯性。</p>
+ *
+ * <h3>三态（DB CHECK 兜住）</h3>
+ * <ul>
+ *   <li>{@link #STATUS_IN_STOCK} —— 在库：{@code (tenant_id, bin_code)} 局部唯一
+ *       ⇒ <b>一个仓位同一时刻只放一个在库成品</b>（并发打包各自算同一个「空闲号」时靠它拦下）；</li>
+ *   <li>{@link #STATUS_SHIPPED} —— 已发货出库（由成品出库单写入）；</li>
+ *   <li>{@link #STATUS_UNPACKED} —— 撤销打包（入库单作废，仓位释放）。</li>
+ * </ul>
+ */
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@TableName("finished_goods_stock")
+public class FinishedGoodsStock {
+
+    /** 在库（占用仓位） */
+    public static final String STATUS_IN_STOCK = "in_stock";
+    /** 已发货出库（仓位释放） */
+    public static final String STATUS_SHIPPED = "shipped";
+    /** 撤销打包（仓位释放，入库单作废） */
+    public static final String STATUS_UNPACKED = "unpacked";
+
+    /** 单位 · 套（成品帘的计量单位） */
+    public static final String UNIT_SET = "set";
+
+    @TableId(type = IdType.AUTO)
+    private Long id;
+
+    private Long tenantId;
+
+    private Long warehouseId;
+
+    private Long locationId;
+
+    /** 仓位号快照（分配那一刻写死） */
+    private String binCode;
+
+    private String orderId;
+
+    private String orderNo;
+
+    /** 成品订单行（一个订单行 = 一个在库行，不按套拆） */
+    private String orderItemId;
+
+    private String productId;
+
+    private String productName;
+
+    private BigDecimal quantity;
+
+    /** {@link #UNIT_SET} */
+    private String unit;
+
+    /** {@link #STATUS_IN_STOCK} / {@link #STATUS_SHIPPED} / {@link #STATUS_UNPACKED} */
+    private String status;
+
+    /** 进货的成品入库单（打包时自动建） */
+    private String inboundOrderId;
+
+    /** 出货的成品出库单（发货时自动建） */
+    private String outboundOrderId;
+
+    private OffsetDateTime createdAt;
+
+    private OffsetDateTime updatedAt;
+
+    @TableLogic
+    private Integer deleted;
+}

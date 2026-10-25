@@ -77,7 +77,9 @@
 --     tenant_param_audit（V131，issue #5131 §22 P6：企业参数变更留痕 = 一行一个参数键的一次变更；
 --       与 worker_report_audits 同族 —— 只追加 + 「身份是怎么确定的」，且**不在**配置写入的事务里），
 --     tenant_payment_qrcodes, user_suggestion_prefs, worker_sessions,
---     inbound_orders, inbound_order_items, stock_batches
+--     inbound_orders, inbound_order_items, stock_batches,
+--     warehouse_locations, outbound_orders, outbound_order_items, finished_goods_stock
+--     （后四张 = V196 / issue #7750 的成品仓 + 出库单）
 --     （入库单 / 批次，V111，issue #5034 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本；
 --     inbound_labels
 --      入库标签（V134，issue #5052 P2 —— 一行 = 一个入库单明细行 = 一张 50×30mm 标签：

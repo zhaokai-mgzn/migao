@@ -83,6 +83,10 @@ import type {
   ProcessingOrderUpdateParams,
   InboundOrder,
   InboundOrderLine,
+  OutboundOrder,
+  OutboundOrderCreateParams,
+  FinishedGoods,
+  WarehouseLocation,
   InboundBatch,
   InboundOrderCreateParams,
   OpeningImportReport,
@@ -2245,6 +2249,41 @@ export const workerPageCatalogApi = {
 export const warehouseApi = {
   /** 仓库列表（默认仓排最前）：`GET /api/admin/warehouses`，码 `inbound:view`。 */
   list: () => request.get<ApiResponse<Warehouse[]>>('/api/admin/warehouses'),
+}
+
+/**
+ * 出库单（V194 / issue #7750）—— 与入库单**对称**：列表 / 详情 / **建单即过账**。
+ *
+ * 权限码复用 `inbound:view`（读）/ `inbound:create`（写）：仓管收发同岗，零授权 delta。
+ * 出库单**没有草稿态**：`create` 成功即已扣库存、已落台账、已生成单据。
+ */
+export const outboundOrderApi = {
+  list: (params?: { keyword?: string; bizCategory?: 'fabric' | 'finished' }) =>
+    request.get<ApiResponse<OutboundOrder[]>>('/api/admin/outbound-orders', { params }),
+
+  detail: (id: string) =>
+    request.get<ApiResponse<OutboundOrder>>(`/api/admin/outbound-orders/${id}`),
+
+  create: (data: OutboundOrderCreateParams) =>
+    request.post<ApiResponse<OutboundOrder>>('/api/admin/outbound-orders', data),
+}
+
+/**
+ * 成品库存与仓位（V194 / issue #7750）—— 「这件成品现在在哪个仓位」。
+ *
+ * 读面权限码 `inbound:view`；`finishedWarehouse` 返回 null 表示该租户还没有成品仓
+ * （**读面不建仓**：第一次打包时才会自动建）。
+ */
+export const finishedGoodsApi = {
+  listInStock: () => request.get<ApiResponse<FinishedGoods[]>>('/api/admin/finished-goods'),
+
+  locations: (warehouseId?: number) =>
+    request.get<ApiResponse<WarehouseLocation[]>>('/api/admin/warehouse-locations', {
+      params: warehouseId == null ? undefined : { warehouseId },
+    }),
+
+  finishedWarehouse: () =>
+    request.get<ApiResponse<Warehouse | null>>('/api/admin/warehouses/finished'),
 }
 
 /**

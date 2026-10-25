@@ -654,7 +654,7 @@ class BatchNoTakeRaceRealDbTest {
                 delayedStockBatchMapper(s.getMapper(StockBatchMapper.class)),
                 s.getMapper(ProductSkuMapper.class),
                 s.getMapper(ProductMapper.class),
-                stockLedgerService);
+                stockLedgerService, null, null);
     }
 
     /**

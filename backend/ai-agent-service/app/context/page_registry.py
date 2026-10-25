@@ -192,6 +192,13 @@ TRUTH_SOURCES: Dict[str, TruthSource] = {
     # issue #7140（= #5652 的商家面）：质检记录的展示口径 —— 一条 = **一件成品帘**、
     # 判定三态（合格 / 返工 / 报废）、**未检 ≠ 合格**、缺值印「—」不折 0。
     # 真值源 = 该口径的**唯一实现模块**（质检记录页与作业单质检区都从它取值）。
+    # 出库单（V196 / issue #7750）：问「出库单为什么没有草稿 / 库存怎么扣的 / 成品仓位怎么释放」
+    # ⇒ 引服务层口径（建单即过账 = 一次请求内扣库存 + 落台账；成品出库只随发货并释放仓位）。
+    "outbound-order-lifecycle": TruthSource(
+        label="出库单口径（建单即过账 · 布料扣米数库存 · 成品释放仓位）",
+        citation="依据：本店出库单口径说明",
+        path="backend/admin-api/src/main/java/com/migao/admin/service/OutboundOrderService.java",
+    ),
     "quality-inspection-display": TruthSource(
         label="质检记录口径（一件成品帘一条 · 合格/返工/报废 · 未检不折成合格）",
         citation="依据：本店质检记录口径说明",
@@ -241,6 +248,13 @@ PAGE_REGISTRY: Tuple[PageEntry, ...] = (
     PageEntry(
         route="/stocktakes",
         truth_source="stocktake-counting",
+        page_permissions=("inbound:view",),
+        entity_permissions=(),
+    ),
+    # 出库单（V196 / issue #7750）：与入库单对称的出口单据（布料手工出库 + 成品发货出库同形）。
+    PageEntry(
+        route="/outbound-orders",
+        truth_source="outbound-order-lifecycle",
         page_permissions=("inbound:view",),
         entity_permissions=(),
     ),

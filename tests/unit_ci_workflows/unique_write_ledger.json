@@ -178,6 +178,11 @@
     "backend/admin-api/src/main/java/com/migao/admin/service/WarehouseSeedService.java::warehouseMapper": {
       "table": "warehouses",
       "handling": "backend/admin-api/src/main/java/com/migao/admin/service/WarehouseSeedService.java"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/OutboundOrderService.java::outboundOrderMapper": {
+      "table": "outbound_orders",
+      "handling": "none",
+      "note": "出库单号由服务端生成（CK-年月-随机），同号冲突概率极低且属「不该发生」形态 —— 按缺口登记（无 ON CONFLICT / 无 DuplicateKeyException 映射）；若要根治，建单路径应改为 ON CONFLICT DO NOTHING + 影响行数判首次（issue #7750 已登记为已知缺口）。"
     }
   }
 }

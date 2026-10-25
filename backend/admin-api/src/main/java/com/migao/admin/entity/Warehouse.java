@@ -22,6 +22,14 @@ public class Warehouse {
     public static final String TYPE_STORE = "store";
     /** 加工仓。 */
     public static final String TYPE_PROCESSING = "processing";
+    /** 原料仓（V196 / issue #7750）：装布料等原材料 —— 存量默认仓由 V196 回填成它。 */
+    public static final String TYPE_MATERIAL = "material";
+    /** 成品仓（V196 / issue #7750）：装打包后的成品帘；成品仓位（{@code warehouse_locations}）挂在它下面。 */
+    public static final String TYPE_FINISHED = "finished";
+
+    /** 全部合法类型（与表 CHECK 逐字一致；服务层校验用它，不各写一份）。 */
+    public static final java.util.List<String> TYPES =
+            java.util.List.of(TYPE_STORE, TYPE_PROCESSING, TYPE_MATERIAL, TYPE_FINISHED);
 
     @TableId(type = IdType.AUTO)
     private Long id;
@@ -33,7 +41,7 @@ public class Warehouse {
 
     private String name;
 
-    /** {@link #TYPE_STORE} / {@link #TYPE_PROCESSING}。 */
+    /** {@link #TYPE_STORE} / {@link #TYPE_PROCESSING} / {@link #TYPE_MATERIAL} / {@link #TYPE_FINISHED}。 */
     private String warehouseType;
 
     /** 默认仓：同租户**只能有一个**（部分唯一索引兜住，不靠服务层自觉）。 */

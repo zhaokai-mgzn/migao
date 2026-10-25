@@ -224,6 +224,10 @@ public class MenuController {
         // 盘点单（issue #7373 段 3 前端）：节点码 = 该页第一屏读端点 `GET /api/admin/stocktakes` 的
         // **方法级** `inbound:view` —— 与 `menu.ts` / `AuthService` 三处逐字同码。
         MenuNode stocktakes = new MenuNode("inbound:view", "盘点单");
+        // 出库单（V196 / issue #7750）：与「入库单」对称的出口单据；节点码复用 `inbound:view`
+        //（仓管收发同岗，零授权 delta）—— 与 `menu.ts` / `AuthService` 三处逐字同码。
+        // 位置 = 盘点单之后、发货单之前：本组顺序「库存 → 对账 → 出库 → 台账 → 分析」。
+        MenuNode iOutbound = new MenuNode("inbound:view", "出库单");
 
         return List.of(
             // 🔴 2026-10-17（issue #7087）：**最前席位**一级项「经营看板」（前端 `standaloneHeadItems`）——
@@ -254,7 +258,7 @@ public class MenuController {
             // 仓储与物料（用户 2026-10-20 起只留**库存与出库**：单据类节点已移到「供应链」）
             // 🔴 issue #6759：组尾追加动作码节点「入库单操作」（`inbound:create` = 手机端过账的写码）。
             // 盘点单紧跟「库存明细」（先看账 → 再对账），排在发货单之前。
-            new MenuNode("inventory-center", "仓储与物料", List.of(prLedger, stocktakes, i2, prRemnants, prSaving, iCreate)),
+            new MenuNode("inventory-center", "仓储与物料", List.of(prLedger, stocktakes, iOutbound, i2, prRemnants, prSaving, iCreate)),
             new MenuNode("org-center", "组织管理", List.of(e1, r1, s1, e2)),
             // 🔴 尾部独立项（不属于任何组）：**排在所有分组之后**（用户 2026-10-06 裁定，原为「工作台组之后」）
             // —— 组名即「分组」，渲染在组与组之间会让「大菜单并列」自相矛盾。

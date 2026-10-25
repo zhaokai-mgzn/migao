@@ -30,6 +30,16 @@
       "case_ids": [
         "OR-066"
       ]
+    },
+    {
+      "method": "InboundOrderMapper#markFinishedCancelled",
+      "verdict": "guarded",
+      "status_predicate": "status = 'posted'",
+      "guard": "成品入库单作废（V196 / issue #7750，撤销打包）：`UPDATE inbound_orders SET status='cancelled' … WHERE id=? AND tenant_id=? AND status='posted' AND biz_category='finished' AND deleted=0`，0 行 ⇒ 409。**谓词不是 draft**：成品入库单建单即过账（posted），作废只针对已过账的成品单 —— 布料草稿单仍走 markCancelled（status='draft'）。两条写面各自带完整谓词 ⇒ 不会互相抢同一状态迁移权。",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/mapper/InboundOrderMapper.java::int markFinishedCancelled(",
+      "case_ids": [
+        "WH-005"
+      ]
     }
   ],
   "service_write_paths": [
@@ -51,6 +61,15 @@
       "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/InboundOrderService.java::inboundOrderMapper.markCancelled(",
       "case_ids": [
         "OR-066"
+      ]
+    },
+    {
+      "method": "InboundOrderService#cancelFinishedPosting",
+      "path": "InboundOrderMapper#markFinishedCancelled",
+      "call_anchor": "inboundOrderMapper.markFinishedCancelled(",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/InboundOrderService.java::inboundOrderMapper.markFinishedCancelled(",
+      "case_ids": [
+        "WH-005"
       ]
     }
   ],

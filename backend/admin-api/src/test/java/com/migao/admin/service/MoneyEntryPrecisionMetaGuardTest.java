@@ -194,6 +194,27 @@ class MoneyEntryPrecisionMetaGuardTest {
                 site("com/migao/admin/service/InboundOrderService.java", "InboundOrderItem.builder()", Admission.GATED,
                         "行金额 = 数量×单价（\"积\"）在建单**校验阶段** validateRequest 过 MoneyScale"
                                 + "（先于任何写）"),
+                // 成品仓 / 出库单（V196，issue #7750）：**不带金额语义** —— 成品入库单的行金额与
+                // 总额均留 NULL（成本口径缺失，宁缺不造 0）；出库单的单价/金额值来自
+                // `product_skus` 售价列**回读**（无外部输入），且页面只做展示、不参与记账。
+                site("com/migao/admin/service/FinishedGoodsService.java", "InboundOrder.builder()",
+                        Admission.NO_NEW_INPUT_SOURCE,
+                        "成品入库单（source=packing）不写任何金额：总额/行金额留 NULL，不引入输入源"),
+                site("com/migao/admin/service/OutboundOrderService.java", "OutboundOrder.builder()",
+                        Admission.NO_NEW_INPUT_SOURCE,
+                        "出库单总额留 NULL / 由行金额求和（行金额值 = SKU 售价列回读，无外部输入）"),
+                site("com/migao/admin/service/OutboundOrderService.java", "OutboundOrderItem.builder()",
+                        Admission.NO_NEW_INPUT_SOURCE,
+                        "出库行单价/金额 = `product_skus` 售价列回读（不是请求输入；前端不可改价）"),
+                site("com/migao/admin/service/OutboundOrderService.java", "setAmount",
+                        Admission.NO_NEW_INPUT_SOURCE,
+                        "同一笔行金额的落库（根条目 = 本文件的 OutboundOrderItem.builder()）"),
+                site("com/migao/admin/service/OutboundOrderService.java", "setTotalAmount",
+                        Admission.NO_NEW_INPUT_SOURCE,
+                        "出库单总额 = Σ 已从 SKU 售价列派化的行金额（根条目同上）"),
+                site("com/migao/admin/service/OutboundOrderService.java", "setUnitCost",
+                        Admission.NO_NEW_INPUT_SOURCE,
+                        "出库不携带成本口径：留 NULL（不写 0，成本未知就是未知）"),
                 site("com/migao/admin/service/OpeningRegisterImportService.java", "setUnitCost", Admission.GATED,
                         "Excel 行单价写入报告行前过 MoneyScale（外部表格输入）"),
                 site("com/migao/admin/service/OrderService.java", "setActualAmount", Admission.GATED,

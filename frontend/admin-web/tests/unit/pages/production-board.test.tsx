@@ -232,17 +232,20 @@ describe('生产管理菜单入口（侧边栏）', () => {
     const group = screen.getByText('仓储与物料').closest('[data-group-key]') as HTMLElement
     const links = group.querySelectorAll('a')
     // #7373：本组 +「盘点单」（紧跟库存明细：先看账 → 再对账）
-    expect(links).toHaveLength(5)
+    expect(links).toHaveLength(6)
     expect(links[0].textContent).toContain('库存明细')
     expect(links[0]).toHaveAttribute('href', '/stock-ledger')
     expect(links[1].textContent).toContain('盘点单')
     expect(links[1]).toHaveAttribute('href', '/stocktakes')
-    expect(links[2].textContent).toContain('发货单')
-    expect(links[2]).toHaveAttribute('href', '/shipments')
-    expect(links[3].textContent).toContain('余料台账')
-    expect(links[3]).toHaveAttribute('href', '/production/remnants')
-    expect(links[4].textContent).toContain('省料看板')
-    expect(links[4]).toHaveAttribute('href', '/production/saving-board')
+    // issue #7750：出库单紧跟盘点单（与入库单对称的出口单据）
+    expect(links[2].textContent).toContain('出库单')
+    expect(links[2]).toHaveAttribute('href', '/outbound-orders')
+    expect(links[3].textContent).toContain('发货单')
+    expect(links[3]).toHaveAttribute('href', '/shipments')
+    expect(links[4].textContent).toContain('余料台账')
+    expect(links[4]).toHaveAttribute('href', '/production/remnants')
+    expect(links[5].textContent).toContain('省料看板')
+    expect(links[5]).toHaveAttribute('href', '/production/saving-board')
     // 反恒真：入库单**不再**出现在本组（搬组不得只搬半边）
     expect(Array.from(links).map((a) => a.textContent).join('|')).not.toContain('入库单')
   })
@@ -286,7 +289,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     // 🔴 2026-10-20（issue #7369）：新增「供应链」组（组内项总数不变 ⇒ 项数不变）。
     // 🔴 2026-10-22（#7375 段 3）：交易管理 +「价格本」⇒ 组内 20 项 ⇒ 全站 25 项
     // 🔴 2026-10-24（issue #7593）：「审批中心」撤出侧边栏（入口改顶栏）⇒ 28 → **27**
-    expect(hrefs).toHaveLength(27) // 27 项 = 最前席位 2（#7376 +报表中心）+ 组内 22（#7369：+供应商 / +采购单；#7375：+价格本；#7593：-审批中心）+ 尾席位 2 + 尾部独立项 1（见 menu-nav.test.ts）
+    expect(hrefs).toHaveLength(28) // 28 项 = 最前席位 2（#7376 +报表中心）+ 组内 23（#7369：+供应商 / +采购单；#7375：+价格本；#7593：-审批中心）+ 尾席位 2 + 尾部独立项 1（见 menu-nav.test.ts）
     expect(hrefs).not.toContain('/processing-orders')
   })
 
@@ -317,6 +320,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     expect(inventory!.children.map((c) => c.permissionCode)).toEqual([
       'product:list',       // 库存明细（issue #6404：同取既有 product:list ⇒ 零授权 delta）
       'inbound:view',       // 盘点单（issue #7373：与入库/仓库同域 ⇒ 复用既有码，零授权 delta）
+      'inbound:view',       // 出库单（issue #7750：与入库单对称 ⇒ 复用既有码，零授权 delta）
       'order:list',         // 发货单（issue #5939：取**既有** order:list ⇒ 与销售订单同码、零授权 delta）
       'processing:manage',  // 余料台账（`RemnantController` 类级码）
       'product:list',       // 省料看板（issue #5699 P4：节点码 = 该页两个读端点的码）

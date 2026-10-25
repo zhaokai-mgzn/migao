@@ -411,6 +411,15 @@ export default function WorkerShipmentPage() {
                 <Text className='admin-card__totals' data-testid='shipment-totals'>
                   实发：{formatShippedTotals(view?.shipped_totals)}
                 </Text>
+                {(view?.finished_bins ?? []).length > 0 ? (
+                  <Text className='admin-card__meta' data-testid='shipment-finished-bins'>
+                    成品仓位：
+                    {(view?.finished_bins ?? [])
+                      .map((b) => b.bin_code || '—')
+                      .filter((code, index, all) => all.indexOf(code) === index)
+                      .join('、')}
+                  </Text>
+                ) : null}
                 {(view?.shipments ?? []).map((row, index) => (
                   <View className='shipment-row' key={`shipment-${row.shipment_no || index}`}>
                     <Text className='shipment-row__title'>发货单 {row.shipment_no || '—'}</Text>

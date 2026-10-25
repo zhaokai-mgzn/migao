@@ -27,9 +27,17 @@ class StockTransferItemMapperTest {
     @DisplayName("两个 Mapper 都只继承 BaseMapper")
     void mappersHaveNoCustomSql() {
         for (Class<?> mapper : new Class<?>[]{StockTransferItemMapper.class, WarehouseMapper.class}) {
-            long declared = java.util.Arrays.stream(mapper.getDeclaredMethods())
-                    .filter(m -> !m.isSynthetic()).count();
-            assertThat(declared).as("%s 不应有自定义方法", mapper.getSimpleName()).isZero();
+            // 唯一的登记例外：`WarehouseMapper#claimWarehouse`（V196 / issue #7750）——
+            // 成品仓「找或建」需要 `ON CONFLICT DO NOTHING` 的原子建档（先查后插会把事务打成
+            // aborted，见该方法注释）。登记为**白名单**（不是放宽为零校验）：新增第二个自定义方法
+            // 仍会红。
+            var declared = java.util.Arrays.stream(mapper.getDeclaredMethods())
+                    .filter(m -> !m.isSynthetic())
+                    .map(java.lang.reflect.Method::getName)
+                    .filter(n -> !(mapper.getSimpleName().equals("WarehouseMapper") && n.equals("claimWarehouse")))
+                    .toList();
+            assertThat(declared).as("%s 不应有自定义方法（WarehouseMapper#claimWarehouse 已在 #7750 登记）",
+                    mapper.getSimpleName()).isEmpty();
         }
     }
 

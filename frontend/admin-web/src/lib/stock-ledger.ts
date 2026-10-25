@@ -28,6 +28,8 @@ export const REASON_LABELS: Record<string, string> = {
   aftersales: '售后回补',
   manual: '手工调整',
   inbound: '入库过账',
+  // V196 / issue #7750：出库单过账（布料手工出库 / 成品随发货出库）
+  outbound: '出库过账',
 }
 
 /**

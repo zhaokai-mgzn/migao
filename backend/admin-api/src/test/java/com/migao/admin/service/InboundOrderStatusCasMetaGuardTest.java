@@ -170,8 +170,11 @@ class InboundOrderStatusCasMetaGuardTest {
             if (!TENANT_PARAM.matcher(w.sql()).find()) {
                 missing.add("tenant_id 参数");
             }
-            if (!DRAFT_PREDICATE.matcher(w.sql()).find()) {
-                missing.add("status='draft' 谓词");
+            // 默认谓词 = status='draft'；台账条目可**显式声明**自己的状态谓词
+            // （V196 / issue #7750：成品入库单建单即过账 ⇒ 作废谓词是 status='posted'）。
+            String expected = declaredStatusPredicates().getOrDefault(w.method(), DRAFT_PREDICATE.pattern());
+            if (!Pattern.compile(expected, Pattern.CASE_INSENSITIVE).matcher(w.sql()).find()) {
+                missing.add("status 谓词（期望 " + expected + "）");
             }
             if (!DELETED_PREDICATE.matcher(w.sql()).find()) {
                 missing.add("deleted=0 谓词");
@@ -734,6 +737,23 @@ class InboundOrderStatusCasMetaGuardTest {
 
     private static String serviceText() throws IOException {
         return Files.readString(repoRoot().resolve(SERVICE_FILE), StandardCharsets.UTF_8);
+    }
+
+    /** 台账里**显式声明**的状态谓词（方法短名 → 正则）；未声明 ⇒ 默认 `status='draft'`。 */
+    private static Map<String, String> declaredStatusPredicates() {
+        Map<String, String> out = new LinkedHashMap<>();
+        try {
+            for (JsonNode e : ledger().get("entries")) {
+                if (e.hasNonNull("status_predicate")) {
+                    String method = e.get("method").asText();
+                    out.put(method.substring(method.lastIndexOf('#') + 1),
+                            e.get("status_predicate").asText());
+                }
+            }
+        } catch (IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+        return out;
     }
 
     private static JsonNode ledger() throws IOException {

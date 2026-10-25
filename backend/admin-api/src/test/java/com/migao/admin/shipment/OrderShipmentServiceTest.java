@@ -92,6 +92,10 @@ class OrderShipmentServiceTest {
     /** 真实 ObjectMapper（`processing_info` 的 JSON 字符串兼容解析要用它 —— 用 mock 会把那条路测成空跑）。 */
     @Mock private ObjectMapper objectMapper;
 
+    // 成品入/出库（V196，issue #7750）：打包 ⇒ 成品入库、发货 ⇒ 成品出库；纯 Mockito 测试里
+    // 若不 mock，`@InjectMocks` 会给 null ⇒ 打包/发货路径直接 NPE（本文件 8 条用例会红）。
+    @Mock private com.migao.admin.service.FinishedGoodsService finishedGoodsService;
+
     @InjectMocks private OrderShipmentService service;
 
     /**
