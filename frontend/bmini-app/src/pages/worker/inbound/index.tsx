@@ -40,8 +40,10 @@ import { renderInboundLabel } from '../../../utils/inbound/labelCanvas'
 import {
   evaluateSkuGate,
   prefillFromRecognize,
+  recognizedFieldRows,
   checkDraftInput,
   type PrefillResult,
+  type RecognizeLike,
   type SkuMatch,
 } from '../../../utils/inbound/recognizeGate'
 import { MAX_INBOUND_PHOTOS, runInboundRecognize } from '../../../utils/inbound/recognizeFlow'
@@ -70,6 +72,7 @@ import {
   postInboundDraft,
   recognizeInbound,
   recordInboundLabelPrint,
+  searchInboundSkus,
   uploadInboundPhoto,
   newInboundRequestId,
 } from '../../../services/workerInboundService'
@@ -92,8 +95,14 @@ export default function WorkerInboundPage() {
   const [busy, setBusy] = useState(false)
 
   const [prefill, setPrefill] = useState<PrefillResult | null>(null)
+  // 识别回执**原样**留一份：逐格结果（`fields`）由它派生，不在端侧重建字段表
+  const [recognized, setRecognized] = useState<RecognizeLike | null>(null)
   const [matches, setMatches] = useState<SkuMatch[]>([])
   const [chosenSku, setChosenSku] = useState<SkuMatch | null>(null)
+  // 零命中时的**只读**货号搜索（issue #7759：原来这里没有出口，文案却叫工人「从已有商品里选」）
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<SkuMatch[]>([])
+  const [searchState, setSearchState] = useState('')
   const [quantity, setQuantity] = useState('1')
   const [rollLengthM, setRollLengthM] = useState('')
   const [dyeLot, setDyeLot] = useState('')
@@ -160,7 +169,11 @@ export default function WorkerInboundPage() {
       setNotices(result.notices.filter(Boolean))
       const next = prefillFromRecognize(result.response)
       setPrefill(next)
+      setRecognized(result.response)
       setMatches(result.response.skuMatches || [])
+      setSearchQuery('')
+      setSearchResults([])
+      setSearchState('')
       // 唯一命中时**预选**（仍要工人核对）；多命中/零命中都不替工人挑
       setChosenSku(next.gate.kind === 'matched' ? next.gate.match : null)
       setQuantity(next.quantity)
@@ -172,6 +185,30 @@ export default function WorkerInboundPage() {
       setBusy(false)
     }
   }, [photos])
+
+  /**
+   * 零命中时按**货号 / 色名**搜已有货号（issue #7759；**只读**，不改存货）。
+   *
+   * 搜索词由工人自己给（不拿识别结果替他去猜），服务端在**既有**货号里找；选中后才成为待入库货号。
+   */
+  const onSearchSkus = useCallback(async () => {
+    const query = searchQuery.trim()
+    if (query.length < 2) {
+      setSearchState('请至少输入 2 个字或 2 位货号再搜')
+      return
+    }
+    setBusy(true)
+    const res = await searchInboundSkus(query)
+    setBusy(false)
+    if (!res.success) {
+      setSearchResults([])
+      setSearchState(res.message || '搜索没成功，请重试')
+      return
+    }
+    const rows = Array.isArray(res.data) ? res.data : []
+    setSearchResults(rows)
+    setSearchState(rows.length === 0 ? '没搜到这个货号，换个写法试试' : `搜到 ${rows.length} 个货号，点一个选中`)
+  }, [searchQuery])
 
   const onSubmit = useCallback(async () => {
     setError('')
@@ -271,6 +308,8 @@ export default function WorkerInboundPage() {
   }, [label, capability])
 
   const gate = useMemo(() => evaluateSkuGate(matches), [matches])
+  /** 逐格识别结果（服务端 `fields` 原样派生；空 = 这次没回字段表 ⇒ 不渲染这一段） */
+  const fieldRows = useMemo(() => recognizedFieldRows(recognized), [recognized])
   /** 纸面版心（与送打印同一份绘制计划；页面不另算一套像素） */
   const labelPlan = useMemo(() => layoutInboundLabel(label || {}), [label])
 
@@ -358,10 +397,71 @@ export default function WorkerInboundPage() {
               {prefill.notice}
             </Text>
 
-            {gate.kind === 'none' && (
-              <Text className='admin-card__note' data-testid='inbound-sku-gate-none'>
-                {gate.message}
+            {fieldRows.length > 0 && (
+              <View data-testid='inbound-recognized-fields'>
+                <Text className='admin-card__note'>系统读到的内容（核对一下；空着的格要自己填）</Text>
+                {fieldRows.map((row) => (
+                  <Text
+                    key={`field-${row.key}`}
+                    className='admin-card__meta'
+                    data-testid={`inbound-field-${row.key}`}
+                  >
+                    {row.label}：{row.text}
+                  </Text>
+                ))}
+              </View>
+            )}
+
+            {recognized?.doorWidthAssumed === true && (
+              <Text className='admin-card__note' data-testid='inbound-door-width-assumed'>
+                标签未印门幅，按行业标准 {recognized?.doorWidth} 米（如有其他门幅，标签上会写，请核对）
               </Text>
+            )}
+
+            {gate.kind === 'none' && (
+              <View data-testid='inbound-sku-search'>
+                <Text className='admin-card__note' data-testid='inbound-sku-gate-none'>
+                  {gate.message}
+                </Text>
+                <Text className='admin-card__meta'>按货号或色名搜已有货号（只查不改，选中后才入库）</Text>
+                <Input
+                  className='admin-input'
+                  data-testid='inbound-sku-search-input'
+                  placeholder='货号或色名的一部分（至少 2 个字）'
+                  value={searchQuery}
+                  onInput={(e: any) => setSearchQuery(e?.detail?.value ?? '')}
+                />
+                <View
+                  className={`admin-action${busy ? ' admin-action--disabled' : ''}`}
+                  data-testid='inbound-sku-search-submit'
+                  onClick={() => {
+                    if (!busy) onSearchSkus()
+                  }}
+                >
+                  <Text>搜货号</Text>
+                </View>
+                {searchState !== '' && (
+                  <Text className='admin-card__note' data-testid='inbound-sku-search-state'>
+                    {searchState}
+                  </Text>
+                )}
+                {searchResults.map((match) => (
+                  <View
+                    key={`found-${match.skuId}`}
+                    className={`admin-action${chosenSku?.skuId === match.skuId ? ' admin-action--gold' : ''}`}
+                    data-testid={`inbound-sku-found-${match.skuId}`}
+                    onClick={() => {
+                      setChosenSku(match)
+                      setSearchState('已选中这个货号，填好卷长后提交')
+                    }}
+                  >
+                    <Text>
+                      {match.skuCode || '未填货号'} · {match.colorName || '未填色号'}
+                      {match.doorWidth ? ` · 门幅 ${match.doorWidth}` : ''}
+                    </Text>
+                  </View>
+                ))}
+              </View>
             )}
             {gate.kind === 'ambiguous' && (
               <View data-testid='inbound-sku-choices'>

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-// case_ids: PG-072, HR-001, HR-002, UI-024, UI-091, UI-121
+// case_ids: PG-072, PG-096, HR-001, HR-002, UI-024, UI-091, UI-121
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { toast } from 'sonner'
 
 /**
@@ -31,6 +31,8 @@ const mockSetWorkerStatus = vi.fn()
 const mockResetWorkerPin = vi.fn()
 const mockGetWorkerPageCatalog = vi.fn()
 const mockUpdateWorkerPages = vi.fn()
+const mockListWorkerOperations = vi.fn()
+const mockUpdateWorkerOperation = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   workerApi: {
@@ -39,6 +41,8 @@ vi.mock('@/lib/api', () => ({
     setWorkerStatus: (...a: unknown[]) => mockSetWorkerStatus(...a),
     resetWorkerPin: (...a: unknown[]) => mockResetWorkerPin(...a),
     updateWorkerPages: (...a: unknown[]) => mockUpdateWorkerPages(...a),
+    listWorkerOperations: (...a: unknown[]) => mockListWorkerOperations(...a),
+    updateWorkerOperation: (...a: unknown[]) => mockUpdateWorkerOperation(...a),
   },
   workerPageCatalogApi: {
     get: (...a: unknown[]) => mockGetWorkerPageCatalog(...a),
@@ -85,10 +89,16 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
     mockResetWorkerPin.mockReset()
     mockGetWorkerPageCatalog.mockReset()
     mockUpdateWorkerPages.mockReset()
+    mockListWorkerOperations.mockReset()
+    mockUpdateWorkerOperation.mockReset()
     ;(toast.error as ReturnType<typeof vi.fn>).mockClear()
     mockListWorkers.mockResolvedValue(okPage([worker()]))
     // 缺省：企业四页全开（逐人菜单的选项来源）
     mockGetWorkerPageCatalog.mockResolvedValue(catalog())
+    // 可绑定的逻辑工序（issue #7749）：下拉的选项来源 = 服务端目录
+    mockListWorkerOperations.mockResolvedValue({
+      data: { data: { total: 1, operations: [{ name: '韩褶', group: '车位', variants: 2 }] } },
+    })
   })
 
   it('① 列表列出工人档案：工号 / 姓名 / 状态', async () => {
@@ -122,6 +132,8 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
       // 默认全勾 = 不限制 ⇒ 这一格发 null（收窄是**减**，默认不减任何东西）
       expect(mockCreateWorker).toHaveBeenCalledWith({
         workerNo: 'W-1002', name: '李四', pin: '135791', workerPages: null,
+        // 没选工序 = 不绑定（扫码后自己选工序的旧行为）
+        workerOperation: null,
       })
     })
     // 建号成功后回到列表并刷新（新工人必须立刻可见，否则管理员会重复建号）
@@ -245,6 +257,7 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
     await waitFor(() => {
       expect(mockCreateWorker).toHaveBeenCalledWith({
         workerNo: 'W-1003', name: '赵六', pin: '246810', workerPages: ['cut_calc'],
+        workerOperation: null,
       })
     })
   })
@@ -264,6 +277,7 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
     await waitFor(() => {
       expect(mockCreateWorker).toHaveBeenCalledWith({
         workerNo: 'W-1004', name: '钱七', pin: '246810', workerPages: null,
+        workerOperation: null,
       })
     })
   })
@@ -308,6 +322,7 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
         pin: '246810',
         // 默认四页（目录给的 default_pages）+ 单独开的质检 = 收窄列表（不是 null）
         workerPages: ['report', 'order', 'cut_calc', 'shipment', 'inspect'],
+        workerOperation: null,
       })
     })
   })
@@ -355,6 +370,7 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
     await waitFor(() => {
       expect(mockCreateWorker).toHaveBeenCalledWith({
         workerNo: 'W-1005', name: '孙八', pin: '246810', workerPages: null,
+        workerOperation: null,
       })
     })
   })
@@ -396,7 +412,74 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
     await waitFor(() => {
       expect(mockCreateWorker).toHaveBeenCalledWith({
         workerNo: 'W-1007', name: '吴十', pin: '246810', workerPages: null,
+        workerOperation: null,
       })
     })
   })
+
+  // ── issue #7749：工人档案绑定一道逻辑工序（一个工人对应一个工序） ──────────────
+  //
+  // 用户 2026-10-25 逐字：「工人要允许绑定一个工序，一个工人对应一个工序，对工人档案进行重新设计，
+  // 工人扫码后直接报工，通过工人自动选择工序」。
+
+  it('⑥ 列表新增「工序」列：不设工序 ⇒ 不设工序（出入库岗位）；已绑定 ⇒ 服务端回来的那道', async () => {
+    mockListWorkers.mockResolvedValue(okPage([
+      worker({ id: 'w-1' }),
+      worker({ id: 'w-2', workerNo: 'W-1002', name: '李四', workerOperation: '韩褶' }),
+    ]))
+    render(<WorkerProfilesPanel canWrite />)
+
+    expect(await screen.findByTestId('worker-operation-w-1')).toHaveTextContent('不设工序')
+    expect(screen.getByTestId('worker-operation-w-2')).toHaveTextContent('韩褶')
+  })
+
+  it('⑥ 建号时选工序 ⇒ 请求带 workerOperation（选项来自服务端工序目录）', async () => {
+    mockCreateWorker.mockResolvedValue({ data: { data: worker({ id: 'w-3' }) } })
+    render(<WorkerProfilesPanel canWrite />)
+
+    fireEvent.click(await screen.findByText('新建工人档案'))
+    const picker = await screen.findByTestId('worker-operation-picker')
+    fireEvent.change(screen.getByPlaceholderText(/W-1002/), { target: { value: 'W-1003' } })
+    fireEvent.change(screen.getByPlaceholderText(/李四/), { target: { value: '赵六' } })
+    fireEvent.change(screen.getByPlaceholderText(/位数字/), { target: { value: '135791' } })
+    fireEvent.change(within(picker).getByRole('combobox'), { target: { value: '韩褶' } })
+    fireEvent.click(screen.getByText('创建'))
+
+    await waitFor(() => expect(mockCreateWorker).toHaveBeenCalledWith(
+      expect.objectContaining({ workerNo: 'W-1003', workerOperation: '韩褶' })))
+  })
+
+  it('⑦ 改工序：存量工人也能改绑；选「不设工序」⇒ 发 null（合法的「这类岗位本来就没有工序」）', async () => {
+    mockUpdateWorkerOperation.mockResolvedValue({ data: { data: worker() } })
+    render(<WorkerProfilesPanel canWrite />)
+
+    fireEvent.click(await screen.findByTestId('worker-set-operation-w-1'))
+    const modal = await screen.findByTestId('worker-operation-modal')
+    fireEvent.change(within(modal).getByRole('combobox'), { target: { value: '韩褶' } })
+    fireEvent.click(screen.getByText('保存'))
+    await waitFor(() => expect(mockUpdateWorkerOperation).toHaveBeenCalledWith('w-1', '韩褶'))
+
+    fireEvent.click(screen.getByTestId('worker-set-operation-w-1'))
+    const modal2 = await screen.findByTestId('worker-operation-modal')
+    fireEvent.change(within(modal2).getByRole('combobox'), { target: { value: '' } })
+    fireEvent.click(screen.getByText('保存'))
+    await waitFor(() => expect(mockUpdateWorkerOperation).toHaveBeenLastCalledWith('w-1', null))
+  })
+
+  it('⑦ 无 employee:create ⇒ 「改工序」不可点（与建号同档写权限）', async () => {
+    render(<WorkerProfilesPanel canWrite={false} />)
+    expect(await screen.findByTestId('worker-set-operation-w-1')).toBeDisabled()
+  })
+
+
+  it('⑧ 工序是**可选**的：下拉第一项 =「不设工序（出入库/仓库等岗位）」，并写明这类岗位不参与报工（#7766）', async () => {
+    render(<WorkerProfilesPanel canWrite />)
+
+    fireEvent.click(await screen.findByText('新建工人档案'))
+    const picker = await screen.findByTestId('worker-operation-picker')
+    const select = within(picker).getByRole('combobox')
+    expect(within(select).getByRole('option', { name: '不设工序（出入库/仓库等岗位）' })).toBeInTheDocument()
+    expect(within(picker).getByText(/出入库\/仓库等岗位：不设工序即可/)).toBeInTheDocument()
+  })
+
 })

@@ -94,6 +94,11 @@ public class ProductionScanCompleteService {
     private final ProductionScanService scanService;
     private final ProductionService productionService;
     private final ClientRequestIdService clientRequestIdService;
+    /**
+     * 工人档案（issue #7749）：只读「这位工人绑定的工序」，与扫码读面**同一份**来源
+     * （{@code users.worker_operation}）—— 写路径如果另算一套，就会出现「屏上是 A、记的是 B」。
+     */
+    private final WorkerAdminService workerAdminService;
 
     /**
      * 扫码<b>开工（领活）</b>—— A 模式闭环的唯一写入口（issue #4967 起语义 = 开工 / 领活，
@@ -144,9 +149,12 @@ public class ProductionScanCompleteService {
         // ⚠️ **新码路径不读**这两个键（码已给出套 × 部位）⇒ 对已有新码零影响。
         String setId = ProductionService.str(body == null ? null : body.get("set_id"));
         String orderItemId = ProductionService.str(body == null ? null : body.get("order_item_id"));
+        // 工人档案上绑定的工序（issue #7749）：读面与写面**同一个**判据，屏上选中的是它、记的也是它。
+        String workerOperation = boundOperationOf(identity);
 
         // 解析 + 推断 = 切片 ① 的**同一份**实现（新码优先，未命中回落既有四形态）
-        Map<String, Object> scan = scanService.resolve(token, pickedOperationId, setId, orderItemId, tenantId);
+        Map<String, Object> scan = scanService.resolve(token, pickedOperationId, setId, orderItemId, tenantId,
+                workerOperation);
 
         // 🔴 旧码降级形态（设计 §2.6）：只到加工单级 ⇒ 必须由工人选套 + 选部位。
         // **绝不默认取第 1 套** —— 默认 = 把进度/计件静默记到错的套上（正是要治的病）。
@@ -165,6 +173,18 @@ public class ProductionScanCompleteService {
         @SuppressWarnings("unchecked")
         Map<String, Object> operationView = (Map<String, Object>) scan.get("operation");
         if (operationView == null) {
+            // 🔴 绑定工人（issue #7749）：他们的工序在本件没有 / 已做完 ⇒ 给**说人话**的拒绝。
+            // 走下面那条「推断不出待做工序」会把责任说成「系统推断不出来」，而真相是「这不是你的活」。
+            if (StringUtils.hasText(workerOperation)) {
+                boolean done = "done".equals(scan.get("worker_operation_state"));
+                throw new BusinessException("WORKER_OPERATION_NOT_PENDING",
+                        "你的工序是「" + workerOperation + "」——本件"
+                                + (done ? "的这道工序已经做完了" : "没有这道工序")
+                                + "，本次没有可报的活（未记账）",
+                        409,
+                        done ? "这一件你不用再报了；换一件扫，或让管理员在「工人档案」里改你绑定的工序"
+                                : "这一件不用你报；如确实该你做这道，请让管理员在「工人档案」里改绑定工序");
+            }
             // 🔴 「本套一行工序都没关联」≠「本套做完了」（issue #4871）：`completed` 键 = `chosen == null`
             // —— 这两态**共用**同一个值（`ProductionScanService#setPositionView`）⇒ 只读 `completed`
             // 会把「存量单的工序行 set_id/set_no 全 NULL、挂不上套」说成「工序都已完成」= **假陈述**。
@@ -243,7 +263,7 @@ public class ProductionScanCompleteService {
         // 且与扫码那一次看到的是**同一份**口径（不在回执里另算一遍 = 不造第二份聚合）。
         result.put("set_overview", scan.get("set_overview"));
         result.put("rerouted", Boolean.TRUE.equals(operationView.get("rerouted")));
-        enrichNextOperation(result, token, setId, orderItemId, tenantId);
+        enrichNextOperation(result, token, setId, orderItemId, tenantId, workerOperation);
         return result;
     }
 
@@ -255,9 +275,10 @@ public class ProductionScanCompleteService {
      * （三个键都在，值是 null = 未知，不是「没有下一道」）。</p>
      */
     private void enrichNextOperation(Map<String, Object> result, String token, String setId,
-                                     String orderItemId, Long tenantId) {
+                                     String orderItemId, Long tenantId, String workerOperation) {
         try {
-            Map<String, Object> next = scanService.resolve(token, null, setId, orderItemId, tenantId);
+            Map<String, Object> next = scanService.resolve(token, null, setId, orderItemId, tenantId,
+                    workerOperation);
             result.put("set_progress", next.get("set_progress"));
             result.put("set_completed", next.get("completed"));
             result.put("next_operation", next.get("operation"));
@@ -295,6 +316,15 @@ public class ProductionScanCompleteService {
         Object progress = scan.get("set_progress");
         Object total = progress instanceof Map<?, ?> view ? view.get("total") : null;
         return total instanceof Number number ? number.intValue() : -1;
+    }
+
+    /** 这位工人档案上绑定的逻辑工序（issue #7749）；未绑定 / 档案读不到 ⇒ {@code null}。 */
+    private String boundOperationOf(WorkerIdentity identity) {
+        if (identity == null) {
+            return null;
+        }
+        var worker = workerAdminService.findOwnedWorker(identity.workerId());
+        return worker == null ? null : worker.getWorkerOperation();
     }
 
     /** 剩余应做数量 = 应做 − 已报（下限 0；`qty`/`done_qty` 为 NULL 按 0 读，与 isDone 同口径）。 */

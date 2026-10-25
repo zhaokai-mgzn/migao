@@ -85,13 +85,31 @@ describe('OrderUrgencyPanel（PR-079）', () => {
     await waitFor(() => expect(mockUpdateUrgency).toHaveBeenCalledTimes(1))
     expect(mockUpdateUrgency.mock.calls[0][0]).toBe('order-001')
     // 🔴 键集**精确相等**：多一个 `priority`（售后字段）或别的键都会让这条红
+    // issue #7746 后续：外发标记与加急/到货日同一张改单入口 ⇒ 键集是**三个**（仍不含任何售后字段）
     expect(mockUpdateUrgency.mock.calls[0][1]).toEqual({
       isUrgent: true,
+      isOutsourced: false,
       requiredDeliveryDate: '2026-09-30',
     })
     // 零联动：售后 API 一次都不许被碰
     expect(mockAfterSalesUpdate).not.toHaveBeenCalled()
     expect(mockAfterSalesList).not.toHaveBeenCalled()
+  })
+
+  it('外发加工开关（issue #7746 后续）：打开后保存 ⇒ 请求体带 isOutsourced=true', async () => {
+    const onChanged = vi.fn()
+    render(<OrderUrgencyPanel order={order({ isUrgent: false, isOutsourced: false })} onChanged={onChanged} />)
+
+    const outsourcedSwitch = screen.getByLabelText('外发加工')
+    expect(outsourcedSwitch.getAttribute('aria-checked')).toBe('false')
+    fireEvent.click(outsourcedSwitch)
+    expect(outsourcedSwitch.getAttribute('aria-checked')).toBe('true')
+
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(mockUpdateUrgency).toHaveBeenCalledTimes(1))
+    expect(mockUpdateUrgency.mock.calls[0][1]).toMatchObject({ isOutsourced: true })
+    // 结果可见：保存成功后父级被通知重新拉单（不是本地假装成功）
+    expect(onChanged).toHaveBeenCalled()
   })
 
   it('结果可见：保存后服务端回「已加急」⇒ 徽标变「加急」；再取消 ⇒ 徽标变回「不加急」', async () => {
@@ -144,6 +162,7 @@ describe('OrderUrgencyPanel（PR-079）', () => {
     await waitFor(() => expect(mockUpdateUrgency).toHaveBeenCalledTimes(1))
     expect(mockUpdateUrgency.mock.calls[0][1]).toEqual({
       isUrgent: false,
+      isOutsourced: false,
       requiredDeliveryDate: '2026-09-30',
     })
     // 🔴 徽标**消失**（变成「不加急」）—— 这条是「字段/服务端值缺失就红」的反空断言
@@ -160,6 +179,7 @@ describe('OrderUrgencyPanel（PR-079）', () => {
     await waitFor(() => expect(mockUpdateUrgency).toHaveBeenCalledTimes(1))
     expect(mockUpdateUrgency.mock.calls[0][1]).toEqual({
       isUrgent: false,
+      isOutsourced: false,
       requiredDeliveryDate: '',
     })
   })

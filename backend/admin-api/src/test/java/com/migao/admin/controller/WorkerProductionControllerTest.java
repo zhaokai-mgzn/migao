@@ -71,6 +71,9 @@ class WorkerProductionControllerTest {
     /** 一体机裁高读面（母单 #5161）—— 身份判据与既有端点**同一处**（本类只钉构造函数接线）。 */
     @Mock
     private com.migao.admin.service.WorkerCuttingHeightService workerCuttingHeightService;
+    /** 工人档案（issue #7749）：扫描面按它读「绑定的工序」；默认 null = 未绑定（旧行为逐字不变）。 */
+    @Mock
+    private com.migao.admin.service.WorkerAdminService workerAdminService;
 
     private MockMvc mockMvc;
 
@@ -82,7 +85,8 @@ class WorkerProductionControllerTest {
         TenantContext.setTenantId(TENANT);
         WorkerProductionController controller =
                 new WorkerProductionController(productionService, workerSessionService,
-                        productionScanService, productionScanCompleteService, workerCuttingHeightService);
+                        productionScanService, productionScanCompleteService, workerCuttingHeightService,
+                        workerAdminService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
@@ -199,7 +203,7 @@ class WorkerProductionControllerTest {
         verify(productionScanService, never()).resolve(any(), any(), any());
 
         when(workerSessionService.resolveIdentity("sess-1")).thenReturn(ZHANG);
-        when(productionScanService.resolve("t-1", null, TENANT))
+        when(productionScanService.resolve("t-1", null, null, null, TENANT, null))
                 .thenReturn(Map.of("granularity", "set_position", "set_no", "CSO-001"));
         mockMvc.perform(get("/api/worker/production/scan").param("token", "t-1")
                         .header(WorkerSessionService.SESSION_HEADER, "sess-1"))

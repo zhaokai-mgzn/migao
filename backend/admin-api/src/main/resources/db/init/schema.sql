@@ -53,6 +53,10 @@ CREATE TABLE users (
     -- 实际下发 = 本列（issue #6828 起企业级页面开关已整层移除 ⇒ 页面集只有这一层）。
     -- 🔴 只承载页面可见性，不是权限码 ⇒ 不参与授权判定，也不写进 users.permissions（恒为 []）。
     worker_pages JSONB,
+    -- 工人档案绑定的**逻辑工序**（V195，issue #7749）：NULL = 未绑定（存量/新建默认，
+    -- 保持「系统推断 + 工序选择器」的旧形态）；'韩褶' = 该工人只报这一道
+    -- （工序库的 韩褶-布 / 韩褶-纱 归并成同一逻辑名，布纱通用）。
+    worker_operation VARCHAR(64),
     session_ttl INTEGER DEFAULT 3600,
     status VARCHAR(32) DEFAULT 'active',
     -- 首登强制改密（V128，issue #5485）：管理员设的初始密码必须首登改掉。
@@ -718,6 +722,8 @@ CREATE TABLE orders (
     logistics_company VARCHAR(128),                 -- 收货物流/快递公司；NULL = 建单未传（不猜）
     -- 来自 V120__order_urgency_and_required_delivery_date.sql（issue #5177）
     is_urgent BOOLEAN NOT NULL DEFAULT FALSE,       -- 订单级加急标记：true = 插队、不进池、立刻单派（pooled=false）；与售后工单 priority 不共享来源、不联动（用户裁定「加急不能跟售后工单绑定」）。NOT NULL ⇒ 无第三态，「未标加急」与「明确不加急」同值
+    is_outsourced BOOLEAN NOT NULL DEFAULT FALSE,   -- 订单级外发加工标记（V194，issue #7746 后续）：TRUE = 不进成批候选、进派单页「外发区」逐单立即派，且派单时必须选承接方（加工厂）。NOT NULL ⇒ 无第三态；存量行 FALSE 不回填
+
     required_delivery_date DATE,                    -- 客户要求到货日；NULL = 未指定（不猜、不回填）。DATE 而非 TIMESTAMP —— 只有日期精度的事实不该带时刻。消费者 = 池看板排序（到货日升序、NULL 排最后）
     remark TEXT,                                     -- 备注
     -- 来自 V148__add_order_shipped_at.sql（issue #6262，用户 2026-10-03 逐字裁定 B）
@@ -1402,6 +1408,7 @@ COMMENT ON TABLE production_routings IS '工艺路线模板：部位×工艺 →
 COMMENT ON TABLE processing_position_operations IS '工序实例：加工单×部位×工序（应做数量/单价/系数/必完标记/报工进度），扫码报工的推进单元';
 COMMENT ON TABLE production_work_logs IS '报工记录（明细不可变）：报工三态 normal/rework/scrap；计件 = Σ(合格数量×**报工自己的单价快照**×**系数快照**)，排除返工/报废；单工序一人制；快照见 V61（issue #4351）';
 COMMENT ON COLUMN users.worker_no IS '工人工号（V98，issue #4733）：非 NULL = 工人档案（role=worker）；租户内唯一（uk_users_tenant_worker_no）';
+COMMENT ON COLUMN users.worker_operation IS '工人档案绑定的逻辑工序（V195，issue #7749）：NULL = 未绑定（存量/新建默认，保持系统推断 + 工序选择器）；非空 = 逻辑工序名（如 韩褶，布纱通用），扫码报工时按它自动选中该工人的工序';
 COMMENT ON TABLE worker_sessions IS '工人登录态（V98，issue #4733）：服务端是身份的权威 —— 报工只带 X-Worker-Session-Id，worker_id/worker_name 一律由本表解出，body 同名字段被忽略';
 COMMENT ON COLUMN worker_sessions.idle_expires_at IS '闲置过期时刻（默认 15 分钟，租户可配 5~60）：每次成功请求由服务端顺延；过期 session 报工 ⇒ 401（不静默续期）';
 COMMENT ON COLUMN worker_sessions.end_reason IS '结束原因：logout 主动登出 / idle 闲置超时 / switched 快速切换工人 / revoked 停用撤销';
@@ -4032,6 +4039,10 @@ CREATE INDEX IF NOT EXISTS idx_orders_tenant_phone
     ON orders (tenant_id, customer_phone) WHERE deleted = 0;
 CREATE INDEX IF NOT EXISTS idx_orders_tenant_user_created
     ON orders (tenant_id, user_id, created_at DESC) WHERE deleted = 0;
+-- 外发区（V194，issue #7752）：派单页按租户筛「待派外发单」（`is_outsourced = TRUE`）。
+CREATE INDEX IF NOT EXISTS idx_orders_tenant_outsourced
+    ON orders (tenant_id, created_at)
+    WHERE deleted = 0 AND is_outsourced = TRUE;
 
 -- 2. 通知：收件箱分页 + 未读数（前端 30s 轮询；`<>` 只能作部分索引谓词）
 CREATE INDEX IF NOT EXISTS idx_notifications_inbox

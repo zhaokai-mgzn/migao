@@ -31,7 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 或者某天有人「顺手支持一下手工调整」，判据就悄悄失效了。<b>字段集就是能力集</b> ——
  * 请求体里没有那个键，能力就不存在。</p>
  *
- * <h3>本类钉住的六件事（逐条可红）</h3>
+ * <h3>本类钉住的七件事（逐条可红）</h3>
  * <ol>
  *   <li><b>请求 DTO 字段集 == 允许集</b>（多一个字段就红 ⇒ 设计 §11.2 N5「结构上不可表达任意调整」）；</li>
  *   <li><b>零商家权限码</b>：控制器/服务源码里没有 {@code @RequirePermission} /
@@ -39,9 +39,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li><b>不复用商家识别端点</b>：不引用 {@code ImageRecognitionController} /
  *       {@code TARGET_PERMISSIONS}（设计 §11.2 N3 / N4）；</li>
  *   <li><b>不新造库存增减</b>：源码里没有库存/台账写方法（设计 §5.3 硬约束 2 / §11.2 N10）；</li>
- *   <li><b>路径只在 {@code /api/worker/**}</b>，且 P1 只有三个端点（P2~P5 不得顺手落进来）；</li>
+ *   <li><b>路径只在 {@code /api/worker/**}</b>，写端点只有 P1 那三个（P2~P5 不得顺手落进来），
+ *       只读面只有一个货号搜索（issue #7759 补的出口）；</li>
  *   <li><b>工人角色仍在 {@code /api/admin/**} 的拒绝集合里</b>（零商家权限的机制底座，
- *       设计 §11.1 第 1 条；机制本体见 {@code AdminApiWorkerRoleGateTest}，本类只钉「它还在」）。</li>
+ *       设计 §11.1 第 1 条；机制本体见 {@code AdminApiWorkerRoleGateTest}，本类只钉「它还在」）；</li>
+ *   <li><b>匹配面不得退回「按商品名 / 色号精确相等」</b>（issue #7759 的**类级元守卫**：
+ *       修一处 ≠ 让这一类进不来 —— 供应商标签恒零命中的根因就是这两句）。</li>
  * </ol>
  */
 @DisplayName("工人入库面结构守卫（#5052 P1）：字段集即能力集 / 零商家权限 / 不新造库存")
@@ -81,16 +84,24 @@ class WorkerInboundSurfaceGuardTest {
     }
 
     @Test
-    @DisplayName("三个端点的路径面 == P1 的 3 个（标签位图 / 打印计数属 P2，不得顺手落进来）")
-    void onlyTheThreeP1EndpointsExist() {
-        Set<String> paths = new LinkedHashSet<>();
+    @DisplayName("写端点 == P1 的 3 个 + 唯一的只读货号搜索（标签位图 / 打印计数属 P2，不得顺手落进来）")
+    void onlyTheThreeP1WriteEndpointsPlusOneReadOnlySearchExist() {
+        Set<String> writes = new LinkedHashSet<>();
+        Set<String> reads = new LinkedHashSet<>();
         for (Method method : WorkerInboundController.class.getDeclaredMethods()) {
-            PostMapping mapping = method.getAnnotation(PostMapping.class);
-            if (mapping != null) {
-                paths.add(String.join(",", mapping.value()));
+            PostMapping post = method.getAnnotation(PostMapping.class);
+            if (post != null) {
+                writes.add(String.join(",", post.value()));
+            }
+            org.springframework.web.bind.annotation.GetMapping get =
+                    method.getAnnotation(org.springframework.web.bind.annotation.GetMapping.class);
+            if (get != null) {
+                reads.add(String.join(",", get.value()));
             }
         }
-        assertThat(paths).containsExactlyInAnyOrder("/recognize", "/drafts", "/drafts/{id}/post");
+        assertThat(writes).containsExactlyInAnyOrder("/recognize", "/drafts", "/drafts/{id}/post");
+        // issue #7759：零命中时工人必须有个**只读**出口（原来文案叫他从已有商品里选，而页面没有控件）
+        assertThat(reads).containsExactlyInAnyOrder("/skus");
     }
 
     // ============================================================ ②③④ 源码判据
@@ -135,6 +146,42 @@ class WorkerInboundSurfaceGuardTest {
         // 过账本体必须落在 #5045 的服务方法上（同一事务语义、同一批次号口径）
         assertThat(sourceOf(SERVICE_SRC)).contains("inboundOrderService.create(");
         assertThat(sourceOf(SERVICE_SRC)).contains("inboundOrderService.post(");
+    }
+
+    /**
+     * 🔴 **类级元守卫**（issue #7759，`migao-dev-flow` §23 G1）：让「精确相等匹配商品名 / 色号」
+     * 这一**类**进不来 —— 修一处 ≠ 让这一类进不来。
+     *
+     * <p>病根（实测）：供应商标签用的是它自己的型号命名空间，而匹配面拿 {@code products.name}
+     * 与 {@code product_skus.color_name} 做**精确相等** ⇒ 这条链**恒零命中**、且没有任何东西会变红
+     * （工人只看到「找不到货号」）。所以本判据不钉某一次调用的写法，钉**这一类写法本身**：
+     * 匹配面一旦重新出现按名字 / 色名的相等比较，当场红。</p>
+     */
+    @Test
+    @DisplayName("🔴 类级元守卫：匹配面不得再按「商品名 / 色号」精确相等匹配（issue #7759）")
+    void skuMatchingNeverFallsBackToExactNameOrColorEquality() throws IOException {
+        String service = sourceOf(SERVICE_SRC);
+        // 反例（实际红过的两句）：`eq(Product::getName, …)` / `eq(ProductSku::getColorName, …)`
+        assertThat(service).doesNotContain(".eq(Product::getName");
+        assertThat(service).doesNotContain(".eq(ProductSku::getColorName");
+        assertThat(service).doesNotContain(".eq(\"name\"");
+        assertThat(service).doesNotContain(".eq(\"color_name\"");
+        // 正向：两级降级必须都在（删任一级 ⇒ 这里当场红；改名同样红）
+        assertThat(service).contains("static String normalizeCode(");
+        assertThat(service).contains("matchInboundSkus(");
+        assertThat(service).contains(".likeRight(Product::getSkuCode, productCode)");
+        assertThat(service).contains(".like(ProductSku::getColorName, colorTokenOf(color))");
+        // 商品名**不再参与匹配**：匹配方法体内不出现任何 `Product::getName`
+        assertThat(matchMethodBody(service)).doesNotContain("Product::getName");
+    }
+
+    /** 取 `matchInboundSkus` 之后的整段匹配实现（元守卫只看匹配面，不看展示字段的读取）。 */
+    private static String matchMethodBody(String service) {
+        int start = service.indexOf("private List<WorkerInboundSkuMatch> matchInboundSkus(");
+        assertThat(start).isGreaterThanOrEqualTo(0);
+        int end = service.indexOf("public List<WorkerInboundSkuMatch> searchSkus(", start);
+        assertThat(end).isGreaterThan(start);
+        return service.substring(start, end);
     }
 
     // ============================================================ ⑤⑥ 路径与角色

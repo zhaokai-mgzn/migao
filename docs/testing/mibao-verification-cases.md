@@ -799,7 +799,7 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-10-18 新增（issue #7249）：现场 = 商家手机端 H5 隔一段时间打开必回登录页（access token 7200s、手机端零 refresh、initialize/checkAuth 过期即 logout）。冻结口径 = 方案 A（401 ⇒ refresh cookie 换 token 并重放一次，与 admin-web 同口径）+ 登录态 30 天（refresh 2592000）。 ｜ tags: auth, session, token-refresh, bmini
 
-## B 端小程序域（48 case）
+## B 端小程序域（49 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -1472,6 +1472,25 @@
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-10-19 新增（issue #7316）：用户逐字「手机端的拍照入库功能页面文案有个mardown语法未正确渲染，显示成了**不会**」「不会调用识别模型这句文案应该改一下，改成工人能理解的文字，补打入库标签页面也有类似问题」。类级处置 = 实例判据（两页 + 解码链）+ 类级元守卫（扫全部手机端页面与共享组件 + 登记文案源；markdown 标记 / 研发术语两条规则）。**首版射程只到工人页，被独立复核指出两处实证漏洞**（printCapability 的打印失败提示与 gaps.ts 的上屏引导文案在射程外、守卫头把 gaps.ts 整体写成「从不上屏」与事实相反）⇒ 第二版把射程扩到 `src/pages/**` + `src/components/**`，并引入 `exported` 模式区分上屏常量与研发台账；同批收口商家手机端 4 处（计件工资 2 / 派单 1 / 数据页 1）、打印失败提示 4 条、打印回执 2 条。边界（照实登记）：只判「会不会被手机用户看到」——注释 / JSDoc 不在射程；`productionOffline.ts` 的「补传被服务端拒绝」目前无入队调用点（本仓不可达），未登记。 ｜ tags: bmini, worker, copy, inbound
+
+### BM-052. 供应商侧布料标签拍照入库 - 型号 2659-4 归一后命中货号 2659-04 + 门幅没印按行业标准 2.8 + 逐格结果上屏 + 只读货号搜索 🔵
+```
+你: 工人拍一张供应商侧布料标签（型号：雪尼尔2659-4绵绵奶咖、52.4 米，**没有印门幅**）：页面先逐格显示系统读到的内容（型号 / 货号 / 品名 / 色号 / 门幅 / 米数，没认出来的那格明说要自己填），再说明「标签未印门幅，按行业标准 2.8 米」并预选出 2659-04-28；若标签印了门幅（3.2）则命中 2659-04-32；工人的出口除了核对还有只读的按货号 / 色名搜索
+期望: direct_reply
+数据: 判据 1·**识别面要有「型号 / 货号」这一格**：backend/ai-agent-service/app/vision/targets.py 的 inbound 字段表含 model_no（标签写「雪尼尔2659-4绵绵奶咖」⇒ model_no=2659-4、color_name=绵绵奶咖），提示词带上该格中文名。红证（实跑过）：从 TARGET_FIELDS 的 inbound 删掉 model_no ⇒ backend/ai-agent-service/tests/test_vision/test_targets_inbound.py 的字段键元组与提示词 label 两处同时判红。证据：backend/ai-agent-service/tests/test_vision/test_targets_inbound.py
+数据: 判据 2·**匹配面归一化后命中（本条真实读数做夹具）**：品名 雪尼尔2659-4绵绵奶咖 + 色号 2659-4绵绵奶咖 + 库里 products.sku_code=2659 / product_skus 2659-04-28 与 2659-04-32（color_name=2659-04 绵绵奶咖）⇒ 命中 2 条。红证（实跑过）：去掉色号段补零，或摘掉 model_no 这一级，命中数 2 → 0（判据当场红）。证据：backend/admin-api/src/test/java/com/migao/admin/service/WorkerInboundServiceTest.java 的 SupplierLabel 组
+数据: 判据 3·**归一化是纯函数且不跨色号猜**：全角 / 分隔符（— · *）/ NO. 前缀 / 空白都归一到 2659-04；型号 2659-05 不得吃进 2659-04 的货号；型号只到 2659 时不去猜更细的 2659-04（商品侧更细 = 标签没说的信息，不补）。证据：同上（normalizationCollapsesEverySupplierSpelling / modelKeyDoesNotBleedAcrossColourNumbers）
+数据: 判据 4·**红线不动**：三个键全对不上 ⇒ 空匹配 + requiresManualEntry + products/product_skus 的 insert 零调用、库存零变更（不建品、不猜）；型号命中但色名一条不中 ⇒ 回该型号下的全部货号（交工人选），不是零命中。证据：同上（nothingMatchesStillRefusesToCreateAnything / modelHitWithoutColorHitStillReturnsTheModelCandidates）
+数据: 判据 5·**类级元守卫**：工人入库匹配面不得再出现「按商品名 / 色号精确相等匹配」（`.eq(Product::getName` / `.eq(ProductSku::getColorName`），且两条降级腿（sku_code 前缀 / color_name 包含）必须都在。红证（实跑过）：把其中任一句写回 backend/admin-api/src/main/java/com/migao/admin/service/WorkerInboundService.java ⇒ backend/admin-api/src/test/java/com/migao/admin/controller/WorkerInboundSurfaceGuardTest.java 判红。证据：同判据 5 的类
+数据: 判据 6·**零命中不再是无路可走（端侧）**：页面把服务端 fields 逐格上屏（空值那格写「没认出来（请自己填）」），并给只读的按货号 / 色名搜索入口 —— 搜到后点选即成为待入库货号，且搜索期间建单 / 过账零调用。红证（实跑过）：页面不读 fields ⇒ inbound-field-* 一个都取不到；删掉搜索区 ⇒ inbound-sku-search 取不到、已选货号恒为「（未选）」。证据：frontend/bmini-app/tests/worker-inbound-page.test.tsx 的 C10 / C11
+数据: 判据 7·**只读搜索端点两侧一致**：GET /api/worker/inbound/skus 在后端存在、端侧有常量且方法对得上（端侧 7 个端点全登记）。红证：端侧漏登记 ⇒ frontend/bmini-app/tests/inbound-api-contract.test.ts 的 C2 反向判红；写成 POST ⇒ C3 判红。证据：同文件
+数据: 判据 8·**门幅口径（来源：用户 2026-10-25 裁定）**：标签**没印门幅** ⇒ 取该商品 2.8 米那一档（唯一候选、预选，页面仍要工人勾「我确认」）；标签**写了 3.2** ⇒ 只取 3.2；标签写了库里**没有**的 3.5 ⇒ 零命中、**不回落** 2.8；该商品**没有 2.8 档** ⇒ 退回候选交工人选。归一：2.8 / 2.80 / 280 / 280cm 同一档。红证（实跑过）：把 selectByDoorWidth 里的默认门幅拿掉 ⇒ 默认门幅那两条用例当场红（命中数 1 → 2、doorWidthAssumed 恒 false）。证据：backend/admin-api/src/test/java/com/migao/admin/service/WorkerInboundServiceTest.java 的 DoorWidthRule 组
+数据: 判据 9·**识别面只抄不推**：backend/ai-agent-service/app/vision/targets.py 的 inbound「门幅」格在图没印时必须留空（2.8 是匹配侧的业务默认值，不是图上的事实）。红证（实跑过）：在 extract_fields 里给门幅兜一个 2.8 ⇒ backend/ai-agent-service/tests/test_vision/test_targets_inbound.py 的 TestDoorWidth 判红。证据：同文件
+数据: 判据 10·**默认值只在一处**：2.8 只出现在 WorkerInboundService.DEFAULT_DOOR_WIDTH（注释引用裁定），页面上的数字取服务端下发的 doorWidth。红证：页面写死 2.8 而服务端改值 ⇒ frontend/bmini-app/tests/worker-inbound-page.test.tsx 的 C12 断言数字对不上。证据：同文件
+跳过: [backend-contract] 确定性判据（pytest: backend/ai-agent-service/tests/test_vision/test_targets_inbound.py；maven: WorkerInboundServiceTest + WorkerInboundSurfaceGuardTest；jest: worker-inbound-page / inbound-api-contract），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.worker-recognize-decoding-first, inbound-order-flow.worker-narrow-surface
+溯源: 2026-10-25 新增（issue #7759）：用户实测「商品有 sku 2659-04 绵绵奶咖，和图中的布料型号能对上，但拍照入库无法识别供应商侧的布料标签」。真因 = 匹配键用过内部商品名 + 色号且都是精确相等（供应商标签是它自己的型号命名空间），而图上唯一靠得住的 2659-4 没有任何字段可承载。修法：识别面补 model_no 一格、匹配面改「归一化 + 多级降级 + 仍绝不猜」、端侧补逐格结果上屏与只读货号搜索。**未做 / 边界**：供应商型号与内部货号的对应关系目前靠数据巧合（该商品货号恰好就是供应商型号），长远的「供应商货号对照表」不在本单；缸号仍只做「能识别 + 能预填」，不做校验。**追加（用户 2026-10-25 裁定，见 issue 评论）**：门幅按「标签没印 = 行业标准 2.8 米」处理（非标准门幅会印在标签上）—— 默认值只放服务端一处常量；标签写了库里没有的门幅 ⇒ 零命中、不回落；该商品没有 2.8 档 ⇒ 退回候选交工人选。 ｜ tags: bmini, inbound, sku-gate, supplier-label
 
 ## 分类域（3 case）
 
@@ -7922,7 +7941,7 @@
 ```
 溯源: 2026-10-18 新增（issue #7251）：只修**调度**，不改 30 天口径 —— `armIdle()` 改为按 `idleSlices()` 分片排队（每片 ≤ `MAX_TIMER_DELAY_MS`，前 N-1 片只续排、末片到期才 `checkAlive()`），并新增同文件 ⑥ 的全区间类级判据；同批修好测试侧因「长定时器不再 1ms 立即触发」而挂住测试进程的一处（frontend/worker-h5/tests/worker-h5-6749-stale-login-error.test.mjs 用 `t.after(() => app.destroy())` 显式销毁）。取号 = PG-089（`python3 scripts/next_case_id.py pg` 实跑：PG → main:001-087 · PR #7224:088 → 取 PG-089）。 ｜ tags: processing, worker, session, timer, backend-contract
 
-## 加工单域（81 case）
+## 加工单域（83 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 作业单生成 + 订单进入生产中（派单即生产；issue #7723 改判） 🔵
 ```
@@ -8854,14 +8873,15 @@
 数据: **判据 1·🔴 服务端准入（不是藏 UI）**：工人档案页面集没有 `inspect`（含「未收窄 = 默认页」）⇒ `POST /api/worker/quality/inspections` 与 `GET /latest` 一律 **403**，且 `QualityCheckService` **零调用**（`verifyNoInteractions`）。红证：把 `requireInspector` 的判据删掉 ⇒ 判据当场红。证据：backend/admin-api/src/test/java/com/migao/admin/controller/WorkerQualityControllerTest.java
 数据: **判据 2·🔴 检验人只来自工人 session**：落库 `inspector_id` = session 解出的 worker_id、`inspector_name` = 工人姓名、`inspector_kind='worker'`；body 里的 `worker_id` / `inspector_id` 一个字节都不读（伪造值不得进库）。证据：WorkerQualityControllerTest.java（grantedWorkerDelegatesWithSessionIdentity）+ backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckServiceTest.java（workerInspectorKindIsPersistedAndReadable）
 数据: **判据 3·身份类别只加不改**：未知 `inspector_kind` ⇒ 422 且零写入；既有员工路径仍落 `employee`；读面 `view` 追加 `inspector_kind`。证据：QualityCheckServiceTest.java（unknownInspectorKindIsRejected）
-数据: **判据 4·🔴 未检 ≠ 合格**：无记录 ⇒ `latest=null`、H5 显示「未检」（不得显示「合格」）；有记录 ⇒ 显示服务端判定 / 原因 / 检验人 / 时刻。证据：frontend/worker-h5/tests/worker-h5-quality.test.mjs（②③）+ QualityCheckServiceTest.java（latestReturnsNewestOrNull）
-数据: **判据 5·录入 = 质检单**：展开表单 ⇒ 三态 + 原因必填提示 +「提交质检单」；提交成功 ⇒ 「质检单已生成」+ 判定换成回执（同一件可复检 = 再录一次）。证据：worker-h5-quality.test.mjs（④⑤⑥）
+数据: **判据 4·🔴 默认没问题（2026-10-25 由 #7749 改判，原「未检 ≠ 合格」不再成立）**：无记录 ⇒ `latest=null`、H5 显示「正常」（**不出现「合格」二字**）；有返工记录 ⇒ 显示「已记返工」/ 原因 / 检验人 / 时刻；服务端给 `pass`（观星台录的）也只显示「正常」。证据：frontend/worker-h5/tests/worker-h5-quality.test.mjs（②③）+ QualityCheckServiceTest.java（latestReturnsNewestOrNull）
+数据: **判据 5·只记返工（#7749 改判）**：展开表单 ⇒ **只有一个**返工动作 + 问题说明（必填）+「提交返工」；提交成功 ⇒「质检单已生成」+ 表单收起（同一件可再记一次）。判定三态仍在服务端（观星台零回归），工人端**不提供**合格/报废选项。证据：worker-h5-quality.test.mjs（④⑤）
 数据: **判据 6·逐人开**：`inspect` 在闭词表里但**不在**默认集合；H5 页面集不含它 ⇒ 质检区块一个字节都不出现。证据：frontend/worker-h5/tests/worker-h5-pages.test.mjs + worker-h5-quality.test.mjs（①）
 数据: **边界（照实登记）**：不做质检单打印（本轮只落记录与两端读面）；不把质检做成可计价工序（报工是数量事实、质检是成品帘判定，两套口径并存）；工人仍**不进** `/api/admin/**`、不获得任何 RBAC 权限码。
 前置: 前置 = ① 一张活跃加工单 + 该件成品帘（`order_item_id`）；② 工人 session（`X-Worker-Session-Id`）；③ 该工人档案的 `users.worker_pages` 里**有** `inspect`（缺 ⇒ 403，不是「看不见入口」）。后端夹具 = Mockito；H5 = 纯渲染/状态机夹具（零 DOM、零网络）。
 跳过: [backend-contract] 服务端准入 + 纯前端渲染/状态机（无 LLM 行为），不进入 agent-eval 冒烟
 ```
-溯源: 2026-10-17 新增（issue #7162；用户三条逐字见 user_inputs）。落码：`WorkerQualityController`（`/api/worker/quality/**`，准入 = 工人档案页面集含 `inspect`）+ `QualityCheckService.create(..., inspectorKind, ...)`（kind 校验 / 读面追加 `inspector_kind` / `latest()`）+ 迁移 V163 `inspector_kind` + `WorkerPages.INSPECT`（不在默认集合）+ worker-h5 质检区块（`render.mjs` / `api.mjs` / `app.mjs`）。取号：见文首注释。 ｜ tags: quality-inspection, worker-h5, backend-contract, permission, finished-curtain
+溯源: 🔴 2026-10-25 改判（issue #7749，用户逐字「质检不要显示合格，默认都合格，只有出现问题时允许直接选择返工，只提供一个返工选项」）⇒ 判据 4/5 的工人端形态改为「默认正常 + 只记返工」，服务端三态与准入不变。
+  2026-10-17 新增（issue #7162；用户三条逐字见 user_inputs）。落码：`WorkerQualityController`（`/api/worker/quality/**`，准入 = 工人档案页面集含 `inspect`）+ `QualityCheckService.create(..., inspectorKind, ...)`（kind 校验 / 读面追加 `inspector_kind` / `latest()`）+ 迁移 V163 `inspector_kind` + `WorkerPages.INSPECT`（不在默认集合）+ worker-h5 质检区块（`render.mjs` / `api.mjs` / `app.mjs`）。取号：见文首注释。 ｜ tags: quality-inspection, worker-h5, backend-contract, permission, finished-curtain
 
 ### PG-083. 单据联动工序：发货单生成 ⇒ 自动完成「发货/外帘发货」工序；质检合格 ⇒ 自动完成「质检」工序（工人端计件、商家端不计件） 🔵
 ```
@@ -8902,12 +8922,13 @@
 数据: **判据 1·两条写入口都拦得住（422 + 零写入）**：逐道报工（`POST /api/worker|admin/production/orders/{orderId}/operations/{operationId}/report`）与扫码完成（`POST /api/worker/production/scan/complete`）对「质检」工序必须 422 具名拒绝（文案指向质检录入 + 给 suggestion），且**不落 `production_work_logs`、不 CAS 推进 `done_qty`**。红证：摘掉 `DocumentOperationLinkage#rejectManualReport` 的任一处调用 ⇒ 该入口变成「报工成功」⇒ 断言红。证据：backend/admin-api/src/test/java/com/migao/admin/service/ProductionReportQualityGuardTest.java（reportingQualityOperationIsRejected）+ ProductionScanCompleteServiceTest.java（qualityOperationIsNotReportable）
 数据: **判据 2·对照不得误伤**：非质检工序（如「精裁-布」）报工照常成功（落报工明细 + 推进工序 + 回执 `status=done`）。证据：ProductionReportQualityGuardTest（reportingNormalOperationStillWorks）
 数据: **判据 3·判定即报工（自动，口径不变）**：判定 = `pass` 且工人身份 ⇒ 走既有报工口径（写 `production_work_logs`、计件记给该工人）+ 完成该件「质检」工序；观星台员工（无工人身份）⇒ 只推进工序、不计件；`rework` / `scrap` ⇒ 照落质检流水、**不**推进工序、不计件（还要再检）。证据：QualityCheckServiceTest + ProductionServiceCompleteByDocumentTest（issue #7165 的既有判据，本单未改口径）
-数据: **判据 4·工人端只有一个动作（无报工按钮）**：当前工序 = 质检 ⇒ 工人端扫码页**不渲染** `wh5-report` / `wh5-work-type`，只出质检区块 + 一句「录入判定即完成报工」；非质检工序仍渲染报工按钮；未开通 `inspect` 页时如实说「需由质检员录入判定」而不是留死页面。证据：frontend/worker-h5/tests/worker-h5-quality.test.mjs（⑦⑧⑨）
+数据: **判据 4·工人端只有一个动作（无报工按钮；2026-10-25 按 #7749 改判）**：当前工序 = 质检 ⇒ 工人端扫码页**不渲染** `wh5-report` / `wh5-work-type`，只出**一句**「本道是质检工序：默认没问题……有问题在下面记返工即可」+ 可按需展开的返工记录（**没有判定按钮**）；非质检工序仍渲染报工按钮；未开通 `inspect` 页时如实说「要记返工需开通」而不是留死页面。证据：frontend/worker-h5/tests/worker-h5-quality.test.mjs（⑥⑦⑧）
 数据: **边界（照实登记）**：① 待检清单读面**不动**（用户同日撤回「报工后才产生待检」那版，读面仍从加工单快照派生）；② bmini 小程序今天没有质检面（`frontend/bmini-app/src` 零「质检」引用）⇒ 它若对质检工序发起报工由服务端 422 兜底，本单不补 UI；③ 藏按钮不构成授权（服务端才是闸）。
 前置: 前置 = 活跃加工单 + 其路由里确有「质检」工序（`V54__seed_production_operations.sql` 的 op-v54-26）；工人端「质检」页（`inspect`）逐人开。无质检工序的单代入本判据 ⇒ 行为必须零变化。
 跳过: [backend-contract] 服务端拒绝码 + 工人端渲染判据（零 LLM 行为），不进 agent-eval 冒烟
 ```
-溯源: 2026-10-18 新增（issue #7186；用户原话见 user_inputs）。落码：`DocumentOperationLinkage#rejectManualReport`（唯一判据，复用 `QUALITY_OPERATION_NAME`）+ `ProductionService.doReport` / `ProductionScanCompleteService.doComplete` 两处调用 + 工人端 `render.mjs`（`isQualityOperation` / `canReport` / `qualityOnlyNote`）。取号 = 现取 origin/main 已占号最大 PG-085 ⇒ 本单取 PG-086。 ｜ tags: quality-inspection, piecework, worker-h5, backend-contract
+溯源: 🔴 2026-10-25 改判（issue #7749）⇒ 工人端不再有判定动作（默认合格、只记返工），且质检工序**不阻塞完工**（其它工序完成即完工、质检行默认置完成、不计件）。
+  2026-10-18 新增（issue #7186；用户原话见 user_inputs）。落码：`DocumentOperationLinkage#rejectManualReport`（唯一判据，复用 `QUALITY_OPERATION_NAME`）+ `ProductionService.doReport` / `ProductionScanCompleteService.doComplete` 两处调用 + 工人端 `render.mjs`（`isQualityOperation` / `canReport` / `qualityOnlyNote`）。取号 = 现取 origin/main 已占号最大 PG-085 ⇒ 本单取 PG-086。 ｜ tags: quality-inspection, piecework, worker-h5, backend-contract
 
 ### PG-087. 质检指标（P0+P1）：按件聚合的首检合格率 / 当前合格率 / 返工报废率 + 时间窗趋势 + 分组 Top-5 + 待检积压（近似待检时长） 🔵
 ```
@@ -9033,6 +9054,38 @@
 跳过: [backend-contract] admin-api 单测（派单写面 + 校验 + 读面过滤；无 LLM 行为面）
 ```
 溯源: 2026-10-25 新增（issue #7723）。用户裁定三条：① 走 A（发加工不再必经）；② 外发粒度 = 整单；③ 加工厂主数据复用供应商档案、本期只做跟踪。设计取舍：承接方是「谁干」而不是「干什么活」⇒ 挂在派单（派单 = 分配承接方 + 批次），作业单只留工序与进度。数据侧复用既有 `processing_orders.processor` / `expected_delivery_date`，新增 `processor_supplier_id`（V193）+ `suppliers.type`。 ｜ tags: processing-order, dispatch, outsourcing, supplier
+
+### PG-096. 工人档案绑定工序 ⇒ 扫码自动选中该道直接报工（不出选择器）；质检默认合格、只记返工、不阻塞完工 🔵
+```
+你: 用户 2026-10-25 逐字：「工人要允许绑定一个工序，一个工人对应一个工序，对工人档案进行重新设计，工人扫码后直接报工，通过工人自动选择工序，质检不要显示合格，默认都合格，只有出现问题时允许直接选择返工，只提供一个返工选项，加一些备注说明即可」
+你: 用户 2026-10-25 补充裁定：「只要所有工序全部完成就算结束了，这样也不需要质检按钮，尽量少一些动作，如果工序没有完成随时可以进入质检判定就好」
+数据: **判据 1·绑定写面（含校验）**：建号 `POST /api/admin/workers` 带 `workerOperation`、改绑 `PUT /api/admin/workers/{id}/operation` ⇒ 落 `users.worker_operation`；不在本租户活跃工序库 ⇒ **422 具名拒绝 + 零写入**；空白 ⇒ 清空绑定（显式写 NULL，不被 MyBatis-Plus NOT_NULL 策略静默漏掉）；跨租户 / 非工人档案 ⇒ 404。证据：backend/admin-api/src/test/java/com/migao/admin/service/WorkerAdminServiceTest.java（createWorkerStoresTheBoundOperation / unknownOperationIsRejectedWithoutWriting / updateWorkerOperationRebindsOrClears）+ backend/admin-api/src/test/java/com/migao/admin/controller/AdminWorkerControllerTest.java（workerOperationCatalogIsServed / updateWorkerOperationReturnsTheBinding）
+数据: **判据 2·扫码自动选工序**：同一张码，不设工序 ⇒ 推断 `determined_by=inferred`（改前形态）；绑定「复烫」⇒ 选中 `op-3` 且 `determined_by=worker`、`alternatives=[]`、`worker_operation="复烫"`。证据：backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanServiceTest.java（boundWorkerOperationIsAutoSelected）
+数据: **判据 3·不回落 / 不谎报完成**：绑定工人在本件没有该工序 ⇒ `operation=null` + `worker_operation_state=absent` + `completed=false`；这道已做完 ⇒ `state=done`；扫码完成入口对这种情形回 409 `WORKER_OPERATION_NOT_PENDING`（说人话，不再落到「推断不出待做工序」）。证据：ProductionScanServiceTest（boundWorkerOperationAbsentOnThisItem / boundWorkerOperationAlreadyDone）
+数据: **判据 4·工人屏不出选择器**：`worker_operation` 在场 ⇒ 出「你的工序：X」、不渲染 `wh5-op-picker`（即使服务端误带 alternatives）；absent / done 两种状态各自说清「不用报工」；不设工序 ⇒ 选择器与改前逐字一致。证据：frontend/worker-h5/tests/worker-h5-worker-operation.test.mjs（①②③④）
+数据: **判据 5·质检默认合格、只记返工**：工人屏质检区块**不出** `data-quality-result`（无合格/报废选项），只有【返工】+ 问题说明必填；无记录显示「正常」且整块不出现「合格」二字。证据：frontend/worker-h5/tests/worker-h5-quality.test.mjs（②③④）
+数据: **判据 6·质检不阻塞完工 + 默认完成**：只剩「质检」未完成 ⇒ 报完最后一道其它工序即 `order_completed=true`，质检行被 CAS 推到 `done_qty=qty` 并落 `done_at`，且**不写报工**（不计件）。证据：backend/admin-api/src/test/java/com/migao/admin/service/ProductionServiceTest.java（pendingQualityOperationDoesNotBlockCompletionAndIsAutoCompleted）
+数据: **判据 7·工人档案面板（商家面）**：新增「工序」列 + 新建/改绑入口，选项来自服务端工序目录（`employee:list`，前端不维护第二份清单）；不设工序显示「不设工序」（出入库/仓库岗位本来就无工序，#7766）。证据：frontend/admin-web/tests/unit/components/WorkerProfilesPanel.test.tsx（⑥⑦）
+数据: **边界（照实登记）**：① 绑定粒度 = 逻辑工序（布/纱通用），不是工序库行 id；② 绑定**不是**权限码（只决定「这次报哪道」，不参与授权判定）；②′ 工序**不是必填**（#7766，用户逐字「也有工人不需要绑定工序，比如管理原材料出入库的工人」）—— 出入库/仓库岗位选「不设工序」即可，档案显示「不设工序」而不是「未配置」；③ 质检工序默认完成**不计件**（原按合格判定 1.5 元/套）；④ 观星台商家侧三态质检录入零回归，这些件的质检统计仍显示「未检」；⑤ 不动 `inspect` 页的写准入。
+前置: 前置 = ① 工人档案（`users.worker_no` 非空）且 `users.worker_operation` 绑定了本租户活跃工序库里的一道**逻辑工序**（如「韩褶」）；② 一张带该工序实例的活跃加工单；③ 工人端「质检」页（`inspect`）逐人开（只影响质检区块，不影响绑定与报工）。后端夹具 = Mockito 单测；H5 / admin-web = 纯渲染与组件夹具（零 DOM 网络 / mock API）。
+跳过: [backend-contract] 服务端写面/读面 + 前端渲染与组件判据（零 LLM 行为），不进 agent-eval 冒烟
+```
+溯源: 2026-10-25 新增（issue #7749；用户原话见 user_inputs）。落码：迁移 V195 `users.worker_operation` + `WorkerAdminService`（写面校验 / 改绑 / 清空）+ `AdminWorkerController`（目录 `GET /operations` + `PUT /{id}/operation`）+ `ProductionScanService`（`resolve` 追加 `workerOperation` 入参、`determined_by=worker`、`worker_operation_state`）+ `ProductionScanCompleteService`（读面/写面同一判据 + 409 `WORKER_OPERATION_NOT_PENDING`）+ `ProductionService`（质检不阻塞完工 + 默认完成不计件）+ worker-h5（「你的工序」一行 / 隐藏选择器 / 质检只记返工）+ admin-web（工序列 / 新建选工序 / 改绑弹窗）。取号 = 现取全仓 PG 已占号最大 PG-095 ⇒ 本单取 PG-096。 ｜ tags: worker-profile, production, quality-inspection, worker-h5, backend-contract
+
+### PG-097. 外发加工标记：订单打标后不进成批候选、进派单页外发区逐单立即派，且派单必须选承接方（V194） 🔵
+```
+你: 外单应该和加急单一样，所以入口应该放在加急单那块区域
+你: 现在做
+数据: **判据 1·外发单不进池（会红）**：`orders.is_outsourced = TRUE` 的订单**不出现在任何** `groups[].lines`（不是成批候选），而是进 `outsourcedLines`，且 `outsourcedCount` 单列计数。执行点 = ProcessingOrderServiceTest.outsourcedOrdersGoToTheirOwnQueue。**红证**：把 pool() 里外发分支删掉（照旧进 groups）⇒ 该用例红。
+数据: **判据 2·派单必须选承接方（会红）**：外发单派单时 `processorSupplierId` 为空 ⇒ 该单 `success=false` + 文案含「外发加工 / 承接方」+ 可行动 suggestion，**一行不写**（不静默按本厂派）。执行点 = 同文件 dispatchOutsourcedWithoutProcessorRejected。**红证**：删掉 prepare() 的外发闸门 ⇒ 外发单被按本厂派出去。
+数据: **判据 3·不进合并（会红）**：外发单混进 `pooled=true` 批次 ⇒ 整批显式拒绝（`外发单不参与合并派单`），一行不写。执行点 = 同文件 pooledBatchRejectsOutsourcedOrders。**红证**：删掉 assertNoOutsourcedInPooledBatch ⇒ 该用例红。
+数据: **判据 4·外发区 UI 与请求体（会红）**：派单页外发区渲染该单、且成批区**取不到**它；未选承接方时「立即派单」disabled；选中后派单请求体 = 单订单 + `pooled:false` + `processorSupplierId`。执行点 = frontend/admin-web/tests/unit/pages/production-pool-urgent.test.tsx 的外发区两条用例。**红证**：把按钮的 `disabled={!processorId}` 去掉 ⇒ 第一条红；请求体不带 processorSupplierId ⇒ 第二条红。
+数据: **判据 5·订单侧开关（会红）**：订单详情「加急 / 外发 / 到货日」面板的「外发加工」开关打开后保存 ⇒ 请求体带 `isOutsourced: true` 并通知父级重新拉单。执行点 = frontend/admin-web/tests/unit/components/OrderUrgencyPanel.test.tsx。**红证**：面板不提交该键 ⇒ 对应用例红。
+数据: **边界（照实登记）**：外发单**不会**被自动成批派单（自动腿只处理加急立即派与成批条件命中，外发必须人工选厂）；`is_urgent` 与 `is_outsourced` 可同时为真（加急优先进插队区，外发仍要求选承接方）；存量订单不回填该列（默认 FALSE）。
+前置: 本用例是 [backend-contract] 确定性单测：前置（订单 is_outsourced 标记 / 工序库桩 / 供应商档案）由测试类自建并打桩（Mockito），不依赖共享夹具或种子真值；前置不成立时对应单测直接红
+跳过: [backend-contract] admin-api 单测 + admin-web 单测（无 LLM 行为面）
+```
+溯源: 2026-10-25 新增（issue #7746 的后续裁定：用户逐字「外单应该和加急单一样，所以入口应该放在加急单那块区域」+「现在做」）。落地形态：新列 `orders.is_outsourced`（V194）+ 池视图新增 `outsourcedLines/outsourcedCount` + 派单闸门（外发必须选承接方）+ 订单详情开关 + 派单页外发区。 ｜ tags: processing-order, dispatch, outsourcing
 
 ## 商品域（132 case）
 
@@ -10386,7 +10439,7 @@
 数据: 🔴 不确定 ⇒ 不预填：vision 返回 `degraded=true` ⇒ 品名 / 色号 / 米数三格全 `null`、`skuMatches` 空、`requiresManualEntry=true`，只给人工录入提示（**不编造**）
 数据: 🔴 零命中不建品：品名 + 色号在 `product_skus` 零命中 ⇒ `skuMatches` 为空数组，且 `productMapper` / `productSkuMapper` 的 `insert` **零调用**、`receiveStock` 零调用（防 AI 幻觉造出假 SKU 还带库存流水）
 数据: 张数准入：0 张 / 4 张 ⇒ 400，且一次远端调用都不发生（上限 3 张沿用现状）
-数据: ai-agent 侧 schema 同源：`inbound` target 的 4 个字段键（product_name / color_name / quantity_meters / barcode）与前两个 target **零交集**，阈值取严档 0.85，低置信度（0.40）的米数**留空 + 给理由**且理由含「入库侧」
+数据: ai-agent 侧 schema 同源：`inbound` target 的字段键（issue #7759 起 5 个：model_no / product_name / color_name / quantity_meters / barcode）与 product / order 两个 target **零交集**，阈值取严档 0.85，低置信度（0.40）的米数**留空 + 给理由**且理由含「入库侧」
 跳过: [backend-contract] 入库识别是后台/仓储单据流（无黄金策工具面，AI 侧未接）⇒ 由 admin-api 单测 + ai-agent vision 单测覆盖，不进入 agent-eval 冒烟
 ```
 真值: inbound-order-flow.worker-recognize-decoding-first
@@ -13092,13 +13145,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：889（活跃 142，跳过 747）
-- tier 分布：smoke 12 / normal 821 / adversarial 32
+- 用例总数：892（活跃 142，跳过 750）
+- tier 分布：smoke 12 / normal 824 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
 - 登录认证域：13
-- B 端小程序域：48
+- B 端小程序域：49
 - 分类域：3
 - 对话边界域：51
 - 跨域：3
@@ -13113,7 +13166,7 @@
 - 领域本体域：4
 - 订单域：69
 - 加工项域：31
-- 加工单域：81
+- 加工单域：83
 - 商品域：132
 - 工具注册器域：1
 - 设置域：10
@@ -13415,6 +13468,8 @@
 - PG-093: 裁剪报工必须确认批次：派工批次预填可改 / 未指派必须手输 / 批次账同事务纠偏（issue #7647）
 - PG-094: 发加工不再必经：首工序报满即可进「加工中」（A6 后半裁定直达；issue #7723）
 - PG-095: 外发承接方搬到智能派单：整单加工厂 + 回厂日，作业单不再录入/展示（issue #7723）
+- PG-096: 工人档案绑定工序 ⇒ 扫码自动选中该道直接报工（不出选择器）；质检默认合格、只记返工、不阻塞完工
+- PG-097: 外发加工标记：订单打标后不进成批候选、进派单页外发区逐单立即派，且派单必须选承接方（V194）
 - PP-007: 黄金策加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）
 - PP-008: 黄金策加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 加工项已无单价与计价方式 ⇒ calculate_price 端点与 action 整体退场（退场守卫）

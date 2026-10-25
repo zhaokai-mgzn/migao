@@ -79,6 +79,9 @@ public class WorkerAdminService {
     /** 姓名长度上限（与 {@code users.nickname VARCHAR(128)} 同量级，留足余量）。 */
     private static final int MAX_NAME_LENGTH = 64;
 
+    /** 绑定工序名长度上限（与 {@code users.worker_operation VARCHAR(64)} 同宽，issue #7749）。 */
+    private static final int MAX_OPERATION_NAME_LENGTH = 64;
+
     /**
      * 随机 PIN 位数（issue #6432）：6 位。
      *
@@ -94,6 +97,13 @@ public class WorkerAdminService {
     private final PasswordEncoder passwordEncoder;
 
     /**
+     * 逻辑工序目录（issue #7749）：这里只借它的**归并口径**做写侧校验 ——
+     * 「档案能绑的工序」必须与下拉选项（{@code GET /api/admin/workers/operations}）**同一份**，
+     * 否则会出现「下拉里没有、接口能存」的静默脏数据。
+     */
+    private final ProductionOperationQueryService productionOperationQueryService;
+
+    /**
      * 建一个工人档案（**本单的核心交付**）。
      *
      * @param workerNo 工号（租户内唯一；由管理员对着纸质工牌录入，首尾空白规整后落库）
@@ -103,7 +113,7 @@ public class WorkerAdminService {
      * @throws BusinessException 422 入参非法 / 409 工号已被占用（两种都是**明确拒绝**）
      */
     public User createWorker(String workerNo, String name, String pin) {
-        return createWorker(workerNo, name, pin, null);
+        return createWorker(workerNo, name, pin, null, null);
     }
 
     /**
@@ -113,8 +123,20 @@ public class WorkerAdminService {
      *                    非法键 / 非数组 / 重复键 ⇒ 422 + 逐条理由（**不静默忽略**）
      * @see #createWorker(String, String, String)
      */
-    @Transactional(rollbackFor = Exception.class)
     public User createWorker(String workerNo, String name, String pin, Object workerPages) {
+        return createWorker(workerNo, name, pin, workerPages, null);
+    }
+
+    /**
+     * 建一个工人档案（含**绑定的逻辑工序**，issue #7749）。
+     *
+     * @param workerOperation 逻辑工序名（如 {@code 韩褶}；{@code null} / 空白 = 不绑定 —— 默认，
+     *                        零回归）；不在本租户活跃工序库里 ⇒ 422 + 可行动出口（**不静默存**）
+     * @see #createWorker(String, String, String, Object)
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public User createWorker(String workerNo, String name, String pin, Object workerPages,
+                             String workerOperation) {
         Long tenantId = TenantContext.getTenantId();
         if (tenantId == null) {
             throw BusinessException.tenantInvalid();
@@ -145,6 +167,9 @@ public class WorkerAdminService {
         // 工人端页面收窄（issue #6788）：null = 未收窄（= 全部页面）。与 `users.permissions`
         // **不是同一格** —— 那是商家 RBAC 权限快照，工人页面码永不写进去（V141/V152 红线）。
         List<String> restrictedPages = validateWorkerPages(workerPages);
+        // 绑定的工序（issue #7749 / #7766）：null = 不设工序（出入库/仓库等岗位本来就无工序；
+        // 生产工人留空则保持「系统推断 + 工序选择器」的旧行为）
+        String normalizedOperation = validateWorkerOperation(tenantId, workerOperation);
 
         // 刻意**不**设：phone（工人不用手机号登录）／username（那是员工登录名，V128）／
         // permissions（工人零菜单权限）／position／mustChangePassword（工人没有可改的密码语义，
@@ -157,6 +182,7 @@ public class WorkerAdminService {
                 .passwordHash(passwordEncoder.encode(normalizedPin))
                 .status("active")
                 .workerPages(WorkerPages.storedJson(restrictedPages))
+                .workerOperation(normalizedOperation)
                 .build();
 
         try {
@@ -269,6 +295,76 @@ public class WorkerAdminService {
         worker.setWorkerPages(stored);
         worker.setPasswordHash(null);
         return worker;
+    }
+
+    /**
+     * 设/清这位工人**绑定的工序**（issue #7749）—— 用户 2026-10-25 裁定「一个工人对应一个工序」。
+     *
+     * <p>绑定后，工人扫码报工时由 {@code ProductionScanService} 按本列**自动选中**该工人的工序
+     * （工人屏不再出工序选择器）；不设工序 ⇒ 保持「系统推断 + 选择器」的旧行为 ——
+     * 出入库 / 仓库等岗位本来就没有工序（#7766），留空是**合法终态**，不是「还没配完」。</p>
+     *
+     * @param workerOperation 逻辑工序名（如 {@code 韩褶}）；{@code null} / 空白 = <b>清空绑定</b>
+     *                        （= 回到旧行为）。不在本租户活跃工序库里 ⇒ 422 + 可行动出口，零写入。
+     * @return 落库后的档案视图（{@code passwordHash} 已清空）
+     * @throws BusinessException 422 工序非法 · 404 目标不是本租户的工人档案
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public User updateWorkerOperation(String workerId, String workerOperation) {
+        Long tenantId = TenantContext.getTenantId();
+        if (tenantId == null) {
+            throw BusinessException.tenantInvalid();
+        }
+        String normalizedOperation = validateWorkerOperation(tenantId, workerOperation);
+
+        // 目标限定工人档案（fail-closed）：查不到 / 不是工人 / 不是本租户 ⇒ 一律拒绝，且零写入
+        User worker = findOwnedWorker(workerId);
+        if (worker == null) {
+            throw BusinessException.notFound("工人档案",
+                    "请在「工人档案」列表里按工号找到这位工人，再设置他做的工序");
+        }
+
+        // 只更新 worker_operation —— 与 updateWorkerPages 同款的部分更新（别的列一律不动）。
+        // 🔴 **必须走显式 set**：MyBatis-Plus 默认更新策略是 NOT_NULL ⇒ 「把 null 塞进实体再 updateById」
+        // 的 SQL 里根本没有这一列（清空绑定会静默不生效，接口却回 200）。
+        userMapper.update(null, new LambdaUpdateWrapper<User>()
+                .eq(User::getId, worker.getId())
+                .eq(User::getTenantId, tenantId)
+                .set(User::getWorkerOperation, normalizedOperation));
+        log.info("[工人档案] 绑定工序已更新：tenantId={}, workerNo={}, workerOperation={}",
+                tenantId, worker.getWorkerNo(), normalizedOperation == null ? "不设工序" : normalizedOperation);
+        worker.setWorkerOperation(normalizedOperation);
+        worker.setPasswordHash(null);
+        return worker;
+    }
+
+    /**
+     * 校验 + 归一工人绑定的工序（issue #7749 / #7766）：空白 = 不设工序（合法终态，出入库 / 仓库等岗位）；
+     * 非空必须能在本租户
+     * **活跃工序库**里按逻辑名找到（判据在 {@link ProductionOperationQueryService#hasLogicalOperation}，
+     * 与下拉选项同一份归并口径）。
+     *
+     * @return 归一后的逻辑工序名；{@code null} = 不设工序
+     */
+    private String validateWorkerOperation(Long tenantId, String workerOperation) {
+        String normalized = workerOperation == null ? "" : workerOperation.trim();
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        if (normalized.length() > MAX_OPERATION_NAME_LENGTH) {
+            throw BusinessException.validationError(
+                    "工序名不能超过 " + MAX_OPERATION_NAME_LENGTH + " 个字符");
+        }
+        if (!productionOperationQueryService.hasLogicalOperation(tenantId, normalized)) {
+            throw BusinessException.validationError(
+                    "工序库里没有这道工序：" + normalized,
+                    List.of(BusinessException.detail("workerOperation",
+                            "可选项 = 本企业隔离工序库里的活跃工序（与「工人档案」下拉里的工序同一份）")),
+                    "先在「企业基础设置 → 工序与部位单价」里建好/启用这道工序，再回来给这位工人绑定；"
+                            + "出入库 / 仓库等岗位不需要工序，选「不设工序」即可"
+                            + "（生产工人若留空，扫码后自己选工序）");
+        }
+        return normalized;
     }
 
     /**

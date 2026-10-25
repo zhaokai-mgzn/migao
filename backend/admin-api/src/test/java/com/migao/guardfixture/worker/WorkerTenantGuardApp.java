@@ -16,6 +16,8 @@ import com.migao.admin.security.LoginFailureGuard;
 import com.migao.admin.security.ServiceTokenFilter;
 import com.migao.admin.security.WorkerSessionFilter;
 import com.migao.admin.service.WorkerCuttingHeightService;
+import com.migao.admin.service.ProductionOperationQueryService;
+import com.migao.admin.service.WorkerAdminService;
 import com.migao.admin.worker.WorkerSessionService;
 import com.migao.admin.worker.WorkerTenantResolver;
 import org.apache.ibatis.session.SqlSessionFactory;
@@ -142,6 +144,21 @@ public class WorkerTenantGuardApp {
     @Bean
     WorkerCuttingHeightService workerCuttingHeightService() {
         return mock(WorkerCuttingHeightService.class);
+    }
+
+    /**
+     * 工人档案服务（issue #7749）：{@code WorkerProductionController} 扫描面用它读「绑定的工序」。
+     * 本守卫只行使「工人会话 ⇒ 租户」这条链，**不**断言绑定工序 ⇒ 替身（同上一条的边界登记）。
+     */
+    @Bean
+    WorkerAdminService workerAdminService() {
+        return mock(WorkerAdminService.class);
+    }
+
+    /** 逻辑工序目录（issue #7749）：{@code WorkerAdminService} 的构造依赖；本链不经过它 ⇒ 替身。 */
+    @Bean
+    ProductionOperationQueryService productionOperationQueryService() {
+        return mock(ProductionOperationQueryService.class);
     }
 
     /** 真 Mapper（**不是** mock）：本守卫的全部意义就是行使租户拦截器那条真实路径。 */

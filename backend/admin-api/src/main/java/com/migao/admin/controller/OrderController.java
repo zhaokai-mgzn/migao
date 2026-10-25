@@ -408,7 +408,8 @@ public class OrderController {
             @RequestBody OrderUrgencyUpdateRequest request) {
         log.info("更新订单加急/到货日: orderId={}, isUrgent={}, requiredDeliveryDate={}",
                 id, request.getIsUrgent(), request.getRequiredDeliveryDate());
-        orderService.updateUrgency(id, request.getIsUrgent(), request.getRequiredDeliveryDate());
+        orderService.updateUrgency(id, request.getIsUrgent(), request.getIsOutsourced(),
+                request.getRequiredDeliveryDate());
         return ApiResponse.success();
     }
 

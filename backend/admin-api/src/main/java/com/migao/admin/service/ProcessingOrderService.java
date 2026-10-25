@@ -634,7 +634,10 @@ public class ProcessingOrderService {
         // 池内（非加急）与**加急插队区**分开装：加急单**不进池**（issue #5177 判据 3）
         Set<String> ordersInPool = new LinkedHashSet<>();
         Set<String> urgentOrders = new LinkedHashSet<>();
+        // 外发区（issue #7746 后续）：订单级 is_outsourced 标记的单同样**不进池** ⇒ 逐单立即派
+        Set<String> outsourcedOrders = new LinkedHashSet<>();
         List<ProductionPoolViews.PoolLine> urgentLines = new ArrayList<>();
+        List<ProductionPoolViews.PoolLine> outsourcedLines = new ArrayList<>();
         int lineCount = 0;
         for (Order order : poolable) {
             if (order.getId() == null || dispatched.contains(order.getId())) {
@@ -664,6 +667,7 @@ public class ProcessingOrderService {
                         maxWaitHours.toPlainString())));
             }
             boolean urgent = Boolean.TRUE.equals(order.getIsUrgent());
+            boolean outsourced = Boolean.TRUE.equals(order.getIsOutsourced());
             LocalDate requiredDeliveryDate = order.getRequiredDeliveryDate();
             Integer deliveryDaysLeft = deliveryDaysLeft(requiredDeliveryDate, today);
             for (Map<String, Object> row : snapshot) {
@@ -678,11 +682,15 @@ public class ProcessingOrderService {
                 ProductionPoolViews.PoolLine line = new ProductionPoolViews.PoolLine(
                         order.getId(), order.getOrderNo(), itemId, productId, str(row.get("productName")),
                         skuCode, required, order.getCreatedAt(), waitHours, overdue,
-                        urgent, requiredDeliveryDate, deliveryDaysLeft);
+                        urgent, outsourced, requiredDeliveryDate, deliveryDaysLeft);
                 if (urgent) {
                     // 🔴 加急单**不进池**（用户裁定「允许加急的订单直接派，不加急的同批次候选池优先」）：
                     // 它的去处是插队区（看板上一个动作 = 立刻单派），**不是**成批候选。
                     urgentLines.add(line);
+                } else if (outsourced) {
+                    // 🔴 外发单同样**不进池**（issue #7746 后续裁定「外单应该和加急单一样」）：
+                    // 去处 = 外发区（同样一个动作 = 立刻单派，但**必须**选承接方）。
+                    outsourcedLines.add(line);
                 } else {
                     String key = materialKey(productId, skuCode);
                     materialOf.putIfAbsent(key, new String[]{productId, skuCode});
@@ -692,12 +700,15 @@ public class ProcessingOrderService {
             }
             if (urgent) {
                 urgentOrders.add(order.getId());
+            } else if (outsourced) {
+                outsourcedOrders.add(order.getId());
             } else {
                 ordersInPool.add(order.getId());
             }
         }
         // 智能派单排序（判据 5 的唯一落点）：插队区与每个物料组**各自**按同一把键排（见 POOL_LINE_ORDER）
         urgentLines.sort(POOL_LINE_ORDER);
+        outsourcedLines.sort(POOL_LINE_ORDER);
         List<ProductionPoolViews.PoolGroup> groups = new ArrayList<>();
         for (Map.Entry<String, List<ProductionPoolViews.PoolLine>> entry : linesByMaterial.entrySet()) {
             String[] material = materialOf.get(entry.getKey());
@@ -715,7 +726,8 @@ public class ProcessingOrderService {
         }
         return new ProductionPoolViews.Pool(maxWaitHours, POOLED_DEFAULT_ENABLED, ordersInPool.size(),
                 lineCount, warnings.size(), urgentOrders.size(), List.copyOf(warnings),
-                List.copyOf(urgentLines), List.copyOf(groups));
+                List.copyOf(urgentLines), List.copyOf(outsourcedLines), outsourcedOrders.size(),
+                List.copyOf(groups));
     }
 
     /**
@@ -739,6 +751,7 @@ public class ProcessingOrderService {
         // 🔴 加急单不进池（判据 3）—— 预览是**成批**的预览：让它预览一个**派不出去**的批次
         // 就是「预览说谎」（判据 4）⇒ 与 /dispatch 同一条闸、同一处口径。
         assertNoUrgentInPooledBatch(orderIds, tenantId);
+        assertNoOutsourcedInPooledBatch(orderIds, tenantId);
         List<Prepared> prepared = new ArrayList<>();
         List<StockBatchConsumptionService.Designation> pooledLines = new ArrayList<>();
         for (String rawId : orderIds) {
@@ -864,6 +877,23 @@ public class ProcessingOrderService {
      * <p>查不到的单**不在这里报错**：{@code ORDER_NOT_FOUND} 由逐单路径按既有文案报
      * （本方法只补「加急」这一条新判据，不改既有失败面与失败顺序）。</p>
      */
+    private void assertNoOutsourcedInPooledBatch(List<String> orderIds, Long tenantId) {
+        List<String> outsourced = new ArrayList<>();
+        for (String rawId : orderIds) {
+            Order order = resolveOrder(rawId, tenantId);
+            if (order != null && Boolean.TRUE.equals(order.getIsOutsourced())) {
+                outsourced.add(order.getOrderNo() == null ? rawId : order.getOrderNo());
+            }
+        }
+        if (!outsourced.isEmpty()) {
+            throw BusinessException.validationError(
+                    "外发单不参与合并派单，请单独派：" + String.join("、", outsourced),
+                    List.of(),
+                    "请把这几个外发单在「外发区」单独派单（记得先选承接方/加工厂），"
+                            + "或先取消它们的外发标记再合并派单");
+        }
+    }
+
     private void assertNoUrgentInPooledBatch(List<String> orderIds, Long tenantId) {
         List<String> urgent = new ArrayList<>();
         for (String rawId : orderIds) {
@@ -1726,6 +1756,7 @@ public class ProcessingOrderService {
         // 🔴 加急单**不进池**（issue #5177 判据 3）：混进成批批次 ⇒ 整批显式拒绝，**一行都不写**。
         // 放在 prepare 之前 ⇒ 拒绝时连只读准备都还没跑，更没有半成品。
         assertNoUrgentInPooledBatch(orderIds, tenantId);
+        assertNoOutsourcedInPooledBatch(orderIds, tenantId);
         GenerateResult[] slots = new GenerateResult[orderIds.size()];
         List<Prepared> prepared = new ArrayList<>();
         List<Integer> indexes = new ArrayList<>();
@@ -1903,6 +1934,16 @@ public class ProcessingOrderService {
             throw BusinessException.validationError(
                     String.format("订单 %s 当前状态 [%s] 不允许生成加工单（须为待付款 / 已确认）",
                             order.getOrderNo(), order.getStatus()));
+        }
+        // 外发单**必须**指定承接方（issue #7746 后续）：外发标记的含义就是「交给外部加工厂做」，
+        // 派单时却选「本厂自做」= 自相矛盾 ⇒ 显式拒绝（不静默按本厂派，也不静默忽略标记）。
+        if (Boolean.TRUE.equals(order.getIsOutsourced())
+                && (consignee == null || !StringUtils.hasText(consignee.supplierId()))) {
+            throw BusinessException.validationError(
+                    "订单 " + order.getOrderNo() + " 已标记为外发加工，派单时必须选择承接方（加工厂）",
+                    List.of(),
+                    "在「智能派单」页顶部选「承接方」（加工厂）后再派；若这单其实本厂自己做，"
+                            + "先到订单详情把「外发加工」关掉");
         }
         List<OrderItem> items = loadOrderItems(order.getId(), tenantId);
         List<Map<String, Object>> snapshot = buildSnapshot(items, tenantId);

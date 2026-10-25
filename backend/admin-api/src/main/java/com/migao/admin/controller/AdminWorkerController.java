@@ -1,10 +1,12 @@
 package com.migao.admin.controller;
 
+import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.entity.User;
 import com.migao.admin.security.RequirePermission;
 import com.migao.admin.security.TenantOwnedResource;
+import com.migao.admin.service.ProductionOperationQueryService;
 import com.migao.admin.service.WorkerAdminService;
 import com.migao.admin.worker.WorkerPages;
 import lombok.RequiredArgsConstructor;
@@ -55,6 +57,16 @@ public class AdminWorkerController {
     private final WorkerAdminService workerAdminService;
 
     /**
+     * 逻辑工序目录（issue #7749）：工人档案「绑定工序」下拉的**唯一**选项来源。
+     *
+     * <p>🔴 为什么不在前端直接读 {@code /api/admin/production/operations-catalog}：那个端点挂
+     * {@code production:view}（生产域读码），而工人档案在人事域（{@code employee:list}）——
+     * 让「能管工人档案、不能看生产配置」的岗位点开下拉却 403，等于把功能按权限腰斩。
+     * 这里只回**逻辑工序名 + 分组**（不含单价/矩阵），与写侧校验（`hasLogicalOperation`）同一份口径。</p>
+     */
+    private final ProductionOperationQueryService productionOperationQueryService;
+
+    /**
      * 列工人档案（与员工列表分开，工人不会混进员工列表）。
      *
      * <p>GET {@code /api/admin/workers?page=1&size=10&keyword=W-1001&status=active}；权限：{@code employee:list}</p>
@@ -74,17 +86,52 @@ public class AdminWorkerController {
     }
 
     /**
-     * 建工人档案：Body {@code {"workerNo":"W-1001","name":"张三","pin":"246810"}}。
+     * 可绑定的**逻辑工序**目录（issue #7749）：{@code {total, operations:[{name, group, variants}]}}。
+     *
+     * <p>权限：{@code employee:list}（与工人列表同码 —— 这是档案面板的选项来源，不是生产配置读面）。
+     * 只含活跃工序；同一道活在库里按部位拆成的多行（{@code 韩褶-布} / {@code 韩褶-纱}）归并成
+     * 一个逻辑名（用户 2026-10-25 选定的粒度）。</p>
+     */
+    @GetMapping("/operations")
+    @RequirePermission("employee:list")
+    public ApiResponse<Map<String, Object>> listWorkerOperations() {
+        return ApiResponse.success(
+                productionOperationQueryService.logicalOperations(TenantContext.getTenantId()));
+    }
+
+    /**
+     * 建工人档案：Body {@code {"workerNo":"W-1001","name":"张三","pin":"246810",
+     * "workerOperation":"韩褶"}}。
      *
      * <p>权限：{@code employee:create}。工号租户内唯一，冲突 ⇒ 409 + 明确文案（不是 500）；
-     * PIN 由服务端 BCrypt 编码后落 {@code users.password_hash}，与工人登录侧同一套比对。</p>
+     * PIN 由服务端 BCrypt 编码后落 {@code users.password_hash}，与工人登录侧同一套比对。
+     * {@code workerOperation} 可省 ⇒ 不绑定（= 扫码后自己选工序的旧行为）；填了但不在本租户工序库
+     * ⇒ 422 + 可行动出口。</p>
      */
     @PostMapping
     @RequirePermission("employee:create")
     public ApiResponse<Map<String, Object>> createWorker(@RequestBody Map<String, Object> body) {
         User worker = workerAdminService.createWorker(
                 text(body, "workerNo"), text(body, "name"), text(body, "pin"),
-                body == null ? null : body.get("workerPages"));
+                body == null ? null : body.get("workerPages"),
+                text(body, "workerOperation"));
+        return ApiResponse.success(toWorkerView(worker));
+    }
+
+    /**
+     * 设/清这位工人**绑定的工序**（issue #7749）：Body {@code {"workerOperation":"韩褶"}}。
+     *
+     * <p>{@code workerOperation} 可省 / 为 {@code null} / 空白 ⇒ <b>清空绑定</b>（= 回到
+     * 「系统推断 + 工序选择器」的旧行为）。非法工序名 ⇒ 422 + 可行动出口，零写入。
+     * 权限：{@code employee:create}（与建号／页面收窄同档写权限）。</p>
+     */
+    @PutMapping("/{id}/operation")
+    @RequirePermission("employee:create")
+    @TenantOwnedResource("worker")
+    public ApiResponse<Map<String, Object>> updateWorkerOperation(@PathVariable String id,
+                                                                  @RequestBody(required = false) Map<String, Object> body) {
+        User worker = workerAdminService.updateWorkerOperation(
+                id, body == null ? null : text(body, "workerOperation"));
         return ApiResponse.success(toWorkerView(worker));
     }
 
@@ -143,6 +190,8 @@ public class AdminWorkerController {
         // 归一后按数组下发（脏值 ⇒ null = 未收窄，与读侧 fail-open 同口径）。
         Set<String> restricted = WorkerPages.normalizeStored(worker.getWorkerPages());
         view.put("workerPages", restricted == null ? null : List.copyOf(restricted));
+        // 绑定的逻辑工序（issue #7749 / #7766）：null = 不设工序（出入库/仓库等岗位）⇒ 前端显示「不设工序」。
+        view.put("workerOperation", worker.getWorkerOperation());
         view.put("createdAt", worker.getCreatedAt() == null ? null : worker.getCreatedAt().toString());
         return view;
     }

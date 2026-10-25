@@ -56,9 +56,12 @@ export function urgentBadgeText(src: UrgencySource | null | undefined): '加急'
 export function urgencyRequestFields(
   isUrgent: boolean,
   requiredDeliveryDate: string,
-): { isUrgent?: true; requiredDeliveryDate?: string } {
+  /** 外发加工标记（V194，issue #7746 后续）：未勾 ⇒ **键不出现**（同 isUrgent 的三态纪律） */
+  isOutsourced = false,
+): { isUrgent?: true; requiredDeliveryDate?: string; isOutsourced?: true } {
   return {
     ...(isUrgent ? { isUrgent: true as const } : {}),
+    ...(isOutsourced ? { isOutsourced: true as const } : {}),
     ...(requiredDeliveryDate ? { requiredDeliveryDate } : {}),
   }
 }

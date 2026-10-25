@@ -7,18 +7,23 @@ import com.migao.admin.dto.WorkerInboundDraftView;
 import com.migao.admin.dto.WorkerInboundPostRequest;
 import com.migao.admin.dto.WorkerInboundRecognizeRequest;
 import com.migao.admin.dto.WorkerInboundRecognizeResponse;
+import com.migao.admin.dto.WorkerInboundSkuMatch;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.service.WorkerInboundService;
 import com.migao.admin.worker.WorkerIdentity;
 import com.migao.admin.worker.WorkerSessionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 /**
  * 工人可达的入库端点（issue #5052 <b>P1</b>）：{@code /api/worker/inbound/**}。
@@ -42,7 +47,10 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>身份**只**从 {@code X-Worker-Session-Id} 解；body 里的 {@code worker_id} / {@code operator} /
  * {@code tenantId} **连读取代码都没有**（请求 DTO 里根本没这几个键）。</p>
  *
- * <h3>本包只有三个端点</h3>
+ * <h3>本控制器只有「三个写端点 + 一个只读搜索端点」</h3>
+ * <p>写面三件：识别（不落库）/ 建草稿（不动库存）/ 过账（动库存）。只读面一件：
+ * 按货号 / 色名搜既有货号（issue #7759 —— 零命中时页面原来没有任何可选的地方，
+ * 文案却叫工人「从已有商品里选一个」，那个出口当时**不存在**）。</p>
  * <p>标签位图 / 短码 / 打印计数（P2）、工人端页面（P3）、打印适配层（P4）、拍照补打（P5）
  * **不在本包**（{@code #5052} 的实现切包计划）。</p>
  */
@@ -106,6 +114,19 @@ public class WorkerInboundController {
         WorkerIdentity identity = requireWorker(sessionId);
         return ApiResponse.success(workerInboundService.postDraft(
                 draftId, body, TenantContext.getTenantId(), identity.workerId(), idempotencyKey));
+    }
+
+    /**
+     * 按**货号 / 色名**搜既有货号（issue #7759；只读，零商家权限码）。
+     *
+     * <p>GET /api/worker/inbound/skus?q=2659。只回 {@code product_skus} 的实读行 —— 不建品、不改库存。</p>
+     */
+    @GetMapping("/skus")
+    public ApiResponse<List<WorkerInboundSkuMatch>> searchSkus(
+            @RequestParam(value = "q", required = false) String q,
+            @RequestHeader(value = WorkerSessionService.SESSION_HEADER, required = false) String sessionId) {
+        requireWorker(sessionId);
+        return ApiResponse.success(workerInboundService.searchSkus(q, TenantContext.getTenantId()));
     }
 
     /** 有效工人 session 或 401（fail-closed 的**唯一**一处判据：工人路径上「谁」没有第二条来源）。 */
