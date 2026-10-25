@@ -134,6 +134,14 @@ class Settings(BaseSettings):
     )
     IMAGE_GEN_TIMEOUT: int = 180                           # 单次生图读超时（实测 30~60s）
 
+    # ── 工具执行预算（issue #7707）───────────────────────────────────────
+    # `_execute_tool_safe` 原来写死 30s（`asyncio.wait_for`）—— 生图是**慢工具**
+    # （实测成功路径 30~60s）⇒ 评测/线上都会在 30s 被截成 `error="timeout"`。
+    # 口径：全局默认 + 按工具名覆盖（`name=秒,name2=秒`），**只放宽慢工具**，
+    # 不抬全局预算（那会把所有卡死工具都拖长一倍）。
+    TOOL_TIMEOUT_S: float = 30.0
+    TOOL_TIMEOUT_OVERRIDES: str = "product_image_generate=120"
+
     DASHSCOPE_EMBEDDING_MODEL: str = "text-embedding-v3"
     INTENT_MODEL: str = "deepseek-flash"                 # 意图分类/摘要（快速模型）
 
