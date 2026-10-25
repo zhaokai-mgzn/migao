@@ -1044,7 +1044,7 @@ grep -rn "deleted = 1" backend/admin-api/src/main/java/com/migao/admin/service/P
 | 问题 | 裁定 | 落点 |
 |---|---|---|
 | 绑定粒度 | **逻辑工序**（`韩褶`，布帘/纱帘通用），不是工序库行 id | `users.worker_operation` 存逻辑名；归并复用 `ProductionOperationQueryService.logicalOperationName`（不新增映射表） |
-| 未绑定工人 | 保持改前行为（系统推断 + 工序选择器） | `worker_operation IS NULL` ⇒ `resolve` 走原分支，响应逐字不变 |
+| 不设工序的工人（出入库/仓库岗位，#7766） | 保持改前行为（系统推断 + 工序选择器）；这类岗位本来就没有工序 | `worker_operation IS NULL` ⇒ `resolve` 走原分支，响应逐字不变；档案里显示「不设工序」 |
 | 绑定工人扫到「没有这道 / 已做完」 | **如实告知，不回落** | `operation=null` + `worker_operation_state ∈ {done, absent}`；写入口 409 `WORKER_OPERATION_NOT_PENDING` |
 | 质检「默认都合格」 | 不点即合格（**不落合格记录**），屏上不出现「合格」这个动作 | 质检区块只有【返工】+ 问题说明；无记录显示「正常」 |
 | 「不需要质检按钮」 | 质检工序**不阻塞完工** | `allInstancesDone` 跳过质检；完工时把质检行 CAS 推到做满（不写报工、不计件） |
@@ -1060,7 +1060,7 @@ grep -rn "deleted = 1" backend/admin-api/src/main/java/com/migao/admin/service/P
 
 `GET /api/worker/production/scan` 与 `POST …/scan/complete` 的响应追加两键（键恒在）：
 
-- `worker_operation`：该工人绑定的逻辑工序（未绑定 ⇒ `null`）；
+- `worker_operation`：该工人绑定的逻辑工序（不设工序 ⇒ `null`）；
 - `worker_operation_state`：`done`（本件这道已做完）/ `absent`（本件没有这道）/ `null`（已选中或未绑定）。
 
 `operation.determined_by` 新增取值 `worker`（另两个既有取值 `inferred` / `picked` 不变）。

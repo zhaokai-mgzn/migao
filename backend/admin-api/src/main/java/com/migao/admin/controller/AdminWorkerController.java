@@ -190,7 +190,7 @@ public class AdminWorkerController {
         // 归一后按数组下发（脏值 ⇒ null = 未收窄，与读侧 fail-open 同口径）。
         Set<String> restricted = WorkerPages.normalizeStored(worker.getWorkerPages());
         view.put("workerPages", restricted == null ? null : List.copyOf(restricted));
-        // 绑定的逻辑工序（issue #7749）：null = 未绑定 ⇒ 前端显示「未绑定（扫码后自己选工序）」。
+        // 绑定的逻辑工序（issue #7749 / #7766）：null = 不设工序（出入库/仓库等岗位）⇒ 前端显示「不设工序」。
         view.put("workerOperation", worker.getWorkerOperation());
         view.put("createdAt", worker.getCreatedAt() == null ? null : worker.getCreatedAt().toString());
         return view;
