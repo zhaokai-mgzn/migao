@@ -51,8 +51,8 @@ import type { Order, OrderItem, ProcessingOrder } from '@/types'
  *    前端求和**故意不同**，纸面必须印服务端那个（前端现算 ⇒ 红）；
  * ④ 🔴 **缺口金额栏不编数**：上期余额 / 预存抵扣 / 账户余额 服务端无字段 ⇒ 标「未采集」，
  *    **不含任何数字**（印 `0.00` = 把「没有这个数」画成「余额为零」）；
- * ⑤ 🔴 **缺值可见 / 长名截断可见**：缺值显式占位 `—`；长名走 CSS 省略号（`sales-cut`）
- *    且**不裁字符串**（纸面是给人看的，静默裁切 = 账实不符的另一种形态）；
+ * ⑤ 🔴 **缺值可见 / 长名完整可见**：缺值显式占位 `—`；长名**折行印全文**（不裁字符串、
+ *    也不上省略号 —— issue #7715：用户 2026-10-25 逐字「这里打印预览的文字要打印全，不能缩略」）；
  * ⑥ **纸面不印收款码**（issue #7589：用户 2026-10-24 逐字「销售单打印处右下角的二维码移除掉」）
  *    —— 页脚只留温馨提示、销售单也不再读收款码；打印隔离沿用 #4983 / #4965 范式（共享 `print-doc`）；
  * ⑧ **左上角作业单扫码报工码**（issue #7530）：码值**逐字**取服务端下发的
@@ -152,6 +152,26 @@ const css = (): string =>
     .join('\n')
 const text = (testId: string): string =>
   document.querySelector(`[data-testid="${testId}"]`)?.textContent?.trim() ?? ''
+
+/**
+ * 纸面「缩略」判据（issue #7715）—— 返回命中的**裁切形态**，空集 = 合格。
+ *
+ * 用户 2026-10-25 逐字「这里打印预览的文字要打印全，不能缩略」：纸面是客户收货凭证，
+ * 被省略号吃掉的正是「这是哪个花色」。⇒ 两件事一起判：
+ * ① 样式里不许出现省略号 / `nowrap` / 旧形态 `.sales-cut`；
+ * ② 承载长文本的单元格必须自己声明折行（`break-words`）。
+ *
+ * 抽成纯函数是刻意的：**红证与判据跑同一把尺子**（各写一份 ⇒ 红证证明不了判据）。
+ */
+function paperTruncationHits(styleText: string, cell: Element | null): string[] {
+  const hits: string[] = []
+  if (/text-overflow:\s*ellipsis/.test(styleText)) hits.push('text-overflow: ellipsis')
+  if (/white-space:\s*nowrap/.test(styleText)) hits.push('white-space: nowrap')
+  if (/\.sales-cut/.test(styleText)) hits.push('.sales-cut')
+  if (!(cell?.className ?? '').includes('break-words')) hits.push('单元格未声明折行')
+  return hits
+}
+
 const sheet = (): HTMLElement | null => document.querySelector('[data-testid="sales-sheet"]')
 /** 左上角作业单扫码报工码的块（无码 ⇒ `null`）与它的**确切内容**（`<svg><title>` = qrcode.react 的 value） */
 const workOrderQr = (): Element | null => document.querySelector('[data-testid="sales-work-order-qr"]')
@@ -395,23 +415,52 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
     expect(text('sales-address')).toBe(SALES_DOC_MISSING)
   })
 
-  it('⑤ 长名**截断可见**：单元格保留全文 + 走 CSS 省略号（不裁字符串）', () => {
+  it('⑤ 长名**完整可见**：单元格折行印全文（不缩略 / 不裁字符串）', () => {
     const longName = '杭州余杭某某某某某某某某某某某某某某某某某某纺织品经营部'
     render(<SalesDoc order={buildOrder({ customerName: longName })} shipments={NO_SHIPMENT} />)
     // 不裁字符串：全文仍在 DOM 里（打印/屏幕都拿得到完整值）
     expect(text('sales-customer')).toBe(longName)
-    // 截断是**可见**的（省略号），不是静默裁掉
-    expect(document.querySelector('[data-testid="sales-customer"]')?.className).toContain('sales-cut')
-    expect(css()).toMatch(/\.sales-cut\s*\{[^}]*text-overflow:\s*ellipsis/)
-    expect(css()).toMatch(/\.sales-cut\s*\{[^}]*overflow:\s*hidden/)
+    // 🔴 纸面**不缩略**（issue #7715）：折行印全文 —— 省略号 / nowrap / `.sales-cut` 一处都不许有
+    expect(paperTruncationHits(css(), document.querySelector('[data-testid="sales-customer"]'))).toEqual([])
   })
 
-  it('⑤ 红证：把长名 slice 掉（静默裁切）或去掉省略号 ⇒ 上面那条必红', () => {
+  it('⑤ 颜色列**折行印全**（用户截图指的就是这一格）：长色名不进省略号', () => {
+    // 真机形态：颜色 = 货号前缀 + 色名（实测「2659-08 月落雾…」被省略号吃掉后半截）
+    const longColor = '2659-08 月落雾灰蓝拼接加长款'
+    render(
+      <SalesDoc
+        order={buildOrder({
+          items: [
+            buildItem({
+              skuCode: '2659',
+              processingInfo: { colorName: longColor, doorWidth: '2.8米' },
+            }),
+          ],
+        })}
+        shipments={NO_SHIPMENT}
+      />
+    )
+    expect(text('sales-code-0')).toBe('2659')
+    expect(text('sales-color-0')).toBe(longColor)
+    expect(paperTruncationHits(css(), document.querySelector('[data-testid="sales-color-0"]'))).toEqual([])
+  })
+
+  it('⑤ 红证：把省略号裁切写回来 / slice 掉长名 ⇒ 上面那条必红', () => {
     const longName = '杭州余杭某某某某某某某某某某某某某某某某某某纺织品经营部'
     render(<SalesDoc order={buildOrder({ customerName: longName })} shipments={NO_SHIPMENT} />)
     expect(text('sales-customer')).not.toBe(longName.slice(0, 8)) // slice = 静默裁切 ⇒ 红
-    const withoutEllipsis = css().replace(/text-overflow:\s*ellipsis;?/g, '')
-    expect(withoutEllipsis).not.toMatch(/text-overflow/) // 去掉省略号 ⇒ 判据红
+    const cell = document.querySelector('[data-testid="sales-customer"]')
+    // ⚠️ 不写存在性弱断言（`not.toBeNull()` —— QA Growth Gate 的 TS 弱断言面会判红）：
+    //    下面那把尺子本身就会对「格子缺失」报「未声明折行」⇒ 判据照样红，不需要额外一行。
+    expect(cell?.getAttribute('data-testid')).toBe('sales-customer')
+    // 射程自证：把**旧形态**（issue #5651 的 `.sales-cut`：省略号 + nowrap）摆进同一把尺子 ⇒ 必须命中。
+    // 这条若不命中，上面的「不许缩略」就是空断言（判据根本没在看那件事）。
+    const legacyCss = '.sales-cut { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }'
+    expect(paperTruncationHits(css() + legacyCss, cell)).toEqual(
+      expect.arrayContaining(['.sales-cut', 'text-overflow: ellipsis', 'white-space: nowrap'])
+    )
+    // 负控：同一把尺子量真产物 ⇒ 空集（判据不是恒命中）
+    expect(paperTruncationHits(css(), cell)).toEqual([])
   })
 
   it('⑥ 销售单纸面**不印收款码**（issue #7589）：页脚只留温馨提示', () => {
