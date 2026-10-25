@@ -541,7 +541,7 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
             />
             <p className="text-xs text-neutral-400 mt-1.5">
               {operationOptions.length === 0
-                ? '工序库还没有可用工序 —— 先到「工艺配置 → 工序库」建立工序，再回来绑定。'
+                ? '工序库还没有可用工序 —— 先到「企业基础设置 → 工序与部位单价」建立工序，再回来绑定。'
                 : '绑定后这位工人扫码就自动选中这道工序、直接报工（屏上不再选工序）；同一道活按布帘/纱帘拆的多行已合并。'}
             </p>
           </div>

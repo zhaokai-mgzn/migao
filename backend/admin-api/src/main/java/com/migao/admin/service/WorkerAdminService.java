@@ -357,7 +357,7 @@ public class WorkerAdminService {
                     "工序库里没有这道工序：" + normalized,
                     List.of(BusinessException.detail("workerOperation",
                             "可选项 = 本企业隔离工序库里的活跃工序（与「工人档案」下拉里的工序同一份）")),
-                    "先在「工艺配置 → 工序库」里建好/启用这道工序，再回来给这位工人绑定；"
+                    "先在「企业基础设置 → 工序与部位单价」里建好/启用这道工序，再回来给这位工人绑定；"
                             + "留空 = 不绑定（工人扫码后自己选工序）");
         }
         return normalized;
