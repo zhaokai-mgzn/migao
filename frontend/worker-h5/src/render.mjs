@@ -87,7 +87,12 @@ export const PAGE_CUT_CALC = 'cut_calc'
 /** 页面键：订单页 —— **`/w/` 暂无对应面**（登记，不造 UI）。 */
 export const PAGE_ORDER = 'order'
 
-/** 页面键：发货页 —— **`/w/` 暂无对应面**（登记，不造 UI）。 */
+/**
+ * 页面键：发货页（`/w/shipment.html`，issue #7761）。
+ *
+ * <p>2026-10-25 之前这里写着「`/w/` 暂无对应面（登记，不造 UI）」—— 那个缺口已经补上：
+ * 后端 `/api/worker/shipment/**` 早在 #5648 就齐了，缺的一直只是入口与页面。</p>
+ */
 export const PAGE_SHIPMENT = 'shipment'
 
 /**
@@ -111,6 +116,9 @@ export const MACHINE_ENTRY_HREF = '/w/machine.html'
 
 /** 我的计件入口（同源静态页，与 `machine.html` 同款；issue #6767）。 */
 export const PIECEWORK_ENTRY_HREF = '/w/piecework.html'
+
+/** 发货入口（同源静态页；issue #7761 —— 全完工待发货列表 + 50×70 发货标签打印）。 */
+export const SHIPMENT_ENTRY_HREF = '/w/shipment.html'
 
 /**
  * 本机实际可走的页面集合（**唯一判据**）—— 三态各不相同，绝不合并：
@@ -658,9 +666,13 @@ function workerEntriesBar(state) {
     ? `<a class="wh5-entry" id="wh5-machine-entry" href="${MACHINE_ENTRY_HREF}">裁高计算（一体机）</a>` : ''
   const piecework = opened.has(PAGE_PIECEWORK)
     ? `<a class="wh5-entry" id="wh5-piecework-entry" href="${PIECEWORK_ENTRY_HREF}">我的计件</a>` : ''
-  if (!machine && !piecework) return ''
+  // 发货页（issue #7761）：本页终于有了对应面（`/w/shipment.html`），⇒ 按 `shipment` 页面键出入口。
+  // 与上面两条同款语义 = **菜单显隐**，不是访问拦截（直接敲 URL 仍可进入）。
+  const shipment = opened.has(PAGE_SHIPMENT)
+    ? `<a class="wh5-entry" id="wh5-shipment-entry" href="${SHIPMENT_ENTRY_HREF}">发货</a>` : ''
+  if (!machine && !piecework && !shipment) return ''
   return `<nav class="wh5-entries" id="wh5-worker-entries" aria-label="工人面入口">
-    ${machine}${piecework}
+    ${machine}${piecework}${shipment}
   </nav>`
 }
 

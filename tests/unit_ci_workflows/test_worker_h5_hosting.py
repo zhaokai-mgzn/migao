@@ -73,6 +73,10 @@ WORKER_MACHINE_APP = WORKER_H5_DIR / "src" / "machine.mjs"
 # 静默回落成 C 端 H5，HTTP 200 不报错）⇒ 落地面断言 ⑧ 段钉住它必须发布、且逐字节一致。
 WORKER_PIECEWORK = WORKER_H5_DIR / "piecework.html"
 WORKER_PIECEWORK_APP = WORKER_H5_DIR / "src" / "piecework-app.mjs"
+# 发货页（issue #7761）：**同族第三次**（machine.html → piecework.html → shipment.html）——
+# 新入口漏进发布集 ⇒ 线上被 try_files 静默回落成 C 端 H5，HTTP 200 不报错。
+WORKER_SHIPMENT = WORKER_H5_DIR / "shipment.html"
+WORKER_SHIPMENT_APP = WORKER_H5_DIR / "src" / "shipment-app.mjs"
 
 JOB = "publish"
 PUBLISH_SCRIPT = "deploy/scripts/swas-h5-publish-ci.sh"
@@ -268,6 +272,63 @@ def test_real_workflow_and_scripts_have_no_problems():
     assert problems == [], "发布接线判据不通过：\n  - " + "\n  - ".join(problems)
 
 
+def test_publish_set_mirrors_repo_entries():
+    """🔴 类级元守卫（铁律 8）：发布集的**三个镜像**必须与仓库里的 `*.html` 入口逐一相等。
+
+    <h3>为什么需要它（同一病灶已复发三次）</h3>
+    <p>`frontend/worker-h5/` 的页面是**静态文件**，发布集在三个地方各写一份：远端脚本的 `cp`、
+    落地面身份断言的编号段、以及两条 CI 守卫的夹具/镜像。新增一个页面只要漏掉其中**任意一处**，
+    症状都不是报错而是「线上打不开 + `try_files` 回落成 C 端 H5（HTTP 200）」——
+    2026-09-29 `machine.html`、2026-10-16 `piecework.html`、2026-10-25 `shipment.html`（issue #7761）
+    **三次同形**，每次都靠人发现。</p>
+    <p>本判据把「漏注册」变成一次**必然变红**：仓库里 `glob("*.html")` 的每一个入口，都必须在
+    ① 远端发布脚本里被 `cp`、② 落地面断言里有 `/w/<name>`、③ module 闭包守卫的
+    `WORKER_HTML_ENTRIES` 里出现。新增页面**只写代码不改这三处 ⇒ 红**。</p>
+    """
+    import re as _re
+
+    repo_entries = sorted(p.name for p in WORKER_H5_DIR.glob("*.html"))
+    assert repo_entries, "frontend/worker-h5 下取不到任何 *.html —— 本判据会空跑（不许当通过）"
+
+    remote = REMOTE_SCRIPT.read_text(encoding="utf-8")
+    copied = sorted(set(_re.findall(r'cp "\$SRC/([A-Za-z0-9_.-]+\.html)"', remote)))
+    assert copied == repo_entries, (
+        "远端发布脚本的发布集与仓库里的 *.html 入口不一致（漏掉 = 线上被 try_files 静默回落）：\n"
+        f"  仓库入口 = {repo_entries}\n  脚本发布 = {copied}"
+    )
+
+    verify = VERIFY_SCRIPT.read_text(encoding="utf-8")
+    missing_assertions = [name for name in repo_entries if f"/w/{name}" not in verify]
+    assert not missing_assertions, (
+        f"落地面身份断言里没有这些入口的身份校验：{missing_assertions}（新增页面必须补一段编号断言）"
+    )
+
+    closure = (Path(__file__).with_name("test_worker_h5_module_closure_guard.py")).read_text(encoding="utf-8")
+    match = _re.search(r"WORKER_HTML_ENTRIES = \(([^)]*)\)", closure)
+    assert match, "module 闭包守卫里找不到 WORKER_HTML_ENTRIES（镜像被改名 ⇒ 本判据失效）"
+    mirrored = sorted(_re.findall(r'"([A-Za-z0-9_.-]+\.html)"', match.group(1)))
+    assert mirrored == repo_entries, (
+        f"module 闭包守卫的入口镜像与仓库不一致：{mirrored} vs {repo_entries}"
+    )
+
+    # ④ **所有「铺一棵已发布树再跑 verify 脚本」的夹具**都必须铺全（第 4 处镜像，实测踩过：
+    #    加了 ⑨ 段之后 `test_bmini_h5_hosting.py` 的合并树仍只铺到 piecework.html ⇒ 夹具造假红）。
+    #    ⚠️ 边界（如实登记）：这份清单**手工维护**，新增第三个"铺树"夹具时不会自动被覆盖 ——
+    #    但真出现那种夹具时它自己会红（因为它跑的是同一份 verify 脚本），届时把它加进本元组即可。
+    tree_fixture_files = (
+        Path(__file__).with_name("test_worker_h5_hosting.py"),
+        Path(__file__).with_name("test_worker_h5_module_closure_guard.py"),
+        Path(__file__).with_name("test_bmini_h5_hosting.py"),
+    )
+    for fixture in tree_fixture_files:
+        text = fixture.read_text(encoding="utf-8")
+        absent = [name for name in repo_entries if name not in text]
+        assert not absent, (
+            f"{fixture.name} 的「已发布树」夹具没铺这些入口：{absent}"
+            "（该夹具跑了同一份 verify 脚本 ⇒ 会造出假红）"
+        )
+
+
 def test_worker_h5_entry_files_exist():
     """判据的前提资产（否则下面的身份断言无参照物）。"""
     assert WORKER_INDEX.is_file()
@@ -441,6 +502,13 @@ def test_sandbox_publish_is_identity_and_preserves_parent(tmp_path):
     assert "piecework-app.mjs" in published_piecework.read_text(encoding="utf-8"), (
         "我的计件页入口脚本没接上（页面加载不到任何模块 ⇒ 白屏）"
     )
+    # ④ 发货页也必须发布（issue #7761；红证：把它从远端脚本的发布集里删掉 ⇒ 本断言红）
+    published_shipment = root / SUBDIR / "shipment.html"
+    assert published_shipment.is_file(), "shipment.html 没被发布（发货页线上打不开）"
+    assert _file_sha(published_shipment) == _file_sha(WORKER_SHIPMENT), "发布的 shipment.html 与仓库不一致"
+    assert "shipment-app.mjs" in published_shipment.read_text(encoding="utf-8"), (
+        "发货页入口脚本没接上（页面加载不到任何模块 ⇒ 白屏）"
+    )
     body = published_index.read_text(encoding="utf-8")
     assert "src/app.mjs" in body
     assert "TARO_" not in body and "元元智能助手" not in body
@@ -592,6 +660,7 @@ def _copy_worker_tree(dest: Path) -> None:
     (dest / SUBDIR / "index.html").write_bytes(WORKER_INDEX.read_bytes())
     (dest / SUBDIR / "machine.html").write_bytes(WORKER_MACHINE.read_bytes())
     (dest / SUBDIR / "piecework.html").write_bytes(WORKER_PIECEWORK.read_bytes())
+    (dest / SUBDIR / "shipment.html").write_bytes(WORKER_SHIPMENT.read_bytes())
     subprocess.run(
         ["cp", "-R", str(WORKER_H5_DIR / "src") + "/.", str(dest / SUBDIR / "src")],
         check=True, capture_output=True,

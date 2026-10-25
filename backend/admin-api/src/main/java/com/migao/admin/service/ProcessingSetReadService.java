@@ -277,6 +277,64 @@ public class ProcessingSetReadService {
         return result;
     }
 
+    // ============================================================ 交付物 4：订单级「多套是否全完工」
+
+    /**
+     * 订单 → 套完成度（**批量**读面，issue #7761）：工人端发货页「全部套都完工」的唯一判据。
+     *
+     * <p><b>为什么必须放在本类</b>：`套是否完工` 的判定本体是 {@link #isCompleted} +
+     * {@link ProductionService#progressOf}，而本类已是全仓**唯一一份**（见类注释「单一口径」）。
+     * 发货列表若自己按 {@code processing_orders.status == 'completed'} 或 {@code done_qty >= qty}
+     * 再拼一遍，就是第二份口径 —— 两份迟早分叉，而分叉的方向正是
+     * 「**还有一套没完工的订单出现在可发货列表里**」（= 把半成品发出去，涉客户与钱）。</p>
+     *
+     * <p>口径与本类既有读面**逐字同源**（{@link #scanProgress}）：套 = {@code processing_order_sets} 行，
+     * 完工 = 该套**全部**活跃工序实例报满（空套不算完工）；只算该订单的**活跃加工单**
+     * （{@code selectActiveByOrderIds}：非取消态 + 未软删，与单条版同白名单）。</p>
+     *
+     * @param orderIds 订单 id 集合（空集 ⇒ 空 Map，不查库）
+     * @param tenantId 租户（null ⇒ 空 Map；每个查询显式带 {@code tenant_id} + {@code deleted = 0}）
+     * @return orderId → {@code {processing_order_id, processing_order_no, processing_order_status,
+     *         total_sets, completed_sets}}；**没有活跃加工单的订单不出现在结果里**（缺键 = 没有套，
+     *         与「有套但没完工」在调用方必须能分开 —— 前者不是「全完工」，后者是「还没完工」）
+     */
+    public Map<String, Map<String, Object>> setCompletionByOrderIds(java.util.Collection<String> orderIds,
+                                                                   Long tenantId) {
+        Map<String, Map<String, Object>> byOrder = new LinkedHashMap<>();
+        if (orderIds == null || orderIds.isEmpty() || tenantId == null) {
+            return byOrder;
+        }
+        List<ProcessingOrder> activeOrders = processingOrderMapper.selectActiveByOrderIds(orderIds, tenantId);
+        if (activeOrders == null || activeOrders.isEmpty()) {
+            return byOrder;
+        }
+        // 套一次取全（这批加工单），工序按单取（一单一张活跃加工单 ⇒ 查询数 = 订单数，不是 套数 × 订单数）
+        List<String> processingOrderIds = activeOrders.stream().map(ProcessingOrder::getId).toList();
+        Map<String, List<ProcessingOrderSet>> setsByProcessingOrder = new LinkedHashMap<>();
+        for (ProcessingOrderSet set : listSetsOfOrders(processingOrderIds, tenantId)) {
+            setsByProcessingOrder.computeIfAbsent(set.getProcessingOrderId(), key -> new ArrayList<>()).add(set);
+        }
+        for (ProcessingOrder po : activeOrders) {
+            Map<String, List<ProcessingPositionOperation>> operationsBySet =
+                    groupBySet(listOrderOperations(po.getId(), tenantId));
+            int completedSets = 0;
+            for (ProcessingOrderSet set : setsByProcessingOrder.getOrDefault(po.getId(), List.of())) {
+                if (isCompleted(productionService.progressOf(
+                        operationsBySet.getOrDefault(set.getId(), List.of())))) {
+                    completedSets++;
+                }
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("processing_order_id", po.getId());
+            row.put("processing_order_no", po.getProcessingOrderNo());
+            row.put("processing_order_status", po.getStatus());
+            row.put("total_sets", setsByProcessingOrder.getOrDefault(po.getId(), List.of()).size());
+            row.put("completed_sets", completedSets);
+            byOrder.put(po.getOrderId(), row);
+        }
+        return byOrder;
+    }
+
     // ============================================================ 单一口径聚合（原 ProductionScanService）
     // ⚠️ 以下 setOverview / overviewOperationView / positionView / positionEntry / productNameOf /
     //    listSetOperations / listOrderOperations / completedAt / requireProcessingOrder 全部是
