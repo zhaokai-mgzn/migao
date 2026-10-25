@@ -314,10 +314,7 @@ export default function SalesDoc({
              （自然分页会让后半截打到下一联 = 跨联错位）。复写三份由压感纸承担，DOM 只有一份。 */
           .sales-sheet { break-inside: avoid; page-break-inside: avoid; }
           .sales-doc-table thead { display: table-header-group; }
-          /* 长名截断可见（省略号），不是静默裁掉（issue #5651 硬约束） */
-          .sales-cut { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         }
-        .sales-cut { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       `}</style>
 
       {/* 🔴 **一份** .sales-sheet —— 三联纸的复写由纸承担，软件不渲染三遍（issue #5651） */}
@@ -375,11 +372,11 @@ export default function SalesDoc({
         <table className="w-full border-collapse mb-1">
           <tbody>
             <tr>
-              <DocCell label="客户" value={order.customerName} testId="sales-customer" cut />
+              <DocCell label="客户" value={order.customerName} testId="sales-customer" />
               <DocCell label="电话" value={order.customerPhone} testId="sales-phone" />
             </tr>
             <tr>
-              <DocCell label="地址" value={order.customerAddress} colSpan={3} testId="sales-address" cut />
+              <DocCell label="地址" value={order.customerAddress} colSpan={3} testId="sales-address" />
             </tr>
             <tr>
               {/* 订货电话：实证 #4 的栏位位置 = 下单电话口径（见文件头口径 3；现场口径存疑已登记） */}
@@ -437,10 +434,10 @@ export default function SalesDoc({
                 return (
                   <tr key={item.id || idx} data-testid={`sales-item-${idx}`}>
                     <DocTd align="right">{idx + 1}</DocTd>
-                    <DocTd cut testId={`sales-code-${idx}`}>
+                    <DocTd testId={`sales-code-${idx}`}>
                       {sku.code || SALES_DOC_MISSING}
                     </DocTd>
-                    <DocTd cut testId={`sales-color-${idx}`}>
+                    <DocTd testId={`sales-color-${idx}`}>
                       {sku.color || SALES_DOC_MISSING}
                     </DocTd>
                     <DocTd testId={`sales-door-width-${idx}`}>
@@ -520,21 +517,27 @@ export default function SalesDoc({
 }
 
 // ========== 打印友好的表格原子（纯边框、无底色，避免打印丢背景） ==========
+//
+// 🔴 **纸面一律折行印全文，不设省略号**（issue #7715，用户 2026-10-25 逐字
+// 「这里打印预览的文字要打印全，不能缩略」）：货号 / 颜色 / 客户 / 地址这些长度不可控的值，
+// 旧形态走 `.sales-cut`（`text-overflow: ellipsis` + `nowrap`）—— 客户拿到纸只看到
+// 「2659-08 月落雾…」，认不出是哪个花色。现改为 `break-words` 折行：全文上纸，
+// 行高由内容决定；纸面超高由既有自检（`PrintDocPreview` 的 `measureSheets`）如实报出，
+// **不靠裁切掩盖**（裁掉的那半截恰恰是客户要认的信息）。
+// ⚠️ 标签列 / 表头的 `whitespace-nowrap` **不在此列**：它们印的是固定短词（客户 / 门幅 …），
+// 不会变长；`nowrap` 只是别让两个字折成两行。
 
 function DocCell({
   label,
   value,
   colSpan = 1,
   testId,
-  cut = false,
   strong = false,
 }: {
   label: string
   value?: string | null
   colSpan?: number
   testId?: string
-  /** 长值截断**可见**（CSS 省略号）—— 不是静默裁切 */
-  cut?: boolean
   strong?: boolean
 }) {
   return (
@@ -545,11 +548,7 @@ function DocCell({
       <td
         colSpan={colSpan}
         data-testid={testId}
-        className={cn(
-          'border border-neutral-400 px-1.5 py-1',
-          cut && 'sales-cut',
-          strong && 'font-semibold'
-        )}
+        className={cn('border border-neutral-400 px-1.5 py-1 break-words', strong && 'font-semibold')}
       >
         {/* 缺值一律显式占位（`—` / 「未采集」）—— 不静默留空（issue #5651 硬约束）：
             空串 / 全空白串同属「没有值」，走同一个 `paperText` 口径 */}
@@ -584,21 +583,18 @@ function DocTh({
 function DocTd({
   children,
   align = 'left',
-  cut = false,
   testId,
 }: {
   children: React.ReactNode
   align?: 'left' | 'right'
-  cut?: boolean
   testId?: string
 }) {
   return (
     <td
       data-testid={testId}
       className={cn(
-        'border border-neutral-400 px-1.5 py-1 align-top',
-        align === 'right' ? 'text-right' : 'text-left',
-        cut ? 'sales-cut' : 'break-words'
+        'border border-neutral-400 px-1.5 py-1 align-top break-words',
+        align === 'right' ? 'text-right' : 'text-left'
       )}
     >
       {children}
