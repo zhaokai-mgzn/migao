@@ -91,6 +91,9 @@ public class OrderListResponse {
      */
     private Boolean isUrgent;
 
+    /** 外发加工标记（V194，issue #7746 后续）。 */
+    private Boolean isOutsourced;
+
     /** **客户要求到货日**（V120，issue #5177；`YYYY-MM-DD`）；`null` = **未指定**（不猜）。 */
     private LocalDate requiredDeliveryDate;
 

@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ProcessingOrderResponse;
+import com.migao.admin.dto.ProductionPoolViews;
 import com.migao.admin.dto.ProcessingOrderUpdateRequest;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
@@ -4447,6 +4448,12 @@ class ProcessingOrderServiceTest {
     /** 池内第二张单（两支单的键只在这里写一次，免得多处硬编码字符串）。 */
     private static final String ORDER_2 = "order-002";
 
+    /** 外发订单夹具（V194）：与 {@link #confirmedOrderOf} 同形，多了 is_outsourced = true。 */
+    private Order outsourcedOrderOf(String id, String orderNo, java.time.OffsetDateTime createdAt) {
+        return Order.builder().id(id).tenantId(TENANT).orderNo(orderNo).status("confirmed")
+                .createdAt(createdAt).isOutsourced(Boolean.TRUE).build();
+    }
+
     private Order confirmedOrderOf(String id, String orderNo, java.time.OffsetDateTime createdAt) {
         return Order.builder().id(id).tenantId(TENANT).orderNo(orderNo).status("confirmed")
                 .createdAt(createdAt).build();
@@ -4767,6 +4774,66 @@ class ProcessingOrderServiceTest {
         assertThatThrownBy(() -> processingOrderService.pool(TENANT, BigDecimal.ZERO))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("maxWaitHours 必须为正数");
+    }
+
+    // ============================================================ 外发区（V194，issue #7746 后续）
+
+    @Test
+    @DisplayName("#7746 外发单不进池：进 outsourcedLines / 不进 groups / 计数单列")
+    void outsourcedOrdersGoToTheirOwnQueue() {
+        java.time.OffsetDateTime now = java.time.OffsetDateTime.now();
+        when(orderMapper.selectList(any())).thenReturn(List.of(
+                outsourcedOrderOf("order-010", "ORD-20260912-0010", now.minusHours(3)),
+                confirmedOrderOf("order-011", "ORD-20260912-0011", now.minusHours(1))));
+        when(processingOrderMapper.selectActiveOrderIds(eq(TENANT), anyCollection())).thenReturn(List.of());
+        when(orderItemMapper.selectList(any())).thenReturn(
+                List.of(itemOf("order-010", "item-10", "SKU-1")),
+                List.of(itemOf("order-011", "item-11", "SKU-1")));
+
+        var pool = processingOrderService.pool(TENANT, null);
+
+        assertThat(pool.outsourcedLines())
+                .as("外发单进外发区（逐单立即派）")
+                .extracting(ProductionPoolViews.PoolLine::orderId)
+                .containsExactly("order-010");
+        assertThat(pool.outsourcedLines().get(0).isOutsourced()).isTrue();
+        assertThat(pool.outsourcedCount()).as("外发区去重订单数单列").isEqualTo(1);
+        assertThat(pool.groups()).hasSize(1);
+        assertThat(pool.groups().get(0).lines())
+                .as("成批候选里**不得**出现外发单（它不是合并对象）")
+                .extracting(ProductionPoolViews.PoolLine::orderId)
+                .containsExactly("order-011");
+        assertThat(pool.orderCount()).as("池内计数只算非加急非外发").isEqualTo(1);
+        assertThat(pool.urgentLines()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("#7746 外发单派单未选承接方 ⇒ 该单失败且给可行动出口（不静默按本厂派）")
+    void dispatchOutsourcedWithoutProcessorRejected() {
+        stubLibrary();
+        when(orderMapper.selectById("order-010")).thenReturn(
+                outsourcedOrderOf("order-010", "ORD-20260912-0010", java.time.OffsetDateTime.now()));
+        // 外发闸门在 `selectActiveByOrderId` **之前**（prepare 的状态闸门之后）⇒ 不 stub 活跃单查询
+        var results = processingOrderService.generate(List.of("order-010"), List.of(), TENANT, "u1",
+                null, false, null, null);
+
+        assertThat(results.get(0).isSuccess()).isFalse();
+        assertThat(results.get(0).getMessage()).contains("外发加工").contains("承接方");
+        assertThat(results.get(0).getSuggestion()).as("出口必须可行动").contains("外发");
+        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
+    }
+
+    @Test
+    @DisplayName("#7746 外发单混进合并派单 ⇒ 整批拒绝，一行不写")
+    void pooledBatchRejectsOutsourcedOrders() {
+        when(orderMapper.selectById("order-010")).thenReturn(
+                outsourcedOrderOf("order-010", "ORD-20260912-0010", java.time.OffsetDateTime.now()));
+
+        assertThatThrownBy(() -> processingOrderService.generate(List.of("order-010"), List.of(),
+                TENANT, "u1", null, true, null, null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("外发单不参与合并派单");
+        verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
     }
 
     // ============================================================ 状态机锚点（issue #4695 / D13）

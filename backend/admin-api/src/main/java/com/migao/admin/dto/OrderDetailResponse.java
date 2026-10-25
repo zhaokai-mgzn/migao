@@ -126,6 +126,9 @@ public class OrderDetailResponse {
      */
     private Boolean isUrgent;
 
+    /** 外发加工标记（V194，issue #7746 后续）：true = 不进成批候选、进派单页「外发区」逐单立即派。 */
+    private Boolean isOutsourced;
+
     /**
      * **客户要求到货日**（V120，issue #5177；`YYYY-MM-DD`）。`null` = **未指定**（不猜）。
      */

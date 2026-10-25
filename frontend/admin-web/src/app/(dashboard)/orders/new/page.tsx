@@ -1829,6 +1829,8 @@ export default function NewOrderPage() {
    * 与售后工单的 `priority` **零联动**（不 import、不读写任何售后字段）。
    */
   const [isUrgent, setIsUrgent] = useState(false)
+  /** 外发加工标记（V194，issue #7746 后续）：缺省不勾；勾了 ⇒ 该单不进成批候选、派单必须选承接方 */
+  const [isOutsourced, setIsOutsourced] = useState(false)
   const [requiredDeliveryDate, setRequiredDeliveryDate] = useState('')
 
   // 表单错误
@@ -3170,7 +3172,7 @@ export default function NewOrderPage() {
         // **加急 / 要求到货日**（issue #5177，做在订单上）：**未勾/未填 ⇒ 键不出现** ——
         // 「没填」与「显式不加急」在请求体上必须能区分（后端库列 NOT NULL DEFAULT FALSE / NULL）。
         // 不写死默认值（#4419 同族口径）；与售后 priority 零联动。
-        ...urgencyRequestFields(isUrgent, requiredDeliveryDate),
+        ...urgencyRequestFields(isUrgent, requiredDeliveryDate, isOutsourced),
         remark: finalRemark || undefined,
         items,
       })
@@ -3563,6 +3565,33 @@ export default function NewOrderPage() {
                     加急（插队）
                     <span className="block text-xs text-neutral-400 mt-0.5">
                       加急单不参与合并，在智能派单页立即单独派单
+                    </span>
+                  </span>
+                </div>
+                {/* 外发加工（V194，issue #7746 后续）：与加急同款开关（role="switch"，理由同上） */}
+                <div className="flex items-start gap-3">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={isOutsourced}
+                    aria-label="外发加工"
+                    onClick={() => setIsOutsourced((v) => !v)}
+                    className={cn(
+                      'mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
+                      isOutsourced ? 'bg-primary-600' : 'bg-neutral-300'
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'ml-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform',
+                        isOutsourced && 'translate-x-4'
+                      )}
+                    />
+                  </button>
+                  <span className="text-sm text-neutral-700">
+                    外发加工（交给加工厂）
+                    <span className="block text-xs text-neutral-400 mt-0.5">
+                      外发单不参与合并，在智能派单页选承接方后立即单独派单
                     </span>
                   </span>
                 </div>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, CheckCircle2, ChevronDown, Layers, RefreshCw, XCircle, Zap } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronDown, Factory, Layers, RefreshCw, XCircle, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import { extractApiErrorMessage, toastRequestError } from '@/lib/api-error'
 import { poolBoardApi } from '@/lib/api'
@@ -211,6 +211,8 @@ export default function ProductionPoolPage() {
   }
 
   const urgentLines = board?.urgentLines ?? []
+  /** 外发区（issue #7746 后续）：订单打了「外发加工」标记 ⇒ 不进池、逐单立即派，且必须先选承接方 */
+  const outsourcedLines = board?.outsourcedLines ?? []
   const groups = batchGroups(board)
   const warnings = board?.warnings ?? []
 
@@ -497,6 +499,77 @@ export default function ProductionPoolPage() {
                               onClick={() => void dispatchSingle(line)}
                               loading={singlePending === line.orderId}
                               data-testid={`pool-dispatch-single-${line.orderId}`}
+                            >
+                              立即派单
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </Card>
+
+          {/*
+            ── 外发区（issue #7746 后续）──────────────────────────────────────────────
+            订单级「外发加工」标记 ⇒ 与加急同款：**不进池**（不是成批候选）、逐单立即派；
+            区别 = 派单前**必须**选承接方（加工厂），否则派单按钮不可用（服务端也会 422）。
+          */}
+          <Card>
+            <div className="p-5" data-testid="pool-outsourced-section">
+              <div className="flex items-center gap-2 mb-3">
+                <Factory className="w-4 h-4 text-primary-600" />
+                <h2 className="text-sm font-medium text-neutral-900">外发订单（不参与合并，选好承接方后立即派）</h2>
+                <span className="text-xs text-neutral-500">
+                  {outsourcedLines.length} 行 / {board?.outsourcedCount ?? 0} 单 ——{' '}
+                  {processorId ? '已选承接方，可立即派单' : '先在上方选「承接方」再派单'}
+                </span>
+              </div>
+              {outsourcedLines.length === 0 ? (
+                <div className="px-4 py-8 text-center text-neutral-400 text-sm">当前没有待派的外发订单</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm" data-testid="pool-outsourced-table">
+                    <thead className="bg-neutral-50 text-neutral-600">
+                      <tr>
+                        <th className="text-left px-4 py-2.5 font-medium whitespace-nowrap">单号</th>
+                        <th className="text-left px-4 py-2.5 font-medium whitespace-nowrap">物料（商品 × 颜色 × 门幅）</th>
+                        <th className="text-right px-4 py-2.5 font-medium whitespace-nowrap">需求米数</th>
+                        <th className="text-right px-4 py-2.5 font-medium whitespace-nowrap">等待时长</th>
+                        <th className="text-left px-4 py-2.5 font-medium whitespace-nowrap">到货日</th>
+                        {/* 右缘冻结（issue #6717）：宽表里「操作」列不得落到默认视口外 */}
+                        <th className="sticky right-0 z-20 border-l border-neutral-200 bg-neutral-50 px-4 py-2.5 text-right font-medium whitespace-nowrap">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {outsourcedLines.map((line) => (
+                        <tr
+                          key={`${line.orderId}-${line.itemId}`}
+                          data-testid={`pool-outsourced-line-${line.orderId}`}
+                          className="border-t border-neutral-100 hover:bg-neutral-50"
+                        >
+                          <td className="px-4 py-2.5 font-mono text-neutral-900">{line.orderNo}</td>
+                          <td className="px-4 py-2.5 text-neutral-700">
+                            {line.productName}
+                            <span className="text-neutral-400 ml-1.5">{line.skuCode || '-'}</span>
+                          </td>
+                          <td className="px-4 py-2.5 text-right font-mono text-neutral-900">
+                            {formatMeters(line.requiredMeters)}
+                          </td>
+                          <td className="px-4 py-2.5 text-right text-neutral-600">
+                            {formatWaitHours(line.waitHours)}
+                          </td>
+                          <td className="px-4 py-2.5 whitespace-nowrap text-neutral-600">
+                            {formatRequiredDeliveryDate(line.requiredDeliveryDate)}
+                          </td>
+                          <td className="sticky right-0 z-10 border-l border-neutral-100 bg-white px-4 py-2.5 text-right">
+                            <Button
+                              size="sm"
+                              disabled={!processorId || singlePending === line.orderId}
+                              onClick={() => void dispatchSingle(line)}
+                              data-testid={`pool-outsourced-dispatch-${line.orderId}`}
                             >
                               立即派单
                             </Button>

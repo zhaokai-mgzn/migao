@@ -117,7 +117,8 @@ describe('🔴 红证夹具：PR-079 散文声称的两条红证（issue #5195�
       { file: 'src/app/(dashboard)/production/pool/page.tsx', call: 'urgentBadgeText(line)' },
       {
         file: 'src/app/(dashboard)/orders/new/page.tsx',
-        call: '...urgencyRequestFields(isUrgent, requiredDeliveryDate)',
+        // issue #7746 后续：请求体多了外发标记 ⇒ 调用点同步成三参（口径仍只有这一份实现）
+        call: '...urgencyRequestFields(isUrgent, requiredDeliveryDate, isOutsourced)',
       },
     ]
     const problems: string[] = []

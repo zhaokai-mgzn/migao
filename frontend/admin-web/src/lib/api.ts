@@ -853,6 +853,7 @@ export const orderApi = {
   updateUrgency: (id: string, data: OrderUrgencyParams) =>
     request.put<ApiResponse<void>>(`/api/admin/orders/${id}/urgency`, {
       ...(data.isUrgent !== undefined ? { isUrgent: data.isUrgent } : {}),
+      ...(data.isOutsourced !== undefined ? { isOutsourced: data.isOutsourced } : {}),
       ...(data.requiredDeliveryDate !== undefined
         ? { requiredDeliveryDate: data.requiredDeliveryDate }
         : {}),

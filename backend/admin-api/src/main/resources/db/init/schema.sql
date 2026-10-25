@@ -718,6 +718,8 @@ CREATE TABLE orders (
     logistics_company VARCHAR(128),                 -- 收货物流/快递公司；NULL = 建单未传（不猜）
     -- 来自 V120__order_urgency_and_required_delivery_date.sql（issue #5177）
     is_urgent BOOLEAN NOT NULL DEFAULT FALSE,       -- 订单级加急标记：true = 插队、不进池、立刻单派（pooled=false）；与售后工单 priority 不共享来源、不联动（用户裁定「加急不能跟售后工单绑定」）。NOT NULL ⇒ 无第三态，「未标加急」与「明确不加急」同值
+    is_outsourced BOOLEAN NOT NULL DEFAULT FALSE,   -- 订单级外发加工标记（V194，issue #7746 后续）：TRUE = 不进成批候选、进派单页「外发区」逐单立即派，且派单时必须选承接方（加工厂）。NOT NULL ⇒ 无第三态；存量行 FALSE 不回填
+
     required_delivery_date DATE,                    -- 客户要求到货日；NULL = 未指定（不猜、不回填）。DATE 而非 TIMESTAMP —— 只有日期精度的事实不该带时刻。消费者 = 池看板排序（到货日升序、NULL 排最后）
     remark TEXT,                                     -- 备注
     -- 来自 V148__add_order_shipped_at.sql（issue #6262，用户 2026-10-03 逐字裁定 B）

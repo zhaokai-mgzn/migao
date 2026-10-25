@@ -10816,6 +10816,25 @@ _CASE_PG_095 = EvalCase(
     precondition='本用例是 [backend-contract] 确定性单测：前置（供应商档案 / 订单 / 工序库桩）由测试类自建并打桩（Mockito），不依赖共享夹具或种子真值；前置不成立时对应单测直接红',
 )
 
+# ── PG-096 [NORMAL] 外发加工标记：订单打标后不进成批候选、进派单页外发区逐单立即派，且派单必须选承接方（V194）（源: cases/processing-order.yml）──
+_CASE_PG_096 = EvalCase(
+    id='PG-096',
+    legacy_id='',
+    title='外发加工标记：订单打标后不进成批候选、进派单页外发区逐单立即派，且派单必须选承接方（V194）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['外单应该和加急单一样，所以入口应该放在加急单那块区域', '现在做'],
+    expectations=[],
+    data_checks=['**判据 1·外发单不进池（会红）**：`orders.is_outsourced = TRUE` 的订单**不出现在任何** `groups[].lines`（不是成批候选），而是进 `outsourcedLines`，且 `outsourcedCount` 单列计数。执行点 = ProcessingOrderServiceTest.outsourcedOrdersGoToTheirOwnQueue。**红证**：把 pool() 里外发分支删掉（照旧进 groups）⇒ 该用例红。', '**判据 2·派单必须选承接方（会红）**：外发单派单时 `processorSupplierId` 为空 ⇒ 该单 `success=false` + 文案含「外发加工 / 承接方」+ 可行动 suggestion，**一行不写**（不静默按本厂派）。执行点 = 同文件 dispatchOutsourcedWithoutProcessorRejected。**红证**：删掉 prepare() 的外发闸门 ⇒ 外发单被按本厂派出去。', '**判据 3·不进合并（会红）**：外发单混进 `pooled=true` 批次 ⇒ 整批显式拒绝（`外发单不参与合并派单`），一行不写。执行点 = 同文件 pooledBatchRejectsOutsourcedOrders。**红证**：删掉 assertNoOutsourcedInPooledBatch ⇒ 该用例红。', '**判据 4·外发区 UI 与请求体（会红）**：派单页外发区渲染该单、且成批区**取不到**它；未选承接方时「立即派单」disabled；选中后派单请求体 = 单订单 + `pooled:false` + `processorSupplierId`。执行点 = frontend/admin-web/tests/unit/pages/production-pool-urgent.test.tsx 的外发区两条用例。**红证**：把按钮的 `disabled={!processorId}` 去掉 ⇒ 第一条红；请求体不带 processorSupplierId ⇒ 第二条红。', '**判据 5·订单侧开关（会红）**：订单详情「加急 / 外发 / 到货日」面板的「外发加工」开关打开后保存 ⇒ 请求体带 `isOutsourced: true` 并通知父级重新拉单。执行点 = frontend/admin-web/tests/unit/components/OrderUrgencyPanel.test.tsx。**红证**：面板不提交该键 ⇒ 对应用例红。', '**边界（照实登记）**：外发单**不会**被自动成批派单（自动腿只处理加急立即派与成批条件命中，外发必须人工选厂）；`is_urgent` 与 `is_outsourced` 可同时为真（加急优先进插队区，外发仍要求选承接方）；存量订单不回填该列（默认 FALSE）。'],
+    skip_reason='[backend-contract] admin-api 单测 + admin-web 单测（无 LLM 行为面）',
+    tags=['processing-order', 'dispatch', 'outsourcing'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 确定性单测：前置（订单 is_outsourced 标记 / 工序库桩 / 供应商档案）由测试类自建并打桩（Mockito），不依赖共享夹具或种子真值；前置不成立时对应单测直接红',
+)
+
 # ── PP-002 [NORMAL] 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query）（源: cases/processing.yml）──
 _CASE_PP_002 = EvalCase(
     id='PP-002',
@@ -17227,6 +17246,7 @@ ALL_CASES = (
     _CASE_PG_093,
     _CASE_PG_094,
     _CASE_PG_095,
+    _CASE_PG_096,
     _CASE_PP_002,
     _CASE_PP_006,
     _CASE_PP_007,
