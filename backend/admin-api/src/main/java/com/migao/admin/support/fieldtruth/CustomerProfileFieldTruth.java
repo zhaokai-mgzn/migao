@@ -99,20 +99,20 @@ public final class CustomerProfileFieldTruth {
         f.put("registeredAt", has("建档 setRegisteredAt(OffsetDateTime.now()) / builder .registeredAt(now)（真值级：建档时刻）"));
 
         // ── 备注与标签 ──
-        f.put("agentNotes", has("createFromOrder 写入「首单收货地址：…」 / updateCustomer 非空拷贝（客服备注真值来自人工/Agent）"));
+        f.put("agentNotes", has("updateCustomer 非空拷贝 + 合并时从较晚那条补空（issue #7711 起建单不再写「首单收货地址」文本，地址进 default_receiver_address）"));
         f.put("tags", has("addTagToCustomer / removeTagFromCustomer 的 profile.setTags(tagIds)（真值来自 customer_tags 表关联）+ updateCustomer 非空拷贝"));
         f.put("customFields", has("CustomerService#updateCustomer 非空拷贝（自定义字段由调用方下发）"));
 
         // ── 工艺画像与常用物流（issue #3984，V47）──
         f.put("craftMode", has("updateCustomer 的 existing.setCraftMode(requireValidCraftMode(profile.getCraftMode()))（真值级：值经白名单校验后落库）"));
         f.put("craftProfile", has("CustomerService#updateCustomer 非空拷贝（M3-F 报价协商会读它）"));
-        f.put("defaultLogisticsType", has("CustomerService#updateCustomer 非空拷贝（客户常用物流方式）"));
-        f.put("defaultLogisticsCompany", has("CustomerService#updateCustomer 非空拷贝（常用承运商）"));
+        f.put("defaultLogisticsType", has("CustomerService#updateCustomer 非空拷贝 + createFromOrder 补空条件写（issue #7711，COALESCE 不覆盖人工值）"));
+        f.put("defaultLogisticsCompany", has("CustomerService#updateCustomer 非空拷贝 + createFromOrder 补空条件写（issue #7711，COALESCE 不覆盖人工值）"));
 
         // ── 默认收货信息（issue #4419，V70）──
-        f.put("defaultReceiverName", has("CustomerService#updateCustomer 非空拷贝（收货人姓名，新增订单选客户时逐字带出）"));
-        f.put("defaultReceiverPhone", has("CustomerService#updateCustomer 非空拷贝（客户列表 keyword 搜索覆盖此列，issue #4436）"));
-        f.put("defaultReceiverAddress", has("CustomerService#updateCustomer 非空拷贝（单字段文本地址，与 orders.customer_address 同口径）"));
+        f.put("defaultReceiverName", has("CustomerService#updateCustomer 非空拷贝 + createFromOrder 补空条件写（issue #7711）"));
+        f.put("defaultReceiverPhone", has("CustomerService#updateCustomer 非空拷贝 + createFromOrder 补空条件写（issue #7711）+ 客户列表 keyword 搜索覆盖此列（issue #4436）"));
+        f.put("defaultReceiverAddress", has("CustomerService#updateCustomer 非空拷贝 + createFromOrder 补空条件写（issue #7711；单字段文本地址，与 orders.customer_address 同口径）"));
 
         // ── 生命周期预测 ──
         f.put("churnRiskScore", none("全仓零写入点（流失风险评分从未被计算），DB DEFAULT 0.0000 会被读成「流失风险 0」"));

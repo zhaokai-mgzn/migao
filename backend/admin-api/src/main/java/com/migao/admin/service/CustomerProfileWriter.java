@@ -76,18 +76,6 @@ public final class CustomerProfileWriter {
     }
 
     /**
-     * 没有去重键（既无手机号也无微信 openid）时建一条匿名档案（issue #7257 之前的原有行为，语义不变）。
-     *
-     * <p>为什么还留在写面里：调用方（会话建档）可能拿不到 openid；此时无处可去重，
-     * 每次调用就是一条新档案 —— 保留这个行为，但**建行本身仍只从这一个点发生**（类级守卫才守得住）。</p>
-     */
-    public static CustomerProfile createAnonymous(CustomerProfileMapper mapper, CustomerProfile candidate) {
-        candidate.setId(newId());
-        mapper.insertIgnoreByOpenid(candidate);
-        return candidate;
-    }
-
-    /**
      * 统一的默认值（三处建档案原来各写一份，口径容易漂）。返回 builder 而不是成品，
      * 因为 {@code CustomerProfile} 没有 {@code toBuilder()}，调用方要在默认值上追加自己的字段。
      */

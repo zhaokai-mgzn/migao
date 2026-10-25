@@ -28,6 +28,8 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 
 /**
@@ -61,6 +63,9 @@ class CustomerProfileTruthExposureTest extends BaseServiceTest {
     private SessionMapper sessionMapper;
     @Mock
     private SessionMessageMapper sessionMessageMapper;
+    /** issue #7711：建档收口到身份收敛服务（本文件只验证「种子照旧被交给建档面」）。 */
+    @Mock
+    private CustomerProfileIdentityService identityService;
 
     /** 读路径返回的行：无真值字段一律带「DB 列默认值 / 建档种子」形态的值（= 修前商家与 Agent 看到的东西）。 */
     private static CustomerProfile dbDefaultShapedRow() {
@@ -199,11 +204,16 @@ class CustomerProfileTruthExposureTest extends BaseServiceTest {
     @Test
     @DisplayName("边界：遮蔽只发生在读面 —— 建档路径的种子值照写（不改写入语义）")
     void creationSeedsAreUntouched() {
-        // issue #7257：写面收口（findFirstByOpenid 未命中 ⇒ 条件插入命中）
-        when(customerProfileMapper.findFirstByOpenid(any(), any())).thenReturn(null);
-        when(customerProfileMapper.insertIgnoreByOpenid(any(CustomerProfile.class))).thenReturn(1);
+        // issue #7711：建档收口到 CustomerProfileIdentityService ⇒ 本文件只验证种子**照旧来自建档面**
+        //（种子的具体取值由 CustomerProfileIdentityServiceTest 判，避免同一口径两处断言）
+        CustomerProfile seeded = CustomerProfile.builder()
+                .id("cust-new").tenantId(1L).wechatOpenid("openid_new").wechatNickname("新客户")
+                .vipLevel("normal").customerStatus("active").lifecycleStage("new")
+                .totalOrders(0).totalConsumption(BigDecimal.ZERO).build();
+        when(identityService.ensure(eq(1L), isNull(), eq("openid_new"),
+                any(CustomerProfileIdentityService.ProfileSeed.class), eq(true))).thenReturn(seeded);
 
-        CustomerProfile created = customerService.createFromSession(1L, "openid_new", "新客户", "wechat_mini");
+        CustomerProfile created = customerService.createFromSession(1L, "openid_new", "新客户", "wechat_mini", null);
 
         assertThat(created.getVipLevel()).isEqualTo("normal");
         assertThat(created.getCustomerStatus()).isEqualTo("active");
