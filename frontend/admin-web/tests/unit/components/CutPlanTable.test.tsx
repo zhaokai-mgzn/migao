@@ -12,7 +12,7 @@
 //   ④ **批次号列**（issue #6754）：派工指定批次上屏；未指派（服务端 `null`）⇒ `—`
 //      （裁床必须看得到「去哪一批拿料」，所以这一列是**常驻列**，不是有值才出现）；
 //   ⑤ **从该批裁（米）列**（issue #7722）：这一批裁多少布上屏；未指派 ⇒ `—`（不折 0 米）；
-//   ⑥ **第二列列头是「帘种」不是「部位」**（issue #7734）：它用来区分布帘 / 纱帘，不是窗位。
+//   ⑥ **没有「帘种」列；「货号」列只印货号**（issue #7737）：帘种数据常缺、组件多为空 ⇒ 一并退场。
 //
 // ⚠️ 本组件**不重算**：不按 `fabric_meters` 除幅数、不把 `null` 折 0 —— 它只渲染服务端给的键。
 import { describe, expect, it } from 'vitest'
@@ -57,14 +57,15 @@ const SETS: ProcessingOrderSetRow[] = [
 ]
 
 describe('CutPlanTable（issue #5693 精裁输出清单）', () => {
-  it('① 逐条渲染「裁多长 × 几片」+ 用料 + 套号 / 帘种 / 组件 / 备注', () => {
+  it('① 逐条渲染「裁多长 × 几片」+ 用料 + 套号 / 货号 / 备注', () => {
     render(<CutPlanTable sets={SETS} />)
 
     const row = screen.getByTestId('cut-plan-row-CSO260915-02615-014-oi-cloth')
     expect(within(row).getByText('CSO260915-02615-014')).toBeInTheDocument()
-    expect(within(row).getByText('布帘')).toBeInTheDocument()
-    expect(within(row).getByText('主布')).toBeInTheDocument()
+    // 货号列（issue #7737）：只印货号 / 商品名 —— 帘种与组件不再上屏
     expect(within(row).getByText('布艺遮光帘A')).toBeInTheDocument()
+    expect(within(row).queryByText('布帘')).toBeNull()
+    expect(within(row).queryByText('主布')).toBeNull()
     // 用料（米）：唯一来源 = 服务端下发（订单行算料口径优先，#7722）
     // ⚠️ 用 testid 定位，不按文本找 —— 本行「用料 12.30 米」与「从该批裁 12.30 米」是**两个不同的数**
     // （公式口径 vs 批次净额），按文本查会同时命中两格（实测：getByText 报 multiple elements）。
@@ -81,14 +82,18 @@ describe('CutPlanTable（issue #5693 精裁输出清单）', () => {
     expect(screen.getAllByTestId(/^cut-plan-row-/)).toHaveLength(2)
   })
 
-  it('🔴 ⑥ 第二列叫「帘种」而不是「部位」（issue #7734）：那一列装的是布帘 / 纱帘', () => {
+  it('🔴 ⑥ 没有「帘种」列；「货号」列只印货号、不拼组件（issue #7737）', () => {
     render(<CutPlanTable sets={SETS} />)
 
-    expect(screen.getByRole('columnheader', { name: '帘种' })).toBeInTheDocument()
-    // 🔴 反向：不得再出现「部位」列头 —— 商家会把它读成窗位（客厅 / 主卧），而这一列装的是帘种
+    // ① 帘种列整列删掉（真实数据常整列为空，留着只是空占位）
+    expect(screen.queryByRole('columnheader', { name: '帘种' })).toBeNull()
     expect(screen.queryByRole('columnheader', { name: '部位' })).toBeNull()
-    // 列值仍是帘种取值（键名 `position_kind` 不变，读面契约冻结）
-    expect(screen.getByTestId('cut-plan-row-CSO260915-02615-014-oi-gauze')).toHaveTextContent('纱帘')
+    // ② 货号列常驻，且格内**只有**货号
+    expect(screen.getByRole('columnheader', { name: '货号' })).toBeInTheDocument()
+    const cloth = screen.getByTestId('cut-plan-row-CSO260915-02615-014-oi-cloth')
+    expect(cloth).toHaveTextContent('布艺遮光帘A')
+    // 🔴 反向：把 `component` 拼回格内 ⇒ 本断言红（用户逐字「移除组件」）
+    expect(cloth.textContent).not.toContain('主布')
   })
 
   it('🔴 ② 缺值不渲染假数据：null ⇒ —（不出现 0.00 / 0 片 / 1 片）+ 原因可见', () => {

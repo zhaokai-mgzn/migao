@@ -16,12 +16,13 @@ import type { CutPlanRow, ProcessingOrderSetRow } from '@/types'
  * 整块在「本单一套都不存在 / 清单全空」时不出现假表格，只给一句可行动的空态文案。
  *
  * <h2>行粒度</h2>
- * 行 = **套 × 帘种**（服务端的清单就是按套给的，一组明细行 = 一个帘种）⇒ 本表按套平铺并保留「套号」列。
- * 🔴 第二列叫**帘种**、不叫「部位」（issue #7734，用户逐字「不要体现部位，应该是用来区分布帘还是纱帘」）：
- * 这一列装的是 `position_kind` = **布帘 / 纱帘 / 帘头**，作用是区分帘种；「部位」在商家语里会被读成窗位
- * （客厅 / 主卧）。键名 `position_kind` 不动（读面契约冻结）。
- * 表头顺序照 issue 正文的字段面，并带服务端下发的 `batch_no` / `batch_meters`：
- * `帘种 | 组件/货号 | 用料（米） | 裁多长（米） × 几片 | 批次号 | 从该批裁（米） | 备注`。
+ * 行 = **套 × 明细行**（服务端的清单就是按套给的，一行 = 一个货号）⇒ 本表按套平铺并保留「套号」列。
+ * 🔴 列面按 2026-10-25 用户裁定收窄（issue #7737，逐字「帘种缺乏数据，移除组件，只保留货号就好了」）：
+ * ① **不设「帘种」列** —— `position_kind` 在真实数据里常整列为空（用户截图整列 `—`），留着只是空占位；
+ * ② **列头「货号」**，格内只渲染 `position_name`（商品名 / 货号），**不再拼** `component`
+ *    （组件同样多为空，且裁床认的是货号）；`position_kind` / `component` 键**仍下发**（读面契约冻结，
+ *    工人端与其它消费者照旧读）。
+ * 表头顺序：`货号 | 用料（米） | 裁多长（米） × 几片 | 批次号 | 从该批裁（米） | 备注`。
  * 数量显示口径与工人端 `render.mjs` 的 `fmtQty` 一致（`toFixed(2)`）——两边同一份清单，
  * 不该出现「商家看 12.3 / 工人看 12.30」这种差。
  *
@@ -59,8 +60,7 @@ export default function CutPlanTable({ sets }: { sets?: ProcessingOrderSetRow[] 
                 类级守卫 = `frontend/admin-web/tests/unit/list-table-nowrap-guard.test.ts`（本表因此从它的
                 存量台账里**除名**、基线 23 → 22）。 */}
             <th className="py-2 pr-3 font-normal whitespace-nowrap">套号</th>
-            <th className="py-2 pr-3 font-normal whitespace-nowrap">帘种</th>
-            <th className="py-2 pr-3 font-normal whitespace-nowrap">组件 / 货号</th>
+            <th className="py-2 pr-3 font-normal whitespace-nowrap">货号</th>
             <th className="py-2 pr-3 font-normal whitespace-nowrap">用料（米）</th>
             <th className="py-2 pr-3 font-normal whitespace-nowrap">裁多长（米） × 几片</th>
             <th className="py-2 pr-3 font-normal whitespace-nowrap">批次号</th>
@@ -78,12 +78,8 @@ export default function CutPlanTable({ sets }: { sets?: ProcessingOrderSetRow[] 
                 data-testid={`cut-plan-row-${setNo}-${row.order_item_id}`}
               >
                 <td className="py-2 pr-3 whitespace-nowrap text-neutral-500">{setNo}</td>
-                <td className="py-2 pr-3 whitespace-nowrap text-neutral-900">
-                  {row.position_kind ?? '—'}
-                </td>
                 <td className="py-2 pr-3 text-neutral-700">
-                  <span>{row.component ?? '—'}</span>
-                  <span className="ml-1 text-neutral-500">{row.position_name ?? ''}</span>
+                  {row.position_name ?? '—'}
                 </td>
                 <td
                   className="py-2 pr-3 whitespace-nowrap text-neutral-900"
