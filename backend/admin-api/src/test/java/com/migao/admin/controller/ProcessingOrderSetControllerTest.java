@@ -99,10 +99,10 @@ class ProcessingOrderSetControllerTest extends BaseControllerTest {
             "set_overview", "progress");
     /** ⚠️ `cut_plan`（issue #5693）= 精裁输出清单（给裁床的「裁多长 × 几片」），**新增键**。 */
     private static final List<String> OVERVIEW_KEYS = List.of("set_no", "set_index", "positions", "cut_plan");
-    /** 精裁输出清单的一行（issue #5693 + issue #6754）：十键恒在，缺值 null。 */
+    /** 精裁输出清单的一行（issue #5693 + #6754 + #7722）：**十一键恒在**，缺值 null。 */
     private static final List<String> CUT_PLAN_ROW_KEYS = List.of("order_item_id", "position_kind",
-            "position_name", "component", "batch_no", "fabric_meters", "panel_count", "panel_length_m",
-            "remark", "missing_reason");
+            "position_name", "component", "batch_no", "batch_meters", "fabric_meters", "panel_count",
+            "panel_length_m", "remark", "missing_reason");
     /** ⚠️ `remark`（issue #5685）为**新增键**（部位级备注，未填 ⇒ null）：键恒在。 */
     private static final List<String> POSITION_KEYS =
             List.of("order_item_id", "position_kind", "position_name", "remark", "operations");
@@ -289,7 +289,13 @@ class ProcessingOrderSetControllerTest extends BaseControllerTest {
         assertThat(gauze.path("fabric_meters").isNull()).as("拿不到用料 ⇒ null").isTrue();
         assertThat(gauze.path("panel_count").isNull()).as("拿不到用料 ⇒ 不报片数（不放半截数据）").isTrue();
         assertThat(gauze.path("panel_length_m").isNull()).isTrue();
-        assertThat(gauze.path("missing_reason").asText()).contains("精裁");
+        assertThat(gauze.path("missing_reason").asText())
+                .as("🔴 #7722：车间可见的缺值原因不得出现内部标识（「精裁」工序实例 / qty_source）")
+                .contains("用料米数")
+                .doesNotContain("精裁", "工序实例", "qty_source");
+        // 从该批裁多少布（issue #7722）：键恒在；本夹具没有台账消耗 ⇒ null（不是省键）
+        assertThat(detailPlan.get(0).path("batch_meters").isNull()).isTrue();
+        assertThat(detailPlan.get(1).path("batch_meters").isNull()).isTrue();
     }
 
     @Test

@@ -288,7 +288,7 @@ public class ProcessingSetReadService {
      * <p><b>形状</b>：{@code {set_no, set_index, positions: [{order_item_id, position_kind,
      * position_name, remark, operations: [{operation_id, logical_name, position, seq, qty, unit,
      * unit_price, status, done_qty}]}], cut_plan: [{order_item_id, position_kind, position_name,
-     * component, batch_no, fabric_meters, panel_count, panel_length_m, remark,
+     * component, batch_no, batch_meters, fabric_meters, panel_count, panel_length_m, remark,
      * missing_reason}]}}。</p>
      *
      * <p>🔴 {@code cut_plan}（issue #5693）= **精裁输出清单**（给裁床的「裁多长 × 几片」），
@@ -353,10 +353,17 @@ public class ProcessingSetReadService {
      *
      * <h2>🔴 字段面的取值来源（issue 正文「前置 1」要求逐字钉死，不许两处口径）</h2>
      * <ul>
-     *   <li><b>用料（米）</b>{@code fabric_meters} = 该部位「精裁」**工序实例**的 {@code qty}，
-     *       且**仅当** {@code qty_source} 逐字 = {@value #QTY_SOURCE_FABRIC_METERS}（引擎直接供数）。
-     *       <b>不</b>回落订单行 / 加工单快照的 {@code fabric_meters} —— 那是第二份口径；
-     *       {@code fallback}（兜底 1）等取值一律留空 + 标原因（拿 1 当用料就是渲染假数据）。</li>
+     *   <li><b>用料（米）</b>{@code fabric_meters} = <b>订单行算料口径优先</b>
+     *       （{@code order_items.processing_info.fabric_meters}，issue #7722）；该键缺席时才回落该部位
+     *       「精裁」**工序实例**的 {@code qty}（且**仅当** {@code qty_source} 逐字 =
+     *       {@value #QTY_SOURCE_FABRIC_METERS}，存量兼容）。
+     *       🔴 <b>方向（#7722 改判）</b>：订单行算料输出 → 工序实例 {@code qty} 是**派生**关系
+     *       （{@code ProductionOperationQtyClient} 就按它供数）⇒ 清单是**裁床的作业指令**，
+     *       不能反过来等实例存在才出数 —— 那正是「没有派工实例 ⇒ 整行只剩批次号」的成因。
+     *       仍不用 0 / 1 冒充用料。</li>
+     *   <li><b>从该批裁多少布</b>{@code batch_meters}（issue #7722，第 11 键）= 该行**这一批**的净额米数
+     *       （同一份 {@code ProductionService#batchAssignmentsOf} ⇒ 与工人端<b>部位规格面</b>的
+     *       {@code batch_meters} 逐值一致）。未指派 ⇒ {@code null}（键恒在）。</li>
      *   <li><b>几片 / 裁多长</b> = {@link CuttingPlanCalculator#pieceLengths}（**同一份**分解，
      *       排料器 {@code StockBatchConsumptionService.piecesOf} 调的就是它）：
      *       定高买宽 ⇒ 1 片 × 用料米数；定宽买高 ⇒ {@code panels} 片 × {@code 用料 / panels}。
@@ -372,7 +379,7 @@ public class ProcessingSetReadService {
      * </ul>
      *
      * <h2>缺值口径（不渲染假数据）</h2>
-     * <p>十键**恒在**；算不出来时 {@code fabric_meters} / {@code panel_count} /
+     * <p>十一键**恒在**（#7722 起含 {@code batch_meters}）；算不出来时 {@code fabric_meters} / {@code panel_count} /
      * {@code panel_length_m} 一律 {@code null}（**不用 0 / 1 冒充**），并由
      * {@code missing_reason} 指名缺的是什么。<b>片数与每片长同生同灭</b>（同一份分解：
      * 拿不到用料就报不出「裁多长」，半截数据比空更危险）。</p>
@@ -393,7 +400,7 @@ public class ProcessingSetReadService {
         return rows;
     }
 
-    /** 清单一行（键集见 {@link #cutPlan}；十键恒在，缺值 null）。 */
+    /** 清单一行（键集见 {@link #cutPlan}；十一键恒在，缺值 null）。 */
     private Map<String, Object> cutPlanRow(String orderItemId, List<ProcessingPositionOperation> ops,
                                            Map<String, StockBatchConsumptionService.BatchAssignment> batchAssignments,
                                            Long tenantId) {
@@ -410,9 +417,11 @@ public class ProcessingSetReadService {
             info = Map.of();
         }
         ProcessingPositionOperation cutOp = cutOperationOf(ops);
-        BigDecimal fabricMeters = cutOp != null && QTY_SOURCE_FABRIC_METERS.equals(cutOp.getQtySource())
-                ? cutOp.getQty()
-                : null;
+        // 用料（米）：**订单行算料口径优先**（issue #7722）。工序实例的 qty 是从订单行算料输出
+        // **派生**的下游 —— 反过来把实例当唯一来源，就等于「先有派工/报工才有作业指令」，
+        // 没有实例的套在裁床单上只剩一个批次号（用户 2026-10-25 逐字：「要告诉工人裁哪个批次的布，
+        // 裁多少布」）。实例只作存量兼容的回落，且必须 qty_source=fabric_meters（兜底 1 不当用料）。
+        BigDecimal fabricMeters = fabricMetersOf(info, cutOp);
         String mode = CuttingPlanCalculator.modeOf(cuttingModeOf(item, info));
         Integer panels = OrderLineCraftFields.integerOrNull(info.get("panels"),
                 "order_items." + orderItemId + " 的分幅数");
@@ -427,12 +436,15 @@ public class ProcessingSetReadService {
         //（**不**拿加工单快照的 batchNo 顶 —— 那是纸面「批号」的口径，见 cutPlan 的 javadoc）
         StockBatchConsumptionService.BatchAssignment assignment = batchAssignments.get(orderItemId);
         row.put("batch_no", assignment == null ? null : assignment.batchNo());
+        // 从该批裁多少布（issue #7722）：与 batch_no **同一份取数**（台账净额），未指派 ⇒ null。
+        // 裁床要的两个数都在这两键里：「哪一批」「这一批裁多少米」。
+        row.put("batch_meters", assignment == null ? null : assignment.meters());
         row.put("fabric_meters", fabricMeters);
         row.put("panel_count", lengths.isEmpty() ? null : lengths.size());
         row.put("panel_length_m", lengths.isEmpty() ? null : lengths.get(0));
         row.put("remark", remarkOf(item));
         row.put("missing_reason", lengths.isEmpty()
-                ? cutPlanMissingReason(cutOp, fabricMeters, mode, panels)
+                ? cutPlanMissingReason(fabricMeters, mode, panels)
                 : null);
         return row;
     }
@@ -471,26 +483,44 @@ public class ProcessingSetReadService {
     }
 
     /**
+     * 用料（米）：**订单行算料口径优先**，实例 qty 只作存量兼容回落（issue #7722）。
+     *
+     * <p>订单行 {@code processing_info.fabric_meters} 是算料输出的落点（引擎 → 订单行 → 工序实例 qty
+     * 同一串派生）；缺键（存量行 / 未跑算料）才读「精裁」实例，且**只认**
+     * {@code qty_source=fabric_meters}（{@code fallback} 的 1 不是用料）。两处都没有 ⇒ {@code null}
+     * （不用 0 / 1 冒充）。</p>
+     */
+    private static BigDecimal fabricMetersOf(Map<String, Object> info, ProcessingPositionOperation cutOp) {
+        BigDecimal fromOrderLine = OrderLineCraftFields.decimalOrNull(info.get("fabric_meters"),
+                "order_items.processing_info.fabric_meters");
+        if (fromOrderLine != null && fromOrderLine.signum() > 0) {
+            return fromOrderLine;
+        }
+        return cutOp != null && QTY_SOURCE_FABRIC_METERS.equals(cutOp.getQtySource())
+                ? cutOp.getQty()
+                : null;
+    }
+
+    /**
      * 算不出来时**指名缺的是什么**（issue #5693 验收：「显式留空**或标注原因**」）。
      *
      * <p>分支序 = 先因后果：加工类型不认 ⇒ 后面两项都谈不上；再判用料；最后判幅数。
      * 每个分支的措辞都**说得出下一步该补什么**（不说「数据异常」这种不可行动的话）。</p>
+     *
+     * <p>🔴 issue #7722：文案**不得**出现内部标识（{@code qty_source} / 「工序实例」/ 键名）——
+     * 这三格是给车间看的（§31 P3「不摆内部标识」）。</p>
      */
-    private static String cutPlanMissingReason(ProcessingPositionOperation cutOp, BigDecimal fabricMeters,
-                                              String mode, Integer panels) {
+    private static String cutPlanMissingReason(BigDecimal fabricMeters, String mode, Integer panels) {
         if (mode == null) {
             return "未选加工类型（定高买宽 / 定宽买高）：裁多长与几片都算不出来（不猜工艺）";
         }
         if (fabricMeters == null) {
-            return cutOp == null
-                    ? "本套该部位没有「精裁」工序实例：用料米数无从取（不猜）"
-                    : "「精裁」工序实例的应做数量不是算料用料（qty_source=" + cutOp.getQtySource()
-                            + "）：不用兜底值当用料";
+            return "这行还没算出用料米数：先在订单行补上窗宽 / 窗高与加工类型，算料出数后这里就有了";
         }
         if (CuttingPlanCalculator.MODE_FIXED_WIDTH.equals(mode) && (panels == null || panels <= 0)) {
-            return "缺幅数（panels）：定宽买高按幅数分片，算料没给该键（幅数无定义时键缺席）";
+            return "缺幅数：定宽买高要按幅数分片，这行的算料还没给出幅数";
         }
-        return "用料米数非正：算不出来（不用 0 冒充）";
+        return "用料米数不是正数：算不出来（不拿 0 顶）";
     }
 
     /**
