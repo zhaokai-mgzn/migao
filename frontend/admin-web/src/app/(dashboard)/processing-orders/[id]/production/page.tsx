@@ -684,7 +684,7 @@ export default function ProcessingOrderProductionPage() {
             <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
               <h2 className="text-base font-medium text-neutral-900">精裁输出清单</h2>
               <span className="text-xs text-neutral-500">
-                按套 × 部位 · 每行给出从哪一批裁多少布；算不出来的留空（不造数）
+                按套 × 帘种 · 每行给出从哪一批裁多少布；算不出来的留空（不造数）
               </span>
             </div>
             {cutPlanError ? (
