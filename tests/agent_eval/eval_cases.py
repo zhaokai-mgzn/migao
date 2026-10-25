@@ -9316,16 +9316,16 @@ _CASE_OR_069 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）（源: cases/processing-order.yml）──
+# ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 作业单生成 + 订单进入生产中（派单即生产；issue #7723 改判）（源: cases/processing-order.yml）──
 _CASE_PG_001 = EvalCase(
     id='PG-001',
     legacy_id='',
-    title='生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）',
+    title='生成加工单 - 已确认含加工项订单 → 作业单生成 + 订单进入生产中（派单即生产；issue #7723 改判）',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
     user_inputs=[],
     expectations=[],
-    data_checks=['已确认订单含加工项 → 生成 processing_orders(status=generated)，快照五要素齐全（商品/颜色/门幅/宽×高/数量/加工项）', '快照加工项含 options（生成时从加工项目录补齐，下单时未落库）', '快照不含销售价（决策 2：加工单给加工方只看加工费）', '**不**联动订单（issue #4305，用户裁定「发加工 = 订单进入生产中」）：生成加工单后订单状态**保持 confirmed** —— 机器判据 = ProcessingOrderServiceTest 断言 never(orderService).updateOrderStatus(any, 「producing」) 且 never revertProducingToConfirmed（订单联动的唯一时点已挪到「发加工」，见 PG-005）', '生成加工单成功（机器断言：$.data[i].success=true，ProcessingOrderServiceTest.generateSuccess / generateInstantiatesOperationsVerbatimFromOperationLibrary）——工序来源 = 工序库（issue #4116 切库）：生成加工单时按 部位×工艺 派生键读 production_routings 取基准路线、按名读 `production_operations` 取分组/单位/单价/is_start_marker —— 工序/单位/单价/起始标记**逐字取库**（**2026-09-21 改判，issue #4961**：`is_must_finish` **不再带出** —— 概念已退场，实例化 payload 里去掉该键；列保留为历史载体、值恒 false，**不许**由它回落或决定完工）；加工项目录**不再**提供工序；派生键库中无该路线 ⇒ 回落默认路线 布帘×韩褶；默认路线也取不到、或路线引用的工序在库中无活跃行 ⇒ 生成失败（$.data[i].success=false + 错误码 PRODUCTION_ROUTING_NOT_FOUND / PRODUCTION_OPERATION_NOT_FOUND + suggestion 指名补救入口），**不回退加工项目录**且**不落加工单行**（不制造「有加工单、无工序、无 qr_token」的孤儿态）—— 证据：ProcessingOrderServiceTest（逐条一致 1 项 + 负例 2 项 + 取法 3 项 + 幂等重放 1 项）'],
+    data_checks=['已确认订单含加工项 → 生成 processing_orders(status=generated)，快照五要素齐全（商品/颜色/门幅/宽×高/数量/加工项）', '快照加工项含 options（生成时从加工项目录补齐，下单时未落库）', '快照不含销售价（决策 2：加工单给加工方只看加工费）', '**派单即生产**（issue #7723，用户 2026-10-25 裁定 A，取代 #4305 的旧时点）：生成作业单成功后订单 `confirmed → producing` —— 机器判据 = ProcessingOrderServiceTest.generateSuccess 断言 `verify(orderService).updateOrderStatus("order-001", "producing")` 且 `never revert`；落库失败时**回退** confirmed（generateConcurrentDuplicateRejectedIdempotently / generateInsertFailurePropagates 各断言 updateOrderStatus + revertProducingToConfirmed ⇒ 无「订单生产中、作业单没生成」孤儿态）', '生成加工单成功（机器断言：$.data[i].success=true，ProcessingOrderServiceTest.generateSuccess / generateInstantiatesOperationsVerbatimFromOperationLibrary）——工序来源 = 工序库（issue #4116 切库）：生成加工单时按 部位×工艺 派生键读 production_routings 取基准路线、按名读 `production_operations` 取分组/单位/单价/is_start_marker —— 工序/单位/单价/起始标记**逐字取库**（**2026-09-21 改判，issue #4961**：`is_must_finish` **不再带出** —— 概念已退场，实例化 payload 里去掉该键；列保留为历史载体、值恒 false，**不许**由它回落或决定完工）；加工项目录**不再**提供工序；派生键库中无该路线 ⇒ 回落默认路线 布帘×韩褶；默认路线也取不到、或路线引用的工序在库中无活跃行 ⇒ 生成失败（$.data[i].success=false + 错误码 PRODUCTION_ROUTING_NOT_FOUND / PRODUCTION_OPERATION_NOT_FOUND + suggestion 指名补救入口），**不回退加工项目录**且**不落加工单行**（不制造「有加工单、无工序、无 qr_token」的孤儿态）—— 证据：ProcessingOrderServiceTest（逐条一致 1 项 + 负例 2 项 + 取法 3 项 + 幂等重放 1 项）'],
     skip_reason='[backend-contract] 由 ProcessingOrderServiceTest 验证（generate 成功路径 + 快照 options/无价格断言 + 切库后的路线解析 fail-closed 与幂等重放）',
     tags=['processing-order', 'generate', 'linkage'],
     persona='',
@@ -9424,16 +9424,16 @@ _CASE_PG_006 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── PG-007 [NORMAL] 加工单取消联动 - issued 及之后取消 → 订单 producing→confirmed 回退（generated 取消不再回退；issue #4305）（源: cases/processing-order.yml）──
+# ── PG-007 [NORMAL] 加工单取消联动 - 订单当前在 producing 就回退（含派单后取消 generated；issue #7723 改判）（源: cases/processing-order.yml）──
 _CASE_PG_007 = EvalCase(
     id='PG-007',
     legacy_id='',
-    title='加工单取消联动 - issued 及之后取消 → 订单 producing→confirmed 回退（generated 取消不再回退；issue #4305）',
+    title='加工单取消联动 - 订单当前在 producing 就回退（含派单后取消 generated；issue #7723 改判）',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
     user_inputs=[],
     expectations=[],
-    data_checks=['取消加工单（必填原因）→ 加工单 cancelled；**issued 及之后**取消 ⇒ 订单 producing→confirmed 回退（重新可生成）；**generated 取消时订单本就 confirmed ⇒ 不触发回退**（issue #4305：订单进入 producing 的时点已从「生成加工单」挪到「发加工」，故 generated 阶段订单尚未 producing）'],
+    data_checks=['取消加工单（必填原因）→ 加工单 cancelled；**回退判据 = 订单当前态**：订单在 `producing` ⇒ `producing→confirmed` 回退（重新可派单）。issue #7723 起派单即把已确认单推进 producing ⇒ **取消 `generated` 作业单同样会回退**（`cancelGeneratedRevertsProducingOrder`）；订单仍 `confirmed`（待付款单派单后、存量单）⇒ 不触发回退（`cancelGeneratedDoesNotRevertOrder`）'],
     skip_reason='[backend-contract] 由 ProcessingOrderServiceTest 验证',
     tags=['processing-order', 'linkage', 'cancel'],
     persona='',
@@ -10776,6 +10776,44 @@ _CASE_PG_093 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     precondition='本用例是 [backend-contract] 确定性单测：前置（工序实例「裁剪」+ 该商品 × SKU 的批次行 + 派工扣减行 / 零批次商品）由各测试类**自建并打桩**（Mockito；真库判据用 PgCluster 现造批次行，跑完随临时库销毁），不依赖共享夹具或种子真值；前置不成立时对应单测直接红（落点方法找不到 / mock 未命中 / 真库缺表），agent-eval 栈不跑它',
+)
+
+# ── PG-094 [NORMAL] 发加工不再必经：首工序报满即可进「加工中」（A6 后半裁定直达；issue #7723）（源: cases/processing-order.yml）──
+_CASE_PG_094 = EvalCase(
+    id='PG-094',
+    legacy_id='',
+    title='发加工不再必经：首工序报满即可进「加工中」（A6 后半裁定直达；issue #7723）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这里的发加工功能是不是可以移除？当前直接通过智能派单进入加工环节然后联动订单状态，不需要手动发加工吧？', '选择A，需要支持给其他加工厂做单子的场景'],
+    expectations=[],
+    data_checks=['**判据 1·状态机放开（会红）**：`ProcessingOrderService.STATUS_TRANSITIONS` 允许 `generated → in_processing`（与 `issued → in_processing` 并列），而 `completed / cancelled / null` 仍不可直达。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java 的 `generatedAndIssuedMayEnterInProcessing`。**红证**：把 `generated` 从 `STATUS_TRANSITIONS` 的 `in_processing` 入边删掉 ⇒ 该用例当场红。', '**判据 2·首工序报满自动推进（会红）**：`generated` 作业单的首工序（`is_start_marker`）报满 ⇒ 作业单进 `in_processing` 且落 `in_processing_at`（走状态机，不裸 UPDATE）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanCompleteServiceTest.java 等既有 D13 用例族（合法性取自同一张表）。**红证**：把 `startProcessingIfAllowed` 的判定改回只认 `issued` ⇒ 该单保持 `generated`、`in_processing_at` 恒空。', '**边界（照实登记）**：`issued` 态**保留**给存量单与 agent 通道（不再是新单的必经态）；作业单页的「开始加工 / 加工完成 / 取消」三个手工动作不变（只是不再需要先「发加工」）。'],
+    skip_reason='[backend-contract] admin-api 单测（状态机表 + 自动迁移路径；无 LLM 行为面）',
+    tags=['processing-order', 'production', 'status-machine', 'scan-report'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 确定性单测：前置（作业单 + 工序实例）由测试类自建并打桩（Mockito），不依赖共享夹具；前置不成立时对应单测直接红，agent-eval 栈不跑它',
+)
+
+# ── PG-095 [NORMAL] 外发承接方搬到智能派单：整单加工厂 + 回厂日，作业单不再录入/展示（issue #7723）（源: cases/processing-order.yml）──
+_CASE_PG_095 = EvalCase(
+    id='PG-095',
+    legacy_id='',
+    title='外发承接方搬到智能派单：整单加工厂 + 回厂日，作业单不再录入/展示（issue #7723）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['需要支持给其他加工厂做单子的场景，新的问题是这个功能应该在哪里体现，我觉得不应该在作业单上体现', '复用供应商档案（推荐）'],
+    expectations=[],
+    data_checks=['**判据 1·写面落三列（会红）**：派单请求带 `processorSupplierId` + `expectedDeliveryDate` ⇒ 作业单落 `processor`（供应商**名称快照**）、`processor_supplier_id`（档案引用）、`expected_delivery_date`（回厂日），且订单 `confirmed→producing`。执行点 = ProcessingOrderServiceTest.generateWithProcessorWritesConsignee。**红证**：把 `prepare` 里三个 builder 字段删掉 ⇒ 该用例红（三列全 null）。', '**判据 2·类型/状态/存在性 fail-closed（会红）**：承接方是采购供应商（`type=material`）⇒ 422 且一行不写；已停用 ⇒ 422 且指名是哪一家；不存在 / 跨租户 ⇒ 422；回厂日早于今天 ⇒ 422。执行点 = 同文件 generateRejectsMaterialSupplier / generateRejectsInactiveSupplier / generateRejectsPastReturnDate。**红证**：把 `resolveConsignee` 的类型或状态判定删掉 ⇒ 对应用例红（会照常落库）。', '**判据 3·出库作业单拒收承接方（会红）**：卖布单（出库作业单）带承接方 ⇒ 该单 `success=false` + 文案含「不支持外发加工厂」，其余单照常（逐单记账）。执行点 = 同文件 generateRejectsProcessorOnOutboundOrder。**红证**：删掉 `prepare` 里的 outbound 判定 ⇒ 该用例红（卖布单被落成外发单）。', '**判据 4·只看外发（会红）**：`GET /api/admin/processing-orders?outsourced=true` 只回有承接方档案引用的行；不传 ⇒ 与改造前逐字相同。执行点 = 同文件 listOutsourcedOnly。**红证**：删掉 `list(..., outsourced)` 的 removeIf ⇒ 该用例红（两行都回）。', '**判据 5·下拉只列在用加工厂（会红）**：`GET /api/admin/production/pool/processors` 只回 `status=active ∧ type=processor` 的 id + 名称（不泄露联系人/账期/欠款），权限 = 派单页同码 `processing:view`。执行点 = 同文件 processorOptionsOnlyActiveProcessors + SupplierService 的 type 过滤用例。**红证**：去掉 type 过滤 ⇒ 采购供应商混进下拉，用例红。', '**边界（照实登记）**：本期**不做**外发加工费/回厂数量登记/对账结算；粒度 = **整单**（一批派单一个承接方）；待付款单派单后订单仍 `pending`（状态机无 `pending→producing`），付款转 confirmed 时不会自动补 producing —— 存量缺口，不在本单修。'],
+    skip_reason='[backend-contract] admin-api 单测（派单写面 + 校验 + 读面过滤；无 LLM 行为面）',
+    tags=['processing-order', 'dispatch', 'outsourcing', 'supplier'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 确定性单测：前置（供应商档案 / 订单 / 工序库桩）由测试类自建并打桩（Mockito），不依赖共享夹具或种子真值；前置不成立时对应单测直接红',
 )
 
 # ── PP-002 [NORMAL] 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query）（源: cases/processing.yml）──
@@ -17187,6 +17225,8 @@ ALL_CASES = (
     _CASE_PG_091,
     _CASE_PG_092,
     _CASE_PG_093,
+    _CASE_PG_094,
+    _CASE_PG_095,
     _CASE_PP_002,
     _CASE_PP_006,
     _CASE_PP_007,

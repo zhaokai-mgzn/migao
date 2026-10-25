@@ -842,7 +842,8 @@ CREATE TABLE IF NOT EXISTS processing_orders (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted INT DEFAULT 0,
-    order_kind VARCHAR(16) NOT NULL DEFAULT 'processing'   -- 单据类型（V159，issue #7079）：processing 加工（成品帘；混合单也在这一档）/ outbound 出库（卖布单：快照每一行 saleForm=布料）；生成时冻结、存量行不回填。列位 = ALTER … ADD COLUMN 的追加位（与存量库列序逐位相同）
+    order_kind VARCHAR(16) NOT NULL DEFAULT 'processing',  -- 单据类型（V159，issue #7079）：processing 加工（成品帘；混合单也在这一档）/ outbound 出库（卖布单：快照每一行 saleForm=布料）；生成时冻结、存量行不回填。列位 = ALTER … ADD COLUMN 的追加位（与存量库列序逐位相同）
+    processor_supplier_id VARCHAR(64)                       -- 外发承接方档案引用（V193，issue #7723）：NULL = 本厂自做 / 存量单；名称快照仍在 processor 列。列位 = ALTER ADD COLUMN 的追加位
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_processing_orders_active
     ON processing_orders (order_id)
@@ -858,6 +859,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_processing_orders_qr_token
 CREATE UNIQUE INDEX IF NOT EXISTS uk_processing_orders_short_code
     ON processing_orders (short_code)
     WHERE deleted = 0 AND short_code IS NOT NULL;
+-- 外发承接方索引（V193，issue #7723）：作业看板「只看外发」筛选 + 按加工厂跟踪在途。
+CREATE INDEX IF NOT EXISTS idx_processing_orders_processor_supplier
+    ON processing_orders (tenant_id, processor_supplier_id)
+    WHERE deleted = 0 AND processor_supplier_id IS NOT NULL;
+COMMENT ON COLUMN processing_orders.processor_supplier_id IS
+    '外发承接方档案引用（V193，issue #7723）：NULL = 本厂自做 / 存量单。processor 列仍是派单那一刻的名称快照（事后改名不回写历史单）。写入口 = 智能派单，不是作业单页。';
 -- 单据类型取值白名单（V159，issue #7079）：与 ProcessingOrderService.ORDER_KIND_PROCESSING /
 -- ORDER_KIND_OUTBOUND 逐值同源。本段是 bootstrap 终态（本文件由 docker-entrypoint-initdb.d 执行，
 -- **迁移链不在该栈运行** ⇒ 只写迁移 = 新建库缺该列/约束，同 #3270 形态）。
@@ -1688,12 +1695,14 @@ CREATE TABLE IF NOT EXISTS suppliers (
     contact_phone VARCHAR(32),
     payment_terms_days INTEGER,
     status VARCHAR(16) NOT NULL DEFAULT 'active',
+    type VARCHAR(32) NOT NULL DEFAULT 'material',      -- 档案类型（V193，issue #7723）：material 采购供应商 / processor 外发加工厂；追加位 = ALTER ADD COLUMN
     remark TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     deleted BOOLEAN NOT NULL DEFAULT FALSE,
     CONSTRAINT ck_suppliers_status CHECK (status IN ('active', 'inactive')),
-    CONSTRAINT ck_suppliers_terms CHECK (payment_terms_days IS NULL OR (payment_terms_days >= 0 AND payment_terms_days <= 365))
+    CONSTRAINT ck_suppliers_terms CHECK (payment_terms_days IS NULL OR (payment_terms_days >= 0 AND payment_terms_days <= 365)),
+    CONSTRAINT ck_suppliers_type CHECK (type IN ('material', 'processor'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_suppliers_tenant_name
@@ -1701,6 +1710,8 @@ CREATE INDEX IF NOT EXISTS idx_suppliers_tenant_name
     WHERE deleted = FALSE;
 
 COMMENT ON TABLE suppliers IS '供应商主数据（issue #7369，P0-1 段 1）：一行 = 一家供应商。单据侧引用（supplier_id）由段 2 落地 —— 本表不参与任何既有单据写面。';
+COMMENT ON COLUMN suppliers.type IS
+    '档案类型（V193，issue #7723）：material 采购供应商（缺省，存量行全部在档）/ processor 外发加工厂（可被智能派单选为承接方）。缺省即正确 ⇒ 不回填、不猜。';
 COMMENT ON COLUMN suppliers.payment_terms_days IS '账期天数：NULL = 未设置；0 = 现结；正数 = 账期（0~365，越界由 CHECK 与服务层双向拦）';
 COMMENT ON COLUMN suppliers.status IS '档案状态：active 在用 / inactive 停用（停用后不可再被新单据选中，由段 2 在写面拦）';
 

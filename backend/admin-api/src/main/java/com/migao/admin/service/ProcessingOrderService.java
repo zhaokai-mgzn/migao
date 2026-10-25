@@ -17,11 +17,13 @@ import com.migao.admin.entity.ProductionOperationPosition;
 import com.migao.admin.entity.ProductionRouteRule;
 import com.migao.admin.entity.ProductionRouteSignal;
 import com.migao.admin.entity.ProductionRouteTemplate;
+import com.migao.admin.entity.Supplier;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProcessingItemMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
+import com.migao.admin.mapper.SupplierMapper;
 import com.migao.admin.time.BusinessClock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -116,6 +118,16 @@ public class ProcessingOrderService {
     private final ProductionOperationQueryService productionOperationQueryService;
     /** 应做数量来源（issue #4208 接线）：算料引擎在 ai-agent，Java 侧只问不猜。 */
     private final ProductionOperationQtyClient productionOperationQtyClient;
+
+    /**
+     * 承接方档案（V193，issue #7723）：智能派单选中的加工厂 = `suppliers.type = processor` 的一行。
+     *
+     * <p><b>字段注入</b>（不改进构造签名）：本类的构造签名被多处测试显式 {@code new}（同
+     * {@link #shortLinkBaseUrl} 的理由）。{@code required = false} ⇒ 切片上下文照常启动；
+     * 真有承接方入参而它没装配时**显式抛错**（{@link #resolveConsignee}），不静默当成「本厂自做」。</p>
+     */
+    @Autowired(required = false)
+    private SupplierMapper supplierMapper;
 
     /**
      * 印刷品上的码的稳定域名（issue #6867 / B3；设计
@@ -493,9 +505,16 @@ public class ProcessingOrderService {
      */
     static final String STATUS_IN_PROCESSING = "in_processing";
 
-    /** 加工单状态机（与 OrderService.STATUS_TRANSITIONS 同模式） */
+    /**
+     * 加工单状态机（与 OrderService.STATUS_TRANSITIONS 同模式）。
+     *
+     * <p>🔴 {@code generated → in_processing}（issue #7723，用户 2026-10-25 裁定 A，落 A6 后半）：
+     * 「发加工」不再是必经动作 —— 智能派单排出作业单后，工人首工序报满即进「加工中」。
+     * 消费者 = {@code ProductionService.startProcessingIfAllowed}（合法性取自本表，不另写一份）。
+     * {@code issued} 保留给存量单与 agent 通道，不再是新单的必经态。</p>
+     */
     private static final Map<String, Set<String>> STATUS_TRANSITIONS = Map.of(
-            "generated", Set.of("issued", "cancelled"),
+            "generated", Set.of("issued", STATUS_IN_PROCESSING, "cancelled"),
             "issued", Set.of(STATUS_IN_PROCESSING, "cancelled"),
             STATUS_IN_PROCESSING, Set.of("completed", "cancelled"),
             "completed", Set.of(),
@@ -1541,6 +1560,26 @@ public class ProcessingOrderService {
     public List<GenerateResult> generate(List<String> orderIds, List<BatchAssignment> batches,
                                          Long tenantId, String operator, String assignmentRule,
                                          Boolean pooled) {
+        return generate(orderIds, batches, tenantId, operator, assignmentRule, pooled, null, null);
+    }
+
+    /**
+     * 批量派单 + **外发承接方 / 回厂日**（issue #7723，用户 2026-10-25 裁定 A）。
+     *
+     * <p>承接方粒度 = **整批一个**（用户裁定「整单外发」）：一批单发给同一家加工厂才合批，
+     * 要分给两家就分两次派。{@code null} = 本厂自做（与改造前逐字相同）。</p>
+     *
+     * <p><b>订单联动时点的挪动</b>：{@code confirmed → producing} 从「发加工」（#4305）挪到本方法
+     * （派单 = 决定要生产了）。改动理由见 {@link #commit}。待付款单仍不动订单
+     * （订单状态机没有 {@code pending → producing}）。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public List<GenerateResult> generate(List<String> orderIds, List<BatchAssignment> batches,
+                                         Long tenantId, String operator, String assignmentRule,
+                                         Boolean pooled, String processorSupplierId,
+                                         LocalDate expectedDeliveryDate) {
+        // 承接方 / 回厂日在**任何写库之前**校验完（fail-closed：不存在/停用/非加工厂 ⇒ 整批拒绝）
+        Consignee consignee = resolveConsignee(processorSupplierId, expectedDeliveryDate, tenantId);
         if (orderIds == null || orderIds.isEmpty()) {
             throw BusinessException.validationError("orderIds 不能为空");
         }
@@ -1556,14 +1595,14 @@ public class ProcessingOrderService {
             for (String rawId : orderIds) {
                 try {
                     results.add(generateOne(rawId, byOrder.getOrDefault(rawId, List.of()), tenantId,
-                            operator, rule));
+                            operator, rule, consignee));
                 } catch (BusinessException e) {
                     results.add(GenerateResult.fail(rawId, e.getCode(), e.getMessage(), e.getSuggestion()));
                 }
             }
             return results;
         }
-        return generatePooled(orderIds, byOrder, tenantId, operator, rule);
+        return generatePooled(orderIds, byOrder, tenantId, operator, rule, consignee);
     }
 
     /**
@@ -1682,7 +1721,8 @@ public class ProcessingOrderService {
      */
     private List<GenerateResult> generatePooled(List<String> orderIds,
                                                 Map<String, List<BatchAssignment>> byOrder,
-                                                Long tenantId, String operator, String rule) {
+                                                Long tenantId, String operator, String rule,
+                                                Consignee consignee) {
         // 🔴 加急单**不进池**（issue #5177 判据 3）：混进成批批次 ⇒ 整批显式拒绝，**一行都不写**。
         // 放在 prepare 之前 ⇒ 拒绝时连只读准备都还没跑，更没有半成品。
         assertNoUrgentInPooledBatch(orderIds, tenantId);
@@ -1694,7 +1734,7 @@ public class ProcessingOrderService {
             String rawId = orderIds.get(i);
             try {
                 Prepared p = prepare(rawId, byOrder.getOrDefault(rawId, List.of()), tenantId, operator,
-                        rule);
+                        rule, consignee);
                 prepared.add(p);
                 indexes.add(i);
                 pooledLines.addAll(p.designations());
@@ -1760,10 +1800,77 @@ public class ProcessingOrderService {
                             List<StockBatchConsumptionService.Designation> designations) {
     }
 
+    /**
+     * 承接方（外发加工厂）解析 —— 派单写面的**唯一**校验点（issue #7723）。
+     *
+     * <p>三条 fail-closed：① 档案存在且属本租户；② 在用；③ 类型 = 加工厂
+     * （{@code processor}）—— 采购供应商不得被派成外发承接方。回厂日早于今天同样拒绝
+     * （沿用 issue #3901 的交期边界）。校验失败 ⇒ 整批拒绝（{@link #generate} 在任何写库之前调用）。</p>
+     */
+    private Consignee resolveConsignee(String processorSupplierId, LocalDate expectedDeliveryDate,
+                                       Long tenantId) {
+        if (expectedDeliveryDate != null && expectedDeliveryDate.isBefore(businessClock.today())) {
+            throw BusinessException.validationError("回厂日不能早于今天");
+        }
+        if (!StringUtils.hasText(processorSupplierId)) {
+            return new Consignee(null, null, expectedDeliveryDate);
+        }
+        if (supplierMapper == null) {
+            throw new IllegalStateException(
+                    "SupplierMapper 未装配 —— 外发承接方不能静默当成「本厂自做」（issue #7723）");
+        }
+        Supplier supplier = supplierMapper.selectById(processorSupplierId);
+        if (supplier == null || Boolean.TRUE.equals(supplier.getDeleted())
+                || !tenantId.equals(supplier.getTenantId())) {
+            throw BusinessException.validationError("承接方（加工厂）不存在：" + processorSupplierId);
+        }
+        if (!SupplierService.STATUS_ACTIVE.equals(supplier.getStatus())) {
+            throw BusinessException.validationError(
+                    "承接方「" + supplier.getName() + "」已停用，请先启用或换一家");
+        }
+        if (!SupplierService.TYPE_PROCESSOR.equals(supplier.getType())) {
+            throw BusinessException.validationError(
+                    "「" + supplier.getName() + "」不是加工厂（档案类型须为 processor）");
+        }
+        return new Consignee(supplier.getId(), supplier.getName(), expectedDeliveryDate);
+    }
+
+    /**
+     * 派单页「承接方」下拉的数据源（issue #7723）：只回**在用加工厂**的 id + 名称。
+     *
+     * <p>为什么不复用 {@code GET /api/admin/suppliers}：那把码是 {@code inbound:view}，
+     * 生产岗（{@code processing:view}）通常没有 ⇒ 下拉会空，派单页被迫提权。本读面挂派单同码，
+     * 且只暴露 id + 名称（不泄露联系人/账期/欠款）。</p>
+     */
+    public List<ProcessorOption> processorOptions(Long tenantId) {
+        if (supplierMapper == null) {
+            return List.of();
+        }
+        List<Supplier> suppliers = supplierMapper.selectList(new LambdaQueryWrapper<Supplier>()
+                .eq(Supplier::getTenantId, tenantId)
+                .eq(Supplier::getStatus, SupplierService.STATUS_ACTIVE)
+                .eq(Supplier::getType, SupplierService.TYPE_PROCESSOR)
+                .orderByAsc(Supplier::getName));
+        List<ProcessorOption> out = new ArrayList<>();
+        for (Supplier supplier : suppliers) {
+            out.add(new ProcessorOption(supplier.getId(), supplier.getName()));
+        }
+        return out;
+    }
+
+    /** 外发承接方（解析后的**名称快照 + 档案引用 + 回厂日**；{@code null} 字段 = 本厂自做 / 不设）。 */
+    private record Consignee(String supplierId, String name, LocalDate deliveryDate) {
+    }
+
+    /** 派单页下拉选项（issue #7723）：{@code id} = 档案引用，{@code name} = 展示名。 */
+    public record ProcessorOption(String id, String name) {
+    }
+
     /** 逐单派（缺省路径）：准备 → 本单求解 → 落库。与池化派**共用**同一条准备与落库链。 */
     private GenerateResult generateOne(String rawId, List<BatchAssignment> assignments,
-                                       Long tenantId, String operator, String rule) {
-        Prepared p = prepare(rawId, assignments, tenantId, operator, rule);
+                                       Long tenantId, String operator, String rule,
+                                       Consignee consignee) {
+        Prepared p = prepare(rawId, assignments, tenantId, operator, rule, consignee);
         // 不指派批次（本单没有指定、也没传规则）⇒ **一次都不调** plan：与 #5145 之前逐字相同
         // （「不指派 ⇒ 不扣批次、不产生台账行、不多一个错误分支」—— 连 mock 交互次数都不许多一次）
         List<StockBatchConsumptionService.Deduction> deductions = p.designations().isEmpty()
@@ -1778,8 +1885,14 @@ public class ProcessingOrderService {
      * <p>语句顺序与拆分前的 {@code generateOne} **逐字相同**（判据 1 要的「不启用池化 ⇒
      * 逐值相同」包括「哪一步先失败」——把幂等闸挪到快照之前就会换一条错误文案）。</p>
      */
+    /** 只读预览等**不派单**的路径：无承接方（与改造前逐字相同）。 */
     private Prepared prepare(String rawId, List<BatchAssignment> assignments,
                              Long tenantId, String operator, String rule) {
+        return prepare(rawId, assignments, tenantId, operator, rule, null);
+    }
+
+    private Prepared prepare(String rawId, List<BatchAssignment> assignments,
+                             Long tenantId, String operator, String rule, Consignee consignee) {
         Order order = resolveOrder(rawId, tenantId);
         if (order == null) {
             throw new BusinessException("ORDER_NOT_FOUND", "无法找到订单：" + rawId, 404);
@@ -1824,15 +1937,28 @@ public class ProcessingOrderService {
         List<StockBatchConsumptionService.Designation> designations =
                 buildDesignations(items, snapshot, assignments, tenantId, rule);
 
+        // 单据类型（V159，issue #7079）：与快照**同一时机**冻结 —— 卖布单（每一行 saleForm=布料）
+        // 落 `outbound`（出库作业单），其余（含混合单）落 `processing`。事后改订单行不回改。
+        String orderKind = deriveOrderKind(snapshot);
+        // 出库作业单**没有加工环节**（#7079：不设加工方 / 交期）⇒ 外发承接方对它无意义。
+        // 显式拒绝而不是静默忽略：静默忽略 = 商家以为这批卖布单已经发给加工厂了。
+        if (orderKind.equals(ORDER_KIND_OUTBOUND) && consignee != null && consignee.supplierId() != null) {
+            throw BusinessException.validationError(
+                    "订单 " + order.getOrderNo() + " 是卖布单（出库作业单），只做出库作业，不支持外发加工厂");
+        }
+
         ProcessingOrder po = ProcessingOrder.builder()
                 .tenantId(tenantId)
                 .orderId(order.getId())
                 .processingOrderNo(generateOrderNo())
                 .status("generated")
                 .itemsSnapshot(snapshot)
-                // 单据类型（V159，issue #7079）：与快照**同一时机**冻结 —— 卖布单（每一行 saleForm=布料）
-                // 落 `outbound`（出库作业单），其余（含混合单）落 `processing`。事后改订单行不回改。
-                .orderKind(deriveOrderKind(snapshot))
+                // 承接方 / 回厂日（V193，issue #7723）：**派单即写**（不再是作业单页上的「发加工」）。
+                // 名称快照 + 档案引用同批落库；null = 本厂自做。
+                .processor(consignee == null ? null : consignee.name())
+                .processorSupplierId(consignee == null ? null : consignee.supplierId())
+                .expectedDeliveryDate(consignee == null ? null : consignee.deliveryDate())
+                .orderKind(orderKind)
                 .templateVersion(1)
                 .generatedBy(operator)
                 .generatedAt(OffsetDateTime.now())
@@ -1889,26 +2015,36 @@ public class ProcessingOrderService {
         // —— 快照是固化真相，前端与车间都读它（批次侧另有逐行台账，两条路都可审计）。
         stampCuttingPlan(p.snapshot(), deductions);
 
-        // 生成**不**联动订单状态（issue #4305，用户裁定「发加工 = 订单进入生产中」）：
-        // 订单 confirmed→producing 的时点已从「生成加工单」挪到「发加工」（见 updateStatus）。
-        // 故此处不再有「联动先行 + 失败回退」那段 —— 订单状态在生成路径上全程不动，
-        // 也就没有「producing 无加工单」的孤儿态可言（该孤儿态的成因随联动一并挪走）。
-        // 并发重复生成仍由 partial unique index 兜底 → 转幂等错误（P2①）。
-        try {
-            processingOrderMapper.insert(p.po());
-        } catch (org.springframework.dao.DuplicateKeyException e) {
-            throw BusinessException.validationError(
-                    "订单 " + p.order().getOrderNo() + " 加工单已生成（并发操作），请刷新后重试");
+        // 🔴 派单即生产（issue #7723，用户 2026-10-25 裁定 A）：订单 confirmed→producing 的
+        // **唯一时点** 从「发加工」（#4305）挪到「派单」。为什么必须挪：发加工已不再是必经动作
+        // （状态机放开 generated→in_processing）⇒ 仍留在那里的话，派单后没有任何人点它，
+        // 订单就永远不会进 producing（作业单照做、订单永远「已确认」）。
+        //
+        // **联动先行 + 失败回退**（与 updateStatus 的 issue 分支同款 fail-closed）：先推进订单、
+        // 再落作业单；随后任何写库失败都把订单回退 ⇒ 杜绝「订单生产中、作业单没生成」的孤儿态。
+        // 待付款单**不动**（订单状态机没有 pending→producing；付款转 confirmed 后不会补推，
+        // 这是存量缺口，本单不放大也不修 —— 见 issue #7723 的边界）。
+        Order order = p.order();
+        boolean orderLinked = "confirmed".equals(order.getStatus());
+        if (orderLinked) {
+            orderService.updateOrderStatus(order.getId(), "producing");
         }
-        log.info("生成加工单: no={}, orderId={}, tenantId={}, operator={}",
-                p.po().getProcessingOrderNo(), p.order().getId(), tenantId, operator);
+        try {
+            try {
+                processingOrderMapper.insert(p.po());
+            } catch (org.springframework.dao.DuplicateKeyException e) {
+                throw BusinessException.validationError(
+                        "订单 " + order.getOrderNo() + " 加工单已生成（并发操作），请刷新后重试");
+            }
+            log.info("生成加工单: no={}, orderId={}, tenantId={}, operator={}",
+                    p.po().getProcessingOrderNo(), order.getId(), tenantId, operator);
         // 派工扣批次库存（issue #5145 判据 1）：与加工单生成**同一事务** ——
         // 加工单插入成功之后才扣（重复生成在更上游就被 selectActiveByOrderId +
         // uk_processing_orders_active 拒掉 ⇒ 不可能二次扣减）；计划已在插入前校验完，
         // 这里只落账、不再抛业务异常。不指定批次 ⇒ 计划为空 ⇒ 本段零动作（行为与今天逐字相同）。
-        if (!deductions.isEmpty()) {
-            batchStock().apply(tenantId, p.po().getProcessingOrderNo(), p.order().getOrderNo(), deductions);
-        }
+            if (!deductions.isEmpty()) {
+                batchStock().apply(tenantId, p.po().getProcessingOrderNo(), order.getOrderNo(), deductions);
+            }
         // 工序实例化（issue #4116，P0 断链第一环）：加工单落行后**立即**实例化工序。
         // 此前 instantiate 端点全仓零调用者 ⇒ 工序列表恒空 ⇒ qr_token 恒 null ⇒
         // 任务卡只出「二维码待生成」占位、工人扫码报工不可达。
@@ -1916,8 +2052,21 @@ public class ProcessingOrderService {
         // 所以本行的失败只可能是 DB 层错误 —— 那种情况异常逸出并由外层逐单
         // catch 记账，同样不留「有加工单、无工序」的静默半成品（工序另可由
         // POST .../instantiate 手工补做）。
-        instantiateOperations(p.order(), p.po(), p.positions(), tenantId);
-        return GenerateResult.ok(p.rawId(), p.po().getProcessingOrderNo());
+            instantiateOperations(order, p.po(), p.positions(), tenantId);
+            return GenerateResult.ok(p.rawId(), p.po().getProcessingOrderNo());
+        } catch (RuntimeException e) {
+            // 联动回退（issue #7723）：与 updateStatus 的 issue 分支同款 —— 落库失败 ⇒ 订单退回已确认，
+            // 让商家刷新后能原样重派。回退自身失败只记 WARN（不掩盖主异常，也不能把主异常吞掉）。
+            if (orderLinked) {
+                try {
+                    orderService.revertProducingToConfirmed(order.getId(), "派单落库失败，订单状态回退");
+                } catch (Exception revertErr) {
+                    log.warn("派单落库失败且订单状态回退失败: orderId={}, err={}",
+                            order.getId(), revertErr.getMessage());
+                }
+            }
+            throw e;
+        }
     }
 
     /**
@@ -3365,12 +3514,8 @@ public class ProcessingOrderService {
      * <p>受控枚举值见 {@link #COMPONENT_ROLE_POSITIONS}（写侧 {@code order_create.py} 的 enum：
      * 主布 / 配布边 / 纱）。**未知取值返回 null**（不猜、不默认成布帘）—— 该维按缺维处理，
      * 由 {@code route_source} 显式标注并在异常订单清单里可见。</p>
-     *
-     * <p>🔴 <b>包内可复用</b>（issue #7742）：工人读面（`ProductionService#orderSpecByItemId` 经
-     * {@code OrderLineCraftFields#curtainTypeOf}）取帘种时走**同一份**映射 —— 读面另抄一张
-     * 「纱⇒纱帘」的表 = 第二份会漂的口径（加工单实例化与工人屏迟早说出不同的帘种）。</p>
      */
-    static String positionOfComponentRole(Map<String, Object> entry) {
+    private static String positionOfComponentRole(Map<String, Object> entry) {
         String role = str(entry.get("componentRole"));
         // 缺键（存量单）/ 未知取值 ⇒ null（**不猜**）：Map.of 也不接受 null 键
         return role == null ? null : COMPONENT_ROLE_POSITIONS.get(role);
@@ -3985,6 +4130,18 @@ public class ProcessingOrderService {
     // ============================================================ 查询
 
     public List<ProcessingOrderResponse> list(String keyword, String status, Long tenantId) {
+        return list(keyword, status, tenantId, null);
+    }
+
+    /**
+     * 加工单列表 + **只看外发**（issue #7723）。
+     *
+     * <p>{@code outsourced = true} ⇒ 只回「有承接方档案引用」的行（外发在途的跟踪面）。
+     * 过滤在内存里做（列表上限 100 行，不值得为它另写一条 SQL + 关键词分支的第二套条件）；
+     * 缺省/空白 ⇒ 与改造前逐字相同。</p>
+     */
+    public List<ProcessingOrderResponse> list(String keyword, String status, Long tenantId,
+                                              Boolean outsourced) {
         List<ProcessingOrder> list;
         if (StringUtils.hasText(keyword)) {
             list = processingOrderMapper.selectByKeyword(keyword.trim(), tenantId);
@@ -3998,6 +4155,13 @@ public class ProcessingOrderService {
                 wrapper.eq(ProcessingOrder::getStatus, status);
             }
             list = processingOrderMapper.selectList(wrapper);
+        }
+        if (Boolean.TRUE.equals(outsourced)) {
+            // 过滤成**副本**：不原地改 mapper 返回的集合（那会把「被裁过的列表」留给上游/同一次请求里
+            // 的第二个读面；测试里的 mock 更会当场暴露这件事）
+            list = list.stream()
+                    .filter(po -> StringUtils.hasText(po.getProcessorSupplierId()))
+                    .toList();
         }
         Map<String, Order> orders = loadOrders(list);
         List<ProcessingOrderResponse> result = new ArrayList<>();
@@ -4101,6 +4265,7 @@ public class ProcessingOrderService {
         resp.setOrderId(po.getOrderId());
         resp.setProcessingOrderNo(po.getProcessingOrderNo());
         resp.setProcessor(po.getProcessor());
+        resp.setProcessorSupplierId(po.getProcessorSupplierId());
         resp.setExpectedDeliveryDate(po.getExpectedDeliveryDate());
         resp.setStatus(po.getStatus());
         resp.setRemark(po.getRemark());

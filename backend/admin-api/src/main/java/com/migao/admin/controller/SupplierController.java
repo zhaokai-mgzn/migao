@@ -40,9 +40,10 @@ public class SupplierController {
     /** 供应商列表。 */
     @GetMapping("/api/admin/suppliers")
     @RequirePermission("inbound:view")
-    public ApiResponse<List<Supplier>> list(@RequestParam(required = false) String keyword) {
+    public ApiResponse<List<Supplier>> list(@RequestParam(required = false) String keyword,
+                                            @RequestParam(required = false) String type) {
         Long tenantId = TenantContext.getTenantId();
-        return ApiResponse.success(supplierService.list(tenantId, keyword));
+        return ApiResponse.success(supplierService.list(tenantId, keyword, type));
     }
 
     /**

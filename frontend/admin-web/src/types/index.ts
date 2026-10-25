@@ -839,7 +839,11 @@ export interface ProcessingOrder {
    * 走 `orderKindLabelOf()` 的单一真值。
    */
   order_kind?: 'processing' | 'outbound' | null
+  /** 承接方名称快照（派单时写死；事后改名不回写历史单）—— 由**智能派单**录入，作业单页不再录入/展示。 */
   processor?: string
+  /** 外发承接方档案引用（issue #7723）：null/缺键 = 本厂自做 / 存量单。 */
+  processorSupplierId?: string | null
+  /** 回厂日（外发时由派单写入；任务卡「交期」读它）。 */
   expectedDeliveryDate?: string
   status: 'generated' | 'issued' | 'in_processing' | 'completed' | 'cancelled'
   /**
@@ -2466,9 +2470,17 @@ export interface Supplier {
   contactPhone?: string | null
   paymentTermsDays?: number | null
   status: 'active' | 'inactive'
+  /** 档案类型（issue #7723）：material 采购供应商（缺省）/ processor 外发加工厂。 */
+  type?: 'material' | 'processor'
   remark?: string | null
   createdAt?: string
   updatedAt?: string
+}
+
+/** 派单页「承接方」下拉选项（issue #7723）：只含在用的加工厂（id + 名称）。 */
+export interface ProcessorOption {
+  id: string
+  name: string
 }
 
 /** 「待指派」的入库单供应商名（issue #7369 段 2）：文本有、档案没挂。 */
@@ -4225,6 +4237,14 @@ export interface PoolDispatchRequest {
   batches: PoolBatchAssignment[]
   assignmentRule: string | null
   pooled: boolean
+  /**
+   * 外发承接方（供应商档案 id，issue #7723）：`null`/缺键 = **本厂自做**。
+   *
+   * <p>粒度 = 整批一个（用户裁定「整单外发」）；要分给两家就分两次派。</p>
+   */
+  processorSupplierId?: string | null
+  /** 回厂日（yyyy-MM-dd，issue #7723）：早于今天会被服务端拒（422）。 */
+  expectedDeliveryDate?: string | null
 }
 
 /** 成批预览（全是 JSON number = 服务端 BigDecimal 聚合；**服务端口径，前端只渲染不算**） */

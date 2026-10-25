@@ -131,18 +131,18 @@ export function operationParts(op: ProductionOperation): string[] {
   return [qty, operationStatusText(op.status)].filter((part) => part !== '')
 }
 
-/** 作业单**纯文本**（复制给加工方/贴 Excel，一行一加工项）
+/**
+ * 作业单**纯文本**（贴 Excel / 发给车间，一行一加工项）。
  *
- * issue #7079：两型的措辞不同 —— 出库作业单**没有加工方、没有交期** ⇒ 这两行不出现（缺值不渲染）。
+ * 🔴 issue #7723：**加工方与交期不再进作业单文本** —— 外发（加工厂 + 回厂日）已搬到智能派单，
+ * 由「外发」视图承载（作业单是「干什么活」，不是「谁干」）。
+ * issue #7079：两型的措辞仍然不同（出库作业单没有加工环节）—— 由 {@link ORDER_KIND_LABELS} 承载。
  */
 function toPlainText(po: ProcessingOrder, operations?: ProductionPosition[] | null): string {
   const operationsIndex = operationsByItem(operations)
-  const outbound = orderKindOf(po) === 'outbound'
   const lines: string[] = []
   lines.push(`${ORDER_KIND_LABELS[orderKindOf(po)]}：${po.processingOrderNo}`)
   if (po.customerName) lines.push(`客户：${po.customerName}`)
-  if (po.processor) lines.push(`加工方：${po.processor}`)
-  if (po.expectedDeliveryDate) lines.push(`交期：${po.expectedDeliveryDate}`)
   lines.push(`状态：${STATUS_TEXT[po.status] ?? po.status}`)
   lines.push('')
   ;(po.items ?? []).forEach((it: ProcessingOrderItem, i: number) => {
@@ -318,18 +318,6 @@ export default function ProcessingOrderBlock({
               <span className="ml-2 rounded bg-primary-50 px-2 py-0.5 text-xs font-medium text-primary-700">
                 {STATUS_TEXT[po.status] ?? po.status}
               </span>
-            </div>
-            <div className="text-sm text-neutral-500">
-              {/* 出库作业单（issue #7079）：**没有加工方、没有交期** ⇒ 这两个写面不渲染，
-                  改为如实说明原因（不印空标题，也不给「—」冒充有值）。 */}
-              {outbound ? (
-                <span>卖布单不设加工方与交期</span>
-              ) : (
-                <>
-                  {po.processor && <span className="mr-3">加工方：{po.processor}</span>}
-                  {po.expectedDeliveryDate && <span>交期：{po.expectedDeliveryDate}</span>}
-                </>
-              )}
             </div>
           </div>
 

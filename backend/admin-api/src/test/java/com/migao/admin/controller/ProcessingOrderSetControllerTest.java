@@ -390,7 +390,9 @@ class ProcessingOrderSetControllerTest extends BaseControllerTest {
 
         // 锚定判据的**另一半**：兄弟只读端点（同实体族）的生效码必须仍是 production:view（#5291 新增的读码）
         // ⇒ 它若改码，本断言红，逼一次锚定复核（不静默漂移）。
-        Method sibling = ProcessingOrderController.class.getDeclaredMethod("list", String.class, String.class);
+        // issue #7723：list 增加 `outsourced`（只看外发）⇒ 反射签名同步
+        Method sibling = ProcessingOrderController.class.getDeclaredMethod(
+                "list", String.class, String.class, Boolean.class);
         assertThat(sibling.getAnnotation(RequirePermission.class).value())
                 .as("锚定来源：ProcessingOrderController 的 GET 生效码").isEqualTo(ANCHOR_PERMISSION);
     }

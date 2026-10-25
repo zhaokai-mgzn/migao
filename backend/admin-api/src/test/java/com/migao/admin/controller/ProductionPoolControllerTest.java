@@ -96,7 +96,8 @@ class ProductionPoolControllerTest extends BaseControllerTest {
     @Test
     @DisplayName("🔴 #5169 判据1 POST /dispatch — 不传 pooled ⇒ 下传 null（**缺省关**的 HTTP 入口守卫）")
     void dispatchWithoutPooledFlagStaysPerOrder() throws Exception {
-        when(processingOrderService.generate(anyList(), any(), eq(1L), any(), any(), any()))
+        when(processingOrderService.generate(anyList(), any(), eq(1L), any(), any(), any(),
+                isNull(), isNull()))
                 .thenReturn(List.of(ProcessingOrderService.GenerateResult.ok("order-1", "JG-1")));
 
         mockMvc.perform(post("/api/admin/production/pool/dispatch")
@@ -107,13 +108,15 @@ class ProductionPoolControllerTest extends BaseControllerTest {
 
         // 服务侧的缺省解析（POOLED_DEFAULT_ENABLED）是**唯一**的缺省值来源；
         // 控制器这一层必须原样传 null，不得替它做决定
-        verify(processingOrderService).generate(anyList(), any(), eq(1L), any(), isNull(), isNull());
+        verify(processingOrderService).generate(anyList(), any(), eq(1L), any(), isNull(), isNull(),
+                isNull(), isNull());
     }
 
     @Test
     @DisplayName("#5169 判据2 POST /dispatch — pooled=true 原样下传（池化必须**显式**开启）")
     void dispatchWithPooledFlagReachesTheService() throws Exception {
-        when(processingOrderService.generate(anyList(), any(), eq(1L), any(), eq("best_fit"), eq(true)))
+        when(processingOrderService.generate(anyList(), any(), eq(1L), any(), eq("best_fit"), eq(true),
+                isNull(), isNull()))
                 .thenReturn(List.of(ProcessingOrderService.GenerateResult.ok("order-1", "JG-1")));
 
         mockMvc.perform(post("/api/admin/production/pool/dispatch")
@@ -122,7 +125,25 @@ class ProductionPoolControllerTest extends BaseControllerTest {
                                 + "\"pooled\":true}"))
                 .andExpect(status().isOk());
 
-        verify(processingOrderService).generate(anyList(), any(), eq(1L), any(), eq("best_fit"), eq(true));
+        verify(processingOrderService).generate(anyList(), any(), eq(1L), any(), eq("best_fit"), eq(true),
+                isNull(), isNull());
+    }
+
+    @Test
+    @DisplayName("#7723 POST /dispatch — 承接方 + 回厂日原样下传（不传 = null，本厂自做）")
+    void dispatchPassesConsignee() throws Exception {
+        when(processingOrderService.generate(anyList(), any(), eq(1L), any(), any(), any(),
+                eq("sup-1"), eq(java.time.LocalDate.of(2026, 11, 1))))
+                .thenReturn(List.of(ProcessingOrderService.GenerateResult.ok("order-1", "JG-1")));
+
+        mockMvc.perform(post("/api/admin/production/pool/dispatch")
+                        .contentType("application/json")
+                        .content("{\"orderIds\":[\"order-1\"],\"processorSupplierId\":\"sup-1\","
+                                + "\"expectedDeliveryDate\":\"2026-11-01\"}"))
+                .andExpect(status().isOk());
+
+        verify(processingOrderService).generate(anyList(), any(), eq(1L), any(), isNull(), isNull(),
+                eq("sup-1"), eq(java.time.LocalDate.of(2026, 11, 1)));
     }
 
     @Test

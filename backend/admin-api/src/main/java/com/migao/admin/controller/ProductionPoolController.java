@@ -85,7 +85,25 @@ public class ProductionPoolController {
     public ApiResponse<List<ProcessingOrderService.GenerateResult>> dispatch(
             @RequestBody ProductionPoolRequest request) {
         Long tenantId = TenantContext.getTenantId();
+        // 外发承接方 / 回厂日（issue #7723）：null = 本厂自做，与改造前逐字相同。
         return ApiResponse.success(processingOrderService.generate(request.getOrderIds(),
-                request.getBatches(), tenantId, null, request.getAssignmentRule(), request.getPooled()));
+                request.getBatches(), tenantId, null, request.getAssignmentRule(), request.getPooled(),
+                request.getProcessorSupplierId(), request.getExpectedDeliveryDate()));
+    }
+
+    /**
+     * 承接方下拉（权限 {@code processing:view} = 本页读码，issue #7723）。
+     *
+     * <p>只回**在用的加工厂**（{@code suppliers.type = processor}）的 id + 名称 ——
+     * 不复用 {@code /api/admin/suppliers}（那把码是 {@code inbound:view}，生产岗通常没有，
+     * 会让派单页被迫提权），也不暴露联系人/账期/欠款。</p>
+     *
+     * GET /api/admin/production/pool/processors
+     */
+    @RequirePermission("processing:view")
+    @GetMapping("/processors")
+    public ApiResponse<List<ProcessingOrderService.ProcessorOption>> processors() {
+        Long tenantId = TenantContext.getTenantId();
+        return ApiResponse.success(processingOrderService.processorOptions(tenantId));
     }
 }

@@ -59,9 +59,11 @@ interface BoardRow {
 interface SearchParams {
   keyword: string
   status: string
+  /** 只看外发（issue #7723）：外发在途的跟踪面 —— 服务端按「有承接方档案引用」过滤 */
+  outsourced: boolean
 }
 
-const EMPTY_SEARCH: SearchParams = { keyword: '', status: '' }
+const EMPTY_SEARCH: SearchParams = { keyword: '', status: '', outsourced: false }
 
 /** 状态下拉选项（含「全部」）——合并自加工单列表页（issue #4357） */
 const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
@@ -118,6 +120,8 @@ export default function ProductionBoardPage() {
   // 筛选（合并自加工单列表页，issue #4357）：输入态与已提交态分离 —— 回车/点「查询」才发请求
   const [keywordInput, setKeywordInput] = useState('')
   const [statusInput, setStatusInput] = useState('')
+  /** 「只看外发」输入态（与已提交态分离，同关键词/状态：点「查询」才生效） */
+  const [outsourcedInput, setOutsourcedInput] = useState(false)
   const [search, setSearch] = useState<SearchParams>(EMPTY_SEARCH)
 
   /** 列表请求序号（issue #4303）：只认最新一次请求的响应，旧的在飞响应一律丢弃 */
@@ -131,6 +135,7 @@ export default function ProductionBoardPage() {
       const res = await processingOrderApi.list({
         keyword: search.keyword || undefined,
         status: search.status || undefined,
+        outsourced: search.outsourced || undefined,
       })
       // 时序保护（issue #4303）：旧响应晚到不得覆盖新数据，也不得由它收尾 loading
       if (seq !== reqSeq.current) return
@@ -210,16 +215,17 @@ export default function ProductionBoardPage() {
   }
 
   const handleSearch = () => {
-    setSearch({ keyword: keywordInput.trim(), status: statusInput })
+    setSearch({ keyword: keywordInput.trim(), status: statusInput, outsourced: outsourcedInput })
   }
 
   const handleReset = () => {
     setKeywordInput('')
     setStatusInput('')
+    setOutsourcedInput(false)
     setSearch(EMPTY_SEARCH)
   }
 
-  const filtered = !!(search.keyword || search.status)
+  const filtered = !!(search.keyword || search.status || search.outsourced)
 
   return (
     <div className="p-6 space-y-4">
@@ -266,6 +272,16 @@ export default function ProductionBoardPage() {
               ))}
             </select>
           </div>
+          {/* 只看外发（issue #7723）：外发承接方与回厂日由智能派单录入，本页只做跟踪/筛选。 */}
+          <label className="flex items-center gap-2 h-9 text-sm text-neutral-600 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={outsourcedInput}
+              onChange={(e) => setOutsourcedInput(e.target.checked)}
+              data-testid="production-filter-outsourced"
+            />
+            只看外发
+          </label>
           <div className="flex items-center gap-2">
             <Button variant="primary" size="sm" onClick={handleSearch} disabled={loading}>
               <Search className="w-4 h-4 mr-1.5" />
@@ -306,6 +322,8 @@ export default function ProductionBoardPage() {
               <th className="px-4 py-3 font-medium whitespace-nowrap">客户</th>
               <th className="px-4 py-3 font-medium">商品与数量</th>
               <th className="px-4 py-3 font-medium whitespace-nowrap">状态</th>
+              {/* 承接方（issue #7723）：外发在途怎么跟踪 —— 加工厂 + 回厂日；本厂自做显示「—」。 */}
+              <th className="px-4 py-3 font-medium whitespace-nowrap">承接方</th>
               <th className="px-4 py-3 font-medium whitespace-nowrap">工序进度</th>
               <th className="px-4 py-3 font-medium whitespace-nowrap">计件合计</th>
               {/* 操作（issue #6717）：右缘冻结 —— 改前 1280×800 实测本列表头 left = 1368
@@ -317,7 +335,7 @@ export default function ProductionBoardPage() {
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-neutral-400" data-testid="production-board-loading">
+                <td colSpan={10} className="px-4 py-8 text-center text-neutral-400" data-testid="production-board-loading">
                   加载中…
                 </td>
               </tr>
@@ -325,7 +343,7 @@ export default function ProductionBoardPage() {
 
             {!loading && error && (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center" data-testid="production-board-error">
+                <td colSpan={10} className="px-4 py-8 text-center" data-testid="production-board-error">
                   <span className="mb-2 flex items-center justify-center gap-2 text-red-500">
                     <AlertCircle className="w-4 h-4" />
                     {error}
@@ -339,7 +357,7 @@ export default function ProductionBoardPage() {
 
             {!loading && !error && rows.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-4 py-10 text-center text-neutral-400" data-testid="production-board-empty">
+                <td colSpan={10} className="px-4 py-10 text-center text-neutral-400" data-testid="production-board-empty">
                   暂无作业单{filtered ? '（当前筛选条件下）' : ''}
                 </td>
               </tr>
@@ -398,6 +416,18 @@ export default function ProductionBoardPage() {
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">
                       <StatusBadge label={chip.label} color={chipToneClasses[chip.tone]} dot />
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-neutral-700" data-testid={`production-row-consignee-${po.id}`}>
+                      {po.processor || po.processorSupplierId ? (
+                        <span>
+                          {po.processor ?? '外发'}
+                          {po.expectedDeliveryDate && (
+                            <span className="ml-1 text-xs text-neutral-500">· {po.expectedDeliveryDate} 回厂</span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-neutral-400">本厂</span>
+                      )}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-2">

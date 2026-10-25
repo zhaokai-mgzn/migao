@@ -22,6 +22,9 @@ public class ProcessingOrderResponse {
     private String customerPhone;
     private String processingOrderNo;
     private String processor;
+
+    /** 外发承接方档案引用（issue #7723）；null = 本厂自做 / 存量单。 */
+    private String processorSupplierId;
     private LocalDate expectedDeliveryDate;
     private String status;
     /** 快照明细：不含销售价（决策 2），加工项含 options */

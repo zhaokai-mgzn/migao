@@ -62,9 +62,11 @@ public class ProcessingOrderController {
     @RequirePermission("production:view")
     public ApiResponse<List<ProcessingOrderResponse>> list(
             @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) String status) {
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) Boolean outsourced) {
         Long tenantId = TenantContext.getTenantId();
-        return ApiResponse.success(processingOrderService.list(keyword, status, tenantId));
+        // outsourced=true ⇒ 只看外发（issue #7723）：作业看板「只看外发」筛选的唯一真值来源。
+        return ApiResponse.success(processingOrderService.list(keyword, status, tenantId, outsourced));
     }
 
     /**

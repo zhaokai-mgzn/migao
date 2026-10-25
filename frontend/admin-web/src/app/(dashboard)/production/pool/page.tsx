@@ -5,7 +5,7 @@ import { AlertTriangle, CheckCircle2, ChevronDown, Layers, RefreshCw, XCircle, Z
 import { toast } from 'sonner'
 import { extractApiErrorMessage, toastRequestError } from '@/lib/api-error'
 import { poolBoardApi } from '@/lib/api'
-import { Badge, Button, Card, PageHeader } from '@/components/ui'
+import { Badge, Button, Card, PageHeader, SELECT_CONTROL } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import {
   batchGroups,
@@ -18,7 +18,7 @@ import {
   previewSummaryRows,
 } from '@/lib/pool-board'
 import { isUrgentFlag, urgentBadgeText } from '@/lib/order-urgency'
-import type { PoolBoard, PoolDispatchResult, PoolLine, PoolPreview } from '@/types'
+import type { PoolBoard, PoolDispatchResult, PoolLine, PoolPreview, ProcessorOption } from '@/types'
 
 /** 池化的等待阈值（小时）—— 传给服务端，服务端回显在 `maxWaitHours` */
 const MAX_WAIT_HOURS = 24
@@ -57,6 +57,16 @@ export default function ProductionPoolPage() {
   const [preview, setPreview] = useState<PoolPreview | null>(null)
   const [previewError, setPreviewError] = useState('')
   const [results, setResults] = useState<PoolDispatchResult[] | null>(null)
+  /**
+   * 外发承接方 + 回厂日（issue #7723）：**整批一个**（粒度 = 整单外发）。
+   *
+   * 留空 = 本厂自做（请求体不带这两个键，与改造前逐字相同）。加工厂档案复用供应商
+   * （`type = processor`），下拉走派单同码的 `GET /production/pool/processors`。
+   */
+  const [processors, setProcessors] = useState<ProcessorOption[]>([])
+  const [processorId, setProcessorId] = useState('')
+  const [returnDate, setReturnDate] = useState('')
+  const consignee = { processorSupplierId: processorId || null, expectedDeliveryDate: returnDate || null }
   const [dispatchError, setDispatchError] = useState('')
   const [dispatching, setDispatching] = useState(false)
   /** 正在单派的订单 id（按钮级 loading，避免连点重复派单） */
@@ -98,6 +108,18 @@ export default function ProductionPoolPage() {
     void load()
   }, [load])
 
+  // 承接方下拉：拉不到不阻塞派单（留空 = 本厂自做），只在控制台留痕
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await poolBoardApi.processors()
+        setProcessors(res.data?.data ?? [])
+      } catch (e) {
+        console.error(e)
+      }
+    })()
+  }, [])
+
   // 勾选订单 ⇒ 调 /preview（预览是「这批派下去会领多少料」的唯一真值来源）
   useEffect(() => {
     if (selectedLines.length === 0) {
@@ -108,7 +130,7 @@ export default function ProductionPoolPage() {
     let cancelled = false
     void (async () => {
       try {
-        const res = await poolBoardApi.preview(buildPoolRequest(selectedLines, true))
+        const res = await poolBoardApi.preview(buildPoolRequest(selectedLines, true, consignee))
         if (cancelled) return
         setPreview(res.data?.data ?? null)
         setPreviewError('')
@@ -140,7 +162,7 @@ export default function ProductionPoolPage() {
     setSinglePending(line.orderId)
     setDispatchError('')
     try {
-      const res = await poolBoardApi.dispatch(buildPoolRequest([line], false))
+      const res = await poolBoardApi.dispatch(buildPoolRequest([line], false, consignee))
       const rows = res.data?.data ?? []
       setResults(rows)
       const done = rows.find((r) => r.success)
@@ -167,7 +189,7 @@ export default function ProductionPoolPage() {
     setDispatching(true)
     setDispatchError('')
     try {
-      const res = await poolBoardApi.dispatch(buildPoolRequest(selectedLines, true))
+      const res = await poolBoardApi.dispatch(buildPoolRequest(selectedLines, true, consignee))
       const rows = res.data?.data ?? []
       setResults(rows)
       const okCount = rows.filter((r) => r.success).length
@@ -456,6 +478,43 @@ export default function ProductionPoolPage() {
           */}
           <Card>
             <div className="p-5" data-testid="pool-groups-section">
+              {/*
+                外发（issue #7723）：承接方 + 回厂日 = **派单的属性**，不是作业单的属性。
+                留空 = 本厂自做（请求体不带这两个键）。单派（加急插队区）与成批派共用这一组值。
+              */}
+              <div
+                data-testid="pool-consignee"
+                className="mb-4 flex flex-wrap items-end gap-4 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3"
+              >
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-neutral-600 whitespace-nowrap">承接方</label>
+                  <select
+                    aria-label="承接方"
+                    value={processorId}
+                    onChange={(e) => setProcessorId(e.target.value)}
+                    className={cn(SELECT_CONTROL, 'min-w-[160px]')}
+                  >
+                    <option value="">本厂自做</option>
+                    {processors.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-neutral-600 whitespace-nowrap">回厂日</label>
+                  <input
+                    type="date"
+                    aria-label="回厂日"
+                    value={returnDate}
+                    onChange={(e) => setReturnDate(e.target.value)}
+                    className="h-9 rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                  />
+                </div>
+                <span className="text-xs text-neutral-500">
+                  发给外部加工厂时填写；留空 = 本厂自做（加工厂档案在「供应商」里把类型设为加工厂）
+                </span>
+              </div>
+
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <Layers className="w-4 h-4 text-primary-600" />
