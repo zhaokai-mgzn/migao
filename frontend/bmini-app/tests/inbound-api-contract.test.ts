@@ -14,6 +14,8 @@
  * | C4 | 幂等头名逐字等于 `WorkerInboundController.IDEMPOTENCY_HEADER` | 沿用报工那条链的 `X-Client-Request-Id` ⇒ 红 |
  * | C5 | 短码字母表 / 长度逐值等于 `WorkerShortLinkService.ALPHABET` / `CODE_LENGTH` | 把字母表写成含 `I` 的 ⇒ 红 |
  * | C6 | **回执形状两侧一致**：端点 `ApiResponse<T>` 的 `T` 是容器（`List<…>`）时端侧必须做容器归一化 | 上传端点的 `data` 是数组而端侧按对象读 `data.url` ⇒ 红（issue #6864 线上 P0） |
+ * | C7 | **只读搜索端点也得登记**（issue #7759）：`GET /api/worker/inbound/skus` 在后端存在、端侧有常量、
+ *        方法对得上 | 端侧漏登记 ⇒ C2 反向判红；写成 POST ⇒ C3 判红 |
  */
 import fs from 'fs'
 import path from 'path'
@@ -99,7 +101,9 @@ describe('工人入库端点/头名与后端逐值一致', () => {
     expect(paths).toContain('/api/worker/inbound/upload')
     expect(paths).toContain('/api/worker/inbound/labels/{}')
     expect(paths).toContain('/api/worker/inbound/labels/{}/print')
-    expect(tsEntries.length).toBe(6)
+    // issue #7759：零命中时的**只读**货号搜索（GET /api/worker/inbound/skus?q=）
+    expect(paths).toContain('/api/worker/inbound/skus')
+    expect(tsEntries.length).toBe(7)
   })
 
   it('C1 端侧端点路径都在后端（写错一个字母 ⇒ 红）', () => {

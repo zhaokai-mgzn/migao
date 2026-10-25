@@ -1,4 +1,4 @@
-// case_ids: BM-017
+// case_ids: BM-017, BM-052
 /**
  * **SKU 匹配门禁 / 不确定不预填 / 卷数·卷长口径**（issue #5052 P3；设计 §6.3 / §6.4，验收判据 2 / 3；
  * 口径改判见 issue #6812）
@@ -16,10 +16,12 @@ import fs from 'fs'
 import path from 'path'
 import {
   AMBIGUOUS_SKU_MESSAGE,
+  FIELD_NOT_RECOGNIZED,
   NO_SKU_MATCH_MESSAGE,
   checkDraftInput,
   evaluateSkuGate,
   prefillFromRecognize,
+  recognizedFieldRows,
   type PrefillResult,
   type RecognizeLike,
 } from '../src/utils/inbound/recognizeGate'
@@ -241,5 +243,48 @@ describe('SKU 匹配门禁与预填口径', () => {
     }
     // 反向对照：卷长必须在契约里（否则"透了但没声明"会被上一条判据掩盖）
     expect(requestBlock).toContain('rollLengthM')
+  })
+})
+
+/**
+ * 逐格识别结果（issue #7759）：服务端一直在回 `fields`，而端侧**原来根本不读它**
+ * ⇒ 工人只看到「没有匹配到货号」，看不到「系统把这一格读成了什么」，既不能自查也不能转述。
+ */
+describe('逐格识别结果上屏（服务端 fields）', () => {
+  it('C7 fields ⇒ 逐格展示行；没认出来的那格明说要自己填；无 fields ⇒ 空表（不造行）', () => {
+    const rows = recognizedFieldRows({
+      fields: [
+        { key: 'model_no', label: '型号 / 货号', value: '2659-4' },
+        { key: 'color_name', label: '色号', value: '2659-4绵绵奶咖' },
+        { key: 'barcode', label: '条码原文', value: null },
+      ],
+    })
+    expect(rows.map((row) => [row.key, row.text])).toEqual([
+      ['model_no', '2659-4'],
+      ['color_name', '2659-4绵绵奶咖'],
+      // 空值 ⇒ 明说「要自己填」，不是静默空白（静默 = 工人以为系统没这一格）
+      ['barcode', FIELD_NOT_RECOGNIZED],
+    ])
+    // 中文名用服务端给的 label（不在端侧再写一份字段名表）
+    expect(rows[0].label).toBe('型号 / 货号')
+    // 服务端没回字段表（老回执 / 解码路径）⇒ 不渲染空段
+    expect(recognizedFieldRows(null)).toEqual([])
+    expect(recognizedFieldRows({})).toEqual([])
+    expect(recognizedFieldRows({ fields: [] })).toEqual([])
+  })
+
+  it('C8 逐格结果是**只读展示**：它不成为预填的旁路（零命中仍全空）', () => {
+    const out = prefillFromRecognize({
+      degraded: false,
+      requiresManualEntry: true,
+      skuMatches: [],
+      fields: [{ key: 'model_no', label: '型号 / 货号', value: '2659-4' }],
+      // 服务端零命中时下发的就是这句（页面上屏的是它，端侧不另写一份）
+      message: NO_SKU_MATCH_MESSAGE,
+    })
+    expect(out.prefillUsed).toBe(false)
+    // 逐格结果只用来**展示**：即便 fields 里有值，零命中时三格仍全空（不给旁路）
+    expect([out.productName, out.colorName, out.rollLengthM]).toEqual(['', '', ''])
+    expect(out.notice).toBe(NO_SKU_MATCH_MESSAGE)
   })
 })

@@ -799,7 +799,7 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-10-18 新增（issue #7249）：现场 = 商家手机端 H5 隔一段时间打开必回登录页（access token 7200s、手机端零 refresh、initialize/checkAuth 过期即 logout）。冻结口径 = 方案 A（401 ⇒ refresh cookie 换 token 并重放一次，与 admin-web 同口径）+ 登录态 30 天（refresh 2592000）。 ｜ tags: auth, session, token-refresh, bmini
 
-## B 端小程序域（48 case）
+## B 端小程序域（49 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -1472,6 +1472,25 @@
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-10-19 新增（issue #7316）：用户逐字「手机端的拍照入库功能页面文案有个mardown语法未正确渲染，显示成了**不会**」「不会调用识别模型这句文案应该改一下，改成工人能理解的文字，补打入库标签页面也有类似问题」。类级处置 = 实例判据（两页 + 解码链）+ 类级元守卫（扫全部手机端页面与共享组件 + 登记文案源；markdown 标记 / 研发术语两条规则）。**首版射程只到工人页，被独立复核指出两处实证漏洞**（printCapability 的打印失败提示与 gaps.ts 的上屏引导文案在射程外、守卫头把 gaps.ts 整体写成「从不上屏」与事实相反）⇒ 第二版把射程扩到 `src/pages/**` + `src/components/**`，并引入 `exported` 模式区分上屏常量与研发台账；同批收口商家手机端 4 处（计件工资 2 / 派单 1 / 数据页 1）、打印失败提示 4 条、打印回执 2 条。边界（照实登记）：只判「会不会被手机用户看到」——注释 / JSDoc 不在射程；`productionOffline.ts` 的「补传被服务端拒绝」目前无入队调用点（本仓不可达），未登记。 ｜ tags: bmini, worker, copy, inbound
+
+### BM-052. 供应商侧布料标签拍照入库 - 型号 2659-4 归一后命中货号 2659-04 + 门幅没印按行业标准 2.8 + 逐格结果上屏 + 只读货号搜索 🔵
+```
+你: 工人拍一张供应商侧布料标签（型号：雪尼尔2659-4绵绵奶咖、52.4 米，**没有印门幅**）：页面先逐格显示系统读到的内容（型号 / 货号 / 品名 / 色号 / 门幅 / 米数，没认出来的那格明说要自己填），再说明「标签未印门幅，按行业标准 2.8 米」并预选出 2659-04-28；若标签印了门幅（3.2）则命中 2659-04-32；工人的出口除了核对还有只读的按货号 / 色名搜索
+期望: direct_reply
+数据: 判据 1·**识别面要有「型号 / 货号」这一格**：backend/ai-agent-service/app/vision/targets.py 的 inbound 字段表含 model_no（标签写「雪尼尔2659-4绵绵奶咖」⇒ model_no=2659-4、color_name=绵绵奶咖），提示词带上该格中文名。红证（实跑过）：从 TARGET_FIELDS 的 inbound 删掉 model_no ⇒ backend/ai-agent-service/tests/test_vision/test_targets_inbound.py 的字段键元组与提示词 label 两处同时判红。证据：backend/ai-agent-service/tests/test_vision/test_targets_inbound.py
+数据: 判据 2·**匹配面归一化后命中（本条真实读数做夹具）**：品名 雪尼尔2659-4绵绵奶咖 + 色号 2659-4绵绵奶咖 + 库里 products.sku_code=2659 / product_skus 2659-04-28 与 2659-04-32（color_name=2659-04 绵绵奶咖）⇒ 命中 2 条。红证（实跑过）：去掉色号段补零，或摘掉 model_no 这一级，命中数 2 → 0（判据当场红）。证据：backend/admin-api/src/test/java/com/migao/admin/service/WorkerInboundServiceTest.java 的 SupplierLabel 组
+数据: 判据 3·**归一化是纯函数且不跨色号猜**：全角 / 分隔符（— · *）/ NO. 前缀 / 空白都归一到 2659-04；型号 2659-05 不得吃进 2659-04 的货号；型号只到 2659 时不去猜更细的 2659-04（商品侧更细 = 标签没说的信息，不补）。证据：同上（normalizationCollapsesEverySupplierSpelling / modelKeyDoesNotBleedAcrossColourNumbers）
+数据: 判据 4·**红线不动**：三个键全对不上 ⇒ 空匹配 + requiresManualEntry + products/product_skus 的 insert 零调用、库存零变更（不建品、不猜）；型号命中但色名一条不中 ⇒ 回该型号下的全部货号（交工人选），不是零命中。证据：同上（nothingMatchesStillRefusesToCreateAnything / modelHitWithoutColorHitStillReturnsTheModelCandidates）
+数据: 判据 5·**类级元守卫**：工人入库匹配面不得再出现「按商品名 / 色号精确相等匹配」（`.eq(Product::getName` / `.eq(ProductSku::getColorName`），且两条降级腿（sku_code 前缀 / color_name 包含）必须都在。红证（实跑过）：把其中任一句写回 backend/admin-api/src/main/java/com/migao/admin/service/WorkerInboundService.java ⇒ backend/admin-api/src/test/java/com/migao/admin/controller/WorkerInboundSurfaceGuardTest.java 判红。证据：同判据 5 的类
+数据: 判据 6·**零命中不再是无路可走（端侧）**：页面把服务端 fields 逐格上屏（空值那格写「没认出来（请自己填）」），并给只读的按货号 / 色名搜索入口 —— 搜到后点选即成为待入库货号，且搜索期间建单 / 过账零调用。红证（实跑过）：页面不读 fields ⇒ inbound-field-* 一个都取不到；删掉搜索区 ⇒ inbound-sku-search 取不到、已选货号恒为「（未选）」。证据：frontend/bmini-app/tests/worker-inbound-page.test.tsx 的 C10 / C11
+数据: 判据 7·**只读搜索端点两侧一致**：GET /api/worker/inbound/skus 在后端存在、端侧有常量且方法对得上（端侧 7 个端点全登记）。红证：端侧漏登记 ⇒ frontend/bmini-app/tests/inbound-api-contract.test.ts 的 C2 反向判红；写成 POST ⇒ C3 判红。证据：同文件
+数据: 判据 8·**门幅口径（来源：用户 2026-10-25 裁定）**：标签**没印门幅** ⇒ 取该商品 2.8 米那一档（唯一候选、预选，页面仍要工人勾「我确认」）；标签**写了 3.2** ⇒ 只取 3.2；标签写了库里**没有**的 3.5 ⇒ 零命中、**不回落** 2.8；该商品**没有 2.8 档** ⇒ 退回候选交工人选。归一：2.8 / 2.80 / 280 / 280cm 同一档。红证（实跑过）：把 selectByDoorWidth 里的默认门幅拿掉 ⇒ 默认门幅那两条用例当场红（命中数 1 → 2、doorWidthAssumed 恒 false）。证据：backend/admin-api/src/test/java/com/migao/admin/service/WorkerInboundServiceTest.java 的 DoorWidthRule 组
+数据: 判据 9·**识别面只抄不推**：backend/ai-agent-service/app/vision/targets.py 的 inbound「门幅」格在图没印时必须留空（2.8 是匹配侧的业务默认值，不是图上的事实）。红证（实跑过）：在 extract_fields 里给门幅兜一个 2.8 ⇒ backend/ai-agent-service/tests/test_vision/test_targets_inbound.py 的 TestDoorWidth 判红。证据：同文件
+数据: 判据 10·**默认值只在一处**：2.8 只出现在 WorkerInboundService.DEFAULT_DOOR_WIDTH（注释引用裁定），页面上的数字取服务端下发的 doorWidth。红证：页面写死 2.8 而服务端改值 ⇒ frontend/bmini-app/tests/worker-inbound-page.test.tsx 的 C12 断言数字对不上。证据：同文件
+跳过: [backend-contract] 确定性判据（pytest: backend/ai-agent-service/tests/test_vision/test_targets_inbound.py；maven: WorkerInboundServiceTest + WorkerInboundSurfaceGuardTest；jest: worker-inbound-page / inbound-api-contract），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.worker-recognize-decoding-first, inbound-order-flow.worker-narrow-surface
+溯源: 2026-10-25 新增（issue #7759）：用户实测「商品有 sku 2659-04 绵绵奶咖，和图中的布料型号能对上，但拍照入库无法识别供应商侧的布料标签」。真因 = 匹配键用过内部商品名 + 色号且都是精确相等（供应商标签是它自己的型号命名空间），而图上唯一靠得住的 2659-4 没有任何字段可承载。修法：识别面补 model_no 一格、匹配面改「归一化 + 多级降级 + 仍绝不猜」、端侧补逐格结果上屏与只读货号搜索。**未做 / 边界**：供应商型号与内部货号的对应关系目前靠数据巧合（该商品货号恰好就是供应商型号），长远的「供应商货号对照表」不在本单；缸号仍只做「能识别 + 能预填」，不做校验。**追加（用户 2026-10-25 裁定，见 issue 评论）**：门幅按「标签没印 = 行业标准 2.8 米」处理（非标准门幅会印在标签上）—— 默认值只放服务端一处常量；标签写了库里没有的门幅 ⇒ 零命中、不回落；该商品没有 2.8 档 ⇒ 退回候选交工人选。 ｜ tags: bmini, inbound, sku-gate, supplier-label
 
 ## 分类域（3 case）
 
@@ -10420,7 +10439,7 @@
 数据: 🔴 不确定 ⇒ 不预填：vision 返回 `degraded=true` ⇒ 品名 / 色号 / 米数三格全 `null`、`skuMatches` 空、`requiresManualEntry=true`，只给人工录入提示（**不编造**）
 数据: 🔴 零命中不建品：品名 + 色号在 `product_skus` 零命中 ⇒ `skuMatches` 为空数组，且 `productMapper` / `productSkuMapper` 的 `insert` **零调用**、`receiveStock` 零调用（防 AI 幻觉造出假 SKU 还带库存流水）
 数据: 张数准入：0 张 / 4 张 ⇒ 400，且一次远端调用都不发生（上限 3 张沿用现状）
-数据: ai-agent 侧 schema 同源：`inbound` target 的 4 个字段键（product_name / color_name / quantity_meters / barcode）与前两个 target **零交集**，阈值取严档 0.85，低置信度（0.40）的米数**留空 + 给理由**且理由含「入库侧」
+数据: ai-agent 侧 schema 同源：`inbound` target 的字段键（issue #7759 起 5 个：model_no / product_name / color_name / quantity_meters / barcode）与 product / order 两个 target **零交集**，阈值取严档 0.85，低置信度（0.40）的米数**留空 + 给理由**且理由含「入库侧」
 跳过: [backend-contract] 入库识别是后台/仓储单据流（无黄金策工具面，AI 侧未接）⇒ 由 admin-api 单测 + ai-agent vision 单测覆盖，不进入 agent-eval 冒烟
 ```
 真值: inbound-order-flow.worker-recognize-decoding-first
@@ -13126,13 +13145,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：891（活跃 142，跳过 749）
-- tier 分布：smoke 12 / normal 823 / adversarial 32
+- 用例总数：892（活跃 142，跳过 750）
+- tier 分布：smoke 12 / normal 824 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
 - 登录认证域：13
-- B 端小程序域：48
+- B 端小程序域：49
 - 分类域：3
 - 对话边界域：51
 - 跨域：3
