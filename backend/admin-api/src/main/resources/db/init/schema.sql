@@ -4034,6 +4034,10 @@ CREATE INDEX IF NOT EXISTS idx_orders_tenant_phone
     ON orders (tenant_id, customer_phone) WHERE deleted = 0;
 CREATE INDEX IF NOT EXISTS idx_orders_tenant_user_created
     ON orders (tenant_id, user_id, created_at DESC) WHERE deleted = 0;
+-- 外发区（V194，issue #7752）：派单页按租户筛「待派外发单」（`is_outsourced = TRUE`）。
+CREATE INDEX IF NOT EXISTS idx_orders_tenant_outsourced
+    ON orders (tenant_id, created_at)
+    WHERE deleted = 0 AND is_outsourced = TRUE;
 
 -- 2. 通知：收件箱分页 + 未读数（前端 30s 轮询；`<>` 只能作部分索引谓词）
 CREATE INDEX IF NOT EXISTS idx_notifications_inbox
