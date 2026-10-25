@@ -21,6 +21,29 @@
 真换商品 / 服务端刷新出不同内容时照旧同步。商家看到的形态 = 生成成功即出现在主图第 1 位（封面），
 再点「提交并上架」保存的就是它。
 
+### 报价单「本套金额」与订单明细「小计」不再把加工费算两遍（2026-10-25，issue #7724）
+
+**改前**（用户 2026-10-25 同一张报价单截图）：一张纸上「本套金额 **327.04**」与「本单总金额 / 本单应收 **275.94**」并存 ——
+`327.04 = 275.94 + 51.10`，该行的加工费被算了**两遍**（屏幕上同一条明细行的小计也是 327.04，而它下面的算式写着 275.94）。
+根因：`order_items.subtotal` 的语义**二义** ——「新增订单」页建单时落的是 `面料 + 加工费`
+（`subtotal: productSub + lineFee`），而 agent / 开放接口路径落的是面料金额；展示层
+（纸面「本套金额」、屏幕明细行「小计」与合计）当时都直读 `subtotal` 再 + `processingFee`。
+
+**改后**：面料金额一律走 `frontend/admin-web/src/lib/order-amount.ts::fabricSubtotal(item)` ——
+服务端已算好的 `amount`（= 单价 × 数量）优先，`subtotal` 只在 `amount` 缺席（存量单）时兜底：
+- 纸面：面料行「小计」= `fabricSubtotal`，「本套金额」= `fabricSubtotal + processingFee`；
+- 屏幕：明细行「小计」与底部「商品金额 / 订单总金额」同口径。
+⇒ 上述单据的读数变为 面料 224.84 + 加工费 51.10 = **275.94**，与「本单应收」一致。
+
+**边界（如实登记）**：**不动任何落库金额** —— `order_items.subtotal` 的语义二义**仍在**
+（把它统一成「面料金额」+ 历史回填属涉钱不可逆动作，需先裁定回填窗口）；`OrderTable` / `OrderDetail`
+的 `getItemAmount` 本来就 `amount` 优先，不在本次改动范围。
+
+**判据**：实例 = `frontend/admin-web/tests/unit/lib/order-amount.test.ts` 的「fabricSubtotal 面料金额取数口」一组
++ `frontend/admin-web/tests/unit/components/QuotationDoc.test.tsx` 的「面料行小计 = amount…不双算」
++ `frontend/admin-web/tests/unit/components/OrderItemList.test.tsx` 的同族用例；
+类级守卫 = `frontend/admin-web/tests/unit/paper-doc-fabric-amount-guard.test.ts`（纸面 / 明细行直读 `.subtotal` 当钱印 ⇒ 逐站点现取判红）。
+
 ### 报价单「加工费」行的单价改印组合价（元/米）：7.3 米不再印成「单价 51.10」（2026-10-25，issue #7716）
 
 **改前**（用户 2026-10-25 截图，A4 报价单打印预览）：加工费行 `数量 7.3 / 单价 51.10 / 小计 51.10` ——
