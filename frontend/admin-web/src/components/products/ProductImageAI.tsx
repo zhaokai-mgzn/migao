@@ -26,10 +26,19 @@ import { toastRequestError } from '@/lib/api-error'
 
 const KINDS: Array<{ value: AiProductImageKind; label: string }> = [
   { value: 'main', label: '主图' },
+  { value: 'white', label: '白底图' },
   { value: 'texture', label: '材质细节' },
   { value: 'craft', label: '工艺细节' },
   { value: 'scene', label: '场景图' },
 ]
+
+/**
+ * 主图构图变体（issue #7782，与 ai-agent 的 `MAIN_VARIANTS` 同序）。
+ *
+ * 用户 2026-10-25 反馈「主图图片生成的都一样」——根因不是模型，是我们只有一套 main 提示词，
+ * 连点两次等于把同一个模板跑两遍。这里按生成次数轮换构图，面板上直接写出「这次是哪一种」。
+ */
+const MAIN_COMPOSITIONS = ['正面棚拍', '半垂坠', '悬挂近景'] as const
 
 const FAILURE_MESSAGE = '生成失败，请稍后重试，或直接上传图片'
 
@@ -84,6 +93,10 @@ export default function ProductImageAI({
   const [error, setError] = useState('')
   /** 上一次**自动填入表单**的结果（只用于「再生成一张」按钮文案与绿色状态行）。 */
   const [applied, setApplied] = useState<{ url: string; kind: AiProductImageKind } | null>(null)
+  /** 本次页面会话里「主图」已生成几张 —— 用来轮换构图，避免两张一个样。 */
+  const [mainGenerated, setMainGenerated] = useState(0)
+
+  const nextVariant = mainGenerated % MAIN_COMPOSITIONS.length
 
   /** 图片列表变化（上传 / 删除 / 自动填入）时，样图始终指向仍然存在的一张。 */
   useEffect(() => {
@@ -97,7 +110,7 @@ export default function ProductImageAI({
 
   /** 写进表单：主图 ⇒ 主图列表末尾；其余 ⇒ 详情图列表末尾。返回是否写进去了（满了就是 false）。 */
   const apply = (url: string, target: AiProductImageKind): boolean => {
-    const ok = target === 'main' ? onApplyMain(url) : onApplyDetail(url)
+    const ok = target === 'main' || target === 'white' ? onApplyMain(url) : onApplyDetail(url)
     if (ok) setApplied({ url, kind: target })
     return ok
   }
@@ -107,16 +120,18 @@ export default function ProductImageAI({
     setLoading(true)
     setError('')
     try {
-      const res = await aiProductImageApi.generate({ imageUrl: sample, productName, kind })
+      const variant = kind === 'main' ? nextVariant : 0
+      const res = await aiProductImageApi.generate({ imageUrl: sample, productName, kind, variant })
       const url = res.data.data?.url
       if (!url) {
         setError(FAILURE_MESSAGE)
         return
       }
       setResult(url)
+      if (kind === 'main') setMainGenerated((n) => n + 1)
       // 生成成功即落位（issue #7533）：多一步「用这张」= 商家漏点即白生成。
       if (!apply(url, kind)) {
-        setError(kind === 'main' ? MAIN_FULL : DETAIL_FULL)
+        setError(kind === 'main' || kind === 'white' ? MAIN_FULL : DETAIL_FULL)
       }
     } catch (e) {
       const message = failureMessage(e)
@@ -216,11 +231,20 @@ export default function ProductImageAI({
             >
               {applied ? '再生成一张' : '生成'}
             </Button>
-            <span className="text-xs text-neutral-400">细节图会加入下方「详情图」。</span>
+            <span className="text-xs text-neutral-400">
+              {kind === 'main'
+                ? `本次构图：${MAIN_COMPOSITIONS[nextVariant]}`
+                : kind === 'white'
+                  ? '白底图：纯白背景、无文字，可直接放第 5 张'
+                  : '细节图会加入下方「详情图」'}
+            </span>
             {error && <span className="text-xs text-red-600">{error}</span>}
             {applied && (
               <span role="status" className="text-xs text-green-600">
-                {applied.kind === 'main' ? '已加入主图' : '已加入「详情图」'}；可继续生成其他用途。
+                {applied.kind === 'main' || applied.kind === 'white'
+                  ? `已加入主图${applied.kind === 'white' ? '（白底图）' : ''}`
+                  : '已加入「详情图」'}
+                ；可继续生成其他用途。
               </span>
             )}
           </div>
@@ -236,7 +260,7 @@ export default function ProductImageAI({
                 className="h-40 w-40 rounded-lg border border-neutral-200 object-cover"
               />
               <p className="text-xs text-neutral-500">
-                请核对颜色与工艺；不满意可再生成一张（替换这一张），或在图片列表里删除。
+                请核对颜色与工艺；不满意可再生成一张（追加一张，不会替换已填入的图），或在图片列表里删除。
               </p>
             </div>
           )}

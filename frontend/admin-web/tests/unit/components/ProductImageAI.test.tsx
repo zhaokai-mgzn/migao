@@ -75,10 +75,48 @@ describe('ProductImageAI', () => {
       imageUrl: SAMPLE,
       productName: '回归布帘-遮光提花',
       kind: 'main',
+      variant: 0,
     })
     // 落位反馈可见；旧的「用这张」入口已消失（回归守卫：别再让商家多点一步）
     expect(await screen.findByRole('status')).toHaveTextContent('已加入主图')
     expect(screen.queryByRole('button', { name: '用这张' })).toBeNull()
+  })
+
+  it('白底图：走 onApplyMain（进主图列表），面板写明可直接放第 5 张', async () => {
+    const { onApplyMain, onApplyDetail } = renderAI()
+
+    fireEvent.click(screen.getByRole('button', { name: 'AI 生成商品图' }))
+    fireEvent.click(screen.getByRole('button', { name: '白底图' }))
+
+    expect(screen.getByText(/可直接放第 5 张/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '生成' }))
+
+    await waitFor(() => expect(onApplyMain).toHaveBeenCalledWith(RESULT))
+    expect(onApplyDetail).not.toHaveBeenCalled()
+    expect(generate).toHaveBeenCalledWith(expect.objectContaining({ kind: 'white', variant: 0 }))
+    expect(await screen.findByRole('status')).toHaveTextContent('已加入主图（白底图）')
+  })
+
+  it('主图连点：构图按 0→1→2→0 轮换（用户「生成的都一样」的判据）', async () => {
+    generate
+      .mockResolvedValueOnce(ok(RESULT))
+      .mockResolvedValueOnce(ok(RESULT_2))
+      .mockResolvedValueOnce(ok(`${RESULT}-3`))
+      .mockResolvedValueOnce(ok(`${RESULT}-4`))
+    renderAI()
+
+    fireEvent.click(screen.getByRole('button', { name: 'AI 生成商品图' }))
+    fireEvent.click(screen.getByRole('button', { name: '生成' }))
+    await waitFor(() => expect(generate).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('button', { name: '再生成一张' }))
+    await waitFor(() => expect(generate).toHaveBeenCalledTimes(2))
+    fireEvent.click(screen.getByRole('button', { name: '再生成一张' }))
+    await waitFor(() => expect(generate).toHaveBeenCalledTimes(3))
+    fireEvent.click(screen.getByRole('button', { name: '再生成一张' }))
+    await waitFor(() => expect(generate).toHaveBeenCalledTimes(4))
+
+    const variants = generate.mock.calls.map((c) => (c[0] as { variant?: number }).variant)
+    expect(variants).toEqual([0, 1, 2, 0])
   })
 
   it('选「材质细节」生成后自动走 onApplyDetail', async () => {
@@ -132,6 +170,7 @@ describe('ProductImageAI', () => {
         imageUrl: SAMPLE_2,
         productName: '回归布帘-遮光提花',
         kind: 'main',
+        variant: 0,
       })
     )
   })

@@ -940,7 +940,7 @@ export interface AiProductImageResult {
 }
 
 /** 生成用途（与 admin-api `ProductImageGenerationService.KINDS` 同源）。 */
-export type AiProductImageKind = 'main' | 'texture' | 'craft' | 'scene'
+export type AiProductImageKind = 'main' | 'white' | 'texture' | 'craft' | 'scene'
 
 /**
  * 商品图生成 API（issue #7335）—— 建品页「AI 生成商品图」。
@@ -950,7 +950,13 @@ export type AiProductImageKind = 'main' | 'texture' | 'craft' | 'scene'
  * 🔴 超时单独放宽到 210s：生图实测 30~60s（长尾 ~120s），沿用全局 30s 会必然超时。
  */
 export const aiProductImageApi = {
-  generate: (payload: { imageUrl: string; productName?: string; kind: AiProductImageKind }) =>
+  generate: (payload: {
+    imageUrl: string
+    productName?: string
+    kind: AiProductImageKind
+    /** 主图构图变体（issue #7782）：0 正面棚拍 / 1 半垂坠 / 2 悬挂近景；其它用途忽略 */
+    variant?: number
+  }) =>
     request.post<ApiResponse<AiProductImageResult>>('/api/admin/products/ai-images', payload, {
       timeout: 210000,
     }),
