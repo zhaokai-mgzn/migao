@@ -265,22 +265,27 @@ def test_g7_injected_geometry_drift_is_red():
 
     # 注入 A：把介质换成**另一张纸**（30×40）而容器不动 ⇒ G1 必红
     css = _css_block(src)
-    page_w, _page_h, _label_w, _label_h = _geometry(src, css)
-    assert "printPageRule('label-50x60')" in src, "找不到写法 A 的注入点 ⇒ 本红证会**空跑**"
-    injected_a = src.replace("printPageRule('label-50x60')", "printPageRule('label-30x40')", 1)
-    assert injected_a != src, "找不到注入点 `printPageRule('label-50x60')` ⇒ 本红证会**空跑**"
+    page_w, page_h, _label_w, _label_h = _geometry(src, css)
+    assert "printPageRule('label-50x70')" in src, "找不到写法 A 的注入点 ⇒ 本红证会**空跑**"
+    injected_a = src.replace("printPageRule('label-50x70')", "printPageRule('label-30x40')", 1)
+    assert injected_a != src, "找不到注入点 `printPageRule('label-50x70')` ⇒ 本红证会**空跑**"
     assert _fingerprint(injected_a) != _fingerprint(src), "注入后内容指纹未变（**禁 mtime/size**）"
     assert _problems(injected_a), "只改 `@page` 宽度后判据**没判红** ⇒ G1 是空判据"
 
     # 注入 B：**两处几何一起**退回 30mm×60mm（注释仍带新旧两个值）⇒ G4 必红
     #          —— 这一路 G2 的子串判定挡不住（实测假绿），是本守卫第一版被自己的红证打回的那一处
-    injected_b = src.replace(f"width: {page_w:g}mm; height: 60mm", "width: 30mm; height: 60mm", 1)
+    # ⚠️ 注入点一律**从现取几何拼**（不写死 60mm/70mm）：纸型一改版，写死的注入点会静默失配 ⇒ 红证空跑
+    injected_b = src.replace(
+        f"width: {page_w:g}mm; height: {page_h:g}mm",
+        "width: 30mm; height: 60mm",
+        1,
+    )
     assert injected_b != src, "找不到容器宽注入点 ⇒ 本红证会**空跑**"
     assert _problems(injected_b), "容器宽退回 30mm 后判据**没判红** ⇒ G4 是空判据（G2 会假绿）"
 
     # 注入 C：把文件头注释里的几何退回 30mm × 60mm ⇒ G2 必红
-    injected_c = src.replace(f"{page_w:g}mm × 60mm", "30mm × 60mm", 1)
-    assert injected_c != src, "找不到注入点「Wmm × 60mm」⇒ 本红证会**空跑**"
+    injected_c = src.replace(f"{page_w:g}mm × {page_h:g}mm", "30mm × 60mm", 1)
+    assert injected_c != src, "找不到注入点「Wmm × Hmm」⇒ 本红证会**空跑**"
     assert _problems(injected_c), "注释退回旧几何后判据**没判红** ⇒ G2 是空判据"
 
     # 注入 D：把 `line-height` 从 1.2 改成 2 ⇒ G6 必红（每行行高恒等式不再成立）

@@ -37,11 +37,31 @@ public class WorkerInboundRecognizeResponse {
     /** 条码原文（前端解码值 或 vision 抄回的原文；都没有 ⇒ null）。**不解析、不猜含义** */
     private String barcode;
 
-    /** 品名候选（null = 没认出来 / 不在图上；**绝不编造**） */
+    /**
+     * 型号 / 货号候选（供应商标签上的**型号**，如 {@code 2659-4}；null = 没认出来）。
+     *
+     * <p>issue #7759：这是**匹配键**（归一化后对 {@code products.sku_code} / {@code product_skus.sku_code}），
+     * 而 {@link #productName} / {@link #colorName} 只是**展示**字段 —— 供应商标签的品名是它自己的命名空间，
+     * 拿去跟内部商品名做匹配只会造出「看起来命中」的候选。</p>
+     */
+    private String modelNo;
+
+    /** 品名候选（null = 没认出来 / 不在图上；**绝不编造**）——**只作展示，不参与匹配** */
     private String productName;
 
     /** 色号候选（null = 同上） */
     private String colorName;
+
+    /**
+     * 门幅（米）—— 本次匹配**实际采用的**那一档（标签写了就用标签上的；没写 ⇒ 行业标准默认值）。
+     *
+     * <p>issue #7759 用户裁定 2026-10-25：默认值**只存在于服务端一处常量**
+     * （{@code WorkerInboundService.DEFAULT_DOOR_WIDTH}），页面上的数字取自这里，端侧不另存一份。</p>
+     */
+    private String doorWidth;
+
+    /** true ⇒ 标签**没印门幅**，本次用的是行业标准默认值（页面据此用陈述句说明，不做惊叹式提示） */
+    private boolean doorWidthAssumed;
 
     /** 米数候选（字符串原样搬运，避免精度歧义；null = 同上）。入库数量仍由工人确认后提交 */
     private String quantityMeters;

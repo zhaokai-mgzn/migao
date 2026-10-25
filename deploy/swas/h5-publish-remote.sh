@@ -34,6 +34,10 @@
 #   ⚠️ 2026-09-29（母单 #5161）：`machine.html` 原先**不在发布集里** ⇒ 线上 `/w/machine.html` 打不开，
 #   且会被 nginx `try_files` 静默回落成 C 端 H5（HTTP 200，不报错）—— 机台页等于没上线。本单补进发布集。
 #   ⚠️ 2026-10-16（issue #6767）：`piecework.html` 是**同一条腿的新入口** ⇒ 同批进发布集
+#   ⚠️ 2026-10-25（issue #7761）：`shipment.html`（发货页）**同族第三次** —— 本文件这里是
+#      发布集的**唯一真值**，新增 `frontend/worker-h5/*.html` 必须同批加进来，
+#      否则线上打不开且被 `try_files` 静默回落成 C 端 H5（HTTP 200、不报错）。
+#      类级判据 = `tests/unit_ci_workflows/test_worker_h5_hosting.py::test_publish_set_mirrors_repo_entries`。
 #   （漏掉 = 线上 `/w/piecework.html` 被 SPA 兜底接成 C 端 H5，200 不报错 —— 与 machine.html 同族病灶）。
 # 幂等：连跑两次结果逐字节一致（先把目标子树收敛为空，再整份拷入）。
 # 退出码：0 = 已发布且自证通过；非零 = **什么都没改 / 已显式失败**（绝不静默半成品）。
@@ -150,11 +154,14 @@ main() {
   [ -f "$SRC/src/app.mjs" ] || die "源码里没有 src/app.mjs（工人端入口）：$SRC"
   [ -f "$SRC/machine.html" ] || die "源码里没有 machine.html（一体机机台页）：$SRC"
   [ -f "$SRC/piecework.html" ] || die "源码里没有 piecework.html（我的计件页）：$SRC"
+  [ -f "$SRC/shipment.html" ] || die "源码里没有 shipment.html（发货页）：$SRC"
 
-  # 发布内容 = index.html + machine.html + piecework.html + src/**（tests/** 不发；**逐字拷贝**，不做任何加工）
+  # 发布内容 = index.html + machine.html + piecework.html + shipment.html + src/**
+  # （tests/** 不发；**逐字拷贝**，不做任何加工）
   cp "$SRC/index.html" "$STAGE/index.html"
   cp "$SRC/machine.html" "$STAGE/machine.html"
   cp "$SRC/piecework.html" "$STAGE/piecework.html"
+  cp "$SRC/shipment.html" "$STAGE/shipment.html"
   cp -R "$SRC/src" "$STAGE/src"
 
   PARENT_BEFORE="$(file_sha256_or_absent "$STATIC_ROOT/index.html")"

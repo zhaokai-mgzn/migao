@@ -36,6 +36,10 @@ LOCAL_MACHINE="$ROOT/frontend/worker-h5/machine.html"
 LOCAL_MACHINE_APP="$ROOT/frontend/worker-h5/src/machine.mjs"
 LOCAL_PIECEWORK="$ROOT/frontend/worker-h5/piecework.html"
 LOCAL_PIECEWORK_APP="$ROOT/frontend/worker-h5/src/piecework-app.mjs"
+# 发货页（issue #7761）：与 machine.html / piecework.html **同族第三次** —— 新入口漏进发布集
+# ⇒ 线上被 nginx `try_files` 静默回落成 C 端 H5（HTTP 200 不报错）
+LOCAL_SHIPMENT="$ROOT/frontend/worker-h5/shipment.html"
+LOCAL_SHIPMENT_APP="$ROOT/frontend/worker-h5/src/shipment-app.mjs"
 
 C_END_MARKERS=("TARO_" "元元智能助手")
 WORKER_MARKERS=("src/app.mjs")
@@ -101,6 +105,8 @@ EXPECTED_MACHINE_SHA="$(file_sha256 "$LOCAL_MACHINE")"
 EXPECTED_MACHINE_APP_SHA="$(file_sha256 "$LOCAL_MACHINE_APP")"
 EXPECTED_PIECEWORK_SHA="$(file_sha256 "$LOCAL_PIECEWORK")"
 EXPECTED_PIECEWORK_APP_SHA="$(file_sha256 "$LOCAL_PIECEWORK_APP")"
+EXPECTED_SHIPMENT_SHA="$(file_sha256 "$LOCAL_SHIPMENT")"
+EXPECTED_SHIPMENT_APP_SHA="$(file_sha256 "$LOCAL_SHIPMENT_APP")"
 echo "   仓库 index.html 哈希=$EXPECTED_INDEX_SHA"
 echo "   仓库 src/app.mjs 哈希=$EXPECTED_APP_SHA"
 echo ""
@@ -215,6 +221,37 @@ if [ -s "$TMPDIR_RUN/piecework-app.mjs" ]; then
     ok "body 哈希 = 仓库 frontend/worker-h5/src/piecework-app.mjs（${GOT}）"
   else
     bad "body 哈希 $GOT ≠ 仓库 $EXPECTED_PIECEWORK_APP_SHA"
+  fi
+fi
+echo ""
+
+# ── ⑨ /w/shipment.html + /w/src/shipment-app.mjs（发货页；issue #7761）──────────────
+# 同族第三次（machine.html 2026-09-29 / piecework.html 2026-10-16）：新入口没进发布集
+# ⇒ 线上被 `try_files` 静默回落成 C 端 H5，HTTP 200 不报错 ⇒ 「工人端有发货页」这句话就是空的。
+echo "⑨ GET $BASE/w/shipment.html"
+CODE=$(fetch "$BASE/w/shipment.html" "$TMPDIR_RUN/shipment.html")
+echo "   HTTP $CODE"
+if [ "$CODE" = "200" ]; then ok "状态码 200"; else bad "状态码 ${CODE}（期望 200 —— shipment.html 没进发布集？）"; fi
+if [ -s "$TMPDIR_RUN/shipment.html" ]; then
+  GOT="$(file_sha256 "$TMPDIR_RUN/shipment.html")"
+  if [ "$GOT" = "$EXPECTED_SHIPMENT_SHA" ]; then
+    ok "body 哈希 = 仓库 frontend/worker-h5/shipment.html（${GOT}）"
+  else
+    bad "body 哈希 $GOT ≠ 仓库 ${EXPECTED_SHIPMENT_SHA}（回落成了别的东西？）"
+  fi
+fi
+echo ""
+
+echo "⑨ GET $BASE/w/src/shipment-app.mjs"
+CODE=$(fetch "$BASE/w/src/shipment-app.mjs" "$TMPDIR_RUN/shipment-app.mjs")
+echo "   HTTP $CODE"
+if [ "$CODE" = "200" ]; then ok "状态码 200"; else bad "状态码 ${CODE}（期望 200 —— 发货页脚本没落上去？）"; fi
+if [ -s "$TMPDIR_RUN/shipment-app.mjs" ]; then
+  GOT="$(file_sha256 "$TMPDIR_RUN/shipment-app.mjs")"
+  if [ "$GOT" = "$EXPECTED_SHIPMENT_APP_SHA" ]; then
+    ok "body 哈希 = 仓库 frontend/worker-h5/src/shipment-app.mjs（${GOT}）"
+  else
+    bad "body 哈希 $GOT ≠ 仓库 ${EXPECTED_SHIPMENT_APP_SHA}"
   fi
 fi
 echo ""

@@ -30,7 +30,7 @@
 // ⑨ 缺值不渲染：无对应快照行 / 无键 ⇒ 该行不出现，纸面不出现 `undefined` / `null` / `NaN`；
 // ⑩ **重算后的字段折行预算**（issue #5646）：件名无 clamp / 加工方式与备注各 ≤2 行 / 算料公式 ≤2 行。
 import type { ComponentProps } from 'react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import TaskCardPrint from '@/components/production/TaskCardPrint'
 import { washLabelRows } from '@/lib/wash-label-content'
@@ -39,6 +39,11 @@ import { join } from 'node:path'
 import { dataTables, collectTableIntegrity } from '@/components/orders/doc-tables'
 import { assertNoPaperZeroFill, paperTextOf } from '@/lib/print-doc-paper'
 import type { ProcessingOrderItem, ProductionPosition } from '@/types'
+
+// 纸面抬头的企业名：替身可控（真实现读登录态 tenantName、无则回落设置读面 —— 异步，
+// 判据里会变成时序相关的假红/假绿；这里只判「有没有抬头块、印的是什么」）
+const companyNameStub = vi.hoisted(() => ({ value: '' }))
+vi.mock('@/lib/use-company-name', () => ({ useCompanyName: () => companyNameStub.value }))
 
 const PROCESSING_ORDER_NO = 'JG-20260921-8237'
 /** 真实形态的 17 位订单号（真库实证 20260921973550001）—— 必须**不截断** */
@@ -119,6 +124,8 @@ const items = [
     openCount: 2,
     isShaped: true,
     specialOptions: ['加logo条', '防翘扣'],
+    // 快照备注（`processing_info.remark` 进快照白名单，issue #4355 的同一份透传）
+    remark: '加铅块',
     fabric_meters: 6.3,
     formula_text: '韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米',
   },
@@ -299,6 +306,26 @@ describe('TaskCardPrint（洗水码 竖版 50mm×60mm 单列，issue #4964 → �
     })
   })
 
+  it('纸面抬头（2026-10-25）：企业名 + 「成品定制」**逐张**渲染（照参考工单的抬头形态）', () => {
+    // 企业名走 `useCompanyName()`（与四张 A4/三联纸单据**同一份**读取口：登录态 tenantName 优先）
+    companyNameStub.value = '亿家纺织'
+    printCard()
+    const headers = screen.getAllByTestId('task-card-company')
+    // 「每张标签都要呈现」：3 个部位 ⇒ 3 张抬头块
+    expect(headers).toHaveLength(3)
+    expect(headers[0]).toHaveTextContent('亿家纺织')
+    expect(headers[0]).toHaveTextContent('成品定制')
+    companyNameStub.value = ''
+  })
+
+  it('缺企业名 ⇒ 抬头块**整块不渲染**（不印空行、不印「未设置」），加工单号不受影响', () => {
+    companyNameStub.value = ''
+    printCard()
+    expect(screen.queryByTestId('task-card-company')).toBeNull()
+    // 加工单号是**每张一份**（3 个部位 ⇒ 3 份），取第一张即可
+    expect(screen.getAllByTestId('task-card-no')[0]).toHaveTextContent(PROCESSING_ORDER_NO)
+  })
+
   it('缺短码的序号仍保留该行（不得与人可读短码一起消失），且码仍出', () => {
     const noShort: ProductionPosition[] = [
       { position_name: '纱帘B', order_item_id: 'item-2', part_token: 'part-token-x', part_short_code: null, scan_url: null, operations: [] },
@@ -309,7 +336,7 @@ describe('TaskCardPrint（洗水码 竖版 50mm×60mm 单列，issue #4964 → �
     expect(screen.getByTestId('task-card-qr').querySelector('title')?.textContent).toBe('part-token-x')
   })
 
-  it('打印样式：@page 50mm×60mm（竖版）+ 标签本体 50mm×60mm 且逐张分页（最后一张不分页）', () => {
+  it('打印样式：@page 50mm×70mm（竖版）+ 标签本体 50mm×70mm 且逐张分页（最后一张不分页）', () => {
     printCard()
 
     // portal 到 body 的直接子级（打印隔离：容器自身的 class 才能被选择器选中）
@@ -320,10 +347,12 @@ describe('TaskCardPrint（洗水码 竖版 50mm×60mm 单列，issue #4964 → �
     const css = Array.from(area.querySelectorAll('style'))
       .map((el) => el.textContent || '')
       .join('\n')
-    // 🔴 几何整版改判（issue #5646）：纸宽 30mm → **50mm**。旧值 30mm 一律不得残留（留一条即假绿）
-    expect(css).toContain('@page { size: 50mm 60mm; margin: 0; }')
+    // 🔴 几何整版改判：#5646 纸宽 30mm → **50mm**；2026-10-25 纸长 60mm → **70mm**
+    //（用户裁定加公司抬头 + 特殊选项 + 备注 两行后 60mm 装不下）。旧值一律不得残留（留一条即假绿）
+    expect(css).toContain('@page { size: 50mm 70mm; margin: 0; }')
     expect(css).not.toContain('30mm 60mm')
-    expect(css).toContain('.task-card-label { width: 50mm; height: 60mm; overflow: hidden;')
+    expect(css).not.toContain('50mm 60mm')
+    expect(css).toContain('.task-card-label { width: 50mm; height: 70mm; overflow: hidden;')
     expect(css).toContain('break-after: page')
     // 最后一张不分页（否则末尾多吐一张空白）
     expect(css).toMatch(/\.task-card-label:last-child \{[^}]*break-after: auto/)
@@ -384,16 +413,20 @@ describe('TaskCardPrint（洗水码 竖版 50mm×60mm 单列，issue #4964 → �
     expect(craft2).not.toHaveTextContent('韩褶')
   })
 
-  it('备注（特殊选项 + 快照备注）与算料公式逐张渲染；无对应快照行 ⇒ 该行不出现（不猜）', () => {
+  it('特殊选项与备注**各成一行**、算料公式逐张渲染；无对应快照行 ⇒ 该行不出现（不猜）', () => {
     printCard()
 
-    expect(screen.getByTestId('task-card-label-remark-0')).toHaveTextContent('加logo条')
-    expect(screen.getByTestId('task-card-label-remark-0')).toHaveTextContent('防翘扣')
+    // 🔴 2026-10-25（用户逐字「把特殊选项，备注也加上」）：改前把两者并成一行
+    // 「备注 加logo条、防翘扣；加铅块」⇒ 纸上分不出哪句是哪类事实。现在各成一行。
+    expect(screen.getByTestId('task-card-label-special-options-0')).toHaveTextContent('特殊选项 加logo条、防翘扣')
+    expect(screen.getByTestId('task-card-label-remark-0')).toHaveTextContent('备注 加铅块')
+    expect(screen.getByTestId('task-card-label-remark-0')).not.toHaveTextContent('加logo条')
     expect(screen.getByTestId('task-card-label-formula-0')).toHaveTextContent('韩褶公式')
     // 🔴 算料公式 = **2 行**（issue #5646 实测改判；30mm 时代的 3 行口径作废）：
     // 两条真公式串（`韩褶公式：…` / `褶倍数公式：…`）在 47.599mm 版心（≈22.5em/行）下都**恰好 2 行**；
     // 容量 2×22.5em = 45em **反而大于**旧口径 3×13em = 39em ⇒ 不是放宽，是同一真值换了版心。
-    // 改回 3 行 ⇒ 最坏构成（件名 2 + 加工方式 2 + 备注 2 + 公式 3 行）实测需 61.4mm > 60mm ⇒ 本条必红。
+    // 改回 3 行 ⇒ 最坏构成（件名 2 + 加工方式 2 + 特殊选项 2 + 备注 2 + 公式 3 行）超出 70mm 的
+    // 版面高 67.6mm ⇒ 本条必红。
     expect(screen.getByTestId('task-card-label-formula-0').className).toContain('line-clamp-2')
     expect(screen.getByTestId('task-card-label-formula-0').className).not.toContain('line-clamp-3')
 
@@ -401,11 +434,12 @@ describe('TaskCardPrint（洗水码 竖版 50mm×60mm 单列，issue #4964 → �
     expect(screen.queryByTestId('task-card-label-color-1')).toBeNull()
     expect(screen.queryByTestId('task-card-label-meters-1')).toBeNull()
     expect(screen.queryByTestId('task-card-label-craft-1')).toBeNull()
+    expect(screen.queryByTestId('task-card-label-special-options-1')).toBeNull()
     expect(screen.queryByTestId('task-card-label-remark-1')).toBeNull()
     expect(screen.queryByTestId('task-card-label-formula-1')).toBeNull()
   })
 
-  it('🔴 版心 30→50mm 后重算的字段折行预算：件名去 clamp / 加工方式与备注 ≤2 行 / 公式 ≤2 行（issue #5646）', () => {
+  it('🔴 重算的字段折行预算：件名去 clamp / 加工方式 · 特殊选项 · 备注 · 公式 各 ≤2 行（issue #5646 → 2026-10-25 重算）', () => {
     printCard()
 
     // ① **件名不再 clamp**（推翻 #4946 为 27.6mm 版心设的 2 行妥协）：版心 47.599mm ≈ 22.5em/行

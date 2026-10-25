@@ -4431,7 +4431,7 @@ cases:
       - "🔴 不确定 ⇒ 不预填：vision 返回 `degraded=true` ⇒ 品名 / 色号 / 米数三格全 `null`、`skuMatches` 空、`requiresManualEntry=true`，只给人工录入提示（**不编造**）"
       - "🔴 零命中不建品：品名 + 色号在 `product_skus` 零命中 ⇒ `skuMatches` 为空数组，且 `productMapper` / `productSkuMapper` 的 `insert` **零调用**、`receiveStock` 零调用（防 AI 幻觉造出假 SKU 还带库存流水）"
       - "张数准入：0 张 / 4 张 ⇒ 400，且一次远端调用都不发生（上限 3 张沿用现状）"
-      - "ai-agent 侧 schema 同源：`inbound` target 的 4 个字段键（product_name / color_name / quantity_meters / barcode）与前两个 target **零交集**，阈值取严档 0.85，低置信度（0.40）的米数**留空 + 给理由**且理由含「入库侧」"
+      - "ai-agent 侧 schema 同源：`inbound` target 的字段键（issue #7759 起 5 个：model_no / product_name / color_name / quantity_meters / barcode）与 product / order 两个 target **零交集**，阈值取严档 0.85，低置信度（0.40）的米数**留空 + 给理由**且理由含「入库侧」"
     skip_reason: "[backend-contract] 入库识别是后台/仓储单据流（无黄金策工具面，AI 侧未接）⇒ 由 admin-api 单测 + ai-agent vision 单测覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-26 新增（issue #5052 P1，设计 §6）：识别策略 = 解码优先 → vision 兜底 → 手输。复用既有 vision 基建（ImageRecognitionClient → ai-agent POST /api/internal/vision/recognize），**只换 schema 与入口**：ai-agent 的 app/vision/targets.py 新增 `inbound` target（不新增第二套识别内核）。"
     traces:

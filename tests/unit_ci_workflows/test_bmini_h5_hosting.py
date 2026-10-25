@@ -639,6 +639,10 @@ def _make_static_root(tmp_path: Path) -> Path:
     shutil.copy(WORKER_H5_DIR / "machine.html", root / "w" / "machine.html")
     # 我的计件页（issue #6767）：同一条腿的 ⑧ 段判 piecework.html / src/piecework-app.mjs 的落地面身份
     shutil.copy(WORKER_H5_DIR / "piecework.html", root / "w" / "piecework.html")
+    # 发货页（issue #7761）：⑨ 段判 shipment.html / src/shipment-app.mjs 的落地面身份
+    # 🔴 这份夹具也必须跟：它是「同一份 verify 脚本 + 另一棵树」⇒ 漏铺 = 夹具造的**假红**
+    #    （与 ④/⑧ 段当年的坑同族；类级判据见 test_worker_h5_hosting.py::test_publish_set_mirrors_repo_entries）
+    shutil.copy(WORKER_H5_DIR / "shipment.html", root / "w" / "shipment.html")
     # `src/**` **整棵递归**铺（issue #6293 / #6306）：该腿 ⑥ 对**每一个** `.mjs` 逐条断言 MIME，
     # ⑦ 还沿 worker-h5 的 import 闭包取依赖（树内有 `src/shared/operation-display.mjs`）⇒
     # 少铺一个（尤其子目录里的）就是**夹具造的假红**（与上面机台页同因）。

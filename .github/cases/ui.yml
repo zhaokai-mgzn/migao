@@ -4851,13 +4851,16 @@ cases:
       verifies: []
 
   # ==========================================================================
-  # UI-128（issue #7309，2026-10-19）—— 纸面不带**浏览器页眉页脚**。
-  #   用户逐字：「我建议拿掉打印的页头和页脚」（附 A4 报价单打印成品截图：顶部版式日期 +
+  # UI-128（issue #7309，2026-10-19；**2026-10-25 收口到全矩阵**）—— 纸面不带**浏览器页眉页脚**。
+  #   用户 2026-10-19 逐字：「我建议拿掉打印的页头和页脚」（附 A4 报价单打印成品截图：顶部版式日期 +
   #   「观星台 - AI经营管理平台」，底部订单 URL + 1/1 —— 四样都被红框圈出）。
+  #   用户 2026-10-25 逐字：「刚才发现打印预览的所有单子，水洗唛都带了打印页头和页脚，你把所有打印的
+  #   功能都检查一遍，移除掉」+「可能默认勾着，我希望做到**即使勾着也不要打印出页眉和页脚**」。
+  #   ⇒ 判据由「A4 一张纸」收紧为「**矩阵里每一份浏览器打印的介质**上下边距都必须是 0」。
 
   - id: UI-128
     legacy_id: ""
-    title: "A4 纸面不带浏览器页眉页脚：@page 边距写 0（浏览器无可画之处）+ 版面内缩 12mm 由单据容器承担、box-decoration-break: clone 逐页重复（issue #7309）"
+    title: "纸面不带浏览器页眉页脚：全矩阵 @page 上下边距写 0（浏览器无可画之处）+ 版面内缩走 contentInset 与单据容器 padding、box-decoration-break: clone 逐页重复（issue #7309 → 2026-10-25 全矩阵收口）"
     domains:
       - ui
       - frontend
@@ -4872,16 +4875,19 @@ cases:
     truths_ref: []
     user_inputs:
       - 「我建议拿掉打印的页头和页脚」（用户 2026-10-19，附 A4 报价单打印成品截图）
+      - 「刚才发现打印预览的所有单子，水洗唛都带了打印页头和页脚，你把所有打印的功能都检查一遍，移除掉」（用户 2026-10-25）
+      - 「可能默认勾着，我希望做到即使勾着也不要打印出页眉和页脚」（用户 2026-10-25）
     expectations:
       - tool: direct_reply
     data_checks:
-      - "判据 1·**结构性去页眉页脚**（会红）：介质矩阵 frontend/admin-web/src/lib/print-media.json 的 a4 必须是 pageMargin=0 + contentInset=12mm；printPageRule('a4') === '@page { size: A4; margin: 0; }'、printContentInsetCss('a4') === '12mm'、可用版面仍 = 186 × 273mm（与改前逐值一致）。执行点 = frontend/admin-web/tests/unit/lib/print-media.test.ts 的「⑤ 纸面不带浏览器页眉页脚」+「③ @page 规则由 printPageRule 唯一生成」。"
-      - "判据 2·**类级元守卫**（会红）：tests/unit_ci_workflows/test_print_media_matrix_guard.py::test_c10_browser_chrome_stays_off_the_paper —— 浏览器打印介质的上下 @page 边距不得 ≥ 8.7mm（实测：8.7mm 不画 / 8.8mm 画）；边距 0 必须登记 contentInset；contentInset 存在 ⇒ 边距必须为 0；且受管 A4 单据的打印 CSS 必须带 printContentInsetCss( + box-decoration-break: clone（缺一即红）。"
+      - "判据 1·**结构性去页眉页脚（全矩阵）**（会红）：介质矩阵 frontend/admin-web/src/lib/print-media.json 里**每一份浏览器打印的介质**上下 `pageMargin` 都必须是 0 —— a4 ⇒ contentInset=12mm、**continuous-241x140（三联纸）⇒ contentInset=6mm 12mm**（2026-10-25 由 `pageMargin: 6mm 12mm` 改 0，属于「靠 6mm < 实测下限 8.7mm 侥幸不画」的形态）；`printPageRule('a4') === '@page { size: A4; margin: 0; }'`、`printPageRule('continuous-241x140') === '@page { size: 241mm 140mm; margin: 0; }'`、可用版面逐值不变（a4 = 186 × 273mm、三联纸 = 217 × 128mm）。执行点 = frontend/admin-web/tests/unit/lib/print-media.test.ts 的「⑤ 纸面不带浏览器页眉页脚」+「③ @page 规则由 printPageRule 唯一生成」。"
+      - "判据 2·**类级元守卫**（会红）：tests/unit_ci_workflows/test_print_media_matrix_guard.py::test_c10_browser_chrome_stays_off_the_paper 与 frontend/admin-web/src/lib/print-media.ts::browserChromeMarginProblems —— 浏览器打印介质的上下 @page 边距**只要不是 0 就判红**（2026-10-25 由「≥ 8.7mm 才红」收紧：8.7mm 是实测下限、**不是容忍度**，判别力自证里专设一条「三联纸写回 6mm 12mm ⇒ 必红」）；边距 0 必须登记 contentInset；contentInset 存在 ⇒ 边距必须为 0；且受管单据的打印 CSS 必须带 printContentInsetCss( + box-decoration-break: clone（缺一即红，四张 A4/三联纸单据 + 洗水唛都在册）。"
       - "判据 3·**逐页内缩**（会红）：四份单据（发货单 / 报价单 / 加工单 / 销售单）的 @media print 容器规则里 padding 取介质内缩、并带 box-decoration-break: clone。执行点 = frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx 的「③ 版面：@page A4（由介质矩阵生成）+ 分页不裁切 + 表头重复」、frontend/admin-web/tests/unit/components/SalesDoc.test.tsx 的「② 介质是**参数**不是副本：切 A4 后 @page 变、而逐格取值**逐字不变**」。"
       - "🔴 红证（实跑）：① 把 a4 的 pageMargin 改回 12mm ⇒ 判据 1/2 必红（本机读数：vitest 4 failed / 5 passed）；② 抹掉容器的 printContentInsetCss( 与 box-decoration-break: clone ⇒ C10 的单据侧必红（内存变异逐条常驻，见该测试的「判别力自证」）。"
-      - "真机读数（Chromium 1243 = Chrome 14x；displayHeaderFooter: true + preferCSSPageSize: true；A4；两页样张）：改前 @page margin 12mm ⇒ 纸面出现 `10/19/26, 11:08 AM 观星台 - AI经营管理平台` + `about:blank 1/2`（= 用户截图同款四行）；改后 margin 0 + 容器内缩 12mm + clone ⇒ 零浏览器页眉页脚，且第 1 / 第 2 页首行 y 坐标**相同**（798.42pt）= 逐页内缩成立、版面未变。"
+      - "真机读数（Chromium 1243 = Chrome 14x；displayHeaderFooter: true + preferCSSPageSize: true；A4；两页样张）：改前 @page margin 12mm ⇒ 纸面出现 `10/19/26, 11:08 AM 观星台 - AI经营管理平台` + `about:blank 1/2`（= 用户截图同款四行）；改后 margin 0 + 容器内缩 12mm + clone ⇒ 零浏览器页眉页脚，且第 1 / 第 2 页首行 y 坐标**相同**（798.42pt）= 逐页内缩成立、版面未变。**2026-10-25 复测（同一台机器上装的正式版 Google Chrome，channel=chrome；printToPDF + displayHeaderFooter: true + 强制 10mm 页边距参数）**：`@page { size: 50mm 70mm; margin: 0 }` ⇒ 纸面**零**页眉页脚；把 `margin: 0` 去掉（只有 `size`）⇒ 纸面立刻多出 `2026/10/25 15:34 观…` + `about:bl… 1/1` 四行（**与用户 2026-10-25 截图里的形态逐字同款**：zh-CN 24 小时日期 + 标题 + URL + 页码）。⇒ 结论收敛成一句可判据的话：**边距只要不是 0，浏览器就有画它的路；边距是 0，Chrome 无画可画**。"
+    precondition: "本用例是 [backend-contract] 纯前端纸面 / 源码级守卫用例：**没有运行期前置**（不连真实打印机、不依赖共享夹具与数据库）—— 判据全部由 frontend/admin-web 的 vitest 与 tests/unit_ci_workflows/ 的静态守卫执行，两者都在 PR CI 的 admin-web 腿与 pr-check 腿里常驻；纸面「观感」仍由真机验收覆盖（无人值守环境拿不到打印机），因此本用例判的是**结构性口径**（边距是否 0 / 内缩是否由容器承担 / clone 是否在），不是「打出来好不好看」"
     skip_reason: "[backend-contract] 纯前端打印版式（无 LLM 环节）：断言由 vitest 与 tests/unit_ci_workflows/test_print_media_matrix_guard.py 执行"
-    merge_log: "2026-10-19 新增（issue #7309）。病：A4 的 @page 边距 12mm ≥ Chrome 画页眉页脚的分界（实测 8.7/8.8mm）⇒ 客户拿到的凭证顶部多出日期与后台标题、底部多出订单 URL 与页码。修：A4 的 @page 边距写 0（结构性、不依赖阈值），版面内缩 12mm 走 contentInset + 单据容器 padding（box-decoration-break: clone 逐页重复）⇒ 纸面版式与改前逐毫米一致。另：销售单可切 A4，同批补 padding（continuous 介质取 0，纸面不变）。"
+    merge_log: "2026-10-19 新增（issue #7309）。病：A4 的 @page 边距 12mm ≥ Chrome 画页眉页脚的分界（实测 8.7/8.8mm）⇒ 客户拿到的凭证顶部多出日期与后台标题、底部多出订单 URL 与页码。修：A4 的 @page 边距写 0（结构性、不依赖阈值），版面内缩 12mm 走 contentInset + 单据容器 padding（box-decoration-break: clone 逐页重复）⇒ 纸面版式与改前逐毫米一致。另：销售单可切 A4，同批补 padding（continuous 介质取 0，纸面不变）。 🟡 2026-10-25 改判（用户逐字「刚才发现打印预览的所有单子，水洗唛都带了打印页头和页脚，你把所有打印的功能都检查一遍，移除掉」+「我希望做到即使勾着也不要打印出页眉和页脚」）：把「0 边距」从 A4 一条**收口到整个介质矩阵** —— 三联纸 `continuous-241x140` 由 `pageMargin: 6mm 12mm` 改为 **0 + contentInset 6mm 12mm**（改前靠「6mm < 实测下限 8.7mm」侥幸不画，那是拿纸面赌一条未文档化的分界）；判别口径从「≥ 8.7mm 才红」收紧成「**非 0 即红**」（TS 侧 `browserChromeMarginProblems` 与 Python 侧 C10 同步改，判别力自证新增「三联纸写回 6mm ⇒ 必红」一条）；同批复测正式版 Google Chrome 确认「边距 0 ⇒ 零页眉页脚 / 去掉 margin 0 ⇒ 立刻出现与用户截图同款的四行」。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/lib/print-media.test.ts"

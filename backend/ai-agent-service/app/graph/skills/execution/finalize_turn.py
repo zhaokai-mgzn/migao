@@ -15,7 +15,8 @@ from typing import Any, List
 from app.graph.skills.base_skill import (
     AgentState, CREATION_SKILL_NAMES, SMS_GATED_WRITE_TOOLS, ToolMessage,
     _b_create_flow_confirm_eligible, _confirm_card_seen, _is_card_confirm_value, _is_customer_role,
-    _is_explicit_confirmation, _order_write_tool_here, _should_code_close_loop, _stored_sms_code,
+    _is_explicit_confirmation, _order_write_tool_here, _release_order_lock_on_withdrawal,
+    _should_code_close_loop, _stored_sms_code,
     build_confirm_interact_xml,
     build_tool_context, confirm_card_fields, confirm_value_for_fields, extract_sms_code,
     is_pending_for, normalize_draft_state_reply, resolve_sms_code,
@@ -258,7 +259,15 @@ async def finalize_turn(
     # creation_skills 覆盖所有「多轮引导写流程」的域：创建类流程在未完成前必须锁
     # pending_skill，否则用户后续轮补充信息时重新走完整路由被关键词误判跳域
     # （HR-005 角色创建、CU-003 客户打标签：staff/customer 此前缺失 → 引导漂移 + 能力误宣）。
-    if skill_name in CREATION_SKILL_NAMES:
+    # 显式撤回下单（issue #7758）：**先清跨轮下单锁**，且本轮不再把 pending 写回当前 skill。
+    # 不清 ⇒ 本段末又把 `order` 写回 ⇒ 误锁的会话「一直」粘在订单流
+    # （生产实证 sess_cf885dc3ef40435a：顾客「我不是要下单，我要更新商品」后仍连续追问下单规格）。
+    _ordering_withdrawn = bool(state.get("ordering_withdrawn"))
+    if _ordering_withdrawn:
+        await _release_order_lock_on_withdrawal(session_id, state)
+        result["pending_interact_skill"] = ""
+
+    if skill_name in CREATION_SKILL_NAMES and not _ordering_withdrawn:
         success_markers = ("创建成功", "已创建", "下单成功", "工单已创建", "售后工单",
                           "账号已创建", "角色已创建", "标签已添加", "已更新", "已添加")
         cancel_markers = ("已取消", "已取消创建", "好的，已取消", "不创建了", "算了不买了")

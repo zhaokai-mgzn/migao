@@ -194,7 +194,10 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
 
   it('① 介质：@page 241mm × 140mm（两等分）+ 只渲染一页 + 单联高度固定不跨联', () => {
     render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} printTarget="sales" />)
-    expect(css()).toContain('@page { size: 241mm 140mm; margin: 6mm 12mm; }')
+    // 🔴 2026-10-25 收口：`@page` 边距改 0（浏览器页眉页脚画在边距里），版面内缩 6mm 12mm
+    // 改由容器 padding 承担 ⇒ DOM 上仍是 `padding: 6mm 12mm`（见 SalesDoc 的打印样式）
+    expect(css()).toContain('@page { size: 241mm 140mm; margin: 0; }')
+    expect(css()).toContain('padding: 6mm 12mm')
     expect(css()).toContain(printPageRule('continuous-241x140'))
     expect(doc()?.getAttribute('data-print-media')).toBe('continuous-241x140')
     // 🔴 复写三份由**纸**承担：DOM 里只有一份单据（渲染三遍 = 打三张、复写九份）
@@ -505,8 +508,10 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
     render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} />)
     expect(doc()?.getAttribute('data-print-target')).toBeNull()
     // 🔴 且**不发表自己的纸型**（issue #5914 的 P1-2：`@page` 是文档级规则，同页多份并存时
-    //    最后声明的那条赢 ⇒ 非目标单据发表纸型 = 把兄弟单据的纸型顶掉，实测打废纸）
-    expect(css()).not.toContain('@page')
+    //    最后声明的那条赢 ⇒ 非目标单据发表纸型 = 把兄弟单据的纸型顶掉，实测打废纸）。
+    // ⚠️ 判据钉的是**规则**（`@page {`），不是「@page」这个词：打印样式的注释里正常会提到
+    //    @page（解释「页眉页脚画在 @page 边距里」），按词判定会把说明文字判成违规（假红）。
+    expect(css()).not.toMatch(/@page\s*\{/)
     cleanup()
     render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} printTarget="sales" />)
     expect(doc()?.getAttribute('data-print-target')).toBe('sales')

@@ -10,7 +10,14 @@ import type { PrintTarget } from '@/lib/print-doc'
 // **同一份**有序行清单 —— 两条通道各派生一份字段 = 改一处另一处不红，
 // 而那正是「直连打印机打出来的和这里预览的不一样」的根因。
 // 取值口径（工艺规格 → `lib/craft-display.ts`、套序 → `groupBySet`）全在这个模块里，本文件不再自己派生。
-import { washLabelRows, type WashLabelRowKey } from '@/lib/wash-label-content'
+import {
+  WASH_LABEL_COMPANY_SUBTITLE,
+  washLabelCompanyName,
+  washLabelRows,
+  type WashLabelRowKey,
+} from '@/lib/wash-label-content'
+// 纸面抬头用的企业名（与发货单 / 报价单 / 加工单 / 销售单**同一份**读取口，issue #7219）
+import { useCompanyName } from '@/lib/use-company-name'
 // 「第 N 套 / 共 M 套」的**唯一实现**：与进度表**同一份**口径 —— 纸面与屏幕不得各算一套
 import { groupBySet } from './ProductionProgressTable'
 import type { ProcessingOrderItem, ProductionPosition } from '@/types'
@@ -19,9 +26,14 @@ import type { ProcessingOrderItem, ProductionPosition } from '@/types'
  * 加工单**洗水码**（可打印纸面，issue #4964 → 版式改判 issue #5646）
  *
  * 用户裁定（2026-09-26，逐字意图）：「**洗水码宽是50，长度根据我们实际需要来定**」
- * ⇒ 本版把纸型由 #4946 的**竖版 30mm × 60mm** 改为 **竖版 50mm × 60mm**（长度见下方第 5 条实测账）。
- * 照**真实工单**（亿家纺织「成品定制」58mm 竖排小票）的信息顺序；字段面 = 加工单号 / 客户 / 第N套共M套 /
- * 部位 / 件名 / 色号 / 用料 / 宽高 / 加工方式 / 订单号 / 交期 / 备注 / 算料公式 + 二维码与**大字**短码。
+ * ⇒ 纸宽由 #4946 的**竖版 30mm** 改为 **50mm**；长度按同一裁定口径随纸面字段增加而加长
+ * （#5646 = 60mm ⇒ 2026-10-25 = **70mm**，见下方第 5 条实测账）。
+ * 照**真实工单**（亿家纺织「成品定制」58mm 竖排小票）的信息顺序；字段面 = **纸面抬头（企业名 / 成品定制）**
+ * + 加工单号 / 客户 / 第N套共M套 / 部位 / 件名 / 色号 / 用料 / 宽高 / 加工方式 / 订单号 / 交期
+ * / **特殊选项** / 备注 / 算料公式 + 二维码与**大字**短码。
+ * （2026-10-25 用户逐字「参考第二张图重新设计，把特殊选项，备注也加上」⇒ ① 抬头块照参考工单加；
+ *   ② 特殊选项与备注**各成一行**（改前把「特殊选项；备注」并成一行 ⇒ 纸上分不出哪句是哪类）；
+ *   ③ 纸长 60mm → **70mm**，预算账见下方第 5 条。）
  *
  * 🔴 **退场两项**（同一次字段裁定**未选**，勿"顺手加回"）：
  *   ① **工序摘要** —— 工人扫部位码后在 H5 看该部位工序清单（`#4967`），纸面不印；
@@ -50,23 +62,26 @@ import type { ProcessingOrderItem, ProductionPosition } from '@/types'
  * 3. 不得放进 Modal（面板 `max-h` 会裁掉多页明细）；每页只挂一份（全局选择器）；
  * 4. 二维码内容只放**该部位自己的** `scan_url ?? part_token`（token 化、可撤销），
  *    不放单号拼接串、不放加工单级 `qr_token`；**缺码不画假码**（出占位框）；
- * 5. 🔴 **纸面高度预算（竖版 50×60 的实测账，勿随手加行；issue #5646）**：
+ * 5. 🔴 **纸面高度预算（竖版 50×70 的实测账，勿随手加行；issue #5646 → 2026-10-25 改判）**：
  *    **实测方法**（同 #4949）：真组件 → 内联真 Tailwind 产物 → Chromium（`@media print`）按 `@page`
- *    出 PDF，逐元素量底边/右边。本版读数：容器 **49.998mm × 59.998mm**、PDF MediaBox
- *    **142.08 × 169.92 pt = 50.13 × 59.97mm**（= `@page 50mm 60mm`，每张独占一页）、
- *    正文右边界 48.799mm 减 1.2mm 内边距 ⇒ **版心宽 47.599mm**、6pt / `line-height 1.2`
- *    ⇒ **每行 2.538mm**（行高与 30mm 时代**同值**；变的是每行装多少字：27.6mm ≈ 13em/行 → 47.599mm ≈ **22.5em/行**）。
- *    60mm 高减上下各 1.2mm ⇒ 可用 **57.6mm**。逐行实测（**最坏场景**：长件名 + 备注 2 行 + 算料公式 2 行）：
- *    加工单号(7pt, **2.96**) + 客户 2.538 + 套序 2.538 + 部位 2.538 + 件名(2 行, **5.077**) + 色号 2.538
- *    + 用料 2.538 + 宽高 2.538 + 加工方式(1 行, 2.538) + 订单号 2.538 + 交期 2.538 + 备注(2 行, **5.077**)
- *    + 算料公式(2 行, **5.077**) ⇒ 中部文字块 **38.071mm**；再加加工单号块 2.96、中部上下各 0.5mm 间距
- *    与底部「二维码(45px = **11.906**) + 人可读短码」行 ⇒ 正文总高 **56.337mm ≤ 60mm**。
- *    **保守上界**（加工方式也按 `line-clamp-2` 折满 2 行）= 38.071 + 2.538 = **40.612mm** ⇒ 正文 **58.878mm**。
- *    **长度取值理由**（用户 2026-09-26「长度按实际需要来定」）：按最坏 **56.337mm** 向上取整到标准标签长度
- *    ⇒ **60mm**（余量 **3.663mm** ≈ 1.44 行；即便退化成上面的保守上界也仍有 **1.122mm** 余量）。
- *    ⚠️ 长度与 #4946 同值**是实测结论、不是沿用**：`L` 逐值扫描（50/54/55/56/57/58/59/60/62mm）给出
- *    「中部文字块不被裁」的最小 L = **57mm**（56mm 实测被裁 **0.265mm**、55mm 被裁 **1.323mm**）
- *    ⇒ **60mm 以下不安全**。
+ *    出 PDF，逐元素量底边/右边。**几何沿革**：#4946 竖版 30mm × 60mm ⇒ #5646 **50mm × 60mm**
+ *    ⇒ 2026-10-25（用户裁定「加公司抬头 + 特殊选项 + 备注」）**50mm × 70mm**。
+ *    纸宽侧读数沿用 #5646 实测：容器 **49.998mm** 宽、正文右边界 48.799mm 减 1.2mm 内边距
+ *    ⇒ **版心宽 47.599mm**、6pt / `line-height 1.2` ⇒ **每行 2.538mm**（≈ 22.5em/行，
+ *    变的是每行装多少字：27.6mm ≈ 13em/行 → 47.599mm ≈ 22.5em/行）。
+ *    70mm 高减上下各 1.2mm 内边距 ⇒ 可用 **67.6mm**（竖版 50×70 的实测账）。
+ *    逐行实测（**最坏构成**：长件名 2 行 + 加工方式 1 行 + 特殊选项 2 行 + 备注 2 行 + 算料公式 2 行）：
+ *    抬头块（企业名 7pt **2.96** + 「成品定制」6pt **2.538** = **5.498**）+ 加工单号(7pt **2.96**)
+ *    + 中部文字块：客户 2.538 + 套序 2.538 + 部位 2.538 + 件名(2 行, **5.077**) + 色号 2.538
+ *    + 用料 2.538 + 宽高 2.538 + 加工方式(1 行, 2.538) + 订单号 2.538 + 交期 2.538
+ *    + 特殊选项(2 行, **5.077**) + 备注(2 行, **5.077**) + 算料公式(2 行, **5.077**) = **40.612mm**；
+ *    再加三处 0.5mm 间距（**1.5**）与底部「二维码(45px = **11.906**) + 人可读短码」行
+ *    ⇒ 正文总高 **62.476mm ≤ 67.6mm**（余量 **5.124mm** ≈ 2 行）。
+ *    **保守上界**（加工方式也按 `line-clamp-2` 折满 2 行）= 40.612 + 2.538 = **43.15mm**
+ *    ⇒ 正文 **65.014mm ≤ 67.6mm**（余量 2.586mm）。
+ *    **长度取值理由**（用户 2026-09-26「长度按实际需要来定」，2026-10-25 新增抬头块与两行后重算）：
+ *    60mm 纸的版面高只有 57.6mm，而新的最坏构成已到 **62.476mm**（差 4.876mm）⇒ 向上取整到标准标签长度
+ *    ⇒ **70mm**（同一裁定口径：长度按实际需要定，不沿用 60mm）。
  *    ⚠️ **余量是给「版式不折行」用的**：30×60 横版时代实测过一次折行吃掉 2.96mm、把纸面底部的人可读短码
  *    挤出纸外（issue #4949）。⇒ 本版把**二维码 + 短码**放在 `shrink-0` 的底部行、文字块用
  *    `min-h-0 overflow-hidden` 承载 —— **空间不够时被裁的是补充文字，绝不裁码与短码**
@@ -124,6 +139,7 @@ const WASH_LABEL_TESTID_SEGMENT: Record<WashLabelRowKey, string> = {
   craft: 'craft',
   orderNo: 'order-no',
   delivery: 'delivery',
+  specialOptions: 'special-options',
   remark: 'remark',
   formula: 'formula',
 }
@@ -150,6 +166,7 @@ const WASH_LABEL_ROW_CLASS: Record<WashLabelRowKey, string> = {
   craft: 'line-clamp-2',
   orderNo: 'whitespace-nowrap',
   delivery: 'whitespace-nowrap',
+  specialOptions: 'line-clamp-2',
   remark: 'line-clamp-2',
   formula: 'line-clamp-2 text-neutral-600',
 }
@@ -169,6 +186,8 @@ export default function TaskCardPrint({
   // 打印只发生在客户端；SSR/首帧无 document，portal 前先等 mounted
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
+  // 纸面抬头：与四张 A4/三联纸单据**同一份**读取口（模块级缓存 ⇒ 同页多份只读一次）
+  const companyName = washLabelCompanyName(useCompanyName())
 
   if (!mounted) return null
 
@@ -191,11 +210,11 @@ export default function TaskCardPrint({
     >
       {/* 🔴 纸型规则**只在本次打印目标为本单据时**进文档（issue #5914 的 P1-2）：
           `@page` 是**文档级**规则 —— 同页多份单据并存时**最后声明的那条赢**。 */}
-      {printTarget === 'labels' && <style>{printPageRule('label-50x60')}</style>}
+      {printTarget === 'labels' && <style>{printPageRule('label-50x70')}</style>}
       <style>{`
         .task-card-print-area { display: none; }
-        /* 洗水码本体：固定 50mm × 60mm（竖版），超出一律裁掉（纸面只有这么大） */
-        .task-card-label { width: 50mm; height: 60mm; overflow: hidden; box-sizing: border-box;
+        /* 洗水码本体：固定 50mm × 70mm（竖版），超出一律裁掉（纸面只有这么大） */
+        .task-card-label { width: 50mm; height: 70mm; overflow: hidden; box-sizing: border-box;
           padding: 1.2mm; font-size: 6pt; line-height: 1.2; display: flex; flex-direction: column;
           break-after: page; page-break-after: always; }
         /* 最后一张不再分页（否则末尾多吐一张空白） */
@@ -240,7 +259,18 @@ export default function TaskCardPrint({
             data-print-sheet
             data-testid={`task-card-label-${index}`}
           >
-            {/* ① 加工单号 —— **主标识**：绝不折行、绝不省略（折行会把纸面底部内容挤出纸外，issue #4949） */}
+            {/* ① 纸面抬头（用户 2026-10-25 裁定照参考工单「亿家纺织 / 成品定制」的形态）：
+                企业名 + 副标题，居中两行。企业名缺值 ⇒ **整块不渲染**（纸面是给客户看的，
+                不印空行、不印「未设置」）。与免驱动直连通道（`lib/label-print/wash-label.ts`
+                的 `company` 块）同字号同位置。 */}
+            {companyName !== '' && (
+              <div className="shrink-0 text-center" data-testid="task-card-company">
+                <div className="text-[7pt] font-bold">{companyName}</div>
+                <div className="text-[6pt] text-neutral-600">{WASH_LABEL_COMPANY_SUBTITLE}</div>
+              </div>
+            )}
+
+            {/* ② 加工单号 —— **主标识**：绝不折行、绝不省略（折行会把纸面底部内容挤出纸外，issue #4949） */}
             <div
               className="shrink-0 whitespace-nowrap text-[7pt] font-bold tracking-wide"
               data-testid="task-card-no"

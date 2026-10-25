@@ -36,7 +36,8 @@ import type { Order, OrderItem, ProcessingOrder } from '@/types'
  * 1. 🔴 **复写是纸的特性，不是软件的事** —— 一次打印即复写三份 ⇒ 本组件**只渲染一页**
  *    （DOM 里只有**一份** `.sales-sheet`；矩阵的 `carbonCopies: 3` 描述纸，**不是**渲染次数）；
  * 2. **`@page` 按连续纸尺寸**：由 `printPageRule(media)` 生成
- *    （`@page { size: 241mm 140mm; margin: 6mm 12mm; }`）—— 边距与页长是**通用参数 + 待实测**，
+ *    （`@page { size: 241mm 140mm; margin: 0; }` + 版面内缩 6mm 12mm 走容器 padding；
+ *    2026-10-25 起上下边距一律 0 —— 浏览器把页眉页脚画在 `@page` 边距里）—— 边距与页长是**通用参数 + 待实测**，
  *    登记在 `lib/print-media.json` 的 `pendingMeasurements`（真机参数本机拿不到，**不编造**）；
  * 3. **针打字号独立预算**：正文走矩阵的 `minFontPt`，**不复用 A4 的 6pt 量级**（针打 180dpi
  *    量级，A4 的小字号上去会糊）；❌ 不照 A4 的比例硬套；
@@ -297,9 +298,11 @@ export default function SalesDoc({
             display: block;
             position: static;
             width: 100%;
-            /* 🔴 浏览器页眉页脚只画在纸边到版心的那段页边距里 ⇒ 切到 A4 时纸型边距写成 0，
-               版面内缩改由这里承担（三联纸的页边距本就够用 ⇒ 本值为 0，纸面不变；issue #7309）。
-               box-decoration-break: clone 让第 2 页起也重复这段内缩。 */
+            /* 🔴 浏览器页眉页脚只画在纸边到版心的那段页边距里。上下边距只要不是 0，就有被画出来的路
+               （实测下限 8.7mm 是一条未文档化的分界；三联纸原来写 6mm 12mm，靠「6mm 比它小」侥幸不画）
+               ⇒ 2026-10-25 起三联纸也把 @page 边距写成 0，版面内缩 6mm 12mm 由这里承担
+               （可用版面 217 × 128mm 逐值不变；issue #7309 立口径，2026-10-25 收口到全矩阵）。
+               box-decoration-break: clone 让多页时逐页重复这段内缩。 */
             padding: ${printContentInsetCss(media)};
             -webkit-box-decoration-break: clone;
             box-decoration-break: clone;
