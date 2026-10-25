@@ -190,7 +190,8 @@ const EXPECTED_CLOTH_SPEC_BLOCK = specBlock([
   ['宽', '2.8米'],
   ['高', '2.65米'],
   // 组 3 加工信息
-  ['部位', '布帘'],
+  // ⚠️ 帘种（`curtain_type`）**不在本块**（issue #7739）：它由 `#wh5-tern` 单独给（关键识别信息，
+  // 不能受「本块缺值即整行消失」的规则影响）⇒ 本块的期望里没有它，判据见本文件 ⑨。
   ['安装工艺', '韩褶'],
   ['加工类型', '定高买宽'],
   ['开数', '2'],
@@ -210,6 +211,27 @@ const EXPECTED_CLOTH_SPEC_BLOCK = specBlock([
   ['指派米数', '12.5米'],
   ['组件', '主帘'],
 ])
+
+test('🔴 ⑨ 帘种（issue #7739）：缺 `curtain_type` 时回落 `position_kind`；两处都缺 ⇒ 不编（不印「帘种 —」）', () => {
+  // ① 订单行没填帘种、扫码解析给了 `position_kind` ⇒ 仍要告诉工人是布帘还是纱帘
+  const fellBack = renderPage(LOGGED_IN(), viewWith(
+    [{ ...clothPosition(), curtain_type: null, position_kind: null }],
+    { position: { order_item_id: 'oi-cloth', position_kind: '纱帘', position_name: '布帘' } },
+  ))
+  assert.match(fellBack, /id="wh5-tern">帘种 纱帘</, '帘种必须从 `position_kind` 回落显示')
+
+  // ② 规格块里**不再**印帘种（同一屏同一事实两次 = §31 P2）
+  assert.equal(firstSpecBlock(fellBack).includes('帘种'), false, '帘种不得在规格块里重复')
+
+  // ③ 两处都没有 ⇒ 这一行不出现（不编值；「关键信息」也不等于可以印 `帘种 —`）
+  const unknown = renderPage(LOGGED_IN(), viewWith(
+    [{ ...clothPosition(), curtain_type: null, position_kind: null }],
+    { position: { order_item_id: 'oi-cloth', position_kind: null, position_name: '布帘' } },
+  ))
+  assert.equal(unknown.includes('id="wh5-tern"'), false, '两处都缺 ⇒ 不印空占位')
+  // 反向：本表**不再**印「部位」这个词（用户口径统一叫帘种）
+  assert.equal(fellBack.includes('<dt>部位</dt>'), false, '「部位」标签必须退场')
+})
 
 test('🔴 ① 扫后屏「本部位生产信息」：组 1/2/3/5 代表键的 label + 值 + 单位 + 顺序**逐字**上屏（注入 A ⇒ 红）', () => {
   const html = renderPage(LOGGED_IN(), viewWith([clothPosition(), gauzePosition()]))
