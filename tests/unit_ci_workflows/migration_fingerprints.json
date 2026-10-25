@@ -103,6 +103,7 @@
     "V194__order_is_outsourced.sql": "sha256:0436227c077051c31b8708d3325fc1d9eb4c1eedb0a1110ee0527a3c947a5e88",
     "V195__add_worker_operation_to_users.sql": "sha256:f80008bbff240d1a478221ebeeaa235bb95f0de25cba8ec9234b8214f20fe1fa",
     "V196__stock_warehouse_locations_and_in_out_documents.sql": "sha256:32f149ada27f19d8c2556cd8512f5abc795b620a948ec600e56be4b144ddc716",
+    "V197__finished_goods_set_part_granularity.sql": "sha256:3def99bb67081b2edbf611222d73e3a6257ef4d7018d0508dfd98956416b55c0",
     "V1__add_permissions_to_users.sql": "sha256:1364c75115a1818071deb3f84e2a0a52817589421b909046ba1aeb5f32e5a02b",
     "V22__add_order_user_id.sql": "sha256:7384a3909ef7e2e22448b619b8df8a72666cda738f48425b0f96fe3855152b86",
     "V23__backfill_order_user_id.sql": "sha256:59e1c3edaa7e0b313ad49e39f61875e0435b48e6045ad36306cbe37eb311ceab",
@@ -191,6 +192,6 @@
     "V98__create_worker_sessions_and_worker_no.sql": "sha256:ad7580afc72ad21c7b63046e21d97e8f721157be33c0bffb51316edc5c7aaa10",
     "V99__add_short_code_to_set_part_tokens.sql": "sha256:617a7efcd9818649eab0f467e5a743922704ec051a2e6bbfd2f76ee63bad5220",
     "V9__create_user_suggestion_prefs.sql": "sha256:ed314e5ce414d047cb475305964c60785de0e5d8b29d20fa02d2bff6ca572955",
-    "schema.sql": "sha256:a9d40430043fef331fdd017efd12f52170d2093a69ff9e90881f7983ec5170f5"
+    "schema.sql": "sha256:2e7f5d2bc68ce44724d0ab89bb7606010f7d5e3b30d15be838bccc2139028c94"
   }
 }

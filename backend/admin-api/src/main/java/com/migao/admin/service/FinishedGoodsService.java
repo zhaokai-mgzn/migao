@@ -14,6 +14,7 @@ import com.migao.admin.mapper.OrderItemMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
@@ -51,6 +52,19 @@ import java.util.Objects;
 public class FinishedGoodsService {
 
     private final FinishedGoodsStockMapper stockMapper;
+    /** 部位码（V197 / issue #7762）：一张水洗唛 = 一个仓位 */
+    private final com.migao.admin.mapper.ProcessingSetPartTokenMapper tokenMapper;
+    /** 套（标签「第 N 套 / 共 M 套」） */
+    private final com.migao.admin.mapper.ProcessingOrderSetMapper setMapper;
+    /** 报工记录（授权：只有做过打包工序的工人能扫唛出库） */
+    private final com.migao.admin.mapper.ProductionWorkLogMapper workLogMapper;
+    /** 订单主表（标签抬头：订单号 / 客户 / 下单日期） */
+    private final com.migao.admin.mapper.OrderMapper orderMapper;
+    /** 业务时钟（issue #3802）：标签「下单日期」的 +08 口径唯一来源（不写时区字面量）。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.migao.admin.time.BusinessClock businessClock = new com.migao.admin.time.BusinessClock();
+    /** 本页「出库标签」的短链前缀（与 `/s/{短码}` 公开入口同一份口径） */
+    private static final String SHORT_LINK_PREFIX = "/s/";
     private final OrderItemMapper orderItemMapper;
     private final WarehouseService warehouseService;
     private final InboundOrderService inboundOrderService;
@@ -70,6 +84,13 @@ public class FinishedGoodsService {
             log.info("[成品入库] 本单已有在库成品行，跳过重复入库: tenant={}, orderNo={}, bins={}",
                     tenantId, order.getOrderNo(), binsOf(existing));
             return existing;
+        }
+        // 🔴 V197（issue #7762）：有部位码 ⇒ 按「套 × 部位」逐行入库（5 套 × 布帘 = 5 行 = 5 个仓位）；
+        // 没有码（布料单 / 未印码的历史单）⇒ 退回 V196 的订单行粒度（不造空行）。
+        List<com.migao.admin.entity.ProcessingSetPartToken> tokens =
+                tokenMapper.selectByOrderId(tenantId, order.getId());
+        if (!tokens.isEmpty()) {
+            return receiveOnPackByTokens(order, tenantId, operator, tokens);
         }
         List<OrderItem> items = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
                 .eq(OrderItem::getTenantId, tenantId)
@@ -176,6 +197,240 @@ public class FinishedGoodsService {
             assignments.add(one);
         }
         return assignments;
+    }
+
+    /**
+     * 打包入库（套 × 部位粒度，V197 / issue #7762）。
+     *
+     * <p>每张水洗唛（部位码）一行：一个套的布帘 / 纱帘各有自己的仓位与标签 —— 工人扫哪张码就出哪一件。
+     * 订单行仍是「成本/计价」载体，这里只把**可搬运的一件成品**当作仓位载体。</p>
+     */
+    private List<FinishedGoodsStock> receiveOnPackByTokens(Order order, Long tenantId, String operator,
+                                                           List<com.migao.admin.entity.ProcessingSetPartToken> tokens) {
+        Map<String, OrderItem> itemById = new LinkedHashMap<>();
+        for (OrderItem item : orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
+                .eq(OrderItem::getTenantId, tenantId)
+                .eq(OrderItem::getOrderId, order.getId()))) {
+            itemById.put(item.getId(), item);
+        }
+        Warehouse warehouse = warehouseService.ensureFinishedWarehouse(tenantId);
+        List<com.migao.admin.entity.InboundOrderItem> lines = new ArrayList<>();
+        int skipped = 0;
+        for (com.migao.admin.entity.ProcessingSetPartToken token : tokens) {
+            OrderItem item = itemById.get(token.getOrderItemId());
+            if (item == null) {
+                skipped++;
+                continue;
+            }
+            com.migao.admin.entity.ProcessingOrderSet set = setMapper.selectById(token.getSetId());
+            lines.add(com.migao.admin.entity.InboundOrderItem.builder()
+                    .productId(item.getProductId())
+                    .productName(item.getProductName())
+                    .orderId(order.getId())
+                    .orderNo(order.getOrderNo())
+                    .orderItemId(item.getId())
+                    .setId(token.getSetId())
+                    .setNo(set == null ? null : set.getSetNo())
+                    .shortCode(token.getShortCode())
+                    .quantity(java.math.BigDecimal.ONE)
+                    .unit(FinishedGoodsStock.UNIT_SET)
+                    .remark("打包（套×部位）")
+                    .build());
+        }
+        if (lines.isEmpty()) {
+            // 码全是陈旧引用（订单行已删）⇒ 不造假单，退回订单行粒度
+            log.warn("[成品入库] 部位码全部挂不到订单行，退回订单行粒度: tenant={}, orderNo={}, skipped={}",
+                    tenantId, order.getOrderNo(), skipped);
+            return receiveOnPackByItems(order, tenantId, operator);
+        }
+        inboundOrderService.receiveFinishedGoodsLines(tenantId, order, lines,
+                warehouse.getId(), warehouse.getName(), operator);
+        List<FinishedGoodsStock> rows = stockMapper.selectInStockByOrder(tenantId, order.getId());
+        log.info("[成品入库] 打包入库（套×部位）完成: tenant={}, orderNo={}, tokens={}, skipped={}, bins={}",
+                tenantId, order.getOrderNo(), lines.size(), skipped, binsOf(rows));
+        return rows;
+    }
+
+    /** V196 的订单行粒度入库（无部位码的兜底形态）。 */
+    private List<FinishedGoodsStock> receiveOnPackByItems(Order order, Long tenantId, String operator) {
+        List<OrderItem> items = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
+                .eq(OrderItem::getTenantId, tenantId)
+                .eq(OrderItem::getOrderId, order.getId())
+                .orderByAsc(OrderItem::getId));
+        if (items.isEmpty()) {
+            return List.of();
+        }
+        Warehouse warehouse = warehouseService.ensureFinishedWarehouse(tenantId);
+        inboundOrderService.receiveFinishedGoods(tenantId, order, items,
+                warehouse.getId(), warehouse.getName(), operator);
+        return stockMapper.selectInStockByOrder(tenantId, order.getId());
+    }
+
+    // ============================================================ 扫水洗唛（V197 / #7762）
+
+    /**
+     * 扫水洗唛的**只读**视图（移动端报工页的「成品出库」卡片）。
+     *
+     * <p>返回 {@code allowed / reason / bin_code / label}：{@code allowed} 三条同时成立才为 true ——
+     * ① 这张码有在库行；② 当前工人**做过这张加工单的打包工序**；③ 未出库（在库行存在即未出库）。</p>
+     *
+     * @param key token 或短码（两者是同一行的两种表示）
+     */
+    public Map<String, Object> washLabelView(Long tenantId, String key, String workerId) {
+        return washLabelView(tenantId, key, workerId, null);
+    }
+
+    public Map<String, Object> washLabelView(Long tenantId, String key, String workerId, String workerName) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        com.migao.admin.entity.ProcessingSetPartToken token = StringUtils_resolveToken(tenantId, key);
+        if (token == null) {
+            out.put("allowed", false);
+            out.put("reason", "这张码不是部位码（没有印套 × 部位的成品标签）");
+            return out;
+        }
+        FinishedGoodsStock stock = stockMapper.selectInStockByWashLabel(tenantId, key);
+        boolean inStock = stock != null;
+        boolean packer = StringUtils.hasText(workerId)
+                && workLogMapper.countPackerLogs(tenantId, token.getProcessingOrderId(), workerId) > 0;
+        boolean allowed = inStock && packer;
+        String reason;
+        if (!inStock) {
+            reason = "这张码对应的成品不在库（还没打包，或已经出库）";
+        } else if (!packer) {
+            reason = "只有做过打包工序的工人才能扫码出库";
+        } else {
+            reason = null;
+        }
+        out.put("allowed", allowed);
+        if (reason != null) {
+            out.put("reason", reason);
+        }
+        out.put("token", token.getToken());
+        out.put("short_code", token.getShortCode());
+        out.put("bin_code", stock == null ? null : stock.getBinCode());
+        out.put("order_id", token.getOrderItemId() == null ? null : stock_orderId(stock, token));
+        out.put("worker_name", workerName);
+        out.put("label", labelOf(tenantId, token, stock));
+        return out;
+    }
+
+    /**
+     * 扫水洗唛出库（V197 / issue #7762）。
+     *
+     * <p>幂等由**条件更新**兜住：{@code status='in_stock'} 才改得动；0 行 ⇒ 409「已出库」。
+     * 出库单 {@code source=scan}、单行（套 × 部位 + 仓位号），与发货出库同表同号段。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> issueByWashLabel(Long tenantId, String key, String workerId, String workerName) {
+        Map<String, Object> view = washLabelView(tenantId, key, workerId, workerName);
+        if (!Boolean.TRUE.equals(view.get("allowed"))) {
+            throw BusinessException.conflict(String.valueOf(view.get("reason")),
+                    "请确认这张水洗唛的成品已打包、并且你本人做过打包工序");
+        }
+        com.migao.admin.entity.ProcessingSetPartToken token = StringUtils_resolveToken(tenantId, key);
+        FinishedGoodsStock stock = stockMapper.selectInStockByWashLabel(tenantId, key);
+        if (token == null || stock == null) {
+            throw BusinessException.conflict("这张水洗唛的在库行已不存在", "请刷新后重试");
+        }
+        Order order = orderMapper.selectById(stock.getOrderId());
+        Warehouse warehouse = warehouseService.ensureFinishedWarehouse(tenantId);
+        OutboundOrder doc = outboundOrderService.createScanOutbound(order == null ? stock.getOrderNo() : order.getOrderNo(),
+                stock, warehouse, tenantId, StringUtils.hasText(workerName) ? workerName : workerId);
+        int rows = stockMapper.markShippedById(tenantId, stock.getId(), doc.getId());
+        if (rows == 0) {
+            throw BusinessException.conflict("这张水洗唛已经出库了",
+                    "同一个仓位不会被两件成品同时占用；重复提交不会重复扣减");
+        }
+        Map<String, Object> out = new LinkedHashMap<>(view);
+        out.put("allowed", false);
+        out.put("reason", "已出库");
+        out.put("outbound_no", doc.getOutboundNo());
+        log.info("[成品出库] 扫水洗唛出库完成: tenant={}, key={}, bin={}, outboundNo={}, worker={}",
+                tenantId, key, stock.getBinCode(), doc.getOutboundNo(), workerId);
+        return out;
+    }
+
+    private com.migao.admin.entity.ProcessingSetPartToken StringUtils_resolveToken(Long tenantId, String key) {
+        if (!org.springframework.util.StringUtils.hasText(key)) {
+            return null;
+        }
+        String k = key.trim();
+        // 整条印刷 URL（`…/s/<短码>`）⇒ 取最后一段：与扫码归一化同口径（不在这里再写一套规则）
+        int slash = k.lastIndexOf('/');
+        if (slash >= 0 && slash < k.length() - 1 && !k.startsWith("http")) {
+            k = k.substring(slash + 1);
+        }
+        return tokenMapper.selectByTokenOrShortCode(tenantId, k);
+    }
+
+    private static String stock_orderId(FinishedGoodsStock stock,
+                                        com.migao.admin.entity.ProcessingSetPartToken token) {
+        return stock == null ? null : stock.getOrderId();
+    }
+
+    /**
+     * 标签内容（**服务端唯一源**，V197 / issue #7762）。
+     *
+     * <p>逐行 = 「标签字段名 → 值」；没有稳定来源的字段（项目名称 / 款式 / 安装工艺 / 扩展选项）
+     * **不出现**（不印 `—`、不编造）—— 前端只负责按顺序排版与打印。</p>
+     */
+    public Map<String, Object> labelOf(Long tenantId,
+                                       com.migao.admin.entity.ProcessingSetPartToken token,
+                                       FinishedGoodsStock stock) {
+        Map<String, Object> label = new LinkedHashMap<>();
+        List<Map<String, String>> rows = new ArrayList<>();
+        Order order = stock == null ? null : orderMapper.selectById(stock.getOrderId());
+        OrderItem item = stock == null || stock.getOrderItemId() == null
+                ? null : orderItemMapper.selectById(stock.getOrderItemId());
+        com.migao.admin.entity.ProcessingOrderSet set = token.getSetId() == null
+                ? null : setMapper.selectById(token.getSetId());
+        int setTotal = set == null ? 0 : setMapper.selectCount(new LambdaQueryWrapper<com.migao.admin.entity.ProcessingOrderSet>()
+                .eq(com.migao.admin.entity.ProcessingOrderSet::getProcessingOrderId, set.getProcessingOrderId())
+                .eq(com.migao.admin.entity.ProcessingOrderSet::getDeleted, 0)).intValue();
+
+        addRow(rows, "订单编号", order == null
+                ? (stock == null ? null : stock.getOrderNo()) : order.getOrderNo());
+        addRow(rows, "客户", order == null ? null : order.getCustomerName());
+        addRow(rows, "下单日期", order == null || order.getCreatedAt() == null ? null
+                : order.getCreatedAt().atZoneSameInstant(businessClock.zone()).toLocalDate().toString());
+        // 收货人：数据模型只有「客户 + 收货地址」，没有独立收货人 ⇒ 收货人 = 客户（照实渲染，不猜人名）
+        addRow(rows, "收货人", order == null ? null : order.getCustomerName());
+        if (set != null) {
+            addRow(rows, "套数", "第" + (set.getSetIndex() == null ? "?" : set.getSetIndex())
+                    + "套/共" + (setTotal > 0 ? setTotal : "?") + "套");
+        }
+        addRow(rows, "尺寸", sizeOf(item));
+        addRow(rows, "开数", item == null || item.getOpenCount() == null ? null
+                : String.valueOf(item.getOpenCount()));
+        addRow(rows, "部位", token.getPositionKind());
+        addRow(rows, "主布货号", item == null ? null : item.getSkuCode());
+        addRow(rows, "打包区域", stock == null ? null : stock.getBinCode());
+
+        label.put("rows", rows);
+        label.put("short_code", token.getShortCode());
+        label.put("qr_value", token.getShortCode() == null
+                ? token.getToken() : SHORT_LINK_PREFIX + token.getShortCode());
+        label.put("bin_code", stock == null ? null : stock.getBinCode());
+        return label;
+    }
+
+    private static void addRow(List<Map<String, String>> rows, String label, String value) {
+        if (value == null || value.isBlank() || "?".equals(value)) {
+            return;
+        }
+        rows.add(Map.of("label", label, "value", value.trim()));
+    }
+
+    /** 尺寸：`宽*高`（米，最多 2 位小数、去尾零）；缺任一边 ⇒ 不渲染（不猜）。 */
+    private static String sizeOf(OrderItem item) {
+        if (item == null || item.getWidth() == null || item.getHeight() == null) {
+            return null;
+        }
+        return trimNumber(item.getWidth()) + "*" + trimNumber(item.getHeight());
+    }
+
+    private static String trimNumber(java.math.BigDecimal value) {
+        return value.stripTrailingZeros().toPlainString();
     }
 
     private static List<String> binsOf(List<FinishedGoodsStock> rows) {

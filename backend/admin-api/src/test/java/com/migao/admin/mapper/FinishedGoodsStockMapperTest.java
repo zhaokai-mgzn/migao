@@ -95,7 +95,9 @@ class FinishedGoodsStockMapperTest {
         assertThat(sql).contains("uk_finished_goods_bin_in_stock");
         assertThat(sql).contains("ON finished_goods_stock (tenant_id, bin_code)")
                 .contains("WHERE status = 'in_stock' AND deleted = 0");
-        assertThat(sql).contains("uk_finished_goods_order_item_in_stock");
+        // V197（issue #7762）：在库唯一从「订单行」改成「套 × 部位」；V196 遗留行由 set_id IS NULL 那条兜底
+        assertThat(sql).contains("uk_finished_goods_set_part_in_stock")
+                .contains("uk_finished_goods_legacy_item_in_stock");
     }
 
     @Test

@@ -278,6 +278,11 @@ export function createApi(opts = {}) {
       return request(`/api/worker/production/scan?${qs.toString()}`)
     },
 
+    /** 扫水洗唛出库（幂等：同一张码第二次提交 ⇒ 服务端 409「已经出库」）。 */
+    async finishedOutbound(token) {
+      return request('/api/worker/stock/finished-outbound', { method: 'POST', body: { token } })
+    },
+
     /** 页头「当前工人」——**服务端**来源（PAD 共用时前端 state 不可信）。 */
     async currentWorker() {
       const d = await request('/api/worker/production/current-worker')

@@ -40,6 +40,9 @@ public class OutboundOrder {
     /** 发货出库（成品，由发货动作自动建单） */
     public static final String SOURCE_SHIP = "ship";
 
+    /** 扫水洗唛出库（V197 / issue #7762：工人扫成品水洗唛 ⇒ 在库行出库，单行、带仓位号） */
+    public static final String SOURCE_SCAN = "scan";
+
     @TableId(type = IdType.ASSIGN_UUID)
     private String id;
 
@@ -51,7 +54,7 @@ public class OutboundOrder {
     /** {@link #BIZ_FABRIC} / {@link #BIZ_FINISHED} */
     private String bizCategory;
 
-    /** {@link #SOURCE_MANUAL} / {@link #SOURCE_SHIP} */
+    /** {@link #SOURCE_MANUAL} / {@link #SOURCE_SHIP} / {@link #SOURCE_SCAN} */
     private String source;
 
     /** 仓库引用（NULL = 未指定；存量/手工单可空） */

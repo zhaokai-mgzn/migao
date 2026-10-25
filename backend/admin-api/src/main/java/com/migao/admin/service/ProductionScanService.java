@@ -13,6 +13,7 @@ import com.migao.admin.mapper.ProcessingOrderSetMapper;
 import com.migao.admin.mapper.ProcessingSetPartTokenMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -94,6 +95,16 @@ import java.util.regex.Pattern;
 @Service
 @RequiredArgsConstructor
 public class ProductionScanService {
+    /**
+     * 成品出库视图（V197 / issue #7762）：扫唛后随视图下发的标签 + 授权结果。
+     *
+     * <p>**字段注入而非构造器**：本仓有 6 处单测直接 {@code new ProductionScanService(...)} 装配解析器，
+     * 且它们与本单无关 —— 加一个构造器参数会让这 6 个文件一次性编译失败（与 {@code businessClock}
+     * 同款处理）。{@code required = false} ⇒ 手工装配的切片测试里为 null，解析结果与改前逐字相同。</p>
+     */
+    @Autowired(required = false)
+    private FinishedGoodsService finishedGoodsService;
+
 
     /** 解析粒度：新码（套 × 部位）—— 部位由码给出，工人不选。 */
     public static final String GRANULARITY_SET_POSITION = "set_position";
@@ -252,6 +263,15 @@ public class ProductionScanService {
      */
     public Map<String, Object> resolve(String token, String operationId, String setId, String orderItemId,
                                        Long tenantId, String workerOperation) {
+        return resolve(token, operationId, setId, orderItemId, tenantId, workerOperation, null);
+    }
+
+    /**
+     * 同上 + **当前工人 id**（V197 / issue #7762）：新码命中时随视图下发 {@code finished_outbound}
+     * （成品出库卡片 + 授权结果）。工人身份由控制器从 session 解出后传入，**不从请求体读**。
+     */
+    public Map<String, Object> resolve(String token, String operationId, String setId, String orderItemId,
+                                       Long tenantId, String workerOperation, String workerId) {
         if (!StringUtils.hasText(token)) {
             throw BusinessException.validationError("扫码内容不能为空");
         }
@@ -264,7 +284,7 @@ public class ProductionScanService {
         }
         if (partToken != null) {
             // 🔴 新码**不读** setId/orderItemId：套 × 部位由码给出 ⇒ 契约扩展对已有新码零影响
-            return setPositionView(partToken, operationId, tenantId, workerOperation);
+            return setPositionView(partToken, operationId, tenantId, workerOperation, workerId);
         }
         // ①′ 旧码收口（issue #4794）：选完套 + 部位 ⇒ 部位级视图（工序仍由系统推断）
         if (StringUtils.hasText(setId) && StringUtils.hasText(orderItemId)) {
@@ -401,11 +421,18 @@ public class ProductionScanService {
     // ============================================================ 新码：套 × 部位 + 推断
 
     private Map<String, Object> setPositionView(ProcessingSetPartToken partToken, String operationId,
-                                                Long tenantId, String workerOperation) {
+                                                Long tenantId, String workerOperation, String workerId) {
         ProcessingOrderSet set = requireSet(partToken, tenantId);
         ProcessingOrder po = processingSetReadService.requireProcessingOrder(set.getProcessingOrderId(), tenantId);
-        return setPositionView(po, set, partToken.getOrderItemId(), partToken.getPositionKind(),
+        Map<String, Object> view = setPositionView(po, set, partToken.getOrderItemId(), partToken.getPositionKind(),
                 operationId, tenantId, workerOperation);
+        // V197 / issue #7762：一张唛 = 一个仓位 ⇒ 随扫码视图直接下发「成品出库」块
+        // （标签逐行 + allowed/reason/bin_code）；页面不再多发一次读请求。
+        if (finishedGoodsService != null) {
+            view.put("finished_outbound", finishedGoodsService.washLabelView(
+                    tenantId, partToken.getToken(), workerId));
+        }
+        return view;
     }
 
     /**

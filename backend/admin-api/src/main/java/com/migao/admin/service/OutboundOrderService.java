@@ -175,6 +175,51 @@ public class OutboundOrderService {
      *
      * @param rows 本单当前在库的成品行（为空 ⇒ 调用方不该调本方法）
      */
+    /**
+     * **扫水洗唛出库单**（V197 / issue #7762）：单行 = 一张水洗唛（套 × 部位）+ 仓位号。
+     *
+     * <p>与 {@link #createFinishedOutbound} 的区别只在「行从哪来」：发货出库一次带走整单所有在库行；
+     * 扫唛出库只带走**被扫到的这一件**。单据形态、号段、已过账状态、金额留 NULL 的口径完全一致。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public OutboundOrder createScanOutbound(String orderNo, FinishedGoodsStock row, Warehouse warehouse,
+                                            Long tenantId, String operator) {
+        OutboundOrder doc = OutboundOrder.builder()
+                .tenantId(tenantId)
+                .outboundNo(nextFreeOutboundNo(tenantId))
+                .bizCategory(OutboundOrder.BIZ_FINISHED)
+                .source(OutboundOrder.SOURCE_SCAN)
+                .warehouseId(warehouse == null ? null : warehouse.getId())
+                .warehouse(warehouse == null ? null : warehouse.getName())
+                .outboundDate(businessClock.today())
+                .status(OutboundOrder.STATUS_POSTED)
+                .totalAmount(BigDecimal.ZERO)
+                .orderId(row.getOrderId())
+                .orderNo(orderNo)
+                .remark("扫水洗唛出库（仓位 " + row.getBinCode() + "）")
+                .postedAt(OffsetDateTime.now())
+                .postedBy(operator)
+                .createdBy(operator)
+                .build();
+        outboundOrderMapper.insert(doc);
+        outboundOrderItemMapper.insert(OutboundOrderItem.builder()
+                .tenantId(tenantId)
+                .outboundOrderId(doc.getId())
+                .productId(row.getProductId())
+                .productName(row.getProductName())
+                .orderId(row.getOrderId())
+                .orderItemId(row.getOrderItemId())
+                .locationId(row.getLocationId())
+                .binCode(row.getBinCode())
+                .quantity(row.getQuantity())
+                .unit(row.getUnit())
+                .remark("扫唛出库")
+                .build());
+        log.info("[出库] 扫水洗唛出库单已过账: tenant={}, outboundNo={}, orderNo={}, bin={}",
+                tenantId, doc.getOutboundNo(), orderNo, row.getBinCode());
+        return doc;
+    }
+
     @Transactional(rollbackFor = Exception.class)
     public OutboundOrder createFinishedOutbound(Order order, List<FinishedGoodsStock> rows,
                                                 Warehouse warehouse, Long tenantId, String operator) {

@@ -1979,7 +1979,10 @@ CREATE TABLE IF NOT EXISTS inbound_order_items (
     location_id BIGINT,                              -- 仓位引用：仅 biz_category=finished 有值
     bin_code VARCHAR(32),                            -- 仓位号快照
     order_id VARCHAR(64),                            -- 成品行来源订单
-    order_item_id VARCHAR(64),                       -- 成品行来源订单明细（一个订单行 = 一个仓位）
+    order_item_id VARCHAR(64),
+    set_id VARCHAR(64),
+    set_no VARCHAR(64),
+    short_code VARCHAR(20),                       -- 成品行来源订单明细（一个订单行 = 一个仓位）
     order_no VARCHAR(64),                            -- 成品行来源订单号快照
     unit VARCHAR(8) NOT NULL DEFAULT 'm',            -- m 米（布料）/ set 套（成品）
     product_name VARCHAR(255)                        -- 品名快照（成品行没有 SKU 货号）
@@ -4437,7 +4440,7 @@ CREATE TABLE IF NOT EXISTS outbound_orders (
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     deleted INT NOT NULL DEFAULT 0,
     CONSTRAINT ck_outbound_orders_biz_category CHECK (biz_category IN ('fabric', 'finished')),
-    CONSTRAINT ck_outbound_orders_source CHECK (source IN ('manual', 'ship')),
+    CONSTRAINT ck_outbound_orders_source CHECK (source IN ('manual', 'ship', 'scan')),
     CONSTRAINT ck_outbound_orders_status CHECK (status = 'posted')
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_outbound_orders_no
@@ -4487,6 +4490,11 @@ CREATE TABLE IF NOT EXISTS finished_goods_stock (
     order_id VARCHAR(64) NOT NULL,
     order_no VARCHAR(64),
     order_item_id VARCHAR(64) NOT NULL,
+    set_id VARCHAR(64),
+    set_no VARCHAR(64),
+    set_index INTEGER,
+    part_token_id VARCHAR(64),
+    short_code VARCHAR(20),
     product_id VARCHAR(64),
     product_name VARCHAR(255),
     quantity NUMERIC(10,2) NOT NULL CHECK (quantity > 0),
@@ -4503,9 +4511,12 @@ CREATE TABLE IF NOT EXISTS finished_goods_stock (
 CREATE UNIQUE INDEX IF NOT EXISTS uk_finished_goods_bin_in_stock
     ON finished_goods_stock (tenant_id, bin_code)
     WHERE status = 'in_stock' AND deleted = 0;
-CREATE UNIQUE INDEX IF NOT EXISTS uk_finished_goods_order_item_in_stock
-    ON finished_goods_stock (tenant_id, order_item_id)
-    WHERE status = 'in_stock' AND deleted = 0;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_finished_goods_set_part_in_stock
+    ON finished_goods_stock (tenant_id, set_id, order_item_id)
+    WHERE status = 'in_stock' AND deleted = 0 AND set_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_finished_goods_legacy_item_in_stock
+    ON finished_goods_stock (tenant_id, order_id, order_item_id)
+    WHERE status = 'in_stock' AND deleted = 0 AND set_id IS NULL;
 CREATE INDEX IF NOT EXISTS idx_finished_goods_order
     ON finished_goods_stock (tenant_id, order_id) WHERE deleted = 0;
 COMMENT ON TABLE finished_goods_stock IS

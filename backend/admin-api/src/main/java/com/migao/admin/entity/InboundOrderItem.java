@@ -112,6 +112,15 @@ public class InboundOrderItem {
     /** 成品行来源订单明细（V194）：与 {@code finished_goods_stock.order_item_id} 同键 */
     private String orderItemId;
 
+    /** 所属套（V197 / issue #7762）：成品入库按「套 × 部位」逐行入库 */
+    private String setId;
+
+    /** 套号快照 */
+    private String setNo;
+
+    /** 部位码短码快照（标签与追溯用） */
+    private String shortCode;
+
     /** 成品行来源订单号快照（V194）：成品在库行展示用（不必回表 orders） */
     private String orderNo;
 

@@ -28,6 +28,7 @@ import {
   PAGE_INSPECT,
   reduce,
   renderPage,
+  washLabelPrintHtml,
 } from './render.mjs'
 
 /**
@@ -180,6 +181,8 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
   // 企业编码（issue #6564）：短链 302 的 `?tenant_code=` 只是**初值**（预填进输入框，可编辑）
   const urlEnterpriseCode = enterpriseCodeFromLocation(href)
   const root = doc.getElementById('worker-h5-root')
+  // 打印窗口的宿主（`createApp` 只拿到 doc；`defaultView` 是同一份 window，jsdom 也有）
+  const win = doc.defaultView ?? globalThis
   let state = { ...initialState(), enterpriseCode: urlEnterpriseCode ?? '' }
   let idleTimer = null
   let aliveInFlight = false // 单飞：同一时刻最多一个对账在飞
@@ -398,6 +401,9 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
       if (el) el.addEventListener('click', fn)
     }
 
+    on('wh5-fl-print', printWashLabel)
+    on('wh5-fl-out', issueWashLabel)
+
     on('wh5-login', async () => {
       const workerNo = doc.getElementById('wh5-worker-no')?.value?.trim()
       const pin = doc.getElementById('wh5-pin')?.value ?? ''
@@ -608,11 +614,42 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
       state = {
         ...state,
         view: { ...view, __token: token, ...(selection ? { __selection: selection } : {}) },
+        // V197 / issue #7762：新码命中时服务端随视图下发「成品出库」块（标签 + allowed/reason）
+        washLabel: view.finished_outbound ?? null,
       }
       dispatch({ type: 'resolved', view: state.view, notice: resumedNotice(token) })
       void loadQuality()
     } catch (e) {
       fail(e)
+    }
+  }
+
+  /** 打印成品标签：新窗口只放标签（`@page 50mm 70mm`），不把报工页印上纸。 */
+  function printWashLabel() {
+    const w = state.washLabel
+    if (!w) return
+    const popup = win.open('', '_blank', 'width=460,height=620')
+    if (!popup) {
+      dispatch({ type: 'error', error: '浏览器拦下了打印窗口：允许弹窗后再点一次「打印标签」' })
+      return
+    }
+    popup.document.write(washLabelPrintHtml(w))
+    popup.document.close()
+    popup.focus()
+    popup.print()
+  }
+
+  /** 扫水洗唛出库：服务端做授权与幂等；这里只负责把结果说人话。 */
+  async function issueWashLabel() {
+    const token = state.washLabel?.token ?? state.view?.__token
+    if (!token) return
+    try {
+      const w = await api.finishedOutbound(token)
+      dispatch({ type: 'notice', notice: `已出库：仓位 ${w?.bin_code ?? ''}（出库单 ${w?.outbound_no ?? '—'}）` })
+      state = { ...state, washLabel: w }
+      draw()
+    } catch (e) {
+      dispatch({ type: 'error', error: e?.message ?? String(e) })
     }
   }
 

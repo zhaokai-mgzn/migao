@@ -9,6 +9,8 @@ import com.migao.admin.dto.NotificationEvent;
 import com.migao.admin.entity.FinishedGoodsStock;
 import com.migao.admin.entity.InboundOrder;
 import com.migao.admin.entity.InboundOrderItem;
+import com.migao.admin.entity.ProcessingOrderSet;
+import com.migao.admin.entity.ProcessingSetPartToken;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.Product;
@@ -21,6 +23,8 @@ import com.migao.admin.mapper.InboundOrderItemMapper;
 import com.migao.admin.mapper.InboundOrderMapper;
 import com.migao.admin.mapper.InboundOrderQueryMapper;
 import com.migao.admin.mapper.FinishedGoodsStockMapper;
+import com.migao.admin.mapper.ProcessingOrderSetMapper;
+import com.migao.admin.mapper.ProcessingSetPartTokenMapper;
 import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
 import com.migao.admin.mapper.StockBatchMapper;
@@ -67,7 +71,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
+@RequiredArgsConstructor(onConstructor_ = @Autowired)
 public class InboundOrderService {
 
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
@@ -83,6 +87,27 @@ public class InboundOrderService {
     /** 列表一次最多返回的单据数（同族页面口径；入库单是流水型单据，不做深分页） */
     private static final int LIST_LIMIT = 200;
     /** 批次查询一次最多返回的行数 */
+    /**
+     * **V196 形态的构造器**（保留给既有单测与旧装配）：两个 V197 依赖传 null。
+     *
+     * <p>为什么保留：本仓有多处**直接 new** 的切片测试（真库竞态 / Controller 切片）在建这个服务，
+     * 新增字段会让它们一次性全部编译失败 —— 而它们与本单的「套 × 部位」粒度无关。
+     * 生产装配走 Lombok 的全参构造器（两个依赖都在容器里），不会走到这里。</p>
+     */
+    public InboundOrderService(InboundOrderMapper inboundOrderMapper,
+                               InboundOrderItemMapper inboundOrderItemMapper,
+                               InboundOrderQueryMapper inboundOrderQueryMapper,
+                               StockBatchMapper stockBatchMapper,
+                               ProductSkuMapper productSkuMapper,
+                               ProductMapper productMapper,
+                               StockLedgerService stockLedgerService,
+                               WarehouseLocationService warehouseLocationService,
+                               FinishedGoodsStockMapper finishedGoodsStockMapper) {
+        this(inboundOrderMapper, inboundOrderItemMapper, inboundOrderQueryMapper, stockBatchMapper,
+                productSkuMapper, productMapper, stockLedgerService, warehouseLocationService,
+                finishedGoodsStockMapper, null, null);
+    }
+
     private static final int BATCH_LIMIT = 200;
 
     /** 业务时钟（issue #3802）：业务「今天」的唯一来源。Spring 注入单例；**不扫描 @Component 的切片上下文**
@@ -102,6 +127,10 @@ public class InboundOrderService {
     private final WarehouseLocationService warehouseLocationService;
     /** 成品在库（V196）：成品单过账的唯一写入方（一行 = 一个订单行 + 一个仓位）。 */
     private final FinishedGoodsStockMapper finishedGoodsStockMapper;
+    /** 部位码（V197 / issue #7762）：成品入库按「套 × 部位」逐行，行上带 set_id 时回读 token 行 */
+    private final ProcessingSetPartTokenMapper setPartTokenMapper;
+    /** 套（V197）：标签「第 N 套」的 set_index 来源 */
+    private final ProcessingOrderSetMapper processingOrderSetMapper;
 
     /**
      * 池化事件通知点（issue #5182）：过账**既有业务完成之后**追加的一句 fail-soft 通知
@@ -256,11 +285,35 @@ public class InboundOrderService {
             boolean claimed = false;
             for (int attempt = 0; attempt < FINISHED_BIN_ATTEMPTS && !claimed; attempt++) {
                 WarehouseLocation bin = warehouseLocationService.nextFreeBin(tenantId, warehouseId);
-                Long stockId = finishedGoodsStockMapper.claimInStock(
+                // 套 × 部位（V197）：标签要「第 N 套 / 共 M 套」与短码 ⇒ 从部位码行回读，
+                // 不信任调用方传进来的重复字段（单一来源 = processing_set_part_tokens）。
+                ProcessingSetPartToken tokenRow = line.getSetId() == null
+                        ? null
+                        : setPartTokenMapper.selectOne(new LambdaQueryWrapper<ProcessingSetPartToken>()
+                        .eq(ProcessingSetPartToken::getTenantId, tenantId)
+                        .eq(ProcessingSetPartToken::getSetId, line.getSetId())
+                        .eq(ProcessingSetPartToken::getOrderItemId, line.getOrderItemId())
+                        .eq(ProcessingSetPartToken::getDeleted, 0)
+                        .last("LIMIT 1"));
+                Integer setIndex = null;
+                if (line.getSetId() != null) {
+                    ProcessingOrderSet setRow = processingOrderSetMapper.selectById(line.getSetId());
+                    setIndex = setRow == null ? null : setRow.getSetIndex();
+                }
+                BigDecimal qty = line.getQuantity() == null ? BigDecimal.ONE : line.getQuantity();
+                // 遗留（订单行粒度）走 11 参重载：与 V196 的调用形态逐字相同（既有判据按它验参数）
+                Long stockId = line.getSetId() == null
+                        ? finishedGoodsStockMapper.claimInStock(
                         tenantId, warehouseId, bin.getId(), bin.getBinCode(),
                         line.getOrderId(), line.getOrderNo(), line.getOrderItemId(),
-                        line.getProductId(), line.getProductName(),
-                        line.getQuantity() == null ? BigDecimal.ONE : line.getQuantity(), order.getId());
+                        line.getProductId(), line.getProductName(), qty, order.getId())
+                        : finishedGoodsStockMapper.claimInStock(
+                        tenantId, warehouseId, bin.getId(), bin.getBinCode(),
+                        line.getOrderId(), line.getOrderNo(), line.getOrderItemId(),
+                        line.getProductId(), line.getProductName(), qty, order.getId(),
+                        line.getSetId(), line.getSetNo(), setIndex,
+                        tokenRow == null ? null : tokenRow.getId(),
+                        tokenRow == null ? null : tokenRow.getShortCode());
                 if (stockId != null) {
                     InboundOrderItem patch = new InboundOrderItem();
                     patch.setId(line.getId());
@@ -329,15 +382,13 @@ public class InboundOrderService {
                 .remark("成品打包入库（订单 " + order.getOrderNo() + "）")
                 .createdBy(operator)
                 .build();
-        inboundOrderMapper.insert(doc);
-
         // 变量名刻意不叫 `item`：`OrderRollAllocationAuthorityTest` 按「本文件里有没有
         // `OrderItem <名>` 声明」判定写面归属，同名会让别处的 `item.setRollCount(...)`
         // 被误判成在写 OrderItem 实体（成品入库路径只读订单行、不写整卷两列）。
+        List<InboundOrderItem> lines = new ArrayList<>();
         for (OrderItem orderItem : items) {
-            InboundOrderItem line = InboundOrderItem.builder()
+            lines.add(InboundOrderItem.builder()
                     .tenantId(tenantId)
-                    .inboundOrderId(doc.getId())
                     .productId(orderItem.getProductId())
                     .productName(orderItem.getProductName())
                     .orderId(order.getId())
@@ -346,7 +397,44 @@ public class InboundOrderService {
                     .quantity(BigDecimal.ONE)
                     .unit(FinishedGoodsStock.UNIT_SET)
                     .remark("打包")
-                    .build();
+                    .build());
+        }
+        return receiveFinishedGoodsLines(tenantId, order, lines, warehouseId, warehouseText, operator);
+    }
+
+    /**
+     * **成品入库（按调用方给的逐行原型建单 + 过账）**（V197 / issue #7762）。
+     *
+     * <p>与 {@link #receiveFinishedGoods(Long, Order, List, Long, String, String)} 的差别只在
+     * 「行从哪来」：本重载由 {@code FinishedGoodsService} 按**套 × 部位**逐 token 组装
+     * （一行 = 一张水洗唛 = 一个仓位），并已在原型上填好 {@code set_id / set_no / short_code}。
+     * 单据本身仍是同一张表、同一号段、同一状态机（建单即过账）。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public InboundOrderResponse receiveFinishedGoodsLines(Long tenantId, Order order,
+                                                          List<InboundOrderItem> lines,
+                                                          Long warehouseId, String warehouseText,
+                                                          String operator) {
+        if (lines == null || lines.isEmpty()) {
+            throw BusinessException.validationError("订单没有成品行，无法生成成品入库单");
+        }
+        InboundOrder doc = InboundOrder.builder()
+                .tenantId(tenantId)
+                .inboundNo(nextFreeInboundNo(tenantId))
+                .warehouse(warehouseText)
+                .warehouseId(warehouseId)
+                .inboundDate(businessClock.today())
+                .status(InboundOrder.STATUS_DRAFT)
+                .totalAmount(BigDecimal.ZERO)
+                .source(InboundOrder.SOURCE_PACKING)
+                .bizCategory(InboundOrder.BIZ_FINISHED)
+                .remark("成品打包入库（订单 " + order.getOrderNo() + "）")
+                .createdBy(operator)
+                .build();
+        inboundOrderMapper.insert(doc);
+        for (InboundOrderItem line : lines) {
+            line.setTenantId(tenantId);
+            line.setInboundOrderId(doc.getId());
             inboundOrderItemMapper.insert(line);
         }
         return post(doc.getId(), tenantId, operator);

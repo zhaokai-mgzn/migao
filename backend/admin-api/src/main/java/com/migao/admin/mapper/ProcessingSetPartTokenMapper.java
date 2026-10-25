@@ -147,4 +147,31 @@ public interface ProcessingSetPartTokenMapper extends BaseMapper<ProcessingSetPa
     int fillMissingToken(@Param("tenantId") Long tenantId, @Param("setId") String setId,
                          @Param("orderItemId") String orderItemId, @Param("token") String token,
                          @Param("updatedAt") OffsetDateTime updatedAt);
+
+    /**
+     * 扫水洗唛（token 或短码）→ 部位码行（V197 / issue #7762）。
+     *
+     * <p>短码跨租户查询在 {@link #selectByShortCode} 已有实现；这里是**工人扫码面**（有租户上下文），
+     * 故显式带 {@code tenant_id} 且 {@code deleted = 0}：别人的码 / 已撤销的码一律查不到。</p>
+     */
+    @InterceptorIgnore(tenantLine = "true")
+    @Select("""
+            SELECT * FROM processing_set_part_tokens
+             WHERE tenant_id = #{tenantId} AND deleted = 0
+               AND (token = #{key} OR short_code = #{key})
+             ORDER BY id DESC LIMIT 1
+            """)
+    ProcessingSetPartToken selectByTokenOrShortCode(@Param("tenantId") Long tenantId, @Param("key") String key);
+
+    /** 某订单的全部部位码（打包时按「套 × 部位」逐行入库；按套序、部位序稳定排列）。 */
+    @InterceptorIgnore(tenantLine = "true")
+    @Select("""
+            SELECT t.* FROM processing_set_part_tokens t
+              JOIN processing_orders po ON po.id = t.processing_order_id
+             WHERE t.tenant_id = #{tenantId} AND po.order_id = #{orderId}
+               AND t.deleted = 0 AND t.token IS NOT NULL
+             ORDER BY t.set_id, t.order_item_id
+            """)
+    java.util.List<ProcessingSetPartToken> selectByOrderId(@Param("tenantId") Long tenantId,
+                                                           @Param("orderId") String orderId);
 }

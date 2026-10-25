@@ -61,8 +61,23 @@ public class FinishedGoodsStock {
 
     private String orderNo;
 
-    /** 成品订单行（一个订单行 = 一个在库行，不按套拆） */
+    /** 成品订单行（V197 起：一个订单行 × 套 × 部位 = 一个在库行） */
     private String orderItemId;
+
+    /** 所属套（{@code processing_order_sets.id}）；{@code NULL} = V196 遗留的订单行粒度行 */
+    private String setId;
+
+    /** 套号快照 */
+    private String setNo;
+
+    /** 第几套（1 起；标签「第 N 套 / 共 M 套」用） */
+    private Integer setIndex;
+
+    /** 部位码行（{@code processing_set_part_tokens.id}）—— 一张水洗唛 = 一个仓位 */
+    private String partTokenId;
+
+    /** 水洗唛短码快照（印在纸上的可抄入口） */
+    private String shortCode;
 
     private String productId;
 
