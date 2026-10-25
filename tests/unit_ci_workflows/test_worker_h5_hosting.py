@@ -311,6 +311,23 @@ def test_publish_set_mirrors_repo_entries():
         f"module 闭包守卫的入口镜像与仓库不一致：{mirrored} vs {repo_entries}"
     )
 
+    # ④ **所有「铺一棵已发布树再跑 verify 脚本」的夹具**都必须铺全（第 4 处镜像，实测踩过：
+    #    加了 ⑨ 段之后 `test_bmini_h5_hosting.py` 的合并树仍只铺到 piecework.html ⇒ 夹具造假红）。
+    #    ⚠️ 边界（如实登记）：这份清单**手工维护**，新增第三个"铺树"夹具时不会自动被覆盖 ——
+    #    但真出现那种夹具时它自己会红（因为它跑的是同一份 verify 脚本），届时把它加进本元组即可。
+    tree_fixture_files = (
+        Path(__file__).with_name("test_worker_h5_hosting.py"),
+        Path(__file__).with_name("test_worker_h5_module_closure_guard.py"),
+        Path(__file__).with_name("test_bmini_h5_hosting.py"),
+    )
+    for fixture in tree_fixture_files:
+        text = fixture.read_text(encoding="utf-8")
+        absent = [name for name in repo_entries if name not in text]
+        assert not absent, (
+            f"{fixture.name} 的「已发布树」夹具没铺这些入口：{absent}"
+            "（该夹具跑了同一份 verify 脚本 ⇒ 会造出假红）"
+        )
+
 
 def test_worker_h5_entry_files_exist():
     """判据的前提资产（否则下面的身份断言无参照物）。"""
