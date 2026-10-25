@@ -159,6 +159,44 @@ export const SHIP_LABEL_MEDIA_ID = 'label-50x70'
 /** 发货标签的 `@page` 尺寸（**必须**与介质矩阵逐字相等；守卫测试比对 print-media.json）。 */
 export const SHIP_LABEL_PAGE_SIZE = '50mm 70mm'
 
+/**
+ * **纸长按内容撑开**（issue #7776；用户 2026-10-25 逐字「字体太小了，可以把长度延长些，因为长度可以无限长，
+ * 宁愿长点也要把字体和信息都呈现出来……打印预览的时候我就发现上下两头留白太多了」）。
+ *
+ * 发货标签与洗水唛是**同一卷纸**（50mm 宽连续纸卷）：宽度固定 50mm、长度按纸面内容算。
+ * 取整 / 夹取口径与洗水唛 `washLabelLengthMm()` 一致：上取整到 1mm、夹在
+ * `[SHIP_LABEL_MIN_LENGTH_MM, SHIP_LABEL_MAX_LENGTH_MM]`（下限 = 介质矩阵登记的**最短**纸长，也是驱动里
+ * 该登记的那档；上限 = 再长说明内容该拆了）。宽 / 上下限由守卫比对介质矩阵，不写第二份真值。
+ */
+export const SHIP_LABEL_WIDTH_MM = 50
+export const SHIP_LABEL_MIN_LENGTH_MM = 70
+export const SHIP_LABEL_MAX_LENGTH_MM = 150
+
+/** 1 CSS px = 1/96 英寸（浏览器度量口径；`scrollHeight` 是 px） */
+const CSS_PX_TO_MM = 25.4 / 96
+
+/** 夹取纸长：无效值 ⇒ 下限；不向下取整（宁可长 1mm，也不裁内容） */
+function clampLabelLength(mm) {
+  const value = Number.isFinite(mm) && mm > 0 ? Math.ceil(mm) : SHIP_LABEL_MIN_LENGTH_MM
+  return Math.min(Math.max(value, SHIP_LABEL_MIN_LENGTH_MM), SHIP_LABEL_MAX_LENGTH_MM)
+}
+
+/** 量到的**内容像素高** ⇒ 纸长（mm）：上取整到 1mm、夹在上下限内 */
+export function shipLabelLengthMm(contentPx) {
+  const px = Number.isFinite(contentPx) && contentPx > 0 ? contentPx : 0
+  return clampLabelLength(px * CSS_PX_TO_MM)
+}
+
+/**
+ * 动态纸型的 `@page` 规则（纸长变了才拼一条；宽度始终 = {@link SHIP_LABEL_WIDTH_MM}）。
+ *
+ * 🔴 静态兜底仍在 `ship-label.css`（`size: 50mm 70mm` —— JS 没跑 / 量不到时按最短纸长出纸）；
+ * 本函数产出的规则由调用方**后**插进文档 ⇒ 后声明者赢（`@page` 是文档级规则）。
+ */
+export function shipLabelPageRule(lengthMm) {
+  return `@page { size: ${SHIP_LABEL_WIDTH_MM}mm ${clampLabelLength(lengthMm)}mm; margin: 0; }`
+}
+
 /** 缺值占位符（与发货单纸面 `—` 同口径；**不是** 0、不是空串）。 */
 export const SHIP_LABEL_MISSING = '—'
 
