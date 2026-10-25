@@ -29,6 +29,8 @@ import TaskCardPrint from '@/components/production/TaskCardPrint'
 // 「直连打印机」入口；部位 ⇒ 洗水码数据的映射走单一处 `toWashLabelInputs`（页面不另写一份）
 import DirectLabelPrint from '@/components/production/DirectLabelPrint'
 import { toWashLabelInputs } from '@/lib/wash-label-content'
+// 纸长 = 内容高度（issue #7776）：打印 / 预览 / 蓝牙直连**三处读同一个数**
+import { washLabelBatchLengthMm } from '@/lib/label-print/wash-label-metrics'
 // 纸面抬头（企业名）与四张 A4/三联纸单据**同一份**读取口（issue #7219；2026-10-25 洗水唛也用）
 import { useCompanyName } from '@/lib/use-company-name'
 import type {
@@ -271,6 +273,22 @@ export default function ProcessingOrderProductionPage() {
         items: po?.items,
       }),
     [companyName, operations, po],
+  )
+
+  /**
+   * 这批洗水唛的**纸长（mm）**（issue #7776）—— 用户 2026-10-25 裁定「字号抬到可读、纸长按内容撑开」：
+   * 同一个数传给打印（`@page`）、预览纸框与蓝牙直连的画布，三处不许各算一份。
+   */
+  const washLabelLengthMm = useMemo(
+    () =>
+      washLabelBatchLengthMm(
+        washLabels.map((label) => ({
+          rows: label.rows ?? [],
+          hasCompany: Boolean(label.companyName),
+          hasQr: Boolean(label.qrValue),
+        })),
+      ),
+    [washLabels],
   )
 
   /** 点「打印任务卡」：先看纸面自检（标签纸型没配好 = 整卷打废） */
@@ -804,6 +822,7 @@ export default function ProcessingOrderProductionPage() {
             qrPlaceholderHint={qrPlaceholderHint}
             // 工艺摘要（issue #4355）真值来源 = 加工单快照明细，按 order_item_id 逐张对齐
             items={po.items}
+            labelLengthMm={washLabelLengthMm}
             printTarget={printTarget}
           />
 
@@ -820,7 +839,14 @@ export default function ProcessingOrderProductionPage() {
             media={PRINT_TARGET_SPECS.labels.media}
             onPrint={printTaskCards}
             onClose={closePreview}
-            actions={<DirectLabelPrint labels={washLabels} onRecordPrint={recordPrintOnce} />}
+            lengthMm={washLabelLengthMm}
+            actions={
+              <DirectLabelPrint
+                labels={washLabels}
+                onRecordPrint={recordPrintOnce}
+                labelLengthMm={washLabelLengthMm}
+              />
+            }
           >
             {previewTarget === 'labels' && (
               <TaskCardPrint
@@ -831,6 +857,7 @@ export default function ProcessingOrderProductionPage() {
                 positions={operations?.positions}
                 qrPlaceholderHint={qrPlaceholderHint}
                 items={po.items}
+                labelLengthMm={washLabelLengthMm}
                 inline
               />
             )}

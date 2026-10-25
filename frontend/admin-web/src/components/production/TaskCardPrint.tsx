@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { QRCodeSVG } from 'qrcode.react'
-import { printPageRule } from '@/lib/print-media'
+import { printPageRuleForLength } from '@/lib/print-media'
+// 纸长 = 内容高度（issue #7776）：与免驱动直连通道、打印预览**同一个函数**算出同一个数
+import { washLabelBatchLengthMm } from '@/lib/label-print/wash-label-metrics'
 import { cn } from '@/lib/utils'
 import type { PrintTarget } from '@/lib/print-doc'
 // 纸面**内容**的单一真值（issue #6656）：本组件与免驱动直连通道（`lib/label-print/*`）读
@@ -29,11 +31,14 @@ import type { ProcessingOrderItem, ProductionPosition } from '@/types'
  * ⇒ 纸宽由 #4946 的**竖版 30mm** 改为 **50mm**；长度按同一裁定口径随纸面字段增加而加长
  * （#5646 = 60mm ⇒ 2026-10-25 = **70mm**，见下方第 5 条实测账）。
  * 照**真实工单**（亿家纺织「成品定制」58mm 竖排小票）的信息顺序；字段面 = **纸面抬头（企业名 / 成品定制）**
- * + 加工单号 / 客户 / 第N套共M套 / 部位 / 件名 / 色号 / 用料 / 宽高 / 加工方式 / 订单号 / 交期
- * / **特殊选项** / 备注 / 算料公式 + 二维码与**大字**短码。
+ * + 加工单号 / 客户 / 第N套共M套 / 部位 / 颜色 / 门幅 / 用料 / 宽高 / 加工方式 / 订单号 / 交期
+ * / **特殊选项** / 备注 + 二维码与**大字**短码。
  * （2026-10-25 用户逐字「参考第二张图重新设计，把特殊选项，备注也加上」⇒ ① 抬头块照参考工单加；
  *   ② 特殊选项与备注**各成一行**（改前把「特殊选项；备注」并成一行 ⇒ 纸上分不出哪句是哪类）；
- *   ③ 纸长 60mm → **70mm**，预算账见下方第 5 条。）
+ *   ③ **纸长 60mm → 按内容自适应**（issue #7776），见下方第 5 条。）
+ * （2026-10-25 用户逐字「移除商品名称展示，保留货号，颜色，门幅和其他工艺信息，移除褶倍公式字段展示」
+ *   ⇒ **件名（商品名称）与算料公式（褶倍公式）两行退场**；颜色改恒印、门幅新增。货号待**加工单快照**
+ *   补 `productCode`（后端单，issue #7776 的待办项）—— 未在册前**不拿 SKU 组合码冒充货号**（#7636）。）
  *
  * 🔴 **退场两项**（同一次字段裁定**未选**，勿"顺手加回"）：
  *   ① **工序摘要** —— 工人扫部位码后在 H5 看该部位工序清单（`#4967`），纸面不印；
@@ -62,32 +67,26 @@ import type { ProcessingOrderItem, ProductionPosition } from '@/types'
  * 3. 不得放进 Modal（面板 `max-h` 会裁掉多页明细）；每页只挂一份（全局选择器）；
  * 4. 二维码内容只放**该部位自己的** `scan_url ?? part_token`（token 化、可撤销），
  *    不放单号拼接串、不放加工单级 `qr_token`；**缺码不画假码**（出占位框）；
- * 5. 🔴 **纸面高度预算（竖版 50×70 的实测账，勿随手加行；issue #5646 → 2026-10-25 改判）**：
+ * 5. 🔴 **纸长预算：纸长 = 内容高度**（issue #7776；2026-10-25 用户逐字「字体太小了，可以把长度延长些，
+ *    因为长度可以无限长，宁愿长点也要把字体和信息都呈现出来……上下两头留白太多了」）：
+ *    几何 = **宽 50mm 固定** / **长按内容撑开**（最短 **50mm × 70mm**、上限 150mm）。
  *    **实测方法**（同 #4949）：真组件 → 内联真 Tailwind 产物 → Chromium（`@media print`）按 `@page`
- *    出 PDF，逐元素量底边/右边。**几何沿革**：#4946 竖版 30mm × 60mm ⇒ #5646 **50mm × 60mm**
- *    ⇒ 2026-10-25（用户裁定「加公司抬头 + 特殊选项 + 备注」）**50mm × 70mm**。
- *    纸宽侧读数沿用 #5646 实测：容器 **49.998mm** 宽、正文右边界 48.799mm 减 1.2mm 内边距
- *    ⇒ **版心宽 47.599mm**、6pt / `line-height 1.2` ⇒ **每行 2.538mm**（≈ 22.5em/行，
- *    变的是每行装多少字：27.6mm ≈ 13em/行 → 47.599mm ≈ 22.5em/行）。
- *    70mm 高减上下各 1.2mm 内边距 ⇒ 可用 **67.6mm**（竖版 50×70 的实测账）。
- *    逐行实测（**最坏构成**：长件名 2 行 + 加工方式 1 行 + 特殊选项 2 行 + 备注 2 行 + 算料公式 2 行）：
- *    抬头块（企业名 7pt **2.96** + 「成品定制」6pt **2.538** = **5.498**）+ 加工单号(7pt **2.96**)
- *    + 中部文字块：客户 2.538 + 套序 2.538 + 部位 2.538 + 件名(2 行, **5.077**) + 色号 2.538
- *    + 用料 2.538 + 宽高 2.538 + 加工方式(1 行, 2.538) + 订单号 2.538 + 交期 2.538
- *    + 特殊选项(2 行, **5.077**) + 备注(2 行, **5.077**) + 算料公式(2 行, **5.077**) = **40.612mm**；
- *    再加三处 0.5mm 间距（**1.5**）与底部「二维码(45px = **11.906**) + 人可读短码」行
- *    ⇒ 正文总高 **62.476mm ≤ 67.6mm**（余量 **5.124mm** ≈ 2 行）。
- *    **保守上界**（加工方式也按 `line-clamp-2` 折满 2 行）= 40.612 + 2.538 = **43.15mm**
- *    ⇒ 正文 **65.014mm ≤ 67.6mm**（余量 2.586mm）。
- *    **长度取值理由**（用户 2026-09-26「长度按实际需要来定」，2026-10-25 新增抬头块与两行后重算）：
- *    60mm 纸的版面高只有 57.6mm，而新的最坏构成已到 **62.476mm**（差 4.876mm）⇒ 向上取整到标准标签长度
- *    ⇒ **70mm**（同一裁定口径：长度按实际需要定，不沿用 60mm）。
+ *    出 PDF，逐元素量底边/右边。纸宽侧读数沿用 #5646 实测：容器 **49.998mm** 宽、正文右边界 48.799mm
+ *    减 1.2mm 内边距 ⇒ **版心宽 47.599mm**；正文 **9pt** / `line-height 1.2` ⇒ **每行 3.81mm**
+ *    （2026-10-25 6pt → 9pt，1.5 倍）；最短纸长 70mm 减上下各 1.2mm 内边距 ⇒ **可用 67.6mm**。
+ *    **逐项预算**：抬头块 12.1mm（企业名 10pt **4.23** + 「成品定制」7pt **2.96** + 0.5 间距）
+ *    + 加工单号 10pt **4.23** + 正文每行 **3.81** + 底部行 = 二维码 **11.906mm**
+ *    （`text-[12pt]` 短码那两行 8.9mm 不超过它）+ 内边距 **2.4mm** + 两处块间距 **1.0mm**。
+ *    常规单（正文 ≈ 15 行）≈ **85mm**；最坏构成（加工方式 / 特殊选项 / 备注各折满 2 行 ≈ 18 行）≈ **96mm**。
+ *    ⇒ **纸长不写死**：`frontend/admin-web/src/lib/label-print/wash-label-metrics.ts` 的 `washLabelLengthMm()`
+ *    按纸面内容算（上取整到 1mm、夹在 `[70, 150]`），`@page` 用 `printPageRuleForLength()` 现拼，
+ *    标签本体的行内 style 给**同一个数**（预览纸框读的也是它）。正文总高 ≤ 纸长上限 150mm。
  *    ⚠️ **余量是给「版式不折行」用的**：30×60 横版时代实测过一次折行吃掉 2.96mm、把纸面底部的人可读短码
  *    挤出纸外（issue #4949）。⇒ 本版把**二维码 + 短码**放在 `shrink-0` 的底部行、文字块用
  *    `min-h-0 overflow-hidden` 承载 —— **空间不够时被裁的是补充文字，绝不裁码与短码**
  *    （短码是设计里明写的降级入口：`docs/design/worker-h5-scan-and-report.md` §1.4「不是可选项」）。
- *    件名已按第 ① 条**去掉 clamp** ⇒ 超过「2 行」的件名（需 > 45em ≈ 45 个汉字，实测最长件名只用 2 行）
- *    会把中部补充文字挤出可视区 —— 这正是上面那条设计取舍的**兜底面**，不是静默裁切：码与短码仍在。
+ *    🔴 **退场行腾出的高度不要"顺手加行"填回去**：件名与算料公式各占 2 行（≈15mm），
+ *    抬字号（6pt → 9pt）恰好吃回这部分预算 —— 再加一行就会把常规单推到 100mm 以上。
  * 6. ⚠️ **别把这个洗水码挪到德佟 DP30S 上打**：DP30S 是 **203dpi 的 2 英寸头**，**有效打印宽度通常只有
  *    48mm（384 dots）** ⇒ **50mm 宽打不满**，右侧约 2mm 打不到（约束登记在 issue #5052「裁定记录 5」）。
  *    本版按用户 2026-09-26 裁定做 50mm —— 洗水码今天由 admin-web 走 A4/标签打印机出，**不是 DP30S**；
@@ -104,7 +103,7 @@ interface TaskCardPrintProps {
   positions?: ProductionPosition[]
   /** 缺码时的占位文案（撤销后传「已撤销」，避免纸面指向不存在的按钮）；缺省＝待生成 */
   qrPlaceholderHint?: string
-  /** 该部位对应的加工单快照明细（色号/用料/加工方式/备注/算料公式的取值来源） */
+  /** 该部位对应的加工单快照明细（颜色/门幅/用料/加工方式/特殊选项/备注的取值来源） */
   items?: ProcessingOrderItem[]
   /**
    * 本次打印的目标（`'labels'` = 打印本单据）。**必须由调用方置位**：标签的显形规则按
@@ -117,6 +116,12 @@ interface TaskCardPrintProps {
    * 缺省 `false` = 既有行为（portal 到 body，屏幕上隐藏、仅打印呈现）。
    */
   inline?: boolean
+  /**
+   * **纸长（mm）** —— 由调用方（生产页）用 `washLabelBatchLengthMm()` 算好后传进来，
+   * 好让**打印 / 预览 / 蓝牙直连**三处读同一个数（issue #7776）。不传 ⇒ 本组件自己按
+   * 纸面行清单算（`Ctrl+P` 直接打印那条路，算出来与传进来的是同一个函数、同一个值）。
+   */
+  labelLengthMm?: number
   className?: string
 }
 
@@ -132,8 +137,8 @@ const WASH_LABEL_TESTID_SEGMENT: Record<WashLabelRowKey, string> = {
   customer: 'customer',
   setNo: 'set-no',
   positionKind: 'kind',
-  pieceName: 'position',
   color: 'color',
+  doorWidth: 'door-width',
   meters: 'meters',
   size: 'size',
   craft: 'craft',
@@ -141,7 +146,6 @@ const WASH_LABEL_TESTID_SEGMENT: Record<WashLabelRowKey, string> = {
   delivery: 'delivery',
   specialOptions: 'special-options',
   remark: 'remark',
-  formula: 'formula',
 }
 
 /** 行 ⇒ `data-testid`（订单号是加工单级的**单**一处，不带张序） */
@@ -159,8 +163,8 @@ const WASH_LABEL_ROW_CLASS: Record<WashLabelRowKey, string> = {
   customer: 'truncate',
   setNo: 'whitespace-nowrap',
   positionKind: 'truncate',
-  pieceName: '',
   color: 'truncate',
+  doorWidth: 'truncate',
   meters: 'truncate',
   size: 'truncate',
   craft: 'line-clamp-2',
@@ -168,7 +172,6 @@ const WASH_LABEL_ROW_CLASS: Record<WashLabelRowKey, string> = {
   delivery: 'whitespace-nowrap',
   specialOptions: 'line-clamp-2',
   remark: 'line-clamp-2',
-  formula: 'line-clamp-2 text-neutral-600',
 }
 
 export default function TaskCardPrint({
@@ -181,6 +184,7 @@ export default function TaskCardPrint({
   items,
   printTarget,
   inline,
+  labelLengthMm: labelLengthProp,
   className,
 }: TaskCardPrintProps) {
   // 打印只发生在客户端；SSR/首帧无 document，portal 前先等 mounted
@@ -203,6 +207,35 @@ export default function TaskCardPrint({
   // 套序/套数走**与进度表同一份**实现
   const setViews = groupBySet(list)
 
+  // 🔴 纸面**内容与行序**的唯一来源（issue #6656；与免驱动直连通道同一份）：
+  // 客户 / 套序 / 部位 / 颜色 / 门幅 / 用料 / 宽高 / 加工方式 / 订单 / 交期 / 特殊选项 / 备注
+  // 的取值口径全在 `washLabelRows` 里面 —— 本文件**不再自己派生**（派生两份 = 两条通道会画得不一样）。
+  const rowsByLabel = labels.map((position, index) => {
+    if (!position) return []
+    const setView = setViews[index]
+    const item = position.order_item_id ? itemsById.get(position.order_item_id) : undefined
+    return washLabelRows({
+      position,
+      item,
+      setNo: (setView?.setIndex ?? 0) + 1,
+      setCount: setView?.setCount ?? 1,
+      customerName,
+      orderNo,
+      expectedDeliveryDate,
+    })
+  })
+  // 纸长 = 这一批里最高的那张（`@page` 是文档级规则，每页纸型不能各不相同）；
+  // 调用方（生产页）把同一个数也传给预览与直连通道 —— 三处同源，预览与纸上不会再对不上。
+  const labelLengthMm =
+    labelLengthProp ??
+    washLabelBatchLengthMm(
+      rowsByLabel.map((rows, index) => ({
+        rows,
+        hasCompany: companyName !== '',
+        hasQr: Boolean(labels[index]?.scan_url ?? labels[index]?.part_token),
+      })),
+    )
+
   const doc = (
     <div
       className={cn('task-card-print-area print-doc text-neutral-900', className)}
@@ -210,12 +243,13 @@ export default function TaskCardPrint({
     >
       {/* 🔴 纸型规则**只在本次打印目标为本单据时**进文档（issue #5914 的 P1-2）：
           `@page` 是**文档级**规则 —— 同页多份单据并存时**最后声明的那条赢**。 */}
-      {printTarget === 'labels' && <style>{printPageRule('label-50x70')}</style>}
+      {printTarget === 'labels' && <style>{printPageRuleForLength('label-50x70', labelLengthMm)}</style>}
       <style>{`
         .task-card-print-area { display: none; }
-        /* 洗水码本体：固定 50mm × 70mm（竖版），超出一律裁掉（纸面只有这么大） */
+        /* 洗水码本体：**宽**固定 50mm、**长**按内容撑开（issue #7776；行内 style 给实际纸长，
+           这里的 70mm 是**最短**纸长 = 介质矩阵 label-50x70 的 pageBoxMm） */
         .task-card-label { width: 50mm; height: 70mm; overflow: hidden; box-sizing: border-box;
-          padding: 1.2mm; font-size: 6pt; line-height: 1.2; display: flex; flex-direction: column;
+          padding: 1.2mm; font-size: 9pt; line-height: 1.2; display: flex; flex-direction: column;
           break-after: page; page-break-after: always; }
         /* 最后一张不再分页（否则末尾多吐一张空白） */
         .task-card-label:last-child { break-after: auto; page-break-after: auto; }
@@ -234,28 +268,17 @@ export default function TaskCardPrint({
       `}</style>
 
       {labels.map((position, index) => {
-        const setView = position ? setViews[index] : undefined
         const qrValue = position ? (position.scan_url ?? position.part_token ?? null) : null
-        const item = position?.order_item_id ? itemsById.get(position.order_item_id) : undefined
-        // 🔴 纸面**内容与行序**的唯一来源（issue #6656；与免驱动直连通道同一份）：
-        // 客户 / 套序 / 部位 / 件名 / 色号（去重）/ 用料 / 宽高 / 加工方式 / 订单 / 交期 / 备注 / 算料公式
-        // 的取值口径全在 `washLabelRows` 里面 —— 本文件**不再自己派生**（派生两份 = 两条通道会画得不一样）。
-        const rows = position
-          ? washLabelRows({
-              position,
-              item,
-              setNo: (setView?.setIndex ?? 0) + 1,
-              setCount: setView?.setCount ?? 1,
-              customerName,
-              orderNo,
-              expectedDeliveryDate,
-            })
-          : []
+        // 纸面行清单（内容与行序的唯一真值）已在上面按张算好（纸长要按它们逐张算）
+        const rows = rowsByLabel[index] ?? []
 
         return (
           <div
             key={position?.order_item_id ?? `label-${index}`}
             className="task-card-label"
+            // 🔴 纸长**按内容撑开**（issue #7776）：与 `@page` 同一个数（上面那一处），
+            // 预览纸框也读它 ⇒ 「预览这张纸」与「打出这张纸」是同一张。
+            style={{ height: `${labelLengthMm}mm` }}
             data-print-sheet
             data-testid={`task-card-label-${index}`}
           >
@@ -265,14 +288,14 @@ export default function TaskCardPrint({
                 的 `company` 块）同字号同位置。 */}
             {companyName !== '' && (
               <div className="shrink-0 text-center" data-testid="task-card-company">
-                <div className="text-[7pt] font-bold">{companyName}</div>
-                <div className="text-[6pt] text-neutral-600">{WASH_LABEL_COMPANY_SUBTITLE}</div>
+                <div className="text-[10pt] font-bold">{companyName}</div>
+                <div className="text-[7pt] text-neutral-600">{WASH_LABEL_COMPANY_SUBTITLE}</div>
               </div>
             )}
 
             {/* ② 加工单号 —— **主标识**：绝不折行、绝不省略（折行会把纸面底部内容挤出纸外，issue #4949） */}
             <div
-              className="shrink-0 whitespace-nowrap text-[7pt] font-bold tracking-wide"
+              className="shrink-0 whitespace-nowrap text-[10pt] font-bold tracking-wide"
               data-testid="task-card-no"
             >
               {processingOrderNo}
@@ -313,7 +336,7 @@ export default function TaskCardPrint({
               ) : (
                 <div
                   data-testid="task-card-qr-placeholder"
-                  className="flex h-[12mm] w-[12mm] shrink-0 items-center justify-center border border-dashed border-neutral-400 text-center text-[5pt] text-neutral-500"
+                  className="flex h-[12mm] w-[12mm] shrink-0 items-center justify-center border border-dashed border-neutral-400 text-center text-[7pt] text-neutral-500"
                 >
                   {qrPlaceholderHint ?? '待生成'}
                 </div>
@@ -322,7 +345,7 @@ export default function TaskCardPrint({
                 <div className="min-w-0">
                   <div className="text-neutral-600">扫码报工</div>
                   <div
-                    className="truncate font-mono text-[8pt] font-bold"
+                    className="truncate font-mono text-[12pt] font-bold"
                     data-testid={`task-card-label-short-code-${index}`}
                   >
                     {position.part_short_code || '—'}

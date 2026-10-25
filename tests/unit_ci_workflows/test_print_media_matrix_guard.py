@@ -87,8 +87,10 @@ _PORTAL_RE = re.compile(r"createPortal\s*\(")
 _PRINT_AREA_RE = re.compile(r"['\"`][a-zA-Z0-9_-]*-print-area\b")
 #: `@page { size: X; margin: Y; }` 字面量（唯一合法写法 = 与矩阵逐字一致）
 _PAGE_LITERAL_RE = re.compile(r"@page\s*\{\s*size:\s*([^;]+);\s*margin:\s*([^;]+);\s*\}")
-#: 介质矩阵读取口调用：`printPageRule('a4')`（字面量形式 —— 单据只印一种纸）
-_PAGE_RULE_CALL_RE = re.compile(r"printPageRule\(\s*'([a-z0-9-]+)'\s*\)")
+#: 介质矩阵读取口调用：`printPageRule('a4')`（字面量形式 —— 单据只印一种纸）；
+#: 以及 issue #7776 的**动态纸长**写法 `printPageRuleForLength('label-50x70', <纸长变量>)`
+#: （纸长按内容撑开：宽 / 边距仍从矩阵取，长度由调用方算 —— 介质仍是**同一份**，不是第二份真值）
+_PAGE_RULE_CALL_RE = re.compile(r"printPageRule(?:ForLength)?\(\s*'([a-z0-9-]+)'")
 #: 介质矩阵读取口调用：`printPageRule(media)`（**参数化**形式 —— 同一单据可切介质）
 _PAGE_RULE_PARAM_RE = re.compile(r"printPageRule\(\s*([A-Za-z_$][\w$]*)\s*\)")
 #: 剥注释时要跳过的文件（二进制 / 大文件）与扫描范围
