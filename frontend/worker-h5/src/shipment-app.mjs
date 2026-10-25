@@ -45,14 +45,14 @@ function loginFallback() {
   </section>`
 }
 
-/** 发货标签预览层（含唯一的打印入口）。 */
+/** 发货联（整套出库单）预览层（含唯一的打印入口）。 */
 function labelSheet(order) {
   return `<section class="wh5-label-sheet" id="wh5-ship-label-sheet" role="dialog" aria-modal="true"
-      aria-label="发货标签预览">
-    <p class="wh5-sub" id="wh5-label-hint">核对无误后打印：50mm × 70mm 标签纸，贴在箱上</p>
+      aria-label="发货联预览">
+    <p class="wh5-sub" id="wh5-label-hint">核对无误后打印：50mm × 70mm 标签纸，整单一张（该订单全部套），贴在箱上</p>
     ${renderShipLabel(order)}
     <div class="wh5-label-actions">
-      <button type="button" class="wh5-entry" id="wh5-label-print">打印标签</button>
+      <button type="button" class="wh5-entry" id="wh5-label-print">打印发货联</button>
       <button type="button" class="wh5-ghost" id="wh5-label-close">关闭</button>
     </div>
   </section>`
