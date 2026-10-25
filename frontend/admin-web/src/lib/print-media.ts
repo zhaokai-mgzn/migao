@@ -91,7 +91,7 @@ export interface PrintMediaSpec {
  * `tests/unit/lib/print-media.test.ts` 钉住：只改一边 ⇒ 必红（否则新增介质会静默地
  * 「矩阵里有、类型上没有」，调用方只能写 `as any` 绕过类型）。
  */
-export const PRINT_MEDIA_IDS = ['a4', 'label-50x60', 'label-30x40', 'continuous-241x140'] as const
+export const PRINT_MEDIA_IDS = ['a4', 'label-50x70', 'label-30x40', 'continuous-241x140'] as const
 
 export type PrintMediaId = (typeof PRINT_MEDIA_IDS)[number]
 
@@ -164,15 +164,18 @@ function millimetres(value: string): number | null {
 }
 
 /**
- * 浏览器（Chrome）**画页眉页脚**的页边距下限（mm）—— 实测读数，不是推断（issue #7309）。
+ * 浏览器（Chrome）**开始画页眉页脚**的页边距实测下限（mm）—— 历史读数，现在**只作说明**（issue #7309）。
  *
  * A4 + `displayHeaderFooter: true` + `preferCSSPageSize: true`（Chromium 1243 = Chrome 14x）：
  * `@page { margin: 8.7mm }` ⇒ **不画**；`8.8mm` ⇒ 画（版式日期 / 文档标题 / 页面 URL / 页码）；
- * 12mm（= A4 改前的值）⇒ 画；`0`（+ 容器内缩 12mm）⇒ 不画。取 8.7mm 是这条**未文档化**
- * 分界的安全侧。
+ * 12mm（= A4 改前的值）⇒ 画；`0`（+ 容器内缩 12mm）⇒ 不画。
  *
- * 本仓口径：**A4 一律把 `@page` 边距写成 0**（0 边距 = 没有可画的边距 = 必然不出，不依赖这条阈值），
- * 版面内缩交给 `contentInset` + 单据容器 padding。这条阈值只用来**拦住**将来把「够大的页边距」写回来的形态。
+ * 🔴 **2026-10-25 收口（用户逐字：「我希望做到即使勾着也不要打印出页眉和页脚」）**：
+ * 8.7mm 是一条**未文档化**的分界 —— 拿「比它小一点的边距」去赌（例如三联纸原值 6mm）本质上
+ * 是把纸面交给浏览器的实现细节。现在**全矩阵一律 `@page` 边距 = 0**（0 边距 = 没有可画的边距
+ * = 结构性不出，不依赖任何阈值），版面内缩一律走 `contentInset` + 单据容器 padding。
+ * 本常量保留**只作说明**（它解释了「为什么不能有小边距」），判据里**不再**拿它当容忍度
+ * （见 {@link browserChromeMarginProblems}：非零上下边距直接判红）。
  */
 export const BROWSER_CHROME_MARGIN_MM = 8.7
 
@@ -206,10 +209,11 @@ export function printContentInsetCss(media: PrintMediaId): string {
 }
 
 /**
- * **类级守卫**：介质矩阵里任何一行都不许落进「浏览器会画页眉页脚」的形态（issue #7309）。
+ * **类级守卫**：介质矩阵里任何一行都不许落进「浏览器会画页眉页脚」的形态（issue #7309 → 2026-10-25 收口）。
  *
  * 三条判据（返回人读问题清单，空 = 合规）：
- * 1. 上下 `@page` 边距 ≥ {@link BROWSER_CHROME_MARGIN_MM} ⇒ 页眉页脚会被画出来；
+ * 1. 上下 `@page` 边距**不是 0** ⇒ 页眉页脚就有被画出来的路（Chrome 把日期 / 标题 / URL / 页码
+ *    画在 `@page` 的页边距里；实测下限 8.7mm，但那是一条未文档化的分界，**不再当容忍度**）；
  * 2. 上下边距为 0 却**没登记 `contentInset`** ⇒ 内容贴到纸边（打印机不可打区会裁掉首末行）——
  *    热敏标签例外（整幅出图，纸边就是版心）；
  * 3. 登记了 `contentInset` 而 `@page` 边距不为 0 ⇒ 两层内缩叠加（版面悄悄变窄）。
@@ -225,11 +229,10 @@ export function browserChromeMarginProblems(spec: PrintMediaSpec): string[] {
   const problems: string[] = []
   const vertical = first
   const thermal = spec.technology === 'thermal-transfer'
-  if (vertical >= BROWSER_CHROME_MARGIN_MM) {
+  if (vertical !== 0) {
     problems.push(
-      `介质 ${spec.id} 的上下页边距 ${vertical}mm 越过了浏览器会画页眉页脚的那条线` +
-        `（${BROWSER_CHROME_MARGIN_MM}mm）—— 纸面会多出日期、标题、网址与页码四行；` +
-        '浏览器打印的纸应把纸型边距写成 0，版面内缩改由单据容器承担'
+      `介质 ${spec.id} 的上下页边距是 ${vertical}mm（不是 0）⇒ 浏览器会在这段留白里印出日期、标题、` +
+        '网址与页码四行（那不是我们画的内容）；把上下页边距写成 0，版面留白改由单据容器的内边距承担'
     )
   }
   if (vertical === 0 && !thermal && !spec.contentInset) {

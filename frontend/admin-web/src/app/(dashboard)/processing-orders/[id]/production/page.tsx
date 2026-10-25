@@ -29,6 +29,8 @@ import TaskCardPrint from '@/components/production/TaskCardPrint'
 // 「直连打印机」入口；部位 ⇒ 洗水码数据的映射走单一处 `toWashLabelInputs`（页面不另写一份）
 import DirectLabelPrint from '@/components/production/DirectLabelPrint'
 import { toWashLabelInputs } from '@/lib/wash-label-content'
+// 纸面抬头（企业名）与四张 A4/三联纸单据**同一份**读取口（issue #7219；2026-10-25 洗水唛也用）
+import { useCompanyName } from '@/lib/use-company-name'
 import type {
   PieceworkSummary,
   ProcessingOrder,
@@ -255,9 +257,12 @@ export default function ProcessingOrderProductionPage() {
    *
    * 🔴 与系统打印（`TaskCardPrint`）传的是**同一份**数据源：改动前这里只传了 4 个键
    * （码 / 短码 / 件名 / 部位）⇒ 直连打出来的纸面比预览少十行（issue #6656 的根因）。 */
+  // 纸面抬头：企业名（缺值 ⇒ 抬头块整块不渲染）
+  const companyName = useCompanyName()
   const washLabels = useMemo(
     () =>
       toWashLabelInputs({
+        companyName,
         processingOrderNo: po?.processingOrderNo,
         orderNo: po?.orderNo,
         customerName: po?.customerName,
@@ -265,7 +270,7 @@ export default function ProcessingOrderProductionPage() {
         positions: operations?.positions,
         items: po?.items,
       }),
-    [operations, po],
+    [companyName, operations, po],
   )
 
   /** 点「打印任务卡」：先看纸面自检（标签纸型没配好 = 整卷打废） */
@@ -802,7 +807,7 @@ export default function ProcessingOrderProductionPage() {
             printTarget={printTarget}
           />
 
-          {/* 打印前的**纸面自检层**（issue #5914）：标签 50×60mm 的纸型没配好 = 整卷打废，
+          {/* 打印前的**纸面自检层**（issue #5914）：标签 50×70mm 的纸型没配好 = 整卷打废，
               所以洗水码也走「先看纸面再打」。预览实例**不传 printTarget** ⇒ 不上纸。
 
               🔴 免驱动直连（Web Bluetooth，issue #6439）那条通道的入口**在这个弹层的页脚**

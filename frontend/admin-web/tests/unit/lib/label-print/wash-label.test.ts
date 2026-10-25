@@ -6,7 +6,7 @@
 //
 // 用户 2026-10-10 逐字：「直连打印机打印的样式和水洗唛预览打印的样式完全不一样，能不能做成一样的」
 // ⇒ 内容面改读唯一真值 `washLabelRows`（判据见 `tests/unit/lib/wash-label-content.test.ts`），
-// **几何**改读**同一份介质** `label-50x60`（预览的 `@page` 也指它）。
+// **几何**改读**同一份介质** `label-50x70`（预览的 `@page` 也指它）。
 //
 // 逐条判据（都能判红）：
 // ① **几何由机器自报值 + 介质矩阵推出**：`printerDPI` / `printerWidth` 一变，`dpmm` 与画布尺寸跟着变
@@ -39,8 +39,8 @@ import type { WashLabelRow } from '@/lib/wash-label-content'
 import { printDotGeometry, printPageBoxMm } from '@/lib/print-media'
 
 /** 介质矩阵里的口径（**唯一真值源**）—— 本文件的期望值从它取，不写第二份像素字面量 */
-const MATRIX = printDotGeometry('label-50x60')
-const BOX = printPageBoxMm('label-50x60')
+const MATRIX = printDotGeometry('label-50x70')
+const BOX = printPageBoxMm('label-50x70')
 
 /** 确定性「量字」替身：0.6em/字符（等宽近似）—— 真机走 canvas `measureText` */
 const measure = (text: string, fontPx: number) => text.length * fontPx * 0.6
@@ -70,12 +70,13 @@ describe('resolveLabelGeometry — 几何取自机器自报值 + 介质矩阵（
     expect(LABEL_DPI_DEFAULT).toBe(MATRIX.dpi)
   })
 
-  it('🔴 两条通道**同一份介质**：纸长 / 纸宽都取自 `label-50x60`（写死 40mm ⇒ 必红）', () => {
+  it('🔴 两条通道**同一份介质**：纸长 / 纸宽都取自 `label-50x70`（写死 40mm ⇒ 必红）', () => {
     expect(WASH_LABEL_DEFAULT_WIDTH_MM).toBe(BOX.widthMm)
     expect(WASH_LABEL_DEFAULT_LENGTH_MM).toBe(BOX.heightMm)
-    // 用户 2026-10-10 裁定「按 60mm 卷做」⇒ 兜底纸长 = 介质纸长（不是 #6439 那版的 40mm）
-    expect(WASH_LABEL_DEFAULT_LENGTH_MM).toBe(60)
-    expect(WASH_LABEL_MEDIA).toBe('label-50x60')
+    // 兜底纸长 = 介质纸长（不是 #6439 那版的 40mm）；2026-10-25 起为 **70mm**
+    //（用户裁定加公司抬头 + 特殊选项 + 备注 两行后 60mm 装不下）
+    expect(WASH_LABEL_DEFAULT_LENGTH_MM).toBe(70)
+    expect(WASH_LABEL_MEDIA).toBe('label-50x70')
   })
 
   it('🔴 机器自报 300dpi / 576dot ⇒ 几何整体跟着变（写死兜底值 ⇒ 必红）', () => {
@@ -109,6 +110,23 @@ describe('layoutWashLabel — 版式是纯函数（issue #6439 → #6656）', ()
     expect(layout.qrNote.text).toBe('扫码报工')
     // 行序自上而下（y 单调不减）
     expect(layout.lines.map((line) => line.y)).toEqual([...layout.lines.map((line) => line.y)].sort((a, b) => a - b))
+  })
+
+  it('纸面抬头（2026-10-25）：位图通道也画「企业名 + 成品定制」两行居中，且在表头之上；缺企业名 ⇒ 整块不画', () => {
+    const withCompany = layoutWashLabel(input({ companyName: '亿家纺织' }), geo, measure)
+    // 两行、逐字：企业名（粗体侧、字号更大）+ 固定副标题
+    expect(withCompany.company.map((line) => line.text)).toEqual(['亿家纺织', '成品定制'])
+    expect(withCompany.company[0].fontPx).toBeGreaterThan(withCompany.company[1].fontPx)
+    // 居中：x = 纸宽的一半（与系统打印的 text-center 同口径）
+    expect(withCompany.company.every((line) => line.x === Math.round(geo.widthPx / 2))).toBe(true)
+    // 行序：抬头 → 表头 → 正文（抬头块必须真的占位，表头不许压在它上面）
+    expect(withCompany.header!.y).toBeGreaterThan(withCompany.company[1].y)
+    expect(withCompany.company[0].y).toBe(withCompany.margin)
+
+    // 缺企业名 ⇒ 空数组（不画空行 / 不画「未设置」），表头回到纸边
+    const bare = layoutWashLabel(input({ companyName: '   ' }), geo, measure)
+    expect(bare.company).toEqual([])
+    expect(bare.header!.y).toBe(bare.margin)
   })
 
   it('判据 ②：短码**永不被裁**（x + 实测宽度 ≤ 纸宽 − 边距）', () => {
@@ -271,6 +289,19 @@ describe('paintWashLabel — 执行层只照单绘制（判据 ⑥）', () => {
     expect(ctx2.calls.some((c) => c.startsWith('drawImage'))).toBe(false)
     expect(ctx2.calls).toContain('strokeRect')
     expect(ctx2.calls.some((c) => c.startsWith('fillText:待生成'))).toBe(true)
+  })
+
+  it('纸面抬头（2026-10-25）：企业名与「成品定制」都真被画到纸上，且居中（只在版式里排、执行层不画 ⇒ 必红）', () => {
+    const ctx = fakeCtx()
+    const geo = resolveLabelGeometry(null)
+    const layout = layoutWashLabel(input({ companyName: '亿家纺织' }), geo, measure)
+    paintWashLabel(ctx, layout, null)
+
+    const centerX = Math.round(geo.widthPx / 2)
+    expect(ctx.calls.some((c) => c.startsWith(`fillText:亿家纺织,${centerX}`))).toBe(true)
+    expect(ctx.calls.some((c) => c.startsWith(`fillText:成品定制,${centerX}`))).toBe(true)
+    // 居中要真设过 textAlign（只按 centerX 画、不对齐 ⇒ 文字整体左移半个字宽）
+    expect(ctx.textAlign).toBe('left')
   })
 
   it('文字按版式算好的字号绘制（不在执行层二次排版）', () => {

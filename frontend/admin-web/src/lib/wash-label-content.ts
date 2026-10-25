@@ -15,7 +15,7 @@
  * 用户 2026-10-10 逐字：「**直连打印机打印的样式和水洗唛预览打印的样式完全不一样，能不能做成一样的**」
  * ⇒ 两条通道改读**同一份有序行清单**（本模块）。版式差异只允许剩下**纸的物理宽度**：
  * 预览印在 50mm 纸上，而标签机打印头只有 384 点 = 48mm（登记在 `lib/print-media.json` 的
- * `label-50x60.dotGeometry`：「右侧约 2mm 打不到」）。
+ * `label-50x70.dotGeometry`：「右侧约 2mm 打不到」）。
  *
  * ## 边界（照实登记，不粉饰）
  *
@@ -53,6 +53,7 @@ export type WashLabelRowKey =
   | 'craft'
   | 'orderNo'
   | 'delivery'
+  | 'specialOptions'
   | 'remark'
   | 'formula'
 
@@ -68,6 +69,7 @@ export const WASH_LABEL_ROW_KEYS: readonly WashLabelRowKey[] = [
   'craft',
   'orderNo',
   'delivery',
+  'specialOptions',
   'remark',
   'formula',
 ]
@@ -84,6 +86,7 @@ const MAX_LINES: Record<WashLabelRowKey, number> = {
   craft: 2,
   orderNo: 1,
   delivery: 1,
+  specialOptions: 2,
   remark: 2,
   formula: 2,
 }
@@ -131,11 +134,29 @@ export function washLabelMeters(item?: ProcessingOrderItem | null): string {
   return specValue(craftSpecRows(item), ...METERS_LABELS)
 }
 
-/** 备注 = 特殊选项（真实工单的「防翘扣 / 花边」那一类）+ 快照备注（缺值不渲染） */
+/**
+ * 特殊选项（真实工单的「加logo条 / 防翘扣 / 花边」那一类，如参考工单的
+ * 「加logo条,防翘扣」）—— 单独成行，**不再**与备注合并（用户 2026-10-25 逐字
+ * 「把特殊选项，备注也加上」：两者是不同来源的两种事实，合并后纸上分不出哪句是哪类）。
+ */
+export function washLabelSpecialOptions(item?: ProcessingOrderItem | null): string {
+  return specValue(craftSpecRows(item), '特殊选项')
+}
+
+/** 备注 = 快照备注（`processing_info.remark`，自由文本；缺值不渲染） */
 export function washLabelRemark(item?: ProcessingOrderItem | null): string {
-  const special = specValue(craftSpecRows(item), '特殊选项')
-  const remark = typeof item?.remark === 'string' ? item.remark.trim() : ''
-  return [special, remark].filter((value) => value !== '').join('；')
+  return typeof item?.remark === 'string' ? item.remark.trim() : ''
+}
+
+/**
+ * 纸面**抬头**：企业名 + 副标题（用户 2026-10-25 裁定照参考工单的
+ * 「亿家纺织 / 成品定制」形态加抬头）。企业名缺值 ⇒ **整块不渲染**（不印空行、
+ * 不印「未设置」—— 纸面是给客户看的）。
+ */
+export const WASH_LABEL_COMPANY_SUBTITLE = '成品定制'
+
+export function washLabelCompanyName(companyName?: string | null): string {
+  return typeof companyName === 'string' ? companyName.trim() : ''
 }
 
 /** 算料公式（用户字段裁定里的「备注（工艺备注 / 算料公式）」） */
@@ -153,6 +174,8 @@ export interface WashLabelRowsInput {
   setCount?: number
   /** 加工单公共属性（**每张**标签都呈现） */
   customerName?: string | null
+  /** 纸面抬头：企业名（缺值 ⇒ 抬头块整块不渲染） */
+  companyName?: string | null
   orderNo?: string | null
   expectedDeliveryDate?: string | null
 }
@@ -200,6 +223,7 @@ export function washLabelRows(input: WashLabelRowsInput): WashLabelRow[] {
 
   push('orderNo', (input.orderNo ?? '').trim() || '—', '订单')
   push('delivery', (input.expectedDeliveryDate ?? '').trim() || '—', '交期')
+  push('specialOptions', washLabelSpecialOptions(input.item), '特殊选项')
   push('remark', washLabelRemark(input.item), '备注')
 
   // 算料公式**不带前缀**（形态本身就是 `韩褶公式：…`，再加「算料公式」是重复）
@@ -216,6 +240,8 @@ export interface WashLabelInput {
   qrValue: string | null
   /** 人可读短码（**底部大字**、纸面的手输降级入口） */
   shortCode: string
+  /** 纸面抬头：企业名（缺值 ⇒ 抬头块整块不渲染；副标题见 {@link WASH_LABEL_COMPANY_SUBTITLE}） */
+  companyName?: string
   /** 表头：加工单号（纸面**主标识**，7pt 粗体） */
   processingOrderNo?: string
   /** 正文行（有序，来自 {@link washLabelRows}） */
@@ -226,6 +252,8 @@ export interface WashLabelInput {
 
 export interface WashLabelSource {
   processingOrderNo?: string | null
+  /** 纸面抬头的企业名（调用方从 `useCompanyName()` 取；缺值 ⇒ 抬头不渲染） */
+  companyName?: string | null
   orderNo?: string | null
   customerName?: string | null
   expectedDeliveryDate?: string | null
@@ -257,6 +285,7 @@ export function toWashLabelInputs(source: WashLabelSource = {}): WashLabelInput[
     return {
       qrValue: position.scan_url ?? position.part_token ?? null,
       shortCode: (position.part_short_code ?? '').trim() || '—',
+      companyName: washLabelCompanyName(source.companyName) || undefined,
       processingOrderNo: (source.processingOrderNo ?? '').trim() || undefined,
       qrPlaceholderHint: undefined,
       rows: washLabelRows({

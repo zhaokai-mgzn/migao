@@ -91,9 +91,12 @@ describe('washLabelRows — 纸面内容与行序（issue #6656）', () => {
     expect(textOf(rows, 'craft')).toBe('加工方式 韩褶 · 定高买宽 · 双开 · 定型')
     expect(textOf(rows, 'orderNo')).toBe(`订单 ${ORDER_NO}`)
     expect(textOf(rows, 'delivery')).toBe(`交期 ${DELIVERY}`)
-    // 备注 = 特殊选项 + 快照备注（拼接分隔符由 `craft-display` 定，本判据只钉「都在」）
-    expect(textOf(rows, 'remark')).toContain('加logo条')
-    expect(textOf(rows, 'remark')).toContain('加铅块')
+    // 🔴 2026-10-25（用户逐字「把特殊选项，备注也加上」）：**特殊选项与备注各成一行** ——
+    // 改前把两者并成一行「备注 加logo条、防翘扣；加铅块」⇒ 纸上分不出哪句是哪一类事实。
+    expect(textOf(rows, 'specialOptions')).toBe('特殊选项 加logo条、防翘扣')
+    expect(textOf(rows, 'remark')).toBe('备注 加铅块')
+    // 反向判据：特殊选项**不得**再混进备注行（并回去 ⇒ 必红）
+    expect(textOf(rows, 'remark')).not.toContain('加logo条')
     // 算料公式**不带前缀**（串本身就是 `韩褶公式：…`，再加前缀是重复）
     expect(textOf(rows, 'formula')).toBe('韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米')
 
@@ -101,6 +104,7 @@ describe('washLabelRows — 纸面内容与行序（issue #6656）', () => {
     expect(rows.filter((row) => row.maxLines === 2).map((row) => row.key)).toEqual([
       'pieceName',
       'craft',
+      'specialOptions',
       'remark',
       'formula',
     ])
@@ -126,7 +130,11 @@ describe('washLabelRows — 纸面内容与行序（issue #6656）', () => {
     expect(rows.map((row) => row.key)).toEqual(['setNo', 'pieceName', 'orderNo', 'delivery'])
     expect(rows.map((row) => row.text)).toEqual(['第 2 套 / 共 3 套', '布艺遮光帘A', '订单 —', '交期 —'])
     // 🔴 正向拒绝：整行 trim 判空会把这些空壳印上纸（改版实测过的形态）
-    expect(rows.some((row) => ['宽高', '用料', '色号', '部位', '加工方式', '备注', '客户'].includes(row.text))).toBe(
+    expect(
+      rows.some((row) =>
+        ['宽高', '用料', '色号', '部位', '加工方式', '特殊选项', '备注', '客户'].includes(row.text)
+      )
+    ).toBe(
       false,
     )
   })
