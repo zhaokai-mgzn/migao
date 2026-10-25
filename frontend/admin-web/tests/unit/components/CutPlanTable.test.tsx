@@ -10,7 +10,8 @@
 //      由 null 折出来的假数字），缺值原因（`missing_reason`）必须可见；
 //   ③ 清单全空 / 无套件 ⇒ 不渲染假表格，只给一句可行动的空态；
 //   ④ **批次号列**（issue #6754）：派工指定批次上屏；未指派（服务端 `null`）⇒ `—`
-//      （裁床必须看得到「去哪一批拿料」，所以这一列是**常驻列**，不是有值才出现）。
+//      （裁床必须看得到「去哪一批拿料」，所以这一列是**常驻列**，不是有值才出现）；
+//   ⑤ **从该批裁（米）列**（issue #7722）：这一批裁多少布上屏；未指派 ⇒ `—`（不折 0 米）。
 //
 // ⚠️ 本组件**不重算**：不按 `fabric_meters` 除幅数、不把 `null` 折 0 —— 它只渲染服务端给的键。
 import { describe, expect, it } from 'vitest'
@@ -18,7 +19,7 @@ import { render, screen, within } from '@testing-library/react'
 import CutPlanTable from '@/components/production/CutPlanTable'
 import type { ProcessingOrderSetRow } from '@/types'
 
-/** 逐字照后端 `set_overview.cut_plan` 的形状（十键恒在，缺值 null；issue #5693 + #6754）。 */
+/** 逐字照后端 `set_overview.cut_plan` 的形状（十一键恒在，缺值 null；issue #5693 + #6754 + #7722）。 */
 const SETS: ProcessingOrderSetRow[] = [
   {
     set_id: 'set-14',
@@ -30,6 +31,7 @@ const SETS: ProcessingOrderSetRow[] = [
         position_name: '布艺遮光帘A',
         component: '主布',
         batch_no: 'PC-20261008-0003',
+        batch_meters: 12.3,
         fabric_meters: 12.3,
         panel_count: 2,
         panel_length_m: 6.15,
@@ -42,11 +44,12 @@ const SETS: ProcessingOrderSetRow[] = [
         position_name: '纱帘-白',
         component: '纱',
         batch_no: null,
+        batch_meters: null,
         fabric_meters: null,
         panel_count: null,
         panel_length_m: null,
         remark: null,
-        missing_reason: '本套该部位没有「精裁」工序实例：用料米数无从取（不猜）',
+        missing_reason: '这行还没算出用料米数：先在订单行补上窗宽 / 窗高与加工类型，算料出数后这里就有了',
       },
     ],
   },
@@ -61,12 +64,19 @@ describe('CutPlanTable（issue #5693 精裁输出清单）', () => {
     expect(within(row).getByText('布帘')).toBeInTheDocument()
     expect(within(row).getByText('主布')).toBeInTheDocument()
     expect(within(row).getByText('布艺遮光帘A')).toBeInTheDocument()
-    expect(within(row).getByText('12.30 米')).toBeInTheDocument()
+    // 用料（米）：唯一来源 = 服务端下发（订单行算料口径优先，#7722）
+    // ⚠️ 用 testid 定位，不按文本找 —— 本行「用料 12.30 米」与「从该批裁 12.30 米」是**两个不同的数**
+    // （公式口径 vs 批次净额），按文本查会同时命中两格（实测：getByText 报 multiple elements）。
+    expect(screen.getByTestId('cut-plan-meters-CSO260915-02615-014-oi-cloth'))
+      .toHaveTextContent('12.30 米')
     // 数量显示口径与工人端 `render.mjs` 的 `fmtQty` 一致（toFixed(2)）
     expect(within(row).getByText('6.15 米 × 2 片')).toBeInTheDocument()
     expect(within(row).getByText('公式--48个折')).toBeInTheDocument()
     // 派工指定批次（issue #6754）：裁床据此知道去哪一批拿料
     expect(within(row).getByText('PC-20261008-0003')).toBeInTheDocument()
+    // 从该批裁多少布（issue #7722）：与批次号同一份取数（台账净额）
+    expect(screen.getByTestId('cut-plan-batch-meters-CSO260915-02615-014-oi-cloth'))
+      .toHaveTextContent('12.30 米')
     expect(screen.getAllByTestId(/^cut-plan-row-/)).toHaveLength(2)
   })
 
@@ -75,7 +85,7 @@ describe('CutPlanTable（issue #5693 精裁输出清单）', () => {
 
     const size = screen.getByTestId('cut-plan-size-CSO260915-02615-014-oi-gauze')
     expect(size).toHaveTextContent('—')
-    expect(size).toHaveTextContent('没有「精裁」工序实例')
+    expect(size).toHaveTextContent('还没算出用料米数')
     // 🔴 反向：null **不得**被折成 0 / 1（那正是 issue #5693 验收点名要防的「用 0 冒充」）
     expect(size.textContent).not.toContain('0.00 米 × 0 片')
     expect(size.textContent).not.toContain('× 1 片')
@@ -97,6 +107,19 @@ describe('CutPlanTable（issue #5693 精裁输出清单）', () => {
     const gauze = screen.getByTestId('cut-plan-batch-CSO260915-02615-014-oi-gauze')
     expect(gauze).toHaveTextContent('—')
     expect(gauze.textContent).not.toContain('PC-')
+  })
+
+  it('🔴 ⑤ 从该批裁（米）列（issue #7722）：常驻列；未指派 ⇒ —（不折 0 米）', () => {
+    render(<CutPlanTable sets={SETS} />)
+
+    // 常驻列：未指派的行也有这一格 —— 「没指派」与「没有这个概念」必须分得开
+    expect(screen.getByRole('columnheader', { name: '从该批裁（米）' })).toBeInTheDocument()
+    expect(screen.getByTestId('cut-plan-batch-meters-CSO260915-02615-014-oi-cloth'))
+      .toHaveTextContent('12.30 米')
+
+    const gauze = screen.getByTestId('cut-plan-batch-meters-CSO260915-02615-014-oi-gauze')
+    expect(gauze).toHaveTextContent('—')
+    expect(gauze.textContent).not.toContain('0.00')
   })
 
   it('③ 清单全空 / 无套件 ⇒ 不渲染假表格，只给可行动空态', () => {

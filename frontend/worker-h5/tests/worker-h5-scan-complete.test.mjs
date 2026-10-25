@@ -807,13 +807,14 @@ const CUT_PLAN_VIEW = {
     cut_plan: [
       {
         order_item_id: 'oi-cloth', position_kind: '布帘', position_name: '布艺遮光帘A',
-        component: '主布', batch_no: 'PC-20261008-0003', fabric_meters: 12.3, panel_count: 2,
-        panel_length_m: 6.15, remark: null, missing_reason: null,
+        component: '主布', batch_no: 'PC-20261008-0003', batch_meters: 12.3, fabric_meters: 12.3,
+        panel_count: 2, panel_length_m: 6.15, remark: null, missing_reason: null,
       },
       {
         order_item_id: 'oi-gauze', position_kind: '纱帘', position_name: '纱帘-白',
-        component: '纱', batch_no: null, fabric_meters: null, panel_count: null, panel_length_m: null,
-        remark: null, missing_reason: '本套该部位没有「精裁」工序实例：用料米数无从取（不猜）',
+        component: '纱', batch_no: null, batch_meters: null, fabric_meters: null, panel_count: null,
+        panel_length_m: null, remark: null,
+        missing_reason: '这行还没算出用料米数：先在订单行补上窗宽 / 窗高与加工类型，算料出数后这里就有了',
       },
     ],
   },
@@ -831,12 +832,15 @@ test('🔴 ⑪ 精裁输出清单（issue #5693）：逐条渲染「裁 6.15 米
   assert.match(doc.html, /布艺遮光帘A · 主布/, '该部位的组件要跟着部位名一起出现')
   // ④ 派工指定批次（issue #6754）：裁床据此知道去哪一批拿料；未指派的那一行**不摆空占位**
   assert.match(doc.html, /批次 PC-20261008-0003/, '指派过的行 ⇒ 批次号上屏')
+  // ⑤ 从该批裁多少布（issue #7722）：与批次号同一份取数（台账净额）
+  assert.match(doc.html, /批次 PC-20261008-0003 · 裁 12\.30 米/,
+    '裁哪一批 + 这一批裁多少米，两个数都要在屏上')
   assert.ok(!/批次 —/.test(doc.html), '未指派 ⇒ 这一格不出现（不拿 — 顶、不造值）')
 
   assert.match(doc.html, /裁 —/, '算不出来 ⇒ 显式留空（—），不留半截数据')
   assert.ok(!/裁 0\.00 米 × 0 片/.test(doc.html), '不得把 null 折成 0 冒充')
   assert.ok(!/裁 0\.00 米 × 1 片/.test(doc.html), '不得把 null 折成 1 片冒充')
-  assert.match(doc.html, /没有「精裁」工序实例/, '缺值原因必须可见（缺什么要说得出来）')
+  assert.match(doc.html, /还没算出用料米数/, '缺值原因必须可见（缺什么要说得出来）')
 
   // 样式面（真正的破版源头在 CSS）：行必须能折行/断词（长部位名 + 长缺值原因在窄屏上会溢出）
   const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
