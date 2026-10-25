@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
@@ -43,6 +44,12 @@ import java.time.OffsetDateTime;
  * 反过来会撞 V167 的部分唯一索引（{@code uk_customer_profiles_phone} / {@code ..._openid}）：
  * keeper 拿到 loser 还占着的 openid ⇒ 唯一键冲突。</p>
  *
+ * <p>🔴 <b>独立事务（REQUIRES_NEW）</b>：调用方（建单 / 小程序登录 / 手机号绑定）都把这里包在
+ * {@code try/catch} 里并声明「失败不影响主流程」。**光 catch 是没用的** —— 若这里参加调用方的
+ * 事务（REQUIRED），抛异常时 Spring 已把外层事务标为 rollback-only，外层 commit 会抛
+ * {@code UnexpectedRollbackException}，于是「不影响建单」变成「建单整单失败」。
+ * ⇒ 两个写面各自开新事务：成功独立提交、失败独立回滚，调用方的业务事务保持干净。</p>
+ *
  * <p>🔴 跨表引用迁移用 {@link JdbcTemplate}（与 {@code PriceBookService} 同口径 ——
  * {@code customer_sku_prices} 本来就只有裸 SQL，没有实体/Mapper）。表清单来自 {@code schema.sql} 里
  * {@code customer_id} 的全部引用面；其中 {@code customer_segment_members} / {@code customer_sku_prices}
@@ -69,7 +76,7 @@ public class CustomerProfileIdentityService {
      * @param createIfMissing {@code false} = 只收敛既有档案、不新建（手机号绑定路径用）
      * @return 最终生效的档案；{@code createIfMissing=false} 且两键都没命中时返回 {@code null}
      */
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
     public CustomerProfile ensure(Long tenantId, String phone, String openid,
                                   ProfileSeed seed, boolean createIfMissing) {
         String p = trim(phone);
@@ -109,7 +116,7 @@ public class CustomerProfileIdentityService {
      * <p>只写档案当前为空的那几列；客服在客户管理「收货信息」卡片里维护过的一律不动
      * （用户 2026-10-25 选定「甲」口径：补空不覆盖）。</p>
      */
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
     public void fillOrderContact(CustomerProfile profile, Long tenantId, String name, String phone,
                                  String address, String logisticsType, String logisticsCompany) {
         if (profile == null) {

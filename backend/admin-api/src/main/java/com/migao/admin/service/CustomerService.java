@@ -289,7 +289,9 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
      * @param sourceChannel  来源渠道
      * @return 客户档案
      */
-    @Transactional(rollbackFor = Exception.class)
+    // 🔴 这里**刻意不加 @Transactional**（issue #7711）：写全在 identityService 的独立事务里，
+    // 本方法只做编排；一旦本方法自己参与外层事务，异常仍会把外层标成 rollback-only ⇒
+    // 「建档失败不阻断登录/建单」的 catch 就变成假护栏。
     public CustomerProfile createFromSession(Long tenantId, String wechatOpenid,
                                               String wechatNickname, String sourceChannel,
                                               String phone) {
@@ -309,7 +311,6 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
      *
      * <p>只收敛既有档案、**不新建**：登录路径已经建过，这里再建只会多一条。</p>
      */
-    @Transactional(rollbackFor = Exception.class)
     public CustomerProfile convergeIdentity(Long tenantId, String phone, String openid) {
         return identityService.ensure(tenantId, phone, openid, null, false);
     }
@@ -332,7 +333,7 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
      * @param userId           下单用户（可空；商户代录时为 null）
      * @return 客户档案
      */
-    @Transactional(rollbackFor = Exception.class)
+    // 🔴 同上：不加 @Transactional（写在下层独立事务里），保证失败不影响建单。
     public CustomerProfile createFromOrder(Long tenantId, String customerName,
                                             String customerPhone, String customerAddress,
                                             String logisticsType, String logisticsCompany,

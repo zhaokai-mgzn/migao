@@ -1,15 +1,20 @@
 // case_ids: OR-045
 package com.migao.admin.service;
 
+import com.migao.admin.entity.CustomerProfile;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Stream;
@@ -122,6 +127,32 @@ class CustomerProfileWritePathMetaGuardTest {
             }
         }
         assertThat(offenders).as("这些文件绕过了身份收敛服务（issue #7711）：%s", offenders).isEmpty();
+    }
+
+    @Test
+    @DisplayName("🔴 档案写面必须跑独立事务（否则「失败不影响建单/登录」是假护栏）")
+    void profileWritesRunInTheirOwnTransaction() throws Exception {
+        Method ensure = CustomerProfileIdentityService.class.getMethod("ensure",
+                Long.class, String.class, String.class,
+                CustomerProfileIdentityService.ProfileSeed.class, boolean.class);
+        Method fill = CustomerProfileIdentityService.class.getMethod("fillOrderContact",
+                CustomerProfile.class, Long.class, String.class, String.class,
+                String.class, String.class, String.class);
+        for (Method method : List.of(ensure, fill)) {
+            Transactional tx = method.getAnnotation(Transactional.class);
+            assertThat(tx).as("%s 必须带 @Transactional", method.getName()).isNotNull();
+            assertThat(tx.propagation())
+                    .as("%s 必须是 REQUIRES_NEW —— 参加调用方事务时，异常会把外层标 rollback-only ⇒ "
+                            + "「建档失败不影响建单」变成「建单整单失败」", method.getName())
+                    .isEqualTo(Propagation.REQUIRES_NEW);
+        }
+        // 编排入口自己也不许开事务（开了就仍会毒化外层）
+        for (String name : List.of("createFromOrder", "createFromSession", "convergeIdentity")) {
+            boolean hasTx = Arrays.stream(CustomerService.class.getDeclaredMethods())
+                    .filter(m -> m.getName().equals(name))
+                    .anyMatch(m -> m.getAnnotation(Transactional.class) != null);
+            assertThat(hasTx).as("CustomerService#%s 不得带 @Transactional（写在下层独立事务里）", name).isFalse();
+        }
     }
 
     /** 剥注释：注释掉的调用不得被当成真实调用点（否则判据永远不会红）。 */
