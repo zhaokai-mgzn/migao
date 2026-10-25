@@ -83,8 +83,9 @@ class TestProductImageDenialHit:
             "抱歉，这个入口不能设置主图，图片上传功能不在我的能力范围内",
             "抱歉，我这边没法设置主图，只能请您去后台操作",
         ]:
-            assert capability_denial_text_hit(t), f"能力误宣未命中: {t!r}"
             assert _product_image_denial_hit(t), f"图片域判据未命中: {t!r}"
+            assert capability_denial_text_hit(t) == "", (
+                f"图片域拒绝被**下单域**判据吞并（域串味，issue #7758）: {t!r}")
 
     def test_neutral_statements_not_hit(self):
         """防误伤：中性说明 / 真实越权不得被当成能力误宣纠正。"""
@@ -221,8 +222,9 @@ class TestProductImageDenialMorphology:
             # 不包含 + 主图锚点
             "主图这个功能不包含在我的能力里",
         ]:
-            assert capability_denial_text_hit(t), f"能力误宣未命中（新措辞）: {t!r}"
             assert _product_image_denial_hit(t), f"图片域判据未命中（新措辞）: {t!r}"
+            assert capability_denial_text_hit(t) == "", (
+                f"图片域拒绝被**下单域**判据吞并（域串味，issue #7758）: {t!r}")
 
     def test_neutral_new_phrasings_not_hit(self):
         """新措辞的防误伤：中性说明 / 非自我否定不得命中。"""
@@ -261,8 +263,9 @@ class TestProductImageDenialCrossClause:
             # 跨小句 + 「没有…通道」
             "改图这块属于商品编辑，我这边没有图片上传的通道",
         ]:
-            assert capability_denial_text_hit(t), f"能力误宣未命中（评测原文）: {t!r}"
             assert _product_image_denial_hit(t), f"图片域判据未命中（评测原文）: {t!r}"
+            assert capability_denial_text_hit(t) == "", (
+                f"图片域拒绝被**下单域**判据吞并（域串味，issue #7758）: {t!r}")
 
     def test_cross_clause_false_positives_not_hit(self):
         """跨小句放宽的假阳性守卫：通用权限否定 + 他处有图片词 → 不得命中。"""

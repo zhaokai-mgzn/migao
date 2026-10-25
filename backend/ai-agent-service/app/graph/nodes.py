@@ -1210,6 +1210,8 @@ def route_by_intent(state: AgentState) -> str:
         # 仅当消息包含其他领域的显式触发词时才允许逃逸。
         last_msg = _get_last_human_text(state.get("messages", [])) or ""
         _pending_domain = _skill_keyword_domain(pending_skill)
+        # 局部导入：base_skill 与 nodes 互相引用，模块级导入会绕回（同下方 `_flow_owner_skill` 的既有写法）
+        from app.graph.skills.base_skill import _is_ordering_withdrawal
 
         # ── 答卡轮豁免（#3557 G1）：点本 skill 自己那张卡 → 留在本 skill ──
         # 卡值由系统按"必须含上下文"的协议生成，可能含**其他域**的词（PR-007 的
@@ -1234,6 +1236,20 @@ def route_by_intent(state: AgentState) -> str:
                 f" | skill={pending_skill} | session={session_id}"
             )
             return _route_target
+
+        # ── 撤回退出（issue #7758）：顾客**显式撤回**下单 ⇒ 不许再被拉回下单 skill ──
+        # 生产实证 sess_cf885dc3ef40435a：会话被误锁在 order，顾客「我不是要下单，我要更新商品」
+        # 仍被下面的「本领域信号优先」拉回 order（order 域关键词自然含「下单」）⇒ 连问 3 轮规格。
+        # 撤回是**比会话锁更高优先级**的用户信号：清锁 + 置位 `ordering_withdrawn`
+        # （`finalize_turn` 据此清除跨轮 `pending_skill`，否则轮末又写回 order）。
+        # 判据用**领域**（`_pending_domain`，与 escape hatch 同一套词表）而不是 skill 名字面量。
+        if _is_ordering_withdrawal(last_msg) and _pending_domain == "order":
+            logger.info(
+                f"[route_by_intent] Withdrawal: 显式撤回下单 → 解锁并重新按意图路由 "
+                f"(pending={pending_skill}) | session={session_id}")
+            state["ordering_withdrawn"] = True
+            state["pending_interact_skill"] = ""
+            pending_skill = ""
 
         # 使用模块级单一来源关键词表（plan_rewrite 护栏与 escape hatch 共用）
         # 如果用户消息包含非当前 skill 领域的关键词，允许切换

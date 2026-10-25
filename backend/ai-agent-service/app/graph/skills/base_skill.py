@@ -1855,10 +1855,12 @@ _PRODUCT_IMAGE_ACTION_WORDS = (
 # （跨小句放宽的假阳性守卫，见 `_product_image_denial_hit`）。
 # 同小句内通用语义词干（"不支持"/"没法"/"没有…权限"等）仍由 `_negation_positions` 基底覆盖。
 # 刻意**不含**「没发/没上传/没图片」等中性事实词（「顾客没发图片给我」是客观说明，不得误报）。
+# ⚠️ 匹配**归一后**形态（_normalize_clause 已把「没有」→「没」）
+_PRODUCT_IMAGE_CAPABILITY_NEGATION_RE = re.compile(
+    r"没[^，。；\n]{0,10}(?:能力|功能|工具|入口|通道|办法|方式)")
 _PRODUCT_IMAGE_UNABLE_RE = re.compile(
     r"(?:传|改|设|上|换|加|做|拿|执行|操作|处理)(?:不了|不到)|不包含|改不动|弄不了|"
-    # ⚠️ 匹配**归一后**形态（_normalize_clause 已把「没有」→「没」）
-    r"没[^，。；\n]{0,10}(?:能力|功能|工具|入口|通道|办法|方式)"
+    + _PRODUCT_IMAGE_CAPABILITY_NEGATION_RE.pattern
 )
 
 
@@ -1875,6 +1877,73 @@ def _has_ordering_intent(message: str) -> bool:
     """顾客这一轮是否在**推进下单**（"确认下单"/"数量 3 米"/"就这个"…）。"""
     text = str(message or "")
     return any(h in text for h in _ORDER_INTENT_HINTS)
+
+
+# ── 「顾客显式撤回下单」= 比会话锁**更高优先级**的用户信号（issue #7758）────────────
+# 生产实证 sess_cf885dc3ef40435a：会话被误锁在 order，顾客「我不是要下单，我要更新商品」
+# 因**子串**命中 `_ORDER_INTENT_HINTS`（含「下单」）被判成"仍在推进下单" ⇒ 守卫继续上膛、
+# 会话锁没有任何出口 ⇒ 连续 3 轮追问下单规格。
+# 为什么不直接把 `_has_ordering_intent` 改成"认否定"：它的宽松是**有意**的（#3477 ——
+# 状态优先于措辞，防顾客改口成「好的，就按这个来」就丢守卫）；撤回是**反方向**的信号，
+# 该在调用点覆盖（路由 + 在办判据 + 轮末持久化三处），而不是把意图判据改钝。
+# 锚点 = **下单动作词** + 少数明确的结算类动词；刻意**不含** `_ORDER_INTENT_HINTS` 里的
+# 含糊项（「就这个」「买它」「拍下」）—— 撤回会**清锁**，误判的代价比漏判大
+# （「不就是这个价吗」这种反问不该被当成撤回）。
+_ORDER_WITHDRAWAL_ANCHORS = tuple(dict.fromkeys(
+    _ORDER_ACTION_WORDS + ("结算", "结账", "付款", "购买")))
+_ORDER_WITHDRAWAL_NEGATIONS = ("不", "没", "别", "非", "勿")
+# 否定词与动作词之间允许的字数：「我**不是要**下单」= 4 字。刻意窄 —— 放宽会把
+# 「不要错过下单优惠」这类**正向**措辞吃掉；撤回判据宁可漏一点，也不能误吞正向推进。
+_ORDER_WITHDRAWAL_WINDOW = 4
+
+
+def _is_ordering_withdrawal(message: str) -> bool:
+    """这一轮消息是否在**显式撤回**下单（「我不是要下单」「先不落单了」「别结算了」）。
+
+    判据 = **否定词 × 下单动作锚点**（与 `_has_ordering_intent` 同一族锚点，方向相反）：
+    前者问"有没有下单措辞"，这里问"那句措辞是不是被否掉的"。结构性判据（否定词距离窗口），
+    不是整句白名单。
+    """
+    text = _normalize_clause(str(message or ""))
+    if not text:
+        return False
+    for anchor in _ORDER_WITHDRAWAL_ANCHORS:
+        start = 0
+        while True:
+            idx = text.find(anchor, start)
+            if idx < 0:
+                break
+            window = text[max(0, idx - _ORDER_WITHDRAWAL_WINDOW):idx]
+            if any(neg in window for neg in _ORDER_WITHDRAWAL_NEGATIONS):
+                return True
+            start = idx + len(anchor)
+    return False
+
+
+async def _release_order_lock_on_withdrawal(session_id: str | None,
+                                            state: dict | None = None) -> bool:
+    """用户显式撤回下单 ⇒ **解除跨轮下单锁**（issue #7758）。
+
+    为什么必须显式解除：`finalize_turn` 的跨轮持久化段每轮都把 `pending_skill` 写回当前 skill
+    ⇒ 一旦会话被误锁到 `order`，**没有任何轮次**会把它放开（生产实证 sess_cf885dc3ef40435a：
+    顾客亲口说「我不是要下单」后仍在订单流里连续追问下单规格）。
+
+    只在 `state["ordering_withdrawn"]` 为真时动作（由 `route_by_intent` 在
+    「**pending 落在下单域** × 本轮显式撤回」时置位）⇒ 别的流程的锁不归本函数管。
+
+    Returns: 是否真的清过锁（未置位 / 写失败 ⇒ False；调用点忽略返回值，语义不变）。
+    """
+    if not session_id or not (state or {}).get("ordering_withdrawn"):
+        return False
+    try:
+        from app.memory.session_memory import SessionMemory
+        await SessionMemory().set_pending_skill(session_id, None)
+        logger.info(f"[下单流程] 用户显式撤回下单 → 清除跨轮下单锁 | session={session_id}")
+        return True
+    except Exception as e:
+        logger.warning(
+            f"[下单流程] 清除下单锁失败（非致命）| session={session_id} error={e}")
+        return False
 
 
 def _flow_owner_skill(state: dict | None = None,
@@ -2071,10 +2140,21 @@ async def _order_flow_in_progress(session_id: str | None, state: dict | None = N
          （pending 锁 / 未完结交互卡）—— #3477 的形态（choice 卡把会话锁在 customer_product）；
       ③ 本会话查过商品详情 **且** 本轮消息仍在下单 —— 保留原判据作措辞兜底。
 
+    ④ **显式撤回**（`_is_ordering_withdrawal`）优先于 ①②③ —— 顾客亲口撤回就直接为假
+       （issue #7758：反方向信号不能由状态压住，否则误锁的会话永远出不来）。
+
     为什么 ② 必需（issue #3477 C-A1 run 34791767013 实证）：顾客已说「确认下单」，
     但旧判据只看**本轮消息里的关键词**（`_ORDER_INTENT_HINTS`）—— 顾客改说「好的，就按这个来」
     就判为"不在办" → 守卫整段失效、顾客被推给人工。**状态在，就不允许由措辞决定守卫是否生效。**
     """
+    # 撤回优先（issue #7758）：顾客**显式撤回**下单 ⇒ 在办判据直接为假。
+    # 撤回是反方向的用户信号，压过 ①② 的状态事实（正向改述仍由状态兜底，见 #3477）。
+    if _is_ordering_withdrawal(last_user_msg):
+        logger.info(
+            f"[下单流程] 用户显式撤回下单 → 在办判据为假（不再 relock）"
+            f" | session={session_id}")
+        return False
+
     # 廉价前置（性能）：既无在办迹象（无跨轮锁/在办卡）、本轮也没有下单动作 → 直接 False，
     # **不查会话存储**。这条判据会在每个 tool 调用前评估，真实链路里每轮有多个 tool 调用，
     # 无条件 `SessionStateStore.load` 会白白多出 N 次存储往返。
@@ -2235,8 +2315,14 @@ def _product_image_denial_hit(text: str) -> str:
             for m in _PRODUCT_IMAGE_UNABLE_RE.finditer(clause):
                 positions.append((m.start(), False))
         else:
-            # 跨小句：仅图片域能力形态否定（不含通用权限否定，防假阳性）
-            positions = [(m.start(), False) for m in _PRODUCT_IMAGE_UNABLE_RE.finditer(clause)]
+            # 跨小句：**只认「能力资源否定」形态**（没有…能力/功能/工具/入口/通道/办法/方式）。
+            # 为什么不再认裸 `V不了`（issue #7758）：整段有图片锚点 + 任意小句出现 `改不了`
+            # 会把**非图片对象**也算成图片能力否定 —— 生产实证 sess_cf885dc3ef40435a 的
+            # 「（海报卡）我这边**改不了排版**」（排版/版式属海报模板，与图片上传无关）命中后，
+            # 下单域守卫又把它当成自己的命中 ⇒ 会话被 relock 到 order、连问 3 轮下单规格。
+            # 裸 `V不了` 仍走**同小句**分支：锚点与否定同句时语义自足，无需跨小句猜。
+            positions = [(m.start(), False)
+                         for m in _PRODUCT_IMAGE_CAPABILITY_NEGATION_RE.finditer(clause)]
         for pos, is_assist in positions:
             if is_assist or _self_scoped_clause(clause, pos):
                 return raw_clause.strip()[:60]
@@ -2246,11 +2332,15 @@ def _product_image_denial_hit(text: str) -> str:
 def capability_denial_text_hit(text: str, *, include_assist: bool = False) -> str:
     """回复文本里是否存在"AI 自己做不到 × 下单动作"的能力误宣；返回命中片段或空串。
 
-    三条**正交**的形态判据，命中任一即算（都不是整句白名单）：
+    两条**正交**的形态判据，命中任一即算（都不是整句白名单）：
       · `_negation_positions` 形态：下单动作锚点 × 否定/能力受限（含 `V不了`）；
-      · `_scope_misattribution_hit` 形态：把下单判给别的环节/工作台/人工（OR-014 实证）；
-      · `_product_image_denial_hit` 形态（issue #3931）：**商品图片域**锚点 × 否定 ×
-        自我主体 —— 「该入口不支持图片/拿不到可写入的地址」= 同一类能力误宣的另一张脸。
+      · `_scope_misattribution_hit` 形态：把下单判给别的环节/工作台/人工（OR-014 实证）。
+
+    🔴 **不含图片域**（issue #7758，域隔离）：`_product_image_denial_hit` 是**另一条域**的判据，
+    调用点在 `react_turn` 的图片域分支（纠正方向也不同：#5318 裁定「这条边界是真话，引导去后台」）。
+    本函数曾把图片域判据并进来（"同一类能力误宣的另一张脸"，issue #3931），后果是**域串味**：
+    海报/图片的边界陈述被当成下单能力误宣 → `_relock_order_skill` 把会话锁进 `order`，
+    模型改口连问下单规格（生产实证 sess_cf885dc3ef40435a，连续 3 轮）。
 
     `include_assist=True` 时额外认「协助下单」这类**回避式**（供转人工理由使用：
     理由写"顾客需要协助下单"就是把本该自己做的事推给人工；回复文本里出现"协助下单"
@@ -2266,9 +2356,6 @@ def capability_denial_text_hit(text: str, *, include_assist: bool = False) -> st
         for pos, is_assist in _negation_positions(clause, include_assist):
             if is_assist or _self_scoped_clause(clause, pos):
                 return raw_clause.strip()[:60]
-    hit = _product_image_denial_hit(text)
-    if hit:
-        return hit
     return _scope_misattribution_hit(text)
 
 
