@@ -212,7 +212,11 @@ public class WarehouseLocationService {
                     "仓位 " + location.getBinCode() + " 上有在库成品，不能删除",
                     "先发货或撤销打包释放仓位后再删除；历史单据会保留仓位号快照");
         }
-        locationMapper.deleteById(location.getId());
+        int deleted = locationMapper.deleteById(location.getId());
+        if (deleted == 0) {
+            // 并发双删：另一请求刚删掉 ⇒ 本次按 404 回报，不把「没删到」谎报成成功（#6956）。
+            throw BusinessException.notFound("仓位", "可能刚被其他人删除，刷新后再试");
+        }
         log.info("[仓位] 删除 | tenant={} bin={}", tenantId, location.getBinCode());
     }
 

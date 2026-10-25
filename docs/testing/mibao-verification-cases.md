@@ -6182,6 +6182,7 @@
 数据: **判据 2（🔴 占用中锁定）**：有 `in_stock` 成品占着仓位时，改仓位号 / 删除 ⇒ 409 且零写入；备注 / 区域名 / 启停仍可改。判据 = `#updateRejectsRenamingOccupiedBin` / `#deleteRejectsOccupiedBin` / `#updateAllowsRemarkAndZoneOnOccupiedBin`。
 数据: **判据 3（停用只影响后续分配）**：停用后 `nextFreeBin` 不再返回它（分配查询只看 `status='active'`），已占用库存不受影响，可重新启用。判据 = `#updateTogglesStatus` + `WarehouseLocationMapper#selectFirstFreeBin` 的 `status = 'active'` 谓词。
 数据: **判据 4（软删可追溯）**：删除 = 软删；历史单据的 `bin_code` 快照不动（V196 列注释）。判据 = `#deleteSoftDeletesFreeBin`。
+数据: **判据 4b（并发双删不谎报）**：删除影响 0 行（另一请求刚删掉）⇒ 404 + 「可能刚被其他人删除」建议，不返回 200。判据 = `#deleteLostRaceIsNotFound`。
 数据: **判据 5（租户隔离）**：跨租户改 / 删命中 404 且零写入。判据 = `#crossTenantIsInvisible`。
 数据: **判据 6（清单口径）**：占用态由 `finished_goods_stock` 的 in_stock 行按 `bin_code` 反推（不按 500 行截断）；`includeInactive=true` 带出停用仓位。判据 = `#listViewMarksOccupancyAndIncludesInactive` + `FinishedGoodsStockMapper#selectOccupiedBinCodes`。
 数据: **判据 7（权限 / 端点）**：读 `inbound:view`、写 `inbound:create`（零授权 delta）；四个端点都透传当前租户。判据 = `WarehouseLocationControllerTest#permissionCodes` / `#listLocationsScopesTenantAndPassesIncludeInactive` / `#createLocationScopesTenant` / `#updateAndDeleteScopeTenant`。
@@ -6190,7 +6191,7 @@
 前置: 本用例是 [backend-contract + frontend-contract]：前置 = `warehouse_locations`（V196）+ `finished_goods_stock` 在库行 + `inbound:view/create`。零网络、零 LLM。
 跳过: [backend-contract] 仓位档案的 CRUD / 占用锁定 / 租户隔离由 Java 单测验证，商家面由前端单测验证，非 LLM 行为
 ```
-溯源: 2026-10-25 新增（issue #7785，用户逐字「缺个仓位号管理功能吧？允许用户在这个页面上创建和管理」）。落码 = `WarehouseLocationService`（listView/create/update/delete + 占用判定）+ `FinishedGoodsStockMapper#selectOccupiedBinCodes/countInStockByBinCode` + `FinishedGoodsController` 三写端点 + `finishedGoodsApi.createLocation/updateLocation/deleteLocation` + `WarehouseLocationPanel` + 出库单页第三页签。 ｜ tags: backend-contract, inventory, warehouse-location, master-data, red-proof
+溯源: 2026-10-25 新增（issue #7785，用户逐字「缺个仓位号管理功能吧？允许用户在这个页面上创建和管理」）。落码 = `WarehouseLocationService`（listView/create/update/delete + 占用判定 + 并发双删判 0 行）+ `@TenantOwnedResource` 归属认定（键 warehouse-location）+ `FinishedGoodsStockMapper#selectOccupiedBinCodes/countInStockByBinCode` + `FinishedGoodsController` 三写端点 + `finishedGoodsApi.createLocation/updateLocation/deleteLocation` + `WarehouseLocationPanel` + 出库单页第三页签。 ｜ tags: backend-contract, inventory, warehouse-location, master-data, red-proof
 
 ## 商家入驻域（7 case）
 

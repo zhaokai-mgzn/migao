@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import com.migao.admin.security.TenantOwnedResource;
 
 import java.util.List;
 
@@ -89,6 +90,7 @@ public class FinishedGoodsController {
      * 编辑仓位（占用中禁止改仓位号；区域 / 备注 / 停用可改）
      * PATCH /api/admin/warehouse-locations/{id}
      */
+    @TenantOwnedResource("warehouse-location")
     @PatchMapping("/warehouse-locations/{id}")
     @RequirePermission("inbound:create")
     public ApiResponse<WarehouseLocationView> updateLocation(

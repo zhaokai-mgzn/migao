@@ -259,10 +259,26 @@ class WarehouseLocationManagementTest {
         WarehouseLocation free = bin("A-01", "active", 11L);
         when(locationMapper.selectById(11L)).thenReturn(free);
         when(stockMapper.countInStockByBinCode(TENANT, "A-01")).thenReturn(0);
+        when(locationMapper.deleteById(11L)).thenReturn(1);
 
         service.delete(11L, TENANT);
 
         verify(locationMapper).deleteById(11L);
+    }
+
+    @Test
+    @DisplayName("并发双删：删除影响 0 行 ⇒ 404（不把「没删到」谎报成成功）")
+    void deleteLostRaceIsNotFound() {
+        WarehouseLocation free = bin("A-01", "active", 11L);
+        when(locationMapper.selectById(11L)).thenReturn(free);
+        when(stockMapper.countInStockByBinCode(TENANT, "A-01")).thenReturn(0);
+        when(locationMapper.deleteById(11L)).thenReturn(0);
+
+        assertThatThrownBy(() -> service.delete(11L, TENANT))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("仓位不存在")
+                .satisfies(ex -> assertThat(((BusinessException) ex).getSuggestion())
+                        .contains("可能刚被其他人删除"));
     }
 
     // ============================================================ 租户隔离 / 清单
