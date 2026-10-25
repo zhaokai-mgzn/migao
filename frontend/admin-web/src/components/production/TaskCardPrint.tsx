@@ -248,7 +248,7 @@ export default function TaskCardPrint({
         .task-card-print-area { display: none; }
         /* 洗水码本体：宽固定 50mm、长按内容撑开（issue #7776；行内 style 给实际纸长，
            这里的 70mm 是最短纸长 = 介质矩阵 label-50x70 的 pageBoxMm）。
-           ⚠️ 这段注释在**模板字面量**里 ⇒ 不许写 markdown 星号（copy-no-markdown-emphasis 判据会红） */
+           ⚠️ 这段注释在模板字面量里 ⇒ 不许写 markdown 星号（copy-no-markdown-emphasis 判据会红） */
         .task-card-label { width: 50mm; height: 70mm; overflow: hidden; box-sizing: border-box;
           padding: 1.2mm; font-size: 9pt; line-height: 1.2; display: flex; flex-direction: column;
           break-after: page; page-break-after: always; }
