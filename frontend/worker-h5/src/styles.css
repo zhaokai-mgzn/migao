@@ -704,7 +704,8 @@ a.wh5-machine__back:active { color: var(--wh5-machine-ink); }
 
 .wh5-label-title {
   margin: 0;
-  font-size: 8pt;
+  /* 抬头 10pt：纸面第一眼要认出「这是什么单」 */
+  font-size: 10pt;
   line-height: 1.2;
   font-weight: 700;
   text-align: center;
@@ -722,7 +723,9 @@ a.wh5-machine__back:active { color: var(--wh5-machine-ink); }
 .wh5-label-row {
   display: flex;
   gap: 1mm;
-  font-size: 6pt;
+  /* 8pt（介质下限 6pt 之上的**可读口径**）：50×70 上 6pt 只是「印得下」，
+     贴到箱上要隔着 1 米核对收货人与电话 ⇒ 版面有富余就抬字号（2026-10-25 真机截图核对） */
+  font-size: 8pt;
   line-height: 1.25;
 }
 
@@ -734,7 +737,7 @@ a.wh5-machine__back:active { color: var(--wh5-machine-ink); }
 }
 
 .wh5-label-key {
-  flex: 0 0 10mm;
+  flex: 0 0 12mm;
   margin: 0;
   font-weight: 700;
   color: #000;

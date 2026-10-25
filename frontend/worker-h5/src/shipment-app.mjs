@@ -92,6 +92,12 @@ export function createShipmentApp({ doc, api, win = globalThis, replace = null }
     const open = labelOrderId == null ? null : orders.find((o) => o?.order_id === labelOrderId)
     html = `${renderReadyOrders({ items: orders })}${open ? labelSheet(open) : ''}`
     draw()
+    // 🔴 预览层在列表**之后**（列表不重排）⇒ 单多时要滚下去才看得到。
+    //    点了「发货标签」却看不到纸面 = 工人以为没反应，会连点（真机现场最容易发生的一类）。
+    if (open && typeof doc.getElementById === 'function') {
+      const sheet = doc.getElementById('wh5-ship-label-sheet')
+      if (sheet && typeof sheet.scrollIntoView === 'function') sheet.scrollIntoView({ block: 'start' })
+    }
   }
 
   async function load() {
