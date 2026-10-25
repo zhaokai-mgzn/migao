@@ -240,6 +240,25 @@ class WorkerInboundServiceTest {
         return new ImageRecognitionClient.ImageRecognitionResult("inbound", fields, degraded);
     }
 
+    /** 真库读数（issue #7759）：一个商品 {@code sku_code=2659}、两个门幅（2.8 / 3.2）。 */
+    private static final String REAL_PRODUCT_ID = "P-2659";
+    private static final String REAL_PRODUCT_NAME = "奶油风纯色遮光窗帘 桂月白露系列";
+    private static final String REAL_PRODUCT_SKU_CODE = "2659";
+
+    private void stubRealSupplierLabelRows() {
+        Product product = Product.builder()
+                .id(REAL_PRODUCT_ID).tenantId(TENANT)
+                .name(REAL_PRODUCT_NAME).skuCode(REAL_PRODUCT_SKU_CODE).build();
+        when(productMapper.selectList(any())).thenReturn(List.of(product));
+        when(productSkuMapper.selectList(any())).thenReturn(List.of(
+                ProductSku.builder().id(28L).tenantId(TENANT).productId(REAL_PRODUCT_ID)
+                        .skuCode("2659-04-28").colorName("2659-04 绵绵奶咖").doorWidth("2.8")
+                        .stock(new BigDecimal("0")).build(),
+                ProductSku.builder().id(32L).tenantId(TENANT).productId(REAL_PRODUCT_ID)
+                        .skuCode("2659-04-32").colorName("2659-04 绵绵奶咖").doorWidth("3.2")
+                        .stock(new BigDecimal("0")).build()));
+    }
+
     /** 走一遍「建草稿」把 order/line 造出来（后续过账用例共用）。 */
     private WorkerInboundDraftView createDraft(String quantity) {
         return service.createDraft(draftRequest(quantity), TENANT, WORKER_ID, null);
@@ -360,36 +379,20 @@ class WorkerInboundServiceTest {
      * | `products` | `name='奶油风纯色遮光窗帘 桂月白露系列'`、`sku_code='2659'` |
      * | `product_skus` | `2659-04-28`（2.8）/ `2659-04-32`（3.2），`color_name='2659-04 绵绵奶咖'` |
      *
-     * <p>红证（实跑过，见 PR body 的注入式红证表）：把 {@code normalizeCode} 的补零 / 分隔符 /
-     * 去空白任一条去掉，或把 {@code model_no} 这一级从 {@code matchInboundSkus} 里摘掉
-     * ⇒ 本组全部变红（命中数 2 → 0）。</p>
+     * <p>门幅口径（用户 2026-10-25 裁定）：「这张图没有展示门幅是多少，按照行业标准就是 2.8 的，
+     * 如果是其他规格的门幅会在标签上展示真实门幅数字」⇒ 标签这张图**没印门幅** ⇒ 命中的是该货号
+     * **2.8 米那一档**（唯一候选、预选），不是「两个门幅都交工人选」。</p>
+     *
+     * <p>红证（实跑过，见 PR body 的注入式红证表）：把 {@code normalizeCode} 退化成 {@code trim}、
+     * 摘掉 {@code model_no} 这一级、或删掉「默认 2.8」那一段 ⇒ 本组必红。</p>
      */
     @Nested
     @DisplayName("供应商标签（issue #7759）：型号 2659-4 ↔ 货号 2659-04")
     class SupplierLabel {
 
-        /** 真库读数：一个商品、两个门幅（标签上没有门幅 ⇒ 两条都由工人选）。 */
-        private static final String REAL_PRODUCT_ID = "P-2659";
-        private static final String REAL_PRODUCT_NAME = "奶油风纯色遮光窗帘 桂月白露系列";
-        private static final String REAL_PRODUCT_SKU_CODE = "2659";
-
-        private void stubRealSupplierLabelRows() {
-            Product product = Product.builder()
-                    .id(REAL_PRODUCT_ID).tenantId(TENANT)
-                    .name(REAL_PRODUCT_NAME).skuCode(REAL_PRODUCT_SKU_CODE).build();
-            when(productMapper.selectList(any())).thenReturn(List.of(product));
-            when(productSkuMapper.selectList(any())).thenReturn(List.of(
-                    ProductSku.builder().id(28L).tenantId(TENANT).productId(REAL_PRODUCT_ID)
-                            .skuCode("2659-04-28").colorName("2659-04 绵绵奶咖").doorWidth("2.8")
-                            .stock(new BigDecimal("0")).build(),
-                    ProductSku.builder().id(32L).tenantId(TENANT).productId(REAL_PRODUCT_ID)
-                            .skuCode("2659-04-32").colorName("2659-04 绵绵奶咖").doorWidth("3.2")
-                            .stock(new BigDecimal("0")).build()));
-        }
-
         @Test
-        @DisplayName("🔴 型号 2659-4 + 色号 2659-4绵绵奶咖 ⇒ 命中 2659-04 的两个门幅（原来恒零命中）")
-        void supplierModelLabelMatchesTheTwoDoorWidths() {
+        @DisplayName("🔴 ① 型号 2659-4 + 色号 2659-4绵绵奶咖 + 标签无门幅 ⇒ 命中 2.8 那档（唯一候选、预选）")
+        void supplierModelLabelWithoutDoorWidthMatchesTheStandard28() {
             stubRealSupplierLabelRows();
             when(imageRecognitionClient.recognize(eq(WorkerInboundService.TARGET_INBOUND), any()))
                     .thenReturn(vision(List.of(
@@ -402,12 +405,14 @@ class WorkerInboundServiceTest {
             WorkerInboundRecognizeResponse resp = service.recognize(recognizeRequest(null, IMAGE_URL), TENANT);
 
             assertThat(resp.getModelNo()).isEqualTo("2659-4");
-            assertThat(resp.getSkuMatches()).hasSize(2);
-            assertThat(resp.getSkuMatches()).extracting(WorkerInboundSkuMatch::getSkuCode)
-                    .containsExactly("2659-04-28", "2659-04-32");
-            // 多命中 = 交工人选（门幅 2.8 / 3.2 标签上没有 ⇒ 不替工人猜）
+            // 唯一候选 ⇒ 前端预选（页面仍要工人勾「我确认」，§6.5 不动）
+            assertThat(resp.getSkuMatches()).hasSize(1);
+            assertThat(resp.getSkuMatches().get(0).getSkuCode()).isEqualTo("2659-04-28");
+            assertThat(resp.getSkuMatches().get(0).getDoorWidth()).isEqualTo("2.8");
+            // 门幅是**默认值**补的 ⇒ 服务端如实标出（页面用陈述句说明，不猜也不惊）
+            assertThat(resp.isDoorWidthAssumed()).isTrue();
+            assertThat(resp.getDoorWidth()).isEqualTo(WorkerInboundService.DEFAULT_DOOR_WIDTH);
             assertThat(resp.isRequiresManualEntry()).isFalse();
-            assertThat(resp.getMessage()).contains("不替工人猜");
         }
 
         @Test
@@ -424,7 +429,7 @@ class WorkerInboundServiceTest {
             WorkerInboundRecognizeResponse resp = service.recognize(recognizeRequest(null, IMAGE_URL), TENANT);
 
             assertThat(resp.getSkuMatches()).extracting(WorkerInboundSkuMatch::getSkuCode)
-                    .containsExactly("2659-04-28", "2659-04-32");
+                    .containsExactly("2659-04-28");
         }
 
         @Test
@@ -438,12 +443,14 @@ class WorkerInboundServiceTest {
                             field("model_no", "2659-4"),
                             field("product_name", "雪尼尔2659-4绵绵奶咖"),
                             field("color_name", "2659-4奶咖灰"),
+                            field("door_width", "3.2"),
                             field("quantity_meters", "52.4")), false));
 
             WorkerInboundRecognizeResponse resp = service.recognize(recognizeRequest(null, IMAGE_URL), TENANT);
 
+            // 色名一条都不中 ⇒ 降到「型号命中的全部货号」，再按写明的门幅 3.2 取档
             assertThat(resp.getSkuMatches()).extracting(WorkerInboundSkuMatch::getSkuCode)
-                    .containsExactly("2659-04-28", "2659-04-32");
+                    .containsExactly("2659-04-32");
         }
 
         @Test
@@ -521,6 +528,113 @@ class WorkerInboundServiceTest {
             verify(productMapper, never()).insert(any(Product.class));
             verify(productSkuMapper, never()).insert(any(ProductSku.class));
             verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
+        }
+    }
+
+    // ============================================================ ①'' 门幅口径（用户 2026-10-25 裁定）
+
+    /**
+     * **门幅口径**（用户 2026-10-25 逐字裁定：「这张图没有展示门幅是多少，按照行业标准就是 2.8 的，
+     * 如果是其他规格的门幅会在标签上展示真实门幅数字」）。
+     *
+     * <p>规则一句话：**标签写了就以标签为准；没印就按 2.8；写了库里没有 ⇒ 零命中，绝不回落。**</p>
+     *
+     * <p>红证（实跑过）：删掉 {@code selectByDoorWidth} 里「没写门幅就用默认值」的那一句
+     * ⇒ 默认门幅那两条用例当场红（命中数 1 → 2、{@code doorWidthAssumed} 恒 false）。</p>
+     */
+    @Nested
+    @DisplayName("门幅口径（issue #7759 用户裁定 2026-10-25）")
+    class DoorWidthRule {
+
+        private WorkerInboundRecognizeResponse recognizeWith(String doorWidth) {
+            stubRealSupplierLabelRows();
+            List<Map<String, Object>> fields = new ArrayList<>();
+            fields.add(field("model_no", "2659-4"));
+            fields.add(field("color_name", "2659-4绵绵奶咖"));
+            if (doorWidth != null) {
+                fields.add(field("door_width", doorWidth));
+            }
+            when(imageRecognitionClient.recognize(eq(WorkerInboundService.TARGET_INBOUND), any()))
+                    .thenReturn(vision(fields, false));
+            return service.recognize(recognizeRequest(null, IMAGE_URL), TENANT);
+        }
+
+        @Test
+        @DisplayName("① 标签没印门幅 ⇒ 按行业标准 2.8 取档（唯一候选、预选，页面仍要工人确认）")
+        void missingDoorWidthUsesTheIndustryStandard() {
+            WorkerInboundRecognizeResponse resp = recognizeWith(null);
+
+            assertThat(resp.getSkuMatches()).hasSize(1);
+            assertThat(resp.getSkuMatches().get(0).getSkuCode()).isEqualTo("2659-04-28");
+            assertThat(resp.isDoorWidthAssumed()).isTrue();
+            assertThat(resp.getDoorWidth()).isEqualTo(WorkerInboundService.DEFAULT_DOOR_WIDTH);
+            assertThat(resp.isRequiresManualEntry()).isFalse();
+        }
+
+        @Test
+        @DisplayName("② 标签写了 3.2 ⇒ 只取 3.2 那档（不因为 2.8 是默认值就取 2.8）")
+        void writtenDoorWidthWins() {
+            WorkerInboundRecognizeResponse resp = recognizeWith("3.2");
+
+            assertThat(resp.getSkuMatches()).hasSize(1);
+            assertThat(resp.getSkuMatches().get(0).getSkuCode()).isEqualTo("2659-04-32");
+            assertThat(resp.getSkuMatches().get(0).getDoorWidth()).isEqualTo("3.2");
+            assertThat(resp.isDoorWidthAssumed()).isFalse();
+            assertThat(resp.getDoorWidth()).isEqualTo("3.2");
+        }
+
+        @Test
+        @DisplayName("③ 标签写了库里没有的 3.5 ⇒ 零命中且**不回落** 2.8（回落 = 替工人猜）")
+        void unknownWrittenDoorWidthNeverFallsBackToTheDefault() {
+            WorkerInboundRecognizeResponse resp = recognizeWith("3.5");
+
+            assertThat(resp.getSkuMatches()).isEmpty();
+            assertThat(resp.isRequiresManualEntry()).isTrue();
+            assertThat(resp.isDoorWidthAssumed()).isFalse();
+            // 文案要说清「是门幅对不上」，而不是笼统的「没匹配到货号」
+            assertThat(resp.getMessage()).contains("门幅");
+            verify(productMapper, never()).insert(any(Product.class));
+            verify(productSkuMapper, never()).insert(any(ProductSku.class));
+        }
+
+        @Test
+        @DisplayName("该商品没有 2.8 档 ⇒ 退回候选交工人选（不得自动换别的门幅，也不得零命中）")
+        void missingStandardAisleFallsBackToWorkerChoice() {
+            Product product = Product.builder().id(REAL_PRODUCT_ID).tenantId(TENANT)
+                    .name(REAL_PRODUCT_NAME).skuCode(REAL_PRODUCT_SKU_CODE).build();
+            when(productMapper.selectList(any())).thenReturn(List.of(product));
+            // 该客户没建 2.8 档：只有 3.2 / 3.5
+            when(productSkuMapper.selectList(any())).thenReturn(List.of(
+                    ProductSku.builder().id(32L).tenantId(TENANT).productId(REAL_PRODUCT_ID)
+                            .skuCode("2659-04-32").colorName("2659-04 绵绵奶咖").doorWidth("3.2").build(),
+                    ProductSku.builder().id(35L).tenantId(TENANT).productId(REAL_PRODUCT_ID)
+                            .skuCode("2659-04-35").colorName("2659-04 绵绵奶咖").doorWidth("3.5").build()));
+            when(imageRecognitionClient.recognize(eq(WorkerInboundService.TARGET_INBOUND), any()))
+                    .thenReturn(vision(List.of(
+                            field("model_no", "2659-4"),
+                            field("color_name", "2659-4绵绵奶咖")), false));
+
+            WorkerInboundRecognizeResponse resp = service.recognize(recognizeRequest(null, IMAGE_URL), TENANT);
+
+            assertThat(resp.getSkuMatches()).extracting(WorkerInboundSkuMatch::getSkuCode)
+                    .containsExactly("2659-04-32", "2659-04-35");
+            // 没用上默认值 ⇒ 不许声称「按行业标准 2.8」（那是编的）
+            assertThat(resp.isDoorWidthAssumed()).isFalse();
+            assertThat(resp.isRequiresManualEntry()).isFalse();
+        }
+
+        @Test
+        @DisplayName("门幅归一：2.8 / 2.80 / 280 / 280cm / 全角 归到同一档；空白 ⇒ null（不猜）")
+        void doorWidthNormalisation() {
+            for (String spelling : List.of("2.8", "2.80", "280", "280cm", "280CM", "２．８", " 2.8 米 ")) {
+                assertThat(WorkerInboundService.normalizeDoorWidth(spelling))
+                        .as("写法 %s 没有归一到 2.8", spelling).isEqualTo("2.8");
+            }
+            assertThat(WorkerInboundService.normalizeDoorWidth("3.2")).isEqualTo("3.2");
+            assertThat(WorkerInboundService.normalizeDoorWidth("")).isNull();
+            assertThat(WorkerInboundService.normalizeDoorWidth(null)).isNull();
+            assertThat(WorkerInboundService.doorWidthMatches("2.8", "280cm")).isTrue();
+            assertThat(WorkerInboundService.doorWidthMatches("2.8", "3.2")).isFalse();
         }
     }
 

@@ -8,7 +8,7 @@
 |---|---|---|
 | `product` | 色卡 / 布料实拍 / 供应商图 | 名称 / 颜色 / 材质 / 工艺 / 门幅 / 售价 |
 | `order` | 手写单 / 微信聊天截图 / 旧系统单据 | 客户名 / 电话 / 地址 / 商品明细 / 数量 / 帘宽 / 帘高 |
-| `inbound`（issue #5052 P1） | **上游标签**（布卷 / 包装上原有的、带 SKU 信息的标签） | 品名 / 色号 / 米数 / 条码原文 |
+| `inbound`（issue #5052 P1；#7759 补两格） | **上游标签**（布卷 / 包装上原有的、带 SKU 信息的标签） | 型号 / 货号 · 品名 / 色号 / **门幅** / 米数 / 条码原文 |
 
 **风险不对称**：订单侧客户信息错 ⇒ **货发错人** ⇒ 「不确定的宁可不填」的阈值更严
 （见 `TARGET_POLICY` 的 `min_confidence`，以及 `recognizer.py` 对手机号形状与尺寸的硬校验）。
@@ -153,6 +153,16 @@ TARGET_FIELDS: Dict[str, Tuple[TargetField, ...]] = {
         TargetField("color_name", "色号",
                     "色号 + 颜色名（如「01 米白」）；标签把型号与色名连写时（如「2659-4绵绵奶咖」）"
                     "**型号进 model_no、本格只抄色名部分**（`绵绵奶咖`）；一位看不清就留空"),
+        # 🔴 门幅（issue #7759 用户裁定 2026-10-25 逐字）：「这张图没有展示门幅是多少，按照行业标准
+        # 就是 2.8 的，如果是其他规格的门幅会在标签上展示真实门幅数字」。
+        # ⇒ **默认 2.8 是匹配侧（admin-api）的业务默认值，不是图上的事实**：本格只许**抄**，
+        # 图上没写 ⇒ 留空（模型一旦在这里补 2.8，就是把「抄」写成了「推」—— 那是本 target 的
+        # 第一红线，判据 = tests/test_vision/test_targets_inbound.py 的 TestDoorWidth）。
+        TargetField(
+            "door_width", "门幅",
+            "标签上**写明**的门幅数字（如 2.8 / 3.2 / 280 / 280cm），只抄写明的那个数字；"
+            "**图上没印门幅 ⇒ 留空**（不要按行业惯例补 2.8，也不要用型号 / 品名去推算门幅）",
+        ),
         TargetField("quantity_meters", "米数",
                     "标签上的米数（只抄数字，不要单位）；布卷标签常写「60.5」这种 1 位小数。"
                     "图上没有米数 ⇒ 留空"),
@@ -203,6 +213,12 @@ TARGET_FIELDS: Dict[str, Tuple[TargetField, ...]] = {
 #: （把 shipment 整份字段表改成与 order 逐字相同 ⇒ 五格全部未登记 ⇒ 红）。
 SHARED_FIELD_KEYS: Dict[str, Tuple[str, ...]] = {
     "quantity": ("order", "shipment"),
+    # 🔴 `door_width`（issue #7759）：`product` 与 `inbound` 都用它 —— 这是**同一列名、同一事实**
+    # （`product_skus.door_width`，门幅米数），与下面 `quantity` / `product_name` 那种
+    # 「同一列名、两个不同事实」不同：两处读的是同一件事，识别面抄到的就是写进 SKU 的那个门幅。
+    # 登记在此是为了让「未登记的共享键即红」这条判据放行它；哪天 `inbound` 不再有这一格 ⇒ 必须删掉本行
+    # （登记项**只许缩短**，判据 = tests/test_vision/test_targets.py 的 test_shared_key_ledger_only_shrinks）。
+    "door_width": ("inbound", "product"),
     # 🔴 `inbound`（#5052 P1）与 `shipment`（#5648）**各自**都不与任何 target 共享键，
     # 但两者合并后 `product_name` 相交 —— 这是**合并态才出现的新交互**（两个分支各自绿、
     # 合起来被本判据抓到，实测 `AssertionError: [('inbound','shipment','product_name')]`）。

@@ -412,6 +412,12 @@ export default function WorkerInboundPage() {
               </View>
             )}
 
+            {recognized?.doorWidthAssumed === true && (
+              <Text className='admin-card__note' data-testid='inbound-door-width-assumed'>
+                标签未印门幅，按行业标准 {recognized?.doorWidth} 米（如有其他门幅，标签上会写，请核对）
+              </Text>
+            )}
+
             {gate.kind === 'none' && (
               <View data-testid='inbound-sku-search'>
                 <Text className='admin-card__note' data-testid='inbound-sku-gate-none'>

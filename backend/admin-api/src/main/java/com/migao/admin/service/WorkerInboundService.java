@@ -102,6 +102,7 @@ public class WorkerInboundService {
 
     /** vision 字段表的键（与 {@code targets.py} 的 {@code TargetField.key} 同源）。 */
     private static final String FIELD_MODEL_NO = "model_no";
+    private static final String FIELD_DOOR_WIDTH = "door_width";
     private static final String FIELD_PRODUCT_NAME = "product_name";
     private static final String FIELD_COLOR_NAME = "color_name";
     private static final String FIELD_QUANTITY_METERS = "quantity_meters";
@@ -113,8 +114,22 @@ public class WorkerInboundService {
             "识别到的型号 / 品名 / 色号在系统里没有匹配到任何已有货号 —— 可以按货号或色名搜一下已有货号，"
                     + "或让文员先建档。本系统不会为了这条记录自动新建商品或货号（防 AI 幻觉造出假货号，还带着库存流水）。";
 
+    /** 门幅命中不到时的说明（**不回落**默认值 —— 回落就是替工人猜）。 */
+    private static final String MSG_MANUAL_NO_SKU_FOR_DOOR_WIDTH =
+            "标签上的门幅在系统里没有对应的货号 —— 不能入库（不会拿别的门幅顶替，也不会自动建品）。"
+                    + "请核对标签上的门幅数字，或按货号 / 色名搜一下已有货号。";
+
     /** 按货号 / 色名搜既有货号时一次最多回多少条（搜索是**只读辅助**，不是列表页）。 */
     static final int SEARCH_LIMIT = 20;
+
+    /**
+     * **行业标准默认门幅（米）** —— 用户 2026-10-25 裁定逐字：
+     * 「这张图没有展示门幅是多少，按照行业标准就是 2.8 的，如果是其他规格的门幅会在标签上展示真实门幅数字」。
+     *
+     * <p>🔴 <b>只许出现在这一处</b>（前后端不得各写一份）：识别面在图没印门幅时**留空**，
+     * 这里才是补默认值的地方；页面上的数字取自识别响应的 {@code doorWidth}。</p>
+     */
+    public static final String DEFAULT_DOOR_WIDTH = "2.8";
 
     private final InboundOrderService inboundOrderService;
     private final ImageRecognitionClient imageRecognitionClient;
@@ -173,6 +188,7 @@ public class WorkerInboundService {
             return resp;
         }
 
+        String doorWidth = normalizeDoorWidth(fieldValue(result.fields(), FIELD_DOOR_WIDTH));
         String modelNo = fieldValue(result.fields(), FIELD_MODEL_NO);
         String productName = fieldValue(result.fields(), FIELD_PRODUCT_NAME);
         String colorName = fieldValue(result.fields(), FIELD_COLOR_NAME);
@@ -184,12 +200,24 @@ public class WorkerInboundService {
             resp.setBarcode(fieldValue(result.fields(), FIELD_BARCODE));
         }
 
-        // ③ SKU 匹配门禁（设计 §6.3，issue #7759 改判）：归一化 + 多级降级，但零命中仍拒绝入库、不自动建品
-        resp.setSkuMatches(matchInboundSkus(modelNo, colorName, tenantId));
-        resp.setRequiresManualEntry(resp.getSkuMatches().isEmpty());
-        if (resp.getSkuMatches().isEmpty()) {
-            resp.setMessage(MSG_MANUAL_NO_SKU_MATCH);
-        } else if (resp.getSkuMatches().size() == 1) {
+        // ③ SKU 匹配门禁（设计 §6.3，issue #7759 改判）：归一化 + 多级降级 + 门幅消歧；
+        //    零命中仍拒绝入库、不自动建品
+        List<WorkerInboundSkuMatch> matches = matchInboundSkus(modelNo, colorName, doorWidth, tenantId);
+        resp.setSkuMatches(matches);
+        resp.setRequiresManualEntry(matches.isEmpty());
+        if (matches.isEmpty()) {
+            // 门幅是「写明了但库里没有」⇒ 单独一句（说清不回落），别让工人以为系统没看懂标签
+            resp.setMessage(doorWidth != null ? MSG_MANUAL_NO_SKU_FOR_DOOR_WIDTH : MSG_MANUAL_NO_SKU_MATCH);
+            return resp;
+        }
+        // 标签没印门幅 ⇒ 本次按行业标准默认值取档（用户 2026-10-25 裁定）；页面据此用陈述句说明
+        boolean assumed = doorWidth == null && hasOnlyDoorWidth(matches, DEFAULT_DOOR_WIDTH);
+        resp.setDoorWidthAssumed(assumed);
+        resp.setDoorWidth(doorWidth != null ? doorWidth : (assumed ? DEFAULT_DOOR_WIDTH : null));
+        if (assumed) {
+            resp.setMessage("标签没有印门幅，已按行业标准 " + DEFAULT_DOOR_WIDTH + " 米匹配到 "
+                    + matches.size() + " 个货号，请核对实物后提交。");
+        } else if (matches.size() == 1) {
             resp.setMessage("已匹配到 1 个已有货号，请核对品名、色号与米数后提交。");
         } else {
             resp.setMessage("匹配到多个已有货号，请工人确认是哪一个（服务端不替工人猜）。");
@@ -344,8 +372,10 @@ public class WorkerInboundService {
      *       精确（{@code 2659}）或更细的分层（{@code 2659-04}）；</li>
      *   <li><b>二级 · 色名消歧</b>：归一后的色名在 {@code product_skus.color_name} 里**包含**即命中
      *       （{@code 绵绵奶咖} ⊂ {@code 2659-04 绵绵奶咖}）；型号命中时**只在型号命中的商品内**消歧；</li>
-     *   <li><b>三级 · 型号兜底</b>：型号命中、色名一条都不中 ⇒ 返回该型号下的**全部**货号
-     *       （2.8 / 3.2 两个门幅都交给工人），<b>不</b>当零命中、也<b>不</b>替工人挑。</li>
+     *   <li><b>三级 · 型号兜底</b>：型号命中、色名一条都不中 ⇒ 该型号下的**全部**货号进下一级；</li>
+     *   <li><b>四级 · 门幅消歧</b>（用户 2026-10-25 裁定）：标签写了门幅 ⇒ 精确取该档，库里没有就**零命中**
+     *       （不回落）；标签没印门幅 ⇒ 取 **2.8 米**那一档（非标准门幅会印在标签上），该档不存在 ⇒
+     *       退回候选列表交工人选。</li>
      * </ol>
      *
      * <p><b>商品名不再参与匹配</b>，只在响应里作展示：供应商标签上的品名是**它自己的**命名，
@@ -354,7 +384,8 @@ public class WorkerInboundService {
      * <p>🔴 <b>红线一条都不动</b>：0 命中 ⇒ 空列表（拒绝入库、不建品、不建 SKU、不落台账）；
      * 多命中 ⇒ 原样返回由工人确认；本方法只读，没有任何写路径。</p>
      */
-    private List<WorkerInboundSkuMatch> matchInboundSkus(String modelNo, String colorName, Long tenantId) {
+    private List<WorkerInboundSkuMatch> matchInboundSkus(String modelNo, String colorName, String doorWidth,
+                                                        Long tenantId) {
         String model = normalizeCode(modelNo);
         String color = normalizeCode(colorName);
         if (model == null && color == null) {
@@ -388,17 +419,54 @@ public class WorkerInboundService {
                 }
             }
         }
+        List<ProductSku> candidates;
         if (!colorCandidates.isEmpty()) {
-            return toMatches(sorted(colorCandidates), tenantId);
+            candidates = colorCandidates;
+        } else if (!modelProductIds.isEmpty()) {
+            // 三级：型号命中但色名一条都不中 ⇒ 该型号下的全部货号（交工人选，不当零命中）
+            candidates = productSkuMapper.selectList(new LambdaQueryWrapper<ProductSku>()
+                    .eq(ProductSku::getTenantId, tenantId)
+                    .in(ProductSku::getProductId, modelProductIds));
+        } else {
+            return new ArrayList<>();
         }
 
-        // 三级：型号命中但色名一条都不中 ⇒ 该型号下的全部货号（交工人选，不当零命中）
-        if (!modelProductIds.isEmpty()) {
-            return toMatches(sorted(productSkuMapper.selectList(new LambdaQueryWrapper<ProductSku>()
-                    .eq(ProductSku::getTenantId, tenantId)
-                    .in(ProductSku::getProductId, modelProductIds))), tenantId);
+        // 四级 · 门幅消歧（用户 2026-10-25 裁定）：写明了就精确取；没写就按行业标准 2.8 取
+        return toMatches(sorted(selectByDoorWidth(candidates, doorWidth)), tenantId);
+    }
+
+    /**
+     * 门幅消歧（issue #7759 用户裁定 2026-10-25）—— <b>取不到就是零命中，绝不回落</b>。
+     *
+     * <ol>
+     *   <li>标签**写了**门幅 ⇒ 只留该档；一档都没有 ⇒ 空列表（<b>不许</b>拿默认值顶替 = 替工人猜）；</li>
+     *   <li>标签**没写**门幅 ⇒ 只留 {@link #DEFAULT_DOOR_WIDTH} 那一档
+     *       （用户裁定：非标准门幅会在标签上印真实数字 ⇒ 没印就是行业标准 2.8）；
+     *       该档不存在 ⇒ <b>原样返回全部候选</b>（交工人选，**不许**自动换别的门幅）。</li>
+     * </ol>
+     */
+    private static List<ProductSku> selectByDoorWidth(List<ProductSku> candidates, String doorWidth) {
+        String wanted = doorWidth != null ? doorWidth : DEFAULT_DOOR_WIDTH;
+        List<ProductSku> hits = new ArrayList<>();
+        for (ProductSku sku : candidates) {
+            if (doorWidthMatches(sku.getDoorWidth(), wanted)) {
+                hits.add(sku);
+            }
         }
-        return new ArrayList<>();
+        if (!hits.isEmpty()) {
+            return hits;
+        }
+        return doorWidth != null ? new ArrayList<>() : candidates;
+    }
+
+    /** 这批候选是不是**全部**落在同一门幅上（用于回填 {@code doorWidthAssumed} 与那句话术）。 */
+    private static boolean hasOnlyDoorWidth(List<WorkerInboundSkuMatch> matches, String doorWidth) {
+        for (WorkerInboundSkuMatch match : matches) {
+            if (!doorWidthMatches(match.getDoorWidth(), doorWidth)) {
+                return false;
+            }
+        }
+        return !matches.isEmpty();
     }
 
     /**
@@ -535,6 +603,42 @@ public class WorkerInboundService {
         }
         String token = normalizedColor.replaceFirst("^\\d+(-\\d+)*-?", "");
         return token.length() >= 2 ? token : normalizedColor;
+    }
+
+    /**
+     * 门幅归一（纯函数）：{@code 2.8} / {@code 2.80} / {@code 280} / {@code 280cm} / 全角写法 ⇒ 同一个 {@code 2.8}。
+     *
+     * <p>标签上写的是「真实门幅数字」（用户裁定），而库里的 {@code product_skus.door_width} 是米数 ——
+     * 打印成公分（`280`）与带单位（`280cm`）在行业里都很常见，所以三种写法都得落到同一档。
+     * 归一**不等于猜**：它只换算能确定的等价写法（280cm ≡ 2.8m），不产生新信息。</p>
+     *
+     * @return 归一后的米数（一位小数，如 {@code 2.8}）；空白 / 非数字 ⇒ {@code null}
+     */
+    static String normalizeDoorWidth(String raw) {
+        String s = normalizeCode(raw);
+        if (s == null) {
+            return null;
+        }
+        s = s.replaceAll("(厘米|公分|cm|米|m)$", "").replaceAll("[^0-9.]", "");
+        if (s.isEmpty() || ".".equals(s)) {
+            return null;
+        }
+        try {
+            java.math.BigDecimal meters = new java.math.BigDecimal(s);
+            if (meters.compareTo(new java.math.BigDecimal("100")) >= 0) {
+                meters = meters.divide(new java.math.BigDecimal("100"));   // 280(cm) → 2.8
+            }
+            return meters.setScale(1, java.math.RoundingMode.HALF_UP).toPlainString();
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /** 两个门幅写法是否同一档（{@code 2.8} ≡ {@code 2.80} ≡ {@code 280cm}）。 */
+    static boolean doorWidthMatches(String storedDoorWidth, String wantedDoorWidth) {
+        String stored = normalizeDoorWidth(storedDoorWidth);
+        String wanted = normalizeDoorWidth(wantedDoorWidth);
+        return stored != null && wanted != null && stored.equals(wanted);
     }
 
     /** 型号 / 货号键命中商品：{@code products.sku_code} 与归一化型号相等、或它是该型号的一段前缀。 */

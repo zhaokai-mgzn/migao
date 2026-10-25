@@ -111,6 +111,10 @@ export interface RecognizeLike {
   quantityMeters?: string | null
   /** 型号 / 货号候选（issue #7759；服务端用它做货号匹配，端侧只展示） */
   modelNo?: string | null
+  /** 本次匹配**实际采用**的门幅（米）。数字真值在服务端，端侧不写第二份常量 */
+  doorWidth?: string | null
+  /** true ⇒ 标签**没印门幅**，本次按行业标准默认值取档（页面用陈述句说明，不做惊叹式提示） */
+  doorWidthAssumed?: boolean | null
   skuMatches?: SkuMatch[] | null
   /** 逐格识别结果（`{ key, label, value, source, reason }`）—— 页面上屏用，见 `recognizedFieldRows` */
   fields?: RecognizeField[] | null

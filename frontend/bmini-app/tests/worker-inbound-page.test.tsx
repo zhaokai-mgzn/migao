@@ -21,6 +21,9 @@
  * | C11 | **零命中不再是无路可走（issue #7759）**：零命中时给**只读**货号搜索入口，搜到后点选即成为待入库货号；
  *        搜索**不建品、不改库存**（只有 `searchInboundSkus` 被调） | 删掉搜索区 ⇒ `inbound-sku-search` 取不到；
  *        点选不生效 ⇒ 已选货号仍是「（未选）」 |
+ * | C12 | **门幅口径（用户 2026-10-25 裁定）**：标签没印门幅 ⇒ 唯一候选 2.8 且预选，同屏用**陈述句**
+ *        说明「标签未印门幅，按行业标准 2.8 米」（不惊叹、不催） | 删掉那句话 ⇒ `inbound-door-width-assumed`
+ *        取不到；端侧写死 2.8 而不取服务端的 `doorWidth` ⇒ 断言里的数字对不上（红） |
  */
 import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
@@ -383,6 +386,52 @@ describe('工人拍照入库页', () => {
     // 空值那格明说「没认出来（请自己填）」，不是静默空格
     expect(screen.getByTestId('inbound-field-barcode').textContent).toContain('没认出来')
     // 红证：`recognizedFieldRows` 不读 `fields` ⇒ 上面三个 testid 全部取不到
+  })
+
+  it('C12 标签没印门幅 ⇒ 陈述句说明「按行业标准 2.8 米」+ 唯一候选预选（用户 2026-10-25 裁定）', async () => {
+    mockRecognize.mockResolvedValueOnce({
+      success: true,
+      message: '',
+      data: {
+        path: 'vision',
+        degraded: false,
+        requiresManualEntry: false,
+        modelNo: '2659-4',
+        productName: '雪尼尔2659-4绵绵奶咖',
+        colorName: '2659-4绵绵奶咖',
+        quantityMeters: '52.4',
+        // 数字真值在服务端（默认值只许出现在一处常量）：页面拿的就是这两个字段
+        doorWidth: '2.8',
+        doorWidthAssumed: true,
+        skuMatches: [
+          { skuId: REAL_SNOWFLAKE_SKU_ID, productId: 'p1', productName: '奶油风纯色遮光窗帘 桂月白露系列', skuCode: '2659-04-28', colorName: '2659-04 绵绵奶咖', doorWidth: '2.8' },
+        ],
+        fields: [
+          { key: 'model_no', label: '型号 / 货号', value: '2659-4' },
+          { key: 'color_name', label: '色号', value: '2659-4绵绵奶咖' },
+          { key: 'door_width', label: '门幅', value: null },
+          { key: 'quantity_meters', label: '米数', value: '52.4' },
+        ],
+        message: '标签没有印门幅，已按行业标准 2.8 米匹配到 1 个货号，请核对实物后提交。',
+      },
+    })
+    mockChooseImage.mockResolvedValueOnce({ tempFilePaths: ['blob:photo-a'], tempFiles: [{ originalFileObj: null }] })
+    render(<WorkerInboundPage />)
+    fireEvent.click(screen.getByTestId('inbound-pick'))
+    await waitFor(() => expect(screen.getByTestId('inbound-recognize')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('inbound-recognize'))
+    await waitFor(() => expect(screen.getByTestId('inbound-step-confirm')).toBeTruthy())
+
+    const note = screen.getByTestId('inbound-door-width-assumed')
+    expect(note.textContent).toContain('标签未印门幅')
+    expect(note.textContent).toContain('2.8')
+    // 陈述句：不惊叹、不催（migao-dev-flow §31 P4）
+    expect(note.textContent).not.toContain('！')
+    expect(note.textContent).not.toContain('!!')
+    // 门幅这一格识别侧留空（图上没印）⇒ 逐格结果里明说「没认出来（请自己填）」
+    expect(screen.getByTestId('inbound-field-door_width').textContent).toContain('没认出来')
+    // 唯一候选 ⇒ 预选（工人仍要勾「我确认」）
+    expect(screen.getByTestId('inbound-chosen-sku').textContent).toContain('2659-04-28')
   })
 
   it('C11 零命中 ⇒ 只读货号搜索可用：搜到后点选即成为待入库货号（原来工人无路可走）', async () => {

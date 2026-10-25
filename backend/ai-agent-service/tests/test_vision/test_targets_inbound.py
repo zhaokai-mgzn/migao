@@ -3,8 +3,10 @@
 
 本文件钉住三件事（每条都能红）：
 
-1. **`inbound` 是第三个 target，不是「复用 product」**：字段键与前两个 target **零交集**
-   （用户裁定 2026-09-24「不要做成一套字段两个页面填」的机械判据同源）；
+1. **`inbound` 是第三个 target，不是「复用 product」**：字段键与 `product` / `order`
+   **不共用任何未登记的键**（用户裁定 2026-09-24「不要做成一套字段两个页面填」的机械判据）；
+   issue #7759 起唯一例外是 `door_width`（与 `product` 共享 —— 同一列名、**同一事实**
+   `product_skus.door_width`，已登记进 `SHARED_FIELD_KEYS`）；
 2. **阈值取严档 0.85**（与订单侧同档、严于商品侧 0.60）：这一格经工人确认后**直接进库存**，
    米数抄错 = 账实不符 ⇒ 错填比留空贵得多；
 3. **不确定 ⇒ 留空 + 给理由**，且理由里出现「入库侧」（`TARGET_SIDE_LABEL` 同源，
@@ -19,6 +21,7 @@
 """
 from app.vision.recognizer import build_messages, extract_fields
 from app.vision.targets import (
+    SHARED_FIELD_KEYS,
     TARGET_FIELDS,
     TARGET_POLICY,
     TARGET_SIDE_LABEL,
@@ -41,16 +44,32 @@ class TestInboundSchema:
         assert field_keys("inbound") == (
             # 型号 / 货号（issue #7759）：供应商标签上最可靠的那个标识 —— 没有它，
             # 识别结果里**没有任何格子**能进 admin-api 的货号匹配（实测恒零命中）。
-            "model_no", "product_name", "color_name", "quantity_meters", "barcode",
+            "model_no", "product_name", "color_name",
+            # 门幅（issue #7759 用户裁定 2026-10-25）：**只抄写明**；没印 ⇒ 留空，
+            # 2.8 是匹配侧的业务默认值（不是这一格的值）。
+            "door_width",
+            "quantity_meters", "barcode",
         )
         assert [f.label for f in TARGET_FIELDS["inbound"]] == [
-            "型号 / 货号", "品名", "色号", "米数", "条码原文",
+            "型号 / 货号", "品名", "色号", "门幅", "米数", "条码原文",
         ]
 
     def test_zero_key_overlap_with_the_two_existing_targets(self):
+        """与 `product` / `order` **不共用任何未登记的键**（登记的共享键见 `SHARED_FIELD_KEYS`）。
+
+        issue #7759 起 `door_width` 是唯一例外：`product` 与 `inbound` 读的是**同一列名、同一事实**
+        （`product_skus.door_width`，门幅米数）—— 不是「一套字段两个页面填」，而是同一个字段在两个
+        target 上确实都存在。未登记的共享仍然红（判据 =
+        `tests/test_vision/test_targets.py::test_no_target_shares_an_unregistered_field_key`）。
+        """
         inbound = set(field_keys("inbound"))
-        assert inbound & set(field_keys("product")) == set()
+        registered = {key for key, targets in SHARED_FIELD_KEYS.items() if "inbound" in targets}
+        assert inbound & set(field_keys("product")) == registered & set(field_keys("product"))
         assert inbound & set(field_keys("order")) == set()
+        # 反向护栏：登记表不是空壳（否则上面第一条会退化成「什么都不检查」）——
+        # 与**前两个** target 共享的登记键只有 door_width（`product_name` 登记的是 shipment 那一条）
+        shared_with_first_two = registered & (set(field_keys("product")) | set(field_keys("order")))
+        assert shared_with_first_two == {"door_width"}
 
     def test_policy_and_side_label_cover_every_target(self):
         assert set(TARGET_POLICY) == set(TARGET_FIELDS)
@@ -84,7 +103,7 @@ class TestInboundRecognition:
     def test_prompt_carries_every_field_label(self):
         messages = build_messages("inbound", ["https://oss.example.com/roll-1.jpg"])
         text = messages[0].content[0]["text"]
-        for label in ("型号 / 货号", "品名", "色号", "米数", "条码原文"):
+        for label in ("型号 / 货号", "品名", "色号", "门幅", "米数", "条码原文"):
             assert label in text
         # 图片块照旧挂在同一条多模态消息上（不新造第二条调用形态）
         assert messages[0].content[1]["type"] == "image_url"
@@ -131,6 +150,8 @@ class TestSupplierLabel:
         assert fields["color_name"]["value"] == "绵绵奶咖"
         assert fields["product_name"]["value"] == "雪尼尔2659-4绵绵奶咖"
         assert fields["quantity_meters"]["value"] == "52.4"
+        # 这张标签**没有印门幅** ⇒ 本格留空（2.8 是匹配侧的业务默认值，识别侧不许补）
+        assert fields["door_width"]["value"] is None
 
     def test_missing_model_number_stays_blank_with_a_reason(self):
         """图上看不到型号 / 看不清 ⇒ **留空 + 给理由**，绝不用品名去凑（凑出来的值会去匹配货号）。"""
@@ -153,3 +174,41 @@ class TestSupplierLabel:
         assert "型号 / 货号" in text
         assert "2659-4" in text
         assert "color_name" in text
+
+
+class TestDoorWidth:
+    """门幅只**抄**不**推**（issue #7759 用户裁定 2026-10-25，逐字：
+
+    「这张图没有展示门幅是多少，按照行业标准就是 2.8 的，如果是其他规格的门幅会在标签上展示真实门幅数字」）。
+
+    ⇒ 分工：**图上没印 ⇒ 识别侧留空**（本文件钉住这一半）；**默认 2.8 由 admin-api 匹配侧补**
+    （`WorkerInboundService.DEFAULT_DOOR_WIDTH`，那里有另一组判据）。
+    让模型在图没印时输出 2.8 = 把「抄」写成「推」，与 `recognizable` 那条既有的「抄 vs 推」边界同族。
+    红证：在 `extract_fields` 里给 `door_width` 兜一个默认值 ⇒ 本类第一条当场红。
+    """
+
+    def test_absent_door_width_is_never_filled_with_the_industry_default(self):
+        # 图上一格都没认出（模型按铁律全留空）⇒ 门幅必须是 None
+        fields = {f["key"]: f for f in extract_fields("inbound", '{"fields": {}}')}
+        assert fields["door_width"]["value"] is None
+        assert fields["door_width"]["source"] is None
+        # 认出了型号但**没有门幅**（本条缺陷那张标签的真实形态）⇒ 门幅仍然留空
+        fields = {f["key"]: f for f in extract_fields(
+            "inbound", '{"fields": {"model_no": {"value": "2659-4", "confidence": 0.92}}}')}
+        assert fields["door_width"]["value"] is None
+        # 反向护栏：同一次里别的格子照常采纳（不因为门幅空着就整张丢掉）
+        assert fields["model_no"]["value"] == "2659-4"
+
+    def test_written_door_width_is_adopted_verbatim(self):
+        # 非标准门幅标签上会印真实数字 ⇒ 照抄（归一与取档在 admin-api 侧，识别侧不动它）
+        fields = {f["key"]: f for f in extract_fields(
+            "inbound", '{"fields": {"door_width": {"value": "3.2", "confidence": 0.91}}}')}
+        assert fields["door_width"]["value"] == "3.2"
+        assert fields["door_width"]["source"] == "[图片识别]"
+
+    def test_hint_forbids_inferring_the_default(self):
+        hint = {f.key: f for f in TARGET_FIELDS["inbound"]}["door_width"].hint
+        assert "留空" in hint
+        assert "不要" in hint
+        # 明确点名「不要按行业惯例补 2.8」—— 不点名的话模型最爱补的就是它
+        assert "2.8" in hint
