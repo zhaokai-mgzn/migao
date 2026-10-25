@@ -308,10 +308,12 @@ export default function OutboundOrdersPage() {
           `${formatStockQuantity(row.quantity)}${row.unit === 'set' ? ' 套' : ` ${row.unit}`}`,
       },
       {
-        key: 'inboundOrderId',
+        // 显示单号 RK-…（服务端投影 inbound_orders.inbound_no，issue #7792）；
+        // `inboundOrderId` 是入库单的内部 id，属内部标识，不上屏。
+        key: 'inboundNo',
         title: '入库单',
-        dataIndex: 'inboundOrderId' as const,
-        render: (row: FinishedGoods) => row.inboundOrderId || '—',
+        dataIndex: 'inboundNo' as const,
+        render: (row: FinishedGoods) => row.inboundNo || '—',
       },
       {
         key: 'status',

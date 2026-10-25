@@ -245,4 +245,25 @@ class FinishedGoodsServiceTest {
         assertThat(views).extracting(FinishedGoodsView::getBinCode).containsExactly("A-01");
         assertThat(views.get(0).getStatus()).isEqualTo(FinishedGoodsStock.STATUS_IN_STOCK);
     }
+
+    /**
+     * issue #7792：「入库单」列印的是内部 UUID 而不是 RK- 单号。
+     *
+     * <p>读面必须把 {@code inbound_orders.inbound_no} 一起投影出来（{@code inboundNo}），
+     * 而 {@code inboundOrderId} 仍原样透传（契约冻结：其它调用方按 id 定位单据）。</p>
+     */
+    @Test
+    @DisplayName("🔴 在库总览透出入库单号 inboundNo，且 inboundOrderId 仍是内部 id（契约不变）")
+    void listInStockExposesInboundNo() {
+        FinishedGoodsStock row = inStock("item-1", "A-01", "3f2a9c1e-5b44-4a77-9a0e-2b1f7c9d8e10");
+        row.setInboundNo("RK-20261025-0001");
+        when(stockMapper.selectInStock(TENANT)).thenReturn(List.of(row));
+
+        List<FinishedGoodsView> views = service.listInStock(TENANT);
+
+        assertThat(views).hasSize(1);
+        assertThat(views.get(0).getInboundNo()).isEqualTo("RK-20261025-0001");
+        // 契约冻结：id 字段仍在、值不变（前端与其它读面按 id 定位单据）
+        assertThat(views.get(0).getInboundOrderId()).isEqualTo("3f2a9c1e-5b44-4a77-9a0e-2b1f7c9d8e10");
+    }
 }

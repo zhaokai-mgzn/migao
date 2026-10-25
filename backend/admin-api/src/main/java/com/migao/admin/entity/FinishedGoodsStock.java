@@ -1,6 +1,7 @@
 package com.migao.admin.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
@@ -93,6 +94,15 @@ public class FinishedGoodsStock {
 
     /** 进货的成品入库单（打包时自动建） */
     private String inboundOrderId;
+
+    /**
+     * 入库单号（只读投影：join {@code inbound_orders} 得来；本列不在 {@code finished_goods_stock} 表里）。
+     *
+     * <p>{@link #inboundOrderId} 存的是单据 **id**（{@code InboundOrder.id} 是 ASSIGN_UUID ⇒ 32 位 UUID），
+     * 商家要看的单号（{@code RK-…}）在 {@code inbound_orders.inbound_no}（issue #7792）。</p>
+     */
+    @TableField(exist = false)
+    private String inboundNo;
 
     /** 出货的成品出库单（发货时自动建） */
     private String outboundOrderId;

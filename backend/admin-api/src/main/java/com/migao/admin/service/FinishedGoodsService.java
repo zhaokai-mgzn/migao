@@ -452,6 +452,9 @@ public class FinishedGoodsService {
         view.setUnit(row.getUnit());
         view.setStatus(row.getStatus());
         view.setInboundOrderId(row.getInboundOrderId());
+        // issue #7792：单号来自 selectInStock 的 join 投影（inbound_orders.inbound_no）；
+        // inboundOrderId 仍是内部 id，原样保留 = 契约冻结（其它调用方按 id 定位单据）。
+        view.setInboundNo(row.getInboundNo());
         view.setOutboundOrderId(row.getOutboundOrderId());
         view.setCreatedAt(row.getCreatedAt());
         return view;
