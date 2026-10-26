@@ -88,12 +88,18 @@ export const PAGE_CUT_CALC = 'cut_calc'
 export const PAGE_ORDER = 'order'
 
 /**
- * 页面键：发货页（`/w/shipment.html`，issue #7761）。
+ * 页面键：**待发货单**（`/w/shipment.html`，issue #7761 / #7814）。
+ *
+ * <p>与 {@link PAGE_SHIPMENT}（发货 = 拍照发货，写面）是**两个能力**：本键管「车间今天能发哪些单、
+ * 贴哪张标签」（读面）。商家后台「设置工人端菜单」按这个键勾选（issue #7814）。</p>
  *
  * <p>2026-10-25 之前这里写着「`/w/` 暂无对应面（登记，不造 UI）」—— 那个缺口已经补上：
  * 后端 `/api/worker/shipment/**` 早在 #5648 就齐了，缺的一直只是入口与页面。</p>
  */
 export const PAGE_SHIPMENT = 'shipment'
+
+/** 页面键：待发货单（名单 + 发货标签；与 {@link PAGE_SHIPMENT} 写面分开，issue #7814）。 */
+export const PAGE_TO_SHIP = 'to_ship'
 
 /**
  * 页面键：质检（issue #7162）—— 扫水洗唛后录判定、生成质检单。
@@ -108,7 +114,7 @@ export const PAGE_INSPECT = 'inspect'
  * ⚠️ 这是**第二份**默认值（真值在后端；前端不可能 import Java）⇒ 唯一防线是判据：
  * `tests/worker-h5-pages.test.mjs` 逐值比对**全部**键 + 顺序，改一边不改另一边 ⇒ 红。
  */
-export const DEFAULT_PAGES = [PAGE_REPORT, PAGE_PIECEWORK, PAGE_ORDER, PAGE_CUT_CALC, PAGE_SHIPMENT]
+export const DEFAULT_PAGES = [PAGE_REPORT, PAGE_PIECEWORK, PAGE_ORDER, PAGE_CUT_CALC, PAGE_SHIPMENT, PAGE_TO_SHIP]
 
 /** 裁高计算入口（同源静态页；`/w/` 与 `/w/machine.html` 同一静态根 ⇒ 相对路径、不写死域名）。
  *  文案 = 「裁高计算（一体机）」（2026-10-10 用户裁定：改前的「机台模式」只有内部人懂，issue #6635）。 */
@@ -666,9 +672,10 @@ function workerEntriesBar(state) {
     ? `<a class="wh5-entry" id="wh5-machine-entry" href="${MACHINE_ENTRY_HREF}">裁高计算（一体机）</a>` : ''
   const piecework = opened.has(PAGE_PIECEWORK)
     ? `<a class="wh5-entry" id="wh5-piecework-entry" href="${PIECEWORK_ENTRY_HREF}">我的计件</a>` : ''
-  // 发货页（issue #7761）：本页终于有了对应面（`/w/shipment.html`），⇒ 按 `shipment` 页面键出入口。
+  // 发货页（issue #7761）：本页终于有了对应面（`/w/shipment.html`），⇒ 按 `to_ship` 页面键出入口
+  // （issue #7814：与 `shipment`=拍照发货的写面分开 —— 商家想只关名单或只关拍照时能分开勾）。
   // 与上面两条同款语义 = **菜单显隐**，不是访问拦截（直接敲 URL 仍可进入）。
-  const shipment = opened.has(PAGE_SHIPMENT)
+  const shipment = opened.has(PAGE_TO_SHIP)
     ? `<a class="wh5-entry" id="wh5-shipment-entry" href="${SHIPMENT_ENTRY_HREF}">发货</a>` : ''
   if (!machine && !piecework && !shipment) return ''
   return `<nav class="wh5-entries" id="wh5-worker-entries" aria-label="工人面入口">

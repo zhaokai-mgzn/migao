@@ -31,15 +31,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 class WorkerPagesTest {
 
     @Test
-    @DisplayName("默认 = report/piecework/order/cut_calc/shipment（顺序即工人端默认页面顺序）")
+    @DisplayName("默认 = report/piecework/order/cut_calc/shipment/to_ship（顺序即工人端默认页面顺序）")
     void defaultsAreTheFourWorkerPages() {
         // issue #6767（2026-10-12 用户逐字「需要给工人看」）：新增 `piecework`（我的计件，含金额）
         // —— 键与商家面人话名同批登记（WorkerPages.labels），默认与可选页同源 ⇒ 本条即闭词表守卫。
         assertThat(WorkerPages.defaultPages())
-                .containsExactly("report", "piecework", "order", "cut_calc", "shipment");
+                .containsExactly("report", "piecework", "order", "cut_calc", "shipment", "to_ship");
+        // issue #7814（用户 2026-10-26「新增的工人菜单在这里也要能设置」）：`to_ship`（待发货单）
+        // 与 `shipment`（拍照发货）是**两个能力** —— 读面 / 写面。合并成一个键 ⇒ 商家想关掉其中一个
+        // 就得两个都关（菜单开关 = 显隐，关错了现场就没入口）。默认集合里两者都在。
         // issue #7162：`inspect`（质检）在闭词表里，但**不在默认集合**（逐人开、且是服务端写准入）
         assertThat(WorkerPages.ALL).containsExactly(
-                "report", "piecework", "order", "cut_calc", "shipment", "inspect");
+                "report", "piecework", "order", "cut_calc", "shipment", "to_ship", "inspect");
         assertThat(WorkerPages.defaultPages()).doesNotContain("inspect");
     }
 

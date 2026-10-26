@@ -64,8 +64,19 @@ public final class WorkerPages {
      */
     public static final String PIECEWORK = "piecework";
 
-    /** 页面键：发货。 */
+    /** 页面键：发货（**写面** = 拍照发货 / 生成发货单）。 */
     public static final String SHIPMENT = "shipment";
+
+    /**
+     * 页面键：**待发货单**（**读面** = 全完工订单名单 + 发货标签；issue #7814）。
+     *
+     * <p>用户 2026-10-26（商家后台「设置工人端菜单」截图）逐字：「新增的工人菜单在这里也要能设置」。</p>
+     *
+     * <p>🔴 与 {@link #SHIPMENT} 是**两个能力**，不合并：拍照发货是「把这一单发出去」（写），
+     * 待发货单是「车间今天能发哪些、贴哪张标签」（读）。合成一个键的后果是商家想关掉其中一个
+     * 就必须两个都关（菜单开关是**显隐**，不是权限，关错了现场就没入口可用）。</p>
+     */
+    public static final String TO_SHIP = "to_ship";
 
     /**
      * 页面键：**质检**（issue #7162）—— 工人扫水洗唛进报工页后，可录入质检判定并生成「质检单」。
@@ -80,7 +91,7 @@ public final class WorkerPages {
      * <p>顺序 = 工人端默认的页面顺序（读面原样回给前端，前端不再自己排一遍）。</p>
      */
     public static final Set<String> ALL = Collections.unmodifiableSet(new LinkedHashSet<>(List.of(
-            REPORT, PIECEWORK, ORDER, CUT_CALC, SHIPMENT, INSPECT)));
+            REPORT, PIECEWORK, ORDER, CUT_CALC, SHIPMENT, TO_SHIP, INSPECT)));
 
     private WorkerPages() {
     }
@@ -95,7 +106,7 @@ public final class WorkerPages {
      * —— 配置面据此把「未收窄」渲染成默认勾选态，前端不另抄一份默认值。可选页全集 = {@link #ALL}。</p>
      */
     public static List<String> defaultPages() {
-        return List.of(REPORT, PIECEWORK, ORDER, CUT_CALC, SHIPMENT);
+        return List.of(REPORT, PIECEWORK, ORDER, CUT_CALC, SHIPMENT, TO_SHIP);
     }
 
     /**
@@ -114,6 +125,7 @@ public final class WorkerPages {
         labels.put(ORDER, "订单");
         labels.put(CUT_CALC, "裁高计算器");
         labels.put(SHIPMENT, "发货");
+        labels.put(TO_SHIP, "待发货单");
         labels.put(INSPECT, "质检");
         return labels;
     }
