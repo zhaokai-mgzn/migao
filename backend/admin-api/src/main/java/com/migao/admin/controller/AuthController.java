@@ -7,6 +7,8 @@ import com.migao.admin.dto.EmployeeLoginRequest;
 import com.migao.admin.dto.LoginRequest;
 import com.migao.admin.dto.LoginResponse;
 import com.migao.admin.dto.MiniPhoneBindRequest;
+import com.migao.admin.dto.QrExchangeRequest;
+import com.migao.admin.dto.QrTicketResponse;
 import com.migao.admin.dto.MiniLoginRequest;
 import com.migao.admin.dto.RefreshTokenRequest;
 import com.migao.admin.dto.SmsLoginRequest;
@@ -15,6 +17,7 @@ import com.migao.admin.exception.BusinessException;
 import com.migao.admin.security.SecurityUser;
 import com.migao.admin.service.AuthService;
 import com.migao.admin.service.MiniPhoneBindService;
+import com.migao.admin.service.QrLoginTicketService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.core.Authentication;
@@ -37,6 +40,8 @@ public class AuthController {
 
     private final AuthService authService;
     private final com.migao.admin.service.MiniPhoneBindService miniPhoneBindService;
+    /** 扫码即登录票据（issue #7825）：签发需已登录，兑换端点公开（凭据 = 120 秒单次票据）。 */
+    private final QrLoginTicketService qrLoginTicketService;
     private final com.migao.admin.config.TenantDomainResolver tenantDomainResolver;
 
     // ======================== 账号密码登录 ========================
@@ -249,6 +254,53 @@ public class AuthController {
         log.info("微信公众号 OAuth 回调: state={}", state);
         String redirectUrl = authService.handleWechatH5Callback(code, state, response);
         response.sendRedirect(redirectUrl);
+    }
+
+    // ======================== 扫码登录（issue #7825） ========================
+
+    /**
+     * 签发「手机端」二维码票据 —— **需已登录**（`/api/auth/qr/ticket` 不在放行名单里）。
+     *
+     * <p>POST /api/auth/qr/ticket</p>
+     *
+     * <p>PC 已登录时给顶栏二维码换一张 **120 秒、单次有效** 的持有凭证；手机扫码后凭它兑换自己的会话
+     * （{@link #qrExchange}）。票据只承载「哪个用户 + 哪个租户」，**不含角色/权限**。</p>
+     */
+    @PostMapping("/qr/ticket")
+    public ApiResponse<QrTicketResponse> qrTicket() {
+        SecurityUser securityUser = currentSecurityUser("请先登录后再生成手机端二维码");
+        QrLoginTicketService.Ticket ticket =
+                qrLoginTicketService.issue(securityUser.getUserId(), securityUser.getTenantId());
+        return ApiResponse.success(QrTicketResponse.builder()
+                .ticket(ticket.ticket())
+                .expiresIn(ticket.expiresIn())
+                .build());
+    }
+
+    /**
+     * 兑换「手机端」二维码票据 —— **公开**（放行名单见 `SecurityConfig`）。
+     *
+     * <p>POST /api/auth/qr/exchange，body {@code {"ticket": "..."}}</p>
+     *
+     * <p>成功即下发 access / refresh 双令牌（与密码登录同一套 Cookie 收尾），并**消费掉票据**
+     * （再换一次 ⇒ 401）。失败文案统一「二维码已过期，请重新扫码」，不区分「过期 / 已用 / 类型不对」。</p>
+     */
+    @PostMapping("/qr/exchange")
+    public ApiResponse<LoginResponse> qrExchange(
+            @Valid @RequestBody QrExchangeRequest request,
+            HttpServletResponse response) {
+        log.info("扫码登录：票据兑换请求");
+        QrLoginTicketService.Identity identity = qrLoginTicketService.consume(request.getTicket());
+        return ApiResponse.success(authService.loginByQrTicket(identity.userId(), identity.tenantId(), response));
+    }
+
+    /** 取当前已认证用户（未认证 ⇒ 401；与其它端点同一口径）。 */
+    private SecurityUser currentSecurityUser(String message) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof SecurityUser securityUser)) {
+            throw BusinessException.authFailed(message);
+        }
+        return securityUser;
     }
 
     // ======================== Token 管理 ========================

@@ -102,7 +102,9 @@ class BusinessClockSourceGuardTest {
      */
     private static final Map<String, Integer> INSTANT_NOW_LEDGER = Map.of(
             "com/migao/admin/dto/ApiResponse.java", 1,
-            "com/migao/admin/security/JwtTokenProvider.java", 2);
+            // issue #7825：三种令牌（access / refresh / 扫码票据）收敛到**一个**公共骨架
+            // `buildToken(...)` ⇒ 该文件的绝对时刻读取点由 2 降为 1（台账**缩短**，不是新增豁免）
+            "com/migao/admin/security/JwtTokenProvider.java", 1);
 
     /**
      * 🔴 <b>未修项冻结台账</b>（issue #6200，**只许缩短**）：本守卫判据射程内、但**本单不改**的地方

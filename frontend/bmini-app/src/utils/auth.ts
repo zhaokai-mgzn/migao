@@ -11,6 +11,26 @@ import { isH5, H5_WECHAT_LOGIN_UNAVAILABLE_HINT } from './platform'
 import type { User, LoginResult, ApiResponse } from '../types'
 
 /**
+ * 把一次登录响应的凭据落到本地 —— **单一写点**（issue #7825）。
+ *
+ * 密码登录 / 管理员短信登录 / 改密换发 / **扫码兑换**四条路径共用它：
+ * 以前三处各抄一遍「写 TOKEN / USER / TENANT」，扫码兑换会成为第四份副本
+ * （漏写一项 = 登录看着成功、下一次打开又回登录页 —— 正是本单要治的形态）。
+ *
+ * @param accessToken 新 access token
+ * @param user        服务端回来的用户（`tenantId` 由服务端回填）
+ * @param tenantId    显式租户（小程序登录有独立入参时用它；缺省取 `user.tenantId`）
+ */
+export function persistSession(accessToken: string, user: User, tenantId?: number | null): void {
+  Taro.setStorageSync(STORAGE_KEYS.TOKEN, accessToken)
+  Taro.setStorageSync(STORAGE_KEYS.USER, JSON.stringify(user))
+  const tid = tenantId ?? user?.tenantId
+  if (tid != null) {
+    Taro.setStorageSync(STORAGE_KEYS.TENANT_ID, tid)
+  }
+}
+
+/**
  * 取**服务端文案**（`ApiResponse.error.message`）。
  *
  * 为什么不能只用 `error.message`（issue #5485 实测）：admin-api 的业务失败是**带 HTTP 状态码**的
@@ -68,9 +88,7 @@ export async function miniAppLogin(tenantId: number): Promise<LoginResult> {
     const { accessToken: token, user } = data.data
 
     // 存储到本地
-    Taro.setStorageSync(STORAGE_KEYS.TOKEN, token)
-    Taro.setStorageSync(STORAGE_KEYS.USER, JSON.stringify(user))
-    Taro.setStorageSync(STORAGE_KEYS.TENANT_ID, tenantId)
+    persistSession(token, user, tenantId)
 
     return { success: true, user }
   } catch (error: any) {
@@ -119,11 +137,7 @@ export async function employeeLogin(identifier: string, password: string): Promi
     const { accessToken: token, user } = data.data
 
     // 存储到本地（tenantId 由后端按标识里的企业编码解析，无需前端传入）
-    Taro.setStorageSync(STORAGE_KEYS.TOKEN, token)
-    Taro.setStorageSync(STORAGE_KEYS.USER, JSON.stringify(user))
-    if (user?.tenantId != null) {
-      Taro.setStorageSync(STORAGE_KEYS.TENANT_ID, user.tenantId)
-    }
+    persistSession(token, user)
 
     return { success: true, user }
   } catch (error: any) {
@@ -188,11 +202,7 @@ export async function adminSmsLogin(phone: string, code: string): Promise<LoginR
 
     const { accessToken: token, user } = data.data
 
-    Taro.setStorageSync(STORAGE_KEYS.TOKEN, token)
-    Taro.setStorageSync(STORAGE_KEYS.USER, JSON.stringify(user))
-    if (user?.tenantId != null) {
-      Taro.setStorageSync(STORAGE_KEYS.TENANT_ID, user.tenantId)
-    }
+    persistSession(token, user)
 
     return { success: true, user }
   } catch (error: any) {
@@ -233,11 +243,7 @@ export async function changePassword(oldPassword: string, newPassword: string): 
     const { accessToken: token, user } = data.data
 
     // 用「改密响应里的新凭据」覆盖本地凭据（旧 token 仍带强制改密标记，不能留）
-    Taro.setStorageSync(STORAGE_KEYS.TOKEN, token)
-    Taro.setStorageSync(STORAGE_KEYS.USER, JSON.stringify(user))
-    if (user?.tenantId != null) {
-      Taro.setStorageSync(STORAGE_KEYS.TENANT_ID, user.tenantId)
-    }
+    persistSession(token, user)
 
     return { success: true, user }
   } catch (error: any) {

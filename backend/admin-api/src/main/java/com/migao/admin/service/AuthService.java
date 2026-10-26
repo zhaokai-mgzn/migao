@@ -773,30 +773,6 @@ public class AuthService {
             throw BusinessException.authFailed("用户状态异常");
         }
 
-        // 获取用户角色和权限
-        List<String> roles = userService.getUserRoles(user);
-        List<String> permissions = roleService.getUserPermissions(user.getId());
-
-        // 签发新的 Token（含细粒度权限 + 强制改密标记）
-        // 🔴 关键（issue #5485 不变式 I4）：标记按**数据库当前值**重算 ——
-        //    「只在登录时算」会被「刷新一次 token」绕过（刷出来的新 token 便不再带 claim）。
-        //    也正因如此，/api/auth/refresh 可以安全地留在强制改密的**白名单**里
-        //    （见 PasswordChangeRequiredFilter 的白名单注释）。
-        boolean mustChangePassword = mustChangePasswordOf(user);
-        String newAccessToken = jwtTokenProvider.generateAccessToken(
-                user.getId(),
-                user.getTenantId(),
-                user.getPhone(),
-                roles,
-                permissions,
-                mustChangePassword
-        );
-
-        String newRefreshToken = jwtTokenProvider.generateRefreshToken(
-                user.getId(),
-                user.getTenantId()
-        );
-
         // 将旧的 Refresh Token 加入黑名单（防止重复使用）
         if (jti != null) {
             long ttl = claims.getExpiration().getTime() - System.currentTimeMillis();
@@ -805,13 +781,100 @@ public class AuthService {
             }
         }
 
-        // 设置新的 Cookie
-        setTokenCookie(response, newAccessToken, (int) jwtTokenProvider.getAccessTokenExpiration());
-        // 审计 07 P1-5：refresh token 仅经 HttpOnly cookie 轮换下发
-        setRefreshTokenCookie(response, newRefreshToken);
+        // 🔴 刷新路径**历史上**把新 refresh token 也回填进响应体（与审计 07 P1-5
+        //    「refresh 只经 HttpOnly cookie 下发」相悖）；改它属于另一个口径改动 ⇒ 本单**不动**，
+        //    只把两条新路径（扫码登录）固定在「不回填」那一侧（issue #7825 的「顺带发现」）。
+        return issueSession(user, response, true);
+    }
 
-        // 查询租户名称
-        String tenantName = getTenantName(user.getTenantId());
+    // ======================== 扫码登录（issue #7825） ========================
+
+    /** 票据兑换失败的唯一文案（过期 / 已使用 / 类型不对都不外泄细节，避免探测面）。 */
+    public static final String QR_TICKET_INVALID_MESSAGE = "二维码已过期，请重新扫码";
+
+    /**
+     * 用一张**已消费**的扫码登录票据开一份完整会话（issue #7825）。
+     *
+     * <p>票据本身的验签 / 类型 / 单次有效由 {@code QrLoginTicketService} 负责；本方法只负责
+     * 「按**数据库当前值**重新算角色与权限，再发会话」—— 与刷新同一纪律（不变式 I4）：
+     * 权限被收回后，一张旧票据不能把旧权限续回去。</p>
+     *
+     * @param userId   票据指向的用户
+     * @param tenantId 票据里的租户（与用户当前租户不一致 ⇒ 按票据无效处理，防跨租户复用）
+     * @param response HTTP 响应（写 access/refresh 双 Cookie）
+     * @return 与密码登录同形的登录响应（**不含** refresh token：审计 07 P1-5）
+     */
+    public LoginResponse loginByQrTicket(String userId, Long tenantId, HttpServletResponse response) {
+        if (tenantId != null) {
+            TenantContext.setTenantId(tenantId);
+        }
+        User user = userService.getUserById(userId);
+        if (user == null) {
+            throw BusinessException.authFailed(QR_TICKET_INVALID_MESSAGE);
+        }
+        boolean tenantMismatch = tenantId != null && user.getTenantId() != null
+                && !tenantId.equals(user.getTenantId());
+        if (!"active".equals(user.getStatus()) || tenantMismatch) {
+            throw BusinessException.authFailed(QR_TICKET_INVALID_MESSAGE);
+        }
+        log.info("扫码即登录：票据兑换成功 userId={}, tenantId={}", userId, user.getTenantId());
+        return issueSession(user, response, false);
+    }
+
+    /**
+     * 吊销读面（issue #7825）：扫码票据复用**同一份**吊销面（`token:blacklist:*` + fail-closed 语义），
+     * 不新造第二套黑名单。
+     *
+     * @return {@code true}=已吊销；{@code false}=未吊销；{@code null}=**不可判定**（Redis 不可用，
+     *         调用方必须 fail-closed 拒绝，见 issue #4866 的口径）
+     */
+    public Boolean isTokenRevoked(String jti) {
+        return isTokenBlacklisted(jti);
+    }
+
+    /**
+     * 吊销写面（issue #7825）：票据**兑换即吊销**（单次有效）。
+     *
+     * @param ttlMillis 剩余有效期（{@code <= 0} ⇒ 幂等无动作）
+     */
+    public void revokeToken(String jti, long ttlMillis) {
+        if (ttlMillis > 0) {
+            blacklistToken(jti, ttlMillis);
+        }
+    }
+
+    /**
+     * 签发 access + refresh 双令牌并写 Cookie —— **密码登录 / 刷新 / 扫码三条路径共用**（issue #7825 抽出）。
+     *
+     * @param exposeRefreshTokenInBody 是否把新 refresh token 回填进响应体。刷新路径**保持历史行为**
+     *                                 （{@code true}）；登录类路径一律 {@code false}（审计 07 P1-5）。
+     */
+    private LoginResponse issueSession(User user, HttpServletResponse response, boolean exposeRefreshTokenInBody) {
+        // 获取用户角色和权限
+        List<String> roles = userService.getUserRoles(user);
+        List<String> permissions = roleService.getUserPermissions(user.getId());
+
+        // 签发新的 Token（含细粒度权限 + 强制改密标记）
+        // 🔴 关键（issue #5485 不变式 I4）：标记按**数据库当前值**重算 ——
+        //    「只在登录时算」会被「刷新一次 token」绕过（刷出来的新 token 便不再带 claim）。
+        boolean mustChangePassword = mustChangePasswordOf(user);
+        String accessToken = jwtTokenProvider.generateAccessToken(
+                user.getId(),
+                user.getTenantId(),
+                user.getPhone(),
+                roles,
+                permissions,
+                mustChangePassword
+        );
+        String refreshToken = jwtTokenProvider.generateRefreshToken(
+                user.getId(),
+                user.getTenantId()
+        );
+
+        // 设置新的 Cookie
+        setTokenCookie(response, accessToken, (int) jwtTokenProvider.getAccessTokenExpiration());
+        // 审计 07 P1-5：refresh token 仅经 HttpOnly cookie 轮换下发
+        setRefreshTokenCookie(response, refreshToken);
 
         return LoginResponse.builder()
                 .user(LoginResponse.UserInfo.builder()
@@ -822,11 +885,11 @@ public class AuthService {
                         .identityType("account")
                         .roles(roles)
                         .tenantId(user.getTenantId())
-                        .tenantName(tenantName)
+                        .tenantName(getTenantName(user.getTenantId()))
                         .mustChangePassword(mustChangePassword)
                         .build())
-                .accessToken(newAccessToken)
-                .refreshToken(newRefreshToken)
+                .accessToken(accessToken)
+                .refreshToken(exposeRefreshTokenInBody ? refreshToken : null)
                 .expiresIn(jwtTokenProvider.getAccessTokenExpiration())
                 .build();
     }

@@ -264,3 +264,39 @@
     padding: 8px 4px;
   }
 }
+
+/* 登录自检面板（issue #7825）：只在 ?diag=1 时渲染，紧凑、等宽、可滚动 —— 不抢登录表单的注意力 */
+.auth-diag {
+  margin: 0 32px 20px;
+  padding: 16px;
+  border-radius: 12px;
+  background: #faf8f4;
+  border: 1px solid #e8e2d8;
+  max-height: 320px;
+  overflow-y: auto;
+
+  &__title {
+    display: block;
+    font-size: 28px;
+    font-weight: 600;
+    color: #4a3f33;
+    margin-bottom: 8px;
+  }
+
+  &__row {
+    display: block;
+    font-family: Menlo, Consolas, monospace;
+    font-size: 24px;
+    line-height: 1.5;
+    color: #6b5d4d;
+    word-break: break-all;
+  }
+
+  &__empty,
+  &__hint {
+    display: block;
+    font-size: 24px;
+    color: #9c8f7d;
+    margin-top: 8px;
+  }
+}

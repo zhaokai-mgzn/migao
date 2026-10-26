@@ -171,6 +171,12 @@ public class SecurityConfig {
                                 "/api/auth/h5/authorize",
                                 "/api/auth/h5/callback",
                                 "/api/auth/refresh",
+                                // 扫码登录**兑换**端点（issue #7825）：公开（手机 H5 扫到二维码时还没有任何会话），
+                                // 凭据是 120 秒、单次有效的票据（签名 JWT，类型 qr_login）—— 票据本身不是会话，
+                                // 兑换成功才下发 access/refresh 双令牌并写 HttpOnly cookie。
+                                // ⚠️ 只放行 exchange；`/api/auth/qr/ticket`（**签发**）必须带有效商家会话
+                                // （它等价于「替当前登录用户发一张 120 秒的持有凭证」）。
+                                "/api/auth/qr/exchange",
                                 // 工人登录（issue #4733）：工号 + PIN 是**公开入口**（工人没有商家账号）
                                 // —— 只放行登录本身；/api/worker/** 的其余端点仍需有效工人 session
                                 "/api/worker/login",

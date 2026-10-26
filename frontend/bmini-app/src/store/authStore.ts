@@ -9,6 +9,8 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { miniAppLogin, employeeLogin, adminSmsLogin, changePassword, getToken, getUser, logout as authLogout, checkTokenValidity } from '../utils/auth'
 import { refreshAccessToken } from '../utils/request'
+import { qrLoginReady } from '../utils/qrLogin'
+import { recordAuthDiag } from '../utils/authDiag'
 import { STORAGE_KEYS, DEFAULT_TENANT_ID } from '../utils/constants'
 import type { User } from '../types'
 
@@ -73,9 +75,15 @@ export const useAuthStore = create<AuthState>()(
        * 隔一段时间打开 `/b/` 必被踢回登录页（续期失败才登出，与改前一致）。
        */
       initialize: async () => {
+        // 🔴 扫码即登录（issue #7825）：票据兑换**先于**任何「未登录」判断
+        //    （否则页面先跳登录页，兑换结果永远没人用）
+        await qrLoginReady
         const token = getToken()
         const user = getUser()
-        if (!token) return
+        if (!token) {
+          recordAuthDiag('boot_no_token')
+          return
+        }
 
         if (checkTokenValidity()) {
           set({ token, user, isLoggedIn: true })
@@ -87,6 +95,7 @@ export const useAuthStore = create<AuthState>()(
           set({ token: freshToken, user, isLoggedIn: true })
         } else {
           // 续期失败（cookie 过期 / 被吊销）⇒ 清除（行为与改前一致）
+          recordAuthDiag('boot_expired_refresh_failed')
           get().logout()
         }
       },
@@ -258,6 +267,7 @@ export const useAuthStore = create<AuthState>()(
        * 请求层补的续期就永远走不到（页面先跳登录页了）。
        */
       checkAuth: async () => {
+        await qrLoginReady
         const token = getToken()
         if (!token) {
           set({ isLoggedIn: false })
@@ -269,6 +279,7 @@ export const useAuthStore = create<AuthState>()(
         }
         const freshToken = await refreshAccessToken()
         if (!freshToken) {
+          recordAuthDiag('boot_expired_refresh_failed')
           get().logout()
           return false
         }

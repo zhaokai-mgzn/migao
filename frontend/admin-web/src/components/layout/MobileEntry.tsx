@@ -27,12 +27,73 @@ import { Smartphone } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui'
-import { getBminiH5Url } from '@/lib/bmini-h5-url'
+import { buildMobileEntryUrl, getBminiH5Url } from '@/lib/bmini-h5-url'
+import request from '@/lib/request'
+import type { ApiResponse } from '@/types'
 import { cn } from '@/lib/utils'
 
-/** 地址 + 复制动作（只由顶栏使用；复制失败不抛未捕获异常 —— jsdom / 非安全上下文没有 clipboard）。 */
+/** 票据端点（issue #7825）：需已登录；返回 120 秒、单次有效的二维码票据 */
+const QR_TICKET_ENDPOINT = '/api/auth/qr/ticket'
+
+/** 服务端没给有效期时的兜底秒数（与后端 `jwt.qr-login-ticket-expiration` 同量级） */
+const QR_TICKET_TTL_FALLBACK = 120
+
+/** 倒计时上屏形态：`m:ss`（票据是短窗口，秒级足够） */
+function formatTicketTtl(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds))
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
+}
+
+/**
+ * 地址 + 票据 + 复制动作（只由顶栏使用）。
+ *
+ * 「扫码即登录」（issue #7825）：弹层打开时向服务端要一张**一次性**票据，二维码内容带 `?qr=`；
+ * 手机 H5 兑换后直接拿到自己的 30 天会话（不必再输密码）。票据过期/签发失败 ⇒ 降级为**裸入口**
+ * （扫码后照旧在手机上登录），不会出现「画了一张扫了没用的码」。
+ *
+ * 复制动作仍复制**裸地址**（不把短期凭证写进剪贴板）。
+ */
 function useMobileEntry() {
   const bminiH5Url = getBminiH5Url()
+  const [ticket, setTicket] = useState('')
+  const [remaining, setRemaining] = useState(0)
+  const [ticketFailed, setTicketFailed] = useState(false)
+
+  const issueTicket = useCallback(async () => {
+    if (!bminiH5Url) return
+    try {
+      // ⚠️ 拦截器返回的是**后端信封本体**（`{success,data}`），而 axios 的泛型是 `AxiosResponse<T>`
+      // ⇒ 这里显式转换（运行时形状由 request.ts 的 response 拦截器保证）
+      type QrTicketEnvelope = ApiResponse<{ ticket: string; expiresIn: number }>
+      const payload = (await request.post<QrTicketEnvelope>(
+        QR_TICKET_ENDPOINT,
+      )) as unknown as QrTicketEnvelope
+      const value = payload?.data?.ticket || ''
+      const ttl = Math.max(1, Math.round(Number(payload?.data?.expiresIn) || QR_TICKET_TTL_FALLBACK))
+      setTicket(value)
+      setRemaining(value ? ttl : 0)
+      setTicketFailed(!value)
+    } catch {
+      setTicket('')
+      setRemaining(0)
+      setTicketFailed(true)
+    }
+  }, [bminiH5Url])
+
+  // 弹层打开（组件挂载）即签发；过期自动换新，不要求用户点刷新
+  useEffect(() => {
+    void issueTicket()
+  }, [issueTicket])
+
+  useEffect(() => {
+    if (remaining <= 0) {
+      if (ticket) void issueTicket()
+      return
+    }
+    const timer = setTimeout(() => setRemaining(value => value - 1), 1000)
+    return () => clearTimeout(timer)
+  }, [remaining, ticket, issueTicket])
+
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(bminiH5Url)
@@ -41,7 +102,8 @@ function useMobileEntry() {
       toast.error('复制失败，请手动选择链接复制')
     }
   }
-  return { bminiH5Url, copy }
+
+  return { bminiH5Url, entryUrl: buildMobileEntryUrl(bminiH5Url, ticket), ticket, remaining, ticketFailed, copy }
 }
 
 /** 点击外部收起（与 `NotificationBell` / `Header` 用户菜单同一形态；`backdrop-filter` 下不能用全屏遮罩）。 */
@@ -63,7 +125,7 @@ function useClickOutside(open: boolean, close: () => void) {
  * 结构层判据（单源守卫）读的就是这段三元：有值才画码，无值只说「未配置」。
  */
 export function MobileEntryPanel({ className }: { className?: string }) {
-  const { bminiH5Url, copy } = useMobileEntry()
+  const { bminiH5Url, entryUrl, ticket, remaining, ticketFailed, copy } = useMobileEntry()
   return (
     <div
       className={cn(
@@ -74,12 +136,22 @@ export function MobileEntryPanel({ className }: { className?: string }) {
       {bminiH5Url ? (
         <div>
           <div className="flex justify-center rounded-lg border border-neutral-200 p-2">
-            <QRCodeSVG value={bminiH5Url} size={140} title={bminiH5Url} data-testid="bmini-h5-qr" />
+            {/* 二维码内容 = 裸地址 或 裸地址 + 一次性票据（派生点只有一个：`buildMobileEntryUrl`） */}
+            <QRCodeSVG value={entryUrl} size={140} title={entryUrl} data-testid="bmini-h5-qr" />
           </div>
           <p className="mt-3 text-xs text-neutral-500">用手机相机或「扫一扫」打开：</p>
           <code className="mt-1 block break-all text-xs text-neutral-700" data-testid="bmini-h5-url">
             {bminiH5Url}
           </code>
+          {ticket ? (
+            <p className="mt-1 text-xs text-neutral-400" data-testid="bmini-h5-qr-ttl">
+              扫码免登录 · {formatTicketTtl(remaining)} 后自动换新码
+            </p>
+          ) : ticketFailed ? (
+            <p className="mt-1 text-xs text-neutral-400" data-testid="bmini-h5-qr-fallback">
+              免登录码暂时生成失败，扫码后在手机上登录即可
+            </p>
+          ) : null}
           <Button variant="secondary" size="sm" className="mt-3 w-full" onClick={copy}>
             复制链接
           </Button>

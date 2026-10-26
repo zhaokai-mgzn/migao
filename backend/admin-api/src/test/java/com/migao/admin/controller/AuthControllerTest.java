@@ -1,5 +1,5 @@
 package com.migao.admin.controller;
-// case_ids: API-010
+// case_ids: API-010, AU-014
 
 import com.migao.admin.config.GlobalExceptionHandler;
 import com.migao.admin.dto.LoginResponse;
@@ -8,6 +8,7 @@ import com.migao.admin.exception.BusinessException;
 import com.migao.admin.security.SecurityUser;
 import com.migao.admin.service.AuthService;
 import com.migao.admin.service.MiniPhoneBindService;
+import com.migao.admin.service.QrLoginTicketService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -44,6 +45,9 @@ class AuthControllerTest {
 
     @Mock
     private MiniPhoneBindService miniPhoneBindService;
+
+    @Mock
+    private QrLoginTicketService qrLoginTicketService;
 
     @InjectMocks
     private AuthController authController;
@@ -178,5 +182,72 @@ class AuthControllerTest {
                 .andExpect(status().is4xxClientError());
 
         verify(miniPhoneBindService, never()).bind(anyString(), anyLong(), anyString());
+    }
+
+    // ==================== 扫码即登录（issue #7825） ====================
+
+    /** 模拟商家员工会话（签发二维码票据需要已登录）。 */
+    private void setMerchantAuth() {
+        SecurityUser user = new SecurityUser(
+                "user-1", 2L, "13800000000",
+                List.of("admin"),
+                List.of(new SimpleGrantedAuthority("ROLE_admin"))
+        );
+        Authentication auth = mock(Authentication.class);
+        when(auth.getPrincipal()).thenReturn(user);
+        SecurityContextHolder.getContext().setAuthentication(auth);
+    }
+
+    @Test
+    @DisplayName("qr/ticket - 已登录 ⇒ 返回票据与有效期（前端据此画二维码）")
+    void qrTicket_ok() throws Exception {
+        setMerchantAuth();
+        when(qrLoginTicketService.issue("user-1", 2L))
+                .thenReturn(new QrLoginTicketService.Ticket("ticket-abc", 120L));
+
+        mockMvc.perform(post("/api/auth/qr/ticket"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.ticket").value("ticket-abc"))
+                .andExpect(jsonPath("$.data.expiresIn").value(120));
+    }
+
+    @Test
+    @DisplayName("qr/ticket - 未登录 ⇒ 401（签发 = 替当前用户发持有凭证，不能匿名）")
+    void qrTicket_requiresAuth() throws Exception {
+        SecurityContextHolder.clearContext();
+
+        mockMvc.perform(post("/api/auth/qr/ticket"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("qr/exchange - 票据有效 ⇒ 返回登录响应（与密码登录同形）")
+    void qrExchange_ok() throws Exception {
+        when(qrLoginTicketService.consume("ticket-abc"))
+                .thenReturn(new QrLoginTicketService.Identity("user-1", 2L));
+        when(authService.loginByQrTicket(eq("user-1"), eq(2L), any()))
+                .thenReturn(LoginResponse.builder().accessToken("new-access").expiresIn(7200L).build());
+
+        mockMvc.perform(post("/api/auth/qr/exchange")
+                        .contentType("application/json")
+                        .content("{\"ticket\":\"ticket-abc\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.accessToken").value("new-access"));
+    }
+
+    @Test
+    @DisplayName("qr/exchange - 票据无效/已用/过期 ⇒ 401 + 同一句文案（不区分细节）")
+    void qrExchange_invalid() throws Exception {
+        when(qrLoginTicketService.consume("bad"))
+                .thenThrow(BusinessException.authFailed(AuthService.QR_TICKET_INVALID_MESSAGE));
+
+        mockMvc.perform(post("/api/auth/qr/exchange")
+                        .contentType("application/json")
+                        .content("{\"ticket\":\"bad\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.message").value(AuthService.QR_TICKET_INVALID_MESSAGE));
     }
 }
