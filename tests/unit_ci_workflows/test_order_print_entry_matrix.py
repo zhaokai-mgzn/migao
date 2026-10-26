@@ -237,15 +237,22 @@ def order_page_processing_leaks(page_src: str) -> list[str]:
     return hits
 
 
-def production_print_docs(page_src: str) -> list[str]:
-    """G8：生产明细页单据标签清单（`printDocs` 的声明体里出现的目标位）。"""
+def production_print_docs(page_src: str, print_doc_src: str) -> list[str]:
+    """G8：生产明细页单据标签清单（`printDocs` 声明体里出现的、`PRINT_TARGETS` 内的目标位）。
+
+    🔴 **不用「引号解析正则」**（`re.findall(r"'([a-z]+)'")` 那类）：它会把注释 / 字符串里的
+    字面量一并算进来（正是 `test_guard_parsing_is_comment_aware.py` 的 `quote-parse` 面），
+    且每新增一处就抬高台账里的一笔债务（只许缩短）。这里改成
+    「剥注释 → 取 `printDocs` 声明块 → 拿 `PRINT_TARGETS`（**现取**）逐个做子串判定」。
+    """
     code = strip_comments(page_src)
-    m = re.search(r"const printDocs\s*=[\s\S]{0,400}?\n\s*\)", code)
+    m = re.search(r"const printDocs\s*=([\s\S]{0,400}?)\n\s*\)", code)
     if not m:
         raise AssertionError(
             f"{PRODUCTION_PAGE_REL} 里找不到 `printDocs` —— 本页可打印单据清单必须是**一处**声明"
         )
-    return sorted(set(re.findall(r"'([a-z]+)'", m.group(0))))
+    block = m.group(1)
+    return sorted(t for t in print_targets(print_doc_src) if f"'{t}'" in block)
 
 
 def production_selector_wiring(page_src: str) -> list[str]:
@@ -279,12 +286,13 @@ class TestProductionPrintEntry:
         assert strip_comments(page).count(PRODUCTION_ENTRY_MARKER) == 1, (
             f"{PRODUCTION_PAGE_REL} 的「打印」入口应恰好 1 处（{PRODUCTION_ENTRY_MARKER}）"
         )
-        docs = production_print_docs(page)
+        doc_lib = _read(PRINT_DOC_REL)
+        docs = production_print_docs(page, doc_lib)
         missing = sorted(set(REQUIRED_PRODUCTION_DOCS) - set(docs))
         assert missing == [], (
             f"生产明细页的单据标签缺 {missing} —— 加工单与水洗唛必须**同层**可选（issue #7870）"
         )
-        unknown = sorted(set(docs) - set(print_targets(_read(PRINT_DOC_REL))))
+        unknown = sorted(set(docs) - set(print_targets(doc_lib)))
         assert unknown == [], f"单据标签里出现了 `PRINT_TARGETS` 之外的目标位 {unknown}"
         wiring = production_selector_wiring(page)
         assert wiring == [], f"生产明细页的打印层选择器没接线，缺 {wiring}"
@@ -442,10 +450,11 @@ class TestDiscriminatingPower:
     def test_g8_dropping_either_doc_is_red(self) -> None:
         """G8 红证：生产明细页少一份纸 / 选择器断线 / 缺页级挂载 ⇒ 各自单独变红。"""
         prod = _read(PRODUCTION_PAGE_REL)
+        doc_lib = _read(PRINT_DOC_REL)
         no_processing = prod.replace("['labels', 'processing']", "['labels']", 1)
         assert no_processing != prod, "注入未生效（锚点漂移）"
-        assert "processing" not in production_print_docs(no_processing)
-        assert "processing" in production_print_docs(prod)  # 对照
+        assert "processing" not in production_print_docs(no_processing, doc_lib)
+        assert "processing" in production_print_docs(prod, doc_lib)  # 对照
         no_docs = prod.replace("docs={printDocs}", "", 1)
         assert production_selector_wiring(no_docs) == ["docs={printDocs}"]
         assert production_selector_wiring(prod) == []  # 对照
@@ -453,7 +462,7 @@ class TestDiscriminatingPower:
         commented = prod.replace(
             "const printDocs", "// 说明：这里给出 labels + processing 两份纸\n  const printDocs", 1
         )
-        assert production_print_docs(commented) == production_print_docs(prod)
+        assert production_print_docs(commented, doc_lib) == production_print_docs(prod, doc_lib)
 
     def test_g6_comment_only_change_is_not_red(self) -> None:
         """对照读数：只往页面里加**注释**（哪怕注释里写满按钮名 / 旧矩阵名）⇒ 一条判据都不该红。"""
