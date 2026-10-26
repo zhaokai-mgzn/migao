@@ -307,6 +307,46 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
     }
   }
 
+  // ══════════════════════════════════════════════════════════════════════════════
+  // 报返工（issue #7860）：任一工序工人都能报 —— 身份只由 `X-Worker-Session-Id` 解。
+  //
+  // 服务端把「这件的这道活、本人最近一笔 normal 报工」改记为 rework（回退 done_qty / done_at /
+  // 加工单完成态，计件归零）并生成返工单；本函数只负责读说明、发一次请求、把回执画上屏。
+  // ══════════════════════════════════════════════════════════════════════════════
+  async function submitRework() {
+    const form = state.reworkForm
+    const token = state.view?.__token
+    if (!form || !token) return
+    // 说明在**提交那一刻**从 DOM 读（不在 input 事件里重绘，否则每敲一个字就丢焦点）
+    const reason = (doc.getElementById('wh5-rework-reason')?.value ?? '').trim()
+    if (!reason) {
+      dispatch({ type: 'reworkFormError', error: '报返工要写明问题（例如：布面污渍 / 尺寸偏差 / 缝线开裂）。' })
+      return
+    }
+    dispatch({ type: 'reworkSubmitting' })
+    try {
+      const rework = await api.reportRework({ token, reason })
+      // 进度被服务端退回了 ⇒ 用同一张码重解析一次，屏上回到真实读数。
+      // 读失败**不影响**返工已成立（写面已返回成功）—— 保持原屏，只少一次刷新。
+      let view = state.view
+      try {
+        const fresh = await api.resolveScan({ token })
+        view = { ...fresh, __token: token }
+      } catch {
+        view = state.view
+      }
+      dispatch({
+        type: 'reworkSubmitted',
+        rework,
+        view,
+        notice: rework?.reworkNo ? `返工单 ${rework.reworkNo} 已生成` : '返工单已生成',
+      })
+    } catch (e) {
+      // 服务端下发的业务文案原样显示（不把 HTTP 状态码当工人文案）
+      dispatch({ type: 'reworkFormError', error: e?.message ?? String(e) })
+    }
+  }
+
   /**
    * 闲置登出：定时器（服务端 `idle_minutes`）+ 可见性变化双保险。
    *
@@ -453,6 +493,11 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
 
     // 质检（issue #7162 / #7749）：展开返工表单 / 取消 / 提交（说明在提交时从 DOM 读）。
     // 🔴 已无「判定单选」：工人端唯一的判定就是返工（合格是默认态，不点即合格）。
+    // 报返工（issue #7860）：展开表单 / 取消 / 提交
+    on('wh5-rework-open', () => dispatch({ type: 'reworkFormOpen' }))
+    on('wh5-rework-cancel', () => dispatch({ type: 'reworkFormClose' }))
+    on('wh5-rework-submit', () => { void submitRework() })
+
     on('wh5-quality-open', () => dispatch({ type: 'qualityFormOpen' }))
     on('wh5-quality-cancel', () => dispatch({ type: 'qualityFormClose' }))
     on('wh5-quality-submit', () => { void submitQuality() })

@@ -4369,7 +4369,7 @@ CREATE TABLE IF NOT EXISTS rework_orders (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
     rework_no VARCHAR(32) NOT NULL,
-    after_sales_ticket_id VARCHAR(64) NOT NULL REFERENCES after_sales_tickets(id),
+    after_sales_ticket_id VARCHAR(64) REFERENCES after_sales_tickets(id),
     order_id VARCHAR(36),
     processing_order_id VARCHAR(64),
     status VARCHAR(16) NOT NULL DEFAULT 'draft',
@@ -4381,7 +4381,16 @@ CREATE TABLE IF NOT EXISTS rework_orders (
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     deleted INT NOT NULL DEFAULT 0,
-    CONSTRAINT ck_rework_orders_status CHECK (status IN ('draft', 'in_progress', 'done', 'cancelled'))
+    -- issue #7860（V199）：来源 + 车间报返工的工序/数量/报工人/被改记的报工行
+    source VARCHAR(16) NOT NULL DEFAULT 'after_sales',
+    operation_id VARCHAR(64),
+    operation_name VARCHAR(64),
+    qty NUMERIC(12, 3),
+    worker_id VARCHAR(64),
+    worker_name VARCHAR(64),
+    work_log_id VARCHAR(64),
+    CONSTRAINT ck_rework_orders_status CHECK (status IN ('draft', 'in_progress', 'done', 'cancelled')),
+    CONSTRAINT ck_rework_orders_source CHECK (source IN ('after_sales', 'worker'))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_rework_orders_no
     ON rework_orders (tenant_id, rework_no) WHERE deleted = 0;
@@ -4390,6 +4399,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_rework_orders_open_per_ticket
     WHERE status IN ('draft', 'in_progress') AND deleted = 0;
 CREATE INDEX IF NOT EXISTS idx_rework_orders_ticket
     ON rework_orders (tenant_id, after_sales_ticket_id) WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_rework_orders_processing
+    ON rework_orders (tenant_id, processing_order_id) WHERE deleted = 0;
 
 -- ══════════════════════════════════════════════════════════════════════════════
 -- 原料仓/成品仓 + 仓位 + 成品在库 + 出库单（V196，issue #7750）

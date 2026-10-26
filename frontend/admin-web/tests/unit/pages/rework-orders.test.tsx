@@ -32,9 +32,15 @@ const wrap = <T,>(data: T) => Promise.resolve({ data: { success: true, data } })
 const DRAFT = {
   id: 'rw1',
   reworkNo: 'FG202610230001',
+  source: 'after_sales' as const,
   afterSalesTicketId: 'SH-20261023-0001',
   orderId: 'o1',
+  orderNo: 'SO-20261023-0001',
   processingOrderId: null,
+  processingOrderNo: null,
+  operationName: null,
+  qty: null,
+  workerName: null,
   status: 'draft' as const,
   reason: '帘头褶皱不齐',
   createdByName: '王小美',
@@ -44,6 +50,38 @@ const DRAFT = {
 
 const DOING = { ...DRAFT, id: 'rw2', reworkNo: 'FG202610230002', status: 'in_progress' as const, startedAt: '2026-10-23T09:10:00+08:00' }
 const DONE = { ...DRAFT, id: 'rw3', reworkNo: 'FG202610230003', status: 'done' as const, startedAt: '2026-10-23T08:00:00+08:00', completedAt: '2026-10-23T09:30:00+08:00' }
+
+/** 售后来源、但只登记了加工单 id（老数据）⇒ 关联加工单要回落到 id，不能空白 */
+const LEGACY_AFTER_SALES = { ...DRAFT, id: 'rw7', reworkNo: 'FG202610230007', processingOrderId: 'po-legacy' }
+
+/** 售后来源 + 加工单号与 id 都有 ⇒ 单号优先（不摆内部 id） */
+const AFTER_SALES = {
+  ...DRAFT,
+  id: 'rw6',
+  reworkNo: 'FG202610230006',
+  processingOrderId: 'po-9',
+  processingOrderNo: 'JG-20261023-0009',
+}
+
+/**
+ * 车间工人报返工（issue #7860）：没有售后单，带工序 / 数量 / 报工人。
+ * 报工人与建单人在库里可能是同一个人 ⇒ 页面只留一列「发起人」，不重复两列。
+ */
+const WORKER = {
+  ...DRAFT,
+  id: 'rw5',
+  reworkNo: 'FG202610230005',
+  source: 'worker' as const,
+  afterSalesTicketId: '',
+  orderNo: null,
+  processingOrderId: 'po-9',
+  processingOrderNo: 'JG-20261023-0009',
+  operationName: '帘头拼缝',
+  qty: 12,
+  workerName: '李师傅',
+  createdByName: null,
+  reason: '拼缝走偏',
+}
 
 describe('返工单页面', () => {
   beforeEach(() => {
@@ -194,5 +232,48 @@ describe('返工单页面', () => {
 
     await waitFor(() => expect(screen.getByTestId('rework-orders-load-error')).toBeInTheDocument())
     expect(screen.getByTestId('rework-orders-load-error-retry')).toBeInTheDocument()
+  })
+
+  it('🟢 车间工人报返工的行：来源「车间返工」+ 工序 / 数量 / 报工人，没有售后单', async () => {
+    reworkOrderApi.list.mockImplementation(() => wrap([WORKER]))
+    render(<ReworkOrdersPage />)
+
+    await waitFor(() => expect(screen.getByTestId('rework-orders-table')).toBeInTheDocument())
+    // 来源：worker ⇒ 人话「车间返工」，不是内部标识
+    expect(screen.getByTestId('rework-source-rw5').textContent).toBe('车间返工')
+    expect(screen.getByTestId('rework-operation-rw5').textContent).toBe('帘头拼缝')
+    expect(screen.getByTestId('rework-qty-rw5').textContent).toBe('12')
+    // 报工人上屏为「发起人」（同一信息不重复两列，「建单人」列已撤）
+    expect(screen.getByTestId('rework-initiator-rw5').textContent).toBe('李师傅')
+    expect(screen.getByText('发起人')).toBeInTheDocument()
+    expect(screen.queryByText('建单人')).toBeNull()
+    // 车间来源没有售后单 ⇒ 单元格是「—」（不是空白）
+    expect(screen.getByTestId('rework-ticket-rw5').textContent).toBe('—')
+    // 关联加工单优先显示单号，不摆内部 id
+    expect(screen.getByTestId('rework-processing-rw5').textContent).toBe('JG-20261023-0009')
+    // 车间来源照样能开工 / 取消（动作逻辑不变）
+    expect(screen.getByTestId('rework-start-rw5')).toBeInTheDocument()
+    expect(screen.getByTestId('rework-cancel-rw5')).toBeInTheDocument()
+    // 副标题把车间来源的存在说出来，不用惊叹号
+    expect(document.body.textContent).toContain('车间工人报返工的单也会出现在这里')
+    expect(document.body.textContent).not.toContain('！')
+  })
+
+  it('售后来源的行仍渲染「售后」，既有列零回归', async () => {
+    reworkOrderApi.list.mockImplementation(() => wrap([AFTER_SALES, LEGACY_AFTER_SALES, DRAFT]))
+    render(<ReworkOrdersPage />)
+
+    await waitFor(() => expect(screen.getByTestId('rework-orders-table')).toBeInTheDocument())
+    expect(screen.getByTestId('rework-source-rw6').textContent).toBe('售后')
+    expect(screen.getByTestId('rework-ticket-rw6').textContent).toBe('SH-20261023-0001')
+    // 售后来源没有报工人 ⇒ 发起人回落到建单人（列语义没变）
+    expect(screen.getByTestId('rework-initiator-rw6').textContent).toBe('王小美')
+    // 工序 / 数量：售后来源没有这两项 ⇒ 空值文案（不是 0 / 空白）
+    expect(screen.getByTestId('rework-operation-rw6').textContent).toBe('—')
+    expect(screen.getByTestId('rework-qty-rw6').textContent).toBe('—')
+    // 加工单号与 id 都在 ⇒ 单号优先；只有 id 的老数据 ⇒ 回落 id；都没有 ⇒ 「—」
+    expect(screen.getByTestId('rework-processing-rw6').textContent).toBe('JG-20261023-0009')
+    expect(screen.getByTestId('rework-processing-rw7').textContent).toBe('po-legacy')
+    expect(screen.getByTestId('rework-processing-rw1').textContent).toBe('—')
   })
 })

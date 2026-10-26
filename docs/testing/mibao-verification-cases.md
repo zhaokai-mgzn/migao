@@ -8117,7 +8117,7 @@
 ```
 溯源: 2026-10-18 新增（issue #7251）：只修**调度**，不改 30 天口径 —— `armIdle()` 改为按 `idleSlices()` 分片排队（每片 ≤ `MAX_TIMER_DELAY_MS`，前 N-1 片只续排、末片到期才 `checkAlive()`），并新增同文件 ⑥ 的全区间类级判据；同批修好测试侧因「长定时器不再 1ms 立即触发」而挂住测试进程的一处（frontend/worker-h5/tests/worker-h5-6749-stale-login-error.test.mjs 用 `t.after(() => app.destroy())` 显式销毁）。取号 = PG-089（`python3 scripts/next_case_id.py pg` 实跑：PG → main:001-087 · PR #7224:088 → 取 PG-089）。 ｜ tags: processing, worker, session, timer, backend-contract
 
-## 加工单域（83 case）
+## 加工单域（84 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 作业单生成 + 订单进入生产中（派单即生产；issue #7723 改判） 🔵
 ```
@@ -9262,6 +9262,28 @@
 跳过: [backend-contract] admin-api 单测 + admin-web 单测（无 LLM 行为面）
 ```
 溯源: 2026-10-25 新增（issue #7746 的后续裁定：用户逐字「外单应该和加急单一样，所以入口应该放在加急单那块区域」+「现在做」）。落地形态：新列 `orders.is_outsourced`（V194）+ 池视图新增 `outsourcedLines/outsourcedCount` + 派单闸门（外发必须选承接方）+ 订单详情开关 + 派单页外发区。 ｜ tags: processing-order, dispatch, outsourcing
+
+### PG-098. 任一工序工人可报返工：把该笔报工改记为返工（回退 done_qty/done_at/加工单完成态、计件归零）+ 生成返工单 + 手机端返工加工单列表（逐人开） 🔵
+```
+你: 用户 2026-10-26 逐字：「质检不能绑定死打包工序，需要允许任一工序工人报返工，另外需要在工人手机端展示报返工的加工单列表」
+你: 用户 2026-10-26 逐字：「报返工的那个工序不能计件的，只报返工，生成返工单，pc端的 返工单列表要能看到这次的返工数据」
+你: 用户 2026-10-26 逐字（追问「刚自动记的那一笔怎么处理」时选）：「把刚自动记的那一笔改记为返工（回退进度与计件）」
+你: 用户 2026-10-26 逐字（列表可见范围）：「在工人档案中设置过可见权限的工人」
+你: 用户 2026-10-26 逐字（追加要求）：「新增返工单需要产生通知消息」
+数据: **判据 1·🔴 改记 + 回退逐值正确（涉钱）**：把这件这道工序「本人最近一笔 normal」改成 `rework` 且 `qualified_qty=0`；`done_qty` 退回该笔合格数（CAS 期望值 = 读到的旧值）；`done_at` 清空；`done_qty < 应做` ⇒ 状态回 `pending`。计件随之归零（聚合只算 `normal`，不另算一次钱）。红证：把回退量写成「该笔的 qty」而不是合格数 ⇒ 判据红。证据：backend/admin-api/src/test/java/com/migao/admin/service/ProductionReworkServiceTest.java（amendsAndRevertsExactly）
+数据: **判据 2·🔴 任一工序工人都能报（不绑打包 / 不看页面键）**：工人档案页面集只有默认页（无 `rework`、无 `inspect`）也照常受理；准入 = 有效工人 session，身份只由 `X-Worker-Session-Id` 解（body 里的 `worker_id` 一个字节都不读）。红证：把 `requireWorker` 换成页面键判据 ⇒ 判据红。证据：WorkerReworkEndpointsTest.java（reportReworkIgnoresPageKeys / withoutSessionRejected）
+数据: **判据 3·🔴 无可改记的报工 ⇒ 422 且零写入**：没有 normal 报工（还没报过 / 已经改记过）⇒ 具名 422，不回退、不开单（不留半截账）。红证：把 `normalLog == null` 分支改成「照常开单」⇒ 判据红。证据：ProductionReworkServiceTest.java（withoutNormalReportRejects / reasonIsRequired）
+数据: **判据 4·并发不丢账**：进度回退走条件更新（旧 `done_qty` / 旧 `status` 不成立 ⇒ 影响 0 行 ⇒ 409），同码重复提交由 `X-Client-Request-Id` 回放首次结果（不重复改记、不生成第二张返工单）。红证：把 CAS 改成无条件 UPDATE ⇒ lostCasRejects 红；去掉幂等占位 ⇒ replayDoesNotAmendTwice 红。证据：ProductionReworkServiceTest.java（lostCasRejects / replayDoesNotAmendTwice）
+数据: **判据 5·加工单不再全绿 ⇒ 回到加工中**：回退后 `allInstancesDone` 不成立 ⇒ `completed → in_processing`（清 `completed_at`；这是 completed 终态的唯一补偿路径，谓词死锁在 `status='completed'`）。红证：删掉 reopen 调用 ⇒ completedProcessingOrderIsReopened 红。证据：ProductionReworkServiceTest.java（completedProcessingOrderIsReopened）+ ProcessingOrderMapper#reopenCompletedIfAny
+数据: **判据 6·生成返工单并出现在 PC「返工单」列表**：落库 `rework_orders.source='worker'`（+ 工序 / 数量 / 报工人 / 被改记的报工行 id / 原因）；`GET /api/admin/rework-orders` 返回 `source / operationName / qty / workerName / processingOrderNo / orderNo`，PC 表新增「来源（售后 / 车间返工）· 关联加工单 · 工序 · 数量」列，「建单人」合并为「发起人」。红证：view() 不映射 source ⇒ 前端「车间返工」永不出现；PC 不加来源列 ⇒ 该页用例红。证据：ReworkOrderService.java（createWorkerRework / view）+ frontend/admin-web/tests/unit/pages/rework-orders.test.tsx
+数据: **判据 7·🔴 手机端返工列表按档案页面键准入**：`GET /api/worker/production/rework-orders` 在页面集不含 `rework` 时 403 且服务层零调用（用户裁定「在工人档案中设置过可见权限的工人」）；含则按加工单聚合「笔数 / 返工数量合计 / 涉及工序 + 数量 / 最近返工时间 / 原因」。红证：把 403 改成空列表 ⇒ listRequiresReworkPage 红（空列表会被读成「没人报过」）。证据：WorkerReworkEndpointsTest.java（listRequiresReworkPage / listWorksWhenReworkGranted）+ ProductionReworkServiceTest.java（reworkOrdersAggregatesPerProcessingOrder）
+数据: **判据 8·工人屏只有返工一个动作、且与质检两把尺子**：报工屏返工区块**不按页面键门控**（只有 `report` 也出）、定位不到一件则整块不渲染、表单只有【提交返工 / 取消】+ 问题说明必填、提交后明说「已改记为返工，不计件」；同屏质检区块仍逐人开（`inspect` ∉ 页面集 ⇒ 不出现）。红证：给返工区块加上 `inspect` 门控 ⇒ ①红；去掉「不计件」说明 ⇒ ⑤红。证据：frontend/worker-h5/tests/worker-h5-rework.test.mjs
+数据: **判据 9·🔴 新增返工单 ⇒ 站内通知**（用户 2026-10-26 逐字「新增返工单需要产生通知消息」）：两个来源（售后开单 / 车间报返工）都触发事件 `rework_order_created`（系统模板 + 规则 `rule-sys-0007`，V200 种入）；事件带 `bizType=rework_order` / `bizId` / `bizNo` / `targetPath=/rework-orders`（能点进单据），变量含单号 / 加工单号 / 工序 / 数量 / 原因 / 来源；通知发送失败**不得**回滚已落库的返工单（fail-soft）。红证：删掉 `notifyCreated` 调用 ⇒ ①②红；把 `targetPath` 去掉 ⇒ ②红；把 try/catch 去掉 ⇒ ③红。证据：backend/admin-api/src/test/java/com/migao/admin/service/ReworkOrderNotificationTest.java（三个用例）+ 迁移 V200
+数据: **边界（照实登记）**：① **成品入库不因返工自动回退**（打包已生成的成品入库单是库存事实；回退属商家侧「撤销入库」动线，本单不碰库存）；② 报工明细「不可变」出现**唯一**例外 = 用户裁定的「改记」，可改列只有 `work_type` / `qualified_qty`（数量、单价快照、报工人、`started_at` 一律不动）；③ 返工**不参与计件**（`aggregate` 只算 normal 的既有口径，未新增算法）；④ 工人仍不进 `/api/admin/**`、不获得任何 RBAC 权限码；⑤ 返工记录页样式复用既有 `wh5-*` 类（不新增版式体系）。
+前置: 前置 = ① 一张**活跃**加工单（`status ∈ {generated, issued, in_processing, completed}`）+ 该件成品帘（`order_item_id`）；② 该工人在这件这道工序有一笔 `work_type='normal'` 的报工（`done_qty` 已推进）；③ 工人 session（`X-Worker-Session-Id`）。后端夹具 = Mockito（`ProductionReworkServiceTest` / `WorkerReworkEndpointsTest`）；H5 = 纯渲染/状态机夹具（零 DOM、零网络）。前置不成立（无可改记报工）⇒ 422 且零写入（**不是**静默成功）。
+跳过: [backend-contract] 服务端写面/读面 + worker-h5 渲染与状态机 + admin-web 列表列（零 LLM 行为），不进 agent-eval 冒烟
+```
+溯源: 2026-10-26 新增（issue #7860；用户四条逐字见 user_inputs）。落码：迁移 V199（`rework_orders` 增 `source/operation_id/operation_name/qty/worker_id/worker_name/work_log_id`，`after_sales_ticket_id` 改可空）+ `ProductionReworkService`（改记 + 回退 + 重开 + 开单，幂等 + CAS）+ `ProcessingPositionOperationMapper#revertDoneQtyIfUnchanged` / `ProcessingOrderMapper#reopenCompletedIfAny` + `ReworkOrderService.createWorkerRework` + `WorkerPages.REWORK`（逐人开）+ `WorkerProductionController`（`POST /rework`、`GET /rework-orders`）+ worker-h5（返工区块 / 返工记录页 `/w/rework.html` / 页头入口）+ admin-web（返工单来源 / 工序 / 数量列）+ 迁移 V200（新增返工单即发站内通知 `rework_order_created`，用户同日追加「新增返工单需要产生通知消息」）。取号：见文首注释。 ｜ tags: rework, worker-h5, backend-contract, rework-order, piecework
 
 ## 商品域（132 case）
 
@@ -13327,8 +13349,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：903（活跃 142，跳过 761）
-- tier 分布：smoke 12 / normal 835 / adversarial 32
+- 用例总数：904（活跃 142，跳过 762）
+- tier 分布：smoke 12 / normal 836 / adversarial 32
 - 售后域：16
 - Agent 核心域：12
 - API 层域：21
@@ -13348,7 +13370,7 @@
 - 领域本体域：4
 - 订单域：70
 - 加工项域：31
-- 加工单域：83
+- 加工单域：84
 - 商品域：132
 - 工具注册器域：1
 - 设置域：10
@@ -13662,6 +13684,7 @@
 - PG-095: 外发承接方搬到智能派单：整单加工厂 + 回厂日，作业单不再录入/展示（issue #7723）
 - PG-096: 工人档案绑定工序 ⇒ 扫码自动选中该道直接报工（不出选择器）；质检默认合格、只记返工、不阻塞完工
 - PG-097: 外发加工标记：订单打标后不进成批候选、进派单页外发区逐单立即派，且派单必须选承接方（V194）
+- PG-098: 任一工序工人可报返工：把该笔报工改记为返工（回退 done_qty/done_at/加工单完成态、计件归零）+ 生成返工单 + 手机端返工加工单列表（逐人开）
 - PP-007: 黄金策加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）
 - PP-008: 黄金策加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 加工项已无单价与计价方式 ⇒ calculate_price 端点与 action 整体退场（退场守卫）

@@ -37,9 +37,35 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ReworkOrderService {
 
+    /** 来源词表（与迁移 V199 的 CHECK 约束逐字同名）。 */
+    public static final String SOURCE_AFTER_SALES = "after_sales";
+    public static final String SOURCE_WORKER = "worker";
+
     private final ReworkOrderMapper reworkOrderMapper;
     private final AfterSalesTicketMapper afterSalesTicketMapper;
     private final com.migao.admin.time.BusinessClock businessClock;
+
+    /**
+     * 读面补「加工单号 / 订单号」（issue #7860）—— 用字段注入而**不加**构造参数：
+     * {@code @RequiredArgsConstructor} 的构造签名被既有单测直接装配，加参数会让那些测试红；
+     * 而这两个 mapper 只喂**展示字段**，缺接线时降级成「不显示编号」比让整条读面炸掉更合理
+     * （读面零业务副作用，编号不是任何判据的输入）。
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.migao.admin.mapper.ProcessingOrderMapper processingOrderMapper;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.migao.admin.mapper.OrderMapper orderMapper;
+
+    /**
+     * 站内通知（issue #7860 用户追加要求：「新增返工单需要产生通知消息」）。
+     *
+     * <p>🔴 <b>fail-soft</b>（与入库通知同一取舍）：通知是「事实之后的追加」，不是事实的一部分 ——
+     * 未注入（切片单测 / 老上下文）或发送异常都只留痕，**绝不**把已经落库的返工单回滚，
+     * 也不改调用方返回值。幂等由 `NotificationService` 的 `eventType:bizId:recipientId` 去重键兜住。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    NotificationService notificationService;
 
     /** 从售后单开返工单。 */
     @Transactional
@@ -66,6 +92,7 @@ public class ReworkOrderService {
                 .tenantId(ticket.getTenantId())
                 .reworkNo(nextReworkNo())
                 .afterSalesTicketId(afterSalesTicketId)
+                .source(SOURCE_AFTER_SALES)
                 .orderId(ticket.getOrderId())
                 .processingOrderId(processingOrderId)
                 .status(ReworkState.DRAFT)
@@ -80,7 +107,9 @@ public class ReworkOrderService {
             throw BusinessException.validationError("这张售后单刚有另一个返工单被开出来，请刷新后处理那一个");
         }
         log.info("[rework] 开单 | no={} ticket={}", order.getReworkNo(), afterSalesTicketId);
-        return view(order);
+        ReworkOrderView created = view(order);
+        notifyCreated(order, created);
+        return created;
     }
 
     /** 开工（draft → in_progress）。 */
@@ -141,6 +170,48 @@ public class ReworkOrderService {
         return view(require(reworkId));
     }
 
+    /**
+     * **车间工人报返工 ⇒ 开一张 {@code source='worker'} 的返工单**（issue #7860）。
+     *
+     * <p>用户 2026-10-26 逐字：「报返工的那个工序不能计件的，只报返工，生成返工单，
+     * pc端的返工单列表要能看到这次的返工数据」。</p>
+     *
+     * <p>🔴 与 {@link #create}（售后开单）的差别只有「挂在哪」：车间返工没有售后单，
+     * 所以 {@code after_sales_ticket_id} 落 {@code NULL}，责任留痕改挂
+     * 「报工人 + 工序 + 数量 + 被改记的那一笔报工行」。状态机与完成回写规则**一字不动**
+     * （{@code complete()} 对无售后单的行什么都不回写 —— 那条分支本就有 null 守卫）。</p>
+     *
+     * <p>调用方 = {@code ProductionReworkService}（同一事务：改记报工 + 回退进度 + 开单要么全成要么全不成）。</p>
+     */
+    @Transactional
+    public ReworkOrderView createWorkerRework(Long tenantId, String orderId, String processingOrderId,
+                                              String operationId, String operationName, java.math.BigDecimal qty,
+                                              String reason, String workerId, String workerName, String workLogId) {
+        ReworkOrder order = ReworkOrder.builder()
+                .tenantId(tenantId)
+                .reworkNo(nextReworkNo())
+                .source(SOURCE_WORKER)
+                .orderId(orderId)
+                .processingOrderId(processingOrderId)
+                .operationId(operationId)
+                .operationName(operationName)
+                .qty(qty)
+                .workerId(workerId)
+                .workerName(workerName)
+                .workLogId(workLogId)
+                .status(ReworkState.DRAFT)
+                .reason(reason)
+                .createdBy(workerId)
+                .createdByName(workerName)
+                .build();
+        reworkOrderMapper.insert(order);
+        log.info("[rework] 车间报返工 | no={} po={} op={} qty={}",
+                order.getReworkNo(), processingOrderId, operationName, qty);
+        ReworkOrderView created = view(order);
+        notifyCreated(order, created);
+        return created;
+    }
+
     /** 列表（最新在前；可按售后单过滤）。 */
     public List<ReworkOrderView> list(String afterSalesTicketId) {
         LambdaQueryWrapper<ReworkOrder> wrapper = new LambdaQueryWrapper<ReworkOrder>()
@@ -184,19 +255,75 @@ public class ReworkOrderService {
         return order;
     }
 
+    /**
+     * 新增返工单 ⇒ 给租户管理员的**站内通知**（issue #7860，用户逐字「新增返工单需要产生通知消息」）。
+     *
+     * <p>两个来源同一句话，只在 {@code sourceText} 上区分（售后判定 / 车间报返工）——
+     * 收件人看到的是「哪张单、哪道工序、多少、为什么」，据此决定派谁去做。</p>
+     *
+     * <p>🔴 落地页 = `/rework-orders`（PC「返工单」列表，本单新增的来源/工序/数量列就在那一页）。</p>
+     */
+    private void notifyCreated(ReworkOrder order, ReworkOrderView created) {
+        if (notificationService == null) {
+            return;
+        }
+        try {
+            java.util.Map<String, String> vars = new java.util.HashMap<>();
+            vars.put("reworkNo", created.getReworkNo() == null ? "" : created.getReworkNo());
+            vars.put("processingOrderNo", created.getProcessingOrderNo() == null
+                    ? "（未关联加工单）" : created.getProcessingOrderNo());
+            vars.put("operationName", created.getOperationName() == null ? "（未指定工序）" : created.getOperationName());
+            vars.put("qtyText", created.getQty() == null
+                    ? "" : "返工数量 " + created.getQty().stripTrailingZeros().toPlainString());
+            vars.put("reason", created.getReason() == null ? "（未填原因）" : created.getReason());
+            vars.put("sourceText", SOURCE_WORKER.equals(order.getSource()) ? "车间报返工" : "售后判定要返工");
+            notificationService.triggerForTenantAdmins(order.getTenantId(), "rework_order_created", vars,
+                    com.migao.admin.dto.NotificationEvent.builder()
+                            .bizType("rework_order")
+                            .bizId(order.getId())
+                            .bizNo(created.getReworkNo())
+                            .targetPath("/rework-orders")
+                            .severity("warn")
+                            .occurredAt(OffsetDateTime.now())
+                            .build());
+        } catch (Exception e) {
+            log.warn("[rework] 返工单通知发送失败（已忽略，不影响单据事实）: no={}, error={}",
+                    order.getReworkNo(), e.getMessage());
+        }
+    }
+
     private ReworkOrderView view(ReworkOrder order) {
-        return ReworkOrderView.builder()
+        ReworkOrderView view = ReworkOrderView.builder()
                 .id(order.getId())
                 .reworkNo(order.getReworkNo())
                 .afterSalesTicketId(order.getAfterSalesTicketId())
                 .orderId(order.getOrderId())
                 .processingOrderId(order.getProcessingOrderId())
+                .source(order.getSource() == null ? SOURCE_AFTER_SALES : order.getSource())
+                .operationName(order.getOperationName())
+                .qty(order.getQty())
+                .workerName(order.getWorkerName())
                 .status(order.getStatus())
                 .reason(order.getReason())
                 .createdByName(order.getCreatedByName())
                 .startedAt(order.getStartedAt())
                 .completedAt(order.getCompletedAt())
                 .build();
+        enrichNos(view, order);
+        return view;
+    }
+
+    /** 展示用编号（issue #7860）：取不到 ⇒ 保持 null（界面渲染 —）。逐行单查：本读面是**单页列表**。 */
+    private void enrichNos(ReworkOrderView view, ReworkOrder order) {
+        if (processingOrderMapper != null && order.getProcessingOrderId() != null) {
+            com.migao.admin.entity.ProcessingOrder po =
+                    processingOrderMapper.selectById(order.getProcessingOrderId());
+            view.setProcessingOrderNo(po == null ? null : po.getProcessingOrderNo());
+        }
+        if (orderMapper != null && order.getOrderId() != null) {
+            com.migao.admin.entity.Order salesOrder = orderMapper.selectById(order.getOrderId());
+            view.setOrderNo(salesOrder == null ? null : salesOrder.getOrderNo());
+        }
     }
 
     /** 单号：RG + 业务日期 + 4 位随机（同租户唯一索引兜底）。 */

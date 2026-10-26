@@ -465,6 +465,58 @@ export function createApi(opts = {}) {
     },
 
     // ════════════════════════════════════════════════════════════════════════════════
+    // 返工（issue #7860）：**任一工序工人**都能报返工 + 手机端「报返工的加工单列表」。
+    //
+    // 🔴 与质检（`/api/worker/quality/**`）不是一件事：返工 = 报工三态里的 `work_type='rework'`。
+    //    服务端把该工人这道工序**最近一笔 `normal` 报工改记为返工**（回退 `done_qty` / `done_at` /
+    //    加工单完成态，计件随之归零）并生成一张 `source='worker'` 的**返工单**。
+    // 🔴 报返工的准入 = 有效工人 session（不看打包工序、不看 `inspect` 页）；
+    //    列表读面才按工人档案的页面键 `rework` 判 403（逐人开，默认不含）。
+    // ════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 报返工（`POST /api/worker/production/rework`）。
+     *
+     * @param {{token:string, operationId?:string, reason:string, qty?:number, clientRequestId?:string}} p
+     * @returns {Promise<{reworkNo:string, operationName:string, qty:number|null, doneQty:number|null,
+     *   status:string|null, orderCompleted:boolean}>}
+     */
+    async reportRework({ token, operationId, reason, qty, clientRequestId } = {}) {
+      if (!session?.sessionId) {
+        const err = new Error('尚未登录工人身份，请先用工号 + PIN 登录')
+        err.code = SESSION_EXPIRED
+        throw err
+      }
+      // 🔴 白名单式 body：**不含** worker_id / worker_name（身份只由 X-Worker-Session-Id 解）
+      const body = { token }
+      if (operationId) body.operation_id = operationId
+      if (reason) body.reason = reason
+      if (typeof qty === 'number' && Number.isFinite(qty) && qty > 0) body.qty = qty
+      const data = await request('/api/worker/production/rework', {
+        method: 'POST',
+        body,
+        extraHeaders: clientRequestId ? { [CLIENT_REQUEST_ID_HEADER]: clientRequestId } : {},
+      })
+      return {
+        reworkNo: data?.rework_no ?? null,
+        operationName: data?.operation_name ?? null,
+        qty: data?.qty ?? null,
+        doneQty: data?.done_qty ?? null,
+        status: data?.status ?? null,
+        orderCompleted: data?.order_completed === true,
+      }
+    },
+
+    /**
+     * 「报返工的加工单列表」（`GET /api/worker/production/rework-orders`）。
+     *
+     * 行内全部字段由服务端聚合（本页不筛不排不补算）；行形状见 `src/rework.mjs` 的注释。
+     */
+    async listReworkOrders() {
+      return request('/api/worker/production/rework-orders')
+    },
+
+    // ════════════════════════════════════════════════════════════════════════════════
     // 发货面（issue #5648）：拍照识别 → 打包 / 发货 / 撤销 → 读实发
     //
     // 🔴 与报工**同一份**客户端、同一套纪律：身份只由 `X-Worker-Session-Id` 解，

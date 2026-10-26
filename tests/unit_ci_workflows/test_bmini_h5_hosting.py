@@ -643,6 +643,8 @@ def _make_static_root(tmp_path: Path) -> Path:
     # 🔴 这份夹具也必须跟：它是「同一份 verify 脚本 + 另一棵树」⇒ 漏铺 = 夹具造的**假红**
     #    （与 ④/⑧ 段当年的坑同族；类级判据见 test_worker_h5_hosting.py::test_publish_set_mirrors_repo_entries）
     shutil.copy(WORKER_H5_DIR / "shipment.html", root / "w" / "shipment.html")
+    # 返工记录页（issue #7860）：⑩ 段判 rework.html / src/rework-app.mjs 的落地面身份
+    shutil.copy(WORKER_H5_DIR / "rework.html", root / "w" / "rework.html")
     # `src/**` **整棵递归**铺（issue #6293 / #6306）：该腿 ⑥ 对**每一个** `.mjs` 逐条断言 MIME，
     # ⑦ 还沿 worker-h5 的 import 闭包取依赖（树内有 `src/shared/operation-display.mjs`）⇒
     # 少铺一个（尤其子目录里的）就是**夹具造的假红**（与上面机台页同因）。

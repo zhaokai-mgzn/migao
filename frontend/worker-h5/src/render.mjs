@@ -56,6 +56,10 @@ export function initialState() {
     // 成品入库块（issue #7845）：服务端给的 `finished_inbound`（入库单号 / 仓位 / 标签 / 质检结论）；
     // `null` = 这张码还没入库 / 不是打包工序 ⇒ 整块卡片不渲染（不摆空壳）。
     finishedInbound: null,
+    // 报返工（issue #7860）：`rework` = 最近一次的返工回执（返工单号 / 工序）；`reworkForm` = 展开中的表单。
+    // 与质检（`quality`）**两套**：返工改的是报工三态（计件归零），质检落的是成品帘判定。
+    rework: null,
+    reworkForm: null,
   }
 }
 
@@ -112,6 +116,15 @@ export const PAGE_TO_SHIP = 'to_ship'
 export const PAGE_INSPECT = 'inspect'
 
 /**
+ * 页面键：**返工记录**（issue #7860）—— `/w/rework.html`：有返工报工的加工单列表。
+ *
+ * 🔴 与 `inspect` 的差别：它只是**读面可见性**（用户 2026-10-26 裁定「在工人档案中设置过可见权限的
+ * 工人」）；**报返工的写准入 = 有效工人 session**（任一工序工人都能报，不看这个键）。
+ * 后端同名键 = `WorkerPages.REWORK`（`ALL` 含它、`defaultPages()` 不含）。
+ */
+export const PAGE_REWORK = 'rework'
+
+/**
  * 默认页面集合 = 后端 `WorkerPages.defaultPages()` 的**逐字镜像**（缺行 ⇒ 默认全开）。
  *
  * ⚠️ 这是**第二份**默认值（真值在后端；前端不可能 import Java）⇒ 唯一防线是判据：
@@ -128,6 +141,9 @@ export const PIECEWORK_ENTRY_HREF = '/w/piecework.html'
 
 /** 发货入口（同源静态页；issue #7761 —— 全完工待发货列表 + 50×70 发货标签打印）。 */
 export const SHIPMENT_ENTRY_HREF = '/w/shipment.html'
+
+/** 返工记录入口（同源静态页；issue #7860 —— 有返工报工的加工单列表）。 */
+export const REWORK_ENTRY_HREF = '/w/rework.html'
 
 /**
  * 本机实际可走的页面集合（**唯一判据**）—— 三态各不相同，绝不合并：
@@ -304,6 +320,26 @@ export function reduce(state, action) {
         quality: { loading: false, latest: action.latest ?? null, error: null },
         qualityForm: null,
         notice: '质检单已生成',
+        error: null,
+      }
+    // ── 报返工（issue #7860）：任一工序工人都能报；这一笔被服务端改记为返工（不计件）并生成返工单 ──
+    case 'reworkFormOpen':
+      return { ...state, reworkForm: { submitting: false, error: null } }
+    case 'reworkFormClose':
+      return { ...state, reworkForm: null }
+    case 'reworkSubmitting':
+      return { ...state, reworkForm: { ...(state.reworkForm ?? {}), submitting: true, error: null } }
+    case 'reworkFormError':
+      return { ...state, reworkForm: { ...(state.reworkForm ?? {}), submitting: false, error: action.error ?? null } }
+    case 'reworkSubmitted':
+      // 服务端已改记 ⇒ 表单收起、屏上留一张回执；`view` 由装配层用同一张码重解析后带进来
+      // （进度被退回 ⇒ 这一屏要回到真实值，不能停在被改记前的旧读数上）。
+      return {
+        ...state,
+        view: action.view ?? state.view,
+        rework: action.rework ?? null,
+        reworkForm: null,
+        notice: action.notice ?? null,
         error: null,
       }
     case 'notice':
@@ -716,9 +752,13 @@ function workerEntriesBar(state) {
   // 与上面两条同款语义 = **菜单显隐**，不是访问拦截（直接敲 URL 仍可进入）。
   const shipment = opened.has(PAGE_TO_SHIP)
     ? `<a class="wh5-entry" id="wh5-shipment-entry" href="${SHIPMENT_ENTRY_HREF}">发货</a>` : ''
-  if (!machine && !piecework && !shipment) return ''
+  // 返工记录（issue #7860）：`rework` ∈ 页面集才出入口（用户裁定「在工人档案中设置过可见权限的工人」）；
+  // 文案与后端 `WorkerPages.labels()` 同源（商家在工人档案里勾的就是「返工记录」）。
+  const rework = opened.has(PAGE_REWORK)
+    ? `<a class="wh5-entry" id="wh5-rework-entry" href="${REWORK_ENTRY_HREF}">返工记录</a>` : ''
+  if (!machine && !piecework && !shipment && !rework) return ''
   return `<nav class="wh5-entries" id="wh5-worker-entries" aria-label="工人面入口">
-    ${machine}${piecework}${shipment}
+    ${machine}${piecework}${shipment}${rework}
   </nav>`
 }
 
@@ -967,6 +1007,53 @@ function finishedInboundCard(state) {
   </section>`
 }
 
+/**
+ * 返工区块（issue #7860）—— **任一工序工人**扫水洗唛后都能报，不看打包工序、不看 `inspect` 页。
+ *
+ * <p>用户 2026-10-26 逐字：「质检不能绑定死打包工序，需要允许任一工序工人报返工」
+ * 「报返工的那个工序不能计件的，只报返工，生成返工单」；追问「刚自动记的那一笔怎么处理」时
+ * 选「把刚自动记的那一笔改记为返工（回退进度与计件）」。</p>
+ *
+ * 🔴 三条硬约束：
+ * ① **不按页面键门控**（与质检区块相反）：报返工是「这件没做好」的事实上报，任何一个工位都可能第一时间发现；
+ * ② 只有一个动作 =【报返工】+ 问题说明（必填）；提交后服务端改记报工三态并生成返工单；
+ * ③ 只在这一屏**能定位到一件**时渲染（`position.order_item_id`）—— 没有件就没有可改记的账。</p>
+ */
+function reworkBlock(state, view) {
+  const itemId = view?.position?.order_item_id
+  if (itemId === null || itemId === undefined || itemId === '') return ''
+  const r = state.rework ?? null
+  const receipt = r
+    ? `<p class="wh5-sub" id="wh5-rework-done">返工单 ${esc(r.reworkNo ?? '')} 已生成${r.operationName ? ` · 工序 ${esc(r.operationName)}` : ''}（这一笔已改记为返工，不计件）</p>`
+    : ''
+  const openButton = state.reworkForm
+    ? ''
+    : `<button id="wh5-rework-open" class="wh5-ghost" type="button">${r ? '再报一次返工' : '这一件有问题，报返工'}</button>`
+  return `<section class="wh5-card wh5-rework" id="wh5-rework">
+    <div class="wh5-q-head"><span class="wh5-q-title">返工</span></div>
+    ${receipt}
+    <p class="wh5-sub">做出来发现问题就报返工：这一笔记为返工（不计件），同时生成一张返工单给车间跟进。</p>
+    ${openButton}
+    ${state.reworkForm ? reworkFormView(state) : ''}
+  </section>`
+}
+
+/** 返工录入表单（issue #7860）：只有一个动作 —— 返工 + 问题说明（必填）。 */
+function reworkFormView(state) {
+  const f = state.reworkForm ?? {}
+  return `<div class="wh5-q-form" id="wh5-rework-form">
+      <label class="wh5-label">问题说明（必填）
+        <textarea id="wh5-rework-reason" class="wh5-input" rows="2"
+          placeholder="例如：布面污渍 / 尺寸偏差 / 缝线开裂"></textarea>
+      </label>
+      ${f.error ? `<p class="wh5-error" id="wh5-rework-form-error">${esc(f.error)}</p>` : ''}
+      <div class="wh5-q-actions">
+        <button id="wh5-rework-submit" class="wh5-primary" type="button"${f.submitting ? ' disabled' : ''}>${f.submitting ? '提交中…' : '提交返工'}</button>
+        <button id="wh5-rework-cancel" class="wh5-ghost" type="button"${f.submitting ? ' disabled' : ''}>取消</button>
+      </div>
+    </div>`
+}
+
 function mainView(state) {
   const v = state.view
   const op = v.operation
@@ -987,6 +1074,7 @@ function mainView(state) {
     ${overviewView(v)}
     ${cutPlanView(v)}
     ${qualityBlock(state, v)}
+    ${reworkBlock(state, v)}
     ${state.notice ? `<p class="wh5-notice" id="wh5-notice">${esc(state.notice)}</p>` : ''}
     ${state.error ? `<p class="wh5-error" id="wh5-error">${esc(state.error)}</p>` : ''}
   </section>`
@@ -1035,6 +1123,7 @@ function mainView(state) {
     ${overviewView(v, v.position?.order_item_id ?? null)}
     ${cutPlanView(v)}
     ${qualityBlock(state, v)}
+    ${reworkBlock(state, v)}
   </section>`
 }
 

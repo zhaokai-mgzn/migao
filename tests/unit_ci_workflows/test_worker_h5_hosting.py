@@ -77,6 +77,10 @@ WORKER_PIECEWORK_APP = WORKER_H5_DIR / "src" / "piecework-app.mjs"
 # 新入口漏进发布集 ⇒ 线上被 try_files 静默回落成 C 端 H5，HTTP 200 不报错。
 WORKER_SHIPMENT = WORKER_H5_DIR / "shipment.html"
 WORKER_SHIPMENT_APP = WORKER_H5_DIR / "src" / "shipment-app.mjs"
+# 返工记录页（issue #7860）：**同族第四次**（machine.html → piecework.html → shipment.html → rework.html）
+# —— 新入口漏进发布集 ⇒ 线上被 try_files 静默回落成 C 端 H5，HTTP 200 不报错。
+WORKER_REWORK = WORKER_H5_DIR / "rework.html"
+WORKER_REWORK_APP = WORKER_H5_DIR / "src" / "rework-app.mjs"
 
 JOB = "publish"
 PUBLISH_SCRIPT = "deploy/scripts/swas-h5-publish-ci.sh"
@@ -509,6 +513,13 @@ def test_sandbox_publish_is_identity_and_preserves_parent(tmp_path):
     assert "shipment-app.mjs" in published_shipment.read_text(encoding="utf-8"), (
         "发货页入口脚本没接上（页面加载不到任何模块 ⇒ 白屏）"
     )
+    # ⑤ 返工记录页也必须发布（issue #7860；红证：把它从远端脚本的发布集里删掉 ⇒ 本断言红）
+    published_rework = root / SUBDIR / "rework.html"
+    assert published_rework.is_file(), "rework.html 没被发布（返工记录页线上打不开）"
+    assert _file_sha(published_rework) == _file_sha(WORKER_REWORK), "发布的 rework.html 与仓库不一致"
+    assert "rework-app.mjs" in published_rework.read_text(encoding="utf-8"), (
+        "返工记录页入口脚本没接上（页面加载不到任何模块 ⇒ 白屏）"
+    )
     body = published_index.read_text(encoding="utf-8")
     assert "src/app.mjs" in body
     assert "TARO_" not in body and "元元智能助手" not in body
@@ -661,6 +672,8 @@ def _copy_worker_tree(dest: Path) -> None:
     (dest / SUBDIR / "machine.html").write_bytes(WORKER_MACHINE.read_bytes())
     (dest / SUBDIR / "piecework.html").write_bytes(WORKER_PIECEWORK.read_bytes())
     (dest / SUBDIR / "shipment.html").write_bytes(WORKER_SHIPMENT.read_bytes())
+    # issue #7860（⑩ 段判返工记录页的身份）⇒ 夹具必须铺它，否则「正确发布」也会被判红（假红）
+    (dest / SUBDIR / "rework.html").write_bytes(WORKER_REWORK.read_bytes())
     subprocess.run(
         ["cp", "-R", str(WORKER_H5_DIR / "src") + "/.", str(dest / SUBDIR / "src")],
         check=True, capture_output=True,

@@ -11,7 +11,7 @@ import ListLoadError from '@/components/common/ListLoadError'
 import { loadErrorMessage } from '@/lib/api-error'
 import { reworkOrderApi } from '@/lib/api'
 import { usePermission } from '@/lib/permission'
-import type { ReworkOrder, ReworkStatus } from '@/types/rework'
+import type { ReworkOrder, ReworkSource, ReworkStatus } from '@/types/rework'
 
 /**
  * 返工单 `/rework-orders`（issue #7377，P1-5 质量闭环的商家面）。
@@ -22,6 +22,11 @@ import type { ReworkOrder, ReworkStatus } from '@/types/rework'
  * 完工时**服务端**回写售后状态（售后单当前是「处理中」才推进到「已解决」）。
  * 同一张售后单不许同时有两张未完结的返工单，已闭环/已驳回的售后单也不许再开 ——
  * 这两条都是**服务端**拒的，本页把它的原话显示出来，不吞成「操作失败」。
+ *
+ * 返工单有两种来源（issue #7860）：售后开单（`after_sales`）与**车间工人报返工**（`worker`）。
+ * 后者没有售后单，带的是工序 / 返工数量 / 报工人 —— 这三列对售后行是「—」，不是 0；
+ * 「报工人」与「建单人」合成一列「发起人」，同一件事不开两列。
+ * 两种来源的**动作完全一致**（`status='draft'` 起，可开工 / 完工 / 取消），本页不做来源分支。
  *
  * ## 🔴 钱在哪：本页**没有金额**
  *
@@ -55,6 +60,12 @@ const STATUS_BADGE: Record<ReworkStatus, string> = {
 }
 
 const STATUS_ORDER: ReworkStatus[] = ['draft', 'in_progress', 'done', 'cancelled']
+
+/** 来源的显示名：服务端标识 ⇒ 人话（未知值由 `displayEnum` 兜底，不回显标识）。 */
+const SOURCE_LABEL: Record<ReworkSource, string> = {
+  after_sales: '售后',
+  worker: '车间返工',
+}
 
 /** 时间是**服务端给的时刻**，本页只格式化，不做时区换算（+08 由后端 `BusinessClock` 定）。 */
 function fmt(value: string | null | undefined): string {
@@ -167,7 +178,7 @@ export default function ReworkOrdersPage() {
     <div className="p-6">
       <PageHeader
         title="返工单"
-        subtitle="售后判定要返工的活在这里跟到完工：完工后售后状态才跟着推进，花的钱按返工报工计入质量成本。"
+        subtitle="售后判定要返工的活在这里跟到完工：完工后售后状态才跟着推进，花的钱按返工报工计入质量成本。车间工人报返工的单也会出现在这里，同样能直接开工处理。"
         actions={
           canWrite ? (
             <Button icon={<Plus className="w-4 h-4" />} onClick={() => setCreateOpen(true)} data-testid="rework-create">
@@ -242,11 +253,14 @@ export default function ReworkOrdersPage() {
               <thead>
                 <tr className="text-left text-xs text-neutral-500 border-b border-neutral-200">
                   <th className="py-2 whitespace-nowrap">返工单号</th>
+                  <th className="py-2 whitespace-nowrap">来源</th>
                   <th className="py-2 whitespace-nowrap">关联售后单</th>
                   <th className="py-2 whitespace-nowrap">关联加工单</th>
+                  <th className="py-2 whitespace-nowrap">工序</th>
+                  <th className="py-2 whitespace-nowrap">数量</th>
                   <th className="py-2 whitespace-nowrap">原因</th>
                   <th className="py-2 whitespace-nowrap">状态</th>
-                  <th className="py-2 whitespace-nowrap">建单人</th>
+                  <th className="py-2 whitespace-nowrap">发起人</th>
                   <th className="py-2 whitespace-nowrap">开工</th>
                   <th className="py-2 whitespace-nowrap">完工</th>
                   <th className="py-2 text-right whitespace-nowrap sticky right-0 bg-white">操作</th>
@@ -256,8 +270,21 @@ export default function ReworkOrdersPage() {
                 {visible.map((row) => (
                   <tr key={row.id} data-testid={`rework-row-${row.id}`} className="border-b border-neutral-100">
                     <td className="py-2 font-medium text-neutral-900">{row.reworkNo}</td>
-                    <td className="py-2 text-neutral-600">{row.afterSalesTicketId}</td>
-                    <td className="py-2 text-neutral-600">{row.processingOrderId || '—'}</td>
+                    <td className="py-2 text-neutral-600" data-testid={`rework-source-${row.id}`}>
+                      {displayEnum(SOURCE_LABEL, row.source)}
+                    </td>
+                    <td className="py-2 text-neutral-600" data-testid={`rework-ticket-${row.id}`}>
+                      {row.afterSalesTicketId || '—'}
+                    </td>
+                    <td className="py-2 text-neutral-600" data-testid={`rework-processing-${row.id}`}>
+                      {row.processingOrderNo ?? row.processingOrderId ?? '—'}
+                    </td>
+                    <td className="py-2 text-neutral-600" data-testid={`rework-operation-${row.id}`}>
+                      {row.operationName || '—'}
+                    </td>
+                    <td className="py-2 text-neutral-600" data-testid={`rework-qty-${row.id}`}>
+                      {row.qty == null ? '—' : row.qty}
+                    </td>
                     <td className="py-2 text-neutral-600">{row.reason || '—'}</td>
                     <td className="py-2">
                       <span
@@ -267,7 +294,9 @@ export default function ReworkOrdersPage() {
                         {displayEnum(STATUS_LABEL, row.status)}
                       </span>
                     </td>
-                    <td className="py-2 text-neutral-600">{row.createdByName || '—'}</td>
+                    <td className="py-2 text-neutral-600" data-testid={`rework-initiator-${row.id}`}>
+                      {row.workerName || row.createdByName || '—'}
+                    </td>
                     <td className="py-2 text-neutral-600">{fmt(row.startedAt)}</td>
                     <td className="py-2 text-neutral-600">{fmt(row.completedAt)}</td>
                     <td className="py-2 text-right sticky right-0 bg-white">

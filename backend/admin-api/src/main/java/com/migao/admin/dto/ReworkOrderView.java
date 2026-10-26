@@ -3,6 +3,7 @@ package com.migao.admin.dto;
 import lombok.Builder;
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
 /** 返工单读面（issue #7377 段 2）。 */
@@ -19,6 +20,24 @@ public class ReworkOrderView {
     private String orderId;
 
     private String processingOrderId;
+
+    /** 加工单号（展示用；取不到 ⇒ null，界面渲染 —，**不编值**）。 */
+    private String processingOrderNo;
+
+    /** 销售订单号（展示用；取不到 ⇒ null）。 */
+    private String orderNo;
+
+    /** 来源（issue #7860）：after_sales / worker。 */
+    private String source;
+
+    /** 返工的工序名（车间来源有值）。 */
+    private String operationName;
+
+    /** 返工数量（车间来源有值；不参与计件）。 */
+    private BigDecimal qty;
+
+    /** 报返工的工人（车间来源有值）。 */
+    private String workerName;
 
     /** draft / in_progress / done / cancelled。 */
     private String status;

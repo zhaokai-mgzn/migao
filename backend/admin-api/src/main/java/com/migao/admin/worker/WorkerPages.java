@@ -86,12 +86,21 @@ public final class WorkerPages {
     public static final String INSPECT = "inspect";
 
     /**
+     * 页面键：**返工记录**（issue #7860）—— 手机端「报返工的加工单列表」（`/w/rework.html`）。
+     *
+     * <p>🔴 用户 2026-10-26 裁定「在工人档案中设置过可见权限的工人」能看到：不在默认集合里、
+     * 逐人开（与 {@link #INSPECT} 同款形态）。与 `inspect` 的差别：它**只是读面可见性**，
+     * 报返工的写准入 = 有效工人 session（任一工序工人都能报，不看这个键）。</p>
+     */
+    public static final String REWORK = "rework";
+
+    /**
      * 合法页面键的<b>闭词表</b>（缺页/未知页 ⇒ 422 逐条理由；拼错的键会被静默忽略 = 商家以为改了却没改）。
      *
      * <p>顺序 = 工人端默认的页面顺序（读面原样回给前端，前端不再自己排一遍）。</p>
      */
     public static final Set<String> ALL = Collections.unmodifiableSet(new LinkedHashSet<>(List.of(
-            REPORT, PIECEWORK, ORDER, CUT_CALC, SHIPMENT, TO_SHIP, INSPECT)));
+            REPORT, PIECEWORK, ORDER, CUT_CALC, SHIPMENT, TO_SHIP, INSPECT, REWORK)));
 
     private WorkerPages() {
     }
@@ -114,7 +123,7 @@ public final class WorkerPages {
      * 商家在工人档案上单独勾选；其中 {@link #INSPECT} 同时是服务端写准入。
      */
     public static List<String> optionalPages() {
-        return List.of(INSPECT);
+        return List.of(INSPECT, REWORK);
     }
 
     /** 页面键 → 商家面可读名称（配置面板按它渲染勾选项；键是机器码，名称是人话）。 */
@@ -127,6 +136,7 @@ public final class WorkerPages {
         labels.put(SHIPMENT, "发货");
         labels.put(TO_SHIP, "待发货单");
         labels.put(INSPECT, "质检");
+        labels.put(REWORK, "返工记录");
         return labels;
     }
 
