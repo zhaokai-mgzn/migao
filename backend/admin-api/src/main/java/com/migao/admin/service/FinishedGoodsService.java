@@ -85,6 +85,10 @@ public class FinishedGoodsService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private QualityCheckService qualityCheckService;
 
+    /** 读 `processing_info` 里安装信息用（issue #7856）；同样走字段注入，原因见 {@link #qualityCheckService}。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+
     // ============================================================ 打包入库
 
     /**
@@ -553,7 +557,14 @@ public class FinishedGoodsService {
         addRow(rows, "尺寸", sizeOf(item));
         addRow(rows, "开数", item == null || item.getOpenCount() == null ? null
                 : String.valueOf(item.getOpenCount()));
-        addRow(rows, "部位", token.getPositionKind());
+        // 🔴 纸面标签统一叫「帘种」（issue #7856；用户 2026-10-26「都要加上帘种」）：
+        // 值仍取部位码的 `positionKind`（= 快照 `curtainType` 派生，同一条取值链）。
+        addRow(rows, "帘种", token.getPositionKind() == null || token.getPositionKind().isBlank()
+                ? (item == null ? null : item.getCurtainType()) : token.getPositionKind());
+        // 安装去向（issue #7856）：订单级「安装小区」+ 件级「安装位置」，真值都在订单行
+        // `processing_info` 顶层（零迁移）。空值不落键、不上纸（与纸面族同一口径）。
+        addRow(rows, "安装小区", installInfoOf(item, OrderInstallInfo.KEY_INSTALL_COMMUNITY));
+        addRow(rows, "安装位置", installInfoOf(item, OrderInstallInfo.KEY_INSTALL_ROOM));
         addRow(rows, "主布货号", item == null ? null : item.getSkuCode());
         addRow(rows, "打包区域", stock == null ? null : stock.getBinCode());
 
@@ -570,6 +581,23 @@ public class FinishedGoodsService {
             return;
         }
         rows.add(Map.of("label", label, "value", value.trim()));
+    }
+
+    /**
+     * 读订单行 {@code processing_info} 顶层的安装信息（issue #7856）。
+     *
+     * <p>真值 = `order_items.processing_info.installCommunity|installRoom`（零迁移）；
+     * 缺键 / 空值 / 解析失败 ⇒ {@code null}（{@link #addRow} 据此**整行不印**，不编造）。</p>
+     *
+     * <p>🔴 {@code ObjectMapper} 用**字段注入 + required=false**：本类的构造签名被既有测试直接
+     * {@code new} 装配（见 {@code qualityCheckService} 同一条注释），不能为它加构造参数；
+     * 测试里没有 mapper ⇒ 该两行不出现（= 缺值口径），不会 NPE。</p>
+     */
+    private String installInfoOf(OrderItem item, String key) {
+        if (item == null || item.getProcessingInfo() == null || objectMapper == null) {
+            return null;
+        }
+        return OrderInstallInfo.valueOf(item.getProcessingInfo(), key, objectMapper);
     }
 
     /** 尺寸：`宽*高`（米，最多 2 位小数、去尾零）；缺任一边 ⇒ 不渲染（不猜）。 */
