@@ -18,7 +18,9 @@ r"""「手机端入口」二维码的**单一真值**与**缺配置不画假码*
 2. **地址只有一个读取点**：`NEXT_PUBLIC_BMINI_H5_URL` 只允许在
    `frontend/admin-web/src/lib/bmini-h5-url.ts` 里读；组件必须经 `getBminiH5Url()` 取，
    不许自己读 `process.env`（否则又是"多处取值 ⇒ 换一处忘一处"）。
-3. **二维码内容取自该单一值**：`value={bminiH5Url}`（不许拼字符串、不许写死域名）。
+3. **二维码内容取自该单一值**：`value={entryUrl}`，而 `entryUrl = buildMobileEntryUrl(bminiH5Url, ticket)`
+   —— 拼 `?qr=` 这件事只许发生在 `URL_HELPER`（issue #7825 扫码即登录）；组件里**不许**自己拼 query、
+   不许写死域名（否则「换一处忘一处」从地址扩散到地址+query）。
 4. **缺配置不画假码**（结构层）：`{bminiH5Url ? (…) : (…)}` 的**真分支**里才有 `QRCodeSVG`，
    假分支渲染「未配置」且**一个 svg 都没有**。行为层的孪生判据在
    `frontend/admin-web/tests/unit/components/MobileEntry.test.tsx`（UI-064 的 5 格）。
@@ -281,14 +283,22 @@ def _problems(page_src=None, entry_src=None, header_src=None, helper_src=None, d
             problems.append("手机端入口不得直接读 process.env（破坏单一读取点）")
         if "import { QRCodeSVG } from 'qrcode.react'" not in entry_src:
             problems.append("手机端入口必须用既有依赖 qrcode.react 的 QRCodeSVG 画码")
+        # issue #7825：二维码内容 = 裸地址 + 可选 `?qr=<票据>`；派生只许在 URL_HELPER
+        if "buildMobileEntryUrl(bminiH5Url" not in entry_src:
+            problems.append("二维码内容必须经 `buildMobileEntryUrl(bminiH5Url, ticket)` 派生（issue #7825）")
+        # ⚠️ 判据只看**代码路径**：注释/文档里写 `?qr=` 是解释，不算拼串（否则判据被自己的说明喂红）
+        if "qr=" in _strip_comments(entry_src):
+            problems.append("组件里不许自己拼 `qr=` query —— 派生点只能是 URL_HELPER（buildMobileEntryUrl）")
         branches = _entry_branches(entry_src)
         if not branches:
             problems.append("找不到「手机端入口」的 `{bminiH5Url ? (…) : (…)}` 三元（判据 3/4 的判据对象）")
         else:
             if "QRCodeSVG" not in branches["yes"]:
                 problems.append("有值分支里没有 QRCodeSVG —— 配了地址却不画码")
-            if "value={bminiH5Url}" not in branches["yes"]:
-                problems.append("二维码内容必须逐字取自 `bminiH5Url`（value={bminiH5Url}）")
+            if "value={entryUrl}" not in branches["yes"]:
+                problems.append(
+                    "二维码内容必须取单一真值派生值 `entryUrl`（value={entryUrl}）"
+                )
             if "QRCodeSVG" in branches["no"]:
                 problems.append("**假码**：无值分支里出现了 QRCodeSVG（缺配置时不许画码）")
             if 'data-testid="bmini-h5-unconfigured"' not in branches["no"]:
@@ -424,7 +434,7 @@ def test_mutations_are_all_detected(tmp_path):
 
     # ③ 假码：把 QRCodeSVG 挪进无值分支（缺配置也画一个）
     fake_qr = entry.replace(
-        '<QRCodeSVG value={bminiH5Url} size={140} title={bminiH5Url} data-testid="bmini-h5-qr" />', ""
+        '<QRCodeSVG value={entryUrl} size={140} title={entryUrl} data-testid="bmini-h5-qr" />', ""
     ).replace(
         '<p className="text-sm text-neutral-500" data-testid="bmini-h5-unconfigured">',
         '<p className="text-sm text-neutral-500" data-testid="bmini-h5-unconfigured">'
@@ -446,9 +456,13 @@ def test_mutations_are_all_detected(tmp_path):
             workflow=_inject_secret_ref(workflow)
         ),
         "把二维码挪进无值分支（画假码）": dict(entry_src=fake_qr),
+        # issue #7825：组件里自己拼 `?qr=`（绕开单一真值的派生点）⇒ 必须判红
+        "二维码内容在组件里自己拼 qr 参数": dict(
+            entry_src=entry.replace("value={entryUrl}", "value={bminiH5Url + '?qr=' + ticket}", 1)
+        ),
         "二维码内容改成硬编码（不取配置值）": dict(
             entry_src=entry.replace(
-                "value={bminiH5Url} size={140} title={bminiH5Url}",
+                "value={entryUrl} size={140} title={entryUrl}",
                 'value="https://app.migaozn.com/b/" size={140} title="https://app.migaozn.com/b/"',
             )
         ),

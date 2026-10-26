@@ -3,7 +3,7 @@
 //   本文件是 growth gate 对 frontend/admin-web/src/lib/bmini-h5-url.ts 要求的同名单测。）
 import { describe, it, expect, vi, afterEach } from 'vitest'
 
-import { getBminiH5Url } from '@/lib/bmini-h5-url'
+import { buildMobileEntryUrl, getBminiH5Url } from '@/lib/bmini-h5-url'
 
 // issue #5668：B 端 h5（手机端入口）地址的**唯一读取点**。
 // 判据两面：① 有值 ⇒ 逐字返回（含首尾空白裁剪）；② 无值/空/纯空白 ⇒ 空串 ——
@@ -44,5 +44,32 @@ describe('getBminiH5Url — 手机端入口地址的单一真值（issue #5668�
       if (original === undefined) delete process.env.NEXT_PUBLIC_BMINI_H5_URL
       else process.env.NEXT_PUBLIC_BMINI_H5_URL = original
     }
+  })
+})
+
+// issue #7825（扫码即登录）：二维码内容 = 裸地址 + 可选 `?qr=<票据>`。
+// 拼 query 只许发生在**单一真值模块**里（组件里拼 = 第二份副本，判据见
+// tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py）。
+describe('buildMobileEntryUrl — 二维码内容派生（issue #7825）', () => {
+  const BASE = 'https://bmini-entry.invalid/b/'
+
+  it('无票据 ⇒ 原样返回裸地址（降级形态：扫码后登录）', () => {
+    expect(buildMobileEntryUrl(BASE)).toBe(BASE)
+    expect(buildMobileEntryUrl(BASE, '')).toBe(BASE)
+    expect(buildMobileEntryUrl(BASE, null)).toBe(BASE)
+  })
+
+  it('有票据 ⇒ 追加 `?qr=<urlencoded ticket>`（jwt 里的 . 与 - 不需要编码，但大字符集必须安全）', () => {
+    expect(buildMobileEntryUrl(BASE, 'a.b-c')).toBe(`${BASE}?qr=a.b-c`)
+    expect(buildMobileEntryUrl(BASE, 'x+y/z=')).toBe(`${BASE}?qr=x%2By%2Fz%3D`)
+  })
+
+  it('地址已带 query ⇒ 用 & 续接（不产生两个 ?）', () => {
+    expect(buildMobileEntryUrl(`${BASE}?from=pc`, 't1')).toBe(`${BASE}?from=pc&qr=t1`)
+  })
+
+  it('地址为空 ⇒ 空串（缺配置不画假码，同上一条的孪生判据）', () => {
+    expect(buildMobileEntryUrl('', 't1')).toBe('')
+    expect(buildMobileEntryUrl('   ', 't1')).toBe('')
   })
 })

@@ -32,12 +32,17 @@ vi.mock('sonner', () => ({
 
 import MobileEntryHeader from '@/components/layout/MobileEntry'
 
+// 票据签发端点（issue #7825）：默认成功；具体用例逐格覆盖
+const { mockPost } = vi.hoisted(() => ({ mockPost: vi.fn() }))
+vi.mock('@/lib/request', () => ({ default: { post: mockPost } }))
+
 const SENTINEL_URL = 'https://bmini-entry.invalid/b/'
 
 const writeText = vi.fn<(value: string) => Promise<void>>()
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mockPost.mockResolvedValue({ success: true, data: { ticket: 'ticket-from-server', expiresIn: 120 } })
   vi.stubEnv('NEXT_PUBLIC_BMINI_H5_URL', SENTINEL_URL)
   writeText.mockResolvedValue(undefined)
   Object.defineProperty(navigator, 'clipboard', {
@@ -57,12 +62,50 @@ describe('MobileEntryHeader —— 顶栏主入口（跨设备交接是个工具
     expect(screen.queryByTestId('bmini-h5-qr')).toBeNull()
   })
 
-  it('点击 ⇒ 展开弹层，二维码的标题与可复制地址逐字等于配置值（哨兵值 ⇒ 硬编码必红）', async () => {
+  it('点击 ⇒ 展开弹层：二维码 = 配置地址 + 一次性票据；可见地址仍是裸地址（哨兵值 ⇒ 硬编码必红）', async () => {
+    render(<MobileEntryHeader />)
+    fireEvent.click(screen.getByRole('button', { name: '手机端入口' }))
+    const qr = await screen.findByTestId('bmini-h5-qr')
+    // 二维码内容 = 单一真值地址 + `?qr=<票据>`（issue #7825 扫码即登录）
+    expect(qr.querySelector('title')?.textContent).toBe(`${SENTINEL_URL}?qr=ticket-from-server`)
+    // 可见的地址块**不带票据**（短期凭证只在码里）
+    expect(screen.getByTestId('bmini-h5-url')).toHaveTextContent(SENTINEL_URL)
+    expect(mockPost).toHaveBeenCalledWith('/api/auth/qr/ticket')
+  })
+
+  it('票据倒计时上屏（服务端 expiresIn 驱动，不自己拍脑袋）', async () => {
+    render(<MobileEntryHeader />)
+    fireEvent.click(screen.getByRole('button', { name: '手机端入口' }))
+    const ttl = await screen.findByTestId('bmini-h5-qr-ttl')
+    expect(ttl).toHaveTextContent('扫码免登录')
+    expect(ttl).toHaveTextContent('2:00')
+  })
+
+  it('签发失败 ⇒ 降级为裸入口（不画」扫了没用」的码）+ 明说扫码后登录', async () => {
+    mockPost.mockRejectedValueOnce(new Error('boom'))
     render(<MobileEntryHeader />)
     fireEvent.click(screen.getByRole('button', { name: '手机端入口' }))
     const qr = await screen.findByTestId('bmini-h5-qr')
     expect(qr.querySelector('title')?.textContent).toBe(SENTINEL_URL)
-    expect(screen.getByTestId('bmini-h5-url')).toHaveTextContent(SENTINEL_URL)
+    expect(await screen.findByTestId('bmini-h5-qr-fallback')).toHaveTextContent('扫码后在手机上登录')
+  })
+
+  it('票据过期 ⇒ 自动换新码（不要求用户点刷新）', async () => {
+    mockPost
+      .mockResolvedValueOnce({ success: true, data: { ticket: 'ticket-old', expiresIn: 1 } })
+      .mockResolvedValueOnce({ success: true, data: { ticket: 'ticket-new', expiresIn: 120 } })
+
+    render(<MobileEntryHeader />)
+    fireEvent.click(screen.getByRole('button', { name: '手机端入口' }))
+    const qr = await screen.findByTestId('bmini-h5-qr')
+    expect(qr.querySelector('title')?.textContent).toBe(`${SENTINEL_URL}?qr=ticket-old`)
+
+    // 倒计时走到 0 ⇒ 触发第二次签发
+    await waitFor(
+      () => expect(qr.querySelector('title')?.textContent).toBe(`${SENTINEL_URL}?qr=ticket-new`),
+      { timeout: 4000 },
+    )
+    expect(mockPost).toHaveBeenCalledTimes(2)
   })
 
   it('点击外部 ⇒ 收起（不是「打开就关不掉」的常驻块）', async () => {

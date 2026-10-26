@@ -6,6 +6,7 @@
 
 import Taro from '@tarojs/taro'
 import { API_BASE_URL, STORAGE_KEYS, REQUEST_CONFIG } from './constants'
+import { recordAuthDiag } from './authDiag'
 
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
@@ -111,10 +112,22 @@ async function doRefresh(): Promise<string | null> {
     const token = payload?.data?.accessToken
     if (statusCode >= 200 && statusCode < 300 && token) {
       Taro.setStorageSync(STORAGE_KEYS.TOKEN, token)
+      recordAuthDiag('refresh_ok', `status=${statusCode}`)
       return token
     }
+    // 探针（issue #7825）：续期为什么没成 —— 这是「又掉线」唯一能事后归因的读数
+    if (statusCode === 401) {
+      recordAuthDiag('refresh_401', serverMessage(payload) || '401')
+    } else if (statusCode === 503) {
+      recordAuthDiag('refresh_unavailable', serverMessage(payload) || '503')
+    } else if (statusCode >= 200 && statusCode < 300) {
+      recordAuthDiag('refresh_no_token', `status=${statusCode}`)
+    } else {
+      recordAuthDiag('refresh_network', `status=${statusCode}`)
+    }
     return null
-  } catch {
+  } catch (error: any) {
+    recordAuthDiag('refresh_network', String(error?.message || error?.errMsg || ''))
     return null
   }
 }
@@ -174,6 +187,7 @@ function handleErrorStatus(statusCode: number, data: any, path: string): void {
         Taro.removeStorageSync(STORAGE_KEYS.WORKER_SESSION)
         Taro.removeStorageSync(STORAGE_KEYS.WORKER)
       } catch {}
+      recordAuthDiag('session_cleared_401', path)
       Taro.showToast({ title: '登录已过期，请重新登录', icon: 'none' })
       setTimeout(() => {
         Taro.redirectTo({ url: '/pages/auth/login/index' })

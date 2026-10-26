@@ -96,6 +96,9 @@ jwt:
   # 刷新令牌 = 30 天（issue #7249；用户 2026-10-18 裁定「登录态改为1个月」）：
   # access token 仍是 2 小时（短凭据面不延长），靠 refresh 续；refresh 每次轮换并重新下发 30 天 cookie。
   refresh-token-expiration: 2592000  # 30 天
+  # 扫码登录票据 = 120 秒（issue #7825）：PC 已登录时给「手机端」二维码签发的**一次性**持有凭证，
+  # 手机 H5 兑换后拿到的是上面那套 30 天会话；票据本身越短越安全（兑换即吊销，单次有效）。
+  qr-login-ticket-expiration: 120
   # Cookie 配置
   cookie:
     name: access_token

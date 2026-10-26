@@ -62,6 +62,16 @@ public class JwtTokenProvider {
     @Getter
     private long refreshTokenExpiration;
 
+    /**
+     * 扫码登录票据有效期（秒，issue #7825）：默认 **120 秒**。
+     *
+     * <p>票据是**短期持有凭证**（截图 / 转发二维码的人可在窗口内抢先用一次）⇒ 窗口要短，
+     * 且兑换即吊销 jti（单次有效）。它**不是**会话：会话由兑换后的 access / refresh 双令牌承担。</p>
+     */
+    @Value("${jwt.qr-login-ticket-expiration:120}")
+    @Getter
+    private long qrLoginTicketExpiration;
+
     private final ResourceLoader resourceLoader;
 
     private PrivateKey rsaPrivateKey;
@@ -87,6 +97,14 @@ public class JwtTokenProvider {
     public static final String CLAIM_TOKEN_TYPE = "tokenType";
     public static final String TOKEN_TYPE_ACCESS = "access";
     public static final String TOKEN_TYPE_REFRESH = "refresh";
+    /**
+     * 扫码登录票据类型（issue #7825）：只能用于 {@code POST /api/auth/qr/exchange}。
+     *
+     * <p>🔴 与 access / refresh **互不可用**：票据过不了 {@code JwtAuthenticationFilter}
+     * （它只认 {@link #TOKEN_TYPE_ACCESS}），access / refresh 也过不了兑换端点
+     * （它只认本类型）—— 三个方向的混用都有判据（{@code QrLoginTicketTest}）。</p>
+     */
+    public static final String TOKEN_TYPE_QR_LOGIN = "qr_login";
 
     public JwtTokenProvider(ResourceLoader resourceLoader) {
         this.resourceLoader = resourceLoader;
@@ -300,6 +318,47 @@ public class JwtTokenProvider {
                     .and()
                 .signWith(getSigningKey())
                 .compact();
+    }
+
+    /**
+     * 签发**扫码登录票据**（issue #7825）。
+     *
+     * <p>用途单一：PC 已登录时给「手机端」二维码换一张 120 秒、单次有效的持有凭证，
+     * 手机 H5 扫码后凭它换出自己的会话（{@code POST /api/auth/qr/exchange}）。
+     * 票据只承载「哪个用户 + 哪个租户」，**不含角色/权限** —— 权限在兑换时按数据库当前值重算
+     * （与刷新同一纪律：权限变更不能靠一张旧票据续命）。</p>
+     *
+     * @param userId   票据唯一指向的账号
+     * @param tenantId 租户（兑换时与用户**当前**租户比对，防跨租户复用）
+     * @return 票据 JWT
+     */
+    public String generateQrLoginTicket(String userId, Long tenantId) {
+        Instant now = Instant.now();
+        Instant expiration = now.plusSeconds(qrLoginTicketExpiration);
+
+        return Jwts.builder()
+                .subject(userId)
+                .claim(CLAIM_USER_ID, userId)
+                .claim(CLAIM_TENANT_ID, tenantId)
+                .claim(CLAIM_TOKEN_TYPE, TOKEN_TYPE_QR_LOGIN)
+                .issuedAt(Date.from(now))
+                .expiration(Date.from(expiration))
+                .id(UUID.randomUUID().toString())
+                .audience()
+                    .add("migao")
+                    .and()
+                .signWith(getSigningKey())
+                .compact();
+    }
+
+    /**
+     * 判断 Token 是否为扫码登录票据（issue #7825）。
+     *
+     * @param token JWT Token
+     * @return 是否为票据
+     */
+    public boolean isQrLoginTicket(String token) {
+        return TOKEN_TYPE_QR_LOGIN.equals(getTokenType(token));
     }
 
     /**

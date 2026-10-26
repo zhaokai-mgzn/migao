@@ -4,6 +4,7 @@ import Taro from '@tarojs/taro'
 import { useAuthStore } from '../../../store/authStore'
 import { sendSmsCode } from '../../../utils/auth'
 import { getRememberedAccount, rememberAccount } from '../../../utils/loginAccount'
+import AuthDiagPanel, { shouldShowAuthDiag } from '../../../components/auth/AuthDiagPanel'
 import { workerLogin } from '../../../services/workerService'
 import { WORKER_HOME_ROUTE } from '../../../utils/inbound/gaps'
 import './index.scss'
@@ -57,6 +58,9 @@ export default function LoginPage() {
   const [tab, setTab] = useState<LoginTab>(() =>
     initialTab((Taro.getCurrentInstance?.() as any)?.router?.params?.tab),
   )
+
+  // 登录自检面板（issue #7825）：**只在 `?diag=1` 时**渲染，正常登录页一行都不多
+  const [showDiag] = useState(() => shouldShowAuthDiag())
 
   // 员工入口
   // 「记住上次成功登录的账号名」（issue #6478）：**只预填账号名**，绝不预填密码；
@@ -234,6 +238,9 @@ export default function LoginPage() {
         <Text className='login-brand__title'>黄金策 · 企业智能生产管家</Text>
         <Text className='login-brand__subtitle'>经营数据 · AI 客服 · 移动坐席</Text>
       </View>
+
+      {/* 登录自检（issue #7825）：`?diag=1` 才出现 —— 掉线原因能当场读到，不靠猜 */}
+      {showDiag ? <AuthDiagPanel /> : null}
 
       {/* 中间登录表单 */}
       <View className='login-form'>
