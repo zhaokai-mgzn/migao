@@ -78,6 +78,8 @@ const REGISTERED_MARKER_FILES = [
   'src/components/settings/OversizeThresholdPreview.tsx',
   'src/app/(dashboard)/production/remnants/page.tsx',
   'src/app/(dashboard)/stock-ledger/page.tsx',
+  // issue #7750/#7762：出库单页副标题的强调走本页的 `InlineMarkdown`（接线见下方 WIRED_FILES）
+  'src/app/(dashboard)/outbound-orders/page.tsx',
   // issue #6580（配置指挥台）：下面这些是**搬运后**仍然带强调的载体 ——
   // 旧路由 `production/routings/page.tsx` 已变薄壳（不再带任何文案）⇒ 条目随之销账。
   'src/components/settings/CalcCaliberPanel.tsx',
@@ -108,6 +110,8 @@ const WIRED_FILES = [
   'src/components/settings/OversizeThresholdPreview.tsx',
   'src/app/(dashboard)/production/remnants/page.tsx',
   'src/app/(dashboard)/stock-ledger/page.tsx',
+  // issue #7750/#7762：出库单页副标题带强调，渲染点 = 本页自己的 `InlineMarkdown`
+  'src/app/(dashboard)/outbound-orders/page.tsx',
 ] as const
 
 interface Leak {

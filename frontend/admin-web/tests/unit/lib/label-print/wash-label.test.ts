@@ -48,7 +48,7 @@ const measure = (text: string, fontPx: number) => text.length * fontPx * 0.6
 const ROWS: WashLabelRow[] = [
   { key: 'customer', text: '客户 赵凯', maxLines: 1 },
   { key: 'setNo', text: '第 1 套 / 共 2 套', maxLines: 1 },
-  { key: 'pieceName', text: '布艺遮光帘A', maxLines: 2 },
+  { key: 'color', text: '布艺遮光帘A', maxLines: 2 },
 ]
 
 const input = (over: Partial<WashLabelInput> = {}): WashLabelInput => ({

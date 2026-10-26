@@ -7,15 +7,8 @@ import com.migao.admin.entity.Warehouse;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.LinkedHashSet;
-import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -34,44 +27,18 @@ class StockTransferMapperTest {
         return Files.readString(SCHEMA);
     }
 
-    private static Set<String> columnsOf(String table) throws Exception {
-        Matcher m = Pattern.compile(
-                "CREATE TABLE IF NOT EXISTS " + table + " \\(([\\s\\S]*?)\\n\\);").matcher(schemaSql());
-        assertThat(m.find()).as("建库脚本里必须有 %s 表", table).isTrue();
-        Set<String> cols = new LinkedHashSet<>();
-        for (String line : m.group(1).split("\n")) {
-            Matcher c = Pattern.compile("^\\s{4}([a-z_]+)\\s+[A-Z]").matcher(line);
-            if (c.find()) {
-                cols.add(c.group(1));
-            }
-        }
-        return cols;
-    }
-
-    private static void assertEntityCovered(Class<?> entity, String table) throws Exception {
-        Set<String> columns = columnsOf(table);
-        assertThat(columns).isNotEmpty();
-        Set<String> missing = java.util.Arrays.stream(entity.getDeclaredFields())
-                .filter(f -> !Modifier.isStatic(f.getModifiers()) && !f.isSynthetic())
-                .map(Field::getName)
-                .map(n -> n.replaceAll("([a-z0-9])([A-Z])", "$1_$2").toLowerCase())
-                .collect(Collectors.toCollection(LinkedHashSet::new));
-        missing.removeAll(columns);
-        assertThat(missing).as("%s 实体字段缺列：%s", table, missing).isEmpty();
-    }
-
     @Test
     @DisplayName("三张表的实体字段都有对应列")
     void entitiesMatchSchema() throws Exception {
-        assertEntityCovered(Warehouse.class, "warehouses");
-        assertEntityCovered(StockTransfer.class, "stock_transfers");
-        assertEntityCovered(StockTransferItem.class, "stock_transfer_items");
+        MapperColumnAssertions.assertEveryEntityFieldHasColumn(Warehouse.class, "warehouses");
+        MapperColumnAssertions.assertEveryEntityFieldHasColumn(StockTransfer.class, "stock_transfers");
+        MapperColumnAssertions.assertEveryEntityFieldHasColumn(StockTransferItem.class, "stock_transfer_items");
     }
 
     @Test
     @DisplayName("🔴 调拨明细带 batch_id（缸号随行的载体；少了就按 SKU 调拨 ⇒ 缸号丢失）")
     void transferItemsAreBatchScoped() throws Exception {
-        assertThat(columnsOf("stock_transfer_items")).contains("batch_id", "batch_no", "qty");
+        assertThat(MapperColumnAssertions.columnsOf("stock_transfer_items")).contains("batch_id", "batch_no", "qty");
     }
 
     @Test
@@ -92,9 +59,17 @@ class StockTransferMapperTest {
     void mappersHaveNoCustomSql() {
         for (Class<?> mapper : new Class<?>[]{WarehouseMapper.class, StockTransferMapper.class,
                 StockTransferItemMapper.class}) {
-            long declared = java.util.Arrays.stream(mapper.getDeclaredMethods())
-                    .filter(m -> !m.isSynthetic()).count();
-            assertThat(declared).as("%s 不应有自定义方法", mapper.getSimpleName()).isZero();
+            // 唯一的登记例外：`WarehouseMapper#claimWarehouse`（V196 / issue #7750）——
+            // 成品仓「找或建」需要 `ON CONFLICT DO NOTHING` 的原子建档（先查后插会把事务打成
+            // aborted，见该方法注释）。登记为**白名单**（不是放宽为零校验）：新增第二个自定义方法
+            // 仍会红。
+            var declared = java.util.Arrays.stream(mapper.getDeclaredMethods())
+                    .filter(m -> !m.isSynthetic())
+                    .map(java.lang.reflect.Method::getName)
+                    .filter(n -> !(mapper.getSimpleName().equals("WarehouseMapper") && n.equals("claimWarehouse")))
+                    .toList();
+            assertThat(declared).as("%s 不应有自定义方法（WarehouseMapper#claimWarehouse 已在 #7750 登记）",
+                    mapper.getSimpleName()).isEmpty();
         }
     }
 }

@@ -17,6 +17,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -60,14 +61,14 @@ class ProductImageGenerationServiceTest {
     @Test
     @DisplayName("成功：下载临时图 → uploadBytes → 返回 OSS 永久 URL（不返回临时地址）")
     void generate_downloadsAndStoresPermanently() {
-        when(client.generate("https://oss.example.com/sample.png", "回归布帘", "main"))
+        when(client.generate("https://oss.example.com/sample.png", "回归布帘", "main", 0))
                 .thenReturn(new ProductImageClient.GeneratedImage(
                         "https://dashscope-0484.oss-accelerate.aliyuncs.com/tmp/out.png", "qwen-image-3.0"));
         when(downloader.getForObject(any(URI.class), eq(byte[].class))).thenReturn(PNG);
         when(storage.uploadBytes(any(byte[].class), anyString(), eq("products/ai-generated")))
                 .thenReturn(UploadedFileInfo.builder().url("https://oss/permanent.png").build());
 
-        Map<String, String> result = service.generate("https://oss.example.com/sample.png", "回归布帘", "main");
+        Map<String, String> result = service.generate("https://oss.example.com/sample.png", "回归布帘", "main", 0);
 
         assertThat(result).containsEntry("url", "https://oss/permanent.png")
                 .containsEntry("model", "qwen-image-3.0");
@@ -79,7 +80,7 @@ class ProductImageGenerationServiceTest {
     @Test
     @DisplayName("用途非白名单 ⇒ 422，且不发起生成请求")
     void unknownKind_rejected() {
-        assertThatThrownBy(() -> service.generate("https://oss.example.com/s.png", "某商品", "banner"))
+        assertThatThrownBy(() -> service.generate("https://oss.example.com/s.png", "某商品", "banner", 0))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("用途");
         verifyNoInteractions(client);
@@ -88,7 +89,7 @@ class ProductImageGenerationServiceTest {
     @Test
     @DisplayName("样图必须是 https ⇒ 否则 422，且不发起生成请求")
     void httpSample_rejected() {
-        assertThatThrownBy(() -> service.generate("http://oss.example.com/s.png", "某商品", "main"))
+        assertThatThrownBy(() -> service.generate("http://oss.example.com/s.png", "某商品", "main", 0))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("https");
         verifyNoInteractions(client);
@@ -97,10 +98,10 @@ class ProductImageGenerationServiceTest {
     @Test
     @DisplayName("临时图域名不是百炼 OSS ⇒ 422，不下载（SSRF 面）")
     void untrustedDownloadHost_rejected() {
-        when(client.generate(anyString(), anyString(), anyString()))
+        when(client.generate(anyString(), anyString(), anyString(), anyInt()))
                 .thenReturn(new ProductImageClient.GeneratedImage("https://evil.example.com/x.png", "m"));
 
-        assertThatThrownBy(() -> service.generate("https://oss.example.com/s.png", "某商品", "main"))
+        assertThatThrownBy(() -> service.generate("https://oss.example.com/s.png", "某商品", "main", 0))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("不可信");
         verify(downloader, never()).getForObject(any(URI.class), eq(byte[].class));
@@ -121,10 +122,10 @@ class ProductImageGenerationServiceTest {
     @Test
     @DisplayName("客户端 422 原样上抛（不吞成「生成失败」）")
     void clientFailure_propagates() {
-        when(client.generate(anyString(), anyString(), anyString()))
+        when(client.generate(anyString(), anyString(), anyString(), anyInt()))
                 .thenThrow(new BusinessException(ProductImageClient.ERR_AI_IMAGE_UNAVAILABLE, "服务不可用", 422));
 
-        assertThatThrownBy(() -> service.generate("https://oss.example.com/s.png", "某商品", "main"))
+        assertThatThrownBy(() -> service.generate("https://oss.example.com/s.png", "某商品", "main", 0))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("服务不可用");
         verifyNoInteractions(storage);

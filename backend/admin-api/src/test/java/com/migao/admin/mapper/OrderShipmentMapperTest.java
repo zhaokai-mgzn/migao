@@ -8,12 +8,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.LinkedHashSet;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -29,27 +24,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("发货单 Mapper：SQL 列名 ⊆ 建库脚本列名 + autoResultMap 绑定")
 class OrderShipmentMapperTest {
 
-    private static final Path SCHEMA = Path.of("src/main/resources/db/init/schema.sql");
-
-    private static Set<String> columnsOf(String table) throws Exception {
-        String sql = Files.readString(SCHEMA);
-        Matcher m = Pattern.compile(
-                "CREATE TABLE IF NOT EXISTS " + table + " \\(([\\s\\S]*?)\\n\\);").matcher(sql);
-        assertThat(m.find()).as("建库脚本里必须有 %s", table).isTrue();
-        Set<String> cols = new LinkedHashSet<>();
-        for (String line : m.group(1).split("\n")) {
-            Matcher c = Pattern.compile("^\\s{4}([a-z_]+)\\s+[A-Z]").matcher(line);
-            if (c.find()) {
-                cols.add(c.group(1));
-            }
-        }
-        return cols;
-    }
-
     @Test
     @DisplayName("🔴 selectByOrderId 点名的列都在建库脚本的 order_shipments 里")
     void selectByOrderIdColumnNamesExist() throws Exception {
-        Set<String> cols = columnsOf("order_shipments");
+        Set<String> cols = MapperColumnAssertions.columnsOf("order_shipments");
         assertThat(cols).contains("order_id", "tenant_id", "deleted", "created_at");
         Method m = OrderShipmentMapper.class.getMethod("selectByOrderId", String.class, Long.class);
         String sql = m.getAnnotation(Select.class).value()[0];
@@ -62,7 +40,7 @@ class OrderShipmentMapperTest {
     @Test
     @DisplayName("🔴 幂等键查询走 client_request_id（唯一索引 uk_order_shipments_idem 的读面）")
     void idempotencyLookupUsesTheIndexedColumn() throws Exception {
-        assertThat(columnsOf("order_shipments")).contains("client_request_id");
+        assertThat(MapperColumnAssertions.columnsOf("order_shipments")).contains("client_request_id");
         Method m = OrderShipmentMapper.class.getMethod("selectByClientRequestId", Long.class, String.class);
         assertThat(m.getAnnotation(Select.class).value()[0]).contains("client_request_id", "tenant_id");
     }

@@ -704,8 +704,9 @@ a.wh5-machine__back:active { color: var(--wh5-machine-ink); }
 
 .wh5-label-title {
   margin: 0;
-  /* 抬头 10pt：纸面第一眼要认出「这是什么单」 */
-  font-size: 10pt;
+  /* 抬头 13pt：纸面第一眼要认出「这是什么单」（2026-10-25 10pt → 13pt，issue #7776：纸长按内容撑开
+     ⇒ 不必再为固定 70mm 让字号；用户逐字「字体太小了」） */
+  font-size: 13pt;
   line-height: 1.2;
   font-weight: 700;
   text-align: center;
@@ -723,9 +724,9 @@ a.wh5-machine__back:active { color: var(--wh5-machine-ink); }
 .wh5-label-row {
   display: flex;
   gap: 1mm;
-  /* 8pt（介质下限 6pt 之上的**可读口径**）：50×70 上 6pt 只是「印得下」，
-     贴到箱上要隔着 1 米核对收货人与电话 ⇒ 版面有富余就抬字号（2026-10-25 真机截图核对） */
-  font-size: 8pt;
+  /* 11pt：贴到箱上要隔着 1 米核对收货人与电话 ⇒ 只印得下不算数（2026-10-25 8pt → 11pt，issue #7776；
+     纸长已按内容撑开，不再靠压字号迁就固定 70mm） */
+  font-size: 11pt;
   line-height: 1.25;
 }
 
@@ -752,3 +753,11 @@ a.wh5-machine__back:active { color: var(--wh5-machine-ink); }
 }
 
 
+
+/* ── 成品出库卡片（V197 / issue #7762）：扫水洗唛后的标签预览 ── */
+.wh5-finished-label .wh5-fl-rows { margin: 2mm 0; }
+.wh5-finished-label .wh5-fl-row { display: flex; gap: 2mm; font-size: 13px; line-height: 1.5; }
+.wh5-finished-label .wh5-fl-k { flex: 0 0 5.5em; color: #555; }
+.wh5-finished-label .wh5-fl-v { flex: 1 1 auto; font-weight: 600; }
+.wh5-finished-label .wh5-fl-code { margin: 1mm 0 2mm; letter-spacing: .5px; font-weight: 700; }
+.wh5-finished-label .wh5-fl-actions { display: flex; gap: 2mm; }

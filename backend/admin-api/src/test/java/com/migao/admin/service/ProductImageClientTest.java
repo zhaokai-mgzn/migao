@@ -60,7 +60,7 @@ class ProductImageClientTest {
         when(restTemplate.exchange(anyString(), eq(HttpMethod.POST), any(), eq(String.class)))
                 .thenThrow(upstream503(upstreamBody));
         return assertThrows(BusinessException.class, () -> clientWith(restTemplate, "tok")
-                .generate("https://oss/sample.png", "回归布帘", "main"));
+                .generate("https://oss/sample.png", "回归布帘", "main", 0));
     }
 
     @Test
@@ -73,7 +73,7 @@ class ProductImageClientTest {
                         """, HttpStatus.OK));
 
         ProductImageClient.GeneratedImage generated =
-                clientWith(restTemplate, "tok").generate("https://oss/sample.png", "回归布帘", "main");
+                clientWith(restTemplate, "tok").generate("https://oss/sample.png", "回归布帘", "main", 0);
 
         assertThat(generated.imageUrl()).isEqualTo("https://oss/tmp.png");
         assertThat(generated.model()).isEqualTo("qwen-image-3.0");
@@ -88,7 +88,7 @@ class ProductImageClientTest {
 
         BusinessException failure = assertThrows(BusinessException.class,
                 () -> clientWith(restTemplate, "tok")
-                        .generate("https://oss/sample.png", "回归布帘", "main"));
+                        .generate("https://oss/sample.png", "回归布帘", "main", 0));
         assertThat(failure.getCode()).isEqualTo(ProductImageClient.ERR_AI_IMAGE_UNAVAILABLE);
         assertNoInternalIdentifiers(failure);
     }
@@ -100,7 +100,7 @@ class ProductImageClientTest {
 
         BusinessException failure = assertThrows(BusinessException.class,
                 () -> clientWith(restTemplate, "")
-                        .generate("https://oss/sample.png", "回归布帘", "main"));
+                        .generate("https://oss/sample.png", "回归布帘", "main", 0));
         assertThat(failure.getCode()).isEqualTo(ProductImageClient.ERR_AI_IMAGE_NOT_CONFIGURED);
         assertThat(failure.getSuggestion()).contains("已反馈平台").doesNotContain("稍后重试");
         assertNoInternalIdentifiers(failure);

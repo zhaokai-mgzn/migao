@@ -316,7 +316,7 @@ class InboundPostLedgerChainRaceRealDbTest {
                 s.getMapper(StockBatchMapper.class),
                 s.getMapper(ProductSkuMapper.class),
                 s.getMapper(ProductMapper.class),
-                stockLedgerService);
+                stockLedgerService, null, null);
     }
 
     // ────────────────────────────────────────────── 真值读取（裸 JDBC，不经被测读面）

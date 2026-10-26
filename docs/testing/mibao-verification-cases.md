@@ -3685,7 +3685,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（156 case）
+## 杂项域（164 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5745,6 +5745,94 @@
 ```
 溯源: 2026-10-24 新增（issue #7592）。落码 = `WarehouseSeedService`（幂等播种）+ `RegistrationService` 接线 + `OnboardingInitialData.REQUIRED` 登记 + 后置条件探针 + V189（存量租户回填）+ `StocktakeService.open` 默认仓收「未指定仓」。 ｜ tags: backend-contract, inventory, warehouse, onboarding, red-proof
 
+### WH-003. 成品仓位自动分配：水位最低且未满优先，全满才顺延新增（issue #7750 / #7791） 🔵
+```
+你: 用户（2026-10-25，逐字）：「对成品帘打包扫码时要自动给当前的成品进行成品仓区域分配仓位号」。
+你: 用户（2026-10-26，逐字）：「后续成品帘打包入库时要自动分配仓位时要能根据仓位水位智能分配」。
+数据: **判据 1（水位优先）**：水位 = 在库件数 / 区域容量；分配时选**水位最低且未满**的 active 仓位，同水位按仓位号（A-01 优先）。判据 = `WarehouseLocationMapper#selectBestBinForAllocation`（count / capacity + ORDER BY）+ `WarehouseLocationServiceTest#reusesLowestWaterBin`。
+数据: **判据 2（全满才顺延）**：本区所有 active 仓位都满 ⇒ 新号 = 本区域现有行数 + 1（如 A-02），容量沿用本区容量；判据 = `#createsNextBinWhenAllCapacityFull` / `#newBinUsesZoneCapacity`。
+数据: **判据 3（🔴 占号原子、冲突不抛异常）**：新增走 `INSERT … ON CONFLICT DO NOTHING`（唯一冲突不会把 PG 事务打成 aborted），抢不到就重算下一轮；连续 8 次抢不到 ⇒ 显式冲突（可重试），**不**静默返回一个可能被占的号。新建的号不直接返回，下一轮带行锁与容量复核。判据 = `#claimConflictRetriesThenSucceeds` + `#exhaustedAttemptsThrows`。
+数据: **判据 4（水位没有第二份真相）**：在库件数只从 `finished_goods_stock` 的 `in_stock` 行按 bin_code 派生（GROUP BY，不按 500 行截断）；仓位表**没有** occupied / in_stock_count 之类字段。V198 去掉 `uk_finished_goods_bin_in_stock`（允许一仓多件），同套装/部位仍由 `uk_finished_goods_set_part_in_stock` 唯一。判据 = `WarehouseLocationMapperTest#allocationUsesWaterLevelCapacityAndNoOccupancyColumn` + `FinishedGoodsStockMapperTest#oneBinHoldsMultiplePackagesUpToCapacity`。
+数据: **判据 5（并发容量闸门）**：候选仓位行 `SELECT … FOR UPDATE OF l`；调用方 `InboundOrderService.post` 是 `@Transactional`，同一事务内锁住候选行、复核在库件数再 insert，并发过账不会把同一仓塞过容量。判据 = `WarehouseLocationAllocationRealDbTest`（真库两事务：第二事务在行锁上等待；第一事务填满后第二事务复核并顺延新建）+ Mapper SQL 的 `FOR UPDATE` 断言。
+数据: **边界（照实登记）**：容量按区域统一（1~999 件，默认 10）；一仓可放多件到容量；不做货架层级 / 体积 / 重量维度；容量下调到低于当前在库件数时不驱逐已有件，只停止继续分配。
+前置: 本用例是 [backend-contract]：前置 = `warehouse_locations` / `finished_goods_stock`（V196）+ `warehouses.warehouse_type` 含 `finished`。零网络、零 LLM。
+跳过: [backend-contract] 仓位分配口径由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-25 新增（issue #7750）。2026-10-26 改判（issue #7791，用户「根据仓位水位智能分配」）：V198 增 capacity（区域统一，默认 10）、去掉 `uk_finished_goods_bin_in_stock`（一仓多件）、分配从 `selectFirstFreeBin` 改为 `selectBestBinForAllocation`（count/capacity + `FOR UPDATE`）；`claimBin` 带容量。 ｜ tags: backend-contract, inventory, warehouse, finished-goods, red-proof
+
+### WH-004. 出库单：布料手工出库「建单即过账」（扣库存 + 落台账），库存不足整笔拒绝（issue #7750） 🔵
+```
+你: 用户（2026-10-25，逐字）：「现在布料也只做了入库，也需要做入库出库，可以统一做成入库出库单，并且做成入库即过账，不要单独再点击过账了」。
+数据: **判据 1（建单即过账）**：`POST /api/admin/outbound-orders` 一次请求内完成扣库存 + 落台账 + 写单据；落库状态恒为 `posted`（DB CHECK 只允许这一个取值，出库单**没有草稿态**）。判据 = `OutboundOrderServiceTest#createAndPostDeductsAndRecordsLedger` + 迁移 `ck_outbound_orders_status`。
+数据: **判据 2（🔴 库存不足不许负库存）**：原子扣减（`WHERE stock >= 本单量 RETURNING`）返回 0 行 ⇒ 422 + 整笔回滚；**不**落台账、**不**落明细。判据 = `#insufficientStockRejected`（同时断言 `stockLedgerService.record` 与明细 insert 一次都没发生）。
+数据: **判据 3（数量粒度）**：> 0 且最多 1 位小数（与 `product_skus.stock` 的 NUMERIC(12,1) 同粒度）；超精度**显式拒绝**、不静默取整。判据 = `#quantityPrecisionGate`。
+数据: **判据 4（台账口径）**：`reason=outbound`、`refNo=出库单号`、before/after 来自扣减语句的 RETURNING（同基链断不了）。判据 = `#createAndPostDeductsAndRecordsLedger`。
+数据: **判据 5（跨租户）**：SKU 不属于本租户 ⇒ 当「不存在」拒绝（不泄露存在性）。判据 = `#foreignTenantSkuRejected`。
+数据: **判据 6（页面可达 + 写码门控 + 雪花号）**：出库单页列表/新建入口在；无 `inbound:create` 不渲染新建；提交体里 `skuId` 是字符串原样（`Number()` 会吞末位）；提交成功提示「已出库」。判据 = `frontend/admin-web/tests/unit/pages/outbound-orders.test.tsx`。
+数据: **边界（照实登记）**：① 布料出库只扣 SKU 库存 + 台账，**不**写 `stock_batch_consumptions`（批次消耗仍由裁剪报工/盘点统计）；② 出库单**不可作废**（冲销须另开入库单）；③ 成品手工出库不支持（成品只随发货出库）。
+前置: 本用例是 [backend-contract]：前置 = `outbound_orders` / `outbound_order_items`（V196）+ `stock_ledger_entries.reason` 含 `outbound`。零网络、零 LLM。
+跳过: [backend-contract] 出库扣减/台账/页面字段面由 Java 单测 + 前端单测验证，非 LLM 行为
+```
+溯源: 2026-10-25 新增（issue #7750）。落码 = `OutboundOrder`/`OutboundOrderItem` + 两个 Mapper + `OutboundOrderQueryMapper` + `OutboundOrderService.createAndPost` + `OutboundOrderController` + 前端 `/outbound-orders` 页 + `outboundOrderApi` + V194（含台账 reason 扩 `outbound`）。 ｜ tags: backend-contract, inventory, outbound, red-proof
+
+### WH-005. 成品帘入/出库闭环：打包 ⇒ 成品入库（分仓位）+ 发货 ⇒ 成品出库 + 撤销打包冲销（issue #7750） 🔵
+```
+你: 用户（2026-10-25，逐字）：「要对成品帘进行入库出库」「对成品帘打包扫码时要自动给当前的成品进行成品仓区域分配仓位号」。
+数据: **判据 1（打包 = 入库）**：打包动作给每个成品订单行分配一个成品仓仓位号，并自动生成一张 `source=packing`、`biz_category=finished` 的**已过账**成品入库单。判据 = `FinishedGoodsServiceTest#packReceivesFinishedGoodsWithBins` + `InboundStockDocumentTest#finishedPostAllocatesBinsOnly`。
+数据: **判据 2（🔴 幂等）**：已有在库行 ⇒ 不重复入库（不建第二张单）；订单没有成品行 ⇒ 不造假单。判据 = `#packIsIdempotent` + `#packWithoutItemsCreatesNothing`。
+数据: **判据 3（发货 = 出库）**：发货 ⇒ 生成 `source=ship` 的已过账成品出库单 + 在库行置 `shipped`（释放仓位）；**没有在库行（一步发货）⇒ 不造空出库单**。判据 = `#shipIssuesFinishedGoods` + `#shipWithoutStockCreatesNoDoc`。
+数据: **判据 4（撤销打包 = 冲销）**：入库单作废 + 在库行置 `unpacked`；同一张入库单只冲一次（两行同一单 ⇒ 一次调用）。判据 = `#unpackReversesInboundOnce` + `#unpackWithoutStockIsNoop`。
+数据: **判据 5（并发显式失败）**：出库时在库行已被并发改掉 ⇒ 409 + 整笔回滚（不静默成功）。判据 = `#shipConcurrentChangeConflicts`。
+数据: **判据 6（工人端可见）**：发货读面带 `finished_bins`（仓位号），工人端拍照发货汇总必须上屏。判据 = `frontend/bmini-app/tests/worker-shipment-page.test.tsx`「成品仓位（V196）」。
+数据: **判据 7（🔴 商家发货路同样出库）**：商家/生产发货路（`OrderShipmentService#recordMerchantShipment`，由 `OrderService#shipWithLogistics` 调）也必须先补入库再出库 —— 否则「工人打包 → 商家后台发货」的订单会永久留在成品仓「在库」，而货已经发走了。判据 = `MerchantShipmentAtomicityTest#happyPathCommitsTheTransaction`（`verify(receiveOnPack|issueOnShip)`）。
+数据: **判据 8（商家面可见）**：出库单页「成品库存」页签显示仓位号 / 品名 / 订单号（打包自动分配的成品仓仓位）。判据 = `frontend/admin-web/tests/unit/pages/outbound-orders.test.tsx`「成品库存页签」。
+数据: **边界（照实登记）**：① 入库时点 = **订单打包动作**（`packed`），**不是**扫码报「打包」工序 —— 报工在本仓的语义是领活（#4967），那一刻货还没打包好；② 一个成品订单行 = 一个在库行（不按套拆，与「一个 SKU 行 = 一个批次」同源）；③ 成品无成本口径（`unit_cost`/`amount` 留 NULL，不伪造 0）。
+前置: 本用例是 [backend-contract]：前置 = `finished_goods_stock` / `warehouse_locations`（V196）+ `inbound_orders.biz_category=finished` + 打包/发货/撤销三个状态迁移。零网络、零 LLM。
+跳过: [backend-contract] 成品入出库编排由 Java 单测 + bmini 页面单测验证，非 LLM 行为
+```
+溯源: 2026-10-25 新增（issue #7750）。落码 = `FinishedGoodsStock`/`FinishedGoodsStockMapper`（原子占位 / markShipped / markUnpacked）+ `FinishedGoodsService`（三个时点）+ `InboundOrderService.receiveFinishedGoods` / `post` 的 finished 分支 / `cancelFinishedPosting` + `OrderShipmentService` 的 pack/ship/unpack 挂钩 + `FinishedGoodsController` + bmini 仓位上屏。 ｜ tags: backend-contract, inventory, finished-goods, shipment, red-proof
+
+### WH-007. 扫描水洗唛出库：套×部位粒度 + 打包工序工人授权 + 幂等（issue #7762） 🔵
+```
+你: 用户（2026-10-25，逐字）：「允许工人扫码水洗唛进行成品出库打标签操作，参考图中的格式」。
+你: 用户（2026-10-25，确认口径）：「扫码水洗唛进入手机端报工页面后操作打印出库，只有关联打包工序的工人扫码后才能操作出库」。
+数据: **判据 1（一张唛 = 一行在库 + 一个仓位号）**：打包按 `processing_order_sets` × `processing_set_part_tokens` 逐行入库 —— 同一订单 5 套的布帘 = 5 行在库。V198（issue #7791）起一仓可放多件到区域容量 ⇒ 5 件可落在同一仓位（选水位最低者），**不再要求 5 个不同仓号**；标签仍打 `bin_code`，扫唛按 token/短码定位到具体件。判据 = `FinishedWashLabelTest` + `V197__finished_goods_set_part_granularity.sql` 的套装唯一索引 + `V198__warehouse_capacity_and_water_level.sql`。
+数据: **判据 2（🔴 非打包工序工人被拒）**：授权 = `production_work_logs` 里该加工单存在 `operation_name ILIKE '%打包%'` 且 `worker_id = 当前工人`。非打包工人 ⇒ `allowed=false` + 原因「只有做过打包工序的工人才能扫码出库」，写面 409，**零库存变动、零出库单**。判据 = `FinishedWashLabelTest#nonPackerIsRejectedWithZeroInventoryChange`。
+数据: **判据 3（出库即过账）**：打包工人扫在库唛 ⇒ 在库行 `in_stock → shipped`（释放仓位）+ 成品出库单 `source=scan` 单行（仓位号 = 标签「打包区域」）。判据 = `FinishedWashLabelTest#outboundMarksStockShippedAndCreatesScanDocIdempotently`。
+数据: **判据 4（幂等）**：同一张唛第二次提交 ⇒ 409「已经出库」，不重复扣减、不建第二张单（`clearInvocations` 后 `never()` 断言）。
+数据: **判据 5（标签字段 = 服务端唯一源）**：逐行内容由服务端 `label.rows` 下发；缺值行不渲染（不印 `—`、不编造），无稳定来源的「项目名称 / 款式 / 安装工艺 / 扩展选项」不出现。判据 = `#packerCanOutboundAndLabelCarriesBinAndSetNo`。
+数据: **判据 6（入口在报工页 + 打印）**：扫水洗唛 → 报工页出现「成品出库」卡片（服务端 rows 排版 + 打印 + 出库），打印走独立文档 `@page 50mm 70mm`。判据 = `frontend/worker-h5/tests/worker-h5-finished-label.test.mjs`。
+前置: 本用例是 [backend-contract]：前置 = V196 成品在库/仓位 + V197 套×部位列与唯一索引 + `production_work_logs` 既有报工记录。零网络、零 LLM。
+跳过: [backend-contract] 扫唛出库的授权/幂等/标签内容由 Java 单测 + 页面静态判据验证，非 LLM 行为
+```
+溯源: 2026-10-25 新增（issue #7762）。落码 = `FinishedGoodsService#washLabelView` / `#issueByWashLabel` / `#receiveOnPackByTokens`/`labelOf` + `FinishedGoodsStockMapper#selectInStockByWashLabel`/`markShippedById` + `ProcessingSetPartTokenMapper#selectByTokenOrShortCode`/`selectByOrderId` + `ProductionWorkLogMapper#countPackerLogs` + `OutboundOrderService#createScanOutbound` + `WorkerFinishedStockController`。 ｜ tags: backend-contract, inventory, outbound, wash-label, red-proof
+
+### WH-008. 水洗唛出库标签格式：仓位号即「打包区域」、套数/尺寸/开数/部位/主布货号逐行（issue #7762） 🔵
+```
+你: 用户（2026-10-25，附图）：车间实拍 50×70mm 热敏标签格式（订单编号 / 客户 / 下单日期 / 收货人 / 套数 / 尺寸 / 开数 / 部位 / 主布货号 / 打包区域 / 二维码 + 短码）。
+数据: **判据 1（「打包区域」= 成品仓仓位号）**：标签末行「打包区域」的值 = 在库行 `bin_code`（与成品库存页同值）。判据 = `FinishedWashLabelTest#packerCanOutboundAndLabelCarriesBinAndSetNo` 的 filteredOn(打包区域)。
+数据: **判据 2（套数行）**：`第 N 套 / 共 M 套`，N = `processing_order_sets.set_index`、M = 该加工单的套数（`selectCount`）。判据 = 同方法断言 `第3套/共5套`。
+数据: **判据 3（尺寸 / 开数 / 部位 / 主布货号）**：尺寸 = `order_items.width*height`（去尾零，如 `3*2.7`）；开数 = `order_items.open_count`；部位 = 部位码 `position_kind`；主布货号 = `order_items.sku_code`。判据 = 同方法 + `labelOf` 实现。
+数据: **判据 4（缺值不渲染）**：任一行值为空 ⇒ 该行不出现（不印 `—`、不编造）；「收货人」照实取 `orders.customer_name`（数据模型无独立收货人，不猜人名）。
+数据: **边界（照实登记）**：① 二维码**图形**本单不渲染（worker-h5 无二维码生成器）⇒ 纸面印短码 + `qr_value` 由服务端给出（`/s/<短码>`），图形另单；② 蓝牙标签机（bmini `lpapi`）本单不接，打印载体 = 浏览器 `window.print()`。
+前置: 本用例是 [backend-contract]：前置 = V197 列 + 部位码短码（V99）。零网络、零 LLM。
+跳过: [backend-contract] 标签字段来源与格式由 Java 单测断言，非 LLM 行为
+```
+溯源: 2026-10-25 新增（issue #7762）。落码 = `FinishedGoodsService#labelOf` + `frontend/worker-h5/src/render.mjs#washLabelPrintHtml`。 ｜ tags: backend-contract, inventory, wash-label, label-format
+
+### WH-006. 入库即过账（商家建单一次请求完成）+ 成品单过账语义与布料单分道（issue #7750） 🔵
+```
+你: 用户（2026-10-25，逐字）：「做成入库即过账，不要单独再点击过账了」。
+数据: **判据 1（建单即过账）**：`POST /api/admin/inbound-orders` = create → post（同一个事务）；建单失败不留孤立草稿，过账失败整笔回滚。判据 = `InboundStockDocumentTest#createAndPostComposesCreateThenPost` + `InboundOrderController` 的建单端点改为 `createAndPost`。
+数据: **判据 2（🔴 成品单过账不碰布料口径）**：`biz_category=finished` 过账只做两件事 —— 逐行分配仓位（`claimInStock` 原子占位）+ 回写明细分位；**不**建 `stock_batches`、**不**加 SKU 米数库存、**不**落库存台账。判据 = `#finishedPostAllocatesBinsOnly`（四条 never 断言）。
+数据: **判据 3（fail-closed）**：成品单缺仓库 / 明细缺订单行引用 ⇒ 拒绝过账（不猜仓库、不分配孤儿仓位）。判据 = `#finishedPostWithoutWarehouseRejected` + `#finishedPostWithoutOrderItemRejected`。
+数据: **判据 4（页面口径）**：入库单新建页提交后提示「已入库（批次号已生成、库存已加、成本已重算）」，按钮文案 = 「确认入库」（不再有「保存为草稿 → 再点过账」两步）；工人拍照入库的**识别草稿**仍保留过账端点（那张草稿是识别结果，不是待办）。判据 = `frontend/admin-web/tests/unit/pages/inbound-orders-new.test.tsx`。
+数据: **边界（照实登记）**：① 商家端不再能建「草稿态」入库单（工人拍照识别草稿走 `WorkerInboundService` 的独立路径）；② `PATCH /{id}` 的 `post`/`cancel` 动作保留给这些草稿。
+前置: 本用例是 [backend-contract]：前置 = `inbound_orders.biz_category`（V196）+ 现有入库过账链路（V111/#5034）。零网络、零 LLM。
+跳过: [backend-contract] 入库即过账与成品过账分道由 Java 单测验证，非 LLM 行为
+```
+溯源: 2026-10-25 新增（issue #7750）。落码 = `InboundOrderService.createAndPost` / `receiveFinishedGoods` / `post` 的 finished 分支 / `cancelFinishedPosting` + `InboundOrderController` 建单端点 + 入库新建页文案与按钮 + `InboundOrder.bizCategory`/`warehouseId` 与明细四列。 ｜ tags: backend-contract, inventory, inbound, red-proof
+
 ### OPS-001. 云上「采购单加载失败」根因：BOOLEAN 逻辑删列 + 全局整数语义 ⇒ 真库 500（issue #7373 复盘） 🔵
 ```
 你: 用户（2026-10-21，逐字）：「如果是 500：这里有个真缺陷，我建议一并修，现在页面就有问题，你自己去验证下」—— 要求自查云上采购单页面打不开的根因，而不是猜。
@@ -6088,6 +6176,43 @@
 跳过: [frontend-contract] 报废工时的采集口径与分列展示，由 Java 单测 + 前端单测验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-23 新增（issue #7377 段 8，用户「按你建议继续做」）。落码 = `QualityCostPolicy.scrapLabor()` + `ReportService.qualityCost/qualityCostBreakdown` 的 scrap 列 + 报表页分列展示与 CSV 列。 ｜ tags: frontend-contract, quality-cost, scrap, red-proof
+
+### WH-009. 成品仓仓位号管理：出库单页新建 / 编辑 / 启停 / 删除仓位，占用中锁定改号与删除（issue #7785） 🔵
+```
+你: 用户（2026-10-25，逐字）：「缺个仓位号管理功能吧？允许用户在这个页面上创建和管理」（附图 = 出库单页 / 成品库存空态，红框圈住「系统会自动给每个成品分配成品仓仓位号」）。
+数据: **判据 1（新建）**：`POST /api/admin/warehouse-locations` 仓位号统一大写（`a-01` = `A-01`）、区域缺省 `A / 成品区`、落成品仓（不存在时自动建）；重复仓位号 ⇒ 422 可读提示（DB 唯一索引兜底，不冒 5xx）。判据 = `WarehouseLocationManagementTest#createNormalizesCodeAndDefaultsZone` / `#createDuplicateCodeIsReadableConflict` / `#createRejectsInvalidCodeBeforeCreatingWarehouse`。
+数据: **判据 2（🔴 占用中锁定）**：有 `in_stock` 成品占着仓位时，改仓位号 / 删除 ⇒ 409 且零写入；备注 / 区域名 / 启停仍可改。判据 = `#updateRejectsRenamingOccupiedBin` / `#deleteRejectsOccupiedBin` / `#updateAllowsRemarkAndZoneOnOccupiedBin`。
+数据: **判据 3（停用只影响后续分配）**：停用后 `nextFreeBin` 不再返回它（分配查询只看 `status='active'`），已占用库存不受影响，可重新启用。判据 = `#updateTogglesStatus` + `WarehouseLocationMapper#selectBestBinForAllocation` 的 `status = 'active'` 谓词。
+数据: **判据 4（软删可追溯）**：删除 = 软删；历史单据的 `bin_code` 快照不动（V196 列注释）。判据 = `#deleteSoftDeletesFreeBin`。
+数据: **判据 4b（并发双删不谎报）**：删除影响 0 行（另一请求刚删掉）⇒ 404 + 「可能刚被其他人删除」建议，不返回 200。判据 = `#deleteLostRaceIsNotFound`。
+数据: **判据 5（租户隔离）**：跨租户改 / 删命中 404 且零写入。判据 = `#crossTenantIsInvisible`。
+数据: **判据 6（清单口径）**：在库件数由 `finished_goods_stock` 的 in_stock 行按 `bin_code` 一次 GROUP BY 聚合（不按 500 行截断）；`includeInactive=true` 带出停用仓位；清单带 `capacity / inStockCount`（水位列）。判据 = `#listViewMarksWaterLevelAndIncludesInactive` + `FinishedGoodsStockMapper#selectInStockCounts`。
+数据: **判据 7（权限 / 端点）**：读 `inbound:view`、写 `inbound:create`（零授权 delta）；清单 / 新建 / 批量新建 / 编辑 / 删除五个端点都透传当前租户。判据 = `WarehouseLocationControllerTest#permissionCodes` / `#listLocationsScopesTenantAndPassesIncludeInactive` / `#createLocationScopesTenant` / `#batchCreateScopesTenant` / `#updateAndDeleteScopeTenant`。
+数据: **判据 8（商家面可达）**：出库单页第三页签「仓位管理」可新建 / 编辑 / 启停 / 删除；`inbound:create` 缺失时整块只读；占用中行内删除禁用、编辑弹窗仓位号禁用；成品库存空态有「管理仓位」入口。判据 = `frontend/admin-web/tests/unit/components/WarehouseLocationPanel.test.tsx` + `frontend/admin-web/tests/unit/pages/outbound-orders.test.tsx`「仓位管理入口」。
+数据: **边界（照实登记）**：① 不做移库（把在库成品从 A-01 挪到 A-02）；② 容量 / 水位 / 批量建号见 WH-010；③ 仓位号只允许字母 / 数字 / 短横线 / 下划线（中文 / 空格拒绝）—— 与自动分配的 `A-01` 同形态。
+前置: 本用例是 [backend-contract + frontend-contract]：前置 = `warehouse_locations`（V196）+ `finished_goods_stock` 在库行 + `inbound:view/create`。零网络、零 LLM。
+跳过: [backend-contract] 仓位档案的 CRUD / 占用锁定 / 租户隔离由 Java 单测验证，商家面由前端单测验证，非 LLM 行为
+```
+溯源: 2026-10-25 新增（issue #7785，用户逐字「缺个仓位号管理功能吧？允许用户在这个页面上创建和管理」）。落码 = `WarehouseLocationService`（listView/create/update/delete + 占用判定 + 并发双删判 0 行）+ `@TenantOwnedResource` 归属认定（键 warehouse-location）+ `FinishedGoodsStockMapper#selectOccupiedBinCodes/countInStockByBinCode` + `FinishedGoodsController` 三写端点 + `finishedGoodsApi.createLocation/updateLocation/deleteLocation` + `WarehouseLocationPanel` + 出库单页第三页签。 ｜ tags: backend-contract, inventory, warehouse-location, master-data, red-proof
+
+### WH-010. 成品仓水位智能分配 + 区域容量 + 批量建号（issue #7791） 🔵
+```
+你: 用户（2026-10-26，逐字）：「后续成品帘打包入库时要自动分配仓位时要能根据仓位水位智能分配」。
+你: 用户（2026-10-26，逐字）：「另外仓位管理允许批量创建，用户输入一个数字区间后批量生成仓位号」。
+你: 用户（2026-10-26，选择口径）：水位按件数；容量按区域统一（不是逐仓）；默认 10 件。
+数据: **判据 1（水位 = 件数 / 容量）**：一仓多件后按 `count(in_stock) / capacity` 分配，选比值最低且 `count < capacity` 的 active 仓，同水位按仓位号；不再按「最小空闲号」。判据 = `WarehouseLocationMapper#selectBestBinForAllocation` + `WarehouseLocationCapacityBatchTest` / `WarehouseLocationServiceTest`。
+数据: **判据 2（一仓多件）**：V198 去掉 `uk_finished_goods_bin_in_stock`（同套装/部位仍唯一）；容量列为 `capacity`（默认 10，CHECK 1~999）；`schema.sql` 终态与迁移一致。判据 = `FinishedGoodsStockMapperTest#oneBinHoldsMultiplePackagesUpToCapacity` + `V198__warehouse_capacity_and_water_level.sql`。
+数据: **判据 3（容量按区域统一）**：改一个仓的容量 ⇒ 本区所有仓同步；新建不传容量 ⇒ 沿用本区现有容量，新区域缺省 10；批量给了不同容量 ⇒ 本区一起改。判据 = `WarehouseLocationCapacityBatchTest#createUsesZoneCapacity` / `#createWithCapacitySyncsZone` / `#updateCapacitySyncsZone` / `#batchWithCapacitySyncsZone`。
+数据: **判据 4（🔴 批量建号幂等 + 有界）**：A 区 1~20 ⇒ A-01…A-20；重复执行 ⇒ 新建 0 / 跳过 20；单次 ≤500、编号 1~9999、结束不小于开始；跨区域不串号。判据 = `#batchCreatesRangeAndCountsSkipped` / `#batchRangeRejected` / `#batchNumberUpperBound` + `WarehouseLocationControllerTest#batchCreateScopesTenant`。
+数据: **判据 5（并发闸门）**：候选行 `FOR UPDATE OF l`，过账事务内锁行后复核件数再 insert；并发不会把同仓塞过容量。判据 = `WarehouseLocationAllocationRealDbTest`（真库两事务：第二事务等锁、第一事务填满后复核并顺延 A-02；去掉 `FOR UPDATE` 则第二事务不阻塞 ⇒ 判据红）+ Mapper SQL 断言。
+数据: **判据 6（商家面水位 / 批量）**：仓位管理清单显示「在库件数 / 容量」与满仓状态；有「批量新建」弹窗（数字区间 + 预览已存在数）；空态也能批量建号；单仓新建 / 编辑带容量。判据 = `frontend/admin-web/tests/unit/components/WarehouseLocationWaterLevelBatch.test.tsx`。
+数据: **判据 7（容量下调不驱逐）**：容量改到低于当前在库件数 ⇒ 已有件保留，水位可 >100%，只停止继续分配；不做自动移库。判据 = 服务层不驱逐 + 清单原样显示（边界照实登记）。
+数据: **判据 8（标签口径不变）**：一张唛仍是一行在库 + 标签上的 bin_code；一仓多件后靠短码/token 定位具体件，不改扫唛出库链路。判据 = WH-007 + `FinishedWashLabelTest`。
+数据: **边界（照实登记）**：① 容量 = 件数，不做体积 / 重量 / 货架层级；② 不做移库 / 跨仓调拨；③ 真库两事务并发判据已做（`WarehouseLocationAllocationRealDbTest`），未做长时间高负载压测；④ 存量仓位迁移后容量统一为 10。
+前置: 本用例是 [backend-contract + frontend-contract]：前置 = V198（warehouse_locations.capacity + 去掉 bin 唯一索引）+ 成品在库行 + `inbound:view/create`。零网络、零 LLM。
+跳过: [backend-contract] 水位 / 容量 / 批量建号由 Java 单测 + 前端单测验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-26 新增（issue #7791，用户「根据仓位水位智能分配」+「批量创建，输入数字区间」）。落码 = V198 + `WarehouseLocation.capacity` + `selectBestBinForAllocation`（FOR UPDATE）/ `selectZoneCapacity` / `updateCapacityByZone` + `FinishedGoodsStockMapper#selectInStockCounts` + `WarehouseLocationService`（水位分配 / 区域容量同步 / batchCreate）+ `POST /warehouse-locations/batch` + 前端水位列 / 容量字段 / 批量弹窗。 ｜ tags: backend-contract, inventory, warehouse, finished-goods, master-data, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -7596,7 +7721,7 @@
 数据: **「必完」标记已整体退场**（**2026-09-21 改判，issue #4961**；用户裁定「完工 = 全部工序实例报满」⇒ 不再有「必完」这个配置维度）：`ProductionProgressTable` **不渲染**任何必完 badge（改前形态 = 「必完工序（is_must_finish）加「必完」标记；非必完工序不得出现该标记」）；行内字段枚举 = 工序名 / 分组 / 应做数量+单位 / 单价 / 状态（待做|已完成）/ 已完成数量 / 报工人。读面键 `is_must_finish` **仍在**（服务端恒 `false`，历史载体）但**界面零消费**。红证（移除类判据 = 「改前**存在**、断言它**不存在**」）：把 badge 加回 ⇒ 该断言红。证据：frontend/admin-web/tests/unit/components/ProductionProgressTable.test.tsx
 数据: 进度条读 progress.percent 且与「已完成 done/total 道工序」文案一致（50% ⇒ 1/2）
 数据: 计件汇总渲染 total（¥ 两位小数）+ per_operation 明细；per_worker 非空时展示分人金额
-数据: 🔴 **洗水码打印（issue #4964 立版式；issue #5646 改判纸宽 30mm → 50mm，用户 2026-09-26 逐字「洗水码宽是50，长度根据我们实际需要来定」）**：纸型 = **竖版 50mm × 70mm 单列**，照**真实工单**（亿家纺织「成品定制」58mm 竖排小票：单号/客户/第N套共M套/宽高/加工方式/用料表/备注/QR）的信息顺序；粒度仍是**一部位（商品行）一张**（N = `positions.length`）。判据（逐条可红）：① **张数** = 部位数（3 个商品 ⇒ 恰好 3 张，`task-card-label-0..2`）；② **每张的码不同**（`task-card-qr` 的 `svg > title` 逐张不同，= 该部位自己的 `scan_url`，形态 `https://<稳定域名>/s/<8 位短码>`）；③ **可打印尺寸 = 竖版 50mm × 70mm**（`@page` 含 `size: 50mm 70mm`、标签容器 `50mm × 70mm` 且 `overflow: hidden`，每张独占一页）—— 旧值 `size: 30mm 60mm` / `size: 50mm 60mm` / `width: 30mm` 一律不得残留（留一条即假绿）⇒ 改回 ⇒ 必红；④ **字段面**（用户 2026-09-21 字段裁定；2026-10-25 追加抬头与特殊选项行）：**纸面抬头 = 企业名 + 「成品定制」**（居中两行；企业名缺值 ⇒ 整块不渲染，不印空行/「未设置」）/ 加工单号 / 客户 / 第 N 套 · 共 M 套 / 部位 / 件名 / 色号 / **用料米数** / **成品宽高** / **加工方式**（工艺 · 加工类型 · 打开方式 · 定型）/ 订单号 / 交期 / **特殊选项**（独立一行；与备注**不再合并**）/ **备注**（= 快照备注）/ **算料公式**，逐张按 `order_item_id ↔ 快照 itemId` 对齐（色号/用料/加工方式/算料公式**取值一律走** `frontend/admin-web/src/lib/craft-display.ts` 的单一真值，纸面不另写推导）；⑤ **退场两项**：**工序摘要**与**完整套号**不得再出现（改回来 ⇒ 必红）；⑥ 主标识**不折行不省略**（加工单号 `shrink-0 whitespace-nowrap`、订单号 `whitespace-nowrap`）—— #4949 实测过一次折行把纸面底部内容挤出纸外；⑦ 底部「二维码 + 大字短码」行 `shrink-0`（空间不够只裁补充文字，**绝不裁码与短码**：短码是设计里明写的**手输降级入口**，`docs/design/worker-h5-scan-and-report.md` §1.4「不是可选项」）；⑧ **折行预算按新几何重算（issue #5646 推翻 #4946 为 27.6mm 窄版心设的三条妥协）**：**件名不再 clamp**（`line-clamp-*` 一律不得出现在件名行 —— 版心 47.599mm ≈ 22.5em/行，2 行可容 ~45em，实测最长件名只折 2 行；留着 clamp 只会砍掉真名；改回 `line-clamp-2` ⇒ 必红）；**加工方式**仍 `line-clamp-2` 但只作**预算上界**（实测最长形态「加工方式 罗马帘 · 定宽买高 · 三开 · 定型」在 47.599mm 下**恰好 1 行**，30mm 时代同样的值要 2 行）；**算料公式给足 2 行**（`line-clamp-2`；两条真公式串 —— `韩褶公式：…` 与 `褶倍数公式：…` —— 在 47.599mm 下都**恰好 2 行**。**这是容量迁移不是放宽**：2×22.5em = **45em** 反而大于旧口径 3×13em = **39em**，同时省下 2.538mm 高度。改回 `line-clamp-3` ⇒ 最坏构成（件名 2 + 加工方式 2 + 备注 2 + 公式 3 行）实测需 **61.4mm > 60mm** ⇒ 必红）；色号的**去重**（件名已含色号 ⇒ 不重复渲染）**保留**（50mm 下恢复独立渲染只是把同名信息多印一遍、白吃 2.538mm）。**缺码不编造**：该部位无 `scan_url`/`part_token` ⇒ **该张**出 `task-card-qr-placeholder` 占位、**不画假码**，其余张仍出真码；`positions` 为空 ⇒ 显式占位（不是空白）。**真机纸面几何实测**（方法同 #4949：真组件 → 内联真 Tailwind 产物 → Chromium（`@media print`）按 `@page` 出 PDF，逐元素量底边/右边）：**3 页 = 3 张、每张 50mm × 60mm、越界元素 0 个**（容器实测 49.998mm × 59.998mm、PDF MediaBox 142.08 × 169.92pt = 50.13 × 59.97mm）。**垂直预算在 50mm 新几何下重新实测并写进组件注释**（30mm 时代的 27.6mm 版心 / 17 行上限 / `@page size: 30mm 60mm` **全部作废**）：版心（正文右边界 48.799mm − 1.2mm 内边距）= **47.599mm**；6pt / `line-height 1.2` ⇒ **每行 2.538mm**（行高与旧版同值，变的是每行装多少字：13em/行 → **22.5em/行**）；60mm − 上下各 1.2mm ⇒ 可用 **57.6mm**；二维码行 45px = **11.906mm** + 中部上下各 0.5mm 间距。**最坏情况实测**（长件名 2 行 + 备注 2 行 + 算料公式 2 行 + 色号 + 其余单行）：正文总高 **56.337mm ≤ 60mm**（保守上界 —— 加工方式也折满 2 行 —— 为 58.878mm）；**长度取值理由**：`L` 逐值扫描 50/54/55/56/57/58/59/60/62mm，给出「中部文字块不被裁」的最小 L = **57mm**（56mm 实测被裁 **0.265mm**、55mm 被裁 1.323mm）⇒ 向上取整到标准标签长度 **60mm**（**是实测结论、不是沿用 #4946 的 60mm**）。红证（改前实测）：旧组件恒出 `@page size: 30mm 60mm`、件名带 `line-clamp-2`、算料公式为 `line-clamp-3` ⇒ ③「可打印尺寸」与 ⑧「折行预算」两条必红。🟡 **2026-10-25 改判（用户逐字「参考第二张图重新设计，把特殊选项，备注也加上」）**：① 纸面新增**抬头块**（企业名 + 「成品定制」，照参考工单「亿家纺织 / 成品定制」的形态）；② **特殊选项与备注各成一行**（改前把「特殊选项；快照备注」并成一行 ⇒ 纸上分不出哪句是哪类事实）；③ 纸长 60mm → **70mm**（`label-50x70`）——新增一个抬头块与一行后，60mm 的最坏构成已到 62.476mm > 可用 57.6mm。判据 ③/④ 随之改判，垂直预算注释同步重算（守卫 G4/G5/G6 的恒等式会在几何/字号漂移时判红）。 ⚠️ **DP30S 约束（登记）**：德佟 DP30S 是 203dpi 的 2 英寸头、**有效打印宽度通常只有 48mm（384 dots）** ⇒ **50mm 宽打不满**（右侧约 2mm 打不到，约束见 issue #5052「裁定记录 5」）；洗水码今天由 admin-web 走 A4/标签打印机出、**不是 DP30S**，该约束已写进组件注释。证据：`frontend/admin-web/tests/unit/components/TaskCardPrint.test.tsx`（16 条）+ 静态守卫 `tests/unit_ci_workflows/test_wash_label_geometry_guard.py`（G1~G7）
+数据: 🔴 **洗水码打印（issue #4964 立版式；issue #5646 改判纸宽 30mm → 50mm，用户 2026-09-26 逐字「洗水码宽是50，长度根据我们实际需要来定」）**：纸型 = **竖版 50mm × 70mm 单列**，照**真实工单**（亿家纺织「成品定制」58mm 竖排小票：单号/客户/第N套共M套/宽高/加工方式/用料表/备注/QR）的信息顺序；粒度仍是**一部位（商品行）一张**（N = `positions.length`）。判据（逐条可红）：① **张数** = 部位数（3 个商品 ⇒ 恰好 3 张，`task-card-label-0..2`）；② **每张的码不同**（`task-card-qr` 的 `svg > title` 逐张不同，= 该部位自己的 `scan_url`，形态 `https://<稳定域名>/s/<8 位短码>`）；③ **可打印尺寸 = 竖版 50mm × 70mm**（`@page` 含 `size: 50mm 70mm`、标签容器 `50mm × 70mm` 且 `overflow: hidden`，每张独占一页）—— 旧值 `size: 30mm 60mm` / `size: 50mm 60mm` / `width: 30mm` 一律不得残留（留一条即假绿）⇒ 改回 ⇒ 必红；④ **字段面**（用户 2026-09-21 字段裁定；2026-10-25 追加抬头与特殊选项行）：**纸面抬头 = 企业名 + 「成品定制」**（居中两行；企业名缺值 ⇒ 整块不渲染，不印空行/「未设置」）/ 加工单号 / 客户 / 第 N 套 · 共 M 套 / 部位 / 件名 / 色号 / **用料米数** / **成品宽高** / **加工方式**（工艺 · 加工类型 · 打开方式 · 定型）/ 订单号 / 交期 / **特殊选项**（独立一行；与备注**不再合并**）/ **备注**（= 快照备注）/ **算料公式**，逐张按 `order_item_id ↔ 快照 itemId` 对齐（色号/用料/加工方式/算料公式**取值一律走** `frontend/admin-web/src/lib/craft-display.ts` 的单一真值，纸面不另写推导）；⑤ **退场两项**：**工序摘要**与**完整套号**不得再出现（改回来 ⇒ 必红）；⑥ 主标识**不折行不省略**（加工单号 `shrink-0 whitespace-nowrap`、订单号 `whitespace-nowrap`）—— #4949 实测过一次折行把纸面底部内容挤出纸外；⑦ 底部「二维码 + 大字短码」行 `shrink-0`（空间不够只裁补充文字，**绝不裁码与短码**：短码是设计里明写的**手输降级入口**，`docs/design/worker-h5-scan-and-report.md` §1.4「不是可选项」）；⑧ **折行预算按新几何重算（issue #5646 推翻 #4946 为 27.6mm 窄版心设的三条妥协）**：**件名不再 clamp**（`line-clamp-*` 一律不得出现在件名行 —— 版心 47.599mm ≈ 22.5em/行，2 行可容 ~45em，实测最长件名只折 2 行；留着 clamp 只会砍掉真名；改回 `line-clamp-2` ⇒ 必红）；**加工方式**仍 `line-clamp-2` 但只作**预算上界**（实测最长形态「加工方式 罗马帘 · 定宽买高 · 三开 · 定型」在 47.599mm 下**恰好 1 行**，30mm 时代同样的值要 2 行）；**算料公式给足 2 行**（`line-clamp-2`；两条真公式串 —— `韩褶公式：…` 与 `褶倍数公式：…` —— 在 47.599mm 下都**恰好 2 行**。**这是容量迁移不是放宽**：2×22.5em = **45em** 反而大于旧口径 3×13em = **39em**，同时省下 2.538mm 高度。改回 `line-clamp-3` ⇒ 最坏构成（件名 2 + 加工方式 2 + 备注 2 + 公式 3 行）实测需 **61.4mm > 60mm** ⇒ 必红）；色号的**去重**（件名已含色号 ⇒ 不重复渲染）**保留**（50mm 下恢复独立渲染只是把同名信息多印一遍、白吃 2.538mm）。**缺码不编造**：该部位无 `scan_url`/`part_token` ⇒ **该张**出 `task-card-qr-placeholder` 占位、**不画假码**，其余张仍出真码；`positions` 为空 ⇒ 显式占位（不是空白）。**真机纸面几何实测**（方法同 #4949：真组件 → 内联真 Tailwind 产物 → Chromium（`@media print`）按 `@page` 出 PDF，逐元素量底边/右边）：**3 页 = 3 张、每张 50mm × 60mm、越界元素 0 个**（容器实测 49.998mm × 59.998mm、PDF MediaBox 142.08 × 169.92pt = 50.13 × 59.97mm）。**垂直预算在 50mm 新几何下重新实测并写进组件注释**（30mm 时代的 27.6mm 版心 / 17 行上限 / `@page size: 30mm 60mm` **全部作废**）：版心（正文右边界 48.799mm − 1.2mm 内边距）= **47.599mm**；6pt / `line-height 1.2` ⇒ **每行 2.538mm**（行高与旧版同值，变的是每行装多少字：13em/行 → **22.5em/行**）；60mm − 上下各 1.2mm ⇒ 可用 **57.6mm**；二维码行 45px = **11.906mm** + 中部上下各 0.5mm 间距。**最坏情况实测**（长件名 2 行 + 备注 2 行 + 算料公式 2 行 + 色号 + 其余单行）：正文总高 **56.337mm ≤ 60mm**（保守上界 —— 加工方式也折满 2 行 —— 为 58.878mm）；**长度取值理由**：`L` 逐值扫描 50/54/55/56/57/58/59/60/62mm，给出「中部文字块不被裁」的最小 L = **57mm**（56mm 实测被裁 **0.265mm**、55mm 被裁 1.323mm）⇒ 向上取整到标准标签长度 **60mm**（**是实测结论、不是沿用 #4946 的 60mm**）。红证（改前实测）：旧组件恒出 `@page size: 30mm 60mm`、件名带 `line-clamp-2`、算料公式为 `line-clamp-3` ⇒ ③「可打印尺寸」与 ⑧「折行预算」两条必红。🟡 **2026-10-25 改判（用户逐字「参考第二张图重新设计，把特殊选项，备注也加上」）**：① 纸面新增**抬头块**（企业名 + 「成品定制」，照参考工单「亿家纺织 / 成品定制」的形态）；② **特殊选项与备注各成一行**（改前把「特殊选项；快照备注」并成一行 ⇒ 纸上分不出哪句是哪类事实）；③ 纸长 60mm → **70mm**（`label-50x70`）——新增一个抬头块与一行后，60mm 的最坏构成已到 62.476mm > 可用 57.6mm。判据 ③/④ 随之改判，垂直预算注释同步重算（守卫 G4/G5/G6 的恒等式会在几何/字号漂移时判红）。 ⚠️ **DP30S 约束（登记）**：德佟 DP30S 是 203dpi 的 2 英寸头、**有效打印宽度通常只有 48mm（384 dots）** ⇒ **50mm 宽打不满**（右侧约 2mm 打不到，约束见 issue #5052「裁定记录 5」）；洗水码今天由 admin-web 走 A4/标签打印机出、**不是 DP30S**，该约束已写进组件注释。证据：`frontend/admin-web/tests/unit/components/TaskCardPrint.test.tsx`（16 条）+ 静态守卫 `tests/unit_ci_workflows/test_wash_label_geometry_guard.py`（G1~G8） 2026-10-25 改判（issue #7776，用户逐字「字体太小了，可以把长度延长些，因为长度可以无限长，宁愿长点也要把字体和信息都呈现出来……上下两头留白太多了」+「移除商品名称展示，保留货号，颜色，门幅和其他工艺信息，移除褶倍公式字段展示」）：① **纸长改为按内容撑开**（`washLabelLengthMm()` = 内容高上取整到 1mm、夹在 `[70,150]mm`；一批取最大值；系统打印 `@page` / 直连画布高 / 预览纸框**同一个数**），介质矩阵 `label-50x70` 的 70mm 降级为**最短**纸长；② **正文字号 6pt → 9pt**、短码 8pt → 12pt、企业名 10pt / 成品定制 7pt / 加工单号 10pt；③ **件名（商品名称）与算料公式（褶倍公式）两行退场**、**颜色恒印**（原「件名已含 ⇒ 去重」退场）、**门幅新增**（`item.doorWidth`，`2.8` / `2.8米` 都只补单位）；④ 货号：加工单快照尚无 `productCode` ⇒ **不拿 SKU 组合码冒充货号**（#7636 口径），后端补快照键后另单接。旧口径的「件名 `line-clamp` 不出现 / 算料公式 2 行 / 色号去重 / 固定 70mm」一律作废。
 数据: 洗水码**只承载摘要、不印工序**（issue #4964 改判 #4946：**工序摘要整体退场** —— 用户 2026-09-21 字段裁定未选「工序摘要」；工人扫部位码后在 H5 看该部位工序清单，见 issue #4967）⇒ 纸面**既没有** A4 的逐道工序表（部位 / 工序 / 应做数量 / 手工勾选位），**也没有**「工序 N 道 + 前几道显示名」的摘要行：`task-card-label-ops-<i>` 不得存在、纸面文案里不得出现「工序」二字。人可读短码逐张渲染且为**大字**（`task-card-label-short-code-<i>`，`text-[8pt] font-bold` —— 小字会被车间灯光/磨损吃掉，降级入口不可用就等于没有）。反向护栏（issue #4621 继承）：纸面**不得**渲染**工人端快照名**（变体名，如 `精裁-布` / `布三边`）。
 数据: 工序显示名统一（issue #4621，web 面命名统一 · 阶段 1）：加工单进度表 / 计件报表「按工序」档 / 加工单生产页计件表 / 黄金策会话生产进度卡一律渲染 **逻辑名 · 部位**（如 `精裁 · 布帘`）；**变体名**（`精裁-布` / `布三边`）不得出现在界面文案或 `data-testid` 里。后端读面**只加不改**地给出 `logical_name` + `position`（**读时派生、不写库**；既有 `operation` / `operation_name` 是**工人端快照名**，一字未动、web 界面不得渲染）；边界：老数据缺 `logical_name` ⇒ 退回 `operation` 原文（不空白）、`position` 为空（部位无关工序如 `外帘装袋`）⇒ 只显示逻辑名。⚠️ **受管面清单在 issue #4964 后是 4 项（不再是 5 项）**：`TaskCardPrint.tsx` **退役**（洗水码不再印工序 ⇒ 不再消费带 `logical_name`/`position` 的读面），并由守卫 **C5** 反向钉住「退役面不得再渲染工序」（确要加回 ⇒ 必须同时加回白名单，否则就是 #4630 的漏改形态）。红证：改前 tests/unit/components/{ProductionProgressTable,TaskCardPrint}.test.tsx 与 tests/unit/pages/production-piecework.test.tsx 得 `Unable to find an element with the text: 精裁 · 布帘`；防复发守卫 = tests/unit_ci_workflows/test_operation_display_name_guard.py（C1~C5，注入式红证 + 内容指纹自证）。2026-09-20（issue #4630，同一 goal 的**漏改面**）：**第 4 个消费面** = 加工单「生产」页内嵌的计件表 `components/production/PieceworkTable.tsx`（#4621 只改了前三个面 ⇒ 它一直渲染变体名且**无任何判据会因此变红**）；守卫白名单同步补第 4 项。
 数据: 无工序 / 无计件 / 接口失败均渲染空态或错误提示 + 重试，不白屏
@@ -12995,21 +13120,22 @@
 ```
 溯源: 2026-10-19 新增（issue #7309）。病：A4 的 @page 边距 12mm ≥ Chrome 画页眉页脚的分界（实测 8.7/8.8mm）⇒ 客户拿到的凭证顶部多出日期与后台标题、底部多出订单 URL 与页码。修：A4 的 @page 边距写 0（结构性、不依赖阈值），版面内缩 12mm 走 contentInset + 单据容器 padding（box-decoration-break: clone 逐页重复）⇒ 纸面版式与改前逐毫米一致。另：销售单可切 A4，同批补 padding（continuous 介质取 0，纸面不变）。 🟡 2026-10-25 改判（用户逐字「刚才发现打印预览的所有单子，水洗唛都带了打印页头和页脚，你把所有打印的功能都检查一遍，移除掉」+「我希望做到即使勾着也不要打印出页眉和页脚」）：把「0 边距」从 A4 一条**收口到整个介质矩阵** —— 三联纸 `continuous-241x140` 由 `pageMargin: 6mm 12mm` 改为 **0 + contentInset 6mm 12mm**（改前靠「6mm < 实测下限 8.7mm」侥幸不画，那是拿纸面赌一条未文档化的分界）；判别口径从「≥ 8.7mm 才红」收紧成「**非 0 即红**」（TS 侧 `browserChromeMarginProblems` 与 Python 侧 C10 同步改，判别力自证新增「三联纸写回 6mm ⇒ 必红」一条）；同批复测正式版 Google Chrome 确认「边距 0 ⇒ 零页眉页脚 / 去掉 margin 0 ⇒ 立刻出现与用户截图同款的四行」。 ｜ tags: print, a4, browser-chrome, class-level-guard
 
-### UI-129. 建品页 AI 生成商品图：样图 → 百炼图生图 → 生成即自动填入图片位（再生成替换，不落库；issue #7335 / #7533 / #7552） 🔵
+### UI-129. 建品页 AI 生成商品图：样图 → 百炼图生图 → 一键出整套（主图 3 + 详情图 5，边生成边追加，只追加不覆盖；issue #7335 / #7533 / #7773 / #7782） 🔵
 ```
 你: 「当前缺乏商品的主图和明细图，你能否根据用户提供的样本图通过大模型来补充一份接近商品的样品图」（用户 2026-10-19）
 你: 「如果效果可以的话，我希望做成商品创建中的功能的一部分」（用户 2026-10-19）
 期望: direct_reply
 数据: 判据 1·后端不落库（会红）：POST /api/admin/products/ai-images 只回 {url, model}（data 恰好两个键）；控制器依赖面恰好 ProductImageGenerationService（无 ProductService / Mapper）。执行点 = ProductImageControllerTest + ProductImageGenerationServiceTest。
-数据: 判据 2·链路收口（会红）：临时 URL 只允许从 *.aliyuncs.com 下载并转存 OSS（非百炼域名 ⇒ 422 且不下载）；样图必须 https；用途白名单 main/texture/craft/scene 之外 ⇒ 422 且不发起生成请求。
+数据: 判据 2·链路收口（会红）：临时 URL 只允许从 *.aliyuncs.com 下载并转存 OSS（非百炼域名 ⇒ 422 且不下载）；样图必须 https；用途白名单 **main/white/texture/craft/scene** 之外 ⇒ 422 且不发起生成请求；主图构图变体 `variant` 越界（>2）⇒ 422 且不发起生成请求，缺省 = 0（老客户端不受影响）。执行点 = ProductImageGenerationServiceTest + ProductImageControllerTest。
 数据: 判据 3·ai-agent 模型轮换（会红）：配额类错误（429 / AllocationQuota）与「模型接不了该请求」（HTTP 400 InvalidParameter）自动切下一个模型；审核类 400（DataInspectionFailed）不切模型；**默认链 = qwen-image-3.0-pro、端点 = 阿里云 MaaS token-plan 的原生多模态路径（用户 2026-10-24 裁定，issue #7661）**，旧百炼模型与旧 host 不得回流（类级守卫 = tests/unit_ci_workflows/test_maas_audio_image_single_source.py 的 G1/G3）；全链不可用时报「模型不接这类请求（非配额原因）」而不是「额度用尽」；全部用尽 ⇒ 503；未配置 Key ⇒ 503 且不发外部请求（**不回落 PRIMARY 的 DeepSeek key**）。**503 响应体必须带稳定机器可读 code（四类互不相同：IMAGE_GEN_MODEL_UNSUPPORTED / IMAGE_GEN_QUOTA_EXCEEDED / IMAGE_GEN_DISABLED / IMAGE_GEN_NO_KEY，issue #7552），detail 并存、状态码语义不变（其它供应商失败仍 502）；凭证失效（401/403，issue #7680）复用 IMAGE_GEN_NO_KEY（同属平台侧凭证问题、商家的下一个动作一致，不新增第五码）**。执行点 = backend/ai-agent-service/tests/test_generator.py。
-数据: 判据 4·前端（会红，issue #7533 改判）：无样图 ⇒ 按钮 disabled + 先上传提示；默认用第 1 张、多图可切换样图（生成携带所选样图 URL + kind）；**生成成功即自动填入图片位**（主图 ⇒ onApplyMain / images[0]；细节·工艺·场景 ⇒ onApplyDetail / detailImages 末位），**不存在「用这张」按钮**（回归守卫）；**再生成一张 ⇒ 携带上一次自动填入的 URL 作为 replaceUrl**（替换、不叠加；换用途跨槽位同样先摘旧位）；生成中 loading；失败**不落位**且错误可见可行动。**失败话术按 admin-api 错误码分叉（issue #7552）：模型不支持 / 额度用尽 / 真·瞬时三类不同，「稍后重试」只出现在真·瞬时那一条；页面不出现服务名与内部地址（§31 P3）**。执行点 = frontend/admin-web/tests/unit/components/ProductImageAI.test.tsx。
-数据: 判据 5·落位闭环（会红，issue #7533）：渲染真实 `ProductForm` ⇒ 生成成功**无需任何额外点击**主图位即变为 [生成图, 原图]；点「提交并上架」⇒ `onSubmit` 载荷 `images` 带上该 URL（= 用户逐字「保存后也没有」的判据）；再生成 ⇒ 替换不叠加；细节用途 ⇒ `detailImages` 末位；**生成期间（~40s）商家改过图片列表 ⇒ 落位基于最新列表**（删掉的图不复活、新图不丢，靠函数式更新）。执行点 = frontend/admin-web/tests/unit/components/ProductFormAIImage.test.tsx；编辑态样图候选去重 = ProductForm.test.tsx。
+数据: 判据 4·前端（会红，issue #7533 / #7773 / #7782 改判）：无样图 ⇒ 按钮 disabled + 先上传提示；默认用第 1 张、多图可切换样图（生成携带所选样图 URL + kind + variant）；**生成成功即自动追加到图片位**（主图·白底图 ⇒ onApplyMain 追加主图末尾；细节·工艺·场景 ⇒ onApplyDetail 追加 detailImages 末尾），**不存在「用这张」按钮**（回归守卫）；**只追加不覆盖**：再生成一张 / 换用途再生成 **都不摘掉上一张**（不再有 replaceUrl；先详情后主图 ⇒ 详情那张仍在）；**一键生成整套**（用户 21:09 改判）⇒ 一次点出 8 张：`main:0 / main:1 / white:0 / texture:0 / texture:1 / craft:0 / scene:0 / scene:1`，并发 3，边生成边落位，结束时报「已生成 8/8」；个别失败 ⇒ 其余照常落位并在错误行点名未成功的用途（可单独补）；单张补生成时主图连点 ⇒ 构图 `variant` 按 0→1→2→0 轮换，面板写明「本次构图：正面棚拍/半垂坠/悬挂近景」；白底图 ⇒ kind=white 且进主图列表、面板写明「可直接放第 5 张」；列表满（主图 5 / 详情图 9）⇒ 提示先删一张、**不静默丢图**；生成中 loading；失败**不落位**且错误可见可行动。**失败话术按 admin-api 错误码分叉（issue #7552）：模型不支持 / 额度用尽 / 真·瞬时三类不同，「稍后重试」只出现在真·瞬时那一条；页面不出现服务名与内部地址（§31 P3）**。执行点 = frontend/admin-web/tests/unit/components/ProductImageAI.test.tsx。
+数据: 判据 5·落位闭环（会红，issue #7533 / #7773）：渲染真实 `ProductForm` ⇒ 生成成功**无需任何额外点击**主图位即变为 [原图, 生成图]（**追加末位**，不再抢封面）；点「提交并上架」⇒ `onSubmit` 载荷 `images` 带上该 URL（= 用户逐字「保存后也没有」的判据）；**再生成 ⇒ 追加不替换**（不摘掉上一张）；细节用途 ⇒ `detailImages` 末位**且提交载荷 `detailImages` 带上它**（= 用户逐字「生图不能保存到详情图」的判据）；**先出详情图、再出主图 ⇒ 详情图那张不得被摘掉**（改前红）；主图已满 5 张 ⇒ 提示先删一张、盘里 5 张一张不少；**生成期间（1~2min）商家改过图片列表 ⇒ 落位基于最新列表**（删掉的图不复活、新图不丢，靠函数式更新）。执行点 = frontend/admin-web/tests/unit/components/ProductFormAIImage.test.tsx + ProductFormAIImageEditPage.test.tsx（编辑页父组件再渲染不得冲掉落位）；编辑态样图候选去重 = ProductForm.test.tsx。
+数据: 判据 7·生成侧「岗位」口径（会红，issue #7782）：ai-agent 提示词按用途分叉 —— 主图三套构图（正面棚拍 / 半垂坠 / 悬挂近景）**互不相同**且都带商品名、`variant` 越界取模；`white` 白底图提示词包含平台硬要求（纯白背景 + RGB 255,255,255 + 居中 + 无水印/无 logo/无边框），且 `variant` 对它无影响；材质提示词不变。取数理由：用户 2026-10-25「主图图片生成的都一样」+ 淘宝/天猫 5 张主图岗位分工（第 5 位白底图是合规位与免费流量位）。执行点 = backend/ai-agent-service/tests/test_generator.py。
 数据: 判据 6·失败口径分叉（会红，issue #7552）：ai-agent 503 的四种 code 在 admin-api 产出**互不相同**的错误码与 suggestion（表驱动）；「稍后重试」只用于真·瞬时不可用（模型不支持 ⇒ 「该能力暂不可用，已反馈平台」+ 手工传图出路；额度 ⇒ 「今日额度已用完」）；对外 message / suggestion **不含**服务名与 URL（§31 P3）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductImageClientTest.java。
 前置: 本用例是 [backend-contract] 纯前端/接口契约用例：前置（已上传样图、admin-api 端点、ai-agent 内部端点）由三端单测自建或 mock（admin-web mock `@/lib/api`；admin-api mock ProductImageClient/FileStorageService；ai-agent mock httpx），不依赖共享夹具与真实服务 ⇒ 前置不成立时对应单测直接红；agent-eval 栈不跑它
 跳过: [backend-contract] 纯页面 AI 辅助入口（不经过 LLM 对话/工具），由 admin-api 单测 + ai-agent pytest + 前端 vitest 执行，不进入 agent-eval 冒烟
 ```
-溯源: 2026-10-19 新增（issue #7335）。数据侧：同日已为测试租户 46 的 6 个无图商品生成 24 张（6 主图 + 18 明细图）并写入 products.main_image / images / detail_images（qwen-image-3.0 封面 + 2.1-pro/mt-image-2.0/2.1-turbo 明细图自动切换）。功能侧：模型/提示词内核在 ai-agent（不落库、配额轮换），转存与页面入口在 admin-api/admin-web；平台统一 Key（用户 2026-10-19 裁定）。2026-10-19 追加（issue #7341）：默认回落链去掉图片翻译模型 qwen-mt-image-2.0，400 InvalidParameter 转为「切下一个模型」。2026-10-19 追加（issue #7344，用户 20:21 建议「编辑页也支持补图」）：入口本就在共享 ProductForm（编辑页可用），本次补多图切换样图 + 用这张后面板不收起。2026-10-23 追加（issue #7538，用户裁定）：默认链切到 qwen-mt-image-2.0（qwen-image-* 免费额度用尽）；它是图片翻译模型、不接图生图（#7341）⇒ 生成返回 503「模型不接这类请求（非配额原因）」，恢复 = 换回可用模型（裁定断言会提示同步配置注释 / .env.example / 本判据）。2026-10-23 改判（issue #7533，用户逐字「商品的AI生图点击生成后，不会自动设置到对应图片位置，而且保存后也没有」）：**生成成功即自动填入图片位**，取消「用这张」这一步（实测：改前生成后 images 不变、点用这张后才变、提交载荷正常 ⇒ 缺的只是自动落位）；再生成 = 替换上一张（replaceUrl 从两个列表摘除，不叠加）。2026-10-24 追加（issue #7661，用户裁定「主推理模型不要更换，只更换语音识别和图片生成的模型的 key endpoint 和模型名」）：生图默认链改判为 qwen-image-3.0-pro、端点改判为 MaaS token-plan 原生多模态路径；同一批把语音识别切到 qwen-audio-3.0-realtime-plus + MaaS 实时端点并**退役旧百炼 key**（缺 key fail-closed，不再回落主推理的 DeepSeek key）。判据 3 随之改判；类级守卫 = tests/unit_ci_workflows/test_maas_audio_image_single_source.py（G1 默认值 / G2 无 key 回落 / G3 旧模型名退场）。2026-10-25 追加（issue #7552）：失败口径从「合并成一个」改成「如实分叉」——改前 ai-agent 的 503 只带 free-text detail，admin-api 把「模型接不了这类请求」与「额度用尽」合成同一个 AI_PRODUCT_IMAGE_UNAVAILABLE 并一律建议「稍后重试」，还把服务名与内部地址写进提示；改后 ai-agent 503 响应体带稳定机器可读 code（IMAGE_GEN_MODEL_UNSUPPORTED / IMAGE_GEN_QUOTA_EXCEEDED / IMAGE_GEN_DISABLED / IMAGE_GEN_NO_KEY，detail 并存、503 语义不变），admin-api 映射成互不相同的错误码与 suggestion（「稍后重试」只留真·瞬时），建品页按错误码分叉话术并不再上屏服务名 / 地址（§31 P3）。 ｜ tags: ai-image, product-create, image-generation
+溯源: 2026-10-19 新增（issue #7335）。数据侧：同日已为测试租户 46 的 6 个无图商品生成 24 张（6 主图 + 18 明细图）并写入 products.main_image / images / detail_images（qwen-image-3.0 封面 + 2.1-pro/mt-image-2.0/2.1-turbo 明细图自动切换）。功能侧：模型/提示词内核在 ai-agent（不落库、配额轮换），转存与页面入口在 admin-api/admin-web；平台统一 Key（用户 2026-10-19 裁定）。2026-10-19 追加（issue #7341）：默认回落链去掉图片翻译模型 qwen-mt-image-2.0，400 InvalidParameter 转为「切下一个模型」。2026-10-19 追加（issue #7344，用户 20:21 建议「编辑页也支持补图」）：入口本就在共享 ProductForm（编辑页可用），本次补多图切换样图 + 用这张后面板不收起。2026-10-23 追加（issue #7538，用户裁定）：默认链切到 qwen-mt-image-2.0（qwen-image-* 免费额度用尽）；它是图片翻译模型、不接图生图（#7341）⇒ 生成返回 503「模型不接这类请求（非配额原因）」，恢复 = 换回可用模型（裁定断言会提示同步配置注释 / .env.example / 本判据）。2026-10-23 改判（issue #7533，用户逐字「商品的AI生图点击生成后，不会自动设置到对应图片位置，而且保存后也没有」）：**生成成功即自动填入图片位**，取消「用这张」这一步（实测：改前生成后 images 不变、点用这张后才变、提交载荷正常 ⇒ 缺的只是自动落位）；再生成 = 替换上一张（replaceUrl 从两个列表摘除，不叠加）。2026-10-24 追加（issue #7661，用户裁定「主推理模型不要更换，只更换语音识别和图片生成的模型的 key endpoint 和模型名」）：生图默认链改判为 qwen-image-3.0-pro、端点改判为 MaaS token-plan 原生多模态路径；同一批把语音识别切到 qwen-audio-3.0-realtime-plus + MaaS 实时端点并**退役旧百炼 key**（缺 key fail-closed，不再回落主推理的 DeepSeek key）。判据 3 随之改判；类级守卫 = tests/unit_ci_workflows/test_maas_audio_image_single_source.py（G1 默认值 / G2 无 key 回落 / G3 旧模型名退场）。2026-10-25 追加（issue #7552）：失败口径从「合并成一个」改成「如实分叉」——改前 ai-agent 的 503 只带 free-text detail，admin-api 把「模型接不了这类请求」与「额度用尽」合成同一个 AI_PRODUCT_IMAGE_UNAVAILABLE 并一律建议「稍后重试」，还把服务名与内部地址写进提示；改后 ai-agent 503 响应体带稳定机器可读 code（IMAGE_GEN_MODEL_UNSUPPORTED / IMAGE_GEN_QUOTA_EXCEEDED / IMAGE_GEN_DISABLED / IMAGE_GEN_NO_KEY，detail 并存、503 语义不变），admin-api 映射成互不相同的错误码与 suggestion（「稍后重试」只留真·瞬时），建品页按错误码分叉话术并不再上屏服务名 / 地址（§31 P3）。2026-10-25 两次改判：① issue #7773（用户逐字「生图不能保存到详情图，主图可以，生成的图片不要直接覆盖，默认添加到主图或者详情图」）⇒ 落位改成**只追加不覆盖**：主图追加 images 末尾（不再抢封面、不再 slice 丢末位），取消 replaceUrl 跨槽位摘图（先出详情图、再出主图时详情图那张被删掉 =「存不下来」的真因），满员（主图 5 / 详情图 9）提示先删一张而不静默丢图；② issue #7782（用户逐字「主图图片生成的都一样」+ 参考淘宝 5 张主图）⇒ 主图按岗位拆：三套构图（正面棚拍 / 半垂坠 / 悬挂近景）按 variant 轮换，新增 white 白底图岗位（纯白 RGB(255,255,255)、居中约 75%、无水印/文字/边框，对应淘宝第 5 位合规位），面板显示「本次构图」「可直接放第 5 张」。2026-10-25 21:09 再改判（用户逐字「我觉得不如直接默认生成一套图片，主图 3 张，详细图 5 张，对用户更友好一点」）：**一键出整套 8 张**（主图 3 = 正面棚拍/半垂坠/白底图；详情图 5 = 材质微距/材质平铺/工艺细节/场景·客厅/场景·卧室），前端并发 3、边生成边落位（仍是只追加不覆盖 #7773），个别失败点名可补；ai-agent 的 texture/craft/scene 也各自获得 2 个变体。 ｜ tags: ai-image, product-create, image-generation
 
 ### UI-130. 销售订单列表查询区默认折叠：常驻一行摘要 + 展开才渲染筛选项（issue #7388） 🔵
 ```
@@ -13165,8 +13291,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：893（活跃 142，跳过 751）
-- tier 分布：smoke 12 / normal 825 / adversarial 32
+- 用例总数：901（活跃 142，跳过 759）
+- tier 分布：smoke 12 / normal 833 / adversarial 32
 - 售后域：16
 - Agent 核心域：12
 - API 层域：21
@@ -13181,7 +13307,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：156
+- 杂项域：164
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：69
@@ -13360,6 +13486,12 @@
 - APP-001: 具名审批流：四态 + 不能自批 + 单次消费 + 超授信闸门出口（issue #7374 段 1）
 - WH-001: 多仓与调拨：仓库实体 + 默认仓唯一 + 调拨守恒与缸号随行（issue #7373 段 1）
 - WH-002: 开租即种默认主仓 + 盘点默认仓收「未指定仓」的批次（issue #7592）
+- WH-003: 成品仓位自动分配：水位最低且未满优先，全满才顺延新增（issue #7750 / #7791）
+- WH-004: 出库单：布料手工出库「建单即过账」（扣库存 + 落台账），库存不足整笔拒绝（issue #7750）
+- WH-005: 成品帘入/出库闭环：打包 ⇒ 成品入库（分仓位）+ 发货 ⇒ 成品出库 + 撤销打包冲销（issue #7750）
+- WH-007: 扫描水洗唛出库：套×部位粒度 + 打包工序工人授权 + 幂等（issue #7762）
+- WH-008: 水洗唛出库标签格式：仓位号即「打包区域」、套数/尺寸/开数/部位/主布货号逐行（issue #7762）
+- WH-006: 入库即过账（商家建单一次请求完成）+ 成品单过账语义与布料单分道（issue #7750）
 - OPS-001: 云上「采购单加载失败」根因：BOOLEAN 逻辑删列 + 全局整数语义 ⇒ 真库 500（issue #7373 复盘）
 - STK-001: 盘点单：账面快照 + 差异必经审批 + 调整只改数量（issue #7373 段 2）
 - PRC-003: 价格本可维护：协议价 / 等级价 / 阶梯价 upsert + 价格必须 > 0（issue #7375 段 3）
@@ -13382,6 +13514,8 @@
 - QC-004: 质量成本按商品摊开：订单行小计占比分摊、逐分对得上、权重缺失不编（issue #7377 段 6）
 - RPT-008: 报表筛选只挂在「吃该维度」的表上：库存滞销按仓库筛（issue #7377 段 7）
 - QC-005: 质量成本补上「报废工时」：报工 work_type=scrap 可采集，报废「料」仍未采集（issue #7377 段 8）
+- WH-009: 成品仓仓位号管理：出库单页新建 / 编辑 / 启停 / 删除仓位，占用中锁定改号与删除（issue #7785）
+- WH-010: 成品仓水位智能分配 + 区域容量 + 批量建号（issue #7791）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
@@ -13566,7 +13700,7 @@
 - UI-124: 按钮只有一种形态：icon slot 统一间距、loading 时 spinner 顶替图标（不并排）、裸 button 不得自拼主色 chrome
 - UI-127: 订单详情权限（order:detail）真正生效：详情/发货两读面收码 + 页面拒绝态 + 无权限的加工单块不发起请求（issue #7276）
 - UI-128: 纸面不带浏览器页眉页脚：全矩阵 @page 上下边距写 0（浏览器无可画之处）+ 版面内缩走 contentInset 与单据容器 padding、box-decoration-break: clone 逐页重复（issue #7309 → 2026-10-25 全矩阵收口）
-- UI-129: 建品页 AI 生成商品图：样图 → 百炼图生图 → 生成即自动填入图片位（再生成替换，不落库；issue #7335 / #7533 / #7552）
+- UI-129: 建品页 AI 生成商品图：样图 → 百炼图生图 → 一键出整套（主图 3 + 详情图 5，边生成边追加，只追加不覆盖；issue #7335 / #7533 / #7773 / #7782）
 - UI-130: 销售订单列表查询区默认折叠：常驻一行摘要 + 展开才渲染筛选项（issue #7388）
 - UI-131: 全站下拉框只有一种形态（共享 SELECT_CONTROL / 自绘箭尖）+ 筛选条字段参与伸缩（issue #7397）
 

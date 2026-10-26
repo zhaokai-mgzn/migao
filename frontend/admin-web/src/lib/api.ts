@@ -83,6 +83,13 @@ import type {
   ProcessingOrderUpdateParams,
   InboundOrder,
   InboundOrderLine,
+  OutboundOrder,
+  OutboundOrderCreateParams,
+  FinishedGoods,
+  WarehouseLocation,
+  WarehouseLocationBatchInput,
+  WarehouseLocationBatchResult,
+  WarehouseLocationInput,
   InboundBatch,
   InboundOrderCreateParams,
   OpeningImportReport,
@@ -936,7 +943,7 @@ export interface AiProductImageResult {
 }
 
 /** 生成用途（与 admin-api `ProductImageGenerationService.KINDS` 同源）。 */
-export type AiProductImageKind = 'main' | 'texture' | 'craft' | 'scene'
+export type AiProductImageKind = 'main' | 'white' | 'texture' | 'craft' | 'scene'
 
 /**
  * 商品图生成 API（issue #7335）—— 建品页「AI 生成商品图」。
@@ -946,7 +953,13 @@ export type AiProductImageKind = 'main' | 'texture' | 'craft' | 'scene'
  * 🔴 超时单独放宽到 210s：生图实测 30~60s（长尾 ~120s），沿用全局 30s 会必然超时。
  */
 export const aiProductImageApi = {
-  generate: (payload: { imageUrl: string; productName?: string; kind: AiProductImageKind }) =>
+  generate: (payload: {
+    imageUrl: string
+    productName?: string
+    kind: AiProductImageKind
+    /** 主图构图变体（issue #7782）：0 正面棚拍 / 1 半垂坠 / 2 悬挂近景；其它用途忽略 */
+    variant?: number
+  }) =>
     request.post<ApiResponse<AiProductImageResult>>('/api/admin/products/ai-images', payload, {
       timeout: 210000,
     }),
@@ -2245,6 +2258,61 @@ export const workerPageCatalogApi = {
 export const warehouseApi = {
   /** 仓库列表（默认仓排最前）：`GET /api/admin/warehouses`，码 `inbound:view`。 */
   list: () => request.get<ApiResponse<Warehouse[]>>('/api/admin/warehouses'),
+}
+
+/**
+ * 出库单（V194 / issue #7750）—— 与入库单**对称**：列表 / 详情 / **建单即过账**。
+ *
+ * 权限码复用 `inbound:view`（读）/ `inbound:create`（写）：仓管收发同岗，零授权 delta。
+ * 出库单**没有草稿态**：`create` 成功即已扣库存、已落台账、已生成单据。
+ */
+export const outboundOrderApi = {
+  list: (params?: { keyword?: string; bizCategory?: 'fabric' | 'finished' }) =>
+    request.get<ApiResponse<OutboundOrder[]>>('/api/admin/outbound-orders', { params }),
+
+  detail: (id: string) =>
+    request.get<ApiResponse<OutboundOrder>>(`/api/admin/outbound-orders/${id}`),
+
+  create: (data: OutboundOrderCreateParams) =>
+    request.post<ApiResponse<OutboundOrder>>('/api/admin/outbound-orders', data),
+}
+
+/**
+ * 成品库存与仓位（V194 / issue #7750）—— 「这件成品现在在哪个仓位」。
+ *
+ * 读面权限码 `inbound:view`；`finishedWarehouse` 返回 null 表示该租户还没有成品仓
+ * （**读面不建仓**：第一次打包时才会自动建）。
+ */
+export const finishedGoodsApi = {
+  listInStock: () => request.get<ApiResponse<FinishedGoods[]>>('/api/admin/finished-goods'),
+
+  /**
+   * 仓位清单。管理面要 `includeInactive: true`（停用仓位要能被看到并重新启用）；
+   * 占用态由服务端按 `finished_goods_stock` 的 in_stock 行反推。
+   */
+  locations: (params?: { warehouseId?: number; includeInactive?: boolean }) =>
+    request.get<ApiResponse<WarehouseLocation[]>>('/api/admin/warehouse-locations', {
+      params,
+    }),
+
+  /** 新建仓位（码 `inbound:create`；成品仓不存在时服务端自动建，与打包同一口径）。 */
+  createLocation: (data: WarehouseLocationInput) =>
+    request.post<ApiResponse<WarehouseLocation>>('/api/admin/warehouse-locations', data),
+
+  /** 批量新建仓位（issue #7791：数字区间 ⇒ A-01…A-20，已存在的幂等跳过）。 */
+  batchCreateLocations: (data: WarehouseLocationBatchInput) =>
+    request.post<ApiResponse<WarehouseLocationBatchResult>>('/api/admin/warehouse-locations/batch', data),
+
+  /** 编辑仓位（占用中禁止改仓位号；区域 / 备注 / 容量 / 启停可改）。 */
+  updateLocation: (id: number, data: WarehouseLocationInput) =>
+    request.patch<ApiResponse<WarehouseLocation>>(`/api/admin/warehouse-locations/${id}`, data),
+
+  /** 删除仓位（软删；占用中 ⇒ 409）。 */
+  deleteLocation: (id: number) =>
+    request.delete<ApiResponse<void>>(`/api/admin/warehouse-locations/${id}`),
+
+  finishedWarehouse: () =>
+    request.get<ApiResponse<Warehouse | null>>('/api/admin/warehouses/finished'),
 }
 
 /**

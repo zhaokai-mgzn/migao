@@ -1,5 +1,6 @@
 package com.migao.admin.mapper;
 
+import com.baomidou.mybatisplus.annotation.InterceptorIgnore;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.migao.admin.entity.InboundOrder;
 import org.apache.ibatis.annotations.Mapper;
@@ -130,6 +131,26 @@ public interface InboundOrderMapper extends BaseMapper<InboundOrder> {
      *
      * @return 影响行数：{@code 1} = 本请求抢到作废权；{@code 0} = 已被过账 / 已作废 / 单不存在
      */
+    /**
+     * 成品入库单的**撤销打包冲销**（V196 / issue #7750）：{@code posted → cancelled} 的条件更新。
+     *
+     * <p>与 {@link #markCancelled} 分开而不是放宽后者：后者是「草稿作废」的 CAS
+     * （{@code status='draft'}），放宽它等于让商家也能作废已过账的布料单 ——
+     * 那会绕过「已过账库存已进台账，冲销须另开单据」的护栏。本方法只由
+     * {@code FinishedGoodsService#reverseOnUnpack} 调用（撤销打包是**唯一**合法入口），
+     * 且必须与成品在库行的释放同事务。</p>
+     */
+    @InterceptorIgnore(tenantLine = "true")
+    @Update("UPDATE inbound_orders SET status = 'cancelled', cancelled_at = #{cancelledAt}, "
+            + "cancelled_by = #{operator}, cancelled_reason = #{reason}, updated_at = NOW() "
+            + "WHERE id = #{id} AND tenant_id = #{tenantId} AND status = 'posted' "
+            + "AND biz_category = 'finished' AND deleted = 0")
+    int markFinishedCancelled(@Param("id") String id,
+                              @Param("tenantId") Long tenantId,
+                              @Param("operator") String operator,
+                              @Param("reason") String reason,
+                              @Param("cancelledAt") OffsetDateTime cancelledAt);
+
     @Update("UPDATE inbound_orders SET status = 'cancelled', cancelled_at = #{cancelledAt}, "
             + "cancelled_by = #{operator}, cancelled_reason = #{reason}, updated_at = NOW() "
             + "WHERE id = #{id} AND tenant_id = #{tenantId} AND status = 'draft' AND deleted = 0")

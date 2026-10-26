@@ -43,13 +43,18 @@ public class InboundOrderController {
 
     /**
      * 入库单列表（权限 inbound:view）
-     * GET /api/admin/inbound-orders?keyword=&status=
+     * GET /api/admin/inbound-orders?keyword=&status=&bizCategory=
+     *
+     * <p>{@code bizCategory}（V196 / issue #7794）：{@code fabric} 原料仓入库 / {@code finished}
+     * 成品仓入库；缺省 = 两类都返回（向后兼容，既有调用点与站内信深链行为不变）。</p>
      */
     @GetMapping
     @RequirePermission("inbound:view")
     public ApiResponse<List<InboundOrderLine>> list(@RequestParam(required = false) String keyword,
-                                                    @RequestParam(required = false) String status) {
-        return ApiResponse.success(inboundOrderService.list(keyword, status, TenantContext.getTenantId()));
+                                                    @RequestParam(required = false) String status,
+                                                    @RequestParam(required = false) String bizCategory) {
+        return ApiResponse.success(
+                inboundOrderService.list(keyword, status, bizCategory, TenantContext.getTenantId()));
     }
 
     /**
@@ -109,14 +114,23 @@ public class InboundOrderController {
     }
 
     /**
-     * 建单（权限 inbound:create）—— 草稿态，**不动库存**
-     * POST /api/admin/inbound-orders
+     * 建单（权限 inbound:create）—— **建单即过账**（V196 / issue #7750）。
+     *
+     * <p>POST /api/admin/inbound-orders</p>
+     *
+     * <p>用户 2026-10-25 逐字「做成入库即过账，不要单独再点击过账了」：商家建单一次请求内完成
+     * 「建单 + 过账」（批次号生成、库存增加、台账、移动加权成本都在这一次里），响应 {@code status=posted}。
+     * 想先核对再入账的商家不再有「草稿」这一站 —— 一次请求内的失败会整体回滚（不会留下孤立草稿）。</p>
+     *
+     * <p>⚠️ {@code PATCH /{id}} 的 {@code post} 动作**保留**：工人拍照入库先落识别草稿
+     * （{@code source=photo}，见 {@code WorkerInboundService}），确认后才过账 —— 那张草稿是
+     * **识别结果**而不是待办，与本端点的「建单即过账」不是同一条流程。</p>
      */
     @PostMapping
     @RequirePermission("inbound:create")
     public ApiResponse<InboundOrderResponse> create(@RequestBody InboundOrderCreateRequest request) {
         return ApiResponse.success(
-                inboundOrderService.create(request, TenantContext.getTenantId(), currentOperator()));
+                inboundOrderService.createAndPost(request, TenantContext.getTenantId(), currentOperator()));
     }
 
     /**

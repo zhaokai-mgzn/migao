@@ -92,6 +92,12 @@ EXPECTED_DELETE_ORDER = (
     "receipt_allocations",
     # #7633 新增（收款族）：`finance_transactions.order_id` 无外键但语义属该订单 ⇒ 早于 orders。
     "finance_transactions",
+    # V196（issue #7750）新增：成品在库 / 出库单 / 出库明细 / 入库明细都带 `order_id`
+    # （成品在库、出库单、入库明细是真外键；出库明细的 outbound_order_id 是外键）⇒ 全部早于 orders。
+    "outbound_order_items",
+    "outbound_orders",
+    "inbound_order_items",
+    "finished_goods_stock",
     "orders",
 )
 

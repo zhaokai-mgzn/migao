@@ -9,8 +9,10 @@
 // 弹窗里商品搜索结果被页脚截断、搜索框双边框、入库日期独占半行 —— 版式件与全站不同族。
 // 本页按 orders/new 的版式件重建：`Card` + `SectionTitle` + `Input/Select` + `sticky bottom-0` 汇总条。
 //
-// 🔴 本次**只动版式与入口，不动建单契约**：提交 payload 逐字段与改造前**一字不差**
+// 🔴 版式与入口不改建单契约：提交 payload 逐字段与改造前一致
 //   （`source` / `items[]` 的 productId,skuId,quantity,unitCost,dyeLot,legacyBatchNo,rollLengthM）。
+//   issue #7799 唯一新增的字段是 `warehouseId`（仓库由自由文本改成**选真仓**）—— 见下面「仓库候选」：
+//   成品仓排除、默认仓预选、读不到列表时给可行动提示（**不**退回自由文本，那是第二套口径）。
 //   数量口径仍是「大于 0 且最多 1 位小数」（issue #5063 / #5153）—— 与后端**同一判据**，
 //   见 lib/stock-quantity.ts；超 1 位小数**显式拒绝**（不静默取整）。
 //
@@ -19,11 +21,12 @@
 //   草稿**不发号**（批次号 = 「真的收货了」的标识）⇒ 本页明细列的批次号恒为「过账后生成」，
 //   列在这里是为了让商家建单时就知道「这批货将来靠哪个号追溯」。
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, FileText, Package } from 'lucide-react'
 import { toast } from 'sonner'
-import { inboundOrderApi } from '@/lib/api'
+import { inboundOrderApi, warehouseApi } from '@/lib/api'
+import type { Warehouse } from '@/types/stocktake'
 import { Button, PageCard, PageHeader, Input, Select } from '@/components/ui'
 import SkuPicker, { type SkuPickerChoice, skuLineLabel } from '@/components/products/SkuPicker'
 import { cn } from '@/lib/utils'
@@ -64,6 +67,24 @@ const SOURCE_OPTIONS: { value: 'purchase' | 'opening'; label: string }[] = [
 
 /** 明细行输入框：与 `Input` 同族（h-9 / rounded-lg / 同一 focus ring），只是窄一档放进表格 */
 const CELL_INPUT = 'h-9 px-2 text-sm'
+
+/**
+ * 仓库类型 → 中文（issue #7799）。
+ *
+ * 只印商家看得懂的三种；`finished` 在本页**根本不会出现**（成品仓不能收布料，见下面的候选过滤），
+ * 未登记的类型缺省不印括号（不把内部标识摆上屏）。
+ */
+const WAREHOUSE_TYPE_LABEL: Record<string, string> = {
+  material: '原料仓',
+  store: '门店仓',
+  processing: '加工仓',
+}
+
+/** 选项文案 = `名称（类型中文）`；类型未知 ⇒ 只印名称（不写括号里一个空壳） */
+function warehouseOptionLabel(w: Warehouse): string {
+  const type = w.warehouseType ? WAREHOUSE_TYPE_LABEL[w.warehouseType] : undefined
+  return type ? `${w.name}（${type}）` : w.name
+}
 
 /**
  * 卷数 × 卷长 ⇒ 入库米数**预览**（商家端「按卷录入」的显示，issue #7709）。
@@ -107,12 +128,51 @@ export default function NewInboundOrderPage() {
   const [form, setForm] = useState({
     supplier: '',
     supplierDocNo: '',
+    // 仓库（issue #7799）：`warehouseId` = 选中的**真仓**（提交体带数字 id）；
+    // `warehouse` = 仓名文本快照（列表 / 详情仍按文本显示，两个字段同一次选择一起写）
+    warehouseId: '',
     warehouse: '',
     inboundDate: localToday(), // 默认当天（后端在 `null` 时也取当天 —— 前端把同一语义**显式**摆给商家看）
     remark: '',
     source: 'purchase' as 'purchase' | 'opening',
   })
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
+  const [warehouseLoadFailed, setWarehouseLoadFailed] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+
+  // 仓库候选（issue #7799）：**只列能收布料的仓** —— 成品仓装的是打包后的成品帘，不能收布料。
+  // 服务端顺序已是「默认仓在前」⇒ 预选默认仓；没有默认仓就选第一个（留空 = 建出一张不落仓的单）。
+  useEffect(() => {
+    let cancelled = false
+    void warehouseApi
+      .list()
+      .then((res) => {
+        if (cancelled) return
+        const rows = ((res.data?.data ?? []) as Warehouse[]).filter(
+          (w) => w.warehouseType !== 'finished',
+        )
+        setWarehouses(rows)
+        const preferred = rows.find((w) => w.isDefault) ?? rows[0]
+        setForm((prev) => ({
+          ...prev,
+          warehouseId: preferred ? String(preferred.id) : '',
+          warehouse: preferred ? preferred.name : '',
+        }))
+      })
+      .catch(() => {
+        // 读不到仓列表就**说清楚**（页面里给一行可行动提示）——不静默空白，
+        // 也**不**退回自由文本输入框：那是第二套口径，对账时两处对不上。
+        if (!cancelled) setWarehouseLoadFailed(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const warehouseOptions = useMemo(
+    () => warehouses.map((w) => ({ value: String(w.id), label: warehouseOptionLabel(w) })),
+    [warehouses],
+  )
 
   /** 勾选 SKU ⇒ 加入/移出草稿行（勾选器只报「哪个商品的哪个 SKU」，留不留原文不动） */
   const toggleSku = ({ product, sku }: SkuPickerChoice) => {
@@ -208,10 +268,16 @@ export default function NewInboundOrderPage() {
       }
     }
     setSubmitting(true)
+    // 真仓 id 取自已加载的候选项（`Warehouse.id` 本来就是 number ⇒ 不需要把下拉里的字符串再转一次；
+    // 也刻意**不**写 `Number(<…Id>)`：`.` 结尾的 id 交给 Number/parseInt 是雪花号丢精度的处方形态，
+    // 源码守卫 `tests/unit/lib/snowflake-id-not-number.test.ts` 会当场判红）
+    const chosenWarehouse = warehouses.find((w) => String(w.id) === form.warehouseId)
     try {
       await inboundOrderApi.create({
         supplier: form.supplier || null,
         supplierDocNo: form.supplierDocNo || null,
+        // 真仓 id + 仓名快照（issue #7799）：服务端据此落 `warehouse_id` 并校验（成品仓会被 422 拒）
+        warehouseId: chosenWarehouse ? chosenWarehouse.id : null,
         warehouse: form.warehouse || null,
         inboundDate: form.inboundDate || null,
         remark: form.remark || null,
@@ -231,12 +297,13 @@ export default function NewInboundOrderPage() {
           rollCount: l.rollCount === '' ? null : Number(l.rollCount),
         })),
       })
+      // V194（issue #7750，用户 2026-10-25 逐字「做成入库即过账，不要单独再点击过账了」）：
+      // 建单这一次请求里已经完成过账（批次号已生成、库存已加、成本已重算）—— 没有「再点一下过账」这一步。
       toast.success(
         form.source === 'opening'
-          ? '期初建账单已建（草稿，未动库存）—— 核对无误后请过账：过账即冻结基线'
-          : '入库单已建（草稿，未动库存）—— 核对无误后请过账',
+          ? '期初建账单已过账：库存按登记米数增加、基线已冻结'
+          : '已入库：批次号已生成、库存已加、成本已按移动加权平均重算',
       )
-      // 建完回列表：新单在列表里（草稿态）→ 点「详情」核对 → 过账时逐行发批次号
       router.push('/inbound-orders')
     } catch {
       // 拦截器已提示
@@ -260,7 +327,7 @@ export default function NewInboundOrderPage() {
         <PageHeader
           className="flex-1"
           title="新增入库单"
-          subtitle={<>登记一张新的到货入库单 —— <strong>保存草稿不动库存</strong>，过账时才生成批次号并加库存</>}
+          subtitle={<>登记新的到货入库单 —— <strong>提交即入账</strong>（生成批次号、加库存、重算成本），不需要再单独过账</>}
         />
       </div>
 
@@ -288,11 +355,26 @@ export default function NewInboundOrderPage() {
                 value={form.supplierDocNo}
                 onChange={(e) => setForm({ ...form, supplierDocNo: e.target.value })}
               />
-              <Input
-                label="仓库 / 仓位"
-                value={form.warehouse}
-                onChange={(e) => setForm({ ...form, warehouse: e.target.value })}
-              />
+              {warehouseLoadFailed ? (
+                <div data-testid="inbound-warehouse-error">
+                  <span className="block text-sm font-medium text-neutral-700 mb-1.5">仓库 / 仓位</span>
+                  <p className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-600">
+                    仓库读取失败，请刷新重试
+                  </p>
+                </div>
+              ) : (
+                <Select
+                  label="仓库 / 仓位"
+                  aria-label="仓库 / 仓位"
+                  value={form.warehouseId}
+                  onChange={(e) => {
+                    const picked = warehouses.find((w) => String(w.id) === e.target.value)
+                    // id 与文本快照同一次选择一起写 —— 两处永远指向同一个仓
+                    setForm({ ...form, warehouseId: e.target.value, warehouse: picked?.name ?? '' })
+                  }}
+                  options={warehouseOptions}
+                />
+              )}
               {/* 入库日期：**标准尺寸**的原生 date 控件（issue #5912）—— 改前它跨 2 列（#5871 为了消掉
                   末行右半的空白），于是输入框被栅格**拉伸到整行宽**，日历图标孤零零挂在最右侧。
                   用户 2026-10-01 裁定以「控件标准尺寸」为准 ⇒ 解除跨列，宽度由控件自己给死。
@@ -330,9 +412,9 @@ export default function NewInboundOrderPage() {
               />
             </div>
             <p className="mt-4 text-xs text-neutral-500 bg-neutral-50 border border-neutral-200 rounded-lg p-3 leading-relaxed">
-              保存为草稿<strong>不会改动库存</strong>；批次号在<strong>过账</strong>时由系统逐行自动生成
+              <strong>提交即入账</strong>：库存与成本当场写入；批次号由系统逐行自动生成
               （形如 <span className="font-mono">PC-20261001-0001</span>，一行 = 一个批次），
-              库存与成本也在过账时一次性写入（可核对后再过账）。
+              提交后不可改：冲销须另开单据（不原地改历史）。
             </p>
           </div>
         </PageCard>
@@ -516,7 +598,7 @@ export default function NewInboundOrderPage() {
               取消
             </Button>
             <Button onClick={() => void submitCreate()} loading={submitting}>
-              保存为草稿
+              确认入库
             </Button>
           </div>
         </div>

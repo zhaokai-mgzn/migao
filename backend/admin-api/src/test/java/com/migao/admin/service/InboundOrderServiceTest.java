@@ -13,6 +13,7 @@ import com.migao.admin.entity.Product;
 import com.migao.admin.entity.ProductSku;
 import com.migao.admin.entity.StockBatch;
 import com.migao.admin.entity.StockLedger;
+import com.migao.admin.entity.Warehouse;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.InboundOrderItemMapper;
 import com.migao.admin.mapper.InboundOrderMapper;
@@ -20,6 +21,7 @@ import com.migao.admin.mapper.InboundOrderQueryMapper;
 import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
 import com.migao.admin.mapper.StockBatchMapper;
+import com.migao.admin.mapper.WarehouseMapper;
 import com.migao.admin.time.BusinessClock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -41,12 +43,14 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -80,6 +84,8 @@ class InboundOrderServiceTest {
     @Mock private ProductSkuMapper productSkuMapper;
     @Mock private ProductMapper productMapper;
     @Mock private StockLedgerService stockLedgerService;
+    /** 仓库档案（issue #7799）：建单绑定的真仓从这里读（租户 / 停用 / 成品仓三条校验都在它上面）。 */
+    @Mock private WarehouseMapper warehouseMapper;
     /** 站内信（issue #7524）：入库过账/作废必须发通知 —— mock 只验「有没有按口径喊」，不验发送实现。 */
     @Mock private NotificationService notificationService;
 
@@ -1438,6 +1444,225 @@ class InboundOrderServiceTest {
             assertThat(saved.getAmount())
                     .as("行金额 = 米数 × 单价 = 67.2 × 38.00（不是 1 × 38.00）")
                     .isEqualByComparingTo("2553.60");
+        }
+    }
+
+    // ============================================================ #7794 两个视图（原料仓 / 成品仓）
+
+    /**
+     * issue #7794：用户 2026-10-26 逐字「要区分原料仓入库和成品仓入库，别混在一起了」。
+     *
+     * <p>守三条：① 类别**确实**透传到读面（漏传 = 两个视图都拿到全量 ⇒ 混排照旧）；
+     * ② 非法取值 ⇒ 422（静默当不过滤正是本单要修的形态）；③ 成品单详情必须带出仓位/套号
+     * —— 仓位是成品仓入库的全部意义，字段漏一个，页面就什么也显示不出来。</p>
+     */
+    @Nested
+    @DisplayName("#7794 列表区分原料仓 / 成品仓：类别透传 + 非法取值 422 + 详情带出仓位")
+    class InboundBizCategory {
+
+        @Test
+        @DisplayName("bizCategory 原样透传到读面（漏传 ⇒ 两个视图都是全量 = 混排照旧）")
+        void listPassesBizCategoryToQueryMapper() {
+            when(inboundOrderQueryMapper.selectOrderLines(any(), any(), any(), any(), anyInt()))
+                    .thenReturn(List.of());
+
+            service.list("RK", null, InboundOrder.BIZ_FINISHED, TENANT);
+
+            verify(inboundOrderQueryMapper).selectOrderLines(eq(TENANT), eq("RK"), isNull(),
+                    eq(InboundOrder.BIZ_FINISHED), anyInt());
+        }
+
+        @Test
+        @DisplayName("缺省（null / 纯空白）= 不过滤（向后兼容：既有调用点与站内信深链行为不变）")
+        void missingBizCategoryMeansNoFilter() {
+            when(inboundOrderQueryMapper.selectOrderLines(any(), any(), any(), any(), anyInt()))
+                    .thenReturn(List.of());
+
+            service.list(null, null, null, TENANT);
+            service.list(null, null, "   ", TENANT);
+
+            verify(inboundOrderQueryMapper, times(2))
+                    .selectOrderLines(eq(TENANT), isNull(), isNull(), isNull(), anyInt());
+        }
+
+        @Test
+        @DisplayName("非法类别 ⇒ 422 且不读库（不静默当「不过滤」= 成品单继续混进原料仓列表）")
+        void unknownBizCategoryIsRejected() {
+            assertThatThrownBy(() -> service.list(null, null, "fabricx", TENANT))
+                    .isInstanceOfSatisfying(BusinessException.class, e -> {
+                        assertThat(e.getMessage()).contains("只支持 fabric / finished");
+                        assertThat(e.getHttpStatus()).as("缺参/非法参 ⇒ 422（照仓内 validationError 口径）")
+                                .isEqualTo(422);
+                    });
+
+            verify(inboundOrderQueryMapper, never())
+                    .selectOrderLines(any(), any(), any(), any(), anyInt());
+        }
+
+        @Test
+        @DisplayName("成品单详情：明细带出仓位号 / 套号 / 短码 / 品名 / 单位（BeanUtils 自动带出，不手写映射）")
+        void finishedDetailCarriesBinAndSetFields() {
+            InboundOrder order = InboundOrder.builder()
+                    .id("o-finished-1")
+                    .tenantId(TENANT)
+                    .inboundNo("RK-20261026-0001")
+                    .inboundDate(LocalDate.of(2026, 10, 26))
+                    .status(InboundOrder.STATUS_POSTED)
+                    .source(InboundOrder.SOURCE_PACKING)
+                    .bizCategory(InboundOrder.BIZ_FINISHED)
+                    .totalAmount(BigDecimal.ZERO)
+                    .build();
+            when(inboundOrderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(order);
+            InboundOrderItem line = InboundOrderItem.builder()
+                    .id(9L)
+                    .tenantId(TENANT)
+                    .inboundOrderId("o-finished-1")
+                    .productName("布帘")
+                    .setNo("JG-20261026-001-001")
+                    .shortCode("AB12CD34")
+                    .binCode("A-01")
+                    .orderNo("SO-20261026-0001")
+                    .unit("set")
+                    .quantity(BigDecimal.ONE)
+                    .build();
+            when(inboundOrderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(line));
+
+            InboundOrderResponse resp = service.detail("o-finished-1", TENANT);
+
+            assertThat(resp.getBizCategory()).as("详情必须带出类别（页面据此切换明细列）")
+                    .isEqualTo(InboundOrder.BIZ_FINISHED);
+            assertThat(resp.getItems()).hasSize(1);
+            InboundOrderResponse.Item item = resp.getItems().get(0);
+            assertThat(item.getBinCode()).as("仓位号 = 成品仓入库的全部意义").isEqualTo("A-01");
+            assertThat(item.getSetNo()).isEqualTo("JG-20261026-001-001");
+            assertThat(item.getShortCode()).isEqualTo("AB12CD34");
+            assertThat(item.getProductName()).isEqualTo("布帘");
+            // issue #7799：成品行要能回查「哪张订单的」—— 实体列 order_no 由 copyProperties 带出
+            assertThat(item.getOrderNo()).as("来源订单号（成品单靠它回查订单）").isEqualTo("SO-20261026-0001");
+            assertThat(item.getUnit()).isEqualTo("set");
+        }
+    }
+
+    // ============================================================ #7799 建单绑定真实仓库
+
+    /**
+     * #7799：布料入库单必须能绑定**真实原料仓**（`warehouse_id`）。
+     *
+     * <p>改前 `warehouse` 只是自由文本快照：商家写「一号仓」「1号仓」「一号仓库」是三个不同的字符串，
+     * 库存与对账都找不到是哪一个仓。判据四条：① 选了仓 ⇒ 落 id 且文本快照 = **仓名**；
+     * ② 成品仓 ⇒ 422（成品单由打包自动产生）；③ 仓不存在 / 他租户 / 已停用 ⇒ 422 且一张单都不建；
+     * ④ **不带 id 的旧请求零回归**（工人拍照草稿、Excel 期初导入、老客户端）。</p>
+     */
+    @Nested
+    @DisplayName("#7799 建单绑定真实仓库（warehouse_id）")
+    class WarehouseBinding {
+
+        private Warehouse warehouse(long id, long tenantId, String code, String name, String type) {
+            Warehouse w = new Warehouse();
+            w.setId(id);
+            w.setTenantId(tenantId);
+            w.setCode(code);
+            w.setName(name);
+            w.setWarehouseType(type);
+            w.setStatus("active");
+            w.setDeleted(0);
+            return w;
+        }
+
+        /**
+         * `createAndPost` = 建单 + 过账**一次请求**（Controller 的 POST 端点走的就是它）
+         * ⇒ 建单与过账两条腿的 mock 都要给（过账那条与 PR-031 同款）。
+         */
+        private void stubCreateAndPost() {
+            when(productMapper.selectById("prod-1")).thenReturn(new Product());
+            when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenReturn(List.of(sku(11L, "prod-1", 5, null)));
+            when(inboundOrderMapper.selectOne(any(LambdaQueryWrapper.class)))
+                    .thenAnswer(inv -> lastInsertedOrder);
+            when(inboundOrderItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenAnswer(inv -> lastInsertedLines);
+            when(productSkuMapper.selectById(11L)).thenReturn(sku(11L, "prod-1", 5, null));
+            when(productSkuMapper.receiveStock(eq(11L), any(), any(), anyString(), any()))
+                    .thenReturn(java.util.Map.of("beforeQuantity", new BigDecimal("5"),
+                            "afterQuantity", new BigDecimal("35")));
+        }
+
+        @Test
+        @DisplayName("带 warehouseId 建单 ⇒ 落 warehouse_id；文本快照 = **仓名**（不再采信请求里的自由文本）")
+        void createAndPostBindsWarehouseId() {
+            stubCreateAndPost();
+            when(warehouseMapper.selectById(501L))
+                    .thenReturn(warehouse(501L, TENANT, "MAIN", "一号原料仓", Warehouse.TYPE_MATERIAL));
+            InboundOrderCreateRequest req = request(item("prod-1", 11L, 30, "12.50"));
+            req.setWarehouseId(501L);
+            // 请求里同时给了一段自由文本（老前端 / 程序化调用）—— 快照必须以**仓名**为准，
+            // 否则列表显示「随手写的仓」而库存挂在一号原料仓，两处口径各说一套。
+            req.setWarehouse("随手写的仓");
+
+            service.createAndPost(req, TENANT, "op");
+
+            ArgumentCaptor<InboundOrder> cap = ArgumentCaptor.forClass(InboundOrder.class);
+            verify(inboundOrderMapper).insert(cap.capture());
+            assertThat(cap.getValue().getWarehouseId()).as("库存/对账要靠 id 找到仓").isEqualTo(501L);
+            assertThat(cap.getValue().getWarehouse()).as("文本快照以仓名为准（两处口径只留一份）")
+                    .isEqualTo("一号原料仓");
+        }
+
+        @Test
+        @DisplayName("🔴 成品仓 ⇒ 422「成品仓不能建布料入库单」，且一张单都不建（成品单由打包自动产生）")
+        void finishedWarehouseRejected() {
+            when(warehouseMapper.selectById(601L))
+                    .thenReturn(warehouse(601L, TENANT, "CP", "成品仓", Warehouse.TYPE_FINISHED));
+            InboundOrderCreateRequest req = request(item("prod-1", 11L, 30, "12.50"));
+            req.setWarehouseId(601L);
+
+            BusinessException ex = catchThrowableOfType(
+                    () -> service.createAndPost(req, TENANT, "op"), BusinessException.class);
+            assertThat(ex).as("成品仓不能收布料：必须显式 422，不许静默建单").isNotNull();
+            assertThat(ex.getCode()).isEqualTo("VALIDATION_ERROR");
+            assertThat(ex.getHttpStatus()).isEqualTo(422);
+            assertThat(ex.getMessage()).contains("成品仓不能建布料入库单");
+            verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+        }
+
+        @Test
+        @DisplayName("仓不存在 / 他租户的仓 / 已停用的仓 ⇒ 422「仓库不存在或已停用」，且一张单都不建")
+        void unknownForeignOrInactiveWarehouseRejected() {
+            when(warehouseMapper.selectById(701L)).thenReturn(null);
+            // 他租户：仓是真的、但不属于本租户 ⇒ 当「不存在」处理（不泄露存在性）
+            when(warehouseMapper.selectById(702L))
+                    .thenReturn(warehouse(702L, 999L, "MAIN", "别人的原料仓", Warehouse.TYPE_MATERIAL));
+            Warehouse inactive = warehouse(703L, TENANT, "MAIN2", "停用原料仓", Warehouse.TYPE_MATERIAL);
+            inactive.setStatus("inactive");
+            when(warehouseMapper.selectById(703L)).thenReturn(inactive);
+
+            for (long warehouseId : new long[]{701L, 702L, 703L}) {
+                InboundOrderCreateRequest req = request(item("prod-1", 11L, 30, "12.50"));
+                req.setWarehouseId(warehouseId);
+                BusinessException ex = catchThrowableOfType(
+                        () -> service.createAndPost(req, TENANT, "op"), BusinessException.class);
+                assertThat(ex).as("仓 id=%s 必须被拒", warehouseId).isNotNull();
+                assertThat(ex.getCode()).isEqualTo("VALIDATION_ERROR");
+                assertThat(ex.getMessage()).contains("仓库不存在或已停用");
+            }
+            verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+        }
+
+        @Test
+        @DisplayName("不带 warehouseId ⇒ warehouse_id 仍为空、文本快照照旧（工人拍照草稿 / 期初导入零回归）")
+        void legacyRequestKeepsNullWarehouseId() {
+            stubCreateAndPost();
+            InboundOrderCreateRequest req = request(item("prod-1", 11L, 30, "12.50"));
+            req.setWarehouse("一号仓");
+
+            service.createAndPost(req, TENANT, "op");
+
+            ArgumentCaptor<InboundOrder> cap = ArgumentCaptor.forClass(InboundOrder.class);
+            verify(inboundOrderMapper).insert(cap.capture());
+            assertThat(cap.getValue().getWarehouseId()).as("旧口径：没有仓 id 就不许凭空造一个").isNull();
+            assertThat(cap.getValue().getWarehouse()).isEqualTo("一号仓");
+            // 没带 id ⇒ 一次仓表都不查（行为一字不动，连读都没有）
+            verify(warehouseMapper, never()).selectById(any());
         }
     }
 }

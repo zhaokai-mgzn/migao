@@ -9,9 +9,6 @@ import org.junit.jupiter.api.Test;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
@@ -48,8 +45,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("发货单列表 Mapper：租户隔离 / 软删 / 上限 / 关键词 / 别名 ⇄ DTO / 列名真值")
 class OrderShipmentQueryMapperTest {
 
-    private static final Path SCHEMA = Path.of("src/main/resources/db/init/schema.sql");
-
     private static Method listMethod() throws NoSuchMethodException {
         return OrderShipmentQueryMapper.class.getMethod(
                 "selectListRows", Long.class, String.class, int.class);
@@ -60,21 +55,6 @@ class OrderShipmentQueryMapperTest {
         assertThat(select).as("selectListRows 必须标 @Select").isNotNull();
         // 空白归一：SQL 是**多行文本块**，断言不该被换行/缩进绑架（否则「格式化一下」就判红）
         return String.join("\n", select.value()).replaceAll("\\s+", " ");
-    }
-
-    private static Set<String> columnsOf(String table) throws Exception {
-        String ddl = Files.readString(SCHEMA);
-        Matcher m = Pattern.compile("CREATE TABLE (?:IF NOT EXISTS )?" + table + " \\(([\\s\\S]*?)\\n\\);")
-                .matcher(ddl);
-        assertThat(m.find()).as("建库脚本里必须有 %s", table).isTrue();
-        Set<String> cols = new LinkedHashSet<>();
-        for (String line : m.group(1).split("\n")) {
-            Matcher c = Pattern.compile("^\\s{4}([a-z_]+)\\s+[A-Z]").matcher(line);
-            if (c.find()) {
-                cols.add(c.group(1));
-            }
-        }
-        return cols;
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -184,9 +164,9 @@ class OrderShipmentQueryMapperTest {
     @DisplayName("🔴 SQL 里 `s.` / `o.` 点名的每一列都在建库脚本里（列名写错 = 生产才第一次执行）")
     void referencedColumnsExistInSchema() throws Exception {
         String sql = sql();
-        Set<String> shipments = columnsOf("order_shipments");
-        Set<String> orders = columnsOf("orders");
-        Set<String> items = columnsOf("order_shipment_items");
+        Set<String> shipments = MapperColumnAssertions.columnsOf("order_shipments");
+        Set<String> orders = MapperColumnAssertions.columnsOf("orders");
+        Set<String> items = MapperColumnAssertions.columnsOf("order_shipment_items");
 
         Matcher m = Pattern.compile("\\b([so])\\.([a-z_]+)").matcher(sql);
         Set<String> bad = new TreeSet<>();

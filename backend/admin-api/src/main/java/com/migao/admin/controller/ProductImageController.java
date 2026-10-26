@@ -33,7 +33,7 @@ public class ProductImageController {
     private final ProductImageGenerationService productImageGenerationService;
 
     /**
-     * 生成一张商品图（主图 / 材质 / 工艺 / 场景）。
+     * 生成一张商品图（主图 / 白底图 / 材质 / 工艺 / 场景）。
      *
      * <p>权限码取 {@code product:create}（与建品同一枚写码）：能看见商品列表但无权建品的角色
      * 不该拿到「为货架生成图片」的入口。</p>
@@ -41,8 +41,10 @@ public class ProductImageController {
     @PostMapping
     @RequirePermission("product:create")
     public ApiResponse<Map<String, String>> generate(@Valid @RequestBody AiProductImageRequest request) {
-        log.info("AI 生成商品图: kind={}, product={}", request.getKind(), request.getProductName());
+        int variant = request.getVariant() == null ? 0 : request.getVariant();
+        log.info("AI 生成商品图: kind={}, variant={}, product={}",
+                request.getKind(), variant, request.getProductName());
         return ApiResponse.success(productImageGenerationService.generate(
-                request.getImageUrl(), request.getProductName(), request.getKind()));
+                request.getImageUrl(), request.getProductName(), request.getKind(), variant));
     }
 }

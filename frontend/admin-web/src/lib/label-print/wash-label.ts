@@ -31,8 +31,26 @@
  * - **文字块装不下 ⇒ 只裁文字块**（表头与底部码 / 短码 `shrink-0`，与 `.task-card-label` 的
  *   flex 布局同口径）。
  */
-import { printBodyFontPt, printDotGeometry, printPageBoxMm, type PrintMediaId } from '@/lib/print-media'
+import { printDotGeometry, printPageBoxMm, type PrintMediaId } from '@/lib/print-media'
 import { WASH_LABEL_COMPANY_SUBTITLE, type WashLabelInput, type WashLabelRow } from '@/lib/wash-label-content'
+// 🔴 版面度量的**唯一一份**（issue #7776）：字号 / 行高 / 内边距 / 二维码 / 块间距全在
+// `wash-label-metrics` —— 系统打印的 CSS 与画布通道读同一份，改一处另一处不会静默漂移。
+import {
+  WASH_LABEL_BLOCK_GAP_MM as LABEL_BLOCK_GAP_MM,
+  WASH_LABEL_BODY_FONT_PT as LABEL_BODY_FONT_PT,
+  WASH_LABEL_COMPANY_FONT_PT as LABEL_COMPANY_FONT_PT,
+  WASH_LABEL_COMPANY_SUBTITLE_FONT_PT as LABEL_COMPANY_SUBTITLE_FONT_PT,
+  WASH_LABEL_HEADER_FONT_PT as LABEL_HEADER_FONT_PT,
+  WASH_LABEL_LINE_HEIGHT as LABEL_LINE_HEIGHT,
+  WASH_LABEL_MIN_SHORT_CODE_FONT_MM,
+  WASH_LABEL_PADDING_MM as LABEL_PADDING_MM,
+  WASH_LABEL_QR_CSS_PX as LABEL_QR_CSS_PX,
+  WASH_LABEL_QR_GAP_MM as LABEL_QR_GAP_MM,
+  WASH_LABEL_QR_PLACEHOLDER_MM as LABEL_QR_PLACEHOLDER_MM,
+  WASH_LABEL_SHORT_CODE_FONT_PT as LABEL_SHORT_CODE_FONT_PT,
+} from './wash-label-metrics'
+
+export { WASH_LABEL_MIN_SHORT_CODE_FONT_MM }
 
 export type { WashLabelInput, WashLabelRow }
 
@@ -59,35 +77,15 @@ const FALLBACK_BOX = printPageBoxMm(WASH_LABEL_MEDIA)
 /** 未连上机器时的通用兜底（**不是**本文件的口径：连上后立刻按机器自报值重算） */
 export const LABEL_DPI_DEFAULT = FALLBACK_GEOMETRY.dpi
 export const LABEL_HEAD_DOTS_DEFAULT = FALLBACK_GEOMETRY.headWidthPx
-/** 纸宽 / 纸长（mm）—— 取自介质矩阵（`label-50x70` = 50mm × 60mm），本文件不写第二份 */
+/** 纸宽 / 纸长下限（mm）—— 取自介质矩阵（`label-50x70` = 50mm 宽 × 70mm **最短**），本文件不写第二份 */
 export const WASH_LABEL_DEFAULT_WIDTH_MM = FALLBACK_BOX.widthMm
 export const WASH_LABEL_DEFAULT_LENGTH_MM = FALLBACK_BOX.heightMm
-/** 短码的最小字号（mm）：再小就失去「手输降级入口」的意义，宁可报错 */
-export const WASH_LABEL_MIN_SHORT_CODE_FONT_MM = 2.5
+// 字号 / 行高 / 内边距 / 二维码 / 块间距的**取值全在** `./wash-label-metrics`（上面按原名 import），
+// 本文件不再写第二份字面量。
 
-/** 标签本体内边距（mm）—— 与 `.task-card-label { padding: 1.2mm }` 同一口径 */
-const LABEL_PADDING_MM = 1.2
-/** 正文行高倍数 —— 与 `.task-card-label { line-height: 1.2 }` 同一口径 */
-const LABEL_LINE_HEIGHT = 1.2
-/** 表头（加工单号）字号（pt）—— 与 `.task-card-label` 的 `text-[7pt]` 同一口径 */
-const LABEL_HEADER_FONT_PT = 7
-/** 纸面抬头：企业名字号（pt）—— 与 `.task-card-label` 抬头块 `text-[7pt] font-bold` 同一口径 */
-const LABEL_COMPANY_FONT_PT = 7
-/** 纸面抬头：副标题（「成品定制」）字号（pt）—— 与抬头块副行 `text-[6pt]` 同一口径（= 正文字号） */
-const LABEL_COMPANY_SUBTITLE_FONT_PT = 6
-/** 底部人可读短码字号（pt）—— 与 `text-[8pt] font-bold` 同一口径 */
-const LABEL_SHORT_CODE_FONT_PT = 8
-/** 二维码边长（CSS px）—— 与 `QRCodeSVG size={45}` 同一口径（1 CSS px = 1/96 英寸） */
-const LABEL_QR_CSS_PX = 45
 const CSS_PX_TO_MM = 25.4 / 96
-/** 缺码时占位方框的边长（mm）—— 与 `h-[12mm] w-[12mm]` 同一口径 */
-const LABEL_QR_PLACEHOLDER_MM = 12
-/** 占位框内文案字号（pt）—— 与 `text-[5pt]` 同一口径 */
-const LABEL_QR_PLACEHOLDER_FONT_PT = 5
-/** 二维码与右侧文字的间距（mm）—— 与 `gap-[1mm]` 同口径 */
-const LABEL_QR_GAP_MM = 1
-/** 表头与正文块 / 正文块与底部行的间距（mm）—— 与 `mt-[0.5mm]` 同口径 */
-const LABEL_BLOCK_GAP_MM = 0.5
+/** 占位框内文案字号（pt）—— 与 `text-[7pt]` 同一口径（2026-10-25：5pt → 7pt，随正文一起抬） */
+const LABEL_QR_PLACEHOLDER_FONT_PT = 7
 
 /** 缺码时的缺省占位文案（与 `TaskCardPrint` 的缺省一致：**不谎称**「已撤销」） */
 export const WASH_LABEL_QR_PLACEHOLDER_HINT = '待生成'
@@ -266,7 +264,7 @@ export function layoutWashLabel(
   const innerW = widthPx - 2 * margin
   if (innerW <= 0) throw new WashLabelLayoutError(`纸宽 ${widthPx}px 放不下边距 ${margin}px`)
 
-  const bodyFontPx = ptToPx(printBodyFontPt(WASH_LABEL_MEDIA), dpmm)
+  const bodyFontPx = ptToPx(LABEL_BODY_FONT_PT, dpmm)
   const lineStep = Math.round(bodyFontPx * LABEL_LINE_HEIGHT)
   const headerFontPx = ptToPx(LABEL_HEADER_FONT_PT, dpmm)
   const gap = Math.round(mm(LABEL_BLOCK_GAP_MM))

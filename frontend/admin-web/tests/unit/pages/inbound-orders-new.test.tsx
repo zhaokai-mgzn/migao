@@ -1,4 +1,4 @@
-// case_ids: PR-037, PR-046, PR-048, PR-062, UI-074
+// case_ids: PR-037, PR-046, PR-048, PR-062, UI-074, WH-004
 //
 // 「新增入库单」**独立整页** `/inbound-orders/new`（issue #5844，用户 2026-10-01 裁定：
 //   「新增入库单的布局很怪异，应该和订单，商品设计风格对齐」）。
@@ -22,6 +22,8 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 const mockCreate = vi.fn()
 const mockGetProducts = vi.fn()
 const mockGetProduct = vi.fn()
+// #7799：仓库下拉的数据源（`warehouseApi.list()` ⇒ `Warehouse[]`）
+const mockWarehouseList = vi.fn()
 
 // 用 vi.hoisted 造**稳定**的 router 对象：否则每次渲染都换一个新 push，断言取不到调用记录
 const { mockPush, stableRouter } = vi.hoisted(() => {
@@ -52,6 +54,9 @@ vi.mock('@/lib/api', () => ({
     getProducts: (...a: unknown[]) => mockGetProducts(...a),
     getProduct: (...a: unknown[]) => mockGetProduct(...a),
   },
+  warehouseApi: {
+    list: (...a: unknown[]) => mockWarehouseList(...a),
+  },
 }))
 
 vi.mock('sonner', () => ({
@@ -70,8 +75,22 @@ const createdOrder = {
   items: [],
 }
 
+// 仓库夹具（#7799）：默认仓 = 原料仓；一个门店仓；**一个成品仓**（必须被页面排除）
+const MATERIAL_WAREHOUSE = {
+  id: 501, code: 'MAIN', name: '一号原料仓', warehouseType: 'material', isDefault: true, status: 'active',
+}
+const STORE_WAREHOUSE = {
+  id: 502, code: 'MD', name: '门店仓', warehouseType: 'store', isDefault: false, status: 'active',
+}
+const FINISHED_WAREHOUSE = {
+  id: 601, code: 'CP', name: '成品仓', warehouseType: 'finished', isDefault: false, status: 'active',
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
+  mockWarehouseList.mockResolvedValue({
+    data: { data: [MATERIAL_WAREHOUSE, STORE_WAREHOUSE, FINISHED_WAREHOUSE] },
+  })
   mockGetProducts.mockResolvedValue({
     data: { data: { items: [{ id: 'prod-1', name: '遮光窗帘布', skuCode: 'HUOHAO-01' }] } },
   })
@@ -204,7 +223,7 @@ describe('建单：一行 = 一个批次，payload 逐字段（PR-037）', () =>
     fireEvent.change(qty, { target: { value: '30' } })
     fireEvent.change(screen.getByLabelText(/单价$/), { target: { value: '12.5' } })
     fireEvent.change(screen.getByLabelText(/缸号$/), { target: { value: 'G-2026-0912' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认入库' }))
 
     await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
     const payload = mockCreate.mock.calls[0][0]
@@ -222,7 +241,7 @@ describe('建单：一行 = 一个批次，payload 逐字段（PR-037）', () =>
         rollCount: null,
       },
     ])
-    // 建完回列表（新单在列表里是草稿，过账在详情弹窗里做）
+    // 建完回列表（V194 起建单即过账，列表里已是 posted）
     expect(mockPush).toHaveBeenCalledWith('/inbound-orders')
   })
 
@@ -237,7 +256,7 @@ describe('建单：一行 = 一个批次，payload 逐字段（PR-037）', () =>
 
     const { qty } = await openWithLine()
     fireEvent.change(qty, { target: { value: '1' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认入库' }))
 
     await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
     const sent = mockCreate.mock.calls[0][0].items[0].skuId
@@ -257,13 +276,15 @@ describe('建单：一行 = 一个批次，payload 逐字段（PR-037）', () =>
       screen.getByTestId('inbound-date-field').querySelector('input[type="date"]') as HTMLInputElement,
       { target: { value: '2026-09-30' } },
     )
-    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认入库' }))
 
     await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
     const payload = mockCreate.mock.calls[0][0]
-    // 顶层键集合 —— 版式改动**不得**顺手增删字段（改前逐字就是这 7 个）
+    // 顶层键集合 —— 版式改动**不得**顺手增删字段。
+    // 改前逐字 7 个；#7799 起**只多** warehouseId（仓库由自由文本改选真仓，
+    // 文本快照 `warehouse` 仍保留给列表/详情显示 ⇒ 是「加一个」而不是「换一个」）。
     expect(Object.keys(payload).sort()).toEqual([
-      'inboundDate', 'items', 'remark', 'source', 'supplier', 'supplierDocNo', 'warehouse',
+      'inboundDate', 'items', 'remark', 'source', 'supplier', 'supplierDocNo', 'warehouse', 'warehouseId',
     ])
     // 用户改过日期 ⇒ 提交改后的值（默认当天只影响初始值，不锁死用户输入）
     expect(payload.inboundDate).toBe('2026-09-30')
@@ -271,7 +292,7 @@ describe('建单：一行 = 一个批次，payload 逐字段（PR-037）', () =>
 
   it('一行都没有 ⇒ 拦住（不调建单接口）', async () => {
     render(<NewInboundOrderPage />)
-    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认入库' }))
 
     const { toast } = await import('sonner')
     await waitFor(() =>
@@ -304,7 +325,7 @@ describe('入库数量：1 位小数（PR-046，issue #5063）', () => {
     render(<NewInboundOrderPage />)
     const { qty } = await openWithLine()
     fireEvent.change(qty, { target: { value: '60.5' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认入库' }))
 
     await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
     // 原值提交：不得被取整成 61、也不得被截断成 60。
@@ -329,7 +350,7 @@ describe('入库数量：1 位小数（PR-046，issue #5063）', () => {
     render(<NewInboundOrderPage />)
     const { qty } = await openWithLine()
     fireEvent.change(qty, { target: { value: '10' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认入库' }))
 
     await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
     expect(mockCreate.mock.calls[0][0].items[0].quantity).toBe(10)
@@ -343,7 +364,7 @@ describe('入库数量：超 1 位小数显式拒绝（PR-048，issue #5063）',
       render(<NewInboundOrderPage />)
       const { qty } = await openWithLine()
       fireEvent.change(qty, { target: { value } })
-      fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
+      fireEvent.click(screen.getByRole('button', { name: '确认入库' }))
 
       const { toast } = await import('sonner')
       await waitFor(() =>
@@ -362,7 +383,7 @@ describe('入库数量：超 1 位小数显式拒绝（PR-048，issue #5063）',
     render(<NewInboundOrderPage />)
     const { qty } = await openWithLine()
     fireEvent.change(qty, { target: { value: '0.5' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认入库' }))
 
     await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
     expect(mockCreate.mock.calls[0][0].items[0].quantity).toBe(0.5)
@@ -372,7 +393,7 @@ describe('入库数量：超 1 位小数显式拒绝（PR-048，issue #5063）',
     render(<NewInboundOrderPage />)
     const { qty } = await openWithLine()
     fireEvent.change(qty, { target: { value } })
-    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认入库' }))
 
     const { toast } = await import('sonner')
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('大于 0')))
@@ -397,7 +418,7 @@ describe('期初建账单条录入（PR-062，V118 / issue #5153）', () => {
 
     fireEvent.change(qty, { target: { value: '0.5' } })
     fireEvent.change(screen.getByLabelText(/旧系统批次号/), { target: { value: 'OLD-2024-0001' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认入库' }))
 
     await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
     const payload = mockCreate.mock.calls[0][0]
@@ -435,7 +456,7 @@ describe('入库三格（数量 / 单价 / 卷长）的数值语义 —— 与�
     fireEvent.change(qty, { target: { value: '0.5' } })
     fireEvent.change(cost, { target: { value: '0.5' } })
     fireEvent.change(roll, { target: { value: '0.5' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认入库' }))
 
     await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
     expect(mockCreate.mock.calls[0][0].items[0]).toMatchObject({
@@ -452,7 +473,7 @@ describe('入库三格（数量 / 单价 / 卷长）的数值语义 —— 与�
     // 空态先在自己这一层确认（不依赖 DOM 对非法数字的归一化，故也与引擎无关）
     expect(cost.value).toBe('')
     expect(roll.value).toBe('')
-    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认入库' }))
 
     await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
     const item = mockCreate.mock.calls[0][0].items[0]
@@ -465,7 +486,7 @@ describe('入库三格（数量 / 单价 / 卷长）的数值语义 —— 与�
     render(<NewInboundOrderPage />)
     const { roll } = await openWithLine()
     fireEvent.change(roll, { target: { value: '0' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认入库' }))
 
     await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
     expect(mockCreate.mock.calls[0][0].items[0].rollLengthM).toBe(0)
@@ -475,7 +496,7 @@ describe('入库三格（数量 / 单价 / 卷长）的数值语义 —— 与�
     render(<NewInboundOrderPage />)
     const { cost } = await openWithLine()
     fireEvent.change(cost, { target: { value: '0' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认入库' }))
 
     const { toast } = await import('sonner')
     await waitFor(() =>
@@ -514,7 +535,7 @@ describe('按卷录入：卷数 × 卷长 ⇒ 入库米数（issue #7644 / #7709
     // 换算式摆在格下（商家提交前能核对「这是 1 卷 × 70 米」）
     expect(screen.getByText('1 卷 × 70 米')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认入库' }))
     await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
     expect(mockCreate.mock.calls[0][0].items[0]).toMatchObject({
       quantity: 70,
@@ -538,7 +559,7 @@ describe('按卷录入：卷数 × 卷长 ⇒ 入库米数（issue #7644 / #7709
     const { qty } = await openWithLine()
     expect(qty.readOnly).toBe(false)
     fireEvent.change(qty, { target: { value: '30' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认入库' }))
 
     await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
     expect(mockCreate.mock.calls[0][0].items[0]).toMatchObject({
@@ -553,7 +574,7 @@ describe('按卷录入：卷数 × 卷长 ⇒ 入库米数（issue #7644 / #7709
     const { rolls, roll } = await openWithLine()
     fireEvent.change(rolls, { target: { value: '0.5' } })
     fireEvent.change(roll, { target: { value: '70' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认入库' }))
 
     const { toast } = await import('sonner')
     await waitFor(() =>
@@ -567,7 +588,7 @@ describe('按卷录入：卷数 × 卷长 ⇒ 入库米数（issue #7644 / #7709
     const { rolls, roll } = await openWithLine()
     fireEvent.change(rolls, { target: { value: '1' } })
     fireEvent.change(roll, { target: { value: '67.25' } })
-    fireEvent.click(screen.getByRole('button', { name: '保存为草稿' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认入库' }))
 
     const { toast } = await import('sonner')
     await waitFor(() =>
@@ -587,5 +608,87 @@ describe('按卷录入：卷数 × 卷长 ⇒ 入库米数（issue #7644 / #7709
     expect(headers).toContain('数量（米）*')
     expect(headers).toContain('卷长(米/卷)')
     expect(screen.queryByLabelText(/ 数量$/)).toBeNull()
+  })
+})
+
+// ============================================================ #7799 仓库改选真实原料仓
+
+/**
+ * #7799 / WH-004：建单页的「仓库 / 仓位」由**自由文本**改为**选真实仓库**（原料仓）。
+ *
+ * 改前商家写「一号仓」「1号仓」「一号仓库」是三个不同字符串 —— 库存对不到任何一个仓。
+ * 四条判据：① 下拉只列非成品仓（成品仓不能收布料）；② 预选默认仓（无默认选第一个，不空白）；
+ * ③ 提交体带 `warehouseId` + 仓名快照；④ 读不到仓列表时给可行动提示，**不退回自由文本**。
+ */
+describe('建单页「仓库 / 仓位」改选真实原料仓（#7799 / WH-004）', () => {
+  it('仓库下拉只列非成品仓：夹具给了原料仓 + 门店仓 + 成品仓 ⇒ 成品仓选项不存在', async () => {
+    render(<NewInboundOrderPage />)
+
+    const select = (await screen.findByLabelText('仓库 / 仓位')) as HTMLSelectElement
+    // 选项文案 = 「名称（类型中文）」；值 = 仓 id（提交体再转数字）
+    expect(Array.from(select.options).map((o) => o.textContent)).toEqual([
+      '一号原料仓（原料仓）',
+      '门店仓（门店仓）',
+    ])
+    // 靶心：成品仓**不得**出现在候选里（它只装打包后的成品帘）
+    expect(Array.from(select.options).map((o) => o.textContent).join('|')).not.toContain('成品仓')
+    expect(Array.from(select.options).map((o) => o.value)).not.toContain('601')
+  })
+
+  it('预选**默认仓**（服务端已把默认仓排最前）⇒ 首屏就有仓，不需要商家先点一下', async () => {
+    render(<NewInboundOrderPage />)
+
+    const select = (await screen.findByLabelText('仓库 / 仓位')) as HTMLSelectElement
+    expect(select.value).toBe('501')
+  })
+
+  it('没有默认仓 ⇒ 选第一个可选的仓（留空 = 一张不落仓的单，比选错更糟）', async () => {
+    mockWarehouseList.mockResolvedValue({
+      data: { data: [{ ...STORE_WAREHOUSE }, FINISHED_WAREHOUSE] },
+    })
+    render(<NewInboundOrderPage />)
+
+    const select = (await screen.findByLabelText('仓库 / 仓位')) as HTMLSelectElement
+    expect(select.value).toBe('502')
+  })
+
+  it('提交体带 `warehouseId`（数字）与**仓名**文本快照（列表 / 详情仍按文本显示）', async () => {
+    mockCreate.mockResolvedValue({ data: { data: createdOrder } })
+    render(<NewInboundOrderPage />)
+
+    const { qty } = await openWithLine()
+    fireEvent.change(qty, { target: { value: '3' } })
+    fireEvent.click(screen.getByRole('button', { name: '确认入库' }))
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
+    const payload = mockCreate.mock.calls[0][0]
+    expect(payload.warehouseId).toBe(501)
+    expect(payload.warehouse).toBe('一号原料仓')
+  })
+
+  it('换一个仓 ⇒ 提交体跟着变（不是把默认仓写死）', async () => {
+    mockCreate.mockResolvedValue({ data: { data: createdOrder } })
+    render(<NewInboundOrderPage />)
+
+    const select = (await screen.findByLabelText('仓库 / 仓位')) as HTMLSelectElement
+    fireEvent.change(select, { target: { value: '502' } })
+    const { qty } = await openWithLine()
+    fireEvent.change(qty, { target: { value: '3' } })
+    fireEvent.click(screen.getByRole('button', { name: '确认入库' }))
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1))
+    const payload = mockCreate.mock.calls[0][0]
+    expect(payload.warehouseId).toBe(502)
+    expect(payload.warehouse).toBe('门店仓')
+  })
+
+  it('仓库读取失败 ⇒ 一行可行动提示（不静默空白、也**不**退回自由文本输入框）', async () => {
+    mockWarehouseList.mockRejectedValue(new Error('network down'))
+    render(<NewInboundOrderPage />)
+
+    const hint = await screen.findByTestId('inbound-warehouse-error')
+    expect(hint.textContent).toContain('仓库读取失败，请刷新重试')
+    // 第二套口径不许回来：仓库位不再有自由文本输入，也没有空的下拉（空下拉 = 静默空白）
+    expect(screen.queryByLabelText('仓库 / 仓位')).toBeNull()
   })
 })

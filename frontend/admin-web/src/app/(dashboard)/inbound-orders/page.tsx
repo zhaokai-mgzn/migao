@@ -92,6 +92,12 @@ export default function InboundOrdersPage() {
   const canWrite = hasPermission('inbound:create')
   const [keyword, setKeyword] = useState('')
   const [status, setStatus] = useState<InboundOrderStatus | ''>('')
+  /**
+   * 视图（V196 / issue #7794；用户 2026-10-26 逐字「要区分原料仓入库和成品仓入库，别混在一起了」）：
+   * `fabric` 原料仓（**默认**，现有行为零回归）/ `finished` 成品仓。
+   * 两类单的列与入口不同 —— 成品单只由打包自动建，成品视图不渲染建单 / 期初建账入口。
+   */
+  const [view, setView] = useState<'fabric' | 'finished'>('fabric')
   const [rows, setRows] = useState<InboundOrderLine[]>([])
   const [loading, setLoading] = useState(false)
   /**
@@ -116,7 +122,7 @@ export default function InboundOrdersPage() {
     setLoading(true)
     setLoadError(false)
     try {
-      const res = await inboundOrderApi.list({ keyword: keyword || undefined, status })
+      const res = await inboundOrderApi.list({ keyword: keyword || undefined, status, bizCategory: view })
       setRows(res.data.data ?? [])
     } catch {
       // request 拦截器已 toast；此处只**标失败态**（不清零、不说空）—— 读面故障 ≠「没有入库单」（issue #6691）
@@ -124,7 +130,7 @@ export default function InboundOrdersPage() {
     } finally {
       setLoading(false)
     }
-  }, [keyword, status])
+  }, [keyword, status, view])
 
   useEffect(() => {
     void load()
@@ -233,6 +239,11 @@ export default function InboundOrdersPage() {
     }
   }
 
+  // 状态选项按视图裁剪（issue #7799）：成品单恒为 `posted`（打包自动建单即过账）⇒
+  // 「草稿」在成品视图里**恒空**，留着只是让商家白点一次。原料视图**保留**（工人拍照草稿停在那里）。
+  const statusOptions =
+    view === 'finished' ? STATUS_OPTIONS.filter((o) => o.value !== 'draft') : STATUS_OPTIONS
+
   return (
     <div className="p-6 space-y-4">
       {/* 页头 */}
@@ -243,27 +254,73 @@ export default function InboundOrdersPage() {
             入库单
           </span>
         }
-        subtitle={<>登记布料到货、过账后加库存 —— <strong>过账前不改动库存</strong>，可以先核对再确认。<strong>期初建账</strong>可按实物把在库批次登记进来</>}
+        subtitle={
+          view === 'fabric' ? (
+            <>登记布料到货 —— <strong>建单即入账</strong>（过账与建单一次完成）。<strong>期初建账</strong>可按实物把在库批次登记进来</>
+          ) : (
+            // 成品视图只读（issue #7794）：成品单由打包动作自动建 —— 这里不能说「登记布料到货」，
+            // 否则等于让商家去点一个本视图没有的入口。
+            <>成品打包后自动入库并分配仓位 —— 本视图<strong>只读</strong>，套号与仓位号在详情里逐行可查</>
+          )
+        }
         actions={
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={openImport}>
-              <Upload className="w-4 h-4 mr-1.5" />
-              期初建账导入
-            </Button>
-            {canWrite && (
-              <Button onClick={() => router.push('/inbound-orders/new')}>
-                <Plus className="w-4 h-4 mr-1.5" />
-                新建入库单
+          // 成品视图只读（issue #7794）：成品单只由打包动作自动建（发货 / 撤销打包自动冲销）
+          // ⇒ 不渲染「新建入库单」「期初建账导入」两个入口（手工建一张成品单没有对应写面）。
+          view === 'fabric' ? (
+            <div className="flex gap-2">
+              <Button variant="secondary" onClick={openImport}>
+                <Upload className="w-4 h-4 mr-1.5" />
+                期初建账导入
               </Button>
-            )}
-          </div>
+              {canWrite && (
+                <Button onClick={() => router.push('/inbound-orders/new')}>
+                  <Plus className="w-4 h-4 mr-1.5" />
+                  新建入库单
+                </Button>
+              )}
+            </div>
+          ) : null
         }
       />
+
+      {/* 视图切换（issue #7794）：原料仓入库 = biz_category=fabric（默认）/ 成品仓入库 = finished。
+          药丸形态与出库单页 `outbound-tab-*` 同族（不引入新的 UI 原语）。 */}
+      <div className="flex gap-2" role="tablist" aria-label="入库单视图">
+        {(
+          [
+            ['fabric', '原料仓入库'],
+            ['finished', '成品仓入库'],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={view === key}
+            data-testid={`inbound-tab-${key}`}
+            onClick={() => {
+              setView(key)
+              // 带着原料视图的「草稿」切到成品视图 ⇒ 那个值已不在选项里，列表也恒空
+              // （一个查不出东西的筛选条件比没有更糟）⇒ 归零
+              if (key === 'finished' && status === 'draft') setStatus('')
+            }}
+            className={
+              'rounded-md border px-3 py-1.5 text-sm ' +
+              (view === key
+                ? 'border-primary-300 bg-primary-50 text-primary-700'
+                : 'border-neutral-300 bg-white text-neutral-600 hover:border-primary-300')
+            }
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
       {/* 筛选 */}
       <PageCard className="flex items-center gap-3">
         <Input
-          placeholder="入库单号 / 供应商 / 送货单号"
+          // 成品单没有供应商 / 送货单号（这两列对其恒空）⇒ 占位提示随视图变，别让商家去搜一个不存在的字段
+          placeholder={view === 'finished' ? '入库单号' : '入库单号 / 供应商 / 送货单号'}
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
           className="max-w-xs"
@@ -271,7 +328,7 @@ export default function InboundOrdersPage() {
         <Select
           value={status}
           onChange={(e) => setStatus(e.target.value as InboundOrderStatus | '')}
-          options={STATUS_OPTIONS}
+          options={statusOptions}
           className="max-w-[160px]"
         />
         <Button variant="secondary" onClick={() => void load()}>
@@ -300,11 +357,27 @@ export default function InboundOrdersPage() {
             <tr>
               <th className="text-left px-3 py-2.5 font-medium whitespace-nowrap">入库单号</th>
               <th className="text-left px-3 py-2.5 font-medium whitespace-nowrap">入库日期</th>
-              <th className="text-left px-3 py-2.5 font-medium whitespace-nowrap">供应商</th>
+              {/* 列随视图变（issue #7794）：成品单的 供应商 / 批次号 / 金额 恒空
+                  （成品不建批次、没有成本口径）⇒ 成品视图不渲染这几列（§31 P2 信息不重复）。
+                  原料仓视图的列**一字不动**（零回归）。 */}
+              {view === 'fabric' && (
+                <th className="text-left px-3 py-2.5 font-medium whitespace-nowrap">供应商</th>
+              )}
               <th className="text-left px-3 py-2.5 font-medium whitespace-nowrap">仓库</th>
-              <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap">行数 / 总数量</th>
-              <th className="text-left px-3 py-2.5 font-medium whitespace-nowrap">批次号</th>
-              <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap">金额</th>
+              {view === 'fabric' ? (
+                <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap">行数 / 总数量</th>
+              ) : (
+                <>
+                  <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap">明细行数</th>
+                  <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap">套数合计</th>
+                </>
+              )}
+              {view === 'fabric' && (
+                <>
+                  <th className="text-left px-3 py-2.5 font-medium whitespace-nowrap">批次号</th>
+                  <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap">金额</th>
+                </>
+              )}
               <th className="text-left px-3 py-2.5 font-medium whitespace-nowrap">状态</th>
               {/* 操作（issue #6717）：右缘冻结 —— 改前 1280×800 实测本列表头 left = 1317
                   （容器右缘 1280）⇒ 出屏，「详情」按钮够不到。`bg-neutral-50` 与 `thead` 同色
@@ -319,20 +392,44 @@ export default function InboundOrdersPage() {
               <tr key={row.id} className="border-t border-neutral-100 bg-white hover:bg-neutral-50">
                 <td className="px-3 py-2.5 font-mono text-neutral-900 whitespace-nowrap">{row.inboundNo}</td>
                 <td className="px-3 py-2.5 text-neutral-600 whitespace-nowrap">{row.inboundDate}</td>
-                <td className="px-3 py-2.5 text-neutral-600 whitespace-nowrap">{row.supplier || '-'}</td>
+                {view === 'fabric' && (
+                  <td className="px-3 py-2.5 text-neutral-600 whitespace-nowrap">{row.supplier || '-'}</td>
+                )}
                 <td className="px-3 py-2.5 text-neutral-600 whitespace-nowrap">{row.warehouse || '-'}</td>
-                <td className="px-3 py-2.5 text-right text-neutral-600 whitespace-nowrap">
-                  {row.itemCount} / {formatStockQuantity(row.totalQuantity)}
-                </td>
-                <td
-                  data-testid="inbound-batch-nos"
-                  className="px-3 py-2.5 font-mono text-xs text-neutral-600 whitespace-nowrap"
-                >
-                  {batchCell(row)}
-                </td>
-                <td className="px-3 py-2.5 text-right text-neutral-900 whitespace-nowrap">
-                  {row.totalAmount != null ? `¥${Number(row.totalAmount).toFixed(2)}` : '-'}
-                </td>
+                {view === 'fabric' ? (
+                  <td className="px-3 py-2.5 text-right text-neutral-600 whitespace-nowrap">
+                    {row.itemCount} / {formatStockQuantity(row.totalQuantity)}
+                  </td>
+                ) : (
+                  <>
+                    {/* 行数 = 部位数；套数 = 不同套号的个数（服务端 SQL 算好，前端不重算） */}
+                    <td
+                      data-testid="inbound-finished-item-count"
+                      className="px-3 py-2.5 text-right text-neutral-600 whitespace-nowrap"
+                    >
+                      {row.itemCount}
+                    </td>
+                    <td
+                      data-testid="inbound-finished-set-count"
+                      className="px-3 py-2.5 text-right text-neutral-900 whitespace-nowrap"
+                    >
+                      {row.setCount != null ? `${row.setCount} 套` : '-'}
+                    </td>
+                  </>
+                )}
+                {view === 'fabric' && (
+                  <>
+                    <td
+                      data-testid="inbound-batch-nos"
+                      className="px-3 py-2.5 font-mono text-xs text-neutral-600 whitespace-nowrap"
+                    >
+                      {batchCell(row)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right text-neutral-900 whitespace-nowrap">
+                      {row.totalAmount != null ? `¥${Number(row.totalAmount).toFixed(2)}` : '-'}
+                    </td>
+                  </>
+                )}
                 <td className="px-3 py-2.5 whitespace-nowrap">
                   <Badge
                     variant={STATUS_BADGE[row.status].variant}
@@ -354,7 +451,7 @@ export default function InboundOrdersPage() {
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-3 py-10 text-center text-neutral-400">
+                <td colSpan={view === 'fabric' ? 9 : 7} className="px-3 py-10 text-center text-neutral-400">
                   {loading ? (
                     '加载中…'
                   ) : loadError ? (
@@ -363,6 +460,15 @@ export default function InboundOrdersPage() {
                       <span className="text-neutral-600">入库单加载失败 —— 没读到数据，请检查网络后重试</span>
                       <Button variant="secondary" size="sm" data-testid="inbound-load-retry" onClick={() => void load()}>
                         重新加载
+                      </Button>
+                    </span>
+                  ) : keyword && view === 'fabric' ? (
+                    // 站内信深链（issue #7524）默认落在**原料仓**视图；命中的若是成品单，
+                    // 这里给一行可点的出口 —— 不许静默空白（商家会以为「单子不见了」，issue #7794）。
+                    <span data-testid="inbound-other-view-hint" className="inline-flex items-center gap-3">
+                      <span className="text-neutral-600">没有匹配的原料仓入库单 —— 该单可能在「成品仓入库」</span>
+                      <Button variant="secondary" size="sm" onClick={() => setView('finished')}>
+                        查看成品仓入库
                       </Button>
                     </span>
                   ) : (
@@ -539,30 +645,80 @@ export default function InboundOrdersPage() {
                 <div className="text-neutral-500">入库日期</div>
                 <div className="text-neutral-900">{detail.inboundDate}</div>
               </div>
-              <div>
-                <div className="text-neutral-500">供应商</div>
-                <div className="text-neutral-900">{detail.supplier || '-'}</div>
-              </div>
+              {/* 供应商 / 供应商送货单号 / 金额合计：成品单恒空（成品不建供应商链、无成本口径）
+                  ⇒ 成品单详情不渲染这三格（issue #7794 / §31 P2），原料仓单保持现状。 */}
+              {detail.bizCategory !== 'finished' && (
+                <div>
+                  <div className="text-neutral-500">供应商</div>
+                  <div className="text-neutral-900">{detail.supplier || '-'}</div>
+                </div>
+              )}
               <div>
                 <div className="text-neutral-500">仓库</div>
                 <div className="text-neutral-900">{detail.warehouse || '-'}</div>
               </div>
-              <div>
-                <div className="text-neutral-500">供应商送货单号</div>
-                <div className="text-neutral-900">{detail.supplierDocNo || '-'}</div>
-              </div>
-              <div>
-                <div className="text-neutral-500">金额合计</div>
-                <div className="text-neutral-900">¥{Number(detail.totalAmount ?? 0).toFixed(2)}</div>
-              </div>
+              {detail.bizCategory !== 'finished' && (
+                <>
+                  <div>
+                    <div className="text-neutral-500">供应商送货单号</div>
+                    <div className="text-neutral-900">{detail.supplierDocNo || '-'}</div>
+                  </div>
+                  <div>
+                    <div className="text-neutral-500">金额合计</div>
+                    <div className="text-neutral-900">¥{Number(detail.totalAmount ?? 0).toFixed(2)}</div>
+                  </div>
+                </>
+              )}
               <div>
                 <div className="text-neutral-500">状态</div>
                 <div className="text-neutral-900">{STATUS_LABEL[detail.status]}</div>
               </div>
             </div>
 
-            {/* 窄屏横向滚动逃逸口 + 表头禁折行（issue #6398 的守卫规则 ①）：本包新增「卷数 / 卷长 / 入库米数」
-                三列后列更宽，不这么做表头会被压成一行一个字 */}
+            {/* 成品单明细（issue #7794）：套号 / 仓位号 / 短码 —— 仓位就是成品仓入库的全部意义。
+                不渲染 米数 / 单价 / 金额（成品行不碰 SKU 米数库存，也没有成本口径）；
+                原料仓单走下面的原表，**一字不动**（零回归）。 */}
+            {detail.bizCategory === 'finished' ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm border border-neutral-200 rounded overflow-hidden">
+                  <thead className="bg-neutral-50 text-neutral-600">
+                    <tr>
+                      <th className="text-left px-3 py-2 font-medium whitespace-nowrap">品名</th>
+                      <th className="text-left px-3 py-2 font-medium whitespace-nowrap">套号</th>
+                      <th className="text-left px-3 py-2 font-medium whitespace-nowrap">仓位号</th>
+                      <th className="text-left px-3 py-2 font-medium whitespace-nowrap">短码</th>
+                      {/* 来源订单号（issue #7799）：成品行不挂 SKU 货号 ⇒ 没有它就无法回查是哪张订单的 */}
+                      <th className="text-left px-3 py-2 font-medium whitespace-nowrap">来源订单号</th>
+                      <th className="text-right px-3 py-2 font-medium whitespace-nowrap">数量</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detail.items?.map((it) => (
+                      <tr key={it.id} className="border-t border-neutral-100">
+                        <td className="px-3 py-2 text-neutral-700">{it.productName || '-'}</td>
+                        <td className="px-3 py-2 font-mono text-neutral-900">{it.setNo || '-'}</td>
+                        <td className="px-3 py-2 font-mono text-neutral-900">{it.binCode || '-'}</td>
+                        <td className="px-3 py-2 font-mono text-neutral-600">{it.shortCode || '-'}</td>
+                        <td className="px-3 py-2 font-mono text-neutral-700">{it.orderNo || '—'}</td>
+                        {/* 数量按「N 套」显示（成品行恒为 1 套，unit=set） */}
+                        <td className="px-3 py-2 text-right text-neutral-900">
+                          {formatStockQuantity(it.quantity)} 套
+                        </td>
+                      </tr>
+                    ))}
+                    {(!detail.items || detail.items.length === 0) && (
+                      <tr>
+                        <td colSpan={6} className="px-3 py-6 text-center text-neutral-400">
+                          无明细
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+            /* 窄屏横向滚动逃逸口 + 表头禁折行（issue #6398 的守卫规则 ①）：本包新增「卷数 / 卷长 / 入库米数」
+                三列后列更宽，不这么做表头会被压成一行一个字 */
             <div className="overflow-x-auto">
             <table className="w-full text-sm border border-neutral-200 rounded overflow-hidden">
               <thead className="bg-neutral-50 text-neutral-600">
@@ -622,6 +778,7 @@ export default function InboundOrdersPage() {
               </tbody>
             </table>
             </div>
+            )}
           </div>
         )}
       </Modal>

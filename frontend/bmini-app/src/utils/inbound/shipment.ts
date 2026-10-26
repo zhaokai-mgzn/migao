@@ -127,6 +127,16 @@ export interface ShipmentRow {
   unpack_reason?: string | null
 }
 
+/** 成品仓位（V194 / issue #7750）：打包时自动分配的成品仓仓位号。 */
+export interface FinishedBinRow {
+  order_item_id?: string | null
+  product_name?: string | null
+  /** 仓位号（如 `A-01`）—— 工人贴标 / 找货就认它 */
+  bin_code?: string | null
+  quantity?: number | string | null
+  unit?: string | null
+}
+
 /** 实发读面（`GET /api/worker/shipment/orders/{orderId}`）。 */
 export interface ShipmentView {
   order_id?: string | null
@@ -134,6 +144,11 @@ export interface ShipmentView {
   status?: string | null
   shipments?: ShipmentRow[] | null
   shipped_totals?: ShippedTotals | null
+  /**
+   * 成品仓位（V194）：本单成品的仓位号。字段名与后端 `readShipment` 的
+   * `finished_bins` 逐字一致（不另造第二份形状）。
+   */
+  finished_bins?: FinishedBinRow[] | null
 }
 
 /**

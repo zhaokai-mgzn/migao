@@ -882,6 +882,37 @@ function qualityFormView(state) {
     </div>`
 }
 
+
+/**
+ * 「成品出库」卡片（V197 / issue #7762）：扫水洗唛后出现在报工页顶部。
+ *
+ * <p>逐行内容、仓位号、「能否出库 + 原因」**全部来自服务端**（`GET /api/worker/stock/wash-label`）；
+ * 本函数只排版。不能出库时按钮 `disabled` 并显示服务端给的原因（比如「只有做过打包工序的工人
+ * 才能扫码出库」）—— 真正的拒绝仍在服务端，前端隐藏按钮不是授权。</p>
+ */
+function washLabelCard(state) {
+  const w = state.washLabel
+  if (!w) return ''
+  const label = w.label ?? {}
+  const rows = (Array.isArray(label.rows) ? label.rows : []).map((row) => (
+    `<div class="wh5-fl-row" data-label-key="${esc(row.label)}">`
+    + `<span class="wh5-fl-k">${esc(row.label)}</span>`
+    + `<span class="wh5-fl-v">${esc(row.value)}</span></div>`
+  )).join('')
+  const allowed = w.allowed === true
+  const reason = w.reason ? `<p class="wh5-sub" id="wh5-fl-reason">${esc(w.reason)}</p>` : ''
+  return `<section class="wh5-card wh5-finished-label" id="wh5-finished-label" aria-label="成品出库标签">
+    <div class="wh5-set" id="wh5-fl-bin">成品出库 · 仓位 ${esc(w.bin_code ?? '未分配')}</div>
+    <div class="wh5-fl-rows" id="wh5-fl-rows">${rows}</div>
+    ${label.short_code ? `<p class="wh5-fl-code" id="wh5-fl-code">${esc(label.short_code)}</p>` : ''}
+    ${reason}
+    <div class="wh5-fl-actions">
+      <button id="wh5-fl-print" class="wh5-ghost" type="button">打印标签</button>
+      <button id="wh5-fl-out" class="wh5-primary" type="button"${allowed ? '' : ' disabled'}>出库</button>
+    </div>
+  </section>`
+}
+
 function mainView(state) {
   const v = state.view
   const op = v.operation
@@ -890,6 +921,7 @@ function mainView(state) {
   // （`set_completed:true` / `next_operation:null`）⇒ 必须显式分支（防呆⑤ 的记账侧那一半）。
   if (!op) {
     return `${header(state)}
+    ${washLabelCard(state)}
   <section class="wh5-card">
     <div class="wh5-set" id="wh5-set">第 ${esc(v.set_no)} 套 · ${esc(v.position?.position_name ?? '')}</div>
     ${ternLine(v)}
@@ -1115,6 +1147,37 @@ export const DEFAULT_WORKER_IDLE_MINUTES = 43200
  * @param {object} state 状态机当前态
  * @param {object} [view] 服务端解析结果（省略则用 `state.view`）
  */
+/**
+ * 成品标签的**打印纸张文档**（50mm × 70mm，V197 / issue #7762）。
+ *
+ * <p>为什么是一份独立文档（而不是给报工页加打印样式）：`@page` 是**文档级**声明 —— 放进报工页
+ * 会把整页（登录/报工/工序选择器）都按 50×70 印出来。#7761 的发货标签用「打印态隔离」解，
+ * 这里同样只让标签上纸：新窗口 = 干净文档，`@page` 只作用于它。</p>
+ *
+ * <p>返回纯字符串 ⇒ 可零浏览器单测（判据：行序 = 服务端下发顺序、缺值行不出现、短码在纸面上）。</p>
+ */
+export function washLabelPrintHtml(w) {
+  const label = w?.label ?? {}
+  const rows = (Array.isArray(label.rows) ? label.rows : []).map((row) => (
+    `<div class="row"><span class="k">${esc(row.label)}</span><span class="v">${esc(row.value)}</span></div>`
+  )).join('')
+  const code = label.short_code ? `<div class="code">${esc(label.short_code)}</div>` : ''
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8" />
+<title>成品标签 ${esc(label.bin_code ?? w?.bin_code ?? '')}</title>
+<style>
+  @page { size: 50mm 70mm; margin: 0; }
+  * { box-sizing: border-box; }
+  body { margin: 0; width: 50mm; height: 70mm; padding: 1.5mm; font-family: "PingFang SC", "Microsoft YaHei", sans-serif; color: #000; }
+  .row { display: flex; gap: 1mm; font-size: 2.6mm; line-height: 1.35; }
+  .k { flex: 0 0 11mm; color: #333; }
+  .v { flex: 1 1 auto; font-weight: 600; word-break: break-all; }
+  .code { margin-top: 1mm; font-size: 3mm; letter-spacing: .3mm; font-weight: 700; text-align: center; }
+</style></head><body>
+${rows}
+${code}
+</body></html>`
+}
+
 export function renderPage(state, view = state.view) {
   const s = { ...state, view: view ?? state.view }
   if (!s.worker) return loginView(s)

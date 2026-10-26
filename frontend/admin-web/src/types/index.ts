@@ -3628,6 +3628,11 @@ export interface InboundOrderLine {
   warehouse?: string
   inboundDate: string
   status: InboundOrderStatus
+  /**
+   * 业务类别（V196，issue #7794）：`fabric` 原料仓 / `finished` 成品仓 ——
+   * 列表页两个视图的分界；缺省（存量响应不返）按原料仓读。
+   */
+  bizCategory?: 'fabric' | 'finished'
   totalAmount: number
   remark?: string
   postedAt?: string
@@ -3637,6 +3642,13 @@ export interface InboundOrderLine {
   itemCount: number
   /** 明细总数量（聚合） */
   totalQuantity: number
+  /**
+   * **套数合计**（聚合，issue #7794）—— 成品视图那一列。
+   *
+   * 成品按「套 × 部位」逐行入库（V197）⇒ 行数 = 部位数、套数 = 套的个数；没有套号的存量行
+   * （V196 订单行粒度：一行 = 一件成品 = 一套）按一行一套计（服务端 SQL 算好，前端不重算）。
+   */
+  setCount?: number
   /**
    * 该单**已生成**的批次号（聚合，逗号分隔；issue #5844）。
    *
@@ -3719,6 +3731,22 @@ export interface InboundOrderItem {
   legacyBatchNo?: string | null
   /** 每卷米数（卷长；与 rollCount 成对时参与换算） */
   rollLengthM?: number | null
+  /**
+   * 以下五个字段**只有成品行**（`bizCategory === 'finished'`）有值（V194 / V197，issue #7794）——
+   * 成品仓入库的意义就是「这件成品在哪个仓位」。
+   */
+  /** 仓位号快照（成品行） */
+  binCode?: string | null
+  /** 套号快照（成品行；V197 / #7762） */
+  setNo?: string | null
+  /** 部位码短码（成品行；V197 / #7762） */
+  shortCode?: string | null
+  /** 来源订单号（成品行；issue #7799）—— 成品单由打包产生，据此回查是哪张订单的 */
+  orderNo?: string | null
+  /** 品名快照（成品行没有 SKU 货号，展示靠它） */
+  productName?: string | null
+  /** 计量单位：m = 米（布料行）/ set = 套（成品行） */
+  unit?: string | null
   remark?: string
 }
 
@@ -3731,6 +3759,8 @@ export interface InboundOrder {
   warehouse?: string
   inboundDate: string
   status: InboundOrderStatus
+  /** 业务类别（issue #7794）：详情弹窗据此切换明细列（成品单显示套号 / 仓位号 / 短码） */
+  bizCategory?: 'fabric' | 'finished'
   totalAmount: number
   remark?: string
   postedAt?: string
@@ -3794,7 +3824,13 @@ export interface InboundOrderItemInput {
 export interface InboundOrderCreateParams {
   supplier?: string | null
   supplierDocNo?: string | null
+  /** 仓名文本快照（列表 / 详情按它显示） */
   warehouse?: string | null
+  /**
+   * 选中的**真仓** id（issue #7799）：带了就落 `warehouse_id` 并校验租户/停用/成品仓；
+   * 不带 = 旧口径（工人拍照草稿 / Excel 期初导入），行为一字不动。
+   */
+  warehouseId?: number | null
   inboundDate?: string | null
   /** 单据来源：`purchase` 采购收货（缺省）/ `opening` 期初建账（V117 / issue #5148） */
   source?: 'purchase' | 'opening' | null
@@ -3847,6 +3883,8 @@ export interface OpeningImportReport {
 export interface InboundOrderListParams {
   keyword?: string
   status?: InboundOrderStatus | ''
+  /** 业务类别（issue #7794）：`fabric` 原料仓 / `finished` 成品仓；缺省 = 两类都返回 */
+  bizCategory?: 'fabric' | 'finished'
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -4516,3 +4554,139 @@ export interface WorkerPageCatalogResponse {
   /** 页面键 → 商家面人话名（同上，服务端一处给出）。 */
   labels: Record<string, string>
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 出库单 / 成品库存 / 仓位（V194，issue #7750）
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** 单据业务类别：布料（扣 SKU 米数库存）/ 成品（成品在库 + 仓位） */
+export type StockBizCategory = 'fabric' | 'finished'
+
+/** 出库单来源：manual 手工出库（布料）/ ship 发货出库（成品，由发货动作自动建单） */
+export type OutboundOrderSource = 'manual' | 'ship'
+
+/** 出库单明细：布料行 = SKU + 米数；成品行 = 订单行 + 仓位 + 套数 */
+export interface OutboundOrderItem {
+  id?: number
+  skuId?: number | null
+  skuCode?: string | null
+  productName?: string | null
+  orderItemId?: string | null
+  locationId?: number | null
+  /** 仓位号（成品行；布料行为空） */
+  binCode?: string | null
+  quantity: number
+  /** m = 米 / set = 套 */
+  unit: string
+  unitCost?: number | null
+  amount?: number | null
+  remark?: string | null
+}
+
+/** 出库单（列表/详情同形状；列表不含明细） */
+export interface OutboundOrder {
+  id: string
+  /** 出库单号 CK-yyyyMMdd-NNNN */
+  outboundNo: string
+  bizCategory: StockBizCategory
+  source: OutboundOrderSource
+  warehouseId?: number | null
+  warehouse?: string | null
+  outboundDate: string
+  /** 恒为 posted（出库单没有草稿态） */
+  status: 'posted'
+  totalAmount: number
+  orderId?: string | null
+  orderNo?: string | null
+  remark?: string | null
+  postedAt?: string | null
+  postedBy?: string | null
+  createdAt?: string | null
+  itemCount?: number
+  totalQuantity?: number
+  items?: OutboundOrderItem[]
+}
+
+/** 建出库单输入（**建单即过账**；只服务布料手工出库） */
+export interface OutboundOrderCreateParams {
+  warehouseId?: number | null
+  outboundDate?: string | null
+  remark?: string | null
+  items: {
+    /** 🔴 SKU id 是雪花号字符串 —— 原样透传，不许 Number() */
+    skuId: string
+    /** 出库米数（> 0，最多 1 位小数） */
+    quantity: number
+    remark?: string | null
+  }[]
+}
+
+/** 成品在库行（含仓位号） */
+export interface FinishedGoods {
+  id: number
+  /** 仓位号（如 A-01）—— 本页最要紧的一列 */
+  binCode: string
+  warehouseId?: number
+  locationId?: number
+  orderId: string
+  orderNo?: string | null
+  orderItemId: string
+  productId?: string | null
+  productName?: string | null
+  quantity: number
+  /** set = 套 */
+  unit: string
+  status: 'in_stock' | 'shipped' | 'unpacked'
+  inboundOrderId?: string | null
+  /** 入库单号（如 RK-20261025-0001）—— 页面显示它；`inboundOrderId` 是内部 id，不上屏（issue #7792） */
+  inboundNo?: string | null
+  outboundOrderId?: string | null
+  createdAt?: string | null
+}
+
+/** 仓位（成品仓的货位；V196 #7750，管理面 #7785） */
+export interface WarehouseLocation {
+  id: number
+  warehouseId: number
+  zoneCode: string
+  zoneName: string
+  binCode: string
+  status: 'active' | 'inactive'
+  /** 每仓容量（件；同一区域统一，默认 10） */
+  capacity?: number
+  /** 当前在库件数（水位分子；由 in_stock 行派生） */
+  inStockCount?: number
+  remark?: string | null
+  /** 有在库成品占着它 —— 管理面据此禁用改号 / 删除 */
+  occupied?: boolean
+  createdAt?: string | null
+}
+
+/** 新建 / 编辑仓位入参（null 字段 = 后端不改；issue #7785） */
+export interface WarehouseLocationInput {
+  binCode?: string
+  zoneCode?: string
+  zoneName?: string
+  remark?: string | null
+  status?: 'active' | 'inactive'
+  /** 每仓容量（件；同一区域统一；改一个会同步本区所有仓位） */
+  capacity?: number
+}
+
+/** 批量新建仓位（issue #7791）：数字区间 ⇒ 仓位号，如 A 区 1~20 ⇒ A-01…A-20 */
+export interface WarehouseLocationBatchInput {
+  zoneCode?: string
+  zoneName?: string
+  numberFrom: number
+  numberTo: number
+  capacity?: number
+}
+
+export interface WarehouseLocationBatchResult {
+  created: number
+  skipped: number
+  fromCode: string
+  toCode: string
+  capacity: number
+}
+

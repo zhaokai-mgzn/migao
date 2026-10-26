@@ -6,15 +6,8 @@ import com.migao.admin.entity.StocktakeItem;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.LinkedHashSet;
-import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -33,37 +26,11 @@ class StocktakeMapperTest {
         return Files.readString(SCHEMA);
     }
 
-    private static Set<String> columnsOf(String table) throws Exception {
-        Matcher m = Pattern.compile(
-                "CREATE TABLE IF NOT EXISTS " + table + " \\(([\\s\\S]*?)\\n\\);").matcher(schemaSql());
-        assertThat(m.find()).as("建库脚本里必须有 %s 表", table).isTrue();
-        Set<String> cols = new LinkedHashSet<>();
-        for (String line : m.group(1).split("\n")) {
-            Matcher c = Pattern.compile("^\\s{4}([a-z_]+)\\s+[A-Z]").matcher(line);
-            if (c.find()) {
-                cols.add(c.group(1));
-            }
-        }
-        return cols;
-    }
-
-    private static void assertEntityCovered(Class<?> entity, String table) throws Exception {
-        Set<String> columns = columnsOf(table);
-        assertThat(columns).isNotEmpty();
-        Set<String> missing = java.util.Arrays.stream(entity.getDeclaredFields())
-                .filter(f -> !Modifier.isStatic(f.getModifiers()) && !f.isSynthetic())
-                .map(Field::getName)
-                .map(n -> n.replaceAll("([a-z0-9])([A-Z])", "$1_$2").toLowerCase())
-                .collect(Collectors.toCollection(LinkedHashSet::new));
-        missing.removeAll(columns);
-        assertThat(missing).as("%s 实体字段缺列：%s", table, missing).isEmpty();
-    }
-
     @Test
     @DisplayName("两张表的实体字段都有对应列")
     void entitiesMatchSchema() throws Exception {
-        assertEntityCovered(Stocktake.class, "stocktakes");
-        assertEntityCovered(StocktakeItem.class, "stocktake_items");
+        MapperColumnAssertions.assertEveryEntityFieldHasColumn(Stocktake.class, "stocktakes");
+        MapperColumnAssertions.assertEveryEntityFieldHasColumn(StocktakeItem.class, "stocktake_items");
     }
 
     @Test

@@ -142,6 +142,8 @@ beforeEach(() => {
         },
       ],
       shipped_totals: { by_unit: { 米: 12 }, set_count: null, roll_count: null },
+      // V194（issue #7750）：打包时自动分配的成品仓仓位号随读面下发
+      finished_bins: [{ order_item_id: 'item-1', product_name: '遮光布帘', bin_code: 'A-01', quantity: 1, unit: 'set' }],
     },
   })
 })
@@ -325,6 +327,13 @@ describe('拍照发货页：实发读面说人话（判据 P6）', () => {
     expect(summary.textContent).toContain('SHIP-0001')
     expect(summary.textContent).toContain('SF123456')
     expect(summary.textContent).toContain('张三')
+  })
+
+  it('P6 成品仓位（V196）：打包时分配的仓位号必须上屏（工人据此贴标/找货）', async () => {
+    await reachSummary()
+
+    const bins = screen.getByTestId('shipment-finished-bins')
+    expect(bins.textContent).toContain('A-01')
   })
 
   it('P6 读面没有发货单 ⇒ 不渲染空的「实发 —」面板（只报状态）', async () => {

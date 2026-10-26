@@ -131,7 +131,8 @@ class InboundOrderMigrationTest {
         assertThat(schema).contains("latest_batch_no VARCHAR(32)");
         assertThat(schema).contains("avg_cost_before NUMERIC(12,4)");
         assertThat(schema).contains("avg_cost_after NUMERIC(12,4)");
-        assertThat(schema).contains("CONSTRAINT ck_stock_ledger_reason CHECK (reason IN ('order', 'aftersales', 'manual', 'inbound'))");
+        // V194（issue #7750）：出库单过账新增一种来源 outbound ⇒ 终态 CHECK 必须同时放行 inbound 与 outbound
+        assertThat(schema).contains("reason IN ('order', 'aftersales', 'manual', 'inbound', 'outbound')");
         // 批次号租户内唯一（防重号的安全网）
         assertThat(schema).contains("uk_stock_batches_no");
         assertThat(schema).contains("uk_inbound_orders_no");
@@ -149,7 +150,8 @@ class InboundOrderMigrationTest {
         assertThat(schema).contains("import_run_id VARCHAR(128)");
         // 来源列 + 取值约束（期初导入与正常采购必须可区分；V153 / issue #6812 起多一个 photo）
         assertThat(schema).contains("source VARCHAR(16) NOT NULL DEFAULT 'purchase'");
-        assertThat(schema).contains("source IN ('purchase', 'opening', 'photo')");
+        // V194（issue #7750）：成品打包入库新增来源 packing ⇒ 终态 CHECK 放行四种来源
+        assertThat(schema).contains("source IN ('purchase', 'opening', 'photo', 'packing')");
         // 两条路径（新建库 = schema.sql / 存量升级 = 迁移）的**终态必须一致**：只改一边 ⇒ 新建库缺 photo
         // （#3270 形态：bootstrap 库与存量库两份真相）⇒ 这里把两边都钉住。
         assertThat(read("backend/admin-api/src/main/resources/db/migration/V153__inbound_source_photo.sql"))

@@ -100,6 +100,36 @@ public class InboundOrderItem {
      */
     private Integer rollCount;
 
+    /** 仓位引用（V194）：仅成品单有值；过账时分配（同一事务内写） */
+    private Long locationId;
+
+    /** 仓位号快照（V194）：仓位行改号/软删后历史单据仍可追溯 */
+    private String binCode;
+
+    /** 成品行来源订单（V194） */
+    private String orderId;
+
+    /** 成品行来源订单明细（V194）：与 {@code finished_goods_stock.order_item_id} 同键 */
+    private String orderItemId;
+
+    /** 所属套（V197 / issue #7762）：成品入库按「套 × 部位」逐行入库 */
+    private String setId;
+
+    /** 套号快照 */
+    private String setNo;
+
+    /** 部位码短码快照（标签与追溯用） */
+    private String shortCode;
+
+    /** 成品行来源订单号快照（V194）：成品在库行展示用（不必回表 orders） */
+    private String orderNo;
+
+    /** 计量单位（V194）：m = 米（布料行恒为米）/ set = 套（成品行） */
+    private String unit;
+
+    /** 品名快照（V194）：成品行没有 SKU 货号，展示要它 */
+    private String productName;
+
     private String remark;
 
     private OffsetDateTime createdAt;

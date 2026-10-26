@@ -3,13 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui'
-import {
-  printBodyFontPt,
-  printContentInsetMm,
-  printPageBoxMm,
-  printUsableBoxMm,
-  type PrintMediaId,
-} from '@/lib/print-media'
+import { printBodyFontPt, printContentInsetMm, printPageBoxMm, type PrintMediaId } from '@/lib/print-media'
 import { captureNodeToPngBlob, copyPngToClipboard, downloadPng } from '@/lib/print-capture'
 import { extractApiErrorMessage } from '@/lib/api-error'
 import type { PrintTarget } from '@/lib/print-doc'
@@ -94,6 +88,11 @@ export interface PrintDocPreviewProps {
   media: PrintMediaId
   /** 该单据（**同一个组件**，且**不传 `printTarget`** —— 预览实例永远不上纸） */
   children: ReactNode
+  /**
+   * **本张纸的长度（mm）** —— 只对「纸长按内容撑开」的介质有意义（洗水唛，issue #7776）。
+   * 与 `@page`、蓝牙直连的画布**同一个数**：三处同源，预览里看到的纸就是打出来的纸。
+   */
+  lengthMm?: number
   /** 点「打印」（由调用方经 `usePrintDoc().requestPrint` 走唯一入口） */
   onPrint: () => void
   onClose: () => void
@@ -135,12 +134,16 @@ export default function PrintDocPreview({
   notice,
   actions,
   docs,
+  lengthMm,
   onSelect,
 }: PrintDocPreviewProps) {
-  const box = printPageBoxMm(media)
+  // 纸的**整幅尺寸**：宽度取自介质矩阵；**长度**按内容撑开的那一档由调用方给
+  //（issue #7776：洗水唛 = 50mm 宽连续纸卷，纸长 = 内容高度，与 `@page` / 直连画布同一个数）
+  const mediaBox = printPageBoxMm(media)
+  const box = { widthMm: mediaBox.widthMm, heightMm: Math.max(mediaBox.heightMm, lengthMm ?? 0) }
   // 纸框的**版面内缩**（不是 `@page` 边距：A4 的 `@page` 边距是 0、内缩在单据容器 padding 上，issue #7309）
   const margin = printContentInsetMm(media)
-  const usable = printUsableBoxMm(media)
+  const usable = { widthMm: box.widthMm - margin.xMm * 2, heightMm: box.heightMm - margin.yMm * 2 }
   const stageRef = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(1)
   const [check, setCheck] = useState<SheetCheckResult | null>(null)

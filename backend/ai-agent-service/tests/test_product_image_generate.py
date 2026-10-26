@@ -86,7 +86,7 @@ class TestToolContract:
     def test_parameters_declare_required_product_id_and_kind_enum(self, tool):
         params = tool.parameters
         assert params["required"] == ["product_id"]
-        assert params["properties"]["kind"]["enum"] == ["main", "texture", "craft", "scene"]
+        assert params["properties"]["kind"]["enum"] == ["main", "white", "texture", "craft", "scene"]
         assert params["properties"]["kind"]["default"] == "main"
 
     def test_description_is_b_side_only(self, tool):

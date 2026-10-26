@@ -26,10 +26,42 @@ import { toastRequestError } from '@/lib/api-error'
 
 const KINDS: Array<{ value: AiProductImageKind; label: string }> = [
   { value: 'main', label: '主图' },
+  { value: 'white', label: '白底图' },
   { value: 'texture', label: '材质细节' },
   { value: 'craft', label: '工艺细节' },
   { value: 'scene', label: '场景图' },
 ]
+
+/**
+ * 主图构图变体（issue #7782，与 ai-agent 的 `MAIN_VARIANTS` 同序）。
+ *
+ * 用户 2026-10-25 反馈「主图图片生成的都一样」——根因不是模型，是我们只有一套 main 提示词，
+ * 连点两次等于把同一个模板跑两遍。这里按生成次数轮换构图，面板上直接写出「这次是哪一种」。
+ */
+const MAIN_COMPOSITIONS = ['正面棚拍', '半垂坠', '悬挂近景'] as const
+
+/**
+ * 「一键生成整套」的 8 张（用户 2026-10-25 21:09：「不如直接默认生成一套图片，主图 3 张，详细图 5 张，
+ * 对用户更友好一点」）。
+ *
+ * 口径对齐淘宝 5 张主图 = 5 个岗位：
+ * - 主图 3 张：正面棚拍（抢点击）/ 半垂坠（垂感）/ 白底图（第 5 位合规位 + 免费流量位）；
+ * - 详情图 5 张：材质微距 / 材质平铺 / 工艺细节 / 场景·客厅 / 场景·卧室。
+ * 单张不满意仍可在下面按用途补（见 KINDS）。
+ */
+const SET_PLAN: Array<{ kind: AiProductImageKind; variant: number; label: string }> = [
+  { kind: 'main', variant: 0, label: '主图·正面棚拍' },
+  { kind: 'main', variant: 1, label: '主图·半垂坠' },
+  { kind: 'white', variant: 0, label: '白底图' },
+  { kind: 'texture', variant: 0, label: '材质微距' },
+  { kind: 'texture', variant: 1, label: '材质平铺' },
+  { kind: 'craft', variant: 0, label: '工艺细节' },
+  { kind: 'scene', variant: 0, label: '场景·客厅' },
+  { kind: 'scene', variant: 1, label: '场景·卧室' },
+]
+
+/** 同时生成几张：太多会互相抢配额，太少会让商家干等 5 分钟以上。 */
+const SET_CONCURRENCY = 3
 
 const FAILURE_MESSAGE = '生成失败，请稍后重试，或直接上传图片'
 
@@ -84,6 +116,14 @@ export default function ProductImageAI({
   const [error, setError] = useState('')
   /** 上一次**自动填入表单**的结果（只用于「再生成一张」按钮文案与绿色状态行）。 */
   const [applied, setApplied] = useState<{ url: string; kind: AiProductImageKind } | null>(null)
+  /** 本次页面会话里「主图」已生成几张 —— 用来轮换构图，避免两张一个样。 */
+  const [mainGenerated, setMainGenerated] = useState(0)
+  /** 整套生成的进度（null = 没在跑整套）。 */
+  const [setProgress, setSetProgress] = useState<{ done: number; total: number } | null>(null)
+  /** 整套生成的结果小结（成功几张 / 哪几张没成功）。 */
+  const [setSummary, setSetSummary] = useState('')
+
+  const nextVariant = mainGenerated % MAIN_COMPOSITIONS.length
 
   /** 图片列表变化（上传 / 删除 / 自动填入）时，样图始终指向仍然存在的一张。 */
   useEffect(() => {
@@ -96,27 +136,70 @@ export default function ProductImageAI({
   }
 
   /** 写进表单：主图 ⇒ 主图列表末尾；其余 ⇒ 详情图列表末尾。返回是否写进去了（满了就是 false）。 */
-  const apply = (url: string, target: AiProductImageKind): boolean => {
-    const ok = target === 'main' ? onApplyMain(url) : onApplyDetail(url)
-    if (ok) setApplied({ url, kind: target })
+  const apply = (url: string, target: AiProductImageKind, remember = true): boolean => {
+    const ok = target === 'main' || target === 'white' ? onApplyMain(url) : onApplyDetail(url)
+    if (ok && remember) setApplied({ url, kind: target })
     return ok
+  }
+
+  /** 一键生成整套 8 张：并发 3，边生成边落位；失败的按名字列出来，可单独补。 */
+  const generateSet = async () => {
+    if (!sample || loading) return
+    setLoading(true)
+    setError('')
+    setSetSummary('')
+    clearFeedback()
+    const total = SET_PLAN.length
+    setSetProgress({ done: 0, total })
+    const queue = [...SET_PLAN]
+    const failed: string[] = []
+    let ok = 0
+    const worker = async () => {
+      for (let item = queue.shift(); item; item = queue.shift()) {
+        try {
+          const res = await aiProductImageApi.generate({
+            imageUrl: sample,
+            productName,
+            kind: item.kind,
+            variant: item.variant,
+          })
+          const url = res.data.data?.url
+          if (url && apply(url, item.kind, false)) ok += 1
+          else failed.push(item.label)
+        } catch {
+          failed.push(item.label)
+        }
+        setSetProgress((p) => (p ? { ...p, done: p.done + 1 } : p))
+      }
+    }
+    await Promise.all(Array.from({ length: SET_CONCURRENCY }, worker))
+    setSetProgress(null)
+    setLoading(false)
+    if (failed.length === 0) {
+      setSetSummary(`已生成 ${ok}/${total} 张，已按用途加入主图与详情图。`)
+    } else {
+      setError(`已生成 ${ok}/${total} 张；未成功：${failed.join('、')}（可在下面按用途单独补）。`)
+    }
   }
 
   const generate = async () => {
     if (!sample || loading) return
     setLoading(true)
     setError('')
+    setSetSummary('')
     try {
-      const res = await aiProductImageApi.generate({ imageUrl: sample, productName, kind })
+      const variant = kind === 'main' ? nextVariant : 0
+      const res = await aiProductImageApi.generate({ imageUrl: sample, productName, kind, variant })
       const url = res.data.data?.url
       if (!url) {
         setError(FAILURE_MESSAGE)
         return
       }
       setResult(url)
+      if (kind === 'main') setMainGenerated((n) => n + 1)
       // 生成成功即落位（issue #7533）：多一步「用这张」= 商家漏点即白生成。
       if (!apply(url, kind)) {
-        setError(kind === 'main' ? MAIN_FULL : DETAIL_FULL)
+        setError(kind === 'main' || kind === 'white' ? MAIN_FULL : DETAIL_FULL)
       }
     } catch (e) {
       const message = failureMessage(e)
@@ -132,7 +215,7 @@ export default function ProductImageAI({
     <div className="mt-3 rounded-lg border border-neutral-200 bg-neutral-50/60 px-3 py-2.5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-neutral-500">
-          以样图生成接近实物的商品图（约 40 秒，每次 1 张）。
+          以样图生成接近实物的商品图：一键出整套（主图 3 + 详情图 5），也可单张补。
         </p>
         <Button
           type="button"
@@ -187,6 +270,24 @@ export default function ProductImageAI({
               ))}
             </div>
           )}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              loading={loading && !!setProgress}
+              onClick={generateSet}
+            >
+              一键生成整套（主图 3 + 详情图 5）
+            </Button>
+            <span className="text-xs text-neutral-400">
+              {setProgress
+                ? `生成中 ${setProgress.done}/${setProgress.total}…`
+                : '共 8 张，约 2~4 分钟；哪张不满意可在下面单独补生成。'}
+            </span>
+            {setSummary && <span role="status" className="text-xs text-green-600">{setSummary}</span>}
+          </div>
+
           <div className="flex flex-wrap gap-1.5" role="group" aria-label="生成用途">
             {KINDS.map((item) => (
               <Button
@@ -216,11 +317,20 @@ export default function ProductImageAI({
             >
               {applied ? '再生成一张' : '生成'}
             </Button>
-            <span className="text-xs text-neutral-400">细节图会加入下方「详情图」。</span>
+            <span className="text-xs text-neutral-400">
+              {kind === 'main'
+                ? `本次构图：${MAIN_COMPOSITIONS[nextVariant]}`
+                : kind === 'white'
+                  ? '白底图：纯白背景、无文字，可直接放第 5 张'
+                  : '细节图会加入下方「详情图」'}
+            </span>
             {error && <span className="text-xs text-red-600">{error}</span>}
             {applied && (
               <span role="status" className="text-xs text-green-600">
-                {applied.kind === 'main' ? '已加入主图' : '已加入「详情图」'}；可继续生成其他用途。
+                {applied.kind === 'main' || applied.kind === 'white'
+                  ? `已加入主图${applied.kind === 'white' ? '（白底图）' : ''}`
+                  : '已加入「详情图」'}
+                ；可继续生成其他用途。
               </span>
             )}
           </div>
@@ -236,7 +346,7 @@ export default function ProductImageAI({
                 className="h-40 w-40 rounded-lg border border-neutral-200 object-cover"
               />
               <p className="text-xs text-neutral-500">
-                请核对颜色与工艺；不满意可再生成一张（替换这一张），或在图片列表里删除。
+                请核对颜色与工艺；不满意可再生成一张（追加一张，不会替换已填入的图），或在图片列表里删除。
               </p>
             </div>
           )}

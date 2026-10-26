@@ -111,6 +111,30 @@ def live_migration_indexes() -> dict[str, tuple[str, str, str, str]]:
     return out
 
 
+def dropped_migration_indexes() -> set[str]:
+    """活目录里**最后一次事件是 DROP** 的索引名（同一索引先建后删 ⇒ 豁免；删了又建 ⇒ 不豁免）。
+
+    <p>为什么需要它（V197 / issue #7762）：V196 建了 `uk_finished_goods_order_item_in_stock`
+    （订单行粒度在库唯一），V197 换成「套 × 部位」两条部分唯一索引并 `DROP INDEX`
+    —— 表还在、索引已合法消失。只豁免「表被删」会让这种**同一张表的索引换代**永远挂着一条假红。</p>
+
+    <p>🔴 判据必须看**版本顺序**：`idx_orders_tenant_created` 这类索引在历史迁移里被删后**又重建**
+    —— 只看「出现过 DROP」会把活索引误判成已删（实测会把判别力自证弄红）。故取每个索引名在
+    全部迁移里的**最后一条事件**（按文件名升序扫描、后写覆盖）。</p>
+    """
+    drop_re = re.compile(r"DROP\s+INDEX\s+(?:IF\s+EXISTS\s+)?([a-zA-Z0-9_]+)", re.IGNORECASE)
+    last_event: dict[str, str] = {}
+    for f in sorted(LIVE_DIR.glob("V*.sql")):
+        # 🔴 先剥注释：`-- DROP INDEX IF EXISTS xxx;`（被注释掉的旧语句）不是一次真实删除
+        text = re.sub(r"/\*.*?\*/", "", f.read_text(encoding="utf-8"), flags=re.S)
+        text = re.sub(r"--[^\n]*", "", text)
+        for name in parse_indexes(text):
+            last_event[name.lower()] = "create"
+        for m in drop_re.finditer(text):
+            last_event[m.group(1).lower()] = "drop"
+    return {name for name, kind in last_event.items() if kind == "drop"}
+
+
 def schema_indexes(sql: str | None = None) -> dict[str, tuple[str, str, str]]:
     return parse_indexes(SCHEMA.read_text(encoding="utf-8") if sql is None else sql)
 
@@ -124,10 +148,13 @@ def drift_problems(schema_sql: str | None = None) -> list[str]:
     text = (SCHEMA.read_text(encoding="utf-8") if schema_sql is None else schema_sql)
     known_tables = parse_created_tables(text)
     boot = parse_indexes(text)
+    dropped = dropped_migration_indexes()
     problems: list[str] = []
     for name, (table, cols, where, mig) in sorted(live_migration_indexes().items()):
         if table not in known_tables:
             continue  # 表已被后续迁移 DROP ⇒ 索引无处可落（合法）
+        if name.lower() in dropped:
+            continue  # 索引被后续迁移 DROP（索引换代，表还在）⇒ 终态不属于建库脚本
         if name not in boot:
             problems.append(f"{name}: {mig} 建了，建库脚本里没有（表 {table}）")
         elif boot[name] != (table, cols, where):

@@ -47,6 +47,18 @@ public class InboundOrder {
      * 分界必须是**可机械判定**、且**只由这条链写**的列值 —— 该值不由客户端给（见 {@code normalizeSource}）。</p>
      */
     public static final String SOURCE_PHOTO = "photo";
+    /**
+     * 成品**打包入库**（V196 / issue #7750）：打包动作自动建单，`biz_category=finished`。
+     *
+     * <p>与 fabric 的来源并列而不是另开一张表：单据生命周期只有一套（见 V196 头注）。
+     * 该来源的单据**只由** {@code FinishedGoodsService#receiveOnPack} 写 —— 商家手建单不接受它。</p>
+     */
+    public static final String SOURCE_PACKING = "packing";
+
+    /** 业务类别 · 布料（默认）：过账 = 批次 + SKU 米数库存 + 移动加权成本。 */
+    public static final String BIZ_FABRIC = "fabric";
+    /** 业务类别 · 成品（V196）：过账 = 分配仓位 + 写 {@code finished_goods_stock}，不碰 SKU 米数库存。 */
+    public static final String BIZ_FINISHED = "finished";
 
     @TableId(type = IdType.ASSIGN_UUID)
     private String id;
@@ -70,8 +82,19 @@ public class InboundOrder {
     /** 供应商送货单号（对账用） */
     private String supplierDocNo;
 
-    /** 仓库/仓位（文本） */
+    /** 仓库/仓位（文本快照 —— 与 {@link #warehouseId} **不是同一件事**：那是主数据引用） */
     private String warehouse;
+
+    /** 仓库引用（V196）：NULL = 未指定（存量单据全为 NULL） */
+    private Long warehouseId;
+
+    /**
+     * 业务类别（V196）：{@link #BIZ_FABRIC} / {@link #BIZ_FINISHED}。
+     *
+     * <p>过账语义的**唯一分界**：fabric 走批次与 SKU 库存，finished 走仓位与成品在库。
+     * 存量行由 DB 缺省值补成 fabric（V196 NOT NULL DEFAULT 'fabric'）。</p>
+     */
+    private String bizCategory;
 
     /** 入库日期（业务日期，可回填历史单） */
     private LocalDate inboundDate;

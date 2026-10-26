@@ -11,7 +11,7 @@
 //      打印态由 `ship-label.css` 隔离（只有标签上纸）。
 
 import { createApi, SESSION_EXPIRED } from './api.mjs'
-import { renderReadyOrders, renderShipLabel } from './shipment.mjs'
+import { renderReadyOrders, renderShipLabel, shipLabelLengthMm, shipLabelPageRule } from './shipment.mjs'
 
 /** 登录页（同源静态页；本页未登录时的出口）。 */
 export const SHIPMENT_LOGIN_HREF = '/w/'
@@ -45,14 +45,14 @@ function loginFallback() {
   </section>`
 }
 
-/** 发货标签预览层（含唯一的打印入口）。 */
+/** 发货联（整套出库单）预览层（含唯一的打印入口）。 */
 function labelSheet(order) {
   return `<section class="wh5-label-sheet" id="wh5-ship-label-sheet" role="dialog" aria-modal="true"
-      aria-label="发货标签预览">
-    <p class="wh5-sub" id="wh5-label-hint">核对无误后打印：50mm × 70mm 标签纸，贴在箱上</p>
+      aria-label="发货联预览">
+    <p class="wh5-sub" id="wh5-label-hint">核对无误后打印：50mm × 70mm 标签纸，整单一张（该订单全部套），贴在箱上</p>
     ${renderShipLabel(order)}
     <div class="wh5-label-actions">
-      <button type="button" class="wh5-entry" id="wh5-label-print">打印标签</button>
+      <button type="button" class="wh5-entry" id="wh5-label-print">打印发货联</button>
       <button type="button" class="wh5-ghost" id="wh5-label-close">关闭</button>
     </div>
   </section>`
@@ -95,6 +95,8 @@ export function createShipmentApp({ doc, api, win = globalThis, replace = null }
     // 🔴 预览层在列表**之后**（列表不重排）⇒ 单多时要滚下去才看得到。
     //    点了「发货标签」却看不到纸面 = 工人以为没反应，会连点（真机现场最容易发生的一类）。
     if (open && typeof doc.getElementById === 'function') {
+      // 预览一打开就把纸长按内容定下来（屏幕上看到的纸 = 打出来的纸）
+      fitLabelToPaper()
       const sheet = doc.getElementById('wh5-ship-label-sheet')
       if (sheet && typeof sheet.scrollIntoView === 'function') sheet.scrollIntoView({ block: 'start' })
     }
@@ -121,8 +123,35 @@ export function createShipmentApp({ doc, api, win = globalThis, replace = null }
     }
   }
 
+  /**
+   * 纸长按内容撑开（issue #7776）：量一次纸面高度 ⇒ 定纸长 ⇒ **同时**改标签高度与 `@page`。
+   *
+   * 🔴 预览与打印走**同一条**：屏幕上看到的纸就是打出来的纸（改前固定 70mm ⇒ 短标签下沿一大段空白）。
+   * 量高度前必须临时放开固定高（屏幕态也是 70mm），否则恒量到 70mm。
+   */
+  function fitLabelToPaper() {
+    if (typeof doc?.getElementById !== 'function') return
+    const label = doc.getElementById('wh5-ship-label')
+    if (!label) return
+    const previous = label.style?.height ?? ''
+    if (label.style) label.style.height = 'auto'
+    const px = Number(label.scrollHeight ?? 0)
+    if (label.style) label.style.height = previous
+    const lengthMm = shipLabelLengthMm(px)
+    if (label.style) label.style.height = `${lengthMm}mm`
+    let style = doc.getElementById('wh5-label-page-size')
+    if (!style) {
+      style = doc.createElement('style')
+      style.id = 'wh5-label-page-size'
+      doc.head?.appendChild?.(style)
+    }
+    style.textContent = shipLabelPageRule(lengthMm)
+  }
+
   /** 打印**只有这一个调用点**（预览里的按钮）—— 别处再写一处就会出现「两次打印两张纸」。 */
   function printLabel() {
+    // 打印前再量一次：字体 / 内容随设备与缩放变化，纸长每次都要按**当前**纸面算
+    fitLabelToPaper()
     if (typeof win?.print === 'function') win.print()
   }
 

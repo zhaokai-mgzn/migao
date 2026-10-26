@@ -82,21 +82,64 @@ class InboundOrderControllerTest {
     }
 
     @Test
-    @DisplayName("PR-035 列表与建单都把当前租户透传给服务（跨租户读 = 数据泄漏）")
+    @DisplayName("PR-035 列表与建单都把当前租户透传给服务（跨租户读 = 数据泄漏；V196 起建单即过账）")
     void listAndCreatePassTenant() {
         TenantContext.setTenantId(7L);
-        when(inboundOrderService.list(any(), any(), any())).thenReturn(List.of(new InboundOrderLine()));
-        when(inboundOrderService.create(any(), any(), any())).thenReturn(new InboundOrderResponse());
+        when(inboundOrderService.list(any(), any(), any(), any())).thenReturn(List.of(new InboundOrderLine()));
+        when(inboundOrderService.createAndPost(any(), any(), any())).thenReturn(new InboundOrderResponse());
 
-        ApiResponse<List<InboundOrderLine>> list = controller.list("柯桥", "draft");
+        ApiResponse<List<InboundOrderLine>> list = controller.list("柯桥", "draft", "finished");
         assertThat(list.getData()).hasSize(1);
-        verify(inboundOrderService).list(eq("柯桥"), eq("draft"), eq(7L));
+        // 类别维（V196 / issue #7794）：查询参数必须原样到服务层 —— 丢掉它 = 两个视图都拿全量（混排照旧）。
+        verify(inboundOrderService).list(eq("柯桥"), eq("draft"), eq("finished"), eq(7L));
 
         InboundOrderCreateRequest req = new InboundOrderCreateRequest();
         controller.create(req);
-        verify(inboundOrderService).create(eq(req), eq(7L), any());
+        // V194（issue #7750）：建单端点走 createAndPost（建单 + 过账一次请求）——
+        // 不再是「先建草稿、再点过账」。判据 = 只允许调 createAndPost，调 create 即红。
+        verify(inboundOrderService).createAndPost(eq(req), eq(7L), any());
 
         // 建单的操作人取自认证上下文；无认证时退化为 "system"（不写 null、不抛异常）
-        verify(inboundOrderService).create(eq(req), eq(7L), eq("system"));
+        verify(inboundOrderService).createAndPost(eq(req), eq(7L), eq("system"));
+        verify(inboundOrderService, never()).create(any(), any(), any());
+    }
+
+    /**
+     * issue #7794：成品单详情要能看到**仓位号**（成品仓入库的全部意义）。
+     *
+     * <p>本用例只守 Controller 这一层的**不改写**契约：服务层给的明细（含 binCode / setNo / shortCode）
+     * 必须原样出参。字段映射本体（{@code BeanUtils.copyProperties}）由
+     * {@code InboundOrderServiceTest.InboundBizCategory#finishedDetailCarriesBinAndSetFields} 守 ——
+     * 那里断到的是「实体列 → 响应字段」的真映射，这里断到的是「Controller 不吞字段」。</p>
+     */
+    @Test
+    @DisplayName("#7794 成品单详情：仓位号 / 套号 / 短码原样出参（Controller 不改写服务层明细）")
+    void finishedDetailKeepsBinAndSetFields() {
+        TenantContext.setTenantId(7L);
+        InboundOrderResponse resp = new InboundOrderResponse();
+        resp.setBizCategory("finished");
+        InboundOrderResponse.Item item = new InboundOrderResponse.Item();
+        item.setBinCode("A-01");
+        item.setSetNo("JG-20261026-001-001");
+        item.setShortCode("AB12CD34");
+        item.setUnit("set");
+        // issue #7799：成品单明细要能看到「来源订单号」（回查是哪张订单的）
+        item.setOrderNo("SO-20261026-0001");
+        resp.setItems(List.of(item));
+        when(inboundOrderService.detail(eq("o-finished-1"), eq(7L))).thenReturn(resp);
+
+        ApiResponse<InboundOrderResponse> detail = controller.detail("o-finished-1");
+
+        assertThat(detail.getData().getBizCategory()).isEqualTo("finished");
+        assertThat(detail.getData().getItems()).hasSize(1);
+        InboundOrderResponse.Item out = detail.getData().getItems().get(0);
+        assertThat(out.getBinCode()).isEqualTo("A-01");
+        assertThat(out.getSetNo()).isEqualTo("JG-20261026-001-001");
+        assertThat(out.getShortCode()).isEqualTo("AB12CD34");
+        assertThat(out.getOrderNo()).as("#7799 来源订单号原样出参（Controller 不改写）")
+                .isEqualTo("SO-20261026-0001");
+        assertThat(out.getUnit()).isEqualTo("set");
+        // 租户上下文同样必须透传（跨租户读 = 数据泄漏）
+        verify(inboundOrderService).detail(eq("o-finished-1"), eq(7L));
     }
 }

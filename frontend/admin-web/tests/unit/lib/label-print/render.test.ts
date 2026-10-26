@@ -30,7 +30,7 @@ const LABELS: WashLabelInput[] = [
     processingOrderNo: 'JG-20260921-8237',
     rows: [
       { key: 'customer', text: '客户 赵凯', maxLines: 1 },
-      { key: 'pieceName', text: '客厅窗帘A', maxLines: 2 },
+      { key: 'color', text: '客厅窗帘A', maxLines: 2 },
     ],
   },
   // 该部位被撤销（无码）⇒ 这一张**不许** drawImage
@@ -38,7 +38,7 @@ const LABELS: WashLabelInput[] = [
     qrValue: null,
     shortCode: 'ABCDEFGH',
     processingOrderNo: 'JG-20260921-8237',
-    rows: [{ key: 'pieceName', text: '卧室窗帘', maxLines: 2 }],
+    rows: [{ key: 'color', text: '卧室窗帘', maxLines: 2 }],
   },
 ]
 

@@ -94,6 +94,8 @@ vi.mock('@/lib/api', () => ({
   batchStockApi: { batches: (...a: unknown[]) => mockBatches(...a) },
   // 与「读失败 ≠ 空态」正交的读面：挂起即可（不 resolve 也不 reject，页面读数不依赖它们）
   craftCalcApi: { preview: () => new Promise(() => {}) },
+  // 建单页的仓库候选（issue #7799）：同上，挂起即可 —— 本文件判的是商品搜索 / 规格明细两条读面
+  warehouseApi: { list: () => new Promise(() => {}) },
   autoFeaturesApi: {
     preview: () => Promise.resolve({ data: { data: { auto_features: [], door_width: null, fullness_used: 2.0, notice: 'missing-door-width' } } }),
   },

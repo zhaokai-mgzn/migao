@@ -178,6 +178,16 @@
     "backend/admin-api/src/main/java/com/migao/admin/service/WarehouseSeedService.java::warehouseMapper": {
       "table": "warehouses",
       "handling": "backend/admin-api/src/main/java/com/migao/admin/service/WarehouseSeedService.java"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/OutboundOrderService.java::outboundOrderMapper": {
+      "table": "outbound_orders",
+      "handling": "none",
+      "note": "出库单号由服务端生成（CK-年月-随机），同号冲突概率极低且属「不该发生」形态 —— 按缺口登记（无 ON CONFLICT / 无 DuplicateKeyException 映射）；若要根治，建单路径应改为 ON CONFLICT DO NOTHING + 影响行数判首次（issue #7750 已登记为已知缺口）。"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/WarehouseLocationService.java::locationMapper": {
+      "table": "warehouse_locations",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/WarehouseLocationService.java",
+      "note": "仓位号租户内唯一（uk_warehouse_locations_bin WHERE deleted=0）：新建走 insert，唯一冲突由服务端 catch DuplicateKeyException 映射成可读 422（「仓位号已存在」）；自动分配另一条路径走 mapper 的 ON CONFLICT DO NOTHING（claimBin）+ count+1 顺延"
     }
   }
 }

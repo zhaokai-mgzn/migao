@@ -46,8 +46,8 @@ export type WashLabelRowKey =
   | 'customer'
   | 'setNo'
   | 'positionKind'
-  | 'pieceName'
   | 'color'
+  | 'doorWidth'
   | 'meters'
   | 'size'
   | 'craft'
@@ -55,15 +55,23 @@ export type WashLabelRowKey =
   | 'delivery'
   | 'specialOptions'
   | 'remark'
-  | 'formula'
 
-/** 纸面行的**行序**（照真实工单：亿家纺织「成品定制」58mm 竖排小票的信息顺序） */
+/**
+ * 纸面行的**行序**（照真实工单：亿家纺织「成品定制」58mm 竖排小票的信息顺序）。
+ *
+ * 🔴 **2026-10-25 用户裁定（issue #7776）退场两行**，勿"顺手加回"：
+ *   ① **商品名称（件名）** —— 逐字「移除商品名称展示」；
+ *   ② **算料公式（褶倍公式）** —— 逐字「移除褶倍公式字段展示」（它是算料引擎的**内部推导**，
+ *      车间按纸面裁布用不到；印出来只会占纸面、挤出可读字号）。
+ *   同时保留「**货号 / 颜色 / 门幅 + 其余工艺信息**」（用户逐字）：颜色与门幅已在表内，
+ *   货号待加工单快照补 `productCode`（后端单，**未在册前不印**——不拿 SKU 组合码冒充货号，issue #7636）。
+ */
 export const WASH_LABEL_ROW_KEYS: readonly WashLabelRowKey[] = [
   'customer',
   'setNo',
   'positionKind',
-  'pieceName',
   'color',
+  'doorWidth',
   'meters',
   'size',
   'craft',
@@ -71,16 +79,15 @@ export const WASH_LABEL_ROW_KEYS: readonly WashLabelRowKey[] = [
   'delivery',
   'specialOptions',
   'remark',
-  'formula',
 ]
 
-/** 行数预算（件名 / 加工方式 / 备注 / 算料公式可折行；其余单行）—— 与 `TaskCardPrint` 的 clamp 口径同源 */
+/** 行数预算（加工方式 / 特殊选项 / 备注可折行；其余单行）—— 与 `TaskCardPrint` 的 clamp 口径同源 */
 const MAX_LINES: Record<WashLabelRowKey, number> = {
   customer: 1,
   setNo: 1,
   positionKind: 1,
-  pieceName: 2,
   color: 1,
+  doorWidth: 1,
   meters: 1,
   size: 1,
   craft: 2,
@@ -88,7 +95,6 @@ const MAX_LINES: Record<WashLabelRowKey, number> = {
   delivery: 1,
   specialOptions: 2,
   remark: 2,
-  formula: 2,
 }
 
 /** 用料 = 面料米数优先；没有则退回加工费米数（两者都是「要用多少料」的同一件事） */
@@ -209,13 +215,15 @@ export function washLabelRows(input: WashLabelRowsInput): WashLabelRow[] {
 
   push('positionKind', position.position_kind ?? '', '部位')
 
-  // 件名：部位名优先，退回商品名（纸面要能认出「这一张是给哪一件的」）
-  const pieceName = (position.position_name || position.product_name || '').trim()
-  push('pieceName', pieceName === '' ? '—' : pieceName)
-
-  // 色号已含在件名里 ⇒ 不重复渲染（50mm 下仍保留这条去重：恢复独立渲染只是把同名信息多印一遍）
+  // 🔴 商品名称（件名）**已退场**（issue #7776，用户 2026-10-25 逐字「移除商品名称展示」）：
+  // 纸面改印「这一件用的是什么布」—— 颜色 / 门幅（+ 其余工艺信息），而不是商品名。
+  // 原「色号已含在件名里 ⇒ 不重复渲染」的去重随件名一起退场：件名不在了，颜色必须**恒印**。
   const colorName = typeof input.item?.colorName === 'string' ? input.item.colorName.trim() : ''
-  if (colorName !== '' && !pieceName.includes(colorName)) push('color', colorName, '色号')
+  push('color', colorName, '颜色')
+
+  // 门幅：快照落的是 SKU 原串（`2.8米` / `2.8` 两种形态都有）⇒ 只补单位、不改数值（缺值不渲染）
+  const doorWidth = typeof input.item?.doorWidth === 'string' ? input.item.doorWidth.trim() : ''
+  push('doorWidth', /^[0-9.]+$/.test(doorWidth) ? `${doorWidth}米` : doorWidth, '门幅')
 
   push('meters', washLabelMeters(input.item), '用料')
   push('size', washLabelSize(position.width, position.height), '宽高')
@@ -226,8 +234,7 @@ export function washLabelRows(input: WashLabelRowsInput): WashLabelRow[] {
   push('specialOptions', washLabelSpecialOptions(input.item), '特殊选项')
   push('remark', washLabelRemark(input.item), '备注')
 
-  // 算料公式**不带前缀**（形态本身就是 `韩褶公式：…`，再加「算料公式」是重复）
-  push('formula', washLabelFormula(input.item))
+  // 🔴 算料公式（褶倍公式）**已退场**（issue #7776，用户 2026-10-25 逐字「移除褶倍公式字段展示」）。
 
   // 行序是纸面契约：即使某几行缺席，剩下的也必须按 `WASH_LABEL_ROW_KEYS` 排
   const order = new Map(WASH_LABEL_ROW_KEYS.map((key, index) => [key, index]))

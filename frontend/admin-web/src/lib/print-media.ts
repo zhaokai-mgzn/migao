@@ -56,6 +56,25 @@ export interface PrintMediaSpec {
   carbonCopies: number
   /** 正文基准字号（pt）—— 针打不许沿用 A4 的字号预算 */
   minFontPt: number
+  /**
+   * **纸长按内容撑开**（连续纸卷专用，issue #7776）。
+   *
+   * 登记了它 ⇒ `pageBoxMm.heightMm` / `pageSize` 描述的是**最短**纸长（驱动里该登记的那档），
+   * 实际纸长由 `frontend/admin-web/src/lib/label-print/wash-label-metrics.ts` 的 `washLabelLengthMm()`
+   * 按纸面内容算出、夹在 `[minMm, maxMm]`，`@page` 用 {@link printPageRuleForLength} 现拼。
+   *
+   * 🔴 三处必须读**同一个数**：系统打印的 `@page` / 蓝牙直连的画布高度 / 打印预览的纸框 ——
+   * 各算一份 ⇒ 预览与纸上又会对不上（issue #6656 踩过的形态）。
+   */
+  lengthMm?: {
+    mode: 'content'
+    /** 最短纸长（mm）；等于 `pageBoxMm.heightMm` */
+    minMm: number
+    /** 最长纸长（mm）：再长说明内容该拆了，**夹住**而不是无限印 */
+    maxMm: number
+    /** 为什么按内容撑开（人读） */
+    why: string
+  }
   /** `measured` = 有实测读数；`pending-field-measurement` = 通用参数 + 待现场实测 */
   measurement: 'measured' | 'pending-field-measurement'
   /** 待实测清单（非 `measured` 时**必须非空** —— 守卫判红） */
@@ -143,6 +162,34 @@ export function printDotGeometry(media: PrintMediaId): PrintDotGeometry {
 export function printPageRule(media: PrintMediaId): string {
   const spec = printMediaSpec(media)
   return `@page { size: ${spec.pageSize}; margin: ${spec.pageMargin}; }`
+}
+
+/**
+ * 纸长**按内容撑开**的介质（连续纸卷）的纸长区间（mm）；没登记 ⇒ `null`。
+ * 真值源 = 矩阵的 `lengthMm`（本文件不写第二份）。
+ */
+export function printLengthRangeMm(media: PrintMediaId): { minMm: number; maxMm: number } | null {
+  const length = printMediaSpec(media).lengthMm
+  if (!length) return null
+  return { minMm: length.minMm, maxMm: length.maxMm }
+}
+
+/**
+ * `@page` 规则的**动态纸长写法**（issue #7776）：宽 / 边距仍取自矩阵，**长度由调用方给**
+ * （= `washLabelLengthMm()` 算出的纸长，夹在 `lengthMm.minMm ~ maxMm`）。
+ *
+ * 🔴 只对登记了 `lengthMm` 的介质开放：别的介质（A4 / 三联纸）纸型是固定的，
+ * 传长度进来 = 把别人的纸打成我们的口径 ⇒ **显式抛错**（fail-closed，不静默忽略）。
+ */
+export function printPageRuleForLength(media: PrintMediaId, lengthMm: number): string {
+  const spec = printMediaSpec(media)
+  const range = printLengthRangeMm(media)
+  if (!range) {
+    throw new Error(`介质 ${media} 没有登记 lengthMm（纸长按内容撑开）—— 不许用动态纸长覆盖固定纸型`)
+  }
+  const value = Number.isFinite(lengthMm) ? lengthMm : range.minMm
+  const clamped = Math.min(Math.max(value, range.minMm), range.maxMm)
+  return `@page { size: ${spec.pageBoxMm.widthMm}mm ${clamped}mm; margin: ${spec.pageMargin}; }`
 }
 
 /** 正文基准字号（pt）：介质决定版面预算，单据只读它、不自己定字号 */

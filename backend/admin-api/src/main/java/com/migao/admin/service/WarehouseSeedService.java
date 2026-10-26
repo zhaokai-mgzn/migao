@@ -70,7 +70,9 @@ public class WarehouseSeedService {
         // 默认值的单一来源 = OnboardingInitialData（迁移 V189 里同值，两处由用例 WH-002 对账）
         warehouse.setCode(OnboardingInitialData.DEFAULT_WAREHOUSE_CODE);
         warehouse.setName(OnboardingInitialData.DEFAULT_WAREHOUSE_NAME);
-        warehouse.setWarehouseType(Warehouse.TYPE_STORE);
+        // V194（issue #7750）：默认仓装的是**布料** ⇒ 类型 = 原料仓（与 V196 对存量默认仓的回填同口径；
+        // 成品仓由打包动作按需自动建，不在这里种 —— 没有成品时可少一个空仓）。
+        warehouse.setWarehouseType(Warehouse.TYPE_MATERIAL);
         warehouse.setIsDefault(true);
         warehouse.setStatus("active");
         try {

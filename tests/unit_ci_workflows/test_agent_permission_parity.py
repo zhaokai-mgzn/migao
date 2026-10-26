@@ -2144,6 +2144,8 @@ ROUTE_MENU_ANCHORS: dict[str, str] = {
     "/stock-ledger": "库存明细",
     # 盘点单（issue #7373）：节点码 = 守卫码 = 该页第一屏读端点码（`StocktakeController` 方法级 `inbound:view`）。
     "/stocktakes": "盘点单",
+    # 出库单（V196 / issue #7750）：新菜单节点 ⇒ 守卫与节点成对登记（判据 11 ③）。
+    "/outbound-orders": "出库单",
     # 🔴 2026-10-09（issue #6580）：`/settings/params`（「参数总览」一级项）已撤掉 ⇒ 本锚点
     # **删除**（陈旧登记即红：该 path 已不在 `config/menu.ts`）；旧链 `/settings/params` 保留为
     # 重定向（其守卫前缀 `/settings/params` 随之登记进 `ROUTE_WITHOUT_MENU_NODE`）。
@@ -2358,6 +2360,9 @@ MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
     "/stock-ledger": MenuReadAnchor("库存明细", "stock-ledger/page.tsx", ("stockLedgerApi.ledger",)),
     # 盘点单（issue #7373）：第一屏只有列表一个读端点（明细是**点击行**才拉的，按本节口径不收）。
     "/stocktakes": MenuReadAnchor("盘点单", "stocktakes/page.tsx", ("stocktakeApi.list",)),
+    # 🔴 V196 / issue #7750：出库单（`/outbound-orders`）第一屏读 `GET /api/admin/outbound-orders`
+    # （方法级 `inbound:view`，与菜单节点码同一把尺子）。
+    "/outbound-orders": MenuReadAnchor("出库单", "outbound-orders/page.tsx", ("outboundOrderApi.list",)),
     "/employees": MenuReadAnchor("员工管理", "employees/page.tsx", (
         "employeeApi.getEmployees", "employeeApi.loadPositions")),
     "/roles": MenuReadAnchor("岗位权限", "roles/page.tsx", (

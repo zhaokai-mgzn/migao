@@ -333,6 +333,7 @@
       "入库单": "inbound:view",
       "库存明细": "product:list",
       "盘点单": "inbound:view",
+      "出库单": "inbound:view",
       "发货单": "order:list",
       "余料台账": "processing:manage",
       "省料看板": "product:list",
@@ -367,6 +368,7 @@
       "省料看板": "product:list",
       "库存明细": "product:list",
       "盘点单": "inbound:view",
+      "出库单": "inbound:view",
       "员工管理": "employee:list",
       "岗位权限": "system:view",
       "企业基础设置（经营域）": "system:manage",
@@ -394,6 +396,7 @@
       "入库单": "inbound:view",
       "库存明细": "product:list",
       "盘点单": "inbound:view",
+      "出库单": "inbound:view",
       "发货单": "order:list",
       "余料台账": "processing:manage",
       "省料看板": "product:list",
@@ -550,6 +553,12 @@
       "key": "stocktakes",
       "name": "盘点单",
       "path": "/stocktakes",
+      "code": "inbound:view"
+    },
+    {
+      "key": "outbound-orders",
+      "name": "出库单",
+      "path": "/outbound-orders",
       "code": "inbound:view"
     },
     {
@@ -717,6 +726,10 @@
       "inbound:view"
     ],
     [
+      "/outbound-orders",
+      "inbound:view"
+    ],
+    [
       "/employees",
       "employee:list"
     ],
@@ -871,6 +884,18 @@
       "units": {
         "order:list": [
           "GET /api/admin/orders"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "outbound-orders",
+      "name": "出库单",
+      "path": "/outbound-orders",
+      "gate": "inbound:view",
+      "units": {
+        "inbound:view": [
+          "GET /api/admin/outbound-orders"
         ]
       },
       "visibility_rule": "all"

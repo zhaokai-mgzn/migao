@@ -2,8 +2,10 @@
 // PP-011（issue #4964 立版式 / **issue #5646 改判纸宽 30mm → 50mm**，用户裁定 2026-09-26 逐字
 // 「洗水码宽是50，长度根据我们实际需要来定」）：洗水码 = **竖版 50mm × 60mm 单列**，照**真实工单**
 // （亿家纺织「成品定制」58mm 竖排小票：单号/客户/第N套共M套/宽高/加工方式/用料表/备注/QR）的信息顺序。
-// 字段面 = 加工单号 / 客户 / 第N套共M套 / 部位 / 件名 / 色号 / 用料 / 宽高 / 加工方式 / 订单号 /
-// 交期 / 备注 / 算料公式 + 二维码与**大字**人可读短码。
+// 字段面 = 加工单号 / 客户 / 第N套共M套 / 部位 / 颜色 / 门幅 / 用料 / 宽高 / 加工方式 / 订单号 /
+// 交期 / 特殊选项 / 备注 + 二维码与**大字**人可读短码。
+// 🔴 2026-10-25（issue #7776）**件名（商品名称）与算料公式（褶倍公式）两行退场**（用户逐字
+// 「移除商品名称展示，保留货号，颜色，门幅和其他工艺信息，移除褶倍公式字段展示」）。
 //
 // 🔴 **退场两项**（用户 2026-09-21 字段裁定**未选**；改回来 ⇒ 本条必红）：
 //   ① **工序摘要**（工人扫部位码后在 H5 看该部位工序清单，纸面不印）；
@@ -118,6 +120,7 @@ const items = [
     itemId: 'item-1',
     productName: '2699系列雪尼尔窗帘面料',
     colorName: '米白',
+    doorWidth: '2.8米',
     curtainType: '布帘',
     craft: '韩褶',
     cuttingMode: '定高买宽',
@@ -133,6 +136,7 @@ const items = [
     itemId: 'item-3',
     productName: '帘头布',
     colorName: '米灰',
+    doorWidth: '2.8',
     curtainType: '帘头',
     craft: '平板',
   },
@@ -300,8 +304,9 @@ describe('TaskCardPrint（洗水码 竖版 50mm×60mm 单列，issue #4964 → �
     expected.forEach((code, i) => {
       const el = screen.getByTestId(`task-card-label-short-code-${i}`)
       expect(el).toHaveTextContent(code)
-      // 大字契约：≥8pt（小字会被车间灯光/磨损吃掉 —— 降级入口不可用就等于没有）
-      expect(el.className).toContain('text-[8pt]')
+      // 大字契约：≥12pt（小字会被车间灯光/磨损吃掉 —— 降级入口不可用就等于没有；
+      // 2026-10-25 用户逐字「字体太小了」⇒ 正文 6pt→9pt 的同时短码 8pt→12pt）
+      expect(el.className).toContain('text-[12pt]')
       expect(el.className).toContain('font-bold')
     })
   })
@@ -389,13 +394,13 @@ describe('TaskCardPrint（洗水码 竖版 50mm×60mm 单列，issue #4964 → �
     expect(document.body.textContent).not.toContain('精裁-帘头')
   })
 
-  it('单列字段逐张渲染：部位 / 件名 / 色号 / 用料 / 宽高 / 加工方式（照真实工单信息顺序）', () => {
+  it('单列字段逐张渲染：部位 / 颜色 / 门幅 / 用料 / 宽高 / 加工方式（照真实工单信息顺序）', () => {
     printCard()
 
-    // 第 1 张（布帘）：部位 / 件名 / 色号 / 用料 / 宽高 / 加工方式
+    // 第 1 张（布帘）：部位 / 颜色 / 门幅 / 用料 / 宽高 / 加工方式
     expect(screen.getByTestId('task-card-label-kind-0')).toHaveTextContent('布帘')
-    expect(screen.getByTestId('task-card-label-position-0')).toHaveTextContent('布艺遮光帘A')
-    expect(screen.getByTestId('task-card-label-color-0')).toHaveTextContent('米白')
+    expect(screen.getByTestId('task-card-label-color-0')).toHaveTextContent('颜色 米白')
+    expect(screen.getByTestId('task-card-label-door-width-0')).toHaveTextContent('门幅 2.8米')
     expect(screen.getByTestId('task-card-label-meters-0')).toHaveTextContent('6.3米')
     expect(screen.getByTestId('task-card-label-size-0')).toHaveTextContent('3×2.75米')
     // 加工方式 = craft-display 的单一真值（工艺/加工类型/打开方式/是否定型），不另写推导
@@ -407,13 +412,15 @@ describe('TaskCardPrint（洗水码 竖版 50mm×60mm 单列，issue #4964 → �
 
     // 逐张对齐（错配 = 车间按错件干活）
     expect(screen.getByTestId('task-card-label-kind-2')).toHaveTextContent('帘头')
-    expect(screen.getByTestId('task-card-label-color-2')).toHaveTextContent('米灰')
+    expect(screen.getByTestId('task-card-label-color-2')).toHaveTextContent('颜色 米灰')
+    // 快照门幅两种存量形态（`2.8米` / `2.8`）⇒ 只补单位、不改数值
+    expect(screen.getByTestId('task-card-label-door-width-2')).toHaveTextContent('门幅 2.8米')
     const craft2 = screen.getByTestId('task-card-label-craft-2')
     expect(craft2).toHaveTextContent('平板')
     expect(craft2).not.toHaveTextContent('韩褶')
   })
 
-  it('特殊选项与备注**各成一行**、算料公式逐张渲染；无对应快照行 ⇒ 该行不出现（不猜）', () => {
+  it('特殊选项与备注**各成一行**；算料公式（褶倍公式）已退场；无对应快照行 ⇒ 该行不出现（不猜）', () => {
     printCard()
 
     // 🔴 2026-10-25（用户逐字「把特殊选项，备注也加上」）：改前把两者并成一行
@@ -421,14 +428,13 @@ describe('TaskCardPrint（洗水码 竖版 50mm×60mm 单列，issue #4964 → �
     expect(screen.getByTestId('task-card-label-special-options-0')).toHaveTextContent('特殊选项 加logo条、防翘扣')
     expect(screen.getByTestId('task-card-label-remark-0')).toHaveTextContent('备注 加铅块')
     expect(screen.getByTestId('task-card-label-remark-0')).not.toHaveTextContent('加logo条')
-    expect(screen.getByTestId('task-card-label-formula-0')).toHaveTextContent('韩褶公式')
+    // 🔴 2026-10-25 用户逐字「移除褶倍公式字段展示」⇒ 纸面不再出现算料公式行
+    expect(screen.queryByTestId('task-card-label-formula-0')).toBeNull()
     // 🔴 算料公式 = **2 行**（issue #5646 实测改判；30mm 时代的 3 行口径作废）：
     // 两条真公式串（`韩褶公式：…` / `褶倍数公式：…`）在 47.599mm 版心（≈22.5em/行）下都**恰好 2 行**；
     // 容量 2×22.5em = 45em **反而大于**旧口径 3×13em = 39em ⇒ 不是放宽，是同一真值换了版心。
     // 改回 3 行 ⇒ 最坏构成（件名 2 + 加工方式 2 + 特殊选项 2 + 备注 2 + 公式 3 行）超出 70mm 的
     // 版面高 67.6mm ⇒ 本条必红。
-    expect(screen.getByTestId('task-card-label-formula-0').className).toContain('line-clamp-2')
-    expect(screen.getByTestId('task-card-label-formula-0').className).not.toContain('line-clamp-3')
 
     // item-2 没有快照行 ⇒ 第 2 张不出色号/用料/宽高/加工方式/备注/公式（缺值不渲染，不猜）
     expect(screen.queryByTestId('task-card-label-color-1')).toBeNull()
@@ -436,18 +442,17 @@ describe('TaskCardPrint（洗水码 竖版 50mm×60mm 单列，issue #4964 → �
     expect(screen.queryByTestId('task-card-label-craft-1')).toBeNull()
     expect(screen.queryByTestId('task-card-label-special-options-1')).toBeNull()
     expect(screen.queryByTestId('task-card-label-remark-1')).toBeNull()
-    expect(screen.queryByTestId('task-card-label-formula-1')).toBeNull()
+    expect(screen.queryByTestId('task-card-label-door-width-1')).toBeNull()
   })
 
-  it('🔴 重算的字段折行预算：件名去 clamp / 加工方式 · 特殊选项 · 备注 · 公式 各 ≤2 行（issue #5646 → 2026-10-25 重算）', () => {
+  it('🔴 折行预算：加工方式 · 特殊选项 · 备注 各 ≤2 行（issue #5646 → 2026-10-25 重算）', () => {
     printCard()
 
-    // ① **件名不再 clamp**（推翻 #4946 为 27.6mm 版心设的 2 行妥协）：版心 47.599mm ≈ 22.5em/行
-    //    ⇒ 2 行可容 ~45em，实测最长件名只折 2 行；留着 clamp 只会平白砍掉真名。
-    //    正向锚点（避免"查不到元素"被读成"断言通过"的空跑）：该行确实渲染了件名正文。
-    const name = screen.getByTestId('task-card-label-position-0')
-    expect(name).toHaveTextContent('布艺遮光帘A')
-    expect(name.className).not.toContain('line-clamp')
+    // ① 件名（商品名称）已**整行退场**（2026-10-25 用户逐字「移除商品名称展示」）⇒ 查不到该行；
+    //    正向锚点（避免"查不到元素"被读成"断言通过"的空跑）：颜色 / 门幅两行确实渲染了值。
+    expect(document.querySelector('[data-testid="task-card-label-position-0"]')).toBeNull()
+    expect(screen.getByTestId('task-card-label-color-0')).toHaveTextContent('米白')
+    expect(screen.getByTestId('task-card-label-door-width-0')).toHaveTextContent('2.8米')
 
     // ② **加工方式**仍 `line-clamp-2` —— 只作**预算上界**：实测最长形态
     //    「加工方式 罗马帘 · 定宽买高 · 三开 · 定型」(≈21.5em) 在 47.599mm 下**恰好 1 行**。
@@ -509,17 +514,14 @@ describe('TaskCardPrint（洗水码 竖版 50mm×60mm 单列，issue #4964 → �
     expect(rendered.some((text) => text === '宽高' || text === '用料')).toBe(false)
   })
 
-  it('色号已包含在件名里 ⇒ 不重复渲染（信息重复问题不再带进 50×60）', () => {
-    // 先钉**正向**：件名不含色号 ⇒ 色号行必须在（否则本条的"不出现"断言是空断言）
-    const { unmount } = printCard()
-    expect(screen.getByTestId('task-card-label-color-0')).toHaveTextContent('米白')
-    unmount()
-
+  it('颜色**恒印**（件名退场后不再有「已含在件名里 ⇒ 去重」这条口径）', () => {
+    // 改前：件名已含色号 ⇒ 颜色行不渲染（纸面少印一次同名信息）。
+    // 2026-10-25 件名整行退场（用户逐字「移除商品名称展示」）⇒ 颜色是「这是什么布」的唯一载体，
+    // 必须**每张都印**：部位名里带不带色号都照样出这一行（改回去重 ⇒ 本条必红）。
     const withColorInName: ProductionPosition[] = [{ ...positions[0], position_name: '布艺遮光帘A（米白）' }]
     printCard({ positions: withColorInName })
 
-    expect(screen.getByTestId('task-card-label-position-0')).toHaveTextContent('米白')
-    expect(screen.queryByTestId('task-card-label-color-0')).toBeNull()
+    expect(screen.getByTestId('task-card-label-color-0')).toHaveTextContent('颜色 米白')
   })
 
   it('是否定型按行业措辞收成「定型 / 不定型」（值仍来自 craft-display，不重算）', () => {
@@ -541,7 +543,7 @@ describe('TaskCardPrint（洗水码 竖版 50mm×60mm 单列，issue #4964 → �
     expect(screen.queryByTestId('task-card-label-color-0')).toBeNull()
     expect(screen.queryByTestId('task-card-label-meters-0')).toBeNull()
     expect(screen.queryByTestId('task-card-label-craft-0')).toBeNull()
-    expect(screen.queryByTestId('task-card-label-formula-0')).toBeNull()
+    expect(screen.queryByTestId('task-card-label-door-width-0')).toBeNull()
     expect(document.body.textContent).not.toMatch(/undefined|null|NaN/)
     unmount()
 
@@ -551,7 +553,7 @@ describe('TaskCardPrint（洗水码 竖版 50mm×60mm 单列，issue #4964 → �
     ] as unknown as ProcessingOrderItem[]
     printCard({ items: legacy })
     expect(screen.queryByTestId('task-card-label-craft-0')).toBeNull()
-    expect(screen.queryByTestId('task-card-label-formula-0')).toBeNull()
+    expect(screen.queryByTestId('task-card-label-door-width-0')).toBeNull()
     expect(document.body.textContent).not.toMatch(/undefined|null|NaN/)
   })
 

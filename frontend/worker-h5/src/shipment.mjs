@@ -137,7 +137,7 @@ export function renderShipmentSummary(view) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
-// 发货页（issue #7761）：全完工订单列表 + 50×70 发货标签
+// 发货页（issue #7761）：全完工订单列表 + 50×70 发货联（整套出库单，issue #7786）
 //
 // 用户 2026-10-25 逐字：「发货工人要能看到全部完结的订单列表，即订单内的多套窗帘全完工的数据。
 // 支持工人对完工的订单进行发货标签打印，包含客户的收货信息，走哪个物流/快递方式和公司」。
@@ -159,6 +159,44 @@ export const SHIP_LABEL_MEDIA_ID = 'label-50x70'
 /** 发货标签的 `@page` 尺寸（**必须**与介质矩阵逐字相等；守卫测试比对 print-media.json）。 */
 export const SHIP_LABEL_PAGE_SIZE = '50mm 70mm'
 
+/**
+ * **纸长按内容撑开**（issue #7776；用户 2026-10-25 逐字「字体太小了，可以把长度延长些，因为长度可以无限长，
+ * 宁愿长点也要把字体和信息都呈现出来……打印预览的时候我就发现上下两头留白太多了」）。
+ *
+ * 发货标签与洗水唛是**同一卷纸**（50mm 宽连续纸卷）：宽度固定 50mm、长度按纸面内容算。
+ * 取整 / 夹取口径与洗水唛 `washLabelLengthMm()` 一致：上取整到 1mm、夹在
+ * `[SHIP_LABEL_MIN_LENGTH_MM, SHIP_LABEL_MAX_LENGTH_MM]`（下限 = 介质矩阵登记的**最短**纸长，也是驱动里
+ * 该登记的那档；上限 = 再长说明内容该拆了）。宽 / 上下限由守卫比对介质矩阵，不写第二份真值。
+ */
+export const SHIP_LABEL_WIDTH_MM = 50
+export const SHIP_LABEL_MIN_LENGTH_MM = 70
+export const SHIP_LABEL_MAX_LENGTH_MM = 150
+
+/** 1 CSS px = 1/96 英寸（浏览器度量口径；`scrollHeight` 是 px） */
+const CSS_PX_TO_MM = 25.4 / 96
+
+/** 夹取纸长：无效值 ⇒ 下限；不向下取整（宁可长 1mm，也不裁内容） */
+function clampLabelLength(mm) {
+  const value = Number.isFinite(mm) && mm > 0 ? Math.ceil(mm) : SHIP_LABEL_MIN_LENGTH_MM
+  return Math.min(Math.max(value, SHIP_LABEL_MIN_LENGTH_MM), SHIP_LABEL_MAX_LENGTH_MM)
+}
+
+/** 量到的**内容像素高** ⇒ 纸长（mm）：上取整到 1mm、夹在上下限内 */
+export function shipLabelLengthMm(contentPx) {
+  const px = Number.isFinite(contentPx) && contentPx > 0 ? contentPx : 0
+  return clampLabelLength(px * CSS_PX_TO_MM)
+}
+
+/**
+ * 动态纸型的 `@page` 规则（纸长变了才拼一条；宽度始终 = {@link SHIP_LABEL_WIDTH_MM}）。
+ *
+ * 🔴 静态兜底仍在 `ship-label.css`（`size: 50mm 70mm` —— JS 没跑 / 量不到时按最短纸长出纸）；
+ * 本函数产出的规则由调用方**后**插进文档 ⇒ 后声明者赢（`@page` 是文档级规则）。
+ */
+export function shipLabelPageRule(lengthMm) {
+  return `@page { size: ${SHIP_LABEL_WIDTH_MM}mm ${clampLabelLength(lengthMm)}mm; margin: 0; }`
+}
+
 /** 缺值占位符（与发货单纸面 `—` 同口径；**不是** 0、不是空串）。 */
 export const SHIP_LABEL_MISSING = '—'
 
@@ -166,6 +204,31 @@ export const SHIP_LABEL_MISSING = '—'
 function labelText(value) {
   const text = value == null ? '' : String(value).trim()
   return text === '' ? SHIP_LABEL_MISSING : text
+}
+
+/** 业务时区（与后端 `businessClock` 同口径）—— 下单日期按它取日期，不按浏览器本地时区。 */
+const SHIP_LABEL_TIME_ZONE = 'Asia/Shanghai'
+
+/**
+ * 下单日期（issue #7786）：服务端 `created_at`（ISO / 带偏移）⇒ `YYYY-MM-DD`，按**业务时区**取日期。
+ *
+ * 🔴 不按 UTC / 浏览器本地时区切字符串：`2026-09-01T16:30:00Z` 在上海是 **09-02** 00:30，
+ * 按 UTC 切会印成 09-01（差一天的单据在车间会被当成另一天的货）。
+ * 缺值 / 坏值 ⇒ `—`（不猜今天、不印 `Invalid Date`）。
+ */
+export function shipLabelDateText(value) {
+  const raw = value == null ? '' : String(value).trim()
+  if (raw === '') return SHIP_LABEL_MISSING
+  const at = new Date(raw)
+  if (Number.isNaN(at.getTime())) return SHIP_LABEL_MISSING
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: SHIP_LABEL_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(at)
+  const pick = (type) => parts.find((part) => part.type === type)?.value ?? ''
+  const year = pick('year')
+  const month = pick('month')
+  const day = pick('day')
+  return year && month && day ? `${year}-${month}-${day}` : SHIP_LABEL_MISSING
 }
 
 /** 物流方式：服务端已给展示名就照用；没给（未采集 / 未知取值）⇒ `—`，**绝不回退「快递」**。 */
@@ -184,9 +247,10 @@ function setsText(order) {
 }
 
 /**
- * 发货标签的**行清单**（唯一真值）：屏幕预览、打印、测试都读它。
+ * 发货联（整套出库单）的**行清单**（唯一真值）：屏幕预览、打印、测试都读它。
  *
- * 行序 = 拣货/贴箱的人从上到下核对的顺序：单号 → 收件人 → 电话 → 地址 → 物流方式 → 物流公司 → 套数 → 备注。
+ * 行序 = 拣货/贴箱的人从上到下核对的顺序：单号 → 收件人 → 电话 → 地址 → 物流方式 → 物流公司 →
+ * 下单日期 → 套数 → 备注（issue #7786：抬头改「发货联」、补「下单日期」，与用户那张现场发货联对齐）。
  * 🔴 **不重复印「客户」**：本系统的客户 = 收货人（`orders.customer_name`），
  * 同一个人印两遍只是白吃 50mm 版心的两行（信息不重复，`migao-dev-flow` §31 P2）。
  *
@@ -202,6 +266,7 @@ export function buildShipLabelRows(order) {
     { key: 'customer_address', label: '地址', value: labelText(order?.customer_address), multiline: true },
     { key: 'logistics_type', label: '物流方式', value: logisticsText(order) },
     { key: 'logistics_company', label: '物流公司', value: labelText(order?.logistics_company) },
+    { key: 'order_date', label: '下单日期', value: shipLabelDateText(order?.created_at) },
     { key: 'sets', label: '套数', value: setsText(order) },
   ]
   const remark = order?.remark == null ? '' : String(order.remark).trim()
@@ -218,8 +283,8 @@ export function renderShipLabel(order) {
     + `<dt class="wh5-label-key">${esc(row.label)}</dt>`
     + `<dd class="wh5-label-value">${esc(row.value)}</dd></div>`
   )).join('')
-  return `<section class="wh5-ship-label" id="wh5-ship-label" aria-label="发货标签">
-    <h2 class="wh5-label-title">发货标签</h2>
+  return `<section class="wh5-ship-label" id="wh5-ship-label" aria-label="发货联（整套出库单）">
+    <h2 class="wh5-label-title">发货联</h2>
     <dl class="wh5-label-rows">${rows}</dl>
   </section>`
 }
@@ -255,7 +320,7 @@ export function renderReadyOrders(payload) {
       <p class="wh5-ready-sub">收货人：${esc(labelText(order?.customer_name))}　电话：${esc(labelText(order?.customer_phone))}</p>
       <p class="wh5-ready-sub wh5-ready-addr">地址：${esc(labelText(order?.customer_address))}</p>
       <p class="wh5-ready-sub">${esc(logistics)}　${esc(sets)}</p>
-      <button type="button" class="wh5-entry" id="wh5-label-${index}" data-label-order="${esc(order?.order_id ?? '')}">发货标签</button>
+      <button type="button" class="wh5-entry" id="wh5-label-${index}" data-label-order="${esc(order?.order_id ?? '')}">发货联</button>
     </li>`
   }).join('')
   return `<section class="wh5-ready" id="wh5-ready-orders">

@@ -9,11 +9,12 @@
 //
 // 逐条判据（都能判红）：
 // ① 行序 = `WASH_LABEL_ROW_KEYS`（改序 ⇒ 必红）；
-// ② 前缀（`客户 ` / `部位 ` / `色号 ` / `用料 ` / `宽高 ` / `加工方式 ` / `订单 ` / `交期 ` / `备注 `）
+// ② 前缀（`客户 ` / `部位 ` / `颜色 ` / `门幅 ` / `用料 ` / `宽高 ` / `加工方式 ` / `订单 ` / `交期 ` / `备注 `）
 //    在**这一处**拼 —— 渲染器各自再拼一遍就是第二份真值；
 // ③ **缺值不渲染，且判空看的是「值」不是「拼好的整行」**：`宽高 ` / `用料 ` 这种只剩前缀的空壳行
 //    不得上纸（这条是改版时实测踩到的形态，故单列一条判据）；
-// ④ 色号已含在件名里 ⇒ 不重复渲染（正反对照都钉）；
+// ④ 颜色**恒印**（2026-10-25 件名退场后，颜色是「这是什么布」的唯一载体）；
+//    🔴 同一次裁定里**件名（商品名称）与算料公式（褶倍公式）两行退场**、门幅新增（issue #7776）；
 // ⑤ 套序走 `groupBySet`（与进度表同一份实现）；
 // ⑥ 定型按行业措辞收成「定型 / 不定型」（值仍来自 `craft-display`）；
 // ⑦ `toWashLabelInputs`：码 = `scan_url ?? part_token`、短码缺 ⇒ 「—」、按 `itemId` 对齐快照行、
@@ -49,6 +50,7 @@ const ITEM = {
   itemId: 'item-1',
   productName: '2699系列雪尼尔窗帘面料',
   colorName: '米白',
+  doorWidth: '2.8米',
   craft: '韩褶',
   cuttingMode: '定高买宽',
   openCount: 2,
@@ -84,8 +86,9 @@ describe('washLabelRows — 纸面内容与行序（issue #6656）', () => {
     expect(textOf(rows, 'customer')).toBe(`客户 ${CUSTOMER}`)
     expect(textOf(rows, 'setNo')).toBe('第 1 套 / 共 2 套')
     expect(textOf(rows, 'positionKind')).toBe('部位 布帘')
-    expect(textOf(rows, 'pieceName')).toBe('布艺遮光帘A')
-    expect(textOf(rows, 'color')).toBe('色号 米白')
+    // 🔴 2026-10-25（issue #7776）件名（商品名称）退场、颜色恒印、门幅新增
+    expect(textOf(rows, 'color')).toBe('颜色 米白')
+    expect(textOf(rows, 'doorWidth')).toBe('门幅 2.8米')
     expect(textOf(rows, 'meters')).toBe('用料 6.3米')
     expect(textOf(rows, 'size')).toBe('宽高 3×2.75米')
     expect(textOf(rows, 'craft')).toBe('加工方式 韩褶 · 定高买宽 · 双开 · 定型')
@@ -97,16 +100,15 @@ describe('washLabelRows — 纸面内容与行序（issue #6656）', () => {
     expect(textOf(rows, 'remark')).toBe('备注 加铅块')
     // 反向判据：特殊选项**不得**再混进备注行（并回去 ⇒ 必红）
     expect(textOf(rows, 'remark')).not.toContain('加logo条')
-    // 算料公式**不带前缀**（串本身就是 `韩褶公式：…`，再加前缀是重复）
-    expect(textOf(rows, 'formula')).toBe('韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米')
+    // 🔴 2026-10-25（issue #7776）算料公式（褶倍公式）退场 —— 用户逐字「移除褶倍公式字段展示」
+    expect(rows.map((row) => row.key)).not.toContain('formula')
+    expect(rows.map((row) => row.text).join('｜')).not.toContain('韩褶公式')
 
-    // 行数预算：可折行的四种给 2 行，其余单行（位图渲染器按它折行）
+    // 行数预算：可折行的三种给 2 行，其余单行（位图渲染器按它折行）
     expect(rows.filter((row) => row.maxLines === 2).map((row) => row.key)).toEqual([
-      'pieceName',
       'craft',
       'specialOptions',
       'remark',
-      'formula',
     ])
   })
 
@@ -127,12 +129,12 @@ describe('washLabelRows — 纸面内容与行序（issue #6656）', () => {
       expectedDeliveryDate: null,
     })
 
-    expect(rows.map((row) => row.key)).toEqual(['setNo', 'pieceName', 'orderNo', 'delivery'])
-    expect(rows.map((row) => row.text)).toEqual(['第 2 套 / 共 3 套', '布艺遮光帘A', '订单 —', '交期 —'])
+    expect(rows.map((row) => row.key)).toEqual(['setNo', 'orderNo', 'delivery'])
+    expect(rows.map((row) => row.text)).toEqual(['第 2 套 / 共 3 套', '订单 —', '交期 —'])
     // 🔴 正向拒绝：整行 trim 判空会把这些空壳印上纸（改版实测过的形态）
     expect(
       rows.some((row) =>
-        ['宽高', '用料', '色号', '部位', '加工方式', '特殊选项', '备注', '客户'].includes(row.text)
+        ['宽高', '用料', '颜色', '门幅', '部位', '加工方式', '特殊选项', '备注', '客户'].includes(row.text)
       )
     ).toBe(
       false,
@@ -148,11 +150,11 @@ describe('washLabelRows — 纸面内容与行序（issue #6656）', () => {
     expect(textOf(fullRows(), 'size')).toBe('宽高 3×2.75米')
   })
 
-  it('判据 ④：色号已含在件名里 ⇒ 不重复渲染', () => {
+  it('判据 ④：颜色**恒印**（件名退场后不再有「已含在件名里 ⇒ 去重」）', () => {
+    // 部位名里带不带色号都照样出「颜色」这一行 —— 它是「这是什么布」的唯一载体
     const named = { ...POSITION, position_name: '布艺遮光帘A（米白）' } as unknown as ProductionPosition
-    expect(textOf(washLabelRows({ position: named, item: ITEM }), 'color')).toBeUndefined()
-    // 正反对照：件名不含色号 ⇒ 色号行必须在
-    expect(textOf(fullRows(), 'color')).toBe('色号 米白')
+    expect(textOf(washLabelRows({ position: named, item: ITEM }), 'color')).toBe('颜色 米白')
+    expect(textOf(fullRows(), 'color')).toBe('颜色 米白')
   })
 
   it('判据 ⑤：套序来自调用方给的 `groupBySet` 读数（1 起）', () => {
@@ -172,9 +174,11 @@ describe('washLabelRows — 纸面内容与行序（issue #6656）', () => {
     expect(textOf(fullRows(), 'craft')).toBe('加工方式 韩褶 · 定高买宽 · 双开 · 定型')
   })
 
-  it('件名与部位名全缺 ⇒ 件名行如实「—」（不编造、不空行）', () => {
+  it('门幅缺值 ⇒ 不出门幅行（不印空壳）；两种存量形态都补单位', () => {
     const anonymous = { order_item_id: 'item-9' } as unknown as ProductionPosition
-    expect(textOf(washLabelRows({ position: anonymous, item: null }), 'pieceName')).toBe('—')
+    expect(textOf(washLabelRows({ position: anonymous, item: null }), 'doorWidth')).toBeUndefined()
+    const bare = { ...ITEM, doorWidth: '2.8' } as unknown as ProcessingOrderItem
+    expect(textOf(washLabelRows({ position: POSITION, item: bare }), 'doorWidth')).toBe('门幅 2.8米')
   })
 
   it('无 position ⇒ 空清单（不在这里造占位行）', () => {

@@ -172,7 +172,7 @@ class MerchantShipmentRouteTest {
         orderShipmentService = new OrderShipmentService(orderMapper, orderItemMapper, orderLogisticsMapper,
                 orderShipmentMapper, orderShipmentItemMapper, processingOrderMapper,
                 clientRequestIdService, imageRecognitionClient, new ObjectMapper(),
-                orderShipmentQueryMapper);
+                orderShipmentQueryMapper, org.mockito.Mockito.mock(com.migao.admin.service.FinishedGoodsService.class));
         // 单位来源（products.unit）是**可选字段注入**（不进构造签名，见 OrderShipmentService 的注释）
         ReflectionTestUtils.setField(orderShipmentService, "productMapper", productMapper);
         mockMvc = mockMvcWith(orderShipmentService);

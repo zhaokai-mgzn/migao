@@ -72,7 +72,10 @@ export interface DirectLabelPrintProps {
     labels: WashLabelInput[],
     qrSources: Array<CanvasImageSource | null>,
     printerInfo: Record<string, unknown> | null,
+    labelLengthMm?: number,
   ) => Promise<PrintJob[]>
+  /** 纸长（mm，按内容撑开，issue #7776）—— 与系统打印 / 预览纸框**同一个数** */
+  labelLengthMm?: number
   className?: string
 }
 
@@ -90,9 +93,10 @@ async function defaultRenderJobs(
   labels: WashLabelInput[],
   qrSources: Array<CanvasImageSource | null>,
   printerInfo: Record<string, unknown> | null,
+  labelLengthMm?: number,
 ): Promise<PrintJob[]> {
   const { renderWashLabelJobs } = await import('@/lib/label-print/render')
-  return renderWashLabelJobs(labels, qrSources, printerInfo)
+  return renderWashLabelJobs(labels, qrSources, printerInfo, labelLengthMm)
 }
 
 export default function DirectLabelPrint({
@@ -101,6 +105,7 @@ export default function DirectLabelPrint({
   env,
   loadProvider,
   renderJobs,
+  labelLengthMm,
   className,
 }: DirectLabelPrintProps) {
   const [busy, setBusy] = useState(false)
@@ -149,7 +154,12 @@ export default function DirectLabelPrint({
 
       // ④ 渲染（几何取自机器自报参数）
       phase = 'render'
-      const jobs = await (renderJobs ?? defaultRenderJobs)(labels, collectQrSources(), provider.printerInfo)
+      const jobs = await (renderJobs ?? defaultRenderJobs)(
+        labels,
+        collectQrSources(),
+        provider.printerInfo,
+        labelLengthMm,
+      )
 
       // ⑤ 送印
       phase = 'print'

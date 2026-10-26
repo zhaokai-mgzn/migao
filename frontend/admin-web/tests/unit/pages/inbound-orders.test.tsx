@@ -1,4 +1,4 @@
-// case_ids: PR-037, UI-074
+// case_ids: PR-037, UI-074, WH-004
 //
 // PR-037（issue #5034，V111）：入库单页面 —— 「建单（草稿，不动库存）→ 过账（自动生成批次号 +
 //   自动加库存）→ 批次可追溯」这条动线在**前端**的可达性。
@@ -136,7 +136,9 @@ describe('入库单页面（PR-037 / issue #5034）', () => {
     expect(within(table).getByText('已过账')).toBeInTheDocument()
     // 行数 / 总数量聚合
     expect(screen.getAllByText('1 / 30').length).toBe(2)
-    expect(mockList).toHaveBeenCalledWith({ keyword: undefined, status: '' })
+    // 类别维（issue #7794）：默认视图 = 原料仓入库 ⇒ 请求必须带 bizCategory=fabric
+    // （不带 = 后端不过滤 = 成品单混进原料仓列表，正是本单要修的形态）
+    expect(mockList).toHaveBeenCalledWith({ keyword: undefined, status: '', bizCategory: 'fabric' })
   })
 
   it('「新建入库单」**导航**到独立整页 /inbound-orders/new（issue #5844：不再是弹窗）', async () => {
@@ -264,6 +266,8 @@ describe('入库单页面（PR-037 / issue #5034）', () => {
     expect(rowOf('SKU-NOROLL').getAllByRole('cell')[1].textContent).toBe('-')
     expect(rowOf('SKU-NOROLL').getAllByRole('cell')[2].textContent).toBe('-')
     expect(rowOf('SKU-NOROLL').getAllByRole('cell')[3].textContent).toBe('30')
+    // #7799 反向（原料单零回归）：来源订单号是**成品单**的列，布料入库不挂订单 ⇒ 这里不出现
+    expect(screen.queryByText('来源订单号')).not.toBeInTheDocument()
   })
 
   it('已过账的单：详情里没有过账/作废入口（库存已进台账，冲销须另开单据）', async () => {
@@ -277,5 +281,246 @@ describe('入库单页面（PR-037 / issue #5034）', () => {
     expect(await screen.findByText('PC-20260923-0001')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /过账（生成批次号并加库存）/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '作废' })).not.toBeInTheDocument()
+  })
+})
+
+// ============================================================
+// 两个视图（issue #7794）—— 用户 2026-10-26 逐字
+// 「要区分原料仓入库和成品仓入库，别混在一起了」
+// ============================================================
+// 守四件事：① 默认视图请求带 bizCategory=fabric（现有行为零回归）；
+//   ② 切到成品视图即带 bizCategory=finished，且**只读**（无建单 / 期初建账入口）；
+//   ③ 列随视图变：成品视图无 供应商 / 批次号 / 金额，有 明细行数 + 套数合计；
+//   ④ 成品单详情看得到 套号 / 仓位号 / 短码，数量「N 套」，不显示 米数 / 单价 / 金额。
+// 后端侧同判据：InboundOrderServiceTest.InboundBizCategory / InboundOrderQueryMapperTest（#7794 两条）。
+
+const finishedRow = {
+  id: 'o-finished-1',
+  inboundNo: 'RK-20261026-0001',
+  bizCategory: 'finished' as const,
+  inboundDate: '2026-10-26',
+  warehouse: '成品仓',
+  status: 'posted' as const,
+  totalAmount: 0,
+  itemCount: 6,
+  totalQuantity: 6,
+  setCount: 2,
+  supplier: '',
+  batchNos: null,
+}
+
+const finishedDetail = {
+  id: 'o-finished-1',
+  inboundNo: 'RK-20261026-0001',
+  bizCategory: 'finished' as const,
+  inboundDate: '2026-10-26',
+  warehouse: '成品仓',
+  status: 'posted' as const,
+  totalAmount: 0,
+  postedBy: '13800000000',
+  postedAt: '2026-10-26T10:00:00Z',
+  items: [
+    {
+      id: 900,
+      productId: 'prod-9',
+      productName: '布帘',
+      setNo: 'JG-20261026-001-001',
+      binCode: 'A-01',
+      shortCode: 'AB12CD34',
+      // #7799：成品单由打包产生 ⇒ 每行都能回查来源订单
+      orderNo: 'SO-20261026-0001',
+      quantity: 1,
+      unit: 'set',
+    },
+    {
+      id: 901,
+      productId: 'prod-9',
+      productName: '纱帘',
+      setNo: 'JG-20261026-001-001',
+      binCode: 'A-02',
+      shortCode: 'EF56GH78',
+      orderNo: 'SO-20261026-0001',
+      quantity: 1,
+      unit: 'set',
+    },
+  ],
+}
+
+describe('入库单两个视图：原料仓 / 成品仓（#7794）', () => {
+  it('默认「原料仓入库」视图：请求带 bizCategory=fabric，且药丸选中态正确（零回归）', async () => {
+    render(<InboundOrdersPage />)
+    await screen.findByText('RK-20260923-0001')
+
+    expect(mockList).toHaveBeenCalledWith({ keyword: undefined, status: '', bizCategory: 'fabric' })
+    expect(screen.getByTestId('inbound-tab-fabric')).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByTestId('inbound-tab-finished')).toHaveAttribute('aria-selected', 'false')
+    // 反向（零回归）：原料仓视图**仍**有 供应商 / 批次号 / 金额 三列与两个入口
+    const table = screen.getByRole('table')
+    expect(within(table).getByText('供应商')).toBeInTheDocument()
+    expect(within(table).getByText('批次号')).toBeInTheDocument()
+    expect(within(table).getByText('金额')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /新建入库单/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /期初建账导入/ })).toBeInTheDocument()
+  })
+
+  it('点「成品仓入库」⇒ 请求带 bizCategory=finished，且只读：没有 新建入库单 / 期初建账导入', async () => {
+    render(<InboundOrdersPage />)
+    await screen.findByText('RK-20260923-0001')
+
+    mockList.mockResolvedValue({ data: { data: [finishedRow] } })
+    fireEvent.click(screen.getByTestId('inbound-tab-finished'))
+
+    expect(await screen.findByText('RK-20261026-0001')).toBeInTheDocument()
+    expect(mockList).toHaveBeenLastCalledWith({ keyword: undefined, status: '', bizCategory: 'finished' })
+    expect(screen.getByTestId('inbound-tab-finished')).toHaveAttribute('aria-selected', 'true')
+    // 成品单只由打包自动建 ⇒ 成品视图是只读面（手工建一张成品单没有对应写面）
+    expect(screen.queryByText('新建入库单')).not.toBeInTheDocument()
+    expect(screen.queryByText('期初建账导入')).not.toBeInTheDocument()
+  })
+
+  it('成品视图列随视图变：无 供应商 / 批次号 / 金额；有 明细行数 与 套数合计（显示「N 套」）', async () => {
+    render(<InboundOrdersPage />)
+    await screen.findByText('RK-20260923-0001')
+    mockList.mockResolvedValue({ data: { data: [finishedRow] } })
+    fireEvent.click(screen.getByTestId('inbound-tab-finished'))
+    await screen.findByText('RK-20261026-0001')
+
+    const table = screen.getByRole('table')
+    // 成品单这几列恒空 ⇒ 不渲染（§31 P2 信息不重复；留着就是噪声）
+    expect(within(table).queryByText('供应商')).not.toBeInTheDocument()
+    expect(within(table).queryByText('批次号')).not.toBeInTheDocument()
+    expect(within(table).queryByText('金额')).not.toBeInTheDocument()
+    // 换上的两列：明细行数（= 部位数）与 套数合计（= 不同套号个数，服务端算）
+    expect(within(table).getByText('明细行数')).toBeInTheDocument()
+    expect(within(table).getByText('套数合计')).toBeInTheDocument()
+    expect(within(table).getByTestId('inbound-finished-item-count').textContent).toBe('6')
+    expect(within(table).getByTestId('inbound-finished-set-count').textContent).toBe('2 套')
+  })
+
+  it('成品单详情：套号 / 仓位号 / 短码 三列 + 数量「N 套」，不显示 米数 / 单价 / 金额', async () => {
+    mockDetail.mockResolvedValueOnce({ data: { data: finishedDetail } })
+    render(<InboundOrdersPage />)
+    await screen.findByText('RK-20260923-0001')
+    mockList.mockResolvedValue({ data: { data: [finishedRow] } })
+    fireEvent.click(screen.getByTestId('inbound-tab-finished'))
+    await screen.findByText('RK-20261026-0001')
+
+    fireEvent.click(
+      within(screen.getByText('RK-20261026-0001').closest('tr')!).getByRole('button', { name: '详情' }),
+    )
+
+    const detailTable = (await screen.findByText('套号')).closest('table') as HTMLTableElement
+    expect(within(detailTable).getByText('仓位号')).toBeInTheDocument()
+    expect(within(detailTable).getByText('短码')).toBeInTheDocument()
+    // 真值逐行渲染（不重算、不截断）；同一套的两个部位（布帘 / 纱帘）共享同一个套号 ⇒ 两行都有
+    expect(within(detailTable).getAllByText('JG-20261026-001-001').length).toBe(2)
+    expect(within(detailTable).getByText('A-01')).toBeInTheDocument()
+    expect(within(detailTable).getByText('A-02')).toBeInTheDocument()
+    expect(within(detailTable).getByText('AB12CD34')).toBeInTheDocument()
+    // 数量按「N 套」显示（成品行恒 1 套）
+    expect(within(detailTable).getAllByText('1 套').length).toBe(2)
+    // 成品行不碰米数库存、没有成本口径 ⇒ 这三列不出现
+    expect(screen.queryByText('入库米数(米)')).not.toBeInTheDocument()
+    expect(screen.queryByText('卷长(米/卷)')).not.toBeInTheDocument()
+    expect(screen.queryByText('单价')).not.toBeInTheDocument()
+    expect(screen.queryByText('金额')).not.toBeInTheDocument()
+    expect(screen.queryByText('金额合计')).not.toBeInTheDocument()
+  })
+
+  it('站内信深链未命中原料仓 ⇒ 给一行可点提示切到成品视图（不静默空白）', async () => {
+    window.history.pushState({}, '', '/inbound-orders?keyword=RK-20261026-0001')
+    try {
+      mockList.mockResolvedValue({ data: { data: [] } })
+      render(<InboundOrdersPage />)
+
+      const hint = await screen.findByTestId('inbound-other-view-hint')
+      expect(hint.textContent).toContain('该单可能在「成品仓入库」')
+      // 深链按默认（原料仓）视图读
+      expect(mockList).toHaveBeenCalledWith({ keyword: 'RK-20261026-0001', status: '', bizCategory: 'fabric' })
+
+      mockList.mockResolvedValue({ data: { data: [finishedRow] } })
+      fireEvent.click(within(hint).getByRole('button', { name: /查看成品仓入库/ }))
+
+      expect(await screen.findByText('RK-20261026-0001')).toBeInTheDocument()
+      expect(mockList).toHaveBeenLastCalledWith({
+        keyword: 'RK-20261026-0001',
+        status: '',
+        bizCategory: 'finished',
+      })
+    } finally {
+      window.history.pushState({}, '', '/')
+    }
+  })
+})
+
+// ============================================================ #7799 成品视图两处收口
+
+/**
+ * #7799 / WH-004：成品入库视图（#7794 落的）两处收口。
+ *
+ * ① 状态筛选去掉「草稿」—— 成品单恒为 `posted`（打包自动建单即过账），「草稿」在这个视图里**恒空**；
+ *    原料视图仍含（工人拍照草稿停在那里）⇒ 反向判据。
+ * ② 成品单明细补「来源订单号」—— 成品行不挂 SKU 货号，没有它就无法回查是哪张订单的。
+ */
+describe('成品视图两处收口（#7799）', () => {
+  const statusOptionLabels = () =>
+    Array.from((screen.getByRole('combobox') as HTMLSelectElement).options).map((o) => o.textContent)
+
+  it('状态筛选：成品视图**不含**「草稿」，原料视图**仍含**（反向零回归）', async () => {
+    render(<InboundOrdersPage />)
+    await screen.findByText('RK-20260923-0001')
+
+    // 原料视图：草稿是真状态（工人拍照草稿），不许顺手删掉
+    expect(statusOptionLabels()).toContain('草稿')
+    expect(statusOptionLabels()).toEqual(['全部状态', '草稿', '已过账', '已作废'])
+
+    mockList.mockResolvedValue({ data: { data: [finishedRow] } })
+    fireEvent.click(screen.getByTestId('inbound-tab-finished'))
+    await screen.findByText('RK-20261026-0001')
+
+    // 成品视图：草稿选项没了，其余状态仍在
+    expect(statusOptionLabels()).not.toContain('草稿')
+    expect(statusOptionLabels()).toEqual(['全部状态', '已过账', '已作废'])
+  })
+
+  it('成品单明细多一列「来源订单号」= item.orderNo（两行都渲染真值）', async () => {
+    mockDetail.mockResolvedValueOnce({ data: { data: finishedDetail } })
+    render(<InboundOrdersPage />)
+    await screen.findByText('RK-20260923-0001')
+    mockList.mockResolvedValue({ data: { data: [finishedRow] } })
+    fireEvent.click(screen.getByTestId('inbound-tab-finished'))
+    await screen.findByText('RK-20261026-0001')
+
+    fireEvent.click(
+      within(screen.getByText('RK-20261026-0001').closest('tr')!).getByRole('button', { name: '详情' }),
+    )
+
+    const detailTable = (await screen.findByText('套号')).closest('table') as HTMLTableElement
+    expect(within(detailTable).getByText('来源订单号')).toBeInTheDocument()
+    // 同一套的两个部位同属一张订单 ⇒ 两行都显示同一个单号
+    expect(within(detailTable).getAllByText('SO-20261026-0001').length).toBe(2)
+  })
+
+  it('没有来源订单号（历史行 / 正常应有）⇒ 显示「—」，不留空白格', async () => {
+    mockDetail.mockResolvedValueOnce({
+      data: {
+        data: {
+          ...finishedDetail,
+          items: [{ ...finishedDetail.items[0], orderNo: null }, finishedDetail.items[1]],
+        },
+      },
+    })
+    render(<InboundOrdersPage />)
+    await screen.findByText('RK-20260923-0001')
+    mockList.mockResolvedValue({ data: { data: [finishedRow] } })
+    fireEvent.click(screen.getByTestId('inbound-tab-finished'))
+    await screen.findByText('RK-20261026-0001')
+
+    fireEvent.click(
+      within(screen.getByText('RK-20261026-0001').closest('tr')!).getByRole('button', { name: '详情' }),
+    )
+
+    const detailTable = (await screen.findByText('套号')).closest('table') as HTMLTableElement
+    expect(within(detailTable).getByText('—')).toBeInTheDocument()
   })
 })
