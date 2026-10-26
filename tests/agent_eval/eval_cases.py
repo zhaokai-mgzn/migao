@@ -9523,6 +9523,24 @@ _CASE_OR_069 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── OR-070 [NORMAL] 订单详情「收货信息」显示物流方式 / 物流公司（issue #7850；缺值印 `-`，不臆造「快递」）（源: cases/order.yml）──
+_CASE_OR_070 = EvalCase(
+    id='OR-070',
+    legacy_id='',
+    title='订单详情「收货信息」显示物流方式 / 物流公司（issue #7850；缺值印 `-`，不臆造「快递」）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-26（订单详情截图）：「另外订单详情缺失了物流信息」—— 收货信息块只有 收货人 / 联系电话 / 收货地址 三行，缺物流方式 / 物流公司；而这两项自下单必填（issue #5840）起就有值，服务端 `orders.logistics_type` / `logistics_company` 已随详情读面下发（`Order.logisticsType` / `Order.logisticsCompany`）。'],
+    expectations=[],
+    data_checks=['判据 1·**正对照（有值 ⇒ 上屏）**：`logisticsType` = express、`logisticsCompany` = 顺丰 ⇒ 收货信息块逐字「物流方式：快递」「物流公司：顺丰」（整行 textContent 断言，不用「页面上出现过快递」这类空断言）。执行点 = `frontend/admin-web/tests/unit/pages/order-detail.test.tsx` 的 `#7850: 收货信息块显示服务端下发的物流方式与物流公司（express ⇒ 快递）`。', '判据 2·**缺值不臆造（红）**：`logisticsType` = null、`logisticsCompany` = null（存量单形态）⇒ 两格印 `-`（本页既有 `InfoRow` 纪律），且整页**不得**出现被臆造出来的「快递」（#4419 既有裁定：未登记 ≠ 快递）。执行点 = `frontend/admin-web/tests/unit/pages/order-detail.test.tsx` 的 `#7850: 物流方式 / 物流公司缺值 ⇒ 两格印 - ，不得臆造「快递」`。', '判据 3·**只读面不套表单口径**：必须用 `frontend/admin-web/src/lib/logistics.ts::logisticsTypeText()`（枚举转中文、未登记原样回显、缺值 ⇒ null），**不得**用 `logisticsTypeLabel()`（表单口径，缺值回落「快递」—— 印在只读面上 = 编值），也不得在本页再拼第三份 express ⇒ 快递 词表。谁把它换成 `logisticsTypeLabel()` ⇒ 判据 2 当场红。'],
+    skip_reason='[backend-contract] 纯前端只读展示（零 LLM 环节 ⇒ 不进 agent-eval 冒烟）：由 admin-web vitest 执行',
+    tags=['order', 'logistics', 'admin-web', 'order-detail', 'null-not-guessed'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 作业单生成 + 订单进入生产中（派单即生产；issue #7723 改判）（源: cases/processing-order.yml）──
 _CASE_PG_001 = EvalCase(
     id='PG-001',
@@ -17403,6 +17421,7 @@ ALL_CASES = (
     _CASE_OR_067,
     _CASE_OR_068,
     _CASE_OR_069,
+    _CASE_OR_070,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,
