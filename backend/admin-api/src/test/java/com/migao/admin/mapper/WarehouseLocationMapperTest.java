@@ -9,16 +9,10 @@ import org.apache.ibatis.annotations.Update;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.LinkedHashSet;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -36,20 +30,6 @@ class WarehouseLocationMapperTest {
 
     private static String schemaSql() throws Exception {
         return Files.readString(SCHEMA);
-    }
-
-    private static Set<String> columnsOf(String table) throws Exception {
-        Matcher m = Pattern.compile(
-                "CREATE TABLE IF NOT EXISTS " + table + " \\(([\\s\\S]*?)\\n\\);").matcher(schemaSql());
-        assertThat(m.find()).as("建库脚本里必须有 %s 表", table).isTrue();
-        Set<String> cols = new LinkedHashSet<>();
-        for (String line : m.group(1).split("\n")) {
-            Matcher c = Pattern.compile("^\\s{4}([a-z_]+)\\s+[A-Z]").matcher(line);
-            if (c.find()) {
-                cols.add(c.group(1));
-            }
-        }
-        return cols;
     }
 
     private static String sqlOf(String method, Class<?> annotation) throws Exception {
@@ -70,15 +50,9 @@ class WarehouseLocationMapperTest {
     @Test
     @DisplayName("实体每个字段都有对应列（含 zone_code / bin_code / status）")
     void everyEntityFieldHasAColumn() throws Exception {
-        Set<String> columns = columnsOf("warehouse_locations");
+        Set<String> columns = MapperColumnAssertions.columnsOf("warehouse_locations");
         assertThat(columns).isNotEmpty().contains("zone_code", "zone_name", "bin_code", "status");
-        Set<String> missing = java.util.Arrays.stream(WarehouseLocation.class.getDeclaredFields())
-                .filter(f -> !Modifier.isStatic(f.getModifiers()) && !f.isSynthetic())
-                .map(Field::getName)
-                .map(n -> n.replaceAll("([a-z0-9])([A-Z])", "$1_$2").toLowerCase())
-                .collect(Collectors.toCollection(LinkedHashSet::new));
-        missing.removeAll(columns);
-        assertThat(missing).as("WarehouseLocation 实体字段缺列：%s", missing).isEmpty();
+        MapperColumnAssertions.assertEveryEntityFieldHasColumn(WarehouseLocation.class, "warehouse_locations");
     }
 
     @Test
@@ -97,7 +71,7 @@ class WarehouseLocationMapperTest {
         assertThat(sql).contains("tenant_id = #{tenantId}", "deleted = 0", "status = 'active'");
         assertThat(sql).as("空闲必须由成品在库行派生（不是仓位表上的一个标志列）")
                 .contains("NOT EXISTS", "finished_goods_stock", "s.status = 'in_stock'");
-        assertThat(columnsOf("warehouse_locations"))
+        assertThat(MapperColumnAssertions.columnsOf("warehouse_locations"))
                 .as("仓位表不得有 occupied/is_used 之类第二份真相列")
                 .doesNotContain("occupied", "is_occupied", "is_used", "used");
     }
@@ -109,7 +83,6 @@ class WarehouseLocationMapperTest {
         assertThat(sql).contains("ON CONFLICT DO NOTHING");
         assertThat(sql).contains("TENANT_ID", "BIN_CODE", "WAREHOUSE_ID");
     }
-
 
     @Test
     @DisplayName("🔴 类级守卫：每条手写 SQL 都标 @InterceptorIgnore(tenantLine=true)（自己写 tenant_id，禁止插件二次注入）")
