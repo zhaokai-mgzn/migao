@@ -106,11 +106,13 @@ class ProductionScanServiceDetailFieldsTest {
     /** 母单 #6901 在 P0-C 的 9 键之外**新增**的键（本文件不再维护第二份清单：由真值集推出来）。
      *
      * <p>🔴 issue #7636（用户 2026-10-24 逐字）：删 `sku`（货号改印商品货号 `product_code`）、
-     * `formula`（用料公式）/ `craft_tier`（算料档位）—— 后两个是引擎内部标识，屏上是英文。</p>
+     * `formula`（用料公式）/ `craft_tier`（算料档位）—— 后两个是引擎内部标识，屏上是英文。
+     * 🔴 issue #7842（用户 2026-10-26 逐字「…移除实际褶倍」）：删 `fullness_actual`；
+     * 同时补 `fee_combination_items`（加工费组合的成员名，屏上「加工费组合」那一行）。</p>
      */
     private static final List<String> ADDED_IN_6901 = List.of(
             "product_name", "product_code", "color_name", "door_width", "selling_method", "unit",
-            "style", "fullness_actual", "pleat_count", "per_panel_pleats", "panels",
+            "style", "fee_combination_items", "pleat_count", "per_panel_pleats", "panels",
             "has_pattern", "pattern_repeat", "special_options",
             "processing_meters", "formula_text",
             "batch_no", "batch_meters", "component_role");
@@ -245,7 +247,10 @@ class ProductionScanServiceDetailFieldsTest {
         assertThat(cloth.get("unit")).isEqualTo("米");
         // 组 3 加工信息
         assertThat(cloth.get("style")).isEqualTo("拼色");
-        assertThat(cloth.get("fullness_actual")).isEqualTo(new BigDecimal("2.35"));
+        // 加工费组合（issue #7842）：成员 = 取价同一份 `featureNames`（顺序 = 选择顺序，去重保序）
+        assertThat(cloth.get("fee_combination_items")).isEqualTo(List.of("定型", "韩褶", "超高"));
+        // 实际褶倍已按 issue #7842 删除（用户 2026-10-26 逐字「移除实际褶倍」）
+        assertThat(cloth).doesNotContainKey("fullness_actual");
         assertThat(cloth.get("pleat_count")).isEqualTo(48);
         assertThat(cloth.get("per_panel_pleats")).isEqualTo(24);
         assertThat(cloth.get("panels")).isEqualTo(2);
@@ -600,6 +605,11 @@ class ProductionScanServiceDetailFieldsTest {
         info.put("processingMeters", "8.10");
         info.put("formulaText", "2.8×2÷1.5=3.73→4");
         info.put("componentRole", "主布");
+        // 加工费组合（issue #7842）：成员来自 `processing_info.processingItems[].name`（取价同一份口径）。
+        // 特意放一个重复项 ⇒ 屏上「定型、定型」这种重复必须被去掉（去重保序）。
+        info.put("processingItems", List.of(
+                Map.of("name", "定型"), Map.of("name", "韩褶"), Map.of("name", "定型"),
+                Map.of("name", "超高")));
         // 算料输出（`CALC_OUTPUT_SNAPSHOT_KEYS`，snake_case）
         info.put("fullness_actual", "2.35");
         info.put("pleat_count", 48);

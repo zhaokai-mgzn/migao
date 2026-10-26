@@ -417,8 +417,10 @@ class ProcessingSetReadServiceTest {
             "product_name", "product_code", "color_name", "door_width", "selling_method", "unit",
             "width", "height",
             "curtain_type", "craft", "cutting_mode", "open_count", "is_shaped", "style",
-            // 理论褶倍 `fullness` 与 用料公式 / 算料档位（`formula` / `craft_tier`）已按 issue #7636 删除
-            "fullness_actual", "pleat_count", "per_panel_pleats", "panels",
+            // 理论褶倍 `fullness` 与 用料公式 / 算料档位（`formula` / `craft_tier`）已按 issue #7636 删除；
+            // 实际褶倍 `fullness_actual` 按 issue #7842 删除（用户 2026-10-26 逐字「移除实际褶倍」），
+            // 同单补上加工费组合的成员名 `fee_combination_items`
+            "fee_combination_items", "pleat_count", "per_panel_pleats", "panels",
             "has_pattern", "pattern_repeat", "special_options",
             "processing_meters", "formula_text",
             "fabric_meters",
