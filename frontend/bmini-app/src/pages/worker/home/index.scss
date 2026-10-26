@@ -124,7 +124,7 @@
     box-shadow: $shadow-card;
   }
 
-  // 左色彩条：三颗**既有**弱色 token（只做节奏区分，不承载语义）
+  // 左色彩条：四颗**既有**弱色 token（只做节奏区分，不承载语义）
   &__entry-bar {
     flex: 0 0 auto;
     width: 8px;
@@ -139,6 +139,11 @@
 
     &--c {
       background: rgba($success-color, 0.18);
+    }
+
+    // 第 4 条（issue #7806「待发货单」）：用**既有**金铜 token 的弱色，与 --b 的浅金区分开
+    &--d {
+      background: rgba($brand-gold, 0.18);
     }
   }
 

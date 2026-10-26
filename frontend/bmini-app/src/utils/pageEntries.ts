@@ -38,6 +38,7 @@
 import {
   INBOUND_PAGE_ROUTE,
   REPRINT_PAGE_ROUTE,
+  SHIPMENT_ORDERS_PAGE_ROUTE,
   SHIPMENT_PAGE_ROUTE,
   WORKER_HOME_ROUTE,
   WORKER_LOGIN_ROUTE,
@@ -239,5 +240,18 @@ export const PAGE_ENTRY_LEDGER: PageEntry[] = [
     viaBinding: 'src/utils/inbound/gaps.ts',
     audience:
       '工人身份（工人首页 →「拍照发货」；未登录时该页自身引导去工号 + PIN 登录，先登录再发货）',
+  },
+  // issue #7806 P1a：工人工作台**新增**的一条入口（「待发货单」= 全完工订单列表，只读）。
+  // 为什么必须有这一条：#7764 的读面 `GET /api/worker/shipment/orders` 已上线，而 `/b/` 侧
+  // **还没有任何页面消费它** ⇒ 不登记就是一条死链（L2 未登记即红）。
+  // ⚠️ 本期不含标签打印（依赖 #7803 的小程序 BLE 通道 + 画布），本页只读。
+  {
+    route: SHIPMENT_ORDERS_PAGE_ROUTE,
+    from: 'src/pages/worker/home/index.tsx',
+    nav: 'navigateTo',
+    via: 'SHIPMENT_ORDERS_PAGE_ROUTE',
+    viaBinding: 'src/utils/inbound/gaps.ts',
+    audience:
+      '工人身份（工人首页 →「待发货单」；未登录时该页自身引导去工号 + PIN 登录，先登录再看名单）',
   },
 ]

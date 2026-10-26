@@ -1,0 +1,172 @@
+@use "../../../styles/variables.scss" as *;
+
+// 工人端「待发货单」列表（issue #7806 P1a）
+//
+// ## 视觉语言：与**商家端**同一套（issue #7240 的既有裁定）
+//   · 页面根声明**非白**底色 + `min-height: 100vh`（判据：`tests/worker-card-contrast-guard.test.ts` 判据 8/9）
+//   · 卡片 = 白底 + `$radius-lg` + 细描边 + `$shadow-card`（可见边界，同一守卫判据 1）
+//   · 字号按 **750 设计尺度**（本仓样式管线 `1px = 1/40 rem`），正文 / 次要字号下限 24
+//
+// 🔴 不新增颜色 / 字号 token（`check-ui-regression.sh` 判 UI 回退）——只取既有变量。
+//
+// ⚠️ 类名末段刻意用 `__row` / `__notice` / `__gate` 之外的词：`__card|__entry|__gate` 是
+//    卡片形态守卫的登记面（判据 1 要求它们各自声明边框或阴影）。本页的 `__gate`（未登录引导）
+//    **按同一口径给了描边 + 阴影**，不留"白底浮在白底上"的形态。
+.shipment-orders {
+  min-height: 100vh;
+  // 非白底：白卡片必须落在有区别的底上（判据 8/9），否则卡片形状整个消失
+  background: $bg-secondary;
+  padding: 0 0 40px;
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 40px 24px 16px;
+  }
+
+  &__heading {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  &__title {
+    display: block;
+    font-size: 40px;
+    font-weight: 700;
+    color: $text-primary;
+  }
+
+  &__worker {
+    display: block;
+    margin-top: 6px;
+    font-size: 24px;
+    color: $text-secondary;
+  }
+
+  &__refresh {
+    flex: 0 0 auto;
+    margin: 0 0 0 16px;
+    padding: 0 28px;
+    height: 64px;
+    line-height: 64px;
+    font-size: 26px;
+    color: $primary-color;
+    background: $bg-primary;
+    border: 1px solid $border-color;
+    border-radius: $radius-full;
+  }
+
+  &__body {
+    display: block;
+  }
+
+  &__count {
+    display: block;
+    margin: 0 24px 12px;
+    font-size: 25px;
+    color: $text-secondary;
+  }
+
+  &__list {
+    display: block;
+  }
+
+  // ── 一行 = 一张全完工待发货单（显式可见边界：白卡落在灰底上） ──
+  &__row {
+    display: block;
+    margin: 0 24px 20px;
+    padding: 28px 32px;
+    background: $bg-primary;
+    border: 1px solid $border-color;
+    border-radius: $radius-lg;
+    box-shadow: $shadow-card;
+  }
+
+  &__no {
+    display: block;
+    font-size: 36px;
+    font-weight: 700;
+    color: $text-primary;
+    // 订单号是最强的定位线索：不折行（折了会被读成两个号）
+    word-break: keep-all;
+  }
+
+  &__line {
+    display: block;
+    margin-top: 10px;
+    font-size: 26px;
+    color: $text-secondary;
+    line-height: 1.5;
+  }
+
+  // 地址是唯一的长自由文本：**折行不截断**（截断 = 快递员不知道送到哪）
+  &__addr {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  // ── 状态块（读取中 / 读不到 / 没有单）：同一形状，文案与出口不同 ──
+  &__notice {
+    display: block;
+    margin: 0 24px 20px;
+    padding: 28px 32px;
+    background: $bg-primary;
+    border: 1px solid $border-color;
+    border-radius: $radius-lg;
+    box-shadow: $shadow-card;
+  }
+
+  &__notice-text {
+    display: block;
+    font-size: 26px;
+    color: $text-secondary;
+    line-height: 1.6;
+  }
+
+  &__retry {
+    display: inline-block;
+    margin-top: 20px;
+    padding: 0 32px;
+    height: 64px;
+    line-height: 64px;
+    font-size: 26px;
+    color: $bg-primary;
+    background: $primary-color;
+    border-radius: $radius-full;
+  }
+
+  &__truncated {
+    display: block;
+    margin: 0 24px 20px;
+    font-size: 24px;
+    color: $warning-color;
+  }
+
+  // ── 未登录引导（与工作台的 `__gate` 同一形态：白卡 + 可见边界） ──
+  &__gate {
+    margin: 0 24px;
+    padding: 32px;
+    background: $bg-primary;
+    border: 1px solid $border-color;
+    border-radius: $radius-lg;
+    box-shadow: $shadow-card;
+  }
+
+  &__gate-text {
+    display: block;
+    font-size: 26px;
+    color: $text-secondary;
+    line-height: 1.6;
+  }
+
+  &__login {
+    margin-top: 24px;
+    height: 88px;
+    line-height: 88px;
+    font-size: 30px;
+    color: $bg-primary;
+    background: $primary-color;
+    border-radius: $radius-full;
+  }
+}

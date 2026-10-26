@@ -12,7 +12,7 @@
  * 1. **身份卡读服务端**（`fetchCurrentWorker()`）：页头显示的正是「这笔活会记到谁头上」
  *    = 计件工资的凭证 ⇒ 前端自己拼一个名字就是把凭证交给客户端。服务端读不到就**回落成未登录**
  *    （绝不静默留着上一个人的名字）；
- * 2. **三件工人功能**（拍照入库 / 补打入库标签 / 拍照发货）都走既有页面与既有路由常量
+ * 2. **四件工人功能**（拍照入库 / 补打入库标签 / 拍照发货 / 待发货单）都走既有页面与既有路由常量
  *    （`utils/inbound/gaps.ts` 是路由单一真值，本页不写第二份字面量）；
  *    🔴 **「扫码报工」主按钮已随报工页下架删除**（2026-10-14，issue #6868 实现包 D1）：
  *    报工的唯一实现 = `frontend/worker-h5` 的 `/w/`（能力更全、已上线），端内那一页是
@@ -46,6 +46,7 @@ import {
 import {
   INBOUND_PAGE_ROUTE,
   REPRINT_PAGE_ROUTE,
+  SHIPMENT_ORDERS_PAGE_ROUTE,
   SHIPMENT_PAGE_ROUTE,
   WORKER_HOME_LOGIN_REQUIRED,
   WORKER_TAB_LOGIN_ROUTE,
@@ -117,7 +118,7 @@ export default function WorkerHomePage() {
               ⇒ 端内没有报工面，留着它就是死链。报工走 H5 `/w/`（工人扫纸上的码即开）。 */}
           <Text className='worker-home__section'>工人功能</Text>
 
-          {/* 🔴 三张行卡**逐条显式**写（不走数组 + `.map()`）：本仓的入口可达性守卫
+          {/* 🔴 四张行卡**逐条显式**写（不走数组 + `.map()`）：本仓的入口可达性守卫
               （`tests/page-entry-reachability.test.ts`）按 `Taro.navigateTo({ url: <路由常量> })`
               这类**字面锚点**静态证明「页面有入口」，数据驱动会让它解析不到 ⇒ 5 条判据一起红
               （实测：本项目 #6858 第一版用 `WORKER_ENTRIES.map()` 时踩到，守卫是对的）。 */}
@@ -154,6 +155,21 @@ export default function WorkerHomePage() {
             <View className='worker-home__entry-body'>
               <Text className='worker-home__entry-text'>拍照发货</Text>
               <Text className='worker-home__entry-sub'>拍运单 / 商品标签 ⇒ 生成发货单</Text>
+            </View>
+            <Text className='worker-home__entry-go'>›</Text>
+          </View>
+
+          {/* 第 4 条（issue #7806 P1a）：全完工订单一屏可见。
+              🔴 同样是**静态字面锚点**（不走数组 + `.map()`）—— 入口可达性守卫按
+              `Taro.navigateTo({ url: <路由常量> })` 静态证明「页面有入口」，数据驱动会让它解析不到。 */}
+          <View
+            className='worker-home__entry'
+            onClick={() => Taro.navigateTo({ url: SHIPMENT_ORDERS_PAGE_ROUTE })}
+          >
+            <View className='worker-home__entry-bar worker-home__entry-bar--d' />
+            <View className='worker-home__entry-body'>
+              <Text className='worker-home__entry-text'>待发货单</Text>
+              <Text className='worker-home__entry-sub'>全部完工的单 ⇒ 看收货人 / 电话 / 地址 / 物流</Text>
             </View>
             <Text className='worker-home__entry-go'>›</Text>
           </View>
