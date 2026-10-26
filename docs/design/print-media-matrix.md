@@ -50,6 +50,9 @@ Chrome 把自己的页眉页脚（版式日期 / 文档标题 / 页面 URL / 页
 ⚠️ **两张纸自 issue #7816 起已分开，不要合并**：
 - **水洗唛** = `label-50x150`（**固定** 50mm × 150mm，正文 12pt）—— 2026-10-26 用户逐字
   「水洗唛长度不足，设置为打印50*150」；#7776 的「纸长按内容撑开」对水洗唛**已作废**。
+  纸面内容 = `frontend/admin-web/src/lib/wash-label-content.ts`（单一真值；两条通道同读）：
+  `单号(加工单号) / 客户 / 第N套共M套 / 部位 / 货号 / 门幅 / 用料 / 宽高 / 加工方式(含加工费组合项，无前缀) / 褶法 / 特殊选项 / 备注`
+  —— issue #7833（2026-10-26）：颜色改货号、行格式 `A: B`、褶法 `韩褶公式 52折`、**折行印全文**（无省略号）、头尾各一条虚线。
 - **发货标签** = `label-50x70`（50mm 宽**连续卷**，纸长按内容撑开 70~150mm，正文 9pt）——
   由 `frontend/worker-h5/src/shipment.mjs` 的 `shipLabelLengthMm()` / `shipLabelPageRule()` 现算，
   守卫 `frontend/worker-h5/tests/worker-h5-shipment-ready.test.mjs` 逐值比对 `pageSize` 与 `lengthMm`。
