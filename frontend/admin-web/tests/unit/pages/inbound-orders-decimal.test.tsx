@@ -27,6 +27,8 @@ vi.mock('@/lib/api', () => ({
     getProducts: vi.fn(),
     getProduct: vi.fn(),
   },
+  // 页面读一次仓列表喂**仓库筛选器**（issue #7807）⇒ 空列表 = 不渲染该筛选，本文件的判据一字不动
+  warehouseApi: { list: () => Promise.resolve({ data: { data: [] } }) },
 }))
 
 vi.mock('sonner', () => ({

@@ -89,6 +89,8 @@ vi.mock('@/lib/api', () => ({
   productApi: { getProducts: (...a: unknown[]) => mockGetProducts(...a) },
   categoryApi: { getCategories: (...a: unknown[]) => mockGetCategories(...a) },
   inboundOrderApi: { list: (...a: unknown[]) => mockInboundList(...a) },
+  // 入库单页读一次仓列表喂**仓库筛选器**（issue #7807）⇒ 空列表 = 不渲染该筛选，本文件的判据一字不动
+  warehouseApi: { list: () => Promise.resolve({ data: { data: [] } }) },
   financeApi: {
     getSummary: (...a: unknown[]) => mockGetSummary(...a),
     getTransactions: (...a: unknown[]) => mockGetTransactions(...a),

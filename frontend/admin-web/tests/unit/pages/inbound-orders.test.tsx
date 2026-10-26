@@ -31,6 +31,8 @@ const mockDetail = vi.fn()
 const mockCreate = vi.fn()
 const mockPost = vi.fn()
 const mockCancel = vi.fn()
+// #7807：仓列表只用于**筛选器的选项**（读失败不阻塞主列表）
+const mockWarehouseList = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   inboundOrderApi: {
@@ -39,6 +41,9 @@ vi.mock('@/lib/api', () => ({
     create: (...a: unknown[]) => mockCreate(...a),
     post: (...a: unknown[]) => mockPost(...a),
     cancel: (...a: unknown[]) => mockCancel(...a),
+  },
+  warehouseApi: {
+    list: (...a: unknown[]) => mockWarehouseList(...a),
   },
 }))
 
@@ -120,6 +125,8 @@ const postedDetail = {
 beforeEach(() => {
   vi.clearAllMocks()
   mockList.mockResolvedValue({ data: { data: [draftRow, postedRow] } })
+  // 默认零仓：既有判据（列表 / 视图 / 详情）都不该被仓库筛选影响 —— 候选 ≤1 时筛选器不渲染
+  mockWarehouseList.mockResolvedValue({ data: { data: [] } })
 })
 
 describe('入库单页面（PR-037 / issue #5034）', () => {
@@ -522,5 +529,153 @@ describe('成品视图两处收口（#7799）', () => {
 
     const detailTable = (await screen.findByText('套号')).closest('table') as HTMLTableElement
     expect(within(detailTable).getByText('—')).toBeInTheDocument()
+  })
+})
+
+// ============================================================ #7807 按仓库筛选
+
+/**
+ * #7807：入库单列表要能**按仓库查单** —— 改前只有「仓库」文本列可看，查不了。
+ *
+ * 守五件事：
+ *   ① 原料视图有 ≥2 个原料仓 ⇒ 渲染仓库下拉；选了仓 ⇒ 请求带该 `warehouseId`；
+ *   ② 切成品视图 ⇒ 选项只剩成品仓，且请求**不再带**旧 warehouseId（重置与重载同一次更新，
+ *      不许出现「先按旧仓查一次成品视图」的中间请求）；
+ *   ③ 候选仓只有 1 个 ⇒ **不渲染**该筛选（一个只有一种取值的控件是噪声，§31 P1）；
+ *   ④ 反向：原料视图的选项里**没有**成品仓（选它一定查不出东西）；
+ *   ⑤ 仓列表读失败 ⇒ 筛选器不渲染即可，主列表自己的读失败态 / 成功态一字不动。
+ */
+const warehouse = (id: number, name: string, warehouseType: string) => ({
+  id,
+  code: `W-${id}`,
+  name,
+  warehouseType,
+  isDefault: false,
+  status: 'active',
+})
+
+const RAW_WAREHOUSE_A = warehouse(1, '原料一号仓', 'material')
+const RAW_WAREHOUSE_B = warehouse(2, '原料二号仓', 'store')
+const FINISHED_WAREHOUSE_A = warehouse(9, '成品一号仓', 'finished')
+const FINISHED_WAREHOUSE_B = warehouse(10, '成品二号仓', 'finished')
+
+describe('入库单列表按仓库筛选（#7807）', () => {
+  interface Option {
+    value: string
+    label: string | null
+  }
+
+  const filterEl = () => screen.queryByTestId('inbound-warehouse-filter') as HTMLSelectElement | null
+  const optionsOf = (el: HTMLSelectElement): Option[] =>
+    Array.from(el.options).map((o) => ({ value: o.value, label: o.textContent }))
+  const lastParams = () => mockList.mock.calls[mockList.mock.calls.length - 1][0]
+
+  /** 等筛选器出现**且**选项等于 expected —— 不存在即抛（把「没渲染也通过」挡在门外） */
+  const waitForOptions = async (expected: Option[]): Promise<HTMLSelectElement> => {
+    await waitFor(() => {
+      const el = filterEl()
+      if (!el) throw new Error('期望渲染仓库筛选器（候选仓 ≥2 个）')
+      expect(optionsOf(el)).toEqual(expected)
+    })
+    const el = filterEl()
+    if (!el) throw new Error('仓库筛选器在断言之后消失')
+    return el
+  }
+
+  it('原料视图：≥2 个原料仓 ⇒ 渲染筛选；选第二个仓 ⇒ 请求带该 warehouseId', async () => {
+    mockWarehouseList.mockResolvedValue({
+      data: { data: [RAW_WAREHOUSE_A, RAW_WAREHOUSE_B, FINISHED_WAREHOUSE_A] },
+    })
+    render(<InboundOrdersPage />)
+    await screen.findByText('RK-20260923-0001')
+
+    // 首项 = 「全部仓库」（value 空）⇒「不选」与后端 `warehouseId = null`（不过滤）同一语义
+    const el = await waitForOptions([
+      { value: '', label: '全部仓库' },
+      { value: '1', label: '原料一号仓' },
+      { value: '2', label: '原料二号仓' },
+    ])
+
+    fireEvent.change(el, { target: { value: '2' } })
+
+    await waitFor(() =>
+      expect(lastParams()).toEqual({
+        keyword: undefined,
+        status: '',
+        bizCategory: 'fabric',
+        warehouseId: 2,
+      }),
+    )
+  })
+
+  it('切成品视图 ⇒ 只剩成品仓选项，且请求里不再带旧 warehouseId（重置与重载同一次更新）', async () => {
+    mockWarehouseList.mockResolvedValue({
+      data: { data: [RAW_WAREHOUSE_A, RAW_WAREHOUSE_B, FINISHED_WAREHOUSE_A, FINISHED_WAREHOUSE_B] },
+    })
+    render(<InboundOrdersPage />)
+    await screen.findByText('RK-20260923-0001')
+
+    const fabricFilter = await waitForOptions([
+      { value: '', label: '全部仓库' },
+      { value: '1', label: '原料一号仓' },
+      { value: '2', label: '原料二号仓' },
+    ])
+    fireEvent.change(fabricFilter, { target: { value: '2' } })
+    await waitFor(() => expect(lastParams().warehouseId).toBe(2))
+
+    mockList.mockResolvedValue({ data: { data: [finishedRow] } })
+    fireEvent.click(screen.getByTestId('inbound-tab-finished'))
+    await screen.findByText('RK-20261026-0001')
+
+    // 选项随视图换（原料仓在新视图里选不到）
+    await waitForOptions([
+      { value: '', label: '全部仓库' },
+      { value: '9', label: '成品一号仓' },
+      { value: '10', label: '成品二号仓' },
+    ])
+
+    // 旧值（原料二号仓 id=2）在成品视图里不存在 ⇒ 必须重置
+    await waitFor(() => expect(lastParams().bizCategory).toBe('finished'))
+    expect(lastParams().warehouseId).toBeUndefined()
+    // 反向：不许出现「先按旧仓查一次成品视图」的中间请求
+    expect(mockList.mock.calls.map((c) => c[0])).not.toContainEqual(
+      expect.objectContaining({ bizCategory: 'finished', warehouseId: 2 }),
+    )
+  })
+
+  it('候选仓只有 1 个 ⇒ 不渲染仓库筛选（一个只有一种取值的控件是噪声）', async () => {
+    mockWarehouseList.mockResolvedValue({ data: { data: [RAW_WAREHOUSE_A, FINISHED_WAREHOUSE_A] } })
+    render(<InboundOrdersPage />)
+    await screen.findByText('RK-20260923-0001')
+    await waitFor(() => expect(mockWarehouseList).toHaveBeenCalled())
+
+    expect(filterEl()).toBeNull()
+    // 筛选器不渲染 ≠ 列表不查：主列表请求照旧（原料视图 + 不带仓库条件）
+    expect(mockList).toHaveBeenCalledWith({ keyword: undefined, status: '', bizCategory: 'fabric' })
+  })
+
+  it('反向：原料视图的选项里没有成品仓（选它一定查不出东西）', async () => {
+    mockWarehouseList.mockResolvedValue({
+      data: { data: [RAW_WAREHOUSE_A, RAW_WAREHOUSE_B, FINISHED_WAREHOUSE_A] },
+    })
+    render(<InboundOrdersPage />)
+    await screen.findByText('RK-20260923-0001')
+
+    const el = await waitForOptions([
+      { value: '', label: '全部仓库' },
+      { value: '1', label: '原料一号仓' },
+      { value: '2', label: '原料二号仓' },
+    ])
+    expect(optionsOf(el).map((o) => o.label)).not.toContain('成品一号仓')
+    expect(optionsOf(el).map((o) => o.value)).not.toContain('9')
+  })
+
+  it('仓列表读失败 ⇒ 筛选器不渲染，主列表照常（筛选器故障不阻塞读单）', async () => {
+    mockWarehouseList.mockRejectedValue(new Error('warehouses 500'))
+    render(<InboundOrdersPage />)
+
+    expect(await screen.findByText('RK-20260923-0001')).toBeInTheDocument()
+    await waitFor(() => expect(mockWarehouseList).toHaveBeenCalled())
+    expect(filterEl()).toBeNull()
   })
 })

@@ -3885,6 +3885,8 @@ export interface InboundOrderListParams {
   status?: InboundOrderStatus | ''
   /** 业务类别（issue #7794）：`fabric` 原料仓 / `finished` 成品仓；缺省 = 两类都返回 */
   bizCategory?: 'fabric' | 'finished'
+  /** 仓库主数据引用（issue #7807）：缺省 = 全部仓库（页面下拉的 value 转 number 后再发） */
+  warehouseId?: number
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

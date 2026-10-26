@@ -26,6 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -85,13 +86,13 @@ class InboundOrderControllerTest {
     @DisplayName("PR-035 列表与建单都把当前租户透传给服务（跨租户读 = 数据泄漏；V196 起建单即过账）")
     void listAndCreatePassTenant() {
         TenantContext.setTenantId(7L);
-        when(inboundOrderService.list(any(), any(), any(), any())).thenReturn(List.of(new InboundOrderLine()));
+        when(inboundOrderService.list(any(), any(), any(), any(), any())).thenReturn(List.of(new InboundOrderLine()));
         when(inboundOrderService.createAndPost(any(), any(), any())).thenReturn(new InboundOrderResponse());
 
-        ApiResponse<List<InboundOrderLine>> list = controller.list("柯桥", "draft", "finished");
+        ApiResponse<List<InboundOrderLine>> list = controller.list("柯桥", "draft", "finished", null);
         assertThat(list.getData()).hasSize(1);
         // 类别维（V196 / issue #7794）：查询参数必须原样到服务层 —— 丢掉它 = 两个视图都拿全量（混排照旧）。
-        verify(inboundOrderService).list(eq("柯桥"), eq("draft"), eq("finished"), eq(7L));
+        verify(inboundOrderService).list(eq("柯桥"), eq("draft"), eq("finished"), isNull(), eq(7L));
 
         InboundOrderCreateRequest req = new InboundOrderCreateRequest();
         controller.create(req);
@@ -102,6 +103,27 @@ class InboundOrderControllerTest {
         // 建单的操作人取自认证上下文；无认证时退化为 "system"（不写 null、不抛异常）
         verify(inboundOrderService).createAndPost(eq(req), eq(7L), eq("system"));
         verify(inboundOrderService, never()).create(any(), any(), any());
+    }
+
+    /**
+     * issue #7807：列表要能**按仓库查单**（改前只有「仓库」文本列可看，查不了）。
+     *
+     * <p>守两条：① 查询参数 {@code warehouseId} 原样到服务层（丢掉 = 下拉选了仓也返回全部仓的单，
+     * 而页面看起来一切正常）；② 与 {@code bizCategory} **同时**给时不得互相吞没
+     * —— 两个筛选是「且」的关系（原料仓 + 某个仓），丢任一个都表现为「筛了没用」。</p>
+     */
+    @Test
+    @DisplayName("#7807 ?warehouseId=12 ⇒ 服务层收到 12，且与 bizCategory 同时给时不互相吞")
+    void listPassesWarehouseIdTogetherWithBizCategory() {
+        TenantContext.setTenantId(7L);
+        when(inboundOrderService.list(any(), any(), any(), any(), any())).thenReturn(List.of());
+
+        controller.list(null, null, "fabric", 12L);
+        verify(inboundOrderService).list(isNull(), isNull(), eq("fabric"), eq(12L), eq(7L));
+
+        // 反向零回归：不传仓库 ⇒ 服务层收到 null（= 全部仓库）
+        controller.list(null, null, "fabric", null);
+        verify(inboundOrderService).list(isNull(), isNull(), eq("fabric"), isNull(), eq(7L));
     }
 
     /**
