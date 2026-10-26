@@ -220,11 +220,6 @@ export function washLabelCompanyName(companyName?: string | null): string {
   return typeof companyName === 'string' ? companyName.trim() : ''
 }
 
-/** 算料公式（用户字段裁定里的「备注（工艺备注 / 算料公式）」） */
-export function washLabelFormula(item?: ProcessingOrderItem | null): string {
-  return specValue(craftSpecRows(item), '算料公式')
-}
-
 export interface WashLabelRowsInput {
   /** 部位（= 商品行）；`null` ⇒ 不出任何行（调用方另出占位，不在这里编造） */
   position?: ProductionPosition | null
