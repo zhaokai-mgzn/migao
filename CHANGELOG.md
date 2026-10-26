@@ -17,6 +17,16 @@
 
 ## [Unreleased]
 
+### 扫码报工恢复可用：PostgreSQL 无法推断 `CONCAT` 内的参数类型，扫码整条 500（2026-10-26，issue #7874）
+
+- 工人端「扫码即报工」在生产上改前**整条 500**（屏上红字「服务器内部错误」）：打包工序判据
+  `ProductionWorkLogMapper#countPackerLogs` 把关键词参数直接塞进 `CONCAT('%', ?, '%')`，而 PostgreSQL 的
+  `CONCAT` 是 `VARIADIC "any"` ⇒ 连接串 `stringtype=unspecified`（本仓生产口径）下**解析期**就报
+  `could not determine data type of parameter $4`，与传什么值无关、每次都炸；
+- 修法 = 参数显式 `CAST(#{keyword} AS text)`（`LIKE '%' || … || '%'` 形态不受影响，见守卫的边界登记）；
+- 判据 = 真库测试（改前逐字复现该 `PSQLException`、改后绿：打包工 1 / 非打包工 0 / 换关键词 0）+
+  类级守卫（全部 mapper 注解 SQL：`CONCAT(` 里出现未 CAST 的 `#{…}` 一律判红）。
+
 ### 加工单打印移到「加工单生产明细」页：与洗水唛同层、统一收口到一个「打印」（2026-10-26，issue #7870）
 
 用户 2026-10-26 逐字：「加工单打印移到加工单和水洗唛放一起，也想订单一样统一收口到打印按钮」。

@@ -28,10 +28,20 @@ public interface ProductionWorkLogMapper extends BaseMapper<ProductionWorkLog> {
      */
     String PACK_OPERATION_KEYWORD = "打包";
 
+    /**
+     * 🔴 关键词**必须**显式 {@code CAST(… AS text)}（issue #7874，2026-10-26 生产事故）：
+     * 生产连接串带 {@code stringtype=unspecified}（`application.yml`），字符串参数以 UNSPECIFIED 类型下发；
+     * 而 PostgreSQL 的 {@code CONCAT} 是 {@code VARIADIC "any"} ⇒ **无法从上下文推断参数类型**，
+     * 解析期就报 {@code could not determine data type of parameter $4}（与传什么值无关，每次都炸）。
+     * 写面现象 = 工人扫码整条 500（「服务器内部错误」）。H2 会替你推断类型 ⇒ 单测测不出来，
+     * 判据 = 真库测试 {@code ProductionWorkLogMapperRealDbTest} + 类级守卫
+     * {@code MapperConcatParamTypeGuardTest}（{@code CONCAT(} 里的未 CAST 参数一律判红）。
+     */
     @com.baomidou.mybatisplus.annotation.InterceptorIgnore(tenantLine = "true")
     @Select("SELECT COUNT(1) FROM production_work_logs "
             + "WHERE tenant_id = #{tenantId} AND processing_order_id = #{processingOrderId} "
-            + "AND worker_id = #{workerId} AND deleted = 0 AND operation_name ILIKE CONCAT('%', #{keyword}, '%')")
+            + "AND worker_id = #{workerId} AND deleted = 0 "
+            + "AND operation_name ILIKE CONCAT('%', CAST(#{keyword} AS text), '%')")
     int countPackerLogs(@Param("tenantId") Long tenantId,
                         @Param("processingOrderId") String processingOrderId,
                         @Param("workerId") String workerId,
