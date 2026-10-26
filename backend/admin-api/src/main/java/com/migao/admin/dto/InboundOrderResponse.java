@@ -115,6 +115,15 @@ public class InboundOrderResponse {
         /** 批次号（**过账后才有**；草稿为 null） */
         private String batchNo;
 
+        /**
+         * **来源订单号**（成品行才有值；issue #7799）—— 成品单由打包产生，一行对应一张订单的一个部位，
+         * 商家据此回查「这件成品是哪张单的」。原料行恒 null（布料入库不挂订单）。
+         *
+         * <p>自动带出：{@code BeanUtils.copyProperties(line, item)} 从
+         * {@code inbound_order_items.order_no} 拷贝，**不手写映射**（同 #7794 的成品字段口径）。</p>
+         */
+        private String orderNo;
+
         /** 供应商缸号（可空） */
         private String dyeLot;
 

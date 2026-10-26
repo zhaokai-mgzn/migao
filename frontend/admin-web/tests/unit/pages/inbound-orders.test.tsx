@@ -1,4 +1,4 @@
-// case_ids: PR-037, UI-074
+// case_ids: PR-037, UI-074, WH-004
 //
 // PR-037（issue #5034，V111）：入库单页面 —— 「建单（草稿，不动库存）→ 过账（自动生成批次号 +
 //   自动加库存）→ 批次可追溯」这条动线在**前端**的可达性。
@@ -266,6 +266,8 @@ describe('入库单页面（PR-037 / issue #5034）', () => {
     expect(rowOf('SKU-NOROLL').getAllByRole('cell')[1].textContent).toBe('-')
     expect(rowOf('SKU-NOROLL').getAllByRole('cell')[2].textContent).toBe('-')
     expect(rowOf('SKU-NOROLL').getAllByRole('cell')[3].textContent).toBe('30')
+    // #7799 反向（原料单零回归）：来源订单号是**成品单**的列，布料入库不挂订单 ⇒ 这里不出现
+    expect(screen.queryByText('来源订单号')).not.toBeInTheDocument()
   })
 
   it('已过账的单：详情里没有过账/作废入口（库存已进台账，冲销须另开单据）', async () => {
@@ -325,6 +327,8 @@ const finishedDetail = {
       setNo: 'JG-20261026-001-001',
       binCode: 'A-01',
       shortCode: 'AB12CD34',
+      // #7799：成品单由打包产生 ⇒ 每行都能回查来源订单
+      orderNo: 'SO-20261026-0001',
       quantity: 1,
       unit: 'set',
     },
@@ -335,6 +339,7 @@ const finishedDetail = {
       setNo: 'JG-20261026-001-001',
       binCode: 'A-02',
       shortCode: 'EF56GH78',
+      orderNo: 'SO-20261026-0001',
       quantity: 1,
       unit: 'set',
     },
@@ -445,5 +450,77 @@ describe('入库单两个视图：原料仓 / 成品仓（#7794）', () => {
     } finally {
       window.history.pushState({}, '', '/')
     }
+  })
+})
+
+// ============================================================ #7799 成品视图两处收口
+
+/**
+ * #7799 / WH-004：成品入库视图（#7794 落的）两处收口。
+ *
+ * ① 状态筛选去掉「草稿」—— 成品单恒为 `posted`（打包自动建单即过账），「草稿」在这个视图里**恒空**；
+ *    原料视图仍含（工人拍照草稿停在那里）⇒ 反向判据。
+ * ② 成品单明细补「来源订单号」—— 成品行不挂 SKU 货号，没有它就无法回查是哪张订单的。
+ */
+describe('成品视图两处收口（#7799）', () => {
+  const statusOptionLabels = () =>
+    Array.from((screen.getByRole('combobox') as HTMLSelectElement).options).map((o) => o.textContent)
+
+  it('状态筛选：成品视图**不含**「草稿」，原料视图**仍含**（反向零回归）', async () => {
+    render(<InboundOrdersPage />)
+    await screen.findByText('RK-20260923-0001')
+
+    // 原料视图：草稿是真状态（工人拍照草稿），不许顺手删掉
+    expect(statusOptionLabels()).toContain('草稿')
+    expect(statusOptionLabels()).toEqual(['全部状态', '草稿', '已过账', '已作废'])
+
+    mockList.mockResolvedValue({ data: { data: [finishedRow] } })
+    fireEvent.click(screen.getByTestId('inbound-tab-finished'))
+    await screen.findByText('RK-20261026-0001')
+
+    // 成品视图：草稿选项没了，其余状态仍在
+    expect(statusOptionLabels()).not.toContain('草稿')
+    expect(statusOptionLabels()).toEqual(['全部状态', '已过账', '已作废'])
+  })
+
+  it('成品单明细多一列「来源订单号」= item.orderNo（两行都渲染真值）', async () => {
+    mockDetail.mockResolvedValueOnce({ data: { data: finishedDetail } })
+    render(<InboundOrdersPage />)
+    await screen.findByText('RK-20260923-0001')
+    mockList.mockResolvedValue({ data: { data: [finishedRow] } })
+    fireEvent.click(screen.getByTestId('inbound-tab-finished'))
+    await screen.findByText('RK-20261026-0001')
+
+    fireEvent.click(
+      within(screen.getByText('RK-20261026-0001').closest('tr')!).getByRole('button', { name: '详情' }),
+    )
+
+    const detailTable = (await screen.findByText('套号')).closest('table') as HTMLTableElement
+    expect(within(detailTable).getByText('来源订单号')).toBeInTheDocument()
+    // 同一套的两个部位同属一张订单 ⇒ 两行都显示同一个单号
+    expect(within(detailTable).getAllByText('SO-20261026-0001').length).toBe(2)
+  })
+
+  it('没有来源订单号（历史行 / 正常应有）⇒ 显示「—」，不留空白格', async () => {
+    mockDetail.mockResolvedValueOnce({
+      data: {
+        data: {
+          ...finishedDetail,
+          items: [{ ...finishedDetail.items[0], orderNo: null }, finishedDetail.items[1]],
+        },
+      },
+    })
+    render(<InboundOrdersPage />)
+    await screen.findByText('RK-20260923-0001')
+    mockList.mockResolvedValue({ data: { data: [finishedRow] } })
+    fireEvent.click(screen.getByTestId('inbound-tab-finished'))
+    await screen.findByText('RK-20261026-0001')
+
+    fireEvent.click(
+      within(screen.getByText('RK-20261026-0001').closest('tr')!).getByRole('button', { name: '详情' }),
+    )
+
+    const detailTable = (await screen.findByText('套号')).closest('table') as HTMLTableElement
+    expect(within(detailTable).getByText('—')).toBeInTheDocument()
   })
 })

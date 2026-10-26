@@ -17,6 +17,7 @@ import com.migao.admin.entity.Product;
 import com.migao.admin.entity.ProductSku;
 import com.migao.admin.entity.StockBatch;
 import com.migao.admin.entity.StockLedger;
+import com.migao.admin.entity.Warehouse;
 import com.migao.admin.entity.WarehouseLocation;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.InboundOrderItemMapper;
@@ -28,6 +29,7 @@ import com.migao.admin.mapper.ProcessingSetPartTokenMapper;
 import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
 import com.migao.admin.mapper.StockBatchMapper;
+import com.migao.admin.mapper.WarehouseMapper;
 import com.migao.admin.time.BusinessClock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -105,7 +107,7 @@ public class InboundOrderService {
                                FinishedGoodsStockMapper finishedGoodsStockMapper) {
         this(inboundOrderMapper, inboundOrderItemMapper, inboundOrderQueryMapper, stockBatchMapper,
                 productSkuMapper, productMapper, stockLedgerService, warehouseLocationService,
-                finishedGoodsStockMapper, null, null);
+                finishedGoodsStockMapper, null, null, null);
     }
 
     private static final int BATCH_LIMIT = 200;
@@ -131,6 +133,11 @@ public class InboundOrderService {
     private final ProcessingSetPartTokenMapper setPartTokenMapper;
     /** 套（V197）：标签「第 N 套」的 set_index 来源 */
     private final ProcessingOrderSetMapper processingOrderSetMapper;
+    /**
+     * 仓库档案（issue #7799）：建单时按 {@code warehouseId} 解析**真仓** —— 租户归属 / 停用 /
+     * 成品仓三条校验都在它上面（复用既有 {@code selectById}，不新写 mapper 方法）。
+     */
+    private final WarehouseMapper warehouseMapper;
 
     /**
      * 池化事件通知点（issue #5182）：过账**既有业务完成之后**追加的一句 fail-soft 通知
@@ -205,6 +212,9 @@ public class InboundOrderService {
                 .supplierId(resolveSupplierId(tenantId, req.getSupplierId(), supplierText))
                 .supplierDocNo(trimToNull(req.getSupplierDocNo()))
                 .warehouse(trimToNull(req.getWarehouse()))
+                // 真仓引用（issue #7799）：解析与校验在 createAndPost（POST 端点）里做；
+                // 走到这里的 null 一律原样落 NULL —— 工人拍照草稿 / Excel 期初导入口径一字不动
+                .warehouseId(req.getWarehouseId())
                 .inboundDate(req.getInboundDate() != null ? req.getInboundDate() : businessClock.today())
                 .status(InboundOrder.STATUS_DRAFT)
                 .totalAmount(BigDecimal.ZERO)
@@ -347,8 +357,43 @@ public class InboundOrderService {
      */
     @Transactional(rollbackFor = Exception.class)
     public InboundOrderResponse createAndPost(InboundOrderCreateRequest req, Long tenantId, String operator) {
+        // 商家建单（issue #7799）：仓库由**选**得来 ⇒ 先解析成真仓，再建单/过账。
+        // 解析放在 create 之前：仓不合法时**一张单都不建**（不留下挂着错仓或空仓的草稿）。
+        applyWarehouseBinding(req, tenantId);
         InboundOrderResponse created = create(req, tenantId, operator);
         return post(created.getId(), tenantId, operator);
+    }
+
+    /**
+     * 把请求里的 {@code warehouseId} 解析成**本租户在用的真仓**并回填文本快照（issue #7799）。
+     *
+     * <p>改前 {@code warehouse} 只是自由文本：「一号仓」「1号仓」「一号仓库」是三个不同的字符串，
+     * 库存与对账都找不到是哪一个仓。带 id 时三条校验：① 仓存在且属于本租户（他租户 = 不存在，
+     * 不泄露存在性）；② 未停用；③ **不是成品仓**（成品帘入库由打包自动产生，手工建成品入库单
+     * 会把成品在库/仓位分配这套语义弄乱）。</p>
+     *
+     * <p>🔴 不带 id（{@code warehouseId == null}）⇒ **立刻返回、一次仓表都不查**：工人拍照草稿、
+     * Excel 期初导入、老客户端都是这个形态，行为一字不动（连 {@code warehouse_id} 都仍为 NULL）。</p>
+     *
+     * <p>文本快照口径：带 id 时以**仓名**为准（覆盖请求里的自由文本）——两处口径只留一份，
+     * 否则列表显示「随手写的仓」而库存挂在一号原料仓。</p>
+     */
+    private void applyWarehouseBinding(InboundOrderCreateRequest req, Long tenantId) {
+        Long warehouseId = req.getWarehouseId();
+        if (warehouseId == null) {
+            return;
+        }
+        // 逻辑删除由 @TableLogic 自动加 deleted = 0（同仓内其它读面口径），这里只需判租户与状态
+        Warehouse warehouse = warehouseMapper.selectById(warehouseId);
+        if (warehouse == null
+                || !tenantId.equals(warehouse.getTenantId())
+                || !"active".equals(warehouse.getStatus())) {
+            throw BusinessException.validationError("仓库不存在或已停用");
+        }
+        if (Warehouse.TYPE_FINISHED.equals(warehouse.getWarehouseType())) {
+            throw BusinessException.validationError("成品仓不能建布料入库单");
+        }
+        req.setWarehouse(warehouse.getName());
     }
 
     /**

@@ -40,6 +40,16 @@ public class InboundOrderCreateRequest {
     /** 仓库/仓位（可空） */
     private String warehouse;
 
+    /**
+     * 仓库 id（可空；issue #7799）—— 选了**真实仓库**时才带。
+     *
+     * <p>可空的理由：旧请求（工人拍照草稿 / Excel 期初导入 / 老客户端）只有文本 {@link #warehouse}，
+     * 一律按原口径处理（{@code warehouse_id} 留空，行为一字不动）。带了就必须是**本租户在用**的仓，
+     * 且不能是成品仓（成品单由打包自动产生）—— 校验与落库见
+     * {@code InboundOrderService#createAndPost}。</p>
+     */
+    private Long warehouseId;
+
     /** 入库日期（可空 ⇒ 服务端取当天；可回填历史单） */
     private LocalDate inboundDate;
 

@@ -239,6 +239,11 @@ export default function InboundOrdersPage() {
     }
   }
 
+  // 状态选项按视图裁剪（issue #7799）：成品单恒为 `posted`（打包自动建单即过账）⇒
+  // 「草稿」在成品视图里**恒空**，留着只是让商家白点一次。原料视图**保留**（工人拍照草稿停在那里）。
+  const statusOptions =
+    view === 'finished' ? STATUS_OPTIONS.filter((o) => o.value !== 'draft') : STATUS_OPTIONS
+
   return (
     <div className="p-6 space-y-4">
       {/* 页头 */}
@@ -293,7 +298,12 @@ export default function InboundOrdersPage() {
             role="tab"
             aria-selected={view === key}
             data-testid={`inbound-tab-${key}`}
-            onClick={() => setView(key)}
+            onClick={() => {
+              setView(key)
+              // 带着原料视图的「草稿」切到成品视图 ⇒ 那个值已不在选项里，列表也恒空
+              // （一个查不出东西的筛选条件比没有更糟）⇒ 归零
+              if (key === 'finished' && status === 'draft') setStatus('')
+            }}
             className={
               'rounded-md border px-3 py-1.5 text-sm ' +
               (view === key
@@ -318,7 +328,7 @@ export default function InboundOrdersPage() {
         <Select
           value={status}
           onChange={(e) => setStatus(e.target.value as InboundOrderStatus | '')}
-          options={STATUS_OPTIONS}
+          options={statusOptions}
           className="max-w-[160px]"
         />
         <Button variant="secondary" onClick={() => void load()}>
@@ -677,6 +687,8 @@ export default function InboundOrdersPage() {
                       <th className="text-left px-3 py-2 font-medium whitespace-nowrap">套号</th>
                       <th className="text-left px-3 py-2 font-medium whitespace-nowrap">仓位号</th>
                       <th className="text-left px-3 py-2 font-medium whitespace-nowrap">短码</th>
+                      {/* 来源订单号（issue #7799）：成品行不挂 SKU 货号 ⇒ 没有它就无法回查是哪张订单的 */}
+                      <th className="text-left px-3 py-2 font-medium whitespace-nowrap">来源订单号</th>
                       <th className="text-right px-3 py-2 font-medium whitespace-nowrap">数量</th>
                     </tr>
                   </thead>
@@ -687,6 +699,7 @@ export default function InboundOrdersPage() {
                         <td className="px-3 py-2 font-mono text-neutral-900">{it.setNo || '-'}</td>
                         <td className="px-3 py-2 font-mono text-neutral-900">{it.binCode || '-'}</td>
                         <td className="px-3 py-2 font-mono text-neutral-600">{it.shortCode || '-'}</td>
+                        <td className="px-3 py-2 font-mono text-neutral-700">{it.orderNo || '—'}</td>
                         {/* 数量按「N 套」显示（成品行恒为 1 套，unit=set） */}
                         <td className="px-3 py-2 text-right text-neutral-900">
                           {formatStockQuantity(it.quantity)} 套
@@ -695,7 +708,7 @@ export default function InboundOrdersPage() {
                     ))}
                     {(!detail.items || detail.items.length === 0) && (
                       <tr>
-                        <td colSpan={5} className="px-3 py-6 text-center text-neutral-400">
+                        <td colSpan={6} className="px-3 py-6 text-center text-neutral-400">
                           无明细
                         </td>
                       </tr>
