@@ -587,7 +587,8 @@ describe('加工单生产明细页', () => {
     const rows = screen.getByTestId('task-card-label-rows-0')
     const lines = Array.from(rows.children).map((el) => el.textContent ?? '')
     // ① 第一行 = **单号 = 加工单号**（2026-10-26 用户选定「只留加工单号，删掉订单行」）
-    expect(lines[0]).toBe(`单号: ${PROCESSING_ORDER.processingOrderNo}`)
+    // issue #7839：纸面单号去 `JG-` 前缀（系统里的加工单号不变）
+    expect(lines[0]).toBe('单号: 20260917-0001')
     expect(lines[1]).toBe(`客户: ${PROCESSING_ORDER.customerName}`)
     // ② 17 位订单号 / 交期 / 人可读短码 / 「扫码报工」**一律不上纸**（历次裁定的退场项）
     expect(rows.textContent).not.toContain(PROCESSING_ORDER.orderNo)

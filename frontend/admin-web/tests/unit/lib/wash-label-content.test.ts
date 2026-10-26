@@ -27,6 +27,7 @@ import {
   WASH_LABEL_ROW_KEYS,
   toWashLabelInputs,
   washLabelCopies,
+  washLabelDocNo,
   washLabelPleats,
   washLabelRows,
   type WashLabelRowKey,
@@ -98,7 +99,8 @@ describe('washLabelRows — 纸面内容与行序（issue #6656 → #7816 → #7
     expect(rows[0].key).toBe('docNo')
     expect(rows[1].key).toBe('customer')
 
-    expect(textOf(rows, 'docNo')).toBe(`单号: ${PROCESSING_ORDER_NO}`)
+    // issue #7839：纸面单号**去 `JG-` 前缀**（系统里的编号不变）
+    expect(textOf(rows, 'docNo')).toBe('单号: 20260921-8237')
     expect(textOf(rows, 'customer')).toBe(`客户: ${CUSTOMER}`)
     expect(textOf(rows, 'setNo')).toBe('第 1 套 / 共 2 套')
     expect(textOf(rows, 'positionKind')).toBe('部位: 布帘')
@@ -236,6 +238,27 @@ describe('washLabelRows — 纸面内容与行序（issue #6656 → #7816 → #7
   it('无 position ⇒ 空清单（不在这里造占位行）', () => {
     expect(washLabelRows({ position: null, item: ITEM })).toEqual([])
     expect(washLabelRows({})).toEqual([])
+  })
+})
+
+describe('washLabelDocNo — 纸面单号去 `JG-` 前缀（issue #7839，用户「简约点」）', () => {
+  it('只剥开头那一个 `JG-`（大小写不敏感）；其余形态原样返回', () => {
+    expect(washLabelDocNo('JG-20261026-8172')).toBe('20261026-8172')
+    expect(washLabelDocNo('jg-20261026-8172')).toBe('20261026-8172')
+    // 前后空白先 trim（后端历史脏数据）
+    expect(washLabelDocNo('  JG-20261026-8172  ')).toBe('20261026-8172')
+    // 只剥开头：中间出现的「JG-」不动（不是全局替换）
+    expect(washLabelDocNo('2026-JG-8172')).toBe('2026-JG-8172')
+    // 其它编号形态不猜、不改（存量单 / 手工单）
+    expect(washLabelDocNo('PO260926-0007')).toBe('PO260926-0007')
+    expect(washLabelDocNo('202610268172')).toBe('202610268172')
+  })
+
+  it('空值 / 缺值 ⇒ 空串（调用方按「缺值 ⇒ —」处理，不编造）', () => {
+    expect(washLabelDocNo(undefined)).toBe('')
+    expect(washLabelDocNo(null)).toBe('')
+    expect(washLabelDocNo('   ')).toBe('')
+    expect(washLabelDocNo('JG-')).toBe('')
   })
 })
 
