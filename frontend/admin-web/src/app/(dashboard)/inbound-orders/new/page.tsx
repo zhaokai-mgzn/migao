@@ -268,12 +268,16 @@ export default function NewInboundOrderPage() {
       }
     }
     setSubmitting(true)
+    // 真仓 id 取自已加载的候选项（`Warehouse.id` 本来就是 number ⇒ 不需要把下拉里的字符串再转一次；
+    // 也刻意**不**写 `Number(<…Id>)`：`.` 结尾的 id 交给 Number/parseInt 是雪花号丢精度的处方形态，
+    // 源码守卫 `tests/unit/lib/snowflake-id-not-number.test.ts` 会当场判红）
+    const chosenWarehouse = warehouses.find((w) => String(w.id) === form.warehouseId)
     try {
       await inboundOrderApi.create({
         supplier: form.supplier || null,
         supplierDocNo: form.supplierDocNo || null,
         // 真仓 id + 仓名快照（issue #7799）：服务端据此落 `warehouse_id` 并校验（成品仓会被 422 拒）
-        warehouseId: form.warehouseId ? Number(form.warehouseId) : null,
+        warehouseId: chosenWarehouse ? chosenWarehouse.id : null,
         warehouse: form.warehouse || null,
         inboundDate: form.inboundDate || null,
         remark: form.remark || null,
