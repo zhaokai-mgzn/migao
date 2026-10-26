@@ -16,6 +16,10 @@
     "src/app/(dashboard)/orders/new/page.tsx": {
       "count": 1,
       "why": "下单页工艺预览：入参只给 cuttingMode/openCount/style/formula 四项，**不含 doorWidth** ⇒ 渲染不出门幅"
+    },
+    "src/app/(dashboard)/processing-orders/[id]/production/page.tsx": {
+      "count": 1,
+      "why": "加工单生产明细页只从 `craftSpecRows()` 里 **pick「特殊选项」那一行**（按 label 过滤，其余行一律不渲染，含「门幅」）⇒ 不构成「同屏两处门幅」；本页门幅只来自快照 `item.doorWidth`（明细行）。issue #7851。"
     }
   },
   "definition_site": "src/lib/craft-display.ts（`craftSpecRows` 的定义处，不算调用）"
