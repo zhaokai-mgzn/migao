@@ -352,6 +352,90 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
     })
   })
 
+  /**
+   * issue #7804（用户 2026-10-26：「这个页面不能修改工人菜单，要支持」）。
+   *
+   * 🔴 改前形态（红证）：存量工人的 `workerPages` 在商家面**没有编辑入口** —— 建号弹窗能设、
+   * 行内「开/关质检」只翻 `inspect` 一个键，默认页的收窄改不了（PG-072 已登记的未固化项）。
+   * 判据 = `worker-set-pages-<id>` 取不到 ⇒ 下面这几条**取不到元素即红**。
+   */
+  it('⑩ 存量工人也能改工人端菜单：行内「改菜单」⇒ 弹窗初值 = 当前档案（不是建号那套全勾）', async () => {
+    mockListWorkers.mockResolvedValue(okPage([
+      worker({ id: 'w-9', workerNo: 'W-1009', name: '收活甲', workerPages: ['report', 'cut_calc', 'inspect'] }),
+    ]))
+    mockUpdateWorkerPages.mockResolvedValue({ data: { data: {} } })
+    render(<WorkerProfilesPanel canWrite />)
+
+    fireEvent.click(await screen.findByTestId('worker-set-pages-w-9'))
+    const modal = await screen.findByTestId('worker-pages-modal')
+    const box = (testId: string) =>
+      within(modal).getByTestId(testId).querySelector('input') as HTMLInputElement
+
+    // 初值逐键 = 该档案当前值：默认页只勾 report / cut_calc，质检已开
+    expect(box('worker-page-option-report').checked).toBe(true)
+    expect(box('worker-page-option-order').checked).toBe(false)
+    expect(box('worker-page-option-cut_calc').checked).toBe(true)
+    expect(box('worker-page-option-shipment').checked).toBe(false)
+    expect(box('worker-page-optional-inspect').checked).toBe(true)
+
+    // 加回「订单」⇒ 保存 = **完整集合**（端点语义是整集写入，不是只发被改的那一个键）
+    fireEvent.click(box('worker-page-option-order'))
+    fireEvent.click(screen.getByText('保存'))
+    await waitFor(() => expect(mockUpdateWorkerPages).toHaveBeenCalled())
+    expect(mockUpdateWorkerPages.mock.calls[0][0]).toBe('w-9')
+    const sent = mockUpdateWorkerPages.mock.calls[0][1] as string[]
+    expect(sent.slice().sort()).toEqual(['cut_calc', 'inspect', 'order', 'report'])
+  })
+
+  it('⑩ 改菜单：全勾默认页且没开质检 ⇒ 发 null（未收窄；与建号同一条 pagesPayload 口径）', async () => {
+    mockListWorkers.mockResolvedValue(okPage([
+      worker({ id: 'w-10', workerNo: 'W-1010', name: '收活乙', workerPages: ['report', 'inspect'] }),
+    ]))
+    mockUpdateWorkerPages.mockResolvedValue({ data: { data: {} } })
+    render(<WorkerProfilesPanel canWrite />)
+
+    fireEvent.click(await screen.findByTestId('worker-set-pages-w-10'))
+    const modal = await screen.findByTestId('worker-pages-modal')
+    // 「默认页面」= 回到未收窄（全勾默认页）；再关掉质检 ⇒ 有效页集 = 默认集合 ⇒ 发 null
+    fireEvent.click(within(modal).getByTestId('worker-pages-select-all'))
+    fireEvent.click(within(modal).getByTestId('worker-page-optional-inspect').querySelector('input') as HTMLInputElement)
+    fireEvent.click(screen.getByText('保存'))
+
+    await waitFor(() => expect(mockUpdateWorkerPages).toHaveBeenCalledWith('w-10', null))
+  })
+
+  it('⑩ 改菜单：全取消 ⇒ 就地拦住、**不发请求**（空集在工人端会被读成「没读到权限 ⇒ 全开」）', async () => {
+    mockListWorkers.mockResolvedValue(okPage([
+      worker({ id: 'w-11', workerNo: 'W-1011', name: '收活丙' }),
+    ]))
+    render(<WorkerProfilesPanel canWrite />)
+
+    fireEvent.click(await screen.findByTestId('worker-set-pages-w-11'))
+    const modal = await screen.findByTestId('worker-pages-modal')
+    for (const key of ['report', 'order', 'cut_calc', 'shipment']) {
+      fireEvent.click(within(modal).getByTestId(`worker-page-option-${key}`).querySelector('input') as HTMLInputElement)
+    }
+    expect(within(modal).getByTestId('worker-pages-empty-hint')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('保存'))
+    await waitFor(() => expect(toast.error).toHaveBeenCalled())
+    expect(mockUpdateWorkerPages).not.toHaveBeenCalled()
+  })
+
+  it('⑩ 无 employee:create ⇒ 「改菜单」不可点（与建号 / 改工序同档写权限）', async () => {
+    render(<WorkerProfilesPanel canWrite={false} />)
+
+    expect(await screen.findByTestId('worker-set-pages-w-1')).toBeDisabled()
+  })
+
+  it('⑩ 页面目录读不到 ⇒ 没有「改菜单」入口（没有选项可勾；同建号「菜单一节不显示」口径）', async () => {
+    mockGetWorkerPageCatalog.mockRejectedValue(new Error('403'))
+    render(<WorkerProfilesPanel canWrite />)
+
+    expect(await screen.findByText('W-1001')).toBeInTheDocument()
+    expect(screen.queryByTestId('worker-set-pages-w-1')).not.toBeInTheDocument()
+  })
+
   it('⑧ 企业级页面读不到（如岗位没有生产域读码）⇒ 建号主流程照旧，只是不显示菜单一节', async () => {
     mockGetWorkerPageCatalog.mockRejectedValue(new Error('403'))
     mockCreateWorker.mockResolvedValue({ data: { data: worker({ id: 'w-5' }) } })

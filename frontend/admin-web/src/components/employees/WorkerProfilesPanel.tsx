@@ -29,6 +29,116 @@ import type { EmployeeStatus, WorkerOperationOption, WorkerProfile } from '@/typ
  *   而工人在产品上就是人事管理的一部分。
  * - 停用 / 启用**复用**既有 `PUT /api/admin/users/{id}/status`（`workerApi.setWorkerStatus`），不另造端点。
  */
+/** 工人端菜单的勾选态（建号 / 改菜单共用）：`pages === null` = 未收窄（默认页全勾）。 */
+interface WorkerPagesValue {
+  pages: string[] | null
+  optional: string[]
+}
+
+/**
+ * 工人端菜单勾选区（issue #6788 建号 / issue #7804 改菜单 —— **同一份渲染**）。
+ *
+ * 两个弹窗共用它，是因为「改之前能设、改之后设不了」正是 #7804 的病灶：
+ * 建号与编辑各写一套勾选逻辑 ⇒ 两边迟早分叉（一处收窄、一处全勾）。
+ * 词表与名称仍全部来自服务端目录（前端不维护第二份会漂的页面清单）。
+ */
+function WorkerPagesPicker({
+  menuPages,
+  optionalPages,
+  value,
+  onChange,
+}: {
+  menuPages: { key: string; label: string }[]
+  optionalPages: { key: string; label: string }[]
+  value: WorkerPagesValue
+  onChange: (next: WorkerPagesValue) => void
+}) {
+  /** 勾选态：`null` = 未收窄 = 全勾（全部默认页面）。 */
+  const isChecked = (key: string) => value.pages === null || value.pages.includes(key)
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-sm font-medium text-neutral-700">工人端菜单</span>
+        <button
+          type="button"
+          data-testid="worker-pages-select-all"
+          onClick={() => onChange({ ...value, pages: null })}
+          className="text-xs text-primary-600 hover:text-primary-700 hover:underline"
+        >
+          默认页面
+        </button>
+      </div>
+      <div className="space-y-1">
+        {menuPages.map((page) => (
+          <label
+            key={page.key}
+            className="flex items-center gap-3 p-1.5 rounded hover:bg-neutral-50 cursor-pointer"
+            data-testid={`worker-page-option-${page.key}`}
+          >
+            <input
+              type="checkbox"
+              className="w-4 h-4"
+              checked={isChecked(page.key)}
+              onChange={() => {
+                // 从「未收窄（全勾）」取消一项 ⇒ 展开成「除这一项外全勾」，而不是空集
+                const current = value.pages === null ? menuPages.map((p) => p.key) : value.pages
+                onChange({
+                  ...value,
+                  pages: current.includes(page.key)
+                    ? current.filter((k) => k !== page.key)
+                    : [...current, page.key],
+                })
+              }}
+            />
+            <span className="text-sm text-neutral-800">{page.label}</span>
+          </label>
+        ))}
+      </div>
+      {value.pages !== null && value.pages.length === 0 ? (
+        <p className="text-xs text-amber-700 mt-1.5" data-testid="worker-pages-empty-hint">
+          至少要留一个页面。一页都不留并不是「什么都不显示」——工人端会当成「没读到权限」按全开运行；
+          要让这位工人不干活，请改用「停用」。
+        </p>
+      ) : (
+        <p className="text-xs text-neutral-400 mt-1.5">
+          只勾这一位工人要用的页面，他就只在工人端看到这些入口；全部勾选 = 默认页面（不含下面单独开放的质检）。
+        </p>
+      )}
+
+      {/* 逐人开放的能力页（issue #7162）：质检不在默认菜单里，且服务端把这一项当写准入 */}
+      {optionalPages.length > 0 && (
+        <div className="pt-3 mt-3 border-t border-neutral-100" data-testid="worker-optional-pages">
+          <span className="text-sm font-medium text-neutral-700">单独开放</span>
+          <div className="space-y-1 mt-1.5">
+            {optionalPages.map((page) => (
+              <label
+                key={page.key}
+                className="flex items-center gap-3 p-1.5 rounded hover:bg-neutral-50 cursor-pointer"
+                data-testid={`worker-page-optional-${page.key}`}
+              >
+                <input
+                  type="checkbox"
+                  className="w-4 h-4"
+                  checked={value.optional.includes(page.key)}
+                  onChange={() => onChange({
+                    ...value,
+                    optional: value.optional.includes(page.key)
+                      ? value.optional.filter((k) => k !== page.key)
+                      : [...value.optional, page.key],
+                  })}
+                />
+                <span className="text-sm text-neutral-800">{page.label}</span>
+                <span className="text-xs text-neutral-400">扫水洗唛后录判定、生成质检单</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
 interface WorkerProfilesPanelProps {
   /** 是否持有 `employee:create`（无此权限 ⇒ 只读） */
   canWrite: boolean
@@ -76,6 +186,12 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
   /** 非默认、逐人开放的能力页（issue #7162：质检 —— 同时是服务端写准入）。 */
   const [optionalPages, setOptionalPages] = useState<{ key: string; label: string }[]>([])
   const [togglingOptional, setTogglingOptional] = useState<string | null>(null)
+
+  // 改菜单（issue #7804）：存量工人的工人端菜单**整集编辑**（默认页收窄 + 单独开放）。
+  // 建号时能设、建完就改不了曾是 PG-072 登记的未固化项（用户 2026-10-26：「这个页面不能修改工人菜单」）。
+  const [pagesTarget, setPagesTarget] = useState<WorkerProfile | null>(null)
+  const [pagesDraft, setPagesDraft] = useState<WorkerPagesValue>({ pages: null, optional: [] })
+  const [savingPages, setSavingPages] = useState(false)
 
   /**
    * 可绑定的**逻辑工序**目录（issue #7749）：选项来源 = 服务端
@@ -172,9 +288,6 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
     setFormOpen(true)
   }
 
-  /** 勾选态：`null` = 未收窄 = 全勾（全部页面）。 */
-  const isChecked = (key: string) => form.pages === null || form.pages.includes(key)
-
   /**
    * 这一位工人被收窄到哪几页（人话名）；`null` = **全部页面**。
    *
@@ -222,6 +335,48 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
       toastRequestError(e, '设置工人端菜单失败')
     } finally {
       setTogglingOptional(null)
+    }
+  }
+
+  /**
+   * 打开「设置工人端菜单」（issue #7804）：初值 = **该档案当前值**（不是建号那套默认全勾）。
+   *
+   * 🔴 `null` 与空数组都读作「未收窄」—— 与读面 fail-open（`WorkerPages.effectiveFor` 对归一后
+   * 空集回落全部页面）和列表列 `menuSummary` 同口径；否则脏数据会让商家看到「一页都没勾」而
+   * 工人实际看到全部页面。
+   */
+  const handleOpenPages = (record: WorkerProfile) => {
+    const assigned = record.workerPages
+    setPagesTarget(record)
+    setPagesDraft(assigned == null || assigned.length === 0
+      ? { pages: null, optional: [] }
+      : {
+          pages: menuPages.filter((p) => assigned.includes(p.key)).map((p) => p.key),
+          optional: optionalPages.filter((p) => assigned.includes(p.key)).map((p) => p.key),
+        })
+  }
+
+  /**
+   * 保存整集页面收窄：空集**就地拦住**（后端也会 422，但「至少留一页」是产品口径，页面先告知）。
+   * 全勾默认页且没开能力页 ⇒ 发 `null`（未收窄，与建号同一条 `pagesPayload`）。
+   */
+  const handleSavePages = async () => {
+    if (!pagesTarget) return
+    if (pagesDraft.pages !== null && pagesDraft.pages.length === 0) {
+      toast.error('至少要留一个页面；要让这位工人不干活，请用「停用」')
+      return
+    }
+
+    setSavingPages(true)
+    try {
+      await workerApi.updateWorkerPages(pagesTarget.id, pagesPayload(pagesDraft.pages, pagesDraft.optional))
+      toast.success('工人端菜单已更新')
+      setPagesTarget(null)
+      loadWorkers()
+    } catch (e) {
+      toastRequestError(e, '设置工人端菜单失败')
+    } finally {
+      setSavingPages(false)
     }
   }
 
@@ -373,9 +528,22 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
     {
       key: 'actions',
       title: '操作',
-      width: '220px',
+      // 改菜单 / 开质检 / 改工序 / 重置 PIN / 停用 —— 五个文本动作单行不折（issue #7217 的 nowrap 口径）
+      width: '320px',
       render: (record) => (
         <div className="flex items-center gap-3 whitespace-nowrap">
+          {/* 改菜单（issue #7804）：目录读不到 ⇒ 没有选项可勾 ⇒ 入口不出现（同建号「菜单一节不显示」） */}
+          {menuPages.length > 0 && (
+            <button
+              type="button"
+              onClick={() => handleOpenPages(record)}
+              disabled={!canWrite}
+              data-testid={`worker-set-pages-${record.id}`}
+              className="text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm disabled:text-neutral-400 disabled:no-underline disabled:cursor-not-allowed"
+            >
+              改菜单
+            </button>
+          )}
           {optionalPages.map((page) => (
             <button
               key={page.key}
@@ -549,83 +717,12 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
 
           {menuPages.length > 0 && (
             <div className="pt-3 border-t border-neutral-100" data-testid="worker-pages-picker">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-sm font-medium text-neutral-700">工人端菜单</span>
-                <button
-                  type="button"
-                  data-testid="worker-pages-select-all"
-                  onClick={() => setForm({ ...form, pages: null })}
-                  className="text-xs text-primary-600 hover:text-primary-700 hover:underline"
-                >
-                  默认页面
-                </button>
-              </div>
-              <div className="space-y-1">
-                {menuPages.map((page) => (
-                  <label
-                    key={page.key}
-                    className="flex items-center gap-3 p-1.5 rounded hover:bg-neutral-50 cursor-pointer"
-                    data-testid={`worker-page-option-${page.key}`}
-                  >
-                    <input
-                      type="checkbox"
-                      className="w-4 h-4"
-                      checked={isChecked(page.key)}
-                      onChange={() => setForm({
-                        ...form,
-                        pages: (() => {
-                          // 从「未收窄（全勾）」取消一项 ⇒ 展开成「除这一项外全勾」，而不是空集
-                          const current = form.pages === null ? menuPages.map((p) => p.key) : form.pages
-                          return current.includes(page.key)
-                            ? current.filter((k) => k !== page.key)
-                            : [...current, page.key]
-                        })(),
-                      })}
-                    />
-                    <span className="text-sm text-neutral-800">{page.label}</span>
-                  </label>
-                ))}
-              </div>
-              {form.pages !== null && form.pages.length === 0 ? (
-                <p className="text-xs text-amber-700 mt-1.5" data-testid="worker-pages-empty-hint">
-                  至少要留一个页面。一页都不留并不是「什么都不显示」——工人端会当成「没读到权限」按全开运行；
-                  要让这位工人不干活，请改用「停用」。
-                </p>
-              ) : (
-                <p className="text-xs text-neutral-400 mt-1.5">
-                  只勾这一位工人要用的页面，他就只在工人端看到这些入口；全部勾选 = 默认页面（不含下面单独开放的质检）。
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* 逐人开放的能力页（issue #7162）：质检不在默认菜单里，且服务端把这一项当写准入 */}
-          {optionalPages.length > 0 && (
-            <div className="pt-3 border-t border-neutral-100" data-testid="worker-optional-pages">
-              <span className="text-sm font-medium text-neutral-700">单独开放</span>
-              <div className="space-y-1 mt-1.5">
-                {optionalPages.map((page) => (
-                  <label
-                    key={page.key}
-                    className="flex items-center gap-3 p-1.5 rounded hover:bg-neutral-50 cursor-pointer"
-                    data-testid={`worker-page-optional-${page.key}`}
-                  >
-                    <input
-                      type="checkbox"
-                      className="w-4 h-4"
-                      checked={form.optional.includes(page.key)}
-                      onChange={() => setForm({
-                        ...form,
-                        optional: form.optional.includes(page.key)
-                          ? form.optional.filter((k) => k !== page.key)
-                          : [...form.optional, page.key],
-                      })}
-                    />
-                    <span className="text-sm text-neutral-800">{page.label}</span>
-                    <span className="text-xs text-neutral-400">扫水洗唛后录判定、生成质检单</span>
-                  </label>
-                ))}
-              </div>
+              <WorkerPagesPicker
+                menuPages={menuPages}
+                optionalPages={optionalPages}
+                value={form}
+                onChange={(next) => setForm({ ...form, ...next })}
+              />
             </div>
           )}
         </div>
@@ -666,6 +763,46 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
           <p className="text-xs text-neutral-400">
             生产工人：绑定后扫码自动选中这道工序、直接报工。出入库/仓库等岗位：选「不设工序」即可
             （他们用入库/出库功能，不参与报工）。本件没有这道 / 已做完时，工人屏会如实说明，不会改报别的工序。
+          </p>
+        </div>
+      </Modal>
+
+      {/* 改菜单（issue #7804）：存量工人整集编辑 —— 与建号弹窗**同一份**勾选区 */}
+      <Modal
+        open={pagesTarget !== null}
+        onClose={() => setPagesTarget(null)}
+        title="设置工人端菜单"
+        width={520}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setPagesTarget(null)} disabled={savingPages}>
+              取消
+            </Button>
+            <Button onClick={handleSavePages} loading={savingPages}>
+              保存
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4" data-testid="worker-pages-modal">
+          <p className="text-sm text-neutral-600">
+            工人：
+            <span className="font-medium text-neutral-900">
+              {pagesTarget?.workerNo} {pagesTarget?.name}
+            </span>
+          </p>
+          {menuPages.length > 0 && (
+            <div className="pt-3 border-t border-neutral-100">
+              <WorkerPagesPicker
+                menuPages={menuPages}
+                optionalPages={optionalPages}
+                value={pagesDraft}
+                onChange={setPagesDraft}
+              />
+            </div>
+          )}
+          <p className="text-xs text-neutral-400">
+            保存后立即生效（工人下次进工人端即按新菜单显示）。工人端菜单只决定入口显隐，不是后台权限。
           </p>
         </div>
       </Modal>
