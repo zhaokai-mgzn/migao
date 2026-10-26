@@ -1,8 +1,10 @@
 // case_ids: PP-011
 // PP-011（issue #4964 立版式 → #5646 纸宽 → #7776 字号/字段 → #7816 固定 50×150 → **issue #7833 纸面改版**）：
 // 水洗唛 = **竖版 50mm × 150mm 单列**，字段面 = 纸面抬头（企业名 / 成品定制）+ **单号（加工单号，第一行）** /
-// 客户 / 第 N 套共 M 套 / 部位 / 货号 / 门幅 / 用料 / 宽高 / **加工方式（含加工费组合项、无前缀）** /
-// **褶法** / 特殊选项 / 备注 + 底部**居中**二维码。一行粒度 = 一部位（商品行）**一张 × 开数份**。
+// 客户 / 第 N 套共 M 套 / **帘种** / **货号（值 = 颜色内容；issue #7872 起文案由「颜色」改「货号」）** /
+// 安装小区 / 安装位置 / 门幅 / 用料 / 宽高 / **加工方式（含加工费组合项、无前缀）** /
+// **褶法** / 特殊选项 / 备注 / **布料批次（末行，值 = 快照 `batchNo`，issue #7872）** + 底部**居中**二维码。
+// 一行粒度 = 一部位（商品行）**一张 × 开数份**。
 //
 // 用户 2026-10-26 逐字（issue #7833，逐条都能判红）：
 // ① 「JG-…-8172 这个加工单有超高倒幅，但是在加工单的各个环节都没有体现出来，打印的洗水唛中也需要
@@ -112,6 +114,8 @@ const items = [
     productName: '2699系列雪尼尔窗帘面料',
     sku: '0012',
     colorName: '米白',
+    // 布料批次（快照键 `batchNo`）：纸面**末行**（issue #7872）
+    batchNo: 'PC-20261026-0001',
     // 安装去向（issue #7856）：小区 = 订单级（随快照逐行固化）、位置 = 件级
     installCommunity: '春江花园 3栋2单元',
     installRoom: '主卧',
@@ -139,6 +143,8 @@ const items = [
     productName: '帘头布',
     sku: '0031',
     colorName: '米灰',
+    // 布料批次（逐张跟着快照行走：第 4/5/6 张 = 帘头那 3 份）
+    batchNo: 'PC-20261025-0007',
     doorWidth: '2.8',
     curtainType: '帘头',
     craft: '平板',
@@ -295,12 +301,15 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×150mm 单列，issue #7816）',
     expect(painted.length).toBeGreaterThanOrEqual(10)
   })
 
-  it('单列字段逐张渲染：帘种 / 颜色 / 安装信息 / 门幅 / 用料 / 宽高 / 加工方式（照真实工单信息顺序）', () => {
+  it('单列字段逐张渲染：帘种 / 货号 / 安装信息 / 门幅 / 用料 / 宽高 / 加工方式 / 布料批次（照真实工单信息顺序）', () => {
     printCard()
 
     // 第 1 张（布帘）：帘种 / 颜色 / 安装小区 / 安装位置 / 门幅 / 用料 / 宽高 / 加工方式
     expect(screen.getByTestId('task-card-label-kind-0')).toHaveTextContent('帘种: 布帘')
-    expect(screen.getByTestId('task-card-label-color-0')).toHaveTextContent('颜色: 米白')
+    // issue #7872（用户 2026-10-26 逐字「这里的颜色文案改成货号，右侧的内容不要变化了」）：
+    // 文案 = `货号`、值 = `colorName` 原样（一字不动）
+    expect(screen.getByTestId('task-card-label-color-0')).toHaveTextContent('货号: 米白')
+    expect(screen.getByTestId('task-card-label-color-0')).not.toHaveTextContent('颜色')
     expect(screen.getByTestId('task-card-label-install-community-0')).toHaveTextContent(
       '安装小区: 春江花园 3栋2单元',
     )
@@ -308,6 +317,11 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×150mm 单列，issue #7816）',
     expect(screen.getByTestId('task-card-label-door-width-0')).toHaveTextContent('门幅: 2.8米')
     expect(screen.getByTestId('task-card-label-meters-0')).toHaveTextContent('用料: 6.3米')
     expect(screen.getByTestId('task-card-label-size-0')).toHaveTextContent('宽高: 3×2.75米')
+    // 🔴 布料批次 = 纸面**末行**（issue #7872 用户逐字「放在最下面，布料批次：xxx」）
+    expect(screen.getByTestId('task-card-label-batch-no-0')).toHaveTextContent('布料批次: PC-20261026-0001')
+    // 位置判据：它在整块行清单的**最后一条**（插到别处 ⇒ 必红）
+    const rowsBlock0 = screen.getByTestId('task-card-label-rows-0')
+    expect(rowsBlock0.lastElementChild).toBe(screen.getByTestId('task-card-label-batch-no-0'))
     // 加工方式 = craft-display + processing-combo 的单一真值（工艺 / 组合项 / 打开方式 / 定型），不另写推导
     const craft0 = screen.getByTestId('task-card-label-craft-0')
     expect(craft0).toHaveTextContent('韩褶')
@@ -355,7 +369,8 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×150mm 单列，issue #7816）',
     expect(screen.getByTestId('task-card-label-remark-0')).toHaveTextContent('备注: 加铅块')
     expect(screen.getByTestId('task-card-label-remark-0')).not.toHaveTextContent('加logo条')
 
-    // item-2 没有快照行 ⇒ 第 3 张（纱帘）不出颜色/安装信息/用料/加工方式/特殊选项/备注/门幅（缺值不渲染，不猜）
+    // item-2 没有快照行 ⇒ 第 3 张（纱帘）不出货号/安装信息/用料/加工方式/特殊选项/备注/门幅/布料批次
+    // （缺值不渲染，不猜）
     expect(screen.queryByTestId('task-card-label-color-2')).toBeNull()
     expect(screen.queryByTestId('task-card-label-install-community-2')).toBeNull()
     expect(screen.queryByTestId('task-card-label-install-room-2')).toBeNull()
@@ -364,6 +379,21 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×150mm 单列，issue #7816）',
     expect(screen.queryByTestId('task-card-label-special-options-2')).toBeNull()
     expect(screen.queryByTestId('task-card-label-remark-2')).toBeNull()
     expect(screen.queryByTestId('task-card-label-door-width-2')).toBeNull()
+    // 无快照行 ⇒ 布料批次整行不出现（不印「布料批次: —」冒充「未指派」）
+    expect(screen.queryByTestId('task-card-label-batch-no-2')).toBeNull()
+  })
+
+  it('🔴 布料批次（issue #7872）：有 `batchNo` 印真值；未指派批次如实 `—`；无快照行整行不出现', () => {
+    // 有批次 ⇒ 真值原样（不缩写、不加字）
+    const first = printCard()
+    expect(screen.getByTestId('task-card-label-batch-no-0')).toHaveTextContent('布料批次: PC-20261026-0001')
+    // 逐张跟着快照行走：第 4 张 = 帘头第 1 份
+    expect(screen.getByTestId('task-card-label-batch-no-3')).toHaveTextContent('布料批次: PC-20261025-0007')
+    first.unmount()
+    // 未指派批次（快照行在、`batchNo` 缺）= 「未指派」≠「本系统没有这个字段」⇒ 如实 `—`
+    const unassigned = [{ ...items[0], batchNo: undefined }] as unknown as ProcessingOrderItem[]
+    printCard({ items: unassigned })
+    expect(screen.getByTestId('task-card-label-batch-no-0')).toHaveTextContent('布料批次: —')
   })
 
   it('缺码部位 ⇒ 该张出占位（不画假码），其余张仍出真码', () => {
