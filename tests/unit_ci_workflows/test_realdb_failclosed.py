@@ -99,6 +99,9 @@ REALDB_FILES: dict[str, str] = {
     # 留痕三列 + CAS 第二次 0 行、快照列一字不动、同期间可重开新单 —— 观测点全是**表里的行与列**。
     _SVC + "PieceworkSettlementRealDbTest.java": "direct",
     _SVC + "ShipmentListQueryRealDbTest.java": "direct",
+    # issue #7791：成品仓水位分配 + FOR UPDATE 容量闸门 —— 水位排序 / 等锁 / 复核后顺延新建，
+    # 只有真 PG 能证（mock 面看不见行锁与 count 谓词）。
+    _SVC + "WarehouseLocationAllocationRealDbTest.java": "direct",
     # issue #6983：商家发货端点（POST /api/admin/production/orders/{id}/ship）的**幂等回放**判据 ——
     # 只真 PG 能证的三条：① `client_request_keys` 的原子占位（`INSERT … ON CONFLICT DO NOTHING`
     # + 按**影响行数**判首次 —— 唯一约束与 ON CONFLICT 的行为在 mock 面上整个不存在）；

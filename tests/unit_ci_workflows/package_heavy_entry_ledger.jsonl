@@ -28,3 +28,9 @@
 {"id":"1792914991.67371.11300","ts":"2026-10-25T07:56:31Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/7750-stock-in-out","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1792938855.22349.110","ts":"2026-10-25T14:34:16Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/7785-warehouse-bin-management","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1792938878.22480.4537","ts":"2026-10-25T14:34:39Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7785-warehouse-bin-management","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1792970848.16708.11671","ts":"2026-10-25T23:27:29Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/7791-warehouse-water-level","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1792970866.16811.17490","ts":"2026-10-25T23:27:46Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7791-warehouse-water-level","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1792971046.19227.17221","ts":"2026-10-25T23:30:46Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7791-warehouse-water-level","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1792971246.25440.30720","ts":"2026-10-25T23:34:06Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/7791-warehouse-water-level","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1792971249.25515.620","ts":"2026-10-25T23:34:09Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7791-warehouse-water-level","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1792971880.86303.1710","ts":"2026-10-25T23:44:41Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7791-warehouse-water-level","why":"--allow-package-heavy（命令行显式）"}

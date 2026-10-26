@@ -4405,18 +4405,20 @@ CREATE TABLE IF NOT EXISTS warehouse_locations (
     zone_name VARCHAR(32) NOT NULL DEFAULT '成品区',
     bin_code VARCHAR(32) NOT NULL,
     status VARCHAR(16) NOT NULL DEFAULT 'active',
+    capacity INTEGER NOT NULL DEFAULT 10,
     remark VARCHAR(255),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     deleted INT NOT NULL DEFAULT 0,
-    CONSTRAINT ck_warehouse_locations_status CHECK (status IN ('active', 'inactive'))
+    CONSTRAINT ck_warehouse_locations_status CHECK (status IN ('active', 'inactive')),
+    CONSTRAINT ck_warehouse_locations_capacity CHECK (capacity BETWEEN 1 AND 999)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_warehouse_locations_bin
     ON warehouse_locations (tenant_id, bin_code) WHERE deleted = 0;
 CREATE INDEX IF NOT EXISTS idx_warehouse_locations_warehouse
     ON warehouse_locations (tenant_id, warehouse_id);
 COMMENT ON TABLE warehouse_locations IS
-    '仓位（V196 / issue #7750）：成品仓里的货位。bin_code = 仓位号（租户内唯一），zone_code/zone_name = 区域';
+    '仓位（V196 / issue #7750；V198 / issue #7791 加 capacity）：成品仓里的货位。bin_code = 仓位号（租户内唯一），zone_code/zone_name = 区域，capacity = 本区每仓最多几件（默认 10，区域统一）';
 
 -- 出库单（与入库单同形；只有 posted 一个状态 —— 建单即过账）
 CREATE TABLE IF NOT EXISTS outbound_orders (
@@ -4507,8 +4509,9 @@ CREATE TABLE IF NOT EXISTS finished_goods_stock (
     deleted INT NOT NULL DEFAULT 0,
     CONSTRAINT ck_finished_goods_stock_status CHECK (status IN ('in_stock', 'shipped', 'unpacked'))
 );
--- 🔴 核心不变式：一个仓位同一时刻只放一个在库成品
-CREATE UNIQUE INDEX IF NOT EXISTS uk_finished_goods_bin_in_stock
+-- 一个仓位可放多件（V198 / issue #7791）；容量由 warehouse_locations.capacity 在服务层闸住，
+-- 同套装/部位的幂等仍由下面的 set_part / legacy 唯一索引兜住。
+CREATE INDEX IF NOT EXISTS idx_finished_goods_bin_in_stock
     ON finished_goods_stock (tenant_id, bin_code)
     WHERE status = 'in_stock' AND deleted = 0;
 CREATE UNIQUE INDEX IF NOT EXISTS uk_finished_goods_set_part_in_stock

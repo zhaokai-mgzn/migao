@@ -4644,6 +4644,10 @@ export interface WarehouseLocation {
   zoneName: string
   binCode: string
   status: 'active' | 'inactive'
+  /** 每仓容量（件；同一区域统一，默认 10） */
+  capacity?: number
+  /** 当前在库件数（水位分子；由 in_stock 行派生） */
+  inStockCount?: number
   remark?: string | null
   /** 有在库成品占着它 —— 管理面据此禁用改号 / 删除 */
   occupied?: boolean
@@ -4657,5 +4661,24 @@ export interface WarehouseLocationInput {
   zoneName?: string
   remark?: string | null
   status?: 'active' | 'inactive'
+  /** 每仓容量（件；同一区域统一；改一个会同步本区所有仓位） */
+  capacity?: number
+}
+
+/** 批量新建仓位（issue #7791）：数字区间 ⇒ 仓位号，如 A 区 1~20 ⇒ A-01…A-20 */
+export interface WarehouseLocationBatchInput {
+  zoneCode?: string
+  zoneName?: string
+  numberFrom: number
+  numberTo: number
+  capacity?: number
+}
+
+export interface WarehouseLocationBatchResult {
+  created: number
+  skipped: number
+  fromCode: string
+  toCode: string
+  capacity: number
 }
 

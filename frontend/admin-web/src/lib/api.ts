@@ -87,6 +87,8 @@ import type {
   OutboundOrderCreateParams,
   FinishedGoods,
   WarehouseLocation,
+  WarehouseLocationBatchInput,
+  WarehouseLocationBatchResult,
   WarehouseLocationInput,
   InboundBatch,
   InboundOrderCreateParams,
@@ -2297,7 +2299,11 @@ export const finishedGoodsApi = {
   createLocation: (data: WarehouseLocationInput) =>
     request.post<ApiResponse<WarehouseLocation>>('/api/admin/warehouse-locations', data),
 
-  /** 编辑仓位（占用中禁止改仓位号；区域 / 备注 / 启停可改）。 */
+  /** 批量新建仓位（issue #7791：数字区间 ⇒ A-01…A-20，已存在的幂等跳过）。 */
+  batchCreateLocations: (data: WarehouseLocationBatchInput) =>
+    request.post<ApiResponse<WarehouseLocationBatchResult>>('/api/admin/warehouse-locations/batch', data),
+
+  /** 编辑仓位（占用中禁止改仓位号；区域 / 备注 / 容量 / 启停可改）。 */
   updateLocation: (id: number, data: WarehouseLocationInput) =>
     request.patch<ApiResponse<WarehouseLocation>>(`/api/admin/warehouse-locations/${id}`, data),
 

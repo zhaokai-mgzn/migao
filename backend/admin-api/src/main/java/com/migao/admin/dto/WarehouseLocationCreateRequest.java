@@ -21,5 +21,8 @@ public class WarehouseLocationCreateRequest {
     /** 区域名称（缺省 成品区） */
     private String zoneName;
 
+    /** 每仓容量（件；null = 沿用本区域现有容量，新区域缺省 10；1~999） */
+    private Integer capacity;
+
     private String remark;
 }

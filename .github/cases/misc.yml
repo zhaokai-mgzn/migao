@@ -5015,7 +5015,7 @@ cases:
 
   - id: WH-003
     legacy_id: ""
-    title: "成品仓位自动分配：先复用已释放的号，占满才顺延新增（issue #7750）"
+    title: "成品仓位自动分配：水位最低且未满优先，全满才顺延新增（issue #7750 / #7791）"
     domains:
       - misc
       - backend
@@ -5024,20 +5024,24 @@ cases:
     truths_ref: []
     user_inputs:
       - "用户（2026-10-25，逐字）：「对成品帘打包扫码时要自动给当前的成品进行成品仓区域分配仓位号」。"
+      - "用户（2026-10-26，逐字）：「后续成品帘打包入库时要自动分配仓位时要能根据仓位水位智能分配」。"
     expectations: []
     data_checks:
-      - "**判据 1（先复用后新增）**：存在空闲仓位（没有 `in_stock` 成品占着）⇒ 直接复用最小空闲号，**不**新增行（一进一出不涨号）。判据 = `WarehouseLocationServiceTest#reusesFreeBin`。"
-      - "**判据 2（占满才顺延）**：全部占满 ⇒ 新号 = 本区域现有行数 + 1，格式 `A-01` / `A-02`（区域 `A` = 成品区）。判据 = `#createsNextBinWhenAllOccupied`。"
-      - "**判据 3（🔴 占号原子、冲突不抛异常）**：新增走 `INSERT … ON CONFLICT DO NOTHING`（唯一冲突不会把 PG 事务打成 aborted），抢不到就重算下一轮；连续 8 次抢不到 ⇒ 显式冲突（可重试），**不**静默返回一个可能被占的号。判据 = `#claimConflictRetriesThenSucceeds` + `#exhaustedAttemptsThrows`。"
-      - "**判据 4（「占用」没有第二份真相）**：仓位表**没有**「已占用」标志列 —— 空闲与否由 `finished_goods_stock` 的 `in_stock` 行判定（发货/撤销漏改标志列会永久占位）。判据 = `WarehouseLocationMapper#selectFirstFreeBin` 的 `NOT EXISTS` + 迁移里的局部唯一索引 `uk_finished_goods_bin_in_stock`。"
-      - "**边界（照实登记）**：不做货架层级 / 容量 / 混放策略；一个仓位同一时刻只放一个在库成品（DB 局部唯一索引兜住，并发打包的互斥点在那里而不是服务层判空）。"
+      - "**判据 1（水位优先）**：水位 = 在库件数 / 区域容量；分配时选**水位最低且未满**的 active 仓位，同水位按仓位号（A-01 优先）。判据 = `WarehouseLocationMapper#selectBestBinForAllocation`（count / capacity + ORDER BY）+ `WarehouseLocationServiceTest#reusesLowestWaterBin`。"
+      - "**判据 2（全满才顺延）**：本区所有 active 仓位都满 ⇒ 新号 = 本区域现有行数 + 1（如 A-02），容量沿用本区容量；判据 = `#createsNextBinWhenAllCapacityFull` / `#newBinUsesZoneCapacity`。"
+      - "**判据 3（🔴 占号原子、冲突不抛异常）**：新增走 `INSERT … ON CONFLICT DO NOTHING`（唯一冲突不会把 PG 事务打成 aborted），抢不到就重算下一轮；连续 8 次抢不到 ⇒ 显式冲突（可重试），**不**静默返回一个可能被占的号。新建的号不直接返回，下一轮带行锁与容量复核。判据 = `#claimConflictRetriesThenSucceeds` + `#exhaustedAttemptsThrows`。"
+      - "**判据 4（水位没有第二份真相）**：在库件数只从 `finished_goods_stock` 的 `in_stock` 行按 bin_code 派生（GROUP BY，不按 500 行截断）；仓位表**没有** occupied / in_stock_count 之类字段。V198 去掉 `uk_finished_goods_bin_in_stock`（允许一仓多件），同套装/部位仍由 `uk_finished_goods_set_part_in_stock` 唯一。判据 = `WarehouseLocationMapperTest#allocationUsesWaterLevelCapacityAndNoOccupancyColumn` + `FinishedGoodsStockMapperTest#oneBinHoldsMultiplePackagesUpToCapacity`。"
+      - "**判据 5（并发容量闸门）**：候选仓位行 `SELECT … FOR UPDATE OF l`；调用方 `InboundOrderService.post` 是 `@Transactional`，同一事务内锁住候选行、复核在库件数再 insert，并发过账不会把同一仓塞过容量。判据 = `WarehouseLocationAllocationRealDbTest`（真库两事务：第二事务在行锁上等待；第一事务填满后第二事务复核并顺延新建）+ Mapper SQL 的 `FOR UPDATE` 断言。"
+      - "**边界（照实登记）**：容量按区域统一（1~999 件，默认 10）；一仓可放多件到容量；不做货架层级 / 体积 / 重量维度；容量下调到低于当前在库件数时不驱逐已有件，只停止继续分配。"
     precondition: "本用例是 [backend-contract]：前置 = `warehouse_locations` / `finished_goods_stock`（V196）+ `warehouses.warehouse_type` 含 `finished`。零网络、零 LLM。"
     skip_reason: "[backend-contract] 仓位分配口径由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟"
-    merge_log: "2026-10-25 新增（issue #7750）。落码 = `WarehouseLocation`/`WarehouseLocationMapper`（`selectFirstFreeBin` / `claimBin` 原子占号）+ `WarehouseLocationService.nextFreeBin` + V196 的 `uk_finished_goods_bin_in_stock`。"
+    merge_log: "2026-10-25 新增（issue #7750）。2026-10-26 改判（issue #7791，用户「根据仓位水位智能分配」）：V198 增 capacity（区域统一，默认 10）、去掉 `uk_finished_goods_bin_in_stock`（一仓多件）、分配从 `selectFirstFreeBin` 改为 `selectBestBinForAllocation`（count/capacity + `FOR UPDATE`）；`claimBin` 带容量。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/WarehouseLocationServiceTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/mapper/WarehouseLocationMapperTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/FinishedGoodsStockMapperTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/WarehouseLocationAllocationRealDbTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/mapper/WarehouseMapperTest.java"
       ci:
         - pr-check.yml
@@ -5130,7 +5134,7 @@ cases:
       - "用户（2026-10-25，确认口径）：「扫码水洗唛进入手机端报工页面后操作打印出库，只有关联打包工序的工人扫码后才能操作出库」。"
     expectations: []
     data_checks:
-      - "**判据 1（一张唛 = 一个仓位）**：打包按 `processing_order_sets` × `processing_set_part_tokens` 逐行入库 —— 同一订单 5 套的布帘 = 5 行在库、5 个不同仓位号（`uk_finished_goods_set_part_in_stock (tenant_id, set_id, order_item_id)`）。判据 = `FinishedWashLabelTest` 的套数/仓位断言 + `V197__finished_goods_set_part_granularity.sql` 的唯一索引。"
+      - "**判据 1（一张唛 = 一行在库 + 一个仓位号）**：打包按 `processing_order_sets` × `processing_set_part_tokens` 逐行入库 —— 同一订单 5 套的布帘 = 5 行在库。V198（issue #7791）起一仓可放多件到区域容量 ⇒ 5 件可落在同一仓位（选水位最低者），**不再要求 5 个不同仓号**；标签仍打 `bin_code`，扫唛按 token/短码定位到具体件。判据 = `FinishedWashLabelTest` + `V197__finished_goods_set_part_granularity.sql` 的套装唯一索引 + `V198__warehouse_capacity_and_water_level.sql`。"
       - "**判据 2（🔴 非打包工序工人被拒）**：授权 = `production_work_logs` 里该加工单存在 `operation_name ILIKE '%打包%'` 且 `worker_id = 当前工人`。非打包工人 ⇒ `allowed=false` + 原因「只有做过打包工序的工人才能扫码出库」，写面 409，**零库存变动、零出库单**。判据 = `FinishedWashLabelTest#nonPackerIsRejectedWithZeroInventoryChange`。"
       - "**判据 3（出库即过账）**：打包工人扫在库唛 ⇒ 在库行 `in_stock → shipped`（释放仓位）+ 成品出库单 `source=scan` 单行（仓位号 = 标签「打包区域」）。判据 = `FinishedWashLabelTest#outboundMarksStockShippedAndCreatesScanDocIdempotently`。"
       - "**判据 4（幂等）**：同一张唛第二次提交 ⇒ 409「已经出库」，不重复扣减、不建第二张单（`clearInvocations` 后 `never()` 断言）。"
@@ -5958,14 +5962,14 @@ cases:
     data_checks:
       - "**判据 1（新建）**：`POST /api/admin/warehouse-locations` 仓位号统一大写（`a-01` = `A-01`）、区域缺省 `A / 成品区`、落成品仓（不存在时自动建）；重复仓位号 ⇒ 422 可读提示（DB 唯一索引兜底，不冒 5xx）。判据 = `WarehouseLocationManagementTest#createNormalizesCodeAndDefaultsZone` / `#createDuplicateCodeIsReadableConflict` / `#createRejectsInvalidCodeBeforeCreatingWarehouse`。"
       - "**判据 2（🔴 占用中锁定）**：有 `in_stock` 成品占着仓位时，改仓位号 / 删除 ⇒ 409 且零写入；备注 / 区域名 / 启停仍可改。判据 = `#updateRejectsRenamingOccupiedBin` / `#deleteRejectsOccupiedBin` / `#updateAllowsRemarkAndZoneOnOccupiedBin`。"
-      - "**判据 3（停用只影响后续分配）**：停用后 `nextFreeBin` 不再返回它（分配查询只看 `status='active'`），已占用库存不受影响，可重新启用。判据 = `#updateTogglesStatus` + `WarehouseLocationMapper#selectFirstFreeBin` 的 `status = 'active'` 谓词。"
+      - "**判据 3（停用只影响后续分配）**：停用后 `nextFreeBin` 不再返回它（分配查询只看 `status='active'`），已占用库存不受影响，可重新启用。判据 = `#updateTogglesStatus` + `WarehouseLocationMapper#selectBestBinForAllocation` 的 `status = 'active'` 谓词。"
       - "**判据 4（软删可追溯）**：删除 = 软删；历史单据的 `bin_code` 快照不动（V196 列注释）。判据 = `#deleteSoftDeletesFreeBin`。"
       - "**判据 4b（并发双删不谎报）**：删除影响 0 行（另一请求刚删掉）⇒ 404 + 「可能刚被其他人删除」建议，不返回 200。判据 = `#deleteLostRaceIsNotFound`。"
       - "**判据 5（租户隔离）**：跨租户改 / 删命中 404 且零写入。判据 = `#crossTenantIsInvisible`。"
-      - "**判据 6（清单口径）**：占用态由 `finished_goods_stock` 的 in_stock 行按 `bin_code` 反推（不按 500 行截断）；`includeInactive=true` 带出停用仓位。判据 = `#listViewMarksOccupancyAndIncludesInactive` + `FinishedGoodsStockMapper#selectOccupiedBinCodes`。"
-      - "**判据 7（权限 / 端点）**：读 `inbound:view`、写 `inbound:create`（零授权 delta）；四个端点都透传当前租户。判据 = `WarehouseLocationControllerTest#permissionCodes` / `#listLocationsScopesTenantAndPassesIncludeInactive` / `#createLocationScopesTenant` / `#updateAndDeleteScopeTenant`。"
+      - "**判据 6（清单口径）**：在库件数由 `finished_goods_stock` 的 in_stock 行按 `bin_code` 一次 GROUP BY 聚合（不按 500 行截断）；`includeInactive=true` 带出停用仓位；清单带 `capacity / inStockCount`（水位列）。判据 = `#listViewMarksWaterLevelAndIncludesInactive` + `FinishedGoodsStockMapper#selectInStockCounts`。"
+      - "**判据 7（权限 / 端点）**：读 `inbound:view`、写 `inbound:create`（零授权 delta）；清单 / 新建 / 批量新建 / 编辑 / 删除五个端点都透传当前租户。判据 = `WarehouseLocationControllerTest#permissionCodes` / `#listLocationsScopesTenantAndPassesIncludeInactive` / `#createLocationScopesTenant` / `#batchCreateScopesTenant` / `#updateAndDeleteScopeTenant`。"
       - "**判据 8（商家面可达）**：出库单页第三页签「仓位管理」可新建 / 编辑 / 启停 / 删除；`inbound:create` 缺失时整块只读；占用中行内删除禁用、编辑弹窗仓位号禁用；成品库存空态有「管理仓位」入口。判据 = `frontend/admin-web/tests/unit/components/WarehouseLocationPanel.test.tsx` + `frontend/admin-web/tests/unit/pages/outbound-orders.test.tsx`「仓位管理入口」。"
-      - "**边界（照实登记）**：① 不做移库（把在库成品从 A-01 挪到 A-02）；② 不做批量建号 / 容量 / 货架层级；③ 仓位号只允许字母 / 数字 / 短横线 / 下划线（中文 / 空格拒绝）—— 与自动分配的 `A-01` 同形态。"
+      - "**边界（照实登记）**：① 不做移库（把在库成品从 A-01 挪到 A-02）；② 容量 / 水位 / 批量建号见 WH-010；③ 仓位号只允许字母 / 数字 / 短横线 / 下划线（中文 / 空格拒绝）—— 与自动分配的 `A-01` 同形态。"
     precondition: "本用例是 [backend-contract + frontend-contract]：前置 = `warehouse_locations`（V196）+ `finished_goods_stock` 在库行 + `inbound:view/create`。零网络、零 LLM。"
     skip_reason: "[backend-contract] 仓位档案的 CRUD / 占用锁定 / 租户隔离由 Java 单测验证，商家面由前端单测验证，非 LLM 行为"
     merge_log: "2026-10-25 新增（issue #7785，用户逐字「缺个仓位号管理功能吧？允许用户在这个页面上创建和管理」）。落码 = `WarehouseLocationService`（listView/create/update/delete + 占用判定 + 并发双删判 0 行）+ `@TenantOwnedResource` 归属认定（键 warehouse-location）+ `FinishedGoodsStockMapper#selectOccupiedBinCodes/countInStockByBinCode` + `FinishedGoodsController` 三写端点 + `finishedGoodsApi.createLocation/updateLocation/deleteLocation` + `WarehouseLocationPanel` + 出库单页第三页签。"
@@ -5975,6 +5979,47 @@ cases:
         - "backend/admin-api/src/test/java/com/migao/admin/controller/WarehouseLocationControllerTest.java"
         - "frontend/admin-web/tests/unit/components/WarehouseLocationPanel.test.tsx"
         - "frontend/admin-web/tests/unit/pages/outbound-orders.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+  - id: WH-010
+    legacy_id: ""
+    title: "成品仓水位智能分配 + 区域容量 + 批量建号（issue #7791）"
+    domains:
+      - misc
+      - backend
+      - frontend
+    tier: normal
+    tags: [backend-contract, inventory, warehouse, finished-goods, master-data, red-proof]
+    truths_ref: []
+    user_inputs:
+      - "用户（2026-10-26，逐字）：「后续成品帘打包入库时要自动分配仓位时要能根据仓位水位智能分配」。"
+      - "用户（2026-10-26，逐字）：「另外仓位管理允许批量创建，用户输入一个数字区间后批量生成仓位号」。"
+      - "用户（2026-10-26，选择口径）：水位按件数；容量按区域统一（不是逐仓）；默认 10 件。"
+    expectations: []
+    data_checks:
+      - "**判据 1（水位 = 件数 / 容量）**：一仓多件后按 `count(in_stock) / capacity` 分配，选比值最低且 `count < capacity` 的 active 仓，同水位按仓位号；不再按「最小空闲号」。判据 = `WarehouseLocationMapper#selectBestBinForAllocation` + `WarehouseLocationCapacityBatchTest` / `WarehouseLocationServiceTest`。"
+      - "**判据 2（一仓多件）**：V198 去掉 `uk_finished_goods_bin_in_stock`（同套装/部位仍唯一）；容量列为 `capacity`（默认 10，CHECK 1~999）；`schema.sql` 终态与迁移一致。判据 = `FinishedGoodsStockMapperTest#oneBinHoldsMultiplePackagesUpToCapacity` + `V198__warehouse_capacity_and_water_level.sql`。"
+      - "**判据 3（容量按区域统一）**：改一个仓的容量 ⇒ 本区所有仓同步；新建不传容量 ⇒ 沿用本区现有容量，新区域缺省 10；批量给了不同容量 ⇒ 本区一起改。判据 = `WarehouseLocationCapacityBatchTest#createUsesZoneCapacity` / `#createWithCapacitySyncsZone` / `#updateCapacitySyncsZone` / `#batchWithCapacitySyncsZone`。"
+      - "**判据 4（🔴 批量建号幂等 + 有界）**：A 区 1~20 ⇒ A-01…A-20；重复执行 ⇒ 新建 0 / 跳过 20；单次 ≤500、编号 1~9999、结束不小于开始；跨区域不串号。判据 = `#batchCreatesRangeAndCountsSkipped` / `#batchRangeRejected` / `#batchNumberUpperBound` + `WarehouseLocationControllerTest#batchCreateScopesTenant`。"
+      - "**判据 5（并发闸门）**：候选行 `FOR UPDATE OF l`，过账事务内锁行后复核件数再 insert；并发不会把同仓塞过容量。判据 = `WarehouseLocationAllocationRealDbTest`（真库两事务：第二事务等锁、第一事务填满后复核并顺延 A-02；去掉 `FOR UPDATE` 则第二事务不阻塞 ⇒ 判据红）+ Mapper SQL 断言。"
+      - "**判据 6（商家面水位 / 批量）**：仓位管理清单显示「在库件数 / 容量」与满仓状态；有「批量新建」弹窗（数字区间 + 预览已存在数）；空态也能批量建号；单仓新建 / 编辑带容量。判据 = `frontend/admin-web/tests/unit/components/WarehouseLocationWaterLevelBatch.test.tsx`。"
+      - "**判据 7（容量下调不驱逐）**：容量改到低于当前在库件数 ⇒ 已有件保留，水位可 >100%，只停止继续分配；不做自动移库。判据 = 服务层不驱逐 + 清单原样显示（边界照实登记）。"
+      - "**判据 8（标签口径不变）**：一张唛仍是一行在库 + 标签上的 bin_code；一仓多件后靠短码/token 定位具体件，不改扫唛出库链路。判据 = WH-007 + `FinishedWashLabelTest`。"
+      - "**边界（照实登记）**：① 容量 = 件数，不做体积 / 重量 / 货架层级；② 不做移库 / 跨仓调拨；③ 真库两事务并发判据已做（`WarehouseLocationAllocationRealDbTest`），未做长时间高负载压测；④ 存量仓位迁移后容量统一为 10。"
+    precondition: "本用例是 [backend-contract + frontend-contract]：前置 = V198（warehouse_locations.capacity + 去掉 bin 唯一索引）+ 成品在库行 + `inbound:view/create`。零网络、零 LLM。"
+    skip_reason: "[backend-contract] 水位 / 容量 / 批量建号由 Java 单测 + 前端单测验证，非 LLM 行为，不进 agent-eval 冒烟"
+    merge_log: "2026-10-26 新增（issue #7791，用户「根据仓位水位智能分配」+「批量创建，输入数字区间」）。落码 = V198 + `WarehouseLocation.capacity` + `selectBestBinForAllocation`（FOR UPDATE）/ `selectZoneCapacity` / `updateCapacityByZone` + `FinishedGoodsStockMapper#selectInStockCounts` + `WarehouseLocationService`（水位分配 / 区域容量同步 / batchCreate）+ `POST /warehouse-locations/batch` + 前端水位列 / 容量字段 / 批量弹窗。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/WarehouseLocationCapacityBatchTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/WarehouseLocationServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/WarehouseLocationMapperTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/FinishedGoodsStockMapperTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/WarehouseLocationAllocationRealDbTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/WarehouseLocationControllerTest.java"
+        - "frontend/admin-web/tests/unit/components/WarehouseLocationWaterLevelBatch.test.tsx"
+        - "frontend/admin-web/tests/unit/components/WarehouseLocationPanel.test.tsx"
       ci:
         - pr-check.yml
       verifies: []

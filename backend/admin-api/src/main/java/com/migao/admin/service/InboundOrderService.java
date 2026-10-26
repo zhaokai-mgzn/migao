@@ -270,8 +270,9 @@ public class InboundOrderService {
      * 成品单过账：逐行分配仓位 + 原子占位写入 {@code finished_goods_stock}。
      *
      * <p>占位走 {@code ON CONFLICT DO NOTHING}（{@code FinishedGoodsStockMapper#claimInStock}）：
-     * 唯一冲突不会把事务打成 aborted，抢不到就换下一个空闲仓位（并发打包的互斥点是
-     * {@code uk_finished_goods_bin_in_stock}，不是服务层的判空）。</p>
+     * 同套装/部位重复时冲突不会把事务打成 aborted，抢不到就换下一个候选。并发容量由
+     * {@code WarehouseLocationMapper#selectBestBinForAllocation} 在**本过账事务**内对候选仓位行
+     * {@code FOR UPDATE} + 复核在库件数闸住（V198 / issue #7791；bin 唯一索引已移除）。</p>
      */
     private void postFinishedLines(InboundOrder order, List<InboundOrderItem> lines, Long tenantId) {
         Long warehouseId = order.getWarehouseId();

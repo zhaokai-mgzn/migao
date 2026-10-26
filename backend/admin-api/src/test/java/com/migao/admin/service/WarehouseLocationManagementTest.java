@@ -1,6 +1,7 @@
 // case_ids: WH-009
 package com.migao.admin.service;
 
+import com.migao.admin.dto.BinStockCount;
 import com.migao.admin.dto.WarehouseLocationCreateRequest;
 import com.migao.admin.dto.WarehouseLocationUpdateRequest;
 import com.migao.admin.dto.WarehouseLocationView;
@@ -65,6 +66,7 @@ class WarehouseLocationManagementTest {
         location.setZoneCode(WarehouseLocationService.DEFAULT_ZONE_CODE);
         location.setZoneName(WarehouseLocationService.DEFAULT_ZONE_NAME);
         location.setBinCode(code);
+        location.setCapacity(10);
         location.setStatus(status);
         return location;
     }
@@ -104,9 +106,12 @@ class WarehouseLocationManagementTest {
         assertThat(saved.getValue().getWarehouseId()).isEqualTo(WAREHOUSE);
         assertThat(saved.getValue().getTenantId()).isEqualTo(TENANT);
         assertThat(saved.getValue().getStatus()).isEqualTo("active");
+        assertThat(saved.getValue().getCapacity()).isEqualTo(10);
         assertThat(saved.getValue().getRemark()).isEqualTo("靠门");
         assertThat(view.getBinCode()).isEqualTo("A-01");
         assertThat(view.getOccupied()).isFalse();
+        assertThat(view.getInStockCount()).isZero();
+        assertThat(view.getCapacity()).isEqualTo(10);
         assertThat(view.getStatus()).isEqualTo("active");
     }
 
@@ -302,20 +307,26 @@ class WarehouseLocationManagementTest {
     }
 
     @Test
-    @DisplayName("清单：一次查全租户占用号（不按 500 行截断），并可按需带出停用仓位")
-    void listViewMarksOccupancyAndIncludesInactive() {
+    @DisplayName("清单：一次查全租户每个仓位的在库件数（GROUP BY，不按 500 行截断），并可按需带出停用仓位")
+    void listViewMarksWaterLevelAndIncludesInactive() {
         when(locationMapper.selectList(any()))
                 .thenReturn(List.of(bin("A-01", "active", 11L), bin("A-02", "inactive", 12L)));
-        when(stockMapper.selectOccupiedBinCodes(TENANT)).thenReturn(List.of("A-01"));
+        BinStockCount count = new BinStockCount();
+        count.setBinCode("A-01");
+        count.setInStockCount(3);
+        when(stockMapper.selectInStockCounts(TENANT)).thenReturn(List.of(count));
 
         List<WarehouseLocationView> views = service.listView(TENANT, null, true);
 
         assertThat(views).hasSize(2);
         assertThat(views.get(0).getBinCode()).isEqualTo("A-01");
+        assertThat(views.get(0).getInStockCount()).isEqualTo(3);
+        assertThat(views.get(0).getCapacity()).isEqualTo(10);
         assertThat(views.get(0).getOccupied()).isTrue();
         assertThat(views.get(1).getBinCode()).isEqualTo("A-02");
+        assertThat(views.get(1).getInStockCount()).isZero();
         assertThat(views.get(1).getStatus()).isEqualTo("inactive");
         assertThat(views.get(1).getOccupied()).isFalse();
-        verify(stockMapper).selectOccupiedBinCodes(eq(TENANT));
+        verify(stockMapper).selectInStockCounts(eq(TENANT));
     }
 }
