@@ -1463,32 +1463,32 @@ class InboundOrderServiceTest {
         @Test
         @DisplayName("bizCategory 原样透传到读面（漏传 ⇒ 两个视图都是全量 = 混排照旧）")
         void listPassesBizCategoryToQueryMapper() {
-            when(inboundOrderQueryMapper.selectOrderLines(any(), any(), any(), any(), anyInt()))
+            when(inboundOrderQueryMapper.selectOrderLines(any(), any(), any(), any(), any(), anyInt()))
                     .thenReturn(List.of());
 
-            service.list("RK", null, InboundOrder.BIZ_FINISHED, TENANT);
+            service.list("RK", null, InboundOrder.BIZ_FINISHED, null, TENANT);
 
             verify(inboundOrderQueryMapper).selectOrderLines(eq(TENANT), eq("RK"), isNull(),
-                    eq(InboundOrder.BIZ_FINISHED), anyInt());
+                    eq(InboundOrder.BIZ_FINISHED), isNull(), anyInt());
         }
 
         @Test
         @DisplayName("缺省（null / 纯空白）= 不过滤（向后兼容：既有调用点与站内信深链行为不变）")
         void missingBizCategoryMeansNoFilter() {
-            when(inboundOrderQueryMapper.selectOrderLines(any(), any(), any(), any(), anyInt()))
+            when(inboundOrderQueryMapper.selectOrderLines(any(), any(), any(), any(), any(), anyInt()))
                     .thenReturn(List.of());
 
-            service.list(null, null, null, TENANT);
-            service.list(null, null, "   ", TENANT);
+            service.list(null, null, null, null, TENANT);
+            service.list(null, null, "   ", null, TENANT);
 
             verify(inboundOrderQueryMapper, times(2))
-                    .selectOrderLines(eq(TENANT), isNull(), isNull(), isNull(), anyInt());
+                    .selectOrderLines(eq(TENANT), isNull(), isNull(), isNull(), isNull(), anyInt());
         }
 
         @Test
         @DisplayName("非法类别 ⇒ 422 且不读库（不静默当「不过滤」= 成品单继续混进原料仓列表）")
         void unknownBizCategoryIsRejected() {
-            assertThatThrownBy(() -> service.list(null, null, "fabricx", TENANT))
+            assertThatThrownBy(() -> service.list(null, null, "fabricx", null, TENANT))
                     .isInstanceOfSatisfying(BusinessException.class, e -> {
                         assertThat(e.getMessage()).contains("只支持 fabric / finished");
                         assertThat(e.getHttpStatus()).as("缺参/非法参 ⇒ 422（照仓内 validationError 口径）")
@@ -1496,7 +1496,7 @@ class InboundOrderServiceTest {
                     });
 
             verify(inboundOrderQueryMapper, never())
-                    .selectOrderLines(any(), any(), any(), any(), anyInt());
+                    .selectOrderLines(any(), any(), any(), any(), any(), anyInt());
         }
 
         @Test
@@ -1663,6 +1663,43 @@ class InboundOrderServiceTest {
             assertThat(cap.getValue().getWarehouse()).isEqualTo("一号仓");
             // 没带 id ⇒ 一次仓表都不查（行为一字不动，连读都没有）
             verify(warehouseMapper, never()).selectById(any());
+        }
+    }
+
+    // ============================================================ #7807 按仓库筛选
+
+    /**
+     * issue #7807：列表要能**按仓库查单** —— 改前只有「仓库」文本列可看，查不了。
+     *
+     * <p>守两条：① {@code warehouseId} 原样透传到读面（漏传 = 下拉选了仓也照样返回全部仓的单，
+     * 而页面看起来一切正常）；② 不传时读面收到 {@code null} = 全部仓库（既有调用点 / 站内信深链零回归）。</p>
+     */
+    @Nested
+    @DisplayName("#7807 列表按仓库筛选：warehouseId 透传 + 缺省不过滤")
+    class InboundWarehouseFilter {
+
+        @Test
+        @DisplayName("warehouseId 原样透传到读面（漏传 ⇒ 选了仓也返回全量）")
+        void listPassesWarehouseIdToQueryMapper() {
+            when(inboundOrderQueryMapper.selectOrderLines(any(), any(), any(), any(), any(), anyInt()))
+                    .thenReturn(List.of());
+
+            service.list(null, null, InboundOrder.BIZ_FABRIC, 12L, TENANT);
+
+            verify(inboundOrderQueryMapper).selectOrderLines(eq(TENANT), isNull(), isNull(),
+                    eq(InboundOrder.BIZ_FABRIC), eq(12L), anyInt());
+        }
+
+        @Test
+        @DisplayName("不传 warehouseId ⇒ 读面收到 null（= 全部仓库；既有调用点零回归）")
+        void missingWarehouseIdMeansNoFilter() {
+            when(inboundOrderQueryMapper.selectOrderLines(any(), any(), any(), any(), any(), anyInt()))
+                    .thenReturn(List.of());
+
+            service.list("RK", null, InboundOrder.BIZ_FABRIC, null, TENANT);
+
+            verify(inboundOrderQueryMapper).selectOrderLines(eq(TENANT), eq("RK"), isNull(),
+                    eq(InboundOrder.BIZ_FABRIC), isNull(), anyInt());
         }
     }
 }
