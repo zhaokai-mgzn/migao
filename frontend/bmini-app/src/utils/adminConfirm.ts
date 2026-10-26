@@ -15,10 +15,20 @@
 import Taro from '@tarojs/taro'
 
 /**
- * 弹一次确认框。返回 `true` = 用户确认，`false` = 取消 / 弹窗失败（**默认拒绝**：拿不到
- * 确认就不执行不可逆动作 —— 弹窗异常时静默放行是更坏的失败方向）。
+ * 确认框的**三态**结论（issue #7822）。
+ *
+ * 🔴 为什么必须把 `cancelled` 与 `failed` 分开：原来两者都压成 `false`，页面无法分辨「工人不想过账」
+ * 与「**确认框根本没弹出来**」—— 后者的现场形态是**零反馈**：工人点「提交过账」，屏上什么都不发生
+ * （既不建单、也不报错），读到的就是「点了没反应」（2026-10-26 线上实测）。
+ * 取消是**工人的选择**（该静默）；弹窗失联是**故障**（必须说一句）。
  */
-export async function confirmAdminAction(title: string, content: string): Promise<boolean> {
+export type ConfirmOutcome = 'confirmed' | 'cancelled' | 'failed'
+
+/**
+ * 弹一次确认框，返回三态。`failed` 仍然等价于「不执行」（**默认拒绝**：拿不到确认就不执行不可逆
+ * 动作 —— 弹窗异常时静默放行是更坏的失败方向），但调用方现在能把它**说出来**。
+ */
+export async function confirmActionResult(title: string, content: string): Promise<ConfirmOutcome> {
   try {
     const res: any = await Taro.showModal({
       title,
@@ -26,8 +36,18 @@ export async function confirmAdminAction(title: string, content: string): Promis
       confirmText: '确认',
       cancelText: '取消',
     })
-    return !!res?.confirm
+    return res?.confirm ? 'confirmed' : 'cancelled'
   } catch {
-    return false
+    return 'failed'
   }
+}
+
+/**
+ * 弹一次确认框。返回 `true` = 用户确认，`false` = 取消 / 弹窗失败（**默认拒绝**）。
+ *
+ * 不区分「失败 vs 取消」的调用方用它；要区分（= 要把弹窗失联说出来）的调用方用
+ * `confirmActionResult`（类级判据 = `frontend/bmini-app/tests/confirm-failure-surfaced.test.ts`）。
+ */
+export async function confirmAdminAction(title: string, content: string): Promise<boolean> {
+  return (await confirmActionResult(title, content)) === 'confirmed'
 }

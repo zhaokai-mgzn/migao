@@ -19,6 +19,11 @@
  * 3. **不许**替工人决定过账（§6.5 + 不可逆 ⇒ `confirmAdminAction` 二次确认，且 `confirmed: true` 由工人勾选）；
  * 4. **不许**绕过服务端直接打印（§7.3；送打印只有一个入口 `printInboundLabel`，它**先调留痕**）。
  *
+ * 5. **不许**让拦截/失败只出现在页面顶部（issue #7822）：端侧闸不通过 / 服务端拒绝 ⇒ 文案渲染在
+ *    「提交过账」**正上方**（`inbound-submit-blocked`），顶部横幅只留拍照 / 识别 / 搜索这类与提交无关的
+ *    失败 —— 长表单 / 小屏 / 软键盘弹起时顶部横幅在视口之外，工人读到的是**「点了没反应」**（线上实测：
+ *    按钮 top=588 在屏内、横幅 top=-170 在屏外，且一个请求都没发）。
+ *
  * ## 两格数字：**卷数** × **卷长**（issue #6812）
  *
  * 「数量」= **卷数**（默认 `1`）、「卷长」= **每卷米数**，入库米数 = 两者之乘 —— 这个乘法的
@@ -32,7 +37,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Taro from '@tarojs/taro'
 import { Image, Input, ScrollView, Text, View } from '@tarojs/components'
-import { confirmAdminAction } from '../../../utils/adminConfirm'
+import { confirmActionResult } from '../../../utils/adminConfirm'
 import { hasWorkerSession } from '../../../utils/workerSession'
 import { decodeBarcodeFromPhoto, type PendingPhoto } from '../../../utils/inbound/barcodeDecode'
 import { inboundLabelPageSize, layoutInboundLabel, type InboundLabelView } from '../../../utils/inbound/labelLayout'
@@ -93,6 +98,10 @@ export default function WorkerInboundPage() {
   const [notices, setNotices] = useState<string[]>([])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  /** 提交链的失败/拦截文案 —— **就地**渲染在「提交过账」正上方（issue #7822：顶部横幅在长表单里
+   * 会被折到视口外，工人看到的是「点了没反应」）。与 `busy` 分开：提交期间要单独给「提交中…」。 */
+  const [submitError, setSubmitError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
   const [prefill, setPrefill] = useState<PrefillResult | null>(null)
   // 识别回执**原样**留一份：逐格结果（`fields`）由它派生，不在端侧重建字段表
@@ -211,29 +220,48 @@ export default function WorkerInboundPage() {
     setSearchState(rows.length === 0 ? '没搜到这个货号，换个写法试试' : `搜到 ${rows.length} 个货号，点一个选中`)
   }, [searchQuery])
 
+  /**
+   * 建单准入的**实时**结论（勾「我确认」/ 填卷长 / 选货号 三件事）。
+   * 渲染在「提交过账」**正上方** ⇒ 缺什么当场看得见（issue #7822），不靠点完之后去页面顶部找横幅
+   * （长表单 / 小屏 / 软键盘弹起时那面横幅在视口之外）。判据真值仍是 `checkDraftInput`。
+   */
+  const draftCheck = useMemo(
+    () =>
+      checkDraftInput({
+        productId: chosenSku?.productId || null,
+        skuId: chosenSku?.skuId ?? null,
+        quantity,
+        rollLengthM,
+        confirmed,
+      }),
+    [chosenSku, quantity, rollLengthM, confirmed],
+  )
+  /** 按钮上方那一行：**提交失败的文案优先**，否则给端侧闸缺的那一项 */
+  const submitHint = submitError !== '' ? submitError : draftCheck.ok ? '' : draftCheck.message
+
   const onSubmit = useCallback(async () => {
     setError('')
-    const input = {
-      productId: chosenSku?.productId || null,
-      skuId: chosenSku?.skuId ?? null,
-      quantity,
-      rollLengthM,
-      confirmed,
-    }
-    const check = checkDraftInput(input)
-    if (!check.ok) {
-      setError(check.message)
+    setSubmitError('')
+    // 🔴 拦截原因**就地**上屏（issue #7822）：顶部横幅在长表单 / 小屏 / 软键盘弹起时会被折到
+    //    视口之外（线上实测：按钮 top=588 在屏内、横幅 top=-170 在屏外）⇒ 工人读到的是「点了没反应」。
+    if (!draftCheck.ok) {
+      setSubmitError(draftCheck.message)
       return
     }
     // 过账**不可逆** ⇒ 二次确认（复用 #5654 的一步动作护栏；文案把两格说清）
     // 🔴 端侧**不在这里算乘积**（issue #6812）：入库米数 = 卷数 × 卷长 的真值在服务端，
     //    端侧再算一份就是第二份会漂的口径（精度/粒度都可能有差）⇒ 只把两格原样念给工人听。
-    const ok = await confirmAdminAction(
+    const outcome = await confirmActionResult(
       '确认过账',
       `${prefill?.productName || chosenSku?.skuCode || '这批货'} ${quantity} 卷 × ${rollLengthM} 米/卷过账后将立即加库存、生成批次号，且不可撤销`,
     )
-    if (!ok) return
-    setBusy(true)
+    // 取消 = 工人的选择（静默）；**弹窗失联**不是选择 ⇒ 必须说一句（issue #7822）
+    if (outcome === 'cancelled') return
+    if (outcome === 'failed') {
+      setSubmitError('这张单没有提交：确认框没能弹出来。请再点一次「提交过账」。')
+      return
+    }
+    setSubmitting(true)
     const draftRequestId = newInboundRequestId()
     try {
       const draft = await createInboundDraft(
@@ -264,11 +292,12 @@ export default function WorkerInboundPage() {
       setPreviewUrl(preview.url)
       if (preview.notice) setNotices((prev) => [...prev, preview.notice])
     } catch (e: any) {
-      setError(e?.message || '过账失败，请重试')
+      // 服务端 400/422/409 的文案**原样**落到按钮上方（口径真值在服务端，端侧不重写第二份）
+      setSubmitError(e?.message || '过账失败，请重试')
     } finally {
-      setBusy(false)
+      setSubmitting(false)
     }
-  }, [chosenSku, quantity, rollLengthM, confirmed, prefill, dyeLot, supplier, supplierDocNo, remark])
+  }, [draftCheck, chosenSku, quantity, rollLengthM, prefill, dyeLot, supplier, supplierDocNo, remark])
 
   const onPrint = useCallback(async () => {
     setError('')
@@ -536,14 +565,21 @@ export default function WorkerInboundPage() {
             >
               <Text>{confirmed ? '☑' : '☐'} 我确认：标签与实物一致（过账立即加库存，不可撤销）</Text>
             </View>
+            {/* 🔴 拦截/失败原因**贴着按钮**（issue #7822）：端侧闸缺哪一项、服务端拒绝了什么都落这一行；
+                顶部横幅只留拍照 / 识别 / 搜索这类与提交无关的失败（同屏不重复说同一件事）。 */}
+            {submitHint !== '' && (
+              <Text className='admin-card__note' data-testid='inbound-submit-blocked'>
+                {submitHint}
+              </Text>
+            )}
             <View
-              className={`admin-action admin-action--gold${busy ? ' admin-action--disabled' : ''}`}
+              className={`admin-action admin-action--gold${busy || submitting ? ' admin-action--disabled' : ''}`}
               data-testid='inbound-submit'
               onClick={() => {
-                if (!busy) onSubmit()
+                if (!busy && !submitting) onSubmit()
               }}
             >
-              <Text>提交过账</Text>
+              <Text>{submitting ? '提交中…' : '提交过账'}</Text>
             </View>
           </View>
         )}
