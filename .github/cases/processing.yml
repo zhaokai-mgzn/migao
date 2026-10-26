@@ -534,6 +534,8 @@ cases:
         - "frontend/admin-web/tests/unit/components/DirectLabelPrint.test.tsx"
         # issue #6656：两条打印通道同一份纸面 —— 内容真值模块的判据 + 类级元守卫（铁律 8）
         - "frontend/admin-web/tests/unit/lib/wash-label-content.test.ts"
+        # issue #7833：加工费组合（= processingItems[].name 集合）的展示取值口
+        - "frontend/admin-web/tests/unit/lib/processing-combo.test.ts"
         - "tests/unit_ci_workflows/test_wash_label_single_source.py"
         # issue #6439 的**类级元守卫**（铁律 8）：生产源码里任何 `openPrinter(` 调用都不许是空参形态
         - "tests/unit_ci_workflows/test_lpapi_open_printer_contract.py"
