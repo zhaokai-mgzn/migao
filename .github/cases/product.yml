@@ -4501,7 +4501,7 @@ cases:
     data_checks:
       - "🔴 码形态：短码 = 8 位且每个字符都在 Crockford 字母表 `0123456789ABCDEFGHJKMNPQRSTVWXYZ` 内（生成面**从不产出** `I/L/O/U`）；手抄形态（小写 / `O` / `I` / `L`）归一化到同一短码（`O→0`、`I,L→1`）；形态不合法（长度不对 / 字符集外）⇒ 一次库都不查"
       - "🔴 唯一与碰撞：分配器查重同时看**活码与留档码**（已撤销的码永不复发，DB 侧由 `uk_inbound_labels_code` 建在有效码 `COALESCE(short_code, revoked_code)` 上兜底）；连续 8 次碰撞 ⇒ 显式 `IllegalStateException`（**拒绝静默造重码**），不落任何标签行"
-      - "🔴 两个码空间互斥：`/i/` 面的源码不出现 `ProcessingSetPartToken` / `processing_set_part_tokens` / `REPORT_PAGE_PATH` / `\"/w/\"`；`/s/` 面的源码不出现 `InboundLabel` / `inbound_labels` / `\"/i/\"`；迁移 V134 的 **SQL**（剥注释后）不出现 `processing_set_part_tokens`；字母表字面量在 admin-api 主源码里**恰好一份**（`WorkerShortLinkService.java`）"
+      - "🔴 两个码空间互斥：`/i/` 面的源码不出现 `ProcessingSetPartToken` / `processing_set_part_tokens` / `REPORT_PAGE_PATH` / `\"/b/?t=\"`（2026-10-27 起报工落地面由 `/w/` 改指 `/b/`，issue #7879；`/w/` 兼容期旧落点同样禁）；`/s/` 面的源码不出现 `InboundLabel` / `inbound_labels` / `\"/i/\"`；迁移 V134 的 **SQL**（剥注释后）不出现 `processing_set_part_tokens`；字母表字面量在 admin-api 主源码里**恰好一份**（`WorkerShortLinkService.java`）"
       - "🔴 公开入口：`GET /i/{短码}` 未认证可达（`permitAll`）—— 未知短码 ⇒ **404**（不是 401）、已撤销 ⇒ **410 Gone**、有效 ⇒ **302** 且 `Location` 为**相对路径**（默认 `/b/?code=<短码>&tenant_id=<id>`）；响应体为空，`Location` 里没有品名 / 米数 / 供应商 / 单号等任何业务字段"
       - "🔴 落地页地址走单一配置：改 `migao.inbound-label.landing-path` 即改 302 目标；解析文件里不出现硬编码域名（`migaozn.com`）"
       - "🔴 未登记即红（类级）：控制器里出现的单字母短码前缀集合必须恰好等于登记表 `CODE_SPACES`（`/s/` + `/i/`）；每个前缀都必须在 `SecurityConfig` 的 permitAll 名单里"

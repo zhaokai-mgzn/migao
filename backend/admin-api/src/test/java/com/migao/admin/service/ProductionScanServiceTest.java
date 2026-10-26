@@ -588,7 +588,7 @@ class ProductionScanServiceTest {
     }
 
     @Test
-    @DisplayName("🔴 整条印刷 URL：`/s/<短码>` 与 `/w/?t=<token>&tenant_id=…` 都能解析（小程序直传扫码原文）")
+    @DisplayName("🔴 整条印刷 URL：`/s/<短码>` 与 `/b/?t=<token>&tenant_id=…` 都能解析（小程序直传扫码原文）")
     void printedUrlFormsResolve() {
         stubNewTokenScan(ITEM_CLOTH, standardOps());
         when(setPartTokenMapper.selectOne(any())).thenReturn(null);
@@ -602,16 +602,23 @@ class ProductionScanServiceTest {
 
         when(setPartTokenMapper.selectOne(any())).thenReturn(partToken(ITEM_CLOTH));
         Map<String, Object> reportPage = service.resolve(
-                "https://app.migaozn.com/w/?t=" + NEW_CODE + "&tenant_id=3", null, TENANT);
+                "https://app.migaozn.com/b/?t=" + NEW_CODE + "&tenant_id=3", null, TENANT);
         assertThat(reportPage.get("granularity")).as("query 里的 t/token/code 先取出再解析")
                 .isEqualTo("set_position");
         assertThat(position(reportPage).get("order_item_id")).isEqualTo(ITEM_CLOTH);
+
+        // 兼容期旧落点（`/w/?t=`，issue #7879 之前的 302 目标）：印刷品与聊天记录里都还在 ⇒
+        // 解析面**照旧认**（"只换落地面、不换参数"的直接后果）。判据强度只增不减。
+        when(setPartTokenMapper.selectOne(any())).thenReturn(partToken(ITEM_CLOTH));
+        Map<String, Object> legacyLanding = service.resolve(
+                "https://app.migaozn.com/w/?t=" + NEW_CODE + "&tenant_id=3", null, TENANT);
+        assertThat(legacyLanding.get("granularity")).as("旧落地形态不被新落点挤掉").isEqualTo("set_position");
 
         // hash 形态（`#t=`）：与前端 helper `parseScanInput` 的接受面**同一份口径**（不产第二份规则）
         when(setPartTokenMapper.selectOne(any())).thenReturn(null);
         when(setPartTokenMapper.selectByShortCode(SHORT_CODE)).thenReturn(partTokenWithShortCode(ITEM_CLOTH));
         Map<String, Object> hashForm = service.resolve(
-                "https://app.migaozn.com/w/#t=" + SHORT_CODE, null, TENANT);
+                "https://app.migaozn.com/b/#t=" + SHORT_CODE, null, TENANT);
         assertThat(hashForm.get("granularity")).isEqualTo("set_position");
     }
 

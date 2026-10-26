@@ -7,6 +7,7 @@ import { getRememberedAccount, rememberAccount } from '../../../utils/loginAccou
 import AuthDiagPanel, { shouldShowAuthDiag } from '../../../components/auth/AuthDiagPanel'
 import { workerLogin } from '../../../services/workerService'
 import { WORKER_HOME_ROUTE } from '../../../utils/inbound/gaps'
+import { reportReturnUrl, takeReportReturn } from '../../../utils/reportEntry'
 import './index.scss'
 
 /**
@@ -193,7 +194,10 @@ export default function LoginPage() {
       }
       // 只记工号（账号名）；**PIN 绝不落盘**（共用 PAD 上更不能留凭据，issue #6478）
       rememberAccount('worker', workerNo.trim())
-      Taro.redirectTo({ url: WORKER_HOME_ROUTE })
+      // 🔴 issue #7879：工人从**报工页**进来登录（新手机首次扫纸上的码）⇒ 登录成功回跳报工页
+      // 继续报那一笔；没有这条记录 ⇒ 照旧回工人首页（既有动线一字未改）。
+      const back = takeReportReturn()
+      Taro.redirectTo({ url: back.present ? reportReturnUrl(back.code) : WORKER_HOME_ROUTE })
     } finally {
       setWorkerSubmitting(false)
     }

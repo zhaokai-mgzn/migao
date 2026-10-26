@@ -24,6 +24,8 @@
  */
 
 /** 缺值占位符（与纸面 / 其它工人面同口径：**不是** 0、不是空串）。 */
+import { codeFromScanText } from './scanInput'
+
 export const MISSING = '—'
 
 /** 报工三态（与后端 `ProductionService.WORK_TYPES`、H5 `render.mjs` 的 `WORK_TYPES` 逐字同名）。 */
@@ -306,28 +308,16 @@ export function applyReceipt(
 /**
  * 扫一扫的 `result` → token（**三种形态**都认；认不出就原样当短码/单号）。
  *
+ * 🔴 **实现只有一份**（issue #7879）：本函数是 `utils/scanInput.ts` 的 `codeFromScanText` 的**转发**
+ * —— h5 落地（`?t=`）、小程序扫一扫、小程序码（`scene`）、扫普通链接二维码（`q`）与页面参数
+ * 全部收口到同一个解析器，禁止在这里另写一套。
+ *
  * | 形态 | 例子 |
  * |---|---|
  * | 短链 | `https://app.migaozn.com/s/ab12cd34` |
- * | 带 t 参数 | `https://app.migaozn.com/w/?t=<token>` |
+ * | 带 t 参数 | `https://app.migaozn.com/b/?t=<token>`（#7879 前的旧落点 `/w/?t=` 同样认） |
  * | 裸短码 / 单号 | `ab12cd34` / `JG-20260901-001` |
  */
 export function tokensFromScanResult(text: string | null | undefined): string {
-  const raw = String(text ?? '').trim()
-  if (raw === '') return ''
-  // `http(s)://…` 形态优先；`URL` 在 RN/小程序运行时不一定存在 ⇒ 失败就落正则
-  try {
-    const url = new URL(raw)
-    const token = url.searchParams.get('t') ?? url.searchParams.get('token')
-    if (token && token.trim() !== '') return token.trim()
-    const short = url.pathname.match(/\/s\/([A-Za-z0-9_-]+)/)
-    if (short) return short[1]
-  } catch {
-    /* 非 URL ⇒ 继续用正则 */
-  }
-  const byQuery = raw.match(/[?&](?:t|token)=([^&#]+)/)
-  if (byQuery) return decodeURIComponent(byQuery[1]).trim()
-  const byShort = raw.match(/\/s\/([A-Za-z0-9_-]+)/)
-  if (byShort) return byShort[1]
-  return raw
+  return codeFromScanText(text)
 }

@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 入库标签面的**结构守卫**（issue #5052 P2）—— 让「同一路径命名空间下两套语义混用」这类缺陷进不来。
  *
  * <p>本单最值得固化的类不是某一条业务规则，而是 <b>码空间混用</b>：{@code /s/}（报工短链，
- * 302 → {@code /w/?t=<token>}）与 {@code /i/}（入库标签，302 → 落地页）是两个语义不同的
+ * 302 → {@code /b/?t=<token>}）与 {@code /i/}（入库标签，302 → 落地页）是两个语义不同的
  * **公开路径命名空间**。它们的短码规格**故意同款**（8 位 Crockford Base32）⇒ 一旦有人
  * 「顺手复用那张表 / 复制一份字母表 / 把两个入口接到同一个服务」，扫标签就会变成进报工页，
  * 而**不会有任何东西变红**。本类把这条钉成源码判据（类级 meta 守卫见
@@ -27,7 +27,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <h3>钉住的八件事（逐条可红）</h3>
  * <ol>
  *   <li><b>码空间互斥</b>：标签面源码不出现报工短链的表 / 服务内部符号（{@code ProcessingSetPartToken}
- *       / {@code processing_set_part_tokens} / {@code REPORT_PAGE_PATH} / {@code "/w/"}），
+ *       / {@code processing_set_part_tokens} / {@code REPORT_PAGE_PATH} / {@code "/b/?t="}；
+ *       {@code "/w/"}（兼容期旧落点）同样禁 —— issue #7879 后两个码空间**同落 {@code /b/}**，
+ *       区分靠的是参数名 {@code code} 与 {@code t}），
  *       反向亦然（{@code WorkerShortLink*} 不出现 {@code InboundLabel} / {@code "/i/"}）；</li>
  *   <li><b>字母表单一来源</b>：Crockford 字母表字面量在全仓 admin-api 主源码里**恰好出现一次**
  *       （= {@code WorkerShortLinkService.ALPHABET}），归一化别名同理 —— 复制第二份 ⇒ 红；</li>
@@ -71,6 +73,10 @@ class InboundLabelSurfaceGuardTest {
             assertThat(source).doesNotContain("ProcessingSetPartToken");
             assertThat(source).doesNotContain("processing_set_part_tokens");
             assertThat(source).doesNotContain("REPORT_PAGE_PATH");
+            // 🔴 issue #7879：报工落地也改成 `/b/` 了 ⇒ 路径段不再能区分两个码空间
+            // （`/i/` → `/b/?code=`、`/s/` → `/b/?t=`），能区分的是**参数名**。
+            // 故这里钉「标签面不许出现报工落地那个带 t 的形态」；`/w/`（兼容期旧落点）同样禁。
+            assertThat(source).doesNotContain("/b/?t=");
             assertThat(source).doesNotContain("/w/");
         }
         // 复用**生成口径**（字母表/归一化/分配器）是刻意的；复用**码表**不是

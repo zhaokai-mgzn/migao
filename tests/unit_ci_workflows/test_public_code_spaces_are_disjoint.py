@@ -69,7 +69,7 @@ class CodeSpace:
 CODE_SPACES: dict[str, CodeSpace] = {
     "/s/": CodeSpace(
         prefix="/s/",
-        semantics="工人报工短链（302 → /w/?t=<token>；承载表 processing_set_part_tokens）",
+        semantics="工人报工短链（302 → /b/?t=<token>；承载表 processing_set_part_tokens）",
         resolver_files=(
             "service/WorkerShortLinkService.java",
             "controller/WorkerShortLinkController.java",
@@ -85,11 +85,11 @@ CODE_SPACES: dict[str, CodeSpace] = {
             "controller/InboundLabelShortLinkController.java",
         ),
         forbidden_tokens=("ProcessingSetPartToken", "processing_set_part_tokens",
-                          "REPORT_PAGE_PATH", "/w/"),
+                          "REPORT_PAGE_PATH", "/b/?t=", "/w/"),
     ),
     "/o/": CodeSpace(
         prefix="/o/",
-        semantics="加工单级纸上的码：服务端 302 → /w/?t=<token>（承载表 processing_orders.short_code；"
+        semantics="加工单级纸上的码：服务端 302 → /b/?t=<token>（承载表 processing_orders.short_code；"
                   "撤销 = qr_token 置 NULL ⇒ 410，short_code 不碰）；只有单、天然指不出部位 "
                   "⇒ 落地必然是「选套 + 选部位」降级面",
         resolver_files=(

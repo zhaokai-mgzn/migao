@@ -17,8 +17,9 @@
  *
  * ## 与 H5 `/w/` 的关系（收口方向 = #7806）
  *
- * 本页是 `/w/` 报工面的**小程序载体**，语义逐条对齐；`/w/` 不下线（纸上已印的码还在用），
- * 直到 #7806 的 P2c 把短链目标切过来。**记账口径一字未动**（扫码 = 开工/领活、单价在报工那刻固化）。
+ * 本页是纸上的码的**落地面**（issue #7879：`/s/` `/o/` 302 → `/b/?t=<token>` ⇒ h5 启动器把 token
+ * 交给本页），语义与 H5 `/w/` 逐条对齐；`/w/` 转入兼容期（静态面可直连，但不再是任何 302 的目标，
+ * 退役属 #7806 P3）。**记账口径一字未动**（扫码 = 开工/领活、单价在报工那刻固化）。
  *
  * ## 不做（照实登记）
  *
@@ -57,6 +58,10 @@ import {
   type WorkType,
 } from '../../../utils/reportState'
 import { WORKER_TAB_LOGIN_ROUTE } from '../../../utils/inbound/gaps'
+// 🔴 入口参数的提取**不在本页判平台**（issue #7879）：h5 读 URL search、小程序读
+// `getEnterOptionsSync()` / 页面参数，两条都收口到 `utils/scanInput.ts` 的同一个解析器
+import { currentEntryLanding, rememberReportReturn } from '../../../utils/reportEntry'
+import { resolveScanLanding } from '../../../utils/scanInput'
 // 🔴 小程序专有 API 的 h5 出路（守卫 tests/h5-platform-api-guard.test.ts）：h5 产物里没有
 // 原生扫码 ⇒ 不摆「扫一扫」按钮，手输码这条降级路径仍然可用（不是把页面弄死）。
 import { canUseNativeScan } from '../../../utils/platform'
@@ -130,8 +135,13 @@ export default function WorkerReportPage() {
   )
 
   const goLogin = useCallback(() => {
+    // 🔴 登录后**回跳本页继续报工**（issue #7879；新手机首次扫码时本机还没有工人 session）：
+    // 把「要接着报的那个码」临时记在本机，登录成功后由 `pages/auth/login/index.tsx` 读它
+    // `redirectTo` 回本页（不是停在登录页、也不是落到工人首页就把手里的活丢了）。存的是**码**，
+    // 不是身份（PIN 绝不落盘，与 `rememberAccount` 的既有口径一致）。
+    rememberReportReturn(token || manual.trim())
     Taro.navigateTo({ url: WORKER_TAB_LOGIN_ROUTE })
-  }, [])
+  }, [token, manual])
 
   /** 解析：token（+ 可选工序 / 旧码选择）→ 一屏。 */
   const resolve = useCallback(
@@ -159,11 +169,32 @@ export default function WorkerReportPage() {
     [],
   )
 
+  /**
+   * 🔴 **入口即解析**（issue #7879）：h5 启动器 `redirectTo` 带 `?t=<token>`、小程序冷启动的
+   * `query.q`（A 档「扫普通链接二维码打开小程序」）/ `query.scene`（B 档小程序码）—— 三条都经
+   * `currentEntryLanding()` 归一 ⇒ 工人扫码后**不必再手输一次**。
+   *
+   * 只消费返回值（页面里**不判平台**）；身份未就绪时先等（下面的身份 effect 会把它设成
+   * `scan` / `unauthorized`），未登录则先记下码再引导登录（`goLogin` 的 `rememberReportReturn`）。
+   */
+  const entryDoneRef = useRef(false)
+  useEffect(() => {
+    if (entryDoneRef.current) return
+    if (state.mode === 'unauthorized' || !state.worker) return
+    const landing = currentEntryLanding()
+    if (landing.kind !== 'report' || landing.code === '') {
+      entryDoneRef.current = true
+      return
+    }
+    entryDoneRef.current = true
+    void resolve(landing.code)
+  }, [state.mode, state.worker, resolve])
+
   /** 扫一扫（小程序原生；扫码结果可能是短链 / 带 t 参数 / 裸码）。 */
   const scan = useCallback(async () => {
     try {
       const result = await Taro.scanCode({ scanType: ['qrCode', 'barCode'] })
-      const code = tokensFromScanResult((result as any)?.result)
+      const code = resolveScanLanding({ text: (result as any)?.result }).code
       if (code) await resolve(code)
     } catch {
       // 用户取消扫码不是错误（小程序会 reject）—— 什么都不做，别弹红字

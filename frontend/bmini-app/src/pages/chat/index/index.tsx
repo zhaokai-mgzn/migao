@@ -4,7 +4,7 @@ import Taro, { useDidShow } from '@tarojs/taro'
 import { useChatStore } from '../../../store/chatStore'
 import { useAuthStore } from '../../../store/authStore'
 import { buildBrandSubtitle, buildBotName } from '../../../utils/brand'
-import { currentLandingCode } from '../../../utils/inbound/deepLink'
+import { currentLandingCode, currentReportToken } from '../../../utils/inbound/deepLink'
 // 商家面身份护栏（issue #6567）：纯工人设备打开本页 ⇒ 送回工人工作台
 import { isWorkerOnlyDevice, merchantEntryTarget, useMerchantSurfaceGuard } from '../../../utils/roleGuard'
 import { consumeWorkerLanding } from '../../../utils/qrLogin'
@@ -80,7 +80,7 @@ export default function ChatPage() {
     // 会把工人从他的补打落地页一脚踢到商家登录页，而这一步**没有任何东西会变红**
     // （跳转成功、无异常、无日志 —— 正是本单要治的"静默失败"形态）。
     // 深链的接手方是 `src/app.tsx`（把码交给补打页）。
-    if (currentLandingCode().present) return
+    if (currentLandingCode().present || currentReportToken().present) return
 
     // 🔴 工人优先（issue #7878）：纯工人设备 / 工人扫码落地 ⇒ 直接进工人工作台。
     //    必须排在 `checkAuth()` **之前** —— 否则「未登录 ⇒ 600ms 后跳商家登录页」会先把工人踢走

@@ -19,7 +19,7 @@ import java.util.concurrent.ThreadLocalRandom;
  * <h2>它解决什么</h2>
  * 长 token（32 位十六进制）在**纸质码 / 工牌 / 贴纸**上印不下、人工抄写极易错 ⇒
  * 印刷品写 {@code https://<稳定域名>/s/<短码>}（8 位、人可读、抄得准），
- * 由服务端 {@code GET /s/{shortCode}} **302** 换回 {@code /w/?t=<token>}。
+ * 由服务端 {@code GET /s/{shortCode}} **302** 换回 {@code /b/?t=<token>}。
  *
  * <h2>为什么必须服务端 302（不能靠前端 JS 跳转）</h2>
  * 用户裁定③「任意扫一扫工具都能用」⇒ 部分扫码工具**只认服务端跳转**（前端 JS 跳转对它们是白屏）。
@@ -62,8 +62,19 @@ public class WorkerShortLinkService {
     /** 短码长度（设计 §1.4：6~8 位，取 8 —— 空间 32^8 ≈ 1.1e12）。 */
     public static final int CODE_LENGTH = 8;
 
-    /** 报工页路径（设计 §1.3：换前端框架/改路径**只改这一跳**）。 */
-    public static final String REPORT_PAGE_PATH = "/w/";
+    /**
+     * 报工页路径（设计 §1.3：换前端框架/改路径**只改这一跳**）。
+     *
+     * <p>🔴 issue #7879（2026-10-27 用户逐字「把跳转链接 /w 改成 /b，统一进手机端页面，
+     * 不要再出现 /w 路径」）：落地面由 H5 {@code frontend/worker-h5} 的 {@code /w/} 改成 bmini 的
+     * {@code /b/}（Taro 一端双编译 = 小程序原生页 + {@code /b/} H5）。**查询串口径一字不动**
+     * （仍是 {@code ?t=&tenant_id=&tenant_code=}）⇒ 已印在纸上的码继续有效，短码 ⇒ token 的换发也不受影响。</p>
+     *
+     * <p>{@code /w/} 转入**兼容期**（退役属 #7806 的 P3）：静态面仍可直接打开，但它**不再是任何 302 的目标**
+     * —— 判据 = {@code WorkerShortLinkControllerTest} / {@code ProcessingOrderShortLinkControllerTest} /
+     * {@code SecurityConfigTest} 里对 {@code /b/?t=…} 的逐字断言。</p>
+     */
+    public static final String REPORT_PAGE_PATH = "/b/";
 
     /** 分配短码的最大尝试次数（碰撞重试上限；到顶 ⇒ 显式失败，不静默造重码）。 */
     private static final int MAX_ALLOCATE_ATTEMPTS = 8;
@@ -201,7 +212,7 @@ public class WorkerShortLinkService {
     /**
      * 302 的 {@code Location}（报工页 + token + 租户 id + 企业编码）。
      *
-     * <p><b>刻意用相对 Location</b>（{@code /w/?t=…}）而不是拿请求 Host 拼绝对 URL：
+     * <p><b>刻意用相对 Location</b>（{@code /b/?t=…}）而不是拿请求 Host 拼绝对 URL：
      * ① 请求 Host 可伪造 ⇒ 拼绝对 URL = **开放重定向**面；② 浏览器按 RFC 7231 §7.1.2
      * 用**请求 URL**（HTTPS 短链）解析相对引用 ⇒ 最终落地仍是**标准 HTTPS URL**，
      * 且换域名时这一跳不用改。</p>
