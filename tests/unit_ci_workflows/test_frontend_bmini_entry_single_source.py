@@ -159,6 +159,22 @@ def _strip_comments(text: str) -> str:
     return "".join(out)
 
 
+def _safe_read(path: Path) -> str | None:
+    """读文件；**扫描期间已消失** ⇒ `None`（跳过，不判红）。
+
+    🔴 为什么必须有这一层（2026-10-26 post-merge 实测，issue #7831）：
+    `tests/unit_ci_workflows/test_growth_gate_verdict_loud.py` 会把**探针文件**
+    直接写进真树（`frontend/admin-web/src/lib/zzz-verdict-loud-probe-N.ts`）再删掉；
+    本守卫的语料是「真树的 `src/**`」⇒ 在 xdist 并行下，**列目录拿到它、读它时它已被删**
+    ⇒ `FileNotFoundError` ⇒ 判据以「异常」而非「违规」判红（main 侧守护腿实测 1 failed）。
+    ⇒ 判据只该对**稳定存在的文件**下判断：读不到就当它不属于本次语料。
+    """
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except (FileNotFoundError, NotADirectoryError, IsADirectoryError):
+        return None
+
+
 def _hardcoded_domain_sites(files=None) -> list[str]:
     """前端**代码**里出现硬编码 `app.migaozn.com` 的位置（仓库相对路径:行号；注释不算）。"""
     files = _source_files() if files is None else files
@@ -167,7 +183,10 @@ def _hardcoded_domain_sites(files=None) -> list[str]:
         rel = _rel(path)
         if rel in ALLOWED_DOMAIN_SITES:
             continue
-        text = _strip_comments(path.read_text(encoding="utf-8", errors="replace"))
+        raw = _safe_read(path)
+        if raw is None:
+            continue
+        text = _strip_comments(raw)
         for i, line in enumerate(text.splitlines(), 1):
             if DOMAIN_RE.search(line):
                 hits.append(f"{rel}:{i}: {line.strip()[:120]}")
@@ -185,7 +204,10 @@ def _env_var_readers(files=None) -> list[str]:
         rel = _rel(path)
         if rel == SOLE_READER:
             continue
-        if needle in _strip_comments(path.read_text(encoding="utf-8", errors="replace")):
+        raw = _safe_read(path)
+        if raw is None:
+            continue
+        if needle in _strip_comments(raw):
             hits.append(rel)
     return hits
 
@@ -486,3 +508,20 @@ def test_the_scan_faces_are_not_empty():
     files = _source_files()
     assert len(files) > 50, f"前端源码面只扫到 {len(files)} 个文件 —— 扫描面疑似失效（空跑成绿）"
     assert any(str(p).endswith("settings/page.tsx") for p in files), "扫描面里没有设置页 —— 面配错了"
+
+
+def test_transient_file_disappearing_midscan_is_skipped(tmp_path):
+    """扫描期间被删掉的**探针文件**不许把判据打成「异常红」（issue #7831）。
+
+    真实成因：`test_growth_gate_verdict_loud.py` 往真树写 `zzz-verdict-loud-probe-*.ts` 再删，
+    xdist 并行下本守卫会「列到它、读到时已消失」⇒ 2026-10-26 post-merge 实测 `1 failed`
+    （`FileNotFoundError: frontend/admin-web/src/lib/zzz-verdict-loud-probe-1.ts`）。
+
+    红证：把 `_safe_read` 的 `except` 去掉（改回直接 `read_text`）⇒ 本用例当场抛
+    `FileNotFoundError` ⇒ 红。
+    """
+    vanished = tmp_path / "zzz-verdict-loud-probe-1.ts"
+    assert not vanished.exists()
+
+    assert _hardcoded_domain_sites([vanished]) == []
+    assert _env_var_readers([vanished]) == []
