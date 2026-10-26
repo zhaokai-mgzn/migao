@@ -34,7 +34,7 @@
 | 1 | 工人的动作链 = `报工 → 配料 → 打包 → 发货 → 工资结算`；其中配料/打包**无需新代码** | `docs/design/worker-scan-terminal.md` §0 + 文首最终裁定 4 |
 | 2 | **结算不做**，但「逐笔可追溯」保留（报工行 `unit_price`/`factor` 快照 + `work_logs[]`） | 同上 裁定 2 |
 | 3 | **扫码 = 开工 / 领活**（不是「做完扫一次」）⇒ 这是**一天几十次**的主路径 | issue #4967（用户 2026-09-21 逐字裁定①） |
-| 4 | 工人端**页面开关**的服务端真值 = 闭词表 `report / order / cut_calc / shipment` + 商家面标签 | `backend/admin-api/src/main/java/com/migao/admin/worker/WorkerPages.java`（V141，母单 #5161） |
+| 4 | 工人端**页面开关**的服务端真值 = 闭词表 `report / piecework / order / cut_calc / shipment / to_ship`（+ 逐人开放的 `inspect`）+ 商家面标签 | `backend/admin-api/src/main/java/com/migao/admin/worker/WorkerPages.java`（V141，母单 #5161） |
 | 5 | 手机端菜单一律「**服务端投影 + 端侧只渲染服务端给的**」 | issue #6570（用户 2026-10-08 逐字「走 B」）+ `backend/admin-api/src/main/java/com/migao/admin/service/MobileSurfaces.java` |
 | 6 | **现状缺口**：bmini 工人工作台 3 条**硬编码**入口，零消费服务端清单 | `frontend/bmini-app/src/pages/worker/home/index.tsx`；复核命令见 §7 |
 | 7 | 现场读数：登录后那一屏「白卡片落白底」看着像没样式 | issue #6760（含线上逐字读数） |
@@ -58,7 +58,7 @@
 | 物料 | **拍照入库** | `pages/worker/inbound/index` | —（工人面固有） | ✅ 已有 |
 | 物料 | **补打入库标签** | `pages/worker/reprint/index` | —（工人面固有） | ✅ 已有 |
 | 出货 | **拍照发货** | `pages/worker/shipment/index`（在飞） | `shipment` | 🚧 在飞（#6761） |
-| 出货 | **待发货单**（全完工订单列表 + 发货标签） | `/w/shipment.html`（`/w/` 侧**已落地**，issue #7761；bmini 端内页仍待建） | `shipment`（**复用既有键**，未新增 `to_ship` —— 新键要迁移 + 全租户回填） | ✅ `/w/` 侧已有（列表 + 50×70 发货标签；端点是 `GET /api/worker/shipment/orders`）· bmini 侧仍缺 |
+| 出货 | **待发货单**（全完工订单列表 + 发货标签） | `/w/shipment.html`（`/w/` 侧已落地，issue #7761）+ bmini `pages/worker/shipment-orders/index`（issue #7806 P1a） | **`to_ship`**（issue #7814 新增 —— 与 `shipment`=拍照发货的**写面**分开，商家可分别勾选） | ✅ `/w/` 侧已有（列表 + 50×70 发货标签；端点 `GET /api/worker/shipment/orders`）· bmini 侧列表已上（打印待 #7803） |
 | 我的 | **我的计件**（**含金额**） | 待建（合计金额 + 件数 + 逐笔，本月/上月） | 建议 `piecework` | ✅ 已裁定要做（2026-10-12）· ⛔ 需新端点 |
 | （页脚） | 切换工人 / 退出工人身份 | 既有 | — | ✅ 已有 |
 
@@ -82,7 +82,7 @@
 商家端「设置 → 工人端页面」            WorkerPageConfigPanel（V141）
         │  写
         ▼
-WorkerPages 闭词表 { report, order, cut_calc, shipment }      ← 全仓唯一真值
+WorkerPages 闭词表 { report, piecework, order, cut_calc, shipment, to_ship }  ← 全仓唯一真值（+ inspect 逐人开）
         │  GET /api/worker/me → pages（+ labels）
         ▼
 工人端渲染 ──┬── worker-h5 `/w/`：`effectivePages()` 已消费（report / cut_calc）
@@ -104,7 +104,7 @@ WorkerPages 闭词表 { report, order, cut_calc, shipment }      ← 全仓唯�
 | `cut_calc` | 裁高计算器 | 裁高计算 | 这块布裁多长（一体机那台屏也在用） |
 | `shipment` | 发货 | 拍照发货 | 拍运单 / 商品标签 ⇒ 生成发货单 |
 | `piecework`（建议新增） | — | 我的计件 | 本月做了多少、这一笔怎么算的 |
-| `to_ship`（建议新增） | — | 待发货单 | 不用先记住单号，从列表点进去 |
+| `to_ship`（**已落地**，issue #7814） | — | 待发货单 | 不用先记住单号，从列表点进去 |
 
 ---
 
@@ -119,7 +119,7 @@ WorkerPages 闭词表 { report, order, cut_calc, shipment }      ← 全仓唯�
 | 条目 | 需要的端点（形状示意） | 待裁定 | 不裁时的安全默认 |
 |---|---|---|---|
 | **我的活** | `GET /api/worker/production/my-tasks`（我在制的单 / 套 / 待做工序） | 范围 = **我经手的** 还是 全厂待做？ | 我经手的（不泄露他人计件归属） |
-| **待发货单** | `GET /api/worker/shipment/to-ship`（admin 侧 `/api/admin/shipments` 工人 403） | 范围与字段：全厂 / 我经手的；是否显示客户名、金额？ | 全厂待发货，只显示单号 + 客户简称 + 件数，**不显示金额** |
+| **待发货单** | `GET /api/worker/shipment/orders`（已上线，issue #7764；admin 侧 `/api/admin/shipments` 工人 403） | 范围与字段：全厂 / 我经手的；是否显示客户名、金额？ | 全厂待发货，只显示单号 + 客户简称 + 件数，**不显示金额** |
 | **我的计件** | `GET /api/worker/piecework?month=`（**合计金额** + 件数 + 逐笔工序/单价快照） | ✅ **已裁定（2026-10-12 用户逐字「需要给工人看」）** —— 口径见 §6.3 | —— |
 
 ### 6.3 「我的计件」口径（2026-10-12 裁定：**金额给工人看**）

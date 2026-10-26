@@ -49,14 +49,19 @@ class WorkerPageCatalogControllerTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.data.pages[2]").value("order"))
                 .andExpect(jsonPath("$.data.pages[3]").value("cut_calc"))
                 .andExpect(jsonPath("$.data.pages[4]").value("shipment"))
+                // issue #7814：`to_ship`（待发货单）与 `shipment`（拍照发货）是**两个能力**，排在其后
+                .andExpect(jsonPath("$.data.pages[5]").value("to_ship"))
                 // issue #7162：质检在闭词表里、但**不在默认集合**（逐人开；同时是服务端写准入）
-                .andExpect(jsonPath("$.data.pages[5]").value("inspect"))
+                .andExpect(jsonPath("$.data.pages[6]").value("inspect"))
                 .andExpect(jsonPath("$.data.default_pages.length()").value(WorkerPages.defaultPages().size()))
                 .andExpect(jsonPath("$.data.default_pages").value(
                         org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasItem("inspect"))))
                 .andExpect(jsonPath("$.data.optional_pages[0]").value("inspect"))
                 .andExpect(jsonPath("$.data.labels.report").value(WorkerPages.labels().get("report")))
-                .andExpect(jsonPath("$.data.labels.shipment").value(WorkerPages.labels().get("shipment")));
+                .andExpect(jsonPath("$.data.labels.shipment").value(WorkerPages.labels().get("shipment")))
+                // issue #7814：商家后台「设置工人端菜单」里必须能看到「待发货单」这一项
+                // （目录端点漏了它 ⇒ 面板里根本没有勾选项 ⇒ 用户报的那个形态）
+                .andExpect(jsonPath("$.data.labels.to_ship").value("待发货单"));
     }
 
     @Test

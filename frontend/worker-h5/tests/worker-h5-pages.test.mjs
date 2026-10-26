@@ -34,13 +34,14 @@ import {
   PAGE_REPORT,
   PAGE_PIECEWORK,
   PAGE_SHIPMENT,
+  PAGE_TO_SHIP,
   permUnreadNotice,
   reduce,
   renderPage,
 } from '../src/render.mjs'
 
 /** 后端 `WorkerPages.ALL` 的逐字镜像（改后端闭词表 ⇒ 本文件红）。 */
-const BACKEND_PAGE_KEYS = [PAGE_REPORT, PAGE_PIECEWORK, PAGE_ORDER, PAGE_CUT_CALC, PAGE_SHIPMENT, PAGE_INSPECT]
+const BACKEND_PAGE_KEYS = [PAGE_REPORT, PAGE_PIECEWORK, PAGE_ORDER, PAGE_CUT_CALC, PAGE_SHIPMENT, PAGE_TO_SHIP, PAGE_INSPECT]
 
 /** 裁高计算入口（本页唯一的入口；文案 2026-10-10 起用「裁高计算（一体机）」）。 */
 const MACHINE_ENTRY = '/w/machine.html'
@@ -107,13 +108,14 @@ function memStorage(seed = {}) {
 
 // ── 上游契约：页面键闭词表 + 默认全开（两处各一份，必须逐值相同）────────────────────────────
 
-test('页面键闭词表 = 后端 WorkerPages.ALL 的逐字镜像（6 键 + 顺序；改一边不改另一边 ⇒ 红）', () => {
+test('页面键闭词表 = 后端 WorkerPages.ALL 的逐字镜像（7 键 + 顺序；改一边不改另一边 ⇒ 红）', () => {
   assert.equal(new Set(BACKEND_PAGE_KEYS).size, BACKEND_PAGE_KEYS.length, '闭词表有重复键（后端是 Set，重复 = 两套口径）')
   assert.deepEqual(
     BACKEND_PAGE_KEYS,
     // issue #6767：`piecework`（我的计件，含金额）与商家面标签同批登记（后端 WorkerPages.PIECEWORK）
     // issue #7162：`inspect`（质检）在闭词表里，但**不在默认集合**（逐人开 + 服务端写准入）
-    ['report', 'piecework', 'order', 'cut_calc', 'shipment', 'inspect'],
+    // issue #7814：`to_ship`（待发货单）—— 与 `shipment`（拍照发货，写面）分开，商家可分别勾选
+    ['report', 'piecework', 'order', 'cut_calc', 'shipment', 'to_ship', 'inspect'],
     '页面键是**冻结契约**（后端闭词表逐字）：拼错一个字母 ⇒ 商家的开关静默失效',
   )
   // 默认集合 = 闭词表去掉逐人开放的能力页（inspect 必须**不在**默认里，否则等于人人可录质检）
@@ -165,13 +167,18 @@ test('🔴 ①′ `piecework` ∈ pages ⇒ 入口栏出现「我的计件」真
 
 // ── 判据 ①″：`shipment`（发货页，issue #7761）────────────────────────────────────────
 
-test('🔴 ①″ `shipment` ∈ pages ⇒ 入口栏出现「发货」真链接；∉ ⇒ 不渲染（页面键有面 ⇒ 必须有入口）', () => {
-  const on = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_SHIPMENT]), null))
+test('🔴 ①″ `to_ship` ∈ pages ⇒ 入口栏出现「发货」真链接；∉ ⇒ 不渲染（页面键有面 ⇒ 必须有入口）', () => {
+  // issue #7814：入口跟 `to_ship`（待发货单）走，不再跟 `shipment`（拍照发货的写面）——
+  // 两个能力分开，商家才能只关其中一个（后台「设置工人端菜单」）。
+  const on = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_TO_SHIP]), null))
   assert.match(on, /id="wh5-shipment-entry"[^>]*href="\/w\/shipment\.html"/, '入口必须是真链接')
   assert.match(on, />发货<\/a>/, '入口文案必须是人话（不许出现页面键 / 路由字面量）')
 
   const off = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_CUT_CALC, PAGE_PIECEWORK]), null))
-  assert.equal(off.includes('/w/shipment.html'), false, '`shipment` 没开却仍在渲染入口（开关形同虚设）')
+  assert.equal(off.includes('/w/shipment.html'), false, '`to_ship` 没开却仍在渲染入口（开关形同虚设）')
+  const legacy = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_SHIPMENT]), null))
+  assert.equal(legacy.includes('/w/shipment.html'), false,
+    '`shipment`（拍照发货）不等于 `to_ship`（待发货单）—— 只勾发货写面不该冒出名单入口')
 })
 
 test('🔴 ① 红证：去掉入口栏的 `cut_calc` 过滤（无条件出裁高链接）⇒ 同一条判定必红', () => {
