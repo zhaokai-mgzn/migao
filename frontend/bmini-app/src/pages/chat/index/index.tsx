@@ -6,7 +6,9 @@ import { useAuthStore } from '../../../store/authStore'
 import { buildBrandSubtitle, buildBotName } from '../../../utils/brand'
 import { currentLandingCode } from '../../../utils/inbound/deepLink'
 // 商家面身份护栏（issue #6567）：纯工人设备打开本页 ⇒ 送回工人工作台
-import { useMerchantSurfaceGuard } from '../../../utils/roleGuard'
+import { isWorkerOnlyDevice, merchantEntryTarget, useMerchantSurfaceGuard } from '../../../utils/roleGuard'
+import { consumeWorkerLanding } from '../../../utils/qrLogin'
+import { WORKER_HOME_ROUTE } from '../../../utils/inbound/gaps'
 import MessageList from '../../../components/chat/MessageList'
 import ChatHeader, { nextHeaderCollapsed } from '../../../components/chat/ChatHeader'
 import MessageInput from '../../../components/chat/MessageInput'
@@ -79,6 +81,15 @@ export default function ChatPage() {
     // （跳转成功、无异常、无日志 —— 正是本单要治的"静默失败"形态）。
     // 深链的接手方是 `src/app.tsx`（把码交给补打页）。
     if (currentLandingCode().present) return
+
+    // 🔴 工人优先（issue #7878）：纯工人设备 / 工人扫码落地 ⇒ 直接进工人工作台。
+    //    必须排在 `checkAuth()` **之前** —— 否则「未登录 ⇒ 600ms 后跳商家登录页」会先把工人踢走
+    //    （他的工人 session 还在，只是这里没有商家凭据）。
+    const workerLanding = consumeWorkerLanding()
+    if (merchantEntryTarget({ workerOnly: isWorkerOnlyDevice(), workerLanding }) === 'worker-home') {
+      Taro.redirectTo({ url: WORKER_HOME_ROUTE })
+      return
+    }
 
     // 检查登录状态（B 端首次登录需账号密码，无微信静默登录）
     // 🔴 `checkAuth` 是异步的（issue #7249）：exp 过期时它会先续期，续不到才判未登录

@@ -31,7 +31,7 @@ jest.mock('../src/utils/request', () => ({
 
 import Taro from '@tarojs/taro'
 import { STORAGE_KEYS } from '../src/utils/constants'
-import { useMerchantSurfaceGuard } from '../src/utils/roleGuard'
+import { merchantEntryTarget, useMerchantSurfaceGuard } from '../src/utils/roleGuard'
 import { WORKER_HOME_ROUTE } from '../src/utils/inbound/gaps'
 import { ADMIN_SURFACES } from '../src/utils/adminPermission'
 
@@ -126,5 +126,15 @@ describe('商家页清单（类级：新增商家页必须挂护栏）', () => {
     notGuarded.forEach((file) => {
       expect({ file, guarded: guarded(file) }).toEqual({ file, guarded: false })
     })
+  })
+})
+
+// ── issue #7878：扫码落地也走「工人优先」──
+describe('merchantEntryTarget —— 进商家首页时的落点判定（issue #7878）', () => {
+  it('四格真值表：纯工人设备 / 工人扫码落地 ⇒ 工人工作台；其余 ⇒ 商家首页', () => {
+    expect(merchantEntryTarget({ workerOnly: true, workerLanding: false })).toBe('worker-home')
+    expect(merchantEntryTarget({ workerOnly: false, workerLanding: true })).toBe('worker-home')
+    expect(merchantEntryTarget({ workerOnly: true, workerLanding: true })).toBe('worker-home')
+    expect(merchantEntryTarget({ workerOnly: false, workerLanding: false })).toBe('merchant')
   })
 })

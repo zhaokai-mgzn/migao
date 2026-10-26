@@ -33,6 +33,19 @@ export function isWorkerOnlyDevice(): boolean {
   return hasWorkerSession() && !(getToken() && getUser())
 }
 
+/**
+ * 进商家首页（`pages/chat/index`）时的**落点判定**（issue #7878，纯函数便于判据）。
+ *
+ * 两种「工人优先」的形态都由它一处决定，避免页面里各写一遍条件：
+ * ① `workerOnly` = 纯工人设备（有工人 session、没有商家凭据）⇒ 商家页对他毫无意义；
+ * ② `workerLanding` = 刚才扫「手机端」码时**保持了工人身份**（一次性标记，未消费 ⇒ 立即消费）。
+ */
+export type MerchantEntryTarget = 'worker-home' | 'merchant'
+
+export function merchantEntryTarget(opts: { workerOnly: boolean; workerLanding: boolean }): MerchantEntryTarget {
+  return opts.workerOnly || opts.workerLanding ? 'worker-home' : 'merchant'
+}
+
 /** 商家面页面挂上它：纯工人设备打开 ⇒ 送回工人工作台（`redirectTo`，工作台不是 tabBar 页） */
 export function useMerchantSurfaceGuard(): void {
   useEffect(() => {

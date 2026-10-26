@@ -47,6 +47,8 @@ export type AuthDiagKind =
   | 'qr_login_ok'
   /** 扫码票据兑换失败（过期 / 已用 / 网络） */
   | 'qr_login_failed'
+  /** 工人设备扫码 ⇒ 保持工人身份、**不**兑换商家会话（issue #7878） */
+  | 'qr_login_skipped_worker'
 
 export interface AuthDiagEntry {
   /** 毫秒时间戳（本机时区显示） */
