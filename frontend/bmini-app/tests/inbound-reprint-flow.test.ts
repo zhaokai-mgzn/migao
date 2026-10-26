@@ -362,17 +362,18 @@ describe('拍照补打主链：解码优先 / 码空间门禁 / 404-410 分开 /
     if (!result.ok) expect(result.hint).toBe(PRINT_FAILURE_HINTS['ios-unsupported'])
   })
 
-  it('F7 缺码不画假码 / 长名截断可见：补打走**同一份**版面（复用即继承，不是空断言）', () => {
+  it('F7 缺码不画假码 / 超宽行可见截断：补打走**同一份**版面（复用即继承，不是空断言）', () => {
     // 复用证据：补打链只把服务端详情交给同一个 layoutInboundLabel（下面两条断言就是 P3 已判据化的口径）
     const missing = layoutInboundLabel({ ...VIEW, shortCode: null })
     expect(missing.qr).toBeNull()
     expect(missing.codeText).toBe(MISSING_CODE_TEXT)
     expect(missing.warnings.join('\n')).toContain('不画占位码')
 
-    const long = layoutInboundLabel({ ...VIEW, productName: '超长品名'.repeat(12) })
-    const name = long.ops.find((op) => op.kind === 'text' && op.bold)
-    expect(name && name.kind === 'text' && name.truncated).toBe(true)
-    expect(name && name.kind === 'text' && name.text.endsWith('…')).toBe(true)
+    // issue #7820：顶部品名已下线 ⇒ 用**长得离谱的批次号**验「超宽必须可见截断」（同样的整行口径）
+    const long = layoutInboundLabel({ ...VIEW, batchNo: 'PC-'.repeat(30) })
+    const batchRow = long.ops.find((op) => op.kind === 'text' && op.text.startsWith('批次'))
+    expect(batchRow && batchRow.kind === 'text' && batchRow.truncated).toBe(true)
+    expect(batchRow && batchRow.kind === 'text' && batchRow.text.endsWith('…')).toBe(true)
     expect(long.warnings.join('\n')).toContain('截断')
 
     const ok = layoutInboundLabel(VIEW)

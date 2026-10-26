@@ -58,7 +58,7 @@ function fakeCanvasFactory() {
   }
 }
 
-describe('入库标签版面（30×40mm）', () => {
+describe('入库标签版面（50×80mm，issue #7820）', () => {
   it('C1 正常短码 ⇒ 画出二维码，且码内容 = https://app.migaozn.com/i/<短码>', () => {
     const plan = layoutInboundLabel(FULL_VIEW)
     expect(plan.qr?.payload).toBe('https://app.migaozn.com/i/ABCD2345')
@@ -96,18 +96,47 @@ describe('入库标签版面（30×40mm）', () => {
     expect(qr.matrix.filter((v) => v === 1).length).toBeGreaterThan(0)
   })
 
-  it('C2 长品名 ⇒ 可见截断（省略号），且进了 warnings；短品名不截断', () => {
-    const longName = '超长品名的遮光涂层印花布（工程单专用）'.repeat(3)
-    const long = layoutInboundLabel({ ...FULL_VIEW, productName: longName })
-    const nameOp: any = long.ops.find((op) => op.kind === 'text' && op.bold)
-    expect(nameOp.truncated).toBe(true)
-    expect(nameOp.text.endsWith('…')).toBe(true)
-    expect(long.warnings.join('\n')).toContain('已截断')
+  it('C2 🔴 色号不遮挡（用户 2026-10-26 裁定）：全宽 + 两行内放下 ⇒ 一字不截、不出省略号', () => {
+    const longColor = '2659-04 绵绵奶咖 深灰蓝拼色'
+    const plan = layoutInboundLabel({ ...FULL_VIEW, colorName: longColor })
+    const colorOps: any[] = plan.ops.filter((op) => op.kind === 'text' && /^色号/.test(op.text))
+    expect(colorOps.length).toBeGreaterThan(0)
+    // 多行拼回来必须**一字不少**（旧形态：右列半版心 ⇒ `2659-04 绵绵奶咖…`）
+    expect(colorOps.map((op) => op.text).join(' ')).toContain('绵绵奶咖')
+    expect(colorOps.some((op) => op.text.endsWith('…'))).toBe(false)
+    expect(plan.warnings.join('\n')).not.toContain('色号超宽')
+    // 红证：把色号按旧的「半版心」宽度排（textLeftRatio 0.5）⇒ 这段文字必进省略号分支
+  })
 
-    const short = layoutInboundLabel({ ...FULL_VIEW, productName: '遮光布' })
-    const shortOp: any = short.ops.find((op) => op.kind === 'text' && op.bold)
-    expect(shortOp.truncated).toBe(false)
-    expect(shortOp.text).toBe('遮光布')
+  it('C6 顶部不再印品名（用户 2026-10-26 逐字「移除顶部的商品名」）', () => {
+    const plan = layoutInboundLabel({ ...FULL_VIEW, productName: '遮光布' })
+    const texts = plan.ops.filter((op) => op.kind === 'text').map((op: any) => op.text)
+    expect(texts.some((t: string) => t.includes('遮光布'))).toBe(false)
+    expect(texts.some((t: string) => t.includes('品名'))).toBe(false)
+    // 纸面第一行 = 货号（最能把这张纸对上实物的一行）
+    expect(texts[0]).toContain('货号')
+  })
+
+  it('C7 增加入库日期（服务端 inboundDate 原样印；缺字段整行不画）', () => {
+    const withDate = layoutInboundLabel({ ...FULL_VIEW, inboundDate: '2026-10-25' })
+    const texts = withDate.ops.filter((op) => op.kind === 'text').map((op: any) => op.text)
+    expect(texts).toContain('入库 2026-10-25')
+    const noDate = layoutInboundLabel({ ...FULL_VIEW, inboundDate: null })
+    const noTexts = noDate.ops.filter((op) => op.kind === 'text').map((op: any) => op.text)
+    expect(noTexts.some((t: string) => t.startsWith('入库'))).toBe(false)
+  })
+
+  it('C8 二维码在**底部**且水平居中，所有文字都在它上方（用户 2026-10-26 裁定）', () => {
+    const plan = layoutInboundLabel(FULL_VIEW)
+    const qr = plan.qr!
+    expect(qr.y).toBeGreaterThan(plan.heightPx * 0.5)
+    // 居中：左右留白差 ≤ 2px（取整误差）
+    expect(Math.abs(qr.x - (plan.widthPx - qr.x - qr.sizePx))).toBeLessThanOrEqual(2)
+    const textOps: any[] = plan.ops.filter((op) => op.kind === 'text' && op.text !== plan.codeText)
+    for (const op of textOps) expect(op.y).toBeLessThan(qr.y)
+    // 短码在二维码下方（手输兜底的那一行永远在纸面最底）
+    const codeOp: any = plan.ops.find((op) => op.kind === 'text' && op.text === plan.codeText)
+    expect(codeOp.y).toBeGreaterThan(qr.y + qr.sizePx - 1)
   })
 
   it('C2 🔴 截断判定本身要能红：静默裁切（截了但不加省略号）不算数', () => {
@@ -164,10 +193,9 @@ describe('入库标签版面（30×40mm）', () => {
     const texts = plan.ops.filter((op) => op.kind === 'text').map((op: any) => op.text)
     expect(texts.some((t: string) => t.includes('批次'))).toBe(false)
     expect(texts.some((t: string) => t.includes('米数'))).toBe(false)
-    // 品名缺失时给的是**可见标注**，不是空白也不是编造的名字
-    const noName = layoutInboundLabel({ shortCode: 'ABCD2345' })
-    const nameTexts = noName.ops.filter((op) => op.kind === 'text').map((op: any) => op.text)
-    expect(nameTexts).toContain('未填品名')
+    // 订单号 / 入库日期都没有时，这两行也不许出现（不编造）
+    expect(texts.some((t: string) => t.startsWith('单号'))).toBe(false)
+    expect(texts.some((t: string) => t.startsWith('入库'))).toBe(false)
   })
 
   it('渲染器把计划画到位图上，且位图与版心 1:1（不缩放）', () => {
@@ -181,7 +209,8 @@ describe('入库标签版面（30×40mm）', () => {
     expect(calls[0].kind).toBe('rect')
     expect(calls.filter((c) => c.kind === 'text').length).toBeGreaterThan(3)
     if (rendered.plan.qr) {
-      const rects = calls.filter((c) => c.kind === 'rect').length - 1
+      // -2 = 铺底 + 字段区/码区之间的分隔线（都不是二维码模块）
+      const rects = calls.filter((c) => c.kind === 'rect').length - 2
       const black = rendered.plan.qr.matrix.filter((v) => v === 1).length
       expect(rects).toBe(black)
     }
@@ -197,7 +226,7 @@ describe('入库标签版面（30×40mm）', () => {
     const { ctx, calls } = fakeContext()
     paintInboundLabel(ctx, layoutInboundLabel({ ...FULL_VIEW, shortCode: null }))
     const black = calls.filter((c) => c.kind === 'rect').length
-    // 只有「铺底 + 缺码占位白框」两次矩形，没有任何二维码模块
-    expect(black).toBe(2)
+    // 只有「铺底 + 缺码占位白框 + 分隔线」三次矩形，没有任何二维码模块
+    expect(black).toBe(3)
   })
 })

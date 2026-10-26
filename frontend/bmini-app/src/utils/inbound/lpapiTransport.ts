@@ -61,7 +61,7 @@ export const LPAPI_MODEL = 'DP235S'
  * 纸张类型「不干胶」、间隔长度 `3.00 毫米`、出纸方向随画布朝向。
  *
  * 🔴 与画布朝向的关系：微打 APP 的样例模板是**横版画布 + 270° 出纸方向**；我们的画布是
- * **30×40 竖版正立**（`truth.ts` 的口径）⇒ 取 `orientation: 0`（少一处旋转依赖）。
+ * **50×80 竖版正立**（`truth.ts` 的口径）⇒ 取 `orientation: 0`（少一处旋转依赖）。
  * 真机核对项见 `frontend/admin-web/src/lib/print-media.json` 的 `pendingMeasurements`。
  */
 export const LABEL_PRINT_PARAMS = {

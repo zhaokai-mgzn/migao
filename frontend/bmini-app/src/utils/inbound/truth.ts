@@ -5,11 +5,11 @@
  *
  * | 真值 | 真值源（仓库相对全路径） | 谁落的 |
  * |---|---|---|
- * | 30×40mm 标签的**纸型 + 像素口径** | `frontend/admin-web/src/lib/print-media.json` | #5651 打印介质矩阵 |
+ * | 入库标签（50×80mm）的**纸型 + 像素口径** | `frontend/admin-web/src/lib/print-media.json` | #5651 打印介质矩阵 |
  *
  * ## 🔴 为什么是「直接 import」，不是「各写一份」或「构建期拷贝」
  *
- * 复制一份 400 / 384 / 240 到 bmini ⇒ **同一物理口径出现第二份字面量**，改一处另一处静默漂移
+ * 复制一份 400 / 384 / 640 到 bmini ⇒ **同一物理口径出现第二份字面量**，改一处另一处静默漂移
  * （纸面尺寸错 = 打废纸，而**没有任何东西会变红**）。构建期拷贝产出的也是第二份文件，
  * 只是把漂移推迟到「谁忘了跑生成脚本」。⇒ 取**同一份文件、两个消费方**：
  * `frontend/admin-web/src/lib/print-media.json` 是这**唯一**一份（守卫
@@ -35,7 +35,7 @@ import matrix from '../../../../admin-web/src/lib/print-media.json'
  * 本页消费的介质 id —— 与 `print-media.json` 的 `media[].id` **逐字一致**。
  * 矩阵里没有它 / 字段缺失 ⇒ 本模块**抛错**（fail-closed：静默回落 = 按 0 像素画一张空标签）。
  */
-export const INBOUND_LABEL_MEDIA_ID = 'label-30x40'
+export const INBOUND_LABEL_MEDIA_ID = 'label-50x80'
 
 /**
  * 标签码形态（设计 §7.1，**一次定死**）：`https://app.migaozn.com/i/<8 位短码>`。
@@ -50,13 +50,13 @@ export interface DotGeometry {
   dpi: number
   /** 每毫米点数（203dpi ⇒ 8 dots/mm，取整值；矩阵里写明「= round(dpi / 25.4)」的取整） */
   dotsPerMm: number
-  /** 纸宽像素（30mm × 8 = 240px）—— 纸的实际宽度，**不是**可打宽度 */
+  /** 纸宽像素（50mm × 8 = 400px）—— 纸的实际宽度，**不是**可打宽度 */
   widthPx: number
-  /** **有效打印宽**像素 = min(纸宽, 打印头宽)：30mm 纸 < 48mm 头 ⇒ 整幅可打（240px） */
+  /** **有效打印宽**像素 = min(纸宽, 打印头宽)：50mm 纸 > 48mm 头 ⇒ 384px（右侧约 2mm 打不到） */
   effectiveWidthPx: number
   /** **打印头宽**像素（48mm × 8 = 384px）：203dpi 的 2 英寸头常见值（**安全侧，待实测**） */
   headWidthPx: number
-  /** 纸高像素（40mm × 8 = 320px） */
+  /** 纸高像素（80mm × 8 = 640px） */
   heightPx: number
 }
 
@@ -89,7 +89,7 @@ export function inboundLabelMedia(): MediaSpec {
 /**
  * 标签的**渲染口径**（标签渲染/打印适配层只读它，不自己写像素字面量）。
  *
- * 🔴 画布取**有效打印宽**（现在 = 纸宽 240px：30mm 纸窄于 48mm 头 ⇒ 整幅可打），而**不是**任何推定值：
+ * 🔴 画布取**有效打印宽**（现在 = 384px：50mm 纸宽于 48mm 头 ⇒ 右侧约 2mm 打不到），而**不是**任何推定值：
  * DP235S 的**打印头 dpi 与宽度尚未核实**（设计 §8.5 ④），按安全侧设计 —— 连上后读
  * `getPrinterInfo()` 的 `printerDPI` / `printerWidth` 回填矩阵即可。**1:1 不缩放、不裁切**。
  */

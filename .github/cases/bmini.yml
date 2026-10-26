@@ -304,7 +304,7 @@ cases:
       verifies: []
   - id: BM-010
     legacy_id: ""
-    title: "入库标签 30×40mm 像素口径 - 单一真值（240/320/384/8 dots/mm），别处出现第二份字面量即红"
+    title: "入库标签 50×80mm 像素口径 - 单一真值（400/384/640/8 dots/mm），别处出现第二份字面量即红"
     domains:
       - bmini
       - inbound
@@ -317,17 +317,17 @@ cases:
     truths_ref:
       - inbound-label-flow.short-code-and-public-entry
     user_inputs:
-      - "工人拍照入库出标签时，设备侧（客户端 canvas）按 30×40mm **竖版**的**点阵口径**出图：203dpi = 8 dots/mm、纸宽 30mm ⇒ 240px、纸高 40mm ⇒ 320px；**有效打宽 = 纸宽 240px**（30mm 纸窄于 48mm 打印头 ⇒ 整幅可打；头宽按 384px 记安全侧），1:1 不缩放不裁切"
+      - "工人拍照入库出标签时，设备侧（客户端 canvas）按 **50×80mm 竖版**（2026-10-26 用户裁定改尺寸）的**点阵口径**出图：203dpi = 8 dots/mm、纸宽 50mm ⇒ 400px、纸高 80mm ⇒ 640px；**有效打宽 = 打印头宽 384px**（50mm 纸宽于 48mm 头 ⇒ 右侧约 2mm 打不到），1:1 不缩放不裁切"
     expectations:
       - tool: direct_reply
     data_checks:
-      - "判据 1·**逐值正确 + 派生自洽**：`dotGeometry` 的 dpi=203、dotsPerMm=8，且 `widthPx == dotsPerMm×30`、`heightPx == dotsPerMm×40`、`headWidthPx == dotsPerMm×48`、`effectiveWidthPx == min(纸宽, 打印头宽)`（孤立的数不算数；红证：把 headWidthPx 记成纸宽、或 dotsPerMm 改成 8.47、或 heightPx 按 32mm 画 ⇒ 各自判红）。证据：frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts"
+      - "判据 1·**逐值正确 + 派生自洽**：`dotGeometry` 的 dpi=203、dotsPerMm=8，且 `widthPx == dotsPerMm×50`、`heightPx == dotsPerMm×80`、`headWidthPx == dotsPerMm×48`、`effectiveWidthPx == min(纸宽, 打印头宽)`（孤立的数不算数；红证：把 headWidthPx 记成纸宽、或 dotsPerMm 改成 8.47、或 heightPx 按 70mm 画 ⇒ 各自判红）。证据：frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts"
       - "判据 2·**单一真值**：全仓 `384`（打印头宽）**只出现在** `frontend/admin-web/src/lib/print-media.json`（#5651 的介质矩阵）；240 / 320 与无关业务重号 ⇒ 改按**出图链路**逐字面量判（「只写一个数」也算，这正是旧口径漏掉的形态）。bmini 侧由 `frontend/bmini-app/src/utils/inbound/truth.ts` **跨工程直接 import 同一份文件**，不复制、不做构建期拷贝（红证：在渲染器里复制一份 384 ⇒ 实测判红）。"
       - "判据 3·**渲染模块零像素字面量**：labelLayout.ts / labelCanvas.ts / truth.ts 去注释后不出现 240/320/384（只能从真值源取）。"
-      - "判据 4·**待实测显式登记**：30×40 介质 `measurement = pending-field-measurement` 且 `pendingMeasurements ≥ 3`（**DP235S** 的打印头 dpi / 有效打印宽度、间隙定位、原点偏移与出纸方向等真机参数**未核实** ⇒ 按安全侧设计，不把推定值写成实测值）。"
+      - "判据 4·**待实测显式登记**：`label-50x80` 介质 `measurement = pending-field-measurement` 且 `pendingMeasurements ≥ 3`（**DP235S** 的打印头 dpi / 有效打印宽度、间隙定位、原点偏移与出纸方向等真机参数**未核实** ⇒ 按安全侧设计，不把推定值写成实测值）。"
       - "判据 5·**判据自身排除在语料外**（B1）：守卫文件自己会写 384/240，必须显式排除，否则判据永远红或永远抓不到真违规。"
     skip_reason: "[backend-contract] 确定性契约判据（jest: frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-27 新增（issue #5052 P3+P4）：设备侧 canvas 渲染 50×30mm 入库标签的像素口径单一真值化（#5651 介质矩阵扩表 + bmini 跨工程消费）。⚠️ 2026-09-29 改判更新（issue #5052 CP-1）：实机德佟 **DP235S** 到货 ⇒ 标签改 **30×40 竖版**（照其 30×40 合格证式样），点阵口径随之改为 240/320 + 头宽 384 单列，判据 2 的谓词从「同时出现两个数」改成「逐字面量」。"
+    merge_log: "2026-09-27 新增（issue #5052 P3+P4）：设备侧 canvas 渲染 50×30mm 入库标签的像素口径单一真值化（#5651 介质矩阵扩表 + bmini 跨工程消费）。⚠️ 2026-09-29 改判更新（issue #5052 CP-1）：实机德佟 **DP235S** 到货 ⇒ 标签改 **30×40 竖版**（照其 30×40 合格证式样），点阵口径随之改为 240/320 + 头宽 384 单列，判据 2 的谓词从「同时出现两个数」改成「逐字面量」。⚠️ 2026-10-26 再改判（issue #7820）：用户逐字「改成50*80的尺寸」⇒ 纸型 50×80、点阵口径 400/384/640，介质 id 换 `label-50x80`（旧 `label-30x40` 下线；矩阵只登记在用介质）。"
     traces:
       tests:
         - "frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts"
@@ -369,7 +369,7 @@ cases:
       verifies: []
   - id: BM-012
     legacy_id: ""
-    title: "入库标签版面 - 缺码不画假码 / 长名截断可见 / 1:1 不缩放不裁切 / 整数倍点阵"
+    title: "入库标签版面（50×80 竖版）- 去顶部品名 / 印入库日期 / 色号不遮挡 / 二维码在底部居中 / 缺码不画假码 / 1:1 不缩放"
     domains:
       - bmini
       - inbound
@@ -381,17 +381,19 @@ cases:
     truths_ref:
       - inbound-label-flow.short-code-and-public-entry
     user_inputs:
-      - "标签纸面渲染（50×30mm）：短码缺失或脏码（长度不对 / 含 I L O U）时**不画二维码**、留空位并印可见标注；品名等文本超宽时**截断 + 省略号**；二维码按整数倍点阵绘制"
+      - "标签纸面渲染（**50×80mm 竖版**，2026-10-26 用户裁定）：自上而下 = 货号 → 色号/门幅（全宽、两行内放下）→ 米数 → 批次/单号/入库日期/缸号/送单 → 分隔线 → 二维码（居中）→ 短码；**顶部不印品名**；短码缺失或脏码（长度不对 / 含 I L O U）时**不画二维码**、留空位并印可见标注；其余超宽文本**截断 + 省略号**"
     expectations:
       - tool: direct_reply
     data_checks:
       - "判据 1·**缺码不画假码**：`shortCode` 为空 / 非法 ⇒ `qr === null`、纸面出现可见标注「短码缺失·未出码」、warnings 含「未绘制二维码」；paint 计划里**没有任何二维码方块**（红证：改成画占位二维码 ⇒ 实测判红）。证据：frontend/bmini-app/tests/inbound-label-layout.test.ts"
-      - "判据 2·**长名截断必须可见**：超宽文本 ⇒ 省略号 + `truncated=true` + warnings；短文本**不**截断（红证：静默裁切（截了但不带省略号）⇒ 判定器判红，实测退出码 1）。"
-      - "判据 3·**1:1 不缩放不裁切**：画布尺寸 = 版心 384×240（从真值源取），所有绘制 op 落在版心内、文本不越界；渲染出的位图宽高 == 计划宽高。"
+      - "判据 2·**色号不遮挡 + 超宽才可见截断**：色号/门幅走**全宽**，两行内放下（先缩字号 26→23→20），放得下就**一字不截**、不出省略号；只有实在放不下才 ⇒ 省略号 + `truncated=true` + warnings（红证：按旧的「半版心」宽度排 ⇒ 色号必截断，实测判红）。证据：frontend/bmini-app/tests/inbound-label-layout.test.ts（C2）"
+      - "判据 3·**1:1 不缩放不裁切**：画布尺寸 = 版心 384×640（从真值源取），所有绘制 op 落在版心内、文本不越界；渲染出的位图宽高 == 计划宽高。"
       - "判据 4·**二维码整数倍点阵**：`sizePx == moduleCount × cellPx`（cellPx 为整数、≥1），点阵非空（防「画了个空方框」）。"
-      - "判据 5·**缺字段不编造**：没有的字段整行不画；品名缺失时印可见标注「未填品名」而不是留白或编一个名字。"
+      - "判据 5·**缺字段不编造 + 顶部无品名**：没有的字段整行不画（批次 / 单号 / 入库日期都适用）；**顶部不再印商品名**（用户逐字「移除顶部的商品名」），纸面第一行是货号。证据：frontend/bmini-app/tests/inbound-label-layout.test.ts（C6）"
+      - "判据 6·**增加入库日期**：`inboundDate`（服务端 `InboundLabelView.inboundDate`，= 收货日期）原样印成「入库 YYYY-MM-DD」；该字段为空 ⇒ 整行不画（不编造）。证据：frontend/bmini-app/tests/inbound-label-layout.test.ts（C7）"
+      - "判据 7·**二维码在底部且水平居中**：`qr.y > 纸高 × 0.5`、左右留白差 ≤ 2px、所有文字行都在二维码上方、短码在二维码下方（用户逐字「可以把二维码放到底部」）。证据：frontend/bmini-app/tests/inbound-label-layout.test.ts（C8）"
     skip_reason: "[backend-contract] 确定性版面判据（jest: frontend/bmini-app/tests/inbound-label-layout.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-27 新增（issue #5052 P3）：50×30mm 标签版面（缺码不画假码 / 可见截断 / 1:1 / 整数倍点阵）。"
+    merge_log: "2026-09-27 新增（issue #5052 P3）：50×30mm 标签版面（缺码不画假码 / 可见截断 / 1:1 / 整数倍点阵）。⚠️ 2026-10-26 改版（issue #7820，用户逐字「移除顶部的商品名，增加入库日期，色号不要有遮挡，可以把二维码放到底部，改成50*80的尺寸」）：50×80 竖版、顶部品名下线、新增入库日期行、色号改全宽两行、二维码移到底部居中。"
     traces:
       tests:
         - "frontend/bmini-app/tests/inbound-label-layout.test.ts"
