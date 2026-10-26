@@ -266,4 +266,95 @@ class FinishedGoodsServiceTest {
         // 契约冻结：id 字段仍在、值不变（前端与其它读面按 id 定位单据）
         assertThat(views.get(0).getInboundOrderId()).isEqualTo("3f2a9c1e-5b44-4a77-9a0e-2b1f7c9d8e10");
     }
+
+    // ============================================================ 扫码报工 ⇒ 成品入库（issue #7845）
+
+    /** 部位码（套 × 部位）：一张水洗唛 = 一个仓位。 */
+    private static com.migao.admin.entity.ProcessingSetPartToken partToken(String token) {
+        return com.migao.admin.entity.ProcessingSetPartToken.builder()
+                .id("pt-1").tenantId(TENANT).processingOrderId("po-1")
+                .setId("set-1").orderItemId("item-1").positionKind("布帘")
+                .token(token).shortCode("ABCD1234").deleted(0).build();
+    }
+
+    @Test
+    @DisplayName("🔴 打包报工扫码入库（issue #7845）：一张唛 = 一行入库单（套×部位）+ 一个仓位；回执带入库单号/仓位/标签")
+    void scanReportReceivesOnePiece() {
+        when(tokenMapper.selectByTokenOrShortCode(TENANT, "tok-1")).thenReturn(partToken("tok-1"));
+        FinishedGoodsStock row = inStock("item-1", "A-01", "rk-9");
+        row.setInboundNo("RK-20261026-0001");
+        when(stockMapper.selectInStockByWashLabel(TENANT, "tok-1")).thenReturn(null, row);
+        when(orderItemMapper.selectById("item-1")).thenReturn(
+                OrderItem.builder().id("item-1").productId("prod-1").productName("遮光布帘").build());
+        when(warehouseService.ensureFinishedWarehouse(TENANT)).thenReturn(finishedWarehouse());
+        when(inboundOrderService.receiveFinishedGoodsLines(eq(TENANT), any(Order.class), any(),
+                eq(9L), eq("成品仓"), eq("张三"))).thenReturn(new InboundOrderResponse());
+
+        Map<String, Object> out = service.receiveByScanReport(TENANT, order(), "tok-1", "张三");
+
+        assertThat(out).containsEntry("already", false)
+                .containsEntry("bin_code", "A-01")
+                .containsEntry("inbound_no", "RK-20261026-0001");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> label = (Map<String, Object>) out.get("label");
+        assertThat(label).containsEntry("short_code", "ABCD1234");
+
+        // 一行 = 这一件（套 × 部位）；**不是**整单所有部位
+        @SuppressWarnings("unchecked")
+        org.mockito.ArgumentCaptor<List<com.migao.admin.entity.InboundOrderItem>> captor =
+                org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(inboundOrderService).receiveFinishedGoodsLines(eq(TENANT), any(Order.class), captor.capture(),
+                eq(9L), eq("成品仓"), eq("张三"));
+        assertThat(captor.getValue()).hasSize(1);
+        assertThat(captor.getValue().get(0).getSetId()).isEqualTo("set-1");
+        assertThat(captor.getValue().get(0).getOrderItemId()).isEqualTo("item-1");
+        assertThat(captor.getValue().get(0).getShortCode()).isEqualTo("ABCD1234");
+    }
+
+    @Test
+    @DisplayName("🔴 同一张唛再报一次 ⇒ 幂等：不建第二张入库单，返回既有单号与仓位")
+    void scanReportIsIdempotent() {
+        when(tokenMapper.selectByTokenOrShortCode(TENANT, "tok-1")).thenReturn(partToken("tok-1"));
+        FinishedGoodsStock row = inStock("item-1", "A-01", "rk-9");
+        row.setInboundNo("RK-20261026-0001");
+        when(stockMapper.selectInStockByWashLabel(TENANT, "tok-1")).thenReturn(row);
+
+        Map<String, Object> out = service.receiveByScanReport(TENANT, order(), "tok-1", "张三");
+
+        assertThat(out).containsEntry("already", true).containsEntry("bin_code", "A-01");
+        verify(inboundOrderService, never()).receiveFinishedGoodsLines(anyLong(), any(), any(), any(), anyString(), anyString());
+        verify(warehouseService, never()).ensureFinishedWarehouse(anyLong());
+    }
+
+    @Test
+    @DisplayName("🔴 扫码先入 + 订单后打包 ⇒ 只补剩余部位（已在库那件不重复入，也不整单跳过）")
+    void packFillsMissingTokensAfterScanInbound() {
+        com.migao.admin.entity.ProcessingSetPartToken t1 = partToken("tok-1");
+        com.migao.admin.entity.ProcessingSetPartToken t2 =
+                com.migao.admin.entity.ProcessingSetPartToken.builder()
+                        .id("pt-2").tenantId(TENANT).processingOrderId("po-1")
+                        .setId("set-1").orderItemId("item-2").positionKind("纱帘")
+                        .token("tok-2").shortCode("EFGH5678").deleted(0).build();
+        when(tokenMapper.selectByOrderId(TENANT, "order-1")).thenReturn(List.of(t1, t2));
+        FinishedGoodsStock already = inStock("item-1", "A-01", "rk-9");
+        already.setSetId("set-1");
+        when(stockMapper.selectInStockByOrder(TENANT, "order-1"))
+                .thenReturn(List.of(already), List.of(already, inStock("item-2", "A-02", "rk-9")));
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(
+                OrderItem.builder().id("item-1").productName("遮光布帘").build(),
+                OrderItem.builder().id("item-2").productName("纱帘").build()));
+        when(warehouseService.ensureFinishedWarehouse(TENANT)).thenReturn(finishedWarehouse());
+
+        List<FinishedGoodsStock> rows = service.receiveOnPack(order(), TENANT, "工人甲");
+
+        assertThat(rows).hasSize(2);
+        @SuppressWarnings("unchecked")
+        org.mockito.ArgumentCaptor<List<com.migao.admin.entity.InboundOrderItem>> captor =
+                org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(inboundOrderService).receiveFinishedGoodsLines(eq(TENANT), any(Order.class), captor.capture(),
+                eq(9L), eq("成品仓"), eq("工人甲"));
+        // 只补「还没入」的那一件（item-2）；已在库的 item-1 不重复入
+        assertThat(captor.getValue()).extracting(com.migao.admin.entity.InboundOrderItem::getOrderItemId)
+                .containsExactly("item-2");
+    }
 }

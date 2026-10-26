@@ -123,8 +123,9 @@ public interface FinishedGoodsStockMapper extends BaseMapper<FinishedGoodsStock>
      * （不靠拦截器），{@code deleted = 0} 正向相等 ⇒ 撤销的码查不到。</p>
      */
     @InterceptorIgnore(tenantLine = "true")
-    @Select("SELECT f.* FROM finished_goods_stock f "
+    @Select("SELECT f.*, io.inbound_no AS inbound_no FROM finished_goods_stock f "
             + "JOIN processing_set_part_tokens t ON t.id = f.part_token_id "
+            + "LEFT JOIN inbound_orders io ON io.id = f.inbound_order_id AND io.deleted = 0 "
             + "WHERE f.tenant_id = #{tenantId} AND f.status = 'in_stock' AND f.deleted = 0 "
             + "  AND t.tenant_id = #{tenantId} AND t.deleted = 0 "
             + "  AND (t.token = #{key} OR t.short_code = #{key}) "

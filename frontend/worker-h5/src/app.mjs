@@ -14,6 +14,7 @@ import { createApi, PAGES_UNREAD, SESSION_EXPIRED } from './api.mjs'
 import { deviceHomeFromLocation, enterpriseCodeFromLocation, normalizeEnterpriseCode, parseScanInput } from './scan-input.mjs'
 import {
   afterComplete,
+  autoReportable,
   batchBlocked,
   BATCH_GATE_HINT,
   currentBatchNo,
@@ -401,8 +402,8 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
       if (el) el.addEventListener('click', fn)
     }
 
-    on('wh5-fl-print', printWashLabel)
-    on('wh5-fl-out', issueWashLabel)
+    // 入库标签打印（issue #7845）：数据 = 服务端回执里的 `finished_inbound.label`
+    on('wh5-fi-print', printWashLabel)
 
     on('wh5-login', async () => {
       const workerNo = doc.getElementById('wh5-worker-no')?.value?.trim()
@@ -446,15 +447,9 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
       draw()
     })
 
-    on('wh5-scan', async () => {
-      const raw = doc.getElementById('wh5-code')?.value ?? ''
-      await doScan(raw)
-    })
-
-    on('wh5-rescan', () => {
-      dispatch({ type: 'resolved', view: null })
-      draw()
-    })
+    // 🔴 issue #7845：`wh5-scan`（手输短码 + 确定）与 `wh5-rescan`（底部重扫）已撤 ——
+    //    用户 2026-10-26 逐字「底部的重扫按钮先移除，当前点击跳转后是手输短码，这个功能不需要，没什么用」。
+    //    入口只剩「扫纸上的二维码」：扫一次 = 一次新的页面落地（`?t=`），页内不再需要重扫按钮。
 
     // 质检（issue #7162 / #7749）：展开返工表单 / 取消 / 提交（说明在提交时从 DOM 读）。
     // 🔴 已无「判定单选」：工人端唯一的判定就是返工（合格是默认态，不点即合格）。
@@ -470,64 +465,9 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
       dispatch({ type: 'workType', workType: raw })
     }
 
-    on('wh5-report', async () => {
-      const v = state.view
-      if (!v?.operation?.operation_id) return
-      // 🔴 报工三态（issue #5652 第二刀）**在这一点取值**：闭词表归一（缺省/非法 = 正常）。
-      //    取值早于 await / 重绘 ⇒ 这一笔送出的就是工人**按下时**看到的那个选择。
-      const workType = normalizeWorkType(v.work_type)
-      // 🔴 in-flight 闸（issue #6667 第 4 条，**涉计件正确性**）：车间里戴手套、弱网下答复要等几秒
-      //    ⇒ 没有闸就会被连点。抄机台页那一把（machine-app.mjs::reportWork 的 `if (state.reporting) return`）。
-      //    叠在既有幂等键之上：键保证「服务端只算一次」，闸保证「客户端只发一次」——两道都要。
-      if (state.reporting) return
-      // 🔴 裁剪批次门禁（issue #7647）：要批次却没填 ⇒ **一个请求都不发**（服务端也有硬闸，但先拦一次
-      //    免得工人干等一个注定 422 的答复）。非裁剪工序 `batchBlocked` 恒 false ⇒ 这段是 no-op。
-      if (batchBlocked(state, state.view)) {
-        dispatch({ type: 'error', error: BATCH_GATE_HINT })
-        return
-      }
-      // 这一笔的批次在**按下那一刻**取值（早于 await / 重绘 ⇒ 送出的就是工人看到的那个值）。
-      // 非裁剪工序 ⇒ `''` ⇒ api 侧不写 `batch_no` 键（请求体与改前逐字节相同）。
-      const batchNo = currentBatchNo(state, state.view)
-      // 🔴 幂等键**同一屏复用**（重试 = 服务端回放首次结果，绝不重复计件）；成功换屏 ⇒ 换新键。
-      // 刻意**不**每次点击都新造一个：那样「第一次其实成功了、响应丢了，工人再点一次」= 第二笔报工。
-      // 🔴 跨刷新（#4814）：屏上的键随刷新消失 ⇒ 补第二条通道 —— 上次**没收到服务端答复**的那一次
-      //    提交已落盘，同一工人 + 同一张码 ⇒ 复用同一个键（服务端回放，不会二次记账）。
-      const clientRequestId = v.__requestId ?? resumedRequestId(v.__token) ?? newRequestId()
-      state = { ...state, view: { ...v, __requestId: clientRequestId } }
-      dispatch({ type: 'reportStart' }) // 置 in-flight 闸 + 重绘（按钮变 `disabled` + 「提交中…」）
-      // 发出**之前**落盘：否则「已发出、答复丢了」这段窗口在刷新后无据可查
-      writePending({ token: v.__token, workerId: api.worker()?.workerId ?? null, requestId: clientRequestId })
-      try {
-        const r = await api.completeByScan({
-          token: v.__token,
-          // 只有「一键改」（工人显式指定）才带 operation_id：归属由**服务端**校验（防呆④）。
-          // 默认路径**只带 token** ⇒ 哪道工序由**系统**定（防呆⑤），数量由服务端取「剩余应做」。
-          operationId: v.operation.determined_by === 'picked' ? v.operation.operation_id : undefined,
-          // 旧码收口（#4794）：只有旧码路径的视图才有 `__selection`（新码恒 undefined ⇒ body 只带 token）
-          selection: v.__selection,
-          // 报工三态（issue #5652 第二刀）：**正常 = 一个字节都不送**（`undefined` ⇒ api 侧不写
-          // `work_type` 键 ⇒ 与改前的请求体**逐字节相同**，既有 7 条硬约束一条不放宽）。
-          // 非正常 ⇒ 送闭词表里的值。
-          workType: workType === DEFAULT_WORK_TYPE ? undefined : workType,
-          // 🔴 数量诚实（本单要点）：服务端 `qualified_qty` 缺省 = `qty` ⇒ 只送 `work_type`
-          // 会把**报废**那笔记成**满额合格**。非「正常」一律显式 `qualified_qty: 0`
-          // （不猜数量：`qty` 仍缺省 ⇒ 服务端照旧按「剩余应做」推进进度，"这次做了多少"不由前端编）。
-          qualifiedQty: workType === DEFAULT_WORK_TYPE ? undefined : 0,
-          batchNo,
-          clientRequestId,
-        })
-        // 服务端已答复（首次成功或回放）⇒ 这一笔有结论：下一笔必须换新键
-        clearPending()
-        // 回执驱动下一屏：接着做下一道 / 本套完工（`afterComplete` 丢掉 __requestId ⇒ 下一笔换新键）
-        dispatch({ type: 'completed', view: afterComplete(state.view, r), notice: doneNotice(r) })
-      } catch (e) {
-        // 只有「服务端答复过」才算有结论（`err.status` 缺失 = 无 HTTP 响应：断网/超时）
-        // ⇒ 传输层失败时**保留**这把键，刷新后重扫仍然回放同一次提交
-        if (e?.status !== undefined) clearPending()
-        fail(e)
-      }
-    })
+    // 返回 Promise（不是 void）⇒ 测试/调用方 `await fire(...)` 能等到这一次提交**有结论**；
+    // 浏览器里事件的返回值没有副作用（既有行为不变）。
+    on('wh5-report', () => submitReport(false))
 
     for (const el of doc.querySelectorAll('[data-set-id]')) {
       el.addEventListener('click', () => dispatch({ type: 'pickSet', setId: el.dataset.setId, setNo: el.dataset.setNo }))
@@ -603,10 +543,84 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
     }
   }
 
+  /**
+   * 报工（唯一的记账动作）—— 手动点【报工】与**扫码自动报工**（issue #7845）走同一段。
+   *
+   * <p>用户 2026-10-26 逐字：「现在还是不能扫码直接报工」。自动报的**准入**不在本函数里：
+   * 判据 = {@link autoReportable}（纯函数，`render.mjs`），只在「这道活由工人档案唯一确定、
+   * 批次已可用、不是质检工序」时为真 ⇒ 本函数只负责把这一次提交做完。</p>
+   *
+   * @param {boolean} auto true = 扫到码后自动提交（屏上不出按钮，结论写「已自动报工」）
+   */
+  async function submitReport(auto = false) {
+    const v = state.view
+    if (!v?.operation?.operation_id) return
+    // 🔴 报工三态（issue #5652 第二刀）**在这一点取值**：闭词表归一（缺省/非法 = 正常）。
+    //    取值早于 await / 重绘 ⇒ 这一笔送出的就是工人**按下时**看到的那个选择。
+    const workType = normalizeWorkType(v.work_type)
+    // 🔴 in-flight 闸（issue #6667 第 4 条，**涉计件正确性**）：车间里戴手套、弱网下答复要等几秒
+    //    ⇒ 没有闸就会被连点。抄机台页那一把（machine-app.mjs::reportWork 的 `if (state.reporting) return`）。
+    //    叠在既有幂等键之上：键保证「服务端只算一次」，闸保证「客户端只发一次」——两道都要。
+    if (state.reporting) return
+    // 🔴 裁剪批次门禁（issue #7647）：要批次却没填 ⇒ **一个请求都不发**（服务端也有硬闸，但先拦一次
+    //    免得工人干等一个注定 422 的答复）。非裁剪工序 `batchBlocked` 恒 false ⇒ 这段是 no-op。
+    if (batchBlocked(state, state.view)) {
+      dispatch({ type: 'error', error: BATCH_GATE_HINT })
+      return
+    }
+    // 这一笔的批次在**按下那一刻**取值（早于 await / 重绘 ⇒ 送出的就是工人看到的那个值）。
+    // 非裁剪工序 ⇒ `''` ⇒ api 侧不写 `batch_no` 键（请求体与改前逐字节相同）。
+    const batchNo = currentBatchNo(state, state.view)
+    // 🔴 幂等键**同一屏复用**（重试 = 服务端回放首次结果，绝不重复计件）；成功换屏 ⇒ 换新键。
+    // 刻意**不**每次点击都新造一个：那样「第一次其实成功了、响应丢了，工人再点一次」= 第二笔报工。
+    // 🔴 跨刷新（#4814）：屏上的键随刷新消失 ⇒ 补第二条通道 —— 上次**没收到服务端答复**的那一次
+    //    提交已落盘，同一工人 + 同一张码 ⇒ 复用同一个键（服务端回放，不会二次记账）。
+    const clientRequestId = v.__requestId ?? resumedRequestId(v.__token) ?? newRequestId()
+    state = { ...state, view: { ...v, __requestId: clientRequestId } }
+    dispatch({ type: 'reportStart' }) // 置 in-flight 闸 + 重绘（按钮变 `disabled` + 「提交中…」）
+    // 发出**之前**落盘：否则「已发出、答复丢了」这段窗口在刷新后无据可查
+    writePending({ token: v.__token, workerId: api.worker()?.workerId ?? null, requestId: clientRequestId })
+    try {
+      const r = await api.completeByScan({
+        token: v.__token,
+        // 只有「一键改」（工人显式指定）才带 operation_id：归属由**服务端**校验（防呆④）。
+        // 默认路径**只带 token** ⇒ 哪道工序由**系统**定（防呆⑤），数量由服务端取「剩余应做」。
+        operationId: v.operation.determined_by === 'picked' ? v.operation.operation_id : undefined,
+        // 旧码收口（#4794）：只有旧码路径的视图才有 `__selection`（新码恒 undefined ⇒ body 只带 token）
+        selection: v.__selection,
+        // 报工三态（issue #5652 第二刀）：**正常 = 一个字节都不送**（`undefined` ⇒ api 侧不写
+        // `work_type` 键 ⇒ 与改前的请求体**逐字节相同**，既有 7 条硬约束一条不放宽）。
+        // 非正常 ⇒ 送闭词表里的值。
+        workType: workType === DEFAULT_WORK_TYPE ? undefined : workType,
+        // 🔴 数量诚实（本单要点）：服务端 `qualified_qty` 缺省 = `qty` ⇒ 只送 `work_type`
+        // 会把**报废**那笔记成**满额合格**。非「正常」一律显式 `qualified_qty: 0`
+        // （不猜数量：`qty` 仍缺省 ⇒ 服务端照旧按「剩余应做」推进进度，"这次做了多少"不由前端编）。
+        qualifiedQty: workType === DEFAULT_WORK_TYPE ? undefined : 0,
+        batchNo,
+        clientRequestId,
+      })
+      // 服务端已答复（首次成功或回放）⇒ 这一笔有结论：下一笔必须换新键
+      clearPending()
+      // 回执驱动下一屏：接着做下一道 / 本套完工（`afterComplete` 丢掉 __requestId ⇒ 下一笔换新键）
+      dispatch({
+        type: 'completed',
+        view: afterComplete(state.view, r),
+        notice: doneNotice(r, { auto }),
+        // 打包工序的成品入库块（issue #7845）：服务端随回执下发 ⇒ 这一屏立刻有「入库单/仓位/标签」
+        finishedInbound: r.finishedInbound ?? state.finishedInbound ?? null,
+      })
+    } catch (e) {
+      // 只有「服务端答复过」才算有结论（`err.status` 缺失 = 无 HTTP 响应：断网/超时）
+      // ⇒ 传输层失败时**保留**这把键，刷新后重扫仍然回放同一次提交
+      if (e?.status !== undefined) clearPending()
+      fail(e)
+    }
+  }
+
   async function doScan(raw, operationId, selection) {
     const token = parseScanInput(raw, href)
     if (!token) {
-      dispatch({ type: 'error', error: '没有识别到码：请扫一次，或手工输入短码 / 加工单号' })
+      dispatch({ type: 'error', error: '没有识别到码：请用水洗唛上的二维码扫一次' })
       return
     }
     try {
@@ -614,43 +628,34 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
       state = {
         ...state,
         view: { ...view, __token: token, ...(selection ? { __selection: selection } : {}) },
-        // V197 / issue #7762：新码命中时服务端随视图下发「成品出库」块（标签 + allowed/reason）
-        washLabel: view.finished_outbound ?? null,
+        // issue #7845：这一件**已入库** ⇒ 服务端随视图下发 `finished_inbound`（入库单/仓位/标签/质检）
+        // —— 刷新、回退、重复扫同一张码都不丢卡片；没入库 ⇒ null（不沿用上一件）。
+        finishedInbound: view.finished_inbound ?? null,
       }
       dispatch({ type: 'resolved', view: state.view, notice: resumedNotice(token) })
       void loadQuality()
+      // 🔴 扫码即报工（issue #7845）：准入判据是纯函数（未绑定工序 / 质检工序 / 批次没填 / 旧码 ⇒ 不自动），
+      //    这里只负责在准入通过时**提交一次**。`operationId` 非空 = 工人刚手动「一键改」了工序，
+      //    那一下不是在扫码领活 ⇒ 不自动提交（让他确认后自己点【报工】）。
+      if (!operationId && autoReportable(state, state.view)) void submitReport(true)
     } catch (e) {
       fail(e)
     }
   }
 
-  /** 打印成品标签：新窗口只放标签（`@page 50mm 70mm`），不把报工页印上纸。 */
+  /** 打印**入库**标签（issue #7845）：新窗口只放标签（`@page 50mm 70mm`），不把报工页印上纸。 */
   function printWashLabel() {
-    const w = state.washLabel
+    const w = state.finishedInbound
     if (!w) return
     const popup = win.open('', '_blank', 'width=460,height=620')
     if (!popup) {
-      dispatch({ type: 'error', error: '浏览器拦下了打印窗口：允许弹窗后再点一次「打印标签」' })
+      dispatch({ type: 'error', error: '浏览器拦下了打印窗口：允许弹窗后再点一次「打印入库标签」' })
       return
     }
     popup.document.write(washLabelPrintHtml(w))
     popup.document.close()
     popup.focus()
     popup.print()
-  }
-
-  /** 扫水洗唛出库：服务端做授权与幂等；这里只负责把结果说人话。 */
-  async function issueWashLabel() {
-    const token = state.washLabel?.token ?? state.view?.__token
-    if (!token) return
-    try {
-      const w = await api.finishedOutbound(token)
-      dispatch({ type: 'notice', notice: `已出库：仓位 ${w?.bin_code ?? ''}（出库单 ${w?.outbound_no ?? '—'}）` })
-      state = { ...state, washLabel: w }
-      draw()
-    } catch (e) {
-      dispatch({ type: 'error', error: e?.message ?? String(e) })
-    }
   }
 
   const onVisible = () => { if (doc.visibilityState === 'visible') void checkAlive() }
@@ -661,6 +666,11 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
     dispatch,
     /** 手工刷新页面集（`GET /api/worker/me`）：供装配层/测试在会话就绪后显式调用一次。 */
     refreshPages,
+    /**
+     * **扫一次码（程序化入口）**（issue #7845）：页面里已没有手输框 ⇒ 这里是唯一的扫码动作；
+     * URL 落地（{@link scanFromUrl}）与单测都走它 —— 同一条 `doScan`，不是第二份实现。
+     */
+    scan: (raw) => doScan(raw),
     /**
      * **扫码落地**（issue #6866）：把当前 URL 里带的码解析一次。
      *

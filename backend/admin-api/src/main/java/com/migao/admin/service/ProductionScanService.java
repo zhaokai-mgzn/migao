@@ -431,6 +431,9 @@ public class ProductionScanService {
         if (finishedGoodsService != null) {
             view.put("finished_outbound", finishedGoodsService.washLabelView(
                     tenantId, partToken.getToken(), workerId));
+            // issue #7845：这张唛**已经入库**（打包报工那一下 / 商家打包动作）⇒ 把「入库单 + 仓位 + 标签 +
+            // 质检结论」摆回屏上（刷新、回退、重复扫同一张码都不丢卡片）。未入库 ⇒ null（不编造）。
+            view.put("finished_inbound", finishedGoodsService.completedInboundView(tenantId, partToken.getToken()));
         }
         return view;
     }

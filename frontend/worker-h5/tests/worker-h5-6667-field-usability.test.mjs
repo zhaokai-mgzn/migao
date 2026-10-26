@@ -253,26 +253,21 @@ function legacyView() {
   }
 }
 
-test('🔴 ③ 旧码降级态（套清单里没有手上那张码）⇒ 屏上有「重扫」出口（复用既有 `wh5-rescan`）', () => {
+test('🔴 ③ 旧码降级态（套清单里没有手上那张码）⇒ 选套清单照旧可点，且**不再**有底部「重扫」（2026-10-26 用户裁定）', () => {
   const state = { ...initialState(), worker: { workerName: '张师傅', workerNo: 'W-001' }, view: legacyView(), mode: 'select' }
   const html = renderPage(state, state.view)
-  assert.match(html, /id="wh5-rescan"/, '旧码降级态必须能返回重扫（否则清单不匹配时是死屏）')
-  assert.match(html, /重扫/, '出口文案要是工人看得懂的动作')
+  // 不是死屏：清单本身还能选（旧码的唯一出口）
+  assert.match(html, /data-set-id="s1"/, '旧码降级态必须仍能选套（清单是唯一出口）')
+  // 用户 2026-10-26 逐字「底部的重扫按钮先移除…这个功能不需要，没什么用」⇒ 全站不再有重扫按钮
+  assert.doesNotMatch(html, /wh5-rescan/, '底部「重扫」按钮已按用户口径撤下')
 })
 
-test('🔴 ③ 旧码降级态点「重扫」⇒ 回等扫码态（装配层既有绑定真的接上）', async () => {
-  const doc = makeDom('worker-h5-root')
-  const { fetchImpl } = makeFetch({})
-  const storage = makeStorage({ ...SESSION_SEED })
-  const api = createApi({ storage, fetchImpl })
-  const app = createApp({ doc, api, storage })
-  app.dispatch({ type: 'worker', worker: { workerName: '张师傅', workerNo: 'W-001' } })
-  app.dispatch({ type: 'resolved', view: legacyView() })
-  assert.equal(app.state.mode, 'select', '前置：先到旧码降级态')
-  doc.click('#wh5-rescan')
-  await settle()
-  assert.equal(app.state.view, null, '点重扫 ⇒ 清掉这一屏的解析结果')
-  assert.equal(app.state.mode, 'scan', '⇒ 回到等扫码态（不是死屏）')
+test('🔴 ③ 手输短码已撤（issue #7845）：待扫码态只给「请扫水洗唛」指路', () => {
+  const state = { ...initialState(), worker: { workerName: '张师傅', workerNo: 'W-001' }, mode: 'scan' }
+  const html = renderPage(state, null)
+  assert.match(html, /id="wh5-scan-hint"/, '没有码的态必须说清下一步（用水洗唛上的二维码扫一次）')
+  assert.doesNotMatch(html, /id="wh5-code"/, '手输短码框已按用户口径撤下')
+  assert.doesNotMatch(html, /id="wh5-scan"/, '「确定」按钮随输入框一起撤下（不是只藏起来）')
 })
 
 // ══════════════════════════════════════════════════════════════════════════════

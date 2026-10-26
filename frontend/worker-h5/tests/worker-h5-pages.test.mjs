@@ -211,7 +211,7 @@ test('🔴 ② `report` ∉ pages ⇒ 页面**照旧可用** + 一条**非阻断
   assert.match(html, /工人端页面/, '出口必须点名去哪里开 = 管理员的「工人端页面」')
   assert.match(html, /换一台|换一个/, '再给一条出口（换设备 / 换工人）')
   // 🔴 **不拦截**：报工主流程照旧（扫水洗唛 / 报工都能用）
-  assert.match(html, /id="wh5-scan"/, '`report` 关掉就把扫码框挡掉 = 硬拦截（B 端 H5 不是这个语义）')
+  assert.match(html, /id="wh5-scan-hint"/, '`report` 关掉就把扫码指路挡掉 = 硬拦截（B 端 H5 不是这个语义）')
   assert.match(html, /id="wh5-report-menu-closed"[^>]*>/, '提示必须是**一条提示**，不是"整页替换"')
   assert.ok(!html.includes('id="wh5-report-closed"'), '旧的硬拦截视图不得再出现')
 })
@@ -221,19 +221,19 @@ test('🔴 ② 双向钉住「不拦截」：去掉提示 ⇒ 红；把页面挡
   const noNotice = renderPage(loggedIn(DEFAULT_PAGES), null)
   assert.ok(!noNotice.includes('id="wh5-report-menu-closed"'), '对照：`report` 已开时本来就没有这条提示')
   // (b) 页面被挡掉（`wh5-scan` 不渲染）⇒ 判定也必红（= 改前那版硬门控的形态）
-  const gatedForm = `${noNotice.replace('id="wh5-scan"', 'id="wh5-scan-gated-away"')}`
-  assert.ok(!gatedForm.includes('id="wh5-scan"'), '变异体确实是"页面被挡掉"这一形态')
+  const gatedForm = `${noNotice.replace('id="wh5-scan-hint"', 'id="wh5-scan-gated-away"')}`
+  assert.ok(!gatedForm.includes('id="wh5-scan-hint"'), '变异体确实是"页面被挡掉"这一形态')
   // 两条判据各自只对一种变异敏感 —— 任一侧坏掉都会被下面任一 assert 抓住
   const withReportClosed = renderPage(loggedIn([PAGE_ORDER, PAGE_CUT_CALC, PAGE_SHIPMENT]), null)
   assert.equal(withReportClosed.includes('id="wh5-report-menu-closed"'), true, '提示在')
-  assert.equal(withReportClosed.includes('id="wh5-scan"'), true, '页面也在（提示 ≠ 拦截）')
-  assert.notEqual(withReportClosed.includes('id="wh5-scan"'), gatedForm.includes('id="wh5-scan"'))
+  assert.equal(withReportClosed.includes('id="wh5-scan-hint"'), true, '页面也在（提示 ≠ 拦截）')
+  assert.notEqual(withReportClosed.includes('id="wh5-scan-hint"'), gatedForm.includes('id="wh5-scan-hint"'))
   assert.notEqual(withReportClosed.includes('id="wh5-report-menu-closed"'), noNotice.includes('id="wh5-report-menu-closed"'))
 })
 
 test('🔴 ② `report` ∈ pages ⇒ 报工主流程**照旧**，且**没有**那条提示', () => {
   const scan = renderPage(loggedIn(DEFAULT_PAGES), null)
-  assert.match(scan, /id="wh5-scan"/, '报工页已开却拿不到扫码入口 = 门控做反了')
+  assert.match(scan, /id="wh5-scan-hint"/, '报工页已开却拿不到扫码入口 = 门控做反了')
   assert.ok(!scan.includes('id="wh5-report-menu-closed"'), '报工页已开不该出现"菜单未开"提示')
   const main = renderPage(loggedIn(DEFAULT_PAGES, {
     mode: 'main',
@@ -260,7 +260,7 @@ test('🔴 ③ `me` 失败 ⇒ fail-open（报工页照旧可用）+ 显式提�
   // 红证：把 fail-open 改成 fail-closed（抛错时 pages=[] 且不允许全开）⇒ 下面两条当场红
   const degraded = loggedIn(null, { pagesUnread: true })
   const html = renderPage(degraded, null)
-  assert.match(html, /id="wh5-scan"/, '读不到权限就把报工页挡掉 = 把"开关没读到"变成"活干不了"')
+  assert.match(html, /id="wh5-scan-hint"/, '读不到权限就把报工页挡掉 = 把"开关没读到"变成"活干不了"')
   assert.match(html, /id="wh5-perm-unread"/, '降级态必须在页面上**显式**说出来（silent fallback 会被当成开关生效）')
   assert.match(html, /按全开运行/, '提示文案要说清"按全开运行"')
   assert.equal(effectivePages(degraded).unread, true)
@@ -275,7 +275,7 @@ test('🔴 ③ `pages` 缺失 / 非数组 ⇒ 同一 fail-open 口径（旧版�
   const me = await api.readMe()
   assert.equal(me.pages, null, '`pages` 缺失必须原样回 null（由调用方 fail-open），不得在这里编一份默认值')
   const html = renderPage(loggedIn(me.pages, { pagesUnread: me.pages === null }), null)
-  assert.match(html, /id="wh5-scan"/, '无 `pages` 键却挡住报工 = fail-closed（本单硬约束是 fail-open）')
+  assert.match(html, /id="wh5-scan-hint"/, '无 `pages` 键却挡住报工 = fail-closed（本单硬约束是 fail-open）')
   assert.match(html, /id="wh5-perm-unread"/, '无 `pages` 键也要显式提示')
 })
 
@@ -289,8 +289,8 @@ test('🔴 ③ 红证：改成 fail-closed ⇒ 判定必红（读数对照）', 
   assert.equal(reportOff.includes('id="wh5-perm-unread"'), false, '读到了权限就不该报"读不到"')
   assert.equal(reportOff.includes('id="wh5-report-menu-closed"'), true, '`report` 关掉 ⇒ 菜单提示在')
   // 🔴 两种口径都**不挡页面**（这是本单改判后的硬口径）
-  assert.equal(failOpen.includes('id="wh5-scan"'), true, 'fail-open：扫码入口在')
-  assert.equal(reportOff.includes('id="wh5-scan"'), true, '`report` 关掉也不拦访问（B 端 H5 语义）')
+  assert.equal(failOpen.includes('id="wh5-scan-hint"'), true, 'fail-open：扫码入口在')
+  assert.equal(reportOff.includes('id="wh5-scan-hint"'), true, '`report` 关掉也不拦访问（B 端 H5 语义）')
   assert.notEqual(
     failOpen.includes('id="wh5-perm-unread"'),
     reportOff.includes('id="wh5-perm-unread"'),
