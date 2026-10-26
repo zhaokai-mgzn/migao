@@ -357,7 +357,7 @@ export default function WorkerInboundPage() {
         {/* 🔴 打印能力缺口**动手前**就在屏上（不是打完才失败）：本机能不能打印，
             在拍照之前就说清 —— 否则工人白拍一遍、白过账一次，最后才发现这台手机打不了。 */}
         <Text className='admin-card__note' data-testid='inbound-print-capability'>
-          {capability.ok ? PRINT_READY_HINT : capability.hint}
+          {capability.ok ? capability.readyHint || PRINT_READY_HINT : capability.hint}
         </Text>
 
         {/* 连接状态（**运行期事实**）：能打 ≠ 已连上（机器可能没开机）—— 两件事分开显示 */}
