@@ -9,16 +9,10 @@ import org.apache.ibatis.annotations.Insert;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.LinkedHashSet;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -44,20 +38,6 @@ class FinishedGoodsStockMapperTest {
         return Files.readString(SCHEMA);
     }
 
-    private static Set<String> columnsOf(String table) throws Exception {
-        Matcher m = Pattern.compile(
-                "CREATE TABLE IF NOT EXISTS " + table + " \\(([\\s\\S]*?)\\n\\);").matcher(schemaSql());
-        assertThat(m.find()).as("建库脚本里必须有 %s 表", table).isTrue();
-        Set<String> cols = new LinkedHashSet<>();
-        for (String line : m.group(1).split("\n")) {
-            Matcher c = Pattern.compile("^\\s{4}([a-z_]+)\\s+[A-Z]").matcher(line);
-            if (c.find()) {
-                cols.add(c.group(1));
-            }
-        }
-        return cols;
-    }
-
     private static String sqlOf(String method, Class<?> annotation) throws Exception {
         for (Method m : FinishedGoodsStockMapper.class.getDeclaredMethods()) {
             if (!m.getName().equals(method)) {
@@ -76,20 +56,10 @@ class FinishedGoodsStockMapperTest {
     @Test
     @DisplayName("实体每个字段都有对应列（仓位 / 订单行 / 状态 / 入出库单引用）")
     void everyEntityFieldHasAColumn() throws Exception {
-        Set<String> columns = columnsOf("finished_goods_stock");
+        Set<String> columns = MapperColumnAssertions.columnsOf("finished_goods_stock");
         assertThat(columns).isNotEmpty().contains("warehouse_id", "location_id", "bin_code", "order_id",
                 "order_item_id", "quantity", "unit", "status", "inbound_order_id", "outbound_order_id");
-        Set<String> missing = java.util.Arrays.stream(FinishedGoodsStock.class.getDeclaredFields())
-                .filter(f -> !Modifier.isStatic(f.getModifiers()) && !f.isSynthetic())
-                // 只读投影（@TableField(exist = false)，如 join 来的 inbound_no）不是 DB 列 —— MyBatis 也不带它写 SQL。
-                // 与全仓同一口径：tests/unit_ci_workflows/_sql_schema.py 的 entity_columns() 同样先抹掉 exist=false（issue #7792）。
-                .filter(f -> f.getAnnotation(com.baomidou.mybatisplus.annotation.TableField.class) == null
-                        || f.getAnnotation(com.baomidou.mybatisplus.annotation.TableField.class).exist())
-                .map(Field::getName)
-                .map(n -> n.replaceAll("([a-z0-9])([A-Z])", "$1_$2").toLowerCase())
-                .collect(Collectors.toCollection(LinkedHashSet::new));
-        missing.removeAll(columns);
-        assertThat(missing).as("FinishedGoodsStock 实体字段缺列：%s", missing).isEmpty();
+        MapperColumnAssertions.assertEveryEntityFieldHasColumn(FinishedGoodsStock.class, "finished_goods_stock");
         // 反向：被排除的字段必须**显式**标 exist = false（不许靠命名 / 注释 / 「约定」绕过这道守卫）
         assertThat(FinishedGoodsStock.class.getDeclaredField("inboundNo")
                 .getAnnotation(com.baomidou.mybatisplus.annotation.TableField.class).exist())

@@ -11,7 +11,6 @@ import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -37,21 +36,10 @@ class OrderShipmentItemMapperTest {
         return m.group(1);
     }
 
-    private static Set<String> columnsOf(String table) throws Exception {
-        Set<String> cols = new LinkedHashSet<>();
-        for (String line : tableBody(table).split("\n")) {
-            Matcher c = Pattern.compile("^\\s{4}([a-z_]+)\\s+[A-Z]").matcher(line);
-            if (c.find()) {
-                cols.add(c.group(1));
-            }
-        }
-        return cols;
-    }
-
     @Test
     @DisplayName("🔴 契约列齐备 + 实发数量是 NUMERIC(10,2)（截断成整数就是少记米数）")
     void contractColumnsAndDecimalQuantity() throws Exception {
-        Set<String> cols = columnsOf("order_shipment_items");
+        Set<String> cols = MapperColumnAssertions.columnsOf("order_shipment_items");
         assertThat(cols).contains("id", "tenant_id", "shipment_id", "order_id", "order_item_id",
                 "product_name", "shipped_quantity", "unit", "set_count", "roll_count");
         assertThat(tableBody("order_shipment_items"))
@@ -82,7 +70,7 @@ class OrderShipmentItemMapperTest {
     @Test
     @DisplayName("🔴 两个读面的列名都在建库脚本里，且都绑 autoResultMap")
     void queryColumnsExistAndBindAutoResultMap() throws Exception {
-        Set<String> cols = columnsOf("order_shipment_items");
+        Set<String> cols = MapperColumnAssertions.columnsOf("order_shipment_items");
         for (String name : new String[]{"selectByShipmentId", "selectByOrderId"}) {
             Method m = name.equals("selectByShipmentId")
                     ? OrderShipmentItemMapper.class.getMethod(name, String.class, Long.class)
@@ -102,7 +90,7 @@ class OrderShipmentItemMapperTest {
     @Test
     @DisplayName("🔴 批量读（列表页用）：一次 IN 查多张发货单的明细，仍逐字带 tenant_id + deleted = 0")
     void batchReadByShipmentIdsIsTenantScopedAndUsesIn() throws Exception {
-        Set<String> cols = columnsOf("order_shipment_items");
+        Set<String> cols = MapperColumnAssertions.columnsOf("order_shipment_items");
         Method m = OrderShipmentItemMapper.class.getMethod(
                 "selectByShipmentIds", java.util.Collection.class, Long.class);
         String sql = m.getAnnotation(Select.class).value()[0];

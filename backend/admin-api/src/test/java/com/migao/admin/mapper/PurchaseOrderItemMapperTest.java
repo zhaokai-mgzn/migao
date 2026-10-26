@@ -5,15 +5,7 @@ import com.migao.admin.entity.PurchaseOrderItem;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.LinkedHashSet;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -28,44 +20,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("采购明细 Mapper：实体字段 ⊆ 建库脚本列")
 class PurchaseOrderItemMapperTest {
 
-    private static final Path SCHEMA = Path.of("src/main/resources/db/init/schema.sql");
-
-    private static Set<String> columnsOf(String table) throws Exception {
-        String sql = Files.readString(SCHEMA);
-        Matcher m = Pattern.compile(
-                "CREATE TABLE IF NOT EXISTS " + table + " \\(([\\s\\S]*?)\\n\\);").matcher(sql);
-        assertThat(m.find()).as("建库脚本里必须有 %s 表", table).isTrue();
-        Set<String> cols = new LinkedHashSet<>();
-        for (String line : m.group(1).split("\n")) {
-            Matcher c = Pattern.compile("^\\s{4}([a-z_]+)\\s+[A-Z]").matcher(line);
-            if (c.find()) {
-                cols.add(c.group(1));
-            }
-        }
-        return cols;
-    }
-
-    private static String toColumn(String field) {
-        return field.replaceAll("([a-z0-9])([A-Z])", "$1_$2").toLowerCase();
-    }
-
     @Test
     @DisplayName("采购明细 Mapper：实体字段 ⊆ 建库脚本列")
     void everyEntityFieldHasAColumn() throws Exception {
-        Set<String> columns = columnsOf("purchase_order_items");
+        Set<String> columns = MapperColumnAssertions.columnsOf("purchase_order_items");
         assertThat(columns).isNotEmpty();
-        Set<String> missing = java.util.Arrays.stream(PurchaseOrderItem.class.getDeclaredFields())
-                .filter(f -> !Modifier.isStatic(f.getModifiers()) && !f.isSynthetic())
-                .map(Field::getName).map(PurchaseOrderItemMapperTest::toColumn)
-                .collect(Collectors.toCollection(LinkedHashSet::new));
-        missing.removeAll(columns);
-        assertThat(missing).as("实体字段缺列：%s（列面 = %s）", missing, columns).isEmpty();
+        MapperColumnAssertions.assertEveryEntityFieldHasColumn(PurchaseOrderItem.class, "purchase_order_items");
     }
 
     @Test
     @DisplayName("采购明细 Mapper：实体字段 ⊆ 建库脚本列：关键列在场")
     void keyColumnsArePresent() throws Exception {
-        assertThat(columnsOf("purchase_order_items")).contains("tenant_id", "purchase_order_id", "sku_id", "quantity", "unit_price", "amount");
+        assertThat(MapperColumnAssertions.columnsOf("purchase_order_items")).contains("tenant_id", "purchase_order_id", "sku_id", "quantity", "unit_price", "amount");
     }
 
     @Test

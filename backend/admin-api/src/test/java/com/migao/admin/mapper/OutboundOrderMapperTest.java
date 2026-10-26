@@ -5,15 +5,9 @@ import com.migao.admin.entity.OutboundOrder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.LinkedHashSet;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -32,33 +26,13 @@ class OutboundOrderMapperTest {
         return Files.readString(SCHEMA);
     }
 
-    private static Set<String> columnsOf(String table) throws Exception {
-        Matcher m = Pattern.compile(
-                "CREATE TABLE IF NOT EXISTS " + table + " \\(([\\s\\S]*?)\\n\\);").matcher(schemaSql());
-        assertThat(m.find()).as("建库脚本里必须有 %s 表", table).isTrue();
-        Set<String> cols = new LinkedHashSet<>();
-        for (String line : m.group(1).split("\n")) {
-            Matcher c = Pattern.compile("^\\s{4}([a-z_]+)\\s+[A-Z]").matcher(line);
-            if (c.find()) {
-                cols.add(c.group(1));
-            }
-        }
-        return cols;
-    }
-
     @Test
     @DisplayName("实体每个字段都有对应列（单号 / 业务类别 / 来源 / 过账痕迹）")
     void everyEntityFieldHasAColumn() throws Exception {
-        Set<String> columns = columnsOf("outbound_orders");
+        Set<String> columns = MapperColumnAssertions.columnsOf("outbound_orders");
         assertThat(columns).isNotEmpty().contains("outbound_no", "biz_category", "source",
                 "warehouse_id", "status", "posted_at", "posted_by");
-        Set<String> missing = java.util.Arrays.stream(OutboundOrder.class.getDeclaredFields())
-                .filter(f -> !Modifier.isStatic(f.getModifiers()) && !f.isSynthetic())
-                .map(Field::getName)
-                .map(n -> n.replaceAll("([a-z0-9])([A-Z])", "$1_$2").toLowerCase())
-                .collect(Collectors.toCollection(LinkedHashSet::new));
-        missing.removeAll(columns);
-        assertThat(missing).as("OutboundOrder 实体字段缺列：%s", missing).isEmpty();
+        MapperColumnAssertions.assertEveryEntityFieldHasColumn(OutboundOrder.class, "outbound_orders");
     }
 
     @Test
