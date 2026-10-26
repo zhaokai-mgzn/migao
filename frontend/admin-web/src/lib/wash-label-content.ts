@@ -60,6 +60,8 @@ export type WashLabelRowKey =
   | 'pleats'
   | 'specialOptions'
   | 'remark'
+  /** 布料批次（快照键 `batchNo`；纸面**末行**，issue #7872） */
+  | 'batchNo'
 
 /**
  * 纸面行的**行序**（照真实工单：亿家纺织「成品定制」58mm 竖排小票的信息顺序）。
@@ -96,6 +98,9 @@ export const WASH_LABEL_ROW_KEYS: readonly WashLabelRowKey[] = [
   'pleats',
   'specialOptions',
   'remark',
+  // 🔴 布料批次 = **纸面末行**（issue #7872，用户 2026-10-26 逐字「再加一个布料批次号，放在最下面，
+  // 布料批次：xxx」）—— 位置就是用户给的「最下面」，排到别处（例如紧跟货号）不算做到。
+  'batchNo',
 ]
 
 /**
@@ -275,7 +280,11 @@ export interface WashLabelRowsInput {
  * 部位 ⇒ 纸面**有序行清单**（两条打印通道的唯一内容真值）。
  *
  * 缺值不渲染：没有对应快照行 / 没有该键 ⇒ 该行**不出现**（纸面不出现 `undefined` / `null` / `NaN`）。
- * 例外 = 单号：它是「这张纸是给谁的」的最小可读集合，缺值如实出 `—`（不编造）。
+ * 例外两类，**都必须带上语义**、不许并成一句「缺值就不印」：
+ * - **单号**：它是「这张纸是给谁的」的最小可读集合，缺值如实出 `—`（不编造）；
+ * - **布料批次**（issue #7872）：只有**快照行在**时才谈得上「这一行没被指派批次」⇒ 如实出 `—`
+ *   （`undefined` = 未指派 ≠「本系统没有这个字段」）；**没有快照行**时整行不出现 ——
+ *   否则会把「读不到这一行」冒充成「未指派」。
  */
 export function washLabelRows(input: WashLabelRowsInput): WashLabelRow[] {
   const position = input.position ?? null
@@ -318,8 +327,10 @@ export function washLabelRows(input: WashLabelRowsInput): WashLabelRow[] {
   //    （**不拿 SKU 组合码冒充货号**，issue #7636 的口径不变）。
   // 🔴 2026-10-26 再改判（用户逐字「货号不要展示sku，展示颜色的内容」）：纸面印**颜色**、
   // 不再印 `sku`（SKU 码对车间/安装现场没有用）。缺值 ⇒ 该行不渲染，不拿别的字段顶替。
+  // 🔴 issue #7872（2026-10-26 用户逐字「这里的颜色文案改成货号，右侧的内容不要变化了」）：
+  // **只改文案**（`颜色` → `货号`）、**值一字不动**（仍是 `colorName`，如 `2659-01 桂月白露`）。
   const colorName = typeof input.item?.colorName === 'string' ? input.item.colorName.trim() : ''
-  push('color', colorName, '颜色')
+  push('color', colorName, '货号')
 
   // 安装去向（用户 2026-10-26：水洗唛 / 发货标签 / 入库标签都要有）—— 只印，不参与算料/计价/派工。
   push('installCommunity', input.item?.installCommunity ?? '', '安装小区')
@@ -342,6 +353,19 @@ export function washLabelRows(input: WashLabelRowsInput): WashLabelRow[] {
   // 🔴 交期行**已退场**（2026-10-26 用户逐字「移除交期字段」）。
   push('specialOptions', washLabelSpecialOptions(input.item), '特殊选项')
   push('remark', washLabelRemark(input.item), '备注')
+
+  // 🔴 布料批次 = **末行**（issue #7872，用户 2026-10-26 逐字「再加一个布料批次号，放在最下面，
+  // 布料批次：xxx」）：值 = 快照键 `batchNo`（`stampAssignedBatches` 派工指派批次时写入；
+  // 与加工单 A4 纸面「批号」列**同一份真值**，本模块不另算）。
+  // 缺值口径分两种（不是一回事，别合并）：
+  // - **快照行在、`batchNo` 缺** = 该行**未指派批次** ⇒ 如实印 `—`
+  //   （`frontend/admin-web/src/types/index.ts` 的 `ProcessingOrderItem.batchNo` 已登记该口径）；
+  // - **没有快照行**（`item` 为 null / 对不上 `itemId`）⇒ 整行**不出现**（与其它快照派生行同一条
+  //   「对不上就不猜」契约；印 `—` 会把「读不到」冒充成「未指派」）。
+  if (input.item) {
+    const batchNo = typeof input.item.batchNo === 'string' ? input.item.batchNo.trim() : ''
+    push('batchNo', batchNo === '' ? '—' : batchNo, '布料批次')
+  }
 
   // 🔴 算料公式（褶倍公式）**已退场**（issue #7776，用户 2026-10-25 逐字「移除褶倍公式字段展示」）。
 

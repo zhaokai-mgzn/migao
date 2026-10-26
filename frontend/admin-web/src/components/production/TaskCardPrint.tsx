@@ -61,8 +61,10 @@ import type { ProcessingOrderItem, ProductionPosition } from '@/types'
  *    「二维码放到底部居中」「移除扫码报工和短码文字」「二维码可以放大一点」。
  *
  * 字段面（从上到下）= **纸面抬头（企业名 / 成品定制）** → **单号（加工单号）** / 客户 /
- * 第 N 套共 M 套 / 部位 / **货号** / 门幅 / 用料 / 宽高 / 加工方式（含加工费组合项，无前缀）/
- * 褶法 / 特殊选项 / 备注 → 底部**居中二维码**（80 CSS px = 21.17mm）。
+ * 第 N 套共 M 套 / **帘种** / **货号**（值 = 颜色内容，issue #7872 起文案由「颜色」改「货号」）/
+ * 安装小区 / 安装位置 / 门幅 / 用料 / 宽高 / 加工方式（含加工费组合项，无前缀）/
+ * 褶法 / 特殊选项 / 备注 / **布料批次（末行，值 = 快照 `batchNo`，issue #7872）**
+ * → 底部**居中二维码**（80 CSS px = 21.17mm）。
  * 一行粒度 = 一部位（商品行）**一张 × 开数份**。
  *
  * 🔴 **退场项（历次字段裁定未选，勿"顺手加回"）**：
@@ -83,12 +85,13 @@ import type { ProcessingOrderItem, ProductionPosition } from '@/types'
  * 容器实测沿 #5646：正文右边界 48.799mm 减 1.2mm 内边距 ⇒ **版心宽 47.6mm**；
  * 150mm 高减上下各 1.2mm 内边距 ⇒ **可用 147.6mm**。
  * 正文 12pt / `line-height 1.2` ⇒ **每行 5.08mm**（≈ 11.2 个汉字/行；9pt 时代是 15 个字）。
- * 逐项预算（最坏构成：单号 / 加工方式 / 特殊选项 / 备注各折满 2 行 = 16 行）：
- * 抬头块（企业名 14pt **5.9** + 「成品定制」10pt **4.23** + 0.5 间距 = **10.66**）+ 正文 16 × 5.08 = **81.28**
+ * 逐项预算（最坏构成：单号 / 加工方式 / 特殊选项 / 备注各折满 2 行 = **17 行**；
+ * 2026-10-26 issue #7872 新增「布料批次」末行后按同一口径 +1 行）：
+ * 抬头块（企业名 14pt **5.9** + 「成品定制」10pt **4.23** + 0.5 间距 = **10.66**）+ 正文 17 × 5.08 = **86.36**
  * + 两处块间距 **1.5** + 底部二维码 **21.17**（80 CSS px）+ 上下内边距 **2.4**
- * ⇒ **117.01mm ≤ 147.6mm**（余量 **30.59mm** ≈ 6 行）。
+ * ⇒ **122.09mm ≤ 147.6mm**（余量 **25.51mm** ≈ 5 行）。
  * 🔴 **折行印全文（issue #7833）**：行里**没有** `truncate` / `line-clamp-*`（省略号 = 静默吃掉半截字），
- * 长值（客户 / 部位 / 货号 / 加工方式 / 特殊选项 / 备注）一律折行；真装不下时由「打印预览」的
+ * 长值（客户 / 部位 / 货号 / 加工方式 / 特殊选项 / 备注 / 布料批次）一律折行；真装不下时由「打印预览」的
  * 纸面自检如实报出「内容 Xmm > 可用 Ymm」，**不靠裁切掩盖**（同 `SalesDoc` 的 #7715 口径）。
  * 底部虚线 = `.task-card-label` 的下沿一条 `1px dashed`（用户同批「头尾加下虚线，这样能清晰知道界线」；
  * issue #7839 后续裁定「水洗唛的顶部虚线移除掉」⇒ **顶部不画**，只留下沿）。
@@ -96,6 +99,8 @@ import type { ProcessingOrderItem, ProductionPosition } from '@/types'
  * 功能件挤出纸外（issue #4949）。⇒ 二维码放在 `shrink-0` 的底部行、文字块用
  * `min-h-0 overflow-hidden` 承载 —— **空间不够时被裁的是补充文字，绝不裁码**。
  * 🔴 **别把"余量"读成"可以加行"**：这张纸的岗位信息已经齐了，加行会重新把字号挤回 9pt。
+ *    （例外 = 用户 2026-10-26 **点名要加**的「布料批次」末行（issue #7872）：预算已按上面那笔账重算，
+ *    加完仍余 25.51mm；下一次要加行必须重新算这笔账，不许吃剩的余量。）
  *
  * 打印隔离沿用项目既有范式（见 `frontend/admin-web/src/components/orders/ShipmentDoc.tsx` 文件头的 6 条约束）：
  * 1. **屏幕隐藏、打印可见**：页面已有屏幕布局，本组件 `display:none` + `@media print` 显形；
@@ -162,6 +167,7 @@ const WASH_LABEL_TESTID_SEGMENT: Record<WashLabelRowKey, string> = {
   pleats: 'pleats',
   specialOptions: 'special-options',
   remark: 'remark',
+  batchNo: 'batch-no',
 }
 
 /**
@@ -200,6 +206,8 @@ const WASH_LABEL_ROW_CLASS: Record<WashLabelRowKey, string> = {
   pleats: 'whitespace-nowrap',
   specialOptions: 'break-words',
   remark: 'break-words whitespace-pre-line',
+  // 布料批次 = 单据型短码（`PC-20261026-0001`）：折断**不藏字**（长批次号也不许出省略号）
+  batchNo: 'break-all',
 }
 
 export default function TaskCardPrint({

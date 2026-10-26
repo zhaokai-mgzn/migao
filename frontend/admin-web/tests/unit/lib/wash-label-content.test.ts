@@ -12,9 +12,12 @@
 // 逐条判据（都能判红）：
 // ① 行序 = `WASH_LABEL_ROW_KEYS`（**单号 = 加工单号**第一行；订单号 / 加工单号以外的号 / 交期**不在**
 //    清单里；改序 ⇒ 必红）；
-// ② 前缀（`单号 ` / `客户 ` / `部位 ` / `颜色 ` / `门幅 ` / `用料 ` / `宽高 ` / `褶法 ` /
-//    `特殊选项 ` / `备注 `）在**这一处**拼 —— 渲染器各自再拼一遍就是第二份真值；
+// ② 前缀（`单号 ` / `客户 ` / `货号 ` / `帘种 ` / `安装小区 ` / `安装位置 ` / `门幅 ` / `用料 ` /
+//    `宽高 ` / `特殊选项 ` / `备注 ` / `布料批次 `）在**这一处**拼 —— 渲染器各自再拼一遍就是第二份真值；
 //    🔴 **「加工方式」前缀已退场**（用户逐字「可以移除」）⇒ 加工行只印值；
+//    🔴 issue #7872（用户 2026-10-26 逐字「这里的颜色文案改成货号，右侧的内容不要变化了，再加一个布料批次号，
+//    放在最下面，布料批次：xxx」）：前缀 `颜色` → **`货号`**（值仍是 `colorName` 原样、一字不动）、
+//    行清单**末位新增 `布料批次`**（值 = 快照键 `batchNo`）；
 // ③ **缺值不渲染，且判空看的是「值」不是「拼好的整行」**：`宽高 ` / `用料 ` 这种只剩前缀的空壳行
 //    不得上纸；单号例外（缺值如实 `—`，它是「这张纸是给谁的」的最小可读集合）；
 // ④ **褶法 = 是否韩褶公式 + 折数**（一个字段）：`韩褶公式 52折` / `韩褶公式`（无折数不编数）/ `倍数法` /
@@ -56,6 +59,8 @@ const ITEM = {
   productName: '2699系列雪尼尔窗帘面料',
   sku: '0012',
   colorName: '米白',
+  // 布料批次（快照键 `batchNo`，派工指派批次时写入）—— 纸面**末行**（issue #7872）
+  batchNo: 'PC-20261026-0001',
   // 安装去向（issue #7856）：小区 = 订单级、位置 = 件级；只印，不参与任何计算
   installCommunity: '春江花园 3栋2单元',
   installRoom: '主卧',
@@ -107,8 +112,10 @@ describe('washLabelRows — 纸面内容与行序（issue #6656 → #7816 → #7
     expect(textOf(rows, 'customer')).toBe(`客户: ${CUSTOMER}`)
     expect(textOf(rows, 'setNo')).toBe('第 1 套 / 共 2 套')
     expect(textOf(rows, 'positionKind')).toBe('帘种: 布帘')
-    // issue #7856：**颜色**取代 `sku` 货号（用户逐字「货号不要展示sku，展示颜色的内容」）
-    expect(textOf(rows, 'color')).toBe('颜色: 米白')
+    // issue #7856：该行的**值** = `colorName`（不是 `sku`）；
+    // 🔴 issue #7872（2026-10-26 用户逐字「这里的颜色文案改成货号，右侧的内容不要变化了」）
+    //    ⇒ 前缀由 `颜色` 改 **`货号`**、值一字不动（`米白` 原样）
+    expect(textOf(rows, 'color')).toBe('货号: 米白')
     // issue #7856：安装去向（小区 = 订单级、位置 = 件级）—— 都印、且**紧跟在帘种之后**
     expect(textOf(rows, 'installCommunity')).toBe('安装小区: 春江花园 3栋2单元')
     expect(textOf(rows, 'installRoom')).toBe('安装位置: 主卧')
@@ -126,6 +133,10 @@ describe('washLabelRows — 纸面内容与行序（issue #6656 → #7816 → #7
     expect(textOf(rows, 'pleats')).toBe('韩褶公式 52折')
     expect(textOf(rows, 'specialOptions')).toBe('特殊选项: 加logo条、防翘扣')
     expect(textOf(rows, 'remark')).toBe('备注: 加铅块')
+    // 🔴 布料批次 = 纸面**末行**（issue #7872 用户逐字「放在最下面，布料批次：xxx」）——
+    // 位置也是判据：插到别处（例如紧跟颜色）⇒ 本条必红
+    expect(textOf(rows, 'batchNo')).toBe('布料批次: PC-20261026-0001')
+    expect(rows[rows.length - 1].key).toBe('batchNo')
     // 反向判据：特殊选项**不得**再混进备注行（并回去 ⇒ 必红）
     expect(textOf(rows, 'remark')).not.toContain('加logo条')
 
@@ -167,7 +178,7 @@ describe('washLabelRows — 纸面内容与行序（issue #6656 → #7816 → #7
     // 🔴 正向拒绝：整行 trim 判空会把这些空壳印上纸（改版实测过的形态）
     expect(
       rows.some((row) =>
-        ['宽高', '用料', '颜色', '门幅', '帘种', '安装小区', '安装位置', '特殊选项', '备注', '客户'].includes(row.text)
+        ['宽高', '用料', '货号', '门幅', '帘种', '安装小区', '安装位置', '特殊选项', '备注', '客户', '布料批次'].includes(row.text)
       )
     ).toBe(false)
   })
@@ -181,14 +192,28 @@ describe('washLabelRows — 纸面内容与行序（issue #6656 → #7816 → #7
     expect(textOf(fullRows(), 'size')).toBe('宽高: 3×2.75米')
   })
 
-  it('判据 ④：**颜色**（取代 sku 货号，issue #7856）：有 `colorName` ⇒ `颜色: 值`；缺值 ⇒ 该行不出现', () => {
-    expect(textOf(fullRows(), 'color')).toBe('颜色: 米白')
-    // 缺 `colorName`（存量快照）⇒ 不出颜色行；**不拿 sku 顶替**（用户明确要求「不要展示sku」）
+  it('判据 ④：`货号` 行的**值** = `colorName`（issue #7872：只改文案、值不变）；缺值 ⇒ 该行不出现', () => {
+    expect(textOf(fullRows(), 'color')).toBe('货号: 米白')
+    // 缺 `colorName`（存量快照）⇒ 不出该行；**不拿 sku 顶替**（issue #7856 用户「不要展示sku」仍有效）
     const noColor = { ...ITEM, colorName: undefined } as unknown as ProcessingOrderItem
     expect(textOf(washLabelRows({ position: POSITION, item: noColor }), 'color')).toBeUndefined()
-    // sku 不再出现在纸面任何一行（改前印「货号: 0012」⇒ 本条必红）
+    // sku 不上纸（改前印「货号: 0012」⇒ 本条必红）
     expect(fullRows().map((row) => row.text).join('｜')).not.toContain('0012')
-    expect(fullRows().map((row) => row.text).join('｜')).not.toContain('货号')
+    // 🔴 旧文案 `颜色` 不得残留（issue #7872 用户逐字「这里的颜色文案改成货号」）
+    expect(fullRows().map((row) => row.text).join('｜')).not.toContain('颜色')
+  })
+
+  it('🔴 判据 ⑦：布料批次 = 快照 `batchNo`；未指派 ⇒ 如实 `—`；无快照行 ⇒ 该行不出现（issue #7872）', () => {
+    expect(textOf(fullRows(), 'batchNo')).toBe('布料批次: PC-20261026-0001')
+    // 未指派批次（快照行在、`batchNo` 缺）= 该行**未指派**（≠「本系统没有这个字段」）⇒ 如实 `—`
+    // （口径登记在 `frontend/admin-web/src/types/index.ts` 的 `ProcessingOrderItem.batchNo`）
+    const noBatch = { ...ITEM, batchNo: undefined } as unknown as ProcessingOrderItem
+    expect(textOf(washLabelRows({ position: POSITION, item: noBatch }), 'batchNo')).toBe('布料批次: —')
+    // 空串 / 纯空格按缺值处理（不印「布料批次: 」这种空壳）
+    const blank = { ...ITEM, batchNo: '   ' } as unknown as ProcessingOrderItem
+    expect(textOf(washLabelRows({ position: POSITION, item: blank }), 'batchNo')).toBe('布料批次: —')
+    // 没有快照行 ⇒ 不猜（与其它快照派生行同一条口径：整行不出现，不印 `—`）
+    expect(textOf(washLabelRows({ position: POSITION, item: null }), 'batchNo')).toBeUndefined()
   })
 
   it('判据 ④-b：**帘种紧跟在颜色下面**（用户 2026-10-26「再加个帘种，放到货号下面」）', () => {
