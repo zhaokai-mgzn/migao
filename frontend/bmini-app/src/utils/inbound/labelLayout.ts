@@ -1,5 +1,6 @@
 /**
- * 入库标签 **30×40mm 版面**（纯函数，issue #5052 P3 / CP-1；设计 §7.1 / §7.2）
+ * 入库标签 **50×80mm 版面**（纯函数，issue #5052 P3 / CP-1；设计 §7.1 / §7.2；
+ * 尺寸与版面由用户 2026-10-26 裁定改版 —— 见 issue #7820）
  *
  * 这一层**只算坐标**，不碰 canvas、不碰蓝牙、不发请求 ⇒ 全部判据能在 CI 里跑
  * （`frontend/bmini-app/tests/inbound-label-layout.test.ts`）。
@@ -138,20 +139,97 @@ function buildQrMatrix(payload: string): { moduleCount: number; matrix: number[]
   return { moduleCount, matrix }
 }
 
-/** 版面栅格（相对量：都是「版心宽/高」的比例，最终像素由几何算出来 —— 本文件不写死像素） */
+/** 版面栅格（相对量：都是「版心宽」的比例，最终像素由几何算出来 —— 本文件不写死像素） */
 const GRID = {
-  padRatio: 0.021, // ≈8px / 384px
-  qrBoxRatio: 0.44, // 二维码方块占版心宽的比例
-  qrTopRatio: 0.17,
-  textLeftRatio: 0.5,
-  nameFontRatio: 0.052, // 相对版心宽
-  fieldFontRatio: 0.042,
-  codeFontRatio: 0.062,
-  lineGapRatio: 0.032,
+  padRatio: 0.05, // ≈19px ≈ 2.4mm
+  headFontRatio: 0.098, // ≈38px ≈ 4.7mm（货号 —— 纸面第一眼要看的那一行）
+  colorFontRatio: 0.075, // ≈29px ≈ 3.6mm
+  metersFontRatio: 0.082, // ≈32px ≈ 3.9mm
+  fieldFontRatio: 0.065, // ≈25px ≈ 3.1mm
+  codeFontRatio: 0.075, // ≈29px（人可读短码：手输兜底用）
+  qrBoxRatio: 0.62, // 上限 ≈29mm 见方（203dpi 下每模块 ≥8 点，磨花的码也扫得出）
+  qrMinRatio: 0.4, // 下限 ≈19mm 见方（再小就扫不动了）—— 字段多时按可用高度自适应收
+  gapRatio: 0.021, // ≈8px 行间（50×80 的纸面更宽，行间跟着放宽一档 —— 空隙均摊在字段区，不留大块空白）
 } as const
+
+/** 色号行的**缩字号梯度**：先缩字号，仍放不下才可见省略号（**绝不静默裁切**） */
+const COLOR_FONT_STEPS = [1, 0.88, 0.77] as const
+
+/**
+ * 按宽度换行（优先在空格 / 斜杠 / 顿号处断开，否则按字断）。
+ *
+ * **不截断**：放不下就多出几行，由调用方决定「缩字号」还是「可见省略号」。
+ */
+export function wrapTextLines(text: string, maxWidthPx: number, fontPx: number): string[] {
+  const raw = String(text ?? '').trim()
+  if (!raw) return ['']
+  const lines: string[] = []
+  let rest = raw
+  while (rest) {
+    if (estimateTextWidth(rest, fontPx) <= maxWidthPx) {
+      lines.push(rest)
+      break
+    }
+    let cut = 0
+    for (let i = 1; i <= rest.length; i += 1) {
+      if (estimateTextWidth(rest.slice(0, i), fontPx) > maxWidthPx) break
+      cut = i
+    }
+    if (cut <= 0) {
+      // 连一个字都放不下（字号远大于版心）⇒ 原样返回，让上层的「超宽」判据判红
+      lines.push(rest)
+      break
+    }
+    const window = rest.slice(0, cut)
+    let breakAt = -1
+    for (let i = window.length - 1; i >= Math.max(1, Math.floor(cut * 0.6)); i -= 1) {
+      if (' /·、'.includes(window[i])) {
+        breakAt = i + 1
+        break
+      }
+    }
+    const take = breakAt > 0 ? breakAt : cut
+    const line = rest.slice(0, take).replace(/[ /·、]+$/, '')
+    const tail = rest.slice(take).replace(/^[ /·、]+/, '')
+    // 分隔符被吃掉后不能变空行（退化 ⇒ 按原 cut 硬断）
+    if (!line) {
+      lines.push(rest.slice(0, cut).trim())
+      rest = rest.slice(cut).trim()
+      continue
+    }
+    lines.push(line)
+    rest = tail.trim()
+  }
+  return lines.length > 0 ? lines : ['']
+}
+
+/** 色号行：两行内放下（先缩字号），仍放不下才把最后一行可见省略 */
+function fitColorLines(
+  text: string,
+  maxWidthPx: number,
+  baseFontPx: number,
+): { lines: string[]; fontPx: number; truncated: boolean } {
+  for (const scale of COLOR_FONT_STEPS) {
+    const fontPx = Math.max(1, Math.round(baseFontPx * scale))
+    const lines = wrapTextLines(text, maxWidthPx, fontPx)
+    if (lines.length <= 2) return { lines, fontPx, truncated: false }
+  }
+  const fontPx = Math.max(1, Math.round(baseFontPx * COLOR_FONT_STEPS[COLOR_FONT_STEPS.length - 1]))
+  const wrapped = wrapTextLines(text, maxWidthPx, fontPx)
+  const tailLine = fitTextVisible(wrapped.slice(1).join(''), maxWidthPx, fontPx)
+  return { lines: [wrapped[0], tailLine.text], fontPx, truncated: tailLine.truncated }
+}
 
 /**
  * 生成标签绘制计划。
+ *
+ * ## 版面（2026-10-26 用户裁定 · 50×80mm；顺序即阅读顺序）
+ *
+ * 1. `货号`（headline）—— **原来的顶部「品名」已去掉**（用户逐字「移除顶部的商品名」）
+ * 2. `色号 / 门幅` —— **全宽**（不再与二维码左右分栏 ⇒ 色号不再被挤成省略号）
+ * 3. `米数`（醒目：贴在布卷上的那张纸要以它为准）
+ * 4. `批次` / `单号` / `入库 <日期>` / `缸号` / `送单`（缺字段整行不画，**不编造**）
+ * 5. 分隔线 + **二维码（居中，在底部）** + 人可读短码（居中）
  *
  * @param view 读面字段（缺字段 ⇒ 该行不画，**不编造**）
  */
@@ -161,62 +239,90 @@ export function layoutInboundLabel(view: InboundLabelView): InboundLabelPlan {
   const height = geometry.canvasHeightPx
   const pad = Math.round(width * GRID.padRatio)
   const inner = width - pad * 2
+  const gap = Math.round(width * GRID.gapRatio)
   const warnings: string[] = []
   const ops: LabelPaintOp[] = []
 
-  const textLeft = Math.round(width * GRID.textLeftRatio)
-  const textMax = width - pad - textLeft
-  const nameFont = Math.round(width * GRID.nameFontRatio)
+  const headFont = Math.round(width * GRID.headFontRatio)
+  const colorFont = Math.round(width * GRID.colorFontRatio)
+  const metersFont = Math.round(width * GRID.metersFontRatio)
   const fieldFont = Math.round(width * GRID.fieldFontRatio)
   const codeFont = Math.round(width * GRID.codeFontRatio)
-  const lineGap = Math.round(height * GRID.lineGapRatio)
 
-  // ── ① 品名（超宽 ⇒ 可见截断）────────────────────────────────────────────────
-  const name = fitTextVisible(String(view.productName ?? '').trim() || '未填品名', inner, nameFont)
-  if (name.truncated) warnings.push(`品名超宽已截断：${name.text}`)
-  ops.push({
-    kind: 'text',
-    text: name.text,
-    x: pad,
-    y: pad,
-    fontPx: nameFont,
-    bold: true,
-    maxWidthPx: inner,
-    truncated: name.truncated,
-  })
-
-  // ── ② 右列字段（缺字段 ⇒ 整行不画）──────────────────────────────────────────
-  const fields: string[] = []
-  const colorLine = [view.colorName, view.doorWidth].filter((v) => String(v ?? '').trim()).join(' / ')
-  if (colorLine) fields.push(`色号 ${colorLine}`)
-  if (String(view.quantity ?? '').toString().trim()) fields.push(`米数 ${view.quantity}`)
-  if (String(view.skuCode ?? '').trim()) fields.push(`货号 ${view.skuCode}`)
-  if (String(view.batchNo ?? '').trim()) fields.push(`批次 ${view.batchNo}`)
-  if (String(view.dyeLot ?? '').trim()) fields.push(`缸号 ${view.dyeLot}`)
-  if (String(view.supplierDocNo ?? '').trim()) fields.push(`送单 ${view.supplierDocNo}`)
-  if (String(view.inboundNo ?? '').trim()) fields.push(`单号 ${view.inboundNo}`)
-
-  const fieldTop = pad + nameFont + lineGap
-  fields.forEach((line, index) => {
-    const fitted = fitTextVisible(line, textMax, fieldFont)
+  /** 自上而下逐行排（整行文字；超宽 ⇒ 可见截断） */
+  let cursorY = pad
+  const pushRow = (raw: string, fontPx: number, bold: boolean, extraGap = 0) => {
+    const fitted = fitTextVisible(raw, inner, fontPx)
     if (fitted.truncated) warnings.push(`字段行超宽已截断：${fitted.text}`)
     ops.push({
       kind: 'text',
       text: fitted.text,
-      x: textLeft,
-      y: fieldTop + index * (fieldFont + Math.round(lineGap * 0.6)),
-      fontPx: fieldFont,
-      bold: false,
-      maxWidthPx: textMax,
+      x: pad,
+      y: cursorY,
+      fontPx,
+      bold,
+      maxWidthPx: inner,
       truncated: fitted.truncated,
     })
-  })
+    cursorY += fontPx + gap + extraGap
+  }
 
-  // ── ③ 二维码（缺码 ⇒ 不画 + 可见标注）───────────────────────────────────────
+  // ── ① 货号（headline）────────────────────────────────────────────────────
+  const skuCode = String(view.skuCode ?? '').trim()
+  if (skuCode) pushRow(`货号 ${skuCode}`, headFont, true, gap)
+
+  // ── ② 色号 / 门幅（全宽；两行内放下）──────────────────────────────────────
+  // 🔴 门幅**不并入色号行**（用户 2026-10-26：色号不要有遮挡）—— 两格各自占满整行，
+  //    色号再长也不会被门幅挤掉一个字（旧形态把两者拼成一行再截断）
+  const colorValue = String(view.colorName ?? '').trim()
+  if (colorValue) {
+    const fit = fitColorLines(`色号 ${colorValue}`, inner, colorFont)
+    fit.lines.forEach((line, index) => {
+      ops.push({
+        kind: 'text',
+        text: line,
+        x: pad,
+        y: cursorY + index * (fit.fontPx + Math.round(gap * 0.5)),
+        fontPx: fit.fontPx,
+        bold: false,
+        maxWidthPx: inner,
+        truncated: fit.truncated && index === fit.lines.length - 1,
+      })
+    })
+    if (fit.truncated) warnings.push(`色号超宽已截断：${fit.lines.join('')}`)
+    cursorY += fit.lines.length * (fit.fontPx + Math.round(gap * 0.5)) + Math.round(gap * 0.5)
+  }
+
+  const doorWidth = String(view.doorWidth ?? '').trim()
+  if (doorWidth) pushRow(`门幅 ${doorWidth}`, fieldFont, false, gap)
+
+  // ── ③ 米数（醒目）────────────────────────────────────────────────────────
+  const meters = String(view.quantity ?? '').trim()
+  if (meters) pushRow(`米数 ${meters}`, metersFont, true, gap)
+
+  // ── ④ 其余字段（缺字段整行不画，**不编造**）──────────────────────────────
+  const rows: string[] = []
+  if (String(view.batchNo ?? '').trim()) rows.push(`批次 ${view.batchNo}`)
+  if (String(view.inboundNo ?? '').trim()) rows.push(`单号 ${view.inboundNo}`)
+  if (String(view.inboundDate ?? '').trim()) rows.push(`入库 ${view.inboundDate}`)
+  if (String(view.dyeLot ?? '').trim()) rows.push(`缸号 ${view.dyeLot}`)
+  if (String(view.supplierDocNo ?? '').trim()) rows.push(`送单 ${view.supplierDocNo}`)
+  rows.forEach((line) => pushRow(line, fieldFont, false))
+
+  // ── ⑤ 底部：二维码（居中）+ 人可读短码（居中）──────────────────────────
   const payload = labelCodePayload(view.shortCode)
-  const qrTop = Math.round(height * GRID.qrTopRatio)
-  const qrBox = Math.round(width * GRID.qrBoxRatio)
+  const codeRaw = payload ? String(view.shortCode).trim().toUpperCase() : MISSING_CODE_TEXT
+  const code = fitTextVisible(codeRaw, inner, codeFont)
+  const codeY = height - pad - codeFont
+  const qrBottom = codeY - gap * 2
+  // 码区上限 = 版心宽的 62%；下限 = 40%；两者之间按「文字排完剩下的高度」自适应
+  const qrMax = Math.round(width * GRID.qrBoxRatio)
+  const qrMin = Math.round(width * GRID.qrMinRatio)
+  const qrRoom = qrBottom - (cursorY + gap * 2)
+  const qrBox = Math.max(qrMin, Math.min(qrMax, qrRoom))
+
   let qr: LabelQrPlan | null = null
+  let codeTop = qrBottom - qrBox
   if (payload) {
     const { moduleCount, matrix } = buildQrMatrix(payload)
     const cellPx = Math.max(1, Math.floor(qrBox / moduleCount))
@@ -225,24 +331,27 @@ export function layoutInboundLabel(view: InboundLabelView): InboundLabelPlan {
       // 码太密（cell 取整后缩水太多）⇒ 纸面仍按整数倍画，但登记出来
       warnings.push(`二维码点阵偏密：${moduleCount}×${moduleCount} 模块，每模块 ${cellPx}px`)
     }
-    qr = { payload, moduleCount, cellPx, x: pad, y: qrTop, sizePx, matrix }
+    qr = {
+      payload,
+      moduleCount,
+      cellPx,
+      x: Math.round((width - sizePx) / 2),
+      y: qrBottom - sizePx,
+      sizePx,
+      matrix,
+    }
+    codeTop = qr.y
   } else {
     // 🔴 缺码不画假码：留空位 + 可见标注（红证：画占位二维码 ⇒ 判据必红）
     warnings.push('短码缺失或非法：未绘制二维码（不画占位码）')
     const mark = fitTextVisible(MISSING_CODE_TEXT, qrBox, fieldFont)
-    ops.push({
-      kind: 'rect',
-      x: pad,
-      y: qrTop,
-      w: qrBox,
-      h: qrBox,
-      color: '#ffffff',
-    })
+    const boxX = Math.round((width - qrBox) / 2)
+    ops.push({ kind: 'rect', x: boxX, y: qrBottom - qrBox, w: qrBox, h: qrBox, color: '#ffffff' })
     ops.push({
       kind: 'text',
       text: mark.text,
-      x: pad,
-      y: qrTop + Math.round(qrBox / 2),
+      x: boxX,
+      y: qrBottom - Math.round(qrBox / 2),
       fontPx: fieldFont,
       bold: false,
       maxWidthPx: qrBox,
@@ -250,14 +359,19 @@ export function layoutInboundLabel(view: InboundLabelView): InboundLabelPlan {
     })
   }
 
-  // ── ④ 人可读短码（纸面降级入口）───────────────────────────────────────────
-  const codeRaw = payload ? String(view.shortCode).trim().toUpperCase() : MISSING_CODE_TEXT
-  const code = fitTextVisible(codeRaw, inner, codeFont)
+  // 分隔线：把「字段区」与「码区」分开（版面纪律：二维码只在下半区，不许压字）
+  const dividerY = Math.max(pad, codeTop - gap * 2)
+  ops.push({ kind: 'rect', x: pad, y: dividerY, w: inner, h: 2, color: '#000000' })
+  if (cursorY > dividerY - gap) {
+    // 字段多到压到码区 ⇒ 纸面照样画（不静默丢字段），但把事实登记出来
+    warnings.push('版面偏挤：字段区与二维码区可能重叠（请核对字段数量）')
+  }
+
   ops.push({
     kind: 'text',
     text: code.text,
-    x: pad,
-    y: height - pad - codeFont,
+    x: Math.max(pad, Math.round((width - estimateTextWidth(code.text, codeFont)) / 2)),
+    y: codeY,
     fontPx: codeFont,
     bold: true,
     maxWidthPx: inner,
@@ -274,7 +388,7 @@ export function layoutInboundLabel(view: InboundLabelView): InboundLabelPlan {
   }
 }
 
-/** 版面声明的纸型（与矩阵同源；渲染器/打印适配层读它，不写 `50mm 30mm` 字面量） */
+/** 版面声明的纸型（与矩阵同源；渲染器/打印适配层读它，不写 `50mm 80mm` 字面量） */
 export function inboundLabelPageSize(): string {
   return inboundLabelMedia().pageSize
 }
