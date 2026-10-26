@@ -3,6 +3,7 @@ package com.migao.admin.security;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
+import io.jsonwebtoken.JwtBuilder;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import jakarta.annotation.PostConstruct;
@@ -25,6 +26,7 @@ import java.time.Instant;
 import java.util.Date;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 /**
@@ -272,26 +274,11 @@ public class JwtTokenProvider {
      */
     public String generateAccessToken(String userId, Long tenantId, String username, List<String> roles,
                                       List<String> permissions, boolean passwordChangeRequired) {
-        Instant now = Instant.now();
-        Instant expiration = now.plusSeconds(accessTokenExpiration);
-
-        return Jwts.builder()
-                .subject(userId)
-                .claim(CLAIM_USER_ID, userId)
-                .claim(CLAIM_TENANT_ID, tenantId)
+        return buildToken(userId, tenantId, TOKEN_TYPE_ACCESS, accessTokenExpiration, builder -> builder
                 .claim(CLAIM_USERNAME, username)
                 .claim(CLAIM_ROLES, roles)
                 .claim(CLAIM_PERMISSIONS, permissions)
-                .claim(CLAIM_PWD_CHANGE_REQUIRED, passwordChangeRequired)
-                .claim(CLAIM_TOKEN_TYPE, TOKEN_TYPE_ACCESS)
-                .issuedAt(Date.from(now))
-                .expiration(Date.from(expiration))
-                .id(UUID.randomUUID().toString())
-                .audience()
-                    .add("migao")
-                    .and()
-                .signWith(getSigningKey())
-                .compact();
+                .claim(CLAIM_PWD_CHANGE_REQUIRED, passwordChangeRequired));
     }
 
     /**
@@ -302,22 +289,7 @@ public class JwtTokenProvider {
      * @return JWT Token
      */
     public String generateRefreshToken(String userId, Long tenantId) {
-        Instant now = Instant.now();
-        Instant expiration = now.plusSeconds(refreshTokenExpiration);
-
-        return Jwts.builder()
-                .subject(userId)
-                .claim(CLAIM_USER_ID, userId)
-                .claim(CLAIM_TENANT_ID, tenantId)
-                .claim(CLAIM_TOKEN_TYPE, TOKEN_TYPE_REFRESH)
-                .issuedAt(Date.from(now))
-                .expiration(Date.from(expiration))
-                .id(UUID.randomUUID().toString())
-                .audience()
-                    .add("migao")
-                    .and()
-                .signWith(getSigningKey())
-                .compact();
+        return buildToken(userId, tenantId, TOKEN_TYPE_REFRESH, refreshTokenExpiration, null);
     }
 
     /**
@@ -333,22 +305,37 @@ public class JwtTokenProvider {
      * @return 票据 JWT
      */
     public String generateQrLoginTicket(String userId, Long tenantId) {
-        Instant now = Instant.now();
-        Instant expiration = now.plusSeconds(qrLoginTicketExpiration);
+        return buildToken(userId, tenantId, TOKEN_TYPE_QR_LOGIN, qrLoginTicketExpiration, null);
+    }
 
-        return Jwts.builder()
+    /**
+     * 三种令牌的**公共骨架**（subject / userId / tenantId / tokenType / 签发时刻 / 过期 / jti / audience / 签名）。
+     *
+     * <p>抽出来的原因不只是「少抄一遍」：绝对时刻读取（{@code Instant#now}）在仓内受
+     * {@code BusinessClockSourceGuardTest} 的**只许缩短**台账约束（issue #3802 / #6200）——
+     * 每多一条绝对时刻读取点就要多一条豁免。三种令牌共用**一个**读取点，既是最小实现，
+     * 也让那个台账**变短**而不是变长（issue #7825）。</p>
+     */
+    private String buildToken(String userId, Long tenantId, String tokenType, long ttlSeconds,
+                              Consumer<JwtBuilder> extraClaims) {
+        Instant now = Instant.now();
+        Instant expiration = now.plusSeconds(ttlSeconds);
+
+        JwtBuilder builder = Jwts.builder()
                 .subject(userId)
                 .claim(CLAIM_USER_ID, userId)
                 .claim(CLAIM_TENANT_ID, tenantId)
-                .claim(CLAIM_TOKEN_TYPE, TOKEN_TYPE_QR_LOGIN)
+                .claim(CLAIM_TOKEN_TYPE, tokenType)
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(expiration))
                 .id(UUID.randomUUID().toString())
                 .audience()
                     .add("migao")
-                    .and()
-                .signWith(getSigningKey())
-                .compact();
+                    .and();
+        if (extraClaims != null) {
+            extraClaims.accept(builder);
+        }
+        return builder.signWith(getSigningKey()).compact();
     }
 
     /**

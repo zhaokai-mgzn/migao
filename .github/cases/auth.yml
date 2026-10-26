@@ -442,7 +442,7 @@ cases:
       - tool: direct_reply
     data_checks:
       - "判据 1·签发需已登录、兑换公开：`/api/auth/qr/ticket` 不在 SecurityConfig 放行名单（未认证 ⇒ 401），`/api/auth/qr/exchange` 在放行名单且票据端点不读 body（不接受「替别人签发」）。执行点 = tests/unit_ci_workflows/test_qr_login_public_surface.py"
-      - "判据 2·类型隔离（真签名）：`qr_login` 票据不是 access / refresh，access / refresh 也不是票据；票据过不了 JwtAuthenticationFilter。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/QrLoginTicketTest.java::tokenTypesAreMutuallyExclusive"
+      - "判据 2·类型隔离（真签名）：`qr_login` 票据不是 access / refresh，access / refresh 也不是票据；票据过不了 JwtAuthenticationFilter。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/QrLoginTicketServiceTest.java::tokenTypesAreMutuallyExclusive"
       - "判据 3·单次有效 + fail-closed：兑换一次成功后二次必 401（兑换即吊销 jti）；吊销状态不可判定（Redis 不可用）⇒ 503 不放行。执行点 = 同文件::consume_secondTimeIsRejected / consume_revocationUnavailable_failsClosed"
       - "判据 4·二维码内容单一真值：二维码 = `buildMobileEntryUrl(getBminiH5Url(), ticket)`，组件里不许自己拼 `qr=`。执行点 = tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py + frontend/admin-web/tests/unit/lib/bmini-h5-url.test.ts"
       - "行为判据：frontend/admin-web/tests/unit/components/MobileEntry.test.tsx（票据随码上屏 / 倒计时 / 过期自动换新 / 签发失败降级裸入口）＋ frontend/bmini-app/tests/qr-login.test.ts（读取·抹参·兑换落地·失败不毁既有会话·启动门先兑换）＋ frontend/bmini-app/tests/auth-diag.test.tsx（探针环形缓冲 / 只在 ?diag=1 显示）"
@@ -450,7 +450,7 @@ cases:
     merge_log: "2026-10-26 新增（issue #7825）：现场 = 顶栏「手机端」二维码只是裸链接（不带登录交接），换浏览器 / App 或本机存储被清后每次扫码都要重新输密码。冻结口径 = 一次性票据（JWT 类型 qr_login、120 秒、兑换即吊销 jti）+ 手机端兑换后与密码登录同一套 30 天会话 + 签发失败降级裸入口 + 启动探针（续期失败原因本地可读）。"
     traces:
       tests:
-        - "backend/admin-api/src/test/java/com/migao/admin/service/QrLoginTicketTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/QrLoginTicketServiceTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/controller/AuthControllerTest.java"
         - "frontend/admin-web/tests/unit/components/MobileEntry.test.tsx"
         - "frontend/admin-web/tests/unit/lib/bmini-h5-url.test.ts"

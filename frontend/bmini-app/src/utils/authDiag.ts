@@ -90,9 +90,3 @@ export function clearAuthDiag(): void {
   } catch {}
 }
 
-/** 时间戳 → `MM-DD HH:mm:ss`（本机时区；探针上屏用，不参与任何判定）。 */
-export function formatAuthDiagTime(at: number): string {
-  const d = new Date(at)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
-}

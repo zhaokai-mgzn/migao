@@ -16,7 +16,6 @@ import {
   AUTH_DIAG_MAX,
   AUTH_DIAG_STORAGE_KEY,
   clearAuthDiag,
-  formatAuthDiagTime,
   readAuthDiag,
   recordAuthDiag,
 } from '../src/utils/authDiag'
@@ -50,10 +49,6 @@ describe('登录自检探针（issue #7825）', () => {
     expect(readAuthDiag()).toEqual([])
   })
 
-  it('时间格式：MM-DD HH:mm:ss（本机时区，补零）', () => {
-    expect(formatAuthDiagTime(new Date(2026, 9, 26, 9, 5, 7).getTime())).toBe('10-26 09:05:07')
-  })
-
   it('面板默认不显示；`?diag=1` 才显示（路由参数与地址两种形态都认）', () => {
     expect(shouldShowAuthDiag()).toBe(false)
 
@@ -77,6 +72,8 @@ describe('登录自检探针（issue #7825）', () => {
     expect(rows[0].textContent).toContain('qr_login_ok')
     expect(rows[0].textContent).toContain('user=u1')
     expect(rows[1].textContent).toContain('refresh_401')
+    // 时间列走 `formatMessageTime`（时间展示单一真值）：今天的记录形如 `HH:MM`，不自己另造格式
+    expect(rows[0].textContent).toMatch(/\d{2}:\d{2}/)
     // 反证「不是凭据面」：面板里不许出现 token / JWT / Bearer 这类凭据形态的字（文案里提到「密码」是免责声明）
     expect(screen.getByTestId('auth-diag-panel').textContent).not.toMatch(/tok-|eyJ|Bearer/i)
   })

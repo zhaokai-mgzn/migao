@@ -46,7 +46,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 @DisplayName("扫码即登录票据（issue #7825）")
-class QrLoginTicketTest {
+class QrLoginTicketServiceTest {
 
     private static final String TICKET = "qr-ticket";
     private static final String JTI = "jti-qr-1";

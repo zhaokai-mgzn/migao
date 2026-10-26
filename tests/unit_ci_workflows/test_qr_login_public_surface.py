@@ -26,7 +26,7 @@ r"""扫码即登录的**公开面边界**（issue #7825）—— 类级元守卫
 ## 边界（照实登记）
 
 - 判据读的是**源码文本/结构**，不是运行结果：行为面（兑换一次成功、二次 401、过期 401、
-  access 当票据 401、fail-closed 503）由 `backend/admin-api/src/test/java/com/migao/admin/service/QrLoginTicketTest.java`
+  access 当票据 401、fail-closed 503）由 `backend/admin-api/src/test/java/com/migao/admin/service/QrLoginTicketServiceTest.java`
   与 `backend/admin-api/src/test/java/com/migao/admin/controller/AuthControllerTest.java` 承担。
 - 它**不**校验票据 TTL 的具体秒数（那是配置真值，由 `test_refresh_token_lifetime.py` 的同族判据守着
   `jwt.*` 配置面）；这里只钉「公开面」这一层。

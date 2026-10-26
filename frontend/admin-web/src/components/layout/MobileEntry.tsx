@@ -62,11 +62,14 @@ function useMobileEntry() {
   const issueTicket = useCallback(async () => {
     if (!bminiH5Url) return
     try {
-      const response = await request.post<ApiResponse<{ ticket: string; expiresIn: number }>>(
+      // ⚠️ 拦截器返回的是**后端信封本体**（`{success,data}`），而 axios 的泛型是 `AxiosResponse<T>`
+      // ⇒ 这里显式转换（运行时形状由 request.ts 的 response 拦截器保证）
+      type QrTicketEnvelope = ApiResponse<{ ticket: string; expiresIn: number }>
+      const payload = (await request.post<QrTicketEnvelope>(
         QR_TICKET_ENDPOINT,
-      )
-      const value = response?.data?.ticket || ''
-      const ttl = Math.max(1, Math.round(Number(response?.data?.expiresIn) || QR_TICKET_TTL_FALLBACK))
+      )) as unknown as QrTicketEnvelope
+      const value = payload?.data?.ticket || ''
+      const ttl = Math.max(1, Math.round(Number(payload?.data?.expiresIn) || QR_TICKET_TTL_FALLBACK))
       setTicket(value)
       setRemaining(value ? ttl : 0)
       setTicketFailed(!value)

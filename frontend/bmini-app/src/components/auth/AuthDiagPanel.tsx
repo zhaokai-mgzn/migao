@@ -11,7 +11,8 @@
 
 import { View, Text } from '@tarojs/components'
 import Taro from '@tarojs/taro'
-import { formatAuthDiagTime, readAuthDiag } from '../../utils/authDiag'
+import { readAuthDiag } from '../../utils/authDiag'
+import { formatMessageTime } from '../../utils/datetime'
 
 /** 面板最多显示几条（older 的留在存储里，不删） */
 export const AUTH_DIAG_VISIBLE = 8
@@ -46,7 +47,7 @@ export default function AuthDiagPanel() {
       ) : (
         entries.map((entry, index) => (
           <Text key={`${entry.at}-${index}`} className='auth-diag__row' data-testid='auth-diag-row'>
-            {formatAuthDiagTime(entry.at)} · {entry.kind}
+            {formatMessageTime(new Date(entry.at).toISOString())} · {entry.kind}
             {entry.detail ? ` · ${entry.detail}` : ''}
           </Text>
         ))

@@ -821,7 +821,7 @@
 你: 用户 2026-10-26 逐字：「现在每次扫码后都要重新登录，不能保持登录态吗」（截图 = 顶栏「手机端」二维码弹层）；随后选项裁定：「做扫码即登录，并加启动探针定位掉线原因（推荐）」。
 期望: direct_reply
 数据: 判据 1·签发需已登录、兑换公开：`/api/auth/qr/ticket` 不在 SecurityConfig 放行名单（未认证 ⇒ 401），`/api/auth/qr/exchange` 在放行名单且票据端点不读 body（不接受「替别人签发」）。执行点 = tests/unit_ci_workflows/test_qr_login_public_surface.py
-数据: 判据 2·类型隔离（真签名）：`qr_login` 票据不是 access / refresh，access / refresh 也不是票据；票据过不了 JwtAuthenticationFilter。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/QrLoginTicketTest.java::tokenTypesAreMutuallyExclusive
+数据: 判据 2·类型隔离（真签名）：`qr_login` 票据不是 access / refresh，access / refresh 也不是票据；票据过不了 JwtAuthenticationFilter。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/QrLoginTicketServiceTest.java::tokenTypesAreMutuallyExclusive
 数据: 判据 3·单次有效 + fail-closed：兑换一次成功后二次必 401（兑换即吊销 jti）；吊销状态不可判定（Redis 不可用）⇒ 503 不放行。执行点 = 同文件::consume_secondTimeIsRejected / consume_revocationUnavailable_failsClosed
 数据: 判据 4·二维码内容单一真值：二维码 = `buildMobileEntryUrl(getBminiH5Url(), ticket)`，组件里不许自己拼 `qr=`。执行点 = tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py + frontend/admin-web/tests/unit/lib/bmini-h5-url.test.ts
 数据: 行为判据：frontend/admin-web/tests/unit/components/MobileEntry.test.tsx（票据随码上屏 / 倒计时 / 过期自动换新 / 签发失败降级裸入口）＋ frontend/bmini-app/tests/qr-login.test.ts（读取·抹参·兑换落地·失败不毁既有会话·启动门先兑换）＋ frontend/bmini-app/tests/auth-diag.test.tsx（探针环形缓冲 / 只在 ?diag=1 显示）
