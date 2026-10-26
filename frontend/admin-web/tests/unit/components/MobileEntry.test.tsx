@@ -42,7 +42,7 @@ const writeText = vi.fn<(value: string) => Promise<void>>()
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mockPost.mockResolvedValue({ success: true, data: { ticket: 'ticket-from-server', expiresIn: 120 } })
+  mockPost.mockResolvedValue({ data: { success: true, data: { ticket: 'ticket-from-server', expiresIn: 120 } } })
   vi.stubEnv('NEXT_PUBLIC_BMINI_H5_URL', SENTINEL_URL)
   writeText.mockResolvedValue(undefined)
   Object.defineProperty(navigator, 'clipboard', {
@@ -104,7 +104,7 @@ describe('MobileEntryHeader —— 顶栏主入口（跨设备交接是个工具
   it('首次失败后**自动重试**并自愈（发布滚动窗口内的瞬时 502 不该把弹层永久钉死）', async () => {
     mockPost
       .mockRejectedValueOnce(Object.assign(new Error('bad gateway'), { response: { status: 502 } }))
-      .mockResolvedValueOnce({ success: true, data: { ticket: 'ticket-after-retry', expiresIn: 120 } })
+      .mockResolvedValueOnce({ data: { success: true, data: { ticket: 'ticket-after-retry', expiresIn: 120 } } })
 
     render(<MobileEntryHeader />)
     fireEvent.click(screen.getByRole('button', { name: '手机端入口' }))
@@ -126,10 +126,11 @@ describe('MobileEntryHeader —— 顶栏主入口（跨设备交接是个工具
     render(<MobileEntryHeader />)
     fireEvent.click(screen.getByRole('button', { name: '手机端入口' }))
     const fallback = await screen.findByTestId('bmini-h5-qr-fallback')
-    // 失败原因落 data-diag（线上排障读数，不上屏）
+    // 失败原因落 data-diag，并**以小字上屏**（issue #7836：用户截图即可定位，不必开 devtools）
     expect(fallback.getAttribute('data-diag')).toMatch(/^status=/)
+    expect(fallback).toHaveTextContent('status=')
 
-    mockPost.mockResolvedValue({ success: true, data: { ticket: 'ticket-manual-retry', expiresIn: 120 } })
+    mockPost.mockResolvedValue({ data: { success: true, data: { ticket: 'ticket-manual-retry', expiresIn: 120 } } })
     fireEvent.click(screen.getByRole('button', { name: '重试' }))
 
     const qr = await screen.findByTestId('bmini-h5-qr')
@@ -138,8 +139,8 @@ describe('MobileEntryHeader —— 顶栏主入口（跨设备交接是个工具
 
   it('票据过期 ⇒ 自动换新码（不要求用户点刷新）', async () => {
     mockPost
-      .mockResolvedValueOnce({ success: true, data: { ticket: 'ticket-old', expiresIn: 1 } })
-      .mockResolvedValueOnce({ success: true, data: { ticket: 'ticket-new', expiresIn: 120 } })
+      .mockResolvedValueOnce({ data: { success: true, data: { ticket: 'ticket-old', expiresIn: 1 } } })
+      .mockResolvedValueOnce({ data: { success: true, data: { ticket: 'ticket-new', expiresIn: 120 } } })
 
     render(<MobileEntryHeader />)
     fireEvent.click(screen.getByRole('button', { name: '手机端入口' }))
