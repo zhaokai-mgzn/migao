@@ -11,8 +11,8 @@
  * | ③ | 读不到（`unread`）⇒ 全开 + **一句显式提示** | 静默全开 / 静默全关 ⇒ 红 |
  * | ④ | 401 ⇒ 回未登录态、**不渲染任何功能卡** | 把 401 当「读不到」⇒ 卡片照旧出现 ⇒ 红 |
  *
- * ⚠️ 「待发货单」本期**仍是无条件显示**（后端页面键 `to_ship` 由 #7813 新增；先门控会「上线即消失」），
- * 所以本文件不对它做显隐断言 —— 等 #7813 落地后补一条并把 `TODO(#7813)` 换掉。
+ * ⑤ 「待发货单」只跟 **`to_ship`** 走（与「拍照发货」的 `shipment` **分开**，issue #7814）：
+ *    只开 `shipment` ⇒ 不出现「待发货单」；开 `to_ship` ⇒ 出现。
  */
 import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
@@ -94,10 +94,22 @@ describe('工人工作台入口按「工人端菜单」显隐（issue #7812）',
     expect(screen.getByText('拍照发货')).toBeTruthy()
   })
 
+  it('⑤ 待发货单只跟 `to_ship` 走：只开 shipment 时**不出现**（两个能力分开勾）', async () => {
+    await renderWithPages(['report', 'shipment'])
+    expect(screen.getByText('拍照发货')).toBeTruthy()
+    expect(screen.queryByText('待发货单')).toBeNull()
+  })
+
+  it('⑤反向 开 `to_ship` ⇒ 出现待发货单（默认集合里就有它）', async () => {
+    await renderWithPages(['report', 'shipment', 'to_ship'])
+    expect(screen.getByText('待发货单')).toBeTruthy()
+  })
+
   it('② 空数组 ⇒ fail-open 全开（不能因为「一份空配置」把活挡掉）', async () => {
     await renderWithPages([])
     expect(screen.getByText('扫码报工')).toBeTruthy()
     expect(screen.getByText('拍照发货')).toBeTruthy()
+    expect(screen.getByText('待发货单')).toBeTruthy()
     expect(screen.getByText('拍照入库')).toBeTruthy()
   })
 

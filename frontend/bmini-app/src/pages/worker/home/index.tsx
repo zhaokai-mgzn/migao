@@ -53,7 +53,7 @@ import {
   WORKER_TAB_LOGIN_ROUTE,
 } from '../../../utils/inbound/gaps'
 import { fetchWorkerPages } from '../../../services/workerService'
-import { WORKER_MENU_KEYS, menuVisible } from '../../../utils/workerMenu'
+import { WORKER_MENU_KEYS, menuVisible, TO_SHIP_PAGE_KEY } from '../../../utils/workerMenu'
 
 /** 读不到菜单开关时给工人的一句话（不摆内部键；文案守卫只扫 src/pages/**，故写在页内）。 */
 export const PAGES_UNREAD_NOTICE = '未能读取本机菜单开关，已按全部菜单显示；若与本机应开的不符，请找管理员'
@@ -102,6 +102,7 @@ export default function WorkerHomePage() {
   }, [worker])
 
   const showReport = menuVisible(pages, pagesUnread, WORKER_MENU_KEYS.report)
+  const showToShip = menuVisible(pages, pagesUnread, TO_SHIP_PAGE_KEY)
   const showShipment = menuVisible(pages, pagesUnread, WORKER_MENU_KEYS.shipment)
 
   /** 引导去登录页的**工人入口**（`?tab=worker` 直达第三 tab） */
@@ -205,8 +206,9 @@ export default function WorkerHomePage() {
           </View>
           ) : null}
 
-          {/* 待发货单（issue #7806 P1a）：TODO(#7813) —— 后端 `to_ship` 页面键合入后再按它门控；
-              现在门控会「上线即消失」（后端还不回这个键）。 */}
+          {/* 待发货单（issue #7806 P1a；门控键 `to_ship` 由 #7814 落地）：与「拍照发货」分开勾选 ——
+              前者是名单 + 标签（读），后者是发出去（写）。 */}
+          {showToShip ? (
           <View
             className='worker-home__entry'
             onClick={() => Taro.navigateTo({ url: SHIPMENT_ORDERS_PAGE_ROUTE })}
@@ -218,6 +220,7 @@ export default function WorkerHomePage() {
             </View>
             <Text className='worker-home__entry-go'>›</Text>
           </View>
+          ) : null}
         </>
       ) : (
         <View className='worker-home__gate'>

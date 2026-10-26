@@ -31,17 +31,19 @@ export const WORKER_MENU_KEYS = {
   order: 'order',
   /** 裁高计算（一体机） */
   cutCalc: 'cut_calc',
-  /** 拍照发货 */
+  /** 拍照发货（写面） */
   shipment: 'shipment',
+  /** 待发货单（读面：全完工名单 + 发货标签；后端键由 issue #7814 落地） */
+  toShip: 'to_ship',
   /** 质检（逐人开，不在默认集合里） */
   inspect: 'inspect',
 } as const
 
 /**
- * 「待发货单」的页面键（**由 #7813 在后端新增**）。
+ * 「待发货单」的页面键（issue #7814 已把它落进后端 `WorkerPages` 闭词表 + 默认集合）。
  *
- * ⚠️ 本包（P2a）**先不**拿它门控那张卡：后端还不回这个键时门控 ⇒ 卡片恒隐藏
- * （P1a #7808 刚上线的入口会「上线即消失」）。#7813 合入后把那处 `TODO(#7813)` 换成本键即可。
+ * 🔴 与 `shipment`（拍照发货，写面）**分开**：前者是「今天能发哪些、贴哪张标签」（读），
+ * 后者是「把这一单发出去」（写）。商家后台「设置工人端菜单」可以分别勾选。
  */
 export const TO_SHIP_PAGE_KEY = 'to_ship'
 
@@ -57,7 +59,6 @@ export const ALWAYS_VISIBLE = ['拍照入库', '补打入库标签'] as const
  */
 export function visibleMenuKeys(pages: string[] | null | undefined, unread = false): Set<string> {
   const all = new Set<string>(Object.values(WORKER_MENU_KEYS))
-  all.add(TO_SHIP_PAGE_KEY)
   if (unread) return all
   if (!Array.isArray(pages) || pages.length === 0) return all
   return new Set(pages.filter((key) => typeof key === 'string'))
