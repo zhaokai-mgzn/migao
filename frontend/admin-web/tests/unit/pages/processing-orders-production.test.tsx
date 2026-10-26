@@ -484,7 +484,8 @@ describe('加工单生产明细页', () => {
       await userEvent.click(screen.getByTestId('production-print-button'))
 
       // 两份纸在**同一个**打印层里：单据标签 = 水洗唛 + 加工单，默认仍水洗唛（既有主流程不变）
-      expect(screen.getByTestId('print-preview-doc-labels')).toHaveTextContent('水洗唛')
+      // ⚠️ 等元素（订单读面回来 ⇒ `printOrder` 提交后才长得出标签行），别假设它已在场
+      expect(await screen.findByTestId('print-preview-doc-labels')).toHaveTextContent('水洗唛')
       expect(screen.getByTestId('print-preview-doc-processing')).toHaveTextContent('加工单')
       expect(screen.getByTestId('print-preview-doc-labels')).toHaveAttribute('aria-pressed', 'true')
       expect(screen.getByTestId('print-preview-media')).toHaveTextContent('50mm × 150mm')

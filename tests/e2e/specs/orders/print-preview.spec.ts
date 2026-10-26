@@ -172,7 +172,10 @@ test.describe('商家后台打印链路（UI-026 / issue #5914）', () => {
     // ⚠️ 纸型读**样式文本**：Chrome 的 CSSOM **不序列化 `@page` 的 `size` 描述符**
     //    （实测 `rule.cssText` 只剩 `@page { margin: 6mm 12mm; }`），拿 cssText 判尺寸会假红
     const pageCss = await readStyleText(page)
-    expect(pageCss).toContain('@page { size: 241mm 140mm; margin: 6mm 12mm; }')
+    // ⚠️ 这行是 `frontend/admin-web/src/lib/print-media.json`（真值）的**镜像**：连续纸的
+    // `pageMargin` 自 issue #7309 / #7755 起收口为 `0`（纸型边距 0 ⇒ 浏览器页眉页脚无处可画；
+    // 版心内缩 6mm/12mm 改由单据容器 padding 承担）。漂移会被类级守卫 C2 / C10 抓住。
+    expect(pageCss).toContain('@page { size: 241mm 140mm; margin: 0; }')
 
     // 打印媒体下：只有目标单据在版面上，兄弟单据既不显形也不占版面
     await page.emulateMedia({ media: 'print' })
