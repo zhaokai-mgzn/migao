@@ -53,11 +53,11 @@
         "effectiveWidthPx": 384,
         "headWidthPx": 384,
         "heightPx": 560,
-        "note": "设备侧**点阵口径**（issue #6439 免驱动直连通道）—— 全仓唯一一份，洗水码位图只许从这里取（守卫 frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts 的 C2b）。与 label-30x40.dotGeometry 是**同一台 DP235S** 的读数（那一条是入库标签链路的落点，本条目是洗水码链路的落点；改一处务必核对另一处）。🔴 纸宽 50mm ⇒ 400px，打印头只有 384px(48mm) ⇒ effectiveWidthPx = 384：**右侧约 2mm 打不到**，出图必须按 effectiveWidthPx（越头的像素会被静默丢掉）。🔴 纸长**按内容撑开**（issue #7776）：560px = **最短** 70mm 的点阵高，实际出图高度由 `resolveLabelGeometry(printer, 纸宽, 纸长)` 用 washLabelLengthMm() 算出的纸长换算（同一份口径）。dpi 与 headWidthPx 仍是**安全侧待实测**值（同 label-30x40 的 pendingMeasurements 第 1 条），连上机器后按 getPrinterInfo() 自报值覆盖。"
+        "note": "设备侧**点阵口径**（issue #6439 免驱动直连通道）—— 全仓唯一一份，洗水码位图只许从这里取（守卫 frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts 的 C2b）。与 label-50x80.dotGeometry 是**同一台 DP235S** 的读数（那一条是入库标签链路的落点，本条目是洗水码链路的落点；改一处务必核对另一处）。🔴 纸宽 50mm ⇒ 400px，打印头只有 384px(48mm) ⇒ effectiveWidthPx = 384：**右侧约 2mm 打不到**，出图必须按 effectiveWidthPx（越头的像素会被静默丢掉）。🔴 纸长**按内容撑开**（issue #7776）：560px = **最短** 70mm 的点阵高，实际出图高度由 `resolveLabelGeometry(printer, 纸宽, 纸长)` 用 washLabelLengthMm() 算出的纸长换算（同一份口径）。dpi 与 headWidthPx 仍是**安全侧待实测**值（同 label-50x80 的 pendingMeasurements 第 1 条），连上机器后按 getPrinterInfo() 自报值覆盖。"
       },
       "measurement": "measured",
       "pendingMeasurements": [],
-      "note": "热敏 / 热转印 + 蓝牙直打（通道归 #5052）。几何真值 = #5646 实测（容器 49.998mm 宽、PDF MediaBox 142.08 × 169.92 pt）。🔴 **纸长改为「按内容撑开」**（issue #7776，用户 2026-10-25 逐字：「字体太小了，可以把长度延长些，因为长度可以无限长，宁愿长点也要把字体和信息都呈现出来……打印预览的时候我就发现上下两头留白太多了」）：`pageBoxMm.heightMm` = **最短**纸长（70mm，也是驱动里该登记的那档），实际纸长由 `frontend/admin-web/src/lib/label-print/wash-label-metrics.ts` 的 `washLabelLengthMm()` 按纸面内容算出 （夹在 `lengthMm.minMm`~`maxMm`），`@page` 用 `printPageRuleForLength()` 现拼 —— **三处（系统打印 / 蓝牙直连 / 打印预览）读同一个数**。正文口径随之由 6pt 抬到 **9pt**（`minFontPt`；纸长不再迁就固定高度 ⇒ 字号不必再压小）；垂直预算账在 frontend/admin-web/src/components/production/TaskCardPrint.tsx 的文件头。⛔ 本矩阵只登记**在用**介质：`label-30x40` 是入库标签链路（#4946/#5052）的落点，不在本单改动范围。",
+      "note": "热敏 / 热转印 + 蓝牙直打（通道归 #5052）。几何真值 = #5646 实测（容器 49.998mm 宽、PDF MediaBox 142.08 × 169.92 pt）。🔴 **纸长改为「按内容撑开」**（issue #7776，用户 2026-10-25 逐字：「字体太小了，可以把长度延长些，因为长度可以无限长，宁愿长点也要把字体和信息都呈现出来……打印预览的时候我就发现上下两头留白太多了」）：`pageBoxMm.heightMm` = **最短**纸长（70mm，也是驱动里该登记的那档），实际纸长由 `frontend/admin-web/src/lib/label-print/wash-label-metrics.ts` 的 `washLabelLengthMm()` 按纸面内容算出 （夹在 `lengthMm.minMm`~`maxMm`），`@page` 用 `printPageRuleForLength()` 现拼 —— **三处（系统打印 / 蓝牙直连 / 打印预览）读同一个数**。正文口径随之由 6pt 抬到 **9pt**（`minFontPt`；纸长不再迁就固定高度 ⇒ 字号不必再压小）；垂直预算账在 frontend/admin-web/src/components/production/TaskCardPrint.tsx 的文件头。⛔ 本矩阵只登记**在用**介质：`label-50x80` 是入库标签链路（#4946/#5052）的落点（2026-10-26 起由 30×40 改为 50×80），不在本单改动范围。",
       "lengthMm": {
         "mode": "content",
         "minMm": 70,
@@ -66,14 +66,14 @@
       }
     },
     {
-      "id": "label-30x40",
-      "label": "入库标签 30mm × 40mm（竖版 · 热敏）",
+      "id": "label-50x80",
+      "label": "入库标签 50mm × 80mm（竖版 · 热敏）",
       "technology": "thermal-transfer",
-      "pageSize": "30mm 40mm",
+      "pageSize": "50mm 80mm",
       "pageMargin": "0",
       "pageBoxMm": {
-        "widthMm": 30,
-        "heightMm": 40
+        "widthMm": 50,
+        "heightMm": 80
       },
       "continuousFeed": false,
       "carbonCopies": 1,
@@ -81,19 +81,19 @@
       "measurement": "pending-field-measurement",
       "pendingMeasurements": [
         "**DP235S 的打印头 dpi 与有效打印宽度** —— 现值按 203dpi / 8 dots/mm / 头宽 **48mm（384px）** 取**安全侧**，不是实测读数；连上后读 `getPrinterInfo()` 的 `printerDPI` / `printerWidth` 回填（设计 §8.5 ④）",
-        "30mm×40mm 不干胶的**间隙定位与间隔长度下限** —— 本实现按微打 APP 读数送参（`gapType` = 间隙纸、`gapLength` = 3.00mm）；能否稳定定位、是否需要黑标（black mark）待实测",
+        "50mm×80mm 不干胶的**间隙定位与间隔长度下限** —— 本实现按微打 APP 读数送参（`gapType` = 间隙纸、`gapLength` = 3.00mm）；能否稳定定位、是否需要黑标（black mark）待实测",
         "**打印原点偏移**（左 / 顶边距的实际落点）与**出纸方向**的对应 —— 本实现按**竖版画布 + orientation=0**；微打 APP 的横版模板用 270° ⇒ 真机打一张核对（1:1 送点阵后是否需要原点校正）",
         "热敏亚银合成纸在**布卷曲面 / PE 袋**的 24h 附着与褪色（耗材实测，设计 §8.5 ⑤）",
         "满电连续「拍照 + 打印」张数 / 单张打印耗时（现场节拍预算）"
       ],
-      "note": "热敏（direct thermal，**DP235S** 为热敏机、不带碳带）+ **设备侧（客户端 canvas）渲染**后经 **Web Bluetooth** 直打（形态 A 下小程序原生页复用同一份口径）。🔴 **2026-09-29 用户裁定：入库标签由 50×30 横版改为 30×40 竖版**（照实机 30×40 合格证式样；字段仍取本仓入库口径，**不引入库数据里没有的列**）。像素口径真值 = 本节 `dotGeometry`：203dpi = 8 dots/mm、纸宽 30mm ⇒ 240px、纸高 40mm ⇒ 320px；**纸宽 30mm < 打印头宽 48mm（384px，安全侧待实测）⇒ 有效打宽 = 纸宽 = 240px，整幅可打**；**1:1 不缩放不裁切**。🔴 本口径**全仓只有这一份**（守卫 `frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts`：别处出现第二份 240/320/384 ⇒ 红）；bmini 侧经 `frontend/bmini-app/src/utils/inbound/truth.ts` **跨工程直接 import 本文件**，不复制、不做构建期拷贝。⚠️ technology 取本矩阵既有的 `thermal-transfer` 档（热敏/热转印同档）；DP235S 实为**热敏**机 —— 耗材必须买「热敏亚银」，买成需碳带的普通亚银 PET 会打不出字（设计 §3.3 确认项③）。",
+      "note": "热敏（direct thermal，**DP235S** 为热敏机、不带碳带）+ **设备侧（客户端 canvas）渲染**后经 **Web Bluetooth** 直打。🔴 **2026-10-26 用户裁定：入库标签 30×40mm 竖版改为 50×80mm 竖版**（逐字「改成50*80的尺寸」；同一条裁定还要求：去掉顶部商品名、增加入库日期、色号不要被遮挡、二维码放到底部）。像素口径真值 = 本节 `dotGeometry`：203dpi = 8 dots/mm、纸宽 50mm ⇒ 400px、纸高 80mm ⇒ 640px；**纸宽 50mm > 打印头宽 48mm（384px，安全侧待实测）⇒ 有效打宽 = 384px**，右侧约 2mm 打不到（与同矩阵的 `label-50x70` 同一台机器、同一口径）。**1:1 不缩放不裁切**。🔴 本口径**全仓只有这一份**（守卫 `frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts`：别处出现第二份 400/384/640 ⇒ 红）；bmini 侧经 `frontend/bmini-app/src/utils/inbound/truth.ts` **跨工程直接 import 本文件**，不复制、不做构建期拷贝。⚠️ technology 取本矩阵既有的 `thermal-transfer` 档（热敏/热转印同档）；DP235S 实为**热敏**机 —— 耗材必须买「热敏亚银」，买成需碳带的普通亚银 PET 会打不出字（设计 §3.3 确认项③）。",
       "dotGeometry": {
         "dpi": 203,
         "dotsPerMm": 8,
-        "widthPx": 240,
-        "effectiveWidthPx": 240,
+        "widthPx": 400,
+        "effectiveWidthPx": 384,
         "headWidthPx": 384,
-        "heightPx": 320
+        "heightPx": 640
       }
     },
     {

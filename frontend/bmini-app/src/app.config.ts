@@ -39,7 +39,7 @@ export default defineAppConfig({
     // 为什么现在有这一页：2026-10-26 用户改判（#7806）——手机端收口到 bmini，小程序是最终形态。
     'pages/worker/report/index',
     // 工人**拍照入库**（issue #5052 P3）：拍上游标签 → 本机解码优先（0 次 LLM）→ 工人确认
-    // → 过账（不可逆，二次确认）→ 出 30×40mm 标签 → 送打印（Web Bluetooth，Android / 桌面 Chrome）。
+    // → 过账（不可逆，二次确认）→ 出 50×80mm 标签 → 送打印（Web Bluetooth，Android / 桌面 Chrome）。
     // 走 `/api/worker/inbound/**`（工人零商家权限码，不是管理面）。
     // 路由字面量是**单一真值**：`src/utils/inbound/gaps.ts` 的 `INBOUND_PAGE_ROUTE` 必须逐字等于它
     // （守卫 tests/inbound-page-platform-gaps.test.ts 判据 G0：没登记进这里 = 死链 ⇒ 红）

@@ -82,7 +82,7 @@ export interface PrintMediaSpec {
   /** 人读说明：现在用的是哪个值、为什么 */
   note: string
   /**
-   * **点阵口径**（仅热敏标签机这类「按 dots 出图」的介质有）—— issue #5052 的 30×40mm 入库标签。
+   * **点阵口径**（仅热敏标签机这类「按 dots 出图」的介质有）—— issue #5052 的 50×80mm 入库标签（2026-10-26 用户裁定改尺寸）。
    *
    * 🔴 它是 240 / 320 / 384 / 8 dots/mm 这组数字的**唯一一份字面量**：设备侧（bmini 的 canvas 渲染）
    * **跨工程直接 import 本 JSON** 取值，不复制、不做构建期拷贝
@@ -110,7 +110,7 @@ export interface PrintMediaSpec {
  * `tests/unit/lib/print-media.test.ts` 钉住：只改一边 ⇒ 必红（否则新增介质会静默地
  * 「矩阵里有、类型上没有」，调用方只能写 `as any` 绕过类型）。
  */
-export const PRINT_MEDIA_IDS = ['a4', 'label-50x70', 'label-30x40', 'continuous-241x140'] as const
+export const PRINT_MEDIA_IDS = ['a4', 'label-50x70', 'label-50x80', 'continuous-241x140'] as const
 
 export type PrintMediaId = (typeof PRINT_MEDIA_IDS)[number]
 

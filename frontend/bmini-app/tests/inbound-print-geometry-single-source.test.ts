@@ -61,7 +61,7 @@ const PIPELINE_DIRS = [
   'frontend/bmini-app/src/pages/worker',
 ]
 /** 像素口径字面量（**分别**判，不再是"两个数同时出现才算"） */
-const PIXEL_LITERALS = [240, 320, 384]
+const PIXEL_LITERALS = [240, 320, 384, 640]
 const CODE_EXT = /\.(ts|tsx|js|jsx|mjs|json)$/
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'coverage', '.next', 'build', '.git'])
 
@@ -116,21 +116,36 @@ function readCorpus(roots: string[]): { rel: string; code: string }[] {
 }
 
 /** 与 C1 同口径的纯判定（供注入式红证复用；真实判据 = 上面的断言） */
-function geometryProblems(geometry: {
-  dpi: number
-  dotsPerMm: number
-  widthPx: number
-  effectiveWidthPx: number
-  headWidthPx: number
-  heightPx: number
-}): string[] {
+/** 纸型（mm）—— 从介质矩阵取，不在判据里另写一份（issue #7820 起 = 50×80） */
+function labelPaperMm(): { widthMm: number; heightMm: number } {
+  const spec = inboundLabelMedia() as unknown as { pageBoxMm?: { widthMm: number; heightMm: number } }
+  const box = spec.pageBoxMm
+  if (!box || !box.widthMm || !box.heightMm) throw new Error('介质矩阵缺 pageBoxMm（纸型必须同源）')
+  return box
+}
+
+function geometryProblems(
+  geometry: {
+    dpi: number
+    dotsPerMm: number
+    widthPx: number
+    effectiveWidthPx: number
+    headWidthPx: number
+    heightPx: number
+  },
+  paper: { widthMm: number; heightMm: number } = labelPaperMm(),
+): string[] {
   const problems: string[] = []
   if (geometry.dpi !== 203) problems.push(`dpi=${geometry.dpi}（目标机口径 203dpi）`)
   if (geometry.dotsPerMm !== 8) problems.push(`dotsPerMm=${geometry.dotsPerMm}（203dpi ⇒ 8 dots/mm）`)
-  if (geometry.widthPx !== geometry.dotsPerMm * 30) problems.push('widthPx ≠ dotsPerMm × 30mm')
-  if (geometry.heightPx !== geometry.dotsPerMm * 40) problems.push('heightPx ≠ dotsPerMm × 40mm')
+  if (geometry.widthPx !== geometry.dotsPerMm * paper.widthMm) {
+    problems.push(`widthPx ≠ dotsPerMm × 纸宽(${paper.widthMm}mm)`)
+  }
+  if (geometry.heightPx !== geometry.dotsPerMm * paper.heightMm) {
+    problems.push(`heightPx ≠ dotsPerMm × 纸高(${paper.heightMm}mm)`)
+  }
   if (geometry.headWidthPx !== geometry.dotsPerMm * 48) problems.push('headWidthPx ≠ dotsPerMm × 48mm')
-  // 有效打宽 = min(纸宽, 打印头宽)：30mm 纸 < 48mm 头 ⇒ 整幅可打（240px）
+  // 有效打宽 = min(纸宽, 打印头宽)：50mm 纸 > 48mm 头 ⇒ 取头宽（右侧约 2mm 打不到）
   if (geometry.effectiveWidthPx !== Math.min(geometry.widthPx, geometry.headWidthPx)) {
     problems.push('effectiveWidthPx ≠ min(纸宽, 打印头宽)')
   }
@@ -138,18 +153,18 @@ function geometryProblems(geometry: {
   return problems
 }
 
-describe('30×40mm 标签像素口径：单一真值（issue #5052 CP-1）', () => {
+describe('入库标签像素口径（50×80mm，issue #7820 改尺寸）：单一真值（issue #5052 CP-1）', () => {
   it('C1 逐值正确，且与 mm↔dots 的派生关系自洽（不是几个孤立的数）', () => {
     const geometry = inboundLabelGeometry()
     expect(geometryProblems(geometry)).toEqual([])
-    expect(inboundLabelMedia().pageSize).toBe('30mm 40mm')
+    expect(inboundLabelMedia().pageSize).toBe('50mm 80mm')
     expect(inboundLabelMedia().pageMargin).toBe('0')
-    // 画布 = **有效打宽 × 纸高**（30mm 纸 < 48mm 头 ⇒ 有效打宽 = 纸宽，整幅可打）
+    // 画布 = **有效打宽 × 纸高**（50mm 纸 > 48mm 头 ⇒ 有效打宽 = 头宽，右侧约 2mm 打不到）
     expect(geometry.canvasWidthPx).toBe(geometry.effectiveWidthPx)
     expect(geometry.canvasHeightPx).toBe(geometry.heightPx)
   })
 
-  it('C1 真值源里 30×40 是**待实测**介质（真机参数没核实 ⇒ 不许写成 measured）', () => {
+  it('C1 真值源里 50×80 是**待实测**介质（真机参数没核实 ⇒ 不许写成 measured）', () => {
     const spec = inboundLabelMedia()
     expect(spec.id).toBe(INBOUND_LABEL_MEDIA_ID)
     expect(spec.measurement).toBe('pending-field-measurement')
@@ -157,7 +172,7 @@ describe('30×40mm 标签像素口径：单一真值（issue #5052 CP-1）', () 
     expect((spec.pendingMeasurements || []).join('\n')).toContain('有效打印宽度')
   })
 
-  it('C2 出图链路里**一个**像素字面量都没有（240 / 320 / 384 逐个数，不放过"只写一个"）', () => {
+  it('C2 出图链路里**一个**像素字面量都没有（240 / 320 / 384 / 640 逐个数，不放过"只写一个"）', () => {
     const pipeline = readCorpus(PIPELINE_DIRS)
     // 反空跑：射程真的扫到了出图链路的源码
     expect(pipeline.length).toBeGreaterThanOrEqual(10)
