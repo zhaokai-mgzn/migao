@@ -32,8 +32,10 @@ import { probePrintCapability, PRINT_READY_HINT_WX } from '../src/utils/inbound/
 import { createPrinterLinkStore } from '../src/utils/inbound/printerLink'
 import type { RenderedLabel } from '../src/utils/inbound/labelCanvas'
 
-const REPO_ROOT = path.resolve(__dirname, '../../..')
-const TRANSPORT_FILE = 'frontend/bmini-app/src/utils/inbound/lpapiTransport.ts'
+// 🔴 只读**本模块内**的文件（不跨目录去读仓根）：`tests/unit_ci_workflows/test_local_gate_matrix.py`
+// 的「触发面闭合」判据会把跨目录输入当成漏面风险（实测本次就是被它判红的）——
+// bmini 的判据读 bmini 的文件，触发面天然覆盖。
+const TRANSPORT_FILE = path.resolve(__dirname, '../src/utils/inbound/lpapiTransport.ts')
 
 const LABEL: RenderedLabel = {
   image: { data: new Uint8ClampedArray(4), width: 1, height: 1 } as any,
@@ -194,7 +196,7 @@ describe('W5/W6 小程序通道的运行时形态', () => {
 })
 
 describe('W7 源码面：两条通道都必须接线（只接一条 = 半成品）', () => {
-  const source = fs.readFileSync(path.join(REPO_ROOT, TRANSPORT_FILE), 'utf8')
+  const source = fs.readFileSync(TRANSPORT_FILE, 'utf8')
 
   it('W7 loadLpapi 同时引用 lpapi-ble（h5）与 lpapi-ble-wx（小程序）', () => {
     expect(source).toContain('lpapi-ble-wx/lib/index.js')
