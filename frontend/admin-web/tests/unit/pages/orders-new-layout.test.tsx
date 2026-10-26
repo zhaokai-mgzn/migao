@@ -795,4 +795,55 @@ describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     await waitFor(() => expect(screen.getByTestId('craft-plan-current')).toHaveTextContent('拼色'))
   })
+
+  it('判据 29（2026-10-26，issue #7849）：②特殊选项的**勾选态 = 生效集**（系统推导的项也在选中态）', async () => {
+    // 用户逐字（两张截图：系统识别写「拼1次 已并入特殊选项」，而②特殊选项里「拼1次」没有选中）：
+    // 「推导出拼一次，但是在特殊选项中没有选中」。
+    // 病灶 = 那一排 chips 读的是**人工勾选态**（`craft.specialOptions`），而推导行 / 落库 / 插工序 / 计件
+    // 读的是**生效集**（人工 ∪ 推导 − 不采纳）⇒ 同屏两处对同一件事各说各话（与判据 26「勾选上的和显示的
+    // 不一致」同一类：**可见面不许有两个真值**）。
+    mockCraftCalcPreview.mockResolvedValue({
+      data: {
+        data: {
+          ...CALC_OK.data.data,
+          plan: {
+            ...CALC_OK.data.data.plan,
+            cutting_mode: '定宽买高',
+            splice_times: 1,
+            splice_option: '拼1次',
+          },
+        },
+      },
+    })
+    await setupLine()
+
+    // ① 收起态摘要的项数也按**生效集**数（否则「摘要 0 项 / 展开看到 1 项选中」是同一个病的另一半）
+    await waitFor(() =>
+      expect(within(screen.getByTestId('wizard-step-2')).getByText(/特殊选项 1 项/)).toBeTruthy()
+    )
+
+    // ② 推导行说「已并入特殊选项」⇒ 选择器里那一项就是选中态（同一个真值，谁都不许另说一份）
+    expect(screen.getByTestId('craft-plan-derived-option-拼1次')).toHaveTextContent('已并入')
+    openStep(/^\d+\s*加工项/)
+    const chips = () => screen.getByTestId('special-options')
+    const spliceChip = () => within(chips()).getByRole('button', { name: '拼1次' })
+    expect(spliceChip().getAttribute('aria-pressed')).toBe('true')
+
+    // ③ 取消 = **不采纳**（推导项不能只从人工勾选态删掉 —— 推导会立刻把它加回来 ⇒ 变成「点不掉的选中」）
+    fireEvent.click(spliceChip())
+    openStep(/用料与规格/)
+    await waitFor(() =>
+      expect(screen.getByTestId('craft-plan-derived-option-拼1次')).toHaveTextContent('已忽略')
+    )
+
+    // ④ 再勾回来 = **采纳**（不新增状态：仍是 `rejectedDerivedOptions` 那一位取反）
+    openStep(/^\d+\s*加工项/)
+    expect(spliceChip().getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(spliceChip())
+    expect(spliceChip().getAttribute('aria-pressed')).toBe('true')
+
+    // ⑤ 落库证据：生效集才是 `processingInfo.specialOptions`（推导项不因「没手勾」而漏）
+    const line = await submittedLine()
+    expect(line.processingInfo.specialOptions).toContain('拼1次')
+  }, 30000)
 })
