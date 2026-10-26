@@ -53,14 +53,40 @@ function formatTicketTtl(seconds: number): string {
  *
  * 复制动作仍复制**裸地址**（不把短期凭证写进剪贴板）。
  */
+type TicketPhase = 'loading' | 'ready' | 'failed'
+
+/**
+ * 取票失败后的**自动重试**节奏（毫秒）：1.5s → 4s → 10s → 10s…
+ *
+ * 为什么必须有（issue #7834 现场）：发布滚动窗口内 admin-api 会短暂 502，前端原来**只试一次**
+ * ⇒ 弹层被永久钉在「免登录码暂时生成失败」，用户只能扫到那张**没有票据**的码，
+ * 于是「扫码后还是要登录」。有节奏的重试能把这种**瞬时**失败自动吃掉。
+ */
+const QR_TICKET_RETRY_DELAYS = [1500, 4000, 10000]
+
+/** 自动重试封顶次数（约 1 分钟）：之后停下，避免后台无休止打后端；用户仍可点「重试」 */
+const QR_TICKET_MAX_ATTEMPTS = 6
+
+/** 取票 + 状态机（issue #7825 首版 / #7834 加固）。 */
 function useMobileEntry() {
   const bminiH5Url = getBminiH5Url()
   const [ticket, setTicket] = useState('')
   const [remaining, setRemaining] = useState(0)
-  const [ticketFailed, setTicketFailed] = useState(false)
+  // 🔴 三态而不是布尔（issue #7834）：`loading` 期间**不画码** —— 否则弹层刚出现的那 ~300ms 里
+  //    画的是**裸入口**，手快的人扫到的正是「要登录」的那张（首版就踩了这个）。
+  const [phase, setPhase] = useState<TicketPhase>('loading')
+  const [attempts, setAttempts] = useState(0)
+  /** 失败原因读数（`status=502` / `status=network` …）：只进 console 与 DOM 的 data-diag，不上屏 */
+  const [diag, setDiag] = useState('')
 
   const issueTicket = useCallback(async () => {
-    if (!bminiH5Url) return
+    if (!bminiH5Url) {
+      setPhase('failed')
+      setDiag('unconfigured')
+      return
+    }
+    setAttempts(value => value + 1)
+    setPhase(prev => (prev === 'ready' ? prev : 'loading'))
     try {
       // ⚠️ 拦截器返回的是**后端信封本体**（`{success,data}`），而 axios 的泛型是 `AxiosResponse<T>`
       // ⇒ 这里显式转换（运行时形状由 request.ts 的 response 拦截器保证）
@@ -69,30 +95,51 @@ function useMobileEntry() {
         QR_TICKET_ENDPOINT,
       )) as unknown as QrTicketEnvelope
       const value = payload?.data?.ticket || ''
+      if (!value) throw Object.assign(new Error('empty ticket'), { status: 200 })
       const ttl = Math.max(1, Math.round(Number(payload?.data?.expiresIn) || QR_TICKET_TTL_FALLBACK))
       setTicket(value)
-      setRemaining(value ? ttl : 0)
-      setTicketFailed(!value)
-    } catch {
+      setRemaining(ttl)
+      setPhase('ready')
+      setDiag('')
+    } catch (error: unknown) {
+      const err = error as { response?: { status?: number }; statusCode?: number; message?: string }
+      const status = Number(err?.response?.status || err?.statusCode || 0)
+      const reason = `status=${status || 'network'}`
       setTicket('')
       setRemaining(0)
-      setTicketFailed(true)
+      setPhase('failed')
+      setDiag(reason)
+      // 归因读数（不打扰用户）：线上排障从 console 或 fallback 节点的 data-diag 直接读
+      // eslint-disable-next-line no-console
+      console.warn('[qr-ticket] 免登录码签发失败', reason, err?.message || '')
     }
   }, [bminiH5Url])
 
-  // 弹层打开（组件挂载）即签发；过期自动换新，不要求用户点刷新
+  // 弹层打开（组件挂载）即签发
   useEffect(() => {
     void issueTicket()
   }, [issueTicket])
 
+  // 失败自动重试（issue #7834）：按节奏退避，封顶 QR_TICKET_MAX_ATTEMPTS 次
   useEffect(() => {
+    if (phase !== 'failed' || attempts >= QR_TICKET_MAX_ATTEMPTS) return
+    const delay = QR_TICKET_RETRY_DELAYS[Math.min(attempts - 1, QR_TICKET_RETRY_DELAYS.length - 1)]
+    const timer = setTimeout(() => {
+      void issueTicket()
+    }, delay)
+    return () => clearTimeout(timer)
+  }, [phase, attempts, issueTicket])
+
+  // 票据到期自动换新（成功态才计时）
+  useEffect(() => {
+    if (phase !== 'ready') return
     if (remaining <= 0) {
-      if (ticket) void issueTicket()
+      void issueTicket()
       return
     }
     const timer = setTimeout(() => setRemaining(value => value - 1), 1000)
     return () => clearTimeout(timer)
-  }, [remaining, ticket, issueTicket])
+  }, [phase, remaining, issueTicket])
 
   const copy = async () => {
     try {
@@ -103,7 +150,16 @@ function useMobileEntry() {
     }
   }
 
-  return { bminiH5Url, entryUrl: buildMobileEntryUrl(bminiH5Url, ticket), ticket, remaining, ticketFailed, copy }
+  return {
+    bminiH5Url,
+    entryUrl: buildMobileEntryUrl(bminiH5Url, ticket),
+    ticket,
+    remaining,
+    phase,
+    diag,
+    copy,
+    retry: issueTicket,
+  }
 }
 
 /** 点击外部收起（与 `NotificationBell` / `Header` 用户菜单同一形态；`backdrop-filter` 下不能用全屏遮罩）。 */
@@ -125,7 +181,7 @@ function useClickOutside(open: boolean, close: () => void) {
  * 结构层判据（单源守卫）读的就是这段三元：有值才画码，无值只说「未配置」。
  */
 export function MobileEntryPanel({ className }: { className?: string }) {
-  const { bminiH5Url, entryUrl, ticket, remaining, ticketFailed, copy } = useMobileEntry()
+  const { bminiH5Url, entryUrl, phase, remaining, diag, copy, retry } = useMobileEntry()
   return (
     <div
       className={cn(
@@ -135,22 +191,41 @@ export function MobileEntryPanel({ className }: { className?: string }) {
     >
       {bminiH5Url ? (
         <div>
-          <div className="flex justify-center rounded-lg border border-neutral-200 p-2">
-            {/* 二维码内容 = 裸地址 或 裸地址 + 一次性票据（派生点只有一个：`buildMobileEntryUrl`） */}
-            <QRCodeSVG value={entryUrl} size={140} title={entryUrl} data-testid="bmini-h5-qr" />
-          </div>
+          {phase === 'loading' ? (
+            // 取票中**不画码**（issue #7834）：画裸码 = 让用户扫到一张「要登录」的码
+            <div
+              className="flex h-[156px] items-center justify-center rounded-lg border border-dashed border-neutral-200 text-xs text-neutral-400"
+              data-testid="bmini-h5-qr-loading"
+            >
+              正在生成免登录码…
+            </div>
+          ) : (
+            <div className="flex justify-center rounded-lg border border-neutral-200 p-2">
+              {/* 二维码内容 = 裸地址 或 裸地址 + 一次性票据（派生点只有一个：`buildMobileEntryUrl`） */}
+              <QRCodeSVG value={entryUrl} size={140} title={entryUrl} data-testid="bmini-h5-qr" />
+            </div>
+          )}
           <p className="mt-3 text-xs text-neutral-500">用手机相机或「扫一扫」打开：</p>
           <code className="mt-1 block break-all text-xs text-neutral-700" data-testid="bmini-h5-url">
             {bminiH5Url}
           </code>
-          {ticket ? (
+          {phase === 'ready' ? (
             <p className="mt-1 text-xs text-neutral-400" data-testid="bmini-h5-qr-ttl">
               扫码免登录 · {formatTicketTtl(remaining)} 后自动换新码
             </p>
-          ) : ticketFailed ? (
-            <p className="mt-1 text-xs text-neutral-400" data-testid="bmini-h5-qr-fallback">
-              免登录码暂时生成失败，扫码后在手机上登录即可
-            </p>
+          ) : phase === 'failed' ? (
+            <div className="mt-1 flex items-start gap-2" data-testid="bmini-h5-qr-fallback" data-diag={diag}>
+              <p className="flex-1 text-xs text-neutral-400">
+                免登录码暂时生成失败，扫码后在手机上登录即可
+              </p>
+              <button
+                type="button"
+                className="shrink-0 text-xs text-amber-600 hover:underline"
+                onClick={() => void retry()}
+              >
+                重试
+              </button>
+            </div>
           ) : null}
           <Button variant="secondary" size="sm" className="mt-3 w-full" onClick={copy}>
             复制链接

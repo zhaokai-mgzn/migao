@@ -21,7 +21,8 @@ r"""「手机端入口」二维码的**单一真值**与**缺配置不画假码*
 3. **二维码内容取自该单一值**：`value={entryUrl}`，而 `entryUrl = buildMobileEntryUrl(bminiH5Url, ticket)`
    —— 拼 `?qr=` 这件事只许发生在 `URL_HELPER`（issue #7825 扫码即登录）；组件里**不许**自己拼 query、
    不许写死域名（否则「换一处忘一处」从地址扩散到地址+query）。
-4. **缺配置不画假码**（结构层）：`{bminiH5Url ? (…) : (…)}` 的**真分支**里才有 `QRCodeSVG`，
+4. **缺配置不画假码**（结构层）：`{bminiH5Url ? (…) : (…)}` 的**真分支**里才有 `QRCodeSVG`
+   （真分支内部另有「取票中 / 就绪 / 失败」嵌套三元 —— 解析用括号配平，不假设无嵌套），
    假分支渲染「未配置」且**一个 svg 都没有**。行为层的孪生判据在
    `frontend/admin-web/tests/unit/components/MobileEntry.test.tsx`（UI-064 的 5 格）。
 5. **发布链在案**（否则功能在线上静默缺失）：`Dockerfile` 的 `ARG`+`ENV`、
@@ -213,13 +214,51 @@ def _env_var_readers(files=None) -> list[str]:
 
 
 def _entry_branches(src: str) -> dict:
-    """切出「手机端入口」卡片里那个三元的两个分支（结构层判据 3/4 的判据对象）。"""
-    m = re.search(
-        r"\{bminiH5Url \? \(\n(?P<yes>.*?)\n\s*\) : \(\n(?P<no>.*?)\n\s*\)\}",
-        src,
-        re.S,
-    )
-    return {"yes": m.group("yes"), "no": m.group("no")} if m else {}
+    """切出「手机端入口」卡片里那个三元的两个分支（结构层判据 3/4 的判据对象）。
+
+    ⚠️ 不能用「非贪婪正则找第一处 `) : (`」：issue #7834 起有值分支里**嵌了一个三元**
+    （取票中 / 就绪 / 失败三态）⇒ 正则会停在**内层**三元的 `: ` 上，把有值分支切成半截
+    （实测判据输出「有值分支里没有 QRCodeSVG」—— 那是**解析器**坏了，不是代码坏了）。
+    这里改成**括号配平**扫描：从 `{bminiH5Url ?` 起走到 depth 0 的 `:` 即为两分支分界。
+    """
+    m = re.search(r"\{bminiH5Url \? ", src)
+    if not m:
+        return {}
+    i = m.end()
+    depth = 0
+    start_yes = i
+    colon = -1
+    while i < len(src):
+        ch = src[i]
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            if depth == 0:
+                break
+            depth -= 1
+        elif ch == ":" and depth == 0:
+            colon = i
+            break
+        i += 1
+    if colon == -1:
+        return {}
+
+    j = colon + 1
+    depth = 0
+    end = -1
+    while j < len(src):
+        ch = src[j]
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            if depth == 0:
+                end = j
+                break
+            depth -= 1
+        j += 1
+    if end == -1:
+        return {}
+    return {"yes": src[start_yes:colon], "no": src[colon + 1:end]}
 
 
 

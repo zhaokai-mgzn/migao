@@ -82,12 +82,58 @@ describe('MobileEntryHeader —— 顶栏主入口（跨设备交接是个工具
   })
 
   it('签发失败 ⇒ 降级为裸入口（不画」扫了没用」的码）+ 明说扫码后登录', async () => {
-    mockPost.mockRejectedValueOnce(new Error('boom'))
+    mockPost.mockRejectedValue(new Error('boom'))
     render(<MobileEntryHeader />)
     fireEvent.click(screen.getByRole('button', { name: '手机端入口' }))
     const qr = await screen.findByTestId('bmini-h5-qr')
     expect(qr.querySelector('title')?.textContent).toBe(SENTINEL_URL)
     expect(await screen.findByTestId('bmini-h5-qr-fallback')).toHaveTextContent('扫码后在手机上登录')
+  })
+
+
+  it('打开瞬间只显示「正在生成免登录码…」**不画码**（避免扫到没有票据的裸码，issue #7834）', async () => {
+    mockPost.mockReturnValue(new Promise(() => {})) // 永不落地：停在取票中
+
+    render(<MobileEntryHeader />)
+    fireEvent.click(screen.getByRole('button', { name: '手机端入口' }))
+
+    expect(await screen.findByTestId('bmini-h5-qr-loading')).toBeInTheDocument()
+    expect(screen.queryByTestId('bmini-h5-qr')).toBeNull()
+  })
+
+  it('首次失败后**自动重试**并自愈（发布滚动窗口内的瞬时 502 不该把弹层永久钉死）', async () => {
+    mockPost
+      .mockRejectedValueOnce(Object.assign(new Error('bad gateway'), { response: { status: 502 } }))
+      .mockResolvedValueOnce({ success: true, data: { ticket: 'ticket-after-retry', expiresIn: 120 } })
+
+    render(<MobileEntryHeader />)
+    fireEvent.click(screen.getByRole('button', { name: '手机端入口' }))
+
+    // ⚠️ 失败态也会画**裸码** ⇒ 直接 findByTestId 会立刻命中它；必须等「标题变成带票据的」那一次
+    await waitFor(
+      () => {
+        const qr = screen.getByTestId('bmini-h5-qr')
+        expect(qr.querySelector('title')?.textContent).toBe(`${SENTINEL_URL}?qr=ticket-after-retry`)
+      },
+      { timeout: 5000 },
+    )
+    expect(mockPost.mock.calls.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('失败态有「重试」，点了就重新签发（用户有出口，不必猜要重开弹层）', async () => {
+    mockPost.mockRejectedValue(new Error('boom'))
+
+    render(<MobileEntryHeader />)
+    fireEvent.click(screen.getByRole('button', { name: '手机端入口' }))
+    const fallback = await screen.findByTestId('bmini-h5-qr-fallback')
+    // 失败原因落 data-diag（线上排障读数，不上屏）
+    expect(fallback.getAttribute('data-diag')).toMatch(/^status=/)
+
+    mockPost.mockResolvedValue({ success: true, data: { ticket: 'ticket-manual-retry', expiresIn: 120 } })
+    fireEvent.click(screen.getByRole('button', { name: '重试' }))
+
+    const qr = await screen.findByTestId('bmini-h5-qr')
+    expect(qr.querySelector('title')?.textContent).toBe(`${SENTINEL_URL}?qr=ticket-manual-retry`)
   })
 
   it('票据过期 ⇒ 自动换新码（不要求用户点刷新）', async () => {
