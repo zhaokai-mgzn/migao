@@ -200,14 +200,15 @@ function bootPage({ doc, f }) {
   const storage = memStorage({ [STORAGE_KEY]: JSON.stringify(SESSION) })
   const api = createApi({ fetchImpl: f, storage, baseUrl: '' })
   const app = createApp({ doc, api, location: 'https://app.migaozn.com/w/', storage })
+  // issue #7845：页面里的手输短码框已撤 ⇒ 单测走装配层暴露的 `app.scan(code)`（与扫码落地 `?t=` 同一条 doScan）。
+  doc.app = app
   app.dispatch({ type: 'worker', worker: { workerName: '张三', workerNo: 'A017', idleMinutes: 15 } })
   return app
 }
 
-/** 扫一次码（把码值填进输码框再点【确定】）。 */
+// 扫一次码（程序化入口，issue #7845：手输框已撤；与 URL 落地 `?t=` 完全同一条 `doScan`）。
 async function scan(doc, code) {
-  doc.getElementById('wh5-code').value = code
-  await doc.fire('wh5-scan')
+  await doc.app.scan(code)
 }
 
 /** 点一个**没有 id** 的元素（三态按钮只有 `data-work-type`）。 */

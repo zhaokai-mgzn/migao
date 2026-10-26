@@ -28,23 +28,28 @@ import java.util.Objects;
  *
  * <h3>时点（与工人实际动作对齐）</h3>
  * <ul>
- *   <li><b>打包</b>（{@code packed}）⇒ 成品入库：自动建成品入库单（{@code source=packing}，立即过账）
- *       + 给每个成品订单行分配成品仓仓位号；</li>
+ *   <li><b>扫码报「打包」工序</b>（issue #7845，2026-10-26 用户裁定）⇒ 成品入库：这张水洗唛
+ *       （套 × 部位）建成品入库单（{@code source=packing}，立即过账、分配仓位）；
+ *       报工页据此显示「质检结果 + 入库单号 + 仓位 + 打印入库标签」；</li>
+ *   <li><b>打包</b>（{@code packed}）⇒ 成品入库：自动建成品入库单 + 分配仓位号
+ *       （扫码已入过的部位跳过、只补剩余，见 {@link #receiveOnPackByTokens}）；</li>
  *   <li><b>发货</b>（{@code shipped}）⇒ 成品出库：自动建成品出库单（{@code source=ship}，立即过账）
  *       + 在库行置 shipped（释放仓位）；</li>
  *   <li><b>撤销打包</b>（{@code packed → producing}）⇒ 冲销：入库单作废 + 在库行置 unpacked（释放仓位）。</li>
  * </ul>
  *
- * <p>🔴 <b>为什么不挂在「扫码报打包工序」上</b>（如实登记）：扫码报工在本仓的语义是**领活**
- * （issue #4967 用户裁定「工人都是先扫码报工后再真实进行生产」）⇒ 那一刻货还没打包好。
- * 入库时点取**订单打包动作**（{@code OrderShipmentService#pack}，也是「打包发货」这条链的
- * 状态迁移点）；一步发货（{@code producing → shipped}，跳过打包）时由 {@link #issueOnShip}
- * 先补一次入库再出库，保证「发走的成品都能追到仓位」。</p>
+ * <p>🔴 <b>入库时点为什么从「订单打包动作」扩到「扫码报打包工序」（沿革 + 取舍）</b>：
+ * 改前（#7750）只挂在 {@code OrderShipmentService#pack}，理由是「扫码在本仓的语义是领活」
+ * —— 但 #7845 用户改判「只有打包工序绑定了成品帘入库…扫码后除了自动报工，还需要生成成品入库单」
+ * （车间里打包这道活干完，这一件就已经装袋、贴唛、可上架了）。两个时点现在**并存且幂等**：
+ * 谁先到谁入库，后到的一侧跳过已在库的那一件（不会一件两仓）。一步发货
+ * （{@code producing → shipped}，跳过打包）仍由 {@link #issueOnShip} 先补一次入库再出库。</p>
  *
  * <h3>幂等</h3>
- * <p>三个入口都以**订单状态迁移**为前置（pack / ship / unpack 的 CAS 只放行一次）⇒
- * 同一订单不会重复入库/重复出库。{@link #receiveOnPack} 另外再判一次「是否已有在库行」，
- * 让「状态已 packed 但成品行缺失」的重入场景补齐而非重复（不会建第二张入库单）。</p>
+ * <p>四个入口都以**订单状态迁移 / 在库行存在**为前置（pack / ship / unpack 的 CAS，以及
+ * 「这张唛已在库 ⇒ 直接返回既有单据」）⇒ 同一件成品不会重复入库/重复出库。
+ * {@link #receiveOnPack} 另外再按 token 判一次「哪些已在库」，让「扫码先入 + 订单后打包」的
+ * 重入场景**补剩余**而非重复（不会建第二张同件入库单）。</p>
  */
 @Slf4j
 @Service
@@ -70,6 +75,16 @@ public class FinishedGoodsService {
     private final InboundOrderService inboundOrderService;
     private final OutboundOrderService outboundOrderService;
 
+    /**
+     * 质检结论（issue #7845）：打包工人扫码报工时要在屏上「确认质检结果」。
+     *
+     * <p>🔴 该读面对外只对开通了「质检」页的工人开放（{@code WorkerQualityController#requireInspector}），
+     * 而打包工人通常没有这一页 ⇒ 结论**随入库块由服务端下发**，页面不再多发一次必然 403 的读请求。
+     * 字段注入（{@code @RequiredArgsConstructor} 的构造签名被既有测试直接装配，不能加参数）。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private QualityCheckService qualityCheckService;
+
     // ============================================================ 打包入库
 
     /**
@@ -80,17 +95,19 @@ public class FinishedGoodsService {
     @Transactional(rollbackFor = Exception.class)
     public List<FinishedGoodsStock> receiveOnPack(Order order, Long tenantId, String operator) {
         List<FinishedGoodsStock> existing = stockMapper.selectInStockByOrder(tenantId, order.getId());
-        if (!existing.isEmpty()) {
-            log.info("[成品入库] 本单已有在库成品行，跳过重复入库: tenant={}, orderNo={}, bins={}",
-                    tenantId, order.getOrderNo(), binsOf(existing));
-            return existing;
-        }
         // 🔴 V197（issue #7762）：有部位码 ⇒ 按「套 × 部位」逐行入库（5 套 × 布帘 = 5 行 = 5 个仓位）；
         // 没有码（布料单 / 未印码的历史单）⇒ 退回 V196 的订单行粒度（不造空行）。
+        // 🔴 issue #7845：**先判有没有部位码，再判"是否已有在库行"** —— 打包工人扫码报工已经按件入过库的
+        // 那些 token 必须跳过、**剩余部位照常补入**；改前「只要有一行在库就整单返回」会让其余部位永远不入库。
         List<com.migao.admin.entity.ProcessingSetPartToken> tokens =
                 tokenMapper.selectByOrderId(tenantId, order.getId());
         if (!tokens.isEmpty()) {
             return receiveOnPackByTokens(order, tenantId, operator, tokens);
+        }
+        if (!existing.isEmpty()) {
+            log.info("[成品入库] 本单已有在库成品行（无部位码），跳过重复入库: tenant={}, orderNo={}, bins={}",
+                    tenantId, order.getOrderNo(), binsOf(existing));
+            return existing;
         }
         List<OrderItem> items = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
                 .eq(OrderItem::getTenantId, tenantId)
@@ -213,42 +230,70 @@ public class FinishedGoodsService {
                 .eq(OrderItem::getOrderId, order.getId()))) {
             itemById.put(item.getId(), item);
         }
-        Warehouse warehouse = warehouseService.ensureFinishedWarehouse(tenantId);
+        // 🔴 issue #7845：扫码报工**已按件入过库**的那些 token 跳过（只补剩余部位），否则订单打包动作
+        // 会因为「已有在库行」而整单跳过 ⇒ 其余部位永远不入库（一单只进一件，库存与标签都对不上）。
+        java.util.Set<String> inStock = new java.util.HashSet<>();
+        for (FinishedGoodsStock row : stockMapper.selectInStockByOrder(tenantId, order.getId())) {
+            if (row.getSetId() != null && row.getOrderItemId() != null) {
+                inStock.add(row.getSetId() + "|" + row.getOrderItemId());
+            }
+        }
         List<com.migao.admin.entity.InboundOrderItem> lines = new ArrayList<>();
         int skipped = 0;
+        int already = 0;
         for (com.migao.admin.entity.ProcessingSetPartToken token : tokens) {
+            if (inStock.contains(token.getSetId() + "|" + token.getOrderItemId())) {
+                already++;
+                continue;
+            }
             OrderItem item = itemById.get(token.getOrderItemId());
             if (item == null) {
                 skipped++;
                 continue;
             }
-            com.migao.admin.entity.ProcessingOrderSet set = setMapper.selectById(token.getSetId());
-            lines.add(com.migao.admin.entity.InboundOrderItem.builder()
-                    .productId(item.getProductId())
-                    .productName(item.getProductName())
-                    .orderId(order.getId())
-                    .orderNo(order.getOrderNo())
-                    .orderItemId(item.getId())
-                    .setId(token.getSetId())
-                    .setNo(set == null ? null : set.getSetNo())
-                    .shortCode(token.getShortCode())
-                    .quantity(java.math.BigDecimal.ONE)
-                    .unit(FinishedGoodsStock.UNIT_SET)
-                    .remark("打包（套×部位）")
-                    .build());
+            lines.add(inboundLineOf(order, token, item));
         }
         if (lines.isEmpty()) {
+            if (already > 0) {
+                // 全部已在库（扫码先入）⇒ 不建第二张单，如实返回既有在库行
+                List<FinishedGoodsStock> rows = stockMapper.selectInStockByOrder(tenantId, order.getId());
+                log.info("[成品入库] 部位码全部已在库（扫码先入），跳过重复入库: tenant={}, orderNo={}, already={}, bins={}",
+                        tenantId, order.getOrderNo(), already, binsOf(rows));
+                return rows;
+            }
             // 码全是陈旧引用（订单行已删）⇒ 不造假单，退回订单行粒度
             log.warn("[成品入库] 部位码全部挂不到订单行，退回订单行粒度: tenant={}, orderNo={}, skipped={}",
                     tenantId, order.getOrderNo(), skipped);
             return receiveOnPackByItems(order, tenantId, operator);
         }
+        Warehouse warehouse = warehouseService.ensureFinishedWarehouse(tenantId);
         inboundOrderService.receiveFinishedGoodsLines(tenantId, order, lines,
                 warehouse.getId(), warehouse.getName(), operator);
         List<FinishedGoodsStock> rows = stockMapper.selectInStockByOrder(tenantId, order.getId());
-        log.info("[成品入库] 打包入库（套×部位）完成: tenant={}, orderNo={}, tokens={}, skipped={}, bins={}",
-                tenantId, order.getOrderNo(), lines.size(), skipped, binsOf(rows));
+        log.info("[成品入库] 打包入库（套×部位）完成: tenant={}, orderNo={}, tokens={}, already={}, skipped={}, bins={}",
+                tenantId, order.getOrderNo(), lines.size(), already, skipped, binsOf(rows));
         return rows;
+    }
+
+    /** 一条「套 × 部位」入库明细（**唯一**构造点：订单打包入库与扫码报工入库共用一份字段口径）。 */
+    private com.migao.admin.entity.InboundOrderItem inboundLineOf(Order order,
+                                                                  com.migao.admin.entity.ProcessingSetPartToken token,
+                                                                  OrderItem item) {
+        com.migao.admin.entity.ProcessingOrderSet set = token.getSetId() == null
+                ? null : setMapper.selectById(token.getSetId());
+        return com.migao.admin.entity.InboundOrderItem.builder()
+                .productId(item.getProductId())
+                .productName(item.getProductName())
+                .orderId(order.getId())
+                .orderNo(order.getOrderNo())
+                .orderItemId(item.getId())
+                .setId(token.getSetId())
+                .setNo(set == null ? null : set.getSetNo())
+                .shortCode(token.getShortCode())
+                .quantity(java.math.BigDecimal.ONE)
+                .unit(FinishedGoodsStock.UNIT_SET)
+                .remark("打包（套×部位）")
+                .build();
     }
 
     /** V196 的订单行粒度入库（无部位码的兜底形态）。 */
@@ -264,6 +309,102 @@ public class FinishedGoodsService {
         inboundOrderService.receiveFinishedGoods(tenantId, order, items,
                 warehouse.getId(), warehouse.getName(), operator);
         return stockMapper.selectInStockByOrder(tenantId, order.getId());
+    }
+
+    // ============================================================ 扫码报工 ⇒ 成品入库（issue #7845）
+
+    /**
+     * 本次报工是不是**打包工序**（issue #7845）—— 成品入库只绑在打包这一道。
+     *
+     * <p>用户口径（2026-10-26 逐字）：「只有打包工序绑定了成品帘入库，如果是打包工人，那扫码后
+     * 除了自动报工，还需要生成成品入库单」「打包通常是最后一个工序，打包扫码报工时就需要
+     * 确认质检结果和成品入库&打入库标签」。</p>
+     *
+     * <p>关键词与授权判据**同一个常量**（{@link com.migao.admin.mapper.ProductionWorkLogMapper#PACK_OPERATION_KEYWORD}），
+     * 不在这里另写一份「打包」字面量。</p>
+     */
+    public static boolean isPackOperation(String operationName) {
+        return operationName != null
+                && operationName.contains(com.migao.admin.mapper.ProductionWorkLogMapper.PACK_OPERATION_KEYWORD);
+    }
+
+    /**
+     * 打包工序**报工即入库**（issue #7845）：这一件（套 × 部位）进成品仓、分配仓位、生成成品入库单。
+     *
+     * <p>幂等：这张唛已有在库行 ⇒ 直接返回它（{@code already=true}），**不建第二张单**、不重复占仓位。
+     * 与订单打包动作（{@link #receiveOnPack}）共用同一条明细构造（{@link #inboundLineOf}）与同一张表/号段；
+     * 订单打包时由 {@code receiveOnPackByTokens} 跳过已入的 token 只补剩余。</p>
+     *
+     * @param order 业务订单（报工侧已解析好，避免这里再查一次）
+     * @param key   扫到的码（token / 短码 / 整条印刷 URL 均可）
+     * @return 入库块（{@code inbound_no / bin_code / label / quality / already}）；
+     *         <b>不是部位码</b> / 码挂不到订单行 ⇒ {@code null}（调用方据此不渲染卡片，不编造）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> receiveByScanReport(Long tenantId, Order order, String key, String operator) {
+        com.migao.admin.entity.ProcessingSetPartToken token = StringUtils_resolveToken(tenantId, key);
+        if (token == null) {
+            return null;
+        }
+        FinishedGoodsStock existing = stockMapper.selectInStockByWashLabel(tenantId, token.getToken());
+        if (existing != null) {
+            log.info("[成品入库] 扫码报工：这件已在库，返回既有入库单: tenant={}, bin={}, inboundNo={}",
+                    tenantId, existing.getBinCode(), existing.getInboundNo());
+            return inboundView(tenantId, token, existing, true);
+        }
+        OrderItem item = token.getOrderItemId() == null ? null : orderItemMapper.selectById(token.getOrderItemId());
+        if (item == null) {
+            log.warn("[成品入库] 扫码报工：码挂不到订单行，跳过入库: tenant={}, orderItemId={}",
+                    tenantId, token.getOrderItemId());
+            return null;
+        }
+        Warehouse warehouse = warehouseService.ensureFinishedWarehouse(tenantId);
+        com.migao.admin.dto.InboundOrderResponse doc = inboundOrderService.receiveFinishedGoodsLines(tenantId, order,
+                List.of(inboundLineOf(order, token, item)), warehouse.getId(), warehouse.getName(), operator);
+        FinishedGoodsStock row = stockMapper.selectInStockByWashLabel(tenantId, token.getToken());
+        if (row == null) {
+            // 建单成功但没占到仓位 = 唯一索引竞争（同一件被并发入了）⇒ 以库里的事实为准
+            log.warn("[成品入库] 扫码报工：入库单已建但没查到在库行（并发竞争？）: tenant={}, inboundNo={}",
+                    tenantId, doc == null ? null : doc.getInboundNo());
+            return null;
+        }
+        log.info("[成品入库] 扫码报工入库完成: tenant={}, orderNo={}, bin={}, inboundNo={}",
+                tenantId, order.getOrderNo(), row.getBinCode(), row.getInboundNo());
+        return inboundView(tenantId, token, row, false);
+    }
+
+    /**
+     * 扫到一张**已入库**的唛 ⇒ 把入库块摆回屏上（issue #7845：刷新 / 回退后卡片不丢）。
+     *
+     * @return 同上入库块；未入库 / 不是部位码 ⇒ {@code null}
+     */
+    public Map<String, Object> completedInboundView(Long tenantId, String key) {
+        com.migao.admin.entity.ProcessingSetPartToken token = StringUtils_resolveToken(tenantId, key);
+        if (token == null) {
+            return null;
+        }
+        FinishedGoodsStock stock = stockMapper.selectInStockByWashLabel(tenantId, token.getToken());
+        return stock == null ? null : inboundView(tenantId, token, stock, true);
+    }
+
+    /**
+     * 入库块（页面「成品入库」卡片的**唯一**数据源）。
+     *
+     * <p>质检结论随块下发：打包工人要在报工时「确认质检结果」，而质检读面对他们不一定开放
+     * （{@code WorkerQualityController#requireInspector}）⇒ 由服务端带出来，页面不另发一次读请求。
+     * 未接质检服务（切片测试装配 / 老上下文）⇒ {@code quality=null}（页面写「正常」，不编造判定）。</p>
+     */
+    private Map<String, Object> inboundView(Long tenantId,
+                                            com.migao.admin.entity.ProcessingSetPartToken token,
+                                            FinishedGoodsStock stock, boolean already) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("already", already);
+        out.put("bin_code", stock.getBinCode());
+        out.put("inbound_no", stock.getInboundNo());
+        out.put("label", labelOf(tenantId, token, stock));
+        out.put("quality", qualityCheckService == null
+                ? null : qualityCheckService.latest(tenantId, token.getOrderItemId()));
+        return out;
     }
 
     // ============================================================ 扫水洗唛（V197 / #7762）

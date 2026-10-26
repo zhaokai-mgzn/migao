@@ -19,11 +19,26 @@ public interface ProductionWorkLogMapper extends BaseMapper<ProductionWorkLog> {
      * （{@code production_work_logs.operation_name ILIKE '%打包%'}），不新造岗位/权限码 ——
      * 车间里「谁打了包」本来就只在报工里有痕迹。</p>
      */
+    /**
+     * 「打包工序」的**唯一关键词**（issue #7845）。
+     *
+     * <p>两处判据共用它，**不写第二份**：① 扫水洗唛的授权（本接口的 SQL LIKE）；
+     * ② 扫码报工「本次报的是不是打包」的触发（{@code FinishedGoodsService#isPackOperation}）。
+     * 用户口径（2026-10-26）：「只有打包工序绑定了成品帘入库」。</p>
+     */
+    String PACK_OPERATION_KEYWORD = "打包";
+
     @com.baomidou.mybatisplus.annotation.InterceptorIgnore(tenantLine = "true")
     @Select("SELECT COUNT(1) FROM production_work_logs "
             + "WHERE tenant_id = #{tenantId} AND processing_order_id = #{processingOrderId} "
-            + "AND worker_id = #{workerId} AND deleted = 0 AND operation_name ILIKE '%打包%'")
+            + "AND worker_id = #{workerId} AND deleted = 0 AND operation_name ILIKE CONCAT('%', #{keyword}, '%')")
     int countPackerLogs(@Param("tenantId") Long tenantId,
                         @Param("processingOrderId") String processingOrderId,
-                        @Param("workerId") String workerId);
+                        @Param("workerId") String workerId,
+                        @Param("keyword") String keyword);
+
+    /** 三参重载（既有调用方）：关键词取 {@link #PACK_OPERATION_KEYWORD}，行为与改前逐字相同。 */
+    default int countPackerLogs(Long tenantId, String processingOrderId, String workerId) {
+        return countPackerLogs(tenantId, processingOrderId, workerId, PACK_OPERATION_KEYWORD);
+    }
 }
