@@ -215,7 +215,10 @@ public class ProductionReworkService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("rework_no", rework.getReworkNo());
         result.put("operation_id", op.getId());
+        // 读面成对给出逻辑工序名（守卫 `test_op_name_registry_guard` ③）：`operation_name` 是工人端
+        // **快照名**（可能是变体名，如 `精裁-布`）；只给快照名 ⇒ 消费面拼不出统一显示名。
         result.put("operation_name", op.getOperationName());
+        result.put("logical_name", ProductionOperationQueryService.logicalOperationName(op.getOperationName()));
         result.put("qty", qty);
         result.put("done_qty", newDone);
         result.put("status", newStatus);
@@ -270,7 +273,9 @@ public class ProductionReworkService {
                     opsByOrder.computeIfAbsent(poId, k -> new LinkedHashMap<>());
             Map<String, Object> opRow = ops.computeIfAbsent(name, k -> {
                 Map<String, Object> m = new LinkedHashMap<>();
+                // 成对给出逻辑名（同上报酬：快照名可能是变体名，消费面只认逻辑名）
                 m.put("operation_name", k);
+                m.put("logical_name", ProductionOperationQueryService.logicalOperationName(k));
                 m.put("qty", BigDecimal.ZERO);
                 m.put("count", 0);
                 return m;
