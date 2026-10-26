@@ -927,4 +927,45 @@ describe('OrderDetailPage', () => {
     expect(screen.queryByTestId('roll-allocation')).toBeNull()
   })
 
+  // ===== issue #7850：「收货信息」块补「物流方式」「物流公司」两格读数 =====
+  //
+  // 病：下单页自 issue #5840 起把「常用物流方式 / 物流公司」当必填（`order-logistics-type` /
+  // `order-logistics-company`），服务端落在 `orders.logistics_type` / `logistics_company` 两列，
+  // 详情读面也已透出（`Order.logisticsType` / `Order.logisticsCompany`）；但详情页「收货信息」块
+  // 只印收货人 / 联系电话 / 收货地址三行 ⇒ 商家在详情页看不到这一单走快递还是物流专线、哪家承运。
+  //
+  // 谁会红：把 OrderDetail.tsx「收货信息」块里那两格 `InfoRow`（物流方式 / 物流公司）删掉 ⇒
+  // 下面两条全红（`findByText('物流方式：')` 直接超时）。
+  //
+  // 口径（#4419 既有裁定）：缺值印 `-`，**不得**把「未登记」臆造成「快递」——
+  // 故「物流方式」复用 `lib/logistics.ts` 的 `logisticsTypeText()`（缺值 ⇒ null），
+  // **不**走表单口径的 `logisticsTypeLabel()`（那个缺值回落「快递」，是给下拉框用的）。
+  it('#7850: 收货信息块显示服务端下发的物流方式与物流公司（express ⇒ 快递）', async () => {
+    mockGetOrder.mockResolvedValue({
+      data: { data: { ...mockOrder, logisticsType: 'express', logisticsCompany: '顺丰' } },
+    })
+    render(<OrderDetailPage />)
+
+    // 行 = InfoRow 的 div（标签 span + 取值 span）；整行文本逐字断言 ——
+    // 只断言「页面上出现过快递」会是空断言（别的块也可能带同名文案，看不出是本块读数）
+    const typeRow = await screen.findByText('物流方式：')
+    expect(typeRow.parentElement?.textContent).toBe('物流方式：快递')
+    expect(screen.getByText('物流公司：').parentElement?.textContent).toBe('物流公司：顺丰')
+  })
+
+  it('#7850: 物流方式 / 物流公司缺值 ⇒ 两格印 `-`，不得臆造「快递」', async () => {
+    // 存量单形态：两列都没值（后端 NULL）—— 与默认夹具同形，但**显式**写出来，
+    // 免得日后改默认夹具把这条缺值面悄悄测成「有值面」
+    mockGetOrder.mockResolvedValue({
+      data: { data: { ...mockOrder, logisticsType: null, logisticsCompany: null } },
+    })
+    render(<OrderDetailPage />)
+
+    const typeRow = await screen.findByText('物流方式：')
+    expect(typeRow.parentElement?.textContent).toBe('物流方式：-')
+    expect(screen.getByText('物流公司：').parentElement?.textContent).toBe('物流公司：-')
+    // 负控：本夹具没有任何物流真值 ⇒ 整页不得出现被臆造出来的「快递」
+    expect(screen.queryByText('快递')).toBeNull()
+  })
+
 })
