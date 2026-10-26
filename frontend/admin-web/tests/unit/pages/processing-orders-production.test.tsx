@@ -1017,6 +1017,62 @@ describe('加工单生产明细页', () => {
     // 页面照常加载；打印入口沿用类级 order:list 口径，不受影响
     expect(screen.getByTestId('production-print-button')).toBeInTheDocument()
   })
+
+  // ── 特殊选项（issue #7851）────────────────────────────────────────────────
+  // 缺陷：页头只有 订单号 / 状态 / 交付日期 / 加工费组合 —— 而服务端按
+  // `processingInfo.specialOptions` **插工序 + 计件**（`拼1次-布` / `接高-布`）⇒
+  // 车间在「工序进度」里看到这几道活，却**看不出它们从哪来**。
+  // 🔴 断言一律 `within` 新块：洗水唛纸面层（`TaskCardPrint`，portal + 屏幕隐藏）**本来就印**
+  //    「特殊选项：拼1次、接高」⇒ 全页 `getByText('拼1次')` 是**改前就绿的空断言**。
+  it('🔴 特殊选项（issue #7851）：按**商品行**展示该行特殊选项（`拼1次、接高`），落在页头同一块', async () => {
+    mockDetail.mockResolvedValue(
+      ok({
+        ...PROCESSING_ORDER,
+        items: [
+          {
+            itemId: 'item-1',
+            productName: '布艺遮光帘A',
+            colorName: '米白',
+            specialOptions: ['拼1次', '接高'],
+          },
+          // 存量单：该行**未携带** `specialOptions` 键（≠ 空数组、≠ 错值）
+          { itemId: 'item-2', productName: '纱帘-白', colorName: '雪白' },
+        ],
+      }),
+    )
+    render(<ProductionDetailPage />)
+
+    // 与「加工费组合」**同一个页头块**（不是另起一块视觉）
+    const header = await screen.findByTestId('production-header')
+    const block = within(header).getByTestId('production-special-options')
+    // 判据 ①（正）：这一行的两项特殊选项读得到，`、` 连接 = 与纸面/订单同源口径
+    expect(within(block).getByText('拼1次、接高')).toBeInTheDocument()
+    // 逐行可归属：说的是哪一行（`商品名（颜色）` = 既有身份形态）
+    expect(within(block).getByText('布艺遮光帘A（米白）')).toBeInTheDocument()
+
+    // 判据 ②（负控）：缺键那一行**不出现**那一块 —— 既不写 `—`，也不留空块
+    expect(within(block).queryByText('纱帘-白（雪白）')).not.toBeInTheDocument()
+    expect(within(block).getAllByTestId('production-special-options-row')).toHaveLength(1)
+    expect(within(block).queryByText('—')).not.toBeInTheDocument()
+  })
+
+  it('特殊选项缺值不渲染（issue #7851）：整单都没携带（缺键 / 空数组）⇒ 整块不出现，不留占位', async () => {
+    mockDetail.mockResolvedValue(
+      ok({
+        ...PROCESSING_ORDER,
+        items: [
+          { itemId: 'item-1', productName: '布艺遮光帘A', colorName: '米白' },
+          { itemId: 'item-2', productName: '纱帘-白', colorName: '雪白', specialOptions: [] },
+        ],
+      }),
+    )
+    render(<ProductionDetailPage />)
+
+    const header = await screen.findByTestId('production-header')
+    expect(within(header).queryByTestId('production-special-options')).not.toBeInTheDocument()
+    // 连标签都不出现（不是「特殊选项 —」）
+    expect(within(header).queryByText('特殊选项')).not.toBeInTheDocument()
+  })
 })
 
 // ── 路线来源提示（issue #4307 交付物 2 / #4308 P1「静默回落」的用户侧可观测面）──

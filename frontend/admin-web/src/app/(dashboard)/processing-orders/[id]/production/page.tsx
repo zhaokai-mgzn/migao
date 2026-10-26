@@ -25,6 +25,9 @@ import CutPlanTable from '@/components/production/CutPlanTable'
 import PrintDocPreview from '@/components/orders/PrintDocPreview'
 // 加工费组合（= `processingItems[].name` 集合；超高/超宽/倒幅所在）—— 取值口径唯一一份（issue #7833）
 import { processingComboTextOfRows } from '@/lib/processing-combo'
+// 工艺规格（含「特殊选项」那一行）的**唯一**取值定义（设计 §4.9）—— 屏幕/纸面/订单详情同源
+// （issue #7851：页头按商品行展示特殊选项，不在这里再拼一份 `join('、')`）
+import { craftSpecRows } from '@/lib/craft-display'
 import { PRINT_TARGET_SPECS, usePrintDoc } from '@/lib/print-doc'
 import TaskCardPrint from '@/components/production/TaskCardPrint'
 // 免驱动直连打印（issue #6439）：**不做打印机定制功能** —— 通道层与机型无关，本页只接一条
@@ -36,10 +39,37 @@ import { useCompanyName } from '@/lib/use-company-name'
 import type {
   PieceworkSummary,
   ProcessingOrder,
+  ProcessingOrderItem,
   ProcessingOrderSetRow,
   ProductionOperations,
   StuckPointsReport,
 } from '@/types'
+
+/**
+ * 该快照行的「特殊选项」展示文本（`拼1次、接高`）；缺键 / 空数组 / 全空白 ⇒ **空串**（调用方据此整行不渲染）。
+ *
+ * 取值走设计 §4.9 的**同一份定义** `craftSpecRows()`（`特殊选项` 那一行由它格式化：去空、`、` 连接）
+ * —— 订单详情 / 加工单纸面 / 本页屏幕**同源**（与组合键 `processingComboTextOfRows` 同一处置）。
+ */
+function specialOptionsTextOf(item: ProcessingOrderItem): string {
+  return craftSpecRows(item).find((row) => row.label === '特殊选项')?.value ?? ''
+}
+
+/**
+ * 逐行的「特殊选项」行（**缺值行整块不出现**，`—` 与空块都不写）。
+ *
+ * 行身份 = `商品名（颜色）`（与「复制全部」文本 `toPlainText` 的既有形态一致）；
+ * 两者都缺时退回空串（只显示该行的选项，不编造行号）。
+ */
+function specialOptionRowsOf(items?: ProcessingOrderItem[]): { key: string; item: string; options: string }[] {
+  return (items ?? []).flatMap((item, index) => {
+    const options = specialOptionsTextOf(item)
+    if (!options) return []
+    const name = (item.productName ?? '').trim()
+    const color = (item.colorName ?? '').trim()
+    return [{ key: item.itemId ?? `item-${index}`, item: name && color ? `${name}（${color}）` : name || color, options }]
+  })
+}
 
 /**
  * 精裁输出清单一次性拉取的套数上限（服务端 `size` 上限 = 100，超出按上限收敛不报错）。
@@ -364,6 +394,11 @@ export default function ProcessingOrderProductionPage() {
       .catch((e) => console.error('Clipboard write failed:', e))
   }
 
+  // 逐行的「特殊选项」（issue #7851）：服务端按 `specialOptions` **插工序 + 计件** ⇒
+  // 车间在「工序进度」看到 `拼1次-布` / `接高-布`，页头必须说得出这几道活来自哪一行。
+  // 缺键 / 空数组 ⇒ 该行整块不渲染（`specialOptionRowsOf` 已丢弃）。
+  const specialOptionRows = useMemo(() => specialOptionRowsOf(po?.items), [po])
+
   const progress = operations?.progress
   const percent = Math.min(100, Math.max(0, Math.round(Number(progress?.percent ?? 0))))
   const doneCount = progress?.done ?? 0
@@ -554,6 +589,31 @@ export default function ProcessingOrderProductionPage() {
                 </div>
               </div>
             </div>
+
+            {/* 特殊选项（issue #7851）：服务端按 `specialOptions` 插工序 + 计件 ⇒ 页头必须按**商品行**
+                说清「这几道活来自哪一行」。与「加工费组合」同一个块、同一套排版语言（label 小字 + 值正文），
+                🔴 缺键 / 空数组 ⇒ **那一行整块不出现**（存量单未携带 ≠ `—`；也不留空块）。 */}
+            {specialOptionRows.length > 0 && (
+              <div className="mt-4 border-t border-neutral-200 pt-3" data-testid="production-special-options">
+                <div className="text-xs text-neutral-500">特殊选项</div>
+                <ul className="mt-1 space-y-1">
+                  {specialOptionRows.map((row) => (
+                    <li
+                      key={row.key}
+                      className="flex flex-wrap items-baseline gap-x-2"
+                      data-testid="production-special-options-row"
+                    >
+                      <span className="text-xs text-neutral-500" data-testid="production-special-options-item">
+                        {row.item}
+                      </span>
+                      <span className="text-sm text-neutral-900" data-testid="production-special-options-value">
+                        {row.options}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
 
           {/* 作业单状态动作（issue #7634）：从销售订单「作业单」块搬来 —— 发加工 / 开始加工 /
