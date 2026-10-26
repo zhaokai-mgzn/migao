@@ -7,8 +7,10 @@ import { chromium } from 'playwright'
 //   2) `node scripts/visual-check/order-detail-print-entry.mjs`（BASE 默认 3129）
 // 产物（4 张）：
 //   `/tmp/order-detail-print-entry.png`      已发货订单首屏 —— 标题右侧**只有一个**「打印」
-//   `/tmp/order-detail-print-center-sales.png` 点「打印」后的打印层（默认销售单 + 四张单据标签）
-//   `/tmp/order-detail-print-center-processing.png` 换到「加工单」（纸型跟着变 A4）
+//   `/tmp/order-detail-print-center-sales.png` 点「打印」后的打印层（默认销售单 + **三张**单据标签）
+//   `/tmp/order-detail-print-center-quotation.png` 换到「报价单」（纸型跟着变 A4）
+//   ⚠️ 加工单（A4）自 issue #7870 起**不在本页**（它随「加工单生产明细」页的「打印」走，
+//   与洗水唛同层）⇒ 本脚本只覆盖订单详情页的三份纸
 //   `/tmp/order-detail-closed.png`           已关闭订单首屏 —— 同样有「打印」（改前这里一张都打不出来）
 //
 // 为什么要有它：单测断言的是「按钮/标签在不在、纸型读数对不对」，
@@ -120,20 +122,21 @@ await page.screenshot({ path: '/tmp/order-detail-print-entry.png' })
 const printButtons = await page.getByRole('button', { name: /^打印/ }).count()
 console.log('首屏「打印」开头的按钮数 =', printButtons, '（应为 1）')
 
-// ② 点「打印」⇒ 打印层：默认销售单 + 四张单据标签（先预览再出纸）
+// ② 点「打印」⇒ 打印层：默认销售单 + 三张单据标签（先预览再出纸；加工单已迁出本页，#7870）
 await page.getByTestId('order-print-entry').click()
 await page.waitForSelector('[data-testid="print-preview"]')
 await page.waitForTimeout(800)
 await page.screenshot({ path: '/tmp/order-detail-print-center-sales.png' })
-console.log('单据标签数 =', await page.locator('[data-testid^="print-preview-doc-"]').count(), '（应为 4）')
+console.log('单据标签数 =', await page.locator('[data-testid^="print-preview-doc-"]').count(), '（应为 3）')
+console.log('加工单标签在本页应为 0 =', await page.getByTestId('print-preview-doc-processing').count())
 
-// ③ 换到「加工单」：纸型读数应从三联纸 241×140 变成 A4 210×297
+// ③ 换到「报价单」：纸型读数应从三联纸 241×140 变成 A4 210×297
 const before = await page.getByTestId('print-preview-media').textContent()
-await page.getByTestId('print-preview-doc-processing').click()
+await page.getByTestId('print-preview-doc-quotation').click()
 await page.waitForTimeout(800)
 const after = await page.getByTestId('print-preview-media').textContent()
 console.log('换单据前后纸型：', before?.slice(0, 24), '→', after?.slice(0, 24))
-await page.screenshot({ path: '/tmp/order-detail-print-center-processing.png' })
+await page.screenshot({ path: '/tmp/order-detail-print-center-quotation.png' })
 await page.close()
 
 // ④ 已关闭订单：改前这里**一张单据都打不出来**（入口被状态吃掉）
