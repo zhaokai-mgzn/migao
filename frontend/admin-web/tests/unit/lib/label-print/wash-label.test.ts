@@ -12,6 +12,7 @@
 //    —— **写死机型口径 ⇒ 必红**（「不做打印机定制功能」的落点：接别家机器不改码）；
 //    兜底值转发介质矩阵（纸宽 50mm × 纸长 **150mm** 固定）；
 // ② **纸面内容 = 行清单**（折行只插入断点、**不增删字**）—— 版式自己编字段 ⇒ 必红；
+//    **issue #7833 起正文不设行数预算**（`WashLabelRow` 无 `maxLines`）：末行**不再**以省略号收尾；
 // ③ **二维码在底部居中**，无码 ⇒ 虚线占位框（不画假码）；**不再有**加工单号 / 扫码报工 / 人可读短码；
 // ④ **装不下只裁文字块**（底部码位置不动，与 `.task-card-label` 的 flex 口径一致）；
 // ⑤ `paintWashLabel` 只做执行：白底铺满 + 有码才 `drawImage` + 文字用算好的字号（不再二次排版）。
@@ -46,11 +47,12 @@ const BOX = printPageBoxMm('label-50x150')
 const measure = (text: string, fontPx: number) => text.length * fontPx * 0.6
 
 const ROWS: WashLabelRow[] = [
-  { key: 'orderNo', text: '订单 20260921973550001', maxLines: 2 },
-  { key: 'customer', text: '客户 赵凯', maxLines: 1 },
-  { key: 'setNo', text: '第 1 套 / 共 2 套', maxLines: 1 },
-  { key: 'craft', text: '加工方式 韩褶 · 定高买宽 · 双开 · 定型', maxLines: 2 },
-  { key: 'pleats', text: '褶法 韩褶 52折', maxLines: 1 },
+  // issue #7833：单号 = 加工单号（17 位订单号退出纸面）；加工方式去前缀、去加工类型、并入加工费组合项
+  { key: 'docNo', text: '单号: JG-20260921-8237' },
+  { key: 'customer', text: '客户: 赵凯' },
+  { key: 'setNo', text: '第 1 套 / 共 2 套' },
+  { key: 'craft', text: '韩褶 · 超高 · 倒幅 · 双开 · 定型' },
+  { key: 'pleats', text: '褶法: 韩褶公式 52折' },
 ]
 
 const input = (over: Partial<WashLabelInput> = {}): WashLabelInput => ({
@@ -172,7 +174,6 @@ describe('layoutWashLabel — 版式是纯函数（#6439 → #6656 → #7816）'
     const huge: WashLabelRow[] = Array.from({ length: 60 }, (_, i) => ({
       key: 'remark',
       text: `备注 第${i}行很长的补充说明文字，用来把文字块撑爆`,
-      maxLines: 2,
     }))
     const layout = layoutWashLabel(input({ rows: huge }), geo, measure)
     const blockBottom = geo.heightPx - layout.margin - layout.qr!.size - Math.round(1 * geo.dpmm)
@@ -193,12 +194,19 @@ describe('layoutWashLabel — 版式是纯函数（#6439 → #6656 → #7816）'
   })
 })
 
-describe('wrapText / ellipsize — 折行与省略（看得见的截断）', () => {
-  it('逐字折行：只在断点插入行，不增删字；末行超出预算 ⇒ 省略号收尾', () => {
+describe('wrapText / ellipsize — 折行（正文印全文，issue #7833）', () => {
+  it('🔴 缺省**不设行数预算** ⇒ 折行印全文（末行不省略）—— 正文通道走的就是这条', () => {
+    // 6 字、行预算 12px（2 字/行）⇒ 3 行**全部**折出，末行不得出现省略号
+    expect(wrapText('一二三四五六', 12, 10, measure)).toEqual(['一二', '三四', '五六'])
+    expect(wrapText('一二三四五六', 12, 10, measure).join('')).toBe('一二三四五六')
+    expect(wrapText('一二三四五六', 12, 10, measure).some((line) => line.includes('…'))).toBe(false)
+  })
+
+  it('显式给预算（只用于占位框文案这类非正文用途）⇒ 末行以省略号收尾', () => {
     expect(wrapText('一二三四', 100, 10, measure, 3)).toEqual(['一二三四'])
     // 4 字 × 6px = 24px/行预算 12px ⇒ 每行 2 字
     expect(wrapText('一二三四', 12, 10, measure, 3)).toEqual(['一二', '三四'])
-    // 预算 2 行 ⇒ 余下的进最后一行并以省略号收尾（不静默吞字）
+    // 预算 2 行 ⇒ 余下的进最后一行并以省略号收尾（看得见的截断，不静默吞字）
     expect(wrapText('一二三四五六', 12, 10, measure, 2)).toEqual(['一二', '三…'])
     expect(wrapText('   ', 12, 10, measure, 2)).toEqual([])
   })
@@ -244,6 +252,11 @@ describe('paintWashLabel — 只照单绘制（判据 ⑤）', () => {
     // 不再画短码 / 「扫码报工」
     expect(painted).not.toContain('扫码报工')
     expect(painted).not.toContain('7Q2M4K8P')
+    // 🔴 头尾虚线（issue #7833「头尾加下虚线」）：上下各一串短划（fillRect 段），
+    // 且第一条短划落在 y = 0、末条落在纸底（与 CSS 的 border-top/bottom: 1px dashed 同口径）
+    expect(calls[1]).toBe('fillRect:0,0,8,2')
+    expect(calls.filter((call) => call.startsWith('fillRect:') && call.endsWith(',2')).length).toBeGreaterThan(20)
+    expect(calls.some((call) => call.endsWith(`,${geo.heightPx - 2},8,2`))).toBe(true)
   })
 
   it('无码位图 ⇒ 画虚线占位框（不静默留白，也不画假码）', () => {

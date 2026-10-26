@@ -1,16 +1,20 @@
 // case_ids: PP-011
-// PP-011（issue #4964 立版式 → #5646 纸宽 → #7776 字号/字段 → **issue #7816 固定 50×150 + 份数 + 字段重排**）：
-// 水洗唛 = **竖版 50mm × 150mm 单列**，字段面 = 纸面抬头（企业名 / 成品定制）+ **订单号（第一行）** / 客户 /
-// 第 N 套共 M 套 / 部位 / 颜色 / 门幅 / 用料 / 宽高 / 加工方式 / **褶法** / 特殊选项 / 备注 + 底部**居中**二维码。
-// 一行粒度 = 一部位（商品行）**一张 × 开数份**。
+// PP-011（issue #4964 立版式 → #5646 纸宽 → #7776 字号/字段 → #7816 固定 50×150 → **issue #7833 纸面改版**）：
+// 水洗唛 = **竖版 50mm × 150mm 单列**，字段面 = 纸面抬头（企业名 / 成品定制）+ **单号（加工单号，第一行）** /
+// 客户 / 第 N 套共 M 套 / 部位 / 货号 / 门幅 / 用料 / 宽高 / **加工方式（含加工费组合项、无前缀）** /
+// **褶法** / 特殊选项 / 备注 + 底部**居中**二维码。一行粒度 = 一部位（商品行）**一张 × 开数份**。
 //
-// 用户 2026-10-26 逐字（issue #7816，逐条都能判红）：
-// ① 「水洗唛长度不足，设置为打印50*150」⇒ `@page` / 容器都是 50mm × 150mm；
-// ② 「如果订单是双开的要打印两份，单开的要打印1份，三开打印3份，4开打印4份」⇒ **张数 = Σ 开数**；
-// ③ 「字体还是太小，可以再大一点」⇒ 正文 12pt（旧 9pt）、抬头 14pt；
-// ④ 「要体现出是否采用的韩褶公式以及韩褶的折数，用一个字段表示」⇒ `褶法 韩褶 52折` / `褶法 倍数法`；
-// ⑤ 「把订单号放到第一行，客户那一行上面」「移除加工单号」「移除交期字段」「二维码放到底部居中」
-//    「移除扫码报工和短码文字」「二维码可以放大一点」。
+// 用户 2026-10-26 逐字（issue #7833，逐条都能判红）：
+// ① 「JG-…-8172 这个加工单有超高倒幅，但是在加工单的各个环节都没有体现出来，打印的洗水唛中也需要
+//    体现加工费组合中的信息」⇒ 加工方式行**并入** `processingItems[].name`（超高 / 倒幅 …）；
+// ② 「加工方式这几个字可以移除」⇒ 该行**只印值**（纸面不得出现「加工方式」四字）；
+// ③ 「把定高买宽和定宽买高的工艺规格信息不要展示在洗水唛上」⇒ 不印加工类型；
+// ④ 「订单号是否可以短一些…只留加工单号，删掉订单行」⇒ 第一行 `单号 JG-…`，17 位订单号不上纸；
+// ⑤ 「打印后的结果出现了文字缩写…自动去换行打印」⇒ 行样式里**没有** truncate / line-clamp（折行印全文）；
+// ⑥ 「头尾加下虚线，这样能清晰知道界线」⇒ `.task-card-label` 上下各一条 `1px dashed`。
+//
+// 沿用 #7816 且**未改**的判据：纸型 50×150 / 正文 12pt / 张数 = Σ 开数 / 褶法 / 二维码底部居中
+// / 打印隔离 6 条 / 缺码不画假码 / 退场项（工序摘要 / 完整套号 / 交期 / 短码 / 扫码报工）。
 //
 // 其余沿用既有契约（改回来 ⇒ 必红）：打印隔离 6 条、一部位一码 / 缺码不画假码、纸面内容 = `washLabelRows`、
 // 退场两项（工序摘要 / 完整套号）、变体名不上纸面、缺值不渲染。
@@ -105,6 +109,7 @@ const items = [
   {
     itemId: 'item-1',
     productName: '2699系列雪尼尔窗帘面料',
+    sku: '0012',
     colorName: '米白',
     doorWidth: '2.8米',
     curtainType: '布帘',
@@ -112,6 +117,13 @@ const items = [
     cuttingMode: '定高买宽',
     openCount: 2,
     isShaped: true,
+    // 加工费组合键（issue #7833）：超高 / 倒幅 就在这个数组里 —— 纸面必须体现出来
+    processingItems: [
+      { id: 'pi-1', name: '韩褶', quantity: 1 },
+      { id: 'pi-14', name: '超高', quantity: 1 },
+      { id: 'pi-16', name: '倒幅', quantity: 1 },
+      { id: 'pi-3', name: '定型', quantity: 1 },
+    ],
     specialOptions: ['加logo条', '防翘扣'],
     remark: '加铅块',
     fabric_meters: 6.3,
@@ -121,6 +133,7 @@ const items = [
   {
     itemId: 'item-3',
     productName: '帘头布',
+    sku: '0031',
     colorName: '米灰',
     doorWidth: '2.8',
     curtainType: '帘头',
@@ -133,7 +146,7 @@ const items = [
 const printCard = (overrides: Partial<ComponentProps<typeof TaskCardPrint>> = {}) =>
   render(
     <TaskCardPrint
-      orderNo={ORDER_NO}
+      processingOrderNo={PROCESSING_ORDER_NO}
       customerName={CUSTOMER}
       positions={positions}
       items={items}
@@ -218,23 +231,44 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×150mm 单列，issue #7816）',
     })
   })
 
-  it('🔴 订单号 = **第一行**（客户之上）；加工单号与交期**不上纸**', () => {
+  it('🔴 单号 = **加工单号**（第一行、客户之上）；17 位订单号不上纸（issue #7833）', () => {
     printCard()
 
     const rowsBlock = screen.getByTestId('task-card-label-rows-0')
-    expect(rowsBlock.firstElementChild?.getAttribute('data-testid')).toBe('task-card-label-order-no-0')
-    expect(screen.getByTestId('task-card-label-order-no-0')).toHaveTextContent(`订单 ${ORDER_NO}`)
+    expect(rowsBlock.firstElementChild?.getAttribute('data-testid')).toBe('task-card-label-doc-no-0')
+    expect(screen.getByTestId('task-card-label-doc-no-0')).toHaveTextContent(`单号: ${PROCESSING_ORDER_NO}`)
     expect(rowsBlock.children[1]?.getAttribute('data-testid')).toBe('task-card-label-customer-0')
 
-    // 🔴 退场：加工单号（2026-10-26「移除加工单号」）与人可读短码 / 「扫码报工」都不在纸面上
     const paper = paperTextOf(printArea())
-    expect(paper).not.toContain(PROCESSING_ORDER_NO)
-    expect(screen.queryByTestId('task-card-no')).toBeNull()
+    // 🔴 退场：17 位订单号（用户 2026-10-26「订单号是否可以短一些…只留加工单号，删掉订单行」）
+    expect(paper).not.toContain(ORDER_NO)
+    expect(paper).not.toContain('订单 ')
+    // 人可读短码 / 「扫码报工」仍不在纸面上（#7816 的退场项，本次未改）
     expect(document.querySelector('[data-testid^="task-card-label-short-code-"]')).toBeNull()
     expect(paper).not.toContain('扫码报工')
     // 🔴 退场：交期（2026-10-26「移除交期字段」）
     expect(paper).not.toContain('交期')
     expect(paper).not.toContain(DELIVERY)
+  })
+
+  it('🔴 加工方式行 = 加工费组合项 + 打开方式 + 定型（**无前缀**、**不印加工类型**）', () => {
+    printCard()
+
+    const craft = screen.getByTestId('task-card-label-craft-0')
+    // 组合项（超高 / 倒幅）必须出现在纸上 —— 这正是用户「加工单有超高倒幅…没有体现出来」的落点
+    expect(craft).toHaveTextContent('韩褶')
+    expect(craft).toHaveTextContent('超高')
+    expect(craft).toHaveTextContent('倒幅')
+    expect(craft).toHaveTextContent('双开')
+    expect(craft).toHaveTextContent('定型')
+    // 🔴 去前缀：纸面不得出现「加工方式」四字
+    expect(craft.textContent).not.toContain('加工方式')
+    // 🔴 不印加工类型（「定高买宽 / 定宽买高」都不上纸）
+    expect(craft.textContent).not.toContain('定高买宽')
+    expect(craft.textContent).not.toContain('定宽买高')
+    expect(paperTextOf(printArea())).not.toContain('加工类型')
+    // 定型不重复：组合项里的「定型」不与该行的定型措辞印两遍
+    expect((craft.textContent || '').split('定型').length - 1).toBe(1)
   })
 
   it('纸面内容与行序 = `washLabelRows`（单一真值；两条通道读同一份）', () => {
@@ -246,7 +280,7 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×150mm 单列，issue #7816）',
       setNo: 1,
       setCount: 2,
       customerName: CUSTOMER,
-      orderNo: ORDER_NO,
+      processingOrderNo: PROCESSING_ORDER_NO,
     })
     const rowsBlock = screen.getByTestId('task-card-label-rows-0')
     const painted = Array.from(rowsBlock.children).map((el) => (el.textContent || '').trim())
@@ -255,26 +289,28 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×150mm 单列，issue #7816）',
     expect(painted.length).toBeGreaterThanOrEqual(10)
   })
 
-  it('单列字段逐张渲染：部位 / 颜色 / 门幅 / 用料 / 宽高 / 加工方式（照真实工单信息顺序）', () => {
+  it('单列字段逐张渲染：部位 / 货号 / 门幅 / 用料 / 宽高 / 加工方式（照真实工单信息顺序）', () => {
     printCard()
 
-    // 第 1 张（布帘）：部位 / 颜色 / 门幅 / 用料 / 宽高 / 加工方式
-    expect(screen.getByTestId('task-card-label-kind-0')).toHaveTextContent('部位 布帘')
-    expect(screen.getByTestId('task-card-label-color-0')).toHaveTextContent('颜色 米白')
-    expect(screen.getByTestId('task-card-label-door-width-0')).toHaveTextContent('门幅 2.8米')
-    expect(screen.getByTestId('task-card-label-meters-0')).toHaveTextContent('用料 6.3米')
-    expect(screen.getByTestId('task-card-label-size-0')).toHaveTextContent('宽高 3×2.75米')
-    // 加工方式 = craft-display 的单一真值（工艺/加工类型/打开方式/是否定型），不另写推导
+    // 第 1 张（布帘）：部位 / 货号 / 门幅 / 用料 / 宽高 / 加工方式
+    expect(screen.getByTestId('task-card-label-kind-0')).toHaveTextContent('部位: 布帘')
+    expect(screen.getByTestId('task-card-label-sku-0')).toHaveTextContent('货号: 0012')
+    expect(screen.getByTestId('task-card-label-door-width-0')).toHaveTextContent('门幅: 2.8米')
+    expect(screen.getByTestId('task-card-label-meters-0')).toHaveTextContent('用料: 6.3米')
+    expect(screen.getByTestId('task-card-label-size-0')).toHaveTextContent('宽高: 3×2.75米')
+    // 加工方式 = craft-display + processing-combo 的单一真值（工艺 / 组合项 / 打开方式 / 定型），不另写推导
     const craft0 = screen.getByTestId('task-card-label-craft-0')
     expect(craft0).toHaveTextContent('韩褶')
-    expect(craft0).toHaveTextContent('定高买宽')
+    expect(craft0).toHaveTextContent('超高')
+    expect(craft0).toHaveTextContent('倒幅')
     expect(craft0).toHaveTextContent('双开')
     expect(craft0).toHaveTextContent('定型')
+    expect(craft0.textContent).not.toContain('定高买宽')
 
     // 逐张对齐（错配 = 车间按错件干活）：第 2 张仍是布帘（双开第 2 份），第 3 张才是纱帘
-    expect(screen.getByTestId('task-card-label-kind-1')).toHaveTextContent('部位 布帘')
-    expect(screen.getByTestId('task-card-label-kind-2')).toHaveTextContent('部位 纱帘')
-    expect(screen.getByTestId('task-card-label-kind-3')).toHaveTextContent('部位 帘头')
+    expect(screen.getByTestId('task-card-label-kind-1')).toHaveTextContent('部位: 布帘')
+    expect(screen.getByTestId('task-card-label-kind-2')).toHaveTextContent('部位: 纱帘')
+    expect(screen.getByTestId('task-card-label-kind-3')).toHaveTextContent('部位: 帘头')
     const craft3 = screen.getByTestId('task-card-label-craft-3')
     expect(craft3).toHaveTextContent('平板')
     expect(craft3).not.toHaveTextContent('韩褶')
@@ -283,9 +319,9 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×150mm 单列，issue #7816）',
   it('🔴 褶法 = 是否韩褶公式 + 折数（一个字段，2026-10-26 用户裁定）', () => {
     printCard()
 
-    // item-1：韩褶公式 + pleat_count 52 ⇒ 「褶法 韩褶 52折」（双开的 2 张都一样）
-    expect(screen.getByTestId('task-card-label-pleats-0')).toHaveTextContent('褶法 韩褶 52折')
-    expect(screen.getByTestId('task-card-label-pleats-1')).toHaveTextContent('褶法 韩褶 52折')
+    // item-1：韩褶公式 + pleat_count 52 ⇒ 「褶法: 韩褶公式 52折」（双开的 2 张都一样）
+    expect(screen.getByTestId('task-card-label-pleats-0')).toHaveTextContent('褶法: 韩褶公式 52折')
+    expect(screen.getByTestId('task-card-label-pleats-1')).toHaveTextContent('褶法: 韩褶公式 52折')
     // item-2 没有快照行 ⇒ 判不出公式 ⇒ 该行**不印**（不猜）
     expect(screen.queryByTestId('task-card-label-pleats-2')).toBeNull()
   })
@@ -296,19 +332,19 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×150mm 单列，issue #7816）',
       { ...items[0], formula_text: '褶倍数公式：(5.5÷2)×2 → 11.0米' },
     ] as unknown as ProcessingOrderItem[]
     printCard({ positions: [positions[0]], items: multiple })
-    expect(screen.getByTestId('task-card-label-pleats-0')).toHaveTextContent('褶法 倍数法')
+    expect(screen.getByTestId('task-card-label-pleats-0')).toHaveTextContent('褶法: 倍数法')
     expect(screen.getByTestId('task-card-label-pleats-0')).not.toHaveTextContent('韩褶')
   })
 
   it('特殊选项与备注**各成一行**；无对应快照行 ⇒ 该行不出现（不猜）', () => {
     printCard()
 
-    expect(screen.getByTestId('task-card-label-special-options-0')).toHaveTextContent('特殊选项 加logo条、防翘扣')
-    expect(screen.getByTestId('task-card-label-remark-0')).toHaveTextContent('备注 加铅块')
+    expect(screen.getByTestId('task-card-label-special-options-0')).toHaveTextContent('特殊选项: 加logo条、防翘扣')
+    expect(screen.getByTestId('task-card-label-remark-0')).toHaveTextContent('备注: 加铅块')
     expect(screen.getByTestId('task-card-label-remark-0')).not.toHaveTextContent('加logo条')
 
-    // item-2 没有快照行 ⇒ 第 3 张（纱帘）不出颜色/用料/加工方式/特殊选项/备注/门幅（缺值不渲染，不猜）
-    expect(screen.queryByTestId('task-card-label-color-2')).toBeNull()
+    // item-2 没有快照行 ⇒ 第 3 张（纱帘）不出货号/用料/加工方式/特殊选项/备注/门幅（缺值不渲染，不猜）
+    expect(screen.queryByTestId('task-card-label-sku-2')).toBeNull()
     expect(screen.queryByTestId('task-card-label-meters-2')).toBeNull()
     expect(screen.queryByTestId('task-card-label-craft-2')).toBeNull()
     expect(screen.queryByTestId('task-card-label-special-options-2')).toBeNull()
@@ -376,8 +412,8 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×150mm 单列，issue #7816）',
     companyNameStub.value = ''
     printCard()
     expect(screen.queryByTestId('task-card-company')).toBeNull()
-    // 订单号仍是第一行（抬头块与订单号互不依赖）
-    expect(screen.getByTestId('task-card-label-order-no-0')).toHaveTextContent(`订单 ${ORDER_NO}`)
+    // 单号仍是第一行（抬头块与单号互不依赖）
+    expect(screen.getByTestId('task-card-label-doc-no-0')).toHaveTextContent(`单号: ${PROCESSING_ORDER_NO}`)
   })
 
   it('打印样式：@page 50mm×150mm（竖版）+ 标签本体 50mm×150mm + 正文 12pt + 逐张分页（最后一张不分页）', () => {
@@ -398,6 +434,9 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×150mm 单列，issue #7816）',
     expect(css).toContain('.task-card-label { width: 50mm; height: 150mm; overflow: hidden;')
     // 🔴 字号 9pt → 12pt（用户「字体还是太小，可以再大一点」）
     expect(css).toContain('font-size: 12pt')
+    // 🔴 头尾虚线（issue #7833「头尾加下虚线，这样能清晰知道界线」）
+    expect(css).toContain('border-top: 1px dashed #000')
+    expect(css).toContain('border-bottom: 1px dashed #000')
     expect(css).toContain('break-after: page')
     // 最后一张不分页（否则末尾多吐一张空白）
     expect(css).toMatch(/\.task-card-label:last-child \{[^}]*break-after: auto/)
@@ -424,6 +463,25 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×150mm 单列，issue #7816）',
     const label = screen.getByTestId('task-card-label-0')
     const rowsBlock = within(label).getByTestId('task-card-label-rows-0')
     expect(rowsBlock.compareDocumentPosition(bottomRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('🔴 折行印全文：每一行**没有** truncate / line-clamp（省略号 = 静默吃掉半截字）', () => {
+    printCard()
+
+    const paper = paperTextOf(printArea())
+    // 长值真的渲染出来（不是被裁掉的空壳）：客户 / 特殊选项 / 备注 逐字在纸上
+    expect(paper).toContain(`客户: ${CUSTOMER}`)
+    expect(paper).toContain('特殊选项: 加logo条、防翘扣')
+    expect(paper).toContain('备注: 加铅块')
+    const rowsBlock = screen.getByTestId('task-card-label-rows-0')
+    for (const row of Array.from(rowsBlock.children)) {
+      const cls = row.className
+      expect(cls).not.toContain('truncate')
+      expect(cls).not.toMatch(/line-clamp-\d/)
+      expect(cls).not.toContain('text-ellipsis')
+    }
+    // 至少一行声明了折行（否则「去裁切」只是把字挤出纸外）
+    expect(Array.from(rowsBlock.children).some((row) => row.className.includes('break-words') || row.className.includes('break-all'))).toBe(true)
   })
 
   it('🔴 工序摘要与完整套号**不再出现**（退场项；改回来 ⇒ 必红）', () => {

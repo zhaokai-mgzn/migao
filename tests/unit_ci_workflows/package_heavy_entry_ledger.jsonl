@@ -38,3 +38,4 @@
 {"id":"1792984078.84248.5835","ts":"2026-10-26T03:07:58Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/wash-label-50x150-copies","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1792987028.77512.22535","ts":"2026-10-26T03:57:09Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/7825-qr-login","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1792987052.77785.10008","ts":"2026-10-26T03:57:32Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7825-qr-login","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1792995140.67556.3994","ts":"2026-10-26T06:12:21Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/7833-wash-label-print","why":"子包 worktree 直跑全量（无批次标记）"}

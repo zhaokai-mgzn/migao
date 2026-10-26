@@ -33,19 +33,20 @@ vi.mock('qrcode.react', () => ({
 }))
 
 // 🔴 夹具只带 `qrValue` / `companyName` / `rows` / `qrPlaceholderHint`（`WashLabelInput` 的现行字段面）：
-//    `shortCode`（人可读短码）与 `processingOrderNo`（加工单号）随 issue #7816 **已从纸面退场**，
-//    类型里也不再存在 —— 写回来 ⇒ 打印出纸上没有的字（且本文件的签名判据会红）。
+//    `shortCode`（人可读短码）随 issue #7816 **已从纸面退场**（类型里也不再存在）；
+//    单号（= 加工单号）现在住在 `rows` 的第一行（issue #7833），不再是本接口的独立字段。
+//    写回 `shortCode` ⇒ 打印出纸上没有的字（且本文件的签名判据会红）。
 const LABELS: WashLabelInput[] = [
   {
     qrValue: 'https://app.migaozn.com/s/7Q2M4K8P',
     rows: [
-      { key: 'customer', text: '客户 赵凯', maxLines: 1 },
-      { key: 'color', text: '客厅窗帘A', maxLines: 2 },
+      { key: 'customer', text: '客户 赵凯' },
+      { key: 'sku', text: '客厅窗帘A' },
     ],
   },
   {
     qrValue: 'https://app.migaozn.com/s/3N8R5T1W',
-    rows: [{ key: 'color', text: '卧室窗帘B', maxLines: 2 }],
+    rows: [{ key: 'sku', text: '卧室窗帘B' }],
   },
 ]
 

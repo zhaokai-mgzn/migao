@@ -16,12 +16,14 @@
  * ⇒ 右侧约 2mm 打不到」）⇒ 位图最宽 48mm。**字段一致、整体窄 2mm，这是物理上限**。
  * 清晰度同理如实登记：203dpi = 8 点/mm，12pt 汉字约 34 点高 —— 能画，但比浏览器渲染的 12pt 毛糙。
  *
- * ## 本版（issue #7816，2026-10-26 用户逐字）
+ * ## 本版（issue #7816 → **issue #7833**，2026-10-26 用户逐字）
  *
  * - 「水洗唛长度不足，设置为打印50*150」⇒ 纸型固定 50mm × 150mm（`pageBoxMm.heightPx` = 1200）；
  * - 「字体还是太小，可以再大一点」⇒ 正文 9pt → **12pt**（抬头 14pt / 副标题 10pt）；
  * - 「二维码放到底部居中」「移除扫码报工和短码文字」「二维码可以放大一点」⇒ 底部只有**居中**二维码
- *   （80 CSS px = 21.17mm），不再画短码与说明字。
+ *   （80 CSS px = 21.17mm），不再画短码与说明字；
+ * - **issue #7833**：「打印后的结果出现了文字缩写…自动去换行打印」⇒ 正文行**不再按行数预算以省略号收尾**
+ *   （`washLabelRows` 已无 `maxLines`）、抬头也改为折行；「头尾加下虚线」⇒ 纸的上下各画一条虚线。
  *
  * ⚠️ **短码退场是有意接受的缺口**：`docs/design/worker-h5-scan-and-report.md` §1.4 原把「人可读短码」
  * 定为"不是可选项"的手输降级入口；2026-10-26 用户明确要求移除。⇒ 纸上不再有手输码，
@@ -38,6 +40,9 @@
  * - **几何由机器自报值 + 介质矩阵推出**（`printerDPI` / `printerWidth` / `pageBoxMm`）——
  *   「不做打印机定制功能」的落点：接别家机器**不改码**，写死机型口径 ⇒ 守卫判红。
  * - **文字块装不下 ⇒ 只裁文字块**（底部码 `shrink-0`，与 `.task-card-label` 的 flex 布局同口径）。
+ *   🔴 **issue #7833 起不再有"看得见的省略号"**：行不设行数预算 ⇒ 折行印全文；纸高真的不够时，
+ *   裁切发生在**块的边界**（不吞半句），并由系统打印通道的「打印预览纸面自检」如实报出
+ *   「内容 Xmm > 可用 Ymm」——预览是两条通道共同的**事前**出口。
  */
 import { printDotGeometry, printPageBoxMm, type PrintMediaId } from '@/lib/print-media'
 import { WASH_LABEL_COMPANY_SUBTITLE, type WashLabelInput, type WashLabelRow } from '@/lib/wash-label-content'
@@ -142,15 +147,15 @@ export function ellipsize(text: string, maxW: number, fontPx: number, measure: T
 /**
  * 按**字**折行（中文没有空格可断）—— 返回该行预算内**已切好**的文本数组。
  *
- * `maxLines` 是行数预算：折到第 `maxLines` 行还没完 ⇒ 最后一行以**省略号**收尾
- * （看得见的截断，**不静默吞字**）。
+ * `maxLines` 是**可选**的行数预算：缺省 = 不设上限（**印全文**，issue #7833）。
+ * 只有「占位框文案」这类**非正文**用途才显式给上限（给上限 ⇒ 末行以省略号收尾）。
  */
 export function wrapText(
   text: string,
   maxW: number,
   fontPx: number,
   measure: TextMeasure,
-  maxLines = 1,
+  maxLines = Number.POSITIVE_INFINITY,
 ): string[] {
   const source = text.trim()
   if (source === '') return []
@@ -258,14 +263,16 @@ export function layoutWashLabel(
     const nameFontPx = ptToPx(LABEL_COMPANY_FONT_PT, dpmm)
     const subtitleFontPx = ptToPx(LABEL_COMPANY_SUBTITLE_FONT_PT, dpmm)
     const centerX = Math.round(widthPx / 2)
-    company.push({ text: ellipsize(companyName, innerW, nameFontPx, measure), x: centerX, y: margin, fontPx: nameFontPx, align: 'center' })
-    company.push({
-      text: ellipsize(WASH_LABEL_COMPANY_SUBTITLE, innerW, subtitleFontPx, measure),
-      x: centerX,
-      y: margin + Math.round(nameFontPx * LABEL_LINE_HEIGHT),
-      fontPx: subtitleFontPx,
-      align: 'center',
-    })
+    // 🔴 抬头也**折行印全文**（issue #7833）：两条通道都不得靠省略号掩盖长企业名。
+    let companyCursor = margin
+    for (const text of wrapText(companyName, innerW, nameFontPx, measure)) {
+      company.push({ text, x: centerX, y: companyCursor, fontPx: nameFontPx, align: 'center' })
+      companyCursor += Math.round(nameFontPx * LABEL_LINE_HEIGHT)
+    }
+    for (const text of wrapText(WASH_LABEL_COMPANY_SUBTITLE, innerW, subtitleFontPx, measure)) {
+      company.push({ text, x: centerX, y: companyCursor, fontPx: subtitleFontPx, align: 'center' })
+      companyCursor += Math.round(subtitleFontPx * LABEL_LINE_HEIGHT)
+    }
   }
   // 抬头块占高 = **逐行真实行高之和**（企业名 14pt 与副标题 10pt 不同字号，按 bodyFont 一刀切会少算）
   const companyHeight =
@@ -287,7 +294,7 @@ export function layoutWashLabel(
   let exhausted = false
   for (const row of input.rows ?? []) {
     if (exhausted) break
-    for (const text of wrapText(row.text, innerW, bodyFontPx, measure, row.maxLines)) {
+    for (const text of wrapText(row.text, innerW, bodyFontPx, measure)) {
       if (cursor + lineStep > blockBottom) {
         exhausted = true
         break
@@ -336,6 +343,28 @@ export interface WashLabelPaintContext {
 /** 正文字族（与 `.task-card-label` 的默认无衬线栈同口径：中文优先系统字体） */
 const BODY_FONT = '-apple-system, "PingFang SC", "Microsoft YaHei", sans-serif'
 
+/** 头尾虚线的划长 / 间隔 / 线粗（px）—— 与 CSS 的 `1px dashed` 同一观感（issue #7833） */
+const DASH_PX = 8
+const DASH_GAP_PX = 6
+const DASH_THICKNESS_PX = 2
+
+/**
+ * 画一条**横向虚线**（用 `fillRect` 逐段画，不扩 `WashLabelPaintContext` 的面 —— 假 ctx 照旧可测）。
+ *
+ * 位置 = 纸的上下边缘（`y = 0` / `y = heightPx - 线粗`），与 `.task-card-label` 的
+ * `border-top/bottom: 1px dashed` 同口径：用户 2026-10-26「头尾加下虚线，这样能清晰知道界线」。
+ */
+export function paintDashedRule(
+  ctx: WashLabelPaintContext,
+  widthPx: number,
+  y: number,
+): void {
+  const step = DASH_PX + DASH_GAP_PX
+  for (let x = 0; x < widthPx; x += step) {
+    ctx.fillRect(x, y, Math.min(DASH_PX, widthPx - x), DASH_THICKNESS_PX)
+  }
+}
+
 /**
  * 执行层：**只照单绘制**，不再二次排版（版式已在 {@link layoutWashLabel} 算好）。
  *
@@ -355,6 +384,10 @@ export function paintWashLabel(
   ctx.strokeStyle = '#000000'
   ctx.textAlign = 'left'
   ctx.textBaseline = 'top'
+
+  // 头尾虚线（issue #7833）：先画界线，正文/二维码都落在内边距之内、不会盖住它
+  paintDashedRule(ctx, widthPx, 0)
+  paintDashedRule(ctx, widthPx, heightPx - DASH_THICKNESS_PX)
 
   for (const line of layout.company) {
     ctx.textAlign = 'center'

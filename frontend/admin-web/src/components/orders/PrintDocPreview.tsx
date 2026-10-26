@@ -40,8 +40,15 @@ export interface SheetCheckResult {
   overflowMm: number
   /** 预计页数（A4 这类自然分页的介质才有意义；连续纸固定 1） */
   pages: number
-  /** 本单据由几张「纸」组成（洗水码 = 一部位一张） */
+  /** 本单据由几张「纸」组成（水洗唛 = 一部位 × 开数） */
   sheets: number
+  /**
+   * **超出的那几张**（1 起，按纸序）；空数组 = 都装得下。
+   *
+   * 为什么逐张列（issue #7833）：洗水唛一张一味位、还按开数重复出纸，
+   * 「内容超出」只报一个总高度时，商家不知道该改哪一张/哪一行；具名到张才是可行动的读数。
+   */
+  overflowSheets: number[]
 }
 
 const PX_PER_MM = 96 / 25.4
@@ -56,7 +63,8 @@ export function measureSheets(stage: HTMLElement, limitMm: number): SheetCheckRe
   if (sheets.length === 0) return null
   const limitPx = limitMm * PX_PER_MM
   let maxContentPx = 0
-  for (const sheet of sheets) {
+  const overflowSheets: number[] = []
+  sheets.forEach((sheet, index) => {
     // 🔴 量的是**内容真实高度**，不是容器高度：销售单的 `.sales-sheet` 固定 128mm + `overflow:hidden`
     // ⇒ `scrollHeight` **恒 ≥ 纸高**（装得下也报 128mm，实测还会因取整变成 128.1mm ⇒ 5 行明细
     // 被误判「超出 0.1mm」）。做法：临时摘掉固定高度与裁切 → 量 → **同一帧内**还原
@@ -68,8 +76,9 @@ export function measureSheets(stage: HTMLElement, limitMm: number): SheetCheckRe
     const contentPx = sheet.scrollHeight > 0 ? sheet.scrollHeight : sheet.offsetHeight
     sheet.style.height = savedHeight
     sheet.style.overflow = savedOverflow
+    if (contentPx > limitPx) overflowSheets.push(index + 1)
     maxContentPx = Math.max(maxContentPx, contentPx)
-  }
+  })
   const contentMm = round1(maxContentPx / PX_PER_MM)
   const overflowMm = round1(contentMm - limitMm)
   return {
@@ -78,6 +87,7 @@ export function measureSheets(stage: HTMLElement, limitMm: number): SheetCheckRe
     overflowMm,
     pages: Math.max(1, Math.ceil(contentMm / limitMm)),
     sheets: sheets.length,
+    overflowSheets,
   }
 }
 
@@ -322,6 +332,9 @@ export default function PrintDocPreview({
             ) : check.overflowMm > 0 ? (
               <span className="text-amber-700">
                 内容 {check.contentMm}mm &gt; 可用 {check.limitMm}mm，超出 {check.overflowMm}mm
+                {check.overflowSheets.length > 0
+                  ? `（第 ${check.overflowSheets.join('、')} 张）`
+                  : ''}
                 —— 直接打印会被裁掉（纸面从底部丢内容）；请拆单，或改用其它介质再打。
               </span>
             ) : (
