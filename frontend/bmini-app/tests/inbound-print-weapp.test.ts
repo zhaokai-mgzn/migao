@@ -116,7 +116,6 @@ describe('W3/W4 `lpapi-ble-wx` 入口适配（它的工厂叫 LPAPIFactory，不
       },
     }
     const adapted = adaptWeappLpapi({ LPAPIFactory: factory })
-    expect(adapted).not.toBeNull()
     const got = adapted!.getInstance!({ logLevel: 2 })
     expect(got).toBe(instance)
     expect(seen).toEqual([{ logLevel: 2 }])
