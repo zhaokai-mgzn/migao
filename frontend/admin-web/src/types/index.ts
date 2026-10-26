@@ -3741,6 +3741,8 @@ export interface InboundOrderItem {
   setNo?: string | null
   /** 部位码短码（成品行；V197 / #7762） */
   shortCode?: string | null
+  /** 来源订单号（成品行；issue #7799）—— 成品单由打包产生，据此回查是哪张订单的 */
+  orderNo?: string | null
   /** 品名快照（成品行没有 SKU 货号，展示靠它） */
   productName?: string | null
   /** 计量单位：m = 米（布料行）/ set = 套（成品行） */
@@ -3822,7 +3824,13 @@ export interface InboundOrderItemInput {
 export interface InboundOrderCreateParams {
   supplier?: string | null
   supplierDocNo?: string | null
+  /** 仓名文本快照（列表 / 详情按它显示） */
   warehouse?: string | null
+  /**
+   * 选中的**真仓** id（issue #7799）：带了就落 `warehouse_id` 并校验租户/停用/成品仓；
+   * 不带 = 旧口径（工人拍照草稿 / Excel 期初导入），行为一字不动。
+   */
+  warehouseId?: number | null
   inboundDate?: string | null
   /** 单据来源：`purchase` 采购收货（缺省）/ `opening` 期初建账（V117 / issue #5148） */
   source?: 'purchase' | 'opening' | null

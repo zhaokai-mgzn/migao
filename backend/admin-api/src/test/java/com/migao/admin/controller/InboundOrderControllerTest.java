@@ -123,6 +123,8 @@ class InboundOrderControllerTest {
         item.setSetNo("JG-20261026-001-001");
         item.setShortCode("AB12CD34");
         item.setUnit("set");
+        // issue #7799：成品单明细要能看到「来源订单号」（回查是哪张订单的）
+        item.setOrderNo("SO-20261026-0001");
         resp.setItems(List.of(item));
         when(inboundOrderService.detail(eq("o-finished-1"), eq(7L))).thenReturn(resp);
 
@@ -134,6 +136,8 @@ class InboundOrderControllerTest {
         assertThat(out.getBinCode()).isEqualTo("A-01");
         assertThat(out.getSetNo()).isEqualTo("JG-20261026-001-001");
         assertThat(out.getShortCode()).isEqualTo("AB12CD34");
+        assertThat(out.getOrderNo()).as("#7799 来源订单号原样出参（Controller 不改写）")
+                .isEqualTo("SO-20261026-0001");
         assertThat(out.getUnit()).isEqualTo("set");
         // 租户上下文同样必须透传（跨租户读 = 数据泄漏）
         verify(inboundOrderService).detail(eq("o-finished-1"), eq(7L));
