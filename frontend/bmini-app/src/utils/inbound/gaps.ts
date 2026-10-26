@@ -12,11 +12,11 @@
  *
  * ## 本页的能力缺口（照实登记）
  *
- * | 能力 | h5（唯一上线形态） | weapp（小程序链路已搁置） |
+ * | 能力 | h5（浏览器：安卓 / 桌面 Chrome） | weapp（微信小程序：安卓 + iOS） |
  * |---|---|---|
  * | 拍照 | `Taro.chooseImage`（taro-h5 **有真实实现**，走 `<input type=file accept=image/*>`） | 同左 |
  * | 本机解码 | `<img>` + canvas `getImageData` + `jsQR` | 需 `Taro.createOffscreenCanvas`（**h5 里是 stub**，且本机**未实测**） |
- * | 打印 | Web Bluetooth（**Android / 桌面 Chrome**；iOS 任何浏览器都不行） | **不支持**（`not-h5` 文案；用户裁定小程序链路搁置） |
+ * | 打印 | Web Bluetooth（**Android / 桌面 Chrome**；iOS 任何浏览器都不行） | **支持**（`lpapi-ble-wx` + `wx.*BLE`；入口见 `lpapiTransport.ts` 的 `loadLpapi`）—— 2026-10-26 接线（issue #7802），**真机待验** |
  */
 import { WEAPP_DECODE_UNAVAILABLE_HINT } from './barcodeDecode'
 import { PRINT_FAILURE_HINTS, type PrintFailureReason } from './printCapability'
