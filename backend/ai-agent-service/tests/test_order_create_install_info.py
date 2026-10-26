@@ -75,7 +75,7 @@ def test_install_info_absent_is_not_sent():
 
     assert result.success is True, result.message
     # 正向锚（具体值）：真的发到服务端才谈得上「键不存在」，否则下面是空断言
-    assert payload["items"][0]["product_name"] == "遮光窗帘", f"下单请求体不完整: {payload}"
+    assert payload["items"][0]["productName"] == "遮光窗帘", f"下单请求体不完整: {payload}"
     assert "installCommunity" not in payload, \
         f"未传 install_community ⇒ 不许自带该键（服务端「缺值不落键」）: {payload}"
     assert "installRoom" not in payload["items"][0], \
