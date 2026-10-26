@@ -402,8 +402,18 @@ public class FinishedGoodsService {
         out.put("bin_code", stock.getBinCode());
         out.put("inbound_no", stock.getInboundNo());
         out.put("label", labelOf(tenantId, token, stock));
-        out.put("quality", qualityCheckService == null
-                ? null : qualityCheckService.latest(tenantId, token.getOrderItemId()));
+        // 质检读不到（未接线 / 码上缺订单行 / 读面异常）⇒ null（页面写「正常」），**绝不**让一张卡片
+        // 把归一屏扫码打挂（质检结论是辅助信息，不是入库的前提）。
+        Object quality = null;
+        if (qualityCheckService != null && StringUtils.hasText(token.getOrderItemId())) {
+            try {
+                quality = qualityCheckService.latest(tenantId, token.getOrderItemId());
+            } catch (RuntimeException e) {
+                log.warn("[成品入库] 质检结论读不到（不影响入库与报工）: tenant={}, itemId={}, error={}",
+                        tenantId, token.getOrderItemId(), e.getMessage());
+            }
+        }
+        out.put("quality", quality);
         return out;
     }
 
