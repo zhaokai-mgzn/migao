@@ -33,6 +33,7 @@ import {
   PAGE_ORDER,
   PAGE_REPORT,
   PAGE_PIECEWORK,
+  PAGE_REWORK,
   PAGE_SHIPMENT,
   PAGE_TO_SHIP,
   permUnreadNotice,
@@ -41,7 +42,7 @@ import {
 } from '../src/render.mjs'
 
 /** 后端 `WorkerPages.ALL` 的逐字镜像（改后端闭词表 ⇒ 本文件红）。 */
-const BACKEND_PAGE_KEYS = [PAGE_REPORT, PAGE_PIECEWORK, PAGE_ORDER, PAGE_CUT_CALC, PAGE_SHIPMENT, PAGE_TO_SHIP, PAGE_INSPECT]
+const BACKEND_PAGE_KEYS = [PAGE_REPORT, PAGE_PIECEWORK, PAGE_ORDER, PAGE_CUT_CALC, PAGE_SHIPMENT, PAGE_TO_SHIP, PAGE_INSPECT, PAGE_REWORK]
 
 /** 裁高计算入口（本页唯一的入口；文案 2026-10-10 起用「裁高计算（一体机）」）。 */
 const MACHINE_ENTRY = '/w/machine.html'
@@ -115,13 +116,18 @@ test('页面键闭词表 = 后端 WorkerPages.ALL 的逐字镜像（7 键 + 顺�
     // issue #6767：`piecework`（我的计件，含金额）与商家面标签同批登记（后端 WorkerPages.PIECEWORK）
     // issue #7162：`inspect`（质检）在闭词表里，但**不在默认集合**（逐人开 + 服务端写准入）
     // issue #7814：`to_ship`（待发货单）—— 与 `shipment`（拍照发货，写面）分开，商家可分别勾选
-    ['report', 'piecework', 'order', 'cut_calc', 'shipment', 'to_ship', 'inspect'],
+    // issue #7860：`rework`（手机端「返工记录」）逐人开 —— 报返工的**写**准入与它无关
+    ['report', 'piecework', 'order', 'cut_calc', 'shipment', 'to_ship', 'inspect', 'rework'],
     '页面键是**冻结契约**（后端闭词表逐字）：拼错一个字母 ⇒ 商家的开关静默失效',
   )
-  // 默认集合 = 闭词表去掉逐人开放的能力页（inspect 必须**不在**默认里，否则等于人人可录质检）
-  assert.deepEqual(DEFAULT_PAGES, BACKEND_PAGE_KEYS.filter((k) => k !== PAGE_INSPECT),
-    '默认页面集合与后端 WorkerPages.defaultPages() 不一致（inspect 应为逐人开）')
+  // 默认集合 = 闭词表去掉**逐人开放**的能力页（与后端 `WorkerPages.optionalPages()` 同集）
+  // 🔴 `inspect` 不在默认里（否则等于人人可录质检）；`rework` 不在默认里（issue #7860：用户裁定
+  // 「在工人档案中设置过可见权限的工人」才看得到返工记录）。
+  assert.deepEqual(DEFAULT_PAGES,
+    BACKEND_PAGE_KEYS.filter((k) => k !== PAGE_INSPECT && k !== PAGE_REWORK),
+    '默认页面集合与后端 WorkerPages.defaultPages() 不一致（逐人开放页不应进默认集合）')
   assert.equal(DEFAULT_PAGES.includes(PAGE_INSPECT), false, '质检页出现在默认集合 = 每个工人都被开了质检')
+  assert.equal(DEFAULT_PAGES.includes(PAGE_REWORK), false, '返工记录出现在默认集合 = 人人可见（与裁定冲突）')
 })
 
 test('`pages` 未被读过 / 空数组 ⇒ 按默认全开（fail-open，不是"全关"）', () => {

@@ -105,6 +105,38 @@ public interface ProcessingPositionOperationMapper extends BaseMapper<Processing
                        @Param("updatedAt") OffsetDateTime updatedAt);
 
     /**
+     * 返工改记的**进度回退**（issue #7860）—— 与 {@link #advanceDoneQtyIfUnchanged} 同一族 CAS，
+     * 方向相反：把某一笔报工推进过的合格数量退回，并把状态退回待做、清掉完工时刻。
+     *
+     * <p>🔴 为什么必须是条件更新：两个人同时点「报返工」，或报工与返工并发，
+     * 无条件 {@code UPDATE ... SET done_qty = 旧值 − x} 会各自用**读到的旧值**算新值 ⇒ 后写覆盖先写，
+     * 一次回退凭空消失（与报工丢更新同一类账实不符）。谓词逐字对应调用方 SELECT 出的旧值，
+     * 影响行数 0 ⇒ 调用方 fail-closed（回滚整笔，不落返工单）。</p>
+     *
+     * <p>SET 子句只写 {@code done_qty} / {@code status} / {@code done_at} / {@code updated_at} ——
+     * **绝不**动 {@code unit_price} / {@code factor} / {@code worker_id}（工资凭证快照与领活人不动：
+     * 返工改的是「这一笔还算不算做出来了」，不是「谁领的活、什么价」）。</p>
+     *
+     * @param expectedDoneQty 读到的旧 {@code done_qty}（CAS 期望值）
+     * @param expectedStatus  读到的旧 {@code status}（CAS 期望值）
+     * @param doneQty         回退后的累计合格数量（调用方已保证 &lt; 旧值）
+     * @param status          回退后的状态（{@code done} / {@code pending}）
+     * @return 1 = 本次回退生效；0 = 该行已被并发请求推进/回退（或工序不存在/软删/跨租户）
+     */
+    @Update("UPDATE processing_position_operations SET done_qty = #{doneQty}, status = #{status}, "
+            + "done_at = NULL, updated_at = #{updatedAt} "
+            + "WHERE id = #{id} AND tenant_id = #{tenantId} AND deleted = 0 "
+            + "AND done_qty = #{expectedDoneQty} AND status = #{expectedStatus} "
+            + "AND done_qty > #{doneQty}")
+    int revertDoneQtyIfUnchanged(@Param("id") String id,
+                                 @Param("tenantId") Long tenantId,
+                                 @Param("expectedDoneQty") BigDecimal expectedDoneQty,
+                                 @Param("expectedStatus") String expectedStatus,
+                                 @Param("doneQty") BigDecimal doneQty,
+                                 @Param("status") String status,
+                                 @Param("updatedAt") OffsetDateTime updatedAt);
+
+    /**
      * 未定价实例的**显式补价**（issue #4709 C）：只把 {@code unit_price IS NULL} 的行补成给定价。
      *
      * <p>🔴 红线 ① 由**谓词**机械保证（不靠调用方自觉）：{@code AND unit_price IS NULL} ⇒

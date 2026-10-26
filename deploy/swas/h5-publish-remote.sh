@@ -155,13 +155,16 @@ main() {
   [ -f "$SRC/machine.html" ] || die "源码里没有 machine.html（一体机机台页）：$SRC"
   [ -f "$SRC/piecework.html" ] || die "源码里没有 piecework.html（我的计件页）：$SRC"
   [ -f "$SRC/shipment.html" ] || die "源码里没有 shipment.html（发货页）：$SRC"
+  # 🔴 2026-10-26（issue #7860）：`rework.html`（返工记录页）—— 同族**第四次**，同样漏一次就线上打不开
+  [ -f "$SRC/rework.html" ] || die "源码里没有 rework.html（返工记录页）：$SRC"
 
-  # 发布内容 = index.html + machine.html + piecework.html + shipment.html + src/**
+  # 发布内容 = index.html + machine.html + piecework.html + shipment.html + rework.html + src/**
   # （tests/** 不发；**逐字拷贝**，不做任何加工）
   cp "$SRC/index.html" "$STAGE/index.html"
   cp "$SRC/machine.html" "$STAGE/machine.html"
   cp "$SRC/piecework.html" "$STAGE/piecework.html"
   cp "$SRC/shipment.html" "$STAGE/shipment.html"
+  cp "$SRC/rework.html" "$STAGE/rework.html"
   cp -R "$SRC/src" "$STAGE/src"
 
   PARENT_BEFORE="$(file_sha256_or_absent "$STATIC_ROOT/index.html")"

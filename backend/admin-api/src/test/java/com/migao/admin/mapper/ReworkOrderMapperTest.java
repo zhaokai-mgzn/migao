@@ -53,10 +53,15 @@ class ReworkOrderMapperTest {
     }
 
     @Test
-    @DisplayName("售后单关联是真外键（返工单不能挂在不存在的工单上）")
+    @DisplayName("售后单关联是真外键（返工单不能挂在不存在的工单上）；车间来源没有售后单 ⇒ 可空")
     void ticketReferenceIsForeignKey() throws Exception {
         assertThat(MapperColumnAssertions.columnsOf("rework_orders")).contains("after_sales_ticket_id");
-        assertThat(schemaSql()).contains("after_sales_ticket_id VARCHAR(64) NOT NULL REFERENCES after_sales_tickets(id)");
+        // issue #7860（V199）：车间工人报返工没有售后单 ⇒ 该列改**可空**，但**外键仍在**
+        // （挂上了就必须是真实存在的售后单）。两个来源由 `source` 区分：
+        //   after_sales = 售后开单（有售后单）；worker = 车间报返工（无售后单，挂工序/数量/报工人）
+        assertThat(schemaSql()).contains("after_sales_ticket_id VARCHAR(64) REFERENCES after_sales_tickets(id)");
+        assertThat(schemaSql()).as("两个来源必须是封闭集合（迁移 V199 的 CHECK）")
+                .contains("CONSTRAINT ck_rework_orders_source CHECK (source IN ('after_sales', 'worker'))");
     }
 
     @Test

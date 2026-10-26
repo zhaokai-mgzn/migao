@@ -4,6 +4,7 @@ import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.service.ClientRequestIdService;
 import com.migao.admin.service.ProductionScanCompleteService;
+import com.migao.admin.service.ProductionReworkService;
 import com.migao.admin.service.ProductionScanService;
 import com.migao.admin.service.ProductionService;
 import com.migao.admin.service.WorkerAdminService;
@@ -58,6 +59,16 @@ public class WorkerProductionController {
     private final ProductionScanCompleteService productionScanCompleteService;
     /** 一体机裁高读面（母单 #5161）：同一个算面 + 同一个码解析，**只读**、不写机器。 */
     private final WorkerCuttingHeightService workerCuttingHeightService;
+    /**
+     * 报返工（issue #7860）：任一工序工人都能报 —— 改记该笔报工 + 回退进度 + 生成返工单。
+     *
+     * <p>🔴 <b>字段注入而非常构造参数</b>（与本类既有 {@code productionScanCompleteService} 的
+     * 装配纪律一致，见 {@code ProductionScanCompleteService} 对 {@code FinishedGoodsService} 的注记）：
+     * {@code @RequiredArgsConstructor} 的构造签名被三个既有测试直接装配 —— 加参数会让它们一起红，
+     * 而那不是本单要改的行为。包级可见 ⇒ 同包测试可直接注入替身。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    ProductionReworkService productionReworkService;
     /**
      * 工人档案（issue #7749）：只读一处 —— 这位工人**绑定的工序**。
      *
@@ -187,6 +198,46 @@ public class WorkerProductionController {
     }
 
     /**
+     * **报返工**（issue #7860，用户 2026-10-26 裁定）：任一工序工人扫水洗唛即可报。
+     *
+     * <p>用户逐字：「质检不能绑定死打包工序，需要允许任一工序工人报返工」
+     * 「报返工的那个工序不能计件的，只报返工，生成返工单」。</p>
+     *
+     * <p>🔴 准入 = 有效工人 session（本路径统一口径）：**不看**打包工序、**不看**工人档案的页面键 ——
+     * 报返工是「这件没做好」的事实上报，任何一个工位都可能在第一时间发现，卡页面键只会让事实丢掉。
+     * 身份同样只由 {@code X-Worker-Session-Id} 解（body 里的 worker_id / worker_name 一个字节都不读）。</p>
+     *
+     * <p>body：{@code token}（必填）+ {@code reason}（必填，≤500 字）+ 可选 {@code operation_id} / {@code qty}。
+     * 服务端把这件这道工序**最近一笔「正常」报工改记为返工**（回退进度与计件）并生成返工单。</p>
+     */
+    @PostMapping("/rework")
+    public ApiResponse<Map<String, Object>> reportRework(
+            @RequestBody(required = false) Map<String, Object> body,
+            @RequestHeader(value = WorkerSessionService.SESSION_HEADER, required = false) String sessionId,
+            @RequestHeader(value = ClientRequestIdService.HEADER, required = false) String clientRequestId) {
+        WorkerIdentity identity = requireWorker(sessionId);
+        requireReworkWired();
+        return ApiResponse.success(productionReworkService.report(
+                body, TenantContext.getTenantId(), clientRequestId, identity));
+    }
+
+    /**
+     * **报返工的加工单列表**（issue #7860）—— 工人端「返工记录」页（`/w/rework.html`）。
+     *
+     * <p>🔴 准入 = 工人档案页面集含 {@link com.migao.admin.worker.WorkerPages#REWORK}（用户 2026-10-26
+     * 逐字「在工人档案中设置过可见权限的工人」）：未开 ⇒ **403**，不降级成空列表
+     * （空列表 = 「没有返工」，会让人以为真的没有）。</p>
+     */
+    @GetMapping("/rework-orders")
+    public ApiResponse<Map<String, Object>> reworkOrders(
+            @RequestHeader(value = WorkerSessionService.SESSION_HEADER, required = false) String sessionId) {
+        WorkerIdentity identity = requireWorker(sessionId);
+        requireWorkerPage(identity, com.migao.admin.worker.WorkerPages.REWORK);
+        requireReworkWired();
+        return ApiResponse.success(productionReworkService.reworkOrders(TenantContext.getTenantId()));
+    }
+
+    /**
      * 一体机（机台旁那块屏 + 有线扫码枪）的**只读**裁高读面（母单 #5161；设计
      * {@code docs/design/cutting-height-config-and-terminal.md} §2.5 / §2.6）。
      *
@@ -220,6 +271,30 @@ public class WorkerProductionController {
         }
         var worker = workerAdminService.findOwnedWorker(identity.workerId());
         return worker == null ? null : worker.getWorkerOperation();
+    }
+
+    /** 报返工服务未接线 ⇒ fail-closed（**不**静默返回「没有返工」—— 那会被读成「没人报过」）。 */
+    private void requireReworkWired() {
+        if (productionReworkService == null) {
+            throw new com.migao.admin.exception.BusinessException("REWORK_UNAVAILABLE",
+                    "报返工暂不可用：服务未接线", 503,
+                    "请让管理员确认后端版本后再试；本次没有写入任何数据");
+        }
+    }
+
+    /**
+     * 工人档案页面集必须含某个**能力页键**，否则 403（issue #7162 的同一套形态，issue #7860 复用到 `rework`）。
+     *
+     * <p>🔴 这是**服务端准入**，不是「界面不显示入口」：档案查不到 / 页面集里没有该键 ⇒ 同一个 403
+     * （不区分「没有这个工人」与「没开这个页」，避免把档案存在性当探针）。</p>
+     */
+    private void requireWorkerPage(WorkerIdentity identity, String pageKey) {
+        var worker = workerAdminService.findOwnedWorker(identity.workerId());
+        java.util.Set<String> granted =
+                com.migao.admin.worker.WorkerPages.restrictedOrNull(worker == null ? null : worker.getWorkerPages());
+        if (granted == null || !granted.contains(pageKey)) {
+            throw com.migao.admin.exception.BusinessException.permissionDenied();
+        }
     }
 
     /** 有效工人 session 或 401（fail-closed 的**唯一**一处判据：工人路径上「谁」没有第二条来源）。 */

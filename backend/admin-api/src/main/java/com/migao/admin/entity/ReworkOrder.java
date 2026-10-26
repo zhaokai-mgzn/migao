@@ -9,6 +9,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
 /**
@@ -36,6 +37,26 @@ public class ReworkOrder {
     private String orderId;
 
     private String processingOrderId;
+
+    /** 来源（issue #7860，V199）：{@code after_sales} 售后开单 / {@code worker} 车间工人报返工。 */
+    private String source;
+
+    /** 返工的工序实例 id（车间来源有值）。 */
+    private String operationId;
+
+    /** 返工的工序名（车间来源有值；与报工明细 {@code operation_name} 同源）。 */
+    private String operationName;
+
+    /** 返工数量（车间来源有值；单位随工序，**不**参与计件）。 */
+    private BigDecimal qty;
+
+    /** 报返工的工人（车间来源有值；服务端从工人 session 解，不信前端）。 */
+    private String workerId;
+
+    private String workerName;
+
+    /** 被改记为返工的那一笔报工明细（{@code production_work_logs.id}；车间来源有值）。 */
+    private String workLogId;
 
     /** draft / in_progress / done / cancelled。 */
     private String status;

@@ -152,6 +152,25 @@ public interface ProcessingOrderMapper extends BaseMapper<ProcessingOrder> {
                                @Param("inProcessingAt") OffsetDateTime inProcessingAt);
 
     /**
+     * 返工改记后**重开已完工的加工单**（issue #7860）：{@code completed → in_processing} + 清 {@code completed_at}。
+     *
+     * <p>🔴 为什么需要它：工人报返工会把某一笔报工退回「没做出来」⇒ {@code allInstancesDone} 不再成立；
+     * 若这时加工单还停在 {@code completed}，就会出现「单子已完工、工序却没做满」的自相矛盾读数
+     * （进度条 / 完工判据 / 发货守卫各说一套）。</p>
+     *
+     * <p>⚠️ 这是「{@code completed} 是终态」**唯一**的反向路径，刻意不从
+     * {@code ProcessingOrderService.STATUS_TRANSITIONS} 走：那张表管的是**人工状态迁移**，
+     * 而这里是「同一件事实被改记」的补偿动作 —— 谓词死锁在 {@code status = 'completed'}，
+     * 谁先改记谁重开，重复/并发只生效一次（影响行数 0 即已重开过，不作失败）。</p>
+     */
+    @Update("UPDATE processing_orders SET status = 'in_processing', completed_at = NULL, "
+            + "updated_at = #{updatedAt} "
+            + "WHERE id = #{id} AND tenant_id = #{tenantId} AND deleted = 0 "
+            + "AND status = 'completed'")
+    int reopenCompletedIfAny(@Param("id") String id, @Param("tenantId") Long tenantId,
+                             @Param("updatedAt") OffsetDateTime updatedAt);
+
+    /**
      * 加工单状态迁移的**唯一条件更新写面**（issue #6954）：手工入口
      * {@code ProcessingOrderService.updateStatus} 的四条迁移（issue / start / complete / cancel）
      * 与订单取消联动作废 {@code OrderService.cancelOrder} 都走它。

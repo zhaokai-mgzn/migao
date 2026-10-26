@@ -42,8 +42,11 @@ class WorkerPagesTest {
         // 就得两个都关（菜单开关 = 显隐，关错了现场就没入口）。默认集合里两者都在。
         // issue #7162：`inspect`（质检）在闭词表里，但**不在默认集合**（逐人开、且是服务端写准入）
         assertThat(WorkerPages.ALL).containsExactly(
-                "report", "piecework", "order", "cut_calc", "shipment", "to_ship", "inspect");
-        assertThat(WorkerPages.defaultPages()).doesNotContain("inspect");
+                "report", "piecework", "order", "cut_calc", "shipment", "to_ship", "inspect", "rework");
+        // issue #7860：`rework`（手机端「报返工的加工单列表」）也不在默认集合 —— 用户裁定
+        // 「在工人档案中设置过可见权限的工人」才看得到；报返工的**写**准入与此无关。
+        assertThat(WorkerPages.defaultPages()).doesNotContain("inspect", "rework");
+        assertThat(WorkerPages.optionalPages()).containsExactly("inspect", "rework");
     }
 
     @Test

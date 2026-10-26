@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<!-- 工人端 H5「报返工的加工单」（issue #7860）—— 手机 / PAD 上「哪几张加工单返过工」的读面：
+     一轮 = 一张加工单（加工单号 / 订单号 / 返工笔数 / 最近返工时间 / 最新原因 / 涉及工序）。
+     🔴 三条纪律（都落在代码里，不靠约定）：
+        ① **列表只有一个来源**：`GET /api/worker/production/rework-orders` 给的行，本页不筛、不排、不补算；
+        ② **可见范围由服务端定**：工人档案的页面集里没有 `rework` 键 ⇒ 服务端 403 ⇒ 本页给
+           「请管理员勾上『返工记录』」的可行动提示（前端不做权限门禁，只把 403 说清楚）；
+        ③ **身份只由会话解**：请求里不带 worker_id / worker_name（`X-Worker-Session-Id` 由 api.mjs 统一带）。
+     零依赖：不引框架、无构建步骤；页面与 /api 同源 ⇒ 无跨域；样式复用既有 `styles.css`。 -->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="format-detection" content="telephone=no" />
+  <title>报返工的加工单</title>
+  <link rel="stylesheet" href="./src/styles.css" />
+</head>
+<body>
+  <main id="rework-root" class="wh5-root"></main>
+  <script type="module" src="./src/rework-app.mjs"></script>
+</body>
+</html>
