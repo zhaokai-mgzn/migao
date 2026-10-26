@@ -131,7 +131,7 @@ const loggedInStorage = (extra = {}) => memStorage({ [STORAGE_KEY]: SESSION, ...
 
 // ── 判据 ①：已登录 + URL 带码 ⇒ 装载时自动解析一次 ──────────────────────────────────────
 
-test('🔴 ① 已登录 + /w/?t=<码> ⇒ boot() 之后自动 GET 解析一次，屏上是解析结果（不是输码空态）', async () => {
+test('🔴 ① 已登录 + /w/?t=<码> ⇒ boot() 之后自动 GET 解析一次，屏上是解析结果（不是空扫码态）', async () => {
   const fetchImpl = stubFetch({
     '/api/worker/production/current-worker': { status: 200, body: { success: true, data: WORKER_BODY } },
     '/api/worker/me': { status: 200, body: { success: true, data: ME_BODY } },
@@ -145,13 +145,13 @@ test('🔴 ① 已登录 + /w/?t=<码> ⇒ boot() 之后自动 GET 解析一次�
   assert.equal(scan.length, 1, `装载时必须恰好解析一次（扫码落地 = 1 步）；实测 ${scan.length} 次`)
   assert.equal(scan[0].method, 'GET', '解析是读面，必须 GET')
   assert.equal(scan[0].url, `${SCAN_PATH}?token=${PART_TOKEN}`, '解析必须带上 URL 里那把码（token）')
-  assert.equal(html.includes('id="wh5-code"'), false, '已在解析结果上，不该还停在「输码」空态')
+  assert.equal(html.includes('id="wh5-scan-hint"'), false, '已在解析结果上，不该还停在「请扫码」空态')
   assert.equal(doc.root.innerHTML.includes('定型'), true, '解析结果必须真的渲染上屏（工序名）')
 })
 
-// ── 判据 ②：读面不得写库 ───────────────────────────────────────────────────────────────
+// ── 判据 ②：读面不得写库（自动报工只对「工人档案绑定工序」放开，见 worker-h5-auto-report.test.mjs） ──
 
-test('🔴 ② 自动落地这一路只读：零 POST /scan/complete（写路仍只在工人点按钮时发生）', async () => {
+test('🔴 ② 未绑定工序（determined_by≠worker）⇒ 自动落地仍只读：零 POST /scan/complete', async () => {
   const fetchImpl = stubFetch({
     '/api/worker/production/current-worker': { status: 200, body: { success: true, data: WORKER_BODY } },
     '/api/worker/me': { status: 200, body: { success: true, data: ME_BODY } },
@@ -177,7 +177,7 @@ test('③ 已登录 + /w/ 不带码 ⇒ 仍是今天的输码空态（且一个�
   const { doc, html } = await loadPage({ href: 'https://app.migaozn.com/w/', storage: loggedInStorage(), fetchImpl })
 
   assert.deepEqual(fetchImpl.hits(SCAN_PATH), [], '没有码 ⇒ 不得解析（不得拿路径段/页面名当码）')
-  assert.equal(html.includes('id="wh5-code"'), true, '没有码就该是输码框（工人手输兜底）')
+  assert.equal(html.includes('id="wh5-scan-hint"'), true, '没有码就给「请扫水洗唛」指路（手输短码已按用户口径撤下）')
   assert.equal(doc.root.innerHTML.includes('id="wh5-operation"'), false, '没有码 ⇒ 没有解析结果面')
 })
 
@@ -258,5 +258,5 @@ test('④ 无效码 / 已撤销 / 跨租户 ⇒ 落到既有错误面（不白�
   assert.match(html, /这张码已作废，请找车间主管换一张/, '解析失败必须把服务端那句原因显式上屏')
   assert.equal(/id="wh5-error"/.test(html) || /id="wh5-notice"/.test(html), true, '失败要落在既有的错误/提示面')
   assert.equal(app.state.view, null, '失败不得留一个半截解析结果')
-  assert.equal(html.includes('id="wh5-code"'), true, '失败后面仍可用（输码兜底还在 ⇒ 没白屏、没把工人锁在外面）')
+  assert.equal(html.includes('id="wh5-scan-hint"'), true, '失败后面仍可用（扫码指路还在 ⇒ 没白屏、没把工人锁在外面）')
 })

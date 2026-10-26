@@ -279,14 +279,15 @@ const resolveOk = (data) => ({ status: 200, body: { success: true, data } })
 function bootPage({ doc, f, loggedIn = true, storage = memStorage(loggedIn ? { [STORAGE_KEY]: JSON.stringify(SESSION) } : {}) }) {
   const api = createApi({ fetchImpl: f, storage, baseUrl: '' })
   const app = createApp({ doc, api, location: 'https://app.migaozn.com/w/', storage })
+  // issue #7845：页面里的手输短码框已撤 ⇒ 单测走装配层暴露的 `app.scan(code)`（与扫码落地 `?t=` 同一条 doScan）。
+  doc.app = app
   app.dispatch({ type: 'worker', worker: loggedIn ? { workerName: '张三', workerNo: 'A017', idleMinutes: 15 } : null })
   return app
 }
 
-/** 扫一次码（把码值填进输码框再点【确定】）。 */
+// 扫一次码（程序化入口，issue #7845：手输框已撤；与 URL 落地 `?t=` 完全同一条 `doScan`）。
 async function scan(doc, code) {
-  doc.getElementById('wh5-code').value = code
-  await doc.fire('wh5-scan')
+  await doc.app.scan(code)
 }
 
 /** 点一个**没有 id** 的元素（部位/一键改这类按钮只有 data-*）。 */
@@ -576,7 +577,8 @@ test('🔴 ⑦ 工序未确定（operation == null 且未完工）⇒ 页面不�
     view: { ...CLOTH_VIEW, operation: null, alternatives: [], completed: false, needs_selection: [] },
   })
   assert.ok(!/id="wh5-report"/.test(doc.html), '工序未确定不得出现报工按钮（防呆⑤）')
-  assert.match(doc.html, /重扫/, '页面必须仍可用（改前这里 TypeError：mainView 直接读 operation.unit_price）')
+  // issue #7845：底部「重扫」按钮已按用户口径撤下 ⇒ 判据换成「屏上把为什么不能报说清了」（不是死屏）
+  assert.match(doc.html, /id="wh5-no-operation"/, '页面必须仍可用并把原因说清（改前这里 TypeError：mainView 直接读 operation.unit_price）')
   app.destroy()
 })
 
@@ -1096,4 +1098,142 @@ test('🔴 ⑪ 对账失败（401 = 身份面）⇒ 仍回落未登录，一字�
   await doc.fireDoc('visibilitychange')
   assert.equal(doc.html.includes('wh5-login'), true, '401 ⇒ 应回落未登录屏（登录按钮在）')
   assert.equal(doc.html.includes('wh5-current-worker'), false, '401 ⇒ 不得继续显示已登录的工人')
+})
+
+// ============================================================ ⑫ 扫码即自动报工（issue #7845）
+
+/**
+ * 用户 2026-10-26 逐字：「现在还是不能扫码直接报工」。
+ *
+ * 判据钉三件事：① **绑定工序**的工人扫到码 ⇒ 不用点按钮就**恰好一次** `POST /scan/complete`；
+ * ② 没绑定的工人（`determined_by ≠ worker`）⇒ **零**自动写（防「把推断出的下一道当这一道记」）；
+ * ③ 刷新 / 再扫同一张码（这道已报过 ⇒ `operation=null`）⇒ **零**自动写（不重复计件）。
+ */
+
+/** 工人档案绑定了这道工序的解析结果（issue #7749：`determined_by="worker"`、无候选）。 */
+const BOUND_VIEW = {
+  ...CLOTH_VIEW,
+  operation: { ...CLOTH_VIEW.operation, operation_id: 'op-pack', logical_name: '打包', determined_by: 'worker' },
+  alternatives: [],
+}
+
+/** 打包回执里的「成品入库」块（issue #7845；逐字照 `FinishedGoodsService#inboundView`）。 */
+const INBOUND = {
+  already: false,
+  inbound_no: 'RK202610260001',
+  bin_code: 'A-01',
+  quality: null,
+  label: {
+    short_code: 'ABCD1234',
+    qr_value: 'https://app.migaozn.com/s/ABCD1234',
+    rows: [
+      { label: '订单编号', value: '0901-00084' },
+      { label: '套数', value: '第3套/共5套' },
+      { label: '打包区域', value: 'A-01' },
+    ],
+  },
+}
+
+test('🔴 ⑫ 扫码即报工：绑定工序的工人扫到码 ⇒ 自动 POST 一次（不必点按钮），屏上说「已自动报工」', async () => {
+  const doc = fakeDom()
+  const f = routeFetch({
+    '/api/worker/production/scan?': resolveOk(BOUND_VIEW),
+    '/api/worker/production/scan/complete': receipt(),
+  })
+  const app = bootPage({ doc, f })
+  await scan(doc, 'tok-cloth')
+  await waitFor(() => f.calls.some((c) => c.method === 'POST'), '自动报工的 POST')
+
+  const posts = f.calls.filter((c) => c.method === 'POST')
+  assert.equal(posts.length, 1, '扫一次 = 恰好自动报一次（不是两次、也不是零次）')
+  assert.deepEqual(posts[0].body, { token: 'tok-cloth' }, '自动报的 body 与手点【报工】逐字一致（只带 token）')
+  assert.ok(posts[0].headers['X-Client-Request-Id'], '自动报也必须带幂等键（重试=回放）')
+  await waitFor(() => /已自动报工/.test(doc.html), '自动报工的结论文案')
+  app.destroy()
+})
+
+test('🔴 ⑫-b 未绑定工序（determined_by≠worker）⇒ **零**自动写（推断出的下一道不等于本次做的活）', async () => {
+  const doc = fakeDom()
+  const f = routeFetch({
+    '/api/worker/production/scan?': resolveOk(CLOTH_VIEW),
+    '/api/worker/production/scan/complete': receipt(),
+  })
+  const app = bootPage({ doc, f })
+  await scan(doc, 'tok-cloth')
+  // 给后台微任务一个机会（若真发了就是 bug）
+  for (let i = 0; i < 5; i += 1) await new Promise((r) => setImmediate(r))
+  assert.deepEqual(f.calls.filter((c) => c.method === 'POST'), [], '未绑定 ⇒ 停在屏上等工人手点【报工】')
+  assert.match(doc.html, /id="wh5-report"/, '未绑定 ⇒ 【报工】按钮照旧在（改前行为一字不变）')
+  app.destroy()
+})
+
+test('🔴 ⑫-c 再扫同一张码（这道已报过 ⇒ operation=null）⇒ **零**自动写（刷新/重复落地不重复计件）', async () => {
+  const doc = fakeDom()
+  const f = routeFetch({
+    '/api/worker/production/scan?': resolveOk({ ...BOUND_VIEW, operation: null, completed: true }),
+  })
+  const app = bootPage({ doc, f })
+  await scan(doc, 'tok-cloth')
+  for (let i = 0; i < 5; i += 1) await new Promise((r) => setImmediate(r))
+  assert.deepEqual(f.calls.filter((c) => c.method === 'POST'), [], '已报过的码不得再自动报（否则刷新一次 = 多一笔计件）')
+  assert.match(doc.html, /本套工序都已报工/, '如实告知这一套都报完了')
+  app.destroy()
+})
+
+test('🔴 ⑫-d 裁剪批次没填 ⇒ **零**自动写（服务端必 422，先让工人把批次填上）', async () => {
+  const doc = fakeDom()
+  const f = routeFetch({
+    '/api/worker/production/scan?': resolveOk({
+      ...BOUND_VIEW,
+      operation: { ...BOUND_VIEW.operation, logical_name: '裁剪' },
+      batch_required: true,
+      batch_no: null,
+      batch_candidates: [],
+    }),
+  })
+  const app = bootPage({ doc, f })
+  await scan(doc, 'tok-cloth')
+  for (let i = 0; i < 5; i += 1) await new Promise((r) => setImmediate(r))
+  assert.deepEqual(f.calls.filter((c) => c.method === 'POST'), [], '要批次却没填 ⇒ 一个写请求都不发')
+  assert.match(doc.html, /id="wh5-batch-input"/, '批次输入框照旧在（工人填完再点【报工】）')
+  app.destroy()
+})
+
+test('🔴 ⑫-e 打包工序自动报工 ⇒ 屏上出「成品入库」卡（质检结果 / 入库单号 / 仓位 / 打印入库标签），**没有**出库按钮', async () => {
+  const doc = fakeDom()
+  const f = routeFetch({
+    '/api/worker/production/scan?': resolveOk(BOUND_VIEW),
+    '/api/worker/production/scan/complete': receipt({
+      set_completed: true,
+      next_operation: null,
+      finished_inbound: { ...INBOUND, quality: { result: 'rework', reason: '布面污渍' } },
+    }),
+  })
+  const app = bootPage({ doc, f })
+  await scan(doc, 'tok-cloth')
+  await waitFor(() => /id="wh5-finished-inbound"/.test(doc.html), '成品入库卡')
+
+  assert.match(doc.html, /成品入库 · 仓位 A-01/, '卡片要给出仓位（与商家库存页同一口径）')
+  assert.match(doc.html, /入库单 RK202610260001/, '卡片要给出入库单号（可对账）')
+  assert.match(doc.html, /质检：已记返工（原因：布面污渍）/, '打包工人要能核对质检结论（用户 2026-10-26 口径）')
+  assert.match(doc.html, /id="wh5-fi-print"/, '要有「打印入库标签」入口')
+  assert.match(doc.html, /订单编号/, '标签逐行来自服务端 label.rows（前端不拼）')
+  assert.equal(/id="wh5-fl-out"/.test(doc.html), false, '出库按钮已按用户口径撤下（打包 = 入库）')
+  assert.equal(/出库/.test(doc.html), false, '工人页不再出现「出库」字样')
+  app.destroy()
+})
+
+test('🔴 ⑫-f 质检无记录 ⇒ 卡片写「正常」（合格是默认态，不写「未检」吓人）', async () => {
+  const doc = fakeDom()
+  const f = routeFetch({
+    '/api/worker/production/scan?': resolveOk(BOUND_VIEW),
+    '/api/worker/production/scan/complete': receipt({
+      set_completed: true, next_operation: null, finished_inbound: INBOUND,
+    }),
+  })
+  const app = bootPage({ doc, f })
+  await scan(doc, 'tok-cloth')
+  await waitFor(() => /id="wh5-finished-inbound"/.test(doc.html), '成品入库卡')
+  assert.match(doc.html, /质检：正常/, '无记录 = 正常（与质检块的默认口径同一份）')
+  app.destroy()
 })
