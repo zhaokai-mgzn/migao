@@ -6392,7 +6392,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（70 case）
+## 订单域（69 case）
 
 ### OR-061. 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262） 🔵
 ```
@@ -6432,6 +6432,7 @@
 数据: 判据 4·🔴 **编辑物流弹窗不静默改写（红）**：未采集回填 ⇒ 提交时省略该键（不凭空写成 logistics）；已记录 `none` ⇒ 仍提交 `none`（改前弹窗**硬编码** `logistics`、`initialData.shippingMethod` 一字不读 = 死 prop ⇒ 用户选的「无需物流」被静默翻转）；已记录 `logistics` ⇒ 仍 `logistics`（正对照）。执行点 = frontend/admin-web/tests/unit/components/LogisticsForm.test.tsx 的三条。
 数据: 判据 5·🔴 **接线**：订单详情回填点必须真的走 `shippingMethodForEdit`，且源码里不再出现「非 none ⇒ logistics」的兜底表达式（谁把兜底改回去 ⇒ 这一条当场红）。执行点 = data-adapter.test.ts 的「接线」一条。
 数据: 量清读数（本单主要交付物，明细见 PR body）：`OrderLogisticsWriter.upsert` 的生产调用方只有两处 —— `OrderService.upsertLogistics`（B 端端点 / 智能体 `order_manage(update_logistics)` / 商家生产发货 `POST /api/admin/production/orders/{id}/ship` 三条路径共用）与 `OrderShipmentService.doShip`（工人 H5 `POST /api/worker/shipment/orders/{id}/ship`）；后三条**结构性不产生「无需物流」语义**（各自硬前置运单号非空，且 `order_logistics.tracking_no` 是 NOT NULL）⇒ **不硬接线**，只收口 NULL 兜底这一半。
+数据: 判据 6·**订单详情「收货信息」显示物流方式 / 物流公司（issue #7850，用户 2026-10-26 逐字「另外订单详情缺失了物流信息」）**：该块在 收货人 / 联系电话 / 收货地址 之后必须有两格只读读数 —— 物流方式（`logisticsType` ⇒ `frontend/admin-web/src/lib/logistics.ts::logisticsTypeText()`：express ⇒ 快递、logistics ⇒ 物流/专线；**不得**用表单口径 `logisticsTypeLabel()`，那个缺值回落「快递」= 编值）与物流公司（`logisticsCompany`）。**缺值印 `-`**（本块既有 `InfoRow` 纪律），且整页**不得**出现被臆造出来的「快递」（#4419）。执行点 = `frontend/admin-web/tests/unit/pages/order-detail.test.tsx` 的两条 `#7850` 用例（正对照 + 缺值负控）。红证（已实跑）：删掉两格 `InfoRow` ⇒ 两条都红（`findByText(物流方式：)` 超时，2 failed / 49 skipped）。
 跳过: [backend-contract] 纯前端回填 / payload 兜底口径（零 LLM 环节 ⇒ 不进 agent-eval 冒烟）：由 admin-web vitest 执行
 ```
 溯源: 2026-10-03 新增（issue #6254）：先量清写面（#6239 留下的半接线）—— 工人 / 商家 / 生产 / 智能体四条发货写面**结构性不产生「无需物流」语义**（各自硬前置运单号非空 + order_logistics.tracking_no NOT NULL；存量 29 行全部带非空运单号）⇒ 裁定**不硬接**该写面，只收口前端 NULL 兜底：① `buildLogisticsPayload` 不再把缺席兜底成 'logistics'（改前 = 把 NULL 记录凭空写成已采集）；② 编辑物流弹窗不再硬编码 'logistics'（改前 initialData.shippingMethod 是死 prop ⇒ 已记录的 none 被静默翻转成 logistics）；③ 订单详情回填口径抽成 shippingMethodForEdit（NULL ⇒ undefined = 未记录）。修前红 = 6 failed / 41 passed；修后绿 = 111 passed（4 个文件）。 ｜ tags: order, logistics, shipping-method, admin-web, null-not-guessed
@@ -7619,16 +7620,6 @@
 跳过: [backend-contract] Java 单测契约（零 LLM 环节）⇒ 不进 agent-eval 冒烟；机器判红通道 = traces.tests
 ```
 溯源: 2026-10-24 新增（issue #7633）。取号 = `scripts/next_case_id.py OR` 现取（main 001-068）⇒ **OR-069**。病根：`ProcessingOrderService.GENERATABLE_ORDER_STATUSES` 自 #7626 起 = {pending, confirmed} ⇒ 待付款订单也能先有作业单，而 `deleteOrder` 的准入只有「状态必须是 pending」一道闸 ⇒ 删单成功、作业单悬挂（看板对已删父订单扇出 404）。修法 = 抄同文件 `updatePendingOrderContent` 的正面先例（同一 `selectActiveByOrderId` 口径），在状态闸门与 `deleteById` 之间加一道闸。 ｜ tags: order, processing-order, orphan, backend-contract
-
-### OR-070. 订单详情「收货信息」显示物流方式 / 物流公司（issue #7850；缺值印 `-`，不臆造「快递」） 🔵
-```
-你: 用户 2026-10-26（订单详情截图）：「另外订单详情缺失了物流信息」—— 收货信息块只有 收货人 / 联系电话 / 收货地址 三行，缺物流方式 / 物流公司；而这两项自下单必填（issue #5840）起就有值，服务端 `orders.logistics_type` / `logistics_company` 已随详情读面下发（`Order.logisticsType` / `Order.logisticsCompany`）。
-数据: 判据 1·**正对照（有值 ⇒ 上屏）**：`logisticsType` = express、`logisticsCompany` = 顺丰 ⇒ 收货信息块逐字「物流方式：快递」「物流公司：顺丰」（整行 textContent 断言，不用「页面上出现过快递」这类空断言）。执行点 = `frontend/admin-web/tests/unit/pages/order-detail.test.tsx` 的 `#7850: 收货信息块显示服务端下发的物流方式与物流公司（express ⇒ 快递）`。
-数据: 判据 2·**缺值不臆造（红）**：`logisticsType` = null、`logisticsCompany` = null（存量单形态）⇒ 两格印 `-`（本页既有 `InfoRow` 纪律），且整页**不得**出现被臆造出来的「快递」（#4419 既有裁定：未登记 ≠ 快递）。执行点 = `frontend/admin-web/tests/unit/pages/order-detail.test.tsx` 的 `#7850: 物流方式 / 物流公司缺值 ⇒ 两格印 - ，不得臆造「快递」`。
-数据: 判据 3·**只读面不套表单口径**：必须用 `frontend/admin-web/src/lib/logistics.ts::logisticsTypeText()`（枚举转中文、未登记原样回显、缺值 ⇒ null），**不得**用 `logisticsTypeLabel()`（表单口径，缺值回落「快递」—— 印在只读面上 = 编值），也不得在本页再拼第三份 express ⇒ 快递 词表。谁把它换成 `logisticsTypeLabel()` ⇒ 判据 2 当场红。
-跳过: [backend-contract] 纯前端只读展示（零 LLM 环节 ⇒ 不进 agent-eval 冒烟）：由 admin-web vitest 执行
-```
-溯源: 2026-10-26 新增（issue #7850，用户截图逐字「另外订单详情缺失了物流信息」）：补「收货信息」块两格只读读数（物流方式 / 物流公司）。**未降门禁**：正对照 + 缺值负控各一条；词表复用 `lib/logistics.ts` 的只读口径 `logisticsTypeText()`（不新建第二份、不复用表单缺省值）。红证（已实跑）：删掉两格 `InfoRow` ⇒ 两条都红（`findByText(物流方式：)` 超时）。 ｜ tags: order, logistics, admin-web, order-detail, null-not-guessed
 
 ## 加工项域（31 case）
 
@@ -13324,8 +13315,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：903（活跃 142，跳过 761）
-- tier 分布：smoke 12 / normal 835 / adversarial 32
+- 用例总数：902（活跃 142，跳过 760）
+- tier 分布：smoke 12 / normal 834 / adversarial 32
 - 售后域：16
 - Agent 核心域：12
 - API 层域：21
@@ -13343,7 +13334,7 @@
 - 杂项域：164
 - 商家入驻域：7
 - 领域本体域：4
-- 订单域：70
+- 订单域：69
 - 加工项域：31
 - 加工单域：83
 - 商品域：132
@@ -13578,7 +13569,6 @@
 - OR-067: 订单详情三个时刻（收款 / 发货 / 完成）显示服务端真值：paid_at 只在 pending→confirmed 边写、received_at 两条完成路都写（issue #7078）
 - OR-068: 订单详情撤下「支付倒计时」（其 paymentDeadline 后端从不下发、倒计时从未启动）+ 落「读面键 ⊆ OrderDetailResponse」类级守卫（issue #7110）
 - OR-069: 删除待付款订单前先查活跃作业单：命中则 422 并给出作业单号（否则作业单悬挂 ⇒ 作业看板对已删父订单扇出 404）(issue #7633)
-- OR-070: 订单详情「收货信息」显示物流方式 / 物流公司（issue #7850；缺值印 `-`，不臆造「快递」）
 - PG-001: 生成加工单 - 已确认含加工项订单 → 作业单生成 + 订单进入生产中（派单即生产；issue #7723 改判）
 - PG-002: 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成
 - PG-003: 生成加工单 - 无加工项订单不生成（现货成品直跳发货）
