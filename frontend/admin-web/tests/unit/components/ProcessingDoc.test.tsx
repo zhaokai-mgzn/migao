@@ -309,6 +309,45 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
     expect(curtainOf(blocks[1])).toBe(MISSING)
   })
 
+  it('🔴 加工费组合行（issue #7833）：每套块内单列一行，逐字印快照 `processingItems[].name`（超高/倒幅）', () => {
+    render(
+      <ProcessingDoc
+        order={buildOrder()}
+        processingOrder={
+          {
+            ...buildProcessingOrder(),
+            items: [
+              {
+                itemId: 'item-1',
+                processingItems: [
+                  { id: 'pi-1', name: '韩褶', quantity: 1 },
+                  { id: 'pi-14', name: '超高', quantity: 1 },
+                  { id: 'pi-16', name: '倒幅', quantity: 1 },
+                  { id: 'pi-3', name: '定型', quantity: 1 },
+                ],
+              },
+            ],
+          } as unknown as ProcessingOrder
+        }
+      />
+    )
+    // 用户要的就是这半句：加工单上有超高/倒幅
+    expect(cellText('processing-doc-combo')).toBe('韩褶、超高、倒幅、定型')
+    const row = Array.from(doc()?.querySelectorAll('.processing-doc-table tr') ?? []).find(
+      (tr) => tr.querySelector('td')?.textContent?.trim() === '加工费组合'
+    )
+    expect(row).toBeTruthy()
+    // 长值由 DocTd 的 break-words 折行印全文（不裁切 —— 与「纸面不藏字」同口径）
+    const valueCell = row!.querySelectorAll('td')[1]
+    expect(valueCell?.className).toContain('break-words')
+  })
+
+  it('🔴 加工费组合缺值 ⇒ 整行不渲染（存量单没有快照项 ≠ 印一个空壳行）', () => {
+    render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
+    expect(cellText('processing-doc-combo')).toBe('')
+    expect(doc()?.textContent).not.toContain('加工费组合')
+  })
+
   it('② issue #6869：工艺说明行承载原「部位信息」，且「部位」并入其中（不再单独成列）', () => {
     render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
     const text = doc()?.textContent || ''

@@ -31,22 +31,37 @@ import type { ProcessingOrderItem, ProductionPosition } from '@/types'
  * - 2026-09-26（issue #5646，**逐字原话，勿删**）：「洗水码宽是50，长度根据我们实际需要来定」
  *   ⇒ 纸宽 50mm 固定、长度随字段增加而加长（60mm → 70mm）。
  * - 2026-10-25（issue #7776）：字号 6pt → 9pt、纸长按内容撑开（夹 70~150mm）、件名与算料公式退场。
- * - **2026-10-26（issue #7816，现行）**：纸型固定 50×150、正文 12pt、加「褶法」、份数 = 开数、
+ * - 2026-10-26（issue #7816）：纸型固定 50×150、正文 12pt、加「褶法」、份数 = 开数、
  *   订单号提到第一行、加工单号/交期/扫码报工/短码退场、二维码底部居中并放大。
+ * - **2026-10-26（issue #7833，现行）**：纸面**折行印全文**（去 `truncate` / `line-clamp`）、
+ *   头尾各一条虚线标界线、单号行改印**加工单号**（17 位订单号退出纸面）、
+ *   加工方式**去「加工方式」前缀**并**并入加工费组合项**、不再印「加工类型」（定高买宽/定宽买高）。
  *
- * ## 本版（2026-10-26，issue #7816）用户逐字裁定 —— 一次收齐
+ * ## 本版（2026-10-26，issue #7833）用户逐字裁定 —— 一次收齐
+ *
+ * ⑥ 「JG-20261026-8172 这个加工单有超高倒幅，但是在加工单的各个环节都没有体现出来，打印的
+ *    洗水唛中也需要体现加工费组合中的信息」⇒ 加工方式行**并入** `processingItems[].name`
+ *    （加工费组合键：韩褶 / 超高 / 超宽 / 倒幅 / 定型 …，取值见 `lib/processing-combo.ts`）；
+ * ⑦ 「加工方式这几个字可以移除」⇒ 该行**只印值**（`韩褶 · 超高 · 倒幅 · 双开 · 定型`）；
+ * ⑧ 「把定高买宽和定宽买高的工艺规格信息不要展示在洗水唛上」⇒ 不再印「加工类型」；
+ * ⑨ 「订单号是否可以短一些…只留加工单号，删掉订单行」⇒ 第一行改印 `单号 JG-…`（订单号不上纸）；
+ * ⑩ 「打印后的结果出现了文字缩写…自动去换行打印」+「头尾加下虚线」⇒ 行内**折行印全文**
+ *    （无省略号 / 无行数截断）+ 标签上下各一条虚线。
+ *
+ * ## 上一版（2026-10-26，issue #7816）口令（仍然有效的那部分）
  *
  * ① 「水洗唛长度不足，设置为打印50*150」⇒ 纸型**固定 50mm × 150mm**（作废 #7776 的"按内容撑开"）；
  * ② 「如果订单是双开的要打印两份，单开的要打印1份，三开打印3份，4开打印4份，这个都要在
  *    打印预览中默认设置好」⇒ **份数 = 打开方式开数**（`washLabelCopies`，两条通道共用）；
  * ③ 「字体还是太小，可以再大一点」⇒ 正文 9pt → **12pt**（抬头 14pt / 副标题 10pt）；
  * ④ 「要体现出是否采用的韩褶公式以及韩褶的折数，用一个字段表示即可」⇒ 新增 **褶法** 行
- *    （`褶法 韩褶 52折` / `褶法 倍数法`，见 `lib/wash-label-content.ts` 的 `washLabelPleats`）；
+ *    （`褶法 韩褶公式 52折` / `褶法 倍数法`，见 `lib/wash-label-content.ts` 的 `washLabelPleats`）；
  * ⑤ 「把订单号放到第一行，客户那一行上面」「移除加工单号」「移除交期字段」
  *    「二维码放到底部居中」「移除扫码报工和短码文字」「二维码可以放大一点」。
  *
- * 字段面（从上到下）= **纸面抬头（企业名 / 成品定制）** → 订单 / 客户 / 第 N 套共 M 套 / 部位 /
- * 颜色 / 门幅 / 用料 / 宽高 / 加工方式 / 褶法 / 特殊选项 / 备注 → 底部**居中二维码**（80 CSS px = 21.17mm）。
+ * 字段面（从上到下）= **纸面抬头（企业名 / 成品定制）** → **单号（加工单号）** / 客户 /
+ * 第 N 套共 M 套 / 部位 / **货号** / 门幅 / 用料 / 宽高 / 加工方式（含加工费组合项，无前缀）/
+ * 褶法 / 特殊选项 / 备注 → 底部**居中二维码**（80 CSS px = 21.17mm）。
  * 一行粒度 = 一部位（商品行）**一张 × 开数份**。
  *
  * 🔴 **退场项（历次字段裁定未选，勿"顺手加回"）**：
@@ -54,9 +69,12 @@ import type { ProcessingOrderItem, ProductionPosition } from '@/types'
  *   ② **完整套号**（`JG-…-001`）—— 与加工单号重复，纯占纸面；
  *   ③ **件名（商品名称）与算料公式（褶倍公式）** —— 2026-10-25 用户逐字「移除商品名称展示…
  *      移除褶倍公式字段展示」；
- *   ④ **加工单号 / 交期 / 扫码报工 / 人可读短码** —— 2026-10-26 用户逐字（见上 ⑤）。
+ *   ④ **交期 / 扫码报工 / 人可读短码** —— 2026-10-26 用户逐字（见上 ⑤）。
  *      ⚠️ 短码退场**改变了** `docs/design/worker-h5-scan-and-report.md` §1.4 的"手输降级入口"：
  *      纸面不再提供手输码 ⇒ 扫不出码时只能看屏幕/重新出码（用户裁定，登记在本文件与 CHANGELOG）。
+ *   ⑤ **加工类型（定高买宽 / 定宽买高）** —— issue #7833 用户逐字「不要展示在洗水唛上」。
+ *      ⚠️ **加工单号**在 #7816 曾退场，issue #7833 起以「单号」行**回到纸面**（它取代了 17 位订单号）——
+ *      这是用户 2026-10-26 的**后一次**裁定，不是把 #7816 读错了。
  *
  * ## 纸面几何与垂直预算（实测口径沿用 #4949 / #5646）
  *
@@ -64,10 +82,14 @@ import type { ProcessingOrderItem, ProductionPosition } from '@/types'
  * 容器实测沿 #5646：正文右边界 48.799mm 减 1.2mm 内边距 ⇒ **版心宽 47.6mm**；
  * 150mm 高减上下各 1.2mm 内边距 ⇒ **可用 147.6mm**。
  * 正文 12pt / `line-height 1.2` ⇒ **每行 5.08mm**（≈ 11.2 个汉字/行；9pt 时代是 15 个字）。
- * 逐项预算（最坏构成：加工方式 / 特殊选项 / 备注各折满 2 行 = 15 行）：
- * 抬头块（企业名 14pt **5.9** + 「成品定制」10pt **4.23** + 0.5 间距 = **10.66**）+ 正文 15 × 5.08 = **76.2**
+ * 逐项预算（最坏构成：单号 / 加工方式 / 特殊选项 / 备注各折满 2 行 = 16 行）：
+ * 抬头块（企业名 14pt **5.9** + 「成品定制」10pt **4.23** + 0.5 间距 = **10.66**）+ 正文 16 × 5.08 = **81.28**
  * + 两处块间距 **1.5** + 底部二维码 **21.17**（80 CSS px）+ 上下内边距 **2.4**
- * ⇒ **111.93mm ≤ 147.6mm**（余量 **35.67mm** ≈ 7 行）。订单号折成 2 行（17 位数字）也只多 5.08mm。
+ * ⇒ **117.01mm ≤ 147.6mm**（余量 **30.59mm** ≈ 6 行）。
+ * 🔴 **折行印全文（issue #7833）**：行里**没有** `truncate` / `line-clamp-*`（省略号 = 静默吃掉半截字），
+ * 长值（客户 / 部位 / 货号 / 加工方式 / 特殊选项 / 备注）一律折行；真装不下时由「打印预览」的
+ * 纸面自检如实报出「内容 Xmm > 可用 Ymm」，**不靠裁切掩盖**（同 `SalesDoc` 的 #7715 口径）。
+ * 头尾虚线 = `.task-card-label` 的上下各一条 `1px dashed`（用户同批「头尾加下虚线，这样能清晰知道界线」）。
  * ⚠️ **余量是给「版式不折行」用的**：30×60 横版时代实测过一次折行吃掉 2.96mm、把纸面底部的
  * 功能件挤出纸外（issue #4949）。⇒ 二维码放在 `shrink-0` 的底部行、文字块用
  * `min-h-0 overflow-hidden` 承载 —— **空间不够时被裁的是补充文字，绝不裁码**。
@@ -91,15 +113,15 @@ import type { ProcessingOrderItem, ProductionPosition } from '@/types'
  *    若将来要上 DP30S，必须先改回 ≤48mm 并重算本条的预算账。
  */
 interface TaskCardPrintProps {
-  /** 订单号 —— **纸面第一行**（客户之上） */
-  orderNo?: string
+  /** 加工单号 —— **纸面第一行**（客户之上；issue #7833 起取代 17 位订单号） */
+  processingOrderNo?: string
   /** 加工单公共属性：客户名 —— **每张标签都要呈现** */
   customerName?: string
   /** 部位（= 商品行）列表；一个部位按开数出 N 张，码取自该部位自己的 scan_url/part_token */
   positions?: ProductionPosition[]
   /** 缺码时的占位文案（撤销后传「已撤销」，避免纸面指向不存在的按钮）；缺省＝待生成 */
   qrPlaceholderHint?: string
-  /** 该部位对应的加工单快照明细（颜色/门幅/用料/加工方式/褶法/特殊选项/备注/开数的取值来源） */
+  /** 该部位对应的加工单快照明细（货号/门幅/用料/加工方式/褶法/特殊选项/备注/开数的取值来源） */
   items?: ProcessingOrderItem[]
   /**
    * 本次打印的目标（`'labels'` = 打印本单据）。**必须由调用方置位**：标签的显形规则按
@@ -124,11 +146,11 @@ type SnapshotItem = ProcessingOrderItem & { itemId?: string }
 
 /** 行 ⇒ `data-testid` 的中段（与 issue #5646 起的既有 testid 逐字一致，别改名） */
 const WASH_LABEL_TESTID_SEGMENT: Record<WashLabelRowKey, string> = {
-  orderNo: 'order-no',
+  docNo: 'doc-no',
   customer: 'customer',
   setNo: 'set-no',
   positionKind: 'kind',
-  color: 'color',
+  sku: 'sku',
   doorWidth: 'door-width',
   meters: 'meters',
   size: 'size',
@@ -151,27 +173,31 @@ function washLabelRowTestId(key: WashLabelRowKey, index: number): string {
 /**
  * 行 ⇒ 本渲染器（CSS）的样式。
  *
- * 🔴 **只在本文件里**决策：折行 / `line-clamp` 是**排版**，不进单一真值模块
- * （位图渲染器读行里的 `maxLines` 自己排）。
+ * 🔴 **只在本文件里**决策：折行是**排版**，不进单一真值模块。
+ *
+ * 🔴 **纸面不许藏字（issue #7833）**：这里**没有** `truncate` / `line-clamp-*` / `text-overflow`
+ * —— 用户 2026-10-26 逐字「打印后的结果出现了文字缩写…自动去换行打印」。
+ * 长值一律折行（`break-words`）；纯数字行用 `whitespace-nowrap` 只是**不折行**（不藏字）。
+ * 守卫 = `tests/unit_ci_workflows/test_print_paper_full_text_guard.py` 的 C4。
  */
 const WASH_LABEL_ROW_CLASS: Record<WashLabelRowKey, string> = {
-  // 订单号是纸上唯一的单据身份 ⇒ **允许折行、绝不省略/裁切**（12pt 下 17 位数字 ≈ 54mm > 47.6mm 版心）
-  orderNo: 'break-all',
-  customer: 'truncate',
+  // 单号（加工单号）是纸上唯一的单据身份 ⇒ 允许折断、绝不省略/裁切
+  docNo: 'break-all',
+  customer: 'break-words',
   setNo: 'whitespace-nowrap',
-  positionKind: 'truncate',
-  color: 'truncate',
-  doorWidth: 'truncate',
-  meters: 'truncate',
-  size: 'truncate',
-  craft: 'line-clamp-2',
+  positionKind: 'break-words',
+  sku: 'break-words',
+  doorWidth: 'break-words',
+  meters: 'break-words',
+  size: 'break-words',
+  craft: 'break-words',
   pleats: 'whitespace-nowrap',
-  specialOptions: 'line-clamp-2',
-  remark: 'line-clamp-2',
+  specialOptions: 'break-words',
+  remark: 'break-words whitespace-pre-line',
 }
 
 export default function TaskCardPrint({
-  orderNo,
+  processingOrderNo,
   customerName,
   positions,
   qrPlaceholderHint,
@@ -213,7 +239,7 @@ export default function TaskCardPrint({
   })
 
   // 🔴 纸面**内容与行序**的唯一来源（issue #6656；与免驱动直连通道同一份）：
-  // 订单 / 客户 / 套序 / 部位 / 颜色 / 门幅 / 用料 / 宽高 / 加工方式 / 褶法 / 特殊选项 / 备注
+  // 单号 / 客户 / 套序 / 部位 / 货号 / 门幅 / 用料 / 宽高 / 加工方式 / 褶法 / 特殊选项 / 备注
   // 的取值口径全在 `washLabelRows` 里面 —— 本文件**不再自己派生**（派生两份 = 两条通道会画得不一样）。
   const rowsBySheet = sheets.map(({ position, sourceIndex }) => {
     if (!position) return []
@@ -225,7 +251,7 @@ export default function TaskCardPrint({
       setNo: (setView?.setIndex ?? 0) + 1,
       setCount: setView?.setCount ?? 1,
       customerName,
-      orderNo,
+      processingOrderNo,
     })
   })
 
@@ -243,6 +269,8 @@ export default function TaskCardPrint({
            ⚠️ 这段注释在模板字面量里 ⇒ 不许写 markdown 星号（copy-no-markdown-emphasis 判据会红） */
         .task-card-label { width: 50mm; height: 150mm; overflow: hidden; box-sizing: border-box;
           padding: 1.2mm; font-size: 12pt; line-height: 1.2; display: flex; flex-direction: column;
+          /* 头尾虚线（issue #7833）：这张纸的上下界线，一眼看得出从哪裁/贴到哪 */
+          border-top: 1px dashed #000; border-bottom: 1px dashed #000;
           break-after: page; page-break-after: always; }
         /* 最后一张不再分页（否则末尾多吐一张空白） */
         .task-card-label:last-child { break-after: auto; page-break-after: auto; }

@@ -23,6 +23,8 @@ import QualityCheckPanel from '@/components/production/QualityCheckPanel'
 import PieceworkTable from '@/components/production/PieceworkTable'
 import CutPlanTable from '@/components/production/CutPlanTable'
 import PrintDocPreview from '@/components/orders/PrintDocPreview'
+// 加工费组合（= `processingItems[].name` 集合；超高/超宽/倒幅所在）—— 取值口径唯一一份（issue #7833）
+import { processingComboTextOfRows } from '@/lib/processing-combo'
 import { PRINT_TARGET_SPECS, usePrintDoc } from '@/lib/print-doc'
 import TaskCardPrint from '@/components/production/TaskCardPrint'
 // 免驱动直连打印（issue #6439）：**不做打印机定制功能** —— 通道层与机型无关，本页只接一条
@@ -263,7 +265,8 @@ export default function ProcessingOrderProductionPage() {
     () =>
       toWashLabelInputs({
         companyName,
-        orderNo: po?.orderNo,
+        // 单号 = 加工单号（issue #7833：17 位订单号退出纸面）
+        processingOrderNo: po?.processingOrderNo,
         customerName: po?.customerName,
         positions: operations?.positions,
         items: po?.items,
@@ -521,6 +524,15 @@ export default function ProcessingOrderProductionPage() {
                 <div className="text-xs text-neutral-500">交付日期</div>
                 <div className="mt-1 text-sm text-neutral-900" data-testid="production-delivery-date">
                   {po.expectedDeliveryDate ?? '—'}
+                </div>
+              </div>
+              {/* 加工费组合（issue #7833）：用户 2026-10-26 逐字「加工单有超高倒幅，但是在加工单的
+                  各个环节都没有体现出来」⇒ 生产明细页页头一眼可见（整单并集，逐行明细在下面的部位区）。
+                  取值 = 加工单**快照**行的 `processingItems[].name`（组合键真值源），缺 ⇒ 如实 `—`。 */}
+              <div>
+                <div className="text-xs text-neutral-500">加工费组合</div>
+                <div className="mt-1 text-sm text-neutral-900" data-testid="production-processing-combo">
+                  {processingComboTextOfRows(po.items) || '—'}
                 </div>
               </div>
               <div>
@@ -793,7 +805,7 @@ export default function ProcessingOrderProductionPage() {
           {/* 可打印水洗唛（issue #4946：一个商品行/部位一张；issue #7816 起纸型固定 50mm×150mm、
               份数 = 开数；码 = 该部位自己的 scan_url）；屏幕隐藏（display:none），点「打印任务卡」时只打印它 */}
           <TaskCardPrint
-            orderNo={po.orderNo}
+            processingOrderNo={po.processingOrderNo}
             // 加工单公共属性：**每张**洗水码都要呈现
             customerName={po.customerName}
             positions={operations?.positions}
@@ -825,7 +837,7 @@ export default function ProcessingOrderProductionPage() {
           >
             {previewTarget === 'labels' && (
               <TaskCardPrint
-                orderNo={po.orderNo}
+                processingOrderNo={po.processingOrderNo}
                 customerName={po.customerName}
                 positions={operations?.positions}
                 qrPlaceholderHint={qrPlaceholderHint}

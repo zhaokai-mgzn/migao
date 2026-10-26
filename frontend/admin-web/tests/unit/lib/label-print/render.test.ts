@@ -30,14 +30,14 @@ const LABELS: WashLabelInput[] = [
   {
     qrValue: 'https://app.migaozn.com/s/7Q2M4K8P',
     rows: [
-      { key: 'customer', text: '客户 赵凯', maxLines: 1 },
-      { key: 'color', text: '客厅窗帘A', maxLines: 2 },
+      { key: 'customer', text: '客户 赵凯' },
+      { key: 'sku', text: '客厅窗帘A' },
     ],
   },
   // 该部位被撤销（无码）⇒ 这一张**不许** drawImage
   {
     qrValue: null,
-    rows: [{ key: 'color', text: '卧室窗帘', maxLines: 2 }],
+    rows: [{ key: 'sku', text: '卧室窗帘' }],
   },
 ]
 
@@ -95,8 +95,11 @@ describe('renderWashLabelJobs — 调度与几何（issue #6439 判据 ③）', 
       { width: geometry.widthPx, height: geometry.heightPx },
       { width: geometry.widthPx, height: geometry.heightPx },
     ])
-    // 白底铺满两张（热敏纸：不铺白 = 打出黑底的反色废纸）
-    expect(calls.filter((c) => c.startsWith('fillRect:')).length).toBe(2)
+    // 白底铺满两张（热敏纸：不铺白 = 打出黑底的反色废纸）。
+    // 🔴 按**整幅**白底数（issue #7833 起头尾虚线也用 `fillRect` 画短划 ⇒ 数 fillRect 总数会误判）
+    expect(
+      calls.filter((c) => c === `fillRect:0,0,${geometry.widthPx},${geometry.heightPx}`).length,
+    ).toBe(2)
   })
 
   it('🔴 二维码位图**与 labels 同序**：只有有码的那张 drawImage（无码不画假码）', async () => {

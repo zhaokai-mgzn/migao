@@ -113,6 +113,25 @@ describe('纸面自检层 PrintDocPreview（issue #5914）', () => {
     expect(measureSheets(document.createElement('div'), 128)).toBeNull()
   })
 
+  it('🔴 溢出逐张具名（issue #7833）：多张（水洗唛按开数出纸）时点名第几张超出 —— 只报总高度不可行动', () => {
+    const stage = document.createElement('div')
+    // 3 张：第 1 张 60px（装得下）、第 2 张 400px（超 60mm 的可用高）、第 3 张 120px
+    stage.appendChild(stubSheet(60, 60))
+    stage.appendChild(stubSheet(400, 400))
+    stage.appendChild(stubSheet(120, 120))
+    const check = measureSheets(stage, 60)
+    if (!check) throw new Error('量不到纸 ⇒ 判据无从取值')
+    // 1mm = 3.7795px；400px = 105.8mm > 60mm
+    expect(check.overflowSheets).toEqual([2])
+    expect(check.sheets).toBe(3)
+    expect(check.overflowMm).toBeCloseTo(400 / MM_TO_PX - 60, 1)
+
+    // 全部装得下 ⇒ 空数组（不是恒有值 —— 空断言会被这条打回）
+    const fits = document.createElement('div')
+    fits.appendChild(stubSheet(100, 100))
+    expect(measureSheets(fits, 60)?.overflowSheets).toEqual([])
+  })
+
   it('③ 多张纸（洗水码一部位一张）⇒ 计张数并取**最高**那张判溢出', () => {
     const stage = document.createElement('div')
     stage.appendChild(stubSheet(50 * MM_TO_PX, 60 * MM_TO_PX))
@@ -121,6 +140,8 @@ describe('纸面自检层 PrintDocPreview（issue #5914）', () => {
     expect(check!.sheets).toBe(2)
     expect(check!.contentMm).toBeCloseTo(64, 1)
     expect(check!.overflowMm).toBeCloseTo(4, 1)
+    // issue #7833：只有第 2 张超（第 1 张 50mm）—— 逐张具名，不只报总高度
+    expect(check!.overflowSheets).toEqual([2])
   })
 
   it('④ 🔴 预览副本**不上纸**：显形规则必须包在 `@media screen` 里（否则会出两张）', () => {

@@ -9,7 +9,7 @@
  *
  * | 通道 | 字段来源 | 纸面 |
  * |---|---|---|
- * | 系统打印 | 组件内联派生（订单 / 客户 / 套序 / 部位 / 颜色 / 门幅 / 用料 / 宽高 / 加工方式 / 褶法 / 特殊选项 / 备注） | 预览那张 |
+ * | 系统打印 | 组件内联派生（单号 / 客户 / 套序 / 部位 / 货号 / 门幅 / 用料 / 宽高 / 加工方式 / 褶法 / 特殊选项 / 备注） | 预览那张 |
  * | 直连打印 | `toWashLabelInputs` 只映射 4 个键（码 / 短码 / 件名 / 部位） | 只有二维码 + 短码 + 一行件名 |
  *
  * 用户 2026-10-10 逐字：「**直连打印机打印的样式和水洗唛预览打印的样式完全不一样，能不能做成一样的**」
@@ -20,39 +20,39 @@
  * ## 边界（照实登记，不粉饰）
  *
  * - 本模块只管**内容**（印什么、什么顺序、取什么值），不管**排版**：CSS 与 canvas 是两套排版引擎，
- *   折行 / 裁切规则各由渲染器决定；`maxLines` 是给位图渲染器的**行数预算**。
+ *   折行规则各由渲染器决定。🔴 **本模块不再带「行数预算」（issue #7833）**：行只给**逐字文本**，
+ *   没有任何 `maxLines` —— 有预算就有省略号，而用户 2026-10-26 逐字裁定「文字缩写…自动去换行打印」。
  * - 取值口径**一律复用**既有单一真值：工艺规格走 `lib/craft-display.ts` 的 `craftSpecRows`、
  *   套序走 `components/production/ProductionProgressTable.tsx` 的 `groupBySet` —— 本模块不另写推导
  *   （另写一份 = 又一个「同一真值两处投影」，改一处另一处不会红）。
  */
 import { craftSpecRows, type CraftSpecRow } from './craft-display'
+import { processingComboNames } from './processing-combo'
 import { groupBySet } from '@/components/production/ProductionProgressTable'
 import type { ProcessingOrderItem, ProductionPosition } from '@/types'
 
 /** 纸面上的**一行**（有序清单的元素） */
 export interface WashLabelRow {
-  /** 行标识（渲染器据此映射 CSS class / `data-testid` / 省略策略；**不参与纸面内容**） */
+  /** 行标识（渲染器据此映射 CSS class / `data-testid`；**不参与纸面内容**） */
   key: WashLabelRowKey
   /**
    * 纸面**逐字**文本（`标签 + 空格 + 值`，已按取值口径格式化）。
    * 🔴 两条通道渲染它，**不得**各自再拼一次前缀（拼第二遍就是第二份真值）。
    */
   text: string
-  /** 行数预算：位图渲染器折到第 `maxLines` 行还没完 ⇒ 以省略号收尾（看得见的截断） */
-  maxLines: number
 }
 
 export type WashLabelRowKey =
+  | 'docNo'
   | 'customer'
   | 'setNo'
   | 'positionKind'
-  | 'color'
+  | 'sku'
   | 'doorWidth'
   | 'meters'
   | 'size'
   | 'craft'
   | 'pleats'
-  | 'orderNo'
   | 'specialOptions'
   | 'remark'
 
@@ -63,17 +63,22 @@ export type WashLabelRowKey =
  *   ① **商品名称（件名）** —— 逐字「移除商品名称展示」；
  *   ② **算料公式（褶倍公式）** —— 逐字「移除褶倍公式字段展示」（它是算料引擎的**内部推导**，
  *      车间按纸面裁布用不到；印出来只会占纸面、挤出可读字号）。
- *   同时保留「**货号 / 颜色 / 门幅 + 其余工艺信息**」（用户逐字）：颜色与门幅已在表内，
- *   货号待加工单快照补 `productCode`（后端单，**未在册前不印**——不拿 SKU 组合码冒充货号，issue #7636）。
+ *   同时保留「货号 / 门幅 + 其余工艺信息」（用户逐字）。
+ * 🔴 **2026-10-26 再改判**（issue #7833，用户逐字「把颜色改成货号，格式都改成 A: B，现在是缺了中间的：」）：
+ *   纸面**不印颜色**、改印 **货号**（快照键 `sku` = `products.sku_code`；缺值 ⇒ 该行不渲染，
+ *   **不拿 SKU 组合码冒充货号**，issue #7636 的口径不变）；所有带标签的行一律 `标签: 值`。
  */
 export const WASH_LABEL_ROW_KEYS: readonly WashLabelRowKey[] = [
-  // 🔴 **订单号第一行**（2026-10-26 用户逐字「把订单号放到第一行，客户那一行上面」）；
-  // 同批「移除加工单号」「移除交期字段」⇒ 这两行不再存在（加工单号是**内部**编号，纸面只留订单号）。
-  'orderNo',
+  // 🔴 **单号第一行**（2026-10-26 用户逐字「把订单号放到第一行，客户那一行上面」；
+  // **issue #7833 改判**：同一位置改印**加工单号**、17 位订单号退出纸面 ——
+  // 用户逐字「订单号是否可以短一些，能否参考别人的做法」+ 选定「只留加工单号，删掉订单行」。
+  // 加工单号 `JG-YYYYMMDD-NNNN` 是**结构化**单据号（日期 + 当日序号），系统里可按它检索、
+  // 也是这叠纸对应的那张加工单的主标识；订单号仍可在系统里查。
+  'docNo',
   'customer',
   'setNo',
   'positionKind',
-  'color',
+  'sku',
   'doorWidth',
   'meters',
   'size',
@@ -82,27 +87,6 @@ export const WASH_LABEL_ROW_KEYS: readonly WashLabelRowKey[] = [
   'specialOptions',
   'remark',
 ]
-
-/**
- * 行数预算（加工方式 / 特殊选项 / 备注可折行；其余单行）—— 与 `TaskCardPrint` 的 clamp 口径同源。
- *
- * 订单号给 2 行：12pt 下 17 位数字 + 「订单」前缀 ≈ 54mm > 版心 47.6mm ⇒ 必须允许**折行**
- * （`break-all`），**绝不**用省略号/裁切（它是纸上唯一的单据身份）。
- */
-const MAX_LINES: Record<WashLabelRowKey, number> = {
-  orderNo: 2,
-  customer: 1,
-  setNo: 1,
-  positionKind: 1,
-  color: 1,
-  doorWidth: 1,
-  meters: 1,
-  size: 1,
-  craft: 2,
-  pleats: 1,
-  specialOptions: 2,
-  remark: 2,
-}
 
 /** 用料 = 面料米数优先；没有则退回加工费米数（两者都是「要用多少料」的同一件事） */
 const METERS_LABELS = ['面料米数', '加工费米数']
@@ -123,23 +107,46 @@ export function washLabelSize(width?: number | null, height?: number | null): st
 }
 
 /**
- * 加工方式 = 工艺 · 加工类型 · 打开方式 · 定型（**值**一律取自 `craft-display` 的同一份格式化，不重算）。
+ * 加工方式 = 工艺 · **加工费组合项** · 打开方式 · 定型（**值**一律取自 `craft-display` 的
+ * 同一份格式化 + `processing-combo` 的同一份组合项，不重算）。
  *
- * 其中「是否定型」在纸面上按**行业措辞**收成「定型 / 不定型」—— 真实工单就是这么写的
- * （图1「单开-韩褶-定型」、图3「双开韩褶 定高买宽 定型」）；单印一个「是」在纸面上读不出
- * 是哪个字段的「是」。**只映射展示形态，不改值本身**。
+ * ## 2026-10-26 用户裁定（issue #7833）—— 两条改动
+ *
+ * ① 「**把定高买宽和定宽买高的工艺规格信息不要展示在洗水唛上**」⇒ 不再印「加工类型」；
+ * ② 「**打印的洗水唛中也需要体现加工费组合中的信息**」「加工单有超高倒幅…都没有体现出来」
+ *    ⇒ 把 `processingItems[].name`（= 加工费组合键：韩褶 / 超高 / 超宽 / 倒幅 / 定型 …）
+ *    **并入本行**，与工艺 / 打开方式 / 定型**同一行**印全 —— 不另起一行（纸上不重复同一名字，
+ *    也省一行 12pt × 5.08mm 的高度）。
+ *
+ * 重名**只印一次**（`工艺=韩褶` 且组合项也有「韩褶」时）—— 顺序 = 「工艺 → 组合项 →
+ * 打开方式 → 定型」，纸面读作 `韩褶 · 超高 · 倒幅 · 双开 · 定型`
+ * （与参考工单「双开-韩褶-定型」同序可读）。
+ *
+ * 其中「是否定型」在纸面上按**行业措辞**收成「定型 / 不定型」—— 真实工单就是这么写的；
+ * 单印一个「是」在纸面上读不出是哪个字段的「是」。**只映射展示形态，不改值本身**。
+ *
+ * 🔴 **定型的去重口径**（别改成"两处都印"）：开数 / 组合项里常同时带「定型」（它是加工费组合键的一项），
+ * 而「是否定型」是工艺字段 —— 两者是**同一件事实的两个载体**。规则：
+ * - 工艺字段**有值**（是/否）⇒ 组合项里的「定型 / 不定型」**不再重复印**，统一由末尾那个词表达
+ *   （否则纸上会出现「定型 … 不定型」两个相反的词，恰恰来自同一张单的脏数据）；
+ * - 工艺字段**缺值**（存量单）⇒ 组合项里的「定型」**照印**（它是被计价的加工项，不能因为工艺键缺失就吞掉）。
  */
 export function washLabelCraftMode(item?: ProcessingOrderItem | null): string {
   const rows = craftSpecRows(item)
   const shaped = specValue(rows, '是否定型')
-  return [
-    specValue(rows, '工艺'),
-    specValue(rows, '加工类型'),
-    specValue(rows, '打开方式'),
-    shaped === '是' ? '定型' : shaped === '否' ? '不定型' : '',
-  ]
-    .filter((value) => value !== '')
-    .join(' · ')
+  const shapeWord = shaped === '是' ? '定型' : shaped === '否' ? '不定型' : ''
+  // 加工费组合项（超高 / 超宽 / 倒幅 / 定型 …）：工艺字段已表达定型时，不重复印同义项
+  const combos = processingComboNames(item).filter(
+    (name) => !(shapeWord !== '' && (name === '定型' || name === '不定型')),
+  )
+  const parts = [specValue(rows, '工艺'), ...combos, specValue(rows, '打开方式'), shapeWord]
+  const unique: string[] = []
+  for (const part of parts) {
+    const text = part.trim()
+    if (text === '' || unique.includes(text)) continue
+    unique.push(text)
+  }
+  return unique.join(' · ')
 }
 
 /** 用料 = 面料米数优先，退回加工费米数 */
@@ -166,7 +173,9 @@ export function washLabelRemark(item?: ProcessingOrderItem | null): string {
  * 「要体现出是否采用的韩褶公式以及韩褶的折数，用一个字段表示即可」）。
  *
  * 取值（**只读既有键、不重算**）：
- * - `韩褶公式`（褶数法，`calc` 侧产 `pleat_count`）⇒ `韩褶 52折`；折数缺失 ⇒ `韩褶`（**不编数**）
+ * - `韩褶公式`（褶数法，`calc` 侧产 `pleat_count`）⇒ `韩褶公式 52折`；折数缺失 ⇒ `韩褶公式`（**不编数**）
+ *   🔴 2026-10-26 用户逐字「打印的褶法中的韩褶改成韩褶公式+折数，现在是缺了公式这两个字」⇒ 值里
+ *   **必须带「公式」二字**（改前只印「韩褶 52折」—— 读不出这是「用了韩褶公式」还是「这道帘叫韩褶」）。
  * - `褶倍数公式`（倍数法）⇒ `倍数法`
  * - 两者都判不出来（老快照缺 `formula_text` 且无 `pleat_count`）⇒ **空串**（该行不印，不猜）
  *
@@ -178,7 +187,7 @@ export function washLabelRemark(item?: ProcessingOrderItem | null): string {
  *
  * 字段名为何叫「褶法」：它既不是纯折数（还有「是否韩褶公式」这一层），
  * 也不是纯算法名（纸上要给车间看折数）⇒ 取「褶的做法」这一层语义，纸面上读作
- * `褶法 韩褶 52折` / `褶法 倍数法`。
+ * `褶法 韩褶公式 52折` / `褶法 倍数法`。
  */
 /** 正整数读取口（容忍 JSON 里以字符串承载的数字；与 `craft-display` 的 `numeric()` 同口径） */
 function positiveInt(value: unknown): number | null {
@@ -190,7 +199,10 @@ export function washLabelPleats(item?: ProcessingOrderItem | null): string {
   const formulaText = typeof item?.formula_text === 'string' ? item.formula_text.trim() : ''
   const count = positiveInt(item?.pleat_count)
   if (formulaText.startsWith('褶倍数')) return '倍数法'
-  if (formulaText.startsWith('韩褶') || count !== null) return count !== null ? `韩褶 ${count}折` : '韩褶'
+  if (formulaText.startsWith('韩褶') || count !== null) {
+    // 「公式」二字不可省（用户 2026-10-26）：它说的是**用了哪种算料公式**，不是帘的品种名
+    return count !== null ? `韩褶公式 ${count}折` : '韩褶公式'
+  }
   return ''
 }
 
@@ -232,14 +244,15 @@ export interface WashLabelRowsInput {
   customerName?: string | null
   /** 纸面抬头：企业名（缺值 ⇒ 抬头块整块不渲染） */
   companyName?: string | null
-  orderNo?: string | null
+  /** 加工单号（纸面第一行的「单号」；issue #7833 起取代 17 位订单号） */
+  processingOrderNo?: string | null
 }
 
 /**
  * 部位 ⇒ 纸面**有序行清单**（两条打印通道的唯一内容真值）。
  *
  * 缺值不渲染：没有对应快照行 / 没有该键 ⇒ 该行**不出现**（纸面不出现 `undefined` / `null` / `NaN`）。
- * 例外 = 件名 / 订单号 / 交期：它们是「这张纸是给谁的」的最小可读集合，缺值如实出 `—`（不编造）。
+ * 例外 = 单号：它是「这张纸是给谁的」的最小可读集合，缺值如实出 `—`（不编造）。
  */
 export function washLabelRows(input: WashLabelRowsInput): WashLabelRow[] {
   const position = input.position ?? null
@@ -253,12 +266,15 @@ export function washLabelRows(input: WashLabelRowsInput): WashLabelRow[] {
   const push = (key: WashLabelRowKey, value: string, prefix = '') => {
     const trimmed = (value ?? '').trim()
     if (trimmed === '') return
-    rows.push({ key, text: prefix === '' ? trimmed : `${prefix} ${trimmed}`, maxLines: MAX_LINES[key] })
+    // 🔴 行格式 = `A: B`（用户 2026-10-26 逐字「格式都改成 A: B，现在是缺了中间的：」）——
+    // 前缀与值之间必须有冒号；无前缀行（加工方式 = 值本身）原样印，不凭空造一个标签。
+    rows.push({ key, text: prefix === '' ? trimmed : `${prefix}: ${trimmed}` })
   }
 
-  // 🔴 订单号 = **第一行**（2026-10-26 用户逐字「把订单号放到第一行，客户那一行上面」）；
+  // 🔴 单号 = **第一行**（2026-10-26 用户逐字「把订单号放到第一行，客户那一行上面」；
+  // issue #7833 起印**加工单号**：17 位订单号退出纸面，用户选定「只留加工单号，删掉订单行」）。
   // 缺值如实出 `—`（它是「这张纸是给谁的」的最小可读集合之一，不编造、也不留空行）。
-  push('orderNo', (input.orderNo ?? '').trim() || '—', '订单')
+  push('docNo', (input.processingOrderNo ?? '').trim() || '—', '单号')
 
   push('customer', input.customerName ?? '', '客户')
 
@@ -268,11 +284,13 @@ export function washLabelRows(input: WashLabelRowsInput): WashLabelRow[] {
 
   push('positionKind', position.position_kind ?? '', '部位')
 
-  // 🔴 商品名称（件名）**已退场**（issue #7776，用户 2026-10-25 逐字「移除商品名称展示」）：
-  // 纸面改印「这一件用的是什么布」—— 颜色 / 门幅（+ 其余工艺信息），而不是商品名。
-  // 原「色号已含在件名里 ⇒ 不重复渲染」的去重随件名一起退场：件名不在了，颜色必须**恒印**。
-  const colorName = typeof input.item?.colorName === 'string' ? input.item.colorName.trim() : ''
-  push('color', colorName, '颜色')
+  // 🔴 商品名称（件名）**已退场**（issue #7776，用户 2026-10-25 逐字「移除商品名称展示」）。
+  // 🔴 **颜色 → 货号**（issue #7833，2026-10-26 用户逐字「把颜色改成货号」）：纸面印快照键
+  //    `sku`（= `products.sku_code`；后端 `buildSnapshot` 的 `copyIfPresent(pi, entry, "skuCode", "sku")`
+  //    与 `snapshotAttrParts` 的「货号」是**同一条**取值链）。缺值 ⇒ 该行不渲染
+  //    （**不拿 SKU 组合码冒充货号**，issue #7636 的口径不变）。
+  const sku = typeof input.item?.sku === 'string' ? input.item.sku.trim() : ''
+  push('sku', sku, '货号')
 
   // 门幅：快照落的是 SKU 原串（`2.8米` / `2.8` 两种形态都有）⇒ 只补单位、不改数值（缺值不渲染）
   const doorWidth = typeof input.item?.doorWidth === 'string' ? input.item.doorWidth.trim() : ''
@@ -280,7 +298,9 @@ export function washLabelRows(input: WashLabelRowsInput): WashLabelRow[] {
 
   push('meters', washLabelMeters(input.item), '用料')
   push('size', washLabelSize(position.width, position.height), '宽高')
-  push('craft', washLabelCraftMode(input.item), '加工方式')
+  // 🔴 「加工方式」前缀已退场（2026-10-26 用户逐字「加工方式这几个字可以移除」）——
+  // 只印值（`韩褶 · 超高 · 倒幅 · 双开 · 定型`），形态同参考工单的「双开-韩褶-定型」。
+  push('craft', washLabelCraftMode(input.item))
   // 褶法 = 是否韩褶公式 + 折数（同一个字段；2026-10-26 用户裁定）
   push('pleats', washLabelPleats(input.item), '褶法')
 
@@ -310,7 +330,8 @@ export interface WashLabelInput {
 export interface WashLabelSource {
   /** 纸面抬头的企业名（调用方从 `useCompanyName()` 取；缺值 ⇒ 抬头不渲染） */
   companyName?: string | null
-  orderNo?: string | null
+  /** 单号 = 加工单号（issue #7833：17 位订单号退出纸面） */
+  processingOrderNo?: string | null
   customerName?: string | null
   positions?: ProductionPosition[] | null
   items?: ProcessingOrderItem[] | null
@@ -348,7 +369,7 @@ export function toWashLabelInputs(source: WashLabelSource = {}): WashLabelInput[
         setNo: (setView?.setIndex ?? 0) + 1,
         setCount: setView?.setCount ?? 1,
         customerName: source.customerName,
-        orderNo: source.orderNo,
+        processingOrderNo: source.processingOrderNo,
       }),
     }
     // 🔴 份数 = 开数（2026-10-26 用户裁定）：两条通道读**同一个**函数，不各算一份

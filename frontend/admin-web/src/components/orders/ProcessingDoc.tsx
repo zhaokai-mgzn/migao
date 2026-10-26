@@ -5,6 +5,8 @@ import { createPortal } from 'react-dom'
 import dayjs from 'dayjs'
 import { freightText } from '@/lib/logistics'
 import { orderItemCurtainType, orderItemQuantity, orderItemSku } from '@/lib/order-item-sku'
+// 加工费组合（= `processingItems[].name` 的集合，超高/超宽/倒幅就在里面）—— 取值口径唯一一份，issue #7833
+import { processingComboText } from '@/lib/processing-combo'
 import { printBodyFontPt, printContentInsetCss, printPageRule } from '@/lib/print-media'
 import { useCompanyName } from '@/lib/use-company-name'
 import { cn } from '@/lib/utils'
@@ -325,6 +327,10 @@ function SetBlock({
   // ⚠️ 「部位」（curtainType）**保留**在这里：issue #4521 移除录入面后它只有纱帘行才有值，
   // 旧「部位」列/段头「部位：…」对普通订单恒空（用户原话「报价单展示部位是啥意思」）。
   const craftText = sku.specRows.map((row) => `${row.label}：${row.value}`).join('；')
+  // 加工费组合（issue #7833）：用户 2026-10-26 逐字「JG-…-8172 这个加工单有超高倒幅，但是在加工单的
+  // 各个环节都没有体现出来」⇒ A4 纸面每套块内单列一行。取值 = **加工单快照行**的 `processingItems`
+  // （组合键的真值源；存量单缺该键 ⇒ 空串 ⇒ 整行不渲染，不编造、不回落到订单侧现值）。
+  const comboText = processingComboText(snapshot)
   const width = typeof item.width === 'number' && Number.isFinite(item.width) ? item.width : null
   const height = typeof item.height === 'number' && Number.isFinite(item.height) ? item.height : null
   // 尺寸：两边都是有限数才出（半个尺寸没有意义）
@@ -386,6 +392,16 @@ function SetBlock({
             <tr>
               <DocTd>工艺</DocTd>
               <DocTd colSpan={8}>{craftText}</DocTd>
+            </tr>
+          )}
+          {/* 加工费组合行（issue #7833）：整行占满 9 列（1 + colSpan 8，同「工艺」行 ——
+              少一格数据行就会缺边框，issue #6595 的实测形态）。长值由 `DocTd` 的 `break-words` 折行印全文。 */}
+          {comboText !== '' && (
+            <tr>
+              <DocTd>加工费组合</DocTd>
+              <DocTd colSpan={8} testId="processing-doc-combo">
+                {comboText}
+              </DocTd>
             </tr>
           )}
         </tbody>

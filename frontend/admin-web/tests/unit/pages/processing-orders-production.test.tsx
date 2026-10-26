@@ -563,8 +563,8 @@ describe('加工单生产明细页', () => {
     render(<ProductionDetailPage />)
 
     // 任务卡是 portal + display:none（打印才显形）⇒ 判文案只看 DOM 存在性，不能用 innerText
-    // 🔴 2026-10-26（issue #7816）：纸面**不再印加工单号**（那是内部编号，`task-card-no` 已随版式退场）
-    //    ⇒ 改判「纸上读不到加工单号」；没有部位时纸面只剩一句显式占位说明。
+    // 没有部位（工序未生成）⇒ 纸面只剩一句显式占位说明（没有任何行 ⇒ 也就没有单号行）。
+    // 🔴 issue #7833：单号行印的是**加工单号**，但那需要「有部位」；本用例的落点是占位态本身。
     // 等到**纸面内容**真的渲染出来（占位框是最稳的锚点）；取不到 portal 容器就**抛**（判据不得空跑）
     await waitFor(() => expect(screen.getByTestId('task-card-qr-placeholder')).toBeInTheDocument())
     const card = document.querySelector('.task-card-print-area') as HTMLElement | null
@@ -580,17 +580,17 @@ describe('加工单生产明细页', () => {
     expect(screen.getByTestId('production-instantiate-button')).toHaveTextContent('补生成工序')
   })
 
-  it('🔴 洗水唛纸面新口径（issue #7816）：订单号**第一行**、加工单号/交期/短码退场、二维码 80px 底部居中', async () => {
+  it('🔴 洗水唛纸面新口径（issue #7833）：**单号 = 加工单号**第一行、17 位订单号/交期/短码退场、二维码 80px 底部居中', async () => {
     render(<ProductionDetailPage />)
 
     await waitFor(() => expect(screen.getByTestId('task-card-label-rows-0')).toBeInTheDocument())
     const rows = screen.getByTestId('task-card-label-rows-0')
     const lines = Array.from(rows.children).map((el) => el.textContent ?? '')
-    // ① 第一行 = **订单号**（用户逐字「把订单号放到第一行，客户那一行上面」）
-    expect(lines[0]).toBe(`订单 ${PROCESSING_ORDER.orderNo}`)
-    expect(lines[1]).toBe(`客户 ${PROCESSING_ORDER.customerName}`)
-    // ② 加工单号 / 交期 / 人可读短码**一律不上纸**（同一批裁定的退场项）
-    expect(rows.textContent).not.toContain(PROCESSING_ORDER.processingOrderNo)
+    // ① 第一行 = **单号 = 加工单号**（2026-10-26 用户选定「只留加工单号，删掉订单行」）
+    expect(lines[0]).toBe(`单号: ${PROCESSING_ORDER.processingOrderNo}`)
+    expect(lines[1]).toBe(`客户: ${PROCESSING_ORDER.customerName}`)
+    // ② 17 位订单号 / 交期 / 人可读短码 / 「扫码报工」**一律不上纸**（历次裁定的退场项）
+    expect(rows.textContent).not.toContain(PROCESSING_ORDER.orderNo)
     expect(rows.textContent).not.toContain(PROCESSING_ORDER.expectedDeliveryDate)
     expect(rows.textContent).not.toContain(PART_SHORT_CODE)
     expect(rows.textContent).not.toContain('扫码报工')
@@ -599,6 +599,35 @@ describe('加工单生产明细页', () => {
     expect(qr).toHaveAttribute('width', '80')
     expect(qr).toHaveAttribute('height', '80')
     expect(qr.parentElement?.className ?? '').toContain('justify-center')
+  })
+
+  it('🔴 页头「加工费组合」（issue #7833）：整单并集一眼可见（超高/倒幅），缺值如实「—」', async () => {
+    // 逐行组合项不同：第 1 行 韩褶+超高、第 2 行 倒幅 ⇒ 页头取并集（去重保序）
+    mockDetail.mockResolvedValue(
+      ok({
+        ...PROCESSING_ORDER,
+        items: [
+          {
+            itemId: 'item-1',
+            processingItems: [
+              { id: 'pi-1', name: '韩褶', quantity: 1 },
+              { id: 'pi-14', name: '超高', quantity: 1 },
+            ],
+          },
+          { itemId: 'item-2', processingItems: [{ id: 'pi-16', name: '倒幅', quantity: 1 }] },
+        ],
+      }),
+    )
+    render(<ProductionDetailPage />)
+    await waitFor(() => expect(screen.getByTestId('production-processing-combo')).toBeInTheDocument())
+    // 这正是用户那句「加工单有超高倒幅，但是加工单的各个环节都没有体现出来」的落点
+    expect(screen.getByTestId('production-processing-combo')).toHaveTextContent('韩褶、超高、倒幅')
+
+    // 反面对照：加工单没有组合项（存量单）⇒ 如实 `—`（不印空、不编造）
+    mockDetail.mockResolvedValue(ok(PROCESSING_ORDER))
+    render(<ProductionDetailPage />)
+    await waitFor(() => expect(screen.getAllByTestId('production-processing-combo').length).toBeGreaterThan(0))
+    expect(screen.getAllByTestId('production-processing-combo').at(-1)).toHaveTextContent('—')
   })
 
   // ── PG-019（#4240 前端半边）：撤销二维码入口（真值源 §1「token 化、可撤销」）──

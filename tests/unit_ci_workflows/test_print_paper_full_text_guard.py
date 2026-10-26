@@ -23,8 +23,12 @@
 
 只判「藏字」三形态（省略号 / Tailwind `truncate` / `line-clamp-*`）。
 `whitespace-nowrap` **不在此列**：它只影响折行、不藏字，而标签列（客户 / 门幅 …）印的是固定短词。
-洗水唛 / 任务卡（`components/production/TaskCardPrint.tsx`）是**固定几何标签**，排版口径归位图渲染器，
-不在本守卫射程；它改成纸面凭证那天必须纳入。
+
+🔴 **洗水唛已纳入射程（issue #7833）**：用户 2026-10-26 逐字「打印后的结果出现了文字缩写，
+有没有办法在打印预览就发现文字会被缩略然后自动去换行打印？」—— 当初把它留在射程外的那句
+「固定几何标签的排版口径归位图渲染器」**不再成立**：两条通道（CSS 预览 / 位图直连）都要印全文。
+⇒ C4 同尺判定洗水唛的三份源码：CSS 渲染器不许藏字、纸面内容模块**不许带行数预算**（`maxLines`）、
+位图渲染器不许按行的预算裁（`row.maxLines`）。
 """
 from __future__ import annotations
 
@@ -111,6 +115,86 @@ def test_c2_every_paper_doc_prints_full_text():
         f"这些纸面单据把文字裁掉了：{offenders} —— 同一类缺陷换一份单据（发货 / 报价 / 加工 …）"
         "也必须红，不许只修销售单这一处。"
     )
+
+
+# ── C4：类级 —— 洗水唛（固定几何标签）同样印全文（issue #7833）─────────────────
+
+
+#: 洗水唛的三份源码：CSS 渲染器 / 纸面内容真值 / 位图渲染器
+WASH_LABEL_CSS = "frontend/admin-web/src/components/production/TaskCardPrint.tsx"
+WASH_LABEL_CONTENT = "frontend/admin-web/src/lib/wash-label-content.ts"
+WASH_LABEL_BITMAP = "frontend/admin-web/src/lib/label-print/wash-label.ts"
+
+
+def _read_managed(rel: str) -> str:
+    path = REPO_ROOT / rel
+    assert path.is_file(), f"受管文件不存在：{rel} —— 路径漂移不得退化成静默跳过"
+    return path.read_text(encoding="utf-8")
+
+
+def wash_label_full_text_problems(sources: dict[str, str]) -> list[str]:
+    """C4 的**纯函数**判定（真值侧与注入式红证共用同一把尺子）。
+
+    @param sources 三份源码（键 = 仓库相对路径）
+    @return 违规说明；空列表 = 合规
+    """
+    problems: list[str] = []
+    for rel in (WASH_LABEL_CSS, WASH_LABEL_CONTENT, WASH_LABEL_BITMAP):
+        hits = truncation_hits(sources[rel])
+        if hits:
+            problems.append(
+                f"{rel} 又把纸面文字裁掉了：{hits} —— 用户 2026-10-26 逐字「文字缩写…自动去换行打印」"
+                "（洗水唛 = 车间/客户手上的标签，同样不得靠省略号掩盖）"
+            )
+
+    # 行里**没有**行数预算：`maxLines` 一旦回到内容真值模块，位图渲染器就又开始省略号收尾
+    if "maxLines" in java_code(sources[WASH_LABEL_CONTENT]):
+        problems.append(
+            f"{WASH_LABEL_CONTENT} 又出现 `maxLines` —— 行数预算 = 省略号（issue #7833 已作废该口径）"
+        )
+    if "row.maxLines" in java_code(sources[WASH_LABEL_BITMAP]):
+        problems.append(f"{WASH_LABEL_BITMAP} 又按行的预算裁 —— 正文必须折行印全文")
+
+    # 正相反向锚：CSS 渲染器确实声明了折行（否则「去裁切」只是把字挤出纸外）
+    css = java_code(sources[WASH_LABEL_CSS])
+    if not ("break-words" in css or "break-all" in css):
+        problems.append(
+            f"{WASH_LABEL_CSS} 里找不到折行类（`break-words` / `break-all`）—— 长值要么被裁、要么溢出纸面"
+        )
+    return problems
+
+
+def test_c4_wash_label_prints_full_text():
+    """C4：洗水唛两条通道都**不许藏字**，且内容模块不带行数预算（有预算就有省略号）。"""
+    sources = {rel: _read_managed(rel) for rel in (WASH_LABEL_CSS, WASH_LABEL_CONTENT, WASH_LABEL_BITMAP)}
+    problems = wash_label_full_text_problems(sources)
+    assert problems == [], "\n  ".join(problems)
+
+
+def test_c4_injection_turns_red():
+    """C4 的判别力自证：三种坏形态注入一份**内存副本** ⇒ 各自必红；恢复 ⇒ 不红（不是空断言）。"""
+    sources = {rel: _read_managed(rel) for rel in (WASH_LABEL_CSS, WASH_LABEL_CONTENT, WASH_LABEL_BITMAP)}
+    assert wash_label_full_text_problems(sources) == [], "基线必须绿（否则分不清是注入还是存量）"
+
+    # ① 渲染器里塞 Tailwind truncate
+    broken = dict(sources)
+    broken[WASH_LABEL_CSS] += "\nconst leak = 'truncate'\n"
+    assert any("裁掉" in p for p in wash_label_full_text_problems(broken)), "truncate 没判红 ⇒ 空断言"
+
+    # ② 内容模块把行数预算加回来
+    broken = dict(sources)
+    broken[WASH_LABEL_CONTENT] += "\nconst leaked = { maxLines: 2 }\n"
+    assert any("maxLines" in p for p in wash_label_full_text_problems(broken)), "maxLines 没判红 ⇒ 空断言"
+
+    # ③ 位图渲染器按行的预算裁
+    broken = dict(sources)
+    broken[WASH_LABEL_BITMAP] += "\nconst leaked = row.maxLines\n"
+    assert any("按行的预算裁" in p for p in wash_label_full_text_problems(broken)), "row.maxLines 没判红 ⇒ 空断言"
+
+    # ④ 负控：写进注释不算（沿革要讲得清）
+    clean = dict(sources)
+    clean[WASH_LABEL_CONTENT] += "\n// 沿革：本模块曾有 maxLines 行数预算，issue #7833 起退场（truncate / line-clamp）\n"
+    assert wash_label_full_text_problems(clean) == [], "只在注释里提及旧形态就判红 —— 假红"
 
 
 # ── C3：判别力自证（注入必红 + 两条负控）────────────────────────────────────────
