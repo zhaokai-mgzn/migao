@@ -26,6 +26,8 @@ public interface InboundOrderQueryMapper {
      * @param status  精确匹配状态；null 或空串 = 不过滤
      * @param bizCategory 精确匹配业务类别（fabric 原料仓 / finished 成品仓，V196）；
      *                    null 或空串 = 不过滤（向后兼容：既有调用点与站内信深链行为不变）
+     * @param warehouseId 精确匹配仓库主数据引用（issue #7807：列表按仓查单）；
+     *                    null = 全部仓库（既有调用点与站内信深链行为不变）
      */
     @Select("""
             <script>
@@ -62,6 +64,9 @@ public interface InboundOrderQueryMapper {
                <if test="bizCategory != null and bizCategory != ''">
                AND o.biz_category = #{bizCategory}
                </if>
+               <if test="warehouseId != null">
+               AND o.warehouse_id = #{warehouseId}
+               </if>
                <if test="status != null and status != ''">
                AND o.status = #{status}
                </if>
@@ -78,5 +83,6 @@ public interface InboundOrderQueryMapper {
                                             @Param("keyword") String keyword,
                                             @Param("status") String status,
                                             @Param("bizCategory") String bizCategory,
+                                            @Param("warehouseId") Long warehouseId,
                                             @Param("limit") int limit);
 }

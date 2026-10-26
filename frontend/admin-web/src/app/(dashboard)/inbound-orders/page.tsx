@@ -4,9 +4,10 @@ import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, RotateCcw, Search, Send, Ban, PackageOpen, Upload, Download } from 'lucide-react'
 import { toast } from 'sonner'
-import { inboundOrderApi } from '@/lib/api'
+import { inboundOrderApi, warehouseApi } from '@/lib/api'
 import { Modal, Button, Input, Select, Badge, PageCard, PageHeader } from '@/components/ui'
 import type { InboundOrder, InboundOrderLine, InboundOrderStatus, OpeningImportReport } from '@/types'
+import type { Warehouse } from '@/types/stocktake'
 import { cn } from '@/lib/utils'
 import { formatStockQuantity } from '@/lib/stock-quantity'
 import { usePermission } from '@/lib/permission'
@@ -98,6 +99,13 @@ export default function InboundOrdersPage() {
    * 两类单的列与入口不同 —— 成品单只由打包自动建，成品视图不渲染建单 / 期初建账入口。
    */
   const [view, setView] = useState<'fabric' | 'finished'>('fabric')
+  /**
+   * 仓库筛选（issue #7807）：改前列表只有「仓库」**文本列**可看，商家无法按仓查单。
+   * 控件是 `Select`（value 为字符串），发出请求前转 `number`；空串 =「全部仓库」= 不带该条件。
+   */
+  const [warehouseId, setWarehouseId] = useState('')
+  /** 仓列表只喂**筛选器的选项**（读失败 ⇒ 不渲染筛选器，主列表的读失败态一字不动） */
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [rows, setRows] = useState<InboundOrderLine[]>([])
   const [loading, setLoading] = useState(false)
   /**
@@ -122,7 +130,13 @@ export default function InboundOrdersPage() {
     setLoading(true)
     setLoadError(false)
     try {
-      const res = await inboundOrderApi.list({ keyword: keyword || undefined, status, bizCategory: view })
+      const res = await inboundOrderApi.list({
+        keyword: keyword || undefined,
+        status,
+        bizCategory: view,
+        // 空串 =「全部仓库」⇒ 不带该条件（与后端 `warehouseId = null` 同一语义，issue #7807）
+        warehouseId: warehouseId ? Number(warehouseId) : undefined,
+      })
       setRows(res.data.data ?? [])
     } catch {
       // request 拦截器已 toast；此处只**标失败态**（不清零、不说空）—— 读面故障 ≠「没有入库单」（issue #6691）
@@ -130,11 +144,20 @@ export default function InboundOrdersPage() {
     } finally {
       setLoading(false)
     }
-  }, [keyword, status, view])
+  }, [keyword, status, view, warehouseId])
 
   useEffect(() => {
     void load()
   }, [load])
+
+  // 仓列表只喂筛选器（issue #7807）：读失败 ⇒ 选项为空 ⇒ 筛选器不渲染即可 ——
+  // **不阻塞主列表**，也不把「仓读取失败」显示成「入库单读取失败」。
+  useEffect(() => {
+    warehouseApi
+      .list()
+      .then((res) => setWarehouses(res.data?.data ?? []))
+      .catch(() => setWarehouses([]))
+  }, [])
 
   // 深链（issue #7524）：站内信「入库单 RK-… 已过账」点进来带 ?keyword=RK-… ⇒ 直接按单号过滤，
   // 不让商家自己再搜一遍。用 window.location 而不是 useSearchParams：本页的单测对
@@ -244,6 +267,15 @@ export default function InboundOrdersPage() {
   const statusOptions =
     view === 'finished' ? STATUS_OPTIONS.filter((o) => o.value !== 'draft') : STATUS_OPTIONS
 
+  /**
+   * 仓库筛选的**候选**（issue #7807）：仓的类型随视图变 —— 原料仓视图列「非成品仓」
+   * （`store` / `processing` / `material` 都是布料能进的地方），成品仓视图只列 `finished`。
+   * 候选 ≤1 时**不渲染**该筛选：一个只有一种取值的控件是噪声（§31 P1）。
+   */
+  const warehouseCandidates = warehouses.filter((w) =>
+    view === 'finished' ? w.warehouseType === 'finished' : w.warehouseType !== 'finished',
+  )
+
   return (
     <div className="p-6 space-y-4">
       {/* 页头 */}
@@ -303,6 +335,9 @@ export default function InboundOrdersPage() {
               // 带着原料视图的「草稿」切到成品视图 ⇒ 那个值已不在选项里，列表也恒空
               // （一个查不出东西的筛选条件比没有更糟）⇒ 归零
               if (key === 'finished' && status === 'draft') setStatus('')
+              // 仓库同理（issue #7807）：旧仓在新视图里可能**不存在**（原料仓 / 成品仓互斥）
+              // ⇒ 与切视图放进**同一次**状态更新 —— 否则会先按旧仓查一次（一次必然为空的请求）
+              setWarehouseId('')
             }}
             className={
               'rounded-md border px-3 py-1.5 text-sm ' +
@@ -331,6 +366,21 @@ export default function InboundOrdersPage() {
           options={statusOptions}
           className="max-w-[160px]"
         />
+        {/* 仓库筛选（issue #7807）：候选取自 `warehouseApi.list()` 并按视图裁剪；
+            候选 ≤1 时不渲染（一个只有一种取值的控件是噪声，§31 P1）。首项 = 全部仓库。 */}
+        {warehouseCandidates.length > 1 && (
+          <Select
+            data-testid="inbound-warehouse-filter"
+            aria-label="按仓库筛选"
+            value={warehouseId}
+            onChange={(e) => setWarehouseId(e.target.value)}
+            options={[
+              { value: '', label: '全部仓库' },
+              ...warehouseCandidates.map((w) => ({ value: String(w.id), label: w.name })),
+            ]}
+            className="max-w-[180px]"
+          />
+        )}
         <Button variant="secondary" onClick={() => void load()}>
           <Search className="w-4 h-4 mr-1.5" />
           查询
@@ -340,6 +390,8 @@ export default function InboundOrdersPage() {
           onClick={() => {
             setKeyword('')
             setStatus('')
+            // 重置 = 回到「全部仓库」（issue #7807）：筛选器有值时，不归零就等于没重置干净
+            setWarehouseId('')
           }}
         >
           <RotateCcw className="w-4 h-4 mr-1.5" />

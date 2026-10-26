@@ -29,7 +29,7 @@ class InboundOrderQueryMapperTest {
 
     private static Select selectAnnotation() throws NoSuchMethodException {
         Method m = InboundOrderQueryMapper.class.getMethod(
-                "selectOrderLines", Long.class, String.class, String.class, String.class, int.class);
+                "selectOrderLines", Long.class, String.class, String.class, String.class, Long.class, int.class);
         Select select = m.getAnnotation(Select.class);
         assertThat(select).as("selectOrderLines 必须标 @Select").isNotNull();
         return select;
@@ -88,6 +88,29 @@ class InboundOrderQueryMapperTest {
         assertThat(sql).contains("o.biz_category = #{bizCategory}");
         assertThat(sql).as("条件必须可缺省（null / 空串 = 不过滤，向后兼容）")
                 .contains("test=\"bizCategory != null and bizCategory != ''\"");
+    }
+
+    /**
+     * issue #7807：列表要能**按仓库查单**（改前只有「仓库」文本列可看，查不了）。
+     *
+     * <p>去掉这个谓词 ⇒ 服务层传什么都白搭，下拉选了仓也照样返回**全部**仓的单 ——
+     * 而页面看起来一切正常（下拉有值、列表有行）。</p>
+     */
+    @Test
+    @DisplayName("#7807 仓库过滤：o.warehouse_id = #{warehouseId}（漏掉 ⇒ 选了仓也返回全量）")
+    void sqlSupportsWarehouseFilter() throws NoSuchMethodException {
+        String sql = sql();
+        assertThat(sql).contains("o.warehouse_id = #{warehouseId}");
+        assertThat(sql).as("必须可缺省（null = 全部仓库：既有调用点与站内信深链行为不变）")
+                .contains("test=\"warehouseId != null\"");
+        // 与类别维**同时**生效：两个 <if> 都在 WHERE 里，不互相吞没
+        assertThat(sql.indexOf("o.warehouse_id = #{warehouseId}"))
+                .as("仓库条件必须落在 o.biz_category 之后（同一 WHERE 内、顺序邻近）")
+                .isGreaterThan(sql.indexOf("o.biz_category = #{bizCategory}"));
+        assertThat(sql.indexOf("o.warehouse_id = #{warehouseId}"))
+                .as("仓库条件必须在**主查询**的 ORDER BY 之前（落到 ORDER BY 之后 = 语法错 / 静默失效；"
+                        + "注意聚合子查询里也有一个 ORDER BY，不能用第一个命中位置）")
+                .isLessThan(sql.indexOf("ORDER BY o.inbound_date DESC"));
     }
 
     @Test
