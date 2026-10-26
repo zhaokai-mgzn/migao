@@ -265,7 +265,7 @@ describe('打印通道：必留痕 / 不自行计数 / 逐种文案', () => {
   it('D3 探测顺序：iOS 优先于「没有蓝牙接口」（否则把人引向"换浏览器"这条走不通的路）', () => {
     const iosNoApi = probePrintCapability({ platform: 'h5', secureContext: true, hasBluetoothApi: false, isIos: true })
     expect(iosNoApi.reason).toBe('ios-unsupported')
-    const nonH5 = probePrintCapability({ platform: 'weapp', secureContext: true, hasBluetoothApi: true, isIos: false })
+    const nonH5 = probePrintCapability({ platform: 'alipay', secureContext: true, hasBluetoothApi: true, isIos: false })
     expect(nonH5.reason).toBe('not-h5')
     const insecure = probePrintCapability({ platform: 'h5', secureContext: false, hasBluetoothApi: true, isIos: false })
     expect(insecure.reason).toBe('insecure-context')

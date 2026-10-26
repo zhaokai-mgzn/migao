@@ -56,7 +56,7 @@ export const PRINT_FAILURE_HINTS: Record<PrintFailureReason, string> = {
   //    所以"这次记了没有"取决于 `result.printRecorded`，由 `printFailureText` 统一补一句。
   //    历史缺陷（issue #5052 验收 D6）：这里曾写「重打不会重复计数」——与实现和 `print-failed` 两条都相反。
   'user-cancelled':
-    '已取消选择打印机（这次没打成）。请点「选打印机」重新选择 DP235S 后重试。',
+    '已取消选择打印机（这次没打成）。请点「打印标签」重新选择标签机后重试。',
   'device-unsupported':
     '选中的设备不是标签打印机（或不是德佟 DP 系列）。请在系统弹出的设备列表里选择名字以 DP 开头的标签机。',
   'connect-failed':
@@ -102,6 +102,8 @@ export interface PrintCapability {
   reason?: PrintFailureReason
   /** 不可用时的**可行动**文案（`ok: true` 时为空串） */
   hint: string
+  /** **可用**时的正向说法（`ok: false` 时缺省）。两端流程不同：h5 有系统弹窗、小程序是自己搜 */
+  readyHint?: string
 }
 
 /**
@@ -113,6 +115,12 @@ export interface PrintCapability {
  * 那句话会把人引向一个走不通的动作（这正是本单要防的「一句通用文案」）。
  */
 export function probePrintCapability(env: PrintEnv = readPrintEnv()): PrintCapability {
+  // 🔴 小程序（weapp）**排在最前**：它有原生 BLE（`wx.*BLE`），既不需要 Web Bluetooth，
+  //    也不需要 https，iOS 也照样能打（小程序 BLE 在 iOS 是开放的）—— 拿 h5 那三条判据去卡它，
+  //    会把唯一能在「微信里不跳出去」打标签的载体判成不可用（issue #7802）。
+  if (env.platform === 'weapp') {
+    return { ok: true, hint: '', readyHint: PRINT_READY_HINT_WX }
+  }
   if (env.platform !== 'h5') {
     return { ok: false, reason: 'not-h5', hint: PRINT_FAILURE_HINTS['not-h5'] }
   }
@@ -128,7 +136,7 @@ export function probePrintCapability(env: PrintEnv = readPrintEnv()): PrintCapab
     const reason: PrintFailureReason = env.isWechat ? 'wechat-webview' : 'no-bluetooth-api'
     return { ok: false, reason, hint: PRINT_FAILURE_HINTS[reason] }
   }
-  return { ok: true, hint: '' }
+  return { ok: true, hint: '', readyHint: PRINT_READY_HINT }
 }
 
 /** 取某原因的文案；未知原因 ⇒ 回落到 `print-failed`（**不返回空串**：空提示 = 静默失败） */
@@ -159,8 +167,21 @@ export function printFailureText(hint: string, printRecorded: boolean): string {
   return printRecorded ? `${hint}${PRINT_COUNT_REPRINT_NOTICE}` : hint
 }
 
-/** 页面文案：动手前的能力说明（h5 且可用时的正向说法也固定一句，免得页面各写一份） */
-export const PRINT_READY_HINT = '点「选打印机」后选择 DP235S 标签机即可打印'
+/**
+ * 页面文案：动手前的能力说明（可用时的正向说法也固定一句，免得页面各写一份）。
+ *
+ * 🔴 历史缺陷（issue #7802 修）：这里曾写「点『**选打印机**』」，而页面上**没有**这个按钮
+ * —— 真实按钮叫「打印标签」（`data-testid=inbound-print`）⇒ 工人照着提示找不到入口。
+ * 文案里的按钮名必须与页面**逐字**相同（判据见 `tests/inbound-print-weapp.test.ts` 的 W1）。
+ */
+export const PRINT_READY_HINT = '点「打印标签」，在设备列表里选择名字以 DP 开头的标签机即可打印'
+
+/**
+ * 小程序侧的正向说法 —— 与 h5 **不同**：小程序**没有系统设备弹窗**，SDK 自己搜自己连，
+ * 工人唯一要做的是把机器开机并放在近处（多台机器的选择见 `lpapiTransport` 的边界登记）。
+ */
+export const PRINT_READY_HINT_WX =
+  '点「打印标签」即可：小程序会自己搜索附近的标签机（请先把打印机开机、放在 1~3 米内）'
 
 /** 本页是否处在「可打印」平台（给页面做分支用；真正的判定仍是 `probePrintCapability`） */
 export function isPrintPlatform(): boolean {
