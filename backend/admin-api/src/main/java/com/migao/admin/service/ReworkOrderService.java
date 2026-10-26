@@ -57,6 +57,16 @@ public class ReworkOrderService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.migao.admin.mapper.OrderMapper orderMapper;
 
+    /**
+     * 站内通知（issue #7860 用户追加要求：「新增返工单需要产生通知消息」）。
+     *
+     * <p>🔴 <b>fail-soft</b>（与入库通知同一取舍）：通知是「事实之后的追加」，不是事实的一部分 ——
+     * 未注入（切片单测 / 老上下文）或发送异常都只留痕，**绝不**把已经落库的返工单回滚，
+     * 也不改调用方返回值。幂等由 `NotificationService` 的 `eventType:bizId:recipientId` 去重键兜住。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    NotificationService notificationService;
+
     /** 从售后单开返工单。 */
     @Transactional
     public ReworkOrderView create(String afterSalesTicketId, String reason, String processingOrderId,
@@ -97,7 +107,9 @@ public class ReworkOrderService {
             throw BusinessException.validationError("这张售后单刚有另一个返工单被开出来，请刷新后处理那一个");
         }
         log.info("[rework] 开单 | no={} ticket={}", order.getReworkNo(), afterSalesTicketId);
-        return view(order);
+        ReworkOrderView created = view(order);
+        notifyCreated(order, created);
+        return created;
     }
 
     /** 开工（draft → in_progress）。 */
@@ -195,7 +207,9 @@ public class ReworkOrderService {
         reworkOrderMapper.insert(order);
         log.info("[rework] 车间报返工 | no={} po={} op={} qty={}",
                 order.getReworkNo(), processingOrderId, operationName, qty);
-        return view(order);
+        ReworkOrderView created = view(order);
+        notifyCreated(order, created);
+        return created;
     }
 
     /** 列表（最新在前；可按售后单过滤）。 */
@@ -239,6 +253,43 @@ public class ReworkOrderService {
             throw BusinessException.notFound("返工单");
         }
         return order;
+    }
+
+    /**
+     * 新增返工单 ⇒ 给租户管理员的**站内通知**（issue #7860，用户逐字「新增返工单需要产生通知消息」）。
+     *
+     * <p>两个来源同一句话，只在 {@code sourceText} 上区分（售后判定 / 车间报返工）——
+     * 收件人看到的是「哪张单、哪道工序、多少、为什么」，据此决定派谁去做。</p>
+     *
+     * <p>🔴 落地页 = `/rework-orders`（PC「返工单」列表，本单新增的来源/工序/数量列就在那一页）。</p>
+     */
+    private void notifyCreated(ReworkOrder order, ReworkOrderView created) {
+        if (notificationService == null) {
+            return;
+        }
+        try {
+            java.util.Map<String, String> vars = new java.util.HashMap<>();
+            vars.put("reworkNo", created.getReworkNo() == null ? "" : created.getReworkNo());
+            vars.put("processingOrderNo", created.getProcessingOrderNo() == null
+                    ? "（未关联加工单）" : created.getProcessingOrderNo());
+            vars.put("operationName", created.getOperationName() == null ? "（未指定工序）" : created.getOperationName());
+            vars.put("qtyText", created.getQty() == null
+                    ? "" : "返工数量 " + created.getQty().stripTrailingZeros().toPlainString());
+            vars.put("reason", created.getReason() == null ? "（未填原因）" : created.getReason());
+            vars.put("sourceText", SOURCE_WORKER.equals(order.getSource()) ? "车间报返工" : "售后判定要返工");
+            notificationService.triggerForTenantAdmins(order.getTenantId(), "rework_order_created", vars,
+                    com.migao.admin.dto.NotificationEvent.builder()
+                            .bizType("rework_order")
+                            .bizId(order.getId())
+                            .bizNo(created.getReworkNo())
+                            .targetPath("/rework-orders")
+                            .severity("warn")
+                            .occurredAt(OffsetDateTime.now())
+                            .build());
+        } catch (Exception e) {
+            log.warn("[rework] 返工单通知发送失败（已忽略，不影响单据事实）: no={}, error={}",
+                    order.getReworkNo(), e.getMessage());
+        }
     }
 
     private ReworkOrderView view(ReworkOrder order) {

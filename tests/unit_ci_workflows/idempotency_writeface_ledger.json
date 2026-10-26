@@ -44,50 +44,76 @@
       "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java",
       "anchor": "clientRequestIdService.claim(tenantId, clientRequestId, ENDPOINT_CREATE_PRODUCT)",
       "surface": "POST /api/admin/products + POST /api/admin/agent/products（建品，共用同一端点标识）",
-      "case_ids": ["PR-128"],
+      "case_ids": [
+        "PR-128"
+      ],
       "note": "issue #6209 本单接入：此前 claim/complete/discard/replay 全类零出现 ⇒ 同键并发 4 次建出 4 条商品、client_request_keys 0 行（注入式红证实测）。"
     },
     {
       "file": "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java",
       "anchor": "clientRequestIdService.claim(tenantId, clientRequestId, ENDPOINT_CREATE_ORDER)",
       "surface": "POST /api/admin/agent/orders（agent 建单）",
-      "case_ids": ["OR-049", "OR-050"]
+      "case_ids": [
+        "OR-049",
+        "OR-050"
+      ]
     },
     {
       "file": "backend/admin-api/src/main/java/com/migao/admin/service/OrderShipmentService.java",
       "anchor": "clientRequestIdService.claim(tenantId, clientRequestId, ENDPOINT_PACK)",
       "surface": "工人打包 / 发货 / 拆包（K3b-1 同族）",
-      "case_ids": ["OR-049"]
+      "case_ids": [
+        "OR-049"
+      ]
     },
     {
       "file": "backend/admin-api/src/main/java/com/migao/admin/controller/agent/AgentAfterSalesController.java",
       "anchor": "clientRequestIdService.claim(tenantId, clientRequestId, ENDPOINT_CREATE_TICKET)",
       "surface": "POST /api/admin/agent/after-sales（建售后工单）",
-      "case_ids": ["AS-010"]
+      "case_ids": [
+        "AS-010"
+      ]
     },
     {
       "file": "backend/admin-api/src/main/java/com/migao/admin/controller/ProductionController.java",
       "anchor": "clientRequestIdService.claim(tenantId, clientRequestId,",
       "surface": "发货（#6157）/ 报工两个端点",
-      "case_ids": ["PG-018"]
+      "case_ids": [
+        "PG-018"
+      ]
     },
     {
       "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java",
       "anchor": "clientRequestIdService.claim(tenantId, clientRequestId, ENDPOINT_REPORT)",
       "surface": "POST 报工（防连点重复计件）",
-      "case_ids": ["PG-018"]
+      "case_ids": [
+        "PG-018"
+      ]
     },
     {
       "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionScanCompleteService.java",
       "anchor": "clientRequestIdService.claim(tenantId, clientRequestId, ENDPOINT_SCAN_COMPLETE)",
       "surface": "POST /api/worker/production/scan/complete（扫码报工）",
-      "case_ids": ["PG-018"]
+      "case_ids": [
+        "PG-018"
+      ]
     },
     {
       "file": "backend/admin-api/src/main/java/com/migao/admin/service/WorkerInboundService.java",
       "anchor": "clientRequestIdService.claim(tenantId, idempotencyKey, ENDPOINT_POST)",
       "surface": "工人入库过账（Idempotency-Key = 另一条头，**同一份实现**；本文件也读 X-Client-Request-Id 头）",
-      "case_ids": ["OR-057"]
+      "case_ids": [
+        "OR-057"
+      ]
+    },
+    {
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionReworkService.java",
+      "anchor": "clientRequestIdService.claim(tenantId, clientRequestId, ENDPOINT_REWORK)",
+      "surface": "POST /api/worker/production/rework（工人报返工：改记该笔报工 + 回退进度 + 生成返工单）",
+      "case_ids": [
+        "PG-098"
+      ],
+      "note": "issue #7860 接入：同一次「报返工」必须只改记一笔、只生成一张返工单 —— 车间戴手套连点 / 弱网重发都是真实形态。重放 = `replayFirstResult`（同键回放首次结果，不重复改记）；整笔一个事务 ⇒ 失败时占位与改记一起回滚，换键重试是合法路径。判据 = ProductionReworkServiceTest#replayDoesNotAmendTwice。"
     }
   ],
   "declaring_delegates": [
@@ -95,34 +121,44 @@
       "file": "backend/admin-api/src/main/java/com/migao/admin/controller/ProductController.java",
       "anchor": "@RequestHeader(value = ClientRequestIdService.HEADER, required = false)",
       "surface": "POST /api/admin/products（表单建品：读头并透传给 ProductService#createProduct）",
-      "case_ids": ["PR-128"]
+      "case_ids": [
+        "PR-128"
+      ]
     },
     {
       "file": "backend/admin-api/src/main/java/com/migao/admin/controller/agent/AgentProductController.java",
       "anchor": "@RequestHeader(value = ClientRequestIdService.HEADER, required = false)",
       "surface": "POST /api/admin/agent/products（agent 建品：读头并透传）",
-      "case_ids": ["PR-128"]
+      "case_ids": [
+        "PR-128"
+      ]
     },
     {
       "file": "backend/admin-api/src/main/java/com/migao/admin/controller/agent/AgentOrderController.java",
       "anchor": "@RequestHeader(value = ClientRequestIdService.HEADER, required = false)",
       "surface": "POST /api/admin/agent/orders（读头并透传到 OrderService）",
-      "case_ids": ["OR-049"]
+      "case_ids": [
+        "OR-049"
+      ]
     },
     {
       "file": "backend/admin-api/src/main/java/com/migao/admin/controller/WorkerProductionController.java",
       "anchor": "@RequestHeader(value = ClientRequestIdService.HEADER, required = false)",
       "surface": "报工端点（读头并透传到 ProductionService / ProductionScanCompleteService）",
-      "case_ids": ["PG-018"]
+      "case_ids": [
+        "PG-018"
+      ]
     },
     {
       "file": "backend/admin-api/src/main/java/com/migao/admin/controller/WorkerShipmentController.java",
       "anchor": "@RequestHeader(value = ClientRequestIdService.HEADER, required = false)",
       "surface": "工人发货 / 打包 / 拆包（读头并透传到 OrderShipmentService）",
-      "case_ids": ["OR-049"]
+      "case_ids": [
+        "OR-049"
+      ]
     }
   ],
   "declared_but_unwired": [],
   "declared_but_unwired_baseline": [],
-  "consume_floor": 8
+  "consume_floor": 9
 }
