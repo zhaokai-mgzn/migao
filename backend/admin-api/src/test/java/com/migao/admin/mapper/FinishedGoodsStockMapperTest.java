@@ -81,11 +81,20 @@ class FinishedGoodsStockMapperTest {
                 "order_item_id", "quantity", "unit", "status", "inbound_order_id", "outbound_order_id");
         Set<String> missing = java.util.Arrays.stream(FinishedGoodsStock.class.getDeclaredFields())
                 .filter(f -> !Modifier.isStatic(f.getModifiers()) && !f.isSynthetic())
+                // 只读投影（@TableField(exist = false)，如 join 来的 inbound_no）不是 DB 列 —— MyBatis 也不带它写 SQL。
+                // 与全仓同一口径：tests/unit_ci_workflows/_sql_schema.py 的 entity_columns() 同样先抹掉 exist=false（issue #7792）。
+                .filter(f -> f.getAnnotation(com.baomidou.mybatisplus.annotation.TableField.class) == null
+                        || f.getAnnotation(com.baomidou.mybatisplus.annotation.TableField.class).exist())
                 .map(Field::getName)
                 .map(n -> n.replaceAll("([a-z0-9])([A-Z])", "$1_$2").toLowerCase())
                 .collect(Collectors.toCollection(LinkedHashSet::new));
         missing.removeAll(columns);
         assertThat(missing).as("FinishedGoodsStock 实体字段缺列：%s", missing).isEmpty();
+        // 反向：被排除的字段必须**显式**标 exist = false（不许靠命名 / 注释 / 「约定」绕过这道守卫）
+        assertThat(FinishedGoodsStock.class.getDeclaredField("inboundNo")
+                .getAnnotation(com.baomidou.mybatisplus.annotation.TableField.class).exist())
+                .as("inboundNo 是 join 投影，必须标 @TableField(exist = false)")
+                .isFalse();
     }
 
     @Test

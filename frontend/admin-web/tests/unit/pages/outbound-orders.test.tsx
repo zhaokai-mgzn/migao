@@ -111,7 +111,10 @@ const finishedRow = {
   quantity: 1,
   unit: 'set',
   status: 'in_stock',
-  inboundOrderId: 'RK-20261025-0001',
+  // 真实载荷形态（issue #7792）：inboundOrderId 是入库单的内部 id
+  // （InboundOrder.id = IdType.ASSIGN_UUID ⇒ 32 位 UUID），单号在 inboundNo。
+  inboundOrderId: '3f2a9c1e-5b44-4a77-9a0e-2b1f7c9d8e10',
+  inboundNo: 'RK-20261025-0001',
 }
 
 beforeEach(() => {
@@ -214,6 +217,32 @@ describe('成品库存页签（WH-005）', () => {
     expect(await screen.findByTestId('finished-bin-code')).toHaveTextContent('A-01')
     expect(screen.getByText('遮光布帘')).toBeTruthy()
     expect(screen.getByText('DD-20261025-0001')).toBeTruthy()
+  })
+
+  it('「入库单」列显示 RK- 单号，不显示内部 UUID（issue #7792）', async () => {
+    render(<OutboundOrdersPage />)
+    await waitFor(() => expect(screen.getByText('CK-20261025-0001')).toBeTruthy())
+
+    fireEvent.click(screen.getByTestId('outbound-tab-finished'))
+    await waitFor(() => expect(mockFinished).toHaveBeenCalledTimes(1))
+
+    // 单号上屏
+    expect(screen.getByText('RK-20261025-0001')).toBeTruthy()
+    // 反向断言：内部 id 不上屏（写回 row.inboundOrderId ⇒ 必红）
+    expect(screen.queryByText('3f2a9c1e-5b44-4a77-9a0e-2b1f7c9d8e10')).toBeNull()
+  })
+
+  it('入库单号缺失时印 —（不是空单元格、也不是内部 id）', async () => {
+    mockFinished.mockResolvedValue({
+      data: { data: [{ ...finishedRow, inboundNo: null }] },
+    })
+    render(<OutboundOrdersPage />)
+    await waitFor(() => expect(screen.getByText('CK-20261025-0001')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('outbound-tab-finished'))
+    await waitFor(() => expect(mockFinished).toHaveBeenCalledTimes(1))
+
+    expect(screen.queryByText('3f2a9c1e-5b44-4a77-9a0e-2b1f7c9d8e10')).toBeNull()
+    expect(screen.getByText('—')).toBeTruthy()
   })
 
   it('成品仓为空时给空态而不是错误（未打包 ≠ 读取失败）', async () => {
