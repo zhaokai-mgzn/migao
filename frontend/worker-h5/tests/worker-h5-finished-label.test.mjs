@@ -1,13 +1,16 @@
 // case_ids: WH-007, WH-008
 //
-// 扫水洗唛 ⇒ 报工页「成品出库」卡片（V197 / issue #7762）：页面侧的类级判据。
+// 扫水洗唛 ⇒ 报工页「成品入库」卡片 + 入库标签（V197 / #7762 → issue #7845 语义改判）。
 //
-// 用户口径（2026-10-25 逐字）：「允许工人扫码水洗唛进行成品出库打标签操作」「只有关联打包工序的
-// 工人扫码后才能操作出库」。页面这一侧只负责**呈现与触发**，因此判据钉的是：
-//   ① 卡片只在服务端下发 `washLabel` 时出现，内容**逐行来自服务端**（`label.rows`），前端不自拼业务字段；
-//   ② 「打印标签」走**独立打印文档**（`@page 50mm 70mm`），不把报工页印上纸；
-//   ③ 「出库」调的是 `POST /api/worker/stock/finished-outbound`，且服务端说不能出库时按钮 disabled
-//      —— 隐藏按钮不是授权（拒绝仍由服务端判）。
+// 用户口径（2026-10-26 逐字）：「只有打包工序绑定了成品帘入库，如果是打包工人，那扫码后除了自动报工，
+// 还需要生成成品入库单」「打包扫码报工时就需要确认质检结果和成品入库&打入库标签」。
+// ⇒ 卡片从「成品出库」改为「成品入库」：质检结果 + 入库单号 + 仓位 + 打印入库标签；
+//    **出库按钮撤下**（打包 = 入库；出库留给发货 / 商家侧，服务端写面保留）。
+//
+// 页面这一侧只负责**呈现与触发**，因此判据钉三件事：
+//   ① 卡片内容**逐行来自服务端**（`label.rows` / `inbound_no` / `bin_code` / `quality`），前端不自拼业务字段；
+//   ② 「打印入库标签」走**独立打印文档**（`@page 50mm 70mm`），不把报工页印上纸；
+//   ③ 数据来自**报工回执** `finished_inbound`（不再多发一次读请求）；工人页**不再有出库**按钮 / API 调用。
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
@@ -17,14 +20,17 @@ const render = read('render.mjs')
 const api = read('api.mjs')
 const app = read('app.mjs')
 
-test('标签卡片的每一行都来自服务端 label.rows（前端不拼订单字段）', () => {
-  const card = render.slice(render.indexOf('function washLabelCard'))
+test('成品入库卡片的每一行都来自服务端（label.rows / inbound_no / bin_code / quality），前端不拼订单字段', () => {
+  const start = render.indexOf('function finishedInboundCard')
+  assert.ok(start > 0, '缺少 finishedInboundCard')
+  const card = render.slice(start, start + 2400)
   assert.match(card, /label\.rows/)
   assert.match(card, /data-label-key=/)
+  assert.match(card, /w\.inbound_no/, '入库单号来自服务端（可对账）')
+  assert.match(card, /w\.bin_code/, '仓位号来自服务端（与商家库存页同一口径）')
+  assert.match(card, /w\.quality/, '质检结论来自服务端（打包工人要核对的那一项）')
   // 前端不得自己读这些业务字段拼标签（唯一来源是服务端 rows）
   assert.doesNotMatch(card, /order_no|customer_name|sku_code/)
-  // 服务端说不能出库 ⇒ 按钮 disabled（不是只靠藏按钮）
-  assert.match(card, /allowed \? '' : ' disabled'/)
 })
 
 test('打印走独立文档：@page 50mm × 70mm，且只含标签行与短码', () => {
@@ -38,10 +44,16 @@ test('打印走独立文档：@page 50mm × 70mm，且只含标签行与短码',
   assert.doesNotMatch(body, /worker-h5-root|wh5-card/)
 })
 
-test('出库视图随扫码响应下发（不再多发一次 GET），出库调 POST /api/worker/stock/finished-outbound', () => {
-  assert.match(app, /washLabel: view\.finished_outbound \?\? null/)
-  assert.match(api, /\/api\/worker\/stock\/finished-outbound/)
-  assert.match(api, /method: 'POST'/)
-  // 读面只有一条（服务端随视图给）：页面不得自己再拉一次 wash-label
-  assert.doesNotMatch(api, /wash-label/)
+test('数据来自报工回执 finished_inbound；工人页**不再有**出库按钮 / 出库请求', () => {
+  // ① 回执 → 状态（api 映射 + 装配层两个入口）
+  assert.match(api, /finishedInbound: data\.finished_inbound \?\? null/)
+  assert.match(app, /finishedInbound: r\.finishedInbound/)
+  assert.match(app, /finishedInbound: view\.finished_inbound \?\? null/)
+  // ② 出库按钮 / 出库调用已撤（用户 2026-10-26 裁定：打包 = 入库）
+  assert.doesNotMatch(render, /wh5-fl-out/)
+  assert.doesNotMatch(api, /request\('\/api\/worker\/stock\/finished-outbound'/, '页面不再发这条出库请求（注释里保留端点说明不算）')
+  assert.doesNotMatch(app, /issueWashLabel/)
+  // ③ 打印按钮接在入库卡上（数据源 = finishedInbound.label）
+  assert.match(app, /on\('wh5-fi-print', printWashLabel\)/)
+  assert.match(app, /const w = state\.finishedInbound/)
 })
