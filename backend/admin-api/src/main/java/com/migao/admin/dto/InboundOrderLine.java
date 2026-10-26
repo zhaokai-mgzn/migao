@@ -31,6 +31,15 @@ public class InboundOrderLine {
     /** draft / posted / cancelled */
     private String status;
 
+    /**
+     * 业务类别（V196）：{@link com.migao.admin.entity.InboundOrder#BIZ_FABRIC} 原料 /
+     * {@link com.migao.admin.entity.InboundOrder#BIZ_FINISHED} 成品。
+     *
+     * <p>列表页按它分成「原料仓入库 / 成品仓入库」两个视图（issue #7794）：两类单的列与入口不同
+     * （成品单只由打包自动建，视图内不渲染建单入口）。</p>
+     */
+    private String bizCategory;
+
     private BigDecimal totalAmount;
 
     private String remark;
@@ -46,6 +55,15 @@ public class InboundOrderLine {
 
     /** 明细总数量（聚合） */
     private Integer totalQuantity;
+
+    /**
+     * **套数合计**（聚合；issue #7794）—— 成品视图那一列。
+     *
+     * <p>成品入库按「套 × 部位」逐行入库（V197 / issue #7762）⇒ 行数 = 部位数、套数 = 套的个数，
+     * 两个数**不同**。没有套号的存量行（V196 订单行粒度：一行 = 一件成品 = 一套）按一行一套计
+     * —— 见 {@code InboundOrderQueryMapper} 的 {@code set_count} 聚合。</p>
+     */
+    private Integer setCount;
 
     /**
      * 该单**已生成**的批次号（聚合，逗号分隔；issue #5844）。

@@ -29,7 +29,7 @@ class InboundOrderQueryMapperTest {
 
     private static Select selectAnnotation() throws NoSuchMethodException {
         Method m = InboundOrderQueryMapper.class.getMethod(
-                "selectOrderLines", Long.class, String.class, String.class, int.class);
+                "selectOrderLines", Long.class, String.class, String.class, String.class, int.class);
         Select select = m.getAnnotation(Select.class);
         assertThat(select).as("selectOrderLines 必须标 @Select").isNotNull();
         return select;
@@ -75,6 +75,30 @@ class InboundOrderQueryMapperTest {
         assertThat(sql).contains("o.supplier_doc_no ILIKE");
     }
 
+    /**
+     * issue #7794：类别是「原料仓入库 / 成品仓入库」两个视图的**唯一分界**。
+     *
+     * <p>去掉这个谓词 ⇒ 服务层传什么都白搭，成品单照旧混进原料仓列表 —— 而页面看起来一切正常
+     * （用户 2026-10-26 报的就是这个形态）。</p>
+     */
+    @Test
+    @DisplayName("#7794 类别过滤：o.biz_category = #{bizCategory}（漏掉 ⇒ 两个视图都是全量）")
+    void sqlSupportsBizCategoryFilter() throws NoSuchMethodException {
+        String sql = sql();
+        assertThat(sql).contains("o.biz_category = #{bizCategory}");
+        assertThat(sql).as("条件必须可缺省（null / 空串 = 不过滤，向后兼容）")
+                .contains("test=\"bizCategory != null and bizCategory != ''\"");
+    }
+
+    @Test
+    @DisplayName("#7794 套数合计：成品行按 set_id 去重（没有套号的存量行按一行一套）")
+    void sqlAggregatesSetCount() throws NoSuchMethodException {
+        String sql = sql();
+        assertThat(sql).as("套数 = 不同套号个数；拿行数顶替就把「5 套 × 2 部位」显示成 10 套")
+                .contains("COUNT(DISTINCT");
+        assertThat(sql).contains("set_count");
+    }
+
     @Test
     @DisplayName("列别名与 InboundOrderLine 的属性名逐一对齐（别名写错 ⇒ 字段静默为 null）")
     void aliasesMatchDtoProperties() throws NoSuchMethodException {
@@ -82,16 +106,16 @@ class InboundOrderQueryMapperTest {
         // MyBatis 按列别名映射到属性名：别名与 DTO 属性名不一致时**不报错**，字段只是永远为 null
         for (String alias : new String[]{
                 "inboundNo", "supplier", "supplierDocNo", "warehouse", "inboundDate",
-                "status", "totalAmount", "remark", "postedAt", "postedBy", "createdAt",
-                "itemCount", "totalQuantity"}) {
+                "status", "bizCategory", "totalAmount", "remark", "postedAt", "postedBy", "createdAt",
+                "itemCount", "totalQuantity", "setCount"}) {
             assertThat(sql).as("列表 SQL 缺别名 %s（DTO 字段会静默为 null）", alias)
                     .contains("AS " + alias);
         }
         // DTO 上确有其属性（反射，避免别名与属性名各改一半）
         for (String prop : new String[]{
                 "inboundNo", "supplier", "supplierDocNo", "warehouse", "inboundDate",
-                "status", "totalAmount", "remark", "postedAt", "postedBy", "createdAt",
-                "itemCount", "totalQuantity"}) {
+                "status", "bizCategory", "totalAmount", "remark", "postedAt", "postedBy", "createdAt",
+                "itemCount", "totalQuantity", "setCount"}) {
             assertThat(InboundOrderLine.class.getDeclaredFields())
                     .as("InboundOrderLine 缺属性 %s", prop)
                     .anyMatch(f -> f.getName().equals(prop));

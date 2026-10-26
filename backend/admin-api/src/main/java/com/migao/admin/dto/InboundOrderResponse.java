@@ -37,6 +37,13 @@ public class InboundOrderResponse {
     /** draft / posted / cancelled */
     private String status;
 
+    /**
+     * 业务类别（V196）：{@code fabric} 原料仓 / {@code finished} 成品仓（issue #7794）。
+     *
+     * <p>详情弹窗按它切换明细列：成品单显示套号 / 仓位号 / 短码，不显示米数 / 单价 / 金额。</p>
+     */
+    private String bizCategory;
+
     private BigDecimal totalAmount;
 
     /** 单据来源：purchase 采购收货 / opening 期初建账 */
@@ -115,6 +122,26 @@ public class InboundOrderResponse {
         private String legacyBatchNo;
 
         private BigDecimal rollLengthM;
+
+        /**
+         * 以下五个字段只对**成品行**（{@code biz_category=finished}）有值（V194 / V197），
+         * 由 {@code BeanUtils.copyProperties(line, item)} 自动带出 —— **不手写映射**（issue #7794）。
+         */
+
+        /** 仓位号快照（成品仓入库的意义就在这个号） */
+        private String binCode;
+
+        /** 套号快照（V197 / #7762） */
+        private String setNo;
+
+        /** 部位码短码快照（V197 / #7762） */
+        private String shortCode;
+
+        /** 品名快照（成品行没有 SKU 货号，展示靠它） */
+        private String productName;
+
+        /** 计量单位：m = 米（布料行）/ set = 套（成品行） */
+        private String unit;
 
         private String remark;
     }
