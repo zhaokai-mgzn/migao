@@ -47,5 +47,15 @@ export const WASH_LABEL_QR_PLACEHOLDER_MM = 20
 export const WASH_LABEL_QR_PLACEHOLDER_FONT_PT = 9
 /** 表头 / 正文块 / 底部码之间的间距（mm）—— 与 `mt-[0.5mm]` / `mt-[1mm]` 同口径 */
 export const WASH_LABEL_BLOCK_GAP_MM = 0.5
-/** 正文块与底部二维码之间多留的一点间距（mm）—— 码是功能件，别和文字挤在一起 */
-export const WASH_LABEL_QR_GAP_MM = 1
+/**
+ * 二维码与正文之间隔**几行**（2026-10-26 用户逐字「二维码不要沉底，跟文字隔两行即可」）。
+ * 行高 = {@link WASH_LABEL_BODY_FONT_PT} × {@link WASH_LABEL_LINE_HEIGHT} ⇒ 与系统打印的
+ * `mt-[10.16mm]`（2 × 12pt × 1.2 = 28.8pt）**同源**，改一处两条通道一起变。
+ */
+export const WASH_LABEL_QR_TEXT_GAP_LINES = 2
+/**
+ * 纸面下沿（底部虚线）之上必须留出的空白（mm）—— 二维码不得贴虚线（用户 2026-10-26
+ * 「要离底部虚线留空」）。系统打印靠「文字块不再 flex-1 + 二维码跟在文字后」自然留白；
+ * 画布通道按本值**兜底夹紧**（内容再长也不许把码压到虚线上）。
+ */
+export const WASH_LABEL_BOTTOM_CLEARANCE_MM = 6

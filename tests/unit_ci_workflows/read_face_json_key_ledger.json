@@ -149,7 +149,9 @@
         "formulaText": "formula_text",
         "formulaMeters": "formulaMeters",
         "plannedMeters": "plannedMeters",
-        "savedMeters": "savedMeters"
+        "savedMeters": "savedMeters",
+        "installCommunity": "installCommunity",
+        "installRoom": "installRoom"
       },
       "frozen_keys": [
         "fabric_meters",
@@ -203,7 +205,8 @@
         "paidAt": "paidAt",
         "shippedAt": "shippedAt",
         "receivedAt": "receivedAt",
-        "updatedAt": "updatedAt"
+        "updatedAt": "updatedAt",
+        "installCommunity": "installCommunity"
       },
       "frozen_keys": [
         "needs_work",

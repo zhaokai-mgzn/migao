@@ -40,6 +40,8 @@ import { orderApi, processingItemApi } from '@/lib/api'
 import { toastRequestError } from '@/lib/api-error'
 import type { Order, OrderContentUpdateItem, ProcessingItem } from '@/types'
 import OrderExtraOptions from './OrderExtraOptions'
+import InstallRoomChips from './InstallRoomChips'
+import { INSTALL_COMMUNITY_MAX_LENGTH, INSTALL_ROOM_MAX_LENGTH } from '@/lib/install-info'
 
 export interface EditOrderContentModalProps {
   open: boolean
@@ -59,6 +61,12 @@ interface EditableLine {
   unitPrice: string
   width: string
   height: string
+  /**
+   * **安装位置**（issue #7856）：件级自由文本 —— 这一扇窗装在那户人家的哪个空间（主卧 / 阳台 …）。
+   * 落点 = 该行 `processingInfo.installRoom`（**不是** item 一级字段：后端 DTO 没有它）；
+   * 空 ⇒ **不落键**（写 `""` 会让下游读成「填过」）。
+   */
+  installRoom: string
   /** 加工项目录里勾选的名称 */
   processingNames: string[]
   /** 特殊选项（元/套那半） */
@@ -118,6 +126,9 @@ function toLine(item: NonNullable<Order['items']>[number]): EditableLine {
   const rest: Record<string, unknown> = { ...info }
   delete rest.processingItems
   delete rest.specialOptions
+  // 安装位置由**本组件的输入框**承载（初值取自这一行）⇒ 从「其余键」里摘掉，避免两处各写一份
+  const installRoom = typeof info.installRoom === 'string' ? info.installRoom : ''
+  delete rest.installRoom
   return {
     key: nextKey(),
     productId: item.productId,
@@ -126,6 +137,7 @@ function toLine(item: NonNullable<Order['items']>[number]): EditableLine {
     unitPrice: num(item.unitPrice),
     width: num(item.width),
     height: num(item.height),
+    installRoom,
     processingNames: namesOf(info.processingItems),
     specialOptions: namesOf(info.specialOptions),
     rest,
@@ -135,8 +147,9 @@ function toLine(item: NonNullable<Order['items']>[number]): EditableLine {
 
 /** 一行 → 提交用的 `processingInfo`：只重建两键，其余原样带回；两个键都空且原本没有 ⇒ 不带该字段 */
 function buildProcessingInfo(line: EditableLine): Record<string, unknown> | undefined {
+  const installRoom = line.installRoom.trim()
   const nothingSelected = line.processingNames.length === 0 && line.specialOptions.length === 0
-  if (nothingSelected && Object.keys(line.rest).length === 0) return undefined
+  if (nothingSelected && Object.keys(line.rest).length === 0 && !installRoom) return undefined
   const processingItems = line.processingNames.map((name) => {
     const kept = line.keptItems[name]
     const row: Record<string, unknown> = { name }
@@ -150,6 +163,9 @@ function buildProcessingInfo(line: EditableLine): Record<string, unknown> | unde
   else delete info.processingItems
   if (line.specialOptions.length > 0) info.specialOptions = line.specialOptions
   else delete info.specialOptions
+  // **安装位置**（issue #7856）：缺值 ⇒ 不落键（清空过的行也不留空串）
+  if (installRoom) info.installRoom = installRoom
+  else delete info.installRoom
   return Object.keys(info).length > 0 ? info : undefined
 }
 
@@ -157,6 +173,11 @@ export default function EditOrderContentModal({ open, order, onClose, onSaved }:
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
   const [customerAddress, setCustomerAddress] = useState('')
+  /**
+   * **安装小区**（issue #7856）：订单级一个值 —— 帘子最终装进的那一户人家所在的小区。
+   * 🔴 不是收货地址（货发给下单的窗帘店）。补录 / 改口就走这里（C 端允许先空、后补）。
+   */
+  const [installCommunity, setInstallCommunity] = useState('')
   const [discount, setDiscount] = useState('')
   const [actual, setActual] = useState('')
   const [lines, setLines] = useState<EditableLine[]>([])
@@ -171,6 +192,7 @@ export default function EditOrderContentModal({ open, order, onClose, onSaved }:
     setCustomerName(order.customerName ?? '')
     setCustomerPhone(order.customerPhone ?? '')
     setCustomerAddress(order.customerAddress ?? '')
+    setInstallCommunity(order.installCommunity ?? '')
     setDiscount(num(order.discountAmount ?? 0))
     setActual(num(order.actualAmount ?? 0))
     setLines((order.items ?? []).map(toLine))
@@ -253,6 +275,7 @@ export default function EditOrderContentModal({ open, order, onClose, onSaved }:
         unitPrice: '',
         width: '',
         height: '',
+        installRoom: '',
         processingNames: [],
         specialOptions: [],
         rest: {},
@@ -292,6 +315,8 @@ export default function EditOrderContentModal({ open, order, onClose, onSaved }:
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
         customerAddress: customerAddress.trim(),
+        // **安装小区**（issue #7856）：空串 = 显式清空（服务端「未传 ⇒ 沿用原值、空串 ⇒ 清空」）
+        installCommunity: installCommunity.trim(),
         discountAmount: Number(discount || 0),
         actualAmount: Number(actual || 0),
         items: lines.map<OrderContentUpdateItem>((line) => ({
@@ -367,6 +392,18 @@ export default function EditOrderContentModal({ open, order, onClose, onSaved }:
                     value={customerAddress}
                     onChange={(e) => setCustomerAddress(e.target.value)}
                     className={inputClass}
+                  />
+                </label>
+                {/* **安装小区**（issue #7856）：补录 / 改口入口 —— 与收货地址并排但**两个事实** */}
+                <label className="text-sm text-neutral-700 col-span-2">
+                  安装小区
+                  <input
+                    data-testid="edit-install-community"
+                    maxLength={INSTALL_COMMUNITY_MAX_LENGTH}
+                    value={installCommunity}
+                    onChange={(e) => setInstallCommunity(e.target.value)}
+                    className={inputClass}
+                    placeholder="例：春江花园 3栋2单元（选填，随货打印给安装/分拣用）"
                   />
                 </label>
               </div>
@@ -449,6 +486,26 @@ export default function EditOrderContentModal({ open, order, onClose, onSaved }:
                           删除
                         </button>
                       </div>
+                    </div>
+
+                    {/* **安装位置**（issue #7856）：件级（一行 = 一扇窗）—— 这一扇窗装在哪。
+                        🔴 不是部位 / 帘种；空 ⇒ 该行 `processingInfo.installRoom` 不落键。 */}
+                    <div className="mt-3">
+                      <label className="text-xs text-neutral-600">
+                        安装位置
+                        <input
+                          data-testid={`edit-install-room-${index}`}
+                          maxLength={INSTALL_ROOM_MAX_LENGTH}
+                          value={line.installRoom}
+                          onChange={(e) => patchLine(line.key, { installRoom: e.target.value })}
+                          className={inputClass}
+                          placeholder="主卧 / 阳台…（选填）"
+                        />
+                      </label>
+                      <InstallRoomChips
+                        value={line.installRoom}
+                        onPick={(room) => patchLine(line.key, { installRoom: room })}
+                      />
                     </div>
 
                     {/* 加工项 */}

@@ -41,12 +41,12 @@ const LABELS: WashLabelInput[] = [
     qrValue: 'https://app.migaozn.com/s/7Q2M4K8P',
     rows: [
       { key: 'customer', text: '客户 赵凯' },
-      { key: 'sku', text: '客厅窗帘A' },
+      { key: 'color', text: '客厅窗帘A' },
     ],
   },
   {
     qrValue: 'https://app.migaozn.com/s/3N8R5T1W',
-    rows: [{ key: 'sku', text: '卧室窗帘B' }],
+    rows: [{ key: 'color', text: '卧室窗帘B' }],
   },
 ]
 

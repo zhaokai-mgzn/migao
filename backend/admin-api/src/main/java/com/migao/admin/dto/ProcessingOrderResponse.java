@@ -157,6 +157,28 @@ public class ProcessingOrderResponse {
          */
         private String remark;
 
+        /**
+         * **安装小区**（issue #7856）：这批帘子最终装进的那一户人家所在的小区。
+         *
+         * <p>来源 = 订单行 {@code processing_info.installCommunity}（已登记 JSONB 顶层键；
+         * 订单级语义由写侧**扇出到每行同一字符串**），随加工单生成**逐行固化**进
+         * `items_snapshot`（白名单见 {@code ProcessingOrderService.CRAFT_SPEC_SNAPSHOT_KEYS}）。
+         * 🔴 **不是收货地址**（货发给下单的窗帘店）、不是客户所在地。只上纸，不参与算料/计价/派工/库存。</p>
+         *
+         * <p>缺值 = 键缺席 = null（{@code copyIfPresent} 不造值）⇒ 纸面该行不印（前端缺值不印，
+         * 不渲染空的「安装小区: 」）。用 {@code Object}：形态不干净时不得让整份快照解析失败。</p>
+         */
+        private Object installCommunity;
+
+        /**
+         * **安装位置**（issue #7856）：这一扇窗装在那户人家的哪个空间（主卧 / 客厅 / 阳台 …）。
+         *
+         * <p>🔴 **不是部位/帘种**（那个是 {@link #curtainType}）。来源 = 订单行
+         * {@code processing_info.installRoom}（**件级**），随加工单生成逐行固化进 `items_snapshot`。
+         * 缺值 = 键缺席 = null ⇒ 纸面不印。</p>
+         */
+        private Object installRoom;
+
         // ── 工艺规格（craft spec，issue #4354 / 设计文档 §4.9 第③处展示）──────────────
         //
         // 快照（`items_snapshot`）是加工单的**固化真相**；下面这些键由订单侧下单时原样落库

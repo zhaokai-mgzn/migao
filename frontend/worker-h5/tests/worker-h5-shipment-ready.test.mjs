@@ -113,6 +113,30 @@ test('标签行序与字段面：订单号 / 收货人 / 电话 / 地址 / 物�
   assert.ok(!rows.some((r) => r.label === '客户'), '不得再有「客户」行')
 })
 
+test('帘种 / 安装小区 / 安装位置：有值就印、缺值整行不印（issue #7856），且排在地址之后', () => {
+  const rows = buildShipLabelRows({
+    ...READY_ROW,
+    curtain_types: '布帘/纱帘',
+    install_community: '春江花园 3栋2单元',
+    install_rooms: '主卧/阳台',
+  })
+  const keys = rows.map((r) => r.key)
+  // 随货标识紧跟在「地址」之后、物流之前（拣货的人先认地址，再认装到哪户哪扇窗）
+  assert.equal(keys.indexOf('curtain_types'), keys.indexOf('customer_address') + 1)
+  assert.equal(keys.indexOf('install_community'), keys.indexOf('curtain_types') + 1)
+  assert.equal(keys.indexOf('install_rooms'), keys.indexOf('install_community') + 1)
+  assert.equal(rows.find((r) => r.key === 'curtain_types').value, '布帘/纱帘')
+  assert.equal(rows.find((r) => r.key === 'install_community').value, '春江花园 3栋2单元')
+  assert.equal(rows.find((r) => r.key === 'install_rooms').value, '主卧/阳台')
+  assert.equal(rows.find((r) => r.key === 'install_rooms').multiline, true, '安装位置可能多扇窗 ⇒ 允许折行')
+
+  // 🔴 缺值（存量单 / C 端先空后补）= 整行不印，不印 `—` 白吃 50mm 版心
+  const blank = buildShipLabelRows({ ...READY_ROW, curtain_types: '', install_community: null, install_rooms: '  ' })
+  assert.ok(!blank.some((r) => r.key === 'curtain_types'))
+  assert.ok(!blank.some((r) => r.key === 'install_community'))
+  assert.ok(!blank.some((r) => r.key === 'install_rooms'))
+})
+
 test('缺值不编造：null / 空串 ⇒ `—`，且物流方式**不回退「快递」**', () => {
   const rows = buildShipLabelRows({
     order_no: '0901-000086', customer_name: '', customer_phone: null,

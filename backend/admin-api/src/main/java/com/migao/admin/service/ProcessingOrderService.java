@@ -377,7 +377,17 @@ public class ProcessingOrderService {
             // `processing_info.remark`（自由文本）⇒ 不进白名单就**不会进快照**，而快照是加工单的
             // 固化真相（`ProcessingOrderItemBrief.remark` 早已声明，只是此前**没有任何写入方** = 死字段）。
             // 缺值不落键（`copyIfPresent` 语义）⇒ 没填备注的单在快照里**没有**该键。
-            "remark");
+            "remark",
+            // 安装信息（issue #7856）：水洗唛 / 发货标签 / 入库标签要印「安装小区 + 安装位置」。
+            // 两者都落在 `order_items.processing_info` 顶层（与 `formulaText` / `remark` 同层，
+            // **已登记 JSONB ⇒ 零迁移**）：
+            //   · `installRoom` = **件级**（= 一行 = 一扇窗），下单时原样落库 ⇒ 逐键透传即可；
+            //   · `installCommunity` = **订单级语义**，但由写侧单点扇出到每行同一字符串
+            //     （快照是行数组、没有订单级顶层对象）⇒ 也在这里逐键取，**不另走 stampOrderUrgency**
+            //     （订单级键塞进那一组会恒取不到 —— 那组的来源是 `orders` 行，本键的来源是明细行）。
+            // 不进白名单 ⇒ 纸面少两行，且快照是固化真相、事后补不回来。
+            // 缺值不落键（`copyIfPresent` 语义）⇒ 没填的单在快照里**没有**这两个键（纸面不印）。
+            "installCommunity", "installRoom");
 
     /**
      * **订单级**字段进加工单快照的键（issue #5177 范围 5「透传」）—— 与

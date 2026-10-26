@@ -75,6 +75,20 @@ public class OrderDetailResponse {
     private String logisticsCompany;
 
     /**
+     * **安装小区**（issue #7856）：这批帘子最终装进的那一户人家所在的小区（可带楼栋/单元/门牌）。
+     *
+     * <p>🔴 语义边界：<b>不是收货地址</b>（{@link #customerAddress} 是「货发到哪儿」——
+     * 发给下单的窗帘店），这是「帘子最终装进哪一户人家」。只上纸（水洗唛 / 发货标签 / 入库标签），
+     * 不参与算料 / 计价 / 派工 / 库存 / 检索。</p>
+     *
+     * <p><b>投影字段，不是列</b>：真值在 {@code order_items.processing_info.installCommunity}
+     * （已登记 JSONB；用户 2026-10-26 裁定「不能作为订单基础字段」⇒ 数据库零迁移）。
+     * 写侧把同一个字符串扇出到该单**每一行**，本字段是**读侧收敛**的结果（第一条非空）。
+     * {@code null} = 未采集（存量单 / 未填）⇒ 前端不渲染该行（不印「—」占纸）。</p>
+     */
+    private String installCommunity;
+
+    /**
      * 总金额（商品小计 + 加工费）
      */
     private BigDecimal totalAmount;
@@ -282,6 +296,15 @@ public class OrderDetailResponse {
          * 加工项详情
          */
         private Object processingInfo;
+
+        /**
+         * **安装位置**（issue #7856）：这一扇窗装在那户人家的哪个空间（主卧 / 次卧 / 客厅 / 阳台 …）。
+         *
+         * <p>🔴 **不是部位/帘种**（布帘 / 纱帘 / 帘头 = {@code curtainType}）—— 两个事实。来源 =
+         * 本行 {@code processingInfo.installRoom}（已登记 JSONB 顶层键，写侧下单时原样落库），
+         * 本字段只做**投影**。{@code null} = 未填 ⇒ 纸面该行不印（不猜）。</p>
+         */
+        private String installRoom;
 
         /**
          * 小计

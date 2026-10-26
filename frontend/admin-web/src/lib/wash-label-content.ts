@@ -46,8 +46,13 @@ export type WashLabelRowKey =
   | 'docNo'
   | 'customer'
   | 'setNo'
+  /** 颜色（取代原「货号 = sku」；用户 2026-10-26「货号不要展示sku，展示颜色的内容」） */
+  | 'color'
   | 'positionKind'
-  | 'sku'
+  /** 安装小区（订单级，随加工单快照逐行固化；只印，不参与算料/计价/派工） */
+  | 'installCommunity'
+  /** 安装位置（件级：这一扇窗装在哪；只印） */
+  | 'installRoom'
   | 'doorWidth'
   | 'meters'
   | 'size'
@@ -77,8 +82,13 @@ export const WASH_LABEL_ROW_KEYS: readonly WashLabelRowKey[] = [
   'docNo',
   'customer',
   'setNo',
+  // 颜色在**帘种上面**：用户 2026-10-26 逐字「再加个帘种，放到货号下面」
+  // ⇒ 帘种紧跟在原「货号」行之后；同一批裁定「货号不要展示sku，展示颜色的内容」⇒ 该行改印颜色
+  'color',
   'positionKind',
-  'sku',
+  // 安装去向（小区 = 订单级 / 位置 = 件级）：只编入纸面，不参与任何计算
+  'installCommunity',
+  'installRoom',
   'doorWidth',
   'meters',
   'size',
@@ -296,15 +306,24 @@ export function washLabelRows(input: WashLabelRowsInput): WashLabelRow[] {
   const setCount = Number.isFinite(input.setCount) ? Number(input.setCount) : 1
   push('setNo', `第 ${setNo} 套 / 共 ${setCount} 套`)
 
-  push('positionKind', position.position_kind ?? '', '部位')
+  // 🔴 纸面标签 = 「帘种」（用户 2026-10-26 逐字「再加个帘种，放到货号下面」）：值仍取
+  // `position_kind`（服务端由快照 `curtainType` 派生，见 `ProcessingOrderService`）——
+  // 缺值时回落到快照 `curtainType`（同一条取值链，不另做推导）。
+  push('positionKind', position.position_kind || (input.item?.curtainType ?? ''), '帘种')
 
   // 🔴 商品名称（件名）**已退场**（issue #7776，用户 2026-10-25 逐字「移除商品名称展示」）。
   // 🔴 **颜色 → 货号**（issue #7833，2026-10-26 用户逐字「把颜色改成货号」）：纸面印快照键
   //    `sku`（= `products.sku_code`；后端 `buildSnapshot` 的 `copyIfPresent(pi, entry, "skuCode", "sku")`
   //    与 `snapshotAttrParts` 的「货号」是**同一条**取值链）。缺值 ⇒ 该行不渲染
   //    （**不拿 SKU 组合码冒充货号**，issue #7636 的口径不变）。
-  const sku = typeof input.item?.sku === 'string' ? input.item.sku.trim() : ''
-  push('sku', sku, '货号')
+  // 🔴 2026-10-26 再改判（用户逐字「货号不要展示sku，展示颜色的内容」）：纸面印**颜色**、
+  // 不再印 `sku`（SKU 码对车间/安装现场没有用）。缺值 ⇒ 该行不渲染，不拿别的字段顶替。
+  const colorName = typeof input.item?.colorName === 'string' ? input.item.colorName.trim() : ''
+  push('color', colorName, '颜色')
+
+  // 安装去向（用户 2026-10-26：水洗唛 / 发货标签 / 入库标签都要有）—— 只印，不参与算料/计价/派工。
+  push('installCommunity', input.item?.installCommunity ?? '', '安装小区')
+  push('installRoom', input.item?.installRoom ?? '', '安装位置')
 
   // 门幅：快照落的是 SKU 原串（`2.8米` / `2.8` 两种形态都有）⇒ 只补单位、不改数值（缺值不渲染）
   const doorWidth = typeof input.item?.doorWidth === 'string' ? input.item.doorWidth.trim() : ''
@@ -316,7 +335,9 @@ export function washLabelRows(input: WashLabelRowsInput): WashLabelRow[] {
   // 只印值（`韩褶 · 超高 · 倒幅 · 双开 · 定型`），形态同参考工单的「双开-韩褶-定型」。
   push('craft', washLabelCraftMode(input.item))
   // 褶法 = 是否韩褶公式 + 折数（同一个字段；2026-10-26 用户裁定）
-  push('pleats', washLabelPleats(input.item), '褶法')
+  // 🔴 2026-10-26 用户逐字「褶法：去掉，只保留后面的文字，和工艺一样，一行展开内容即可」
+  // ⇒ 不印「褶法」前缀（形态同上一条「加工方式」），值整行展开、不折叠。
+  push('pleats', washLabelPleats(input.item))
 
   // 🔴 交期行**已退场**（2026-10-26 用户逐字「移除交期字段」）。
   push('specialOptions', washLabelSpecialOptions(input.item), '特殊选项')

@@ -18,14 +18,15 @@ import { describe, expect, it } from 'vitest'
 import { printDotGeometry, printPageBoxMm, printPageRule } from '@/lib/print-media'
 import {
   WASH_LABEL_BODY_FONT_PT,
+  WASH_LABEL_BOTTOM_CLEARANCE_MM,
   WASH_LABEL_COMPANY_FONT_PT,
   WASH_LABEL_COMPANY_SUBTITLE_FONT_PT,
   WASH_LABEL_LINE_HEIGHT,
   WASH_LABEL_PADDING_MM,
   WASH_LABEL_QR_CSS_PX,
-  WASH_LABEL_QR_GAP_MM,
   WASH_LABEL_QR_PLACEHOLDER_FONT_PT,
   WASH_LABEL_QR_PLACEHOLDER_MM,
+  WASH_LABEL_QR_TEXT_GAP_LINES,
 } from '@/lib/label-print/wash-label-metrics'
 
 const COMPONENT = resolve(process.cwd(), 'src/components/production/TaskCardPrint.tsx')
@@ -75,10 +76,17 @@ describe('水洗唛版面度量：TS 单一真值 ⇄ 组件 CSS（改一处不�
     expect(WASH_LABEL_QR_CSS_PX).toBe(80)
   })
 
-  it('二维码在底部**居中**；「扫码报工」与短码文字已退场（用户 2026-10-26 逐字）', () => {
-    // 底部二维码行 = `mt-[<gap>mm] … justify-center`（正则里不能写 `${…}` 插值 ⇒ 用字符串拼）
-    const bottomRow = `mt-[${WASH_LABEL_QR_GAP_MM}mm] flex shrink-0 items-center justify-center`
-    if (!source.includes(bottomRow)) throw new Error(`找不到「底部二维码行 = ${bottomRow}」—— 判据无从取值`)
+  it('二维码**不沉底**（正文后两行、离底部虚线留白）；「扫码报工」与短码文字已退场（用户 2026-10-26 逐字）', () => {
+    // 二维码行 = `mt-[<两行 mm>] … justify-center`；两行 = 2 × 12pt × 1.2 = 28.8pt ≈ 10.16mm
+    const gapMm = Number(
+      (WASH_LABEL_QR_TEXT_GAP_LINES * (WASH_LABEL_BODY_FONT_PT / 72) * 25.4 * WASH_LABEL_LINE_HEIGHT).toFixed(2),
+    )
+    const qrRow = `mt-[${gapMm}mm] flex shrink-0 items-center justify-center`
+    if (!source.includes(qrRow)) throw new Error(`找不到「二维码行 = ${qrRow}」—— 判据无从取值`)
+    // 🔴 反向护栏：正文块**不得**再 `flex-1`（那会把码顶到纸底 = 用户说的「二维码沉底」）
+    expect(source).not.toMatch(/min-h-0 flex-1 overflow-hidden/)
+    // 纸底（底部虚线）之上必须留白
+    expect(WASH_LABEL_BOTTOM_CLEARANCE_MM).toBeGreaterThanOrEqual(6)
     // 断言打在 **JSX 文本节点**上（文件头注释里会提到这个词，用裸子串会假红）
     expect(source).not.toMatch(/>\s*扫码报工\s*</)
     expect(source).not.toContain('task-card-label-short-code')

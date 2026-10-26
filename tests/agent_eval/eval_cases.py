@@ -9523,6 +9523,24 @@ _CASE_OR_069 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── OR-070 [NORMAL] 订单安装信息（安装小区 = 订单级、安装位置 = 件级）：两条只存只印的附注 —— 录入 / 详情展示 / 纸面打印读同一份真值（issue #7856）（源: cases/order.yml）──
+_CASE_OR_070 = EvalCase(
+    id='OR-070',
+    legacy_id='',
+    title='订单安装信息（安装小区 = 订单级、安装位置 = 件级）：两条只存只印的附注 —— 录入 / 详情展示 / 纸面打印读同一份真值（issue #7856）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-26 逐字：「订单，水洗唛，成品出库单，发货联上还缺了一个信息，窗帘的安装位置，是卧室还是阳台，还有客户要求我们备注窗帘未来安装给哪个小区」', '用户 2026-10-26 逐字：「这两信息是跟随订单产生的」；「c端允许先空，再补」'],
+    expectations=[],
+    data_checks=['判据 1·**安装小区是订单级一个值，且与收货地址是两个事实**（会红）：下单页在「收货信息」区收货地址**下面**录入，提交时只带**顶层** installCommunity（服务端单点扇出到每行 processing_info.installCommunity，前端**不逐行写**同一个字符串）；改单弹层 EditOrderContentModal 的 edit-install-community 初值 = order.installCommunity，改值后保存请求体顶层带新值。执行点 = frontend/admin-web/tests/unit/pages/orders-new-item-remark.test.tsx（下单页安装信息写侧 判据 1）· frontend/admin-web/tests/unit/components/EditOrderContentModal.test.tsx（⑥⑦）。红证（实测）：删掉弹层 payload 的 installCommunity / 删掉详情页该 InfoRow ⇒ 对应用例红。', '判据 2·**安装位置是件级，落在该行 processingInfo.installRoom**（会红）：它不是部位 / 帘种（curtainType），也**不是** item 一级字段 —— 后端 OrderCreateRequest.OrderItemRequest / OrderContentUpdateRequest.Item 没有该字段 ⇒ 放一级会被 Jackson 静默丢掉。执行点 = 同上两文件（下单页判据 1/3、弹层 ⑦ 断言 Object.keys(items[0]) 不含 installRoom）。红证（实测）：删掉 buildLineProcessingInfo 里的 if (installRoom) info.installRoom = installRoom ⇒ 下单页判据 1/3 红（2 条）。', '判据 3·**缺值不落键**（会红）：空 / 纯空白 ⇒ 请求体里**没有** installCommunity 键、该行 processingInfo 里**没有** installRoom 键（不写空串：写空串会被下游读成「填过」，纸面会多印一行空值）；改单弹层清空安装小区时**显式**发空串（服务端口径「未传 ⇒ 沿用原值、空串 ⇒ 清空」）。执行点 = 下单页判据 2/3 · 弹层 ⑧。红证（实测）：把弹层的条件落键改成无条件写 ⇒ ⑧ 红。', '判据 4·**软限 40 / 12 由录入控件挡住**（会红）：服务端超长是 422 硬拒（OrderInstallInfo.normalizeCommunity / normalizeRoom）⇒ 两个录入面的 maxLength 必须先挡；安装位置的常用空间 chips（主卧 / 次卧 / 儿童房 / …）只是录入捷径，不构成值域校验（自由文本照旧允许）。执行点 = 下单页判据 4 · 弹层 ⑥⑨。', '判据 5·**详情页与纸面读同一份真值**：订单详情「收货信息」区在收货地址下显示安装小区（缺值 - ，与相邻行同口径）、明细区显示件级安装位置（缺值**不渲染**该行，与「部位备注」同口径）。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx（#7856 四条；红证实测：删掉 InfoRow / 删掉安装位置渲染块 ⇒ 各自红）。纸面（水洗唛 / 发货标签 / 入库标签）由后端读同一份 JSONB 逐行打印，判据在后端（ProcessingOrderService 白名单 / WorkerShipmentReadyService.install_rooms）。'],
+    skip_reason='[backend-contract] 本用例是**订单安装信息**的确定性判据（前端 vitest 判录入 / 请求体 / 展示；后端 JUnit 判归一与准入 / 扇出 / 投影；**无 LLM 环节 ⇒ 不进 agent-eval 冒烟**）：计分通道 = traces.tests',
+    tags=['order', 'admin-web', 'install-info', 'print-annotation'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 作业单生成 + 订单进入生产中（派单即生产；issue #7723 改判）（源: cases/processing-order.yml）──
 _CASE_PG_001 = EvalCase(
     id='PG-001',
@@ -17403,6 +17421,7 @@ ALL_CASES = (
     _CASE_OR_067,
     _CASE_OR_068,
     _CASE_OR_069,
+    _CASE_OR_070,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,

@@ -151,8 +151,10 @@ const WASH_LABEL_TESTID_SEGMENT: Record<WashLabelRowKey, string> = {
   docNo: 'doc-no',
   customer: 'customer',
   setNo: 'set-no',
+  color: 'color',
   positionKind: 'kind',
-  sku: 'sku',
+  installCommunity: 'install-community',
+  installRoom: 'install-room',
   doorWidth: 'door-width',
   meters: 'meters',
   size: 'size',
@@ -187,8 +189,10 @@ const WASH_LABEL_ROW_CLASS: Record<WashLabelRowKey, string> = {
   docNo: 'break-all',
   customer: 'break-words',
   setNo: 'whitespace-nowrap',
+  color: 'break-words',
   positionKind: 'break-words',
-  sku: 'break-words',
+  installCommunity: 'break-words',
+  installRoom: 'break-words',
   doorWidth: 'break-words',
   meters: 'break-words',
   size: 'break-words',
@@ -312,12 +316,15 @@ export default function TaskCardPrint({
               </div>
             )}
 
-            {/* ② 中部文字块（第一行 = **订单号**，2026-10-26 用户裁定「放到第一行，客户上面」）。
-                空间不够时**只裁这里**（底部码 shrink-0，绝不裁）。
+            {/* ② 中部文字块（第一行 = **单号**，2026-10-26 用户裁定「放到第一行，客户上面」）。
+                🔴 **不再 `flex-1`**（用户 2026-10-26 逐字「二维码不要沉底，跟文字隔两行即可，
+                要离底部虚线留空」）：文字块按内容高度收缩，二维码跟在文字后**两行**处，
+                纸面下沿留白 —— 改前 `flex-1` 把二维码顶到纸底、贴着底部虚线。
+                空间不够时仍只裁这里（`overflow-hidden`）。
                 `data-testid` 是给「纸面内容 = 唯一真值模块」那条判据读**整块逐行文本**用的：
                 在本块里内联多写一行（绕过 `washLabelRows`）⇒ 那条判据必红。 */}
             <div
-              className="mt-[0.5mm] min-h-0 flex-1 overflow-hidden"
+              className="mt-[0.5mm] min-h-0 overflow-hidden"
               data-testid={`task-card-label-rows-${sheetIndex}`}
             >
               {position ? (
@@ -341,10 +348,11 @@ export default function TaskCardPrint({
               )}
             </div>
 
-            {/* ③ 底部（`shrink-0`）：**居中**二维码 —— 纸面的功能件，永不被裁。
-                2026-10-26 用户裁定「二维码放到底部居中」「移除扫码报工和短码文字」「二维码可以放大一点」
-                ⇒ 80 CSS px（21.17mm），不再画短码/说明字。 */}
-            <div className="mt-[1mm] flex shrink-0 items-center justify-center">
+            {/* ③ 二维码（`shrink-0`，永不被裁）：**跟在文字后两行**，不沉底。
+                2026-10-26 用户逐字「二维码不要沉底，跟文字隔两行即可，要离底部虚线留空」
+                ⇒ `mt` = 2 行正文（12pt × 1.2 行高 = 28.8pt ≈ 10.16mm）；余下纸面留白，
+                二维码不再贴纸底/虚线。码 80 CSS px（21.17mm），不画短码/说明字。 */}
+            <div className="mt-[10.16mm] flex shrink-0 items-center justify-center">
               {qrValue ? (
                 <QRCodeSVG value={qrValue} size={80} level="M" title={qrValue} data-testid="task-card-qr" />
               ) : (

@@ -40,6 +40,8 @@ import { useOrderAmounts } from '@/hooks/useOrderAmounts'
 import { Button, Card, Input, Modal, NumberInput, PageHeader, SELECT_CONTROL } from '@/components/ui'
 import OrderCraftFields from '@/components/orders/OrderCraftFields'
 import OrderExtraOptions from '@/components/orders/OrderExtraOptions'
+import InstallRoomChips from '@/components/orders/InstallRoomChips'
+import { INSTALL_COMMUNITY_MAX_LENGTH, INSTALL_ROOM_MAX_LENGTH } from '@/lib/install-info'
 import {
   METERS_SOURCE_FORMULA,
   // 与配布边米数来源的 `METERS_SOURCE_MANUAL` 同值（都是「人工指定」）但**是另一个字段**
@@ -262,6 +264,16 @@ interface OrderLineItem {
    * 上限 200 字符由录入控件 `maxLength` 挡住（服务端不截断、页面也不静默截断）。
    */
   remark?: string
+  /**
+   * **安装位置**（issue #7856）—— 件级（一行 = 一个部位 = 一扇窗）：这一扇窗装在那户人家的
+   * 哪个空间（主卧 / 阳台 …）。**不是**部位 / 帘种（那个是 `curtainType`）。
+   *
+   * 落库载体 = `processingInfo.installRoom`（后端 `OrderCreateRequest.OrderItemRequest` 的
+   * `processingInfo` 顶层键，与 `remark` 同一载体）—— **不是** item 一级字段（后端 DTO 没有它，
+   * 放一级会被静默丢掉）。缺值 ⇒ **不落键**；上限 12 字由录入控件 `maxLength` 挡。
+   * 选填：不阻塞提交。
+   */
+  installRoom?: string
   // ── 「套窗」输入已移除（issue #4486，用户裁定「我感觉不需要」）──
   // 代价已如实登记：商家手工路径不再能跨行绑套窗 ⇒ 布 + 纱会算成 2 套窗 ⇒ 套级工序
   // （外帘打卷/装袋/发货）各实例化 2 次（计件工资双付，约 ¥3/套）。见 issue #4486。
@@ -1219,6 +1231,8 @@ function buildLineProcessingInfo(
   // **缺值不落键**（空串 / 纯空白 ⇒ 视为未填）：写 `""` 会被下游读成「填过」，详情页多一行空值。
   // 上限 200 由录入控件 `maxLength` 挡（服务端不截断，页面也不静默截断）。
   const remark = line.remark?.trim()
+  // **安装位置**（issue #7856）：同一口径 —— 有值才落键，空串 / 纯空白 = 未填。
+  const installRoom = line.installRoom?.trim()
 
   if (
     processingDetails.length === 0 &&
@@ -1226,8 +1240,9 @@ function buildLineProcessingInfo(
     !colorName &&
     Object.keys(mainSpec).length === 0 &&
     !isFabric &&
-    // 只填了备注的行**不得**被整份丢掉（否则商家写了「公式--48个折」而 payload 里什么都没有）
-    !remark
+    // 只填了备注 / 安装位置的行**不得**被整份丢掉（否则商家写了「公式--48个折」而 payload 里什么都没有）
+    !remark &&
+    !installRoom
   ) {
     return undefined
   }
@@ -1251,6 +1266,8 @@ function buildLineProcessingInfo(
 
   // 部位备注（issue #5685）：**有值才落键**（缺值不写 `""`）—— 逐字透传商家的输入（只去首尾空白）。
   if (remark) info.remark = remark
+  // 安装位置（issue #7856）：同上 —— 缺值不落键（写 `""` 会被下游读成「填过」，纸面多印一行空值）。
+  if (installRoom) info.installRoom = installRoom
 
   // 加工费米数（裁定 R-b：= 该套窗**主布行**米数）+ 算料输出（#4273：输入与输出都要落）。
   // ⚠️ `ProcessingFeeCalculator.METER_KEYS = (processingMeters, fabric_meters)` ——
@@ -1608,6 +1625,15 @@ export default function NewOrderPage() {
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
   const [customerAddress, setCustomerAddress] = useState('')
+  /**
+   * **安装小区**（issue #7856；用户 2026-10-26 逐字「还有客户要求我们备注窗帘未来安装给哪个小区」）
+   * —— 订单级、整单一个值：这批帘子**最终装进的那一户人家所在的小区**（可带楼栋/单元/门牌）。
+   *
+   * 🔴 **不是收货地址**（货发给下单的窗帘店）：两个地址是**两个事实**，不合并、不互相回填。
+   * 选填；只随货上纸，不参与算料 / 计价 / 派工 / 库存。落点 = 建单请求**顶层** `installCommunity`
+   * （服务端单点扇出到每行 JSONB，前端**不逐行写**同一个字符串）。
+   */
+  const [installCommunity, setInstallCommunity] = useState('')
   const [remark, setRemark] = useState('')
   // 图片识别预填过的字段（issue #5321 包 1）：只驱动 `[图片识别]` 徽标，提醒商家复核
   const [recognizedFields, setRecognizedFields] = useState<string[]>([])
@@ -3162,6 +3188,9 @@ export default function NewOrderPage() {
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
         customerAddress: customerAddress.trim(),
+        // **安装小区**（issue #7856）：订单级、**顶层**一个值（服务端扇出到每行 JSONB）。
+        // 缺值 ⇒ **键不出现**（与 `urgencyRequestFields` 同口径：未填 ≠ 写了一串空）。
+        ...(installCommunity.trim() ? { installCommunity: installCommunity.trim() } : {}),
         actualAmount: actual,
         // 后端校验 应收 - 优惠 ≈ 实收（容差 0.01），必须随单携带，否则实收≠应收会被拒
         discountAmount: discountNumber,
@@ -3299,6 +3328,8 @@ export default function NewOrderPage() {
                         onChangePrice={(p) => updateLineItem(line.id, { unitPrice: p })}
                         // 部位备注（issue #5685）：只进行状态 —— 落库由 `buildLineProcessingInfo` 单点完成
                         onChangeRemark={(r) => updateLineItem(line.id, { remark: r })}
+                        // 安装位置（issue #7856）：同上 —— 落库由 `buildLineProcessingInfo` 单点完成
+                        onChangeInstallRoom={(room) => updateLineItem(line.id, { installRoom: room })}
                         onToggleProcessing={(pi, sel) => toggleProcessing(line, pi, sel)}
                         onChangeCraft={(patch) => {
                           updateLineItem(line.id, {
@@ -3433,6 +3464,18 @@ export default function NewOrderPage() {
                     <RecognizedBadge fieldKey="customerAddress" />
                   )}
                 </div>
+              </div>
+              {/* **安装小区**（issue #7856，用户 2026-10-26）：「客户要求我们备注窗帘未来安装给哪个小区」。
+                  它是**订单级**的一个值，且与上面的收货地址**不是同一个事实**（货发给窗帘店、
+                  帘子装进客户家）⇒ 并排摆开、各自独立录入。选填：不参与必填校验、不阻塞提交。 */}
+              <div className="mt-4">
+                <Input
+                  label="安装小区"
+                  placeholder="例：春江花园 3栋2单元（选填，随货打印给安装/分拣用）"
+                  value={installCommunity}
+                  onChange={(e) => setInstallCommunity(e.target.value)}
+                  maxLength={INSTALL_COMMUNITY_MAX_LENGTH}
+                />
               </div>
               {/* **常用物流 / 快递** + **常用物流公司**（issue #4874，用户 2026-09-21：
                   「新增订单时收货信息中缺少用户的常用物流/快递以及常用公司，选择客户后要默认带出」）
@@ -4207,6 +4250,11 @@ interface LineItemBlockProps {
    * `buildLineProcessingInfo` 单点完成（**不在回调里拼 payload**）。
    */
   onChangeRemark: (remark: string) => void
+  /**
+   * **安装位置**（issue #7856）：行级自由文本 —— 与 {@link LineItemBlockProps.onChangeRemark}
+   * 同一范式：只存进行状态，落库由 `buildLineProcessingInfo` 单点完成（缺值不落键）。
+   */
+  onChangeInstallRoom: (room: string) => void
   /** **门幅 / 规格**节点（2026-09-30 第四批）：与用料米数 / 单价同一行（组级算、行内渲染） */
   specPicker?: React.ReactNode
   /** 门幅的**来源说明 + 推导细节**（同上）：整行平铺在规格行下方 */
@@ -5114,6 +5162,7 @@ function LineItemBlock({
   onProcessingFeeOverrideChange,
   onRecommendedDecision,
   onChangeRemark,
+  onChangeInstallRoom,
   specPicker,
   specExtras,
 }: LineItemBlockProps) {
@@ -6722,6 +6771,30 @@ function LineItemBlock({
                 <p data-testid="line-item-remark-counter" className="mt-1 text-xs text-neutral-400">
                   {(line.remark ?? '').length}/{REMARK_MAX_LENGTH}
                 </p>
+              </div>
+
+              {/* **安装位置**（issue #7856）：这一扇窗装在那户人家的哪个空间（主卧 / 阳台 …）。
+                  紧挨「部位备注」（同属「只上纸的附注」那一类，商家在同一处一口气写完）。
+                  🔴 它不是「部位 / 帘种」（布帘 / 纱帘 = `curtainType`）—— 两个事实不许混。
+                  ① 12 字上限由 `maxLength` 挡住（服务端超长 422）；
+                  ② 选填：空 ⇒ `processingInfo` 里**不落键**，纸面该行不印；
+                  ③ 词表 chips 只是录入捷径（自由输入照旧允许）。 */}
+              <div className="mt-4">
+                <Label>安装位置</Label>
+                <input
+                  type="text"
+                  data-testid="line-item-install-room"
+                  aria-label="安装位置"
+                  maxLength={INSTALL_ROOM_MAX_LENGTH}
+                  value={line.installRoom ?? ''}
+                  onChange={(e) => onChangeInstallRoom(e.target.value)}
+                  placeholder="主卧 / 阳台…（选填）"
+                  className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                />
+                <InstallRoomChips
+                  value={line.installRoom ?? ''}
+                  onPick={(room) => onChangeInstallRoom(room)}
+                />
               </div>
             </WizardStep>
 

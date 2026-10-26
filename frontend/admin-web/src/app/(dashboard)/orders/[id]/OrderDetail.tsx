@@ -584,6 +584,11 @@ export default function OrderDetailPage() {
           <div className="col-span-2">
             <InfoRow label="收货地址" value={order.customerAddress || '-'} />
           </div>
+          {/* **安装小区**（issue #7856）：与收货地址**并列**（两个事实：货发窗帘店 / 帘子装进客户家）。
+              缺值 `-` —— 与相邻行同口径（这一片是「读得全」的信息面，不是纸面）。 */}
+          <div className="col-span-2">
+            <InfoRow label="安装小区" value={order.installCommunity || '-'} />
+          </div>
           {/* 物流方式 / 物流公司（issue #7850）：下单页自 #5840 起把这两项当必填，服务端落在
               `orders.logistics_type` / `logistics_company` 两列并随详情读面下发，但本块此前只印
               收货人 / 电话 / 地址 ⇒ 商家在详情页看不出这一单走快递还是物流专线、哪家承运。
@@ -1022,6 +1027,18 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
                         </span>
                       </div>
                     )}
+                  {/* **安装位置**（issue #7856）：真值 = 后端投影的 `item.installRoom`
+                      （= `processing_info.installRoom`，件级）。**缺值不渲染**：不显示 `-`、
+                      不显示空行 —— 与上面「部位备注」同一口径。 */}
+                  {typeof row.installRoom === 'string' && row.installRoom.trim() !== '' && (
+                    <div
+                      data-testid="order-item-install-room"
+                      className="mt-1 flex flex-wrap justify-center gap-x-1.5 text-xs"
+                    >
+                      <span className="text-neutral-400">安装位置</span>
+                      <span className="text-neutral-700">{row.installRoom}</span>
+                    </div>
+                  )}
                 </Td>
                 <Td className="text-red-500 font-medium">
                   {formatAmount(row.unitPrice)}

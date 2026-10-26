@@ -580,6 +580,15 @@ class OrderCreateTool(BaseTool):
                 "type": "string",
                 "description": "客户收货地址（可选）",
             },
+            "install_community": {
+                "type": "string",
+                "description": (
+                    "安装小区（可选，订单级）：这批帘子最终装进的那一户人家所在的小区"
+                    "（可带楼栋/单元/门牌）。🔴 它不是收货地址（货是发给下单的窗帘店）；"
+                    "只上纸（水洗唛/发货标签/入库标签），不参与算料/计价/派工/库存/检索。"
+                    "允许先空、由商家后台再补 —— **不要**为了它追问顾客。"
+                ),
+            },
             "remark": {
                 "type": "string",
                 "description": "订单备注（可选）",
@@ -628,6 +637,14 @@ class OrderCreateTool(BaseTool):
                             "type": "number",
                             "minimum": 0,
                             "description": "高度（米，可选，不得为负；可传 2.0 或「2.0米」）",
+                        },
+                        "install_room": {
+                            "type": "string",
+                            "description": (
+                                "安装位置（可选，**件级** = 这一扇窗）：主卧/次卧/客厅/阳台…。"
+                                "🔴 它不是部位/帘种（布帘/纱帘/帘头放 processing_info.curtainType）；"
+                                "允许先空、由商家后台再补 —— 不要为了它追问顾客。"
+                            ),
                         },
                         "processing_info": {
                             "type": "object",
@@ -1762,6 +1779,7 @@ class OrderCreateTool(BaseTool):
         sms_code: Optional[str] = None,
         customer_address: Optional[str] = None,
         remark: Optional[str] = None,
+        install_community: Optional[str] = None,
     ) -> ToolResult:
         """执行创建订单操作
 
@@ -1773,6 +1791,7 @@ class OrderCreateTool(BaseTool):
             sms_code: 短信验证码（customer角色必填）
             customer_address: 客户收货地址（可选）
             remark: 订单备注（可选）
+            install_community: 安装小区（可选，订单级；允许先空 —— 不追问、不编造）
 
         Returns:
             ToolResult: 创建结果
@@ -1984,6 +2003,8 @@ class OrderCreateTool(BaseTool):
                     ("width", "width"),
                     ("height", "height"),
                     ("processing_info", "processingInfo"),
+                    # 安装位置（issue #7856，件级）：可选；不传 ⇒ 不带该键
+                    ("install_room", "installRoom"),
                 ]:
                     value = item.get(py_key)
                     if value is None:
@@ -2005,6 +2026,11 @@ class OrderCreateTool(BaseTool):
                 json_data["customerAddress"] = customer_address
             if remark:
                 json_data["remark"] = remark
+            # 安装小区（issue #7856）：**可选**、原样透传（与 customer_address 同一层）。
+            # 🔴 空/不传 ⇒ **不带这个键**（服务端「缺值不落键」），不替顾客编、也不追问
+            #（用户 2026-10-26：「C 端/客服收单允许先空、后台再补」）。
+            if install_community:
+                json_data["installCommunity"] = install_community
 
             logger.info(
                 f"[order-create] Creating order: customer={customer_name}, "

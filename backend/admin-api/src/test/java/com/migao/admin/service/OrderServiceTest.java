@@ -456,6 +456,96 @@ class OrderServiceTest {
                 .doesNotContain("created_by_name");
     }
 
+    // ═══════════ 安装信息（issue #7856）：写侧单点扇出 / 读侧收敛 ═══════════
+    //
+    // 用户 2026-10-26 裁定：安装小区 / 安装位置**不是订单基础字段**（逐字「不能作为订单基础字段吧？」）
+    // ⇒ 落**已登记**的 `order_items.processing_info` 顶层（camelCase，与 formulaText / remark 同层），
+    // **数据库零迁移**。写侧由 persistOrderItems 这一个写点把订单级「安装小区」扇到每一行；
+    // 读侧用「第一条非空」收敛回订单级。
+
+    @Test
+    @DisplayName("🔴 #7856 建单：安装小区扇出到**每一行** processing_info（订单级语义、行数组载体）")
+    void createOrder_fansInstallCommunityIntoEveryItem() {
+        when(userService.resolveCurrentOperator()).thenReturn(null);
+        stubCreateOrderPersistence("order-new");
+        OrderCreateRequest request = minimalCreateOrderRequest();
+        // 去首尾空白 + 内部换行折叠成**一个**空格：纸面按单行打印（50×70 标签没有第二行的位置）
+        request.setInstallCommunity("  春江花园 3栋\n2单元 502 ");
+        OrderCreateRequest.OrderItemRequest firstWindow = request.getItems().get(0);
+        firstWindow.setInstallRoom(" 主卧 ");
+        OrderCreateRequest.OrderItemRequest secondWindow = new OrderCreateRequest.OrderItemRequest();
+        secondWindow.setProductId("prod-002");
+        secondWindow.setProductName("蜂巢帘-次卧");
+        secondWindow.setQuantity(BigDecimal.ONE);
+        secondWindow.setUnitPrice(new BigDecimal("100.00"));
+        secondWindow.setInstallRoom("客厅");
+        request.setItems(List.of(firstWindow, secondWindow));
+
+        orderService.createOrder(request, 1L);
+
+        ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper, times(2)).insert(captor.capture());
+        assertThat(captor.getAllValues())
+                .as("订单级事实必须逐行落（快照 / 明细都是行数组，没有订单级顶层对象）—— 只落第一行 ⇒ 红")
+                .hasSize(2)
+                .allSatisfy(item -> assertThat(processingInfoOf(item))
+                        .containsEntry("installCommunity", "春江花园 3栋 2单元 502"));
+        assertThat(captor.getAllValues())
+                .as("件级「安装位置」各自落**本行**（不是把订单级一个值抄两行）")
+                .extracting(item -> processingInfoOf(item).get("installRoom"))
+                .containsExactly("主卧", "客厅");
+    }
+
+    @Test
+    @DisplayName("🔴 #7856 建单：安装小区超过 40 字 ⇒ 422，且订单与明细**一行都不写**")
+    void createOrder_rejectsOverlongInstallCommunity() {
+        OrderCreateRequest request = minimalCreateOrderRequest();
+        request.setInstallCommunity("春".repeat(OrderInstallInfo.COMMUNITY_MAX_LENGTH + 1));
+
+        BusinessException e = (BusinessException) org.assertj.core.api.Assertions
+                .catchThrowable(() -> orderService.createOrder(request, 1L));
+
+        assertThat(e).as("超长必须被拒（不是静默截断）").isNotNull();
+        assertThat(e.getHttpStatus()).as("422（本仓字段校验的统一形态）").isEqualTo(422);
+        assertThat(e.getMessage()).contains("安装小区不能超过 40 个字");
+        verify(orderMapper, never()).insert(any(Order.class));
+        verify(orderItemMapper, never()).insert(any(OrderItem.class));
+    }
+
+    @Test
+    @DisplayName("🔴 #7856 详情透出：订单级「安装小区」取第一条非空；行级「安装位置」逐行投影")
+    void getOrderById_projectsInstallInfo() {
+        OrderItem firstWindow = OrderItem.builder()
+                .id("item-1").tenantId(1L).orderId("order-001")
+                .productName("蜂巢帘").quantity(BigDecimal.ONE).unitPrice(new BigDecimal("299.50"))
+                .processingInfo(new LinkedHashMap<>(Map.of("installRoom", "主卧")))
+                .build();
+        OrderItem secondWindow = OrderItem.builder()
+                .id("item-2").tenantId(1L).orderId("order-001")
+                .productName("蜂巢帘").quantity(BigDecimal.ONE).unitPrice(new BigDecimal("299.50"))
+                .processingInfo(new LinkedHashMap<>(Map.of(
+                        "installRoom", "客厅", "installCommunity", "春江花园 3栋2单元")))
+                .build();
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(java.util.Arrays.asList(firstWindow, secondWindow));
+        when(orderLogisticsMapper.selectByOrderId("order-001", 1L)).thenReturn(List.of());
+
+        OrderDetailResponse detail = orderService.getOrderById("order-001");
+
+        assertThat(detail.getInstallCommunity())
+                .as("读侧收敛 = 第一条**非空**（第一行没有 ⇒ 取第二行），不拼「未填写」这类占位")
+                .isEqualTo("春江花园 3栋2单元");
+        assertThat(detail.getItems())
+                .extracting(OrderDetailResponse.OrderItemResponse::getInstallRoom)
+                .containsExactly("主卧", "客厅");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> processingInfoOf(OrderItem item) {
+        return (Map<String, Object>) item.getProcessingInfo();
+    }
+
     /** 建单落库所需的公共桩（订单 insert + 明细 + 回读），只服务上面 issue #5835 的用例。 */
     private void stubCreateOrderPersistence(String orderId) {
         when(orderMapper.insert(any(Order.class))).thenAnswer(invocation -> {

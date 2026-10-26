@@ -31,13 +31,13 @@ const LABELS: WashLabelInput[] = [
     qrValue: 'https://app.migaozn.com/s/7Q2M4K8P',
     rows: [
       { key: 'customer', text: '客户 赵凯' },
-      { key: 'sku', text: '客厅窗帘A' },
+      { key: 'color', text: '客厅窗帘A' },
     ],
   },
   // 该部位被撤销（无码）⇒ 这一张**不许** drawImage
   {
     qrValue: null,
-    rows: [{ key: 'sku', text: '卧室窗帘' }],
+    rows: [{ key: 'color', text: '卧室窗帘' }],
   },
 ]
 
