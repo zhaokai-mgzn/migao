@@ -18,6 +18,17 @@
  *
  * 一次最多 3 张（与服务端 `WorkerInboundService.MAX_IMAGES` 同口径；超出由服务端 400 兜底，
  * 端侧先拦一次只是为了不让工人白等）。
+ *
+ * ## 不上屏（issue #7818；用户 2026-10-26 逐字「为什么会出现，移除掉」）
+ *
+ * 本链**不向页面投放过程叙述**：解码没命中而服务端认回来了 = **正常路径**，工人不需要知道
+ * 「这一次走了哪一条路」（§31 P3 不摆内部标识）；要不要人工核对由**确认卡**说清
+ * （`prefillFromRecognize().notice` + 卡标题），服务端 `message` 原样上屏。
+ *
+ * 旧形态（被用户点名的，截图见 issue #7818）：① 每张图解不出码的 `hint` 全部 push 进 `notices`；
+ * ② 走 vision 兜底**成功后**又 push 一句「系统换一种方式再认了一次…」 ⇒ 一个良性事件说了两遍，
+ * 而且切到「入库标签」步还在 —— 「下面的结果」那时已经不在屏上了。
+ * 判据：frontend/bmini-app/tests/worker-inbound-page.test.tsx（C13）+ inbound-decode-first.test.ts（C4）。
  */
 import type { DecodeOutcome, PendingPhoto } from './barcodeDecode'
 import type { RecognizeLike } from './recognizeGate'
@@ -50,8 +61,6 @@ export interface RecognizeFlowResult {
   uploadedCount: number
   /** 端侧**期望**的 LLM 调用次数（`local-barcode` ⇒ 0）—— 与假服务端计数比对用 */
   expectedLlmCalls: number
-  /** 解码/降级过程中要对工人说的话（非空即必须上屏，**不许静默**） */
-  notices: string[]
 }
 
 /**
@@ -65,14 +74,12 @@ export async function runInboundRecognize(deps: RecognizeFlowDeps): Promise<Reco
     throw new Error('请先拍照（至少 1 张上游标签 / 布卷包装照）')
   }
 
-  const notices: string[] = []
   let decodedBarcode: string | null = null
   let decodedIndex = -1
 
   // ── ① 本机解码优先（0 次 LLM）──────────────────────────────────────────────
   for (let index = 0; index < photos.length; index += 1) {
     const outcome = await deps.decode(photos[index])
-    if (outcome.hint) notices.push(outcome.hint)
     if (outcome.text) {
       decodedBarcode = outcome.text
       decodedIndex = index
@@ -90,7 +97,6 @@ export async function runInboundRecognize(deps: RecognizeFlowDeps): Promise<Reco
       decodedBarcode,
       uploadedCount: 1,
       expectedLlmCalls: 0,
-      notices,
     }
   }
 
@@ -100,13 +106,11 @@ export async function runInboundRecognize(deps: RecognizeFlowDeps): Promise<Reco
     urls.push(await deps.upload(photo))
   }
   const response = await deps.recognize({ images: urls })
-  notices.push('照片里的二维码没认出来，系统换一种方式再认了一次（会稍慢一点）。请核对下面的结果，不对就手工改。')
   return {
     response,
     route: 'server-vision',
     decodedBarcode: null,
     uploadedCount: urls.length,
     expectedLlmCalls: 1,
-    notices,
   }
 }

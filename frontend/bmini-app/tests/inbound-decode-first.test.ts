@@ -11,7 +11,7 @@
  * | C1 | 照片含可解条码 ⇒ `llmCalls === 0`、上传 **1** 张、`barcode` 非空 | 把识别排到解码前面 ⇒ 红 |
  * | C2 | 解码失败 ⇒ 全量上传 + 不带 barcode（服务端 vision 兜底，1 次 LLM） | 不传 barcode 却仍走"解码优先"分支 ⇒ 红 |
  * | C3 | **解码库真能解出码**（真跑 encode → decode 往返，不是替身对替身） | 关掉 jsQR 调用 ⇒ 红 |
- * | C4 | 解码/降级过程**有话要说**（不静默） | 丢掉 notices ⇒ 红 |
+ * | C4 | 解码/降级**不向页面投放过程叙述**（issue #7818；要不要核对由确认卡说清） | 把 `notices` 字段/push 加回 `RecognizeFlowResult` ⇒ 红 |
  */
 import qrcode from 'qrcode-generator'
 import { decodeQrFromImageData } from '../src/utils/inbound/barcodeDecode'
@@ -167,7 +167,7 @@ describe('识别主链：解码优先（0 次 LLM 调用）', () => {
     expect(result.uploadedCount).toBe(MAX_INBOUND_PHOTOS)
   })
 
-  it('C4 解码/降级过程有话要说（不静默）', async () => {
+  it('C4 解码没命中 ⇒ 走 vision 兜底，但**不回传上屏文案**（过程叙述不摆到页面，issue #7818）', async () => {
     const server = fakeServer()
     const result = await runInboundRecognize({
       photos: [PHOTO_A],
@@ -175,9 +175,12 @@ describe('识别主链：解码优先（0 次 LLM 调用）', () => {
       upload: server.upload,
       recognize: server.recognize,
     })
-    expect(result.notices.join('\n')).toContain('读不出像素')
-    expect(result.notices.join('\n')).toContain('换一种方式再认')
-    expect(result.notices.join('\n')).toContain('请核对下面的结果')
+    // 🔴 红证：把 `notices` 字段与两条 push 加回 `RecognizeFlowResult` ⇒ 本断言当场红
+    expect((result as unknown as Record<string, unknown>).notices).toBeUndefined()
+    // 「不静默」的落点不在流程里，而在**确认卡**（navigation 层判据 = worker-inbound-page.test.tsx 的 C13）——
+    // 本链仍必须把结果原样带回，否则工人拿不到要核对的东西
+    expect(result.route).toBe('server-vision')
+    expect(result.response).toBeTruthy()
   })
 
   it('一张照片都没有 ⇒ 明说（不静默走一次空请求）', async () => {

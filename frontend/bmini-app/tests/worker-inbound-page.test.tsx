@@ -24,6 +24,9 @@
  * | C12 | **门幅口径（用户 2026-10-25 裁定）**：标签没印门幅 ⇒ 唯一候选 2.8 且预选，同屏用**陈述句**
  *        说明「标签未印门幅，按行业标准 2.8 米」（不惊叹、不催） | 删掉那句话 ⇒ `inbound-door-width-assumed`
  *        取不到；端侧写死 2.8 而不取服务端的 `doorWidth` ⇒ 断言里的数字对不上（红） |
+ * | C13 | **识别成功时不弹过程告警（issue #7818）**：本机没解出码、服务端再认回来 ⇒ 顶部**零告警横幅**；
+ *        「要不要人工核对」由确认卡说清（`inbound-prefill-notice` 非空），切到标签步也不再带上来
+ *        | 把两条 notices 的 push 加回 `recognizeFlow` ⇒ 确认步 `inbound-notice-0` 取得到（红） |
  */
 import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
@@ -82,6 +85,7 @@ import WorkerInboundPage from '../src/pages/worker/inbound/index'
 import { hasWorkerSession } from '../src/utils/workerSession'
 import { PRINT_FAILURE_HINTS, PRINT_READY_HINT } from '../src/utils/inbound/printCapability'
 import { INBOUND_WORKER_LOGIN_REQUIRED, WORKER_LOGIN_ROUTE } from '../src/utils/inbound/gaps'
+import { decodeBarcodeFromPhoto } from '../src/utils/inbound/barcodeDecode'
 import {
   createInboundDraft,
   postInboundDraft,
@@ -99,6 +103,8 @@ const mockPostDraft = postInboundDraft as jest.Mock
 const mockGetLabel = getInboundLabel as jest.Mock
 const mockRecognize = recognizeInbound as jest.Mock
 const mockSearchSkus = searchInboundSkus as jest.Mock
+/** 本机解码（默认 mock 命中条码；C13 注入「这张图解不出来」） */
+const mockDecode = decodeBarcodeFromPhoto as jest.Mock
 
 function setPrintEnv({ ios, secure = true, bluetooth = true }: { ios: boolean; secure?: boolean; bluetooth?: boolean }) {
   ;(window as any).isSecureContext = secure
@@ -463,4 +469,32 @@ describe('工人拍照入库页', () => {
     expect(mockCreateDraft).not.toHaveBeenCalled()
     expect(mockPostDraft).not.toHaveBeenCalled()
   })
+  it('C13 本机没解出码、服务端又认了一次 ⇒ 成功后**不弹过程告警**（「不静默」改由确认卡承担，issue #7818）', async () => {
+    // 红证：把 recognizeFlow 里那两条 notices 的 push 加回 ⇒ 确认步 `inbound-notice-0` 取得到 ⇒ 本用例红
+    mockDecode.mockResolvedValueOnce({ text: null, source: 'h5-dom-canvas', hint: '这张照片里没找到二维码。' })
+    render(<WorkerInboundPage />)
+    mockChooseImage.mockResolvedValueOnce({ tempFilePaths: ['blob:photo-a'], tempFiles: [{ originalFileObj: null }] })
+    fireEvent.click(screen.getByTestId('inbound-pick'))
+    await waitFor(() => expect(screen.getByTestId('inbound-recognize')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('inbound-recognize'))
+    await waitFor(() => expect(screen.getByTestId('inbound-step-confirm')).toBeTruthy())
+
+    // ① 本次确实走了「本机解不出 ⇒ 服务端认」这条路（否则本判据是空断言）
+    expect(mockDecode).toHaveBeenCalled()
+    expect(mockRecognize).toHaveBeenCalled()
+    // ② 识别成功 ⇒ 页面顶部零告警横幅（旧的「这张照片里没找到二维码。」/「系统换一种方式再认了一次…」都不在）
+    expect(screen.queryByTestId('inbound-notice-0')).toBeNull()
+    expect(screen.queryByText(/换一种方式再认/)).toBeNull()
+    expect(screen.queryByText('这张照片里没找到二维码。')).toBeNull()
+    // ③ 「不静默」仍在：要不要核对、核对什么，由确认卡说清（服务端 message 原样上屏）
+    expect(screen.getByTestId('inbound-prefill-notice').textContent).toContain('请核对')
+
+    // ④ 走到标签步也不许把识别阶段的叙述带上来（旧形态：切步不清空）
+    fireEvent.click(screen.getByTestId('inbound-confirm-toggle'))
+    fireEvent.click(screen.getByTestId('inbound-submit'))
+    await waitFor(() => expect(screen.getByTestId('inbound-step-label')).toBeTruthy())
+    expect(screen.queryByText(/换一种方式再认/)).toBeNull()
+    expect(screen.queryByText('这张照片里没找到二维码。')).toBeNull()
+  })
+
 })
