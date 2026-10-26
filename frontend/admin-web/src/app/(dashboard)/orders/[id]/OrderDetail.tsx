@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronRight, Printer, Zap, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
@@ -16,9 +16,8 @@ import AccessDenied from '@/components/common/AccessDenied'
 import { orderApi, productionApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
 import { Button, Loading, Modal } from '@/components/ui'
-import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, ShipmentDoc, QuotationDoc, ProcessingDoc, SalesDoc, OrderUrgencyPanel, EditOrderContentModal, PrintDocPreview, ProcessingQrMissingNotice } from '@/components/orders'
+import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, ShipmentDoc, QuotationDoc, SalesDoc, OrderUrgencyPanel, EditOrderContentModal, PrintDocPreview } from '@/components/orders'
 import { PRINT_TARGET_SPECS, usePrintDoc, type PrintTarget } from '@/lib/print-doc'
-// 权限（issue #6867 / B5）：补码入口与端点同码显隐（端点方法级 `processing:manage`）
 import { usePermission } from '@/lib/permission'
 // 「发货前要不要作业」的唯一读点 + 按型分岔的引导句（issue #7079 第 5 包）
 import { WORK_ORDER_NEEDED_COPY, workOrderKindOf } from '@/lib/processing-order'
@@ -131,19 +130,7 @@ export default function OrderDetailPage() {
    */
   const [orderOperations, setOrderOperations] = useState<ProductionPosition[]>([])
 
-  /**
-   * 加工单**缺码**提示的接线（issue #6867 / B5）。
-   *
-   * 病：存量加工单没有短码（V155 不回填）⇒ 商家直接点「打印加工单」时纸面**静默**印「无码」，
-   * 看起来打好了、纸却扫不了。修：缺码时在打印预览上给一条可行动的提示 + 一键补码入口
-   * （端点 = 既有 `.../qr-token/regenerate`，issue #4287 —— **不新增后端**）。
-   *
-   * `blockReloadRef`：补码成功后要把**纸面**上的短链与短码刷新出来 —— 加工单读面在
-   * `ProcessingOrderBlock`（它自取自持），故让该块把它的 `load` 交给本页调用（不复制第二份读面）。
-   */
   const { has: hasPermission } = usePermission()
-  const blockReloadRef = useRef<(() => Promise<void>) | null>(null)
-  const canManageProcessing = hasPermission('processing:manage')
   /**
    * 本页**页面码** = `order:detail`（issue #7276）。
    *
@@ -163,8 +150,6 @@ export default function OrderDetailPage() {
    * 「提示没权限，但仍然能访问」。**无权限的面不发请求**才是干净形态。
    */
   const canViewProcessingOrder = hasPermission('production:view')
-  /** 纸面**确实缺码**（两键都空）—— 有码的单不出现本提示（别对一张有效的纸喊缺码） */
-  const processingQrMissing = !processingOrder?.scan_url && !processingOrder?.short_code
 
   // 确认付款 / 确认收货 / 编辑物流
   const [confirmPaymentOpen, setConfirmPaymentOpen] = useState(false)
@@ -192,19 +177,6 @@ export default function OrderDetailPage() {
   // 🔴 打印**只能**走这一个入口（issue #5914）：`window.print()` 已收敛进 `usePrintDoc()`
   // 的 effect —— 在 target 提交进 DOM **之后**才开印（同 tick 调 print = 首次打印空白纸）。
   const { printTarget, previewTarget, requestPrint, openPreview, selectPreview, closePreview } = usePrintDoc()
-
-  /**
-   * 补码成功后**重新读加工单**（issue #6867 / B5）：纸面读的是 `processingOrder.scan_url` /
-   * `short_code`，它们归 `ProcessingOrderBlock` 的读面所有 ⇒ 由该块自刷新（本页不写第二份读面），
-   * 刷新结果经既有 `onStatusChange` 回传 ⇒ 预览层与纸面同步拿到新码（提示随之退场）。
-   */
-  const reloadProcessingForQr = async () => {
-    await blockReloadRef.current?.()
-  }
-  /** 稳定引用（`ProcessingOrderBlock` 的交接 effect 依赖它 ⇒ 每次渲染换一个新函数会让该 effect 空跑） */
-  const acceptBlockReload = useCallback((reload: () => Promise<void>) => {
-    blockReloadRef.current = reload
-  }, [])
 
   /**
    * 发货明细读面（issue #5651 收口）：销售单数量列要印**实发**（真值 owner = `order_shipment_items`）。
@@ -502,7 +474,6 @@ export default function OrderDetailPage() {
         workOrderKind={workOrderKindOf(order)}
         operations={orderOperations}
         onStatusChange={setProcessingOrder}
-        onReloadReady={acceptBlockReload}
       />}
 
       {/* 纸质发货单（issue #3768）：屏幕上隐藏，仅打印呈现；已发货/已完成可在此补打 */}
@@ -513,15 +484,10 @@ export default function OrderDetailPage() {
           （不进 Modal、每页只挂一份，见组件文件头 6 条约束）。 */}
       <QuotationDoc order={order} printTarget={printTarget} />
 
-      {/* 纸质加工单（A4，issue #5651）：照客户实证制式「按套分块」；右上 QR = **加工单级稳定短链**
-          （`processingOrder.scan_url` = `{base}/o/{短码}`，issue #6867）—— **不回落加工单号**：
-          回落就退回「扫出来只有一串文本、打不开任何页面」的旧形态。
-          页面级挂载一份 —— 与 ShipmentDoc / QuotationDoc 同范式（见 ProcessingDoc 文件头）。 */}
-      <ProcessingDoc
-        order={order}
-        processingOrder={processingOrder}
-        printTarget={printTarget}
-      />
+      {/* 纸质加工单（A4，issue #5651）**不在本页**（issue #7870，用户 2026-10-26 逐字
+          「加工单打印移到加工单和水洗唛放一起，也想订单一样统一收口到打印按钮」）：
+          它随「加工单生产明细」页（`/processing-orders/{id}/production`）的「打印」入口走 ——
+          车间那张纸与洗水唛（任务卡）在同一个层里选，不在销售面（本页）里出现。 */}
 
       {/* 纸质销售单（**三联纸 241mm × 140mm**，issue #5651）：随货给客户的那张；
           🔴 页脚**不印收款码**（issue #7589，用户 2026-10-24 逐字「销售单打印处右下角的二维码移除掉」）
@@ -545,32 +511,12 @@ export default function OrderDetailPage() {
         onClose={closePreview}
         docs={ORDER_PRINT_DOCS}
         onSelect={selectPreview}
-        notice={
-          // 加工单预览才挂缺码提示（issue #6867 / B5）：**有码 ⇒ 什么都不渲染**；
-          // 缺码 ⇒ 事实照旧可见（读面事实，谁打印谁受影响），**补码按钮**按 `processing:manage`
-          // 显隐（照 #4287 口径，避免「按钮可见却 403」）—— 两条分界都在组件的 props 里。
-          previewTarget === 'processing' ? (
-            <ProcessingQrMissingNotice
-              orderId={order.id}
-              missing={processingQrMissing}
-              canManage={canManageProcessing}
-              onRegenerated={reloadProcessingForQr}
-            />
-          ) : null
-        }
       >
         {/* `inline` = 原地渲染进真尺寸纸框（不 portal 到 body，issue #5914） */}
         {previewTarget === 'shipment' && (
           <ShipmentDoc order={order} logistics={order.logistics} inline />
         )}
         {previewTarget === 'quotation' && <QuotationDoc order={order} inline />}
-        {previewTarget === 'processing' && (
-          <ProcessingDoc
-            order={order}
-            processingOrder={processingOrder}
-            inline
-          />
-        )}
         {previewTarget === 'sales' && (
           <SalesDoc order={order} shipments={shipments} processingOrder={processingOrder} inline />
         )}
@@ -720,16 +666,19 @@ function ConfirmModal({ open, title, message, loading, onClose, onConfirm }: Con
 // ============== 子组件 ==============
 
 /**
- * 订单详情可打印的单据与**展示顺序**（issue #7544）—— 与订单状态**无关**：任何状态都能打这几份。
+ * 订单详情可打印的单据与**展示顺序**（issue #7544；#7870 收窄为三份）—— 与订单状态**无关**：任何状态都能打这几份。
  *
  * 改前这里是一张「订单状态 × 可打单据」的矩阵（#6434），病在两头：
  * ① 已关闭 / 退款中的单子**一张都打不出来**（商家要补一张报价单给客户对账时是死路）；
  * ② 四个按钮常驻在状态卡上，单据一多就把操作行铺满 —— 而它们其实是**同一个动作**的四个选项。
  *
  * => 收敛成一个入口：页面上只有一个「打印」，进来后在预览层的单据标签里选。
- * 顺序 = 用得最频繁的两份在前（销售单随货、加工单下车间），其余按纸型从大到小。
+ * 顺序 = 用得最频繁的那份在前（销售单随货），其余按纸型从大到小。
+ *
+ * 🔴 **加工单不在本清单里**（issue #7870）：那张 A4 纸是车间用的，已搬到「加工单生产明细」页，
+ * 与洗水唛（任务卡）同层、同理收口成一个「打印」入口 —— 一份单据只有一个打印入口。
  */
-const ORDER_PRINT_DOCS = ['sales', 'processing', 'quotation', 'shipment'] as const satisfies readonly PrintTarget[]
+const ORDER_PRINT_DOCS = ['sales', 'quotation', 'shipment'] as const satisfies readonly PrintTarget[]
 
 /** 打开打印层时默认选中的单据：销售单（每一单都必然用到的那张） */
 const DEFAULT_ORDER_PRINT_DOC: PrintTarget = ORDER_PRINT_DOCS[0]

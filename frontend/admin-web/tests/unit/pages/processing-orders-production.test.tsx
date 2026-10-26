@@ -30,6 +30,8 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 const mockDetail = vi.fn()
+// issue #7870：加工单（A4）纸面读的是**订单详情**（与订单详情页打印同一份 DTO）
+const mockGetOrder = vi.fn()
 const mockGetOrderOperations = vi.fn()
 const mockGetPiecework = vi.fn()
 const mockInstantiate = vi.fn()
@@ -49,6 +51,10 @@ const mockListSets = vi.fn()
 vi.mock('@/lib/api', () => ({
   processingOrderApi: {
     detail: (...args: unknown[]) => mockDetail(...args),
+  },
+  // issue #7870：加工单（A4）纸面的数据源 = `GET /api/admin/orders/{id}`（权限 order:detail）
+  orderApi: {
+    getOrder: (...args: unknown[]) => mockGetOrder(...args),
   },
   // issue #5693：精裁输出清单的取数入口（后端 `GET /api/admin/processing-order-sets`）。
   processingOrderSetApi: {
@@ -92,6 +98,27 @@ const PROCESSING_ORDER = {
   expectedDeliveryDate: '2026-09-25',
   status: 'in_processing' as const,
   generatedAt: '2026-09-17 10:00:00',
+}
+
+/** 加工单（A4）纸面读的订单详情（issue #7870）：字段与订单详情页打印**同源**（不另拼一套映射） */
+const ORDER_FOR_PRINT = {
+  id: 'order-uuid-1',
+  orderNo: 'MG20260917001',
+  customerName: '李四',
+  customerPhone: '13456789000',
+  customerAddress: 'hangzhou',
+  createdAt: '2026-09-17T10:00:00+08:00',
+  requiredDeliveryDate: '2026-09-25',
+  items: [
+    {
+      id: 'item-1',
+      productName: '布艺遮光帘A',
+      skuCode: '2659',
+      quantity: 10.1,
+      unit: '米',
+      processingInfo: { colorName: '桂月白露', doorWidth: '3.2米' },
+    },
+  ],
 }
 
 /** issue #4946：纸面/弹层的码 = **该部位自己的** `scan_url`（不是加工单号，也不是单张 qr_token） */
@@ -193,6 +220,7 @@ describe('加工单生产明细页', () => {
       user: { id: 'u-1', name: '运营', roles: ['operator'], permissions: ['processing:manage'] },
     })
     mockDetail.mockReset().mockResolvedValue(ok(PROCESSING_ORDER))
+    mockGetOrder.mockReset().mockResolvedValue(ok(ORDER_FOR_PRINT))
     mockGetOrderOperations.mockReset().mockResolvedValue(ok(OPERATIONS))
     mockGetPiecework.mockReset().mockResolvedValue(ok(PIECEWORK))
     mockInstantiate.mockReset().mockResolvedValue(ok({ qr_token: 'qr-token-abc123', operation_count: 2 }))
@@ -401,7 +429,7 @@ describe('加工单生产明细页', () => {
     expect(within(group).getByText('布帘')).toBeInTheDocument()
   })
 
-  it('「打印任务卡」按钮打开纸面自检层，层里点「打印」才 window.print（任务卡含二维码）', async () => {
+  it('页头「打印」按钮打开纸面自检层，层里点「打印」才 window.print（默认水洗唛，含二维码）', async () => {
     const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
     render(<ProductionDetailPage />)
 
@@ -434,6 +462,68 @@ describe('加工单生产明细页', () => {
     await waitFor(() => expect(printSpy).toHaveBeenCalledTimes(1))
 
     printSpy.mockRestore()
+  })
+
+  it('issue #7870：加工单（A4）与洗水唛**同层**——页头同一个「打印」入口，单据标签切过去即 A4，出纸的只有所选那份且不打任务卡留痕', async () => {
+    // 加工单纸面读订单详情 ⇒ 本用例给足 `order:detail`（无该码的形态见下一条）
+    mockUseAuthStore.mockReturnValue({
+      user: {
+        id: 'u-1',
+        name: '运营',
+        roles: ['operator'],
+        permissions: ['processing:manage', 'order:detail'],
+      },
+    })
+    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
+    try {
+      render(<ProductionDetailPage />)
+      await waitFor(() => expect(screen.getByTestId('production-header')).toBeInTheDocument())
+      // 订单详情读面回来之后，本页才有「加工单」那张纸
+      await waitFor(() => expect(mockGetOrder).toHaveBeenCalledWith('order-uuid-1'))
+
+      await userEvent.click(screen.getByTestId('production-print-button'))
+
+      // 两份纸在**同一个**打印层里：单据标签 = 水洗唛 + 加工单，默认仍水洗唛（既有主流程不变）
+      // ⚠️ 等元素（订单读面回来 ⇒ `printOrder` 提交后才长得出标签行），别假设它已在场
+      expect(await screen.findByTestId('print-preview-doc-labels')).toHaveTextContent('水洗唛')
+      expect(screen.getByTestId('print-preview-doc-processing')).toHaveTextContent('加工单')
+      expect(screen.getByTestId('print-preview-doc-labels')).toHaveAttribute('aria-pressed', 'true')
+      expect(screen.getByTestId('print-preview-media')).toHaveTextContent('50mm × 150mm')
+
+      // 换到加工单：纸型读数与预览都跟着换成 A4（预览里看到的就是要打的那张纸）
+      await userEvent.click(screen.getByTestId('print-preview-doc-processing'))
+      expect(screen.getByTestId('print-preview-doc-processing')).toHaveAttribute('aria-pressed', 'true')
+      expect(screen.getByTestId('print-preview-media')).toHaveTextContent('210mm × 297mm')
+      // 纸面读的是**订单**详情（客户来自那一份 DTO）
+      expect(within(screen.getByTestId('print-preview-paper')).getByText('李四')).toBeInTheDocument()
+
+      // 换标签 ≠ 出纸（纸是耗材，issue #5914）
+      expect(printSpy).not.toHaveBeenCalled()
+      await userEvent.click(screen.getByTestId('print-preview-print'))
+      await waitFor(() => expect(printSpy).toHaveBeenCalledTimes(1))
+      // 上纸的只有所选那一份（加工单）：页级挂载那一份带 `data-print-target='processing'`
+      expect(
+        document.querySelector('.processing-print-area[data-print-target="processing"]'),
+      ).not.toBeNull()
+      // 🔴 留痕口径不变：`print_count` 记的是任务卡，打 A4 加工单不记账
+      expect(mockRecordPrint).not.toHaveBeenCalled()
+    } finally {
+      printSpy.mockRestore()
+    }
+  })
+
+  it('issue #7870：无 `order:detail` ⇒ 不请求订单、打印层只有水洗唛（入口同码显隐，洗水唛照旧可打）', async () => {
+    // 默认 operator 只有 processing:manage（无 order:detail）
+    render(<ProductionDetailPage />)
+    await waitFor(() => expect(screen.getByTestId('production-header')).toBeInTheDocument())
+    // 无权限的面**不发请求**（同 #7276 口径：先判码再请求，而不是请求后吃 403）
+    expect(mockGetOrder).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByTestId('production-print-button'))
+    expect(screen.getByRole('dialog', { name: '水洗唛打印预览' })).toBeInTheDocument()
+    // 只有一份纸 ⇒ 不出现单据标签行（与改前逐字一致）
+    expect(screen.queryByTestId('print-preview-docs')).toBeNull()
+    expect(screen.queryByTestId('print-preview-doc-processing')).toBeNull()
   })
 
   it('打印时上报打印计数，且计数接口失败不阻断打印（fire-and-forget）', async () => {
