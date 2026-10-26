@@ -160,7 +160,7 @@ export const SHIPMENT_PAGE_ROUTE = '/pages/worker/shipment/index'
 export const SHIPMENT_PAGE_FILE = 'src/pages/worker/shipment/index.tsx'
 
 /**
- * **待发货单**列表页路由（issue #7806 P1a）—— 工人工作台的第 **5** 条入口。
+ * **待发货单**列表页路由（issue #7806 P1a）—— 工人工作台**新增**的一条入口（只读列表页）。
  *
  * 为什么要有它：#7764 已上线读面 `GET /api/worker/shipment/orders`（只回「多套全部完工 +
  * 可发货状态 + 作业单已完成」的订单），而 `/b/` 侧**还没有任何页面消费它** ——

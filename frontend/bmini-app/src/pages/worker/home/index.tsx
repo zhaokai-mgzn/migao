@@ -169,7 +169,7 @@ export default function WorkerHomePage() {
             <View className='worker-home__entry-bar worker-home__entry-bar--d' />
             <View className='worker-home__entry-body'>
               <Text className='worker-home__entry-text'>待发货单</Text>
-              <Text className='worker-home__entry-sub'>全部完工的单 ⇒ 看收货信息 / 打发货标签</Text>
+              <Text className='worker-home__entry-sub'>全部完工的单 ⇒ 看收货人 / 电话 / 地址 / 物流</Text>
             </View>
             <Text className='worker-home__entry-go'>›</Text>
           </View>
