@@ -441,10 +441,13 @@ class WorkerCuttingHeightNullProductIdTest {
                                 Verdict.READ_IS_NULL_TOLERANT, "getOrDefault(c.getId(), 0L) ⇒ 空键安全")),
                 // ── 存量：get + 可能为 null 的键 ⇒ 由调用点显式短路（本包不改这些文件，仅登记） ──
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/ProductionScanService.java|specByItemId",
-                        new IndexSite("specByItemId", "specByItemIdOf", "op.getOrderItemId()", "op.getOrderItemId()", 688,
+                        new IndexSite("specByItemId", "specByItemIdOf", "op.getOrderItemId()", "op.getOrderItemId()", 691,
                                 Verdict.KEY_NULLABLE,
                                 "调用点已 `specByItemId == null ? null : ...get(op.getOrderItemId())` 短路"
-                                        + "（2026-10-24 / issue #7647：`resolve()` 追加批次三键后行号 594→603，判定未变）")),
+                                        + "（2026-10-24 / issue #7647：`resolve()` 追加批次三键后行号 594→603，判定未变）"
+                                        // 2026-10-26 / issue #7845：扫码视图追加 finished_inbound 三键后行号 688→691，
+                                        // 判定（KEY_NULLABLE + 调用点短路）未变 ⇒ 只更行号，不降判据。
+                                        + "（2026-10-26 / issue #7845：扫码视图追加成品入库块后行号 688→691）")),
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java|itemGroupKey",
                         new IndexSite("itemGroupKey", "itemIdToGroupKey", "itemGroupKey.get(spec.orderItemId())",
                                 "spec.orderItemId()", 290,

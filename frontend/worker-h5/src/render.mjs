@@ -53,6 +53,9 @@ export function initialState() {
     // 裁剪报工确认批次（issue #7647）：`null` = 工人还没动过输入框（⇒ 用服务端预填的派工批次）；
     // 字符串 = 工人当前输入的原样值。只对 `batch_required` 为真的屏有意义（其余屏一个字节都不看）。
     batchNo: null,
+    // 成品入库块（issue #7845）：服务端给的 `finished_inbound`（入库单号 / 仓位 / 标签 / 质检结论）；
+    // `null` = 这张码还没入库 / 不是打包工序 ⇒ 整块卡片不渲染（不摆空壳）。
+    finishedInbound: null,
   }
 }
 
@@ -221,7 +224,8 @@ export function reduce(state, action) {
         selection: { setId: null, orderItemId: null },
         notice: needsSelection ? '这是一张旧码：请先选择套号与部位' : (action.notice ?? null),
         error: null,
-        // 🔴 `view: null` = **重扫**（`app.mjs` 的 `wh5-rescan` 出口）⇒ 回等扫码态。
+        // 🔴 `view: null` ⇒ 回等扫码态（issue #7845 起 UI 不再有「重扫」按钮；这条分支留给
+        //    「还没解析出任何一屏」与装配层/测试的显式复位）。
         //    改前这里恒给 `'main'`：`renderPage` 靠 `!s.view` 兜住了屏面，但 `state.mode` 是**错的**
         //    （`main` 而不是 `scan`）⇒ 任何按 mode 判事的判据/调用方都读到假状态（issue #6667 第 3 条的红证）。
         mode: !view ? 'scan' : (needsSelection ? 'select' : 'main'),
@@ -229,6 +233,9 @@ export function reduce(state, action) {
         reporting: false,
         // 新一屏 = 新的一张码 ⇒ 工人上一屏手输的批次**不带走**（预填值重新来自服务端）
         batchNo: null,
+        // 🔴 换成**这一张码**的成品入库块（issue #7845）：服务端随扫码视图下发已入库的那一件；
+        //    没入库 ⇒ null（**不沿用**上一件——那会把 A 的仓位/入库单画到 B 的码上）。
+        finishedInbound: action.finishedInbound ?? view?.finished_inbound ?? null,
       }
     }
     // 报工在飞（issue #6667 第 4 条）：置位在按钮点下的那一刻、清位在下面三处（换了屏 / 有了结论 / 登出）
@@ -259,6 +266,9 @@ export function reduce(state, action) {
         reporting: false, // 有了结论 ⇒ 闸放开（否则接着领下一道时按钮是禁的）
         // 这一笔的批次已记账 ⇒ 下一笔的输入框回到「没动过」（预填只来自服务端，绝不带上一笔的值）
         batchNo: null,
+        // 打包工序的成品入库块（issue #7845）：回执带 `finished_inbound` ⇒ 换成它；
+        // 没带（非打包 / 入库失败 / 已在库未回传）⇒ 保留屏上既有的那一块（同一张码，不清空）。
+        finishedInbound: action.finishedInbound ?? state.finishedInbound ?? null,
       }
     // 报工三态选择（issue #5652 第二刀）：**只记在 view 上**（不进 `state.selection` ——
     // 那个键是**旧码的套 / 部位**选择，语义不同，混用会让"半截选择"判据失真）。
@@ -461,6 +471,27 @@ export function canReport(state, view) {
 }
 
 /**
+ * **扫码即自动报工**的唯一判据（issue #7845）。
+ *
+ * <p>用户 2026-10-26 逐字：「现在还是不能扫码直接报工…」「扫码后除了自动报工，还需要生成成品入库单」。
+ * 本函数与 {@link canReport} 的关系是**加严**：能报工 ≠ 能自动报。额外两条：</p>
+ * <ol>
+ *   <li><b>工序必须由工人档案唯一确定</b>（{@code determined_by === 'worker'}，issue #7749）——
+ *       未绑定时服务端按顺序推断出的那一道未必是本次真正做的活，自动提交会把下一道记成这一道（计件错）；</li>
+ *   <li><b>裁剪批次必须已经可用</b>（派工预填的就是它）—— 要批次却空着 ⇒ 服务端必 422，
+ *       自动提交只会让工人盯着一句报错；这时停在屏上，等他填完手点【报工】。</li>
+ * </ol>
+ *
+ * <p>放纯函数里（不发 DOM / 不发请求）⇒ `node --test` 可逐条钉住；装配层只在它为真时自动提交一次。</p>
+ */
+export function autoReportable(state, view) {
+  if (!canReport(state, view)) return false
+  if (view.operation.determined_by !== 'worker') return false
+  if (isBatchRequired(view) && batchBlocked(state, view)) return false
+  return true
+}
+
+/**
  * 开工按钮（唯一的记账入口）。
  *
  * 🔴 **2026-09-21 语义改判（issue #4967，用户逐字裁定①）**：扫码 = **开工 / 领活**，
@@ -604,8 +635,8 @@ export function legacySelection(view, selection) {
 }
 
 /** 报工回执 ⇒ 给工人的一句话（`replayed` 必须显式说清「没有新增计件」，不谎报一笔新报工）。 */
-export function doneNotice(receipt) {
-  return `${doneNoticeBase(receipt)}${batchReceiptTail(receipt)}`
+export function doneNotice(receipt, { auto = false } = {}) {
+  return `${doneNoticeBase(receipt, auto)}${batchReceiptTail(receipt)}`
 }
 
 /**
@@ -632,18 +663,26 @@ function batchReceiptTail(receipt) {
   return parts.length === 0 ? '' : ` · ${parts.join(' · ')}`
 }
 
-function doneNoticeBase(receipt) {
+function doneNoticeBase(receipt, auto) {
   if (receipt.replayed) return '这次没有新增计件：重复提交已回放（同一次扫码只算一次）'
-  if (receipt.orderCompleted) return '已报工 · 本单工序都报完了 🎉'
-  if (receipt.setCompleted === true) return '已报工 · 本套工序都报完了 🎉'
+  // 🔴 issue #7845：扫码即自动记账 ⇒ 文案必须**说清这一下已经记了账**（工人没点任何按钮，
+  // 不能让他以为"还要再点一下"）。手动那条「已报工」四段**逐字冻结**（跨面文案守卫
+  // `frontend/bmini-app/tests/worker-scan-report-copy-same-source.test.ts` 逐字钉住）⇒
+  // 这里保留字面量、不拼 `head`（拼了就只剩后缀，守卫会判「回执缺『已报工 · 下一道：』」）。
+  if (receipt.orderCompleted) {
+    return auto ? '已自动报工 · 本单工序都报完了 🎉' : '已报工 · 本单工序都报完了 🎉'
+  }
+  if (receipt.setCompleted === true) {
+    return auto ? '已自动报工 · 本套工序都报完了 🎉' : '已报工 · 本套工序都报完了 🎉'
+  }
   // 🔴 「下一道」必须**带部位**（issue #4963）：改前只拼 `nextOperation.logical_name`
   // ⇒ 跨部位时屏上少一半信息（`打卷 · 布帘` 显示成 `打卷`）。回执的 `next_operation`
   // 本来就带 `position`（逐字照 `ProductionScanCompleteService.enrichNextOperation`）。
   // 文案语义（`已报工` = 扫码开工/领活这一下，issue #4967 用户逐字裁定 +#6868 统一口径）
   // **一字不动**，只补部位。
   const next = operationDisplayName(receipt.nextOperation)
-  if (next) return `已报工 · 下一道：${next}`
-  return '已报工'
+  if (next) return auto ? `已自动报工 · 下一道：${next}` : `已报工 · 下一道：${next}`
+  return auto ? '已自动报工' : '已报工'
 }
 
 /**
@@ -707,16 +746,20 @@ function loginView(state) {
   </section>`
 }
 
+/**
+ * 待扫码态（issue #7845：**手输短码已撤**）。
+ *
+ * <p>用户 2026-10-26 逐字：「当前点击跳转后是手输短码，这个功能不需要，没什么用」⇒ 本屏只剩一句
+ * 指路：用水洗唛上的二维码扫一次（微信扫一扫 / 手机相机）。没有码就没有可做的事 —— 不摆一个
+ * 没人用的输入框（它会被误读成"系统要我抄码"）。</p>
+ */
 function scanView(state) {
   return `${header(state)}
-  <section class="wh5-card">
+  <section class="wh5-card" id="wh5-scan-hint">
     ${state.notice ? `<p class="wh5-notice" id="wh5-notice">${esc(state.notice)}</p>` : ''}
     ${state.error ? `<p class="wh5-error" id="wh5-error">${esc(state.error)}</p>` : ''}
     <h1 class="wh5-title">扫码报工</h1>
-    <p class="wh5-sub">扫一次码 = 报一道工序（先报工再生产，做完不用再扫）；扫不了就输码</p>
-    <label class="wh5-label">输码（短码 / 加工单号 / 订单号）
-      <input id="wh5-code" class="wh5-input" inputmode="text" autocapitalize="characters" /></label>
-    <button id="wh5-scan" class="wh5-primary" type="button">确 定</button>
+    <p class="wh5-sub">用水洗唛上的二维码扫一次（微信扫一扫 / 手机相机）—— 扫到就自动报工，不用再点按钮。</p>
   </section>`
 }
 
@@ -742,7 +785,6 @@ function selectView(state) {
     ${set ? `<div class="wh5-group"><span class="wh5-group-label">选部位</span>${posHtml}</div>` : ''}
     <p class="wh5-sub" id="wh5-legacy-pending">本单：${esc(state.view?.processing_order_no ?? '')}</p>
     <p class="wh5-sub" id="wh5-legacy-hint">选完套 + 部位即可报工 —— 该做哪道工序由系统推断（不用你找）。</p>
-    <button id="wh5-rescan" class="wh5-ghost" type="button">重扫</button>
   </section>`
 }
 
@@ -891,14 +933,18 @@ function qualityFormView(state) {
 
 
 /**
- * 「成品出库」卡片（V197 / issue #7762）：扫水洗唛后出现在报工页顶部。
+ * 「成品入库」卡片（issue #7845）：**打包工序**扫码报工成功后出现在报工页顶部。
  *
- * <p>逐行内容、仓位号、「能否出库 + 原因」**全部来自服务端**（`GET /api/worker/stock/wash-label`）；
- * 本函数只排版。不能出库时按钮 `disabled` 并显示服务端给的原因（比如「只有做过打包工序的工人
- * 才能扫码出库」）—— 真正的拒绝仍在服务端，前端隐藏按钮不是授权。</p>
+ * <p>用户 2026-10-26 逐字：「只有打包工序绑定了成品帘入库，如果是打包工人，那扫码后除了自动报工，
+ * 还需要生成成品入库单」「打包扫码报工时就需要确认质检结果和成品入库&打入库标签」。</p>
+ *
+ * <p>🔴 内容全部来自服务端（回执 {@code finished_inbound} / 再次扫码时的同名块）：
+ * 质检结论 / 入库单号 / 仓位 / 标签逐行（`label.rows`），前端**不拼业务字段**。
+ * 出库**不在本页**（用户同日裁定：打包 = 入库；出库留给发货 / 商家侧）—— 改前那个「出库」按钮
+ * （#7762）已被本单撤下，`disabled` 兜底随之退场（连按钮都不渲染，服务端写面仍保留）。</p>
  */
-function washLabelCard(state) {
-  const w = state.washLabel
+function finishedInboundCard(state) {
+  const w = state.finishedInbound
   if (!w) return ''
   const label = w.label ?? {}
   const rows = (Array.isArray(label.rows) ? label.rows : []).map((row) => (
@@ -906,16 +952,17 @@ function washLabelCard(state) {
     + `<span class="wh5-fl-k">${esc(row.label)}</span>`
     + `<span class="wh5-fl-v">${esc(row.value)}</span></div>`
   )).join('')
-  const allowed = w.allowed === true
-  const reason = w.reason ? `<p class="wh5-sub" id="wh5-fl-reason">${esc(w.reason)}</p>` : ''
-  return `<section class="wh5-card wh5-finished-label" id="wh5-finished-label" aria-label="成品出库标签">
-    <div class="wh5-set" id="wh5-fl-bin">成品出库 · 仓位 ${esc(w.bin_code ?? '未分配')}</div>
+  // 质检：无记录 = 正常（与质检块的默认口径同一份：合格是默认态，不写「未检」吓人）
+  const q = w.quality ?? null
+  const quality = q ? `${QUALITY_LABELS[q.result] ?? '已检'}${q.reason ? `（原因：${q.reason}）` : ''}` : '正常'
+  return `<section class="wh5-card wh5-finished-label" id="wh5-finished-inbound" aria-label="成品入库">
+    <div class="wh5-set" id="wh5-fi-bin">成品入库 · 仓位 ${esc(w.bin_code ?? '未分配')}</div>
+    <p class="wh5-sub" id="wh5-fi-quality">质检：${esc(quality)}</p>
+    ${w.inbound_no ? `<p class="wh5-sub" id="wh5-fi-no">入库单 ${esc(w.inbound_no)}</p>` : ''}
     <div class="wh5-fl-rows" id="wh5-fl-rows">${rows}</div>
     ${label.short_code ? `<p class="wh5-fl-code" id="wh5-fl-code">${esc(label.short_code)}</p>` : ''}
-    ${reason}
     <div class="wh5-fl-actions">
-      <button id="wh5-fl-print" class="wh5-ghost" type="button">打印标签</button>
-      <button id="wh5-fl-out" class="wh5-primary" type="button"${allowed ? '' : ' disabled'}>出库</button>
+      <button id="wh5-fi-print" class="wh5-ghost" type="button">打印入库标签</button>
     </div>
   </section>`
 }
@@ -928,7 +975,7 @@ function mainView(state) {
   // （`set_completed:true` / `next_operation:null`）⇒ 必须显式分支（防呆⑤ 的记账侧那一半）。
   if (!op) {
     return `${header(state)}
-    ${washLabelCard(state)}
+    ${finishedInboundCard(state)}
   <section class="wh5-card">
     <div class="wh5-set" id="wh5-set">第 ${esc(v.set_no)} 套 · ${esc(v.position?.position_name ?? '')}</div>
     ${ternLine(v)}
@@ -942,7 +989,6 @@ function mainView(state) {
     ${qualityBlock(state, v)}
     ${state.notice ? `<p class="wh5-notice" id="wh5-notice">${esc(state.notice)}</p>` : ''}
     ${state.error ? `<p class="wh5-error" id="wh5-error">${esc(state.error)}</p>` : ''}
-    <button id="wh5-rescan" class="wh5-ghost" type="button">重扫</button>
   </section>`
   }
   const price = op.unit_price === null || op.unit_price === undefined
@@ -969,6 +1015,7 @@ function mainView(state) {
       </div>`
     : ''
   return `${header(state)}
+  ${finishedInboundCard(state)}
   <section class="wh5-card">
     <div class="wh5-set" id="wh5-set">第 ${esc(v.set_no)} 套 · ${esc(v.position?.position_name ?? '')}</div>
     ${ternLine(v)}
@@ -988,7 +1035,6 @@ function mainView(state) {
     ${overviewView(v, v.position?.order_item_id ?? null)}
     ${cutPlanView(v)}
     ${qualityBlock(state, v)}
-    <button id="wh5-rescan" class="wh5-ghost" type="button">重扫</button>
   </section>`
 }
 

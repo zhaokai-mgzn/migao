@@ -101,6 +101,15 @@ public class ProductionScanCompleteService {
     private final WorkerAdminService workerAdminService;
 
     /**
+     * 成品入库（issue #7845）：**打包**工序报工成功那一次 ⇒ 这一件（套 × 部位）进成品仓。
+     *
+     * <p>字段注入（{@code @RequiredArgsConstructor} 的构造签名被既有测试直接装配，不能加参数）；
+     * 未接线（切片测试 / 老上下文）⇒ 回执不带 {@code finished_inbound}，报工行为一字不变。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private FinishedGoodsService finishedGoodsService;
+
+    /**
      * 扫码<b>开工（领活）</b>—— A 模式闭环的唯一写入口（issue #4967 起语义 = 开工 / 领活，
      * 记账时点与实现一字未变）。
      *
@@ -264,7 +273,56 @@ public class ProductionScanCompleteService {
         result.put("set_overview", scan.get("set_overview"));
         result.put("rerouted", Boolean.TRUE.equals(operationView.get("rerouted")));
         enrichNextOperation(result, token, setId, orderItemId, tenantId, workerOperation);
+        // ④ 打包工序 ⇒ 成品入库（issue #7845）：用户 2026-10-26 逐字「只有打包工序绑定了成品帘入库…
+        //    扫码后除了自动报工，还需要生成成品入库单」「打包扫码报工时就需要确认质检结果和成品入库&打入库标签」。
+        attachFinishedInbound(result, order, op, scan, token, identity, tenantId, workType);
         return result;
+    }
+
+    /**
+     * 回执里的「成品入库」块（issue #7845）—— **只对打包工序、只对正常报工**生成。
+     *
+     * <p>🔴 三条纪律：</p>
+     * <ol>
+     *   <li><b>不改变报工结论</b>：报工已落库，入库失败**绝不**变成失败响应（否则调用方会释放幂等键
+     *       重试 ⇒ 同一笔报工记两遍）；失败只写 {@code finished_inbound_error} 并留 warn（同
+     *       {@link #enrichNextOperation} 的取舍），订单打包动作会补剩余；</li>
+     *   <li><b>只绑打包</b>：判据 = {@link FinishedGoodsService#isPackOperation}（关键词与授权判据同一常量）；</li>
+     *   <li><b>返工 / 报废不入库</b>：那两笔是「这件没做好」，进成品仓会把不合格品算成可发货库存。</li>
+     * </ol>
+     */
+    private void attachFinishedInbound(Map<String, Object> result, Order order,
+                                       ProcessingPositionOperation op, Map<String, Object> scan,
+                                       String token, WorkerIdentity identity, Long tenantId, String workType) {
+        result.put("finished_inbound", null);
+        if (finishedGoodsService == null || !FinishedGoodsService.isPackOperation(op.getOperationName())) {
+            return;
+        }
+        if (!"normal".equals(workType)) {
+            result.put("finished_inbound_skipped", "这一笔不是「正常」报工（返工 / 报废）⇒ 不入成品库");
+            return;
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> position = (Map<String, Object>) scan.get("position");
+        String itemId = position == null ? null : ProductionService.str(position.get("order_item_id"));
+        if (!StringUtils.hasText(itemId)) {
+            // 旧码降级 / 套级回落：没有「这一件」⇒ 没有可入库的颗粒度（不猜、不按订单行凑）
+            result.put("finished_inbound_skipped", "这次报工没有指定部位（套级 / 旧码）⇒ 不入成品库");
+            return;
+        }
+        String operator = identity == null ? null
+                : (StringUtils.hasText(identity.workerName()) ? identity.workerName() : identity.workerId());
+        try {
+            Map<String, Object> inbound = finishedGoodsService.receiveByScanReport(tenantId, order, token, operator);
+            result.put("finished_inbound", inbound);
+            if (inbound == null) {
+                result.put("finished_inbound_error", "这件没有可入库的成品码（没有生成成品入库单）");
+            }
+        } catch (RuntimeException e) {
+            log.warn("[扫码完成] 成品入库没生成（本次报工已成功落库，库存以打包/发货时点补齐）: "
+                    + "tenant={}, orderId={}, error={}", tenantId, order.getId(), e.getMessage());
+            result.put("finished_inbound_error", "成品入库单没生成成功：请让管理员在「库存 → 成品入库」核对后补单");
+        }
     }
 
     /**

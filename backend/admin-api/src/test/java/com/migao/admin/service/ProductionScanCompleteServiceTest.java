@@ -124,6 +124,9 @@ class ProductionScanCompleteServiceTest {
     /** 工人档案（issue #7749）：写面按它读「绑定的工序」；默认 null = 未绑定（旧行为逐字不变）。 */
     @Mock
     private WorkerAdminService workerAdminService;
+    /** 成品入库（issue #7845）：打包工序报工 ⇒ 这一件进成品仓；其它工序不得触达。 */
+    @Mock
+    private FinishedGoodsService finishedGoodsService;
 
     private ProductionService productionService;
     private ProductionScanService scanService;
@@ -149,6 +152,8 @@ class ProductionScanCompleteServiceTest {
         // 批次账是**字段注入**（构造签名被 27 处既有测试直接装配，不能加参数）⇒ 测试里同样按字段装。
         // 默认 mock 的 `tracksBatches` 返回 false ⇒ 非「裁剪」工序与存量商品行为逐字不变。
         ReflectionTestUtils.setField(productionService, "stockBatchConsumptionService", stockBatchConsumptionService);
+        // 成品入库是**字段注入**（构造签名被既有测试直接装配）⇒ 测试里同样按字段装（issue #7845）
+        ReflectionTestUtils.setField(service, "finishedGoodsService", finishedGoodsService);
 
         // 幂等占位：默认「首次」（claim=true）。重复提交的用例单独把它改成 false。
         when(clientRequestIdService.claim(any(), any(), any())).thenReturn(true);
@@ -1061,5 +1066,56 @@ class ProductionScanCompleteServiceTest {
                 .operationName(operationName).seq(seq).unit("米").qty(new BigDecimal(qty))
                 .doneQty(new BigDecimal(doneQty)).unitPrice(unitPrice).status("pending")
                 .isMustFinish(Boolean.TRUE).deleted(0).build();
+    }
+
+    // ============================================================ ④ 打包工序 ⇒ 成品入库（issue #7845）
+
+    @Test
+    @DisplayName("🔴 打包工序报工 ⇒ 回执带 finished_inbound（入库单/仓位/标签），报工结论一字未动")
+    void packReportAttachesFinishedInbound() {
+        ProcessingPositionOperation packOp = op("op-pack", ITEM_CLOTH, 3, "打包", "1", "0", new BigDecimal("1.00"));
+        stubPending(packOp);
+        // 写面按 operation_id 取回实例（`stubPending` 只桩了两个常量 id）
+        when(positionOperationMapper.selectById("op-pack")).thenReturn(packOp);
+        Map<String, Object> inbound = new java.util.LinkedHashMap<>();
+        inbound.put("inbound_no", "RK-20261026-0001");
+        inbound.put("bin_code", "A-01");
+        when(finishedGoodsService.receiveByScanReport(eq(TENANT), any(Order.class), eq(TOKEN), eq("张三")))
+                .thenReturn(inbound);
+
+        Map<String, Object> result = service.complete(body(TOKEN), TENANT, "key-1", WORKER);
+
+        assertThat(result.get("finished_inbound")).isEqualTo(inbound);
+        assertThat(result.get("status")).isEqualTo("done");
+        verify(finishedGoodsService).receiveByScanReport(eq(TENANT), any(Order.class), eq(TOKEN), eq("张三"));
+    }
+
+    @Test
+    @DisplayName("非打包工序 ⇒ 不触达成品入库（finished_inbound 为 null、零调用）")
+    void nonPackReportDoesNotTouchFinishedGoods() {
+        stubPending(Set_OP_CLOTH_DONE_0);
+
+        Map<String, Object> result = service.complete(body(TOKEN), TENANT, "key-1", WORKER);
+
+        assertThat(result).containsEntry("finished_inbound", null);
+        verify(finishedGoodsService, never()).receiveByScanReport(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("🔴 入库失败不改变报工结论：报工照常成功 + 回执带 finished_inbound_error（不诱发重试重复计件）")
+    void inboundFailureDoesNotFailTheReport() {
+        ProcessingPositionOperation packOp = op("op-pack", ITEM_CLOTH, 3, "打包", "1", "0", new BigDecimal("1.00"));
+        stubPending(packOp);
+        // 写面按 operation_id 取回实例（`stubPending` 只桩了两个常量 id）
+        when(positionOperationMapper.selectById("op-pack")).thenReturn(packOp);
+        when(finishedGoodsService.receiveByScanReport(any(), any(), any(), any()))
+                .thenThrow(new IllegalStateException("成品仓没仓位了"));
+
+        Map<String, Object> result = service.complete(body(TOKEN), TENANT, "key-1", WORKER);
+
+        assertThat(result.get("status")).isEqualTo("done");
+        assertThat(result.get("finished_inbound")).isNull();
+        assertThat((String) result.get("finished_inbound_error")).contains("入库");
+        verify(clientRequestIdService).complete(eq(TENANT), eq("key-1"), any());
     }
 }

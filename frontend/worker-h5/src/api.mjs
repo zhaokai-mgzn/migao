@@ -278,10 +278,9 @@ export function createApi(opts = {}) {
       return request(`/api/worker/production/scan?${qs.toString()}`)
     },
 
-    /** 扫水洗唛出库（幂等：同一张码第二次提交 ⇒ 服务端 409「已经出库」）。 */
-    async finishedOutbound(token) {
-      return request('/api/worker/stock/finished-outbound', { method: 'POST', body: { token } })
-    },
+    // 🔴 扫水洗唛「出库」不再由报工页发起（issue #7845：用户 2026-10-26 裁定
+    //    「只有打包工序绑定了成品帘入库」⇒ 打包 = **入库**，报工页只出「成品入库」卡 + 打印入库标签）。
+    //    服务端 `POST /api/worker/stock/finished-outbound` 保留（发货/商家侧口径不变，另单决定是否复用）。
 
     /** 页头「当前工人」——**服务端**来源（PAD 共用时前端 state 不可信）。 */
     async currentWorker() {
@@ -418,6 +417,9 @@ export function createApi(opts = {}) {
         batchNo: data.batch_no,
         batchRemaining: data.batch_remaining,
         batchShortageMeters: data.batch_shortage_meters,
+        // 打包工序的成品入库块（issue #7845）：服务端随回执下发（入库单 / 仓位 / 标签 / 质检结论）；
+        // 缺键（非打包工序 / 未接线）⇒ null（页面按「没有入库卡」处理，不编造）。
+        finishedInbound: data.finished_inbound ?? null,
         // 下一屏的批次判据（issue #7647）：服务端已经用**同一次重解析**算好（报「裁剪」后下一道通常是
         // 「打包」⇒ 不需要批次；报废不推进进度 ⇒ 下一道仍是「裁剪」⇒ 仍需要）。页面据此渲染下一屏，
         // **不沿用上一屏的旧值**（那会让打包屏多出输入框、或让裁剪屏填不了批次）。缺键 ⇒ false/null/[]。
