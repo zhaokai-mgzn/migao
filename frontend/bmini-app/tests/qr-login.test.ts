@@ -124,6 +124,31 @@ describe('扫码即登录（issue #7825）', () => {
     expect(readAuthDiag().map((entry: any) => entry.kind)).toContain('qr_login_failed')
   })
 
+  it('工人设备扫「手机端」码 ⇒ **不兑换商家会话**，只标记去工人工作台（issue #7878）', async () => {
+    const { STORAGE_KEYS } = importConstants()
+    window.history.replaceState({}, '', '/b/?qr=ticket-for-worker')
+
+    let gateResult: boolean | null = null
+    let freshTaro: any = null
+    await jest.isolateModulesAsync(async () => {
+      // ⚠️ `resetModules` 之后 `@tarojs/taro` 是**新实例**（存储也是新的一份）⇒ 工人 session 必须
+      //    写在**新实例**上，否则被测代码读到的是空存储（实测：这条会静默变成「没有工人会话」）。
+      const taro = require('@tarojs/taro')
+      freshTaro = taro.default ?? taro
+      freshTaro.setStorageSync(STORAGE_KEYS.WORKER_SESSION, 'worker-sess-1')
+      const { qrLoginReady } = require('../src/utils/qrLogin')
+      gateResult = await qrLoginReady
+    })
+
+    expect(gateResult).toBe(true)
+    // 🔴 零请求：不把 PC 的商家令牌落到共用车间设备上
+    expect(freshTaro.request).not.toHaveBeenCalled()
+    // 票据不留在地址栏
+    expect(window.location.search).not.toContain('qr=')
+    // 一次性落地标记：商家首页据此把工人送到工人工作台
+    expect(freshTaro.getStorageSync('qr_worker_landing')).toBe('1')
+  })
+
   it('启动门：地址带票据时，checkAuth **先等兑换**再判登录', async () => {
     const { STORAGE_KEYS } = importConstants()
     window.history.replaceState({}, '', '/b/?qr=ticket-gate')

@@ -25,6 +25,7 @@ import Taro from '@tarojs/taro'
 import { API_BASE_URL, REQUEST_CONFIG } from './constants'
 import { recordAuthDiag } from './authDiag'
 import { persistSession } from './auth'
+import { hasWorkerSession } from './workerSession'
 import type { ApiResponse, User } from '../types'
 
 /** 二维码票据的查询参数名（与 admin-web 的 `?qr=` 同一份契约） */
@@ -35,6 +36,42 @@ export const QR_EXCHANGE_PATH = '/api/auth/qr/exchange'
 
 /** 兑换失败的唯一提示（与后端 `AuthService.QR_TICKET_INVALID_MESSAGE` 逐字一致） */
 export const QR_TICKET_EXPIRED_HINT = '二维码已过期，请重新扫码'
+
+/**
+ * 「工人扫码落地」一次性标记（issue #7878）。
+ *
+ * 工人手机上扫「手机端」码时**不做商家兑换**（不把 PC 的商家令牌落到共用设备上），
+ * 但页面默认是商家首页 ⇒ 需要一个**一次性**标记让商家首页把它送到工人工作台。
+ * 消费即删（`consumeWorkerLanding`），避免下次正常打开商家页被误送走。
+ */
+export const QR_WORKER_LANDING_KEY = 'qr_worker_landing'
+
+/** 打上「下次进商家首页 ⇒ 送工人工作台」的标记（扫码落地时用）。 */
+export function markWorkerHomeLanding(): void {
+  try {
+    Taro.setStorageSync(QR_WORKER_LANDING_KEY, '1')
+  } catch {}
+}
+
+/** 是否带着「工人扫码落地」标记。 */
+export function shouldLandOnWorkerHome(): boolean {
+  try {
+    return Taro.getStorageSync(QR_WORKER_LANDING_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+/** 读取并**消费**落地标记（`true` = 这次该去工人工作台；读后即删）。 */
+export function consumeWorkerLanding(): boolean {
+  const pending = shouldLandOnWorkerHome()
+  if (pending) {
+    try {
+      Taro.removeStorageSync(QR_WORKER_LANDING_KEY)
+    } catch {}
+  }
+  return pending
+}
 
 interface LocationLike {
   search?: string
@@ -150,6 +187,17 @@ export async function exchangeQrTicket(ticket: string): Promise<boolean> {
 async function consumeTicketFromUrl(): Promise<boolean> {
   const ticket = readQrTicket()
   if (!ticket) return false
+
+  // 🔴 工人身份优先（issue #7878）：工人设备上扫「商家手机端」码**不兑换**。
+  //    理由两条：① 工人身份是另一套载体（`X-Worker-Session-Id`），商家 JWT 帮不上他的活；
+  //    ② 共用车间设备上把 PC 的商家令牌落进来 = 把老板的会话放到工人手机（安全面不划算）。
+  //    ⇒ 抹掉票参、打一次性落地标记，直接去工人工作台。
+  if (hasWorkerSession()) {
+    stripQrTicket()
+    markWorkerHomeLanding()
+    recordAuthDiag('qr_login_skipped_worker')
+    return true
+  }
 
   const ok = await exchangeQrTicket(ticket)
   stripQrTicket()
