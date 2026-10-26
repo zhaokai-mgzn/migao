@@ -12,12 +12,12 @@
  * 1. **身份卡读服务端**（`fetchCurrentWorker()`）：页头显示的正是「这笔活会记到谁头上」
  *    = 计件工资的凭证 ⇒ 前端自己拼一个名字就是把凭证交给客户端。服务端读不到就**回落成未登录**
  *    （绝不静默留着上一个人的名字）；
- * 2. **四件工人功能**（拍照入库 / 补打入库标签 / 拍照发货 / 待发货单）都走既有页面与既有路由常量
- *    （`utils/inbound/gaps.ts` 是路由单一真值，本页不写第二份字面量）；
- *    🔴 **「扫码报工」主按钮已随报工页下架删除**（2026-10-14，issue #6868 实现包 D1）：
- *    报工的唯一实现 = `frontend/worker-h5` 的 `/w/`（能力更全、已上线），端内那一页是
- *    **第二份实现** ⇒ 删除后本页不再有指向 `pages/production/index/index` 的死链。
- *    报工面由 H5 承接（工人扫纸上的码即开 H5；不用 web-view，见 2026-09-29 的形态裁定）；
+ * 2. **五件工人功能**（扫码报工 / 拍照入库 / 补打入库标签 / 拍照发货 / 待发货单）都走既有页面与
+ *    既有路由常量（`utils/inbound/gaps.ts` 是路由单一真值，本页不写第二份字面量）；
+ *    🔴 **扫码报工回来了**（issue #7812 P2a，2026-10-26 用户改判 #7806「未来都要进入小程序」）：
+ *    2026-10-14 曾按 #6868「手机端收口到 H5」把端内报工页下架；现在载体反过来，端内这一页是
+ *    `/w/` 报工面的**小程序载体**（记账口径与判据逐条对齐），`/w/` 保留到 P2c 切短链；
+ *    🔴 **入口显隐由「工人端菜单」开关决定**（`utils/workerMenu`）：读不到 ⇒ fail-open 全开；
  * 3. **一件商家面都不出现**：问黄金策 / 数据 / 坐席 / 管理面 4 项都不在本页（工人点了只会 403）；
  * 4. **退出工人身份** = `workerLogout()`（服务端留 `end_reason=logout` 痕）+ `clearWorkerSession()`
  *    ⇒ 回登录页的**工人入口**（共用 PAD 场景：下一个人接着用）。
@@ -45,12 +45,18 @@ import {
 } from '../../../utils/workerSession'
 import {
   INBOUND_PAGE_ROUTE,
+  REPORT_PAGE_ROUTE,
   REPRINT_PAGE_ROUTE,
   SHIPMENT_ORDERS_PAGE_ROUTE,
   SHIPMENT_PAGE_ROUTE,
   WORKER_HOME_LOGIN_REQUIRED,
   WORKER_TAB_LOGIN_ROUTE,
 } from '../../../utils/inbound/gaps'
+import { fetchWorkerPages } from '../../../services/workerService'
+import { WORKER_MENU_KEYS, menuVisible, TO_SHIP_PAGE_KEY } from '../../../utils/workerMenu'
+
+/** 读不到菜单开关时给工人的一句话（不摆内部键；文案守卫只扫 src/pages/**，故写在页内）。 */
+export const PAGES_UNREAD_NOTICE = '未能读取本机菜单开关，已按全部菜单显示；若与本机应开的不符，请找管理员'
 import './index.scss'
 
 export default function WorkerHomePage() {
@@ -58,6 +64,10 @@ export default function WorkerHomePage() {
   const workerReady = hasWorkerSession()
   const [worker, setWorker] = useState<CurrentWorker | null>(null)
   const [message, setMessage] = useState('')
+  // 商家后台「设置工人端菜单」的**唯一**消费点（issue #7812）：null = 还没读到；
+  // `pagesUnread` = 读不到（网络 / 5xx）⇒ fail-open 全开 + 一句显式提示。
+  const [pages, setPages] = useState<string[] | null>(null)
+  const [pagesUnread, setPagesUnread] = useState(false)
 
   const refresh = useCallback(async () => {
     const res = await fetchCurrentWorker()
@@ -76,6 +86,24 @@ export default function WorkerHomePage() {
   useEffect(() => {
     if (workerReady) void refresh()
   }, [refresh, workerReady])
+
+  // 页面开关：只决定**入口显不显示**（不是访问拦截）；读不到 ⇒ 全开 + 提示，绝不把活挡掉
+  useEffect(() => {
+    if (!worker) return
+    void fetchWorkerPages().then((res) => {
+      if (res.unauthorized) {
+        clearWorkerSession()
+        setWorker(null)
+        return
+      }
+      setPages(res.pages)
+      setPagesUnread(res.unread)
+    })
+  }, [worker])
+
+  const showReport = menuVisible(pages, pagesUnread, WORKER_MENU_KEYS.report)
+  const showToShip = menuVisible(pages, pagesUnread, TO_SHIP_PAGE_KEY)
+  const showShipment = menuVisible(pages, pagesUnread, WORKER_MENU_KEYS.shipment)
 
   /** 引导去登录页的**工人入口**（`?tab=worker` 直达第三 tab） */
   const goWorkerLogin = useCallback(() => {
@@ -114,19 +142,37 @@ export default function WorkerHomePage() {
 
       {worker ? (
         <>
-          {/* 🔴 「扫码报工」主按钮已删（2026-10-14，issue #6868 实现包 D1）：报工页整页下架
-              ⇒ 端内没有报工面，留着它就是死链。报工走 H5 `/w/`（工人扫纸上的码即开）。 */}
           <Text className='worker-home__section'>工人功能</Text>
+          {pagesUnread ? (
+            <Text className='worker-home__message' data-testid='worker-home-pages-unread'>
+              {PAGES_UNREAD_NOTICE}
+            </Text>
+          ) : null}
 
-          {/* 🔴 四张行卡**逐条显式**写（不走数组 + `.map()`）：本仓的入口可达性守卫
-              （`tests/page-entry-reachability.test.ts`）按 `Taro.navigateTo({ url: <路由常量> })`
-              这类**字面锚点**静态证明「页面有入口」，数据驱动会让它解析不到 ⇒ 5 条判据一起红
-              （实测：本项目 #6858 第一版用 `WORKER_ENTRIES.map()` 时踩到，守卫是对的）。 */}
+          {/* 🔴 入口按**商家后台的工人端菜单**显隐（issue #7812；商家反馈「勾了却没变」）。
+              语义 = 菜单显隐、不是访问拦截；读不到页面集 ⇒ fail-open 全开（见 utils/workerMenu）。
+              仍然是**静态字面锚点**（不走数组 + map）：入口可达性守卫按 `Taro.navigateTo({ url: <常量> })`
+              静态证明「页面有入口」，数据驱动会让它解析不到。 */}
+          {showReport ? (
+          <View
+            className='worker-home__entry'
+            onClick={() => Taro.navigateTo({ url: REPORT_PAGE_ROUTE })}
+          >
+            <View className='worker-home__entry-bar worker-home__entry-bar--a' />
+            <View className='worker-home__entry-body'>
+              <Text className='worker-home__entry-text'>扫码报工</Text>
+              <Text className='worker-home__entry-sub'>扫一扫 / 输码 ⇒ 选工序 ⇒ 报工</Text>
+            </View>
+            <Text className='worker-home__entry-go'>›</Text>
+          </View>
+          ) : null}
+
+          {/* 拍照入库 / 补打入库标签 = 工人面**固有**能力（后端没有页面键）⇒ 恒显示 */}
           <View
             className='worker-home__entry'
             onClick={() => Taro.navigateTo({ url: INBOUND_PAGE_ROUTE })}
           >
-            <View className='worker-home__entry-bar worker-home__entry-bar--a' />
+            <View className='worker-home__entry-bar worker-home__entry-bar--b' />
             <View className='worker-home__entry-body'>
               <Text className='worker-home__entry-text'>拍照入库</Text>
               <Text className='worker-home__entry-sub'>拍上游标签 ⇒ 过账 ⇒ 打标签</Text>
@@ -138,7 +184,7 @@ export default function WorkerHomePage() {
             className='worker-home__entry'
             onClick={() => Taro.navigateTo({ url: REPRINT_PAGE_ROUTE })}
           >
-            <View className='worker-home__entry-bar worker-home__entry-bar--b' />
+            <View className='worker-home__entry-bar worker-home__entry-bar--c' />
             <View className='worker-home__entry-body'>
               <Text className='worker-home__entry-text'>补打入库标签</Text>
               <Text className='worker-home__entry-sub'>标签丢了 / 磨花了</Text>
@@ -146,33 +192,35 @@ export default function WorkerHomePage() {
             <Text className='worker-home__entry-go'>›</Text>
           </View>
 
-          {/* 第 3 条（issue #6761）：#5648 的后端与纯逻辑早已就绪，缺的就是这个入口 */}
+          {showShipment ? (
           <View
             className='worker-home__entry'
             onClick={() => Taro.navigateTo({ url: SHIPMENT_PAGE_ROUTE })}
           >
-            <View className='worker-home__entry-bar worker-home__entry-bar--c' />
+            <View className='worker-home__entry-bar worker-home__entry-bar--d' />
             <View className='worker-home__entry-body'>
               <Text className='worker-home__entry-text'>拍照发货</Text>
               <Text className='worker-home__entry-sub'>拍运单 / 商品标签 ⇒ 生成发货单</Text>
             </View>
             <Text className='worker-home__entry-go'>›</Text>
           </View>
+          ) : null}
 
-          {/* 第 4 条（issue #7806 P1a）：全完工订单一屏可见。
-              🔴 同样是**静态字面锚点**（不走数组 + `.map()`）—— 入口可达性守卫按
-              `Taro.navigateTo({ url: <路由常量> })` 静态证明「页面有入口」，数据驱动会让它解析不到。 */}
+          {/* 待发货单（issue #7806 P1a；门控键 `to_ship` 由 #7814 落地）：与「拍照发货」分开勾选 ——
+              前者是名单 + 标签（读），后者是发出去（写）。 */}
+          {showToShip ? (
           <View
             className='worker-home__entry'
             onClick={() => Taro.navigateTo({ url: SHIPMENT_ORDERS_PAGE_ROUTE })}
           >
-            <View className='worker-home__entry-bar worker-home__entry-bar--d' />
+            <View className='worker-home__entry-bar worker-home__entry-bar--a' />
             <View className='worker-home__entry-body'>
               <Text className='worker-home__entry-text'>待发货单</Text>
               <Text className='worker-home__entry-sub'>全部完工的单 ⇒ 看收货人 / 电话 / 地址 / 物流</Text>
             </View>
             <Text className='worker-home__entry-go'>›</Text>
           </View>
+          ) : null}
         </>
       ) : (
         <View className='worker-home__gate'>

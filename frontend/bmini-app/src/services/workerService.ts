@@ -158,6 +158,45 @@ export async function workerLogout(): Promise<void> {
   }
 }
 
+/**
+ * 读「我是谁 + 本租户给我开了哪几个工人端页面」（`GET /api/worker/me`，V141/#5161）。
+ *
+ * 🔴 **三态必须可分**（调用方据此决定显隐与提示）：
+ * - `pages` 是数组（可能为空）⇒ 用这份收窄集；
+ * - `pages === null` 且 `unread = false` ⇒ 服务端没给（旧版服务端）⇒ 调用方按全开；
+ * - `unread = true` ⇒ 读不到（网络 / 5xx / 形状不对）⇒ 调用方 **fail-open 全开** + 提示；
+ * - `unauthorized = true` ⇒ 401（未登录 / 闲置超时）⇒ 调用方回未登录态，**不**当「读不到」。
+ */
+export interface WorkerPagesResult {
+  pages: string[] | null
+  unread: boolean
+  unauthorized: boolean
+  message?: string
+}
+
+export async function fetchWorkerPages(): Promise<WorkerPagesResult> {
+  try {
+    const res: any = await get<any>('/api/worker/me', {
+      baseURL: API_BASE_URL,
+      headers: workerSessionHeaders(),
+    })
+    const pages = Array.isArray(res?.data?.pages)
+      ? (res.data.pages as string[]).filter((key: unknown) => typeof key === 'string')
+      : null
+    return { pages, unread: false, unauthorized: false }
+  } catch (error: any) {
+    if (error?.statusCode === 401) {
+      return { pages: null, unread: false, unauthorized: true }
+    }
+    return {
+      pages: null,
+      unread: true,
+      unauthorized: false,
+      message: error?.data?.error?.message || error?.message || '',
+    }
+  }
+}
+
 /** 落 session + 展示缓存。 */
 function persistSession(payload: WorkerSessionPayload): void {
   setWorkerSessionId(payload.session_id)

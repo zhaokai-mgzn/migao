@@ -37,6 +37,7 @@
  */
 import {
   INBOUND_PAGE_ROUTE,
+  REPORT_PAGE_ROUTE,
   REPRINT_PAGE_ROUTE,
   SHIPMENT_ORDERS_PAGE_ROUTE,
   SHIPMENT_PAGE_ROUTE,
@@ -240,6 +241,16 @@ export const PAGE_ENTRY_LEDGER: PageEntry[] = [
     viaBinding: 'src/utils/inbound/gaps.ts',
     audience:
       '工人身份（工人首页 →「拍照发货」；未登录时该页自身引导去工号 + PIN 登录，先登录再发货）',
+  },
+  // issue #7812 P2a：工人工作台**新增**「扫码报工」（小程序内的报工面；`/w/` 仍在线到 P2c）。
+  {
+    route: REPORT_PAGE_ROUTE,
+    from: 'src/pages/worker/home/index.tsx',
+    nav: 'navigateTo',
+    via: 'REPORT_PAGE_ROUTE',
+    viaBinding: 'src/utils/inbound/gaps.ts',
+    audience:
+      '工人身份（工人首页 →「扫码报工」；未登录时该页自身引导去工号 + PIN 登录）',
   },
   // issue #7806 P1a：工人工作台**新增**的一条入口（「待发货单」= 全完工订单列表，只读）。
   // 为什么必须有这一条：#7764 的读面 `GET /api/worker/shipment/orders` 已上线，而 `/b/` 侧

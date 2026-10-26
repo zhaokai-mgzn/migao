@@ -321,6 +321,17 @@ export interface ScanCompleteResult extends ReportResult {
  * 后端业务响应：success=false 时 message 为可展示文案
  * （兼容 {message} 与 {error:{message}} 两种后端错误形态）
  */
+/**
+ * 旧码的具名选择（issue #7812）：`set_id` + `order_item_id`。
+ *
+ * 只由**工人报工页**在「旧码（`granularity:'order'`）选完套 + 部位」后传入；
+ * 新码路径恒不传 ⇒ 请求体与改前逐字节一致。
+ */
+export interface ScanSelection {
+  setId: string
+  orderItemId: string
+}
+
 export interface ProductionResponse<T> {
   success: boolean
   data?: T
@@ -333,6 +344,11 @@ export interface ProductionResponse<T> {
    * 已释放幂等键（`ClientRequestIdService.discard`）⇒ 换个时机重发会**真的再执行一次**。
    */
   offline?: boolean
+  /**
+   * HTTP 状态码（issue #7812）：失败时透出，调用方据此分辨 **401（会话失效 ⇒ 引导登录）**
+   * 与「业务拒绝 / 传输层失败」。既有调用方（离线队列 / 发货页）不读它 ⇒ 行为不变。
+   */
+  statusCode?: number
 }
 
 /**
@@ -405,9 +421,16 @@ export const reportInFlightLock = new ReportInFlightLock()
 export async function scanResolve(
   token: string,
   operationId?: string,
+  selection?: ScanSelection | null,
 ): Promise<ProductionResponse<ScanResolveResult>> {
   try {
-    const query = operationId ? `&operation_id=${encodeURIComponent(operationId)}` : ''
+    const query = [
+      operationId ? `&operation_id=${encodeURIComponent(operationId)}` : '',
+      // 🔴 旧码收口（issue #7812）：只有「套 + 部位」**都**选完才带（半截选择不带）
+      selection?.setId && selection?.orderItemId
+        ? `&set_id=${encodeURIComponent(selection.setId)}&order_item_id=${encodeURIComponent(selection.orderItemId)}`
+        : '',
+    ].join('')
     const res = await get<ProductionResponse<ScanResolveResult>>(
       `/api/worker/production/scan?token=${encodeURIComponent(token)}${query}`,
       { baseURL: API_BASE_URL, headers: workerSessionHeaders() },
@@ -418,6 +441,8 @@ export async function scanResolve(
       success: false,
       message: error?.data?.message || error?.message || '无法识别该二维码，请手动输入单号',
       offline: !error?.statusCode,
+      // 🔴 401 必须可分辨（工人报工页据此引导登录，而不是当成「识别失败」）
+      statusCode: error?.statusCode,
     }
   }
 }
@@ -464,12 +489,18 @@ export async function completeByScan(
   operationId: string,
   requestId?: string,
   payload?: ReportPayload,
+  selection?: ScanSelection | null,
 ): Promise<ProductionResponse<ScanCompleteResult>> {
   const body: Record<string, unknown> = { token, operation_id: operationId }
   if (payload) {
     body.qty = payload.qty
     body.qualified_qty = payload.qualified_qty
     body.work_type = payload.work_type
+  }
+  // 🔴 旧码收口（issue #7812，与 H5 `api.mjs::completeByScan` 同口径）：只在「套 + 部位」都齐时带
+  if (selection?.setId && selection?.orderItemId) {
+    body.set_id = selection.setId
+    body.order_item_id = selection.orderItemId
   }
   try {
     const res = await post<ProductionResponse<ScanCompleteResult>>(
@@ -490,6 +521,8 @@ export async function completeByScan(
       message: error?.data?.message || error?.message || '报工失败，请重试',
       // 无 HTTP 状态码 = 传输层失败（断网/超时）；有状态码 = 服务端已答复（业务拒绝）
       offline: !error?.statusCode,
+      // 🔴 401 可分辨（工人报工页据此引导登录；离线队列不看这个字段，不受影响）
+      statusCode: error?.statusCode,
     }
   }
 }

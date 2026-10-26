@@ -142,10 +142,11 @@ export const H5_API_OUTLET_LEDGER: Record<string, string> = {
   login: 'h5 不走微信换码：miniAppLogin 直接拒绝并指向账号密码登录（employeeLogin → POST /api/auth/employee/login）',
   getRecorderManager:
     'h5 不调用它（stub）⇒ 语音改走**浏览器原生** `getUserMedia` + `MediaRecorder`（issue #6596，见 frontend/bmini-app/src/utils/voiceBrowserRecorder.ts）；浏览器确实没有这两个 API 时才回落文字模式，切换键点了给显式提示（H5_VOICE_UNAVAILABLE_HINT）',
-  // 🔴 2026-10-14（issue #6868 实现包 D1）：这里原有 `scanCode` 的 h5 出路条目 ——
-  // 本仓**唯一**用法是已整页删除的小程序报工页（页内「扫一扫」的拍照降级面）
-  // ⇒ 台账口径「清单 ∩ 用法里已不存在的条目必须删掉（只许缩短）」要求删掉它。
-  // 工人报工面现为 H5 `/w/`：**没有页内扫码**（工人用微信 / 系统扫一扫打开页面）。
+  // 🔴 2026-10-26（issue #7812 P2a）：`scanCode` 的用法**回来了** —— 小程序报工页
+  // （`src/pages/worker/report/index.tsx`）的「扫一扫」是小程序独有能力；h5 产物里没有它，
+  // 页面靠 {@link canUseNativeScan} 决定**摆不摆**这个按钮（不摆 = 手输码仍可用，不是死路）。
+  scanCode:
+    'h5 不暴露原生扫码：`canUseNativeScan()` 为假 ⇒ 页面**不渲染**「扫一扫」，只给手输码（短码 / 加工单号 / 订单号）这一条降级路径；小程序端走原生扫码（能力探测见本文件）',
   createOffscreenCanvas:
     'h5 不调用它（未实现的 stub）：拍照入库的**本机解码**在 h5 走 <img> + canvas 取像素，只有小程序端才用它；小程序端取不到像素时明说「已改用服务端识别」（src/utils/inbound/barcodeDecode.ts 的平台分支）',
 }

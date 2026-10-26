@@ -52,13 +52,14 @@ describe('类级守卫：小程序专有 API 必须同时给 h5 去处（issue #
 
   it('射程非空且确实取到了本仓的命中用法（判据不许空转成「0 命中 = 通过」）', () => {
     expect(usages.length).toBeGreaterThan(50)
-    // 🔴 2026-10-14（issue #6868 实现包 D1）：小程序报工页整页删除 ⇒ 它是本仓**唯一**的
-    // `Taro.scanCode` 用法（页内「扫一扫」的降级面随页面退场：工人报工面 = H5 `/w/`，
-    // 那台屏上**没有页内扫码**）⇒ 命中集合少了 `scanCode`，其余三处仍在射程内。
+    // 🔴 2026-10-26（issue #7812 P2a）：报工页**回到**小程序（收口方向见 #7806），页内「扫一扫」
+    // 重新成为本仓的 `Taro.scanCode` 用法 ⇒ 命中集合四处在射程内。
+    // 2026-10-14 曾因该页整页下架而少这一条（历史口径），现在恢复。
     expect(Array.from(new Set(hazardous.map((u) => u.api))).sort()).toEqual([
       'createOffscreenCanvas',
       'getRecorderManager',
       'login',
+      'scanCode',
     ])
   })
 

@@ -1,0 +1,135 @@
+/* 扫码报工页（issue #7812 P2a）—— 车间手机 / PAD：单手可点、触控 ≥44px、弱光高对比。 */
+.worker-report {
+  min-height: 100vh;
+  padding: 24px 24px 48px;
+  background: #faf7f2;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+
+  &__header {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  &__title {
+    font-size: 36px;
+    font-weight: 700;
+    color: #312c26;
+  }
+
+  &__worker {
+    font-size: 24px;
+    color: #7e6f57;
+  }
+
+  &__scan,
+  &__card,
+  &__legacy,
+  &__gate {
+    background: #fff;
+    border-radius: 20px;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    box-shadow: 0 1px 2px rgba(36, 31, 24, 0.04), 0 4px 16px rgba(36, 31, 24, 0.06);
+  }
+
+  &__primary,
+  &__ghost {
+    min-height: 96px;
+    line-height: 96px;
+    border-radius: 16px;
+    font-size: 32px;
+    text-align: center;
+  }
+
+  &__primary {
+    background: #3a4e75;
+    color: #fff;
+    font-weight: 700;
+  }
+
+  &__ghost {
+    background: #f2ede5;
+    color: #3a4e75;
+  }
+
+  &__input {
+    min-height: 88px;
+    padding: 0 20px;
+    border: 1px solid #d4c9b8;
+    border-radius: 16px;
+    font-size: 30px;
+    background: #fff;
+  }
+
+  &__hint {
+    font-size: 24px;
+    color: #7e6f57;
+  }
+
+  &__set {
+    font-size: 38px;
+    font-weight: 700;
+    color: #312c26;
+  }
+
+  &__op {
+    font-size: 40px;
+    font-weight: 700;
+    color: #232e46;
+  }
+
+  &__line {
+    font-size: 28px;
+    color: #484036;
+  }
+
+  &__notice,
+  &__receipt {
+    font-size: 26px;
+    line-height: 1.5;
+    color: #7e6f57;
+  }
+
+  &__receipt {
+    color: #2e3d5c;
+    font-weight: 600;
+  }
+
+  &__error {
+    font-size: 26px;
+    color: #b91c1c;
+  }
+
+  &__sets,
+  &__positions,
+  &__picker,
+  &__worktype {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+  }
+
+  &__set,
+  &__position,
+  &__choice {
+    min-height: 88px;
+    line-height: 88px;
+    padding: 0 24px;
+    border-radius: 16px;
+    background: #f2ede5;
+    color: #312c26;
+    font-size: 30px;
+  }
+
+  &__choice.is-on {
+    background: #eef2f8;
+    color: #2e3d5c;
+    font-weight: 700;
+  }
+}
