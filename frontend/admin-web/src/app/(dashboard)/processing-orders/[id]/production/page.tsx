@@ -9,7 +9,7 @@ import StatusBadge from '@/components/ui/StatusBadge'
 import { cn, formatFullDateTime } from '@/lib/utils'
 import { chipToneClasses } from '@/lib/status-chip'
 import { processingOrderStatusChipFor } from '@/lib/processing-order'
-import { processingOrderApi, processingOrderSetApi, productionApi } from '@/lib/api'
+import { orderApi, processingOrderApi, processingOrderSetApi, productionApi } from '@/lib/api'
 import { usePermission } from '@/lib/permission'
 import { useRouteId } from '@/lib/use-route-id'
 import { routeSourceNotice } from '@/lib/route-source'
@@ -23,12 +23,16 @@ import QualityCheckPanel from '@/components/production/QualityCheckPanel'
 import PieceworkTable from '@/components/production/PieceworkTable'
 import CutPlanTable from '@/components/production/CutPlanTable'
 import PrintDocPreview from '@/components/orders/PrintDocPreview'
+// 加工单（A4）纸面自 issue #7870 起在**本页**打印（用户 2026-10-26「加工单打印移到加工单和洗水唛
+// 放一起，也想订单一样统一收口到打印按钮」）—— 与洗水唛同一个预览层，靠单据标签切换。
+// 🔴 同一份组件、同一份字段映射：订单详情页打印的那张纸就是这张（不另写一套纸面）。
+import ProcessingDoc from '@/components/orders/ProcessingDoc'
 // 加工费组合（= `processingItems[].name` 集合；超高/超宽/倒幅所在）—— 取值口径唯一一份（issue #7833）
 import { processingComboTextOfRows } from '@/lib/processing-combo'
 // 工艺规格（含「特殊选项」那一行）的**唯一**取值定义（设计 §4.9）—— 屏幕/纸面/订单详情同源
 // （issue #7851：页头按商品行展示特殊选项，不在这里再拼一份 `join('、')`）
 import { craftSpecRows } from '@/lib/craft-display'
-import { PRINT_TARGET_SPECS, usePrintDoc } from '@/lib/print-doc'
+import { PRINT_TARGET_SPECS, usePrintDoc, type PrintTarget } from '@/lib/print-doc'
 import TaskCardPrint from '@/components/production/TaskCardPrint'
 // 免驱动直连打印（issue #6439）：**不做打印机定制功能** —— 通道层与机型无关，本页只接一条
 // 「直连打印机」入口；部位 ⇒ 洗水码数据的映射走单一处 `toWashLabelInputs`（页面不另写一份）
@@ -37,6 +41,7 @@ import { toWashLabelInputs } from '@/lib/wash-label-content'
 // 纸面抬头（企业名）与四张 A4/三联纸单据**同一份**读取口（issue #7219；2026-10-25 洗水唛也用）
 import { useCompanyName } from '@/lib/use-company-name'
 import type {
+  Order,
   PieceworkSummary,
   ProcessingOrder,
   ProcessingOrderItem,
@@ -83,7 +88,8 @@ const CUT_PLAN_SET_PAGE_SIZE = 100
  *
  * 路由：/processing-orders/{id}/production（id = 加工单号/订单号/UUID，按既有 useRouteId 读法）
  * 数据：加工单详情（头部：加工单号/订单号/状态/交期）+ 生产工序树（进度条/工序进度表）
- *       + 计件汇总；任务卡随页面挂载（屏幕隐藏、打印显形）→「打印任务卡」交车间扫码报工。
+ *       + 计件汇总；两份纸随页面挂载（屏幕隐藏、打印显形）→ 页头**一个**「打印」入口，
+ *       进来在单据标签里选「水洗唛（任务卡）」或「加工单（A4）」（issue #7870）。
  * 真值源：docs/curtain-production-rules.md §2 工序库 / §4 计件 / §5 扫码报工闭环。
  * 端点：GET /api/admin/production/orders/{orderId}/operations、/piecework（权限 order:list）；
  *       POST .../qr-token/revoke（issue #4240，**方法级 processing:manage** —— 与其它端点的类级
@@ -93,8 +99,19 @@ export default function ProcessingOrderProductionPage() {
   const id = useRouteId('id')
   const router = useRouter()
   const { has: hasPermission } = usePermission()
+  /**
+   * 加工单（A4）纸面的**读面码** = `order:detail`（`GET /api/admin/orders/{id}`）。
+   *
+   * 纸面读的是订单字段（客户/地址/货运/制单人/商品行…）——「展示真值单一来源」要求它取
+   * **同一份**订单详情 DTO，不另外拼一套快照映射。⇒ 无本码的岗位（如质检员 `inspector`：
+   * 只有 `production:view`）**不请求、不渲染**这张纸（洗水唛照旧可用）：入口同码显隐，
+   * 避免「按钮可见却 403」。
+   */
+  const canReadOrderDetail = hasPermission('order:detail')
 
   const [po, setPo] = useState<ProcessingOrder | null>(null)
+  // 加工单（A4）纸面的数据（issue #7870）：订单详情读面；`null` = 本页没有这张纸
+  const [printOrder, setPrintOrder] = useState<Order | null>(null)
   const [operations, setOperations] = useState<ProductionOperations | null>(null)
   const [piecework, setPiecework] = useState<PieceworkSummary | null>(null)
   const [loading, setLoading] = useState(true)
@@ -147,6 +164,20 @@ export default function ProcessingOrderProductionPage() {
         return
       }
       setPo(detail)
+
+      // 加工单（A4）纸面（issue #7870）：读**订单详情**（与订单详情页打印同一份 DTO）。
+      // 失败只影响这一张纸（洗水唛照旧可打），**不**改变页面其余部分的可用性 ⇒ 单独 try + 静默降级。
+      if (canReadOrderDetail && detail.orderId) {
+        try {
+          const orderRes = await orderApi.getOrder(detail.orderId)
+          setPrintOrder(orderRes.data?.data ?? null)
+        } catch (e) {
+          console.error(e)
+          setPrintOrder(null)
+        }
+      } else {
+        setPrintOrder(null)
+      }
 
       // 生产端点按**订单 id**（production/orders/{orderId}/...）取；加工单详情已带 orderId
       const orderId = detail.orderId
@@ -204,7 +235,7 @@ export default function ProcessingOrderProductionPage() {
     } finally {
       setLoading(false)
     }
-  }, [id])
+  }, [id, canReadOrderDetail])
 
   useEffect(() => {
     load()
@@ -262,8 +293,22 @@ export default function ProcessingOrderProductionPage() {
   }
 
   // 🔴 走共享打印入口（issue #5914）：`window.print()` 只在 target 提交之后调用
-  // 本页只有洗水码一份 ⇒ 缺省目标就是它（Ctrl+P 与改前行为一致）
-  const { printTarget, previewTarget, requestPrint, openPreview, closePreview } = usePrintDoc('labels')
+  // 缺省目标 = 洗水唛（Ctrl+P 与改前行为一致）；加工单（A4）自 issue #7870 起与本页同层，
+  // 靠预览层的单据标签切换（`docs` / `selectPreview`）。
+  const { printTarget, previewTarget, requestPrint, openPreview, selectPreview, closePreview } =
+    usePrintDoc('labels')
+
+  /**
+   * 本层可打印的单据（issue #7870）：洗水唛（默认）+ 加工单。
+   * 没有订单详情可读 ⇒ 只有洗水唛一份（`docs.length === 1` ⇒ 预览层不出现标签行，与改前一致）。
+   */
+  const printDocs = useMemo<readonly PrintTarget[]>(
+    () => (printOrder ? ['labels', 'processing'] : ['labels']),
+    [printOrder],
+  )
+
+  /** 预览层当前这份纸的标题与纸型（`PRINT_TARGET_SPECS` 是唯一真值；没选 ⇒ 默认水洗唛） */
+  const previewSpec = previewTarget ? PRINT_TARGET_SPECS[previewTarget] : PRINT_TARGET_SPECS.labels
 
   /**
    * 打印留痕（**唯一一处**：fire-and-forget，失败不得阻断打印）。
@@ -277,12 +322,16 @@ export default function ProcessingOrderProductionPage() {
   }, [po?.orderId])
 
   /**
-   * **真正**打印任务卡：先上报打印计数，再开印。
-   * ⚠️ 计数挪到「预览层里点打印」那一刻 —— 只看了预览没打纸的时候**不该**记账。
+   * 预览层里点「打印」：置位本次目标 ⇒ 由 `usePrintDoc` 在**提交之后**开印。
+   *
+   * 🔴 打印留痕只记**洗水唛（任务卡）**那一次（issue #7870）：`print_count` 的口径是
+   * 「任务卡打了几张」，打 A4 加工单不该把它加一。
+   * ⚠️ 计数仍在「真的开印」那一刻 —— 只看了预览没打纸的时候**不该**记账。
    */
-  const printTaskCards = () => {
-    recordPrintOnce()
-    requestPrint('labels')
+  const printPreviewDoc = () => {
+    if (!previewTarget) return
+    if (previewTarget === 'labels') recordPrintOnce()
+    requestPrint(previewTarget)
   }
 
   /** 预览页脚「蓝牙无线打印」要的水洗唛数据（部位 + 快照行 ⇒ 纸面行清单，走**单一处**映射；issue #6439 → #6656 → #7288）
@@ -304,7 +353,7 @@ export default function ProcessingOrderProductionPage() {
     [companyName, operations, po],
   )
 
-  /** 点「打印任务卡」：先看纸面自检（标签纸型没配好 = 整卷打废） */
+  /** 点页头「打印」：先看纸面自检（标签纸型没配好 = 整卷打废）；默认洗水唛 */
   const handlePrint = () => openPreview('labels')
 
   /**
@@ -537,7 +586,7 @@ export default function ProcessingOrderProductionPage() {
                 )}
                 <Button data-testid="production-print-button" onClick={handlePrint}>
                   <Printer className="w-4 h-4 mr-1.5" />
-                  打印任务卡
+                  打印
                 </Button>
               </div>
             </div>
@@ -875,6 +924,10 @@ export default function ProcessingOrderProductionPage() {
             printTarget={printTarget}
           />
 
+          {/* 纸质加工单（A4，issue #7870）：与任务卡同范式 —— 屏幕隐藏、打印显形；
+              预览实例**不传** `printTarget` ⇒ 不上纸，只有本次目标那一份上纸。 */}
+          {printOrder && <ProcessingDoc order={printOrder} processingOrder={po} printTarget={printTarget} />}
+
           {/* 打印前的**纸面自检层**（issue #5914）：标签 50×150mm 的纸型没配好 = 整卷打废，
               所以洗水码也走「先看纸面再打」。预览实例**不传 printTarget** ⇒ 不上纸。
 
@@ -884,15 +937,20 @@ export default function ProcessingOrderProductionPage() {
               两条通道的能力面与边界见 `frontend/admin-web/src/lib/label-print/capability.ts`。 */}
           <PrintDocPreview
             target={previewTarget}
-            title={PRINT_TARGET_SPECS.labels.title}
-            media={PRINT_TARGET_SPECS.labels.media}
-            onPrint={printTaskCards}
+            title={previewSpec.title}
+            media={previewSpec.media}
+            onPrint={printPreviewDoc}
             onClose={closePreview}
+            docs={printDocs}
+            onSelect={selectPreview}
             actions={
-              <DirectLabelPrint
-                labels={washLabels}
-                onRecordPrint={recordPrintOnce}
-              />
+              // 蓝牙无线打印只服务洗水唛（标签纸）；A4 加工单走系统打印 + 驱动（同一台机器）
+              previewTarget === 'labels' ? (
+                <DirectLabelPrint
+                  labels={washLabels}
+                  onRecordPrint={recordPrintOnce}
+                />
+              ) : null
             }
           >
             {previewTarget === 'labels' && (
@@ -904,6 +962,9 @@ export default function ProcessingOrderProductionPage() {
                 items={po.items}
                 inline
               />
+            )}
+            {previewTarget === 'processing' && printOrder && (
+              <ProcessingDoc order={printOrder} processingOrder={po} inline />
             )}
           </PrintDocPreview>
 

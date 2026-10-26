@@ -97,7 +97,6 @@ vi.mock('@/components/orders', () => ({
   OrderUrgencyPanel: () => null,
   EditOrderContentModal: () => null,
   PrintDocPreview: () => null,
-  ProcessingQrMissingNotice: () => null,
 }))
 
 // 页面用 `DateTimeCell` 渲染时间列；替身掉以免把 dayjs 的 mock 面拖进来（本判据不裁时间格式）。

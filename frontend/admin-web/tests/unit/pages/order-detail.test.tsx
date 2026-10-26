@@ -85,10 +85,9 @@ vi.mock('@/components/orders', async (importOriginal) => {
   ShipmentDoc: () => <div data-testid="shipment-doc">ShipmentDoc</div>,
   // 纸质报价单（issue #4965）：同上 —— 入口按钮在本文件，纸面内容由 QuotationDoc.test.tsx 覆盖
   QuotationDoc: () => <div data-testid="quotation-doc">QuotationDoc</div>,
-  // 纸质加工单（A4，issue #5651）/ 纸质销售单（三联纸 241mm×140mm，issue #5651）：同上 ——
-  // 入口按钮在本文件，纸面内容由 ProcessingDoc.test.tsx / SalesDoc.test.tsx 覆盖。
+  // 纸质销售单（三联纸 241mm×140mm，issue #5651）：同上 —— 入口按钮在本文件，
+  // 纸面内容由 SalesDoc.test.tsx 覆盖。
   // ⚠️ `@/components/orders` 的 mock 少一个导出 ⇒ 渲染期直接抛（同 OrderUrgencyPanel 那条注释）
-  ProcessingDoc: () => <div data-testid="processing-doc">ProcessingDoc</div>,
   SalesDoc: () => <div data-testid="sales-doc">SalesDoc</div>,
   CloseOrderModal: ({ open }: any) => open ? <div data-testid="close-modal">CloseModal</div> : null,
   LogisticsForm: ({ open }: any) => open ? <div data-testid="logistics-form">LogisticsForm</div> : null,
@@ -112,11 +111,6 @@ vi.mock('@/components/orders', async (importOriginal) => {
   PrintDocPreview: actual.PrintDocPreview,
   EditOrderContentModal: ({ open }: any) =>
     open ? <div data-testid="edit-order-content-modal">EditOrderContentModal</div> : null,
-  // 加工单缺码提示 + 一键补码（issue #6867 / B5）：本文件不验它的行为（缺码提示的判据在
-  // tests/unit/components/ProcessingQrMissingNotice.test.tsx），但**必须给替身**——
-  // 页面 import 了它，桶 mock 少一个导出 ⇒ 26 条用例渲染期崩（守卫
-  // tests/unit_ci_workflows/test_orders_barrel_mock_guard.py 的判据 C2，issue #5651 实测）。
-  ProcessingQrMissingNotice: () => null,
   }
 })
 
@@ -447,22 +441,24 @@ describe('OrderDetailPage', () => {
 
       // 打开预览 ≠ 出纸（纸是耗材，issue #5914）
       expect(printSpy).not.toHaveBeenCalled()
-      // 四份单据都在选择器里，文案取 `PRINT_TARGET_SPECS`（不手写第二份字面量）
+      // **三份**单据在选择器里（加工单自 issue #7870 起搬到「加工单生产明细」页 ——
+      // 一份单据只有一个打印入口），文案取 `PRINT_TARGET_SPECS`（不手写第二份字面量）
       for (const [target, title] of [
         ['sales', '销售单'],
-        ['processing', '加工单'],
         ['quotation', '报价单'],
         ['shipment', '发货单'],
       ] as const) {
         expect(screen.getByTestId(`print-preview-doc-${target}`)).toHaveTextContent(title)
       }
+      // 🔴 加工单**不在**订单详情页的打印层里（issue #7870 的迁移判据）
+      expect(screen.queryByTestId('print-preview-doc-processing')).toBeNull()
       // 默认选中销售单（三联纸 241×140 ⇒ 纸型读数跟着它走）
       expect(screen.getByTestId('print-preview-doc-sales')).toHaveAttribute('aria-pressed', 'true')
       expect(screen.getByTestId('print-preview-media')).toHaveTextContent('241mm × 140mm')
 
-      // 换成加工单：预览与纸型都换成 A4 的那一份，但**仍然没出纸**
-      await user.click(screen.getByTestId('print-preview-doc-processing'))
-      expect(screen.getByTestId('print-preview-doc-processing')).toHaveAttribute('aria-pressed', 'true')
+      // 换成报价单：预览与纸型都换成 A4 的那一份，但**仍然没出纸**
+      await user.click(screen.getByTestId('print-preview-doc-quotation'))
+      expect(screen.getByTestId('print-preview-doc-quotation')).toHaveAttribute('aria-pressed', 'true')
       expect(screen.getByTestId('print-preview-media')).toHaveTextContent('210mm × 297mm')
       expect(printSpy).not.toHaveBeenCalled()
 

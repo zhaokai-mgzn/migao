@@ -11,7 +11,12 @@
   `closed` / `refund` 两个状态**一张都打不出来**，而四个按钮常驻把操作行铺满。
 
 **现在的口径**：页面上只有**一个**「打印」入口（页面级、**不在任何状态分支里**），
-进来后在纸面自检层里以**单据标签**选（销售单 / 加工单 / 报价单 / 发货单），先预览再出纸。
+进来后在纸面自检层里以**单据标签**选（销售单 / 报价单 / 发货单），先预览再出纸。
+
+**#7870（2026-10-26，用户逐字）**：「加工单打印移到加工单和水洗唛放一起，也想订单一样统一收口到打印按钮」
+⇒ 加工单（A4）**退出订单详情页**，改由「加工单生产明细」页（`/processing-orders/{id}/production`）
+的**同一个**「打印」入口承载（单据标签 = 水洗唛 / 加工单）。⇒ 本守卫补 G7/G8 两条：
+订单详情页**不得**再出现加工单打印；生产明细页**必须**是它唯一的入口（且与洗水唛同层）。
 
 ## 冻结判据（每条都能单独变红，见 `TestDiscriminatingPower`）
 
@@ -23,6 +28,8 @@
 | G4 | 打印层的单据选择器必须**接线**：`docs={ORDER_PRINT_DOCS}` + `onSelect={selectPreview}`，且清单里每份单据都是**真实 target** | 摘掉 `docs=` ⇒ 红；清单里写 `'sale'`（错键）⇒ 红 |
 | G5 | 「作业单」区块**不再**有第二个打印入口（打印只剩一处） | 在 `ProcessingOrderBlock` 里加回 `onPrintProcessing` ⇒ 红 |
 | G6 | 判别力自证 + **对照读数**（只加注释 ⇒ 不红） | 注入未生效 ⇒ 红（红证自己是空断言） |
+| G7 | 订单详情页**不再**承载加工单打印（`<ProcessingDoc>` / `previewTarget === 'processing'` / 清单含 `processing` 任一出现） | 把加工单标签加回 `ORDER_PRINT_DOCS` 或把 `<ProcessingDoc>` 挂回页面 ⇒ 红 |
+| G8 | 「加工单生产明细」页 = 加工单打印**唯一**入口，且与水洗唛**同层**（单据标签 = `labels` + `processing`、`docs` / `onSelect` 接线、`<ProcessingDoc>` 页级挂载 + 预览副本各一处） | 摘掉 `['labels','processing']` 里的 `processing` / 摘掉 `docs=` / 删掉页级挂载 ⇒ 红 |
 
 ⚠️ **判据按「去注释后的代码」判定**：页面文件用注释解释这些坑（会**写出**几个按钮名），
 按原文判定会把解释性注释判成违规 = 假红。故本文件自带字符串感知的注释剥离器。
@@ -34,6 +41,12 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PAGE_REL = "frontend/admin-web/src/app/(dashboard)/orders/[id]/OrderDetail.tsx"
+#: 加工单（A4）打印自 issue #7870 起搬到「加工单生产明细」页 —— 这是它的**唯一**入口所在文件
+PRODUCTION_PAGE_REL = (
+    "frontend/admin-web/src/app/(dashboard)/processing-orders/[id]/production/page.tsx"
+)
+#: 生产明细页的唯一打印入口锚点
+PRODUCTION_ENTRY_MARKER = 'data-testid="production-print-button"'
 PRINT_DOC_REL = "frontend/admin-web/src/lib/print-doc.ts"
 BLOCK_REL = "frontend/admin-web/src/components/orders/ProcessingOrderBlock.tsx"
 
@@ -43,8 +56,12 @@ HANDWRITTEN_LABELS: tuple[str, ...] = ("打印发货单", "打印报价单", "�
 #: 唯一入口的锚点（`data-testid` 是给单测与 e2e 的共同抓手）
 ENTRY_MARKER = 'data-testid="order-print-entry"'
 
-#: 订单详情必须能打的四份单据（顺序不钉；集合不齐 ⇒ 商家少一张纸）
-REQUIRED_ORDER_DOCS: tuple[str, ...] = ("shipment", "quotation", "processing", "sales")
+#: 订单详情必须能打的**三份**单据（顺序不钉；集合不齐 ⇒ 商家少一张纸）。
+#: 🔴 `processing` 自 issue #7870 起**不在此列** —— 它随「加工单生产明细」页走（G7/G8 钉住）。
+REQUIRED_ORDER_DOCS: tuple[str, ...] = ("shipment", "quotation", "sales")
+
+#: 生产明细页必须同时给出的**两份**纸（水洗唛 = 任务卡，加工单 = A4）
+REQUIRED_PRODUCTION_DOCS: tuple[str, ...] = ("labels", "processing")
 
 
 def _read(rel: str) -> str:
@@ -201,6 +218,82 @@ def block_print_entry(block_src: str) -> list[str]:
     return hits
 
 
+# ============== G7 / G8：加工单打印的唯一入口在生产明细页 ==============
+
+
+def order_page_processing_leaks(page_src: str) -> list[str]:
+    """G7：订单详情页里残留的「加工单打印」痕迹（去注释后判定）。"""
+    code = strip_comments(page_src)
+    hits: list[str] = []
+    if "<ProcessingDoc" in code:
+        hits.append("<ProcessingDoc")
+    if re.search(r"previewTarget\s*===\s*'processing'", code):
+        hits.append("previewTarget === 'processing'")
+    if re.search(r"printTarget\s*===\s*'processing'", code):
+        hits.append("printTarget === 'processing'")
+    docs = order_print_docs(page_src)
+    if "processing" in docs:
+        hits.append("ORDER_PRINT_DOCS 含 processing")
+    return hits
+
+
+def production_print_docs(page_src: str) -> list[str]:
+    """G8：生产明细页单据标签清单（`printDocs` 的声明体里出现的目标位）。"""
+    code = strip_comments(page_src)
+    m = re.search(r"const printDocs\s*=[\s\S]{0,400}?\n\s*\)", code)
+    if not m:
+        raise AssertionError(
+            f"{PRODUCTION_PAGE_REL} 里找不到 `printDocs` —— 本页可打印单据清单必须是**一处**声明"
+        )
+    return sorted(set(re.findall(r"'([a-z]+)'", m.group(0))))
+
+
+def production_selector_wiring(page_src: str) -> list[str]:
+    """G8：生产明细页打印层的选择器接线（`docs=` + `onSelect=`）。返回**缺失**项。"""
+    code = strip_comments(page_src)
+    missing: list[str] = []
+    if "docs={printDocs}" not in code:
+        missing.append("docs={printDocs}")
+    if "onSelect={selectPreview}" not in code:
+        missing.append("onSelect={selectPreview}")
+    return missing
+
+
+def processing_doc_mounts(page_src: str) -> int:
+    """G8：生产明细页里 `<ProcessingDoc` 的处数（页级挂载 1 + 预览副本 1）。"""
+    return len(re.findall(r"<ProcessingDoc\b", strip_comments(page_src)))
+
+
+class TestProductionPrintEntry:
+    """G7 / G8 的**真语料**判据（订单详情页 + 生产明细页两份语料）。"""
+
+    def test_g7_order_page_no_longer_prints_processing_doc(self) -> None:
+        leaks = order_page_processing_leaks(_read(PAGE_REL))
+        assert leaks == [], (
+            f"订单详情页又出现了加工单打印痕迹 {leaks} —— issue #7870 起加工单（A4）只在"
+            "「加工单生产明细」页打印（一份单据只有一个打印入口）"
+        )
+
+    def test_g8_production_page_is_the_single_entry(self) -> None:
+        page = _read(PRODUCTION_PAGE_REL)
+        assert strip_comments(page).count(PRODUCTION_ENTRY_MARKER) == 1, (
+            f"{PRODUCTION_PAGE_REL} 的「打印」入口应恰好 1 处（{PRODUCTION_ENTRY_MARKER}）"
+        )
+        docs = production_print_docs(page)
+        missing = sorted(set(REQUIRED_PRODUCTION_DOCS) - set(docs))
+        assert missing == [], (
+            f"生产明细页的单据标签缺 {missing} —— 加工单与水洗唛必须**同层**可选（issue #7870）"
+        )
+        unknown = sorted(set(docs) - set(print_targets(_read(PRINT_DOC_REL))))
+        assert unknown == [], f"单据标签里出现了 `PRINT_TARGETS` 之外的目标位 {unknown}"
+        wiring = production_selector_wiring(page)
+        assert wiring == [], f"生产明细页的打印层选择器没接线，缺 {wiring}"
+        assert processing_doc_mounts(page) == 2, (
+            "加工单纸面应有**两处** `<ProcessingDoc>`：页级挂载（真正上纸的那一份）+ 预览副本"
+            f"（`inline`）；实测 {processing_doc_mounts(page)} 处 —— 缺页级那份 = 打印出空白纸"
+        )
+
+
 class TestRealSources:
     """真语料判据（页面 + 打印入口 lib + 作业单区块三份语料）。"""
 
@@ -320,8 +413,8 @@ class TestDiscriminatingPower:
         assert unknown_docs(self.PAGE, self.PRINT_DOC) == []
         # 缺一份必打单据 ⇒ missing_required_docs 判红
         dropped = self.PAGE.replace(
-            "const ORDER_PRINT_DOCS = ['sales', 'processing', 'quotation', 'shipment']",
-            "const ORDER_PRINT_DOCS = ['sales', 'processing', 'quotation']",
+            "const ORDER_PRINT_DOCS = ['sales', 'quotation', 'shipment']",
+            "const ORDER_PRINT_DOCS = ['sales', 'quotation']",
         )
         assert dropped != self.PAGE, "注入未生效（锚点漂移）"
         assert missing_required_docs(dropped) == ["shipment"]
@@ -335,6 +428,32 @@ class TestDiscriminatingPower:
         assert mutated != self.BLOCK, "注入未生效（锚点漂移）⇒ 红证自己是空断言"
         assert block_print_entry(mutated) == ["onPrintProcessing"]
         assert block_print_entry(self.BLOCK) == []  # 对照
+
+    def test_g7_readding_processing_doc_is_red(self) -> None:
+        """G7 红证：把加工单标签加回订单详情页的清单 ⇒ 必红；对照 = 原文为空集。"""
+        mutated = self.PAGE.replace(
+            "const ORDER_PRINT_DOCS = ['sales', 'quotation', 'shipment']",
+            "const ORDER_PRINT_DOCS = ['sales', 'processing', 'quotation', 'shipment']",
+        )
+        assert mutated != self.PAGE, "注入未生效（锚点漂移）⇒ 红证自己是空断言"
+        assert "ORDER_PRINT_DOCS 含 processing" in order_page_processing_leaks(mutated)
+        assert order_page_processing_leaks(self.PAGE) == []  # 对照
+
+    def test_g8_dropping_either_doc_is_red(self) -> None:
+        """G8 红证：生产明细页少一份纸 / 选择器断线 / 缺页级挂载 ⇒ 各自单独变红。"""
+        prod = _read(PRODUCTION_PAGE_REL)
+        no_processing = prod.replace("['labels', 'processing']", "['labels']", 1)
+        assert no_processing != prod, "注入未生效（锚点漂移）"
+        assert "processing" not in production_print_docs(no_processing)
+        assert "processing" in production_print_docs(prod)  # 对照
+        no_docs = prod.replace("docs={printDocs}", "", 1)
+        assert production_selector_wiring(no_docs) == ["docs={printDocs}"]
+        assert production_selector_wiring(prod) == []  # 对照
+        # 对照读数：只加注释 ⇒ 不红
+        commented = prod.replace(
+            "const printDocs", "// 说明：这里给出 labels + processing 两份纸\n  const printDocs", 1
+        )
+        assert production_print_docs(commented) == production_print_docs(prod)
 
     def test_g6_comment_only_change_is_not_red(self) -> None:
         """对照读数：只往页面里加**注释**（哪怕注释里写满按钮名 / 旧矩阵名）⇒ 一条判据都不该红。"""

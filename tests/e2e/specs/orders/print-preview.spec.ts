@@ -133,26 +133,27 @@ test.describe('商家后台打印链路（UI-026 / issue #5914）', () => {
     await page.getByTestId('order-print-entry').click()
     const docs = page.getByTestId('print-preview-docs')
     await expect(docs).toBeVisible()
-    // 四份单据都在选择器里（一单一签）
-    for (const target of ['sales', 'processing', 'quotation', 'shipment']) {
+    // 三份单据都在选择器里（一单一签）；加工单自 issue #7870 起搬到「加工单生产明细」页
+    for (const target of ['sales', 'quotation', 'shipment']) {
       await expect(page.getByTestId(`print-preview-doc-${target}`)).toBeVisible()
     }
+    await expect(page.getByTestId('print-preview-doc-processing')).toHaveCount(0)
 
-    // 换单据 = 换预览：纸型读数跟着换（销售单三联纸 241×140 → 加工单 A4 210×297）
+    // 换单据 = 换预览：纸型读数跟着换（销售单三联纸 241×140 → 报价单 A4 210×297）
     await expect(page.getByTestId('print-preview-media')).toContainText('241mm × 140mm')
-    await page.getByTestId('print-preview-doc-processing').click()
+    await page.getByTestId('print-preview-doc-quotation').click()
     await expect(page.getByTestId('print-preview-media')).toContainText('210mm × 297mm')
-    await expect(page.getByTestId('print-preview-doc-processing')).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByTestId('print-preview-doc-quotation')).toHaveAttribute('aria-pressed', 'true')
 
     // 出纸的仍是**所选**那一份
     await page.getByTestId('print-preview-print').click()
     const marks = await page.evaluate(
       () => (window as unknown as { __printMarks: string[] }).__printMarks
     )
-    expect(marks).toEqual(['processing'])
+    expect(marks).toEqual(['quotation'])
   })
 
-  test('② 同页四份单据只放一份上纸：文档里恰好一条 @page，且是本次那张纸', async ({ page }) => {
+  test('② 同页三份单据只放一份上纸：文档里恰好一条 @page，且是本次那张纸', async ({ page }) => {
     await mockOrderApi(page, baseOrder())
     await page.goto(`/orders/${ORDER_ID}`)
     await expect(page.getByTestId('order-print-entry')).toBeVisible()
@@ -181,9 +182,11 @@ test.describe('商家后台打印链路（UI-026 / issue #5914）', () => {
     await expect(page.locator('.sales-print-area[data-print-target="sales"]')).toBeVisible()
     // 而预览副本在打印媒体下**不上纸**（这条防的是「一次出两份」）
     await expect(page.locator('.print-preview-doc .sales-print-area')).toBeHidden()
-    for (const sibling of ['.shipment-print-area', '.quotation-print-area', '.processing-print-area']) {
+    for (const sibling of ['.shipment-print-area', '.quotation-print-area']) {
       await expect(page.locator(sibling)).toBeHidden()
     }
+    // 🔴 加工单（A4）自 issue #7870 起不在本页：它一份都不该出现在订单详情的文档里
+    await expect(page.locator('.processing-print-area')).toHaveCount(0)
   })
 
   test('③ 纸面自检：明细行装得下 / 装不下都要说清楚（销售单单联 128mm）', async ({ page }) => {
