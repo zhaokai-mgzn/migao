@@ -29,8 +29,6 @@ import TaskCardPrint from '@/components/production/TaskCardPrint'
 // 「直连打印机」入口；部位 ⇒ 洗水码数据的映射走单一处 `toWashLabelInputs`（页面不另写一份）
 import DirectLabelPrint from '@/components/production/DirectLabelPrint'
 import { toWashLabelInputs } from '@/lib/wash-label-content'
-// 纸长 = 内容高度（issue #7776）：打印 / 预览 / 蓝牙直连**三处读同一个数**
-import { washLabelBatchLengthMm } from '@/lib/label-print/wash-label-metrics'
 // 纸面抬头（企业名）与四张 A4/三联纸单据**同一份**读取口（issue #7219；2026-10-25 洗水唛也用）
 import { useCompanyName } from '@/lib/use-company-name'
 import type {
@@ -265,30 +263,12 @@ export default function ProcessingOrderProductionPage() {
     () =>
       toWashLabelInputs({
         companyName,
-        processingOrderNo: po?.processingOrderNo,
         orderNo: po?.orderNo,
         customerName: po?.customerName,
-        expectedDeliveryDate: po?.expectedDeliveryDate,
         positions: operations?.positions,
         items: po?.items,
       }),
     [companyName, operations, po],
-  )
-
-  /**
-   * 这批洗水唛的**纸长（mm）**（issue #7776）—— 用户 2026-10-25 裁定「字号抬到可读、纸长按内容撑开」：
-   * 同一个数传给打印（`@page`）、预览纸框与蓝牙直连的画布，三处不许各算一份。
-   */
-  const washLabelLengthMm = useMemo(
-    () =>
-      washLabelBatchLengthMm(
-        washLabels.map((label) => ({
-          rows: label.rows ?? [],
-          hasCompany: Boolean(label.companyName),
-          hasQr: Boolean(label.qrValue),
-        })),
-      ),
-    [washLabels],
   )
 
   /** 点「打印任务卡」：先看纸面自检（标签纸型没配好 = 整卷打废） */
@@ -810,23 +790,20 @@ export default function ProcessingOrderProductionPage() {
             </div>
           )}
 
-          {/* 可打印洗水码（issue #4946：一个商品行/部位一张；issue #5646 纸宽 30mm→50mm ⇒ 50mm×60mm，
-              码 = 该部位自己的 scan_url）；屏幕隐藏（display:none），点「打印任务卡」时只打印它 */}
+          {/* 可打印水洗唛（issue #4946：一个商品行/部位一张；issue #7816 起纸型固定 50mm×150mm、
+              份数 = 开数；码 = 该部位自己的 scan_url）；屏幕隐藏（display:none），点「打印任务卡」时只打印它 */}
           <TaskCardPrint
-            processingOrderNo={po.processingOrderNo}
             orderNo={po.orderNo}
             // 加工单公共属性：**每张**洗水码都要呈现
             customerName={po.customerName}
-            expectedDeliveryDate={po.expectedDeliveryDate}
             positions={operations?.positions}
             qrPlaceholderHint={qrPlaceholderHint}
             // 工艺摘要（issue #4355）真值来源 = 加工单快照明细，按 order_item_id 逐张对齐
             items={po.items}
-            labelLengthMm={washLabelLengthMm}
             printTarget={printTarget}
           />
 
-          {/* 打印前的**纸面自检层**（issue #5914）：标签 50×70mm 的纸型没配好 = 整卷打废，
+          {/* 打印前的**纸面自检层**（issue #5914）：标签 50×150mm 的纸型没配好 = 整卷打废，
               所以洗水码也走「先看纸面再打」。预览实例**不传 printTarget** ⇒ 不上纸。
 
               🔴 免驱动直连（Web Bluetooth，issue #6439）那条通道的入口**在这个弹层的页脚**
@@ -839,25 +816,20 @@ export default function ProcessingOrderProductionPage() {
             media={PRINT_TARGET_SPECS.labels.media}
             onPrint={printTaskCards}
             onClose={closePreview}
-            lengthMm={washLabelLengthMm}
             actions={
               <DirectLabelPrint
                 labels={washLabels}
                 onRecordPrint={recordPrintOnce}
-                labelLengthMm={washLabelLengthMm}
               />
             }
           >
             {previewTarget === 'labels' && (
               <TaskCardPrint
-                processingOrderNo={po.processingOrderNo}
                 orderNo={po.orderNo}
                 customerName={po.customerName}
-                expectedDeliveryDate={po.expectedDeliveryDate}
                 positions={operations?.positions}
                 qrPlaceholderHint={qrPlaceholderHint}
                 items={po.items}
-                labelLengthMm={washLabelLengthMm}
                 inline
               />
             )}

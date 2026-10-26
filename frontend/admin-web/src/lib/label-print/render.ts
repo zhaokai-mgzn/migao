@@ -31,16 +31,14 @@ export function canvasTextMeasure(ctx: CanvasRenderingContext2D): TextMeasure {
  *
  * @param qrSources 与 `labels` **同序**的二维码位图（页面从隐藏的 `QRCodeCanvas` 取；缺位 ⇒ `null`，不画假码）
  * @param printerInfo 机器自报参数（决定画布几何 —— 不写死机型）
- * @param labelLengthMm 纸长（mm，按内容撑开，issue #7776）；缺省 = 介质矩阵的**最短**纸长
  */
 export async function renderWashLabelJobs(
   labels: WashLabelInput[],
   qrSources: Array<CanvasImageSource | null>,
   printerInfo?: LabelPrinterInfoLike | null,
-  labelLengthMm?: number,
 ): Promise<PrintJob[]> {
-  // 纸长 = 调用方（打印预览页）算好的那个数（issue #7776）：与系统打印的 `@page`、预览纸框同源
-  const geometry = resolveLabelGeometry(printerInfo, null, labelLengthMm)
+  // 几何 = 机器自报值 + 介质矩阵（issue #7816：纸型固定 50×150，纸长不再由调用方给）
+  const geometry = resolveLabelGeometry(printerInfo)
   const jobs: PrintJob[] = []
 
   for (let index = 0; index < labels.length; index += 1) {

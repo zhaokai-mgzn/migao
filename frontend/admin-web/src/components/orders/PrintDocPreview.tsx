@@ -17,7 +17,7 @@ import { PRINT_TARGET_SPECS } from '@/lib/print-doc'
  * 浏览器自带的打印预览已经能看版面，它答不了的是这三件（issue #5914 实证）：
  * ① 内容**超出这一联/这一页被裁**（销售单单联 128mm，>6 行明细即被 `overflow:hidden` 静默裁掉，
  *    裁掉的恰好是「本单应收 / 账户余额 / 收款码」）；
- * ② **非标纸型**（241×140 / 50×70）在驱动里没登记自定义纸型时的落差；
+ * ② **非标纸型**（241×140 / 50×150）在驱动里没登记自定义纸型时的落差；
  * ③ 同一页挂着四份单据时**这次到底打哪一张、什么纸**。
  *
  * ## 三条硬约束
@@ -88,11 +88,6 @@ export interface PrintDocPreviewProps {
   media: PrintMediaId
   /** 该单据（**同一个组件**，且**不传 `printTarget`** —— 预览实例永远不上纸） */
   children: ReactNode
-  /**
-   * **本张纸的长度（mm）** —— 只对「纸长按内容撑开」的介质有意义（洗水唛，issue #7776）。
-   * 与 `@page`、蓝牙直连的画布**同一个数**：三处同源，预览里看到的纸就是打出来的纸。
-   */
-  lengthMm?: number
   /** 点「打印」（由调用方经 `usePrintDoc().requestPrint` 走唯一入口） */
   onPrint: () => void
   onClose: () => void
@@ -134,13 +129,10 @@ export default function PrintDocPreview({
   notice,
   actions,
   docs,
-  lengthMm,
   onSelect,
 }: PrintDocPreviewProps) {
-  // 纸的**整幅尺寸**：宽度取自介质矩阵；**长度**按内容撑开的那一档由调用方给
-  //（issue #7776：洗水唛 = 50mm 宽连续纸卷，纸长 = 内容高度，与 `@page` / 直连画布同一个数）
-  const mediaBox = printPageBoxMm(media)
-  const box = { widthMm: mediaBox.widthMm, heightMm: Math.max(mediaBox.heightMm, lengthMm ?? 0) }
+  // 纸的**整幅尺寸**取自介质矩阵（issue #7816：洗水唛改回固定 50×150，不再有「按内容撑开」的长度）
+  const box = printPageBoxMm(media)
   // 纸框的**版面内缩**（不是 `@page` 边距：A4 的 `@page` 边距是 0、内缩在单据容器 padding 上，issue #7309）
   const margin = printContentInsetMm(media)
   const usable = { widthMm: box.widthMm - margin.xMm * 2, heightMm: box.heightMm - margin.yMm * 2 }

@@ -1,36 +1,19 @@
 // case_ids: PP-011
-// PP-011（issue #4964 立版式 / **issue #5646 改判纸宽 30mm → 50mm**，用户裁定 2026-09-26 逐字
-// 「洗水码宽是50，长度根据我们实际需要来定」）：洗水码 = **竖版 50mm × 60mm 单列**，照**真实工单**
-// （亿家纺织「成品定制」58mm 竖排小票：单号/客户/第N套共M套/宽高/加工方式/用料表/备注/QR）的信息顺序。
-// 字段面 = 加工单号 / 客户 / 第N套共M套 / 部位 / 颜色 / 门幅 / 用料 / 宽高 / 加工方式 / 订单号 /
-// 交期 / 特殊选项 / 备注 + 二维码与**大字**人可读短码。
-// 🔴 2026-10-25（issue #7776）**件名（商品名称）与算料公式（褶倍公式）两行退场**（用户逐字
-// 「移除商品名称展示，保留货号，颜色，门幅和其他工艺信息，移除褶倍公式字段展示」）。
+// PP-011（issue #4964 立版式 → #5646 纸宽 → #7776 字号/字段 → **issue #7816 固定 50×150 + 份数 + 字段重排**）：
+// 水洗唛 = **竖版 50mm × 150mm 单列**，字段面 = 纸面抬头（企业名 / 成品定制）+ **订单号（第一行）** / 客户 /
+// 第 N 套共 M 套 / 部位 / 颜色 / 门幅 / 用料 / 宽高 / 加工方式 / **褶法** / 特殊选项 / 备注 + 底部**居中**二维码。
+// 一行粒度 = 一部位（商品行）**一张 × 开数份**。
 //
-// 🔴 **退场两项**（用户 2026-09-21 字段裁定**未选**；改回来 ⇒ 本条必红）：
-//   ① **工序摘要**（工人扫部位码后在 H5 看该部位工序清单，纸面不印）；
-//   ② **完整套号**（`JG-…-001`，与行①的加工单号重复）。
+// 用户 2026-10-26 逐字（issue #7816，逐条都能判红）：
+// ① 「水洗唛长度不足，设置为打印50*150」⇒ `@page` / 容器都是 50mm × 150mm；
+// ② 「如果订单是双开的要打印两份，单开的要打印1份，三开打印3份，4开打印4份」⇒ **张数 = Σ 开数**；
+// ③ 「字体还是太小，可以再大一点」⇒ 正文 12pt（旧 9pt）、抬头 14pt；
+// ④ 「要体现出是否采用的韩褶公式以及韩褶的折数，用一个字段表示」⇒ `褶法 韩褶 52折` / `褶法 倍数法`；
+// ⑤ 「把订单号放到第一行，客户那一行上面」「移除加工单号」「移除交期字段」「二维码放到底部居中」
+//    「移除扫码报工和短码文字」「二维码可以放大一点」。
 //
-// 🔴 **30mm → 50mm 时被推翻的三条「窄版心妥协」**（宽 30→50 把版心由 27.6mm 抬到 47.599mm，+72%）：
-//   ① **件名不再 clamp 到 2 行**（该 clamp 当年只为 27.6mm 版心而设；本版**去掉 clamp**）；
-//   ② **加工方式不再折 2 行**（实测最长形态在 47.599mm 下恰好 1 行，`line-clamp-2` 仅作预算上界）；
-//   ③ **算料公式 clamp 3 行 → 2 行**（两条真公式串在 47.599mm 下都恰好 2 行；容量 2×22.5em=45em
-//      反而 > 旧口径 3×13em=39em，且省下 2.538mm —— 最坏情况能收进 60mm 正是靠这一步）。
-//   色号的**去重**（件名已含色号 ⇒ 不重复渲染）**保留**：50mm 下恢复独立渲染只是多印一遍同名信息。
-//
-// 逐条判据（都能判红）：
-// ① 3 个部位 ⇒ 恰 3 张（`task-card-label-0..2`），加工单公共属性**逐张**都在；
-// ② 三张码三个值（= 各部位自己的 `scan_url`）—— 本条**核心判据**（改回单张/单值 ⇒ 必红）；
-// ③ 缺码部位 ⇒ 该张出占位（不画假码），其余张仍出真码；
-// ④ 人可读短码逐张渲染且为**大字**（`text-[8pt]`），缺码位如实「—」；
-// ⑤ 打印样式：`@page { size: 50mm 60mm; margin: 0 }` + 标签本体 50mm×60mm + 逐张分页（最后一张不分页）
-//    —— **几何整版改判**（issue #5646 推翻 #4946 的 30mm 宽）；逐值实测读数见组件文件头第 5 条；
-// ⑥ **工序摘要与完整套号不再出现**（防复发守卫）；
-// ⑦ 主标识**不折行不省略**：加工单号 `shrink-0 whitespace-nowrap`、订单号 `whitespace-nowrap`
-//    —— 60×30 横版时代的实测教训（issue #4949：折行吃 2.96mm ⇒ 纸面底部短码被裁 1.25mm）；
-// ⑧ 0 个部位 ⇒ 一张显式占位（不是空白）；
-// ⑨ 缺值不渲染：无对应快照行 / 无键 ⇒ 该行不出现，纸面不出现 `undefined` / `null` / `NaN`；
-// ⑩ **重算后的字段折行预算**（issue #5646）：件名无 clamp / 加工方式与备注各 ≤2 行 / 算料公式 ≤2 行。
+// 其余沿用既有契约（改回来 ⇒ 必红）：打印隔离 6 条、一部位一码 / 缺码不画假码、纸面内容 = `washLabelRows`、
+// 退场两项（工序摘要 / 完整套号）、变体名不上纸面、缺值不渲染。
 import type { ComponentProps } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
@@ -48,20 +31,18 @@ const companyNameStub = vi.hoisted(() => ({ value: '' }))
 vi.mock('@/lib/use-company-name', () => ({ useCompanyName: () => companyNameStub.value }))
 
 const PROCESSING_ORDER_NO = 'JG-20260921-8237'
-/** 真实形态的 17 位订单号（真库实证 20260921973550001）—— 必须**不截断** */
+/** 真实形态的 17 位订单号（真库实证 20260921973550001）—— 折行但**绝不截断** */
 const ORDER_NO = '20260921973550001'
 const CUSTOMER = '赵凯'
+/** 已退场（2026-10-26 用户逐字「移除交期字段」）—— 纸面**不得**出现它 */
 const DELIVERY = '2026-09-28'
 
 const SCAN_BL = 'https://app.migaozn.com/s/7K3M9QP2'
 const SCAN_SHA = 'https://app.migaozn.com/s/QW8Z2N4B'
 const SCAN_LT = 'https://app.migaozn.com/s/ZX5C7V1N'
-const SHORT_BL = '7K3M9QP2'
-const SHORT_SHA = 'QW8Z2N4B'
-const SHORT_LT = 'ZX5C7V1N'
 
 /**
- * 三个部位（= 三个商品行）分属**两套**（布帘+纱帘 = 第 1 套；帘头 = 第 2 套）——
+ * 三个部位（= 三个商品行）分属**两套**（布帘 + 纱帘 = 第 1 套；帘头 = 第 2 套）——
  * 「第 N 套 / 共 M 套」由 `set_no` 去重派生（走 `groupBySet`，与进度表**同一份**口径）。
  */
 const positions: ProductionPosition[] = [
@@ -74,7 +55,7 @@ const positions: ProductionPosition[] = [
     width: 3,
     height: 2.75,
     part_token: 'part-token-bu-1',
-    part_short_code: SHORT_BL,
+    part_short_code: '7K3M9QP2',
     scan_url: SCAN_BL,
     // `operation` = 工人端快照名（变体名）：纸面**不得**渲染（issue #4621），且本版**不再印工序摘要**
     operations: [
@@ -91,7 +72,7 @@ const positions: ProductionPosition[] = [
     width: 1.2,
     height: 2.75,
     part_token: 'part-token-sha-1',
-    part_short_code: SHORT_SHA,
+    part_short_code: 'QW8Z2N4B',
     scan_url: SCAN_SHA,
     operations: [
       { id: 'op-3', seq: 1, operation: '韩褶-纱', logical_name: '韩褶', position: '纱帘', unit: '折', qty: 24, status: 'pending', done_qty: 0 },
@@ -106,7 +87,7 @@ const positions: ProductionPosition[] = [
     width: 3,
     height: 0.3,
     part_token: 'part-token-lt-1',
-    part_short_code: SHORT_LT,
+    part_short_code: 'ZX5C7V1N',
     scan_url: SCAN_LT,
     operations: [
       { id: 'op-4', seq: 1, operation: '精裁-帘头', logical_name: '精裁', position: '帘头', unit: '套', qty: 1, status: 'pending', done_qty: 0 },
@@ -114,7 +95,12 @@ const positions: ProductionPosition[] = [
   },
 ]
 
-/** 加工单快照明细（`items_snapshot` 口径；`itemId` = 行主键，与 `position.order_item_id` 对齐） */
+/**
+ * 加工单快照明细（`items_snapshot` 口径；`itemId` = 行主键，与 `position.order_item_id` 对齐）。
+ *
+ * 开数（issue #7816）：item-1 = **双开 2 份**、item-3 = **三开 3 份**、item-2 没有快照行 ⇒ 缺省 1 份
+ * ⇒ 本单共 **2 + 1 + 3 = 6 张**。
+ */
 const items = [
   {
     itemId: 'item-1',
@@ -127,9 +113,9 @@ const items = [
     openCount: 2,
     isShaped: true,
     specialOptions: ['加logo条', '防翘扣'],
-    // 快照备注（`processing_info.remark` 进快照白名单，issue #4355 的同一份透传）
     remark: '加铅块',
     fabric_meters: 6.3,
+    pleat_count: 52,
     formula_text: '韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米',
   },
   {
@@ -139,6 +125,7 @@ const items = [
     doorWidth: '2.8',
     curtainType: '帘头',
     craft: '平板',
+    openCount: 3,
   },
 ] as unknown as ProcessingOrderItem[]
 
@@ -146,10 +133,8 @@ const items = [
 const printCard = (overrides: Partial<ComponentProps<typeof TaskCardPrint>> = {}) =>
   render(
     <TaskCardPrint
-      processingOrderNo={PROCESSING_ORDER_NO}
       orderNo={ORDER_NO}
       customerName={CUSTOMER}
-      expectedDeliveryDate={DELIVERY}
       positions={positions}
       items={items}
       printTarget="labels"
@@ -159,10 +144,13 @@ const printCard = (overrides: Partial<ComponentProps<typeof TaskCardPrint>> = {}
 
 const printArea = () => document.querySelector('.task-card-print-area') as HTMLElement
 
-describe('TaskCardPrint（洗水码 竖版 50mm×60mm 单列，issue #4964 → 纸宽改判 #5646）', () => {
+/** 张序 ⇒ 部位（开数展开后的映射；本单 = 2 + 1 + 3） */
+const SHEET_SCANS = [SCAN_BL, SCAN_BL, SCAN_SHA, SCAN_LT, SCAN_LT, SCAN_LT]
+
+describe('TaskCardPrint（水洗唛 竖版 50mm×150mm 单列，issue #7816）', () => {
   it('类级不变量（issue #6720）：本单据纸面不得出现「未知 ⇒ 0」的回退形态（今天它不印任何金额/数量）', () => {
     // 缺码部位**真的**渲染出来（否则下面的判据面可能是空的）：
-    // 判据面 = **短码格**的取值（本单据唯一可能承载「缺值」的人可读位）
+    // 判据面 = **二维码占位**的取值（本单据唯一可能承载「缺值」的人可读位）
     printCard({
       positions: [
         { ...positions[0] },
@@ -170,37 +158,34 @@ describe('TaskCardPrint（洗水码 竖版 50mm×60mm 单列，issue #4964 → �
       ],
       qrPlaceholderHint: '二维码已撤销（旧码已失效）',
     })
-    const shortCodes = Array.from(printArea().querySelectorAll('[data-testid^="task-card-label-short-code-"]')).map(
-      (el) => (el.textContent || '').trim(),
-    )
+    const placeholders = Array.from(
+      printArea().querySelectorAll('[data-testid="task-card-qr-placeholder"]'),
+    ).map((el) => (el.textContent || '').trim())
     // 单据：任务卡 TaskCardPrint
-    assertNoPaperZeroFill(shortCodes, {
+    assertNoPaperZeroFill(placeholders, {
       label: '任务卡 TaskCardPrint',
-      presence: ['缺码部位（占位「—」，不是假码，更不是 0）'],
+      presence: ['缺码部位（占位文案，不是假码，更不是 0）'],
     })
     // ✅ 正向证据锚：缺码位真的渲染了占位（否则上面的判据面可能是空的）
-    expect(shortCodes).toContain('—')
+    expect(placeholders).toContain('二维码已撤销（旧码已失效）')
     // 纸面不得出现 `undefined` / `null` / `NaN`
     expect(paperTextOf(printArea())).not.toMatch(/undefined|null|NaN/)
   })
 
   it('「本单据不印数值」是**结构事实**而非漏判：纸面组件源码里没有任何数值格式化（一开印就红）', () => {
-    // 这条钉住 SCOPE 里对洗水码「天然免疫」的判断（见
+    // 这条钉住 SCOPE 里对洗水唛「天然免疫」的判断（见
     // frontend/admin-web/scripts/print-doc-zero-fallback-scan.mjs 的 SCOPE 注释与死亡条件）：
     // 一旦它开始把 amount / quantity 印上纸，本判据立刻红 ⇒ 必须同批登记进判据面。
-    const src = readFileSync(
-      join(process.cwd(), 'src/components/production/TaskCardPrint.tsx'),
-      'utf-8',
-    )
+    const src = readFileSync(join(process.cwd(), 'src/components/production/TaskCardPrint.tsx'), 'utf-8')
     for (const call of ['toLocaleString', 'toFixed', 'formatAmount', 'formatQty']) {
-      expect(src, `洗水码开始使用 ${call} ⇒ 它进了「印数值的纸面」判据面，请同步登记`).not.toContain(call)
+      expect(src, `水洗唛开始使用 ${call} ⇒ 它进了「印数值的纸面」判据面，请同步登记`).not.toContain(call)
     }
   })
 
   // 类级固化（issue #6595）：本单据的每一张表逐行自洽（Σ(colSpan) = 表头列数）。
   it('表格列数不变量：逐行 Σ(colSpan) 与表头列数一致（issue #6595）', () => {
-    render(<TaskCardPrint processingOrderNo={PROCESSING_ORDER_NO} />)
-    // 洗水码是**单列**版式（`div` 承载，见 `TaskCardPrint.tsx` 的 `.task-card-label`）—— 面内 0 张表是**结构事实**，
+    printCard()
+    // 水洗唛是**单列**版式（`div` 承载，见 `TaskCardPrint.tsx` 的 `.task-card-label`）—— 面内 0 张表是**结构事实**，
     // 故这里只断言「若有表则必须自洽」（空集不再被当作判据空跑）。
     expect(
       dataTables(document.querySelector('.task-card-print-area'))
@@ -209,50 +194,126 @@ describe('TaskCardPrint（洗水码 竖版 50mm×60mm 单列，issue #4964 → �
     ).toBe(true)
   })
 
-  it('3 个部位 ⇒ 恰 3 张洗水码，加工单公共属性**逐张**都在（加工单号/客户/套序/订单号/交期）', () => {
+  it('🔴 张数 = Σ 开数（双开 2 + 缺省 1 + 三开 3 = 6 张），张序 testid 连续', () => {
     printCard()
 
-    const labels = [0, 1, 2].map((i) => screen.getByTestId(`task-card-label-${i}`))
-    // 粒度 = 商品行 = 部位（每行一张），第 4 张不存在
-    expect(screen.queryByTestId('task-card-label-3')).toBeNull()
-
-    labels.forEach((label, i) => {
-      expect(within(label).getByTestId('task-card-no')).toHaveTextContent(PROCESSING_ORDER_NO)
-      expect(within(label).getByTestId('task-card-order-no')).toHaveTextContent(ORDER_NO)
-      expect(label).toHaveTextContent(CUSTOMER)
-      expect(label).toHaveTextContent(DELIVERY)
-      // 套序走 `groupBySet`（与进度表同一份实现）
-      expect(within(label).getByTestId(`task-card-label-set-no-${i}`)).toBeInTheDocument()
-    })
-
-    // 布帘/纱帘同套、帘头第 2 套
-    expect(screen.getByTestId('task-card-label-set-no-0')).toHaveTextContent('第 1 套 / 共 2 套')
-    expect(screen.getByTestId('task-card-label-set-no-1')).toHaveTextContent('第 1 套 / 共 2 套')
-    expect(screen.getByTestId('task-card-label-set-no-2')).toHaveTextContent('第 2 套 / 共 2 套')
-
-    // 🔴 主标识不折行不省略（issue #4949 的实测教训：折行会把纸面底部内容挤出纸外）
-    const label0 = screen.getByTestId('task-card-label-0')
-    expect(within(label0).getByTestId('task-card-no').className).toContain('shrink-0')
-    expect(within(label0).getByTestId('task-card-no').className).toContain('whitespace-nowrap')
-    expect(within(label0).getByTestId('task-card-order-no').className).toContain('whitespace-nowrap')
+    const labels = SHEET_SCANS.map((_, index) => screen.getByTestId(`task-card-label-${index}`))
+    expect(labels).toHaveLength(6)
+    // 第 7 张不存在（多出一张 = 份数口径错）
+    expect(screen.queryByTestId('task-card-label-6')).toBeNull()
+    // 每张都带 `.task-card-label` 标记类（打印分页 / 纸型尺寸的落点）
+    labels.forEach((label) => expect(label.className).toContain('task-card-label'))
   })
 
-  it('三张码三个值：每张二维码内容 = 该部位自己的 scan_url（本单核心判据）', () => {
+  it('🔴 每张的码 = 该**部位**自己的 scan_url（开数只是重复出纸，不改码）', () => {
     printCard()
 
     const codes = screen.getAllByTestId('task-card-qr')
-    expect(codes).toHaveLength(3)
-
-    const expected = [SCAN_BL, SCAN_SHA, SCAN_LT]
-    expected.forEach((value, i) => {
-      const qr = within(screen.getByTestId(`task-card-label-${i}`)).getByTestId('task-card-qr')
+    expect(codes).toHaveLength(6)
+    expect(codes.map((qr) => qr.querySelector('title')?.textContent)).toEqual(SHEET_SCANS)
+    // 逐张：SVG 真画了（不是空壳）
+    codes.forEach((qr) => {
       expect(qr.tagName.toLowerCase()).toBe('svg')
-      expect(within(qr).getByTitle(value)).toBeInTheDocument()
       expect(qr.querySelectorAll('path').length).toBeGreaterThan(0)
     })
-    // 逐张不同：三张码三个值（改回「一单一张/一张一值」⇒ 本条必红）
-    expect(codes.map((qr) => qr.querySelector('title')?.textContent)).toEqual(expected)
-    expect(new Set(expected).size).toBe(3)
+  })
+
+  it('🔴 订单号 = **第一行**（客户之上）；加工单号与交期**不上纸**', () => {
+    printCard()
+
+    const rowsBlock = screen.getByTestId('task-card-label-rows-0')
+    expect(rowsBlock.firstElementChild?.getAttribute('data-testid')).toBe('task-card-label-order-no-0')
+    expect(screen.getByTestId('task-card-label-order-no-0')).toHaveTextContent(`订单 ${ORDER_NO}`)
+    expect(rowsBlock.children[1]?.getAttribute('data-testid')).toBe('task-card-label-customer-0')
+
+    // 🔴 退场：加工单号（2026-10-26「移除加工单号」）与人可读短码 / 「扫码报工」都不在纸面上
+    const paper = paperTextOf(printArea())
+    expect(paper).not.toContain(PROCESSING_ORDER_NO)
+    expect(screen.queryByTestId('task-card-no')).toBeNull()
+    expect(document.querySelector('[data-testid^="task-card-label-short-code-"]')).toBeNull()
+    expect(paper).not.toContain('扫码报工')
+    // 🔴 退场：交期（2026-10-26「移除交期字段」）
+    expect(paper).not.toContain('交期')
+    expect(paper).not.toContain(DELIVERY)
+  })
+
+  it('纸面内容与行序 = `washLabelRows`（单一真值；两条通道读同一份）', () => {
+    printCard()
+
+    const expected = washLabelRows({
+      position: positions[0],
+      item: items[0],
+      setNo: 1,
+      setCount: 2,
+      customerName: CUSTOMER,
+      orderNo: ORDER_NO,
+    })
+    const rowsBlock = screen.getByTestId('task-card-label-rows-0')
+    const painted = Array.from(rowsBlock.children).map((el) => (el.textContent || '').trim())
+    expect(painted).toEqual(expected.map((row) => row.text))
+    // 正向锚：确实印了足够多的行（不是空清单）
+    expect(painted.length).toBeGreaterThanOrEqual(10)
+  })
+
+  it('单列字段逐张渲染：部位 / 颜色 / 门幅 / 用料 / 宽高 / 加工方式（照真实工单信息顺序）', () => {
+    printCard()
+
+    // 第 1 张（布帘）：部位 / 颜色 / 门幅 / 用料 / 宽高 / 加工方式
+    expect(screen.getByTestId('task-card-label-kind-0')).toHaveTextContent('部位 布帘')
+    expect(screen.getByTestId('task-card-label-color-0')).toHaveTextContent('颜色 米白')
+    expect(screen.getByTestId('task-card-label-door-width-0')).toHaveTextContent('门幅 2.8米')
+    expect(screen.getByTestId('task-card-label-meters-0')).toHaveTextContent('用料 6.3米')
+    expect(screen.getByTestId('task-card-label-size-0')).toHaveTextContent('宽高 3×2.75米')
+    // 加工方式 = craft-display 的单一真值（工艺/加工类型/打开方式/是否定型），不另写推导
+    const craft0 = screen.getByTestId('task-card-label-craft-0')
+    expect(craft0).toHaveTextContent('韩褶')
+    expect(craft0).toHaveTextContent('定高买宽')
+    expect(craft0).toHaveTextContent('双开')
+    expect(craft0).toHaveTextContent('定型')
+
+    // 逐张对齐（错配 = 车间按错件干活）：第 2 张仍是布帘（双开第 2 份），第 3 张才是纱帘
+    expect(screen.getByTestId('task-card-label-kind-1')).toHaveTextContent('部位 布帘')
+    expect(screen.getByTestId('task-card-label-kind-2')).toHaveTextContent('部位 纱帘')
+    expect(screen.getByTestId('task-card-label-kind-3')).toHaveTextContent('部位 帘头')
+    const craft3 = screen.getByTestId('task-card-label-craft-3')
+    expect(craft3).toHaveTextContent('平板')
+    expect(craft3).not.toHaveTextContent('韩褶')
+  })
+
+  it('🔴 褶法 = 是否韩褶公式 + 折数（一个字段，2026-10-26 用户裁定）', () => {
+    printCard()
+
+    // item-1：韩褶公式 + pleat_count 52 ⇒ 「褶法 韩褶 52折」（双开的 2 张都一样）
+    expect(screen.getByTestId('task-card-label-pleats-0')).toHaveTextContent('褶法 韩褶 52折')
+    expect(screen.getByTestId('task-card-label-pleats-1')).toHaveTextContent('褶法 韩褶 52折')
+    // item-2 没有快照行 ⇒ 判不出公式 ⇒ 该行**不印**（不猜）
+    expect(screen.queryByTestId('task-card-label-pleats-2')).toBeNull()
+  })
+
+  it('🔴 褶法（反面对照）：倍数法 ⇒ 同一个字段印「倍数法」；无公式 ⇒ 该行不印', () => {
+    // 换一份快照：公式串 = 褶倍数公式（倍数法）⇒ 不是韩褶公式，同一个字段就要如实说「倍数法」
+    const multiple = [
+      { ...items[0], formula_text: '褶倍数公式：(5.5÷2)×2 → 11.0米' },
+    ] as unknown as ProcessingOrderItem[]
+    printCard({ positions: [positions[0]], items: multiple })
+    expect(screen.getByTestId('task-card-label-pleats-0')).toHaveTextContent('褶法 倍数法')
+    expect(screen.getByTestId('task-card-label-pleats-0')).not.toHaveTextContent('韩褶')
+  })
+
+  it('特殊选项与备注**各成一行**；无对应快照行 ⇒ 该行不出现（不猜）', () => {
+    printCard()
+
+    expect(screen.getByTestId('task-card-label-special-options-0')).toHaveTextContent('特殊选项 加logo条、防翘扣')
+    expect(screen.getByTestId('task-card-label-remark-0')).toHaveTextContent('备注 加铅块')
+    expect(screen.getByTestId('task-card-label-remark-0')).not.toHaveTextContent('加logo条')
+
+    // item-2 没有快照行 ⇒ 第 3 张（纱帘）不出颜色/用料/加工方式/特殊选项/备注/门幅（缺值不渲染，不猜）
+    expect(screen.queryByTestId('task-card-label-color-2')).toBeNull()
+    expect(screen.queryByTestId('task-card-label-meters-2')).toBeNull()
+    expect(screen.queryByTestId('task-card-label-craft-2')).toBeNull()
+    expect(screen.queryByTestId('task-card-label-special-options-2')).toBeNull()
+    expect(screen.queryByTestId('task-card-label-remark-2')).toBeNull()
+    expect(screen.queryByTestId('task-card-label-door-width-2')).toBeNull()
   })
 
   it('缺码部位 ⇒ 该张出占位（不画假码），其余张仍出真码', () => {
@@ -265,21 +326,23 @@ describe('TaskCardPrint（洗水码 竖版 50mm×60mm 单列，issue #4964 → �
     ]
     printCard({ positions: mixed, qrPlaceholderHint: '二维码已撤销（旧码已失效）' })
 
-    const emptyLabel = screen.getByTestId('task-card-label-1')
+    // 张序：item-1 双开 = 0,1；item-2 = 2；item-3 三开 = 3,4,5
+    const emptyLabel = screen.getByTestId('task-card-label-2')
     expect(within(emptyLabel).getByTestId('task-card-qr-placeholder')).toHaveTextContent(
       '二维码已撤销（旧码已失效）',
     )
     // 不画假码：该张里连一个 svg 都没有
     expect(emptyLabel.querySelector('svg')).toBeNull()
     expect(within(emptyLabel).queryByTestId('task-card-qr')).toBeNull()
+    // 只有**那一个部位**的每一份都出占位（2 份三开 × 该部位 ⇒ 这里只 1 份缺码部位）
     expect(screen.getAllByTestId('task-card-qr-placeholder')).toHaveLength(1)
 
-    // 其余张不受影响：真码照出（第 3 张回退到 part_token）
+    // 其余张不受影响：真码照出（帘头那张回退到 part_token）
     expect(
       within(screen.getByTestId('task-card-label-0')).getByTestId('task-card-qr').querySelector('title')?.textContent,
     ).toBe(SCAN_BL)
     expect(
-      within(screen.getByTestId('task-card-label-2')).getByTestId('task-card-qr').querySelector('title')?.textContent,
+      within(screen.getByTestId('task-card-label-5')).getByTestId('task-card-qr').querySelector('title')?.textContent,
     ).toBe('part-token-lt-1')
   })
 
@@ -293,71 +356,48 @@ describe('TaskCardPrint（洗水码 竖版 50mm×60mm 单列，issue #4964 → �
     expect(placeholder).toHaveTextContent('待生成')
     expect(placeholder.textContent).not.toContain('已撤销')
     expect(screen.queryByTestId('task-card-qr')).toBeNull()
-    // 公共属性仍在（纸面能认出是哪张单的哪一件）
-    expect(screen.getByTestId('task-card-label-0')).toHaveTextContent(PROCESSING_ORDER_NO)
   })
 
-  it('人可读短码逐张渲染且为**大字**（扫码枪/人眼读不出时的手输降级入口）', () => {
-    printCard()
-
-    const expected = [SHORT_BL, SHORT_SHA, SHORT_LT]
-    expected.forEach((code, i) => {
-      const el = screen.getByTestId(`task-card-label-short-code-${i}`)
-      expect(el).toHaveTextContent(code)
-      // 大字契约：≥12pt（小字会被车间灯光/磨损吃掉 —— 降级入口不可用就等于没有；
-      // 2026-10-25 用户逐字「字体太小了」⇒ 正文 6pt→9pt 的同时短码 8pt→12pt）
-      expect(el.className).toContain('text-[12pt]')
-      expect(el.className).toContain('font-bold')
-    })
-  })
-
-  it('纸面抬头（2026-10-25）：企业名 + 「成品定制」**逐张**渲染（照参考工单的抬头形态）', () => {
-    // 企业名走 `useCompanyName()`（与四张 A4/三联纸单据**同一份**读取口：登录态 tenantName 优先）
+  it('纸面抬头（2026-10-25）：企业名 + 「成品定制」**逐张**渲染，字号随正文一起抬（14pt / 10pt）', () => {
     companyNameStub.value = '亿家纺织'
     printCard()
     const headers = screen.getAllByTestId('task-card-company')
-    // 「每张标签都要呈现」：3 个部位 ⇒ 3 张抬头块
-    expect(headers).toHaveLength(3)
+    // 「每张标签都要呈现」：6 张 ⇒ 6 个抬头块
+    expect(headers).toHaveLength(6)
     expect(headers[0]).toHaveTextContent('亿家纺织')
     expect(headers[0]).toHaveTextContent('成品定制')
+    // 字号口径：企业名 14pt 粗体 / 副标题 10pt（与 `wash-label-metrics` 同源）
+    expect(within(headers[0]).getByText('亿家纺织').className).toContain('text-[14pt]')
+    expect(within(headers[0]).getByText('成品定制').className).toContain('text-[10pt]')
     companyNameStub.value = ''
   })
 
-  it('缺企业名 ⇒ 抬头块**整块不渲染**（不印空行、不印「未设置」），加工单号不受影响', () => {
+  it('缺企业名 ⇒ 抬头块**整块不渲染**（不印空行、不印「未设置」）', () => {
     companyNameStub.value = ''
     printCard()
     expect(screen.queryByTestId('task-card-company')).toBeNull()
-    // 加工单号是**每张一份**（3 个部位 ⇒ 3 份），取第一张即可
-    expect(screen.getAllByTestId('task-card-no')[0]).toHaveTextContent(PROCESSING_ORDER_NO)
+    // 订单号仍是第一行（抬头块与订单号互不依赖）
+    expect(screen.getByTestId('task-card-label-order-no-0')).toHaveTextContent(`订单 ${ORDER_NO}`)
   })
 
-  it('缺短码的序号仍保留该行（不得与人可读短码一起消失），且码仍出', () => {
-    const noShort: ProductionPosition[] = [
-      { position_name: '纱帘B', order_item_id: 'item-2', part_token: 'part-token-x', part_short_code: null, scan_url: null, operations: [] },
-    ]
-    printCard({ positions: noShort })
-
-    expect(screen.getByTestId('task-card-label-short-code-0')).toHaveTextContent('—')
-    expect(screen.getByTestId('task-card-qr').querySelector('title')?.textContent).toBe('part-token-x')
-  })
-
-  it('打印样式：@page 50mm×70mm（竖版）+ 标签本体 50mm×70mm 且逐张分页（最后一张不分页）', () => {
+  it('打印样式：@page 50mm×150mm（竖版）+ 标签本体 50mm×150mm + 正文 12pt + 逐张分页（最后一张不分页）', () => {
     printCard()
 
     // portal 到 body 的直接子级（打印隔离：容器自身的 class 才能被选择器选中）
     const area = printArea()
-    expect(area).not.toBeNull()
     expect(area.parentElement).toBe(document.body)
 
     const css = Array.from(area.querySelectorAll('style'))
       .map((el) => el.textContent || '')
       .join('\n')
-    // 🔴 几何整版改判：#5646 纸宽 30mm → **50mm**；2026-10-25 纸长 60mm → **70mm**
-    //（用户裁定加公司抬头 + 特殊选项 + 备注 两行后 60mm 装不下）。旧值一律不得残留（留一条即假绿）
-    expect(css).toContain('@page { size: 50mm 70mm; margin: 0; }')
-    expect(css).not.toContain('30mm 60mm')
+    // 🔴 2026-10-26 用户逐字「长度不足，设置为打印50*150」⇒ 固定 50mm × 150mm；旧值一律不得残留
+    expect(css).toContain('@page { size: 50mm 150mm; margin: 0; }')
+    expect(css).not.toContain('50mm 70mm')
     expect(css).not.toContain('50mm 60mm')
-    expect(css).toContain('.task-card-label { width: 50mm; height: 70mm; overflow: hidden;')
+    expect(css).not.toContain('30mm 60mm')
+    expect(css).toContain('.task-card-label { width: 50mm; height: 150mm; overflow: hidden;')
+    // 🔴 字号 9pt → 12pt（用户「字体还是太小，可以再大一点」）
+    expect(css).toContain('font-size: 12pt')
     expect(css).toContain('break-after: page')
     // 最后一张不分页（否则末尾多吐一张空白）
     expect(css).toMatch(/\.task-card-label:last-child \{[^}]*break-after: auto/)
@@ -369,218 +409,48 @@ describe('TaskCardPrint（洗水码 竖版 50mm×60mm 单列，issue #4964 → �
     // 容器必须带共享标记类（否则共享选择器选不到自己 ⇒ 打印整页空白）
     expect(area.className).toContain('print-doc')
     expect(css).toContain('.task-card-print-area, .task-card-print-area * { visibility: visible; }')
-
-    ;[0, 1, 2].forEach((i) => expect(screen.getByTestId(`task-card-label-${i}`).className).toContain('task-card-label'))
   })
 
-  it('🔴 工序摘要与完整套号**不再出现**（issue #4964 的退场两项；改回来 ⇒ 必红）', () => {
+  it('二维码：底部**居中**、尺寸放大到 80（用户 2026-10-26 三项裁定）', () => {
+    printCard()
+
+    const qr = screen.getAllByTestId('task-card-qr')[0]
+    const bottomRow = qr.parentElement as HTMLElement
+    expect(bottomRow.className).toContain('justify-center')
+    expect(bottomRow.className).toContain('shrink-0')
+    // qrcode.react 把 size 直接落到 svg 的 width/height 属性
+    expect(qr.getAttribute('width')).toBe('80')
+    // 正文块 → 底部码行的顺序：码在所有文字之后（DOM 序）
+    const label = screen.getByTestId('task-card-label-0')
+    const rowsBlock = within(label).getByTestId('task-card-label-rows-0')
+    expect(rowsBlock.compareDocumentPosition(bottomRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('🔴 工序摘要与完整套号**不再出现**（退场项；改回来 ⇒ 必红）', () => {
     printCard()
 
     // ① 工序摘要退场：连"工序"二字都不该在纸面上（工人扫部位码后在 H5 看工序清单）
     expect(screen.queryByTestId('task-card-label-ops-0')).toBeNull()
-    expect(screen.queryByTestId('task-card-label-ops-1')).toBeNull()
-    expect(screen.queryByTestId('task-card-label-ops-2')).toBeNull()
-    expect(document.body.textContent).not.toContain('工序')
+    expect(paperTextOf(printArea())).not.toContain('工序')
 
-    // ② 完整套号退场（与行①的加工单号重复，纯占纸面）
+    // ② 完整套号退场（与加工单号重复，纯占纸面）
     expect(screen.queryByTestId('task-card-label-set-code-0')).toBeNull()
-    expect(screen.queryByTestId('task-card-label-set-code-2')).toBeNull()
-    expect(document.body.textContent).not.toContain(`${PROCESSING_ORDER_NO}-001`)
-    expect(document.body.textContent).not.toContain(`${PROCESSING_ORDER_NO}-002`)
+    expect(paperTextOf(printArea())).not.toContain(`${PROCESSING_ORDER_NO}-001`)
+    expect(paperTextOf(printArea())).not.toContain(`${PROCESSING_ORDER_NO}-002`)
 
     // ③ 变体名（工人端快照名）一个都不许上纸面（issue #4621 回归守卫）
-    expect(document.body.textContent).not.toContain('精裁-布')
-    expect(document.body.textContent).not.toContain('韩褶-纱')
-    expect(document.body.textContent).not.toContain('精裁-帘头')
+    expect(paperTextOf(printArea())).not.toContain('精裁-布')
+    expect(paperTextOf(printArea())).not.toContain('韩褶-纱')
+    expect(paperTextOf(printArea())).not.toContain('精裁-帘头')
   })
 
-  it('单列字段逐张渲染：部位 / 颜色 / 门幅 / 用料 / 宽高 / 加工方式（照真实工单信息顺序）', () => {
-    printCard()
+  it('0 个部位 ⇒ 一张显式占位（不是空白、不造多张）', () => {
+    printCard({ positions: [] })
 
-    // 第 1 张（布帘）：部位 / 颜色 / 门幅 / 用料 / 宽高 / 加工方式
-    expect(screen.getByTestId('task-card-label-kind-0')).toHaveTextContent('布帘')
-    expect(screen.getByTestId('task-card-label-color-0')).toHaveTextContent('颜色 米白')
-    expect(screen.getByTestId('task-card-label-door-width-0')).toHaveTextContent('门幅 2.8米')
-    expect(screen.getByTestId('task-card-label-meters-0')).toHaveTextContent('6.3米')
-    expect(screen.getByTestId('task-card-label-size-0')).toHaveTextContent('3×2.75米')
-    // 加工方式 = craft-display 的单一真值（工艺/加工类型/打开方式/是否定型），不另写推导
-    const craft0 = screen.getByTestId('task-card-label-craft-0')
-    expect(craft0).toHaveTextContent('韩褶')
-    expect(craft0).toHaveTextContent('定高买宽')
-    expect(craft0).toHaveTextContent('双开')
-    expect(craft0).toHaveTextContent('定型')
-
-    // 逐张对齐（错配 = 车间按错件干活）
-    expect(screen.getByTestId('task-card-label-kind-2')).toHaveTextContent('帘头')
-    expect(screen.getByTestId('task-card-label-color-2')).toHaveTextContent('颜色 米灰')
-    // 快照门幅两种存量形态（`2.8米` / `2.8`）⇒ 只补单位、不改数值
-    expect(screen.getByTestId('task-card-label-door-width-2')).toHaveTextContent('门幅 2.8米')
-    const craft2 = screen.getByTestId('task-card-label-craft-2')
-    expect(craft2).toHaveTextContent('平板')
-    expect(craft2).not.toHaveTextContent('韩褶')
-  })
-
-  it('特殊选项与备注**各成一行**；算料公式（褶倍公式）已退场；无对应快照行 ⇒ 该行不出现（不猜）', () => {
-    printCard()
-
-    // 🔴 2026-10-25（用户逐字「把特殊选项，备注也加上」）：改前把两者并成一行
-    // 「备注 加logo条、防翘扣；加铅块」⇒ 纸上分不出哪句是哪类事实。现在各成一行。
-    expect(screen.getByTestId('task-card-label-special-options-0')).toHaveTextContent('特殊选项 加logo条、防翘扣')
-    expect(screen.getByTestId('task-card-label-remark-0')).toHaveTextContent('备注 加铅块')
-    expect(screen.getByTestId('task-card-label-remark-0')).not.toHaveTextContent('加logo条')
-    // 🔴 2026-10-25 用户逐字「移除褶倍公式字段展示」⇒ 纸面不再出现算料公式行
-    expect(screen.queryByTestId('task-card-label-formula-0')).toBeNull()
-    // 🔴 算料公式 = **2 行**（issue #5646 实测改判；30mm 时代的 3 行口径作废）：
-    // 两条真公式串（`韩褶公式：…` / `褶倍数公式：…`）在 47.599mm 版心（≈22.5em/行）下都**恰好 2 行**；
-    // 容量 2×22.5em = 45em **反而大于**旧口径 3×13em = 39em ⇒ 不是放宽，是同一真值换了版心。
-    // 改回 3 行 ⇒ 最坏构成（件名 2 + 加工方式 2 + 特殊选项 2 + 备注 2 + 公式 3 行）超出 70mm 的
-    // 版面高 67.6mm ⇒ 本条必红。
-
-    // item-2 没有快照行 ⇒ 第 2 张不出色号/用料/宽高/加工方式/备注/公式（缺值不渲染，不猜）
-    expect(screen.queryByTestId('task-card-label-color-1')).toBeNull()
-    expect(screen.queryByTestId('task-card-label-meters-1')).toBeNull()
-    expect(screen.queryByTestId('task-card-label-craft-1')).toBeNull()
-    expect(screen.queryByTestId('task-card-label-special-options-1')).toBeNull()
-    expect(screen.queryByTestId('task-card-label-remark-1')).toBeNull()
-    expect(screen.queryByTestId('task-card-label-door-width-1')).toBeNull()
-  })
-
-  it('🔴 折行预算：加工方式 · 特殊选项 · 备注 各 ≤2 行（issue #5646 → 2026-10-25 重算）', () => {
-    printCard()
-
-    // ① 件名（商品名称）已**整行退场**（2026-10-25 用户逐字「移除商品名称展示」）⇒ 查不到该行；
-    //    正向锚点（避免"查不到元素"被读成"断言通过"的空跑）：颜色 / 门幅两行确实渲染了值。
-    expect(document.querySelector('[data-testid="task-card-label-position-0"]')).toBeNull()
-    expect(screen.getByTestId('task-card-label-color-0')).toHaveTextContent('米白')
-    expect(screen.getByTestId('task-card-label-door-width-0')).toHaveTextContent('2.8米')
-
-    // ② **加工方式**仍 `line-clamp-2` —— 只作**预算上界**：实测最长形态
-    //    「加工方式 罗马帘 · 定宽买高 · 三开 · 定型」(≈21.5em) 在 47.599mm 下**恰好 1 行**。
-    expect(screen.getByTestId('task-card-label-craft-0').className).toContain('line-clamp-2')
-
-    // ③ **备注**仍 ≤2 行（issue #5646 的最坏口径明写「备注 2 行」）。
-    expect(screen.getByTestId('task-card-label-remark-0').className).toContain('line-clamp-2')
-
-    // ④ 主标识与底部码/短码的**不折行 + shrink-0** 契约一字未动（打印隔离与降级入口是红线）
-    expect(within(screen.getByTestId('task-card-label-0')).getByTestId('task-card-no').className).toContain(
-      'whitespace-nowrap',
-    )
-    const bottomRow = screen.getAllByTestId('task-card-qr')[0].parentElement as HTMLElement
-    expect(bottomRow.className).toContain('shrink-0')
-  })
-
-  it('🔴 纸面**内容与行序** = 唯一真值模块 `washLabelRows`（issue #6656；直连通道读同一份）', () => {
-    printCard()
-
-    // 正向锚点（避免「查不到元素」被读成「断言通过」的空跑）：整块逐行文本必须与真值模块逐字相等
-    const rendered = Array.from(screen.getByTestId('task-card-label-rows-0').children).map(
-      (el) => el.textContent,
-    )
-    const expected = washLabelRows({
-      position: positions[0],
-      item: items[0],
-      setNo: 1,
-      setCount: 2,
-      customerName: CUSTOMER,
-      orderNo: ORDER_NO,
-      expectedDeliveryDate: DELIVERY,
-    })
-    expect(expected.length).toBeGreaterThan(5)
-    expect(rendered).toEqual(expected.map((row) => row.text))
-    // 行序本身就是纸面契约（照真实工单）：首行客户、次行套序（改序 ⇒ 必红）
-    expect(rendered[0]).toBe(`客户 ${CUSTOMER}`)
-    expect(rendered[1]).toBe('第 1 套 / 共 2 套')
-  })
-
-  it('🔴 缺值不渲染在**两条通道上同一条口径**（无快照行 ⇒ DOM 与真值模块同时少那几行）', () => {
-    printCard({ items: [] })
-
-    const rendered = Array.from(screen.getByTestId('task-card-label-rows-0').children).map(
-      (el) => el.textContent,
-    )
-    const expected = washLabelRows({
-      position: positions[0],
-      item: null,
-      setNo: 1,
-      setCount: 2,
-      customerName: CUSTOMER,
-      orderNo: ORDER_NO,
-      expectedDeliveryDate: DELIVERY,
-    })
-    // 正反对照：缺快照行时**确实**少了行（否则「相等」是空断言）
-    expect(expected.map((row) => row.text)).not.toContain('色号 米白')
-    expect(rendered).toEqual(expected.map((row) => row.text))
-    // 缺值不渲染 = 纸面上不得只剩前缀（`宽高 ` / `用料 ` 这种空壳行）
-    expect(rendered.some((text) => text === '宽高' || text === '用料')).toBe(false)
-  })
-
-  it('颜色**恒印**（件名退场后不再有「已含在件名里 ⇒ 去重」这条口径）', () => {
-    // 改前：件名已含色号 ⇒ 颜色行不渲染（纸面少印一次同名信息）。
-    // 2026-10-25 件名整行退场（用户逐字「移除商品名称展示」）⇒ 颜色是「这是什么布」的唯一载体，
-    // 必须**每张都印**：部位名里带不带色号都照样出这一行（改回去重 ⇒ 本条必红）。
-    const withColorInName: ProductionPosition[] = [{ ...positions[0], position_name: '布艺遮光帘A（米白）' }]
-    printCard({ positions: withColorInName })
-
-    expect(screen.getByTestId('task-card-label-color-0')).toHaveTextContent('颜色 米白')
-  })
-
-  it('是否定型按行业措辞收成「定型 / 不定型」（值仍来自 craft-display，不重算）', () => {
-    // 是 ⇒ 定型
-    const { unmount } = printCard()
-    expect(screen.getByTestId('task-card-label-craft-0')).toHaveTextContent('定型')
-    unmount()
-
-    // 否 ⇒ 不定型（判据可判别：写死「定型」⇒ 本条必红）
-    const unshaped = [{ itemId: 'item-1', craft: '韩褶', isShaped: false }] as unknown as ProcessingOrderItem[]
-    printCard({ items: unshaped })
-    const craft = screen.getByTestId('task-card-label-craft-0')
-    expect(craft).toHaveTextContent('不定型')
-    expect(craft).not.toHaveTextContent('是否定型：是')
-  })
-
-  it('缺值不渲染：无 items / 无工艺键 ⇒ 相关行不出现，纸面不出现 undefined/null/NaN', () => {
-    const { unmount } = printCard({ items: [] })
-    expect(screen.queryByTestId('task-card-label-color-0')).toBeNull()
-    expect(screen.queryByTestId('task-card-label-meters-0')).toBeNull()
-    expect(screen.queryByTestId('task-card-label-craft-0')).toBeNull()
-    expect(screen.queryByTestId('task-card-label-door-width-0')).toBeNull()
-    expect(document.body.textContent).not.toMatch(/undefined|null|NaN/)
-    unmount()
-
-    // 存量加工单：快照里只有销售信息、没有任何工艺键
-    const legacy = [
-      { itemId: 'item-1', productName: '布艺遮光帘A', colorName: '米白', craft: null, openCount: null, style: '' },
-    ] as unknown as ProcessingOrderItem[]
-    printCard({ items: legacy })
-    expect(screen.queryByTestId('task-card-label-craft-0')).toBeNull()
-    expect(screen.queryByTestId('task-card-label-door-width-0')).toBeNull()
-    expect(document.body.textContent).not.toMatch(/undefined|null|NaN/)
-  })
-
-  it('缺宽高（只有一边 / 都没有）⇒ 不渲染宽高行（半个尺寸没有意义）', () => {
-    const { unmount } = printCard({ positions: [{ ...positions[0], height: null }] })
-    expect(screen.queryByTestId('task-card-label-size-0')).toBeNull()
-    unmount()
-
-    printCard({ positions: [{ ...positions[0], width: null, height: null }] })
-    expect(screen.queryByTestId('task-card-label-size-0')).toBeNull()
-  })
-
-  it('0 个部位 ⇒ 一张显式占位（不是空白），且不画任何码', () => {
-    const { unmount } = printCard({ positions: [] })
-
-    expect(screen.getByTestId('task-card-label-0')).toHaveTextContent('暂无商品')
-    expect(screen.getByTestId('task-card-label-0')).toHaveTextContent('无码可打印')
-    expect(screen.getByTestId('task-card-qr-placeholder')).toHaveTextContent('待生成')
-    expect(screen.queryByTestId('task-card-qr')).toBeNull()
-    // 只有一张占位（不是 N 张），公共属性仍在
+    expect(screen.getAllByTestId('task-card-label-0')).toHaveLength(1)
     expect(screen.queryByTestId('task-card-label-1')).toBeNull()
-    expect(screen.getByTestId('task-card-no')).toHaveTextContent(PROCESSING_ORDER_NO)
-    unmount()
-
-    // positions 缺席（存量调用形态）⇒ 同一占位
-    render(<TaskCardPrint processingOrderNo={PROCESSING_ORDER_NO} />)
-    expect(screen.getByTestId('task-card-label-0')).toHaveTextContent('无码可打印')
-    expect(screen.queryByTestId('task-card-qr')).toBeNull()
+    expect(screen.getByTestId('task-card-label-0')).toHaveTextContent('该加工单暂无商品/无码可打印')
+    // 缺码 ⇒ 占位框（不画假码）
+    expect(screen.getByTestId('task-card-qr-placeholder')).toBeInTheDocument()
   })
 })

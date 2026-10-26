@@ -59,12 +59,11 @@ export interface PrintMediaSpec {
   /**
    * **纸长按内容撑开**（连续纸卷专用，issue #7776）。
    *
-   * 登记了它 ⇒ `pageBoxMm.heightMm` / `pageSize` 描述的是**最短**纸长（驱动里该登记的那档），
-   * 实际纸长由 `frontend/admin-web/src/lib/label-print/wash-label-metrics.ts` 的 `washLabelLengthMm()`
-   * 按纸面内容算出、夹在 `[minMm, maxMm]`，`@page` 用 {@link printPageRuleForLength} 现拼。
-   *
-   * 🔴 三处必须读**同一个数**：系统打印的 `@page` / 蓝牙直连的画布高度 / 打印预览的纸框 ——
-   * 各算一份 ⇒ 预览与纸上又会对不上（issue #6656 踩过的形态）。
+   * 登记了它 ⇒ `pageBoxMm.heightMm` / `pageSize` 描述的是**最短**纸长（驱动里该登记的那档）。
+   * 消费方 = **工人端发货标签**（`frontend/worker-h5/src/shipment.mjs` 的 `shipLabelLengthMm()`，
+   * 纯 JS 直读本矩阵）—— admin-web 侧自 issue #7816 起**没有**读取者（水洗唛改成固定纸型
+   * `label-50x150`，`printPageRuleForLength()` / `printLengthRangeMm()` 随之删除）。
+   * 🔴 别因为「admin-web 没人读」就把本块删掉：工人端发货页的纸长全靠它。
    */
   lengthMm?: {
     mode: 'content'
@@ -110,7 +109,7 @@ export interface PrintMediaSpec {
  * `tests/unit/lib/print-media.test.ts` 钉住：只改一边 ⇒ 必红（否则新增介质会静默地
  * 「矩阵里有、类型上没有」，调用方只能写 `as any` 绕过类型）。
  */
-export const PRINT_MEDIA_IDS = ['a4', 'label-50x70', 'label-50x80', 'continuous-241x140'] as const
+export const PRINT_MEDIA_IDS = ['a4', 'label-50x150', 'label-50x70', 'label-50x80', 'continuous-241x140'] as const
 
 export type PrintMediaId = (typeof PRINT_MEDIA_IDS)[number]
 
@@ -137,6 +136,14 @@ export interface PrintDotGeometry {
   /** **实际可打**像素数（= min(纸宽像素, 打印头像素)）—— 出图必须用这个 */
   effectiveWidthPx: number
   headWidthPx: number
+  /**
+   * 纸长换来的点阵高度（= `pageBoxMm.heightMm × dotsPerMm`）。
+   *
+   * ⚠️ 与 `resolveLabelGeometry()` 现算的高度可能差 **1 点**：后者按机器自报 dpi 重算
+   * （203dpi ⇒ 7.9921 dots/mm × 150mm = 1199），本字段是矩阵登记的**整点口径**（8 dots/mm = 1200）。
+   * 两者是同一张纸的两种取整，判据允许相差 ≤ 1 点（差更多说明纸长换了来源）。
+   */
+  heightPx: number
 }
 
 /**
@@ -162,34 +169,6 @@ export function printDotGeometry(media: PrintMediaId): PrintDotGeometry {
 export function printPageRule(media: PrintMediaId): string {
   const spec = printMediaSpec(media)
   return `@page { size: ${spec.pageSize}; margin: ${spec.pageMargin}; }`
-}
-
-/**
- * 纸长**按内容撑开**的介质（连续纸卷）的纸长区间（mm）；没登记 ⇒ `null`。
- * 真值源 = 矩阵的 `lengthMm`（本文件不写第二份）。
- */
-export function printLengthRangeMm(media: PrintMediaId): { minMm: number; maxMm: number } | null {
-  const length = printMediaSpec(media).lengthMm
-  if (!length) return null
-  return { minMm: length.minMm, maxMm: length.maxMm }
-}
-
-/**
- * `@page` 规则的**动态纸长写法**（issue #7776）：宽 / 边距仍取自矩阵，**长度由调用方给**
- * （= `washLabelLengthMm()` 算出的纸长，夹在 `lengthMm.minMm ~ maxMm`）。
- *
- * 🔴 只对登记了 `lengthMm` 的介质开放：别的介质（A4 / 三联纸）纸型是固定的，
- * 传长度进来 = 把别人的纸打成我们的口径 ⇒ **显式抛错**（fail-closed，不静默忽略）。
- */
-export function printPageRuleForLength(media: PrintMediaId, lengthMm: number): string {
-  const spec = printMediaSpec(media)
-  const range = printLengthRangeMm(media)
-  if (!range) {
-    throw new Error(`介质 ${media} 没有登记 lengthMm（纸长按内容撑开）—— 不许用动态纸长覆盖固定纸型`)
-  }
-  const value = Number.isFinite(lengthMm) ? lengthMm : range.minMm
-  const clamped = Math.min(Math.max(value, range.minMm), range.maxMm)
-  return `@page { size: ${spec.pageBoxMm.widthMm}mm ${clamped}mm; margin: ${spec.pageMargin}; }`
 }
 
 /** 正文基准字号（pt）：介质决定版面预算，单据只读它、不自己定字号 */

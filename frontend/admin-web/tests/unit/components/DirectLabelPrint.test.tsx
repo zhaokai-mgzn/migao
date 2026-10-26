@@ -32,11 +32,12 @@ vi.mock('qrcode.react', () => ({
   QRCodeSVG: () => <svg data-testid="qr-svg" />,
 }))
 
+// 🔴 夹具只带 `qrValue` / `companyName` / `rows` / `qrPlaceholderHint`（`WashLabelInput` 的现行字段面）：
+//    `shortCode`（人可读短码）与 `processingOrderNo`（加工单号）随 issue #7816 **已从纸面退场**，
+//    类型里也不再存在 —— 写回来 ⇒ 打印出纸上没有的字（且本文件的签名判据会红）。
 const LABELS: WashLabelInput[] = [
   {
     qrValue: 'https://app.migaozn.com/s/7Q2M4K8P',
-    shortCode: '7Q2M4K8P',
-    processingOrderNo: 'JG-20260921-8237',
     rows: [
       { key: 'customer', text: '客户 赵凯', maxLines: 1 },
       { key: 'color', text: '客厅窗帘A', maxLines: 2 },
@@ -44,8 +45,6 @@ const LABELS: WashLabelInput[] = [
   },
   {
     qrValue: 'https://app.migaozn.com/s/3N8R5T1W',
-    shortCode: '3N8R5T1W',
-    processingOrderNo: 'JG-20260921-8237',
     rows: [{ key: 'color', text: '卧室窗帘B', maxLines: 2 }],
   },
 ]
@@ -123,16 +122,51 @@ describe('DirectLabelPrint — 成功路径的调用序（issue #6439 判据 ②
     const user = userEvent.setup()
     const { provider, order } = fakeProvider()
     const onRecordPrint = vi.fn(() => order.push('record'))
-    const renderJobs = vi.fn(async () => {
-      order.push('render')
-      return JOB
-    })
+    // 替身签名与组件的 `renderJobs` prop **逐参一致**（三个参数；多一个/少一个 ⇒ 类型与判据都红）
+    const renderJobs = vi.fn(
+      async (
+        _labels: WashLabelInput[],
+        _qrSources: Array<CanvasImageSource | null>,
+        _printerInfo: Record<string, unknown> | null,
+      ) => {
+        order.push('render')
+        return JOB
+      },
+    )
     renderIt({ onRecordPrint, renderJobs, loadProvider: async () => provider })
 
     await user.click(screen.getByTestId('production-direct-print-button'))
     await waitFor(() => expect(provider.print).toHaveBeenCalledWith(JOB))
     expect(order).toEqual(['record', 'connect', 'render', 'print'])
     expect(screen.getByTestId('direct-print-status').textContent).toContain('1')
+
+    // 🔴 渲染器签名 = `(labels, qrSources, printerInfo)` **恰好三个参数**
+    //    （issue #7816：纸长固定 50×150 ⇒ `labelLengthMm` 不再是入参；多传一个 ⇒ 本条必红）
+    expect(renderJobs.mock.calls[0]).toHaveLength(3)
+    // ① 逐张的输入原样交下去（不在这里改内容 / 不截断份数）
+    expect(renderJobs.mock.calls[0][0]).toBe(LABELS)
+    // ② 二维码位图**与 labels 同序**、每张一位（本夹具两张都有码）
+    expect(renderJobs.mock.calls[0][1]).toHaveLength(2)
+    // ③ 第三参 = 机器自报参数（假 provider 没自报 ⇒ null），不是纸长之类的版面参数
+    expect(renderJobs.mock.calls[0][2]).toBeNull()
+  })
+
+  it('🔴 份数 = 开数（issue #7816）：同一部位展开成 N 条 ⇒ N 张都送渲染、都送印（不按部位/码去重）', async () => {
+    const user = userEvent.setup()
+    const { provider } = fakeProvider()
+    // 双开商品在 `toWashLabelInputs` 里被展开成 2 条**内容相同**的记录（份数口径只有那一处）
+    const twoCopies: WashLabelInput[] = [LABELS[0], LABELS[0]]
+    const renderJobs = vi.fn(async (labels: WashLabelInput[]) =>
+      labels.map((_label, index) => ({ ...JOB[0], jobName: `wash-label-${index}` })),
+    )
+    renderIt({ labels: twoCopies, renderJobs, loadProvider: async () => provider })
+
+    await user.click(screen.getByTestId('production-direct-print-button'))
+    await waitFor(() => expect(provider.print).toHaveBeenCalledTimes(1))
+    // 两条都进了渲染器（去重 ⇒ 1 ⇒ 必红），也都被送印
+    expect(renderJobs.mock.calls[0][0]).toHaveLength(2)
+    expect((provider.print as unknown as { mock: { calls: PrintJob[][] } }).mock.calls[0][0]).toHaveLength(2)
+    await waitFor(() => expect(screen.getByTestId('direct-print-status').textContent).toContain('2 张'))
   })
 
   it('已连接过 ⇒ 不再重复连接（第二次点只渲染 + 送印）', async () => {

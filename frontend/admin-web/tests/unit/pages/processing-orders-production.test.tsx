@@ -80,6 +80,8 @@ vi.mock('@/lib/use-route-id', () => ({
 }))
 
 import ProductionDetailPage from '@/app/(dashboard)/processing-orders/[id]/production/page'
+// 份数口径的**唯一实现**（issue #7816）：纸面张数 = Σ 开数 —— 判据从同一个函数取期望值，不写死数字
+import { washLabelCopies } from '@/lib/wash-label-content'
 
 const PROCESSING_ORDER = {
   id: 'po-1',
@@ -414,6 +416,10 @@ describe('加工单生产明细页', () => {
 
     await userEvent.click(screen.getByTestId('production-print-button'))
 
+    // 预览层纸型 = 水洗唛**固定 50mm × 150mm**（issue #7816；由介质矩阵给，不再是 50mm × 70mm）
+    const preview = await screen.findByRole('dialog', { name: '水洗唛打印预览' })
+    expect(within(preview).getByTestId('print-preview-media')).toHaveTextContent('50mm × 150mm')
+
     // 🔴 标签纸型没配好 = 整卷打废（issue #5914）⇒ 先看纸面自检；没点「打印」之前不该出纸
     expect(printSpy).not.toHaveBeenCalled()
     await userEvent.click(await screen.findByTestId('print-preview-print'))
@@ -557,12 +563,38 @@ describe('加工单生产明细页', () => {
     render(<ProductionDetailPage />)
 
     // 任务卡是 portal + display:none（打印才显形）⇒ 判文案只看 DOM 存在性，不能用 innerText
-    await waitFor(() => expect(screen.getByTestId('task-card-no')).toHaveTextContent('JG-20260917-0001'))
+    // 🔴 2026-10-26（issue #7816）：纸面**不再印加工单号**（那是内部编号，`task-card-no` 已随版式退场）
+    //    ⇒ 改判「纸上读不到加工单号」；没有部位时纸面只剩一句显式占位说明。
+    await waitFor(() => expect(document.querySelector('.task-card-print-area')).not.toBeNull())
+    const card = document.querySelector('.task-card-print-area') as HTMLElement
+    expect(card.textContent).not.toContain('JG-20260917-0001')
+    expect(screen.queryByTestId('task-card-no')).toBeNull()
     const placeholder = screen.getByTestId('task-card-qr-placeholder')
     // 加工单**已生成**，二维码缺的真成因是「工序未生成」⇒ 不得再指回去生成加工单
     expect(placeholder.textContent).not.toContain('请先在订单详情生成加工单')
     // 指引指向本页的补生成工序（同一修复面的正向判据）
     expect(screen.getByTestId('production-instantiate-button')).toHaveTextContent('补生成工序')
+  })
+
+  it('🔴 洗水唛纸面新口径（issue #7816）：订单号**第一行**、加工单号/交期/短码退场、二维码 80px 底部居中', async () => {
+    render(<ProductionDetailPage />)
+
+    await waitFor(() => expect(screen.getByTestId('task-card-label-rows-0')).toBeInTheDocument())
+    const rows = screen.getByTestId('task-card-label-rows-0')
+    const lines = Array.from(rows.children).map((el) => el.textContent ?? '')
+    // ① 第一行 = **订单号**（用户逐字「把订单号放到第一行，客户那一行上面」）
+    expect(lines[0]).toBe(`订单 ${PROCESSING_ORDER.orderNo}`)
+    expect(lines[1]).toBe(`客户 ${PROCESSING_ORDER.customerName}`)
+    // ② 加工单号 / 交期 / 人可读短码**一律不上纸**（同一批裁定的退场项）
+    expect(rows.textContent).not.toContain(PROCESSING_ORDER.processingOrderNo)
+    expect(rows.textContent).not.toContain(PROCESSING_ORDER.expectedDeliveryDate)
+    expect(rows.textContent).not.toContain(PART_SHORT_CODE)
+    expect(rows.textContent).not.toContain('扫码报工')
+    // ③ 二维码放大到 **80 CSS px**、在底部**居中**行里（用户「二维码可以放大一点」「放到底部居中」）
+    const qr = screen.getByTestId('task-card-qr')
+    expect(qr).toHaveAttribute('width', '80')
+    expect(qr).toHaveAttribute('height', '80')
+    expect(qr.parentElement?.className ?? '').toContain('justify-center')
   })
 
   // ── PG-019（#4240 前端半边）：撤销二维码入口（真值源 §1「token 化、可撤销」）──
@@ -879,16 +911,40 @@ describe('加工单生产明细页', () => {
     ],
   }
 
-  it('#4946 弹层逐张出码：N 个部位 ⇒ N 张（各 = 自己的 scan_url + 短码 + 复制短码），缺码的那张如实说明', async () => {
+  it('#4946 弹层逐张出码：N 个部位 ⇒ N 张弹层码（各 = 自己的 scan_url + 短码 + 复制短码），缺码的那张如实说明；纸面张数 = Σ 开数（issue #7816）', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.assign(navigator, { clipboard: { writeText } })
     mockGetOrderOperations.mockResolvedValue(ok(OPERATIONS_THREE_PARTS))
+    // 🔴 份数 = **打开方式开数**（issue #7816，用户逐字「双开的要打印两份，单开的打印1份，
+    //    三开打印3份，4开打印4份，这个都要在打印预览中默认设置好」）⇒ 快照行带 openCount
+    const SNAPSHOT_ITEMS = [
+      { itemId: 'item-1', openCount: 2, colorName: '米白' }, // 双开 ⇒ 2 张
+      { itemId: 'item-2', openCount: 1, colorName: '月白' }, // 单开 ⇒ 1 张
+      { itemId: 'item-3', openCount: 3, colorName: '浅灰' }, // 三开 ⇒ 3 张
+    ]
+    mockDetail.mockResolvedValue(ok({ ...PROCESSING_ORDER, items: SNAPSHOT_ITEMS }))
     render(<ProductionDetailPage />)
 
-    // 纸面侧先成立：3 个部位 ⇒ **恰好** 3 张洗水码（页面把 positions 原样交给任务卡）
-    await waitFor(() => expect(screen.getByTestId('task-card-label-2')).toBeInTheDocument())
-    expect(screen.getAllByTestId(/^task-card-label-\d$/)).toHaveLength(3)
-    expect(within(screen.getByTestId('task-card-label-2')).getByTestId('task-card-qr-placeholder')).toBeInTheDocument()
+    // 纸面侧先成立：3 个部位 × 各自开数 ⇒ **Σ 开数** 张洗水码（页面把 positions + 快照原样交给任务卡）。
+    // ⚠️ 期望值从 `washLabelCopies` 现取（与两条打印通道**同一个**函数），不写死「3 张」——
+    //    写死就等于把份数口径在判据里再抄一份（改开数时判据不会跟着变 ⇒ 纸面少印一份也没人知道）。
+    const sheets = SNAPSHOT_ITEMS.reduce((sum, item) => sum + washLabelCopies(item), 0)
+    expect(sheets).toBe(6)
+    await waitFor(() => expect(screen.getByTestId(`task-card-label-${sheets - 1}`)).toBeInTheDocument())
+    expect(screen.getAllByTestId(/^task-card-label-\d$/)).toHaveLength(sheets)
+    // 反「一部位一张」的旧口径：本夹具的开数不全是 1 ⇒ 纸面张数**必须多于**部位数
+    // （改回「一部位一张」⇒ 下面这条同步必红，且总数那条也会红）
+    expect(sheets).toBeGreaterThan(OPERATIONS_THREE_PARTS.positions.length)
+    // 张序 0..N-1 **连续**（中间缺一张 = 少印一份且判据只看总数会漏）
+    expect(screen.getAllByTestId(/^task-card-label-\d$/).map((el) => el.dataset.testid)).toEqual(
+      Array.from({ length: sheets }, (_, index) => `task-card-label-${index}`),
+    )
+    // 第 3 个部位（item-3，三开）没有码 ⇒ 它那 3 张（张序 3..5）都是占位框，缺码不画假码
+    for (const index of [3, 4, 5]) {
+      expect(
+        within(screen.getByTestId(`task-card-label-${index}`)).getByTestId('task-card-qr-placeholder'),
+      ).toBeInTheDocument()
+    }
 
     await userEvent.click(screen.getByTestId('production-test-qr-button'))
     const dialog = await screen.findByRole('dialog', { name: '生成二维码（测试用）' })

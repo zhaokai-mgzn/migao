@@ -37,6 +37,15 @@
 | SS6 | **反向对照**：注释里**提及**这些词不得判红（沿革要写得清，`migao-dev-flow` §2.2「引用即实例」） | 注释里加一句沿革 ⇒ **不**红 |
 
 🔴 **本守卫只扫这三份源码**：测试与文档里出现这些词是**在描述口径**，不在射程。
+
+## SS7：份数口径也只许一处（issue #7816）
+
+用户 2026-10-26 逐字「如果订单是双开的要打印两份，单开的要打印1份，三开打印3份，4开打印4份」。
+份数读的是 `order_items` 的开数（`openCount`）—— 若两个渲染器各写一份映射（一个写 `2`、一个写
+`openCount ?? 1`），**两条通道的出纸张数就会不一样**，而今天没有任何行为判据能同时看见两条通道
+（系统打印断言 DOM 张数、直连断言 job 数，各自的 fixture 各自给开数）。
+⇒ 判据：两个渲染器的**代码面**都必须出现 `washLabelCopies`，且 `openCount` 这个键**只许**出现在
+内容真值模块里（自己读一遍开数 = 第二份映射）。
 """
 from __future__ import annotations
 
@@ -66,11 +75,17 @@ CONTENT_MODULE = "frontend/admin-web/src/lib/wash-label-content.ts"
 CONTENT_SPECIFIER = "@/lib/wash-label-content"
 #: 系统打印渲染器必须调用的行清单工厂
 ROW_BUILDER = "washLabelRows"
+#: 份数口径的**唯一实现**（issue #7816）：两个渲染器都必须调它
+COPIES_READER = "washLabelCopies("
+#: 开数键：只许出现在内容真值模块（渲染器自己读 = 第二份份数映射）
+OPEN_COUNT_KEY = "openCount"
 
 #: 纸面行前缀（`washLabelRows` 是**唯一**拼它们的地方）
 # ⚠️ 2026-10-25（issue #7776）：`色号` → `颜色`、新增 `门幅`（用户逐字「保留货号，颜色，门幅和其他工艺信息」；
 # 件名（商品名称）与算料公式（褶倍公式）两行退场 ⇒ 它们的词条不再进这张表）。
-ROW_PREFIX_LITERALS = ("客户", "部位", "颜色", "门幅", "用料", "宽高", "加工方式", "订单", "交期", "备注")
+# 🔴 2026-10-26（issue #7816）：**交期行退场**（用户逐字「移除交期字段」），新增 **`褶法`**
+# （是否韩褶公式 + 折数，一个字段）；订单号提前为第一行（前缀不变）。
+ROW_PREFIX_LITERALS = ("客户", "部位", "颜色", "门幅", "用料", "宽高", "加工方式", "褶法", "订单", "备注")
 
 _MANAGED = (CSS_RENDERER, BITMAP_RENDERER, CONTENT_MODULE)
 
@@ -134,6 +149,25 @@ def _problems(sources: dict[str, str]) -> list[str]:
                 f"前缀只许在 `{CONTENT_MODULE}` 里拼（自己再拼一遍 = 第二份会漂移的真值）"
             )
 
+    # SS7：份数口径只有一处
+    #   - 系统打印：`TaskCardPrint` 自己按张渲染 ⇒ 必须调 `washLabelCopies`
+    #   - 直连通道：份数在**内容真值模块**的 `toWashLabelInputs` 里展开（位图渲染器只逐张画）
+    if COPIES_READER not in css_face:
+        problems.append(
+            f"SS7 {CSS_RENDERER} 没有调用 `{COPIES_READER}` —— 份数（= 打开方式开数）必须读单一真值，"
+            "自己算一份 ⇒ 两条通道出纸张数会不一样"
+        )
+    if COPIES_READER not in code_face(content):
+        problems.append(
+            f"SS7 `{CONTENT_MODULE}` 没有调用 `{COPIES_READER}` —— 直连通道的份数展开点就在这里，"
+            "缺了它 ⇒ 蓝牙打出来永远每部位一张"
+        )
+    for rel, source in ((CSS_RENDERER, css), (BITMAP_RENDERER, bitmap), (CONTENT_MODULE, content)):
+        if rel != CONTENT_MODULE and OPEN_COUNT_KEY in code_face(source):
+            problems.append(
+                f"SS7 {rel} 的**代码面**出现开数键 `{OPEN_COUNT_KEY}` —— 份数映射只许在 `{CONTENT_MODULE}` 里"
+            )
+
     # SS4：反空跑锚点 —— 真值模块必须真的产出全部前缀
     content_face = code_face(content)
     missing = [prefix for prefix in ROW_PREFIX_LITERALS if prefix not in content_face]
@@ -181,7 +215,17 @@ def test_injection_turns_red_with_attribution():
     assert _fingerprint(broken[CSS_RENDERER]) != baseline[CSS_RENDERER], "注入 ② 未生效"
     assert any("SS3" in p for p in _problems(broken)), "渲染器自己拼前缀却没判红 ⇒ 判据是空断言"
 
-    # ③ SS4：把真值模块里的前缀清掉（「删掉别处的词」不得被读成「改完了」）
+    # ③ SS7：把位图渲染器的份数读取改成自己算一份（`openCount`）⇒ 必红
+    broken = dict(sources)
+    broken[BITMAP_RENDERER] = broken[BITMAP_RENDERER].replace(
+        "export const WASH_LABEL_MEDIA",
+        "// 注入：自己算份数（第二份映射）\nconst copies = (item: any) => item.openCount ?? 1\nexport const WASH_LABEL_MEDIA",
+        1,
+    )
+    assert _fingerprint(broken[BITMAP_RENDERER]) != baseline[BITMAP_RENDERER], "注入 ③ 未生效"
+    assert any("SS7" in p for p in _problems(broken)), "自己算份数却没判红 ⇒ SS7 是空断言"
+
+    # ④ SS4：把真值模块里的前缀清掉（「删掉别处的词」不得被读成「改完了」）
     broken = dict(sources)
     content = broken[CONTENT_MODULE]
     for prefix in ROW_PREFIX_LITERALS:

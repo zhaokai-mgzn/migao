@@ -9,13 +9,13 @@
  *
  * | 通道 | 字段来源 | 纸面 |
  * |---|---|---|
- * | 系统打印 | 组件内联派生（客户 / 套序 / 部位 / 件名 / 色号 / 用料 / 宽高 / 加工方式 / 订单 / 交期 / 备注 / 算料公式） | 预览那张 |
+ * | 系统打印 | 组件内联派生（订单 / 客户 / 套序 / 部位 / 颜色 / 门幅 / 用料 / 宽高 / 加工方式 / 褶法 / 特殊选项 / 备注） | 预览那张 |
  * | 直连打印 | `toWashLabelInputs` 只映射 4 个键（码 / 短码 / 件名 / 部位） | 只有二维码 + 短码 + 一行件名 |
  *
  * 用户 2026-10-10 逐字：「**直连打印机打印的样式和水洗唛预览打印的样式完全不一样，能不能做成一样的**」
  * ⇒ 两条通道改读**同一份有序行清单**（本模块）。版式差异只允许剩下**纸的物理宽度**：
  * 预览印在 50mm 纸上，而标签机打印头只有 384 点 = 48mm（登记在 `lib/print-media.json` 的
- * `label-50x70.dotGeometry`：「右侧约 2mm 打不到」）。
+ * `label-50x150.dotGeometry`：「右侧约 2mm 打不到」）。
  *
  * ## 边界（照实登记，不粉饰）
  *
@@ -51,8 +51,8 @@ export type WashLabelRowKey =
   | 'meters'
   | 'size'
   | 'craft'
+  | 'pleats'
   | 'orderNo'
-  | 'delivery'
   | 'specialOptions'
   | 'remark'
 
@@ -67,6 +67,9 @@ export type WashLabelRowKey =
  *   货号待加工单快照补 `productCode`（后端单，**未在册前不印**——不拿 SKU 组合码冒充货号，issue #7636）。
  */
 export const WASH_LABEL_ROW_KEYS: readonly WashLabelRowKey[] = [
+  // 🔴 **订单号第一行**（2026-10-26 用户逐字「把订单号放到第一行，客户那一行上面」）；
+  // 同批「移除加工单号」「移除交期字段」⇒ 这两行不再存在（加工单号是**内部**编号，纸面只留订单号）。
+  'orderNo',
   'customer',
   'setNo',
   'positionKind',
@@ -75,14 +78,19 @@ export const WASH_LABEL_ROW_KEYS: readonly WashLabelRowKey[] = [
   'meters',
   'size',
   'craft',
-  'orderNo',
-  'delivery',
+  'pleats',
   'specialOptions',
   'remark',
 ]
 
-/** 行数预算（加工方式 / 特殊选项 / 备注可折行；其余单行）—— 与 `TaskCardPrint` 的 clamp 口径同源 */
+/**
+ * 行数预算（加工方式 / 特殊选项 / 备注可折行；其余单行）—— 与 `TaskCardPrint` 的 clamp 口径同源。
+ *
+ * 订单号给 2 行：12pt 下 17 位数字 + 「订单」前缀 ≈ 54mm > 版心 47.6mm ⇒ 必须允许**折行**
+ * （`break-all`），**绝不**用省略号/裁切（它是纸上唯一的单据身份）。
+ */
 const MAX_LINES: Record<WashLabelRowKey, number> = {
+  orderNo: 2,
   customer: 1,
   setNo: 1,
   positionKind: 1,
@@ -91,8 +99,7 @@ const MAX_LINES: Record<WashLabelRowKey, number> = {
   meters: 1,
   size: 1,
   craft: 2,
-  orderNo: 1,
-  delivery: 1,
+  pleats: 1,
   specialOptions: 2,
   remark: 2,
 }
@@ -155,6 +162,54 @@ export function washLabelRemark(item?: ProcessingOrderItem | null): string {
 }
 
 /**
+ * **褶法** = 是否采用韩褶公式 + 韩褶的折数（**一个字段**，用户 2026-10-26 逐字
+ * 「要体现出是否采用的韩褶公式以及韩褶的折数，用一个字段表示即可」）。
+ *
+ * 取值（**只读既有键、不重算**）：
+ * - `韩褶公式`（褶数法，`calc` 侧产 `pleat_count`）⇒ `韩褶 52折`；折数缺失 ⇒ `韩褶`（**不编数**）
+ * - `褶倍数公式`（倍数法）⇒ `倍数法`
+ * - 两者都判不出来（老快照缺 `formula_text` 且无 `pleat_count`）⇒ **空串**（该行不印，不猜）
+ *
+ * 🔴 **为什么按 `formula_text` 前缀判**：加工单快照的算料输出键族（`ProcessingOrderService` 的
+ * `CALC_OUTPUT_SNAPSHOT_KEYS`）里**没有** `formula`（`pleat|fullness`）这个键，只有
+ * `formula_text` + `pleat_count`。而 `formula_text` 本身是算料引擎产出的**可读公式串**
+ * （`韩褶公式：…` / `褶倍数公式：…`），纸面原本就印它 ⇒ 判它没有引入第二份真值。
+ * `pleat_count` 只在褶数法产出（倍数法无褶数）⇒ 拿它兜底，老快照也能判出「韩褶」。
+ *
+ * 字段名为何叫「褶法」：它既不是纯折数（还有「是否韩褶公式」这一层），
+ * 也不是纯算法名（纸上要给车间看折数）⇒ 取「褶的做法」这一层语义，纸面上读作
+ * `褶法 韩褶 52折` / `褶法 倍数法`。
+ */
+/** 正整数读取口（容忍 JSON 里以字符串承载的数字；与 `craft-display` 的 `numeric()` 同口径） */
+function positiveInt(value: unknown): number | null {
+  const n = typeof value === 'number' ? value : typeof value === 'string' && value.trim() !== '' ? Number(value) : NaN
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : null
+}
+
+export function washLabelPleats(item?: ProcessingOrderItem | null): string {
+  const formulaText = typeof item?.formula_text === 'string' ? item.formula_text.trim() : ''
+  const count = positiveInt(item?.pleat_count)
+  if (formulaText.startsWith('褶倍数')) return '倍数法'
+  if (formulaText.startsWith('韩褶') || count !== null) return count !== null ? `韩褶 ${count}折` : '韩褶'
+  return ''
+}
+
+/**
+ * 一张水洗唛**印几份** = 该商品的「打开方式」开数（`openCount`：1 单开 / 2 双开 / 3 三开 / 4 四开）。
+ *
+ * 用户 2026-10-26 逐字：「如果订单是双开的要打印两份，单开的要打印1份，三开打印3份，4开打印4份，
+ * 这个都要在打印预览中默认设置好」。
+ *
+ * 🔴 **份数口径只有这一处**：系统打印（`TaskCardPrint` 逐张展开）与蓝牙直连
+ * （`toWashLabelInputs` 展开）都读它 —— 各写一份 ⇒ 两条通道出纸张数会不一样。
+ * 开数是**正整数**不是固定枚举（issue #4387）⇒ 表外开数如实 N 份；缺值 / 非法值 ⇒ 1 份。
+ */
+export function washLabelCopies(item?: ProcessingOrderItem | null): number {
+  // 开数在订单侧是数字；存量/透传也可能以字符串承载（与 `craft-display` 的数字容忍同口径）
+  return positiveInt(item?.openCount) ?? 1
+}
+
+/**
  * 纸面**抬头**：企业名 + 副标题（用户 2026-10-25 裁定照参考工单的
  * 「亿家纺织 / 成品定制」形态加抬头）。企业名缺值 ⇒ **整块不渲染**（不印空行、
  * 不印「未设置」—— 纸面是给客户看的）。
@@ -183,7 +238,6 @@ export interface WashLabelRowsInput {
   /** 纸面抬头：企业名（缺值 ⇒ 抬头块整块不渲染） */
   companyName?: string | null
   orderNo?: string | null
-  expectedDeliveryDate?: string | null
 }
 
 /**
@@ -207,6 +261,10 @@ export function washLabelRows(input: WashLabelRowsInput): WashLabelRow[] {
     rows.push({ key, text: prefix === '' ? trimmed : `${prefix} ${trimmed}`, maxLines: MAX_LINES[key] })
   }
 
+  // 🔴 订单号 = **第一行**（2026-10-26 用户逐字「把订单号放到第一行，客户那一行上面」）；
+  // 缺值如实出 `—`（它是「这张纸是给谁的」的最小可读集合之一，不编造、也不留空行）。
+  push('orderNo', (input.orderNo ?? '').trim() || '—', '订单')
+
   push('customer', input.customerName ?? '', '客户')
 
   const setNo = Number.isFinite(input.setNo) ? Number(input.setNo) : 1
@@ -228,9 +286,10 @@ export function washLabelRows(input: WashLabelRowsInput): WashLabelRow[] {
   push('meters', washLabelMeters(input.item), '用料')
   push('size', washLabelSize(position.width, position.height), '宽高')
   push('craft', washLabelCraftMode(input.item), '加工方式')
+  // 褶法 = 是否韩褶公式 + 折数（同一个字段；2026-10-26 用户裁定）
+  push('pleats', washLabelPleats(input.item), '褶法')
 
-  push('orderNo', (input.orderNo ?? '').trim() || '—', '订单')
-  push('delivery', (input.expectedDeliveryDate ?? '').trim() || '—', '交期')
+  // 🔴 交期行**已退场**（2026-10-26 用户逐字「移除交期字段」）。
   push('specialOptions', washLabelSpecialOptions(input.item), '特殊选项')
   push('remark', washLabelRemark(input.item), '备注')
 
@@ -241,16 +300,12 @@ export function washLabelRows(input: WashLabelRowsInput): WashLabelRow[] {
   return rows.sort((a, b) => (order.get(a.key) ?? 0) - (order.get(b.key) ?? 0))
 }
 
-/** 直连通道一张标签要打的东西（= 表头 + 有序行 + 底部码/短码） */
+/** 直连通道一张标签要打的东西（= 有序行 + 底部二维码） */
 export interface WashLabelInput {
   /** 二维码内容（该部位自己的 `scan_url ?? part_token`）；`null` ⇒ **不画假码**（出占位框） */
   qrValue: string | null
-  /** 人可读短码（**底部大字**、纸面的手输降级入口） */
-  shortCode: string
   /** 纸面抬头：企业名（缺值 ⇒ 抬头块整块不渲染；副标题见 {@link WASH_LABEL_COMPANY_SUBTITLE}） */
   companyName?: string
-  /** 表头：加工单号（纸面**主标识**，7pt 粗体） */
-  processingOrderNo?: string
   /** 正文行（有序，来自 {@link washLabelRows}） */
   rows?: WashLabelRow[]
   /** 缺码时的占位文案（默认「待生成」） */
@@ -258,12 +313,10 @@ export interface WashLabelInput {
 }
 
 export interface WashLabelSource {
-  processingOrderNo?: string | null
   /** 纸面抬头的企业名（调用方从 `useCompanyName()` 取；缺值 ⇒ 抬头不渲染） */
   companyName?: string | null
   orderNo?: string | null
   customerName?: string | null
-  expectedDeliveryDate?: string | null
   positions?: ProductionPosition[] | null
   items?: ProcessingOrderItem[] | null
 }
@@ -272,8 +325,8 @@ export interface WashLabelSource {
  * 加工单 ⇒ 直连通道的**逐张**输入（**单一处**映射：页面与测试都走它，不各写一份）。
  *
  * - 码 = `scan_url ?? part_token`，两者都没有 ⇒ `null`（**不画假码**，与 `TaskCardPrint` 同口径）
- * - 短码缺失 ⇒ `'—'`（纸面如实显示「没有」，**不编造**）
  * - 套序走 `groupBySet`（与进度表 / 系统打印**同一份**实现）
+ * - **份数 = 开数**（{@link washLabelCopies}）：双开商品 ⇒ 同一张纸出两份（与系统打印同一份口径）
  * - 0 个部位 ⇒ 空数组（**不造占位**：直连入口据此禁用，不是打一张空白纸）
  */
 export function toWashLabelInputs(source: WashLabelSource = {}): WashLabelInput[] {
@@ -286,14 +339,13 @@ export function toWashLabelInputs(source: WashLabelSource = {}): WashLabelInput[
     if (id) itemsById.set(id, item)
   }
 
-  return positions.map((position, index) => {
+  const labels: WashLabelInput[] = []
+  positions.forEach((position, index) => {
     const item = position.order_item_id ? itemsById.get(position.order_item_id) : undefined
     const setView = setViews[index]
-    return {
+    const label: WashLabelInput = {
       qrValue: position.scan_url ?? position.part_token ?? null,
-      shortCode: (position.part_short_code ?? '').trim() || '—',
       companyName: washLabelCompanyName(source.companyName) || undefined,
-      processingOrderNo: (source.processingOrderNo ?? '').trim() || undefined,
       qrPlaceholderHint: undefined,
       rows: washLabelRows({
         position,
@@ -302,8 +354,10 @@ export function toWashLabelInputs(source: WashLabelSource = {}): WashLabelInput[
         setCount: setView?.setCount ?? 1,
         customerName: source.customerName,
         orderNo: source.orderNo,
-        expectedDeliveryDate: source.expectedDeliveryDate,
       }),
     }
+    // 🔴 份数 = 开数（2026-10-26 用户裁定）：两条通道读**同一个**函数，不各算一份
+    for (let copy = 0; copy < washLabelCopies(item); copy += 1) labels.push(label)
   })
+  return labels
 }

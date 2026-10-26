@@ -50,7 +50,7 @@ PRINT_DOCS: tuple[tuple[str, str], ...] = (
     ("frontend/admin-web/src/components/orders/QuotationDoc.tsx", "a4"),
     ("frontend/admin-web/src/components/orders/ProcessingDoc.tsx", "a4"),
     ("frontend/admin-web/src/components/orders/SalesDoc.tsx", "continuous-241x140"),
-    ("frontend/admin-web/src/components/production/TaskCardPrint.tsx", "label-50x70"),
+    ("frontend/admin-web/src/components/production/TaskCardPrint.tsx", "label-50x150"),
 )
 
 #: 单份字段映射：（单据名, 实现文件, 有序列清单）
@@ -87,10 +87,11 @@ _PORTAL_RE = re.compile(r"createPortal\s*\(")
 _PRINT_AREA_RE = re.compile(r"['\"`][a-zA-Z0-9_-]*-print-area\b")
 #: `@page { size: X; margin: Y; }` 字面量（唯一合法写法 = 与矩阵逐字一致）
 _PAGE_LITERAL_RE = re.compile(r"@page\s*\{\s*size:\s*([^;]+);\s*margin:\s*([^;]+);\s*\}")
-#: 介质矩阵读取口调用：`printPageRule('a4')`（字面量形式 —— 单据只印一种纸）；
-#: 以及 issue #7776 的**动态纸长**写法 `printPageRuleForLength('label-50x70', <纸长变量>)`
-#: （纸长按内容撑开：宽 / 边距仍从矩阵取，长度由调用方算 —— 介质仍是**同一份**，不是第二份真值）
-_PAGE_RULE_CALL_RE = re.compile(r"printPageRule(?:ForLength)?\(\s*'([a-z0-9-]+)'")
+#: 介质矩阵读取口调用：`printPageRule('a4')`（字面量形式 —— 单据只印一种纸）。
+#: 🔴 issue #7776 的**动态纸长**写法（`printPageRuleForLength(...)`）随 issue #7816 退场
+#: （用户 2026-10-26 裁定水洗唛固定 50×150）⇒ 本正则只认 `printPageRule`：有人把动态写法加回来 ⇒
+#: 介质 id 解析不出来 ⇒ C2 直接红（不是静默放过）。
+_PAGE_RULE_CALL_RE = re.compile(r"printPageRule\(\s*'([a-z0-9-]+)'")
 #: 介质矩阵读取口调用：`printPageRule(media)`（**参数化**形式 —— 同一单据可切介质）
 _PAGE_RULE_PARAM_RE = re.compile(r"printPageRule\(\s*([A-Za-z_$][\w$]*)\s*\)")
 #: 剥注释时要跳过的文件（二进制 / 大文件）与扫描范围

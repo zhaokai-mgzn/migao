@@ -11,7 +11,7 @@
 
 | # | 单据 | 介质 | MIGAO 落地 |
 |---|---|---|---|
-| 1 | 水洗码 | 特殊标签 | ✅ `components/production/TaskCardPrint.tsx`（#4964 → #5646 改判 50×60 → **2026-10-25 加长到 50×70**） |
+| 1 | 水洗唛 | 特殊标签 | ✅ `components/production/TaskCardPrint.tsx`（#4964 → #5646 改判 50×60 → 2026-10-25 加长到 50×70 → **2026-10-26（#7816）固定 50×150、正文 12pt**） |
 | 2 | 报价单 | A4 | ✅ `components/orders/QuotationDoc.tsx`（#4965） |
 | 3 | **加工单** | A4 | ✅ **本单新增** `components/orders/ProcessingDoc.tsx` |
 | 4 | **销售单** | **三联纸** | ✅ **本单新增** `components/orders/SalesDoc.tsx`（针式/连续纸/压感复写 = 全仓此前**零支持**） |
@@ -25,7 +25,8 @@
 | 介质 id | 打印技术 | `@page` | 连续走纸 | 复写份数 | 版面预算（正文基准） | 实测状态 |
 |---|---|---|---|---|---|---|
 | `a4` | 激光 / 喷墨（浏览器 `window.print()`） | `size: A4; margin: 0`（版面内缩 12mm 走容器 padding，issue #7309） | 否 | 1 | 9pt（= 既有 12px 口径） | 已实测（既有单据在用） |
-| `label-50x70` | 热敏 / 热转印（BLE 直打，通道归 #5052） | `size: 50mm 70mm; margin: 0`（整幅出图，纸边即版心）；🔴 **纸长按内容撑开**：宽度固定 50mm、长度由 `printPageRuleForLength()` 现拼（70mm = **最短**，上限 150mm，issue #7776） | 否 | 1 | 9pt | **已实测**（#5646 纸宽侧：容器 49.998mm 宽、正文右边界 48.799mm；2026-10-25 纸长 60→70mm；issue #7776 正文 6pt→9pt + 纸长改为内容驱动，预算见 `TaskCardPrint.tsx` 文件头第 5 条） |
+| `label-50x150` | 热敏 / 热转印（BLE 直打，通道归 #5052） | `size: 50mm 150mm; margin: 0`（整幅出图，纸边即版心）；🔴 **纸型固定**（issue #7816，用户 2026-10-26 逐字「水洗唛长度不足，设置为打印50*150」）—— 作废 #7776 的「纸长按内容撑开」 | 否 | 1 | **12pt**（用户同批「字体还是太小，可以再大一点」；抬头 14pt） | **已实测**（#5646 纸宽侧：容器 49.998mm 宽、正文右边界 48.799mm；点阵 150mm × 8 dots/mm = 1200px） |
+| `label-50x70` | 热敏 / 热转印（**工人端发货标签**，通道归 #7761/#7786） | `size: 50mm 70mm; margin: 0`（整幅出图）；🔴 **纸长按内容撑开**：宽度固定 50mm、长度由 `frontend/worker-h5/src/shipment.mjs` 的 `shipLabelLengthMm()` 按纸面内容算（70mm = **最短**，上限 150mm，issue #7776 仍对发货标签有效） | 否 | 1 | 9pt | **已实测**（#5646 纸宽侧；2026-10-25 纸长 60→70mm；点阵 560px = 最短 70mm） |
 | `continuous-241x140` | **针式点阵 + 连续纸 + 压感复写** | `size: 241mm 140mm; margin: 0`（版面内缩 6mm 12mm 走容器 padding，2026-10-25） | **是** | **3**（纸承担） | 9pt（**通用下限**，待实测） | 🚧 **待现场实测**（见 §5；含「边距 0 + 容器内缩」的真机对齐） |
 
 
@@ -44,13 +45,16 @@ Chrome 把自己的页眉页脚（版式日期 / 文档标题 / 页面 URL / 页
 判据 = `print-media.ts::browserChromeMarginProblems`（**非 0 即红**，`BROWSER_CHROME_MARGIN_MM`
 只作历史说明）+ `tests/unit_ci_workflows/test_print_media_matrix_guard.py` 的 C10。
 
-🔴 **工人端发货标签（issue #7761，2026-10-25）是**第 6 份**可打印单据，介质 = DP235S 的 50mm 卷纸，
-`@page size: 50mm 70mm`（用户 2026-10-25 裁定「复用现有 50mm × 70mm 标签纸」）。
-它与洗水唛**同纸不同文档**：内容 = 订单号 / 收货人 / 电话 / 地址 / 物流方式 / 物流公司 / 套数 / 备注。
-⚠️ **纸长口径的差别（显式登记）**：发货标签与洗水唛**同纸**（`label-50x70`）但**长度口径暂时不同** ——
-洗水唛按内容撑开（issue #7776），发货标签仍是矩阵声明的 50mm × 70mm 固定页
-（守卫 `frontend/worker-h5/tests/worker-h5-shipment-ready.test.mjs` 逐值比对 `pageSize`）。
-⇒ 同一卷纸的两个文档各有各的 `@page` 长度，**改任一边都要看另一边**（矩阵只登记最短纸长与点阵口径）。
+🔴 **工人端发货标签（issue #7761，2026-10-25）是第 6 份可打印单据**，介质 = DP235S 的 50mm 卷纸
+`label-50x70`：内容 = 订单号 / 收货人 / 电话 / 地址 / 物流方式 / 物流公司 / 套数 / 备注。
+⚠️ **两张纸自 issue #7816 起已分开，不要合并**：
+- **水洗唛** = `label-50x150`（**固定** 50mm × 150mm，正文 12pt）—— 2026-10-26 用户逐字
+  「水洗唛长度不足，设置为打印50*150」；#7776 的「纸长按内容撑开」对水洗唛**已作废**。
+- **发货标签** = `label-50x70`（50mm 宽**连续卷**，纸长按内容撑开 70~150mm，正文 9pt）——
+  由 `frontend/worker-h5/src/shipment.mjs` 的 `shipLabelLengthMm()` / `shipLabelPageRule()` 现算，
+  守卫 `frontend/worker-h5/tests/worker-h5-shipment-ready.test.mjs` 逐值比对 `pageSize` 与 `lengthMm`。
+⇒ 改任一边都要看另一边；把水洗唛改回 `label-50x70` = 把「长度不足」带回来（守卫
+`tests/unit_ci_workflows/test_wash_label_geometry_guard.py` 会红）。
 
 **四条技术要点（三联纸，实现前必读）**
 
