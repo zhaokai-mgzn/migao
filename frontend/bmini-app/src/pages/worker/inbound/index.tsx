@@ -166,7 +166,8 @@ export default function WorkerInboundPage() {
           return res.data
         },
       })
-      setNotices(result.notices.filter(Boolean))
+      // 🔴 识别链**不上屏过程叙述**（issue #7818）：解码没命中而服务端认回来了是正常路径。
+      //    「要不要人工核对」由确认卡说清（`prefillFromRecognize().notice`），这里不接横幅。
       const next = prefillFromRecognize(result.response)
       setPrefill(next)
       setRecognized(result.response)
