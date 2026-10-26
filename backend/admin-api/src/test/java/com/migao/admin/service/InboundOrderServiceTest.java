@@ -47,6 +47,7 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -1438,6 +1439,99 @@ class InboundOrderServiceTest {
             assertThat(saved.getAmount())
                     .as("行金额 = 米数 × 单价 = 67.2 × 38.00（不是 1 × 38.00）")
                     .isEqualByComparingTo("2553.60");
+        }
+    }
+
+    // ============================================================ #7794 两个视图（原料仓 / 成品仓）
+
+    /**
+     * issue #7794：用户 2026-10-26 逐字「要区分原料仓入库和成品仓入库，别混在一起了」。
+     *
+     * <p>守三条：① 类别**确实**透传到读面（漏传 = 两个视图都拿到全量 ⇒ 混排照旧）；
+     * ② 非法取值 ⇒ 422（静默当不过滤正是本单要修的形态）；③ 成品单详情必须带出仓位/套号
+     * —— 仓位是成品仓入库的全部意义，字段漏一个，页面就什么也显示不出来。</p>
+     */
+    @Nested
+    @DisplayName("#7794 列表区分原料仓 / 成品仓：类别透传 + 非法取值 422 + 详情带出仓位")
+    class InboundBizCategory {
+
+        @Test
+        @DisplayName("bizCategory 原样透传到读面（漏传 ⇒ 两个视图都是全量 = 混排照旧）")
+        void listPassesBizCategoryToQueryMapper() {
+            when(inboundOrderQueryMapper.selectOrderLines(any(), any(), any(), any(), anyInt()))
+                    .thenReturn(List.of());
+
+            service.list("RK", null, InboundOrder.BIZ_FINISHED, TENANT);
+
+            verify(inboundOrderQueryMapper).selectOrderLines(eq(TENANT), eq("RK"), isNull(),
+                    eq(InboundOrder.BIZ_FINISHED), anyInt());
+        }
+
+        @Test
+        @DisplayName("缺省（null / 纯空白）= 不过滤（向后兼容：既有调用点与站内信深链行为不变）")
+        void missingBizCategoryMeansNoFilter() {
+            when(inboundOrderQueryMapper.selectOrderLines(any(), any(), any(), any(), anyInt()))
+                    .thenReturn(List.of());
+
+            service.list(null, null, null, TENANT);
+            service.list(null, null, "   ", TENANT);
+
+            verify(inboundOrderQueryMapper, times(2))
+                    .selectOrderLines(eq(TENANT), isNull(), isNull(), isNull(), anyInt());
+        }
+
+        @Test
+        @DisplayName("非法类别 ⇒ 422 且不读库（不静默当「不过滤」= 成品单继续混进原料仓列表）")
+        void unknownBizCategoryIsRejected() {
+            assertThatThrownBy(() -> service.list(null, null, "fabricx", TENANT))
+                    .isInstanceOfSatisfying(BusinessException.class, e -> {
+                        assertThat(e.getMessage()).contains("只支持 fabric / finished");
+                        assertThat(e.getHttpStatus()).as("缺参/非法参 ⇒ 422（照仓内 validationError 口径）")
+                                .isEqualTo(422);
+                    });
+
+            verify(inboundOrderQueryMapper, never())
+                    .selectOrderLines(any(), any(), any(), any(), anyInt());
+        }
+
+        @Test
+        @DisplayName("成品单详情：明细带出仓位号 / 套号 / 短码 / 品名 / 单位（BeanUtils 自动带出，不手写映射）")
+        void finishedDetailCarriesBinAndSetFields() {
+            InboundOrder order = InboundOrder.builder()
+                    .id("o-finished-1")
+                    .tenantId(TENANT)
+                    .inboundNo("RK-20261026-0001")
+                    .inboundDate(LocalDate.of(2026, 10, 26))
+                    .status(InboundOrder.STATUS_POSTED)
+                    .source(InboundOrder.SOURCE_PACKING)
+                    .bizCategory(InboundOrder.BIZ_FINISHED)
+                    .totalAmount(BigDecimal.ZERO)
+                    .build();
+            when(inboundOrderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(order);
+            InboundOrderItem line = InboundOrderItem.builder()
+                    .id(9L)
+                    .tenantId(TENANT)
+                    .inboundOrderId("o-finished-1")
+                    .productName("布帘")
+                    .setNo("JG-20261026-001-001")
+                    .shortCode("AB12CD34")
+                    .binCode("A-01")
+                    .unit("set")
+                    .quantity(BigDecimal.ONE)
+                    .build();
+            when(inboundOrderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(line));
+
+            InboundOrderResponse resp = service.detail("o-finished-1", TENANT);
+
+            assertThat(resp.getBizCategory()).as("详情必须带出类别（页面据此切换明细列）")
+                    .isEqualTo(InboundOrder.BIZ_FINISHED);
+            assertThat(resp.getItems()).hasSize(1);
+            InboundOrderResponse.Item item = resp.getItems().get(0);
+            assertThat(item.getBinCode()).as("仓位号 = 成品仓入库的全部意义").isEqualTo("A-01");
+            assertThat(item.getSetNo()).isEqualTo("JG-20261026-001-001");
+            assertThat(item.getShortCode()).isEqualTo("AB12CD34");
+            assertThat(item.getProductName()).isEqualTo("布帘");
+            assertThat(item.getUnit()).isEqualTo("set");
         }
     }
 }
