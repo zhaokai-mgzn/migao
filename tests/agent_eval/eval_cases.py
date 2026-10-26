@@ -9539,6 +9539,7 @@ _CASE_OR_070 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    precondition=[{'type': 'none', 'note': '无外部系统前置：判据全部是组件/服务级单测（前端 vitest 自造订单夹具；后端 JUnit 用内存 mapper 装配），不写真实库、不依赖会话或存量数据 ⇒ 重跑不改世界'}],
 )
 
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 作业单生成 + 订单进入生产中（派单即生产；issue #7723 改判）（源: cases/processing-order.yml）──

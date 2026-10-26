@@ -235,7 +235,8 @@ public class WorkerShipmentReadyService {
      */
     private Map<String, List<OrderItem>> loadOrderItemsByOrder(List<String> orderIds, Long tenantId) {
         if (orderIds == null || orderIds.isEmpty()) {
-            return Map.of();
+            // 空集也给**可变**表：`Map.of()` 是空不可变表 ⇒ 调用方按空键索引会 NPE（issue #6219 守卫）
+            return new LinkedHashMap<>();
         }
         List<OrderItem> rows = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
                 .in(OrderItem::getOrderId, orderIds)

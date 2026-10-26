@@ -100,6 +100,10 @@ final class OrderInstallInfo {
      */
     static String valueOf(Object processingInfo, String key, ObjectMapper objectMapper) {
         Object normalized = OrderLineCraftFields.normalize(processingInfo, objectMapper);
+        // 存量行 `processing_info` 可能为 NULL ⇒ 归一结果也可能是 null（issue #5550 的空安全口径）
+        if (normalized == null) {
+            return null;
+        }
         if (!(normalized instanceof java.util.Map<?, ?> map)) {
             return null;
         }

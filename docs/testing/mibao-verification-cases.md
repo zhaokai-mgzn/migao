@@ -7630,6 +7630,7 @@
 数据: 判据 3·**缺值不落键**（会红）：空 / 纯空白 ⇒ 请求体里**没有** installCommunity 键、该行 processingInfo 里**没有** installRoom 键（不写空串：写空串会被下游读成「填过」，纸面会多印一行空值）；改单弹层清空安装小区时**显式**发空串（服务端口径「未传 ⇒ 沿用原值、空串 ⇒ 清空」）。执行点 = 下单页判据 2/3 · 弹层 ⑧。红证（实测）：把弹层的条件落键改成无条件写 ⇒ ⑧ 红。
 数据: 判据 4·**软限 40 / 12 由录入控件挡住**（会红）：服务端超长是 422 硬拒（OrderInstallInfo.normalizeCommunity / normalizeRoom）⇒ 两个录入面的 maxLength 必须先挡；安装位置的常用空间 chips（主卧 / 次卧 / 儿童房 / …）只是录入捷径，不构成值域校验（自由文本照旧允许）。执行点 = 下单页判据 4 · 弹层 ⑥⑨。
 数据: 判据 5·**详情页与纸面读同一份真值**：订单详情「收货信息」区在收货地址下显示安装小区（缺值 - ，与相邻行同口径）、明细区显示件级安装位置（缺值**不渲染**该行，与「部位备注」同口径）。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx（#7856 四条；红证实测：删掉 InfoRow / 删掉安装位置渲染块 ⇒ 各自红）。纸面（水洗唛 / 发货标签 / 入库标签）由后端读同一份 JSONB 逐行打印，判据在后端（ProcessingOrderService 白名单 / WorkerShipmentReadyService.install_rooms）。
+前置: none(note=无外部系统前置：判据全部是组件/服务级单测（前端 vitest 自造订单夹具；后端 JUnit 用内存 mapper 装配），不写真实库、不依赖会话或存量数据 ⇒ 重跑不改世界)
 跳过: [backend-contract] 本用例是**订单安装信息**的确定性判据（前端 vitest 判录入 / 请求体 / 展示；后端 JUnit 判归一与准入 / 扇出 / 投影；**无 LLM 环节 ⇒ 不进 agent-eval 冒烟**）：计分通道 = traces.tests
 ```
 溯源: 2026-10-26 新增（issue #7856；用户当日逐字见 user_inputs）。取号 = scripts/next_case_id.py OR 现取（main 001-069 ∪ 全部 open PR ∪ 工作区空洞）⇒ OR-070。口径落点：数据库**零迁移**（用户当场裁定「不能作为订单基础字段吧？」）⇒ 两个键都住已登记的 JSONB order_items.processing_info（tests/unit_ci_workflows/schema_health_ledger.json 的 jsonb_columns）。⚠️ 未固化（照实登记）：① 真实浏览器里的纸面（水洗唛 / 发货标签）未做 Playwright 多模态验收（纸面判据在后端）；② 存量单（本功能之前落的单）没有该键 ⇒ 详情页安装小区显示 - 、安装位置整行不渲染，**不回填、不猜**。 ｜ tags: order, admin-web, install-info, print-annotation
