@@ -24,6 +24,14 @@
  * | C12 | **门幅口径（用户 2026-10-25 裁定）**：标签没印门幅 ⇒ 唯一候选 2.8 且预选，同屏用**陈述句**
  *        说明「标签未印门幅，按行业标准 2.8 米」（不惊叹、不催） | 删掉那句话 ⇒ `inbound-door-width-assumed`
  *        取不到；端侧写死 2.8 而不取服务端的 `doorWidth` ⇒ 断言里的数字对不上（红） |
+ * | C14 | **拦截原因贴着按钮（issue #7822）**：端侧闸不通过 / 服务端拒绝 ⇒ 文案在「提交过账」
+ *        **正上方**（`inbound-submit-blocked`，与按钮同父节点、在按钮之前），页面顶部不再重复同一句 |
+ *        删掉就地那段（回到只有 `setError`）⇒ C14 取不到节点（红）；线上实测形态 = 按钮在屏内、
+ *        顶部横幅 top=-170 在屏外 ⇒ 工人读到「点了没反应」 |
+ * | C15 | **弹窗失联不静默（issue #7822）**：`confirmAdminAction` 的 `failed` 与 `cancelled` 分开 ⇒
+ *        弹窗失败给「没提交 + 再点一次」且零建单 | 把 `failed` 并回静默 `return` ⇒ C15 红 |
+ * | C16 | **取消 ≠ 故障（负对照）**：工人点取消 ⇒ 无提示、零建单（取消是他的选择，不该被说成失败） |
+ *        取消也弹失败提示 ⇒ C16 红 |
  * | C13 | **识别成功时不弹过程告警（issue #7818）**：本机没解出码、服务端再认回来 ⇒ 顶部**零告警横幅**；
  *        「要不要人工核对」由确认卡说清（`inbound-prefill-notice` 非空），切到标签步也不再带上来
  *        | 把两条 notices 的 push 加回 `recognizeFlow` ⇒ 确认步 `inbound-notice-0` 取得到（红） |
@@ -236,7 +244,9 @@ describe('工人拍照入库页', () => {
     fireEvent.change(screen.getByTestId('inbound-roll-length'), { target: { value: '' } })
     fireEvent.click(screen.getByTestId('inbound-confirm-toggle'))
     fireEvent.click(screen.getByTestId('inbound-submit'))
-    await waitFor(() => expect(screen.getByTestId('inbound-error').textContent).toContain('请填写卷长'))
+    await waitFor(() => expect(screen.getByTestId('inbound-submit-blocked').textContent).toContain('请填写卷长'))
+    // 同屏不重复说同一件事（§31 P2）：这句话只在按钮上方，不也在页面顶部
+    expect(screen.queryByTestId('inbound-error')).toBeNull()
     expect(mockCreateDraft).not.toHaveBeenCalled()
   })
 
@@ -254,9 +264,60 @@ describe('工人拍照入库页', () => {
     fireEvent.change(screen.getByTestId('inbound-roll-length'), { target: { value: '2.755' } })
     fireEvent.click(screen.getByTestId('inbound-confirm-toggle'))
     fireEvent.click(screen.getByTestId('inbound-submit'))
-    await waitFor(() => expect(screen.getByTestId('inbound-error').textContent).toBe(SERVER_422))
+    await waitFor(() => expect(screen.getByTestId('inbound-submit-blocked').textContent).toBe(SERVER_422))
     // 建单被拒 ⇒ **不**继续过账（不产生"半张单"）
     expect(mockPostDraft).not.toHaveBeenCalled()
+  })
+
+  /**
+   * C14（issue #7822）：「点了没反应」的机器判据。
+   *
+   * 现场形态（线上实测 375×667）：长表单里工人在底部点「提交过账」，而拦截文案渲染在页面**顶部**
+   * ⇒ 横幅 box.top = -170（视口外）、屏上零变化、一个请求都没发。
+   * 红证：删掉 `inbound-submit-blocked` 那一段（回到只有 `setError`）⇒ 本用例第一条断言取不到节点。
+   */
+  it('C14 拦截原因**贴着按钮**：零命中未选货号 ⇒ 说明在「提交过账」正上方（不是页面顶部横幅）', async () => {
+    await driveToZeroHitConfirmStep()
+    // 卷长填了、也勾了确认 —— 唯一缺的是「选货号」（#7759 起零命中很常见）
+    fireEvent.change(screen.getByTestId('inbound-roll-length'), { target: { value: '52.4' } })
+    fireEvent.click(screen.getByTestId('inbound-confirm-toggle'))
+    fireEvent.click(screen.getByTestId('inbound-submit'))
+
+    await waitFor(() =>
+      expect(screen.getByTestId('inbound-submit-blocked').textContent).toContain('没有对应的货号'),
+    )
+    // 位置判据（这才是「贴着动作」）：与按钮**同一个父节点**，且在按钮**之前**
+    const hint = screen.getByTestId('inbound-submit-blocked')
+    const submit = screen.getByTestId('inbound-submit')
+    expect(hint.parentElement).toBe(submit.parentElement)
+    expect(hint.compareDocumentPosition(submit) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // 同一句话不再出现在页面顶部（§31 P2）
+    expect(screen.queryByTestId('inbound-error')).toBeNull()
+    expect(mockCreateDraft).not.toHaveBeenCalled()
+  })
+
+  /**
+   * C15（issue #7822）：确认框**失联**不再静默。
+   * 原形态：`confirmAdminAction` 把「取消」与「弹窗失败」压成同一个 `false` ⇒ 弹窗没弹出来时页面
+   * 静默 `return`，屏上什么都不发生。红证：把 `failed` 分支并回「静默 return」⇒ 本用例取不到该文案。
+   */
+  it('C15 确认框没弹出来 ⇒ 就地明说「没提交 + 再点一次」且零建单（不是静默 return）', async () => {
+    mockShowModal.mockRejectedValueOnce(new Error('modal unavailable'))
+    render(<WorkerInboundPage />)
+    await driveToLabelStep()
+    await waitFor(() => expect(screen.getByTestId('inbound-submit-blocked').textContent).toContain('确认框'))
+    expect(mockCreateDraft).not.toHaveBeenCalled()
+    expect(screen.queryByTestId('inbound-step-label')).toBeNull()
+  })
+
+  /** C16（issue #7822）负对照：**工人自己点取消**仍然静默（那是他的选择，不是故障） */
+  it('C16 工人点「取消」⇒ 不给失败提示、不建单（取消 ≠ 弹窗失联）', async () => {
+    mockShowModal.mockResolvedValueOnce({ confirm: false, cancel: true })
+    render(<WorkerInboundPage />)
+    await driveToLabelStep()
+    await waitFor(() => expect(mockShowModal).toHaveBeenCalled())
+    expect(screen.queryByTestId('inbound-submit-blocked')).toBeNull()
+    expect(mockCreateDraft).not.toHaveBeenCalled()
   })
 
   it('C8 卷数默认 1、识别到的米数落进卷长；确认文案把两格都说清（#6812）', async () => {
