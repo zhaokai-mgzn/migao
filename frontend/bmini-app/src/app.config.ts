@@ -34,6 +34,10 @@ export default defineAppConfig({
     // 路由字面量是**单一真值**：`src/utils/inbound/gaps.ts` 的 `WORKER_HOME_ROUTE` 必须逐字等于它
     // （没登记 = 死链 ⇒ 入口台账 tests/page-entry-reachability.test.ts 与 G0 同款守卫判红）
     'pages/worker/home/index',
+    // 工人**扫码报工**（issue #7812 P2a）：扫一扫 / 手输码 → 一屏（套/部位/帘种/工序/应做）→ 报工 → 回执。
+    // 走 `/api/worker/production/scan[/complete]`（工人零商家权限码）；**记账口径一字未动**。
+    // 为什么现在有这一页：2026-10-26 用户改判（#7806）——手机端收口到 bmini，小程序是最终形态。
+    'pages/worker/report/index',
     // 工人**拍照入库**（issue #5052 P3）：拍上游标签 → 本机解码优先（0 次 LLM）→ 工人确认
     // → 过账（不可逆，二次确认）→ 出 30×40mm 标签 → 送打印（Web Bluetooth，Android / 桌面 Chrome）。
     // 走 `/api/worker/inbound/**`（工人零商家权限码，不是管理面）。

@@ -3,7 +3,6 @@
   "_how_to_regen": "条数现取：cd frontend/bmini-app && node -e \"const l=require('./tests/worker-surface-ledger.json');console.log(l.entries.length)\"（台账本体不许手写死条数：守卫按 src/pages 下全部 .tsx 现取配对集，双向相等才算过）",
   "_detection": "守卫扫 src/pages 下全部 .tsx（先剥注释）里出现的『工人写调用』记号（completeByScan( / reportOperationFree( / workerLogin( / workerLogout( / createInboundDraft( / postInboundDraft(）；每个 (页面, 调用) 配对都必须在 entries 里登记，且每条登记都必须仍能被扫到（台账只许缩短）。requires_worker_session=true 的条目还必须逐条命中 gate_tokens（= 该页「必须先有工人身份」的**声明 + 用到它的渲染条件**两个记号；只写声明不接到渲染条件 ⇒ 红）。🔴 2026-10-14（issue #6868 实现包 D1）：报工页（src/pages/production/index/index.tsx）已整页删除 ⇒ 它那两条（completeByScan( / reportOperationFree( ，原先分别用 `{workerReady ? (` / `{workerReady && (` 两处**刻意不同**的闸门记号）随之删掉。**同页两条写路各用不同闸门记号**这个形态当前**没有现役实例**（如实登记，不粉饰）：保留的工人面里 src/pages/worker/inbound/index.tsx 有两条写路（createInboundDraft( / postInboundDraft( ）但共用同一处闸门 `if (!workerReady) {`。台账仍按「每条登记各自给出闸门记号」判定 —— 摘掉任一条的闸门记号 ⇒ 该条判红并具名。",
   "entries": [
-
     {
       "page": "src/pages/worker/home/index.tsx",
       "call": "workerLogout(",
@@ -65,6 +64,23 @@
       "requires_worker_session": false,
       "case_ids": [
         "BM-019"
+      ]
+    },
+    {
+      "page": "src/pages/worker/report/index.tsx",
+      "call": "completeByScan(",
+      "label": "扫码报工（唯一写入口）",
+      "requires_worker_session": true,
+      "gate_tokens": [
+        "const workerReady = hasWorkerSession()",
+        "state.mode === 'unauthorized'"
+      ],
+      "guide_token": "REPORT_LOGIN_REQUIRED",
+      "login_route_token": "WORKER_TAB_LOGIN_ROUTE",
+      "case_ids": [
+        "BM-014",
+        "BM-015",
+        "BM-025"
       ]
     }
   ]

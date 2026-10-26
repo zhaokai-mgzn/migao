@@ -154,10 +154,25 @@ export const WORKER_HOME_PAGE_FILE = 'src/pages/worker/home/index.tsx'
  * 🔴 路由字面量是**单一真值**：`src/app.config.ts` 的 pages 必须逐字含它
  * （没登记 = 死链；守卫 = `tests/page-entry-reachability.test.ts` 的 L2「未登记即红」）。
  */
+export const REPORT_PAGE_ROUTE = '/pages/worker/report/index'
+
+/** 报工页文件（入口台账 `from` 要对账的落点） */
+export const REPORT_PAGE_FILE = 'src/pages/worker/report/index.tsx'
+
+/** 报工页未登录时的引导（与其它工人面同一口径）。 */
+export const REPORT_WORKER_LOGIN_REQUIRED = '请先用工号 + PIN 登录工人身份，再扫码报工。'
+
 export const SHIPMENT_PAGE_ROUTE = '/pages/worker/shipment/index'
 
 /** 拍照发货页文件（入口台账 `from` 要核的落点） */
 export const SHIPMENT_PAGE_FILE = 'src/pages/worker/shipment/index.tsx'
+
+/**
+ * **扫码报工**页路由（issue #7812 P2a）—— 工人工作台的第一张行卡。
+ *
+ * 收口方向见 #7806：报工面的**小程序载体**（`/w/` 仍在线，直到 P2c 把短链目标切过来）。
+ * 🔴 路由字面量是**单一真值**：`src/app.config.ts` 的 pages 必须逐字含它（没登记 = 死链）。
+ */
 
 /**
  * **待发货单**列表页路由（issue #7806 P1a）—— 工人工作台**新增**的一条入口（只读列表页）。

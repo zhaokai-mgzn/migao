@@ -59,14 +59,18 @@ jest.mock('@tarojs/taro', () => {
 jest.mock('../src/services/workerService', () => ({
   fetchCurrentWorker: jest.fn(),
   workerLogout: jest.fn(),
+  // issue #7812：工作台入口按「工人端菜单」显隐 ⇒ 本页会读一次页面集。
+  // 默认 = 读到了但没给（null）⇒ fail-open 全开（与线上未收窄的工人一致）。
+  fetchWorkerPages: jest.fn(),
 }))
 
 import Taro from '@tarojs/taro'
 import WorkerHomePage from '../src/pages/worker/home/index'
-import { fetchCurrentWorker, workerLogout } from '../src/services/workerService'
+import { fetchCurrentWorker, fetchWorkerPages, workerLogout } from '../src/services/workerService'
 import { ADMIN_SURFACES } from '../src/utils/adminPermission'
 import {
   INBOUND_PAGE_ROUTE,
+  REPORT_PAGE_ROUTE,
   REPRINT_PAGE_ROUTE,
   SHIPMENT_PAGE_ROUTE,
   WORKER_TAB_LOGIN_ROUTE,
@@ -86,6 +90,7 @@ const WORKER = {
 
 const mockFetch = fetchCurrentWorker as jest.Mock
 const mockLogout = workerLogout as jest.Mock
+const mockPages = fetchWorkerPages as jest.Mock
 
 /** 有工人身份 + 服务端认出当前工人 ⇒ 落在工人首页的**正跑**形态 */
 async function renderLoggedIn() {
@@ -101,6 +106,7 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
     ;(Taro as any).__clearStorage()
     mockFetch.mockResolvedValue({ success: true, data: WORKER })
     mockLogout.mockResolvedValue(undefined)
+    mockPages.mockResolvedValue({ pages: null, unread: false, unauthorized: false })
   })
 
   it('🔴 身份卡 = 服务端当前工人（工号 + 姓名），不是前端 state', async () => {
@@ -115,9 +121,10 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
   it('三件工人功能入口各自跳对路由（都走 gaps.ts 的路由常量，不写字面量）', async () => {
     await renderLoggedIn()
 
-    // 🔴 2026-10-14（issue #6868 实现包 D1）：报工页整页下架 ⇒ 本页**不再**有「扫码报工」主按钮
-    // （留着它就是指向已删除页面的死链）。报工面 = H5 `/w/`（工人扫纸上的码即开）。
-    expect(screen.queryByText('扫码报工')).toBeNull()
+    // 🔴 2026-10-26（issue #7812 P2a）：报工页回到端内（收口方向见 #7806）⇒ 第一张卡就是它。
+    // 反转历史断言是**有意的**：2026-10-14 按 #6868「收口到 H5」删过这一页，现在载体改回 bmini。
+    fireEvent.click(screen.getByText('扫码报工'))
+    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: REPORT_PAGE_ROUTE })
 
     fireEvent.click(screen.getByText('拍照入库'))
     expect(Taro.navigateTo).toHaveBeenCalledWith({ url: INBOUND_PAGE_ROUTE })
