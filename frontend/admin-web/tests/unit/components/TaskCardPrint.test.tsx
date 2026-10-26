@@ -11,7 +11,8 @@
 // ③ 「把定高买宽和定宽买高的工艺规格信息不要展示在洗水唛上」⇒ 不印加工类型；
 // ④ 「订单号是否可以短一些…只留加工单号，删掉订单行」⇒ 第一行 `单号 JG-…`，17 位订单号不上纸；
 // ⑤ 「打印后的结果出现了文字缩写…自动去换行打印」⇒ 行样式里**没有** truncate / line-clamp（折行印全文）；
-// ⑥ 「头尾加下虚线，这样能清晰知道界线」⇒ `.task-card-label` 上下各一条 `1px dashed`。
+// ⑥ 「头尾加下虚线，这样能清晰知道界线」⇒ `.task-card-label` 一条 `1px dashed`；
+//    issue #7839 后续裁定「水洗唛的顶部虚线移除掉」⇒ **只留底部**（顶部再画 ⇒ 必红）。
 //
 // 沿用 #7816 且**未改**的判据：纸型 50×150 / 正文 12pt / 张数 = Σ 开数 / 褶法 / 二维码底部居中
 // / 打印隔离 6 条 / 缺码不画假码 / 退场项（工序摘要 / 完整套号 / 交期 / 短码 / 扫码报工）。
@@ -231,18 +232,20 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×150mm 单列，issue #7816）',
     })
   })
 
-  it('🔴 单号 = **加工单号**（第一行、客户之上）；17 位订单号不上纸（issue #7833）', () => {
+  it('🔴 单号 = **加工单号（去 `JG-` 前缀）**（第一行、客户之上）；17 位订单号不上纸（issue #7833 / #7839）', () => {
     printCard()
 
     const rowsBlock = screen.getByTestId('task-card-label-rows-0')
     expect(rowsBlock.firstElementChild?.getAttribute('data-testid')).toBe('task-card-label-doc-no-0')
-    expect(screen.getByTestId('task-card-label-doc-no-0')).toHaveTextContent(`单号: ${PROCESSING_ORDER_NO}`)
+    expect(screen.getByTestId('task-card-label-doc-no-0')).toHaveTextContent('单号: 20260921-8237')
     expect(rowsBlock.children[1]?.getAttribute('data-testid')).toBe('task-card-label-customer-0')
 
     const paper = paperTextOf(printArea())
     // 🔴 退场：17 位订单号（用户 2026-10-26「订单号是否可以短一些…只留加工单号，删掉订单行」）
     expect(paper).not.toContain(ORDER_NO)
     expect(paper).not.toContain('订单 ')
+    // 🔴 纸面不出现 `JG-` 前缀（issue #7839 用户「加工单号不要带 JG- 了，简约点」）
+    expect(paper).not.toContain('JG-')
     // 人可读短码 / 「扫码报工」仍不在纸面上（#7816 的退场项，本次未改）
     expect(document.querySelector('[data-testid^="task-card-label-short-code-"]')).toBeNull()
     expect(paper).not.toContain('扫码报工')
@@ -412,8 +415,8 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×150mm 单列，issue #7816）',
     companyNameStub.value = ''
     printCard()
     expect(screen.queryByTestId('task-card-company')).toBeNull()
-    // 单号仍是第一行（抬头块与单号互不依赖）
-    expect(screen.getByTestId('task-card-label-doc-no-0')).toHaveTextContent(`单号: ${PROCESSING_ORDER_NO}`)
+    // 单号仍是第一行（抬头块与单号互不依赖；issue #7839 起不带 `JG-`）
+    expect(screen.getByTestId('task-card-label-doc-no-0')).toHaveTextContent('单号: 20260921-8237')
   })
 
   it('打印样式：@page 50mm×150mm（竖版）+ 标签本体 50mm×150mm + 正文 12pt + 逐张分页（最后一张不分页）', () => {
@@ -435,8 +438,9 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×150mm 单列，issue #7816）',
     // 🔴 字号 9pt → 12pt（用户「字体还是太小，可以再大一点」）
     expect(css).toContain('font-size: 12pt')
     // 🔴 头尾虚线（issue #7833「头尾加下虚线，这样能清晰知道界线」）
-    expect(css).toContain('border-top: 1px dashed #000')
     expect(css).toContain('border-bottom: 1px dashed #000')
+    // 🔴 issue #7839：顶部那条虚线**已移除**（用户逐字「水洗唛的顶部虚线移除掉」）
+    expect(css).not.toContain('border-top: 1px dashed')
     expect(css).toContain('break-after: page')
     // 最后一张不分页（否则末尾多吐一张空白）
     expect(css).toMatch(/\.task-card-label:last-child \{[^}]*break-after: auto/)

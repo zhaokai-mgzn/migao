@@ -88,6 +88,19 @@ export const WASH_LABEL_ROW_KEYS: readonly WashLabelRowKey[] = [
   'remark',
 ]
 
+/**
+ * 纸面单号 = 加工单号**去掉 `JG-` 前缀**（用户 2026-10-26 逐字「加工单号不要带 JG- 了，简约点」）。
+ *
+ * 🔴 **只改纸面显示，不改编号规则**：系统里的加工单号仍是 `JG-YYYYMMDD-NNNN`
+ * （DB 唯一约束 / 按单号检索 / 扫码短链 / A4 加工单表头一律按原样）—— 去前缀是**排版取舍**，
+ * 不是新编号。只剥**开头**那一个 `JG-`（大小写不敏感），其余形态原样返回
+ * （空值由调用方按「缺值 ⇒ `—`」处理）。
+ */
+export function washLabelDocNo(processingOrderNo?: string | null): string {
+  const raw = (processingOrderNo ?? '').trim()
+  return raw.replace(/^JG-/i, '')
+}
+
 /** 用料 = 面料米数优先；没有则退回加工费米数（两者都是「要用多少料」的同一件事） */
 const METERS_LABELS = ['面料米数', '加工费米数']
 
@@ -274,7 +287,8 @@ export function washLabelRows(input: WashLabelRowsInput): WashLabelRow[] {
   // 🔴 单号 = **第一行**（2026-10-26 用户逐字「把订单号放到第一行，客户那一行上面」；
   // issue #7833 起印**加工单号**：17 位订单号退出纸面，用户选定「只留加工单号，删掉订单行」）。
   // 缺值如实出 `—`（它是「这张纸是给谁的」的最小可读集合之一，不编造、也不留空行）。
-  push('docNo', (input.processingOrderNo ?? '').trim() || '—', '单号')
+  // issue #7839：纸面**去 `JG-` 前缀**（`JG-20261026-8172` ⇒ `20261026-8172`，用户「简约点」）。
+  push('docNo', washLabelDocNo(input.processingOrderNo) || '—', '单号')
 
   push('customer', input.customerName ?? '', '客户')
 

@@ -34,7 +34,7 @@ import type { ProcessingOrderItem, ProductionPosition } from '@/types'
  * - 2026-10-26（issue #7816）：纸型固定 50×150、正文 12pt、加「褶法」、份数 = 开数、
  *   订单号提到第一行、加工单号/交期/扫码报工/短码退场、二维码底部居中并放大。
  * - **2026-10-26（issue #7833，现行）**：纸面**折行印全文**（去 `truncate` / `line-clamp`）、
- *   头尾各一条虚线标界线、单号行改印**加工单号**（17 位订单号退出纸面）、
+ *   虚线标界线（2026-10-26 后续裁定**只留底部**一条）、单号行改印**加工单号（去 `JG-` 前缀）**（17 位订单号退出纸面）、
  *   加工方式**去「加工方式」前缀**并**并入加工费组合项**、不再印「加工类型」（定高买宽/定宽买高）。
  *
  * ## 本版（2026-10-26，issue #7833）用户逐字裁定 —— 一次收齐
@@ -46,7 +46,8 @@ import type { ProcessingOrderItem, ProductionPosition } from '@/types'
  * ⑧ 「把定高买宽和定宽买高的工艺规格信息不要展示在洗水唛上」⇒ 不再印「加工类型」；
  * ⑨ 「订单号是否可以短一些…只留加工单号，删掉订单行」⇒ 第一行改印 `单号 JG-…`（订单号不上纸）；
  * ⑩ 「打印后的结果出现了文字缩写…自动去换行打印」+「头尾加下虚线」⇒ 行内**折行印全文**
- *    （无省略号 / 无行数截断）+ 标签上下各一条虚线。
+ *    （无省略号 / 无行数截断）+ 标签上下各一条虚线；**后续裁定（issue #7839）**「水洗唛的顶部虚线移除掉」
+ *    ⇒ 只保留**底部**一条（顶部那条去掉）。
  *
  * ## 上一版（2026-10-26，issue #7816）口令（仍然有效的那部分）
  *
@@ -89,7 +90,8 @@ import type { ProcessingOrderItem, ProductionPosition } from '@/types'
  * 🔴 **折行印全文（issue #7833）**：行里**没有** `truncate` / `line-clamp-*`（省略号 = 静默吃掉半截字），
  * 长值（客户 / 部位 / 货号 / 加工方式 / 特殊选项 / 备注）一律折行；真装不下时由「打印预览」的
  * 纸面自检如实报出「内容 Xmm > 可用 Ymm」，**不靠裁切掩盖**（同 `SalesDoc` 的 #7715 口径）。
- * 头尾虚线 = `.task-card-label` 的上下各一条 `1px dashed`（用户同批「头尾加下虚线，这样能清晰知道界线」）。
+ * 底部虚线 = `.task-card-label` 的下沿一条 `1px dashed`（用户同批「头尾加下虚线，这样能清晰知道界线」；
+ * issue #7839 后续裁定「水洗唛的顶部虚线移除掉」⇒ **顶部不画**，只留下沿）。
  * ⚠️ **余量是给「版式不折行」用的**：30×60 横版时代实测过一次折行吃掉 2.96mm、把纸面底部的
  * 功能件挤出纸外（issue #4949）。⇒ 二维码放在 `shrink-0` 的底部行、文字块用
  * `min-h-0 overflow-hidden` 承载 —— **空间不够时被裁的是补充文字，绝不裁码**。
@@ -269,8 +271,8 @@ export default function TaskCardPrint({
            ⚠️ 这段注释在模板字面量里 ⇒ 不许写 markdown 星号（copy-no-markdown-emphasis 判据会红） */
         .task-card-label { width: 50mm; height: 150mm; overflow: hidden; box-sizing: border-box;
           padding: 1.2mm; font-size: 12pt; line-height: 1.2; display: flex; flex-direction: column;
-          /* 头尾虚线（issue #7833）：这张纸的上下界线，一眼看得出从哪裁/贴到哪 */
-          border-top: 1px dashed #000; border-bottom: 1px dashed #000;
+          /* 底部虚线（issue #7833 → #7839）：只标这张纸的下沿（顶部那条按用户裁定移除） */
+          border-bottom: 1px dashed #000;
           break-after: page; page-break-after: always; }
         /* 最后一张不再分页（否则末尾多吐一张空白） */
         .task-card-label:last-child { break-after: auto; page-break-after: auto; }

@@ -23,7 +23,8 @@
  * - 「二维码放到底部居中」「移除扫码报工和短码文字」「二维码可以放大一点」⇒ 底部只有**居中**二维码
  *   （80 CSS px = 21.17mm），不再画短码与说明字；
  * - **issue #7833**：「打印后的结果出现了文字缩写…自动去换行打印」⇒ 正文行**不再按行数预算以省略号收尾**
- *   （`washLabelRows` 已无 `maxLines`）、抬头也改为折行；「头尾加下虚线」⇒ 纸的上下各画一条虚线。
+ *   （`washLabelRows` 已无 `maxLines`）、抬头也改为折行；「头尾加下虚线」⇒ 起初上下各一条，
+ *   2026-10-26 后续裁定「水洗唛的顶部虚线移除掉」⇒ **只留底部一条**（issue #7839）。
  *
  * ⚠️ **短码退场是有意接受的缺口**：`docs/design/worker-h5-scan-and-report.md` §1.4 原把「人可读短码」
  * 定为"不是可选项"的手输降级入口；2026-10-26 用户明确要求移除。⇒ 纸上不再有手输码，
@@ -343,7 +344,7 @@ export interface WashLabelPaintContext {
 /** 正文字族（与 `.task-card-label` 的默认无衬线栈同口径：中文优先系统字体） */
 const BODY_FONT = '-apple-system, "PingFang SC", "Microsoft YaHei", sans-serif'
 
-/** 头尾虚线的划长 / 间隔 / 线粗（px）—— 与 CSS 的 `1px dashed` 同一观感（issue #7833） */
+/** 底部虚线的划长 / 间隔 / 线粗（px）—— 与 CSS 的 `1px dashed` 同一观感（issue #7833） */
 const DASH_PX = 8
 const DASH_GAP_PX = 6
 const DASH_THICKNESS_PX = 2
@@ -351,8 +352,9 @@ const DASH_THICKNESS_PX = 2
 /**
  * 画一条**横向虚线**（用 `fillRect` 逐段画，不扩 `WashLabelPaintContext` 的面 —— 假 ctx 照旧可测）。
  *
- * 位置 = 纸的上下边缘（`y = 0` / `y = heightPx - 线粗`），与 `.task-card-label` 的
- * `border-top/bottom: 1px dashed` 同口径：用户 2026-10-26「头尾加下虚线，这样能清晰知道界线」。
+ * 位置 = 纸的**下沿**（`y = heightPx - 线粗`），与 `.task-card-label` 的 `border-bottom: 1px dashed`
+ * 同口径：用户 2026-10-26「头尾加下虚线，这样能清晰知道界线」；同批后续「水洗唛的顶部虚线移除掉」
+ * ⇒ **顶部不画**（issue #7839）。
  */
 export function paintDashedRule(
   ctx: WashLabelPaintContext,
@@ -385,8 +387,7 @@ export function paintWashLabel(
   ctx.textAlign = 'left'
   ctx.textBaseline = 'top'
 
-  // 头尾虚线（issue #7833）：先画界线，正文/二维码都落在内边距之内、不会盖住它
-  paintDashedRule(ctx, widthPx, 0)
+  // 底部虚线（issue #7833 → #7839）：只画下沿；顶部按用户裁定不画（正文/二维码都落在内边距之内）
   paintDashedRule(ctx, widthPx, heightPx - DASH_THICKNESS_PX)
 
   for (const line of layout.company) {

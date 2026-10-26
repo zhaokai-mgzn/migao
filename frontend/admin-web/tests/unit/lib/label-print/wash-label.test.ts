@@ -252,11 +252,15 @@ describe('paintWashLabel — 只照单绘制（判据 ⑤）', () => {
     // 不再画短码 / 「扫码报工」
     expect(painted).not.toContain('扫码报工')
     expect(painted).not.toContain('7Q2M4K8P')
-    // 🔴 头尾虚线（issue #7833「头尾加下虚线」）：上下各一串短划（fillRect 段），
-    // 且第一条短划落在 y = 0、末条落在纸底（与 CSS 的 border-top/bottom: 1px dashed 同口径）
-    expect(calls[1]).toBe('fillRect:0,0,8,2')
-    expect(calls.filter((call) => call.startsWith('fillRect:') && call.endsWith(',2')).length).toBeGreaterThan(20)
-    expect(calls.some((call) => call.endsWith(`,${geo.heightPx - 2},8,2`))).toBe(true)
+    // 🔴 底部虚线（issue #7833「头尾加下虚线」→ issue #7839「顶部虚线移除掉」）：
+    // 只在纸的**下沿**画一串短划（fillRect 段）；顶部除整幅白底外**没有**短划
+    const dashCalls = calls.filter((call) => call.startsWith('fillRect:') && call.endsWith(',2'))
+    expect(dashCalls.length).toBeGreaterThan(10)
+    // 逐段都在**下沿**（y = 纸高 − 线粗）；最后一段因取整可能窄于划长，故按 y 判而不按宽度判
+    const dashYs = dashCalls.map((call) => Number(call.split(',')[1]))
+    expect(dashYs.every((y) => y === geo.heightPx - 2)).toBe(true)
+    const topCalls = calls.filter((call) => call.startsWith('fillRect:') && call.split(',')[1] === '0')
+    expect(topCalls).toEqual([`fillRect:0,0,${geo.widthPx},${geo.heightPx}`])
   })
 
   it('无码位图 ⇒ 画虚线占位框（不静默留白，也不画假码）', () => {
