@@ -666,18 +666,23 @@ function batchReceiptTail(receipt) {
 function doneNoticeBase(receipt, auto) {
   if (receipt.replayed) return '这次没有新增计件：重复提交已回放（同一次扫码只算一次）'
   // 🔴 issue #7845：扫码即自动记账 ⇒ 文案必须**说清这一下已经记了账**（工人没点任何按钮，
-  // 不能让他以为"还要再点一下"）。手动那条保持「已报工」逐字不变（既有断言不动）。
-  const head = auto ? '已自动报工' : '已报工'
-  if (receipt.orderCompleted) return `${head} · 本单工序都报完了 🎉`
-  if (receipt.setCompleted === true) return `${head} · 本套工序都报完了 🎉`
+  // 不能让他以为"还要再点一下"）。手动那条「已报工」四段**逐字冻结**（跨面文案守卫
+  // `frontend/bmini-app/tests/worker-scan-report-copy-same-source.test.ts` 逐字钉住）⇒
+  // 这里保留字面量、不拼 `head`（拼了就只剩后缀，守卫会判「回执缺『已报工 · 下一道：』」）。
+  if (receipt.orderCompleted) {
+    return auto ? '已自动报工 · 本单工序都报完了 🎉' : '已报工 · 本单工序都报完了 🎉'
+  }
+  if (receipt.setCompleted === true) {
+    return auto ? '已自动报工 · 本套工序都报完了 🎉' : '已报工 · 本套工序都报完了 🎉'
+  }
   // 🔴 「下一道」必须**带部位**（issue #4963）：改前只拼 `nextOperation.logical_name`
   // ⇒ 跨部位时屏上少一半信息（`打卷 · 布帘` 显示成 `打卷`）。回执的 `next_operation`
   // 本来就带 `position`（逐字照 `ProductionScanCompleteService.enrichNextOperation`）。
   // 文案语义（`已报工` = 扫码开工/领活这一下，issue #4967 用户逐字裁定 +#6868 统一口径）
   // **一字不动**，只补部位。
   const next = operationDisplayName(receipt.nextOperation)
-  if (next) return `${head} · 下一道：${next}`
-  return head
+  if (next) return auto ? `已自动报工 · 下一道：${next}` : `已报工 · 下一道：${next}`
+  return auto ? '已自动报工' : '已报工'
 }
 
 /**
