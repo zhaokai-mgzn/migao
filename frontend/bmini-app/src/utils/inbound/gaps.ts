@@ -159,6 +159,28 @@ export const SHIPMENT_PAGE_ROUTE = '/pages/worker/shipment/index'
 /** 拍照发货页文件（入口台账 `from` 要核的落点） */
 export const SHIPMENT_PAGE_FILE = 'src/pages/worker/shipment/index.tsx'
 
+/**
+ * **待发货单**列表页路由（issue #7806 P1a）—— 工人工作台**新增**的一条入口（只读列表页）。
+ *
+ * 为什么要有它：#7764 已上线读面 `GET /api/worker/shipment/orders`（只回「多套全部完工 +
+ * 可发货状态 + 作业单已完成」的订单），而 `/b/` 侧**还没有任何页面消费它** ——
+ * 工人只能在 H5 `/w/`（发货页）看到这份名单，端内工作台里看不见。
+ * 本页补的就是这个入口与读面消费，**只读**。
+ *
+ * ⚠️ 本期**不含标签打印**：发货标签依赖小程序 BLE 通道 + 画布渲染，那是另一包（#7803）。
+ *
+ * 🔴 路由字面量是**单一真值**：`src/app.config.ts` 的 pages 必须逐字含它
+ * （没登记 = 死链；守卫 = `tests/page-entry-reachability.test.ts` 的 L0/L2）。
+ */
+export const SHIPMENT_ORDERS_PAGE_ROUTE = '/pages/worker/shipment-orders/index'
+
+/** 待发货单页文件（入口台账 `from` 要核的落点） */
+export const SHIPMENT_ORDERS_PAGE_FILE = 'src/pages/worker/shipment-orders/index.tsx'
+
+/** 待发货单页未登录时的引导（与其它工人面同一口径，但说清本页是「看待发货单」） */
+export const SHIPMENT_ORDERS_WORKER_LOGIN_REQUIRED =
+  '请先用工号 + PIN 登录工人身份，再查看待发货单（商家账号不能走这条路径）。'
+
 /** 拍照发货页未登录时的引导（与入库页同一口径，但说清本页是"发货"） */
 export const SHIPMENT_WORKER_LOGIN_REQUIRED =
   '请先用工号 + PIN 登录工人身份，再拍照发货（商家账号不能走这条路径）。'
