@@ -5328,9 +5328,36 @@ function LineItemBlock({
    *
    * ⚠️ 面板那一行必须读 `effectiveOptions`（**不是** `plan.splice_option`）—— 读 plan 就会在
    * 「人工加 / 不采纳 / 手工勾过」三种情形下与订单内容不一致（#5211 要收口的正是这个）。
+   * ⚠️ **②特殊选项那一排 chips 的勾选态也读它**（issue #7849；用户逐字「推导出拼一次，但是在特殊选项
+   * 中没有选中」）—— 选择器读人工勾选态 = 同屏两个真值：面板说「已并入特殊选项」，选择器却显示没选。
    */
   const derivedOptions = derivedSpecialOptionsOf(derivedOptionInputOf(line))
   const effectiveOptions = effectiveSpecialOptionsOf(derivedOptionInputOf(line))
+  /**
+   * **②特殊选项的勾选动作**（issue #7849）—— 勾选态 = **生效集**（所见 = 所提交），
+   * 落到**两份既有状态**上（不新增状态、不改推导 / 落库链路）：
+   * - 勾上一个还没生效的项 ⇒ 记**人工勾选**（`craft.specialOptions`，人工优先）；
+   * - 取消一个人工项 ⇒ 从 `craft.specialOptions` 移除；
+   * - 取消一个**推导**项 ⇒ 记**不采纳**（`rejectedDerivedOptions`）—— 只删人工项没用：
+   *   推导下一帧就会把它加回生效集，变成「点不掉的选中」；
+   * - 勾回一个被不采纳的推导项 ⇒ **采纳**（同一位取反）。
+   * ⚠️ 推导项**不写**进人工勾选态：写进去 `derivedOptionState` 会把它读成「你手工勾过 ⇒ 人工优先」。
+   */
+  const onChangeSpecialOptions = (next: string[]) => {
+    const manual = line.craft.specialOptions ?? []
+    const added = next.filter((name) => !effectiveOptions.includes(name))
+    const removed = effectiveOptions.filter((name) => !next.includes(name))
+    onChangeCraft({
+      specialOptions: [
+        ...manual.filter((name) => !removed.includes(name)),
+        ...added.filter((name) => !derivedOptions.includes(name)),
+      ],
+    })
+    for (const name of derivedOptions) {
+      if (added.includes(name)) onDerivedOptionDecision(name, 'adopt')
+      else if (removed.includes(name)) onDerivedOptionDecision(name, 'reject')
+    }
+  }
   /**
    * **引擎拒绝了本行本次算料**（issue #5287 ②/③/④）—— `line.calcError` 就是引擎/后端给的那**一条**
    * 错误原文（成功 ⇒ `null`；被拒 ⇒ 非空）。⚠️ 「某一项到底生没生效」**只许**读它：
@@ -6336,6 +6363,8 @@ function LineItemBlock({
               summary={
                 // #4576：摘要里带上**工艺**（哪一项），不再让商家回头数；计数口径不变（仍只数**手选**项）
                 // 2026-09-29：**特殊选项**并入本步 ⇒ 摘要里一并报它的项数（折叠时也看得见）
+                // ⚠️ 项数按**生效集**数（issue #7849）：展开后那一排 chips 勾着的就是生效集 ---- 摘要数人工项
+                // 会出现「摘要 0 项、展开却有 1 项选中」这种同屏打架。
                 [
                   selectedProcessingCount > 0
                     ? `已选 ${selectedProcessingCount} 项` +
@@ -6345,8 +6374,8 @@ function LineItemBlock({
                           ? ` · 工艺：${lineCraft}`
                           : '')
                     : '未选',
-                  (line.craft.specialOptions ?? []).length > 0
-                    ? `特殊选项 ${(line.craft.specialOptions ?? []).length} 项`
+                  effectiveOptions.length > 0
+                    ? `特殊选项 ${effectiveOptions.length} 项`
                     : null,
                   (line.remark ?? '').trim() !== '' ? '有部位备注' : null,
                 ]
@@ -6664,13 +6693,12 @@ function LineItemBlock({
                   『其他』，改成**特殊选项**」）=====
                   ① 19 项清单与选项名（join key）一字未动，写侧仍是 `onChangeCraft` 唯一通路；
                   ② 「部位备注」同批并入本步（它原本也住在 ③）；
-                  ③ 原 ③ 的折叠壳与 `stepProps(3)` 一并删除 ⇒ 下单页只剩**两步**。 */}
+                  ③ 原 ③ 的折叠壳与 `stepProps(3)` 一并删除 ⇒ 下单页只剩**两步**。
+                  ⚠️ 勾选态传的是**生效集**（issue #7849）：系统推导并入的那几项也在这里显示为选中 ——
+                  改前传人工勾选态 ⇒ 面板说「已并入特殊选项」而这里没选，同一件事两个真值。 */}
               <div className="mt-4 pt-4 border-t border-neutral-100">
                 <div className="text-sm font-medium text-neutral-700 mb-2">特殊选项</div>
-                <OrderExtraOptions
-                  value={line.craft.specialOptions}
-                  onChange={(next) => onChangeCraft({ specialOptions: next })}
-                />
+                <OrderExtraOptions value={effectiveOptions} onChange={onChangeSpecialOptions} />
               </div>
 
               {/* **部位备注**（issue #5685）：商家自由文本 —— 写「**这个数字怎么来的**」
