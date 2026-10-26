@@ -36,7 +36,7 @@ export default function OrderExtraOptions({ value, onChange }: OrderExtraOptions
   }
 
   return (
-    <div className="flex flex-wrap gap-2">
+    <div data-testid="special-options" className="flex flex-wrap gap-2">
       {SPECIAL_OPTIONS.map((option) => {
         const active = selected.includes(option)
         return (

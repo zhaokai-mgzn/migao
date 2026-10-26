@@ -316,7 +316,8 @@ export function derivedSpecialOptionsOf(input: {
  * 与**计件**（拼次 0.8 / 1.2 / 1.6 元/幅、接高 1.0 元/幅）。
  * ⇒ 「推导了但没落地」在结构上不可能：面板显示、计价预览入参、提交 payload **三者同源**。
  *
- * ⚠️ **不回写** `line.craft.specialOptions`（那是②特殊选项选择器的勾选态，改它就是替商家勾选）；
+ * ⚠️ **不回写** `line.craft.specialOptions`（那是②特殊选项选择器里**商家手工勾选**的那一支 —— 选择器
+ * 显示的是**生效集**（issue #7849），把推导项写回人工勾选态会让 `derivedOptionState` 读成「人工优先」）；
  * 也**不进算料请求**（拼次/接高不参与算料：契约 #5200 §三 R2/R3 —— 送进去反而会在拼色款式下走
  * `MIXED_COLOR_PATCH_METERS_BY_TIMES`）。生效值只在**落库 / 计价**这一侧合成。
  */
