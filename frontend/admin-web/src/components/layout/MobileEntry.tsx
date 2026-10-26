@@ -88,12 +88,13 @@ function useMobileEntry() {
     setAttempts(value => value + 1)
     setPhase(prev => (prev === 'ready' ? prev : 'loading'))
     try {
-      // ⚠️ 拦截器返回的是**后端信封本体**（`{success,data}`），而 axios 的泛型是 `AxiosResponse<T>`
-      // ⇒ 这里显式转换（运行时形状由 request.ts 的 response 拦截器保证）
+      // 🔴 解包口径（issue #7837 事故）：请求实例的响应拦截器返回的是 **AxiosResponse**，
+      //   不是后端信封本体 —— 本仓惯例是 `res.data.data`（见 store/auth.ts 的 refreshToken）。
+      //   首版读成 `res.data.ticket`（漏了一层）⇒ 恒 undefined ⇒ 每次都判「生成失败」，
+      //   而请求其实是 **200**（现场症状：弹层立刻显示失败、没有任何网络错误提示）。
       type QrTicketEnvelope = ApiResponse<{ ticket: string; expiresIn: number }>
-      const payload = (await request.post<QrTicketEnvelope>(
-        QR_TICKET_ENDPOINT,
-      )) as unknown as QrTicketEnvelope
+      const response = await request.post<QrTicketEnvelope>(QR_TICKET_ENDPOINT)
+      const payload = response?.data
       const value = payload?.data?.ticket || ''
       if (!value) throw Object.assign(new Error('empty ticket'), { status: 200 })
       const ttl = Math.max(1, Math.round(Number(payload?.data?.expiresIn) || QR_TICKET_TTL_FALLBACK))
@@ -216,7 +217,10 @@ export function MobileEntryPanel({ className }: { className?: string }) {
           ) : phase === 'failed' ? (
             <div className="mt-1 flex items-start gap-2" data-testid="bmini-h5-qr-fallback" data-diag={diag}>
               <p className="flex-1 text-xs text-neutral-400">
-                免登录码暂时生成失败，扫码后在手机上登录即可
+                免登录码暂时生成失败
+                {/* 诊断码（issue #7836）：只给排障用（用户截图即可定位），不替代主文案 */}
+                {diag ? <span className="ml-1 text-neutral-300">（{diag}）</span> : null}
+                ，扫码后在手机上登录即可
               </p>
               <button
                 type="button"
