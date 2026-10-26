@@ -6,8 +6,8 @@
       "why": "取值口本身：`orderItemSku()` 取「门幅」行 + `craftRowsWithoutDoorWidth()` 排除「门幅」各一处 —— 这两处就是全仓唯一允许看到原始行的地方"
     },
     "src/lib/wash-label-content.ts": {
-      "count": 4,
-      "why": "水洗标正文：只 pick 工艺/加工类型/打开方式/是否定型/面料米数，**从不 pick 门幅**（门幅不是标签字段）"
+      "count": 3,
+      "why": "水洗标正文：只 pick 工艺/加工类型/打开方式/是否定型（加工方式行）、面料米数与加工费米数（用料行）、特殊选项行 —— 共 3 处直调；门幅不从这里取（改读快照 `item.doorWidth`，纸面只有这一处门幅来源，不存在「同屏两处门幅」）。issue #7816 删掉算料公式行后由 4 处缩为 3 处（台账只许缩短）。"
     },
     "src/lib/order-craft-fields.ts": {
       "count": 1,

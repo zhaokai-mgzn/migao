@@ -1,24 +1,20 @@
 // case_ids: PP-011
 // @vitest-environment jsdom
 //
-// PP-011（issue #6439 建版式 → **issue #6656 改判：与系统打印同一份纸面**）：
+// PP-011（issue #6439 建版式 → #6656 与系统打印同一份纸面 → **#7816 固定纸型 50×150**）：
 // 免驱动直连通道的**位图版式**（`frontend/admin-web/src/lib/label-print/wash-label.ts`）。
 //
-// 用户 2026-10-10 逐字：「直连打印机打印的样式和水洗唛预览打印的样式完全不一样，能不能做成一样的」
-// ⇒ 内容面改读唯一真值 `washLabelRows`（判据见 `tests/unit/lib/wash-label-content.test.ts`），
-// **几何**改读**同一份介质** `label-50x70`（预览的 `@page` 也指它）。
+// 用户 2026-10-26 逐字（issue #7816）：「水洗唛长度不足，设置为打印50*150」「字体还是太小，可以再大一点」
+// 「二维码放到底部居中」「移除扫码报工和短码文字」「二维码可以放大一点」「移除加工单号」。
 //
 // 逐条判据（都能判红）：
 // ① **几何由机器自报值 + 介质矩阵推出**：`printerDPI` / `printerWidth` 一变，`dpmm` 与画布尺寸跟着变
 //    —— **写死机型口径 ⇒ 必红**（「不做打印机定制功能」的落点：接别家机器不改码）；
-//    兜底值本身**不是**本模块的字面量，而是转发介质矩阵（含**纸长 60mm**：用户 2026-10-10 裁定按 60mm 卷做）；
-// ② **短码是功能件、永不被裁**：`x + measure(短码, fontPx) ≤ widthPx − margin`，窄纸靠**缩字号**活下来；
-// ③ 窄到连最小字号都放不下 ⇒ **显式抛错**（fail-closed），**绝不静默裁掉短码**
-//    —— 短码是设计里明写的手输降级入口（`docs/design/worker-h5-scan-and-report.md` §1.4「不是可选项」）；
-// ④ **纸面内容 = 行清单**（折行只插入断点、**不增删字**）—— 版式自己编字段 ⇒ 必红；
-// ⑤ **装不下只裁文字块**：表头与底部「二维码 + 扫码报工 + 短码」位置不动（与 `.task-card-label` 的
-//    flex 口径一致）；无码 ⇒ 不画假码，出**虚线占位框** + 占位文案；
-// ⑥ `paintWashLabel` 只做执行：白底铺满 + 有码才 `drawImage` + 文字用算好的字号（不再二次排版）。
+//    兜底值转发介质矩阵（纸宽 50mm × 纸长 **150mm** 固定）；
+// ② **纸面内容 = 行清单**（折行只插入断点、**不增删字**）—— 版式自己编字段 ⇒ 必红；
+// ③ **二维码在底部居中**，无码 ⇒ 虚线占位框（不画假码）；**不再有**加工单号 / 扫码报工 / 人可读短码；
+// ④ **装不下只裁文字块**（底部码位置不动，与 `.task-card-label` 的 flex 口径一致）；
+// ⑤ `paintWashLabel` 只做执行：白底铺满 + 有码才 `drawImage` + 文字用算好的字号（不再二次排版）。
 import { describe, expect, it } from 'vitest'
 import {
   LABEL_DPI_DEFAULT,
@@ -28,7 +24,6 @@ import {
   WASH_LABEL_MEDIA,
   WashLabelLayoutError,
   ellipsize,
-  fitFontSize,
   layoutWashLabel,
   paintWashLabel,
   resolveLabelGeometry,
@@ -37,24 +32,29 @@ import {
 } from '@/lib/label-print/wash-label'
 import type { WashLabelRow } from '@/lib/wash-label-content'
 import { printDotGeometry, printPageBoxMm } from '@/lib/print-media'
+import {
+  WASH_LABEL_BODY_FONT_PT,
+  WASH_LABEL_COMPANY_FONT_PT,
+  WASH_LABEL_COMPANY_SUBTITLE_FONT_PT,
+} from '@/lib/label-print/wash-label-metrics'
 
 /** 介质矩阵里的口径（**唯一真值源**）—— 本文件的期望值从它取，不写第二份像素字面量 */
-const MATRIX = printDotGeometry('label-50x70')
-const BOX = printPageBoxMm('label-50x70')
+const MATRIX = printDotGeometry('label-50x150')
+const BOX = printPageBoxMm('label-50x150')
 
 /** 确定性「量字」替身：0.6em/字符（等宽近似）—— 真机走 canvas `measureText` */
 const measure = (text: string, fontPx: number) => text.length * fontPx * 0.6
 
 const ROWS: WashLabelRow[] = [
+  { key: 'orderNo', text: '订单 20260921973550001', maxLines: 2 },
   { key: 'customer', text: '客户 赵凯', maxLines: 1 },
   { key: 'setNo', text: '第 1 套 / 共 2 套', maxLines: 1 },
-  { key: 'color', text: '布艺遮光帘A', maxLines: 2 },
+  { key: 'craft', text: '加工方式 韩褶 · 定高买宽 · 双开 · 定型', maxLines: 2 },
+  { key: 'pleats', text: '褶法 韩褶 52折', maxLines: 1 },
 ]
 
 const input = (over: Partial<WashLabelInput> = {}): WashLabelInput => ({
   qrValue: 'https://app.migaozn.com/s/7Q2M4K8P',
-  shortCode: '7Q2M4K8P',
-  processingOrderNo: 'JG-20260921-8237',
   rows: ROWS,
   ...over,
 })
@@ -67,16 +67,17 @@ describe('resolveLabelGeometry — 几何取自机器自报值 + 介质矩阵（
     expect(geo.widthPx).toBe(MATRIX.effectiveWidthPx)
     expect(geo.widthPx).toBe(LABEL_HEAD_DOTS_DEFAULT)
     expect(geo.heightPx).toBe(Math.round(WASH_LABEL_DEFAULT_LENGTH_MM * geo.dpmm))
+    // 纸长 150mm × 203dpi = 1198.8 → 1199 点（矩阵里的 1200 = 150 × 8 dots/mm 的整点口径，差 1 点是 dpi 取整）
+    expect(geo.heightPx).toBe(Math.round(BOX.heightMm * (MATRIX.dpi / 25.4)))
     expect(LABEL_DPI_DEFAULT).toBe(MATRIX.dpi)
   })
 
-  it('🔴 两条通道**同一份介质**：纸长 / 纸宽都取自 `label-50x70`（写死 40mm ⇒ 必红）', () => {
+  it('🔴 两条通道**同一份介质**：纸长 / 纸宽都取自 `label-50x150`（写死 70mm / 40mm ⇒ 必红）', () => {
     expect(WASH_LABEL_DEFAULT_WIDTH_MM).toBe(BOX.widthMm)
     expect(WASH_LABEL_DEFAULT_LENGTH_MM).toBe(BOX.heightMm)
-    // 兜底纸长 = 介质纸长（不是 #6439 那版的 40mm）；2026-10-25 起为 **70mm**
-    //（用户裁定加公司抬头 + 特殊选项 + 备注 两行后 60mm 装不下）
-    expect(WASH_LABEL_DEFAULT_LENGTH_MM).toBe(70)
-    expect(WASH_LABEL_MEDIA).toBe('label-50x70')
+    // 2026-10-26 用户裁定「设置为打印 50*150」⇒ 纸长 150mm（#7776 的"按内容撑开"已作废）
+    expect(WASH_LABEL_DEFAULT_LENGTH_MM).toBe(150)
+    expect(WASH_LABEL_MEDIA).toBe('label-50x150')
   })
 
   it('🔴 机器自报 300dpi / 576dot ⇒ 几何整体跟着变（写死兜底值 ⇒ 必红）', () => {
@@ -88,229 +89,169 @@ describe('resolveLabelGeometry — 几何取自机器自报值 + 介质矩阵（
   })
 
   it('给了纸宽（mm）⇒ 取「纸宽 × dpmm」与打印头宽度的较小者（不越纸、不越头）', () => {
-    expect(resolveLabelGeometry({ printerDPI: 203, printerWidth: 576 }, 40, 30).widthPx).toBe(
+    expect(resolveLabelGeometry({ printerDPI: 203, printerWidth: 576 }, 40).widthPx).toBe(
       Math.round(40 * (203 / 25.4)),
     )
     // 纸比头宽 ⇒ 仍受头宽限制
     expect(resolveLabelGeometry({ printerDPI: 203, printerWidth: 576 }, 80).widthPx).toBe(576)
-    // 纸长是入参（缺省 = 介质纸长）
-    expect(resolveLabelGeometry(null, null, 30).heightPx).toBe(Math.round(30 * (203 / 25.4)))
+    // 纸长**不吃入参**（issue #7816：纸型固定，画布高度恒 = 矩阵纸长 × dpmm）
+    expect(resolveLabelGeometry({ printerDPI: 203, printerWidth: 576 }, 40).heightPx).toBe(
+      Math.round(WASH_LABEL_DEFAULT_LENGTH_MM * (203 / 25.4)),
+    )
   })
 })
 
-describe('layoutWashLabel — 版式是纯函数（issue #6439 → #6656）', () => {
+describe('layoutWashLabel — 版式是纯函数（#6439 → #6656 → #7816）', () => {
   const geo = resolveLabelGeometry(null)
 
-  it('判据 ④：**纸面内容 = 行清单**（折行只插入断点，不增删字）', () => {
+  it('判据 ②：**纸面内容 = 行清单**（折行只插入断点，不增删字）；不再有加工单号/短码', () => {
     const layout = layoutWashLabel(input(), geo, measure)
     // 正文块逐行文本首尾相接 == 行清单逐行文本首尾相接（版式自己编字段 / 丢字 ⇒ 必红）
     expect(layout.lines.map((line) => line.text).join('')).toBe(ROWS.map((row) => row.text).join(''))
-    expect(layout.header?.text).toBe('JG-20260921-8237')
-    expect(layout.shortCode.text).toBe('7Q2M4K8P')
-    expect(layout.qrNote.text).toBe('扫码报工')
+    // 🔴 加工单号（表头）与短码 / 「扫码报工」整块退场（2026-10-26 用户逐字）
+    expect(Object.keys(layout)).not.toContain('header')
+    expect(Object.keys(layout)).not.toContain('shortCode')
+    expect(Object.keys(layout)).not.toContain('qrNote')
     // 行序自上而下（y 单调不减）
     expect(layout.lines.map((line) => line.y)).toEqual([...layout.lines.map((line) => line.y)].sort((a, b) => a - b))
+    // 正文字号 = 12pt（34px @203dpi）—— 内容真值不含字号，字号只由 metrics 决定
+    expect(layout.lines[0].fontPx).toBe(Math.round((WASH_LABEL_BODY_FONT_PT / 72) * 25.4 * geo.dpmm))
   })
 
-  it('纸面抬头（2026-10-25）：位图通道也画「企业名 + 成品定制」两行居中，且在表头之上；缺企业名 ⇒ 整块不画', () => {
+  it('纸面抬头（2026-10-25）：位图通道也画「企业名 + 成品定制」两行居中，且在正文之上；缺企业名 ⇒ 整块不画', () => {
     const withCompany = layoutWashLabel(input({ companyName: '亿家纺织' }), geo, measure)
     // 两行、逐字：企业名（粗体侧、字号更大）+ 固定副标题
     expect(withCompany.company.map((line) => line.text)).toEqual(['亿家纺织', '成品定制'])
+    expect(withCompany.company[0].fontPx).toBe(Math.round((WASH_LABEL_COMPANY_FONT_PT / 72) * 25.4 * geo.dpmm))
+    expect(withCompany.company[1].fontPx).toBe(
+      Math.round((WASH_LABEL_COMPANY_SUBTITLE_FONT_PT / 72) * 25.4 * geo.dpmm),
+    )
     expect(withCompany.company[0].fontPx).toBeGreaterThan(withCompany.company[1].fontPx)
     // 居中：x = 纸宽的一半（与系统打印的 text-center 同口径）
     expect(withCompany.company.every((line) => line.x === Math.round(geo.widthPx / 2))).toBe(true)
-    // 行序：抬头 → 表头 → 正文（抬头块必须真的占位，表头不许压在它上面）
-    expect(withCompany.header!.y).toBeGreaterThan(withCompany.company[1].y)
-    expect(withCompany.company[0].y).toBe(withCompany.margin)
+    // 抬头在正文之上
+    expect(withCompany.company[1].y).toBeLessThan(withCompany.lines[0].y)
 
-    // 缺企业名 ⇒ 空数组（不画空行 / 不画「未设置」），表头回到纸边
-    const bare = layoutWashLabel(input({ companyName: '   ' }), geo, measure)
-    expect(bare.company).toEqual([])
-    expect(bare.header!.y).toBe(bare.margin)
+    const noCompany = layoutWashLabel(input(), geo, measure)
+    expect(noCompany.company).toEqual([])
+    // 正反对照：没有抬头块 ⇒ 正文从内边距开始（不是空出两行）
+    expect(noCompany.lines[0].y).toBe(noCompany.margin)
   })
 
-  it('判据 ②：短码**永不被裁**（x + 实测宽度 ≤ 纸宽 − 边距）', () => {
+  it('判据 ③：二维码在**底部居中**（用户 2026-10-26「放到底部居中」「放大一点」）', () => {
     const layout = layoutWashLabel(input(), geo, measure)
-    const right = layout.shortCode.x + measure(layout.shortCode.text, layout.shortCode.fontPx)
-    expect(right).toBeLessThanOrEqual(geo.widthPx - layout.margin + 0.001)
-    expect(layout.shortCode.fontPx).toBeGreaterThan(0)
+    const qr = layout.qr
+    if (!qr) throw new Error('有码的输入却没算出二维码位 —— 判据无从取值')
+    // 水平居中
+    expect(qr.x).toBe(Math.round((geo.widthPx - qr.size) / 2))
+    // 贴底（留一个内边距）
+    expect(qr.y + qr.size).toBe(geo.heightPx - layout.margin)
+    // 不越界
+    expect(qr.x).toBeGreaterThanOrEqual(0)
+    expect(qr.x + qr.size).toBeLessThanOrEqual(geo.widthPx)
+    // 80 CSS px = 21.17mm（旧值 45px = 11.9mm ⇒ 明显放大）
+    expect(qr.size).toBe(Math.round((80 * 25.4) / 96 * geo.dpmm))
+    expect(qr.size).toBeGreaterThan(45 * (25.4 / 96) * geo.dpmm)
   })
 
-  it('判据 ②：窄纸靠缩字号活下来（字号随纸宽单调不增），短码本体一字不少', () => {
-    const wide = layoutWashLabel(input(), resolveLabelGeometry({ printerDPI: 203, printerWidth: 576 }), measure)
-    const narrow = layoutWashLabel(input(), resolveLabelGeometry({ printerDPI: 203, printerWidth: 220 }), measure)
-    expect(narrow.shortCode.fontPx).toBeLessThan(wide.shortCode.fontPx)
-    expect(narrow.shortCode.text).toBe('7Q2M4K8P')
-    expect(narrow.shortCode.x + measure(narrow.shortCode.text, narrow.shortCode.fontPx)).toBeLessThanOrEqual(
-      220 - narrow.margin + 0.001,
+  it('无码 ⇒ 不画假码：底部出**同尺寸量级**的虚线占位框（居中）+ 占位文案', () => {
+    const layout = layoutWashLabel(input({ qrValue: null, qrPlaceholderHint: '二维码已撤销' }), geo, measure)
+    expect(layout.qr).toBeNull()
+    const placeholder = layout.qrPlaceholder
+    if (!placeholder) throw new Error('无码却没算出占位框 —— 判据无从取值')
+    expect(placeholder.rect.x).toBe(Math.round((geo.widthPx - placeholder.rect.size) / 2))
+    expect(placeholder.rect.y + placeholder.rect.size).toBe(geo.heightPx - layout.margin)
+    expect(placeholder.lines.map((line) => line.text).join('')).toContain('二维码已撤销')
+    // 文案在框内居中（x = 框中心）
+    expect(placeholder.lines.every((line) => line.x === placeholder.rect.x + Math.round(placeholder.rect.size / 2))).toBe(
+      true,
     )
   })
 
-  it('判据 ③：窄到放不下 ⇒ 抛 WashLabelLayoutError（fail-closed，不静默裁）', () => {
-    expect(() =>
-      layoutWashLabel(input(), resolveLabelGeometry({ printerDPI: 203, printerWidth: 120 }), measure),
-    ).toThrow(WashLabelLayoutError)
-  })
-
-  it('判据 ⑤：文字块装不下 ⇒ **只裁文字块**（表头与底部码/短码位置不动）', () => {
-    const long: WashLabelRow[] = Array.from({ length: 40 }, (_, index) => ({
+  it('判据 ④：**装不下只裁文字块** —— 超长行清单被截断，二维码位置一字不动', () => {
+    const huge: WashLabelRow[] = Array.from({ length: 60 }, (_, i) => ({
       key: 'remark',
-      text: `备注 第${index}行 这是一段会被挤出纸外的补充文字`,
+      text: `备注 第${i}行很长的补充说明文字，用来把文字块撑爆`,
       maxLines: 2,
     }))
-    const clipped = layoutWashLabel(input({ rows: long }), geo, measure)
-    const whole = layoutWashLabel(input(), geo, measure)
+    const layout = layoutWashLabel(input({ rows: huge }), geo, measure)
+    const blockBottom = geo.heightPx - layout.margin - layout.qr!.size - Math.round(1 * geo.dpmm)
+    // 最后一行仍在底部二维码之上（没被挤出纸外）
+    const lastLine = layout.lines[layout.lines.length - 1]
+    expect(lastLine.y).toBeLessThan(blockBottom)
+    // 大量行被裁 ⇒ 但也确实画了东西（不是空断言）
+    expect(layout.lines.length).toBeGreaterThan(5)
+    expect(layout.lines.length).toBeLessThan(huge.length)
+    // 码不变
+    expect(layout.qr!.y + layout.qr!.size).toBe(geo.heightPx - layout.margin)
+  })
 
-    // 正反对照：确实被裁了（否则「没越界」是空断言）
-    expect(clipped.lines.length).toBeGreaterThan(0)
-    expect(clipped.lines.length).toBeLessThan(40)
-    // 每行都不越过正文块下沿（= 底部行上沿；越界 = 压到二维码/短码上）
-    const blockBottom = clipped.qr!.y
-    clipped.lines.forEach((line) =>
-      expect(line.y + Math.round(line.fontPx * 1.2)).toBeLessThanOrEqual(blockBottom),
+  it('纸宽连内边距都放不下 ⇒ 显式抛错（fail-closed，不静默画一张错纸）', () => {
+    expect(() => layoutWashLabel(input(), { dpmm: 8, widthPx: 2, heightPx: 1200 }, measure)).toThrow(
+      WashLabelLayoutError,
     )
-    // 底部功能件（码与短码）位置一字不动 —— 空间不够时被裁的只能是补充文字
-    expect(clipped.qr).toEqual(whole.qr)
-    expect(clipped.shortCode).toEqual(whole.shortCode)
-    expect(clipped.header).toEqual(whole.header)
-  })
-
-  it('判据 ⑤：无码 ⇒ 不画假码（`qr` 为 null），出占位框 + 占位文案，短码仍在', () => {
-    const withQr = layoutWashLabel(input(), geo, measure)
-    const noQr = layoutWashLabel(input({ qrValue: null }), geo, measure)
-
-    expect(withQr.qr!.size).toBeGreaterThan(0)
-    expect(withQr.qrPlaceholder).toBeNull()
-    expect(noQr.qr).toBeNull()
-    expect(noQr.qrPlaceholder!.rect.size).toBeGreaterThan(0)
-    expect(noQr.qrPlaceholder!.lines.map((line) => line.text).join('')).toContain('待生成')
-    expect(noQr.shortCode.text).toBe('7Q2M4K8P')
-  })
-
-  it('判据 ⑤：占位文案可覆盖（撤销后传「已撤销」，不谎称「待生成」）', () => {
-    const revoked = layoutWashLabel(input({ qrValue: null, qrPlaceholderHint: '已撤销' }), geo, measure)
-    expect(revoked.qrPlaceholder!.lines.map((line) => line.text).join('')).toContain('已撤销')
-    expect(revoked.qrPlaceholder!.lines.map((line) => line.text).join('')).not.toContain('待生成')
-  })
-
-  it('版式落在纸内：所有元素不越界（含二维码与占位框）', () => {
-    const layout = layoutWashLabel(input(), geo, measure)
-    expect(layout.qr!.x).toBeGreaterThanOrEqual(0)
-    expect(layout.qr!.x + layout.qr!.size).toBeLessThanOrEqual(geo.widthPx)
-    expect(layout.qr!.y + layout.qr!.size).toBeLessThanOrEqual(geo.heightPx)
-
-    const noQr = layoutWashLabel(input({ qrValue: null }), geo, measure)
-    const box = noQr.qrPlaceholder!.rect
-    expect(box.x + box.size).toBeLessThanOrEqual(geo.widthPx)
-    expect(box.y + box.size).toBeLessThanOrEqual(geo.heightPx)
-    expect(noQr.shortCode.x + measure(noQr.shortCode.text, noQr.shortCode.fontPx)).toBeLessThanOrEqual(
-      geo.widthPx - noQr.margin + 0.001,
-    )
-  })
-
-  it('缺表头（无加工单号）⇒ 正文块上移，不留空洞', () => {
-    const withHeader = layoutWashLabel(input(), geo, measure)
-    const without = layoutWashLabel(input({ processingOrderNo: '' }), geo, measure)
-    expect(without.header).toBeNull()
-    expect(without.lines[0].y).toBeLessThan(withHeader.lines[0].y)
   })
 })
 
-describe('wrapText / ellipsize / fitFontSize — 看得见的截断（判据 ④）', () => {
-  it('放得下 ⇒ 单行原样返回', () => {
-    expect(wrapText('客户 赵凯', 999, 20, measure, 1)).toEqual(['客户 赵凯'])
-    expect(ellipsize('短', 999, 20, measure)).toBe('短')
+describe('wrapText / ellipsize — 折行与省略（看得见的截断）', () => {
+  it('逐字折行：只在断点插入行，不增删字；末行超出预算 ⇒ 省略号收尾', () => {
+    expect(wrapText('一二三四', 100, 10, measure, 3)).toEqual(['一二三四'])
+    // 4 字 × 6px = 24px/行预算 12px ⇒ 每行 2 字
+    expect(wrapText('一二三四', 12, 10, measure, 3)).toEqual(['一二', '三四'])
+    // 预算 2 行 ⇒ 余下的进最后一行并以省略号收尾（不静默吞字）
+    expect(wrapText('一二三四五六', 12, 10, measure, 2)).toEqual(['一二', '三…'])
+    expect(wrapText('   ', 12, 10, measure, 2)).toEqual([])
   })
 
-  it('按**字**折行：不改字、不改序，行行不超宽', () => {
-    const lines = wrapText('客户 一个很长的客户名称需要折行', 120, 20, measure, 4)
-    expect(lines.join('')).toBe('客户 一个很长的客户名称需要折行')
-    lines.forEach((line) => expect(measure(line, 20)).toBeLessThanOrEqual(120))
-  })
-
-  it('行数预算用完 ⇒ 最后一行以省略号收尾（不静默吞字）', () => {
-    const source = '一个很长的件名需要被折成很多行否则就该省略号收尾处理掉多余的字'
-    const lines = wrapText(source, 100, 20, measure, 2)
-    expect(lines).toHaveLength(2)
-    expect(lines[1].endsWith('…')).toBe(true)
-    // 保留的字数确实少于原文（截断真的发生了，不是「本来就只有两行」）
-    expect(lines.join('').replace('…', '').length).toBeLessThan(source.length)
-    lines.forEach((line) => expect(measure(line, 20)).toBeLessThanOrEqual(100))
-  })
-
-  it('fitFontSize：缩到最小字号仍放不下 ⇒ `fits: false`（由调用方 fail-closed）', () => {
-    expect(fitFontSize('7Q2M4K8P', 999, 23, 20, measure)).toEqual({ fontPx: 23, fits: true })
-    // 缩到最小字号才勉强放下 ⇒ fontPx = 下限、仍算放得下（96 ≤ 100）
-    expect(fitFontSize('7Q2M4K8P', 100, 23, 20, measure)).toEqual({ fontPx: 20, fits: true })
-    // 连最小字号都放不下 ⇒ `fits: false`（由调用方 fail-closed 抛错）
-    expect(fitFontSize('7Q2M4K8P', 90, 23, 20, measure).fontPx).toBe(20)
-    expect(fitFontSize('7Q2M4K8P', 90, 23, 20, measure).fits).toBe(false)
+  it('ellipsize：放得下就原样返回；放不下逐字退到省略号', () => {
+    expect(ellipsize('一二', 100, 10, measure)).toBe('一二')
+    expect(ellipsize('一二三四', 12, 10, measure)).toBe('一…')
   })
 })
 
-describe('paintWashLabel — 执行层只照单绘制（判据 ⑥）', () => {
-  /** 最小 2D 上下文替身：jsdom 没有 canvas，执行层用假 ctx 测调用面 */
-  const fakeCtx = () => {
-    const calls: string[] = []
-    return {
-      calls,
-      fillStyle: '',
-      strokeStyle: '',
-      font: '',
-      textAlign: '' as CanvasTextAlign,
-      textBaseline: '' as CanvasTextBaseline,
-      lineWidth: 1,
-      fillRect: (...a: unknown[]) => calls.push(`fillRect:${a.join(',')}`),
-      fillText: (...a: unknown[]) => calls.push(`fillText:${a.join(',')}`),
-      strokeRect: () => calls.push('strokeRect'),
-      setLineDash: () => calls.push('setLineDash'),
-      drawImage: (...a: unknown[]) => calls.push(`drawImage:${a.length}`),
-      measureText: (t: string) => ({ width: measure(t, 16) }) as TextMetrics,
-    }
+/** 记录调用面的假 ctx（真 canvas 在 jsdom 里没有） */
+function fakeContext() {
+  const calls: string[] = []
+  const ctx = {
+    fillStyle: '',
+    strokeStyle: '',
+    font: '',
+    textAlign: 'left' as CanvasTextAlign,
+    textBaseline: 'top' as CanvasTextBaseline,
+    lineWidth: 1,
+    fillRect: (x: number, y: number, w: number, h: number) => calls.push(`fillRect:${x},${y},${w},${h}`),
+    strokeRect: (x: number, y: number, w: number, h: number) => calls.push(`strokeRect:${x},${y},${w},${h}`),
+    fillText: (text: string, x: number, y: number) => calls.push(`fillText:${text}@${x},${y}`),
+    drawImage: (_image: CanvasImageSource, x: number, y: number, w: number, h: number) =>
+      calls.push(`drawImage:${x},${y},${w},${h}`),
+    setLineDash: (segments: number[]) => calls.push(`setLineDash:${segments.join(',')}`),
   }
+  return { ctx, calls }
+}
 
-  it('白底铺满整幅（热敏纸：不铺白 = 打出黑底的反色废纸）', () => {
-    const ctx = fakeCtx()
-    const geo = resolveLabelGeometry(null)
-    paintWashLabel(ctx, layoutWashLabel(input(), geo, measure), null)
-    expect(ctx.calls.some((c) => c === `fillRect:0,0,${geo.widthPx},${geo.heightPx}`)).toBe(true)
-  })
+describe('paintWashLabel — 只照单绘制（判据 ⑤）', () => {
+  const geo = resolveLabelGeometry(null)
 
-  it('🔴 有码才 drawImage；无码时不画假码、改画虚线占位框', () => {
-    const geo = resolveLabelGeometry(null)
-
-    const ctx = fakeCtx()
-    paintWashLabel(ctx, layoutWashLabel(input(), geo, measure), {} as unknown as CanvasImageSource)
-    expect(ctx.calls.filter((c) => c.startsWith('drawImage'))).toHaveLength(1)
-    expect(ctx.calls).not.toContain('strokeRect')
-
-    const ctx2 = fakeCtx()
-    paintWashLabel(ctx2, layoutWashLabel(input({ qrValue: null }), geo, measure), null)
-    expect(ctx2.calls.some((c) => c.startsWith('drawImage'))).toBe(false)
-    expect(ctx2.calls).toContain('strokeRect')
-    expect(ctx2.calls.some((c) => c.startsWith('fillText:待生成'))).toBe(true)
-  })
-
-  it('纸面抬头（2026-10-25）：企业名与「成品定制」都真被画到纸上，且居中（只在版式里排、执行层不画 ⇒ 必红）', () => {
-    const ctx = fakeCtx()
-    const geo = resolveLabelGeometry(null)
-    const layout = layoutWashLabel(input({ companyName: '亿家纺织' }), geo, measure)
-    paintWashLabel(ctx, layout, null)
-
-    const centerX = Math.round(geo.widthPx / 2)
-    expect(ctx.calls.some((c) => c.startsWith(`fillText:亿家纺织,${centerX}`))).toBe(true)
-    expect(ctx.calls.some((c) => c.startsWith(`fillText:成品定制,${centerX}`))).toBe(true)
-    // 居中要真设过 textAlign（只按 centerX 画、不对齐 ⇒ 文字整体左移半个字宽）
-    expect(ctx.textAlign).toBe('left')
-  })
-
-  it('文字按版式算好的字号绘制（不在执行层二次排版）', () => {
-    const ctx = fakeCtx()
-    const geo = resolveLabelGeometry(null)
+  it('先铺白底（不铺 = 整幅反色废纸），再把二维码画在算好的位置上', () => {
     const layout = layoutWashLabel(input(), geo, measure)
+    const { ctx, calls } = fakeContext()
+    paintWashLabel(ctx, layout, {} as CanvasImageSource)
+    expect(calls[0]).toBe(`fillRect:0,0,${geo.widthPx},${geo.heightPx}`)
+    expect(calls).toContain(`drawImage:${layout.qr!.x},${layout.qr!.y},${layout.qr!.size},${layout.qr!.size}`)
+    // 文字都画了
+    const painted = calls.filter((call) => call.startsWith('fillText:')).join('|')
+    for (const row of ROWS) expect(painted).toContain(row.text.slice(0, 4))
+    // 不再画短码 / 「扫码报工」
+    expect(painted).not.toContain('扫码报工')
+    expect(painted).not.toContain('7Q2M4K8P')
+  })
+
+  it('无码位图 ⇒ 画虚线占位框（不静默留白，也不画假码）', () => {
+    const layout = layoutWashLabel(input({ qrValue: null }), geo, measure)
+    const { ctx, calls } = fakeContext()
     paintWashLabel(ctx, layout, null)
-    expect(ctx.calls.some((c) => c.includes(`fillText:${layout.shortCode.text},${layout.shortCode.x}`))).toBe(true)
-    expect(ctx.calls.some((c) => c.includes(`fillText:${layout.header!.text},${layout.header!.x}`))).toBe(true)
-    expect(ctx.calls.some((c) => c.includes('fillText:客户 赵凯'))).toBe(true)
+    expect(calls).toContain('setLineDash:2,2')
+    expect(calls.some((call) => call.startsWith('strokeRect:'))).toBe(true)
+    expect(calls.some((call) => call.startsWith('drawImage:'))).toBe(false)
   })
 })

@@ -7,7 +7,8 @@
 ① `@page { size: Wmm Hmm }`（分页尺寸）、② `.task-card-label { width; height }`（标签本体）、
 ③ 组件文件头那段**靠真机渲染量出来的垂直预算注释**（逐行行高 / 折行数 / 二维码行 / 内边距）。
 
-#4946（30×60）→ #5646（**50×60**）这次改版里，①② 一改就看得见，**③ 不会** ——
+#4946（30×60）→ #5646（**50×60**）→ 2026-10-25（50×70）→ **2026-10-26（issue #7816：固定 50×150）**
+这次改版里，①② 一改就看得见，**③ 不会** ——
 旧读数（30mm 宽 / 27.6mm 版心 / 17 行上限）留在注释里**没有任何东西会变红**，
 下一个人照着过期预算加一行，就会把纸面底部的二维码与人可读短码挤出纸外。
 **#4949 已经实测过一次这个后果**（行①折行吃掉 2.96mm ⇒ 每张的人可读短码被裁 1.25mm），
@@ -17,7 +18,7 @@
 
 | # | 判据 | 红证（怎么让它红） |
 |---|---|---|
-| G1 | `@page` 的 W×H 与 `.task-card-label` 的 width/height **字面一致** | 只把 `@page` 的 50mm 改回 30mm ⇒ 必红 |
+| G1 | `@page` 的 W×H 与 `.task-card-label` 的 width/height **字面一致** | 把介质换成 30×40 而容器不动 ⇒ 必红 |
 | G2 | 文件头预算注释**声明当前几何**（`Wmm × Hmm`） | 注释写回 `30mm × 60mm` ⇒ 必红 |
 | G3 | 预算注释**结构完整**：版心 / 每行 / 二维码 / 内边距 / `≤` 五要素齐备 | 删掉任一要素 / 清空预算段 ⇒ 必红 |
 | G4 | **版心宽可复算**：注释「版心宽 Xmm」== `width − 2 × padding`（±0.01mm） | **只把容器宽改回 30mm** ⇒ 必红（G2 挡不住这一路，见下） |
@@ -59,13 +60,11 @@ LABEL_SRC = "frontend/admin-web/src/components/production/TaskCardPrint.tsx"
 
 #: `@page { size: Wmm Hmm; … }`
 _PAGE_RE = re.compile(r"@page\s*\{\s*size:\s*([0-9.]+)mm\s+([0-9.]+)mm")
-#: 写法 A（issue #5914）：`printPageRule('<介质id>')` —— 纸型由介质矩阵生成，尺寸从矩阵取；
-#: 写法 A'（issue #7776）：`printPageRuleForLength('<介质id>', <纸长变量>)` —— **纸长按内容撑开**的介质
-#: （洗水唛 = 50mm 宽连续纸卷）。**不钉死右括号**：两种写法的参数个数不同，钉死会让新版静默解析失败。
-_PAGE_RULE_CALL_RE = re.compile(r"printPageRule(?:ForLength)?\(\s*'([a-z0-9-]+)'")
-#: 动态纸长的**唯一合法形态**：长度变量同时喂给 `@page` 与标签本体（`style={{ height: `${x}mm` }}`）
-_ELASTIC_CALL_RE = re.compile(r"printPageRuleForLength\(\s*'([a-z0-9-]+)'\s*,\s*([A-Za-z_$][\w$]*)\s*\)")
-_INLINE_HEIGHT_RE = re.compile(r"height:\s*`\$\{\s*([A-Za-z_$][\w$]*)\s*\}mm`")
+#: 写法 A（issue #5914）：`printPageRule('<介质id>')` —— 纸型由介质矩阵生成，尺寸从矩阵取。
+#: 🔴 #7776 的动态纸长写法（`printPageRuleForLength('<id>', <纸长变量>)`）随 issue #7816 退场
+#: （用户 2026-10-26「水洗唛长度不足，设置为打印50*150」⇒ 纸型固定）—— 本正则**故意不认**它：
+#: 有人把动态纸长写回来 ⇒ 解析不出介质 id ⇒ 判据红（不是静默跳过）。
+_PAGE_RULE_CALL_RE = re.compile(r"printPageRule\(\s*'([a-z0-9-]+)'")
 MEDIA_MATRIX = REPO_ROOT / "frontend/admin-web" / "src" / "lib" / "print-media.json"
 
 
@@ -250,52 +249,6 @@ def _problems(src: str) -> list[str]:
     return problems
 
 
-# ── G8：纸长按内容撑开时，「@page 的长度」与「标签本体的高度」必须**同一个变量** ──────
-
-
-def _elastic_length_problems(src: str, matrix: dict[str, dict]) -> list[str]:
-    """登记了 `lengthMm` 的介质：纸长必须**由调用方算好、一个变量喂两处**。
-
-    红证：把 `style={{ height: `${labelLengthMm}mm` }}` 的变量名换掉 / 把
-    `printPageRuleForLength` 改回静态 `printPageRule` ⇒ 必红（无需改矩阵）。
-    """
-    problems: list[str] = []
-    for media_id, spec in sorted(matrix.items()):
-        if not spec.get("lengthMm"):
-            continue
-        call = _ELASTIC_CALL_RE.search(src)
-        if call is None or call.group(1) != media_id:
-            problems.append(
-                f"G8 介质 `{media_id}` 登记了 `lengthMm`（纸长按内容撑开），但组件没有用 "
-                f"`printPageRuleForLength('{media_id}', <纸长变量>)` —— 静态纸型会把内容裁掉"
-            )
-            continue
-        height = _INLINE_HEIGHT_RE.search(src)
-        if height is None:
-            problems.append(
-                f"G8 介质 `{media_id}` 是动态纸长，但标签本体没有 `style={{ height: `${{…}}mm` }}` —— "
-                "纸长变了、标签本体没变 ⇒ 纸面要么被裁、要么两头留白"
-            )
-            continue
-        if height.group(1) != call.group(2):
-            problems.append(
-                f"G8 `@page` 用的纸长变量是 `{call.group(2)}`，标签本体的高度却是 "
-                f"`{height.group(1)}` —— 两处必须**同一个数**（改一处另一处会静默漂移）"
-            )
-    return problems
-
-
-def test_g8_elastic_length_uses_one_variable_for_page_and_label():
-    """G8：动态纸长的介质，「@page」与「标签高度」必须同一变量（红证见下）。"""
-    src = _read(LABEL_SRC)
-    problems = _elastic_length_problems(src, _matrix())
-    assert problems == [], f"`{LABEL_SRC}` 动态纸长违规：\n  " + "\n  ".join(problems)
-    # 反空跑：矩阵里**确实**有登记 lengthMm 的介质，否则本判据恒绿
-    assert any(spec.get("lengthMm") for spec in _matrix().values()), (
-        "介质矩阵里没有任何 `lengthMm` 登记 ⇒ 本判据是**空判据**"
-    )
-
-
 # ── G1~G6：真值侧判据 ────────────────────────────────────────────────────────
 
 def test_g1_g6_wash_label_geometry_and_budget_comment_are_consistent():
@@ -324,7 +277,7 @@ def test_g7_injected_geometry_drift_is_red():
     css = _css_block(src)
     page_w, page_h, _label_w, _label_h = _geometry(src, css)
     injected_a = _PAGE_RULE_CALL_RE.sub(lambda m: m.group(0).replace(m.group(1), "continuous-241x140"), src, count=1)
-    assert "label-50x70" in src, "找不到介质 id 的注入点 ⇒ 本红证会**空跑**"
+    assert "label-50x150" in src, "找不到介质 id 的注入点 ⇒ 本红证会**空跑**"
     assert injected_a != src, "找不到介质 id 的注入点 ⇒ 本红证会**空跑**"
     assert _fingerprint(injected_a) != _fingerprint(src), "注入后内容指纹未变（**禁 mtime/size**）"
     assert _problems(injected_a), "只改 `@page` 宽度后判据**没判红** ⇒ G1 是空判据"
@@ -341,7 +294,9 @@ def test_g7_injected_geometry_drift_is_red():
     assert _problems(injected_b), "容器宽退回 30mm 后判据**没判红** ⇒ G4 是空判据（G2 会假绿）"
 
     # 注入 C：把文件头注释里的几何退回 30mm × 60mm ⇒ G2 必红
-    injected_c = src.replace(f"{page_w:g}mm × {page_h:g}mm", "30mm × 60mm", 1)
+    # ⚠️ 注释里当前几何会出现**多次**（字段面 / 几何段落都写了）⇒ 必须**全换**，
+    #    只换第一处会让第二处继续满足 G2（本红证第一版就因此空跑，实测打回）
+    injected_c = src.replace(f"{page_w:g}mm × {page_h:g}mm", "30mm × 60mm")
     assert injected_c != src, "找不到注入点「Wmm × Hmm」⇒ 本红证会**空跑**"
     assert _problems(injected_c), "注释退回旧几何后判据**没判红** ⇒ G2 是空判据"
 

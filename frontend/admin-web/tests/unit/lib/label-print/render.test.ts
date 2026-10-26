@@ -18,16 +18,17 @@
 // ③ **位图与 labels 同序**：只有有码的那张 `drawImage`（无码不画假码）；
 // ④ 机器自报换一台 ⇒ 画布跟着变（不写死机型）；
 // ⑤ 拿不到 2d 上下文 ⇒ **抛错**（不静默交出一张空白纸去打印）；
-// ⑥ `canvasTextMeasure` 与绘制同一套字号口径（bold + 等宽族）。
+// ⑥ `canvasTextMeasure` 与绘制同一套字号口径（bold + 等宽族）；
+// ⑦ 🔴 **纸长固定 50mm × 150mm**（issue #7816，作废 #7776 的「按内容撑开」）：
+//    入参只有 `(labels, qrSources, printerInfo)` 三个 —— 纸长不再由调用方给，画布高由**介质矩阵的纸长**换算。
 import { describe, expect, it, vi } from 'vitest'
 import { canvasTextMeasure, renderWashLabelJobs } from '@/lib/label-print/render'
 import { resolveLabelGeometry, type WashLabelInput } from '@/lib/label-print/wash-label'
+import { printDotGeometry, printPageBoxMm } from '@/lib/print-media'
 
 const LABELS: WashLabelInput[] = [
   {
     qrValue: 'https://app.migaozn.com/s/7Q2M4K8P',
-    shortCode: '7Q2M4K8P',
-    processingOrderNo: 'JG-20260921-8237',
     rows: [
       { key: 'customer', text: '客户 赵凯', maxLines: 1 },
       { key: 'color', text: '客厅窗帘A', maxLines: 2 },
@@ -36,8 +37,6 @@ const LABELS: WashLabelInput[] = [
   // 该部位被撤销（无码）⇒ 这一张**不许** drawImage
   {
     qrValue: null,
-    shortCode: 'ABCDEFGH',
-    processingOrderNo: 'JG-20260921-8237',
     rows: [{ key: 'color', text: '卧室窗帘', maxLines: 2 }],
   },
 ]
@@ -132,6 +131,40 @@ describe('renderWashLabelJobs — 调度与几何（issue #6439 判据 ③）', 
   it('空输入 ⇒ 空数组（不造占位）', async () => {
     installCanvasStub()
     expect(await renderWashLabelJobs([], [], null)).toEqual([])
+  })
+
+  it('🔴 纸长**固定 50mm × 150mm**（issue #7816）：入参三个、画布高取矩阵纸长、宽被打印头钳住', async () => {
+    const { canvases } = installCanvasStub()
+    const dots = printDotGeometry('label-50x150')
+    const box = printPageBoxMm('label-50x150')
+
+    // ① 签名 = `(labels, qrSources, printerInfo)` —— **没有第 4 个**纸长参数
+    //    （#7776 时代 playwright 传 `labelLengthMm`；纸型固定后再传 ⇒ 纸长又有第二个来源）
+    expect(renderWashLabelJobs.length).toBe(3)
+
+    // ② 未连机器 ⇒ 介质矩阵兜底：纸型 50mm × 150mm（不是 70mm，也不是任何调用方给的长度）
+    expect(box).toEqual({ widthMm: 50, heightMm: 150 })
+    const geometry = resolveLabelGeometry(null)
+    // 纸宽 50mm 换来的像素被**打印头**钳住（右侧约 2mm 打不到）⇒ 出图必须按有效打宽
+    expect(geometry.widthPx).toBe(dots.headWidthPx)
+    expect(geometry.widthPx).toBe(dots.effectiveWidthPx)
+    // 纸长 150mm × 8 dots/mm = 1200 点（介质矩阵登记的整点口径）；实现按 203 / 25.4 = 7.9921 dots/mm
+    // 重算 ⇒ 1199 点，两者只许差 **1 点**（dpi 取整）。差更多 ⇒ 纸长换了来源（例如又按调用方传的长度画）。
+    expect(box.heightMm * dots.dotsPerMm).toBe(1200)
+    expect(geometry.heightPx).toBe(Math.round(box.heightMm * (dots.dpi / 25.4)))
+    expect(Math.abs(geometry.heightPx - box.heightMm * dots.dotsPerMm)).toBeLessThanOrEqual(1)
+    // ③ 换一台机器 ⇒ 点阵变、纸长不变（纸型是介质的属性，不是机器的属性）
+    const other = resolveLabelGeometry({ printerDPI: 300, printerWidth: 576 })
+    expect(other.heightPx).toBe(Math.round(box.heightMm * (300 / 25.4)))
+    expect(other.heightPx).not.toBe(geometry.heightPx)
+    expect(other.widthPx).toBe(576)
+
+    // ④ 画布真按这套几何开（两张 = 两张 50×150mm 的点阵）
+    await renderWashLabelJobs(LABELS, [null, null], null)
+    expect(canvases).toEqual([
+      { width: dots.headWidthPx, height: geometry.heightPx },
+      { width: dots.headWidthPx, height: geometry.heightPx },
+    ])
   })
 })
 

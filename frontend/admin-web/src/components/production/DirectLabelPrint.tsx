@@ -39,7 +39,7 @@ import type { WashLabelInput } from '@/lib/label-print/wash-label'
  * ## 纸面与预览**同一份**（issue #6656）
  *
  * 打出来的位图读的就是预览那份有序行清单（`frontend/admin-web/src/lib/wash-label-content.ts` 的
- * `washLabelRows` + 同读介质 `label-50x70`）⇒ 搬入口**不改版式**；唯一不可统一的仍是纸的物理宽度
+ * `washLabelRows` + 同读介质 `label-50x150`）⇒ 搬入口**不改版式**；唯一不可统一的仍是纸的物理宽度
  * （打印头 384 点 = 48mm < 纸宽 50mm，登记在 `lib/print-media.json`）。
  *
  * ## 可注入面（为什么留这两个口）
@@ -72,10 +72,7 @@ export interface DirectLabelPrintProps {
     labels: WashLabelInput[],
     qrSources: Array<CanvasImageSource | null>,
     printerInfo: Record<string, unknown> | null,
-    labelLengthMm?: number,
   ) => Promise<PrintJob[]>
-  /** 纸长（mm，按内容撑开，issue #7776）—— 与系统打印 / 预览纸框**同一个数** */
-  labelLengthMm?: number
   className?: string
 }
 
@@ -93,10 +90,9 @@ async function defaultRenderJobs(
   labels: WashLabelInput[],
   qrSources: Array<CanvasImageSource | null>,
   printerInfo: Record<string, unknown> | null,
-  labelLengthMm?: number,
 ): Promise<PrintJob[]> {
   const { renderWashLabelJobs } = await import('@/lib/label-print/render')
-  return renderWashLabelJobs(labels, qrSources, printerInfo, labelLengthMm)
+  return renderWashLabelJobs(labels, qrSources, printerInfo)
 }
 
 export default function DirectLabelPrint({
@@ -105,7 +101,6 @@ export default function DirectLabelPrint({
   env,
   loadProvider,
   renderJobs,
-  labelLengthMm,
   className,
 }: DirectLabelPrintProps) {
   const [busy, setBusy] = useState(false)
@@ -158,7 +153,6 @@ export default function DirectLabelPrint({
         labels,
         collectQrSources(),
         provider.printerInfo,
-        labelLengthMm,
       )
 
       // ⑤ 送印
@@ -230,7 +224,7 @@ export default function DirectLabelPrint({
         <div ref={qrBoxRef} aria-hidden="true" style={{ display: 'none' }} data-testid="direct-print-qr-sources">
           {labels.map((label, index) =>
             label.qrValue ? (
-              <QRCodeCanvas key={`${label.shortCode}-${index}`} value={label.qrValue} size={256} level="M" />
+              <QRCodeCanvas key={`qr-${index}`} value={label.qrValue} size={256} level="M" />
             ) : null,
           )}
         </div>
