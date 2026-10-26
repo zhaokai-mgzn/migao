@@ -199,7 +199,10 @@ class PositionDetailFieldsTest {
         assertThat(cloth.get("door_width")).isEqualTo("2.8");
         assertThat(cloth.get("selling_method")).isEqualTo("bulk_cut");
         assertThat(cloth.get("unit")).isEqualTo("米");
-        assertThat(cloth.get("fullness_actual")).isEqualTo(new BigDecimal("2.35"));
+        // 加工费组合（issue #7842）：成员 = 取价同一份 `featureNames`（顺序 = 选择顺序，去重保序）
+        assertThat(cloth.get("fee_combination_items")).isEqualTo(List.of("定型", "韩褶", "超高", "倒幅"));
+        // 实际褶倍已按 issue #7842 删除（用户 2026-10-26 逐字「移除实际褶倍」）
+        assertThat(cloth).doesNotContainKey("fullness_actual");
         assertThat(cloth.get("pleat_count")).isEqualTo(48);
         assertThat(cloth.get("per_panel_pleats")).isEqualTo(24);
         assertThat(cloth.get("panels")).isEqualTo(2);
@@ -327,7 +330,11 @@ class PositionDetailFieldsTest {
         assertThat(cloth).doesNotContainKey("sku");
         assertThat(cloth.get("color_name")).isEqualTo("雾霾蓝");
         assertThat(cloth.get("door_width")).isEqualTo("2.8");
-        assertThat(cloth.get("fullness_actual")).isEqualTo(new BigDecimal("2.35"));
+        // 加工费组合（issue #7842）：机台屏与报工屏同表同口径 ⇒ 成员名同样下发
+        assertThat(cloth.get("fee_combination_items"))
+                .isEqualTo(List.of("定型", "韩褶", "超高", "倒幅"));
+        // 实际褶倍已按 issue #7842 删除（机台屏既有手写行「褶倍」读的是 `fullness`，见上面那条负控）
+        assertThat(cloth).doesNotContainKey("fullness_actual");
         assertThat(cloth.get("pleat_count")).isEqualTo(48);
         assertThat(cloth.get("panels")).isEqualTo(2);
         assertThat(cloth.get("component_role")).isEqualTo("主布");
@@ -499,6 +506,11 @@ class PositionDetailFieldsTest {
         info.put("processingMeters", "8.10");
         info.put("formulaText", "2.8×2÷1.5=3.73→4");
         info.put("componentRole", "主布");
+        // 加工费组合（issue #7842）：成员 = `processing_info.processingItems[].name`（取价同一份口径），
+        // 屏上「加工费组合」那一行就是它（顺序 = 选择顺序）
+        info.put("processingItems", List.of(
+                Map.of("name", "定型"), Map.of("name", "韩褶"),
+                Map.of("name", "超高"), Map.of("name", "倒幅")));
         // 算料输出（`CALC_OUTPUT_SNAPSHOT_KEYS`，snake_case）
         info.put("fullness_actual", "2.35");
         info.put("pleat_count", 48);

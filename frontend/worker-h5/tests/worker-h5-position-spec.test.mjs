@@ -25,6 +25,10 @@
 // 2026-10-24（issue #7636，用户逐字四条）：① 只印实际褶倍（删理论褶倍）；② 去掉无效的 0；
 // ③ 删用料公式 / 算料档位（屏上是 pleat / standard 这类英文）；④ 货号 = **商品货号**（不是 SKU 码）。
 //
+// 2026-10-26（issue #7842，用户逐字三条）：① 补「加工费组合」一行（定型 / 韩褶 / 超高 / 倒幅）；
+// ② **移除实际褶倍**（#7636 那一行随本单退场）；③ 算料公式**只印公式名**（韩褶公式 / 褶倍数公式），
+// 后面的推导链不上屏。
+//
 // 🔴 期望值一律是**手写字面量**，**不** import `POSITION_SPEC_KEYS` 来比对：拿被测表去比被测表 =
 //    恒真（表改了屏上也照改 ⇒ 判据不红 = 空断言）。改标签 / 改单位 / 改精度 / 改顺序 / 删行
 //    ⇒ 逐字不等 ⇒ 当场红。
@@ -81,6 +85,8 @@ const clothPosition = (over = {}) => ({
   width: 2.8,
   height: 2.65,
   // ── 组 3 加工信息 ──
+  // 加工费组合（issue #7842）：服务端下发**名字数组**（成员 = 取价的同一份 `featureNames`）
+  fee_combination_items: ['定型', '韩褶', '超高', '倒幅'],
   curtain_type: '布帘',
   craft: '韩褶',
   cutting_mode: '定高买宽',
@@ -88,6 +94,8 @@ const clothPosition = (over = {}) => ({
   is_shaped: true,
   style: '韩式',
   fullness: 2,
+  // ⚠️ 服务端**仍会下发** `fullness_actual`（issue #7842 只从工人屏退场，键不在共享表里）
+  //    ⇒ 夹具留着它是为了**反向断言它不上屏**（与 `sku` / `formula` / `craft_tier` 同款）。
   fullness_actual: 2.05,
   pleat_count: 48,
   per_panel_pleats: 24,
@@ -97,6 +105,8 @@ const clothPosition = (over = {}) => ({
   formula: 'W×F÷门幅',
   craft_tier: 'B',
   special_options: '加铅线',
+  // 算料公式：引擎产出的**整串**（公式名 + 推导链）⇒ 屏上只印公式名（issue #7842）
+  formula_text: FORMULA_TEXT_CLOTH,
   // ── 组 5 派工 ──
   batch_no: 'B-20261014-01',
   batch_meters: 12.5,
@@ -165,6 +175,15 @@ const PRODUCT_CODE_GAUZE = '2740'
 const SKU_CLOTH = '2659-01-28'
 const SKU_GAUZE = '2740-01-29'
 
+/**
+ * 算料公式（引擎产出的**整串**：公式名 + 推导链，`curtain_calc._formula_text`）。
+ *
+ * <p>issue #7842（用户 2026-10-26 逐字「算料公式只需要展示韩褶公式或者褶倍公式，后面的详细算法不要展示，
+ * 可以移除」）：屏上只印冒号前的**公式名**（`韩褶公式`），推导链不上屏。</p>
+ */
+const FORMULA_TEXT_CLOTH =
+  '韩褶公式：2.8×2−0.3 = 5.3 ÷ 0.25 = 21.2 → 21折 → 0.25×21+0.3 = 5.55米'
+
 // ══════════════════════════════════════════════════════════════════════════════
 // ① 扫后屏：组 1/2/3/5 代表键 label + 值**逐字**上屏
 // ══════════════════════════════════════════════════════════════════════════════
@@ -190,6 +209,9 @@ const EXPECTED_CLOTH_SPEC_BLOCK = specBlock([
   ['宽', '2.8米'],
   ['高', '2.65米'],
   // 组 3 加工信息
+  // 加工费组合（issue #7842，用户 2026-10-26 逐字「工人报工页面缺乏加工费组合中倒幅，超高 韩褶 定型信息，
+  // 可以参考 pc 端这样展示即可」）—— PC 端参考形态 = 一行名字，**顿号并列**
+  ['加工费组合', '定型、韩褶、超高、倒幅'],
   // ⚠️ 帘种（`curtain_type`）**不在本块**（issue #7739）：它由 `#wh5-tern` 单独给（关键识别信息，
   // 不能受「本块缺值即整行消失」的规则影响）⇒ 本块的期望里没有它，判据见本文件 ⑨。
   ['安装工艺', '韩褶'],
@@ -197,8 +219,7 @@ const EXPECTED_CLOTH_SPEC_BLOCK = specBlock([
   ['开数', '2'],
   ['是否定型', '是'],
   ['款式', '韩式'],
-  // 褶倍只印**这一单实际用的**那一个（理论褶倍已删，2026-10-24 用户逐字裁定）
-  ['实际褶倍', '2.05倍'],
+  // 褶倍**两行都已退场**（理论褶倍 #7636 / 实际褶倍 #7842，用户 2026-10-26 逐字「移除实际褶倍」）
   ['总褶数', '48'],
   ['每片褶数', '24'],
   ['幅数', '2'],
@@ -206,6 +227,8 @@ const EXPECTED_CLOTH_SPEC_BLOCK = specBlock([
   ['花距', '0.32'],
   // 用料公式 / 算料档位**已删**（引擎内部标识：屏上是 pleat / standard 这类英文）
   ['特殊选项', '加铅线'],
+  // 算料公式**只印公式名**（issue #7842：后面的推导链不上屏）
+  ['算料公式', '韩褶公式'],
   // 组 5 派工
   ['批号', 'B-20261014-01'],
   ['指派米数', '12.5米'],
@@ -400,19 +423,21 @@ const ADDED_ROWS = [
   ['数量单位', '片'],
   ['是否定型', '是'],
   ['款式', '韩式'],
-  ['实际褶倍', '2.05倍'],
+  // 实际褶倍已退场（issue #7842）⇒ 机台屏也不再有这一行；机台屏既有手写行「褶倍」照旧（见 LEGACY_12_ROWS）
   ['总褶数', '48'],
   ['每片褶数', '24'],
   ['幅数', '2'],
   ['是否对花', '是'],
   ['花距', '0.32'],
   ['特殊选项', '加铅线'],
+  ['加工费组合', '定型、韩褶、超高、倒幅'],
   ['批号', 'B-20261014-01'],
   // 机台屏**不去尾零**（机器精度三位小数 = mm，既有真值）—— 这条同时是报工屏去尾零的**负控**
   ['指派米数', '12.500米'],
   ['组件', '主帘'],
   ['加工费米数', '—'],
-  ['算料公式', '—'],
+  // 算料公式只印公式名（与报工屏同一份口径，issue #7842）
+  ['算料公式', '韩褶公式'],
 ]
 
 /** 机台屏屏一的状态（`/api/worker/production/cutting-height` 的形状）。 */
@@ -476,7 +501,9 @@ test('🔴 ④ 机台屏屏一：#6901 新增规格行上屏 + 缺值 `—`（�
   }
 
   // 缺值一律显式 `—`（不猜 0、不留空、不接单位）
-  assert.equal(kvList.includes(kvRow('算料公式', '—')), true, '缺值行显式 `—`（机台屏口径 = `EMPTY`，与报工屏「整行不渲染」是**有意**的两态）')
+  // ⚠️ 取样键 = `加工费米数`（夹具不给 `processing_meters`）：`算料公式` 在 issue #7842 之后
+  // 夹具里**有值**（公式名），拿它当缺值样本会变成「有值也要 `—`」的自相矛盾。
+  assert.equal(kvList.includes(kvRow('加工费米数', '—')), true, '缺值行显式 `—`（机台屏口径 = `EMPTY`，与报工屏「整行不渲染」是**有意**的两态）')
   assert.equal(kvList.includes('—米'), false, '缺值不得在 `—` 后面再缀单位')
   assert.equal(/undefined|null|NaN/.test(kvList), false, '缺值不得渲染成 undefined / null / NaN')
 })
@@ -532,4 +559,80 @@ test('🔴 ⑥ 报工屏去尾零：`3.000` → `3`、`6.300` → `6.3`；机台
   const machine = renderMachine(machineDetailState())
   const kvList = machine.match(/<dl class="wh5-machine__kv-list">([\s\S]*?)<\/dl>/)?.[1] ?? ''
   assert.equal(kvList.includes(kvRow('宽', '2.800米')), true, '机台屏保持三位小数（既有真值，本单不动）')
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ⑦ 加工费组合上屏（issue #7842）· ⑧ 算料公式只印公式名 + 实际褶倍退场
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 用户 2026-10-26 逐字：「工人报工页面缺乏加工费组合中倒幅，超高 韩褶 定型信息，可以参考 pc 端这样展示即可」。
+ *
+ * <p>红证（三条，都会红）：① 把 `POSITION_SPEC_KEYS` 里 `fee_combination_items` 那一行删掉
+ * ⇒ 屏上整行消失 ⇒ 红；② 把 `format: 'list'` 摘掉（退回 `dataOr` 的 `String(数组)`）
+ * ⇒ 屏上变成 `定型,韩褶,超高,倒幅``（英文逗号）⇒ 红；③ 把缺值口径改成「空数组也渲染一行」
+ * ⇒ 「空数组 ⇒ 整行不出现」那条红。</p>
+ */
+test('🔴 ⑦ 加工费组合上屏：用户点名的四项（定型/韩褶/超高/倒幅）一行可见；缺值与空数组整行不渲染', () => {
+  const html = renderPage(LOGGED_IN(), viewWith([clothPosition()]))
+  const block = firstSpecBlock(html)
+
+  assert.equal(
+    block.includes(specRow('加工费组合', '定型、韩褶、超高、倒幅')),
+    true,
+    '加工费组合必须按「顿号并列」上屏（PC 端参考形态）',
+  )
+  // 反向：不得用数组的 String 形态顶替（`String(['定型','韩褶'])` = `定型,韩褶`）
+  assert.equal(block.includes('定型,韩褶'), false, '不得印成 String(数组) 的形态')
+  // 反向：这四个工艺名必须都在（用户点名的四项，缺一个就是没做）
+  for (const name of ['定型', '韩褶', '超高', '倒幅']) {
+    assert.equal(block.includes(name), true, `「${name}」必须出现在屏上`)
+  }
+
+  // 缺值口径：缺键 / null / 空数组 / 全空串 ⇒ 整行不渲染（工人屏不摆空占位）
+  for (const [name, over] of [
+    ['缺键', { fee_combination_items: undefined }],
+    ['null', { fee_combination_items: null }],
+    ['空数组', { fee_combination_items: [] }],
+    ['全空串数组', { fee_combination_items: ['  '] }],
+  ]) {
+    const bare = firstSpecBlock(renderPage(LOGGED_IN(), viewWith([clothPosition(over)])))
+    assert.equal(bare.includes('<dt>加工费组合</dt>'), false, `${name} ⇒ 加工费组合整行不渲染`)
+    // 前置：同一块里别的内容照旧在（否则「不渲染」会因为整块消失而假绿）
+    assert.equal(bare.includes('<dt>商品名称</dt>'), true, `前置：${name} 的用例里整块照旧渲染`)
+  }
+})
+
+/**
+ * 用户 2026-10-26 逐字两条：「移除实际褶倍」+「算料公式只需要展示韩褶公式或者褶倍公式，
+ * 后面的详细算法不要展示，可以移除」。
+ *
+ * <p>红证：① 把 `formula_text` 的 `format: 'formula'` 摘掉 ⇒ 整串（含 `= 5.55米`）上屏 ⇒ 红；
+ * ② 把 `fullness_actual` 加回 `POSITION_SPEC_KEYS` ⇒ 「实际褶倍 2.05倍」重新上屏 ⇒ 红。</p>
+ */
+test('🔴 ⑧ 算料公式只印公式名（推导链不上屏）＋ 实际褶倍退场', () => {
+  const html = renderPage(LOGGED_IN(), viewWith([clothPosition()]))
+  const block = firstSpecBlock(html)
+
+  assert.equal(block.includes(specRow('算料公式', '韩褶公式')), true, '算料公式行只印公式名')
+  // 推导链一个字节都不许上屏（含折数 / 米数这些中间读数）
+  for (const tail of ['2.8×2', '21折', '5.55米', '= 5.3']) {
+    assert.equal(block.includes(tail), false, `推导链片段「${tail}」不得上屏`)
+  }
+
+  // 另一支引擎产出（倍数法）同样只留名字 —— 别把「褶倍数公式」裁成空串 / 只留「褶倍数」
+  const fullnessBlock = firstSpecBlock(renderPage(
+    LOGGED_IN(),
+    viewWith([clothPosition({ formula_text: '褶倍数公式：(5.5÷2)×2 → 每片 2.75×2=5.5米 ×2片 = 11.0米' })]),
+  ))
+  assert.equal(
+    fullnessBlock.includes(specRow('算料公式', '褶倍数公式')),
+    true,
+    '倍数法同样只印公式名（`褶倍数公式`）',
+  )
+  assert.equal(fullnessBlock.includes('每片 2.75'), false, '倍数法的推导链同样不上屏')
+
+  // 实际褶倍退场：服务端仍下发 `fullness_actual`（见夹具注释），屏上不许再出现
+  assert.equal(block.includes('<dt>实际褶倍</dt>'), false, '实际褶倍必须退场（用户 2026-10-26 逐字）')
+  assert.equal(block.includes('2.05倍'), false, '实际褶倍的值也不得借道其它行上屏')
 })

@@ -74,16 +74,26 @@ final class PositionDetailFields {
     static final List<String> SPEC_SIZE_KEYS = List.of("width", "height");
 
     /**
-     * 加工信息键（组 3）：实际褶倍 / 总褶数 / 每片褶数 / 幅数 / 特殊选项 / 款式 / 是否对花 / 花距 /
+     * 加工信息键（组 3）：加工费组合 / 总褶数 / 每片褶数 / 幅数 / 特殊选项 / 款式 / 是否对花 / 花距 /
      * 加工费米数 / 算料公式 / 部位 / 安装工艺 / 加工类型 / 开数 / 是否定型。
      *
      * <p>🔴 issue #7636（用户 2026-10-24 逐字裁定）删掉三键：理论褶倍 {@code fullness}（只留
      * {@code fullness_actual} = 这一单实际用的）、用料公式 {@code formula} / 算料档位 {@code craft_tier}
      * （引擎内部标识，屏上是 {@code pleat} / {@code standard} 这类英文）。</p>
+     *
+     * <p>🔴 issue #7842（用户 2026-10-26 逐字「工人报工页面缺乏加工费组合中倒幅，超高 韩褶 定型信息，
+     * 可以参考 pc 端这样展示即可，移除实际褶倍」）两处：① <b>补</b>
+     * {@code fee_combination_items}（加工费组合的成员名 = 该行选配的加工项，工人据此知道这道活含哪些工艺）；
+     * ② <b>删</b> {@code fullness_actual}（实际褶倍不再上工人屏）。</p>
      */
     static final List<String> CRAFT_DETAIL_KEYS = List.of(
             "curtain_type", "craft", "cutting_mode", "open_count", "is_shaped",
-            "style", "fullness_actual", "pleat_count", "per_panel_pleats",
+            // 加工费组合（issue #7842）：值 = 该订单行选配的加工项名（「定型」/「韩褶」/「超高」/「倒幅」…），
+            // 由 `ProductionService#orderSpecByItemId` 现算 —— 成员与取价用的
+            // `ProcessingFeeQueryService#featureNames` **同一份**（工人看的组合 = 商家配价的组合）。
+            // 键名与下发键同名 ⇒ 无需进 SNAPSHOT_SOURCE_KEYS 翻译。
+            "fee_combination_items",
+            "style", "pleat_count", "per_panel_pleats",
             "panels", "has_pattern", "pattern_repeat",
             "special_options",
             "processing_meters", "formula_text");
@@ -132,7 +142,10 @@ final class PositionDetailFields {
             Map.entry("open_count", "openCount"),
             Map.entry("is_shaped", "isShaped"),
             Map.entry("style", "style"),
-            Map.entry("fullness_actual", "fullness_actual"),
+            // 加工费组合（issue #7842）：值由 `ProductionService#orderSpecByItemId` 现算后落在快照源键
+            // `feeCombinationItems`（与 `specialOptions` / `formulaText` 同族的 camelCase 快照键），
+            // 这里翻译一次成下发键 `fee_combination_items`。
+            Map.entry("fee_combination_items", "feeCombinationItems"),
             Map.entry("pleat_count", "pleat_count"),
             Map.entry("per_panel_pleats", "per_panel_pleats"),
             Map.entry("panels", "panels"),

@@ -50,7 +50,8 @@ export function dataOr(value) {
  * @property {string} key    wire 键名（**snake_case**，与服务端 `getOperations.positions[]` 逐字同名）
  * @property {string} label  屏上标签
  * @property {string} [unit] 单位（缺值不显示单位）
- * @property {'raw'|'m'|'number'|'int'|'bool'} [format] 数值呈现口径（缺省 `raw`）
+ * @property {'raw'|'m'|'number'|'int'|'bool'|'list'|'formula'} [format] 呈现口径（缺省 `raw`；
+ *           `list` = 字符串数组按「、」并列；`formula` = 公式串只留公式名）
  */
 
 /** @type {PositionSpecKey[]} */
@@ -71,6 +72,12 @@ export const POSITION_SPEC_KEYS = [
   { key: 'width', label: '宽', unit: '米', format: 'm' },
   { key: 'height', label: '高', unit: '米', format: 'm' },
   // ── 组 3 加工信息 ──
+  // 加工费组合（issue #7842，用户 2026-10-26 逐字「工人报工页面缺乏加工费组合中倒幅，超高 韩褶 定型信息，
+  // 可以参考 pc 端这样展示即可」）：值 = 该订单行选配的加工项名（服务端 `fee_combination_items`，
+  // 成员 = 取价用的同一份 `ProcessingFeeQueryService.featureNames`）⇒ 屏上并列成
+  // 「定型、韩褶、超高、倒幅」。工人据此知道这道活含哪些工艺（倒幅 / 超高 是系统推算、韩褶 / 定型 是手选）。
+  // 缺值 / 空数组 ⇒ 整行不渲染（与其它行同一条缺值口径）。
+  { key: 'fee_combination_items', label: '加工费组合', format: 'list' },
   // 帘种（issue #7739，用户逐字「工人报工详情页面也缺失帘种这一关键信息，需要告诉工人是布帘还是纱帘」）：
   // 值 = 布帘 / 纱帘 / 帘头。⚠️ 本表**登记**它（后端键集守卫要求表 ⊇ 真源键集），但报工屏**不在本块**印 ——
   // 由 `render.mjs::ternLine` 紧跟「第 N 套 · 货号」那一行单独给（见 `SCAN_BLOCK_EXCLUDED_KEYS`）。
@@ -80,9 +87,9 @@ export const POSITION_SPEC_KEYS = [
   { key: 'open_count', label: '开数', format: 'int' },
   { key: 'is_shaped', label: '是否定型', format: 'bool' },
   { key: 'style', label: '款式' },
-  // 褶倍只印**这一单实际用的**那一个（issue #7636，用户 2026-10-24 逐字「为什么有理论和实际褶倍，
-  // 就展示该订单用的实际哪个褶倍」）⇒ 理论褶倍 `fullness` 已从本表删除。
-  { key: 'fullness_actual', label: '实际褶倍', unit: '倍', format: 'number' },
+  // 🔴 褶倍**两行都已退场**：理论褶倍 `fullness` 按 issue #7636（2026-10-24）删除；实际褶倍
+  // `fullness_actual` 按 issue #7842（2026-10-26 用户逐字「移除实际褶倍」）删除 —— 工人屏不再印褶倍，
+  // 需要褶倍信息时看「算料公式」的公式名（韩褶公式 / 褶倍数公式）。
   { key: 'pleat_count', label: '总褶数', format: 'int' },
   { key: 'per_panel_pleats', label: '每片褶数', format: 'int' },
   { key: 'panels', label: '幅数', format: 'int' },
@@ -94,7 +101,9 @@ export const POSITION_SPEC_KEYS = [
   // ── 组 4 算料 / 排料 ──
   { key: 'fabric_meters', label: '面料米数', unit: '米', format: 'm' },
   { key: 'processing_meters', label: '加工费米数', unit: '米', format: 'm' },
-  { key: 'formula_text', label: '算料公式' },
+  // 算料公式**只印公式名**（issue #7842，用户 2026-10-26 逐字「算料公式只需要展示韩褶公式或者褶倍公式，
+  // 后面的详细算法不要展示，可以移除」）⇒ `韩褶公式：6.6×2−0.3 = … = 13.3米` 裁成 `韩褶公式`（`format: 'formula'`）。
+  { key: 'formula_text', label: '算料公式', format: 'formula' },
   // ── 组 5 派工 ──
   { key: 'batch_no', label: '批号' },
   { key: 'batch_meters', label: '指派米数', unit: '米', format: 'm' },
@@ -115,6 +124,8 @@ const digitsOfFormat = (format) => (format === 'm' ? DEFAULT_DIGITS : null)
 export function formatSpecValue(value, format) {
   if (value === null || value === undefined) return EMPTY
   if (format === 'bool') return value === true ? '是' : value === false ? '否' : EMPTY
+  if (format === 'list') return nameList(value)
+  if (format === 'formula') return formulaName(dataOr(value))
   if (value !== '' && Number.isFinite(Number(value))) {
     if (format === 'int') return String(Math.trunc(Number(value)))
     if (format === 'm') return fmtNumber(value, DEFAULT_DIGITS)
@@ -122,6 +133,38 @@ export function formatSpecValue(value, format) {
     return String(Number(value))
   }
   return dataOr(value)
+}
+
+/**
+ * 名单（字符串数组）→ `定型、韩褶、超高、倒幅`（**顿号并列**，与商家端 PC 的组合名同一形态）。
+ *
+ * <p>非数组 / 空数组 / 全空串 ⇒ {@link EMPTY}（整行不渲染）。数组里非字符串项一律丢掉 ——
+ * 服务端下发的就是名字清单（`fee_combination_items`），别把对象 `[object Object]` 印上工人屏。</p>
+ */
+function nameList(value) {
+  if (!Array.isArray(value)) return EMPTY
+  const names = value
+    .filter((item) => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter((item) => item !== '')
+  return names.length > 0 ? names.join('、') : EMPTY
+}
+
+/**
+ * 算料公式串 → **只留公式名**（`韩褶公式：6.6×2−0.3 = 12.9 ÷ 0.25 = 51.6 → 52折 → … = 13.3米` ⇒ `韩褶公式`）。
+ *
+ * <p>用户 2026-10-26 逐字（issue #7842）：「算料公式只需要展示韩褶公式或者褶倍公式，后面的详细算法不要展示，
+ * 可以移除」。🔴 <b>公式名由引擎产出</b>（`curtain_calc._formula_text` 的 `"{label}："` 前缀，
+ * 引擎侧判据 `test_craft_calc_formula.py::test_*_formula_text_names_the_formula` 逐字钉住）——
+ * 本函数只**截前缀**，Java / TS 侧**不自拼第二份**「pleat → 韩褶公式」的标签表（那就是会漂的第二份口径）。</p>
+ *
+ * <p>没有冒号（历史串 / 异常形态）⇒ 原样显示：宁可多印，也不把内容整行吞掉。</p>
+ */
+function formulaName(text) {
+  if (text === EMPTY) return EMPTY
+  const [head] = text.split(/[：:]/)
+  const name = head.trim()
+  return name === '' ? text : name
 }
 
 /**

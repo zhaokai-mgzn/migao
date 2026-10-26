@@ -373,7 +373,8 @@ export function detailRows(data, position) {
 const MACHINE_DETAIL_COVERED = new Set([
   'width', 'height', 'craft', 'curtain_type', 'open_count', 'cutting_mode',
   // `fullness` 仍有两层含义：机台屏手写行「褶倍」读它（**本单不动**那一行 —— 它是机器屏既有真值）；
-  // 共享表已不再登记它（报工屏只印实际褶倍 `fullness_actual`，issue #7636）
+  // 共享表登记的是 `fullness_actual`（实际褶倍）—— issue #7842 起**它也不在表里了**（工人屏不印褶倍），
+  // 故本屏只剩这行手写的「褶倍」。
   'fullness', 'fabric_meters',
   // 货号手写行改读 `product_code`（issue #7636）⇒ 共享表这一格也必须排除，否则一屏印两遍
   'product_code',

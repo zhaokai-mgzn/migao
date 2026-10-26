@@ -929,6 +929,22 @@ public class ProductionService {
                         spec.put(key, pi.get(key));
                     }
                 }
+                // 加工费组合（issue #7842，用户 2026-10-26 逐字「工人报工页面缺乏加工费组合中倒幅，
+                // 超高 韩褶 定型信息，可以参考 pc 端这样展示即可」）：工人屏要看见**这一行选了哪些加工项**
+                // —— 倒幅 / 超高 是系统推算特征、韩褶 / 定型 是手选项，它们只活在
+                // `processing_info.processingItems[]`（取价的组合键成员）。
+                // 🔴 成员**不在这里另拼**：复用 `ProcessingFeeQueryService#featureNames`
+                // （`ProcessingFeeCalculator` 判组合键用的是同一份实现）⇒ 工人屏看到的组合与商家配的
+                // 组合价**必然是同一批成员**。顺序 = 选择顺序（去重保序）；归一化（排序后的组合键）
+                // 仍是 `ProcessingFeeCombinationCommandService#compositionKey` 的事，此处不掺和。
+                List<String> feeItems = ProcessingFeeQueryService.featureNames(pi);
+                if (!feeItems.isEmpty()) {
+                    // 落的是**快照源键**（camelCase，与 `specialOptions` / `formulaText` 同族）——
+                    // 下发键 `fee_combination_items` 由 `PositionDetailFields.SNAPSHOT_SOURCE_KEYS`
+                    // 翻译一次；商家 `getOperations` 面因此只多一个 camelCase 键，canonical 明细键
+                    // 照旧不进那个面（`PositionDetailFieldsTest` ② 的契约）。
+                    spec.put("feeCombinationItems", new ArrayList<>(new LinkedHashSet<>(feeItems)));
+                }
             }
             byId.put(item.getId(), spec);
         }
