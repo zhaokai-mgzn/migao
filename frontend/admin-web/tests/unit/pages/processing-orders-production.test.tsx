@@ -565,8 +565,12 @@ describe('加工单生产明细页', () => {
     // 任务卡是 portal + display:none（打印才显形）⇒ 判文案只看 DOM 存在性，不能用 innerText
     // 🔴 2026-10-26（issue #7816）：纸面**不再印加工单号**（那是内部编号，`task-card-no` 已随版式退场）
     //    ⇒ 改判「纸上读不到加工单号」；没有部位时纸面只剩一句显式占位说明。
-    await waitFor(() => expect(document.querySelector('.task-card-print-area')).not.toBeNull())
-    const card = document.querySelector('.task-card-print-area') as HTMLElement
+    // 等到**纸面内容**真的渲染出来（占位框是最稳的锚点）；取不到 portal 容器就**抛**（判据不得空跑）
+    await waitFor(() => expect(screen.getByTestId('task-card-qr-placeholder')).toBeInTheDocument())
+    const card = document.querySelector('.task-card-print-area') as HTMLElement | null
+    if (!card) throw new Error('任务卡 portal 没挂到 body —— 判据无从取值（不得静默通过）')
+    // 打印隔离的落点：portal 容器必须是 body 的直接子级（`body > *:not(.print-doc)` 才选得准）
+    expect(card.parentElement).toBe(document.body)
     expect(card.textContent).not.toContain('JG-20260917-0001')
     expect(screen.queryByTestId('task-card-no')).toBeNull()
     const placeholder = screen.getByTestId('task-card-qr-placeholder')
@@ -932,9 +936,10 @@ describe('加工单生产明细页', () => {
     expect(sheets).toBe(6)
     await waitFor(() => expect(screen.getByTestId(`task-card-label-${sheets - 1}`)).toBeInTheDocument())
     expect(screen.getAllByTestId(/^task-card-label-\d$/)).toHaveLength(sheets)
-    // 反「一部位一张」的旧口径：本夹具的开数不全是 1 ⇒ 纸面张数**必须多于**部位数
-    // （改回「一部位一张」⇒ 下面这条同步必红，且总数那条也会红）
-    expect(sheets).toBeGreaterThan(OPERATIONS_THREE_PARTS.positions.length)
+    // 反「一部位一张」的旧口径：本夹具的开数不全是 1 ⇒ 纸面张数**必须多于**部位数。
+    // 写成**确切差值**（6 − 3 = 3：双开多 1 张 + 三开多 2 张），不用 `toBeGreaterThan`
+    // （弱断言门禁只许非增，且「多于」不如「多几张」能判别份数映射错位）。
+    expect(sheets - OPERATIONS_THREE_PARTS.positions.length).toBe(3)
     // 张序 0..N-1 **连续**（中间缺一张 = 少印一份且判据只看总数会漏）
     expect(screen.getAllByTestId(/^task-card-label-\d$/).map((el) => el.dataset.testid)).toEqual(
       Array.from({ length: sheets }, (_, index) => `task-card-label-${index}`),

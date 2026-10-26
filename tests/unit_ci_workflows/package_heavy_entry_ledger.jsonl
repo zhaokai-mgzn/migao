@@ -34,3 +34,5 @@
 {"id":"1792971246.25440.30720","ts":"2026-10-25T23:34:06Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/7791-warehouse-water-level","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1792971249.25515.620","ts":"2026-10-25T23:34:09Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7791-warehouse-water-level","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1792971880.86303.1710","ts":"2026-10-25T23:44:41Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7791-warehouse-water-level","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1792984045.84097.20546","ts":"2026-10-26T03:07:26Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/wash-label-50x150-copies","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1792984078.84248.5835","ts":"2026-10-26T03:07:58Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/wash-label-50x150-copies","why":"--allow-package-heavy（命令行显式）"}
