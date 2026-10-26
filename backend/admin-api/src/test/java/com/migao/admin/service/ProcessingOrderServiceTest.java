@@ -647,6 +647,51 @@ class ProcessingOrderServiceTest {
                 .doesNotContainKey("remark");
     }
 
+    // ── 安装信息（issue #7856）：processing_info 顶层两键 ⇒ 加工单快照（固化真相）────────────
+    //
+    // 用户 2026-10-26 裁定：两个信息都**不是订单基础字段** ⇒ 落 order_items.processing_info
+    // （已登记 JSONB ⇒ 零迁移）。`installCommunity` 是订单级语义、由写侧扇出到每行同值；
+    // `installRoom` 是件级（= 一行 = 一扇窗）。白名单里没有这两个键 ⇒ 纸面永远少这两行，
+    // 而快照是加工单的固化真相、事后补不回来。
+
+    @Test
+    @DisplayName("🔴 #7856 安装小区 + 安装位置随加工单固化：processing_info 两键逐行带进快照")
+    @SuppressWarnings("unchecked")
+    void installInfoIsFrozenIntoSnapshot() {
+        stubLibrary();
+        OrderItem item = orderItemWithProcessing("米白");
+        ((Map<String, Object>) item.getProcessingInfo()).putAll(
+                spec("installCommunity", "春江花园 3栋2单元", "installRoom", "主卧"));
+        stubGenerate(List.of(item));
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "文员");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
+        verify(processingOrderMapper).insert(poCaptor.capture());
+        assertThat(capturedSnapshot(poCaptor).get(0))
+                .as("两个键都在 CRAFT_SPEC_SNAPSHOT_KEYS 里 ⇒ 快照逐行带上（删掉任一 ⇒ 本断言红）")
+                .containsEntry("installCommunity", "春江花园 3栋2单元")
+                .containsEntry("installRoom", "主卧");
+    }
+
+    @Test
+    @DisplayName("🔴 #7856 未填安装信息 ⇒ 快照里没有这两个键（缺值不落键，纸面不印）")
+    void absentInstallInfoLeavesNoSnapshotKey() {
+        stubLibrary();
+        stubGenerate(List.of(orderItemWithProcessing("米白")));
+
+        var results = realChainService().generate(List.of("order-001"), TENANT, "文员");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        ArgumentCaptor<ProcessingOrder> poCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
+        verify(processingOrderMapper).insert(poCaptor.capture());
+        assertThat(capturedSnapshot(poCaptor).get(0))
+                .as("缺值不落键（copyIfPresent 语义）：不落 null / 空串，前端据此不印")
+                .doesNotContainKey("installCommunity")
+                .doesNotContainKey("installRoom");
+    }
+
     @Test
     @DisplayName("PG-060 不重复扣：同一订单重复生成被幂等闸拒 ⇒ 台账只被调用一次")
     void duplicateGenerateDoesNotDeductTwice() {

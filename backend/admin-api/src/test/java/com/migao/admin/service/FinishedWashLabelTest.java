@@ -124,7 +124,11 @@ class FinishedWashLabelTest {
         List<Map<String, String>> rows = (List<Map<String, String>>)
                 ((Map<String, Object>) view.get("label")).get("rows");
         assertThat(rows).extracting(r -> r.get("label"))
-                .contains("订单编号", "客户", "下单日期", "套数", "尺寸", "开数", "部位", "主布货号", "打包区域");
+                .contains("订单编号", "客户", "下单日期", "套数", "尺寸", "开数", "帘种", "主布货号", "打包区域")
+                // issue #7856：纸面标签统一叫「帘种」，不再有「部位」行
+                .doesNotContain("部位")
+                // 安装信息缺值（本夹具 processingInfo 为空）⇒ 整行不印（不印 `—`）
+                .doesNotContain("安装小区", "安装位置");
         assertThat(rows).filteredOn(r -> "打包区域".equals(r.get("label")))
                 .singleElement().satisfies(r -> assertThat(r.get("value")).isEqualTo("A-01"));
         assertThat(rows).filteredOn(r -> "套数".equals(r.get("label")))
@@ -134,6 +138,34 @@ class FinishedWashLabelTest {
         // 没有稳定来源的字段不得出现（不印 `—`、不编造）
         assertThat(rows).extracting(r -> r.get("label"))
                 .doesNotContain("项目名称", "款式", "安装工艺", "扩展选项");
+    }
+
+    @Test
+    @DisplayName("🔴 成品入库标签带安装信息（issue #7856）：有值按「帘种→安装小区→安装位置→主布货号」印，缺值整行不印")
+    void finishedLabelCarriesInstallInfo() {
+        when(workLogMapper.countPackerLogs(TENANT, "po-1", "w-1")).thenReturn(1);
+        // 真值 = 订单行 `processing_info` 顶层两键（零迁移）；测试直连 service ⇒ 字段注入的 mapper 手动补上
+        item.setProcessingInfo(Map.of("installCommunity", "春江花园 3栋2单元", "installRoom", "主卧"));
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                service, "objectMapper", new com.fasterxml.jackson.databind.ObjectMapper());
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, String>> rows = (List<Map<String, String>>)
+                ((Map<String, Object>) service.washLabelView(TENANT, TOKEN, "w-1", "张三").get("label")).get("rows");
+        // 行序：安装信息紧跟在帘种之后、主布货号之前（拣货/贴箱的人先认这户人家、再认布）
+        assertThat(rows).extracting(r -> r.get("label"))
+                .containsSubsequence("帘种", "安装小区", "安装位置", "主布货号");
+        assertThat(rows).filteredOn(r -> "安装小区".equals(r.get("label")))
+                .singleElement().satisfies(r -> assertThat(r.get("value")).isEqualTo("春江花园 3栋2单元"));
+        assertThat(rows).filteredOn(r -> "安装位置".equals(r.get("label")))
+                .singleElement().satisfies(r -> assertThat(r.get("value")).isEqualTo("主卧"));
+
+        // 缺值对照：键清空 ⇒ 两行都不得出现（「不印 —」不是只对水洗唛成立）
+        item.setProcessingInfo(Map.of());
+        @SuppressWarnings("unchecked")
+        List<Map<String, String>> blankRows = (List<Map<String, String>>)
+                ((Map<String, Object>) service.washLabelView(TENANT, TOKEN, "w-1", "张三").get("label")).get("rows");
+        assertThat(blankRows).extracting(r -> r.get("label")).doesNotContain("安装小区", "安装位置");
     }
 
     @Test

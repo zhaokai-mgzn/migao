@@ -659,6 +659,13 @@ export interface OrderItem {
   /** 下单时的卷长快照（米，后端 `order_items.roll_length_m`） */
   rollLengthM?: number | null
   processingInfo?: Record<string, unknown>
+  /**
+   * **安装位置**（件级，issue #7856）：这一扇窗装在那户人家的哪个空间（主卧 / 阳台 …）。
+   *
+   * 🔴 **不是**部位 / 帘种（那是 `curtainType`）。服务端**投影**自 `processingInfo.installRoom`
+   * （真值仍在 JSONB 里）⇒ 展示直读本字段；缺值 ⇒ **不渲染该行**（不猜、不占位）。
+   */
+  installRoom?: string
   processingFee?: number
   subtotal: number
   createdAt?: string
@@ -744,6 +751,21 @@ export interface ProcessingOrderItem {
   productName?: string
   sku?: string
   colorName?: string
+  /**
+   * **安装小区**（订单级；生成加工单时随快照逐行固化）。
+   *
+   * 语义 = 这批帘子最终装进的那一户人家所在的小区（可连带楼栋/单元/门牌）。
+   * 🔴 **不是**收货地址（货是发给下单的窗帘店）、**不是**客户所在地。
+   * 只上纸（水洗唛 / 发货标签 / 入库标签），不参与算料 / 计价 / 派工 / 库存。
+   */
+  installCommunity?: string
+  /**
+   * **安装位置**（件级；= 这一扇窗装在那户人家的哪个空间，例「主卧」「阳台」）。
+   *
+   * 🔴 **不是**「部位/帘种」（布帘 / 纱帘 / 帘头）—— 那个是 `curtainType`。
+   * 来源 = 订单行 `processing_info.installRoom` 的逐键透传；缺键 ⇒ 纸面该行不印（不猜）。
+   */
+  installRoom?: string
   /**
    * 该快照行对应的**订单商品行 id**（= `order_items.id`）：后端 `buildSnapshot` **无条件**落它。
    * 洗水码与加工单纸面靠它与 `order.items` 对齐（对不上 ⇒ **不猜**，该行不印这些值）。
@@ -2116,6 +2138,12 @@ export interface Order {
   customerName: string
   customerPhone: string
   customerAddress?: string
+  /**
+   * **安装小区**（订单级，2026-10-26 新增）：帘子最终装进的那一户人家所在的小区。
+   * 只随货打印（水洗唛 / 发货标签 / 入库标签），不参与算料 / 计价 / 检索 / 统计。
+   * 空 ⇒ 纸面不印该行（不印「—」占纸）。
+   */
+  installCommunity?: string
   totalAmount: number          // 累计金额
   actualAmount: number         // 实收款
   discountAmount?: number      // 优惠金额 (issue #672)
@@ -2226,6 +2254,12 @@ export interface OrderFormData {
   customerName: string
   customerPhone: string
   customerAddress?: string
+  /**
+   * **安装小区**（issue #7856）：订单级、整单一个值 —— 帘子最终装进的那一户人家所在的小区。
+   * 🔴 **不是收货地址**（货发给下单的窗帘店）。服务端落 `order_items.processing_info.installCommunity`
+   * 并**扇出到每行**；缺值 ⇒ **键不出现**（空白 = 未填）。
+   */
+  installCommunity?: string
   actualAmount?: number           // 实收款（用户输入的实际收款金额）
   discountAmount?: number         // 优惠金额（后端校验 应收-优惠≈实收，必须随单携带）
   /**
@@ -2289,6 +2323,12 @@ export interface OrderContentUpdateParams {
   customerName: string
   customerPhone: string
   customerAddress?: string
+  /**
+   * **安装小区**（issue #7856）：`undefined`（未传）⇒ 服务端**沿用原值**；空串 ⇒ **清空**；
+   * 其余 ⇒ 归一后扇出到每行。件级「安装位置」不在这里 —— 它走每行的
+   * `processingInfo.installRoom`（写侧 DTO 没有 item 一级字段，放一级会被静默丢掉）。
+   */
+  installCommunity?: string
   discountAmount?: number
   actualAmount?: number
   items: OrderContentUpdateItem[]

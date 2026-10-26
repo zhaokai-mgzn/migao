@@ -1,4 +1,4 @@
-// case_ids: OR-001, OR-002, OR-003, OR-046, OR-055, OR-067, OR-068, UI-024, UI-040, UI-053, UI-076, UI-090
+// case_ids: OR-001, OR-002, OR-003, OR-046, OR-055, OR-067, OR-068, OR-070, UI-024, UI-040, UI-053, UI-076, UI-090
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, cleanup, screen, waitFor } from '@testing-library/react'
 
@@ -968,4 +968,46 @@ describe('OrderDetailPage', () => {
     expect(screen.queryByText('快递')).toBeNull()
   })
 
+  // ===== 安装信息（issue #7856）=====
+  // 两个字段都是「只存只印」的附注；屏幕上的口径与相邻行一致：
+  // 订单级的**安装小区**缺值显示 `-`（信息面要读得全），件级的**安装位置**缺值**不渲染**该行
+  // （与「部位备注」同一口径：不占位、不印 `-`）。
+
+  it('#7856: 安装小区有值 ⇒ 收货信息区显示，且**不**与收货地址互相回填', async () => {
+    mockGetOrder.mockResolvedValue({
+      data: { data: { ...mockOrder, installCommunity: '春江花园 3栋2单元 502' } },
+    })
+    render(<OrderDetailPage />)
+
+    const label = await screen.findByText('安装小区：')
+    expect(label.parentElement?.textContent).toBe('安装小区：春江花园 3栋2单元 502')
+    // 收货地址仍在原位（两个事实、两个地址，不合并）
+    expect(screen.getByText('收货地址：').parentElement?.textContent).toBe(
+      '收货地址：北京市朝阳区xx小区'
+    )
+  })
+
+  it('#7856: 安装小区缺值 ⇒ `-`（与相邻行同口径，不留白、不 undefined）', async () => {
+    render(<OrderDetailPage />)
+    const label = await screen.findByText('安装小区：')
+    expect(label.parentElement?.textContent).toBe('安装小区：-')
+  })
+
+  it('#7856: 安装位置（件级）有值 ⇒ 该行渲染「安装位置 主卧」', async () => {
+    mockGetOrder.mockResolvedValue({
+      data: {
+        data: { ...mockOrder, items: [{ ...mockOrder.items[0], installRoom: '主卧' }] },
+      },
+    })
+    render(<OrderDetailPage />)
+
+    const el = await screen.findByTestId('order-item-install-room')
+    expect(el.textContent).toBe('安装位置主卧')
+  })
+
+  it('#7856: 安装位置缺值 ⇒ 该行**不渲染**（不显示 `-`、不显示空行）', async () => {
+    render(<OrderDetailPage />)
+    await screen.findByText('测试窗帘布')
+    expect(screen.queryByTestId('order-item-install-room')).toBeNull()
+  })
 })

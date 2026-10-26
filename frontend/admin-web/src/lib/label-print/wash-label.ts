@@ -57,7 +57,8 @@ import {
   WASH_LABEL_LINE_HEIGHT as LABEL_LINE_HEIGHT,
   WASH_LABEL_PADDING_MM as LABEL_PADDING_MM,
   WASH_LABEL_QR_CSS_PX as LABEL_QR_CSS_PX,
-  WASH_LABEL_QR_GAP_MM as LABEL_QR_GAP_MM,
+  WASH_LABEL_QR_TEXT_GAP_LINES as LABEL_QR_TEXT_GAP_LINES,
+  WASH_LABEL_BOTTOM_CLEARANCE_MM as LABEL_BOTTOM_CLEARANCE_MM,
   WASH_LABEL_QR_PLACEHOLDER_FONT_PT,
   WASH_LABEL_QR_PLACEHOLDER_MM as LABEL_QR_PLACEHOLDER_MM,
 } from './wash-label-metrics'
@@ -279,17 +280,24 @@ export function layoutWashLabel(
   const companyHeight =
     company.length > 0 ? company.reduce((sum, line) => sum + Math.round(line.fontPx * LABEL_LINE_HEIGHT), 0) + gap : 0
 
-  // ② 底部行（`shrink-0`）：**居中**二维码（或同尺寸占位框）—— 纸面的功能件，永不被裁
+  // ② 二维码（`shrink-0`）：**跟在正文后两行**，不沉底 —— 2026-10-26 用户逐字
+  //    「二维码不要沉底，跟文字隔两行即可，要离底部虚线留空」。
+  //    版式与系统打印（`TaskCardPrint`：文字块不 flex-1 + `mt-[10.16mm]`）逐条同口径；
+  //    两者共用 {@link LABEL_QR_TEXT_GAP_LINES} / {@link LABEL_BOTTOM_CLEARANCE_MM}。
   const qrValue = (input.qrValue ?? '').trim()
   const qrSize = Math.round(mm(LABEL_QR_CSS_PX * CSS_PX_TO_MM))
   const placeholderSize = Math.round(mm(LABEL_QR_PLACEHOLDER_MM))
   const footerSize = qrValue === '' ? placeholderSize : qrSize
-  const footerTop = heightPx - margin - footerSize
+  const textGap = lineStep * LABEL_QR_TEXT_GAP_LINES
+  const bottomClearance = Math.round(mm(LABEL_BOTTOM_CLEARANCE_MM))
+  /** 二维码**最低**允许的下沿（再往下就贴底部虚线了 ⇒ 正文在这里之前必须收住） */
+  const footerBottomMax = heightPx - margin - bottomClearance
+  const footerTopMax = footerBottomMax - footerSize
   const footerX = Math.round((widthPx - footerSize) / 2)
 
-  // ③ 正文块（`flex-1 min-h-0 overflow-hidden`）：**空间不够时只裁这里**
+  // ③ 正文块（`min-h-0 overflow-hidden`）：**空间不够时只裁这里**；止于「二维码上沿再往上两行」
   const blockTop = margin + companyHeight
-  const blockBottom = footerTop - Math.round(mm(LABEL_QR_GAP_MM))
+  const blockBottom = footerTopMax - textGap
   const lines: LabelText[] = []
   let cursor = blockTop
   let exhausted = false
@@ -304,6 +312,8 @@ export function layoutWashLabel(
       cursor += lineStep
     }
   }
+  // 二维码 y = 正文最后一行的下方**两行**；正文很短时也不许沉底（`min` 兜住纸底 + 留白）
+  const footerTop = Math.min(cursor + textGap, footerTopMax)
 
   const qr: LabelRect | null = qrValue === '' ? null : { x: footerX, y: footerTop, size: qrSize }
   const qrPlaceholder: LabelPlaceholder | null =

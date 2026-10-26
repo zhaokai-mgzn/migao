@@ -1,4 +1,4 @@
-// case_ids: OR-035, OR-033
+// case_ids: OR-035, OR-033, OR-070
 // @vitest-environment jsdom
 /**
  * 下单页**部位备注**写侧（issue #5685）。
@@ -344,4 +344,83 @@ describe('下单页部位备注写侧（#5685）', () => {
     // 红证：若备注存在页面级共享 state（或被写进每一行）⇒ 第二行会拿到同一串 ⇒ 本条红
     expect('remark' in items[1].processingInfo).toBe(false)
   }, 30000)
+})
+
+// ============================================================================
+// **安装信息**写侧（issue #7856；与上面「部位备注」同一族：都是「只存只印」的附注）
+//
+// 用户 2026-10-26 逐字：「订单，水洗唛，成品出库单，发货联上还缺了一个信息，窗帘的安装位置，
+// 是卧室还是阳台，还有客户要求我们备注窗帘未来安装给哪个小区」+「c端允许先空，再补」
+//
+// 口径（键名冻结）：
+// - **安装小区** 订单级 ⇒ 建单请求**顶层** `installCommunity`（服务端单点扇出到每行 JSONB，
+//   前端**不**逐行写同一个字符串）；
+// - **安装位置** 件级 ⇒ 该行 `processingInfo.installRoom`（后端写侧 DTO **没有** item 一级字段，
+//   放一级会被静默丢掉）；
+// - 两个都**选填**：空 / 纯空白 ⇒ **不落键**（不参与必填校验、不阻塞提交）。
+// ============================================================================
+describe('下单页安装信息写侧（#7856）', () => {
+  beforeEach(stubApis)
+
+  /** 安装小区输入框（订单级；在「收货信息」区，收货地址下面） */
+  const communityInput = (): HTMLInputElement =>
+    screen.getByPlaceholderText('例：春江花园 3栋2单元（选填，随货打印给安装/分拣用）')
+
+  /** 安装位置输入框（件级；在加工项步骤里，紧挨「部位备注」） */
+  const roomInput = (idx = 0): HTMLInputElement =>
+    screen.getAllByTestId('line-item-install-room')[idx] as HTMLInputElement
+
+  const submittedPayload = async (): Promise<any> => {
+    await submit()
+    await waitFor(() => expect(mockCreateOrder).toHaveBeenCalled())
+    return mockCreateOrder.mock.calls[0][0]
+  }
+
+  it('判据 1（红证）：填了小区 + 位置 ⇒ 顶层 installCommunity、该行 processingInfo.installRoom 逐字', async () => {
+    await setupLine()
+    openOtherSteps()
+    fireEvent.change(communityInput(), { target: { value: '春江花园 3栋2单元' } })
+    fireEvent.change(roomInput(), { target: { value: '主卧' } })
+
+    const payload = await submittedPayload()
+    expect(payload.installCommunity).toBe('春江花园 3栋2单元')
+    expect(payload.items[0].processingInfo.installRoom).toBe('主卧')
+    // 🔴 件级字段**不得**落在 item 一级（后端 DTO 没有它 ⇒ 会被静默丢掉）
+    expect(Object.keys(payload.items[0])).not.toContain('installRoom')
+    // 只加不改：既有的落库键仍在（安装信息不许挤掉加工费米数）
+    expect(payload.items[0].processingInfo.processingMeters).toBe(13.3)
+  })
+
+  it('判据 2（红证）：两个都不填 ⇒ 请求体里**没有** installCommunity 键、该行没有 installRoom 键', async () => {
+    await setupLine()
+    const payload = await submittedPayload()
+    // 前提自证：其它键确实产出了（否则「没有这两个键」可能是空断言）
+    expect(payload.items[0].processingInfo.processingMeters).toBe(13.3)
+    expect('installCommunity' in payload).toBe(false)
+    expect('installRoom' in payload.items[0].processingInfo).toBe(false)
+  })
+
+  it('判据 3（红证）：只填位置不填小区 ⇒ 位置照落、小区键仍不出现（两个字段不串）', async () => {
+    await setupLine()
+    openOtherSteps()
+    fireEvent.change(roomInput(), { target: { value: '阳台' } })
+
+    const payload = await submittedPayload()
+    expect(payload.items[0].processingInfo.installRoom).toBe('阳台')
+    expect('installCommunity' in payload).toBe(false)
+  })
+
+  it('判据 4（红证）：软限 40 / 12 由 maxLength 挡住 + chips 点选即填（仍可自由输入）', async () => {
+    await setupLine()
+    openOtherSteps()
+    // ① 服务端超长是 422 硬拒 ⇒ 录入控件必须先挡住
+    expect(communityInput().maxLength).toBe(40)
+    expect(roomInput().maxLength).toBe(12)
+    // ② 连打 13 个字 ⇒ 只进 12（超出部分根本进不来）
+    await userEvent.type(roomInput(), '主卧次卧客厅阳台书房')
+    expect(roomInput().value).toBe('主卧次卧客厅阳台书房'.slice(0, 12))
+    // ③ chips 快捷词：点一下填入（自由输入的内容被快捷词替换）
+    fireEvent.click(screen.getByTestId('install-room-chip-儿童房'))
+    expect(roomInput().value).toBe('儿童房')
+  }, 20000)
 })

@@ -656,6 +656,12 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         // → **超卖防线被绕过**；0 < 数量 < 1 → 库存/销量零扣减（本条 issue #3682）。
         assertItemAmountsValid(request.getItems());
 
+        // 安装信息（issue #7856）：归一 + 准入**在任何写之前**（超长 ⇒ 422，一行都不落 —— 与上面
+        // 资金闸门同一条纪律；否则会先 insert 订单再抛，靠事务回滚兜，多一次白写）。
+        // 两者都**可选**（用户 2026-10-26：「C 端/客服收单允许先空、后台再补」）⇒ 空白 = 不落键。
+        String installCommunity = OrderInstallInfo.normalizeCommunity(request.getInstallCommunity());
+        normalizeInstallRooms(request.getItems());
+
         // ── 服务端定价（issue #7375 段 2）──
         // 口径见 OrderPricingService：只有**价格本命中**（协议/等级/阶梯）才覆盖客户端价 ——
         // 那是「承诺过的价」；没有价格本依据时不动（覆盖 = 凭空改单，且存量订单会一夜变价）。
@@ -776,7 +782,10 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         orderMapper.insert(order);
 
         // 保存订单明细
-        persistOrderItems(order, request.getItems(), itemFees, tenantId, linePricings);
+        // 安装小区（issue #7856）：**唯一写点扇出**在 persistOrderItems 里（逐行写进
+        // `processing_info.installCommunity`）—— 订单级语义、行数组载体 ⇒ 落每行同一字符串。
+        // 归一 + 准入（去空白 / 折叠内部换行 / ≤40 字，超长 422）在这里做一次，落库前就拒。
+        persistOrderItems(order, request.getItems(), itemFees, tenantId, linePricings, installCommunity);
 
         // 审批留痕回填（issue #7374 段 1）：超授信是被审批放行的，把那笔审批的「用在哪」补成这张订单
         // （闸门跑在下单之前，那时还没有 order id —— 所以是事后回填，不是闸门内直接写）
@@ -917,9 +926,27 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * V111 整卷分配这三件事都会出现**第二份**，而它们分叉的方向是「改单后加工费构成丢失」
      * 「改单后整卷分配不再重算」——都是静默的（没有任何东西会变红）。</p>
      */
+    /**
+     * 订单明细落库（建单 / 内容更新 / Agent 三条路径的**唯一共享入口**）。
+     *
+     * <h3>安装信息（issue #7856）：写侧**单点扇出**</h3>
+     * <p>订单级语义的「安装小区」（{@code processingInfo.installCommunity}）在这里写进**每一行**：
+     * 加工单快照与订单明细都是行数组、没有订单级顶层对象，而纸面（水洗唛 / 发货标签 / 入库标签）
+     * 逐行打印 ⇒ 订单级事实只能逐行落（同 {@code isUrgent} 的既有范式）。调用方只交一个订单级字符串，
+     * **不前端逐行写**（那是第二份口径）；件级「安装位置」则直接放在该行的
+     * {@code processingInfo.installRoom}（与 {@code curtainType} / {@code remark} 同一载体）。</p>
+     * <p>为什么落 JSONB 而不是给 {@code orders} / {@code order_items} 加列（用户 2026-10-26 当场裁定
+     * 「不能作为订单基础字段吧？」）：它只上纸、不参与算料 / 计价 / 派工 / 库存 / 检索；
+     * {@code order_items.processing_info} 是**已登记**的 JSONB 扩展点 ⇒ **数据库零迁移**
+     * （{@code orders} 仍 24 列、{@code order_items} 仍 32 列）。
+     * 缺值不落键（与 {@code CRAFT_SPEC_SNAPSHOT_KEYS} 的白名单键族一致）。</p>
+     *
+     * @param installCommunity 已归一 + 准入的安装小区（{@code null} = 未填 ⇒ 不落键）
+     */
     private void persistOrderItems(Order order, List<OrderCreateRequest.OrderItemRequest> items,
                                    List<ProcessingFeeCalculator.Fee> itemFees, Long tenantId,
-                                   List<OrderPricingService.LinePricing> linePricings) {
+                                   List<OrderPricingService.LinePricing> linePricings,
+                                   String installCommunity) {
         for (int i = 0; i < items.size(); i++) {
             OrderCreateRequest.OrderItemRequest itemRequest = items.get(i);
             // ── 加工费可审计构成落库（issue #4406）──
@@ -931,10 +958,25 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             // UnsupportedOperationException ⇒ 下单直接 500；同时也不该就地改调用方传进来的对象）。
             Map<String, Object> normalizedInfo = OrderLineCraftFields.normalize(
                     itemRequest.getProcessingInfo(), objectMapper);
-            if (normalizedInfo != null) {
-                Map<String, Object> feeAnnotated = new LinkedHashMap<>(normalizedInfo);
-                ProcessingFeeCalculator.attach(feeAnnotated, itemFees.get(i));
-                itemRequest.setProcessingInfo(feeAnnotated);
+            // 安装信息（issue #7856）两键在**同一处**落：订单级 `installCommunity` 扇到每行，
+            // 件级 `installRoom` 落本行（显式 API 字段 > 调用方自己塞进 processingInfo 的同名键）。
+            String installRoom = itemRequest.getInstallRoom();
+            if (normalizedInfo != null || installCommunity != null || installRoom != null) {
+                Map<String, Object> annotated = normalizedInfo == null
+                        ? new LinkedHashMap<>()
+                        : new LinkedHashMap<>(normalizedInfo);
+                if (normalizedInfo != null) {
+                    // 加工费可审计构成只在原本就有 processing_info 的行上挂（与改前逐字同语义）
+                    ProcessingFeeCalculator.attach(annotated, itemFees.get(i));
+                }
+                if (installCommunity != null) {
+                    annotated.put(OrderInstallInfo.KEY_INSTALL_COMMUNITY, installCommunity);
+                }
+                if (installRoom != null) {
+                    annotated.put(OrderInstallInfo.KEY_INSTALL_ROOM, installRoom);
+                }
+                itemRequest.setProcessingInfo(annotated);
+                normalizedInfo = annotated;
             }
             OrderItem item = new OrderItem();
             item.setTenantId(tenantId);
@@ -1041,6 +1083,9 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             target.setWidth(source.getWidth());
             target.setHeight(source.getHeight());
             target.setProcessingInfo(source.getProcessingInfo());
+            // 安装位置（issue #7856）：改单请求的**件级**字段同样接到建单行类型上 ——
+            // 下游写面只有一份（persistOrderItems），两处各搬一遍迟早分叉。
+            target.setInstallRoom(source.getInstallRoom());
             target.setSellingMethod(source.getSellingMethod());
             if (source.getUnitPrice() != null && source.getQuantity() != null) {
                 target.setSubtotal(source.getUnitPrice().multiply(source.getQuantity()));
@@ -1178,7 +1223,12 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         validateStockSufficientForItems(draftItems(items), "修改订单");
 
         // ⑥ 审计留痕：改动前快照（下一行起 order 对象就被就地改写了）
-        Map<String, Object> before = contentSnapshot(order, loadOrderItems(order.getId(), tenantId));
+        //   明细取一次复用：「安装小区」的「未传 = 沿用原值」要靠改动前的行（见下方 ⑧）。
+        List<OrderItem> existingItems = loadOrderItems(order.getId(), tenantId);
+        Map<String, Object> before = contentSnapshot(order, existingItems);
+        // 安装信息（issue #7856）：归一 + 准入同样**在任何写之前**（⑦ 的订单更新 / ⑧ 的明细替换都不落半成品）
+        String installCommunity = resolveUpdatedInstallCommunity(request.getInstallCommunity(), existingItems);
+        normalizeInstallRooms(items);
 
         // ⑦ 落库：收货信息 + 三金额
         orderMapper.update(null, new LambdaUpdateWrapper<Order>()
@@ -1193,13 +1243,47 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         // ⑧ 明细整体替换：旧行**软删**（@TableLogic）后按新明细落库（与建单同一份 persistOrderItems）
         orderItemMapper.delete(new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderId, order.getId()));
         // 改单路径不做服务端定价（改价属于 P1-2 审批面）：传 null ⇒ 不写定价依据列
-        persistOrderItems(order, items, itemFees, tenantId, null);
+        // 安装小区（issue #7856）：**未传 ⇒ 沿用原值**（改动前明细第一条非空），传空串 ⇒ 清空；
+        // 与 discountAmount / actualAmount 的「未传 = 不改、不猜、不清零」同一口径
+        // （明细被**整体替换** ⇒ 不沿用就会在「只想改收货地址」时静默抹掉安装小区）。
+        persistOrderItems(order, items, itemFees, tenantId, null, installCommunity);
 
         recordContentEditAudit(order, before,
                 contentSnapshot(orderMapper.selectById(order.getId()), loadOrderItems(order.getId(), tenantId)));
         log.info("订单内容已修改: id={}, orderNo={}, totalAmount={}, 明细 {} 行",
                 order.getId(), order.getOrderNo(), totalAmount, items.size());
         return getOrderById(order.getId());
+    }
+
+    /**
+     * 逐行归一 + 准入件级「安装位置」（issue #7856）：去空白 / 折叠内部换行 / ≤12 字，超长 422。
+     *
+     * <p>归一结果**写回请求明细**（{@code itemRequest.setInstallRoom}）⇒ {@code persistOrderItems}
+     * 只搬已归一的值，不必再判一次；判在写库之前，超长不会留下半张单。</p>
+     */
+    private void normalizeInstallRooms(List<OrderCreateRequest.OrderItemRequest> items) {
+        if (items == null) {
+            return;
+        }
+        for (OrderCreateRequest.OrderItemRequest item : items) {
+            if (item != null) {
+                item.setInstallRoom(OrderInstallInfo.normalizeRoom(item.getInstallRoom()));
+            }
+        }
+    }
+
+    /**
+     * 内容更新时「安装小区」的取值（issue #7856）。
+     *
+     * <p>{@code null}（未传）⇒ **沿用原值**（改动前明细第一条非空）；空白 ⇒ **清空**；
+     * 其余 ⇒ 归一 + 准入（≤40 字，超长 422）。与 {@code discountAmount} / {@code actualAmount}
+     * 的「未传 = 不改」同一口径 —— 明细是**整体替换**，不沿用就会在「只改收货地址」时静默抹掉安装小区。</p>
+     */
+    private String resolveUpdatedInstallCommunity(String requested, List<OrderItem> existingItems) {
+        if (requested == null) {
+            return OrderInstallInfo.firstCommunity(existingItems, objectMapper);
+        }
+        return OrderInstallInfo.normalizeCommunity(requested);
     }
 
     /**
@@ -1460,6 +1544,9 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         //    issue #4882 起快照不再有 `unitPrice` / `amount`（加工费口径**只有** processingFee 一处）。
         List<OrderDetailResponse.ProcessingItemBrief> aggregatedProcessing = new ArrayList<>();
         BigDecimal processingFee = BigDecimal.ZERO;
+        // 安装小区（issue #7856）：**读侧收敛** —— 取该单明细里第一条非空（写侧扇出到每行同值）。
+        // 存量单 / 扇出之前落的单没有该键 ⇒ null（前端不渲染该行，不印「—」占纸）。
+        String installCommunity = null;
         for (int i = 0; i < items.size(); i++) {
             OrderItem item = items.get(i);
             aggregatedProcessing.addAll(extractProcessingItems(item.getProcessingInfo()));
@@ -1470,7 +1557,15 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             OrderDetailResponse.OrderItemResponse itemResponse = itemResponses.get(i);
             itemResponse.setProcessingFee(itemFee);
             itemResponse.setProcessingFeeDetail(fee == null ? null : fee.detail());
+            // 安装信息（issue #7856）：行级「安装位置」逐行投影；订单级「安装小区」读侧收敛。
+            itemResponse.setInstallRoom(OrderInstallInfo.valueOf(
+                    item.getProcessingInfo(), OrderInstallInfo.KEY_INSTALL_ROOM, objectMapper));
+            if (installCommunity == null) {
+                installCommunity = OrderInstallInfo.valueOf(
+                        item.getProcessingInfo(), OrderInstallInfo.KEY_INSTALL_COMMUNITY, objectMapper);
+            }
         }
+        response.setInstallCommunity(installCommunity);
         response.setProcessingItems(aggregatedProcessing);
         response.setProcessingFee(processingFee);
         // 当前阶段：实收款 = 总金额；后续支持优惠/部分付款时再调整

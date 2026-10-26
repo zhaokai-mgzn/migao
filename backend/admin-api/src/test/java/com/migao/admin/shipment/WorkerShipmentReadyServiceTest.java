@@ -1,9 +1,12 @@
 // case_ids: DF-017, PG-020, OR-045
 package com.migao.admin.shipment;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migao.admin.controller.WorkerShipmentController;
 import com.migao.admin.entity.Order;
+import com.migao.admin.entity.OrderItem;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.service.OrderShipmentService;
 import com.migao.admin.service.ProcessingSetReadService;
@@ -66,11 +69,18 @@ class WorkerShipmentReadyServiceTest {
     @Mock
     private ProcessingSetReadService processingSetReadService;
 
+    /** 订单明细（issue #7856）：发货标签上的帘种与安装信息都是**部位级**事实（一行 = 一扇窗）。 */
+    @Mock
+    private OrderItemMapper orderItemMapper;
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
     private WorkerShipmentReadyService service;
 
     @BeforeEach
     void setUp() {
-        service = new WorkerShipmentReadyService(orderMapper, processingSetReadService);
+        service = new WorkerShipmentReadyService(orderMapper, processingSetReadService,
+                orderItemMapper, objectMapper);
     }
 
     // ── 夹具 ────────────────────────────────────────────────────────────────
@@ -189,6 +199,76 @@ class WorkerShipmentReadyServiceTest {
         assertThat(row).containsKeys("total_sets", "completed_sets");
         org.mockito.Mockito.verify(processingSetReadService)
                 .setCompletionByOrderIds(anyCollection(), any());
+    }
+
+    // ── ③ 安装信息（issue #7856）：帘种 / 安装位置 / 安装小区 ─────────────────────
+    //
+    // 用户 2026-10-26 逐字：「这些水洗唛，入库单，发货联标签都要加上帘种，和安装信息」。
+    // 三个键都是**服务端拼好的展示串**（前端只渲染），且**缺值不下发**（前端缺值不印）。
+
+    /** 一行 = 一扇窗：帘种在**列**上（curtain_type），安装信息在 `processing_info` 顶层（已登记 JSONB）。 */
+    private static OrderItem window(String id, String curtainType, String room, String community) {
+        Map<String, Object> info = new LinkedHashMap<>();
+        if (room != null) {
+            info.put("installRoom", room);
+        }
+        if (community != null) {
+            info.put("installCommunity", community);
+        }
+        return OrderItem.builder()
+                .id(id)
+                .tenantId(TENANT)
+                .orderId("o-1")
+                .productName("蜂巢帘")
+                .curtainType(curtainType)
+                .processingInfo(info)
+                .build();
+    }
+
+    private void givenOrderItems(OrderItem... items) {
+        when(orderItemMapper.selectList(any())).thenReturn(new ArrayList<>(List.of(items)));
+    }
+
+    private void givenAllSetsCompleted(String orderId) {
+        Map<String, Map<String, Object>> completion = new LinkedHashMap<>();
+        completion.put(orderId, sets("JG-1", 2, 2, "completed"));
+        givenCompletion(completion);
+    }
+
+    @Test
+    @DisplayName("🔴 #7856 发货标签三字段：帘种/安装位置按**部位序**去重、`/` 连接；小区取第一条非空")
+    void installInfoFieldsAreDeDuplicatedInPositionOrder() {
+        givenCandidates(order("o-1", "0901-000084"));
+        givenAllSetsCompleted("o-1");
+        givenOrderItems(
+                window("i1", "布帘", "主卧", "春江花园 3栋2单元"),
+                window("i2", "纱帘", "客厅", null),
+                window("i3", "布帘", "主卧", "春江花园 3栋2单元"),
+                window("i4", "帘头", "阳台", null));
+
+        Map<String, Object> row = items(service.listReadyOrders(TENANT)).get(0);
+
+        assertThat(row)
+                .as("顺序 = 部位序（i1→i2→i4），去重保留首次出现的位置；排序 / 用 Set 丢掉顺序 ⇒ 红")
+                .containsEntry("curtain_types", "布帘/纱帘/帘头")
+                .containsEntry("install_rooms", "主卧/客厅/阳台")
+                .containsEntry("install_community", "春江花园 3栋2单元");
+    }
+
+    @Test
+    @DisplayName("🔴 #7856 三字段缺值 ⇒ 键**不下发**（不是空串；前端据此不印，避免孤立分隔符）")
+    void installInfoKeysAreAbsentWhenNothingToPrint() {
+        givenCandidates(order("o-1", "0901-000084"));
+        givenAllSetsCompleted("o-1");
+        givenOrderItems(
+                window("i1", null, null, null),
+                window("i2", "  ", "", null));
+
+        Map<String, Object> row = items(service.listReadyOrders(TENANT)).get(0);
+
+        assertThat(row).doesNotContainKeys("curtain_types", "install_rooms", "install_community");
+        // 反空跑：行本身还在（这三个键的缺值不得把整行改坏）
+        assertThat(row).containsEntry("order_id", "o-1").containsEntry("customer_name", "肖风伟");
     }
 
     // ── ② 截断不静默 ───────────────────────────────────────────────────────

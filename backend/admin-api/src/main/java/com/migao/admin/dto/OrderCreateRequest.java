@@ -133,6 +133,30 @@ public class OrderCreateRequest {
     private Boolean isOutsourced;
 
     /**
+     * **安装小区**（issue #7856；用户 2026-10-26 逐字需求：「窗帘的安装位置…还有客户要求我们备注
+     * 窗帘未来安装给哪个小区」）。
+     *
+     * <p>语义 = 这批帘子最终装进的那一户人家所在的**小区**（可带楼栋 / 单元 / 门牌）。
+     * 🔴 **不是收货地址**（货是发给下单的窗帘店）、不是客户所在地 —— 两个地址是**两个事实**。
+     * 只上纸（水洗唛 / 发货标签 / 入库标签），**不参与**算料 / 计价 / 派工 / 库存 / 检索。</p>
+     *
+     * <p>🔴 <b>它不是订单表的基础字段</b>（用户 2026-10-26 当场裁定「不能作为订单基础字段吧？」）：
+     * 落点是 {@code order_items.processing_info.installCommunity}（已登记的 JSONB 扩展点，
+     * 与 {@code formulaText} / {@code remark} 同一层）⇒ <b>数据库零迁移</b>。写入由
+     * {@code OrderService.persistOrderItems} 这一个写点**扇出到该单每一行**（同一个字符串，
+     * 供加工单快照逐行固化、纸面逐行打印）；读面用「第一条非空」收敛回订单级。
+     * 件级的「安装位置」由明细行的 {@code processingInfo.installRoom} 承载（同一载体）。</p>
+     *
+     * <p>校验（服务端唯一实现点 = {@code OrderInstallInfo}）：去首尾空白、内部换行/制表折叠为
+     * 一个空格、≤40 字；超长 **422**。{@code null} / 空白 ⇒ <b>不落键</b>（缺值不印）。</p>
+     *
+     * <p>⚠️ <b>单侧字段（wire 契约）</b>：ai-agent 的 {@code order_create} 工具 schema 不采集它
+     * （C 端元元澄清清单里没有这个问题）⇒ 登记在 {@code OrderDtoContractTest} 的
+     * {@code REGISTERED_SINGLE_SIDED_FIELDS}（不登记 ⇒ 「未登记的单侧字段」判红）。</p>
+     */
+    private String installCommunity;
+
+    /**
      * 订单明细列表
      */
     @NotEmpty(message = "订单明细不能为空")
@@ -196,6 +220,23 @@ public class OrderCreateRequest {
          */
         @DecimalMin(value = "0", message = "高度不能为负数")
         private BigDecimal height;
+
+        /**
+         * **安装位置**（issue #7856，**件级** = 一行 = 一扇窗）：这一扇窗装在那户人家的哪个空间
+         * （主卧 / 次卧 / 客厅 / 阳台 …）。
+         *
+         * <p>🔴 **不是部位/帘种**（布帘 / 纱帘 / 帘头 = {@code processingInfo.curtainType}）——
+         * 两个事实。也不是房间 {@code processingInfo.room}（那是下单行的另一个键）。</p>
+         *
+         * <p>落点 = 本行 {@code processing_info.installRoom}（**已登记** JSONB 顶层键，与
+         * {@code formulaText} / {@code remark} 同层 ⇒ <b>数据库零迁移</b>）；本字段是**API 级的显式入口**
+         * （前端不必自己往 JSONB 里塞），服务端在 {@code OrderService.persistOrderItems} 这一个写点落键。
+         * 与 {@code processingInfo.installRoom} 同时给时**本字段优先**（显式 &gt; 自由字典）。</p>
+         *
+         * <p><b>可选</b>（用户 2026-10-26：「C 端/客服收单允许先空、后台再补」）：不传 ⇒ 不落键
+         * （不写空串）。校验：去空白 / 折叠内部换行 / ≤12 字，超长 422。</p>
+         */
+        private String installRoom;
 
         /**
          * 加工项详情 JSON

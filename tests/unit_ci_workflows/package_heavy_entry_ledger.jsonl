@@ -45,3 +45,4 @@
 {"id":"1793000954.88927.17160","ts":"2026-10-26T07:49:14Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7839-label-docno-dash","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793001532.92306.28994","ts":"2026-10-26T07:58:52Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/7845-auto-report-inbound","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1793001604.92505.4656","ts":"2026-10-26T08:00:04Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7845-auto-report-inbound","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793006270.87797.18343","ts":"2026-10-26T09:17:51Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/install-info-labels","why":"子包 worktree 直跑全量（无批次标记）"}

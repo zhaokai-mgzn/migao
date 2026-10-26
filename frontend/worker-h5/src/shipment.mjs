@@ -264,11 +264,28 @@ export function buildShipLabelRows(order) {
     { key: 'consignee', label: '收货人', value: labelText(order?.customer_name) },
     { key: 'customer_phone', label: '电话', value: labelText(order?.customer_phone) },
     { key: 'customer_address', label: '地址', value: labelText(order?.customer_address), multiline: true },
+  ]
+  /**
+   * 随货标识（issue #7856，用户 2026-10-26「发货联标签都要加上帘种，和安装信息」）。
+   *
+   * 🔴 **缺值不印该行**（与水洗唛同一口径）：这三个是选填附注，印「帘种 —」/「安装小区 —」
+   * 只会在 50mm 版心上白吃行高。地址是必印行，故它上面仍走 `labelText` 的 `—`。
+   * 值来自 `GET /api/worker/shipment/orders` 的 `items[]`（服务端按部位序去重、`/` 连接）。
+   */
+  const optionalText = (value) => (value == null ? '' : String(value).trim())
+  for (const [key, label, value, multiline] of [
+    ['curtain_types', '帘种', optionalText(order?.curtain_types)],
+    ['install_community', '安装小区', optionalText(order?.install_community)],
+    ['install_rooms', '安装位置', optionalText(order?.install_rooms), true],
+  ]) {
+    if (value !== '') rows.push({ key, label, value, ...(multiline ? { multiline: true } : {}) })
+  }
+  rows.push(
     { key: 'logistics_type', label: '物流方式', value: logisticsText(order) },
     { key: 'logistics_company', label: '物流公司', value: labelText(order?.logistics_company) },
     { key: 'order_date', label: '下单日期', value: shipLabelDateText(order?.created_at) },
     { key: 'sets', label: '套数', value: setsText(order) },
-  ]
+  )
   const remark = order?.remark == null ? '' : String(order.remark).trim()
   if (remark !== '') {
     rows.push({ key: 'remark', label: '备注', value: remark, multiline: true })

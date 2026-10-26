@@ -112,6 +112,9 @@ const items = [
     productName: '2699系列雪尼尔窗帘面料',
     sku: '0012',
     colorName: '米白',
+    // 安装去向（issue #7856）：小区 = 订单级（随快照逐行固化）、位置 = 件级
+    installCommunity: '春江花园 3栋2单元',
+    installRoom: '主卧',
     doorWidth: '2.8米',
     curtainType: '布帘',
     craft: '韩褶',
@@ -292,12 +295,16 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×150mm 单列，issue #7816）',
     expect(painted.length).toBeGreaterThanOrEqual(10)
   })
 
-  it('单列字段逐张渲染：部位 / 货号 / 门幅 / 用料 / 宽高 / 加工方式（照真实工单信息顺序）', () => {
+  it('单列字段逐张渲染：帘种 / 颜色 / 安装信息 / 门幅 / 用料 / 宽高 / 加工方式（照真实工单信息顺序）', () => {
     printCard()
 
-    // 第 1 张（布帘）：部位 / 货号 / 门幅 / 用料 / 宽高 / 加工方式
-    expect(screen.getByTestId('task-card-label-kind-0')).toHaveTextContent('部位: 布帘')
-    expect(screen.getByTestId('task-card-label-sku-0')).toHaveTextContent('货号: 0012')
+    // 第 1 张（布帘）：帘种 / 颜色 / 安装小区 / 安装位置 / 门幅 / 用料 / 宽高 / 加工方式
+    expect(screen.getByTestId('task-card-label-kind-0')).toHaveTextContent('帘种: 布帘')
+    expect(screen.getByTestId('task-card-label-color-0')).toHaveTextContent('颜色: 米白')
+    expect(screen.getByTestId('task-card-label-install-community-0')).toHaveTextContent(
+      '安装小区: 春江花园 3栋2单元',
+    )
+    expect(screen.getByTestId('task-card-label-install-room-0')).toHaveTextContent('安装位置: 主卧')
     expect(screen.getByTestId('task-card-label-door-width-0')).toHaveTextContent('门幅: 2.8米')
     expect(screen.getByTestId('task-card-label-meters-0')).toHaveTextContent('用料: 6.3米')
     expect(screen.getByTestId('task-card-label-size-0')).toHaveTextContent('宽高: 3×2.75米')
@@ -311,9 +318,9 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×150mm 单列，issue #7816）',
     expect(craft0.textContent).not.toContain('定高买宽')
 
     // 逐张对齐（错配 = 车间按错件干活）：第 2 张仍是布帘（双开第 2 份），第 3 张才是纱帘
-    expect(screen.getByTestId('task-card-label-kind-1')).toHaveTextContent('部位: 布帘')
-    expect(screen.getByTestId('task-card-label-kind-2')).toHaveTextContent('部位: 纱帘')
-    expect(screen.getByTestId('task-card-label-kind-3')).toHaveTextContent('部位: 帘头')
+    expect(screen.getByTestId('task-card-label-kind-1')).toHaveTextContent('帘种: 布帘')
+    expect(screen.getByTestId('task-card-label-kind-2')).toHaveTextContent('帘种: 纱帘')
+    expect(screen.getByTestId('task-card-label-kind-3')).toHaveTextContent('帘种: 帘头')
     const craft3 = screen.getByTestId('task-card-label-craft-3')
     expect(craft3).toHaveTextContent('平板')
     expect(craft3).not.toHaveTextContent('韩褶')
@@ -322,9 +329,11 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×150mm 单列，issue #7816）',
   it('🔴 褶法 = 是否韩褶公式 + 折数（一个字段，2026-10-26 用户裁定）', () => {
     printCard()
 
-    // item-1：韩褶公式 + pleat_count 52 ⇒ 「褶法: 韩褶公式 52折」（双开的 2 张都一样）
-    expect(screen.getByTestId('task-card-label-pleats-0')).toHaveTextContent('褶法: 韩褶公式 52折')
-    expect(screen.getByTestId('task-card-label-pleats-1')).toHaveTextContent('褶法: 韩褶公式 52折')
+    // item-1：韩褶公式 + pleat_count 52 ⇒ 「韩褶公式 52折」**无前缀**（issue #7856）
+    // （用户逐字「褶法：去掉，只保留后面的文字，和工艺一样」）
+    expect(screen.getByTestId('task-card-label-pleats-0')).toHaveTextContent('韩褶公式 52折')
+    expect(screen.getByTestId('task-card-label-pleats-0')).not.toHaveTextContent('褶法')
+    expect(screen.getByTestId('task-card-label-pleats-1')).toHaveTextContent('韩褶公式 52折')
     // item-2 没有快照行 ⇒ 判不出公式 ⇒ 该行**不印**（不猜）
     expect(screen.queryByTestId('task-card-label-pleats-2')).toBeNull()
   })
@@ -335,7 +344,7 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×150mm 单列，issue #7816）',
       { ...items[0], formula_text: '褶倍数公式：(5.5÷2)×2 → 11.0米' },
     ] as unknown as ProcessingOrderItem[]
     printCard({ positions: [positions[0]], items: multiple })
-    expect(screen.getByTestId('task-card-label-pleats-0')).toHaveTextContent('褶法: 倍数法')
+    expect(screen.getByTestId('task-card-label-pleats-0')).toHaveTextContent('倍数法')
     expect(screen.getByTestId('task-card-label-pleats-0')).not.toHaveTextContent('韩褶')
   })
 
@@ -346,8 +355,10 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×150mm 单列，issue #7816）',
     expect(screen.getByTestId('task-card-label-remark-0')).toHaveTextContent('备注: 加铅块')
     expect(screen.getByTestId('task-card-label-remark-0')).not.toHaveTextContent('加logo条')
 
-    // item-2 没有快照行 ⇒ 第 3 张（纱帘）不出货号/用料/加工方式/特殊选项/备注/门幅（缺值不渲染，不猜）
-    expect(screen.queryByTestId('task-card-label-sku-2')).toBeNull()
+    // item-2 没有快照行 ⇒ 第 3 张（纱帘）不出颜色/安装信息/用料/加工方式/特殊选项/备注/门幅（缺值不渲染，不猜）
+    expect(screen.queryByTestId('task-card-label-color-2')).toBeNull()
+    expect(screen.queryByTestId('task-card-label-install-community-2')).toBeNull()
+    expect(screen.queryByTestId('task-card-label-install-room-2')).toBeNull()
     expect(screen.queryByTestId('task-card-label-meters-2')).toBeNull()
     expect(screen.queryByTestId('task-card-label-craft-2')).toBeNull()
     expect(screen.queryByTestId('task-card-label-special-options-2')).toBeNull()

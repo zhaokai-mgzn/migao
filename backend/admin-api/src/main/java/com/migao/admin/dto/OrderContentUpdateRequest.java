@@ -60,6 +60,20 @@ public class OrderContentUpdateRequest {
     /** 收货地址 */
     private String customerAddress;
 
+    /**
+     * **安装小区**（issue #7856）：这批帘子最终装进的那一户人家所在的小区（不是收货地址）。
+     *
+     * <p>它不是订单表的列 —— 落点 = {@code order_items.processing_info.installCommunity}
+     * （订单级语义、逐行扇出到每一行，写点唯一 = {@code OrderService.persistOrderItems}）。
+     * 只上纸（水洗唛 / 发货标签 / 入库标签），不参与算料 / 计价 / 派工 / 库存 / 检索。</p>
+     *
+     * <p><b>未传（{@code null}）⇒ 沿用原值</b>（改动前明细里第一条非空）；<b>空串 ⇒ 清空</b>；
+     * 其余 ⇒ 归一（去空白 / 折叠内部换行 / ≤40 字，超长 422）。理由：明细是**整体替换**，
+     * 若不沿用，调用方「只想改收货地址」时会静默抹掉安装小区（同 {@code discountAmount} /
+     * {@code actualAmount} 的「未传 = 不改」口径）。</p>
+     */
+    private String installCommunity;
+
     /** 优惠金额；未传 ⇒ 沿用订单原值（见类注释） */
     private BigDecimal discountAmount;
 
@@ -104,6 +118,13 @@ public class OrderContentUpdateRequest {
         /** 高度(米)，非负 */
         @DecimalMin(value = "0", message = "高度不能为负数")
         private BigDecimal height;
+
+        /**
+         * **安装位置**（issue #7856，件级）：这一扇窗装在那户人家的哪个空间（主卧 / 客厅 / 阳台 …）。
+         * 落点 = 本行 {@code processing_info.installRoom}（已登记 JSONB，零迁移）；
+         * **可选**：不传 ⇒ 不落键（C 端/客服收单允许先空、后台再补）。≤12 字，超长 422。
+         */
+        private String installRoom;
 
         /** 加工项详情（与建单**逐字同形**，见类注释） */
         private Object processingInfo;

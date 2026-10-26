@@ -1,4 +1,4 @@
-// case_ids: OR-055
+// case_ids: OR-055, OR-070
 /**
  * 「修改订单」弹窗（issue #5842；用户 2026-10-01 裁定「买家未付款的订单要允许修改」）。
  *
@@ -43,6 +43,8 @@ const order: any = {
   customerName: '张三',
   customerPhone: '13800138000',
   customerAddress: '北京市朝阳区xx小区',
+  // **安装小区**（issue #7856）：订单级一个值（补录 / 改口都走本弹层）
+  installCommunity: '春江花园 3栋2单元',
   totalAmount: 599,
   discountAmount: 0,
   actualAmount: 599,
@@ -60,6 +62,8 @@ const order: any = {
         processingMeters: 6,
         processingItems: [{ id: 'pi-1', name: '韩褶', quantity: 2 }],
         specialOptions: [],
+        // **安装位置**（件级）：真值住 `processingInfo.installRoom`
+        installRoom: '主卧',
       },
     },
   ],
@@ -163,5 +167,67 @@ describe('EditOrderContentModal（修改订单 · 待付款内容编辑）', () 
     expect(onSaved).not.toHaveBeenCalled()
     expect(onClose).not.toHaveBeenCalled()
     expect(screen.getByTestId('edit-order-content-modal')).toBeInTheDocument()
+  })
+
+  // ===== 安装信息（issue #7856）=====
+  // 用户 2026-10-26 逐字：「订单，水洗唛，成品出库单，发货联上还缺了一个信息，窗帘的安装位置，
+  // 是卧室还是阳台，还有客户要求我们备注窗帘未来安装给哪个小区」+「c端允许先空，再补」
+  // ⇒ 补录 / 改口入口就是这个弹层。口径：
+  // - **安装小区** = 订单级（顶层 `installCommunity`，服务端扇出到每行 JSONB）；
+  // - **安装位置** = 件级（该行 `processingInfo.installRoom`；**不是** item 一级字段 ——
+  //   后端写侧 DTO 没有它，放一级会被静默丢掉）。
+
+  it('⑥ 两格都渲染 + 初值来自订单（小区 = 订单级、位置 = 该行件级）+ 软限 40/12', async () => {
+    renderModal()
+    expect(screen.getByTestId('edit-install-community')).toHaveValue('春江花园 3栋2单元')
+    expect(screen.getByTestId('edit-install-room-0')).toHaveValue('主卧')
+    // 服务端超长是 **422 硬拒** ⇒ 录入控件必须先挡住（40 / 12 与 `OrderInstallInfo` 同值）
+    expect(screen.getByTestId('edit-install-community')).toHaveAttribute('maxlength', '40')
+    expect(screen.getByTestId('edit-install-room-0')).toHaveAttribute('maxlength', '12')
+  })
+
+  it('⑦ 改两格 ⇒ 请求体带顶层 installCommunity + 该行 processingInfo.installRoom（红证）', async () => {
+    const user = userEvent.setup()
+    renderModal()
+    await user.clear(screen.getByTestId('edit-install-community'))
+    await user.type(screen.getByTestId('edit-install-community'), '春江花园 5栋1单元')
+    await user.clear(screen.getByTestId('edit-install-room-0'))
+    await user.type(screen.getByTestId('edit-install-room-0'), '阳台')
+    await user.click(screen.getByTestId('edit-submit'))
+
+    await waitFor(() => expect(mockUpdateOrderContent).toHaveBeenCalledTimes(1))
+    const payload = mockUpdateOrderContent.mock.calls[0][1]
+    expect(payload.installCommunity).toBe('春江花园 5栋1单元')
+    expect(payload.items[0].processingInfo.installRoom).toBe('阳台')
+    // 🔴 件级字段**不得**出现在 item 一级（后端 DTO 没有它 ⇒ 会被 Jackson 静默丢掉）
+    expect(Object.keys(payload.items[0])).not.toContain('installRoom')
+    // 只加不改：其余键仍原样带回
+    expect(payload.items[0].processingInfo.craftLineId).toBe('L1')
+  })
+
+  it('⑧ 两格清空 ⇒ 小区显式清空（空串）、该行 installRoom 键**不出现**（不是空串）', async () => {
+    const user = userEvent.setup()
+    renderModal()
+    await user.clear(screen.getByTestId('edit-install-community'))
+    await user.clear(screen.getByTestId('edit-install-room-0'))
+    await user.click(screen.getByTestId('edit-submit'))
+
+    await waitFor(() => expect(mockUpdateOrderContent).toHaveBeenCalledTimes(1))
+    const payload = mockUpdateOrderContent.mock.calls[0][1]
+    // 小区：空串 = 显式清空（服务端口径「未传 ⇒ 沿用原值、空串 ⇒ 清空」）
+    expect(payload.installCommunity).toBe('')
+    // 位置：缺值 ⇒ **不落键**（写 `""` 会被下游读成「填过」，纸面会多印一行空值）
+    expect(payload.items[0].processingInfo).not.toHaveProperty('installRoom')
+    // 前提自证：processingInfo 本身仍产出了（否则上面那条是空断言）
+    expect(payload.items[0].processingInfo.craftLineId).toBe('L1')
+  })
+
+  it('⑨ 快捷词 chips：点一下填入、再点一次清空（词表只是捷径，不是值域校验）', async () => {
+    const user = userEvent.setup()
+    renderModal()
+    await user.click(screen.getByTestId('install-room-chip-阳台'))
+    expect(screen.getByTestId('edit-install-room-0')).toHaveValue('阳台')
+    await user.click(screen.getByTestId('install-room-chip-阳台'))
+    expect(screen.getByTestId('edit-install-room-0')).toHaveValue('')
   })
 })

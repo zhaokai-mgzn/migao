@@ -489,6 +489,66 @@ class OrderContentEditTest {
                 .isFalse();
     }
 
+    // ──────────────────────────── 安装信息（issue #7856） ────────────────────────────
+    //
+    // 安装小区不是订单列（用户 2026-10-26 裁定「不能作为订单基础字段」）⇒ 落 processing_info。
+    // 改单是**明细整体替换** ⇒ 「未传 = 沿用原值」这一条必须成立，否则「只改收货地址」会静默抹掉它。
+
+    /** 带安装小区的旧行（「沿用原值」的唯一来源）。 */
+    private static OrderItem oldItemWithCommunity(String community) {
+        return OrderItem.builder()
+                .id("item-old").tenantId(TENANT).orderId(ORDER_ID)
+                .productId("prod-1").productName("蜂巢帘")
+                .quantity(new BigDecimal("2")).unitPrice(new BigDecimal("299.50"))
+                .subtotal(new BigDecimal("599.00")).deleted(0)
+                .processingInfo(new LinkedHashMap<>(Map.of("installCommunity", community)))
+                .build();
+    }
+
+    @Test
+    @DisplayName("🔴 #7856 内容更新：安装小区未传 ⇒ 沿用原值并扇进新行（不清零、不落订单列）")
+    @SuppressWarnings("unchecked")
+    void installCommunityIsCarriedOverAndFannedOut() {
+        givenSkuStock("999");
+        givenOrderItems(oldItemWithCommunity("春江花园 3栋2单元"));
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order);
+
+        OrderContentUpdateRequest update = request("3", "50", "150");
+        // 件级安装位置（issue #7856）：可选；传了就必须落进**本行** processing_info（去空白）
+        update.getItems().get(0).setInstallRoom(" 阳台 ");
+
+        orderService.updatePendingOrderContent(ORDER_ID, update);
+
+        ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper).insert(captor.capture());
+        Map<String, Object> info = (Map<String, Object>) captor.getValue().getProcessingInfo();
+        assertThat(info)
+                .as("未传 ⇒ 沿用原值（明细整体替换也不丢），并写进新行的 processing_info")
+                .containsEntry("installCommunity", "春江花园 3栋2单元");
+        assertThat(info)
+                .as("件级安装位置由 API 字段落本行（不是订单级扇出，也不与小区混成一个键）")
+                .containsEntry("installRoom", "阳台");
+    }
+
+    @Test
+    @DisplayName("🔴 #7856 内容更新：传空串 ⇒ 清空（新行不落该键；与「未传 = 沿用」两回事）")
+    @SuppressWarnings("unchecked")
+    void blankInstallCommunityClearsIt() {
+        givenSkuStock("999");
+        givenOrderItems(oldItemWithCommunity("春江花园 3栋2单元"));
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order);
+        OrderContentUpdateRequest update = request("3", "50", "150");
+        update.setInstallCommunity("");
+
+        orderService.updatePendingOrderContent(ORDER_ID, update);
+
+        ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper).insert(captor.capture());
+        assertThat((Map<String, Object>) captor.getValue().getProcessingInfo())
+                .as("空串 = 明确清空 ⇒ 不落键（缺值不落键，纸面不印）")
+                .doesNotContainKey("installCommunity");
+    }
+
     // ──────────────────────────── 条件更新的断言夹具（issue #6955） ────────────────────────────
 
     /** 捕获 {@code update(entity, wrapper)} 的 wrapper（与 {@code OrderUrgencyFieldsTest} 同款）。 */

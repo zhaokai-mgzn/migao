@@ -302,6 +302,8 @@ class OrderDtoContractTest {
             fieldMap.put("customer_name", "customerName");
             fieldMap.put("customer_phone", "customerPhone");
             fieldMap.put("customer_address", "customerAddress");
+            // 安装信息（issue #7856）：两侧都有（**不再单侧**）—— 工具 schema 可选、服务端不传就不落键
+            fieldMap.put("install_community", "installCommunity");
             fieldMap.put("remark", "remark");
             fieldMap.put("items", "items");
             // 明细级（Python 键 → Java 字段）
@@ -313,6 +315,7 @@ class OrderDtoContractTest {
             fieldMap.put("width", "width");
             fieldMap.put("height", "height");
             fieldMap.put("processing_info", "processingInfo");
+            fieldMap.put("install_room", "installRoom");
         }
 
         @Test

@@ -1,7 +1,11 @@
 package com.migao.admin.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migao.admin.entity.Order;
+import com.migao.admin.entity.OrderItem;
+import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -9,6 +13,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -71,6 +76,14 @@ public class WorkerShipmentReadyService {
 
     private final OrderMapper orderMapper;
     private final ProcessingSetReadService processingSetReadService;
+    /**
+     * 订单明细（issue #7856）：50×70 发货标签要印**帘种**与**安装信息**，两者都是**部位级**事实
+     * （一行 = 一扇窗）⇒ 必须取明细；与 {@code ProcessingOrderService} / {@code OrderShipGuard}
+     * 同一条取数路径（走 BaseMapper，{@code processing_info} 才会经 {@code JacksonTypeHandler} 反序列化成 Map）。
+     */
+    private final OrderItemMapper orderItemMapper;
+    /** {@code processing_info} 可能是 JSON **字符串**（自定义 {@code @Select} 路径）⇒ 复用既有归一实现。 */
+    private final ObjectMapper objectMapper;
 
     /**
      * 全完工待发货列表。
@@ -83,7 +96,8 @@ public class WorkerShipmentReadyService {
      *     "customer_name", "customer_phone", "customer_address",     // 收货信息（建单时采集，纸面直接可打）
      *     "logistics_type", "logistics_type_label", "logistics_company",
      *     "total_sets", "completed_sets",
-     *     "processing_order_no", "remark"
+     *     "processing_order_no", "remark",
+     *     "curtain_types", "install_community", "install_rooms"   // 安装信息（issue #7856；缺值不下发）
      *   }],
      *   "scan": {"limit": 200, "truncated": false}
      * }
@@ -99,12 +113,21 @@ public class WorkerShipmentReadyService {
                 candidates.stream().map(Order::getId).toList(), tenantId);
 
         List<Map<String, Object>> items = new ArrayList<>();
+        List<Order> listed = new ArrayList<>();
         for (Order order : candidates) {
             Map<String, Object> sets = completion.get(order.getId());
             if (!allSetsCompleted(sets)) {
                 continue;
             }
-            items.add(rowView(order, sets));
+            listed.add(order);
+        }
+        // 安装信息（issue #7856）：帘种 / 安装位置 / 安装小区都要按单看明细 ⇒ **一次批量取**
+        // （不逐单查 = 不 N+1），且只为**已进列表**的单取。
+        Map<String, List<OrderItem>> itemsByOrder = loadOrderItemsByOrder(
+                listed.stream().map(Order::getId).toList(), tenantId);
+        for (Order order : listed) {
+            items.add(rowView(order, completion.get(order.getId()),
+                    itemsByOrder.getOrDefault(order.getId(), List.of())));
         }
 
         Map<String, Object> scan = new LinkedHashMap<>();
@@ -154,8 +177,30 @@ public class WorkerShipmentReadyService {
         return rows == null ? List.of() : rows;
     }
 
-    /** 一行 = 一张单的全部纸面事实（发货标签读的就是这些键，不再回查）。 */
-    private static Map<String, Object> rowView(Order order, Map<String, Object> sets) {
+    /**
+     * 一行 = 一张单的全部纸面事实（发货标签读的就是这些键，不再回查）。
+     *
+     * <h3>50×70 发货标签的安装信息三键（issue #7856；用户 2026-10-26 逐字需求）</h3>
+     * <p>「水洗唛，成品出库单，发货联上还缺了一个信息，窗帘的安装位置…还有客户要求我们备注窗帘未来
+     * 安装给哪个小区」｜「这些水洗唛，入库单，发货联标签都要加上帘种，和安装信息」。</p>
+     * <table border="1">
+     *   <caption>键与口径</caption>
+     *   <tr><th>键</th><th>值</th><th>来源 / 顺序</th></tr>
+     *   <tr><td>{@code curtain_types}</td>
+     *       <td>该单**全部部位**的帘种，去重后 {@code /} 连接（例 {@code 布帘/纱帘}）</td>
+     *       <td>列 {@code order_items.curtain_type}，顺序 = **部位序**</td></tr>
+     *   <tr><td>{@code install_community}</td>
+     *       <td>安装小区（订单级语义）</td>
+     *       <td>{@code processing_info.installCommunity}，**读侧收敛取第一条非空**（写侧扇出到每行同值）</td></tr>
+     *   <tr><td>{@code install_rooms}</td>
+     *       <td>该单全部部位的安装位置，去重后 {@code /} 连接（例 {@code 主卧/客厅/阳台}）</td>
+     *       <td>{@code processing_info.installRoom}（件级），顺序 = **部位序**</td></tr>
+     * </table>
+     * <p>🔴 <b>缺值不下发该键</b>（不是空串、不是 {@code —}）⇒ 前端「缺值不印」：不印空行，
+     * 也不印孤立的分隔符（{@code /主卧} 这类）。顺序**只由部位序决定**（去重保留首次出现的位置），
+     * 不排序 —— 纸面要与加工单上的部位顺序一致，排序就是第二份口径。</p>
+     */
+    private Map<String, Object> rowView(Order order, Map<String, Object> sets, List<OrderItem> orderItems) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("order_id", order.getId());
         row.put("order_no", order.getOrderNo());
@@ -173,7 +218,78 @@ public class WorkerShipmentReadyService {
         row.put("completed_sets", sets.get("completed_sets"));
         row.put("processing_order_no", sets.get("processing_order_no"));
         row.put("remark", order.getRemark());
+        // 安装信息（issue #7856）：服务端拼装好的**展示串**（前端只渲染，缺值不印）。
+        putIfPresent(row, "curtain_types", joinDistinct(curtainTypesOf(orderItems)));
+        putIfPresent(row, "install_community", OrderInstallInfo.firstCommunity(orderItems, objectMapper));
+        putIfPresent(row, "install_rooms", joinDistinct(installRoomsOf(orderItems)));
         return row;
+    }
+
+    /**
+     * 批量取明细并按订单分组（保持取数序）。
+     *
+     * <p>⚠️ <b>不加 {@code ORDER BY}</b>：本列表的「部位序」必须与加工单快照同一份取数序
+     * （{@code ProcessingOrderService.loadOrderItems} 与 {@code OrderShipGuard.loadOrderItems}
+     * 都只按 {@code order_id + tenant_id + deleted} 过滤）—— 这里另加一种排序，标签上的帘种 / 位置
+     * 顺序就会与加工单上的部位顺序不一致，而那是「两张纸对不上」的静默错误。</p>
+     */
+    private Map<String, List<OrderItem>> loadOrderItemsByOrder(List<String> orderIds, Long tenantId) {
+        if (orderIds == null || orderIds.isEmpty()) {
+            // 空集也给**可变**表：`Map.of()` 是空不可变表 ⇒ 调用方按空键索引会 NPE（issue #6219 守卫）
+            return new LinkedHashMap<>();
+        }
+        List<OrderItem> rows = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
+                .in(OrderItem::getOrderId, orderIds)
+                .eq(OrderItem::getTenantId, tenantId)
+                .eq(OrderItem::getDeleted, 0));
+        Map<String, List<OrderItem>> grouped = new LinkedHashMap<>();
+        if (rows != null) {
+            for (OrderItem row : rows) {
+                grouped.computeIfAbsent(row.getOrderId(), key -> new ArrayList<>()).add(row);
+            }
+        }
+        return grouped;
+    }
+
+    /** 该单全部部位的帘种（部位序；缺值原样进列表，由 {@link #joinDistinct} 丢弃）。 */
+    private static List<String> curtainTypesOf(List<OrderItem> orderItems) {
+        List<String> types = new ArrayList<>();
+        for (OrderItem item : orderItems) {
+            types.add(item.getCurtainType());
+        }
+        return types;
+    }
+
+    /** 该单全部部位的安装位置（部位序；件级 = 一扇窗一个值）。 */
+    private List<String> installRoomsOf(List<OrderItem> orderItems) {
+        List<String> rooms = new ArrayList<>();
+        for (OrderItem item : orderItems) {
+            rooms.add(OrderInstallInfo.valueOf(item.getProcessingInfo(),
+                    OrderInstallInfo.KEY_INSTALL_ROOM, objectMapper));
+        }
+        return rooms;
+    }
+
+    /**
+     * 去重 + {@code /} 连接（**顺序 = 部位序**，去重保留首次出现的位置）。
+     *
+     * <p>空白 / 缺值不占位；全空 ⇒ {@code null}（调用方据此**不下发该键**）。</p>
+     */
+    static String joinDistinct(List<String> values) {
+        LinkedHashSet<String> distinct = new LinkedHashSet<>();
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                distinct.add(value.trim());
+            }
+        }
+        return distinct.isEmpty() ? null : String.join("/", distinct);
+    }
+
+    /** 只在有值时才放键（缺值不下发 —— 前端据此「不印」，而不是印一行空的）。 */
+    private static void putIfPresent(Map<String, Object> row, String key, String value) {
+        if (value != null && !value.isBlank()) {
+            row.put(key, value);
+        }
     }
 
     /**

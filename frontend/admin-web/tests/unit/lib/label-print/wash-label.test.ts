@@ -35,9 +35,16 @@ import type { WashLabelRow } from '@/lib/wash-label-content'
 import { printDotGeometry, printPageBoxMm } from '@/lib/print-media'
 import {
   WASH_LABEL_BODY_FONT_PT,
+  WASH_LABEL_BOTTOM_CLEARANCE_MM,
   WASH_LABEL_COMPANY_FONT_PT,
   WASH_LABEL_COMPANY_SUBTITLE_FONT_PT,
+  WASH_LABEL_LINE_HEIGHT,
+  WASH_LABEL_QR_TEXT_GAP_LINES,
 } from '@/lib/label-print/wash-label-metrics'
+
+/** 正文行高（px）= 字号 × 行高倍数 —— 与 `layoutWashLabel` 里的 `lineStep` 同口径 */
+const lineStepOf = (dpmm: number) =>
+  Math.round(Math.round((WASH_LABEL_BODY_FONT_PT / 72) * 25.4 * dpmm) * WASH_LABEL_LINE_HEIGHT)
 
 /** 介质矩阵里的口径（**唯一真值源**）—— 本文件的期望值从它取，不写第二份像素字面量 */
 const MATRIX = printDotGeometry('label-50x150')
@@ -140,14 +147,20 @@ describe('layoutWashLabel — 版式是纯函数（#6439 → #6656 → #7816）'
     expect(noCompany.lines[0].y).toBe(noCompany.margin)
   })
 
-  it('判据 ③：二维码在**底部居中**（用户 2026-10-26「放到底部居中」「放大一点」）', () => {
+  it('判据 ③：二维码**不沉底** —— 正文后隔两行、离纸底（虚线）留白（用户 2026-10-26 逐字「二维码不要沉底，跟文字隔两行即可，要离底部虚线留空」）', () => {
     const layout = layoutWashLabel(input(), geo, measure)
     const qr = layout.qr
     if (!qr) throw new Error('有码的输入却没算出二维码位 —— 判据无从取值')
     // 水平居中
     expect(qr.x).toBe(Math.round((geo.widthPx - qr.size) / 2))
-    // 贴底（留一个内边距）
-    expect(qr.y + qr.size).toBe(geo.heightPx - layout.margin)
+    // 竖直：正文最后一行之下**恰好两行**（不是贴纸底）
+    const lineStep = lineStepOf(geo.dpmm)
+    const lastLine = layout.lines[layout.lines.length - 1]
+    expect(qr.y).toBe(lastLine.y + lineStep * (1 + WASH_LABEL_QR_TEXT_GAP_LINES))
+    // 离纸的下沿（底部虚线）至少留 WASH_LABEL_BOTTOM_CLEARANCE_MM（改回「贴底」⇒ 必红）
+    expect(qr.y + qr.size).toBeLessThanOrEqual(
+      geo.heightPx - layout.margin - Math.round(WASH_LABEL_BOTTOM_CLEARANCE_MM * geo.dpmm),
+    )
     // 不越界
     expect(qr.x).toBeGreaterThanOrEqual(0)
     expect(qr.x + qr.size).toBeLessThanOrEqual(geo.widthPx)
@@ -162,7 +175,13 @@ describe('layoutWashLabel — 版式是纯函数（#6439 → #6656 → #7816）'
     const placeholder = layout.qrPlaceholder
     if (!placeholder) throw new Error('无码却没算出占位框 —— 判据无从取值')
     expect(placeholder.rect.x).toBe(Math.round((geo.widthPx - placeholder.rect.size) / 2))
-    expect(placeholder.rect.y + placeholder.rect.size).toBe(geo.heightPx - layout.margin)
+    // 占位框同口径：跟在正文后两行、不贴纸底（与有码时同一套版式）
+    const lineStep = lineStepOf(geo.dpmm)
+    const lastLine = layout.lines[layout.lines.length - 1]
+    expect(placeholder.rect.y).toBe(lastLine.y + lineStep * (1 + WASH_LABEL_QR_TEXT_GAP_LINES))
+    expect(placeholder.rect.y + placeholder.rect.size).toBeLessThanOrEqual(
+      geo.heightPx - layout.margin - Math.round(WASH_LABEL_BOTTOM_CLEARANCE_MM * geo.dpmm),
+    )
     expect(placeholder.lines.map((line) => line.text).join('')).toContain('二维码已撤销')
     // 文案在框内居中（x = 框中心）
     expect(placeholder.lines.every((line) => line.x === placeholder.rect.x + Math.round(placeholder.rect.size / 2))).toBe(
@@ -170,21 +189,23 @@ describe('layoutWashLabel — 版式是纯函数（#6439 → #6656 → #7816）'
     )
   })
 
-  it('判据 ④：**装不下只裁文字块** —— 超长行清单被截断，二维码位置一字不动', () => {
+  it('判据 ④：**装不下只裁文字块** —— 超长行清单被截断；码由正文长度定位但被纸底留白夹住', () => {
     const huge: WashLabelRow[] = Array.from({ length: 60 }, (_, i) => ({
       key: 'remark',
       text: `备注 第${i}行很长的补充说明文字，用来把文字块撑爆`,
     }))
     const layout = layoutWashLabel(input({ rows: huge }), geo, measure)
-    const blockBottom = geo.heightPx - layout.margin - layout.qr!.size - Math.round(1 * geo.dpmm)
-    // 最后一行仍在底部二维码之上（没被挤出纸外）
+    const lineStep = lineStepOf(geo.dpmm)
+    const bottomLimit = geo.heightPx - layout.margin - Math.round(WASH_LABEL_BOTTOM_CLEARANCE_MM * geo.dpmm)
+    // 最后一行仍在二维码之上（没被挤出纸外），且码与末行之间仍有**两行**空位
     const lastLine = layout.lines[layout.lines.length - 1]
-    expect(lastLine.y).toBeLessThan(blockBottom)
+    expect(lastLine.y).toBeLessThan(layout.qr!.y)
+    expect(layout.qr!.y - (lastLine.y + lineStep)).toBeGreaterThanOrEqual(lineStep * WASH_LABEL_QR_TEXT_GAP_LINES)
     // 大量行被裁 ⇒ 但也确实画了东西（不是空断言）
     expect(layout.lines.length).toBeGreaterThan(5)
     expect(layout.lines.length).toBeLessThan(huge.length)
-    // 码不变
-    expect(layout.qr!.y + layout.qr!.size).toBe(geo.heightPx - layout.margin)
+    // 码永不被文字挤出纸底留白（改回「贴底」⇒ 必红）
+    expect(layout.qr!.y + layout.qr!.size).toBeLessThanOrEqual(bottomLimit)
   })
 
   it('纸宽连内边距都放不下 ⇒ 显式抛错（fail-closed，不静默画一张错纸）', () => {

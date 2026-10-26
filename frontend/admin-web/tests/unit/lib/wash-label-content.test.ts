@@ -56,6 +56,9 @@ const ITEM = {
   productName: '2699系列雪尼尔窗帘面料',
   sku: '0012',
   colorName: '米白',
+  // 安装去向（issue #7856）：小区 = 订单级、位置 = 件级；只印，不参与任何计算
+  installCommunity: '春江花园 3栋2单元',
+  installRoom: '主卧',
   doorWidth: '2.8米',
   craft: '韩褶',
   cuttingMode: '定高买宽',
@@ -103,16 +106,24 @@ describe('washLabelRows — 纸面内容与行序（issue #6656 → #7816 → #7
     expect(textOf(rows, 'docNo')).toBe('单号: 20260921-8237')
     expect(textOf(rows, 'customer')).toBe(`客户: ${CUSTOMER}`)
     expect(textOf(rows, 'setNo')).toBe('第 1 套 / 共 2 套')
-    expect(textOf(rows, 'positionKind')).toBe('部位: 布帘')
-    expect(textOf(rows, 'sku')).toBe('货号: 0012')
+    expect(textOf(rows, 'positionKind')).toBe('帘种: 布帘')
+    // issue #7856：**颜色**取代 `sku` 货号（用户逐字「货号不要展示sku，展示颜色的内容」）
+    expect(textOf(rows, 'color')).toBe('颜色: 米白')
+    // issue #7856：安装去向（小区 = 订单级、位置 = 件级）—— 都印、且**紧跟在帘种之后**
+    expect(textOf(rows, 'installCommunity')).toBe('安装小区: 春江花园 3栋2单元')
+    expect(textOf(rows, 'installRoom')).toBe('安装位置: 主卧')
+    const order = rows.map((row) => row.key)
+    expect(order.indexOf('installCommunity')).toBe(order.indexOf('positionKind') + 1)
+    expect(order.indexOf('installRoom')).toBe(order.indexOf('installCommunity') + 1)
     expect(textOf(rows, 'doorWidth')).toBe('门幅: 2.8米')
     expect(textOf(rows, 'meters')).toBe('用料: 6.3米')
     expect(textOf(rows, 'size')).toBe('宽高: 3×2.75米')
     // 加工行（issue #7833）：**无「加工方式」前缀**、**不印加工类型**、**并入加工费组合项**
     // （韩褶来自工艺、超高/倒幅/定型来自组合键；定型与工艺字段同义 ⇒ 只印一次，落在末尾）
     expect(textOf(rows, 'craft')).toBe('韩褶 · 超高 · 倒幅 · 双开 · 定型')
-    // ④ 褶法 = 是否韩褶公式 + 折数（同一个字段，用户 2026-10-26 裁定）
-    expect(textOf(rows, 'pleats')).toBe('褶法: 韩褶公式 52折')
+    // ⑤ 褶法 = 是否韩褶公式 + 折数（同一个字段，用户 2026-10-26 裁定）
+    //    🔴 issue #7856：**无「褶法」前缀**（用户逐字「褶法：去掉，只保留后面的文字，和工艺一样」）
+    expect(textOf(rows, 'pleats')).toBe('韩褶公式 52折')
     expect(textOf(rows, 'specialOptions')).toBe('特殊选项: 加logo条、防翘扣')
     expect(textOf(rows, 'remark')).toBe('备注: 加铅块')
     // 反向判据：特殊选项**不得**再混进备注行（并回去 ⇒ 必红）
@@ -156,7 +167,7 @@ describe('washLabelRows — 纸面内容与行序（issue #6656 → #7816 → #7
     // 🔴 正向拒绝：整行 trim 判空会把这些空壳印上纸（改版实测过的形态）
     expect(
       rows.some((row) =>
-        ['宽高', '用料', '货号', '门幅', '部位', '褶法', '特殊选项', '备注', '客户'].includes(row.text)
+        ['宽高', '用料', '颜色', '门幅', '帘种', '安装小区', '安装位置', '特殊选项', '备注', '客户'].includes(row.text)
       )
     ).toBe(false)
   })
@@ -170,16 +181,34 @@ describe('washLabelRows — 纸面内容与行序（issue #6656 → #7816 → #7
     expect(textOf(fullRows(), 'size')).toBe('宽高: 3×2.75米')
   })
 
-  it('判据 ④：**货号**（取代颜色，issue #7833）：有 `sku` ⇒ `货号: 值`；缺值 ⇒ 该行不出现', () => {
-    // 部位名里带颜色也不再影响纸面（颜色整体退场；车间靠货号对布）
-    const named = { ...POSITION, position_name: '布艺遮光帘A（米白）' } as unknown as ProductionPosition
-    expect(textOf(washLabelRows({ position: named, item: ITEM }), 'sku')).toBe('货号: 0012')
-    expect(textOf(fullRows(), 'sku')).toBe('货号: 0012')
-    // 缺 `sku`（存量快照）⇒ 不出货号行；**不拿颜色顶替**（用户明确要求改印货号，不静默换回旧字段）
-    const noSku = { ...ITEM, sku: undefined } as unknown as ProcessingOrderItem
-    expect(textOf(washLabelRows({ position: POSITION, item: noSku }), 'sku')).toBeUndefined()
-    // 颜色名不再出现在纸面上
-    expect(fullRows().map((row) => row.text).join('｜')).not.toContain('米白')
+  it('判据 ④：**颜色**（取代 sku 货号，issue #7856）：有 `colorName` ⇒ `颜色: 值`；缺值 ⇒ 该行不出现', () => {
+    expect(textOf(fullRows(), 'color')).toBe('颜色: 米白')
+    // 缺 `colorName`（存量快照）⇒ 不出颜色行；**不拿 sku 顶替**（用户明确要求「不要展示sku」）
+    const noColor = { ...ITEM, colorName: undefined } as unknown as ProcessingOrderItem
+    expect(textOf(washLabelRows({ position: POSITION, item: noColor }), 'color')).toBeUndefined()
+    // sku 不再出现在纸面任何一行（改前印「货号: 0012」⇒ 本条必红）
+    expect(fullRows().map((row) => row.text).join('｜')).not.toContain('0012')
+    expect(fullRows().map((row) => row.text).join('｜')).not.toContain('货号')
+  })
+
+  it('判据 ④-b：**帘种紧跟在颜色下面**（用户 2026-10-26「再加个帘种，放到货号下面」）', () => {
+    // 有颜色行时：颜色 → 帘种 相邻且顺序固定
+    const keys = fullRows().map((row) => row.key)
+    expect(keys.indexOf('positionKind')).toBe(keys.indexOf('color') + 1)
+    // 颜色缺值时，帘种仍在（两条判据互不依赖 —— 否则「相邻」会被缺值掩盖）
+    const noColor = { ...ITEM, colorName: undefined } as unknown as ProcessingOrderItem
+    const rows = washLabelRows({ position: POSITION, item: noColor })
+    expect(rows.map((row) => row.key)).toContain('positionKind')
+    expect(rows.map((row) => row.key)).not.toContain('color')
+    // `position_kind` 缺值时回落到快照 `curtainType`（同一条取值链，不另做推导）
+    const barePosition = { ...POSITION, position_kind: undefined } as unknown as ProductionPosition
+    expect(textOf(washLabelRows({ position: barePosition, item: { ...ITEM, curtainType: '纱帘' } as ProcessingOrderItem }), 'positionKind')).toBe('帘种: 纱帘')
+  })
+
+  it('判据 ④-c：安装信息缺值 ⇒ 整行不印（不印「安装小区: —」占纸，issue #7856）', () => {
+    const rows = washLabelRows({ position: POSITION, item: { ...ITEM, installCommunity: '', installRoom: undefined } as ProcessingOrderItem })
+    expect(rows.map((row) => row.key)).not.toContain('installCommunity')
+    expect(rows.map((row) => row.key)).not.toContain('installRoom')
   })
 
   it('判据 ⑤：套序来自调用方给的 `groupBySet` 读数（1 起）', () => {
@@ -389,7 +418,7 @@ describe('toWashLabelInputs — 加工单 ⇒ 逐张输入（#6439 → #6656 →
     )
     expect(labels[0].rows?.length).toBeGreaterThan(5)
     expect(labels[0].rows?.map((row) => row.text)).toContain('用料: 6.3米')
-    expect(labels[0].rows?.map((row) => row.text)).toContain('褶法: 韩褶公式 52折')
+    expect(labels[0].rows?.map((row) => row.text)).toContain('韩褶公式 52折')
   })
 
   it('空输入 ⇒ 空数组（不造占位：直连入口据此禁用，不是打一张空白纸）', () => {
