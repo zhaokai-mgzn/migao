@@ -115,6 +115,11 @@ REALDB_FILES: dict[str, str] = {
     # ② 判别力自证 = 把旧形状（一次空读 + 两次 insert）确定性复刻 ⇒ 必须落成 **2 行**
     #    （观测点是表里的行数，不是"某个 mock 被调用几次"）。
     _SVC + "OrderLogisticsUpsertConcurrencyRealDbTest.java": "direct",
+    # issue #7874：打包工序判据 `ProductionWorkLogMapper#countPackerLogs` —— 只真 PG 能证的一条：
+    # `CONCAT('%', #{kw}, '%')` 的参数在 `stringtype=unspecified`（生产连接串）下**推不出类型**，
+    # 解析期就报 `could not determine data type of parameter $4`（与传什么值无关）。H2 会替参数
+    # 推断类型 ⇒ 改前 CI 全绿而生产「扫码即报工」整条 500（2026-10-26 事故）⇒ 必须留在真库族。
+    _SVC + "ProductionWorkLogMapperRealDbTest.java": "direct",
     # issue #7257：CustomerProfileMapper 的条件写/读（撞任意唯一索引都收敛、重复行下读不抛、只刷新活跃时刻）
     _SVC + "CustomerProfileMapperTest.java": "direct",
     # issue #7257：并发 3 次按同一手机号建档 ⇒ 恰 1 条；判别力自证 = 摘索引后按旧形状必须落 2 条
