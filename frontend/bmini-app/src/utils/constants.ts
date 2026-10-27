@@ -18,10 +18,15 @@ export const STORAGE_KEYS = {
   WORKER_SESSION: 'worker_session_id',
   WORKER: 'worker_current',
   // 「记住上次成功登录的账号名」（issue #6478）：**只记账号名**，按登录面分开存、进登录页预填。
-  // 🔴 绝不记 PIN / 密码 / 验证码 —— 落盘的键只有这三个 + 上面的登录态键，凭据一个都不进来。
+  // 🔴 绝不记 PIN / 密码 / 验证码 —— 落盘的键只有这三个账号名键 + 下面两个企业编码键 + 上面的登录态键，
+  // 凭据一个都不进来。
   LOGIN_ACCOUNT_EMPLOYEE: 'login_account_employee',
   LOGIN_ACCOUNT_ADMIN: 'login_account_admin',
   LOGIN_ACCOUNT_WORKER: 'login_account_worker',
+  // 「记住上次成功登录的**企业编码**」（issue #7944）：员工面 / 工人面各记各的。
+  // 企业编码**不是凭据**（没有用户名 + 密码 / 工号 + PIN 就登不进去），记它只为「不必重输」。
+  LOGIN_TENANT_EMPLOYEE: 'login_tenant_employee',
+  LOGIN_TENANT_WORKER: 'login_tenant_worker',
 } as const
 
 // 默认租户 ID（开发用）

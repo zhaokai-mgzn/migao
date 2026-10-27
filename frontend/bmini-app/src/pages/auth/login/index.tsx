@@ -3,7 +3,7 @@ import { View, Text, Button, Input } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { useAuthStore } from '../../../store/authStore'
 import { sendSmsCode } from '../../../utils/auth'
-import { getRememberedAccount, rememberAccount } from '../../../utils/loginAccount'
+import { getRememberedAccount, getRememberedTenantCode, rememberAccount, rememberTenantCode, splitLoginIdentifier } from '../../../utils/loginAccount'
 import AuthDiagPanel, { shouldShowAuthDiag } from '../../../components/auth/AuthDiagPanel'
 import { workerLogin } from '../../../services/workerService'
 import { WORKER_HOME_ROUTE } from '../../../utils/inbound/gaps'
@@ -33,9 +33,9 @@ function initialTab(routeTab: unknown): LoginTab {
 /**
  * B 端登录页（黄金策商家端）
  *
- * 1. **员工入口**（issue #5485）：填「用户名@企业编码」+ 密码 → `employeeLoginAction`
+ * 1. **员工入口**（issue #5485 / #7944）：两格「用户名 @ 企业编码」+ 密码 → `employeeLoginAction`
  *    → 后端 `POST /api/auth/employee/login` 由标识里的企业编码解析租户
- *    （前端**不解析租户、不传 tenantId**）。
+ *    （前端**不解析租户、不传 tenantId**；中间的 `@` 是静态文本，不用输入）。
  * 2. **管理员入口**（issue #5721）：手机号 + 短信验证码 → `smsLoginAction`
  *    → `POST /api/auth/sms/login`。为什么必须有：管理员身份在设计上是「手机号 + 短信」，
  *    而 #5485 之后 H5 只留了员工入口 ⇒ 管理员在**唯一可达的 H5** 上无路可走
@@ -63,10 +63,18 @@ export default function LoginPage() {
   // 登录自检面板（issue #7825）：**只在 `?diag=1` 时**渲染，正常登录页一行都不多
   const [showDiag] = useState(() => shouldShowAuthDiag())
 
-  // 员工入口
-  // 「记住上次成功登录的账号名」（issue #6478）：**只预填账号名**，绝不预填密码；
-  // 从未登录过 ⇒ `getRememberedAccount` 回空串（**不编默认值**）。
-  const [identifier, setIdentifier] = useState(() => getRememberedAccount('employee'))
+  // 员工入口（issue #6478 / #7944）：「用户名 @ 企业编码」是**两格**，中间的 `@` 是静态文本
+  // ⇒ 用户不用自己打 `@`（也不会打成全角）。两格**分别**记住上次成功登录用过的值：
+  // 企业编码记住之后，换人登录只需改用户名（首次登录仍要填企业编码）。
+  // 旧版（#6478）存的是整串 `用户名@企业编码` ⇒ 进页时按最后一个 `@` 拆开迁移，老用户不必再"首次"一次；
+  // 从不编默认值：从未登录过 ⇒ 两格都空。
+  const [employeeUsername, setEmployeeUsername] = useState(
+    () => splitLoginIdentifier(getRememberedAccount('employee')).username,
+  )
+  const [employeeTenantCode, setEmployeeTenantCode] = useState(() => {
+    const remembered = splitLoginIdentifier(getRememberedAccount('employee'))
+    return remembered.tenantCode || getRememberedTenantCode('employee')
+  })
   const [password, setPassword] = useState('')
 
   // 管理员入口（issue #5721）
@@ -75,13 +83,13 @@ export default function LoginPage() {
   const [countdown, setCountdown] = useState(0)
   const [sendingCode, setSendingCode] = useState(false)
 
-  // 工人入口（issue #6467）：工号预填（PIN / 设备标签 / 企业编码不预填）
+  // 工人入口（issue #6467 / #7944）：工号 / **企业编码**分别预填上次成功值（PIN / 设备标签一律不预填）
   const [workerNo, setWorkerNo] = useState(() => getRememberedAccount('worker'))
   const [pin, setPin] = useState('')
   const [deviceLabel, setDeviceLabel] = useState('')
-  // 企业编码（issue #6564）：租户**只由服务端解析**。它不是账号名 ⇒ **不**进 `loginAccount.ts`
-  // 的「记住账号名」键（凭据/准凭据一律不落盘）
-  const [workerEnterpriseCode, setWorkerEnterpriseCode] = useState('')
+  // 企业编码（issue #6564 / #7944）：租户**只由服务端解析**（前端不解析、不传 tenantId）。
+  // 它不是凭据（没有工号 + PIN 就登不进去）⇒ 可以记住：预填只为免去每次手输；PIN 仍绝不落盘。
+  const [workerEnterpriseCode, setWorkerEnterpriseCode] = useState(() => getRememberedTenantCode('worker'))
   const [workerSubmitting, setWorkerSubmitting] = useState(false)
   const [workerError, setWorkerError] = useState('')
 
@@ -111,17 +119,26 @@ export default function LoginPage() {
   /** 员工登录：空输入在本地拦下（不白跑一次请求），其余交后端判定 */
   const handleEmployeeLogin = useCallback(async () => {
     if (isLoading) return
-    if (!identifier.trim() || !password) {
-      Taro.showToast({ title: '请输入用户名@企业编码和密码', icon: 'none' })
+    const username = employeeUsername.trim()
+    const tenantCode = employeeTenantCode.trim()
+    if (!username || !tenantCode) {
+      Taro.showToast({ title: '请输入用户名和企业编码', icon: 'none' })
+      return
+    }
+    if (!password) {
+      Taro.showToast({ title: '请输入密码', icon: 'none' })
       return
     }
 
-    const success = await employeeLoginAction(identifier.trim(), password)
+    // 两格拼回**既有**标识（单 `@`）：租户仍只由服务端按企业编码解析，前端不解析租户（#5485 I1）
+    const success = await employeeLoginAction(`${username}@${tenantCode}`, password)
     if (!success) return
-    // **成功之后**才记该面的账号名（记的是「上次成功登录用过的账号名」，不是「上次输入过」）
-    rememberAccount('employee', identifier.trim())
+    // **成功之后**才记（记的是「上次成功登录用过的值」，不是「上次输入过」）；
+    // 账号名与企业编码**分开**落盘 ⇒ 换人登录时企业编码还在，只需改用户名（issue #7944）
+    rememberAccount('employee', username)
+    rememberTenantCode('employee', tenantCode)
     afterLoginSuccess()
-  }, [identifier, password, isLoading, employeeLoginAction, afterLoginSuccess])
+  }, [employeeUsername, employeeTenantCode, password, isLoading, employeeLoginAction, afterLoginSuccess])
 
   /** 管理员登录：手机号 + 验证码（角色门禁在服务端，非管理员由服务端回文案） */
   const handleAdminLogin = useCallback(async () => {
@@ -192,8 +209,9 @@ export default function LoginPage() {
         setWorkerError(res.message || '登录失败，请重试')
         return
       }
-      // 只记工号（账号名）；**PIN 绝不落盘**（共用 PAD 上更不能留凭据，issue #6478）
+      // 只记工号（账号名）与企业编码；**PIN 绝不落盘**（共用 PAD 上更不能留凭据，issue #6478）
       rememberAccount('worker', workerNo.trim())
+      rememberTenantCode('worker', workerEnterpriseCode.trim())
       // 🔴 issue #7879：工人从**报工页**进来登录（新手机首次扫纸上的码）⇒ 登录成功回跳报工页
       // 继续报那一笔；没有这条记录 ⇒ 照旧回工人首页（既有动线一字未改）。
       const back = takeReportReturn()
@@ -273,14 +291,30 @@ export default function LoginPage() {
         {tab === 'employee' ? (
           <>
             <View className='login-field'>
-              <Text className='login-field__label'>用户名@企业编码</Text>
-              <Input
-                className='login-field__input'
-                type='text'
-                placeholder='如 zhangsan@acme'
-                value={identifier}
-                onInput={(e: any) => setIdentifier(e.detail.value)}
-              />
+              <Text className='login-field__label'>员工账号</Text>
+              {/* `[用户名] @ [企业编码]` 两格 + 中间**固定**的 `@`（issue #7944）：
+                  `@` 是静态文本 ⇒ 不用输入、也不会打成全角；企业编码记住之后只改用户名即可。 */}
+              <View className='login-identifier'>
+                <View className='login-identifier__part'>
+                  <Input
+                    className='login-field__input'
+                    type='text'
+                    placeholder='用户名'
+                    value={employeeUsername}
+                    onInput={(e: any) => setEmployeeUsername(e.detail.value)}
+                  />
+                </View>
+                <Text className='login-identifier__at'>@</Text>
+                <View className='login-identifier__part'>
+                  <Input
+                    className='login-field__input'
+                    type='text'
+                    placeholder='企业编码'
+                    value={employeeTenantCode}
+                    onInput={(e: any) => setEmployeeTenantCode(e.detail.value)}
+                  />
+                </View>
+              </View>
             </View>
 
             <View className='login-field'>
@@ -296,7 +330,7 @@ export default function LoginPage() {
             </View>
 
             <Text className='login-form__hint'>
-              账号由企业管理员在管理后台「员工管理」中分配（用户名@企业编码）
+              账号由企业管理员在管理后台「员工管理」中分配；企业编码首次登录填写一次，之后自动记住
             </Text>
           </>
         ) : tab === 'admin' ? (
@@ -390,7 +424,7 @@ export default function LoginPage() {
             ) : null}
 
             <Text className='login-form__hint'>
-              车间工人用「工号 + PIN + 企业编码」登录（共用 PAD 不必登录商家账号）；登录后进工人工作台
+              车间工人用「企业编码 + 工号 + PIN」登录（企业编码首次填写后自动记住）；共用 PAD 不必登录商家账号
             </Text>
           </>
         )}

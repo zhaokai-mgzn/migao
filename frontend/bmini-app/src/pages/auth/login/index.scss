@@ -171,6 +171,29 @@
   }
 }
 
+// 员工账号：`[用户名] @ [企业编码]` 两格 + 中间**固定**的 `@`（issue #7944）。
+// `@` 是静态文本（不进输入框）⇒ 用户不用打 `@`，也不会打成全角；企业编码记住后只改用户名即可。
+// 两格平分宽度；`min-width: 0` 保证窄屏上输入框能收缩、不把 `@` 挤出屏幕。
+.login-identifier {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+
+  &__part {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__at {
+    flex-shrink: 0;
+    padding: 0 16px;
+    // 与输入框同字号（设计尺度 34px；本仓设计尺度字号下限 24 由台账判据看住）
+    font-size: 34px;
+    line-height: 1.2;
+    color: $text-secondary;
+  }
+}
+
 // 验证码行：输入框自适应 + 「获取验证码」按钮固定不换行
 .login-code-row {
   display: flex;

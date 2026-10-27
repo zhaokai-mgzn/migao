@@ -38,7 +38,7 @@
     {
       "file": "src/pages/auth/login/index.tsx",
       "className": "login-field__input",
-      "label": "商家登录页：员工账号 / 密码、管理员手机号、工号 / PIN / 设备标签",
+      "label": "商家登录页：员工账号（用户名 / 企业编码两格 + 密码）、管理员手机号、工号 / PIN / 设备标签",
       "case_ids": [
         "BM-042"
       ]

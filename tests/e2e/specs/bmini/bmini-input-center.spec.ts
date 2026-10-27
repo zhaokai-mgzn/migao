@@ -22,15 +22,15 @@
  *
  * | 面 | 修前 内层/外框（占比） | 修前 上/下留白 | 修后 内层/外框（占比） | 修后 上/下留白 |
  * |---|---|---|---|---|
- * | 登录页 `.login-field__input`（7 个） | 26.0 / 49.906（52.1%） | 1.0 / 22.91 | 47.906 / 49.906（96.0%） | 1.0 / 1.0 |
- * | 工人登录页 `.worker-login__input`（3 个） | 22.94 / 47.75（48.0%） | 1.0 / 23.81 | 45.75 / 47.75（95.8%） | 1.0 / 1.0 |
+ * | 登录页 `.login-field__input`（9 个；员工面自 issue #7944 起是「用户名 / 企业编码 / 密码」三格） | 26.0 / 49.906（52.1%） | 1.0 / 22.91 | 47.906 / 49.906（96.0%） | 1.0 / 1.0 |
+ * | 工人登录页 `.worker-login__input`（4 个） | 22.94 / 47.75（48.0%） | 1.0 / 23.81 | 45.75 / 47.75（95.8%） | 1.0 / 1.0 |
  * | 首登强制改密页 `.cp-field__input`（3 个） | 24.47 / 47.75（51.2%） | 1.0 / 22.28 | 45.75 / 47.75（95.8%） | 1.0 / 1.0 |
  *
  * （上/下留白各 1 CSS px = 各页自己的 1px 边框 —— 内外层之间**没有**任何多余留白，文字在整框里居中。）
  *
  * ## 边界（照实登记，§19.1）
  * - 只判**竖向几何**：颜色 / 观感 / 暗色模式不在判据内，也不做像素基线（与 `bmini-tabbar.spec.ts` 同口径）。
- * - 覆盖「**有显式高度的圆角框**」这一族输入面里的 **3 个页面 / 13 个输入框**（登录页 7 + 工人登录页 3 +
+ * - 覆盖「**有显式高度的圆角框**」这一族输入面里的 **3 个页面 / 16 个输入框**（登录页 9 + 工人登录页 4 +
  *   首登强制改密页 3）—— 它们是**未登录即可到达**的输入面，也是本缺陷的判别面。
  *   ⚠️ **未实测**的输入面（报工页 / 坐席会话详情 / 工人入库 / 工人补打 / WorkerBar / FormCard ——
  *   需要登录态或业务数据才能到达）**不在本腿**；它们靠**同一个全局选择器**（共享样式层作用于
@@ -117,9 +117,9 @@ test.describe('B 端 H5 输入框文字竖向居中（issue #6478）', () => {
     await expect(page.locator('.login-field__input').first()).toBeVisible()
 
     const all: Reading[] = []
-    // 员工 tab（默认）：用户名@企业编码 / 密码
+    // 员工 tab（默认）：用户名 / 企业编码（两格 + 中间固定 @，issue #7944）/ 密码
     const employee = await measureAll(page, '.login-field__input', '登录页·员工')
-    expect(employee.length).toBeGreaterThanOrEqual(2)
+    expect(employee.length).toBeGreaterThanOrEqual(3)
     all.push(...employee)
 
     // 管理员 tab：手机号 / 短信验证码（验证码框是与按钮同行的那个）
@@ -129,14 +129,14 @@ test.describe('B 端 H5 输入框文字竖向居中（issue #6478）', () => {
     expect(admin.length).toBeGreaterThanOrEqual(2)
     all.push(...admin)
 
-    // 工人 tab：工号 / PIN / 设备标签
+    // 工人 tab：企业编码 / 工号 / PIN / 设备标签（#6564 起企业编码也在工人 tab 上）
     await page.locator('.login-tab').nth(2).click()
     const worker = await measureAll(page, '.login-field__input', '登录页·工人')
-    expect(worker.length).toBeGreaterThanOrEqual(3)
+    expect(worker.length).toBeGreaterThanOrEqual(4)
     all.push(...worker)
 
-    // 反空跑：三个 tab 合起来至少 7 个输入框（少一个说明 tab 没切过去 ⇒ 下面的绿没有意义）
-    expect(all.length).toBeGreaterThanOrEqual(7)
+    // 反空跑：三个 tab 合起来至少 9 个输入框（少一个说明 tab 没切过去 ⇒ 下面的绿没有意义）
+    expect(all.length).toBeGreaterThanOrEqual(9)
     // 把读数打进日志（证据可复算：失败时也能看到是哪一面、差多少）
     console.log(`[input-center] 登录页读数 ${JSON.stringify(all)}`)
 
@@ -148,8 +148,8 @@ test.describe('B 端 H5 输入框文字竖向居中（issue #6478）', () => {
     await expect(page.locator('.worker-login__input').first()).toBeVisible()
 
     const readings = await measureAll(page, '.worker-login__input', '工人登录页')
-    // 工号 / PIN / 设备标签
-    expect(readings.length).toBeGreaterThanOrEqual(3)
+    // 企业编码 / 工号 / PIN / 设备标签（#6564 起企业编码也在本页）
+    expect(readings.length).toBeGreaterThanOrEqual(4)
     console.log(`[input-center] 工人登录页读数 ${JSON.stringify(readings)}`)
 
     for (const reading of readings) expectCentered(reading)

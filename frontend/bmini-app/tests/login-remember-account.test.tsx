@@ -1,13 +1,15 @@
-// case_ids: BM-041
+// case_ids: BM-041, BM-055
 /**
- * 「记住上次成功登录的账号名」判据（issue #6478）
+ * 「记住上次成功登录的账号名 / 企业编码」判据（issue #6478 / issue #7944）
  *
  * ## 用户原话与冻结口径
  *
  * > 还要做个小优化，账号名存在 cookies 中，不要每次都要输入
+ * > （#7944）让浏览器记录下来上次登录的企业编码。员工登录也应该记录下来@企业编码，最好是只需要输入
+ * > 员工账号，除非是首次登录才需要输入
  *
- * · **只记账号名**，按登录面分开存（员工「用户名@企业编码」/ 管理员手机号 / 工人工号各自记各自的上次值），
- *   进登录页**预填**；
+ * · **只记账号名 + 企业编码**，按登录面分开存（员工用户名 / 员工企业编码 / 管理员手机号 / 工人工号 /
+ *   工人企业编码各自记各自的上次值），进登录页**预填**；
  * · 🔴 **绝不记 PIN / 密码 / 短信验证码** —— 没有例外、也没有「记住密码」开关
  *   （工人共用 PAD 上更不能留凭据）；
  * · 记的是「**上次成功登录**用过的账号名」，不是「上次输入过」⇒ 失败不写、成功才写；
@@ -19,14 +21,14 @@
  * | # | 判据 | 红证（怎么让它单独变红） |
  * |---|---|---|
  * | 1a | 从未登录过 ⇒ 三个面都留空（不编默认值） | 给 `getRememberedAccount` 加一个兜底默认值 ⇒ 红 |
- * | 1b | 员工面预填上次成功登录的账号名；**密码不预填** | 把密码也预填 ⇒ 红 |
+ * | 1b | 员工面预填上次成功登录的用户名 + 企业编码；**密码不预填** | 把密码也预填 ⇒ 红 |
  * | 1c | 三面各记各的、互不串台 | 三面共用一个键 ⇒ 红（管理员的值串到员工面） |
  * | 1d | 只在**成功之后**写：失败保留上次成功值，成功才覆盖 | 把 `rememberAccount` 移到 `if (!success)` 之前 ⇒ 红 |
- * | 1e | 退出登录**不清**账号名 | 把三个键加进 `logout()` 的清理列表 ⇒ 红 |
- * | 1f | 独立工人登录页同样预填工号（PIN 不预填） | 摘掉该页的预填 ⇒ 红 |
- * | 2 | 🔴 **反向红线**：三个面全部填满并成功登录 ⇒ 落盘键值里**不出现**密码 / PIN / 验证码，且键名不越界 | 注入「把 pin 也存进去」⇒ 红 |
+ * | 1e | 退出登录**不清**账号名 / 企业编码 | 把这五个键加进 `logout()` 的清理列表 ⇒ 红 |
+ * | 1f | 独立工人登录页同样预填工号 + 企业编码（PIN 不预填） | 摘掉该页的预填 ⇒ 红 |
+ * | 2 | 🔴 **反向红线**：三个面全部填满并成功登录 ⇒ 落盘键值里**不出现**密码 / PIN / 验证码（企业编码照记），且键名不越界 | 注入「把 pin 也存进去」⇒ 红 |
  * | 2b | **类级**：本仓存储键面不许出现凭据形态的键名（`password`/`pwd`/`pin`/`*code`/`credential`…） | 新增 `LOGIN_PASSWORD` 之类的键 ⇒ 红 |
- * | 2c | **类级**：账号名三键只有 `frontend/bmini-app/src/utils/loginAccount.ts` 一个读写点 | 在别处直写这两个键 ⇒ 红 |
+ * | 2c | **类级**：账号名三键 + 企业编码两键只有 `frontend/bmini-app/src/utils/loginAccount.ts` 一个读写点 | 在别处直写这五个键 ⇒ 红 |
  *
  * ## 边界（照实登记）
  * · 判据只覆盖「端侧落盘面」：**服务端**是否记录账号名不在本文件射程内（本就与本次改动无关）。
@@ -79,12 +81,18 @@ const ACCOUNT_KEYS = [
   STORAGE_KEYS.LOGIN_ACCOUNT_ADMIN,
   STORAGE_KEYS.LOGIN_ACCOUNT_WORKER,
 ] as const
+/** 企业编码两键（issue #7944）：员工面 / 工人面各一份，与账号名同样只在成功登录后写 */
+const TENANT_KEYS = [
+  STORAGE_KEYS.LOGIN_TENANT_EMPLOYEE,
+  STORAGE_KEYS.LOGIN_TENANT_WORKER,
+] as const
 const ALL_STORAGE_KEYS: string[] = Object.values(STORAGE_KEYS)
 
 /** 凭据形态键名（命中 ⇒ 红）。`token` 不在此列 —— 它是既有登录态键，不是用户输入的口令。 */
 const CREDENTIAL_KEY_RE = /pass(word|wd)?|pwd|\bpin\b|sms_?code|captcha|verify_?code|credential|secret/i
 
-const IDENTIFIER_PLACEHOLDER = '如 zhangsan@acme'
+const USERNAME_PLACEHOLDER = '用户名'
+const EMPLOYEE_TENANT_PLACEHOLDER = '企业编码'
 const PASSWORD_PLACEHOLDER = '请输入密码'
 const PHONE_PLACEHOLDER = '请输入管理员手机号'
 const CODE_PLACEHOLDER = '请输入验证码'
@@ -164,19 +172,22 @@ describe('A. 记住上次成功登录的账号名（issue #6478）', () => {
   it('判据 1a：从未登录过 ⇒ 三个面都留空（不编默认值）', () => {
     render(<LoginPage />)
 
-    expect(valueOf(IDENTIFIER_PLACEHOLDER)).toBe('')
+    expect(valueOf(USERNAME_PLACEHOLDER)).toBe('')
+    expect(valueOf(EMPLOYEE_TENANT_PLACEHOLDER)).toBe('')
     switchTo('管理员登录')
     expect(valueOf(PHONE_PLACEHOLDER)).toBe('')
     switchTo('工人登录')
     expect(valueOf(WORKER_NO_PLACEHOLDER)).toBe('')
   })
 
-  it('判据 1b：员工面预填上次成功登录的账号名，**密码不预填**', () => {
-    Taro.setStorageSync(STORAGE_KEYS.LOGIN_ACCOUNT_EMPLOYEE, 'zhangsan@acme')
+  it('判据 1b：员工面预填上次成功登录的用户名 + 企业编码，**密码不预填**', () => {
+    Taro.setStorageSync(STORAGE_KEYS.LOGIN_ACCOUNT_EMPLOYEE, 'zhangsan')
+    Taro.setStorageSync(STORAGE_KEYS.LOGIN_TENANT_EMPLOYEE, 'acme')
 
     render(<LoginPage />)
 
-    expect(valueOf(IDENTIFIER_PLACEHOLDER)).toBe('zhangsan@acme')
+    expect(valueOf(USERNAME_PLACEHOLDER)).toBe('zhangsan')
+    expect(valueOf(EMPLOYEE_TENANT_PLACEHOLDER)).toBe('acme')
     expect(valueOf(PASSWORD_PLACEHOLDER)).toBe('')
   })
 
@@ -186,8 +197,9 @@ describe('A. 记住上次成功登录的账号名（issue #6478）', () => {
 
     render(<LoginPage />)
 
-    // 员工面没有记录 ⇒ 空（没有被管理员/工人的值串上）
-    expect(valueOf(IDENTIFIER_PLACEHOLDER)).toBe('')
+    // 员工面没有记录 ⇒ 空（没有被管理员/工人的值串上，企业编码同样不串）
+    expect(valueOf(USERNAME_PLACEHOLDER)).toBe('')
+    expect(valueOf(EMPLOYEE_TENANT_PLACEHOLDER)).toBe('')
     switchTo('管理员登录')
     expect(valueOf(PHONE_PLACEHOLDER)).toBe('13800000000')
     switchTo('工人登录')
@@ -196,43 +208,49 @@ describe('A. 记住上次成功登录的账号名（issue #6478）', () => {
     expect(valueOf(PIN_PLACEHOLDER)).toBe('')
   })
 
-  it('判据 1d：只在**成功之后**写 —— 失败保留上次成功值，成功才覆盖', async () => {
-    Taro.setStorageSync(STORAGE_KEYS.LOGIN_ACCOUNT_EMPLOYEE, 'old@acme')
+  it('判据 1d：只在**成功之后**写 —— 失败保留上次成功值，成功才覆盖（账号名与企业编码各自覆盖）', async () => {
+    Taro.setStorageSync(STORAGE_KEYS.LOGIN_ACCOUNT_EMPLOYEE, 'old')
+    Taro.setStorageSync(STORAGE_KEYS.LOGIN_TENANT_EMPLOYEE, 'acme')
     mockEmployeeLoginAction.mockResolvedValueOnce(false)
 
     render(<LoginPage />)
-    type(IDENTIFIER_PLACEHOLDER, 'new@acme')
+    type(USERNAME_PLACEHOLDER, 'new')
+    type(EMPLOYEE_TENANT_PLACEHOLDER, 'other')
     type(PASSWORD_PLACEHOLDER, 'init-pass-123')
     await clickLogin()
 
     // 失败不写：仍是上次**成功**用过的那个
-    expect(Taro.getStorageSync(STORAGE_KEYS.LOGIN_ACCOUNT_EMPLOYEE)).toBe('old@acme')
+    expect(Taro.getStorageSync(STORAGE_KEYS.LOGIN_ACCOUNT_EMPLOYEE)).toBe('old')
+    expect(Taro.getStorageSync(STORAGE_KEYS.LOGIN_TENANT_EMPLOYEE)).toBe('acme')
 
     mockEmployeeLoginAction.mockResolvedValueOnce(true)
     await clickLogin()
 
-    expect(Taro.getStorageSync(STORAGE_KEYS.LOGIN_ACCOUNT_EMPLOYEE)).toBe('new@acme')
+    expect(Taro.getStorageSync(STORAGE_KEYS.LOGIN_ACCOUNT_EMPLOYEE)).toBe('new')
+    expect(Taro.getStorageSync(STORAGE_KEYS.LOGIN_TENANT_EMPLOYEE)).toBe('other')
   })
 
-  it('判据 1e：退出登录**不清**账号名（它只是输入便利，不是登录态）', () => {
-    for (const key of ACCOUNT_KEYS) Taro.setStorageSync(key, 'kept')
+  it('判据 1e：退出登录**不清**账号名 / 企业编码（它只是输入便利，不是登录态）', () => {
+    for (const key of [...ACCOUNT_KEYS, ...TENANT_KEYS]) Taro.setStorageSync(key, 'kept')
     Taro.setStorageSync(STORAGE_KEYS.TOKEN, 'tok-1')
     Taro.setStorageSync(STORAGE_KEYS.USER, '{"id":1}')
 
     realAuth.logout()
 
-    for (const key of ACCOUNT_KEYS) expect(Taro.getStorageSync(key)).toBe('kept')
+    for (const key of [...ACCOUNT_KEYS, ...TENANT_KEYS]) expect(Taro.getStorageSync(key)).toBe('kept')
     // 对照：登录态照旧被清（否则「没清账号名」可能只是 logout 什么都没干）
     expect(Taro.getStorageSync(STORAGE_KEYS.TOKEN)).toBe('')
     expect(Taro.getStorageSync(STORAGE_KEYS.USER)).toBe('')
   })
 
-  it('判据 1f：独立工人登录页（`pages/worker/login`）同样预填工号，PIN 不预填', () => {
+  it('判据 1f：独立工人登录页（`pages/worker/login`）同样预填工号 + 企业编码，PIN 不预填', () => {
     Taro.setStorageSync(STORAGE_KEYS.LOGIN_ACCOUNT_WORKER, 'W-042')
+    Taro.setStorageSync(STORAGE_KEYS.LOGIN_TENANT_WORKER, 'acme')
 
     render(<WorkerLoginPage />)
 
     expect(valueOf('工号')).toBe('W-042')
+    expect(valueOf(ENTERPRISE_PLACEHOLDER)).toBe('acme')
     expect(valueOf('PIN')).toBe('')
   })
 
@@ -244,8 +262,9 @@ describe('A. 记住上次成功登录的账号名（issue #6478）', () => {
 
     render(<LoginPage />)
 
-    // 员工面：账号名 + 密码
-    type(IDENTIFIER_PLACEHOLDER, 'zhangsan@acme')
+    // 员工面：用户名 + 企业编码 + 密码
+    type(USERNAME_PLACEHOLDER, 'zhangsan')
+    type(EMPLOYEE_TENANT_PLACEHOLDER, 'acme')
     type(PASSWORD_PLACEHOLDER, SENTINEL_PASSWORD)
     await clickLogin()
 
@@ -263,16 +282,18 @@ describe('A. 记住上次成功登录的账号名（issue #6478）', () => {
     await clickLogin()
 
     const calls = (Taro.setStorageSync as jest.Mock).mock.calls as [string, unknown][]
-    // 反空跑：三个面都真的落盘了（否则「没有凭据」是空集恒真）
+    // 反空跑：三个面都真的落盘了（账号名三键 + 企业编码两键；否则「没有凭据」是空集恒真）
     expect(calls.map(([key]) => key).sort()).toEqual(
-      [...ACCOUNT_KEYS].sort(),
+      [...ACCOUNT_KEYS, ...TENANT_KEYS].sort(),
     )
 
     const written = calls.map(([key, value]) => `${key}=${JSON.stringify(value)}`).join('\n')
     expect(written).not.toContain(SENTINEL_PASSWORD)
-    // 企业编码**不落盘**（issue #6564）——它不是账号名（`loginAccount.ts` 只记三个面的账号名），
-    // 也不是凭据；工人每次登录自己填/由短链 302 的 ?tenant_code= 预填
-    expect(written).not.toContain('migao')
+    // 企业编码**照记**（issue #7944：它不是凭据 —— 没有用户名 / 密码就登不进去），
+    // 但落盘的是**编码本身**，不是整串 `用户名@企业编码`
+    expect(Taro.getStorageSync(STORAGE_KEYS.LOGIN_TENANT_EMPLOYEE)).toBe('acme')
+    expect(Taro.getStorageSync(STORAGE_KEYS.LOGIN_TENANT_WORKER)).toBe('migao')
+    expect(written).not.toContain('zhangsan@acme')
     expect(written).not.toContain(SENTINEL_CODE)
     expect(written).not.toContain(SENTINEL_PIN)
     // 键面也不越界：落盘的键全部是仓内已登记键
@@ -284,18 +305,21 @@ describe('A. 记住上次成功登录的账号名（issue #6478）', () => {
     const all = new Set<string>([...ALL_STORAGE_KEYS, ...literals])
 
     // 反空跑：现取真的扫到了键（否则「没有凭据键」是空集恒真）
-    expect(ALL_STORAGE_KEYS.length).toBeGreaterThanOrEqual(7)
+    expect(ALL_STORAGE_KEYS.length).toBeGreaterThanOrEqual(9)
     expect(literals.size).toBeGreaterThanOrEqual(3)
 
     const offenders = [...all].filter((key) => CREDENTIAL_KEY_RE.test(key))
     expect(offenders).toEqual([])
   })
 
-  it('🔴 判据 2c（类级）：账号名三键只有 loginAccount.ts 一个读写点', () => {
+  it('🔴 判据 2c（类级）：账号名三键 + 企业编码两键只有 loginAccount.ts 一个读写点', () => {
     const direct = sourceFiles().filter((rel) => {
       if (rel === 'src/utils/constants.ts' || rel === 'src/utils/loginAccount.ts') return false
       const text = readSource(rel)
-      return /LOGIN_ACCOUNT_(EMPLOYEE|ADMIN|WORKER)/.test(text) || /login_account_(employee|admin|worker)/.test(text)
+      return (
+        /LOGIN_(ACCOUNT|TENANT)_(EMPLOYEE|ADMIN|WORKER)/.test(text) ||
+        /login_(account|tenant)_(employee|admin|worker)/.test(text)
+      )
     })
 
     expect(direct).toEqual([])
