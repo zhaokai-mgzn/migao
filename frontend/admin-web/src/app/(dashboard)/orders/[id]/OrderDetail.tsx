@@ -336,9 +336,10 @@ export default function OrderDetailPage() {
    * 联合打印步进 ⇒ 预览跟着走（issue #7902）：纸框里显示的永远是**这一张**要出的纸，
    * 否则「看的是销售单、打的是水洗唛」——那正是纸面自检层要消掉的错打形态。
    */
+  const batchCurrent = batch.current
   useEffect(() => {
-    if (batch.current) selectPreview(batch.current)
-  }, [batch.current, selectPreview])
+    if (batchCurrent) selectPreview(batchCurrent)
+  }, [batchCurrent, selectPreview])
 
   // 关闭订单
   const handleConfirmClose = async (reason: string) => {
