@@ -79,6 +79,19 @@ export function batchCandidateOrderIds(board: PoolBoard | null | undefined): str
 }
 
 /**
+ * **「不参与合并、逐单立即派」**的全部行（加急 + 外发）—— 唯一取值口径（issue #7943）。
+ *
+ * 🔴 顺序 = 两个服务端数组的**拼接序**（加急段在前、外发段在后）：两段各自已按服务端
+ * `POOL_LINE_ORDER` 排好 ⇒ 前端**不重排**（「加急优先」体现在这一份顺序里，而不是渲染位置）。
+ * 🔴 两段**互斥**：服务端先判 `urgent`、再 `else if (outsourced)`
+ * （`backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java` 的看板构造）
+ * ⇒ 同一行不会出现两次，React key（`orderId-itemId`）不会撞。
+ */
+export function singleDispatchLines(board: PoolBoard | null | undefined): PoolLine[] {
+  return [...(board?.urgentLines ?? []), ...(board?.outsourcedLines ?? [])]
+}
+
+/**
  * 派单**失败面**是否必须上屏（唯一口径）。
  *
  * 被拒绝的每一次都必须留下**看得见**的文案（PR-080 判据 3「整批显式拒绝，不静默少派」）：

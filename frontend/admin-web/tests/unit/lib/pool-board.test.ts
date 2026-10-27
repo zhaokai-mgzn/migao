@@ -21,8 +21,9 @@ import {
   formatRequiredDeliveryDate,
   formatWaitHours,
   previewSummaryRows,
+  singleDispatchLines,
 } from '@/lib/pool-board'
-import type { PoolPreview } from '@/types'
+import type { PoolBoard, PoolLine, PoolPreview } from '@/types'
 
 describe('buildPoolRequest（/preview 与 /dispatch 同体）', () => {
   const L = (orderId: string, itemId: string) => ({ orderId, itemId })
@@ -157,5 +158,25 @@ describe('成批预览摘要：渲染服务端值，绝不自己相减', () => {
     expect(saved.value).not.toBe(gain.value)
     expect(saved.value).toBe('99.00')
     expect(gain.value).toBe('1.50')
+  })
+})
+
+describe('singleDispatchLines：加急 / 外发 = 一张表（issue #7943）', () => {
+  const line = (orderId: string): PoolLine => ({ orderId, itemId: `i-${orderId}` } as PoolLine)
+  const board = (over: Partial<PoolBoard>) => over as PoolBoard
+
+  it('拼接序：加急段在前、外发段在后（两段各自的序不动 ⇒ 前端不重排）', () => {
+    const merged = singleDispatchLines(
+      board({ urgentLines: [line('u1'), line('u2')], outsourcedLines: [line('x1')] }),
+    )
+    expect(merged.map((l) => l.orderId)).toEqual(['u1', 'u2', 'x1'])
+  })
+
+  it('后端 `non_null` 键缺席 / 空看板 ⇒ 空数组（不崩、不造行）；只有外发时也不丢', () => {
+    expect(singleDispatchLines(null)).toEqual([])
+    expect(singleDispatchLines(board({}))).toEqual([])
+    expect(
+      singleDispatchLines(board({ outsourcedLines: [line('x1')] })).map((l) => l.orderId),
+    ).toEqual(['x1'])
   })
 })
