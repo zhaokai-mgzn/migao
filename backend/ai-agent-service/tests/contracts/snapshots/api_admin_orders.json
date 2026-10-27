@@ -33,7 +33,9 @@
             "amount": 199.0,
             "subtotal": 199.0
           }
-        ]
+        ],
+        "printCount": 0,
+        "printedDocTypes": []
       },
       {
         "id": "5ff272bea067de2bfd7bb14b9da6d7d5",
@@ -89,7 +91,9 @@
               }
             }
           }
-        ]
+        ],
+        "printCount": 0,
+        "printedDocTypes": []
       },
       {
         "id": "a429f0ead2d3da19225095ab041cd229",
@@ -117,7 +121,9 @@
             "amount": 47.6,
             "subtotal": 47.6
           }
-        ]
+        ],
+        "printCount": 0,
+        "printedDocTypes": []
       },
       {
         "id": "79eff834bf73c853895adc439a92548b",
@@ -173,7 +179,9 @@
               }
             }
           }
-        ]
+        ],
+        "printCount": 0,
+        "printedDocTypes": []
       },
       {
         "id": "cdba9596669ed841880b56741d1fe2ab",
@@ -229,7 +237,9 @@
               }
             }
           }
-        ]
+        ],
+        "printCount": 0,
+        "printedDocTypes": []
       }
     ]
   },

@@ -131,6 +131,9 @@
       "items",
       "orderNo",
       "page",
+      "printCount",
+      "printedAt",
+      "printedDocTypes",
       "processingFee",
       "processingInfo",
       "productCode",
@@ -210,5 +213,6 @@
       "unit",
       "updatedAt"
     ]
-  }
+  },
+  "_refresh_note": "2026-10-27 issue #7902：`api_admin_orders` 的契约键集新增 printCount / printedAt / printedDocTypes（OrderListResponse 的打印状态聚合）。本机无 PG / admin-api ⇒ 没有重跑整批真实抓取；这里按「**契约侧现算 + 数据侧可推导**」更新：键集 = 从 Java 源码现算（与 current_fingerprint 同口径），快照条目按新契约补 `printCount: 0` / `printedDocTypes: []`（print_logs 是本次新表、这些历史单无打印记录；`printedAt` 为 null ⇒ 全局 non_null 下**不下发**，故不补）。⚠️ captured_at 保持原值（那是上一次真抓的时刻，不追改）；下一次有人起真服务重抓时会自动覆盖本文件。"
 }

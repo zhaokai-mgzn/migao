@@ -10,8 +10,11 @@
   另外把按钮**收拢到一个打印统一入口**中」。⇒ 状态矩阵本身就是病根的另一半：
   `closed` / `refund` 两个状态**一张都打不出来**，而四个按钮常驻把操作行铺满。
 
-**现在的口径**：页面上只有**一个**「打印」入口（页面级、**不在任何状态分支里**），
-进来后在纸面自检层里以**单据标签**选（销售单 / 报价单 / 发货单），先预览再出纸。
+**现在的口径（issue #7902 再改判，用户 2026-10-27 逐字「移除发货单打印」「把加工单的打印按钮
+移除掉，最终效果是统一到销售单上打印」）**：页面上只有**一个**「打印」入口（页面级、**不在任何
+状态分支里**），进来后在纸面自检层里以**单据标签**选（报价单 / 销售单 / 加工单=面料单 / 水洗唛）；
+后两张**派单成功后**才出现（`processingOrder` 是派单产物），面料单没有水洗唛。
+发货单**整体退场**；「加工单生产明细」页**不再持有任何打印入口**（G7/G8 已按新口径反号）。
 
 **#7870（2026-10-26，用户逐字）**：「加工单打印移到加工单和水洗唛放一起，也想订单一样统一收口到打印按钮」
 ⇒ 加工单（A4）**退出订单详情页**，改由「加工单生产明细」页（`/processing-orders/{id}/production`）
@@ -56,12 +59,20 @@ HANDWRITTEN_LABELS: tuple[str, ...] = ("打印发货单", "打印报价单", "�
 #: 唯一入口的锚点（`data-testid` 是给单测与 e2e 的共同抓手）
 ENTRY_MARKER = 'data-testid="order-print-entry"'
 
-#: 订单详情必须能打的**三份**单据（顺序不钉；集合不齐 ⇒ 商家少一张纸）。
-#: 🔴 `processing` 自 issue #7870 起**不在此列** —— 它随「加工单生产明细」页走（G7/G8 钉住）。
-REQUIRED_ORDER_DOCS: tuple[str, ...] = ("shipment", "quotation", "sales")
+#: 订单详情**任何状态都能打**的两份纸（顺序不钉；集合不齐 ⇒ 商家少一张纸）。
+REQUIRED_ORDER_DOCS: tuple[str, ...] = ("quotation", "sales")
 
-#: 生产明细页必须同时给出的**两份**纸（水洗唛 = 任务卡，加工单 = A4）
-REQUIRED_PRODUCTION_DOCS: tuple[str, ...] = ("labels", "processing")
+#: **派单后**才出现的两份纸（issue #7902：`processingOrder` 是派单产物；面料单没有 labels）
+REQUIRED_ORDER_GATED_DOCS: tuple[str, ...] = ("processing", "labels")
+
+#: 生产明细页**不得**再出现的打印痕迹（issue #7902：入口随水洗唛搬到销售订单详情）
+PRODUCTION_PRINT_FREE_MARKERS: tuple[str, ...] = (
+    'data-testid="production-print-button"',
+    "PrintDocPreview",
+    "TaskCardPrint",
+    "DirectLabelPrint",
+    "usePrintDoc",
+)
 
 
 def _read(rel: str) -> str:
@@ -169,36 +180,65 @@ def handwritten_labels(page_src: str) -> list[str]:
 # ============== G4：选择器接线 + 清单合法 ==============
 
 
-def order_print_docs(page_src: str) -> list[str]:
-    """G4：解析页面里的 `ORDER_PRINT_DOCS` 清单（唯一声明处）。"""
-    m = re.search(r"const ORDER_PRINT_DOCS\s*=\s*\[([^\]]*)\]", strip_comments(page_src))
+def order_print_docs(page_src: str, print_doc_src: str) -> list[str]:
+    """G4：页面里的可打印单据清单（`printDocs` 声明块里出现的、`PRINT_TARGETS` 内的目标位）。
+
+    🔴 issue #7902 起清单是**动态**的（派单后才多出加工单 / 水洗唛）⇒ 不再是一条静态数组，
+    但「清单只有一处声明」这条不变量不变：`const printDocs = useMemo(...)` 的声明体是唯一来源。
+    """
+    code = strip_comments(page_src)
+    m = re.search(r"const printDocs\s*=\s*useMemo<[^>]*>\(([\s\S]{0,600}?)\n[ \t]*\}[ \t]*,", code)
     if not m:
         raise AssertionError(
-            f"{PAGE_REL} 里找不到 `ORDER_PRINT_DOCS` —— 可打印单据清单必须是**一处**声明，"
-            "不是散在各状态分支里的按钮"
+            f"{PAGE_REL} 里找不到 `const printDocs = useMemo<…>(…)` —— 可打印单据清单必须是"
+            "**一处**声明，不是散在各状态分支里的按钮"
         )
-    docs = re.findall(r"'([a-z]+)'", m.group(1))
-    if not docs:
-        raise AssertionError("`ORDER_PRINT_DOCS` 解析出 0 条（判据 fail-closed）")
-    return docs
+    block = m.group(1)
+    return sorted(t for t in print_targets(print_doc_src) if f"'{t}'" in block)
 
 
-def missing_required_docs(page_src: str) -> list[str]:
-    """G4：清单里缺的必打单据。"""
-    return sorted(set(REQUIRED_ORDER_DOCS) - set(order_print_docs(page_src)))
+def missing_required_docs(page_src: str, print_doc_src: str) -> list[str]:
+    """G4：清单里缺的必打单据（任何状态都能打的两份 + 派单后才出现的那两份）。"""
+    docs = set(order_print_docs(page_src, print_doc_src))
+    return sorted((set(REQUIRED_ORDER_DOCS) | set(REQUIRED_ORDER_GATED_DOCS)) - docs)
 
 
 def unknown_docs(page_src: str, print_doc_src: str) -> list[str]:
-    """G4：清单里写了 `PRINT_TARGETS` 之外的目标位（错键 ⇒ 该单据永远选不中）。"""
-    return sorted(set(order_print_docs(page_src)) - set(print_targets(print_doc_src)))
+    """G4：清单里写了 `PRINT_TARGETS` 之外的目标位（错键 ⇒ 该单据永远选不中）。
+
+    🔴 不能只看「已解析出的合法 target」：错键（`'sale'`）会被合法清单过滤掉，永远判不出。
+    故取**声明块里出现过的所有小写标识符**（引号内的），再减去合法目标位。
+    """
+    code = strip_comments(page_src)
+    m = re.search(r"const printDocs\s*=\s*useMemo<[^>]*>\(([\s\S]{0,600}?)\n[ \t]*\}[ \t]*,", code)
+    if not m:
+        raise AssertionError(f"{PAGE_REL} 里找不到 `const printDocs = useMemo<…>(…)`（判据 fail-closed）")
+    block = m.group(1)
+    # 只看「被当作单据登记」的字符串：初始数组 + `docs.push(...)`。
+    # ⚠️ 不能把所有引号串都算进去 —— `orderKindOf(processingOrder) !== 'outbound'` 里的
+    # `'outbound'` 是**作业单两型的判别值**，不是打印目标位（判进去 = 假红）。
+    mentioned = set(re.findall(r"docs\.push\('([a-z][a-z-]*)'\)", block))
+    init = re.search(r"const docs:\s*PrintTarget\[\]\s*=\s*\[([^\]]*)\]", block)
+    if init:
+        mentioned |= set(re.findall(r"'([a-z][a-z-]*)'", init.group(1)))
+    return sorted(mentioned - set(print_targets(print_doc_src)))
+
+
+def order_docs_are_gated(page_src: str) -> bool:
+    """G4：派单后才出现的那两份必须**有条件**（`printDocs` 声明体里出现 `processingOrder`）。"""
+    code = strip_comments(page_src)
+    m = re.search(r"const printDocs\s*=\s*useMemo<[^>]*>\(([\s\S]{0,600}?)\n[ \t]*\}[ \t]*,", code)
+    # 闸门必须是**这一句**（`if (processingOrder) {`）—— 只在块里"提到过 processingOrder"
+    # 不足以证明条件存在（`orderKindOf(processingOrder)` 只是取型，不是闸门）
+    return bool(m and "if (processingOrder) {" in m.group(1))
 
 
 def selector_wiring(page_src: str) -> list[str]:
     """G4：打印层的选择器接线（`docs=` + `onSelect=`）。返回**缺失**的那几项。"""
     code = strip_comments(page_src)
     missing: list[str] = []
-    if "docs={ORDER_PRINT_DOCS}" not in code:
-        missing.append("docs={ORDER_PRINT_DOCS}")
+    if "docs={printDocs}" not in code:
+        missing.append("docs={printDocs}")
     if "onSelect={selectPreview}" not in code:
         missing.append("onSelect={selectPreview}")
     return missing
@@ -218,87 +258,64 @@ def block_print_entry(block_src: str) -> list[str]:
     return hits
 
 
-# ============== G7 / G8：加工单打印的唯一入口在生产明细页 ==============
+# ============== G7 / G8：加工单/水洗唛回到订单详情，生产明细页零打印入口 ==============
 
 
-def order_page_processing_leaks(page_src: str) -> list[str]:
-    """G7：订单详情页里残留的「加工单打印」痕迹（去注释后判定）。"""
+def order_page_processing_mounts(page_src: str) -> dict[str, int]:
+    """G7：订单详情页里加工单 / 水洗唛两份纸的挂载处数（页级 1 + 预览副本 1 = 2）。"""
     code = strip_comments(page_src)
-    hits: list[str] = []
-    if "<ProcessingDoc" in code:
-        hits.append("<ProcessingDoc")
-    if re.search(r"previewTarget\s*===\s*'processing'", code):
-        hits.append("previewTarget === 'processing'")
-    if re.search(r"printTarget\s*===\s*'processing'", code):
-        hits.append("printTarget === 'processing'")
-    docs = order_print_docs(page_src)
-    if "processing" in docs:
-        hits.append("ORDER_PRINT_DOCS 含 processing")
-    return hits
+    return {
+        "ProcessingDoc": len(re.findall(r"<ProcessingDoc\b", code)),
+        "TaskCardPrint": len(re.findall(r"<TaskCardPrint\b", code)),
+    }
 
 
-def production_print_docs(page_src: str, print_doc_src: str) -> list[str]:
-    """G8：生产明细页单据标签清单（`printDocs` 声明体里出现的、`PRINT_TARGETS` 内的目标位）。
-
-    🔴 **不用「引号解析正则」**（`re.findall(r"'([a-z]+)'")` 那类）：它会把注释 / 字符串里的
-    字面量一并算进来（正是 `test_guard_parsing_is_comment_aware.py` 的 `quote-parse` 面），
-    且每新增一处就抬高台账里的一笔债务（只许缩短）。这里改成
-    「剥注释 → 取 `printDocs` 声明块 → 拿 `PRINT_TARGETS`（**现取**）逐个做子串判定」。
-    """
-    code = strip_comments(page_src)
-    m = re.search(r"const printDocs\s*=([\s\S]{0,400}?)\n\s*\)", code)
-    if not m:
-        raise AssertionError(
-            f"{PRODUCTION_PAGE_REL} 里找不到 `printDocs` —— 本页可打印单据清单必须是**一处**声明"
-        )
-    block = m.group(1)
-    return sorted(t for t in print_targets(print_doc_src) if f"'{t}'" in block)
-
-
-def production_selector_wiring(page_src: str) -> list[str]:
-    """G8：生产明细页打印层的选择器接线（`docs=` + `onSelect=`）。返回**缺失**项。"""
+def order_page_preview_branches(page_src: str) -> list[str]:
+    """G7：预览层里必须能选到加工单 / 水洗唛（`previewTarget === '…'` 两个分支）。"""
     code = strip_comments(page_src)
     missing: list[str] = []
-    if "docs={printDocs}" not in code:
-        missing.append("docs={printDocs}")
-    if "onSelect={selectPreview}" not in code:
-        missing.append("onSelect={selectPreview}")
+    for target in ("processing", "labels"):
+        if not re.search(rf"previewTarget\s*===\s*'{target}'", code):
+            missing.append(target)
     return missing
 
 
-def processing_doc_mounts(page_src: str) -> int:
-    """G8：生产明细页里 `<ProcessingDoc` 的处数（页级挂载 1 + 预览副本 1）。"""
-    return len(re.findall(r"<ProcessingDoc\b", strip_comments(page_src)))
+def production_page_print_entries(page_src: str) -> list[str]:
+    """G8：生产明细页残留的打印痕迹（issue #7902：本页**零**打印入口）。"""
+    code = strip_comments(page_src)
+    return [marker for marker in PRODUCTION_PRINT_FREE_MARKERS if marker in code]
 
 
 class TestProductionPrintEntry:
     """G7 / G8 的**真语料**判据（订单详情页 + 生产明细页两份语料）。"""
 
-    def test_g7_order_page_no_longer_prints_processing_doc(self) -> None:
-        leaks = order_page_processing_leaks(_read(PAGE_REL))
-        assert leaks == [], (
-            f"订单详情页又出现了加工单打印痕迹 {leaks} —— issue #7870 起加工单（A4）只在"
-            "「加工单生产明细」页打印（一份单据只有一个打印入口）"
-        )
-
-    def test_g8_production_page_is_the_single_entry(self) -> None:
-        page = _read(PRODUCTION_PAGE_REL)
-        assert strip_comments(page).count(PRODUCTION_ENTRY_MARKER) == 1, (
-            f"{PRODUCTION_PAGE_REL} 的「打印」入口应恰好 1 处（{PRODUCTION_ENTRY_MARKER}）"
-        )
+    def test_g7_order_page_carries_processing_and_labels(self) -> None:
+        page = _read(PAGE_REL)
         doc_lib = _read(PRINT_DOC_REL)
-        docs = production_print_docs(page, doc_lib)
-        missing = sorted(set(REQUIRED_PRODUCTION_DOCS) - set(docs))
+        docs = set(order_print_docs(page, doc_lib))
+        missing = sorted(set(REQUIRED_ORDER_GATED_DOCS) - docs)
         assert missing == [], (
-            f"生产明细页的单据标签缺 {missing} —— 加工单与水洗唛必须**同层**可选（issue #7870）"
+            f"订单详情的打印层缺 {missing} —— issue #7902 起加工单/面料单与水洗唛回到"
+            "**销售订单详情**的打印层（派单后出现），商家不该再跑到生产明细页打这两张"
         )
-        unknown = sorted(set(docs) - set(print_targets(doc_lib)))
-        assert unknown == [], f"单据标签里出现了 `PRINT_TARGETS` 之外的目标位 {unknown}"
-        wiring = production_selector_wiring(page)
-        assert wiring == [], f"生产明细页的打印层选择器没接线，缺 {wiring}"
-        assert processing_doc_mounts(page) == 2, (
-            "加工单纸面应有**两处** `<ProcessingDoc>`：页级挂载（真正上纸的那一份）+ 预览副本"
-            f"（`inline`）；实测 {processing_doc_mounts(page)} 处 —— 缺页级那份 = 打印出空白纸"
+        assert order_docs_are_gated(page), (
+            "加工单 / 水洗唛不是**派单后才有**（`printDocs` 声明体里没有 `processingOrder` 条件）"
+            " —— 未派单的单子会点开一张空白纸"
+        )
+        mounts = order_page_processing_mounts(page)
+        assert mounts == {"ProcessingDoc": 2, "TaskCardPrint": 2}, (
+            f"两份纸各应有**两处**挂载（页级上纸 + 预览副本），实测 {mounts} —— "
+            "缺页级那份 = 点打印出来是空白纸"
+        )
+        branches = order_page_preview_branches(page)
+        assert branches == [], f"预览层里选不到 {branches}（纸面自检层缺这份纸的分支）"
+
+    def test_g8_production_page_has_no_print_entry(self) -> None:
+        hits = production_page_print_entries(_read(PRODUCTION_PAGE_REL))
+        assert hits == [], (
+            f"加工单生产明细页又出现打印痕迹 {hits} —— issue #7902（用户 2026-10-27"
+            "「把加工单的打印按钮移除掉，最终效果是统一到销售单上打印」）起，本页**零**打印入口；"
+            "水洗唛 / 加工单都从销售订单详情的打印层出"
         )
 
 
@@ -335,7 +352,7 @@ class TestRealSources:
     def test_g4_selector_is_wired_and_valid(self) -> None:
         page = _read(PAGE_REL)
         doc_lib = _read(PRINT_DOC_REL)
-        missing = missing_required_docs(page)
+        missing = missing_required_docs(page, doc_lib)
         assert missing == [], f"可打印单据清单里缺了 {missing}（商家会少一张纸）"
         unknown = unknown_docs(page, doc_lib)
         assert unknown == [], (
@@ -364,9 +381,10 @@ class TestDiscriminatingPower:
 
     def test_g1_readding_matrix_is_red(self) -> None:
         mutated = self.PAGE.replace(
-            "const ORDER_PRINT_DOCS",
+            "const printDocs",
             "const PRINT_TARGETS_BY_STATUS: Record<OrderStatus, PrintTarget[]> = { closed: [] }\n"
-            "const ORDER_PRINT_DOCS",
+            "  const printDocs",
+            1,
         )
         assert mutated != self.PAGE, "注入未生效（锚点漂移）⇒ 红证自己是空断言"
         assert "PRINT_TARGETS_BY_STATUS" in legacy_status_matrix(mutated)
@@ -406,26 +424,23 @@ class TestDiscriminatingPower:
         assert handwritten_labels(self.PAGE) == []  # 对照
 
     def test_g4_broken_wiring_is_red(self) -> None:
-        assert "docs={ORDER_PRINT_DOCS}" in strip_comments(self.PAGE)
-        missing_docs = self.PAGE.replace("docs={ORDER_PRINT_DOCS}", "")
-        assert selector_wiring(missing_docs) == ["docs={ORDER_PRINT_DOCS}"]
+        assert "docs={printDocs}" in strip_comments(self.PAGE)
+        missing_docs = self.PAGE.replace("docs={printDocs}", "")
+        assert selector_wiring(missing_docs) == ["docs={printDocs}"]
         missing_select = self.PAGE.replace("onSelect={selectPreview}", "")
         assert selector_wiring(missing_select) == ["onSelect={selectPreview}"]
         assert selector_wiring(self.PAGE) == []  # 对照
         # 错键（`'sale'`）⇒ unknown_docs 判红（对照读数：原文是空集）
-        wrong_key = self.PAGE.replace(
-            "const ORDER_PRINT_DOCS = ['sales'", "const ORDER_PRINT_DOCS = ['sale'"
-        )
+        wrong_key = self.PAGE.replace("const docs: PrintTarget[] = ['quotation', 'sales']",
+                                      "const docs: PrintTarget[] = ['quotation', 'sale']")
         assert wrong_key != self.PAGE, "注入未生效（锚点漂移）"
         assert unknown_docs(wrong_key, self.PRINT_DOC) == ["sale"]
         assert unknown_docs(self.PAGE, self.PRINT_DOC) == []
-        # 缺一份必打单据 ⇒ missing_required_docs 判红
-        dropped = self.PAGE.replace(
-            "const ORDER_PRINT_DOCS = ['sales', 'quotation', 'shipment']",
-            "const ORDER_PRINT_DOCS = ['sales', 'quotation']",
-        )
-        assert dropped != self.PAGE, "注入未生效（锚点漂移）"
-        assert missing_required_docs(dropped) == ["shipment"]
+        # 去掉派单闸门（`processingOrder` 条件）⇒ order_docs_are_gated 判红
+        no_gate = self.PAGE.replace("if (processingOrder) {", "if (true) {", 1)
+        assert no_gate != self.PAGE, "注入未生效（锚点漂移）"
+        assert order_docs_are_gated(no_gate) is False
+        assert order_docs_are_gated(self.PAGE) is True  # 对照
 
     def test_g5_block_print_entry_is_red(self) -> None:
         mutated = self.BLOCK.replace(
@@ -437,37 +452,39 @@ class TestDiscriminatingPower:
         assert block_print_entry(mutated) == ["onPrintProcessing"]
         assert block_print_entry(self.BLOCK) == []  # 对照
 
-    def test_g7_readding_processing_doc_is_red(self) -> None:
-        """G7 红证：把加工单标签加回订单详情页的清单 ⇒ 必红；对照 = 原文为空集。"""
+    def test_g7_removing_the_doc_mount_is_red(self) -> None:
+        """G7 红证：把页级加工单挂载摘掉 ⇒ 必红；对照 = 原文两处都在。"""
         mutated = self.PAGE.replace(
-            "const ORDER_PRINT_DOCS = ['sales', 'quotation', 'shipment']",
-            "const ORDER_PRINT_DOCS = ['sales', 'processing', 'quotation', 'shipment']",
+            "<ProcessingDoc order={order} processingOrder={processingOrder} printTarget={printTarget} />",
+            "",
+            1,
         )
         assert mutated != self.PAGE, "注入未生效（锚点漂移）⇒ 红证自己是空断言"
-        assert "ORDER_PRINT_DOCS 含 processing" in order_page_processing_leaks(mutated)
-        assert order_page_processing_leaks(self.PAGE) == []  # 对照
+        assert order_page_processing_mounts(mutated)["ProcessingDoc"] == 1
+        assert order_page_processing_mounts(self.PAGE)["ProcessingDoc"] == 2  # 对照
 
-    def test_g8_dropping_either_doc_is_red(self) -> None:
-        """G8 红证：生产明细页少一份纸 / 选择器断线 / 缺页级挂载 ⇒ 各自单独变红。"""
+    def test_g7_ungating_docs_is_red(self) -> None:
+        mutated = self.PAGE.replace("if (processingOrder) {", "if (true) {", 1)
+        assert mutated != self.PAGE, "注入未生效（锚点漂移）⇒ 红证自己是空断言"
+        assert order_docs_are_gated(mutated) is False
+        assert order_docs_are_gated(self.PAGE) is True  # 对照
+
+    def test_g8_readding_print_entry_is_red(self) -> None:
+        """G8 红证：往生产明细页塞回一个打印入口 ⇒ 必红；对照 = 原文空集。"""
         prod = _read(PRODUCTION_PAGE_REL)
-        doc_lib = _read(PRINT_DOC_REL)
-        no_processing = prod.replace("['labels', 'processing']", "['labels']", 1)
-        assert no_processing != prod, "注入未生效（锚点漂移）"
-        assert "processing" not in production_print_docs(no_processing, doc_lib)
-        assert "processing" in production_print_docs(prod, doc_lib)  # 对照
-        no_docs = prod.replace("docs={printDocs}", "", 1)
-        assert production_selector_wiring(no_docs) == ["docs={printDocs}"]
-        assert production_selector_wiring(prod) == []  # 对照
-        # 对照读数：只加注释 ⇒ 不红
-        commented = prod.replace(
-            "const printDocs", "// 说明：这里给出 labels + processing 两份纸\n  const printDocs", 1
+        mutated = prod.replace(
+            "<div className=\"p-6 space-y-4\">",
+            '<div className="p-6 space-y-4">\n      <button data-testid="production-print-button">打印</button>',
+            1,
         )
-        assert production_print_docs(commented, doc_lib) == production_print_docs(prod, doc_lib)
+        assert mutated != prod, "注入未生效（锚点漂移）⇒ 红证自己是空断言"
+        assert production_page_print_entries(mutated) == ['data-testid="production-print-button"']
+        assert production_page_print_entries(prod) == []  # 对照
 
     def test_g6_comment_only_change_is_not_red(self) -> None:
         """对照读数：只往页面里加**注释**（哪怕注释里写满按钮名 / 旧矩阵名）⇒ 一条判据都不该红。"""
         mutated = self.PAGE.replace(
-            "const ORDER_PRINT_DOCS",
+            "const printDocs",
             "// 说明：改前这里是 PRINT_TARGETS_BY_STATUS 矩阵，按钮叫 打印发货单 / 打印报价单 / "
             "打印加工单 / 打印销售单\nconst ORDER_PRINT_DOCS",
         )
