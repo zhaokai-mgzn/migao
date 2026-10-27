@@ -1,4 +1,4 @@
-// case_ids: UI-040, UI-047
+// case_ids: UI-040, UI-047, OR-072
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -361,60 +361,18 @@ describe('ShipOrder', () => {
     expect(mockShipOrder).not.toHaveBeenCalled()
   })
 
-  it('发货前可打印发货单：点击真的触发 window.print', async () => {
-    // 还原**只针对这一个 spy**（见 describe 头的反例二）：文件级 `restoreAllMocks()` 会连
-    // `vi.fn()` 替身的实现一起清掉 ⇒ 组件 effect 命中 `undefined` ⇒ 本文件随机红、卡住部署。
-    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
-    try {
-      const user = userEvent.setup()
-      render(<ShipOrder />)
+  it('本页**没有**打印入口（issue #7902：发货单退场，纸统一在销售订单详情出）', async () => {
+    render(<ShipOrder />)
+    // 稳态锚点：发货表单已就绪（不拿"打印按钮不存在"当锚点，否则判据会空跑）
+    await screen.findByPlaceholderText('请输入实际发货人姓名')
 
-      await user.click(await screen.findByRole('button', { name: /打印发货单/ }))
-
-      // 🔴 点按钮 = 打开**纸面自检层**（issue #5914）；层里点「打印」才真的开印
-      expect(printSpy).not.toHaveBeenCalled()
-      await user.click(await screen.findByTestId('print-preview-print'))
-
-      expect(printSpy).toHaveBeenCalledTimes(1)
-    } finally {
-      printSpy.mockRestore()
-    }
+    expect(screen.queryByRole('button', { name: /打印/ })).toBeNull()
+    expect(document.querySelector('.shipment-print-area')).toBeNull()
+    expect(screen.queryByTestId('print-preview')).toBeNull()
   })
 
   it('打印用例跑完后 window.print 必须已还原（否则泄漏到后续用例 ⇒「没打印」类断言恒真/恒假）', () => {
-    // 反向护栏：删掉上面那条用例的 `finally { printSpy.mockRestore() }` ⇒ 本判据必红。
     expect(vi.isMockFunction(window.print)).toBe(false)
-  })
-
-  it('发货单在 DOM 中就绪（屏幕隐藏、打印显形），内容含订单号/收货人/明细/发货人', async () => {
-    render(<ShipOrder />)
-
-    await screen.findByPlaceholderText('请输入实际发货人姓名')
-
-    // 🔴 必须再等**打印区自己**落地（issue #5006）：`.shipment-print-area` 由 `ShipmentDoc` 用
-    // `const [mounted, setMounted] = useState(false); useEffect(() => setMounted(true), [])`
-    // + `createPortal(..., document.body)` 渲染 ⇒ 比发货表单**还晚一个提交**。
-    // 只等表单就绪就同步 `querySelector('.shipment-print-area')` ⇒ 撞进「表单已挂、打印区未挂」
-    // 的窗口（实测：把打印区挂载推迟 200ms 模拟该窗口变宽 ⇒ 旧写法必红
-    // `expected null not to be null`，本写法必绿）。
-    // 「发货单」是打印区自己的区块标题（实测全文档仅一处文本节点命中）⇒ 等它即等打印区。
-    //
-    // ⚠️ **归因边界（照实登记，issue #5006）**：本机**不复现**该窗口（旧写法本机 5/5 绿）⇒
-    // 本改动**不声称**已证 CI 那两次失败（run 35560642965 / 35561418929）的根因。
-    // 它的判据是**较弱但确定**的那一条：**该窗口客观存在且可达**（把打印区挂载推迟 200ms
-    // 即复现 CI 的逐字报错），而「等被断言内容自己」在结构上不依赖这个窗口 ⇒ 是**收紧等待**，
-    // 不是放宽断言（未动任何 `expect`）。根因定位仍见 #5006。
-    await screen.findByText('发货单')
-
-    const doc = document.querySelector('.shipment-print-area')
-    // 存在性断言要**触业务对象**（弱断言 `not.toBeNull` 会被 QA Growth Gate 判红）
-    expect(doc?.className, '找不到纸面发货单容器 ⇒ 判据在扫空气').toContain('shipment-print-area')
-    expect(doc!.textContent).toContain('发货单')
-    expect(doc!.textContent).toContain('MG202606002')
-    expect(doc!.textContent).toContain('李四')
-    expect(doc!.textContent).toContain('遮光窗帘')
-    // 发货人 = 当前输入值（尚未保存也要能印在纸面）
-    expect(doc!.textContent).toContain('王五')
   })
 
   // ===== 客户常用物流档案带出（issue #4419 / UI-047）=====
@@ -617,50 +575,26 @@ describe('ShipOrder', () => {
             {
               ...mockOrder.items[0],
               processingFee: 37.5,
-              // issue #7891：加工项写在该商品行的 `processingInfo` 上 —— 纸面把它挂在**这条商品行**
-              // 下面（订单级 `processingItems` 不再上纸）
               processingInfo: { processingItems: [{ id: 'pr-1', name: '打孔', quantity: 12.5 }] },
             },
           ],
-          // #4882：后端 `ProcessingItemBrief` 只剩 id / name / quantity
           processingItems: [{ id: 'pr-1', name: '打孔', quantity: 12.5 }],
         },
       },
     })
     render(<ShipOrder />)
 
-    // 等发货表单落地（先确认没被守卫拦成阻断页 —— 否则下面的断言是空跑）
     await screen.findAllByText('商品发货')
     expect(screen.queryByText(/须先完成加工单后再发货/)).toBeNull()
 
-    // 🔴 下面的断言打的是**纸质发货单**（`.shipment-print-area`），它比发货表单**还晚一个提交**
-    // 才挂（`ShipmentDoc`：`useState(false)` + `useEffect(() => setMounted(true), [])`
-    // + `createPortal(..., document.body)`）⇒ 必须等打印区自己的内容落地，否则同步 `getByText`
-    // 撞进「表单已挂、打印区未挂」的窗口（实测：把打印区挂载推迟 200ms 模拟该窗口变宽 ⇒
-    // 旧写法必红 `Unable to find an element with the text: 加工费合计（元）：37.50`
-    // ——与 CI run 35560642965 逐字相同；本写法必绿）。
-    // 「打孔 12.5」由**商品行的** `processingInfo.processingItems` 派生、只存在于打印区
-    // （屏幕侧 #4882 后已无同名文本）。
-    // issue #7275：加工项压成一行 ⇒ 按**一行锚点**定位（「打孔」不再是独立文本节点；
-    // 红证：把加工项退回逐项表格 ⇒ 本行找不到 ⇒ 红）。
-    // issue #7891（用户 2026-10-27 逐字「发货单的加工项需要和商品绑定…商品下面是加工项」）：
-    // 一行加工项现在挂在**商品行下面**（子行 `shipment-item-processing-<idx>`），底部独立区块退场
-    // （红证：把底部「加工项（数量：米）」区块加回来 / 子行不随商品行走 ⇒ 本行找不到 ⇒ 红）。
-    // issue #7605（用户 2026-10-24 裁定）：写法是「名称 数量」——数量不等 ⇒ 逐项写；
-    // **不再**是 `名称×数量`（`×` 会诱导客户拿它去乘出加工费）。
-    const procRow = await screen.findByTestId('shipment-item-processing-0')
-    expect(procRow.textContent?.trim()).toBe('加工项：打孔 12.5')
-
-    // 红证：`加工合计` 是那张退场表**独有**的表头
-    // （保留下来的纸质发货单只有「加工费合计（元）：X」，没有「加工合计」）
-    // ⇒ 把 `ProcessingTable`（定义或使用）加回来即红
+    // 屏幕侧的加工项表已随 #4882 退场（本页也不再挂纸质发货单 —— issue #7902）
     expect(screen.queryByText('加工合计')).toBeNull()
-
-    // 退场的是「表」，不是「含加工项」语义：纸质单据照旧印名称 / 米数 / 加工费合计（行级落库值）
-    expect(screen.getByText('加工费合计（元）：37.50')).toBeInTheDocument()
-    // 米数仍在（压成一行不得把送货核对的米数丢掉）—— 它现在是同一行的一段，不再自成单元格
-    expect(procRow.textContent).toContain('12.5')
+    expect(document.querySelector('.shipment-print-area')).toBeNull()
+    // 反向自证（不是空跑）：页面确实渲染了发货表单与金额区
+    expect(screen.getByPlaceholderText('请输入实际发货人姓名')).toBeInTheDocument()
+    expect(document.body.textContent).toContain('订单实收款')
   })
+
   /**
    * issue #6664 第 6 条：**币符重复** —— `formatAmount` 已带 `¥`，调用处再拼「元」。
    *

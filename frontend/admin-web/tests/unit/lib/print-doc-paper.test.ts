@@ -1,10 +1,10 @@
-// case_ids: UI-040, UI-053, UI-061, UI-062, UI-095
+// case_ids: UI-040, UI-053, UI-061, UI-062, UI-095, OR-071
 /**
  * 类级元守卫（issue #6720）：**纸面不得把「未知」印成 0**。
  *
  * ## 病灶（悬空尾巴：#6667 第 8 条移出本包后无人收口）
  *
- * `frontend/admin-web/src/components/orders/ShipmentDoc.tsx`（**客户拿到手的凭证**）里
+ * `frontend/admin-web/src/components/orders/ShipmentDoc.tsx`（**已于 issue #7902 退场**；病灶原形保留为历史锚）里
  * `formatAmount = (amount ?? 0).toLocaleString(...)` / `formatQty = String(qty ?? 0)` ——
  * 缺值在纸面上印成 `0.00` / `0`。而该文件**自己**就写着同族判断（加工费一段）：
  * 「『本来就不收加工费』与『算不出来』长得一样，属**静默改钱的外观**」；
@@ -22,11 +22,11 @@
  * | 1 | **未登记即红**：`SCOPE`（打印单据族）里出现「`?? 0` / `|| 0` 落进印数值的形态」 | 报出 `文件::形态` 与可复制命令；修法 = 缺值印 `—`（真 0 仍印 `0.00`） |
  * | 2 | **台账只许缩短**：`LEDGER` 条目**不再命中** ⇒ 当场红 | 修好不同批删登记（僵尸豁免）⇒ 红 |
  * | 3 | **判别力自证**：坏形态在内存源码里逐形判红；好形态（缺值 ⇒ `—`、真 0、算术中性元、注释里的反例）**不**报 | 判据退化 / 被自己的文案喂红 ⇒ 红 |
- * | 4 | **实例不变量**：五份单据的测试都必须挂纸面判据（**未登记即红**），且 `SCOPE` 必须含五份单据 | 新单据的测试不调它 ⇒ 具名报出；`SCOPE` 被改小 ⇒ 红 |
+ * | 4 | **实例不变量**：每份在册单据的测试都必须挂纸面判据（**未登记即红**），且 `SCOPE` 必须含它们在册的每一份 | 新单据的测试不调它 ⇒ 具名报出；`SCOPE` 被改小 ⇒ 红 |
  *
  * ## 边界（照实登记，§19.1）
  *
- * - **只扫 `SCOPE` 四份印数值的纸面单据 + 洗水码（当前不印数值）**；屏上组件、取数页、
+ * - **只扫 `SCOPE` 在册的印数值纸面单据 + 洗水码（当前不印数值）**；屏上组件、取数页、
  *   `/dashboard`、读失败面**不在本台账**（各由 `derived-zero-fallback-scan.mjs`（#6701）、
  *   `read-failure-copy-attribution-scan.mjs`（#6702）承担，两表不互重判）。
  * - 只认源码**文本形态**（去注释后），不判运行时；经中间变量 / 跨行 / 三元回退的 `?? 0`
@@ -90,9 +90,8 @@ function registrations(source: string, label: string): string[] {
 
 describe('打印单据族 · 「未知不得印成 0」类级判定面（issue #6720）', () => {
   it('判据面非空、含目标单据，且每个受管文件**真实存在**（扫空气 ⇒ 红）', () => {
-    expect(SCOPE.length).toBeGreaterThanOrEqual(5)
+    expect(SCOPE.length).toBeGreaterThanOrEqual(4)
     for (const anchor of [
-      'src/components/orders/ShipmentDoc.tsx',
       'src/components/orders/QuotationDoc.tsx',
       'src/components/orders/SalesDoc.tsx',
       'src/components/orders/ProcessingDoc.tsx',
@@ -103,7 +102,7 @@ describe('打印单据族 · 「未知不得印成 0」类级判定面（issue #
     for (const rel of SCOPE) {
       expect(readFileSync(join(ROOT, rel), 'utf-8').length, `${rel} 读不到内容`).toBeGreaterThan(0)
     }
-    expect(SCOPE_TARGETS.length).toBeGreaterThanOrEqual(5)
+    expect(SCOPE_TARGETS.length).toBeGreaterThanOrEqual(4)
   })
 
   it('🔴 未登记即红：受管单据里不得出现「`?? 0` / `|| 0` 落进印数值的形态」', () => {
@@ -123,7 +122,7 @@ describe('打印单据族 · 「未知不得印成 0」类级判定面（issue #
     expect(stale, '这些台账条目已经不再命中（多半是修好了）⇒ 必须同批删掉，不留僵尸豁免：').toEqual([])
   })
 
-  it('🔴 实例不变量：五份单据的测试都必须挂纸面判据（未登记即红）', () => {
+  it('🔴 实例不变量：每份在册单据的测试都必须挂纸面判据（未登记即红）', () => {
     const missing = SCOPE_TARGETS.filter((target) => {
       const source = readFileSync(join(ROOT, target.file), 'utf-8')
       return registrations(source, target.label).length === 0
@@ -137,17 +136,17 @@ describe('打印单据族 · 「未知不得印成 0」类级判定面（issue #
   it('🔴 实例不变量 ①：判据面里出现「整格 = 0 / 0.00」⇒ 抛错并点出单据与命中值', () => {
     expect(() =>
       assertNoPaperZeroFill(['—', '0.00', '1,250.00'], {
-        label: '发货单 ShipmentDoc',
+        label: '报价单 QuotationDoc',
         presence: ['缺 amount'],
       })
-    ).toThrow(/发货单 ShipmentDoc[\s\S]*0\.00/)
+    ).toThrow(/报价单 QuotationDoc[\s\S]*0\.00/)
     // 反向对照：印 `—` 的纸面**不**报（否则「修好了还红」= 假红，会逼人回退）
     expect(
       assertNoPaperZeroFill(['—', '—'], { label: '报价单 QuotationDoc', presence: ['缺 amount'] })
     ).toBeUndefined()
     // 🔴 **真值里的 `0.00` 不许判红**（issue #6720 明令）：`100.00` / `1,250.00` 是整格真值
     expect(
-      assertNoPaperZeroFill(['100.00', '1,250.00', '17.5'], { label: '发货单 ShipmentDoc' })
+      assertNoPaperZeroFill(['100.00', '1,250.00', '17.5'], { label: '报价单 QuotationDoc' })
     ).toBeUndefined()
   })
 
@@ -167,15 +166,15 @@ describe('打印单据族 · 「未知不得印成 0」类级判定面（issue #
   it('🔴 实例不变量 ②：逐格「未知 vs 真 0」**双向**都要有（缺任一边 ⇒ 红）', () => {
     const ok = [PAPER_MISSING, '0.00', '0', '1,250.00']
     expect(
-      assertPaperKeepsMissingDistinct(ok, { label: '发货单 ShipmentDoc', presence: ['缺值行 + 真 0 行'] })
+      assertPaperKeepsMissingDistinct(ok, { label: '报价单 QuotationDoc', presence: ['缺值行 + 真 0 行'] })
     ).toBeUndefined()
     // 只有真 0、没有 `—` ⇒ 缺值那半没渲染（判据在空气上跑）⇒ 红
     expect(() =>
-      assertPaperKeepsMissingDistinct(['0.00', '1,250.00'], { label: '发货单 ShipmentDoc' })
+      assertPaperKeepsMissingDistinct(['0.00', '1,250.00'], { label: '报价单 QuotationDoc' })
     ).toThrow(/缺值那半没渲染|「—」/)
     // 只有 `—`、没有真 0 ⇒ 没覆盖「真 0 仍印 0」的反向对照 ⇒ 红
     expect(() =>
-      assertPaperKeepsMissingDistinct([PAPER_MISSING, '1,250.00'], { label: '发货单 ShipmentDoc' })
+      assertPaperKeepsMissingDistinct([PAPER_MISSING, '1,250.00'], { label: '报价单 QuotationDoc' })
     ).toThrow(/反向对照|真 0/)
   })
 
@@ -306,21 +305,17 @@ describe('打印单据族 · 「未知不得印成 0」类级判定面（issue #
       '注入 main 上的旧写法后判据**没判红** ⇒ 守卫是空判据'
     ).not.toEqual([])
 
-    // ② 聚合形态的注入式红证（issue #6731）：把「未知摊成 0」的求和注进同一个真源码
-    const aggregateAnchor = /function sumOrUnknown\([\s\S]*?\): number \| null \{/
-    expect(
-      aggregateAnchor.test(original),
-      `\`${rel}\` 里找不到 \`sumOrUnknown\`（聚合注入点已漂移）`
-    ).toBe(true)
-    const injectedAggregate = original.replace(
-      aggregateAnchor,
-      // 注入形态 = #6720 之前真正的写法（字段名在命中面内：`(it.amount || 0)`）
-      (m) => `${m}\n  return items.reduce((sum, it) => sum + (it.amount || 0), 0) as number`
-    )
+    // ② 聚合形态的注入式红证（issue #6731）：把「未知摊成 0」的求和注进同一个真源码。
+    // 🔴 #7902：`sumOrUnknown`（原在发货单里）随该纸退场 ⇒ 注入点改为**真实源码文本** ——
+    // 判据认的是形态，不是某个符号是否存在（按符号注入，符号一换名红证就静默空跑）。
+    const injectedAggregate =
+      original +
+      "\nexport function __probeAggregate(items: { amount?: number }[]) {\n" +
+      "  return items.reduce((sum, it) => sum + (it.amount || 0), 0)\n}\n"
     expect(injectedAggregate).not.toBe(original)
     expect(
       printDocZeroFillSitesFromSource(injectedAggregate, { file: rel }),
-      '注入「聚合摊零」写法后判据**没判红** ⇒ 新形态是空判据'
+      '注入 main 上的旧写法后判据**没判红** ⇒ 守卫是空判据'
     ).not.toEqual([])
   })
 

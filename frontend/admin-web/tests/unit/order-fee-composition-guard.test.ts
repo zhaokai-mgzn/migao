@@ -1,4 +1,4 @@
-// case_ids: UI-076
+// case_ids: UI-076, OR-072
 /**
  * 类级元守卫（issue #5843）——**加工费合计的每一处求和都必须显式登记**。
  *
@@ -39,7 +39,6 @@ const SUMMATION_PATTERNS: Array<[string, RegExp]> = [
  *
  * - `lib/order-fee-display.ts`：共享层本尊（`buildOrderFeeComposition`）
  * - `components/orders/OrderItemList.tsx`：明细行「合计区」（#4406 起就在，本单未改造它）
- * - `components/orders/ShipmentDoc.tsx`：纸质发货单的加工费合计（同一份行级口径的另一个渲染面）
  * - `app/(dashboard)/orders/new/page.tsx`：新增订单页的**试算预览**面（`feePreview`，不落库；
  *   详情页是**落库快照**面 —— 两个面本来就不同源，见 issue #5843 的裁定）
  *
@@ -47,11 +46,10 @@ const SUMMATION_PATTERNS: Array<[string, RegExp]> = [
  * ⇒ 从本表删掉那一行 ⇒ 守卫仍绿。**新增一行必须同时把 `FROZEN_MAX` 抬上去**，
  * 而抬这个数 = 明确宣告「又多了一套求和」，评审时一眼可见。
  */
-const FROZEN_MAX = 4
+const FROZEN_MAX = 3
 const ALLOWED_SITES = [
   'lib/order-fee-display.ts',
   'components/orders/OrderItemList.tsx',
-  'components/orders/ShipmentDoc.tsx',
   'app/(dashboard)/orders/new/page.tsx',
 ] as const
 

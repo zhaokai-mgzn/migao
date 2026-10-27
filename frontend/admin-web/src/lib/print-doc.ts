@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { peekPaymentQrcodes } from './use-payment-qrcodes'
-import type { PrintMediaId } from './print-media'
+import { printPageBoxMm, type PrintMediaId } from './print-media'
 // 纸面标题按**作业单两型**给名（issue #7891）：真值在 `processing-order.ts`（只 import 类型 ⇒ 无循环）
 import { workOrderDocTitleOf, type WorkOrderKind } from './processing-order'
 
@@ -64,7 +64,7 @@ function afterNextPaint(): Promise<void> {
  */
 
 /** 可打印单据的**目标位**（= 页面上「这次要印哪一份」）。新增单据必须同时登记进本清单与介质矩阵。 */
-export const PRINT_TARGETS = ['shipment', 'quotation', 'processing', 'sales', 'labels'] as const
+export const PRINT_TARGETS = ['quotation', 'sales', 'processing', 'labels'] as const
 
 export type PrintTarget = (typeof PRINT_TARGETS)[number]
 
@@ -74,7 +74,6 @@ export type PrintTarget = (typeof PRINT_TARGETS)[number]
  * 本表**不是**第二份纸型真值。
  */
 export const PRINT_TARGET_SPECS: Record<PrintTarget, { title: string; media: PrintMediaId }> = {
-  shipment: { title: '发货单', media: 'a4' },
   quotation: { title: '报价单', media: 'a4' },
   processing: { title: '加工单', media: 'a4' },
   sales: { title: '销售单', media: 'continuous-241x140' },
@@ -94,6 +93,29 @@ export const PRINT_TARGET_SPECS: Record<PrintTarget, { title: string; media: Pri
  */
 export function printTargetTitle(target: PrintTarget, kind?: WorkOrderKind): string {
   return target === 'processing' ? workOrderDocTitleOf(kind) : PRINT_TARGET_SPECS[target].title
+}
+
+/**
+ * 单据类型 → 屏上中文名（打印流水 / 列表汇总用）。
+ *
+ * 🔴 流水里的 `doc_title` 是**打印当时的快照**（「加工单」还是「面料单」由当时的作业单两型决定），
+ * 所以展示优先用快照；只有快照缺值（存量行 / 早期记录）才回落到本函数 —— **不覆写历史**。
+ */
+export function printDocTypeLabel(docType: string): string {
+  const spec = PRINT_TARGET_SPECS[docType as PrintTarget]
+  return spec ? spec.title : docType
+}
+
+/** 介质 id → 纸面尺寸文案（登录流水里「打歪了」第一眼看的就是它）；查不到 ⇒ 原样回 id */
+export function printMediaLabel(mediaId: string | null | undefined): string {
+  if (!mediaId) return '—'
+  try {
+    const box = printPageBoxMm(mediaId as PrintMediaId)
+    return `${box.widthMm}×${box.heightMm}mm`
+  } catch {
+    // 介质矩阵里没有这个 id（历史行 / 未来新增）⇒ 原样显示 id，**不编一个尺寸**
+    return mediaId
+  }
 }
 
 export interface PrintDocController {
@@ -179,4 +201,152 @@ export function usePrintDoc(singleDocTarget?: PrintTarget): PrintDocController {
   const closePreview = useCallback(() => setPreviewTarget(null), [])
 
   return { printTarget, previewTarget, requestPrint, openPreview, selectPreview, closePreview }
+}
+
+/* ============================================================================
+ * 联合打印（issue #7902）—— 一次操作打多份纸，但**一张一张出**
+ * ==========================================================================*/
+
+/** 一次联合打印的批次号（写打印流水用；`crypto.randomUUID` 不可用 ⇒ 时间戳兜底，判据只要求非空且同批相同） */
+export function newPrintBatchId(): string {
+  const c = typeof crypto !== 'undefined' ? crypto : undefined
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID()
+  return `batch-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`
+}
+
+export interface PrintBatchController {
+  /** `idle` = 不在联合打印里；`panel` = 勾选面板打开；`running` = 逐张引导中 */
+  stage: 'idle' | 'panel' | 'running'
+  /** 本次**可**联合打印的单据（页面按派单/权限给；顺序 = 出纸顺序） */
+  candidates: readonly PrintTarget[]
+  /** 已勾选的单据（顺序 = 出纸顺序） */
+  selected: PrintTarget[]
+  /** 逐张引导：当前第几张（0-based） */
+  index: number
+  /** 当前这一张是否已经出过纸（出纸后主按钮变「下一张」） */
+  fired: boolean
+  /** 本次联合打印的批次号（未开始 ⇒ `null`；写打印流水用） */
+  batchId: string | null
+  /** 逐张引导时当前这份纸；`null` ⇒ 没在引导 */
+  current: PrintTarget | null
+  /** 打开勾选面板；`preferred` = 当前正在看的那一份（默认勾它，缺省勾第一份） */
+  openPanel: (preferred?: PrintTarget) => void
+  closePanel: () => void
+  toggle: (target: PrintTarget) => void
+  /** 全选 / 全不选（当前全选 ⇒ 清空） */
+  toggleAll: () => void
+  start: () => void
+  /** 出纸后立刻记一笔（**不改阶段**，主按钮仍停在「下一张」） */
+  markFired: () => void
+  /** 前进到下一张；最后一张 ⇒ 直接收尾 */
+  next: () => void
+  stop: () => void
+}
+
+/**
+ * 联合打印的状态机（**只做状态**，不碰 `window.print()` —— 开印仍由 `usePrintDoc` 的唯一入口负责）。
+ *
+ * ## 为什么是「逐张引导」而不是「连打 N 张」
+ *
+ * ① 浏览器**不保证** `window.print()` 会阻塞到出纸完成（`afterprint` 的时机在各驱动上不同），
+ *    自动连打会在真机上变成「点了没反应」或「一次弹 N 个对话框」；
+ * ② 四份单据的纸型不同（241×140 三联纸 / A4 / 50×150 标签）——**每份都要换纸/换驱动设置**，
+ *    物理上就必须一张一张来；
+ * ③ 商家要能中途停（少打一张标签纸 = 少浪费一张耗材）。
+ * ⇒ 主按钮 = 「打印这一张」，出纸后变「下一张」，进度与顺序在屏上一直可见。
+ *
+ * @param candidates 本次可联合打印的单据（页面给；顺序 = 出纸顺序）。集合变小（如作业单被取消）时，
+ *   已勾选但不再可打印的项会被**静默剔除** —— 宁可少打一张，也不打一张数据已经没有的纸。
+ */
+export function usePrintBatch(candidates: readonly PrintTarget[]): PrintBatchController {
+  const [stage, setStage] = useState<'idle' | 'panel' | 'running'>('idle')
+  const [selected, setSelected] = useState<PrintTarget[]>([])
+  const [index, setIndex] = useState(0)
+  const [fired, setFired] = useState(false)
+  const [batchId, setBatchId] = useState<string | null>(null)
+
+  // 候选集合收缩 ⇒ 同步剔除（勾选状态是「这一次要打什么」的意图，不是账本）
+  useEffect(() => {
+    setSelected((prev) => {
+      const next = prev.filter((t) => candidates.includes(t))
+      return next.length === prev.length ? prev : next
+    })
+  }, [candidates])
+
+  const openPanel = useCallback((preferred?: PrintTarget) => {
+    setStage('panel')
+    // 面板打开时默认**只勾当前正在看的那一份**：联合打印是显式动作，不默认把纸全打一遍（纸是耗材）；
+    // 已有勾选则保持（用户在面板里调整到一半关掉再打开，不该被重置）
+    setSelected((prev) =>
+      prev.length > 0
+        ? prev
+        : [preferred && candidates.includes(preferred) ? preferred : candidates[0]].filter(
+            Boolean,
+          ) as PrintTarget[],
+    )
+  }, [candidates])
+
+  const closePanel = useCallback(() => setStage('idle'), [])
+
+  const toggle = useCallback((target: PrintTarget) => {
+    setSelected((prev) =>
+      prev.includes(target) ? prev.filter((t) => t !== target) : [...prev, target],
+    )
+  }, [])
+
+  const toggleAll = useCallback(() => {
+    setSelected((prev) => (prev.length === candidates.length ? [] : [...candidates]))
+  }, [candidates])
+
+  const start = useCallback(() => {
+    if (selected.length === 0) return
+    // 顺序 = 候选顺序（业务流水序：报价单 → 销售单 → 加工单 → 水洗唛），不按点击顺序
+    const ordered = candidates.filter((t) => selected.includes(t))
+    setSelected(ordered)
+    setIndex(0)
+    setFired(false)
+    setBatchId(newPrintBatchId())
+    setStage('running')
+  }, [candidates, selected])
+
+  const markFired = useCallback(() => setFired(true), [])
+
+  const stop = useCallback(() => {
+    setStage('idle')
+    setIndex(0)
+    setFired(false)
+    setBatchId(null)
+  }, [])
+
+  const next = useCallback(() => {
+    setIndex((prev) => {
+      if (prev + 1 >= selected.length) {
+        // 最后一张 ⇒ 收尾（用微任务避免在渲染期改多个 state 的交错分支）
+        setStage('idle')
+        setFired(false)
+        setBatchId(null)
+        return 0
+      }
+      setFired(false)
+      return prev + 1
+    })
+  }, [selected.length])
+
+  return {
+    stage,
+    candidates,
+    selected,
+    index,
+    fired,
+    batchId,
+    current: stage === 'running' ? (selected[index] ?? null) : null,
+    openPanel,
+    closePanel,
+    toggle,
+    toggleAll,
+    start,
+    markFired,
+    next,
+    stop,
+  }
 }

@@ -2,7 +2,7 @@
  * OrderTable 组件测试
  * 覆盖：基本渲染、采购商品列、采购明细列、加工项计费、空状态、加载状态
  */
-// case_ids: UI-002, UI-020, UI-019, UI-030
+// case_ids: UI-002, UI-020, UI-019, UI-030, OR-072
 import { render, screen, within } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import OrderTable from '@/components/orders/OrderTable'
@@ -382,4 +382,58 @@ describe('OrderTable 退款按钮（基于真实状态 + refundAmount）', () =>
     expect(screen.queryByText('处理退款')).toBeNull()
   })
 })
+})
+
+/**
+ * 「打印」列（issue #7902）—— 列表要能一眼看出这单打过没有。
+ *
+ * 读数**全部来自服务端聚合**（`printedAt` / `printCount` / `printedDocTypes`，真值 = print_logs
+ * 里 status='fired' 的行）⇒ 换台电脑打过的纸也看得见；前端不拿本地状态冒充。
+ */
+describe('打印列（issue #7902）', () => {
+  const baseProps = {
+    orders: [] as never[],
+    loading: false,
+    selectedIds: [] as string[],
+    onSelectChange: () => {},
+    onView: () => {},
+    onRemark: () => {},
+    onClose: () => {},
+    onShip: () => {},
+  }
+
+  it('已打印 ⇒ 勾 + 最近打印时间；悬浮说明有次数与打过的单据', () => {
+    render(
+      <OrderTable
+        {...baseProps}
+        orders={[
+          {
+            ...mockOrder,
+            id: 'order-printed',
+            printedAt: '2026-10-27T15:22:00+08:00',
+            printCount: 3,
+            printedDocTypes: ['sales', 'processing', 'labels'],
+          } as never,
+        ]}
+      />,
+    )
+
+    const cell = screen.getByTestId('order-printed-order-printed')
+    expect(cell).toHaveTextContent('已打印')
+    // 今年内的紧凑形态：MM-DD HH:mm（与完整时间戳分开：列表列宽有限，"多久以前"才是要看的那一面）
+    expect(cell).toHaveTextContent('10-27 15:22')
+    const title = cell.querySelector('span')?.getAttribute('title') ?? ''
+    expect(title).toContain('已打印 3 次')
+    expect(title).toContain('销售单')
+    expect(title).toContain('加工单')
+    expect(title).toContain('水洗唛')
+  })
+
+  it('从未打印 ⇒ 灰字「未打印」（不是空白，也不是 0 次）', () => {
+    render(<OrderTable {...baseProps} orders={[{ ...mockOrder, id: 'order-fresh' } as never]} />)
+
+    const cell = screen.getByTestId('order-printed-order-fresh')
+    expect(cell).toHaveTextContent('未打印')
+    expect(cell).not.toHaveTextContent('已打印')
+  })
 })

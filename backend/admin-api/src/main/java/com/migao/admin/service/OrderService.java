@@ -17,6 +17,7 @@ import com.migao.admin.mapper.FinanceTransactionMapper;
 import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderLogisticsMapper;
 import com.migao.admin.mapper.OrderMapper;
+import com.migao.admin.mapper.PrintLogMapper;
 import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
@@ -174,6 +175,19 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      */
     @org.springframework.beans.factory.annotation.Autowired
     private StockBatchConsumptionService stockBatchConsumptionService;
+
+    /**
+     * 打印流水（V201，issue #7902）：订单列表「是否已打印」三个读数（{@code printedAt} / {@code printCount} /
+     * {@code printedDocTypes}）的唯一数据面。
+     *
+     * <p><b>字段注入而非构造参数</b>，理由同 {@link #stockBatchConsumptionService}：本类构造签名被多处
+     * 测试显式装配（{@code new OrderService(...)}），加参数会把它们全改一遍。
+     * <b>Spring 生产装配下一定非 null</b>；单测切片里为 null ⇒ 三个读数是「未打印」的确定值
+     * （{@code null / 0 / []}，与「这单确实没打过」同形 —— 列表不会因此报错，也不会编出一个打印时间）。
+     * 判据：{@code OrderServicePrintStatusTest}（批量只查一次 / 未打印是确定值 / 空页不发查询）。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private PrintLogMapper printLogMapper;
 
     /**
      * 审计留痕（issue #5842）：订单**内容编辑**的前后差异落 {@code audit_logs}。
@@ -416,7 +430,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         List<OrderListResponse> responses = resultPage.getRecords().stream()
                 .map(this::convertToListResponse)
                 .collect(Collectors.toList());
-        enrichListResponses(responses);
+        enrichListResponses(responses, tenantId);
 
         return PageResponse.of(resultPage.getTotal(), resultPage.getCurrent(), resultPage.getSize(), responses);
     }
@@ -464,7 +478,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         List<OrderListResponse> responses = resultPage.getRecords().stream()
                 .map(this::convertToListResponse)
                 .collect(Collectors.toList());
-        enrichListResponses(responses);
+        enrichListResponses(responses, tenantId);
 
         return PageResponse.of(resultPage.getTotal(), resultPage.getCurrent(), resultPage.getSize(), responses);
     }
@@ -502,9 +516,15 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     }
 
     /**
-     * 批量补充订单明细/加工费/实收款（getOrderPage 与 getMyOrderPage 共用，避免 N+1）
+     * 批量补充订单明细/加工费/实收款/「是否已打印」（getOrderPage 与 getMyOrderPage 共用，避免 N+1）
+     *
+     * @param tenantId 当前租户（打印汇总必须**同租户**：跨租户的 order_id 撞车不可想象，但白读一次也没意义）
      */
-    private void enrichListResponses(List<OrderListResponse> responses) {
+    private void enrichListResponses(List<OrderListResponse> responses, Long tenantId) {
+        // 「是否已打印」（V201，issue #7902）：先给**全页**的确定值，再一次性批量覆盖 ——
+        // 两条分支（有单 / 空页）都拿到同一份口径，前端不必分情况判空。
+        enrichPrintStatus(responses, tenantId);
+
         // 批量补充订单明细，避免 N+1 查询；前端列表"采购商品"列依赖 items[0]
         List<String> orderIds = responses.stream()
                 .map(OrderListResponse::getId)
@@ -573,6 +593,52 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                     resp.setActualAmount(resp.getTotalAmount());
                 }
             }
+        }
+    }
+
+    /**
+     * 批量补充「是否已打印」（V201，issue #7902）：**一次**聚合查询（禁止 N+1）。
+     *
+     * <h3>三个读数的口径</h3>
+     * <ul>
+     *   <li>{@code printedAt} = 最近一次**成功发起**的打印时间（{@code print_logs.status = 'fired'}）；
+     *       {@code null} = 从未打印；</li>
+     *   <li>{@code printCount} = 打印条数（不是出纸张数之和 —— 「打了几次」与「出了几张纸」是两件事）；</li>
+     *   <li>{@code printedDocTypes} = 去重排序的单据类型（{@code processing} / {@code sales} / …）。</li>
+     * </ul>
+     *
+     * <p>🔴 未打印的订单回的是**确定值**（{@code null} / {@code 0} / 空列表），不是「本次不填」：
+     * 让「没打过」与「读不到」长得不一样，前端就得按三种情况判空 —— 而那正是「某处漏填了」
+     * 永远不会被发现的原因（判据：{@code OrderServicePrintStatusTest}）。</p>
+     */
+    private void enrichPrintStatus(List<OrderListResponse> responses, Long tenantId) {
+        for (OrderListResponse response : responses) {
+            response.setPrintedAt(null);
+            response.setPrintCount(0);
+            response.setPrintedDocTypes(Collections.emptyList());
+        }
+        // 空页 / 单测切片（未装配 Mapper）/ 无租户上下文 ⇒ 不发查询（`IN ()` 还会是语法错误）
+        if (printLogMapper == null || responses.isEmpty() || tenantId == null) {
+            return;
+        }
+        List<String> orderIds = responses.stream()
+                .map(OrderListResponse::getId)
+                .filter(StringUtils::hasText)
+                .distinct()
+                .collect(Collectors.toList());
+        if (orderIds.isEmpty()) {
+            return;
+        }
+        Map<String, PrintLogSummary> summaries = printLogMapper.selectPrintSummary(tenantId, orderIds).stream()
+                .collect(Collectors.toMap(PrintLogSummary::getOrderId, summary -> summary, (first, second) -> first));
+        for (OrderListResponse response : responses) {
+            PrintLogSummary summary = summaries.get(response.getId());
+            if (summary == null) {
+                continue;
+            }
+            response.setPrintedAt(summary.getPrintedAt());
+            response.setPrintCount(summary.getPrintCount() == null ? 0 : summary.getPrintCount());
+            response.setPrintedDocTypes(summary.printedDocTypes());
         }
     }
 

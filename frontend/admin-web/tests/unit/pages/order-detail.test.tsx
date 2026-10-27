@@ -1,10 +1,12 @@
-// case_ids: OR-001, OR-002, OR-003, OR-046, OR-055, OR-067, OR-068, OR-070, UI-024, UI-040, UI-053, UI-076, UI-090
+// case_ids: OR-001, OR-002, OR-003, OR-046, OR-055, OR-067, OR-068, OR-070, UI-024, UI-040, UI-053, UI-076, UI-090, OR-072
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, cleanup, screen, waitFor } from '@testing-library/react'
+import { useEffect } from 'react'
+import { render, cleanup, screen, waitFor, fireEvent } from '@testing-library/react'
 
 // issue #7276：订单详情页的**页面码 = order:detail**（判据见 tests/unit/pages/order-detail-permission-gate.test.tsx）
 // ⇒ 本文件渲染的是「有权限的商家」形态，必须给登录态一份 `*` 权限；否则页面走拒绝态，
 // 本文件的全部断言会凭空变红（那不是被测行为）。
+const poFixture = vi.hoisted(() => ({ current: null as any }))
 const authMock = vi.hoisted(() => ({
   state: {
     user: { id: '1', username: 'tester', name: '测试账号', permissions: ['*'] as string[], roles: [] as string[] },
@@ -26,6 +28,10 @@ const mockGetOrderShipments = vi.fn()
 const mockGetOrderOperations = vi.fn()
 const mockConfirmPayment = vi.fn()
 const mockRefundOrder = vi.fn()
+// 打印流水（issue #7902）：写 / 读都要有替身 —— 页面与 `PrintLogPanel` 都会调它们，
+// 少一个就是渲染期 TypeError（本文件既有注释里登记过同款假绿形态）
+const mockRecordPrintLogs = vi.fn()
+const mockListPrintLogs = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   orderApi: {
@@ -36,6 +42,8 @@ vi.mock('@/lib/api', () => ({
     updateOrderStatus: vi.fn(),
     updateLogistics: vi.fn(),
     refundOrder: (...args: any[]) => mockRefundOrder(...args),
+    recordPrintLogs: (...args: any[]) => mockRecordPrintLogs(...args),
+    listPrintLogs: (...args: any[]) => mockListPrintLogs(...args),
   },
   productionApi: {
     getOrderOperations: (...args: any[]) => mockGetOrderOperations(...args),
@@ -61,9 +69,12 @@ import { toast } from 'sonner'
 
 // Mock dayjs
 vi.mock('dayjs', () => ({
+  // 纸面组件（ProcessingDoc / DateTimeCell）除了 format / diff 还会问 `isValid()`
+  // —— issue #7902 起加工单常驻本页 ⇒ 缺这个方法会让整棵子树渲染期抛错（页面变空白，判据全红）
   default: (date?: string) => ({
     format: () => date || '2026-04-25 10:00',
     diff: () => 3600,
+    isValid: () => Boolean(date),
   }),
 }))
 
@@ -76,7 +87,17 @@ vi.mock('@/components/orders', async (importOriginal) => {
   return {
     ...actual,
   OrderProgressSteps: () => <div data-testid="order-progress">OrderProgressSteps</div>,
-  ProcessingOrderBlock: () => <div data-testid="po-block">ProcessingOrderBlock</div>,
+  // 加工单块替身（issue #7902）：页面用它上报**派单产物** ⇒ 打印层是否出现「加工单 / 水洗唛」
+  // 全靠这个回调。替身读 hoisted 夹具（默认 null = 未派单），才能分别验两条分支。
+  // 加工单纸面（issue #7902）：页面只在**派单后**挂它 ⇒ 替身成空壳即可
+  // （纸面版式由 ProcessingDoc 自己的测试覆盖；这里验的是"页面有没有按闸门挂它"）
+  ProcessingDoc: () => null,
+  ProcessingOrderBlock: (props: any) => {
+    useEffect(() => {
+      if (poFixture.current) props.onStatusChange?.(poFixture.current)
+    }, [])
+    return <div data-testid="po-block">ProcessingOrderBlock</div>
+  },
   // 订单加急 / 到货日改单控件（issue #5177）：本文件验的是详情页既有区块与操作区，
   // 该控件的判据在 tests/unit/components/OrderUrgencyPanel.test.tsx ⇒ 这里替身成空壳
   // （不替身会让 `@/components/orders` 的 mock 缺该导出 ⇒ 渲染期直接抛）。
@@ -159,6 +180,9 @@ describe('OrderDetailPage', () => {
   // ⇒ 只还原**自己创建的那个 spy**，不做文件级清场（issue #4773；同根因见 #4496 / #4497）。
 
   beforeEach(() => {
+  poFixture.current = null
+  mockRecordPrintLogs.mockReset().mockResolvedValue({ data: { data: { ids: ['pl-1'], printedAt: '2026-10-27T15:22:00+08:00' } } })
+  mockListPrintLogs.mockReset().mockResolvedValue({ data: { data: [] } })
     vi.clearAllMocks()
     mockGetOrder.mockResolvedValue({
       data: { data: mockOrder },
@@ -429,7 +453,7 @@ describe('OrderDetailPage', () => {
     },
   )
 
-  it('点「打印」→ 在预览层里换单据 → 打印：默认销售单，换标签后预览的就是所选那份（issue #7544）', async () => {
+  it('打印层：未派单只有报价单/销售单；**没有**发货单、也没有加工单/水洗唛（issue #7902 闸门）', async () => {
     const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
     try {
       mockGetOrder.mockResolvedValue({ data: { data: { ...mockOrder, status: 'shipped', refundAmount: 0 } } })
@@ -441,32 +465,145 @@ describe('OrderDetailPage', () => {
 
       // 打开预览 ≠ 出纸（纸是耗材，issue #5914）
       expect(printSpy).not.toHaveBeenCalled()
-      // **三份**单据在选择器里（加工单自 issue #7870 起搬到「加工单生产明细」页 ——
-      // 一份单据只有一个打印入口），文案取 `PRINT_TARGET_SPECS`（不手写第二份字面量）
-      for (const [target, title] of [
-        ['sales', '销售单'],
-        ['quotation', '报价单'],
-        ['shipment', '发货单'],
-      ] as const) {
-        expect(screen.getByTestId(`print-preview-doc-${target}`)).toHaveTextContent(title)
-      }
-      // 🔴 加工单**不在**订单详情页的打印层里（issue #7870 的迁移判据）
+
+      // 报价单 / 销售单：与订单状态无关，任何单子都能打
+      expect(screen.getByTestId('print-preview-doc-sales')).toHaveTextContent('销售单')
+      expect(screen.getByTestId('print-preview-doc-quotation')).toHaveTextContent('报价单')
+      // 🔴 发货单**整体退场**（用户 2026-10-27 逐字「移除发货单打印」）
+      expect(screen.queryByTestId('print-preview-doc-shipment')).toBeNull()
+      // 🔴 未派单 ⇒ 加工单 / 水洗唛**不出现**（不是出现后打开是白纸）
       expect(screen.queryByTestId('print-preview-doc-processing')).toBeNull()
-      // 默认选中销售单（三联纸 241×140 ⇒ 纸型读数跟着它走）
+      expect(screen.queryByTestId('print-preview-doc-labels')).toBeNull()
+
+      // 默认销售单（三联纸 241×140）
       expect(screen.getByTestId('print-preview-doc-sales')).toHaveAttribute('aria-pressed', 'true')
       expect(screen.getByTestId('print-preview-media')).toHaveTextContent('241mm × 140mm')
 
-      // 换成报价单：预览与纸型都换成 A4 的那一份，但**仍然没出纸**
+      // 换成报价单：预览与纸型跟着换，但**仍然没出纸**
       await user.click(screen.getByTestId('print-preview-doc-quotation'))
-      expect(screen.getByTestId('print-preview-doc-quotation')).toHaveAttribute('aria-pressed', 'true')
       expect(screen.getByTestId('print-preview-media')).toHaveTextContent('210mm × 297mm')
       expect(printSpy).not.toHaveBeenCalled()
 
       await user.click(screen.getByTestId('print-preview-print'))
       expect(printSpy).toHaveBeenCalledTimes(1)
+      // 出纸即留痕（issue #7902）：一条流水，单据类型 = 报价单
+      await waitFor(() => expect(mockRecordPrintLogs).toHaveBeenCalledTimes(1))
+      expect(mockRecordPrintLogs.mock.calls[0][1].docs[0].docType).toBe('quotation')
     } finally {
       printSpy.mockRestore()
     }
+  })
+
+  it('派单后（成品帘）：打印层多出「加工单 + 水洗唛」，并可从联合打印逐张出纸（issue #7902）', async () => {
+    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
+    try {
+      poFixture.current = {
+        id: 'po-1',
+        orderId: 'test-order-123',
+        processingOrderNo: 'JG-2026-0001',
+        orderNo: mockOrder.orderNo,
+        customerName: mockOrder.customerName,
+        status: 'in_processing',
+        order_kind: 'processing',
+        items: [],
+      }
+      mockGetOrder.mockResolvedValue({ data: { data: { ...mockOrder, status: 'producing', refundAmount: 0 } } })
+      render(<OrderDetailPage />)
+      const user = userEvent.setup()
+      await screen.findAllByText(mockOrder.orderNo)
+
+      await user.click(screen.getByTestId('order-print-entry'))
+
+      // 派单产物 = 加工单 + 水洗唛（面料单才没有水洗唛）
+      expect(screen.getByTestId('print-preview-doc-processing')).toHaveTextContent('加工单')
+      expect(screen.getByTestId('print-preview-doc-labels')).toHaveTextContent('水洗唛')
+      // A4 加工单的纸型读数
+      await user.click(screen.getByTestId('print-preview-doc-processing'))
+      expect(screen.getByTestId('print-preview-media')).toHaveTextContent('210mm × 297mm')
+
+      // ---- 联合打印：勾选面板默认只勾当前这份，可全选，然后逐张出纸 ----
+      await user.click(screen.getByTestId('print-batch-entry'))
+      expect(screen.getByTestId('print-batch-panel')).toBeInTheDocument()
+      // 默认只勾「当前正在看的那一份」（纸是耗材，不默认全打）
+      expect(screen.getByTestId('print-batch-doc-processing')).toHaveAttribute('aria-checked', 'true')
+      expect(screen.getByTestId('print-batch-doc-sales')).toHaveAttribute('aria-checked', 'false')
+
+      await user.click(screen.getByTestId('print-batch-toggle-all'))
+      // 四份纸全选（报价单 / 销售单 / 加工单 / 水洗唛）
+      for (const t of ['quotation', 'sales', 'processing', 'labels']) {
+        expect(screen.getByTestId(`print-batch-doc-${t}`)).toHaveAttribute('aria-checked', 'true')
+      }
+
+      await user.click(screen.getByTestId('print-batch-start'))
+      // 进度行：第 1/4 张 = 报价单（顺序 = 候选顺序，不是点击顺序）
+      expect(screen.getByTestId('print-batch-progress')).toHaveTextContent('联合打印 1/4')
+
+      // 出纸 → 按钮变「下一张」→ 进度走到 2/4
+      await user.click(screen.getByTestId('print-preview-print'))
+      expect(printSpy).toHaveBeenCalledTimes(1)
+      await user.click(await screen.findByTestId('print-batch-next'))
+      expect(screen.getByTestId('print-batch-progress')).toHaveTextContent('联合打印 2/4')
+
+      // 结束 ⇒ 离开逐张引导，回到普通打印
+      await user.click(screen.getByTestId('print-batch-stop'))
+      expect(screen.queryByTestId('print-batch-progress')).toBeNull()
+      expect(screen.getByTestId('print-preview-print')).toHaveTextContent('打印')
+      // 每条出纸都写了流水（step 1 至少一条）
+      expect(mockRecordPrintLogs).toHaveBeenCalled()
+    } finally {
+      printSpy.mockRestore()
+    }
+  })
+
+  it('派单后（面料单 outbound）：有「面料单」但**没有**水洗唛（issue #7891 裁定）', async () => {
+    poFixture.current = {
+      id: 'po-2',
+      orderId: 'test-order-123',
+      processingOrderNo: 'JG-2026-0002',
+      orderNo: mockOrder.orderNo,
+      customerName: mockOrder.customerName,
+      status: 'in_processing',
+      order_kind: 'outbound',
+      items: [],
+    }
+    mockGetOrder.mockResolvedValue({ data: { data: { ...mockOrder, status: 'producing', refundAmount: 0 } } })
+    render(<OrderDetailPage />)
+    const user = userEvent.setup()
+    await screen.findAllByText(mockOrder.orderNo)
+    await user.click(screen.getByTestId('order-print-entry'))
+
+    expect(screen.getByTestId('print-preview-doc-processing')).toHaveTextContent('面料单')
+    expect(screen.queryByTestId('print-preview-doc-labels')).toBeNull()
+  })
+
+  it('打印流水区块：展示服务端下发的 时间 / 单据 / 操作人（issue #7902）', async () => {
+    mockListPrintLogs.mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: 'pl-1',
+            docType: 'sales',
+            docTitle: '销售单',
+            mediaId: 'continuous-241x140',
+            sheets: 1,
+            channel: 'browser',
+            status: 'fired',
+            operatorName: '王五',
+            orderStatus: 'shipped',
+            createdAt: '2026-10-27T15:22:00+08:00',
+          },
+        ],
+      },
+    })
+    mockGetOrder.mockResolvedValue({ data: { data: { ...mockOrder, status: 'shipped', refundAmount: 0 } } })
+    render(<OrderDetailPage />)
+    await screen.findAllByText(mockOrder.orderNo)
+
+    const panel = await screen.findByTestId('order-print-logs')
+    expect(panel).toHaveTextContent('销售单')
+    expect(panel).toHaveTextContent('王五')
+    expect(panel).toHaveTextContent('241×140mm')
+    expect(screen.getByTestId('print-log-pl-1')).toBeInTheDocument()
   })
 
   it('已关闭订单也能打开打印层（改前这个状态一张单据都打不出来）', async () => {

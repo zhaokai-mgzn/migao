@@ -6415,7 +6415,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（70 case）
+## 订单域（72 case）
 
 ### OR-061. 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262） 🔵
 ```
@@ -7655,6 +7655,36 @@
 跳过: [backend-contract] 本用例是**订单安装信息**的确定性判据（前端 vitest 判录入 / 请求体 / 展示；后端 JUnit 判归一与准入 / 扇出 / 投影；**无 LLM 环节 ⇒ 不进 agent-eval 冒烟**）：计分通道 = traces.tests
 ```
 溯源: 2026-10-26 新增（issue #7856；用户当日逐字见 user_inputs）。取号 = scripts/next_case_id.py OR 现取（main 001-069 ∪ 全部 open PR ∪ 工作区空洞）⇒ OR-070。口径落点：数据库**零迁移**（用户当场裁定「不能作为订单基础字段吧？」）⇒ 两个键都住已登记的 JSONB order_items.processing_info（tests/unit_ci_workflows/schema_health_ledger.json 的 jsonb_columns）。⚠️ 未固化（照实登记）：① 真实浏览器里的纸面（水洗唛 / 发货标签）未做 Playwright 多模态验收（纸面判据在后端）；② 存量单（本功能之前落的单）没有该键 ⇒ 详情页安装小区显示 - 、安装位置整行不渲染，**不回填、不猜**。 ｜ tags: order, admin-web, install-info, print-annotation
+
+### OR-071. 打印中心：订单详情页一处打印（销售单 / 加工单 / 报价单 / 水洗唛）+ 打印流水（谁、何时、哪种单据、几张）—— 列表页的「是否已打印」是这张事件表的聚合投影（issue #7902） 🔵
+```
+你: 需求（issue #7902）：把「打印」统一到销售订单详情页，并新增打印流水（谁、什么时候、打了哪种单据）；订单列表页要能看出「是否已打印」
+数据: 判据 1·🔴 **流水逐条登记 + 服务端快照**（会红）：`POST /api/admin/orders/{orderId}/print-logs` 的请求体只带客户端知道的事实（docs[].docType/docTitle/processingOrderId/mediaId/sheets/channel/status/failReason）；order_no / order_status / operator_id / operator_name / tenant_id / client_ip / created_at / batch_id / batch_index / batch_size **全部服务端补**（请求体里没有这些键）。同一次请求的 N 条共享 batch_id、batch_index 从 0 起、batch_size = 本次条数。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/PrintLogServiceTest.java 的 `recordFillsServerSideSnapshotsPerDoc`（红证：把 orderNo / operatorId 改成从请求体取 ⇒ 该用例断言落空而红）
+数据: 判据 2·🔴 **闭集合 fail-closed**（会红）：doc_type 只认 sales / processing / quotation / labels，channel 只认 browser / ble，status 只认 fired / failed；不认识的值 ⇒ 400 VALIDATION_ERROR 且**一行都不写**（表上另有 CHECK 兜底）。执行点 = 同文件 `recordRejectsUnknownDocType`
+数据: 判据 3·🔴 **批量上限 10 条**（会红）：一次请求超过 10 条 ⇒ 400（不是静默截断）；docs 空 ⇒ 400。执行点 = 同文件 `recordRejectsMoreThanTenDocs` / `recordRejectsEmptyDocs`
+数据: 判据 4·🔴 **订单不存在 / 跨租户 ⇒ 404**（会红）：与「没打过」的 200 + 空数组**语义不同**（空列表 ≠ 404）。执行点 = 同文件 `recordRejectsMissingOrder` / `recordTreatsOtherTenantsOrderAsMissing` / `listRejectsMissingOrder`
+数据: 判据 5·**加工单号快照只在属于本单时借用**：doc_type ∈ {processing, labels} 且 processingOrderId 命中**本单**的加工单才补 processing_order_no；查不到 / 属于别的订单 ⇒ 留空不报错（打印不能因为主数据缺失而失败，也不能把两张单串起来）。执行点 = 同文件 `recordKeepsProcessingOrderNoBlankWhenMissing` / `recordDoesNotBorrowAnotherOrdersProcessingOrderNo`
+数据: 判据 6·🔴 **列表封顶 100 / 默认 20**（会红）：`GET /api/admin/orders/{orderId}/print-logs?limit=500` 实际只查 100 条。执行点 = 同文件 `listCapsLimitAtHundredAndDefaultsToTwenty`
+数据: 判据 7·🔴 **订单列表「是否已打印」一次批量聚合（禁止 N+1）**（会红）：`OrderService.enrichListResponses` 用**一次** `selectPrintSummary(tenantId, orderIds)` 填充 printedAt / printCount / printedDocTypes；未打印的订单是**确定值**（printedAt=null、printCount=0、printedDocTypes=**空列表不是 null**）；空页不发查询（`IN ()` 是语法错误）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderServicePrintStatusTest.java 的 `theSummaryQueryRunsExactlyOncePerPage`（verify times(1)）/ `printedOrderIsFilledAndUnprintedOrderGetsDeterministicDefaults` / `emptyPageSkipsTheSummaryQuery`（红证：改成逐单查询 ⇒ 第一条 verify 到 N 次而红）
+数据: 判据 8·**聚合只算成功发起的打印**：`selectPrintSummary` 带 `status = 'fired'`，失败的那次（纸没出来）不计入 printedAt / printCount / printedDocTypes —— 否则商家会以为这张单打过了。执行点 = backend/admin-api/src/main/java/com/migao/admin/mapper/PrintLogMapper.java 的 `selectPrintSummary`（SQL 判据随判据 7 的用例一起跑）
+数据: 判据 9·🔴 **写面不新造权限码**（会红）：两个端点的**生效**权限码都是 order:detail（打印入口本来就在订单详情页；另造 order:print 会让现网种子岗位全体 403，而单测/页面渲染都不会红）；路径必须是 /api/admin/orders/{orderId}/print-logs，且全仓只有 PrintLogController 映射它（OrderController 的 /{id} 通配不认识 print-logs）。执行点 = backend/admin-api/src/test/java/com/migao/admin/controller/PrintLogSurfaceGuardTest.java；该形态（写动词 + 读码）同时登记在 I4 台账 `WRITE_UNDER_READ_CODE`（tests/unit_ci_workflows/test_rbac_submenu_granularity.py，上限 12→13 且逐条写明「新增端点 ≠ 既有端点改码」）
+跳过: [backend-contract] 本用例是打印流水与「是否已打印」的确定性判据（Java 单测：服务层登记/快照/闭集合 + 控制器注解面 + 列表批量聚合；无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：计分通道 = traces.tests
+```
+溯源: 2026-10-27 新增（issue #7902）。取号 = scripts/next_case_id.py OR 现取（main 001-070 ∪ 全部 open PR ∪ 工作区）⇒ OR-071。口径：① 表 print_logs = **只登记**「已发起 + 结果」的外部事实表（纸出没出来服务端不知道），不存业务对象副本（order_no / order_status / doc_title / operator_name 只是快照）；② 写面沿用 order:detail（不新增权限码）；③ 列表「是否已打印」= 该表 status='fired' 行的批量聚合，一次查询。⚠️ 未固化（照实登记）：① 前端「订单详情页一处打印」与列表「已打印」标记由前端包实现并另有 vitest 判据；② 真机纸面（各纸型 @page 与分页）仍走既有打印介质矩阵的守卫，本单不重复；③ client_ip 在反向代理后可能是代理地址（审计辅助列，不参与判定）。 ｜ tags: order, print-center, print-log, backend-contract
+
+### OR-072. 打印中心（admin-web）：销售订单详情页是唯一打印入口 —— 发货单退场、加工单/面料单/水洗唛按派单状态出现、「联合打印」勾选后逐张出纸、打印流水区块与列表「已打印」标记（issue #7902） 🔵
+```
+你: 移除发货单打印；当订单成功派单后，销售订单的打印预览也能打印加工单的水洗唛、加工单/面料单；再加个一键打印全部单据的功能（允许用户勾选要打印哪些，叫「联合打印」这类名字）；把加工单的打印按钮移除掉，最终统一到销售单上打印
+你: 在订单列表页需要表达已经打印过的状态，方便用户查看
+数据: 判据 1·🔴 **派单闸门**（会红）：`processingOrder` 为 null（未派单）⇒ 打印层的单据标签**没有** processing / labels（不是出现后打开是白纸）；有加工单且 order_kind=outbound（面料单）⇒ 有「面料单」**没有**水洗唛；成品帘 ⇒ 两者都有。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx 的三条 #7902 用例（红证：把 printDocs 写回静态四条 ⇒ 未派单用例红）
+数据: 判据 2·🔴 **发货单整体退场**（会红）：打印层 `print-preview-doc-shipment` 取不到；发货页无任何打印按钮/纸面容器；发货记录页无「补打」按钮。执行点 = order-detail.test.tsx / ship-order.test.tsx / shipments.test.tsx（红证：把 ShipmentDoc 挂回任一页 ⇒ 对应用例红）
+数据: 判据 3·🔴 **生产明细页零打印入口**（会红）：`production-print-button` 不存在、`.task-card-print-area` 与 `print-preview` 都不在页面上。执行点 = processing-orders-production.test.tsx（红证：把打印按钮加回页头 ⇒ 红）
+数据: 判据 4·🔴 **联合打印**（会红）：面板默认只勾**当前正在看的那一份**（纸是耗材），「全选」后 4 份全勾；开始后进度行显示「联合打印 1/N」，出纸后主按钮变「下一张」并推进到 2/N；「结束」退出逐张引导。执行点 = order-detail.test.tsx 的 `派单后（成品帘）…联合打印` 用例 + PrintDocPreview.test.tsx（红证：把 openPanel 的默认勾选改成全选 / 去掉 markFired ⟹ 「打印这一张」不变「下一张」⇒ 红）
+数据: 判据 5·🔴 **打印流水区块**（会红）：每次出纸写一条（docType / docTitle / mediaId / sheets / channel / batchId），随后重读；区块显示时间 / 单据 / 操作人 / 纸型 / 张数 / 通道 / 结果；折叠态只渲染 5 行；读失败给失败态 + 重试（不是空态）。执行点 = PrintLogPanel.test.ts + order-detail.test.tsx 的流水用例（红证：不写流水 / 折叠态改成 CSS 隐藏 ⇒ 红）
+数据: 判据 6·**列表「已打印」**（会红）：订单列表「打印」列读服务端聚合的 printedAt / printCount / printedDocTypes（`已打印 MM-DD HH:mm` + 悬浮显示次数与单据；未打印 ⇒ 灰字「未打印」），不用前端本地状态冒充。执行点 = frontend/admin-web/tests/unit/components/OrderTable.test.tsx（红证：改成恒渲染「未打印」⇒ 红）
+跳过: [backend-contract] 本用例是打印中心的确定性前端判据（vitest：渲染 + 交互 + 纸型读数；无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：计分通道 = traces.tests
+```
+溯源: 2026-10-27 新增（issue #7902）。取号 = scripts/next_case_id.py OR 现取 ⇒ OR-072。口径：① 一处入口 = 销售订单详情（发货页 / 发货记录页 / 生产明细页的打印入口一并退场）；② 加工单/面料单/水洗唛的纸面名与是否出现由派单产物（processing_orders.order_kind）决定；③ 联合打印 = 勾选 + 逐张引导（浏览器不保证 window.print 阻塞到出纸，且四份纸的纸型不同，物理上必须一张一张换纸）；④ 打印流水只记「已发起 + 结果」，不假装能确认物理出纸。⚠️ 未固化（照实登记）：① 生产明细页撤掉打印后，车间岗位需 order:detail 才能在订单详情打水洗唛（用户 2026-10-27 已选该方案）；② 真机纸面与驱动分页仍由打印介质矩阵守卫承担，本用例不重复；③ 蓝牙直连（Web Bluetooth）在 jsdom 里只能判「入口存在 + 上报通道为 ble」，真实出纸不在面内。 ｜ tags: order, print-center, print-log
 
 ## 加工项域（31 case）
 
@@ -13443,8 +13473,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：909（活跃 142，跳过 767）
-- tier 分布：smoke 12 / normal 841 / adversarial 32
+- 用例总数：911（活跃 142，跳过 769）
+- tier 分布：smoke 12 / normal 843 / adversarial 32
 - 售后域：16
 - Agent 核心域：12
 - API 层域：21
@@ -13462,7 +13492,7 @@
 - 杂项域：164
 - 商家入驻域：7
 - 领域本体域：4
-- 订单域：70
+- 订单域：72
 - 加工项域：31
 - 加工单域：85
 - 商品域：132
@@ -13698,6 +13728,8 @@
 - OR-068: 订单详情撤下「支付倒计时」（其 paymentDeadline 后端从不下发、倒计时从未启动）+ 落「读面键 ⊆ OrderDetailResponse」类级守卫（issue #7110）
 - OR-069: 删除待付款订单前先查活跃作业单：命中则 422 并给出作业单号（否则作业单悬挂 ⇒ 作业看板对已删父订单扇出 404）(issue #7633)
 - OR-070: 订单安装信息（安装小区 = 订单级、安装位置 = 件级）：两条只存只印的附注 —— 录入 / 详情展示 / 纸面打印读同一份真值（issue #7856）
+- OR-071: 打印中心：订单详情页一处打印（销售单 / 加工单 / 报价单 / 水洗唛）+ 打印流水（谁、何时、哪种单据、几张）—— 列表页的「是否已打印」是这张事件表的聚合投影（issue #7902）
+- OR-072: 打印中心（admin-web）：销售订单详情页是唯一打印入口 —— 发货单退场、加工单/面料单/水洗唛按派单状态出现、「联合打印」勾选后逐张出纸、打印流水区块与列表「已打印」标记（issue #7902）
 - PG-001: 生成加工单 - 已确认含加工项订单 → 作业单生成 + 订单进入生产中（派单即生产；issue #7723 改判）
 - PG-002: 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成
 - PG-003: 生成加工单 - 无加工项订单不生成（现货成品直跳发货）

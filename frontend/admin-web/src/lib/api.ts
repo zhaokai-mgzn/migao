@@ -18,6 +18,7 @@ import type {
 import type { RefundOrderParams } from './data-adapter'
 // 发货读面（issue #5651）：真值 owner = `OrderShipmentService.readShipment`，这里只声明形状
 import type { OrderShipmentRead } from './sales-shipment'
+import type { PrintLogRecordRequest, PrintLogView } from '@/types'
 import type { PriceBookView } from '@/types/pricing'
 // 报表读面类型（issue #7376 / #7377）：单列一个文件，避免 api.ts 继续膨胀
 import type {
@@ -800,6 +801,24 @@ export const orderApi = {
    */
   getOrderShipments: (id: string) =>
     request.get<ApiResponse<OrderShipmentRead>>(`/api/admin/orders/${id}/shipments`),
+
+  /**
+   * 写**打印流水**（issue #7902）：每张出纸一条，一次可多条（联合打印）。
+   *
+   * 口径 = 调用方在「真的开印」那一刻调（只看了预览没打纸**不该**记账），失败**不阻断打印**
+   * （fire-and-forget，与既有的打印计数纪律一致：留痕是旁路，不是打印的前置条件）。
+   */
+  recordPrintLogs: (id: string, data: PrintLogRecordRequest) =>
+    request.post<ApiResponse<{ ids: string[]; printedAt: string }>>(
+      `/api/admin/orders/${id}/print-logs`,
+      data,
+    ),
+
+  /** 读本单的打印流水（详情页「打印流水」区块）；`limit` 服务端默认 20、上限 100 */
+  listPrintLogs: (id: string, limit = 20) =>
+    request.get<ApiResponse<PrintLogView[]>>(`/api/admin/orders/${id}/print-logs`, {
+      params: { limit },
+    }),
   
   // 创建订单
   createOrder: (data: OrderFormData) => 

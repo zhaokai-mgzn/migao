@@ -9,13 +9,12 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Printer, RotateCcw, Search, Truck } from 'lucide-react'
+import { RotateCcw, Search, Truck } from 'lucide-react'
 import { orderApi, shipmentApi } from '@/lib/api'
 import { Button, Input, PageCard, PageHeader } from '@/components/ui'
-import { PRINT_TARGET_SPECS, PrintDocPreview, ShipmentDoc, usePrintDoc } from '@/components/orders'
 // 来源展示口径（内部键不上屏，issue #6664 第 5 条）：与判据同一份模块
 import { sourceLabel } from '@/components/orders/shipment-source'
-import type { Order, ShipmentListRow } from '@/types'
+import type { ShipmentListRow } from '@/types'
 import { formatFullDateTime } from '@/lib/utils'
 
 // ============================================================
@@ -28,9 +27,9 @@ import { formatFullDateTime } from '@/lib/utils'
 // 本页三件事：
 //   ① 全量发货单（本租户）—— 单号 / 订单号 / 客户 / 来源 / 发货人 / 发货时间 / 实发；
 //   ② 筛选：关键词（发货单号 / 订单号 / 客户名，服务端 ILIKE，三列都匹配）；
-//   ③ **补打**：取订单 → 打开**纸面自检层**（`PrintDocPreview`，真尺寸 A4 发货单）→「打印 / 复制截图」。
-//      🔴 走 #5914 的唯一打印入口（`usePrintDoc`）：页面里**不许**出现第二处 `window.print()`
-//      （守卫：`tests/unit_ci_workflows/test_print_single_doc_on_paper.py`）。
+//   ③ ~~补打~~ —— **已退场**（issue #7902，用户 2026-10-27 逐字「移除发货单打印」）：
+//      发货单这张纸整体退场，纸统一在销售订单详情的打印层里出；本页只剩「记录 + 查订单」。
+//      守卫 `tests/unit_ci_workflows/test_print_single_doc_on_paper.py` 仍要求页面里没有第二处 `window.print()`。
 //
 // 🔴 「实发」不在前端重算：数字来自服务端 `shippedTotals`（与按单读面 `orderApi.getOrderShipments`
 // **同一份实现** `OrderShipmentService.totals()`）—— 前端只负责显示，不做第三套口径。
@@ -65,11 +64,6 @@ export default function ShipmentsPage() {
   const [loading, setLoading] = useState(false)
   /** 读面失败（与「暂无发货单」互斥）：故障不是业务事实，issue #6664 第 3 条 */
   const [loadError, setLoadError] = useState(false)
-  /** 补打：正在取订单的发货单 id（按钮转圈，避免连点取两次） */
-  const [printingId, setPrintingId] = useState<string | null>(null)
-  /** 补打所依据的订单（`ShipmentDoc` 的数据源 = 订单本身，见 Doc 文件头第 5 条） */
-  const [printOrder, setPrintOrder] = useState<Order | null>(null)
-  const { printTarget, previewTarget, requestPrint, openPreview, closePreview } = usePrintDoc()
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -88,28 +82,6 @@ export default function ShipmentsPage() {
   useEffect(() => {
     void load()
   }, [load])
-
-  /**
-   * 补打：按订单 id 取订单 → 打开纸面自检层。
-   *
-   * 为什么必须先取订单：发货单纸面的数据源是**订单本身**（明细不可变，issue #3768 的依据）⇒
-   * 列表行里没有明细，拿不到就印不出正确纸面。取不到 ⇒ 不打开预览层（宁可什么都不弹，
-   * 也不弹一张缺数据的纸）。
-   */
-  const openReprint = async (row: ShipmentListRow) => {
-    setPrintingId(row.id)
-    try {
-      const res = await orderApi.getOrder(row.orderId)
-      const order = res.data.data ?? null
-      if (!order) return
-      setPrintOrder(order)
-      openPreview('shipment')
-    } catch {
-      // 拦截器已提示
-    } finally {
-      setPrintingId(null)
-    }
-  }
 
   return (
     <div className="p-6 space-y-4">
@@ -188,18 +160,7 @@ export default function ShipmentsPage() {
                     onClick={() => router.push(`/orders/${row.orderId}`)}
                   >
                     查看订单
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    loading={printingId === row.id}
-                    aria-label={`补打 ${row.shipmentNo}`}
-                    onClick={() => void openReprint(row)}
-                  >
-                    <Printer className="w-4 h-4 mr-1.5" />
-                    补打
-                  </Button>
-                </td>
+                  </Button>                </td>
               </tr>
             ))}
             {rows.length === 0 && (
@@ -234,28 +195,6 @@ export default function ShipmentsPage() {
         </table>
       </PageCard>
 
-      {/* 纸质发货单（屏幕隐藏、仅打印呈现）：挂当前补打的那张单 */}
-      {printOrder && (
-        <ShipmentDoc
-          order={printOrder}
-          logistics={printOrder.logistics}
-          printTarget={printTarget}
-        />
-      )}
-
-      {/* 打印前的**纸面自检层**（issue #5914）：真尺寸 A4 纸框 + 溢出/页数自检 +「打印 / 复制截图」。
-          🔴 预览实例**不传 printTarget**（`inline`）⇒ 打印媒体下仍是 display:none（否则一次会出两份）。 */}
-      <PrintDocPreview
-        target={previewTarget}
-        title={previewTarget ? PRINT_TARGET_SPECS[previewTarget].title : ''}
-        media={previewTarget ? PRINT_TARGET_SPECS[previewTarget].media : 'a4'}
-        onPrint={() => previewTarget && requestPrint(previewTarget)}
-        onClose={closePreview}
-      >
-        {previewTarget === 'shipment' && printOrder && (
-          <ShipmentDoc order={printOrder} logistics={printOrder.logistics} inline />
-        )}
-      </PrintDocPreview>
     </div>
   )
 }

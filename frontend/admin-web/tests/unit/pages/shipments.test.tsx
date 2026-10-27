@@ -1,4 +1,4 @@
-// case_ids: UI-078
+// case_ids: UI-078, OR-072
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
@@ -166,22 +166,17 @@ describe('发货单列表页（issue #5939 / UI-078）', () => {
     expect(screen.queryByText(/加载失败/)).toBeNull()
   })
 
-  it('⑥ 补打：取订单 → 打开纸面自检层（真尺寸 A4 发货单）；取不到订单 ⇒ 不弹预览层', async () => {
-    const user = userEvent.setup()
+  it('⑥ 发货单**不再**提供补打（issue #7902：发货单这张纸整体退场，纸统一在销售订单详情出）', async () => {
     render(<Shipments />)
     await screen.findByText('FH-20261002120000-A001')
 
-    await user.click(screen.getByLabelText('补打 FH-20261002120000-A001'))
-    expect(mockGetOrder).toHaveBeenCalledWith('o-1')
-    const preview = await screen.findByLabelText('发货单打印预览')
-    expect(preview).toBeInTheDocument()
-    expect(screen.getByTestId('print-preview-print')).toBeInTheDocument()
-
-    // 反向：订单取不到 ⇒ 不打开预览层（宁可什么都不弹，也不弹一张缺数据的纸）
-    mockGetOrder.mockRejectedValue(new Error('404'))
-    await user.click(screen.getByLabelText('补打 FH-20261002130000-A002'))
-    await waitFor(() => expect(mockGetOrder).toHaveBeenCalledTimes(2))
-    expect(screen.getAllByLabelText('发货单打印预览')).toHaveLength(1)
+    // 正向判据：行内只剩「查看订单」，没有任何打印类入口
+    expect(screen.queryByRole('button', { name: /补打/ })).toBeNull()
+    expect(screen.queryByTestId('print-preview')).toBeNull()
+    // 反向自证（本判据不是空跑）：这一行确实渲染出了动作区
+    expect(screen.getAllByRole('button', { name: '查看订单' }).length).toBeGreaterThan(0)
+    // 打印入口的唯一定位不再是本页 ⇒ 本页不再取订单读面（少一次 403 面）
+    expect(mockGetOrder).not.toHaveBeenCalled()
   })
 
   it('⑦ 「查看订单」跳该发货单对应的订单（不是发货单本身）', async () => {

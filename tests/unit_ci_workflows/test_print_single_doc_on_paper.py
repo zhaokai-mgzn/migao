@@ -44,7 +44,6 @@ PRINT_ENTRY_FILES: tuple[str, ...] = ("frontend/admin-web/src/lib/print-doc.ts",
 #: 受管单据：（文件, 本次打印目标位）
 #: 🔴 新增可打印单据必须在这里登记 —— 未登记的单据不会发表纸型，**打印时什么也不出**（静默不出纸）。
 PRINT_DOC_TARGETS: tuple[tuple[str, str], ...] = (
-    ("frontend/admin-web/src/components/orders/ShipmentDoc.tsx", "shipment"),
     ("frontend/admin-web/src/components/orders/QuotationDoc.tsx", "quotation"),
     ("frontend/admin-web/src/components/orders/ProcessingDoc.tsx", "processing"),
     ("frontend/admin-web/src/components/orders/SalesDoc.tsx", "sales"),
@@ -53,7 +52,6 @@ PRINT_DOC_TARGETS: tuple[tuple[str, str], ...] = (
 
 #: C4 的判定面：订单详情页挂在纸面上的四份单据（洗水码读的是部位/快照，不读 `Order` 详情）
 ORDER_SURFACE_DOCS: tuple[str, ...] = (
-    "frontend/admin-web/src/components/orders/ShipmentDoc.tsx",
     "frontend/admin-web/src/components/orders/QuotationDoc.tsx",
     "frontend/admin-web/src/components/orders/ProcessingDoc.tsx",
     "frontend/admin-web/src/components/orders/SalesDoc.tsx",
@@ -224,7 +222,8 @@ def test_c2_c3_every_doc_page_rule_is_conditional_and_qualified():
 
 def test_c2_c3_registry_is_not_vacuous():
     """登记表非空 + 路径存在（判据不得在空表 / 路径漂移上静默通过）。"""
-    assert len(PRINT_DOC_TARGETS) >= 5, (
+    # issue #7902：发货单退场 ⇒ 在册单据 5 → 4（报价单 / 加工单 / 销售单 / 洗水唛）。
+    assert len(PRINT_DOC_TARGETS) >= 4, (
         f"受管单据清单被缩短到 {len(PRINT_DOC_TARGETS)} 条 ⇒ 本守卫会空跑通过"
     )
     for rel, target in PRINT_DOC_TARGETS:
@@ -277,7 +276,8 @@ def test_c5_injected_regressions_are_red():
     assert _fingerprint(str(sorted(injected.items()))) != _fingerprint(str(sorted({rel: entry}.items())))
 
     # ── 注入 B（C2 + C3）：把销售单的纸型条件化与显式限定都去掉 ──
-    sales_rel, sales_target = PRINT_DOC_TARGETS[3]
+    # #7902：清单按「目标位」取（原来按下标 3 取销售单，发货单退场后下标会错位）
+    sales_rel, sales_target = next(t for t in PRINT_DOC_TARGETS if t[1] == 'sales')
     sales = _strip_comments(_read(sales_rel))
     assert _page_problems(sales_rel, sales_target, sales) == [], (
         f"`{sales_rel}` 原文件本应干净（C2/C3 已单独判）—— 这里先红说明判据或预期已变"
@@ -289,15 +289,21 @@ def test_c5_injected_regressions_are_red():
     assert _fingerprint(no_qualifier) != _fingerprint(sales), "注入 B2 未生效（内容指纹相同）"
     assert _page_problems(sales_rel, sales_target, no_qualifier), "去掉目标限定却**没判红** ⇒ C3 是空判据"
 
-    # ── 注入 C（C4）：删掉详情 DTO 的 `createdByName`（本单修的那一处）──
+    # ── 注入 C（C4）：删掉详情 DTO 里**这份纸确实在读**的一个字段 ──
+    # 🔴 旧写法钉 `createdByName` + 固定下标（发货单 read 它）；issue #7902 发货单退场后
+    # 那两处都漂了（下标指向销售单、销售单不读 createdByName）⇒ 红证静默失效。
+    # 现在**现取**：从受管纸面里找出第一个「纸面读了、DTO 也有」的字段再删。
     dto = _read(DETAIL_DTO)
-    assert "createdByName" in dto, f"`{DETAIL_DTO}` 里没有 createdByName —— 本单的修复已被回退？"
-    stripped = {name for name in _JAVA_FIELD_RE.findall(dto) if name != "createdByName"}
-    doc_rel = ORDER_SURFACE_DOCS[2]
+    dto_fields = set(_JAVA_FIELD_RE.findall(dto))
+    doc_rel = ORDER_SURFACE_DOCS[0]
     doc_code = _strip_comments(_read(doc_rel))
+    used_fields = sorted(set(_ORDER_FIELD_RE.findall(doc_code)) & dto_fields)
+    assert used_fields, f"`{doc_rel}` 没有读任何详情 DTO 字段 ⇒ 本红证无从注入（判据面已漂）"
+    injected_field = used_fields[0]
+    stripped = dto_fields - {injected_field}
     assert _order_field_problems(doc_rel, doc_code, stripped, frozenset()) != [], (
-        "详情 DTO 少了 `createdByName` 却**没判红** ⇒ C4 是空判据"
+        f"详情 DTO 少了 `{injected_field}`（`{doc_rel}` 在读它）却**没判红** ⇒ C4 是空判据"
     )
-    assert _fingerprint(str(sorted(stripped))) != _fingerprint(
-        str(sorted(_JAVA_FIELD_RE.findall(dto)))
-    ), "注入 C 未生效（内容指纹相同）"
+    assert _fingerprint(str(sorted(stripped))) != _fingerprint(str(sorted(dto_fields))), (
+        "注入 C 未生效（内容指纹相同）"
+    )

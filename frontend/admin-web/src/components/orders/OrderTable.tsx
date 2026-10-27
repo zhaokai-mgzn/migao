@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowDown } from 'lucide-react'
+import { ArrowDown, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { OrderBrief } from '@/types'
 import { normalizeOrderStatus } from '@/types'
@@ -10,6 +10,7 @@ import OrderStatusBadge from './OrderStatusBadge'
 import { isUrgentFlag, urgentBadgeText } from '@/lib/order-urgency'
 import { processingFeeOf } from '@/lib/order-fee-display'
 import RemarkPopover from './RemarkPopover'
+import { printDocTypeLabel } from '@/lib/print-doc'
 
 /**
  * #1289: 获取备注列触发器的预览文本。
@@ -26,6 +27,28 @@ function getRemarkPreview(order: OrderBrief): string {
     return sorted[0].content
   }
   return ''
+}
+
+/** 列表「打印」列的悬浮说明：打了几次、打过哪些单据（缺值不编） */
+export function printStatusTitle(order: OrderBrief): string {
+  const count = order.printCount ?? 0
+  const docs = (order.printedDocTypes ?? []).map((t) => printDocTypeLabel(t)).filter(Boolean)
+  const parts = [`已打印 ${count} 次`]
+  if (docs.length > 0) parts.push(`单据：${docs.join(' / ')}`)
+  return parts.join(' · ')
+}
+
+/**
+ * 最近打印时间的**紧凑**形态（列表列宽有限）：今年内 ⇒ `MM-DD HH:mm`，跨年 ⇒ `YYYY-MM-DD`。
+ * 与 `DateTimeCell` 的区别：这里要的是"多久以前"，不是完整时间戳（完整值在详情页流水里）。
+ */
+export function formatPrintedAt(value: string, now: Date = new Date()): string {
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return '—'
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const sameYear = d.getFullYear() === now.getFullYear()
+  const md = `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  return sameYear ? `${md} ${pad(d.getHours())}:${pad(d.getMinutes())}` : `${d.getFullYear()}-${md}`
 }
 
 export interface OrderTableProps {
@@ -177,6 +200,10 @@ export default function OrderTable({
             {/* 加急 / 到货日（issue #5177）：列表面就能看出哪些单要插队、承诺哪天到。
                 🔴 显示的是**服务端值**（`isUrgent` 缺省即库列默认 FALSE）—— 不写死客户端默认。 */}
             <th className="px-4 py-3 font-medium whitespace-nowrap">加急</th>
+            {/* 打印（issue #7902）：**这单打过没有**是列表要回答的问题（与状态/加急同属决策列）。
+                只读服务端按 print_logs 汇总的读数：已打印 ⇒ 勾 + 最近时间（悬浮显示次数与打过的单据）；
+                从未打印 ⇒ 灰字「未打印」。🔴 不用前端本地状态冒充 —— 换台电脑打过的纸也看得见。 */}
+            <th className="px-4 py-3 font-medium whitespace-nowrap">打印</th>
             <th className="pl-0 pr-4 py-3 font-medium whitespace-nowrap">采购商品</th>
             {/* 采购明细（issue #7138）：**表头必须与数据格共用同一宽度下限**。
                 改前表头没有 `min-w`、也不 nowrap，而这列的表头是全表**唯一**会换行的格 ——
@@ -217,13 +244,13 @@ export default function OrderTable({
         <tbody>
           {loading ? (
             <tr>
-              <td colSpan={14} className="px-4 py-16 text-center text-neutral-400">
+              <td colSpan={15} className="px-4 py-16 text-center text-neutral-400">
                 加载中…
               </td>
             </tr>
           ) : orders.length === 0 ? (
             <tr>
-              <td data-testid="orders-empty" colSpan={14} className="px-4 py-16 text-center text-neutral-400">
+              <td data-testid="orders-empty" colSpan={15} className="px-4 py-16 text-center text-neutral-400">
                 {/* 🔴 issue #6733：`emptyText` 由页面传入 —— 读失败时传空串（别把「读不到」说成「没有订单」）。 */}
                 {emptyText}
               </td>
@@ -270,6 +297,24 @@ export default function OrderTable({
                       <Badge variant="warning">{urgentBadgeText(order)}</Badge>
                     ) : (
                       <span className="text-xs text-neutral-400">{urgentBadgeText(order)}</span>
+                    )}
+                  </td>
+
+                  {/* 打印状态（issue #7902） */}
+                  <td className="px-4 py-4 whitespace-nowrap" data-testid={`order-printed-${order.id}`}>
+                    {order.printedAt ? (
+                      <span
+                        className="inline-flex items-center gap-1 text-neutral-700"
+                        title={printStatusTitle(order)}
+                      >
+                        <Check className="h-3.5 w-3.5 text-emerald-600" />
+                        已打印
+                        <span className="text-xs text-neutral-500">
+                          {formatPrintedAt(order.printedAt)}
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="text-xs text-neutral-400">未打印</span>
                     )}
                   </td>
 

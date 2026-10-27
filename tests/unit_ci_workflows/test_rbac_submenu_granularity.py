@@ -193,13 +193,28 @@ WRITE_UNDER_READ_CODE: dict[str, tuple[str, str]] = {
     "POST /api/admin/production/pool/preview": (
         "计算/预览", "派单预览（不写库；`ProductionPoolController` 方法级 `processing:view`）；owner = 生产域读面 + 本台账",
     ),
+    # ── 追加只写的事实登记（**不碰任何业务对象**）⇒ 挂页面读码是**有意**形态（归类仍走登记集：它确实落库）──
+    "POST /api/admin/orders/{}/print-logs": (
+        "真写",
+        "登记打印流水（`PrintLogController`，issue #7902：谁 / 何时 / 打了哪种单据 / 几张）—— 只往 "
+        "`print_logs` **追加**一行事实，不改任何业务对象（orders / processing_orders 一个字段都不动、"
+        "也没有 update/delete 语句可调）；码沿用 `order:detail` 是**产品口径**：打印入口就在订单详情页，"
+        "**能看这张单就该能打**（另造 `order:print` 会让现网种子岗位全体 403，而那个失效不会有任何东西变红）。"
+        "owner = 交易域读面 + 打印中心（issue #7902）+ 本台账",
+    ),
 }
 
 #: `WRITE_UNDER_READ_CODE` 的条数上限（**只许缩短**；现取出现未登记形态 ⇒ 红）。
 #: 🔴 **16 → 12**（issue #5699 的 **I4**，2026-09-27 人类裁定选 A）：四条**真写**端点
 #:（建加工单 / 报工 / 打印 / 发货）已改挂写码 `production:execute` ⇒ 不再命中本台账；
 #: 四条的去向与逐端点读数登记在 `tests/unit_ci_workflows/test_rbac_endpoint_write_codes.py`。
-WRITE_UNDER_READ_CODE_CAP = 12
+#: 🔴 **12 → 13**（issue #7902 打印中心，2026-10-27）：**新增**一个端点
+#: `POST /api/admin/orders/{}/print-logs`（打印流水登记）命中本形态 —— 计数 +1 是**新端点**，
+#: **不是**有人把既有端点的码从写码改回读码（后者仍会红：现取 > 上限即红）。
+#: 它的码是产品口径的裁定结果（打印入口在订单详情页 ⇒ 沿用 `order:detail`，不新增权限码），
+#: 理由与边界见台账该条的说明；读数复算 = `python3 -m pytest
+#: tests/unit_ci_workflows/test_rbac_submenu_granularity.py -q`（现取 == 上限 == 13）。
+WRITE_UNDER_READ_CODE_CAP = 13
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -742,8 +757,11 @@ def test_p4_census_only_touches_read_endpoints():
             assert url.startswith("/"), f"端点 `{endpoint}` 的形态不对（应为 `<VERB> <path>`）"
     # 写侧的第二个读数：I4 台账（端点层「写动词 + 读码」）在 P4 是**存量**形态（当时 16 条）；
     # issue #5699 的 **I4** 之后四条**真写**已改挂写码 ⇒ 现取 12 条。
+    # 写侧的第二个读数：I4 台账（端点层「写动词 + 读码」）。沿革（**只许缩短**的例外只有「新增端点」）：
+    # 存量 16 ⇒ issue #5699 的 **I4** 后 12（四条真写改挂写码）⇒ 13（issue #7902 新增打印流水登记端点，
+    # 码沿 `order:detail` 是产品口径：打印入口在订单详情页、能看就能打；理由见台账该条）。
     live = write_under_read_code(load_parity_guard())
-    assert len(live) == WRITE_UNDER_READ_CODE_CAP == 12, (
+    assert len(live) == WRITE_UNDER_READ_CODE_CAP == 13, (
         f"写侧台账条数漂移（现取 {len(live)} / 上限 {WRITE_UNDER_READ_CODE_CAP}）⇒ "
         "要么有人改了写端点的码（本阶段射程外、须人裁），要么漏登记"
     )
