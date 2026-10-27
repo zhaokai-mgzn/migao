@@ -59,7 +59,7 @@
 | 物料 | **补打入库标签** | `pages/worker/reprint/index` | —（工人面固有） | ✅ 已有 |
 | 出货 | **拍照发货** | `pages/worker/shipment/index`（在飞） | `shipment` | 🚧 在飞（#6761） |
 | 出货 | **待发货单**（全完工订单列表 + 发货标签） | `/w/shipment.html`（`/w/` 侧已落地，issue #7761）+ bmini `pages/worker/shipment-orders/index`（issue #7806 P1a） | **`to_ship`**（issue #7814 新增 —— 与 `shipment`=拍照发货的**写面**分开，商家可分别勾选） | ✅ `/w/` 侧已有（列表 + 50×70 发货标签；端点 `GET /api/worker/shipment/orders`）· bmini 侧列表已上（打印待 #7803） |
-| 我的 | **我的计件**（**含金额**） | 待建（合计金额 + 件数 + 逐笔，本月/上月） | 建议 `piecework` | ✅ 已裁定要做（2026-10-12）· ⛔ 需新端点 |
+| 我的 | **我的计件**（**含金额**） | bmini `pages/worker/piecework/index`（端内，issue #7934）· H5 `/b/report/piecework.html`（兼容期可直连） | `piecework` | ✅ 已上线（2026-10-27）· 端点 `GET /api/worker/piecework`（#6767 即已就绪，复用商家端同一份聚合）· 入口在**工人菜单**（报工详情页页头的那条已于 #7934 撤除） |
 | （页脚） | 切换工人 / 退出工人身份 | 既有 | — | ✅ 已有 |
 
 ---
@@ -103,7 +103,7 @@ WorkerPages 闭词表 { report, piecework, order, cut_calc, shipment, to_ship } 
 | `order` | 订单 | 我的活 | 订单 / 套号 / 还要做哪几道 |
 | `cut_calc` | 裁高计算器 | 裁高计算 | 这块布裁多长（一体机那台屏也在用） |
 | `shipment` | 发货 | 拍照发货 | 拍运单 / 商品标签 ⇒ 生成发货单 |
-| `piecework`（建议新增） | — | 我的计件 | 本月做了多少、这一笔怎么算的 |
+| `piecework`（**已落地**：#6767 端点 / #7934 端内页） | — | 我的计件 | 本月做了多少、这一笔怎么算的 |
 | `to_ship`（**已落地**，issue #7814） | — | 待发货单 | 不用先记住单号，从列表点进去 |
 
 ---
@@ -120,7 +120,7 @@ WorkerPages 闭词表 { report, piecework, order, cut_calc, shipment, to_ship } 
 |---|---|---|---|
 | **我的活** | `GET /api/worker/production/my-tasks`（我在制的单 / 套 / 待做工序） | 范围 = **我经手的** 还是 全厂待做？ | 我经手的（不泄露他人计件归属） |
 | **待发货单** | `GET /api/worker/shipment/orders`（已上线，issue #7764；admin 侧 `/api/admin/shipments` 工人 403） | 范围与字段：全厂 / 我经手的；是否显示客户名、金额？ | 全厂待发货，只显示单号 + 客户简称 + 件数，**不显示金额** |
-| **我的计件** | `GET /api/worker/piecework?month=`（**合计金额** + 件数 + 逐笔工序/单价快照） | ✅ **已裁定（2026-10-12 用户逐字「需要给工人看」）** —— 口径见 §6.3 | —— |
+| **我的计件** | `GET /api/worker/piecework?month=`（**合计金额** + 件数 + 逐笔工序/单价快照） | ✅ **已裁定（2026-10-12 用户逐字「需要给工人看」）** —— 口径见 §6.3；**已上线**：端点 #6767 / 端内页 `pages/worker/piecework/index`（#7934） | —— |
 
 ### 6.3 「我的计件」口径（2026-10-12 裁定：**金额给工人看**）
 
