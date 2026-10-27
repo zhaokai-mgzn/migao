@@ -49,7 +49,7 @@ vi.mock('@/lib/api', () => ({
   },
 }))
 
-import WorkerProfilesPanel from '@/components/employees/WorkerProfilesPanel'
+import WorkerProfilesPanel, { OPTIONAL_PAGE_HINTS } from '@/components/employees/WorkerProfilesPanel'
 import { markErrorToastShown } from '@/lib/api-error'
 
 const okPage = (items: unknown[]) => ({ data: { data: { items, total: items.length } } })
@@ -295,6 +295,37 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
     // 🔴 空数组（历史脏数据）显示成「全部页面」—— 与**读面契约**一致（`WorkerPages.effectiveFor`
     // 对归一后为空集一律回落全部页面，issue #6828 复核发现旧的「未开放任何页面」与契约相反）
     expect(screen.getByTestId('worker-menu-w-3')).toHaveTextContent('默认页面')
+  })
+
+  it('⑩ 🔴 两个能力页各有自己的说明：「返工记录」不得复用质检那句（issue #7932）', async () => {
+    mockGetWorkerPageCatalog.mockResolvedValue({
+      data: {
+        data: {
+          pages: ['report', 'order', 'cut_calc', 'shipment', 'inspect', 'rework'],
+          default_pages: ['report', 'order', 'cut_calc', 'shipment'],
+          optional_pages: ['inspect', 'rework'],
+          labels: {
+            report: '报工',
+            order: '订单',
+            cut_calc: '裁高计算器',
+            shipment: '发货',
+            inspect: '质检',
+            rework: '返工记录',
+          },
+        },
+      },
+    })
+    render(<WorkerProfilesPanel canWrite />)
+
+    fireEvent.click(await screen.findByText('新建工人档案'))
+    const inspect = await screen.findByTestId('worker-page-optional-inspect')
+    const rework = await screen.findByTestId('worker-page-optional-rework')
+    // 两个键各自一句话，且**不是**同一句（改前共用硬编码的质检文案 ⇒ 本条红）
+    expect(OPTIONAL_PAGE_HINTS.rework).not.toBe(OPTIONAL_PAGE_HINTS.inspect)
+    expect(within(inspect).getByText(OPTIONAL_PAGE_HINTS.inspect)).toBeInTheDocument()
+    expect(within(rework).getByText(OPTIONAL_PAGE_HINTS.rework)).toBeInTheDocument()
+    // 返工记录那一格**不许**出现质检的说明（2026-10-27 用户截图里的错文案）
+    expect(within(rework).queryByText(OPTIONAL_PAGE_HINTS.inspect)).not.toBeInTheDocument()
   })
 
   it('⑨ 🔴 质检是逐人开的能力页（issue #7162）：单独一栏、勾上后建号带 inspect；默认不勾', async () => {
