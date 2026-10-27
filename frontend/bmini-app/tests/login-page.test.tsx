@@ -45,15 +45,19 @@ import Taro from '@tarojs/taro'
 import LoginPage from '../src/pages/auth/login/index'
 import { WORKER_HOME_ROUTE } from '../src/utils/inbound/gaps'
 
-const IDENTIFIER_PLACEHOLDER = '如 zhangsan@acme'
+const USERNAME_PLACEHOLDER = '用户名'
+const EMPLOYEE_TENANT_PLACEHOLDER = '企业编码'
 const PASSWORD_PLACEHOLDER = '请输入密码'
 const PHONE_PLACEHOLDER = '请输入管理员手机号'
 const CODE_PLACEHOLDER = '请输入验证码'
 
-/** 填表：用户名@企业编码 + 密码 */
-function fillForm(identifier: string, password: string) {
-  fireEvent.change(screen.getByPlaceholderText(IDENTIFIER_PLACEHOLDER), {
-    target: { value: identifier },
+/** 填表：`[用户名] @ [企业编码]` 两格（中间固定 `@`，issue #7944）+ 密码 */
+function fillForm(username: string, tenantCode: string, password: string) {
+  fireEvent.change(screen.getByPlaceholderText(USERNAME_PLACEHOLDER), {
+    target: { value: username },
+  })
+  fireEvent.change(screen.getByPlaceholderText(EMPLOYEE_TENANT_PLACEHOLDER), {
+    target: { value: tenantCode },
   })
   fireEvent.change(screen.getByPlaceholderText(PASSWORD_PLACEHOLDER), {
     target: { value: password },
@@ -79,10 +83,11 @@ describe('LoginPage', () => {
 
     expect(screen.getByText('黄金策 · 企业智能生产管家')).toBeTruthy()
     expect(screen.getByText('经营数据 · AI 客服 · 移动坐席')).toBeTruthy()
-    expect(screen.getByText('用户名@企业编码')).toBeTruthy()
+    expect(screen.getByText('员工账号')).toBeTruthy()
     expect(screen.getByText('密码')).toBeTruthy()
     expect(screen.getByText('登录')).toBeTruthy()
-    expect(screen.getByPlaceholderText(IDENTIFIER_PLACEHOLDER)).toBeTruthy()
+    expect(screen.getByPlaceholderText(USERNAME_PLACEHOLDER)).toBeTruthy()
+    expect(screen.getByPlaceholderText(EMPLOYEE_TENANT_PLACEHOLDER)).toBeTruthy()
   })
 
   it('密码框是遮蔽输入（password → type="password"）', () => {
@@ -96,7 +101,7 @@ describe('LoginPage', () => {
     mockEmployeeLoginAction.mockResolvedValueOnce(true)
 
     render(<LoginPage />)
-    fillForm('zhangsan@acme', 'init-pass-123')
+    fillForm('zhangsan', 'acme', 'init-pass-123')
     await clickLogin()
 
     expect(mockEmployeeLoginAction).toHaveBeenCalledWith('zhangsan@acme', 'init-pass-123')
@@ -106,7 +111,7 @@ describe('LoginPage', () => {
     mockEmployeeLoginAction.mockResolvedValueOnce(true)
 
     render(<LoginPage />)
-    fillForm('  zhangsan@acme  ', 'init-pass-123')
+    fillForm('  zhangsan  ', '  acme  ', 'init-pass-123')
     await clickLogin()
 
     expect(mockEmployeeLoginAction).toHaveBeenCalledWith('zhangsan@acme', 'init-pass-123')
@@ -116,7 +121,7 @@ describe('LoginPage', () => {
     mockEmployeeLoginAction.mockResolvedValueOnce(true)
 
     render(<LoginPage />)
-    fillForm('zhangsan@acme', 'init-pass-123')
+    fillForm('zhangsan', 'acme', 'init-pass-123')
     await clickLogin()
 
     expect(Taro.switchTab).toHaveBeenCalledWith({
@@ -129,7 +134,7 @@ describe('LoginPage', () => {
     mockGetState.mockReturnValue({ user: { mustChangePassword: true } })
 
     render(<LoginPage />)
-    fillForm('zhangsan@acme', 'init-pass-123')
+    fillForm('zhangsan', 'acme', 'init-pass-123')
     await clickLogin()
 
     // 改密前后端只放行白名单接口 ⇒ 放进主界面只会每个功能都 403（用户读成「小程序坏了」）
@@ -142,7 +147,7 @@ describe('LoginPage', () => {
     mockGetState.mockReturnValue({ user: { mustChangePassword: false, id: 'emp-1' } })
 
     render(<LoginPage />)
-    fillForm('zhangsan@acme', 'init-pass-123')
+    fillForm('zhangsan', 'acme', 'init-pass-123')
     await clickLogin()
 
     expect(Taro.redirectTo).not.toHaveBeenCalledWith({ url: '/pages/auth/change-password/index' })
@@ -151,18 +156,18 @@ describe('LoginPage', () => {
 
   it('账号为空 → 本地拦截并提示，不发请求', async () => {
     render(<LoginPage />)
-    fillForm('   ', 'init-pass-123')
+    fillForm('   ', 'acme', 'init-pass-123')
     await clickLogin()
 
     expect(mockEmployeeLoginAction).not.toHaveBeenCalled()
     expect(Taro.showToast).toHaveBeenCalledWith(
-      expect.objectContaining({ title: expect.stringContaining('用户名@企业编码') }),
+      expect.objectContaining({ title: expect.stringContaining('用户名') }),
     )
   })
 
   it('密码为空 → 本地拦截并提示，不发请求', async () => {
     render(<LoginPage />)
-    fillForm('zhangsan@acme', '')
+    fillForm('zhangsan', 'acme', '')
     await clickLogin()
 
     expect(mockEmployeeLoginAction).not.toHaveBeenCalled()
@@ -175,7 +180,7 @@ describe('LoginPage', () => {
     mockEmployeeLoginAction.mockResolvedValueOnce(false)
 
     render(<LoginPage />)
-    fillForm('zhangsan@acme', 'wrong-pass')
+    fillForm('zhangsan', 'acme', 'wrong-pass')
     await clickLogin()
 
     // 失败原因由 authStore 内部 showToast（同一 401 文案），页面不自行编造区分文案、不跳转
@@ -253,7 +258,7 @@ describe('LoginPage · 管理员短信入口（issue #5721）', () => {
 
     expect(screen.getByText('员工登录')).toBeTruthy()
     expect(screen.getByText('管理员登录')).toBeTruthy()
-    expect(screen.getByPlaceholderText(IDENTIFIER_PLACEHOLDER)).toBeTruthy()
+    expect(screen.getByPlaceholderText(USERNAME_PLACEHOLDER)).toBeTruthy()
     expect(screen.queryByPlaceholderText(PHONE_PLACEHOLDER)).toBeNull()
   })
 
@@ -264,7 +269,7 @@ describe('LoginPage · 管理员短信入口（issue #5721）', () => {
     expect(screen.getByText('手机号')).toBeTruthy()
     expect(screen.getByText('验证码')).toBeTruthy()
     expect(screen.getByText('获取验证码')).toBeTruthy()
-    expect(screen.queryByPlaceholderText(IDENTIFIER_PLACEHOLDER)).toBeNull()
+    expect(screen.queryByPlaceholderText(USERNAME_PLACEHOLDER)).toBeNull()
     expect(screen.queryByPlaceholderText(PASSWORD_PLACEHOLDER)).toBeNull()
   })
 
@@ -441,7 +446,7 @@ describe('LoginPage · 工人入口（issue #6467 判据 1）', () => {
     expect(screen.getByText('员工登录')).toBeTruthy()
     expect(screen.getByText('管理员登录')).toBeTruthy()
     expect(screen.getByText('工人登录')).toBeTruthy()
-    expect(screen.getByPlaceholderText(IDENTIFIER_PLACEHOLDER)).toBeTruthy()
+    expect(screen.getByPlaceholderText(USERNAME_PLACEHOLDER)).toBeTruthy()
     expect(screen.queryByPlaceholderText(WORKER_NO_PLACEHOLDER)).toBeNull()
   })
 
@@ -453,7 +458,7 @@ describe('LoginPage · 工人入口（issue #6467 判据 1）', () => {
     expect(screen.getByPlaceholderText(WORKER_NO_PLACEHOLDER)).toBeTruthy()
     expect(screen.getByPlaceholderText(WORKER_PIN_PLACEHOLDER)).toBeTruthy()
     // 三条身份链不共用一个表单：员工字段退场
-    expect(screen.queryByPlaceholderText(IDENTIFIER_PLACEHOLDER)).toBeNull()
+    expect(screen.queryByPlaceholderText(USERNAME_PLACEHOLDER)).toBeNull()
   })
 
   it('切到工人入口 ⇒ 渲染工号 + PIN + 设备标签（可选），商家字段退场', () => {
@@ -466,7 +471,7 @@ describe('LoginPage · 工人入口（issue #6467 判据 1）', () => {
     expect(screen.getByPlaceholderText(WORKER_PIN_PLACEHOLDER)).toBeTruthy()
     expect(screen.getByPlaceholderText(DEVICE_PLACEHOLDER)).toBeTruthy()
     expect(screen.getByPlaceholderText(ENTERPRISE_PLACEHOLDER)).toBeTruthy()
-    expect(screen.queryByPlaceholderText(IDENTIFIER_PLACEHOLDER)).toBeNull()
+    expect(screen.queryByPlaceholderText(USERNAME_PLACEHOLDER)).toBeNull()
     expect(screen.queryByPlaceholderText(PHONE_PLACEHOLDER)).toBeNull()
   })
 

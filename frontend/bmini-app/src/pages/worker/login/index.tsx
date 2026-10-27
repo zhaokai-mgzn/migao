@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react'
 import { View, Text, Button, Input } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { workerLogin } from '../../../services/workerService'
-import { getRememberedAccount, rememberAccount } from '../../../utils/loginAccount'
+import { getRememberedAccount, getRememberedTenantCode, rememberAccount, rememberTenantCode } from '../../../utils/loginAccount'
 import './index.scss'
 
 /**
@@ -20,9 +20,10 @@ export default function WorkerLoginPage() {
   const [workerNo, setWorkerNo] = useState(() => getRememberedAccount('worker'))
   const [pin, setPin] = useState('')
   const [deviceLabel, setDeviceLabel] = useState('')
-  // 企业编码（issue #6564）：租户**只由服务端解析**。它不是账号名（不进「记住账号名」键）、
-  // 更不是凭据，但同样**不落盘** —— 预填只服务工号（`utils/loginAccount.ts` 的纪律）
-  const [enterpriseCode, setEnterpriseCode] = useState('')
+  // 企业编码（issue #6564 / #7944）：租户**只由服务端解析**（前端不解析、不传 tenantId）；
+  // 它是「该面上次成功登录用过的值」⇒ **预填**，免去每次都手输。它不是凭据（没有工号 + PIN
+  // 登不进去），但仍按 `utils/loginAccount.ts` 的纪律：**只**走「企业编码」键，绝不与 PIN 混存。
+  const [enterpriseCode, setEnterpriseCode] = useState(() => getRememberedTenantCode('worker'))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
@@ -49,8 +50,9 @@ export default function WorkerLoginPage() {
         setError(res.message || '登录失败，请重试')
         return
       }
-      // 只记工号（账号名）；PIN 绝不落盘（issue #6478）
+      // 只记工号（账号名）与企业编码；PIN 绝不落盘（issue #6478 的红线；企业编码不是凭据 ⇒ #7944）
       rememberAccount('worker', workerNo.trim())
+      rememberTenantCode('worker', enterpriseCode.trim())
       Taro.showToast({ title: `已登录：${res.data?.worker_name || workerNo}`, icon: 'success' })
       Taro.navigateBack({ delta: 1 })
     } finally {
