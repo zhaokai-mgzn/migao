@@ -223,6 +223,7 @@ export default function PrintDocPreview({
   if (!target) return null
 
   // 面板读数的两处派生（数字只在这里算一次：全选与否、总张数）
+  const selecting = batch?.stage === 'panel'
   const allSelected = !!batch && batch.candidates.length > 0 && batch.selected.length === batch.candidates.length
   const totalSheets = batch
     ? batch.selected.reduce((sum, doc) => sum + Math.max(1, sheetsOf?.(doc) ?? 1), 0)
@@ -295,134 +296,119 @@ export default function PrintDocPreview({
           </Button>
         </div>
 
-        {/* ② 单据标签（issue #7544）：同页多份单据时**唯一**的选择入口 ——
-            商家不必先在页面上找到「打印哪一份」的按钮，进来就能换。
-            ⚠️ 标签只换预览目标（`onSelect`），**不置位打印目标** ⇒ 「换一份看看」不会改掉这次要印的纸。 */}
-        {docs && docs.length > 1 && onSelect && batch?.stage !== 'running' && (
+        {/* ② 单据标签（issue #7544）＝ 同页多份单据时**唯一**的换单据入口；
+            联合打印面板打开时（issue #7949，用户 2026-10-27「横着放置一行」「点击联合打印后顶部出现多选框进行勾选」）
+            **同一行**切换成多选 chip —— 不另起一张竖排列表（竖排 4 行会把纸面预览挤掉一截）。
+            点击 = 勾选这份纸 + 顺带把它切到预览（勾选与「看哪张」是同一次点击的两个结果）。 */}
+        {docs && docs.length > 1 && onSelect && (
           <div
             className="flex flex-wrap items-center gap-2 border-b border-neutral-200 px-4 py-2"
             role="group"
-            aria-label="选择单据"
+            aria-label={selecting ? '勾选这次要出的纸' : '选择单据'}
             data-testid="print-preview-docs"
           >
-            {docs.map((doc) => {
+            {docs.map((doc, i) => {
               const spec = PRINT_TARGET_SPECS[doc]
-              // 显示名可由调用方按作业单两型改写（issue #7891）；缺省仍取 specs 的静态标题
-              const label = titleOf ? titleOf(doc) : spec.title
               const active = doc === target
-              const box = printPageBoxMm(spec.media)
+              const docBox = printPageBoxMm(spec.media)
+              const label = titleOf ? titleOf(doc) : spec.title
+              const sheets = Math.max(1, sheetsOf?.(doc) ?? 1)
+              const checked = !!batch && batch.selected.includes(doc)
               return (
                 <button
                   key={doc}
                   type="button"
-                  aria-pressed={active}
-                  data-testid={`print-preview-doc-${doc}`}
-                  onClick={() => onSelect(doc)}
+                  // 面板态 = 多选框语义；常态 = 单选（换单据看）
+                  role={selecting ? 'checkbox' : undefined}
+                  aria-checked={selecting ? checked : undefined}
+                  aria-pressed={selecting ? undefined : active}
+                  data-testid={selecting ? `print-batch-doc-${doc}` : `print-preview-doc-${doc}`}
+                  onClick={() => {
+                    if (selecting && batch) batch.toggle(doc)
+                    onSelect(doc)
+                  }}
                   className={`inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 text-sm transition-colors ${
-                    active
-                      ? 'border-primary-500 bg-primary-50 font-medium text-primary-700'
-                      : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50'
+                    selecting
+                      ? checked
+                        ? 'border-primary-200 bg-primary-50/60 font-medium text-neutral-900'
+                        : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300 hover:bg-neutral-50'
+                      : active
+                        ? 'border-primary-500 bg-primary-50 font-medium text-primary-700'
+                        : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50'
                   }`}
                 >
+                  {selecting && (
+                    <span
+                      aria-hidden="true"
+                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
+                        checked
+                          ? 'border-primary-500 bg-primary-500 text-white'
+                          : 'border-neutral-300 bg-white text-transparent'
+                      }`}
+                    >
+                      <svg viewBox="0 0 12 12" className="h-3 w-3" fill="none" aria-hidden="true">
+                        <path
+                          d="M2.5 6.5 5 9l4.5-5.5"
+                          stroke="currentColor"
+                          strokeWidth="1.6"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </span>
+                  )}
+                  {/* 序号 = 真实出纸顺序（用户 2026-10-27「数字仍然展示」）—— 弱化成行内小字，
+                      不占独立列宽；左→右读序与序号同向，两者互为校验 */}
+                  {selecting && (
+                    <span className="text-xs tabular-nums text-neutral-400">{i + 1}</span>
+                  )}
                   {label}
                   {/* 纸型**从介质矩阵取**（不是标签自带的第二份字面量）—— 换纸后这里跟着变 */}
-                  <span className="text-xs font-normal text-neutral-400">
-                    {box.widthMm}×{box.heightMm}mm
+                  <span className={`text-xs font-normal ${selecting && checked ? 'text-neutral-500' : 'text-neutral-400'}`}>
+                    {docBox.widthMm}×{docBox.heightMm}mm
                   </span>
+                  {selecting && (
+                    <span className="text-xs tabular-nums text-neutral-500">{sheets} 张</span>
+                  )}
+                  {active && (
+                    <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-500">当前</span>
+                  )}
                 </button>
               )
             })}
           </div>
         )}
 
-        {/* 联合打印面板（issue #7902）：勾选哪几张一起出。**默认只勾当前这一份** ——
-            纸是耗材，点开面板不等于同意把四张全打一遍；要全打有「全选」。 */}
+        {/* ②b 联合打印的**唯一**常驻面（issue #7949）：一行 = 标题/说明 + 已选读数 + 三个动作。
+            勾选项在上一行（与单据标签同一行），故本面板只有**一行**高度（改前是 4 行列表 + 页脚 ≈ 6 行）。 */}
         {batch && batch.stage === 'panel' && (
-          <section
-            className="border-b border-neutral-200 bg-neutral-50 px-4 py-3"
+          <div
+            className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-neutral-200 bg-neutral-50 px-4 py-2"
             data-testid="print-batch-panel"
             aria-label="联合打印"
           >
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <h3 className="text-sm font-medium text-neutral-900">联合打印</h3>
-                {/* 一句说清机制（issue #7941 P4：陈述事实 + 该做什么，不分号、不啰嗦） */}
-                <p className="mt-0.5 text-xs text-neutral-500">按顺序逐张出纸，每张记一条打印流水</p>
-              </div>
-              {/* 辅助动作降为文字按钮（§32.2 层级：描边次级按钮留给「取消 / 复制截图」这类并列动作） */}
-              <button
-                type="button"
-                onClick={batch.toggleAll}
-                aria-pressed={allSelected}
-                data-testid="print-batch-toggle-all"
-                className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-neutral-600 transition-colors hover:bg-white hover:text-neutral-900"
-              >
-                {allSelected ? '取消全选' : '全选'}
-              </button>
-            </div>
-            <ul className="mt-3 space-y-1">
-              {batch.candidates.map((doc, i) => {
-                const checked = batch.selected.includes(doc)
-                const spec = PRINT_TARGET_SPECS[doc]
-                const label = titleOf ? titleOf(doc) : spec.title
-                const sheets = Math.max(1, sheetsOf?.(doc) ?? 1)
-                const isCurrent = doc === target
-                return (
-                  <li key={doc}>
-                    <button
-                      type="button"
-                      role="checkbox"
-                      aria-checked={checked}
-                      data-testid={`print-batch-doc-${doc}`}
-                      onClick={() => batch.toggle(doc)}
-                      className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors ${
-                        checked
-                          ? 'border-primary-200 bg-white shadow-sm'
-                          : 'border-transparent bg-white/50 hover:border-neutral-200 hover:bg-white'
-                      }`}
-                    >
-                      <span
-                        aria-hidden="true"
-                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
-                          checked
-                            ? 'border-primary-500 bg-primary-500 text-white'
-                            : 'border-neutral-300 bg-white text-transparent'
-                        }`}
-                      >
-                        <svg viewBox="0 0 12 12" className="h-3 w-3" fill="none" aria-hidden="true">
-                          <path d="M2.5 6.5 5 9l4.5-5.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      </span>
-                      {/* 序号 = 真实出纸顺序（逐张推进按它走）；只做弱化，不删 */}
-                      <span className="w-3 shrink-0 text-xs tabular-nums text-neutral-400">{i + 1}</span>
-                      <span className={`text-sm ${checked ? 'font-medium text-neutral-900' : 'text-neutral-700'}`}>
-                        {label}
-                      </span>
-                      {/* 纸型**不在这里重复**（issue #7941 P2；标签行已表达「这份纸多大」） */}
-                      {isCurrent && (
-                        <span className="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-500">当前</span>
-                      )}
-                      <span className="ml-auto shrink-0 text-xs tabular-nums text-neutral-500">{sheets} 张</span>
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-neutral-200 pt-3">
-              {/* 份数 / 张数分开读：份 = 几张单据，张 = 实际出纸数（水洗唛一部位一张） */}
-              <span className="text-xs tabular-nums text-neutral-500" data-testid="print-batch-summary">
-                已选 {batch.selected.length} 份 · {totalSheets} 张纸
-              </span>
-              <div className="flex items-center gap-2">
-                <Button variant="ghost" onClick={batch.closePanel} data-testid="print-batch-cancel">
-                  取消
-                </Button>
-                <Button onClick={batch.start} disabled={batch.selected.length === 0} data-testid="print-batch-start">
-                  开始联合打印
-                </Button>
-              </div>
-            </div>
-          </section>
+            <span className="text-sm font-medium text-neutral-900">联合打印</span>
+            <span className="hidden text-xs text-neutral-500 sm:inline">按顺序逐张出纸，每张记一条打印流水</span>
+            <span className="ml-auto text-xs tabular-nums text-neutral-500" data-testid="print-batch-summary">
+              已选 {batch.selected.length} 份 · {totalSheets} 张纸
+            </span>
+            {/* 辅助动作降为文字按钮（§32.2 层级） */}
+            <button
+              type="button"
+              onClick={batch.toggleAll}
+              aria-pressed={allSelected}
+              data-testid="print-batch-toggle-all"
+              className="rounded-md px-2 py-1 text-xs font-medium text-neutral-600 transition-colors hover:bg-white hover:text-neutral-900"
+            >
+              {allSelected ? '取消全选' : '全选'}
+            </button>
+            <Button variant="ghost" size="sm" onClick={batch.closePanel} data-testid="print-batch-cancel">
+              取消
+            </Button>
+            <Button size="sm" onClick={batch.start} disabled={batch.selected.length === 0} data-testid="print-batch-start">
+              开始联合打印
+            </Button>
+          </div>
         )}
 
         {/* ③ 真尺寸纸框（按 mm），外层只做缩放适配 */}

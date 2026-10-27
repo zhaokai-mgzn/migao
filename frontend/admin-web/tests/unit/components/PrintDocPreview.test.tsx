@@ -73,6 +73,43 @@ describe('联合打印面板（issue #7941：去重复 / 份·张分读 / 勾选
     )
   }
 
+  it('⓪ 勾选项与单据标签**同一行**（issue #7949：横排，不另起竖排列表）', () => {
+    renderPanel(fakeBatch())
+    const row = screen.getByTestId('print-preview-docs')
+    // 四个勾选项都是这一行的直接子级（= 同一行的 chip）
+    for (const doc of ['quotation', 'sales', 'processing', 'labels']) {
+      const chip = screen.getByTestId(`print-batch-doc-${doc}`)
+      expect(chip.parentElement).toBe(row)
+    }
+    expect(row.className).toContain('flex-wrap')
+    expect(row.className).not.toContain('flex-col')
+    // 面板里**没有**竖排列表（改回`<ul><li>` ⇒ 红）
+    expect(screen.getByTestId('print-batch-panel').querySelector('li')).toBeNull()
+  })
+
+  it('⓪b 联合打印面板只占**一行**：读数与三个动作全在同一行容器里', () => {
+    renderPanel(fakeBatch())
+    const panel = screen.getByTestId('print-batch-panel')
+    for (const id of ['print-batch-summary', 'print-batch-toggle-all', 'print-batch-cancel', 'print-batch-start']) {
+      expect(panel.contains(screen.getByTestId(id))).toBe(true)
+    }
+    // 勾选项**不在**面板里（它们在上一行，与标签同一行）
+    expect(panel.contains(screen.getByTestId('print-batch-doc-sales'))).toBe(false)
+  })
+
+  it('⓪c 勾选 chip **保留序号数字**（用户 2026-10-27「数字仍然展示」）', () => {
+    renderPanel(fakeBatch())
+    const docs = ['quotation', 'sales', 'processing', 'labels']
+    docs.forEach((doc, i) => {
+      const chip = screen.getByTestId(`print-batch-doc-${doc}`)
+      const text = chip.textContent ?? ''
+      // 序号 = 真实出纸顺序，弱化成行内小字（仍可读、仍上屏）
+      expect(text.trim().startsWith(String(i + 1))).toBe(true)
+      // 张数也在（4 张 / 1 张）—— 两种数字都不丢
+      expect(text).toMatch(/\d+ 张/)
+    })
+  })
+
   it('① 勾选行**不再重复纸型**（同一面板纸型只许出现在上方标签行）', () => {
     renderPanel(fakeBatch())
     const panel = screen.getByTestId('print-batch-panel')

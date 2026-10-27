@@ -8,6 +8,10 @@
 //   ③ 加急单混进 `pooled:true` 的批 ⇒ **422 VALIDATION_ERROR（整批拒绝）**——
 //      拒绝文案必须**看得见**（红色错误条），不能只靠一次转瞬即逝的 toast。
 //
+// issue #7943（用户 2026-10-27 裁定）：加急与外发是**同一件事**（不进池、逐单立即派、共用同一个
+// 承接方设置）⇒ 合并成**一张表**；且**成批合并区置顶**（主操作），「加急 / 外发」区在其后。
+// 本文件的结构判据因此从「加急区在成批区之前」翻转为「成批区在加急 / 外发区之前」（改前必红）。
+//
 // §15.1：断言必须落在**用户可见结果**上 —— 所以「派单成功」这条断言的是
 // **屏幕上出现加工单号**（`加工单号 JG-...`），不是「API 被调用过」。
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -81,6 +85,14 @@ const URGENT_B = line({
   deliveryDaysLeft: null,
 })
 const POOLED_A = line({ orderId: 'o1', orderNo: 'MG-POOL-1', itemId: 'io1' })
+/** 外发单（V194，issue #7746 后续）：`isOutsourced` ⇒ 与加急同区、派单前**必须**选承接方 */
+const OUT_A = line({
+  orderId: 'x1',
+  orderNo: 'MG-OUT-1',
+  itemId: 'ix1',
+  waitHours: 5,
+  isOutsourced: true,
+})
 
 const board = (over: Partial<PoolBoard> = {}): PoolBoard => ({
   maxWaitHours: 24,
@@ -197,7 +209,7 @@ describe('智能派单 · 加急插队区（PR-080）', () => {
     mockPreview.mockResolvedValue(ok(urgentPreview))
   })
 
-  it('外发入口（承接方 + 回厂日）在**加急区**内、加急表格之前，不在成批区（issue #7746）', async () => {
+  it('外发入口（承接方 + 回厂日）在**加急 / 外发区**内、逐单表格之前，不在成批区（issue #7746 / #7943）', async () => {
     const { container } = render(<ProductionPoolPage />)
     await waitFor(() => expect(screen.getByTestId('pool-urgent-table')).toBeInTheDocument())
 
@@ -205,7 +217,7 @@ describe('智能派单 · 加急插队区（PR-080）', () => {
     const html = container.innerHTML
     const consignee = html.indexOf('data-testid="pool-consignee"')
     expect(consignee, '外发入口不见了').toBeGreaterThan(-1)
-    expect(consignee, '外发入口必须排在加急表格之前（同区、表格上方）').toBeLessThan(
+    expect(consignee, '外发入口必须排在逐单表格之前（同区、表格上方）').toBeLessThan(
       html.indexOf('pool-urgent-table'),
     )
 
@@ -215,16 +227,23 @@ describe('智能派单 · 加急插队区（PR-080）', () => {
 
     // ③ 标题必须同时覆盖两件事（退回「只有加急」= 红）
     expect(screen.getByText('加急 / 外发订单（不参与合并，立即派）')).toBeInTheDocument()
+    // ④ 合并成一个区：旧的「外发订单」独立卡**取不到**（issue #7943）
+    expect(screen.queryByTestId('pool-outsourced-section')).toBeNull()
   })
 
-  it('加急插队区**结构性**排在成批区之前，且加急单不出现在成批候选里（不进池）', async () => {
+  it('**成批区置顶**、「加急 / 外发」区在其后（issue #7943），且加急单不出现在成批候选里（不进池）', async () => {
     const { container } = render(<ProductionPoolPage />)
     await waitFor(() => expect(screen.getByTestId('pool-urgent-table')).toBeInTheDocument())
 
-    // ① 结构性优先：整段 urgentLines 渲染在 groups 之前（**不是前端排序的结果**）
+    // ① 结构：成批合并（主操作）是页面**第一个**内容区块，「加急 / 外发」在其后
+    //    （改前是「加急区在前」⇒ 本断言必红；两段都在，不是把另一段渲染没了来「通过」）
     const html = container.innerHTML
-    expect(html.indexOf('pool-urgent-table')).toBeGreaterThan(-1)
-    expect(html.indexOf('pool-urgent-table')).toBeLessThan(html.indexOf('pool-groups-section'))
+    expect(html.indexOf('pool-groups-section')).toBeGreaterThan(-1)
+    expect(html.indexOf('pool-urgent-section')).toBeGreaterThan(-1)
+    expect(
+      html.indexOf('pool-groups-section'),
+      '成批合并区必须排在「加急 / 外发」区之前（用户 2026-10-27 裁定：主操作置顶）',
+    ).toBeLessThan(html.indexOf('pool-urgent-section'))
 
     // ② 加急单**不进池**：成批区里没有它们（有的话就是「当成成批候选」= 会给商家一个必然 422 的勾选）
     const groupsSection = screen.getByTestId('pool-groups-section')
@@ -243,6 +262,44 @@ describe('智能派单 · 加急插队区（PR-080）', () => {
     expect(urgentRow).toHaveTextContent('2026-09-28')
     // 未指定到货日 ⇒ 「未指定」（不猜一个日期）
     expect(screen.getByTestId('pool-line-u2')).toHaveTextContent('未指定')
+  })
+
+  it('加急与外发**合并在同一张表**（一张表 / 一个空态），旧的外发独立卡不再存在（issue #7943）', async () => {
+    mockGetBoard.mockResolvedValue(
+      ok(board({ outsourcedLines: [OUT_A], outsourcedCount: 1 })),
+    )
+    const { container } = render(<ProductionPoolPage />)
+
+    const table = await screen.findByTestId('pool-urgent-table')
+    // ① 同表：加急单与外发单都在**这一张**表里（不是两张卡各一张表）
+    expect(within(table).getByText('MG-URG-1')).toBeInTheDocument()
+    expect(within(table).getByText('MG-OUT-1')).toBeInTheDocument()
+    // ② 顺序 = 两个服务端数组的拼接序（加急在前、外发在后）—— 前端**不重排**
+    const html = container.innerHTML
+    expect(html.indexOf('pool-line-u1')).toBeLessThan(html.indexOf('pool-outsourced-line-x1'))
+    // ③ 外发行带「外发」标记（它是「必须先选承接方」的原因，不能靠空白让商家猜）
+    expect(screen.getByTestId('pool-outsourced-line-x1')).toHaveTextContent('外发')
+    // ④ 一张表 ⇒ 一个表头：「操作」列只出现一次
+    expect(within(table).getAllByText('操作')).toHaveLength(1)
+    // ⑤ 旧的外发独立卡不再渲染（合并 = 移除外发那一块）
+    expect(screen.queryByTestId('pool-outsourced-section')).toBeNull()
+  })
+
+  it('加急与外发**都为空** ⇒ 只渲染**一个**空态（旧形态是两张卡两段空态）', async () => {
+    mockGetBoard.mockResolvedValue(
+      ok(board({ urgentLines: [], urgentCount: 0, outsourcedLines: [], outsourcedCount: 0 })),
+    )
+    render(<ProductionPoolPage />)
+
+    await waitFor(() =>
+      expect(screen.getByText('当前没有加急或外发待派订单')).toBeInTheDocument(),
+    )
+    expect(screen.getAllByText('当前没有加急或外发待派订单')).toHaveLength(1)
+    // 旧的两段空态文案都要消失（否则就是「合并了标题、没合并空态」）
+    expect(screen.queryByText('当前没有加急待派订单')).toBeNull()
+    expect(screen.queryByText('当前没有待派的外发订单')).toBeNull()
+    // 空态代替表格（不是空表 + 空态并排）
+    expect(screen.queryByTestId('pool-urgent-table')).toBeNull()
   })
 
   it('点「加急插队派单」⇒ 单订单 + pooled:false，且**屏幕上出现加工单号**（结果可见）', async () => {
@@ -332,26 +389,27 @@ describe('智能派单 · 加急插队区（PR-080）', () => {
 // ============================================================ 外发区（V194，issue #7746 后续）
 
 describe('外发区：订单标记「外发加工」⇒ 不进池、逐单立即派、必须先选承接方', () => {
-  const OUT_A = line({ orderId: 'x1', orderNo: 'MG-OUT-1', itemId: 'ix1', waitHours: 5 })
   const boardWithOutsourced = (): PoolBoard =>
-    board({ outsourcedLines: [{ ...OUT_A, isOutsourced: true }], outsourcedCount: 1 })
+    board({ outsourcedLines: [OUT_A], outsourcedCount: 1 })
 
-  it('外发单单独成区、不进成批候选；未选承接方时「立即派单」不可用', async () => {
+  it('外发单与加急**同区**（不进成批候选）；未选承接方时「立即派单」不可用', async () => {
     mockGetBoard.mockResolvedValue(ok(boardWithOutsourced()))
     render(<ProductionPoolPage />)
 
-    const section = await screen.findByTestId('pool-outsourced-section')
+    const section = await screen.findByTestId('pool-urgent-section')
     expect(within(section).getByText('MG-OUT-1')).toBeInTheDocument()
     const groups = screen.getByTestId('pool-groups-section')
     expect(within(groups).queryByText('MG-OUT-1')).toBeNull()
     expect(screen.getByTestId('pool-outsourced-dispatch-x1')).toBeDisabled()
   })
 
-  it('选了承接方 ⇒ 立即派单带 processorSupplierId（单订单 + pooled:false）', async () => {
+  it('选了承接方 ⇒ 立即派单带 processorSupplierId（单订单 + pooled:false），结果行显示**单号**', async () => {
     mockGetBoard.mockResolvedValue(ok(boardWithOutsourced()))
-    mockDispatch.mockResolvedValue(ok([{ orderId: 'x1', success: true, processingOrderNo: 'JG-1' }]))
+    mockDispatch.mockResolvedValue(
+      ok([{ orderRef: 'x1', success: true, processingOrderNo: 'JG-1', message: null, code: null, suggestion: null }]),
+    )
     render(<ProductionPoolPage />)
-    await screen.findByTestId('pool-outsourced-section')
+    await screen.findByTestId('pool-urgent-section')
 
     fireEvent.change(screen.getByLabelText('承接方'), { target: { value: 'sup-1' } })
     const btn = screen.getByTestId('pool-outsourced-dispatch-x1')
@@ -363,5 +421,12 @@ describe('外发区：订单标记「外发加工」⇒ 不进池、逐单立即
     expect(body.orderIds).toEqual(['x1'])
     expect(body.pooled).toBe(false)
     expect(body.processorSupplierId).toBe('sup-1')
+
+    // 结果可见（§15.1）：结果卡上显示的是**单号**（不是订单 id）。
+    // 🔴 累积映射必须覆盖外发行（`singleDispatchLines`）—— 改前它只累积 urgentLines ⇒ 这里渲染成 `x1`。
+    await waitFor(() =>
+      expect(screen.getByTestId('pool-dispatch-results')).toHaveTextContent('MG-OUT-1'),
+    )
+    expect(screen.getByTestId('pool-dispatch-results')).toHaveTextContent('JG-1')
   })
 })
