@@ -293,6 +293,28 @@ describe('B3b 商家面守卫也不抢落地（issue #7887：工人扫纸上的�
   })
 })
 
+describe('B3c 服务端 302 的路由常量与前端注册的路由逐字一致（issue #7889）', () => {
+  it('🔴 `WorkerShortLinkService.REPORT_ROUTE` == `REPORT_PAGE_ROUTE`（漂了 ⇒ 首屏落错页/白屏）', () => {
+    const java = fs.readFileSync(
+      path.join(REPO_ROOT, 'backend/admin-api/src/main/java/com/migao/admin/service/WorkerShortLinkService.java'),
+      'utf8',
+    )
+    const matched = /REPORT_ROUTE\s*=\s*"([^"]+)"/.exec(java)
+    expect(matched).not.toBeNull()
+    expect(matched?.[1]).toBe(REPORT_PAGE_ROUTE)
+  })
+
+  it('🔴 `InboundLabelService.LANDING_ROUTE` == `REPRINT_PAGE_ROUTE`（补打页同款）', () => {
+    const java = fs.readFileSync(
+      path.join(REPO_ROOT, 'backend/admin-api/src/main/java/com/migao/admin/service/InboundLabelService.java'),
+      'utf8',
+    )
+    const matched = /LANDING_ROUTE\s*=\s*"([^"]+)"/.exec(java)
+    expect(matched).not.toBeNull()
+    expect(matched?.[1]).toBe(REPRINT_PAGE_ROUTE)
+  })
+})
+
 describe('B4 反向钉住：`/w/` 不再是任何跳转生产者', () => {
   it('B4 302 的唯一真值 = `/b/`（`REPORT_PAGE_PATH`）', () => {
     const source = stripComments(

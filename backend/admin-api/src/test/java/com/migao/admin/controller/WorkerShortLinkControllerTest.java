@@ -102,7 +102,7 @@ class WorkerShortLinkControllerTest {
 
         mockMvc.perform(get("/s/" + SHORT_CODE))
                 .andExpect(status().isFound())
-                .andExpect(header().string("Location", "/b/?t=" + PART_CODE + "&tenant_id=7&tenant_code=migao"))
+                .andExpect(header().string("Location", "/b/?t=" + PART_CODE + "&tenant_id=7&tenant_code=migao" + "#/pages/worker/report/index"))
                 // 不泄露身份/权限：响应体为空
                 .andExpect(content().string(""));
     }
@@ -117,16 +117,16 @@ class WorkerShortLinkControllerTest {
 
         real.perform(get("/s/7k3m9qp0"))
                 .andExpect(status().isFound())
-                .andExpect(header().string("Location", "/b/?t=" + PART_CODE + "&tenant_id=7&tenant_code=migao"));
+                .andExpect(header().string("Location", "/b/?t=" + PART_CODE + "&tenant_id=7&tenant_code=migao" + "#/pages/worker/report/index"));
         real.perform(get("/s/7K3M9QPO"))
                 .andExpect(status().isFound())
-                .andExpect(header().string("Location", "/b/?t=" + PART_CODE + "&tenant_id=7&tenant_code=migao"));
+                .andExpect(header().string("Location", "/b/?t=" + PART_CODE + "&tenant_id=7&tenant_code=migao" + "#/pages/worker/report/index"));
         real.perform(get("/s/7K3M9QPI"))
                 .andExpect(status().isFound())
-                .andExpect(header().string("Location", "/b/?t=" + "a".repeat(32) + "&tenant_id=7&tenant_code=migao"));
+                .andExpect(header().string("Location", "/b/?t=" + "a".repeat(32) + "&tenant_id=7&tenant_code=migao" + "#/pages/worker/report/index"));
         real.perform(get("/s/7K3M9QPL"))
                 .andExpect(status().isFound())
-                .andExpect(header().string("Location", "/b/?t=" + "a".repeat(32) + "&tenant_id=7&tenant_code=migao"));
+                .andExpect(header().string("Location", "/b/?t=" + "a".repeat(32) + "&tenant_id=7&tenant_code=migao" + "#/pages/worker/report/index"));
     }
 
     // ────────────────────────────────────────────── ② 未知 / 已撤销
@@ -168,7 +168,7 @@ class WorkerShortLinkControllerTest {
         when(mapper.selectByShortCode(SHORT_CODE)).thenReturn(row(PART_CODE, SHORT_CODE));
         real.perform(get("/s/" + SHORT_CODE))
                 .andExpect(status().isFound())
-                .andExpect(header().string("Location", "/b/?t=" + PART_CODE + "&tenant_id=7&tenant_code=migao"));
+                .andExpect(header().string("Location", "/b/?t=" + PART_CODE + "&tenant_id=7&tenant_code=migao" + "#/pages/worker/report/index"));
     }
 
     @Test
@@ -179,7 +179,7 @@ class WorkerShortLinkControllerTest {
 
         mockMvc.perform(get("/s/" + SHORT_CODE))
                 .andExpect(status().isFound())
-                .andExpect(header().string("Location", "/b/?t=" + PART_CODE + "&tenant_id=7"));
+                .andExpect(header().string("Location", "/b/?t=" + PART_CODE + "&tenant_id=7" + "#/pages/worker/report/index"));
     }
 
     @Test
@@ -190,7 +190,7 @@ class WorkerShortLinkControllerTest {
 
         mockMvc.perform(get("/s/" + SHORT_CODE))
                 .andExpect(status().isFound())
-                .andExpect(header().string("Location", "/b/?t=" + PART_CODE + "&tenant_id=7&tenant_code=migao"));
+                .andExpect(header().string("Location", "/b/?t=" + PART_CODE + "&tenant_id=7&tenant_code=migao" + "#/pages/worker/report/index"));
         verify(workerShortLinkService).tenantCodeOf(7L);
     }
 }

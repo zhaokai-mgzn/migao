@@ -78,7 +78,7 @@ class InboundLabelShortLinkControllerTest {
 
         mockMvc.perform(get("/i/" + CODE))
                 .andExpect(status().isFound())
-                .andExpect(header().string("Location", "/b/?code=" + CODE + "&tenant_id=" + TENANT))
+                .andExpect(header().string("Location", "/b/?code=" + CODE + "&tenant_id=" + TENANT + "#/pages/worker/reprint/index?code=" + CODE))
                 .andExpect(content().string(""));
     }
 
@@ -100,7 +100,7 @@ class InboundLabelShortLinkControllerTest {
         when(inboundLabelMapper.selectByCode("7K3M9QP0")).thenReturn(liveLabel("7K3M9QP0"));
         mockMvc.perform(get("/i/7k3m9qpo"))
                 .andExpect(status().isFound())
-                .andExpect(header().string("Location", "/b/?code=7K3M9QP0&tenant_id=" + TENANT));
+                .andExpect(header().string("Location", "/b/?code=7K3M9QP0&tenant_id=" + TENANT + "#/pages/worker/reprint/index?code=" + "7K3M9QP0"));
     }
 
     @Test
@@ -111,7 +111,11 @@ class InboundLabelShortLinkControllerTest {
         ReflectionTestUtils.setField(inboundLabelService, "landingPath", "/b/label");
         mockMvc.perform(get("/i/" + CODE))
                 .andExpect(status().isFound())
-                .andExpect(header().string("Location", "/b/label?code=" + CODE + "&tenant_id=" + TENANT));
+                // 🔴 issue #7889：**配置只管 base**；hash 段（前端路由 + 短码）恒定 ——
+                // 少了它，bmini 首屏不会定到补打页（会先起商家首页再靠启动器补救，第二次扫码被竞态吞掉）。
+                .andExpect(header().string("Location",
+                        "/b/label?code=" + CODE + "&tenant_id=" + TENANT
+                                + "#/pages/worker/reprint/index?code=" + CODE));
     }
 
     @Test

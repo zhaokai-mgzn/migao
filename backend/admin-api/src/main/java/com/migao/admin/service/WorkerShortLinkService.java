@@ -76,6 +76,17 @@ public class WorkerShortLinkService {
      */
     public static final String REPORT_PAGE_PATH = "/b/";
 
+    /**
+     * 报工页在 bmini 里的**路由**（写进 302 的 hash 段，issue #7889）。
+     *
+     * <p>🔴 为什么必须把路由写进 hash：只给 {@code /b/?t=<token>}（search 段）时，Taro 会先按默认页
+     * {@code pages/chat/index/index} 初始化，再由前端启动器（{@code frontend/bmini-app/src/app.tsx}）
+     * 发 {@code redirectTo} 补救 —— 而**启动器与路由初始化是两个时序**：2026-10-27 现场实测
+     * 「第一次扫码进报工页、**关闭后再扫码地址栏是对的而页面渲染成商家首页**」（缓存命中、启动更快时稳定复现）。
+     * 把路由放进 hash ⇒ 首屏即报工页，**不依赖任何补救跳转**；token 仍留在 search（页面两支都能读）。</p>
+     */
+    public static final String REPORT_ROUTE = "/pages/worker/report/index";
+
     /** 分配短码的最大尝试次数（碰撞重试上限；到顶 ⇒ 显式失败，不静默造重码）。 */
     private static final int MAX_ALLOCATE_ATTEMPTS = 8;
 
@@ -232,6 +243,9 @@ public class WorkerShortLinkService {
     public static String reportPageLocation(String token, Long tenantId, String tenantCode) {
         return REPORT_PAGE_PATH + "?t=" + token
                 + (tenantId == null ? "" : "&tenant_id=" + tenantId)
-                + (StringUtils.hasText(tenantCode) ? "&tenant_code=" + tenantCode : "");
+                + (StringUtils.hasText(tenantCode) ? "&tenant_code=" + tenantCode : "")
+                // 🔴 issue #7889：hash 段直接定路由（见 REPORT_ROUTE 的说明）—— 不加它，
+                // 第二次扫码会在「地址栏已是报工页、页面仍是商家首页」的竞态里被复现。
+                + "#" + REPORT_ROUTE;
     }
 }
