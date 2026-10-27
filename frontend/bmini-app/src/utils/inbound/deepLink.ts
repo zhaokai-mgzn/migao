@@ -1,5 +1,6 @@
 /**
- * 落地页深链（`/b/?code=<短码>`）→ 工人面页面的**消费侧**（issue #5052 实现 PR；设计 §5.4）
+ * 落地页深链（`/b/?code=<短码>` / `/b/?t=<token>`）→ 工人面页面的**消费侧**
+ * （issue #5052 实现 PR；`?t=` 支线 = issue #7879；设计 §5.4）
  *
  * ## 这一层治的形态：「服务端 302 了，而**没有任何人读那个参数**」
  *
@@ -29,12 +30,18 @@
  *
  * ⚠️ **边界（不要把本模块读成覆盖面更大的东西）**：裸 8 位码**形态上无法区分** `/i/` 与 `/s/`
  * （两套短码规格故意同款，见 `codeSpace.ts` 文件头）。这里按「入库标签」判，依据是
- * **生产者唯一**（`/i/` 的 302 只放裸短码；`/s/` 的 302 目标是 `/w/?t=`，从不到 `/b/`）
- * —— 不是靠形态猜。真正携带 `/s/` 语义的形态（整条 URL）走 `classifyScannedCode`，判为洗水码。
+ * **参数名 + 形态**，不是靠猜：
+ * - 入库标签那一支的参数名是 `code`，值是**裸 8 位短码**（`/i/` 的 302 只放裸短码）；
+ * - 报工短链那一支的参数名是 `t`（{@link REPORT_TOKEN_PARAM}），值是**32 位 token**
+ *   —— issue #7879 起 `/s/` 与 `/o/` 的 302 也落 `/b/`（`/b/?t=<token>&tenant_id=&tenant_code=`），
+ *   但它们**走 `t` 支线**（{@link currentReportToken} → 报工页），与本模块的 `code` 支线**不串道**。
+ *
+ * 真正携带 `/s/` 语义的形态（整条 URL）走 `classifyScannedCode`，判为洗水码。
  */
 import { isH5 } from '../platform'
+import { readQueryParam } from '../scanInput'
 import { classifyManualCode, classifyScannedCode, type LabelCodeReading } from './codeSpace'
-import { REPRINT_PAGE_ROUTE } from './gaps'
+import { REPORT_PAGE_ROUTE, REPRINT_PAGE_ROUTE } from './gaps'
 
 /**
  * 落地页的参数名 —— **与服务端逐字同名**。
@@ -59,13 +66,15 @@ export interface LandingCode {
 
 const ABSENT: LandingCode = { present: false, raw: '' }
 
-/** `decodeURIComponent` 遇到非法百分号编码会抛 —— 抛出去会把"读参数"变成白屏，故退回原样 */
-function decodeLoose(value: string): string {
-  try {
-    return decodeURIComponent(value)
-  } catch {
-    return value
-  }
+/**
+ * 从 URL query 串读**某个参数**（`?<name>=X` / `<name>=X`；无 ⇒ `present: false`）。
+ *
+ * 解析只有一份：`utils/scanInput.ts` 的 `readQueryParam`（issue #7879 起 h5 与小程序的入口
+ * 归一都收口到那个模块）—— 这里只做"读哪个参数名"的包装。
+ */
+function readParam(search: string | null | undefined, name: string): LandingCode {
+  const hit = readQueryParam(search, name)
+  return hit.present ? { present: true, raw: hit.raw } : ABSENT
 }
 
 /**
@@ -76,19 +85,7 @@ function decodeLoose(value: string): string {
  * —— 依赖「Taro 恰好把 search 也并进 params」是把判据挂在实现细节上。这里读的是 URL 本身。
  */
 export function landingCodeFromSearch(search?: string | null): LandingCode {
-  const text = String(search ?? '').replace(/^\?/, '')
-  if (!text) return ABSENT
-  for (const pair of text.split('&')) {
-    if (!pair) continue
-    const eq = pair.indexOf('=')
-    const key = decodeLoose(eq < 0 ? pair : pair.slice(0, eq))
-    if (key !== LANDING_CODE_PARAM) continue
-    const value = eq < 0 ? '' : pair.slice(eq + 1)
-    // `+` 在 query 里代表空格（工人从聊天记录里粘 URL 时会出现）：只做这一处还原，
-    // 其余**原样**交给服务端（短码归一化在服务端，见 `codeSpace.ts` 文件头）
-    return { present: true, raw: decodeLoose(value).replace(/\+/g, ' ') }
-  }
-  return ABSENT
+  return readParam(search, LANDING_CODE_PARAM)
 }
 
 /**
@@ -142,4 +139,43 @@ export function classifyLandingCode(raw?: string | null): LabelCodeReading {
  */
 export function reprintLandingUrl(raw: string): string {
   return `${REPRINT_PAGE_ROUTE}?${LANDING_CODE_PARAM}=${encodeURIComponent(String(raw ?? ''))}`
+}
+
+/**
+ * 报工落地页的参数名 —— **与服务端逐字同名**。
+ * 真值源 = `backend/admin-api/src/main/java/com/migao/admin/service/WorkerShortLinkService.java`
+ * 的 `reportPageLocation`（`REPORT_PAGE_PATH + "?t=" + token + …`）。
+ *
+ * 为什么 `t` 与 `code` 可以放心并存（issue #7879）：`/i/`（入库标签）302 只放
+ * `?code=<裸 8 位短码>`，`/s/` `/o/`（报工短链）只放 `?t=<32 位 token>`
+ * ⇒ **参数名与取值形态两两可区分**，不存在"这条 URL 属于哪个码空间"的歧义。
+ * 分流只按参数名，**码空间判定与授权判据仍在服务端**（两张表不同，互不命中）。
+ */
+export const REPORT_TOKEN_PARAM = 't'
+
+/** 从 URL query 串读报工 token（`?t=X` / `t=X`；无 ⇒ `present: false`）。 */
+export function reportTokenFromSearch(search?: string | null): LandingCode {
+  return readParam(search, REPORT_TOKEN_PARAM)
+}
+
+/**
+ * **h5 当前 URL** 上的报工 token（启动时读一次）。
+ *
+ * 与 {@link currentLandingCode} 同形（weapp 恒 `present: false`：小程序没有 URL query，
+ * 工人从微信扫一扫进小程序时走的是**页面参数**，不是这条 302），但下游**不同**：
+ * 本支去 `REPORT_PAGE_ROUTE`（报工页），`code` 支去补打页 —— 两支**不串道**。
+ */
+export function currentReportToken(): LandingCode {
+  if (!isH5()) return ABSENT
+  if (typeof window === 'undefined') return ABSENT
+  return reportTokenFromSearch(window.location?.search)
+}
+
+/**
+ * 报工页的落地 URL（**唯一**拼装处：路由与参数名都在这里，启动器与页面不各写一份）。
+ *
+ * token **原样**带走（32 位十六进制；归一化与撤销判定都在服务端）。
+ */
+export function reportLandingUrl(token: string): string {
+  return `${REPORT_PAGE_ROUTE}?${REPORT_TOKEN_PARAM}=${encodeURIComponent(String(token ?? ''))}`
 }

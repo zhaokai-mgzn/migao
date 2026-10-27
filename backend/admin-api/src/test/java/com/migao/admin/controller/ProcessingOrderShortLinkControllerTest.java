@@ -110,7 +110,7 @@ class ProcessingOrderShortLinkControllerTest {
                 .andReturn().getResponse();
 
         String location = response.getHeader("Location");
-        assertThat(location).isEqualTo("/w/?t=" + FIXTURE_TOKEN + "&tenant_id=7&tenant_code=migao");
+        assertThat(location).isEqualTo("/b/?t=" + FIXTURE_TOKEN + "&tenant_id=7&tenant_code=migao");
         Map<String, String> params = queryParams(location);
         assertThat(params.get("t")).as("token 参数").isEqualTo(FIXTURE_TOKEN);
         assertThat(params.get("tenant_id")).as("租户 id 参数").isEqualTo("7");
@@ -202,7 +202,7 @@ class ProcessingOrderShortLinkControllerTest {
                 .andReturn().getResponse();
 
         assertThat(found.getHeader("Location"))
-                .isEqualTo("/w/?t=" + REISSUED_TOKEN + "&tenant_id=7&tenant_code=migao");
+                .isEqualTo("/b/?t=" + REISSUED_TOKEN + "&tenant_id=7&tenant_code=migao");
         assertThat(reissued.getShortCode()).as("短码必须一字未动（已打印的纸不作废）").isEqualTo(SHORT_CODE);
 
         // 公开入口**只读**：不补码、不撤销（那是管理面的写路径）
@@ -224,11 +224,15 @@ class ProcessingOrderShortLinkControllerTest {
         assertThat(controller)
                 .as("控制器必须复用既有 reportPageLocation（复制第二份拼装 = 第二条真相源）")
                 .contains("WorkerShortLinkService.reportPageLocation(");
+        // 🔴 issue #7879：落地页由 `/w/` 改成 `/b/` ⇒ 两个字面量都要禁（只禁 `/w/` 等于给
+        // 「第二套拼装」留一条合法的退路：新代码照新路径自拼，旧断言照样绿）
         assertThat(controller)
                 .as("不得自拼报工页 URL（那会让改落地页路径只改一处）")
+                .doesNotContain("\"/b/")
                 .doesNotContain("\"/w/");
         assertThat(service)
                 .as("解析层也不得自拼报工页 URL")
+                .doesNotContain("\"/b/")
                 .doesNotContain("\"/w/");
     }
 

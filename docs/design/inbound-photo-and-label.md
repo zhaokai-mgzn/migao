@@ -81,7 +81,7 @@
 |---|---|---|
 | 工人身份与路径 | `/api/worker`：`POST /login`、`POST /session/switch`、`POST /session/logout`、`POST /session/current` | `backend/admin-api/src/main/java/com/migao/admin/controller/WorkerAuthController.java` |
 | 工人生产业务 | `/api/worker/production`：`GET /orders/{orderId}/operations`、`POST /orders/{orderId}/operations/{operationId}/report`、`GET /scan`、`POST /scan/complete`、`GET /current-worker` | `backend/admin-api/src/main/java/com/migao/admin/controller/WorkerProductionController.java` |
-| 工人短链入口 | `GET /s/{shortCode}`（302 换回 `/w/?t=<token>`）；短码 = 8 位、字母表 `0123456789ABCDEFGHJKMNPQRSTVWXYZ`（去 `I/L/O/U`，人可读可抄） | `backend/admin-api/src/main/java/com/migao/admin/controller/WorkerShortLinkController.java`；`backend/admin-api/src/main/java/com/migao/admin/service/WorkerShortLinkService.java`（`ALPHABET` / `CODE_LENGTH` / `REPORT_PAGE_PATH`） |
+| 工人短链入口 | `GET /s/{shortCode}`（302 换回 `/b/?t=<token>`，issue #7879 起；改前 `/w/`，兼容期仍可直连）；短码 = 8 位、字母表 `0123456789ABCDEFGHJKMNPQRSTVWXYZ`（去 `I/L/O/U`，人可读可抄） | `backend/admin-api/src/main/java/com/migao/admin/controller/WorkerShortLinkController.java`；`backend/admin-api/src/main/java/com/migao/admin/service/WorkerShortLinkService.java`（`ALPHABET` / `CODE_LENGTH` / `REPORT_PAGE_PATH`） |
 | 工人零商家权限 | `ADMIN_API_REJECTED_ROLES = Set.of("customer", "agent", "worker")` ⇒ 工人持 session 打 `/api/admin/**` 被拒 | `backend/admin-api/src/main/java/com/migao/admin/security/SecurityConfig.java` |
 | **图片识别（商家侧）** | `POST /api/admin/image-recognition`；**权限码按 `targetType` 动态取**（`product` → `product:create`，`order` → `order:create`），未知 target **400 fail-closed** | `backend/admin-api/src/main/java/com/migao/admin/controller/ImageRecognitionController.java`（`TARGET_PERMISSIONS` + `PermissionInterceptor.requirePermission`） |
 | **🔴 工人可达面缺口（本次实测结论）** | `/api/worker/**` 现有端点**没有任何**图像识别 / 标签解析 / 入库端点；而唯一的识别控制器挂在 `/api/admin/image-recognition` 且**按 target 取商家写码** ⇒ **工人双重被拒**（① 路径在 `/api/admin/**` 被 `ADMIN_API_REJECTED_ROLES` 拒；② 即便放行，工人**零商家权限码**，`requirePermission` 仍拒） | 上面三行合起来即结论；复算命令见附录 A |
@@ -225,7 +225,7 @@
 ### 5.4 入口衔接（**登记缺口，本文不拍板**）
 
 **实测**：`frontend/worker-h5` 是**零依赖纯 H5**（无 `package.json`），其唯一写入口是 `POST /api/worker/production/scan/complete`；
-而路径 `/s/{短码}` 302 落到 **`/w/`**（`WorkerShortLinkService.REPORT_PAGE_PATH`）。
+而路径 `/s/{短码}` 302 落到 **`/b/`**（`WorkerShortLinkService.REPORT_PAGE_PATH`，issue #7879 起；`/w/` 转兼容期）。
 ⇒ 若拍照入库链按裁定 12 落在 `frontend/bmini-app`，则**工人的「扫码直达」入口（`/w/`）与「拍照入库」页面（bmini-app h5）不在同一个应用里** ——
 **衔接方式**（在 `/w/` 页给一个去入库页的入口 vs 入库另配短码入口）**未定**，登记在此，由**实现 PR** 处置（**不要**为了衔接把 `worker-h5` 重写成有依赖的工程 —— 与裁定 13「不重写」冲突）。
 

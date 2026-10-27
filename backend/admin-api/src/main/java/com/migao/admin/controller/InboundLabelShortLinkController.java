@@ -22,7 +22,7 @@ import java.net.URI;
  * </pre>
  *
  * <h3>🔴 与 {@code GET /s/{短码}}（工人报工短链）是**两个码空间**</h3>
- * <p>{@code /s/} 是「哪一张工单纸」（302 → {@code /w/?t=<token>}），{@code /i/} 是「哪一张入库标签」
+ * <p>{@code /s/} 是「哪一张工单纸」（302 → {@code /b/?t=<token>}），{@code /i/} 是「哪一张入库标签」
  * （302 → 落地页）—— 语义不同、落地页不同，混用会把「扫标签」变成「进报工页」。
  * 两条入口各自解析自己的表（{@code inbound_labels} vs {@code processing_set_part_tokens}），
  * 一个码在另一条入口上**必须**解析不到（判据 = {@code InboundLabelSurfaceGuardTest} 的互斥断言

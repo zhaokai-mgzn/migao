@@ -132,27 +132,24 @@ export const WORKER_HOME_ROUTE = '/pages/worker/home/index'
 export const WORKER_HOME_PAGE_FILE = 'src/pages/worker/home/index.tsx'
 
 /**
- * 🔴 **小程序报工页已下架**（2026-10-14，issue #6868 实现包 D1；用户逐字「**没有用处的页面就直接删了**」）。
+ * 🔴 **报工页的起落（沿革不删，现状一句话）**：小程序报工页曾在 2026-10-14 按 issue #6868
+ * 整页下架（用户逐字「没有用处的页面就直接删了」），报工的唯一实现当时收敛到
+ * `frontend/worker-h5` 的 `/w/`；2026-10-26 用户**改判**（issue #7806「手机端收口到 bmini，
+ * 未来都要进入小程序」）⇒ #7812 P2a 把这一页在 bmini 里重建为 {@link REPORT_PAGE_ROUTE}。
  *
- * **历史沿革（不删）**：这里曾有 `PRODUCTION_PAGE_ROUTE = '/pages/production/index/index'` ——
- * 工人首页三件功能之一的入口常量。而工人报工的**唯一实现**是 `frontend/worker-h5`
- * （`/w/`，能力更全：工序选择器 / 机台页 / 已上线）⇒ 小程序侧那一页是**第二份实现**，
- * 已随本包删除（`src/pages/production/index/**` 三个文件）。
- *
- * **报工面现由 H5 `/w/` 承接**：工人扫纸上的码（微信浏览器直接开 H5）或直达
- * `https://app.migaozn.com/w/`。微信内承载 H5 **不用 web-view** —— 2026-09-29 的产品形态裁定
- * 「一端双编译（形态 A：小程序走原生页）」，留痕 = `src/utils/inbound/lpapiTransport.ts` 文件头。
+ * **#7879 起它是扫码的落地面**：纸上的码（`/s/<短码>`、加工单级的 `/o/<短码>`）由服务端 302 到
+ * `/b/?t=<token>&tenant_id=&tenant_code=` ⇒ h5 启动器把 token 交给本页
+ * （`src/utils/inbound/deepLink.ts` 的 `currentReportToken` / `reportLandingUrl`）。
+ * `/w/` 转入**兼容期**：仍可直连，但**不再是任何 302 的目标**（退役属 #7806 的 P3）。
+ * 微信内承载 H5 **不用 web-view** —— 2026-09-29 的形态裁定「一端双编译（形态 A：小程序走原生页）」，
+ * 留痕 = `src/utils/inbound/lpapiTransport.ts` 文件头。
  */
 
 /**
- * **拍照发货**页路由（issue #6761）—— 工人工作台的第 **4** 条入口（#5648 的 UI 面收口）。
+ * **扫码报工**页路由（issue #7812 P2a；#7879 起是扫码的落地面）—— 工人工作台的**第 1** 张行卡。
  *
- * 为什么要有它：#5648 把后端（`/api/worker/shipment/**`）与纯逻辑都落了码，
- * 而**从来没有页面入口**（`gh pr view 5664` §9 逐字登记为**半成品**）⇒ 商家端
- * `WorkerPageConfigPanel` 对商家承诺的「发货（工人拍照发货的那一面）」一直是空头支票。
- *
- * 🔴 路由字面量是**单一真值**：`src/app.config.ts` 的 pages 必须逐字含它
- * （没登记 = 死链；守卫 = `tests/page-entry-reachability.test.ts` 的 L2「未登记即红」）。
+ * 🔴 路由字面量是**单一真值**：`src/app.config.ts` 的 pages 必须逐字含它（没登记 = 死链），
+ * 且**两个**发射方都要登记进入口台账（工人首页的行卡 + h5 启动器的 `?t=` 深链）。
  */
 export const REPORT_PAGE_ROUTE = '/pages/worker/report/index'
 
@@ -162,17 +159,20 @@ export const REPORT_PAGE_FILE = 'src/pages/worker/report/index.tsx'
 /** 报工页未登录时的引导（与其它工人面同一口径）。 */
 export const REPORT_WORKER_LOGIN_REQUIRED = '请先用工号 + PIN 登录工人身份，再扫码报工。'
 
+/**
+ * **拍照发货**页路由（issue #6761）—— 工人工作台的一条入口（#5648 的 UI 面收口）。
+ *
+ * 为什么要有它：#5648 把后端（`/api/worker/shipment/**`）与纯逻辑都落了码，
+ * 而**从来没有页面入口**（`gh pr view 5664` §9 逐字登记为**半成品**）⇒ 商家端
+ * `WorkerPageConfigPanel` 对商家承诺的「发货（工人拍照发货的那一面）」一直是空头支票。
+ *
+ * 🔴 路由字面量是**单一真值**：`src/app.config.ts` 的 pages 必须逐字含它
+ * （没登记 = 死链；守卫 = `tests/page-entry-reachability.test.ts` 的 L2「未登记即红」）。
+ */
 export const SHIPMENT_PAGE_ROUTE = '/pages/worker/shipment/index'
 
 /** 拍照发货页文件（入口台账 `from` 要核的落点） */
 export const SHIPMENT_PAGE_FILE = 'src/pages/worker/shipment/index.tsx'
-
-/**
- * **扫码报工**页路由（issue #7812 P2a）—— 工人工作台的第一张行卡。
- *
- * 收口方向见 #7806：报工面的**小程序载体**（`/w/` 仍在线，直到 P2c 把短链目标切过来）。
- * 🔴 路由字面量是**单一真值**：`src/app.config.ts` 的 pages 必须逐字含它（没登记 = 死链）。
- */
 
 /**
  * **待发货单**列表页路由（issue #7806 P1a）—— 工人工作台**新增**的一条入口（只读列表页）。
@@ -205,14 +205,13 @@ export const WORKER_HOME_LOGIN_REQUIRED =
   '请先用工号 + PIN 登录工人身份，再使用工人功能（商家账号不能走这条路径）。'
 
 /**
- * 🔴 **报工页未登录引导已随页面下架**（2026-10-14，issue #6868 实现包 D1）。
+ * **报工页未登录引导**（issue #7812 P2a 重建；见上面的沿革）。
  *
- * **历史沿革（不删）**：这里曾是 `PRODUCTION_WORKER_LOGIN_REQUIRED`
- * （'请先用工号 + PIN 登录工人身份，再扫码报工（商家账号不能走这条路径）。'）——
- * 报工页在**无工人 session** 时的引导文案。页面已删 ⇒ 文案失去消费点；同一份
- * 「无工人身份 ⇒ 明说去登录」的口径仍活在**保留的工人面**上：`WORKER_HOME_LOGIN_REQUIRED`
- * （工人首页）/ `INBOUND_WORKER_LOGIN_REQUIRED`（拍照入库）/ `SHIPMENT_WORKER_LOGIN_REQUIRED`
- * （拍照发货），判据 = `frontend/bmini-app/tests/worker-surface-ledger.test.ts`。
+ * 历史沿革：2026-10-14（#6868 实现包 D1）页面下架时，这里的 `PRODUCTION_WORKER_LOGIN_REQUIRED`
+ * 一度失去消费点；页面回来后同一份口径以 {@link REPORT_WORKER_LOGIN_REQUIRED} 回归
+ * （'请先用工号 + PIN 登录工人身份，再扫码报工。'）。其余工人面各有一份同口径文案：
+ * `WORKER_HOME_LOGIN_REQUIRED`（工人首页）/ `INBOUND_WORKER_LOGIN_REQUIRED`（拍照入库）/
+ * `SHIPMENT_WORKER_LOGIN_REQUIRED`（拍照发货），判据 = `frontend/bmini-app/tests/worker-surface-ledger.test.ts`。
  */
 
 /** 补打页未登录时的引导（与入库页同一口径，但说清本页是"补打"） */

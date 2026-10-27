@@ -182,14 +182,14 @@ class WorkerShortLinkServiceTest {
     @DisplayName("302 目标 = 报工页 + token + 租户 id + 企业编码（相对 Location，不带请求 Host ⇒ 无开放重定向面）")
     void reportPageLocationShape() {
         assertThat(WorkerShortLinkService.reportPageLocation("9f8e7d6c5b4a39281706f5e4d3c2b1a0", 7L, "migao"))
-                .isEqualTo("/w/?t=9f8e7d6c5b4a39281706f5e4d3c2b1a0&tenant_id=7&tenant_code=migao");
-        assertThat(WorkerShortLinkService.reportPageLocation("abc", null, null)).isEqualTo("/w/?t=abc");
+                .isEqualTo("/b/?t=9f8e7d6c5b4a39281706f5e4d3c2b1a0&tenant_id=7&tenant_code=migao");
+        assertThat(WorkerShortLinkService.reportPageLocation("abc", null, null)).isEqualTo("/b/?t=abc");
         assertThat(WorkerShortLinkService.reportPageLocation("abc", 7L, null))
                 .as("企业编码取不到 ⇒ **不带** tenant_code（旧前端只认 tenant_id；两个参数并存是兼容期的有意形态）")
-                .isEqualTo("/w/?t=abc&tenant_id=7");
+                .isEqualTo("/b/?t=abc&tenant_id=7");
         assertThat(WorkerShortLinkService.reportPageLocation("abc", 7L, "migao"))
                 .as("必须**相对**（不以 http(s):// 或 // 开头）—— 否则就是拿请求 Host 拼绝对 URL")
-                .startsWith("/w/")
+                .startsWith("/b/")
                 .doesNotStartWith("//")
                 .doesNotContain("http");
     }

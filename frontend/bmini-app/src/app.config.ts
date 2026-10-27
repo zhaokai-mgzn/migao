@@ -19,11 +19,11 @@ export default defineAppConfig({
     // 改密端点(`POST /api/auth/password/change`)在强制改密白名单内、成功即换发新凭据
     // ⇒ 商家员工在本页自助改密，不必去电脑端
     'pages/auth/change-password/index',
-    // 🔴 **小程序工人扫码报工页已下架**（2026-10-14，issue #6868 实现包 D1）：
-    // 报工的唯一实现 = `frontend/worker-h5`（`/w/`）⇒ `pages/production/index/index` 是
-    // **第二份实现**，按用户裁定（「没有用处的页面就直接删了」）整页删除。
-    // **报工面现由 H5 `/w/` 承接**（工人扫纸上的码即开 H5；不用 web-view，见
-    // `src/utils/inbound/lpapiTransport.ts` 文件头的 2026-09-29 形态裁定）。
+    // 🔴 **小程序工人扫码报工页的起落**：2026-10-14 按 issue #6868 整页下架（当时报工唯一实现 =
+    // `frontend/worker-h5` 的 `/w/`）；2026-10-26 用户改判（#7806「手机端收口到 bmini」）后由
+    // #7812 P2a 重建 —— 现登记在下面（`pages/worker/report/index`），且 #7879 起**它就是扫码的
+    // 落地面**（服务端 `/s/` `/o/` 302 → `/b/?t=<token>`）。不用 web-view，见
+    // `src/utils/inbound/lpapiTransport.ts` 文件头的 2026-09-29 形态裁定。
     // 商家面（tabBar / pages/admin/** / pages/production/order-detail）一个字节都没动。
     // 工人登录（issue #4733）：工号 + PIN，主路径不依赖微信；与商家登录页是两条链路
     'pages/worker/login/index',

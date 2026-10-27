@@ -122,7 +122,7 @@
 
 ```
 纸上的码（永不变）          服务端（可变）                     实际页面（随便换）
-https://app.migaozn.com/s/7K3M9QP2  ──302──▶  https://app.migaozn.com/w/?t=<token>
+https://app.migaozn.com/s/7K3M9QP2  ──302──▶  https://app.migaozn.com/b/?t=<token>
                      │                                    │
         稳定域名 + 稳定路径段 /s/            ← 换框架/改路径只改这一跳的目标
 ```
@@ -131,7 +131,7 @@ https://app.migaozn.com/s/7K3M9QP2  ──302──▶  https://app.migaozn.com/
 |---|---|---|
 | 稳定域名 | **复用 `app.migaozn.com`**（实测已在用：C 端 H5 / 小程序合法域名 / nginx 已分流） | **不引新域名** —— 新域名 = 重新备案 = 已打印的码的额外风险 |
 | 稳定路径段 | `/s/<短码>`（服务端路由，**不是**前端路由） | 「换前端框架」时前端路由会变，服务端路由不会 |
-| 重定向目标 | 当前报工页（`/w/...`，带 token） | **只改这一跳** ⇒ 已打印的码继续有效 |
+| 重定向目标 | 当前报工页（`/b/?t=<token>`，bmini 的 `pages/worker/report/index`，issue #7879；`/w/` 转兼容期） | **只改这一跳** ⇒ 已打印的码继续有效 |
 | 谁实现 | **admin-api 新增端点** `GET /s/{shortCode}`（302）+ SecurityConfig 的 `permitAll` 列表**追加一条路径** | 短码 → token 要查库 ⇒ nginx 做不到；「只加不改」见 §7 |
 | 码的寿命 | **长寿命**（印刷品）+ **可撤销** | 撤销复用既有语义（§1.3.1） |
 
@@ -474,7 +474,7 @@ users (role='worker', permissions=[], worker_no=<工号>, password_hash=<PIN 的
 |---|---|---|---|
 | 1 | HTTPS 域名 | ✅ | 已有 |
 | 2 | **ICP 备案** | ✅ **已备案**（用户裁定） | —（风险解除） |
-| 3 | 稳定短链 + 服务端重定向 | ✅ **已落（issue #4802）** | 已落码：`GET /s/{短码}` ⇒ 服务端 **302** 到 `/w/?t=<token>&tenant_id=<id>`（§1.3） |
+| 3 | 稳定短链 + 服务端重定向 | ✅ **已落（issue #4802）** | 已落码：`GET /s/{短码}` ⇒ 服务端 **302** 到 `/b/?t=<token>&tenant_id=<id>`（§1.3；issue #7879 起由 `/w/` 改指 `/b/`，`/w/` 转兼容期） |
 | 4 | 人可读短码 + 输码入口 | ✅ **已落**（短码 = issue #4802；输码入口 = issue #4765） | 已落码：**8 位 Crockford Base32**（避开 `0/O`、`1/I/L`），与 `token` 同行两种表示（§1.4） |
 | 5 | 响应式两断点 | ❌ 待建 | 前端 |
 | 6 | 零 `wx.*` | 设计约束 | 前端 |
@@ -834,7 +834,7 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 | ① | A4 加工单右上角 QR 的内容 = **加工单号纯文本** | `frontend/admin-web/src/app/(dashboard)/orders/[id]/OrderDetail.tsx` 的 `<ProcessingDoc qrValue={processingOrder?.processingOrderNo ?? null}>`（两处调用：页面级 + 打印预览层） |
 | ② | 组件只负责画，不判内容形态（「缺码不画假码」） | `frontend/admin-web/src/components/orders/ProcessingDoc.tsx` 的 `qrValue` prop + `data-testid="processing-doc-qr"` |
 | ③ | 一部位一码**已经是** `{base}/s/{短码}` 标准 HTTPS URL | `frontend/admin-web/src/components/production/TaskCardPrint.tsx` 的 `position.scan_url ?? position.part_token`；`scan_url` 由 `backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java` 的 `scanUrlOf` 拼（base 可配 `migao.worker.short-link-base-url`，缺省 `https://app.migaozn.com`） |
-| ④ | `/s/{短码}` 的 302 与撤销语义**已落码** | `backend/admin-api/src/main/java/com/migao/admin/controller/WorkerShortLinkController.java` + `backend/admin-api/src/main/java/com/migao/admin/service/WorkerShortLinkService.java`（未知 404 / 已撤销 410 / `Location: /w/?t=<token>&tenant_id=&tenant_code=`） |
+| ④ | `/s/{短码}` 的 302 与撤销语义**已落码** | `backend/admin-api/src/main/java/com/migao/admin/controller/WorkerShortLinkController.java` + `backend/admin-api/src/main/java/com/migao/admin/service/WorkerShortLinkService.java`（未知 404 / 已撤销 410 / `Location: /b/?t=<token>&tenant_id=&tenant_code=`，issue #7879 起） |
 | ⑤ | 加工单级只有**可撤销的裸 `qr_token`**，没有短码 | `backend/admin-api/src/main/java/com/migao/admin/entity/ProcessingOrder.java` + `ProcessingOrderMapper.revokeQrToken`（撤销 = 置 NULL，不换新 token） |
 | ⑥ | H5 已能消费 `?t=<裸 token>`，旧形态走「选套 + 选部位」降级面 | `frontend/worker-h5/src/scan-input.mjs` 的 `parseScanInput` / `frontend/worker-h5/src/render.mjs`（`granularity:"order"` + `needs_selection` ⇒ 强制选，**绝不默认取第 1 套**） |
 | ⑦ | 服务端解析是**四形态**（`order_id` / `order_no` / `qr_token` / `processing_order_no`，`processing_order_no` 是后加的兜底） | `backend/admin-api/src/main/java/com/migao/admin/controller/ProcessingOrderController.java` 的读面注释 + `ProductionService.resolveOrder` |
@@ -874,11 +874,11 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 |---|---|---|
 | **迁移** | **加一列** `processing_orders.short_code CHAR(8)` + 部分唯一索引 `uk_processing_orders_short_code (short_code) WHERE deleted = 0 AND short_code IS NOT NULL`（**跨租户**全局唯一，同 §1.3 理由）。**不建新表**（论证见 §11.4 —— 存储形态与码空间是**两件独立的事**）。**号现取**（§11.5） | 与既有 `qr_token` **逐字同款**（`uk_processing_orders_qr_token (qr_token) WHERE deleted = 0 AND qr_token IS NOT NULL`）⇒ 存储形态零新意 |
 | **后端 · 分配** | `WorkerShortLinkService.allocateUnique(Predicate)` **直接复用**（同一份「随机 + 查重 + 碰撞重试 + 到顶 fail-closed」），**不新写循环** —— 该 `public static` 重载正是为第二个码空间抽出来的 | `WorkerShortLinkService.allocateUnique` |
-| **后端 · 解析** | **新** `GET /o/{shortCode}` ⇒ 302。未知 / 形态不合法 ⇒ 404；**已撤销**（`token` 置 NULL）⇒ 410 | 控制器与语义**照 `WorkerShortLinkController` 的范式**；302 目标**直接复用** `WorkerShortLinkService.reportPageLocation(token, tenantId, tenantCode)`（`REPORT_PAGE_PATH` 与租户参数拼装**只有这一份**） |
+| **后端 · 解析** | **新** `GET /o/{shortCode}` ⇒ 302（落 `/b/?t=<token>`，issue #7879 起）。未知 / 形态不合法 ⇒ 404；**已撤销**（`token` 置 NULL）⇒ 410 | 控制器与语义**照 `WorkerShortLinkController` 的范式**；302 目标**直接复用** `WorkerShortLinkService.reportPageLocation(token, tenantId, tenantCode)`（`REPORT_PAGE_PATH` 与租户参数拼装**只有这一份**） |
 | **后端 · 读面键** | 加工单读面**追加** `short_code` + `scan_url`（**键恒在、未知 ⇒ null**，与 #4946 的 `part_short_code` / `scan_url` 同款）；`scan_url = {base}/o/{short_code}`，`token` 为空或短码为空 ⇒ **`null`（不编造）**。装配：读活性判据 `selectActiveByOrderId` 已经带回 `po`（**零新增查询**） | `ProductionService.scanUrlOf` 的**同款写法**（base + 路径段不同 ⇒ 各自一份，不许互相拼） |
 | **后端 · 撤销语义** | **逐字复用 §1.3.1**：撤销 = `token` 置 NULL（**不换新 token**、**不碰 `short_code`**）⇒ `/o/{短码}` 410 | `ProcessingOrderMapper.revokeQrToken` **同一条 `UPDATE`**（`short_code` 与 `qr_token` 同表同行 ⇒ 状态**不存在两处**） |
 | **前端 · admin-web** | ① `ProcessingOrder` 类型追加 `short_code?` / `scan_url?`；② 调用方 `qrValue={processingOrder?.scan_url ?? null}`（**不再回落单号**）；③ `ProcessingDoc` 在 QR **下方**加一行**人可读短码**（形态照 `TaskCardPrint` 的 `task-card-label-short-code-*`，缺码印 `—`、**绝不编**）；④ 组件测试把 `qrValue="PO260926-0007"` 换成 URL 形态 + 加「短码行」判据 | `TaskCardPrint` 的「码 + 短码同行」是**同款范式** |
-| **消费面（H5；小程序是它在微信侧的壳）** | **零改动**：302 落点仍是 `/w/?t=<token>`，`parseScanInput` 的 `CODE_KEYS` 与四形态解析都不动 | §1.4 / §1.5 |
+| **消费面（H5；小程序是它在微信侧的壳）** | 302 落点 = `/b/?t=<token>`（issue #7879 起；改前 `/w/`），`parseScanInput` 的 `CODE_KEYS` 与四形态解析都不动 | §1.4 / §1.5 |
 | **契约账本** | `docs/wiki/CONTRACT-LEDGER.md` **追加**（**不改既有行**）：`GET /o/{短码}` 一条 + 加工单读面新增两键 | 与 #4802 / #4946 登记同款 |
 | **边缘 / 放行** | `SecurityConfig` 的 `permitAll` **追加一条** `"/o/**"`（漏了 ⇒ 扫码拿到 401，纸上的码等于没用）；`deploy/swas/nginx.conf` **追加** `location /o/`（照 `/i/` 逐行，`proxy_pass` **不带 URI 后缀**；漏了 ⇒ 静默落到 SPA fallback 出 200，线上只有真机扫码才发现） | `location /i/` 的注释已把这两个坑写死 |
 | **类级守卫** | 登记进 `CODE_SPACES`（`tests/unit_ci_workflows/test_public_code_spaces_are_disjoint.py`）⇒ 未登记即红；同时补 **F1~F3 边缘归属登记** | 该守卫的判据 A/B/C/D + F1~F3 |

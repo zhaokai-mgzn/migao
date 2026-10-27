@@ -44,7 +44,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *       部分扫码工具只认服务端跳转（用户裁定③）；</li>
  *   <li><b>撤销 ⇒ 410</b>（不是 404、更不是「静默回落到别的码」）：{@code token} 置 NULL = 这张纸作废；</li>
  *   <li><b>不泄露身份 / 权限</b>：响应体**为空**，Location 逐字等于
- *       {@code /w/?t=<token>&tenant_id=<id>&tenant_code=<code>}（不含工人 id/姓名/权限/订单/工序）；</li>
+ *       {@code /b/?t=<token>&tenant_id=<id>&tenant_code=<code>}（不含工人 id/姓名/权限/订单/工序）；</li>
  *   <li><b>冻结契约未被扩</b>：{@code /s/<32 位 token>} ⇒ **404** 且**一次库都不查**
  *       —— 本路径**只**认短码，{@code resolveOrder} / {@code resolve} 的既有五形态一字未动；</li>
  *   <li><b>手输可抄形态</b>：小写 / {@code O}/{@code I}/{@code L} 抄错形态 ⇒ 仍 302 到同一 token。</li>
@@ -102,7 +102,7 @@ class WorkerShortLinkControllerTest {
 
         mockMvc.perform(get("/s/" + SHORT_CODE))
                 .andExpect(status().isFound())
-                .andExpect(header().string("Location", "/w/?t=" + PART_CODE + "&tenant_id=7&tenant_code=migao"))
+                .andExpect(header().string("Location", "/b/?t=" + PART_CODE + "&tenant_id=7&tenant_code=migao"))
                 // 不泄露身份/权限：响应体为空
                 .andExpect(content().string(""));
     }
@@ -117,16 +117,16 @@ class WorkerShortLinkControllerTest {
 
         real.perform(get("/s/7k3m9qp0"))
                 .andExpect(status().isFound())
-                .andExpect(header().string("Location", "/w/?t=" + PART_CODE + "&tenant_id=7&tenant_code=migao"));
+                .andExpect(header().string("Location", "/b/?t=" + PART_CODE + "&tenant_id=7&tenant_code=migao"));
         real.perform(get("/s/7K3M9QPO"))
                 .andExpect(status().isFound())
-                .andExpect(header().string("Location", "/w/?t=" + PART_CODE + "&tenant_id=7&tenant_code=migao"));
+                .andExpect(header().string("Location", "/b/?t=" + PART_CODE + "&tenant_id=7&tenant_code=migao"));
         real.perform(get("/s/7K3M9QPI"))
                 .andExpect(status().isFound())
-                .andExpect(header().string("Location", "/w/?t=" + "a".repeat(32) + "&tenant_id=7&tenant_code=migao"));
+                .andExpect(header().string("Location", "/b/?t=" + "a".repeat(32) + "&tenant_id=7&tenant_code=migao"));
         real.perform(get("/s/7K3M9QPL"))
                 .andExpect(status().isFound())
-                .andExpect(header().string("Location", "/w/?t=" + "a".repeat(32) + "&tenant_id=7&tenant_code=migao"));
+                .andExpect(header().string("Location", "/b/?t=" + "a".repeat(32) + "&tenant_id=7&tenant_code=migao"));
     }
 
     // ────────────────────────────────────────────── ② 未知 / 已撤销
@@ -168,7 +168,7 @@ class WorkerShortLinkControllerTest {
         when(mapper.selectByShortCode(SHORT_CODE)).thenReturn(row(PART_CODE, SHORT_CODE));
         real.perform(get("/s/" + SHORT_CODE))
                 .andExpect(status().isFound())
-                .andExpect(header().string("Location", "/w/?t=" + PART_CODE + "&tenant_id=7&tenant_code=migao"));
+                .andExpect(header().string("Location", "/b/?t=" + PART_CODE + "&tenant_id=7&tenant_code=migao"));
     }
 
     @Test
@@ -179,7 +179,7 @@ class WorkerShortLinkControllerTest {
 
         mockMvc.perform(get("/s/" + SHORT_CODE))
                 .andExpect(status().isFound())
-                .andExpect(header().string("Location", "/w/?t=" + PART_CODE + "&tenant_id=7"));
+                .andExpect(header().string("Location", "/b/?t=" + PART_CODE + "&tenant_id=7"));
     }
 
     @Test
@@ -190,7 +190,7 @@ class WorkerShortLinkControllerTest {
 
         mockMvc.perform(get("/s/" + SHORT_CODE))
                 .andExpect(status().isFound())
-                .andExpect(header().string("Location", "/w/?t=" + PART_CODE + "&tenant_id=7&tenant_code=migao"));
+                .andExpect(header().string("Location", "/b/?t=" + PART_CODE + "&tenant_id=7&tenant_code=migao"));
         verify(workerShortLinkService).tenantCodeOf(7L);
     }
 }

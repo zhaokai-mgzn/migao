@@ -46,6 +46,10 @@ const Taro = {
   // （h5 路由 query 与**小程序页面参数**共用这一侧）⇒ 默认无参，具体用例用
   // `mockReturnValue` 注入 `{ router: { params: { code: '…' } } }`。
   getCurrentInstance: jest.fn(() => ({ router: { path: '', params: {} } })),
+  // issue #7879：小程序冷启动的进入参数（A 档「扫普通链接二维码打开小程序」读 query.q；
+  // B 档小程序码读 query.scene）。默认空 ⇒ 解析器返回「不去任何页」。
+  getEnterOptionsSync: jest.fn(() => ({ query: {}, scene: 0 })),
+  scanCode: jest.fn(() => Promise.resolve({ result: '' })),
 
   // 媒体（拍照入库 issue #5052 P3）：h5 里 `chooseImage` / `uploadFile` 都是**真实实现**
   // （chooseImage → chooseMedia → `<input type=file>`；uploadFile → XHR + FormData）

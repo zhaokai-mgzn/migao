@@ -19,9 +19,9 @@
  * ## 入口在**哪个应用**里都可以登记（跨应用入口也是一条真入口）
  *
  * `frontend/bmini-app`（h5 产物落在 `app.migaozn.com/b/`）与 `frontend/worker-h5`
- * （零依赖纯静态，落在 `app.migaozn.com/w/`）**同源同静态根**：工人手里常开的那个页面是 `/w/`
- * （他一天扫几十次洗水码报工），因此 `/w/` 上的两个链接就是工人面两页的**真实动线**入口
- * （设计 §5.4 的两条路选了 (a)，理由见 PR）。
+ * （零依赖纯静态，落在 `app.migaozn.com/w/`）**同源同静态根**。**issue #7879 起**：纸上的码
+ * （`/s/` `/o/`）302 到 `/b/`、报工面在 bmini ⇒ 工人**扫码落地的入口**也在 `/b/`（`src/app.tsx`），
+ * `/w/` 只作兼容期直连（`/w/` 页头那两条入库入口已于 2026-10-10 撤除，见台账里 #6635 的说明）。
  *
  * ## 边界（明确的，不要把本台账读成覆盖面更大的东西）
  *
@@ -137,7 +137,8 @@ export const PAGE_ENTRY_LEDGER: PageEntry[] = [
   // （扫码报工 / 拍照入库 / 补打入库标签，issue #5747 补的）—— 三件功能已归位到工人登录后的工作台，
   // 商家面不再发射它们。**三页的可达性不受影响**：扫标签深链各有一条，
   // 台账末尾的工人工作台还有**三条**真入口（入库 / 补打 / 发货；`/w/` 页头那两条已于 2026-10-10
-  // 撤除，见上面的说明；报工那条已随页面下架 —— 2026-10-14，issue #6868 实现包 D1）。
+  // 撤除，见上面的说明；报工那条 2026-10-14 曾随页面下架 —— 2026-10-26 用户改判后由 #7812 恢复，
+  // 见台账末尾的两条 `REPORT_PAGE_ROUTE` 登记）。
   {
     route: '/pages/admin/pool/index',
     from: 'src/pages/profile/index/index.tsx',
@@ -211,9 +212,9 @@ export const PAGE_ENTRY_LEDGER: PageEntry[] = [
   },
   // 🔴 issue #6868 实现包 D1：这里原本登记着「工人首页 → 扫码报工」（route = 已删除的
   // `PRODUCTION_PAGE_ROUTE`）—— 报工页整页下架 ⇒ 工人首页的「扫码报工」主按钮是死链，一并删除
-  // （身份卡 + 入库 / 补打 / 发货三张行卡保留）。**报工面现由 H5 `/w/` 承接**：工人扫纸上的码
-  // （微信浏览器直接开 H5）或直达 `app.migaozn.com/w/` —— 跨应用入口不在本台账的射程内
-  // （本台账只登记 bmini 页面的入口，见文件头边界 ①）。
+  // （身份卡 + 入库 / 补打 / 发货三张行卡保留）。**报工面已于 #7812 回到 bmini**（路由常量
+  // `REPORT_PAGE_ROUTE`），且 #7879 起它是扫码的落地面（服务端 302 → `/b/?t=`）—— 见台账末尾
+  // 那**两条** `REPORT_PAGE_ROUTE` 登记（端内点击 + 扫码落地）。
   {
     route: INBOUND_PAGE_ROUTE,
     from: 'src/pages/worker/home/index.tsx',
@@ -242,7 +243,9 @@ export const PAGE_ENTRY_LEDGER: PageEntry[] = [
     audience:
       '工人身份（工人首页 →「拍照发货」；未登录时该页自身引导去工号 + PIN 登录，先登录再发货）',
   },
-  // issue #7812 P2a：工人工作台**新增**「扫码报工」（小程序内的报工面；`/w/` 仍在线到 P2c）。
+  // issue #7812 P2a：工人工作台**新增**「扫码报工」（小程序内的报工面）。
+  // 🔴 issue #7879：`/w/` 不再是跳转目标（纸上的码已改指 `/b/`）⇒ 下面**两条**登记都要在：
+  // 这一条 = 工人**端内点击**的入口；下一条 = **扫码落地**（服务端 302 到 `/b/?t=`）的入口。
   {
     route: REPORT_PAGE_ROUTE,
     from: 'src/pages/worker/home/index.tsx',
@@ -251,6 +254,19 @@ export const PAGE_ENTRY_LEDGER: PageEntry[] = [
     viaBinding: 'src/utils/inbound/gaps.ts',
     audience:
       '工人身份（工人首页 →「扫码报工」；未登录时该页自身引导去工号 + PIN 登录）',
+  },
+  // issue #7879：**扫码的落地面** —— 纸上的码（`/s/<短码>`、加工单级 `/o/<短码>`）由服务端
+  // 302 到 `/b/?t=<token>&tenant_id=&tenant_code=`，h5 启动器把 token 交给报工页。
+  // 为什么必须有这一条：改前 `/b/` 上**没有任何人读 `t`** ⇒ 工人扫开自家纸上的码只会停在
+  // 商家首页（与 #5052 的 `?code=` 同一种静默失败，且不会有任何东西变红）。
+  {
+    route: REPORT_PAGE_ROUTE,
+    from: 'src/app.tsx',
+    nav: 'redirectTo',
+    via: 'reportLandingUrl',
+    viaBinding: 'src/utils/inbound/deepLink.ts',
+    audience:
+      '公开入口 → 工人身份（扫纸上的码：`GET /s/{短码}` 302 到 `/b/?t=<token>`，启动器把 token 原样交给报工页；未登录时页面引导去工号 + PIN 登录，登录回来接着扫）',
   },
   // issue #7806 P1a：工人工作台**新增**的一条入口（「待发货单」= 全完工订单列表，只读）。
   // 为什么必须有这一条：#7764 的读面 `GET /api/worker/shipment/orders` 已上线，而 `/b/` 侧

@@ -831,7 +831,7 @@
 真值: auth.qr-login-ticket
 溯源: 2026-10-26 新增（issue #7825）：现场 = 顶栏「手机端」二维码只是裸链接（不带登录交接），换浏览器 / App 或本机存储被清后每次扫码都要重新输密码。冻结口径 = 一次性票据（JWT 类型 qr_login、120 秒、兑换即吊销 jti）+ 手机端兑换后与密码登录同一套 30 天会话 + 签发失败降级裸入口 + 启动探针（续期失败原因本地可读）。 ｜ tags: auth, session, qr-login, bmini, admin-web
 
-## B 端小程序域（49 case）
+## B 端小程序域（50 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -898,7 +898,7 @@
 端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
 期望: direct_reply
 数据: 🔴 **本用例的承载体已改钉到工人端 H5 `/w/`**（2026-10-14，issue #6868 实现包 D1；逐字口径见 merge_log）：工人报工的唯一实现是 frontend/worker-h5（零构建原生 ESM 静态页）；小程序侧那**第二份实现**（frontend/bmini-app/src/pages/production/index/**）按用户裁定（「没有用处的页面就直接删了」）整页删除 ⇒ 本用例原挂在它上面的页面级断言随之改钉到 H5 面。**退休登记本身也有判据**（不留「描述了不存在的页面」的用例）：该页已不在 frontend/bmini-app/src/app.config.ts 的 pages 里、工人工作台也不再发射指向它的入口 —— 证据 frontend/bmini-app/tests/page-entry-reachability.test.ts（L0/L2 入口台账）+ frontend/bmini-app/tests/worker-home-page.test.tsx（「扫码报工」主按钮不渲染的反向断言）
-数据: 码的容错解析（H5 侧）：`/w/?t=<码>`（服务端 `/s/<短码>` 302 的落点）在**装载时解析一次**并直接渲染解析结果 —— 已登录工人扫部位码不再停在「输码」空态（issue #6866）；旧码降级（`granularity=order`）⇒ 显式提示必须选部位、**不**出【开工】按钮（绝不默认取第 1 套）；解析失败 ⇒ 上屏服务端点名的原因。证据：frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs + frontend/worker-h5/tests/worker-h5-legacy-code.test.mjs + frontend/worker-h5/tests/worker-h5-6866-scan-landing.test.mjs
+数据: 码的容错解析（H5 侧）：`/w/?t=<码>`（**2026-10-27 起 `/s/<短码>` 的 302 落点改成 `/b/?t=<token>`**，见 BM-053 issue #7879；`/w/` 转兼容期，解析面照旧认这种旧形态，判据 = frontend/worker-h5/tests/worker-h5-6866-scan-landing.test.mjs）在**装载时解析一次**并直接渲染解析结果 —— 已登录工人扫部位码不再停在「输码」空态（issue #6866）；旧码降级（`granularity=order`）⇒ 显式提示必须选部位、**不**出【开工】按钮（绝不默认取第 1 套）；解析失败 ⇒ 上屏服务端点名的原因。证据：frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs + frontend/worker-h5/tests/worker-h5-legacy-code.test.mjs + frontend/worker-h5/tests/worker-h5-6866-scan-landing.test.mjs
 数据: 🔴 **扫码 = 开工 / 领活**（issue #4967，2026-09-21 用户逐字裁定①「工人都是先扫码报工后再真实进行生产」）：H5 一屏的大按钮文案 = **【报工】**（`id=wh5-report`；2026-10-14 用户逐字裁定②「工人屏全部统一到『报』」把工人可见面统一到「报」⇒ 由【开工】改钉为【报工】；**id 与动作一字未改**；改回【完成】或改回【开工】⇒ 必红）；点它只调一次 `POST /api/worker/production/scan/complete`（数量/身份都不传：数量缺省由服务端取剩余应做、身份由服务端从工人 session 解）；报工在飞期间按钮禁用 + 说「提交中」（issue #6667 第 4 条，涉计件正确性）；未确定工序（operation=null）⇒ 屏上**没有**【开工】按钮。记账口径（`started_at` / `done_at` / 一次事务）一字不动（见 PG-018）。证据：frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs + frontend/worker-h5/tests/worker-h5-page.test.mjs
 数据: 🔴 **按套展示工序细节**（issue #4967 交付物 2）：扫码后（除「当前这道 + 按钮」外）列出**本套各部位的工序明细**（逻辑名 / 应做数量+单位 / 单价 / 状态 / 已报数量）。数据**只**来自服务端解析响应的 `set_overview`（聚合只有一份，见 PG-058）—— 页面**不**自己聚合、也**不**另拉 `GET /api/worker/production/orders/{orderId}/operations` 再按套重排（第二份口径）。🔴 **缺值不渲染**：`set_overview` 缺失 / `positions` 为空 ⇒ 明细块一个字节都不出现（不渲染 undefined 米 / ¥NaN）；`unit_price` 为 `null` = **未定价**（≠ 0 元，issue #4696）显式写「未定价」。证据：frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs（⑨ / ⑨-b / ⑨-c / ⑩）
 数据: 🔴 **工序选择器**（issue #6635，2026-10-10 用户裁定 = 选项 A）：扫一次码后，解析响应的 `operation`（系统推断的那道）+ `alternatives`（其它待领工序）一起渲染成**正常的工序选择器**（稳定 id `wh5-op-picker`，标签「选工序（点哪道就领哪道）」，当前那道带 `is-on` + `aria-pressed=true`）；点别的候选 ⇒ 走既有**一键改**（`GET /scan?operation_id=…`，归属由服务端校验 = 防呆④）；点当前已选中那道 ⇒ **一个请求都不发**（no-op）。证据：frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs（② / ②-b）+ frontend/worker-h5/tests/worker-h5-operation-display.test.mjs
@@ -1525,6 +1525,21 @@
 ```
 真值: inbound-order-flow.worker-recognize-decoding-first, inbound-order-flow.worker-narrow-surface
 溯源: 2026-10-25 新增（issue #7759）：用户实测「商品有 sku 2659-04 绵绵奶咖，和图中的布料型号能对上，但拍照入库无法识别供应商侧的布料标签」。真因 = 匹配键用过内部商品名 + 色号且都是精确相等（供应商标签是它自己的型号命名空间），而图上唯一靠得住的 2659-4 没有任何字段可承载。修法：识别面补 model_no 一格、匹配面改「归一化 + 多级降级 + 仍绝不猜」、端侧补逐格结果上屏与只读货号搜索。**未做 / 边界**：供应商型号与内部货号的对应关系目前靠数据巧合（该商品货号恰好就是供应商型号），长远的「供应商货号对照表」不在本单；缸号仍只做「能识别 + 能预填」，不做校验。**追加（用户 2026-10-25 裁定，见 issue 评论）**：门幅按「标签没印 = 行业标准 2.8 米」处理（非标准门幅会印在标签上）—— 默认值只放服务端一处常量；标签写了库里没有的门幅 ⇒ 零命中、不回落；该商品没有 2.8 档 ⇒ 退回候选交工人选。 ｜ tags: bmini, inbound, sku-gate, supplier-label
+
+### BM-053. 扫码报工落地面从 /w 改到 /b - 302 目标改成 /b/?t=<token>，h5 启动器把 token 交给报工页（/w 不再是任何跳转生产者） 🔵
+```
+你: 工人用微信扫加工单 / 水洗唛上的码（https://app.migaozn.com/s/<短码>）：服务端 302 到 /b/?t=<token> 后直接开到报工页（一屏：套号 / 部位 / 工序 / 应做 / 进度 → 报工 → 回执），不再出现 /w 路径
+期望: direct_reply
+数据: 判据 1·**302 目标逐字 = /b/?t=…**：`GET /s/{短码}` 与 `GET /o/{短码}` 的 `Location` = `/b/?t=<token>&tenant_id=<id>&tenant_code=<code>`（查询串口径一字未动，只换落地面），拼装仍只有 `WorkerShortLinkService.reportPageLocation` 一份；未知短码 ⇒ 404、已撤销 ⇒ 410 一格未变。红证（实跑过）：把 `REPORT_PAGE_PATH` 改回 `/w/` ⇒ WorkerShortLinkControllerTest / ProcessingOrderShortLinkControllerTest / SecurityConfigTest / WorkerShortLinkServiceTest 的逐字断言全红（读数见 issue #7879 的实现 PR）。证据：backend/admin-api/src/test/java/com/migao/admin/controller/WorkerShortLinkControllerTest.java + frontend/bmini-app/tests/report-landing.test.ts
+数据: 判据 2·**h5 启动器把 token 交给报工页，且与 `?code=` 支线不串道**：`/b/?t=<token>` ⇒ `Taro.redirectTo('/pages/worker/report/index?t=<token>')`；`/b/?code=<短码>` 仍走补打页（负控）；一个参数都没有 ⇒ 不动路由；两者同时出现 ⇒ 以 `t` 为准。红证（实跑过）：删掉 src/app.tsx 的 `t` 支线 ⇒ report-landing.test.ts 的 B1 判红（页面停在 chat/index，工人扫开纸上的码什么也没发生）。证据：frontend/bmini-app/tests/report-landing.test.ts
+数据: 判据 3·**商家首页不抢路由**：URL 上带 `?t=` 时 `src/pages/chat/index/index.tsx` 不排「未登录 ⇒ 600ms 去商家登录页」的定时器（与 `?code=` 同款守卫）。红证：去掉那道闸 ⇒ B3 行为面带码落地判红（工人被踢到商家登录页，且没有任何东西会报警）。证据：frontend/bmini-app/tests/report-landing.test.ts
+数据: 判据 4·**报工页四条硬约束不因换落地面而放宽**：旧码（`granularity=order`）进选套态**绝不默认第 1 套**；`operation == null` ⇒ **不出报工按钮**；未登录 ⇒ 不出报工按钮且明说去哪登录；回执驱动下一屏（前端不猜）。红证（实跑过）：去掉「工序未确定不出现报工按钮」的判断 ⇒ worker-report-page.test.tsx 的 ② 判红。证据：frontend/bmini-app/tests/worker-report-page.test.tsx + frontend/bmini-app/tests/report-state.test.ts
+数据: 判据 5·**入口可达（两条都要在册）**：报工页在 `src/app.config.ts` 的 pages 里，且入口台账有**两条**发射方（工人首页的「扫码报工」行卡 / h5 启动器的 `?t=` 深链）；未登记即红、登记了没人指向也红。证据：frontend/bmini-app/tests/page-entry-reachability.test.ts + frontend/bmini-app/tests/report-landing.test.ts 的 B4
+数据: 判据 6·**反向钉住（/w 不再是跳转生产者）**：`WorkerShortLinkService.REPORT_PAGE_PATH` == `/b/`，且 src/app.tsx / 工人首页 / 入口台账的**代码**里不再出现 `/w/`（兼容期只允许「静态面可直连」这一条历史陈述，写在注释里）。红证：把 REPORT_PAGE_PATH 换回 `/w/` ⇒ report-landing.test.ts 的 B4 判红 + Java 四个测试类红。证据：frontend/bmini-app/tests/report-landing.test.ts
+跳过: [backend-contract] 确定性判据（maven: WorkerShortLink* / ProcessingOrderShortLink* / SecurityConfigTest；jest: report-landing / worker-report-page / report-state / page-entry-reachability），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: processing-manage.scan-report-landing-path
+溯源: 2026-10-27 新增（issue #7879；用户逐字「从加工单的二维码上扫码现在跳转的仍然是 /w 页面，这个页面为什么没有合并到 /b 页面？」「把跳转链接 /w 改成 /b，统一进手机端页面，不要再出现 /w 路径」）。改动 = ① `WorkerShortLinkService.REPORT_PAGE_PATH` 由 `/w/` 改 `/b/`（查询串口径一字未动 ⇒ 已印的码继续有效）；② bmini h5 启动器补 `?t=` 支线（`reportLandingUrl` → 报工页 `pages/worker/report/index`，该页 = #7812 P2a 已落地的报工面），与原 `?code=`（补打页）按参数名分流、不串道；③ 商家首页同款守卫不抢路由（带 `?t=` 时不让 600ms 定时器把人踢到商家登录页）；④ 入口台账补「扫码落地」一条（工人首页那条早在 #7812 就在册）。**边界（照实登记）**：`/w/` 静态面本期**保留可直连**（退役含 nginx / 发布腿 / worker-h5 判据，属 #7806 P3）；解析面照旧接受 `/w/?t=` 旧落地形态；小程序发版是人工环节（合并 ≠ 工人手机上是新版；`/b/` H5 腿自动发布）；真机验收（微信扫一扫 / 相册选码 / 弱网重试）需现场配合；记账口径一字不动（`done_at` / 计件单价固化 / 幂等键全在服务端）。 ｜ tags: bmini, worker, scan-landing
 
 ## 分类域（3 case）
 
@@ -8341,7 +8356,7 @@
 数据: 租户隔离与软删：订单/工序实例/报工记录均按 tenant_id + deleted=0 过滤；跨租户订单或不属于该订单加工单的工序 → 404，且不落报工明细
 数据: 订单解析**四形态**（issue #4005 + #4222）：GET/报工/计件的 {orderId} 路径参数支持 ① 内部 order_id ② 订单号 order_no（手输纸质单号）③ 加工单 qr_token（M4-H 打印任务卡二维码的取值来源）④ **加工单号 processing_order_no**（工人端「或手输加工单号」兜底路径 + 任务卡上唯一可抄的号；qr_token 只以二维码图形呈现、无可读文本，issue #4222）——四级都不中才 404；租户隔离/deleted 过滤逐级保持，④ 与 ③ 同构且插在其后（既有三形态优先级不变）。（证据：ProductionServiceTest 4 项含 #4222 的加工单号形态 + ProductionControllerTest「路径参数=qr_token」1 项）
 数据: Agent 冻结契约（并行包消费）：GET /api/admin/agent/production/progress?order_no= 返回键集固定 **11 键** {order_no,status,status_text,progress_percent,current_operation,logical_name,position,pending_operations,total_operations,done_operations,expected_delivery_date}（**键集恒定** —— `position` 在部位无关工序上值为 null、**键仍在**：省键 = 前端渲染 undefined；2026-09-20 / issue #4643 由 **9 键**追加 `logical_name` + `position` 两键（web 界面显示名），**只加不改** —— `current_operation` / `pending_operations` 仍是**工人端快照名**（如 `精裁-布`）一字未动，agent 与其它消费者照读）；GET /piecework?worker_name=&period=YYYY-MM 返回 {worker_name,period,total,details:[{operation,qty,amount}]}（缺键/改名即红）。2026-09-20（issue #4621）：`details` 每项**追加** `logical_name` + `position`（**只加不改** —— 既有键名/含义一字未动，`operation` 仍是工人端快照名；派生是**读时**做的、不写库）。⚠️ **相邻真值（防混读）**：`variant_name` 与本端点无关 —— 它已由 #4622 从 `GET /operation-positions` 的键集移除（部位价目项 11 键 ⇒ **10 键**），见 PP-014
-数据: 🔴 加工单级公开短链（issue #6867 / 实现包 B2；设计 docs/design/worker-h5-scan-and-report.md §11.3 / §11.6 / §11.9(B2 行)）：纸上的码 = `{base}/o/{短码}`（**加工单级**稳定短链，不再是加工单号纯文本），`GET /o/{shortCode}` **三形态** —— ① 命中且 `qr_token` 非空 ⇒ **302** + `Location: /w/?t=<qr_token>&tenant_id=<租户id>&tenant_code=<企业编码>`（**与 `/s/` 逐字同款三参数**，拼装复用 `WorkerShortLinkService.reportPageLocation`，**无第二份实现**）；② 短码未知 / 形态不合法 ⇒ **404**（一次库都不查）；③ 行在但 `qr_token` 为 NULL（**已撤销**）⇒ **410 Gone**。🔴 撤销 = `qr_token` 置 NULL、**`short_code` 一字未动** ⇒ 已打印的纸**不作废**、重新发码（只补 `token IS NULL` 的行）后**同一短码**仍 302（判据逐条：`/o/<短码>` 302 三参数齐全 / 未知 404 / 已撤销 410 / **短码不变**）。🔴 加工单纸是**单级**的（只有单、天然指不出部位）⇒ 302 落点必然走 H5 的「选套 → 选部位」降级面（`granularity=order` + `needs_selection`，**绝不默认取第 1 套**）。🔴 **不泄露**：响应体为空、`Location` 查询参数**恰好三个**（不带加工单号 / 客户 / 工序 / 价格 / 工人身份）；且它**只是跳转** —— 真数据在 `/api/worker/**` 上，那一层要求有效工人 session（无 session ⇒ **401**，WorkerSessionFilter fail-closed；纵向越权由 ADMIN_API_REJECTED_ROLES 含 worker 挡 `/api/admin/**`）。证据：backend/admin-api/src/test/java/com/migao/admin/controller/ProcessingOrderShortLinkControllerTest.java（三形态 + Location 逐参 + 撤销后短码不变 + 公开入口只读）+ backend/admin-api/src/test/java/com/migao/admin/security/SecurityConfigTest.java（真安全链：`/o/{短码}` 公开 ⇒ 404 而非 401；有效短码 ⇒ 302 + Location；未带工人会话直接打 `/api/worker/production/scan` ⇒ 401）
+数据: 🔴 加工单级公开短链（issue #6867 / 实现包 B2；设计 docs/design/worker-h5-scan-and-report.md §11.3 / §11.6 / §11.9(B2 行)）：纸上的码 = `{base}/o/{短码}`（**加工单级**稳定短链，不再是加工单号纯文本），`GET /o/{shortCode}` **三形态** —— ① 命中且 `qr_token` 非空 ⇒ **302** + `Location: /b/?t=<qr_token>&tenant_id=<租户id>&tenant_code=<企业编码>`（2026-10-27 起落地面由 `/w/` 改指 `/b/`，issue #7879；查询串一字未动）（**与 `/s/` 逐字同款三参数**，拼装复用 `WorkerShortLinkService.reportPageLocation`，**无第二份实现**）；② 短码未知 / 形态不合法 ⇒ **404**（一次库都不查）；③ 行在但 `qr_token` 为 NULL（**已撤销**）⇒ **410 Gone**。🔴 撤销 = `qr_token` 置 NULL、**`short_code` 一字未动** ⇒ 已打印的纸**不作废**、重新发码（只补 `token IS NULL` 的行）后**同一短码**仍 302（判据逐条：`/o/<短码>` 302 三参数齐全 / 未知 404 / 已撤销 410 / **短码不变**）。🔴 加工单纸是**单级**的（只有单、天然指不出部位）⇒ 302 落点必然走 H5 的「选套 → 选部位」降级面（`granularity=order` + `needs_selection`，**绝不默认取第 1 套**）。🔴 **不泄露**：响应体为空、`Location` 查询参数**恰好三个**（不带加工单号 / 客户 / 工序 / 价格 / 工人身份）；且它**只是跳转** —— 真数据在 `/api/worker/**` 上，那一层要求有效工人 session（无 session ⇒ **401**，WorkerSessionFilter fail-closed；纵向越权由 ADMIN_API_REJECTED_ROLES 含 worker 挡 `/api/admin/**`）。证据：backend/admin-api/src/test/java/com/migao/admin/controller/ProcessingOrderShortLinkControllerTest.java（三形态 + Location 逐参 + 撤销后短码不变 + 公开入口只读）+ backend/admin-api/src/test/java/com/migao/admin/security/SecurityConfigTest.java（真安全链：`/o/{短码}` 公开 ⇒ 404 而非 401；有效短码 ⇒ 302 + Location；未带工人会话直接打 `/api/worker/production/scan` ⇒ 401）
 数据: 🔴 加工单级短链的**边缘归属与类级守卫**（issue #6867 / B2；F1~F3）：新前缀 `/o/` 必须在**两处**登记（只登记一处 ⇒ 红）—— ① tests/unit_ci_workflows/test_public_code_spaces_are_disjoint.py 的 `CODE_SPACES`（语义 + 解析文件；判据 A 按「控制器里发现的前缀 == 登记键集」比，未登记即红）；② 同文件的 `PUBLIC_PREFIX_FACES`（NginxFace：prefix=/o/、kind=FACE_PROXY、owner=admin-api（ProcessingOrderShortLinkController，issue #6867）、upstream=admin-api:8080）；③ `SecurityConfig` 的 permitAll 必须含 `/o/**`（漏 ⇒ 扫码工具只拿到 401，纸上的码等于没用）；④ `deploy/swas/nginx.conf` 必须有 `location /o/`（照 `/i/` 逐行、proxy_pass **不带 URI 后缀**）—— **删掉它 ⇒ 判据 F3 当场红并指名「落到了 location / 的 SPA fallback」（200 + C 端元元首页，静默串端）**；⑤ 限流预算：`/o/` 与 `/s/`、`/i/` **同档**（worker_entry burst 1000）且必须落在 `$worker_entry_key` 的 map 覆盖内，否则 nginx「空 key 不计账」⇒ 限流是**空断言**（判据 = tests/unit_ci_workflows/test_swas_nginx_rate_limit.py 判据 4/6/8，注入式红证对 `/i/` 与 `/o/` 各跑一遍）；⑥ **未注解端点登记**：`GET /o/{}` 必须登记进 tests/unit_ci_workflows/test_agent_permission_parity.py 的 `UNANNOTATED_ENDPOINTS`（判据 8「未注解端点 = 显式登记的决定」；漏 ⇒ 红 —— 本包实测踩到过一次，CI 的 `ci workflow helper unit tests` 当场判红）。证据：tests/unit_ci_workflows/test_public_code_spaces_are_disjoint.py + tests/unit_ci_workflows/test_swas_nginx_rate_limit.py
 跳过: [backend-contract] 后端契约用例（写路径无 LLM 环节，不进 agent-eval 冒烟）：断言全部由 Java 单测执行 —— ProductionControllerTest / AgentProductionControllerTest（MockMvc，含返回键集冻结断言）/ ProductionServiceTest（服务层语义）/ ProcessingOrderServiceTest（生成加工单即实例化：库逐条一致 + fail-closed）/ ProductionOperationQueryServiceTest（工序库只读消费者 + findRouting）/ Mapper 契约测试（实体 ↔ V49 迁移 ↔ docs/sql/schema.sql 三源收敛）/ ProductionReportingMigrationTest（迁移与 qr_token 索引）
 ```
@@ -10667,7 +10682,7 @@
 期望: direct_reply
 数据: 🔴 码形态：短码 = 8 位且每个字符都在 Crockford 字母表 `0123456789ABCDEFGHJKMNPQRSTVWXYZ` 内（生成面**从不产出** `I/L/O/U`）；手抄形态（小写 / `O` / `I` / `L`）归一化到同一短码（`O→0`、`I,L→1`）；形态不合法（长度不对 / 字符集外）⇒ 一次库都不查
 数据: 🔴 唯一与碰撞：分配器查重同时看**活码与留档码**（已撤销的码永不复发，DB 侧由 `uk_inbound_labels_code` 建在有效码 `COALESCE(short_code, revoked_code)` 上兜底）；连续 8 次碰撞 ⇒ 显式 `IllegalStateException`（**拒绝静默造重码**），不落任何标签行
-数据: 🔴 两个码空间互斥：`/i/` 面的源码不出现 `ProcessingSetPartToken` / `processing_set_part_tokens` / `REPORT_PAGE_PATH` / `"/w/"`；`/s/` 面的源码不出现 `InboundLabel` / `inbound_labels` / `"/i/"`；迁移 V134 的 **SQL**（剥注释后）不出现 `processing_set_part_tokens`；字母表字面量在 admin-api 主源码里**恰好一份**（`WorkerShortLinkService.java`）
+数据: 🔴 两个码空间互斥：`/i/` 面的源码不出现 `ProcessingSetPartToken` / `processing_set_part_tokens` / `REPORT_PAGE_PATH` / `"/b/?t="`（2026-10-27 起报工落地面由 `/w/` 改指 `/b/`，issue #7879；`/w/` 兼容期旧落点同样禁）；`/s/` 面的源码不出现 `InboundLabel` / `inbound_labels` / `"/i/"`；迁移 V134 的 **SQL**（剥注释后）不出现 `processing_set_part_tokens`；字母表字面量在 admin-api 主源码里**恰好一份**（`WorkerShortLinkService.java`）
 数据: 🔴 公开入口：`GET /i/{短码}` 未认证可达（`permitAll`）—— 未知短码 ⇒ **404**（不是 401）、已撤销 ⇒ **410 Gone**、有效 ⇒ **302** 且 `Location` 为**相对路径**（默认 `/b/?code=<短码>&tenant_id=<id>`）；响应体为空，`Location` 里没有品名 / 米数 / 供应商 / 单号等任何业务字段
 数据: 🔴 落地页地址走单一配置：改 `migao.inbound-label.landing-path` 即改 302 目标；解析文件里不出现硬编码域名（`migaozn.com`）
 数据: 🔴 未登记即红（类级）：控制器里出现的单字母短码前缀集合必须恰好等于登记表 `CODE_SPACES`（`/s/` + `/i/`）；每个前缀都必须在 `SecurityConfig` 的 permitAll 名单里
@@ -13351,13 +13366,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：904（活跃 142，跳过 762）
-- tier 分布：smoke 12 / normal 836 / adversarial 32
+- 用例总数：905（活跃 142，跳过 763）
+- tier 分布：smoke 12 / normal 837 / adversarial 32
 - 售后域：16
 - Agent 核心域：12
 - API 层域：21
 - 登录认证域：14
-- B 端小程序域：49
+- B 端小程序域：50
 - 分类域：3
 - 对话边界域：51
 - 跨域：3

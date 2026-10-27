@@ -44,6 +44,7 @@ import fs from 'fs'
 import path from 'path'
 import {
   INBOUND_PAGE_ROUTE,
+  REPORT_PAGE_ROUTE,
   REPRINT_PAGE_ROUTE,
   WORKER_LOGIN_ROUTE,
   WORKER_SURFACE_PLATFORM_GAPS,
@@ -115,6 +116,7 @@ function tabBarPages(read: Reader): string[] {
 const ROUTE_ALIASES: Record<string, string> = {
   [INBOUND_PAGE_ROUTE]: 'INBOUND_PAGE_ROUTE',
   [REPRINT_PAGE_ROUTE]: 'REPRINT_PAGE_ROUTE',
+  [REPORT_PAGE_ROUTE]: 'REPORT_PAGE_ROUTE',
   [WORKER_LOGIN_ROUTE]: 'WORKER_LOGIN_ROUTE',
 }
 
@@ -332,22 +334,22 @@ describe('入口可达性：交付物可达性三问之② —— 每个面向�
     const orphaned: Reader = (rel) =>
       rel === 'src/app.tsx'
         ? readReal(rel)
-            .replace(/\s*Taro\.redirectTo\(\{ url: reprintLandingUrl\(landing\.raw\) \}\)/, '')
+            .replace(/\s*Taro\.redirectTo\(\{ url: reprintLandingUrl\(landing\.code\) \}\)/, '')
             .concat(
-              '\nexport function handleLandingNav(landing: { raw: string }) {\n' +
-                '  Taro.redirectTo({ url: reprintLandingUrl(landing.raw) })\n}\n',
+              '\nexport function handleLandingNav(landing: { code: string }) {\n' +
+                '  Taro.redirectTo({ url: reprintLandingUrl(landing.code) })\n}\n',
             )
         : readReal(rel)
     const mutated = orphaned('src/app.tsx')
     // 「变异真的被读到」的自证：跳转语句**还在**文件里（只是没人调用它）
-    expect(mutated).toContain('Taro.redirectTo({ url: reprintLandingUrl(landing.raw) })')
+    expect(mutated).toContain('Taro.redirectTo({ url: reprintLandingUrl(landing.code) })')
     expect(mutated).toContain('function handleLandingNav')
     expect(entryProblems(input)).toEqual([])
     {
       // ⚠️ 不能用「变异体里还有没有这句」判变异生效 —— 追加的**孤儿函数体内本来就有**同一句调用
       //（第一次就是这么误报的）。正确的自证 = **出现在函数体外的那一处真的没了**：
       // 计数从 1 降到 1（原文 1 处 → 变异后 1 处，从函数体挪进了孤儿函数）。
-      const CALLEE = 'Taro.redirectTo({ url: reprintLandingUrl(landing.raw) })'
+      const CALLEE = 'Taro.redirectTo({ url: reprintLandingUrl(landing.code) })'
       const mutatedApp = orphaned('src/app.tsx')
       expectMutationApplied(mutatedApp, ['export function handleLandingNav'], 'L4 挪进孤儿函数')
       const before = (readReal('src/app.tsx').match(new RegExp(CALLEE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) ?? []).length

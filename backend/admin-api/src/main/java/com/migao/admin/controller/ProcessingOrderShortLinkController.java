@@ -21,7 +21,7 @@ import java.net.URI;
  *
  * <pre>
  * 纸上的码（永不变）                     服务端（可变）                        实际页面（随便换）
- * https://app.migaozn.com/o/7K3M9QP2  ──302──▶  /w/?t=&lt;token&gt;&amp;tenant_id=&lt;id&gt;&amp;tenant_code=&lt;code&gt;
+ * https://app.migaozn.com/o/7K3M9QP2  ──302──▶  /b/?t=&lt;token&gt;&amp;tenant_id=&lt;id&gt;&amp;tenant_code=&lt;code&gt;
  * </pre>
  *
  * <h2>为什么是**第三个**前缀（不与 {@code /s/} 共表、不共用解析入口）</h2>
@@ -80,7 +80,7 @@ public class ProcessingOrderShortLinkController {
      * <p>GET /o/{shortCode}（例：{@code https://app.migaozn.com/o/7K3M9QP2}）</p>
      *
      * @param shortCode 短码（8 位 Crockford Base32；手输形态 {@code O/I/L} 会被归一化）
-     * @return 302 + {@code Location: /w/?t=&lt;token&gt;&amp;tenant_id=&lt;id&gt;&amp;tenant_code=&lt;code&gt;}；
+     * @return 302 + {@code Location: /b/?t=&lt;token&gt;&amp;tenant_id=&lt;id&gt;&amp;tenant_code=&lt;code&gt;}；
      *         未知 / 形态不合法 ⇒ 404；已撤销 ⇒ 410
      */
     @GetMapping("/o/{shortCode}")
