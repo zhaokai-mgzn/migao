@@ -255,14 +255,16 @@ public final class WorkerPages {
             return defaultPages();
         }
         List<String> out = new ArrayList<>();
-        // 遍历 ALL（不是 defaultPages）：inspect 不在默认集合里，却是可逐人开放的页面键。
-        for (String page : defaultPages()) {
+        // 🔴 遍历 ALL（不是 defaultPages）：`inspect` / `rework` 不在默认集合里，却是可逐人开放的
+        //    页面键。漏一个的后果不是「少显示一个入口」，而是**商家勾了、工人端什么也看不见**
+        //    （2026-10-27 现场：档案勾了「返工记录」，工作台无入口，issue #7932 —— 改前这里
+        //    只特判了 INSPECT，REWORK 加进闭词表时被漏掉）。
+        //    遍历 ALL 同时修掉另一个口径错误：只开 rework 时 `out` 不再为空 ⇒ **不回落默认页**
+        //    （改前「只开返工记录」会让工人看到六页默认菜单 = 把商家的意图反过来）。
+        for (String page : ALL) {
             if (restricted.contains(page)) {
                 out.add(page);
             }
-        }
-        if (restricted.contains(INSPECT)) {
-            out.add(INSPECT);
         }
         return out.isEmpty() ? defaultPages() : out;
     }

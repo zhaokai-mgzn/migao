@@ -30,6 +30,19 @@ import type { EmployeeStatus, WorkerOperationOption, WorkerProfile } from '@/typ
  * - 停用 / 启用**复用**既有 `PUT /api/admin/users/{id}/status`（`workerApi.setWorkerStatus`），不另造端点。
  */
 /** 工人端菜单的勾选态（建号 / 改菜单共用）：`pages === null` = 未收窄（默认页全勾）。 */
+/**
+ * 「单独开放」能力页的说明（一句「拿它干什么」，显示在勾选框右边）。
+ *
+ * 🔴 按**页面键**取，**不**共用一个字面量（issue #7932 现场）：改前这里是硬编码的质检文案
+ * （issue #7162 只有 inspect 时写的），`rework` 加进能力页后复用了同一句 ⇒
+ * 商家看到「返工记录 —— 扫水洗唛后录判定、生成质检单」（说的却是质检的事）。
+ * 未知键 ⇒ **不显示**说明：宁可少一句，也不摆一句错的。
+ */
+export const OPTIONAL_PAGE_HINTS: Record<string, string> = {
+  inspect: '扫水洗唛后录判定、生成质检单',
+  rework: '看报过返工的加工单：返工笔数 / 最近返工 / 原因 / 涉及工序',
+}
+
 interface WorkerPagesValue {
   pages: string[] | null
   optional: string[]
@@ -129,7 +142,9 @@ function WorkerPagesPicker({
                   })}
                 />
                 <span className="text-sm text-neutral-800">{page.label}</span>
-                <span className="text-xs text-neutral-400">扫水洗唛后录判定、生成质检单</span>
+                {OPTIONAL_PAGE_HINTS[page.key] ? (
+                  <span className="text-xs text-neutral-400">{OPTIONAL_PAGE_HINTS[page.key]}</span>
+                ) : null}
               </label>
             ))}
           </div>

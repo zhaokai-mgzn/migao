@@ -138,6 +138,26 @@ class WorkerPagesTest {
     }
 
     @Test
+    @DisplayName("⑤ 🔴 rework 逐人开（issue #7860 / #7932）：默认不出现；给了才下发；只开它**不许**回落默认页")
+    void reworkIsOptInAndNeverInDefaults() {
+        // 未收窄 ⇒ 默认页（不含返工记录）
+        assertThat(WorkerPages.effectiveFor(null)).doesNotContain(WorkerPages.REWORK);
+        // 逐人开：收窄集里带 rework ⇒ 下发（默认页在前、rework 在后）
+        assertThat(WorkerPages.effectiveFor(List.of("report", "rework")))
+                .containsExactly("report", "rework");
+        // 🔴 只开返工记录：下发就是**这一页** —— 不得因为「其它默认页没勾」回落成全部默认页
+        //    （那是把商家的意图反过来：想只开一页，工人却看到六页）
+        assertThat(WorkerPages.effectiveFor(List.of("rework"))).containsExactly("rework");
+        // 商家「全勾保存」的形态（默认页 + 两个能力页）⇒ 闭词表一个不少
+        List<String> all = new ArrayList<>(WorkerPages.defaultPages());
+        all.addAll(WorkerPages.optionalPages());
+        assertThat(WorkerPages.effectiveFor(all))
+                .containsExactlyElementsOf(new ArrayList<>(WorkerPages.ALL));
+        // 写侧认得这两个能力页键
+        assertThat(WorkerPages.validateRestriction(List.of("inspect", "rework")).errors()).isEmpty();
+    }
+
+    @Test
     @DisplayName("③ 存储往返：真键集合 → JSON 文本 → 归一集合（原样、保序）")
     void storedJsonRoundTripsThroughTheNormalizer() {
         String stored = WorkerPages.storedJson(List.of("cut_calc", "report"));
