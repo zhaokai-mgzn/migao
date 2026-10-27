@@ -1053,11 +1053,18 @@
       "note": "issue #7919 新增 PG-099（报工页「质检」并入「返工」：质检区块撤下、返工报工自动落一条质检记录，[backend-contract] 用例、expectations 为空）；机器判红通道 = traces.tests（ProductionReworkQualityRecordTest / ProductionServiceDerivedKeyNpeTest / WorkerCuttingHeightNullProductIdTest / worker-h5 node --test）⇒ 读数 249→250，真债务 no_channel_total 仍为 0。"
     },
     {
-      "sha": "9dbb00c9e0aff09e2ca5c648efaf2a5042f4376c",
+      "sha": "pending-pr-7902",
       "date": "2026-10-27",
       "no_channel_total": 0,
-      "backend_contract_scoring_zero": 250,
-      "note": "issue #7919 新增 PG-099（报工页「质检」并入「返工」：质检区块撤下、返工报工自动落一条质检记录，[backend-contract] 用例、expectations 为空）；机器判红通道 = traces.tests（ProductionReworkQualityRecordTest / ProductionServiceDerivedKeyNpeTest / WorkerCuttingHeightNullProductIdTest / worker-h5 node --test）⇒ 读数 249→250，真债务 no_channel_total 仍为 0。"
+      "backend_contract_scoring_zero": 251,
+      "note": "issue #7902（打印中心：所有打印统一到销售订单详情页 + 打印流水）新增 1 条 `[backend-contract]` 用例 OR-071 —— 按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0`）⇒ 读数 251 → 252（rebase 到含 #7919 的 main 后）（rebase 到含 #7919 的 main 后：249 已由 PG-099 抬到 250）。机器判红通道 = `traces.tests` 的三个真测试文件（均非空且真实存在，本机实跑 23 passed）：backend/admin-api/src/test/java/com/migao/admin/service/PrintLogServiceTest.java（14 条：逐条快照 / 闭集合 / 批量上限 10 / 订单不存在与跨租户 404 / 加工单号不借用别单 / 列表封顶与逐键映射）、backend/admin-api/src/test/java/com/migao/admin/controller/PrintLogSurfaceGuardTest.java（5 条：生效码 order:detail / 路径面唯一映射 / @RestController）、backend/admin-api/src/test/java/com/migao/admin/service/OrderServicePrintStatusTest.java（4 条：一页只查一次 / 未打印是确定值 / 空页不发查询）；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在**同一 PR 内实测重锚**（不按号推算）：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3 -p no:randomly` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 250}` vs 锚点 249 ⇒ 差值 1 = 本 PR 新增那一条。（rebase 到含 #7919 的 main 后按实测重算：main 的 PG-099 已 +1，故本行为 251/252。）"
+    },
+    {
+      "sha": "pending-pr-7902",
+      "date": "2026-10-27",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 252,
+      "note": "issue #7902 前端面新增 1 条 `[backend-contract]` 用例 OR-072（打印中心：一处入口 / 派单闸门 / 联合打印 / 打印流水区块 / 列表「已打印」列）—— 按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0`）⇒ 读数 251 → 252（rebase 到含 #7919 的 main 后）。机器判红通道 = `traces.tests` 的六个真测试文件（均非空且真实存在，本机实跑 179 passed）：frontend/admin-web/tests/unit/pages/order-detail.test.tsx（派单闸门 / 发货单退场 / 联合打印逐张推进 / 流水区块）、ship-order.test.tsx 与 shipments.test.tsx（打印入口退场）、processing-orders-production.test.tsx（生产明细页零打印入口）、components/PrintDocPreview.test.tsx（单据标签）、components/PrintLogPanel.test.ts（流水六列 / 折叠不渲染 / 读失败≠空态）；`traces.ci` = `pr-check.yml`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在**同一 PR 内实测重锚**：本机实跑 test_case_machine_fail_channel 报 250（OR-071 后）⇒ 差值 1 = 本 PR 新增那一条。（rebase 到含 #7919 的 main 后按实测重算：main 的 PG-099 已 +1，故本行为 251/252。）"
     }
   ]
 }
