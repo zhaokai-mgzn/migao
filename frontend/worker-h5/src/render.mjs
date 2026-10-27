@@ -47,9 +47,6 @@ export function initialState() {
     // 工人端页面权限（V141 母单 #5161）：`null` = **还没读到**（fail-open 的初值，见 `effectivePages`）
     pages: null,
     pagesUnread: false,
-    // 质检（issue #7162）：最新判定 / 读取中 / 读失败；qualityForm = 展开中的录入表单
-    quality: null,
-    qualityForm: null,
     // 裁剪报工确认批次（issue #7647）：`null` = 工人还没动过输入框（⇒ 用服务端预填的派工批次）；
     // 字符串 = 工人当前输入的原样值。只对 `batch_required` 为真的屏有意义（其余屏一个字节都不看）。
     batchNo: null,
@@ -57,7 +54,8 @@ export function initialState() {
     // `null` = 这张码还没入库 / 不是打包工序 ⇒ 整块卡片不渲染（不摆空壳）。
     finishedInbound: null,
     // 报返工（issue #7860）：`rework` = 最近一次的返工回执（返工单号 / 工序）；`reworkForm` = 展开中的表单。
-    // 与质检（`quality`）**两套**：返工改的是报工三态（计件归零），质检落的是成品帘判定。
+    // 🔴 报工页只有**一个**「这件有问题」的动作（issue #7919：质检与返工合并）—— 返工改的是报工三态
+    // （计件归零），服务端据此自动落一条质检记录；页面上**不再有**独立的质检区块。
     rework: null,
     reworkForm: null,
   }
@@ -66,8 +64,7 @@ export function initialState() {
 // ════════════════════════════════════════════════════════════════════════════════
 // 工人端页面开关（V141，母单 #5161）—— `GET /api/worker/me` 的 `pages` 的**唯一**消费处。
 //
-// 它回答「本机这个工人能走到哪几页」。**默认不是权限**（准入仍在服务端 `/api/worker/**`）——
-// 🔴 唯一例外：`inspect`（质检）同时是服务端写准入（`/api/worker/quality/**` 会校验它，issue #7162）。
+// 它回答「本机这个工人能走到哪几页」。**默认不是权限**（准入仍在服务端 `/api/worker/**`）。
 // 与后端 `com.migao.admin.worker.WorkerPages` 的闭词表**逐字同名**（改一边 ⇒ 判据红）：
 //   · `report`    —— 报工主流程（本页，`/w/`）
 //   · `piecework` —— 我的计件（**含金额**；`/w/piecework.html`，issue #6767）
@@ -77,9 +74,9 @@ export function initialState() {
 //   · `cut_calc`  —— 裁高计算（一体机那台屏的页面，`/w/machine.html` 的入口链接）
 //   · `shipment`  —— 发货页（⚠️ 同上：`/w/` 暂无对应面 ⇒ 不造 UI；准入面
 //                    `/api/worker/shipment/**` 已在后端，缺的只是入口）
-//   · `inspect`   —— 质检（issue #7162）：扫水洗唛后在本页出现质检区块，可录判定、生成质检单。
-//                    🔴 与其它页**语义不同**：它同时是服务端**写准入**（`/api/worker/quality/**`
-//                    会校验工人档案的页面集里有它），且**不在** `DEFAULT_PAGES` 里（逐人开）。
+//   · `inspect`   —— 质检（issue #7162）：键仍在后端闭词表里（逐人开、**不在** `DEFAULT_PAGES`），
+//                    但**工人端已没有质检面** —— 报工页的「有问题」只剩【返工】一条路
+//                    （issue #7919：质检与返工合并成一个功能，返工报工自动落质检记录）。
 // ════════════════════════════════════════════════════════════════════════════════
 
 /** 页面键：报工主流程（本页）。 */
@@ -109,9 +106,14 @@ export const PAGE_SHIPMENT = 'shipment'
 export const PAGE_TO_SHIP = 'to_ship'
 
 /**
- * 页面键：质检（issue #7162）—— 扫水洗唛后录判定、生成质检单。
+ * 页面键：质检（issue #7162）—— **键保留，工人端的质检面已撤**（issue #7919）。
  *
- * 🔴 **不在** `DEFAULT_PAGES` 里（逐人开）；且后端把它当 `/api/worker/quality/**` 的写准入。
+ * <p>用户 2026-10-27 逐字：「报工页面的质检和返工要合并成一个功能，现在是两个独立的，移除质检，
+ * 保留返工，当前系统返工=质检」⇒ 报工页不再有质检区块（判定 / 表单 / 状态一起撤），
+ * 工人报【返工】即可 —— 服务端自动落一条质检记录，质检单与质量成本报表不断档。</p>
+ *
+ * <p>🔴 常量本身**不得删**：它是后端 `WorkerPages` 闭词表的**逐字镜像**
+ * （`tests/worker-h5-pages.test.mjs` 逐键比对），且**不在** `DEFAULT_PAGES` 里（逐人开）。</p>
  */
 export const PAGE_INSPECT = 'inspect'
 
@@ -297,32 +299,7 @@ export function reduce(state, action) {
     // `null` = 回到「没动过输入框」（预填重新取服务端的派工批次）。
     case 'batch':
       return { ...state, batchNo: action.batchNo === null ? null : String(action.batchNo ?? '') }
-    // ── 质检（issue #7162）：读最新判定 / 录判定（生成质检单） ──
-    // 🔴 「未检 ≠ 合格」：无记录 ⇒ latest=null，界面写「未检」，不折成「合格」。
-    case 'qualityLoading':
-      return { ...state, quality: { loading: true, latest: state.quality?.latest ?? null, error: null } }
-    case 'qualityLoaded':
-      return { ...state, quality: { loading: false, latest: action.latest ?? null, error: null } }
-    case 'qualityFailed':
-      return { ...state, quality: { loading: false, latest: null, error: action.error ?? '质检状态读不到' } }
-    case 'qualityFormOpen':
-      // 唯一可录的判定 = 返工（issue #7749；合格是默认态，屏上不给这个按钮）
-      return { ...state, qualityForm: { result: 'rework', submitting: false, error: null } }
-    case 'qualityFormClose':
-      return { ...state, qualityForm: null }
-    case 'qualitySubmitting':
-      return { ...state, qualityForm: { ...(state.qualityForm ?? {}), submitting: true, error: null } }
-    case 'qualityFormError':
-      return { ...state, qualityForm: { ...(state.qualityForm ?? {}), submitting: false, error: action.error ?? null } }
-    case 'qualitySubmitted':
-      return {
-        ...state,
-        quality: { loading: false, latest: action.latest ?? null, error: null },
-        qualityForm: null,
-        notice: '质检单已生成',
-        error: null,
-      }
-    // ── 报返工（issue #7860）：任一工序工人都能报；这一笔被服务端改记为返工（不计件）并生成返工单 ──
+    // ── 报返工（issue #7860；#7919 起它同时承担「记质检」）：任一工序工人都能报；这一笔被服务端改记为返工（不计件）并生成返工单 ──
     case 'reworkFormOpen':
       return { ...state, reworkForm: { submitting: false, error: null } }
     case 'reworkFormClose':
@@ -381,24 +358,12 @@ export const DEFAULT_WORK_TYPE = 'normal'
 const WORK_TYPE_LABELS = { normal: '正常', rework: '返工', scrap: '报废' }
 
 /**
- * 质检**只有一个**录入动作 = 返工（issue #7749，用户 2026-10-25 逐字：
- * 「质检不要显示合格，默认都合格，只有出现问题时允许直接选择返工，只提供一个返工选项，
- * 加一些备注说明即可」）。
- *
- * 🔴 为什么不再有「合格 / 报废」两个选项：
- * ① 没问题就是**默认**（不点任何东西）⇒ 摆一个「合格」选项只会让工人多点一次；
- * ② 报废不在工人这一屏处置（真报废走商家侧质量处置）⇒ 工人端只负责「把问题记下来」。
- * 服务端 `QualityCheckService.RESULTS` 仍保留三态（观星台商家面零回归）—— 端侧只是**不提供**另外两个。
- */
-export const QUALITY_RESULTS = [
-  { value: 'rework', label: '返工', hint: '写明问题，提交后生成质检单（同一件返工后再检）' },
-]
-
-/**
- * 质检状态的显示词。
+ * 质检结论的显示词（**唯一消费方** = 成品入库卡片 `finishedInboundCard`，issue #7845：
+ * 打包工序要把这一件的质检结论逐行核对）。
  *
  * 🔴 **不出现「合格」**（用户 2026-10-25 逐字「质检不要显示合格」）：
- * 合格是默认态、没有「合格」这个动作 ⇒ 屏上只在**有返工记录**时说话；其余一律「正常」。
+ * 合格是默认态 ⇒ 只在**有返工/报废记录**时说话，其余一律「正常」。
+ * 质检区块（issue #7162）已随 issue #7919 撤下，这份词表**不随它退场**。
  */
 const QUALITY_LABELS = { pass: '正常', rework: '已记返工', scrap: '已记报废' }
 
@@ -500,8 +465,9 @@ export function canReport(state, view) {
   if (!view || view.completed === true) return false
   if (Array.isArray(view.needs_selection) && view.needs_selection.length > 0) return false // ① 旧码未选定
   if (!view.operation?.operation_id) return false                    // ② 工序未确定不得记账
-  // ④ 质检工序**没有报工动作**（issue #7186）：判定即报工 ⇒ 这一屏只出质检区块，
+  // ④ 质检工序**没有报工动作**（issue #7186）：判定即报工 ⇒ 这一屏只出**一句**说明，
   //    不出报工按钮 / 报工三态（服务端同款判据见 isQualityOperation 的注释）。
+  //    🔴 issue #7919 起「判定」= 报工三态里的【返工】（质检区块已撤）—— 本判据一字未动。
   if (isQualityOperation(view.operation)) return false
   return true
 }
@@ -864,20 +830,19 @@ function ternLine(v) {
 }
 
 /**
- * 质检工序的「这一屏只有一个动作」说明（issue #7186）。
+ * 质检工序的「这一屏只有一个动作」说明（issue #7186；issue #7919 改文案）。
  *
  * <p>用户 2026-10-18 逐字：「质检员不需要报工这个动作，只需要有一个质检动作，完成判定后自动报工，
  * 然后自动生成质检流水」⇒ 本屏对「质检」工序**不出**报工按钮（{@link canReport} 判 false）。
  * 不给一句话就是**死页面**（工人看到应做数量、却没有可点的动作）。</p>
  *
- * <p>两句不同是因为**授权**不同（`inspect` 逐人开）：没开这一页的人不该以为「点一下就能报」——
- * 说清「要谁来录」，而不是把按钮藏起来不说理由。</p>
+ * <p>🔴 2026-10-27（issue #7919）用户逐字「报工页面的质检和返工要合并成一个功能，现在是两个独立的，
+ * 移除质检，保留返工，当前系统返工=质检」⇒ 质检区块（连「要开通质检页」那句）已撤，
+ * 这里只留**一条出口** = 有问题走【返工】（返工区块不按页面键门控，任一工序工人都能报）。</p>
  */
-function qualityOnlyNote(state, view) {
+function inspectOnlyNote(state, view) {
   if (!isQualityOperation(view?.operation)) return ''
-  return effectivePages(state).opened.has(PAGE_INSPECT)
-    ? '<p class="wh5-sub" id="wh5-quality-only">本道是质检工序：默认没问题，完成生产即算做完；有问题在下面记返工即可（不用报工）。</p>'
-    : '<p class="wh5-sub" id="wh5-quality-only">本道是质检工序：默认没问题；要记返工需开通「质检」页（当前账号未开通）。</p>'
+  return '<p class="wh5-sub" id="wh5-inspect-only">本道是质检工序：默认没问题，完成生产即算做完；有问题走返工（在下面报返工即可，不用报工）。</p>'
 }
 
 /**
@@ -890,87 +855,6 @@ function workerOperationLine(v) {
   const name = typeof v?.worker_operation === 'string' ? v.worker_operation.trim() : ''
   return name ? `<p class="wh5-sub" id="wh5-worker-operation">你的工序：${esc(name)}</p>` : ''
 }
-
-/**
- * 质检区块（issue #7162）：工人扫水洗唛后，在这一屏录判定、生成「质检单」。
- *
- * <p>口径（用户 2026-10-17 逐字）：「工人不能进入观星台……只需要在小程序端扫码进入报工页后
- * 有入口进行质检即可」「质检等同发货工序一样，打包发货完成后生成发货单，质检完成后生成质检单」。</p>
- *
- * 🔴 三条硬约束：
- * ① 只在 `inspect` ∈ 页面集时渲染（逐人开；服务端 `/api/worker/quality/**` 同时做写准入，
- *    藏起 UI **不是**授权）；
- * ② **默认没问题**（issue #7749）：没有记录 ⇒ 显示「正常」，屏上**不出现「合格」**这个选项/状态；
- * ③ 只有一个动作 =【返工】+ 问题说明（必填；前端先拦一次不白跑网络，服务端 422 才是真判据）。
- *
- * <p>成品帘 = `view.position.order_item_id`（水洗唛是部位码 ⇒ 扫码已指到这一件），
- * 不逐工序、不重算报工数量。</p>
- */
-function qualityBlock(state, view) {
-  const { opened } = effectivePages(state)
-  if (!opened.has(PAGE_INSPECT)) return ''
-  const itemId = view?.position?.order_item_id
-  if (itemId === null || itemId === undefined || itemId === '') return ''
-
-  const q = state.quality ?? { loading: true, latest: null, error: null }
-  const latest = q.latest ?? null
-  const result = latest?.result ?? null
-  // 没有记录 = **默认没问题**（「正常」，不写「合格」）；有记录才显示记了什么
-  const stateText = QUALITY_LABELS[result] ?? '正常'
-  const stateClass = result && QUALITY_LABELS[result] ? `is-${result}` : 'is-pending'
-  const moment = typeof latest?.inspected_at === 'string'
-    ? latest.inspected_at.slice(0, 16).replace('T', ' ')
-    : ''
-  const meta = latest
-    ? `<div class="wh5-q-meta" id="wh5-quality-meta">检验人 ${esc(latest.inspector_name || '—')}${moment ? ` · ${esc(moment)}` : ''}</div>`
-    : ''
-  const reason = latest?.reason
-    ? `<div class="wh5-q-reason" id="wh5-quality-reason-latest">原因：${esc(latest.reason)}</div>`
-    : ''
-  const loadingText = q.loading ? '<p class="wh5-sub" id="wh5-quality-loading">质检状态读取中…</p>' : ''
-  const errorText = q.error ? `<p class="wh5-error" id="wh5-quality-error">${esc(q.error)}</p>` : ''
-  const form = state.qualityForm ? qualityFormView(state) : ''
-  const openButton = state.qualityForm
-    ? ''
-    : `<button id="wh5-quality-open" class="wh5-ghost" type="button">${latest ? '再记一次返工' : '有问题，记返工'}</button>`
-
-  return `<section class="wh5-card wh5-quality" id="wh5-quality">
-    <div class="wh5-q-head">
-      <span class="wh5-q-title">质检</span>
-      <span class="wh5-q-state ${stateClass}" id="wh5-quality-state">${stateText}</span>
-    </div>
-    ${meta}
-    ${reason}
-    ${loadingText}
-    ${errorText}
-    <p class="wh5-sub">这一件默认按没问题走；只有出问题才需要记返工（写明问题，提交后生成质检单）。</p>
-    ${openButton}
-    ${form}
-  </section>`
-}
-
-/**
- * 质检录入表单（issue #7749：**只有一个动作** —— 返工 + 问题说明）。
- *
- * <p>用户逐字「只提供一个返工选项，加一些备注说明即可」⇒ 不再有判定单选组（合格 / 报废都退场）；
- * 说明在提交时由装配层从 DOM 读值（不在 input 事件里重绘 ⇒ 每敲一个字不会丢焦点）。</p>
- */
-function qualityFormView(state) {
-  const f = state.qualityForm
-  return `<div class="wh5-q-form" id="wh5-quality-form">
-      <p class="wh5-sub" id="wh5-quality-hint">这次记为「返工」：写明问题，提交后生成质检单。</p>
-      <label class="wh5-label">问题说明（必填）
-        <textarea id="wh5-quality-reason" class="wh5-input" rows="2"
-          placeholder="例如：布面污渍 / 尺寸偏差 / 缝线开裂"></textarea>
-      </label>
-      ${f.error ? `<p class="wh5-error" id="wh5-quality-form-error">${esc(f.error)}</p>` : ''}
-      <div class="wh5-q-actions">
-        <button id="wh5-quality-submit" class="wh5-primary" type="button"${f.submitting ? ' disabled' : ''}>${f.submitting ? '提交中…' : '提交返工'}</button>
-        <button id="wh5-quality-cancel" class="wh5-ghost" type="button"${f.submitting ? ' disabled' : ''}>取消</button>
-      </div>
-    </div>`
-}
-
 
 /**
  * 「成品入库」卡片（issue #7845）：**打包工序**扫码报工成功后出现在报工页顶部。
@@ -1073,7 +957,6 @@ function mainView(state) {
         : '<p class="wh5-sub" id="wh5-no-operation">本部位推断不出待报工序（工序未确定 ⇒ 不得记账）</p>'}
     ${overviewView(v)}
     ${cutPlanView(v)}
-    ${qualityBlock(state, v)}
     ${reworkBlock(state, v)}
     ${state.notice ? `<p class="wh5-notice" id="wh5-notice">${esc(state.notice)}</p>` : ''}
     ${state.error ? `<p class="wh5-error" id="wh5-error">${esc(state.error)}</p>` : ''}
@@ -1116,13 +999,12 @@ function mainView(state) {
     ${state.notice ? `<p class="wh5-notice" id="wh5-notice">${esc(state.notice)}</p>` : ''}
     ${state.error ? `<p class="wh5-error" id="wh5-error">${esc(state.error)}</p>` : ''}
     ${picker}
-    ${qualityOnlyNote(state, v)}
+    ${inspectOnlyNote(state, v)}
     ${workTypePicker(state, v)}
     ${batchBlock(state, v)}
     ${reportButton(state, v)}
     ${overviewView(v, v.position?.order_item_id ?? null)}
     ${cutPlanView(v)}
-    ${qualityBlock(state, v)}
     ${reworkBlock(state, v)}
   </section>`
 }
