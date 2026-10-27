@@ -231,6 +231,24 @@ describe('智能派单 · 加急插队区（PR-080）', () => {
     expect(screen.queryByTestId('pool-outsourced-section')).toBeNull()
   })
 
+  it('承接方下拉为空 ⇒ 给「去供应商新建」入口；有加工厂档案时不摆（issue #7955）', async () => {
+    // ① 没有任何加工厂：下拉只有「本厂自做」= 死路（用户当场问「承接方需要在哪添加」）
+    //    ⇒ 必须给出口（加工厂档案 = 供应商页里「类型 = 加工厂（外发作业）」）
+    // ⚠️ 必须是 `mockResolvedValueOnce`：默认实现（beforeEach）= 朝阳加工厂，改默认实现会让 ② 也拿到空表
+    mockProcessors.mockResolvedValueOnce(ok([]))
+    const first = render(<ProductionPoolPage />)
+    const link = await screen.findByTestId('pool-processor-empty-link')
+    expect(link).toHaveAttribute('href', '/suppliers')
+    expect(link).toHaveTextContent('去供应商新建')
+    first.unmount()
+
+    // ② 负控：有档案（默认夹具 = 朝阳加工厂）⇒ 取不到该入口（不是「永远挂着」）
+    render(<ProductionPoolPage />)
+    const select = await screen.findByLabelText('承接方')
+    await waitFor(() => expect(within(select).getByText('朝阳加工厂')).toBeInTheDocument())
+    expect(screen.queryByTestId('pool-processor-empty-link')).toBeNull()
+  })
+
   it('**成批区置顶**、「加急 / 外发」区在其后（issue #7943），且加急单不出现在成批候选里（不进池）', async () => {
     const { container } = render(<ProductionPoolPage />)
     await waitFor(() => expect(screen.getByTestId('pool-urgent-table')).toBeInTheDocument())
