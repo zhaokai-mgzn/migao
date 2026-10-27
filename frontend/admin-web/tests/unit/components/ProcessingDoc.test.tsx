@@ -41,7 +41,9 @@ import {
  *
  * 断言的是**纸面内容与版面契约**：
  * ① 表头九栏逐条命中（订单日期 / 客户 / 电话 / 地址 / 备注 / 制单人 / 单号 / 交付日期 / 货运）；
- * ② **按套分块**，每块 `第N套/共M套` + 一张 **9 列表**（列清单 = `PROCESSING_DOC_COLUMNS`，全仓唯一一份）；
+ * ② **按套分块**，每块 `第N套/共M套` + 一张 **6 列表**（列清单 = `PROCESSING_DOC_COLUMNS`，全仓唯一一份）；
+ *    🔴 **两型同版式**（issue #7901 面料单 → issue #7909 加工单，用户 2026-10-27 两句裁定）：
+ *    「品名」列 /「帘种」列 /「尺寸」列 /「工艺」行**都不再上纸**；
  * ③ `@page { size: A4; margin: 0; }`（由介质矩阵生成；边距 0 = 浏览器页眉页脚无处可画，
  *    版面内缩 12mm 由容器 padding 承担 —— issue #7309）+ 分页不裁切（`break-inside: avoid`）
  *    且长单分页时**表头重复**（`thead { display: table-header-group }`）；
@@ -52,9 +54,9 @@ import {
  *    竖排「扫码报工」；无码 ⇒ 码 / 占位框 / 短码行三种形态**都不出现**；短码一律不上纸（issue #7608）；
  * ⑤b 🔴 **纸面标题按作业单两型**（issue #7891）：成品帘 ⇒「加工单」、面料单 ⇒「面料单」
  *    （用户逐字「面料单就叫面料单，不要叫裁剪单」）；缺键 ⇒ 加工单（存量单口径）；
- * ②b 🔴 **工艺行照水洗唛的展示方式**（issue #7891 追加需求）：一行一条 `标签：值` ——
- *    `加工方式：…`（水洗唛 `washLabelCraftMode` 的**同一句**）+ `特殊选项：…`（独立一行，缺 ⇒ 不渲染）
- *    + 其余工艺规格行（`craftSpecRows()` 既有顺序）；取值源优先加工单快照行、缺快照回落 `processingInfo`；
+ * ②b 🔴 **「工艺」行已整行退场**（issue #7909，用户 2026-10-27 逐字「加工单也要移除」）——
+ *    原先是水洗唛式一行一条 `标签：值`（issue #7891）；现在两型纸面都不印工艺规格，
+ *    车间认「定高买宽 / 双开 / 定型」看**水洗唛**或**屏幕**（生产明细页 / 加工单块）；
  * ⑥ 打印隔离沿用 #4983 / #4965 范式（共享 `print-doc` + 限定本次打印目标的 visibility 防御）；
  * ⑦ **列宽按内容预算**（issue #6600）：批号是**固定 17 字符**的 `PC-yyyyMMdd-####`，原先只给 10%
  *    ⇒ `table-layout: fixed` 下折成 3 行、把数据行撑高（真浏览器实测 63px）。现在 ≥16%（两行放得下）；
@@ -165,16 +167,6 @@ const docTitle = (): string =>
       ?.textContent ?? ''
   ).trim()
 
-/**
- * 工艺行里的**逐行**内容（issue #7891 追加需求：一行一条 `标签：值`）。
- * 判据面 = 「工艺」那一格里的每一行 —— 不再对一整串「；」拼接做包含式断言
- * （那种断言对「长句」和「分行」两种形态都绿 ⇒ 零判别力）。
- */
-const craftLines = (): string[] =>
-  Array.from(
-    document.querySelector('[data-testid="processing-doc-craft"]')?.querySelectorAll('div') ?? []
-  ).map((el) => (el.textContent || '').trim())
-
 describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
   // 类级固化（issue #6595）：本单据的正文表逐行自洽（Σ(colSpan) = 表头列数）——
   // 主体行少渲染一格 ⇒ 备注列在数据行没有单元格 ⇒ 整列没有边框（用户真机截图撞见的那一处）。
@@ -202,9 +194,9 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
       />
     )
     const area = document.querySelector('.processing-print-area')
-    // 判据面 = 9 列表的**用料列**（index 5，唯一由「数量是否算得出」决定的那一格）
-    // issue #7625：数量列 index = 6（品名0 货号1 颜色2 门幅3 帘种4 尺寸5 数量6）
-    const metersColumn = paperNumericColumn(area, { column: 6 })
+    // 判据面 = 正文表的**数量列**（唯一由「数量是否算得出」决定的那一格）——
+    // 下标**现取**列清单（issue #7901 / #7909 删了三列，写死 6 会指到别处 ⇒ 判据静默空跑）
+    const metersColumn = paperNumericColumn(area, { column: PROCESSING_DOC_COLUMNS.indexOf('数量') })
     // 单据：加工单 ProcessingDoc
     assertNoPaperZeroFill(metersColumn.slice(0, 1), {
       label: '加工单 ProcessingDoc',
@@ -253,7 +245,7 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
     expect(doc()?.textContent).toContain('CSO260926-0001')
   })
 
-  it('② 按套分块：3 个商品行 ⇒ 3 块，各带 `第N套/共M套` 与 9 列表头', () => {
+  it('② 按套分块：3 个商品行 ⇒ 3 块，各带 `第N套/共M套` 与 6 列表头', () => {
     render(
       <ProcessingDoc
         order={buildOrder({
@@ -270,44 +262,29 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
       th.textContent?.trim()
     )
     expect(headers.slice(0, PROCESSING_DOC_COLUMNS.length)).toEqual([...PROCESSING_DOC_COLUMNS])
-    // issue #6869：列清单换成「商品 SKU 四件套 + 尺寸/数量/组件/批号/备注」——
-    // 原「部位 / 部位信息 / 货号(=拼串) / 用料」退场（部位列在 #4521 后对普通订单恒空）
+    // issue #6869：列清单换成「商品身份 + 数量/批号/备注」；
     // 🔴 issue #6901：列名由「数量(米)」改「数量」—— 单位随行显示（见下方「数量列单位」用例），
     // 写死「米」会与件/套的订单行自相矛盾。
-    expect([...PROCESSING_DOC_COLUMNS]).toEqual([
-      '品名',
-      '货号',
-      '颜色',
-      '门幅',
-      '帘种',
-      '尺寸',
-      '数量',
-      '批号',
-      '备注',
-    ])
-    // issue #7625（用户 2026-10-24「不要组件这一列 … 加一列区分布帘还是纱帘」）：
-    // 「组件」列退场、同位置附近补「帘种」（紧跟门幅）⇒ 仍 9 列。
+    // 🔴 issue #7901 / #7909（用户 2026-10-27 两句裁定）：品名 / 帘种 / 尺寸 三列退场 ⇒ 9 列变 6 列。
+    expect([...PROCESSING_DOC_COLUMNS]).toEqual(['货号', '颜色', '门幅', '数量', '批号', '备注'])
   })
 
-  it('② issue #6869：逐格印商品 SKU 四件套（品名/货号/颜色/门幅）—— 货号取响应真字段 `skuCode`', () => {
+  it('② issue #6869：逐格印商品身份（货号 / 颜色 / 门幅）—— 货号取响应真字段 `skuCode`', () => {
     render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
     const cells = Array.from(doc()!.querySelectorAll('.processing-doc-table tbody tr td')).map(
       (td) => td.textContent?.trim() ?? ''
     )
     expect(cells.slice(0, PROCESSING_DOC_COLUMNS.length)).toEqual([
-      '布艺遮光帘A', // 品名
       '0012', // 货号（`skuCode` —— 夹具**没有** `productCode`：读幽灵字段的旧实现这里必空 ⇒ 红证）
       '米白', // 颜色（`processingInfo.colorName`）
       '2.8米', // 门幅（`processingInfo.doorWidth`，经 `craftSpecRows` 同一份格式化）
-      '布帘', // 帘种（`processingInfo.curtainType`）
-      '3.2×2.6', // 尺寸
       '12.5', // 数量(米)
       '—', // 批号（无快照行 ⇒ 未指派，显式占位）
       '', // 备注（未填行级备注 ⇒ 留白供手写）
     ])
   })
 
-  it('帘种列（issue #7625）：显式 `curtainType=纱帘` ⇒ 印「纱帘」；布料单（无帘）⇒ 占位「—」', () => {
+  it('🔴 帘种不上纸（issue #7909）：帘种列退场 —— 表头没有「帘种」、纸面也不出现「纱帘」', () => {
     render(
       <ProcessingDoc
         order={buildOrder({
@@ -316,22 +293,18 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
               id: 'item-sheer',
               processingInfo: { curtainType: '纱帘', colorName: '象牙白', doorWidth: '3.0米' },
             }),
-            buildItem({
-              id: 'item-fabric',
-              processingInfo: { colorName: '米白', saleForm: '布料' },
-            }),
           ],
         })}
         processingOrder={buildProcessingOrder()}
       />
     )
-    const blocks = Array.from(document.querySelectorAll('.processing-set'))
-    // 帘种列 index = 4（品名0 货号1 颜色2 门幅3 帘种4）
-    const curtainOf = (block: Element): string =>
-      block.querySelectorAll('tbody tr')[0]?.querySelectorAll('td')[4]?.textContent?.trim() ?? ''
-    // 🔴 注入式红证：两张都落回同一个缺省值（写死「布帘」）⇒ 下面两条必红
-    expect(curtainOf(blocks[0])).toBe('纱帘')
-    expect(curtainOf(blocks[1])).toBe(MISSING)
+    const headers = Array.from(doc()?.querySelectorAll('.processing-doc-table thead th') ?? []).map(
+      (th) => th.textContent?.trim()
+    )
+    expect(headers).not.toContain('帘种')
+    // 值也不许从别的格子漏出来（旧实现有独立的 `processing-doc-curtain-type` 格）
+    expect(doc()?.textContent).not.toContain('纱帘')
+    expect(document.querySelector('[data-testid="processing-doc-curtain-type"]')).toBeNull()
   })
 
   it('🔴 加工费组合行（issue #7833）：每套块内单列一行，逐字印快照 `processingItems[].name`（超高/倒幅）', () => {
@@ -373,31 +346,9 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
     expect(doc()?.textContent).not.toContain('加工费组合')
   })
 
-  it('🔴 ② 工艺行照水洗唛的展示方式：一行一条 `标签：值`（issue #7891 追加需求）', () => {
-    render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
-    const lines = craftLines()
-    // ① 「加工方式」= 水洗唛那一句（工艺 · 加工费组合项 · 打开方式 · 定型）——**一行**
-    expect(lines[0]).toBe('加工方式：韩褶')
-    // ② 「工艺 / 打开方式 / 是否定型」不再各自成行（已由「加工方式」表达，同一真值印两处只是噪音）
-    expect(lines.filter((line) => /^(工艺|打开方式|是否定型)：/.test(line))).toEqual([])
-    // ③ 其余工艺规格行各自成行（顺序沿用 `craftSpecRows()` 的既有顺序）
-    expect(lines).toEqual(['加工方式：韩褶', '部位：布帘', '加工类型：定高买宽'])
-    // ④ 「门幅」有自己的列 ⇒ 不在这一格里重复印一遍（同 `orderItemSku.specRows` 的既有排除）
-    expect(lines.some((line) => line.startsWith('门幅：'))).toBe(false)
-    // 行标签「工艺」在**首格**（不是「工艺：…」前缀 —— 那会与明细里的值串重复，真机取证实测）
-    const craftRow = Array.from(doc()!.querySelectorAll('.processing-doc-table tbody tr')).find(
-      (tr) => tr.querySelector('td')?.textContent?.trim() === '工艺'
-    )
-    expect(craftRow).toBeTruthy()
-    // 表头里不再有「部位」「部位信息」列
-    const headers = Array.from(doc()!.querySelectorAll('.processing-doc-table thead th')).map(
-      (th) => th.textContent?.trim()
-    )
-    expect(headers).not.toContain('部位')
-    expect(headers).not.toContain('部位信息')
-  })
-
-  it('🔴 ② 特殊选项单独一行；没有 ⇒ 该行不渲染（issue #7891 追加需求）', () => {
+  it('🔴 纸面不印「工艺」行（issue #7909，用户 2026-10-27 逐字「加工单也要移除」）', () => {
+    // 🔴 改判说明：本组原先是**正面**判据（一行一条 `标签：值` / 特殊选项独立成行 / 取值源优先快照行）。
+    // 工艺行退场后那三条正面断言会变成缺陷的守护者 ⇒ 整组改为**反向**：节点取不到 + 值一个字都不印。
     render(
       <ProcessingDoc
         order={buildOrder({
@@ -407,40 +358,18 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
             }),
           ],
         })}
-        processingOrder={buildProcessingOrder()}
-      />
-    )
-    const lines = craftLines()
-    // 值 = `optionList` 的既有格式化（顿号连接）—— 纸面不另写一份拼接
-    expect(lines).toContain('特殊选项：防翘扣、花边')
-    // **紧跟「加工方式」之后**独立成行（与「特殊选项 / 备注不合并」的既有裁定同口径）
-    expect(lines[0]).toBe('加工方式：韩褶')
-    expect(lines[1]).toBe('特殊选项：防翘扣、花边')
-
-    cleanup()
-    // 没有特殊选项 ⇒ **该行不渲染**（不印空壳行、不写「无」）
-    render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
-    expect(craftLines().some((line) => line.startsWith('特殊选项：'))).toBe(false)
-  })
-
-  it('🔴 ② 取值源优先加工单**快照行**，缺快照回落订单行 `processingInfo`（不编造）', () => {
-    // 快照行带工艺键 ⇒ 以**快照**为准（订单行那一份同名字段不许盖掉它）
-    render(
-      <ProcessingDoc
-        order={buildOrder({
-          items: [buildItem({ processingInfo: { colorName: '米白', craft: '订单侧工艺' } })],
-        })}
         processingOrder={buildProcessingOrder({
           items: [{ itemId: 'item-1', craft: '快照侧工艺' } as unknown as ProcessingOrderItem],
         })}
       />
     )
-    expect(craftLines()[0]).toBe('加工方式：快照侧工艺')
-
-    cleanup()
-    // 没有快照行 ⇒ 回落订单行 `processingInfo`（两者键名同源 ⇒ 不是「纸面缺值」）
-    render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
-    expect(craftLines()[0]).toBe('加工方式：韩褶')
+    expect(document.querySelector('[data-testid="processing-doc-craft"]')).toBeNull()
+    // 快照行 / 订单行都带齐了工艺键，纸面仍一个字都不印
+    expect(doc()?.textContent).not.toContain('加工方式')
+    expect(doc()?.textContent).not.toContain('特殊选项')
+    expect(doc()?.textContent).not.toContain('加工类型')
+    expect(doc()?.textContent).not.toContain('韩褶')
+    expect(doc()?.textContent).not.toContain('快照侧工艺')
   })
 
   it('② issue #6869：备注列 = 商家手写的行级备注（`processingInfo.remark`）', () => {
@@ -705,7 +634,7 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
     // 批号必须比常态为空的「备注」列宽
     expect(batch).toBeGreaterThan(headerWidthOf('备注'))
     expect(widths.reduce((sum, w) => sum + w, 0)).toBe(100)
-    // 9 列一个都不能少（少一个 label ⇒ NaN，这条会红）
+    // 6 列一个都不能少（少一个 label ⇒ NaN，这条会红）
     expect(widths.every((w) => Number.isFinite(w))).toBe(true)
 
     // 🔴 可红（在真值源上取证，不碰真文件）：把本组件的表头宽度声明改成**修前**的批号 10%
@@ -717,9 +646,12 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
     const declared = Array.from(source.matchAll(/<DocTh[^>]*?w-\[(\d+)%\][^>]*?>\s*\{?PROCESSING_DOC_COLUMNS\[(\d)\]/g)).map(
       (m) => ({ index: Number(m[2]), percent: Number(m[1]) })
     )
-    expect(declared.find((d) => d.index === 7)?.percent).toBe(batch) // 判据读的就是真值源
-    const broken = declared.map((d) => (d.index === 7 ? 10 : d.percent))
-    expect(broken.find((p, i) => declared[i].index === 7)).toBeLessThan(16)
+    // 🔴 issue #7909：列序变了 ⇒ 批号的下标**现取**（写死 7 = 下次改列序时这条判据静默空跑）
+    const batchIdx = PROCESSING_DOC_COLUMNS.indexOf('批号')
+    expect(batchIdx).toBeGreaterThanOrEqual(0)
+    expect(declared.find((d) => d.index === batchIdx)?.percent).toBe(batch) // 判据读的就是真值源
+    const broken = declared.map((d) => (d.index === batchIdx ? 10 : d.percent))
+    expect(broken.find((p, i) => declared[i].index === batchIdx)).toBeLessThan(16)
   })
 })
 
@@ -751,8 +683,10 @@ describe('ProcessingDoc 纸面不印工序（issue #7274）', () => {
   it('🔴 起算点自证：纸面正文照旧渲染（上面那条不是「纸面整个没了」的空跑）', () => {
     render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
     const text = doc()?.textContent || ''
-    expect(text).toContain('布艺遮光帘A')
-    expect(text).toContain('工艺')
+    // 起算点读**仍在上纸**的列（品名自 issue #7909 起不上纸 ⇒ 改读货号 / 颜色）
+    expect(text).toContain('0012')
+    expect(text).toContain('米白')
+    expect(text).toContain('张三')
     expect(text).not.toContain('工序')
   })
 })
@@ -796,47 +730,56 @@ describe('ProcessingDoc 数量列单位（issue #6901）', () => {
 })
 
 /**
- * 面料单纸面（issue #7901，用户 2026-10-27 截图三处红框 + 逐字「面料单移除红框的行列」）。
+ * 纸面列收敛：**两型同版式**（issue #7901 面料单 → issue #7909 加工单）。
  *
- * 面料单（`order_kind=outbound`）只做裁剪一道工序：纸面**不印**「品名」列、「帘种」「尺寸」两列，
- * 也**不印**「工艺」行 —— 布料行的帘种恒 `—`、尺寸是行内约定不是成品尺寸、工艺行那一格漏出来的
- * 「加工费米数」与「数量」列本来就是同一件事。
- * 🔴 **成品帘「加工单」的版式一字不动**：本 describe 第 2 条是起算点自证（同数据换 `processing`
- * ⇒ 9 列 + 帘种列 + 工艺行都在），删过头这条会红。
+ * 用户 2026-10-27 先说「面料单移除红框的行列」（截图三处红框：品名列 / 帘种+尺寸两列 / 工艺行），
+ * 看到结果后追加一句「**加工单也要移除**」⇒ 成品帘「加工单」与面料单现在**同一套 6 列**，
+ * 都不印「工艺」行。理由（都不是「不好看」，是**在说假话 / 在重复**）：
+ * - 「品名」：商品身份由「货号 + 颜色 + 门幅」承担（同族裁定：报价单 issue #7527）；
+ * - 「帘种」：布料行恒 `—`；
+ * - 「尺寸」：行内约定（`0×2.8`）不是成品尺寸，抄下来不能裁；
+ * - 「工艺行」：面料单上只剩「加工费米数」，与「数量」列同一个数。
+ * 🔴 加工单**有意接受**的信息收敛：车间认「定高买宽 / 双开 / 定型」看水洗唛或屏幕（issue #7909 已登记）。
  */
-describe('ProcessingDoc 面料单（order_kind=outbound，issue #7901）', () => {
-  const fabricPo = (overrides: Partial<ProcessingOrder> = {}): ProcessingOrder =>
-    buildProcessingOrder({ order_kind: 'outbound', ...overrides })
-
+describe('纸面列收敛：两型同版式（issue #7901 / #7909）', () => {
   /** 正文表头标签（按渲染顺序） */
   const headers = (): (string | undefined)[] =>
     Array.from(doc()?.querySelectorAll('.processing-doc-table thead th') ?? []).map((th) =>
       th.textContent?.trim()
     )
+  const EXPECTED = ['货号', '颜色', '门幅', '数量', '批号', '备注']
 
-  it('🔴 三处红框逐条退场：品名列 / 帘种 + 尺寸两列 / 工艺行', () => {
-    render(<ProcessingDoc order={buildOrder()} processingOrder={fabricPo()} />)
-    expect(headers()).toEqual(['货号', '颜色', '门幅', '数量', '批号', '备注'])
+  it('🔴 加工单（order_kind=processing）6 列，不印品名 / 帘种 / 尺寸 / 工艺行', () => {
+    render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
+    expect(headers()).toEqual(EXPECTED)
     expect(doc()?.textContent).not.toContain('品名')
-    // 帘种列与工艺行**整块不出现**（取不到节点，不是样式藏起来）
     expect(document.querySelector('[data-testid="processing-doc-curtain-type"]')).toBeNull()
     expect(document.querySelector('[data-testid="processing-doc-craft"]')).toBeNull()
-    // 值也不许从别的格子漏出来：帘种「布帘」/ 尺寸「3.2×2.6」都不在纸面上
+    // 值也不许从别的格子漏出来
     expect(doc()?.textContent).not.toContain('布帘')
     expect(doc()?.textContent).not.toContain('3.2×2.6')
+    expect(doc()?.textContent).not.toContain('加工方式')
   })
 
-  it('🔴 起算点自证：同一份数据换成成品帘（order_kind=processing）⇒ 9 列 + 帘种列 + 工艺行都在', () => {
+  it('🔴 面料单（order_kind=outbound）同一套 6 列（两型不许各印一套）', () => {
+    render(
+      <ProcessingDoc
+        order={buildOrder()}
+        processingOrder={buildProcessingOrder({ order_kind: 'outbound' })}
+      />
+    )
+    expect(headers()).toEqual(EXPECTED)
+    expect(document.querySelector('[data-testid="processing-doc-craft"]')).toBeNull()
+  })
+
+  it('🔴 存量单（`order_kind` 缺键）也不退回 9 列 —— 列清单不随作业单类型分叉', () => {
     render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
-    expect(headers()).toEqual([...PROCESSING_DOC_COLUMNS])
-    // 判据读**内容**不读「节点存在」（存在性断言是本仓明令的弱断言形态，见
-    // tests/unit_ci_workflows/test_weak_assert_blindspots.py）
-    expect(cellText('processing-doc-curtain-type')).toBe('布帘')
-    expect(craftLines()[0]).toBe('加工方式：韩褶')
+    expect(headers()).toEqual(EXPECTED)
+    expect(headers()).toHaveLength(6)
   })
 
-  it('🔴 表格列数不变量：面料单每行 Σ(colSpan) = 6（少一格 ⇒ 备注列在数据行没边框，同 #6595 形态）', () => {
-    render(<ProcessingDoc order={buildOrder()} processingOrder={fabricPo()} />)
+  it('🔴 表格列数不变量：每行 Σ(colSpan) = 6（少一格 ⇒ 备注列在数据行没边框，同 #6595 形态）', () => {
+    render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
     const tables = collectTableIntegrity(dataTables(doc())) // 单据：加工单 ProcessingDoc
     expect(tables.length).toBeGreaterThan(0)
     for (const table of tables) {
@@ -846,12 +789,12 @@ describe('ProcessingDoc 面料单（order_kind=outbound，issue #7901）', () =>
     }
   })
 
-  it('🔴 补位行（加工费组合）在面料单上也占满 6 列 —— `colSpan` 随列数走，不写死魔数 8', () => {
+  it('🔴 补位行（加工费组合）占满 6 列 —— `colSpan` 随列数走，不写死魔数', () => {
     render(
       <ProcessingDoc
         order={buildOrder()}
         processingOrder={
-          fabricPo({
+          buildProcessingOrder({
             items: [
               {
                 itemId: 'item-1',
@@ -868,23 +811,13 @@ describe('ProcessingDoc 面料单（order_kind=outbound，issue #7901）', () =>
     for (const table of tables) expect(table.rows.every((n) => n === 6)).toBe(true)
   })
 
-  it('🔴 版面：面料单 6 列宽度合计 100%，批号仍 ≥16%（#6600 的 17 位下限不放宽）', () => {
-    render(<ProcessingDoc order={buildOrder()} processingOrder={fabricPo()} />)
-    const widths = headers().map((label) => headerWidthOf(label as string))
-    expect(widths.every((w) => Number.isFinite(w))).toBe(true)
-    expect(widths.reduce((sum, w) => sum + w, 0)).toBe(100)
-    expect(headerWidthOf('批号')).toBeGreaterThanOrEqual(16)
-    // 批号必须比常态为空的「备注」列宽（同加工单的口径）
-    expect(headerWidthOf('批号')).toBeGreaterThan(headerWidthOf('备注'))
-  })
-
-  it('② 多套面料单：3 个商品行 ⇒ 3 块，每块 6 列（用户报的那张多套单同形）', () => {
+  it('② 多套单：3 个商品行 ⇒ 3 块，每块 6 列（用户报的那张多套单同形）', () => {
     render(
       <ProcessingDoc
         order={buildOrder({
           items: [buildItem(), buildItem({ id: 'item-2' }), buildItem({ id: 'item-3' })],
         })}
-        processingOrder={fabricPo()}
+        processingOrder={buildProcessingOrder()}
       />
     )
     const blocks = Array.from(document.querySelectorAll('.processing-set'))

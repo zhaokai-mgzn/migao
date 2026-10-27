@@ -5,15 +5,12 @@ import { createPortal } from 'react-dom'
 import dayjs from 'dayjs'
 import { QRCodeSVG } from 'qrcode.react'
 import { freightText } from '@/lib/logistics'
-import { orderItemCurtainType, orderItemQuantity, orderItemSku, craftRowsWithoutDoorWidth } from '@/lib/order-item-sku'
+import { orderItemQuantity, orderItemSku } from '@/lib/order-item-sku'
 // 加工费组合（= `processingItems[].name` 的集合，超高/超宽/倒幅就在里面）—— 取值口径唯一一份，issue #7833
 import { processingComboText } from '@/lib/processing-combo'
 // 纸面标题按**作业单两型**（issue #7891）：真值只有一份（`lib/processing-order.ts`），本组件不另写映射
 import { orderKindOf, workOrderDocTitleOf } from '@/lib/processing-order'
 import { printBodyFontPt, printContentInsetCss, printPageRule } from '@/lib/print-media'
-// 「加工方式 / 特殊选项」的**取值口只有一份**（水洗唛纸面用的同一对 helper，issue #7891 追加需求）——
-// 纸面「工艺」行照水洗唛的展示方式来印，不在本组件另写推导（另写 = 同一真值两处投影）
-import { washLabelCraftMode, washLabelSpecialOptions } from '@/lib/wash-label-content'
 import { useCompanyName } from '@/lib/use-company-name'
 import { cn } from '@/lib/utils'
 import type { PrintTarget } from './index'
@@ -27,10 +24,10 @@ import type { Order, OrderItem, ProcessingOrder, ProcessingOrderItem } from '@/t
  *
  * ① **表头**：订单日期 / 客户 / 电话 / 地址 / 备注 / **制单人** / **单号** / **交付日期** /
  *    **货运**（左上角另有**扫码报工码**，见下「左上角扫码报工码」）；
- * ② **正文**：**按套分块** —— 每块段头 `第N套/共M套`，块内一张 9 列表
- *    （{@link PROCESSING_DOC_COLUMNS}：品名 | 货号 | 颜色 | 门幅 | 帘种 | 尺寸 | 数量 | 批号 | 备注）
- *    ＋ 一行「工艺：…」（原「部位信息」列的内容，issue #6869）；
- *    🔴 **面料单只有 6 列 + 没有工艺行**（issue #7901，见下方「面料单纸面」节）；
+ * ② **正文**：**按套分块** —— 每块段头 `第N套/共M套`，块内一张 **6 列表**
+ *    （{@link PROCESSING_DOC_COLUMNS}：货号 | 颜色 | 门幅 | 数量 | 批号 | 备注）；
+ *    🔴 **两型同版式**（issue #7901 面料单 → issue #7909 加工单，用户 2026-10-27 两句裁定）：
+ *    「品名」列 /「帘种」列 /「尺寸」列 /「工艺」行**都不再上纸**（见下方「两型同版式」节）；
  *    品名 / 货号 / 颜色 / 门幅 取 `lib/order-item-sku.ts` 的 `orderItemSku()`；
  * ③ **分页**：每套 `break-inside: avoid`（不跨页裁切）、`thead` 用
  *    `display: table-header-group`（长单跨页时**表头重复**，否则第二页起认不出列）；
@@ -39,13 +36,12 @@ import type { Order, OrderItem, ProcessingOrder, ProcessingOrderItem } from '@/t
  *
  * ## 数据口径（三条硬约束，勿随手改）
  *
- * 1. **展示真值单一来源**：品名 / 货号 / 颜色 / 门幅 取 `lib/order-item-sku.ts` 的
+ * 1. **展示真值单一来源**：货号 / 颜色 / 门幅 取 `lib/order-item-sku.ts` 的
  *    `orderItemSku(item)`（货号真字段是响应里的 `skuCode`；原先读的 `productCode` **不在响应里**
- *    ⇒ 纸面货号恒空，issue #6869 的根因）；「工艺」= `craftSpecRows()` 的**同一份**真值
- *    （设计文档 §4.9「一份 spec，三处渲染」）—— 本组件不另写推导；
- *    「部位」（`curtainType`）**保留在工艺说明里**：issue #4521 移除录入面后它只有纱帘行才有值，
- *    独立成列（旧「部位」列 / 段头「部位：…」）时恒空；
- *    `craftSpecRows` 已丢弃缺值行 ⇒ 纸面**绝不**出现 `undefined` / `null` / `NaN`。
+ *    ⇒ 纸面货号恒空，issue #6869 的根因）；
+ *    🔴 工艺规格（`craftSpecRows()` 那一份）自 issue #7909 起**本纸面不再渲染** ——
+ *    「一份 spec，多处渲染」的其余几处（水洗唛 / 屏幕加工单块 / 订单详情）不受影响；
+ *    缺值仍一律显式占位，纸面**绝不**出现 `undefined` / `null` / `NaN`。
  * 2. 🔴 **缺值不许静默留空**（issue #5651 硬约束）：一律显式占位 `—`；
  *    **本系统没有采集**的字段（制单人 / 批号）另标「未采集」并出一行脚注 ——
  *    二者必须可区分：「客户没填」与「我们没有这个字段」不是一回事（同族判据：
@@ -126,20 +122,19 @@ import type { Order, OrderItem, ProcessingOrder, ProcessingOrderItem } from '@/t
  * 🔴 **纸面名 ≠ 屏上类型名**：屏上仍是 `ORDER_KIND_LABELS`（「加工单」/「出库作业单」），
  * 两套名字**不得互相覆盖**（屏幕要说清「卖布单的裁剪打包作业 ≠ 外发加工」，纸面只印两型名）。
  *
- * ## 面料单纸面去掉「品名」列 +「帘种」「尺寸」列 +「工艺」行（issue #7901）
+ * ## 两型同版式：「品名」列 +「帘种」「尺寸」列 +「工艺」行都不上纸（issue #7901 / #7909）
  *
- * 用户 2026-10-27 截图（订单 `JG-20261027-5575`，纸面标题「面料单」）圈了三处红框 + 逐字
- * 「面料单移除红框的行列」⇒ 面料单（`order_kind=outbound`）的列序变成
- * **货号 | 颜色 | 门幅 | 数量 | 批号 | 备注**（6 列），「工艺」行整行不渲染。
- *
- * 为什么是这三样（都不是「不好看」，是**在说假话 / 在重复**）：
- * - 「帘种」对布料行恒 `—`（布料单没有帘，`orderItemCurtainType()` 无值 ⇒ 占位符本身是噪音）；
- * - 「尺寸」是行内约定（截图里 `0×2.8`）不是成品尺寸 —— 成品帘抄下来就能裁，面料单抄下来不能；
- * - 「工艺」行在面料单上只剩「加工费米数：10 米」，而**数量列就是 10 米** ⇒ 同一件事印两遍；
- *   商品身份由「货号 + 颜色 + 门幅」承担（同族裁定：报价单 issue #7527 的「品名」列退场）。
- * 🔴 **成品帘「加工单」一字不动**：那三列 + 工艺行是车间认活的依据（定高买宽 / 双开 / 定型）。
- * 判据 = `frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx` 的「ProcessingDoc 面料单」一组
- * （含「同数据换 `processing` ⇒ 9 列 + 帘种列 + 工艺行都在」的起算点自证）。
+ * 用户 2026-10-27 先发「面料单 · 打印预览」截图（订单 `JG-20261027-5575`）圈三处红框 + 逐字
+ * 「面料单移除红框的行列」；看到结果后追加一句「**加工单也要移除**」⇒ 两型（成品帘「加工单」/
+ * 面料单「面料单」）现在**同一套 6 列**，都不印「工艺」行。理由（都不是「不好看」）：
+ * - 「帘种」对布料行恒 `—`；「尺寸」是行内约定（截图里 `0×2.8`）不是成品尺寸，抄下来不能裁；
+ * - 「工艺」行在面料单上只剩「加工费米数：10 米」，而「数量」列就是 10 米 —— 同一件事印两遍；
+ * - 「品名」退场后商品身份由「货号 + 颜色 + 门幅」承担（同族裁定：报价单 issue #7527）。
+ * 🔴 **有意接受的信息收敛**（issue #7909 已登记）：加工单纸面从此没有帘种 / 尺寸 / 工艺规格 ——
+ * 车间认「定高买宽 / 双开 / 定型」看**水洗唛**（同一份工艺事实的另一张纸）或**屏幕**
+ * （生产明细页 / 加工单块）。要改回去只需把这四样各自加回列清单与对应单元格。
+ * 判据 = `frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx` 的
+ * 「纸面列收敛：两型同版式（issue #7901 / #7909）」一组。
  */
 interface ProcessingDocProps {
   order: Order
@@ -164,32 +159,7 @@ interface ProcessingDocProps {
  * 表头由它渲染 ⇒ 想加/改列只动这里。守卫 `test_print_media_matrix_guard.py` C5 断言这串
  * 有序标签在 `src/**` 里**恰好出现在一个文件**（复制一份到别的介质变体 ⇒ 必红）。
  */
-export const PROCESSING_DOC_COLUMNS = [
-  '品名',
-  '货号',
-  '颜色',
-  '门幅',
-  '帘种',
-  '尺寸',
-  '数量',
-  '批号',
-  '备注',
-] as const
-
-/**
- * 面料单（`order_kind=outbound`）纸面**不印**的三列（issue #7901，用户 2026-10-27 截图三处红框）——
- * 理由见文件头「面料单纸面」节：帘种恒 `—`、尺寸是行内约定不是成品尺寸、品名由「货号 + 颜色 + 门幅」承担。
- * 🔴 只作用于面料单：成品帘「加工单」这三列是车间认活的依据。
- */
-export const PROCESSING_DOC_FABRIC_HIDDEN_COLUMNS = ['品名', '帘种', '尺寸'] as const
-
-/**
- * 面料单的列宽（6 列，顺序 = {@link PROCESSING_DOC_COLUMNS} 去掉上面三列）。
- * 单独一份而不复用加工单那套：删掉三列后原百分比只剩 67%，
- * `table-layout: fixed` 会把剩下的 33% 按比例摊给各列 ⇒ 版面不受控，
- * #6600 的「批号 ≥16%（17 位 `PC-yyyyMMdd-####` 两行放得下）」下限也保不住。
- */
-const FABRIC_DOC_COL_WIDTHS = ['w-[20%]', 'w-[20%]', 'w-[12%]', 'w-[14%]', 'w-[18%]', 'w-[16%]'] as const
+export const PROCESSING_DOC_COLUMNS = ['货号', '颜色', '门幅', '数量', '批号', '备注'] as const
 
 /** 纸面缺值占位（**显式**：不静默留空） */
 export const MISSING = '—'
@@ -258,11 +228,7 @@ export default function ProcessingDoc({
   const docNo = paperText(processingOrder?.processingOrderNo ?? order.orderNo)
   // 纸面标题按作业单两型（issue #7891）：成品帘 ⇒「加工单」、面料单 ⇒「面料单」；
   // 缺键 / null ⇒ 加工单（存量单口径 = `orderKindOf` 同一把尺，不在本组件另写映射）
-  const workOrderKind = processingOrder ? orderKindOf(processingOrder) : null
-  const docTitle = workOrderDocTitleOf(workOrderKind)
-  // 面料单（issue #7901）：卖布裁剪作业 —— 纸面不印「品名」列 /「帘种」「尺寸」两列 /「工艺」行。
-  // 缺作业单 / 存量单（`workOrderKind === null`）⇒ 按加工单口径（与标题同一把尺，见文件头）。
-  const fabricDoc = workOrderKind === 'outbound'
+  const docTitle = workOrderDocTitleOf(processingOrder ? orderKindOf(processingOrder) : null)
   // 左上角扫码报工码（issue #7891：由销售单迁入）：码值**逐字**取服务端 `scan_url`（前端不拼），
   // 无码 ⇒ 整块不出现（不画占位框、不印短码、不回落加工单号）
   const scanUrl = (processingOrder?.scan_url ?? '').trim()
@@ -389,7 +355,6 @@ export default function ProcessingDoc({
             snapshot={item.id ? snapshots.get(item.id) : undefined}
             index={idx}
             total={items.length}
-            fabric={fabricDoc}
           />
         ))
       )}
@@ -420,64 +385,25 @@ function SetBlock({
   snapshot,
   index,
   total,
-  fabric,
 }: {
   item: OrderItem
   /** 该商品行对应的加工单**快照行**（批号从这里读；对不上 ⇒ `undefined`，不猜） */
   snapshot?: ProcessingOrderItem
   index: number
   total: number
-  /** 面料单（`order_kind=outbound`）⇒ 不印品名 / 帘种 / 尺寸三列与「工艺」行（issue #7901） */
-  fabric: boolean
 }) {
   const info = (item.processingInfo ?? {}) as Record<string, unknown>
   // 商品身份（品名 / 货号 / 颜色 / 门幅）—— **唯一**取值口，见文件头第 1 条
   const sku = orderItemSku(item)
-  // 工艺规格的**取值源**（issue #7891 追加需求）：优先加工单**快照行**（加工费组合 / 算料输出都在
-  // 它上面），缺快照才回落到订单行的 `processingInfo`（两者键名同源：`craftSpecRows()` 同时吃
-  // camelCase / snake_case）。此处只做类型断言，好**复用**水洗唛的取值口 —— 不新增字段读取、不编造。
-  const craftSource = (snapshot ?? (item.processingInfo as unknown)) as ProcessingOrderItem | null
-  // ① 加工方式 = 水洗唛那一句（工艺 · 加工费组合项 · 打开方式 · 定型）；② 特殊选项单独一行。
-  // 🔴 取值口**唯一**（`washLabelCraftMode` / `washLabelSpecialOptions`）：水洗唛与这张纸不许各拼一份。
-  const craftMode = washLabelCraftMode(craftSource)
-  const specialOptions = washLabelSpecialOptions(craftSource)
-  // 已被上面两行表达过的字段不再重复印；「门幅」由 `craftRowsWithoutDoorWidth()` 排除
-  // （那是全仓**唯一**的取值口：`craftSpecRows()` 去掉「门幅」——本组件**不**直调 `craftSpecRows()`，
-  // 直调点未登记会判红，见 `tests/unit/craft-spec-row-source-guard.test.ts`）。
-  // ⚠️ 「加工类型」**不在此列**：洗水唛不印它（issue #7833），但加工单是给车间的作业纸，留一行。
-  const CRAFT_LABELS_EXPRESSED = ['工艺', '打开方式', '是否定型', '特殊选项']
-  // 一行一条 `标签：值`（用户 2026-10-27 截图：一整串「…；…；…」看不出重点）
-  const craftLines = [
-    craftMode !== '' ? `加工方式：${craftMode}` : '',
-    specialOptions !== '' ? `特殊选项：${specialOptions}` : '',
-    ...craftRowsWithoutDoorWidth(craftSource)
-      .filter((row) => !CRAFT_LABELS_EXPRESSED.includes(row.label))
-      .map((row) => `${row.label}：${row.value}`),
-  ].filter((line) => line !== '')
   // 加工费组合（issue #7833）：用户 2026-10-26 逐字「JG-…-8172 这个加工单有超高倒幅，但是在加工单的
   // 各个环节都没有体现出来」⇒ A4 纸面每套块内单列一行。取值 = **加工单快照行**的 `processingItems`
   // （组合键的真值源；存量单缺该键 ⇒ 空串 ⇒ 整行不渲染，不编造、不回落到订单侧现值）。
   const comboText = processingComboText(snapshot)
-  const width = typeof item.width === 'number' && Number.isFinite(item.width) ? item.width : null
-  const height = typeof item.height === 'number' && Number.isFinite(item.height) ? item.height : null
-  // 尺寸：两边都是有限数才出（半个尺寸没有意义）
-  const size = width !== null && height !== null ? `${width}×${height}` : ''
-  // 帘种（issue #7625）：布帘 / 纱帘 —— 唯一取值口（`orderItemCurtainType`）；
-  // 「组件」（componentRole）列自本单退场（用户 2026-10-24「不要组件这一列」）
-  const curtainType = orderItemCurtainType(item) || MISSING
-  // 数量 + 单位（issue #6901）：**一个**取值口（`lib/order-item-sku.ts`）同时喂「列名」与「值」——
-  // 原先列名写死「数量(米)」而 `quantity` 的单位可能是件/套（快照行 `unit`）
-  // ⇒ 同一行里列名与值各说一份单位。缺值 ⇒ 显式占位 `—`（不静默留空）。
   const quantity = orderItemQuantity({ quantity: item.quantity, unit: snapshot?.unit })
   // 列名按本行的单位：有单位 ⇒ `数量(米)`，没采集到 ⇒ 只写 `数量`（**不编「米」**）
   const quantityLabel = quantity.unit
     ? `${PROCESSING_DOC_COLUMNS[COL_QUANTITY]}(${quantity.unit})`
     : PROCESSING_DOC_COLUMNS[COL_QUANTITY]
-  // 面料单少三列（issue #7901）⇒ 表头列数 / 补位行的 `colSpan` 都跟着它走，**不写魔数**
-  // （少一格数据行 = 整列没有边框，issue #6595 的实测形态）
-  const columnCount = fabric ? FABRIC_DOC_COL_WIDTHS.length : PROCESSING_DOC_COLUMNS.length
-  // 面料单的列宽取 {@link FABRIC_DOC_COL_WIDTHS}（6 列），加工单仍用下面各行的字面量
-  const colW = fabric ? FABRIC_DOC_COL_WIDTHS : null
   return (
     <div className="processing-set mb-3" data-testid={`processing-doc-set-${index}`}>
       <div className="font-semibold mb-1">
@@ -488,28 +414,21 @@ function SetBlock({
       <table className="processing-doc-table w-full border-collapse" style={{ tableLayout: 'fixed' }}>
         <thead>
           <tr>
-            {!fabric && <DocTh className="w-[16%]">{PROCESSING_DOC_COLUMNS[0]}</DocTh>}
-            <DocTh className={colW ? colW[0] : 'w-[11%]'}>{PROCESSING_DOC_COLUMNS[1]}</DocTh>
-            <DocTh className={colW ? colW[1] : 'w-[8%]'}>{PROCESSING_DOC_COLUMNS[2]}</DocTh>
-            <DocTh className={colW ? colW[2] : 'w-[7%]'}>{PROCESSING_DOC_COLUMNS[3]}</DocTh>
-            {!fabric && <DocTh className="w-[8%]">{PROCESSING_DOC_COLUMNS[4]}</DocTh>}
-            {!fabric && <DocTh className="w-[9%]">{PROCESSING_DOC_COLUMNS[5]}</DocTh>}
-            <DocTh align="right" className={colW ? colW[3] : 'w-[11%]'}>
+            <DocTh className="w-[20%]">{PROCESSING_DOC_COLUMNS[0]}</DocTh>
+            <DocTh className="w-[20%]">{PROCESSING_DOC_COLUMNS[1]}</DocTh>
+            <DocTh className="w-[12%]">{PROCESSING_DOC_COLUMNS[2]}</DocTh>
+            <DocTh align="right" className="w-[14%]">
               {quantityLabel}
             </DocTh>
-            <DocTh className={colW ? colW[4] : 'w-[16%]'}>{PROCESSING_DOC_COLUMNS[7]}</DocTh>
-            <DocTh className={colW ? colW[5] : 'w-[14%]'}>{PROCESSING_DOC_COLUMNS[8]}</DocTh>
+            <DocTh className="w-[18%]">{PROCESSING_DOC_COLUMNS[4]}</DocTh>
+            <DocTh className="w-[16%]">{PROCESSING_DOC_COLUMNS[5]}</DocTh>
           </tr>
         </thead>
         <tbody>
           <tr>
-            {/* 面料单跳过「品名」「帘种」「尺寸」三格（issue #7901）—— 列序与表头同一把尺 */}
-            {!fabric && <DocTd>{sku.name || MISSING}</DocTd>}
             <DocTd>{sku.code || MISSING}</DocTd>
             <DocTd>{sku.color || MISSING}</DocTd>
             <DocTd>{sku.doorWidth || MISSING}</DocTd>
-            {!fabric && <DocTd testId="processing-doc-curtain-type">{curtainType}</DocTd>}
-            {!fabric && <DocTd>{size || MISSING}</DocTd>}
             <DocTd align="right">{quantity.quantity ?? MISSING}</DocTd>
             {/* 批号 = 快照行的 `batchNo`（指派批次时写入）。缺值印 `—`（= 未指派），
                 与「我们没有这个字段」是两件事（issue #5914；登记见 PROCESSING_DOC_NOT_COLLECTED_FIELDS） */}
@@ -518,28 +437,13 @@ function SetBlock({
                 —— 车间要按它核算法）。缺值**留空**（纸面留白供手写）。 */}
             <DocTd>{paperText(info.remark, '')}</DocTd>
           </tr>
-          {/* 工艺规格行（issue #7891 追加需求）：照水洗唛「加工方式 / 特殊选项」的展示方式**一行一条**
-              —— 改前是一整串用「；」拼起来的长句（用户截图红框：看不出重点）。
-              行序 = 加工方式 → 特殊选项 → `craftSpecRows()` 的既有顺序；长值由 `DocTd` 折行印全文。
-              🔴 整行仍须占满本表列数（1 + `colSpan`）—— 少一格数据行就缺边框（issue #6595 实测形态）。
-              🔴 面料单**不印这一行**（issue #7901）：那一格只剩「加工费米数」，与「数量」列重复。 */}
-          {!fabric && craftLines.length > 0 && (
-            <tr>
-              <DocTd>工艺</DocTd>
-              <DocTd colSpan={columnCount - 1} testId="processing-doc-craft">
-                {craftLines.map((line) => (
-                  <div key={line}>{line}</div>
-                ))}
-              </DocTd>
-            </tr>
-          )}
-          {/* 加工费组合行（issue #7833）：整行占满本表列数（1 + colSpan，同「工艺」行 ——
-              少一格数据行就会缺边框，issue #6595 的实测形态）。长值由 `DocTd` 的 `break-words` 折行印全文。
-              `colSpan` 随列数变（面料单 6 列 ⇒ 5），**不写死 8**。 */}
+          {/* 加工费组合行（issue #7833）：整行占满本表列数（1 + `colSpan`）—— 少一格数据行就缺边框
+              （issue #6595 的实测形态）。🔴 issue #7909 起「工艺」行退场 ⇒ 本行是正文唯一一行补位行；
+              `colSpan` 由列清单长度算（**不写死**）。 */}
           {comboText !== '' && (
             <tr>
               <DocTd>加工费组合</DocTd>
-              <DocTd colSpan={columnCount - 1} testId="processing-doc-combo">
+              <DocTd colSpan={PROCESSING_DOC_COLUMNS.length - 1} testId="processing-doc-combo">
                 {comboText}
               </DocTd>
             </tr>
