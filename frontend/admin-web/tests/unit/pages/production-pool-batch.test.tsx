@@ -467,7 +467,7 @@ describe('智能派单 · 成批区（PR-081）', () => {
     expect(row).not.toHaveTextContent('NaN')
     // 键缺席 ⇒ 空态（不是崩溃、也不是把「没有」渲染成「有」）
     expect(screen.queryByTestId('pool-warnings')).toBeNull()
-    expect(screen.getByText('当前没有加急待派订单')).toBeInTheDocument()
+    expect(screen.getByText('当前没有加急或外发待派订单')).toBeInTheDocument()
   })
 
   it('预览被拒（403/422）⇒ 拒绝文案在预览区可见（不静默留一个旧数字）', async () => {    mockPreview.mockRejectedValueOnce(new Error('没有权限执行此操作'))
