@@ -65,13 +65,13 @@ const FROZEN_ACTION_OFFSCREEN: string[] = [
   //   · after-sales：9 列；**本仓实测在 1440/1280 两档都干净**（操作按钮够得到）——
   //     但它的空态行 `colSpan={9}` 与数据行的**实际格数不一致**（数据行少一格）⇒ 静态判不了、
   //     留作观察项，不在本包改（边界：不在 #6717 面内）。
-  //   · production/pool：7 列（其中一列是 3 列的小表同页）⇒ 无冻结列，登记观察。
+  //   · production/pool：**已收口并从台账删除**（issue #7943）—— 加急 / 外发合并成一张表后
+  //     操作列带 `sticky right-0`（右缘冻结）；改前的旧「加急」表是 7 列无冻结列的观察项。
   'src/app/(dashboard)/shipments/page.tsx::表[发货单号|订单号|客户|来源|发货人|发货时间|实发|操作]',
   'src/app/(dashboard)/after-sales/page.tsx::表[工单号|关联订单|客户|售后类型|状态|优先级|创建时间|更新时间|操作]',
-  'src/app/(dashboard)/production/pool/page.tsx::表[单号|物料（商品 × 颜色 × 门幅）|需求米数|等待时长|加急标记|到货日|操作]',
 ]
 /** 冻结读数：台账条数（**只许缩短**；修好一处必须同时下调本数字）。 */
-const ACTION_OFFSCREEN_BASELINE = 3
+const ACTION_OFFSCREEN_BASELINE = 2
 
 /**
  * 存量台账·规则 ①b（冻结格背景不透明）：**当前为空**（归零基线）。
