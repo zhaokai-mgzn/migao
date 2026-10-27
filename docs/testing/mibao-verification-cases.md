@@ -9318,6 +9318,7 @@
 数据: **判据 3·出库作业单拒收承接方（会红）**：卖布单（出库作业单）带承接方 ⇒ 该单 `success=false` + 文案含「不支持外发加工厂」，其余单照常（逐单记账）。执行点 = 同文件 generateRejectsProcessorOnOutboundOrder。**红证**：删掉 `prepare` 里的 outbound 判定 ⇒ 该用例红（卖布单被落成外发单）。
 数据: **判据 4·只看外发（会红）**：`GET /api/admin/processing-orders?outsourced=true` 只回有承接方档案引用的行；不传 ⇒ 与改造前逐字相同。执行点 = 同文件 listOutsourcedOnly。**红证**：删掉 `list(..., outsourced)` 的 removeIf ⇒ 该用例红（两行都回）。
 数据: **判据 5·下拉只列在用加工厂（会红）**：`GET /api/admin/production/pool/processors` 只回 `status=active ∧ type=processor` 的 id + 名称（不泄露联系人/账期/欠款），权限 = 派单页同码 `processing:view`。执行点 = 同文件 processorOptionsOnlyActiveProcessors + SupplierService 的 type 过滤用例。**红证**：去掉 type 过滤 ⇒ 采购供应商混进下拉，用例红。
+数据: 判据 5·**承接方为空时的入口（issue #7955，前端）**：下拉只剩「本厂自做」= 死路 ⇒ 确认没有加工厂档案后，承接方旁给「还没有加工厂？去供应商新建 →」（`href=/suppliers`；档案侧 = 供应商页「类型 = 加工厂（外发作业）」+ 在用）；**有档案时不摆**（正控 + 负控）。判据 = `frontend/admin-web/tests/unit/pages/production-pool-urgent.test.tsx`（改前该用例红）。
 数据: **边界（照实登记）**：本期**不做**外发加工费/回厂数量登记/对账结算；粒度 = **整单**（一批派单一个承接方）；待付款单派单后订单仍 `pending`（状态机无 `pending→producing`），付款转 confirmed 时不会自动补 producing —— 存量缺口，不在本单修。
 前置: 本用例是 [backend-contract] 确定性单测：前置（供应商档案 / 订单 / 工序库桩）由测试类自建并打桩（Mockito），不依赖共享夹具或种子真值；前置不成立时对应单测直接红
 跳过: [backend-contract] admin-api 单测（派单写面 + 校验 + 读面过滤；无 LLM 行为面）

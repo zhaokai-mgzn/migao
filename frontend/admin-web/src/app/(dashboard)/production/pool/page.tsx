@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, ChevronDown, Layers, RefreshCw, XCircle, Zap } from 'lucide-react'
+import Link from 'next/link'
 import { toast } from 'sonner'
 import { extractApiErrorMessage, toastRequestError } from '@/lib/api-error'
 import { poolBoardApi } from '@/lib/api'
@@ -67,6 +68,11 @@ export default function ProductionPoolPage() {
    * （`type = processor`），下拉走派单同码的 `GET /production/pool/processors`。
    */
   const [processors, setProcessors] = useState<ProcessorOption[]>([])
+  /**
+   * 「承接方」档案**拉过一次**（issue #7955）—— 引导链接只在**确认确实没有加工厂**之后才摆：
+   * 请求在飞的那几十毫秒里先闪一句「还没有加工厂？」就是**说假话**（有的租户其实有档案）。
+   */
+  const [processorsLoaded, setProcessorsLoaded] = useState(false)
   const [processorId, setProcessorId] = useState('')
   const [returnDate, setReturnDate] = useState('')
   const consignee = { processorSupplierId: processorId || null, expectedDeliveryDate: returnDate || null }
@@ -119,6 +125,8 @@ export default function ProductionPoolPage() {
         setProcessors(res.data?.data ?? [])
       } catch (e) {
         console.error(e)
+      } finally {
+        setProcessorsLoaded(true)
       }
     })()
   }, [])
@@ -597,6 +605,20 @@ export default function ProductionPoolPage() {
                       <option key={p.id} value={p.id}>{p.name}</option>
                     ))}
                   </select>
+                  {/*
+                    issue #7955（用户 2026-10-27 现场提问「这里的承接方需要在哪添加」）：
+                    下拉里只有「本厂自做」= **死路** —— 加工厂档案在「供应商」页（类型选「加工厂（外发作业）」），
+                    只在**确认没有加工厂档案**时给这条入口；有档案时不摆无用引导。
+                  */}
+                  {processorsLoaded && processors.length === 0 && (
+                    <Link
+                      href="/suppliers"
+                      data-testid="pool-processor-empty-link"
+                      className="text-xs text-primary-600 hover:underline whitespace-nowrap"
+                    >
+                      还没有加工厂？去供应商新建 →
+                    </Link>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <label className="text-sm text-neutral-600 whitespace-nowrap">回厂日</label>
