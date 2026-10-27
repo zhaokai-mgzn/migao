@@ -576,7 +576,7 @@ describe('OrderDetailPage', () => {
     expect(screen.queryByTestId('print-preview-doc-labels')).toBeNull()
   })
 
-  it('打印流水区块：展示服务端下发的 时间 / 单据 / 操作人（issue #7902）', async () => {
+  it('打印流水视图：入口在打印预览表头，订单明细页不再常驻（issue #7964）', async () => {
     mockListPrintLogs.mockResolvedValue({
       data: {
         data: [
@@ -597,13 +597,29 @@ describe('OrderDetailPage', () => {
     })
     mockGetOrder.mockResolvedValue({ data: { data: { ...mockOrder, status: 'shipped', refundAmount: 0 } } })
     render(<OrderDetailPage />)
+    const user = userEvent.setup()
     await screen.findAllByText(mockOrder.orderNo)
+
+    // ① 订单明细页不再有流水区块（用户 2026-10-28「不要放到订单明细中」）—— 也不该先读一次
+    expect(screen.queryByTestId('order-print-logs')).toBeNull()
+    expect(mockListPrintLogs).not.toHaveBeenCalled()
+
+    // ② 打开打印层 ⇒ 表头有入口；**点开后才读**（打开预览本身不多打一条读请求）
+    await user.click(screen.getByTestId('order-print-entry'))
+    expect(screen.queryByTestId('order-print-logs')).toBeNull()
+    expect(mockListPrintLogs).not.toHaveBeenCalled()
+    await user.click(screen.getByTestId('print-preview-logs-entry'))
 
     const panel = await screen.findByTestId('order-print-logs')
     expect(panel).toHaveTextContent('销售单')
     expect(panel).toHaveTextContent('王五')
     expect(panel).toHaveTextContent('241×140mm')
     expect(screen.getByTestId('print-log-pl-1')).toBeInTheDocument()
+
+    // ③ 流水视图打开时纸面与打印动作退场（流水不属于纸面、不随纸印出）
+    expect(screen.queryByTestId('print-preview-paper')).toBeNull()
+    expect(screen.queryByTestId('print-preview-actions')).toBeNull()
+    expect(screen.getByTestId('print-preview-logs-entry')).toHaveTextContent('返回预览')
   })
 
   it('已关闭订单也能打开打印层（改前这个状态一张单据都打不出来）', async () => {

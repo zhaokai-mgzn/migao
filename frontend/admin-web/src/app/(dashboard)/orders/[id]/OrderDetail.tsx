@@ -22,7 +22,8 @@ import { PRINT_TARGET_SPECS, printTargetTitle, usePrintBatch, usePrintDoc, type 
 // （`toWashLabelInputs` + `TaskCardPrint`）—— 换入口不换字段口径，两条打印通道（系统 / 蓝牙）也照旧。
 import TaskCardPrint from '@/components/production/TaskCardPrint'
 import DirectLabelPrint from '@/components/production/DirectLabelPrint'
-// 打印流水（issue #7902）：本单的留痕区块（只在订单详情里看，用户 2026-10-27 裁定）
+// 打印流水（issue #7902 建面，issue #7964 搬进打印层）：本单的留痕视图 —— 入口在打印预览表头，
+// 不再常驻订单明细页（用户 2026-10-28 逐字「打印流水应该放到打印预览界面上……不要放到订单明细中」）
 import PrintLogPanel from '@/components/orders/PrintLogPanel'
 import { toWashLabelInputs } from '@/lib/wash-label-content'
 import { useCompanyName } from '@/lib/use-company-name'
@@ -627,6 +628,9 @@ export default function OrderDetailPage() {
         }}
         docs={printDocs}
         onSelect={selectPreview}
+        // 打印流水（issue #7964）：视图挂在本层里、入口在表头 —— 订单明细页上不再占一块
+        // （用户 2026-10-28 逐字「打印流水应该放到打印预览界面上……不要放到订单明细中」）
+        logs={<PrintLogPanel orderId={order.id} refreshKey={printLogNonce} />}
         // 单据标签的显示名与标题**同源**（issue #7891）：作业单两型下同一个「processing」目标
         // 会叫「加工单」（成品帘）或「面料单」（只裁剪的面料单），标签行不许另说一套名字。
         titleOf={(target) => printTargetTitle(target, workDocKind)}
@@ -668,12 +672,6 @@ export default function OrderDetailPage() {
           />
         )}
       </PrintDocPreview>
-
-      {/* 打印流水（issue #7902）：本单出过哪些纸、谁打的、补打了几次 —— 用户裁定只看本单
-          （不做全局流水页）。常驻面最多 5 行，更多的按需展开（产品设计原则 P1）。 */}
-      <SectionCard title="打印流水">
-        <PrintLogPanel orderId={order.id} refreshKey={printLogNonce} />
-      </SectionCard>
 
       {/* 收货信息 */}
       <SectionCard title="收货信息">

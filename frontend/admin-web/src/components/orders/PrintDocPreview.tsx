@@ -121,6 +121,17 @@ export interface PrintDocPreviewProps {
    */
   actions?: ReactNode
   /**
+   * 本单的**打印流水**槽（issue #7964，用户 2026-10-28 逐字「打印流水应该放到打印预览界面上，
+   * 你找个合适的入口让用户可以查看，不要放到订单明细中」）：给了它，表头就长出「打印流水」入口，
+   * 点开后**在本层内**查看流水（时间 / 单据 / 操作人 / 纸型 / 张数 / 通道 / 结果）。
+   *
+   * 🔴 为什么是槽而不是让本层认识订单：本层是**纸面预览**的通用层（发货页 / 加工页也在用），
+   * 流水是订单域的事实 —— 由调用方渲染 `PrintLogPanel` 传进来，本层只负责「放在哪、什么时候显示」。
+   *
+   * 不传 ⇒ 本层与改前逐字一致（其它使用方零影响）。
+   */
+  logs?: ReactNode
+  /**
    * 本页可打印的单据与**展示顺序**（issue #7544）—— 给了它就长出一排「单据标签」，
    * 商家在**同一个层里**换单据看，而不是先在页面上找对应的那个按钮。
    *
@@ -167,6 +178,7 @@ export default function PrintDocPreview({
   onClose,
   notice,
   actions,
+  logs,
   docs,
   onSelect,
   titleOf,
@@ -193,6 +205,12 @@ export default function PrintDocPreview({
     setPrinterName(readPrinterName(media))
     setPrinterEditing(false)
   }, [media])
+
+  // 流水视图（issue #7964）：本层内的**第二视图** —— 关层即收起，下次打开回到纸面（不带着上一次的视图）
+  const [logsOpen, setLogsOpen] = useState(false)
+  useEffect(() => {
+    if (!target) setLogsOpen(false)
+  }, [target])
 
   // 缩放：只做「适配屏幕」，不改纸的真尺寸（纸框本身始终是 mm 单位）
   useEffect(() => {
@@ -359,16 +377,30 @@ export default function PrintDocPreview({
               )}
             </div>
           </div>
-          <Button variant="ghost" size="sm" onClick={onClose} data-testid="print-preview-close">
-            关闭
-          </Button>
+          <div className="flex shrink-0 items-center gap-1">
+            {/* 打印流水入口（issue #7964）：联合打印逐张引导中不出现 —— 不打断正在换的那张纸 */}
+            {logs && batch?.stage !== 'running' && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setLogsOpen((open) => !open)}
+                aria-expanded={logsOpen}
+                data-testid="print-preview-logs-entry"
+              >
+                {logsOpen ? '返回预览' : '打印流水'}
+              </Button>
+            )}
+            <Button variant="ghost" size="sm" onClick={onClose} data-testid="print-preview-close">
+              关闭
+            </Button>
+          </div>
         </div>
 
         {/* ② 单据标签（issue #7544）＝ 同页多份单据时**唯一**的换单据入口；
             联合打印面板打开时（issue #7949，用户 2026-10-27「横着放置一行」「点击联合打印后顶部出现多选框进行勾选」）
             **同一行**切换成多选 chip —— 不另起一张竖排列表（竖排 4 行会把纸面预览挤掉一截）。
             点击 = 勾选这份纸 + 顺带把它切到预览（勾选与「看哪张」是同一次点击的两个结果）。 */}
-        {docs && docs.length > 1 && onSelect && (
+        {!logsOpen && docs && docs.length > 1 && onSelect && (
           <div
             className="flex flex-wrap items-center gap-2 border-b border-neutral-200 px-4 py-2"
             role="group"
@@ -449,7 +481,7 @@ export default function PrintDocPreview({
 
         {/* ②b 联合打印的**唯一**常驻面（issue #7949）：一行 = 标题/说明 + 已选读数 + 三个动作。
             勾选项在上一行（与单据标签同一行），故本面板只有**一行**高度（改前是 4 行列表 + 页脚 ≈ 6 行）。 */}
-        {batch && batch.stage === 'panel' && (
+        {!logsOpen && batch && batch.stage === 'panel' && (
           <div
             className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-neutral-200 bg-neutral-50 px-4 py-2"
             data-testid="print-batch-panel"
@@ -479,108 +511,120 @@ export default function PrintDocPreview({
           </div>
         )}
 
-        {/* ③ 真尺寸纸框（按 mm），外层只做缩放适配 */}
-        <div className="flex-1 overflow-auto bg-neutral-100 p-4">
-          <div
-            className="print-preview-stage mx-auto"
-            ref={stageRef}
-            style={{ width: `${paperWidthPx}px`, height: `${paperHeightPx}px` }}
-          >
+        {/* 流水视图（issue #7964）：本层内的第二视图 —— 纸面 / 单据标签 / 纸面自检与打印动作**一并退场**，
+            商家看的是「这单打过什么」，看完点表头「返回预览」回到纸面。
+            🔴 本块在 `[data-print-paper]` 之外 ⇒ 流水永远不会随着纸印出去。 */}
+        {logsOpen && logs ? (
+          <div className="flex-1 overflow-auto bg-white px-4 py-3" data-testid="print-preview-logs">
+            <div className="mb-2 text-sm font-semibold text-neutral-900">打印流水</div>
+            {logs}
+          </div>
+        ) : (
+          /* ③ 真尺寸纸框（按 mm），外层只做缩放适配 */
+          <div className="flex-1 overflow-auto bg-neutral-100 p-4">
             <div
-              data-print-paper
-              data-testid="print-preview-paper"
-              className="origin-top-left bg-white shadow ring-1 ring-neutral-300"
-              style={{
-                width: `${box.widthMm}mm`,
-                minHeight: `${box.heightMm}mm`,
-                padding: `${margin.yMm}mm ${margin.xMm}mm`,
-                transform: `scale(${scale})`,
-                fontSize: `${printBodyFontPt(media)}pt`,
-              }}
+              className="print-preview-stage mx-auto"
+              ref={stageRef}
+              style={{ width: `${paperWidthPx}px`, height: `${paperHeightPx}px` }}
             >
-              {/* 🔴 预览实例不传 printTarget ⇒ 不带 data-print-target ⇒ 打印媒体下不上纸 */}
-              <div className="print-preview-doc">{children}</div>
+              <div
+                data-print-paper
+                data-testid="print-preview-paper"
+                className="origin-top-left bg-white shadow ring-1 ring-neutral-300"
+                style={{
+                  width: `${box.widthMm}mm`,
+                  minHeight: `${box.heightMm}mm`,
+                  padding: `${margin.yMm}mm ${margin.xMm}mm`,
+                  transform: `scale(${scale})`,
+                  fontSize: `${printBodyFontPt(media)}pt`,
+                }}
+              >
+                {/* 🔴 预览实例不传 printTarget ⇒ 不带 data-print-target ⇒ 打印媒体下不上纸 */}
+                <div className="print-preview-doc">{children}</div>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
-        {/* ④ 自检结论 + 出口 */}
-        <div className="border-t border-neutral-200 px-4 py-3">
-          {/* 单据级提示槽（issue #6867）：在出口**之前**、纸框**之外** —— 商家先看见「这张纸扫不了」，
-              再决定是打还是先补码（放进纸框会污染纸面自检读数，见 `notice` 的 props 注释）。 */}
-          {notice && <div className="mb-2">{notice}</div>}
-          {/* 联合打印进度（issue #7902）：**哪一张、第几张、出没出纸**在同一行说完 ——
-              商家按这张纸的纸型换纸/换驱动，屏幕要一直告诉他现在在打哪一份。 */}
-          {batch?.stage === 'running' && (
-            <div className="mb-2 flex flex-wrap items-center gap-2" data-testid="print-batch-progress">
-              <span className="inline-flex items-center rounded-full bg-primary-50 px-2.5 py-0.5 text-xs font-semibold text-primary-700">
-                联合打印 {batch.index + 1}/{batch.selected.length}
-              </span>
-              <span className="text-sm font-medium text-neutral-900">
-                {batch.current ? (titleOf ? titleOf(batch.current) : PRINT_TARGET_SPECS[batch.current].title) : ''}
-              </span>
-              <span className="text-xs tabular-nums text-neutral-500">
-                {box.widthMm}×{box.heightMm}mm
-              </span>
-              <span className="text-xs text-neutral-500" data-testid="print-batch-printer">
-                {printerName ? `打印机：${printerName}` : `请选：${printerKindOf(media)}`}
-              </span>
-              <span className="text-xs text-neutral-500">{batch.fired ? '已出纸' : '待出纸'}</span>
+        {/* ④ 自检结论 + 出口（流水视图打开时一并退场：自检读的是纸面，纸面不在就不该报读数） */}
+        {!logsOpen && (
+          <div className="border-t border-neutral-200 px-4 py-3">
+            {/* 单据级提示槽（issue #6867）：在出口**之前**、纸框**之外** —— 商家先看见「这张纸扫不了」，
+                再决定是打还是先补码（放进纸框会污染纸面自检读数，见 `notice` 的 props 注释）。 */}
+            {notice && <div className="mb-2">{notice}</div>}
+            {/* 联合打印进度（issue #7902）：**哪一张、第几张、出没出纸**在同一行说完 ——
+                商家按这张纸的纸型换纸/换驱动，屏幕要一直告诉他现在在打哪一份。 */}
+            {batch?.stage === 'running' && (
+              <div className="mb-2 flex flex-wrap items-center gap-2" data-testid="print-batch-progress">
+                <span className="inline-flex items-center rounded-full bg-primary-50 px-2.5 py-0.5 text-xs font-semibold text-primary-700">
+                  联合打印 {batch.index + 1}/{batch.selected.length}
+                </span>
+                <span className="text-sm font-medium text-neutral-900">
+                  {batch.current ? (titleOf ? titleOf(batch.current) : PRINT_TARGET_SPECS[batch.current].title) : ''}
+                </span>
+                <span className="text-xs tabular-nums text-neutral-500">
+                  {box.widthMm}×{box.heightMm}mm
+                </span>
+                <span className="text-xs text-neutral-500" data-testid="print-batch-printer">
+                  {printerName ? `打印机：${printerName}` : `请选：${printerKindOf(media)}`}
+                </span>
+                <span className="text-xs text-neutral-500">{batch.fired ? '已出纸' : '待出纸'}</span>
+              </div>
+            )}
+            <div className="mb-2 text-sm" data-testid="print-preview-check">
+              {check === null ? (
+                <span className="text-neutral-500">正在量纸面…</span>
+              ) : check.overflowMm > 0 ? (
+                <span className="text-amber-700">
+                  内容 {check.contentMm}mm &gt; 可用 {check.limitMm}mm，超出 {check.overflowMm}mm
+                  {check.overflowSheets.length > 0
+                    ? `（第 ${check.overflowSheets.join('、')} 张）`
+                    : ''}
+                  —— 直接打印会被裁掉（纸面从底部丢内容）；请拆单，或改用其它介质再打。
+                </span>
+              ) : (
+                <span className="text-neutral-600">
+                  内容 {check.contentMm}mm ≤ 可用 {check.limitMm}mm，装得下
+                  {check.sheets > 1 ? `（共 ${check.sheets} 张）` : ''}
+                  {check.limitMm > 0 && check.contentMm / check.limitMm > 0.5 && check.sheets === 1
+                    ? `，预计 ${check.pages} 页`
+                    : ''}
+                </span>
+              )}
             </div>
-          )}
-          <div className="mb-2 text-sm" data-testid="print-preview-check">
-            {check === null ? (
-              <span className="text-neutral-500">正在量纸面…</span>
-            ) : check.overflowMm > 0 ? (
-              <span className="text-amber-700">
-                内容 {check.contentMm}mm &gt; 可用 {check.limitMm}mm，超出 {check.overflowMm}mm
-                {check.overflowSheets.length > 0
-                  ? `（第 ${check.overflowSheets.join('、')} 张）`
-                  : ''}
-                —— 直接打印会被裁掉（纸面从底部丢内容）；请拆单，或改用其它介质再打。
-              </span>
-            ) : (
-              <span className="text-neutral-600">
-                内容 {check.contentMm}mm ≤ 可用 {check.limitMm}mm，装得下
-                {check.sheets > 1 ? `（共 ${check.sheets} 张）` : ''}
-                {check.limitMm > 0 && check.contentMm / check.limitMm > 0.5 && check.sheets === 1
-                  ? `，预计 ${check.pages} 页`
-                  : ''}
-              </span>
-            )}
-          </div>
-          <div className="flex flex-wrap items-center justify-end gap-2" data-testid="print-preview-actions">
-            {actions}
-            <Button variant="secondary" onClick={handleCapture} loading={capturing} data-testid="print-preview-capture">
-              复制截图
-            </Button>
-            {batch && batch.stage === 'idle' && batch.candidates.length > 1 && (
-              <Button variant="secondary" onClick={() => batch.openPanel(target ?? undefined)} data-testid="print-batch-entry">
-                联合打印
+            <div className="flex flex-wrap items-center justify-end gap-2" data-testid="print-preview-actions">
+              {actions}
+              <Button variant="secondary" onClick={handleCapture} loading={capturing} data-testid="print-preview-capture">
+                复制截图
               </Button>
-            )}
-            {batch?.stage === 'running' ? (
-              <>
-                <Button variant="secondary" onClick={batch.stop} data-testid="print-batch-stop">
-                  结束
+              {batch && batch.stage === 'idle' && batch.candidates.length > 1 && (
+                <Button variant="secondary" onClick={() => batch.openPanel(target ?? undefined)} data-testid="print-batch-entry">
+                  联合打印
                 </Button>
-                {batch.fired ? (
-                  <Button onClick={batch.next} data-testid="print-batch-next">
-                    {batch.index + 1 >= batch.selected.length ? '完成' : '下一张'}
+              )}
+              {batch?.stage === 'running' ? (
+                <>
+                  <Button variant="secondary" onClick={batch.stop} data-testid="print-batch-stop">
+                    结束
                   </Button>
-                ) : (
-                  <Button onClick={() => onBatchPrintCurrent?.()} data-testid="print-preview-print">
-                    打印这一张
-                  </Button>
-                )}
-              </>
-            ) : (
-              <Button onClick={onPrint} data-testid="print-preview-print">
-                打印
-              </Button>
-            )}
+                  {batch.fired ? (
+                    <Button onClick={batch.next} data-testid="print-batch-next">
+                      {batch.index + 1 >= batch.selected.length ? '完成' : '下一张'}
+                    </Button>
+                  ) : (
+                    <Button onClick={() => onBatchPrintCurrent?.()} data-testid="print-preview-print">
+                      打印这一张
+                    </Button>
+                  )}
+                </>
+              ) : (
+                <Button onClick={onPrint} data-testid="print-preview-print">
+                  打印
+                </Button>
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   )
