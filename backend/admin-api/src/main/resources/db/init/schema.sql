@@ -4032,6 +4032,9 @@ CREATE TABLE IF NOT EXISTS quality_inspections (
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
     processing_order_id VARCHAR(64) NOT NULL REFERENCES processing_orders(id),
     order_item_id VARCHAR(64) NOT NULL,                -- 一件成品帘（order_items.id）：质检的唯一颗粒度
+    -- issue #7945（V202）：件 = 套号 × 部位（与返工单同一把钥匙）；存量 NULL = 未定位（不猜）
+    set_id VARCHAR(64),
+    set_no VARCHAR(64),
     position_name VARCHAR(128),                        -- 成品帘展示名快照（缺值不渲染假数据）
     inspector_id VARCHAR(64) NOT NULL,                 -- 检验人（独立质检员 / 工人端质检员）
     inspector_name VARCHAR(64),
@@ -4050,6 +4053,9 @@ CREATE INDEX IF NOT EXISTS idx_quality_inspections_item
 CREATE INDEX IF NOT EXISTS idx_quality_inspections_po
     ON quality_inspections (tenant_id, processing_order_id)
     WHERE deleted = 0;
+-- 件级读面（issue #7945）：套号 × 部位 = 一张水洗唛码
+CREATE INDEX IF NOT EXISTS idx_quality_inspections_piece
+    ON quality_inspections (tenant_id, set_no, order_item_id, inspected_at) WHERE deleted = 0;
 COMMENT ON TABLE quality_inspections IS '质检记录（成品帘级，issue #5652）：一行 = 一件成品帘（order_item_id）× 检验人 × 检验时刻 × 判定（pass/rework/scrap）× 不合格原因（判定≠pass 时必填）。颗粒度 = **成品帘**（用户 2026-10-16 裁定「是按成品帘来检查的」）⇒ 本表**没有** operation_id 列。**两套口径并存**：报工表是数量事实、本表是质检判定 —— 互不覆盖、互不重算，质检不参与计件。';
 COMMENT ON COLUMN quality_inspections.order_item_id IS '一件成品帘（order_items.id）：质检的**唯一颗粒度**（用户裁定「是按成品帘来检查的」）';
 COMMENT ON COLUMN quality_inspections.inspection_result IS '质检三态：pass 合格 / rework 返工 / scrap 报废；取值域由服务层 QualityCheckService.RESULTS 裁（与 production_work_logs.work_type 同名不同物）';
@@ -4389,6 +4395,11 @@ CREATE TABLE IF NOT EXISTS rework_orders (
     worker_id VARCHAR(64),
     worker_name VARCHAR(64),
     work_log_id VARCHAR(64),
+    -- issue #7945（V202）：件定位键 = 套号 × 部位（= 一张水洗唛码）；存量 NULL = 未定位（不猜）
+    order_item_id VARCHAR(36),
+    set_id VARCHAR(64),
+    set_no VARCHAR(64),
+    position_name VARCHAR(128),
     CONSTRAINT ck_rework_orders_status CHECK (status IN ('draft', 'in_progress', 'done', 'cancelled')),
     CONSTRAINT ck_rework_orders_source CHECK (source IN ('after_sales', 'worker'))
 );
@@ -4401,6 +4412,12 @@ CREATE INDEX IF NOT EXISTS idx_rework_orders_ticket
     ON rework_orders (tenant_id, after_sales_ticket_id) WHERE deleted = 0;
 CREATE INDEX IF NOT EXISTS idx_rework_orders_processing
     ON rework_orders (tenant_id, processing_order_id) WHERE deleted = 0;
+-- 同一件最多一张未完结的**车间**返工单（issue #7945，V202）：件 = 套号 × 部位
+CREATE UNIQUE INDEX IF NOT EXISTS uk_rework_orders_open_per_piece
+    ON rework_orders (tenant_id, set_no, order_item_id)
+    WHERE source = 'worker' AND status IN ('draft', 'in_progress') AND deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_rework_orders_piece
+    ON rework_orders (tenant_id, order_item_id, set_no) WHERE deleted = 0;
 
 -- ══════════════════════════════════════════════════════════════════════════════
 -- 原料仓/成品仓 + 仓位 + 成品在库 + 出库单（V196，issue #7750）

@@ -207,24 +207,6 @@ public class ProductionService {
     private ProductMapper productMapper;
 
     /**
-     * 返工报工自动落质检记录（issue #7919）—— 复用 {@link QualityCheckService} 的写入实现，
-     * **不在本类另写一份 insert**。
-     *
-     * <p>🔴 用 {@link org.springframework.beans.factory.ObjectProvider} **延迟**解析，而不是直接字段/构造注入：
-     * {@code QualityCheckService} 字段注入了 {@code DocumentOperationLinkage}，而
-     * {@code DocumentOperationLinkage} 是**构造注入** {@code ProductionService} ⇒ 直接注入会成环
-     * （Spring Boot 3 默认禁止循环引用 ⇒ 启动即 {@code APPLICATION FAILED TO START}）。
-     * 延迟取把这条边留到**第一次返工报工时**才解析（那时容器已就绪）。同一模式在本仓既有先例：
-     * {@code MigrationRunner} / {@code ClientRequestIdService} 的 {@code ObjectProvider<JdbcTemplate>}。</p>
-     *
-     * <p>手工装配的既有单测（{@code new ProductionService(...)} 21+ 处）不过 Spring ⇒ 该字段为 null
-     * ⇒ 显式跳过 + WARN（不是 NPE）；本单的判据把 provider 装配上（见
-     * {@code ProductionReworkQualityRecordTest}）。</p>
-     */
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private org.springframework.beans.factory.ObjectProvider<QualityCheckService> qualityCheckServiceProvider;
-
-    /**
      * 印刷品上的码的稳定域名（issue #4946；设计 {@code docs/design/worker-h5-scan-and-report.md}
      * §1.3：**不引新域名**，复用 {@code app.migaozn.com}）。
      *
@@ -1674,12 +1656,10 @@ public class ProductionService {
                     .build());
         }
 
-        // 返工报工 = 记一次质检（issue #7919，用户 2026-10-27 逐字「移除质检，保留返工，当前系统返工=质检」）。
-        // 🔴 三条边界都在这里兑现：① **只在新写入**这一笔时落 —— 本方法只在幂等占位成功后执行，
-        //    同键重放走 {@link #replayFirstResult}，根本到不了这里（不新增列、不加标记）；
-        //    ② {@code normal} / {@code scrap} 不落；③ 计件/进度口径一字不动（{@code advances} 仍是
-        //    「normal 且合格数 > 0」）—— 这一笔只是**多一行质检事实**。
-        recordReworkQuality(po, op, workType, identity, tenantId);
+        // 🔴 返工报工**不再**落质检记录（issue #7945，用户 2026-10-27 裁定）：
+        //    「返工是因为布料有质量问题，而质检是因为加工厂做工有问题，两者有区别」⇒
+        //    返工只记录返工单（车间报返工块 / ProductionReworkService），质检单不由返工自动生成。
+        //    #7919 的 recordReworkQuality 已整体删除，这里保留一句口径，防止后人再加回来。
 
         BigDecimal doneQty = nz(op.getDoneQty());
         String status = op.getStatus() == null ? "pending" : op.getStatus();
@@ -1749,42 +1729,6 @@ public class ProductionService {
         result.put("worker_name", identity.workerName());
         result.put("identity_source", identity.source());
         return result;
-    }
-
-    /**
-     * 返工报工自动补一条质检记录（issue #7919）。
-     *
-     * <p>为什么必须补：删掉工人端质检区块后，若返工报工**不**落 {@code quality_inspections}，
-     * 质检单与质量成本报表就会在这一类「有问题」事实上**断档**（用户同轮追问裁定）。</p>
-     *
-     * <p>🔴 落库实现**只有一份** = {@link QualityCheckService#recordReworkReport}（本方法只负责
-     * 「该不该落、落给谁」）：判定 = {@code rework}、检验人 = 本次报工工人（{@code inspector_kind=worker}）、
-     * 原因 = {@code 返工报工：<工序逻辑名>}、时刻 = 业务时钟单点。**不**触发 #7165 的「完成质检工序」联动
-     * —— 那条只属于显式质检判定（返工意味着这一件还要再检）。</p>
-     *
-     * <p><b>跳过形态（照实登记，都不静默）</b>：① 非 rework 报工 ⇒ 静默跳过（正常路径，不该刷日志）；
-     * ② 未装配 {@link QualityCheckService}（手工装配的单测/切片）⇒ WARN 后跳过；
-     * ③ 工序实例没有 {@code order_item_id}（V92 之前的存量行）⇒ WARN 后跳过 —— 质检的颗粒度是
-     * **一件成品帘**，没有件就不猜、也不落半行脏数据。</p>
-     */
-    private void recordReworkQuality(ProcessingOrder po, ProcessingPositionOperation op, String workType,
-                                     WorkerIdentity identity, Long tenantId) {
-        if (!"rework".equals(workType)) {
-            return;
-        }
-        QualityCheckService qualityCheckService = qualityCheckServiceProvider == null
-                ? null : qualityCheckServiceProvider.getIfAvailable();
-        if (qualityCheckService == null) {
-            log.warn("[返工=质检] QualityCheckService 未装配 ⇒ 本次返工报工未落质检记录（手工装配的单测/切片）");
-            return;
-        }
-        if (!StringUtils.hasText(op.getOrderItemId())) {
-            log.warn("[返工=质检] 工序实例没有 order_item_id ⇒ 本次返工报工未落质检记录（存量实例行不猜件）: po={}, op={}",
-                    po.getId(), op.getId());
-            return;
-        }
-        qualityCheckService.recordReworkReport(tenantId, po.getId(), op.getOrderItemId(), op.getPositionName(),
-                identity.workerId(), identity.workerName(), op.getOperationName());
     }
 
     /**

@@ -33,6 +33,13 @@ public class ReworkOrderView {
     /** 返工的工序名（车间来源有值）。 */
     private String operationName;
 
+    /** 件定位键（issue #7945）：套号 × 部位；null = 未定位（不猜）。 */
+    private String orderItemId;
+    private String setId;
+    private String setNo;
+    /** 部位展示名快照（读面不 join 猜）。 */
+    private String positionName;
+
     /** 返工数量（车间来源有值；不参与计件）。 */
     private BigDecimal qty;
 

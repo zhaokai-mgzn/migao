@@ -1,4 +1,4 @@
-// case_ids: RWK-001
+// case_ids: RWK-001, PG-099
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import ReworkOrdersPage, { actionsFor, isOpen } from '@/app/(dashboard)/rework-orders/page'
@@ -41,6 +41,11 @@ const DRAFT = {
   operationName: null,
   qty: null,
   workerName: null,
+  // 件定位键（issue #7945）：售后来源不定位到件 ⇒ null 显示「—」（不猜）
+  orderItemId: null,
+  setId: null,
+  setNo: null,
+  positionName: null,
   status: 'draft' as const,
   reason: '帘头褶皱不齐',
   createdByName: '王小美',
@@ -79,6 +84,11 @@ const WORKER = {
   operationName: '帘头拼缝',
   qty: 12,
   workerName: '李师傅',
+  // 件键（issue #7945）：套号 × 部位 = 一张水洗唛码
+  orderItemId: 'item-5',
+  setId: 'set-9',
+  setNo: 'JG-20261023-0009-001',
+  positionName: '布帘',
   createdByName: null,
   reason: '拼缝走偏',
 }
@@ -242,6 +252,9 @@ describe('返工单页面', () => {
     // 来源：worker ⇒ 人话「车间返工」，不是内部标识
     expect(screen.getByTestId('rework-source-rw5').textContent).toBe('车间返工')
     expect(screen.getByTestId('rework-operation-rw5').textContent).toBe('帘头拼缝')
+    // 件键上屏（issue #7945）：套号 × 部位 —— 答得出「返的是哪一件」
+    expect(screen.getByTestId('rework-set-rw5').textContent).toBe('JG-20261023-0009-001')
+    expect(screen.getByTestId('rework-position-rw5').textContent).toBe('布帘')
     expect(screen.getByTestId('rework-qty-rw5').textContent).toBe('12')
     // 报工人上屏为「发起人」（同一信息不重复两列，「建单人」列已撤）
     expect(screen.getByTestId('rework-initiator-rw5').textContent).toBe('李师傅')
@@ -268,8 +281,10 @@ describe('返工单页面', () => {
     expect(screen.getByTestId('rework-ticket-rw6').textContent).toBe('SH-20261023-0001')
     // 售后来源没有报工人 ⇒ 发起人回落到建单人（列语义没变）
     expect(screen.getByTestId('rework-initiator-rw6').textContent).toBe('王小美')
-    // 工序 / 数量：售后来源没有这两项 ⇒ 空值文案（不是 0 / 空白）
+    // 工序 / 数量 / 件键：售后来源没有这几项 ⇒ 空值文案（不是 0 / 空白，也不猜套号）
     expect(screen.getByTestId('rework-operation-rw6').textContent).toBe('—')
+    expect(screen.getByTestId('rework-set-rw6').textContent).toBe('—')
+    expect(screen.getByTestId('rework-position-rw6').textContent).toBe('—')
     expect(screen.getByTestId('rework-qty-rw6').textContent).toBe('—')
     // 加工单号与 id 都在 ⇒ 单号优先；只有 id 的老数据 ⇒ 回落 id；都没有 ⇒ 「—」
     expect(screen.getByTestId('rework-processing-rw6').textContent).toBe('JG-20261023-0009')

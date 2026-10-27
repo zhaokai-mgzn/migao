@@ -12,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
@@ -187,6 +188,23 @@ public class ReworkOrderService {
     public ReworkOrderView createWorkerRework(Long tenantId, String orderId, String processingOrderId,
                                               String operationId, String operationName, java.math.BigDecimal qty,
                                               String reason, String workerId, String workerName, String workLogId) {
+        return createWorkerRework(tenantId, orderId, processingOrderId, operationId, operationName, qty,
+                reason, workerId, workerName, workLogId, null, null, null, null);
+    }
+
+    /**
+     * 车间报返工开单（带**件定位键**，issue #7945）。
+     *
+     * @param orderItemId   部位行（一件成品帘的「部位」半边）—— {@code null} = 指不出件（不猜）
+     * @param setId         套 id（件的「套」半边）
+     * @param setNo         套号快照
+     * @param positionName  部位展示名快照
+     */
+    @Transactional
+    public ReworkOrderView createWorkerRework(Long tenantId, String orderId, String processingOrderId,
+                                              String operationId, String operationName, java.math.BigDecimal qty,
+                                              String reason, String workerId, String workerName, String workLogId,
+                                              String orderItemId, String setId, String setNo, String positionName) {
         ReworkOrder order = ReworkOrder.builder()
                 .tenantId(tenantId)
                 .reworkNo(nextReworkNo())
@@ -195,6 +213,10 @@ public class ReworkOrderService {
                 .processingOrderId(processingOrderId)
                 .operationId(operationId)
                 .operationName(operationName)
+                .orderItemId(orderItemId)
+                .setId(setId)
+                .setNo(setNo)
+                .positionName(positionName)
                 .qty(qty)
                 .workerId(workerId)
                 .workerName(workerName)
@@ -204,9 +226,17 @@ public class ReworkOrderService {
                 .createdBy(workerId)
                 .createdByName(workerName)
                 .build();
-        reworkOrderMapper.insert(order);
-        log.info("[rework] 车间报返工 | no={} po={} op={} qty={}",
-                order.getReworkNo(), processingOrderId, operationName, qty);
+        try {
+            reworkOrderMapper.insert(order);
+        } catch (org.springframework.dao.DuplicateKeyException duplicate) {
+            // 件级部分唯一索引（uk_rework_orders_open_per_piece）兜住：同一件只能有一张未完结车间返工单
+            throw BusinessException.validationError(StringUtils.hasText(setNo) && StringUtils.hasText(orderItemId)
+                    ? String.format("这一件（%s · 部位 %s）已有未完结的返工单，请先处理那一张",
+                            setNo, StringUtils.hasText(positionName) ? positionName : orderItemId)
+                    : "这一件刚有另一个返工单被开出来，请刷新后处理那一张");
+        }
+        log.info("[rework] 车间报返工 | no={} po={} op={} set={} item={} qty={}",
+                order.getReworkNo(), processingOrderId, operationName, setNo, orderItemId, qty);
         ReworkOrderView created = view(order);
         notifyCreated(order, created);
         return created;
@@ -301,6 +331,10 @@ public class ReworkOrderService {
                 .processingOrderId(order.getProcessingOrderId())
                 .source(order.getSource() == null ? SOURCE_AFTER_SALES : order.getSource())
                 .operationName(order.getOperationName())
+                .orderItemId(order.getOrderItemId())
+                .setId(order.getSetId())
+                .setNo(order.getSetNo())
+                .positionName(order.getPositionName())
                 .qty(order.getQty())
                 .workerName(order.getWorkerName())
                 .status(order.getStatus())

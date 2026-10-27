@@ -3096,7 +3096,7 @@ cases:
       - "**判据 8·订单号随之给出**（issue #7160，只加不改）：行上 `order_no` = 该加工单所属**销售订单号**（一次 `IN` 批量取回，不逐行单查）；取不到 / 存量单缺 `order_id` ⇒ `null`（不编值，界面渲染 `—`）。既有键与语义一字不动（`quantity` / `unit` 仍返回）。红证：删掉行上 `order_no` 的赋值 ⇒ 判据当场红。证据：backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckTargetsTest.java（rowCarriesSalesOrderNo）"
       - "**边界（照实登记）**：清单读面**不**做「合格率 / 一次通过率」这类派生指标（本轮没有口径裁定）；**不**改写任何报工行、**不**重算数量 —— 报工（数量事实）与质检（成品帘判定）两套口径并存（#5652 的既有裁定）。"
     skip_reason: "[backend-contract] 后端只读聚合面（Java 单测 + 同键名断言），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-10-17 新增（issue #7140；用户 2026-10-17 逐字见 user_inputs）。落码：`GET /api/admin/quality-inspections/targets`（`@RequirePermission(\"production:inspect\")`，与既有录入/读面**同码**，不新造权限点、不放宽任何码）+ `QualityCheckService.targets()`（一行 = 一件成品帘；`latest` 取该件第一条）+ 加工单生产明细读面 `operations[]` 增 `qualified_qty/rework_qty/scrap_qty`（既有 `ProductionService.worklog` 的同一套口径，抽成 `qtyByOperation`）。取号：见文首注释（工具超时 ⇒ 现取 main 最大 080 + open PR 复核）。2026-10-17 issue #7160 追加：行上 `order_no`（所属销售订单号，批量取回；缺 ⇒ `null`）。"
+    merge_log: "2026-10-27 口径扩展（issue #7945）：有 live 套（processing_order_sets）的加工单，清单按「套 × 部位」一件一行（行上增 `set_id/set_no/piece_key`，`quantity=1`）；没有套的存量单回落「一个部位行一行」（`set_no=null`，旧行为不变）。`latest` 的配对键随之改为 `(order_item_id, set_no)` —— 无套记录不会折算到任一樘（不猜）。以下为原记录。\n  2026-10-17 新增（issue #7140；用户 2026-10-17 逐字见 user_inputs）2026-10-17 新增（issue #7140；用户 2026-10-17 逐字见 user_inputs）。落码：`GET /api/admin/quality-inspections/targets`（`@RequirePermission(\"production:inspect\")`，与既有录入/读面**同码**，不新造权限点、不放宽任何码）+ `QualityCheckService.targets()`（一行 = 一件成品帘；`latest` 取该件第一条）+ 加工单生产明细读面 `operations[]` 增 `qualified_qty/rework_qty/scrap_qty`（既有 `ProductionService.worklog` 的同一套口径，抽成 `qtyByOperation`）。取号：见文首注释（工具超时 ⇒ 现取 main 最大 080 + open PR 复核）。2026-10-17 issue #7160 追加：行上 `order_no`（所属销售订单号，批量取回；缺 ⇒ `null`）。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckTargetsTest.java"
@@ -3116,7 +3116,7 @@ cases:
   # ══════════════════════════════════════════════════════════════════════════
   - id: PG-082
     legacy_id: ""
-    title: "工人端质检并入返工：报工页不再有质检区块（渲染/状态机/接口/样式一起删），有问题只走返工（见 PG-099）；服务端质检端点与「档案页面集含 inspect」准入保留"
+    title: "工人端质检区块恢复为「做工判定」（inspect 页面可见），返工（布料）与质检（做工）各自独立（见 PG-099）；服务端 #7919 自动落质检已撤销"
     domains:
       - processing-order
       - production
@@ -3142,12 +3142,12 @@ cases:
       - "**判据 2·🔴 检验人只来自工人 session**：落库 `inspector_id` = session 解出的 worker_id、`inspector_name` = 工人姓名、`inspector_kind='worker'`；body 里的 `worker_id` / `inspector_id` 一个字节都不读（伪造值不得进库）。证据：WorkerQualityControllerTest.java（grantedWorkerDelegatesWithSessionIdentity）+ backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckServiceTest.java（workerInspectorKindIsPersistedAndReadable）"
       - "**判据 3·身份类别只加不改**：未知 `inspector_kind` ⇒ 422 且零写入；既有员工路径仍落 `employee`；读面 `view` 追加 `inspector_kind`。证据：QualityCheckServiceTest.java（unknownInspectorKindIsRejected）"
       - "**判据 4·🔴 工人端质检面已整块撤下（2026-10-27 由 #7919 改判，原「默认正常 + 只记返工的表单」不再成立）**：`inspect` ∈ 页面集（改前渲染质检区块的**唯一**条件）也**不渲染**质检区块（无 `id=\"wh5-quality\"`、无「有问题，记返工」/「再记一次返工」按钮），且 `qualityFormOpen` 这类动作**不再被 `reduce` 消费**（原样返回、状态里没有 `quality*` 键）。红证：把质检区块加回 `render.mjs` ⇒ ①③ 当场红（实测 6 条中 2 failed / 4 passed）。证据：frontend/worker-h5/tests/worker-h5-quality.test.mjs（①②）"
-      - "**判据 5·质检记录改由返工报工自动落（#7919）**：工人端已无「录判定」入口；判定/原因/检验人不再由工人填，而是服务端在 `work_type=rework` 的**新写入报工**上补一条（逐项判据见 PG-099）。服务端 `QualityCheckService.create` 的「非 pass 必须给原因 ⇒ 422」一字未动（观星台商家面零回归）。证据：backend/admin-api/src/test/java/com/migao/admin/service/ProductionReworkQualityRecordTest.java + backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckServiceTest.java（unknownInspectorKindIsRejected / workerInspectorKindIsPersistedAndReadable）"
+      - "**判据 5·质检判定只在手机端（2026-10-27 改判）**：`inspect` ∈ 页面集 ⇒ 报工屏渲染「质检（做工）」区块与「做工有问题，记返工」，提交 `POST /api/worker/quality/inspections` 且 body 带 `set_no`（件 = 套号 × 部位）；无该页面键 ⇒ 不渲染。PC 质检记录页不再提供录入（只留指标 + 流水）。证据：frontend/worker-h5/tests/worker-h5-quality.test.mjs + frontend/admin-web/tests/unit/pages/quality-inspections.test.tsx + PG-099"
       - "**判据 6·逐人开的页面键保留、但不再是渲染条件**：`inspect` 仍在闭词表里且**不在**默认集合（`test_pages` 逐键比对）；H5 侧它的页面集**不再影响屏上是否有质检块**（该块已不存在）。证据：frontend/worker-h5/tests/worker-h5-pages.test.mjs + worker-h5-quality.test.mjs（①⑥）"
-      - "**判据 7·「有问题」的唯一出口 = 返工**：报工三态选择器仍在（正常/返工/报废），选「返工」⇒ `work_type=rework` + `qualified_qty=0`；返工区块不按页面键门控（任一工序工人都能报）⇒ 工人端不再出现「两个地方各办一次」。证据：frontend/worker-h5/tests/worker-h5-report-work-type.test.mjs（③⑤）+ worker-h5-rework.test.mjs（①）+ PG-099"
+      - "**判据 7·两种问题各走各的入口（2026-10-27 改判）**：报工三态选择器仍在（正常/返工/报废），选「返工」⇒ `work_type=rework` + `qualified_qty=0`，并生成**返工单**（布料问题）；「做工问题」走质检区块（生成质检单）。两条链互不自动生成（见 PG-099 的类级守卫）。证据：worker-h5-report-work-type.test.mjs（③④⑤）+ worker-h5-rework.test.mjs（①）+ PG-099"
       - "**边界（照实登记）**：`/api/worker/quality/**` 两个端点在**服务端保留**（本单不删：`inspect` 页面键仍是它的写准入，管理/后续面可能用；工人端 UI 已不再调用 —— 若确认无消费方另单清理）；不做质检单打印；不把质检做成可计价工序（报工是数量事实、质检是成品帘判定，两套口径并存）；工人仍**不进** `/api/admin/**`、不获得任何 RBAC 权限码。"
     skip_reason: "[backend-contract] 服务端准入 + 纯前端渲染/状态机（无 LLM 行为），不进入 agent-eval 冒烟"
-    merge_log: "🔴 2026-10-27 改判（issue #7919，用户逐字「报工页面的质检和返工要合并成一个功能，现在是两个独立的，移除质检，保留返工，当前系统返工=质检」）⇒ 工人端质检区块（判定态 / 表单 / 提示 / 两个接口调用 / 样式）**整块删除**，判据 4/5/6 改为**反向**钉住；服务端 `WorkerQualityController` 与 `QualityCheckService` **一字未删**（边界：端点保留），质检记录改由返工报工自动落（新用例 PG-099）。\n  🔴 2026-10-25 改判（issue #7749，用户逐字「质检不要显示合格，默认都合格，只有出现问题时允许直接选择返工，只提供一个返工选项」）⇒ 判据 4/5 的工人端形态改为「默认正常 + 只记返工」，服务端三态与准入不变。\n  2026-10-17 新增（issue #7162；用户三条逐字见 user_inputs）。落码：`WorkerQualityController`（`/api/worker/quality/**`，准入 = 工人档案页面集含 `inspect`）+ `QualityCheckService.create(..., inspectorKind, ...)`（kind 校验 / 读面追加 `inspector_kind` / `latest()`）+ 迁移 V163 `inspector_kind` + `WorkerPages.INSPECT`（不在默认集合）+ worker-h5 质检区块（`render.mjs` / `api.mjs` / `app.mjs`）。取号：见文首注释。"
+    merge_log: "🔴 2026-10-27 再次改判（issue #7945，用户逐字「返工是因为布料有质量问题，而质检是因为加工厂做工有问题」「质检单的这个区域都可以移除了，应该从手机端去判定」）⇒ 质检区块**恢复**并改称「质检（做工）」（`inspect` 页面集可见，判定随扫码带 `set_no`），#7919 的自动落质检**整体删除**；PC 质检记录页只留指标 + 流水。以下为 #7919 当时的记录（保留历史）。\n  🔴 2026-10-27 改判（issue #7919，用户逐字「报工页面的质检和返工要合并成一个功能，现在是两个独立的，移除质检，保留返工，当前系统返工=质检」）⇒ 工人端质检区块（判定态 / 表单 / 提示 / 两个接口调用 / 样式）**整块删除**，判据 4/5/6 改为**反向**钉住；服务端 `WorkerQualityController` 与 `QualityCheckService` **一字未删**（边界：端点保留），质检记录改由返工报工自动落（新用例 PG-099）。\n  🔴 2026-10-25 改判（issue #7749，用户逐字「质检不要显示合格，默认都合格，只有出现问题时允许直接选择返工，只提供一个返工选项」）⇒ 判据 4/5 的工人端形态改为「默认正常 + 只记返工」，服务端三态与准入不变。\n  2026-10-17 新增（issue #7162；用户三条逐字见 user_inputs）。落码：`WorkerQualityController`（`/api/worker/quality/**`，准入 = 工人档案页面集含 `inspect`）+ `QualityCheckService.create(..., inspectorKind, ...)`（kind 校验 / 读面追加 `inspector_kind` / `latest()`）+ 迁移 V163 `inspector_kind` + `WorkerPages.INSPECT`（不在默认集合）+ worker-h5 质检区块（`render.mjs` / `api.mjs` / `app.mjs`）。取号：见文首注释。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/controller/WorkerQualityControllerTest.java"
@@ -3739,20 +3739,20 @@ cases:
       verifies: []
 
   # ══════════════════════════════════════════════════════════════════════════
-  # PG-099（issue #7919，2026-10-27）—— 报工页「质检」并入「返工」：移除质检区块，
-  # 返工报工（`work_type=rework`）自动落一条质检记录（`quality_inspections`），
-  # 质检单 / 质量成本报表不断档。
+  # PG-099（issue #7945，2026-10-27 改判）—— 返工与质检**分离**：
+  # 返工只记返工单（材料/布料问题），质检只记质检单（做工问题）；#7919 的
+  # 「返工报工自动落质检」已整体删除；质检判定入口只在手机端（质检员扫码录入）。
+  # 两单都定位到「套号 × 部位」（= 一张水洗唛码）。
   #
-  # 用户逐字（2026-10-27 18:13 +08）：「报工页面的质检和返工要合并成一个功能，现在是两个独立的，
-  # 移除质检，保留返工，当前系统返工=质检」；同轮追问裁定：删掉质检区块后**返工报工要继续产生
-  # 质检记录**，否则质检单 / 质量成本报表断档。
+  # 用户逐字（2026-10-27）：「应该只记录返工单，不产生质检数据，返工是因为布料有质量问题，
+  # 而质检是因为加工厂做工有问题，两者有区别」；同轮「质检单的这个区域都可以移除了，
+  # 应该从手机端去判定」。
   #
-  # 取号：本仓 PG 已占号最大 = PG-098（现取 origin/main 的 .github/cases/processing-order.yml）
-  # ⇒ 本单取 PG-099。
+  # 取号沿用 PG-099（原用途随 #7919 撤销，本行改判后重写）。
   # ══════════════════════════════════════════════════════════════════════════
   - id: PG-099
     legacy_id: ""
-    title: "报工页质检并入返工：质检区块整块撤下（渲染/状态机/接口/样式一起删），返工报工自动落一条质检记录（逐项 + 幂等重放不重复），正常/报废不落、计件与进度口径不变"
+    title: "返工与质检分离：返工写路径不再产生质检数据（类级守卫），质检判定只在手机端；两张单都定位到「套号 × 部位」"
     domains:
       - processing-order
       - production
@@ -3764,30 +3764,30 @@ cases:
       - rework
       - worker-h5
       - backend-contract
-      - piecework
+      - piece-key
     truths_ref: []
     user_inputs:
-      - "用户 2026-10-27 18:13 +08 逐字：「报工页面的质检和返工要合并成一个功能，现在是两个独立的，移除质检，保留返工，当前系统返工=质检」"
-      - "用户 2026-10-27 裁定（同轮追问）：删掉质检区块后，返工报工**要**继续产生质检记录，否则质检单 / 质量成本报表断档"
+      - "用户 2026-10-27 逐字：「应该只记录返工单，不产生质检数据，返工是因为布料有质量问题，而质检是因为加工厂做工有问题，两者有区别」"
+      - "用户 2026-10-27 逐字：「质检单的这个区域都可以移除了，应该从手机端去判定」"
     expectations: []
-    precondition: "前置 = ① 一张**活跃**加工单 + 其工序实例带 `order_item_id`（一件成品帘）；② 工人 session（`X-Worker-Session-Id`，身份只由它解）。后端夹具 = Mockito（真 `QualityCheckService` + 替身 `QualityCheckMapper`，用来逐字段断言**落的是什么**）；H5 = 纯渲染/状态机/源码扫描夹具（零 DOM、零网络）。"
+    precondition: "前置 = ① 车间报返工：活跃加工单 + 工序实例（带 order_item_id/set_id/set_no/position_name）+ 工人 session；② 质检：同一件成品帘 + live 套（processing_order_sets.position_item_ids 含该部位）。后端夹具 = Mockito（`ProcessingOrderSetMapper` 替身，件键逐值断言）；H5 = 纯渲染/状态机夹具（零 DOM、零网络）。"
     data_checks:
-      - "**判据 1·🔴 返工报工 ⇒ 质检记录恰好 1 行（逐项，会红）**：`work_type=rework` 的**新写入**报工在同一事务里补一条 `quality_inspections` —— `inspection_result=rework` / `inspector_kind=worker` / `inspector_id`+`inspector_name` = 本次报工工人 / `reason=`「返工报工：<**逻辑**工序名>」（`精裁-布` ⇒ `精裁`，复用既有归并表）/ `inspected_at` 走业务时钟单点（offset = +08:00）/ `deleted=0` / `order_item_id` = 该件成品帘 / `processing_order_id` = 该加工单。**红证（实测）**：把 `ProductionService#recordReworkQuality(...)` 那一次调用删掉 ⇒ 本判据红（surefire 实测 `Wanted but not invoked: qualityCheckMapper.insert`，6 条中 1 failed）。证据：backend/admin-api/src/test/java/com/migao/admin/service/ProductionReworkQualityRecordTest.java（reworkReportWritesExactlyOneQualityInspection）"
-      - "**判据 2·幂等重放不重复落（会红）**：同一 `X-Client-Request-Id` 重放 ⇒ 仍是 1 行（**不新增数据库列**：落库点在 `applyReport`，而它只在幂等占位成功后执行，重放走既有 `replayFirstResult` 根本到不了落库点）；同时回放不改账（`production_work_logs` 也不再插）。红证：把落库点挪到幂等占位**之前**（或删掉 `claim` 分支）⇒ 本判据红。证据：同文件（replayWithSameClientRequestIdDoesNotWriteSecondInspection）"
-      - "**判据 3·只有「有问题」才记质检（会红）**：`normal` / `scrap` 报工 ⇒ **0 行**质检记录（同时两笔报工照常落 `production_work_logs`，防「什么都没发生」的空跑绿）。红证：删掉 `recordReworkQuality` 里的 `if (!\"rework\".equals(workType)) return;` ⇒ 本判据红。证据：同文件（normalAndScrapReportsWriteNoInspection）"
-      - "**判据 4·计件 / 进度口径一字不动（会红）**：返工报工仍 `qualified_qty=0`、**不**调用 `advanceDoneQtyIfUnchanged`（不推进 `done_qty` / 不改状态）；且**不**触发 #7165 的「完成质检工序」联动（`DocumentOperationLinkage` **零交互** —— 返工意味着这一件还要再检）。红证：把自动落质检搬进 `advances` 分支、或在 `recordReworkReport` 里调联动 ⇒ 本判据红。证据：同文件（reworkKeepsPieceworkSemanticsAndSkipsLinkage）+ backend/admin-api/src/main/java/com/migao/admin/service/QualityCheckService.java 的 `recordReworkReport` 刻意不调 `completeQualityOperation`"
-      - "**判据 5·🔴 前端反向（会红）**：`inspect` ∈ 页面集（改前渲染质检区块的**唯一**条件）也**不再渲染**质检区块 —— 无 `id=\"wh5-quality\"`、无「有问题，记返工」/「再记一次返工」；`qualityFormOpen` / `qualityLoading` / `qualitySubmitted` 等动作**不再被 `reduce` 消费**（原样返回同一对象、状态里没有 `quality*` 键）；`src/**`（.mjs/.css）与根 `*.html` 里**零** `wh5-quality` / `qualityForm` / 质检读写字面量。**红证（实测）**：把质检区块加回 frontend/worker-h5/src/render.mjs 的 `mainView` ⇒ ①③ 当场红（`node --test` 实测 6 条中 2 failed / 4 passed）。证据：frontend/worker-h5/tests/worker-h5-quality.test.mjs（①②③）"
-      - "**判据 6·保留的那一半：返工仍可报（会红）**：报工三态选择器仍在（正常 / 返工 / 报废），选「返工」⇒ `view.work_type='rework'` 且选中态可见；提交仍走 `POST /api/worker/production/scan/complete` 且 body = `work_type:'rework'` + `qualified_qty:0`；返工记录页仍可达（入口常量 `./rework.html` + 屏上真链接 + 文件在）。红证：删掉三态选择器 / 把 `workType` 不再传给 `completeByScan` ⇒ 本判据与 report-work-type 的 ③ 同批红。证据：worker-h5-quality.test.mjs（④⑤）+ frontend/worker-h5/tests/worker-h5-report-work-type.test.mjs（③④⑤）+ frontend/worker-h5/tests/worker-h5-api.test.mjs（completeByScan 的 `work_type` 逐字节）"
-      - "**判据 7·质检工序那一屏仍只有一个动作（会红）**：当前工序 = 质检 ⇒ 不出报工按钮 / 报工三态，只出一句「本道是质检工序：默认没问题……有问题走返工」（**不再**按 `inspect` 页面集分叉，也不再出现「要开通质检页」）。证据：worker-h5-quality.test.mjs（⑥）"
-      - "**边界（照实登记）**：① `/api/worker/quality/**` 两个端点在**服务端保留**（`inspect` 页面键仍是写准入；工人端 UI 不再调用 —— 确认无消费方另单清理，本单不动）；② bmini 报工页本来没有质检区块 ⇒ 不在本单；③ 计件口径一字不动（返工/报废不计件是既有规则）；④ 成品入库卡片的「质检结论」一行仍来自服务端下发（打包工人要核对的那一项，与本单无关面）；⑤ 存量工序实例行（V92 之前，无 `order_item_id`）⇒ 不落质检记录但报工照常（WARN 可见，不猜件）。"
-    skip_reason: "[backend-contract] 服务端写面 + worker-h5 渲染/状态机/源码结构（零 LLM 行为），不进 agent-eval 冒烟"
-    merge_log: "2026-10-27 新增（issue #7919；用户逐字与同轮裁定见 user_inputs）。落码：`QualityCheckService#recordReworkReport`（不校验 reason 必填、**不**联动 #7165；与 `create` 共用**唯一**插入实现 `insertInspection`）+ `ProductionService#recordReworkQuality`（`applyReport` 内，只在新写入且 `work_type=rework` 时落；`ObjectProvider` 延迟取以避开 `QualityCheckService → DocumentOperationLinkage → ProductionService` 的构造环）+ worker-h5（删 `quality*` state/actions/渲染/表单/样式 + frontend/worker-h5/src/api.mjs 的两个方法 + frontend/worker-h5/src/app.mjs 的接线；`isQualityOperation` 语义保留、文案改「有问题走返工」）。取号 = 现取本仓 PG 已占号最大 PG-098 ⇒ 本单取 PG-099。"
+      - "**判据 1·🔴 返工写路径不产生质检数据（结构判据，会红）**：`QualityCheckService` 无 `recordReworkReport`；`ProductionService` 无 `recordReworkQuality`；返工写路径两个服务**不持有任何 `QualityCheck*` 字段**（想接回质检必须加依赖 ⇒ 当场红）。红证：把 `recordReworkQuality` 加回 ProductionService（或把 `QualityCheckService` 字段注入进去）⇒ ②③ 当场红。证据：backend/admin-api/src/test/java/com/migao/admin/service/ReworkQualitySeparationGuardTest.java"
+      - "**判据 2·返工单落件键（会红）**：车间报返工 ⇒ `createWorkerRework` 收到 `orderItemId/setId/setNo/positionName`（逐值 = 工序实例上的值），回执同名字段同源；工序实例缺这几项 ⇒ 落 null（不猜）。红证：把件键实参删掉 / 换成常量 ⇒ 逐值断言红。证据：ProductionReworkServiceTest.java（amendsAndRevertsExactly）"
+      - "**判据 3·质检单落件键（会红）**：显式套号 ⇒ 落 `set_id/set_no`；多套未给套号 ⇒ 422 并列出候选（**不猜第 1 套**，零写入）；套号与部位不属于同一套 ⇒ 422（不跨件）；该单只有一套 ⇒ 自动取该套。证据：QualityCheckServiceTest.java（⑨~⑫）"
+      - "**判据 4·手机端质检入口恢复为「做工」判定（会红）**：`inspect` ∈ 页面集 ⇒ 渲染质检区块（标题「质检（做工）」）+「做工有问题，记返工」；提交体带 `set_no`（扫码面已知套号）；无 `inspect` ⇒ 不渲染；返工区块文案改「布料有问题，报返工」，与质检并列但语义分开。证据：frontend/worker-h5/tests/worker-h5-quality.test.mjs + worker-h5-api.test.mjs"
+      - "**判据 5·PC 不再录入判定（会红）**：质检记录页零调用 `targets`、无「待检成品帘 / 录入判定」；只剩指标 + 质检流水，并写明入口在手机端。红证：把 targets 读回页面 ⇒ ① 红。证据：frontend/admin-web/tests/unit/pages/quality-inspections.test.tsx"
+      - "**边界（照实登记）**：① #7919 已落库的存量自动质检记录**保留**（清洗历史 = 改写事实，不做；读面按 `reason` 前缀可识别）；② 存量返工单 / 质检单无套号 ⇒ 显示「未定位」，统计不折算到任一樘；③ `GET /targets` 接口保留给后续手机端队列，PC 不渲染；④ 返工不计件、报工明细不可变（除既有车间报返工改记口径）一字不动。"
+    skip_reason: "[backend-contract] 结构性判据 + 纯渲染/源码扫描（零 LLM 行为），不进 agent-eval 冒烟"
+    merge_log: "2026-10-27 改判（issue #7945；用户逐字见 user_inputs）⇒ 上一版（#7919）的「返工报工自动落质检」**整体删除**：`QualityCheckService#recordReworkReport` 与 `ProductionService#recordReworkQuality` 双双移除（不是藏起来），并由类级守卫 ReworkQualitySeparationGuardTest 钉住「返工写路径不持有任何质检依赖」；QC 判定入口迁回**手机端**（`inspect` 页面集，质检员扫码），PC 质检记录页移除「待检成品帘 + 录入判定」只留指标 + 流水。两单补件键：V202 迁移给 `rework_orders.order_item_id/set_id/set_no/position_name` 与 `quality_inspections.set_id/set_no`，车间返工从工序实例取件、质检由手机端扫码带 `set_no`（多套未给 ⇒ 422，不猜）。取号沿用 PG-099（原用途随 #7919 撤销）。"
     traces:
       tests:
-        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionReworkQualityRecordTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ReworkQualitySeparationGuardTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionReworkServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckServiceTest.java"
         - "frontend/worker-h5/tests/worker-h5-quality.test.mjs"
-        - "frontend/worker-h5/tests/worker-h5-report-work-type.test.mjs"
         - "frontend/worker-h5/tests/worker-h5-api.test.mjs"
+        - "frontend/admin-web/tests/unit/pages/quality-inspections.test.tsx"
       ci:
         - pr-check.yml
       verifies: []

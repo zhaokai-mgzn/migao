@@ -1,4 +1,4 @@
-// case_ids: PG-098
+// case_ids: PG-098, PG-099
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
@@ -114,8 +114,11 @@ class ProductionReworkServiceTest {
                 .thenReturn(1);
         when(workLogMapper.update(any(), any())).thenReturn(1);
         when(processingOrderMapper.reopenCompletedIfAny(anyString(), anyLong(), any())).thenReturn(1);
-        when(reworkOrderService.createWorkerRework(anyLong(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
-                .thenReturn(ReworkOrderView.builder().reworkNo("RG202610260001").build());
+        when(reworkOrderService.createWorkerRework(anyLong(), any(), any(), any(), any(), any(), any(), any(), any(), any(),
+                any(), any(), any(), any()))
+                .thenReturn(ReworkOrderView.builder().reworkNo("RG202610260001")
+                        .orderItemId("item-1").setId("set-1").setNo("JG-20261026-0001-001").positionName("布帘")
+                        .build());
     }
 
     // ── 夹具 ────────────────────────────────────────────────────────────────
@@ -133,7 +136,10 @@ class ProductionReworkServiceTest {
 
     private static ProcessingPositionOperation operation(BigDecimal qty, BigDecimal doneQty, String status) {
         return ProcessingPositionOperation.builder().id("op-1").processingOrderId("po-1")
-                .operationName("车缝").qty(qty).doneQty(doneQty).status(status).build();
+                .operationName("车缝").qty(qty).doneQty(doneQty).status(status)
+                // 件键（issue #7945）：套号 × 部位 = 一张水洗唛码
+                .orderItemId("item-1").setId("set-1").setNo("JG-20261026-0001-001").positionName("布帘")
+                .build();
     }
 
     private static ProductionWorkLog normalLog(BigDecimal qualifiedQty) {
@@ -181,15 +187,20 @@ class ProductionReworkServiceTest {
 
         // 报工明细改记为返工（CAS 只认还处在 normal 的那一笔）
         verify(workLogMapper).update(isNull(), any());
-        // 返工单：工序 / 数量 / 原因 / 报工人 / 被改记的报工行 全部来自服务端
+        // 返工单：工序 / 数量 / 原因 / 报工人 / 被改记的报工行 + **件键**（issue #7945）全部来自服务端
         verify(reworkOrderService).createWorkerRework(eq(TENANT), eq("o-1"), eq("po-1"), eq("op-1"),
-                eq("车缝"), any(), eq("布面污渍"), eq("worker-zhang"), eq("张三"), eq("log-1"));
+                eq("车缝"), any(), eq("布面污渍"), eq("worker-zhang"), eq("张三"), eq("log-1"),
+                eq("item-1"), eq("set-1"), eq("JG-20261026-0001-001"), eq("布帘"));
 
         assertThat(result).containsEntry("rework_no", "RG202610260001")
                 .containsEntry("operation_name", "车缝")
                 .containsEntry("status", "pending")
                 .containsEntry("order_completed", false)
-                .containsEntry("amended_work_log_id", "log-1");
+                .containsEntry("amended_work_log_id", "log-1")
+                // 回执带上件键：界面据此确认「返的是哪一件」
+                .containsEntry("order_item_id", "item-1")
+                .containsEntry("set_no", "JG-20261026-0001-001")
+                .containsEntry("position_name", "布帘");
         assertThat((BigDecimal) result.get("done_qty")).isEqualByComparingTo("2");
     }
 

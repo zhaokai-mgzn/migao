@@ -257,6 +257,8 @@ export default function ReworkOrdersPage() {
                   <th className="py-2 whitespace-nowrap">关联售后单</th>
                   <th className="py-2 whitespace-nowrap">关联加工单</th>
                   <th className="py-2 whitespace-nowrap">工序</th>
+                  <th className="py-2 whitespace-nowrap">套号</th>
+                  <th className="py-2 whitespace-nowrap">部位</th>
                   <th className="py-2 whitespace-nowrap">数量</th>
                   <th className="py-2 whitespace-nowrap">原因</th>
                   <th className="py-2 whitespace-nowrap">状态</th>
@@ -281,6 +283,12 @@ export default function ReworkOrdersPage() {
                     </td>
                     <td className="py-2 text-neutral-600" data-testid={`rework-operation-${row.id}`}>
                       {row.operationName || '—'}
+                    </td>
+                    <td className="py-2 text-neutral-600" data-testid={`rework-set-${row.id}`}>
+                      {row.setNo || '—'}
+                    </td>
+                    <td className="py-2 text-neutral-600" data-testid={`rework-position-${row.id}`}>
+                      {row.positionName || '—'}
                     </td>
                     <td className="py-2 text-neutral-600" data-testid={`rework-qty-${row.id}`}>
                       {row.qty == null ? '—' : row.qty}

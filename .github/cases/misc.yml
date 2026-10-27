@@ -5656,7 +5656,7 @@ cases:
 
   - id: RWK-001
     legacy_id: ""
-    title: "返工单进观星台：售后 → 返工 → 完工回写（状态机唯一 · 本页不产生金额 · 服务端原话上屏）（issue #7377 段 3）"
+    title: "返工单进观星台：售后 → 返工 → 完工回写（状态机唯一 · 本页不产生金额 · 服务端原话上屏 · 车间来源带「套号 / 部位」）（issue #7377 段 3 / #7945）"
     domains:
       - misc
       - frontend
@@ -5677,7 +5677,7 @@ cases:
       - "**边界（照实登记）**：① 本页不录返工工时/成本（成本口径 = 返工报工，另一条动线）；② 不改售后单状态机（只触发「完工回写」，且服务端仅在售后单为 `processing` 时推进）；③ 退回售后单原始状态（返工取消）不回退售后；④ 没有物理删除（开错就取消，留痕）。"
     precondition: "本用例是 [frontend-contract]：前置 = 返工单后端（issue #7377 段 2：`ReworkOrderController` / `ReworkOrderService`）+ 售后工单页。零网络、零 LLM。"
     skip_reason: "[frontend-contract] 返工单页面的状态机纪律与「本页不产生金额」口径，由前端单测 + 菜单三源判据验证，非 LLM 行为，不进 agent-eval 冒烟"
-    merge_log: "2026-10-23 新增（issue #7377 段 3，商家面）。落码 = `rework-orders/page.tsx` + `types/rework.ts` + `reworkOrderApi` + 菜单五副本（menu.ts / MenuController / AuthService / menu_navigator / rbac manifest）+ `page_registry` 的 `rework-order-lifecycle`。"
+    merge_log: "🔴 2026-10-27 增列（issue #7945）：车间来源的返工单多两列「套号 / 部位」（= 一张水洗唛码的件键），售后来源为 null ⇒ 渲染「—」（不猜）。以下为原记录。\n  2026-10-23 新增（issue #7377 段 3）2026-10-23 新增（issue #7377 段 3，商家面）。落码 = `rework-orders/page.tsx` + `types/rework.ts` + `reworkOrderApi` + 菜单五副本（menu.ts / MenuController / AuthService / menu_navigator / rbac manifest）+ `page_registry` 的 `rework-order-lifecycle`。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/pages/rework-orders.test.tsx"
