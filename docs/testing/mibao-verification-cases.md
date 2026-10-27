@@ -7682,6 +7682,7 @@
 数据: 判据 4·🔴 **联合打印**（会红）：面板默认只勾**当前正在看的那一份**（纸是耗材），「全选」后 4 份全勾；开始后进度行显示「联合打印 1/N」，出纸后主按钮变「下一张」并推进到 2/N；「结束」退出逐张引导。执行点 = order-detail.test.tsx 的 `派单后（成品帘）…联合打印` 用例 + PrintDocPreview.test.tsx（红证：把 openPanel 的默认勾选改成全选 / 去掉 markFired ⟹ 「打印这一张」不变「下一张」⇒ 红）
 数据: 判据 5·🔴 **打印流水区块**（会红）：每次出纸写一条（docType / docTitle / mediaId / sheets / channel / batchId），随后重读；区块显示时间 / 单据 / 操作人 / 纸型 / 张数 / 通道 / 结果；折叠态只渲染 5 行；读失败给失败态 + 重试（不是空态）。执行点 = PrintLogPanel.test.ts + order-detail.test.tsx 的流水用例（红证：不写流水 / 折叠态改成 CSS 隐藏 ⇒ 红）
 数据: 判据 6·**列表「已打印」**（会红）：订单列表「打印」列读服务端聚合的 printedAt / printCount / printedDocTypes（`已打印 MM-DD HH:mm` + 悬浮显示次数与单据；未打印 ⇒ 灰字「未打印」），不用前端本地状态冒充。执行点 = frontend/admin-web/tests/unit/components/OrderTable.test.tsx（红证：改成恒渲染「未打印」⇒ 红）
+前置(散文): 订单详情页可打开（持 `order:detail`）；「派单后」那一组用例需要一张**已有作业单**的订单（`processing_orders` 存在；`order_kind=processing` ⇒ 加工单 + 水洗唛，`order_kind=outbound` ⇒ 只有面料单）；`window.print` 在 jsdom 里是替身（不上真纸），流水的写请求被替身接住
 跳过: [backend-contract] 本用例是打印中心的确定性前端判据（vitest：渲染 + 交互 + 纸型读数；无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：计分通道 = traces.tests
 ```
 溯源: 2026-10-27 新增（issue #7902）。取号 = scripts/next_case_id.py OR 现取 ⇒ OR-072。口径：① 一处入口 = 销售订单详情（发货页 / 发货记录页 / 生产明细页的打印入口一并退场）；② 加工单/面料单/水洗唛的纸面名与是否出现由派单产物（processing_orders.order_kind）决定；③ 联合打印 = 勾选 + 逐张引导（浏览器不保证 window.print 阻塞到出纸，且四份纸的纸型不同，物理上必须一张一张换纸）；④ 打印流水只记「已发起 + 结果」，不假装能确认物理出纸。⚠️ 未固化（照实登记）：① 生产明细页撤掉打印后，车间岗位需 order:detail 才能在订单详情打水洗唛（用户 2026-10-27 已选该方案）；② 真机纸面与驱动分页仍由打印介质矩阵守卫承担，本用例不重复；③ 蓝牙直连（Web Bluetooth）在 jsdom 里只能判「入口存在 + 上报通道为 ble」，真实出纸不在面内。 ｜ tags: order, print-center, print-log
@@ -11918,9 +11919,10 @@
 数据: order_logistics.shipper_name 必须 nullable：存量已发货订单历史上无此数据，纸面「发货人」栏显示「-」（#3818 裁定，不得留白、不得 undefined/null），不得回填假值（否则迁移失败或纸面出现伪造经手人）
 数据: 新增可打印「发货单」（ShipmentDoc）：A4（@page size: A4）+ body visibility 隔离；纸面含 订单号/下单时间/收货人/电话/地址/商品明细（品名·货号·颜色·规格·数量·单价·金额）/合计（总数量+总金额）/加工费合计（`ShipmentDoc.tsx` 的纸面标签真值）/备注/发货人（存量空值显示「-」）/物流公司·运单号（发货前留空供手写，发货后带出）
 数据: 入口两处：发货页（发货前打印，发货人取当前输入值，未保存也印）+ 订单详情页页面级「打印」入口里选**发货单**（补打——发货页有状态守卫，shipped 后进不去）。🔴 issue #7544 改判：详情页不再有独立的「打印发货单」按钮，也不再按状态显隐（待付款等未发货状态同样能补打，只是纸面物流 / 发货人栏为空）
+数据: ⛔ **发货单自 issue #7902 整体退场**（用户 2026-10-27 逐字「移除发货单打印」「统一到销售单上打印」）：纸、组件、发货页「打印发货单」、发货记录页「补打」一并撤下；上方纸面/入口类断言只作为**历史口径留档**，现行判据 = `frontend/admin-web/tests/unit/pages/ship-order.test.tsx` / `shipments.test.tsx` 的「零打印入口」与订单详情打印层里取不到 `print-preview-doc-shipment`
 数据: 发货单渲染在页面级，**不得**放进 Modal（Modal 为 max-h-full + 内部 overflow-y-auto，打印只会打出可视一屏、多页明细被裁）；每页只挂一份（.shipment-print-area 为全局选择器，挂两份会打印出两套单据）
 数据: 不向 C 端顾客泄漏发货人：customer_logistics_track 按白名单字段构造返回（order_id/order_no/tracking_number/company/status/status_text/latest/traces），响应中不含 shipperName
-数据: 加工项区（issue #7275 → #7605 → **#7891**）：**加工项绑商品行** —— 每个商品行下方跟一条子行（`shipment-item-processing-N`，单格 `colSpan` = 全表列数），文案 = 水洗唛式单行 `加工项：定型、韩褶 各 6.3 · 特殊选项：拼2次-布`（**加工费合计**仍在明细表之后单独一行右对齐，口径不变 = Σ 行级 `processingFee`）；「不绑商品」的表外一行（旧区头 `加工项（数量：米）`、锚点 `shipment-processing-items`）**退场**。行文案由 `frontend/admin-web/src/lib/processing-item-text.ts` 的 `processingItemsText()` / `processingPaperLine()` **单一构建器**产出（三份纸共用）、按**数据二态**：数量全等 ⇒ `定型、韩褶 各 6`（数字只说一遍）；数量不等 ⇒ `定型 6 + 韩褶 2`；单项 ⇒ `定型 6`（不写「各」）；缺数量 ⇒ 该项显式印 `—`（`打孔 —`）。🔴 **不得**用 `（A+B）×6`（用户 2026-10-24 裁定）：纯文本有运算优先级歧义（`定型 + 韩褶×6`），且与「加工费合计」并排会诱导客户拿它去乘出加工费（真值 = 组合价 元/米 × 加工费米数）；各加工项 quantity 可以不等、可以缺 ⇒ 无条件提公因子 = 把不等的数压成一个 = 报错数。执行点 = `frontend/admin-web/tests/unit/components/ShipmentDoc.test.tsx`（三态 / 绑定 / 布料行不出 / 旧形态退场 / 加工费合计）+ `frontend/admin-web/tests/unit/lib/processing-item-text.test.ts`；类级判据 = `tests/unit_ci_workflows/test_print_media_matrix_guard.py::test_c9_shipment_processing_items_bind_to_the_product_row`（子行锚点缺失 / 退回旧表外锚点 / 没 import 单一构建器 / 构建器缺全等形态 / 构建器里出现 `×` / 删掉加工费合计 均判红，含注入式红证）
+数据: 加工项区（issue #7275 → #7605 → **#7891**）：**加工项绑商品行** —— 每个商品行下方跟一条子行（`shipment-item-processing-N`，单格 `colSpan` = 全表列数），文案 = 水洗唛式单行 `加工项：定型、韩褶 各 6.3 · 特殊选项：拼2次-布`（**加工费合计**仍在明细表之后单独一行右对齐，口径不变 = Σ 行级 `processingFee`）；「不绑商品」的表外一行（旧区头 `加工项（数量：米）`、锚点 `shipment-processing-items`）**退场**。行文案由 `frontend/admin-web/src/lib/processing-item-text.ts` 的 `processingItemsText()` / `processingPaperLine()` **单一构建器**产出（三份纸共用）、按**数据二态**：数量全等 ⇒ `定型、韩褶 各 6`（数字只说一遍）；数量不等 ⇒ `定型 6 + 韩褶 2`；单项 ⇒ `定型 6`（不写「各」）；缺数量 ⇒ 该项显式印 `—`（`打孔 —`）。🔴 **不得**用 `（A+B）×6`（用户 2026-10-24 裁定）：纯文本有运算优先级歧义（`定型 + 韩褶×6`），且与「加工费合计」并排会诱导客户拿它去乘出加工费（真值 = 组合价 元/米 × 加工费米数）；各加工项 quantity 可以不等、可以缺 ⇒ 无条件提公因子 = 把不等的数压成一个 = 报错数。执行点 = `frontend/admin-web/tests/unit/components/SalesDoc.test.tsx` 与 `QuotationDoc.test.tsx`（同一条不变量；发货单已于 issue #7902 退场）+ `frontend/admin-web/tests/unit/lib/processing-item-text.test.ts`；类级判据 = `tests/unit_ci_workflows/test_print_media_matrix_guard.py::test_c9_shipment_processing_items_bind_to_the_product_row`（子行锚点缺失 / 退回旧表外锚点 / 没 import 单一构建器 / 构建器缺全等形态 / 构建器里出现 `×` / 删掉加工费合计 均判红，含注入式红证）
 跳过: [backend-contract] 纯前端 UI + 后端字段落库，由 vitest 单测（ShipmentDoc/ship-order/order-detail/data-adapter）与 MockMvc/Service 单测（OrderControllerTest/AgentOrderServiceTest/UserServiceTest）验证；非 LLM 行为（agent 工具参数未变，发货人由后端按 X-User-Id 兜底），不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.vitest
@@ -13404,12 +13406,13 @@
 你: 发货单的加工项需要和商品绑定，比如如果是成品帘，一览展示商品，商品下面是加工项，展示内容参考水洗唛的那种格式，还有特殊选项也要放上去，都放在加工项那一栏里面
 你: 发货单的打印格式也需要改一下
 期望: direct_reply
-数据: 判据 1·三份纸都有加工项（会红）：销售单 / 报价单 / 发货单的商品行下方都能取到加工项子行（`sales-item-processing-N` / `quotation-set-processing-N` / `shipment-item-processing-N`），文案含加工项名称与数量；把子行删掉 ⇒ 对应测试红。执行点 = frontend/admin-web/tests/unit/components/ 下 SalesDoc.test.tsx / QuotationDoc.test.tsx / ShipmentDoc.test.tsx 的加工项用例
+数据: 判据 1·三份纸都有加工项（会红）：销售单 / 报价单 / 发货单的商品行下方都能取到加工项子行（`sales-item-processing-N` / `quotation-set-processing-N` / `shipment-item-processing-N`），文案含加工项名称与数量；把子行删掉 ⇒ 对应测试红。执行点 = frontend/admin-web/tests/unit/components/ 下 SalesDoc.test.tsx / QuotationDoc.test.tsx 的加工项用例（发货单已于 issue #7902 退场）
 数据: 判据 2·**绑到商品行**（会红）：商品 A 的加工项只出现在 A 的子行、B 行下不出现（两行各带不同加工项 + `within(row)` 断言）；把子行挂到表尾（改回不绑商品）⇒ 红。执行点 = 三份测试的绑定用例
 数据: 判据 3·水洗唛式两栏 + 特殊选项同栏（会红）：子行文案 = `加工项：… · 特殊选项：…`（特殊选项取 craftSpecRows 的同一份格式化）；特殊选项被丢 ⇒ 红。执行点 = 同文件「特殊选项也上纸」用例
 数据: 判据 4·数量三态与缺值占位（会红）：全等 ⇒ `定型、韩褶 各 6.3`；不等 ⇒ `定型 6.3 + 韩褶 2`；缺数量 ⇒ `打孔 —`（不印 0、不吞项、不出现 `×`）。执行点 = 同文件三态用例 + 类级守卫 tests/unit_ci_workflows/test_print_media_matrix_guard.py 的 C9（构建器形态 + `×` 判红）
 数据: 判据 5·布料行不出子行（会红）：商品行没有 `processingInfo`（面料/布料单）⇒ 该行下零加工项节点。执行点 = 三份测试的布料行用例
-数据: 判据 6·发货单底部独立区退场、加工费合计仍在（会红）：纸面取不到「加工项（数量：米）」与 `shipment-processing-items`；`shipment-processing-fee-total` 仍印且数值 = Σ 行级 `processingFee`（为 0 时不渲染该行）。执行点 = ShipmentDoc.test.tsx 的退场/合计用例
+数据: 判据 6b·⛔ **发货单整张退场**（issue #7902）：`shipment-item-processing-*` / `shipment-processing-fee-total` 随纸一起消失；同一条「加工项绑商品行」不变量由**销售单**承接（`sales-item-processing-*`），类级判据 C9 已改挂 SalesDoc
+数据: 判据 6·发货单底部独立区退场、加工费合计仍在（会红）：纸面取不到「加工项（数量：米）」与 `shipment-processing-items`；`shipment-processing-fee-total` 仍印且数值 = Σ 行级 `processingFee`（为 0 时不渲染该行）。执行点 = SalesDoc.test.tsx 的加工费合计用例（发货单底区已随整张纸退场，issue #7902）
 前置: 本用例是 [backend-contract] 纯前端打印版式契约（jsdom 渲染，夹具自建）；前置不成立时对应单测直接红，agent-eval 栈不跑它
 跳过: [backend-contract] 纯前端打印版式契约（无 LLM 环节，不进 agent-eval 冒烟）：断言由三份单据组件测试执行
 ```

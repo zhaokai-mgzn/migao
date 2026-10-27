@@ -4697,6 +4697,8 @@ cases:
     user_inputs:
       - "移除发货单打印；当订单成功派单后，销售订单的打印预览也能打印加工单的水洗唛、加工单/面料单；再加个一键打印全部单据的功能（允许用户勾选要打印哪些，叫「联合打印」这类名字）；把加工单的打印按钮移除掉，最终统一到销售单上打印"
       - "在订单列表页需要表达已经打印过的状态，方便用户查看"
+    preconditions:
+      - "订单详情页可打开（持 `order:detail`）；「派单后」那一组用例需要一张**已有作业单**的订单（`processing_orders` 存在；`order_kind=processing` ⇒ 加工单 + 水洗唛，`order_kind=outbound` ⇒ 只有面料单）；`window.print` 在 jsdom 里是替身（不上真纸），流水的写请求被替身接住"
     expectations: []
     data_checks:
       - "判据 1·🔴 **派单闸门**（会红）：`processingOrder` 为 null（未派单）⇒ 打印层的单据标签**没有** processing / labels（不是出现后打开是白纸）；有加工单且 order_kind=outbound（面料单）⇒ 有「面料单」**没有**水洗唛；成品帘 ⇒ 两者都有。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx 的三条 #7902 用例（红证：把 printDocs 写回静态四条 ⇒ 未派单用例红）"

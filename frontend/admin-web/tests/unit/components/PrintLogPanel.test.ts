@@ -117,6 +117,16 @@ describe('打印流水区块（issue #7902）', () => {
     expect(await screen.findByTestId('print-log-pl-1')).toBeInTheDocument()
   })
 
+  it('⑥ 读面形状异常（不是数组）⇒ 当空态处理，**不许把页面渲染打崩**', async () => {
+    // 实测（CI Demo path specs）：替身把订单对象当流水返回 ⇒ 组件里 `.slice` 抛错 ⇒ 整页白屏
+    mockListPrintLogs.mockResolvedValue({ data: { data: { orderNo: 'ORD-1', shipments: [] } } })
+    render(createElement(PrintLogPanel, { orderId: 'o-1', refreshKey: 0 }))
+
+    expect(await screen.findByTestId('order-print-logs-empty')).toHaveTextContent('还没有打印记录')
+    // 反向自证：组件仍在（不是整体崩掉之后的空 DOM）
+    expect(screen.getByTestId('order-print-logs')).toBeInTheDocument()
+  })
+
   it('⑤ 联合打印的批次读数与蓝牙通道照实显示（同一张纸的两条通道不混为一谈）', async () => {
     mockListPrintLogs.mockResolvedValue(
       ok([buildLog({ id: 'pl-ble', channel: 'ble', batchId: 'b-1', batchIndex: 2, batchSize: 3 })]),

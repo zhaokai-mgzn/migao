@@ -42,7 +42,10 @@ export default function PrintLogPanel({ orderId, refreshKey }: PrintLogPanelProp
     setFailed(false)
     try {
       const res = await orderApi.listPrintLogs(orderId, 20)
-      setLogs(res.data?.data ?? [])
+      // 🔴 形状兜底：读面**不是数组**时不许把页面渲染打崩（fixture 替身 / 网关异常页 / 旧版本接口）。
+      // 实测（CI Demo path specs）：替身把订单对象当流水返回 ⇒ `(logs ?? []).slice` 抛错
+      // ⇒ 整张订单详情页白屏（流水是旁路，不该有这种权力）。
+      setLogs(Array.isArray(res.data?.data) ? res.data.data : [])
     } catch {
       // 读失败 ≠「没打印过」：分开说（拦截器已 toast，这里只标失败态 + 给重试）
       setFailed(true)
