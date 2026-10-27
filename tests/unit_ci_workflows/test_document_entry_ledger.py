@@ -160,15 +160,18 @@ def test_every_print_target_declares_a_reachable_entry() -> None:
 
 def test_ledger_is_not_empty() -> None:
     """fail-closed：清空台账不能消红（否则「删掉台账」就是最省事的消红手段）。"""
-    assert len(load_ledger()["documents"]) >= 5
+    # issue #7902：发货单退场 ⇒ 在册单据 5 → 4（报价 / 加工 / 销售 / 水洗唛）
+    assert len(load_ledger()["documents"]) >= 4
 
 
-def test_shipment_has_a_menu_entry_now() -> None:
-    """本单的实例判据：发货单**必须是独立菜单项**，且路径真实存在于菜单。"""
+def test_water_label_entry_moved_to_the_sales_order_page() -> None:
+    """issue #7902 的实例判据：水洗唛的打印入口从「生产明细页」改为「销售订单详情」，
+    且发货单**整条退场**（台账里不许再留它 —— 陈旧登记同样判红）。"""
     targets, paths, ledger = _live()
-    assert "shipment" in targets
-    assert ledger["documents"]["shipment"]["entry"] == "menu:/shipments"
-    assert "/shipments" in paths
+    assert "labels" in targets
+    assert ledger["documents"]["labels"]["entry"] == "embedded:/orders"
+    assert "shipment" not in targets
+    assert "shipment" not in ledger["documents"]
 
 
 def test_every_document_entry_is_reachable() -> None:
@@ -191,11 +194,12 @@ class TestDiscriminatingPower:
     """七种坏形态各自判红 + 一条对照读数（只改注释 ⇒ 不红）。"""
 
     def test_missing_ledger_entry_goes_red(self) -> None:
+        # 摘掉一条**在册**单据的登记（#7902 后发货单已退场 ⇒ 用仍在册的「水洗唛」做注入）
         targets, paths, ledger = _live(
-            {k: v for k, v in load_ledger()["documents"].items() if k != "shipment"}
+            {k: v for k, v in load_ledger()["documents"].items() if k != "labels"}
         )
         problems = entry_problems(targets, paths, ledger)
-        assert any("shipment" in p and "未登记" in p for p in problems)
+        assert any("labels" in p and "未登记" in p for p in problems)
 
     def test_stale_ledger_entry_goes_red(self) -> None:
         documents = dict(load_ledger()["documents"])
@@ -205,7 +209,7 @@ class TestDiscriminatingPower:
 
     def test_menu_entry_that_does_not_exist_goes_red(self) -> None:
         documents = dict(load_ledger()["documents"])
-        documents["shipment"] = {"name": "发货单", "entry": "menu:/nowhere", "why": "x"}
+        documents["quotation"] = {"name": "报价单", "entry": "menu:/nowhere", "why": "x"}
         _, paths, ledger = _live(documents)
         problems = entry_problems(print_targets(), paths, ledger)
         assert any("/nowhere" in p for p in problems)
@@ -225,19 +229,23 @@ class TestDiscriminatingPower:
 
     def test_malformed_entry_goes_red(self) -> None:
         documents = dict(load_ledger()["documents"])
-        documents["shipment"] = {"name": "发货单", "entry": "shipment", "why": "x"}
+        documents["quotation"] = {"name": "报价单", "entry": "shipment", "why": "x"}
         _, paths, ledger = _live(documents)
         assert any("形态非法" in p for p in entry_problems(print_targets(), paths, ledger))
 
     def test_removing_the_menu_item_goes_red(self) -> None:
-        """🔴 **本缺陷的原始形态**：单据声明了独立菜单入口，而菜单里没有它 ⇒ 必红。"""
+        """🔴 **本缺陷的原始形态**（issue #5939 现场）：单据声明的入口承载页不可达 ⇒ 必红。
+
+        #7902 后四份纸全部 `embedded:`（挂在订单详情 / 报告单页）⇒ 把承载页路径从菜单里改名，
+        全部单据的入口就都不可达（这正是「单据做完了、大菜单里没有它」的机器读数）。
+        """
         original = MENU_TS.read_text(encoding="utf-8")
-        menu_src = original.replace("path: '/shipments'", "path: '/shipments-disabled'")
+        menu_src = original.replace("path: '/orders'", "path: '/orders-disabled'")
         # 变异自证：注入必须先真的改到东西（否则「没红」会被误读成「判据判不了」）
         assert menu_src != original
         targets, paths, ledger = _live()
         problems = entry_problems(targets, menu_paths(menu_src), ledger)
-        assert any("/shipments" in p for p in problems)
+        assert any("不可达" in p for p in problems)
 
     def test_unrelated_comment_does_not_go_red(self) -> None:
         """对照读数：只加一段与单据无关的注释 ⇒ 不红（判据在判语义，不是判「文件变了没有」）。"""

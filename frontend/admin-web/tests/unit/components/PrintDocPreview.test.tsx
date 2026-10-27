@@ -1,4 +1,4 @@
-// case_ids: UI-027
+// case_ids: UI-027, OR-072
 // @vitest-environment jsdom
 
 import { describe, it, expect, afterEach, vi } from 'vitest'
@@ -229,7 +229,8 @@ describe('纸面自检层 PrintDocPreview（issue #5914）', () => {
  * ③ 不传 `docs` ⇒ 没有选择器（发货页 / 加工单生产页各只有一份单据，形态必须与改前逐字一致）。
  */
 describe('打印层的单据选择器（issue #7544）', () => {
-  const DOCS = ['sales', 'processing', 'quotation', 'shipment'] as const
+  // 发货单自 issue #7902 起整体退场 ⇒ 目标位只剩三份（加工单/水洗唛在订单页按派单动态给）
+  const DOCS = ['sales', 'processing', 'quotation'] as const
 
   function open(
     docs: readonly (typeof DOCS)[number][] | undefined,
@@ -258,7 +259,6 @@ describe('打印层的单据选择器（issue #7544）', () => {
     expect(screen.getByTestId('print-preview-doc-processing')).toHaveTextContent('加工单')
     expect(screen.getByTestId('print-preview-doc-processing')).toHaveTextContent('210×297')
     expect(screen.getByTestId('print-preview-doc-quotation')).toHaveTextContent('报价单')
-    expect(screen.getByTestId('print-preview-doc-shipment')).toHaveTextContent('发货单')
     // 当前单据 = 唯一选中项
     expect(screen.getByTestId('print-preview-doc-sales')).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByTestId('print-preview-doc-processing')).toHaveAttribute('aria-pressed', 'false')

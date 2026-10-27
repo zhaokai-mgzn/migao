@@ -4568,3 +4568,52 @@ END $$;
 -- 入库单按仓查询（V196）
 CREATE INDEX IF NOT EXISTS idx_inbound_orders_tenant_warehouse
     ON inbound_orders (tenant_id, warehouse_id) WHERE warehouse_id IS NOT NULL AND deleted = 0;
+
+-- ══════════════════════════════════════════════════════════════════════════════════════
+-- 打印流水（V201，issue #7902）
+-- 谁、什么时候、打了哪种单据。🔴 不存业务对象副本（order_no / order_status / doc_title / operator_name
+-- 只是当时的快照，真值仍在 orders / users）；打印是**外部事实**，只登记「已发起 + 结果」，
+-- 不假装能确认纸真的印出来了。口径与理由见 V201 的文件头。
+-- ══════════════════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS print_logs (
+    id VARCHAR(36) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+
+    order_id VARCHAR(36),
+    order_no VARCHAR(64),
+
+    doc_type VARCHAR(32) NOT NULL,
+    doc_title VARCHAR(32),
+    processing_order_id VARCHAR(36),
+    processing_order_no VARCHAR(64),
+
+    media_id VARCHAR(32),
+    sheets INTEGER NOT NULL DEFAULT 1,
+    channel VARCHAR(16) NOT NULL DEFAULT 'browser',
+
+    batch_id VARCHAR(36),
+    batch_index INTEGER,
+    batch_size INTEGER,
+
+    order_status VARCHAR(32),
+
+    status VARCHAR(16) NOT NULL DEFAULT 'fired',
+    fail_reason VARCHAR(255),
+
+    operator_id VARCHAR(36),
+    operator_name VARCHAR(64),
+    client_ip VARCHAR(64),
+    user_agent VARCHAR(255),
+
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT ck_print_logs_doc_type CHECK (doc_type IN ('sales', 'processing', 'quotation', 'labels')),
+    CONSTRAINT ck_print_logs_channel CHECK (channel IN ('browser', 'ble')),
+    CONSTRAINT ck_print_logs_status CHECK (status IN ('fired', 'failed')),
+    CONSTRAINT ck_print_logs_sheets CHECK (sheets BETWEEN 1 AND 999)
+);
+
+CREATE INDEX IF NOT EXISTS idx_print_logs_tenant_order_created
+    ON print_logs (tenant_id, order_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_print_logs_tenant_created
+    ON print_logs (tenant_id, created_at DESC);

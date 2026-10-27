@@ -6,7 +6,7 @@ import { Button } from '@/components/ui'
 import { printBodyFontPt, printContentInsetMm, printPageBoxMm, type PrintMediaId } from '@/lib/print-media'
 import { captureNodeToPngBlob, copyPngToClipboard, downloadPng } from '@/lib/print-capture'
 import { extractApiErrorMessage } from '@/lib/api-error'
-import type { PrintTarget } from '@/lib/print-doc'
+import type { PrintBatchController, PrintTarget } from '@/lib/print-doc'
 import { PRINT_TARGET_SPECS } from '@/lib/print-doc'
 
 /**
@@ -135,6 +135,19 @@ export interface PrintDocPreviewProps {
    * 不传 ⇒ 标签与改前逐字一致（行为零变化）。
    */
   titleOf?: (target: PrintTarget) => string
+  /**
+   * **联合打印**（issue #7902）：勾选多份单据 → 一张一张出纸。
+   *
+   * 状态机在 `lib/print-doc.ts` 的 `usePrintBatch`（本组件只管界面）；「真正开印」仍由
+   * `usePrintDoc` 的唯一入口负责 —— 本层不出现第二处 `window.print()`。
+   *
+   * 不传 ⇒ 页脚与改前逐字一致（其它使用方零影响）。
+   */
+  batch?: PrintBatchController
+  /** 联合打印面板里每份单据的**补充读数**（如洗水唛「3 张」）；算不出来的不传，不编数字 */
+  batchHintOf?: (target: PrintTarget) => string | undefined
+  /** 点「打印这一张」（联合打印进行中）—— 调用方负责置位打印目标 + 写打印流水 */
+  onBatchPrintCurrent?: () => void
 }
 
 export default function PrintDocPreview({
@@ -149,6 +162,9 @@ export default function PrintDocPreview({
   docs,
   onSelect,
   titleOf,
+  batch,
+  batchHintOf,
+  onBatchPrintCurrent,
 }: PrintDocPreviewProps) {
   // 纸的**整幅尺寸**取自介质矩阵（issue #7816：洗水唛改回固定 50×150，不再有「按内容撑开」的长度）
   const box = printPageBoxMm(media)
@@ -270,7 +286,7 @@ export default function PrintDocPreview({
         {/* ② 单据标签（issue #7544）：同页多份单据时**唯一**的选择入口 ——
             商家不必先在页面上找到「打印哪一份」的按钮，进来就能换。
             ⚠️ 标签只换预览目标（`onSelect`），**不置位打印目标** ⇒ 「换一份看看」不会改掉这次要印的纸。 */}
-        {docs && docs.length > 1 && onSelect && (
+        {docs && docs.length > 1 && onSelect && batch?.stage !== 'running' && (
           <div
             className="flex flex-wrap items-center gap-2 border-b border-neutral-200 px-4 py-2"
             role="group"
@@ -307,6 +323,77 @@ export default function PrintDocPreview({
           </div>
         )}
 
+        {/* 联合打印面板（issue #7902）：勾选哪几张一起出。**默认只勾当前这一份** ——
+            纸是耗材，点开面板不等于同意把四张全打一遍；要全打有「全选」。 */}
+        {batch && batch.stage === 'panel' && (
+          <div className="border-b border-neutral-200 bg-neutral-50 px-4 py-3" data-testid="print-batch-panel">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-neutral-900">联合打印</div>
+                <div className="mt-0.5 text-xs text-neutral-500">
+                  勾选这次要出的纸，按下面的顺序一张一张打；每张都会记一条打印流水。
+                </div>
+              </div>
+              <Button variant="secondary" size="sm" onClick={batch.toggleAll} data-testid="print-batch-toggle-all">
+                {batch.selected.length === batch.candidates.length ? '取消全选' : '全选'}
+              </Button>
+            </div>
+            <ul className="mt-3 space-y-1.5">
+              {batch.candidates.map((doc, i) => {
+                const checked = batch.selected.includes(doc)
+                const spec = PRINT_TARGET_SPECS[doc]
+                const docBox = printPageBoxMm(spec.media)
+                const label = titleOf ? titleOf(doc) : spec.title
+                const hint = batchHintOf?.(doc)
+                return (
+                  <li key={doc}>
+                    <button
+                      type="button"
+                      role="checkbox"
+                      aria-checked={checked}
+                      data-testid={`print-batch-doc-${doc}`}
+                      onClick={() => batch.toggle(doc)}
+                      className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                        checked
+                          ? 'border-primary-500 bg-white text-neutral-900'
+                          : 'border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50'
+                      }`}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-xs font-bold ${
+                          checked ? 'border-primary-500 bg-primary-500 text-white' : 'border-neutral-300 bg-white text-transparent'
+                        }`}
+                      >
+                        ✓
+                      </span>
+                      <span className="w-4 shrink-0 text-xs text-neutral-400">{i + 1}</span>
+                      <span className="font-medium">{label}</span>
+                      <span className="text-xs text-neutral-400">
+                        {docBox.widthMm}×{docBox.heightMm}mm
+                      </span>
+                      {hint && <span className="text-xs text-neutral-400">{hint}</span>}
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+            <div className="mt-3 flex items-center justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={batch.closePanel} data-testid="print-batch-cancel">
+                取消
+              </Button>
+              <Button
+                size="sm"
+                onClick={batch.start}
+                disabled={batch.selected.length === 0}
+                data-testid="print-batch-start"
+              >
+                开始联合打印（{batch.selected.length} 张）
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* ③ 真尺寸纸框（按 mm），外层只做缩放适配 */}
         <div className="flex-1 overflow-auto bg-neutral-100 p-4">
           <div
@@ -337,6 +424,19 @@ export default function PrintDocPreview({
           {/* 单据级提示槽（issue #6867）：在出口**之前**、纸框**之外** —— 商家先看见「这张纸扫不了」，
               再决定是打还是先补码（放进纸框会污染纸面自检读数，见 `notice` 的 props 注释）。 */}
           {notice && <div className="mb-2">{notice}</div>}
+          {/* 联合打印进度（issue #7902）：**哪一张、第几张、出没出纸**在同一行说完 ——
+              商家按这张纸的纸型换纸/换驱动，屏幕要一直告诉他现在在打哪一份。 */}
+          {batch?.stage === 'running' && (
+            <div className="mb-2 flex flex-wrap items-center gap-2" data-testid="print-batch-progress">
+              <span className="inline-flex items-center rounded-full bg-primary-50 px-2.5 py-0.5 text-xs font-semibold text-primary-700">
+                联合打印 {batch.index + 1}/{batch.selected.length}
+              </span>
+              <span className="text-sm font-medium text-neutral-900">
+                {batch.current ? (titleOf ? titleOf(batch.current) : PRINT_TARGET_SPECS[batch.current].title) : ''}
+              </span>
+              <span className="text-xs text-neutral-500">{batch.fired ? '已出纸' : '待出纸'}</span>
+            </div>
+          )}
           <div className="mb-2 text-sm" data-testid="print-preview-check">
             {check === null ? (
               <span className="text-neutral-500">正在量纸面…</span>
@@ -363,9 +463,31 @@ export default function PrintDocPreview({
             <Button variant="secondary" onClick={handleCapture} loading={capturing} data-testid="print-preview-capture">
               复制截图
             </Button>
-            <Button onClick={onPrint} data-testid="print-preview-print">
-              打印
-            </Button>
+            {batch && batch.stage === 'idle' && batch.candidates.length > 1 && (
+              <Button variant="secondary" onClick={() => batch.openPanel(target ?? undefined)} data-testid="print-batch-entry">
+                联合打印
+              </Button>
+            )}
+            {batch?.stage === 'running' ? (
+              <>
+                <Button variant="secondary" onClick={batch.stop} data-testid="print-batch-stop">
+                  结束
+                </Button>
+                {batch.fired ? (
+                  <Button onClick={batch.next} data-testid="print-batch-next">
+                    {batch.index + 1 >= batch.selected.length ? '完成' : '下一张'}
+                  </Button>
+                ) : (
+                  <Button onClick={() => onBatchPrintCurrent?.()} data-testid="print-preview-print">
+                    打印这一张
+                  </Button>
+                )}
+              </>
+            ) : (
+              <Button onClick={onPrint} data-testid="print-preview-print">
+                打印
+              </Button>
+            )}
           </div>
         </div>
       </div>

@@ -1,4 +1,4 @@
-// case_ids: UI-095
+// case_ids: UI-095, OR-072
 // @vitest-environment jsdom
 /**
  * 打印单据**表格列数不变量**（issue #6595）—— 实例判据 + 类级元守卫。
@@ -189,7 +189,6 @@ const DOC_GUARDS: DocGuard[] = [
   { label: '加工单 ProcessingDoc', file: 'tests/unit/components/ProcessingDoc.test.tsx' },
   { label: '报价单 QuotationDoc', file: 'tests/unit/components/QuotationDoc.test.tsx' },
   { label: '销售单 SalesDoc', file: 'tests/unit/components/SalesDoc.test.tsx' },
-  { label: '发货单 ShipmentDoc', file: 'tests/unit/components/ShipmentDoc.test.tsx' },
   { label: '任务卡 TaskCardPrint', file: 'tests/unit/components/TaskCardPrint.test.tsx' },
 ]
 
@@ -224,7 +223,7 @@ describe('类级元守卫 · 每份打印单据都挂同一条表格不变量', 
   })
 
   it('语料不许空转：登记的单据数下限 + 每个文件必须真实存在（扫空气 ⇒ 红）', () => {
-    expect(DOC_GUARDS.length).toBeGreaterThanOrEqual(5)
+    expect(DOC_GUARDS.length).toBeGreaterThanOrEqual(4)
     for (const guard of DOC_GUARDS) {
       expect(readFileSync(join(REPO_ADMIN_WEB, guard.file), 'utf-8').length).toBeGreaterThan(0)
     }

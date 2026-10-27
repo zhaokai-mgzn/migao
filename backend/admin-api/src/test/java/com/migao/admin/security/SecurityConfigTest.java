@@ -135,6 +135,18 @@ class SecurityConfigTest {
     private com.migao.admin.service.OrderShipmentService orderShipmentService;
 
     /**
+     * 打印中心（V201，issue #7902）：本上下文**排除了 DataSource / MybatisPlus auto-config**
+     * ⇒ 新 mapper 必须在这里顶替（否则 `MapperFactoryBean` 拿不到 `sqlSessionFactory`，
+     * 整棵上下文起不来 —— 实测 59 条全 ERROR）；新服务同理（控制器构造依赖）。
+     * 元守卫 = `test_security_config_mapper_mocks`（每个 mapper 都必须被 mock）。
+     */
+    @MockBean
+    private com.migao.admin.service.PrintLogService printLogService;
+
+    @MockBean
+    private com.migao.admin.mapper.PrintLogMapper printLogMapper;
+
+    /**
      * 客户档案身份收敛（issue #7711）：本上下文**排除了 DataSource auto-config** ⇒ 没有
      * {@code JdbcTemplate} bean，而该服务构造依赖它（与 {@code PriceBookService} 同款）⇒ 必须在这里顶替。
      */

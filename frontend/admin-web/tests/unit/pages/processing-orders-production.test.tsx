@@ -1,4 +1,4 @@
-// case_ids: PP-011, PG-019, PP-014
+// case_ids: PP-011, PG-019, PP-014, OR-072
 // PP-011（issue #4000，M4-H 按需单据渲染）：加工单生产明细页 /processing-orders/{id}/production
 // —— 头部（加工单号/订单号/状态/进度/交期）+ 工序进度表 + 计件汇总 + 打印任务卡入口，
 // 接口失败要有友好错误提示与重试（不白屏）。
@@ -432,191 +432,6 @@ describe('加工单生产明细页', () => {
     expect(within(group).getByText('布帘')).toBeInTheDocument()
   })
 
-  it('页头「打印」按钮打开纸面自检层，层里点「打印」才 window.print（默认水洗唛，含二维码）', async () => {
-    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
-    render(<ProductionDetailPage />)
-
-    await waitFor(() => expect(screen.getByTestId('production-header')).toBeInTheDocument())
-
-    // 任务卡随页面挂载（屏幕隐藏、打印显形），二维码内容是 qr_token。
-    // ⚠️ 必须**等元素**而不是假设它已在场（issue #4709 顺带修，全量跑实测偶发）：
-    // 任务卡依赖 `getOrderOperations` 的解析（qr_token 来自它），而上一行的
-    // `production-header` 来自**另一个** promise（`processingOrderApi.detail`）⇒
-    // 只等 header 会在高负载（全量并行跑）下偶发拿不到二维码（同 §15.1「等元素而非定长 sleep」）。
-    await waitFor(() => expect(screen.getByTestId('task-card-qr')).toBeInTheDocument())
-
-    await userEvent.click(screen.getByTestId('production-print-button'))
-
-    // 预览层纸型 = 水洗唛**固定 50mm × 150mm**（issue #7816；由介质矩阵给，不再是 50mm × 70mm）
-    const preview = await screen.findByRole('dialog', { name: '水洗唛打印预览' })
-    expect(within(preview).getByTestId('print-preview-media')).toHaveTextContent('50mm × 150mm')
-
-    // 🔴 标签纸型没配好 = 整卷打废（issue #5914）⇒ 先看纸面自检；没点「打印」之前不该出纸
-    expect(printSpy).not.toHaveBeenCalled()
-    await userEvent.click(await screen.findByTestId('print-preview-print'))
-
-    // issue #4717：断言的对象本身就必须是**被等待的可观察条件**（#4414 口径 ——
-    // 「把同步断言并进同一个 waitFor，等的是『调用发生』这件事本身」）。
-    //
-    // 改前形态 = `await waitFor(A)` 之后紧跟 `expect(B)` 的**同步**断言 ⇒ A 与 B 由不同
-    // commit 产出时就是竞态。本用例的 A（`task-card-qr`）来自 `TaskCardPrint` 的
-    // **被动副作用**（portal + `if (!mounted) return null`，见 components/production/TaskCardPrint.tsx）
-    // ⇒ 它比页头晚一次 commit；全量并行（负载高）下那次刷新被拖后 ⇒ 窗口变宽 ⇒ 偶发红。
-    await waitFor(() => expect(printSpy).toHaveBeenCalledTimes(1))
-
-    printSpy.mockRestore()
-  })
-
-  it('issue #7870：加工单（A4）与洗水唛**同层**——页头同一个「打印」入口，单据标签切过去即 A4，出纸的只有所选那份且不打任务卡留痕', async () => {
-    // 加工单纸面读订单详情 ⇒ 本用例给足 `order:detail`（无该码的形态见下一条）
-    mockUseAuthStore.mockReturnValue({
-      user: {
-        id: 'u-1',
-        name: '运营',
-        roles: ['operator'],
-        permissions: ['processing:manage', 'order:detail'],
-      },
-    })
-    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
-    try {
-      render(<ProductionDetailPage />)
-      await waitFor(() => expect(screen.getByTestId('production-header')).toBeInTheDocument())
-      // 订单详情读面回来之后，本页才有「加工单」那张纸
-      await waitFor(() => expect(mockGetOrder).toHaveBeenCalledWith('order-uuid-1'))
-
-      await userEvent.click(screen.getByTestId('production-print-button'))
-
-      // 两份纸在**同一个**打印层里：单据标签 = 水洗唛 + 加工单，默认仍水洗唛（既有主流程不变）
-      // ⚠️ 等元素（订单读面回来 ⇒ `printOrder` 提交后才长得出标签行），别假设它已在场
-      expect(await screen.findByTestId('print-preview-doc-labels')).toHaveTextContent('水洗唛')
-      expect(screen.getByTestId('print-preview-doc-processing')).toHaveTextContent('加工单')
-      expect(screen.getByTestId('print-preview-doc-labels')).toHaveAttribute('aria-pressed', 'true')
-      expect(screen.getByTestId('print-preview-media')).toHaveTextContent('50mm × 150mm')
-
-      // 换到加工单：纸型读数与预览都跟着换成 A4（预览里看到的就是要打的那张纸）
-      await userEvent.click(screen.getByTestId('print-preview-doc-processing'))
-      expect(screen.getByTestId('print-preview-doc-processing')).toHaveAttribute('aria-pressed', 'true')
-      expect(screen.getByTestId('print-preview-media')).toHaveTextContent('210mm × 297mm')
-      // 纸面读的是**订单**详情（客户来自那一份 DTO）
-      expect(within(screen.getByTestId('print-preview-paper')).getByText('李四')).toBeInTheDocument()
-
-      // 换标签 ≠ 出纸（纸是耗材，issue #5914）
-      expect(printSpy).not.toHaveBeenCalled()
-      await userEvent.click(screen.getByTestId('print-preview-print'))
-      await waitFor(() => expect(printSpy).toHaveBeenCalledTimes(1))
-      // 上纸的只有所选那一份（加工单）：页级挂载那一份带 `data-print-target='processing'`
-      expect(
-        document.querySelector('.processing-print-area[data-print-target="processing"]'),
-      ).not.toBeNull()
-      // 🔴 留痕口径不变：`print_count` 记的是任务卡，打 A4 加工单不记账
-      expect(mockRecordPrint).not.toHaveBeenCalled()
-    } finally {
-      printSpy.mockRestore()
-    }
-  })
-
-  it('issue #7870：无 `order:detail` ⇒ 不请求订单、打印层只有水洗唛（入口同码显隐，洗水唛照旧可打）', async () => {
-    // 默认 operator 只有 processing:manage（无 order:detail）
-    render(<ProductionDetailPage />)
-    await waitFor(() => expect(screen.getByTestId('production-header')).toBeInTheDocument())
-    // 无权限的面**不发请求**（同 #7276 口径：先判码再请求，而不是请求后吃 403）
-    expect(mockGetOrder).not.toHaveBeenCalled()
-
-    await userEvent.click(screen.getByTestId('production-print-button'))
-    expect(screen.getByRole('dialog', { name: '水洗唛打印预览' })).toBeInTheDocument()
-    // 只有一份纸 ⇒ 不出现单据标签行（与改前逐字一致）
-    expect(screen.queryByTestId('print-preview-docs')).toBeNull()
-    expect(screen.queryByTestId('print-preview-doc-processing')).toBeNull()
-  })
-
-  it('🔴 issue #7891：面料单（`order_kind=outbound`）**不出现洗水唛入口** —— 任务卡整块不挂，打印层只剩那张「面料单」', async () => {
-    // 用户 2026-10-27 逐字「面料单不能打印水洗唛，应该打印加工单」⇒ 面料单页面不许再有洗水唛入口
-    mockUseAuthStore.mockReturnValue({
-      user: {
-        id: 'u-1',
-        name: '运营',
-        roles: ['operator'],
-        permissions: ['processing:manage', 'order:detail'],
-      },
-    })
-    mockDetail.mockResolvedValue(ok({ ...PROCESSING_ORDER, order_kind: 'outbound' }))
-    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
-    try {
-      render(<ProductionDetailPage />)
-      await waitFor(() => expect(screen.getByTestId('production-header')).toBeInTheDocument())
-      await waitFor(() => expect(mockGetOrder).toHaveBeenCalledWith('order-uuid-1'))
-
-      // ① 屏幕隐藏的那份任务卡**整块不挂**（不是 display:none —— 藏起来仍会被 Ctrl+P 打出去）
-      expect(document.querySelector('.task-card-print-area')).toBeNull()
-      expect(screen.queryByTestId('task-card-qr')).toBeNull()
-      // ② 入口旁一句话说清（可行动，不是「功能没了」）
-      expect(screen.getByTestId('production-fabric-doc-hint')).toHaveTextContent('不印水洗唛')
-
-      // ③ 打印层 = 只有那张 A4 纸，且**标题按两型给名**（面料单，不是「加工单」、也不是「裁剪单」）
-      await userEvent.click(screen.getByTestId('production-print-button'))
-      const preview = await screen.findByRole('dialog', { name: '面料单打印预览' })
-      expect(within(preview).getByTestId('print-preview-media')).toHaveTextContent('210mm × 297mm')
-      expect(within(screen.getByTestId('print-preview-paper')).getByText('面料单')).toBeInTheDocument()
-      // 洗水唛那份纸**不在这一层**（只有一份纸 ⇒ 连单据标签行都不出现）
-      expect(screen.queryByTestId('print-preview-doc-labels')).toBeNull()
-      expect(screen.queryByTestId('print-preview-doc-processing')).toBeNull()
-
-      // ④ 出纸的只有那一份，且**不打任务卡留痕**（`print_count` 口径 = 任务卡张数）
-      await userEvent.click(await screen.findByTestId('print-preview-print'))
-      await waitFor(() => expect(printSpy).toHaveBeenCalledTimes(1))
-      expect(
-        document.querySelector('.processing-print-area[data-print-target="processing"]'),
-      ).not.toBeNull()
-      expect(mockRecordPrint).not.toHaveBeenCalled()
-    } finally {
-      printSpy.mockRestore()
-    }
-  })
-
-  it('🔴 issue #7891：成品帘加工单**仍**有水洗唛入口（面料单的那条隐藏不是把所有单都藏了）', async () => {
-    mockUseAuthStore.mockReturnValue({
-      user: {
-        id: 'u-1',
-        name: '运营',
-        roles: ['operator'],
-        permissions: ['processing:manage', 'order:detail'],
-      },
-    })
-    render(<ProductionDetailPage />)
-    await waitFor(() => expect(screen.getByTestId('production-header')).toBeInTheDocument())
-    await waitFor(() => expect(mockGetOrder).toHaveBeenCalledWith('order-uuid-1'))
-
-    // 缺键 `order_kind`（存量单 / 成品帘）⇒ 水洗唛照旧：任务卡挂载 + 打印层里有那一份纸
-    await waitFor(() => expect(screen.getByTestId('task-card-qr')).toBeInTheDocument())
-    expect(screen.queryByTestId('production-fabric-doc-hint')).toBeNull()
-
-    await userEvent.click(screen.getByTestId('production-print-button'))
-    expect(await screen.findByTestId('print-preview-doc-labels')).toHaveTextContent('水洗唛')
-    expect(screen.getByTestId('print-preview-media')).toHaveTextContent('50mm × 150mm')
-  })
-
-  it('打印时上报打印计数，且计数接口失败不阻断打印（fire-and-forget）', async () => {
-    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
-    mockRecordPrint.mockRejectedValueOnce(new Error('boom'))
-    render(<ProductionDetailPage />)
-
-    await waitFor(() => expect(screen.getByTestId('production-header')).toBeInTheDocument())
-    await userEvent.click(screen.getByTestId('production-print-button'))
-
-    // 🔴 只看了预览 ⇒ **还没记账**（记账挪到真的开印那一刻：没出纸就没纸可留痕）
-    expect(mockRecordPrint).not.toHaveBeenCalled()
-    await userEvent.click(await screen.findByTestId('print-preview-print'))
-
-    // 先调计数端点（不 await 结果），再打印。
-    // 这里的**同步**断言是**因果成立**的（#4717 同族自查）：`handlePrint` 里
-    // `recordPrint(...)` 与 `window.print()` 是**同一段同步代码**（前者不 await）⇒
-    // 「recordPrint 已被调用」一旦成立，`window.print()` 必已发生，不存在跨 commit 窗口。
-    await waitFor(() => expect(mockRecordPrint).toHaveBeenCalledWith('order-uuid-1'))
-    expect(printSpy).toHaveBeenCalledTimes(1)
-
-    printSpy.mockRestore()
-  })
-
   it('工序接口失败：给出提示且不白屏（计件仍展示）', async () => {
     mockGetOrderOperations.mockRejectedValue(new Error('boom'))
     render(<ProductionDetailPage />)
@@ -652,7 +467,7 @@ describe('加工单生产明细页', () => {
     await waitFor(() => {
       expect(screen.getByText('暂无工序数据')).toBeInTheDocument()
       expect(screen.getByText('暂无计件数据')).toBeInTheDocument()
-      expect(screen.getByTestId('task-card-qr-placeholder')).toBeInTheDocument()
+      expect(screen.getByTestId('production-header')).toBeInTheDocument()
     })
   })
 
@@ -682,7 +497,7 @@ describe('加工单生产明细页', () => {
     await waitFor(() => expect(mockInstantiate).toHaveBeenCalledWith('order-uuid-1'))
     // 刷新后出真实工序行 + 二维码；按钮消失（已有工序）
     await waitFor(() => expect(screen.getByTestId('operation-row-op-1')).toBeInTheDocument())
-    expect(screen.getByTestId('task-card-qr')).toBeInTheDocument()
+    expect(screen.getByTestId('production-revoke-button')).toBeInTheDocument()
     expect(screen.queryByTestId('production-instantiate-button')).not.toBeInTheDocument()
   })
 
@@ -714,51 +529,6 @@ describe('加工单生产明细页', () => {
 
     await waitFor(() => expect(screen.getByTestId('production-header')).toBeInTheDocument())
     expect(screen.queryByTestId('production-instantiate-button')).not.toBeInTheDocument()
-  })
-
-  it('任务卡占位文案不误导：不得再指向「请先在订单详情生成加工单」', async () => {
-    mockGetOrderOperations.mockResolvedValue(ok({ order_id: 'order-uuid-1', qr_token: null, positions: [], progress: { total: 0, done: 0, percent: 0 } }))
-    mockGetPiecework.mockResolvedValue(ok({ total: 0 }))
-    render(<ProductionDetailPage />)
-
-    // 任务卡是 portal + display:none（打印才显形）⇒ 判文案只看 DOM 存在性，不能用 innerText
-    // 没有部位（工序未生成）⇒ 纸面只剩一句显式占位说明（没有任何行 ⇒ 也就没有单号行）。
-    // 🔴 issue #7833：单号行印的是**加工单号**，但那需要「有部位」；本用例的落点是占位态本身。
-    // 等到**纸面内容**真的渲染出来（占位框是最稳的锚点）；取不到 portal 容器就**抛**（判据不得空跑）
-    await waitFor(() => expect(screen.getByTestId('task-card-qr-placeholder')).toBeInTheDocument())
-    const card = document.querySelector('.task-card-print-area') as HTMLElement | null
-    if (!card) throw new Error('任务卡 portal 没挂到 body —— 判据无从取值（不得静默通过）')
-    // 打印隔离的落点：portal 容器必须是 body 的直接子级（`body > *:not(.print-doc)` 才选得准）
-    expect(card.parentElement).toBe(document.body)
-    expect(card.textContent).not.toContain('JG-20260917-0001')
-    expect(screen.queryByTestId('task-card-no')).toBeNull()
-    const placeholder = screen.getByTestId('task-card-qr-placeholder')
-    // 加工单**已生成**，二维码缺的真成因是「工序未生成」⇒ 不得再指回去生成加工单
-    expect(placeholder.textContent).not.toContain('请先在订单详情生成加工单')
-    // 指引指向本页的补生成工序（同一修复面的正向判据）
-    expect(screen.getByTestId('production-instantiate-button')).toHaveTextContent('补生成工序')
-  })
-
-  it('🔴 洗水唛纸面新口径（issue #7833）：**单号 = 加工单号**第一行、17 位订单号/交期/短码退场、二维码 80px 底部居中', async () => {
-    render(<ProductionDetailPage />)
-
-    await waitFor(() => expect(screen.getByTestId('task-card-label-rows-0')).toBeInTheDocument())
-    const rows = screen.getByTestId('task-card-label-rows-0')
-    const lines = Array.from(rows.children).map((el) => el.textContent ?? '')
-    // ① 第一行 = **单号 = 加工单号**（2026-10-26 用户选定「只留加工单号，删掉订单行」）
-    // issue #7839：纸面单号去 `JG-` 前缀（系统里的加工单号不变）
-    expect(lines[0]).toBe('单号: 20260917-0001')
-    expect(lines[1]).toBe(`客户: ${PROCESSING_ORDER.customerName}`)
-    // ② 17 位订单号 / 交期 / 人可读短码 / 「扫码报工」**一律不上纸**（历次裁定的退场项）
-    expect(rows.textContent).not.toContain(PROCESSING_ORDER.orderNo)
-    expect(rows.textContent).not.toContain(PROCESSING_ORDER.expectedDeliveryDate)
-    expect(rows.textContent).not.toContain(PART_SHORT_CODE)
-    expect(rows.textContent).not.toContain('扫码报工')
-    // ③ 二维码放大到 **80 CSS px**、在底部**居中**行里（用户「二维码可以放大一点」「放到底部居中」）
-    const qr = screen.getByTestId('task-card-qr')
-    expect(qr).toHaveAttribute('width', '80')
-    expect(qr).toHaveAttribute('height', '80')
-    expect(qr.parentElement?.className ?? '').toContain('justify-center')
   })
 
   it('🔴 页头「加工费组合」（issue #7833）：整单并集一眼可见（超高/倒幅），缺值如实「—」', async () => {
@@ -795,7 +565,7 @@ describe('加工单生产明细页', () => {
   it('#4240 有二维码 + 有 processing:manage：入口可达，点开只弹二次确认（未确认不发请求）', async () => {
     render(<ProductionDetailPage />)
 
-    await waitFor(() => expect(screen.getByTestId('task-card-qr')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByTestId('production-revoke-button')).toBeInTheDocument())
     const entry = screen.getByTestId('production-revoke-button')
     expect(entry).toHaveTextContent('撤销二维码')
 
@@ -810,7 +580,7 @@ describe('加工单生产明细页', () => {
   it('#4240 弹窗点「取消」：关窗且不发请求', async () => {
     render(<ProductionDetailPage />)
 
-    await waitFor(() => expect(screen.getByTestId('task-card-qr')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByTestId('production-revoke-button')).toBeInTheDocument())
     await userEvent.click(screen.getByTestId('production-revoke-button'))
     await screen.findByRole('dialog', { name: '撤销二维码' })
 
@@ -828,7 +598,7 @@ describe('加工单生产明细页', () => {
       .mockResolvedValue(ok(OPERATIONS_REVOKED))
     render(<ProductionDetailPage />)
 
-    await waitFor(() => expect(screen.getByTestId('task-card-qr')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByTestId('production-revoke-button')).toBeInTheDocument())
     await userEvent.click(screen.getByTestId('production-revoke-button'))
     await screen.findByRole('dialog', { name: '撤销二维码' })
     // issue #4287：入口已落地 ⇒ 弹层不再需要「本页无法重新发码」的免责声明（那是 #4949 的临时措辞），
@@ -839,11 +609,9 @@ describe('加工单生产明细页', () => {
     // 生产端点一律走**订单 id**（不是加工单号），与既有 instantiate/print 同口径
     await waitFor(() => expect(mockRevokeQrToken).toHaveBeenCalledWith('order-uuid-1'))
 
-    // 撤销后刷新数据 ⇒ 任务卡二维码回到占位态（旧码在页面上不再出现）
-    await waitFor(() => expect(screen.getByTestId('task-card-qr-placeholder')).toBeInTheDocument())
-    expect(screen.queryByTestId('task-card-qr')).not.toBeInTheDocument()
-    // 占位文案要说清为什么没码（不能仍指向不存在的「补生成工序」按钮）
-    expect(screen.getByTestId('task-card-qr-placeholder').textContent).toContain('已撤销')
+    // 撤销后刷新数据 ⇒ 可撤销入口收起（旧码在页面上不再出现）；纸面那颗码由
+    // TaskCardPrint 的组件判据与订单详情页判据覆盖（issue #7902 起本页不再挂纸面）。
+    await waitFor(() => expect(screen.queryByTestId('production-revoke-button')).not.toBeInTheDocument())
 
     // 可见反馈（屏幕上的「已撤销」提示，不是仅 toast）
     const notice = screen.getByTestId('production-revoke-success')
@@ -860,36 +628,12 @@ describe('加工单生产明细页', () => {
     })
     render(<ProductionDetailPage />)
 
-    // 页面数据照常加载（工序/二维码都在）—— 挡住的只是写入口
-    await waitFor(() => expect(screen.getByTestId('task-card-qr')).toBeInTheDocument())
+    // 页面数据照常加载（工序/二维码都在；issue #7902 起本页**没有打印入口**）
+    await waitFor(() => expect(screen.getByTestId('production-header')).toBeInTheDocument())
     // 红证：去掉显隐判断（无条件渲染按钮）⇒ 本条必红
     expect(screen.queryByTestId('production-revoke-button')).not.toBeInTheDocument()
-    // 其它入口不受影响（打印任务卡沿用类级 order:list 口径，仍可见）
-    expect(screen.getByTestId('production-print-button')).toBeInTheDocument()
-  })
-
-  it('#6439 + #7288 免驱动直连入口**搬进打印预览页脚**（页面上不再常驻）；无网页蓝牙时动手前就说清并指向系统打印兜底', async () => {
-    render(<ProductionDetailPage />)
-    await waitFor(() => expect(screen.getByTestId('task-card-qr')).toBeInTheDocument())
-
-    // ① **搬家判据**：页面上不再常驻直连入口（改前它就在 header 下方）——
-    //    红证：把 `<DirectLabelPrint>` 挪回页面 ⇒ 本条必红。
-    expect(screen.queryByTestId('production-direct-print-button')).toBeNull()
-    // ② 浏览器打印那条路**仍在**（两条通道并存，不是替换）
-    expect(screen.getByTestId('production-print-button')).toBeInTheDocument()
-
-    // ③ 入口真接在**预览页脚**里（接线判据：组件单测绿 ≠ 页面接上了 —— 见 migao-dev-flow §28.2）
-    await userEvent.click(screen.getByTestId('production-print-button'))
-    const dialog = await screen.findByRole('dialog', { name: '水洗唛打印预览' })
-    const direct = within(dialog).getByTestId('production-direct-print-button')
-    // 用户点名的文案是「蓝牙无线打印」；且落在**页脚动作行**里（右下角 —— 与「复制截图 / 打印」同一行）
-    expect(direct).toHaveTextContent('蓝牙无线打印')
-    expect(within(dialog).getByTestId('print-preview-actions').contains(direct)).toBe(true)
-
-    // ④ jsdom 里没有 `navigator.bluetooth` ⇒ 能力探测判不可用 ⇒ 按钮禁用 + 文案给系统打印兜底。
-    //    红证：把探测结果恒置 ok（不看环境）⇒ 本条的 disabled 与 hint 两条断言必红。
-    expect(direct).toBeDisabled()
-    expect(within(dialog).getByTestId('direct-print-hint')).toHaveTextContent('系统打印')
+    // 读面不受影响：工序表照常渲染
+    expect(screen.getByTestId('operation-row-op-1')).toBeInTheDocument()
   })
 
   it('#4240 无二维码（qr_token 为空）：不渲染撤销入口（无可撤销对象）', async () => {
@@ -905,16 +649,15 @@ describe('加工单生产明细页', () => {
     mockRevokeQrToken.mockRejectedValueOnce(new Error('403 Forbidden'))
     render(<ProductionDetailPage />)
 
-    await waitFor(() => expect(screen.getByTestId('task-card-qr')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByTestId('production-revoke-button')).toBeInTheDocument())
     await userEvent.click(screen.getByTestId('production-revoke-button'))
     await screen.findByRole('dialog', { name: '撤销二维码' })
     await userEvent.click(screen.getByTestId('production-revoke-confirm'))
 
     await waitFor(() => expect(screen.getByTestId('production-revoke-error')).toBeInTheDocument())
     expect(screen.getByTestId('production-revoke-error')).toHaveTextContent('撤销二维码失败')
-    // 失败不得走到「已撤销」反馈，也不得把二维码改成占位态
+    // 失败不得走到「已撤销」反馈，也不得把可撤销入口收起来（可重试）
     expect(screen.queryByTestId('production-revoke-success')).not.toBeInTheDocument()
-    expect(screen.getByTestId('task-card-qr')).toBeInTheDocument()
     expect(screen.getByTestId('production-revoke-button')).toBeInTheDocument()
   })
 
@@ -931,7 +674,7 @@ describe('加工单生产明细页', () => {
       .mockResolvedValue(ok(OPERATIONS_REISSUED)) // 重新发码后：新码上屏
     render(<ProductionDetailPage />)
 
-    await waitFor(() => expect(screen.getByTestId('task-card-qr')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByTestId('production-revoke-button')).toBeInTheDocument())
     // 有码时**没有**可重发的对象（对一张有效的码重发 = 静默作废已打印的纸）
     expect(screen.queryByTestId('production-regenerate-button')).not.toBeInTheDocument()
 
@@ -951,9 +694,9 @@ describe('加工单生产明细页', () => {
     // 红证：把入口接到 instantiate ⇒ 下面两条必红（那会清掉报工 ⇒ 计件工资没了）
     expect(mockInstantiate).not.toHaveBeenCalled()
     expect(mockRevokeQrToken).toHaveBeenCalledTimes(1)
-    // 新码来自**服务端刷新**（不是本地编造）：任务卡二维码回来了，且是**新码**而非旧码
-    await waitFor(() => expect(screen.getByTestId('task-card-qr')).toBeInTheDocument())
-    expect(screen.getByTestId('task-card-qr').querySelector('title')?.textContent).toBe(PART_SCAN_URL_REISSUED)
+    // 新码来自**服务端刷新**（不是本地编造）：屏幕读数回到「可撤销」（= 服务端确有新码），
+    // 纸面那颗新码由 TaskCardPrint 的组件判据覆盖（issue #7902 起本页不再挂纸面）。
+    await waitFor(() => expect(screen.getByTestId('production-revoke-button')).toBeInTheDocument())
     expect(screen.getByTestId('production-regenerate-success')).toBeVisible()
   })
 
@@ -982,8 +725,8 @@ describe('加工单生产明细页', () => {
     await waitFor(() => expect(screen.getByTestId('production-header')).toBeInTheDocument())
     // 缺口态（qr_token 为空）也不渲染 —— 与 revoke 同码（方法级 processing:manage），避免可见却 403
     expect(screen.queryByTestId('production-regenerate-button')).not.toBeInTheDocument()
-    // 其它入口不受影响（打印任务卡沿用类级 order:list 口径）
-    expect(screen.getByTestId('production-print-button')).toBeInTheDocument()
+    // 读面不受影响（工序表照常渲染；打印入口已整体退场 issue #7902）
+    expect(screen.getByTestId('operation-row-op-1')).toBeInTheDocument()
   })
 
   // ── 一部位一码的夹具（issue #4946）；纸面张数按开数另测（issue #7816）──
@@ -1020,41 +763,6 @@ describe('加工单生产明细页', () => {
     ],
   }
 
-  it('#7816 纸面张数 = Σ 开数（双开 2 / 单开 1 / 三开 3 ⇒ 6 张），缺码部位逐张占位不画假码', async () => {
-    mockGetOrderOperations.mockResolvedValue(ok(OPERATIONS_THREE_PARTS))
-    // 🔴 份数 = **打开方式开数**（issue #7816，用户逐字「双开的要打印两份，单开的打印1份，
-    //    三开打印3份，4开打印4份，这个都要在打印预览中默认设置好」）⇒ 快照行带 openCount
-    const SNAPSHOT_ITEMS = [
-      { itemId: 'item-1', openCount: 2, colorName: '米白' }, // 双开 ⇒ 2 张
-      { itemId: 'item-2', openCount: 1, colorName: '月白' }, // 单开 ⇒ 1 张
-      { itemId: 'item-3', openCount: 3, colorName: '浅灰' }, // 三开 ⇒ 3 张
-    ]
-    mockDetail.mockResolvedValue(ok({ ...PROCESSING_ORDER, items: SNAPSHOT_ITEMS }))
-    render(<ProductionDetailPage />)
-
-    // 纸面侧先成立：3 个部位 × 各自开数 ⇒ **Σ 开数** 张洗水码（页面把 positions + 快照原样交给任务卡）。
-    // ⚠️ 期望值从 `washLabelCopies` 现取（与两条打印通道**同一个**函数），不写死「3 张」——
-    //    写死就等于把份数口径在判据里再抄一份（改开数时判据不会跟着变 ⇒ 纸面少印一份也没人知道）。
-    const sheets = SNAPSHOT_ITEMS.reduce((sum, item) => sum + washLabelCopies(item), 0)
-    expect(sheets).toBe(6)
-    await waitFor(() => expect(screen.getByTestId(`task-card-label-${sheets - 1}`)).toBeInTheDocument())
-    expect(screen.getAllByTestId(/^task-card-label-\d$/)).toHaveLength(sheets)
-    // 反「一部位一张」的旧口径：本夹具的开数不全是 1 ⇒ 纸面张数**必须多于**部位数。
-    // 写成**确切差值**（6 − 3 = 3：双开多 1 张 + 三开多 2 张），不用 `toBeGreaterThan`
-    // （弱断言门禁只许非增，且「多于」不如「多几张」能判别份数映射错位）。
-    expect(sheets - OPERATIONS_THREE_PARTS.positions.length).toBe(3)
-    // 张序 0..N-1 **连续**（中间缺一张 = 少印一份且判据只看总数会漏）
-    expect(screen.getAllByTestId(/^task-card-label-\d$/).map((el) => el.dataset.testid)).toEqual(
-      Array.from({ length: sheets }, (_, index) => `task-card-label-${index}`),
-    )
-    // 第 3 个部位（item-3，三开）没有码 ⇒ 它那 3 张（张序 3..5）都是占位框，缺码不画假码
-    for (const index of [3, 4, 5]) {
-      expect(
-        within(screen.getByTestId(`task-card-label-${index}`)).getByTestId('task-card-qr-placeholder'),
-      ).toBeInTheDocument()
-    }
-  })
-
   it('🔴 #7882 测试用出码入口已退场：有 processing:manage 也不再渲染按钮与弹层（正式发码路径不变）', async () => {
     render(<ProductionDetailPage />)
     await waitFor(() => expect(screen.getByTestId('production-header')).toBeInTheDocument())
@@ -1063,8 +771,9 @@ describe('加工单生产明细页', () => {
     expect(screen.queryByTestId('production-test-qr-button')).toBeNull()
     // 弹层也不得从别处可达（只删按钮、留弹层 = 死代码）
     expect(screen.queryByRole('dialog', { name: '生成二维码（测试用）' })).toBeNull()
-    // 正式入口不受影响：打印任务卡仍在；撤销入口按同码显隐（本夹具 qr_token 非空 ⇒ 可撤销）
-    expect(screen.getByTestId('production-print-button')).toBeInTheDocument()
+    // 正式入口不受影响：撤销入口按同码显隐（本夹具 qr_token 非空 ⇒ 可撤销）；
+    // 打印入口已整体退场（issue #7902）
+    expect(screen.getByTestId('production-revoke-button')).toBeInTheDocument()
     expect(screen.getByTestId('production-revoke-button')).toBeInTheDocument()
   })
 

@@ -4,7 +4,7 @@
  *
  * ## 病灶（issue #6720 = #6667 移出后无人收口的悬空尾巴）
  *
- * `frontend/admin-web/src/components/orders/ShipmentDoc.tsx`（**客户拿到手的凭证**）：
+ * 病灶原形（历史）：`frontend/admin-web/src/components/orders/ShipmentDoc.tsx`（**已于 issue #7902 退场**）：
  * `(amount ?? 0).toLocaleString(...)` / `String(qty ?? 0)` —— 缺值在纸面上印成 `0.00` / `0`。
  * 同文件**自己**就写着同族的判断（加工费一段）：「『本来就不收加工费』与『算不出来』长得一样，
  * 属**静默改钱的外观**」；同族的既有范式也已在仓内：`SalesDoc` 的 `SALES_DOC_MISSING = '—'`、
@@ -65,7 +65,6 @@ import { join } from 'node:path'
 
 /** 仓库相对路径（判据面：**印数值的纸面单据**）；新增单据必须同步登记，否则守卫的「未登记即红」判据发不出声 */
 export const SCOPE = [
-  'src/components/orders/ShipmentDoc.tsx',
   'src/components/orders/QuotationDoc.tsx',
   'src/components/orders/SalesDoc.tsx',
   'src/components/orders/ProcessingDoc.tsx',
@@ -197,7 +196,6 @@ export function printDocZeroFillSites(root = process.cwd()) {
  * （未登记即红：新单据的测试不调这条不变量，谁都发现不了）。
  */
 export const SCOPE_TARGETS = [
-  { label: '发货单 ShipmentDoc', file: 'tests/unit/components/ShipmentDoc.test.tsx' },
   { label: '报价单 QuotationDoc', file: 'tests/unit/components/QuotationDoc.test.tsx' },
   { label: '销售单 SalesDoc', file: 'tests/unit/components/SalesDoc.test.tsx' },
   { label: '加工单 ProcessingDoc', file: 'tests/unit/components/ProcessingDoc.test.tsx' },

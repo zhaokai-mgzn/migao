@@ -1,4 +1,4 @@
-// case_ids: UI-053
+// case_ids: UI-053, OR-072
 // @vitest-environment jsdom
 
 import { describe, it, expect, vi } from 'vitest'
@@ -18,7 +18,7 @@ vi.mock('@/lib/api', () => ({
 vi.mock('@/lib/qr-image', () => ({ trimWhiteMargin: (url: string) => Promise.resolve(url) }))
 
 import QuotationDoc from '@/components/orders/QuotationDoc'
-import ShipmentDoc from '@/components/orders/ShipmentDoc'
+import ProcessingDoc from '@/components/orders/ProcessingDoc'
 import { __resetPaymentQrcodesCache } from '@/lib/use-payment-qrcodes'
 import { dataTables, collectTableIntegrity } from '@/components/orders/doc-tables'
 import {
@@ -940,7 +940,7 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
     })
   })
 
-  describe('打印隔离（ShipmentDoc 范式 6 条约束，勿随手改）', () => {
+  describe('打印隔离（门户式单据的 6 条约束，勿随手改）', () => {
     it('portal 到 document.body 的直接子级 + 容器自身 class + 每页只挂一份 + 屏幕态 display:none', () => {
       render(<QuotationDoc order={buildOrder()} />)
       const el = doc()
@@ -962,9 +962,9 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
       expect(style).toContain('@media print')
       expect(style).toMatch(/\.quotation-print-area\s*\{\s*display:\s*none/)
       // 🔴 隔离选择器必须排除**所有**打印单据（issue #4965 实测：写成
-      // `body > *:not(.quotation-print-area)` 会把兄弟单据 ShipmentDoc 也选进来 ⇒
+      // `body > *:not(.quotation-print-area)` 会把兄弟单据（加工单）也选进来 ⇒
       // `display:none !important` 把它整份藏掉，CI `Demo path specs` 的
-      // `expect('.shipment-print-area').toBeVisible()` 红）。
+      // `expect('.processing-print-area').toBeVisible()` 红）。
       expect(style).toMatch(/body > \*:not\(\.print-doc\)\s*\{\s*display:\s*none\s*!important/)
       expect(style).not.toMatch(/body > \*:not\(\.quotation-print-area\)/)
       // visibility 防御（订单详情页 ProcessingOrderBlock 残留的 body * { visibility: hidden }）
@@ -981,7 +981,7 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
     })
 
     // 🔴 回归守卫（issue #4965 实测：CI `Demo path specs` 因这条判据缺失而红）：
-    // 订单详情页**同时挂着**发货单（`ShipmentDoc`）—— 两个单据是 body 的兄弟节点，
+    // 订单详情页**同时挂着**多份门户式单据—— 两个单据是 body 的兄弟节点，
     // 各自的 `visibility: visible` 打印防御**同特异性** ⇒ 后渲染者胜，报价单会把发货单
     // 重新藏掉（纸面空白）。故防御必须限定「本次打印目标」。
     it('visibility 防御限定本次打印目标（否则会把同页发货单藏掉）', () => {
@@ -1014,20 +1014,20 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
     })
 
     // 🔴 端到端回归复现（issue #4965 实测：CI `Demo path specs` 红在
-    // `expect('.shipment-print-area').toBeVisible()`）：订单详情页**同时挂着**两份单据，
+    // `expect('.processing-print-area').toBeVisible()`）：订单详情页**同时挂着**两份单据，
     // 且页面上有 `ProcessingOrderBlock` 的遗留隔离 `@media print { body * { visibility: hidden } }`
     // —— 两份单据各自都写 `visibility: visible` 防御，**同特异性、后渲染者胜** ⇒
-    // 后挂的报价单会把先挂的发货单重新藏掉（补打纸面空白）。
+    // 后挂的报价单会把先挂的加工单重新藏掉（补打纸面空白）。
     // 这里按真实 DOM 顺序把三块 print 规则并到样式表末尾（jsdom 不解析媒体查询，故为等价仿真，
-    // 同 ShipmentDoc.test.tsx 的 ② 手法），断言「点谁只显谁」。
+    // 同 TaskCardPrint.test.tsx 的 ② 手法），断言「点谁只显谁」。
     // 🔴 直接判据（比字符串匹配强）：把 print 块里 `body > *:not(...)` 的**选择器本体**取出，
     // 用 `element.matches()` 问「它会不会选中兄弟单据」。旧写法 `:not(.quotation-print-area)`
-    // 会匹配 `.shipment-print-area` ⇒ `display:none !important` 把发货单整份藏掉
+    // 会匹配 `.processing-print-area` ⇒ `display:none !important` 把发货单整份藏掉
     // （CI `Demo path specs` 实测红）；新写法 `:not(.print-doc)` 对两者都不匹配。
-    it('隔离选择器不选中兄弟单据（body > *:not(...) 对 ShipmentDoc 必须为 false）', () => {
+    it('隔离选择器不选中兄弟单据（body > *:not(...) 对兄弟单据（加工单）必须为 false）', () => {
       render(
         <>
-          <ShipmentDoc order={buildOrder()} printTarget="shipment" />
+          <ProcessingDoc order={buildOrder()} printTarget="processing" />
           <QuotationDoc order={buildOrder()} printTarget="quotation" />
         </>
       )
@@ -1039,7 +1039,7 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
         .map((r) => (r as CSSStyleRule).selectorText || '')
         .find((t) => t.includes('body >'))
       expect(isolation).toBeTruthy()
-      const shipment = document.querySelector('.shipment-print-area') as HTMLElement
+      const shipment = document.querySelector('.processing-print-area') as HTMLElement
       const quotation = document.querySelector('.quotation-print-area') as HTMLElement
       expect(quotation.matches(isolation!)).toBe(false)
       expect(shipment.matches(isolation!)).toBe(false)
@@ -1067,7 +1067,7 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
           legacy,
           ...Array.from(
             document.querySelectorAll<HTMLStyleElement>(
-              '.shipment-print-area style, .quotation-print-area style'
+              '.processing-print-area style, .quotation-print-area style'
             )
           ),
         ]
@@ -1090,32 +1090,32 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
       // ── 场景 A：点「打印报价单」──
       let view = render(
         <>
-          <ShipmentDoc order={buildOrder()} printTarget="quotation" />
+          <ProcessingDoc order={buildOrder()} printTarget="quotation" />
           <QuotationDoc order={buildOrder()} printTarget="quotation" />
         </>
       )
       inlinePrintBlocks()
-      const shipment = document.querySelector('.shipment-print-area') as HTMLElement
+      const shipment = document.querySelector('.processing-print-area') as HTMLElement
       const quotation = document.querySelector('.quotation-print-area') as HTMLElement
       expect(getComputedStyle(quotation).visibility).toBe('visible')
-      // 发货单**不得**被报价单的防御带成 visible（这正是 CI 那条红的形态）
+      // 兄弟单据**不得**被报价单的防御带成 visible（这正是 CI 那条红的形态）
       expect(getComputedStyle(shipment).visibility).toBe('hidden')
       view.unmount()
       clear()
 
-      // ── 场景 B：点「打印发货单」（反向：发货单显形、报价单保持 hidden）──
+      // ── 场景 B：点「打印加工单」（反向：加工单显形、报价单保持 hidden）──
       // 遗留隔离复位（`clear()` 把它清空了；它必须与两份单据一起参与本次级联）
       legacy.textContent = '@media print { body * { visibility: hidden; } }'
       view = render(
         <>
-          <ShipmentDoc order={buildOrder()} printTarget="shipment" />
-          <QuotationDoc order={buildOrder()} printTarget="shipment" />
+          <ProcessingDoc order={buildOrder()} printTarget="processing" />
+          <QuotationDoc order={buildOrder()} printTarget="processing" />
         </>
       )
       inlinePrintBlocks()
-      const shipment2 = document.querySelector('.shipment-print-area') as HTMLElement
+      const sibling2 = document.querySelector('.processing-print-area') as HTMLElement
       const quotation2 = document.querySelector('.quotation-print-area') as HTMLElement
-      expect(getComputedStyle(shipment2).visibility).toBe('visible')
+      expect(getComputedStyle(sibling2).visibility).toBe('visible')
       expect(getComputedStyle(quotation2).visibility).toBe('hidden')
 
       view.unmount()

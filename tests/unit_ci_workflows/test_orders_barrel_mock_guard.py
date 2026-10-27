@@ -169,7 +169,7 @@ def test_c1_scan_is_not_vacuous():
     assert len(exports) >= 5, (
         f"只解析到 {len(exports)} 个桶组件导出（{exports}）—— 解析口径已失效，本守卫正在空跑"
     )
-    for name in ("ProcessingDoc", "SalesDoc", "ShipmentDoc", "QuotationDoc"):
+    for name in ("ProcessingDoc", "SalesDoc", "QuotationDoc"):
         assert name in exports, f"桶里没有 `{name}` 导出 —— 本单新增的两份单据或既有单据不见了"
 
     mocks = _mock_files()

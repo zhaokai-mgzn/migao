@@ -1,9 +1,13 @@
 // case_ids: UI-040
 /**
- * 发货单（issue #3768 / UI-040）真实浏览器走查
+ * 发货面真实浏览器走查（issue #3768 → **issue #7902 发货单退场**）
  *
  * 这层要回答的是 vitest 答不了的问题（migao-dev-flow §15.3）：`@media print` 是否真的
- * 只把发货单印出来、屏幕上是否真的不重复显示、纸面内容是否完整。
+ * 只把**选中的那份纸**印出来、屏幕上是否真的不重复显示、纸面内容是否完整。
+ *
+ * 🔴 issue #7902（用户 2026-10-27「移除发货单打印」「统一到销售单上打印」）：发货单这张纸与
+ * 它的入口整体退场 ⇒ 本文件判两件事：① 发货页**零打印入口**；② 订单详情页的打印层里
+ * **没有**发货单、销售单能正常上纸。文件名沿用（case_ids UI-040 的判据载体不变）。
  * jsdom 不解析媒体查询 ⇒ 只有真实渲染 + emulateMedia({ media: 'print' }) 能验证。
  *
  * fixture 模式（E2E_MOCK_AUTH）：认证与订单接口全部 mock，不依赖后端与真实数据。
@@ -121,7 +125,7 @@ async function mockOrderApi(page: any, order: Record<string, unknown>) {
 }
 
 test.describe('发货单 — 真实浏览器打印旅程（UI-040）', () => {
-  test('发货页：发货人预填 + 打印媒体下只印单据、屏幕不重复显示', async ({ page }) => {
+  test('发货页：发货人预填，且**没有任何打印入口**（发货单已退场，issue #7902）', async ({ page }) => {
     await mockOrderApi(page, baseOrder)
 
     await page.goto(`/orders/${ORDER_ID}/ship`)
@@ -131,53 +135,19 @@ test.describe('发货单 — 真实浏览器打印旅程（UI-040）', () => {
     await expect(shipperInput).toBeVisible()
     await expect(shipperInput).toHaveValue('管理员')
 
-    // 2) 屏幕上发货单**不可见**（页面已有商品/收货区块，避免重复呈现）
-    const doc = page.locator('.shipment-print-area')
-    await expect(doc).toBeHidden()
+    // 2) 🔴 issue #7902（用户 2026-10-27「移除发货单打印」「统一到销售单上打印」）：
+    //    这张纸整体退场 ⇒ 本页既没有打印按钮，也没有任何纸面容器（不是藏起来，是不存在）
+    await expect(page.getByRole('button', { name: /打印/ })).toHaveCount(0)
+    await expect(page.locator('.shipment-print-area')).toHaveCount(0)
+    await expect(page.locator('.print-doc')).toHaveCount(0)
 
-    // 3) 切到打印媒体：单据显形，页面外壳（标题/按钮/侧边栏）不打印
-    await page.emulateMedia({ media: 'print' })
-    // ⚠️ 必须等过渡结束再取证：侧边栏/浮窗带 `transition-all duration-300`，而 `visibility`
-    // 是可过渡属性 —— 切换媒体后 300ms 内 getComputedStyle 仍报 visible（实测），
-    // 此时截图会拍到「侧边栏盖住纸面左列」的假象（z-50 绘制在单据之上）。
-    await page.waitForTimeout(600)
-    await expect(doc).toBeVisible()
-    // 页面外壳真的不打印（不是"看起来没打印"）
-    await expect(page.locator('aside')).toBeHidden()
-    await expect(page.getByPlaceholder('请输入实际发货人姓名')).toBeHidden()
-    await expect(page.getByRole('button', { name: /确认发货/ })).toBeHidden()
-
-    // 4) 纸面内容完整（拣货/打包要照着这张纸干活）
-    await expect(doc).toContainText('发货单')
-    await expect(doc).toContainText('ORD20260915001')
-    await expect(doc).toContainText('张三')
-    await expect(doc).toContainText('13800138000')
-    await expect(doc).toContainText('余杭区某某路 1 号')
-    await expect(doc).toContainText('布艺遮光帘A')
-    // issue #6869：发货单「规格尺寸」列改印真值「门幅」（原读 `item.specification` —— 不在响应里）
-    await expect(doc).toContainText('0012')
-    await expect(doc).toContainText('米白')
-    await expect(doc).toContainText('2.8米')
-    await expect(doc).toContainText('客户要求工作日送达')
-    // 经手人 = 当前输入值（发货前打印也要有经手人栏）
-    await expect(doc).toContainText('管理员')
-    // 发货前没有运单号 → 纸面留空供手写，绝不编造
-    await expect(doc).not.toContainText('SF20260915001')
-
-    // 5) 几何证据：单据占据可打印宽度且从页面顶部开始（未被外壳挤压/偏移）
-    const rect = await doc.evaluate((el) => {
-      const r = el.getBoundingClientRect()
-      return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width) }
-    })
-    const viewportWidth = page.viewportSize()!.width
-    expect(rect.x).toBeLessThanOrEqual(2)
-    expect(rect.y).toBeLessThanOrEqual(2)
-    expect(rect.width).toBeGreaterThan(viewportWidth * 0.9)
-
-    await page.screenshot({ path: '/tmp/ui040-shipment-doc-print.png', fullPage: true })
+    // 3) 发货动作本身不受影响（反向自证：本页不是空页）
+    await expect(page.getByRole('button', { name: /确认发货/ })).toBeVisible()
+    // 反向自证：页面确实渲染出了这单的商品明细（不是空页 / 不是阻断页）
+    await expect(page.getByText('布艺遮光帘A').first()).toBeVisible()
   })
 
-  test('订单详情：已发货可补打，纸面带运单号与已落库发货人', async ({ page }) => {
+  test('订单详情：打印层里没有发货单，销售单仍能上纸（真实浏览器打印媒体）', async ({ page }) => {
     await mockOrderApi(page, {
       ...baseOrder,
       status: 'shipped',
@@ -186,29 +156,33 @@ test.describe('发货单 — 真实浏览器打印旅程（UI-040）', () => {
 
     await page.goto(`/orders/${ORDER_ID}`)
 
-    // 补打入口（发货页对 shipped 有状态守卫，重打只能从这里）。
-    // 🔴 issue #7544：详情页不再有独立的「打印发货单」按钮 —— 页面级唯一「打印」入口里选「发货单」，
-    //    先看纸面预览，「打印」才真正置位打印目标（真实 window.print 在无头环境静默返回）。
+    // 先等订单数据落地（订单号进 DOM）——否则入口按钮会在订单加载前后的重渲染里被 detach，
+    // 点击可能落在已卸载的节点上（实测 CI：preview 一直不出现）
+    await expect(page.getByText('ORD20260915001').first()).toBeVisible()
+    // 打开页面级唯一打印入口（issue #7544 / #7902）
+    await expect(page.getByTestId('order-print-entry')).toBeVisible()
     await page.getByTestId('order-print-entry').click()
     await expect(page.getByTestId('print-preview')).toBeVisible()
-    await page.getByTestId('print-preview-doc-shipment').click()
+    // 发货单已退场：标签行里没有它，未派单也没有加工单/水洗唛
+    await expect(page.getByTestId('print-preview-doc-shipment')).toHaveCount(0)
+    await expect(page.getByTestId('print-preview-doc-processing')).toHaveCount(0)
+
+    // 打销售单：三联纸 241×140，打印媒体下只有这一份上纸
     await page.getByTestId('print-preview-print').click()
-
     await page.emulateMedia({ media: 'print' })
-    await page.waitForTimeout(600) // 同上：等 transition-all 结束，避免拍到过渡中间态
-    // ⚠️ 选择器精确到「**上纸那一份**」（issue #5914）：点「打印发货单」会打开纸面自检层，
-    // 层里还有一份**不带 data-print-target 的预览副本**（屏幕态显形、打印态不上纸），
-    // 裸 `.shipment-print-area` 会命中 2 个 ⇒ strict mode 红。
-    const doc = page.locator('.shipment-print-area[data-print-target="shipment"]')
+    await page.waitForTimeout(600) // 等 transition-all 结束，避免拍到过渡中间态
+    const doc = page.locator('.sales-print-area[data-print-target="sales"]')
     await expect(doc).toBeVisible()
-    // 预览副本**不上纸**（否则同一份单据会出两张）
-    await expect(page.locator('.print-preview-doc .shipment-print-area')).toBeHidden()
+    await expect(page.locator('.print-preview-doc .sales-print-area')).toBeHidden()
+    await expect(page.locator('.shipment-print-area')).toHaveCount(0)
     await expect(page.locator('aside')).toBeHidden()
-    await expect(doc).toContainText('李四')
-    await expect(doc).toContainText('顺丰速运')
-    await expect(doc).toContainText('SF20260915001')
+    // 纸面内容完整（随货给客户的那张）：单号 / 收货人 / 明细
+    await expect(doc).toContainText('ORD20260915001')
+    await expect(doc).toContainText('张三')
+    // 纸面**不印品名**（issue #7527 / #7901：销售单纸面去品名列）⇒ 用货号认行
+    await expect(doc).toContainText('0012')
 
-    await page.screenshot({ path: '/tmp/ui040-shipment-doc-reprint.png', fullPage: true })
+    await page.screenshot({ path: '/tmp/ui040-sales-doc-print.png', fullPage: true })
   })
 
   test('发货提交：走原子端点，发货人/运单号/发货方式随 payload 下发，且带幂等键', async ({ page }) => {

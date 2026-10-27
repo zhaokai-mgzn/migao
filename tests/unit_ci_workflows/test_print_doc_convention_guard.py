@@ -41,7 +41,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: 受管的**门户式**打印单据（`createPortal` 到 `document.body` 的独立单据）
 PORTALED_PRINT_DOCS: tuple[str, ...] = (
-    "frontend/admin-web/src/components/orders/ShipmentDoc.tsx",
+    # 发货单自 issue #7902 起整体退场（纸统一在销售订单详情的打印层出）⇒ 不再受管
     "frontend/admin-web/src/components/orders/QuotationDoc.tsx",
     "frontend/admin-web/src/components/production/TaskCardPrint.tsx",
     # issue #5651 新增的两份单据（A4 加工单 / 三联纸销售单）—— 与既有三份同一隔离约定
@@ -54,7 +54,7 @@ KNOWN_NON_CONFORMING: tuple[tuple[str, str], ...] = (
     (
         "frontend/admin-web/src/components/orders/ProcessingOrderBlock.tsx",
         "**in-flow 打印区**（`.po-print-area` 是页面内的区块，**不是** portal 到 body 的独立单据）："
-        "它用的是**已废弃**的 `body * { visibility: hidden }` 形态 —— `ShipmentDoc.tsx` 文件头明写该形态的"
+        "它用的是**已废弃**的 `body * { visibility: hidden }` 形态 —— 既有门户式单据注释里明写该形态的"
         "病根（隐藏元素**仍占版面高度** ⇒ 按隐藏内容高度分页、打出空白第二页，issue #3896）。"
         "本单不改它：它印的是「页面里的加工单区块」而不是独立单据，改成门户式属**产品裁定**"
         "（且它与门户式单据共页时还有一条**既有**缺陷：点它自己的「打印」会被门户单据的 "
@@ -174,7 +174,8 @@ def test_c3_registry_is_not_vacuous():
     """C3：登记表非空 + 每个登记路径**存在**（判据不得在空表 / 漂移路径上静默通过）。"""
     # 下界与成员数**必须同步**（#5007②，判据 = test_gate_coverage_and_same_source.py 的
     # `test_frozen_declarations_are_pinned_exactly` + declaration_gate_registry.json 的逐项成员）
-    assert len(PORTALED_PRINT_DOCS) >= 5, (
+    # issue #7902：发货单退场 ⇒ 门户式单据 5 → 4（报价单 / 加工单 / 销售单 / 洗水唛）。
+    assert len(PORTALED_PRINT_DOCS) >= 4, (
         "受管门户式单据清单被清空/缩短到 <5 ⇒ 本守卫会空跑通过（判据必须能判红）"
     )
     for rel in PORTALED_PRINT_DOCS:
@@ -215,13 +216,15 @@ def test_c5_injected_self_selector_is_red():
     )
 
     # 注入 A：隔离选择器退回「自己那一份」
-    injected_a = original.replace(SHARED_SELECTOR, "body > *:not(.shipment-print-area)")
+    injected_a = original.replace(SHARED_SELECTOR, "body > *:not(.quotation-print-area)")
     assert injected_a != original, f"`{rel}` 里找不到注入点 `{SHARED_SELECTOR}` ⇒ 本红证会**空跑**"
     assert _fingerprint(injected_a) != _fingerprint(original), "注入后内容指纹未变（**禁 mtime/size**）"
     assert _doc_problems(injected_a), "注入「自己那一份」的选择器后判据**没判红** ⇒ 守卫是空判据"
 
     # 注入 B：容器去掉共享标记类
-    injected_b = re.sub(r"\bprint-doc\b", "", original, count=1)
+    # 注入 B：#7902 起部分单据里 `print-doc` 出现多次（容器 + 选择器）⇒ 必须**全部**去掉
+    # 才等价于「容器缺共享标记类」这一形态（只去一处会让红证静默失效）
+    injected_b = re.sub(r"\bprint-doc\b", "", original)
     assert injected_b != original, "找不到 `print-doc` 注入点 ⇒ 本红证会**空跑**"
     assert _doc_problems(injected_b), "去掉 `print-doc` 后判据**没判红** ⇒ 守卫是空判据"
 
@@ -282,4 +285,4 @@ def test_c7_payment_qr_guard_is_not_vacuous():
     # 负控 ②：允许清单内的单据不会被 C6 判红（否则白名单失效 = 等于把报价单也砍了）
     assert _payment_qr_problems(allowed, allowed_code) == [], "允许清单内的单据被误判红 ⇒ 白名单失效"
     # 反空跑：受管清单本身不得被清空（清空后 C6 恒绿）
-    assert len(PORTALED_PRINT_DOCS) >= 5, "受管清单被清空到 <5 ⇒ C6 会空跑通过"
+    assert len(PORTALED_PRINT_DOCS) >= 4, "受管清单被清空到 <4 ⇒ C6 会空跑通过"

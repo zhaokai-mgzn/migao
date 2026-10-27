@@ -708,7 +708,65 @@ export interface OrderBriefItem {
  * 订单**列表**行（＝ {@link Order}，但明细换成列表形态）。
  * 列表页 / `OrderTable` / 余料页的商品行搜索用它，**不要**用详情类型 `Order` 去接列表响应。
  */
-export type OrderBrief = Omit<Order, 'items'> & { items?: OrderBriefItem[] }
+export type OrderBrief = Omit<Order, 'items'> & {
+  items?: OrderBriefItem[]
+  /**
+   * **打印状态**（issue #7902，仅列表读面下发；真值 = 服务端按 `print_logs` 汇总）：
+   * - `printedAt`：最近一次打印时间；`null` / 缺键 = **从未打印**
+   * - `printCount`：打印条数（联合打印一次 N 张 = N 条）
+   * - `printedDocTypes`：打过哪些单据（`sales` / `processing` / `quotation` / `labels`）
+   */
+  printedAt?: string | null
+  printCount?: number | null
+  printedDocTypes?: string[] | null
+}
+
+/**
+ * 打印流水（issue #7902）—— 每次「点了打印」在服务端留的一条记录。
+ *
+ * 🔴 口径：它记的是**已发起打印**（`fired`）或**失败**（`failed`），不是「纸真的印出来了」——
+ * 浏览器无法确认物理出纸，这里不假装能确认。
+ */
+export interface PrintLogView {
+  id: string
+  /** 单据类型：`sales` / `processing` / `quotation` / `labels` */
+  docType: string
+  /** 打印当时的纸面名（快照；如「加工单」/「面料单」/「水洗唛」） */
+  docTitle?: string | null
+  /** 纸型 id（介质矩阵真值：a4 / continuous-241x140 / label-50x150） */
+  mediaId?: string | null
+  /** 本次出纸张数（水洗唛按部位一张） */
+  sheets: number
+  /** 通道：`browser` = 系统打印 / `ble` = 蓝牙直连 */
+  channel: string
+  batchId?: string | null
+  batchIndex?: number | null
+  batchSize?: number | null
+  /** `fired` = 已发起到打印 / `failed` = 失败 */
+  status: string
+  failReason?: string | null
+  operatorName?: string | null
+  /** 打印当时的订单状态快照 */
+  orderStatus?: string | null
+  createdAt: string
+}
+
+/** 写打印流水的请求体（一次可多条：联合打印的每张纸一条） */
+export interface PrintLogRecordItem {
+  docType: string
+  docTitle?: string
+  mediaId?: string
+  sheets?: number
+  channel?: 'browser' | 'ble'
+  status?: 'fired' | 'failed'
+  failReason?: string
+  processingOrderId?: string
+}
+
+export interface PrintLogRecordRequest {
+  batchId?: string
+  docs: PrintLogRecordItem[]
+}
 
 // 加工项（订单级聚合快照）
 //

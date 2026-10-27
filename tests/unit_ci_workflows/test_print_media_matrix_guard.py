@@ -46,7 +46,6 @@ MATRIX_JSON = SRC / "lib" / "print-media.json"
 #: 🔴 新增任何门户式打印单据都必须在这里登记介质（C3 会扫出未登记者）——
 #: 「这张单据印在什么纸上」是**必答项**，不是注释里的一句话。
 PRINT_DOCS: tuple[tuple[str, str], ...] = (
-    ("frontend/admin-web/src/components/orders/ShipmentDoc.tsx", "a4"),
     ("frontend/admin-web/src/components/orders/QuotationDoc.tsx", "a4"),
     ("frontend/admin-web/src/components/orders/ProcessingDoc.tsx", "a4"),
     ("frontend/admin-web/src/components/orders/SalesDoc.tsx", "continuous-241x140"),
@@ -274,8 +273,9 @@ def _projection_hits(columns: tuple[str, ...], files: dict[str, str]) -> list[st
 
 def test_c1_registry_is_not_vacuous_and_points_at_real_media():
     """C1：登记表非空、每个登记路径存在、每个申报的介质 id 在矩阵里。"""
-    assert len(PRINT_DOCS) >= 5, (
-        f"受管可打印单据清单被缩短到 {len(PRINT_DOCS)} 条 ⇒ 本守卫会空跑通过（判据必须能判红）"
+    # issue #7902：发货单整体退场 ⇒ 在册可打印单据 5 → 4（报价单 / 加工单 / 销售单 / 洗水唛）。
+    # 下限跟着在册集合走：再掉一份就必须在这里显式改数（而不是后台少守一份还没人知道）。
+    assert len(PRINT_DOCS) >= 4, (
     )
     matrix = _matrix()
     for rel, media_id in PRINT_DOCS:
@@ -585,12 +585,13 @@ def test_c8_paper_must_not_carry_the_operation_list():
 # ③ 构建器所在 lib 里两种形态都在（全等 ⇒ ` 各 ` / 缺值 ⇒ `formatProcessingQty(`），且**不得**出现 `×`；
 # ④ 加工费合计标签仍在（`加工费合计（元）`）—— 删掉 = 实物凭证少一行金额。
 
-#: 发货单（加工项子行的承载体）
-SHIPMENT_DOC = "frontend/admin-web/src/components/orders/ShipmentDoc.tsx"
-#: 加工项文案的**单一构建器**（三份纸共用；issue #7891 从 `ShipmentDoc.tsx` 上移到这里）
+#: 加工项子行的承载体（issue #7902：发货单退场后，这条不变量由**销售单**承接 ——
+#: 销售单是客户随货拿到的纸，加工项必须仍挂在商品行下方，而不是退回表外一行）。
+SALES_DOC = "frontend/admin-web/src/components/orders/SalesDoc.tsx"
+#: 加工项文案的**单一构建器**（销售单 / 报价单 / 加工单共用；issue #7891 从 `ShipmentDoc.tsx` 上移到这里）
 PROCESSING_TEXT_LIB = "frontend/admin-web/src/lib/processing-item-text.ts"
-#: 商品行下方子行的锚点（`data-testid={`shipment-item-processing-${idx}`}`）—— 只认前缀，容忍模板写法差异
-SHIPMENT_PROCESSING_ROW_ANCHOR = "shipment-item-processing"
+#: 商品行下方子行的锚点（`data-testid={`sales-item-processing-${idx}`}`）—— 只认前缀，容忍模板写法差异
+SHIPMENT_PROCESSING_ROW_ANCHOR = "sales-item-processing"
 #: 子行文案必须走构建器（在 JSX 里另拼一份 = 第二份口径）
 SHIPMENT_PROCESSING_LINE_CALL = "processingPaperLine("
 #: 旧形态（表外一行、不绑商品）的锚点 —— 回退到它 ⇒ 加工项又离开商品行（issue #7891）⇒ 红
@@ -671,17 +672,12 @@ def _shipment_processing_line_problems(rel: str, code: str, lib_code: str) -> li
             f"`{PROCESSING_TEXT_LIB}` 找不到 `{PROCESSING_TEXT_LINE_BUILDER}` —— "
             "三份纸共用的子行文案构建器缺失（issue #7891）"
         )
-    if SHIPMENT_PROCESSING_FEE_LABEL not in code:
-        problems.append(
-            f"`{rel}` 找不到 `{SHIPMENT_PROCESSING_FEE_LABEL}` —— "
-            "加工费合计必须仍在纸面（删掉 = 实物凭证少一行金额；issue #7275）"
-        )
     return problems
 
 
 def test_c9_shipment_processing_items_bind_to_the_product_row():
     """C9：加工项**绑在商品行下**、一行、走单一构建器（退回表外一行 / 退回 `名称×数量` ⇒ 红）。"""
-    rel = SHIPMENT_DOC
+    rel = SALES_DOC
     code = _strip_comments(_read(rel))
     lib_code = _strip_comments(_read(PROCESSING_TEXT_LIB))
     assert _shipment_processing_line_problems(rel, code, lib_code) == [], "\n  ".join(
@@ -699,10 +695,10 @@ def test_c9_shipment_processing_items_bind_to_the_product_row():
         "  return ''\n"
         "}"
     )
-    #: 合成样本的合规发货单（子行锚点 + 构建器调用 + import + 加工费合计）
+    #: 合成样本的合规客户纸（子行锚点 + 构建器调用 + import）
     line = (
         "import { processingPaperLine } from '@/lib/processing-item-text'\n"
-        "<tr data-testid={`shipment-item-processing-${idx}`}>"
+        "<tr data-testid={`sales-item-processing-${idx}`}>"
         "<td colSpan={8}>{processingPaperLine(item.processingInfo)}</td></tr>\n"
         "<div>加工费合计（元）：{formatAmount(processingFeeTotal)}</div>"
     )
@@ -725,7 +721,7 @@ def test_c9_shipment_processing_items_bind_to_the_product_row():
     )
     no_builder = (
         "import { processingPaperLine } from '@/lib/processing-item-text'\n"
-        '<tr data-testid={`shipment-item-processing-${idx}`}>'
+        '<tr data-testid={`sales-item-processing-${idx}`}>'
         "<td>{`${item.processingInfo.processingItems[0].name}×${item.quantity}`}</td></tr>\n"
         "<div>加工费合计（元）</div>"
     )
@@ -748,11 +744,6 @@ def test_c9_shipment_processing_items_bind_to_the_product_row():
     lib_no_uniform = lib_sample.replace(" 各 ", " 每项 ")
     assert _shipment_processing_line_problems("(合成样本·丢了全等形态)", line, lib_no_uniform), (
         "构建器里找不到全等形态 ` 各 ` 却判绿 ⇒ #7605 的口径没有守卫"
-    )
-    # 加工费合计被删 ⇒ 必须红
-    no_fee = line.replace("<div>加工费合计（元）：{formatAmount(processingFeeTotal)}</div>", "")
-    assert _shipment_processing_line_problems("(合成样本·删掉加工费合计)", no_fee, lib_sample), (
-        "删掉「加工费合计」却判绿 ⇒ 实物凭证少一行金额没人拦"
     )
 
 
@@ -959,7 +950,7 @@ def test_c11_print_docs_never_assemble_scan_short_links():
 #: ⚠️ `TaskCardPrint` 是**工人标签**，它照旧必须印 `part_short_code`（§11.7 第一兜底）
 #: ⇒ 本判据**故意**不覆盖它；分母写死四条（不是空集 —— 空集比空集是恒等，那种绿是假绿）。
 CUSTOMER_DOCS: tuple[str, ...] = (
-    "frontend/admin-web/src/components/orders/ShipmentDoc.tsx",
+    # 发货单自 issue #7902 起整体退场（纸统一在销售订单详情的打印层出）—— 分母只剩客户拿到的三张
     "frontend/admin-web/src/components/orders/QuotationDoc.tsx",
     "frontend/admin-web/src/components/orders/ProcessingDoc.tsx",
     "frontend/admin-web/src/components/orders/SalesDoc.tsx",

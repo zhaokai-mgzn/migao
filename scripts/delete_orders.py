@@ -98,6 +98,9 @@ DELETE_PLAN = (
     ("order_shipments", (("order_id", "order"),)),
     ("order_items", (("order_id", "order"),)),
     ("order_logistics", (("order_id", "order"),)),
+    # 打印流水（V201，issue #7902）：print_logs.order_id 是**语义**引用（无外键，但属该订单的
+    # 审计行）⇒ 早于 orders 删；append-only 事实表，删单时一并清掉（否则留下孤儿「已打印」读数）
+    ("print_logs", (("order_id", "order"),)),
     # 售后工单本体（issue #7633）：after_sales_tickets.order_id 无外键但语义属该订单 ⇒ 早于 orders
     ("after_sales_tickets", (("order_id", "order"),)),
     # 收款核销明细（V176，issue #7370 段 3）引用**订单**（order_id 是真外键）⇒ 必须早于 orders 删；
@@ -129,6 +132,7 @@ TABLE_LABELS = {
     "order_shipments": "发货单",
     "order_items": "订单明细",
     "order_logistics": "物流",
+    "print_logs": "打印流水",
     "after_sales_tickets": "售后工单",
     "receipt_allocations": "收款核销明细",
     "finance_transactions": "收款流水",

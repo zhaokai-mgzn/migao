@@ -16,11 +16,19 @@ import AccessDenied from '@/components/common/AccessDenied'
 import { orderApi, productionApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
 import { Button, Loading, Modal } from '@/components/ui'
-import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, ShipmentDoc, QuotationDoc, SalesDoc, OrderUrgencyPanel, EditOrderContentModal, PrintDocPreview } from '@/components/orders'
-import { PRINT_TARGET_SPECS, printTargetTitle, usePrintDoc, type PrintTarget } from '@/lib/print-doc'
+import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, QuotationDoc, SalesDoc, ProcessingDoc, OrderUrgencyPanel, EditOrderContentModal, PrintDocPreview } from '@/components/orders'
+import { PRINT_TARGET_SPECS, printTargetTitle, usePrintBatch, usePrintDoc, type PrintTarget } from '@/lib/print-doc'
+// 洗水唛（issue #7902 从「加工单生产明细」页搬回销售订单页）：**同一份**数据映射与**同一份**纸面
+// （`toWashLabelInputs` + `TaskCardPrint`）—— 换入口不换字段口径，两条打印通道（系统 / 蓝牙）也照旧。
+import TaskCardPrint from '@/components/production/TaskCardPrint'
+import DirectLabelPrint from '@/components/production/DirectLabelPrint'
+// 打印流水（issue #7902）：本单的留痕区块（只在订单详情里看，用户 2026-10-27 裁定）
+import PrintLogPanel from '@/components/orders/PrintLogPanel'
+import { toWashLabelInputs } from '@/lib/wash-label-content'
+import { useCompanyName } from '@/lib/use-company-name'
 import { usePermission } from '@/lib/permission'
 // 「发货前要不要作业」的唯一读点 + 按型分岔的引导句（issue #7079 第 5 包）
-import { WORK_ORDER_NEEDED_COPY, workOrderKindOf } from '@/lib/processing-order'
+import { WORK_ORDER_NEEDED_COPY, orderKindOf, workOrderKindOf } from '@/lib/processing-order'
 // 费用构成（issue #5843）：详情页原先只算商品金额，与页脚订单级总额（**含**加工费）对不上
 // ⇒ 补「商品合计 + 加工费 + 其它构成 = 订单金额」这一块。判定与渲染都在
 // `components/orders/OrderFeeBreakdown.tsx` + `lib/order-fee-display.ts`（本页只接线、不自算）。
@@ -179,6 +187,85 @@ export default function OrderDetailPage() {
   const { printTarget, previewTarget, requestPrint, openPreview, selectPreview, closePreview } = usePrintDoc()
 
   /**
+   * 本页可打印的单据（issue #7902）—— **顺序 = 出纸顺序**，也是联合打印面板里的排序：
+   * 报价单（客户先确认）→ 销售单（随货）→ 加工单/面料单（下车间）→ 水洗唛（缝到帘上）。
+   *
+   * 🔴 **派单成功后才有后两张**（用户 2026-10-27 逐字「当订单成功派单后…也能打印加工单的水洗唛，
+   * 加工单/面料单」）：`processingOrder` 就是派单的产物 —— 没有它 ⇒ 这两个标签**不出现**
+   * （而不是出现后点开是白纸 / 403）。面料单（`order_kind='outbound'`）**没有水洗唛**（#7891 裁定）。
+   */
+  const printDocs = useMemo<PrintTarget[]>(() => {
+    const docs: PrintTarget[] = ['quotation', 'sales']
+    if (processingOrder) {
+      docs.push('processing')
+      if (orderKindOf(processingOrder) !== 'outbound') docs.push('labels')
+    }
+    return docs
+  }, [processingOrder])
+
+  /** 作业单两型（纸面名：成品帘 ⇒「加工单」、面料单 ⇒「面料单」，issue #7891） */
+  const workDocKind = processingOrder ? orderKindOf(processingOrder) : null
+
+  /** 联合打印状态机（issue #7902）：勾选 → 逐张引导；开印仍走 `usePrintDoc` 唯一入口 */
+  const batch = usePrintBatch(printDocs)
+
+  /**
+   * 洗水唛的纸面行清单（issue #7902：从「加工单生产明细」页搬到本页，**同一份**映射
+   * `toWashLabelInputs` —— 换入口不换字段口径）。系统打印（`TaskCardPrint`）与
+   * 蓝牙直连（`DirectLabelPrint`）读的也是**同一份**数据（issue #6656 的教训）。
+   *
+   * 缺数据（未派单 / 部位还没生成）⇒ 空数组 ⇒ 不出假纸；水洗唛标签本身也不会出现（见 `printDocs`）。
+   */
+  const companyName = useCompanyName()
+  const washLabels = useMemo(
+    () =>
+      toWashLabelInputs({
+        companyName,
+        processingOrderNo: processingOrder?.processingOrderNo,
+        customerName: processingOrder?.customerName ?? order?.customerName,
+        positions: orderOperations,
+        items: processingOrder?.items,
+      }),
+    [companyName, processingOrder, order?.customerName, orderOperations],
+  )
+
+  /**
+   * 打印流水：**每次真的开印**写一条（fire-and-forget，失败不阻断打印），随后重读本单流水。
+   * 🔴 只记「已发起」与「失败」两态 —— 浏览器确认不了物理出纸，这里不假装能确认。
+   */
+  const [printLogNonce, setPrintLogNonce] = useState(0)
+  const recordPrintLogs = useCallback(
+    (targets: PrintTarget[], channel: 'browser' | 'ble' = 'browser') => {
+      if (!order?.id || targets.length === 0) return
+      const docs = targets.map((target) => ({
+        docType: target,
+        docTitle: printTargetTitle(target, processingOrder ? orderKindOf(processingOrder) : null),
+        mediaId: PRINT_TARGET_SPECS[target].media,
+        // 水洗唛一部位一张 ⇒ 张数按纸面行清单数（不是 1）；其余单据一次一份
+        sheets: target === 'labels' ? Math.max(1, washLabels.length) : 1,
+        channel,
+        processingOrderId: processingOrder?.id,
+      }))
+      orderApi
+        .recordPrintLogs(order.id, { batchId: batch.batchId ?? undefined, docs })
+        .then(() => setPrintLogNonce((n) => n + 1))
+        .catch(() => {
+          // 留痕是旁路：失败不得阻断打印（同既有打印计数纪律）
+        })
+    },
+    [order?.id, processingOrder, batch.batchId, washLabels.length],
+  )
+
+  /**
+   * 纸面自检 / 打印目标：**页面上同时挂着四份纸**（报价单 / 销售单 / 加工单 / 水洗唛），
+   * 由 `printTarget` 决定这次只让哪一份上纸（issue #4965 的同页多单据纪律）。
+   */
+  const printDoc = (target: PrintTarget) => {
+    recordPrintLogs([target])
+    requestPrint(target)
+  }
+
+  /**
    * 发货明细读面（issue #5651 收口）：销售单数量列要印**实发**（真值 owner = `order_shipment_items`）。
    * 🔴 取不到 ⇒ `null`（**不是** `{shipments: []}`）：纸面会显式标「发货明细未取到」，
    * 绝不把读面故障显示成「未发货」（用缺数据冒充业务状态）。
@@ -244,6 +331,15 @@ export default function OrderDetailPage() {
     }
     loadOrder()
   }, [loadOrder, canViewOrderDetail])
+
+  /**
+   * 联合打印步进 ⇒ 预览跟着走（issue #7902）：纸框里显示的永远是**这一张**要出的纸，
+   * 否则「看的是销售单、打的是水洗唛」——那正是纸面自检层要消掉的错打形态。
+   */
+  const batchCurrent = batch.current
+  useEffect(() => {
+    if (batchCurrent) selectPreview(batchCurrent)
+  }, [batchCurrent, selectPreview])
 
   // 关闭订单
   const handleConfirmClose = async (reason: string) => {
@@ -476,18 +572,32 @@ export default function OrderDetailPage() {
         onStatusChange={setProcessingOrder}
       />}
 
-      {/* 纸质发货单（issue #3768）：屏幕上隐藏，仅打印呈现；已发货/已完成可在此补打 */}
-      <ShipmentDoc order={order} logistics={order.logistics} printTarget={printTarget} />
-
       {/* 纸质报价单（issue #4965）：屏幕上隐藏，仅打印呈现；照真实报价单 A4 制式
           （每商品行一套 + 金额汇总 + 扫码支付）。页面级挂载一份 —— 与 ShipmentDoc 同范式
           （不进 Modal、每页只挂一份，见组件文件头 6 条约束）。 */}
       <QuotationDoc order={order} printTarget={printTarget} />
 
-      {/* 纸质加工单（A4，issue #5651）**不在本页**（issue #7870，用户 2026-10-26 逐字
-          「加工单打印移到加工单和水洗唛放一起，也想订单一样统一收口到打印按钮」）：
-          它随「加工单生产明细」页（`/processing-orders/{id}/production`）的「打印」入口走 ——
-          车间那张纸与洗水唛（任务卡）在同一个层里选，不在销售面（本页）里出现。 */}
+      {/* 纸质加工单（A4，issue #5651）—— issue #7902 起**回到本页**（用户 2026-10-27 裁定
+          「把加工单的打印按钮移除掉，最终效果是统一到销售单上打印」）：车间那张纸（成品帘 =
+          加工单 / 面料单）与洗水唛一起挂在销售订单的打印层里，生产明细页不再有自己的打印入口。
+
+          🔴 **派单成功后才有**（`processingOrder` = 派单产物）；纸面名按作业单两型（#7891）。 */}
+      {processingOrder && (
+        <ProcessingDoc order={order} processingOrder={processingOrder} printTarget={printTarget} />
+      )}
+
+      {/* 可打印水洗唛（issue #7902 从生产明细页搬到本页）：一个部位一张，码取自该部位自己的
+          `scan_url`（token 化、可撤销）。面料单（`order_kind='outbound'`）只裁剪、**没有**水洗唛
+          （issue #7891 裁定）⇒ 不挂载、打印层里也不出现。 */}
+      {processingOrder && orderKindOf(processingOrder) !== 'outbound' && (
+        <TaskCardPrint
+          processingOrderNo={processingOrder.processingOrderNo}
+          customerName={processingOrder.customerName}
+          positions={orderOperations}
+          items={processingOrder.items}
+          printTarget={printTarget}
+        />
+      )}
 
       {/* 纸质销售单（**三联纸 241mm × 140mm**，issue #5651）：随货给客户的那张；
           🔴 页脚**不印收款码**（issue #7589，用户 2026-10-24 逐字「销售单打印处右下角的二维码移除掉」）
@@ -507,25 +617,64 @@ export default function OrderDetailPage() {
         target={previewTarget}
         // 标题按**作业单两型**给名（issue #7891：成品帘 ⇒「加工单」、面料单 ⇒「面料单」）；
         // 其余单据位仍取 `PRINT_TARGET_SPECS`（那是**目标位**的名字，见 `lib/print-doc.ts`）
-        title={previewTarget ? printTargetTitle(previewTarget, workOrderKindOf(order)) : ''}
+        title={previewTarget ? printTargetTitle(previewTarget, workDocKind) : ''}
         media={previewTarget ? PRINT_TARGET_SPECS[previewTarget].media : 'a4'}
-        onPrint={() => previewTarget && requestPrint(previewTarget)}
-        onClose={closePreview}
-        docs={ORDER_PRINT_DOCS}
+        onPrint={() => previewTarget && printDoc(previewTarget)}
+        onClose={() => {
+          // 关层 = 连带结束联合打印（否则下一次打开还在「第 2/3 张」里，商家会以为要接着打）
+          batch.stop()
+          closePreview()
+        }}
+        docs={printDocs}
         onSelect={selectPreview}
         // 单据标签的显示名与标题**同源**（issue #7891）：作业单两型下同一个「processing」目标
         // 会叫「加工单」（成品帘）或「面料单」（只裁剪的面料单），标签行不许另说一套名字。
-        titleOf={(target) => printTargetTitle(target, workOrderKindOf(order))}
+        titleOf={(target) => printTargetTitle(target, workDocKind)}
+        // 联合打印（issue #7902）：勾选 → 逐张引导；开印仍走 `usePrintDoc` 唯一入口
+        batch={batch}
+        batchHintOf={(target) =>
+          target === 'labels' ? `${Math.max(1, washLabels.length)} 张` : undefined
+        }
+        onBatchPrintCurrent={() => {
+          if (!batch.current) return
+          printDoc(batch.current)
+          // 出纸即推进到「下一张」（不改阶段：商家看到"已出纸"再点，符合换纸的真实节奏）
+          batch.markFired()
+        }}
+        // 洗水唛除了系统打印还有第二条通道（免驱动蓝牙直连，issue #6439）：入口跟着这份纸走
+        actions={
+          previewTarget === 'labels' && batch.stage !== 'running' ? (
+            <DirectLabelPrint
+              labels={washLabels}
+              onRecordPrint={() => recordPrintLogs(['labels'], 'ble')}
+            />
+          ) : undefined
+        }
       >
         {/* `inline` = 原地渲染进真尺寸纸框（不 portal 到 body，issue #5914） */}
-        {previewTarget === 'shipment' && (
-          <ShipmentDoc order={order} logistics={order.logistics} inline />
-        )}
         {previewTarget === 'quotation' && <QuotationDoc order={order} inline />}
         {previewTarget === 'sales' && (
           <SalesDoc order={order} shipments={shipments} inline />
         )}
+        {previewTarget === 'processing' && processingOrder && (
+          <ProcessingDoc order={order} processingOrder={processingOrder} inline />
+        )}
+        {previewTarget === 'labels' && processingOrder && (
+          <TaskCardPrint
+            processingOrderNo={processingOrder.processingOrderNo}
+            customerName={processingOrder.customerName}
+            positions={orderOperations}
+            items={processingOrder.items}
+            inline
+          />
+        )}
       </PrintDocPreview>
+
+      {/* 打印流水（issue #7902）：本单出过哪些纸、谁打的、补打了几次 —— 用户裁定只看本单
+          （不做全局流水页）。常驻面最多 5 行，更多的按需展开（产品设计原则 P1）。 */}
+      <SectionCard title="打印流水">
+        <PrintLogPanel orderId={order.id} refreshKey={printLogNonce} />
+      </SectionCard>
 
       {/* 收货信息 */}
       <SectionCard title="收货信息">
@@ -683,10 +832,17 @@ function ConfirmModal({ open, title, message, loading, onClose, onConfirm }: Con
  * 🔴 **加工单不在本清单里**（issue #7870）：那张 A4 纸是车间用的，已搬到「加工单生产明细」页，
  * 与洗水唛（任务卡）同层、同理收口成一个「打印」入口 —— 一份单据只有一个打印入口。
  */
-const ORDER_PRINT_DOCS = ['sales', 'quotation', 'shipment'] as const satisfies readonly PrintTarget[]
+/**
+ * **发货单退场**（issue #7902，用户 2026-10-27 逐字「移除发货单打印」「统一到销售单上打印」）
+ * ⇒ 本页可打印的单据由 `printDocs` 按**派单状态**动态给（报价单 / 销售单 / 加工单 / 水洗唛），
+ * 不再是一张静态清单；发货页与发货记录页的打印入口同批撤掉。
+ *
+ * 原来这里是一张四份单据的静态清单（`['sales','processing','quotation','shipment']`）——
+ * 静态清单回答不了「这单现在有没有加工单」，于是未派单的单子也能点开一张空白的加工单。
+ */
 
 /** 打开打印层时默认选中的单据：销售单（每一单都必然用到的那张） */
-const DEFAULT_ORDER_PRINT_DOC: PrintTarget = ORDER_PRINT_DOCS[0]
+const DEFAULT_ORDER_PRINT_DOC: PrintTarget = 'sales'
 
 interface StatusSectionProps {
   order: Order

@@ -69,7 +69,8 @@ def _paper_docs() -> list[Path]:
         f"纸面单据清单塌成 0 个（glob = {PAPER_DOC_GLOB}）⇒ 判据在空集上跑 = 空跑通过；"
         "主目录 / 文件命名变了吗？"
     )
-    assert len(docs) >= 4, f"纸面单据只剩 {[d.name for d in docs]} ⇒ 少于既有四份（发货 / 报价 / 加工 / 销售），同步本守卫"
+    # issue #7902：发货单整体退场 ⇒ 在册纸面单据 4 → 3（报价 / 加工 / 销售）。
+    assert len(docs) >= 3, f"纸面单据只剩 {[d.name for d in docs]} ⇒ 少于既有三份（报价 / 加工 / 销售），同步本守卫"
     return docs
 
 

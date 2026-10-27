@@ -15,7 +15,7 @@
 | 2 | 报价单 | A4 | ✅ `components/orders/QuotationDoc.tsx`（#4965） |
 | 3 | **加工单** | A4 | ✅ **本单新增** `components/orders/ProcessingDoc.tsx` |
 | 4 | **销售单** | **三联纸** | ✅ **本单新增** `components/orders/SalesDoc.tsx`（针式/连续纸/压感复写 = 全仓此前**零支持**） |
-| — | 发货单（MIGAO 自有） | A4 | ✅ `components/orders/ShipmentDoc.tsx`（#3768） |
+| — | 发货单（MIGAO 自有） | A4 | ⛔ **已退场**（issue #7902，2026-10-27 用户裁定「移除发货单打印」「统一到销售单上打印」）：纸、组件、发货页/发货记录页的打印入口一并撤下；仓库改用销售单 |
 
 不显式分层时的实际后果：新单据**再抄一份 A4 模板**，抄出来的 `@page` 与字段映射
 **没有任何东西**会拦住它漂移 —— 纸面尺寸错 = 打废纸；字段错 = 账实不符。两者都不出声。
@@ -62,6 +62,23 @@ Chrome 把自己的页眉页脚（版式日期 / 文档标题 / 页面 URL / 页
   守卫 `frontend/worker-h5/tests/worker-h5-shipment-ready.test.mjs` 逐值比对 `pageSize` 与 `lengthMm`。
 ⇒ 改任一边都要看另一边；把水洗唛改回 `label-50x70` = 把「长度不足」带回来（守卫
 `tests/unit_ci_workflows/test_wash_label_geometry_guard.py` 会红）。
+
+## 2.1 打印入口唯一化与打印流水（issue #7902）
+
+**一处入口**：所有纸都从**销售订单详情页**的打印层出（报价单 / 销售单 / 加工单=面料单 / 水洗唛）。
+其余页面（发货页、发货记录页、加工单生产明细页）**不再持有** 打印入口 —— 同一份纸两处可打，
+必然出现「两套状态各打一份」与「谁是最新那张」的争论。
+
+- **派单闸门**：加工单 / 面料单 / 水洗唛 只在该订单**已有作业单**时出现（`processing_orders` 是派单产物）；
+  面料单（`order_kind='outbound'`）没有水洗唛（issue #7891）。
+- **联合打印** = 勾选 + 逐张引导：四份纸的介质不同（241×140 三联 / A4 / 50×150 标签），
+  物理上必须一张一张换纸；浏览器也不保证 `window.print()` 连打不丢对话框 ⇒ **不自动连打**。
+- **打印流水**（`print_logs`，V201）：`doc_type` / `doc_title`（打印当时的纸面名快照）/ `media_id` /
+  `sheets` / `channel`（browser / ble）/ `batch_id+batch_index+batch_size`（联合打印批次）/
+  `order_status`（当时的订单状态）/ `status`（fired / failed）+ `fail_reason` / 操作人快照 / 客户端 IP。
+  它是**外部事实表**（纸出没出来服务端不知道）⇒ 只登记「已发起 + 结果」，不存业务对象副本。
+  订单列表的「已打印」= 该表 `status='fired'` 行的**一次批量聚合**（`printedAt` / `printCount` /
+  `printedDocTypes`），不是前端本地状态。
 
 **四条技术要点（三联纸，实现前必读）**
 
@@ -119,7 +136,7 @@ Chrome 把自己的页眉页脚（版式日期 / 文档标题 / 页面 URL / 页
    - 发货单原来表外那条独立「加工项（数量：米）」区**退场**（不绑商品 = 与商品行对不上）；
      加工费合计仍印（口径不变 = 行级落库 `processingFee` 求和）；
    - 文案**单一构建器** = `frontend/admin-web/src/lib/processing-item-text.ts`（`processingItemsText` 从
-     `frontend/admin-web/src/components/orders/ShipmentDoc.tsx` 上移）；特殊选项取
+     `frontend/admin-web/src/lib/processing-item-text.ts`（原在已退场的 ShipmentDoc）里）；特殊选项取
      `frontend/admin-web/src/lib/craft-display.ts::craftSpecRows()` 的同一份格式化。
      布料行没有 `processingInfo` ⇒ 不出子行。
 2. **扫码报工码从销售单迁到加工单**（用户逐字「把销售单左上角的扫码报工二维码迁移到加工单打印上，
@@ -137,7 +154,7 @@ Chrome 把自己的页眉页脚（版式日期 / 文档标题 / 页面 URL / 页
    + `特殊选项` 独立一行（`washLabelSpecialOptions()`，无值不渲染）+ 其余工艺规格逐行
    （顺序沿用 `craftSpecRows()`）。**不新增列**：`PROCESSING_DOC_COLUMNS` 仍是 C5 的唯一真值。
 
-判据 = `frontend/admin-web/tests/unit/components/` 下 SalesDoc / QuotationDoc / ShipmentDoc / ProcessingDoc
+判据 = `frontend/admin-web/tests/unit/components/` 下 SalesDoc / QuotationDoc / ProcessingDoc
 四份测试 ＋ 类级守卫 `tests/unit_ci_workflows/test_print_media_matrix_guard.py` 的 C9 / C11 / C12；
 用例登记 = UI-134（码）· UI-138（加工项绑商品）· UI-139（两型命名 / 面料单不印水洗唛）·
 UI-140（加工单工艺按水洗唛形态）。
