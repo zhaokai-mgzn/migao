@@ -53,6 +53,15 @@ import {
 } from '../../../utils/inbound/recognizeGate'
 import { MAX_INBOUND_PHOTOS, runInboundRecognize } from '../../../utils/inbound/recognizeFlow'
 import {
+  SUGGEST_DEBOUNCE_MS,
+  SUGGEST_SHOW_LIMIT,
+  SUGGEST_TOO_SHORT_HINT,
+  canSuggest,
+  createSuggestRunner,
+  suggestHint,
+  suggestQueryOf,
+} from '../../../utils/inbound/skuSuggest'
+import {
   PRINT_READY_HINT,
   printFailureText,
   probePrintCapability,
@@ -91,6 +100,18 @@ import './index.scss'
 
 type Step = 'photo' | 'confirm' | 'label'
 
+/**
+ * 模糊搜索下拉的状态（issue #7892）。
+ *
+ * `q` = 这批候选**属于哪个查询** —— 输入框里的词变了，旧候选就不许再上屏（后发先至的端侧一刀）。
+ * `hint` = 面板下面那句话（也兼作「搜索中…」的状态位，不再多一个 loading 开关）。
+ */
+interface SuggestView {
+  q: string
+  rows: SkuMatch[]
+  hint: string
+}
+
 export default function WorkerInboundPage() {
   const workerReady = hasWorkerSession()
   const [step, setStep] = useState<Step>('photo')
@@ -109,9 +130,9 @@ export default function WorkerInboundPage() {
   const [matches, setMatches] = useState<SkuMatch[]>([])
   const [chosenSku, setChosenSku] = useState<SkuMatch | null>(null)
   // 零命中时的**只读**货号搜索（issue #7759：原来这里没有出口，文案却叫工人「从已有商品里选」）
+  // issue #7892：不是「点按钮再在整宽列表里找」，而是**边输边出候选、点一条即选中**（用户裁定）
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<SkuMatch[]>([])
-  const [searchState, setSearchState] = useState('')
+  const [suggest, setSuggest] = useState<SuggestView>({ q: '', rows: [], hint: '' })
   const [quantity, setQuantity] = useState('1')
   const [rollLengthM, setRollLengthM] = useState('')
   const [dyeLot, setDyeLot] = useState('')
@@ -182,8 +203,7 @@ export default function WorkerInboundPage() {
       setRecognized(result.response)
       setMatches(result.response.skuMatches || [])
       setSearchQuery('')
-      setSearchResults([])
-      setSearchState('')
+      setSuggest({ q: '', rows: [], hint: '' })
       // 唯一命中时**预选**（仍要工人核对）；多命中/零命中都不替工人挑
       setChosenSku(next.gate.kind === 'matched' ? next.gate.match : null)
       setQuantity(next.quantity)
@@ -197,28 +217,57 @@ export default function WorkerInboundPage() {
   }, [photos])
 
   /**
-   * 零命中时按**货号 / 色名**搜已有货号（issue #7759；**只读**，不改存货）。
+   * 零命中时按**货号 / 色名**搜已有货号（issue #7759 的出口；**只读**，不改存货）。
    *
-   * 搜索词由工人自己给（不拿识别结果替他去猜），服务端在**既有**货号里找；选中后才成为待入库货号。
+   * 用户 2026-10-27 裁定（issue #7892）：要能「通过输入模糊搜索下拉框来选中」—— 于是这里从
+   * 「输入 + 点按钮」改成**边输边出候选**。搜索词仍由工人自己给（不拿识别结果替他去猜），
+   * 三条端侧口径（最小长度 / 防抖 / 后发先至）的唯一实现 = `utils/inbound/skuSuggest`。
    */
-  const onSearchSkus = useCallback(async () => {
-    const query = searchQuery.trim()
-    if (query.length < 2) {
-      setSearchState('请至少输入 2 个字或 2 位货号再搜')
-      return
+  const runSuggest = useMemo(
+    () =>
+      createSuggestRunner(async (query) => {
+        const res = await searchInboundSkus(query)
+        if (!res.success) return { ok: false as const, message: res.message || '搜索没成功，请重试' }
+        return { ok: true as const, matches: Array.isArray(res.data) ? res.data : [] }
+      }),
+    [],
+  )
+
+  /** 停手 300ms 才查（每敲一个字就查 = 一次输入 6 个请求）；`alive` = 这一次输入还有没有人要 */
+  useEffect(() => {
+    const query = suggestQueryOf(searchQuery)
+    if (!canSuggest(query)) return
+    let alive = true
+    setSuggest({ q: query, rows: [], hint: '搜索中…' })
+    const timer = setTimeout(() => {
+      void runSuggest(query).then((answer) => {
+        // 两道闸：`alive`（本次输入已被新输入取代）＋ `stale`（查询器侧的序号，双保险）
+        if (!alive || answer.stale) return
+        setSuggest({
+          q: answer.query,
+          rows: answer.outcome.ok ? answer.outcome.matches : [],
+          hint: answer.outcome.ok ? suggestHint(answer.outcome.matches.length) : answer.outcome.message,
+        })
+      })
+    }, SUGGEST_DEBOUNCE_MS)
+    return () => {
+      alive = false
+      clearTimeout(timer)
     }
-    setBusy(true)
-    const res = await searchInboundSkus(query)
-    setBusy(false)
-    if (!res.success) {
-      setSearchResults([])
-      setSearchState(res.message || '搜索没成功，请重试')
-      return
-    }
-    const rows = Array.isArray(res.data) ? res.data : []
-    setSearchResults(rows)
-    setSearchState(rows.length === 0 ? '没搜到这个货号，换个写法试试' : `搜到 ${rows.length} 个货号，点一个选中`)
-  }, [searchQuery])
+  }, [searchQuery, runSuggest])
+
+  /** 点候选即选中（下拉收起：输入框清空 ⇒ 短查询；要换货号就再输几个字） */
+  const onSuggestPick = useCallback((match: SkuMatch) => {
+    setChosenSku(match)
+    setSearchQuery('')
+    setSuggest({ q: '', rows: [], hint: '' })
+  }, [])
+
+  const suggestQuery = suggestQueryOf(searchQuery)
+  /** 只认**当前查询**的候选（旧查询的候选哪怕还在内存里也不上屏） */
+  const suggestRows = suggest.q === suggestQuery ? suggest.rows : []
+  const suggestText = suggest.q === suggestQuery ? suggest.hint : ''
+  const suggestTooShort = suggestQuery !== '' && !canSuggest(suggestQuery)
 
   /**
    * 建单准入的**实时**结论（勾「我确认」/ 填卷长 / 选货号 三件事）。
@@ -457,40 +506,33 @@ export default function WorkerInboundPage() {
                 <Input
                   className='admin-input'
                   data-testid='inbound-sku-search-input'
-                  placeholder='货号或色名的一部分（至少 2 个字）'
+                  placeholder='输入货号或色名（至少 2 个字，边输边出候选）'
                   value={searchQuery}
                   onInput={(e: any) => setSearchQuery(e?.detail?.value ?? '')}
                 />
-                <View
-                  className={`admin-action${busy ? ' admin-action--disabled' : ''}`}
-                  data-testid='inbound-sku-search-submit'
-                  onClick={() => {
-                    if (!busy) onSearchSkus()
-                  }}
-                >
-                  <Text>搜货号</Text>
-                </View>
-                {searchState !== '' && (
-                  <Text className='admin-card__note' data-testid='inbound-sku-search-state'>
-                    {searchState}
+                {/* 下拉候选（issue #7892）：点一条即选中，不再需要「搜货号」按钮 */}
+                {suggestRows.length > 0 && (
+                  <View className='admin-suggest' data-testid='inbound-sku-suggest'>
+                    {suggestRows.slice(0, SUGGEST_SHOW_LIMIT).map((match) => (
+                      <View
+                        key={`found-${match.skuId}`}
+                        className='admin-suggest__row'
+                        data-testid={`inbound-sku-found-${match.skuId}`}
+                        onClick={() => onSuggestPick(match)}
+                      >
+                        <Text>
+                          {match.skuCode || '未填货号'} · {match.colorName || '未填色号'}
+                          {match.doorWidth ? ` · 门幅 ${match.doorWidth}` : ''}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+                {(suggestTooShort || suggestText !== '') && (
+                  <Text className='admin-card__note' data-testid='inbound-sku-suggest-hint'>
+                    {suggestTooShort ? SUGGEST_TOO_SHORT_HINT : suggestText}
                   </Text>
                 )}
-                {searchResults.map((match) => (
-                  <View
-                    key={`found-${match.skuId}`}
-                    className={`admin-action${chosenSku?.skuId === match.skuId ? ' admin-action--gold' : ''}`}
-                    data-testid={`inbound-sku-found-${match.skuId}`}
-                    onClick={() => {
-                      setChosenSku(match)
-                      setSearchState('已选中这个货号，填好卷长后提交')
-                    }}
-                  >
-                    <Text>
-                      {match.skuCode || '未填货号'} · {match.colorName || '未填色号'}
-                      {match.doorWidth ? ` · 门幅 ${match.doorWidth}` : ''}
-                    </Text>
-                  </View>
-                ))}
               </View>
             )}
             {gate.kind === 'ambiguous' && (

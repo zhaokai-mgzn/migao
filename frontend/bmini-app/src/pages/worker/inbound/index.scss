@@ -25,3 +25,31 @@
   border-radius: 6px;
   background: #ffffff;
 }
+
+/**
+ * 模糊搜索的**下拉候选**（issue #7892）。
+ *
+ * 就是「贴着输入框的一小块面板」：条数上限在逻辑侧截断（`SUGGEST_SHOW_LIMIT`），
+ * 这里只负责把每条做成手指点得中的行（行高 ≥ 44px），颜色 / 圆角沿用上面输入框那一套。
+ */
+.admin-suggest {
+  margin: -4px 0 8px;
+  border: 1px solid rgba(10, 37, 64, 0.12);
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+
+  &__row {
+    padding: 12px;
+    min-height: 44px;
+    box-sizing: border-box;
+    font-size: 30px;
+    line-height: 20px;
+    color: #0a2540;
+    border-top: 1px solid rgba(10, 37, 64, 0.08);
+
+    &:first-child {
+      border-top: none;
+    }
+  }
+}
