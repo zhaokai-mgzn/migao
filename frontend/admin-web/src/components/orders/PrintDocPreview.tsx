@@ -361,7 +361,7 @@ export default function PrintDocPreview({
                     >
                       <span
                         aria-hidden="true"
-                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] font-bold ${
+                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-xs font-bold ${
                           checked ? 'border-primary-500 bg-primary-500 text-white' : 'border-neutral-300 bg-white text-transparent'
                         }`}
                       >

@@ -85,6 +85,9 @@ EXPECTED_DELETE_ORDER = (
     "order_shipments",
     "order_items",
     "order_logistics",
+    # V201（issue #7902）新增：打印流水的是**语义**引用（无外键，但属该订单的审计行）
+    # ⇒ 与物流同层、早于 orders 删（否则删单后留下孤儿「已打印」读数）。
+    "print_logs",
     # #7633 新增（售后工单本体）：`after_sales_tickets.order_id` 无外键但语义属该订单 ⇒ 早于 orders。
     "after_sales_tickets",
     # V176（issue #7370 段 3）新增：收款核销明细引用 **orders**（order_id 是真外键）⇒ 必须早于 orders 删；

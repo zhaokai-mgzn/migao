@@ -410,7 +410,10 @@ describe('打印列（issue #7902）', () => {
           {
             ...mockOrder,
             id: 'order-printed',
-            printedAt: '2026-10-27T15:22:00+08:00',
+            // 🔴 用**本机时区**构造（CI 跑在 UTC）：直接写 `+08:00` 的串会让「15:22」在
+            // UTC runner 上渲染成 07:22 ⇒ 判据在本地绿、CI 红（本判据只关心"显示的是哪个时刻"，
+            // 不关心时区本身；时刻身份由 `new Date(...)` 的本地分量固定）
+            printedAt: new Date(2026, 9, 27, 15, 22).toISOString(),
             printCount: 3,
             printedDocTypes: ['sales', 'processing', 'labels'],
           } as never,

@@ -50,6 +50,8 @@ const containerWidth = (viewport: number) => (viewport >= 1440 ? 1044 : 884)
  * 见文件头「列宽模型怎么来的」：真机读数 + `min-w`/`max-w` 声明，取偏大一侧。
  */
 const COLUMN_WIDTH_PX: Record<string, number> = {
+  // issue #7902：「打印」列 = 勾 + 「已打印」+ `MM-DD HH:mm`（实测约 150px）
+  打印: 150,
   '~': 40,
   订单ID: 190,
   状态: 100,
@@ -91,6 +93,8 @@ const ORDER_COLUMNS_AFTER = [
   '订单ID',
   '状态',
   '加急',
+  // issue #7902：「打印」是决策列（这单打过没有），与状态/加急同区前置
+  '打印',
   '采购商品',
   '采购明细(名称:单价×数量+加工费)',
   '累计金额(元)',
