@@ -90,9 +90,12 @@ class ProcessingOrderShortLinkControllerTest {
 
     private static Map<String, String> queryParams(String location) {
         Map<String, String> params = new LinkedHashMap<>();
-        int mark = location.indexOf('?');
+        // 🔴 issue #7889：Location 现在带 hash 段（`…?t=…#/pages/worker/report/index`）⇒ 查询参数
+        // 只取 **fragment 之前**那一段，否则最后一个参数会把路由吃进去（`tenant_code=migao#/pages/…`）。
+        String beforeHash = location.contains("#") ? location.substring(0, location.indexOf('#')) : location;
+        int mark = beforeHash.indexOf('?');
         assertThat(mark).as("Location 必须带查询串：%s", location).isGreaterThanOrEqualTo(0);
-        for (String pair : location.substring(mark + 1).split("&")) {
+        for (String pair : beforeHash.substring(mark + 1).split("&")) {
             String[] kv = pair.split("=", 2);
             params.put(kv[0], kv.length > 1 ? URLDecoder.decode(kv[1], StandardCharsets.UTF_8) : "");
         }
@@ -110,7 +113,7 @@ class ProcessingOrderShortLinkControllerTest {
                 .andReturn().getResponse();
 
         String location = response.getHeader("Location");
-        assertThat(location).isEqualTo("/b/?t=" + FIXTURE_TOKEN + "&tenant_id=7&tenant_code=migao");
+        assertThat(location).isEqualTo("/b/?t=" + FIXTURE_TOKEN + "&tenant_id=7&tenant_code=migao" + "#/pages/worker/report/index");
         Map<String, String> params = queryParams(location);
         assertThat(params.get("t")).as("token 参数").isEqualTo(FIXTURE_TOKEN);
         assertThat(params.get("tenant_id")).as("租户 id 参数").isEqualTo("7");
@@ -202,7 +205,7 @@ class ProcessingOrderShortLinkControllerTest {
                 .andReturn().getResponse();
 
         assertThat(found.getHeader("Location"))
-                .isEqualTo("/b/?t=" + REISSUED_TOKEN + "&tenant_id=7&tenant_code=migao");
+                .isEqualTo("/b/?t=" + REISSUED_TOKEN + "&tenant_id=7&tenant_code=migao" + "#/pages/worker/report/index");
         assertThat(reissued.getShortCode()).as("短码必须一字未动（已打印的纸不作废）").isEqualTo(SHORT_CODE);
 
         // 公开入口**只读**：不补码、不撤销（那是管理面的写路径）

@@ -389,16 +389,19 @@ class InboundLabelServiceTest {
     @Test
     @DisplayName("🔴 落地页地址走单一配置：改配置即改 302 目标，源码里没有硬编码域名")
     void landingPathIsASingleConfigurableSource() {
+        // 🔴 issue #7889：hash 段（补打页路由 + 短码）**恒定**，配置只管 base ——
+        //    少了它 bmini 首屏不会定到补打页（先起商家首页再靠启动器补救，第二次扫码会被竞态吞掉）。
+        String hash = "#/pages/worker/reprint/index?code=" + LIVE_CODE;
         assertThat(service.landingLocation("7k3m9qp2", TENANT))
-                .isEqualTo("/b/?code=" + LIVE_CODE + "&tenant_id=" + TENANT);
+                .isEqualTo("/b/?code=" + LIVE_CODE + "&tenant_id=" + TENANT + hash);
 
         ReflectionTestUtils.setField(service, "landingPath", "/b/index.html");
         assertThat(service.landingLocation(LIVE_CODE, TENANT))
-                .isEqualTo("/b/index.html?code=" + LIVE_CODE + "&tenant_id=" + TENANT);
+                .isEqualTo("/b/index.html?code=" + LIVE_CODE + "&tenant_id=" + TENANT + hash);
 
         ReflectionTestUtils.setField(service, "landingPath", "/b/?from=label");
         assertThat(service.landingLocation(LIVE_CODE, TENANT))
-                .isEqualTo("/b/?from=label&code=" + LIVE_CODE + "&tenant_id=" + TENANT);
+                .isEqualTo("/b/?from=label&code=" + LIVE_CODE + "&tenant_id=" + TENANT + hash);
 
         // 只回跳转、不泄露业务字段：这串里不可能出现品名 / 米数 / 供应商 / 单号
         String location = service.landingLocation(LIVE_CODE, TENANT);
@@ -407,7 +410,7 @@ class InboundLabelServiceTest {
         // 无租户（理论上不会发生：公开入口一定解得出租户）⇒ 只带短码，不拼一个假的 tenant_id
         ReflectionTestUtils.setField(service, "landingPath", InboundLabelService.DEFAULT_LANDING_PATH);
         assertThat(service.landingLocation(LIVE_CODE, null))
-                .isEqualTo("/b/?code=" + LIVE_CODE);
+                .isEqualTo("/b/?code=" + LIVE_CODE + hash);
     }
 
     // ============================================================ 夹具

@@ -29,6 +29,15 @@
 - 判据：`frontend/bmini-app/tests/inbound-sku-suggest.test.ts`（C1~C6）与
   `frontend/bmini-app/tests/worker-inbound-page.test.tsx`（C17 / C18）。
 
+### 扫纸上的码一次到位：302 直接把路由写进 hash，第二次扫码不再停在黄金策首页（2026-10-27，issue #7889）
+
+- **现场**：第一次扫码进报工页正常；**关闭后再扫，地址栏已经是报工页、页面内容却是商家首页（黄金策）**。
+- **根因**：302 只给 `?t=<token>`（search 段），hash 段是空的 ⇒ Taro 先按默认页初始化，再由启动器
+  `redirectTo` 补救 —— 补救与路由初始化是**两个时序**，缓存命中、启动更快时稳定翻车（地址栏变了、内容没换）。
+- **改后**：`/s/` `/o/` 的 302 目标追加 `#/pages/worker/report/index`（`/i/` 补打同理追加
+  `#/pages/worker/reprint/index?code=<短码>`）⇒ 首屏即目标页，**不依赖补救跳转**；token 仍在 search，旧链接照旧可用。
+- 质量守卫：服务端路由常量与前端注册路由**逐字一致**（`REPORT_ROUTE`/`LANDING_ROUTE` ⇄ `gaps.ts`），漂了即红。
+
 ### 工人手机上扫水洗唛/任务卡的码直接进报工页，不再被弹到工人工作台（2026-10-27，issue #7887）
 
 - **现场**：工人手机（有工人身份、没有商家凭据）扫纸上的码，落在**工人工作台**而不是报工页。

@@ -61,6 +61,12 @@ public class InboundLabelService {
     /** 落地页带过去的短码参数名（P3 / #5668 消费：{@code /b/?code=<短码>}）。 */
     public static final String LANDING_CODE_PARAM = "code";
 
+    /**
+     * 补打页在 bmini 里的**路由**（写进 302 的 hash 段，issue #7889 —— 与报工短链同一个竞态：
+     * 只给 search 段时"第二次扫码"会被路由初始化吞掉，地址栏对、页面停在商家首页）。
+     */
+    public static final String LANDING_ROUTE = "/pages/worker/reprint/index";
+
     /** 撤销后的扫码口径（§7.3）：**410 Gone**，不是 404（不把「作废」说成「不存在」）。 */
     public static final int GONE_STATUS = 410;
 
@@ -261,6 +267,9 @@ public class InboundLabelService {
         if (tenantId != null) {
             sb.append("&tenant_id=").append(tenantId);
         }
+        // 🔴 issue #7889：hash 段直接定路由 + 带上短码（补打页按 `router.params` 读），
+        // 不再依赖启动器二次跳转（那一步与 Taro 路由初始化有竞态）。
+        sb.append('#').append(LANDING_ROUTE).append('?').append(LANDING_CODE_PARAM).append('=').append(code);
         return sb.toString();
     }
 
