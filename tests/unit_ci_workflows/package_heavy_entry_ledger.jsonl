@@ -66,3 +66,5 @@
 {"id":"1793109787.45001.30007","ts":"2026-10-27T14:03:08Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/quality-rework-loop","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1793109804.45088.11718","ts":"2026-10-27T14:03:24Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/quality-rework-loop","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793110675.21523.23610","ts":"2026-10-27T14:17:55Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/quality-rework-loop","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793144388.60421.30257","ts":"2026-10-27T23:39:49Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/7965-worker-report-only-bound-op","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1793144484.61048.14656","ts":"2026-10-27T23:41:24Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7965-worker-report-only-bound-op","why":"--allow-package-heavy（命令行显式）"}
