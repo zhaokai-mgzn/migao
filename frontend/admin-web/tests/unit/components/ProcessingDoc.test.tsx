@@ -585,7 +585,10 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
       />
     )
     const qr = document.querySelector('[data-testid="processing-doc-qr"]')
-    expect(qr).not.toBeNull()
+    // 🔴 具体值断言（不是「存在即可」）：码块必须是**这一个** testid 的元素，
+    // 且里面真的有一张 `QRCodeSVG`（弱断言 = 空判据，growth gate 会红）
+    expect(qr?.getAttribute('data-testid')).toBe('processing-doc-qr')
+    expect(qr?.querySelector('svg')).not.toBeUndefined()
     // 码值**逐字** = 服务端下发的 `scan_url`（qrcode.react 把 value 写进 `<svg><title>`；
     // 前端不拼域名 / 路径段 ⇒ 这里断言的是「印出来的就是服务端给的那一串」）
     expect(document.querySelector('[data-testid="processing-doc-qr-svg"] title')?.textContent).toBe(SCAN_URL)

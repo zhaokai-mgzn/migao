@@ -5394,7 +5394,7 @@ cases:
     traces:
       tests:
         - "frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx"
-        - "frontend/admin-web/tests/unit/wash-label-content.test.ts"
+        - "frontend/admin-web/tests/unit/lib/wash-label-content.test.ts"
       ci:
         - pr-check.yml
       verifies: []
