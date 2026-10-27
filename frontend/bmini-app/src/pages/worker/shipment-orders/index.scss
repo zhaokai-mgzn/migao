@@ -46,6 +46,11 @@
 
   &__refresh {
     flex: 0 0 auto;
+    // 🔴 Taro 的 `Button` 默认 `width: 100%`（`.taro-button-core`）⇒ 只写 `flex: 0 0 auto` 不够：
+    //    `flex-basis: auto` 会去用那条 100% ⇒ 按钮独占一行、把「待发货单 / 当前工人」挤成**竖排**
+    //    （2026-10-27 用户真机截图即此形态）。判据 = `tests/worker-page-header-button-width.test.ts`。
+    width: auto;
+    white-space: nowrap;
     margin: 0 0 0 16px;
     padding: 0 28px;
     height: 64px;

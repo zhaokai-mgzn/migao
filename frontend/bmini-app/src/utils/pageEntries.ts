@@ -39,6 +39,7 @@ import {
   INBOUND_PAGE_ROUTE,
   REPORT_PAGE_ROUTE,
   REPRINT_PAGE_ROUTE,
+  REWORK_PAGE_ROUTE,
   SHIPMENT_ORDERS_PAGE_ROUTE,
   SHIPMENT_PAGE_ROUTE,
   WORKER_HOME_ROUTE,
@@ -243,18 +244,10 @@ export const PAGE_ENTRY_LEDGER: PageEntry[] = [
     audience:
       '工人身份（工人首页 →「拍照发货」；未登录时该页自身引导去工号 + PIN 登录，先登录再发货）',
   },
-  // issue #7812 P2a：工人工作台**新增**「扫码报工」（小程序内的报工面）。
-  // 🔴 issue #7879：`/w/` 不再是跳转目标（纸上的码已改指 `/b/`）⇒ 下面**两条**登记都要在：
-  // 这一条 = 工人**端内点击**的入口；下一条 = **扫码落地**（服务端 302 到 `/b/?t=`）的入口。
-  {
-    route: REPORT_PAGE_ROUTE,
-    from: 'src/pages/worker/home/index.tsx',
-    nav: 'navigateTo',
-    via: 'REPORT_PAGE_ROUTE',
-    viaBinding: 'src/utils/inbound/gaps.ts',
-    audience:
-      '工人身份（工人首页 →「扫码报工」；未登录时该页自身引导去工号 + PIN 登录）',
-  },
+  // 🔴 2026-10-27 用户裁定（issue #7920）：「把工人菜单页面的扫码报工菜单移除掉，直接用其他 app
+  // 的扫一扫功能替代」⇒ 这里原本的「工人首页 → 扫码报工」登记**随入口一起删除**（台账只许缩短）。
+  // 报工页**仍然可达**：扫纸上的码（微信 / 手机相机）⇒ 服务端 302 到 `/b/?t=` ⇒ 启动器
+  // redirectTo 本页 —— 那条登记见上面 `from: 'src/app.tsx'` 的一条。
   // issue #7879：**扫码的落地面** —— 纸上的码（`/s/<短码>`、加工单级 `/o/<短码>`）由服务端
   // 302 到 `/b/?t=<token>&tenant_id=&tenant_code=`，h5 启动器把 token 交给报工页。
   // 为什么必须有这一条：改前 `/b/` 上**没有任何人读 `t`** ⇒ 工人扫开自家纸上的码只会停在
@@ -280,5 +273,18 @@ export const PAGE_ENTRY_LEDGER: PageEntry[] = [
     viaBinding: 'src/utils/inbound/gaps.ts',
     audience:
       '工人身份（工人首页 →「待发货单」；未登录时该页自身引导去工号 + PIN 登录，先登录再看名单）',
+  },
+  // issue #7921：工人工作台**新增**「返工记录」入口（只读；显隐由工人档案的 `rework` 页面键决定）。
+  // 为什么必须有这一条：后端 #7860 的读面与 403 准入早已上线，而 `/b/` 侧**没有页面、没有入口**
+  // ⇒ 商家勾了「返工记录」，工人端什么都看不到（2026-10-27 用户真机反馈）。
+  // 不登记它 = 一条死链（入口台账的 L2「未登记即红」）。
+  {
+    route: REWORK_PAGE_ROUTE,
+    from: 'src/pages/worker/home/index.tsx',
+    nav: 'navigateTo',
+    via: 'REWORK_PAGE_ROUTE',
+    viaBinding: 'src/utils/inbound/gaps.ts',
+    audience:
+      '工人身份（工人首页 →「返工记录」；未登录时该页自身引导去工号 + PIN 登录，先登录再看返工名单）',
   },
 ]

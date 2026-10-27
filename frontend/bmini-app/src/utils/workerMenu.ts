@@ -10,7 +10,10 @@
  * ## 三条口径（与 H5 `/w/` 既有语义同源，`frontend/worker-h5/src/render.mjs::effectivePages`）
  *
  * 1. **页面键 = 后端 `WorkerPages` 的闭词表**（`report` / `piecework` / `order` / `cut_calc` /
- *    `shipment` / `inspect`）；端侧只按字符串消费，**不**自己发明键；
+ *    `shipment` / `to_ship` / `inspect` / `rework`）；端侧只按字符串消费，**不**自己发明键；
+ *    🔴 `report` 仍是**后端**的页面键（`/w/` 的报工页可见性用它），但 **bmini 工作台已不再发射
+ *    「扫码报工」入口**（2026-10-27 用户裁定，issue #7920：扫一扫交给微信 / 手机相机）——
+ *    键还在，只是这一页的入口不在本菜单里；
  * 2. 🔴 **fail-open**：读不到（网络 / 5xx / 非数组）或读到了空数组 ⇒ **按全开渲染**。
  *    把「开关没读到」变成「活干不了」是更坏的失败（工人手上那台设备是他的生产工具）；
  * 3. **显隐 ≠ 访问拦截**：菜单藏起来只是不显示入口，直接打开页面照旧可用（2026-09-29 用户裁定）。
@@ -23,7 +26,7 @@
 
 /** 后端 `WorkerPages` 的闭词表（本文件只**消费**；新增键以后端为准）。 */
 export const WORKER_MENU_KEYS = {
-  /** 扫码报工（P2a，本包新增的页） */
+  /** 报工（后端页面键；bmini 工作台已不发射该入口，扫码由微信 / 手机相机承担，issue #7920） */
   report: 'report',
   /** 我的计件 */
   piecework: 'piecework',
@@ -37,6 +40,8 @@ export const WORKER_MENU_KEYS = {
   toShip: 'to_ship',
   /** 质检（逐人开，不在默认集合里） */
   inspect: 'inspect',
+  /** 返工记录（逐人开；issue #7921 —— 后端键见 `WorkerPages.REWORK`，商家面名字「返工记录」） */
+  rework: 'rework',
 } as const
 
 /**
@@ -46,6 +51,14 @@ export const WORKER_MENU_KEYS = {
  * 后者是「把这一单发出去」（写）。商家后台「设置工人端菜单」可以分别勾选。
  */
 export const TO_SHIP_PAGE_KEY = 'to_ship'
+
+/**
+ * 「返工记录」的页面键（issue #7921；后端 `WorkerPages.REWORK` 早已存在，见 #7860）。
+ *
+ * 🔴 与 `inspect` 的区别：它**只是读面可见性**（报返工的写准入 = 任一工序工人的有效 session）；
+ * 工作台入口显隐由它决定，直接打开页面照旧可用（显隐 ≠ 访问拦截）。
+ */
+export const REWORK_PAGE_KEY = 'rework'
 
 /** 工人面固有入口（后端无页面键 ⇒ 恒显示；仅登记，不参与计算）。 */
 export const ALWAYS_VISIBLE = ['拍照入库', '补打入库标签'] as const
