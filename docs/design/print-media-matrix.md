@@ -64,7 +64,7 @@ Chrome 把自己的页眉页脚（版式日期 / 文档标题 / 页面 URL / 页
 - **发货标签** = `label-50x70`（50mm 宽**连续卷**，纸长按内容撑开 70~150mm，正文 9pt）——
   由 `frontend/worker-h5/src/shipment.mjs` 的 `shipLabelLengthMm()` / `shipLabelPageRule()` 现算，
   守卫 `frontend/worker-h5/tests/worker-h5-shipment-ready.test.mjs` 逐值比对 `pageSize` 与 `lengthMm`。
-⇒ 改任一边都要看另一边；把水洗唛改回 `label-50x70` / `label-50x150` = 把「长度不足」带回来（守卫
+⇒ 改任一边都要看另一边；把水洗唛改回 `label-50x70` / `label-50x110` = 把「长度不足」带回来（守卫
 `tests/unit_ci_workflows/test_wash_label_geometry_guard.py` 会红）。
 
 ## 2.1 打印入口唯一化与打印流水（issue #7902）
@@ -96,6 +96,29 @@ Chrome 把自己的页眉页脚（版式日期 / 文档标题 / 页面 URL / 页
 4. **走纸与页边距**：连续纸靠**走纸孔**定位 ⇒ 容器按纸固定高度 + `overflow: hidden`
    （高度 = `printUsableHeightMm()` = 页长 − 上下边距；`241×140` + `6mm 12mm` ⇒ **128mm**）——
    内容超高会打到**下一联**，属「纸面与账目对不上」的一种形态，**不许**靠浏览器自然分页兜。
+
+## 2.2 打印机引导与本机登记（issue #7957）
+
+客户的一台电脑往往连着**多台打印机**（A4 激光 / 针式连续纸 / 标签机各一台），而浏览器打印的边界是硬的：
+
+- `window.print()` **没有**「指定打印机」参数；系统打印对话框是原生窗口，JS 既不能预选、也**读不到**用户最后选了哪台
+  （`beforeprint` / `afterprint` 不带打印机信息）⇒ **「自动分发到三台打印机」浏览器做不到**，需要本地打印代理（另单评估）。
+
+因此本层只做两件**真实可做**的事（`frontend/admin-web/src/lib/print-printer.ts`）：
+
+| 纸型 id | 通用打印机类型（引导文案） |
+|---|---|
+| `a4` | A4 激光打印机 |
+| `continuous-241x140` | 针式打印机（连续纸） |
+| `label-50x110` / `label-50x70` / `label-50x80` | 标签打印机 |
+
+1. **纸型 → 打印机类型**：打印预览表头与「联合打印」进度行显示该纸型该选哪类机器（不编具体型号）；
+2. **本机登记**：商家可一次性登记「这台电脑的该纸型打印机叫什么」（`localStorage`，**按纸型隔离**，不落服务端 ——
+   打印机是机器外设事实，不是租户配置）；之后显示「打印机：HP LaserJet M404」并给「更改」。
+   未登记 ⇒ 只显示通用类型 + 「登记本机名称」。
+
+🔴 判据（会红）：`frontend/admin-web/tests/unit/lib/print-printer.test.ts`（类型映射 / 按纸型隔离 / 空名清除 / localStorage 抛错不崩）
++ `frontend/admin-web/tests/unit/components/PrintDocPreview.test.tsx` 的「打印机引导与本机登记」五条。
 
 ## 3. 分层（三层，别混）
 
