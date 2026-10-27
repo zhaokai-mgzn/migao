@@ -55,8 +55,11 @@ public class QualityCheckController {
     /**
      * 录入一条质检记录（成品帘级）。
      *
-     * <p>body = {@code {order_item_id, result, reason?}}；{@code result ∈ pass|rework|scrap}；
+     * <p>body = {@code {order_item_id, set_no?, result, reason?}}；{@code result ∈ pass|rework|scrap}；
      * 判定 ≠ 合格时 {@code reason} 必填（缺 ⇒ 422 具名报错，不静默存）。</p>
+     *
+     * <p>{@code set_no}（issue #7945）：件 = 套号 × 部位。多套加工单必须给；只一套可省略（服务端取唯一套）；
+     * 多套未给 ⇒ 422 列候选（<b>不猜第 1 套</b>）。</p>
      */
     @PostMapping
     @RequirePermission("production:inspect")
@@ -71,7 +74,10 @@ public class QualityCheckController {
                 me.getUserId(),
                 me.getDisplayName(),
                 // 🔴 业务时钟单点（issue #3802 / BusinessClockSourceGuardTest）：不在本类写时区字面量、不调无参 now()
-                businessClock.nowOffset());
+                QualityCheckService.INSPECTOR_EMPLOYEE,
+                businessClock.nowOffset(),
+                null,
+                str(body, "set_no"));
         return ApiResponse.success(record);
     }
 

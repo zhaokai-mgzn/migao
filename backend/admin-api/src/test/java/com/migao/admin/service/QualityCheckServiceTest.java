@@ -1,14 +1,16 @@
-// case_ids: PG-077, PG-083
+// case_ids: PG-077, PG-083, PG-099
 package com.migao.admin.service;
 
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.ProcessingOrder;
+import com.migao.admin.entity.ProcessingOrderSet;
 import com.migao.admin.entity.QualityCheck;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
+import com.migao.admin.mapper.ProcessingOrderSetMapper;
 import com.migao.admin.mapper.QualityCheckMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -72,6 +74,8 @@ class QualityCheckServiceTest {
     private ProcessingOrderMapper processingOrderMapper;
     @Mock
     private OrderMapper orderMapper;
+    @Mock
+    private ProcessingOrderSetMapper processingOrderSetMapper;
 
     private QualityCheckService service;
 
@@ -79,6 +83,8 @@ class QualityCheckServiceTest {
     void setUp() {
         service = new QualityCheckService(qualityInspectionMapper, orderItemMapper, processingOrderMapper,
                 orderMapper, new com.fasterxml.jackson.databind.ObjectMapper());
+        // 套读面是字段注入（构造签名被既有单测显式装配）⇒ 这里显式装上，件键判据才能生效
+        ReflectionTestUtils.setField(service, "processingOrderSetMapper", processingOrderSetMapper);
         TenantContext.setTenantId(TENANT);
         when(orderItemMapper.selectById(ITEM_ID)).thenReturn(OrderItem.builder()
                 .id(ITEM_ID)
@@ -314,6 +320,68 @@ class QualityCheckServiceTest {
         assertThat(service.latest(TENANT, ITEM_ID))
                 .containsEntry("result", "rework")
                 .containsEntry("inspector_kind", QualityCheckService.INSPECTOR_WORKER);
+    }
+
+    // ── 件键：套号 × 部位（issue #7945）──────────────────────────────────────
+
+    @Test
+    @DisplayName("⑨ 多套加工单未给套号 ⇒ 422 列候选（不猜第 1 套）")
+    void multipleSetsWithoutSetNoIsRejected() {
+        stubSets(set("set-1", "JG-001", List.of(ITEM_ID)), set("set-2", "JG-002", List.of(ITEM_ID)));
+
+        assertThatThrownBy(() -> service.create(TENANT, ITEM_ID, "pass", null, INSPECTOR_ID, INSPECTOR_NAME, AT))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("套号")
+                .hasMessageContaining("JG-001")
+                .hasMessageContaining("JG-002");
+        verify(qualityInspectionMapper, never()).insert(any(QualityCheck.class));
+    }
+
+    @Test
+    @DisplayName("⑩ 显式套号 ⇒ 落 set_id/set_no（件 = 套号 × 部位）")
+    void explicitSetNoIsPersisted() {
+        stubSets(set("set-1", "JG-001", List.of(ITEM_ID)), set("set-2", "JG-002", List.of(ITEM_ID)));
+
+        Map<String, Object> view = service.create(TENANT, ITEM_ID, "pass", null, INSPECTOR_ID, INSPECTOR_NAME,
+                QualityCheckService.INSPECTOR_EMPLOYEE, AT, null, "JG-002");
+
+        QualityCheck row = capturedRow();
+        assertThat(row.getSetId()).isEqualTo("set-2");
+        assertThat(row.getSetNo()).isEqualTo("JG-002");
+        assertThat(view).containsEntry("set_no", "JG-002").containsEntry("set_id", "set-2");
+    }
+
+    @Test
+    @DisplayName("⑪ 套号与部位不匹配 ⇒ 422（不跨件质检）")
+    void setNotContainingPieceIsRejected() {
+        stubSets(set("set-1", "JG-001", List.of("other-item")), set("set-2", "JG-002", List.of("other-item")));
+
+        assertThatThrownBy(() -> service.create(TENANT, ITEM_ID, "pass", null, INSPECTOR_ID, INSPECTOR_NAME,
+                QualityCheckService.INSPECTOR_EMPLOYEE, AT, null, "JG-001"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("不包含");
+        verify(qualityInspectionMapper, never()).insert(any(QualityCheck.class));
+    }
+
+    @Test
+    @DisplayName("⑫ 该单只有一套 ⇒ 自动取该套（无歧义，调用方不必传套号）")
+    void singleSetIsResolvedAutomatically() {
+        stubSets(set("set-1", "JG-001", List.of(ITEM_ID)));
+
+        service.create(TENANT, ITEM_ID, "pass", null, INSPECTOR_ID, INSPECTOR_NAME, AT);
+
+        QualityCheck row = capturedRow();
+        assertThat(row.getSetId()).isEqualTo("set-1");
+        assertThat(row.getSetNo()).isEqualTo("JG-001");
+    }
+
+    private void stubSets(ProcessingOrderSet... sets) {
+        when(processingOrderSetMapper.selectList(any())).thenReturn(List.of(sets));
+    }
+
+    private static ProcessingOrderSet set(String id, String setNo, List<String> itemIds) {
+        return ProcessingOrderSet.builder().id(id).tenantId(TENANT).processingOrderId(PO_ID)
+                .setIndex(1).setNo(setNo).positionItemIds(itemIds).deleted(0).build();
     }
 
     /** 捕获这次真落库的那一行（逐值断言的取样点）。 */

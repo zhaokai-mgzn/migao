@@ -8,12 +8,11 @@
 //   追问「刚自动记的那一笔怎么处理」⇒ 选「把刚自动记的那一笔改记为返工（回退进度与计件）」。
 //
 // 🔴 本文件钉五条（每条能单独变红）：
-//   ① **不按页面键门控**：档案只有默认页（无 `rework`）也出返工区块 —— 任一工序工人都能报；
-//      （issue #7919 起报工页的「这件有问题」只剩【返工】这一条路：质检区块已整块撤下）
+//   ① **不按页面键门控**：档案只有默认页（无 `rework` / 无 `inspect`）也出返工区块 —— 任一工序工人都能报；
 //   ② 定位不到「一件」⇒ 整块不渲染（没有件 = 没有可改记的账，不摆空壳）；
 //   ③ 表单只有一个动作（提交返工 / 取消）+ 问题说明必填；整块**不出现**「合格」；
 //   ④ 提交中 ⇒ 按钮禁用 + 文案「提交中…」；
-//   ⑤ 提交成功 ⇒ 返工单号 / 工序上屏 + 明说「已改记为返工，不计件」，表单收起、按钮改「再报一次返工」。
+//   ⑤ 提交成功 ⇒ 返工单号 / 工序上屏 + 明说「已改记为返工，不计件」，表单收起、入口仍在页头动作栏。
 //
 // 边界：真栈改记（回退 done_qty / 生成返工单 / 403 页面键）由后端
 // `ProductionReworkServiceTest` + `WorkerReworkEndpointsTest` 钉住；本文件只判**渲染与状态机**（零 DOM、零网络）。
@@ -49,8 +48,9 @@ function open(pages = [PAGE_REPORT], view = VIEW) {
 test('① 档案只有默认页（没有 rework / inspect）⇒ 返工区块照样出现（任一工序工人可报）', () => {
   const html = renderPage(open([PAGE_REPORT]))
   assert.match(html, /id="wh5-rework"/)
-  assert.match(html, /id="wh5-rework-open"[^>]*>这一件有问题，报返工</)
-  // 对照：质检区块**整块已撤**（issue #7919 把质检并入返工）—— 不是「没开页面所以不显示」
+  // 2026-10-27 上移：入口在页头动作栏（工人不用滑到底部找按钮）
+  assert.match(html, /id="wh5-worker-entries"[\s\S]*id="wh5-rework-action"[^>]*>报返工</)
+  // 对照：同一份页面集下质检区块**不**出现（它逐人开，与返工不是一把尺子）
   assert.doesNotMatch(html, /id="wh5-quality"/)
 })
 
@@ -58,7 +58,7 @@ test('② 定位不到「一件」⇒ 返工区块整块不渲染（不摆空壳
   const noItem = { ...VIEW, position: { position_name: '布艺遮光帘A 米白' } }
   const html = renderPage(open([PAGE_REPORT], noItem))
   assert.doesNotMatch(html, /id="wh5-rework"/)
-  assert.doesNotMatch(html, /wh5-rework-open/)
+  assert.doesNotMatch(html, /id="wh5-rework-action"/)
 })
 
 test('③ 展开表单 ⇒ 只有「提交返工 / 取消」+ 问题说明必填；不出现「合格」', () => {
@@ -68,8 +68,6 @@ test('③ 展开表单 ⇒ 只有「提交返工 / 取消」+ 问题说明必填
   assert.match(html, /问题说明（必填）/)
   assert.match(html, /id="wh5-rework-submit"[^>]*>提交返工</)
   assert.match(html, /id="wh5-rework-cancel"/)
-  // 展开后不再同时摆开按钮（避免「表单开着还让你再点开」）
-  assert.doesNotMatch(html, /id="wh5-rework-open"/)
   // 返工不是质检：整块不出现「合格」这个动作/状态（issue #7749 的口径）
   assert.doesNotMatch(html, /合格/)
 })
@@ -81,7 +79,7 @@ test('④ 提交中 ⇒ 两个按钮都禁用 + 文案「提交中…」', () =>
   assert.match(html, /id="wh5-rework-cancel"[^>]*disabled/)
 })
 
-test('⑤ 提交成功 ⇒ 返工单号 + 工序上屏 + 「不计件」说明；表单收起、按钮改「再报一次返工」', () => {
+test('⑤ 提交成功 ⇒ 返工单号 + 工序上屏 + 「不计件」说明；表单收起、入口仍在页头动作栏', () => {
   const s = reduce(open([PAGE_REPORT]), {
     type: 'reworkSubmitted',
     rework: { reworkNo: 'RG202610260001', operationName: '车缝', qty: 2 },
@@ -90,7 +88,6 @@ test('⑤ 提交成功 ⇒ 返工单号 + 工序上屏 + 「不计件」说明�
   const html = renderPage(s)
   assert.match(html, /id="wh5-rework-done"[^>]*>[^<]*返工单 RG202610260001 已生成[^<]*工序 车缝/)
   assert.match(html, /已改记为返工，不计件/)
-  assert.match(html, /id="wh5-rework-open"[^>]*>再报一次返工</)
   assert.doesNotMatch(html, /id="wh5-rework-form"/)
   assert.match(html, /id="wh5-notice"[^>]*>返工单 RG202610260001 已生成/)
 })

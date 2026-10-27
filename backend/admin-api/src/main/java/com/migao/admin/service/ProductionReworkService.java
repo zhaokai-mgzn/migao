@@ -210,11 +210,17 @@ public class ProductionReworkService {
         // ⑤ 生成返工单（source='worker'）
         var rework = reworkOrderService.createWorkerRework(tenantId, order.getId(), po.getId(),
                 op.getId(), op.getOperationName(), qty, reason.trim(),
-                identity.workerId(), identity.workerName(), normalLog.getId());
+                identity.workerId(), identity.workerName(), normalLog.getId(),
+                // 件键（issue #7945）：套号 × 部位 = 一张水洗唛码；为 null 说明这行是存量实例（不猜）
+                op.getOrderItemId(), op.getSetId(), op.getSetNo(), op.getPositionName());
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("rework_no", rework.getReworkNo());
         result.put("operation_id", op.getId());
+        // 件键回执（issue #7945）：界面据此确认「返的是哪一件」；null = 未定位，不编值
+        result.put("order_item_id", rework.getOrderItemId());
+        result.put("set_no", rework.getSetNo());
+        result.put("position_name", rework.getPositionName());
         // 读面成对给出逻辑工序名（守卫 `test_op_name_registry_guard` ③）：`operation_name` 是工人端
         // **快照名**（可能是变体名，如 `精裁-布`）；只给快照名 ⇒ 消费面拼不出统一显示名。
         result.put("operation_name", op.getOperationName());

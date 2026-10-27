@@ -1000,7 +1000,7 @@
       "units": {
         "production:inspect": [
           "GET /api/admin/quality-inspections",
-          "GET /api/admin/quality-inspections/targets"
+          "GET /api/admin/quality-inspections/stats"
         ]
       },
       "visibility_rule": "all"

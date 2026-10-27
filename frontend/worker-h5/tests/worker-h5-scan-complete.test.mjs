@@ -1215,7 +1215,7 @@ test('🔴 ⑫-e 打包工序自动报工 ⇒ 屏上出「成品入库」卡（�
 
   assert.match(doc.html, /成品入库 · 仓位 A-01/, '卡片要给出仓位（与商家库存页同一口径）')
   assert.match(doc.html, /入库单 RK202610260001/, '卡片要给出入库单号（可对账）')
-  assert.match(doc.html, /质检：已记返工（原因：布面污渍）/, '打包工人要能核对质检结论（用户 2026-10-26 口径）')
+  assert.match(doc.html, /质检：已记做工返工（原因：布面污渍）/, '打包工人要能核对质检结论（用户 2026-10-26 口径）')
   assert.match(doc.html, /id="wh5-fi-print"/, '要有「打印入库标签」入口')
   assert.match(doc.html, /订单编号/, '标签逐行来自服务端 label.rows（前端不拼）')
   assert.equal(/id="wh5-fl-out"/.test(doc.html), false, '出库按钮已按用户口径撤下（打包 = 入库）')

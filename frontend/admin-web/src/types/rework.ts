@@ -26,6 +26,11 @@ export interface ReworkOrder {
   operationName: string | null
   qty: number | null
   workerName: string | null
+  // 件定位键（issue #7945，V202）：套号 × 部位 = 一张水洗唛码；null = 未定位（存量/售后开单，不猜）
+  orderItemId: string | null
+  setId: string | null
+  setNo: string | null
+  positionName: string | null
   orderNo: string | null
   /** 加工单号：展示优先于 `processingOrderId`（后者是老数据/内部 id）。 */
   processingOrderNo: string | null

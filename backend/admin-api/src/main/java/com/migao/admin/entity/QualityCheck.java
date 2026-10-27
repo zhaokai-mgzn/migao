@@ -46,6 +46,16 @@ public class QualityCheck {
     /** 🔴 质检的唯一颗粒度：一件成品帘（{@code order_items.id}） */
     private String orderItemId;
 
+    /**
+     * 件定位键的另一半（issue #7945，V202）：套号 × 部位 = 一张水洗唛码。
+     *
+     * <p>没有套号时，同一订单两樘窗的同一部位会共用一条「当前判定」⇒ 质检结果串件
+     * （用户 2026-10-27：「对订单中的某个成品帘进行质检，而不是对订单整体」）。
+     * {@code null} = 存量行 / 该单没有套（不猜，界面显示「未定位」）。</p>
+     */
+    private String setId;
+    private String setNo;
+
     /** 成品帘展示名快照（读时从工序实例解；解不到为 {@code null} —— 缺值不渲染假数据） */
     private String positionName;
 

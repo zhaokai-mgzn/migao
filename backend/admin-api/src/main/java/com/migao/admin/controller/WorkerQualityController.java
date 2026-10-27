@@ -96,7 +96,9 @@ public class WorkerQualityController {
                 // 🔴 业务时钟单点（issue #3802 / BusinessClockSourceGuardTest）：不在这里写时区字面量
                 businessClock.nowOffset(),
                 // issue #7165：工人端录判定 ⇒ 合格时联动完成「质检」工序，计件记给这位工人
-                me));
+                me,
+                // issue #7945：件 = 套号 × 部位；多套未给 ⇒ 服务端 422（不猜第 1 套）
+                str(body, "set_no")));
     }
 
     /**

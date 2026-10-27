@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.ProcessingOrder;
+import com.migao.admin.entity.ProcessingOrderSet;
 import com.migao.admin.entity.QualityCheck;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.OrderItemMapper;
@@ -84,7 +85,6 @@ public class QualityCheckService {
      * <p>它是 {@link #RESULTS} 里的一个值，单独取常量只为让「返工报工 ⇒ 记为返工」这件事在代码里
      * 有一个可检索的名字（不在别处拼字面量）。</p>
      */
-    public static final String RESULT_REWORK = "rework";
 
     /**
      * 返工报工自动落质检记录时的原因前缀（issue #7919）：{@code 返工报工：<工序逻辑名>}。
@@ -92,7 +92,6 @@ public class QualityCheckService {
      * <p>这张表要求「判定 ≠ 合格 ⇒ 原因必填」，而自动路径的原因**不是工人手填的**（报工三态里
      * 只有「返工」这一个选择）⇒ 由本前缀 + 工序逻辑名合成一句人话，让质检单上看得懂「为什么有这条」。</p>
      */
-    public static final String REWORK_REPORT_REASON_PREFIX = "返工报工：";
 
     /** 判为合格时允许原因为空后的文案锚（供报错文案复用）。 */
     private static final String REASON_REQUIRED =
@@ -121,6 +120,15 @@ public class QualityCheckService {
     private final OrderMapper orderMapper;
     /** 加工单快照解析：`items_snapshot` 可能是 JSON 字符串形态（自定义 `@Select` 不经 typeHandler）。 */
     private final ObjectMapper objectMapper;
+
+    /**
+     * 套（樘）读面（issue #7945）：件 = **套号 × 部位**（= 一张水洗唛码）。
+     *
+     * <p>字段注入（同 {@code documentOperationLinkage} 的理由：构造签名被单测显式装配，加参数会把它们全改一遍）。
+     * {@code null} = 未装配（单测切片）⇒ 退化为「该单没有套」的存量行为（件键只剩 order_item_id）。</p>
+     */
+    @Autowired(required = false)
+    private com.migao.admin.mapper.ProcessingOrderSetMapper processingOrderSetMapper;
 
     /**
      * 业务时钟（issue #3802 单点口径）：时间窗、「本月」缺省、趋势兜底一律走它 ——
@@ -173,11 +181,28 @@ public class QualityCheckService {
     /**
      * 同上 + **工人身份**（issue #7165）：工人端录判定时，合格 ⇒ 联动完成该件成品帘的「质检」工序，
      * 计件记给该工人；观星台员工录（{@code actor = null}）⇒ 只完成工序、不计件。
+     *
+     * <p>不带套号 ⇒ 走 {@link #create(Long, String, String, String, String, String, String, OffsetDateTime, WorkerIdentity, String)}
+     * 的「单套自动取 / 多套 422」口径（不猜第 1 套）。</p>
      */
     @org.springframework.transaction.annotation.Transactional(rollbackFor = Exception.class)
     public Map<String, Object> create(Long tenantId, String orderItemId, String result, String reason,
                                       String inspectorId, String inspectorName, String inspectorKind,
                                       OffsetDateTime inspectedAt, WorkerIdentity actor) {
+        return create(tenantId, orderItemId, result, reason, inspectorId, inspectorName, inspectorKind,
+                inspectedAt, actor, null);
+    }
+
+    /**
+     * 同上 + **件定位键的套号**（issue #7945）：件 = 套号 × 部位 = 一张水洗唛码。
+     *
+     * <p>套的解析规则见 {@link #resolvePieceSet}：显式给 ⇒ 校验属于该件；只一套 ⇒ 自动取；
+     * 多套未给 ⇒ 422（列候选）；该单没有套（存量）⇒ {@code null}（未定位，不猜）。</p>
+     */
+    @org.springframework.transaction.annotation.Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> create(Long tenantId, String orderItemId, String result, String reason,
+                                      String inspectorId, String inspectorName, String inspectorKind,
+                                      OffsetDateTime inspectedAt, WorkerIdentity actor, String setNoArg) {
         String kind = inspectorKind == null ? INSPECTOR_EMPLOYEE : inspectorKind.trim();
         if (!INSPECTOR_KINDS.contains(kind)) {
             throw BusinessException.validationError(
@@ -207,11 +232,15 @@ public class QualityCheckService {
             throw BusinessException.validationError(
                     "该成品帘所属订单尚无活跃加工单，无法质检（质检对象必须是加工中的成品帘）");
         }
+        // 件键的「套」半边（issue #7945）：多套未指定 ⇒ 422，绝不猜第 1 套
+        ProcessingOrderSet pieceSet = resolvePieceSet(po, orderItemId, setNoArg);
 
         QualityCheck row = QualityCheck.builder()
                 .tenantId(tenantId)
                 .processingOrderId(po.getId())
                 .orderItemId(orderItemId)
+                .setId(pieceSet == null ? null : pieceSet.getId())
+                .setNo(pieceSet == null ? null : pieceSet.getSetNo())
                 .positionName(item.getProductName())
                 .inspectorId(inspectorId)
                 .inspectorName(inspectorName)
@@ -230,61 +259,11 @@ public class QualityCheckService {
     }
 
     /**
-     * 返工报工自动落一条质检记录（issue #7919）。
+     * 质检记录落库（**唯一**插入实现）：显式质检（{@link #create}）走这一处。
      *
-     * <p>用户 2026-10-27 18:13 +08 逐字：「报工页面的质检和返工要合并成一个功能，现在是两个独立的，
-     * 移除质检，保留返工，当前系统返工=质检」；同轮追问裁定：删掉质检区块后**返工报工要继续产生质检记录**，
-     * 否则质检单 / 质量成本报表断档。</p>
-     *
-     * <p>🔴 与 {@link #create} 的**两处**差别就是本方法存在的全部理由：</p>
-     * <ol>
-     *   <li><b>不校验「非 pass 必须给原因」</b> —— 原因由调用方按固定前缀合成
-     *       （{@link #REWORK_REPORT_REASON_PREFIX} + 工序逻辑名），不来自工人输入；</li>
-     *   <li><b>不联动</b> {@code DocumentOperationLinkage}（#7165 的「完成质检工序」只属于显式质检判定：
-     *       判为返工意味着这一件还要再检，绝不能顺手把质检工序置完成）。</li>
-     * </ol>
-     *
-     * <p>颗粒度与 {@link #create} **逐字相同** = 一件成品帘（{@code order_items.id}）；
-     * {@code inspected_at} 取业务时钟单点 {@link BusinessClock}（不写时区字面量）。
-     * 插入走**唯一**实现 {@link #insertInspection}（两条路各写一份 insert 迟早不同）。</p>
-     *
-     * <p><b>事务</b>：{@code REQUIRED}（默认）—— 工人扫码报工/扫码完成那条路径**本来就在事务里**
-     * ⇒ 与报工明细同一事务（要么全成、要么全不成）。</p>
-     *
-     * @param tenantId          当前租户（调用方从 {@code TenantContext} / 入参拿，不从 body 取）
-     * @param processingOrderId 该件所属加工单（调用方已解析，不在这里回查）
-     * @param orderItemId       一件成品帘（{@code order_items.id}）
-     * @param positionName      成品帘展示名快照（工序实例的 {@code position_name}）
-     * @param inspectorId       报工工人 id（调用方从工人 session 解，body 伪造不了）
-     * @param inspectorName     报工工人姓名
-     * @param operationName     工序名（变体名，如 {@code 精裁-布}）—— 原因里写**逻辑名**
-     * @return 落库后的那一行（判定 / 原因 / 检验人 / 时刻 / 成品帘）
-     */
-    @org.springframework.transaction.annotation.Transactional(rollbackFor = Exception.class)
-    public QualityCheck recordReworkReport(Long tenantId, String processingOrderId, String orderItemId,
-                                           String positionName, String inspectorId, String inspectorName,
-                                           String operationName) {
-        String logical = ProductionOperationQueryService.logicalOperationName(operationName);
-        QualityCheck row = QualityCheck.builder()
-                .tenantId(tenantId)
-                .processingOrderId(processingOrderId)
-                .orderItemId(orderItemId)
-                .positionName(positionName)
-                .inspectorId(inspectorId)
-                .inspectorName(inspectorName)
-                .inspectorKind(INSPECTOR_WORKER)
-                .inspectionResult(RESULT_REWORK)
-                .reason(REWORK_REPORT_REASON_PREFIX + (StringUtils.hasText(logical) ? logical.trim() : "工序未命名"))
-                .inspectedAt(clock().nowOffset())
-                .deleted(0)
-                .build();
-        insertInspection(row);
-        return row;
-    }
-
-    /**
-     * 质检记录落库（**唯一**插入实现）：显式质检（{@link #create}）与返工报工自动落
-     * （{@link #recordReworkReport}）共用这一处 —— 两条路各写一份 insert 是第二份口径，迟早不同。
+     * <p>🔴 返工**不再**落质检记录（issue #7945，用户 2026-10-27 裁定：「返工是因为布料有质量问题，
+     * 而质检是因为加工厂做工有问题，两者有区别」）—— #7919 的 {@code recordReworkReport} 已整体删除；
+     * <b>不要</b>在这里加回「返工触发质检」的调用（那会把材料问题记成做工判定）。</p>
      */
     private void insertInspection(QualityCheck row) {
         qualityInspectionMapper.insert(row);
@@ -346,8 +325,9 @@ public class QualityCheckService {
 
         List<ProcessingOrder> orders = activeOrders(tenantId, kw);
         Map<String, String> orderNoByOrderId = loadOrderNos(orders);
+        Map<String, List<ProcessingOrderSet>> setsByPo = loadSets(orders);
 
-        Map<String, Map<String, Object>> latestByItem = latestInspectionByItem(tenantId, orders);
+        Map<String, Map<String, Object>> latestByPiece = latestInspectionByItem(tenantId, orders);
 
         List<Map<String, Object>> rows = new ArrayList<>();
         Map<String, Integer> counts = new LinkedHashMap<>();
@@ -356,13 +336,13 @@ public class QualityCheckService {
         counts.put("rework", 0);
         counts.put("scrap", 0);
         for (ProcessingOrder po : orders) {
-            for (Map<String, Object> item : snapshotItems(po)) {
-                String orderItemId = str(item.get("itemId"));
+            for (Map<String, Object> piece : piecesOf(po, setsByPo.getOrDefault(po.getId(), List.of()))) {
+                String orderItemId = str(piece.get("order_item_id"));
                 // 存量行没有订单行 id ⇒ 指不出「哪一件成品帘」⇒ 不可质检（不猜、不编）
                 if (!StringUtils.hasText(orderItemId)) {
                     continue;
                 }
-                Map<String, Object> latest = latestByItem.get(orderItemId);
+                Map<String, Object> latest = latestByPiece.get(pieceKey(orderItemId, str(piece.get("set_no"))));
                 String state = latest == null ? "pending" : String.valueOf(latest.get("result"));
                 if (counts.containsKey(state)) {
                     counts.put(state, counts.get(state) + 1);
@@ -370,18 +350,12 @@ public class QualityCheckService {
                 if (!"all".equals(filter) && !filter.equals(state)) {
                     continue;
                 }
-                Map<String, Object> row = new LinkedHashMap<>();
-                row.put("order_item_id", orderItemId);
+                Map<String, Object> row = new LinkedHashMap<>(piece);
                 row.put("processing_order_id", po.getId());
                 row.put("processing_order_no", po.getProcessingOrderNo());
                 // 订单号（issue #7160）：同屏给出「这张加工单是哪个订单的」；取不到 ⇒ null，不编值。
                 row.put("order_no", orderNoByOrderId.get(po.getOrderId()));
                 row.put("processing_status", po.getStatus());
-                row.put("product_name", str(item.get("productName")));
-                row.put("color_name", str(item.get("colorName")));
-                row.put("sku", str(item.get("sku")));
-                row.put("quantity", item.get("quantity"));
-                row.put("unit", str(item.get("unit")));
                 row.put("state", state);
                 row.put("latest", latest);
                 rows.add(row);
@@ -473,8 +447,9 @@ public class QualityCheckService {
             if (!StringUtils.hasText(itemId)) {
                 continue;
             }
-            firstByItem.putIfAbsent(itemId, row);
-            lastByItem.put(itemId, row);
+            String piece = pieceKey(itemId, row.getSetNo());
+            firstByItem.putIfAbsent(piece, row);
+            lastByItem.put(piece, row);
         }
 
         // ② cohort + 计数（全部按件）
@@ -586,14 +561,16 @@ public class QualityCheckService {
      */
     private Map<String, Object> backlog(Long tenantId) {
         List<ProcessingOrder> orders = activeOrders(tenantId, null);
-        Map<String, Map<String, Object>> latestByItem = latestInspectionByItem(tenantId, orders);
+        Map<String, List<ProcessingOrderSet>> setsByPo = loadSets(orders);
+        Map<String, Map<String, Object>> latestByPiece = latestInspectionByItem(tenantId, orders);
         int pending = 0;
         OffsetDateTime oldest = null;
         for (ProcessingOrder po : orders) {
-            for (Map<String, Object> item : snapshotItems(po)) {
-                String itemId = str(item.get("itemId"));
+            for (Map<String, Object> piece : piecesOf(po, setsByPo.getOrDefault(po.getId(), List.of()))) {
+                String itemId = str(piece.get("order_item_id"));
                 // 与清单同一份判据：指不出「哪一件」的行不进来（不猜、不编）
-                if (!StringUtils.hasText(itemId) || latestByItem.containsKey(itemId)) {
+                if (!StringUtils.hasText(itemId)
+                        || latestByPiece.containsKey(pieceKey(itemId, str(piece.get("set_no"))))) {
                     continue;
                 }
                 pending++;
@@ -846,7 +823,8 @@ public class QualityCheckService {
                 .orderByDesc(QualityCheck::getInspectedAt)
                 .orderByDesc(QualityCheck::getCreatedAt);
         for (QualityCheck row : qualityInspectionMapper.selectList(q)) {
-            latestByItem.putIfAbsent(row.getOrderItemId(), view(row));
+            // 件键 = 套号 × 部位（issue #7945）：只用 order_item_id 会把两樘窗的同一部位混成一件
+            latestByItem.putIfAbsent(pieceKey(row.getOrderItemId(), row.getSetNo()), view(row));
         }
         return latestByItem;
     }
@@ -877,6 +855,154 @@ public class QualityCheckService {
     /** 快照字段取值（缺键 / null ⇒ null，**不折算成空串**）。 */
     private String str(Object value) {
         return value == null ? null : String.valueOf(value);
+    }
+
+    // ==================================================== 件键（issue #7945：套号 × 部位）
+
+    /**
+     * 件键 = 套号 × 部位（= 一张水洗唛码）；为了能用 {@code Map} 直接查，拼成字符串。
+     *
+     * <p><b>null 安全</b>：无套（存量单）⇒ {@code "|item"}；有套 ⇒ {@code "PO-...-001|item"}。
+     * 两类互不相等 —— 存量/未定位的记录**不会**被折算到某一樘（不猜）。</p>
+     */
+    static String pieceKey(String orderItemId, String setNo) {
+        return (setNo == null ? "" : setNo.trim()) + "|" + (orderItemId == null ? "" : orderItemId);
+    }
+
+    /**
+     * 解析「这一件属于哪一套」（issue #7945）。
+     *
+     * <ul>
+     *   <li>显式套号 ⇒ 必须是该单的 live 套，且该套部位清单**包含**这件（不跨件）；否则 422 列候选；</li>
+     *   <li>未给 + 恰好一套 ⇒ 取该套（无歧义）；该套不含这件（脏数据）⇒ {@code null}（不猜）；</li>
+     *   <li>未给 + 多套 ⇒ 422 列候选（**不猜第 1 套**）；</li>
+     *   <li>该单没有套（存量/未装配）⇒ {@code null}。</li>
+     * </ul>
+     */
+    private ProcessingOrderSet resolvePieceSet(ProcessingOrder po, String orderItemId, String setNoArg) {
+        if (processingOrderSetMapper == null) {
+            return null;
+        }
+        List<ProcessingOrderSet> sets = processingOrderSetMapper.selectList(
+                new LambdaQueryWrapper<ProcessingOrderSet>()
+                        .eq(ProcessingOrderSet::getTenantId, po.getTenantId())
+                        .eq(ProcessingOrderSet::getProcessingOrderId, po.getId())
+                        .eq(ProcessingOrderSet::getDeleted, 0)
+                        .orderByAsc(ProcessingOrderSet::getSetIndex));
+        if (sets == null || sets.isEmpty()) {
+            return null;
+        }
+        String wanted = setNoArg == null ? null : setNoArg.trim();
+        if (StringUtils.hasText(wanted)) {
+            for (ProcessingOrderSet set : sets) {
+                if (!wanted.equals(set.getSetNo())) {
+                    continue;
+                }
+                if (set.getPositionItemIds() == null || !set.getPositionItemIds().contains(orderItemId)) {
+                    throw BusinessException.validationError(String.format(
+                            "套号「%s」不包含这件成品帘：套号与部位必须一致（不跨件质检）", wanted));
+                }
+                return set;
+            }
+            throw BusinessException.validationError(String.format(
+                    "这张加工单没有套号「%s」；可选：%s", wanted, setNos(sets)));
+        }
+        if (sets.size() == 1) {
+            ProcessingOrderSet only = sets.get(0);
+            return only.getPositionItemIds() != null && only.getPositionItemIds().contains(orderItemId)
+                    ? only : null;
+        }
+        throw BusinessException.validationError(String.format(
+                "这张加工单有 %d 套，请指定套号（set_no）再提交：%s", sets.size(), setNos(sets)));
+    }
+
+    /** 套号候选清单（报错文案用；**不**给空串占位）。 */
+    private static String setNos(List<ProcessingOrderSet> sets) {
+        List<String> nos = new ArrayList<>();
+        for (ProcessingOrderSet set : sets) {
+            if (StringUtils.hasText(set.getSetNo())) {
+                nos.add(set.getSetNo());
+            }
+        }
+        return nos.isEmpty() ? "（该单套号缺失）" : String.join("、", nos);
+    }
+
+    /** 一次取回这批加工单的 live 套（按加工单分组；未装配/空单 ⇒ 空表）。 */
+    private Map<String, List<ProcessingOrderSet>> loadSets(List<ProcessingOrder> orders) {
+        Map<String, List<ProcessingOrderSet>> byPo = new LinkedHashMap<>();
+        if (processingOrderSetMapper == null || orders.isEmpty()) {
+            return byPo;
+        }
+        List<String> ids = new ArrayList<>();
+        for (ProcessingOrder po : orders) {
+            ids.add(po.getId());
+        }
+        List<ProcessingOrderSet> sets = processingOrderSetMapper.selectList(
+                new LambdaQueryWrapper<ProcessingOrderSet>()
+                        .eq(ProcessingOrderSet::getDeleted, 0)
+                        .in(ProcessingOrderSet::getProcessingOrderId, ids)
+                        .orderByAsc(ProcessingOrderSet::getSetIndex));
+        if (sets != null) {
+            for (ProcessingOrderSet set : sets) {
+                byPo.computeIfAbsent(set.getProcessingOrderId(), k -> new ArrayList<>()).add(set);
+            }
+        }
+        return byPo;
+    }
+
+    /**
+     * 把一张加工单展开成**一件一行**（套 × 部位）。
+     *
+     * <p>没有套（存量单）⇒ 回落到快照行（{@code set_no=null}，旧行为一字不变）；
+     * 套指向的部位不在快照里 ⇒ 该行不产出（**不编**）。</p>
+     */
+    private List<Map<String, Object>> piecesOf(ProcessingOrder po, List<ProcessingOrderSet> sets) {
+        Map<String, Map<String, Object>> itemById = new LinkedHashMap<>();
+        for (Map<String, Object> item : snapshotItems(po)) {
+            String itemId = str(item.get("itemId"));
+            if (StringUtils.hasText(itemId)) {
+                itemById.putIfAbsent(itemId, item);
+            }
+        }
+        List<Map<String, Object>> pieces = new ArrayList<>();
+        for (ProcessingOrderSet set : sets) {
+            if (set.getPositionItemIds() == null) {
+                continue;
+            }
+            for (String itemId : set.getPositionItemIds()) {
+                Map<String, Object> item = StringUtils.hasText(itemId) ? itemById.get(itemId) : null;
+                if (item == null) {
+                    continue;
+                }
+                pieces.add(pieceRow(po, itemId, set.getId(), set.getSetNo(), item));
+            }
+        }
+        if (!pieces.isEmpty()) {
+            return pieces;
+        }
+        // 没套（存量单）⇒ 回落快照行：一行 = 一个部位行（旧口径），件键只剩 order_item_id
+        for (Map.Entry<String, Map<String, Object>> entry : itemById.entrySet()) {
+            pieces.add(pieceRow(po, entry.getKey(), null, null, entry.getValue()));
+        }
+        return pieces;
+    }
+
+    /** 一件的展示行（件键 + 快照字段；{@code quantity} 对成套件恒为 1，旧口径保留原值）。 */
+    private Map<String, Object> pieceRow(ProcessingOrder po, String orderItemId, String setId, String setNo,
+                                         Map<String, Object> item) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("order_item_id", orderItemId);
+        row.put("set_id", setId);
+        row.put("set_no", setNo);
+        row.put("piece_key", pieceKey(orderItemId, setNo));
+        row.put("processing_order_id", po.getId());
+        row.put("processing_order_no", po.getProcessingOrderNo());
+        row.put("product_name", str(item.get("productName")));
+        row.put("color_name", str(item.get("colorName")));
+        row.put("sku", str(item.get("sku")));
+        row.put("quantity", setNo == null ? item.get("quantity") : 1);
+        row.put("unit", str(item.get("unit")));
+        return row;
     }
 
     /**
@@ -913,6 +1039,10 @@ public class QualityCheckService {
         Map<String, Object> v = new LinkedHashMap<>();
         v.put("id", row.getId());
         v.put("order_item_id", row.getOrderItemId());
+        // 件键的另一半（issue #7945）：套号 × 部位 = 一张水洗唛码；null = 未定位（不编）
+        v.put("set_id", row.getSetId());
+        v.put("set_no", row.getSetNo());
+        v.put("piece_key", pieceKey(row.getOrderItemId(), row.getSetNo()));
         v.put("processing_order_id", row.getProcessingOrderId());
         v.put("position_name", row.getPositionName());
         v.put("result", row.getInspectionResult());

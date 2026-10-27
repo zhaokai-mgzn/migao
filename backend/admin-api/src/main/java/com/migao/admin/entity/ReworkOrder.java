@@ -58,6 +58,19 @@ public class ReworkOrder {
     /** 被改记为返工的那一笔报工明细（{@code production_work_logs.id}；车间来源有值）。 */
     private String workLogId;
 
+    /**
+     * 件定位键（issue #7945，V202）：套号 × 部位 = 一张水洗唛码。
+     *
+     * <p>改前只有 {@link #operationId}（件隐含在工序实例里）⇒ PC 列表答不出「返的是哪一件」。
+     * {@code null} = 存量行 / 售后来源（不猜，界面显示「未定位」）。</p>
+     */
+    private String orderItemId;
+    private String setId;
+    private String setNo;
+
+    /** 部位展示名快照（报返工那一刻从工序实例取；读面不 join 猜）。 */
+    private String positionName;
+
     /** draft / in_progress / done / cancelled。 */
     private String status;
 

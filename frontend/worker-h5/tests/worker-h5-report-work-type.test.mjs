@@ -379,26 +379,42 @@ test('🔴 ⑦ 报工按钮不出现时（工序未确定 / 本套已完工）�
 
 // ============================================================ ⑧ 工人面**不得**出现成品帘质检判定入口
 
-test('🔴 ⑧ 工人报工屏只报**数量归属**（正常/返工/报废）—— 一个字节的成品帘质检判定控件都没有', async () => {
+test('🔴 ⑧ 没开「质检」页的工人：只报数量归属（正常/返工/报废），无质检判定入口', async () => {
   const doc = fakeDom()
   const f = routeFetch({ '/api/worker/production/scan?': resolveOk(CLOTH_VIEW) })
   const app = bootPage({ doc, f })
+  // 2026-10-27 改判（issue #7945）：质检判定只在 `inspect` ∈ 页面集的工人屏上出现
+  app.dispatch({ type: 'pages', pages: ['report'] })
   app.dispatch({ type: 'resolved', view: CLOTH_VIEW })
 
   // 前提自证：屏上**真的**有报工三态（不是「整屏没渲染」造成的空判）
   assert.match(doc.html, /id="wh5-work-type"/, '前提：报工三态选择器必须在屏上')
   assert.match(doc.html, /data-work-type="scrap"/, '前提：三态之一「报废」必须在屏上')
 
-  // 🔴 判据 3（用户裁定「报工人只报数量」）：质检判定（合格/不合格）由**独立质检员**在**另一个面**录，
-  //    工人屏不得出现任何质检判定入口。判据 = 屏上不出现质检判定面的语义词（判定按钮 / 质检容器）。
-  for (const forbidden of [/质检/, /不合格/, /data-inspection/, /inspection-result/, /quality/i]) {
-    assert.ok(!forbidden.test(doc.html), `工人面不得出现质检判定入口（命中 ${forbidden}）`)
+  // 🔴 判据：没有 inspect 权限 ⇒ 质检区块 / 入口 / 表单一个都不出现（不看文案，看结构锚）
+  for (const forbidden of [/id="wh5-quality"/, /id="wh5-quality-entry"/, /wh5-quality-form/,
+    /data-inspection/, /inspection-result/]) {
+    assert.ok(!forbidden.test(doc.html), `未开质检页的工人屏不得出现质检判定入口（命中 ${forbidden}）`)
   }
 
   // 负例自证（判别力）：同一把判据喂一条真会出现的质检面 HTML ⇒ 必须命中
-  // （证明上面那几条不是恒真：若哪天有人把质检控件搬上工人屏，本判据会红）
-  const inspectorFace = '<button data-inspection="pass">合格</button>'
-  assert.ok(/data-inspection|不合格|质检/.test(inspectorFace), '判别力自证：质检面 HTML 必须被同一把判据命中')
+  const inspectorFace = '<button id="wh5-quality-entry">质检</button>'
+  assert.ok(/id="wh5-quality-entry"/.test(inspectorFace), '判别力自证：质检面 HTML 必须被同一把判据命中')
+
+  app.destroy()
+})
+
+test('🔴 ⑧b 开了「质检」页的工人：页头出现「质检」入口 + 当前件质检块（做工判定）', async () => {
+  const doc = fakeDom()
+  const f = routeFetch({ '/api/worker/production/scan?': resolveOk(CLOTH_VIEW) })
+  const app = bootPage({ doc, f })
+  app.dispatch({ type: 'pages', pages: ['report', 'inspect'] })
+  app.dispatch({ type: 'resolved', view: CLOTH_VIEW })
+
+  assert.match(doc.html, /id="wh5-worker-entries"[\s\S]*id="wh5-quality-entry"/, '质检入口必须在页头动作栏')
+  assert.match(doc.html, /id="wh5-quality"[^>]*>/, '质检块必须渲染（做工判定）')
+  // 报工三态仍在（质检 ≠ 报工，两者并列）
+  assert.match(doc.html, /id="wh5-work-type"/, '报工三态不得被质检入口挤掉')
 
   app.destroy()
 })

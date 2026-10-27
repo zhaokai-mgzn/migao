@@ -137,7 +137,8 @@ class WorkerQualityControllerTest {
         ArgumentCaptor<String> kind = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<WorkerIdentity> actor = ArgumentCaptor.forClass(WorkerIdentity.class);
         verify(qualityCheckService).create(eq(TENANT), eq("item-1"), eq("rework"), eq("布面污渍"),
-                workerId.capture(), workerName.capture(), kind.capture(), eq(AT), actor.capture());
+                workerId.capture(), workerName.capture(), kind.capture(), eq(AT), actor.capture(),
+                org.mockito.ArgumentMatchers.isNull());
         assertThat(workerId.getValue()).isEqualTo(WORKER_ID);
         assertThat(workerName.getValue()).isEqualTo(WORKER_NAME);
         assertThat(kind.getValue()).isEqualTo(QualityCheckService.INSPECTOR_WORKER);
