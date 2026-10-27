@@ -36,6 +36,30 @@ export function orderKindLabelOf(po: Pick<ProcessingOrder, 'order_kind'>): strin
 export type WorkOrderKind = 'processing' | 'outbound' | null
 
 /**
+ * **纸面标题**（issue #7891）：成品帘 ⇒「加工单」；面料单 ⇒「面料单」。
+ *
+ * 用户 2026-10-27 逐字「面料单就叫面料单，不要叫裁剪单」（同批裁定还包括「把销售单左上角的
+ * 扫码报工二维码迁移到加工单打印上」「面料单不能打印水洗唛，应该打印加工单」）——
+ * 面料单只做**裁剪**一道简单工序，但纸名不能叫「裁剪单」：裁剪只是其中一道工序，纸是整张作业单。
+ *
+ * 🔴 这是**纸面**用名，**不是**屏幕上的类型名：屏上仍是 {@link ORDER_KIND_LABELS}
+ * （「加工单」/「出库作业单」）—— 屏幕要说出「卖布单的裁剪打包作业 ≠ 外发加工」这层业务语义，
+ * 纸面只印两型名。**两者不得互相覆盖**（改一个就把另一个的意思改掉了）。
+ */
+export const WORK_ORDER_DOC_TITLES: Record<'processing' | 'outbound', string> = {
+  processing: '加工单',
+  outbound: '面料单',
+}
+
+/**
+ * 纸面标题取值（issue #7891）：缺键 / `null` ⇒「加工单」—— 与 {@link orderKindOf} 的
+ * 存量单口径**同一把尺**（存量行不带 `order_kind`，把它印成「面料单」= 给客户一张名字写错的纸）。
+ */
+export function workOrderDocTitleOf(kind?: WorkOrderKind): string {
+  return WORK_ORDER_DOC_TITLES[kind === 'outbound' ? 'outbound' : 'processing']
+}
+
+/**
  * 读面键 `work_order_kind`（订单详情面，issue #7079 第 5 包）→ 两型；`null` = 无需要报工的作业。
  *
  * 🔴 **键名口径（issue #7319，实测断线）**：后端下发的是 **snake_case 冻结键**

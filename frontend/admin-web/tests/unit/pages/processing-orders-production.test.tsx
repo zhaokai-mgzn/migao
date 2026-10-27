@@ -17,6 +17,10 @@
 // PP-011（issue #4726；**2026-10-27 由 issue #7882 退场**）：页头的「生成二维码（测试用）」联调入口
 // 及其逐部位出码弹层已删除（正式发码路径 = 洗水唛部位码 + 撤销 / 重新生成）⇒ 本文件改为**反向**判据：
 // 有 processing:manage 也再取不到入口按钮 / 同名对话框（防回归）。
+// PP-011（issue #7891，用户 2026-10-27 逐字「面料单不能打印水洗唛，应该打印加工单」）：面料单
+// （`order_kind='outbound'`）**隐藏洗水唛入口** —— 任务卡整块不挂（不是 display:none，否则 Ctrl+P
+// 仍会打出去）、打印层里只剩那张「面料单」（A4，纸面标题按作业单两型给名）；成品帘加工单照旧
+// （反向判据，防「一刀切藏掉」把成品帘的洗水唛也藏了）。
 // PP-011（issue #4946，用户裁定 2026-09-21）：**洗水码取代 A4 任务卡** —— 生产页传
 // `positions` 给任务卡（每部位一张，码 = 该部位自己的 `scan_url`/`part_token`；
 // **纸型后经 issue #5646 改判为 50mm×60mm**，见 `frontend/admin-web/src/components/production/TaskCardPrint.tsx`），
@@ -523,6 +527,72 @@ describe('加工单生产明细页', () => {
     // 只有一份纸 ⇒ 不出现单据标签行（与改前逐字一致）
     expect(screen.queryByTestId('print-preview-docs')).toBeNull()
     expect(screen.queryByTestId('print-preview-doc-processing')).toBeNull()
+  })
+
+  it('🔴 issue #7891：面料单（`order_kind=outbound`）**不出现洗水唛入口** —— 任务卡整块不挂，打印层只剩那张「面料单」', async () => {
+    // 用户 2026-10-27 逐字「面料单不能打印水洗唛，应该打印加工单」⇒ 面料单页面不许再有洗水唛入口
+    mockUseAuthStore.mockReturnValue({
+      user: {
+        id: 'u-1',
+        name: '运营',
+        roles: ['operator'],
+        permissions: ['processing:manage', 'order:detail'],
+      },
+    })
+    mockDetail.mockResolvedValue(ok({ ...PROCESSING_ORDER, order_kind: 'outbound' }))
+    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
+    try {
+      render(<ProductionDetailPage />)
+      await waitFor(() => expect(screen.getByTestId('production-header')).toBeInTheDocument())
+      await waitFor(() => expect(mockGetOrder).toHaveBeenCalledWith('order-uuid-1'))
+
+      // ① 屏幕隐藏的那份任务卡**整块不挂**（不是 display:none —— 藏起来仍会被 Ctrl+P 打出去）
+      expect(document.querySelector('.task-card-print-area')).toBeNull()
+      expect(screen.queryByTestId('task-card-qr')).toBeNull()
+      // ② 入口旁一句话说清（可行动，不是「功能没了」）
+      expect(screen.getByTestId('production-fabric-doc-hint')).toHaveTextContent('不印水洗唛')
+
+      // ③ 打印层 = 只有那张 A4 纸，且**标题按两型给名**（面料单，不是「加工单」、也不是「裁剪单」）
+      await userEvent.click(screen.getByTestId('production-print-button'))
+      const preview = await screen.findByRole('dialog', { name: '面料单打印预览' })
+      expect(within(preview).getByTestId('print-preview-media')).toHaveTextContent('210mm × 297mm')
+      expect(within(screen.getByTestId('print-preview-paper')).getByText('面料单')).toBeInTheDocument()
+      // 洗水唛那份纸**不在这一层**（只有一份纸 ⇒ 连单据标签行都不出现）
+      expect(screen.queryByTestId('print-preview-doc-labels')).toBeNull()
+      expect(screen.queryByTestId('print-preview-doc-processing')).toBeNull()
+
+      // ④ 出纸的只有那一份，且**不打任务卡留痕**（`print_count` 口径 = 任务卡张数）
+      await userEvent.click(await screen.findByTestId('print-preview-print'))
+      await waitFor(() => expect(printSpy).toHaveBeenCalledTimes(1))
+      expect(
+        document.querySelector('.processing-print-area[data-print-target="processing"]'),
+      ).not.toBeNull()
+      expect(mockRecordPrint).not.toHaveBeenCalled()
+    } finally {
+      printSpy.mockRestore()
+    }
+  })
+
+  it('🔴 issue #7891：成品帘加工单**仍**有水洗唛入口（面料单的那条隐藏不是把所有单都藏了）', async () => {
+    mockUseAuthStore.mockReturnValue({
+      user: {
+        id: 'u-1',
+        name: '运营',
+        roles: ['operator'],
+        permissions: ['processing:manage', 'order:detail'],
+      },
+    })
+    render(<ProductionDetailPage />)
+    await waitFor(() => expect(screen.getByTestId('production-header')).toBeInTheDocument())
+    await waitFor(() => expect(mockGetOrder).toHaveBeenCalledWith('order-uuid-1'))
+
+    // 缺键 `order_kind`（存量单 / 成品帘）⇒ 水洗唛照旧：任务卡挂载 + 打印层里有那一份纸
+    await waitFor(() => expect(screen.getByTestId('task-card-qr')).toBeInTheDocument())
+    expect(screen.queryByTestId('production-fabric-doc-hint')).toBeNull()
+
+    await userEvent.click(screen.getByTestId('production-print-button'))
+    expect(await screen.findByTestId('print-preview-doc-labels')).toHaveTextContent('水洗唛')
+    expect(screen.getByTestId('print-preview-media')).toHaveTextContent('50mm × 150mm')
   })
 
   it('打印时上报打印计数，且计数接口失败不阻断打印（fire-and-forget）', async () => {

@@ -831,8 +831,8 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 
 | # | 事实 | 载体（仓库相对全路径） |
 |---|---|---|
-| ① | A4 加工单右上角 QR 的内容 = **加工单号纯文本** | `frontend/admin-web/src/app/(dashboard)/orders/[id]/OrderDetail.tsx` 的 `<ProcessingDoc qrValue={processingOrder?.processingOrderNo ?? null}>`（两处调用：页面级 + 打印预览层） |
-| ② | 组件只负责画，不判内容形态（「缺码不画假码」） | `frontend/admin-web/src/components/orders/ProcessingDoc.tsx` 的 `qrValue` prop + `data-testid="processing-doc-qr"` |
+| ① | A4 加工单**左上角** QR 的内容 = 服务端下发的作业单扫码短链 `scan_url`（issue #7891：2026-10-27 从销售单迁入；销售单纸面不再有该码） | `frontend/admin-web/src/app/(dashboard)/orders/[id]/OrderDetail.tsx` 的 `<ProcessingDoc order={order} processingOrder={processingOrder} …>`（两处调用：页面级 + 打印预览层）→ `frontend/admin-web/src/components/orders/ProcessingDoc.tsx` 读 `processingOrder.scan_url` |
+| ② | 组件只负责画，不判内容形态（「缺码不画假码」：无 `scan_url` ⇒ 整块不出现） | `frontend/admin-web/src/components/orders/ProcessingDoc.tsx` 的 `data-testid="processing-doc-qr"`（码值逐字取服务端值，前端**不拼**域名 / 路径段） |
 | ③ | 一部位一码**已经是** `{base}/s/{短码}` 标准 HTTPS URL | `frontend/admin-web/src/components/production/TaskCardPrint.tsx` 的 `position.scan_url ?? position.part_token`；`scan_url` 由 `backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java` 的 `scanUrlOf` 拼（base 可配 `migao.worker.short-link-base-url`，缺省 `https://app.migaozn.com`） |
 | ④ | `/s/{短码}` 的 302 与撤销语义**已落码** | `backend/admin-api/src/main/java/com/migao/admin/controller/WorkerShortLinkController.java` + `backend/admin-api/src/main/java/com/migao/admin/service/WorkerShortLinkService.java`（未知 404 / 已撤销 410 / `Location: /b/?t=<token>&tenant_id=&tenant_code=`，issue #7879 起） |
 | ⑤ | 加工单级只有**可撤销的裸 `qr_token`**，没有短码 | `backend/admin-api/src/main/java/com/migao/admin/entity/ProcessingOrder.java` + `ProcessingOrderMapper.revokeQrToken`（撤销 = 置 NULL，不换新 token） |
@@ -971,10 +971,11 @@ grep -rn "deleted = 1" backend/admin-api/src/main/java/com/migao/admin/service/P
 加工单号是「工人只想在报工页手输」的既有兜底（四形态的第 ④ 个）——
 **两者不是重复信息**（一个是系统入口、一个是业务单号），且 §1.4 已把「手输入口」定义成产品能力。
 
-🔴 **销售单是例外（2026-10-24 用户裁定，issue #7608）**：随货给客户的销售单**不印**短码，码旁只留**竖排**「扫码报工」——
-用户逐字「不要在产品上体现短码了，工人端还有输入短码的地方」（客户收到的单子上印内部短码属 §31 P3「不摆内部标识」）。
+🔴 **加工单纸面（2026-10-27 起，issue #7891）**：码已从销售单迁到**加工单**表头左上角，码旁只留**竖排**
+「扫码报工」—— 客户可见纸面行为同销售单口径（2026-10-24 用户裁定，issue #7608）：用户逐字
+「不要在产品上体现短码了，工人端还有输入短码的地方」（客户收到的单子上印内部短码属 §31 P3「不摆内部标识」）。
 兜底三处不变：工人 H5 的「输码（短码 / 加工单号 / 订单号）」输入框、任务卡的 `part_short_code`、
-以及销售单本来就印的「单号」。**不要**据此把短码加回销售单。
+以及纸面本来就印的「单号」。**不要**据此把短码加回任何客户可见纸面。
 
 ### 11.8 外部输入项 / 有意不做的边界 / 重启条件
 

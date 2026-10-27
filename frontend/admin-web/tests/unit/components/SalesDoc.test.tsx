@@ -3,6 +3,7 @@
 
 import { describe, it, expect, vi } from 'vitest'
 import { render, cleanup, within } from '@testing-library/react'
+import type { ComponentProps } from 'react'
 
 // 销售单纸面**不再读企业收款码**（issue #7589）。两处替身都为此：
 // ① `usePaymentQrcodes` 是可观测桩，返回一张**真码** —— 谁把收款码块加回销售单，`⑥` 的两条（出图 / 零调用）
@@ -23,6 +24,7 @@ import SalesDoc, {
   SALES_DOC_NOT_COLLECTED,
 } from '@/components/orders/SalesDoc'
 import { printPageRule } from '@/lib/print-media'
+import { PROCESSING_TEXT_MISSING, processingPaperLine } from '@/lib/processing-item-text'
 import { dataTables, collectTableIntegrity } from '@/components/orders/doc-tables'
 import {
   SALES_QTY_BASIS,
@@ -36,7 +38,7 @@ import {
   assertPaperKeepsMissingDistinct,
   paperNumericColumn,
 } from '@/lib/print-doc-paper'
-import type { Order, OrderItem, ProcessingOrder } from '@/types'
+import type { Order, OrderItem } from '@/types'
 
 /**
  * 销售单（**三联纸 241mm × 140mm**，issue #5651）—— 照客户现行实物制式（实证表 #4）。
@@ -55,9 +57,14 @@ import type { Order, OrderItem, ProcessingOrder } from '@/types'
  *    也不上省略号 —— issue #7715：用户 2026-10-25 逐字「这里打印预览的文字要打印全，不能缩略」）；
  * ⑥ **纸面不印收款码**（issue #7589：用户 2026-10-24 逐字「销售单打印处右下角的二维码移除掉」）
  *    —— 页脚只留温馨提示、销售单也不再读收款码；打印隔离沿用 #4983 / #4965 范式（共享 `print-doc`）；
- * ⑧ **左上角作业单扫码报工码**（issue #7530）：码值**逐字**取服务端下发的
- *    `processingOrder.scan_url`（`{base}/o/{短码}` ⇒ 302 到工人报工页 `/w/`），前端**不拼**；
- *    无码 ⇒ 整块不出现（不画占位框、不回落作业单号）。见 describe「⑬」；
+ * ⑧ **扫码报工码已迁到加工单纸面**（issue #7891，用户 2026-10-27 逐字「把销售单左上角的扫码
+ *    报工二维码迁移到加工单打印上，这样设计才是合理的」）⇒ 本文件的判据**反向**：销售单纸面
+ *    **不再出现**那块码（`sales-work-order-qr*` 一个都不许有，见 describe「⑬」），组件签名里
+ *    也**不再吃** `processingOrder`（码值逐字取 `scan_url` / 缺码不画假码两条口径随码迁到
+ *    `ProcessingDoc`，判据在 `ProcessingDoc.test.tsx`，本文件不复述）；
+ * ⑨ **加工项绑商品**（issue #7891，用户同日逐字「销售单和报价单都缺了加工项」）：每个商品行之后
+ *    一条子行（`sales-item-processing-{idx}`），文案**只**来自 `lib/processing-item-text.ts`；
+ *    布料行 / 无加工项的行不出子行（见 describe「⑭」）；
  * ⑦ **数量列消费实发**（issue #5651 收口）：经 admin 读面 `GET /api/admin/orders/{id}/shipments`
  *    拿 `order_shipment_items` 的**实发**，四态（已发货 / 部分发货 / 未发货 / 读面没取到）
  *    **各自可判**、纸面**标明基准**、**永不印 0**、挂不到订单行的实发行**显式提示**。
@@ -97,26 +104,6 @@ function buildOrder(overrides: Partial<Order> = {}): Order {
     hasProcessing: false,
     items: [buildItem()],
     createdAt: '2026-09-26T10:00:00+08:00',
-    ...overrides,
-  }
-}
-
-/**
- * 作业单（`processingOrder`）夹具 —— 销售单左上角扫码报工码的来源（issue #7530）。
- *
- * 🔴 `scan_url` 刻意用**非 `app.migaozn.com`** 的示例域：纸面**只认**服务端下发的这个值，
- * 前端自己拼 `{base}/o/{短码}` 会印出另一个地址 ⇒ 那条红证靠这个差集判得出来
- * （前端拼域名 / 路径段 = 第二份真值，换域名时纸面与读面会静默不一致）。
- */
-function buildProcessingOrder(overrides: Partial<ProcessingOrder> = {}): ProcessingOrder {
-  return {
-    id: 'po-1',
-    orderId: 'order-1',
-    processingOrderNo: 'CK-20261023-0001',
-    order_kind: 'outbound',
-    status: 'generated',
-    short_code: '7K3M9QP2',
-    scan_url: 'https://print.example.test/o/7K3M9QP2',
     ...overrides,
   }
 }
@@ -173,10 +160,11 @@ function paperTruncationHits(styleText: string, cell: Element | null): string[] 
 }
 
 const sheet = (): HTMLElement | null => document.querySelector('[data-testid="sales-sheet"]')
-/** 左上角作业单扫码报工码的块（无码 ⇒ `null`）与它的**确切内容**（`<svg><title>` = qrcode.react 的 value） */
+/**
+ * 左上角作业单扫码报工码的块 —— issue #7891 起销售单**不再有**它（码迁到加工单纸面），
+ * 故本文件的判据是**反向**的：这个查询必须恒为 `null`（修前那块码在这里查得到）。
+ */
 const workOrderQr = (): Element | null => document.querySelector('[data-testid="sales-work-order-qr"]')
-const workOrderQrValue = (): string =>
-  workOrderQr()?.querySelector('svg title')?.textContent?.trim() ?? ''
 
 /** 明细区逐格取值（序号/货号/颜色/门幅/数量/单位/单价/金额）—— 用于「切介质取值不变」的逐格比对 */
 function rowCells(): string[][] {
@@ -222,7 +210,6 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
       <SalesDoc
         order={buildOrder()}
         shipments={NO_SHIPMENT}
-        processingOrder={buildProcessingOrder()}
         printTarget="sales"
       />
     )
@@ -232,13 +219,11 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
     )
     const triDue = text('sales-total-due')
     const triTotal = text('sales-total')
-    const triQr = workOrderQrValue()
     cleanup()
     render(
       <SalesDoc
         order={buildOrder()}
         shipments={NO_SHIPMENT}
-        processingOrder={buildProcessingOrder()}
         media="a4"
         printTarget="sales"
       />
@@ -250,15 +235,15 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
     expect(doc()?.getAttribute('data-print-media')).toBe('a4')
     expect(sheet()?.style.height).toBe('')
     // 而**字段映射一份都没变**（复制一份映射给 A4 ⇒ 这里会红）：
-    // 逐格取值 / 表头 / 金额汇总 / 扫码报工码值 一律逐字相同
+    // 逐格取值 / 表头 / 金额汇总 一律逐字相同
     expect(rowCells()).toEqual(tri)
     expect(
       Array.from(document.querySelectorAll('.sales-doc-table thead th')).map((th) => th.textContent?.trim())
     ).toEqual(triHeader)
     expect(text('sales-total-due')).toBe(triDue)
     expect(text('sales-total')).toBe(triTotal)
-    expect(triQr).toBe('https://print.example.test/o/7K3M9QP2')
-    expect(workOrderQrValue()).toBe(triQr)
+    // 切介质也不许把已迁走的扫码报工码带回来（issue #7891）
+    expect(workOrderQr()).toBeNull()
   })
 
   it('② 列清单 = SALES_DOC_COLUMNS（全仓唯一一份；商品行粒度，不是报价单的按套粒度）', () => {
@@ -622,87 +607,213 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
   })
 
   // ══════════════════════════════════════════════════════════════════════════════
-  // ⑬ 左上角作业单扫码报工二维码（issue #7530）
-  //   码值 = **服务端下发**的 `processingOrder.scan_url`（`{base}/o/{短码}` ⇒ 302 到工人报工页 `/w/`）
+  // ⑬ 扫码报工码**已迁到加工单**（issue #7891，用户 2026-10-27 逐字「把销售单左上角的扫码报工
+  //    二维码迁移到加工单打印上，这样设计才是合理的」）—— 判据因此**反向**：
+  //    销售单纸面**不再出现**那块码，组件也**不再吃** `processingOrder` prop。
   // ══════════════════════════════════════════════════════════════════════════════
 
-  it('⑬ 有作业单扫码短链 ⇒ 纸面**左上角**出码，码值逐字 = 服务端 scan_url', () => {
-    render(
-      <SalesDoc
-        order={buildOrder()}
-        shipments={NO_SHIPMENT}
-        processingOrder={buildProcessingOrder()}
-      />
-    )
-    // 码块存在性由**取值断言**证明（`workOrderQrValue()` 取的就是它的 `<svg><title>`）——
-    // 不写 `not.toBeNull()` 这类存在性弱断言（QA Growth Gate 的 TS 弱断言面会判红）
-    const qr = workOrderQr()
-    expect(workOrderQrValue()).toBe('https://print.example.test/o/7K3M9QP2')
-    // ② 位置 = 纸面**左上角**：QR 块在 `.sales-sheet` 的第一段里，且文档顺序在「销售单」抬头之前
-    //    （不是页脚 / 右下角、也不与收款码混在一处）
-    const title = Array.from(sheet()?.querySelectorAll('span') ?? []).find(
-      (el) => el.textContent?.trim() === '销售单'
-    )
-    expect(title).toBeTruthy()
-    expect(sheet()?.firstElementChild?.contains(qr)).toBe(true)
-    expect(Boolean(qr!.compareDocumentPosition(title!) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true)
-    expect(qr!.closest('[data-testid^="sales-qr-"]')).toBeNull()
-  })
-
-  it('⑬ 纸面只留**竖排**「扫码报工」，短码不印在销售单上（issue #7608）', () => {
-    render(
-      <SalesDoc
-        order={buildOrder()}
-        shipments={NO_SHIPMENT}
-        processingOrder={buildProcessingOrder()}
-      />
-    )
-    const label = document.querySelector('[data-testid="sales-work-order-qr-label"]') as HTMLElement | null
-    expect(text('sales-work-order-qr-label')).toBe('扫码报工')
-    // 竖排是**机制**不是装饰：`writing-mode: vertical-rl` 让这一列只占一行字宽（≈3mm）。
-    // 换成横排 ⇒ 这条必红（4 个字横排 ≈9mm，正是本单要省掉的那一段）。
-    expect(label?.style.writingMode).toBe('vertical-rl')
-    // 短码从产品面退场（用户 2026-10-24 逐字「不要在产品上体现短码了，工人端还有输入短码的地方」）：
-    // 节点不渲染。手输兜底仍在工人端输入框 / 任务卡 / 本单纸面本来就印的「单号」，兜底没断。
-    expect(document.querySelector('[data-testid="sales-work-order-short-code"]')).toBeNull()
-  })
-
-  it('⑬ 缺码**不画假码**：无 scan_url ⇒ 整块不出现（零 QR / 零占位框 / 不回落作业单号）', () => {
-    render(
-      <SalesDoc
-        order={buildOrder()}
-        shipments={NO_SHIPMENT}
-        // 只有短码、没有服务端下发的短链（存量单未实例化 / 读面没取到）—— 前端**不自己拼**
-        processingOrder={buildProcessingOrder({ scan_url: null })}
-      />
-    )
-    expect(workOrderQr()).toBeNull()
-    // 不画占位框；不回落作业单号；也不把裸短码印成「一个码」（扫出来只有文本、打不开页面）
-    expect(doc()?.querySelector('[data-testid="sales-work-order-qr-placeholder"]')).toBeNull()
-    expect(doc()?.textContent).not.toContain('CK-20261023-0001')
-    expect(doc()?.textContent).not.toContain('7K3M9QP2')
-    // 纸面**不印收款码**（issue #7589）⇒ 页脚本来就没有任何图片节点（与「缺码不画假码」同一读数）
-    expect(doc()?.querySelectorAll('img')).toHaveLength(0)
-
-    cleanup()
-    // 没有作业单（订单详情页读面没取到）⇒ 同样整块不出现
+  it('⑬ 销售单纸面**不再出现**扫码报工码（码已迁到加工单纸面）', () => {
     render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} />)
+    // 三个锚点一个都不许有（修前分别查得到块 / svg / 竖排标签）
     expect(workOrderQr()).toBeNull()
+    expect(document.querySelector('[data-testid="sales-work-order-qr-svg"]')).toBeNull()
+    expect(document.querySelector('[data-testid="sales-work-order-qr-label"]')).toBeNull()
+    // 纸面上连一张图 / 一个 `<svg>` 都没有（收款码 #7589 已退场、报工码 #7891 已迁走）
+    expect(doc()?.querySelectorAll('img')).toHaveLength(0)
+    expect(doc()?.querySelectorAll('svg')).toHaveLength(0)
+    expect(doc()?.textContent).not.toContain('扫码报工')
+    // 射程自证（负判据不许是「选择器打错字」）：把 **issue #7530 的那块码**摆进同一批选择器
+    // ⇒ 必须查得到；移走后再回到空集（证明判据既不恒真、也不对着空 DOM 恒假）。
+    const probe = document.createElement('div')
+    probe.innerHTML =
+      '<div data-testid="sales-work-order-qr">' +
+      '<svg data-testid="sales-work-order-qr-svg"></svg>' +
+      '<div data-testid="sales-work-order-qr-label">扫码报工</div></div>'
+    document.body.appendChild(probe)
+    expect(document.querySelectorAll('[data-testid="sales-work-order-qr"]')).toHaveLength(1)
+    expect(document.querySelectorAll('[data-testid="sales-work-order-qr-svg"]')).toHaveLength(1)
+    expect(document.querySelectorAll('[data-testid="sales-work-order-qr-label"]')).toHaveLength(1)
+    expect(probe.querySelectorAll('svg')).toHaveLength(1)
+    expect(probe.textContent).toContain('扫码报工')
+    probe.remove()
+    expect(document.querySelectorAll('[data-testid="sales-work-order-qr"]')).toHaveLength(0)
   })
 
-  it('⑬ 红证：前端自己拼 `{base}/o/{短码}` ⇒ 码值与服务端下发值不同 ⇒ 上面那条必红', () => {
-    const serverScanUrl = 'https://print.example.test/o/7K3M9QP2'
+  it('⑬ 组件签名里已没有 `processingOrder`（类型面：删 prop 才算迁完）', () => {
+    // 类型级红证：谁把 `processingOrder` 加回 props ⇒ 下面的 `false` 赋值当场 TS 报错。
+    type HasProcessingOrder = 'processingOrder' extends keyof ComponentProps<typeof SalesDoc>
+      ? true
+      : false
+    const hasProcessingOrder: HasProcessingOrder = false
+    expect(hasProcessingOrder).toBe(false)
+  })
+
+  it('⑬ 遗留调用点若仍传 `processingOrder` ⇒ 也不会把码带回来（防御）', () => {
+    // 组件签名已无该 prop（调用点那一包同批删掉了两处传参）。这里**从类型外**注入，
+    // 证明遗留 / 回退的调用点即使还传这个多余 prop，也**不会**复活那块码。
+    const staleProps = {
+      order: buildOrder(),
+      shipments: NO_SHIPMENT,
+      processingOrder: {
+        id: 'po-1',
+        orderId: 'order-1',
+        processingOrderNo: 'CK-20261023-0001',
+        short_code: '7K3M9QP2',
+        scan_url: 'https://print.example.test/o/7K3M9QP2',
+      },
+    } as unknown as ComponentProps<typeof SalesDoc>
+    render(<SalesDoc {...staleProps} />)
+    expect(workOrderQr()).toBeNull()
+    expect(doc()?.querySelectorAll('svg')).toHaveLength(0)
+    // 短码 / 作业单号也不上纸（内部标识不上随货单据，issue #7608 的口径不变）
+    expect(doc()?.textContent).not.toContain('7K3M9QP2')
+    expect(doc()?.textContent).not.toContain('CK-20261023-0001')
+  })
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // ⑭ 加工项**绑商品**（issue #7891，用户 2026-10-27 逐字「销售单和报价单都缺了加工项」+
+  //    「发货单的加工项需要和商品绑定…都放在加工项那一栏里面」）
+  //    子行 = 商品行之后的一条 `colSpan` 子行；文案**只**来自 `lib/processing-item-text.ts`
+  // ══════════════════════════════════════════════════════════════════════════════
+
+  /** 第 `idx` 个商品行的加工项子行（没有 ⇒ `null`）与其纸面文本 */
+  const processingRow = (idx: number): Element | null =>
+    document.querySelector(`[data-testid="sales-item-processing-${idx}"]`)
+  const processingText = (idx: number): string => processingRow(idx)?.textContent?.trim() ?? ''
+
+  it('⑭ 数量全等 ⇒ 「各」只说一遍数字（`定型、韩褶 各 6.3`）', () => {
+    const info = {
+      colorName: '米白',
+      doorWidth: '2.8米',
+      processingItems: [
+        { name: '定型', quantity: 6.3 },
+        { name: '韩褶', quantity: 6.3 },
+      ],
+    }
     render(
       <SalesDoc
-        order={buildOrder()}
+        order={buildOrder({ items: [buildItem({ processingInfo: info })] })}
         shipments={NO_SHIPMENT}
-        processingOrder={buildProcessingOrder({ scan_url: serverScanUrl })}
       />
     )
-    // 「前端自己拼」的写法 —— 与服务端下发值不同（域名 / 路径段是第二份真值）
-    const fabricated = 'https://app.migaozn.com/o/7K3M9QP2'
-    expect(fabricated).not.toBe(serverScanUrl)
-    expect(workOrderQrValue()).toBe(serverScanUrl)
-    expect(workOrderQrValue()).not.toBe(fabricated)
+    expect(processingText(0)).toBe('加工项：定型、韩褶 各 6.3')
+    // 文案**只**来自共享构建器（组件里另拼一份 ⇒ 这两条会在同一次改动里分叉）
+    expect(processingText(0)).toBe(processingPaperLine(info))
+    // 子行与商品行**同一张表**、单格跨全表列数（不新增列 ⇒ C5 的列清单真值不动）
+    const row = processingRow(0)
+    expect(row?.closest('table')).toBe(document.querySelector('.sales-doc-table'))
+    expect(row?.closest('tbody')?.getAttribute('data-testid')).toBe('sales-doc-body')
+    expect(row?.querySelectorAll('td')).toHaveLength(1)
+    expect(row?.querySelector('td')?.getAttribute('colspan')).toBe(String(SALES_DOC_COLUMNS.length))
+    expect(document.querySelectorAll('.sales-doc-table thead th')).toHaveLength(SALES_DOC_COLUMNS.length)
+    // 单行紧凑（三联纸单联可用高只有 128mm）：0.85em + 折行不裁（issue #7715）
+    expect(row?.querySelector('td')?.className).toContain('text-[0.85em]')
+    expect(row?.querySelector('td')?.className).toContain('break-words')
+    // 行/列自洽交给类级不变量：子行 Σ(colSpan) 必须等于表头列数（issue #6595）
+    expect(dataTables(doc()).every((table) => collectTableIntegrity([table]).length === 1)).toBe(true) // 单据：销售单 SalesDoc
+  })
+
+  it('⑭ 数量不等 ⇒ 逐项印各自的数（`定型 6.3 + 韩褶 2`，不提公因子）', () => {
+    const info = {
+      processingItems: [
+        { name: '定型', quantity: 6.3 },
+        { name: '韩褶', quantity: 2 },
+      ],
+    }
+    render(
+      <SalesDoc
+        order={buildOrder({ items: [buildItem({ processingInfo: info })] })}
+        shipments={NO_SHIPMENT}
+      />
+    )
+    expect(processingText(0)).toBe('加工项：定型 6.3 + 韩褶 2')
+    expect(processingText(0)).not.toContain('各')
+    expect(processingText(0)).toBe(processingPaperLine(info))
+  })
+
+  it('⑭ 缺数量 ⇒ 该项印缺值占位 `—`（`打孔 —`，不静默吞掉、不摊成 0）', () => {
+    const info = { processingItems: [{ name: '打孔' }] }
+    render(
+      <SalesDoc
+        order={buildOrder({ items: [buildItem({ processingInfo: info })] })}
+        shipments={NO_SHIPMENT}
+      />
+    )
+    expect(processingText(0)).toBe(`加工项：打孔 ${PROCESSING_TEXT_MISSING}`)
+    expect(processingText(0)).not.toContain('打孔 0')
+  })
+
+  it('⑭ 特殊选项**同一栏**上纸（`加工项：… · 特殊选项：拼2次-布`）', () => {
+    const info = {
+      processingItems: [{ name: '定型', quantity: 6.3 }],
+      specialOptions: ['拼2次-布'],
+    }
+    render(
+      <SalesDoc
+        order={buildOrder({ items: [buildItem({ processingInfo: info })] })}
+        shipments={NO_SHIPMENT}
+      />
+    )
+    expect(processingText(0)).toBe('加工项：定型 6.3 · 特殊选项：拼2次-布')
+    expect(processingText(0)).toBe(processingPaperLine(info))
+  })
+
+  it('⑭ **绑定**：A 行的加工项不出现在 B 行子行（不串行），且子行紧跟自己的商品行', () => {
+    render(
+      <SalesDoc
+        order={buildOrder({
+          items: [
+            buildItem({
+              id: 'item-a',
+              skuCode: '0012',
+              processingInfo: { processingItems: [{ name: '定型', quantity: 3 }] },
+            }),
+            buildItem({
+              id: 'item-b',
+              skuCode: '0013',
+              quantity: 4,
+              processingInfo: { processingItems: [{ name: '打孔', quantity: 4 }] },
+            }),
+          ],
+        })}
+        shipments={NO_SHIPMENT}
+      />
+    )
+    expect(processingText(0)).toBe('加工项：定型 3')
+    expect(processingText(1)).toBe('加工项：打孔 4')
+    // 反向：A 行子行里没有 B 行的加工项，B 行也没有 A 行的（跨行串味 = 把别人的活印在这行下面）
+    expect(processingText(0)).not.toContain('打孔')
+    expect(processingText(1)).not.toContain('定型')
+    // 位置：子行紧跟**自己**那一行的商品行之后
+    expect(processingRow(0)?.previousElementSibling?.getAttribute('data-testid')).toBe('sales-item-0')
+    expect(processingRow(1)?.previousElementSibling?.getAttribute('data-testid')).toBe('sales-item-1')
+  })
+
+  it('⑭ 布料行 / 无加工项的行 ⇒ 不出子行（不印空行、不印「加工项：—」）', () => {
+    render(
+      <SalesDoc
+        order={buildOrder({
+          items: [
+            // 布料行：`processingInfo` 只有颜色 / 门幅 + saleForm，没有加工项数组
+            buildItem({ id: 'item-fabric', processingInfo: { colorName: '米白', saleForm: '布料' } }),
+            // 存量单：整行没有 `processingInfo` 键
+            buildItem({ id: 'item-legacy', skuCode: '0014', processingInfo: undefined }),
+            // 有加工项的成品帘行（对照：子行只在它下面出）
+            buildItem({
+              id: 'item-curtain',
+              skuCode: '0015',
+              processingInfo: { curtainType: '布帘', processingItems: [{ name: '定型', quantity: 6 }] },
+            }),
+          ],
+        })}
+        shipments={NO_SHIPMENT}
+      />
+    )
+    expect(processingRow(0)).toBeNull()
+    expect(processingRow(1)).toBeNull()
+    expect(processingText(2)).toBe('加工项：定型 6')
+    // 子行总数 = 1（不多出空行），纸面也不出现「加工项：—」这种空值形态
+    expect(document.querySelectorAll('[data-testid^="sales-item-processing-"]')).toHaveLength(1)
+    expect(doc()?.textContent).not.toContain(`加工项：${PROCESSING_TEXT_MISSING}`)
   })
 })

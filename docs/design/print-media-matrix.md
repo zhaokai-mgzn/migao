@@ -109,13 +109,38 @@ Chrome 把自己的页眉页脚（版式日期 / 文档标题 / 页面 URL / 页
 `ProcessingOrderService.COMPONENT_ROLE_POSITIONS` 同一张映射）；判据 = 四份单据测试的列清单断言 +
 `tests/unit_ci_workflows/test_print_media_matrix_guard.py` 的 C5。
 
-🔴 **2026-10-23（issue #7530）销售单左上角「作业单扫码报工」码**：销售单抬头左侧印
-`processingOrder.scan_url` 的二维码（= `{base}/o/{短码}`，服务端 302 到工人报工页 `/w/`），
-短码印在码旁作**手输兜底**；**缺码不画假码**（没有 `scan_url` ⇒ 整块不出现，不回落作业单号 ——
-回落就退回「扫出来只有一串文本、打不开任何页面」的旧形态）。码值与短码都取自订单详情页既有的
-`processingOrder` 读面（与 `ProcessingDoc` **同一份**来源，不新增后端接口），前端**不拼**域名 / 路径段。
-判据 = `frontend/admin-web/tests/unit/components/SalesDoc.test.tsx` 的「⑬」四条 + 红证；用例登记 = UI-134。
-⚠️ 加工单纸面**仍不印** QR（issue #7219 的裁定**未**被本单改动）。
+🔴 **2026-10-27（issue #7891）加工项绑商品 + 扫码报工码迁到加工单 + 作业单纸面按两型命名**：
+
+1. **加工项绑商品**（用户逐字「发货单的加工项需要和商品绑定，比如如果是成品帘，一览展示商品，
+   商品下面是加工项，展示内容参考水洗唛的那种格式，还有特殊选项也要放上去，都放在加工项那一栏里面」；
+   同一条还点了「销售单和报价单都缺了加工项」）：
+   - 销售单 / 报价单 / 发货单三份纸都在**商品行下方**印一行子行，形态 = 水洗唛式 `标签 值`：
+     `加工项：定型、韩褶 各 6.3 · 特殊选项：拼2次-布`（特殊选项与加工项**同栏**）；
+   - 发货单原来表外那条独立「加工项（数量：米）」区**退场**（不绑商品 = 与商品行对不上）；
+     加工费合计仍印（口径不变 = 行级落库 `processingFee` 求和）；
+   - 文案**单一构建器** = `frontend/admin-web/src/lib/processing-item-text.ts`（`processingItemsText` 从
+     `frontend/admin-web/src/components/orders/ShipmentDoc.tsx` 上移）；特殊选项取
+     `frontend/admin-web/src/lib/craft-display.ts::craftSpecRows()` 的同一份格式化。
+     布料行没有 `processingInfo` ⇒ 不出子行。
+2. **扫码报工码从销售单迁到加工单**（用户逐字「把销售单左上角的扫码报工二维码迁移到加工单打印上，
+   这样设计才是合理的」）：加工单表头左上角印 `processingOrder.scan_url` 的二维码（= `{base}/o/{短码}`，
+   服务端 302 到工人报工页 `/w/`），码旁只留**竖排**「扫码报工」（短码不上纸，issue #7608 口径不变）；
+   **缺码不画假码**（无 `scan_url` ⇒ 整块不出现，不回落作业单号）。销售单纸面**不再有**该块。
+3. **作业单纸面标题按两型**（用户 2026-10-27 裁定「入口统一叫作业单；面料单就叫面料单，不要叫裁剪单」）：
+   成品帘（`processing`）⇒「加工单」；面料单（`outbound`）⇒「面料单」；
+   真值 = `frontend/admin-web/src/lib/processing-order.ts` 的 `WORK_ORDER_DOC_TITLES` /
+   `workOrderDocTitleOf()`。面料单**不再提供水洗唛打印入口**（用户逐字「面料单不能打印水洗唛，
+   应该打印加工单」）。
+4. **加工单「工艺」按水洗唛形态分行**（同日追加，用户逐字「加工单打印的工艺也参考水洗唛上的
+   加工和特殊选项的展示方式」+ 真机截图红框指向那一整串长句）：每套块的那一格改为水洗唛式多行
+   `标签 值` —— `加工方式`（复用 `frontend/admin-web/src/lib/wash-label-content.ts::washLabelCraftMode()`）
+   + `特殊选项` 独立一行（`washLabelSpecialOptions()`，无值不渲染）+ 其余工艺规格逐行
+   （顺序沿用 `craftSpecRows()`）。**不新增列**：`PROCESSING_DOC_COLUMNS` 仍是 C5 的唯一真值。
+
+判据 = `frontend/admin-web/tests/unit/components/` 下 SalesDoc / QuotationDoc / ShipmentDoc / ProcessingDoc
+四份测试 ＋ 类级守卫 `tests/unit_ci_workflows/test_print_media_matrix_guard.py` 的 C9 / C11 / C12；
+用例登记 = UI-134（码）· UI-138（加工项绑商品）· UI-139（两型命名 / 面料单不印水洗唛）·
+UI-140（加工单工艺按水洗唛形态）。
 
 🔴 **2026-10-14（issue #6901）「数量(米)」→「数量」**：列名不能写死单位 —— `quantity` 的单位随行
 （快照行 `unit` 可能是米 / 件 / 套）。同一行的**列名与值**都出自

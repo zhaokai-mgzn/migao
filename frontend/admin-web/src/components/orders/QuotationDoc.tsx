@@ -6,6 +6,8 @@ import { freightText } from '@/lib/logistics'
 import { orderItemCurtainType, orderItemSku } from '@/lib/order-item-sku'
 import { fabricSubtotal, paperLineSubtotal } from '@/lib/order-amount'
 import { readFeeDetail } from '@/lib/order-fee-display'
+// 加工项文案的**单一来源**（与销售单 / 发货单 / 加工单同一份构建器，issue #7891）
+import { processingPaperLine } from '@/lib/processing-item-text'
 import { usePaymentQrcodes } from '@/lib/use-payment-qrcodes'
 import { useCompanyName } from '@/lib/use-company-name'
 import { printBodyFontPt, printContentInsetCss, printPageRule } from '@/lib/print-media'
@@ -93,6 +95,19 @@ import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
  *    ⇒ 单价印 `—`、数量回落面料米数（缺值不编价，同第 9 条）。
  *    ⚠️ 已知边界（**有意接受**）：`processingFee` 含按套特殊选项 / 拼色加价（#4526）时，
  *    `单价 × 数量 ≠ 小计`（纸面不展开选项行）；单价**不摊成平均价** —— 那会是纸面上从没出现过的价。
+ * 12. **加工项绑套**（issue #7891，用户 2026-10-27 逐字「销售单和报价单都缺了加工项」+
+ *    「发货单的加工项需要和商品绑定，比如如果是成品帘，一览展示商品，商品下面是加工项，
+ *    展示内容参考水洗唛的那种格式，还有特殊选项也要放上去，都放在加工项那一栏里面」）：
+ *    每套**面料行之后、加工费行之前**插入一条加工项子行（`quotation-set-processing-{index}`，
+ *    单格 `colSpan=8` 与 8 列栅格对齐），内容 = `lib/processing-item-text.ts` 的
+ *    `processingPaperLine(item.processingInfo)` —— 水洗唛式单行
+ *    `加工项：定型、韩褶 各 6.3 · 特殊选项：拼2次-布`（加工项与特殊选项**同一栏**）。
+ *    🔴 **文案单一来源**：与销售单 / 发货单 / 加工单**同一份**构建器 —— 本组件不另拼一份
+ *    （各拼一份 = 同一张订单的「做哪些活」在纸上长得不一样）。
+ *    🔴 **绑套**：子行只印**它自己那一套**的 `processingInfo`（跨套串味 = 把别人的活印到这张纸上）；
+ *    布料行 / 存量无加工项的行 ⇒ 空串 ⇒ 整块不渲染（不印空行、也不印「加工项：—」占位）。
+ *    ⚠️ 加工项子行**不是**「工艺行」（issue #7527）：部位 / 用料公式 / 算料仍不上纸，
+ *    本单只印「这张纸要交代给客户的那几件活 + 特殊选项」。
  */
 interface QuotationDocProps {
   order: Order
@@ -365,6 +380,9 @@ function SetBlock({ item, index, total }: { item: OrderItem; index: number; tota
   const feeDetail = readFeeDetail(item.processingInfo)
   const feeUnitPrice = numberOrNull(feeDetail?.unit_price)
   const feeMeters = numberOrNull(feeDetail?.meters)
+  // 加工项子行（issue #7891）：文案**只**取 `lib/processing-item-text.ts`（与销售单 / 发货单 /
+  // 加工单同一份构建器）；空串 = 本套没有加工项（布料行、存量单）⇒ 整块不渲染。
+  const processingLine = processingPaperLine(item.processingInfo)
 
   return (
     <div className="quotation-set mb-3">
@@ -410,6 +428,21 @@ function SetBlock({ item, index, total }: { item: OrderItem; index: number; tota
                 🔴 不许直读 `item.subtotal`：对「新增订单」页建的单它已含加工费，再单列加工费行 = 双算（issue #7724）。 */}
             <DocTd align="right">{formatAmount(fabricSubtotal(item))}</DocTd>
           </tr>
+          {/* 加工项子行（issue #7891）：加工项**绑这一套**（= 这个商品行），紧跟面料行 ——
+              水洗唛式「加工项 / 特殊选项」单行，两样**同一栏**（用户逐字「都放在加工项那一栏里面」）。
+              `colSpan=8` 与 8 列栅格对齐（Σ=8 ⇒ 行自洽，issue #6595 不变量照旧成立）；
+              小字 / 无背景色（打印丢底色）/ 折行不裁（issue #7715：纸面印全文）。
+              空串 = 这一套没有加工项 ⇒ 整块不渲染（不印空行、不印「加工项：—」占位）。 */}
+          {processingLine !== '' && (
+            <tr data-testid={`quotation-set-processing-${index}`}>
+              <td
+                colSpan={8}
+                className="border border-neutral-400 px-1.5 py-1 text-[0.9em] text-neutral-700 break-words"
+              >
+                {processingLine}
+              </td>
+            </tr>
+          )}
           {/* 加工费行：processingFee > 0 才出（与参照物的**有意差异**：我们两笔真实金额
               必须分别列示，否则商家对不上账 —— 见文件头第 7 条）。
               🔴 「组件」列自 issue #7625 退场 ⇒ 加工费行的**行标签**改由前四列合并承载

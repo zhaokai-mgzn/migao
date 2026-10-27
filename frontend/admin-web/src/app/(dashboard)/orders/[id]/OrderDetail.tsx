@@ -17,7 +17,7 @@ import { orderApi, productionApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
 import { Button, Loading, Modal } from '@/components/ui'
 import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, ShipmentDoc, QuotationDoc, SalesDoc, OrderUrgencyPanel, EditOrderContentModal, PrintDocPreview } from '@/components/orders'
-import { PRINT_TARGET_SPECS, usePrintDoc, type PrintTarget } from '@/lib/print-doc'
+import { PRINT_TARGET_SPECS, printTargetTitle, usePrintDoc, type PrintTarget } from '@/lib/print-doc'
 import { usePermission } from '@/lib/permission'
 // 「发货前要不要作业」的唯一读点 + 按型分岔的引导句（issue #7079 第 5 包）
 import { WORK_ORDER_NEEDED_COPY, workOrderKindOf } from '@/lib/processing-order'
@@ -492,12 +492,12 @@ export default function OrderDetailPage() {
       {/* 纸质销售单（**三联纸 241mm × 140mm**，issue #5651）：随货给客户的那张；
           🔴 页脚**不印收款码**（issue #7589，用户 2026-10-24 逐字「销售单打印处右下角的二维码移除掉」）
           —— 收款码只留在报价单上。
-          `processingOrder` 只用于左上角的**作业单扫码报工码**（issue #7530）：码值取服务端
-          `scan_url`，与 `ProcessingDoc` **同一份来源**（不新增读面）；无码 ⇒ 该块不出现。 */}
+          🔴 销售单左上角的**作业单扫码报工码已迁走**（issue #7891，用户 2026-10-27 逐字「把销售单左上角
+          的扫码报工二维码迁移到加工单打印上，这样设计才是合理的」）⇒ 本页**不再**给销售单传作业单读面
+          （`processingOrder` prop 同批退场），码归**加工单纸面**（`ProcessingDoc`，在加工单生产明细页打印）。 */}
       <SalesDoc
         order={order}
         shipments={shipments}
-        processingOrder={processingOrder}
         printTarget={printTarget}
       />
 
@@ -505,12 +505,17 @@ export default function OrderDetailPage() {
           🔴 预览实例**不传 printTarget** ⇒ 打印媒体下仍是 display:none（否则一次会出两份）。 */}
       <PrintDocPreview
         target={previewTarget}
-        title={previewTarget ? PRINT_TARGET_SPECS[previewTarget].title : ''}
+        // 标题按**作业单两型**给名（issue #7891：成品帘 ⇒「加工单」、面料单 ⇒「面料单」）；
+        // 其余单据位仍取 `PRINT_TARGET_SPECS`（那是**目标位**的名字，见 `lib/print-doc.ts`）
+        title={previewTarget ? printTargetTitle(previewTarget, workOrderKindOf(order)) : ''}
         media={previewTarget ? PRINT_TARGET_SPECS[previewTarget].media : 'a4'}
         onPrint={() => previewTarget && requestPrint(previewTarget)}
         onClose={closePreview}
         docs={ORDER_PRINT_DOCS}
         onSelect={selectPreview}
+        // 单据标签的显示名与标题**同源**（issue #7891）：作业单两型下同一个「processing」目标
+        // 会叫「加工单」（成品帘）或「面料单」（只裁剪的面料单），标签行不许另说一套名字。
+        titleOf={(target) => printTargetTitle(target, workOrderKindOf(order))}
       >
         {/* `inline` = 原地渲染进真尺寸纸框（不 portal 到 body，issue #5914） */}
         {previewTarget === 'shipment' && (
@@ -518,7 +523,7 @@ export default function OrderDetailPage() {
         )}
         {previewTarget === 'quotation' && <QuotationDoc order={order} inline />}
         {previewTarget === 'sales' && (
-          <SalesDoc order={order} shipments={shipments} processingOrder={processingOrder} inline />
+          <SalesDoc order={order} shipments={shipments} inline />
         )}
       </PrintDocPreview>
 

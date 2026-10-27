@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { peekPaymentQrcodes } from './use-payment-qrcodes'
 import type { PrintMediaId } from './print-media'
+// 纸面标题按**作业单两型**给名（issue #7891）：真值在 `processing-order.ts`（只 import 类型 ⇒ 无循环）
+import { workOrderDocTitleOf, type WorkOrderKind } from './processing-order'
 
 /**
  * 打印前的异步素材等待（issue #7536）—— 目前唯一的异步素材是收款码。
@@ -79,6 +81,21 @@ export const PRINT_TARGET_SPECS: Record<PrintTarget, { title: string; media: Pri
   labels: { title: '水洗唛', media: 'label-50x150' },
 }
 
+/**
+ * 预览 / 纸面标题（issue #7891）：`processing` 目标按**作业单两型**给名 ——
+ * 成品帘 ⇒「加工单」、面料单 ⇒「面料单」（真值 = {@link workOrderDocTitleOf}，
+ * 用户 2026-10-27 逐字「面料单就叫面料单，不要叫裁剪单」）；其它目标位原样回 {@link PRINT_TARGET_SPECS}。
+ *
+ * 为什么不把它写进 `PRINT_TARGET_SPECS`：那张表是**目标位**的名字（一份单据一个位，屏上到处在引用），
+ * 而「加工单 / 面料单」是**同一份纸**按这单的业务类型给的**纸面名** —— 写进 specs 等于说
+ * 「加工单这个位置有两种名字」，屏上的单据标签就会随单漂移。
+ * ⚠️ 已知边界：预览层的**单据标签行**（`PrintDocPreview` 内部）仍读 `PRINT_TARGET_SPECS`，
+ * 本 helper 只管**标题 / 纸面名**。
+ */
+export function printTargetTitle(target: PrintTarget, kind?: WorkOrderKind): string {
+  return target === 'processing' ? workOrderDocTitleOf(kind) : PRINT_TARGET_SPECS[target].title
+}
+
 export interface PrintDocController {
   /** 本次打印目标（各单据据此决定「我上不上纸」）；`null` = 本次没有任何单据上纸 */
   printTarget: PrintTarget | null
@@ -108,6 +125,19 @@ export function usePrintDoc(singleDocTarget?: PrintTarget): PrintDocController {
   const [previewTarget, setPreviewTarget] = useState<PrintTarget | null>(null)
   // 用**递增计数**而不是布尔：连点两次「打印」同一份单据时，effect 也必须再跑一次
   const [printNonce, setPrintNonce] = useState(0)
+
+  /**
+   * 缺省目标**跟着数据变**（issue #7891）：加工单生产页的缺省纸是「洗水唛」，但面料单
+   * （`order_kind='outbound'`）**没有**洗水唛、只有那份 A4「面料单」—— 而作业单读面是异步回来的
+   * ⇒ 首帧 `singleDocTarget` 还是 `'labels'`，之后再没人改它 ⇒ 面料单页直接 Ctrl+P **一张纸都不出**。
+   *
+   * 只在「还没打印过」时跟随（`printNonce === 0`）：一旦用户/页面指定了这次要印哪一份，
+   * 后续的数据变化**不得**改掉他的选择（纸是耗材；打印前换目标 = 打错纸）。
+   */
+  useEffect(() => {
+    if (printNonce !== 0) return
+    if (singleDocTarget) setPrintTarget(singleDocTarget)
+  }, [singleDocTarget, printNonce])
 
   // 🔴 打印发生在**提交之后**：本 effect 跑的时候，目标单据的 `data-print-target` 已经进 DOM。
   // 不许把 `window.print()` 挪回点击处理器里 —— 那正是 #5914 的「首次打印空白纸」。

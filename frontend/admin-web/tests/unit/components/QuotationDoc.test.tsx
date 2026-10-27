@@ -30,6 +30,7 @@ import {
   paperTextOf,
 } from '@/lib/print-doc-paper'
 import { paperLineSubtotal } from '@/lib/order-amount'
+import { processingPaperLine } from '@/lib/processing-item-text'
 import type { Order, OrderItem } from '@/types'
 /**
  * 报价单（可打印纸质文档，issue #4965）—— 照真实报价单 A4 制式（亿家纺织 CSO260918-03182）。
@@ -52,6 +53,13 @@ import type { Order, OrderItem } from '@/types'
  * 🔴 issue #6869（用户 2026-10-14）：「缺了商品 sku 的信息」+「报价单展示部位是啥意思」。
  * 夹具按**真 wire 形态**写（`skuCode` + `processingInfo.colorName/doorWidth`）——
  * 原夹具用的 `productCode` / `color` **都不在响应里**，正是纸面货号/颜色恒空的原因。
+ *
+ * 🔴 **加工项绑套**（issue #7891，用户 2026-10-27 逐字「销售单和报价单都缺了加工项」）：
+ * 每套面料行之后、加工费行之前多一条加工项子行（`quotation-set-processing-{index}`），
+ * 内容 = 水洗唛式 `加工项：… · 特殊选项：…`（两样**同一栏**），文案**只**来自
+ * `lib/processing-item-text.ts`（与销售单 / 发货单 / 加工单同一份构建器）；
+ * 布料行 / 无加工项的套**不出**子行（不印空行，也不印「加工项：—」占位）。
+ * 判据见 describe「⑫ 加工项绑套」；既有「加工费」行与金额判据**一条都不许变**。
  */
 
 function buildItem(overrides: Partial<OrderItem> = {}): OrderItem {
@@ -511,6 +519,138 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
       render(<QuotationDoc order={buildOrder({ items: [] })} />)
       expect(docText()).not.toContain('第1套')
       expect(docText()).not.toContain('undefined')
+    })
+  })
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // ⑫ 加工项**绑套**（issue #7891，用户 2026-10-27 逐字「销售单和报价单都缺了加工项」+
+  //    「发货单的加工项需要和商品绑定…展示内容参考水洗唛的那种格式，还有特殊选项也要放上去，
+  //    都放在加工项那一栏里面」）⇒ 每套**面料行之后、加工费行之前**一条加工项子行，
+  //    文案**只**来自 `lib/processing-item-text.ts`（与销售单 / 发货单 / 加工单同一份构建器）。
+  // ══════════════════════════════════════════════════════════════════════════════
+  describe('⑫ 加工项绑套：每套一条加工项子行（issue #7891）', () => {
+    /** 第 `index` 套的加工项子行（没有 ⇒ `null`） */
+    const setProcessing = (index: number): Element | null =>
+      doc().querySelector(`[data-testid="quotation-set-processing-${index}"]`)
+
+    it('每套一条：内容 = 水洗唛式「加工项：… · 特殊选项：…」（加工项与特殊选项同一栏）', () => {
+      const info = {
+        curtainType: '布帘',
+        colorName: '米白',
+        doorWidth: '2.8米',
+        processingItems: [
+          { name: '定型', quantity: 12.5 },
+          { name: '韩褶', quantity: 12.5 },
+        ],
+        specialOptions: ['拼2次-布'],
+      }
+      render(<QuotationDoc order={buildOrder({ items: [buildItem({ processingInfo: info })] })} />)
+      const row = setProcessing(0)
+      // 内容逐字：加工项 + 特殊选项**同一栏**（用户逐字「都放在加工项那一栏里面」）
+      expect(row?.textContent?.trim()).toBe('加工项：定型、韩褶 各 12.5 · 特殊选项：拼2次-布')
+      // 文案**只**来自共享构建器（组件里另拼一份 ⇒ 与上面那条会在同一次改动里分叉）
+      expect(row?.textContent?.trim()).toBe(processingPaperLine(info))
+      // 与 8 列同栅格（单格 colSpan=8）+ 小字折行不裁（issue #7715）
+      expect(row?.querySelectorAll('td')).toHaveLength(1)
+      expect(row?.querySelector('td')?.getAttribute('colspan')).toBe('8')
+      expect(row?.querySelector('td')?.className).toContain('break-words')
+      // 位置：本套 tbody 的第 2 行（第 1 行 = 面料行）
+      const rows = Array.from(doc()!.querySelectorAll('.quotation-set tbody tr'))
+      expect(rows.indexOf(row as HTMLTableRowElement)).toBe(1)
+      // 行/列自洽交给类级不变量：子行 Σ(colSpan) 必须等于表头 8 列（issue #6595）
+      expect(dataTables(doc()).every((table) => collectTableIntegrity([table]).length === 1)).toBe(true) // 单据：报价单 QuotationDoc
+    })
+
+    it('子行在**面料行之后、加工费行之前**，且不扰动加工费行（#7716 的口径不回退）', () => {
+      render(
+        <QuotationDoc
+          order={buildOrder({
+            items: [
+              buildFeeItem({
+                processingInfo: {
+                  ...buildFeeItem().processingInfo,
+                  processingItems: [{ name: '定型', quantity: 7.3 }],
+                },
+              }),
+            ],
+          })}
+        />
+      )
+      const rows = Array.from(doc()!.querySelectorAll('.quotation-set tbody tr'))
+      const indexes = {
+        fabric: rows.findIndex((tr) => tr.querySelectorAll('td')[0]?.textContent?.trim() === '0012'),
+        processing: rows.findIndex(
+          (tr) => tr.getAttribute('data-testid') === 'quotation-set-processing-0'
+        ),
+        fee: rows.findIndex((tr) => tr.querySelector('td')?.textContent?.trim() === '加工费'),
+      }
+      expect(indexes).toEqual({ fabric: 0, processing: 1, fee: 2 })
+      // 既有「加工费」行的单价 / 数量 / 小计**逐字不变**（插一行不许动它，issue #7716）
+      expect(feeRowCells()).toEqual(['加工费', '', '7.3', '7.00', '51.10'])
+      expect(docText()).toContain('本套金额 275.94')
+    })
+
+    it('两套各自绑定：第 1 套不出现第 2 套的加工项（不串套）', () => {
+      render(
+        <QuotationDoc
+          order={buildOrder({
+            items: [
+              buildItem({
+                id: 'a',
+                skuCode: '0012',
+                processingInfo: {
+                  curtainType: '布帘',
+                  processingItems: [{ name: '定型', quantity: 3 }],
+                },
+              }),
+              buildItem({
+                id: 'b',
+                skuCode: '0013',
+                quantity: 4,
+                processingInfo: {
+                  curtainType: '纱帘',
+                  processingItems: [{ name: '打孔', quantity: 4 }],
+                },
+              }),
+            ],
+          })}
+        />
+      )
+      expect(setProcessing(0)?.textContent?.trim()).toBe('加工项：定型 3')
+      expect(setProcessing(1)?.textContent?.trim()).toBe('加工项：打孔 4')
+      // 反向：串套（把别人的活印到这一套纸上）当场红
+      expect(setProcessing(0)?.textContent).not.toContain('打孔')
+      expect(setProcessing(1)?.textContent).not.toContain('定型')
+      expect(doc()!.querySelectorAll('[data-testid^="quotation-set-processing-"]')).toHaveLength(2)
+    })
+
+    it('布料行 / 无加工项的套 ⇒ 不出子行（不印空行、不印「加工项：—」）', () => {
+      render(
+        <QuotationDoc
+          order={buildOrder({
+            items: [
+              // 布料行：`processingInfo` 只有颜色 + saleForm，没有加工项数组
+              buildItem({ id: 'fabric', processingInfo: { colorName: '米白', saleForm: '布料' } }),
+              // 存量单：整行没有 `processingInfo` 键
+              buildItem({ id: 'legacy', skuCode: '0014', processingInfo: undefined }),
+              // 有加工项的成品帘套（对照：子行只在它那一套里出）
+              buildItem({
+                id: 'curtain',
+                skuCode: '0015',
+                processingInfo: { curtainType: '布帘', processingItems: [{ name: '定型', quantity: 6 }] },
+              }),
+            ],
+          })}
+        />
+      )
+      expect(setProcessing(0)).toBeNull()
+      expect(setProcessing(1)).toBeNull()
+      expect(setProcessing(2)?.textContent?.trim()).toBe('加工项：定型 6')
+      // 每套行数不变：布料 / 存量套只有面料行（1 行）
+      const blocks = Array.from(doc()!.querySelectorAll('.quotation-set'))
+      expect(blocks[0].querySelectorAll('tbody tr')).toHaveLength(1)
+      expect(blocks[1].querySelectorAll('tbody tr')).toHaveLength(1)
+      expect(docText()).not.toContain(`加工项：${PAPER_MISSING}`)
     })
   })
 

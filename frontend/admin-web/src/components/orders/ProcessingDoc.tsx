@@ -3,11 +3,17 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import dayjs from 'dayjs'
+import { QRCodeSVG } from 'qrcode.react'
 import { freightText } from '@/lib/logistics'
-import { orderItemCurtainType, orderItemQuantity, orderItemSku } from '@/lib/order-item-sku'
+import { orderItemCurtainType, orderItemQuantity, orderItemSku, craftRowsWithoutDoorWidth } from '@/lib/order-item-sku'
 // 加工费组合（= `processingItems[].name` 的集合，超高/超宽/倒幅就在里面）—— 取值口径唯一一份，issue #7833
 import { processingComboText } from '@/lib/processing-combo'
+// 纸面标题按**作业单两型**（issue #7891）：真值只有一份（`lib/processing-order.ts`），本组件不另写映射
+import { orderKindOf, workOrderDocTitleOf } from '@/lib/processing-order'
 import { printBodyFontPt, printContentInsetCss, printPageRule } from '@/lib/print-media'
+// 「加工方式 / 特殊选项」的**取值口只有一份**（水洗唛纸面用的同一对 helper，issue #7891 追加需求）——
+// 纸面「工艺」行照水洗唛的展示方式来印，不在本组件另写推导（另写 = 同一真值两处投影）
+import { washLabelCraftMode, washLabelSpecialOptions } from '@/lib/wash-label-content'
 import { useCompanyName } from '@/lib/use-company-name'
 import { cn } from '@/lib/utils'
 import type { PrintTarget } from './index'
@@ -20,7 +26,7 @@ import type { Order, OrderItem, ProcessingOrder, ProcessingOrderItem } from '@/t
  * ## 制式（四段，逐条对实证 #3）
  *
  * ① **表头**：订单日期 / 客户 / 电话 / 地址 / 备注 / **制单人** / **单号** / **交付日期** /
- *    **货运**（🔴 纸面**不印** QR / 短码，issue #7219）；
+ *    **货运**（左上角另有**扫码报工码**，见下「左上角扫码报工码」）；
  * ② **正文**：**按套分块** —— 每块段头 `第N套/共M套`，块内一张 9 列表
  *    （{@link PROCESSING_DOC_COLUMNS}：品名 | 货号 | 颜色 | 门幅 | 帘种 | 尺寸 | 数量 | 批号 | 备注）
  *    ＋ 一行「工艺：…」（原「部位信息」列的内容，issue #6869）；
@@ -75,11 +81,49 @@ import type { Order, OrderItem, ProcessingOrder, ProcessingOrderItem } from '@/t
  *   （不加限定会同特异性覆盖兄弟单据）；
  * - 守卫 = `tests/unit_ci_workflows/test_print_doc_convention_guard.py`。
  *
- * ## 纸面**不印** QR / 短码（issue #7219，本 PR 收口死参数）
+ * ## 左上角扫码报工码（issue #7891：由销售单迁入）
  *
- * 加工单纸面**不承载**扫码入口：QR / 无码占位框 / 可读短码行三种形态都不出现
- * （扫码入口属于工人端 / 任务卡，不属于给车间的加工单纸面）⇒ `qrValue` prop 与
- * `ProcessingDoc.test.tsx` 的旧 QR 用例同批退场。判据 = 同文件「🔴 ⑤ 加工单不再印 QR」。
+ * 用户 2026-10-27 逐字「把销售单左上角的扫码报工二维码迁移到加工单打印上，这样设计才是合理的」
+ * ⇒ 销售单那边由同批改动撤掉，**本单据**表头左上角与抬头**并排**画出（A4 版面，不额外起一段）。
+ * 三条口径（勿随手改）：
+ * 1. **码值逐字取服务端**：`(processingOrder.scan_url ?? '').trim()` —— 前端**不拼**域名 / 路径段
+ *    （那是第二份真值：换域名时纸面与读面静默不一致，而**纸上的码印出去就收不回来**；
+ *    类级守卫 = `tests/unit_ci_workflows/test_print_media_matrix_guard.py` 的 C11）；
+ * 2. **缺码不画假码**：没有 `scan_url`（存量单未实例化 / 没有作业单 / 读面没取到）⇒ **整块不出现**，
+ *    不画占位框、**不回落加工单号**（回落 = 扫出来只有一串文本、打不开任何页面）；
+ * 3. **短码不上纸**（issue #7608，用户 2026-10-24 逐字「不要在产品上体现短码了，工人端还有输入短码的
+ *    地方」）⇒ 码旁只留一行**竖排**「扫码报工」（`writing-mode: vertical-rl`：4 字高 ≈34px < 码高
+ *    56px，不额外占高度；横向只占一行字宽）。手输兜底仍在三处：工人报工页的输码框、任务卡上的部位
+ *    短码、以及本单纸面本来就印的「单号」。
+ * ⚠️ issue #7219 的「加工单纸面不承载扫码入口」**已被本裁定推翻**（同批把码从销售单迁过来）。
+ *
+ * ## 「工艺」行照水洗唛的展示方式（issue #7891 追加需求，用户 2026-10-27 截图 + 逐字）
+ *
+ * 改前那一格是**一整串**「工艺：韩褶；加工类型：定高买宽；打开方式：双开；是否定型：是；款式：单色；
+ * …；算料公式：…」—— 长句看不出重点（用户截图红框标的正是它）。改后**一行一条** `标签：值`：
+ *
+ * ① `加工方式：…` —— **复用**水洗唛的取值口 `washLabelCraftMode()`（工艺 · 加工费组合项 · 打开方式 ·
+ *    定型，与洗水唛纸面**逐字同一句**）；② `特殊选项：…` **单独一行**（`washLabelSpecialOptions()`，
+ *    缺 ⇒ 该行不渲染）；③ 其余工艺规格行各自成行，顺序沿用 `craftSpecRows()` 的既有顺序。
+ *
+ * 🔴 为什么**不**另写推导：水洗唛与加工单是同一批工艺事实的两张纸，各拼一份 = 又一个「同一真值两处
+ * 投影」（改一处另一处不会红）。本组件只做**排版**（把既有取值口的结果摆成多行），不重算任何值。
+ * ⚠️ 两处**故意的**差异（都属版面/信息完整度，不是第二份真值）：
+ * - 「门幅」不进这一格（它有自己的列，同一真值印两处只是噪音）；
+ * - 「加工类型」**保留**为独立一行：洗水唛 2026-10-26 裁定（issue #7833）不印它，但加工单是给车间的
+ *   作业纸，定高买宽 / 定宽买高是裁布依据 —— 参考展示方式 ≠ 跟着删信息。
+ * - 取值源优先加工单**快照行**（`processingItems` / 算料输出都在它上面），缺快照才回落到订单行
+ *   `processingInfo`（两者键名同源，`craftSpecRows()` 同时吃 camelCase / snake_case）——**不编造**。
+ *
+ * ## 纸面标题按作业单两型（issue #7891）
+ *
+ * 用户 2026-10-27 逐字「面料单不能打印水洗唛，应该打印加工单……那加工单打印名称如何统一命名呢，
+ * 又能体现成品帘加工，又要体现面料单的简单裁剪工序」⇒ 裁定：纸面标题 = {@link WORK_ORDER_DOC_TITLES}
+ * —— **成品帘 ⇒「加工单」、面料单 ⇒「面料单」**（用户同日另一句「面料单就叫面料单，不要叫裁剪单」：
+ * 裁剪只是面料单里的一道工序，拿它当纸名会把整张纸说小）。
+ * 缺键 / `null` ⇒「加工单」（存量单口径，与 `orderKindOf` **同一把尺**）。
+ * 🔴 **纸面名 ≠ 屏上类型名**：屏上仍是 `ORDER_KIND_LABELS`（「加工单」/「出库作业单」），
+ * 两套名字**不得互相覆盖**（屏幕要说清「卖布单的裁剪打包作业 ≠ 外发加工」，纸面只印两型名）。
  */
 interface ProcessingDocProps {
   order: Order
@@ -181,6 +225,12 @@ export default function ProcessingDoc({
   // 批号 = 加工单**快照**行的 `batchNo`（按 `itemId` 与商品行对齐；对不上 ⇒ 该行不猜）
   const snapshots = snapshotIndex(processingOrder)
   const docNo = paperText(processingOrder?.processingOrderNo ?? order.orderNo)
+  // 纸面标题按作业单两型（issue #7891）：成品帘 ⇒「加工单」、面料单 ⇒「面料单」；
+  // 缺键 / null ⇒ 加工单（存量单口径 = `orderKindOf` 同一把尺，不在本组件另写映射）
+  const docTitle = workOrderDocTitleOf(processingOrder ? orderKindOf(processingOrder) : null)
+  // 左上角扫码报工码（issue #7891：由销售单迁入）：码值**逐字**取服务端 `scan_url`（前端不拼），
+  // 无码 ⇒ 整块不出现（不画占位框、不印短码、不回落加工单号）
+  const scanUrl = (processingOrder?.scan_url ?? '').trim()
   // 交付日期：加工单的交期优先，缺则回落到订单的「要求到货日」（#5177）—— 都是服务端字段
   const delivery = formatDate(processingOrder?.expectedDeliveryDate ?? order.requiredDeliveryDate)
   const orderDate = formatDate(order.createdAt)
@@ -230,15 +280,36 @@ export default function ProcessingDoc({
         }
       `}</style>
 
-      {/* ===== ① 表头（issue #7219：不再印 QR；企业名称在标题上方） ===== */}
-      <div>
-        <div>
+      {/* ===== ① 表头（issue #7891：扫码报工码在**左上角**与抬头并排；企业名称在标题上方） ===== */}
+      <div className="flex items-start gap-2">
+        {/* 左上角扫码报工码（issue #7891：由销售单迁入）：有码才画，缺码整块不出现 */}
+        {scanUrl !== '' && (
+          <div className="flex shrink-0 items-start gap-1" data-testid="processing-doc-qr">
+            <QRCodeSVG
+              value={scanUrl}
+              size={56}
+              level="M"
+              title={scanUrl}
+              data-testid="processing-doc-qr-svg"
+            />
+            {/* 「扫码报工」竖排（issue #7608）：4 字高 ≈34px < 码高 56px ⇒ 不额外占高度；
+                横向只占一行字宽。短码不上纸（用户 2026-10-24 裁定），手输兜底在工人端。 */}
+            <div
+              className="text-[0.7em] leading-tight text-neutral-500"
+              style={{ writingMode: 'vertical-rl' }}
+              data-testid="processing-doc-qr-label"
+            >
+              扫码报工
+            </div>
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
           {companyName && (
             <div className="text-center text-sm font-medium text-neutral-700 mb-0.5" data-testid="doc-company-name">
               {companyName}
             </div>
           )}
-          <div className="text-center text-xl font-semibold tracking-[0.5em] mb-1">加工单</div>
+          <div className="text-center text-xl font-semibold tracking-[0.5em] mb-1">{docTitle}</div>
           <table className="w-full border-collapse mb-2">
             <tbody>
               <tr>
@@ -323,10 +394,27 @@ function SetBlock({
   const info = (item.processingInfo ?? {}) as Record<string, unknown>
   // 商品身份（品名 / 货号 / 颜色 / 门幅）—— **唯一**取值口，见文件头第 1 条
   const sku = orderItemSku(item)
-  // 工艺说明 = craftSpecRows 的同一份真值（§4.9）—— 「门幅」已由 orderItemSku 排除（有独立的列）；
-  // ⚠️ 「部位」（curtainType）**保留**在这里：issue #4521 移除录入面后它只有纱帘行才有值，
-  // 旧「部位」列/段头「部位：…」对普通订单恒空（用户原话「报价单展示部位是啥意思」）。
-  const craftText = sku.specRows.map((row) => `${row.label}：${row.value}`).join('；')
+  // 工艺规格的**取值源**（issue #7891 追加需求）：优先加工单**快照行**（加工费组合 / 算料输出都在
+  // 它上面），缺快照才回落到订单行的 `processingInfo`（两者键名同源：`craftSpecRows()` 同时吃
+  // camelCase / snake_case）。此处只做类型断言，好**复用**水洗唛的取值口 —— 不新增字段读取、不编造。
+  const craftSource = (snapshot ?? (item.processingInfo as unknown)) as ProcessingOrderItem | null
+  // ① 加工方式 = 水洗唛那一句（工艺 · 加工费组合项 · 打开方式 · 定型）；② 特殊选项单独一行。
+  // 🔴 取值口**唯一**（`washLabelCraftMode` / `washLabelSpecialOptions`）：水洗唛与这张纸不许各拼一份。
+  const craftMode = washLabelCraftMode(craftSource)
+  const specialOptions = washLabelSpecialOptions(craftSource)
+  // 已被上面两行表达过的字段不再重复印；「门幅」由 `craftRowsWithoutDoorWidth()` 排除
+  // （那是全仓**唯一**的取值口：`craftSpecRows()` 去掉「门幅」——本组件**不**直调 `craftSpecRows()`，
+  // 直调点未登记会判红，见 `tests/unit/craft-spec-row-source-guard.test.ts`）。
+  // ⚠️ 「加工类型」**不在此列**：洗水唛不印它（issue #7833），但加工单是给车间的作业纸，留一行。
+  const CRAFT_LABELS_EXPRESSED = ['工艺', '打开方式', '是否定型', '特殊选项']
+  // 一行一条 `标签：值`（用户 2026-10-27 截图：一整串「…；…；…」看不出重点）
+  const craftLines = [
+    craftMode !== '' ? `加工方式：${craftMode}` : '',
+    specialOptions !== '' ? `特殊选项：${specialOptions}` : '',
+    ...craftRowsWithoutDoorWidth(craftSource)
+      .filter((row) => !CRAFT_LABELS_EXPRESSED.includes(row.label))
+      .map((row) => `${row.label}：${row.value}`),
+  ].filter((line) => line !== '')
   // 加工费组合（issue #7833）：用户 2026-10-26 逐字「JG-…-8172 这个加工单有超高倒幅，但是在加工单的
   // 各个环节都没有体现出来」⇒ A4 纸面每套块内单列一行。取值 = **加工单快照行**的 `processingItems`
   // （组合键的真值源；存量单缺该键 ⇒ 空串 ⇒ 整行不渲染，不编造、不回落到订单侧现值）。
@@ -385,13 +473,18 @@ function SetBlock({
                 —— 车间要按它核算法）。缺值**留空**（纸面留白供手写）。 */}
             <DocTd>{paperText(info.remark, '')}</DocTd>
           </tr>
-          {/* 工艺说明行：整行承载原「部位信息」列（issue #6869）；首格 = 行标签「工艺」。
-              🔴 整行必须占满 9 列（1 + `colSpan` 8）—— 少一格 ⇒ 那一列在数据行没有单元格、
-              也就没有边框（issue #6595 实测形态）。 */}
-          {craftText !== '' && (
+          {/* 工艺规格行（issue #7891 追加需求）：照水洗唛「加工方式 / 特殊选项」的展示方式**一行一条**
+              —— 改前是一整串用「；」拼起来的长句（用户截图红框：看不出重点）。
+              行序 = 加工方式 → 特殊选项 → `craftSpecRows()` 的既有顺序；长值由 `DocTd` 折行印全文。
+              🔴 整行仍须占满 9 列（1 + `colSpan` 8）—— 少一格数据行就缺边框（issue #6595 实测形态）。 */}
+          {craftLines.length > 0 && (
             <tr>
               <DocTd>工艺</DocTd>
-              <DocTd colSpan={8}>{craftText}</DocTd>
+              <DocTd colSpan={8} testId="processing-doc-craft">
+                {craftLines.map((line) => (
+                  <div key={line}>{line}</div>
+                ))}
+              </DocTd>
             </tr>
           )}
           {/* 加工费组合行（issue #7833）：整行占满 9 列（1 + colSpan 8，同「工艺」行 ——

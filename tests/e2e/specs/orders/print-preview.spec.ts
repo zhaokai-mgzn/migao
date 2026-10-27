@@ -11,6 +11,11 @@
  * ③ **非目标单据会不会一起上纸**（`visibility:hidden` 仍占版面 ⇒ 空白页）；
  * ④ **截图复制到底有没有产出真实尺寸的 PNG**（`SVG foreignObject` 这条链路只有真浏览器跑得通）。
  *
+ * ⑤ issue #7891（用户 2026-10-27「把销售单左上角的扫码报工二维码迁移到加工单打印上」）：
+ *    扫码报工码在**加工单**纸面的左上角（有码出图 / 缺码不画 / 短码不上纸），**销售单**纸面不再有它。
+ *    ⚠️ 加工单只在「加工单生产明细」页上纸（issue #7870）⇒ 那两条用例进生产明细页，
+ *    本机**未执行**（e2e 不进本地验证回路）。
+ *
  * fixture 模式（`E2E_MOCK_AUTH`）：认证与订单接口全部 mock，不依赖后端与真实数据。
  */
 import { test, expect } from '../../fixtures'
@@ -277,87 +282,184 @@ test.describe('商家后台打印链路（UI-026 / issue #5914）', () => {
     expect(shot.inkHeightRatio).toBeGreaterThan(0.5)
   })
 
-  // 🔴 issue #7530（用户 2026-10-23「把作业出库单手机端链接对应的二维码信息放置在左上角，
-  //    工人可以通过扫码进入报工页面」）：jsdom 判得了「码值 / 位置 / 缺码不画」，判不了
-  //    「真浏览器里它到底在不在纸框左上角」—— 这里用真 Chrome 量一遍相对纸框的偏移并截图留证。
-  test('⑤ 销售单左上角：作业单扫码报工码（有码 ⇒ 出图且贴左上角；无码 ⇒ 不画假码）', async ({ page }) => {
-    await mockOrderApi(page, baseOrder(2))
-    // 作业单读面（GET /api/admin/processing-orders/{orderId}）：服务端下发的短链 + 短码
-    const workOrder = (scanUrl: string | null) => ({
-      success: true,
-      data: {
-        id: 'po-1',
-        orderId: ORDER_ID,
-        orderNo: 'ORD20261001001',
-        processingOrderNo: 'CK-20261023-0001',
-        order_kind: 'outbound',
-        status: 'generated',
-        short_code: '7K3M9QP2',
-        scan_url: scanUrl,
-        items: [],
-      },
-    })
-    await page.route('**/api/admin/processing-orders/**', (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(workOrder('https://app.migaozn.com/o/7K3M9QP2')),
-      })
-    )
+  // 🔴 issue #7891（用户 2026-10-27 逐字「把销售单左上角的扫码报工二维码迁移到加工单打印上，
+  //    这样设计才是合理的」）：码从**销售单**搬到**加工单纸面**。jsdom 判得了「码值 / 位置 /
+  //    缺码不画」，判不了「真浏览器里它到底在不在纸框左上角」—— 这里用真 Chrome 量一遍相对
+  //    纸框的偏移并截图留证。
+  //    ⚠️ 加工单只在「加工单生产明细」页上纸（issue #7870）⇒ 本用例进那一页；销售单那边的
+  //    反向判据见 ⑤b。⚠️ 本机未执行（e2e 不进本地验证回路），首跑请留意 route 替身的字段面。
+  test('⑤ 加工单左上角：扫码报工码（有码 ⇒ 出图且贴左上角；无码 ⇒ 不画假码）', async ({ page }) => {
+    const scan: { scanUrl: string | null; shortCode: string | null } = {
+      scanUrl: 'https://app.migaozn.com/o/7K3M9QP2',
+      shortCode: '7K3M9QP2',
+    }
+    await mockProductionPageApi(page, scan)
+    await page.goto('/processing-orders/JG-20261027-0001/production')
 
+    // 打印层里两份纸（洗水唛 + 加工单，issue #7870）—— 码在**加工单**那一张上
+    await page.getByTestId('production-print-button').click()
+    const preview = page.getByTestId('print-preview')
+    await expect(preview).toBeVisible()
+    await page.getByTestId('print-preview-doc-processing').click()
+    await expect(page.getByTestId('print-preview-doc-processing')).toHaveAttribute('aria-pressed', 'true')
+
+    const qr = preview.locator('[data-testid="processing-doc-qr"]')
+    await expect(qr).toBeVisible()
+    // 码值**逐字** = 服务端下发值（qrcode.react 把 value 写进 `<svg><title>`；前端不拼域名 / 路径段）
+    await expect(qr.locator('svg title')).toHaveText(scan.scanUrl!)
+    // 纸面只留**竖排**「扫码报工」（横向只占一行字宽），8 位短码不上纸（issue #7608）
+    await expect(qr).toContainText('扫码报工')
+    await expect(qr.locator('[data-testid="processing-doc-qr-label"]')).toHaveCSS('writing-mode', 'vertical-rl')
+    // 纸面**可读文字**里没有短码（`<svg>` 不参与文本 —— 里面那串是码值本身，不是印出来的字）
+    const paperText = await preview.locator('.processing-print-area').evaluate((el) => {
+      const clone = el.cloneNode(true) as Element
+      clone.querySelectorAll('svg, style').forEach((node) => node.remove())
+      return clone.textContent || ''
+    })
+    expect(paperText).toContain('扫码报工')
+    expect(paperText).not.toContain(scan.shortCode!)
+
+    // 位置 = 纸面**左上角**：码块相对纸框的左上偏移都在 20px 内（纸框本身是缩放适配的）
+    const paper = preview.locator('.processing-print-area')
+    const paperBox = (await paper.boundingBox())!
+    const qrBox = (await qr.boundingBox())!
+    expect(qrBox.x - paperBox.x).toBeLessThan(20)
+    expect(qrBox.y - paperBox.y).toBeLessThan(20)
+
+    // 多模态取证（真浏览器截图，人工读图用）
+    await preview.screenshot({ path: '/tmp/ui7891-processing-doc-qr.png' })
+
+    // 缺码**不画假码**：读面没有 scan_url ⇒ 整块不出现（不画占位框、不印短码、不回落加工单号）
+    scan.scanUrl = null
+    scan.shortCode = null
+    await page.reload()
+    await page.getByTestId('production-print-button').click()
+    const preview2 = page.getByTestId('print-preview')
+    await expect(preview2).toBeVisible()
+    await preview2.getByTestId('print-preview-doc-processing').click()
+    await expect(preview2.locator('[data-testid="processing-doc-qr"]')).toHaveCount(0)
+    await expect(preview2.locator('[data-testid="processing-doc-qr-placeholder"]')).toHaveCount(0)
+    // 起算点自证：那张纸还在（上面两条不是「页面上什么都没有」的空跑）
+    await expect(preview2.locator('.processing-print-area')).toContainText('加工单')
+  })
+
+  // 反向判据（issue #7891）：码**迁走**了 —— 同一次裁定是「搬」，不是「两边都印」
+  test('⑤b 销售单纸面无扫码块（码已迁到加工单，issue #7891）', async ({ page }) => {
+    await mockOrderApi(page, baseOrder(2))
     await page.goto(`/orders/${ORDER_ID}`)
-    // issue #7544：入口收敛成页面级唯一的「打印」，打印层默认选中销售单（`PRINT_SPEC_DEFAULT`）
     await page.getByTestId('order-print-entry').click()
     const preview = page.getByTestId('print-preview')
     await expect(preview).toBeVisible()
-
-    const qr = preview.locator('[data-testid="sales-work-order-qr"]')
-    await expect(qr).toBeVisible()
-    // 码值**逐字** = 服务端下发值（qrcode.react 把 value 写进 <svg><title>）
-    await expect(qr.locator('svg title')).toHaveText('https://app.migaozn.com/o/7K3M9QP2')
-    // 纸面只留**竖排**「扫码报工」，8 位短码不印在销售单上（issue #7608，用户 2026-10-24 逐字
-    // 「不要在产品上体现短码了，工人端还有输入短码的地方」）—— 手输兜底在工人端输入框 /
-    // 任务卡 / 本单本来就印的「单号」，不在这块；竖排是**机制**，横排会让这一列再宽 ≈9mm
-    await expect(qr).toContainText('扫码报工')
-    await expect(qr.locator('[data-testid="sales-work-order-qr-label"]')).toHaveCSS(
-      'writing-mode',
-      'vertical-rl'
-    )
-    await expect(qr.locator('[data-testid="sales-work-order-short-code"]')).toHaveCount(0)
-
-    // 位置 = 纸面**左上角**：码块相对单联纸框的左上偏移都在 20px 内（纸框本身是缩放适配的）
-    const sheet = preview.locator('[data-testid="sales-sheet"]')
-    await expect(sheet).toBeVisible()
-    const sheetBox = (await sheet.boundingBox())!
-    const qrBox = (await qr.boundingBox())!
-    expect(qrBox.x - sheetBox.x).toBeLessThan(20)
-    expect(qrBox.y - sheetBox.y).toBeLessThan(20)
-
-    // 🔴 销售单纸面**不印收款码**（issue #7589）：真浏览器里连图片节点都不该有
-    //（收款码只属于报价单；旧形态这里会出现 `sales-qr-wechat` / `sales-qr-alipay` 两张图）
-    await expect(preview.locator('[data-testid^="sales-qr-"]')).toHaveCount(0)
-    await expect(preview.locator('[data-testid="sales-sheet"] img')).toHaveCount(0)
-
-    // 多模态取证（真浏览器截图，人工读图用）
-    await preview.screenshot({ path: '/tmp/ui7530-sales-doc-work-order-qr.png' })
-
-    // 缺码**不画假码**：读面没有 scan_url ⇒ 整块不出现（不画占位框、不印作业单号冒充可扫码）
-    await page.unroute('**/api/admin/processing-orders/**')
-    await page.route('**/api/admin/processing-orders/**', (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(workOrder(null)),
-      })
-    )
-    await page.reload()
-    await page.getByTestId('order-print-entry').click()
-    const preview2 = page.getByTestId('print-preview')
-    await expect(preview2).toBeVisible()
-    await expect(preview2.locator('[data-testid="sales-work-order-qr"]')).toHaveCount(0)
-    await expect(preview2.locator('[data-testid="sales-sheet"]')).not.toContainText('CK-20261023-0001')
+    await expect(preview.locator('[data-testid="sales-work-order-qr"]')).toHaveCount(0)
+    // 加工单纸面也不该跑到订单详情页里（#7870 的唯一入口 + #7891 的迁入面）
+    await expect(preview.locator('[data-testid="processing-doc-qr"]')).toHaveCount(0)
+    await expect(page.locator('.processing-print-area')).toHaveCount(0)
+    // 起算点自证：销售单纸面确实渲染出来了（上面几条不是「预览层是空的」的空跑）
+    await expect(preview.locator('[data-testid="sales-sheet"]')).toBeVisible()
   })
 })
+
+/**
+ * 「加工单生产明细」页（`/processing-orders/{id}/production`）的读面替身（fixture 模式无后端）。
+ *
+ * `scan` 是**可变**的：缺码那一轮直接把 `scanUrl` 置空再 reload —— 不必重复注册 route
+ * （重复注册会让「哪一条先命中」变成隐式耦合）。
+ *
+ * ⚠️ route 一律用**精确 glob**（`*` 不跨 `/`）：订单详情的 pattern 落在 `/api/admin/orders/<id>`
+ * 这一层，就不会顺带命中 `.../shipments`，免得与「更宽的 pattern 谁先命中」扯上关系。
+ */
+async function mockProductionPageApi(
+  page: any,
+  scan: { scanUrl: string | null; shortCode: string | null }
+) {
+  const body = (data: unknown) => JSON.stringify({ success: true, data })
+  // 加工单详情（`GET /api/admin/processing-orders/{id}`）：`order_kind` = 成品帘（纸面名「加工单」）
+  await page.route('**/api/admin/processing-orders/*', (route: any) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: body({
+        id: 'po-1',
+        orderId: ORDER_ID,
+        orderNo: 'ORD20261027001',
+        processingOrderNo: 'JG-20261027-0001',
+        customerName: '张三',
+        status: 'in_processing',
+        order_kind: 'processing',
+        generatedAt: '2026-10-27T09:00:00+08:00',
+        short_code: scan.shortCode,
+        scan_url: scan.scanUrl,
+        items: [
+          { itemId: 'item-1', productName: '布艺遮光帘1', colorName: '米白', quantity: 12.5, unit: '米' },
+        ],
+      }),
+    })
+  )
+  // 加工单纸面读的是**订单详情**（#7870：与订单详情页打印**同一份** DTO，权限 order:detail）
+  await page.route('**/api/admin/orders/*', (route: any) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: body({ ...baseOrder(1), id: ORDER_ID, orderNo: 'ORD20261027001' }),
+    })
+  )
+  // 工序树 / 计件 / 卡点 / 精裁清单 / 质检：本用例只关心那张 A4，但页面会一起取
+  // ⇒ 都给**成功**的空读（不让错误态抢版面，也不拿它们当判据）
+  await page.route('**/api/admin/production/orders/*/operations', (route: any) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: body({
+        order_id: ORDER_ID,
+        qr_token: 'qr-token-1',
+        positions: [],
+        progress: { total: 0, done: 0, percent: 0 },
+      }),
+    })
+  )
+  await page.route('**/api/admin/production/orders/*/piecework', (route: any) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: body({ total: 0, per_worker: {}, per_operation: [] }),
+    })
+  )
+  await page.route('**/api/admin/production/stuck-points*', (route: any) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: body({
+        mode: 'A',
+        threshold_hours: 4,
+        threshold_source: 'default',
+        states: { not_started: 0, in_progress: 0, completed: 0 },
+        stuck_total: 0,
+        stuck: [],
+      }),
+    })
+  )
+  await page.route('**/api/admin/processing-order-sets*', (route: any) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: body({ total: 0, page: 1, size: 100, items: [] }),
+    })
+  )
+  await page.route('**/api/admin/quality-inspections*', (route: any) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: body([]) })
+  )
+  // 企业名 / 通知（与订单详情页同一批旁路；空读数 ⇒ 纸面抬头整块不渲染，不影响判据）
+  await page.route('**/api/admin/settings**', (route: any) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: body({}) })
+  )
+  await page.route('**/api/admin/notifications**', (route: any) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: body({ items: [], total: 0, unreadCount: 0 }),
+    })
+  )
+}
 
 /** 读出文档里所有 `<style>` 的文本（`@page` 的 `size` 描述符只有这里读得到） */
 async function readStyleText(page: any): Promise<string> {

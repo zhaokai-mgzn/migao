@@ -15113,7 +15113,7 @@ _CASE_UI_040 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['发货时要拿着一张单据照单拣货/打包，纸面还要留经手人（发货人）；但系统里发货只填了承运商+运单号，既没有可打印的发货单，也没有任何发货人留痕'],
     expectations=['direct_reply'],
-    data_checks=['发货页新增「发货人」输入：默认预填当前登录人姓名（name→nickname→username 兜底链，但**不**退化为「管理员」这类角色名），允许改成实际经手人；清空则拒绝提交（toast「请输入发货人」）', '确认发货 payload 携带 shipperName（trim 后非空才下发）；后端 PUT /api/admin/orders/{id}/logistics 落库 order_logistics.shipper_name，传空时用 SecurityUser.userId 查 users.nickname 兜底（agent order_manage(update_logistics) 路径同口径——order_manage 透传 X-User-Id）', '更新已有物流时**仅**在显式传入非空才覆盖发货人：改运单号/纠错不等于换经手人；存量订单（shipper_name 为 NULL）不为历史数据猜经手人', 'order_logistics.shipper_name 必须 nullable：存量已发货订单历史上无此数据，纸面「发货人」栏显示「-」（#3818 裁定，不得留白、不得 undefined/null），不得回填假值（否则迁移失败或纸面出现伪造经手人）', '新增可打印「发货单」（ShipmentDoc）：A4（@page size: A4）+ body visibility 隔离；纸面含 订单号/下单时间/收货人/电话/地址/商品明细（品名·货号·颜色·规格·数量·单价·金额）/合计（总数量+总金额）/加工费合计（`ShipmentDoc.tsx` 的纸面标签真值）/备注/发货人（存量空值显示「-」）/物流公司·运单号（发货前留空供手写，发货后带出）', '入口两处：发货页（发货前打印，发货人取当前输入值，未保存也印）+ 订单详情页页面级「打印」入口里选**发货单**（补打——发货页有状态守卫，shipped 后进不去）。🔴 issue #7544 改判：详情页不再有独立的「打印发货单」按钮，也不再按状态显隐（待付款等未发货状态同样能补打，只是纸面物流 / 发货人栏为空）', '发货单渲染在页面级，**不得**放进 Modal（Modal 为 max-h-full + 内部 overflow-y-auto，打印只会打出可视一屏、多页明细被裁）；每页只挂一份（.shipment-print-area 为全局选择器，挂两份会打印出两套单据）', '不向 C 端顾客泄漏发货人：customer_logistics_track 按白名单字段构造返回（order_id/order_no/tracking_number/company/status/status_text/latest/traces），响应中不含 shipperName', '加工项区（issue #7275 + #7605）：纸面「加工项」压成**一行**（区头 = `加工项（数量：米）`，单位只写一次），加工费合计同行右对齐（过长自动折行，不裁项）；行文案由 `frontend/admin-web/src/components/orders/ShipmentDoc.tsx` 的 `processingItemsText()` **单一构建器**产出、按**数据二态**：数量全等 ⇒ `定型、韩褶 各 6`（数字只说一遍）；数量不等 ⇒ `定型 6 + 韩褶 2`；单项 ⇒ `定型 6`（不写「各」）；缺数量 ⇒ 该项显式印 `—`（`打孔 —`）。🔴 **不得**用 `（A+B）×6`（用户 2026-10-24 裁定）：纯文本有运算优先级歧义（`定型 + 韩褶×6`），且与同行「加工费合计」并排会诱导客户拿它去乘出加工费（真值 = 组合价 元/米 × 加工费米数）；各加工项 quantity 可以不等、可以缺 ⇒ 无条件提公因子 = 把不等的数压成一个 = 报错数。执行点 = `frontend/admin-web/tests/unit/components/ShipmentDoc.test.tsx` 的「#4882 / #7275 / #7605」+「#7605：数量全等」+「#7275 / #7605：缺数量」；类级判据 = `tests/unit_ci_workflows/test_print_media_matrix_guard.py::test_c9_shipment_processing_items_stay_on_one_line`（构建器缺失 / 全等形态缺失 / 构建器里出现 `×` 均判红，含注入式红证）'],
+    data_checks=['发货页新增「发货人」输入：默认预填当前登录人姓名（name→nickname→username 兜底链，但**不**退化为「管理员」这类角色名），允许改成实际经手人；清空则拒绝提交（toast「请输入发货人」）', '确认发货 payload 携带 shipperName（trim 后非空才下发）；后端 PUT /api/admin/orders/{id}/logistics 落库 order_logistics.shipper_name，传空时用 SecurityUser.userId 查 users.nickname 兜底（agent order_manage(update_logistics) 路径同口径——order_manage 透传 X-User-Id）', '更新已有物流时**仅**在显式传入非空才覆盖发货人：改运单号/纠错不等于换经手人；存量订单（shipper_name 为 NULL）不为历史数据猜经手人', 'order_logistics.shipper_name 必须 nullable：存量已发货订单历史上无此数据，纸面「发货人」栏显示「-」（#3818 裁定，不得留白、不得 undefined/null），不得回填假值（否则迁移失败或纸面出现伪造经手人）', '新增可打印「发货单」（ShipmentDoc）：A4（@page size: A4）+ body visibility 隔离；纸面含 订单号/下单时间/收货人/电话/地址/商品明细（品名·货号·颜色·规格·数量·单价·金额）/合计（总数量+总金额）/加工费合计（`ShipmentDoc.tsx` 的纸面标签真值）/备注/发货人（存量空值显示「-」）/物流公司·运单号（发货前留空供手写，发货后带出）', '入口两处：发货页（发货前打印，发货人取当前输入值，未保存也印）+ 订单详情页页面级「打印」入口里选**发货单**（补打——发货页有状态守卫，shipped 后进不去）。🔴 issue #7544 改判：详情页不再有独立的「打印发货单」按钮，也不再按状态显隐（待付款等未发货状态同样能补打，只是纸面物流 / 发货人栏为空）', '发货单渲染在页面级，**不得**放进 Modal（Modal 为 max-h-full + 内部 overflow-y-auto，打印只会打出可视一屏、多页明细被裁）；每页只挂一份（.shipment-print-area 为全局选择器，挂两份会打印出两套单据）', '不向 C 端顾客泄漏发货人：customer_logistics_track 按白名单字段构造返回（order_id/order_no/tracking_number/company/status/status_text/latest/traces），响应中不含 shipperName', '加工项区（issue #7275 → #7605 → **#7891**）：**加工项绑商品行** —— 每个商品行下方跟一条子行（`shipment-item-processing-N`，单格 `colSpan` = 全表列数），文案 = 水洗唛式单行 `加工项：定型、韩褶 各 6.3 · 特殊选项：拼2次-布`（**加工费合计**仍在明细表之后单独一行右对齐，口径不变 = Σ 行级 `processingFee`）；「不绑商品」的表外一行（旧区头 `加工项（数量：米）`、锚点 `shipment-processing-items`）**退场**。行文案由 `frontend/admin-web/src/lib/processing-item-text.ts` 的 `processingItemsText()` / `processingPaperLine()` **单一构建器**产出（三份纸共用）、按**数据二态**：数量全等 ⇒ `定型、韩褶 各 6`（数字只说一遍）；数量不等 ⇒ `定型 6 + 韩褶 2`；单项 ⇒ `定型 6`（不写「各」）；缺数量 ⇒ 该项显式印 `—`（`打孔 —`）。🔴 **不得**用 `（A+B）×6`（用户 2026-10-24 裁定）：纯文本有运算优先级歧义（`定型 + 韩褶×6`），且与「加工费合计」并排会诱导客户拿它去乘出加工费（真值 = 组合价 元/米 × 加工费米数）；各加工项 quantity 可以不等、可以缺 ⇒ 无条件提公因子 = 把不等的数压成一个 = 报错数。执行点 = `frontend/admin-web/tests/unit/components/ShipmentDoc.test.tsx`（三态 / 绑定 / 布料行不出 / 旧形态退场 / 加工费合计）+ `frontend/admin-web/tests/unit/lib/processing-item-text.test.ts`；类级判据 = `tests/unit_ci_workflows/test_print_media_matrix_guard.py::test_c9_shipment_processing_items_bind_to_the_product_row`（子行锚点缺失 / 退回旧表外锚点 / 没 import 单一构建器 / 构建器缺全等形态 / 构建器里出现 `×` / 删掉加工费合计 均判红，含注入式红证）'],
     skip_reason='[backend-contract] 纯前端 UI + 后端字段落库，由 vitest 单测（ShipmentDoc/ship-order/order-detail/data-adapter）与 MockMvc/Service 单测（OrderControllerTest/AgentOrderServiceTest/UserServiceTest）验证；非 LLM 行为（agent 工具参数未变，发货人由后端按 X-User-Id 兜底），不进入 agent-eval 冒烟',
     tags=['ui', 'order', 'shipment', 'print', 'admin-web'],
     persona='',
@@ -15467,16 +15467,16 @@ _CASE_UI_060 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── UI-061 [NORMAL] A4 加工单打印：表头九栏（订单日期/客户/电话/地址/备注/制单人/单号/交付日期/货运）；按套分块，每块 9 列 品名|货号|颜色|门幅|尺寸|数量|组件|批号|备注（🔴 纸面不印工序清单、不印 QR）；@page A4 + 分页不裁切 + 表头重复（issue #5651 / #6901 / #7219 / #7274）（源: cases/ui.yml）──
+# ── UI-061 [NORMAL] A4 加工单打印：表头九栏（订单日期/客户/电话/地址/备注/制单人/单号/交付日期/货运）；按套分块，每块 9 列 品名|货号|颜色|门幅|帘种|尺寸|数量|批号|备注（🔴 纸面不印工序清单；纸面标题按作业单两型「加工单 / 面料单」；左上角印扫码报工码）；@page A4 + 分页不裁切 + 表头重复（issue #5651 / #6901 / #7274 / #7891）（源: cases/ui.yml）──
 _CASE_UI_061 = EvalCase(
     id='UI-061',
     legacy_id='',
-    title='A4 加工单打印：表头九栏（订单日期/客户/电话/地址/备注/制单人/单号/交付日期/货运）；按套分块，每块 9 列 品名|货号|颜色|门幅|尺寸|数量|组件|批号|备注（🔴 纸面不印工序清单、不印 QR）；@page A4 + 分页不裁切 + 表头重复（issue #5651 / #6901 / #7219 / #7274）',
+    title='A4 加工单打印：表头九栏（订单日期/客户/电话/地址/备注/制单人/单号/交付日期/货运）；按套分块，每块 9 列 品名|货号|颜色|门幅|帘种|尺寸|数量|批号|备注（🔴 纸面不印工序清单；纸面标题按作业单两型「加工单 / 面料单」；左上角印扫码报工码）；@page A4 + 分页不裁切 + 表头重复（issue #5651 / #6901 / #7274 / #7891）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
     user_inputs=['客户现行四张单据里的 A4 加工单（2026-09-26 用户提供实物照，去 PII 后登记在 issue #5651 的实证表 #3）；用户逐字裁定「要做，新增 A4 加工单打印」'],
     expectations=['direct_reply'],
-    data_checks=['判据 1·**表头九栏逐条命中实证 #3**：订单日期 / 客户 / 电话 / 地址 / 备注 / 制单人 / 单号 / 交付日期 / 货运 九栏全部渲染，取值取服务端字段（订单日期 = order.createdAt；单号 = 加工单号、缺则回落订单号；交付日期 = 加工单交期、缺则回落订单「要求到货日」；货运 = logisticsType · logisticsCompany）。执行点 = frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx 的「① 表头九栏逐条命中实证 #3 的制式」+「① 交付日期回落链」+「① 加工单缺失 ⇒ 单号回落订单号」。', "判据 2·**按套分块**：N 个商品行 ⇒ N 块，每块段头 `第N套/共M套`，块内一张 **9 列表**，列序逐字等于 PROCESSING_DOC_COLUMNS = ['品名','货号','颜色','门幅','尺寸','数量','组件','批号','备注']。🔴 2026-10-14 同批纠正一处**散文漂移**（非本批引入）：本条此前写的是「8 列表 = ['部位','部位信息','尺寸','组件','货号','用料','批号','备注']」，与真值（代码常量 + CI 守卫 C5 的钉住元组）**早已不符** —— 该判据执行点断言的本来就是当前版式，故不构成假绿，但散文必须与真值对齐。执行点 = 同文件「② 按套分块：3 个商品行 ⇒ 3 块」。", "判据 3·**A4 版面与分页不裁切**：样式里 `@page { size: A4; margin: 0; }`（由 `lib/print-media.ts` 的 printPageRule('a4') 生成，本组件不自写纸型；🔴 issue #7309：边距 0 = 浏览器页眉页脚无处可画，版面内缩 12mm 由容器 padding + `box-decoration-break: clone` 承担）；`.processing-set { break-inside: avoid }` + `.processing-doc-table thead { display: table-header-group }`（长单跨页时表头重复）。执行点 = 同文件「③ 版面：@page A4（由介质矩阵生成）+ 分页不裁切 + 表头重复」。", '判据 4·**缺值不许静默留空**：客户名 / 电话 / 地址缺失 ⇒ 单元格为显式占位 `—`（不是空串）；本系统**未采集**的字段（制单人 / 批号）标「未采集」并出脚注 —— 二者必须可区分。执行点 = 同文件「🔴 ④ 缺字段可见」+「🔴 ④ 本系统未采集的字段必须显式标注」。', '判据 5·🔴 **纸面不印 QR**（issue #7219，本批收口死参数）：加工单纸面**零**扫码形态 —— `processing-doc-qr` / `processing-doc-qr-placeholder` / `processing-doc-short-code` 三者都取不到（即使夹具给了 `scan_url` / `short_code`）；`ProcessingDoc` 的 `qrValue` prop 同批退场（调用方不再传）。执行点 = 同文件「🔴 ⑤ 加工单不再印 QR」。⚠️ 原判据 5（缺码不画假码 / 虚线占位框）随 #7219 退场，不再是本用例的判据面。', '判据 6·**加工单不印金额**（实证 #3 无金额列）⇒ 天然没有第二份金额真值：纸面文本不含「本单应收 / 单价 / 金额 / 小计」。执行点 = 同文件「⑥ 加工单不印金额」。', '判据 7·🔴 **纸面不印工序清单**（issue #7274，用户 2026-10-18 逐字「工序细节不用在打印单上，移除掉工序相关的表格信息」）：加工单纸面**零**工序节点 —— 即使按旧调用方形态（issue #6901 的 `operations` prop）传入工序实例，也不得出现 `processing-doc-operations` / `processing-doc-operation`，纸面文本不含「工序 / 精裁 / 应做 / 待做」。工序信息改在**屏幕**加工单块（`frontend/admin-web/src/components/orders/ProcessingOrderBlock.tsx`）与工人扫码面呈现（读面 / 显示名口径不变）。执行点 = `frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx` 的「ProcessingDoc 纸面不印工序（issue #7274）」；类级判据 = `tests/unit_ci_workflows/test_print_media_matrix_guard.py::test_c8_paper_must_not_carry_the_operation_list`。红证（实跑）：把 `ProcessingDoc.tsx` **与** `ShipmentDoc.tsx` 一起换回 origin/main 版（测试留本分支版本）⇒ 组件用例 **2 failed / 49 passed**（两个文件各挂 1 条）、C8/C9 守卫 **2 failed / 7 passed', '判据 8·**数量列名按本行单位**：快照行 `unit` 有 ⇒ `数量(套)`；**没采集到单位 ⇒ 只写「数量」**（不编「米」）；列名与值**同出** `frontend/admin-web/src/lib/order-item-sku.ts::orderItemQuantity()`。红证 = 把 CI 守卫 C5 的元组改回 `数量(米)` ⇒ **1 failed / 6 passed**（实跑读数）', "🔴 红证（注入式，随测试文件常驻）：把 `.processing-set` 的 break-inside 与 thead 的 table-header-group 抹掉 ⇒ 判据 3 必须红（同文件「③ 分页判据可红」）；把占位换回 `value || ''` 的静默留空 ⇒ 判据 4 必须红（同文件「④ 缺字段判据可红」）；把工序块接回纸面 ⇒ 判据 7 必须红（同文件「ProcessingDoc 纸面不印工序」）。⚠️ 取不到真机读数（针打/三联纸）的部分不在本用例的判据里，如实登记在 docs/design/print-media-matrix.md 的待实测清单。", '🔴 **加工费组合行（issue #7833，用户 2026-10-26 逐字「JG-20261026-8172 这个加工单有超高倒幅，但是在加工单的各个环节都没有体现出来」）**：A4 加工单每套块内、紧跟「工艺」行之后单列一行「加工费组合」，值 = 加工单**快照**行的 `processingItems[].name` 用顿号连接（如 `韩褶、超高、倒幅、定型`；取值口 `lib/processing-combo.ts`，不另写推导）；缺该键（存量单）⇒ 整行不渲染（不印空壳行）；整行仍占满 9 列（1 + colSpan 8，Σ(colSpan) 不变量由类级判据钉住）；长值走 `DocTd` 的 `break-words` 折行印全文（不裁切）。判据 = `frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx`。'],
+    data_checks=['判据 1·**表头九栏逐条命中实证 #3**：订单日期 / 客户 / 电话 / 地址 / 备注 / 制单人 / 单号 / 交付日期 / 货运 九栏全部渲染，取值取服务端字段（订单日期 = order.createdAt；单号 = 加工单号、缺则回落订单号；交付日期 = 加工单交期、缺则回落订单「要求到货日」；货运 = logisticsType · logisticsCompany）。执行点 = frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx 的「① 表头九栏逐条命中实证 #3 的制式」+「① 交付日期回落链」+「① 加工单缺失 ⇒ 单号回落订单号」。', "判据 2·**按套分块**：N 个商品行 ⇒ N 块，每块段头 `第N套/共M套`，块内一张 **9 列表**，列序逐字等于 PROCESSING_DOC_COLUMNS = ['品名','货号','颜色','门幅','尺寸','数量','组件','批号','备注']。🔴 2026-10-14 同批纠正一处**散文漂移**（非本批引入）：本条此前写的是「8 列表 = ['部位','部位信息','尺寸','组件','货号','用料','批号','备注']」，与真值（代码常量 + CI 守卫 C5 的钉住元组）**早已不符** —— 该判据执行点断言的本来就是当前版式，故不构成假绿，但散文必须与真值对齐。执行点 = 同文件「② 按套分块：3 个商品行 ⇒ 3 块」。", "判据 3·**A4 版面与分页不裁切**：样式里 `@page { size: A4; margin: 0; }`（由 `lib/print-media.ts` 的 printPageRule('a4') 生成，本组件不自写纸型；🔴 issue #7309：边距 0 = 浏览器页眉页脚无处可画，版面内缩 12mm 由容器 padding + `box-decoration-break: clone` 承担）；`.processing-set { break-inside: avoid }` + `.processing-doc-table thead { display: table-header-group }`（长单跨页时表头重复）。执行点 = 同文件「③ 版面：@page A4（由介质矩阵生成）+ 分页不裁切 + 表头重复」。", '判据 4·**缺值不许静默留空**：客户名 / 电话 / 地址缺失 ⇒ 单元格为显式占位 `—`（不是空串）；本系统**未采集**的字段（制单人 / 批号）标「未采集」并出脚注 —— 二者必须可区分。执行点 = 同文件「🔴 ④ 缺字段可见」+「🔴 ④ 本系统未采集的字段必须显式标注」。', '判据 5·🔴 **左上角「作业单扫码报工」码**（issue #7891，2026-10-27 由销售单迁入；取代 #7219 的「纸面不印 QR」口径）：有 `scan_url` ⇒ 码块 `processing-doc-qr` 在纸面**左上角**（与抬头并排、文档顺序在纸面标题之前），码值逐字 = 服务端下发的 `scan_url`（qrcode.react 把 value 写进 `svg > title`），码旁只留**竖排**「扫码报工」(`writing-mode: vertical-rl`）；`short_code` 的取值不出现在纸面文本里（类级 C12）。无 `scan_url`（含 `processingOrder=null`）⇒ **三种形态都不出现**（码 / 占位框 / 可读短码行）。执行点 = `frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx` 的 #7891 码用例组。', '判据 6·**加工单不印金额**（实证 #3 无金额列）⇒ 天然没有第二份金额真值：纸面文本不含「本单应收 / 单价 / 金额 / 小计」。执行点 = 同文件「⑥ 加工单不印金额」。', '判据 7·🔴 **纸面不印工序清单**（issue #7274，用户 2026-10-18 逐字「工序细节不用在打印单上，移除掉工序相关的表格信息」）：加工单纸面**零**工序节点 —— 即使按旧调用方形态（issue #6901 的 `operations` prop）传入工序实例，也不得出现 `processing-doc-operations` / `processing-doc-operation`，纸面文本不含「工序 / 精裁 / 应做 / 待做」。工序信息改在**屏幕**加工单块（`frontend/admin-web/src/components/orders/ProcessingOrderBlock.tsx`）与工人扫码面呈现（读面 / 显示名口径不变）。执行点 = `frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx` 的「ProcessingDoc 纸面不印工序（issue #7274）」；类级判据 = `tests/unit_ci_workflows/test_print_media_matrix_guard.py::test_c8_paper_must_not_carry_the_operation_list`。红证（实跑）：把 `ProcessingDoc.tsx` **与** `ShipmentDoc.tsx` 一起换回 origin/main 版（测试留本分支版本）⇒ 组件用例 **2 failed / 49 passed**（两个文件各挂 1 条）、C8/C9 守卫 **2 failed / 7 passed', '判据 8·**数量列名按本行单位**：快照行 `unit` 有 ⇒ `数量(套)`；**没采集到单位 ⇒ 只写「数量」**（不编「米」）；列名与值**同出** `frontend/admin-web/src/lib/order-item-sku.ts::orderItemQuantity()`。红证 = 把 CI 守卫 C5 的元组改回 `数量(米)` ⇒ **1 failed / 6 passed**（实跑读数）', "🔴 红证（注入式，随测试文件常驻）：把 `.processing-set` 的 break-inside 与 thead 的 table-header-group 抹掉 ⇒ 判据 3 必须红（同文件「③ 分页判据可红」）；把占位换回 `value || ''` 的静默留空 ⇒ 判据 4 必须红（同文件「④ 缺字段判据可红」）；把工序块接回纸面 ⇒ 判据 7 必须红（同文件「ProcessingDoc 纸面不印工序」）。⚠️ 取不到真机读数（针打/三联纸）的部分不在本用例的判据里，如实登记在 docs/design/print-media-matrix.md 的待实测清单。", '🔴 **加工费组合行（issue #7833，用户 2026-10-26 逐字「JG-20261026-8172 这个加工单有超高倒幅，但是在加工单的各个环节都没有体现出来」）**：A4 加工单每套块内、紧跟「工艺」行之后单列一行「加工费组合」，值 = 加工单**快照**行的 `processingItems[].name` 用顿号连接（如 `韩褶、超高、倒幅、定型`；取值口 `lib/processing-combo.ts`，不另写推导）；缺该键（存量单）⇒ 整行不渲染（不印空壳行）；整行仍占满 9 列（1 + colSpan 8，Σ(colSpan) 不变量由类级判据钉住）；长值走 `DocTd` 的 `break-words` 折行印全文（不裁切）。判据 = `frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx`。'],
     skip_reason='[backend-contract] 纯前端打印版式（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx 执行',
     tags=['ui', 'order', 'print', 'processing-doc', 'a4'],
     persona='',
@@ -16843,18 +16843,18 @@ _CASE_UI_133 = EvalCase(
     precondition='本用例是 [backend-contract] 纯前端交互契约用例（jsdom 渲染 + 源码形态扫描），不依赖真实服务与共享夹具；前置不成立时对应单测直接红，agent-eval 栈不跑它',
 )
 
-# ── UI-134 [NORMAL] 销售单左上角「作业单扫码报工」二维码：码值逐字取服务端 processingOrder.scan_url（前端不拼域名/路径）+ 纸面只留**竖排**「扫码报工」（短码不上产品面，issue #7608）+ 缺码不画假码（不回落作业单号），工人扫码进报工页（issue #7530）（源: cases/ui.yml）──
+# ── UI-134 [NORMAL] 加工单左上角「作业单扫码报工」二维码：码值逐字取服务端 processingOrder.scan_url（前端不拼域名/路径）+ 纸面只留**竖排**「扫码报工」（短码不上产品面，issue #7608）+ 缺码不画假码（不回落作业单号），工人扫码进报工页（issue #7530；2026-10-27 由销售单迁到加工单，issue #7891）（源: cases/ui.yml）──
 _CASE_UI_134 = EvalCase(
     id='UI-134',
     legacy_id='',
-    title='销售单左上角「作业单扫码报工」二维码：码值逐字取服务端 processingOrder.scan_url（前端不拼域名/路径）+ 纸面只留**竖排**「扫码报工」（短码不上产品面，issue #7608）+ 缺码不画假码（不回落作业单号），工人扫码进报工页（issue #7530）',
+    title='加工单左上角「作业单扫码报工」二维码：码值逐字取服务端 processingOrder.scan_url（前端不拼域名/路径）+ 纸面只留**竖排**「扫码报工」（短码不上产品面，issue #7608）+ 缺码不画假码（不回落作业单号），工人扫码进报工页（issue #7530；2026-10-27 由销售单迁到加工单，issue #7891）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['销售单不要品名，并且把作业出库单手机端链接对应的二维码信息放置在左上角，工人可以通过扫码进入报工页面'],
+    user_inputs=['销售单不要品名，并且把作业出库单手机端链接对应的二维码信息放置在左上角，工人可以通过扫码进入报工页面', '把销售单左上角的扫码报工二维码迁移到加工单打印上，这样设计才是合理的'],
     expectations=['direct_reply'],
-    data_checks=['判据 1·码值只认服务端下发（会红）：纸面二维码的内容逐字 = `processingOrder.scan_url`（示例域刻意不用 app.migaozn.com）⇒ 前端自己拼 `{base}/o/{短码}` 会印出另一个地址 ⇒ 必红。执行点 = frontend/admin-web/tests/unit/components/SalesDoc.test.tsx 的「⑬ 有作业单扫码短链 ⇒ 纸面左上角出码，码值逐字 = 服务端 scan_url」+「⑬ 红证：前端自己拼 `{base}/o/{短码}` ⇒ 码值与服务端下发值不同 ⇒ 上面那条必红」', '判据 2·位置在纸面左上角（会红）：二维码块属于 `.sales-sheet` 的第一段（与抬头并排），且文档顺序在「销售单」标题之前；不与页脚收款码混在一处。执行点 = 同文件「⑬ 有作业单扫码短链…」', '判据 3·纸面只留**竖排**「扫码报工」、短码不上产品面（会红，issue #7608）：标签带 `writing-mode: vertical-rl`（改成横排 ⇒ 红），且 `sales-work-order-short-code` 节点取不到（把短码行加回去 ⇒ 红）。兜底不靠这张纸：工人报工页有「输码（短码 / 加工单号 / 订单号）」输入框，短码仍印在任务卡上（`TaskCardPrint` 的 `part_short_code`），本单纸面本来就印「单号」。执行点 = 同文件「⑬ 纸面只留**竖排**「扫码报工」，短码不印在销售单上（issue #7608）」', '判据 4·缺码不画假码（会红）：无 `scan_url`（存量单未实例化短码 / 没有作业单 / 读面没取到）⇒ 零二维码、零占位框，纸面既不出现作业单号也不出现裸短码（扫出来只有一串文本、打不开任何页面 = issue #6867 治过的病）。执行点 = 同文件「⑬ 缺码不画假码」', '判据 5·**类级元守卫**（让同类进不来）：受管打印单据里不得出现扫码短链路径段（`/o/` 作业单级 · `/s/` 部位级）—— 谁再在纸面拼域名 / 路径段 ⇒ 红（含内存注入自证：拼路径段的样本判红、逐字取 `scan_url` 的样本判绿，防「空判据」）。执行点 = tests/unit_ci_workflows/test_print_media_matrix_guard.py 的 C11（test_c11_print_docs_never_assemble_scan_short_links）；另一条类级判据 = 同文件 C12（test_c12_customer_visible_docs_never_print_internal_short_code）：客户可见纸面（销售单 / 报价单 / 发货单 / 加工单）不得读取或渲染 `short_code` —— 把短码行加回销售单即红'],
-    skip_reason='[backend-contract] 纯前端打印版式与扫码入口取值（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/SalesDoc.test.tsx 执行',
-    tags=['ui', 'order', 'print', 'sales-doc', 'work-order-qr'],
+    data_checks=['判据 1·码值只认服务端下发（会红）：纸面二维码的内容逐字 = `processingOrder.scan_url`（示例域刻意不用 app.migaozn.com）⇒ 前端自己拼 `{base}/o/{短码}` 会印出另一个地址 ⇒ 必红。执行点 = frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx 的「扫码报工码」用例组（有码 ⇒ 码值逐字 = 服务端 scan_url / 无码 ⇒ 三种形态都不出现）', '判据 2·位置在**加工单**纸面左上角（会红，issue #7891）：二维码块与加工单抬头并排（文档顺序在纸面标题之前），取 `processing-doc-qr` 能取到；同时**销售单**纸面取不到任何扫码码（`sales-work-order-qr` 为 null，销售单不再承载车间入口）。执行点 = ProcessingDoc.test.tsx 的码用例 + frontend/admin-web/tests/unit/components/SalesDoc.test.tsx 的反向断言', '判据 3·纸面只留**竖排**「扫码报工」、短码不上产品面（会红，issue #7608）：标签 `processing-doc-qr-label` 带 `writing-mode: vertical-rl`（改成横排 ⇒ 红），且纸面文本里不出现 `short_code` 的取值（把短码行加回去 ⇒ 红；类级判据 = C12）。兜底不靠这张纸：工人报工页有「输码（短码 / 加工单号 / 订单号）」输入框，短码仍印在任务卡上（`TaskCardPrint` 的 `part_short_code`），加工单纸面本来就印「单号」。', '判据 4·缺码不画假码（会红）：无 `scan_url`（存量单未实例化短码 / 没有作业单 / 读面没取到）⇒ 零二维码、零占位框，纸面既不出现作业单号也不出现裸短码（扫出来只有一串文本、打不开任何页面 = issue #6867 治过的病）。执行点 = ProcessingDoc.test.tsx 的「无 scan_url ⇒ 整块不出现」', '判据 5·**类级元守卫**（让同类进不来）：受管打印单据里不得出现扫码短链路径段（`/o/` 作业单级 · `/s/` 部位级）—— 谁再在纸面拼域名 / 路径段 ⇒ 红（含内存注入自证：拼路径段的样本判红、逐字取 `scan_url` 的样本判绿，防「空判据」）。执行点 = tests/unit_ci_workflows/test_print_media_matrix_guard.py 的 C11（test_c11_print_docs_never_assemble_scan_short_links）；另一条类级判据 = 同文件 C12（test_c12_customer_visible_docs_never_print_internal_short_code）：客户可见纸面（销售单 / 报价单 / 发货单 / 加工单）不得读取或渲染 `short_code` —— 把短码行加回纸面即红'],
+    skip_reason='[backend-contract] 纯前端打印版式与扫码入口取值（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx 与 SalesDoc.test.tsx 执行',
+    tags=['ui', 'order', 'print', 'processing-doc', 'work-order-qr'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -16917,6 +16917,63 @@ _CASE_UI_137 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     precondition='本用例是 [backend-contract] 纯前端契约用例：服务端解析响应（`batch_required` / `batch_no` / `batch_candidates`）与报工回执由单测自建并打桩（假 DOM + fetch 替身，不碰真库），前置不成立时单测直接红；agent-eval 栈不跑它',
+)
+
+# ── UI-138 [NORMAL] 纸面加工项绑商品：销售单 / 报价单 / 发货单在商品行下印水洗唛式「加工项 + 特殊选项」，发货单底部独立加工项区退场（issue #7891）（源: cases/ui.yml）──
+_CASE_UI_138 = EvalCase(
+    id='UI-138',
+    legacy_id='',
+    title='纸面加工项绑商品：销售单 / 报价单 / 发货单在商品行下印水洗唛式「加工项 + 特殊选项」，发货单底部独立加工项区退场（issue #7891）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['销售单和报价单都缺了加工项', '发货单的加工项需要和商品绑定，比如如果是成品帘，一览展示商品，商品下面是加工项，展示内容参考水洗唛的那种格式，还有特殊选项也要放上去，都放在加工项那一栏里面', '发货单的打印格式也需要改一下'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·三份纸都有加工项（会红）：销售单 / 报价单 / 发货单的商品行下方都能取到加工项子行（`sales-item-processing-N` / `quotation-set-processing-N` / `shipment-item-processing-N`），文案含加工项名称与数量；把子行删掉 ⇒ 对应测试红。执行点 = frontend/admin-web/tests/unit/components/ 下 SalesDoc.test.tsx / QuotationDoc.test.tsx / ShipmentDoc.test.tsx 的加工项用例', '判据 2·**绑到商品行**（会红）：商品 A 的加工项只出现在 A 的子行、B 行下不出现（两行各带不同加工项 + `within(row)` 断言）；把子行挂到表尾（改回不绑商品）⇒ 红。执行点 = 三份测试的绑定用例', '判据 3·水洗唛式两栏 + 特殊选项同栏（会红）：子行文案 = `加工项：… · 特殊选项：…`（特殊选项取 craftSpecRows 的同一份格式化）；特殊选项被丢 ⇒ 红。执行点 = 同文件「特殊选项也上纸」用例', '判据 4·数量三态与缺值占位（会红）：全等 ⇒ `定型、韩褶 各 6.3`；不等 ⇒ `定型 6.3 + 韩褶 2`；缺数量 ⇒ `打孔 —`（不印 0、不吞项、不出现 `×`）。执行点 = 同文件三态用例 + 类级守卫 tests/unit_ci_workflows/test_print_media_matrix_guard.py 的 C9（构建器形态 + `×` 判红）', '判据 5·布料行不出子行（会红）：商品行没有 `processingInfo`（面料/布料单）⇒ 该行下零加工项节点。执行点 = 三份测试的布料行用例', '判据 6·发货单底部独立区退场、加工费合计仍在（会红）：纸面取不到「加工项（数量：米）」与 `shipment-processing-items`；`shipment-processing-fee-total` 仍印且数值 = Σ 行级 `processingFee`（为 0 时不渲染该行）。执行点 = ShipmentDoc.test.tsx 的退场/合计用例'],
+    skip_reason='[backend-contract] 纯前端打印版式契约（无 LLM 环节，不进 agent-eval 冒烟）：断言由三份单据组件测试执行',
+    tags=['ui', 'order', 'print', 'processing-items', 'sales-doc', 'quotation', 'shipment'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯前端打印版式契约（jsdom 渲染，夹具自建）；前置不成立时对应单测直接红，agent-eval 栈不跑它',
+)
+
+# ── UI-139 [NORMAL] 作业单纸面按两型命名（成品帘=加工单 / 面料单=面料单），且面料单不提供水洗唛打印入口（issue #7891）（源: cases/ui.yml）──
+_CASE_UI_139 = EvalCase(
+    id='UI-139',
+    legacy_id='',
+    title='作业单纸面按两型命名（成品帘=加工单 / 面料单=面料单），且面料单不提供水洗唛打印入口（issue #7891）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['面料单不能打印水洗唛，应该打印加工单，但是面料单不设计加工，只需要裁剪，那加工单打印名称如何统一命名呢，又能体现成品帘加工，又要体现面料单的简单裁剪工序', '选择A，面料单就叫面料单，不要叫裁剪单'],
+    expectations=['direct_reply'],
+    data_checks=["判据 1·纸面标题按作业单两型（会红）：`order_kind='processing'` ⇒ 纸面标题「加工单」；`order_kind='outbound'` ⇒「面料单」；缺键（存量单）⇒「加工单」。把标题写回恒定的「加工单」或改成「裁剪单」⇒ 红。执行点 = frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx 的标题用例", '判据 2·取值口单一（会红）：标题取自 frontend/admin-web/src/lib/processing-order.ts 的 WORK_ORDER_DOC_TITLES / workOrderDocTitleOf()（与 orderKindOf 的存量单口径一致），组件里不另写一份两型映射。执行点 = ProcessingDoc.test.tsx + 预览层标题（OrderDetail 的 printTargetTitle）', "判据 3·面料单隐藏水洗唛入口（会红）：加工单生产页在 `order_kind='outbound'` 时取不到「打印任务卡」入口与水洗唛纸面（TaskCardPrint / labels 预览）；`processing` 时照旧存在（负控）。把入口对所有型都藏或都对开 ⇒ 红。执行点 = frontend/admin-web/tests/unit/pages/processing-orders-production.test.tsx 的 #7891 用例"],
+    skip_reason='[backend-contract] 纯前端命名与入口显隐契约（无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProcessingDoc 与加工单生产页测试执行',
+    tags=['ui', 'print', 'processing-doc', 'work-order-kind', 'wash-label'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯前端命名与入口显隐契约（jsdom 渲染 + 页面级测试，夹具自建）；前置不成立时对应单测直接红，agent-eval 栈不跑它',
+)
+
+# ── UI-140 [NORMAL] 加工单纸面的「工艺」按水洗唛形态分行：加工方式一行（工艺-加工类型-打开方式-定型）+ 特殊选项独立一行，其余工艺规格各自成行（issue #7891）（源: cases/ui.yml）──
+_CASE_UI_140 = EvalCase(
+    id='UI-140',
+    legacy_id='',
+    title='加工单纸面的「工艺」按水洗唛形态分行：加工方式一行（工艺-加工类型-打开方式-定型）+ 特殊选项独立一行，其余工艺规格各自成行（issue #7891）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['加工单打印的工艺也参考水洗唛上的加工和特殊选项的展示方式'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·加工方式一行、与 水洗唛同一取值口（会红）：纸面「加工方式：…」逐字 = frontend/admin-web/src/lib/wash-label-content.ts 的 washLabelCraftMode(src)（工艺-加工类型-打开方式-定型，`-` 连接），不再拆成「工艺 / 加工类型 / 打开方式 / 是否定型」四段；改回整串长句 ⇒ 红。执行点 = frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx 的工艺行用例', '判据 2·特殊选项独立成行（会红）：有特殊选项 ⇒ 纸面出现「特殊选项：…」并逐字 = washLabelSpecialOptions(src)；没有 ⇒ 该行不渲染（不印空值、不印「特殊选项：—」）。执行点 = 同文件两条用例', '判据 3·其余工艺规格各自成行、顺序沿用 craftSpecRows（会红）：款式 / 用料公式 / 档位 / 总褶数 / 褶数（每片）/ 理论褶倍 / 实际褶倍 / 面料米数 / 加工费米数 / 算料公式 / 是否对花 仍逐条在纸面（未被新形态吞掉），顺序与 frontend/admin-web/src/lib/craft-display.ts 的 CRAFT_SPEC_FIELDS 一致。执行点 = 同文件逐行断言', '判据 4·取值口单一（会红）：`src` 优先加工单快照行、缺快照时回落 `item.processingInfo`（两者键名同源），纸面不出现自造的推导；组件里不另写一份「定型 / 不定型」映射（应取 wash-label 的格式化）。执行点 = 同文件「缺快照时仍从 processingInfo 取值」用例'],
+    skip_reason='[backend-contract] 纯前端打印版式契约（无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProcessingDoc.test.tsx 执行',
+    tags=['ui', 'print', 'processing-doc', 'wash-label'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯前端打印版式契约（jsdom 渲染，夹具自建）；前置不成立时对应单测直接红，agent-eval 栈不跑它',
 )
 
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
@@ -17859,6 +17916,9 @@ ALL_CASES = (
     _CASE_UI_135,
     _CASE_UI_136,
     _CASE_UI_137,
+    _CASE_UI_138,
+    _CASE_UI_139,
+    _CASE_UI_140,
     _CASE_UT_001,
     _CASE_UT_002,
 )
