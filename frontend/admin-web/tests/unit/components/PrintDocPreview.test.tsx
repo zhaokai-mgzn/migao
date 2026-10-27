@@ -149,27 +149,27 @@ describe('纸面自检层 PrintDocPreview（issue #5914）', () => {
     expect(screen.getByTestId('print-preview-media').textContent).toContain('241mm × 140mm')
   })
 
-  it('①b 水洗唛纸型**固定 50mm × 150mm**（issue #7816）：纸框 / 边距 / 正文字号全从介质矩阵读（旧 50×70 已作废）', () => {
+  it('①b 水洗唛纸型**固定 50mm × 110mm**（issue #7948）：纸框 / 边距 / 正文字号全从介质矩阵读（旧 50×150 已作废）', () => {
     render(
-      <PrintDocPreview target="labels" title="水洗唛" media="label-50x150" onPrint={() => {}} onClose={() => {}}>
+      <PrintDocPreview target="labels" title="水洗唛" media="label-50x110" onPrint={() => {}} onClose={() => {}}>
         <div>单据</div>
       </PrintDocPreview>
     )
     const paper = screen.getByTestId('print-preview-paper')
-    // 纸型 = 矩阵里的 `label-50x150`（固定 50mm × 150mm，不再是"按内容撑开"的动态长度）
-    expect(printPageBoxMm('label-50x150')).toEqual({ widthMm: 50, heightMm: 150 })
+    // 纸型 = 矩阵里的 `label-50x110`（固定 50mm × 110mm，不再是"按内容撑开"的动态长度）
+    expect(printPageBoxMm('label-50x110')).toEqual({ widthMm: 50, heightMm: 110 })
     expect(paper.style.width).toBe('50mm')
-    expect(paper.style.minHeight).toBe('150mm')
+    expect(paper.style.minHeight).toBe('110mm')
     // 热敏标签：`@page` 边距 0 且无版面内缩 ⇒ 纸框 padding 为 0（纸边即版心）
-    expect(printContentInsetMm('label-50x150')).toEqual({ xMm: 0, yMm: 0 })
+    expect(printContentInsetMm('label-50x110')).toEqual({ xMm: 0, yMm: 0 })
     // ⚠️ 读长写法而不是 shorthand：jsdom 会把 `0mm 0mm` 归一成 `0mm`（序列化细节，不是版面差异）
     expect(paper.style.paddingTop).toBe('0mm')
     expect(paper.style.paddingLeft).toBe('0mm')
     // 正文字号由介质矩阵给（minFontPt = 12pt）—— 9pt 时代随 #7816 退场
     expect(paper.style.fontSize).toBe('12pt')
-    expect(printBodyFontPt('label-50x150')).toBe(12)
+    expect(printBodyFontPt('label-50x110')).toBe(12)
     const mediaText = screen.getByTestId('print-preview-media').textContent ?? ''
-    expect(mediaText).toContain('50mm × 150mm')
+    expect(mediaText).toContain('50mm × 110mm')
     expect(mediaText).toContain('无边距')
     expect(mediaText).toContain('正文 12pt')
   })
@@ -280,7 +280,7 @@ describe('纸面自检层 PrintDocPreview（issue #5914）', () => {
       <PrintDocPreview
         target="labels"
         title="水洗唛"
-        media="label-50x150"
+        media="label-50x110"
         onPrint={() => {}}
         onClose={() => {}}
         actions={<button data-testid="extra-action">蓝牙无线打印</button>}
@@ -303,7 +303,7 @@ describe('纸面自检层 PrintDocPreview（issue #5914）', () => {
       <PrintDocPreview
         target="labels"
         title="水洗唛"
-        media="label-50x150"
+        media="label-50x110"
         onPrint={() => {}}
         onClose={() => {}}
       >

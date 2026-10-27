@@ -1,24 +1,28 @@
 /**
- * 水洗唛**位图版式**（issue #6439 建立 → #6656 与系统打印同一份纸面 → **#7816 固定纸型 50×150**）。
+ * 水洗唛**位图版式**（issue #6439 建立 → #6656 与系统打印同一份纸面 → **2026-10-27 固定纸型 50×110**）。
  *
  * ## 与系统打印的关系（issue #6656 的核心，别改回去）
  *
  * 用户 2026-10-10 逐字：「**直连打印机打印的样式和水洗唛预览打印的样式完全不一样，能不能做成一样的**」
  * ⇒ 本模块与 `frontend/admin-web/src/components/production/TaskCardPrint.tsx` 读**同一份**：
  * 同一份有序行清单（`lib/wash-label-content.ts` 的 `washLabelRows` = 唯一内容真值）、
- * 同一份介质（`label-50x150`）、同一份字号口径（`lib/label-print/wash-label-metrics.ts`）。
+ * 同一份介质（`label-50x110`）、同一份字号口径（`lib/label-print/wash-label-metrics.ts`）。
  * 本文件只负责**排版**（CSS 与 canvas 是两套排版引擎）。
  *
  * ## 两条通道**唯一不可统一**的一处：纸的物理宽度
  *
  * 预览印在 **50mm** 纸上，而标签机打印头只有 **384 点 = 48mm**
- * （`lib/print-media.json` 的 `label-50x150.dotGeometry` 已登记「纸宽 50mm ⇒ 400px，打印头只有 384px
+ * （`lib/print-media.json` 的 `label-50x110.dotGeometry` 已登记「纸宽 50mm ⇒ 400px，打印头只有 384px
  * ⇒ 右侧约 2mm 打不到」）⇒ 位图最宽 48mm。**字段一致、整体窄 2mm，这是物理上限**。
  * 清晰度同理如实登记：203dpi = 8 点/mm，12pt 汉字约 34 点高 —— 能画，但比浏览器渲染的 12pt 毛糙。
  *
  * ## 本版（issue #7816 → **issue #7833**，2026-10-26 用户逐字）
  *
- * - 「水洗唛长度不足，设置为打印50*150」⇒ 纸型固定 50mm × 150mm（`pageBoxMm.heightPx` = 1200）；
+ * - 「水洗唛长度不足，设置为打印50*150」⇒ 纸型曾固定 50mm × 150mm（#7816，`heightPx` = 1200）；
+ * - **2026-10-27 现行**：「把水洗唛的尺寸改成50*110，现在偏长了」⇒ 纸型固定 **50mm × 110mm**
+ *   （`dotGeometry.heightPx` = 880）；「二维码不能直接沉底，务必和底部留点距离」⇒ 二维码下沿
+ *   与纸底（底部虚线）恒 ≥ **6mm**（本文件按 `WASH_LABEL_BOTTOM_CLEARANCE_MM` **从纸边**起算；
+ *   系统打印同口径 = `.task-card-label` 的 `padding-bottom: 6mm`）；
  * - 「字体还是太小，可以再大一点」⇒ 正文 9pt → **12pt**（抬头 14pt / 副标题 10pt）；
  * - 「二维码放到底部居中」「移除扫码报工和短码文字」「二维码可以放大一点」⇒ 底部只有**居中**二维码
  *   （80 CSS px = 21.17mm），不再画短码与说明字；
@@ -66,7 +70,7 @@ import {
 export type { WashLabelInput, WashLabelRow }
 
 /** 两条通道**同一份介质**（系统打印的 `@page` 与直连的画布都指它）—— 这是 #6656 的核心 */
-export const WASH_LABEL_MEDIA: PrintMediaId = 'label-50x150'
+export const WASH_LABEL_MEDIA: PrintMediaId = 'label-50x110'
 
 /** 机器自报的打印参数（`getPrinterInfo()` 的子集） */
 export interface LabelPrinterInfoLike {
@@ -81,14 +85,14 @@ export interface LabelDotGeometry {
   heightPx: number
 }
 
-/** 兜底口径的**唯一真值源** = `lib/print-media.json` 的 `label-50x150`（本文件不写第二份） */
+/** 兜底口径的**唯一真值源** = `lib/print-media.json` 的 `label-50x110`（本文件不写第二份） */
 const FALLBACK_GEOMETRY = printDotGeometry(WASH_LABEL_MEDIA)
 const FALLBACK_BOX = printPageBoxMm(WASH_LABEL_MEDIA)
 
 /** 未连上机器时的通用兜底（**不是**本文件的口径：连上后立刻按机器自报值重算） */
 export const LABEL_DPI_DEFAULT = FALLBACK_GEOMETRY.dpi
 export const LABEL_HEAD_DOTS_DEFAULT = FALLBACK_GEOMETRY.headWidthPx
-/** 纸宽 / 纸长（mm）—— 取自介质矩阵（`label-50x150` = 50mm × 150mm），本文件不写第二份 */
+/** 纸宽 / 纸长（mm）—— 取自介质矩阵（`label-50x110` = 50mm × 110mm），本文件不写第二份 */
 export const WASH_LABEL_DEFAULT_WIDTH_MM = FALLBACK_BOX.widthMm
 export const WASH_LABEL_DEFAULT_LENGTH_MM = FALLBACK_BOX.heightMm
 // 字号 / 行高 / 内边距 / 二维码 / 块间距的**取值全在** `./wash-label-metrics`（上面按原名 import），
@@ -121,7 +125,7 @@ const ptToPx = (pt: number, dpmm: number): number => Math.max(1, Math.round((pt 
  * @param printer   机器自报参数（未连上传 null/undefined ⇒ 用矩阵兜底）
  * @param paperWidthMm 纸宽（mm）；取「纸宽 × dpmm」与**打印头宽度**的**较小者**（不越纸、不越头）
  *
- * 纸长**不由调用方给**（issue #7816）：固定 = 介质矩阵的 `pageBoxMm.heightMm`（150mm ⇒ 1200px）。
+ * 纸长**不由调用方给**（issue #7816）：固定 = 介质矩阵的 `pageBoxMm.heightMm`（110mm ⇒ 880px）。
  */
 export function resolveLabelGeometry(
   printer?: LabelPrinterInfoLike | null,
@@ -290,8 +294,8 @@ export function layoutWashLabel(
   const footerSize = qrValue === '' ? placeholderSize : qrSize
   const textGap = lineStep * LABEL_QR_TEXT_GAP_LINES
   const bottomClearance = Math.round(mm(LABEL_BOTTOM_CLEARANCE_MM))
-  /** 二维码**最低**允许的下沿（再往下就贴底部虚线了 ⇒ 正文在这里之前必须收住） */
-  const footerBottomMax = heightPx - margin - bottomClearance
+  /** 二维码**最低**允许的下沿（距纸底 6mm：从纸边起算，与系统打印的 `padding-bottom: 6mm` 同口径） */
+  const footerBottomMax = heightPx - bottomClearance
   const footerTopMax = footerBottomMax - footerSize
   const footerX = Math.round((widthPx - footerSize) / 2)
 

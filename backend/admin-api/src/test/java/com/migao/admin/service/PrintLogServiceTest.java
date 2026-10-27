@@ -185,7 +185,7 @@ class PrintLogServiceTest {
     @DisplayName("加工单号查不到/不属于本单 ⇒ 留空，不报错（打印不能因为主数据缺失而失败）")
     void recordKeepsProcessingOrderNoBlankWhenMissing() {
         service.record(ORDER_ID, request(
-                item(PrintLog.DOC_LABELS, "水洗唛", "po-unknown", "label-50x150", 3)
+                item(PrintLog.DOC_LABELS, "水洗唛", "po-unknown", "label-50x110", 3)
         ), TENANT, OPERATOR, null, null);
 
         ArgumentCaptor<PrintLog> row = ArgumentCaptor.forClass(PrintLog.class);

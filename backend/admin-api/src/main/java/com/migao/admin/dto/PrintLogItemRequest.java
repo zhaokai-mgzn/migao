@@ -25,7 +25,7 @@ public class PrintLogItemRequest {
     /** 加工单 / 洗水唛所属的加工单（可空；服务端据此补 {@code processingOrderNo} 快照）。 */
     private String processingOrderId;
 
-    /** 纸型 id（a4 / continuous-241x140 / label-50x150），≤ 32 字符。 */
+    /** 纸型 id（a4 / continuous-241x140 / label-50x110），≤ 32 字符。 */
     private String mediaId;
 
     /** 这次出纸几张（1~999；缺省 1）。 */

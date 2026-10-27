@@ -5,7 +5,7 @@
  * 为什么要有这一条（实测形态，不是假想）：字号 / 内边距 / 二维码尺寸在**三个地方**各存在一份 ——
  * ① `lib/label-print/wash-label-metrics.ts`（TS：画布通道 + 打印通道读它）；
  * ② `components/production/TaskCardPrint.tsx` 里那段 CSS / Tailwind 字号（系统打印）；
- * ③ 介质矩阵 `label-50x150`（固定纸型 50mm × 150mm）。
+ * ③ 介质矩阵 `label-50x110`（固定纸型 50mm × 110mm）。
  * 改一处不改另一处**不会报错**，只会让两条通道画得不一样。⇒ 本文件**解析组件源码**逐值比对。
  *
  * 2026-10-26（issue #7816）改判：纸长**不再按内容撑开**（作废 #7776 的动态纸长），
@@ -45,25 +45,29 @@ const css = labelCss()
 
 describe('水洗唛版面度量：TS 单一真值 ⇄ 组件 CSS（改一处不改另一处 ⇒ 红）', () => {
   it('内边距 / 行高 / 正文字号：CSS 与 metrics 逐值一致', () => {
-    expect(css).toContain(`padding: ${WASH_LABEL_PADDING_MM}mm`)
+    // 🔴 下内边距 = 二维码与底部虚线的净空（2026-10-27 用户逐字「二维码不能直接沉底，务必和底部留点距离」）
+    //    —— 与画布通道读**同一个**常量，两条通道不会各写一份
+    expect(css).toContain(
+      `padding: ${WASH_LABEL_PADDING_MM}mm ${WASH_LABEL_PADDING_MM}mm ${WASH_LABEL_BOTTOM_CLEARANCE_MM}mm`,
+    )
     expect(css).toContain(`line-height: ${WASH_LABEL_LINE_HEIGHT}`)
     expect(css).toContain(`font-size: ${WASH_LABEL_BODY_FONT_PT}pt`)
     // 正向锚：字体确实比上一版（9pt）大 —— 用户 2026-10-26「字体还是太小，可以再大一点」
     expect(WASH_LABEL_BODY_FONT_PT).toBeGreaterThan(9)
   })
 
-  it('固定纸型 50mm × 150mm：CSS 与介质矩阵逐值一致（issue #7816）', () => {
+  it('固定纸型 50mm × 110mm：CSS 与介质矩阵逐值一致（issue #7948）', () => {
     expect(css).toContain('width: 50mm')
     // 纸长**写死**在 CSS 里（不再有行内 style 覆盖）—— 纸型是固定的，不是按内容撑开
-    expect(css).toContain('height: 150mm')
+    expect(css).toContain('height: 110mm')
     expect(source).not.toContain('style={{ height:')
-    // 唯一纸型写法：printPageRule('label-50x150')，不许自写 @page 字面量
-    expect(source).toContain("printPageRule('label-50x150')")
+    // 唯一纸型写法：printPageRule('label-50x110')，不许自写 @page 字面量
+    expect(source).toContain("printPageRule('label-50x110')")
     expect(source).not.toMatch(/@page\s*\{\s*size:/)
-    expect(printPageRule('label-50x150')).toBe('@page { size: 50mm 150mm; margin: 0; }')
-    expect(printPageBoxMm('label-50x150')).toEqual({ widthMm: 50, heightMm: 150 })
-    // 点阵侧同一份纸：150mm × 8 dots/mm = 1200px（直连通道的画布高度）
-    expect(printDotGeometry('label-50x150').heightPx).toBe(1200)
+    expect(printPageRule('label-50x110')).toBe('@page { size: 50mm 110mm; margin: 0; }')
+    expect(printPageBoxMm('label-50x110')).toEqual({ widthMm: 50, heightMm: 110 })
+    // 点阵侧同一份纸：110mm × 8 dots/mm = 880px（直连通道的画布高度）
+    expect(printDotGeometry('label-50x110').heightPx).toBe(880)
   })
 
   it('抬头 / 二维码 / 占位框的字号与边长逐值一致', () => {
@@ -85,8 +89,8 @@ describe('水洗唛版面度量：TS 单一真值 ⇄ 组件 CSS（改一处不�
     if (!source.includes(qrRow)) throw new Error(`找不到「二维码行 = ${qrRow}」—— 判据无从取值`)
     // 🔴 反向护栏：正文块**不得**再 `flex-1`（那会把码顶到纸底 = 用户说的「二维码沉底」）
     expect(source).not.toMatch(/min-h-0 flex-1 overflow-hidden/)
-    // 纸底（底部虚线）之上必须留白
-    expect(WASH_LABEL_BOTTOM_CLEARANCE_MM).toBeGreaterThanOrEqual(6)
+    // 纸底（底部虚线）之上必须留白 —— 2026-10-27 用户再次强调「务必和底部留点距离」⇒ 定值 6mm
+    expect(WASH_LABEL_BOTTOM_CLEARANCE_MM).toBe(6)
     // 断言打在 **JSX 文本节点**上（文件头注释里会提到这个词，用裸子串会假红）
     expect(source).not.toMatch(/>\s*扫码报工\s*</)
     expect(source).not.toContain('task-card-label-short-code')
