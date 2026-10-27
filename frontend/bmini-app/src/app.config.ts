@@ -72,6 +72,15 @@ export default defineAppConfig({
     // 路由字面量是**单一真值**：`src/utils/inbound/gaps.ts` 的 `REWORK_PAGE_ROUTE`
     // 必须逐字等于它（没登记 = 死链 ⇒ 入口台账 tests/page-entry-reachability.test.ts 的 L0/L2 判红）
     'pages/worker/rework/index',
+    // 工人**我的计件**（issue #7934）：合计金额 + 件数 + 逐笔（本月 / 上月切换），只读、无写入口。
+    // 为什么现在有这一页：该读面 `GET /api/worker/piecework`（#6767）此前只有 H5 `/w/piecework.html`
+    // 一个面，而入口长在**报工详情页的页头**里（2026-10-27 用户逐字「我的计件和发货…为什么做到报工
+    // 详情页面？应该都作为工人菜单页面上的菜单」）⇒ 本页把它归位到工人菜单页。
+    // 口径 = docs/design/worker-home-menu.md §6.3：金额复用服务端**同一份**聚合（端侧不求和）、
+    // worker_id 只由会话头解、未定价显式列出且不计入合计（**绝不**印 0 元）。
+    // 路由字面量是**单一真值**：`src/utils/inbound/gaps.ts` 的 `PIECEWORK_PAGE_ROUTE`
+    // 必须逐字等于它（没登记 = 死链 ⇒ 入口台账 tests/page-entry-reachability.test.ts 的 L0/L2 判红）
+    'pages/worker/piecework/index',
     // ── 管理面 4 项（issue #5654）：管理员离店后也要能办的事 ──
     // 路由字面量是**单一真值**：`src/utils/adminPermission.ts` 的 `ADMIN_SURFACES[].route`
     // 必须逐字等于这里的字符串（守卫 tests/admin-surfaces-platform-guard.test.ts 核验：

@@ -1,0 +1,245 @@
+@use "../../../styles/variables.scss" as *;
+
+// 工人端「我的计件」（issue #7934）
+//
+// ## 视觉语言：与同族工人页（返工记录 / 待发货单 / 拍照发货）**同一套**（issue #7240 的既有裁定）
+//   · 页面根声明**非白**底色 + `min-height: 100vh`（判据：`tests/worker-card-contrast-guard.test.ts`）
+//   · 卡片 = 白底 + `$radius-lg` + 细描边 + `$shadow-card`（可见边界）
+//   · 字号按 **750 设计尺度**（本仓样式管线 `1px = 1/40 rem`），正文 / 次要字号下限 24
+//
+// 🔴 不新增颜色 / 字号 token（`check-ui-regression.sh` 判 UI 回退）——只取既有变量。
+//
+// 🔴 `&__refresh` / `&__month` 必须显式 `width: auto`：Taro 的 `Button` 默认 `width: 100%`，
+//    在 `display: flex` 的行里 `flex-basis: auto` 会去吃那条 100% ⇒ 标题被挤成**竖排**
+//    （待发货单页 2026-10-27 真机截图就是这个形态）。判据 = `tests/worker-page-header-button-width.test.ts`。
+.worker-piecework {
+  min-height: 100vh;
+  background: $bg-secondary;
+  padding: 0 0 40px;
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 40px 24px 16px;
+  }
+
+  &__heading {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  &__title {
+    display: block;
+    font-size: 40px;
+    font-weight: 700;
+    color: $text-primary;
+  }
+
+  &__worker,
+  &__period {
+    display: block;
+    margin-top: 6px;
+    font-size: 24px;
+    color: $text-secondary;
+  }
+
+  &__refresh {
+    flex: 0 0 auto;
+    width: auto;
+    white-space: nowrap;
+    margin: 0 0 0 16px;
+    padding: 0 28px;
+    height: 64px;
+    line-height: 64px;
+    font-size: 26px;
+    color: $primary-color;
+    background: $bg-primary;
+    border: 1px solid $border-color;
+    border-radius: $radius-full;
+  }
+
+  &__body {
+    display: block;
+  }
+
+  // ── 合计块：本页**唯一**的金额汇总（数字全来自服务端） ──
+  &__summary {
+    display: block;
+    margin: 0 24px 20px;
+    padding: 28px 32px;
+    background: $bg-primary;
+    border: 1px solid $border-color;
+    border-radius: $radius-lg;
+    box-shadow: $shadow-card;
+  }
+
+  &__total {
+    display: block;
+    font-size: 44px;
+    font-weight: 700;
+    color: $text-primary;
+  }
+
+  &__qty {
+    display: block;
+    margin-top: 8px;
+    font-size: 26px;
+    color: $text-secondary;
+  }
+
+  &__list {
+    display: block;
+  }
+
+  // ── 逐笔一行（白卡落在灰底上，显式可见边界） ──
+  &__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 0 24px 16px;
+    padding: 24px 28px;
+    background: $bg-primary;
+    border: 1px solid $border-color;
+    border-radius: $radius-lg;
+    box-shadow: $shadow-card;
+  }
+
+  &__row-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 28px;
+    color: $text-primary;
+    line-height: 1.4;
+  }
+
+  &__row-qty {
+    flex: 0 0 auto;
+    margin: 0 20px;
+    font-size: 26px;
+    color: $text-secondary;
+  }
+
+  &__row-amount {
+    flex: 0 0 auto;
+    font-size: 28px;
+    font-weight: 600;
+    color: $text-primary;
+  }
+
+  // ── 未定价块（**不计入合计**；绝不印 0 元）：比合计块弱一档，但必须显眼可见 ──
+  &__unpriced {
+    display: block;
+    margin: 0 24px 20px;
+    padding: 28px 32px;
+    background: $bg-primary;
+    border: 1px solid $border-color;
+    border-radius: $radius-lg;
+    box-shadow: $shadow-card;
+  }
+
+  &__unpriced-title {
+    display: block;
+    font-size: 28px;
+    font-weight: 600;
+    color: $text-primary;
+  }
+
+  &__unpriced-detail {
+    display: block;
+    margin-top: 10px;
+    font-size: 26px;
+    color: $text-secondary;
+    line-height: 1.6;
+  }
+
+  &__unpriced-row {
+    display: block;
+    margin-top: 8px;
+    font-size: 25px;
+    color: $text-secondary;
+  }
+
+  // ── 期间切换（上月 / 下月）：文本动作，不做主按钮（一屏至多一个 primary） ──
+  &__months {
+    display: flex;
+    align-items: center;
+    margin: 0 24px;
+  }
+
+  &__month {
+    flex: 0 0 auto;
+    width: auto;
+    white-space: nowrap;
+    margin: 0 20px 0 0;
+    padding: 0 32px;
+    height: 64px;
+    line-height: 64px;
+    font-size: 26px;
+    color: $primary-color;
+    background: $bg-primary;
+    border: 1px solid $border-color;
+    border-radius: $radius-full;
+  }
+
+  // ── 状态块（读取中 / 读不到 / 空月）：同一形状，文案与出口不同 ──
+  &__notice {
+    display: block;
+    margin: 0 24px 20px;
+    padding: 28px 32px;
+    background: $bg-primary;
+    border: 1px solid $border-color;
+    border-radius: $radius-lg;
+    box-shadow: $shadow-card;
+  }
+
+  &__notice-text {
+    display: block;
+    font-size: 26px;
+    color: $text-secondary;
+    line-height: 1.6;
+  }
+
+  &__retry {
+    flex: 0 0 auto;
+    width: auto;
+    white-space: nowrap;
+    margin-top: 20px;
+    padding: 0 32px;
+    height: 64px;
+    line-height: 64px;
+    font-size: 26px;
+    color: $bg-primary;
+    background: $primary-color;
+    border-radius: $radius-full;
+  }
+
+  // ── 未登录引导（与同族工人页的 `__gate` 同一形态） ──
+  &__gate {
+    margin: 0 24px;
+    padding: 32px;
+    background: $bg-primary;
+    border: 1px solid $border-color;
+    border-radius: $radius-lg;
+    box-shadow: $shadow-card;
+  }
+
+  &__gate-text {
+    display: block;
+    font-size: 26px;
+    color: $text-secondary;
+    line-height: 1.6;
+  }
+
+  &__login {
+    flex: 0 0 auto;
+    width: auto;
+    margin-top: 24px;
+    height: 88px;
+    line-height: 88px;
+    font-size: 30px;
+    color: $bg-primary;
+    background: $primary-color;
+    border-radius: $radius-full;
+  }
+}

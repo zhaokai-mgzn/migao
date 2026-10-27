@@ -37,6 +37,7 @@
  */
 import {
   INBOUND_PAGE_ROUTE,
+  PIECEWORK_PAGE_ROUTE,
   REPORT_PAGE_ROUTE,
   REPRINT_PAGE_ROUTE,
   REWORK_PAGE_ROUTE,
@@ -286,5 +287,19 @@ export const PAGE_ENTRY_LEDGER: PageEntry[] = [
     viaBinding: 'src/utils/inbound/gaps.ts',
     audience:
       '工人身份（工人首页 →「返工记录」；未登录时该页自身引导去工号 + PIN 登录，先登录再看返工名单）',
+  },
+  // issue #7934：工人工作台**新增**「我的计件」入口（只读钱面；显隐 = 工人档案的 `piecework` 页面键）。
+  // 为什么必须有这一条：读面 `GET /api/worker/piecework` 早已上线，但它的入口此前长在**报工详情页**
+  // （worker-h5 页头）里 —— 用户 2026-10-27 逐字「我的计件和发货…为什么做到报工详情页面？应该都作为
+  // 工人菜单页面上的菜单」⇒ 入口搬到工人菜单页；报工页那一条同时撤除（反向钉住见
+  // frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs）。
+  {
+    route: PIECEWORK_PAGE_ROUTE,
+    from: 'src/pages/worker/home/index.tsx',
+    nav: 'navigateTo',
+    via: 'PIECEWORK_PAGE_ROUTE',
+    viaBinding: 'src/utils/inbound/gaps.ts',
+    audience:
+      '工人身份（工人首页 →「我的计件」；未登录时该页自身引导去工号 + PIN 登录，先登录再看到自己的计件）',
   },
 ]
