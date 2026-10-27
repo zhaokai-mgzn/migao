@@ -829,8 +829,10 @@ describe('ProcessingDoc 面料单（order_kind=outbound，issue #7901）', () =>
   it('🔴 起算点自证：同一份数据换成成品帘（order_kind=processing）⇒ 9 列 + 帘种列 + 工艺行都在', () => {
     render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
     expect(headers()).toEqual([...PROCESSING_DOC_COLUMNS])
-    expect(document.querySelector('[data-testid="processing-doc-curtain-type"]')).not.toBeNull()
-    expect(document.querySelector('[data-testid="processing-doc-craft"]')).not.toBeNull()
+    // 判据读**内容**不读「节点存在」（存在性断言是本仓明令的弱断言形态，见
+    // tests/unit_ci_workflows/test_weak_assert_blindspots.py）
+    expect(cellText('processing-doc-curtain-type')).toBe('布帘')
+    expect(craftLines()[0]).toBe('加工方式：韩褶')
   })
 
   it('🔴 表格列数不变量：面料单每行 Σ(colSpan) = 6（少一格 ⇒ 备注列在数据行没边框，同 #6595 形态）', () => {
