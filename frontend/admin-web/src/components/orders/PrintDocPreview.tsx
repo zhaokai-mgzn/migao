@@ -8,6 +8,8 @@ import { captureNodeToPngBlob, copyPngToClipboard, downloadPng } from '@/lib/pri
 import { extractApiErrorMessage } from '@/lib/api-error'
 import type { PrintBatchController, PrintTarget } from '@/lib/print-doc'
 import { PRINT_TARGET_SPECS } from '@/lib/print-doc'
+// 纸型 → 打印机引导 + 本机登记（issue #7957）：浏览器**不能**选/读打印机 ⇒ 只做提示与登记
+import { printerKindOf, readPrinterName, savePrinterName } from '@/lib/print-printer'
 
 /**
  * 打印前的**纸面自检层**（issue #5914 的功能③）—— 真尺寸纸框 + 溢出/页数自检 + 纸型提示。
@@ -181,6 +183,16 @@ export default function PrintDocPreview({
   const [scale, setScale] = useState(1)
   const [check, setCheck] = useState<SheetCheckResult | null>(null)
   const [capturing, setCapturing] = useState(false)
+  // 本机登记的打印机名（按纸型记；换纸型跟着换。issue #7957）
+  const [printerName, setPrinterName] = useState<string | null>(() => readPrinterName(media))
+  const [printerEditing, setPrinterEditing] = useState(false)
+  const [printerDraft, setPrinterDraft] = useState('')
+
+  // 切换纸型 ⇒ 换成该纸型的登记（A4 的名字不能出现在连续纸的提示里）
+  useEffect(() => {
+    setPrinterName(readPrinterName(media))
+    setPrinterEditing(false)
+  }, [media])
 
   // 缩放：只做「适配屏幕」，不改纸的真尺寸（纸框本身始终是 mm 单位）
   useEffect(() => {
@@ -289,6 +301,62 @@ export default function PrintDocPreview({
                 ? ` · 页边距 ${margin.yMm}mm ${margin.xMm}mm`
                 : ' · 无边距'}
               ）· 正文 {printBodyFontPt(media)}pt
+            </div>
+            <div
+              className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-neutral-500"
+              data-testid="print-printer-hint"
+            >
+              <span>
+                {printerName ? `打印机：${printerName}` : `打印机：${printerKindOf(media)}`}
+                {!printerName && <span className="text-neutral-400">（未登记本机名称）</span>}
+              </span>
+              {!printerEditing ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPrinterDraft(printerName ?? '')
+                    setPrinterEditing(true)
+                  }}
+                  data-testid="print-printer-edit"
+                  className="rounded px-1 text-neutral-600 underline decoration-neutral-300 underline-offset-2 transition-colors hover:text-neutral-900"
+                >
+                  {printerName ? '更改' : '登记本机名称'}
+                </button>
+              ) : (
+                <span className="inline-flex items-center gap-1">
+                  <input
+                    autoFocus
+                    value={printerDraft}
+                    onChange={(e) => setPrinterDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur()
+                    }}
+                    placeholder="例：HP LaserJet M404"
+                    data-testid="print-printer-input"
+                    className="h-7 w-44 rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-900 outline-none focus:border-primary-400"
+                  />
+                  <button
+                    type="button"
+                    data-testid="print-printer-save"
+                    onClick={() => {
+                      savePrinterName(media, printerDraft)
+                      setPrinterName(readPrinterName(media))
+                      setPrinterEditing(false)
+                    }}
+                    className="rounded px-1 font-medium text-primary-700 hover:text-primary-800"
+                  >
+                    保存
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="print-printer-cancel"
+                    onClick={() => setPrinterEditing(false)}
+                    className="rounded px-1 text-neutral-500 hover:text-neutral-800"
+                  >
+                    取消
+                  </button>
+                </span>
+              )}
             </div>
           </div>
           <Button variant="ghost" size="sm" onClick={onClose} data-testid="print-preview-close">
@@ -450,6 +518,12 @@ export default function PrintDocPreview({
               </span>
               <span className="text-sm font-medium text-neutral-900">
                 {batch.current ? (titleOf ? titleOf(batch.current) : PRINT_TARGET_SPECS[batch.current].title) : ''}
+              </span>
+              <span className="text-xs tabular-nums text-neutral-500">
+                {box.widthMm}×{box.heightMm}mm
+              </span>
+              <span className="text-xs text-neutral-500" data-testid="print-batch-printer">
+                {printerName ? `打印机：${printerName}` : `请选：${printerKindOf(media)}`}
               </span>
               <span className="text-xs text-neutral-500">{batch.fired ? '已出纸' : '待出纸'}</span>
             </div>

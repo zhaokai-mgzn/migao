@@ -29,6 +29,90 @@ function stubSheet(scrollHeightPx: number, offsetHeightPx: number): HTMLElement 
 
 const MM_TO_PX = 96 / 25.4
 
+describe('打印机引导与本机登记（issue #7957）', () => {
+  afterEach(() => {
+    cleanup()
+    localStorage.clear()
+  })
+
+  function renderWith(media: 'a4' | 'continuous-241x140' | 'label-50x110', extra: Record<string, unknown> = {}) {
+    return render(
+      <PrintDocPreview
+        target="processing"
+        title="加工单"
+        media={media}
+        onPrint={() => {}}
+        onClose={() => {}}
+        {...extra}
+      >
+        <div>单据</div>
+      </PrintDocPreview>
+    )
+  }
+
+  it('① 未登记 ⇒ 显示**纸型对应的通用打印机类型** + 「登记本机名称」入口（不编型号）', () => {
+    renderWith('a4')
+    const hint = screen.getByTestId('print-printer-hint')
+    expect(hint).toHaveTextContent('打印机：A4 激光打印机')
+    expect(screen.getByTestId('print-printer-edit')).toHaveTextContent('登记本机名称')
+  })
+
+  it('①b 连续纸 / 标签纸各给对应类型（不是同一句话）', () => {
+    renderWith('continuous-241x140')
+    expect(screen.getByTestId('print-printer-hint')).toHaveTextContent('针式打印机（连续纸）')
+    cleanup()
+    renderWith('label-50x110')
+    expect(screen.getByTestId('print-printer-hint')).toHaveTextContent('标签打印机')
+  })
+
+  it('② 登记后显示「打印机：<名>」，且**再渲染一次仍在**（真持久化，不是内存态）', () => {
+    const first = renderWith('a4')
+    fireEvent.click(screen.getByTestId('print-printer-edit'))
+    fireEvent.change(screen.getByTestId('print-printer-input'), { target: { value: ' HP LaserJet M404 ' } })
+    fireEvent.click(screen.getByTestId('print-printer-save'))
+    expect(screen.getByTestId('print-printer-hint')).toHaveTextContent('打印机：HP LaserJet M404')
+    first.unmount()
+
+    renderWith('a4')
+    expect(screen.getByTestId('print-printer-hint')).toHaveTextContent('打印机：HP LaserJet M404')
+    // 已登记 ⇒ 入口变成「更改」
+    expect(screen.getByTestId('print-printer-edit')).toHaveTextContent('更改')
+  })
+
+  it('③ 空白名不保存（保存后仍是未登记态，入口仍是「登记本机名称」）', () => {
+    renderWith('a4')
+    fireEvent.click(screen.getByTestId('print-printer-edit'))
+    fireEvent.change(screen.getByTestId('print-printer-input'), { target: { value: '   ' } })
+    fireEvent.click(screen.getByTestId('print-printer-save'))
+    expect(screen.getByTestId('print-printer-hint')).toHaveTextContent('打印机：A4 激光打印机')
+    expect(screen.getByTestId('print-printer-edit')).toHaveTextContent('登记本机名称')
+  })
+
+  it('④ 联合打印**进度行**带当前纸型 + 该纸型的打印机（每张出纸前就知道该选哪台）', () => {
+    const batch = {
+      stage: 'running' as const,
+      candidates: ['processing', 'labels'] as const,
+      selected: ['processing', 'labels'] as const,
+      index: 0,
+      fired: false,
+      current: 'processing' as const,
+      batchId: 'b-1',
+      openPanel: vi.fn(),
+      closePanel: vi.fn(),
+      toggle: vi.fn(),
+      toggleAll: vi.fn(),
+      start: vi.fn(),
+      markFired: vi.fn(),
+      next: vi.fn(),
+      stop: vi.fn(),
+    }
+    renderWith('a4', { batch: batch as never, docs: ['processing', 'labels'], onSelect: () => {} })
+    const progress = screen.getByTestId('print-batch-progress')
+    expect(progress).toHaveTextContent('210×297mm')
+    expect(progress).toHaveTextContent('A4 激光打印机')
+  })
+})
+
 describe('联合打印面板（issue #7941：去重复 / 份·张分读 / 勾选行层次）', () => {
   afterEach(cleanup)
 
