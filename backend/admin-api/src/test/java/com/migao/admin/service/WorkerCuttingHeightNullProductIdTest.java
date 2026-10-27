@@ -450,7 +450,7 @@ class WorkerCuttingHeightNullProductIdTest {
                                         + "（2026-10-26 / issue #7845：扫码视图追加成品入库块后行号 688→691）")),
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java|itemGroupKey",
                         new IndexSite("itemGroupKey", "itemIdToGroupKey", "itemGroupKey.get(spec.orderItemId())",
-                                "spec.orderItemId()", 290,
+                                "spec.orderItemId()", 308,
                                 Verdict.KEY_NULLABLE,
                                 "⚙️ 登记面事实（issue #6878 订正；**不是**「已安全」结论）：真正交给 `setByGroup.get(...)` 的键是"
                                         + "**派生值** `itemGroupKey.get(spec.orderItemId())`（字段 = 派生键表达式，本轮由"
@@ -465,14 +465,14 @@ class WorkerCuttingHeightNullProductIdTest {
                                         + "`DERIVED_KEY_SITES` 承担（登记站点 A ⇄ 站点 B；未登记 / 摘掉判空 / 换 getOrDefault "
                                         + "⇒ 那里具名判红）—— 本条目只保证「产出方与调用点被登记且不陈旧」。")),
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java|setByGroup",
-                        new IndexSite("setByGroup", "ensureSetsFor", "derivedKey", "itemGroupKey.get(spec.orderItemId())", 291,
+                        new IndexSite("setByGroup", "ensureSetsFor", "derivedKey", "itemGroupKey.get(spec.orderItemId())", 309,
                                 Verdict.KEY_NULLABLE,
                                 "两级取值的外层表（#6878 补登记；产出方 `ensureSetsFor` 同 PR 补登记后本调用点才被扫到）。"
                                         + "键 = 派生值 `itemGroupKey.get(...)`，改后先落局部变量 `derivedKey` 再判空")),
                 // issue #7636：商品货号（工人屏「货号」）—— 产出方 `productCodesOf` 的空集分支是 `Map.of()`，
                 // 键 = `order_items.product_id`（存量明细可为空）⇒ 调用点必须显式短路空键。
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java|productCodeByProductId",
-                        new IndexSite("productCodeByProductId", "productCodesOf", "productId", "item.getProductId()", 897,
+                        new IndexSite("productCodeByProductId", "productCodesOf", "productId", "item.getProductId()", 915,
                                 Verdict.KEY_NULLABLE,
                                 "`productId == null ? null : productCodeByProductId.get(productId)` 显式短路"
                                         + "（空键交给不可变表 = NPE，issue #6219 同族；本行新增时曾实测红）")),

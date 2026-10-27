@@ -78,6 +78,22 @@ public class QualityCheckService {
     public static final String INSPECTOR_WORKER = "worker";
     private static final Set<String> INSPECTOR_KINDS = Set.of(INSPECTOR_EMPLOYEE, INSPECTOR_WORKER);
 
+    /**
+     * 返工判定（issue #7919）：**返工报工自动落的那一条**质检记录的判定值。
+     *
+     * <p>它是 {@link #RESULTS} 里的一个值，单独取常量只为让「返工报工 ⇒ 记为返工」这件事在代码里
+     * 有一个可检索的名字（不在别处拼字面量）。</p>
+     */
+    public static final String RESULT_REWORK = "rework";
+
+    /**
+     * 返工报工自动落质检记录时的原因前缀（issue #7919）：{@code 返工报工：<工序逻辑名>}。
+     *
+     * <p>这张表要求「判定 ≠ 合格 ⇒ 原因必填」，而自动路径的原因**不是工人手填的**（报工三态里
+     * 只有「返工」这一个选择）⇒ 由本前缀 + 工序逻辑名合成一句人话，让质检单上看得懂「为什么有这条」。</p>
+     */
+    public static final String REWORK_REPORT_REASON_PREFIX = "返工报工：";
+
     /** 判为合格时允许原因为空后的文案锚（供报错文案复用）。 */
     private static final String REASON_REQUIRED =
             "质检判定为「%s」时必须填写不合格原因（判定 ≠ 合格 ⇒ 原因必填）";
@@ -205,12 +221,73 @@ public class QualityCheckService {
                 .inspectedAt(inspectedAt)
                 .deleted(0)
                 .build();
-        qualityInspectionMapper.insert(row);
+        insertInspection(row);
         // issue #7165：**合格**才代表这一件的质检工序做完（返工/报废还要再检）
         if ("pass".equals(normalized) && documentOperationLinkage != null) {
             documentOperationLinkage.completeQualityOperation(item.getOrderId(), orderItemId, actor, tenantId);
         }
         return view(row);
+    }
+
+    /**
+     * 返工报工自动落一条质检记录（issue #7919）。
+     *
+     * <p>用户 2026-10-27 18:13 +08 逐字：「报工页面的质检和返工要合并成一个功能，现在是两个独立的，
+     * 移除质检，保留返工，当前系统返工=质检」；同轮追问裁定：删掉质检区块后**返工报工要继续产生质检记录**，
+     * 否则质检单 / 质量成本报表断档。</p>
+     *
+     * <p>🔴 与 {@link #create} 的**两处**差别就是本方法存在的全部理由：</p>
+     * <ol>
+     *   <li><b>不校验「非 pass 必须给原因」</b> —— 原因由调用方按固定前缀合成
+     *       （{@link #REWORK_REPORT_REASON_PREFIX} + 工序逻辑名），不来自工人输入；</li>
+     *   <li><b>不联动</b> {@code DocumentOperationLinkage}（#7165 的「完成质检工序」只属于显式质检判定：
+     *       判为返工意味着这一件还要再检，绝不能顺手把质检工序置完成）。</li>
+     * </ol>
+     *
+     * <p>颗粒度与 {@link #create} **逐字相同** = 一件成品帘（{@code order_items.id}）；
+     * {@code inspected_at} 取业务时钟单点 {@link BusinessClock}（不写时区字面量）。
+     * 插入走**唯一**实现 {@link #insertInspection}（两条路各写一份 insert 迟早不同）。</p>
+     *
+     * <p><b>事务</b>：{@code REQUIRED}（默认）—— 工人扫码报工/扫码完成那条路径**本来就在事务里**
+     * ⇒ 与报工明细同一事务（要么全成、要么全不成）。</p>
+     *
+     * @param tenantId          当前租户（调用方从 {@code TenantContext} / 入参拿，不从 body 取）
+     * @param processingOrderId 该件所属加工单（调用方已解析，不在这里回查）
+     * @param orderItemId       一件成品帘（{@code order_items.id}）
+     * @param positionName      成品帘展示名快照（工序实例的 {@code position_name}）
+     * @param inspectorId       报工工人 id（调用方从工人 session 解，body 伪造不了）
+     * @param inspectorName     报工工人姓名
+     * @param operationName     工序名（变体名，如 {@code 精裁-布}）—— 原因里写**逻辑名**
+     * @return 落库后的那一行（判定 / 原因 / 检验人 / 时刻 / 成品帘）
+     */
+    @org.springframework.transaction.annotation.Transactional(rollbackFor = Exception.class)
+    public QualityCheck recordReworkReport(Long tenantId, String processingOrderId, String orderItemId,
+                                           String positionName, String inspectorId, String inspectorName,
+                                           String operationName) {
+        String logical = ProductionOperationQueryService.logicalOperationName(operationName);
+        QualityCheck row = QualityCheck.builder()
+                .tenantId(tenantId)
+                .processingOrderId(processingOrderId)
+                .orderItemId(orderItemId)
+                .positionName(positionName)
+                .inspectorId(inspectorId)
+                .inspectorName(inspectorName)
+                .inspectorKind(INSPECTOR_WORKER)
+                .inspectionResult(RESULT_REWORK)
+                .reason(REWORK_REPORT_REASON_PREFIX + (StringUtils.hasText(logical) ? logical.trim() : "工序未命名"))
+                .inspectedAt(clock().nowOffset())
+                .deleted(0)
+                .build();
+        insertInspection(row);
+        return row;
+    }
+
+    /**
+     * 质检记录落库（**唯一**插入实现）：显式质检（{@link #create}）与返工报工自动落
+     * （{@link #recordReworkReport}）共用这一处 —— 两条路各写一份 insert 是第二份口径，迟早不同。
+     */
+    private void insertInspection(QualityCheck row) {
+        qualityInspectionMapper.insert(row);
     }
 
     /**

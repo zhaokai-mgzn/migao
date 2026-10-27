@@ -21,12 +21,10 @@ import {
   DEFAULT_WORKER_IDLE_MINUTES,
   DEFAULT_WORK_TYPE,
   doneNotice,
-  effectivePages,
   initialState,
   legacySelection,
   MACHINE_ENTRY_HREF,
   normalizeWorkType,
-  PAGE_INSPECT,
   reduce,
   renderPage,
   washLabelPrintHtml,
@@ -263,51 +261,6 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
   }
 
   // ══════════════════════════════════════════════════════════════════════════════
-  // 质检（issue #7162）：扫水洗唛后读这一件的最新判定 / 录判定（生成质检单）。
-  //
-  // 🔴 只在 `inspect` ∈ 页面集时读 —— 但**真正**的准入在服务端 `/api/worker/quality/**`
-  //    （工人档案里没开这一页 ⇒ 403）。这里少渲染一块，不等于挡住了接口。
-  // ══════════════════════════════════════════════════════════════════════════════
-  const qualityItemId = () => state.view?.position?.order_item_id ?? null
-
-  async function loadQuality() {
-    const itemId = qualityItemId()
-    if (!itemId) return
-    if (!effectivePages(state).opened.has(PAGE_INSPECT)) return
-    dispatch({ type: 'qualityLoading' })
-    try {
-      const d = await api.qualityLatest(itemId)
-      // 读回来时屏已经换了一件 ⇒ 丢弃（避免把上一件的判定画到这一件上）
-      if (qualityItemId() !== itemId) return
-      dispatch({ type: 'qualityLoaded', latest: d.latest })
-    } catch (e) {
-      dispatch({ type: 'qualityFailed', error: e?.message ?? String(e) })
-    }
-  }
-
-  async function submitQuality() {
-    const form = state.qualityForm
-    const itemId = qualityItemId()
-    if (!form || !itemId) return
-    // 原因由**提交那一刻**从 DOM 读（不在 input 事件里重绘，否则每敲一个字就丢焦点）
-    const reason = (doc.getElementById('wh5-quality-reason')?.value ?? '').trim()
-    // 🔴 工人端只有一个判定 = 返工（issue #7749：合格是默认态，屏上不给这个动作）
-    //    ⇒ 说明必填；这里先拦一次只为不白跑网络，服务端 422 才是真判据。
-    if (!reason) {
-      dispatch({ type: 'qualityFormError', error: '记返工要写明问题（例如：布面污渍 / 尺寸偏差 / 缝线开裂）。' })
-      return
-    }
-    dispatch({ type: 'qualitySubmitting' })
-    try {
-      const latest = await api.createQuality({ orderItemId: itemId, result: 'rework', reason })
-      dispatch({ type: 'qualitySubmitted', latest })
-    } catch (e) {
-      // 服务端下发的业务文案原样显示（不把 HTTP 状态码当工人文案）
-      dispatch({ type: 'qualityFormError', error: e?.message ?? String(e) })
-    }
-  }
-
-  // ══════════════════════════════════════════════════════════════════════════════
   // 报返工（issue #7860）：任一工序工人都能报 —— 身份只由 `X-Worker-Session-Id` 解。
   //
   // 服务端把「这件的这道活、本人最近一笔 normal 报工」改记为 rework（回退 done_qty / done_at /
@@ -491,16 +444,11 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
     //    用户 2026-10-26 逐字「底部的重扫按钮先移除，当前点击跳转后是手输短码，这个功能不需要，没什么用」。
     //    入口只剩「扫纸上的二维码」：扫一次 = 一次新的页面落地（`?t=`），页内不再需要重扫按钮。
 
-    // 质检（issue #7162 / #7749）：展开返工表单 / 取消 / 提交（说明在提交时从 DOM 读）。
-    // 🔴 已无「判定单选」：工人端唯一的判定就是返工（合格是默认态，不点即合格）。
-    // 报返工（issue #7860）：展开表单 / 取消 / 提交
+    // 报返工（issue #7860）：展开表单 / 取消 / 提交。
+    // 🔴 issue #7919：质检区块已撤 —— 「这件有问题」在报工页只剩【返工】这一条路（服务端自动落质检记录）。
     on('wh5-rework-open', () => dispatch({ type: 'reworkFormOpen' }))
     on('wh5-rework-cancel', () => dispatch({ type: 'reworkFormClose' }))
     on('wh5-rework-submit', () => { void submitRework() })
-
-    on('wh5-quality-open', () => dispatch({ type: 'qualityFormOpen' }))
-    on('wh5-quality-cancel', () => dispatch({ type: 'qualityFormClose' }))
-    on('wh5-quality-submit', () => { void submitQuality() })
 
     // 报工三态（issue #5652 第二刀）：选择只落在 `state.view.work_type`（纯状态动作、**不发请求**）。
     // 🔴 放在 in-flight 闸**之前**：正在提交时也能改选 —— 那一笔的 `workType` 在点【报工】那一刻
@@ -582,7 +530,6 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
       state = { ...state, view: { ...view, __token: token, __selection: selection } }
       // 重扫同一张码且上次提交没收到答复 ⇒ 明说「这一下是回放、不会重复计件」
       dispatch({ type: 'resolved', view: state.view, notice: resumedNotice(token) })
-      void loadQuality()
     } catch (e) {
       fail(e)
     }
@@ -678,7 +625,6 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
         finishedInbound: view.finished_inbound ?? null,
       }
       dispatch({ type: 'resolved', view: state.view, notice: resumedNotice(token) })
-      void loadQuality()
       // 🔴 扫码即报工（issue #7845）：准入判据是纯函数（未绑定工序 / 质检工序 / 批次没填 / 旧码 ⇒ 不自动），
       //    这里只负责在准入通过时**提交一次**。`operationId` 非空 = 工人刚手动「一键改」了工序，
       //    那一下不是在扫码领活 ⇒ 不自动提交（让他确认后自己点【报工】）。
