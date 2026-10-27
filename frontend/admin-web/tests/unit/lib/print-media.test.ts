@@ -47,11 +47,11 @@ describe('打印介质矩阵（issue #5651）', () => {
   it('② 五种介质都在册，且技术/复写/连续走纸口径与 issue #5651 的矩阵表一致', () => {
     expect(matrix.media.map((m) => m.id)).toEqual([
       'a4',
-      // 2026-10-26（issue #7816，用户逐字「水洗唛长度不足，设置为打印50*150」）：
-      // 水洗唛介质 id 由 `label-50x70` 改为 **`label-50x150`**（纸型固定，作废「按内容撑开」）；
-      // 🔴 `label-50x70` **仍在册** —— 它自 #7816 起只服务**工人端发货标签**（#7761/#7786，
+      // 2026-10-27（issue #7948，用户逐字「把水洗唛的尺寸改成50*110，现在偏长了」）：
+      // 水洗唛介质 id 由 **`label-50x150` 改为 `label-50x110`**（纸型仍固定；#7816 的 150mm 作废）；
+      // 🔴 `label-50x70` **仍在册** —— 它只服务**工人端发货标签**（#7761/#7786，
       // `frontend/worker-h5/src/shipment.mjs` 逐字指它），仍是「纸长按内容撑开」的那张纸。
-      'label-50x150',
+      'label-50x110',
       'label-50x70',
       'label-50x80',
       'continuous-241x140',
@@ -60,22 +60,22 @@ describe('打印介质矩阵（issue #5651）', () => {
     expect(a4.technology).toBe('laser-inkjet')
     expect(a4.continuousFeed).toBe(false)
     expect(a4.carbonCopies).toBe(1)
-    const label = printMediaSpec('label-50x150')
+    const label = printMediaSpec('label-50x110')
     expect(label.technology).toBe('thermal-transfer')
-    // 🔴 **纸型固定 50mm × 150mm**（2026-10-26 用户逐字；#7776 的「纸长按内容撑开 / 夹在 70~150mm」作废）
-    expect(label.pageSize).toBe('50mm 150mm')
+    // 🔴 **纸型固定 50mm × 110mm**（2026-10-27 用户逐字；#7816 的 150mm 作废）
+    expect(label.pageSize).toBe('50mm 110mm')
     // 正文下限 12pt（随「字体还是太小，可以再大一点」由 9pt 抬上来）
     expect(label.minFontPt).toBe(12)
     // 🔴 动态纸长的字段**已删除**：矩阵里再长出 `lengthMm` ⇒ 纸型就有了第二份真值（#7776 回潮）⇒ 判红
     expect(Object.keys(label)).not.toContain('lengthMm')
-    // 点阵口径：纸长 150mm ⇒ 1200px；纸宽 50mm ⇒ 400px，被打印头 48mm 钳到头宽
+    // 点阵口径：纸长 110mm ⇒ 880px；纸宽 50mm ⇒ 400px，被打印头 48mm 钳到头宽
     // （逐值用**派生关系**断言，不在判据里抄第二份像素字面量 —— bmini 守卫 C2b 会判红）
     const labelDots = label.dotGeometry?.dotsPerMm as number
     expect(label.dotGeometry?.dpi).toBe(203)
     expect(labelDots).toBe(8)
     expect(label.dotGeometry?.widthPx).toBe(labelDots * 50)
-    expect(label.dotGeometry?.heightPx).toBe(labelDots * 150)
-    expect(label.dotGeometry?.heightPx).toBe(1200)
+    expect(label.dotGeometry?.heightPx).toBe(labelDots * 110)
+    expect(label.dotGeometry?.heightPx).toBe(880)
     expect(label.dotGeometry?.headWidthPx).toBe(labelDots * 48)
     // 有效打宽 = min(纸宽, 打印头宽)：50mm 纸 > 48mm 头 ⇒ 出图必须按头宽（右侧约 2mm 打不到）
     expect(label.dotGeometry?.effectiveWidthPx).toBe(labelDots * 48)
@@ -113,22 +113,22 @@ describe('打印介质矩阵（issue #5651）', () => {
     // （实测阈值见 `BROWSER_CHROME_MARGIN_MM`）；0 边距 = 没有可画的边距 = 必然不出。
     // 版面内缩（12mm）改由单据容器 padding 承担，见 ⑤ 那一组。
     expect(printPageRule('a4')).toBe('@page { size: A4; margin: 0; }')
-    // 🔴 水洗唛纸型**固定 50mm × 150mm**（issue #7816）：逐字钉 `@page` ——
-    //    改回 `50mm 70mm`、或再出现"按内容撑开"的纸长 ⇒ 必红
-    expect(printPageRule('label-50x150')).toBe('@page { size: 50mm 150mm; margin: 0; }')
+    // 🔴 水洗唛纸型**固定 50mm × 110mm**（2026-10-27 用户裁定）：逐字钉 `@page` ——
+    //    改回 `50mm 150mm` / `50mm 70mm`、或再出现"按内容撑开"的纸长 ⇒ 必红
+    expect(printPageRule('label-50x110')).toBe('@page { size: 50mm 110mm; margin: 0; }')
     // 2026-10-25 收口：三联纸也改成 0 边距（8.7mm 是未文档化分界，6mm 不该拿去赌）
     expect(printPageRule('continuous-241x140')).toBe('@page { size: 241mm 140mm; margin: 0; }')
   })
 
   it('🔴 ③b「纸长按内容撑开」的两个出口**已删除**（issue #7816 作废 #7776）：长回来 ⇒ 纸型又有第二份真值', () => {
     // 动态纸长时代：`printPageRuleForLength(mm)` 与 `printLengthRangeMm()` 从矩阵的 `lengthMm` 取范围。
-    // 现在纸型固定 50mm × 150mm，这两个出口**不存在** —— 导出面就是契约面：加回来 ⇒ 本判据必红。
+    // 现在纸型固定 50mm × 110mm，这两个出口**不存在** —— 导出面就是契约面：加回来 ⇒ 本判据必红。
     expect(Object.keys(mediaModule)).not.toContain('printPageRuleForLength')
     expect(Object.keys(mediaModule)).not.toContain('printLengthRangeMm')
     // 反空跑：同一个模块的导出面**确实**读得到（否则上面两条会因读错模块而假绿）
     expect(typeof mediaModule.printPageRule).toBe('function')
-    expect(mediaModule.PRINT_MEDIA_IDS).toContain('label-50x150')
-    // 发货标签的介质仍在册（两张纸不合并：一张固定 50×150、一张连续卷按内容撑开）
+    expect(mediaModule.PRINT_MEDIA_IDS).toContain('label-50x110')
+    // 发货标签的介质仍在册（两张纸不合并：一张固定 50×110、一张连续卷按内容撑开）
     expect(mediaModule.PRINT_MEDIA_IDS).toContain('label-50x70')
     const ship = printMediaSpec('label-50x70')
     expect(ship.pageSize).toBe('50mm 70mm')
@@ -153,7 +153,7 @@ describe('打印介质矩阵（issue #5651）', () => {
       expect(joined).toContain(keyword)
     }
     // 有实测读数的介质则**不许**留待实测项（否则「待实测」会退化成永久标签）
-    for (const id of ['a4', 'label-50x150'] as const) {
+    for (const id of ['a4', 'label-50x110'] as const) {
       expect(printMediaSpec(id).measurement).toBe('measured')
       expect(printMediaSpec(id).pendingMeasurements).toEqual([])
     }
@@ -184,10 +184,10 @@ describe('打印介质矩阵（issue #5651）', () => {
     // 纸的整幅 mm 尺寸 = 矩阵的 `pageBoxMm`（`pageSize` 是 CSS 值，`A4` 解析不出 mm）
     expect(printPageBoxMm('a4')).toEqual({ widthMm: 210, heightMm: 297 })
     expect(printPageBoxMm('continuous-241x140')).toEqual({ widthMm: 241, heightMm: 140 })
-    // 水洗唛：纸型固定 50mm × 150mm（issue #7816）—— 纸的整幅 mm 尺寸与 `@page` 指**同一张纸**
-    expect(printPageBoxMm('label-50x150')).toEqual({ widthMm: 50, heightMm: 150 })
+    // 水洗唛：纸型固定 50mm × 110mm（2026-10-27 用户裁定）—— 纸的整幅 mm 尺寸与 `@page` 指**同一张纸**
+    expect(printPageBoxMm('label-50x110')).toEqual({ widthMm: 50, heightMm: 110 })
     expect(printUsableHeightMm('a4')).toBe(273) // 297 − 12×2（命名纸型不再返回 null）
-    expect(printUsableHeightMm('label-50x150')).toBe(150) // 标签无边距（纸边即版心）
+    expect(printUsableHeightMm('label-50x110')).toBe(110) // 标签无边距（纸边即版心）
     expect(printContentInsetMm('continuous-241x140')).toEqual({ xMm: 12, yMm: 6 })
     expect(printUsableBoxMm('continuous-241x140')).toEqual({ widthMm: 217, heightMm: 128 })
     expect(isContinuousFeed('continuous-241x140')).toBe(true)
@@ -195,7 +195,7 @@ describe('打印介质矩阵（issue #5651）', () => {
     // 针打**不复用** A4 的字号预算（A4 的 6pt 量级在针打上会糊）
     expect(printBodyFontPt('continuous-241x140')).toBeGreaterThanOrEqual(printBodyFontPt('a4'))
     // 水洗唛正文下限 = **12pt**（issue #7816：9pt → 12pt，用户「字体还是太小，可以再大一点」）
-    expect(printBodyFontPt('label-50x150')).toBe(12)
+    expect(printBodyFontPt('label-50x110')).toBe(12)
   })
 
   it('⑤ 纸面不带**浏览器页眉页脚**：全矩阵 @page 边距为 0，版面内缩改由单据容器承担（issue #7309 → 2026-10-25 收口）', () => {
@@ -217,11 +217,11 @@ describe('打印介质矩阵（issue #5651）', () => {
     expect(printContentInsetCss('continuous-241x140')).toBe('6mm 12mm')
     expect(printContentInsetMm('continuous-241x140')).toEqual({ xMm: 12, yMm: 6 })
     expect(printUsableBoxMm('continuous-241x140')).toEqual({ widthMm: 217, heightMm: 128 })
-    // 热敏标签：整幅出图（纸边即版心）⇒ 无边距也无内缩；纸型固定 50mm × 150mm（issue #7816）
-    expect(printPageRule('label-50x150')).toBe('@page { size: 50mm 150mm; margin: 0; }')
-    expect(printContentInsetCss('label-50x150')).toBe('0')
-    // 可用版面 = 整幅纸（50 × 150）：标签没有 `@page` 边距，也没有容器内缩
-    expect(printUsableBoxMm('label-50x150')).toEqual({ widthMm: 50, heightMm: 150 })
+    // 热敏标签：整幅出图（纸边即版心）⇒ 无边距也无内缩；纸型固定 50mm × 110mm（issue #7948）
+    expect(printPageRule('label-50x110')).toBe('@page { size: 50mm 110mm; margin: 0; }')
+    expect(printContentInsetCss('label-50x110')).toBe('0')
+    // 可用版面 = 整幅纸（50 × 110）：标签没有 `@page` 边距，也没有容器内缩
+    expect(printUsableBoxMm('label-50x110')).toEqual({ widthMm: 50, heightMm: 110 })
   })
 
   it('⑤ 类级元守卫：矩阵里任何介质都不许落进「浏览器会画页眉页脚」的页边距区间', () => {

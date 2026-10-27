@@ -62,7 +62,7 @@ export interface PrintMediaSpec {
    * 登记了它 ⇒ `pageBoxMm.heightMm` / `pageSize` 描述的是**最短**纸长（驱动里该登记的那档）。
    * 消费方 = **工人端发货标签**（`frontend/worker-h5/src/shipment.mjs` 的 `shipLabelLengthMm()`，
    * 纯 JS 直读本矩阵）—— admin-web 侧自 issue #7816 起**没有**读取者（水洗唛改成固定纸型
-   * `label-50x150`，`printPageRuleForLength()` / `printLengthRangeMm()` 随之删除）。
+   * `label-50x110`，`printPageRuleForLength()` / `printLengthRangeMm()` 随之删除）。
    * 🔴 别因为「admin-web 没人读」就把本块删掉：工人端发货页的纸长全靠它。
    */
   lengthMm?: {
@@ -109,7 +109,7 @@ export interface PrintMediaSpec {
  * `tests/unit/lib/print-media.test.ts` 钉住：只改一边 ⇒ 必红（否则新增介质会静默地
  * 「矩阵里有、类型上没有」，调用方只能写 `as any` 绕过类型）。
  */
-export const PRINT_MEDIA_IDS = ['a4', 'label-50x150', 'label-50x70', 'label-50x80', 'continuous-241x140'] as const
+export const PRINT_MEDIA_IDS = ['a4', 'label-50x110', 'label-50x70', 'label-50x80', 'continuous-241x140'] as const
 
 export type PrintMediaId = (typeof PRINT_MEDIA_IDS)[number]
 
