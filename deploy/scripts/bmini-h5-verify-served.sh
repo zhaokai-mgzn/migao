@@ -210,6 +210,33 @@ for path in "/" "$ROOT_PROBE"; do
 done
 echo ""
 
+# ── ③b `/b/report/` 身份（issue #7906：手机端只留 /b 命名空间，页面仍是 /w 那份）──────────
+# 判据 = body 哈希 == 本仓 frontend/worker-h5/index.html + 子资源可读（`.mjs` 走 /w/ 的 MIME 块）。
+# 红证：删掉 nginx 的 `location /b/report/` ⇒ 落到 `location /b/` 的 SPA fallback（body = bmini 首页）⇒ 必红。
+echo "③b /b/report/ 身份（nginx rewrite → /w/）"
+REPORT_CODE=$(fetch "$BASE/b/report/index.html" "$TMPDIR_RUN/b-report.html")
+REPORT_SHA=$( [ -s "$TMPDIR_RUN/b-report.html" ] && file_sha256 "$TMPDIR_RUN/b-report.html" || echo '(空)' )
+# 判据 = **与线上 `/w/index.html` 逐字节一致**（rewrite 只换前缀、不换内容）。
+# 不直接与本仓文件比：`/w/` 与本仓的字节一致性已由 ④ 的 worker-h5 身份脚本单独负责（不重复造判据）。
+W_CODE=$(fetch "$BASE/w/index.html" "$TMPDIR_RUN/w-index-for-report.html")
+W_SHA=$( [ -s "$TMPDIR_RUN/w-index-for-report.html" ] && file_sha256 "$TMPDIR_RUN/w-index-for-report.html" || echo '(空)' )
+if [ "$REPORT_CODE" != "200" ]; then
+  bad "GET /b/report/index.html → HTTP ${REPORT_CODE}（期望 200：nginx 的 location /b/report/ 没生效）"
+elif [ "$W_CODE" != "200" ]; then
+  bad "GET /w/index.html → HTTP ${W_CODE}（对照面取不到，无法判定 /b/report/ 是否落到 worker-h5）"
+elif [ "$REPORT_SHA" != "$W_SHA" ]; then
+  bad "GET /b/report/index.html 与 GET /w/index.html 的 body 不一致 —— /b/report/ 没有落到 worker-h5（可能被 bmini 的 SPA fallback 吃掉了）"
+else
+  ok "GET /b/report/index.html → 200，body 与 /w/index.html 逐字节一致（rewrite 只换前缀）"
+fi
+REPORT_MOD_CODE=$(fetch "$BASE/b/report/src/app.mjs" "$TMPDIR_RUN/b-report-app.mjs")
+if [ "$REPORT_MOD_CODE" = "200" ]; then
+  ok "GET /b/report/src/app.mjs → 200（子资源同样经 rewrite 落 /w/）"
+else
+  bad "GET /b/report/src/app.mjs → HTTP ${REPORT_MOD_CODE}（子资源不可读 ⇒ 页面白屏）"
+fi
+echo ""
+
 # ── ④ worker-h5 零回归（复用既有身份断言脚本，不复制第二份判定）─────────────
 echo "④ worker-h5 零回归（/w/ 身份 + /s/ 代理面）"
 if [ -f "$WORKER_VERIFY" ]; then

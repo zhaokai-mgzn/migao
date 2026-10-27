@@ -67,10 +67,13 @@ public class WorkerShortLinkService {
      *
      * <p>🔴 issue #7899（2026-10-27 15:16 用户逐字「需要用 /w 的页面替代 /b 的报工页面，
      * /w 的页面是经过多轮测试过的」）：落点由 bmini 的 `/b/`（#7812 P2a 的 MVP）**改回**
-     * `frontend/worker-h5` 的 `/w/` —— 那是一张**静态多页**应用（无前端路由、无启动器补救跳转），
-     * 今天两次现场故障（第二次扫码渲染成商家首页）的根源正是「把静态多页换成了 SPA」。
-     * `/b/` 的 bmini 报工页**保留**（小程序原生面的载体 + 工人工作台内入口），
-     * 等它达到 `/w/` 的能力与稳定度（#7813）再谈切回 —— 届时只改这一条常量。</p>
+     * `frontend/worker-h5` 的那一页（**静态多页**：无前端路由、无启动器补救跳转）。
+     *
+     * <p>🔴 issue #7906（同日 16:47 用户逐字「扫码…还是进入 /w 页面，这个页面仍然没有合并替代 /b 页面的
+     * 扫码报工页面」）：手机端对外**只留 `/b` 一个命名空间** —— 落点改成 **`/b/report/`**，
+     * 该前缀在 nginx 里**内部 rewrite 到 `/w/`**（`deploy/swas/nginx.conf`）⇒ URL 在 `/b` 下，
+     * 页面本体仍是那份经多轮现场测试的实现（**一字不改**，只把它页内的绝对 `/w/…` 链接改成相对）。
+     * `/w/` 静态面继续可直连（兼容期）；bmini 的 `pages/worker/report/index` 只服务小程序原生面。</p>
      *
      * <p>🔴 issue #7879（2026-10-27 用户逐字「把跳转链接 /w 改成 /b，统一进手机端页面，
      * 不要再出现 /w 路径」）：落地面由 H5 {@code frontend/worker-h5} 的 {@code /w/} 改成 bmini 的
@@ -81,7 +84,7 @@ public class WorkerShortLinkService {
      * —— 判据 = {@code WorkerShortLinkControllerTest} / {@code ProcessingOrderShortLinkControllerTest} /
      * {@code SecurityConfigTest} 里对 {@code /b/?t=…} 的逐字断言。</p>
      */
-    public static final String REPORT_PAGE_PATH = "/w/";
+    public static final String REPORT_PAGE_PATH = "/b/report/";
 
 
     /** 分配短码的最大尝试次数（碰撞重试上限；到顶 ⇒ 显式失败，不静默造重码）。 */
