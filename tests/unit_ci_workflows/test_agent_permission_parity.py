@@ -2325,13 +2325,12 @@ MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
     "/production/piecework": MenuReadAnchor("计件工资", "production/piecework/page.tsx",
                                             ("productionApi.getPieceworkSummary",
                                              "productionApi.getPieceworkSettlements")),
-    # 质检记录（issue #7140 = #5652 的商家面）：节点码 = 本页第一屏读端点码
-    # （`GET /api/admin/quality-inspections/targets`，`QualityCheckController` 的**方法级**
-    # `@RequirePermission("production:inspect")`）。写面（POST 录入）与流水读面同码 ⇒ 码集仍是一个，
-    # 不需要 `MULTI_READ_ENDPOINT_PAGES`。本页**没有写码**：判定录入本身就是该码授权的动作。
+    # 质检记录（issue #7140 = #5652 的商家面；#7945 改判后 PC 只读）：
+    # 第一屏 = 指标（stats）+ 质检流水（list），两者方法级码都是 `production:inspect`；
+    # 待检清单（targets）已从 PC 撤下（判定入口只在手机端）⇒ 不再登记为第一屏调用。
     "/quality-inspections": MenuReadAnchor("质检记录", "quality-inspections/page.tsx",
-                                           ("qualityInspectionApi.targets",
-                                            "qualityInspectionApi.list")),
+                                           ("qualityInspectionApi.list",
+                                            "qualityInspectionApi.stats")),
     # 返工单（issue #7377）：节点码 `after_sales:view` = 本页第一屏读端点（`reworkOrderApi.list`）的
     # 方法级码 —— 与售后工单同域复用，零授权 delta。
     "/rework-orders": MenuReadAnchor("返工单", "rework-orders/page.tsx", ("reworkOrderApi.list",)),
