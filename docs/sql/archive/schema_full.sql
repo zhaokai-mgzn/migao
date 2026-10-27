@@ -4,7 +4,7 @@
 -- 本文件是 **2026-05-30 的一次性快照**，此后未随迁移链更新，**两个方向都已失真**
 -- （2026-09-11 实测，逐表比对 backend/admin-api/src/main/resources/db/init/schema.sql）：
 --
---   本文件缺失（schema.sql 已有，共 62 张）：
+--   本文件缺失（schema.sql 已有，共 63 张）：
 --     agent_batches, agent_batch_items
 --      批量更新的批次资源（V127，issue #5314 服务端包 —— 一张批次 + 一张逐条明细；
 --      明细的 old_value 是**撤销的唯一依据**，**不得**改用 audit_logs：审计是有界 fail-open、丢行允许），
@@ -80,6 +80,11 @@
 --     inbound_orders, inbound_order_items, stock_batches,
 --     warehouse_locations, outbound_orders, outbound_order_items, finished_goods_stock
 --     （后四张 = V196 / issue #7750 的成品仓 + 出库单）
+--     print_logs
+--      打印流水（V201，issue #7902 —— 一行 = 一次「发起打印」的事实：谁 / 何时 / 哪张单 /
+--      哪份纸（sales·processing·quotation·labels）/ 纸型 / 张数 / 通道（browser·ble）/ 结果。
+--      append-only：没有 update/delete 入口、没有 deleted 列 —— 「打过没有」是事实，不是可撤销状态；
+--      订单列表的「已打印」聚合只认 status='fired'（failed 表示纸没出来，算进去会让商家误以为打过了）），
 --     （入库单 / 批次，V111，issue #5034 —— 批次号自动生成 + 自动加库存 + 移动加权平均成本；
 --     inbound_labels
 --      入库标签（V134，issue #5052 P2 —— 一行 = 一个入库单明细行 = 一张 50×30mm 标签：

@@ -637,16 +637,15 @@
     {
       "file": "tests/unit_ci_workflows/test_print_doc_convention_guard.py",
       "symbol": "PORTALED_PRINT_DOCS",
-      "bound": 5,
+      "bound": 4,
       "members": [
-        "frontend/admin-web/src/components/orders/ShipmentDoc.tsx",
         "frontend/admin-web/src/components/orders/QuotationDoc.tsx",
         "frontend/admin-web/src/components/production/TaskCardPrint.tsx",
         "frontend/admin-web/src/components/orders/ProcessingDoc.tsx",
         "frontend/admin-web/src/components/orders/SalesDoc.tsx"
       ],
       "issue": "#5007",
-      "note": "该处只写 `assert len(...) >= N`（只防清空、不防删一项）⇒ 由逐项冻结承担「多一个/少一个都红」；下界断言本身按文件所有权留在原文件"
+      "note": "该处只写 `assert len(...) >= N`（只防清空、不防删一项）⇒ 由逐项冻结承担「多一个/少一个都红」；下界断言本身按文件所有权留在原文件（2026-10-27 issue #7902：ShipmentDoc 随发货单退场 ⇒ 成员 5→4、下界同步降到 4）"
     },
     {
       "file": "tests/unit_ci_workflows/test_needs_changes_tail_job_coverage.py",
