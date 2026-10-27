@@ -64,7 +64,7 @@ Chrome 把自己的页眉页脚（版式日期 / 文档标题 / 页面 URL / 页
 - **发货标签** = `label-50x70`（50mm 宽**连续卷**，纸长按内容撑开 70~150mm，正文 9pt）——
   由 `frontend/worker-h5/src/shipment.mjs` 的 `shipLabelLengthMm()` / `shipLabelPageRule()` 现算，
   守卫 `frontend/worker-h5/tests/worker-h5-shipment-ready.test.mjs` 逐值比对 `pageSize` 与 `lengthMm`。
-⇒ 改任一边都要看另一边；把水洗唛改回 `label-50x70` / `label-50x110` = 把「长度不足」带回来（守卫
+⇒ 改任一边都要看另一边；把水洗唛改回 `label-50x70` = 把「长度不足」带回来（旧的 `label-50x110` 已退场）（守卫
 `tests/unit_ci_workflows/test_wash_label_geometry_guard.py` 会红）。
 
 ## 2.1 打印入口唯一化与打印流水（issue #7902）
@@ -110,7 +110,7 @@ Chrome 把自己的页眉页脚（版式日期 / 文档标题 / 页面 URL / 页
 |---|---|
 | `a4` | A4 激光打印机 |
 | `continuous-241x140` | 针式打印机（连续纸） |
-| `label-50x110` / `label-50x70` / `label-50x80` | 标签打印机 |
+| `label-50x119` / `label-50x70` / `label-50x80` | 标签打印机 |
 
 1. **纸型 → 打印机类型**：打印预览表头与「联合打印」进度行显示该纸型该选哪类机器（不编具体型号）；
 2. **本机登记**：商家可一次性登记「这台电脑的该纸型打印机叫什么」（`localStorage`，**按纸型隔离**，不落服务端 ——

@@ -128,7 +128,7 @@ describe('打印介质矩阵（issue #5651）', () => {
     // 反空跑：同一个模块的导出面**确实**读得到（否则上面两条会因读错模块而假绿）
     expect(typeof mediaModule.printPageRule).toBe('function')
     expect(mediaModule.PRINT_MEDIA_IDS).toContain('label-50x119')
-    // 发货标签的介质仍在册（两张纸不合并：一张固定 50×110、一张连续卷按内容撑开）
+    // 发货标签的介质仍在册（两张纸不合并：一张固定 50×119、一张连续卷按内容撑开）
     expect(mediaModule.PRINT_MEDIA_IDS).toContain('label-50x70')
     const ship = printMediaSpec('label-50x70')
     expect(ship.pageSize).toBe('50mm 70mm')
