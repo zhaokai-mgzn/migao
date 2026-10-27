@@ -414,14 +414,34 @@ def _locations(block: str) -> list[dict]:
             continue  # 只收前缀 location（模拟器覆盖的形态；正则 location 另由判据挡下）
         body = m.group("body")
         tf = re.search(r"try_files\s+([^;]+);", body)
+        # 内部重写（issue #7906）：`rewrite ^<前缀>(.*)$ <目标>$1 last;` ⇒ 该前缀由 <目标> 伺候
+        # （`/b/report/…` ⇒ `/w/…`：URL 在 /b 命名空间下、文件仍是 worker-h5 那一份）
+        rw = re.search(r"rewrite\s+\^(?P<from>\S+?)\(\.\*\)\$\s+(?P<to>\S+?)\$1\s+last;", body)
         out.append(
             {
                 "prefix": m.group("prefix"),
                 "try_files": tf.group(1).split() if tf else None,
                 "proxy_pass": bool(re.search(r"proxy_pass\s+\S+;", body)),
+                "rewrite_to": rw.group("to") if rw else None,
             }
         )
     return out
+
+
+def _apply_rewrite(locs: list[dict], request_path: str) -> str | None:
+    """若**最长前缀**命中的 location 带 `rewrite_to`，返回替换前缀后的路径（否则 None）。
+
+    语义对齐 nginx：`rewrite ^/b/report/(.*)$ /w/$1 last;` ⇒ `/b/report/x` 变 `/w/x`，
+    `/b/report/` 变 `/w/`（`$1` 为空）。
+    """
+    best = None
+    for loc in locs:
+        if request_path.startswith(loc["prefix"]):
+            if best is None or len(loc["prefix"]) > len(best["prefix"]):
+                best = loc
+    if best is None or not best.get("rewrite_to"):
+        return None
+    return best["rewrite_to"] + request_path[len(best["prefix"]):]
 
 
 def _serve(block: str, files: set[str], request_path: str, index: str = "index.html") -> str:
@@ -439,6 +459,11 @@ def _serve(block: str, files: set[str], request_path: str, index: str = "index.h
     locs = _locations(block)
     if not locs:
         return "404"
+
+    # 内部重写（`last`）：路径前缀替换成目标前缀后**重新解析**（模拟器现在会这一形态）
+    rewritten = _apply_rewrite(locs, request_path)
+    if rewritten is not None and rewritten != request_path:
+        return _serve(block, files, rewritten, index)
 
     def exists_file(p: str) -> bool:
         return p.lstrip("/") in files
@@ -811,6 +836,10 @@ class _NginxishServer:
         self._thread = None
 
     def _route(self, path: str):
+        # issue #7906：`/b/report/` 是 nginx 里 `rewrite ^/b/report/(.*)$ /w/$1 last;` 挂上来的
+        # ⇒ 本模拟器照同一语义**先换成 /w/**（放在 `/b/` 分支之前，否则会被 bmini 的 fallback 吃掉）。
+        if path.startswith("/b/report/"):
+            return self._route("/w/" + path[len("/b/report/"):])
         root = self.root
         bmini = (root / SUBDIR / "index.html").read_bytes() if (root / SUBDIR / "index.html").is_file() else b""
         c_end = (root / "index.html").read_bytes()

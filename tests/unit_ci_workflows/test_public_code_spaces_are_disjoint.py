@@ -338,6 +338,8 @@ H5_SUBDIR_RE = re.compile(r"^\s*H5_SUBDIR:\s*(?P<sub>[A-Za-z0-9._-]+)\s*$", re.M
 FACE_PROXY = "proxy"
 FACE_STATIC = "static"
 FACE_STATIC_UNDER_ROOT = "static-under-root"
+#: 内部重写面：该前缀**没有自己的文件**，nginx 用 `rewrite … last;` 把它换到另一个前缀（issue #7906）
+FACE_REWRITE = "rewrite"
 
 
 @dataclass(frozen=True)
@@ -350,6 +352,7 @@ class NginxFace:
     semantics: str
     upstream: str = ""   # kind == FACE_PROXY 时：登记的代理上游（host:port）
     fallback: str = ""   # kind == FACE_STATIC / FACE_STATIC_UNDER_ROOT 时：fallback 落在哪
+    rewrite_to: str = ""  # kind == FACE_REWRITE 时：内部重写到的目标前缀（谁真正伺候它）
 
 
 #: 🔴 **登记表**（与 CODE_SPACES 同文件、同族 —— 一处登记 = 一个公开前缀的全部归属）。
@@ -383,6 +386,14 @@ PUBLIC_PREFIX_FACES: dict[str, NginxFace] = {
         owner="bmini h5 发布腿（.github/workflows/bmini-h5-publish.yml，issue #5668）",
         semantics="B 端商家端 h5（Taro build:h5，publicPath=/b/）",
         fallback="落回自己的 /b/index.html（**不得**落到根 index.html）",
+    ),
+    "/b/report/": NginxFace(
+        prefix="/b/report/",
+        kind=FACE_REWRITE,
+        owner="worker-h5（经 nginx 内部 rewrite 挂到 /b 命名空间下，issue #7906）",
+        semantics="手机端报工面：URL 在 `/b` 下、页面本体是 `frontend/worker-h5` 那份静态多页应用"
+        "（经多轮现场测试，一字未改）⇒ 对外只有一个手机端命名空间，页面不变",
+        rewrite_to="/w/",
     ),
     "/w/": NginxFace(
         prefix="/w/",
@@ -427,6 +438,17 @@ def app_server(conf: str) -> Block:
     servers = _servers(parse_nginx(conf))
     assert APP_DOMAIN in servers, f"nginx.conf 里找不到 {APP_DOMAIN} 的 443 server 段（本判据的坐标没了）"
     return servers[APP_DOMAIN]
+
+
+def _rewrite_target(block) -> str:
+    """从 location block 的指令里取 `rewrite ^<前缀>(.*)$ <目标>$1 last;` 的目标前缀。"""
+    for statement in block.directives:
+        if not statement.startswith("rewrite "):
+            continue
+        m = re.search(r"\^\S*?\(\.\*\)\$\s+(\S+?)\$1\s+last;?", statement)
+        if m:
+            return m.group(1)
+    return ""
 
 
 def public_nginx_prefixes(conf: str) -> set[str]:
@@ -584,6 +606,23 @@ def prefix_wiring_problems(conf: str, java_prefixes: set[str], h5_prefixes: set[
                 bad.append(
                     f"`location {prefix}` 的 fallback 是 {fallback!r}，**跨出了自己的前缀命名空间**"
                     f"（登记要求：{face.fallback}）⇒ 子路由会静默回落到别的应用"
+                )
+        elif face.kind == FACE_REWRITE:
+            if block is None:
+                bad.append(f"{prefix} 登记为内部重写面（{face.owner}）但 nginx 里没有 `location {prefix}`")
+                continue
+            if target := proxy_target_of(block):
+                bad.append(f"`location {prefix}` 登记为内部重写面（{face.owner}）却挂了 proxy_pass（{target}）")
+            rewritten = _rewrite_target(block)
+            if not rewritten:
+                bad.append(
+                    f"`location {prefix}` 没有 `rewrite … last;` ⇒ 它没有自己的文件、也没人伺候 ⇒ "
+                    f"请求会 404 或落进别的命名空间（登记要求：重写到 {face.rewrite_to}）"
+                )
+            elif not rewritten.startswith(face.rewrite_to):
+                bad.append(
+                    f"`location {prefix}` 的内部重写目标是 {rewritten!r}，登记的是 {face.rewrite_to!r}"
+                    f"（改目标 = 换页面，必须同步改登记与判据）"
                 )
         else:  # FACE_STATIC_UNDER_ROOT
             if block is not None:

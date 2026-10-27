@@ -313,8 +313,8 @@ describe('B3c 服务端 302 的路由常量与前端注册的路由逐字一致�
   })
 })
 
-describe('B4 落点真值 = `/w/`（issue #7899：纸上的码回到经多轮测试的静态多页报工面）', () => {
-  it('B4 302 的唯一真值 = `/w/`（`REPORT_PAGE_PATH`）', () => {
+describe('B4 落点真值 = `/b/report/`（issue #7906：手机端只留 /b 命名空间，页面仍是 /w 那份静态多页）', () => {
+  it('B4 302 的唯一真值 = `/b/report/`（`REPORT_PAGE_PATH`）', () => {
     const source = stripComments(
       fs.readFileSync(
         path.join(
@@ -325,7 +325,7 @@ describe('B4 落点真值 = `/w/`（issue #7899：纸上的码回到经多轮测
       ),
     )
     const declared = /REPORT_PAGE_PATH\s*=\s*"([^"]+)"/.exec(source)
-    expect(declared?.[1]).toBe('/w/')
+    expect(declared?.[1]).toBe('/b/report/')
   })
 
   it('B4 启动器 / 工人首页 / 入口台账的**代码**里不再出现 `/w/`', () => {
