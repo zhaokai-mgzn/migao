@@ -68,7 +68,7 @@ export function createReworkApp({ doc, api, replace = null }) {
   function bind() {
     const retry = doc.querySelector('#wh5-rework-retry')
     if (retry) retry.addEventListener('click', () => { void load() })
-    // 登录 / 返回报工都是**真链接**（`<a href="/w/">`）：`replace` 只在被注入时才接管（测试替身）
+    // 登录 / 返回报工都是**真链接**（`<a href="./">`）：`replace` 只在被注入时才接管（测试替身）
     for (const id of ['wh5-rework-login', 'wh5-rework-back', 'wh5-rework-forbidden-back']) {
       const link = doc.querySelector(`#${id}`)
       if (link && typeof replace === 'function') {

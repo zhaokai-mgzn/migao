@@ -96,7 +96,7 @@ test('⑤ 提交成功 ⇒ 返工单号 + 工序上屏 + 「不计件」说明�
 
 test('⑥ 返工记录入口：档案开了 rework ⇒ 有真链接；没开 ⇒ 不出现（逐人开）', () => {
   const opened = renderPage(open([PAGE_REPORT, PAGE_REWORK]))
-  assert.match(opened, /id="wh5-rework-entry"[^>]*href="\/w\/rework.html"[^>]*>返工记录</)
+  assert.match(opened, /id="wh5-rework-entry"[^>]*href="\.\/rework.html"[^>]*>返工记录</)
   const closed = renderPage(open([PAGE_REPORT, PAGE_INSPECT]))
   assert.doesNotMatch(closed, /id="wh5-rework-entry"/)
 })

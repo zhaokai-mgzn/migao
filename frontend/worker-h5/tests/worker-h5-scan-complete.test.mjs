@@ -1020,7 +1020,7 @@ async function loginAndCollectNav(href, storage) {
 
 test('🔴 ⑨ 本机钉在裁高页 ⇒ 登录成功后换到 `/w/machine.html`（机台那台屏不必再点）', async () => {
   const nav = await loginAndCollectNav('https://app.migaozn.com/w/', memStorage({ 'migao:worker-h5:home': 'cut_calc' }))
-  assert.deepEqual(nav, ['/w/machine.html'], '钉在裁高页的机台屏：登录成功后就该换过去')
+  assert.deepEqual(nav, ['./machine.html'], '钉在裁高页的机台屏：登录成功后就该换过去')
 })
 
 test('🔴 ⑨ 逃生门 `?page=report&keep=1` ⇒ 登录后**不换页**（机台屏临时报普通工）', async () => {

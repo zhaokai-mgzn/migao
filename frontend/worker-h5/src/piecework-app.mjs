@@ -12,7 +12,7 @@ import { createApi, SESSION_EXPIRED } from './api.mjs'
 import { PIECEWORK_UNREADABLE, renderPiecework } from './piecework.mjs'
 
 /** 登录页（同源静态页；本页未登录时的出口）。 */
-export const PIECEWORK_LOGIN_HREF = '/w/'
+export const PIECEWORK_LOGIN_HREF = './'
 
 /** 从 URL 读 `?month=YYYY-MM`（深链用；缺省 = 服务端按当前自然月）。 */
 export function monthFromLocation(location) {
@@ -47,7 +47,7 @@ function pageHeader(worker) {
   if (!name) return ''
   return `<header class="wh5-header">
     <span class="wh5-worker" id="wh5-current-worker">当前工人：${name}${no ? `（工号 ${no}）` : ''}</span>
-    <a class="wh5-ghost" id="wh5-piecework-back" href="/w/">返回报工</a>
+    <a class="wh5-ghost" id="wh5-piecework-back" href="./">返回报工</a>
   </header>`
 }
 

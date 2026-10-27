@@ -827,6 +827,7 @@ class _NginxishServer:
       · ``i_falls_back``  —— nginx 少了 `location /i/`（入库标签的码静默回落到根页 = C 端元元）
       · ``o_falls_back``  —— nginx 少了 `location /o/`（加工单纸的码静默回落到根页 = C 端元元；#6867）
       · ``bad_js_mime``   —— 入口脚本（`.js`/`.mjs`）被发成 `application/octet-stream`（issue #6293）
+      · ``no_report_rewrite`` —— nginx 少了 `location /b/report/` 的 rewrite（扫码落点静默变成 bmini 首页；#7906/#7915）
     """
 
     def __init__(self, served_root: Path, mode: str = "ok"):
@@ -838,7 +839,8 @@ class _NginxishServer:
     def _route(self, path: str):
         # issue #7906：`/b/report/` 是 nginx 里 `rewrite ^/b/report/(.*)$ /w/$1 last;` 挂上来的
         # ⇒ 本模拟器照同一语义**先换成 /w/**（放在 `/b/` 分支之前，否则会被 bmini 的 fallback 吃掉）。
-        if path.startswith("/b/report/"):
+        # `no_report_rewrite` = 红证形态：没有这条 rewrite ⇒ 请求落进 `/b/` 的 fallback（页面变成 bmini）。
+        if path.startswith("/b/report/") and self.mode != "no_report_rewrite":
             return self._route("/w/" + path[len("/b/report/"):])
         root = self.root
         bmini = (root / SUBDIR / "index.html").read_bytes() if (root / SUBDIR / "index.html").is_file() else b""
@@ -967,6 +969,8 @@ def test_verify_served_is_green_on_correct_landing(tmp_path):
         # issue #6293：入口脚本被发成 octet-stream ⇒ 浏览器拒绝执行 module script ⇒ 整页白屏，
         # 而身份 / 串端 / 字节全对（所以 ①~⑤ 会全绿）⇒ 必须由 ⑥ 判红。
         ("bad_js_mime", "∉ JS MIME 白名单"),
+        # issue #7906/#7915：`/b/report/` 的 rewrite 没了 ⇒ 每一页都变成 bmini 首页/自己的产物 ⇒ 必须判红且指名。
+        ("no_report_rewrite", "没有落到 worker-h5"),
     ],
 )
 def test_verify_served_is_red_on_broken_landings(tmp_path, mode, marker):

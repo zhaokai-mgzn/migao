@@ -26,7 +26,7 @@
 // 也给 `node --test` 用。
 
 /** 登录页（同源静态页；本页未登录时的出口）。 */
-export const REWORK_LOGIN_HREF = '/w/'
+export const REWORK_LOGIN_HREF = './'
 
 /** 缺值占位符（**只在整行一个可显示值都没有时**出现；与发货纸面 `—` 同口径）。 */
 export const REWORK_MISSING = '—'

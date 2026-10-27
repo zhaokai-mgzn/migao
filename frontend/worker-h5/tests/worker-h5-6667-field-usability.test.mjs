@@ -203,9 +203,9 @@ function makeFetch(handlers, hold = {}) {
 // ① 机台页登录入口（P0）
 // ══════════════════════════════════════════════════════════════════════════════
 
-test('🔴 ① 机台页未登录 ⇒ 屏上有一条**真的**登录入口（`<a href="/w/">`；不是"请去登录"四个字）', () => {
+test('🔴 ① 机台页未登录 ⇒ 屏上有一条**真的**登录入口（`<a href="./">`；不是"请去登录"四个字）', () => {
   const html = renderScan({ ...initialMachineState(), mode: 'error', error: '本台设备还没登录：请先用工号 + PIN 登录，再扫码' })
-  assert.match(html, /<a [^>]*href="\/w\/"/, '未登录态必须给一条指向 /w/ 登录页的真实链接（车间里盯着这块屏的人有路可走）')
+  assert.match(html, /<a [^>]*href="\.\/"/, '未登录态必须给一条指向 /w/ 登录页的真实链接（车间里盯着这块屏的人有路可走）')
   assert.match(html, /登录/, '链接文案要说清「这台屏还没登录」，不能让工人自己猜')
   // 真浏览器探针（scripts/probe-worker-h5-touch.mjs）判它 ≥44px + touch-action；这里判静态形态
   assert.match(html, /id="wh5-machine-login"[^>]*class="wh5-machine__back"|class="wh5-machine__back"[^>]*id="wh5-machine-login"/, '入口复用既有的机台链接样式（不新造一套）')
@@ -217,7 +217,7 @@ test('🔴 ① 装配层：未登录（无 session）时 boot 出来的屏上仍
   const api = createApi({ storage: makeStorage(), fetchImpl, deviceLabel: 'MACHINE' })
   const app = createMachineApp({ doc, api, storage: makeStorage() })
   app.dispatch({ type: 'failed', error: '本台设备还没登录：请先用工号 + PIN 登录，再扫码' })
-  assert.match(doc.html, /<a [^>]*href="\/w\/"/, '未登录的机台页必须能一步走到登录页')
+  assert.match(doc.html, /<a [^>]*href="\.\/"/, '未登录的机台页必须能一步走到登录页')
 })
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -418,7 +418,7 @@ test('🔴 ⑥ 点「切换工人」⇒ 清掉本机工人身份 + 换到登录�
   await settle()
   assert.equal(api.worker(), null, '切换工人必须清掉本机身份')
   assert.equal(storage.getItem(STORAGE_KEY), null, 'localStorage 里的 session 也要清（否则下一班仍按上一班记账）')
-  assert.deepEqual(navigations, ['/w/'], '换到登录页（/w/ 是唯一有登录面的那一页）')
+  assert.deepEqual(navigations, ['./'], '换到登录页（/w/ 是唯一有登录面的那一页）')
 })
 
 // ══════════════════════════════════════════════════════════════════════════════

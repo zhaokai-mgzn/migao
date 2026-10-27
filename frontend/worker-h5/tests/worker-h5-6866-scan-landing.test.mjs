@@ -213,7 +213,7 @@ test('③ `?page=cut_calc` 门控照旧：已登录 ⇒ 换页且**不解析码*
     Object.assign(globalThis, saved)
   }
 
-  assert.equal(navigated, '/w/machine.html', '已登录 + 设备预设 ⇒ 必须换到裁高页')
+  assert.equal(navigated, './machine.html', '已登录 + 设备预设 ⇒ 必须换到裁高页')
   assert.equal(storage.getItem(DEVICE_HOME_KEY), 'cut_calc', '预设必须被钉在本机')
   assert.deepEqual(fetchImpl.hits(SCAN_PATH), [], '预设优先：换页了就不再解析码（否则是两条路同时生效）')
 })

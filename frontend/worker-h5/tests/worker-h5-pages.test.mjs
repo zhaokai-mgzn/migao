@@ -16,6 +16,7 @@
 //
 // 🔴 前端**不**做权限门禁（本包边界）：`pages` 只决定「页面上看不看得见」，
 // 真正的准入仍在服务端 `/api/worker/**`（后端 `WorkerPages` 类注释是单一真值源）。
+import { readdirSync } from 'node:fs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -45,7 +46,7 @@ import {
 const BACKEND_PAGE_KEYS = [PAGE_REPORT, PAGE_PIECEWORK, PAGE_ORDER, PAGE_CUT_CALC, PAGE_SHIPMENT, PAGE_TO_SHIP, PAGE_INSPECT, PAGE_REWORK]
 
 /** 裁高计算入口（本页唯一的入口；文案 2026-10-10 起用「裁高计算（一体机）」）。 */
-const MACHINE_ENTRY = '/w/machine.html'
+const MACHINE_ENTRY = './machine.html'
 
 /** 已移出本页的两条跨应用入口（2026-10-10 用户裁定；反向钉住：渲染里出现即红）。 */
 const REMOVED_CROSS_APP = [
@@ -59,7 +60,7 @@ const WORKER = { workerName: '张师傅', workerNo: 'W-001', idleMinutes: 43200 
  * 去掉「标识符里出现的路径」造成的**假命中**（`view.` 命中 `wx.` 的同族坑）。
  *
  * 🔴 为什么必须有：判据 ① 的"链接不在了"必须按**真链接**判 —— 若页面别处把这条路径拼进了
- * 一个**不含点号的标识符**（如 `machineHtml`），朴素的 `html.includes('/w/machine.html')`
+ * 一个**不含点号的标识符**（如 `machineHtml`），朴素的 `html.includes('./machine.html')`
  * 会照样绿，而工人**看不到**入口。
  *
  * ⚠️ 只掐「**紧邻**路径的标识符尾巴」那一段，**不**动路径本身：
@@ -144,7 +145,7 @@ test('`pages` 未被读过 / 空数组 ⇒ 按默认全开（fail-open，不是"
 test('🔴 ① `cut_calc` ∈ pages ⇒ 入口栏出现「裁高计算（一体机）」链接；∉ ⇒ 入口栏**不渲染**', () => {
   const on = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_CUT_CALC]), null))
   assert.equal(deglue(on).includes(MACHINE_ENTRY), true, '`cut_calc` 已开却没给裁高计算入口（那台屏走不到裁高页）')
-  assert.match(on, /id="wh5-machine-entry"[^>]*href="\/w\/machine\.html"/, '入口必须是真链接（href 在）')
+  assert.match(on, /id="wh5-machine-entry"[^>]*href="\.\/machine\.html"/, '入口必须是真链接（href 在）')
   assert.match(on, />裁高计算（一体机）<\/a>/, '入口文案要在链接里（且是人话 —— 2026-10-10 用户裁定）')
 
   const off = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_ORDER]), null))
@@ -158,12 +159,12 @@ test('🔴 ① `cut_calc` ∈ pages ⇒ 入口栏出现「裁高计算（一体�
 
 test('🔴 ①′ `piecework` ∈ pages ⇒ 入口栏出现「我的计件」真链接；∉ ⇒ 一条都不渲染', () => {
   const on = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_PIECEWORK]), null))
-  assert.match(on, /id="wh5-piecework-entry"[^>]*href="\/w\/piecework\.html"/, '入口必须是真链接')
+  assert.match(on, /id="wh5-piecework-entry"[^>]*href="\.\/piecework\.html"/, '入口必须是真链接')
   assert.match(on, />我的计件<\/a>/, '入口文案必须是人话（不许出现页面键 / 路由字面量）')
   assert.equal(deglue(on).includes(MACHINE_ENTRY), false, '`cut_calc` 没开 ⇒ 不渲染裁高入口')
 
   const off = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_ORDER]), null))
-  assert.equal(off.includes('/w/piecework.html'), false, '`piecework` 没开却仍在渲染入口（开关形同虚设）')
+  assert.equal(off.includes('./piecework.html'), false, '`piecework` 没开却仍在渲染入口（开关形同虚设）')
   assert.ok(!off.includes('id="wh5-worker-entries"'), '一条入口都没有 ⇒ **不留空入口栏**')
 
   const both = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_PIECEWORK, PAGE_CUT_CALC]), null))
@@ -177,13 +178,13 @@ test('🔴 ①″ `to_ship` ∈ pages ⇒ 入口栏出现「发货」真链接�
   // issue #7814：入口跟 `to_ship`（待发货单）走，不再跟 `shipment`（拍照发货的写面）——
   // 两个能力分开，商家才能只关其中一个（后台「设置工人端菜单」）。
   const on = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_TO_SHIP]), null))
-  assert.match(on, /id="wh5-shipment-entry"[^>]*href="\/w\/shipment\.html"/, '入口必须是真链接')
+  assert.match(on, /id="wh5-shipment-entry"[^>]*href="\.\/shipment\.html"/, '入口必须是真链接')
   assert.match(on, />发货<\/a>/, '入口文案必须是人话（不许出现页面键 / 路由字面量）')
 
   const off = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_CUT_CALC, PAGE_PIECEWORK]), null))
-  assert.equal(off.includes('/w/shipment.html'), false, '`to_ship` 没开却仍在渲染入口（开关形同虚设）')
+  assert.equal(off.includes('./shipment.html'), false, '`to_ship` 没开却仍在渲染入口（开关形同虚设）')
   const legacy = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_SHIPMENT]), null))
-  assert.equal(legacy.includes('/w/shipment.html'), false,
+  assert.equal(legacy.includes('./shipment.html'), false,
     '`shipment`（拍照发货）不等于 `to_ship`（待发货单）—— 只勾发货写面不该冒出名单入口')
 })
 
@@ -430,12 +431,12 @@ test('🔴 ⑥ 钉住裁高页 ⇒ 落到 `/w/machine.html`；无参数 + 已钉
   const replace = (url) => nav.push(url)
 
   assert.equal(applyDeviceHome({ location: 'https://app.migaozn.com/w/?page=cut_calc', storage: store, replace, navigate: true }), 'cut_calc')
-  assert.equal(nav.at(-1), '/w/machine.html', '钉住后本次就该换到裁高页')
+  assert.equal(nav.at(-1), './machine.html', '钉住后本次就该换到裁高页')
   assert.equal(store.getItem(DEVICE_HOME_KEY), 'cut_calc', '预设要落盘（否则刷新就丢）')
 
   nav.length = 0
   assert.equal(applyDeviceHome({ location: 'https://app.migaozn.com/w/', storage: store, replace, navigate: true }), 'cut_calc')
-  assert.equal(nav.at(-1), '/w/machine.html', '本机已钉住 ⇒ 下次打开 `/w/` 仍落到裁高页')
+  assert.equal(nav.at(-1), './machine.html', '本机已钉住 ⇒ 下次打开 `/w/` 仍落到裁高页')
 })
 
 test('🔴 ⑥ 机台页的「去报工页」= `keep=1`：本次留在报工页，且**不改**本机预设', () => {
@@ -469,7 +470,7 @@ test('🔴 ⑥ 不传 `replace` ⇒ 换页动作缺省取 `location.replace`（�
   const nav = []
   const location = { href: 'https://app.migaozn.com/w/', replace: (url) => nav.push(url) }
   assert.equal(applyDeviceHome({ location, storage: memStorage({ [DEVICE_HOME_KEY]: 'cut_calc' }), navigate: true }), 'cut_calc')
-  assert.deepEqual(nav, ['/w/machine.html'], '缺省换页动作没生效 ⇒ boot() 那处只拿到返回值、什么也没跳')
+  assert.deepEqual(nav, ['./machine.html'], '缺省换页动作没生效 ⇒ boot() 那处只拿到返回值、什么也没跳')
 })
 
 test('🔴 ⑥ **未登录不得换页**（机台页没有登录面 ⇒ 换过去 = 把人关在门外）', () => {
@@ -517,4 +518,16 @@ test('🔴 ⑥ `applyDeviceHome` 是装配层唯一的换页出口（登录成�
 
 test('`createApp` 导出面照旧（装配层没被设备预设改坏）', () => {
   assert.equal(typeof createApp, 'function')
+})
+
+test('🔴 类级：worker-h5 源码里**不得**再出现绝对 `/w/` 链接（整站已挂在 /b/report/ 下，issue #7915）', () => {
+  // 为什么钉结构而不是只钉行为：绝对链接在**逐页**看都能通（服务器照样伺候 `/w/`），
+  // 只有「从 /b/report/ 点进机台 ⇒ 地址栏跳回 /w/」这种**跨页动线**才暴露 ⇒ 行为面天然抓不住。
+  const offenders = []
+  for (const file of readdirSync(new URL('../src/', import.meta.url), { recursive: true })) {
+    if (!String(file).endsWith('.mjs')) continue
+    const text = readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8')
+    if (/['"]\/w\//.test(text) || /href="\/w\//.test(text)) offenders.push(`src/${file}`)
+  }
+  assert.deepEqual(offenders, [], `这些文件里还有绝对 /w/ 链接（从 /b/report/ 点进去会跳回 /w/）：${offenders.join(', ')}`)
 })

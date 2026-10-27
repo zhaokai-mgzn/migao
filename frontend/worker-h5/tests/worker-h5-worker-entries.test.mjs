@@ -24,7 +24,7 @@ import assert from 'node:assert/strict'
 import { initialState, PAGE_CUT_CALC, PAGE_REPORT, renderPage } from '../src/render.mjs'
 
 /** 裁高计算入口 —— 本页**唯一**的入口（2026-10-10 起；改前叫「机台模式」）。 */
-const MACHINE_ENTRY = '/w/machine.html'
+const MACHINE_ENTRY = './machine.html'
 
 /** 已移出本页的两条跨应用入口（反向锚：渲染里出现即红）。 */
 const REMOVED_ENTRIES = ['/b/#/pages/worker/inbound/index', '/b/#/pages/worker/reprint/index']

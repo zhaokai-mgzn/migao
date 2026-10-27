@@ -46,7 +46,7 @@ export { dataOr, DEFAULT_DIGITS, digitsOf, EMPTY, fmtNumber } from './position-s
  * 工人临时要报普通工时得有**一条**出路 —— `keep=1` = **只本次**，绝不把机台的预设改掉
  * （改掉 ⇒ 这台屏下次开机就不再是机台模式了）。见 frontend/worker-h5/src/scan-input.mjs。
  */
-export const MACHINE_REPORT_HREF = '/w/?page=report&keep=1'
+export const MACHINE_REPORT_HREF = './?page=report&keep=1'
 
 
 
@@ -58,7 +58,7 @@ export const MACHINE_REPORT_HREF = '/w/?page=report&keep=1'
  * 🔴 不把登录表单搬进机台页：本页刻意零文本输入元素（扫码枪的字符不被输入法吃掉，
  * 见 `createScanBuffer` 与 machine.html 的头注释）—— 搬进来等于把那条护栏拆掉。
  */
-export const MACHINE_LOGIN_HREF = '/w/'
+export const MACHINE_LOGIN_HREF = './'
 
 /**
  * 本次显示值 = 成品高 + Σ(勾选项 × direction)。
