@@ -588,7 +588,7 @@ class ProductionScanServiceTest {
     }
 
     @Test
-    @DisplayName("🔴 整条印刷 URL：`/s/<短码>` 与 `/b/?t=<token>&tenant_id=…` 都能解析（小程序直传扫码原文）")
+    @DisplayName("🔴 整条印刷 URL：`/s/<短码>` 与 `/w/?t=<token>&tenant_id=…` 都能解析（小程序直传扫码原文）")
     void printedUrlFormsResolve() {
         stubNewTokenScan(ITEM_CLOTH, standardOps());
         when(setPartTokenMapper.selectOne(any())).thenReturn(null);
@@ -602,8 +602,13 @@ class ProductionScanServiceTest {
 
         when(setPartTokenMapper.selectOne(any())).thenReturn(partToken(ITEM_CLOTH));
         Map<String, Object> reportPage = service.resolve(
-                "https://app.migaozn.com/b/?t=" + NEW_CODE + "&tenant_id=3", null, TENANT);
+                "https://app.migaozn.com/w/?t=" + NEW_CODE + "&tenant_id=3", null, TENANT);
         assertThat(reportPage.get("granularity")).as("query 里的 t/token/code 先取出再解析")
+                .isEqualTo("set_position");
+        // issue #7899 只换 302 目标、**不改解析面**：旧落点 `/b/?t=`（缓存/历史链接里仍在）照样要能解析
+        Map<String, Object> legacyForm = service.resolve(
+                "https://app.migaozn.com/b/?t=" + NEW_CODE + "&tenant_id=3", null, TENANT);
+        assertThat(legacyForm.get("granularity")).as("旧落点形态继续可用（只加不改）")
                 .isEqualTo("set_position");
         assertThat(position(reportPage).get("order_item_id")).isEqualTo(ITEM_CLOTH);
 

@@ -1289,7 +1289,7 @@ class SecurityConfigTest {
 
         mockMvc.perform(get("/s/" + shortCode))
                 .andExpect(status().isFound())
-                .andExpect(header().string("Location", "/b/?t=" + partCode + "&tenant_id=7" + "#/pages/worker/report/index"))
+                .andExpect(header().string("Location", "/w/?t=" + partCode + "&tenant_id=7"))
                 // 不泄露身份/权限：302 的响应体为空
                 .andExpect(content().string(""));
     }
@@ -1375,7 +1375,7 @@ class SecurityConfigTest {
 
         mockMvc.perform(get("/o/" + shortCode))
                 .andExpect(status().isFound())
-                .andExpect(header().string("Location", "/b/?t=" + partCode + "&tenant_id=7" + "#/pages/worker/report/index"))
+                .andExpect(header().string("Location", "/w/?t=" + partCode + "&tenant_id=7"))
                 .andExpect(content().string(""));
     }
 

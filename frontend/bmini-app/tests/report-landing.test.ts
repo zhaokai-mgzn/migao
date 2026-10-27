@@ -294,14 +294,13 @@ describe('B3b 商家面守卫也不抢落地（issue #7887：工人扫纸上的�
 })
 
 describe('B3c 服务端 302 的路由常量与前端注册的路由逐字一致（issue #7889）', () => {
-  it('🔴 `WorkerShortLinkService.REPORT_ROUTE` == `REPORT_PAGE_ROUTE`（漂了 ⇒ 首屏落错页/白屏）', () => {
+  it('🔴 报工落点不写前端路由（`/w/` 是静态多页应用，加 hash 路由只会让「第二跳」回来 —— issue #7899）', () => {
     const java = fs.readFileSync(
       path.join(REPO_ROOT, 'backend/admin-api/src/main/java/com/migao/admin/service/WorkerShortLinkService.java'),
       'utf8',
     )
-    // 只用强断言：正则没匹配到 ⇒ `matched?.[1]` 是 undefined ≠ 期望值 ⇒ 直接红
-    const matched = /REPORT_ROUTE\s*=\s*"([^"]+)"/.exec(java)
-    expect(matched?.[1]).toBe(REPORT_PAGE_ROUTE)
+    // 强断言：源码里不得再声明 REPORT_ROUTE（有 ⇒ 说明又有人把 SPA 路由写进 302 目标）
+    expect(/REPORT_ROUTE/.test(java)).toBe(false)
   })
 
   it('🔴 `InboundLabelService.LANDING_ROUTE` == `REPRINT_PAGE_ROUTE`（补打页同款）', () => {
@@ -314,8 +313,8 @@ describe('B3c 服务端 302 的路由常量与前端注册的路由逐字一致�
   })
 })
 
-describe('B4 反向钉住：`/w/` 不再是任何跳转生产者', () => {
-  it('B4 302 的唯一真值 = `/b/`（`REPORT_PAGE_PATH`）', () => {
+describe('B4 落点真值 = `/w/`（issue #7899：纸上的码回到经多轮测试的静态多页报工面）', () => {
+  it('B4 302 的唯一真值 = `/w/`（`REPORT_PAGE_PATH`）', () => {
     const source = stripComments(
       fs.readFileSync(
         path.join(
@@ -326,7 +325,7 @@ describe('B4 反向钉住：`/w/` 不再是任何跳转生产者', () => {
       ),
     )
     const declared = /REPORT_PAGE_PATH\s*=\s*"([^"]+)"/.exec(source)
-    expect(declared?.[1]).toBe('/b/')
+    expect(declared?.[1]).toBe('/w/')
   })
 
   it('B4 启动器 / 工人首页 / 入口台账的**代码**里不再出现 `/w/`', () => {

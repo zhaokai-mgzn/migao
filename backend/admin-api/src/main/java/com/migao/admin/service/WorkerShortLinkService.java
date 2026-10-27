@@ -65,6 +65,13 @@ public class WorkerShortLinkService {
     /**
      * 报工页路径（设计 §1.3：换前端框架/改路径**只改这一跳**）。
      *
+     * <p>🔴 issue #7899（2026-10-27 15:16 用户逐字「需要用 /w 的页面替代 /b 的报工页面，
+     * /w 的页面是经过多轮测试过的」）：落点由 bmini 的 `/b/`（#7812 P2a 的 MVP）**改回**
+     * `frontend/worker-h5` 的 `/w/` —— 那是一张**静态多页**应用（无前端路由、无启动器补救跳转），
+     * 今天两次现场故障（第二次扫码渲染成商家首页）的根源正是「把静态多页换成了 SPA」。
+     * `/b/` 的 bmini 报工页**保留**（小程序原生面的载体 + 工人工作台内入口），
+     * 等它达到 `/w/` 的能力与稳定度（#7813）再谈切回 —— 届时只改这一条常量。</p>
+     *
      * <p>🔴 issue #7879（2026-10-27 用户逐字「把跳转链接 /w 改成 /b，统一进手机端页面，
      * 不要再出现 /w 路径」）：落地面由 H5 {@code frontend/worker-h5} 的 {@code /w/} 改成 bmini 的
      * {@code /b/}（Taro 一端双编译 = 小程序原生页 + {@code /b/} H5）。**查询串口径一字不动**
@@ -74,18 +81,8 @@ public class WorkerShortLinkService {
      * —— 判据 = {@code WorkerShortLinkControllerTest} / {@code ProcessingOrderShortLinkControllerTest} /
      * {@code SecurityConfigTest} 里对 {@code /b/?t=…} 的逐字断言。</p>
      */
-    public static final String REPORT_PAGE_PATH = "/b/";
+    public static final String REPORT_PAGE_PATH = "/w/";
 
-    /**
-     * 报工页在 bmini 里的**路由**（写进 302 的 hash 段，issue #7889）。
-     *
-     * <p>🔴 为什么必须把路由写进 hash：只给 {@code /b/?t=<token>}（search 段）时，Taro 会先按默认页
-     * {@code pages/chat/index/index} 初始化，再由前端启动器（{@code frontend/bmini-app/src/app.tsx}）
-     * 发 {@code redirectTo} 补救 —— 而**启动器与路由初始化是两个时序**：2026-10-27 现场实测
-     * 「第一次扫码进报工页、**关闭后再扫码地址栏是对的而页面渲染成商家首页**」（缓存命中、启动更快时稳定复现）。
-     * 把路由放进 hash ⇒ 首屏即报工页，**不依赖任何补救跳转**；token 仍留在 search（页面两支都能读）。</p>
-     */
-    public static final String REPORT_ROUTE = "/pages/worker/report/index";
 
     /** 分配短码的最大尝试次数（碰撞重试上限；到顶 ⇒ 显式失败，不静默造重码）。 */
     private static final int MAX_ALLOCATE_ATTEMPTS = 8;
@@ -243,9 +240,6 @@ public class WorkerShortLinkService {
     public static String reportPageLocation(String token, Long tenantId, String tenantCode) {
         return REPORT_PAGE_PATH + "?t=" + token
                 + (tenantId == null ? "" : "&tenant_id=" + tenantId)
-                + (StringUtils.hasText(tenantCode) ? "&tenant_code=" + tenantCode : "")
-                // 🔴 issue #7889：hash 段直接定路由（见 REPORT_ROUTE 的说明）—— 不加它，
-                // 第二次扫码会在「地址栏已是报工页、页面仍是商家首页」的竞态里被复现。
-                + "#" + REPORT_ROUTE;
+                + (StringUtils.hasText(tenantCode) ? "&tenant_code=" + tenantCode : "");
     }
 }
