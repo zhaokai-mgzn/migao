@@ -54,6 +54,8 @@
 - **成批合并区置顶**：勾单 → 一键合并派单是页面主操作，改前被两张空态卡挤到页面最底部。
 - **外发单派单结果行显示单号**（同批修正）：结果卡的「订单 id → 单号」累积映射漏了外发行 ⇒ 外发单派完后
   那一行已离开看板、退化成按订单 id 显示。
+- **宽表台账顺手收口一条**（issue #6717）：合并后的逐单表「操作」列右缘冻结 ⇒ `/production/pool` 从
+  `FROZEN_ACTION_OFFSCREEN` 台账移除（只许缩短，基线 3 → 2）。
 - 边界（照实登记）：只动 PC 端 `admin-web`；小程序 `frontend/bmini-app/src/pages/admin/pool/index.tsx`
   无外发区、手机端形态不同，本次不改；接口契约（`urgentLines` / `outsourcedLines` / `outsourcedCount`）
   与服务端排序键逐字未动。
