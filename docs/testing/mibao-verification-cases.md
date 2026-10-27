@@ -831,7 +831,7 @@
 真值: auth.qr-login-ticket
 溯源: 2026-10-26 新增（issue #7825）：现场 = 顶栏「手机端」二维码只是裸链接（不带登录交接），换浏览器 / App 或本机存储被清后每次扫码都要重新输密码。冻结口径 = 一次性票据（JWT 类型 qr_login、120 秒、兑换即吊销 jti）+ 手机端兑换后与密码登录同一套 30 天会话 + 签发失败降级裸入口 + 启动探针（续期失败原因本地可读）。 ｜ tags: auth, session, qr-login, bmini, admin-web
 
-## B 端小程序域（50 case）
+## B 端小程序域（51 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -1157,13 +1157,13 @@
 数据: 判据 1·🔴 **未登记即红**：`src/app.config.ts` 里每个**非 tabBar** 页面都必须在 `src/utils/pageEntries.ts` 的 `PAGE_ENTRY_LEDGER` 具名（tabBar 页面按 `tabBar.list` 机械豁免，且不许登记 —— 登记它 = 台账里躺着一条假入口）。红证：给 app.config 加一个页面而不登记 ⇒ 判红（证据：frontend/bmini-app/tests/page-entry-reachability.test.ts 的 L2）
 数据: 判据 2·🔴 **登记了没人指向也红**：每条登记都必须在 `from` 里找到真导航形态（`Taro.navigateTo/redirectTo/switchTab/reLaunch` 或跨应用 `href`）**且**跳转里带着目标记号。红证（变异注入实跑）：把入口换回「只声明」（`from` 指向只写着路由常量的 `src/utils/inbound/gaps.ts`）⇒ 判红点名「声明存在 ≠ 可达」；删掉 `/w/` 上的 `<a href>` ⇒ 判红。这是本单要治的形态本身：两条路由常量被声明、被 `tests/inbound-page-platform-gaps.test.ts` 的 G0 比对过 `app.config.ts`，却没有任何跳转用它们（证据：同文件 L3）
 数据: 判据 3·**台账只许缩短**：条目对应的页面从 `app.config.ts` 消失 ⇒ 判红（条目必须活着）；`via` 为动态记号时 `viaBinding` 必须钉住「记号 ⇒ 路由」的绑定。红证：从 app.config 删掉补打页 / 把 viaBinding 指向无关文件 ⇒ 各自判红（证据：同文件 L0 / L4）
-数据: 判据 4·**跨应用入口已收敛**（2026-10-10 用户逐字「移除拍照入库和补打入库标签」，issue #6635）：`/w/` 报工页**不再**承载入库两页的 `<a>`（反向钉住：本页再出现 `/b/#/pages/worker/inbound|reprint` ⇒ 红）—— 可达性**没有丢**：那两页由**工人工作台** `src/pages/worker/home/index.tsx` 承载（台账 `from` 逐值核 + `nav` 形态 + L3b「写了 ≠ 会被执行」），且台账里**不再有** `nav: 'href'` 条目。渲染面判据在 frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs（`renderPage` 的渲染结果；本页只留一条「裁高计算（一体机）」入口）+ 反向面在 frontend/bmini-app/tests/page-entry-reachability.test.ts 的 L5
+数据: 判据 4·**跨应用入口已收敛**（2026-10-10 用户逐字「移除拍照入库和补打入库标签」，issue #6635）：`/w/` 报工页**不再**承载入库两页的 `<a>`（反向钉住：本页再出现 `/b/#/pages/worker/inbound|reprint` ⇒ 红）—— 可达性**没有丢**：那两页由**工人工作台** `src/pages/worker/home/index.tsx` 承载（台账 `from` 逐值核 + `nav` 形态 + L3b「写了 ≠ 会被执行」），且台账里**不再有** `nav: 'href'` 条目。渲染面判据在 frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs（`renderPage` 的渲染结果；本页只留「裁高计算（一体机）」「返工记录」两条入口）+ 反向面在 frontend/bmini-app/tests/page-entry-reachability.test.ts 的 L5。🔴 **2026-10-27 再收窄（issue #7934）**：用户逐字「我的计件和发货…为什么做到报工详情页面？应该都作为工人菜单页面上的菜单」⇒ 本页连「我的计件」「发货」两条也撤除（反向钉住 `./piecework.html` / `./shipment.html` 出现即红，即使 `piecework` / `to_ship` 页面键开着）；两张静态页本身**保留可直连**（判据同文件 ④：文件 + 装配模块都在）。红证（实跑）：把 `<a href="./piecework.html">` 加回 `workerEntriesBar` ⇒ 4 failed（worker-h5-worker-entries 的 ② 与 worker-h5-pages 的 ①′ 各自具名）。
 数据: 判据 5·**平台缺口必须有登记且被真的接线**：`/b/?code=` 是 h5 专有形态（小程序没有 URL query），登记在 `src/utils/inbound/gaps.ts` 的 `WORKER_SURFACE_PLATFORM_GAPS`，`wiredBy` 的文件**代码**里必须真的出现 `wiredToken`（只登记不接线 ⇒ 红）
 数据: 判据 6·**两平台都要能编译**：`npm run build:h5` 与 `npm run build:weapp` 均退出 0（CI 的 `bmini-app build (h5 + weapp)` 腿）
 跳过: [backend-contract] 确定性入口/台账判据（jest: frontend/bmini-app/tests/page-entry-reachability.test.ts + node --test: frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs + 两平台构建腿），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: inbound-order-flow.worker-narrow-surface, inbound-label-flow.short-code-and-public-entry
-溯源: 2026-09-27 新增（issue #5052 实现 PR，设计 §5.4）：本单最值得固化的一类 —— 「交付物做完了、却没有任何入口能走到它」（验收协议 v1.11 交付物可达性三问之②），落成入口台账 + 语料内省式元守卫（未登记即红、登记了没人指向也红）。 ｜ 2026-10-10（issue #6635，用户逐字「移除拍照入库和补打入库标签」）：`/w/` 页头那两条跨应用 `href` 登记**已撤**（该页只留「裁高计算（一体机）」一条），可达性由工人工作台承接 ⇒ 判据 4 改判为**反向钉住 + 工作台 `from` 逐值核**，台账里不再有 `nav:'href'` 条目（`href` 判定分支由 L5 的合成样本自证）；L3 / L3b / L5 的红证注入点同步从 `render.mjs` 换到工人工作台（否则红证与判定对象脱钩 ⇒ 空断言）。判据一格不放宽。 ｜ tags: bmini, inbound, entry-reachability, meta-guard, worker-surface
+溯源: 2026-09-27 新增（issue #5052 实现 PR，设计 §5.4）：本单最值得固化的一类 —— 「交付物做完了、却没有任何入口能走到它」（验收协议 v1.11 交付物可达性三问之②），落成入口台账 + 语料内省式元守卫（未登记即红、登记了没人指向也红）。 ｜ 2026-10-10（issue #6635，用户逐字「移除拍照入库和补打入库标签」）：`/w/` 页头那两条跨应用 `href` 登记**已撤**（该页只留「裁高计算（一体机）」一条），可达性由工人工作台承接 ⇒ 判据 4 改判为**反向钉住 + 工作台 `from` 逐值核**，台账里不再有 `nav:'href'` 条目（`href` 判定分支由 L5 的合成样本自证）；L3 / L3b / L5 的红证注入点同步从 `render.mjs` 换到工人工作台（否则红证与判定对象脱钩 ⇒ 空断言）。判据一格不放宽。 ｜ 2026-10-27（issue #7934）：报工页再撤「我的计件」「发货」两条入口（改由工人菜单页承载）⇒ 判据 4 的反向锚从 2 条扩到 4 条，并追加「两张静态页仍在、可直连」的存活断言（入口搬走 ≠ 页面下线）；台账**增**一条 `PIECEWORK_PAGE_ROUTE`（工人首页行卡 → 新页），删除 0 条。 ｜ tags: bmini, inbound, entry-reachability, meta-guard, worker-surface
 
 ### BM-027. 商家 H5 登录可用：同源 API 面（同源 POST 不被 CORS 误判）+ 两入口（员工 / 管理员短信）+ 可读字号与触控目标 🔵
 ```
@@ -1276,21 +1276,21 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-10-07 新增（issue #6467 切片 1）：现场（生产 app.migaozn.com，2026-10-07 08:06:57 / 08:07:48 +08，nginx 日志 `POST /api/worker/production/scan/complete 401`）用管理员账号在 H5 点「完成报工」⇒ 被清商家登录态并踢回登录页，重登再点仍然 401。根因之一是 H5 上**没有工人登录入口**（独立的 pages/worker/login/index 存在，但报工页/工人首页都不指向它）⇒ 登录页补第三 tab，并支持 `?tab=worker` 直达（给报工页/工人首页的引导用）。**零后端改动**（truths_ref = frontend-fix.no-api-change）。｜ 2026-10-08（issue #6564）：工人登录补第 4 个入参「企业编码」—— 前端不再发 `tenantId`（租户只由服务端解析），判据 2 的调用形态随之改钉；本用例其余判据一字未动。 ｜ tags: bmini, login, worker
 
-### BM-034. 工人工作台（pages/worker/home/index）- 身份卡读服务端 + 工人功能入口按工人档案菜单显隐（拍照入库 / 补打入库标签 / 拍照发货 / 待发货单 / 返工记录）+ 待处理数 + 退出工人身份；不出现任何商家面入口；扫码报工入口已移除（扫码由微信 / 手机相机承担） 🔵
+### BM-034. 工人工作台（pages/worker/home/index）- 身份卡读服务端 + 工人功能入口按工人档案菜单显隐（拍照入库 / 补打入库标签 / 拍照发货 / 待发货单 / 返工记录 / 我的计件）+ 待处理数 + 退出工人身份；不出现任何商家面入口；扫码报工入口已移除（扫码由微信 / 手机相机承担） 🔵
 ```
-你: 工人用「工号 + PIN」登录成功后落在**工人工作台**：页头显示当前工人（工号 + 姓名，来自服务端 `GET /api/worker/production/current-worker`）→ 工人功能：拍照入库 / 补打入库标签 / 拍照发货 / 待发货单 / 返工记录（按工人档案的菜单勾选显隐；2026-10-27 用户裁定「把工人菜单页面的扫码报工菜单移除掉，直接用其他 app 的扫一扫功能替代」⇒ 扫码报工**不再是本页菜单**，工人用微信 / 手机相机扫纸上的码直接落到报工页）；底部「退出工人身份」→ 回登录页的工人入口
+你: 工人用「工号 + PIN」登录成功后落在**工人工作台**：页头显示当前工人（工号 + 姓名，来自服务端 `GET /api/worker/production/current-worker`）→ 工人功能：拍照入库 / 补打入库标签 / 拍照发货 / 待发货单 / 返工记录 / 我的计件（按工人档案的菜单勾选显隐；2026-10-27 用户裁定「把工人菜单页面的扫码报工菜单移除掉，直接用其他 app 的扫一扫功能替代」⇒ 扫码报工**不再是本页菜单**，工人用微信 / 手机相机扫纸上的码直接落到报工页）；底部「退出工人身份」→ 回登录页的工人入口
 期望: direct_reply
 数据: 判据 1·**身份卡读服务端**：工号 + 姓名来自 `fetchCurrentWorker()`（服务端工人 session，页头显示的正是「这笔活会记到谁头上」= 计件工资凭证）；服务端读不到（session 失效）⇒ 回落成「未登录工人身份」并清本机工人态，**不**静默保留上一个人的名字。红证（实跑）：把身份卡改读 `getCachedWorker()`（不调服务端）⇒ 1 failed
-数据: 判据 2·**工人功能入口各自跳对路由 + 扫码报工入口已移除**：拍照入库 → `INBOUND_PAGE_ROUTE`、补打入库标签 → `REPRINT_PAGE_ROUTE`、拍照发货 → `SHIPMENT_PAGE_ROUTE`、待发货单 → `SHIPMENT_ORDERS_PAGE_ROUTE`、返工记录 → `REWORK_PAGE_ROUTE`（真值全在 frontend/bmini-app/src/utils/inbound/gaps.ts，页面不写第二份字面量）。🔴 2026-10-27（issue #7920，用户逐字「把工人菜单页面的扫码报工菜单移除掉，直接用其他 app 的扫一扫功能替代」）：**该入口已删除**，并**反向钉住**「本页的 `Taro.navigateTo` 里不许再出现 `/pages/worker/report/index`」（报工页只由外部扫码 302 → 启动器 `redirectTo` 到达）。红证（实跑）：把「扫码报工」卡加回去 / 或把返工记录入口摘掉 ⇒ frontend/bmini-app/tests/worker-home-page.test.tsx 对应断言 red
+数据: 判据 2·**工人功能入口各自跳对路由 + 扫码报工入口已移除**：拍照入库 → `INBOUND_PAGE_ROUTE`、补打入库标签 → `REPRINT_PAGE_ROUTE`、拍照发货 → `SHIPMENT_PAGE_ROUTE`、待发货单 → `SHIPMENT_ORDERS_PAGE_ROUTE`、返工记录 → `REWORK_PAGE_ROUTE`、**我的计件 → `PIECEWORK_PAGE_ROUTE`**（真值全在 frontend/bmini-app/src/utils/inbound/gaps.ts，页面不写第二份字面量；我的计件这条是 issue #7934 从**报工详情页**页头搬到本页的，worker-h5 侧同步反向钉住「报工页不得再渲染它」）。🔴 2026-10-27（issue #7920，用户逐字「把工人菜单页面的扫码报工菜单移除掉，直接用其他 app 的扫一扫功能替代」）：**该入口已删除**，并**反向钉住**「本页的 `Taro.navigateTo` 里不许再出现 `/pages/worker/report/index`」（报工页只由外部扫码 302 → 启动器 `redirectTo` 到达）。红证（实跑）：把「扫码报工」卡加回去 / 或把返工记录入口摘掉 ⇒ frontend/bmini-app/tests/worker-home-page.test.tsx 对应断言 red
 数据: 判据 6·**待处理红色数字**（issue #7921）：待发货单 / 返工记录两条入口标题上显示服务端列表行数（`GET /api/worker/shipment/orders` 的 `items`、`GET /api/worker/production/rework-orders` 的 `orders`）；**只在这条入口可见时才请求**；`>0` 才显示、`0` 与读失败都**不显示**（读失败绝不回落成 0 —— 那是在替服务端断言「没有待处理的活」）。红证（实跑）：把读失败的 `null` 改成 0 ⇒ 徽标出现 ⇒ 断言 red
 数据: 判据 7·**返工记录页**（issue #7921，新页 pages/worker/rework/index）：数据 = `GET /api/worker/production/rework-orders`（与 H5 `/w/rework.html` 同一端点，端侧只渲染）；五态互斥 —— 读取中 / 读不到（可重试）/ 401（去登录）/ **403（工人档案没开「返工记录」页 ⇒ 可行动提示，不冒充「没有返工」）** / 读到了（空态或列表）。判据 = frontend/bmini-app/tests/worker-rework-page.test.tsx。红证（实跑）：把 403 归到 error / 把 `rework_count` 缺值补 0 ⇒ 对应断言 red
 数据: 判据 3·🔴 **不出现任何商家面入口**：问黄金策 / 数据 / 坐席 / 我的 四个 tabBar 文案与管理面 4 项（标签取自 frontend/bmini-app/src/utils/adminPermission.ts 的 `ADMIN_SURFACES`）一个都不渲染 —— 工人零商家权限（`/api/admin/**` 拒绝集合含 `worker`），点了只会 403/空页。红证（实跑）：往页面混入一行「问黄金策」⇒ 1 failed
 数据: 判据 4·**退出工人身份**：`workerLogout()`（服务端留 `end_reason=logout` 痕）+ `clearWorkerSession()` 清本机 ⇒ `redirectTo` 登录页的工人入口（共用 PAD 场景：下一个人接着用；只清本机会让下一个人记到上一个人头上）
-数据: 判据 5·**新页必须在册**：`WORKER_HOME_ROUTE` / `REWORK_PAGE_ROUTE` 逐字出现在 frontend/bmini-app/src/app.config.ts 的 pages 里（没登记 = 死链），并登记进 frontend/bmini-app/src/utils/pageEntries.ts 的入口台账（「登记了没人指向也红 / 没登记即红」）。🔴 2026-10-27 台账**缩表**：报工页的发射方由两条（端内点击 + 扫码落地）降为**一条**（扫码落地，`src/app.tsx`）—— 入口台账只许缩短。证据：frontend/bmini-app/tests/page-entry-reachability.test.ts + frontend/bmini-app/tests/report-landing.test.ts（B4）
+数据: 判据 5·**新页必须在册**：`WORKER_HOME_ROUTE` / `REWORK_PAGE_ROUTE` / `PIECEWORK_PAGE_ROUTE` 逐字出现在 frontend/bmini-app/src/app.config.ts 的 pages 里（没登记 = 死链），并登记进 frontend/bmini-app/src/utils/pageEntries.ts 的入口台账（「登记了没人指向也红 / 没登记即红」）。🔴 2026-10-27 台账**缩表**：报工页的发射方由两条（端内点击 + 扫码落地）降为**一条**（扫码落地，`src/app.tsx`）—— 入口台账只许缩短。证据：frontend/bmini-app/tests/page-entry-reachability.test.ts + frontend/bmini-app/tests/report-landing.test.ts（B4）
 跳过: [backend-contract] 确定性页面链路判据（jest: frontend/bmini-app/tests/worker-home-page.test.tsx + tests/page-entry-reachability.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change
-溯源: 2026-10-27 改钉（issue #7920 / #7921，用户同日逐字「把工人菜单页面的扫码报工菜单移除掉，直接用其他 app 的扫一扫功能替代」+「直接在列表上显示红色数字，方便在菜单上看到有待处理的单子」+「这两菜单要能在工人档案上设置菜单权限」）：① **「扫码报工」入口删除**（扫码由微信 / 手机相机扫纸上的码承担 ⇒ 服务端 302 → `/b/?t=` → 启动器 redirectTo 报工页），本页反向钉住「不再发射报工页」；② 新增「返工记录」入口（显隐键 = 工人档案的 `rework`，后端 `WorkerPages.optionalPages()` 早已下发，商家后台勾了才显示）+ 新页 pages/worker/rework/index（消费 `GET /api/worker/production/rework-orders`，403 = 档案没开该页 ⇒ 可行动提示）；③ 待发货单 / 返工记录两条入口加**红色待处理数**（服务端列表行数，>0 才显示、读失败不冒充 0）；④ `title` / `user_inputs` 同步改钉（旧文写的「四件功能：扫码报工 / …」已是用户裁掉的菜单，留着就是描述一个不存在的入口 —— 本用例 2026-10-14 已有同款破例先例）；判据 1 / 3 / 4 一字未动。 ｜ 2026-10-07 新增（issue #6467 切片 1）：工人身份此前**没有落点** —— 登录后只能落商家 tabBar（问黄金策/数据/坐席/我的），而工人零商家权限 ⇒ 看见商家菜单只会 403/空页；且 `Taro.switchTab` 只能落 tabBar 页 ⇒ 工人登录成功只能 redirectTo 一个非 tabBar 的工人页。本页 = 工人面收口（身份卡 + 工人功能 + 退出）。 ｜ 2026-10-12 扩面（issue #6761）：**三件 → 四件** —— 补第 4 条「拍照发货」（`SHIPMENT_PAGE_ROUTE`，#5648 的 UI 面收口，页面行为见 BM-050）；判据 1/3/4/5 一字未动。 ｜ tags: bmini, worker, page-flow
+溯源: 2026-10-27 改钉（issue #7920 / #7921，用户同日逐字「把工人菜单页面的扫码报工菜单移除掉，直接用其他 app 的扫一扫功能替代」+「直接在列表上显示红色数字，方便在菜单上看到有待处理的单子」+「这两菜单要能在工人档案上设置菜单权限」）：① **「扫码报工」入口删除**（扫码由微信 / 手机相机扫纸上的码承担 ⇒ 服务端 302 → `/b/?t=` → 启动器 redirectTo 报工页），本页反向钉住「不再发射报工页」；② 新增「返工记录」入口（显隐键 = 工人档案的 `rework`，后端 `WorkerPages.optionalPages()` 早已下发，商家后台勾了才显示）+ 新页 pages/worker/rework/index（消费 `GET /api/worker/production/rework-orders`，403 = 档案没开该页 ⇒ 可行动提示）；③ 待发货单 / 返工记录两条入口加**红色待处理数**（服务端列表行数，>0 才显示、读失败不冒充 0）；④ `title` / `user_inputs` 同步改钉（旧文写的「四件功能：扫码报工 / …」已是用户裁掉的菜单，留着就是描述一个不存在的入口 —— 本用例 2026-10-14 已有同款破例先例）；判据 1 / 3 / 4 一字未动。 ｜ 2026-10-27（issue #7934）：本页**新增「我的计件」行卡**（显隐键 = 工人档案的 `piecework`，后端 `WorkerPages` 闭词表里本来就有；入口从**报工详情页**页头搬来，用户逐字「我的计件和发货…为什么做到报工详情页面？应该都作为工人菜单页面上的菜单」）⇒ 判据 2 / 5 与 `title` / `user_inputs` 同批改钉，行为面与显隐面判据 = worker-home-page / worker-home-menu（只开 `piecework` ⇒ 只多这一条），页面自身口径见 BM-054。判据 1 / 3 / 4 / 6 / 7 一字未动。 ｜ 2026-10-07 新增（issue #6467 切片 1）：工人身份此前**没有落点** —— 登录后只能落商家 tabBar（问黄金策/数据/坐席/我的），而工人零商家权限 ⇒ 看见商家菜单只会 403/空页；且 `Taro.switchTab` 只能落 tabBar 页 ⇒ 工人登录成功只能 redirectTo 一个非 tabBar 的工人页。本页 = 工人面收口（身份卡 + 工人功能 + 退出）。 ｜ 2026-10-12 扩面（issue #6761）：**三件 → 四件** —— 补第 4 条「拍照发货」（`SHIPMENT_PAGE_ROUTE`，#5648 的 UI 面收口，页面行为见 BM-050）；判据 1/3/4/5 一字未动。 ｜ tags: bmini, worker, page-flow
 
 ### BM-036. 请求层 401 身份分流 - 工人端点 401 不再误诊成「商家会话过期」（不清商家态 / 不跳商家登录页 / 上屏服务端文案） 🔵
 ```
@@ -1546,6 +1546,22 @@
 ```
 真值: processing-manage.scan-report-landing-path
 溯源: 2026-10-27 新增（issue #7879；用户逐字「从加工单的二维码上扫码现在跳转的仍然是 /w 页面，这个页面为什么没有合并到 /b 页面？」「把跳转链接 /w 改成 /b，统一进手机端页面，不要再出现 /w 路径」）。改动 = ① `WorkerShortLinkService.REPORT_PAGE_PATH` 由 `/w/` 改 `/b/`（查询串口径一字未动 ⇒ 已印的码继续有效）；② bmini h5 启动器补 `?t=` 支线（`reportLandingUrl` → 报工页 `pages/worker/report/index`，该页 = #7812 P2a 已落地的报工面），与原 `?code=`（补打页）按参数名分流、不串道；③ 商家首页同款守卫不抢路由（带 `?t=` 时不让 600ms 定时器把人踢到商家登录页）；④ 入口台账补「扫码落地」一条（工人首页那条早在 #7812 就在册）。**边界（照实登记）**：`/w/` 静态面本期**保留可直连**（退役含 nginx / 发布腿 / worker-h5 判据，属 #7806 P3）；解析面照旧接受 `/w/?t=` 旧落地形态；小程序发版是人工环节（合并 ≠ 工人手机上是新版；`/b/` H5 腿自动发布）；真机验收（微信扫一扫 / 相册选码 / 弱网重试）需现场配合；记账口径一字不动（`done_at` / 计件单价固化 / 幂等键全在服务端）。 ｜ tags: bmini, worker, scan-landing
+
+### BM-054. 工人「我的计件」页（pages/worker/piecework/index）- 入口从报工详情页归位到工人菜单；金额只用服务端聚合（端侧不求和）、未定价显式列出且不计入合计、绝不印 0 元、只读 🔵
+```
+你: 工人从**工人菜单页**点「我的计件」：看到本月合计金额 + 件数 + 逐笔工序（本月，可切上月），只看到**自己的**计件；未定价的活显式列出「N 道未定价（未计入合计）」，不印 0 元；读不到时说「读取失败，请重试」（用户 2026-10-27 逐字「我的计件和发货…为什么做到报工详情页面？应该都作为工人菜单页面上的菜单」）
+期望: direct_reply
+数据: 判据 1·🔴 **金额只有一份聚合**：合计逐值渲染服务端 `amount_total`（`GET /api/worker/piecework?month=YYYY-MM` 的实现 = `ProductionService.workerPieceworkLedger`，只是 `ProductionService.aggregate` 之上「按当前工人 + 期间」的过滤投影，与商家端计件报表 / H5 `/b/report/piecework.html` 同一份算法）—— 端侧**不**把 `lines[].amount` 加起来。红证（实跑）：夹具给 `amount_total=2000` 而两行之和 1234.5，端侧改成求和 ⇒ frontend/bmini-app/tests/worker-piecework-page.test.tsx 的 ① red（屏上出现 ¥1,234.50）
+数据: 判据 2·🔴 **作用域只认会话**：请求只带可选 `month`（首屏一个参数都不带），**绝不**带 `worker_id` / `worker_name` —— 身份只由 `X-Worker-Session-Id` 解（涉钱面：工资归属不能由前端自称）。红证（实跑）：给 `readWorkerPiecework` 加一个 worker_id 入参 ⇒ ⑥ red（`mockRead.mock.calls[0]` 不等于 `[undefined]`）
+数据: 判据 3·🔴 **未定价显式列出且不进合计**：`unpriced` 原样渲染成「N 道未定价（未计入合计）」+ 逐条工序名，合计仍是服务端值；**一整月都是未定价**时只出未定价块（不出合计），**绝不**印 ¥0.00（未定价 ≠ 0 元，V90 / #4696）。红证（实跑）：把 `hasPriced` 改成恒真 ⇒ ③ red（`document.body.textContent` 出现 ¥0.00）
+数据: 判据 4·**空态 ≠ 读不到**：`amount_total=0` 且既无定价行也无未定价行 ⇒ 空态文案（「本月还没有计件…」）；读失败 / 形状不对（没有 `amount_total`）⇒ 「读取失败，请重试」+ 重试（再读一次），**不**冒充空态、不冒充 0 元。红证（实跑）：把 error 分支渲染成空态 ⇒ ⑤ red
+数据: 判据 5·**期间切换只按服务端给的 `can_prev` / `prev_period` / `can_next` / `next_period`**（端侧不推算月份边界）；401 ⇒ 清本机工人身份 + 引导去工人登录入口（`WORKER_TAB_LOGIN_ROUTE`）。红证（实跑）：端侧自己算上月（`new Date` 减一月）⇒ ⑦ red
+数据: 判据 6·**只读**：屏上只有 刷新 / 上月 / 下月 / 去登录 / 重试，没有任何写动作（不确认 / 不保存 / 不结算 / 不锁定 —— 用户 2026-09-19 裁定 2）。红证：加一个「确认」按钮 ⇒ ⑧ red
+数据: 判据 7·**入口归位 + 页在册**：本页在 `src/app.config.ts` 的 pages 里（`pages/worker/piecework/index`），入口 = 工人菜单页的「我的计件」行卡（静态字面锚点 `Taro.navigateTo({ url: PIECEWORK_PAGE_ROUTE })`），已登记进 `src/utils/pageEntries.ts` 的 `PAGE_ENTRY_LEDGER`（未登记即红 / 登记了没人指向也红）；**报工详情页不再发射这条入口**（反向钉住 = frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs）。红证（实跑）：把工人菜单页的行卡删掉 ⇒ frontend/bmini-app/tests/page-entry-reachability.test.ts 判红（「声明存在 ≠ 可达」并点名 route）；把 `<a href="./piecework.html">我的计件</a>` 加回报工页页头 ⇒ worker-h5 两条判据各自具名红
+跳过: [backend-contract] 确定性页面链路判据（jest: frontend/bmini-app/tests/worker-piecework-page.test.tsx + worker-home-page / worker-home-menu / page-entry-reachability；node --test: frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-10-27 新增（issue #7934；用户逐字「我的计件和发货，还有裁高一体机为什么做到报工详情页面？应该都作为工人菜单页面上的菜单，工人页面有拍照发货了，可以把报工详情页面的发货功能移除掉」）。改动 = ① 端内新页 `pages/worker/piecework/index`（只读钱面：合计 + 件数 + 逐笔 + 未定价块 + 本月/上月），数据源 = `GET /api/worker/piecework`（#6767 上线，与 H5 那页同一个端点、同一份服务端聚合 ⇒ **零后端改动**）；② 工人菜单页新增「我的计件」行卡（显隐键 = 工人档案的 `piecework`）；③ 报工详情页撤「我的计件」「发货」两条入口（发货本来在工人菜单里已有「拍照发货」，属重复）。**口径（docs/design/worker-home-menu.md §6.3 六条）逐条落点**：单一真值（端侧只格式化，判据 1）/ 作用域只认会话（判据 2）/ 期间由服务端给（判据 5）/ 未定价显式列出且不印 0 元（判据 3）/ 只读（判据 6）/ 扣减口径同源（同一份 `aggregate`，端侧不碰）。**边界（照实登记）**：裁高计算入口**暂留**报工详情页（端内还没有裁高页，撤掉会让手机端彻底没有裁高入口；一体机屏用本机预设 `?page=cut_calc&keep=1` 直达，不受影响；端内裁高页另单并入 #7813）；`/b/report/piecework.html` / `shipment.html` 两张 H5 页保留可直连；底部 tabBar 与「扫码领活」主按钮未动；真机观感（§15.7 读图）不在本单。 ｜ tags: bmini, worker, piecework, money-surface
 
 ## 分类域（3 case）
 
@@ -13476,13 +13492,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：911（活跃 142，跳过 769）
-- tier 分布：smoke 12 / normal 843 / adversarial 32
+- 用例总数：912（活跃 142，跳过 770）
+- tier 分布：smoke 12 / normal 844 / adversarial 32
 - 售后域：16
 - Agent 核心域：12
 - API 层域：21
 - 登录认证域：14
-- B 端小程序域：50
+- B 端小程序域：51
 - 分类域：3
 - 对话边界域：51
 - 跨域：3

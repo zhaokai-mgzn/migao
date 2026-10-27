@@ -138,11 +138,12 @@ export const DEFAULT_PAGES = [PAGE_REPORT, PAGE_PIECEWORK, PAGE_ORDER, PAGE_CUT_
  *  文案 = 「裁高计算（一体机）」（2026-10-10 用户裁定：改前的「机台模式」只有内部人懂，issue #6635）。 */
 export const MACHINE_ENTRY_HREF = './machine.html'
 
-/** 我的计件入口（同源静态页，与 `machine.html` 同款；issue #6767）。 */
-export const PIECEWORK_ENTRY_HREF = './piecework.html'
-
-/** 发货入口（同源静态页；issue #7761 —— 全完工待发货列表 + 50×70 发货标签打印）。 */
-export const SHIPMENT_ENTRY_HREF = './shipment.html'
+// 🔴 这里原本还有两条入口常量（`./piecework.html` / `./shipment.html`）——**已删**（issue #7934，
+// 2026-10-27 用户逐字「我的计件和发货…为什么做到报工详情页面？应该都作为工人菜单页面上的菜单，
+// 工人页面有拍照发货了，可以把报工详情页面的发货功能移除掉」）。两条入口改由**工人菜单页**承载：
+// 「我的计件」= bmini `pages/worker/piecework/index`；「发货」= bmini `pages/worker/shipment/index`
+// （工人菜单页本来就有「拍照发货」行卡 ⇒ 本页那条是重复入口）。
+// 两张静态页本身**保留可直连**（`/b/report/piecework.html` / `shipment.html`，菜单显隐 ≠ 访问拦截）。
 
 /** 返工记录入口（同源静态页；issue #7860 —— 有返工报工的加工单列表）。 */
 export const REWORK_ENTRY_HREF = './rework.html'
@@ -688,22 +689,30 @@ function doneNoticeBase(receipt, auto) {
 }
 
 /**
- * 页头入口栏（2026-10-10 改版，issue #6635）。
+ * 页头入口栏（2026-10-10 改版 issue #6635；2026-10-27 再收窄 issue #7934）。
  *
- * 🔴 **两条跨应用入口已移出本页**（用户 2026-10-10 逐字：「移除拍照入库和补打入库标签」）：
- * 它们是 bmini-app 的页面，动线由**工人工作台**承载
- * （frontend/bmini-app/src/pages/worker/home/index.tsx；入口台账 `PAGE_ENTRY_LEDGER` 的
- * `from` 就是它）⇒ 从 `/w/` 移出**不会**让那两页变成「走不到」。
- * 本页的反向钉住（页头再出现这两条 ⇒ 红）= frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs。
+ * 🔴 **四条跨应用入口已移出本页**，只剩两条：
+ *  · 拍照入库 / 补打入库标签（用户 2026-10-10 逐字「移除拍照入库和补打入库标签」）——
+ *    动线由**工人工作台**承载（frontend/bmini-app/src/pages/worker/home/index.tsx）；
+ *  · 我的计件 / 发货（issue #7934，用户 2026-10-27 逐字「我的计件和发货…为什么做到报工详情页面？
+ *    应该都作为工人菜单页面上的菜单，工人页面有拍照发货了，可以把报工详情页面的发货功能移除掉」）——
+ *    同样由**工人工作台**承载（「我的计件」「拍照发货」两条行卡；入口台账 `PAGE_ENTRY_LEDGER` 的
+ *    `from` 就是它）⇒ 从报工页移出**不会**让那两页变成「走不到」。
+ * 反向钉住（页头再出现这四条 ⇒ 红）= frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs
+ * + frontend/worker-h5/tests/worker-h5-pages.test.mjs。
  *
- * 入口栏 = `pages` 里**本页有对应面**的那几条（`cut_calc` / `piecework`），文案与商家端页面开关同源
- * （页面键与商家面人话名的唯一真值 = `backend/admin-api/src/main/java/com/migao/admin/worker/WorkerPages.java`）：
+ * 入口栏 = `pages` 里**本页有对应面、且没有别处入口**的那几条（`cut_calc` / `rework`），文案与商家端
+ * 页面开关同源（页面键与商家面人话名的唯一真值 =
+ * backend/admin-api/src/main/java/com/migao/admin/worker/WorkerPages.java）：
  * 改前的「机台模式」只有内部人懂（用户 2026-10-10 逐字问「机台模式是什么含义」）。
  * 一条都没开 ⇒ **整条入口栏不渲染**（不留空 `<nav>`）—— 机台那台屏改用**本机预设**直达
  * （`?page=cut_calc`，见 frontend/worker-h5/src/scan-input.mjs 的 `deviceHomeFromLocation`）。
  *
+ * 🔴 **裁高计算这条有意暂留本页**（issue #7934 的边界）：端内（bmini）还没有裁高页，撤掉会让手机端
+ * 工人彻底没有裁高入口；一体机那台屏自己用本机预设直达，不受影响。端内裁高页另单（并入 #7813）。
+ *
  * ⚠️ 这是**菜单显隐**语义，不是「访问拦截」（2026-09-29 用户逐字改判，口径以 B 端 H5 为准）：
- * 链接消失 ≠ 页面不可达 —— `/w/machine.html` / `/w/piecework.html` 直接敲 URL **仍可进入**
+ * 链接消失 ≠ 页面不可达 —— `/b/report/{machine,piecework,shipment}.html` 直接敲 URL **仍可进入**
  * （静态页，本包不给它加访问门禁）。同款语义的另一半 = 页头的 `pageNoticeBanner`
  * （`report` 关掉时页面**照旧可用**，只多一句话）。
  */
@@ -711,20 +720,13 @@ function workerEntriesBar(state) {
   const { opened } = effectivePages(state)
   const machine = opened.has(PAGE_CUT_CALC)
     ? `<a class="wh5-entry" id="wh5-machine-entry" href="${MACHINE_ENTRY_HREF}">裁高计算（一体机）</a>` : ''
-  const piecework = opened.has(PAGE_PIECEWORK)
-    ? `<a class="wh5-entry" id="wh5-piecework-entry" href="${PIECEWORK_ENTRY_HREF}">我的计件</a>` : ''
-  // 发货页（issue #7761）：本页终于有了对应面（`/w/shipment.html`），⇒ 按 `to_ship` 页面键出入口
-  // （issue #7814：与 `shipment`=拍照发货的写面分开 —— 商家想只关名单或只关拍照时能分开勾）。
-  // 与上面两条同款语义 = **菜单显隐**，不是访问拦截（直接敲 URL 仍可进入）。
-  const shipment = opened.has(PAGE_TO_SHIP)
-    ? `<a class="wh5-entry" id="wh5-shipment-entry" href="${SHIPMENT_ENTRY_HREF}">发货</a>` : ''
   // 返工记录（issue #7860）：`rework` ∈ 页面集才出入口（用户裁定「在工人档案中设置过可见权限的工人」）；
   // 文案与后端 `WorkerPages.labels()` 同源（商家在工人档案里勾的就是「返工记录」）。
   const rework = opened.has(PAGE_REWORK)
     ? `<a class="wh5-entry" id="wh5-rework-entry" href="${REWORK_ENTRY_HREF}">返工记录</a>` : ''
-  if (!machine && !piecework && !shipment && !rework) return ''
+  if (!machine && !rework) return ''
   return `<nav class="wh5-entries" id="wh5-worker-entries" aria-label="工人面入口">
-    ${machine}${piecework}${shipment}${rework}
+    ${machine}${rework}
   </nav>`
 }
 

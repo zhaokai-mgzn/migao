@@ -125,6 +125,8 @@ describe('工人工作台入口按「工人端菜单」显隐（issue #7812）',
     expect(screen.queryByText('拍照发货')).toBeNull()
     expect(screen.queryByText('待发货单')).toBeNull()
     expect(screen.queryByText('返工记录')).toBeNull()
+    // issue #7934：我的计件由 `piecework` 键控制，`report` 开着不等于它开着
+    expect(screen.queryByText('我的计件')).toBeNull()
   })
 
   it('⑤ 待发货单只跟 `to_ship` 走：只开 shipment 时**不出现**（两个能力分开勾）', async () => {
@@ -138,12 +140,26 @@ describe('工人工作台入口按「工人端菜单」显隐（issue #7812）',
     expect(screen.getByText('待发货单')).toBeTruthy()
   })
 
+  it('⑦ 我的计件只跟 `piecework` 走（issue #7934：入口从报工详情页搬到本菜单）', async () => {
+    await renderWithPages(['piecework'])
+    expect(screen.getByText('我的计件')).toBeTruthy()
+    // 没开的照旧不出现（不是「一条开 ⇒ 全开」）
+    expect(screen.queryByText('返工记录')).toBeNull()
+    expect(screen.queryByText('拍照发货')).toBeNull()
+    expect(screen.queryByText('待发货单')).toBeNull()
+    // 无键的两条恒在
+    expect(screen.getByText('拍照入库')).toBeTruthy()
+    expect(screen.getByText('补打入库标签')).toBeTruthy()
+  })
+
   it('② 空数组 ⇒ fail-open 全开（不能因为「一份空配置」把活挡掉）', async () => {
     await renderWithPages([])
     expect(screen.getByText('返工记录')).toBeTruthy()
     expect(screen.getByText('拍照发货')).toBeTruthy()
     expect(screen.getByText('待发货单')).toBeTruthy()
     expect(screen.getByText('拍照入库')).toBeTruthy()
+    // 我的计件（issue #7934）在默认集合里 ⇒ fail-open 时也在
+    expect(screen.getByText('我的计件')).toBeTruthy()
     // 空数组 = 全开，但**没有**「扫码报工」这条入口（它已从菜单移除，不是被收窄）
     expect(screen.queryByText('扫码报工')).toBeNull()
   })

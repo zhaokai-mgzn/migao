@@ -139,8 +139,8 @@ test('`pages` 未被读过 / 空数组 ⇒ 按默认全开（fail-open，不是"
 })
 
 // ── 判据 ①：pages ⇔ 机台模式入口 ────────────────────────────────────────────────────────
-// ⚠️ 入口栏现在有**三条**（裁高计算 / 我的计件 / 发货，issue #7761 加了第三条）——
-//    「一条入口都没有 ⇒ 不留空入口栏」的 off 夹具因此**不能**再拿 `shipment` 当填充项。
+// ⚠️ 入口栏**只剩两条**（裁高计算 / 返工记录）——「我的计件」「发货」已于 2026-10-27 搬到
+//    工人菜单页（issue #7934，见下面 ①′/①″ 的反向钉住）。
 
 test('🔴 ① `cut_calc` ∈ pages ⇒ 入口栏出现「裁高计算（一体机）」链接；∉ ⇒ 入口栏**不渲染**', () => {
   const on = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_CUT_CALC]), null))
@@ -155,37 +155,32 @@ test('🔴 ① `cut_calc` ∈ pages ⇒ 入口栏出现「裁高计算（一体�
   assert.ok(!off.includes('id="wh5-worker-entries"'), '没有可渲染的入口 ⇒ **不留空入口栏**（2026-10-10 改版）')
 })
 
-// ── 判据 ①′：`piecework`（我的计件，issue #6767）─────────────────────────────────────────
+// ── 判据 ①′ / ①″（2026-10-27 **反转**，issue #7934）：我的计件 / 发货不再由本页承载 ─────────
+// 用户逐字「我的计件和发货…为什么做到报工详情页面？应该都作为工人菜单页面上的菜单，工人页面有
+// 拍照发货了，可以把报工详情页面的发货功能移除掉」⇒ 这两条入口归位到**工人菜单页**
+// （frontend/bmini-app/src/pages/worker/home/index.tsx：「我的计件」行卡 + 早已有的「拍照发货」行卡）。
+// 本文件把原来的**正向**断言（`piecework` 开 ⇒ 出现入口）换成**反向**钉住（开了也不许出现）；
+// 两张静态页本身仍在、可直连（判据 = frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs ④）。
 
-test('🔴 ①′ `piecework` ∈ pages ⇒ 入口栏出现「我的计件」真链接；∉ ⇒ 一条都不渲染', () => {
-  const on = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_PIECEWORK]), null))
-  assert.match(on, /id="wh5-piecework-entry"[^>]*href="\.\/piecework\.html"/, '入口必须是真链接')
-  assert.match(on, />我的计件<\/a>/, '入口文案必须是人话（不许出现页面键 / 路由字面量）')
-  assert.equal(deglue(on).includes(MACHINE_ENTRY), false, '`cut_calc` 没开 ⇒ 不渲染裁高入口')
-
-  const off = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_ORDER]), null))
-  assert.equal(off.includes('./piecework.html'), false, '`piecework` 没开却仍在渲染入口（开关形同虚设）')
-  assert.ok(!off.includes('id="wh5-worker-entries"'), '一条入口都没有 ⇒ **不留空入口栏**')
-
-  const both = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_PIECEWORK, PAGE_CUT_CALC]), null))
-  assert.match(both, /id="wh5-machine-entry"/, '两条都开 ⇒ 两条入口都在')
-  assert.match(both, /id="wh5-piecework-entry"/, '两条都开 ⇒ 两条入口都在')
+test('🔴 ①′ `piecework` ∈ pages ⇒ 本页**不再**渲染「我的计件」入口（反向钉住，issue #7934）', () => {
+  const on = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_CUT_CALC, PAGE_PIECEWORK]), null))
+  assert.equal(on.includes('./piecework.html'), false,
+    '`piecework` 已开 ⇒ 本页仍渲染「我的计件」入口（该入口已搬到工人菜单页）')
+  assert.ok(!on.includes('id="wh5-piecework-entry"'), '入口元素 id 不得再出现（判据 / 排障按它定位）')
+  assert.equal(deglue(on).includes(MACHINE_ENTRY), true, '同一夹具下裁高入口**仍在**（不是把整条入口栏弄没了）')
 })
 
-// ── 判据 ①″：`shipment`（发货页，issue #7761）────────────────────────────────────────
-
-test('🔴 ①″ `to_ship` ∈ pages ⇒ 入口栏出现「发货」真链接；∉ ⇒ 不渲染（页面键有面 ⇒ 必须有入口）', () => {
-  // issue #7814：入口跟 `to_ship`（待发货单）走，不再跟 `shipment`（拍照发货的写面）——
-  // 两个能力分开，商家才能只关其中一个（后台「设置工人端菜单」）。
-  const on = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_TO_SHIP]), null))
-  assert.match(on, /id="wh5-shipment-entry"[^>]*href="\.\/shipment\.html"/, '入口必须是真链接')
-  assert.match(on, />发货<\/a>/, '入口文案必须是人话（不许出现页面键 / 路由字面量）')
-
-  const off = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_CUT_CALC, PAGE_PIECEWORK]), null))
-  assert.equal(off.includes('./shipment.html'), false, '`to_ship` 没开却仍在渲染入口（开关形同虚设）')
-  const legacy = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_SHIPMENT]), null))
-  assert.equal(legacy.includes('./shipment.html'), false,
-    '`shipment`（拍照发货）不等于 `to_ship`（待发货单）—— 只勾发货写面不该冒出名单入口')
+test('🔴 ①″ `to_ship` / `shipment` ∈ pages ⇒ 本页**不再**渲染「发货」入口（反向钉住，issue #7934）', () => {
+  for (const pages of [
+    [PAGE_REPORT, PAGE_TO_SHIP],
+    [PAGE_REPORT, PAGE_SHIPMENT],
+    [PAGE_REPORT, PAGE_TO_SHIP, PAGE_SHIPMENT],
+  ]) {
+    const html = visible(renderPage(loggedIn(pages), null))
+    assert.equal(html.includes('./shipment.html'), false,
+      `pages=${JSON.stringify(pages)} 时本页仍渲染「发货」入口（工人菜单页已有「拍照发货」）`)
+    assert.ok(!html.includes('id="wh5-shipment-entry"'), '入口元素 id 不得再出现')
+  }
 })
 
 test('🔴 ① 红证：去掉入口栏的 `cut_calc` 过滤（无条件出裁高链接）⇒ 同一条判定必红', () => {

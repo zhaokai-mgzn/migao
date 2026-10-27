@@ -235,6 +235,26 @@ export const REPRINT_WORKER_LOGIN_REQUIRED =
   '请先用工号 + PIN 登录工人身份，再拍照补打标签（商家账号不能走这条路径）。'
 
 /**
+ * **我的计件**页路由（issue #7934）—— 工人菜单页的一条行卡（只读钱面）。
+ *
+ * 为什么要有它：`GET /api/worker/piecework?month=YYYY-MM`（#6767 上线，口径 =
+ * docs/design/worker-home-menu.md §6.3）此前**只有 H5 `/w/piecework.html` 一个面**，而该入口长在
+ * 报工详情页的页头里（用户 2026-10-27 逐字「我的计件和发货…为什么做到报工详情页面？应该都作为工人
+ * 菜单页面上的菜单」）⇒ 本页把它归位到工人菜单页，端内（小程序）可直达。
+ *
+ * 🔴 本页**只读**、**不求和**：金额全部来自服务端同一份聚合（`ProductionService.aggregate`，
+ * 与商家端计件报表 / H5 那页共用）；请求里**只**带 `month`，`worker_id` 只由服务端从
+ * `X-Worker-Session-Id` 解出（涉钱面：工资归属不能由前端自称）。
+ *
+ * 路由字面量是**单一真值**：`src/app.config.ts` 的 pages 必须逐字含它
+ * （没登记 = 死链；守卫 = `tests/page-entry-reachability.test.ts` 的 L0/L2）。
+ */
+export const PIECEWORK_PAGE_ROUTE = '/pages/worker/piecework/index'
+
+/** 我的计件页文件（入口台账 `from` 要核的落点） */
+export const PIECEWORK_PAGE_FILE = 'src/pages/worker/piecework/index.tsx'
+
+/**
  * 守卫射程：**工人标签面**（入库页 + 补打页）+ 它们依赖的入库模块
  * （服务 / 门禁 / 解码 / 打印 / 共用件 / 确认框）。
  *

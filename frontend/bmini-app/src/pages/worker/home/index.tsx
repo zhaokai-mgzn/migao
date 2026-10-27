@@ -48,6 +48,7 @@ import {
 } from '../../../utils/workerSession'
 import {
   INBOUND_PAGE_ROUTE,
+  PIECEWORK_PAGE_ROUTE,
   REPRINT_PAGE_ROUTE,
   REWORK_PAGE_ROUTE,
   SHIPMENT_ORDERS_PAGE_ROUTE,
@@ -114,6 +115,9 @@ export default function WorkerHomePage() {
   const showToShip = menuVisible(pages, pagesUnread, TO_SHIP_PAGE_KEY)
   const showShipment = menuVisible(pages, pagesUnread, WORKER_MENU_KEYS.shipment)
   const showRework = menuVisible(pages, pagesUnread, REWORK_PAGE_KEY)
+  // 我的计件（issue #7934）：显隐键 = 工人档案的 `piecework`（后端 `WorkerPages` 闭词表里**本来就有**
+  // 这个键 —— 此前只有 H5 `/w/piecework.html` 消费它）。本卡把它归位到工人菜单页。
+  const showPiecework = menuVisible(pages, pagesUnread, WORKER_MENU_KEYS.piecework)
 
   /**
    * 🔴 待处理数（issue #7921）。服务端**没有**计数端点 ⇒ 复用两个既有只读列表端点现算行数
@@ -287,6 +291,24 @@ export default function WorkerHomePage() {
                 ) : null}
               </View>
               <Text className='worker-home__entry-sub'>报过返工的加工单 ⇒ 看返工笔数 / 原因 / 工序</Text>
+            </View>
+            <Text className='worker-home__entry-go'>›</Text>
+          </View>
+          ) : null}
+
+          {/* 我的计件（issue #7934）：显隐键 = 工人档案的 `piecework`；行卡放在设计稿的「我的」组
+              （物料 / 出货之后）—— 它是这一天干完才看的东西，不占干活动线的前排。
+              🔴 入口是**静态字面锚点**（`Taro.navigateTo({ url: PIECEWORK_PAGE_ROUTE })`）：
+              入口可达性守卫按它静态证明「页面有入口」，数据驱动会让它解析不到。 */}
+          {showPiecework ? (
+          <View
+            className='worker-home__entry'
+            onClick={() => Taro.navigateTo({ url: PIECEWORK_PAGE_ROUTE })}
+          >
+            <View className='worker-home__entry-bar worker-home__entry-bar--d' />
+            <View className='worker-home__entry-body'>
+              <Text className='worker-home__entry-text'>我的计件</Text>
+              <Text className='worker-home__entry-sub'>本月做了多少、这一笔怎么算的</Text>
             </View>
             <Text className='worker-home__entry-go'>›</Text>
           </View>

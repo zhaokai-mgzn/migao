@@ -78,6 +78,7 @@ import { fetchCurrentWorker, fetchWorkerPages, workerLogout } from '../src/servi
 import { ADMIN_SURFACES } from '../src/utils/adminPermission'
 import {
   INBOUND_PAGE_ROUTE,
+  PIECEWORK_PAGE_ROUTE,
   REPRINT_PAGE_ROUTE,
   REWORK_PAGE_ROUTE,
   SHIPMENT_ORDERS_PAGE_ROUTE,
@@ -156,10 +157,16 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
 
     fireEvent.click(screen.getByText('返工记录'))
     expect(Taro.navigateTo).toHaveBeenCalledWith({ url: REWORK_PAGE_ROUTE })
+
+    // 我的计件（issue #7934）：入口从**报工详情页**页头搬到本页（工人菜单）
+    fireEvent.click(screen.getByText('我的计件'))
+    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: PIECEWORK_PAGE_ROUTE })
+
     // 路由常量本身与 app.config 的登记逐字一致（守卫 page-entry-reachability / G0 另核）
     expect(INBOUND_PAGE_ROUTE).toBe('/pages/worker/inbound/index')
     expect(REPRINT_PAGE_ROUTE).toBe('/pages/worker/reprint/index')
     expect(SHIPMENT_PAGE_ROUTE).toBe('/pages/worker/shipment/index')
+    expect(PIECEWORK_PAGE_ROUTE).toBe('/pages/worker/piecework/index')
   })
 
   it('🔴 不出现任何商家面入口（问黄金策 / 数据 / 坐席 / 管理面 4 项 + 「我的」）', async () => {
