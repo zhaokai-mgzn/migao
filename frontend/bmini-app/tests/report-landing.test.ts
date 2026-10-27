@@ -299,8 +299,8 @@ describe('B3c 服务端 302 的路由常量与前端注册的路由逐字一致�
       path.join(REPO_ROOT, 'backend/admin-api/src/main/java/com/migao/admin/service/WorkerShortLinkService.java'),
       'utf8',
     )
+    // 只用强断言：正则没匹配到 ⇒ `matched?.[1]` 是 undefined ≠ 期望值 ⇒ 直接红
     const matched = /REPORT_ROUTE\s*=\s*"([^"]+)"/.exec(java)
-    expect(matched).not.toBeNull()
     expect(matched?.[1]).toBe(REPORT_PAGE_ROUTE)
   })
 
@@ -310,7 +310,6 @@ describe('B3c 服务端 302 的路由常量与前端注册的路由逐字一致�
       'utf8',
     )
     const matched = /LANDING_ROUTE\s*=\s*"([^"]+)"/.exec(java)
-    expect(matched).not.toBeNull()
     expect(matched?.[1]).toBe(REPRINT_PAGE_ROUTE)
   })
 })
