@@ -27,7 +27,7 @@
  * - 退出只清本机不调 `workerLogout()`（服务端 session 还活着 ⇒ 下一个人扫码记到上一个人头上）⇒ ④红。
  */
 import React from 'react'
-import { render, screen, fireEvent, act } from '@testing-library/react'
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 
 jest.mock('@tarojs/taro', () => {
   // 真内存 storage：工人态的清除必须能被**读到**（`jest.fn()` 空实现会让「真的清了」与
@@ -111,6 +111,10 @@ async function renderLoggedIn() {
   mockFetch.mockResolvedValue({ success: true, data: WORKER })
   render(<WorkerHomePage />)
   await screen.findByText('工号 G001')
+  // 🔴 菜单开关是**异步**读回来的（`fetchWorkerPages().then(...)`）⇒ 只等身份卡会与它赛跑
+  //    （CI 上实测偶发红：断言跑在 fail-open 默认态上）。这里把所有待 settle 的微任务冲刷掉，
+  //    让后面的入口断言读到的是**菜单应用之后**的那一版。
+  await act(async () => {})
 }
 
 describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
@@ -231,15 +235,17 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
     mockPages.mockResolvedValue({ pages: ['report', 'rework'], unread: false, unauthorized: false })
     await renderLoggedIn()
 
+    // 等待「菜单已应用」的可观察读数（收窄集里没有 to_ship ⇒ 待发货单消失），再断言返工记录在
+    await waitFor(() => expect(screen.queryByText('待发货单')).toBeNull())
     expect(screen.getByText('返工记录')).toBeTruthy()
-    // 同一份收窄集里没有 to_ship ⇒ 待发货单如实不出现（显隐按同一套口径）
-    expect(screen.queryByText('待发货单')).toBeNull()
   })
 
   it('🔴 档案没勾 `rework` ⇒ 返工记录入口不出现（勾了才出现，不是恒显示）', async () => {
     mockPages.mockResolvedValue({ pages: ['report', 'to_ship'], unread: false, unauthorized: false })
     await renderLoggedIn()
 
+    // 等待「菜单已应用」的可观察读数（收窄集里没有 shipment ⇒ 拍照发货消失），再断言返工记录不在
+    await waitFor(() => expect(screen.queryByText('拍照发货')).toBeNull())
     expect(screen.queryByText('返工记录')).toBeNull()
     expect(screen.getByText('待发货单')).toBeTruthy()
   })

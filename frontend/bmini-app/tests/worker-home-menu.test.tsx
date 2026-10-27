@@ -19,7 +19,7 @@
  *    报工页仍可达，但入口是**外部扫码**（服务端 302 → 启动器 redirectTo），不是这张菜单。
  */
 import React from 'react'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 
 jest.mock('@tarojs/taro', () => {
   const store: Record<string, any> = {}
@@ -84,6 +84,8 @@ async function renderWithPages(pages: string[] | null, unread = false) {
   render(<WorkerHomePage />)
   await screen.findByText('工号 G001')
   await waitFor(() => expect(mockPages).toHaveBeenCalled())
+  // 菜单开关是异步读回的 ⇒ 等它应用到 state 再断言（否则断言跑在 fail-open 默认态上）
+  await act(async () => {})
   return screen
 }
 
@@ -171,5 +173,35 @@ describe('工人工作台入口按「工人端菜单」显隐（issue #7812）',
     await renderWithPages(['rework', 'shipment'])
     fireEvent.click(screen.getByText('返工记录'))
     expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/pages/worker/rework/index' })
+  })
+
+  /**
+   * ⏱ **菜单开关晚到**（回归钉，2026-10-27 CI 实测踩到）：`fetchWorkerPages()` 是异步的，
+   * 它 resolve 之前页面处于 fail-open 默认态。改前本文件的断言在「默认态」上跑，本地恰好赢、
+   * CI 上输 ⇒ 红了两次。本判据把**顺序**钉死：先全开（读不到），读到后**收敛**到实际页面集。
+   */
+  it('⏱ 菜单开关晚到：先 fail-open 全开，读到 pages 后收敛到实际集合', async () => {
+    setWorkerSessionId(WORKER.session_id)
+    mockFetch.mockResolvedValue({ success: true, data: WORKER })
+    let release: (value: any) => void = () => {}
+    mockPages.mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve
+      }),
+    )
+    render(<WorkerHomePage />)
+    await screen.findByText('工号 G001')
+
+    // ① 还没读到 ⇒ fail-open：受键控制的入口都在
+    expect(screen.getByText('返工记录')).toBeTruthy()
+    expect(screen.getByText('拍照发货')).toBeTruthy()
+
+    // ② 读到「只开 report」⇒ 收敛：受键控制的三条都收起
+    await act(async () => {
+      release({ pages: ['report'], unread: false, unauthorized: false })
+    })
+    await waitFor(() => expect(screen.queryByText('返工记录')).toBeNull())
+    expect(screen.queryByText('拍照发货')).toBeNull()
+    expect(screen.queryByText('待发货单')).toBeNull()
   })
 })
