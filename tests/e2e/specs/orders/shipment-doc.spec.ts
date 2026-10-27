@@ -179,7 +179,8 @@ test.describe('发货单 — 真实浏览器打印旅程（UI-040）', () => {
     // 纸面内容完整（随货给客户的那张）：单号 / 收货人 / 明细
     await expect(doc).toContainText('ORD20260915001')
     await expect(doc).toContainText('张三')
-    await expect(doc).toContainText('布艺遮光帘A')
+    // 纸面**不印品名**（issue #7527 / #7901：销售单纸面去品名列）⇒ 用货号认行
+    await expect(doc).toContainText('0012')
 
     await page.screenshot({ path: '/tmp/ui040-sales-doc-print.png', fullPage: true })
   })
