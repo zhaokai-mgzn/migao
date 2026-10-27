@@ -73,16 +73,6 @@
       "owner": "RBAC 跟踪单 #5699 的后续阶段（M4 扩面时逐条处置）",
       "issue": "#5699",
       "snippet": "E2E_MOCK_AUTH=true npx playwright test --project=web e2e/specs/orders/shipment-doc.spec.ts"
-    },
-    {
-      "file": "docs/testing/mibao-verification-cases.md",
-      "target": "tests/unit/pages/processing-orders-production.test.tsx",
-      "kind": "generated-artifact",
-      "true_path": "frontend/admin-web/tests/unit/pages/processing-orders-production.test.tsx",
-      "reason": "该文件是 `.github/cases/**` 的**生成物**（casebook）⇒ 修它要改用例源并重渲染；此处路径是相对 frontend/admin-web 的口径。本单只登记（零 delta），不改用例",
-      "owner": "RBAC 跟踪单 #5699 的后续阶段（M4 扩面时逐条处置）",
-      "issue": "#5699",
-      "snippet": "npx vitest run tests/unit/pages/processing-orders-production.test.tsx"
     }
   ]
 }

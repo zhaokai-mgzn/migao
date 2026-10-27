@@ -14,14 +14,13 @@
 // PP-014（issue #4307 交付物 2，契约所有者 = 后端 4308）：`route_source` **四态**的用户侧可观测面
 // —— derived 不提示 / partial 提示另一半取默认 / missing_route 提示「识别的是 X（route_requested_key）
 // 但库里没这条路线」/ default 高亮提示核对工序与计件单价；字段缺失 = 未知 ⇒ 不得显示成「已派生」。
-// PP-011（issue #4726，A 档）：加工单生产明细页「生成二维码（测试用）」入口 —— 把**加工单号**画成
-// 纯文本码（**只读**：零写请求、qr_token 一字不动）+ 一键复制单号 + 按 processing:manage 显隐，
-// 用于串联「扫码 → 手动输单号 → 报工 → 计件」端到端联调（B 档小程序码需 bmini 凭据，本单缺）。
+// PP-011（issue #4726；**2026-10-27 由 issue #7882 退场**）：页头的「生成二维码（测试用）」联调入口
+// 及其逐部位出码弹层已删除（正式发码路径 = 洗水唛部位码 + 撤销 / 重新生成）⇒ 本文件改为**反向**判据：
+// 有 processing:manage 也再取不到入口按钮 / 同名对话框（防回归）。
 // PP-011（issue #4946，用户裁定 2026-09-21）：**洗水码取代 A4 任务卡** —— 生产页传
 // `positions` 给任务卡（每部位一张，码 = 该部位自己的 `scan_url`/`part_token`；
 // **纸型后经 issue #5646 改判为 50mm×60mm**，见 `frontend/admin-web/src/components/production/TaskCardPrint.tsx`），
-// 且「生成二维码（测试用）」弹层**逐张**出码（N 个部位 ⇒ N 张，各带人可读短码 + 复制短码），
-// 不再是「一张单号码」。撤销语义（`qr_token` 为空 ⇒ 占位文案）逐字保留。
+// 撤销语义（`qr_token` 为空 ⇒ 占位文案）逐字保留；纸面张数另按开数（issue #7816）。
 // PP-011（issue #4960 第 3 条 / #4961，2026-09-21）：① 实例显示名 `逻辑名 · 部位` 的**口径唯一性**
 // —— 本页「卡在哪」原先手拼了一份，与同页进度表两套口径 ⇒ 改判为同走 `operationDisplayName`
 // （正/负态各一条：`精裁 · 布帘` / 部位无关只显示逻辑名）；② 工序进度表那枚「必完」badge 退场。
@@ -917,91 +916,7 @@ describe('加工单生产明细页', () => {
     expect(screen.getByTestId('production-print-button')).toBeInTheDocument()
   })
 
-  // ── #4726：「生成二维码（测试用）」入口（A 档 = 加工单号纯文本码）──
-  // 用户原话（2026-09-20）：「能不能在这里加个按钮生成二维码，这样就能串联起来扫码生产&计件了，
-  // 这个按钮主要是用来测试」。串联链路 = 屏幕出码 → 任意扫码工具读到**加工单号** →
-  // 工人在 bmini 报工页**手动输入**单号 → 报工 → 计件（#3997/#4206 已存在的那一页）。
-  // A 档**不是**「扫一下就进」（要手输单号）；B 档小程序码才是（本单凭据不齐，见 PR body）。
-
-  it('#4726 有 processing:manage：页头渲染「生成二维码（测试用）」入口', async () => {
-    render(<ProductionDetailPage />)
-    await waitFor(() => expect(screen.getByTestId('production-header')).toBeInTheDocument())
-
-    // 红证（改前实测）：改前无该入口 ⇒ getByTestId 直接抛
-    //   「Unable to find an element by: [data-testid="production-test-qr-button"]」⇒ 必红
-    const entry = screen.getByTestId('production-test-qr-button')
-    expect(entry).toHaveTextContent('生成二维码')
-    // 「测试用」必须写在**入口文案**上（不能让商家误当成正式发码入口）
-    expect(entry).toHaveTextContent('测试用')
-  })
-
-  it('#4946 点开弹层：**逐张**出码（第 0 张 = 该部位自己的 scan_url，不是单号码、不是 qr_token）+ 明示「测试用」', async () => {
-    render(<ProductionDetailPage />)
-    await waitFor(() => expect(screen.getByTestId('production-header')).toBeInTheDocument())
-
-    await userEvent.click(screen.getByTestId('production-test-qr-button'))
-
-    // 红证（改前实测）：点击后无二维码/无单号 ⇒ findByRole 超时必红
-    const dialog = await screen.findByRole('dialog', { name: '生成二维码（测试用）' })
-
-    const qr = within(dialog).getByTestId('production-test-qr-code-0')
-    expect(qr.tagName.toLowerCase()).toBe('svg')
-    // qrcode.react 的 title prop → svg <title>；断言**该部位自己的扫码内容**真的进了二维码组件
-    // （issue #4946：逐张出码，第 0 张 = 第 0 个部位）
-    expect(within(qr).getByTitle(PART_SCAN_URL)).toBeInTheDocument()
-    expect(qr.querySelectorAll('path').length).toBeGreaterThan(0)
-    // 内容不得是 qr_token（任务卡的码与「测试用」弹层的码都不是单号拼接串）
-    expect(within(qr).queryByTitle('qr-token-abc123')).toBeNull()
-
-    // 屏幕上也要有可读的单号文本（扫码工具读不出来时人眼可核）
-    expect(within(dialog).getByTestId('production-test-qr-order-no')).toHaveTextContent('JG-20260917-0001')
-    // 弹层内明示「测试用」+ 说明要手输单号（不得暗示「扫一下就进」）
-    expect(dialog.textContent).toContain('测试用')
-    expect(dialog.textContent).toContain('手动输入')
-  })
-
-  it('#4726 弹层「复制单号」：把加工单号写进剪贴板', async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined)
-    Object.assign(navigator, { clipboard: { writeText } })
-    render(<ProductionDetailPage />)
-    await waitFor(() => expect(screen.getByTestId('production-header')).toBeInTheDocument())
-
-    await userEvent.click(screen.getByTestId('production-test-qr-button'))
-    await screen.findByRole('dialog', { name: '生成二维码（测试用）' })
-    await userEvent.click(screen.getByTestId('production-test-qr-copy'))
-
-    // 复制的是**加工单号**（工人粘进 bmini 报工页的单号输入框）
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith('JG-20260917-0001'))
-  })
-
-  it('#4726 只读护栏：生成二维码 / 复制单号**零写请求**，qr_token 一字不动', async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined)
-    Object.assign(navigator, { clipboard: { writeText } })
-    render(<ProductionDetailPage />)
-    await waitFor(() => expect(screen.getByTestId('task-card-qr')).toBeInTheDocument())
-
-    // 操作前：任务卡二维码内容 = **该部位自己的码**（issue #4946；页面上的权威扫码入口）
-    const codeBefore = screen.getByTestId('task-card-qr').querySelector('title')?.textContent
-    expect(codeBefore).toBe(PART_SCAN_URL)
-
-    await userEvent.click(screen.getByTestId('production-test-qr-button'))
-    await screen.findByRole('dialog', { name: '生成二维码（测试用）' })
-    await userEvent.click(screen.getByTestId('production-test-qr-copy'))
-
-    // 红证：在入口 handler 里注入「生成即写库」（调 revokeQrToken / instantiate）⇒ 下面必红
-    expect(mockRevokeQrToken).not.toHaveBeenCalled()
-    expect(mockInstantiate).not.toHaveBeenCalled()
-    expect(mockRecordPrint).not.toHaveBeenCalled()
-    // 也不许借生成之名重新拉数据（生成是纯前端渲染，不触发任何网络）
-    expect(mockGetOrderOperations).toHaveBeenCalledTimes(1)
-    expect(mockGetPiecework).toHaveBeenCalledTimes(1)
-    // 码内容一字不动（撤销/重发都会让它变）
-    expect(screen.getByTestId('task-card-qr').querySelector('title')?.textContent).toBe(PART_SCAN_URL)
-    // 测试码弹层开着也不影响权威码的存在
-    expect(screen.getByTestId('task-card-qr')).toBeInTheDocument()
-  })
-
-  // ── #4946：弹层**逐张**出码（N 个商品/部位 ⇒ N 张码，各带短码 + 复制短码）──
+  // ── 一部位一码的夹具（issue #4946）；纸面张数按开数另测（issue #7816）──
   // 用户裁定（2026-09-21）：「一个加工单里有 3 个商品，就要出 3 张，每张二维码对应自己的工序」。
   const OPERATIONS_THREE_PARTS = {
     ...OPERATIONS,
@@ -1035,9 +950,7 @@ describe('加工单生产明细页', () => {
     ],
   }
 
-  it('#4946 弹层逐张出码：N 个部位 ⇒ N 张弹层码（各 = 自己的 scan_url + 短码 + 复制短码），缺码的那张如实说明；纸面张数 = Σ 开数（issue #7816）', async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined)
-    Object.assign(navigator, { clipboard: { writeText } })
+  it('#7816 纸面张数 = Σ 开数（双开 2 / 单开 1 / 三开 3 ⇒ 6 张），缺码部位逐张占位不画假码', async () => {
     mockGetOrderOperations.mockResolvedValue(ok(OPERATIONS_THREE_PARTS))
     // 🔴 份数 = **打开方式开数**（issue #7816，用户逐字「双开的要打印两份，单开的打印1份，
     //    三开打印3份，4开打印4份，这个都要在打印预览中默认设置好」）⇒ 快照行带 openCount
@@ -1070,42 +983,19 @@ describe('加工单生产明细页', () => {
         within(screen.getByTestId(`task-card-label-${index}`)).getByTestId('task-card-qr-placeholder'),
       ).toBeInTheDocument()
     }
-
-    await userEvent.click(screen.getByTestId('production-test-qr-button'))
-    const dialog = await screen.findByRole('dialog', { name: '生成二维码（测试用）' })
-
-    // 逐张：第 0/1 张真码（各自不同的 scan_url），第 2 张无码 ⇒ 只出说明，不画假码
-    expect(within(within(dialog).getByTestId('production-test-qr-code-0')).getByTitle(PART_SCAN_URL)).toBeInTheDocument()
-    expect(
-      within(within(dialog).getByTestId('production-test-qr-code-1')).getByTitle('https://app.migaozn.com/s/QW8Z2N4B'),
-    ).toBeInTheDocument()
-    expect(within(dialog).queryByTestId('production-test-qr-code-2')).toBeNull()
-
-    // 每张都标明是**哪一件**（商品名/部位名）+ 人可读短码
-    const first = within(dialog).getByTestId('production-test-qr-position-0')
-    expect(first).toHaveTextContent('布帘')
-    expect(first).toHaveTextContent(PART_SHORT_CODE)
-    const third = within(dialog).getByTestId('production-test-qr-position-2')
-    expect(third).toHaveTextContent('帘头')
-    expect(third).toHaveTextContent('暂无码')
-
-    // 逐张「复制短码」：复制的是**该部位的短码**（工人手输用），不是加工单号
-    await userEvent.click(within(dialog).getByTestId('production-test-qr-copy-1'))
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith('QW8Z2N4B'))
-    expect(writeText).not.toHaveBeenCalledWith('JG-20260917-0001')
   })
 
-  it('#4726 权限显隐：无 processing:manage（客服）时入口不渲染', async () => {
-    mockUseAuthStore.mockReturnValue({
-      user: { id: 'u-2', name: '客服小王', roles: ['customer_service'], permissions: ['order:list'] },
-    })
+  it('🔴 #7882 测试用出码入口已退场：有 processing:manage 也不再渲染按钮与弹层（正式发码路径不变）', async () => {
     render(<ProductionDetailPage />)
     await waitFor(() => expect(screen.getByTestId('production-header')).toBeInTheDocument())
 
-    // 红证：去掉 hasPermission('processing:manage') 判断（无条件渲染按钮）⇒ 本条必红
-    expect(screen.queryByTestId('production-test-qr-button')).not.toBeInTheDocument()
-    // 页面照常加载；打印入口沿用类级 order:list 口径，不受影响
+    // 改前红证：入口在 #4726 时期对 manage 角色**恒渲染** ⇒ 本条改前必红（getByTestId 能取到）
+    expect(screen.queryByTestId('production-test-qr-button')).toBeNull()
+    // 弹层也不得从别处可达（只删按钮、留弹层 = 死代码）
+    expect(screen.queryByRole('dialog', { name: '生成二维码（测试用）' })).toBeNull()
+    // 正式入口不受影响：打印任务卡仍在；撤销入口按同码显隐（本夹具 qr_token 非空 ⇒ 可撤销）
     expect(screen.getByTestId('production-print-button')).toBeInTheDocument()
+    expect(screen.getByTestId('production-revoke-button')).toBeInTheDocument()
   })
 
   // ── 特殊选项（issue #7851）────────────────────────────────────────────────
