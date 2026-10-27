@@ -1,7 +1,7 @@
 // case_ids: PP-011
 // PP-011（issue #4964 立版式 → #5646 纸宽 → #7776 字号/字段 → #7816 固定 50×150 → #7833 纸面改版
 // → **issue #7948：纸型 50×150 → 50×110 + 二维码离底 6mm**）：
-// 水洗唛 = **竖版 50mm × 110mm 单列**，字段面 = 纸面抬头（企业名 / 成品定制）+ **单号（加工单号，第一行）** /
+// 水洗唛 = **竖版 50mm × 119mm 单列**，字段面 = 纸面抬头（企业名 / 成品定制）+ **单号（加工单号，第一行）** /
 // 客户 / 第 N 套共 M 套 / **帘种** / **货号（值 = 颜色内容；issue #7872 起文案由「颜色」改「货号」）** /
 // 安装小区 / 安装位置 / 门幅 / 用料 / 宽高 / **加工方式（含加工费组合项、无前缀）** /
 // **褶法** / 特殊选项 / 备注 / **布料批次（末行，值 = 快照 `batchNo`，issue #7872）** + 底部**居中**二维码。
@@ -17,10 +17,10 @@
 // ⑥ 「头尾加下虚线，这样能清晰知道界线」⇒ `.task-card-label` 一条 `1px dashed`；
 //    issue #7839 后续裁定「水洗唛的顶部虚线移除掉」⇒ **只留底部**（顶部再画 ⇒ 必红）。
 //
-// 沿用 #7816 且**未改**的判据：正文 12pt / 张数 = Σ 开数 / 褶法 / 二维码底部居中
+// 沿用 #7816 且后经 #7960 调整的判据：正文 11pt / 张数 = Σ 开数 / 褶法 / 二维码底部居中
 // / 打印隔离 6 条 / 缺码不画假码 / 退场项（工序摘要 / 完整套号 / 交期 / 短码 / 扫码报工）。
 // 2026-10-27（issue #7948）：「把水洗唛的尺寸改成50*110，现在偏长了」「二维码不能直接沉底，
-// 务必和底部留点距离」⇒ 纸型 110mm、`padding-bottom: 6mm`（二维码下沿与底部虚线恒 ≥ 6mm）。
+// 务必和底部留点距离」⇒ 纸型 119mm、`padding-bottom: 6mm`（二维码下沿与底部虚线恒 ≥ 6mm）。
 //
 // 其余沿用既有契约（改回来 ⇒ 必红）：打印隔离 6 条、一部位一码 / 缺码不画假码、纸面内容 = `washLabelRows`、
 // 退场两项（工序摘要 / 完整套号）、变体名不上纸面、缺值不渲染。
@@ -467,7 +467,7 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×150mm 单列，issue #7816）',
     expect(screen.getByTestId('task-card-label-doc-no-0')).toHaveTextContent('单号: 20260921-8237')
   })
 
-  it('打印样式：@page 50mm×110mm（竖版）+ 标签本体 50mm×110mm + 二维码离底 6mm + 正文 12pt + 逐张分页（最后一张不分页）', () => {
+  it('打印样式：@page 50mm×119mm（竖版）+ 标签本体 50mm×119mm + 二维码离底 6mm + 正文 11pt + 逐张分页（最后一张不分页）', () => {
     printCard()
 
     // portal 到 body 的直接子级（打印隔离：容器自身的 class 才能被选择器选中）
@@ -477,20 +477,20 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×150mm 单列，issue #7816）',
     const css = Array.from(area.querySelectorAll('style'))
       .map((el) => el.textContent || '')
       .join('\n')
-    // 🔴 2026-10-27 用户逐字「把水洗唛的尺寸改成50*110，现在偏长了」⇒ 固定 50mm × 110mm；旧值一律不得残留
-    expect(css).toContain('@page { size: 50mm 110mm; margin: 0; }')
+    // 🔴 2026-10-27 用户逐字「客户要求小于120mm」「要不字体小一号？」⇒ 固定 50mm × 119mm / 正文 11pt；旧值一律不得残留
+    expect(css).toContain('@page { size: 50mm 119mm; margin: 0; }')
     expect(css).not.toContain('50mm 150mm')
     expect(css).not.toContain('50mm 70mm')
     expect(css).not.toContain('50mm 60mm')
     expect(css).not.toContain('30mm 60mm')
-    expect(css).toContain('.task-card-label { width: 50mm; height: 110mm; overflow: hidden;')
+    expect(css).toContain('.task-card-label { width: 50mm; height: 119mm; overflow: hidden;')
     // 🔴 2026-10-27 用户逐字「二维码不能直接沉底，务必和底部留点距离」⇒ 下内边距 = 6mm
     //    （与画布通道读**同一个**常量 `WASH_LABEL_BOTTOM_CLEARANCE_MM`，两条通道不会各写一份）
     expect(css).toContain(
       `padding: ${WASH_LABEL_PADDING_MM}mm ${WASH_LABEL_PADDING_MM}mm ${WASH_LABEL_BOTTOM_CLEARANCE_MM}mm;`,
     )
-    // 🔴 字号 9pt → 12pt（用户「字体还是太小，可以再大一点」）
-    expect(css).toContain('font-size: 12pt')
+    // 🔴 字号 9pt → 11pt（用户「字体还是太小，可以再大一点」）
+    expect(css).toContain('font-size: 11pt')
     // 🔴 头尾虚线（issue #7833「头尾加下虚线，这样能清晰知道界线」）
     expect(css).toContain('border-bottom: 1px dashed #000')
     // 🔴 issue #7839：顶部那条虚线**已移除**（用户逐字「水洗唛的顶部虚线移除掉」）

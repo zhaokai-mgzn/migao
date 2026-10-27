@@ -301,7 +301,7 @@ def test_g7_injected_geometry_drift_is_red():
     css = _css_block(src)
     page_w, page_h, _label_w, _label_h = _geometry(src, css)
     injected_a = _PAGE_RULE_CALL_RE.sub(lambda m: m.group(0).replace(m.group(1), "continuous-241x140"), src, count=1)
-    assert "label-50x110" in src, "找不到介质 id 的注入点 ⇒ 本红证会**空跑**"
+    assert "label-50x119" in src, "找不到介质 id 的注入点 ⇒ 本红证会**空跑**"
     assert injected_a != src, "找不到介质 id 的注入点 ⇒ 本红证会**空跑**"
     assert _fingerprint(injected_a) != _fingerprint(src), "注入后内容指纹未变（**禁 mtime/size**）"
     assert _problems(injected_a), "只改 `@page` 宽度后判据**没判红** ⇒ G1 是空判据"

@@ -49,7 +49,7 @@ PRINT_DOCS: tuple[tuple[str, str], ...] = (
     ("frontend/admin-web/src/components/orders/QuotationDoc.tsx", "a4"),
     ("frontend/admin-web/src/components/orders/ProcessingDoc.tsx", "a4"),
     ("frontend/admin-web/src/components/orders/SalesDoc.tsx", "continuous-241x140"),
-    ("frontend/admin-web/src/components/production/TaskCardPrint.tsx", "label-50x110"),
+    ("frontend/admin-web/src/components/production/TaskCardPrint.tsx", "label-50x119"),
 )
 
 #: 单份字段映射：（单据名, 实现文件, 有序列清单）

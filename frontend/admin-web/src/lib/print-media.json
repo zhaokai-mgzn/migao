@@ -34,30 +34,30 @@
       "note": "激光 / 喷墨 + 浏览器 window.print()（分页由浏览器负责）。🔴 `pageMargin` **必须是 0**（issue #7309）：Chrome 把自己的页眉页脚（版式日期 / 文档标题 / 页面 URL / 页码）画在 `@page` 的页边距里，上下边距一够大就照画（实测 8.7mm 不画 / 8.8mm 画）⇒ 0 边距 = 没有可画的边距 = 必然不出。版面内缩 12mm 是**真值**，写在 `contentInset`，由单据容器的 padding 承担（`box-decoration-break: clone` 让第 2 页起也重复这段内缩）。在用：发货单（#3768）、报价单（#4965）、加工单（#5651）。minFontPt 9pt = 既有 A4 单据的正文 12px 口径（不是量出来的下限）。"
     },
     {
-      "id": "label-50x110",
-      "label": "标签 50mm × 110mm（竖版）",
+      "id": "label-50x119",
+      "label": "标签 50mm × 119mm（竖版）",
       "technology": "thermal-transfer",
-      "pageSize": "50mm 110mm",
+      "pageSize": "50mm 119mm",
       "pageMargin": "0",
       "pageBoxMm": {
         "widthMm": 50,
-        "heightMm": 110
+        "heightMm": 119
       },
       "continuousFeed": false,
       "carbonCopies": 1,
-      "minFontPt": 12,
+      "minFontPt": 11,
       "dotGeometry": {
         "dpi": 203,
         "dotsPerMm": 8,
         "widthPx": 400,
         "effectiveWidthPx": 384,
         "headWidthPx": 384,
-        "heightPx": 880,
-        "note": "设备侧**点阵口径**（issue #6439 免驱动直连通道）—— 全仓唯一一份，水洗唛位图只许从这里取（守卫 frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts 的 C2b）。与 label-50x70.dotGeometry 是**同一台 DP235S** 的读数（那一条是工人端发货标签链路的落点，本条是水洗唛链路的落点；改一处务必核对另一处）。🔴 纸宽 50mm ⇒ 400px，打印头只有 384px(48mm) ⇒ effectiveWidthPx = 384：**右侧约 2mm 打不到**，出图必须按 effectiveWidthPx（越头的像素会被静默丢掉）。纸长 **110mm ⇒ 880px**（2026-10-27 用户逐字「把水洗唛的尺寸改成50*110，现在偏长了」：纸型仍**固定**，作废 #7816 的 150mm）。dpi 与 headWidthPx 仍是**安全侧待实测**值（同 label-50x80 的 pendingMeasurements 第 1 条），连上机器后按 getPrinterInfo() 自报值覆盖。"
+        "heightPx": 952,
+        "note": "设备侧**点阵口径**（issue #6439 免驱动直连通道）—— 全仓唯一一份，水洗唛位图只许从这里取（守卫 frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts 的 C2b）。与 label-50x70.dotGeometry 是**同一台 DP235S** 的读数（那一条是工人端发货标签链路的落点，本条是水洗唛链路的落点；改一处务必核对另一处）。🔴 纸宽 50mm ⇒ 400px，打印头只有 384px(48mm) ⇒ effectiveWidthPx = 384：**右侧约 2mm 打不到**，出图必须按 effectiveWidthPx（越头的像素会被静默丢掉）。纸长 **119mm ⇒ 952px**（2026-10-27 用户逐字「客户要求小于120mm」「要不字体小一号？」⇒ 50×110/12pt 收到 **50×119/11pt**，issue #7960）。dpi 与 headWidthPx 仍是**安全侧待实测**值（同 label-50x80 的 pendingMeasurements 第 1 条），连上机器后按 getPrinterInfo() 自报值覆盖。"
       },
       "measurement": "measured",
       "pendingMeasurements": [],
-      "note": "热敏 / 热转印 + 蓝牙直打（通道归 #5052）。🔴 **纸型固定 50mm × 110mm**（2026-10-27 用户逐字「把水洗唛的尺寸改成50*110，现在偏长了」⇒ #7816 的 150mm 收到 110mm）：`@page` 由 `printPageRule()` 从本矩阵取、直连画布高度取 `dotGeometry.heightPx`、预览纸框取 `pageBoxMm` —— 三处仍是**同一个数**（没有第二份纸型真值）。正文 12pt（`minFontPt`，2026-10-26 用户裁定「字体还是太小，可以再大一点」）、抬头 14pt / 副标题 10pt / 二维码 80 CSS px（底部居中、正文后两行）。🔴 **二维码与纸底（底部虚线）恒留 6mm 净空**（用户 2026-10-27「二维码不能直接沉底，务必和底部留点距离」）：系统打印 = `.task-card-label` 的 `padding-bottom: 6mm`，画布通道 = `wash-label-metrics.ts` 的 `WASH_LABEL_BOTTOM_CLEARANCE_MM`（同一数值）。垂直预算账在 frontend/admin-web/src/components/production/TaskCardPrint.tsx 的文件头。⛔ 本矩阵只登记**在用**介质：`label-50x70` 是工人端发货标签（#7761/#7786）、`label-50x80` 是入库标签（#5052）。"
+      "note": "热敏 / 热转印 + 蓝牙直打（通道归 #5052）。🔴 **纸型固定 50mm × 119mm**（2026-10-27 用户逐字「客户要求小于120mm」+「要不字体小一号？」⇒ 50×110/12pt 收到 **50×119mm / 正文 11pt**，issue #7960）：`@page` 由 `printPageRule()` 从本矩阵取、直连画布高度取 `dotGeometry.heightPx`、预览纸框取 `pageBoxMm` —— 三处仍是**同一个数**（没有第二份纸型真值）。正文 11pt（`minFontPt`）、抬头 14pt / 副标题 10pt / 二维码 80 CSS px（底部居中、正文后两行 = 9.31mm）。🔴 **二维码与纸底（底部虚线）恒留 6mm 净空**（用户 2026-10-27「二维码不能直接沉底，务必和底部留点距离」）：系统打印 = `.task-card-label` 的 `padding-bottom: 6mm`，画布通道 = `wash-label-metrics.ts` 的 `WASH_LABEL_BOTTOM_CLEARANCE_MM`（同一数值）。垂直预算：可用 119 − 1.2 − 6 = **111.8mm**，满字段 15 行 = **110.99mm ≤ 111.8mm**（余 0.81mm）；16 行 = 115.65mm > 111.8mm ⇒ 有折行即裁、码永不被裁（预览逐张报）。⛔ 本矩阵只登记**在用**介质：`label-50x70` 是工人端发货标签（#7761/#7786）、`label-50x80` 是入库标签（#5052）。"
     },
     {
       "id": "label-50x70",
@@ -83,12 +83,12 @@
       },
       "measurement": "measured",
       "pendingMeasurements": [],
-      "note": "热敏 / 热转印 + 蓝牙直打（通道归 #5052）。🔴 **本条目自 issue #7816 起只服务「工人端发货标签」**（`frontend/worker-h5/src/shipment.mjs` 的 `SHIP_LABEL_MEDIA_ID` 逐字指它；#7761 列表 + #7786 发货联）；**水洗唛**已改用 `label-50x110`（固定 50mm × 110mm，用户 2026-10-27 逐字「把水洗唛的尺寸改成50*110，现在偏长了」）⇒ 两张纸**不要合并**（发货标签仍是 50mm 宽连续卷、纸长按内容撑开；水洗唛是固定纸型）。几何真值 = #5646 实测（容器 49.998mm 宽、PDF MediaBox 142.08 × 169.92 pt）。纸长按内容撑开 = #7776：`pageBoxMm.heightMm` 是**最短**纸长（70mm，也是驱动里该登记的那档），实际纸长由 worker-h5 的 `shipLabelLengthMm()` 按纸面内容算出（夹在 `lengthMm.minMm`~`maxMm`）并由 `shipLabelPageRule()` 现拼 `@page` —— 预览 / 打印读同一个数。⛔ 本矩阵只登记**在用**介质。",
+      "note": "热敏 / 热转印 + 蓝牙直打（通道归 #5052）。🔴 **本条目自 issue #7816 起只服务「工人端发货标签」**（`frontend/worker-h5/src/shipment.mjs` 的 `SHIP_LABEL_MEDIA_ID` 逐字指它；#7761 列表 + #7786 发货联）；**水洗唛**已改用 `label-50x119`（固定 50mm × 119mm，用户 2026-10-27 逐字「客户要求小于120mm」）⇒ 两张纸**不要合并**（发货标签仍是 50mm 宽连续卷、纸长按内容撑开；水洗唛是固定纸型）。几何真值 = #5646 实测（容器 49.998mm 宽、PDF MediaBox 142.08 × 169.92 pt）。纸长按内容撑开 = #7776：`pageBoxMm.heightMm` 是**最短**纸长（70mm，也是驱动里该登记的那档），实际纸长由 worker-h5 的 `shipLabelLengthMm()` 按纸面内容算出（夹在 `lengthMm.minMm`~`maxMm`）并由 `shipLabelPageRule()` 现拼 `@page` —— 预览 / 打印读同一个数。⛔ 本矩阵只登记**在用**介质。",
       "lengthMm": {
         "mode": "content",
         "minMm": 70,
         "maxMm": 150,
-        "why": "发货标签是 50mm 宽**连续纸卷**：长度不限 ⇒ 纸长按内容撑开（下限 70mm / 上限 150mm）。消费方 = frontend/worker-h5/src/shipment.mjs 的 shipLabelLengthMm / shipLabelPageRule（守卫 frontend/worker-h5/tests/worker-h5-shipment-ready.test.mjs 逐值比对本块）。🔴 水洗唛自 issue #7816 起**不再读本条目**（改用固定纸型 label-50x110）；把水洗唛改回读这里 = 又把「长度不足」带回来。"
+        "why": "发货标签是 50mm 宽**连续纸卷**：长度不限 ⇒ 纸长按内容撑开（下限 70mm / 上限 150mm）。消费方 = frontend/worker-h5/src/shipment.mjs 的 shipLabelLengthMm / shipLabelPageRule（守卫 frontend/worker-h5/tests/worker-h5-shipment-ready.test.mjs 逐值比对本块）。🔴 水洗唛自 issue #7816 起**不再读本条目**（改用固定纸型 label-50x119）；把水洗唛改回读这里 = 又把「长度不足」带回来。"
       }
     },
     {
