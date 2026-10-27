@@ -226,7 +226,7 @@ for page in index.html machine.html piecework.html shipment.html rework.html; do
     bad "GET /b/report/$page → HTTP ${R_CODE}（期望 200：该页没经 rewrite 落到 worker-h5）"; REPORT_MISSING=1; continue
   fi
   if [ "$W_CODE" != "200" ]; then
-    bad "GET /w/$page → HTTP ${W_CODE}（对照面取不到 ⇒ 无法判定 /b/report/$page）"; REPORT_MISSING=1; continue
+    bad "GET /w/$page → HTTP ${W_CODE}（对照面取不到 ⇒ 无法判定 /b/report/${page}）"; REPORT_MISSING=1; continue
   fi
   if [ "$(file_sha256 "$TMPDIR_RUN/br-$page")" != "$(file_sha256 "$TMPDIR_RUN/w-$page")" ]; then
     bad "GET /b/report/$page 与 /w/$page 的 body 不一致 —— 该页没有落到 worker-h5"
