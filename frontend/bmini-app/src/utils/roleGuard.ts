@@ -20,6 +20,7 @@ import { useEffect } from 'react'
 import Taro from '@tarojs/taro'
 import { getToken, getUser } from './auth'
 import { WORKER_HOME_ROUTE } from './inbound/gaps'
+import { hasLandingIntent } from './inbound/deepLink'
 import { hasWorkerSession } from './workerSession'
 
 /**
@@ -49,6 +50,11 @@ export function merchantEntryTarget(opts: { workerOnly: boolean; workerLanding: 
 /** 商家面页面挂上它：纯工人设备打开 ⇒ 送回工人工作台（`redirectTo`，工作台不是 tabBar 页） */
 export function useMerchantSurfaceGuard(): void {
   useEffect(() => {
+    // 🔴 issue #7887（2026-10-27 现场）：**落地优先** —— URL 上带着 `?t=`（报工短链）或 `?code=`
+    // （入库标签）时，把人送到那一页的是启动器 `src/app.tsx`，**不是**这里。守卫此时抢路由的后果
+    // 实测就是「工人扫纸上的码，落在工人工作台」：本 effect 与 chat 页的 `initialize()` 平级执行，
+    // initialize 里那句早退管不到它，而两跳 redirect 只会活下来一条。
+    if (hasLandingIntent()) return
     if (isWorkerOnlyDevice()) {
       Taro.redirectTo({ url: WORKER_HOME_ROUTE })
     }

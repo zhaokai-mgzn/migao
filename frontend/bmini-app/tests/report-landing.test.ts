@@ -1,4 +1,4 @@
-// case_ids: BM-053
+// case_ids: BM-053, BM-040
 /**
  * **扫码报工落地面：`/b/?t=<token>` 被消费，且与 `?code=`（补打页）不串道**（issue #7879）
  *
@@ -45,7 +45,9 @@ import {
   reportReturnUrl,
   takeReportReturn,
 } from '../src/utils/reportEntry'
-import { REPORT_PAGE_ROUTE, REPRINT_PAGE_ROUTE } from '../src/utils/inbound/gaps'
+import { REPORT_PAGE_ROUTE, REPRINT_PAGE_ROUTE, WORKER_HOME_ROUTE } from '../src/utils/inbound/gaps'
+import { STORAGE_KEYS } from '../src/utils/constants'
+import { useMerchantSurfaceGuard } from '../src/utils/roleGuard'
 import { PAGE_ENTRY_LEDGER } from '../src/utils/pageEntries'
 import { BMINI_ROOT, stripComments } from './helpers/h5PlatformLists'
 
@@ -193,9 +195,10 @@ describe('B1/B2 启动器（h5 落地）', () => {
 describe('B3 商家首页不抢路由', () => {
   it('B3 源码面：首页初始化前先看「URL 上有没有落地参数」，两个支线都让位', () => {
     const code = codeOf('src/pages/chat/index/index.tsx')
-    expect(code).toContain('currentLandingCode')
-    expect(code).toContain('currentReportToken')
-    const gate = code.indexOf('currentReportToken()')
+    // 🔴 issue #7887：判据收成一处（`hasLandingIntent()`）后，这里钉的是**"有没有这道闸"**，
+    // 不是某个具体 helper 名 —— 页面上不再各写一份 `?code=` / `?t=` 的条件。
+    expect(code).toContain('hasLandingIntent')
+    const gate = code.indexOf('hasLandingIntent()')
     const steal = code.indexOf("Taro.redirectTo({ url: '/pages/auth/login/index' })")
     expect(gate).toBeGreaterThan(-1)
     // 闸必须在"去商家登录"之前（反了就等于没有）
@@ -229,6 +232,64 @@ describe('B3 商家首页不抢路由', () => {
     } finally {
       jest.useRealTimers()
     }
+  })
+})
+
+describe('B3b 商家面守卫也不抢落地（issue #7887：工人扫纸上的码落在工人菜单）', () => {
+  /** 纯工人设备：有工人 session、**没有**商家凭据（= 车间里每一台工人手机） */
+  function workerOnly(): void {
+    Taro.removeStorageSync(STORAGE_KEYS.TOKEN)
+    Taro.removeStorageSync(STORAGE_KEYS.USER)
+    Taro.setStorageSync(STORAGE_KEYS.WORKER_SESSION, 'ws-1')
+    Taro.setStorageSync(STORAGE_KEYS.WORKER, { id: 'w1', name: '工人', workerNo: '009' })
+  }
+
+  /** 探针：只挂守卫（测的是 hook 本身，不是某一页的副作用） */
+  function GuardProbe() {
+    useMerchantSurfaceGuard()
+    return React.createElement('div')
+  }
+
+  afterEach(() => {
+    ;[STORAGE_KEYS.WORKER_SESSION, STORAGE_KEYS.WORKER].forEach((key) => Taro.removeStorageSync(key))
+  })
+
+  it('负控基线：纯工人设备 + **无**落地参数 ⇒ 照旧送回工人工作台（证明 skip 不是把守卫废掉）', () => {
+    gotoLanding('')
+    workerOnly()
+    render(React.createElement(GuardProbe))
+    expect(Taro.redirectTo).toHaveBeenCalledWith({ url: WORKER_HOME_ROUTE })
+  })
+
+  it('🔴 带 `?t=` 落地 ⇒ 守卫**不抢路由**（否则两跳 redirect 只会活下来"工人工作台"那条）', () => {
+    gotoLanding(`?t=${TOKEN}`)
+    workerOnly()
+    render(React.createElement(GuardProbe))
+    expect(Taro.redirectTo).not.toHaveBeenCalled()
+  })
+
+  it('🔴 带 `?code=` 落地 ⇒ 守卫同样不抢路由（补打页不被劫，与 #5052 同款动线）', () => {
+    gotoLanding('?code=ABCD2345')
+    workerOnly()
+    render(React.createElement(GuardProbe))
+    expect(Taro.redirectTo).not.toHaveBeenCalled()
+  })
+
+  it('🔴 负控（#7880 不许被本单影响）：手机端 `?qr=<票据>` 不含 t/code ⇒ 守卫照旧把人送回工人工作台', () => {
+    // 「手机端」码 = 商家在 PC 上点「手机端」出的票据（`?qr=`），**不是**纸上的码（`?t=` / `?code=`）。
+    // 它的去处由 #7880 的工人优先逻辑决定（工人 session 在场 ⇒ 工人工作台）—— 本单的落地闸不许把它一起放行。
+    gotoLanding('?qr=ticket-abc')
+    workerOnly()
+    render(React.createElement(GuardProbe))
+    expect(Taro.redirectTo).toHaveBeenCalledWith({ url: WORKER_HOME_ROUTE })
+  })
+
+  it('类级：守卫**在跳转之前**必须问 `hasLandingIntent()`（把闸删掉 ⇒ 这里红，不是只靠上面两条行为面）', () => {
+    const code = codeOf('src/utils/roleGuard.ts')
+    const body = code.slice(code.indexOf('export function useMerchantSurfaceGuard'))
+    expect(body).toContain('hasLandingIntent()')
+    // 闸必须在 `redirectTo` **之前**（写在后面 = 等于没有闸，但行为面可能因为渲染时序看起来是绿的）
+    expect(body.indexOf('Taro.redirectTo')).toBeGreaterThan(body.indexOf('hasLandingIntent()'))
   })
 })
 
