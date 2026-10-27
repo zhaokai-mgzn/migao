@@ -172,6 +172,22 @@ export function currentReportToken(): LandingCode {
 }
 
 /**
+ * **有没有落地意图**（`?code=` 或 `?t=` 任一在场）—— 「落地优先」的**唯一判据**。
+ *
+ * 🔴 issue #7887（2026-10-27 现场）：纯工人设备打开 `/b/?t=<token>` 落在**工人工作台**而不是报工页。
+ * 根因不是启动器（`src/app.tsx` 的 302 搬运是对的），而是**商家面守卫**：
+ * `utils/roleGuard.ts` 的 `useMerchantSurfaceGuard()` 是一个与首页 `initialize()` **平级**的 effect，
+ * 它无条件把"纯工人设备"送回工人工作台 ⇒ 启动器随后发出的 `redirectTo(报工页/补打页)` 被吃掉。
+ * 那句"落地优先"的判断此前只写在 chat 页的 `initialize()` 里，守卫看不见它。
+ *
+ * ⇒ 任何**要抢路由**的守卫/初始化都必须先问这一句：**落地参数在场时，谁都不许改路由**，
+ * 由启动器把人送到那一页（报工页 / 补打页）。新增一个守卫却忘了问 ⇒ 现场会重演"扫纸上的码进工人菜单"。
+ */
+export function hasLandingIntent(): boolean {
+  return currentLandingCode().present || currentReportToken().present
+}
+
+/**
  * 报工页的落地 URL（**唯一**拼装处：路由与参数名都在这里，启动器与页面不各写一份）。
  *
  * token **原样**带走（32 位十六进制；归一化与撤销判定都在服务端）。

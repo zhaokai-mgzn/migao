@@ -208,8 +208,10 @@ describe('落地页深链：商家首页不抢路由（D6）', () => {
     const code = stripComments(
       require('fs').readFileSync(require('path').join(BMINI_ROOT, 'src/pages/chat/index/index.tsx'), 'utf8'),
     )
-    expect(code).toContain('currentLandingCode')
-    const gate = code.indexOf('currentLandingCode()')
+    // 🔴 issue #7887：判据收成一处（`hasLandingIntent()` = `?code=` 或 `?t=` 任一在场）后，
+    // 这里钉的是**"有没有这道闸"**，不是某个具体 helper 名。
+    expect(code).toContain('hasLandingIntent')
+    const gate = code.indexOf('hasLandingIntent()')
     const steal = code.indexOf("Taro.redirectTo({ url: '/pages/auth/login/index' })")
     expect(gate).toBeGreaterThan(-1)
     // 闸必须在"去商家登录"之前（反了就等于没有）
