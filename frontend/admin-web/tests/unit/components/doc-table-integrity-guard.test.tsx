@@ -146,16 +146,22 @@ describe('加工单 · 表格列数不变量（issue #6595）', () => {
     }
   })
 
-  it('工艺说明行（整行补位）⇒ `colSpan` 计入后仍逐行自洽', () => {
+  it('补位行（加工费组合，整行 `colSpan`）⇒ 计入后仍逐行自洽', () => {
+    // issue #7909（用户 2026-10-27「加工单也要移除」）：「工艺」补位行退场 ⇒ 正文里只剩
+    // 「加工费组合」这一行补位行；判据仍要钉住「补位行按 1 + colSpan 占满表头列数」。
     render(
       <ProcessingDoc
-        order={buildOrder({ items: [buildItem({ processingInfo: { craft: '韩褶' } })] })}
-        processingOrder={buildProcessingOrder()}
+        order={buildOrder()}
+        processingOrder={buildProcessingOrder({
+          items: [
+            { itemId: 'item-1', processingItems: [{ id: 'pi-1', name: '韩褶' }] },
+          ] as unknown as ProcessingOrder['items'],
+        })}
       />
     )
     const tables = collectTableIntegrity(dataTables(doc()))
     const n = PROCESSING_DOC_COLUMNS.length
-    // 表头 + 主体行 + 「工艺：…」补位行
+    // 表头 + 主体行 + 「加工费组合」补位行
     expect(tables[0].rows).toEqual([n, n, n])
   })
 
