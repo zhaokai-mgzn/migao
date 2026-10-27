@@ -81,6 +81,9 @@ Chrome 把自己的页眉页脚（版式日期 / 文档标题 / 页面 URL / 页
   `sheets` / `channel`（browser / ble）/ `batch_id+batch_index+batch_size`（联合打印批次）/
   `order_status`（当时的订单状态）/ `status`（fired / failed）+ `fail_reason` / 操作人快照 / 客户端 IP。
   它是**外部事实表**（纸出没出来服务端不知道）⇒ 只登记「已发起 + 结果」，不存业务对象副本。
+  **查看入口在打印预览表头**（issue #7964，用户 2026-10-28 逐字「打印流水应该放到打印预览界面上……
+  不要放到订单明细中」）：点开在本层内看，订单明细页**不再常驻**流水区块；流水视图打开时纸面退场，
+  它**不会随纸印出去**。
   订单列表的「已打印」= 该表 `status='fired'` 行的**一次批量聚合**（`printedAt` / `printCount` /
   `printedDocTypes`），不是前端本地状态。
 

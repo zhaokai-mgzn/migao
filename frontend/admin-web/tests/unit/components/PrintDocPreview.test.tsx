@@ -505,3 +505,104 @@ describe('打印层的单据选择器（issue #7544）', () => {
     expect(screen.queryByTestId('print-preview-docs')).toBeNull()
   })
 })
+
+/* ==========================================================================
+ * 打印流水入口（issue #7964，用户 2026-10-28「打印流水应该放到打印预览界面上…不要放到订单明细中」）
+ * ==========================================================================*/
+describe('打印流水入口：入口在表头、视图在本层内（issue #7964）', () => {
+  afterEach(cleanup)
+
+  function fakeBatch(over: Partial<Record<string, unknown>> = {}) {
+    return {
+      stage: 'running' as const,
+      candidates: ['processing', 'labels'] as const,
+      selected: ['processing', 'labels'] as const,
+      index: 0,
+      fired: false,
+      current: 'processing' as const,
+      batchId: 'b-1',
+      openPanel: vi.fn(),
+      closePanel: vi.fn(),
+      toggle: vi.fn(),
+      toggleAll: vi.fn(),
+      start: vi.fn(),
+      markFired: vi.fn(),
+      next: vi.fn(),
+      stop: vi.fn(),
+      ...over,
+    }
+  }
+
+  function renderWithLogs(extra: Record<string, unknown> = {}) {
+    return render(
+      <PrintDocPreview
+        target="processing"
+        title="加工单"
+        media="a4"
+        onPrint={() => {}}
+        onClose={() => {}}
+        logs={<div data-testid="fake-print-logs">流水</div>}
+        {...extra}
+      >
+        <div>单据</div>
+      </PrintDocPreview>,
+    )
+  }
+
+  it('① 不传 logs ⇒ 表头没有入口（其它打印使用方零影响）', () => {
+    render(
+      <PrintDocPreview target="processing" title="加工单" media="a4" onPrint={() => {}} onClose={() => {}}>
+        <div>单据</div>
+      </PrintDocPreview>,
+    )
+    expect(screen.queryByTestId('print-preview-logs-entry')).toBeNull()
+  })
+
+  it('② 点入口 ⇒ 本层内看流水；纸面 / 自检 / 打印动作一并退场（流水不随纸印出）', () => {
+    renderWithLogs()
+    expect(screen.getByTestId('print-preview-paper')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('print-preview-logs-entry'))
+
+    const view = screen.getByTestId('print-preview-logs')
+    expect(view).toHaveTextContent('打印流水')
+    expect(view).toHaveTextContent('流水')
+    // 🔴 流水块在纸框**之外** —— 它永远不会上纸
+    expect(view.closest('[data-print-paper]')).toBeNull()
+    expect(screen.queryByTestId('print-preview-paper')).toBeNull()
+    expect(screen.queryByTestId('print-preview-check')).toBeNull()
+    expect(screen.queryByTestId('print-preview-actions')).toBeNull()
+    expect(screen.getByTestId('print-preview-logs-entry')).toHaveTextContent('返回预览')
+    expect(screen.getByTestId('print-preview-logs-entry')).toHaveAttribute('aria-expanded', 'true')
+
+    // 再点回到纸面
+    fireEvent.click(screen.getByTestId('print-preview-logs-entry'))
+    expect(screen.getByTestId('print-preview-paper')).toBeInTheDocument()
+    expect(screen.queryByTestId('print-preview-logs')).toBeNull()
+    expect(screen.getByTestId('print-preview-logs-entry')).toHaveTextContent('打印流水')
+  })
+
+  it('③ 联合打印逐张引导中 ⇒ 不出现入口（不打断正在换的那张纸）', () => {
+    renderWithLogs({ batch: fakeBatch(), docs: ['processing', 'labels'], onSelect: () => {} })
+    expect(screen.queryByTestId('print-preview-logs-entry')).toBeNull()
+  })
+
+  it('④ 关层再开 ⇒ 回到纸面（视图状态不跨次残留）', () => {
+    const view = renderWithLogs()
+    fireEvent.click(screen.getByTestId('print-preview-logs-entry'))
+    expect(screen.getByTestId('print-preview-logs')).toBeInTheDocument()
+
+    view.rerender(
+      <PrintDocPreview target={null} title="加工单" media="a4" onPrint={() => {}} onClose={() => {}} logs={<div>流水</div>}>
+        <div>单据</div>
+      </PrintDocPreview>,
+    )
+    view.rerender(
+      <PrintDocPreview target="processing" title="加工单" media="a4" onPrint={() => {}} onClose={() => {}} logs={<div>流水</div>}>
+        <div>单据</div>
+      </PrintDocPreview>,
+    )
+    expect(screen.getByTestId('print-preview-paper')).toBeInTheDocument()
+    expect(screen.queryByTestId('print-preview-logs')).toBeNull()
+  })
+})
