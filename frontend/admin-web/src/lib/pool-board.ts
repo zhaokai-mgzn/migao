@@ -45,7 +45,14 @@ export function buildPoolRequest(
   consignee?: { processorSupplierId?: string | null; expectedDeliveryDate?: string | null },
 ): PoolDispatchRequest {
   return {
-    orderIds: lines.map((l) => l.orderId),
+    // 🔴 `orderIds` 是**订单集合**，而 `lines` 是**池行**（一张多套订单 = N 行、同一个 `orderId`）
+    // ⇒ 必须去重（issue #7904）。服务端是「**一单一加工单**」：`generatePooled` / `preview` 都按
+    // `orderIds` 逐份处理，重复单号 = 同一张单被当成 N 张各派一次。
+    // 实测后果（用户 2026-10-27 现场「服务器错误」）：第 2 份 insert 撞 `uk_processing_orders_active`，
+    // 而 PG 事务已被这条失败语句中止 ⇒ 第 3 份抛 25P02（不是 `DuplicateKeyException`）⇒ 逸出兜底 ⇒ 500；
+    // 只有 2 套时更糟：接口 200 + 「合并派单完成：1 单」，整批在提交时静默回滚（一张加工单都没生成）。
+    // ⚠️ 去重**只**作用于 `orderIds`：`batches` 仍**逐池行**（少一条 = 那一套不参与排料，`saved` 少算）。
+    orderIds: [...new Set(lines.map((l) => l.orderId))],
     batches: lines.map((l) => ({ orderId: l.orderId, itemId: l.itemId })),
     assignmentRule: POOL_ASSIGNMENT_RULE,
     pooled,

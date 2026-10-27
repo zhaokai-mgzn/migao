@@ -47,18 +47,39 @@ describe('buildPoolRequest（/preview 与 /dispatch 同体）', () => {
     expect(body.orderIds).toHaveLength(1)
   })
 
-  it('🔴 类级自证：**非空行 ⇒ 指派非空且逐行 1:1、规则非空**（空指派 = #6408 的缺陷形态）', () => {
+  it('🔴 类级自证：**非空行 ⇒ 指派非空、规则非空、每条指派都落在请求声明的单号里**（空指派 = #6408 的缺陷形态）', () => {
     // 缺陷形态（2026-10-06 实测，300 单四臂对照）：`batches: []` ⇒ 服务端 `buildDesignations`
     // 直接返回空 ⇒ 排料求解器一次都不跑 ⇒ 消耗行 0 行、`saved = 0`、页面「预计节省」恒 0.00。
     // 本断言让「又变回空指派 / 规则又给 null」当场红，而不是等到真库上看不见扣料才发现。
+    // 🔴 2026-10-27 改判（issue #7904）：原先这里断言 `batches.map(orderId) === orderIds`（**逐行 1:1**）——
+    // 它对「多套订单」这一形态把缺陷钉成了正确（见下一条）。`batches` 是**逐池行**的，
+    // `orderIds` 是**去重后的订单集合**，两者只在「一单一行」时巧合相等。
     for (const pooled of [true, false]) {
       const body = buildPoolRequest([L('a', 'ia'), L('b', 'ib'), L('c', 'ic')], pooled)
-      expect(body.batches).toHaveLength(body.orderIds.length)
-      expect(body.batches.map((b) => b.orderId)).toEqual(body.orderIds)
+      expect(body.batches).toHaveLength(3)
+      expect(body.orderIds).toEqual(['a', 'b', 'c'])
+      expect(body.batches.every((b) => body.orderIds.includes(b.orderId))).toBe(true)
       expect(body.batches.every((b) => b.itemId !== '')).toBe(true)
       // 规则必须显式给值：`null` ⇒ 未指定批次的行**不补位**（服务端口径）⇒ 等于白带指派
       expect(body.assignmentRule).toBe('fifo')
     }
+  })
+
+  it('🔴 多套订单：同一 orderId 的 N 行 ⇒ `orderIds` **去重**、`batches` 仍逐行（issue #7904）', () => {
+    // 池行是**逐商品行**的（`PoolLine` 带 `orderId` + `itemId`），而服务端是「**一单一加工单**」：
+    // 重复单号被当成 N 张单各派一次 ⇒ 第 2 份撞部分唯一索引 `uk_processing_orders_active`，
+    // 而 PG 事务已被这条失败语句中止 ⇒ 第 3 份抛 25P02（不是 `DuplicateKeyException`）⇒
+    // 逸出兜底 ⇒ **500「服务器内部错误」**（用户 2026-10-27 现场）。
+    // N=2 时更糟：接口 200 + 「合并派单完成：1 单」，而整批在提交时静默回滚 —— 一张加工单都没生成。
+    const body = buildPoolRequest([L('o1', 'i1'), L('o1', 'i2'), L('o1', 'i3'), L('o2', 'i4')], true)
+    expect(body.orderIds).toEqual(['o1', 'o2'])
+    // 指派一条都不能丢（丢了 = 那一套不参与排料，`saved` 少算）
+    expect(body.batches).toEqual([
+      { orderId: 'o1', itemId: 'i1' },
+      { orderId: 'o1', itemId: 'i2' },
+      { orderId: 'o1', itemId: 'i3' },
+      { orderId: 'o2', itemId: 'i4' },
+    ])
   })
 })
 
