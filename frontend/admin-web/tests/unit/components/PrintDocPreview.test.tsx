@@ -29,6 +29,100 @@ function stubSheet(scrollHeightPx: number, offsetHeightPx: number): HTMLElement 
 
 const MM_TO_PX = 96 / 25.4
 
+describe('联合打印面板（issue #7941：去重复 / 份·张分读 / 勾选行层次）', () => {
+  afterEach(cleanup)
+
+  /** 面板只依赖 `PrintBatchController` 的形状（不发起真打印）⇒ 直接给替身，逐条判形态 */
+  function fakeBatch(over: Partial<Record<string, unknown>> = {}) {
+    const candidates = ['quotation', 'sales', 'processing', 'labels'] as const
+    return {
+      stage: 'panel' as const,
+      candidates: [...candidates],
+      selected: ['sales', 'labels'] as ('quotation' | 'sales' | 'processing' | 'labels')[],
+      index: 0,
+      fired: false,
+      current: 'sales' as const,
+      batchId: 'b-1',
+      openPanel: vi.fn(),
+      closePanel: vi.fn(),
+      toggle: vi.fn(),
+      toggleAll: vi.fn(),
+      start: vi.fn(),
+      markFired: vi.fn(),
+      next: vi.fn(),
+      stop: vi.fn(),
+      ...over,
+    }
+  }
+
+  function renderPanel(batch: ReturnType<typeof fakeBatch>, target: 'quotation' | 'sales' | 'processing' | 'labels' = 'sales') {
+    return render(
+      <PrintDocPreview
+        target={target}
+        title="销售单"
+        media="continuous-241x140"
+        onPrint={() => {}}
+        onClose={() => {}}
+        docs={['quotation', 'sales', 'processing', 'labels']}
+        onSelect={() => {}}
+        batch={batch as never}
+        sheetsOf={(doc) => (doc === 'labels' ? 4 : 1)}
+      >
+        <div>单据</div>
+      </PrintDocPreview>
+    )
+  }
+
+  it('① 勾选行**不再重复纸型**（同一面板纸型只许出现在上方标签行）', () => {
+    renderPanel(fakeBatch())
+    const panel = screen.getByTestId('print-batch-panel')
+    // 行内没有任何 `210×297mm` 这类纸型读数（标签行仍在，但它不在 panel 里）
+    expect(panel.textContent).not.toMatch(/\d+×\d+mm/)
+  })
+
+  it('② 行右侧只留**张数**（水洗唛 4 张 / 单据 1 张），数字等宽', () => {
+    renderPanel(fakeBatch())
+    expect(screen.getByTestId('print-batch-doc-labels')).toHaveTextContent('4 张')
+    expect(screen.getByTestId('print-batch-doc-sales')).toHaveTextContent('1 张')
+  })
+
+  it('③ 面板给出「已选 N 份 · M 张纸」汇总读数，主按钮只说动作（不再把份数写成「张」）', () => {
+    renderPanel(fakeBatch())
+    expect(screen.getByTestId('print-batch-summary')).toHaveTextContent('已选 2 份 · 5 张纸')
+    const start = screen.getByTestId('print-batch-start')
+    expect(start).toHaveTextContent('开始联合打印')
+    expect(start.textContent).not.toMatch(/（\d+ 张）/)
+  })
+
+  it('④ 「全选」降为**文字按钮**（原生 button + aria-pressed，不是描边次级按钮）', () => {
+    const batch = fakeBatch()
+    renderPanel(batch)
+    const toggleAll = screen.getByTestId('print-batch-toggle-all')
+    expect(toggleAll.tagName).toBe('BUTTON')
+    expect(toggleAll).toHaveAttribute('aria-pressed', 'false') // 4 选 2 ⇒ 未全选
+    fireEvent.click(toggleAll)
+    expect(batch.toggleAll).toHaveBeenCalledTimes(1)
+  })
+
+  it('④b 已全选时 aria-pressed=true（读数与视觉同源）', () => {
+    renderPanel(fakeBatch({ selected: ['quotation', 'sales', 'processing', 'labels'] }))
+    expect(screen.getByTestId('print-batch-toggle-all')).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('⑤ 当前正在预览的那一份带「当前」徽标（勾选态与预览态是两件事）', () => {
+    renderPanel(fakeBatch(), 'sales')
+    expect(screen.getByTestId('print-batch-doc-sales')).toHaveTextContent('当前')
+    expect(screen.getByTestId('print-batch-doc-quotation')).not.toHaveTextContent('当前')
+  })
+
+  it('⑥ 说明文案收敛为一句（17 字以内、无分号）', () => {
+    renderPanel(fakeBatch())
+    const text = screen.getByTestId('print-batch-panel').textContent ?? ''
+    expect(text).toContain('按顺序逐张出纸')
+    expect(text).not.toContain('；')
+  })
+})
+
 describe('纸面自检层 PrintDocPreview（issue #5914）', () => {
   afterEach(cleanup)
 
