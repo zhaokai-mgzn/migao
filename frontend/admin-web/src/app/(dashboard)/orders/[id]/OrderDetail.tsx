@@ -632,9 +632,8 @@ export default function OrderDetailPage() {
         titleOf={(target) => printTargetTitle(target, workDocKind)}
         // 联合打印（issue #7902）：勾选 → 逐张引导；开印仍走 `usePrintDoc` 唯一入口
         batch={batch}
-        batchHintOf={(target) =>
-          target === 'labels' ? `${Math.max(1, washLabels.length)} 张` : undefined
-        }
+        // 张数只报**数**（issue #7941）：水洗唛 = 部位数，其它纸 = 1；面板自己汇总「N 份 · M 张纸」
+        sheetsOf={(target) => (target === 'labels' ? Math.max(1, washLabels.length) : 1)}
         onBatchPrintCurrent={() => {
           if (!batch.current) return
           printDoc(batch.current)
