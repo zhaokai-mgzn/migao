@@ -18,6 +18,7 @@ import {
   mustSurfaceDispatchError,
   previewSummaryRows,
   singleDispatchLines,
+  singleDispatchLinesOfOrder,
 } from '@/lib/pool-board'
 import { isUrgentFlag, urgentBadgeText } from '@/lib/order-urgency'
 import type { PoolBoard, PoolDispatchResult, PoolLine, PoolPreview, ProcessorOption } from '@/types'
@@ -168,12 +169,22 @@ export default function ProductionPoolPage() {
     await load()
   }
 
-  /** 加急插队派单（单订单 + `pooled:false`）—— 一个动作，不批 */
+  /**
+   * 加急 / 外发插队派单（**整单** + `pooled:false`）—— 一个动作，不批。
+   *
+   * 🔴 issue #7968：派单是**订单级动作**（服务端一单一加工单）⇒ 批次指派也必须**整单逐行**：
+   * 取该订单在逐单派表里的全部行，而不是只带被点的那一行 —— 只带一行 ⇒ 其余成品帘
+   * 在加工单快照里没有 `batchNo`、也不落批次台账（整单派出、只有一套领料）。
+   * 「点哪一行」只决定派哪张单，**不决定**哪几套领批次。
+   */
   const dispatchSingle = async (line: PoolLine) => {
+    const lines = singleDispatchLinesOfOrder(board, line.orderId)
+    // 看板可能已被刷新 / 该单已不在表里 ⇒ 退回被点的这一行（不让请求退化成空指派 = #6408 的缺陷形态）
+    const designated: Pick<PoolLine, 'orderId' | 'itemId'>[] = lines.length > 0 ? lines : [line]
     setSinglePending(line.orderId)
     setDispatchError('')
     try {
-      const res = await poolBoardApi.dispatch(buildPoolRequest([line], false, consignee))
+      const res = await poolBoardApi.dispatch(buildPoolRequest(designated, false, consignee))
       const rows = res.data?.data ?? []
       setResults(rows)
       const done = rows.find((r) => r.success)

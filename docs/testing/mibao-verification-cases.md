@@ -10293,10 +10293,11 @@
 数据: 🔴 判据 3·**成批批内拒绝（fail-closed）**：`/dispatch` 与 `/preview` 带 `pooled=true` 且批次里含加急单 ⇒ **整批显式拒绝**（消息点名**订单号** + 可行动处置：单独派 = 插队，或先取消加急），且**一行都不写**。**红证（实测单点变异）** = 摘掉 `assertNoUrgentInPooledBatch` 在成批路径上的调用 ⇒ 拒绝断言当场红。判别力：拒绝文案**不得**是逐单路径的既有文案（`不允许生成加工单`）—— 两个不同失败面必须能机器分辨。
 数据: 判据 3·**加急不侵入单派**：同一个加急单走 `pooled=false` ⇒ 抛的仍是**既有**失败文案（用「状态非 confirmed」的夹具），消息里**不含**「加急」⇒ 加急只改「是否入池/派单时机」，不改单订单路径的任何一格（判据 2 的「单订单路径错误文案」）。
 数据: **看板上的一个动作**：插队区每行一个「加急插队派单」按钮 ⇒ 调同一个 `/dispatch` 端点 + `pooled=false` + 单订单；成功后在**看板上可见地**出现该加工单号（§15.1：断言结果可见，不停留在「API 被调用」）。
+数据: 🔴 **整单派工 ⇒ 整单逐行指派（issue #7968）**：一张**多套成品帘**的加急 / 外发单，点任意一行「立即派单」⇒ `/dispatch` 的 `batches` 必须带**该单在逐单派表里的全部行**（`orderIds` 去重为 1 条、`itemId` 一条不少）。只带被点的那一行 = 整单派出而其余各套在加工单快照里没有 `batchNo`、也不落批次台账（用户 2026-10-28 现场）。**红证** = 把 `dispatchSingle` 退回 `buildPoolRequest([line], …)` ⇒ `production-pool-urgent.test.tsx` 的多套用例当场红（实际只回被点的那一套）；`singleDispatchLinesOfOrder` 的单项判据在 `pool-board.test.ts`（加急段 / 外发段各一例）。**边界**：整单某行无可用批次 ⇒ 整单派单显式失败（与成批派单同口径，fail-closed）。
 跳过: [backend-contract] 加急插队的判定与拒绝（无黄金策工具面）⇒ 由 Java 单测 + 前端 vitest 覆盖，不进入 agent-eval 冒烟
 ```
 真值: order-urgency.queue-jump, batch-ledger.pooled-batch-dispatch
-溯源: 2026-09-23 新增（issue #5177）：加急不进池 + 成批批内整批拒绝（含单点变异红证）+ 不侵入单派 + 看板插队动作。取号 PR-080。 ｜ tags: order-urgency, queue-jump, pool-board, backend-contract
+溯源: 2026-09-23 新增（issue #5177）：加急不进池 + 成批批内整批拒绝（含单点变异红证）+ 不侵入单派 + 看板插队动作。取号 PR-080。 2026-10-28 追加（issue #7968）：多套成品帘的逐单立即派改成**整单逐行带批次指派**（点哪一行不决定哪几套领批次；红证 = 退回只带点击行）。 ｜ tags: order-urgency, queue-jump, pool-board, backend-contract
 
 ### PR-081. 🔴 智能派单可用化：**排序是字段的真实消费者**（加急优先 / 到货日临期优先，`null` 排最后）+ 成批预览**逐值不说谎** + 一键成批派单 🔵
 ```

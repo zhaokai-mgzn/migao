@@ -22,6 +22,7 @@ import {
   formatWaitHours,
   previewSummaryRows,
   singleDispatchLines,
+  singleDispatchLinesOfOrder,
 } from '@/lib/pool-board'
 import type { PoolBoard, PoolLine, PoolPreview } from '@/types'
 
@@ -178,5 +179,38 @@ describe('singleDispatchLines：加急 / 外发 = 一张表（issue #7943）', (
     expect(
       singleDispatchLines(board({ outsourcedLines: [line('x1')] })).map((l) => l.orderId),
     ).toEqual(['x1'])
+  })
+})
+
+describe('singleDispatchLinesOfOrder：**整单派工 ⇒ 整单逐行指派**（issue #7968）', () => {
+  const line = (orderId: string, itemId: string): PoolLine =>
+    ({ orderId, itemId } as PoolLine)
+  const board = (over: Partial<PoolBoard>) => over as PoolBoard
+
+  it('多套加急单：同一 orderId 的**全部**成品帘行都返回（顺序 = 服务端拼接序）', () => {
+    const lines = singleDispatchLinesOfOrder(
+      board({
+        urgentLines: [line('m1', 'im1'), line('m2', 'iu2'), line('m1', 'im2')],
+      }),
+      'm1',
+    )
+    // 点哪一行不改变「哪几行领批次」：两张成品帘行一条都不能少
+    expect(lines.map((l) => l.itemId)).toEqual(['im1', 'im2'])
+  })
+
+  it('多套外发行同样整单返回（加急 / 外发走同一个派单动作，不能只修一段）', () => {
+    const lines = singleDispatchLinesOfOrder(
+      board({ outsourcedLines: [line('x1', 'ix1'), line('x1', 'ix2'), line('x2', 'ix3')] }),
+      'x1',
+    )
+    expect(lines.map((l) => l.itemId)).toEqual(['ix1', 'ix2'])
+  })
+
+  it('跨订单不串行 / 空看板不崩（订单不存在时由调用方兜底，不在这里造行）', () => {
+    const b = board({ urgentLines: [line('m1', 'im1')], outsourcedLines: [line('x1', 'ix1')] })
+    expect(singleDispatchLinesOfOrder(b, 'm1').map((l) => l.itemId)).toEqual(['im1'])
+    expect(singleDispatchLinesOfOrder(b, 'x1').map((l) => l.itemId)).toEqual(['ix1'])
+    expect(singleDispatchLinesOfOrder(b, 'nope')).toEqual([])
+    expect(singleDispatchLinesOfOrder(null, 'm1')).toEqual([])
   })
 })
