@@ -76,6 +76,16 @@ export const RESOLVE_FAILED_HINT = '扫码结果读取失败，请重试'
 /** 手输提示。 */
 export const MANUAL_HINT = '输码（短码 / 加工单号 / 订单号）'
 
+/**
+ * 没有码落地时先给的那句话（2026-10-27 用户裁定，issue #7920）：
+ * 「把工人菜单页面的扫码报工菜单移除掉，直接用其他 app 的扫一扫功能替代」
+ * ⇒ 本页是**扫码的落地面**（服务端 302 → `/b/?t=`），不再自己发起扫码；
+ * 页面要先把「怎么到这一页」说清楚，手输只是标签磨花时的兜底（不是首屏主语）。
+ *
+ * 小程序端**不渲染**它：端内有原生「扫一扫」（`canUseNativeScan()`），没有"其他 app"这回事。
+ */
+export const SCAN_ENTRY_HINT = '请用微信「扫一扫」或手机相机扫一扫纸上的二维码'
+
 /** 报工按钮文案（issue #6868 用户裁定「工人屏全部统一到『报』」）。 */
 export const REPORT_BUTTON_TEXT = '报工'
 
@@ -298,6 +308,11 @@ export default function WorkerReportPage() {
               {busy ? '读取中…' : '扫一扫'}
             </Button>
           ) : null}
+          {canUseNativeScan() ? null : (
+            <Text className='worker-report__hint' data-testid='worker-report-scan-entry-hint'>
+              {SCAN_ENTRY_HINT}
+            </Text>
+          )}
           <Text className='worker-report__hint'>{MANUAL_HINT}</Text>
           <Input
             className='worker-report__input'

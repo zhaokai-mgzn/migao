@@ -65,6 +65,13 @@ export default defineAppConfig({
     // 路由字面量是**单一真值**：`src/utils/inbound/gaps.ts` 的 `SHIPMENT_ORDERS_PAGE_ROUTE`
     // 必须逐字等于它（没登记 = 死链 ⇒ 入口台账 tests/page-entry-reachability.test.ts 的 L0/L2 判红）
     'pages/worker/shipment-orders/index',
+    // 工人**返工记录**列表（issue #7921）：有返工报工的加工单（加工单号 / 订单号 / 返工笔数 /
+    // 最近返工 / 原因 / 涉及工序），只读、无写入口。
+    // 数据源 = `GET /api/worker/production/rework-orders`（#7860 上线，与 H5 `/w/rework.html`
+    // 同一个端点）；工人档案页面集里没有 `rework` 键 ⇒ 服务端 403，页面给可行动提示。
+    // 路由字面量是**单一真值**：`src/utils/inbound/gaps.ts` 的 `REWORK_PAGE_ROUTE`
+    // 必须逐字等于它（没登记 = 死链 ⇒ 入口台账 tests/page-entry-reachability.test.ts 的 L0/L2 判红）
+    'pages/worker/rework/index',
     // ── 管理面 4 项（issue #5654）：管理员离店后也要能办的事 ──
     // 路由字面量是**单一真值**：`src/utils/adminPermission.ts` 的 `ADMIN_SURFACES[].route`
     // 必须逐字等于这里的字符串（守卫 tests/admin-surfaces-platform-guard.test.ts 核验：

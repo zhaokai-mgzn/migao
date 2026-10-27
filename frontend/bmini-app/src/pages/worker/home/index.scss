@@ -152,11 +152,34 @@
     min-width: 0;
   }
 
+  // 行卡标题行：标题 + 待处理数（issue #7921）—— 数字与标题同一行，不另占高度（§31 P1 常驻面克制）
+  &__entry-head {
+    display: flex;
+    align-items: center;
+  }
+
   &__entry-text {
     display: block;
     font-size: 34px;
     font-weight: 600;
     color: $text-primary;
+  }
+
+  // 待处理数（红色胶囊）：只在 >0 时渲染（读不到 / 0 都不显示，绝不冒充「没有活」）
+  &__badge {
+    display: inline-block;
+    flex: 0 0 auto;
+    min-width: 40px;
+    margin-left: 12px;
+    padding: 0 12px;
+    height: 40px;
+    line-height: 40px;
+    text-align: center;
+    font-size: 24px;
+    font-weight: 700;
+    color: $bg-primary;
+    background: $error-color;
+    border-radius: $radius-full;
   }
 
   &__entry-sub {

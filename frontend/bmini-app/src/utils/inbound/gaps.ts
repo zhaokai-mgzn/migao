@@ -192,6 +192,22 @@ export const SHIPMENT_ORDERS_PAGE_ROUTE = '/pages/worker/shipment-orders/index'
 /** 待发货单页文件（入口台账 `from` 要核的落点） */
 export const SHIPMENT_ORDERS_PAGE_FILE = 'src/pages/worker/shipment-orders/index.tsx'
 
+/**
+ * **返工记录**列表页路由（issue #7921）—— 工人工作台的一条入口（只读列表页）。
+ *
+ * 为什么要有它：后端 #7860 早已给出 `GET /api/worker/production/rework-orders`
+ * （工人档案勾了「返工记录」才 200，否则 403），H5 `/w/rework.html` 也在消费它；
+ * 而 `/b/` 工人工作台**没有入口、也没有页面** ⇒ 商家在工人档案里勾了「返工记录」，
+ * 工人端**看不到任何东西**（2026-10-27 用户真机反馈，issue #7921）。
+ *
+ * 🔴 路由字面量是**单一真值**：`src/app.config.ts` 的 pages 必须逐字含它
+ * （没登记 = 死链；守卫 = `tests/page-entry-reachability.test.ts` 的 L0/L2）。
+ */
+export const REWORK_PAGE_ROUTE = '/pages/worker/rework/index'
+
+/** 返工记录页文件（入口台账 `from` 要核的落点） */
+export const REWORK_PAGE_FILE = 'src/pages/worker/rework/index.tsx'
+
 /** 待发货单页未登录时的引导（与其它工人面同一口径，但说清本页是「看待发货单」） */
 export const SHIPMENT_ORDERS_WORKER_LOGIN_REQUIRED =
   '请先用工号 + PIN 登录工人身份，再查看待发货单（商家账号不能走这条路径）。'

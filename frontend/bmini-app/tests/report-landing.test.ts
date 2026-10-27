@@ -339,12 +339,12 @@ describe('B4 落点真值 = `/b/report/`（issue #7906：手机端只留 /b 命�
     }
   })
 
-  it('B4 入口台账：报工页有**两条**发射方（端内点击 + 扫码落地），且 `via` 都不含 `/w/`', () => {
+  it('B4 入口台账：报工页的发射方 = **扫码落地**一条（端内点击已随菜单移除），且 `via` 不含 `/w/`', () => {
+    // 🔴 2026-10-27 用户裁定（issue #7920）：「把工人菜单页面的扫码报工菜单移除掉，直接用其他 app
+    // 的扫一扫功能替代」⇒ 工人首页那条登记**随之删除**（台账只许缩短）。报工页仍可达：
+    // 扫纸上的码 ⇒ 服务端 302 到 `/b/?t=` ⇒ 启动器 redirectTo。
     const entries = PAGE_ENTRY_LEDGER.filter((entry) => entry.route === REPORT_PAGE_ROUTE)
-    expect(entries.map((entry) => entry.from).sort()).toEqual([
-      'src/app.tsx',
-      'src/pages/worker/home/index.tsx',
-    ])
+    expect(entries.map((entry) => entry.from).sort()).toEqual(['src/app.tsx'])
     for (const entry of entries) {
       expect(entry.via).not.toContain('/w/')
     }

@@ -64,17 +64,28 @@ jest.mock('../src/services/workerService', () => ({
   fetchWorkerPages: jest.fn(),
 }))
 
+// issue #7921：入口上的「待处理数」= 两个既有只读列表端点的行数（端侧不新增计数端点）
+jest.mock('../src/services/workerShipmentOrdersService', () => ({
+  listReadyShipmentOrders: jest.fn(),
+}))
+jest.mock('../src/services/workerReworkService', () => ({
+  listWorkerReworkOrders: jest.fn(),
+}))
+
 import Taro from '@tarojs/taro'
 import WorkerHomePage from '../src/pages/worker/home/index'
 import { fetchCurrentWorker, fetchWorkerPages, workerLogout } from '../src/services/workerService'
 import { ADMIN_SURFACES } from '../src/utils/adminPermission'
 import {
   INBOUND_PAGE_ROUTE,
-  REPORT_PAGE_ROUTE,
   REPRINT_PAGE_ROUTE,
+  REWORK_PAGE_ROUTE,
+  SHIPMENT_ORDERS_PAGE_ROUTE,
   SHIPMENT_PAGE_ROUTE,
   WORKER_TAB_LOGIN_ROUTE,
 } from '../src/utils/inbound/gaps'
+import { listReadyShipmentOrders } from '../src/services/workerShipmentOrdersService'
+import { listWorkerReworkOrders } from '../src/services/workerReworkService'
 import {
   clearWorkerSession,
   getWorkerSessionId,
@@ -91,6 +102,8 @@ const WORKER = {
 const mockFetch = fetchCurrentWorker as jest.Mock
 const mockLogout = workerLogout as jest.Mock
 const mockPages = fetchWorkerPages as jest.Mock
+const mockShipmentOrders = listReadyShipmentOrders as jest.Mock
+const mockReworkOrders = listWorkerReworkOrders as jest.Mock
 
 /** 有工人身份 + 服务端认出当前工人 ⇒ 落在工人首页的**正跑**形态 */
 async function renderLoggedIn() {
@@ -107,6 +120,8 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
     mockFetch.mockResolvedValue({ success: true, data: WORKER })
     mockLogout.mockResolvedValue(undefined)
     mockPages.mockResolvedValue({ pages: null, unread: false, unauthorized: false })
+    mockShipmentOrders.mockResolvedValue({ success: true, data: { items: [] }, message: '' })
+    mockReworkOrders.mockResolvedValue({ success: true, data: { orders: [] }, message: '' })
   })
 
   it('🔴 身份卡 = 服务端当前工人（工号 + 姓名），不是前端 state', async () => {
@@ -118,13 +133,8 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
     // 红证：身份卡改读 `getCachedWorker()`（不调服务端）⇒ 本断言收到 0 次调用（红）
   })
 
-  it('三件工人功能入口各自跳对路由（都走 gaps.ts 的路由常量，不写字面量）', async () => {
+  it('工人功能入口各自跳对路由（都走 gaps.ts 的路由常量，不写字面量）', async () => {
     await renderLoggedIn()
-
-    // 🔴 2026-10-26（issue #7812 P2a）：报工页回到端内（收口方向见 #7806）⇒ 第一张卡就是它。
-    // 反转历史断言是**有意的**：2026-10-14 按 #6868「收口到 H5」删过这一页，现在载体改回 bmini。
-    fireEvent.click(screen.getByText('扫码报工'))
-    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: REPORT_PAGE_ROUTE })
 
     fireEvent.click(screen.getByText('拍照入库'))
     expect(Taro.navigateTo).toHaveBeenCalledWith({ url: INBOUND_PAGE_ROUTE })
@@ -135,6 +145,13 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
     // 第 4 条（issue #6761）：#5648 的后端早已就绪，缺的就是这个入口
     fireEvent.click(screen.getByText('拍照发货'))
     expect(Taro.navigateTo).toHaveBeenCalledWith({ url: SHIPMENT_PAGE_ROUTE })
+
+    // 待发货单（issue #7806 P1a）与返工记录（issue #7921）都是**只读名单页**
+    fireEvent.click(screen.getByText('待发货单'))
+    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: SHIPMENT_ORDERS_PAGE_ROUTE })
+
+    fireEvent.click(screen.getByText('返工记录'))
+    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: REWORK_PAGE_ROUTE })
     // 路由常量本身与 app.config 的登记逐字一致（守卫 page-entry-reachability / G0 另核）
     expect(INBOUND_PAGE_ROUTE).toBe('/pages/worker/inbound/index')
     expect(REPRINT_PAGE_ROUTE).toBe('/pages/worker/reprint/index')
@@ -180,7 +197,7 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
     render(<WorkerHomePage />)
 
     expect(await screen.findByText(/请先用工号 \+ PIN 登录工人身份/)).toBeTruthy()
-    expect(screen.queryByText('扫码报工')).toBeNull()
+    expect(screen.queryByText('返工记录')).toBeNull()
     expect(screen.queryByText('拍照发货')).toBeNull()
     expect(screen.queryByText('退出')).toBeNull()
 
@@ -197,5 +214,57 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
     expect(await screen.findByText(/请先用工号 \+ PIN 登录工人身份/)).toBeTruthy()
     expect(screen.queryByText('张三')).toBeNull()
     expect(getWorkerSessionId()).toBeNull()
+  })
+
+  // ── issue #7920（2026-10-27 用户裁定）：工作台不再有「扫码报工」入口 ──
+  it('🔴 「扫码报工」入口已移除：扫码由微信 / 手机相机承担，本页不再发射报工页入口', async () => {
+    await renderLoggedIn()
+
+    expect(screen.queryByText('扫码报工')).toBeNull()
+    // 反向钉住：本页的跳转里**不许**再出现报工页（报工页只由外部扫码 302 → 启动器 redirectTo 到达）
+    const urls = (Taro.navigateTo as jest.Mock).mock.calls.map((call) => String(call[0]?.url ?? ''))
+    expect(urls.filter((url) => url.startsWith('/pages/worker/report/index'))).toEqual([])
+  })
+
+  // ── issue #7921：返工记录入口（工人档案的 `rework` 键） ──
+  it('🔴 返工记录入口按工人档案的 `rework` 键显隐（勾了就出现）', async () => {
+    mockPages.mockResolvedValue({ pages: ['report', 'rework'], unread: false, unauthorized: false })
+    await renderLoggedIn()
+
+    expect(screen.getByText('返工记录')).toBeTruthy()
+    // 同一份收窄集里没有 to_ship ⇒ 待发货单如实不出现（显隐按同一套口径）
+    expect(screen.queryByText('待发货单')).toBeNull()
+  })
+
+  it('🔴 档案没勾 `rework` ⇒ 返工记录入口不出现（勾了才出现，不是恒显示）', async () => {
+    mockPages.mockResolvedValue({ pages: ['report', 'to_ship'], unread: false, unauthorized: false })
+    await renderLoggedIn()
+
+    expect(screen.queryByText('返工记录')).toBeNull()
+    expect(screen.getByText('待发货单')).toBeTruthy()
+  })
+
+  // ── issue #7921：两条只读名单入口上的「待处理数」（红色数字） ──
+  it('🔴 待处理数 = 服务端列表行数（>0 才显示红色数字）', async () => {
+    mockShipmentOrders.mockResolvedValue({ success: true, data: { items: [{}, {}] }, message: '' })
+    mockReworkOrders.mockResolvedValue({
+      success: true,
+      data: { orders: [{}, {}, {}] },
+      message: '',
+    })
+    await renderLoggedIn()
+
+    expect((await screen.findByTestId('worker-home-badge-to-ship')).textContent).toBe('2')
+    expect((await screen.findByTestId('worker-home-badge-rework')).textContent).toBe('3')
+  })
+
+  it('🔴 读不到 / 没有待处理 ⇒ 不显示数字（绝不冒充 0）', async () => {
+    mockShipmentOrders.mockResolvedValue({ success: false, message: '网络抖了一下' })
+    mockReworkOrders.mockResolvedValue({ success: false, message: '网络抖了一下' })
+    await renderLoggedIn()
+    await act(async () => {})
+
+    expect(screen.queryByTestId('worker-home-badge-to-ship')).toBeNull()
+    expect(screen.queryByTestId('worker-home-badge-rework')).toBeNull()
   })
 })
