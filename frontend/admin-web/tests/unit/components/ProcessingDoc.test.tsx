@@ -8,7 +8,8 @@ import { join } from 'node:path'
 
 // ProcessingDoc 经 `useCompanyName` 触到 `@/lib/api`（企业名回落读面）—— 这里打一个**部分**替身，
 // 让 jsdom 落到「取不到 ⇒ 空串」分支，避免真发 XHR（噪音）。
-// （收款码与本单据无关：加工单自 issue #7219 起不印二维码、销售单自 issue #7589 起不印收款码。）
+// （收款码与本单据无关：加工单纸面的码是**服务端下发的** `scan_url`（qrcode.react 纯 SVG，不取图）；
+//  销售单自 issue #7589 起不印收款码。）
 const mockGetPaymentQrcodes = vi.fn()
 vi.mock('@/lib/api', () => ({
   settingsApi: { getPaymentQrcodes: (...args: unknown[]) => mockGetPaymentQrcodes(...args) },
@@ -46,7 +47,14 @@ import {
  *    且长单分页时**表头重复**（`thead { display: table-header-group }`）；
  * ④ 🔴 **缺值不许静默留空**：一律显式占位 `—`；本系统**没有采集**的字段（制单人 / 批号）
  *    另标「未采集」——「客户没填」与「我们没有这个列」必须可区分；
- * ⑤ 🔴 **纸面不印 QR**（issue #7219：扫码入口不属于加工单）—— QR / 无码占位 / 可读短码行三种形态**都不出现**；
+ * ⑤ 🔴 **左上角扫码报工码**（issue #7891：由销售单迁入，用户 2026-10-27 逐字「把销售单左上角的
+ *    扫码报工二维码迁移到加工单打印上」）—— 有码 ⇒ 出图且码值**逐字** = 服务端 `scan_url`、
+ *    竖排「扫码报工」；无码 ⇒ 码 / 占位框 / 短码行三种形态**都不出现**；短码一律不上纸（issue #7608）；
+ * ⑤b 🔴 **纸面标题按作业单两型**（issue #7891）：成品帘 ⇒「加工单」、面料单 ⇒「面料单」
+ *    （用户逐字「面料单就叫面料单，不要叫裁剪单」）；缺键 ⇒ 加工单（存量单口径）；
+ * ②b 🔴 **工艺行照水洗唛的展示方式**（issue #7891 追加需求）：一行一条 `标签：值` ——
+ *    `加工方式：…`（水洗唛 `washLabelCraftMode` 的**同一句**）+ `特殊选项：…`（独立一行，缺 ⇒ 不渲染）
+ *    + 其余工艺规格行（`craftSpecRows()` 既有顺序）；取值源优先加工单快照行、缺快照回落 `processingInfo`；
  * ⑥ 打印隔离沿用 #4983 / #4965 范式（共享 `print-doc` + 限定本次打印目标的 visibility 防御）；
  * ⑦ **列宽按内容预算**（issue #6600）：批号是**固定 17 字符**的 `PC-yyyyMMdd-####`，原先只给 10%
  *    ⇒ `table-layout: fixed` 下折成 3 行、把数据行撑高（真浏览器实测 63px）。现在 ≥16%（两行放得下）；
@@ -149,6 +157,23 @@ const headerWidthOf = (label: string): number => {
 }
 /** 9 列表头声明的宽度百分比（按表头顺序） */
 const headerWidths = (): number[] => PROCESSING_DOC_COLUMNS.map(headerWidthOf)
+
+/** 纸面标题那一格（`tracking-[0.5em]` = 全单据唯一一处标题排版） */
+const docTitle = (): string =>
+  (
+    Array.from(doc()?.querySelectorAll('div') ?? []).find((el) => el.className.includes('tracking-[0.5em]'))
+      ?.textContent ?? ''
+  ).trim()
+
+/**
+ * 工艺行里的**逐行**内容（issue #7891 追加需求：一行一条 `标签：值`）。
+ * 判据面 = 「工艺」那一格里的每一行 —— 不再对一整串「；」拼接做包含式断言
+ * （那种断言对「长句」和「分行」两种形态都绿 ⇒ 零判别力）。
+ */
+const craftLines = (): string[] =>
+  Array.from(
+    document.querySelector('[data-testid="processing-doc-craft"]')?.querySelectorAll('div') ?? []
+  ).map((el) => (el.textContent || '').trim())
 
 describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
   // 类级固化（issue #6595）：本单据的正文表逐行自洽（Σ(colSpan) = 表头列数）——
@@ -348,25 +373,74 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
     expect(doc()?.textContent).not.toContain('加工费组合')
   })
 
-  it('② issue #6869：工艺说明行承载原「部位信息」，且「部位」并入其中（不再单独成列）', () => {
+  it('🔴 ② 工艺行照水洗唛的展示方式：一行一条 `标签：值`（issue #7891 追加需求）', () => {
     render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
-    const text = doc()?.textContent || ''
-    expect(text).toContain('部位：布帘')
-    // 行标签「工艺」在**首格**（不是「工艺：…」前缀 —— 明细里本来就有「工艺：韩褶」，
-    // 前缀会让纸面出现「工艺：…工艺：…」的重复，真机取证实测）
+    const lines = craftLines()
+    // ① 「加工方式」= 水洗唛那一句（工艺 · 加工费组合项 · 打开方式 · 定型）——**一行**
+    expect(lines[0]).toBe('加工方式：韩褶')
+    // ② 「工艺 / 打开方式 / 是否定型」不再各自成行（已由「加工方式」表达，同一真值印两处只是噪音）
+    expect(lines.filter((line) => /^(工艺|打开方式|是否定型)：/.test(line))).toEqual([])
+    // ③ 其余工艺规格行各自成行（顺序沿用 `craftSpecRows()` 的既有顺序）
+    expect(lines).toEqual(['加工方式：韩褶', '部位：布帘', '加工类型：定高买宽'])
+    // ④ 「门幅」有自己的列 ⇒ 不在这一格里重复印一遍（同 `orderItemSku.specRows` 的既有排除）
+    expect(lines.some((line) => line.startsWith('门幅：'))).toBe(false)
+    // 行标签「工艺」在**首格**（不是「工艺：…」前缀 —— 那会与明细里的值串重复，真机取证实测）
     const craftRow = Array.from(doc()!.querySelectorAll('.processing-doc-table tbody tr')).find(
       (tr) => tr.querySelector('td')?.textContent?.trim() === '工艺'
     )
     expect(craftRow).toBeTruthy()
-    expect(text).not.toContain('工艺：部位：')
-    // 「门幅」有自己的列 ⇒ 不许在工艺行里重复印一遍（同一真值印两处只是噪音）
-    expect(text).not.toContain('门幅：2.8米')
     // 表头里不再有「部位」「部位信息」列
     const headers = Array.from(doc()!.querySelectorAll('.processing-doc-table thead th')).map(
       (th) => th.textContent?.trim()
     )
     expect(headers).not.toContain('部位')
     expect(headers).not.toContain('部位信息')
+  })
+
+  it('🔴 ② 特殊选项单独一行；没有 ⇒ 该行不渲染（issue #7891 追加需求）', () => {
+    render(
+      <ProcessingDoc
+        order={buildOrder({
+          items: [
+            buildItem({
+              processingInfo: { colorName: '米白', craft: '韩褶', specialOptions: ['防翘扣', '花边'] },
+            }),
+          ],
+        })}
+        processingOrder={buildProcessingOrder()}
+      />
+    )
+    const lines = craftLines()
+    // 值 = `optionList` 的既有格式化（顿号连接）—— 纸面不另写一份拼接
+    expect(lines).toContain('特殊选项：防翘扣、花边')
+    // **紧跟「加工方式」之后**独立成行（与「特殊选项 / 备注不合并」的既有裁定同口径）
+    expect(lines[0]).toBe('加工方式：韩褶')
+    expect(lines[1]).toBe('特殊选项：防翘扣、花边')
+
+    cleanup()
+    // 没有特殊选项 ⇒ **该行不渲染**（不印空壳行、不写「无」）
+    render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
+    expect(craftLines().some((line) => line.startsWith('特殊选项：'))).toBe(false)
+  })
+
+  it('🔴 ② 取值源优先加工单**快照行**，缺快照回落订单行 `processingInfo`（不编造）', () => {
+    // 快照行带工艺键 ⇒ 以**快照**为准（订单行那一份同名字段不许盖掉它）
+    render(
+      <ProcessingDoc
+        order={buildOrder({
+          items: [buildItem({ processingInfo: { colorName: '米白', craft: '订单侧工艺' } })],
+        })}
+        processingOrder={buildProcessingOrder({
+          items: [{ itemId: 'item-1', craft: '快照侧工艺' } as unknown as ProcessingOrderItem],
+        })}
+      />
+    )
+    expect(craftLines()[0]).toBe('加工方式：快照侧工艺')
+
+    cleanup()
+    // 没有快照行 ⇒ 回落订单行 `processingInfo`（两者键名同源 ⇒ 不是「纸面缺值」）
+    render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
+    expect(craftLines()[0]).toBe('加工方式：韩褶')
   })
 
   it('② issue #6869：备注列 = 商家手写的行级备注（`processingInfo.remark`）', () => {
@@ -503,17 +577,85 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
     expect(cellText('processing-doc-batch')).toBe(MISSING)
   })
 
-  it('🔴 ⑤ 加工单**不再印 QR**（issue #7219：扫码入口不属于加工单）', () => {
+  it('🔴 ⑤ 左上角扫码报工码（issue #7891：由销售单迁入）—— 有码 ⇒ 出图、码值逐字 = `scan_url`、竖排标签', () => {
     render(
       <ProcessingDoc
         order={buildOrder()}
         processingOrder={buildProcessingOrder({ short_code: SHORT_CODE, scan_url: SCAN_URL })}
       />
     )
-    // QR / 无码占位 / 短码行三种形态**都不出现**（移除是整块移除，不是隐藏）
+    const qr = document.querySelector('[data-testid="processing-doc-qr"]')
+    expect(qr).not.toBeNull()
+    // 码值**逐字** = 服务端下发的 `scan_url`（qrcode.react 把 value 写进 `<svg><title>`；
+    // 前端不拼域名 / 路径段 ⇒ 这里断言的是「印出来的就是服务端给的那一串」）
+    expect(document.querySelector('[data-testid="processing-doc-qr-svg"] title')?.textContent).toBe(SCAN_URL)
+    // 竖排「扫码报工」（issue #7608）：横向只占一行字宽 —— 竖排是**机制**，不是装饰
+    const label = document.querySelector('[data-testid="processing-doc-qr-label"]') as HTMLElement | null
+    expect(label?.textContent).toBe('扫码报工')
+    expect(label?.style.writingMode).toBe('vertical-rl')
+    // 位置 = **表头左上角**、与抬头并排：码块与标题栏是同一行的两个子块，码在前
+    const headerBlock = qr?.parentElement
+    expect(headerBlock?.children).toHaveLength(2)
+    expect(headerBlock?.firstElementChild).toBe(qr)
+    expect(headerBlock?.lastElementChild?.textContent).toContain('加工单')
+    // 🔴 短码不上纸（issue #7608，用户 2026-10-24 逐字「不要在产品上体现短码了」）：
+    // 判据面 = 纸面**可读文字**（`paperTextOf` 已剥掉 `<style>` / `<svg>` —— svg 里那串是码值本身）
+    expect(paperTextOf(doc())).toContain('扫码报工')
+    expect(paperTextOf(doc())).not.toContain(SHORT_CODE)
+    // 起算点自证：这张纸真的画出来了（上面几条不是空跑）
+    expect(doc()?.textContent).toContain('张三')
+  })
+
+  it('🔴 ⑤ 无 `scan_url` ⇒ 整块不出现（不画占位框、不印短码、不回落加工单号）', () => {
+    render(
+      <ProcessingDoc
+        order={buildOrder()}
+        processingOrder={buildProcessingOrder({ short_code: SHORT_CODE, scan_url: null })}
+      />
+    )
+    // 码 / 占位框 / 短码行三种形态**都不出现**（缺码不画假码：占位框会让人以为「扫得出来」）
     expect(document.querySelector('[data-testid="processing-doc-qr"]')).toBeNull()
     expect(document.querySelector('[data-testid="processing-doc-qr-placeholder"]')).toBeNull()
     expect(document.querySelector('[data-testid="processing-doc-short-code"]')).toBeNull()
+    expect(doc()?.textContent).not.toContain('扫码报工')
+    expect(paperTextOf(doc())).not.toContain(SHORT_CODE)
+    // 起算点自证：纸面照旧渲染（不是「纸面整个没了」的空跑）
+    expect(doc()?.textContent).toContain('PO260926-0007')
+
+    // 没有作业单读面（存量 / 读面没取到）⇒ 同样不出现
+    cleanup()
+    render(<ProcessingDoc order={buildOrder()} processingOrder={null} />)
+    expect(document.querySelector('[data-testid="processing-doc-qr"]')).toBeNull()
+  })
+
+  it('🔴 ⑤b 纸面标题按作业单两型：`order_kind=processing`（成品帘）⇒「加工单」', () => {
+    render(
+      <ProcessingDoc
+        order={buildOrder()}
+        processingOrder={buildProcessingOrder({ order_kind: 'processing' })}
+      />
+    )
+    expect(docTitle()).toBe('加工单')
+    expect(doc()?.textContent).not.toContain('面料单')
+  })
+
+  it('🔴 ⑤b 纸面标题：`order_kind=outbound`（面料单）⇒「面料单」（用户逐字「不要叫裁剪单」）', () => {
+    render(
+      <ProcessingDoc
+        order={buildOrder()}
+        processingOrder={buildProcessingOrder({ order_kind: 'outbound' })}
+      />
+    )
+    // 用户 2026-10-27 逐字「面料单就叫面料单，不要叫裁剪单」⇒ 纸名逐字判
+    expect(docTitle()).toBe('面料单')
+    expect(doc()?.textContent).not.toContain('裁剪单')
+    // 也不能印成「加工单」（那是成品帘的纸名；同一份纸按两型给名，不是两个名字都能用）
+    expect(docTitle()).not.toBe('加工单')
+  })
+
+  it('🔴 ⑤b 纸面标题：`order_kind` 缺键（存量单）⇒「加工单」（与 `orderKindOf` 同一把尺）', () => {
+    render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
+    expect(docTitle()).toBe('加工单')
   })
 
   it('加工单**不印金额**（实证 #3 无金额列）⇒ 天然没有第二份金额真值', () => {

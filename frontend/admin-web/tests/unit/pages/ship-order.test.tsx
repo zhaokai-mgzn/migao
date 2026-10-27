@@ -613,7 +613,15 @@ describe('ShipOrder', () => {
           hasProcessing: true,
           // #7079：守卫读 `work_order_kind` ⇒ 含加工项单必须显式给 'processing'（不给就绕过守卫 = 假绿）
           work_order_kind: 'processing',
-          items: [{ ...mockOrder.items[0], processingFee: 37.5 }],
+          items: [
+            {
+              ...mockOrder.items[0],
+              processingFee: 37.5,
+              // issue #7891：加工项写在该商品行的 `processingInfo` 上 —— 纸面把它挂在**这条商品行**
+              // 下面（订单级 `processingItems` 不再上纸）
+              processingInfo: { processingItems: [{ id: 'pr-1', name: '打孔', quantity: 12.5 }] },
+            },
+          ],
           // #4882：后端 `ProcessingItemBrief` 只剩 id / name / quantity
           processingItems: [{ id: 'pr-1', name: '打孔', quantity: 12.5 }],
         },
@@ -631,13 +639,17 @@ describe('ShipOrder', () => {
     // 撞进「表单已挂、打印区未挂」的窗口（实测：把打印区挂载推迟 200ms 模拟该窗口变宽 ⇒
     // 旧写法必红 `Unable to find an element with the text: 加工费合计（元）：37.50`
     // ——与 CI run 35560642965 逐字相同；本写法必绿）。
-    // 「打孔 12.5」由 `processingItems` 派生、只存在于打印区（屏幕侧 #4882 后已无同名文本）。
+    // 「打孔 12.5」由**商品行的** `processingInfo.processingItems` 派生、只存在于打印区
+    // （屏幕侧 #4882 后已无同名文本）。
     // issue #7275：加工项压成一行 ⇒ 按**一行锚点**定位（「打孔」不再是独立文本节点；
     // 红证：把加工项退回逐项表格 ⇒ 本行找不到 ⇒ 红）。
-    // issue #7605（用户 2026-10-24 裁定）：写法改为「名称 数量」（单位在区头一次）——
-    // 数量不等 ⇒ 逐项写；**不再**是 `名称×数量`（`×` 会诱导客户拿它去乘出加工费）。
-    const procLine = await screen.findByTestId('shipment-processing-items')
-    expect(procLine.textContent?.trim()).toBe('打孔 12.5')
+    // issue #7891（用户 2026-10-27 逐字「发货单的加工项需要和商品绑定…商品下面是加工项」）：
+    // 一行加工项现在挂在**商品行下面**（子行 `shipment-item-processing-<idx>`），底部独立区块退场
+    // （红证：把底部「加工项（数量：米）」区块加回来 / 子行不随商品行走 ⇒ 本行找不到 ⇒ 红）。
+    // issue #7605（用户 2026-10-24 裁定）：写法是「名称 数量」——数量不等 ⇒ 逐项写；
+    // **不再**是 `名称×数量`（`×` 会诱导客户拿它去乘出加工费）。
+    const procRow = await screen.findByTestId('shipment-item-processing-0')
+    expect(procRow.textContent?.trim()).toBe('加工项：打孔 12.5')
 
     // 红证：`加工合计` 是那张退场表**独有**的表头
     // （保留下来的纸质发货单只有「加工费合计（元）：X」，没有「加工合计」）
@@ -647,7 +659,7 @@ describe('ShipOrder', () => {
     // 退场的是「表」，不是「含加工项」语义：纸质单据照旧印名称 / 米数 / 加工费合计（行级落库值）
     expect(screen.getByText('加工费合计（元）：37.50')).toBeInTheDocument()
     // 米数仍在（压成一行不得把送货核对的米数丢掉）—— 它现在是同一行的一段，不再自成单元格
-    expect(procLine.textContent).toContain('12.5')
+    expect(procRow.textContent).toContain('12.5')
   })
   /**
    * issue #6664 第 6 条：**币符重复** —— `formatAmount` 已带 `¥`，调用处再拼「元」。

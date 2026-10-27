@@ -1,9 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import dayjs from 'dayjs'
-import { QRCodeSVG } from 'qrcode.react'
 import {
   isContinuousFeed,
   printBodyFontPt,
@@ -14,6 +13,9 @@ import {
 } from '@/lib/print-media'
 import { useCompanyName } from '@/lib/use-company-name'
 import { orderItemCurtainType, orderItemSku } from '@/lib/order-item-sku'
+// 加工项文案的**单一来源**（与发货单 / 加工单 / 报价单同一份构建器，issue #7891）——
+// 本组件只渲染它的输出，不另拼一份会漂移的文案。
+import { processingPaperLine } from '@/lib/processing-item-text'
 import {
   resolveSalesQuantity,
   SALES_QTY_NOT_SHIPPED,
@@ -23,7 +25,7 @@ import { cn } from '@/lib/utils'
 // 页脚「温馨提示」与报价单**同一句**（#4965）—— 从既有那份 import，不复制一份会漂移的副本
 import { QUOTATION_FOOTER_NOTICE } from './QuotationDoc'
 import type { PrintTarget } from './index'
-import type { Order, OrderItem, ProcessingOrder } from '@/types'
+import type { Order, OrderItem } from '@/types'
 
 /**
  * 销售单（可打印纸质文档 · **三联纸 241mm × 140mm**，issue #5651）——
@@ -54,9 +56,11 @@ import type { Order, OrderItem, ProcessingOrder } from '@/types'
  *
  * ## 制式（四段，逐条对实证 #4）
  *
- * ① 表头：**左上角作业单扫码报工码** + 销售单 / 单号 / 日期 / 客户 / 电话 / 地址 / 订货电话；
+ * ① 表头：企业名称 + 销售单 / 单号 · 日期（**占满整行**）+ 客户 / 电话 / 地址 / 订货电话 ——
+ *    左上角那块作业单扫码报工码自 issue #7891 起**迁到加工单**纸面（见下「码已迁到加工单纸面」）；
  * ② 明细：{@link SALES_DOC_COLUMNS}（序号 | 货号 | 颜色 | 门幅 | 帘种 | 数量 | 单位 | 单价 | 金额）——
  *    **商品行粒度**（与报价单的「按套」粒度**不是同一个数据投影**，不许互套）；
+ *    每个商品行之后可跟一条**加工项子行**（issue #7891：加工项**绑商品**，见下同名一节）；
  *    货号 / 颜色 / 门幅 取 `lib/order-item-sku.ts` 的 `orderItemSku()`（issue #6869）；
  *    帘种（布帘 / 纱帘）取同一模块的 `orderItemCurtainType()`（issue #7625）；
  *    🔴 「品名」列自 issue #7530 起**退场**（用户 2026-10-23 逐字「销售单不要品名」）——
@@ -109,29 +113,41 @@ import type { Order, OrderItem, ProcessingOrder } from '@/types'
  * 🔴 **`shipments` 是必填 prop**（`null` = 读面没取到，是**调用方要做的决定**）：
  * 让"忘了接读面"在**编译期**就红 —— 那正是本单要修的半成品形态（读面只落了一面）。
  *
- * ## 左上角的作业单扫码报工码（issue #7530）
+ * ## 码已迁到加工单纸面（issue #7891，用户 2026-10-27 逐字「把销售单左上角的扫码报工二维码
+ * 迁移到加工单打印上，这样设计才是合理的」）
  *
- * 用户 2026-10-23 逐字「把作业出库单手机端链接对应的二维码信息放置在左上角，工人可以通过扫码
- * 进入报工页面」。实现口径（三条，勿随手改）：
- * 1. **码值 = 服务端下发的 `processingOrder.scan_url`**（= `{base}/o/{短码}` ⇒ 服务端 302 到
- *    工人报工页（`/b/`，issue #7879 起；改前 `/w/`，issue #6867）—— 前端**不拼**：域名 / 路径段是第二份真值，换域名时
- *    纸面与读面会静默不一致（红证：`SalesDoc.test.tsx` 的「⑬ 红证」）；
- * 2. **缺码不画假码**：没有 `scan_url`（存量单未实例化短码 / 没有作业单 / 读面没取到）⇒
- *    **整块不出现**，不画占位框、**不回落作业单号**（回落 = 扫出来只有一串文本、打不开任何页面，
- *    正是 #6867 治过的病）；
- * 3. **短码不上销售单纸面**（issue #7608，用户 2026-10-24 逐字「不要在产品上体现短码了，
- *    工人端还有输入短码的地方」）：本单是**随货给客户**的那张，印内部短码属 §31 P3
- *    「不摆内部标识」⇒ 码旁只留一行**竖排**「扫码报工」（`writing-mode: vertical-rl`，
- *    4 字高 ≈34px < 码高 56px，不额外占高度；横向只占一行字宽）。
- *    **手输兜底仍在三处**：工人报工页的「输码（短码 / 加工单号 / 订单号）」输入框
- *    （`frontend/worker-h5/src/render.mjs`）、任务卡上的 `part_short_code`
- *    （`frontend/admin-web/src/components/production/TaskCardPrint.tsx`）、
- *    以及本单纸面本来就印的「单号」（订单号，H5 四形态之一）。
- *    ⚠️ §11.7 的「码旁必须印短码」是**加工单纸**口径（`ProcessingDoc` 另有「加工单纸面不承载
- *    扫码入口」）—— **不要**据此把短码「顺手」补回销售单。
+ * 销售单负责「**随货给客户**」，扫码报工属**车间** ⇒ 码**不上本单**：issue #7530 加在左上角的
+ * 整块码（`sales-work-order-qr` / `-svg` / `-label`）连同 `processingOrder` prop 一并退场，
+ * 抬头恢复成「企业名称 + 销售单 / 单号 · 日期」**占满整行**（不再为码块留左侧位置）。
  *
- * 🔴 版面预算：二维码块与抬头**并排**（≈15mm 见方、`level="M"`），不额外起一段 ——
- * 三联纸单联可用高只有 128mm，多起一段会挤掉「本单应收 / 页脚提示」。
+ * 码现在由**加工单纸面**（`components/orders/ProcessingDoc.tsx`，同一批已落地「左上角扫码报工码」
+ * 一节）承载 —— 原来属于本单的两条口径随码迁过去，**不在本文件复述**（同一件事两处各写一份会漂）：
+ * ① 码值**逐字**取服务端下发的 `scan_url`，前端**不拼**（域名 / 路径段是第二份真值）；
+ * ② **缺码不画假码**（整块不出现，不画占位框、不回落作业单号）。
+ * 两条的判据随实现一起搬到 `ProcessingDoc.test.tsx`，本文件只留**反向**判据：
+ * 销售单纸面**不再出现**那块码（`SalesDoc.test.tsx` 的「⑬」）。
+ *
+ * ✅ 调用点那一包（`OrderDetail.tsx`）已同批删掉两处 `processingOrder` 传参（本组件先删签名、
+ * 调用点后收口，两边不互相等）。即便**遗留**调用点还传这个多余 prop，React 也只是忽略它 ——
+ * **不会**把码带回纸面（`SalesDoc.test.tsx` 的「⑬ 遗留调用点」就是这条的判据）。
+ *
+ * ## 加工项**绑商品**（issue #7891）
+ *
+ * 用户同一次要求逐字「销售单和报价单都缺了加工项」+「发货单的加工项需要和商品绑定，比如如果是
+ * 成品帘，一览展示商品，商品下面是加工项，展示内容参考水洗唛的那种格式，还有特殊选项也要放上去，
+ * 都放在加工项那一栏里面」。⇒ 每个**商品行之后**追加一条子行
+ * （`sales-item-processing-{idx}`、单格 `colSpan` = 全表列数，仍在**同一张** `<table>` 里 ⇒ 与
+ * 商品行同一栅格 / 同一张边框），内容 = `processingPaperLine(item.processingInfo)` 的**单行**形态
+ * （`加工项：定型、韩褶 各 6.3 · 特殊选项：拼2次-布`）。
+ *
+ * 1. 🔴 **文案单一来源**：加工项 / 特殊选项**只**从 `lib/processing-item-text.ts` 取
+ *    （销售单 / 报价单 / 发货单 / 加工单同一份构建器）—— 本组件**不许**另拼一份
+ *    （三份纸各拼一份 = 同一张订单的「做哪些活」在纸上长得不一样）。
+ * 2. **布料行 / 存量无加工项的行不出子行**：该函数返回空串即整块不渲染 —— 不印空行，
+ *    也**不**印「加工项：—」占位（没有加工项 = 这行本来就没有这栏，不是缺值）。
+ * 3. 🔴 **版面预算**：三联纸单联可用高只有 128mm（见上「介质」第 4 点）⇒ 子行必须**单行紧凑**：
+ *    `0.85em`、**无背景色**（打印会丢底色）、`break-words` 折行不裁（issue #7715：纸面印全文）。
+ *    ⛔ 不为它新增表头 / 列 —— `SALES_DOC_COLUMNS` 是 C5 守卫的唯一真值。
  */
 interface SalesDocProps {
   order: Order
@@ -143,14 +159,6 @@ interface SalesDocProps {
    * 判定与四态见 `lib/sales-shipment.ts` 的 `resolveSalesQuantity`。
    */
   shipments: OrderShipmentRead | null
-  /**
-   * 作业单读面（订单详情页已加载，与 `ProcessingDoc` **同一份**来源）—— 左上角扫码报工码的
-   * **唯一**取值来源，只读 `scan_url`（码值，前端**不拼**）；`short_code` 自 issue #7608 起
-   * **不印在销售单上**（见文件头「左上角…」第 3 条），本组件不读它。
-   *
-   * 缺省 / `null` = 没有作业单或读面没取到 ⇒ 二维码**整块不出现**（不画假码，见文件头）。
-   */
-  processingOrder?: ProcessingOrder | null
   /**
    * 介质（缺省三联纸 241mm × 140mm）。切介质**只**改版面参数，字段映射只有一份
    * （见文件头「介质是参数，不是副本」）。
@@ -186,7 +194,9 @@ interface SalesDocProps {
  *
  * 🔴 issue #7530（用户 2026-10-23 逐字「销售单不要品名」）：「品名」列**退场** ⇒ 9 列变 8 列。
  * 它承载的信息在纸面上仍有真值——货号 / 颜色 / 门幅 三列合起来足以认出是哪一款布
- * （同一次裁定的另一半是把作业单扫码报工码放到左上角，见文件头「左上角…」节）。
+ * （同一次裁定另一半的左上角扫码报工码，issue #7891 起已**迁到加工单**，见文件头）。
+ * issue #7625 又把「帘种」补进门幅之后（8 列变 9 列），之后再没增删列：
+ * 加工项走**子行**（`colSpan` = 本列清单长度），⛔ 不为它动这份清单。
  */
 export const SALES_DOC_COLUMNS = [
   '序号',
@@ -249,7 +259,6 @@ function formatDate(value?: string | null): string | null {
 export default function SalesDoc({
   order,
   shipments,
-  processingOrder,
   media = 'continuous-241x140',
   printTarget,
   inline,
@@ -272,11 +281,6 @@ export default function SalesDoc({
   const docNo = paperText(order.orderNo)
   const date = formatDate(order.createdAt)
   const hasDiscount = typeof order.discountAmount === 'number'
-  /**
-   * 左上角作业单扫码报工码（issue #7530）—— 码值**逐字**取服务端 `scan_url`，前端不拼；
-   * 无码 ⇒ 整块不渲染（缺码不画假码）。短码自 issue #7608 起不再印在销售单上。
-   */
-  const workOrderQrValue = (processingOrder?.scan_url ?? '').trim()
 
   const doc = (
     <div
@@ -327,48 +331,21 @@ export default function SalesDoc({
         data-testid="sales-sheet"
         style={sheetHeightMm !== null ? { height: `${sheetHeightMm}mm`, overflow: 'hidden' } : undefined}
       >
-        {/* ===== ① 表头（issue #7219：企业名称） ===== */}
-        {/* 抬头与**左上角作业单扫码报工码**并排（issue #7530）：码块占左侧 ≈15mm，
-            企业名称 / 销售单 / 单号 在其右侧 —— 不额外起一段（单联 128mm 的版面预算见文件头）。
-            🔴 码值取服务端 `scan_url`；无码 ⇒ 整块不出现（不画占位框、不回落作业单号）。 */}
-        <div className="mb-1 flex items-start gap-2">
-          {workOrderQrValue !== '' && (
-            <div
-              className="flex shrink-0 items-center gap-1.5"
-              data-testid="sales-work-order-qr"
-            >
-              <QRCodeSVG
-                value={workOrderQrValue}
-                size={56}
-                level="M"
-                title={workOrderQrValue}
-                data-testid="sales-work-order-qr-svg"
-              />
-              {/* 「扫码报工」竖排（issue #7608）：4 字高 ≈34px < 码高 56px ⇒ 不额外占高度；
-                  横向只占一行字宽（≈3mm）—— 原来是那 8 位短码把它撑到 ≈13mm。
-                  短码不上销售单纸面（用户 2026-10-24 裁定），见文件头「左上角…」第 3 条。 */}
-              <div
-                className="text-[0.7em] leading-tight text-neutral-500"
-                style={{ writingMode: 'vertical-rl' }}
-                data-testid="sales-work-order-qr-label"
-              >
-                扫码报工
-              </div>
+        {/* ===== ① 表头（issue #7219：企业名称；issue #7891：抬头占满整行，码已迁到加工单） ===== */}
+        {/* 码块（issue #7530 的左上角扫码报工码）自 issue #7891 起**不上销售单** ⇒ 抬头不再为它
+            留左侧位置：企业名称 / 销售单 / 单号 · 日期 直接占满整行（单联 128mm 的版面预算见文件头）。 */}
+        <div className="mb-1">
+          {companyName && (
+            <div className="text-center text-[0.9em] font-medium text-neutral-700 mb-0.5" data-testid="doc-company-name">
+              {companyName}
             </div>
           )}
-          <div className="min-w-0 flex-1">
-            {companyName && (
-              <div className="text-center text-[0.9em] font-medium text-neutral-700 mb-0.5" data-testid="doc-company-name">
-                {companyName}
-              </div>
-            )}
-            <div className="flex items-baseline justify-between border-b border-neutral-400 pb-1">
-              <span className="text-base font-semibold tracking-[0.3em]">销售单</span>
-              <span className="text-[0.9em] text-neutral-600">
-                单号 {docNo}
-                {date ? ` · ${date}` : ''}
-              </span>
-            </div>
+          <div className="flex items-baseline justify-between border-b border-neutral-400 pb-1">
+            <span className="text-base font-semibold tracking-[0.3em]">销售单</span>
+            <span className="text-[0.9em] text-neutral-600">
+              单号 {docNo}
+              {date ? ` · ${date}` : ''}
+            </span>
           </div>
         </div>
 
@@ -434,38 +411,58 @@ export default function SalesDoc({
                 const sku = orderItemSku(item)
                 // 帘种（issue #7625）：布帘 / 纱帘 —— 唯一取值口；布料单没有帘 ⇒ 占位 `—`
                 const curtainType = orderItemCurtainType(item)
+                // 加工项子行（issue #7891）：文案**只**取 `lib/processing-item-text.ts` 的构建器
+                // （销售单 / 报价单 / 发货单 / 加工单同一份）；空串 = 这一行没有加工项
+                // （布料行、存量无加工项的订单）⇒ 整块不渲染（不印空行、也不印「加工项：—」）。
+                const processingLine = processingPaperLine(item.processingInfo)
                 return (
-                  <tr key={item.id || idx} data-testid={`sales-item-${idx}`}>
-                    <DocTd align="right">{idx + 1}</DocTd>
-                    <DocTd testId={`sales-code-${idx}`}>
-                      {sku.code || SALES_DOC_MISSING}
-                    </DocTd>
-                    <DocTd testId={`sales-color-${idx}`}>
-                      {sku.color || SALES_DOC_MISSING}
-                    </DocTd>
-                    <DocTd testId={`sales-door-width-${idx}`}>
-                      {sku.doorWidth || SALES_DOC_MISSING}
-                    </DocTd>
-                    <DocTd testId={`sales-curtain-type-${idx}`}>
-                      {curtainType || SALES_DOC_MISSING}
-                    </DocTd>
-                    {/* 数量：**实发**（后端 admin 读面；真值 owner = `order_shipment_items`）。
-                        未发行 ⇒ 显式「未发」；未发货 / 读面没取到 ⇒ 订单数量（口径已印在表上方）。
-                        ⛔ 任何情况下都不写 0 —— `0` 会被读成「实发为零」（issue #5651 硬约束）。 */}
-                    <DocTd align="right" testId={`sales-qty-${idx}`}>
-                      {qty.cells[idx]?.basis === 'shipped' && qty.cells[idx]?.value === null
-                        ? SALES_QTY_NOT_SHIPPED
-                        : paperText(qty.cells[idx]?.value)}
-                    </DocTd>
-                    {/* 单位：`OrderItem.quantity` 在本系统**恒为米** —— 发货单表头写的就是
-                        「数量(米)」、报价单单价写的是「元/米」⇒ 单位取**同一口径**，
-                        不新增字段、也不编一个别单位 */}
-                    <DocTd>米</DocTd>
-                    <DocTd align="right">{formatAmount(item.unitPrice)}</DocTd>
-                    <DocTd align="right" testId={`sales-row-amount-${idx}`}>
-                      {formatAmount(item.amount)}
-                    </DocTd>
-                  </tr>
+                  <Fragment key={item.id || idx}>
+                    <tr data-testid={`sales-item-${idx}`}>
+                      <DocTd align="right">{idx + 1}</DocTd>
+                      <DocTd testId={`sales-code-${idx}`}>
+                        {sku.code || SALES_DOC_MISSING}
+                      </DocTd>
+                      <DocTd testId={`sales-color-${idx}`}>
+                        {sku.color || SALES_DOC_MISSING}
+                      </DocTd>
+                      <DocTd testId={`sales-door-width-${idx}`}>
+                        {sku.doorWidth || SALES_DOC_MISSING}
+                      </DocTd>
+                      <DocTd testId={`sales-curtain-type-${idx}`}>
+                        {curtainType || SALES_DOC_MISSING}
+                      </DocTd>
+                      {/* 数量：**实发**（后端 admin 读面；真值 owner = `order_shipment_items`）。
+                          未发行 ⇒ 显式「未发」；未发货 / 读面没取到 ⇒ 订单数量（口径已印在表上方）。
+                          ⛔ 任何情况下都不写 0 —— `0` 会被读成「实发为零」（issue #5651 硬约束）。 */}
+                      <DocTd align="right" testId={`sales-qty-${idx}`}>
+                        {qty.cells[idx]?.basis === 'shipped' && qty.cells[idx]?.value === null
+                          ? SALES_QTY_NOT_SHIPPED
+                          : paperText(qty.cells[idx]?.value)}
+                      </DocTd>
+                      {/* 单位：`OrderItem.quantity` 在本系统**恒为米** —— 发货单表头写的就是
+                          「数量(米)」、报价单单价写的是「元/米」⇒ 单位取**同一口径**，
+                          不新增字段、也不编一个别单位 */}
+                      <DocTd>米</DocTd>
+                      <DocTd align="right">{formatAmount(item.unitPrice)}</DocTd>
+                      <DocTd align="right" testId={`sales-row-amount-${idx}`}>
+                        {formatAmount(item.amount)}
+                      </DocTd>
+                    </tr>
+                    {/* 加工项**绑这个商品**（issue #7891）：紧跟商品行、同一张表内的一条子行
+                        （单格 `colSpan` = 全表列数 ⇒ 不新增列、不破坏 C5 的列清单真值）。
+                        单行紧凑（0.85em / 无背景色 / 折行不裁）：三联纸单联可用高只有 128mm，
+                        多起一段会挤掉「本单应收 / 页脚提示」（见文件头「加工项绑商品」第 3 条）。 */}
+                    {processingLine !== '' && (
+                      <tr data-testid={`sales-item-processing-${idx}`}>
+                        <td
+                          colSpan={SALES_DOC_COLUMNS.length}
+                          className="border border-neutral-400 px-1.5 py-1 text-[0.85em] text-neutral-700 break-words"
+                        >
+                          {processingLine}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 )
               })
             )}

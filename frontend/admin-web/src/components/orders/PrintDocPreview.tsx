@@ -127,6 +127,14 @@ export interface PrintDocPreviewProps {
   docs?: readonly PrintTarget[]
   /** 换单据（配合 `docs`）：调用方应当只切预览目标、**不置位打印目标**（`usePrintDoc().selectPreview`） */
   onSelect?: (target: PrintTarget) => void
+  /**
+   * 单据标签的**显示名**（issue #7891）：同一个打印目标在不同订单下可能叫不同的纸 ——
+   * 作业单两型里「加工单」（成品帘）/「面料单」（只裁剪的面料单）是**同一份 A4 纸**，
+   * 标题由 `printTargetTitle(target, kind)` 给（缺省仍读 `PRINT_TARGET_SPECS`）。
+   *
+   * 不传 ⇒ 标签与改前逐字一致（行为零变化）。
+   */
+  titleOf?: (target: PrintTarget) => string
 }
 
 export default function PrintDocPreview({
@@ -140,6 +148,7 @@ export default function PrintDocPreview({
   actions,
   docs,
   onSelect,
+  titleOf,
 }: PrintDocPreviewProps) {
   // 纸的**整幅尺寸**取自介质矩阵（issue #7816：洗水唛改回固定 50×150，不再有「按内容撑开」的长度）
   const box = printPageBoxMm(media)
@@ -270,6 +279,8 @@ export default function PrintDocPreview({
           >
             {docs.map((doc) => {
               const spec = PRINT_TARGET_SPECS[doc]
+              // 显示名可由调用方按作业单两型改写（issue #7891）；缺省仍取 specs 的静态标题
+              const label = titleOf ? titleOf(doc) : spec.title
               const active = doc === target
               const box = printPageBoxMm(spec.media)
               return (
@@ -285,7 +296,7 @@ export default function PrintDocPreview({
                       : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50'
                   }`}
                 >
-                  {spec.title}
+                  {label}
                   {/* 纸型**从介质矩阵取**（不是标签自带的第二份字面量）—— 换纸后这里跟着变 */}
                   <span className="text-xs font-normal text-neutral-400">
                     {box.widthMm}×{box.heightMm}mm

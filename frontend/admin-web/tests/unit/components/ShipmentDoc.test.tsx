@@ -31,6 +31,13 @@ import type { Order, OrderItem } from '@/types'
  * 断言单据显形/外壳被隐藏（把 print 块的规则并到样式表末尾后 getComputedStyle 真算）；
  * ② 真实 `emulateMedia({media:'print'})` 走查见 tests/e2e/specs/orders/shipment-doc.spec.ts
  * （⚠️ 该 e2e 从未被 CI 执行，issue #3817）。
+ *
+ * 加工项（issue #7891）：用户 2026-10-27 逐字「发货单的加工项需要和商品绑定，比如如果是成品帘，
+ * 一览展示商品，商品下面是加工项，展示内容参考水洗唛的那种格式，还有特殊选项也要放上去，
+ * 都放在加工项那一栏里面」⇒ 加工项**下挂在各自商品行之后**（子行
+ * `data-testid="shipment-item-processing-<idx>"`），底部独立的「加工项（数量：米）」区整块退场，
+ * 加工费合计仍在（明细表下单独一行右对齐）。加工项文案的**单一来源** =
+ * `src/lib/processing-item-text.ts`（本文件只断**渲染结果**，不在这里另拼一份文案）。
  */
 
 function buildOrder(overrides: Partial<Order> = {}): Order {
@@ -77,11 +84,43 @@ function buildOrder(overrides: Partial<Order> = {}): Order {
   }
 }
 
+/**
+ * 带加工项的商品行（issue #7891：加工项写在 **`item.processingInfo`** 上，随商品行下挂 ——
+ * 既不是订单级 `processingItems`，也不是表外单独一块）。`info` 与既有 `processingInfo`
+ * （颜色 / 门幅 / 帘种）合并，夹具保持**真 wire 形态**。
+ */
+function itemWithProcessing(
+  info: Record<string, unknown>,
+  overrides: Partial<OrderItem> = {}
+): OrderItem {
+  const base = buildOrder().items![0]
+  return {
+    ...base,
+    processingInfo: { ...base.processingInfo, ...info },
+    ...overrides,
+  }
+}
+
 describe('ShipmentDoc — 发货单纸面内容', () => {
   // 类级固化（issue #6595）：本单据的每一张表逐行自洽（Σ(colSpan) = 表头列数）。
-  it('表格列数不变量：逐行 Σ(colSpan) 与表头列数一致（issue #6595）', () => {
-    render(<ShipmentDoc order={buildOrder()} />)
+  // 含加工项子行（issue #7891）：子行是 `colSpan={8}` —— 写成 7 / 9 或漏掉一格 ⇒ 那一列在子行
+  // 没有单元格、纸面右侧缺一块边框（正是 #6595 的缺陷形态），本断言必红。
+  it('表格列数不变量：逐行 Σ(colSpan) 与表头列数一致（issue #6595 / #7891）', () => {
+    render(
+      <ShipmentDoc
+        order={buildOrder({
+          items: [
+            itemWithProcessing({
+              processingItems: [{ name: '定型', quantity: 6 }],
+              specialOptions: ['拼2次-布'],
+            }),
+          ],
+        })}
+      />
+    )
     expect(dataTables(document.querySelector('.shipment-print-area')).every((t) => collectTableIntegrity([t]).length === 1)).toBe(true) // 单据：发货单 ShipmentDoc
+    // 前置条件：子行确实渲染了（否则上面那条对子行零覆盖 = 空跑）
+    expect(screen.getByTestId('shipment-item-processing-0')).toBeInTheDocument()
   })
 
   it('渲染单据头：标题 + 订单号 + 下单时间', () => {
@@ -145,61 +184,92 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
     expect(document.body.textContent).not.toContain('加工费合计（元）：—')
   })
 
-  it('#4882 / #7275 / #7605：加工项压成**一行**，数量不等 ⇒ 逐项写；加工费合计走行级落库值', () => {
+  // ===== issue #7891：加工项随**商品行**下挂（水洗唛式一行）=====
+  // 用户 2026-10-27 逐字「发货单的加工项需要和商品绑定，比如如果是成品帘，一览展示商品，商品下面是
+  // 加工项，展示内容参考水洗唛的那种格式，还有特殊选项也要放上去，都放在加工项那一栏里面」
+  // +「发货单的打印格式也需要改一下」⇒ 每条商品行**之后**追加一条 `colSpan={8}` 子行；
+  // 底部独立的「加工项（数量：米）」区**整块退场**（见下方「旧形态退场」一条）。
+  // ⚠️ 子行文案由 `src/lib/processing-item-text.ts` 产出 —— 本文件断的是**渲染结果**（逐字值），
+  // 组件里另拼一份文案 / 三态写法漂了，这里就会红。
+  /** 某商品行**下面**的子行（按品名定位商品行 → 看它的下一个兄弟；与被测实现写法解耦） */
+  const subRowOf = (productName: string): HTMLElement | null => {
+    const next = (screen.getByText(productName).closest('tr') as HTMLElement)
+      .nextElementSibling as HTMLElement | null
+    return next?.getAttribute('data-testid')?.startsWith('shipment-item-processing-') ? next : null
+  }
+
+  it('#7891：加工项挂在商品行**之后**、合计行之前；数量不等 ⇒ 逐项写（`打孔 12.5 + 定型 1`）', () => {
     const order = buildOrder({
       hasProcessing: true,
       // 加工费真值源 = **行级落库 `processingFee`**（issue #4406：组合价 × 加工费米数）
-      items: [{ ...buildOrder().items![0], processingFee: 37.5 }],
-      // #4882：后端 `ProcessingItemBrief` 只剩 id / name / quantity（无 unitPrice / amount）
-      processingItems: [
-        { id: 'pr-1', name: '打孔', quantity: 12.5 },
-        { id: 'pr-2', name: '定型', quantity: 1 },
+      items: [
+        itemWithProcessing(
+          {
+            // #4882：后端 `ProcessingItemBrief` 只剩 id / name / quantity（无 unitPrice / amount）
+            processingItems: [
+              { id: 'pr-1', name: '打孔', quantity: 12.5 },
+              { id: 'pr-2', name: '定型', quantity: 1 },
+            ],
+          },
+          { processingFee: 37.5 }
+        ),
       ],
     })
     render(<ShipmentDoc order={order} />)
 
-    // ① 逐项真值压成**一行**（issue #7275 用户逐字「加工项表格应该用一行表达…比如改成a+b+c这样？」）。
-    //    issue #7605（用户 2026-10-24 裁定）：数量**不等** ⇒ 逐项写、**不**硬提公因子（把不等的数
-    //    压成一个 = 报错数）；行内不写单位（单位提到区头一次）。
-    //    红证：退回逐项两列表（`<table>`）⇒ 本断言与 `closest('table')` 两条同时红。
-    const itemsLine = screen.getByTestId('shipment-processing-items')
-    expect(itemsLine.textContent?.trim()).toBe('打孔 12.5 + 定型 1')
-    expect(screen.getByText('加工费合计（元）：37.50').closest('table')).toBeNull()
+    // ① 数量**不等** ⇒ 逐项写、**不**硬提公因子（issue #7605：把不等的数压成一个 = 报错数）。
+    //    红证：子行退回 `名称×数量` 形态 / 把两项压成一个数 ⇒ 本断言红。
+    const subRow = screen.getByTestId('shipment-item-processing-0')
+    expect(subRow.textContent?.trim()).toBe('加工项：打孔 12.5 + 定型 1')
 
-    // ② 凭证的核对价值（名称 + 米数）仍在 —— 省版面不得把「做了什么加工、各多少」一起删掉
-    expect(itemsLine.textContent).toContain('打孔')
-    expect(itemsLine.textContent).toContain('12.5')
+    // ② 位置：紧跟**这一条**商品行，且在「合计」行之前、同一张明细表内（加工项是商品的下挂，
+    //    不是表外附件）。红证：把子行挪到表外 / 挪到合计行之后 ⇒ 下面三条红。
+    const productRow = screen.getByText('布艺遮光帘A').closest('tr') as HTMLElement
+    expect(productRow.nextElementSibling).toBe(subRow)
+    expect((subRow.nextElementSibling as HTMLElement).textContent).toContain('合计')
+    expect(subRow.closest('table')).toBe(productRow.closest('table'))
 
-    // ③ 加工费合计不是逐项金额相加（逐项 amount 已退场 ⇒ 那样恒 0.00），而是行级 processingFee
+    // ③ 凭证的核对价值（名称 + 米数）仍在 —— 省版面不得把「做了什么加工、各多少」一起删掉
+    expect(subRow.textContent).toContain('打孔')
+    expect(subRow.textContent).toContain('12.5')
+
+    // ④ 加工费合计**仍在**（商品明细表下面单独一行右对齐），且不是逐项金额相加
+    //    （逐项 `amount` issue #4882 起已退场 ⇒ 那样恒 0.00）
     expect(screen.getByText('加工费合计（元）：37.50')).toBeInTheDocument()
-
-    // ④ 反向护栏：把合计改回 `Σ processingItems[].amount` ⇒ 此处会印 0.00，本断言红
+    expect(screen.getByTestId('shipment-processing-fee-total').closest('table')).toBeNull()
+    // 反向护栏：把合计改回 `Σ processingItems[].amount` ⇒ 此处会印 0.00，本断言红
     expect(document.body.textContent).not.toContain('加工费合计（元）：0.00')
   })
 
-  it('#7605：数量**全等** ⇒ 数字只说一遍（`定型、韩褶 各 6`）+ 单位只在区头出现一次', () => {
-    const order = buildOrder({
-      hasProcessing: true,
-      items: [{ ...buildOrder().items![0], processingFee: 42 }],
-      processingItems: [
-        { id: 'pr-1', name: '定型', quantity: 6 },
-        { id: 'pr-2', name: '韩褶', quantity: 6 },
-      ],
-    })
-    render(<ShipmentDoc order={order} />)
+  it('#7891 / #7605：数量**全等** ⇒ 数字只说一遍（`定型、韩褶 各 6.3`），且不出现 `×` / 括号算式', () => {
+    render(
+      <ShipmentDoc
+        order={buildOrder({
+          hasProcessing: true,
+          items: [
+            itemWithProcessing(
+              {
+                processingItems: [
+                  { name: '定型', quantity: 6.3 },
+                  { name: '韩褶', quantity: 6.3 },
+                ],
+              },
+              { processingFee: 42 }
+            ),
+          ],
+        })}
+      />
+    )
 
     // 用户 2026-10-24 逐字「这里的加工项应该改成A+B 然后乘以数量是否更好」——要的是**数字别印两遍**，
-    // 但不接受 `（A+B）×6`：纯文本有运算优先级歧义（`定型 + 韩褶×6`），且与同行「加工费合计」并排
-    // 会诱导客户按 ×N 去乘出一个算不出来的数（加工费真值 = 组合价 元/米 × 加工费米数）。
-    const itemsLine = screen.getByTestId('shipment-processing-items')
-    expect(itemsLine.textContent?.trim()).toBe('定型、韩褶 各 6')
-
-    // 单位提到区头**一次**（行内不再写「米」，也不出现 `×`）
-    expect(document.body.textContent).toContain('加工项（数量：米）')
-    expect(itemsLine.textContent ?? '').not.toContain('米')
-    // 🔴 反向判据：`×` 与括号算式一律不得进这一行（改回 `定型×6 + 韩褶×6` 或 `（定型+韩褶）×6` ⇒ 必红）
-    expect(itemsLine.textContent ?? '').not.toContain('×')
-    expect(itemsLine.textContent ?? '').not.toContain('（')
+    // 但不接受 `（A+B）×6.3`：纯文本有运算优先级歧义，且与「加工费合计」并排会诱导客户按 ×N 去
+    // 乘出一个算不出来的数（加工费真值 = 加工费组合价 元/米 × 加工费米数）。
+    const subRow = screen.getByTestId('shipment-item-processing-0')
+    expect(subRow.textContent?.trim()).toBe('加工项：定型、韩褶 各 6.3')
+    expect(subRow.textContent).toContain('6.3')
+    // 🔴 反向判据：改成 `定型×6.3 + 韩褶×6.3` 或 `（定型+韩褶）×6.3` ⇒ 下面两条必红
+    expect(subRow.textContent ?? '').not.toContain('×')
+    expect(subRow.textContent ?? '').not.toContain('（')
 
     // 单项不写「各」（「定型 各 6」是病句）
     cleanup()
@@ -207,24 +277,166 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
       <ShipmentDoc
         order={buildOrder({
           hasProcessing: true,
-          items: [{ ...buildOrder().items![0], processingFee: 3 }],
-          processingItems: [{ id: 'pr-9', name: '定型', quantity: 6 }],
+          items: [
+            itemWithProcessing({ processingItems: [{ name: '定型', quantity: 6 }] }, { processingFee: 3 }),
+          ],
         })}
       />
     )
-    expect(screen.getByTestId('shipment-processing-items').textContent?.trim()).toBe('定型 6')
+    expect(screen.getByTestId('shipment-item-processing-0').textContent?.trim()).toBe('加工项：定型 6')
   })
 
-  it('#7275 / #7605：缺数量的加工项仍**显式**印 `—`（`名称 —`，不静默吞掉）', () => {
-    const order = buildOrder({
-      hasProcessing: true,
-      items: [{ ...buildOrder().items![0], processingFee: 0 }],
-      processingItems: [{ id: 'pr-3', name: '打孔', quantity: undefined as unknown as number }],
-    })
-    render(<ShipmentDoc order={order} />)
+  it('#7891 / #7275：缺数量的加工项仍**显式**印 `—`（`打孔 —`，不静默吞掉）', () => {
+    render(
+      <ShipmentDoc
+        order={buildOrder({
+          hasProcessing: true,
+          items: [itemWithProcessing({ processingItems: [{ name: '打孔' }] }, { processingFee: 0 })],
+        })}
+      />
+    )
     // 缺值不静默留空（范式同 issue #6720 / `SHIPMENT_DOC_MISSING`）——
     // 红证：把该项写成 `item.name`（丢掉数量）⇒ 本断言红
-    expect(screen.getByTestId('shipment-processing-items').textContent?.trim()).toBe('打孔 —')
+    expect(screen.getByTestId('shipment-item-processing-0').textContent?.trim()).toBe('加工项：打孔 —')
+    // 加工费真值 0 ⇒ 合计那一行不渲染（不印 0.00 占纸面；issue #7891）
+    expect(screen.queryByTestId('shipment-processing-fee-total')).toBeNull()
+  })
+
+  it('#7891：加工项**绑定到各自的商品行** —— A 的加工项不出现在 B 行下', () => {
+    const [first, second] = buildOrder().items!
+    render(
+      <ShipmentDoc
+        order={buildOrder({
+          items: [
+            {
+              ...first,
+              id: 'item-a',
+              processingInfo: { ...first.processingInfo, processingItems: [{ name: '打孔', quantity: 12.5 }] },
+            },
+            {
+              ...second,
+              id: 'item-b',
+              processingInfo: { ...second.processingInfo, processingItems: [{ name: '定型', quantity: 6 }] },
+            },
+          ],
+        })}
+      />
+    )
+
+    const rowA = screen.getByTestId('shipment-item-processing-0')
+    const rowB = screen.getByTestId('shipment-item-processing-1')
+    // 各挂各的商品行（按 DOM 相邻关系判，与被测实现写法解耦）
+    expect(screen.getByText('布艺遮光帘A').closest('tr')?.nextElementSibling).toBe(rowA)
+    expect(screen.getByText('纱帘B').closest('tr')?.nextElementSibling).toBe(rowB)
+    // 内容不串行（红证：把子行写成「订单级第一组加工项」的复印件 ⇒ 下面 B 的两条红）
+    expect(within(rowA).getByText('加工项：打孔 12.5')).toBeInTheDocument()
+    expect(within(rowB).getByText('加工项：定型 6')).toBeInTheDocument()
+    expect(rowA.textContent).not.toContain('定型')
+    expect(rowB.textContent).not.toContain('打孔')
+  })
+
+  it('#7891：特殊选项也上纸（子行里跟着加工项，`特殊选项：拼2次-布`）', () => {
+    render(
+      <ShipmentDoc
+        order={buildOrder({
+          items: [
+            itemWithProcessing({
+              processingItems: [{ name: '定型', quantity: 6 }],
+              specialOptions: ['拼2次-布'],
+            }),
+          ],
+        })}
+      />
+    )
+    // 用户逐字「还有特殊选项也要放上去，都放在加工项那一栏里面」
+    expect(screen.getByTestId('shipment-item-processing-0').textContent?.trim()).toBe(
+      '加工项：定型 6 · 特殊选项：拼2次-布'
+    )
+  })
+
+  it('#7891：布料行（`processingInfo` 里没有加工项 / 特殊选项）⇒ 不出子行（不误伤、不编造）', () => {
+    // 夹具的 item-1 / item-2 只有颜色 · 门幅 · 帘种 ⇒ 全单零加工项
+    render(<ShipmentDoc order={buildOrder()} />)
+    expect(screen.queryByTestId('shipment-item-processing-0')).toBeNull()
+    expect(screen.queryByTestId('shipment-item-processing-1')).toBeNull()
+    expect(document.querySelector('.shipment-print-area')?.textContent).not.toContain('加工项：')
+    expect(subRowOf('布艺遮光帘A')).toBeNull()
+
+    // 同一张单里「成品帘行有加工项、布料行没有」⇒ 只有前者出子行（反向对照，防一刀切）
+    cleanup()
+    const [finished, cloth] = buildOrder().items!
+    render(
+      <ShipmentDoc
+        order={buildOrder({
+          items: [
+            {
+              ...finished,
+              id: 'item-finished',
+              processingInfo: { ...finished.processingInfo, processingItems: [{ name: '定型', quantity: 6 }] },
+            },
+            { ...cloth, id: 'item-cloth', processingInfo: { colorName: '象牙白', doorWidth: '3.0米' } },
+          ],
+        })}
+      />
+    )
+    expect(document.querySelectorAll('[data-testid^="shipment-item-processing-"]')).toHaveLength(1)
+    expect(subRowOf('布艺遮光帘A')?.textContent?.trim()).toBe('加工项：定型 6')
+    expect(subRowOf('纱帘B')).toBeNull()
+  })
+
+  it('#7891：旧的底部独立「加工项（数量：米）」区**整块退场**（区头与锚点都不再渲染）', () => {
+    render(
+      <ShipmentDoc
+        order={buildOrder({
+          hasProcessing: true,
+          items: [
+            itemWithProcessing({ processingItems: [{ name: '打孔', quantity: 12.5 }] }, { processingFee: 37.5 }),
+          ],
+          // 存量响应里仍有订单级 `processingItems` —— 它**不再**上纸（加工项只随商品行）
+          processingItems: [{ id: 'pr-1', name: '打孔', quantity: 12.5 }],
+        })}
+      />
+    )
+    // 红证：把底部那块加回来 ⇒ 下面两条同时红
+    expect(screen.queryByText('加工项（数量：米）')).toBeNull()
+    expect(screen.queryByTestId('shipment-processing-items')).toBeNull()
+    // 但「做了哪几项加工、各多少」的核对价值仍在 —— 搬到了商品行下面
+    expect(screen.getByTestId('shipment-item-processing-0').textContent).toContain('打孔 12.5')
+  })
+
+  it('#7891：加工费合计 = Σ `items[].processingFee`（缺省按 0 累加，单独一行右对齐）', () => {
+    const [, second] = buildOrder().items!
+    render(
+      <ShipmentDoc
+        order={buildOrder({
+          items: [
+            itemWithProcessing({ processingItems: [{ name: '定型', quantity: 6 }] }, { id: 'fee-a', processingFee: 20.5 }),
+            // 存量单形态：整行没有 `processingFee` 键 ⇒ 缺席的含义就是 0（issue #6731，不是「不可知」）
+            { ...second, id: 'fee-b' },
+            itemWithProcessing({ processingItems: [{ name: '韩褶', quantity: 3 }] }, { id: 'fee-c', processingFee: 4.25 }),
+          ],
+        })}
+      />
+    )
+
+    // 20.5 + (缺 ⇒ 0) + 4.25 = 24.75（红证：改成 `Σ processingItems[].amount` ⇒ 印 0.00；省略缺省行 ⇒ 印 24.75 但少算 …）
+    expect(screen.getByTestId('shipment-processing-fee-total').textContent?.trim()).toBe(
+      '加工费合计（元）：24.75'
+    )
+    // 缺值不摊成「—」（加工费缺席**就是** 0，issue #6731 的反向对照）
+    expect(document.body.textContent).not.toContain('加工费合计（元）：—')
+  })
+
+  it('#7891：全单加工费为 0 / 全缺 ⇒ **不渲染**「加工费合计」那一行（不印 0.00 占纸）', () => {
+    render(<ShipmentDoc order={buildOrder()} />)
+    expect(screen.queryByTestId('shipment-processing-fee-total')).toBeNull()
+    expect(document.body.textContent).not.toContain('加工费合计（元）：0.00')
+
+    cleanup()
+    const [first] = buildOrder().items!
+    render(<ShipmentDoc order={buildOrder({ items: [{ ...first, processingFee: 0 }] })} />)
+    // 真 0 也不渲染这一行（纸面少一行噪音；行级金额/数量仍按 #6720 印真 0）
+    expect(screen.queryByTestId('shipment-processing-fee-total')).toBeNull()
   })
 
   it('商品明细表的「单价(元/米)」「金额(元)」列**不受影响**（商品行语义，非加工项）', () => {
