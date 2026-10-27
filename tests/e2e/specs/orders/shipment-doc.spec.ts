@@ -143,7 +143,8 @@ test.describe('发货单 — 真实浏览器打印旅程（UI-040）', () => {
 
     // 3) 发货动作本身不受影响（反向自证：本页不是空页）
     await expect(page.getByRole('button', { name: /确认发货/ })).toBeVisible()
-    await expect(page.getByText('商品信息')).toBeVisible()
+    // 反向自证：页面确实渲染出了这单的商品明细（不是空页 / 不是阻断页）
+    await expect(page.getByText('布艺遮光帘A').first()).toBeVisible()
   })
 
   test('订单详情：打印层里没有发货单，销售单仍能上纸（真实浏览器打印媒体）', async ({ page }) => {
@@ -155,7 +156,11 @@ test.describe('发货单 — 真实浏览器打印旅程（UI-040）', () => {
 
     await page.goto(`/orders/${ORDER_ID}`)
 
+    // 先等订单数据落地（订单号进 DOM）——否则入口按钮会在订单加载前后的重渲染里被 detach，
+    // 点击可能落在已卸载的节点上（实测 CI：preview 一直不出现）
+    await expect(page.getByText('ORD20260915001').first()).toBeVisible()
     // 打开页面级唯一打印入口（issue #7544 / #7902）
+    await expect(page.getByTestId('order-print-entry')).toBeVisible()
     await page.getByTestId('order-print-entry').click()
     await expect(page.getByTestId('print-preview')).toBeVisible()
     // 发货单已退场：标签行里没有它，未派单也没有加工单/水洗唛
