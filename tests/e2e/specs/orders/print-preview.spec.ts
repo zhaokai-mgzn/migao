@@ -138,11 +138,15 @@ test.describe('商家后台打印链路（UI-026 / issue #5914）', () => {
     await page.getByTestId('order-print-entry').click()
     const docs = page.getByTestId('print-preview-docs')
     await expect(docs).toBeVisible()
-    // 三份单据都在选择器里（一单一签）；加工单自 issue #7870 起搬到「加工单生产明细」页
-    for (const target of ['sales', 'quotation', 'shipment']) {
+    // 报价单 / 销售单都在选择器里（一单一签）。
+    // 🔴 issue #7902：发货单**整体退场**（纸统一在销售订单详情出），加工单/水洗唛要**派单后**才出现
+    // ⇒ 这张没有作业单的已关闭单子，标签行恰好两份。
+    for (const target of ['sales', 'quotation']) {
       await expect(page.getByTestId(`print-preview-doc-${target}`)).toBeVisible()
     }
+    await expect(page.getByTestId('print-preview-doc-shipment')).toHaveCount(0)
     await expect(page.getByTestId('print-preview-doc-processing')).toHaveCount(0)
+    await expect(page.getByTestId('print-preview-doc-labels')).toHaveCount(0)
 
     // 换单据 = 换预览：纸型读数跟着换（销售单三联纸 241×140 → 报价单 A4 210×297）
     await expect(page.getByTestId('print-preview-media')).toContainText('241mm × 140mm')
@@ -190,10 +194,10 @@ test.describe('商家后台打印链路（UI-026 / issue #5914）', () => {
     await expect(page.locator('.sales-print-area[data-print-target="sales"]')).toBeVisible()
     // 而预览副本在打印媒体下**不上纸**（这条防的是「一次出两份」）
     await expect(page.locator('.print-preview-doc .sales-print-area')).toBeHidden()
-    for (const sibling of ['.shipment-print-area', '.quotation-print-area']) {
-      await expect(page.locator(sibling)).toBeHidden()
-    }
-    // 🔴 加工单（A4）自 issue #7870 起不在本页：它一份都不该出现在订单详情的文档里
+    // 报价单（本页另一份在册单据）不得显形；发货单已退场 ⇒ 整份文档里没有这个容器
+    await expect(page.locator('.quotation-print-area')).toBeHidden()
+    await expect(page.locator('.shipment-print-area')).toHaveCount(0)
+    // 🔴 加工单（A4）要**派单后**才挂（issue #7902）：这张没有作业单的单子文档里一份都没有
     await expect(page.locator('.processing-print-area')).toHaveCount(0)
   })
 
@@ -293,11 +297,14 @@ test.describe('商家后台打印链路（UI-026 / issue #5914）', () => {
       scanUrl: 'https://app.migaozn.com/o/7K3M9QP2',
       shortCode: '7K3M9QP2',
     }
-    await mockProductionPageApi(page, scan)
-    await page.goto('/processing-orders/JG-20261027-0001/production')
+    await mockProductionPrintApi(page, scan)
+    // 🔴 issue #7902：加工单的打印入口从「加工单生产明细」页搬回**销售订单详情**
+    // ⇒ 本用例进订单详情页；派单产物（processing-orders 读面）由下面的替身给。
+    await page.goto(`/orders/${ORDER_ID}`)
+    await expect(page.getByTestId('order-print-entry')).toBeVisible()
 
-    // 打印层里两份纸（洗水唛 + 加工单，issue #7870）—— 码在**加工单**那一张上
-    await page.getByTestId('production-print-button').click()
+    // 派单后打印层里多出两张纸（加工单 / 水洗唛）—— 码在**加工单**那一张上
+    await page.getByTestId('order-print-entry').click()
     const preview = page.getByTestId('print-preview')
     await expect(preview).toBeVisible()
     await page.getByTestId('print-preview-doc-processing').click()
@@ -333,7 +340,7 @@ test.describe('商家后台打印链路（UI-026 / issue #5914）', () => {
     scan.scanUrl = null
     scan.shortCode = null
     await page.reload()
-    await page.getByTestId('production-print-button').click()
+    await page.getByTestId('order-print-entry').click()
     const preview2 = page.getByTestId('print-preview')
     await expect(preview2).toBeVisible()
     await preview2.getByTestId('print-preview-doc-processing').click()
@@ -351,8 +358,8 @@ test.describe('商家后台打印链路（UI-026 / issue #5914）', () => {
     const preview = page.getByTestId('print-preview')
     await expect(preview).toBeVisible()
     await expect(preview.locator('[data-testid="sales-work-order-qr"]')).toHaveCount(0)
-    // 加工单纸面也不该跑到订单详情页里（#7870 的唯一入口 + #7891 的迁入面）
-    await expect(preview.locator('[data-testid="processing-doc-qr"]')).toHaveCount(0)
+    // 这张单**没有作业单**（未派单，issue #7902 的闸门）⇒ 加工单标签与纸面都不出现
+    await expect(page.getByTestId('print-preview-doc-processing')).toHaveCount(0)
     await expect(page.locator('.processing-print-area')).toHaveCount(0)
     // 起算点自证：销售单纸面确实渲染出来了（上面几条不是「预览层是空的」的空跑）
     await expect(preview.locator('[data-testid="sales-sheet"]')).toBeVisible()
@@ -368,11 +375,19 @@ test.describe('商家后台打印链路（UI-026 / issue #5914）', () => {
  * ⚠️ route 一律用**精确 glob**（`*` 不跨 `/`）：订单详情的 pattern 落在 `/api/admin/orders/<id>`
  * 这一层，就不会顺带命中 `.../shipments`，免得与「更宽的 pattern 谁先命中」扯上关系。
  */
-async function mockProductionPageApi(
+async function mockProductionPrintApi(
   page: any,
   scan: { scanUrl: string | null; shortCode: string | null }
 ) {
   const body = (data: unknown) => JSON.stringify({ success: true, data })
+  // 发货明细读面（订单详情页会一起取）：给 empty 成功读，避免读失败横幅抢版面
+  await page.route('**/api/admin/orders/*/shipments', (route: any) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: body({ order_id: ORDER_ID, order_no: 'ORD20261027001', status: 'shipped', shipments: [] }),
+    })
+  )
   // 加工单详情（`GET /api/admin/processing-orders/{id}`）：`order_kind` = 成品帘（纸面名「加工单」）
   await page.route('**/api/admin/processing-orders/*', (route: any) =>
     route.fulfill({
