@@ -35,6 +35,12 @@
  * | C13 | **识别成功时不弹过程告警（issue #7818）**：本机没解出码、服务端再认回来 ⇒ 顶部**零告警横幅**；
  *        「要不要人工核对」由确认卡说清（`inbound-prefill-notice` 非空），切到标签步也不再带上来
  *        | 把两条 notices 的 push 加回 `recognizeFlow` ⇒ 确认步 `inbound-notice-0` 取得到（红） |
+ * | C17 | **零命中的模糊搜索下拉（issue #7892，用户 2026-10-27 裁定）**：边输边出候选项（停手 300ms 自动查，
+ *        **不必再点「搜货号」按钮**），点一条即选中 + 下拉收起；不足 2 字 ⇒ **零请求** + 「至少 2 个字」
+ *        | 退回「输入 + 点按钮才出结果」⇒ 输入 2 字后仍取不到 `inbound-sku-suggest`（红）；
+ *        1 字也发请求 ⇒ `searchInboundSkus` 调用数不为 0（红） |
+ * | C18 | 🔴 **后发先至**：先搜 `26`（慢）后搜 `2659`（快）⇒ 面板只留 `2659` 的候选，慢响应回来**不许**顶掉它
+ *        （顶掉 = 工人选到别的货号 = 错库存） | 去掉乱序守卫 ⇒ 慢响应把候选换成 `26` 那批（红） |
  */
 import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
@@ -518,17 +524,84 @@ describe('工人拍照入库页', () => {
     expect(screen.getByTestId('inbound-chosen-sku').textContent).toContain('未选')
 
     fireEvent.change(screen.getByTestId('inbound-sku-search-input'), { target: { value: '2659' } })
-    fireEvent.click(screen.getByTestId('inbound-sku-search-submit'))
     await waitFor(() => expect(mockSearchSkus).toHaveBeenCalledWith('2659'))
 
     const first = await waitFor(() => screen.getByTestId(`inbound-sku-found-${REAL_SNOWFLAKE_SKU_ID}`))
-    expect(screen.getByTestId('inbound-sku-search-state').textContent).toContain('搜到 2 个货号')
+    expect(screen.getByTestId('inbound-sku-suggest-hint').textContent).toContain('找到 2 个货号')
     fireEvent.click(first)
     await waitFor(() => expect(screen.getByTestId('inbound-chosen-sku').textContent).toContain('2659-04-28'))
 
     // 只读：搜索不建单、不过账、不改任何东西
     expect(mockCreateDraft).not.toHaveBeenCalled()
     expect(mockPostDraft).not.toHaveBeenCalled()
+  })
+
+  it('C17 零命中 ⇒ 边输边出下拉候选（不点按钮）、不足 2 字零请求（issue #7892）', async () => {
+    mockSearchSkus.mockResolvedValueOnce({
+      success: true,
+      message: '',
+      data: [
+        { skuId: REAL_SNOWFLAKE_SKU_ID, productId: 'p1', productName: '奶油风纯色遮光窗帘 桂月白露系列', skuCode: '2659-04-28', colorName: '2659-04 绵绵奶咖', doorWidth: '2.8' },
+      ],
+    })
+    await driveToZeroHitConfirmStep()
+    const input = screen.getByTestId('inbound-sku-search-input')
+
+    // ① 1 个字：一次请求都不发，并说清还差几个字
+    fireEvent.change(input, { target: { value: '2' } })
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    expect(mockSearchSkus).not.toHaveBeenCalled()
+    expect(screen.getByTestId('inbound-sku-suggest-hint').textContent).toContain('至少 2 个字')
+
+    // ② 2 个字起：停手就是查（没有「搜货号」按钮这一跳）
+    fireEvent.change(input, { target: { value: '2659' } })
+    const row = await waitFor(() => screen.getByTestId(`inbound-sku-found-${REAL_SNOWFLAKE_SKU_ID}`), { timeout: 3000 })
+    expect(mockSearchSkus).toHaveBeenCalledWith('2659')
+    expect(screen.getByTestId('inbound-sku-suggest')).toBeTruthy()
+
+    // ③ 点一条 ⇒ 成为待入库货号 + 下拉收起（后续核对 / 提交仍走主链）
+    fireEvent.click(row)
+    await waitFor(() => expect(screen.getByTestId('inbound-chosen-sku').textContent).toContain('2659-04-28'))
+    expect(screen.queryByTestId('inbound-sku-suggest')).toBeNull()
+    expect(mockCreateDraft).not.toHaveBeenCalled()
+    expect(mockPostDraft).not.toHaveBeenCalled()
+  })
+
+  it('C18 后发先至：慢的旧查询结果不许顶掉新查询的候选（选错货号 = 错库存）', async () => {
+    let releaseSlow: (value: any) => void = () => {}
+    const slow = new Promise((resolve) => {
+      releaseSlow = resolve
+    })
+    mockSearchSkus.mockImplementationOnce(() => slow)
+    mockSearchSkus.mockResolvedValueOnce({
+      success: true,
+      message: '',
+      data: [
+        { skuId: REAL_SNOWFLAKE_SKU_ID, productId: 'p1', productName: '奶油风纯色遮光窗帘 桂月白露系列', skuCode: '2659-04-28', colorName: '2659-04 绵绵奶咖', doorWidth: '2.8' },
+      ],
+    })
+    await driveToZeroHitConfirmStep()
+    const input = screen.getByTestId('inbound-sku-search-input')
+
+    // 先发：`26`（迟迟不回）
+    fireEvent.change(input, { target: { value: '26' } })
+    await waitFor(() => expect(mockSearchSkus).toHaveBeenCalledTimes(1))
+    // 后发：`2659`（先回）
+    fireEvent.change(input, { target: { value: '2659' } })
+    const fresh = await waitFor(() => screen.getByTestId(`inbound-sku-found-${REAL_SNOWFLAKE_SKU_ID}`), { timeout: 3000 })
+
+    // 旧响应这时才回来 —— 必须被丢弃
+    releaseSlow({
+      success: true,
+      message: '',
+      data: [
+        { skuId: '2106900122848247999', productId: 'p9', productName: '别的布', skuCode: '2600-01-28', colorName: '2600-01 旧色', doorWidth: '2.8' },
+      ],
+    })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(screen.queryByTestId('inbound-sku-found-2106900122848247999')).toBeNull()
+    expect(fresh).toBeTruthy()
+    expect(screen.getByTestId('inbound-chosen-sku').textContent).toContain('未选')
   })
   it('C13 本机没解出码、服务端又认了一次 ⇒ 成功后**不弹过程告警**（「不静默」改由确认卡承担，issue #7818）', async () => {
     // 红证：把 recognizeFlow 里那两条 notices 的 push 加回 ⇒ 确认步 `inbound-notice-0` 取得到 ⇒ 本用例红
