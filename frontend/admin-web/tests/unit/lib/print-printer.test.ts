@@ -24,7 +24,7 @@ describe('纸型 → 打印机类型（issue #7957）', () => {
   it('① 三种纸各有一句通用类型（不写具体型号，型号由本机登记）', () => {
     expect(PRINTER_KIND_BY_MEDIA.a4).toBe('A4 激光打印机')
     expect(PRINTER_KIND_BY_MEDIA['continuous-241x140']).toBe('针式打印机（连续纸）')
-    expect(PRINTER_KIND_BY_MEDIA['label-50x110']).toBe('标签打印机')
+    expect(PRINTER_KIND_BY_MEDIA['label-50x119']).toBe('标签打印机')
   })
 
   it('①b 未知纸型（历史行 / 未来新增）⇒ 兜底文案，**不编类型**', () => {

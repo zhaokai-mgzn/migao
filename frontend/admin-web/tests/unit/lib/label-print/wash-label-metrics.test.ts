@@ -5,7 +5,7 @@
  * 为什么要有这一条（实测形态，不是假想）：字号 / 内边距 / 二维码尺寸在**三个地方**各存在一份 ——
  * ① `lib/label-print/wash-label-metrics.ts`（TS：画布通道 + 打印通道读它）；
  * ② `components/production/TaskCardPrint.tsx` 里那段 CSS / Tailwind 字号（系统打印）；
- * ③ 介质矩阵 `label-50x110`（固定纸型 50mm × 110mm）。
+ * ③ 介质矩阵 `label-50x119`（固定纸型 50mm × 119mm）。
  * 改一处不改另一处**不会报错**，只会让两条通道画得不一样。⇒ 本文件**解析组件源码**逐值比对。
  *
  * 2026-10-26（issue #7816）改判：纸长**不再按内容撑开**（作废 #7776 的动态纸长），
@@ -56,18 +56,18 @@ describe('水洗唛版面度量：TS 单一真值 ⇄ 组件 CSS（改一处不�
     expect(WASH_LABEL_BODY_FONT_PT).toBeGreaterThan(9)
   })
 
-  it('固定纸型 50mm × 110mm：CSS 与介质矩阵逐值一致（issue #7948）', () => {
+  it('固定纸型 50mm × 119mm：CSS 与介质矩阵逐值一致（issue #7960）', () => {
     expect(css).toContain('width: 50mm')
     // 纸长**写死**在 CSS 里（不再有行内 style 覆盖）—— 纸型是固定的，不是按内容撑开
-    expect(css).toContain('height: 110mm')
+    expect(css).toContain('height: 119mm')
     expect(source).not.toContain('style={{ height:')
-    // 唯一纸型写法：printPageRule('label-50x110')，不许自写 @page 字面量
-    expect(source).toContain("printPageRule('label-50x110')")
+    // 唯一纸型写法：printPageRule('label-50x119')，不许自写 @page 字面量
+    expect(source).toContain("printPageRule('label-50x119')")
     expect(source).not.toMatch(/@page\s*\{\s*size:/)
-    expect(printPageRule('label-50x110')).toBe('@page { size: 50mm 110mm; margin: 0; }')
-    expect(printPageBoxMm('label-50x110')).toEqual({ widthMm: 50, heightMm: 110 })
-    // 点阵侧同一份纸：110mm × 8 dots/mm = 880px（直连通道的画布高度）
-    expect(printDotGeometry('label-50x110').heightPx).toBe(880)
+    expect(printPageRule('label-50x119')).toBe('@page { size: 50mm 119mm; margin: 0; }')
+    expect(printPageBoxMm('label-50x119')).toEqual({ widthMm: 50, heightMm: 119 })
+    // 点阵侧同一份纸：119mm × 8 dots/mm = 952px（直连通道的画布高度）
+    expect(printDotGeometry('label-50x119').heightPx).toBe(952)
   })
 
   it('抬头 / 二维码 / 占位框的字号与边长逐值一致', () => {
@@ -81,7 +81,7 @@ describe('水洗唛版面度量：TS 单一真值 ⇄ 组件 CSS（改一处不�
   })
 
   it('二维码**不沉底**（正文后两行、离底部虚线留白）；「扫码报工」与短码文字已退场（用户 2026-10-26 逐字）', () => {
-    // 二维码行 = `mt-[<两行 mm>] … justify-center`；两行 = 2 × 12pt × 1.2 = 28.8pt ≈ 10.16mm
+    // 二维码行 = `mt-[<两行 mm>] … justify-center`；两行 = 2 × 11pt × 1.2 = 26.4pt ≈ 9.31mm
     const gapMm = Number(
       (WASH_LABEL_QR_TEXT_GAP_LINES * (WASH_LABEL_BODY_FONT_PT / 72) * 25.4 * WASH_LABEL_LINE_HEIGHT).toFixed(2),
     )

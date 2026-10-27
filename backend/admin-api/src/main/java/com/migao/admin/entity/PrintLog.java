@@ -90,7 +90,7 @@ public class PrintLog {
     /** 加工单号快照（加工单 / 水洗唛那两张才有）。 */
     private String processingOrderNo;
 
-    /** 纸型 id（a4 / continuous-241x140 / label-50x110，登记在 admin-web 的 print-media.json）。 */
+    /** 纸型 id（a4 / continuous-241x140 / label-50x119，登记在 admin-web 的 print-media.json）。 */
     private String mediaId;
 
     /** 这次出纸几张（水洗唛按部位一张）。 */
