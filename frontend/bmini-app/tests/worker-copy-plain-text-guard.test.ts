@@ -45,6 +45,8 @@ const COPY_SOURCES: { file: string; mode: 'all' | 'exported' }[] = [
   { file: 'src/utils/inbound/barcodeDecode.ts', mode: 'all' },
   { file: 'src/utils/inbound/recognizeGate.ts', mode: 'all' },
   { file: 'src/utils/inbound/printCapability.ts', mode: 'all' },
+  // issue #7892：零命中模糊搜索下拉的提示文案（`SUGGEST_TOO_SHORT_HINT` + `suggestHint()` 的三种形态）
+  { file: 'src/utils/inbound/skuSuggest.ts', mode: 'all' },
   { file: 'src/utils/inbound/gaps.ts', mode: 'exported' },
   { file: 'src/utils/inbound/reprintFlow.ts', mode: 'exported' },
 ]
