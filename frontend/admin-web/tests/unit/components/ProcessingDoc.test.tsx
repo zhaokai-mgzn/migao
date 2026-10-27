@@ -794,3 +794,104 @@ describe('ProcessingDoc 数量列单位（issue #6901）', () => {
     expect(doc()?.textContent).not.toContain('数量(米)')
   })
 })
+
+/**
+ * 面料单纸面（issue #7901，用户 2026-10-27 截图三处红框 + 逐字「面料单移除红框的行列」）。
+ *
+ * 面料单（`order_kind=outbound`）只做裁剪一道工序：纸面**不印**「品名」列、「帘种」「尺寸」两列，
+ * 也**不印**「工艺」行 —— 布料行的帘种恒 `—`、尺寸是行内约定不是成品尺寸、工艺行那一格漏出来的
+ * 「加工费米数」与「数量」列本来就是同一件事。
+ * 🔴 **成品帘「加工单」的版式一字不动**：本 describe 第 2 条是起算点自证（同数据换 `processing`
+ * ⇒ 9 列 + 帘种列 + 工艺行都在），删过头这条会红。
+ */
+describe('ProcessingDoc 面料单（order_kind=outbound，issue #7901）', () => {
+  const fabricPo = (overrides: Partial<ProcessingOrder> = {}): ProcessingOrder =>
+    buildProcessingOrder({ order_kind: 'outbound', ...overrides })
+
+  /** 正文表头标签（按渲染顺序） */
+  const headers = (): (string | undefined)[] =>
+    Array.from(doc()?.querySelectorAll('.processing-doc-table thead th') ?? []).map((th) =>
+      th.textContent?.trim()
+    )
+
+  it('🔴 三处红框逐条退场：品名列 / 帘种 + 尺寸两列 / 工艺行', () => {
+    render(<ProcessingDoc order={buildOrder()} processingOrder={fabricPo()} />)
+    expect(headers()).toEqual(['货号', '颜色', '门幅', '数量', '批号', '备注'])
+    expect(doc()?.textContent).not.toContain('品名')
+    // 帘种列与工艺行**整块不出现**（取不到节点，不是样式藏起来）
+    expect(document.querySelector('[data-testid="processing-doc-curtain-type"]')).toBeNull()
+    expect(document.querySelector('[data-testid="processing-doc-craft"]')).toBeNull()
+    // 值也不许从别的格子漏出来：帘种「布帘」/ 尺寸「3.2×2.6」都不在纸面上
+    expect(doc()?.textContent).not.toContain('布帘')
+    expect(doc()?.textContent).not.toContain('3.2×2.6')
+  })
+
+  it('🔴 起算点自证：同一份数据换成成品帘（order_kind=processing）⇒ 9 列 + 帘种列 + 工艺行都在', () => {
+    render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
+    expect(headers()).toEqual([...PROCESSING_DOC_COLUMNS])
+    // 判据读**内容**不读「节点存在」（存在性断言是本仓明令的弱断言形态，见
+    // tests/unit_ci_workflows/test_weak_assert_blindspots.py）
+    expect(cellText('processing-doc-curtain-type')).toBe('布帘')
+    expect(craftLines()[0]).toBe('加工方式：韩褶')
+  })
+
+  it('🔴 表格列数不变量：面料单每行 Σ(colSpan) = 6（少一格 ⇒ 备注列在数据行没边框，同 #6595 形态）', () => {
+    render(<ProcessingDoc order={buildOrder()} processingOrder={fabricPo()} />)
+    const tables = collectTableIntegrity(dataTables(doc())) // 单据：加工单 ProcessingDoc
+    expect(tables.length).toBeGreaterThan(0)
+    for (const table of tables) {
+      expect(table.columns).toBe(6)
+      expect(table.rows.length).toBeGreaterThanOrEqual(2)
+      expect(table.rows.every((n) => n === 6)).toBe(true)
+    }
+  })
+
+  it('🔴 补位行（加工费组合）在面料单上也占满 6 列 —— `colSpan` 随列数走，不写死魔数 8', () => {
+    render(
+      <ProcessingDoc
+        order={buildOrder()}
+        processingOrder={
+          fabricPo({
+            items: [
+              {
+                itemId: 'item-1',
+                processingItems: [{ id: 'pi-14', name: '超高', quantity: 1 }],
+              } as unknown as ProcessingOrderItem,
+            ],
+          } as Partial<ProcessingOrder>)
+        }
+      />
+    )
+    // 起算点：那一行真的渲染了（否则这条会空跑通过）
+    expect(cellText('processing-doc-combo')).toBe('超高')
+    const tables = collectTableIntegrity(dataTables(doc()))
+    for (const table of tables) expect(table.rows.every((n) => n === 6)).toBe(true)
+  })
+
+  it('🔴 版面：面料单 6 列宽度合计 100%，批号仍 ≥16%（#6600 的 17 位下限不放宽）', () => {
+    render(<ProcessingDoc order={buildOrder()} processingOrder={fabricPo()} />)
+    const widths = headers().map((label) => headerWidthOf(label as string))
+    expect(widths.every((w) => Number.isFinite(w))).toBe(true)
+    expect(widths.reduce((sum, w) => sum + w, 0)).toBe(100)
+    expect(headerWidthOf('批号')).toBeGreaterThanOrEqual(16)
+    // 批号必须比常态为空的「备注」列宽（同加工单的口径）
+    expect(headerWidthOf('批号')).toBeGreaterThan(headerWidthOf('备注'))
+  })
+
+  it('② 多套面料单：3 个商品行 ⇒ 3 块，每块 6 列（用户报的那张多套单同形）', () => {
+    render(
+      <ProcessingDoc
+        order={buildOrder({
+          items: [buildItem(), buildItem({ id: 'item-2' }), buildItem({ id: 'item-3' })],
+        })}
+        processingOrder={fabricPo()}
+      />
+    )
+    const blocks = Array.from(document.querySelectorAll('.processing-set'))
+    expect(blocks).toHaveLength(3)
+    for (const block of blocks) {
+      expect(block.querySelectorAll('thead th')).toHaveLength(6)
+      expect(block.querySelectorAll('tbody tr')[0]?.querySelectorAll('td')).toHaveLength(6)
+    }
+  })
+})
