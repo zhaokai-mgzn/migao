@@ -14,7 +14,7 @@ import { createApi, SESSION_EXPIRED } from './api.mjs'
 import { renderReadyOrders, renderShipLabel, shipLabelLengthMm, shipLabelPageRule } from './shipment.mjs'
 
 /** 登录页（同源静态页；本页未登录时的出口）。 */
-export const SHIPMENT_LOGIN_HREF = '/w/'
+export const SHIPMENT_LOGIN_HREF = './'
 
 /** 读面失败时的兜底文案（技术原文留在 `err.technical`，屏上只出现人话）。 */
 export const SHIPMENT_UNREADABLE = '待发货订单读取失败：请检查网络后刷新'
@@ -32,7 +32,7 @@ function pageHeader(worker) {
   if (!name) return ''
   return `<header class="wh5-header">
     <span class="wh5-worker" id="wh5-current-worker">当前工人：${name}${no ? `（工号 ${no}）` : ''}</span>
-    <a class="wh5-ghost" id="wh5-shipment-back" href="/w/">返回报工</a>
+    <a class="wh5-ghost" id="wh5-shipment-back" href="./">返回报工</a>
   </header>`
 }
 

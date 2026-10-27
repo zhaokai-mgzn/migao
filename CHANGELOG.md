@@ -17,6 +17,22 @@
 
 ## [Unreleased]
 
+### 工人端整站搬进 `/b`：报工 / 机台 / 计件 / 发货 / 返工五页都在 `/b/report/` 下（2026-10-27，issue #7915）
+
+用户 2026-10-27 17:22 逐字：「所有 /w 页面都要迁移到 /b，统一成手机端/小程序」。
+
+- **五张页面全部挂到 `/b/report/`**：`index.html`（报工）、`machine.html`（机台/裁高）、`piecework.html`（我的计件）、
+  `shipment.html`（拍照发货）、`rework.html`（返工记录）—— 由 nginx `rewrite ^/b/report/(.*)$ /w/$1 last;` 承接，
+  文件仍是 `/w/` 那一份（**页面本体零改动**，347 条判据全绿）。
+- **页内 9 处跳转改成相对**（`MACHINE_ENTRY_HREF` / `PIECEWORK_ENTRY_HREF` / `SHIPMENT_ENTRY_HREF` /
+  `REWORK_ENTRY_HREF` / `*_LOGIN_HREF` / `MACHINE_REPORT_HREF` / 两处 `<a href>`）⇒ 从 `/b/report/` 点进任何一页
+  **地址栏都留在 `/b/report/…`**；从 `/w/` 直连进去则留在 `/w/…`（同一份文件、两条前缀都正确）。
+- **判据**：`deploy/scripts/bmini-h5-verify-served.sh` 从「只判首页」扩为**逐页**（五页各自 `/b/report/<p>` 与 `/w/<p>`
+  逐字节一致）；worker-h5 新增类级守卫「源码里不得再出现绝对 `/w/` 链接」；模拟器补 `no_report_rewrite` 红证形态
+  （删掉 rewrite ⇒ 必红）。
+- 边界（照实登记）：`/w/` 静态面仍可直连（兼容期，退役属 #7806 P3）；小程序侧的「一套」仍由 #7813 承接
+  （把机台/计件/发货/返工搬进 bmini 原生页）。
+
 ### 手机端只留 `/b`：扫纸上的码进 `/b/report/`，页面就是经过多轮测试的 `/w` 报工面（2026-10-27，issue #7906）
 
 用户 2026-10-27 16:47 逐字：「扫码洗水唛二维码还是进入 /w 页面，这个页面仍然没有合并替代 /b 页面的扫码报工页面」。

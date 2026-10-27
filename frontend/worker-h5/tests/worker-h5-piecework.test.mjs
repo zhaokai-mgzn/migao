@@ -163,5 +163,5 @@ test('装配层：401 ⇒ 显式回落登录页（不静默重试、不按上一
   const app = createPieceworkApp({ doc, api })
   await app.boot()
   assert.match(root.innerHTML, /id="wh5-piecework-login-required"/, '401 必须显式说清并给登录出口')
-  assert.match(root.innerHTML, /href="\/w\/"/, '登录出口是真链接')
+  assert.match(root.innerHTML, /href="\.\/"/, '登录出口是真链接')
 })

@@ -134,16 +134,16 @@ export const DEFAULT_PAGES = [PAGE_REPORT, PAGE_PIECEWORK, PAGE_ORDER, PAGE_CUT_
 
 /** 裁高计算入口（同源静态页；`/w/` 与 `/w/machine.html` 同一静态根 ⇒ 相对路径、不写死域名）。
  *  文案 = 「裁高计算（一体机）」（2026-10-10 用户裁定：改前的「机台模式」只有内部人懂，issue #6635）。 */
-export const MACHINE_ENTRY_HREF = '/w/machine.html'
+export const MACHINE_ENTRY_HREF = './machine.html'
 
 /** 我的计件入口（同源静态页，与 `machine.html` 同款；issue #6767）。 */
-export const PIECEWORK_ENTRY_HREF = '/w/piecework.html'
+export const PIECEWORK_ENTRY_HREF = './piecework.html'
 
 /** 发货入口（同源静态页；issue #7761 —— 全完工待发货列表 + 50×70 发货标签打印）。 */
-export const SHIPMENT_ENTRY_HREF = '/w/shipment.html'
+export const SHIPMENT_ENTRY_HREF = './shipment.html'
 
 /** 返工记录入口（同源静态页；issue #7860 —— 有返工报工的加工单列表）。 */
-export const REWORK_ENTRY_HREF = '/w/rework.html'
+export const REWORK_ENTRY_HREF = './rework.html'
 
 /**
  * 本机实际可走的页面集合（**唯一判据**）—— 三态各不相同，绝不合并：

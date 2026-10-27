@@ -157,7 +157,7 @@ test('④ 401：显式「登录已失效」+ `/w/` 真链接（不静默重试�
   assert.match(html, /id="wh5-rework-login-required">登录已失效：/, '必须明说登录已失效（不能只说「请登录」）')
   assert.equal(textOf(html).includes(REWORK_LOGIN_REQUIRED), true)
   assert.match(html, new RegExp(`<a[^>]*id="wh5-rework-login"[^>]*href="${REWORK_LOGIN_HREF}"`), '登录出口必须是真链接')
-  assert.equal(REWORK_LOGIN_HREF, '/w/', '登录页 = 工人端首页（改路径 ⇒ 红）')
+  assert.equal(REWORK_LOGIN_HREF, './', '登录页 = 工人端首页（改路径 ⇒ 红）')
   assert.doesNotMatch(html, /wh5-rework-retry/, '401 不许给「重新读取」（会话没了，重试不会成功）')
   assert.doesNotMatch(html, /失败/, '401 的文案是「登录已失效」，不是泛化的「失败」')
   // 红证：把 `<a href>` 换成 `<button>`（或删掉 href）⇒ 第二条断言红
