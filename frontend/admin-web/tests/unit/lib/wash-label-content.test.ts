@@ -513,7 +513,7 @@ describe('专属唛 —— 余料带回 / 绑带 每套一张（issue #8002）',
     // 专属唛：码 / 套序 / 快照行都沿用该部位（不另造内容）
     expect(sheets[2].qrValue).toBe(POSITION.scan_url)
     expect(sheets[2].position).toBe(POSITION)
-    expect(sheets[2].item).toBeDefined()
+    expect(sheets[2].item?.itemId).toBe('item-1')
     expect(sheets[2].setNo).toBe(1)
     // 没有命中选项 ⇒ 零专属唛（常规唛原样）
     const plain = washLabelSheets({ positions: [POSITION], items: [ITEM] })

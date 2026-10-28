@@ -76,3 +76,4 @@
 {"id":"1793147721.21291.3996","ts":"2026-10-28T00:35:21Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7974-pool-order-level-dispatch","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793155738.9080.31947","ts":"2026-10-28T02:48:59Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/7979-wash-label-50x150","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1793173933.41452.18104","ts":"2026-10-28T07:52:14Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/cutting-height-process-params","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1793184606.56500.21526","ts":"2026-10-28T10:50:06Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/8002-wash-label-option-label","why":"子包 worktree 直跑全量（无批次标记）"}
