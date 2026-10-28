@@ -394,6 +394,20 @@ function remarkText(position) {
  */
 const MACHINE_KEY_ROWS = new Set(['宽', '高', '用料'])
 
+/**
+ * 单屏版**主屏只印这些**（issue #7990，2026-10-28 用户逐字「要一个屏幕把关键信息都放下」）。
+ *
+ * <p>详情面服务端给的字段有 **38 个**（母单 #6901 之后还在长），一屏装不下 —— 主屏只放裁床当下要读的 16 格；
+ * 其余（售卖方式 / 卷数 / 数量单位 / 是否定型 / 幅数 / 是否对花 / 花距 / 算料公式 / 加工费米数 / 指派米数 /
+ * 组件 …）仍由 `detailRows` 提供、在**报工页**可见，不在机台主屏铺开。</p>
+ *
+ * <p>顺序 = 既有 12 行原序（`worker-h5-position-spec.test.mjs` 的负控按此逐字比较）+ 4 行裁剪口径。</p>
+ */
+const MACHINE_MAIN_ROWS = [
+  '品牌', '收货人', '款式', '套数', '宽', '高', '加工类型', '开数', '安装工艺', '褶倍', '用料', '部位备注',
+  '总褶数', '每片褶数', '特殊选项', '加工费组合',
+]
+
 function kvRows(rows) {
   return rows
     .map(([label, value, unit, format]) => {
@@ -536,6 +550,12 @@ export function renderCalc(state) {
     </section>`
 }
 
+/** 主屏行 = 白名单顺序（未在白名单里的字段不上主屏，见 {@link MACHINE_MAIN_ROWS}）。 */
+function mainDetailRows(data, position) {
+  const all = detailRows(data, position)
+  return MACHINE_MAIN_ROWS.map((label) => all.find((row) => row[0] === label)).filter(Boolean)
+}
+
 /** 详情屏内联参数 chips（issue #7990）：与计算器同一份命中项与勾选状态，工人不用换屏就能改。 */
 function detailChips(state, position) {
   const digits = digitsOf(position)
@@ -565,7 +585,7 @@ export function renderDetail(state) {
       </header>
       <nav class="wh5-machine__tabs">${positionTabs(state)}</nav>
       <div class="wh5-machine__body">
-        <dl class="wh5-machine__kv-list">${kvRows(detailRows(state.data, position))}</dl>
+        <dl class="wh5-machine__kv-list">${kvRows(mainDetailRows(state.data, position))}</dl>
         <div class="wh5-machine__col">
           <div class="wh5-machine__chips">${detailChips(state, position)}</div>
           ${isEdited(position, state.unchecked) ? '<p class="wh5-machine__edited">已手改：只改本次显示与下发值，不写订单、不留痕</p>' : ''}

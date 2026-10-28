@@ -449,9 +449,9 @@ a.wh5-machine__back:active { color: var(--wh5-machine-ink); }
   .wh5-machine__tab { min-height: 72px; font-size: 26px; }
   .wh5-machine__hit { min-height: 80px; font-size: 28px; }
   .wh5-machine__kv dd { font-size: 30px; }
-  .wh5-machine__big { font-size: 44px; }
+  .wh5-machine__big { font-size: 36px; }
   .wh5-machine__big b { font-size: 2em; }
-  .wh5-machine__cta, .wh5-machine__back { min-height: 96px; font-size: 30px; }
+  .wh5-machine__cta, .wh5-machine__back { min-height: 72px; font-size: 24px; }
 }
 
 /* 报工区（与裁高值同屏）：大字值 + 【完成】+ 回执/报错 —— 报工失败必须一眼看到 */
@@ -809,9 +809,9 @@ a.wh5-machine__back:active { color: var(--wh5-machine-ink); }
   .wh5-machine { padding: 12px 16px; }
   .wh5-machine__body { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 14px; align-items: start; }
   .wh5-machine__kv-list { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
-  .wh5-machine__kv { padding: 6px 10px; border-radius: 10px; }
+  .wh5-machine__kv { padding: 5px 8px; border-radius: 10px; }
   .wh5-machine__kv dt { font-size: 12px; }
-  .wh5-machine__kv dd { font-size: 18px; margin-top: 2px; line-height: 1.2; }
+  .wh5-machine__kv dd { font-size: 17px; margin-top: 1px; line-height: 1.15; }
   .wh5-machine__kv dd.is-key { font-size: 26px; font-weight: 800; }
   .wh5-machine__head h1 { font-size: 26px; }
   .wh5-machine__worker { font-size: 18px; }
@@ -820,7 +820,7 @@ a.wh5-machine__back:active { color: var(--wh5-machine-ink); }
 .wh5-machine__chips { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
 .wh5-machine__chip {
   display: flex; align-items: center; gap: 8px;
-  min-height: 52px; padding: 0 12px; border-radius: 12px;
+  min-height: 46px; padding: 0 12px; border-radius: 12px;
   border: 2px solid transparent;
   background: var(--wh5-machine-surface); color: var(--wh5-machine-ink);
   font-size: 16px; touch-action: manipulation;
