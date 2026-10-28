@@ -50,7 +50,7 @@
     ⇒ 商家不再选材料；join key 注册表（`NON_PIECEWORK_OPTIONS`）仍按派生键登记，工资口径一字不动。
     代码承载体：`app/production/routing.py::SPECIAL_OPTION_FAMILIES`（真值源镜像）·
     `frontend/admin-web/src/lib/order-craft-fields.ts::SPECIAL_OPTION_FAMILIES`（录入派生）·
-    `backend/admin-api/src/main/java/com/migao/admin/service/SpecialOptionNames.java`（读侧兼容）。
+    `backend/admin-api/src/main/java/com/migao/admin/service/OptionFamilyNames.java`（读侧兼容）。
     详见 [docs/design/special-option-display-and-derivation.md](design/special-option-display-and-derivation.md)。
 - 【默】保证金机制：保证金余额 / 保证金使用 / 本次收款 / 收款备注（定金制，配合企业收款二维码）。
 

@@ -228,7 +228,7 @@ NON_PIECEWORK_OPTIONS = frozenset({"余料带回-布", "余料带回-纱"})
 # 用户逐字：「特殊选项里的这两项要改，只需要展示**余料带回**即可，后面的 `-布` 和 `-纱` 应该是
 # 默认**跟随订单套行的帘种**来决定的，这样语义更清晰」「这个规则要**适用于全系统**」。
 #
-# ⇒ 口径（与 Java `SpecialOptionNames`、admin-web `SPECIAL_OPTION_FAMILIES` 同一份）：
+# ⇒ 口径（与 Java `OptionFamilyNames`、admin-web `SPECIAL_OPTION_FAMILIES` 同一份）：
 # · **语义名**（`余料带回`）是录入 / 展示面唯一该出现的名字 —— 它不再是「待客户确认」的未知
 #   选项，而是本族的 base 名（issue #4389 的判据 2 至此**已定论**）；
 # · `-布` / `-纱` 是**派生键**：纱帘 ⇒ `-纱`，布帘 / 帘头 / 缺省 ⇒ `-布`；

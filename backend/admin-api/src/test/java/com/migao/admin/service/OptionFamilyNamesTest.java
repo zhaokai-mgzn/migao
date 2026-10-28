@@ -23,44 +23,44 @@ import static org.assertj.core.api.Assertions.assertThat;
  * </ol>
  */
 @DisplayName("特殊选项布/纱派生族（issue #8007）")
-class SpecialOptionNamesTest {
+class OptionFamilyNamesTest {
 
     @Test
     @DisplayName("🔴 客户带走：语义名与两种派生键都算（红证：只认派生键 ⇒ 语义名那条红）")
     void customerTakeAwayAcceptsSemanticNameAndBothDerivedKeys() {
-        assertThat(SpecialOptionNames.isCustomerTakeAway(List.of("余料带回"))).isTrue();
-        assertThat(SpecialOptionNames.isCustomerTakeAway(List.of("余料带回-布"))).isTrue();
-        assertThat(SpecialOptionNames.isCustomerTakeAway(List.of("余料带回-纱"))).isTrue();
+        assertThat(OptionFamilyNames.isCustomerTakeAway(List.of("余料带回"))).isTrue();
+        assertThat(OptionFamilyNames.isCustomerTakeAway(List.of("余料带回-布"))).isTrue();
+        assertThat(OptionFamilyNames.isCustomerTakeAway(List.of("余料带回-纱"))).isTrue();
         // 同一行里混着别的选项也要认出来
-        assertThat(SpecialOptionNames.isCustomerTakeAway(List.of("加铅块", "拼1次", "余料带回"))).isTrue();
+        assertThat(OptionFamilyNames.isCustomerTakeAway(List.of("加铅块", "拼1次", "余料带回"))).isTrue();
         // 别的选项名不得被误判成「客户带走」
-        assertThat(SpecialOptionNames.isCustomerTakeAway(List.of("加铅块", "拼1次"))).isFalse();
-        assertThat(SpecialOptionNames.isCustomerTakeAway(List.of())).isFalse();
-        assertThat(SpecialOptionNames.isCustomerTakeAway(null)).isFalse();
+        assertThat(OptionFamilyNames.isCustomerTakeAway(List.of("加铅块", "拼1次"))).isFalse();
+        assertThat(OptionFamilyNames.isCustomerTakeAway(List.of())).isFalse();
+        assertThat(OptionFamilyNames.isCustomerTakeAway(null)).isFalse();
     }
 
     @Test
     @DisplayName("规则匹配：语义名按族展开；派生键只命中同名；非族名逐字")
     void ruleValueMatchesExpandsOnlySemanticNames() {
         // 配置面唯一可选值 = 语义名 ⇒ 布帘单 / 纱帘单都命中
-        assertThat(SpecialOptionNames.ruleValueMatches("余料带回", "余料带回-布")).isTrue();
-        assertThat(SpecialOptionNames.ruleValueMatches("余料带回", "余料带回-纱")).isTrue();
-        assertThat(SpecialOptionNames.ruleValueMatches("余料带回", "余料带回")).isTrue();
+        assertThat(OptionFamilyNames.ruleValueMatches("余料带回", "余料带回-布")).isTrue();
+        assertThat(OptionFamilyNames.ruleValueMatches("余料带回", "余料带回-纱")).isTrue();
+        assertThat(OptionFamilyNames.ruleValueMatches("余料带回", "余料带回")).isTrue();
         // 派生键规则**只**命中同名（布帘规则不得命中纱帘单）
-        assertThat(SpecialOptionNames.ruleValueMatches("余料带回-布", "余料带回-布")).isTrue();
-        assertThat(SpecialOptionNames.ruleValueMatches("余料带回-布", "余料带回-纱")).isFalse();
+        assertThat(OptionFamilyNames.ruleValueMatches("余料带回-布", "余料带回-布")).isTrue();
+        assertThat(OptionFamilyNames.ruleValueMatches("余料带回-布", "余料带回-纱")).isFalse();
         // 反向不展开：派生键不是「全族」的别名，也不得凭空命中别的选项
-        assertThat(SpecialOptionNames.ruleValueMatches("余料带回", "加立边")).isFalse();
-        assertThat(SpecialOptionNames.ruleValueMatches("加立边", "余料带回-布")).isFalse();
+        assertThat(OptionFamilyNames.ruleValueMatches("余料带回", "加立边")).isFalse();
+        assertThat(OptionFamilyNames.ruleValueMatches("加立边", "余料带回-布")).isFalse();
     }
 
     @Test
     @DisplayName("非族名不折叠：布绑带 / 纱绑带 是独立选项名（不属任何布/纱族）")
     void independentOptionNamesAreNotFamilyMembers() {
-        assertThat(SpecialOptionNames.isFamilyName("布绑带")).isFalse();
-        assertThat(SpecialOptionNames.isFamilyName("纱绑带")).isFalse();
-        assertThat(SpecialOptionNames.ruleValueMatches("布绑带", "纱绑带")).isFalse();
-        assertThat(SpecialOptionNames.isFamilyName("余料带回-布")).isTrue();
-        assertThat(SpecialOptionNames.isFamilyName("余料带回")).isTrue();
+        assertThat(OptionFamilyNames.isFamilyName("布绑带")).isFalse();
+        assertThat(OptionFamilyNames.isFamilyName("纱绑带")).isFalse();
+        assertThat(OptionFamilyNames.ruleValueMatches("布绑带", "纱绑带")).isFalse();
+        assertThat(OptionFamilyNames.isFamilyName("余料带回-布")).isTrue();
+        assertThat(OptionFamilyNames.isFamilyName("余料带回")).isTrue();
     }
 }

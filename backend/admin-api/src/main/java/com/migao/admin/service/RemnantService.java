@@ -100,7 +100,7 @@ public class RemnantService {
     /**
      * 状态=客户带走（特殊选项「余料带回」）—— 行业做法 1，企业零损失、不入可用池。
      *
-     * <p>⚠️ 名称口径单一真值 = {@link SpecialOptionNames}（issue #8007）：语义名
+     * <p>⚠️ 名称口径单一真值 = {@link OptionFamilyNames}（issue #8007）：语义名
      * {@code 余料带回} 与派生键 {@code 余料带回-布} / {@code 余料带回-纱} 都算「客户带走」。</p>
      */
 
@@ -236,7 +236,7 @@ public class RemnantService {
 
     /**
      * 本订单是否「客户带走余料」（{@code processing_info.specialOptions} 含语义名
-     * {@code 余料带回} 或其派生键 {@code -布} / {@code -纱}，见 {@link SpecialOptionNames}）。
+     * {@code 余料带回} 或其派生键 {@code -布} / {@code -纱}，见 {@link OptionFamilyNames}）。
      *
      * <p>行业做法 1（回收率 100% —— 本来就是客户的）：企业零损失、不入库、不回收。
      * 本方法只回答「整单有没有勾」这一个问题；系统**不推算**客户会带走哪一块（不猜）。</p>
@@ -253,7 +253,7 @@ public class RemnantService {
         for (OrderItem item : orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
                 .eq(OrderItem::getTenantId, tenantId).eq(OrderItem::getOrderId, order.getId()))) {
             List<String> options = specialOptionsOf(item);
-            if (SpecialOptionNames.isCustomerTakeAway(options)) {
+            if (OptionFamilyNames.isCustomerTakeAway(options)) {
                 return true;
             }
         }

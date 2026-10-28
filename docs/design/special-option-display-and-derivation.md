@@ -28,7 +28,7 @@
 |---|---|
 | 前端**录入派生** + 展示词表 | `frontend/admin-web/src/lib/order-craft-fields.ts::SPECIAL_OPTION_FAMILIES` / `specialOptionDisplayOptions()` / `resolveSpecialOptionName()` / `derivedSpecialOptionValues()` |
 | 前端**展示收敛**（订单详情 / 加工单屏幕 / 打印 / 水洗唛 / 三端小程序） | `craft-display.ts::optionList`（三端**逐字同源**，由 `tests/unit_ci_workflows/test_craft_display_same_source.py` 钉住） |
-| 后端**读侧兼容**（余料客户带走、裁高条件匹配） | `backend/admin-api/src/main/java/com/migao/admin/service/SpecialOptionNames.java` |
+| 后端**读侧兼容**（余料客户带走、裁高条件匹配） | `backend/admin-api/src/main/java/com/migao/admin/service/OptionFamilyNames.java` |
 | Agent 真值源镜像 | `backend/ai-agent-service/app/production/routing.py::SPECIAL_OPTION_FAMILIES`（+ 订单工具描述里的「不要写 -布/-纱」） |
 | 行业真值源说明 | `docs/curtain-production-rules.md` §1【默】特殊选项清单 |
 
@@ -51,7 +51,7 @@
 
 - **`布绑带` / `纱绑带` 不纳入本族**：它们是**两个独立选项名**（各自对应独立工序与 join key），
   且 `布/纱` 是**特征名的一部分**，不是同一语义的材料后缀。判据把它们钉成「非族成员」
-  （`SpecialOptionNamesTest` / `special-option-names.test.ts`），防止后人「顺手也折叠一下」改坏工资 key。
+  （`OptionFamilyNamesTest` / `special-option-names.test.ts`），防止后人「顺手也折叠一下」改坏工资 key。
 - **存量数据不回填**：历史订单里的 `余料带回-布/-纱` 原样保留（展示收敛、读侧兼容）；新数据由录入边界派生。
 - **未覆盖**：配置面「新增特殊选项」自由文本入口仍可手输派生键（见上表 #10）；
   若后续要禁止，建议在研究清楚「配置面 vs 订单面词表分离」后单独开单。
@@ -64,7 +64,7 @@
 - `frontend/admin-web/tests/unit/components/OrderExtraOptions.test.tsx`：18 项、无 `-布/-纱`、按帘种派生；
 - `frontend/admin-web/tests/unit/lib/craft-display.test.ts`：展示面收回语义名；
 - `frontend/admin-web/tests/unit/components/CuttingHeightConfigPanel.test.tsx`：配置面词表；
-- `backend/admin-api/src/test/java/com/migao/admin/service/SpecialOptionNamesTest.java`：读侧族匹配；
+- `backend/admin-api/src/test/java/com/migao/admin/service/OptionFamilyNamesTest.java`：读侧族匹配；
 - `backend/admin-api/src/test/java/com/migao/admin/service/CuttingHeightCalculatorTest.java`：条件按族命中；
 - `backend/ai-agent-service/tests/test_production/test_special_options.py`：真值源三分类 + 派生族登记；
 - `tests/unit_ci_workflows/test_production_catalog_seed.py`：ERP 三形态显式登记。

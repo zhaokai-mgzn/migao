@@ -22,7 +22,7 @@ import java.util.Map;
  * （录入边界），展示收敛在 {@code craft-display.ts::optionList}（三端同源）；
  * 本类与它们同口径，两侧一致性由判据钉住。</p>
  */
-final class SpecialOptionNames {
+final class OptionFamilyNames {
 
     /** 语义名（= 录入 / 展示面唯一该出现的名字） */
     static final String TAKE_AWAY_BASE = "余料带回";
@@ -40,7 +40,7 @@ final class SpecialOptionNames {
     private static final Map<String, List<String>> FAMILIES =
             Map.of(TAKE_AWAY_BASE, List.of(TAKE_AWAY_FABRIC, TAKE_AWAY_SHEER));
 
-    private SpecialOptionNames() {
+    private OptionFamilyNames() {
     }
 
     /** 该名字是否属于某个布/纱派生族（语义名或任一派生键） */
@@ -64,7 +64,7 @@ final class SpecialOptionNames {
      * （该归客户的东西被回收），是静默的账错。历史数据里的派生键照旧命中。</p>
      */
     static boolean isCustomerTakeAway(List<String> options) {
-        return options != null && options.stream().anyMatch(SpecialOptionNames::isFamilyName);
+        return options != null && options.stream().anyMatch(OptionFamilyNames::isFamilyName);
     }
 
     /**

@@ -181,11 +181,11 @@ final class CuttingHeightCalculator {
         };
     }
 
-    /** 特殊选项条件的命中：{@link SpecialOptionNames#ruleValueMatches} 承借口径（语义名按族展开）。 */
+    /** 特殊选项条件的命中：{@link OptionFamilyNames#ruleValueMatches} 承借口径（语义名按族展开）。 */
     private static boolean optionAnyOf(List<String> values, List<String> pool) {
         List<String> source = pool == null ? List.of() : pool;
         return values.stream().anyMatch(value ->
-                source.stream().anyMatch(option -> SpecialOptionNames.ruleValueMatches(value, option)));
+                source.stream().anyMatch(option -> OptionFamilyNames.ruleValueMatches(value, option)));
     }
 
     private static boolean anyOf(List<String> values, List<String> pool) {
