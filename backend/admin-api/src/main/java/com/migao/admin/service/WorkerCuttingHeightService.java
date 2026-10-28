@@ -56,6 +56,14 @@ public class WorkerCuttingHeightService {
 
     /** 缺项判据名（进 {@code positions[].missing}，页面据此**指名**报缺，不静默显示 0）。 */
     static final String MISSING_POSITION = "position";
+
+    /**
+     * 「主帘缺省即布帘」的**默认部位**（issue #4521 的写侧口径，读侧在此补回；issue #7993）。
+     *
+     * <p>值必须与 {@code CuttingHeightCalculator.POSITIONS} 的「布帘」逐字一致 —— 配置项的
+     * {@code hit.position} 用的就是这一组词。</p>
+     */
+    static final String DEFAULT_POSITION_KIND = "布帘";
     static final String MISSING_FINISHED_HEIGHT = "finished_height";
     static final String MISSING_CUTTING_HEIGHT = "cutting_height";
 
@@ -194,6 +202,15 @@ public class WorkerCuttingHeightService {
         PositionDetailFields.fillDetailKeys(row, entry, MACHINE_ROW_EXCLUDED_KEYS);
 
         String position = text(entry.get("position_kind"));
+        // 🔴 空值 ≠ 缺数据（issue #7993，2026-10-28 一体机现场实证）：
+        // 下单面按 issue #4521「**主帘缺省即布帘 ⇒ 不写** curtainType」把布帘这个默认值**刻意留空**，
+        // 于是绝大多数布帘单的 `order_items.curtain_type` 就是 NULL；本读面若把空值当「缺部位」，
+        // 则**每一张布帘单都算不出裁高**、也下发不了（真机：订单详情正常但裁高区报「缺少 position」）。
+        // 口径只补一次、且**布料行不补**（卖布行没有部位语义）——布料判据复用唯一实现，不新造第二个。
+        if (position == null && item != null && !ProcessingOrderService.isFabricSaleLine(info)) {
+            position = DEFAULT_POSITION_KIND;
+            row.put("position_kind", position);
+        }
         BigDecimal finishedHeight = item == null ? null : item.getHeight();
         List<String> missing = new ArrayList<>();
         if (position == null) {
