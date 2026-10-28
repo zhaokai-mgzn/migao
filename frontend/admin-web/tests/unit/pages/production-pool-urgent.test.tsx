@@ -173,7 +173,7 @@ describe('🔴 红证夹具：「加急不进池」与「拒绝文案看得见�
     ].map(() => '被拒绝却没有可见文案（静默少派）'))
   })
 
-  it('⑤ 接线：前端两条红证必须与页面**同源**（页面真的用这三个口径）', () => {
+  it('⑤ 接线：前端红证必须与页面**同源**（页面真的用这些口径）', () => {
     const src = readFileSync(
       join(process.cwd(), 'src/app/(dashboard)/production/pool/page.tsx'),
       'utf-8'
@@ -187,6 +187,18 @@ describe('🔴 红证夹具：「加急不进池」与「拒绝文案看得见�
     }
     if (!src.includes('mustSurfaceDispatchError(dispatchError)')) {
       problems.push('失败红条的渲染条件没有走 mustSurfaceDispatchError ⇒ 「文案看得见」判据与页面脱钩')
+    }
+    // 🔴 类级锁（issue #7968）：订单级派单只能从「整单行」口径取批次指派 ——
+    // 退回 `buildPoolRequest([line])`（只带被点的那一行）⇒ 本项当场红，不用等真库看见另一套没领料。
+    const dispatchSingleBody = src.slice(
+      src.indexOf('const dispatchSingle'),
+      src.indexOf('const dispatchBatch'),
+    )
+    if (
+      !src.includes('singleDispatchLinesOfOrder') ||
+      !dispatchSingleBody.includes('singleDispatchLinesOfOrder(board, line.orderId)')
+    ) {
+      problems.push('「立即派单」没有按整单行取批次指派（singleDispatchLinesOfOrder）⇒ 多套成品帘只有被点那套领料')
     }
     expect(problems).toEqual([])
   })
