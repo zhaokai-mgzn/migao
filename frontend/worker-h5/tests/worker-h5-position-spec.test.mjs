@@ -502,15 +502,25 @@ test('🔴 ④ 机台屏屏一：#6901 新增规格行上屏 + 缺值 `—`（�
     '既有 12 行内容逐字不变（本单只加判据、不动它们）',
   )
 
-  // 新增行上屏（逐行逐字）
-  for (const [label, text] of ADDED_ROWS) {
-    assert.equal(kvList.includes(kvRow(label, text)), true, `#6901 新增行「${label}」必须以「${text}」上屏`)
+  // 主屏白名单（issue #7990，用户逐字「要一个屏幕把关键信息都放下」）：
+  // 详情面服务端字段有 38 个，主屏只放 16 格 —— 12 既有行 + 下面这 4 行；其余仍由 `detailRows` 提供、报工页可见。
+  for (const label of ['总褶数', '每片褶数', '特殊选项', '加工费组合']) {
+    assert.equal(kvList.includes(`<dt>${label}</dt>`), true, `主屏白名单行「${label}」必须上屏（issue #7990）`)
+  }
+  for (const label of ['售卖方式', '卷数', '数量单位', '算料公式', '加工费米数', '是否对花', '花距', '指派米数']) {
+    assert.equal(kvList.includes(`<dt>${label}</dt>`), false, `主屏只放 16 格：\`${label}\` 不得上主屏（issue #7990；报工页仍可见）`)
   }
 
   // 缺值一律显式 `—`（不猜 0、不留空、不接单位）
-  // ⚠️ 取样键 = `加工费米数`（夹具不给 `processing_meters`）：`算料公式` 在 issue #7842 之后
-  // 夹具里**有值**（公式名），拿它当缺值样本会变成「有值也要 `—`」的自相矛盾。
-  assert.equal(kvList.includes(kvRow('加工费米数', '—')), true, '缺值行显式 `—`（机台屏口径 = `EMPTY`，与报工屏「整行不渲染」是**有意**的两态）')
+  // 缺值显式 `—`：既有夹具 16 格都有值 ⇒ 单独构造一个「品牌/部位备注/用料 为空」的状态来钉这条口径
+  //（`—` 不猜 0、不留白、不缀单位）。
+  const base = machineDetailState()
+  const sparseState = {
+    ...base,
+    data: { ...base.data, positions: [{ ...base.data.positions[0], brand: null, position_remark: null, fabric_meters: null }] },
+  }
+  const sparse = renderMachine(sparseState).replace(/ class="is-key"/g, '')
+  assert.equal(/<dd>—<\/dd>/.test(sparse), true, '缺值行显式 `—`（机台屏口径 = `EMPTY`，与报工屏「整行不渲染」是**有意**的两态）')
   assert.equal(kvList.includes('—米'), false, '缺值不得在 `—` 后面再缀单位')
   assert.equal(/undefined|null|NaN/.test(kvList), false, '缺值不得渲染成 undefined / null / NaN')
 })
