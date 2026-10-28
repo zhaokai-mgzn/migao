@@ -8,7 +8,10 @@
 //   ② `requiredDeliveryDate === null` ⇒ 「未指定」（不猜一个日期）。
 //
 // 反空断言（§15.1）：本文件同时钉**正反两态** —— 只断言「加急出现」的实现
-// （比如永远渲染一个加急徽标）会在「不加急」那条上立刻红。
+// （比如永远渲染一个加急徽标）会在「非加急」那条上立刻红。
+//
+// 🔴 issue #8011 改的是**展示决策**、不是取值口径：非加急行**不再印「不加急」**（空单元格）。
+// 「缺省 = false」仍由本文件逐条判（非加急行不得出现加急徽标）—— 只是不再要求把那句话印出来。
 import { describe, it, expect } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import OrderTable from '@/components/orders/OrderTable'
@@ -62,23 +65,24 @@ describe('OrderTable · 加急 / 到货日（PR-079）', () => {
     expect(screen.getByTestId('order-delivery-order-001')).toHaveTextContent('2026-09-30')
   })
 
-  it('非加急（服务端 false ⇒ 库列缺省）：**不出现加急徽标**，到货日显示「未指定」', () => {
+  it('非加急（服务端 false ⇒ 库列缺省）：**不出现加急徽标**（空单元格），到货日显示「未指定」', () => {
     renderTable([order({ isUrgent: false, requiredDeliveryDate: null })])
 
     const cell = screen.getByTestId('order-urgent-order-001')
-    expect(cell).toHaveTextContent('不加急')
     // 🔴 反向断言（非空断言的关键）：非加急单上**不得**出现「加急」徽标
     // —— 「永远渲染一个加急徽标」的实现会在这里红
     expect(within(cell).queryByText('加急')).toBeNull()
-    expect(cell.textContent).toBe('不加急')
+    // issue #8011：非加急行**不渲染任何文字**（不再逐行印「不加急」）
+    expect(cell.textContent).toBe('')
     expect(screen.getByTestId('order-delivery-order-001')).toHaveTextContent('未指定')
   })
 
-  it('字段整体缺席（老响应/未下发）⇒ 按库列缺省渲染「不加急 / 未指定」，不崩、不编造', () => {
+  it('字段整体缺席（老响应/未下发）⇒ 按库列缺省渲染空单元格 / 未指定，不崩、不编造', () => {
     // `isUrgent` / `requiredDeliveryDate` 都不给 = 后端列缺省（NOT NULL DEFAULT FALSE / NULL）
     renderTable([order({})])
 
-    expect(screen.getByTestId('order-urgent-order-001').textContent).toBe('不加急')
+    // 缺省 false ⇒ 非加急 ⇒ 空单元格（issue #8011；仍不允许"猜成加急"）
+    expect(screen.getByTestId('order-urgent-order-001').textContent).toBe('')
     expect(screen.getByTestId('order-delivery-order-001')).toHaveTextContent('未指定')
   })
 
@@ -89,7 +93,8 @@ describe('OrderTable · 加急 / 到货日（PR-079）', () => {
     ])
 
     expect(screen.getByTestId('order-urgent-o-a').textContent).toBe('加急')
-    expect(screen.getByTestId('order-urgent-o-b').textContent).toBe('不加急')
+    // 非加急 ⇒ 空单元格（issue #8011）；与上一行对照即可证伪「整表同一个值」
+    expect(screen.getByTestId('order-urgent-o-b').textContent).toBe('')
     expect(screen.getByTestId('order-delivery-o-a')).toHaveTextContent('2026-10-03')
     expect(screen.getByTestId('order-delivery-o-b')).toHaveTextContent('未指定')
   })
