@@ -1092,15 +1092,15 @@ def effective_option_rows(table: str, columns, migration_dir: Path = MIGRATION_D
 
 
 def _routing_py_option_registries():
-    """routing.py 的三张特殊选项表 + 待确认集合（**真值源**，单一 import 点）。"""
+    """routing.py 的三张特殊选项表 + 布/纱派生族（**真值源**，单一 import 点）。"""
     sys.path.insert(0, str(ROUTING_PY_DIR))
     try:
         from app.production.routing import (
             NON_PIECEWORK_OPTIONS, OPTION_FACTOR_SCOPES,
-            PENDING_CUSTOMER_CONFIRMATION_OPTIONS, SPECIAL_OPTION_ROUTINGS,
+            SPECIAL_OPTION_FAMILIES, SPECIAL_OPTION_ROUTINGS,
         )
         return (SPECIAL_OPTION_ROUTINGS, OPTION_FACTOR_SCOPES,
-                NON_PIECEWORK_OPTIONS, PENDING_CUSTOMER_CONFIRMATION_OPTIONS)
+                NON_PIECEWORK_OPTIONS, SPECIAL_OPTION_FAMILIES)
     finally:
         sys.path.pop(0)
 
@@ -1183,22 +1183,22 @@ def test_option_names_carry_no_stale_spelling_anywhere():
 
 
 def test_erp_leftover_return_forms_are_all_explicitly_registered():
-    """判据 2（红证）：ERP 的**三种**「余料带回」形态都被显式登记（既不漏、也不落静默黑洞）。
+    """判据 2（红证）：ERP 的「余料带回」各形态都被显式登记（既不漏、也不落静默黑洞）。
 
-    `余料带回-布` / `余料带回-纱` = 显式登记的**不计件**；`余料带回`（无后缀）不在真值源 §1 的
-    19 项清单里 ⇒ 登记为**待客户确认**（`PENDING_CUSTOMER_CONFIRMATION_OPTIONS`），
-    不猜它归哪一类、也不让它变成「忘了映射」。
+    `余料带回-布` / `余料带回-纱` = 显式登记的**不计件**（注册表按派生键，join key 不动）；
+    `余料带回`（无后缀）= **布/纱派生族的 base 名**（issue #8007，用户 2026-10-28 裁定
+    「只需要展示余料带回即可，-布 / -纱 跟随订单套行的帘种」）⇒ 登记在 `SPECIAL_OPTION_FAMILIES`。
     """
-    _, _, non_piecework, pending = _routing_py_option_registries()
+    _, _, non_piecework, families = _routing_py_option_registries()
     assert {"余料带回-布", "余料带回-纱"} <= non_piecework, \
         f"ERP 名的不计件项未登记: {sorted({'余料带回-布', '余料带回-纱'} - non_piecework)}"
-    assert "余料带回" in pending, "ERP 第三种形态（无后缀 `余料带回`）零登记 = 静默黑洞"
-    # 三形态都不得落表（「不计件」与「待确认」都**不是**「有映射」）
+    assert "余料带回" in families, "派生族 base 名（无后缀 `余料带回`）零登记 = 静默黑洞"
+    # 三形态都不得落表（「不计件」与「派生族 base」都**不是**「有映射」）
     for table, columns in (("production_option_factors", OPTION_FACTOR_COLUMNS),
                            ("production_option_routings", OPTION_ROUTING_COLUMNS)):
         names = {r["option_name"] for r in effective_option_rows(table, columns)}
         assert names & {"余料带回-布", "余料带回-纱", "余料带回"} == set(), \
-            f"{table} 里落了不计件/待确认选项（会把「不计件」变成「有映射但系数 1」）"
+            f"{table} 里落了不计件/派生族 base（会把「不计件」变成「有映射但系数 1」）"
     # 终态面（issue #5245 A4 改判）：表已删 ⇒ 终态不存在「落表」这一可能（判据改指退场）
     _terminal_retired_tables_absent(SCHEMA.read_text(encoding="utf-8"))
 

@@ -697,7 +697,7 @@ class OrderCreateTool(BaseTool):
                                 "specialOptions": {
                                     "type": "array",
                                     "items": {"type": "string"},
-                                    "description": "下单勾选的**特殊选项**（部位级，19 项，如 拼1次/加铅块/加花边/抱枕/布绑带）——影响车间条件工序与计件系数",
+                                    "description": "下单勾选的**特殊选项**（部位级，19 项，如 拼1次/加铅块/加花边/抱枕/布绑带）——影响车间条件工序与计件系数。⚠️「余料带回」只写这一个名字，**不要**写 `余料带回-布` / `余料带回-纱`（材料由该明细行的帘种决定，服务端按帘种派生）",
                                 },
                                 "componentRole": {
                                     "type": "string",

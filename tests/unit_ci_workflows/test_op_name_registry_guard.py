@@ -125,6 +125,17 @@ LITERAL_EXEMPTIONS: tuple[tuple[str, str, str], ...] = (
         "同上（`余料带回-纱` 是另一个特殊选项名，同一份词表；与工序名的 `-纱` 变体形态同形不同物）",
     ),
     (
+        "frontend/admin-web/src/lib/craft-display.ts",
+        "余料带回-布",
+        "**展示收敛表**（issue #8007）：布/纱派生键在展示面收回语义名 `余料带回` —— "
+        "这张表必须逐字写出派生键才能做替换；它不是工序名，且**只**做展示归一（不改落库值）",
+    ),
+    (
+        "frontend/admin-web/src/lib/craft-display.ts",
+        "余料带回-纱",
+        "同上（`-纱` 是同一族的另一个派生键；与工序名的 `-纱` 变体形态同形不同物）",
+    ),
+    (
         "frontend/admin-web/src/lib/wash-label-content.ts",
         "余料带回-布",
         "**特殊选项名**（专属唛触发词表，与 `order-craft-fields.ts` / `routing.py` 逐字一致；issue #8002）"

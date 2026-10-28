@@ -71,6 +71,11 @@ interface EditableLine {
   processingNames: string[]
   /** 特殊选项（元/套那半） */
   specialOptions: string[]
+  /**
+   * 本行帘种（§4.2 `curtainType`）—— 布/纱派生键的**唯一**依据（issue #8007）。
+   * 弹窗不改帘种，只把它原样喂给特殊选项选择器；缺省 = 布帘。
+   */
+  curtainType?: string
   /** 原样带回的加工项其它键（工艺规格 / 算料输出 / 樘窗组键 …） */
   rest: Record<string, unknown>
   /** 原有加工项的数量与目录 id（按名字索引，勾选态来回切不丢） */
@@ -140,6 +145,8 @@ function toLine(item: NonNullable<Order['items']>[number]): EditableLine {
     installRoom,
     processingNames: namesOf(info.processingItems),
     specialOptions: namesOf(info.specialOptions),
+    // 帘种住在 `processingInfo.curtainType`（写侧同口径；纱帘行显式写、主帘缺省即布帘）
+    curtainType: typeof info.curtainType === 'string' && info.curtainType ? info.curtainType : undefined,
     rest,
     keptItems,
   }
@@ -549,6 +556,7 @@ export default function EditOrderContentModal({ open, order, onClose, onSaved }:
                         <div className="text-xs text-neutral-600 mb-2">特殊选项</div>
                         <OrderExtraOptions
                           value={line.specialOptions}
+                          curtainType={line.curtainType}
                           onChange={(next) => patchLine(line.key, { specialOptions: next })}
                         />
                       </div>
