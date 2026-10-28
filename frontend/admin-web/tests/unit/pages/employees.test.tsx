@@ -164,6 +164,16 @@ vi.mock('lucide-react', async (importOriginal) => {
 
 import EmployeesPage from '@/app/(dashboard)/employees/page'
 
+/**
+ * 行内「⋯」菜单的开合（issue #8039）：`重置密码` / `删除` 收进菜单，
+ * **收起态不进 DOM** —— 页面判据因此必须先点触发器。
+ */
+const openRowMenu = (rowId: number) => {
+  fireEvent.click(
+    within(screen.getByTestId(`employee-${rowId}`)).getByRole('button', { name: '更多操作' }),
+  )
+}
+
 describe('EmployeesPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -475,9 +485,11 @@ describe('EmployeesPage', () => {
     mockResetPassword.mockResolvedValue({ data: { data: null } })
     render(<EmployeesPage />)
     await waitFor(() => {
-      expect(screen.getAllByText('重置密码').length).toBeGreaterThan(0)
+      expect(screen.getByTestId('employee-edit-1')).toBeInTheDocument()
     })
-    fireEvent.click(screen.getAllByText('重置密码')[0])
+    // 重置密码在 ⋯ 菜单里（#8039）：收起态不进 DOM，先展开
+    openRowMenu(1)
+    fireEvent.click(screen.getByTestId('employee-reset-password-1'))
     await waitFor(() => {
       expect(screen.getByTestId('modal')).toBeInTheDocument()
     })
@@ -493,9 +505,10 @@ describe('EmployeesPage', () => {
   it('#5485: 重置密码未填新密码 → 提示且不发请求', async () => {
     render(<EmployeesPage />)
     await waitFor(() => {
-      expect(screen.getAllByText('重置密码').length).toBeGreaterThan(0)
+      expect(screen.getByTestId('employee-edit-1')).toBeInTheDocument()
     })
-    fireEvent.click(screen.getAllByText('重置密码')[0])
+    openRowMenu(1)
+    fireEvent.click(screen.getByTestId('employee-reset-password-1'))
     await waitFor(() => {
       expect(screen.getByTestId('modal')).toBeInTheDocument()
     })
@@ -736,9 +749,38 @@ describe('EmployeesPage', () => {
     render(<EmployeesPage />)
     expect(screen.getByText('新增员工')).toBeInTheDocument()
     await waitFor(() => {
-      expect(screen.getAllByText('编辑').length).toBeGreaterThan(0)
+      expect(screen.getByTestId('employee-edit-1')).toBeInTheDocument()
     })
-    expect(screen.getAllByText('删除').length).toBeGreaterThan(0)
+    // 删除在 ⋯ 菜单里（#8039）：收起态不进 DOM，展开后可达
+    expect(screen.queryByText('删除')).toBeNull()
+    openRowMenu(1)
+    expect(screen.getByTestId('employee-delete-1')).toBeInTheDocument()
+  })
+
+  it('#8039: 操作列 = 1 主行动 + ⋯ 菜单：每行可点 ≤ 2、删除仍走原确认弹窗', async () => {
+    render(<EmployeesPage />)
+    await waitFor(() => expect(screen.getByTestId('employee-1')).toBeInTheDocument())
+
+    const cell = within(screen.getByTestId('employee-1')).getByTestId('cell-actions')
+    const clickable = within(cell).getAllByRole('button')
+    expect(clickable).toHaveLength(2)
+    // 主行动 = 编辑（共享件，不再手写 `text-sm` 字面量按钮）
+    expect(clickable[0].textContent).toBe('编辑')
+    // 收起态：重置密码 / 删除 根本不进 DOM（不是 CSS 隐藏）
+    expect(within(cell).queryByText('重置密码')).toBeNull()
+    expect(within(cell).queryByText('删除')).toBeNull()
+    expect(within(cell).queryByRole('menu')).toBeNull()
+
+    // 展开后可达
+    fireEvent.click(within(cell).getByRole('button', { name: '更多操作' }))
+    expect(within(cell).getByTestId('employee-reset-password-1')).toBeInTheDocument()
+    expect(within(cell).getByTestId('employee-delete-1')).toBeInTheDocument()
+
+    // 危险动作仍走原有二次确认（Modal 一字未改）：点「删除」只开弹窗
+    fireEvent.click(within(cell).getByTestId('employee-delete-1'))
+    await waitFor(() => expect(screen.getByTestId('modal')).toBeInTheDocument())
+    expect(screen.getByTestId('modal').textContent).toContain('此操作不可撤销')
+    expect(within(screen.getByTestId('modal-footer')).getByText('确认删除')).toBeInTheDocument()
   })
 })
 
