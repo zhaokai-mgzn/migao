@@ -5,6 +5,12 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]` 下累加。**
 
+### 一体机机台屏改回深底：标题与说明在浅底上几乎看不见的问题（2026-10-28，issue #7983）
+- 现场（Windows 20H2 一体机、1024×768、Edge kiosk 全屏）：机台页 `/w/machine.html` 的「裁高计算（一体机）」「请扫水洗唛」在米白底上是浅色字，真机 CDP 实测对比度 **1.22:1**（正文要求 ≥4.5:1）⇒ 工人看不见标题。
+- 归因：2026-10-18 主题对齐把全局 `--wh5-bg` 从深色改为米白，而机台屏 body 取的是**全局页面底**、文字色仍是机台的浅色 `--wh5-machine-ink`（`styles.css` 的机台 token 注释写明「机台仍是深底（车间反光/粉尘）」）。
+- 改后：机台屏**自持** `var(--wh5-machine-bg)`（`#191f31`）深底，不再跟随工人端页面底；卡片 / 报工区 / 大字号裁高值口径不变。
+- 判据：`frontend/worker-h5/tests/worker-h5-machine-screen-contrast.test.mjs` —— ① 解析 token 后算 WCAG 对比度 ≥4.5:1；② 类级守卫：机台屏底色不得引用 `--wh5-bg` / `--wh5-bg-end`；③ 判别力自证（修复态必过、打回 `--wh5-bg` 必红）。
+
 ### 扫水洗唛出库（issue #7762）
 - **成品在库粒度改成「套 × 部位」**：一张水洗唛 = 一个仓位（V197：`finished_goods_stock` 增 `set_id/set_no/set_index/part_token_id/short_code`，在库唯一索引改为 `(tenant_id, set_id, order_item_id)`；V196 的订单行粒度保留 `set_id IS NULL` 兜底索引，存量行不丢）。
 - **打包按部位码逐行入库**：`FinishedGoodsService#receiveOnPack` 枚举该订单的 `processing_order_sets × processing_set_part_tokens` ⇒ 5 套布帘 = 5 行 = 5 个仓位；没有部位码（布料单 / 未印码历史单）退回订单行粒度。
