@@ -7,7 +7,7 @@ import { toastRequestError } from '@/lib/api-error'
 import { employeeApi } from '@/lib/api'
 import request from '@/lib/request'
 import { usePermission } from '@/lib/permission'
-import { Button, Input, Select, Modal, Table, Pagination, Badge, PageHeader, PageCard, SearchPanel, SELECT_CONTROL, RowActions, RowActionLink } from '@/components/ui'
+import { Button, Input, Select, Modal, Table, Pagination, Badge, PageHeader, PageCard, SearchPanel, SELECT_CONTROL, RowActions, RowActionLink, TableSkeleton } from '@/components/ui'
 import type { TableColumn, SearchFieldSpec } from '@/components/ui'
 import type { Employee, EmployeeStatus, EmployeeFormData } from '@/types'
 import { TreeCheckbox, type TreeNode } from '@/components/ui/TreeCheckbox'
@@ -610,6 +610,11 @@ export default function EmployeesPage() {
 
       {/* 表格 */}
       <PageCard testId="employees-empty">
+        {/* issue #8048：加载态 = 通用表格骨架（#8036 口径：页面级三元），与 9 列对齐；
+            不再让共享 `Table` 的 loading 分支印裸「加载中…」+ 空白表体。 */}
+        {loading ? (
+          <TableSkeleton rows={pageSize} columns={9} />
+        ) : (
         <Table<Employee>
           columns={columns}
           dataSource={employees}
@@ -628,6 +633,7 @@ export default function EmployeesPage() {
                 : '还没有员工 —— 点右上角「新增员工」开始，建好后就能给员工分配岗位和登录账号'
           }
         />
+        )}
         <Pagination
           current={current}
           pageSize={pageSize}

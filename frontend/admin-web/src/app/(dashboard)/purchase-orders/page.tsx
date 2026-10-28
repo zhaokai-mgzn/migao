@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Input, Modal, PageCard, PageHeader } from '@/components/ui'
+import { Button, Input, Modal, PageCard, PageHeader, TableSkeleton } from '@/components/ui'
 import SkuPicker, { type SkuPickerChoice, skuLineLabel } from '@/components/products/SkuPicker'
 import ListLoadError from '@/components/common/ListLoadError'
 import { loadErrorMessage } from '@/lib/api-error'
@@ -317,8 +317,10 @@ export default function PurchaseOrdersPage() {
       {loadError && <ListLoadError message={loadError} onRetry={load} testId="purchase-orders-load-error" />}
 
       <PageCard className="mt-4">
+        {/* issue #8048：加载态 = 通用表格骨架（#8036 口径），与 8 列对齐；
+            不再印裸「加载中…」+ 空白表体。 */}
         {loading ? (
-          <div className="text-sm text-neutral-500" data-testid="purchase-orders-loading">加载中…</div>
+          <TableSkeleton rows={8} columns={8} />
         ) : loadError ? (
           // 失败态已经在上面的 ListLoadError 里给出：这里**不许**再画「还没有采购单」——
           // 那是业务结论（真的一张都没有），拿它冒充加载失败会让商家以为单子丢了。

@@ -8,7 +8,7 @@ import { toastRequestError } from '@/lib/api-error'
 import { cn } from '@/lib/utils'
 import { orderApi } from '@/lib/api'
 import { OrderTable, CloseOrderModal, RemarkModal, RefundOrderModal } from '@/components/orders'
-import { Button, Modal, PageHeader, SearchPanel, SELECT_CONTROL } from '@/components/ui'
+import { Button, Modal, PageHeader, SearchPanel, SELECT_CONTROL, TableSkeleton } from '@/components/ui'
 import type { SearchFieldSpec } from '@/components/ui'
 import ListLoadError from '@/components/common/ListLoadError'
 import { usePermission } from '@/lib/permission'
@@ -646,6 +646,12 @@ export default function OrdersPage() {
         </div>
 
         {/* 表格 */}
+        {/* issue #8048：加载态 = **通用表格骨架**（#8036 已验收口径：页面级三元），与 `OrderTable`
+            的 15 列对齐；不再让表格组件内部印裸「加载中…」+ 空白表体。只改加载分支 ——
+            取数 / 分页 / 筛选 / 组件 props 一字未动。 */}
+        {loading ? (
+          <TableSkeleton rows={pageSize} columns={15} />
+        ) : (
         <OrderTable
           orders={orders}
           loading={loading}
@@ -675,6 +681,7 @@ export default function OrdersPage() {
                 : '最近一个月还没有订单 —— 点右上角「新增订单」开始；要看更早的单子，把日期范围往前调'
           }
         />
+        )}
 
         {/* 分页 */}
         <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-neutral-100">

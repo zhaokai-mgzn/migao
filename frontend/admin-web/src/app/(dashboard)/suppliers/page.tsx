@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Plus, Search, Truck } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button, PageCard, PageHeader } from '@/components/ui'
+import { Button, PageCard, PageHeader, TableSkeleton } from '@/components/ui'
 import ListLoadError from '@/components/common/ListLoadError'
 import { loadErrorMessage } from '@/lib/api-error'
 import { supplierApi } from '@/lib/api'
@@ -399,8 +399,10 @@ export default function SuppliersPage() {
           />
         )}
 
+        {/* issue #8048：加载态 = 通用表格骨架（#8036 口径），与 7 列对齐；
+            不再印裸「加载中…」+ 空白表体。 */}
         {loading ? (
-          <div className="py-10 text-center text-sm text-neutral-500">加载中…</div>
+          <TableSkeleton rows={8} columns={7} />
         ) : loadError ? null : suppliers.length === 0 ? (
           <div className="py-12 text-center text-sm text-neutral-500" data-testid="supplier-empty">
             <Truck className="w-8 h-8 mx-auto mb-2 text-neutral-300" />

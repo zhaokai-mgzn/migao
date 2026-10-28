@@ -6,7 +6,7 @@ import { Plus, Tags, X, Star } from 'lucide-react'
 import { toast } from 'sonner'
 import { customerApi } from '@/lib/api'
 import { resolveImageUrl } from '@/lib/utils'
-import { Table, Pagination, Modal, Button, Badge, Select, PageHeader, PageCard, SearchPanel } from '@/components/ui'
+import { Table, Pagination, Modal, Button, Badge, Select, PageHeader, PageCard, SearchPanel, TableSkeleton } from '@/components/ui'
 import { SEARCH_CONTROL_CLASS } from '@/components/ui/SearchPanel'
 import type { TableColumn, SearchFieldSpec } from '@/components/ui'
 import type { Customer, CustomerTag, CustomerTagFormData, CustomerChannel, CustomerListParams } from '@/types'
@@ -434,6 +434,11 @@ export default function CustomersPage() {
             />
           </div>
         )}
+        {/* issue #8048：加载态 = 通用表格骨架（#8036 口径：页面级三元），与 7 列对齐；
+            不再让共享 `Table` 的 loading 分支印裸「加载中…」+ 空白表体。 */}
+        {loading ? (
+          <TableSkeleton rows={pageSize} columns={7} />
+        ) : (
         <Table
           columns={columns}
           dataSource={customers}
@@ -453,6 +458,7 @@ export default function CustomersPage() {
                 : '还没有客户 —— 客户在对话里留过联系方式、或下过单后会自动建档'
           }
         />
+        )}
         <Pagination
           current={current}
           pageSize={pageSize}
