@@ -110,7 +110,8 @@ function ReviewStrip({ items }: { items: BriefingReviewItem[] }) {
 }
 
 export default function BriefingCard({ enabled = true, variant = 'dashboard' }: BriefingCardProps) {
-  const [loading, setLoading] = useState(false)
+  // 开启时首帧就是「加载中」（issue #8012）：否则会先闪一下「尚未生成」摘要再变回卡片
+  const [loading, setLoading] = useState(enabled)
   const [briefing, setBriefing] = useState<BriefingContent | null>(null)
   const [verifyStatus, setVerifyStatus] = useState<string | null>(null)
   const [generated, setGenerated] = useState(false)
@@ -146,8 +147,40 @@ export default function BriefingCard({ enabled = true, variant = 'dashboard' }: 
 
   useEffect(() => { fetchBriefing() }, [fetchBriefing])
 
-  // 企业开关关闭 → 整卡不渲染（红线 3：菜单/首页同时隐藏）
-  if (!enabled) return null
+  // ── 空态压缩（issue #8012）──────────────────────────────────────────────
+  // 改前：开关关闭 ⇒ 整块不渲染；开关开启但今日未生成 ⇒ 一个约 300px 的常驻盒子
+  //       （图标 + 「今日简报尚未生成」+ 三行长说明 + 「去开启」）⇒ 把「待处理」推到 1440×900
+  //       折叠线以下（2026-10-24 真栈截图 03-briefing.png 即此现象）。
+  // 改后：两种空态都降级为**一行摘要**（`migao-dev-flow` §31 P1 常驻面克制）：
+  //       一句话说清状态 + 一个可行动入口；有数据时仍是原来的完整卡片（不压缩）。
+  if (!enabled || (!loading && !generated)) {
+    return (
+      <div className="mb-6 space-y-2">
+        <div
+          data-testid="briefing-collapsed-hint"
+          className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-neutral-200 bg-white px-4 py-2.5 text-xs text-neutral-500 shadow-card"
+        >
+          <Newspaper className="h-3.5 w-3.5 flex-shrink-0 text-neutral-400" />
+          <span className="font-medium text-neutral-700">
+            {enabled ? '今日简报尚未生成' : '每日经营简报未开启'}
+          </span>
+          <span className="text-neutral-400">
+            {enabled
+              ? '每日生成时刻自动整理经营要点；生成失败时不会展示不实数据'
+              : '开启后每日自动整理经营要点'}
+          </span>
+          <Link
+            href="/settings?tab=basic"
+            className="ml-auto inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-primary-600 transition-colors hover:bg-primary-50 hover:text-primary-700"
+          >
+            {enabled ? '查看设置' : '开启'} <ArrowRight className="h-3 w-3" />
+          </Link>
+        </div>
+        {/* 简报没生成 ≠ 没有主动检查结论：有采集到就说清楚「哪些方面本次没有数据」 */}
+        {enabled && <ProactiveStatusPanel status={proactiveStatus} variant={variant} />}
+      </div>
+    )
+  }
 
   return (
     <div className="mb-6 rounded-xl border border-neutral-200 bg-white shadow-card">
@@ -185,27 +218,6 @@ export default function BriefingCard({ enabled = true, variant = 'dashboard' }: 
               {Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-14 animate-pulse rounded-lg bg-neutral-100" />)}
             </div>
             <div className="h-10 animate-pulse rounded-lg bg-neutral-100" />
-          </div>
-        ) : !generated ? (
-          // 引导空态：未生成/生成失败（不展示假数据，红线 4）
-          <div className="space-y-4">
-            {/* 简报没生成 ≠ 没有主动检查结论：有采集到就说清楚「哪些方面本次没有数据」 */}
-            <ProactiveStatusPanel status={proactiveStatus} variant={variant} />
-            <div className="flex flex-col items-center justify-center py-8 text-center">
-              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary-50 to-accent-50">
-                <Newspaper className="h-5 w-5 text-primary-400" />
-              </div>
-              <p className="text-sm font-medium text-neutral-600">今日简报尚未生成</p>
-              <p className="mt-1 max-w-md text-xs text-neutral-400">
-                开启「智能每日经营简报」后，系统将在每日生成时刻自动为您整理经营要点；生成失败时会显示此状态，不会展示不实数据。
-              </p>
-              <Link
-                href="/settings?tab=basic"
-                className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-primary-200 bg-primary-50 px-3.5 py-2 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-100"
-              >
-                去开启 <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
-            </div>
           </div>
         ) : !briefing ? (
           <div className="space-y-4">

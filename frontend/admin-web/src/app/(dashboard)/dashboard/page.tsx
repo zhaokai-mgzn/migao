@@ -72,12 +72,29 @@ function metricText(v: MetricState | null | undefined, fmt: (n: number) => strin
   return v === DASHBOARD_EMPTY_VALUE || !Number.isFinite(v) ? DASHBOARD_EMPTY_VALUE : fmt(v)
 }
 
-/** 涨跌百分比带符号：+25.5% / -12.3% / 0% */
-function fmtSigned(n: number): string {
-  if (!Number.isFinite(n)) return '—'
-  if (n === 0) return '0%'
-  const sign = n > 0 ? '+' : '-'
-  return `${sign}${Math.abs(n)}%`
+/**
+ * 环比展示口径 = **比值**（`0.4` = +40%）。后端 `*Change` 字段是**百分比**（`25.5` = +25.5%），
+ * 一律经 `asRatio()` 换算 —— 两个单位不许在同页各说各话（issue #8012）。
+ */
+function asRatio(percent: number | null | undefined): number | null {
+  return percent == null ? null : percent / 100
+}
+
+/**
+ * 大基数保护阈值（issue #8012）：`|环比| ≥ 5`（即 **±500%**）⇒ 改倍数展示。
+ *
+ * 为什么：昨日只卖 2 单时「+2300%」数学正确、可读性为零（商家读不出量级）；
+ * 「+23×」一眼就是「二十几倍」。阈值以下仍是百分比（`+40%` 才是大家习惯的说法）。
+ */
+const BIG_CHANGE_RATIO = 5
+
+/** 涨跌百分比带符号：+25.5% / -12.3% / 0%（入参是**比值**） */
+function fmtSigned(r: number): string {
+  if (!Number.isFinite(r)) return '—'
+  if (r === 0) return '0%'
+  const sign = r > 0 ? '+' : '-'
+  // 先留一位小数再上屏：`0.4 * 100 = 40.000000000000006` 这类浮点尾巴不许印给商家
+  return `${sign}${Math.round(Math.abs(r) * 1000) / 10}%`
 }
 
 const BLOCK_LABELS: Record<string, string> = {
@@ -94,7 +111,7 @@ const BLOCK_LABELS: Record<string, string> = {
  * 为什么不是 0%：0% 的语义是「与上期**持平**」，与「上期为 0、根本没有可比基数」是两件事；
  * 折叠成 0% 会被读成「没有变化」⇒ 误导（加了这个悬停说明，才让「—」可解释）。
  */
-function changeBadge(
+export function changeBadge(
   prefix: string,
   v: number | null | undefined,
 ): { text: string; up: boolean; title: string; neutral: boolean } {
@@ -102,6 +119,17 @@ function changeBadge(
     // ⚠️ `neutral` 必须显式带上：否则徽章会落到「非上涨 = 红色 + 向下箭头」那一支，
     //    把「没有可比基数」画成**下跌** —— 又是一种误导。
     return { text: `${prefix} —`, up: false, neutral: true, title: '无上期可比（上期为 0）—— 这不是「与上期持平」' }
+  }
+  // issue #8012 大基数保护：`|环比| ≥ 500%` 时百分比已失去可读性（+2300% 读不出量级）
+  // ⇒ 改倍数（+23× / -8×），并用悬停说明「为什么这里不是百分比」。
+  if (Number.isFinite(v) && Math.abs(v) >= BIG_CHANGE_RATIO) {
+    const times = Math.round(Math.abs(v) * 10) / 10
+    return {
+      text: `${prefix} ${v > 0 ? '+' : '-'}${times}×`,
+      up: v > 0,
+      neutral: false,
+      title: '基数较小，百分比不具参考性',
+    }
   }
   return { text: `${prefix} ${fmtSigned(v)}`, up: v > 0, neutral: false, title: '' }
 }
@@ -261,7 +289,12 @@ function PendingCard({ title, count, icon, color }: { title: string; count: Metr
       <div className="flex-1 min-w-0">
         <p data-testid="pending-card-title" className="truncate text-xs text-neutral-500" title={title}>{title}</p>
         {/* issue #6701：读不到（`'—'`）⇒ 不出数字（**不是 0** —— 「0 条待发货」会被当成真实待办） */}
-        <p className="tnum text-2xl font-bold leading-tight text-neutral-900">{metricText(count, fmtNum)}</p>
+        {/* issue #8012：加载中是**骨架**而不是 `…` —— 「…」既占位又像出错，首屏五张卡排成一排省略号 */}
+        {count === 'loading' ? (
+          <span data-testid="pending-skeleton" aria-hidden className="mt-1 block h-7 w-12 animate-pulse rounded bg-neutral-200" />
+        ) : (
+          <p className="tnum text-2xl font-bold leading-tight text-neutral-900">{metricText(count, fmtNum)}</p>
+        )}
       </div>
       <ArrowRight className="w-4 h-4 text-neutral-300 transition-all group-hover:translate-x-0.5 group-hover:text-primary-500" />
     </div>
@@ -309,8 +342,10 @@ export default function DashboardPage() {
   // ⚠️ 标记的读/清一律**就地内联**成 `setBlockErrors(...)`，不抽组件内小函数：
   //    `fetchData`（useCallback）声明的更早，抽函数会形成前向引用，ESLint `react-hooks/immutability`
   //    判 **error**（本地 `tsc` 看不见，CI 的 eslint 步会红 —— 已实跑踩过）。
-  // 智能每日经营简报：企业开关状态（默认关，关闭不渲染简报卡，红线 3）
+  // 智能每日经营简报：企业开关状态（默认关，关闭时只留一行摘要，红线 3）
   const [briefingEnabled, setBriefingEnabled] = useState(false)
+  // issue #8012：开关没回来之前**不**渲染「未开启」那一行 —— 否则已开启的企业会先闪一句错话
+  const [briefingConfigLoaded, setBriefingConfigLoaded] = useState(false)
   const [orderStatus, setOrderStatus] = useState<OrderStatusDistribution[]>([])
   /**
    * **有过历史成功值**的块（issue #6715）：`blockErrors` 只说明「这一块**这次**读失败了」，
@@ -470,12 +505,13 @@ export default function DashboardPage() {
     }
   }, [trendDays])
 
-  // 拉取简报企业开关（开关关闭时不渲染简报卡；失败默认关闭，不影响看板主体）
+  // 拉取简报企业开关（开关关闭时只在首屏留一行摘要；失败默认关闭，不影响看板主体）
   useEffect(() => {
     import('@/lib/api').then(({ briefingApi }) =>
       briefingApi.getConfig()
         .then((res) => setBriefingEnabled(!!res.data.data?.enabled))
         .catch(() => setBriefingEnabled(false))
+        .finally(() => setBriefingConfigLoaded(true))
     )
   }, [])
 
@@ -591,8 +627,8 @@ export default function DashboardPage() {
         lowStockCount={lowStockCount}
       />
 
-      {/* 智能每日经营简报（企业开关开启才渲染，红线 3） */}
-      <BriefingCard enabled={briefingEnabled} />
+      {/* 智能每日经营简报（issue #8012：未开启 / 未生成 ⇒ 一行摘要；已开启且有数据 ⇒ 完整卡片） */}
+      {briefingConfigLoaded && <BriefingCard enabled={briefingEnabled} />}
 
       {/* ① 待处理任务 */}
       <div className="mb-6">
@@ -619,7 +655,15 @@ export default function DashboardPage() {
         <SectionHeading icon={<TrendingUp className="h-3.5 w-3.5 text-primary-600" />} colorClass="bg-primary-50">经营数据</SectionHeading>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {loading ? (
-            Array.from({ length: 4 }).map((_, i) => <div key={i} className="bg-white rounded-xl border border-neutral-200 shadow-card h-[120px] animate-pulse p-5" />)
+            /* issue #8012：加载骨架必须是**灰底 + 脉冲**。改前是 `bg-white` + `animate-pulse`
+               ⇒ 白底白块，屏上等于「四格空白」（真栈截图 02-dashboard.png 即此现象）。 */
+            Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} data-testid="stats-skeleton" className="rounded-xl border border-neutral-200 bg-white p-5 shadow-card">
+                <div className="h-3 w-16 animate-pulse rounded bg-neutral-200" />
+                <div className="mt-4 h-7 w-24 animate-pulse rounded bg-neutral-200" />
+                <div className="mt-3 h-3 w-20 animate-pulse rounded bg-neutral-100" />
+              </div>
+            ))
           ) : (
             <>
               <BizStatCard
@@ -627,7 +671,7 @@ export default function DashboardPage() {
                 title="今日订单数"
                 value={metricText(todayOrdersState, fmtNum)}
                 valueTestId="stats-card-today-orders"
-                change={statsMissing ? undefined : changeBadge('较昨日', stats?.todayOrdersChange)}
+                change={statsMissing ? undefined : changeBadge('较昨日', asRatio(stats?.todayOrdersChange))}
                 icon={<ClipboardList className="w-4 h-4 text-primary-600" />}
                 sparkline={sparkline}
                 chartType="line"
@@ -637,7 +681,7 @@ export default function DashboardPage() {
                 title="今日销售额"
                 value={metricText(todaySalesState, fmtCurrency)}
                 valueTestId="stats-card-today-sales"
-                change={statsMissing ? undefined : changeBadge('较昨日', stats?.todaySalesChange)}
+                change={statsMissing ? undefined : changeBadge('较昨日', asRatio(stats?.todaySalesChange))}
                 icon={<DollarSign className="w-4 h-4 text-emerald-600" />}
                 sparkline={salesSeries.slice(-14)}
                 chartType="bar"
@@ -654,7 +698,7 @@ export default function DashboardPage() {
                 title="本月销售额"
                 value={metricText(monthRevenueState, fmtCurrency)}
                 valueTestId="stats-card-month-revenue"
-                change={statsMissing ? undefined : changeBadge('较上月', stats?.monthRevenueChange)}
+                change={statsMissing ? undefined : changeBadge('较上月', asRatio(stats?.monthRevenueChange))}
                 icon={<DollarSign className="w-4 h-4 text-accent-600" />}
               />
             </>

@@ -36,6 +36,12 @@ export function processingRatio(processingCount: number, pendingCount: number): 
 }
 
 /**
+ * 大基数保护阈值（issue #8012）：`|环比| ≥ 500%` ⇒ 改倍数展示（`+23×` / `-8×`）。
+ * 昨日只有 2 单时「+2300%」数学正确、可读性为零；阈值以下仍是百分比（`+40%` 才是习惯说法）。
+ */
+const BIG_CHANGE_PCT = 500
+
+/**
  * 订单环比格式化：正数带加号、负数带负号、0 渲染 0%、非有限值渲染 —。
  * 不做任何写死百分比，数值完全来自入参（API 派生）。
  */
@@ -46,6 +52,10 @@ export function formatOrderChange(orderChange: number | null | null | undefined)
   if (!Number.isFinite(orderChange)) return '—'
   if (orderChange === 0) return '0%'
   const sign = orderChange > 0 ? '+' : '-'
+  // issue #8012：小基数会把百分比放大成误导（+2300%）⇒ 同一阈值上改倍数
+  if (Math.abs(orderChange) >= BIG_CHANGE_PCT) {
+    return `${sign}${Math.round((Math.abs(orderChange) / 100) * 10) / 10}×`
+  }
   return `${sign}${Math.abs(orderChange)}%`
 }
 
@@ -125,6 +135,10 @@ export default function TodayOverviewBar({
     processingRatioPct: ratioPct,
     lowStockCount,
   })
+  // issue #8012：这句里的环比若走了「倍数」形态，悬停说明为什么不是百分比
+  const hasBigChange = [orderChange, salesChange].some(
+    (v) => v != null && Number.isFinite(v) && Math.abs(v) >= BIG_CHANGE_PCT,
+  )
 
   return (
     <section
@@ -142,7 +156,11 @@ export default function TodayOverviewBar({
           </span>
           <span className="text-[11px] text-neutral-400">AI 生成内容仅供参考</span>
         </div>
-        <p data-testid="today-overview-sentence" className={cn('text-sm leading-relaxed text-neutral-700')}>{sentence}</p>
+        <p
+          data-testid="today-overview-sentence"
+          title={hasBigChange ? '基数较小，百分比不具参考性' : undefined}
+          className={cn('text-sm leading-relaxed text-neutral-700')}
+        >{sentence}</p>
       </div>
     </section>
   )
