@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Layers, RefreshCw } from 'lucide-react'
 import { extractApiErrorMessage, toastRequestError } from '@/lib/api-error'
 import { savingBoardApi } from '@/lib/api'
-import { Button, Card, PageHeader, SELECT_CONTROL } from '@/components/ui'
+import { Button, Card, Loading, PageHeader, SELECT_CONTROL } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import {
   NO_DATA,
@@ -88,6 +88,16 @@ export default function SavingBoardPage() {
   const bucketLabel = board?.cohorts?.[0]?.buckets?.[0]?.label
   const batchTrend = board?.batchTrend ?? []
   const savedGroups = board?.savedGroups ?? []
+  /**
+   * 首屏**在途**（issue #8049：四态① —— 加载中不得先印「无数据」）。
+   *
+   * 病灶（审计 #8035 标的「未核实」项，实测真缺口）：`loading` 只喂给了页头的刷新按钮
+   * （`<Button loading={loading}>`），而下面三块读面在 `board === null` 时**已经**按空态渲染 ——
+   * 首屏读面还没回来，屏上就印着「无数据」/「无数据」/「无数据」= 把**在途**画成**没有**。
+   * ⇒ 现在首屏在途用占位（骨架/「加载中…」二者皆合规，`docs/design/design-baseline.md` 四态契约①）。
+   * 有旧读数时刷新（`board !== null`）不替换内容 —— 那份读数仍然有效，按钮上已有 spinner。
+   */
+  const pending = loading && board === null
 
   // 首屏两个大数字：本期取服务端 `comparison`，读不出（含后端未部署）则退回服务端 `total`
   const meters = metricView(comparison?.savedMeters, total?.savedMeters)
@@ -135,172 +145,183 @@ export default function SavingBoardPage() {
         </div>
       )}
 
-      {/* ① 结论：省了多少布 / 省了多少钱（数值全部原样来自服务端，只做取值与拼装） */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {pending ? (
+        /* 四态①：首屏在途 —— 占位（**不印空态**：读面没回来 ≠ 暂时没有省料数据） */
         <Card>
-          <div className="p-5" data-testid="saving-metric-saved-meters">
-            <div className="text-sm text-neutral-500">
-              {meters.period ? `省下的布 · ${meters.period}` : '省下的布'}
-            </div>
-            <div
-              className={cn(
-                'mt-1 font-mono text-3xl',
-                meters.value === null || meters.value === undefined
-                  ? 'text-neutral-400 text-xl'
-                  : 'text-neutral-900'
-              )}
-            >
-              {formatMeters(meters.value)}
-            </div>
-            {metersComparison && (
-              <div data-testid="saving-comparison-saved-meters" className="mt-1 text-xs text-neutral-500">
-                {metersComparison}
-              </div>
-            )}
-            <div className="mt-1 text-xs text-neutral-500">累计 {formatMeters(meters.cumulative)}</div>
+          <div className="p-10" data-testid="saving-loading">
+            <Loading text="加载中…" />
           </div>
         </Card>
-        <Card>
-          <div className="p-5" data-testid="saving-metric-saved-amount">
-            <div className="text-sm text-neutral-500">
-              {amount.period ? `省下的钱 · ${amount.period}` : '省下的钱'}
-            </div>
-            <div
-              className={cn(
-                'mt-1 font-mono text-3xl',
-                amount.value === null || amount.value === undefined
-                  ? 'text-neutral-400 text-xl'
-                  : 'text-neutral-900'
-              )}
-            >
-              {formatMetric(amount.value)} 元
-            </div>
-            {amountComparison && (
-              <div data-testid="saving-comparison-saved-amount" className="mt-1 text-xs text-neutral-500">
-                {amountComparison}
+      ) : (
+        <>
+          {/* ① 结论：省了多少布 / 省了多少钱（数值全部原样来自服务端，只做取值与拼装） */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card>
+              <div className="p-5" data-testid="saving-metric-saved-meters">
+                <div className="text-sm text-neutral-500">
+                  {meters.period ? `省下的布 · ${meters.period}` : '省下的布'}
+                </div>
+                <div
+                  className={cn(
+                    'mt-1 font-mono text-3xl',
+                    meters.value === null || meters.value === undefined
+                      ? 'text-neutral-400 text-xl'
+                      : 'text-neutral-900'
+                  )}
+                >
+                  {formatMeters(meters.value)}
+                </div>
+                {metersComparison && (
+                  <div data-testid="saving-comparison-saved-meters" className="mt-1 text-xs text-neutral-500">
+                    {metersComparison}
+                  </div>
+                )}
+                <div className="mt-1 text-xs text-neutral-500">累计 {formatMeters(meters.cumulative)}</div>
               </div>
-            )}
-            <div className="mt-1 text-xs text-neutral-500">累计 {formatMetric(amount.cumulative)} 元</div>
+            </Card>
+            <Card>
+              <div className="p-5" data-testid="saving-metric-saved-amount">
+                <div className="text-sm text-neutral-500">
+                  {amount.period ? `省下的钱 · ${amount.period}` : '省下的钱'}
+                </div>
+                <div
+                  className={cn(
+                    'mt-1 font-mono text-3xl',
+                    amount.value === null || amount.value === undefined
+                      ? 'text-neutral-400 text-xl'
+                      : 'text-neutral-900'
+                  )}
+                >
+                  {formatMetric(amount.value)} 元
+                </div>
+                {amountComparison && (
+                  <div data-testid="saving-comparison-saved-amount" className="mt-1 text-xs text-neutral-500">
+                    {amountComparison}
+                  </div>
+                )}
+                <div className="mt-1 text-xs text-neutral-500">累计 {formatMetric(amount.cumulative)} 元</div>
+              </div>
+            </Card>
           </div>
-        </Card>
-      </div>
 
-      {/* ② 趋势：几乎用完的布 · 批数（服务端 `batchTrend`，只含系统采购入库的批次） */}
-      <Card>
-        <div className="p-5" data-testid="saving-batch-trend">
-          <h2 className="text-sm font-medium text-neutral-900 mb-1">{batchTrendTitle(bucketLabel)}</h2>
-          <p className="text-xs text-neutral-500 mb-3">{batchTrendNote()}</p>
-          {batchTrend.length === 0 ? (
-            <div data-testid="saving-batch-trend-empty" className="px-4 py-10 text-center text-neutral-400 text-sm">
-              {NO_DATA}
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-neutral-50 text-neutral-600">
-                  <tr>
-                    <th className="text-left px-4 py-2.5 font-medium whitespace-nowrap">时间</th>
-                    <th className="text-right px-4 py-2.5 font-medium whitespace-nowrap">几乎用完的布（批）</th>
-                    <th className="text-right px-4 py-2.5 font-medium whitespace-nowrap">当期收进的布（批）</th>
-                    <th className="text-right px-4 py-2.5 font-medium whitespace-nowrap">占比</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {batchTrend.map((p) => (
-                    <tr
-                      key={p.period ?? 'nodate'}
-                      data-testid={`saving-batch-trend-${p.period ?? 'nodate'}`}
-                      className="border-t border-neutral-100"
-                    >
-                      <td className="px-4 py-2.5 text-neutral-600 whitespace-nowrap">{formatPeriod(p.period)}</td>
-                      <td className="px-4 py-2.5 text-right font-mono text-neutral-900">
-                        {formatMetric(p.le0_2Count, 0)}
-                      </td>
-                      <td className="px-4 py-2.5 text-right font-mono text-neutral-900">
-                        {formatMetric(p.batchCount, 0)}
-                      </td>
-                      <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{formatShare(p.le0_2Share)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </Card>
-
-      {/* ③ 省在哪：逐单省料汇总（与逐单明细逐值相等）+ 合计行（服务端 total）；默认收起 */}
-      <Card>
-        <details className="p-5" data-testid="saving-saved-groups-details">
-          <summary className="cursor-pointer text-sm font-medium text-neutral-900">省料明细（按月 × 物料）</summary>
-          <div className="mt-3" data-testid="saving-saved-groups">
-            {savedGroups.length === 0 ? (
-              <div data-testid="saving-saved-groups-empty" className="px-4 py-10 text-center text-neutral-400 text-sm">
-                {NO_DATA}
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-neutral-50 text-neutral-600">
-                    <tr>
-                      <th className="text-left px-4 py-2.5 font-medium whitespace-nowrap">时间</th>
-                      <th className="text-left px-4 py-2.5 font-medium whitespace-nowrap">物料</th>
-                      <th className="text-right px-4 py-2.5 font-medium whitespace-nowrap">该领（公式米数）</th>
-                      <th className="text-right px-4 py-2.5 font-medium whitespace-nowrap">− 实领（排料米数）</th>
-                      <th className="text-right px-4 py-2.5 font-medium whitespace-nowrap">= 省下</th>
-                      <th className="text-right px-4 py-2.5 font-medium whitespace-nowrap">省下的钱</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {savedGroups.map((g) => (
-                      <tr
-                        key={`${g.period}-${g.cohort}-${g.materialKey}`}
-                        data-testid={`saving-saved-group-${g.period}-${g.materialKey}`}
-                        className="border-t border-neutral-100"
-                      >
-                        <td className="px-4 py-2.5 text-neutral-600 whitespace-nowrap">{g.period}</td>
-                        {/* 🔴 「物料」列 = 服务端展示名（人话，issue #6535）—— `materialKey` 是机器键
-                            （`productId|skuCode`，productId 是 UUID）⇒ 只做 testid，**不上屏**。
-                            展示名一律来自服务端（前端不拼串：那是第二份会漂的口径）。 */}
-                        <td className="px-4 py-2.5 text-neutral-700">{g.materialLabel}</td>
-                        <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{formatMeters(g.formulaMeters)}</td>
-                        <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{formatMeters(g.plannedMeters)}</td>
-                        <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{formatMeters(g.savedMeters)}</td>
-                        <td className="px-4 py-2.5 text-right font-mono text-neutral-900">
-                          {formatMetric(g.savedAmount)} 元
-                          {unknownCostHint(g.unknownCostLines) && (
-                            <span className="block text-xs text-amber-700">{unknownCostHint(g.unknownCostLines)}</span>
-                          )}
-                        </td>
+          {/* ② 趋势：几乎用完的布 · 批数（服务端 `batchTrend`，只含系统采购入库的批次） */}
+          <Card>
+            <div className="p-5" data-testid="saving-batch-trend">
+              <h2 className="text-sm font-medium text-neutral-900 mb-1">{batchTrendTitle(bucketLabel)}</h2>
+              <p className="text-xs text-neutral-500 mb-3">{batchTrendNote()}</p>
+              {batchTrend.length === 0 ? (
+                <div data-testid="saving-batch-trend-empty" className="px-4 py-10 text-center text-neutral-400 text-sm">
+                  {NO_DATA}
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-neutral-50 text-neutral-600">
+                      <tr>
+                        <th className="text-left px-4 py-2.5 font-medium whitespace-nowrap">时间</th>
+                        <th className="text-right px-4 py-2.5 font-medium whitespace-nowrap">几乎用完的布（批）</th>
+                        <th className="text-right px-4 py-2.5 font-medium whitespace-nowrap">当期收进的布（批）</th>
+                        <th className="text-right px-4 py-2.5 font-medium whitespace-nowrap">占比</th>
                       </tr>
-                    ))}
-                  </tbody>
-                  {/* 合计腿：**原样渲染服务端 `total`**（前端不求和 —— 判据 1 的落点） */}
-                  <tfoot>
-                    <tr
-                      data-testid="saving-saved-groups-total"
-                      className="border-t-2 border-neutral-200 bg-neutral-50 font-medium"
-                    >
-                      <td className="px-4 py-2.5 text-neutral-700" colSpan={2}>
-                        合计
-                      </td>
-                      <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{formatMeters(total?.formulaMeters)}</td>
-                      <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{formatMeters(total?.plannedMeters)}</td>
-                      <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{formatMeters(total?.savedMeters)}</td>
-                      <td className="px-4 py-2.5 text-right font-mono text-neutral-900">
-                        {formatMetric(total?.savedAmount)} 元
-                        {unknownCostHint(total?.unknownCostLines) && (
-                          <span className="block text-xs text-amber-700">{unknownCostHint(total?.unknownCostLines)}</span>
-                        )}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
+                    </thead>
+                    <tbody>
+                      {batchTrend.map((p) => (
+                        <tr
+                          key={p.period ?? 'nodate'}
+                          data-testid={`saving-batch-trend-${p.period ?? 'nodate'}`}
+                          className="border-t border-neutral-100"
+                        >
+                          <td className="px-4 py-2.5 text-neutral-600 whitespace-nowrap">{formatPeriod(p.period)}</td>
+                          <td className="px-4 py-2.5 text-right font-mono text-neutral-900">
+                            {formatMetric(p.le0_2Count, 0)}
+                          </td>
+                          <td className="px-4 py-2.5 text-right font-mono text-neutral-900">
+                            {formatMetric(p.batchCount, 0)}
+                          </td>
+                          <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{formatShare(p.le0_2Share)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </Card>
+
+          {/* ③ 省在哪：逐单省料汇总（与逐单明细逐值相等）+ 合计行（服务端 total）；默认收起 */}
+          <Card>
+            <details className="p-5" data-testid="saving-saved-groups-details">
+              <summary className="cursor-pointer text-sm font-medium text-neutral-900">省料明细（按月 × 物料）</summary>
+              <div className="mt-3" data-testid="saving-saved-groups">
+                {savedGroups.length === 0 ? (
+                  <div data-testid="saving-saved-groups-empty" className="px-4 py-10 text-center text-neutral-400 text-sm">
+                    {NO_DATA}
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-neutral-50 text-neutral-600">
+                        <tr>
+                          <th className="text-left px-4 py-2.5 font-medium whitespace-nowrap">时间</th>
+                          <th className="text-left px-4 py-2.5 font-medium whitespace-nowrap">物料</th>
+                          <th className="text-right px-4 py-2.5 font-medium whitespace-nowrap">该领（公式米数）</th>
+                          <th className="text-right px-4 py-2.5 font-medium whitespace-nowrap">− 实领（排料米数）</th>
+                          <th className="text-right px-4 py-2.5 font-medium whitespace-nowrap">= 省下</th>
+                          <th className="text-right px-4 py-2.5 font-medium whitespace-nowrap">省下的钱</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {savedGroups.map((g) => (
+                          <tr
+                            key={`${g.period}-${g.cohort}-${g.materialKey}`}
+                            data-testid={`saving-saved-group-${g.period}-${g.materialKey}`}
+                            className="border-t border-neutral-100"
+                          >
+                            <td className="px-4 py-2.5 text-neutral-600 whitespace-nowrap">{g.period}</td>
+                            {/* 🔴 「物料」列 = 服务端展示名（人话，issue #6535）—— `materialKey` 是机器键
+                                （`productId|skuCode`，productId 是 UUID）⇒ 只做 testid，**不上屏**。
+                                展示名一律来自服务端（前端不拼串：那是第二份会漂的口径）。 */}
+                            <td className="px-4 py-2.5 text-neutral-700">{g.materialLabel}</td>
+                            <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{formatMeters(g.formulaMeters)}</td>
+                            <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{formatMeters(g.plannedMeters)}</td>
+                            <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{formatMeters(g.savedMeters)}</td>
+                            <td className="px-4 py-2.5 text-right font-mono text-neutral-900">
+                              {formatMetric(g.savedAmount)} 元
+                              {unknownCostHint(g.unknownCostLines) && (
+                                <span className="block text-xs text-amber-700">{unknownCostHint(g.unknownCostLines)}</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      {/* 合计腿：**原样渲染服务端 `total`**（前端不求和 —— 判据 1 的落点） */}
+                      <tfoot>
+                        <tr
+                          data-testid="saving-saved-groups-total"
+                          className="border-t-2 border-neutral-200 bg-neutral-50 font-medium"
+                        >
+                          <td className="px-4 py-2.5 text-neutral-700" colSpan={2}>
+                            合计
+                          </td>
+                          <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{formatMeters(total?.formulaMeters)}</td>
+                          <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{formatMeters(total?.plannedMeters)}</td>
+                          <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{formatMeters(total?.savedMeters)}</td>
+                          <td className="px-4 py-2.5 text-right font-mono text-neutral-900">
+                            {formatMetric(total?.savedAmount)} 元
+                            {unknownCostHint(total?.unknownCostLines) && (
+                              <span className="block text-xs text-amber-700">{unknownCostHint(total?.unknownCostLines)}</span>
+                            )}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        </details>
-      </Card>
+            </details>
+          </Card>
+        </>
+      )}
 
       {/* ④ 口径与边界（折叠）：首屏之外的口径一次说完，默认收起 */}
       <details
