@@ -11440,7 +11440,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（141 case）
+## 前端 UI 域（143 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -13508,6 +13508,32 @@
 真值: frontend-fix.vitest
 溯源: 2026-10-27 新增（issue #7891 追加需求，用户逐字「加工单打印的工艺也参考水洗唛上的加工和特殊选项的展示方式」+ 真机截图红框指向那一整串长句）：加工单每套块的「工艺」单元格改为水洗唛式多行 `标签 值` —— 加工方式（复用 washLabelCraftMode）+ 特殊选项独立行（复用 washLabelSpecialOptions）+ 其余工艺规格逐行；不新增列（PROCESSING_DOC_COLUMNS 仍是 C5 唯一真值）。 ｜ tags: ui, print, processing-doc, wash-label
 
+### UI-142. 销售订单列表：4 个同级文字链收敛为「1 主行动 + ⋯ 菜单」，非加急行不再印「不加急」，订单号可复制（issue #8011） 🔵
+```
+你: 用户 2026-10-28 评审：B 端先打磨，C 端暂不做
+期望: direct_reply
+数据: 判据 1·「不加急」零出现（会红）：非加急行的「加急」单元格 `textContent === ''`（不是灰字、不是 CSS 隐藏）。执行点 = frontend/admin-web/tests/unit/pages/orders-list-row-actions.test.tsx。
+数据: 判据 2·行内可点元素 ≤ 2（会红）：每行 1 个主行动 + 1 个「⋯」触发器；旧的「查看/备注/发货/处理退款」四文字链同屏形态不再出现。执行点同上。
+数据: 判据 3·主行动按状态派生（会红）：待付款 → 收款 / 待发货 → 发货 / 已发货 → 确认收货 / 其它 → 无。执行点同上 + frontend/admin-web/tests/unit/pages/orders-confirm-modal.test.tsx。
+数据: 判据 4·菜单可达性（会红）：`aria-haspopup=menu` / `aria-expanded` / `role=menu` / `role=menuitem`，Escape 与点外部收起，**收起态菜单项不进 DOM**。执行点同上。
+数据: 判据 5·订单号复制（会红）：单元格内有 `aria-label` 为「复制订单号」 的按钮，点击写剪贴板并给 toast。执行点同上。
+前置: 本用例是 [backend-contract] 纯前端交互契约：页面渲染时 mock `@/lib/api` 与 `@/components/orders`，不依赖共享夹具与真实服务
+跳过: [backend-contract] 纯前端交互契约（不经过 LLM 对话/工具），由 admin-web vitest 执行，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-28 新增（issue #8011）。取号 = scripts/next_case_id.py UI 现取。形态依据 = 2026-10-24 真栈截图 acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/14-orders-list.png（每行 §31-P2 同级文字链、单屏约 80 个可点文本）。未验证面：菜单 `position: fixed` 展开后的视觉落点只靠真机，jsdom 证明不了 ⇒ 重启条件 = 下次动该文件时点开截图。 ｜ tags: orders-list, row-actions, noise
+
+### UI-143. 经营看板首屏：简报空态压成一行、待处理与经营数据出骨架、环比破 ±500% 改倍数（issue #8012） 🔵
+```
+你: 用户 2026-10-28 评审：首屏第一眼要能看到要做的事
+期望: direct_reply
+数据: 判据 1·简报空态压成一行（会红）：未开启 / 今日未生成两种空态都渲染 `briefing-collapsed-hint`，旧的大盒子 `briefing-empty-state` 取不到；有数据时卡片形态不变。执行点 = frontend/admin-web/tests/unit/pages/dashboard-first-screen.test.tsx。
+数据: 判据 2·加载出骨架（会红）：待处理卡与经营数据格在加载中渲染骨架块，卡上不出现 `…`。执行点同上。
+数据: 判据 3·环比大基数保护（会红）：`|change| ≥ 500%` 改倍数（+23× / -8×）并带「基数较小」说明；阈值以下仍是百分比；上期为 0 仍是 `—`（#5792 裁定不回退）；页面上不再出现 `2300%`。执行点同上 + dashboard.test.tsx。
+前置: 本用例是 [backend-contract] 纯前端契约：mock `@/lib/api`，不依赖真实服务
+跳过: [backend-contract] 纯前端契约（不经过 LLM 对话/工具），由 admin-web vitest 执行，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-28 新增（issue #8012）。取号 = scripts/next_case_id.py UI 现取。后端口径：DashboardController 的 *Change 已是百分比 ⇒ changeBadge 收比值、页面经 asRatio() 单一换算。未做：简报未开启态现在会多出**一行**提示（改前整块不渲染），若后续裁定收回，删 BriefingCard 的 !enabled 分支并同步本判据。 ｜ tags: dashboard, first-screen, skeleton
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -13537,8 +13563,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：914（活跃 142，跳过 772）
-- tier 分布：smoke 12 / normal 846 / adversarial 32
+- 用例总数：916（活跃 142，跳过 774）
+- tier 分布：smoke 12 / normal 848 / adversarial 32
 - 售后域：16
 - Agent 核心域：12
 - API 层域：21
@@ -13563,7 +13589,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：141
+- 前端 UI 域：143
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -13954,4 +13980,6 @@
 - UI-129: 建品页 AI 生成商品图：样图 → 百炼图生图 → 一键出整套（主图 3 + 详情图 5，边生成边追加，只追加不覆盖；issue #7335 / #7533 / #7773 / #7782）
 - UI-130: 销售订单列表查询区默认折叠：常驻一行摘要 + 展开才渲染筛选项（issue #7388）
 - UI-131: 全站下拉框只有一种形态（共享 SELECT_CONTROL / 自绘箭尖）+ 筛选条字段参与伸缩（issue #7397）
+- UI-142: 销售订单列表：4 个同级文字链收敛为「1 主行动 + ⋯ 菜单」，非加急行不再印「不加急」，订单号可复制（issue #8011）
+- UI-143: 经营看板首屏：简报空态压成一行、待处理与经营数据出骨架、环比破 ±500% 改倍数（issue #8012）
 
