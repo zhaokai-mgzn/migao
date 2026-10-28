@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { BadgeCheck, RefreshCw } from 'lucide-react'
-import { Button, EmptyState, PageCard, PageHeader, Pagination } from '@/components/ui'
+import { Button, EmptyState, Loading, PageCard, PageHeader, Pagination } from '@/components/ui'
 import ListLoadError from '@/components/common/ListLoadError'
 import QualityMetricsPanel from '@/components/production/QualityMetricsPanel'
 import { qualityInspectionApi } from '@/lib/api'
@@ -165,6 +165,17 @@ export default function QualityInspectionsPage() {
               onRetry={() => void loadRecords()}
               retrying={recordsLoading}
             />
+          </div>
+        )}
+
+        {/*
+          issue #8041：读流水期间卡片体曾经是**完全空白**（四态契约 ① 加载中，见
+          docs/design/design-baseline.md 的「四态契约」节）。用**既有** `Loading` 原语补占位；
+          刷新时若已有流水（`pagedRecords.length > 0`）⇒ 表格照旧在场，不把它换成转圈。
+        */}
+        {!recordsError && recordsLoading && pagedRecords.length === 0 && (
+          <div data-testid="quality-records-loading" className="p-4">
+            <Loading size="sm" text="加载中…" />
           </div>
         )}
 
