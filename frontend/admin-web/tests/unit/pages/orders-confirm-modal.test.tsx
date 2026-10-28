@@ -1,6 +1,9 @@
 // case_ids: OR-001, UI-048
 /**
- * 订单列表的两个确认动作（「确认付款」/「确认收货」）—— issue #6664 第 4 条。
+ * 订单列表的两个确认动作（**收款** / 「确认收货」）—— issue #6664 第 4 条。
+ *
+ * issue #8011：待付款行的这个动作**升级为该行的主行动按钮，文案「收款」**（改前是行内文字链「确认付款」）
+ * —— 触发路径变了，落地的确认弹框（`Modal`）与本文件要守的「零 window.confirm」一字未变。
  *
  * 改前（缺陷形态）：`window.confirm('确认已收到客户付款？')` —— 原生弹窗无理由/不可撤销说明，
  * 与仓内自研 `Modal`（UI-048 家族：删除二次确认改弹框）**同一个动作两个世界观**；
@@ -86,11 +89,11 @@ describe('订单列表确认动作走自研 Modal（issue #6664 第 4 条）', (
     vi.restoreAllMocks()
   })
 
-  it('① 「确认付款」⇒ 弹自研 Modal（写明动作 + 不可撤销）；**零** window.confirm', async () => {
+  it('① 主行动「收款」⇒ 弹自研 Modal（写明动作 + 不可撤销）；**零** window.confirm', async () => {
     api.getOrders.mockResolvedValue(listResolve([order({ status: 'pending_payment' })]))
     render(<OrdersPage />)
 
-    fireEvent.click(await screen.findByText('确认付款'))
+    fireEvent.click(await screen.findByText('收款'))
 
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText(/确认付款|已收到客户付款/)).toBeInTheDocument()
@@ -107,7 +110,7 @@ describe('订单列表确认动作走自研 Modal（issue #6664 第 4 条）', (
     )
     render(<OrdersPage />)
 
-    fireEvent.click(await screen.findByText('确认付款'))
+    fireEvent.click(await screen.findByText('收款'))
     const dialog = await screen.findByRole('dialog')
     const confirmBtn = within(dialog).getByRole('button', { name: /确认/ })
     fireEvent.click(confirmBtn)
@@ -126,7 +129,7 @@ describe('订单列表确认动作走自研 Modal（issue #6664 第 4 条）', (
     api.getOrders.mockResolvedValue(listResolve([order({ status: 'pending_payment' })]))
     render(<OrdersPage />)
 
-    fireEvent.click(await screen.findByText('确认付款'))
+    fireEvent.click(await screen.findByText('收款'))
     const dialog = await screen.findByRole('dialog')
     fireEvent.click(within(dialog).getByRole('button', { name: /取消/ }))
 
