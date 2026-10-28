@@ -101,7 +101,7 @@ test('③ 记录逐条上屏；最新 = 返工 ⇒ 「待复检」+ 页头入口
   assert.match(html, /检验人 李质检/)
   // 状态 = 待复检（不是「已记」就完事：下一步必须复检）
   assert.match(html, /id="wh5-quality-state"[^>]*>待复检</)
-  assert.match(html, /id="wh5-quality-pending"[^>]*>已记做工返工：返工做好后在这里复检/)
+  assert.match(html, /id="wh5-quality-pending"[^>]*>返工做好后在这里复检/)
   // 页头入口收起（动作在记录卡里：通过 / 仍有问题）
   assert.doesNotMatch(html, /id="wh5-quality-entry"/)
   assert.match(html, /id="wh5-quality-recheck-pass"[^>]*>复检通过</)

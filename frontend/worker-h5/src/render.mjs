@@ -974,7 +974,7 @@ function qualityBlock(state, view) {
         : '<p class="wh5-sub" id="wh5-quality-empty">本件还没有质检记录（默认没问题；做工有问题才记）</p>'
   // 待复检 = 这一件已记做工返工、还没被复检关闭 ⇒ 只给复检两个动作（不再给普通「记返工」）
   const pendingNote = pending
-    ? '<p class="wh5-sub" id="wh5-quality-pending">已记做工返工：返工做好后在这里复检 —— 通过才关闭这条记录。</p>'
+    ? '<p class="wh5-sub" id="wh5-quality-pending">返工做好后在这里复检 —— 通过才关闭这条记录。</p>'
     : ''
   const actions = pending
     ? `<div class="wh5-q-actions" id="wh5-quality-recheck">
@@ -1188,13 +1188,13 @@ function mainView(state) {
   <section class="wh5-card">
     <div class="wh5-set" id="wh5-set">第 ${esc(v.set_no)} 套 · ${esc(v.position?.position_name ?? '')}</div>
     ${ternLine(v)}
-    ${qualityBlock(state, v)}
-    ${reworkBlock(state, v)}
     ${v.completed === true
       ? '<p class="wh5-done" id="wh5-completed">本套工序都已报工 🎉</p>'
       : v.worker_operation
         ? `<p class="wh5-sub" id="wh5-no-operation">你的工序是「${esc(v.worker_operation)}」：本件${v.worker_operation_state === 'done' ? '的这道已经做完' : '没有这道工序'}，不用报工。</p>`
         : '<p class="wh5-sub" id="wh5-no-operation">本部位推断不出待报工序（工序未确定 ⇒ 不得记账）</p>'}
+    ${qualityBlock(state, v)}
+    ${reworkBlock(state, v)}
     ${overviewView(v)}
     ${cutPlanView(v)}
     ${state.notice ? `<p class="wh5-notice" id="wh5-notice">${esc(state.notice)}</p>` : ''}
@@ -1229,8 +1229,6 @@ function mainView(state) {
   <section class="wh5-card">
     <div class="wh5-set" id="wh5-set">第 ${esc(v.set_no)} 套 · ${esc(v.position?.position_name ?? '')}</div>
     ${ternLine(v)}
-    ${qualityBlock(state, v)}
-    ${reworkBlock(state, v)}
     ${workerOperationLine(v)}
     <div class="wh5-op" id="wh5-operation">${esc(operationDisplayName(op))}</div>
     <div class="wh5-qty" id="wh5-qty">应做 ${fmtQty(op.qty)} ${esc(op.unit ?? '')}</div>
@@ -1240,6 +1238,8 @@ function mainView(state) {
     ${state.notice ? `<p class="wh5-notice" id="wh5-notice">${esc(state.notice)}</p>` : ''}
     ${state.error ? `<p class="wh5-error" id="wh5-error">${esc(state.error)}</p>` : ''}
     ${picker}
+    ${qualityBlock(state, v)}
+    ${reworkBlock(state, v)}
     ${qualityOnlyNote(state, v)}
     ${workTypePicker(state, v)}
     ${batchBlock(state, v)}
