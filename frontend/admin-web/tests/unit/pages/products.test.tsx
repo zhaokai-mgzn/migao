@@ -1,4 +1,4 @@
-// case_ids: PR-010
+// case_ids: PR-010, UI-143
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
@@ -168,6 +168,19 @@ describe('ProductsPage', () => {
     render(<ProductsPage />)
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('商品管理')
     expect(screen.queryByText('商品列表')).not.toBeInTheDocument()
+  })
+
+  // issue #8036：加载态必须是**表格骨架**（灰底 + 脉冲占位），不再是裸「加载中…」+ 空白表体
+  // —— 2026-10-24 真栈截图 08-products-list.png 里那形态会让商家误读成「这个店没有商品」。
+  it('加载中：渲染 table-skeleton，且不出现裸「加载中…」文案（#8036）', () => {
+    // 取数挂起 ⇒ 页面停在首帧加载态（真栈证据里的那个形态）
+    mockGetProducts.mockReturnValue(new Promise(() => {}))
+    mockGetCategories.mockReturnValue(new Promise(() => {}))
+    render(<ProductsPage />)
+    expect(screen.getByTestId('table-skeleton')).toBeInTheDocument()
+    // 红证：把页面改回 `<ProductTable loading={loading} />`（共享 Table 的裸文案分支）⇒ 本条红
+    expect(screen.queryByText(/加载中/)).not.toBeInTheDocument()
+    expect(screen.queryByTestId('table-loading')).not.toBeInTheDocument()
   })
 
   it('should render add product button', () => {
