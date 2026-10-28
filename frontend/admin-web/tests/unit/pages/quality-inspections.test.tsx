@@ -18,7 +18,9 @@ import userEvent from '@testing-library/user-event'
  * ② 指标面板：默认「本月」拉一次，首检合格率与样本量同屏；
  * ③ **读失败 ≠ 没有数据**：流水读失败 ⇒ 失败锚常驻、不画空态；空态只在真的 0 条时出现；
  * ④ 流水客户端分页：25 条 ⇒ 第 1 页 10 条，翻页看第 2 页（issue #7217）；
- * ⑤ 页面如实说明入口在手机端（用户改判的可见面）。
+ * ⑤ 页面如实说明入口在手机端（用户改判的可见面）；
+ * ⑥ **加载中不是白卡片**（issue #8041）：读流水期间卡片体渲染既有 `Loading` 原语
+ *    （「加载中…」+ 转圈），既不是空白、也不提前画空态；读完 ⇒ 占位消失、换成真数据。
  */
 
 const mockTargets = vi.fn()
@@ -148,6 +150,35 @@ describe('质检记录页（/quality-inspections）', () => {
     await user.click(within(card).getByRole('button', { name: '2' }))
     await waitFor(() => expect(within(card).getByTestId('quality-record-row-qi-11')).toBeInTheDocument())
     expect(within(card).queryByTestId('quality-record-row-qi-1')).not.toBeInTheDocument()
+  })
+
+  it('⑦ 读流水期间 ⇒ 卡片体有「加载中…」占位，不是白卡片（issue #8041）', async () => {
+    // 手控 promise：把「加载中」这一帧钉住，不靠时序碰运气
+    let resolveRecords: (value: unknown) => void = () => {}
+    mockList.mockReturnValue(
+      new Promise((resolve) => {
+        resolveRecords = resolve
+      }),
+    )
+    render(<QualityInspectionsPage />)
+
+    const card = screen.getByTestId('quality-records-card')
+    // ⚠️ 指标面板也有「加载中…」⇒ 必须限定在流水卡片内取，否则会取到两个
+    const placeholder = within(card).getByTestId('quality-records-loading')
+    expect(placeholder).toBeInTheDocument()
+    expect(within(card).getByText('加载中…')).toBeInTheDocument()
+    // 「卡片体不是空白」的机器读数：占位里既有转圈的图标、也有文案；且没有提前画空态 / 失败态
+    // （⚠️ 图标在测试环境里由 lucide-react 的 mock 渲染成 `<span>`，故按 `.animate-spin` 取，不写死 `svg`）
+    expect(placeholder.querySelector('.animate-spin')).not.toBeNull()
+    expect(placeholder).toHaveTextContent('加载中…')
+    expect(within(card).queryByTestId('quality-records-empty')).not.toBeInTheDocument()
+    expect(within(card).queryByTestId('quality-records-load-error')).not.toBeInTheDocument()
+
+    resolveRecords({ data: { data: [passRecord] } })
+    await waitFor(() =>
+      expect(within(card).getByTestId('quality-record-row-qi-2')).toBeInTheDocument(),
+    )
+    expect(within(card).queryByTestId('quality-records-loading')).not.toBeInTheDocument()
   })
 
   it('⑥ 页面如实说明判定入口在手机端（改判的可见面）', async () => {
