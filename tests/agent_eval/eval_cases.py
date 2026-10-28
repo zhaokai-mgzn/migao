@@ -17010,6 +17010,25 @@ _CASE_UI_137 = EvalCase(
     precondition='本用例是 [backend-contract] 纯前端契约用例：服务端解析响应（`batch_required` / `batch_no` / `batch_candidates`）与报工回执由单测自建并打桩（假 DOM + fetch 替身，不碰真库），前置不成立时单测直接红；agent-eval 栈不跑它',
 )
 
+# ── UI-141 [NORMAL] 数值输入框的小数录入口径：<input> 的 onChange 不许 Number/parseFloat(target.value) 往返（类级判据 + 裁高取值框三位小数；单测覆盖，非 LLM 行为）（源: cases/ui.yml）──
+_CASE_UI_141 = EvalCase(
+    id='UI-141',
+    legacy_id='',
+    title='数值输入框的小数录入口径：<input> 的 onChange 不许 Number/parseFloat(target.value) 往返（类级判据 + 裁高取值框三位小数；单测覆盖，非 LLM 行为）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这里的输入框不允许输入小数点，这里应该要支持3位小数，后续要注意，已经发现几次新增的输入框都不支持输入小数点，这个默认开发规则是不符合实际业务需要的'],
+    expectations=[],
+    data_checks=['**判据 1·类级（会红）**：三个前端包 `src/**` 里每个 `<input …>` 开标签，若 `onChange` 内出现 `Number(...target.value)` / `parseFloat(...)` / `parseInt(...)`（含 `currentTarget` / 跨行）⇒ 红；真语料**零容忍**（落地时全仓唯一一处 = 裁高配置的取值框，已改 `NumberInput`）。红证 = 把该框改回手写往返 ⇒ 当场红。执行点 = frontend/admin-web/tests/unit/numeric-input-draft-guard.test.ts 的 ①②③④。', "**判据 2·实例（会红）**：裁高配置「取值（米）」敲 `0.`（中间态）后输入框仍是 `0.`（旧实现 `Number('0.')===0` ⇒ 上屏 `0`，小数点打不出来），再敲成 `0.145` 后保存报文里 `value === 0.145`。执行点 = frontend/admin-web/tests/unit/components/CuttingHeightConfigPanel.test.tsx 的 ⑩。"],
+    skip_reason='[frontend-contract] 只登记「数值输入的草稿口径」这一层**确定性**判据（静态扫描 + jsdom 输入事件），由单元测试全量覆盖 ⇒ 不进 agent-eval 冒烟（同 UI-131 / UI-138 家族惯例）。',
+    tags=['ui', 'frontend', 'numeric-input', 'class-level-guard'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='纯前端契约用例：静态扫描 + jsdom 输入事件，不碰真库、不起服务栈；`NumberInput` 的草稿口径由 frontend/admin-web/src/components/ui/NumberInput.tsx 提供（issue #5198/#5210）',
+)
+
 # ── UI-138 [NORMAL] 纸面加工项绑商品：销售单 / 报价单 / 发货单在商品行下印水洗唛式「加工项 + 特殊选项」，发货单底部独立加工项区退场（issue #7891）（源: cases/ui.yml）──
 _CASE_UI_138 = EvalCase(
     id='UI-138',
@@ -18012,6 +18031,7 @@ ALL_CASES = (
     _CASE_UI_135,
     _CASE_UI_136,
     _CASE_UI_137,
+    _CASE_UI_141,
     _CASE_UI_138,
     _CASE_UI_139,
     _CASE_UI_140,
