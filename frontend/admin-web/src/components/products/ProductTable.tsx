@@ -1,8 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { Table, Badge, StatusBadge, Pagination } from '@/components/ui'
-import type { TableColumn } from '@/components/ui'
+import { Table, Badge, StatusBadge, Pagination, Button, RowActions } from '@/components/ui'
+import type { TableColumn, RowActionItem } from '@/components/ui'
 import Image from 'next/image'
 import { cn, resolveImageUrl } from '@/lib/utils'
 import type { Product, ProductStatus } from '@/types'
@@ -115,6 +115,56 @@ export default function ProductTable({
     } else {
       onSelectChange([...selectedIds, id])
     }
+  }
+
+  /**
+   * 行内动作（issue #8038）：**1 主行动 + ⋯ 菜单**。
+   *
+   * 改前在架行有 **5 个**、下架行 **4 个**同级文字链（#8035 审计：`products` 是全站密度最高的一页）。
+   * 主行动**按状态派生**（取该行「最可能需要的一步」，与 `/orders` 的取法同源）：
+   * - `on_sale` → **编辑**（在架商品最常用的一步；下架 / 删除是破坏性 ⇒ 进菜单）；
+   * - `off_sale` → **上架**（下架行唯一能推进状态的动作）；
+   * - `under_review` → **查看**（审核中只读，没有其它动作可收 ⇒ 连 ⋯ 都不渲染）；
+   * - `draft` → **编辑**（草稿的下一步就是补全内容）。
+   *
+   * 🔴 **硬边界**：本函数只决定「谁是主行动」，**一个回调都没改** —— 危险动作（下架 / 删除）
+   * 仍走页面既有的 `setSingleConfirm(...)` ⇒ 二次确认弹框一字未动（改容器不改语义）。
+   */
+  const rowActionsFor = (
+    record: Product,
+  ): { primary: RowActionItem; items: RowActionItem[] } => {
+    const view: RowActionItem = { key: 'view', label: '查看', onClick: () => onView(record) }
+    const edit: RowActionItem = { key: 'edit', label: '编辑', onClick: () => onEdit(record) }
+    const remove: RowActionItem = {
+      key: 'delete',
+      label: '删除',
+      onClick: () => onDelete(record),
+      danger: true,
+    }
+    if (record.status === 'on_sale') {
+      return {
+        primary: edit,
+        items: [
+          view,
+          record.recommended
+            ? { key: 'unrecommend', label: '取消推荐', onClick: () => onUnrecommend(record) }
+            : { key: 'recommend', label: '推荐', onClick: () => onRecommend(record) },
+          { key: 'off_shelf', label: '下架', onClick: () => onTakeOffShelf(record), danger: true },
+          remove,
+        ],
+      }
+    }
+    if (record.status === 'off_sale') {
+      return {
+        primary: { key: 'on_shelf', label: '上架', onClick: () => onPutOnShelf(record) },
+        items: [view, edit, remove],
+      }
+    }
+    if (record.status === 'under_review') {
+      return { primary: view, items: [] }
+    }
+    // draft：下一步 = 补全内容（删除是破坏性 ⇒ 只进菜单）
+    return { primary: edit, items: [remove] }
   }
 
   const columns: TableColumn<Product>[] = [
@@ -275,46 +325,25 @@ export default function ProductTable({
       width: '160px',
       align: 'left',
       render: (record) => {
-        const stop = (e: React.MouseEvent) => e.stopPropagation()
-        const linkBase = 'text-primary-600 hover:text-primary-700 hover:underline transition-colors'
-        const dangerLink = 'text-red-500 hover:text-red-600 hover:underline transition-colors'
+        const action = rowActionsFor(record)
         return (
-          <div className="flex items-center gap-3 text-sm whitespace-nowrap">
-            {/* 出售中：查看 编辑 推荐/取消推荐 下架 删除 */}
-            {record.status === 'on_sale' && (
-              <>
-                <button onClick={(e) => { stop(e); onView(record) }} className={linkBase}>查看</button>
-                <button onClick={(e) => { stop(e); onEdit(record) }} className={linkBase}>编辑</button>
-                {record.recommended ? (
-                  <button onClick={(e) => { stop(e); onUnrecommend(record) }} className="text-amber-600 hover:text-amber-700 hover:underline transition-colors">取消推荐</button>
-                ) : (
-                  <button onClick={(e) => { stop(e); onRecommend(record) }} className={linkBase}>推荐</button>
-                )}
-                <button onClick={(e) => { stop(e); onTakeOffShelf(record) }} className={linkBase}>下架</button>
-                <button onClick={(e) => { stop(e); onDelete(record) }} className={dangerLink}>删除</button>
-              </>
-            )}
-            {/* 已下架：查看 编辑 上架 删除 */}
-            {record.status === 'off_sale' && (
-              <>
-                <button onClick={(e) => { stop(e); onView(record) }} className={linkBase}>查看</button>
-                <button onClick={(e) => { stop(e); onEdit(record) }} className={linkBase}>编辑</button>
-                <button onClick={(e) => { stop(e); onPutOnShelf(record) }} className={linkBase}>上架</button>
-                <button onClick={(e) => { stop(e); onDelete(record) }} className={dangerLink}>删除</button>
-              </>
-            )}
-            {/* 审核中：仅查看 */}
-            {record.status === 'under_review' && (
-              <button onClick={(e) => { stop(e); onView(record) }} className={linkBase}>查看</button>
-            )}
-            {/* 草稿：编辑 删除 */}
-            {record.status === 'draft' && (
-              <>
-                <button onClick={(e) => { stop(e); onEdit(record) }} className={linkBase}>编辑</button>
-                <button onClick={(e) => { stop(e); onDelete(record) }} className={dangerLink}>删除</button>
-              </>
-            )}
-          </div>
+          <RowActions
+            testId={`product-actions-${record.id}`}
+            menuTestId={`product-menu-${record.id}`}
+            items={action.items}
+          >
+            {/* 行内主行动走 ghost（§32.2：一屏至多一个 primary，那一个是页面头的「新增商品」） */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation()
+                action.primary.onClick()
+              }}
+            >
+              {action.primary.label}
+            </Button>
+          </RowActions>
         )
       },
     },

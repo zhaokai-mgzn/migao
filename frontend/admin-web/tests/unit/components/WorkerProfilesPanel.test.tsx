@@ -81,6 +81,19 @@ const worker = (over: Record<string, unknown> = {}) => ({
   ...over,
 })
 
+/**
+ * 打开某工人档案行的「⋯」菜单（issue #8038：行内动作收成 **1 主行动（改工序）+ ⋯ 菜单**）。
+ *
+ * 🔴 **收起态菜单项不进 DOM** ⇒ 任何「点行内动作」的判据都必须先点开菜单，
+ * 否则拿到的是 null 而不是「动作不见了」。
+ */
+async function openMenu(id: string) {
+  const trigger = within(await screen.findByTestId(`worker-row-menu-${id}`)).getByRole('button', {
+    name: '更多操作',
+  })
+  fireEvent.click(trigger)
+}
+
 describe('WorkerProfilesPanel（issue #4869）', () => {
   beforeEach(() => {
     mockListWorkers.mockReset()
@@ -174,7 +187,8 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
     mockResetWorkerPin.mockResolvedValue({ data: { data: { pin: '654321' } } })
     render(<WorkerProfilesPanel canWrite />)
 
-    fireEvent.click(await screen.findByText('重置 PIN'))
+    await openMenu('w-1')
+    fireEvent.click(await screen.findByTestId('worker-reset-pin-w-1'))
     fireEvent.click(screen.getByText('确认重置'))
 
     await waitFor(() => expect(mockResetWorkerPin).toHaveBeenCalledWith('w-1', undefined))
@@ -188,7 +202,8 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
     mockResetWorkerPin.mockResolvedValue({ data: { data: { pin: '135791' } } })
     render(<WorkerProfilesPanel canWrite />)
 
-    fireEvent.click(await screen.findByText('重置 PIN'))
+    await openMenu('w-1')
+    fireEvent.click(await screen.findByTestId('worker-reset-pin-w-1'))
     fireEvent.change(screen.getByPlaceholderText(/留空则由系统随机生成/), { target: { value: '135791' } })
     fireEvent.click(screen.getByText('确认重置'))
 
@@ -199,7 +214,8 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
   it('⑤ 无 employee:create ⇒ 重置 PIN 入口不可用（与建号同档写权限；只读角色点不动）', async () => {
     render(<WorkerProfilesPanel canWrite={false} />)
 
-    const resetBtn = await screen.findByText('重置 PIN')
+    await openMenu('w-1')
+    const resetBtn = await screen.findByTestId('worker-reset-pin-w-1')
     expect(resetBtn).toBeDisabled()
     fireEvent.click(resetBtn)
     expect(mockResetWorkerPin).not.toHaveBeenCalled()
@@ -211,7 +227,8 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
     mockResetWorkerPin.mockRejectedValue(notFound)
 
     render(<WorkerProfilesPanel canWrite />)
-    fireEvent.click(await screen.findByText('重置 PIN'))
+    await openMenu('w-1')
+    fireEvent.click(await screen.findByTestId('worker-reset-pin-w-1'))
     fireEvent.click(screen.getByText('确认重置'))
 
     await waitFor(() => expect(mockResetWorkerPin).toHaveBeenCalledTimes(1))
@@ -366,17 +383,19 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
     mockUpdateWorkerPages.mockResolvedValue({ data: { data: {} } })
     render(<WorkerProfilesPanel canWrite />)
 
-    // 操作列数据格默认 nowrap（issue #7217）：开质检 / 重置 PIN / 停用 不得逐字竖排
-    expect((await screen.findByTestId('worker-optional-inspect-w-7')).closest('td')?.className)
-      .toContain('whitespace-nowrap')
+    // 操作列数据格默认 nowrap（issue #7217）：行内动作面不得逐字竖排。
+    // issue #8038 起动作收在 ⋯ 菜单里 ⇒ 量「动作面容器」（收起态菜单项不进 DOM）。
+    expect((await screen.findByTestId('worker-actions-w-7')).className).toContain('whitespace-nowrap')
 
-    // 默认（未收窄）⇒ 开质检 = 默认四页 + inspect
+    // 默认（未收窄）⇒ 开质检 = 默认四页 + inspect（先点开该行的 ⋯ 菜单）
+    await openMenu('w-7')
     fireEvent.click(await screen.findByTestId('worker-optional-inspect-w-7'))
     await waitFor(() => {
       expect(mockUpdateWorkerPages).toHaveBeenCalledWith('w-7', ['report', 'order', 'cut_calc', 'shipment', 'inspect'])
     })
 
-    // 已开 ⇒ 关质检 = 回到收窄集（去掉 inspect）
+    // 已开 ⇒ 关质检 = 回到收窄集（去掉 inspect）；上一行点的菜单已收起 ⇒ 重新点开
+    await openMenu('w-8')
     fireEvent.click(await screen.findByTestId('worker-optional-inspect-w-8'))
     await waitFor(() => {
       expect(mockUpdateWorkerPages).toHaveBeenCalledWith('w-8', ['report'])
@@ -397,6 +416,7 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
     mockUpdateWorkerPages.mockResolvedValue({ data: { data: {} } })
     render(<WorkerProfilesPanel canWrite />)
 
+    await openMenu('w-9')
     fireEvent.click(await screen.findByTestId('worker-set-pages-w-9'))
     const modal = await screen.findByTestId('worker-pages-modal')
     const box = (testId: string) =>
@@ -425,6 +445,7 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
     mockUpdateWorkerPages.mockResolvedValue({ data: { data: {} } })
     render(<WorkerProfilesPanel canWrite />)
 
+    await openMenu('w-10')
     fireEvent.click(await screen.findByTestId('worker-set-pages-w-10'))
     const modal = await screen.findByTestId('worker-pages-modal')
     // 「默认页面」= 回到未收窄（全勾默认页）；再关掉质检 ⇒ 有效页集 = 默认集合 ⇒ 发 null
@@ -441,6 +462,7 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
     ]))
     render(<WorkerProfilesPanel canWrite />)
 
+    await openMenu('w-11')
     fireEvent.click(await screen.findByTestId('worker-set-pages-w-11'))
     const modal = await screen.findByTestId('worker-pages-modal')
     for (const key of ['report', 'order', 'cut_calc', 'shipment']) {
@@ -456,6 +478,7 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
   it('⑩ 无 employee:create ⇒ 「改菜单」不可点（与建号 / 改工序同档写权限）', async () => {
     render(<WorkerProfilesPanel canWrite={false} />)
 
+    await openMenu('w-1')
     expect(await screen.findByTestId('worker-set-pages-w-1')).toBeDisabled()
   })
 
@@ -464,7 +487,10 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
     render(<WorkerProfilesPanel canWrite />)
 
     expect(await screen.findByText('W-1001')).toBeInTheDocument()
+    // 菜单照旧能开（重置 PIN / 停用 都在），只是**没有「改菜单」这一项**
+    await openMenu('w-1')
     expect(screen.queryByTestId('worker-set-pages-w-1')).not.toBeInTheDocument()
+    expect(screen.getByTestId('worker-reset-pin-w-1')).toBeInTheDocument()
   })
 
   it('⑧ 企业级页面读不到（如岗位没有生产域读码）⇒ 建号主流程照旧，只是不显示菜单一节', async () => {

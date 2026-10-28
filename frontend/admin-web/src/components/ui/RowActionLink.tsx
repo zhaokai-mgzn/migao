@@ -21,12 +21,13 @@
  *
  * ⚠️ **销售订单列表的行内动作已不再是本组件**（issue #8011，2026-10-28）：那张表的行内收成
  * 「1 个主行动按钮 + 1 个「⋯」菜单」，菜单项另用菜单语义（`role="menuitem"`）。本组件仍是
- * 「行内**文字**动作」的单一形态 —— 现有消费点 = 作业看板（`src/app/(dashboard)/production/page.tsx`）
- * 与库位面板（`src/components/stock/WarehouseLocationPanel.tsx`）。
+ * 「行内**文字**动作」的单一形态 —— 现有消费点 = 作业看板（`src/app/(dashboard)/production/page.tsx`）。
+ * ⚠️ 库位面板（`src/components/stock/WarehouseLocationPanel.tsx`）在 issue #8038 已改走
+ * `RowActions`（1 主行动 + ⋯ 菜单），**不再是**本组件的消费点。
  *
- * ⚠️ **边界（照实登记）**：全仓还有几处**同款字面量**的链接（`ProductTable` /
- * 员工 / 售后等，各自带 `text-sm` 或 `disabled:` 变体）—— 本次**有意不并入**
- * （它们有各自的禁用态与字号，硬并会改变观感），未迁移项另单跟踪。
+ * ⚠️ **边界（照实登记）**：全仓还有几处**同款字面量**的链接（员工 / 售后等，各自带 `text-sm`
+ * 或 `disabled:` 变体）。`ProductTable` 与库位面板已在 issue #8038 改走 `RowActions`；
+ * 余下几处仍是「行内文字动作」的**待迁移项**（另单跟踪），本组件暂不改它们。
  */
 export default function RowActionLink({
   children,

@@ -79,6 +79,14 @@ beforeEach(() => {
   mockDelete.mockResolvedValue({ data: {} })
 })
 
+/** 打开某仓位行的「⋯」菜单（issue #8038：行内动作 = **1 主行动（编辑）+ ⋯ 菜单**） */
+function openMenu(id: number | string) {
+  const trigger = within(screen.getByTestId(`warehouse-location-menu-${id}`)).getByRole('button', {
+    name: '更多操作',
+  })
+  fireEvent.click(trigger)
+}
+
 describe('仓位管理清单（WH-009）', () => {
   it('显示仓位号 / 区域 / 三态（空闲 / 占用中 / 已停用）', async () => {
     render(<WarehouseLocationPanel canWrite refreshKey={0} />)
@@ -217,6 +225,7 @@ describe('启停 / 删除（WH-009）', () => {
     render(<WarehouseLocationPanel canWrite refreshKey={0} />)
     await screen.findByText('A-01')
 
+    openMenu(11)
     fireEvent.click(screen.getByTestId('warehouse-location-toggle-11'))
 
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith(11, { status: 'inactive' }))
@@ -228,6 +237,7 @@ describe('启停 / 删除（WH-009）', () => {
     render(<WarehouseLocationPanel canWrite refreshKey={0} />)
     await screen.findByText('A-02')
 
+    openMenu(12)
     const deleteButton = screen.getByTestId('warehouse-location-delete-12') as HTMLButtonElement
     expect(deleteButton.disabled).toBe(true)
     expect(deleteButton.getAttribute('title')).toContain('不能删除')
@@ -237,6 +247,7 @@ describe('启停 / 删除（WH-009）', () => {
     render(<WarehouseLocationPanel canWrite refreshKey={0} />)
     await screen.findByText('A-01')
 
+    openMenu(11)
     fireEvent.click(screen.getByTestId('warehouse-location-delete-11'))
     const dialog = await screen.findByRole('dialog', { name: '删除仓位' })
     expect(within(dialog).getByText('A-01')).toBeTruthy()

@@ -5,8 +5,8 @@ import { Plus, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { workerApi, workerPageCatalogApi } from '@/lib/api'
 import { toastRequestError } from '@/lib/api-error'
-import { Button, Input, Select, Modal, Table, Badge, Pagination } from '@/components/ui'
-import type { TableColumn } from '@/components/ui'
+import { Button, Input, Select, Modal, Table, Badge, Pagination, RowActions } from '@/components/ui'
+import type { TableColumn, RowActionItem } from '@/components/ui'
 import type { EmployeeStatus, WorkerOperationOption, WorkerProfile } from '@/types'
 
 /**
@@ -494,6 +494,54 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
     }
   }
 
+  /**
+   * 行内动作（issue #8038）：**主行动 = 改工序** + ⋯ 菜单。
+   *
+   * 为什么主行动选「改工序」：本页说明段自己写着「绑定工序后扫码直接报那一道，不用再选」——
+   * 那是工人档案里**唯一会改变作业行为**的一项；「改菜单」是收窄可见面的权限步骤，
+   * 「开/关质检」是逐页开关，「重置 PIN」「停用」是低频例外 ⇒ 都进 ⋯。
+   * （改前这 5 个是平级文字动作 = 类级扫描器扫出的最高一页，密度 5。）
+   *
+   * 🔴 禁用态与回调**逐条保持改前**：`canWrite` 一档（只读角色看得见但点不动）、
+   * `togglingOptional` / `togglingId` 进行中禁用、`menuPages` 为空时「改菜单」入口不出现（#7804）。
+   */
+  const rowActionsFor = (record: WorkerProfile): RowActionItem[] => {
+    const items: RowActionItem[] = []
+    if (menuPages.length > 0) {
+      items.push({
+        key: 'pages',
+        label: '改菜单',
+        testId: `worker-set-pages-${record.id}`,
+        onClick: () => handleOpenPages(record),
+        disabled: !canWrite,
+      })
+    }
+    for (const page of optionalPages) {
+      items.push({
+        key: `optional-${page.key}`,
+        label: record.workerPages?.includes(page.key) ? `关${page.label}` : `开${page.label}`,
+        testId: `worker-optional-${page.key}-${record.id}`,
+        onClick: () => void handleToggleOptional(record, page.key),
+        disabled: !canWrite || togglingOptional === record.id,
+      })
+    }
+    items.push({
+      key: 'reset-pin',
+      label: '重置 PIN',
+      testId: `worker-reset-pin-${record.id}`,
+      onClick: () => handleOpenResetPin(record),
+      disabled: !canWrite,
+    })
+    items.push({
+      key: 'toggle-status',
+      label: record.status === 'active' ? '停用' : '启用',
+      testId: `worker-toggle-status-${record.id}`,
+      onClick: () => void handleToggleStatus(record),
+      disabled: !canWrite || togglingId === record.id,
+    })
+    return items
+  }
+
   const columns: TableColumn<WorkerProfile>[] = [
     {
       key: 'workerNo',
@@ -543,60 +591,26 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
     {
       key: 'actions',
       title: '操作',
-      // 改菜单 / 开质检 / 改工序 / 重置 PIN / 停用 —— 五个文本动作单行不折（issue #7217 的 nowrap 口径）
-      width: '320px',
+      // issue #8038：**1 主行动（改工序）+ ⋯ 菜单**。改前是 5 个平级文字动作
+      // （改菜单 / 开·关质检 / 改工序 / 重置 PIN / 停用），nowrap 口径（#7217）不变。
+      width: '140px',
       render: (record) => (
-        <div className="flex items-center gap-3 whitespace-nowrap">
-          {/* 改菜单（issue #7804）：目录读不到 ⇒ 没有选项可勾 ⇒ 入口不出现（同建号「菜单一节不显示」） */}
-          {menuPages.length > 0 && (
-            <button
-              type="button"
-              onClick={() => handleOpenPages(record)}
-              disabled={!canWrite}
-              data-testid={`worker-set-pages-${record.id}`}
-              className="text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm disabled:text-neutral-400 disabled:no-underline disabled:cursor-not-allowed"
-            >
-              改菜单
-            </button>
-          )}
-          {optionalPages.map((page) => (
-            <button
-              key={page.key}
-              type="button"
-              onClick={() => void handleToggleOptional(record, page.key)}
-              disabled={!canWrite || togglingOptional === record.id}
-              data-testid={`worker-optional-${page.key}-${record.id}`}
-              className="text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm disabled:text-neutral-400 disabled:no-underline disabled:cursor-not-allowed"
-            >
-              {record.workerPages?.includes(page.key) ? `关${page.label}` : `开${page.label}`}
-            </button>
-          ))}
-          <button
-            type="button"
-            onClick={() => handleOpenOperation(record)}
+        <RowActions
+          testId={`worker-actions-${record.id}`}
+          // ⚠️ 别用 `worker-menu-<id>`：那是「工人端菜单口径」列的既有 testid（同屏会撞）
+          menuTestId={`worker-row-menu-${record.id}`}
+          items={rowActionsFor(record)}
+        >
+          <Button
+            variant="ghost"
+            size="sm"
             disabled={!canWrite}
             data-testid={`worker-set-operation-${record.id}`}
-            className="text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm disabled:text-neutral-400 disabled:no-underline disabled:cursor-not-allowed"
+            onClick={() => handleOpenOperation(record)}
           >
             改工序
-          </button>
-          <button
-            type="button"
-            onClick={() => handleOpenResetPin(record)}
-            disabled={!canWrite}
-            className="text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm disabled:text-neutral-400 disabled:no-underline disabled:cursor-not-allowed"
-          >
-            重置 PIN
-          </button>
-          <button
-            type="button"
-            onClick={() => handleToggleStatus(record)}
-            disabled={!canWrite || togglingId === record.id}
-            className="text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm disabled:text-neutral-400 disabled:no-underline disabled:cursor-not-allowed"
-          >
-            {record.status === 'active' ? '停用' : '启用'}
-          </button>
-        </div>
+          </Button>
+        </RowActions>
       ),
     },
   ]
