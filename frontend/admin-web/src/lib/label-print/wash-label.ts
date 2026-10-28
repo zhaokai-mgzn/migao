@@ -28,6 +28,9 @@
  *   （抬头首行距纸边，`WASH_LABEL_TOP_BLANK_MM`）；**二维码紧挨正文**（正文末行之下只留
  *   `WASH_LABEL_BLOCK_GAP_MM` = 0.5mm，不再空两行）；**码下沿距纸边（底部虚线）15mm**
  *   （`WASH_LABEL_BOTTOM_CLEARANCE_MM`，两条通道同一数值）。
+ * - **2026-10-28（issue #8002，专属唛）**：`WashLabelInput.optionLabel`（余料带回 / 绑带）⇒
+ *   抬头副标题 `成品定制 · 余料带回`（12pt 加粗）；企业名缺值也照画（标记不能依赖企业名）。
+ *   张数 / 张序由 `lib/wash-label-content.ts::washLabelSheets` 派生，本文件只排一张纸。
  * - 「字体还是太小，可以再大一点」⇒ 正文 9pt → **12pt**（抬头 14pt / 副标题 10pt）；
  * - 「二维码放到底部居中」「移除扫码报工和短码文字」「二维码可以放大一点」⇒ 底部只有**居中**二维码
  *   （80 CSS px = 21.17mm），不再画短码与说明字；
@@ -55,7 +58,7 @@
  *   「内容 Xmm > 可用 Ymm」——预览是两条通道共同的**事前**出口。
  */
 import { printDotGeometry, printPageBoxMm, type PrintMediaId } from '@/lib/print-media'
-import { WASH_LABEL_COMPANY_SUBTITLE, type WashLabelInput, type WashLabelRow } from '@/lib/wash-label-content'
+import { washLabelSubtitle, type WashLabelInput, type WashLabelRow } from '@/lib/wash-label-content'
 // 🔴 版面度量的**唯一一份**（issue #7776 建立）：字号 / 行高 / 内边距 / 二维码 / 块间距全在
 // `wash-label-metrics` —— 系统打印的 CSS 与画布通道读同一份，改一处另一处不会静默漂移。
 import {
@@ -64,6 +67,7 @@ import {
   WASH_LABEL_BODY_FONT_PT as LABEL_BODY_FONT_PT,
   WASH_LABEL_COMPANY_FONT_PT as LABEL_COMPANY_FONT_PT,
   WASH_LABEL_COMPANY_SUBTITLE_FONT_PT as LABEL_COMPANY_SUBTITLE_FONT_PT,
+  WASH_LABEL_OPTION_SUBTITLE_FONT_PT as LABEL_OPTION_SUBTITLE_FONT_PT,
   WASH_LABEL_LINE_HEIGHT as LABEL_LINE_HEIGHT,
   WASH_LABEL_PADDING_MM as LABEL_PADDING_MM,
   WASH_LABEL_QR_CSS_PX as LABEL_QR_CSS_PX,
@@ -224,7 +228,10 @@ export interface WashLabelLayout {
   margin: number
   /** 顶部留白（px）：最顶端的字（抬头首行）距纸边的高度 */
   topBlank: number
-  /** 纸面抬头（企业名 + 副标题，居中）；企业名缺值 ⇒ 空数组（整块不渲染） */
+  /**
+   * 纸面抬头（企业名 + 副标题，居中）。常规唛企业名缺值 ⇒ 空数组（整块不渲染）；
+   * 专属唛（`optionLabel`，issue #8002）副标题即标记 ⇒ 企业名缺值也照出（只少企业名那一行）。
+   */
   company: LabelText[]
   /** 正文块（可裁区）：已切好的行，逐行带位置与字号 */
   lines: LabelText[]
@@ -276,25 +283,38 @@ export function layoutWashLabel(
   const lineStep = Math.round(bodyFontPx * LABEL_LINE_HEIGHT)
   const gap = Math.round(mm(LABEL_BLOCK_GAP_MM))
 
-  // ① 纸面抬头（`shrink-0`）：企业名 + 副标题，居中（与系统打印的抬头块同口径）
+  // ① 纸面抬头（`shrink-0`）：企业名 + 副标题，居中（与系统打印的抬头块同口径）。
+  //    🔴 专属唛（issue #8002）：副标题 = `成品定制 · 余料带回`（12pt 加粗）—— 企业名缺值也照画，
+  //    因为这一行就是「这张纸给哪个特殊选项」的标记；常规唛仍是「企业名缺值 ⇒ 整块不画」。
   const company: LabelText[] = []
   const companyName = (input.companyName ?? '').trim()
-  if (companyName !== '') {
+  const optionLabel = (input.optionLabel ?? '').trim()
+  if (companyName !== '' || optionLabel !== '') {
     const nameFontPx = ptToPx(LABEL_COMPANY_FONT_PT, dpmm)
-    const subtitleFontPx = ptToPx(LABEL_COMPANY_SUBTITLE_FONT_PT, dpmm)
+    const subtitleFontPx = ptToPx(
+      optionLabel === '' ? LABEL_COMPANY_SUBTITLE_FONT_PT : LABEL_OPTION_SUBTITLE_FONT_PT,
+      dpmm,
+    )
     const centerX = Math.round(widthPx / 2)
     // 🔴 抬头也**折行印全文**（issue #7833）：两条通道都不得靠省略号掩盖长企业名。
     let companyCursor = topBlank
     for (const text of wrapText(companyName, innerW, nameFontPx, measure)) {
-      company.push({ text, x: centerX, y: companyCursor, fontPx: nameFontPx, align: 'center' })
+      company.push({ text, x: centerX, y: companyCursor, fontPx: nameFontPx, align: 'center', bold: true })
       companyCursor += Math.round(nameFontPx * LABEL_LINE_HEIGHT)
     }
-    for (const text of wrapText(WASH_LABEL_COMPANY_SUBTITLE, innerW, subtitleFontPx, measure)) {
-      company.push({ text, x: centerX, y: companyCursor, fontPx: subtitleFontPx, align: 'center' })
+    for (const text of wrapText(washLabelSubtitle(optionLabel), innerW, subtitleFontPx, measure)) {
+      company.push({
+        text,
+        x: centerX,
+        y: companyCursor,
+        fontPx: subtitleFontPx,
+        align: 'center',
+        ...(optionLabel === '' ? {} : { bold: true }),
+      })
       companyCursor += Math.round(subtitleFontPx * LABEL_LINE_HEIGHT)
     }
   }
-  // 抬头块占高 = **逐行真实行高之和**（企业名 14pt 与副标题 10pt 不同字号，按 bodyFont 一刀切会少算）
+  // 抬头块占高 = **逐行真实行高之和**（企业名 14pt 与副标题 10pt / 专属唛 12pt 不同字号，按 bodyFont 一刀切会少算）
   const companyHeight =
     company.length > 0 ? company.reduce((sum, line) => sum + Math.round(line.fontPx * LABEL_LINE_HEIGHT), 0) + gap : 0
 
@@ -427,7 +447,9 @@ export function paintWashLabel(
 
   for (const line of layout.company) {
     ctx.textAlign = 'center'
-    ctx.font = `${line.fontPx === layout.company[0]?.fontPx ? 'bold ' : ''}${line.fontPx}px ${BODY_FONT}`
+    // 抬头两行都用 `bold` 逐行判定：企业名恒粗、专属唛副标题（`成品定制 · 余料带回`）也粗，
+    // 常规副标题（`成品定制`）不粗 —— 与系统打印的 `font-bold` 同源（issue #8002）
+    ctx.font = `${line.bold ? 'bold ' : ''}${line.fontPx}px ${BODY_FONT}`
     ctx.fillText(line.text, line.x, line.y)
   }
   if (layout.company.length > 0) ctx.textAlign = 'left'

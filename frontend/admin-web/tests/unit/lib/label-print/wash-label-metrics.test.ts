@@ -24,6 +24,7 @@ import {
   WASH_LABEL_BLOCK_GAP_MM,
   WASH_LABEL_EMPHASIS_ROW_KEYS,
   WASH_LABEL_LINE_HEIGHT,
+  WASH_LABEL_OPTION_SUBTITLE_FONT_PT,
   WASH_LABEL_PADDING_MM,
   WASH_LABEL_QR_CSS_PX,
   WASH_LABEL_QR_PLACEHOLDER_FONT_PT,
@@ -89,6 +90,11 @@ describe('水洗唛版面度量：TS 单一真值 ⇄ 组件 CSS（改一处不�
   it('抬头 / 二维码 / 占位框的字号与边长逐值一致', () => {
     expect(source).toContain(`text-[${WASH_LABEL_COMPANY_FONT_PT}pt] font-bold`)
     expect(source).toContain(`text-[${WASH_LABEL_COMPANY_SUBTITLE_FONT_PT}pt]`)
+    // 🔴 专属唛（issue #8002）的副标题 = 12pt 加粗、常规唛 = 10pt 常规 —— 两条通道同读这一份常量
+    expect(WASH_LABEL_OPTION_SUBTITLE_FONT_PT).toBe(12)
+    expect(WASH_LABEL_OPTION_SUBTITLE_FONT_PT).toBeGreaterThan(WASH_LABEL_COMPANY_SUBTITLE_FONT_PT)
+    expect(source).toContain(`text-[${WASH_LABEL_OPTION_SUBTITLE_FONT_PT}pt] font-bold`)
+    expect(source).toContain("optionLabel !== null")
     expect(source).toContain(`size={${WASH_LABEL_QR_CSS_PX}}`)
     expect(source).toContain(`h-[${WASH_LABEL_QR_PLACEHOLDER_MM}mm] w-[${WASH_LABEL_QR_PLACEHOLDER_MM}mm]`)
     expect(source).toContain(`text-[${WASH_LABEL_QR_PLACEHOLDER_FONT_PT}pt]`)

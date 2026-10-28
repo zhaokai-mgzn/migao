@@ -134,6 +134,15 @@ LITERAL_EXEMPTIONS: tuple[tuple[str, str, str], ...] = (
         "frontend/admin-web/src/lib/craft-display.ts",
         "余料带回-纱",
         "同上（`-纱` 是同一族的另一个派生键；与工序名的 `-纱` 变体形态同形不同物）",
+        "frontend/admin-web/src/lib/wash-label-content.ts",
+        "余料带回-布",
+        "**特殊选项名**（专属唛触发词表，与 `order-craft-fields.ts` / `routing.py` 逐字一致；issue #8002）"
+        "—— `-布` 是选项名的一部分，不是工序名的部位后缀；纸面只在「特殊选项」行与专属唛抬头原样展示",
+    ),
+    (
+        "frontend/admin-web/src/lib/wash-label-content.ts",
+        "余料带回-纱",
+        "同上（`余料带回-纱` 是另一个特殊选项名，同一份词表；与工序名的 `-纱` 变体形态同形不同物）",
     ),
 )
 
