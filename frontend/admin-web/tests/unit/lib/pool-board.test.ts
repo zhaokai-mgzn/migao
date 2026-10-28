@@ -23,6 +23,7 @@ import {
   previewSummaryRows,
   singleDispatchLines,
   singleDispatchLinesOfOrder,
+  singleDispatchOrders,
 } from '@/lib/pool-board'
 import type { PoolBoard, PoolLine, PoolPreview } from '@/types'
 
@@ -212,5 +213,66 @@ describe('singleDispatchLinesOfOrder：**整单派工 ⇒ 整单逐行指派**�
     expect(singleDispatchLinesOfOrder(b, 'x1').map((l) => l.itemId)).toEqual(['ix1'])
     expect(singleDispatchLinesOfOrder(b, 'nope')).toEqual([])
     expect(singleDispatchLinesOfOrder(null, 'm1')).toEqual([])
+  })
+})
+
+describe('singleDispatchOrders：逐单区按**订单**归并（issue #7974）', () => {
+  const line = (orderId: string, itemId: string, over: Partial<PoolLine> = {}): PoolLine =>
+    ({
+      orderId,
+      orderNo: `NO-${orderId}`,
+      itemId,
+      productId: 'p1',
+      productName: `商品-${itemId}`,
+      requiredMeters: 1,
+      waitingSince: '2026-10-20T08:00:00+08:00',
+      waitHours: 3,
+      overdue: false,
+      isUrgent: true,
+      ...over,
+    }) as PoolLine
+  const board = (over: Partial<PoolBoard>) => over as PoolBoard
+
+  it('多套订单 ⇒ **一组多行**（一套都不能丢）；订单级字段取该单第一行；组内行序不变', () => {
+    const orders = singleDispatchOrders(
+      board({
+        urgentLines: [
+          line('m1', 'im1', {
+            waitHours: 6,
+            requiredDeliveryDate: '2026-10-28',
+            deliveryDaysLeft: 1,
+          }),
+          line('m1', 'im2'),
+        ],
+      }),
+    )
+    expect(orders).toHaveLength(1)
+    expect(orders[0].orderId).toBe('m1')
+    expect(orders[0].orderNo).toBe('NO-m1')
+    expect(orders[0].lines.map((l) => l.itemId)).toEqual(['im1', 'im2'])
+    expect(orders[0].waitHours).toBe(6)
+    expect(orders[0].requiredDeliveryDate).toBe('2026-10-28')
+    expect(orders[0].deliveryDaysLeft).toBe(1)
+    expect(orders[0].isUrgent).toBe(true)
+    expect(orders[0].isOutsourced).toBe(false)
+  })
+
+  it('订单序 = **首次出现序**（加急段在前、外发段在后）；同一单分散出现也只成一组', () => {
+    const orders = singleDispatchOrders(
+      board({
+        urgentLines: [line('u2', 'iu21'), line('u1', 'iu11'), line('u2', 'iu22')],
+        outsourcedLines: [line('x1', 'ix1', { isUrgent: false, isOutsourced: true })],
+      }),
+    )
+    expect(orders.map((o) => o.orderId)).toEqual(['u2', 'u1', 'x1'])
+    expect(orders[0].lines.map((l) => l.itemId)).toEqual(['iu21', 'iu22'])
+    // 加急 / 外发标记只来自该单自己的行（不是全局默认值）
+    expect(orders[2].isOutsourced).toBe(true)
+    expect(orders[0].isOutsourced).toBe(false)
+  })
+
+  it('空看板 / 缺键 ⇒ 空数组（不造行、不崩）', () => {
+    expect(singleDispatchOrders(null)).toEqual([])
+    expect(singleDispatchOrders(board({}))).toEqual([])
   })
 })

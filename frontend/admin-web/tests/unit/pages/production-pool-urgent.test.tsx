@@ -7,8 +7,10 @@
 //   ② 加急插队 = **同一个端点 + 单订单 + `pooled:false`**（一个动作）；
 //   ③ 加急单混进 `pooled:true` 的批 ⇒ **422 VALIDATION_ERROR（整批拒绝）**——
 //      拒绝文案必须**看得见**（红色错误条），不能只靠一次转瞬即逝的 toast。
-//   ④ issue #7968：**整单派工 ⇒ 整单逐行指派** —— 多套成品帘的加急 / 外发单，点任意一行「立即派单」
-//      ⇒ `/dispatch` 的 `batches` 带**该单全部行**（只带被点的那一行 = 其余各套不领料、快照无 batchNo）。
+//   ④ issue #7968：**整单派工 ⇒ 整单逐行指派** —— 多套成品帘的加急 / 外发单，一次派单
+//      ⇒ `/dispatch` 的 `batches` 带**该单全部行**（只带一行 = 其余各套不领料、快照无 batchNo）。
+//   ⑤ issue #7974：**展示与动作都是订单级** —— 一张多套订单在逐单表里**只有一行、一个按钮**，
+//      行内列出全部套的物料/米数（改前按套渲染 = 同一单号 N 行、N 个按钮，看起来像逐套派）。
 //
 // issue #7943（用户 2026-10-27 裁定）：加急与外发是**同一件事**（不进池、逐单立即派、共用同一个
 // 承接方设置）⇒ 合并成**一张表**；且**成批合并区置顶**（主操作），「加急 / 外发」区在其后。
@@ -196,9 +198,13 @@ describe('🔴 红证夹具：「加急不进池」与「拒绝文案看得见�
     )
     if (
       !src.includes('singleDispatchLinesOfOrder') ||
-      !dispatchSingleBody.includes('singleDispatchLinesOfOrder(board, line.orderId)')
+      !dispatchSingleBody.includes('singleDispatchLinesOfOrder(board, order.orderId)')
     ) {
-      problems.push('「立即派单」没有按整单行取批次指派（singleDispatchLinesOfOrder）⇒ 多套成品帘只有被点那套领料')
+      problems.push('「立即派单」没有按整单行取批次指派（singleDispatchLinesOfOrder）⇒ 多套成品帘只有一套领料')
+    }
+    // 🔴 类级锁（issue #7974）：逐单区必须按**订单**渲染 —— 退回「`singleDispatchLines.map` 一套一行」即红
+    if (!src.includes('singleDispatchOrders(board)') || !src.includes('singleOrders.map')) {
+      problems.push('逐单区没有按订单归并渲染（singleDispatchOrders）⇒ 多套订单又变成一套一行/一个按钮')
     }
     expect(problems).toEqual([])
   })
@@ -240,7 +246,7 @@ describe('智能派单 · 加急插队区（PR-080）', () => {
     expect(within(groupsSection).queryByTestId('pool-consignee')).toBeNull()
 
     // ③ 标题必须同时覆盖两件事（退回「只有加急」= 红）
-    expect(screen.getByText('加急 / 外发订单（不参与合并，立即派）')).toBeInTheDocument()
+    expect(screen.getByText('加急 / 外发订单（不参与合并，整单立即派）')).toBeInTheDocument()
     // ④ 合并成一个区：旧的「外发订单」独立卡**取不到**（issue #7943）
     expect(screen.queryByTestId('pool-outsourced-section')).toBeNull()
   })
@@ -284,7 +290,7 @@ describe('智能派单 · 加急插队区（PR-080）', () => {
     // 池内那一单照常在成批区（反向断言：不能把成批区整个渲染没了来「通过」上面两条）
     expect(within(groupsSection).getByText('MG-POOL-1')).toBeInTheDocument()
 
-    // ③ 池视图列齐全：单号 / 物料 / 需求米数 / 等待时长 / 加急标记 / 到货日
+    // ③ 池视图列齐全：单号 / 成品帘（套数 + 物料 + 米数）/ 等待时长 / 加急标记 / 到货日
     const urgentRow = screen.getByTestId('pool-line-u1')
     expect(urgentRow).toHaveTextContent('MG-URG-1')
     expect(urgentRow).toHaveTextContent('遮光布')
@@ -463,31 +469,37 @@ describe('外发区：订单标记「外发加工」⇒ 不进池、逐单立即
   })
 })
 
-// ============================================================ 整单派工 ⇒ 整单逐行指派（issue #7968）
+// ============================================================ 整单展示 / 整单派单（issue #7974 + #7968）
 
 /**
- * 用户现场（2026-10-28 逐字）：
+ * 用户 2026-10-28 两次现场（逐字）：
  * > 一个加急订单有多套成品帘时，点击某个商品行直接派工会整单派工，但是只有被选中的那套成品帘
  * > 指定了批次号，应该要整单都指派
+ * > 既然是整单派单，那应该改成整单派单的交互形式，现在是根据订单套展示和派单的
  *
- * 口径：「立即派单」是**订单级动作**（服务端一单一加工单）⇒ `batches` 必须带**该单在看板上的全部行**；
- * 点哪一行只决定「派哪张单」，**不决定**「哪几套领批次」。
- * 红证 = 把 `dispatchSingle` 退回 `buildPoolRequest([line], …)` ⇒ 下面的 `batches` 断言当场红
- * （实际只回被点的那一套，少一条）。
+ * 口径：
+ * ① **展示 = 订单**：一张多套订单在逐单表里**只有一行**，行内列出该单全部套的物料与米数；
+ * ② **动作 = 订单**：该行**只有一个**「立即派单」按钮，一次派整单；
+ * ③ **指派 = 整单逐行**：`batches` 带该单全部行（issue #7968），不是只有某一行。
+ *
+ * 红证：
+ * - 退回按套渲染（N 行、N 个按钮）⇒「恰好一行 / 恰好一个按钮」断言当场红；
+ * - 退回只带一行 ⇒ `batches` 断言当场红。
  */
-describe('多套成品帘的逐单立即派：点一行 ⇒ 整单全部行都带批次指派（issue #7968）', () => {
+describe('多套成品帘的整单立即派：一张订单一行一个按钮，一次覆盖全部行（issue #7974 / #7968）', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetBoard.mockResolvedValue(ok(board()))
     mockProcessors.mockResolvedValue(ok([{ id: 'sup-1', name: '朝阳加工厂' }]))
   })
 
-  /** 一张加急单 = 两套成品帘（同一 orderId、两个 itemId） */
+  /** 一张加急单 = 两套成品帘（同一 orderId、两个 itemId；米数刻意不同，证明两套都被渲染） */
   const MULTI_CLOTH = line({
     orderId: 'm1',
     orderNo: 'MG-URG-MULTI',
     itemId: 'im1',
     productName: '遮光布',
+    requiredMeters: 18.5,
     isUrgent: true,
   })
   const MULTI_SHEER = line({
@@ -496,10 +508,11 @@ describe('多套成品帘的逐单立即派：点一行 ⇒ 整单全部行都�
     itemId: 'im2',
     productName: '素纱',
     skuCode: '米白/2.0m',
+    requiredMeters: 12,
     isUrgent: true,
   })
 
-  it('点**第二套**那一行的「立即派单」⇒ batches 仍是整单两行（orderIds 仍去重为 1 条）', async () => {
+  it('多套加急单 ⇒ **恰好一行、恰好一个按钮**；行内两套物料/米数都在；点击后 batches 两行', async () => {
     mockGetBoard.mockResolvedValue(
       ok(board({ urgentLines: [MULTI_CLOTH, MULTI_SHEER], urgentCount: 1 })),
     )
@@ -519,15 +532,26 @@ describe('多套成品帘的逐单立即派：点一行 ⇒ 整单全部行都�
     render(<ProductionPoolPage />)
     await waitFor(() => expect(screen.getByTestId('pool-urgent-table')).toBeInTheDocument())
 
-    // 定位**第二套（纱帘）**那一行 —— 用行内语义文案取行，不写「第一行」这种位置锚
-    const row = screen
-      .getAllByTestId('pool-line-m1')
-      .find((r) => r.textContent?.includes('素纱'))
+    // ① 订单级展示：同一单**只出现一行**（改前按套渲染 = 两行 ⇒ 本断言红）
+    const rows = screen.getAllByTestId('pool-line-m1')
+    expect(rows).toHaveLength(1)
+    const row = rows[0]
+
+    // ② 行内 = 该单全部套（信息不丢：两套的商品 / 颜色门幅 / 米数都在）
+    expect(row).toHaveTextContent('2 套成品帘')
+    expect(row).toHaveTextContent('遮光布')
+    expect(row).toHaveTextContent('米白/2.8m')
+    expect(row).toHaveTextContent('18.50 米')
     expect(row).toHaveTextContent('素纱')
-    fireEvent.click(within(row as HTMLElement).getByRole('button', { name: '立即派单' }))
+    expect(row).toHaveTextContent('米白/2.0m')
+    expect(row).toHaveTextContent('12.00 米')
+
+    // ③ 一个订单一个动作：行内**恰好一个**「立即派单」按钮（改前两套 = 两个按钮 ⇒ 本断言红）
+    const buttons = within(row).getAllByRole('button', { name: '立即派单' })
+    expect(buttons).toHaveLength(1)
+    fireEvent.click(buttons[0])
 
     await waitFor(() => expect(mockDispatch).toHaveBeenCalledTimes(1))
-    // 改前：batches 只有被点的 `im2`（另一套成品帘不领料、快照无 batchNo）⇒ 本断言红
     expect(mockDispatch).toHaveBeenCalledWith({
       orderIds: ['m1'],
       batches: [
@@ -539,14 +563,21 @@ describe('多套成品帘的逐单立即派：点一行 ⇒ 整单全部行都�
     })
   })
 
-  it('多套**外发**单同样整单带指派（外发与加急走同一个派单动作，不能只修一段）', async () => {
-    const out1 = line({ orderId: 'mx', orderNo: 'MG-OUT-MULTI', itemId: 'xm1', isOutsourced: true })
+  it('多套外发单同样一行一个按钮；未选承接方时不可用，选后一次派整单', async () => {
+    const out1 = line({
+      orderId: 'mx',
+      orderNo: 'MG-OUT-MULTI',
+      itemId: 'xm1',
+      requiredMeters: 18.5,
+      isOutsourced: true,
+    })
     const out2 = line({
       orderId: 'mx',
       orderNo: 'MG-OUT-MULTI',
       itemId: 'xm2',
       productName: '素纱',
       skuCode: '米白/2.0m',
+      requiredMeters: 12,
       isOutsourced: true,
     })
     mockGetBoard.mockResolvedValue(
@@ -567,13 +598,17 @@ describe('多套成品帘的逐单立即派：点一行 ⇒ 整单全部行都�
 
     render(<ProductionPoolPage />)
     await screen.findByTestId('pool-urgent-section')
-    fireEvent.change(screen.getByLabelText('承接方'), { target: { value: 'sup-1' } })
 
-    const row = screen
-      .getAllByTestId('pool-outsourced-line-mx')
-      .find((r) => r.textContent?.includes('素纱'))
+    // 一张外发单同样**只有一行一个按钮**
+    const rows = screen.getAllByTestId('pool-outsourced-line-mx')
+    expect(rows).toHaveLength(1)
+    const row = rows[0]
+    expect(row).toHaveTextContent('2 套成品帘')
     expect(row).toHaveTextContent('素纱')
-    const button = within(row as HTMLElement).getByRole('button', { name: '立即派单' })
+    const button = within(row).getByRole('button', { name: '立即派单' })
+    expect(button).toBeDisabled()
+
+    fireEvent.change(screen.getByLabelText('承接方'), { target: { value: 'sup-1' } })
     await waitFor(() => expect(button).not.toBeDisabled())
     fireEvent.click(button)
 
