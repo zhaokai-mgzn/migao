@@ -36,7 +36,7 @@
  * - 「操作」列右缘冻结几何 ⇒ `tests/unit/wide-table-action-column-guard.test.ts`。
  */
 import React from 'react'
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 
 // 页面按 `order:create` 显隐「新增订单」（issue #5983）⇒ 渲染必须带登录态（与 orders.test.tsx 同口径）
@@ -360,10 +360,6 @@ describe('行内菜单的键盘可达性（收敛不得把动作藏成不可达�
   beforeEach(() => {
     vi.clearAllMocks()
     api.getOrders.mockResolvedValue({ data: { data: { items: ROWS, total: ROWS.length } } })
-  })
-
-  afterEach(() => {
-    vi.restoreAllMocks()
   })
 
   it('Escape 收起菜单；触发器 aria-expanded 随开合变化', async () => {
