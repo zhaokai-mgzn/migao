@@ -13450,7 +13450,7 @@
 真值: frontend-fix.vitest
 溯源: 2026-10-24 新增（issue #7647，用户逐字见 PG-092）。形态按用户裁定：派工指定批次默认展示、允许改；未指定必须手输才能完成报工；回执当场给「批次 + 余量 + 缺口」。前端**不按工序名猜**适用面（只认服务端 `batch_required`）—— 判定与记账面**同一个** `ProductionService#cuttingBatchItem`。同批处理一体机回归（机台页刻意无文本输入元素 ⇒ 无派工批次时指路报工页，不新增输入框）。 ｜ tags: ui, worker-h5, production, scan-report, batch-stock
 
-### UI-138. 数值输入框的小数录入口径：<input> 的 onChange 不许 Number/parseFloat(target.value) 往返（类级判据 + 裁高取值框三位小数；单测覆盖，非 LLM 行为） 🔵
+### UI-141. 数值输入框的小数录入口径：<input> 的 onChange 不许 Number/parseFloat(target.value) 往返（类级判据 + 裁高取值框三位小数；单测覆盖，非 LLM 行为） 🔵
 ```
 你: 这里的输入框不允许输入小数点，这里应该要支持3位小数，后续要注意，已经发现几次新增的输入框都不支持输入小数点，这个默认开发规则是不符合实际业务需要的
 数据: **判据 1·类级（会红）**：三个前端包 `src/**` 里每个 `<input …>` 开标签，若 `onChange` 内出现 `Number(...target.value)` / `parseFloat(...)` / `parseInt(...)`（含 `currentTarget` / 跨行）⇒ 红；真语料**零容忍**（落地时全仓唯一一处 = 裁高配置的取值框，已改 `NumberInput`）。红证 = 把该框改回手写往返 ⇒ 当场红。执行点 = frontend/admin-web/tests/unit/numeric-input-draft-guard.test.ts 的 ①②③④。

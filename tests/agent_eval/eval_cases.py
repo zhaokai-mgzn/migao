@@ -17010,9 +17010,9 @@ _CASE_UI_137 = EvalCase(
     precondition='本用例是 [backend-contract] 纯前端契约用例：服务端解析响应（`batch_required` / `batch_no` / `batch_candidates`）与报工回执由单测自建并打桩（假 DOM + fetch 替身，不碰真库），前置不成立时单测直接红；agent-eval 栈不跑它',
 )
 
-# ── UI-138 [NORMAL] 数值输入框的小数录入口径：<input> 的 onChange 不许 Number/parseFloat(target.value) 往返（类级判据 + 裁高取值框三位小数；单测覆盖，非 LLM 行为）（源: cases/ui.yml）──
-_CASE_UI_138 = EvalCase(
-    id='UI-138',
+# ── UI-141 [NORMAL] 数值输入框的小数录入口径：<input> 的 onChange 不许 Number/parseFloat(target.value) 往返（类级判据 + 裁高取值框三位小数；单测覆盖，非 LLM 行为）（源: cases/ui.yml）──
+_CASE_UI_141 = EvalCase(
+    id='UI-141',
     legacy_id='',
     title='数值输入框的小数录入口径：<input> 的 onChange 不许 Number/parseFloat(target.value) 往返（类级判据 + 裁高取值框三位小数；单测覆盖，非 LLM 行为）',
     skill=Skill.GENERAL,
@@ -18031,7 +18031,7 @@ ALL_CASES = (
     _CASE_UI_135,
     _CASE_UI_136,
     _CASE_UI_137,
-    _CASE_UI_138,
+    _CASE_UI_141,
     _CASE_UI_138,
     _CASE_UI_139,
     _CASE_UI_140,

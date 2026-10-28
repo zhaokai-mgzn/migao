@@ -5281,7 +5281,7 @@ cases:
       verifies: []
 
 
-  - id: UI-138
+  - id: UI-141
     legacy_id: ""
     title: "数值输入框的小数录入口径：<input> 的 onChange 不许 Number/parseFloat(target.value) 往返（类级判据 + 裁高取值框三位小数；单测覆盖，非 LLM 行为）"
     domains:
