@@ -20,7 +20,10 @@
  *    （不提交 + 行内报错）；`shippingMethod=none`（无需物流）**空运单号也直接提交**；
  * ④ 失败（4xx）⇒ 录入区保留、输入**原样保留**、行内错误文案可见（服务端原文优先），
  *    行不消失、**不弹 toast 独占**、不跳页；
- * ⑤ 兜底路径仍在：⋯ 菜单里的「去发货页」跳既有 `/orders/{id}/ship`。
+ * ⑤ 兜底路径仍在：⋯ 菜单里的「去发货页」跳既有 `/orders/{id}/ship`；
+ * ⑥ 收起后**焦点归位**（issue #8027）：提交成功 / `Escape` / 「取消」三条路径收完之后
+ *    `document.activeElement` 都回到**触发这一行**的「发货」按钮（改前落 `body`：连续录单时
+ *    键盘 / 读屏用户每单都要重新找回位置）。焦点只在**收起**时搬动，换行展开不会把上一行的焦点抢回来。
  *
  * **注入式红证**（复核用，非本文件运行时执行）：
  * - 把 `handleShip` 改回 `router.push(...)` ⇒ ① 的 `push` 0 次与 ② 的「不跳页」当场红；
@@ -28,7 +31,9 @@
  *   原子发货端点」与「行变已发货」当场红（后者在 #6983 已实证：老路不建发货单、不确定状态）；
  * - 去掉前端空单号预校验 ⇒ ③ 红；把 `none` 也拦下 ⇒ ③ 的负控（无需物流直接提交）红；
  * - 把失败分支改成 `toast.error` + 清空输入 ⇒ ④ 的红；
- * - 把「去发货页」从菜单里删掉 ⇒ ⑤ 红。
+ * - 把「去发货页」从菜单里删掉 ⇒ ⑤ 红；
+ * - 去掉焦点归位（或只在同步收起时还一次、刷新回来就不管）⇒ ⑥ 的提交成功那条红
+ *   （刷新期间表体整体换成「加载中…」，行按钮是新的一茬节点）。
  *
  * ## 与相邻判据的分工（不重复）
  *
@@ -372,5 +377,86 @@ describe('销售订单列表 · 行内快捷发货（issue #8013）', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: '去发货页' }))
 
     expect(routerMock.push).toHaveBeenCalledWith('/orders/ship1/ship')
+  })
+
+  // ================= ⑥ 收起后焦点归位（issue #8027）=================
+
+  it('⑥ `Escape` 收起 ⇒ 焦点回到该行「发货」触发器', async () => {
+    render(<OrdersPage />)
+    await waitForRows()
+
+    await expandShip('ship1')
+    // 录入区展开时焦点先在录入区里（商家正在打字）
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    await waitFor(() => expect(screen.queryByTestId('ship-inline-form')).toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(primaryButton('ship1')))
+    expect(document.activeElement?.textContent).toBe('发货')
+  })
+
+  it('⑥ 点「取消」收起 ⇒ 焦点回到该行「发货」触发器', async () => {
+    render(<OrdersPage />)
+    await waitForRows()
+
+    const form = await expandShip('ship1')
+    fireEvent.click(within(form).getByRole('button', { name: '取消' }))
+
+    await waitFor(() => expect(screen.queryByTestId('ship-inline-form')).toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(primaryButton('ship1')))
+    expect(document.activeElement?.textContent).toBe('发货')
+  })
+
+  it('⑥ 提交成功收起 ⇒ 焦点回到该行「发货」触发器（刷新期间表体换过一茬，也不丢）', async () => {
+    // 🔴 刷新那一帧**必须真的渲染出来**，否则这条判据证明不了任何东西：mock 即时 resolve 时
+    //    `loading` 那一帧会被批掉（行根本没被卸载），"收起时顺手 focus 一下" 也能过。
+    //    真机是**网络往返** ⇒ 表体确实会先换成「加载中…」（行按钮全被卸载）。
+    let resolveRefresh: ((value: unknown) => void) | undefined
+    api.getOrders.mockReset()
+    api.getOrders.mockResolvedValueOnce(pageOf(ROWS))
+    api.getOrders.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveRefresh = resolve }),
+    )
+
+    render(<OrdersPage />)
+    await waitForRows()
+
+    const form = await expandShip('ship1')
+    typeTracking('SF1234567890')
+    // 提交按钮此刻就是焦点位置（键盘用户按 Enter / 空格触发）—— 录入区一撤，焦点不能掉到 body
+    ;(within(form).getByRole('button', { name: '确认发货' }) as HTMLButtonElement).focus()
+    fireEvent.click(within(form).getByRole('button', { name: '确认发货' }))
+
+    await waitFor(() => expect(screen.queryByTestId('ship-inline-form')).toBeNull())
+    // 这一帧就是真机的样子：行按钮全不在 DOM 里，没有东西可聚焦
+    await waitFor(() => expect(screen.getByText('加载中…')).toBeInTheDocument())
+
+    resolveRefresh?.(pageOf(ROWS))
+    await waitFor(() => expect(api.getOrders).toHaveBeenCalledTimes(2))
+    // 行回来之后焦点才落位（且是**新的一茬**节点，不是那个已被卸载的旧按钮）
+    await waitFor(() => expect(screen.queryByText('加载中…')).toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(primaryButton('ship1')))
+    expect(document.activeElement?.textContent).toBe('发货')
+  })
+
+  it('⑥ 负控：接着录下一单 —— 换行收起后焦点归位到**这一次**的行，不串回上一行', async () => {
+    render(<OrdersPage />)
+    await waitForRows()
+
+    await expandShip('ship1')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(document.activeElement).toBe(primaryButton('ship1')))
+
+    // 「连续录下一单」= 这个功能存在的全部理由：换到另一行仍然完全可用
+    await expandShip('ship2')
+    expect(primaryButton('ship1')).toHaveAttribute('aria-expanded', 'false')
+    expect(primaryButton('ship2')).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.queryByTestId('ship-inline-row-ship1')).toBeNull()
+    typeTracking('SF-2ND-0002')
+    expect((screen.getByLabelText('运单号') as HTMLInputElement).value).toBe('SF-2ND-0002')
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByTestId('ship-inline-form')).toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(primaryButton('ship2')))
+    expect(document.activeElement).not.toBe(primaryButton('ship1'))
   })
 })

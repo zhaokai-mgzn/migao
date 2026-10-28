@@ -31,6 +31,12 @@
  *
  * 4xx/5xx ⇒ 录入区**保留**、输入**原样保留**、错误文案**在行内**（服务端原文优先，
  * `extractApiErrorMessage`）；不弹一个独占屏幕的 toast，也不假装成功去刷新列表。
+ *
+ * ## 收起后焦点归位（issue #8027）
+ *
+ * 本组件只管「收起」（`onClose` / `onShipped`），**焦点**由宿主 `OrderTable` 还给触发这一行的
+ * 「发货」按钮 —— 提交成功 / `Escape` / 「取消」三条路径一致，且**不用焦点陷阱库**。
+ * ⛔ 别在这里自己 `focus()`：录入区内的按钮在收起时就卸载了，抢不到落点。
  */
 import { useEffect, useRef, useState } from 'react'
 import { Button, SELECT_CONTROL_FIELD } from '@/components/ui'
