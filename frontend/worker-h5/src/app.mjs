@@ -250,6 +250,15 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
     draw()
   }
 
+  /**
+   * 页头入口在屏顶、表单在「问题记录」卡里（issue #7973 版式：本次动作 → 记录 → 报工动作）⇒
+   * 点开后把表单带进视野：否则工人点了【质检】/【报返工】只看到页面重画一下，表单其实在折叠线下方。
+   * 替身 doc（node --test）没有 `scrollIntoView` ⇒ 可选调用 + try/catch，一律静默跳过。
+   */
+  const revealForm = (id) => {
+    try { doc.getElementById(id)?.scrollIntoView?.({ block: 'center' }) } catch { /* 忽略 */ }
+  }
+
   /** 报错统一出口：session 过期 ⇒ 回落未登录（清本地已由 api 完成）。 */
   const fail = (e) => {
     if (e?.code === SESSION_EXPIRED) {
@@ -527,7 +536,7 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
     // 质检（issue #7162 / #7749）：展开返工表单 / 取消 / 提交（说明在提交时从 DOM 读）。
     // 🔴 已无「判定单选」：工人端唯一的判定就是返工（合格是默认态，不点即合格）。
     // 报返工（issue #7860）：展开表单 / 取消 / 提交
-    on('wh5-rework-action', () => dispatch({ type: 'reworkFormOpen' }))
+    on('wh5-rework-action', () => { dispatch({ type: 'reworkFormOpen' }); revealForm('wh5-rework-form') })
     on('wh5-rework-cancel', () => dispatch({ type: 'reworkFormClose' }))
     on('wh5-rework-submit', () => { void submitRework() })
 
@@ -535,11 +544,12 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
     // 首次点开时补读一次最新判定（不靠「进页面就全量拉」）。
     on('wh5-quality-entry', () => {
       dispatch({ type: 'qualityFormOpen' })
+      revealForm('wh5-quality-form')
       if (!state.quality?.latest) void loadQuality()
     })
     // 待复检（issue #7973）：通过 = 关闭；仍有问题 = 新的一轮判定（表单带 recheck）
     on('wh5-quality-recheck-pass', () => { void recheckQualityPass() })
-    on('wh5-quality-recheck-open', () => dispatch({ type: 'qualityFormOpen', recheck: true }))
+    on('wh5-quality-recheck-open', () => { dispatch({ type: 'qualityFormOpen', recheck: true }); revealForm('wh5-quality-form') })
     on('wh5-quality-cancel', () => dispatch({ type: 'qualityFormClose' }))
     on('wh5-quality-submit', () => { void submitQuality() })
 
