@@ -380,3 +380,50 @@ describe('行内菜单的键盘可达性（收敛不得把动作藏成不可达�
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
   })
 })
+
+// ================= 选择列（假动作）已移除（issue #8052） =================
+//
+// 用户 2026-10-29 裁定：「先移除」—— 每行勾选框 / 表头全选框选完**没有任何批量动作消费它**
+// （全仓无 `selectedIds` 消费者）⇒ 能点但没用的假动作（`migao-dev-flow` §31 P1）。
+// 重启条件：真需要批量能力时**连动作一起设计**再放回选择列（见 issue #8052）。
+//
+// 本文件渲染的是**真页面 + 真 OrderTable**（两处组件都不替身）⇒ 列头 / 行内形态、
+// 列数与 `colSpan` 的一致性都是真读数，不是测自己写的 mock。
+describe('销售订单列表 · 选择列已移除（issue #8052）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    api.getOrders.mockResolvedValue({ data: { data: { items: ROWS, total: ROWS.length } } })
+  })
+
+  it('① 表头无全选 checkbox、行内无 checkbox 单元格（整页零 checkbox）', async () => {
+    renderPage()
+    await waitForRows()
+
+    // 红证：把 `<th>` 里的全选勾选框（或每行 `<td>` 里的勾选框）注回去 ⇒ 下面两条当场红
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+    expect(document.querySelectorAll('table input[type="checkbox"]')).toHaveLength(0)
+
+    // 正控（防止「整张表没渲染」让上面两条空跑通过）：表还在，且首个表头是「订单ID」而非空占位
+    const headerCells = Array.from(document.querySelectorAll('table thead th'))
+    expect(headerCells).toHaveLength(14)
+    expect(headerCells[0].textContent?.trim()).toBe('订单ID')
+    // 数据行格数 = 列数（移除一列后没有留下空 `<td>`）
+    expect(document.querySelectorAll('table tbody tr:first-child td')).toHaveLength(14)
+  })
+
+  it('② 列数 = 14，加载态 / 空态的 colSpan 一并收敛（列数变了 colSpan 没跟上 = 表格错位）', async () => {
+    // 加载态：读面挂起 ⇒ 表体只有「加载中…」那一个整行格
+    api.getOrders.mockReturnValue(new Promise(() => {}))
+    const loading = renderPage()
+    expect(document.querySelectorAll('table thead th')).toHaveLength(14)
+    expect(document.querySelector('table tbody td')!.getAttribute('colspan')).toBe('14')
+    loading.unmount()
+
+    // 空态：同样必须 14（改前这里是 15 —— 那正是「骨架/占位比真实列数多」的错位形态）
+    api.getOrders.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
+    renderPage()
+    await waitFor(() => expect(screen.getByTestId('orders-empty')).toBeInTheDocument())
+    expect(document.querySelectorAll('table thead th')).toHaveLength(14)
+    expect(screen.getByTestId('orders-empty').getAttribute('colspan')).toBe('14')
+  })
+})

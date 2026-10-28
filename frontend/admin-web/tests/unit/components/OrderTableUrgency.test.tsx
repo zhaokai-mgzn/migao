@@ -39,8 +39,6 @@ const renderTable = (orders: Order[]) =>
     <OrderTable
       orders={orders}
       loading={false}
-      selectedIds={[]}
-      onSelectChange={noop}
       onView={noop}
       onRemark={noop}
       onClose={noop}

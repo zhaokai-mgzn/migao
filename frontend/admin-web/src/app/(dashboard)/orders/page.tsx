@@ -186,7 +186,6 @@ export default function OrdersPage() {
   // 列表（🔴 issue #6882：**列表形态**，不是详情形态 —— `orderApi.getOrders` 回的是 brief）
   const [orders, setOrders] = useState<OrderBrief[]>([])
   const [loading, setLoading] = useState(false)
-  const [selectedIds, setSelectedIds] = useState<string[]>([])
   /**
    * 行内快捷发货（issue #8013）：当前展开了录入区的订单 id（`null` = 全部收起）。
    *
@@ -649,8 +648,6 @@ export default function OrdersPage() {
         <OrderTable
           orders={orders}
           loading={loading}
-          selectedIds={selectedIds}
-          onSelectChange={setSelectedIds}
           onView={handleView}
           onRemark={handleOpenRemark}
           onClose={handleOpenClose}
