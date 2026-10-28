@@ -118,8 +118,10 @@ export default function ShipmentsPage() {
       {/* 列表 */}
       <PageCard padded={false} className="overflow-hidden">
         {/* issue #8048：加载态 = 通用表格骨架（#8036 口径：页面级三元），与 8 列对齐；
-            不再在 tbody 里印裸「加载中…」+ 空白表体。 */}
-        {loading ? (
+            不再在 tbody 里印裸「加载中…」+ 空白表体。
+            🔴 只在**首次加载**（列表为空）出骨架：点「查询」会触发刷新，刷新时已有读数 ⇒
+            表格照旧在场（同 `quality-inspections` 的 `recordsLoading && pagedRecords.length === 0` 口径）。 */}
+        {loading && rows.length === 0 ? (
           <TableSkeleton rows={8} columns={8} />
         ) : (
         <table className="w-full text-sm">

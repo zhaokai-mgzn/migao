@@ -648,8 +648,12 @@ export default function OrdersPage() {
         {/* 表格 */}
         {/* issue #8048：加载态 = **通用表格骨架**（#8036 已验收口径：页面级三元），与 `OrderTable`
             的 15 列对齐；不再让表格组件内部印裸「加载中…」+ 空白表体。只改加载分支 ——
-            取数 / 分页 / 筛选 / 组件 props 一字未动。 */}
-        {loading ? (
+            取数 / 分页 / 筛选 / 组件 props 一字未动。
+            🔴 **只在首次加载**（`orders.length === 0`）出骨架：行内发货 / 确认收款等动作会触发刷新，
+            刷新时已有读数 ⇒ 表格照旧在场（不换骨架、行按钮不被摘掉）。否则 #8027 的焦点归位
+            会因目标节点被卸载而丢焦点（CI 实测红：orders-inline-ship ⑥）。
+            同 `quality-inspections` 的 `recordsLoading && pagedRecords.length === 0` 口径。 */}
+        {loading && orders.length === 0 ? (
           <TableSkeleton rows={pageSize} columns={15} />
         ) : (
         <OrderTable

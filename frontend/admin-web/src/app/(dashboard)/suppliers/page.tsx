@@ -400,8 +400,11 @@ export default function SuppliersPage() {
         )}
 
         {/* issue #8048：加载态 = 通用表格骨架（#8036 口径），与 7 列对齐；
-            不再印裸「加载中…」+ 空白表体。 */}
-        {loading ? (
+            不再印裸「加载中…」+ 空白表体。
+            🔴 只在**首次加载**（列表为空）出骨架：建档 / 停用 / 登记付款 / 搜索会触发刷新，
+            刷新时已有读数 ⇒ 表格照旧在场（同 `quality-inspections` 的
+            `recordsLoading && pagedRecords.length === 0` 口径）。 */}
+        {loading && suppliers.length === 0 ? (
           <TableSkeleton rows={8} columns={7} />
         ) : loadError ? null : suppliers.length === 0 ? (
           <div className="py-12 text-center text-sm text-neutral-500" data-testid="supplier-empty">

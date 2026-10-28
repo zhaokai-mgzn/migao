@@ -404,8 +404,10 @@ export default function InboundOrdersPage() {
         {/* issue #6398：`w-full` 会把列压到 CJK min-content（一个汉字）⇒ 必须给横向逃逸口 +
             `whitespace-nowrap`（否则表头折行、状态药丸竖排）。同省料看板 / 工艺路线的既有范式。 */}
         {/* issue #8048：加载态 = 通用表格骨架（#8036 口径：页面级三元），列数随视图（原料 9 / 成品 7）；
-            不再在 tbody 里印裸「加载中…」+ 空白表体。 */}
-        {loading ? (
+            不再在 tbody 里印裸「加载中…」+ 空白表体。
+            🔴 只在**首次加载**（列表为空）出骨架：过账 / 作废 / 查询会触发刷新，刷新时已有读数 ⇒
+            表格照旧在场（同 `quality-inspections` 的 `recordsLoading && pagedRecords.length === 0` 口径）。 */}
+        {loading && rows.length === 0 ? (
           <TableSkeleton rows={8} columns={view === 'fabric' ? 9 : 7} />
         ) : (
         <div className="overflow-x-auto">

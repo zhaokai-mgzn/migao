@@ -611,8 +611,11 @@ export default function EmployeesPage() {
       {/* 表格 */}
       <PageCard testId="employees-empty">
         {/* issue #8048：加载态 = 通用表格骨架（#8036 口径：页面级三元），与 9 列对齐；
-            不再让共享 `Table` 的 loading 分支印裸「加载中…」+ 空白表体。 */}
-        {loading ? (
+            不再让共享 `Table` 的 loading 分支印裸「加载中…」+ 空白表体。
+            🔴 只在**首次加载**（列表为空）出骨架：新建 / 编辑 / 删除 / 重置密码会触发刷新，
+            刷新时已有读数 ⇒ 表格照旧在场（同 `quality-inspections` 的
+            `recordsLoading && pagedRecords.length === 0` 口径）。 */}
+        {loading && employees.length === 0 ? (
           <TableSkeleton rows={pageSize} columns={9} />
         ) : (
         <Table<Employee>
