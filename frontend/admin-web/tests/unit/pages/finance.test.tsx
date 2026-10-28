@@ -377,6 +377,19 @@ describe('FinancePage', () => {
     expect(screen.queryByText('暂无数据')).toBeNull()
   })
 
+  it('失败 ≠ 空（issue #8049）：收支汇总读失败 ⇒ 两张表改口「没读到」，失败锚**同屏**', async () => {
+    mockGetSummary.mockRejectedValue(new Error('500'))
+    render(<FinancePage />)
+    await user.click(screen.getByRole('button', { name: '收支汇总' }))
+
+    // 同屏：常驻失败锚（同一次读面的出口）在，且**两张表**都改口（改前它们照旧印「没有收付款/没有收支」）
+    expect(await screen.findByTestId('finance-summary-load-error')).toBeInTheDocument()
+    expect(screen.getAllByText('收支汇总没读到 —— 见上方失败提示')).toHaveLength(2)
+    // 红证：把空态分支里的 `summaryError` 判断删掉 ⇒ 下面两条立刻红（故障被画成「没有」）
+    expect(screen.queryByText(/这个时间范围里还没有收付款/)).toBeNull()
+    expect(screen.queryByText(/这个时间范围里没有收支/)).toBeNull()
+  })
+
   it('空态分流（issue #8040）：应收对账 —— 「仅看异常」下的空不是「没有可对账的订单」', async () => {
     mockGetReconciliation.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
     render(<FinancePage />)
