@@ -32,6 +32,7 @@ import { washLabelRows } from '@/lib/wash-label-content'
 import {
   WASH_LABEL_BOTTOM_CLEARANCE_MM,
   WASH_LABEL_PADDING_MM,
+  WASH_LABEL_EMPHASIS_ROW_KEYS,
   WASH_LABEL_TOP_BLANK_MM,
 } from '@/lib/label-print/wash-label-metrics'
 import { readFileSync } from 'node:fs'
@@ -48,6 +49,7 @@ vi.mock('@/lib/use-company-name', () => ({ useCompanyName: () => companyNameStub
 const PROCESSING_ORDER_NO = 'JG-20260921-8237'
 /** 真实形态的 17 位订单号（真库实证 20260921973550001）—— 折行但**绝不截断** */
 const ORDER_NO = '20260921973550001'
+const source = readFileSync(join(process.cwd(), 'src/components/production/TaskCardPrint.tsx'), 'utf-8')
 const CUSTOMER = '赵凯'
 /** 已退场（2026-10-26 用户逐字「移除交期字段」）—— 纸面**不得**出现它 */
 const DELIVERY = '2026-09-28'
@@ -249,6 +251,22 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×140mm 单列，issue #7979）',
     })
   })
 
+  it('🔴 加工项（加工方式行）= **加黑加粗**，其余行不加粗（用户 2026-10-28「把加工项信息加黑加粗」，issue #7987）', () => {
+    printCard()
+
+    const craft = screen.getByTestId('task-card-label-craft-0')
+    expect(craft.className).toContain('font-bold')
+    // 反向对照：同一张纸上别的行**不得**加粗（全纸加粗 = 没有重点，等于没做）
+    for (const other of ['customer', 'color', 'remark', 'door-width']) {
+      const row = screen.queryByTestId(`task-card-label-${other}-0`)
+      if (!row) continue
+      expect(row.className).not.toContain('font-bold')
+    }
+    // 🔴 单一真值：加粗行由 metrics 的一份常量决定（两条通道同源），组件里不许另写死行名
+    expect(WASH_LABEL_EMPHASIS_ROW_KEYS).toContain('craft')
+    expect(source).toContain('WASH_LABEL_EMPHASIS_ROW_KEYS.includes(row.key)')
+  })
+
   it('🔴 单号 = **加工单号（去 `JG-` 前缀）**（第一行、客户之上）；17 位订单号不上纸（issue #7833 / #7839）', () => {
     printCard()
 
@@ -256,6 +274,10 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×140mm 单列，issue #7979）',
     expect(rowsBlock.firstElementChild?.getAttribute('data-testid')).toBe('task-card-label-doc-no-0')
     expect(screen.getByTestId('task-card-label-doc-no-0')).toHaveTextContent('单号: 20260921-8237')
     expect(rowsBlock.children[1]?.getAttribute('data-testid')).toBe('task-card-label-customer-0')
+    // 🔴 issue #7986（2026-10-28「把安装小区和安装位置放置到客户那一行下面」）：
+    //    第 3、4 行 = 安装小区 / 安装位置（改回「帘种之后」⇒ 必红）
+    expect(rowsBlock.children[2]?.getAttribute('data-testid')).toBe('task-card-label-install-community-0')
+    expect(rowsBlock.children[3]?.getAttribute('data-testid')).toBe('task-card-label-install-room-0')
 
     const paper = paperTextOf(printArea())
     // 🔴 退场：17 位订单号（用户 2026-10-26「订单号是否可以短一些…只留加工单号，删掉订单行」）

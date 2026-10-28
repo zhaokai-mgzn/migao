@@ -33,6 +33,9 @@
  * 二维码永不被裁、离纸边恒 ≥ 15mm；预算账见 `TaskCardPrint.tsx`）。
  */
 
+/** 纸面行的类型（引真值模块的类型，避免本文件另立一套键名） */
+import type { WashLabelRowKey } from '@/lib/wash-label-content'
+
 /** 标签本体**左 / 右**内边距（mm）—— 与 `.task-card-label { padding: 15mm 1.2mm 15mm }` 的左右值同一口径；
  *  上沿是「顶部留白」（见 `WASH_LABEL_TOP_BLANK_MM`）、下沿是「底部净空」（见 `WASH_LABEL_BOTTOM_CLEARANCE_MM`） */
 export const WASH_LABEL_PADDING_MM = 1.2
@@ -70,6 +73,17 @@ export const WASH_LABEL_QR_PLACEHOLDER_FONT_PT = 9
  * 当前留白太多」）—— 码**紧挨正文**，纸长才能从 150mm 收到 140mm；两条通道同读这一个常量。
  */
 export const WASH_LABEL_BLOCK_GAP_MM = 0.5
+/**
+ * 需要**加黑加粗**的纸面行（用户 2026-10-28 逐字「把加工项信息加黑加粗」）。
+ *
+ * 「加工项」= 加工方式那一行（`craft`，值形如 `韩褶 · 超高 · 倒幅 · 双开 · 定型`）——
+ * 它是车间一眼要看的活：哪些附加项做了（超高 / 超宽 / 倒幅 / 定型…）。
+ *
+ * 🔴 **单一真值**：系统打印（`TaskCardPrint` 的 `font-bold`）与位图通道（`wash-label.ts` 的 `bold` 字体）
+ * 都读这一份 —— 一方加粗一方不加 ⇒ 两条通道画得不一样，`wash-label-metrics.test.ts` 判红。
+ */
+export const WASH_LABEL_EMPHASIS_ROW_KEYS: readonly WashLabelRowKey[] = ['craft']
+
 /**
  * 纸面下沿（底部虚线）之上必须留出的空白（mm）—— 二维码不得贴虚线
  * （用户 2026-10-26「要离底部虚线留空」；2026-10-27 再次逐字「二维码不能直接沉底，务必和底部留点距离」；

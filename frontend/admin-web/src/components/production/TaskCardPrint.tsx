@@ -21,6 +21,8 @@ import {
 import { useCompanyName } from '@/lib/use-company-name'
 // 「第 N 套 / 共 M 套」的**唯一实现**：与进度表**同一份**口径 —— 纸面与屏幕不得各算一套
 import { groupBySet } from './ProductionProgressTable'
+// 需要「加黑加粗」的行（加工项 = 加工方式行）：与位图通道**同一份**常量（issue #7986 同批）
+import { WASH_LABEL_EMPHASIS_ROW_KEYS } from '@/lib/label-print/wash-label-metrics'
 import type { ProcessingOrderItem, ProductionPosition } from '@/types'
 
 /**
@@ -70,6 +72,9 @@ import type { ProcessingOrderItem, ProductionPosition } from '@/types'
  *    （`褶法 韩褶公式 52折` / `褶法 倍数法`，见 `lib/wash-label-content.ts` 的 `washLabelPleats`）；
  * ⑤ 「把订单号放到第一行，客户那一行上面」「移除加工单号」「移除交期字段」
  *    「二维码放到底部居中」「移除扫码报工和短码文字」「二维码可以放大一点」。
+ *
+ * - **2026-10-28（issue #7986 / #7987）**：「把安装小区和安装位置放置到客户那一行下面」⇒ 这两行
+ *   紧跟「客户」；「把加工项信息加黑加粗」⇒ 加工方式行 `font-bold`（位图通道同口径加粗）。
  *
  * 字段面（从上到下）= **纸面抬头（企业名 / 成品定制）** → **单号（加工单号）** / 客户 /
  * 第 N 套共 M 套 / **帘种** / **货号**（值 = 颜色内容，issue #7872 起文案由「颜色」改「货号」）/
@@ -357,7 +362,12 @@ export default function TaskCardPrint({
                   {rows.map((row) => (
                     <div
                       key={row.key}
-                      className={WASH_LABEL_ROW_CLASS[row.key] || undefined}
+                      className={cn(
+                        WASH_LABEL_ROW_CLASS[row.key],
+                        // 加工项**加黑加粗**（用户 2026-10-28「把加工项信息加黑加粗」）——
+                        // 哪些行加粗由 metrics 的 `WASH_LABEL_EMPHASIS_ROW_KEYS` 决定（两条通道同源）
+                        WASH_LABEL_EMPHASIS_ROW_KEYS.includes(row.key) && 'font-bold',
+                      )}
                       data-testid={washLabelRowTestId(row.key, sheetIndex)}
                     >
                       {row.text}

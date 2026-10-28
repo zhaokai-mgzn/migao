@@ -22,6 +22,7 @@ import {
   WASH_LABEL_COMPANY_FONT_PT,
   WASH_LABEL_COMPANY_SUBTITLE_FONT_PT,
   WASH_LABEL_BLOCK_GAP_MM,
+  WASH_LABEL_EMPHASIS_ROW_KEYS,
   WASH_LABEL_LINE_HEIGHT,
   WASH_LABEL_PADDING_MM,
   WASH_LABEL_QR_CSS_PX,
@@ -73,6 +74,16 @@ describe('水洗唛版面度量：TS 单一真值 ⇄ 组件 CSS（改一处不�
     expect(printPageBoxMm('label-50x140')).toEqual({ widthMm: 50, heightMm: 140 })
     // 点阵侧同一份纸：140mm × 8 dots/mm = 1120px（直连通道的画布高度）
     expect(printDotGeometry('label-50x140').heightPx).toBe(1120)
+  })
+
+  it('🔴 加工项 = **加黑加粗**（两条通道同读一份常量；一方加粗一方不加 ⇒ 红；issue #7987）', () => {
+    expect(WASH_LABEL_EMPHASIS_ROW_KEYS).toEqual(['craft'])
+    // 系统打印：组件按该常量加 `font-bold`（写死行名 = 第二份真值 ⇒ 下面这条必红）
+    expect(source).toContain("WASH_LABEL_EMPHASIS_ROW_KEYS.includes(row.key) && 'font-bold'")
+    // 位图通道：同读该常量，绘制时加 `bold ` 字体前缀
+    const bitmap = readFileSync(resolve(process.cwd(), 'src/lib/label-print/wash-label.ts'), 'utf-8')
+    expect(bitmap).toContain('LABEL_EMPHASIS_ROW_KEYS')
+    expect(bitmap).toContain("line.bold ? 'bold ' : ''")
   })
 
   it('抬头 / 二维码 / 占位框的字号与边长逐值一致', () => {
