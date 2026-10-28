@@ -28,6 +28,12 @@ vi.mock('@/lib/api', () => ({
     update: vi.fn(() => Promise.resolve({ data: { success: true, data: {} } })),
     preview: vi.fn(() => Promise.resolve({ data: { success: true, data: {} } })),
   },
+  // issue #7997：内层面板会读一次「条件取值域」（活跃加工项目录）—— 本层只关心挂载形态，给空目录即可
+  productionApi: {
+    getRouteRuleOptions: vi.fn(() =>
+      Promise.resolve({ data: { success: true, data: { crafts: [], processing_items: [], positions: [] } } }),
+    ),
+  },
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 

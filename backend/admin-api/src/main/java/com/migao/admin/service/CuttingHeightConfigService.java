@@ -57,9 +57,9 @@ public class CuttingHeightConfigService {
     static final Set<String> CONFIG_KEYS = new LinkedHashSet<>(List.of("items", "rounding"));
 
     private static final Set<String> ITEM_KEYS = new LinkedHashSet<>(List.of(
-            "key", "name", "value", "direction", "height_join", "hit", "hit_expr", "enabled", "order"));
-    private static final Set<String> HIT_KEYS = new LinkedHashSet<>(List.of(
-            "trigger_kind", "trigger_value", "position"));
+            "key", "name", "value", "direction", "height_join", "scope", "position", "conditions",
+            "enabled", "order"));
+    private static final Set<String> CONDITION_KEYS = new LinkedHashSet<>(List.of("kind", "values"));
     private static final Set<String> REQUEST_KEYS = new LinkedHashSet<>(List.of(
             "position", "cutting_mode", "finished_height", "craft", "special_options", "processing_items", "is_shaped"));
     private static final Set<String> DIRECTIONS = Set.of("add", "subtract");
@@ -79,9 +79,9 @@ public class CuttingHeightConfigService {
         requireTenant(tenantId);
         CuttingHeightConfig row = cuttingHeightConfigMapper.selectActiveByTenant(tenantId);
         if (row == null) {
-            return response(SOURCE_DEFAULT, CuttingHeightDefaults.config());
+            return response(SOURCE_DEFAULT, normalizeConfig(CuttingHeightDefaults.config()));
         }
-        return response(SOURCE_STORED, row.toConfigMap());
+        return response(SOURCE_STORED, normalizeConfig(row.toConfigMap()));
     }
 
     /**
@@ -96,7 +96,7 @@ public class CuttingHeightConfigService {
         // 🔴 改前的值必须在覆盖**之前**取到（§22 P6 留痕的「A → B」那一半）。
         //    无行 ⇒ 空映射 ⇒ 每个键的改前值都是 null（= 本租户当时在用默认种子）。
         //    刻意**不**在这里去「取默认种子来当改前值」：那会让审计账本里出现一份**从未存过**的值。
-        Map<String, Object> before = row == null ? Map.of() : row.toConfigMap();
+        Map<String, Object> before = row == null ? Map.of() : normalizeConfig(row.toConfigMap());
         String operationId = TenantParamAuditService.newOperationId();
         OffsetDateTime now = OffsetDateTime.now();
         if (row == null) {
@@ -122,7 +122,7 @@ public class CuttingHeightConfigService {
         // §22 P6 变更留痕（口径 B = best-effort）：本调用**恒不抛**（失败由审计腿自己大声记日志）。
         tenantParamAuditService.recordChanges(tenantId, TenantParamAuditService.DOMAIN_CUTTING_HEIGHT,
                 TenantParamAuditService.OPERATION_PUT, operationId, before, row.toConfigMap());
-        return response(SOURCE_STORED, row.toConfigMap());
+        return response(SOURCE_STORED, normalizeConfig(row.toConfigMap()));
     }
 
     /**
@@ -159,7 +159,7 @@ public class CuttingHeightConfigService {
 
         CuttingHeightConfig row = cuttingHeightConfigMapper.selectActiveByTenant(tenantId);
         String source = row == null ? SOURCE_DEFAULT : SOURCE_STORED;
-        Map<String, Object> config = row == null ? CuttingHeightDefaults.config() : row.toConfigMap();
+        Map<String, Object> config = normalizeConfig(row == null ? CuttingHeightDefaults.config() : row.toConfigMap());
         CuttingHeightCalculator.Vars vars = new CuttingHeightCalculator.Vars(
                 position, finishedHeight, text(in.get("craft")),
                 strings(in.get("special_options")), strings(in.get("processing_items")),
@@ -305,45 +305,42 @@ public class CuttingHeightConfigService {
             details.add(BusinessException.detail(field + ".direction", "必须是 " + DIRECTIONS + " 之一"));
         }
 
-        Object hit = raw.get("hit");
-        String hitExpr = text(raw.get("hit_expr"));
-        if (hit != null && hitExpr != null) {
-            details.add(BusinessException.detail(field + ".hit_expr",
-                    "hit 与 hit_expr 只能给一个（两个判据并存 ⇒ 迟早漂，判定二义）"));
-        } else if (hit == null && hitExpr == null) {
-            details.add(BusinessException.detail(field + ".hit", "缺少命中口径（hit 或 hit_expr 必须给一个）"));
+        String scope = text(raw.get("scope"));
+        if (scope == null) {
+            scope = CuttingHeightCalculator.SCOPE_SPECIFIC;
+        } else if (!CuttingHeightCalculator.SCOPES.contains(scope)) {
+            details.add(BusinessException.detail(field + ".scope",
+                    "必须是 " + CuttingHeightCalculator.SCOPES + " 之一（specific = 工序专用 / fallback = 公共兜底）"));
         }
 
-        Map<String, Object> normalizedHit = null;
-        if (hit != null) {
-            if (!(hit instanceof Map<?, ?> map)) {
-                details.add(BusinessException.detail(field + ".hit", "必须是对象 {trigger_kind, trigger_value, position}"));
+        String position = text(raw.get("position"));
+        if (position != null && !CuttingHeightCalculator.POSITIONS.contains(position)) {
+            details.add(BusinessException.detail(field + ".position",
+                    "必须是 " + CuttingHeightCalculator.POSITIONS + " 之一或 null（= 不限部位）"));
+        }
+
+        List<Map<String, Object>> conditions = new ArrayList<>();
+        Object rawConditions = raw.get("conditions");
+        if (rawConditions != null) {
+            if (!(rawConditions instanceof List<?> list)) {
+                details.add(BusinessException.detail(field + ".conditions",
+                        "必须是数组 [{kind, values}]（空数组 = 无额外条件，恒命中）"));
             } else {
-                for (Object k : map.keySet()) {
-                    if (!HIT_KEYS.contains(String.valueOf(k))) {
-                        details.add(BusinessException.detail(field + ".hit." + k, "不是命中口径键；合法键：" + HIT_KEYS));
+                Set<String> seenKinds = new HashSet<>();
+                int conditionIndex = 0;
+                for (Object rawCondition : list) {
+                    String conditionField = field + ".conditions[" + conditionIndex + "]";
+                    if (rawCondition instanceof Map<?, ?> map) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> parsed = validateCondition((Map<String, Object>) map,
+                                conditionField, details, seenKinds);
+                        if (parsed != null) {
+                            conditions.add(parsed);
+                        }
+                    } else {
+                        details.add(BusinessException.detail(conditionField, "必须是对象 {kind, values}"));
                     }
-                }
-                String kind = text(map.get("trigger_kind"));
-                String triggerValue = text(map.get("trigger_value"));
-                String hitPosition = text(map.get("position"));
-                if (kind == null || !CuttingHeightCalculator.TRIGGER_KINDS.contains(kind)) {
-                    details.add(BusinessException.detail(field + ".hit.trigger_kind",
-                            "必须是 " + CuttingHeightCalculator.TRIGGER_KINDS + " 之一（与 production_route_rules 同词表），收到 " + map.get("trigger_kind")));
-                }
-                if (triggerValue == null) {
-                    details.add(BusinessException.detail(field + ".hit.trigger_value",
-                            "缺少触发值（**逐字**等于订单上的特殊选项名 / 工艺名 / 加工项名；写错一个字就不命中）"));
-                }
-                if (hitPosition != null && !CuttingHeightCalculator.POSITIONS.contains(hitPosition)) {
-                    details.add(BusinessException.detail(field + ".hit.position",
-                            "必须是 " + CuttingHeightCalculator.POSITIONS + " 之一或 null（= 不限部位）"));
-                }
-                if (kind != null && triggerValue != null) {
-                    normalizedHit = new LinkedHashMap<>();
-                    normalizedHit.put("trigger_kind", kind);
-                    normalizedHit.put("trigger_value", triggerValue);
-                    normalizedHit.put("position", hitPosition);
+                    conditionIndex++;
                 }
             }
         }
@@ -354,11 +351,131 @@ public class CuttingHeightConfigService {
         item.put("value", value);
         item.put("direction", direction);
         item.put("height_join", Boolean.TRUE.equals(raw.get("height_join")));
-        item.put("hit", normalizedHit);
-        item.put("hit_expr", hitExpr);
+        item.put("scope", scope);
+        item.put("position", position);
+        item.put("conditions", conditions);
         item.put("enabled", !Boolean.FALSE.equals(raw.get("enabled")));
         item.put("order", intOf(raw.get("order")));
         return item;
+    }
+
+    /**
+     * 单条命中条件：{@code {kind, values[]}}。
+     *
+     * <p>同一个 kind 在一个项里<b>只能出现一次</b>（values 内部就是「或」）—— 两条同 kind 条件与一条
+     * 多值条件等价，留着两种写法迟早漂（口径二义 ⇒ 判定说不清）。</p>
+     */
+    private Map<String, Object> validateCondition(Map<String, Object> raw, String field,
+                                                  List<ApiResponse.ErrorDetail> details, Set<String> seenKinds) {
+        for (String key : raw.keySet()) {
+            if (!CONDITION_KEYS.contains(key)) {
+                details.add(BusinessException.detail(field + "." + key, "不是条件键；合法键：" + CONDITION_KEYS));
+            }
+        }
+        String kind = text(raw.get("kind"));
+        if (kind == null || !CuttingHeightCalculator.TRIGGER_KINDS.contains(kind)) {
+            details.add(BusinessException.detail(field + ".kind",
+                    "必须是 " + CuttingHeightCalculator.TRIGGER_KINDS + " 之一（与 production_route_rules 同词表），收到 " + raw.get("kind")));
+            return null;
+        }
+        if (!seenKinds.add(kind)) {
+            details.add(BusinessException.detail(field + ".kind",
+                    "同一项里 " + kind + " 出现两次（同 kind 的多个取值请放进一个 values 数组 —— 那是「或」）"));
+            return null;
+        }
+        Object rawValues = raw.get("values");
+        if (!(rawValues instanceof List<?> list) || list.isEmpty()) {
+            details.add(BusinessException.detail(field + ".values",
+                    "必须是非空数组（**逐字**等于订单上的特殊选项名 / 工艺名 / 加工项名；写错一个字就不命中）"));
+            return null;
+        }
+        List<String> values = new ArrayList<>();
+        for (Object rawValue : list) {
+            String value = text(rawValue);
+            if (value == null) {
+                details.add(BusinessException.detail(field + ".values", "取值不得为空：" + rawValue));
+                return null;
+            }
+            if (!values.contains(value)) {
+                values.add(value);
+            }
+        }
+        Map<String, Object> condition = new LinkedHashMap<>();
+        condition.put("kind", kind);
+        condition.put("values", values);
+        return condition;
+    }
+
+    /**
+     * 存量 v1 配置 → v2 形态的<b>单点归一</b>（读面 / 预演 / 审计改前值共用）。
+     *
+     * <p>v1 = {@code {hit:{trigger_kind,trigger_value,position}, hit_expr}}（每项只有一条触发）；
+     * v2 = {@code {scope, position, conditions:[{kind, values}]}}。归一规则：</p>
+     * <ul>
+     *   <li>{@code scope} 缺省 = {@code specific}：v1 的档案<b>整份都是专用项</b>、没有兜底组
+     *       ⇒ 行为逐字不变（不会因为归一而凭空多出一组兜底）；</li>
+     *   <li>{@code hit} → {@code conditions:[{kind: trigger_kind, values:[trigger_value]}]}，{@code hit.position} → {@code position}；</li>
+     *   <li>归一后<b>剔除</b> {@code hit} / {@code hit_expr}：一份配置只留一种写法（两套并存迟早漂）。</li>
+     * </ul>
+     */
+    static Map<String, Object> normalizeConfig(Map<String, Object> config) {
+        // 空值也返回**可变** `LinkedHashMap`（不返回 `Map.of()`：不可变空表遇到空键索引会 NPE 500，
+        // 那是 issue #6219 那一族；判据 = `WorkerCuttingHeightNullProductIdTest` 的产出方台账）。
+        Map<String, Object> out = config == null ? new LinkedHashMap<>() : new LinkedHashMap<>(config);
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (Map<String, Object> item : maps(config.get("items"))) {
+            items.add(normalizeItem(item));
+        }
+        out.put("items", items);
+        return out;
+    }
+
+    private static Map<String, Object> normalizeItem(Map<String, Object> raw) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : raw.entrySet()) {
+            if ("hit".equals(entry.getKey()) || "hit_expr".equals(entry.getKey())) {
+                continue;
+            }
+            item.put(entry.getKey(), entry.getValue());
+        }
+        Map<String, Object> legacyHit = raw.get("hit") instanceof Map<?, ?> m ? castMap(m) : Map.of();
+        if (!item.containsKey("conditions")) {
+            String kind = text(legacyHit.get("trigger_kind"));
+            String value = text(legacyHit.get("trigger_value"));
+            List<Map<String, Object>> conditions = new ArrayList<>();
+            if (kind != null && value != null) {
+                Map<String, Object> condition = new LinkedHashMap<>();
+                condition.put("kind", kind);
+                condition.put("values", List.of(value));
+                conditions.add(condition);
+            }
+            item.put("conditions", conditions);
+        }
+        if (!item.containsKey("position")) {
+            item.put("position", text(legacyHit.get("position")));
+        }
+        if (text(item.get("scope")) == null) {
+            item.put("scope", CuttingHeightCalculator.SCOPE_SPECIFIC);
+        }
+        return item;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> castMap(Map<?, ?> raw) {
+        return (Map<String, Object>) raw;
+    }
+
+    private static List<Map<String, Object>> maps(Object raw) {
+        if (!(raw instanceof List<?> list)) {
+            return List.of();
+        }
+        List<Map<String, Object>> out = new ArrayList<>(list.size());
+        for (Object item : list) {
+            if (item instanceof Map<?, ?> m) {
+                out.add(castMap(m));
+            }
+        }
+        return out;
     }
 
     private static void apply(CuttingHeightConfig row, Map<String, Object> config) {

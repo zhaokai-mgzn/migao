@@ -11597,16 +11597,16 @@ _CASE_PG_044 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── PG-045 [NORMAL] 裁高配置 - 裁剪高度 = 成品高 + Σ命中增量项（部位级档案 + 同名/工艺/加工项/定型触发 + 取整三位小数；单测覆盖，非 LLM 行为）（源: cases/processing.yml）──
+# ── PG-045 [NORMAL] 裁高配置 - 裁剪高度 = 成品高 + Σ命中增量项（条件组：特殊选项×加工项×部位 AND + 工序专用/公共兜底两组 + 取整三位小数；单测覆盖，非 LLM 行为）（源: cases/processing.yml）──
 _CASE_PG_045 = EvalCase(
     id='PG-045',
     legacy_id='',
-    title='裁高配置 - 裁剪高度 = 成品高 + Σ命中增量项（部位级档案 + 同名/工艺/加工项/定型触发 + 取整三位小数；单测覆盖，非 LLM 行为）',
+    title='裁高配置 - 裁剪高度 = 成品高 + Σ命中增量项（条件组：特殊选项×加工项×部位 AND + 工序专用/公共兜底两组 + 取整三位小数；单测覆盖，非 LLM 行为）',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
     user_inputs=['这台裁高机这一单的布帘要裁多高？'],
     expectations=['direct_reply'],
-    data_checks=['裁剪高度(部位) = 成品高 + Σ(命中且启用的增量项)，按 rounding 取整后输出（默认保留三位小数 = mm 精度）', '命中口径 = 复用 production_route_rules 的 trigger_kind / trigger_value / position（特殊选项 / 工艺 / 加工项 / 定型 + 部位限定），**不另写第二份匹配实现**', '命中而**未配置取值**的项（壁达的「画线」即此形态）= misses(reason=unresolved)：显式报出、不计入合计、**不按 0 算**', '缺行 ⇒ source=default（壁达现场弹窗 7 项，画线留空）；PUT 是全量替换，缺键 / 未知键 / 越界值 ⇒ 422 逐条理由（不静默回退默认值）', '本版只算不写机器：任何路径都不得开串口 / 写寄存器（下发归上游设计单）', '预演取值域 = **闭词表选择器**（issue #7213）：安装工艺 = 单选 `CRAFT_OPTIONS`（4 值 +「不指定」）、特殊选项 = 多选 `SPECIAL_OPTIONS`（19 项，默认折叠），两个字段都**不是自由文本**；提交 body 仍为 `craft` 字符串 + `special_options` 数组，逐字取自所选项（不拼逗号串）。红证：把任一改回 `<input>` ⇒ ⑥ 红（`tagName` / 默认折叠）。执行点 = frontend/admin-web/tests/unit/components/CuttingHeightConfigPanel.test.tsx 的「⑥ 预演的「安装工艺 / 特殊选项」是闭词表选择器」。'],
+    data_checks=['裁剪高度(部位) = 成品高 + Σ(命中且启用的增量项)，按 rounding 取整后输出（默认保留三位小数 = mm 精度）', '命中口径 = 复用 production_route_rules 的 trigger_kind / trigger_value / position（特殊选项 / 工艺 / 加工项 / 定型 + 部位限定），**不另写第二份匹配实现**', 'v2（issue #7997）：每项命中 = **条件组**（跨 kind 与 AND、组内 values 或 OR）+ 部位；**不加第五种触发源**（工序由特殊选项派生）。红证：把条件循环改成「任一命中」⇒ 布绑带-打孔在韩褶单上误命中 ⇒ 红。', 'v2：配置分 `scope=specific`（工序专用）与 `scope=fallback`（公共兜底），兜底是**替换**语义（有任何专用项命中 ⇒ 整组不参与；含「命中但未配置取值」也视为命中，不许被兜底盖住）。红证：两组合并成一遍求和 ⇒ 布绑带单又加一份布贴 ⇒ 红。', 'v2 种子 = 3 项工序专用（布绑带-韩褶 0.14 / 布绑带-打孔 0.16 / 接高-画线 0.145；便签值按 2026-10-28 裁定 ⑪ 进种子）+ 6 项公共兜底；存量 v1 配置读面单点归一（hit → conditions + scope=specific），旧库不改一行也算得对。', '命中而**未配置取值**的项（壁达的「画线」即此形态）= misses(reason=unresolved)：显式报出、不计入合计、**不按 0 算**', '缺行 ⇒ source=default（壁达现场弹窗 7 项，画线留空）；PUT 是全量替换，缺键 / 未知键 / 越界值 ⇒ 422 逐条理由（不静默回退默认值）', '本版只算不写机器：任何路径都不得开串口 / 写寄存器（下发归上游设计单）', '预演取值域 = **闭词表选择器**（issue #7213）：安装工艺 = 单选 `CRAFT_OPTIONS`（4 值 +「不指定」）、特殊选项 = 多选 `SPECIAL_OPTIONS`（19 项，默认折叠），两个字段都**不是自由文本**；提交 body 仍为 `craft` 字符串 + `special_options` 数组，逐字取自所选项（不拼逗号串）。红证：把任一改回 `<input>` ⇒ ⑥ 红（`tagName` / 默认折叠）。执行点 = frontend/admin-web/tests/unit/components/CuttingHeightConfigPanel.test.tsx 的「⑥ 预演的「安装工艺 / 特殊选项」是闭词表选择器」。'],
     skip_reason='[backend-contract] 本条只登记「裁高配置与裁剪高度计算」这一层**确定性逻辑**，由单元测试全量覆盖（backend/admin-api/src/test/java/com/migao/admin/service/CuttingHeightConfigServiceTest.java）⇒ 不进 agent-eval 冒烟（同 CH-036 / CH-042 惯例）。⚠️ 它**不覆盖**「商家该把哪些选项配上」—— 壁达那批「选项/扩展项 ↔ 增量项」的对应行属现场取证（设计单 docs/design/cutting-height-config-and-terminal.md §5）。',
     tags=['processing', 'cutting_height', 'tenant_config', 'backend-contract'],
     persona='',

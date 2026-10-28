@@ -4,27 +4,40 @@
  * ## 它回答什么
  * 「这台机器这一刀该多高」：`裁剪高度(部位) = 成品高 + Σ(命中的增量项)`，本租户可配。
  *
- * ## 三条实现纪律
+ * ## v2（issue #7997；用户 2026-10-28）
+ * 用户逐字：「裁高参数是根据工序来的」「如果有布绑带工序，则需要根据加工项韩褶还是打孔分别自动算高度」
+ * 「如果有接高工序，则需要一个画线参数」「其他情况都是默认定高参数」
+ * 「要根据特殊选项+加工项+部位来定高度」「再允许一个默认公共（兜底）裁高参数」。
+ * ⇒ 配置分**两个区块**（`scope`）：工序专用 / 公共默认；每项的命中是**条件组**
+ * （跨 kind 与、组内 values 或）+ 部位。兜底是**替换**语义（用户裁定 A）。
+ *
+ * ## 三条实现纪律（v1 起不变）
  * 1. **页面不持有默认值**：缺行时后端回的是**默认种子** + `source='default'` ⇒ 界面显式标
  *    「当前使用系统默认值」（把默认值伪装成商家配置 = 让商家以为改过、其实没改）。
- * 2. **命中口径由服务端判**：本面板只填 `trigger_kind / trigger_value / position`；
+ * 2. **命中口径由服务端判**：本面板只填 `scope / position / conditions`；
  *    「哪些项命中」一律由 `POST …/preview` 回答 —— 前端再写一份匹配 = 第二份口径。
  * 3. **本版只算不写机器**：面板的终点是「给人一个可核对的数」（用户 2026-09-29 裁定①：下发先不做）。
+ *
+ * ## 版式（修 #7153 残留、issue #7997）
+ * 表格已退场：**列宽 + 单元格内边距**是「布帘被裁成布」的成因（`SELECT_CONTROL` 的 `pl-3 pr-9`
+ * 在 11% 宽的列里放不下两个字），靠调百分比只是在改临界点。现在每条增量项是一张卡（字段在上、
+ * 控件满列），触发条件是一排**可折行**的 chips ⇒ 结构上不存在「窄列裁字」这一类。
  */
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { AlertCircle, ChevronDown } from 'lucide-react'
+import { AlertCircle, ChevronDown, X } from 'lucide-react'
 
 import { formatDraft } from '@/components/ui/NumberInput'
-// issue #7176：配置面表单的**唯一版式原语**（与「阈值试算」同一套：浅底面板 + 栅格 + 标签在上 + 单位入框）
-import FormPanel, { FIELD_CONTROL, Field, FormGrid, fieldControl } from '@/components/ui/FormPanel'
-import { cuttingHeightApi } from '@/lib/api'
+// issue #7176：配置面表单的**唯一版式原语**（浅底面板 + 栅格 + 标签在上 + 单位入框）
+import FormPanel, { Field, FormGrid, fieldControl } from '@/components/ui/FormPanel'
+import { cuttingHeightApi, productionApi } from '@/lib/api'
 import { CRAFT_OPTIONS, SPECIAL_OPTIONS } from '@/lib/order-craft-fields'
 import { cn } from '@/lib/utils'
-import { SELECT_CONTROL, SELECT_CONTROL_FIELD } from '@/components/ui'
+import { SELECT_CONTROL_FIELD } from '@/components/ui'
 import type {
+  CuttingHeightCondition,
   CuttingHeightConfigBody,
   CuttingHeightConfigResponse,
   CuttingHeightItem,
@@ -39,13 +52,37 @@ const TRIGGER_KINDS: { value: string; label: string }[] = [
   { value: 'shaped', label: '是否定型' },
 ]
 
+const SCOPES: { value: string; label: string; hint: string; addLabel: string }[] = [
+  {
+    value: 'specific',
+    label: '工序专用参数',
+    hint: '勾了布绑带 / 接高等工序时用这一组。只要有一条命中，「公共默认参数」整组就不参与。',
+    addLabel: '添加工序专用项',
+  },
+  {
+    value: 'fallback',
+    label: '公共默认参数',
+    hint: '没有任何工序专用参数命中时才用这一组（「其他情况都是默认定高参数」）。',
+    addLabel: '添加默认项',
+  },
+]
+
 const POSITIONS = ['布帘', '纱帘', '帘头']
 
-const inputCls =
-  'w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-primary-500 focus:outline-none'
+const SHAPED_VALUES: Option[] = [
+  { value: 'true', label: '是' },
+  { value: 'false', label: '否' },
+]
+
+interface Option {
+  value: string
+  label: string
+}
+
+const SCOPE_SPECIFIC = 'specific'
 
 /** 新项的初值（key 用时间戳保证与本租户已有 key 不撞；商家可改）。 */
-function newItem(order: number): CuttingHeightItem {
+function newItem(order: number, scope: string): CuttingHeightItem {
   const key = `item-${Date.now().toString(36)}`
   return {
     key,
@@ -53,19 +90,29 @@ function newItem(order: number): CuttingHeightItem {
     value: null,
     direction: 'add',
     height_join: false,
-    hit: { trigger_kind: 'option', trigger_value: '', position: null },
-    hit_expr: null,
+    scope,
+    position: null,
+    conditions: [],
     enabled: true,
     order,
   }
 }
 
 /**
- * 特殊选项多选下拉（issue #7213）—— 19 项**闭词表**（与下单页 `OrderExtraOptions` 同一份
- * `SPECIAL_OPTIONS`；选项名是 join key，手输错一个字就不命中 ⇒ 这里不给自由文本）。
- * §31 P1：常驻面只一行（未选择 / 已选 N 项），点开才渲染复选项。
+ * 多选取值下拉（闭词表）—— 选项名是 join key，手输错一个字就不命中 ⇒ 不给自由文本。
+ * §31 P1：常驻面只一段文字（已选取值 / 「选择取值」），点开才渲染复选项。
  */
-function OptionsMultiSelect({ value, onChange }: { value: string[]; onChange: (next: string[]) => void }) {
+function ValueMultiSelect({
+  ariaLabel,
+  options,
+  values,
+  onChange,
+}: {
+  ariaLabel: string
+  options: Option[]
+  values: string[]
+  onChange: (next: string[]) => void
+}) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -77,44 +124,216 @@ function OptionsMultiSelect({ value, onChange }: { value: string[]; onChange: (n
     return () => document.removeEventListener('mousedown', onMouseDown)
   }, [open])
 
-  const toggle = (name: string) => {
-    onChange(value.includes(name) ? value.filter((v) => v !== name) : [...value, name])
+  const label = (value: string) => options.find((o) => o.value === value)?.label ?? value
+  const text = values.length === 0 ? '选择取值' : values.map(label).join('、')
+
+  const toggle = (value: string) => {
+    onChange(values.includes(value) ? values.filter((v) => v !== value) : [...values, value])
   }
 
   return (
     <div className="relative" ref={ref}>
       <button
         type="button"
-        id="cutting-height-probe-options"
-        aria-label="预演特殊选项"
+        aria-label={ariaLabel}
         aria-expanded={open}
-        title={value.length > 0 ? value.join('、') : undefined}
+        title={values.length > 0 ? text : undefined}
         onClick={() => setOpen((v) => !v)}
-        className={cn(FIELD_CONTROL, 'flex items-center justify-between text-left')}
+        className={cn(
+          'max-w-[16rem] truncate rounded px-1.5 py-0.5 text-xs underline decoration-dotted',
+          values.length === 0 ? 'text-neutral-400' : 'text-primary-700',
+        )}
       >
-        <span className={value.length === 0 ? 'text-neutral-400' : undefined}>
-          {value.length === 0 ? '未选择' : `已选 ${value.length} 项`}
-        </span>
-        <ChevronDown className="h-4 w-4 shrink-0 text-neutral-400" />
+        {text}
       </button>
       {open && (
-        <div className="absolute left-0 top-full z-40 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-neutral-200 bg-white p-1 shadow-card-hover">
-          {SPECIAL_OPTIONS.map((name) => (
-            <label
-              key={name}
-              className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
-            >
-              <input
-                type="checkbox"
-                checked={value.includes(name)}
-                onChange={() => toggle(name)}
-                aria-label={`特殊选项-${name}`}
-              />
-              {name}
-            </label>
-          ))}
+        <div className="absolute left-0 top-full z-40 mt-1 max-h-56 w-52 overflow-y-auto rounded-lg border border-neutral-200 bg-white p-1 shadow-card-hover">
+          {options.length === 0 ? (
+            <p className="px-2 py-1.5 text-xs text-neutral-400">暂无可用取值</p>
+          ) : (
+            options.map((o) => (
+              <label
+                key={o.value}
+                className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
+              >
+                <input
+                  type="checkbox"
+                  aria-label={`${ariaLabel}-${o.label}`}
+                  checked={values.includes(o.value)}
+                  onChange={() => toggle(o.value)}
+                />
+                {o.label}
+              </label>
+            ))
+          )}
         </div>
       )}
+    </div>
+  )
+}
+
+/** 一条命中条件：`{kind, values}`（跨 kind 与、组内或）。 */
+function ConditionRow({
+  itemIndex,
+  conditionIndex,
+  condition,
+  optionsOf,
+  onChange,
+  onRemove,
+}: {
+  itemIndex: number
+  conditionIndex: number
+  condition: CuttingHeightCondition
+  optionsOf: (kind: string) => Option[]
+  onChange: (next: CuttingHeightCondition) => void
+  onRemove: () => void
+}) {
+  return (
+    <div className="flex max-w-full flex-wrap items-center gap-1 rounded-lg border border-neutral-200 bg-neutral-50 p-1">
+      {/* 下拉走共享铬（issue #7397 的类级判据：业务面每个 `<select>` 必须引用 `SELECT_CONTROL*`） */}
+      <select
+        className={cn(SELECT_CONTROL_FIELD, 'w-full max-w-[8.5rem]')}
+        aria-label={`条件类型-${itemIndex}-${conditionIndex}`}
+        value={condition.kind}
+        onChange={(e) => onChange({ kind: e.target.value, values: [] })}
+      >
+        {TRIGGER_KINDS.map((k) => (
+          <option key={k.value} value={k.value}>
+            {k.label}
+          </option>
+        ))}
+      </select>
+      <ValueMultiSelect
+        ariaLabel={`条件取值-${itemIndex}-${conditionIndex}`}
+        options={optionsOf(condition.kind)}
+        values={condition.values}
+        onChange={(values) => onChange({ ...condition, values })}
+      />
+      <button
+        type="button"
+        aria-label={`删除条件-${itemIndex}-${conditionIndex}`}
+        className="text-neutral-400 hover:text-danger-600"
+        onClick={onRemove}
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  )
+}
+
+/** 一条增量项：字段在上、条件 chips 折行。 */
+function ItemRow({
+  index,
+  item,
+  optionsOf,
+  onChange,
+  onRemove,
+}: {
+  index: number
+  item: CuttingHeightItem
+  optionsOf: (kind: string) => Option[]
+  onChange: (patch: Partial<CuttingHeightItem>) => void
+  onRemove: () => void
+}) {
+  const conditions = item.conditions ?? []
+  const patchCondition = (conditionIndex: number, next: CuttingHeightCondition) =>
+    onChange({ conditions: conditions.map((c, i) => (i === conditionIndex ? next : c)) })
+  const removeCondition = (conditionIndex: number) =>
+    onChange({ conditions: conditions.filter((_, i) => i !== conditionIndex) })
+  const addCondition = () => {
+    const used = new Set(conditions.map((c) => c.kind))
+    const kind = TRIGGER_KINDS.find((k) => !used.has(k.value))?.value ?? TRIGGER_KINDS[0].value
+    onChange({ conditions: [...conditions, { kind, values: [] }] })
+  }
+
+  return (
+    <div
+      className="rounded-lg border border-neutral-200 bg-white p-3"
+      data-testid={`cutting-height-item-${index}`}
+    >
+      <div className="grid items-end gap-3 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,0.8fr)_minmax(0,0.9fr)_auto_auto]">
+        <Field label="名称" htmlFor={`ch-name-${index}`}>
+          <input
+            id={`ch-name-${index}`}
+            className={fieldControl()}
+            aria-label={`名称-${index}`}
+            value={item.name}
+            onChange={(e) => onChange({ name: e.target.value })}
+          />
+        </Field>
+        <Field label="取值" unit="米" htmlFor={`ch-value-${index}`}>
+          <input
+            id={`ch-value-${index}`}
+            className={fieldControl('米')}
+            aria-label={`取值-${index}`}
+            value={formatDraft(item.value)}
+            placeholder="可留空"
+            title="取值留空 = 有项无值：会命中，但会显式报出「未配置取值」，不按 0 算"
+            onChange={(e) =>
+              onChange({ value: e.target.value.trim() === '' ? null : Number(e.target.value) })
+            }
+          />
+        </Field>
+        <Field label="部位" htmlFor={`ch-position-${index}`}>
+          <select
+            id={`ch-position-${index}`}
+            className={cn(SELECT_CONTROL_FIELD, 'w-full')}
+            aria-label={`部位-${index}`}
+            value={item.position ?? ''}
+            onChange={(e) => onChange({ position: e.target.value || null })}
+          >
+            <option value="">不限</option>
+            {POSITIONS.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <label className="flex items-center gap-2 whitespace-nowrap pb-2 text-sm text-neutral-600">
+          <input
+            type="checkbox"
+            aria-label={`启用-${index}`}
+            checked={item.enabled}
+            onChange={(e) => onChange({ enabled: e.target.checked })}
+          />
+          启用
+        </label>
+        <button
+          type="button"
+          className="whitespace-nowrap pb-2 text-sm text-neutral-400 underline"
+          data-testid={`cutting-height-remove-${index}`}
+          onClick={onRemove}
+        >
+          删除
+        </button>
+      </div>
+
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <span className="whitespace-nowrap text-xs text-neutral-500">触发条件（同时满足）</span>
+        {conditions.map((condition, conditionIndex) => (
+          <ConditionRow
+            key={`${item.key}-${conditionIndex}`}
+            itemIndex={index}
+            conditionIndex={conditionIndex}
+            condition={condition}
+            optionsOf={optionsOf}
+            onChange={(next) => patchCondition(conditionIndex, next)}
+            onRemove={() => removeCondition(conditionIndex)}
+          />
+        ))}
+        <button
+          type="button"
+          className="whitespace-nowrap text-xs text-primary-600 underline"
+          data-testid={`cutting-height-add-condition-${index}`}
+          onClick={addCondition}
+        >
+          ＋ 条件
+        </button>
+        {conditions.length === 0 && (
+          <span className="text-xs text-neutral-400">无附加条件（只按部位圈范围）</span>
+        )}
+      </div>
     </div>
   )
 }
@@ -126,7 +345,14 @@ export function CuttingHeightConfigPanel() {
   const [saving, setSaving] = useState(false)
   const [preview, setPreview] = useState<CuttingHeightPreview | null>(null)
   const [previewError, setPreviewError] = useState('')
-  const [probe, setProbe] = useState({ position: '布帘', finishedHeight: '', craft: '', options: [] as string[] })
+  const [processingItems, setProcessingItems] = useState<string[]>([])
+  const [probe, setProbe] = useState({
+    position: '布帘',
+    finishedHeight: '',
+    craft: '',
+    options: [] as string[],
+    processingItems: [] as string[],
+  })
 
   const load = useCallback(async () => {
     try {
@@ -147,6 +373,37 @@ export function CuttingHeightConfigPanel() {
     void load()
   }, [load])
 
+  // 条件取值域（活跃加工项目录）：拿不到就留空下拉 —— **不回落**任何写死的加工项清单
+  //（写死 = 第二份会漂的词表；选错一个名字 = 永远不命中）。
+  useEffect(() => {
+    let alive = true
+    // 取值域腿按能力调用：拿不到（接口未上 / 单测只 mock 了裁高面）⇒ 空词表，**不回落**写死的加工项清单。
+    const loadOptions = productionApi?.getRouteRuleOptions
+    if (typeof loadOptions !== 'function') return
+    loadOptions
+      .call(productionApi)
+      .then((res) => {
+        if (alive) setProcessingItems(res.data.data?.processing_items ?? [])
+      })
+      .catch(() => {
+        if (alive) setProcessingItems([])
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  const optionsOf = useCallback(
+    (kind: string): Option[] => {
+      if (kind === 'option') return SPECIAL_OPTIONS.map((name) => ({ value: name, label: name }))
+      if (kind === 'craft') return CRAFT_OPTIONS.map((name) => ({ value: name, label: name }))
+      if (kind === 'processing_item') return processingItems.map((name) => ({ value: name, label: name }))
+      if (kind === 'shaped') return SHAPED_VALUES
+      return []
+    },
+    [processingItems],
+  )
+
   const patchItem = (index: number, patch: Partial<CuttingHeightItem>) => {
     setConfig((prev) => {
       if (!prev) return prev
@@ -155,15 +412,13 @@ export function CuttingHeightConfigPanel() {
     })
   }
 
-  const patchHit = (index: number, patch: Partial<CuttingHeightItem['hit']>) => {
-    setConfig((prev) => {
-      if (!prev) return prev
-      const items = prev.items.map((item, i) =>
-        i === index ? { ...item, hit: { ...item.hit, ...patch } } : item,
-      )
-      return { ...prev, items }
-    })
-  }
+  const removeItem = (index: number) =>
+    setConfig((prev) => (prev ? { ...prev, items: prev.items.filter((_, i) => i !== index) } : prev))
+
+  const addItem = (scope: string) =>
+    setConfig((prev) =>
+      prev ? { ...prev, items: [...prev.items, newItem((prev.items.length + 1) * 10, scope)] } : prev,
+    )
 
   const save = async () => {
     if (!config) return
@@ -188,6 +443,7 @@ export function CuttingHeightConfigPanel() {
         finished_height: probe.finishedHeight,
         craft: probe.craft || undefined,
         special_options: probe.options,
+        processing_items: probe.processingItems,
       })
       setPreview(res.data.data)
     } catch {
@@ -211,10 +467,10 @@ export function CuttingHeightConfigPanel() {
           </span>
         </div>
         <p className="text-sm text-neutral-500">
-          裁剪高度 = 成品高 + 命中的增量项。命中按下面的「触发」判：触发值要<strong>逐字</strong>
-          等于订单上勾的特殊选项 / 安装工艺 / 加工项名（写错一个字就不命中）。
-          <strong>取值留空 = 有项无值</strong>：它会命中、但会被显式报出「未配置取值」，
-          <strong>不按 0 算</strong>。
+          裁剪高度 = 成品高 + 命中的增量项。命中按「触发条件 + 部位」判：一条里的多个条件要
+          <strong>同时满足</strong>（同一个条件里选多个取值 = 满足任一个即可），取值要
+          <strong>逐字</strong>等于订单上的特殊选项名 / 安装工艺 / 加工项名（写错一个字就不命中）。
+          <strong>取值留空 = 有项无值</strong>：它会命中、但会被显式报出「未配置取值」，<strong>不按 0 算</strong>。
         </p>
 
         {loadError !== '' && (
@@ -234,143 +490,54 @@ export function CuttingHeightConfigPanel() {
         )}
 
         {config && (
-          <div className="mt-4 space-y-4">
-            <div className="overflow-x-auto">
-              {/* 列宽**显式**给（issue #7153）：此前 `w-full` + auto 布局 + 每格 `w-full` 控件 ⇒
-                  宽输入框吃掉余量后把 select 列压到**低于内容宽度**（真机实测「特殊选:」「布厂」被裁、
-                  「启用」「删除」竖排）。现在 `table-fixed` + `colgroup` 定比例、`min-w` 兜底：
-                  窄屏走横向滚动，**不压缩控件到裁字**。 */}
-              <table
-                className="w-full min-w-[700px] table-fixed text-sm"
-                data-testid="cutting-height-items"
-              >
-                <colgroup>
-                  <col className="w-[20%]" />
-                  <col className="w-[14%]" />
-                  <col className="w-[16%]" />
-                  <col className="w-[18%]" />
-                  <col className="w-[11%]" />
-                  <col className="w-[9%]" />
-                  <col className="w-[12%]" />
-                </colgroup>
-                <thead>
-                  <tr className="text-left text-neutral-500">
-                    <th className="whitespace-nowrap py-1 pr-2">名称</th>
-                    <th className="whitespace-nowrap py-1 pr-2">取值（米）</th>
-                    <th className="whitespace-nowrap py-1 pr-2">触发</th>
-                    <th className="whitespace-nowrap py-1 pr-2">触发值</th>
-                    <th className="whitespace-nowrap py-1 pr-2">部位</th>
-                    <th className="whitespace-nowrap py-1 pr-2 text-center">启用</th>
-                    <th className="whitespace-nowrap py-1" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {config.items.map((item, index) => (
-                    <tr key={item.key} className="border-t border-neutral-100 align-middle">
-                      <td className="py-1 pr-2">
-                        <input
-                          className={inputCls}
-                          aria-label={`名称-${index}`}
-                          value={item.name}
-                          onChange={(e) => patchItem(index, { name: e.target.value })}
+          <div className="mt-4 space-y-5" data-testid="cutting-height-items">
+            {SCOPES.map(({ value: scope, label, hint, addLabel }) => {
+              const rows = config.items
+                .map((item, index) => ({ item, index }))
+                .filter(({ item }) => (item.scope ?? SCOPE_SPECIFIC) === scope)
+              return (
+                <div key={scope} data-testid={`cutting-height-group-${scope}`}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-sm font-medium text-neutral-900">{label}</h3>
+                    <button
+                      type="button"
+                      className="whitespace-nowrap rounded border border-neutral-300 px-2 py-1 text-sm"
+                      data-testid={scope === SCOPE_SPECIFIC ? 'cutting-height-add' : 'cutting-height-add-fallback'}
+                      /* 域写面出口标记（issue #6825）：类级守卫要求「可编辑控件 + 本域写出口」成对出现 */
+                      data-write-exit="cutting-height"
+                      onClick={() => addItem(scope)}
+                    >
+                      {addLabel}
+                    </button>
+                  </div>
+                  <p className="mt-1 text-xs text-neutral-500">{hint}</p>
+                  <div className="mt-2 space-y-2">
+                    {rows.length === 0 ? (
+                      <p className="rounded-lg border border-dashed border-neutral-200 px-3 py-4 text-sm text-neutral-400">
+                        这一组还没有参数
+                      </p>
+                    ) : (
+                      rows.map(({ item, index }) => (
+                        <ItemRow
+                          key={item.key}
+                          index={index}
+                          item={item}
+                          optionsOf={optionsOf}
+                          onChange={(patch) => patchItem(index, patch)}
+                          onRemove={() => removeItem(index)}
                         />
-                      </td>
-                      <td className="py-1 pr-2">
-                        <input
-                          className={inputCls}
-                          aria-label={`取值-${index}`}
-                          value={formatDraft(item.value)}
-                          placeholder="可留空"
-                          title="取值留空 = 有项无值：会命中，但会显式报出「未配置取值」，不按 0 算"
-                          onChange={(e) =>
-                            patchItem(index, { value: e.target.value.trim() === '' ? null : Number(e.target.value) })
-                          }
-                        />
-                      </td>
-                      <td className="py-1 pr-2">
-                        <select
-                          className={cn(SELECT_CONTROL, 'w-full')}
-                          aria-label={`触发类型-${index}`}
-                          value={item.hit.trigger_kind}
-                          onChange={(e) => patchHit(index, { trigger_kind: e.target.value })}
-                        >
-                          {TRIGGER_KINDS.map((k) => (
-                            <option key={k.value} value={k.value}>
-                              {k.label}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="py-1 pr-2">
-                        <input
-                          className={inputCls}
-                          aria-label={`触发值-${index}`}
-                          value={item.hit.trigger_value}
-                          onChange={(e) => patchHit(index, { trigger_value: e.target.value })}
-                        />
-                      </td>
-                      <td className="py-1 pr-2">
-                        <select
-                          className={cn(SELECT_CONTROL, 'w-full')}
-                          aria-label={`部位-${index}`}
-                          value={item.hit.position ?? ''}
-                          onChange={(e) => patchHit(index, { position: e.target.value || null })}
-                        >
-                          <option value="">不限</option>
-                          {POSITIONS.map((p) => (
-                            <option key={p} value={p}>
-                              {p}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="py-1 pr-2 text-center">
-                        <input
-                          type="checkbox"
-                          aria-label={`启用-${index}`}
-                          checked={item.enabled}
-                          onChange={(e) => patchItem(index, { enabled: e.target.checked })}
-                        />
-                      </td>
-                      <td className="whitespace-nowrap py-1">
-                        <button
-                          type="button"
-                          className="whitespace-nowrap text-neutral-400 underline"
-                          data-testid={`cutting-height-remove-${index}`}
-                          onClick={() =>
-                            setConfig((prev) =>
-                              prev ? { ...prev, items: prev.items.filter((_, i) => i !== index) } : prev,
-                            )
-                          }
-                        >
-                          删除
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )
+            })}
 
-            <div className="flex flex-wrap items-end gap-3">
-              <button
-                type="button"
-                className="rounded border border-neutral-300 px-2 py-1 text-sm"
-                data-testid="cutting-height-add"
-                /* 域写面出口标记（issue #6825）：类级守卫要求「可编辑控件 + 本域写出口」成对出现 */
-                data-write-exit="cutting-height"
-                onClick={() =>
-                  setConfig((prev) =>
-                    prev ? { ...prev, items: [...prev.items, newItem((prev.items.length + 1) * 10)] } : prev,
-                  )
-                }
-              >
-                添加增量项
-              </button>
-              <label className="text-sm text-neutral-600">
-                取整
+            <div className="flex flex-wrap items-end gap-3 border-t border-neutral-100 pt-3">
+              <Field label="取整" htmlFor="cutting-height-rounding-mode">
                 <select
-                  className={cn(SELECT_CONTROL, 'ml-1 inline-block w-auto')}
+                  id="cutting-height-rounding-mode"
+                  className={cn(SELECT_CONTROL_FIELD, 'w-full')}
                   aria-label="取整方式"
                   value={config.rounding.mode}
                   onChange={(e) =>
@@ -381,11 +548,11 @@ export function CuttingHeightConfigPanel() {
                   <option value="down">向下取整</option>
                   <option value="up">向上取整</option>
                 </select>
-              </label>
-              <label className="text-sm text-neutral-600">
-                保留
+              </Field>
+              <Field label="保留位数" htmlFor="cutting-height-rounding-digits">
                 <select
-                  className={cn(SELECT_CONTROL, 'ml-1 inline-block w-auto')}
+                  id="cutting-height-rounding-digits"
+                  className={cn(SELECT_CONTROL_FIELD, 'w-full')}
                   aria-label="保留位数"
                   value={String(config.rounding.digits)}
                   onChange={(e) =>
@@ -398,7 +565,7 @@ export function CuttingHeightConfigPanel() {
                     </option>
                   ))}
                 </select>
-              </label>
+              </Field>
               <button
                 type="button"
                 className="rounded bg-primary-600 px-3 py-1.5 text-sm text-white disabled:opacity-50"
@@ -413,8 +580,7 @@ export function CuttingHeightConfigPanel() {
         )}
       </section>
 
-      {/* 🔴 issue #7176：本块与「阈值试算」是**同一套字段语言**（此前是「标签顺排在控件左边 + 定宽框」，
-          与同页/同产品的其它配置面长得不一样 —— 用户逐字「一个产品不要出现多种设计和风格样式」）。 */}
+      {/* 🔴 issue #7176：本块与「阈值试算」是**同一套字段语言**（标签在上 + 控件满列 + 单位入框）。 */}
       <FormPanel
         title="预演（只读）"
         hint={
@@ -423,7 +589,6 @@ export function CuttingHeightConfigPanel() {
           </>
         }
       >
-        {/* 列数按**标签长度**选（本组标签较长 ⇒ 两列，与「阈值试算」的四列同一个 `FormGrid`） */}
         <FormGrid cols={2}>
           <Field label="部位" htmlFor="cutting-height-probe-position">
             <select
@@ -466,9 +631,23 @@ export function CuttingHeightConfigPanel() {
             </select>
           </Field>
           <Field label="特殊选项" htmlFor="cutting-height-probe-options">
-            <OptionsMultiSelect
+            <OptionsProbe
+              buttonId="cutting-height-probe-options"
+              buttonLabel="预演特殊选项"
+              optionLabelPrefix="特殊选项"
+              options={SPECIAL_OPTIONS}
               value={probe.options}
               onChange={(options) => setProbe({ ...probe, options })}
+            />
+          </Field>
+          <Field label="加工项" htmlFor="cutting-height-probe-items">
+            <OptionsProbe
+              buttonId="cutting-height-probe-items"
+              buttonLabel="预演加工项"
+              optionLabelPrefix="加工项"
+              options={processingItems}
+              value={probe.processingItems}
+              onChange={(items) => setProbe({ ...probe, processingItems: items })}
             />
           </Field>
         </FormGrid>
@@ -513,6 +692,79 @@ export function CuttingHeightConfigPanel() {
           </div>
         )}
       </FormPanel>
+    </div>
+  )
+}
+
+/** 预演用的多选下拉（闭词表；§31 P1：默认折叠成一行）。 */
+function OptionsProbe({
+  buttonId,
+  buttonLabel,
+  optionLabelPrefix,
+  options,
+  value,
+  onChange,
+}: {
+  buttonId: string
+  buttonLabel: string
+  optionLabelPrefix: string
+  options: readonly string[]
+  value: string[]
+  onChange: (next: string[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    function onMouseDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [open])
+
+  const toggle = (name: string) => {
+    onChange(value.includes(name) ? value.filter((v) => v !== name) : [...value, name])
+  }
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        id={buttonId}
+        aria-label={buttonLabel}
+        aria-expanded={open}
+        title={value.length > 0 ? value.join('、') : undefined}
+        onClick={() => setOpen((v) => !v)}
+        className={cn(fieldControl(), 'flex items-center justify-between text-left')}
+      >
+        <span className={value.length === 0 ? 'text-neutral-400' : undefined}>
+          {value.length === 0 ? '未选择' : `已选 ${value.length} 项`}
+        </span>
+        <ChevronDown className="h-4 w-4 shrink-0 text-neutral-400" />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-40 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-neutral-200 bg-white p-1 shadow-card-hover">
+          {options.length === 0 ? (
+            <p className="px-2 py-1.5 text-xs text-neutral-400">暂无可用取值</p>
+          ) : (
+            options.map((name) => (
+              <label
+                key={name}
+                className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
+              >
+                <input
+                  type="checkbox"
+                  checked={value.includes(name)}
+                  onChange={() => toggle(name)}
+                  aria-label={`${optionLabelPrefix}-${name}`}
+                />
+                {name}
+              </label>
+            ))
+          )}
+        </div>
+      )}
     </div>
   )
 }

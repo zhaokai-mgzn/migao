@@ -16,13 +16,27 @@ import java.util.Map;
  *   裁剪高度(部位) = 取整( 成品高 + Σ(命中且启用的增量项 × direction) )
  * </pre>
  *
- * <p><b>命中口径复用 {@code production_route_rules} 那一份</b>（设计单 §1.6）：本类**不**按名称再比一遍，
- * 只认配置里的 {@code hit.trigger_kind} / {@code hit.trigger_value} / {@code hit.position} 三件，
- * 与订单侧同名的取值域（{@code processingInfo.specialOptions[]} / 工艺名 / 加工项名 / 部位名）**逐字**比对。
- * 判据：出现第二份「选项名 → 命中」实现 ⇒ 红（{@code CuttingHeightConfigServiceTest}）。</p>
+ * <h3>v2（issue #7997；用户 2026-10-28 逐字「要根据特殊选项 + 加工项 + 部位来定高度」「再允许一个默认公共（兜底）裁高参数」）</h3>
  *
- * <p><b>未配置取值（{@code value=null}，如「画线」）不算 0</b>：它进 {@code misses}
- * （{@code reason=unresolved}）且**不计入**合计 —— 静默按 0 算 = 给机器的值偏小 = 裁短（事故）。</p>
+ * <p>每个增量项的命中口径从「**一条**触发」升级为「**条件组**」：</p>
+ * <pre>
+ *   item.position     部位（null = 不限）
+ *   item.scope        specific（工序专用，默认）| fallback（公共兜底）
+ *   item.conditions   [{kind, values}] —— **跨 kind 与（AND）、组内 values 或（OR）**；空数组 = 恒真
+ * </pre>
+ *
+ * <p><b>兜底是「替换」语义</b>（用户 2026-10-28 裁定 A）：先求全部 {@code specific} 项；
+ * <b>只要有一项命中</b>（含「命中但未配置取值」—— 那是要显式报出的缺项，不是没命中）⇒ 兜底组<b>整组不参与</b>；
+ * 只有专用项<b>零命中</b>时才求 {@code fallback} 组。⇒ 布绑带 / 接高的单不会把「包布折 / 布贴」那批默认项也算进去。</p>
+ *
+ * <p><b>命中口径仍复用 {@code production_route_rules} 的触发面</b>（设计单 §1.6）：
+ * {@code kind ∈ option / craft / processing_item / shaped} 四档，与订单侧同名取值域
+ * （{@code processingInfo.specialOptions[]} / 工艺名 / 加工项名 / 是否定型）<b>逐字</b>比对；
+ * 本类<b>不</b>新增第五种触发源（工序本就由特殊选项派生，另立一份工序真值源就会与 route rules 漂）。
+ * 判据：出现第二份「条件 → 命中」实现 ⇒ 红（{@code CuttingHeightConfigServiceTest}）。</p>
+ *
+ * <p><b>未配置取值（{@code value=null}，如壁达的「画线」）不算 0</b>：它进 {@code misses}
+ * （{@code reason=unresolved}）且<b>不计入</b>合计 —— 静默按 0 算 = 给机器的值偏小 = 裁短（事故）。</p>
  */
 final class CuttingHeightCalculator {
 
@@ -31,6 +45,15 @@ final class CuttingHeightCalculator {
 
     /** 部位闭词表（与订单行的部位词表同集合）；{@code null} = 不限部位。 */
     static final List<String> POSITIONS = List.of("布帘", "纱帘", "帘头");
+
+    /** 作用域闭词表：{@code specific} = 工序专用（默认）；{@code fallback} = 公共兜底。 */
+    static final List<String> SCOPES = List.of("specific", "fallback");
+
+    /** {@code scope} 缺省值（写面缺键 / 存量 v1 归一都落这里）。 */
+    static final String SCOPE_SPECIFIC = "specific";
+
+    /** 公共兜底组。 */
+    static final String SCOPE_FALLBACK = "fallback";
 
     private static final BigDecimal MAX_VALUE = new BigDecimal("10");
 
@@ -60,60 +83,105 @@ final class CuttingHeightCalculator {
         String mode = str(rounding.get("mode"), "half_up");
         int digits = intOf(rounding.get("digits"), 3);
 
-        BigDecimal total = vars.finishedHeight();
-        List<Hit> hits = new ArrayList<>();
-        List<Miss> misses = new ArrayList<>();
+        List<Map<String, Object>> specific = new ArrayList<>();
+        List<Map<String, Object>> fallback = new ArrayList<>();
         for (Map<String, Object> item : asList(config.get("items"))) {
-            String key = str(item.get("key"), "");
-            String name = str(item.get("name"), "");
-            if (!Boolean.FALSE.equals(item.get("enabled"))) {
-                if (!matches(asMap(item.get("hit")), vars)) {
-                    // 未命中的项**不进** misses：那是常态（一份档案里绝大多数项对某张单都不命中），
-                    // 报出来只会把「真的缺东西」淹掉。misses 只承载**异常形态**。
-                    continue;
-                }
-                BigDecimal value = num(item.get("value"));
-                if (value == null) {
-                    // 命中但**未配置取值**（壁达的「画线」就是这一形态）⇒ 显式报出，不计入、不按 0 算。
-                    misses.add(new Miss(key, name, "unresolved"));
-                    continue;
-                }
-                String direction = str(item.get("direction"), "add");
-                boolean heightJoin = Boolean.TRUE.equals(item.get("height_join"));
-                hits.add(new Hit(key, name, value, direction, heightJoin));
-                total = "subtract".equals(direction) ? total.subtract(value) : total.add(value);
+            if (Boolean.FALSE.equals(item.get("enabled"))) {
+                // 未启用的项**不参与**：既不命中、也不进 misses（那是「有意关掉」，不是「配置缺项」）。
+                continue;
+            }
+            if (SCOPE_FALLBACK.equals(str(item.get("scope"), SCOPE_SPECIFIC))) {
+                fallback.add(item);
+            } else {
+                specific.add(item);
             }
         }
-        return new Result(vars.finishedHeight(), round(total, mode, digits), mode, digits, hits, misses);
+
+        // ① 专用项：只要有一项命中（含未配置取值那一种），兜底组就整组不参与。
+        Pass pass = apply(specific, vars, vars.finishedHeight());
+        if (!pass.matched()) {
+            // ② 专用项零命中 ⇒ 公共兜底组（替换语义，不是叠加）。
+            pass = apply(fallback, vars, vars.finishedHeight());
+        }
+        return new Result(vars.finishedHeight(), round(pass.total(), mode, digits), mode, digits,
+                pass.hits(), pass.misses());
+    }
+
+    /** 一组增量项的一次求值。{@code matched} = 有项命中（**无论取值是否配置**）。 */
+    private record Pass(BigDecimal total, boolean matched, List<Hit> hits, List<Miss> misses) {
+    }
+
+    private static Pass apply(List<Map<String, Object>> items, Vars vars, BigDecimal base) {
+        BigDecimal total = base;
+        boolean matched = false;
+        List<Hit> hits = new ArrayList<>();
+        List<Miss> misses = new ArrayList<>();
+        for (Map<String, Object> item : items) {
+            if (!matches(item, vars)) {
+                // 未命中的项**不进** misses：那是常态（一份档案里绝大多数项对某张单都不命中），
+                // 报出来只会把「真的缺东西」淹掉。misses 只承载**异常形态**。
+                continue;
+            }
+            matched = true;
+            String key = str(item.get("key"), "");
+            String name = str(item.get("name"), "");
+            BigDecimal value = num(item.get("value"));
+            if (value == null) {
+                // 命中但**未配置取值**（壁达的「画线」就是这一形态）⇒ 显式报出，不计入、不按 0 算。
+                misses.add(new Miss(key, name, "unresolved"));
+                continue;
+            }
+            String direction = str(item.get("direction"), "add");
+            boolean heightJoin = Boolean.TRUE.equals(item.get("height_join"));
+            hits.add(new Hit(key, name, value, direction, heightJoin));
+            total = "subtract".equals(direction) ? total.subtract(value) : total.add(value);
+        }
+        return new Pass(total, matched, hits, misses);
     }
 
     /**
-     * 命中判定：**三件**逐字比对（触发类型 + 触发值 + 部位限定）。
+     * 命中判定：**部位**（{@code null} = 不限）+ **条件组**（跨 kind AND、组内 values OR）。
      *
-     * <p>{@code trigger_kind} 决定拿订单侧哪个取值域比：{@code option} ⇒ 特殊选项、
-     * {@code craft} ⇒ 安装工艺、{@code processing_item} ⇒ 加工项、{@code shaped} ⇒ 是否定型
-     * （{@code trigger_value} = {@code "true"}/{@code "false"}）。未知类型 ⇒ **不命中**（fail-closed：
-     * 写面已拒，能走到这里的只可能是历史脏数据，宁可漏不可错）。</p>
+     * <p>{@code kind} 决定拿订单侧哪个取值域比：{@code option} ⇒ 特殊选项、{@code craft} ⇒ 安装工艺、
+     * {@code processing_item} ⇒ 加工项、{@code shaped} ⇒ 是否定型（取值 {@code "true"}/{@code "false"}）。
+     * 未知 kind / 空 values ⇒ <b>该条件不成立</b>（fail-closed：写面已拒，能走到这里的只可能是历史脏数据，
+     * 宁可漏不可错）。</p>
      */
-    static boolean matches(Map<String, Object> hit, Vars vars) {
-        if (hit == null || hit.isEmpty()) {
+    static boolean matches(Map<String, Object> item, Vars vars) {
+        if (item == null || item.isEmpty()) {
             return false;
         }
-        String position = str(hit.get("position"), null);
+        String position = str(item.get("position"), null);
         if (position != null && !position.equals(vars.position())) {
             return false;
         }
-        String value = str(hit.get("trigger_value"), null);
-        if (value == null) {
+        for (Map<String, Object> condition : asList(item.get("conditions"))) {
+            if (!conditionMatches(condition, vars)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean conditionMatches(Map<String, Object> condition, Vars vars) {
+        String kind = str(condition.get("kind"), "");
+        List<String> values = strings(condition.get("values"));
+        if (values.isEmpty()) {
             return false;
         }
-        return switch (str(hit.get("trigger_kind"), "")) {
-            case "option" -> vars.specialOptions().contains(value);
-            case "craft" -> value.equals(vars.craft());
-            case "processing_item" -> vars.processingItems().contains(value);
-            case "shaped" -> String.valueOf(Boolean.TRUE.equals(vars.isShaped())).equals(value);
+        return switch (kind) {
+            case "option" -> anyOf(values, vars.specialOptions());
+            case "craft" -> values.stream().anyMatch(value -> value.equals(vars.craft()));
+            case "processing_item" -> anyOf(values, vars.processingItems());
+            case "shaped" -> values.stream()
+                    .anyMatch(value -> value.equals(String.valueOf(Boolean.TRUE.equals(vars.isShaped()))));
             default -> false;
         };
+    }
+
+    private static boolean anyOf(List<String> values, List<String> pool) {
+        List<String> source = pool == null ? List.of() : pool;
+        return values.stream().anyMatch(source::contains);
     }
 
     /** 取整（本仓库唯一一处：配置页与机器下发值必须同源）。 */
@@ -181,6 +249,21 @@ final class CuttingHeightCalculator {
         for (Object item : list) {
             if (item instanceof Map<?, ?> m) {
                 out.add((Map<String, Object>) m);
+            }
+        }
+        return out;
+    }
+
+    /** 字符串数组归一（空白丢弃、去重保序）—— 与订单侧 {@code specialOptions} 同口径。 */
+    private static List<String> strings(Object raw) {
+        if (!(raw instanceof List<?> list)) {
+            return List.of();
+        }
+        List<String> out = new ArrayList<>(list.size());
+        for (Object item : list) {
+            String text = str(item, null);
+            if (text != null && !out.contains(text)) {
+                out.add(text);
             }
         }
         return out;
