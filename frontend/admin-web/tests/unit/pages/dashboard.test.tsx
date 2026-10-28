@@ -343,6 +343,42 @@ describe('DashboardPage', () => {
     }
   })
 
+  // ── 子集语义（issue #8026）──
+  //
+  // 现象：「待处理」里「待发货订单」与「含加工待发货」是**严格子集**关系
+  // （后者 = 前者 ∧ 含加工项）。2026-10-24 / 2026-10-28 两轮冒烟数据里两者都是 49
+  // （那批待发货单**全部**含加工）⇒ 并排两张卡被读成 `49 + 49 = 98`，多算 49 单。
+  //
+  // 修法（本单只选**一处**）：数字下加副标题「其中」—— 不动标题（#5881 的 ≤6 字版式判据）、
+  // **不动计数口径与下钻链接**（`docs/design/dashboard-refactor-stage2.md` §1 的裁定）。
+  //
+  // 红证（已实测）：把副标题去掉（`note` 不传）⇒ ① 红；href 末尾多一个字符 ⇒ ② 红。
+  // 去掉后两处均已还原（红证不是留在代码里的开关）。
+  it('#8026 「含加工待发货」卡表达子集语义：副标题「其中」，计数与 href 逐字不变', async () => {
+    const { container } = render(<DashboardPage />)
+    await waitFor(() => expect(screen.getByText('待处理')).toBeInTheDocument())
+
+    // 定位卡：标题文本 → 所属卡本体 / 外层下钻 `<a>`
+    const titleEl = Array.from(container.querySelectorAll('p.text-xs')).find(
+      (el) => el.textContent === '含加工待发货',
+    ) as HTMLElement | undefined
+    expect(titleEl, '找不到「含加工待发货」卡的标题（选择器漂移 ⇒ 本判据会空跑）').toBeTruthy()
+    const card = titleEl!.closest('[data-testid="pending-card"]') as HTMLElement | null
+    const link = titleEl!.closest('a') as HTMLAnchorElement | null
+    expect(card, '「含加工待发货」卡缺 pending-card 容器').toBeTruthy()
+    expect(link, '「含加工待发货」卡不在下钻 `<a>` 里').toBeTruthy()
+
+    // ① 子集语义：卡内必须出现「其中」副标题（子集关系的唯一承载体 ⇒ 去掉它这里就红）
+    expect(within(card!).queryByText(/其中/), '卡内没有「其中」⇒ 两张卡仍被读成 49 + 49 = 98').toBeTruthy()
+
+    // ② 负控：计数与下钻链接**逐字不变**（夹具 stats.processingPendingOrders = 3）
+    const countEl = titleEl!.nextElementSibling as HTMLElement | null
+    expect(countEl?.textContent, '计数口径被动了（#8026 明令不动）').toBe('3')
+    expect(link!.getAttribute('href'), '下钻链接被动了（端点契约，一字不改）').toBe(
+      '/orders?category=含加工订单&status=待发货',
+    )
+  })
+
   // ── 趋势图 ──
 
   it('should render order trend section', async () => {
