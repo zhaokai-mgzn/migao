@@ -1035,6 +1035,52 @@ public class QualityCheckService {
         return rows == null || rows.isEmpty() ? null : view(rows.get(0));
     }
 
+    /**
+     * 这一件（套号 × 部位）的质检记录（issue #7973）—— 工人扫码屏「质检记录（做工）」块的唯一数据源。
+     *
+     * <p>🔴 件键必须带上 {@code set_no}（#7945）：同一 {@code order_item_id} 在多套里重复出现，
+     * 只按部位行取最新会把 A 樘的判定画到 B 樘上（件级闭环会因此按**别的一件**的记录挡人）。
+     * 套号缺失 = 存量单 / 旧调用方 ⇒ 退回既有「按部位行」口径（不猜套）。</p>
+     *
+     * @param limit 返回条数上限（最新在前）；{@code <= 0} 按 1 处理
+     */
+    public List<Map<String, Object>> records(Long tenantId, String orderItemId, String setNo, int limit) {
+        if (!StringUtils.hasText(orderItemId)) {
+            return List.of();
+        }
+        LambdaQueryWrapper<QualityCheck> wrapper = new LambdaQueryWrapper<QualityCheck>()
+                .eq(QualityCheck::getTenantId, tenantId)
+                .eq(QualityCheck::getDeleted, 0)
+                .eq(QualityCheck::getOrderItemId, orderItemId.trim())
+                .orderByDesc(QualityCheck::getInspectedAt)
+                .orderByDesc(QualityCheck::getCreatedAt);
+        if (StringUtils.hasText(setNo)) {
+            wrapper.eq(QualityCheck::getSetNo, setNo.trim());
+        }
+        List<QualityCheck> rows = qualityInspectionMapper.selectList(wrapper);
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (QualityCheck row : rows) {
+            if (out.size() >= Math.max(1, limit)) {
+                break;
+            }
+            out.add(view(row));
+        }
+        return out;
+    }
+
+    /**
+     * 这一件（套号 × 部位）的**最新**判定；套号缺失 ⇒ 沿用 {@link #latest}（按部位行的存量口径）。
+     *
+     * <p>工人端「待复检」门禁用它（issue #7973）：只有**同一件**的未闭环判定才挡新报。</p>
+     */
+    public Map<String, Object> latestForPiece(Long tenantId, String orderItemId, String setNo) {
+        if (!StringUtils.hasText(setNo)) {
+            return latest(tenantId, orderItemId);
+        }
+        List<Map<String, Object>> rows = records(tenantId, orderItemId, setNo, 1);
+        return rows.isEmpty() ? null : rows.get(0);
+    }
+
     private Map<String, Object> view(QualityCheck row) {
         Map<String, Object> v = new LinkedHashMap<>();
         v.put("id", row.getId());

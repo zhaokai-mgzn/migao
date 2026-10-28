@@ -21,6 +21,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -150,5 +151,36 @@ class WorkerReworkEndpointsTest {
                 .isInstanceOf(BusinessException.class);
         verify(productionReworkService, never()).report(any(), anyLong(), any(), any());
         verify(productionReworkService, never()).reworkOrders(anyLong());
+    }
+
+    @Test
+    @DisplayName("⑤ 扫码视图带件级返工记录（issue #7973）：只加一个键，值来自服务端；未定位到件 ⇒ 不加")
+    void scanAttachesPieceReworkRecords() {
+        when(workerAdminService.findOwnedWorker(anyString())).thenReturn(worker(null));
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("set_no", "JG-20261026-0001-001");
+        Map<String, Object> position = new LinkedHashMap<>();
+        position.put("order_item_id", "item-1");
+        view.put("position", position);
+        when(productionScanService.resolve(anyString(), any(), any(), any(), anyLong(), any(), any()))
+                .thenReturn(view);
+        when(productionReworkService.pieceRecords(TENANT, "JG-20261026-0001-001", "item-1"))
+                .thenReturn(List.of(Map.of("rework_no", "RG-1", "status", "draft")));
+
+        Map<String, Object> data = controller.scan("tk-1", null, null, null, SESSION).getData();
+
+        assertThat(data).containsKey("rework_records");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> records = (List<Map<String, Object>>) data.get("rework_records");
+        assertThat(records).extracting(r -> r.get("rework_no")).containsExactly("RG-1");
+
+        // 旧码降级形态（position = null）⇒ 没有件级记录可谈：不加键（不摆空壳）
+        Map<String, Object> degraded = new LinkedHashMap<>();
+        degraded.put("granularity", "order");
+        degraded.put("position", null);
+        when(productionScanService.resolve(anyString(), any(), any(), any(), anyLong(), any(), any()))
+                .thenReturn(degraded);
+        assertThat(controller.scan("tk-1", null, null, null, SESSION).getData())
+                .doesNotContainKey("rework_records");
     }
 }

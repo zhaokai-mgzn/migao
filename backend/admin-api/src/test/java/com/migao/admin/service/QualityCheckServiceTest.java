@@ -390,4 +390,59 @@ class QualityCheckServiceTest {
         verify(qualityInspectionMapper).<QualityCheck>insert(captor.capture());
         return captor.getValue();
     }
+
+    // ── 件级记录读面（issue #7973）──────────────────────────────────────────
+
+    @Test
+    @DisplayName("⑬ 件级记录：逐条视图（判定/套号/检验人/时刻）、上限生效、无件 ⇒ 空列表")
+    void pieceRecordsRead() {
+        QualityCheck rework = QualityCheck.builder()
+                .id("qi-r").tenantId(TENANT).processingOrderId(PO_ID).orderItemId(ITEM_ID)
+                .setId("set-1").setNo("JG-001").positionName("布帘")
+                .inspectorId("worker-user-1").inspectorName("张师傅")
+                .inspectorKind(QualityCheckService.INSPECTOR_WORKER)
+                .inspectionResult("rework").reason("缝线开裂").inspectedAt(AT).deleted(0).build();
+        QualityCheck pass = QualityCheck.builder()
+                .id("qi-p").tenantId(TENANT).processingOrderId(PO_ID).orderItemId(ITEM_ID)
+                .setNo("JG-001").inspectionResult("pass").inspectedAt(AT.minusDays(1)).deleted(0).build();
+        when(qualityInspectionMapper.selectList(any())).thenReturn(List.of(rework, pass));
+
+        List<Map<String, Object>> rows = service.records(TENANT, ITEM_ID, "JG-001", 20);
+
+        assertThat(rows).hasSize(2);
+        assertThat(rows.get(0)).containsEntry("result", "rework")
+                .containsEntry("set_no", "JG-001")
+                .containsEntry("inspector_name", "张师傅")
+                .containsKey("inspected_at")
+                .containsKey("piece_key");
+        assertThat(rows.get(1)).containsEntry("result", "pass");
+        // 上限（页面常驻面克制）：只给最新一条
+        assertThat(service.records(TENANT, ITEM_ID, "JG-001", 1)).hasSize(1);
+        // 没有可定位的件 ⇒ 空列表（不查库）
+        assertThat(service.records(TENANT, " ", "JG-001", 20)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("⑬ 件级最新判定：套号缺失 ⇒ 沿用按部位行的 latest（存量口径，不猜套）")
+    void latestForPieceWithoutSetNoUsesLegacyLatest() {
+        QualityCheck row = QualityCheck.builder()
+                .id("qi-1").tenantId(TENANT).processingOrderId(PO_ID).orderItemId(ITEM_ID)
+                .inspectionResult("rework").inspectedAt(AT).deleted(0).build();
+        when(qualityInspectionMapper.selectLatestByOrderItemIds(List.of(ITEM_ID))).thenReturn(List.of(row));
+
+        assertThat(service.latestForPiece(TENANT, ITEM_ID, null)).containsEntry("result", "rework");
+        verify(qualityInspectionMapper, never()).selectList(any());
+    }
+
+    @Test
+    @DisplayName("⑬ 件级最新判定：给了套号 ⇒ 走件级记录（多套同部位不串）")
+    void latestForPieceWithSetNoUsesRecords() {
+        QualityCheck row = QualityCheck.builder()
+                .id("qi-2").tenantId(TENANT).processingOrderId(PO_ID).orderItemId(ITEM_ID)
+                .setNo("JG-002").inspectionResult("rework").inspectedAt(AT).deleted(0).build();
+        when(qualityInspectionMapper.selectList(any())).thenReturn(List.of(row));
+
+        assertThat(service.latestForPiece(TENANT, ITEM_ID, "JG-002")).containsEntry("result", "rework");
+        verify(qualityInspectionMapper, never()).selectLatestByOrderItemIds(any());
+    }
 }

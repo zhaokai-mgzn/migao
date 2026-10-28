@@ -442,18 +442,27 @@ export function createApi(opts = {}) {
      *
      * @param {string} orderItemId 成品帘（`order_items.id`）—— 水洗唛扫码结果里的 `position.order_item_id`
      */
-    async qualityLatest(orderItemId) {
+    async qualityLatest(orderItemId, setNo) {
       const q = new URLSearchParams({ order_item_id: orderItemId })
+      // 件键（issue #7973）：套号 × 部位；不带 ⇒ 多套同部位会串（服务端只能按部位行取最新）
+      if (setNo !== null && setNo !== undefined && String(setNo).trim() !== '') q.set('set_no', String(setNo).trim())
       const data = await request(`/api/worker/quality/latest?${q.toString()}`)
-      return { orderItemId: data?.order_item_id ?? orderItemId, latest: data?.latest ?? null }
+      return {
+        orderItemId: data?.order_item_id ?? orderItemId,
+        latest: data?.latest ?? null,
+        // 记录列表（最新在前）：页面「质检记录（做工）」块 + 待复检门禁都读它（服务端口径，前端不聚合）
+        records: Array.isArray(data?.records) ? data.records : [],
+      }
     },
 
     /**
      * 录一条质检判定 ⇒ 生成一张**质检单**（`POST /api/worker/quality/inspections`）。
      *
      * 判定 ≠ 合格时服务端要求原因（缺 ⇒ 422，零写入）；前端先拦一次只为不白跑网络。
+     * 闭环（issue #7973）：同一件最新判定 = 返工且未复检 ⇒ 普通「记返工」被服务端 409 拒；
+     * 复检【仍有问题】必须带 `recheck:true`（显式的新一轮判定）。
      */
-    async createQuality({ orderItemId, result, reason, setNo } = {}) {
+    async createQuality({ orderItemId, result, reason, setNo, recheck } = {}) {
       if (!session?.sessionId) {
         const err = new Error('尚未登录工人身份，请先用工号 + PIN 登录')
         err.code = SESSION_EXPIRED
@@ -463,6 +472,9 @@ export function createApi(opts = {}) {
       // 件键（issue #7945）：套号 × 部位 = 一张水洗唛码；扫码面已知套号，直接带上（多套单不猜第 1 套）
       if (setNo) body.set_no = setNo
       if (reason) body.reason = reason
+      // 复检回路（issue #7973）：只有从「待复检」点的【复检仍有问题】才带 true ——
+      // 普通「记返工」在待复检状态下会被服务端 409 拒（不靠前端自觉）。
+      if (recheck === true) body.recheck = true
       return request('/api/worker/quality/inspections', { method: 'POST', body })
     },
 

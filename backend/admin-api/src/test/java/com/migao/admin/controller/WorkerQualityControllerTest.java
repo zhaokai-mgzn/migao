@@ -21,13 +21,17 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
 import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -106,12 +110,12 @@ class WorkerQualityControllerTest {
     @DisplayName("① 档案查不到 / 未收窄（默认页不含质检）⇒ 同样 403")
     void missingProfileOrUnrestrictedDefaultsIsDenied() {
         when(workerAdminService.findOwnedWorker(WORKER_ID)).thenReturn(null);
-        assertThatThrownBy(() -> controller.latest(SESSION, "item-1"))
+        assertThatThrownBy(() -> controller.latest(SESSION, "item-1", null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("权限不足");
 
         when(workerAdminService.findOwnedWorker(WORKER_ID)).thenReturn(worker(null));
-        assertThatThrownBy(() -> controller.latest(SESSION, "item-1"))
+        assertThatThrownBy(() -> controller.latest(SESSION, "item-1", null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("权限不足");
         verifyNoInteractions(qualityCheckService);
@@ -153,7 +157,7 @@ class WorkerQualityControllerTest {
         when(workerAdminService.findOwnedWorker(WORKER_ID)).thenReturn(worker("[\"inspect\"]"));
         when(qualityCheckService.latest(TENANT, "item-1")).thenReturn(null);
 
-        Map<String, Object> data = controller.latest(SESSION, "item-1").getData();
+        Map<String, Object> data = controller.latest(SESSION, "item-1", null).getData();
 
         assertThat(data).containsEntry("order_item_id", "item-1");
         assertThat(data.get("latest")).isNull();
@@ -166,9 +170,75 @@ class WorkerQualityControllerTest {
         Map<String, Object> record = Map.of("result", "pass", "inspector_kind", "worker");
         when(qualityCheckService.latest(TENANT, "item-1")).thenReturn(record);
 
-        assertThat(controller.latest(SESSION, "item-1").getData().get("latest")).isEqualTo(record);
+        assertThat(controller.latest(SESSION, "item-1", null).getData().get("latest")).isEqualTo(record);
         // 读面也不调写面
         verify(qualityCheckService, never()).create(any(), anyString(), anyString(), any(), anyString(),
                 anyString(), anyString(), any(), any());
+    }
+
+    @Test
+    @DisplayName("④ 件级读面（issue #7973）：set_no 一起给 ⇒ records 逐条返回，latest 与 records[0] 同源")
+    void latestWithSetNoReturnsPieceRecords() {
+        when(workerAdminService.findOwnedWorker(WORKER_ID)).thenReturn(worker("[\"inspect\"]"));
+        Map<String, Object> newest = Map.of("result", "rework", "reason", "缝线开裂");
+        Map<String, Object> older = Map.of("result", "pass");
+        when(qualityCheckService.records(TENANT, "item-1", "JG-001", 20))
+                .thenReturn(List.of(newest, older));
+
+        Map<String, Object> data = controller.latest(SESSION, "item-1", "JG-001").getData();
+
+        assertThat(data).containsEntry("set_no", "JG-001");
+        assertThat(data.get("latest")).isEqualTo(newest);
+        assertThat((List<?>) data.get("records")).hasSize(2);
+        // 套号给了就不再走「按部位行」的 latest（多套同部位会串）
+        verify(qualityCheckService, never()).latest(anyLong(), anyString());
+    }
+
+    @Test
+    @DisplayName("④ 待复检门禁（issue #7973）：最新 = 返工 ⇒ 普通「记返工」409 且零写入；复检仍有问题放行")
+    void pendingReworkBlocksBlindRepeat() {
+        when(workerAdminService.findOwnedWorker(WORKER_ID)).thenReturn(worker("[\"report\",\"inspect\"]"));
+        when(qualityCheckService.latestForPiece(TENANT, "item-1", "JG-001"))
+                .thenReturn(Map.of("result", "rework"));
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("order_item_id", "item-1");
+        body.put("result", "rework");
+        body.put("reason", "缝线开裂");
+        body.put("set_no", "JG-001");
+
+        assertThatThrownBy(() -> controller.create(SESSION, body))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("正在等复检");
+        verify(qualityCheckService, never()).create(any(), anyString(), anyString(), any(), anyString(),
+                anyString(), anyString(), any(), any(), anyString());
+
+        // 【复检仍有问题】= 显式新的一轮判定 ⇒ 同一个写面放行（`recheck` 是显式入口，不是盲重复）
+        when(qualityCheckService.create(any(), anyString(), anyString(), any(), anyString(), anyString(),
+                anyString(), any(), any(), anyString())).thenReturn(Map.of("id", "qi-2"));
+        body.put("recheck", true);
+        controller.create(SESSION, body);
+        verify(qualityCheckService).create(eq(TENANT), eq("item-1"), eq("rework"), eq("缝线开裂"),
+                eq(WORKER_ID), eq(WORKER_NAME), eq(QualityCheckService.INSPECTOR_WORKER), eq(AT),
+                any(WorkerIdentity.class), eq("JG-001"));
+    }
+
+    @Test
+    @DisplayName("④ 复检通过（result=pass）不受待复检门禁影响（闭环出口；pass 本来就能录）")
+    void passIsNotGatedByPendingRework() {
+        when(workerAdminService.findOwnedWorker(WORKER_ID)).thenReturn(worker("[\"inspect\"]"));
+        when(qualityCheckService.create(any(), anyString(), anyString(), any(), anyString(), anyString(),
+                anyString(), any(), any(), anyString())).thenReturn(Map.of("id", "qi-pass"));
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("order_item_id", "item-1");
+        body.put("result", "pass");
+        body.put("set_no", "JG-001");
+        controller.create(SESSION, body);
+
+        verify(qualityCheckService).create(eq(TENANT), eq("item-1"), eq("pass"), isNull(),
+                eq(WORKER_ID), eq(WORKER_NAME), eq(QualityCheckService.INSPECTOR_WORKER), eq(AT),
+                any(WorkerIdentity.class), eq("JG-001"));
+        verify(qualityCheckService, never()).latestForPiece(anyLong(), anyString(), anyString());
     }
 }

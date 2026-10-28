@@ -269,17 +269,21 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
   //    （工人档案里没开这一页 ⇒ 403）。这里少渲染一块，不等于挡住了接口。
   // ══════════════════════════════════════════════════════════════════════════════
   const qualityItemId = () => state.view?.position?.order_item_id ?? null
+  /** 件键（issue #7973）：套号 × 部位 —— 读面返回时必须仍是**这一件**，否则丢弃（多套同部位会串）。 */
+  const qualityPieceKey = () => `${qualityItemId() ?? ''}|${state.view?.set_no ?? ''}`
 
   async function loadQuality() {
     const itemId = qualityItemId()
     if (!itemId) return
     if (!effectivePages(state).opened.has(PAGE_INSPECT)) return
+    const pieceKey = qualityPieceKey()
     dispatch({ type: 'qualityLoading' })
     try {
-      const d = await api.qualityLatest(itemId)
-      // 读回来时屏已经换了一件 ⇒ 丢弃（避免把上一件的判定画到这一件上）
-      if (qualityItemId() !== itemId) return
-      dispatch({ type: 'qualityLoaded', latest: d.latest })
+      // 件键随读面带上（issue #7945 / #7973）：只按部位行取最新会把 A 樘的判定画到 B 樘上
+      const d = await api.qualityLatest(itemId, state.view?.set_no ?? null)
+      // 读回来时屏已经换了一件 / 一套 ⇒ 丢弃（避免把上一件的判定画到这一件上）
+      if (qualityItemId() !== itemId || qualityPieceKey() !== pieceKey) return
+      dispatch({ type: 'qualityLoaded', latest: d.latest, records: d.records })
     } catch (e) {
       dispatch({ type: 'qualityFailed', error: e?.message ?? String(e) })
     }
@@ -305,11 +309,38 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
         reason,
         // 件键（issue #7945）：套号 × 部位；本屏扫码已定位到这一件，套号随判定一起提交
         setNo: state.view?.set_no ?? null,
+        // 复检回路（issue #7973）：从「待复检」点的【复检仍有问题】= 新的一轮判定（服务端放行）
+        recheck: form.recheck === true,
       })
-      dispatch({ type: 'qualitySubmitted', latest })
+      dispatch({ type: 'qualitySubmitted', latest, notice: '质检已登记' })
+      // 追加成功 ⇒ 重新读一次记录（列表是服务端口径，不在前端拼接第二条真值）
+      void loadQuality()
     } catch (e) {
       // 服务端下发的业务文案原样显示（不把 HTTP 状态码当工人文案）
       dispatch({ type: 'qualityFormError', error: e?.message ?? String(e) })
+    }
+  }
+
+  /**
+   * 复检通过（issue #7973）：`pass` 是一次新判定（关闭「待复检」）—— 沿用同一个写端点，不新开端点。
+   *
+   * 用户 2026-10-25 的「默认合格、不摆合格按钮」**不变**：这个动作只在**已有做工返工记录**时出现，
+   * 不是每件都要点一次「合格」（ISO 9001 §8.7.1.4：返工后放行前必须再检验）。
+   */
+  async function recheckQualityPass() {
+    const itemId = qualityItemId()
+    if (!itemId || state.quality?.rechecking) return
+    dispatch({ type: 'qualityRecheckStart' })
+    try {
+      const latest = await api.createQuality({
+        orderItemId: itemId,
+        result: 'pass',
+        setNo: state.view?.set_no ?? null,
+      })
+      dispatch({ type: 'qualitySubmitted', latest, notice: '复检通过：本件回到「正常」' })
+      void loadQuality()
+    } catch (e) {
+      dispatch({ type: 'qualityRecheckFailed', error: e?.message ?? String(e) })
     }
   }
 
@@ -331,8 +362,8 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
     }
     dispatch({ type: 'reworkSubmitting' })
     try {
-      const rework = await api.reportRework({ token, reason })
-      // 进度被服务端退回了 ⇒ 用同一张码重解析一次，屏上回到真实读数。
+      await api.reportRework({ token, reason })
+      // 进度被服务端退回了 ⇒ 用同一张码重解析一次，屏上回到真实读数（**记录也随之刷新**）。
       // 读失败**不影响**返工已成立（写面已返回成功）—— 保持原屏，只少一次刷新。
       let view = state.view
       try {
@@ -341,12 +372,8 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
       } catch {
         view = state.view
       }
-      dispatch({
-        type: 'reworkSubmitted',
-        rework,
-        view,
-        notice: rework?.reworkNo ? `返工单 ${rework.reworkNo} 已生成` : '返工单已生成',
-      })
+      // 单号不再由 notice 重复念（记录卡里已有；§31 P2）
+      dispatch({ type: 'reworkSubmitted', view, notice: '返工已登记' })
     } catch (e) {
       // 服务端下发的业务文案原样显示（不把 HTTP 状态码当工人文案）
       dispatch({ type: 'reworkFormError', error: e?.message ?? String(e) })
@@ -510,6 +537,9 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
       dispatch({ type: 'qualityFormOpen' })
       if (!state.quality?.latest) void loadQuality()
     })
+    // 待复检（issue #7973）：通过 = 关闭；仍有问题 = 新的一轮判定（表单带 recheck）
+    on('wh5-quality-recheck-pass', () => { void recheckQualityPass() })
+    on('wh5-quality-recheck-open', () => dispatch({ type: 'qualityFormOpen', recheck: true }))
     on('wh5-quality-cancel', () => dispatch({ type: 'qualityFormClose' }))
     on('wh5-quality-submit', () => { void submitQuality() })
 

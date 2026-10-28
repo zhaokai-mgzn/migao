@@ -300,4 +300,74 @@ class ProductionReworkServiceTest {
         List<Map<String, Object>> operations = (List<Map<String, Object>>) row.get("operations");
         assertThat(operations).extracting(o -> o.get("operation_name")).containsExactly("车缝", "熨烫");
     }
+
+    // ── 件级闭环 + 记录读面（issue #7973）──────────────────────────────────
+
+    @Test
+    @DisplayName("⑧ 这一件已有未完结返工单 ⇒ 409 点名那张单，且零写入（回退/改记/开单全不发生）")
+    void openReworkBlocksAnotherReport() {
+        when(reworkOrderMapper.selectList(any())).thenReturn(List.of(ReworkOrder.builder()
+                .id("rw-open").tenantId(TENANT).source(ReworkOrderService.SOURCE_WORKER)
+                .reworkNo("RG202610280002").status(ReworkState.DRAFT)
+                .setNo("JG-20261026-0001-001").orderItemId("item-1").build()));
+
+        assertThatThrownBy(() -> service.report(body("布面污渍"), TENANT, null, ZHANG))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("未处理完的返工单")
+                .hasMessageContaining("RG202610280002")
+                .hasMessageContaining("待处理");
+        // 零写入：不改进度、不改报工、不开单（页面收起入口之外的第二道闸）
+        verify(positionOperationMapper, never())
+                .revertDoneQtyIfUnchanged(anyString(), anyLong(), any(), any(), any(), any(), any());
+        verify(workLogMapper, never()).update(any(), any());
+        verifyNoInteractions(reworkOrderService);
+    }
+
+    @Test
+    @DisplayName("⑨ 件级返工记录：字段逐值来自服务端（工序/数量/原因/状态/报工人/时刻），无件 ⇒ 空列表")
+    void pieceRecordsMapServerFields() {
+        ReworkOrder open = ReworkOrder.builder()
+                .id("rw-1").tenantId(TENANT).source(ReworkOrderService.SOURCE_WORKER)
+                .reworkNo("RG202610280002").operationName("车缝").qty(new BigDecimal("2"))
+                .reason("布面污渍").status(ReworkState.IN_PROGRESS).workerName("张师傅")
+                .createdAt(OffsetDateTime.parse("2026-10-28T09:15:00+08:00"))
+                .orderItemId("item-1").setNo("JG-20261026-0001-001").positionName("布帘").build();
+        ReworkOrder done = ReworkOrder.builder()
+                .id("rw-2").tenantId(TENANT).source(ReworkOrderService.SOURCE_WORKER)
+                .reworkNo("RG202610280001").operationName("车缝").qty(BigDecimal.ONE)
+                .reason("色差").status(ReworkState.DONE).workerName("张师傅")
+                .createdAt(OffsetDateTime.parse("2026-10-27T09:15:00+08:00"))
+                .orderItemId("item-1").setNo("JG-20261026-0001-001").build();
+        when(reworkOrderMapper.selectList(any())).thenReturn(List.of(open, done));
+
+        List<Map<String, Object>> rows = service.pieceRecords(TENANT, "JG-20261026-0001-001", "item-1");
+
+        assertThat(rows).hasSize(2);
+        assertThat(rows.get(0)).containsEntry("rework_no", "RG202610280002")
+                .containsEntry("operation_name", "车缝")
+                .containsEntry("reason", "布面污渍")
+                .containsEntry("status", ReworkState.IN_PROGRESS)
+                .containsEntry("worker_name", "张师傅")
+                .containsEntry("position_name", "布帘")
+                .containsKey("created_at")
+                .containsKey("logical_name");
+        assertThat((BigDecimal) rows.get(0).get("qty")).isEqualByComparingTo("2");
+        assertThat(rows.get(1)).containsEntry("status", ReworkState.DONE);
+        // 没有可定位的件 ⇒ 空列表（页面据此不渲染记录块，不编「没有返工」）
+        assertThat(service.pieceRecords(TENANT, "JG-20261026-0001-001", " ")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("⑨ 件级返工记录上限 20 条（§31 P1 常驻面克制；历史去 PC 返工单看）")
+    void pieceRecordsCappedAt20() {
+        List<ReworkOrder> many = new ArrayList<>();
+        for (int i = 0; i < 25; i += 1) {
+            many.add(ReworkOrder.builder().id("rw-" + i).tenantId(TENANT)
+                    .source(ReworkOrderService.SOURCE_WORKER).reworkNo("RG-" + i)
+                    .status(ReworkState.DONE).orderItemId("item-1").setNo("JG-20261026-0001-001").build());
+        }
+        when(reworkOrderMapper.selectList(any())).thenReturn(many);
+
+        assertThat(service.pieceRecords(TENANT, "JG-20261026-0001-001", "item-1")).hasSize(20);
+    }
 }

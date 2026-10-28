@@ -137,6 +137,10 @@ public class WorkerProductionController {
      * 需要同一条读面。实现**逐字复用** {@link ProductionScanService#resolve}（不新造第二套响应形状
      * —— 商家端与工人端看到的推断结果逐字同源）。</p>
      *
+     * <p>🔴 <b>响应含 {@code rework_records}</b>（issue #7973）：本件（套号 × 部位）的返工单记录，
+     * 工人屏「返工记录（布料）」块与件级闭环（有未完结单 ⇒ 不再给报返工入口）的唯一数据源；
+     * 未定位到件 / 服务未接线 ⇒ 不加这个键（不谎报「没有返工」）。</p>
+     *
      * <p>🔴 <b>响应含 {@code set_overview}</b>（issue #4967 交付物 2）：本套 → 部位 → 工序明细
      * （逻辑名 / 应做数量+单位 / 单价 / 状态 / 已报数量）⇒ 工人扫一次就看到「这一套还有哪几道没做」。
      * 聚合**只有这一份**（在解析面，与推断/进度/卡点同源）—— 页面不另拉一份再按套重排。</p>
@@ -161,7 +165,35 @@ public class WorkerProductionController {
                         workerOperation, identity.workerId())
                 : productionScanService.resolve(token, operationId, null, null, tenantId,
                         workerOperation, identity.workerId());
+        attachPieceReworkRecords(view, tenantId);
         return ApiResponse.success(view);
+    }
+
+    /**
+     * 扫码视图追加**本件**的返工记录（issue #7973）—— 工人屏「返工记录（布料）」块的唯一数据源。
+     *
+     * <p>只加一个键 {@code rework_records}（与既有键同形，页面不重算）。三条判断：</p>
+     * <ol>
+     *   <li>未定位到件（旧码降级形态 / 无 {@code position.order_item_id}）⇒ <b>不加</b>：没有件就没有件级记录；</li>
+     *   <li>服务未接线 ⇒ <b>不加</b>：不谎报「这一件没有返工」（与 {@code requireReworkWired} 同一口径）；</li>
+     *   <li>真读了（哪怕是空列表）⇒ 加；页面据此区分「没有返工」与「这次读不到」。</li>
+     * </ol>
+     */
+    private void attachPieceReworkRecords(Map<String, Object> view, Long tenantId) {
+        if (view == null || productionReworkService == null) {
+            return;
+        }
+        if (!(view.get("position") instanceof Map<?, ?> position)) {
+            return;
+        }
+        Object rawItemId = position.get("order_item_id");
+        String orderItemId = rawItemId == null ? null : String.valueOf(rawItemId).trim();
+        if (!StringUtils.hasText(orderItemId)) {
+            return;
+        }
+        Object rawSetNo = view.get("set_no");
+        String setNo = rawSetNo == null ? null : String.valueOf(rawSetNo).trim();
+        view.put("rework_records", productionReworkService.pieceRecords(tenantId, setNo, orderItemId));
     }
 
     /**
