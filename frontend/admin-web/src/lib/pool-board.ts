@@ -111,6 +111,61 @@ export function singleDispatchLinesOfOrder(
 }
 
 /**
+ * **一张订单**在「不参与合并、逐单立即派」区的订单级视图（issue #7974）。
+ *
+ * 🔴 派单是订单级动作 ⇒ **展示与动作也必须以订单为单位**：改前逐 `PoolLine`（一套一行、
+ * 一套一个「立即派单」按钮）会把一张多套订单摆成 N 行、N 个按钮，而点任意一行都派整单 ——
+ * 交互与语义不一致（用户 2026-10-28：「既然是整单派单，那应该改成整单派单的交互形式」）。
+ *
+ * 订单序 = {@link singleDispatchLines} 的**首次出现序**（该数组本身是服务端 `POOL_LINE_ORDER`
+ * 拼接的，前端不重排）；组内行序 = 服务端数组顺序（`lines` **不重排、不去重**）。
+ *
+ * 订单级字段（单号 / 加急 / 外发 / 等待 / 到货日）取**该单第一行**：这些事实是**订单级**的，
+ * 服务端对同一订单的各行给的是同一组值（`pool()` 逐订单计算）。
+ */
+export interface SingleDispatchOrder {
+  orderId: string
+  orderNo: string
+  isUrgent: boolean
+  isOutsourced: boolean
+  waitHours: number
+  overdue: boolean
+  requiredDeliveryDate?: string | null
+  deliveryDaysLeft?: number | null
+  /** 该单的**全部**成品帘行（服务端顺序；一张订单 = 一行 = 全部套） */
+  lines: PoolLine[]
+}
+
+/** 逐单立即派区的**订单级**取值口径（唯一；页面与判据共用，issue #7974）。 */
+export function singleDispatchOrders(
+  board: PoolBoard | null | undefined,
+): SingleDispatchOrder[] {
+  const orders: SingleDispatchOrder[] = []
+  const byOrderId = new Map<string, SingleDispatchOrder>()
+  for (const line of singleDispatchLines(board)) {
+    const existing = byOrderId.get(line.orderId)
+    if (existing) {
+      existing.lines.push(line)
+      continue
+    }
+    const order: SingleDispatchOrder = {
+      orderId: line.orderId,
+      orderNo: line.orderNo,
+      isUrgent: line.isUrgent === true,
+      isOutsourced: line.isOutsourced === true,
+      waitHours: line.waitHours,
+      overdue: line.overdue,
+      requiredDeliveryDate: line.requiredDeliveryDate ?? null,
+      deliveryDaysLeft: line.deliveryDaysLeft ?? null,
+      lines: [line],
+    }
+    byOrderId.set(line.orderId, order)
+    orders.push(order)
+  }
+  return orders
+}
+
+/**
  * 派单**失败面**是否必须上屏（唯一口径）。
  *
  * 被拒绝的每一次都必须留下**看得见**的文案（PR-080 判据 3「整批显式拒绝，不静默少派」）：

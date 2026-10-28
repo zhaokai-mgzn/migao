@@ -19,9 +19,11 @@ import {
   previewSummaryRows,
   singleDispatchLines,
   singleDispatchLinesOfOrder,
+  singleDispatchOrders,
+  type SingleDispatchOrder,
 } from '@/lib/pool-board'
 import { isUrgentFlag, urgentBadgeText } from '@/lib/order-urgency'
-import type { PoolBoard, PoolDispatchResult, PoolLine, PoolPreview, ProcessorOption } from '@/types'
+import type { PoolBoard, PoolDispatchResult, PoolPreview, ProcessorOption } from '@/types'
 
 /** 池化的等待阈值（小时）—— 传给服务端，服务端回显在 `maxWaitHours` */
 const MAX_WAIT_HOURS = 24
@@ -170,18 +172,21 @@ export default function ProductionPoolPage() {
   }
 
   /**
-   * 加急 / 外发插队派单（**整单** + `pooled:false`）—— 一个动作，不批。
+   * **整单**立即派单（`pooled:false`）—— 一个订单一个动作，不批（issue #7974）。
+   *
+   * 🔴 入参是**订单级视图**（{@link SingleDispatchOrder}）而不是一行：改前表格按套渲染、
+   * 每套一个按钮，看起来像「逐套派」而实际派整单 ⇒ 展示与动作的粒度与语义不一致。
    *
    * 🔴 issue #7968：派单是**订单级动作**（服务端一单一加工单）⇒ 批次指派也必须**整单逐行**：
-   * 取该订单在逐单派表里的全部行，而不是只带被点的那一行 —— 只带一行 ⇒ 其余成品帘
+   * 取该订单在逐单派表里的全部行，而不是只带某一行 —— 只带一行 ⇒ 其余成品帘
    * 在加工单快照里没有 `batchNo`、也不落批次台账（整单派出、只有一套领料）。
-   * 「点哪一行」只决定派哪张单，**不决定**哪几套领批次。
    */
-  const dispatchSingle = async (line: PoolLine) => {
-    const lines = singleDispatchLinesOfOrder(board, line.orderId)
-    // 看板可能已被刷新 / 该单已不在表里 ⇒ 退回被点的这一行（不让请求退化成空指派 = #6408 的缺陷形态）
-    const designated: Pick<PoolLine, 'orderId' | 'itemId'>[] = lines.length > 0 ? lines : [line]
-    setSinglePending(line.orderId)
+  const dispatchSingle = async (order: SingleDispatchOrder) => {
+    const lines = singleDispatchLinesOfOrder(board, order.orderId)
+    // 看板可能已被刷新 / 该单已不在表里 ⇒ 退回该订单级视图里的行（不让请求退化成空指派 = #6408 的缺陷形态）
+    const designated: { orderId: string; itemId: string }[] =
+      lines.length > 0 ? lines : order.lines
+    setSinglePending(order.orderId)
     setDispatchError('')
     try {
       const res = await poolBoardApi.dispatch(buildPoolRequest(designated, false, consignee))
@@ -190,13 +195,13 @@ export default function ProductionPoolPage() {
       const done = rows.find((r) => r.success)
       if (done) {
         // **结果可见**：toast 里带加工单号（不是只说一句「成功」）
-        toast.success(`加急单派单成功：${done.processingOrderNo ?? '-'}`)
+        toast.success(`整单派单成功：${done.processingOrderNo ?? '-'}`)
         await reloadAfterDispatch()
       } else {
-        toast.error(rows[0]?.message || '加急单派单失败')
+        toast.error(rows[0]?.message || '整单派单失败')
       }
     } catch (e) {
-      const text = dispatchErrorText(e, '加急单派单失败')
+      const text = dispatchErrorText(e, '整单派单失败')
       setDispatchError(text)
       setResults(null)
       toastRequestError(e, text)
@@ -233,7 +238,7 @@ export default function ProductionPoolPage() {
   }
 
 /** 加急 / 外发 = **同一件事**（不进池、逐单立即派）⇒ 一张表、一条取值口径（issue #7943） */
-  const singleLines = singleDispatchLines(board)
+  const singleOrders = singleDispatchOrders(board)
   const groups = batchGroups(board)
   const warnings = board?.warnings ?? []
 
@@ -583,16 +588,19 @@ export default function ProductionPoolPage() {
             却指不到实处的提示）—— 同一件事摆了两遍，还把主操作（成批合并）挤到页尾。
             现在：**成批区置顶**（主操作），本区在其后、**一张表**。
 
-            🔴 行序 = `singleDispatchLines(board)` 的拼接序（加急段在前、外发段在后）；
+            🔴 行 = **订单**（issue #7974）：一张多套订单只有**一行、一个按钮**，
+            行内列出该单全部套的物料与米数（`singleDispatchOrders` 归并）。
+            行序 = 订单的**首次出现序**（加急段在前、外发段在后 —— 即 `singleDispatchLines` 的拼接序）；
             两段各自已是服务端 `POOL_LINE_ORDER` 排好的 ⇒ 前端**不重排**（同 §排序口径）。
           */}
           <Card>
             <div className="p-5" data-testid="pool-urgent-section">
               <div className="flex items-center gap-2 mb-3">
                 <Zap className="w-4 h-4 text-amber-600" />
-                <h2 className="text-sm font-medium text-neutral-900">加急 / 外发订单（不参与合并，立即派）</h2>
+                <h2 className="text-sm font-medium text-neutral-900">加急 / 外发订单（不参与合并，整单立即派）</h2>
                 <span className="text-xs text-neutral-500">
-                  加急 {board?.urgentCount ?? 0} 单 · 外发 {board?.outsourcedCount ?? 0} 单 —— 不参与合并；外发单先选承接方，再点「立即派单」
+                  加急 {board?.urgentCount ?? 0} 单 · 外发 {board?.outsourcedCount ?? 0} 单 —— 不参与合并，一张订单一派；
+                  外发单先选承接方，再点「立即派单」
                 </span>
               </div>
               {/*
@@ -642,10 +650,10 @@ export default function ProductionPoolPage() {
                   />
                 </div>
                 <span className="text-xs text-neutral-500">
-                  发给外部加工厂时填写，再点该行「立即派单」；留空 = 本厂自做（加工厂档案在「供应商」里把类型设为加工厂）
+                  发给外部加工厂时填写，再点该单「立即派单」；留空 = 本厂自做（加工厂档案在「供应商」里把类型设为加工厂）
                 </span>
               </div>
-              {singleLines.length === 0 ? (
+              {singleOrders.length === 0 ? (
                 <div className="px-4 py-8 text-center text-neutral-400 text-sm">当前没有加急或外发待派订单</div>
               ) : (
                 <div className="overflow-x-auto">
@@ -653,8 +661,9 @@ export default function ProductionPoolPage() {
                     <thead className="bg-neutral-50 text-neutral-600">
                       <tr>
                         <th className="text-left px-4 py-2.5 font-medium whitespace-nowrap">单号</th>
-                        <th className="text-left px-4 py-2.5 font-medium whitespace-nowrap">物料（商品 × 颜色 × 门幅）</th>
-                        <th className="text-right px-4 py-2.5 font-medium whitespace-nowrap">需求米数</th>
+                        <th className="text-left px-4 py-2.5 font-medium whitespace-nowrap">
+                          成品帘（套数 / 物料 / 米数）
+                        </th>
                         <th className="text-right px-4 py-2.5 font-medium whitespace-nowrap">等待时长</th>
                         <th className="text-left px-4 py-2.5 font-medium whitespace-nowrap">标记</th>
                         <th className="text-left px-4 py-2.5 font-medium whitespace-nowrap">到货日</th>
@@ -663,67 +672,86 @@ export default function ProductionPoolPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {/* ⚠️ 顺序 = `singleDispatchLines` 的拼接序（加急 → 外发），不重排 */}
-                      {singleLines.map((line) => {
-                        const outsourced = line.isOutsourced === true
-                        return (
-                          <tr
-                            key={`${line.orderId}-${line.itemId}`}
-                            data-testid={outsourced ? `pool-outsourced-line-${line.orderId}` : `pool-line-${line.orderId}`}
-                            className="border-t border-neutral-100 hover:bg-neutral-50"
+                      {/* ⚠️ 行 = **订单**（不是订单套）；顺序 = `singleDispatchOrders` 的订单序（服务端首次出现序），不重排 */}
+                      {singleOrders.map((order) => (
+                        <tr
+                          key={order.orderId}
+                          data-testid={
+                            order.isOutsourced
+                              ? `pool-outsourced-line-${order.orderId}`
+                              : `pool-line-${order.orderId}`
+                          }
+                          className="border-t border-neutral-100 hover:bg-neutral-50"
+                        >
+                          <td className="px-4 py-2.5 font-mono text-neutral-900 align-top">
+                            {order.orderNo}
+                          </td>
+                          <td
+                            className="px-4 py-2.5 text-neutral-700"
+                            data-testid={`pool-order-sets-${order.orderId}`}
                           >
-                            <td className="px-4 py-2.5 font-mono text-neutral-900">{line.orderNo}</td>
-                            <td className="px-4 py-2.5 text-neutral-700">
-                              {line.productName}
-                              <span className="text-neutral-400 ml-1.5">{line.skuCode || '-'}</span>
-                            </td>
-                            <td className="px-4 py-2.5 text-right font-mono text-neutral-900">
-                              {formatMeters(line.requiredMeters)}
-                            </td>
-                            <td className="px-4 py-2.5 text-right text-neutral-600">
-                              {formatWaitHours(line.waitHours)}
-                            </td>
-                            <td className="px-4 py-2.5">
-                              <span className="inline-flex items-center gap-1">
-                                {outsourced && <Badge variant="info">外发</Badge>}
-                                {isUrgentFlag(line) ? (
-                                  <Badge variant="warning">{urgentBadgeText(line)}</Badge>
-                                ) : outsourced ? null : (
-                                  <span className="text-xs text-neutral-400">{urgentBadgeText(line)}</span>
-                                )}
+                            <div className="text-xs text-neutral-500 mb-1">
+                              {order.lines.length} 套成品帘
+                            </div>
+                            <ul className="space-y-0.5">
+                              {order.lines.map((line) => (
+                                <li
+                                  key={line.itemId}
+                                  data-testid={`pool-order-set-${order.orderId}-${line.itemId}`}
+                                  className="flex flex-wrap items-baseline gap-x-2"
+                                >
+                                  <span className="text-neutral-700">{line.productName}</span>
+                                  <span className="text-neutral-400 text-xs">{line.skuCode || '-'}</span>
+                                  <span className="font-mono text-neutral-900">
+                                    {formatMeters(line.requiredMeters)} 米
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          </td>
+                          <td className="px-4 py-2.5 text-right text-neutral-600">
+                            {formatWaitHours(order.waitHours)}
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <span className="inline-flex items-center gap-1">
+                              {order.isOutsourced && <Badge variant="info">外发</Badge>}
+                              {order.isUrgent ? (
+                                <Badge variant="warning">{urgentBadgeText(order)}</Badge>
+                              ) : order.isOutsourced ? null : (
+                                <span className="text-xs text-neutral-400">{urgentBadgeText(order)}</span>
+                              )}
+                            </span>
+                          </td>
+                          <td
+                            className={cn(
+                              'px-4 py-2.5 whitespace-nowrap',
+                              order.overdue ? 'text-red-600' : 'text-neutral-600'
+                            )}
+                          >
+                            {formatRequiredDeliveryDate(order.requiredDeliveryDate)}
+                            {order.requiredDeliveryDate && (
+                              <span className="text-xs text-neutral-400 ml-1.5">
+                                {formatDeliveryDaysLeft(order.deliveryDaysLeft)}
                               </span>
-                            </td>
-                            <td
-                              className={cn(
-                                'px-4 py-2.5 whitespace-nowrap',
-                                line.overdue ? 'text-red-600' : 'text-neutral-600'
-                              )}
+                            )}
+                          </td>
+                          <td className="sticky right-0 z-10 border-l border-neutral-100 bg-white px-4 py-2.5 text-right align-top">
+                            <Button
+                              size="sm"
+                              disabled={order.isOutsourced && !processorId}
+                              onClick={() => void dispatchSingle(order)}
+                              loading={singlePending === order.orderId}
+                              data-testid={
+                                order.isOutsourced
+                                  ? `pool-outsourced-dispatch-${order.orderId}`
+                                  : `pool-dispatch-single-${order.orderId}`
+                              }
                             >
-                              {formatRequiredDeliveryDate(line.requiredDeliveryDate)}
-                              {line.requiredDeliveryDate && (
-                                <span className="text-xs text-neutral-400 ml-1.5">
-                                  {formatDeliveryDaysLeft(line.deliveryDaysLeft)}
-                                </span>
-                              )}
-                            </td>
-                            <td className="sticky right-0 z-10 border-l border-neutral-100 bg-white px-4 py-2.5 text-right">
-                              <Button
-                                size="sm"
-                                disabled={outsourced && !processorId}
-                                onClick={() => void dispatchSingle(line)}
-                                loading={singlePending === line.orderId}
-                                data-testid={
-                                  outsourced
-                                    ? `pool-outsourced-dispatch-${line.orderId}`
-                                    : `pool-dispatch-single-${line.orderId}`
-                                }
-                              >
-                                立即派单
-                              </Button>
-                            </td>
-                          </tr>
-                        )
-                      })}
+                              立即派单
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
