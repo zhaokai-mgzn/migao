@@ -245,9 +245,45 @@ class ProductionOptionRoutingMigrationTest {
         return truthFrozensetOptions("NON_PIECEWORK_OPTIONS");
     }
 
-    /** 待客户确认的特殊选项（issue #4389 判据 2）：`余料带回`（无后缀）—— 未定论，**不落任何表**。 */
-    private static Set<String> truthPendingOptions() throws Exception {
-        return truthFrozensetOptions("PENDING_CUSTOMER_CONFIRMATION_OPTIONS");
+    /**
+     * 布/纱派生族的 **base 名**（issue #8007，用户 2026-10-28 裁定）：`余料带回`（无后缀）——
+     * 只做录入/展示与派生，**不是 join key** ⇒ 不落任何表。
+     */
+    private static Set<String> truthFamilyBaseOptions() throws Exception {
+        return truthMappingKeys("SPECIAL_OPTION_FAMILIES");
+    }
+
+    /**
+     * 解析 routing.py 里 `<NAME>... = { "base": {...}, ... }` 的**外层键**（映射表的 base 名）。
+     *
+     * <p>只有 base 名后面跟的是 `{`；内层键（{@code cloth} / {@code sheer}）后面跟的是字符串
+     * ⇒ 用 `"key" : {` 形态即可精确取到外层键。花括号做配对扫描（不猜行号）。</p>
+     */
+    private static Set<String> truthMappingKeys(String constant) throws Exception {
+        String source = read(ROUTING_PY);
+        Matcher assign = Pattern.compile("(?m)^" + constant + "[^=\n]*=\\s*\\{")
+                .matcher(source);
+        assertThat(assign.find()).as("routing.py 应有 " + constant + " = { ... }").isTrue();
+        int start = assign.end();
+        int depth = 1;
+        int index = start;
+        while (index < source.length() && depth > 0) {
+            char ch = source.charAt(index);
+            if (ch == '{') {
+                depth++;
+            } else if (ch == '}') {
+                depth--;
+            }
+            index++;
+        }
+        assertThat(depth).as("routing.py 的 " + constant + " 花括号不平衡").isZero();
+        Matcher key = Pattern.compile("\"([^\"]+)\"\\s*:\\s*\\{")
+                .matcher(source.substring(start, index - 1));
+        Set<String> names = new LinkedHashSet<>();
+        while (key.find()) {
+            names.add(key.group(1));
+        }
+        return names;
     }
 
     /** 解析 routing.py 里 `<NAME> = frozenset({...})` 的字符串字面量集合。 */
@@ -397,18 +433,18 @@ class ProductionOptionRoutingMigrationTest {
     }
 
     @Test
-    @DisplayName("判据 2：不计件 / 待确认选项（NON_PIECEWORK / PENDING）都不得落进两张表")
+    @DisplayName("判据 2：不计件 / 布纱派生族 base 选项（NON_PIECEWORK / SPECIAL_OPTION_FAMILIES）都不得落进两张表")
     void nonPieceworkOptionsAreNotSeeded() throws Exception {
         Set<String> nonPiecework = truthNonPiecework();
         assertThat(nonPiecework).as("自检：真值源必须显式登记不计件项（否则判据空转）").isNotEmpty();
-        // issue #4389 判据 2：ERP 实证但 §1 未列的 `余料带回`（无后缀）登记为**待客户确认** ——
-        // 「未定论」与「已定论的不计件」是两种语义，故它同样不得落表（落了就等于替客户定了论）。
-        Set<String> pending = truthPendingOptions();
-        assertThat(pending).as("自检：routing.py 必须显式登记待确认选项（否则判据空转）").isNotEmpty();
+        // issue #8007（用户 2026-10-28 改判）：`余料带回`（无后缀）已定论为**布/纱派生族的 base 名**
+        // ⇒ 它不再是「待确认」的未知项，但同样不是 join key（注册表按派生键登记）⇒ 一律不得落表。
+        Set<String> familyBase = truthFamilyBaseOptions();
+        assertThat(familyBase).as("自检：routing.py 必须显式登记派生族 base 名（否则判据空转）").isNotEmpty();
 
         // 迁移侧（归档载体，逐字节冻结）—— 判据一字未动
         String migration = read(MIGRATION);
-        for (String option : concat(nonPiecework, pending)) {
+        for (String option : concat(nonPiecework, familyBase)) {
             assertThat(sqlRoutings(migration)).as("「%s」不得落条件工序表", option)
                     .doesNotContainKey(option);
             assertThat(sqlFactorScopes(migration)).as("「%s」不得落系数表", option)

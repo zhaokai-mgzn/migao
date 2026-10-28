@@ -1,10 +1,12 @@
 'use client'
 
-import { ArrowDown, Check } from 'lucide-react'
+import { ArrowDown, Check, Copy, MoreHorizontal } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import type { OrderBrief } from '@/types'
 import { normalizeOrderStatus } from '@/types'
-import { Badge, RowActionLink } from '@/components/ui'
+import { Badge, Button } from '@/components/ui'
 import DateTimeCell from '@/components/common/DateTimeCell'
 import OrderStatusBadge from './OrderStatusBadge'
 import { isUrgentFlag, urgentBadgeText } from '@/lib/order-urgency'
@@ -90,11 +92,123 @@ function getItemAmount(item: { amount?: number; subtotal?: number; unitPrice?: n
   return unit * qty
 }
 
-function ActionLink({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
-  // 2026-10-17（用户裁定「不要有多种风格设计」）：形态并入共享原语
-  // （`@/components/ui/RowActionLink`）—— 「单据列表行内动作只有一种长相」的单一真值在那里，
-  // 本处只留一个本地别名，免去全文件改 8 处调用点。
-  return <RowActionLink onClick={onClick}>{children}</RowActionLink>
+/**
+ * 行内「⋯」菜单（issue #8011）—— 把同名级文字链收进一个菜单，行内只留 **1 主行动 + 1 触发器**。
+ *
+ * ## 为什么必须收（真机读数，2026-10-24 `14-orders-list.png`）
+ *
+ * 改前每行 4 个同级文字链（`查看 · 备注 · 发货 · 处理退款`）⇒ 20 行/页 = **单屏 80 个可点文本**，
+ * 没有层级、没有主行动（`migao-dev-flow` §31 P1/P2：常驻面克制 + 信息不重复）。
+ *
+ * ## 实现口径
+ *
+ * - **收起态菜单项不进 DOM**（`{open && …}`，不是 CSS 隐藏）—— 否则「单屏 80 个可点文本」只换了长相；
+ * - 面板 `position: fixed`：本表在 `overflow-x-auto` 里（#6717 右缘冻结列），
+ *   绝对定位的子面板会被横向滚动容器**纵向裁掉**（最后一行的菜单点开就没了）⇒ 用 fixed 脱离裁切，
+ *   并在滚动 / 缩放时收起（否则面板与行脱位）；
+ * - 键盘：`aria-haspopup="menu"` / `aria-expanded` / `role="menu"` / `role="menuitem"`，
+ *   `Escape` 与「点外部」都收起 —— 收敛**不得**把动作藏成不可达。
+ */
+interface RowMenuItem {
+  key: string
+  label: string
+  onClick: () => void
+}
+
+function RowActionMenu({ menuId, items }: { menuId: string; items: RowMenuItem[] }) {
+  /** `null` = 收起；有坐标 = 展开（坐标在**点开的那一刻**量，避免与行脱位） */
+  const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const open = anchor !== null
+
+  useEffect(() => {
+    if (!open) return
+    const close = () => setAnchor(null)
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null
+      // 触发器自己交给 onClick 处理（否则一次点击会先关后开）
+      if (triggerRef.current?.contains(target as Node)) return
+      // 面板里的动作同样不在这里关（它的 onClick 自己关，保证动作先执行）
+      if (target?.closest?.(`[data-row-menu="${menuId}"]`)) return
+      close()
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close()
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    // 表格容器可横滚、页面可竖滚 ⇒ 面板会与行脱位，直接收起（比假装还在正确位置诚实）
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('resize', close)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('resize', close)
+    }
+  }, [open, menuId])
+
+  const toggle = () => {
+    if (open) {
+      setAnchor(null)
+      return
+    }
+    const rect = triggerRef.current?.getBoundingClientRect()
+    if (!rect) return
+    setAnchor({ top: rect.bottom + 4, left: rect.right })
+  }
+
+  return (
+    <span className="relative inline-flex" data-testid={menuId}>
+      {/* 纯图标按钮必须 `aria-label`（§32.2 第 5 条）；行内层级一律 ghost（不用实心主色） */}
+      <Button
+        ref={triggerRef}
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="px-1.5"
+        aria-label="更多操作"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={toggle}
+        icon={<MoreHorizontal className="h-4 w-4" />}
+      />
+      {open && (
+        <div
+          role="menu"
+          data-row-menu={menuId}
+          style={{ top: anchor.top, left: anchor.left, transform: 'translateX(-100%)' }}
+          className="fixed z-50 min-w-[9rem] rounded-lg border border-neutral-200 bg-white py-1 shadow-lg"
+        >
+          {items.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setAnchor(null)
+                item.onClick()
+              }}
+              className="flex w-full items-center px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-50"
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </span>
+  )
+}
+
+/** 订单号复制（issue #8011）：17 位纯数字手抄必错，给一个**明确的**复制入口 */
+async function copyOrderNo(orderNo: string) {
+  try {
+    await navigator.clipboard.writeText(orderNo)
+    toast.success('订单号已复制')
+  } catch {
+    // 复制失败不能静默（否则用户以为已复制、粘出来是旧内容）—— 给出可执行的手动路径
+    toast.error('复制失败，请手动选中订单号复制')
+  }
 }
 
 export default function OrderTable({
@@ -131,6 +245,13 @@ export default function OrderTable({
     }
   }
 
+  /**
+   * 行内操作（issue #8011）：**1 个主行动 + 1 个「⋯」菜单**。
+   *
+   * 主行动按**订单状态**派生（待付款→收款 / 待发货→发货 / 已发货→确认收货 / 其它→无主行动），
+   * 其余动作收进菜单。🔴 **逐条保持改前的条件与回调** —— 本次只动**形态**，不动权限判断、
+   * 不动「哪些状态哪些动作可做」（红灯面：`refundable` / `alreadyRefunded` / 可选回调缺省）。
+   */
   const renderActions = (order: OrderBrief) => {
     const displayStatus = normalizeOrderStatus(order.status as string)
     // 后端允许退款的状态：confirmed / producing / shipped / completed
@@ -138,36 +259,43 @@ export default function OrderTable({
     const refundable = ['pending_shipment', 'shipped', 'completed'].includes(displayStatus)
     // 已退款标记：refundAmount > 0（退款不再把订单置为 cancelled，订单保持原状态）
     const alreadyRefunded = (order.refundAmount ?? 0) > 0
-    const actions: React.ReactNode[] = [
-      <ActionLink key="view" onClick={() => onView(order)}>查看</ActionLink>,
-      <ActionLink key="remark" onClick={() => onRemark(order)}>备注</ActionLink>,
+
+    // 主行动：**只**按状态派生；回调缺席（页面没接线）⇒ 同样不渲染，不摆一个点不动的按钮
+    const primary: RowMenuItem | null =
+      displayStatus === 'pending_payment' && onConfirmPayment
+        ? { key: 'payment', label: '收款', onClick: () => onConfirmPayment(order) }
+        : displayStatus === 'pending_shipment'
+          ? { key: 'ship', label: '发货', onClick: () => onShip(order) }
+          : displayStatus === 'shipped' && onConfirmReceive
+            ? { key: 'receive', label: '确认收货', onClick: () => onConfirmReceive(order) }
+            : null
+
+    const menuItems: RowMenuItem[] = [
+      { key: 'view', label: '查看详情', onClick: () => onView(order) },
+      { key: 'remark', label: '备注', onClick: () => onRemark(order) },
     ]
     if (displayStatus === 'pending_payment') {
-      actions.push(<ActionLink key="close" onClick={() => onClose(order)}>关闭</ActionLink>)
-      if (onConfirmPayment) {
-        actions.push(
-          <ActionLink key="confirm-payment" onClick={() => onConfirmPayment(order)}>
-            确认付款
-          </ActionLink>
-        )
-      }
-    } else if (displayStatus === 'pending_shipment') {
-      actions.push(<ActionLink key="ship" onClick={() => onShip(order)}>发货</ActionLink>)
-    } else if (displayStatus === 'shipped' && onConfirmReceive) {
-      actions.push(
-        <ActionLink key="confirm-receive" onClick={() => onConfirmReceive(order)}>
-          确认收货
-        </ActionLink>
-      )
+      menuItems.push({ key: 'close', label: '关闭订单', onClick: () => onClose(order) })
     }
     if (refundable && !alreadyRefunded && onRefund) {
-      actions.push(<ActionLink key="refund" onClick={() => onRefund(order)}>处理退款</ActionLink>)
+      menuItems.push({ key: 'refund', label: '处理退款', onClick: () => onRefund(order) })
     }
+
     return (
-      <div className="flex items-center gap-3 whitespace-nowrap">
-        {actions.map((action, idx) => (
-          <span key={idx}>{action}</span>
-        ))}
+      <div
+        className="flex items-center gap-1 whitespace-nowrap"
+        data-testid={`order-actions-${order.id}`}
+      >
+        {primary && (
+          // 行内主行动走 `ghost`（§32.2 / §32.4：表格行内不用实心主色 —— 一屏至多一个 primary，
+          // 那一个是页面头的「新增订单」）
+          <span data-testid={`order-primary-${order.id}`}>
+            <Button variant="ghost" size="sm" className="px-2" type="button" onClick={primary.onClick}>
+              {primary.label}
+            </Button>
+          </span>
+        )}
+        <RowActionMenu menuId={`order-menu-${order.id}`} items={menuItems} />
       </div>
     )
   }
@@ -280,9 +408,21 @@ export default function OrderTable({
                     />
                   </td>
 
-                  {/* 订单ID */}
+                  {/* 订单ID（issue #8011：17 位纯数字手抄必错 ⇒ 单元格内给复制入口） */}
                   <td className="pl-0 pr-4 py-4 font-mono text-neutral-800 whitespace-nowrap">
-                    {order.orderNo || order.id}
+                    <span className="inline-flex items-center gap-1">
+                      {order.orderNo || order.id}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-1"
+                        aria-label="复制订单号"
+                        data-testid={`order-copy-${order.id}`}
+                        onClick={() => void copyOrderNo(order.orderNo || order.id)}
+                        icon={<Copy className="h-3.5 w-3.5" />}
+                      />
+                    </span>
                   </td>
 
                   {/* 状态（issue #6717：决策列前置 —— 与表头同序） */}
@@ -291,13 +431,13 @@ export default function OrderTable({
                     <OrderStatusBadge status={order.status} />
                   </td>
 
-                  {/* 加急（issue #5177 / #6717：订单级真值，与售后工单的 priority **零联动**） */}
+                  {/* 加急（issue #5177 / #6717：订单级真值，与售后工单的 priority **零联动**）
+                      issue #8011：非加急 ⇒ **空单元格**（不再逐行印「不加急」—— 同屏零信息量重复，
+                      §31 P2）；加急 ⇒ 醒目徽标（同字号灰字扫视读不出来）。
+                      🔴 取值口径仍走 `urgentBadgeText`（唯一真值源，PR-079）—— 只改**渲染条件**，
+                      不改取值；「缺省 = 不加急」的语义因此一字未动。 */}
                   <td className="px-4 py-4 whitespace-nowrap" data-testid={`order-urgent-${order.id}`}>
-                    {isUrgentFlag(order) ? (
-                      <Badge variant="warning">{urgentBadgeText(order)}</Badge>
-                    ) : (
-                      <span className="text-xs text-neutral-400">{urgentBadgeText(order)}</span>
-                    )}
+                    {isUrgentFlag(order) && <Badge variant="warning">{urgentBadgeText(order)}</Badge>}
                   </td>
 
                   {/* 打印状态（issue #7902） */}

@@ -92,6 +92,28 @@ class CuttingHeightCalculatorTest {
     }
 
     @Test
+    @DisplayName("🔴 布/纱派生族（issue #8007）：规则写语义名「余料带回」⇒ 命中 -布 / -纱；写派生键 ⇒ 只命中同名")
+    void takeAwayFamilyMatchesBySemanticName() {
+        Vars cloth = new Vars("布帘", new BigDecimal("2.92"), "韩褶",
+                List.of("余料带回-布"), List.of(), false);
+        Vars sheer = new Vars("纱帘", new BigDecimal("2.92"), "纱帘",
+                List.of("余料带回-纱"), List.of(), false);
+        // 其他写入口（AI Agent / API）可能原样落语义名
+        Vars baseName = new Vars("布帘", new BigDecimal("2.92"), "韩褶",
+                List.of("余料带回"), List.of(), false);
+
+        // 配置面唯一可选值 = 语义名 ⇒ 布帘单 / 纱帘单都命中（同一语义：余料归客户）
+        assertThat(matches(conditions(condition("option", "余料带回")), cloth, null)).isTrue();
+        assertThat(matches(conditions(condition("option", "余料带回")), sheer, null)).isTrue();
+        assertThat(matches(conditions(condition("option", "余料带回")), baseName, null)).isTrue();
+
+        // 派生键规则**只**命中同名（布帘规则不得命中纱帘单 —— 那是另一个部位）
+        assertThat(matches(conditions(condition("option", "余料带回-布")), cloth, null)).isTrue();
+        assertThat(matches(conditions(condition("option", "余料带回-布")), sheer, null)).isFalse();
+        // 红证：把族展开拆掉（退回逐字 anyOf）⇒ 前三条同时红
+    }
+
+    @Test
     @DisplayName("求和 + 取整：2.92 + 0.015 = 2.935（三位小数）")
     void sumsAndRounds() {
         Map<String, Object> config = config(List.of(

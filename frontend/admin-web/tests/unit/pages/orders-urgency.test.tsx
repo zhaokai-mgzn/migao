@@ -245,7 +245,7 @@ describe('订单列表页 · 加急徽标 / 到货日（PR-079 读面）', () =>
     )
   })
 
-  it('列表行显示服务端下发的加急徽标与到货日；非加急单显示「不加急 / 未指定」', async () => {
+  it('列表行显示服务端下发的加急徽标与到货日；非加急单不渲染加急列文字（issue #8011）', async () => {
     render(<OrdersPage />)
 
     // 真实 OrderTable 渲染（本文件**不**替身 @/components/orders）
@@ -253,8 +253,9 @@ describe('订单列表页 · 加急徽标 / 到货日（PR-079 读面）', () =>
 
     expect(screen.getByTestId('order-urgent-o-urgent').textContent).toBe('加急')
     expect(screen.getByTestId('order-delivery-o-urgent')).toHaveTextContent('2026-09-30')
-    // 反向：另一单不是加急（同一份响应的逐单取值，不是整表一个值）
-    expect(screen.getByTestId('order-urgent-o-normal').textContent).toBe('不加急')
+    // 反向：另一单不是加急（同一份响应的逐单取值，不是整表一个值）。
+    // issue #8011：非加急行**不再印「不加急」** ⇒ 空单元格（取值口径未变，改的是展示决策）
+    expect(screen.getByTestId('order-urgent-o-normal').textContent).toBe('')
     expect(screen.getByTestId('order-delivery-o-normal')).toHaveTextContent('未指定')
   })
 })

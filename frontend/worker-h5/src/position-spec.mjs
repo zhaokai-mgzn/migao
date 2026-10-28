@@ -97,7 +97,10 @@ export const POSITION_SPEC_KEYS = [
   { key: 'pattern_repeat', label: '花距', format: 'number' },
   // 🔴 `formula`（用料公式 = `pleat`）/ `craft_tier`（算料档位 = `standard`）**已删**（issue #7636）：
   //    它们是算料引擎的内部标识，屏上是英文 —— 用户 2026-10-24 逐字「这里显示英文了，直接删除这两个字段」。
-  { key: 'special_options', label: '特殊选项' },
+  // 🔴 issue #8007：展示面只出**语义选项名**（`余料带回`），布/纱派生键按帘种在录入侧派生
+  //    ⇒ 工人屏不印 `-布` / `-纱`（形态容错见 `optionList`）。`format: 'optionList'` 同时修掉
+  //    数组走 `String()` 时的英文逗号并列。
+  { key: 'special_options', label: '特殊选项', format: 'optionList' },
   // ── 组 4 算料 / 排料 ──
   { key: 'fabric_meters', label: '面料米数', unit: '米', format: 'm' },
   { key: 'processing_meters', label: '加工费米数', unit: '米', format: 'm' },
@@ -125,6 +128,7 @@ export function formatSpecValue(value, format) {
   if (value === null || value === undefined) return EMPTY
   if (format === 'bool') return value === true ? '是' : value === false ? '否' : EMPTY
   if (format === 'list') return nameList(value)
+  if (format === 'optionList') return optionListValue(value)
   if (format === 'formula') return formulaName(dataOr(value))
   if (value !== '' && Number.isFinite(Number(value))) {
     if (format === 'int') return String(Math.trunc(Number(value)))
@@ -148,6 +152,35 @@ function nameList(value) {
     .map((item) => item.trim())
     .filter((item) => item !== '')
   return names.length > 0 ? names.join('、') : EMPTY
+}
+
+/**
+ * 特殊选项清单 → `余料带回、加铅块`（**顿号**并列，与商家端同一形态）。
+ *
+ * <p>派生族的**展示归一**（issue #8007，用户 2026-10-28 裁定）：`余料带回-布` / `-纱` 是落库
+ * join key，语义选项只有一个「余料带回」—— 工人屏不印材料后缀（部位行本来就写了布帘/纱帘）。
+ * 该表与 `admin-web/src/lib/order-craft-fields.ts::SPECIAL_OPTION_FAMILIES` 同口径
+ * （worker-h5 无构建期共享，判据见 `worker-h5-special-option-display.test.mjs`）。</p>
+ *
+ * <p>形态容错：真实下发是**数组**；历史夹具 / 老载荷可能是单串 ⇒ 两种都认，不因形态退化整行。</p>
+ */
+function optionListValue(value) {
+  const raw = Array.isArray(value) ? value : [value]
+  const names = raw
+    .filter((item) => typeof item === 'string')
+    .map((item) => displayOptionName(item.trim()))
+    .filter((item) => item !== '')
+  return names.length > 0 ? names.join('、') : EMPTY
+}
+
+/** 布/纱派生族：落库键 ⇒ 展示名（族成员收回 base 名；其余原样） */
+const SPECIAL_OPTION_FAMILIES = { 余料带回: ['余料带回-布', '余料带回-纱'] }
+
+function displayOptionName(name) {
+  for (const [base, variants] of Object.entries(SPECIAL_OPTION_FAMILIES)) {
+    if (variants.includes(name)) return base
+  }
+  return name
 }
 
 /**

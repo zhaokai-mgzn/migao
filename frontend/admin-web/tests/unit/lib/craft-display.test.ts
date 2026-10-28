@@ -345,4 +345,18 @@ describe('craftSpecRows — 门幅（issue #5022：C 端报价卡展示系统自
       { label: '门幅', value: '2.8米' },
     ])
   })
+
+  it('🔴 issue #8007：布/纱派生键在展示面收回语义名（余料带回-布 / -纱 ⇒ 余料带回）', () => {
+    // 订单详情 / 加工单屏幕 / 打印 / 水洗唛都读本文件的「特殊选项」行 ⇒ 一处收敛、全展示面生效
+    expect(rowValue(craftSpecRows({ specialOptions: ['余料带回-布'] }), '特殊选项')).toBe('余料带回')
+    expect(rowValue(craftSpecRows({ special_options: ['余料带回-纱'] }), '特殊选项')).toBe('余料带回')
+    // 与别的选项混排：只收敛族成员，其余逐字保留
+    expect(rowValue(craftSpecRows({ specialOptions: ['余料带回-布', '加铅块'] }), '特殊选项')).toBe(
+      '余料带回、加铅块'
+    )
+    // 类级防误伤：布绑带 / 纱绑带 是**独立**选项名（各有独立工序），不得被折叠
+    expect(rowValue(craftSpecRows({ specialOptions: ['布绑带', '纱绑带'] }), '特殊选项')).toBe(
+      '布绑带、纱绑带'
+    )
+  })
 })

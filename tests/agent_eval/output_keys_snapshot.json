@@ -804,7 +804,7 @@
     "data=response.get('data', {})",
     "order_data ← response.get('data', {})"
    ],
-   "source_sha256": "dd8c2da76633b9e425f8aa4b87f2078bb898790280dc4871cc4688ab236033f7"
+   "source_sha256": "60eb0a49e6479134ff7a85b4aa21b086e212eeec2961a48a4708ef4e5000f0c6"
   },
   "order_manage": {
    "actions": null,

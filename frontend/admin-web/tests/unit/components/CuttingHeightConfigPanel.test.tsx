@@ -22,7 +22,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
  *   ⑨ **条件 chip 单行**（结构成因：类型下拉不得 `w-full`、容器不得折返）；
  *   ⑩ **取值支持三位小数**（中间态 `0.` 不被吞、`0.145` 原样进报文）—— issue #8003 的实例判据。
  */
-import { CRAFT_OPTIONS, SPECIAL_OPTIONS } from '@/lib/order-craft-fields'
+import { CRAFT_OPTIONS, specialOptionDisplayOptions } from '@/lib/order-craft-fields'
 
 const mockGet = vi.fn()
 const mockUpdate = vi.fn()
@@ -260,17 +260,22 @@ describe('CuttingHeightConfigPanel', () => {
     expect(options.getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(options)
     expect(options.getAttribute('aria-expanded')).toBe('true')
-    for (const name of SPECIAL_OPTIONS) {
+    // 🔴 issue #8007：词表是**语义选项** ⇒ 只出 `余料带回`，布/纱派生键不进配置面
+    for (const name of specialOptionDisplayOptions()) {
       expect(screen.getByLabelText(`特殊选项-${name}`)).toBeTruthy()
     }
+    expect(screen.getByLabelText('特殊选项-余料带回')).toBeTruthy()
+    expect(screen.queryByLabelText('特殊选项-余料带回-布')).toBeNull()
+    expect(screen.queryByLabelText('特殊选项-余料带回-纱')).toBeNull()
     fireEvent.mouseDown(document.body)
     expect(screen.queryByLabelText('特殊选项-拼2次')).toBeNull()
 
-    // 条件取值同样走闭词表（选项名是 join key，不给自由文本）
+    // 条件取值同样走闭词表（语义名 ⇒ 后端按族匹配订单侧的派生键，不给自由文本）
     fireEvent.click(screen.getByLabelText('条件取值-0-0'))
-    for (const name of SPECIAL_OPTIONS) {
+    for (const name of specialOptionDisplayOptions()) {
       expect(screen.getByLabelText(`条件取值-0-0-${name}`)).toBeTruthy()
     }
+    expect(screen.queryByLabelText('条件取值-0-0-余料带回-布')).toBeNull()
   })
 
   it('⑦ 版式：#7153 的成因（窄列 + 大内边距裁字）结构上不存在', async () => {
