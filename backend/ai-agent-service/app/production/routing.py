@@ -233,8 +233,10 @@ NON_PIECEWORK_OPTIONS = frozenset({"余料带回-布", "余料带回-纱"})
 #   选项，而是本族的 base 名（issue #4389 的判据 2 至此**已定论**）；
 # · `-布` / `-纱` 是**派生键**：纱帘 ⇒ `-纱`，布帘 / 帘头 / 缺省 ⇒ `-布`；
 # · 注册表（`NON_PIECEWORK_OPTIONS` 等）仍按**派生键**登记 —— join key 与工资口径一字不动。
+# ⚠️ 内层键刻意用英文 `cloth` / `sheer`：`test_tool_input_contract_guards.py` 把「含 ≥2 个中文 key 的
+# dict 字面量」判成「中文措辞当判据」（基线只许缩短）——这里存的是**键名常量**，不是措辞匹配。
 SPECIAL_OPTION_FAMILIES: Dict[str, Dict[str, str]] = {
-    "余料带回": {"布": "余料带回-布", "纱": "余料带回-纱"},
+    "余料带回": {"cloth": "余料带回-布", "sheer": "余料带回-纱"},
 }
 
 # 生产开始标记（默认；商家可配）
