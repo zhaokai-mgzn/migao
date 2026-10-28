@@ -270,6 +270,37 @@ export default function OrderTable({
   }
 
   /**
+   * 焦点归位（issue #8027）：行内录入区**收起**后，把焦点还给触发它的那个「发货」按钮。
+   *
+   * 改前三条收起路径（提交成功 / `Escape` / 「取消」）最后焦点都落 `body` —— 连续录单时
+   * 键盘 / 读屏用户每单都要重新找回位置。
+   *
+   * 🔴 **提交成功那条不能"收起时顺手 `focus()` 一下就完"**：`onShipped` 同时触发列表刷新，
+   *    `loading` 期间表体整体换成「加载中…」（行按钮被卸载）⇒ 收起那一帧根本没有可聚焦的按钮。
+   *    所以这里记下「欠谁一次焦点」，等行回来再还；行被刷新移出列表（按筛选筛掉）就放弃，
+   *    不去抢别处的焦点。
+   *
+   * 落点 = **这一行的主行动按钮**：提交成功后行状态翻成已发货时，它已经是「确认收货」
+   * （「发货」触发器随状态消失 ⇒ 焦点落在同一位置的新主行动，而不是掉回 `body`）。
+   */
+  const primaryButtonRefs = useRef(new Map<string, HTMLButtonElement>())
+  const prevShippingOrderId = useRef<string | null>(shippingOrderId)
+  const pendingFocusOrderId = useRef<string | null>(null)
+
+  useEffect(() => {
+    const prev = prevShippingOrderId.current
+    prevShippingOrderId.current = shippingOrderId
+    if (prev !== shippingOrderId) {
+      // 只有**收起**才搬焦点（换行展开 / 再次展开都不搬 —— 焦点该留在用户点的那一处）
+      pendingFocusOrderId.current = shippingOrderId === null ? prev : null
+    }
+    if (loading || pendingFocusOrderId.current === null) return
+    const target = pendingFocusOrderId.current
+    pendingFocusOrderId.current = null
+    primaryButtonRefs.current.get(target)?.focus()
+  }, [shippingOrderId, loading])
+
+  /**
    * 行内操作（issue #8011）：**1 个主行动 + 1 个「⋯」菜单**。
    *
    * 主行动按**订单状态**派生（待付款→收款 / 待发货→发货 / 已发货→确认收货 / 其它→无主行动），
@@ -329,6 +360,12 @@ export default function OrderTable({
               className="px-2"
               type="button"
               onClick={primary.onClick}
+              // 焦点归位的落点（issue #8027）：收起录入区时焦点回到这里。
+              // 🔴 用 block body：箭头函数的返回值在 React 19 会被当成 ref 清理函数。
+              ref={(el) => {
+                if (el) primaryButtonRefs.current.set(order.id, el)
+                else primaryButtonRefs.current.delete(order.id)
+              }}
               // 展开态要让读屏 / 键盘用户可感知（issue #8013：就地展开必须是一次「看得见的状态变化」）
               aria-expanded={primary.key === 'ship' ? shippingOrderId === order.id : undefined}
             >
