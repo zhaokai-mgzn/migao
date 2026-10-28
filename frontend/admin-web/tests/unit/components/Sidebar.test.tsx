@@ -656,37 +656,80 @@ describe('Sidebar', () => {
     expect(STANDALONE_TOP_AFTER_GROUP_KEY).toBe(TOP_SLOT_KEY)
   })
 
-  it('（#5877）一级项用**板块入口**规格（与组头同级排版 + 不旋转 chevron + 分隔线 + 无星标）', () => {
+  it('（2026-10-28）**视觉层次不许倒置**：组标题/一级项 14px（修前 12px）+ 叶子项同为 14px 但更轻更暗；徽标是唯一的 text-xs 面', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    const link = linkFor('商品管理')
-    // 一整行可点的一级项：常态颜色/悬停与组头同级（不是与组内项同级的 text-sm text-neutral-300）
-    expect(link.className).toContain('text-neutral-400')
-    expect(link.className).toContain('hover:bg-white/5')
-    expect(link.className).toContain('hover:text-neutral-200')
-    // 文案 = 组头规格
-    const label = within(link).getByText('商品管理')
-    expect(label.className).toContain('text-xs')
-    expect(label.className).toContain('font-medium')
-    expect(label.className).toContain('tracking-wide')
-    // 对照：组头也是同一套排版（「板块入口」= 与组头同级，而不是随口一说）
+    // ① 组标题（「大菜单」）：修前 `text-xs`（12px）⇒ **比叶子项（14px）还小**，正是用户说的
+    //    「大菜单字小，叶子菜单字大」。修后 14px/600 亮色。
     const groupLabel = screen.getByText('客户服务')
-    for (const cls of ['text-xs', 'font-medium', 'tracking-wide']) {
-      expect(groupLabel.className).toContain(cls)
-    }
-    // 图标 = 组头同款尺寸
-    const icon = within(link).getByTestId('icon-package')
-    expect(icon.getAttribute('class')).toContain('h-3.5')
-    expect(icon.getAttribute('class')).toContain('w-3.5')
-    // 右端 = **不旋转**的 ChevronRight（表示「直达」，不是可展开的组）
-    const chevron = within(link).getByTestId('icon-chevron-right')
-    expect(chevron.getAttribute('class')).toContain('text-neutral-600')
-    expect(chevron.getAttribute('class')).not.toContain('rotate-90')
-    // 与上方之间（head 组之后）有分隔线：仓内既有同款
+    expect(groupLabel.className).toContain('text-sm')
+    expect(groupLabel.className).toContain('font-semibold')
+    expect(groupLabel.className).not.toContain('text-xs')
+    // 组标题**不挂图标**（组图标只留在折叠态锚点）—— 靠缩进把「标签」与「条目」分开
+    expect(within(groupButton('customer-service')).queryByTestId('icon-message-square')).toBeNull()
+    // ② 一级项（三个席位同一套）：14px/600 + 18px 图标 + 36px 行（比组标题更高）+ 右端**无** chevron
+    const top = linkFor('商品管理')
+    const topLabel = within(top).getByText('商品管理')
+    expect(topLabel.className).toContain('text-sm')
+    expect(topLabel.className).toContain('font-semibold')
+    expect(top.className).toContain('h-9')
+    expect(top.className).toContain('text-neutral-50')
+    expect(top.className).toContain('hover:bg-white/5')
+    const topIcon = within(top).getByTestId('icon-package')
+    expect(topIcon.getAttribute('class')).toContain('h-[18px]')
+    expect(topIcon.getAttribute('class')).toContain('w-[18px]')
+    // 那枚 chevron 留给「可展开的组」—— 直达项挂它是假示能
+    expect(within(top).queryByTestId('icon-chevron-right')).toBeNull()
+    // ③ 叶子项：同为 14px，但 400 字重 + 次级亮度 + 16px 图标 + 32px 行 + `pl-7` 缩进
+    expandGroups('customer-service')
+    const leaf = linkFor('在线接待')
+    expect(within(leaf).getByText('在线接待').className).toContain('text-sm')
+    expect(leaf.className).toContain('h-8')
+    expect(leaf.className).toContain('pl-7')
+    expect(leaf.className).toContain('text-neutral-300')
+    expect(leaf.className).not.toContain('font-semibold')
+    const leafIcon = within(leaf).getByTestId('icon-headphones')
+    expect(leafIcon.getAttribute('class')).toContain('h-4')
+    expect(leafIcon.getAttribute('class')).toContain('w-4')
+    // ④ 「通知中心」（尾部独立项）与两个席位**同一套视觉** —— 修前它是叶子规格（14px），
+    //    另两个席位却是组头规格（12px）：同一层级两种字号就是「不协调」的来源
+    const notifications = linkFor('通知中心')
+    expect(notifications.className).toContain('h-9')
+    expect(notifications.className).toContain('text-neutral-50')
+    expect(within(notifications).getByText('通知中心').className).toContain('text-sm')
+    // 但仍**可收藏**（#5877 的「一级项无星标」只约束最前 / 尾席位，不是星标整体被删）
+    expect(within(notifications).getByTestId('sidebar-pin-notifications')).toBeInTheDocument()
+    // ⑤ 分隔线与席位口径不变：尾席位块前有分隔线；最前席位紧接「常用」⇒ 无分隔线
     expect(screen.getByTestId('sidebar-standalone-top').className).toContain('border-t')
-    // 🔴 对照（issue #7087）：**最前席位**在顶部紧接「常用」⇒ **不画**分隔线（两种情形，别只按一种理解）
     expect(screen.getByTestId(STANDALONE_HEAD_TESTID).className).not.toContain('border-t')
-    // 无星标：一级项不可收藏
-    expect(within(link).queryByTestId('sidebar-pin-products')).toBeNull()
+    // 一级项（最前 / 尾席位）不可收藏 ⇒ 无星标
+    expect(within(top).queryByTestId('sidebar-pin-products')).toBeNull()
+    expect(screen.queryByTestId('sidebar-pin-settings')).toBeNull()
+  })
+
+  it('（类级）侧边栏**所有**标签/条目标题都是 14px：只有计数徽标用 text-xs（防止某一级菜单再次单独变小）', () => {
+    render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+    expandAll()
+    // ① 组标题（「常用」是 div 不是 button，用 data-testid 前缀取全量）：逐个 text-sm
+    const sectionLabels = Array.from(
+      document.querySelectorAll('[data-testid^="sidebar-group-toggle-"] > span:first-child'),
+    )
+    expect(sectionLabels.map((el) => el.textContent)).toEqual(GROUPS.map((g) => g.name))
+    for (const el of sectionLabels) {
+      expect(el.className, el.textContent ?? '').toContain('text-sm')
+      expect(el.className, el.textContent ?? '').not.toContain('text-xs')
+    }
+    // ② 每个条目（组内项 / 三个席位的一级项）的标题 `span.flex-1`：逐个 text-sm
+    const titles = ALL_MENU_KEYS.map((key) => {
+      const a = document.querySelector(`nav a[data-menu-key="${key}"]`)
+      expect(a, key).not.toBeNull()
+      return a!.querySelector('span.flex-1') as HTMLElement | null
+    })
+    for (const el of titles) {
+      expect(el).not.toBeNull()
+      expect(el!.className, el!.textContent ?? '').toContain('text-sm')
+      // 修前的倒置形态 = 标题用 text-xs（12px，只该给计数徽标）
+      expect(el!.className, el!.textContent ?? '').not.toContain('text-xs')
+    }
   })
 
   it('（#5877）一级项无星标；组内项与尾部独立项**仍有**星标（对照：不是星标整体被删）', () => {
@@ -751,13 +794,15 @@ describe('Sidebar', () => {
     expect(within(dashboardLink).getByTestId('icon-bar-chart3')).toBeInTheDocument()
   })
 
-  it('（#5778）「客户服务」组渲染 MessageSquare 图标（#3081 AI 客服配置菜单已移除）', () => {
-    render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    const groupButtonEl = screen.getByText('客户服务').closest('button')!
+  it('（#5778）「客户服务」组图标 = MessageSquare（#3081 AI 客服配置菜单已移除）', () => {
+    // 🔴 2026-10-28 视觉层次：展开态的组标题是**纯文字标签**（不挂图标），组图标只渲染在
+    // **折叠态锚点**上 ⇒ 图标映射的判据必须在折叠态取（断言强度不变：仍是「组图标 ≠ 组内任一项图标」）。
+    render(<Sidebar collapsed={true} onToggle={mockOnToggle} />)
+    const anchor = screen.getByTestId('sidebar-group-anchor-customer-service')
     // ⚠️ 组图标**不得**与组内任一项同图（判据 = 图标两两不同，issue #5582）——
     // 曾用 Headphones（与组内「在线接待」同图）⇒ 实测判红；改用空闲的 MessageSquare。
-    expect(within(groupButtonEl).getByTestId('icon-message-square')).toBeInTheDocument()
-    expect(within(groupButtonEl).queryByTestId('icon-headphones')).not.toBeInTheDocument()
+    expect(within(anchor).getByTestId('icon-message-square')).toBeInTheDocument()
+    expect(within(anchor).queryByTestId('icon-headphones')).not.toBeInTheDocument()
   })
 
   it('「黄金策·在线对话」菜单入口已移除（#3094：智能体对话经右下角浮动按钮进入）', () => {

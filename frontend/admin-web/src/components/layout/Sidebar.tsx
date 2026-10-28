@@ -49,6 +49,40 @@ import {
   PINNED_MAX,
 } from '@/lib/menu-nav'
 
+// ══════════════════════════════════════════════════════════════════════════════
+// 三级视觉层次（2026-10-28 用户裁定：「左侧菜单…我感觉不太协调，大菜单字小，叶子菜单字大」）
+//
+// 修前是**倒过来**的：组标题（「大菜单」）`text-xs` 12px，而组内叶子项 `text-sm` 14px
+// ⇒ 越该被看见的层级越小；且**同为一级项**的「商品管理」走组头规格（12px）、
+// 「通知中心」走叶子规格（14px）—— 同一层级两种字号。
+//
+// 修后的口径（**不靠字号造层级**：字号阶梯只有 12/14 两档，且 12px 是文字下限，
+// 叶子项不能为了「显小」再降一档）：
+//
+//   ① **组标题**（含「常用」）= 14px/600 亮色 **纯文字标签**（不再挂图标 —— 组图标与组内项
+//      的领域图标本就重复，去掉后「标签 ↔ 条目」靠**缩进**一眼分开；折叠态仍用组图标做锚点）；
+//   ② **一级项**（三个席位）= 14px/600 最亮 + 18px 图标 + **36px 行**（比组标题更高 ⇒
+//      「可点的目的地」比「分类标签」重）；右端**不挂 chevron**（直达项没有展开语义）；
+//   ③ **叶子项** = 14px/400 次级亮度 + 16px 图标（原 20px 偏重）+ **32px 行**，左内距
+//      `pl-7`（28px）⇒ 三级缩进锚点：10（标签）/ 38（一级项）/ 56（叶子）。
+//
+// 判据（会红）：`tests/unit/components/Sidebar.test.tsx` 的「视觉层次」用例
+// —— 组标题/一级项 `text-sm`（不再是 `text-xs`）+ 叶子项仍 `text-sm`；
+// 一级项行高 `h-9` > 叶子 `h-8`；序号徽标是**唯一**的 `text-xs` 面。
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** 组标题 / 「常用」标签行（**无图标**；32px） */
+const SECTION_ROW = 'flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left'
+const SECTION_LABEL = 'flex-1 text-sm font-semibold transition-colors'
+/** 计数徽标（组内项数 / 「常用」n/6）：本期唯一的 `text-xs` 面 */
+const SECTION_COUNT = 'text-xs leading-none text-neutral-600'
+/** 一级项行（36px，比组标题更高 ⇒ 目的地重于标签） */
+const TOP_ROW = 'group/item relative flex h-9 items-center gap-2.5 rounded-md px-2.5 transition-colors'
+const TOP_LABEL = 'flex-1 truncate text-sm font-semibold'
+/** 叶子项行（32px；`pl-7` = 三级缩进里的最内层） */
+const LEAF_ROW =
+  'group/item relative flex h-8 items-center gap-2 rounded-md pl-7 pr-2.5 transition-colors'
+
 interface SidebarProps {
   collapsed: boolean
   onToggle: () => void
@@ -147,14 +181,43 @@ export default function Sidebar({
   // 🔴 pinned 与普通分组**分开渲染**（不是往 groups 里塞一个合成组）：
   // `resolveActiveGroupKey` / `initialExpandedGroups` 都按「分组」语义工作，
   // 把「常用」混进 groups 会让它把当前路由的所在组抢走（被钉项在「常用」与域内各有一份）。
+  // ── 星标按钮（叶子项与尾部独立项共用）──
+  // 星标常态隐藏（`opacity-0`）以免每行都多一个图标；当前项与 hover 时可见。
+  // iOS 无 hover ⇒ 当前项那一枚恒显（「想钉的大多是自己现在在用的」）。
+  // 「常用」区里**恒显**（否则没法取消）。一级项（最前 / 尾席位）不可收藏 ⇒ 不渲染它。
+  const renderPinButton = (item: MenuItem, opts: { alwaysShow: boolean; active: boolean }) => {
+    const pinnedNow = isPinned(pinned, item.key)
+    const visible = opts.alwaysShow || opts.active || pinnedNow
+    return (
+      <button
+        type="button"
+        data-testid={`sidebar-pin-${item.key}`}
+        data-pinned={pinnedNow ? 'true' : 'false'}
+        aria-label={pinnedNow ? `取消常用：${item.name}` : `加入常用：${item.name}`}
+        aria-pressed={pinnedNow}
+        title={pinnedNow ? '取消常用' : '加入常用'}
+        onClick={(e) => {
+          // 星标是 Link 内的按钮 ⇒ 必须阻止跳转（点它只钉、不导航）
+          e.preventDefault()
+          e.stopPropagation()
+          onTogglePin(item.key)
+        }}
+        className={cn(
+          'flex-shrink-0 rounded p-0.5 transition-opacity',
+          'text-neutral-400 hover:bg-white/10 hover:text-white',
+          opts.active && 'text-white',
+          visible ? 'opacity-100' : 'opacity-0 group-hover/item:opacity-100',
+        )}
+      >
+        <Star className={cn('h-3.5 w-3.5', pinnedNow && 'fill-current')} />
+      </button>
+    )
+  }
+
+  // ── 叶子项（组内项 / 「常用」区）── 三级里最内层：32px 行、16px 图标、`pl-7` 缩进
   const renderItem = (item: MenuItem, opts: { alwaysShowPin: boolean }) => {
     const Icon = resolveMenuIcon(item.icon)
     const active = isActive(item.path)
-    const pinnedNow = isPinned(pinned, item.key)
-    // 星标：常态隐藏（`opacity-0`）以免 21 项每行都多一个图标；当前项与 hover 时可见。
-    // iOS 无 hover ⇒ 当前项那一枚恒显（「想钉的大多是自己现在在用的」）。
-    // 「常用」区里**恒显**（否则没法取消）。
-    const showPin = !collapsed && (opts.alwaysShowPin || active || pinnedNow)
     return (
       <Link
         key={item.key}
@@ -162,10 +225,10 @@ export default function Sidebar({
         onClick={onMobileClose}
         data-menu-key={item.key}
         className={cn(
-          'group/item relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors',
+          LEAF_ROW,
           active
-            ? 'bg-primary-600 text-white shadow-sm'
-            : 'text-neutral-300 hover:bg-white/5 hover:text-white',
+            ? 'bg-primary-600 font-medium text-white shadow-sm'
+            : 'text-neutral-300 hover:bg-white/5 hover:text-neutral-50',
           collapsed && 'justify-center px-2',
         )}
         title={collapsed ? item.name : undefined}
@@ -173,32 +236,11 @@ export default function Sidebar({
         {active && (
           <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-white/90" />
         )}
-        <Icon className="h-5 w-5 flex-shrink-0" />
-        {!collapsed && <span className="flex-1 truncate">{item.name}</span>}
-        {!collapsed && (
-          <button
-            type="button"
-            data-testid={`sidebar-pin-${item.key}`}
-            data-pinned={pinnedNow ? 'true' : 'false'}
-            aria-label={pinnedNow ? `取消常用：${item.name}` : `加入常用：${item.name}`}
-            aria-pressed={pinnedNow}
-            title={pinnedNow ? '取消常用' : '加入常用'}
-            onClick={(e) => {
-              // 星标是 Link 内的按钮 ⇒ 必须阻止跳转（点它只钉、不导航）
-              e.preventDefault()
-              e.stopPropagation()
-              onTogglePin(item.key)
-            }}
-            className={cn(
-              'flex-shrink-0 rounded p-0.5 transition-opacity',
-              'text-neutral-300 hover:bg-white/10 hover:text-white',
-              active && 'text-white',
-              showPin ? 'opacity-100' : 'opacity-0 group-hover/item:opacity-100',
-            )}
-          >
-            <Star className={cn('h-3.5 w-3.5', pinnedNow && 'fill-current')} />
-          </button>
-        )}
+        <Icon
+          className={cn('h-4 w-4 flex-shrink-0', active ? 'text-white' : 'text-neutral-500')}
+        />
+        {!collapsed && <span className="flex-1 truncate text-sm">{item.name}</span>}
+        {!collapsed && renderPinButton(item, { alwaysShow: opts.alwaysShowPin, active })}
       </Link>
     )
   }
@@ -226,11 +268,14 @@ export default function Sidebar({
   const renderGroup = (group: MenuGroup) => {
     const GroupIcon = resolveMenuIcon(group.icon)
     const isExpanded = !!expandedGroups[group.key]
+    // 组内含当前路由 ⇒ 组标题提亮（收起时也知道「你在这一组」）
+    const isActiveGroup = group.key === activeGroupKey
 
     return (
-      <div key={group.key} data-group-key={group.key} className="mb-4">
+      <div key={group.key} data-group-key={group.key} className="mb-3">
         {collapsed ? (
           // 折叠态：分组信息**不再丢失** —— 组图标锚点（title = 组名）+ 细分割线
+          // 🔴 组图标**只在这里**渲染（展开态是纯文字标签，见 SECTION_ROW 的注释）
           <div
             data-testid={`sidebar-group-anchor-${group.key}`}
             title={group.name}
@@ -245,19 +290,22 @@ export default function Sidebar({
             data-testid={`sidebar-group-toggle-${group.key}`}
             aria-expanded={isExpanded}
             onClick={() => toggleGroup(group.key)}
-            className="group mb-1 flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-1.5 text-left transition-colors hover:bg-white/5"
+            className={cn(SECTION_ROW, 'group mb-0.5 cursor-pointer hover:bg-white/5')}
           >
-            <GroupIcon className="h-3.5 w-3.5 flex-shrink-0 text-neutral-500 transition-colors group-hover:text-neutral-300" />
-            <span className="flex-1 text-xs font-medium tracking-wide text-neutral-400 transition-colors group-hover:text-neutral-200">
+            <span
+              className={cn(
+                SECTION_LABEL,
+                isActiveGroup ? 'text-neutral-100' : 'text-neutral-200',
+                'group-hover:text-white',
+              )}
+            >
               {group.name}
             </span>
             {/* 项数徽标：收起时也知道组里有几项（「东西没丢」） */}
-            <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] leading-none text-neutral-500">
-              {group.children.length}
-            </span>
+            <span className={SECTION_COUNT}>{group.children.length}</span>
             <ChevronRight
               className={cn(
-                'h-3.5 w-3.5 flex-shrink-0 text-neutral-600 transition-transform group-hover:text-neutral-300',
+                'h-3.5 w-3.5 flex-shrink-0 text-neutral-600 transition-transform group-hover:text-neutral-400',
                 isExpanded && 'rotate-90',
               )}
             />
@@ -276,17 +324,49 @@ export default function Sidebar({
     )
   }
 
+  // ── 一级项（三个席位**同一套视觉**）──
+  // 36px 行、18px 图标、14px/600 最亮，右端**不挂 chevron**（直达项没有展开语义，那枚符号留给「可展开的组」）。
+  // 🔴 2026-10-28：修前「商品管理 / 企业基础设置」走组头规格（12px）、「通知中心」走叶子规格（14px）
+  // —— 同一层级两种字号，正是用户所说「不协调」的来源之一。
+  const renderStandaloneItem = (item: MenuItem, opts: { withPin: boolean }) => {
+    const Icon = resolveMenuIcon(item.icon)
+    const active = isActive(item.path)
+    return (
+      <Link
+        key={item.key}
+        href={item.path}
+        onClick={onMobileClose}
+        data-menu-key={item.key}
+        className={cn(
+          TOP_ROW,
+          active
+            ? 'bg-primary-600 text-white shadow-sm'
+            : 'text-neutral-50 hover:bg-white/5 hover:text-white',
+          collapsed && 'justify-center px-2',
+        )}
+        title={collapsed ? item.name : undefined}
+      >
+        {active && (
+          <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-white/90" />
+        )}
+        <Icon className="h-[18px] w-[18px] flex-shrink-0" />
+        {!collapsed && <span className={TOP_LABEL}>{item.name}</span>}
+        {/* 只有「尾部独立项」（通知中心）可收藏；最前 / 尾席位的一级项不进「常用」（#5877） */}
+        {!collapsed && opts.withPin && renderPinButton(item, { alwaysShow: false, active })}
+      </Link>
+    )
+  }
+
   // ── 一级项块（**直达**项，无分组语义）──
   // 席位语义见 `@/config/menu` 的三个 `standalone*` 数组（最前席位 / 尾席位 / 尾部独立项）。
-  // 视觉 = **板块入口**规格（与组头同级：`text-xs font-medium tracking-wide` + `h-3.5 w-3.5` 图标），
-  // **仍是**一整行可点的 `<Link>`（直达、无展开语义 ⇒ 右端那枚 ChevronRight **不旋转**）；
-  // 🔴 **不渲染星标**：一级项不可收藏（否则「常用」里会出现第二条一模一样的入口）。
-  // `separator`：块前要不要画分隔线 —— 最前席位在顶部（紧接「常用」）不画；尾席位画
-  // （仓内既有同款 `border-t border-white/5`，与尾部独立项前那条一致）。
+  // 视觉 = 一级项规格（见上）；`separator`：块前要不要画分隔线 —— 最前席位在顶部紧接「常用」
+  // 不画；尾席位 / 尾部独立项画（仓内既有同款 `border-t border-white/5`）。
+  // `withPin`：只有尾部独立项（通知中心）可收藏 —— 一级项不可收藏（否则「常用」里会出现
+  // 第二条一模一样的入口）。
   const renderStandaloneBlock = (
     items: MenuItem[],
     testId: string,
-    opts: { separator: boolean },
+    opts: { separator: boolean; withPin?: boolean },
   ) => {
     if (items.length === 0) return null
     return (
@@ -294,38 +374,7 @@ export default function Sidebar({
         data-testid={testId}
         className={cn('my-2 space-y-0.5', opts.separator && 'border-t border-white/5 pt-1')}
       >
-        {items.map((item) => {
-          const Icon = resolveMenuIcon(item.icon)
-          const active = isActive(item.path)
-          return (
-            <Link
-              key={item.key}
-              href={item.path}
-              onClick={onMobileClose}
-              data-menu-key={item.key}
-              className={cn(
-                'relative flex items-center gap-2 rounded-md px-3 py-1.5 transition-colors',
-                active
-                  ? 'bg-primary-600 text-white shadow-sm'
-                  : 'text-neutral-400 hover:bg-white/5 hover:text-neutral-200',
-                collapsed && 'justify-center px-2',
-              )}
-              title={collapsed ? item.name : undefined}
-            >
-              {active && (
-                <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-white/90" />
-              )}
-              <Icon className="h-3.5 w-3.5 flex-shrink-0" />
-              {!collapsed && (
-                <span className="flex-1 text-xs font-medium tracking-wide">{item.name}</span>
-              )}
-              {/* 不旋转 = 「直达」；组头那枚会 `rotate-90`（可展开）—— 语义在此分叉 */}
-              {!collapsed && (
-                <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-neutral-600" />
-              )}
-            </Link>
-          )
-        })}
+        {items.map((item) => renderStandaloneItem(item, { withPin: !!opts.withPin }))}
       </div>
     )
   }
@@ -407,17 +456,11 @@ export default function Sidebar({
               // 恒展开（不提供折叠）——「常用」一旦收起就失去它存在的意义
               <div
                 data-testid={`sidebar-group-label-${PINNED_GROUP_KEY}`}
-                className="mb-1 flex w-full items-center gap-2 rounded-md px-3 py-1.5"
+                className={cn(SECTION_ROW, 'mb-0.5')}
               >
-                <Pin className="h-3.5 w-3.5 flex-shrink-0 text-neutral-500" />
-                <span className="flex-1 text-xs font-medium tracking-wide text-neutral-400">
-                  {favorites.name}
-                </span>
+                <span className={cn(SECTION_LABEL, 'text-neutral-200')}>{favorites.name}</span>
                 {/* `n/上限`：满额时用户一眼知道为什么再钉不进去（`togglePinned` 是拒绝、不顶替） */}
-                <span
-                  data-testid="sidebar-pinned-count"
-                  className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] leading-none text-neutral-500"
-                >
+                <span data-testid="sidebar-pinned-count" className={SECTION_COUNT}>
                   {favorites.items.length}/{PINNED_MAX}
                 </span>
               </div>
@@ -454,13 +497,11 @@ export default function Sidebar({
         {/* ── tail 组（一级项之后的其余组）── */}
         {tail.map((group) => renderGroup(group))}
 
-        {/* 一级独立菜单项 */}
-        {standalone.length > 0 && !collapsed && (
-          <div className="my-2 border-t border-white/5" />
-        )}
-        <div className="space-y-0.5">
-          {standalone.map((item) => renderItem(item, { alwaysShowPin: false }))}
-        </div>
+        {/* 尾部独立项（「通知中心」）：同属一级项 ⇒ 与两个席位**同一套视觉**（可收藏 ⇒ withPin） */}
+        {renderStandaloneBlock(standalone, 'sidebar-standalone-tail', {
+          separator: !collapsed,
+          withPin: true,
+        })}
       </nav>
 
       {/* 页脚（issue #7476 / #7480 / #7482 / #7487 / #7491）：**星标 + 品牌署名**。
