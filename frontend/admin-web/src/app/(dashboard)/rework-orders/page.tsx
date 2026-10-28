@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Plus } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button, EmptyState, Input, Modal, PageCard, PageHeader } from '@/components/ui'
+import { Button, EmptyState, Input, Modal, PageCard, PageHeader, RowActions } from '@/components/ui'
+import type { RowActionItem } from '@/components/ui'
 import { SELECT_CONTROL_FIELD } from '@/components/ui/Select'
 import { displayEnum } from '@/lib/enum-display'
 import ListLoadError from '@/components/common/ListLoadError'
@@ -269,7 +270,23 @@ export default function ReworkOrdersPage() {
                 </tr>
               </thead>
               <tbody>
-                {visible.map((row) => (
+                {visible.map((row) => {
+                  // 行内动作的唯一形态（#8039）：主行动按状态派生，「取消」进 ⋯ 菜单。
+                  // 权限判定（`canWrite`）与状态机（`actionsFor`）一字未改。
+                  const acts = canWrite ? actionsFor(row.status) : []
+                  const menuItems: RowActionItem[] = acts.includes('cancel')
+                    ? [
+                        {
+                          key: 'cancel',
+                          label: '取消',
+                          danger: true,
+                          disabled: busy,
+                          testId: `rework-cancel-${row.id}`,
+                          onClick: () => void runAction('cancel', row),
+                        },
+                      ]
+                    : []
+                  return (
                   <tr key={row.id} data-testid={`rework-row-${row.id}`} className="border-b border-neutral-100">
                     <td className="py-2 font-medium text-neutral-900">{row.reworkNo}</td>
                     <td className="py-2 text-neutral-600" data-testid={`rework-source-${row.id}`}>
@@ -308,46 +325,42 @@ export default function ReworkOrdersPage() {
                     <td className="py-2 text-neutral-600">{fmt(row.startedAt)}</td>
                     <td className="py-2 text-neutral-600">{fmt(row.completedAt)}</td>
                     <td className="py-2 text-right sticky right-0 bg-white">
-                      <div className="flex justify-end gap-2">
-                        {canWrite && actionsFor(row.status).includes('start') && (
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            disabled={busy}
-                            onClick={() => void runAction('start', row)}
-                            data-testid={`rework-start-${row.id}`}
+                      {acts.length === 0 ? (
+                        <span className="text-xs text-neutral-400">{isOpen(row) ? '—' : '已闭环'}</span>
+                      ) : (
+                        <div className="flex justify-end">
+                          <RowActions
+                            testId={`rework-actions-${row.id}`}
+                            menuTestId={`rework-row-menu-${row.id}`}
+                            items={menuItems}
                           >
-                            开工
-                          </Button>
-                        )}
-                        {canWrite && actionsFor(row.status).includes('complete') && (
-                          <Button
-                            size="sm"
-                            disabled={busy}
-                            onClick={() => void runAction('complete', row)}
-                            data-testid={`rework-complete-${row.id}`}
-                          >
-                            完工
-                          </Button>
-                        )}
-                        {canWrite && actionsFor(row.status).includes('cancel') && (
-                          <Button
-                            variant="danger"
-                            size="sm"
-                            disabled={busy}
-                            onClick={() => void runAction('cancel', row)}
-                            data-testid={`rework-cancel-${row.id}`}
-                          >
-                            取消
-                          </Button>
-                        )}
-                        {(!canWrite || actionsFor(row.status).length === 0) && (
-                          <span className="text-xs text-neutral-400">{isOpen(row) ? '—' : '已闭环'}</span>
-                        )}
-                      </div>
+                            {acts.includes('start') ? (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                disabled={busy}
+                                onClick={() => void runAction('start', row)}
+                                data-testid={`rework-start-${row.id}`}
+                              >
+                                开工
+                              </Button>
+                            ) : acts.includes('complete') ? (
+                              <Button
+                                size="sm"
+                                disabled={busy}
+                                onClick={() => void runAction('complete', row)}
+                                data-testid={`rework-complete-${row.id}`}
+                              >
+                                完工
+                              </Button>
+                            ) : null}
+                          </RowActions>
+                        </div>
+                      )}
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>

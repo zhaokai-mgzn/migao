@@ -7,7 +7,7 @@ import { toastRequestError } from '@/lib/api-error'
 import { employeeApi } from '@/lib/api'
 import request from '@/lib/request'
 import { usePermission } from '@/lib/permission'
-import { Button, Input, Select, Modal, Table, Pagination, Badge, PageHeader, PageCard, SearchPanel, SELECT_CONTROL } from '@/components/ui'
+import { Button, Input, Select, Modal, Table, Pagination, Badge, PageHeader, PageCard, SearchPanel, SELECT_CONTROL, RowActions, RowActionLink } from '@/components/ui'
 import type { TableColumn, SearchFieldSpec } from '@/components/ui'
 import type { Employee, EmployeeStatus, EmployeeFormData } from '@/types'
 import { TreeCheckbox, type TreeNode } from '@/components/ui/TreeCheckbox'
@@ -454,34 +454,39 @@ export default function EmployeesPage() {
       key: 'actions',
       title: '操作',
       width: '140px',
-      render: (record) => (
-        <div className="flex items-center gap-3 whitespace-nowrap">
-          {canWrite ? (
-            <>
-              <button
-                onClick={(e) => { e.stopPropagation(); handleEdit(record) }}
-                className="text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm"
-              >
-                编辑
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); setResetTarget(record); setResetPasswordValue('') }}
-                className="text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm"
-              >
-                重置密码
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); setDeleteTarget(record) }}
-                className="text-red-500 hover:text-red-600 hover:underline transition-colors text-sm"
-              >
-                删除
-              </button>
-            </>
-          ) : (
-            <span className="text-xs text-neutral-400">只读</span>
-          )}
-        </div>
-      ),
+      render: (record) =>
+        canWrite ? (
+          // 行内动作的唯一形态（#8039）：主行动「编辑」+ ⋯ 收「重置密码 / 删除」。
+          // 危险动作仍走页内既有确认弹窗（`deleteTarget` / `resetTarget`），本组件不弹确认。
+          <RowActions
+            testId={`employee-actions-${record.id}`}
+            menuTestId={`employee-row-menu-${record.id}`}
+            items={[
+              {
+                key: 'reset-password',
+                label: '重置密码',
+                testId: `employee-reset-password-${record.id}`,
+                onClick: () => {
+                  setResetTarget(record)
+                  setResetPasswordValue('')
+                },
+              },
+              {
+                key: 'delete',
+                label: '删除',
+                danger: true,
+                testId: `employee-delete-${record.id}`,
+                onClick: () => setDeleteTarget(record),
+              },
+            ]}
+          >
+            <RowActionLink data-testid={`employee-edit-${record.id}`} onClick={() => handleEdit(record)}>
+              编辑
+            </RowActionLink>
+          </RowActions>
+        ) : (
+          <span className="text-xs text-neutral-400">只读</span>
+        ),
     },
   ]
 

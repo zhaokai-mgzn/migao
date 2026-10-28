@@ -1,6 +1,6 @@
 // case_ids: RWK-001, PG-099
 import { describe, expect, it, beforeEach, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import ReworkOrdersPage, { actionsFor, isOpen } from '@/app/(dashboard)/rework-orders/page'
 
 /**
@@ -93,6 +93,13 @@ const WORKER = {
   reason: '拼缝走偏',
 }
 
+/** 行内「⋯」菜单的开合（issue #8039）：`取消` 收进菜单，收起态不进 DOM */
+const openRowMenu = (rowId: string) => {
+  fireEvent.click(
+    within(screen.getByTestId(`rework-row-menu-${rowId}`)).getByRole('button', { name: '更多操作' }),
+  )
+}
+
 describe('返工单页面', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -122,18 +129,48 @@ describe('返工单页面', () => {
     render(<ReworkOrdersPage />)
 
     await waitFor(() => expect(screen.getByTestId('rework-orders-table')).toBeInTheDocument())
-    // 待开工：开工 + 取消，没有完工
+    // 待开工：主行动「开工」（#8039），`取消` 收进 ⋯ 菜单（收起态不进 DOM），没有完工
     expect(screen.getByTestId('rework-start-rw1')).toBeInTheDocument()
-    expect(screen.getByTestId('rework-cancel-rw1')).toBeInTheDocument()
+    expect(screen.queryByTestId('rework-cancel-rw1')).toBeNull()
     expect(screen.queryByTestId('rework-complete-rw1')).toBeNull()
-    // 返工中：完工 + 取消，没有开工
+    openRowMenu('rw1')
+    expect(screen.getByTestId('rework-cancel-rw1')).toBeInTheDocument()
+    // 返工中：主行动「完工」，没有开工
     expect(screen.getByTestId('rework-complete-rw2')).toBeInTheDocument()
     expect(screen.queryByTestId('rework-start-rw2')).toBeNull()
-    // 已闭环：一个动作都没有
+    // 已闭环：一个动作都没有（连「点开是空盒子」的 ⋯ 都不摆）
     expect(screen.queryByTestId('rework-complete-rw3')).toBeNull()
     expect(screen.queryByTestId('rework-start-rw3')).toBeNull()
+    expect(screen.queryByTestId('rework-row-menu-rw3')).toBeNull()
     expect(screen.queryByTestId('rework-cancel-rw3')).toBeNull()
     expect(screen.getByTestId('rework-row-rw3').textContent).toContain('已闭环')
+  })
+
+  it('🟢 操作列 = 1 主行动 + ⋯ 菜单：主行动按状态派生、取消进菜单，每行可点 ≤ 2（#8039）', async () => {
+    reworkOrderApi.list.mockImplementation(() => wrap([DRAFT, DOING, DONE]))
+    render(<ReworkOrdersPage />)
+
+    await waitFor(() => expect(screen.getByTestId('rework-orders-table')).toBeInTheDocument())
+
+    // 待开工：主行动「开工」+ ⋯ 触发器 = 2 个可点（取消藏在菜单里，不占平级）
+    const draft = screen.getByTestId('rework-actions-rw1')
+    const draftClickable = within(draft).getAllByRole('button')
+    expect(draftClickable).toHaveLength(2)
+    expect(draftClickable[0].textContent).toBe('开工')
+    expect(within(draft).queryByRole('menuitem')).toBeNull()
+
+    // 返工中：主行动换成「完工」（按状态派生），可点数不变
+    const doing = screen.getByTestId('rework-actions-rw2')
+    expect(within(doing).getAllByRole('button')).toHaveLength(2)
+    expect(within(doing).getAllByRole('button')[0].textContent).toBe('完工')
+
+    // 已闭环：不摆动作，也不摆一个点开是空盒子的「⋯」
+    expect(screen.queryByTestId('rework-actions-rw3')).toBeNull()
+
+    // 展开后可达，且取消仍走原调用路径（菜单项不是死项）
+    openRowMenu('rw1')
+    fireEvent.click(within(draft).getByTestId('rework-cancel-rw1'))
+    await waitFor(() => expect(reworkOrderApi.cancel).toHaveBeenCalledWith('rw1'))
   })
 
   it('状态计数 = 未完结（待开工 + 返工中）/ 已完成 / 已取消', async () => {
@@ -264,8 +301,10 @@ describe('返工单页面', () => {
     expect(screen.getByTestId('rework-ticket-rw5').textContent).toBe('—')
     // 关联加工单优先显示单号，不摆内部 id
     expect(screen.getByTestId('rework-processing-rw5').textContent).toBe('JG-20261023-0009')
-    // 车间来源照样能开工 / 取消（动作逻辑不变）
+    // 车间来源照样能开工 / 取消（动作逻辑不变）：开工是主行动，取消在 ⋯ 菜单里
     expect(screen.getByTestId('rework-start-rw5')).toBeInTheDocument()
+    expect(screen.queryByTestId('rework-cancel-rw5')).toBeNull()
+    openRowMenu('rw5')
     expect(screen.getByTestId('rework-cancel-rw5')).toBeInTheDocument()
     // 副标题把车间来源的存在说出来，不用惊叹号
     expect(document.body.textContent).toContain('车间工人报返工的单也会出现在这里')
