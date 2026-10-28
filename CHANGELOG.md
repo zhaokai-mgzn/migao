@@ -5,6 +5,37 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 列表页加载态有了统一骨架，商品管理先接入（2026-10-29，issue #8036）
+- 现场：商品管理进入时表格区是**空白 + 「加载中...」**，看着像「这家店没有商品」（`acceptance/2026-10-24/.../08-products-list.png`）。
+- 改后：新增通用原语 `ui/TableSkeleton`（行列可配、纯布局、零新依赖），商品列表加载分支改用它；**页面级三元**接入（不是给 `ui/Table` 加开关 —— 否则页面级断言会退化成「断言 mock」）。其它列表页本轮不接线，等审计表分批。
+- 真机读数：接口延迟 4s 钉住加载态 ⇒ `table-skeleton` 在场、10 行、`textContent` 为空串、裸「加载中...」为 0；数据回来骨架消失。
+- 判据：`tests/unit/components/TableSkeleton.test.tsx` + `tests/unit/pages/products.test.tsx`。
+
+### 质检记录页加载期间不再是一片空白（2026-10-29，issue #8041）
+- 现场：`quality-inspections` 的空态门与数据门都不覆盖「加载中」，卡片体只剩标题行。
+- 改后：加载分支渲染既有 `<Loading size="sm" text="加载中…" />`；闸在「当前没有已加载流水」，刷新时已有数据仍显示表格。
+- 判据：`tests/unit/pages/quality-inspections.test.tsx` ⑦（手控 promise 钉住加载帧）。
+
+### 操作列全站收口为「1 主行动 + ⋯ 菜单」，并落类级密度扫描器（2026-10-29，issue #8038 / #8039）
+- 现场（审计 #8035）：`products` 单行 **5 个**同级可点、`knowledge` **4 个**、`approvals`/`rework-orders`/`employees` 各 **3 个**；`orders` 已于 #8011 收口。
+- 改后：新建共享原语 `ui/RowActions`（把 #8011 留在 `OrderTable` 的实现抽出，三处共用一份），
+  上述 5 页全部收敛为 **1 主行动 + ⋯ 菜单**；危险动作（删除/下架/撤回/取消）保留原有二次确认。
+- **类级固化**：`scripts/row-action-density-scan.mjs` + `row-action-density-ledger.json` + 守卫测试
+  —— 未登记即红 / 只许缩短 / 债务不许放大 / 正向锚 5 面。收口过程中扫描器还扫出 2 处审计口径外的存量债
+  （`WorkerProfilesPanel` 密度 5、`WarehouseLocationPanel` 密度 3），同批收口。**台账现为 0 条**，
+  清零后不许再加条目：判据变红的唯一处置是用共享原语改页面。
+- 真机读数：`knowledge` ⋯ 展开 3 项、`products` ⋯ 展开在视口内、`Escape` 收起。⚠️ 验这个菜单**别用 force click**：
+  `products` 操作列需横滚才够得着，force click 会触发「滚动即关闭」得到假失败。
+
+### 空态话术统一：说清「为什么空」和「去哪建」（2026-10-29，issue #8040）
+- 现场（审计 #8035）：11 个页面是裸「暂无X」，不说为什么空、不说去哪建；同页还有两套口径（`outbound-orders`）。
+- 改后：11 页空态全部区分「筛选下为空」与「还没有任何数据」，并给出下一步（新增/导入/换条件/放宽时间）；
+  `finance` 四处、`notifications` 三个 tab 各说各的。顺带把 12 个页文件、17 处 ASCII `加载中...` 统一成 `加载中…`。
+- 连带：`read-failure-empty-state-scan.mjs` 台账 **16 → 12**（改好的 4 条按「只许缩短」删除，FLOOR 同批下调）。
+- 判据：24 个测试文件 / 377 例；`user-copy-scan.mjs` 扫 307 文件 · 7518 条候选 · **命中 0**。
+
+
+
 ### 侧栏页脚品牌做防御性布局加固（原报的遮挡实为 dev 覆盖层，不是产品缺陷）（2026-10-28，issue #8025）
 - ⚠️ **本条订正了原定性**：截图里那颗圆形「N」是 **Next.js 开发工具的悬浮指示器**（`nextjs-portal`，只存在于 `next dev`），不是产品的「收起」按钮。真机几何读数：品牌块 `x=12..82.8`、收起按钮 `x=172..228`（相距 89px，不重叠），名称 `scrollWidth == clientWidth == 47`（未截断），`elementFromPoint(75,870)` 命中的就是品牌文字本身 ⇒ **真实浏览器里没有遮挡**。
 - 改后（**保留，降级为防御性加固**）：品牌块 `min-w-0` + 名称 `truncate`、收起按钮 `shrink-0` —— 让页脚在「品牌名更长 / 窄侧栏」时不至于真被压垮；折叠逻辑、菜单结构、侧栏宽度、品牌文案逐字未动。
