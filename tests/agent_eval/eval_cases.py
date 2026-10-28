@@ -17086,6 +17086,44 @@ _CASE_UI_140 = EvalCase(
     precondition='本用例是 [backend-contract] 纯前端打印版式契约（jsdom 渲染，夹具自建）；前置不成立时对应单测直接红，agent-eval 栈不跑它',
 )
 
+# ── UI-142 [NORMAL] 销售订单列表：4 个同级文字链收敛为「1 主行动 + ⋯ 菜单」，非加急行不再印「不加急」，订单号可复制（issue #8011）（源: cases/ui.yml）──
+_CASE_UI_142 = EvalCase(
+    id='UI-142',
+    legacy_id='',
+    title='销售订单列表：4 个同级文字链收敛为「1 主行动 + ⋯ 菜单」，非加急行不再印「不加急」，订单号可复制（issue #8011）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-28 评审：B 端先打磨，C 端暂不做'],
+    expectations=['direct_reply'],
+    data_checks=["判据 1·「不加急」零出现（会红）：非加急行的「加急」单元格 `textContent === ''`（不是灰字、不是 CSS 隐藏）。执行点 = frontend/admin-web/tests/unit/pages/orders-list-row-actions.test.tsx。", '判据 2·行内可点元素 ≤ 2（会红）：每行 1 个主行动 + 1 个「⋯」触发器；旧的「查看/备注/发货/处理退款」四文字链同屏形态不再出现。执行点同上。', '判据 3·主行动按状态派生（会红）：待付款 → 收款 / 待发货 → 发货 / 已发货 → 确认收货 / 其它 → 无。执行点同上 + frontend/admin-web/tests/unit/pages/orders-confirm-modal.test.tsx。', '判据 4·菜单可达性（会红）：`aria-haspopup=menu` / `aria-expanded` / `role=menu` / `role=menuitem`，Escape 与点外部收起，**收起态菜单项不进 DOM**。执行点同上。', '判据 5·订单号复制（会红）：单元格内有 `aria-label` 为「复制订单号」 的按钮，点击写剪贴板并给 toast。执行点同上。'],
+    skip_reason='[backend-contract] 纯前端交互契约（不经过 LLM 对话/工具），由 admin-web vitest 执行，不进入 agent-eval 冒烟',
+    tags=['orders-list', 'row-actions', 'noise'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯前端交互契约：页面渲染时 mock `@/lib/api` 与 `@/components/orders`，不依赖共享夹具与真实服务',
+)
+
+# ── UI-143 [NORMAL] 经营看板首屏：简报空态压成一行、待处理与经营数据出骨架、环比破 ±500% 改倍数（issue #8012）（源: cases/ui.yml）──
+_CASE_UI_143 = EvalCase(
+    id='UI-143',
+    legacy_id='',
+    title='经营看板首屏：简报空态压成一行、待处理与经营数据出骨架、环比破 ±500% 改倍数（issue #8012）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-28 评审：首屏第一眼要能看到要做的事'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·简报空态压成一行（会红）：未开启 / 今日未生成两种空态都渲染 `briefing-collapsed-hint`，旧的大盒子 `briefing-empty-state` 取不到；有数据时卡片形态不变。执行点 = frontend/admin-web/tests/unit/pages/dashboard-first-screen.test.tsx。', '判据 2·加载出骨架（会红）：待处理卡与经营数据格在加载中渲染骨架块，卡上不出现 `…`。执行点同上。', '判据 3·环比大基数保护（会红）：`|change| ≥ 500%` 改倍数（+23× / -8×）并带「基数较小」说明；阈值以下仍是百分比；上期为 0 仍是 `—`（#5792 裁定不回退）；页面上不再出现 `2300%`。执行点同上 + dashboard.test.tsx。'],
+    skip_reason='[backend-contract] 纯前端契约（不经过 LLM 对话/工具），由 admin-web vitest 执行，不进入 agent-eval 冒烟',
+    tags=['dashboard', 'first-screen', 'skeleton'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯前端契约：mock `@/lib/api`，不依赖真实服务',
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -18035,6 +18073,8 @@ ALL_CASES = (
     _CASE_UI_138,
     _CASE_UI_139,
     _CASE_UI_140,
+    _CASE_UI_142,
+    _CASE_UI_143,
     _CASE_UT_001,
     _CASE_UT_002,
 )
