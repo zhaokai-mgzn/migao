@@ -2,7 +2,7 @@
 // 本包（issue #6703）只复用既有用例号，不新开用例（改 .github/cases/** 归别的包）。
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 // case_ids: API-015, UI-033, UI-034, UI-035, UI-039
 
@@ -42,6 +42,19 @@ vi.mock('dayjs', () => ({
 // `knowledge:manage` 显隐 ⇒ 本文件全是「写流程」用例，必须以**持码**身份跑，否则按钮根本不渲染、
 // 用例测的就不是它声称的行为。`@/store/auth` 必须按 **zustand 选择器**返回（整份 state mock 会让
 // `useAuthStore(s => s.user)` 恒 undefined ⇒ `has()` 恒 false），范式同 list-write-button-permission.test.tsx。
+/**
+ * 打开某张知识卡片所在行的 ⋯ 菜单（issue #8038：行内动作 = **1 主行动（编辑）+ ⋯ 菜单**）。
+ *
+ * 🔴 **收起态菜单项不进 DOM**（不是 CSS 隐藏）⇒ 任何「点行内动作」的判据都必须先点开菜单，
+ * 否则拿到的是 null 而不是「动作不见了」。
+ */
+async function openRowMenu(user: ReturnType<typeof userEvent.setup>, title: string) {
+  // 真实 `ui/Table` 的行是 `<tr>`；本文件的 Table 桩用 `div[data-testid=row-*]` ⇒ 两种都认
+  const row = screen.getByText(title).closest('tr, [data-testid^="row-"]')
+  if (!row) throw new Error(`找不到「${title}」所在行`)
+  await user.click(within(row as HTMLElement).getByRole('button', { name: '更多操作' }))
+}
+
 const authMock = vi.hoisted(() => ({
   state: {
     user: { id: '1', username: 'tester', name: '测试账号', permissions: ['*'] as string[], roles: [] as string[] },
@@ -179,7 +192,9 @@ describe('KnowledgePage（LLM WIKI 知识卡片管理）', () => {
     await waitFor(() => {
       expect(screen.getByText('退换货政策')).toBeInTheDocument()
     })
-    await user.click(screen.getByText('发布'))
+    // issue #8038：行内动作收进 ⋯ 菜单 ⇒ 先点开再点项
+    await openRowMenu(user, '退换货政策')
+    await user.click(screen.getByRole('menuitem', { name: '发布' }))
     await waitFor(() => {
       expect(api.publishCard).toHaveBeenCalledWith('entry_2')
     })
@@ -390,20 +405,27 @@ describe('KnowledgePage（LLM WIKI 知识卡片管理）', () => {
     await waitFor(() => {
       expect(screen.getByText('过季窗帘知识')).toBeInTheDocument()
     })
-    // 已归档卡片有「重新发布」按钮（归档非终点）
-    expect(screen.getByText('重新发布')).toBeInTheDocument()
+    // 已归档卡片的主行动是「编辑」，「重新发布」在 ⋯ 菜单里（归档非终点，#3108 语义不变）
+    expect(screen.getByText('编辑')).toBeInTheDocument()
+    await openRowMenu(user, '过季窗帘知识')
+    expect(screen.getByRole('menuitem', { name: '重新发布' })).toBeInTheDocument()
     // 重新发布后列表刷新：返回已发布状态 → 操作区出现「归档」（结果可见）
     api.getCards.mockResolvedValueOnce({
       data: { success: true, data: { items: [{ id: 'entry_archived', title: '过季窗帘知识', category: 'faq', sourceType: 'manual', status: 'published', version: 3, answer: '……', updatedAt: '2026-09-08T09:00:00' }], total: 1, page: 1, size: 20 } },
     })
-    await user.click(screen.getByText('重新发布'))
+    await user.click(screen.getByRole('menuitem', { name: '重新发布' }))
     await waitFor(() => {
       expect(api.publishCard).toHaveBeenCalledWith('entry_archived')
     })
+    // 重新发布后列表刷新：已发布 ⇒ 菜单项变成「归档」（结果可见，不是只看 toast）
     await waitFor(() => {
-      expect(screen.getByText('归档')).toBeInTheDocument()
+      expect(screen.getByText('过季窗帘知识')).toBeInTheDocument()
     })
-    expect(screen.queryByText('重新发布')).not.toBeInTheDocument()
+    await openRowMenu(user, '过季窗帘知识')
+    await waitFor(() => {
+      expect(screen.getByRole('menuitem', { name: '归档' })).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('menuitem', { name: '重新发布' })).not.toBeInTheDocument()
   })
 
   it('should open read-only detail via 查看 button (view without edit, #3108)', async () => {
@@ -412,7 +434,9 @@ describe('KnowledgePage（LLM WIKI 知识卡片管理）', () => {
     await waitFor(() => {
       expect(screen.getByText('雪尼尔面料会起球吗')).toBeInTheDocument()
     })
-    await user.click(screen.getByText('查看'))
+    // issue #8038：「查看」进 ⋯ 菜单（主行动 = 编辑）
+    await openRowMenu(user, '雪尼尔面料会起球吗')
+    await user.click(screen.getByRole('menuitem', { name: '查看' }))
     // 只读详情弹窗：完整内容可见（标题 + 标准回答全文）
     await waitFor(() => {
       expect(screen.getByRole('dialog')).toBeInTheDocument()
@@ -421,5 +445,29 @@ describe('KnowledgePage（LLM WIKI 知识卡片管理）', () => {
     })
     // 只读视图：无「保存」操作（区别于编辑弹窗）
     expect(screen.queryByText('保存')).not.toBeInTheDocument()
+  })
+
+  it('issue #8038：行内动作收成「1 主行动 + ⋯ 菜单」—— 每行可点 ≤ 2 且收起态菜单项不进 DOM', async () => {
+    render(<KnowledgePage />)
+    await waitFor(() => {
+      expect(screen.getByText('雪尼尔面料会起球吗')).toBeInTheDocument()
+    })
+    const row = screen.getByText('雪尼尔面料会起球吗').closest('tr, [data-testid^="row-"]') as HTMLElement
+
+    // 改前这一行是 4 个平级按钮（查看/编辑/发布·归档/删除）—— 现在只剩主行动 + ⋯ 触发器
+    expect(
+      within(row).getAllByRole('button').length,
+      '知识卡片行的可点元素 > 2（又回到平铺按钮的形态了）',
+    ).toBeLessThanOrEqual(2)
+
+    // 收起态：菜单项**不进 DOM**（不是 CSS 隐藏 —— 否则「密度」只是换了长相）
+    expect(within(row).queryByRole('menu')).toBeNull()
+    expect(within(row).queryByText('删除')).toBeNull()
+    expect(within(row).queryByText('归档')).toBeNull()
+
+    // 主行动 = 编辑（在 DOM 里、可直接点）
+    expect(within(row).getByRole('button', { name: '编辑' })).toBeInTheDocument()
+    // ⋯ 触发器在（其余动作可达）
+    expect(within(row).getByRole('button', { name: '更多操作' })).toBeInTheDocument()
   })
 })

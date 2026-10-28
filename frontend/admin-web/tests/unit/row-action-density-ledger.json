@@ -1,0 +1,33 @@
+{
+  "why": "issue #8038 的类级台账：`src/app/(dashboard)` + `src/components`（`products` / `orders` 的表格组件在 components 里）中凡带「操作」列的表，**一行同时可点 ≤ 2**（1 主行动 + 1 个「⋯」触发器，形态 = 共享原语 `src/components/ui/RowActions.tsx`）。判据 = `frontend/admin-web/tests/unit/row-action-density-guard.test.ts`（扫描器 = `frontend/admin-web/scripts/row-action-density-scan.mjs`）。未登记即红；**条目只许缩短**（改好后同批删条目）；`frozen` = 登记时的密度读数，**债务不许放大**（现读数 > frozen ⇒ 红）。",
+  "scope": "src/app/(dashboard)/**/*.tsx + src/components/**/*.tsx",
+  "frozen_count": 5,
+  "ledger": {
+    "src/app/(dashboard)/approvals/page.tsx": {
+      "frozen": 3,
+      "owner": "#8039",
+      "reason": "审批工作台：一行的 `通过 / 驳回 / 撤回` 三个**平级**按钮（`approval-approve-*` / `-reject-*` / `-withdraw-*`），`acts` 决定几个同时出现。改法 = 主行动 = 当前状态下最该做的那一步，其余进 ⋯（`RowActions`）；**权限与状态判断（`acts`）不得改**。本单（#8038）只登记、不改 —— 归属 #8039。"
+    },
+    "src/app/(dashboard)/rework-orders/page.tsx": {
+      "frozen": 3,
+      "owner": "#8039",
+      "reason": "返工单：`开工 / 完工 / 取消` 三个平级按钮由 `actionsFor(row.status)` 派生。改法与 approvals 同源；本单只登记不改 —— 归属 #8039。"
+    },
+    "src/app/(dashboard)/employees/page.tsx": {
+      "frozen": 3,
+      "owner": "#8039",
+      "reason": "员工列表：`编辑 / 重置密码 / 删除` 三个平级文字动作（无写码岗位落「只读」单文本 ⇒ 不超限）。改法 = 主行动「编辑」+ ⋯ 收「重置密码 / 删除」；本单只登记不改 —— 归属 #8039。"
+    },
+    "src/components/employees/WorkerProfilesPanel.tsx": {
+      "frozen": 5,
+      "owner": "待派单（#8038 扫描器新发现）",
+      "reason": "**#8035 审计口径外的新发现**：工人档案面板每行 `改菜单 / 开·关X（map）/ 改工序 / 重置 PIN / 停用·启用` 共 5 个平级文字动作。它不在 #8035 的表里（那份审计只数 `app/(dashboard)/**/page.tsx`），本单也**不改**（超出 #8038 的严格实现范围）⇒ 照「未登记即红」如实入册，待单收口后删条目。⚠️ 与 `count-row-derived-ledger.json` 里同文件的那条是**两条不同的判据**（读失败 vs 动作密度），互不替代。"
+    },
+    "src/components/stock/WarehouseLocationPanel.tsx": {
+      "frozen": 3,
+      "owner": "待派单（#8038 扫描器新发现）",
+      "reason": "**#8035 审计口径外的新发现**：成品仓仓位面板每行 `编辑 / 停用·启用 / 删除` 三个平级动作（删除已按 `occupied` 禁用）。同上：本单只登记不改，待单收口后删条目。"
+    }
+  },
+  "boundary": "静态判据（源码文本 / AST）：判不了菜单展开后的落点与遮挡（真机视觉，集成侧截图复核），也判不了运行时「收起态菜单项不进 DOM」（那是原语自己的判据 `tests/unit/components/RowActions.test.tsx`）。跨组件不可见：动作面若渲染**别的文件**里的格子组件，扫描器看不进去（计 0）—— 有意不做跨文件调用图。同字段互斥分支（`{s==='a' && <B1/>}{s==='b' && <B2/>}`）在语法上是两个平级条件 ⇒ 计 2（真实同行 1 个）：偏保守、**不会假绿**；要精确就按共享原语形态写（主行动走 children、其余走 items 数据）。"
+}

@@ -22,6 +22,9 @@ export { default as PageCard } from './PageCard'
 export { default as SearchPanel } from './SearchPanel'
 // 2026-10-17：单据列表**行内动作**的唯一形态（销售订单 / 作业看板共用一份定义）
 export { default as RowActionLink } from './RowActionLink'
+// issue #8038：表格行内动作的**唯一形态** —— `1 主行动 + 1 个「⋯」菜单`（orders / products / knowledge 共用一份实现）
+export { default as RowActions } from './RowActions'
+export type { RowActionItem } from './RowActions'
 
 export type { TableColumn } from './Table'
 export type { SearchField } from './SearchBar'

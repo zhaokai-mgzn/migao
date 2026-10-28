@@ -5,8 +5,8 @@ import { Plus, Pencil, Trash2, Send, Archive, Eye, RotateCcw } from 'lucide-reac
 import { toast } from 'sonner'
 import { knowledgeApi } from '@/lib/api'
 import { extractApiErrorMessage } from '@/lib/api-error'
-import { Table, Pagination, Modal, Button, Badge, SearchBar, PageHeader, SELECT_CONTROL } from '@/components/ui'
-import type { TableColumn } from '@/components/ui'
+import { Table, Pagination, Modal, Button, Badge, SearchBar, PageHeader, SELECT_CONTROL, RowActions } from '@/components/ui'
+import type { TableColumn, RowActionItem } from '@/components/ui'
 import type { KnowledgeCard, KnowledgeCardStatus, KnowledgeCandidate, KnowledgeTemplateInfo } from '@/types'
 import DateTimeCell from '@/components/common/DateTimeCell'
 import ListLoadError from '@/components/common/ListLoadError'
@@ -329,6 +329,23 @@ export default function KnowledgePage() {
     }
   }
 
+  /**
+   * 行内动作（issue #8038）：改前 4 个同级 ghost 按钮（查看/编辑/发布·归档/删除，#8035 审计）。
+   * 现在主行动 = **编辑**（知识卡片最常用的一步），其余收进 ⋯ 菜单。
+   *
+   * 🔴 条件与回调**逐条保持改前**（issue #6392 的写码口径不变：行内写操作同码 `knowledge:manage`；
+   * 「归档非终点」#3108 的重新发布分支照旧）。删除仍是 `setDeleteTarget` ⇒ 页面既有的确认弹框照旧。
+   */
+  const rowActionsFor = (entry: KnowledgeCard): RowActionItem[] => [
+    { key: 'view', label: '查看', onClick: () => setViewTarget(entry) },
+    entry.status === 'archived'
+      ? { key: 'republish', label: '重新发布', onClick: () => publishCard(entry) }
+      : entry.status === 'published'
+        ? { key: 'archive', label: '归档', onClick: () => archiveCard(entry) }
+        : { key: 'publish', label: '发布', onClick: () => publishCard(entry) },
+    { key: 'delete', label: '删除', onClick: () => setDeleteTarget(entry), danger: true },
+  ]
+
   const columns: TableColumn<KnowledgeCard>[] = [
     {
       key: 'title',
@@ -381,39 +398,35 @@ export default function KnowledgePage() {
     {
       key: 'actions',
       title: '操作',
-      // 4 按钮（查看/编辑/发布或归档/删除）需要足够宽度；nowrap 防按钮文字被列压缩竖排（#3108 视觉验证发现）
-      width: '300px',
+      // issue #8038：**1 主行动（编辑）+ ⋯ 菜单**（改前 4 个按钮需要 300px，现在一个按钮 + 触发器足够）
+      width: '160px',
       render: (entry) => (
-        <div className="flex items-center gap-1 whitespace-nowrap">
-          <Button size="sm" variant="ghost" onClick={() => setViewTarget(entry)}>
-            <Eye className="h-3.5 w-3.5" /> 查看
-          </Button>
-          {/* issue #6392：行内写操作同码（knowledge:manage）—— 无码岗位只看得到「查看」 */}
-          {canWrite && (
-            <>
-              <Button size="sm" variant="ghost" onClick={() => openEdit(entry)}>
-                <Pencil className="h-3.5 w-3.5" /> 编辑
-              </Button>
-              {entry.status === 'archived' ? (
-                // 归档非终点（#3108）：已归档卡片可一键重新发布，恢复 AI 检索命中
-                <Button size="sm" variant="ghost" onClick={() => publishCard(entry)}>
-                  <RotateCcw className="h-3.5 w-3.5" /> 重新发布
-                </Button>
-              ) : entry.status === 'published' ? (
-                <Button size="sm" variant="ghost" onClick={() => archiveCard(entry)}>
-                  <Archive className="h-3.5 w-3.5" /> 归档
-                </Button>
-              ) : (
-                <Button size="sm" variant="ghost" onClick={() => publishCard(entry)}>
-                  <Send className="h-3.5 w-3.5" /> 发布
-                </Button>
-              )}
-              <Button size="sm" variant="ghost" onClick={() => setDeleteTarget(entry)}>
-                <Trash2 className="h-3.5 w-3.5" /> 删除
-              </Button>
-            </>
+        <RowActions
+          testId={`knowledge-actions-${entry.id}`}
+          menuTestId={`knowledge-menu-${entry.id}`}
+          // issue #6392：行内写操作同码（`knowledge:manage`）—— 无码岗位只剩「查看」（没有菜单可开）
+          items={canWrite ? rowActionsFor(entry) : []}
+        >
+          {canWrite ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={<Pencil className="h-4 w-4" />}
+              onClick={() => openEdit(entry)}
+            >
+              编辑
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={<Eye className="h-4 w-4" />}
+              onClick={() => setViewTarget(entry)}
+            >
+              查看
+            </Button>
           )}
-        </div>
+        </RowActions>
       ),
     },
   ]
