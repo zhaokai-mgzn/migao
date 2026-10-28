@@ -133,7 +133,7 @@ describe('读失败后屏上不得有「没有数据」断言（运行期，issu
     async () => {
       // 页面把失败读数接进去（`emptyText={loadError ? '' : …}`）⇒ 不命中
       const ok = render(
-        <OrderTable orders={[]} loading={false} selectedIds={[]} onSelectChange={noop} onView={noop}
+        <OrderTable orders={[]} loading={false} onView={noop}
           onRemark={noop} onClose={noop} onShip={noop} emptyText="" />,
       )
       expect(findEmptyDataAssertions(screenText())).toEqual([])
@@ -141,7 +141,7 @@ describe('读失败后屏上不得有「没有数据」断言（运行期，issu
 
       // 把「接失败读数」这一步摘掉（= 页面回退成改前形态：默认文案）⇒ **必红**
       render(
-        <OrderTable orders={[]} loading={false} selectedIds={[]} onSelectChange={noop} onView={noop}
+        <OrderTable orders={[]} loading={false} onView={noop}
           onRemark={noop} onClose={noop} onShip={noop} />,
       )
       const hits = findEmptyDataAssertions(screenText())

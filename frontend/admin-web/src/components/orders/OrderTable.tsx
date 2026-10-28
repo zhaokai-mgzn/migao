@@ -3,7 +3,6 @@
 import { ArrowDown, Check, Copy } from 'lucide-react'
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
 import type { OrderBrief } from '@/types'
 import { normalizeOrderStatus } from '@/types'
 import { Badge, Button, RowActions } from '@/components/ui'
@@ -61,8 +60,6 @@ export interface OrderTableProps {
    *  用详情类型 `Order` 接列表响应 = 让「详情字段在列表上也可选」的谎话继续成立。 */
   orders: OrderBrief[]
   loading: boolean
-  selectedIds: string[]
-  onSelectChange: (ids: string[]) => void
   onView: (order: OrderBrief) => void
   onRemark: (order: OrderBrief) => void
   onClose: (order: OrderBrief) => void
@@ -138,8 +135,6 @@ async function copyOrderNo(orderNo: string) {
 export default function OrderTable({
   orders,
   loading,
-  selectedIds,
-  onSelectChange,
   onView,
   onRemark,
   onClose,
@@ -153,26 +148,6 @@ export default function OrderTable({
   onConfirmReceive,
   emptyText = '暂无数据',
 }: OrderTableProps) {
-  const allSelected = orders.length > 0 && orders.every((o) => selectedIds.includes(o.id))
-  const someSelected = orders.some((o) => selectedIds.includes(o.id)) && !allSelected
-
-  const toggleAll = () => {
-    if (allSelected) {
-      onSelectChange(selectedIds.filter((id) => !orders.find((o) => o.id === id)))
-    } else {
-      const newIds = Array.from(new Set([...selectedIds, ...orders.map((o) => o.id)]))
-      onSelectChange(newIds)
-    }
-  }
-
-  const toggleOne = (id: string) => {
-    if (selectedIds.includes(id)) {
-      onSelectChange(selectedIds.filter((sid) => sid !== id))
-    } else {
-      onSelectChange([...selectedIds, id])
-    }
-  }
-
   /**
    * 焦点归位（issue #8027）：行内录入区**收起**后，把焦点还给触发它的那个「发货」按钮。
    *
@@ -287,17 +262,8 @@ export default function OrderTable({
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-neutral-50 text-neutral-600 text-left">
-            <th className="pl-2 pr-3 py-3 font-medium w-10 whitespace-nowrap">
-              <input
-                type="checkbox"
-                checked={allSelected}
-                ref={(el) => {
-                  if (el) el.indeterminate = someSelected
-                }}
-                onChange={toggleAll}
-                className="w-4 h-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
-              />
-            </th>
+            {/* 选择列（表头全选框 + 每行勾选框）已移除（issue #8052）：选完没有任何批量动作
+                消费它 = 假动作（§31 P1：常驻控件必须真的能做事）。等真有批量能力时再连动作一起设计。 */}
             <th className="pl-0 pr-4 py-3 font-medium whitespace-nowrap">订单ID</th>
             {/* 状态 / 加急（issue #6717）：**决策列前置**。改前它们在第 10、11 位（真机实测
                 1440×980 下「状态」表头 left = 1542，而容器右缘 2181、横向可视区只有 1044px
@@ -354,43 +320,25 @@ export default function OrderTable({
         <tbody>
           {loading ? (
             <tr>
-              <td colSpan={15} className="px-4 py-16 text-center text-neutral-400">
+              <td colSpan={14} className="px-4 py-16 text-center text-neutral-400">
                 加载中…
               </td>
             </tr>
           ) : orders.length === 0 ? (
             <tr>
-              <td data-testid="orders-empty" colSpan={15} className="px-4 py-16 text-center text-neutral-400">
+              <td data-testid="orders-empty" colSpan={14} className="px-4 py-16 text-center text-neutral-400">
                 {/* 🔴 issue #6733：`emptyText` 由页面传入 —— 读失败时传空串（别把「读不到」说成「没有订单」）。 */}
                 {emptyText}
               </td>
             </tr>
           ) : (
             orders.map((order) => {
-              const checked = selectedIds.includes(order.id)
               return (
                 // issue #8013：行 + （可选）它自己的展开行 —— 两行同属一单，故外层用 Fragment 承 key
                 <Fragment key={order.id}>
-                <tr
-                  className={cn(
-                    'border-b border-neutral-100 align-top transition-colors',
-                    // issue #6717：「操作」列是 `sticky right-0`，而 sticky 格的背景**只能**继承
-                    // `<tr>` 的背景（用祖先链上的 `.bg-white` 让 `bg-inherit` 变透明 ⇒ 横向滚过它
-                    // 下面的单元格会**穿透**显示）。故行背景必须**显式**声明在这里：
-                    // 未被选中 ⇒ `bg-white`（与卡片底色同值，外观不变）；选中 ⇒ 既有的 50/40。
-                    checked ? 'bg-primary-50/40' : 'bg-white hover:bg-neutral-50'
-                  )}
-                >
-                  <td className="pl-2 pr-3 py-4">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleOne(order.id)}
-                      onClick={(e) => e.stopPropagation()}
-                      className="w-4 h-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
-                    />
-                  </td>
-
+                {/* issue #6717：行背景**显式**声明在 `<tr>` 上（`sticky right-0` 的「操作」列
+                    横滚时不得让下层内容穿透；退回 `bg-inherit` 会重新引入 #6729 的穿透缺陷） */}
+                <tr className="border-b border-neutral-100 bg-white align-top transition-colors hover:bg-neutral-50">
                   {/* 订单ID（issue #8011：17 位纯数字手抄必错 ⇒ 单元格内给复制入口） */}
                   <td className="pl-0 pr-4 py-4 font-mono text-neutral-800 whitespace-nowrap">
                     <span className="inline-flex items-center gap-1">
@@ -547,23 +495,12 @@ export default function OrderTable({
                   </td>
 
                   {/* 操作（issue #6717）：右缘冻结。`border-l` 与表头同位置，滚动时与左侧内容之间有分隔。
-                      issue #6729（**#6717 的回归修复**）：原来写 `bg-inherit` —— 它继承的是 `<tr>` 的背景，
-                      而**选中态的行背景就是半透明的**（`bg-primary-50/40` = `rgba(238,242,248,0.4)`）
-                      ⇒ 继承到的也半透明 ⇒ 横滚时下层列的内容（姓名/电话/地址）**穿透**进冻结列
-                      （真机 `getComputedStyle` alpha=0.4 + 读图双重实证）。
-                      修法 = **把「继承」换成「同一个颜色的不透明版」**：
-                        · 未选中：行底色是 `bg-white` ⇒ 本格也 `bg-white`（逐像素一致）；
-                        · 选中：用 `bg-primary-50-lit`（= `bg-primary-50/40` 叠在白底上的**已合成色**
-                          `#f8fafc`）⇒ 与同行其它格**逐像素同色**；不能直接用 `bg-primary-50`
-                          （那是**未合成**的原色 `#eef2f8`，比同行其它格深一档 = 视觉不一致）。
-                      ⇒ 冻结格任何交互态下 alpha 恒为 1，而**行底色机制一字未改**（未选中 / hover 观感不变）。
-                      🔴 不要再退回 `bg-inherit`：行底色一旦半透明，冻结列必然穿透（类级判据会拦住）。 */}
-                  <td
-                    className={cn(
-                      'sticky right-0 z-10 border-l border-neutral-100 pl-2 pr-3 py-4',
-                      checked ? 'bg-primary-50-lit' : 'bg-white',
-                    )}
-                  >
+                      issue #6729（**#6717 的回归修复**）：原来写 `bg-inherit`，横滚时下层列的内容
+                      （姓名/电话/地址）会**穿透**进冻结列（真机 `getComputedStyle` alpha<1 + 读图双重实证）。
+                      修法 = 冻结格**自己**声明不透明底色：这里用 `bg-white`（与行底色同值，逐像素一致），
+                      行 hover 变 `neutral-50` 时本格保持不透明白底 —— 与改前未选中态观感完全相同。
+                      🔴 不要再退回 `bg-inherit` / 半透明色：背景一旦透明，冻结列必然穿透（类级判据会拦住）。 */}
+                  <td className="sticky right-0 z-10 border-l border-neutral-100 bg-white pl-2 pr-3 py-4">
                     {renderActions(order)}
                   </td>
                 </tr>
@@ -574,7 +511,7 @@ export default function OrderTable({
                     data-testid={`ship-inline-row-${order.id}`}
                     className="border-b border-neutral-100 bg-neutral-50/60"
                   >
-                    <td colSpan={15} className="px-4 py-4">
+                    <td colSpan={14} className="px-4 py-4">
                       <InlineShipForm
                         order={order}
                         onClose={() => onToggleShip?.(order)}

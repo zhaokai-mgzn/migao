@@ -37,8 +37,6 @@ describe('OrderTable', () => {
   const defaultProps = {
     orders: [mockOrder],
     loading: false,
-    selectedIds: [] as string[],
-    onSelectChange: vi.fn(),
     onView: vi.fn(),
     onRemark: vi.fn(),
     onClose: vi.fn(),
@@ -256,10 +254,42 @@ describe('OrderTable', () => {
     expect(screen.getByText('加载中…')).toBeTruthy()
   })
 
-  it('应渲染复选框列', () => {
-    render(<OrderTable {...defaultProps} />)
-    const checkboxes = screen.getAllByRole('checkbox')
-    expect(checkboxes.length).toBeGreaterThan(0)
+  // issue #8052：选择列（表头全选 + 每行勾选框）是**假动作** —— 选完没有任何批量动作消费它
+  // ⇒ 按用户裁定先移除（`migao-dev-flow` §31 P1：常驻控件必须真的能做事；重启条件见 issue）。
+  describe('选择列已移除（issue #8052）', () => {
+    it('🔴 表头没有全选 checkbox、行内没有 checkbox 单元格（整表零 checkbox）', () => {
+      const { container } = render(<OrderTable {...defaultProps} />)
+      // 红证：把 `<th>` 里的全选 `input[type="checkbox"]`（或行内勾选框）注回去 ⇒ 本组当场红
+      expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+      expect(container.querySelectorAll('table input[type="checkbox"]')).toHaveLength(0)
+      // 首列表头必须是「订单ID」—— 不是留一个空 `<th>` 占位（那等于「只删了控件、没删列」）
+      const headerCells = Array.from(container.querySelectorAll('thead th'))
+      expect(headerCells[0].textContent?.trim()).toBe('订单ID')
+    })
+
+    it('🔴 列数 = 14，加载态 / 空态 / 行内录入行的 colSpan 一并收敛（列数变了 colSpan 没跟上 = 表格错位）', () => {
+      const loading = render(<OrderTable {...defaultProps} loading orders={[]} />)
+      expect(loading.container.querySelectorAll('thead th')).toHaveLength(14)
+      expect(loading.container.querySelector('tbody td')!.getAttribute('colspan')).toBe('14')
+      loading.unmount()
+
+      const empty = render(<OrderTable {...defaultProps} orders={[]} />)
+      expect(empty.container.querySelectorAll('thead th')).toHaveLength(14)
+      expect(empty.container.querySelector('tbody td')!.getAttribute('colspan')).toBe('14')
+      empty.unmount()
+
+      const rows = render(<OrderTable {...defaultProps} />)
+      expect(rows.container.querySelectorAll('thead th')).toHaveLength(14)
+      expect(rows.container.querySelectorAll('tbody tr:first-child td')).toHaveLength(14)
+      rows.unmount()
+
+      // 行内录入区（issue #8013）的展开行是**整行一格** ⇒ 同样要跟列数走
+      const expanded = render(
+        <OrderTable {...defaultProps} onToggleShip={vi.fn()} shippingOrderId="order-001" />,
+      )
+      const shipRow = expanded.container.querySelector('[data-testid="ship-inline-row-order-001"] td')
+      expect(shipRow!.getAttribute('colspan')).toBe('14')
+    })
   })
 
   // #1290: 订单ID 行顶格 — 左侧无 padding
@@ -409,8 +439,6 @@ describe('打印列（issue #7902）', () => {
   const baseProps = {
     orders: [] as never[],
     loading: false,
-    selectedIds: [] as string[],
-    onSelectChange: () => {},
     onView: () => {},
     onRemark: () => {},
     onClose: () => {},

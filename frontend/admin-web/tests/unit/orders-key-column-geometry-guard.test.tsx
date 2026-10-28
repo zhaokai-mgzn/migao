@@ -46,8 +46,9 @@ const VIEWPORTS = [
 const containerWidth = (viewport: number) => (viewport >= 1440 ? 1044 : 884)
 
 /**
- * 列宽模型（px）。键 = 表头文本（`~` 表示复选框列）。值 = 该列的**宽度上界**估计。
+ * 列宽模型（px）。键 = 表头文本。值 = 该列的**宽度上界**估计。
  * 见文件头「列宽模型怎么来的」：真机读数 + `min-w`/`max-w` 声明，取偏大一侧。
+ * `'~'` = **改前**的复选框列（issue #8052 已移除；只有改前快照 `ORDER_COLUMNS_BEFORE` 还用到它）。
  */
 const COLUMN_WIDTH_PX: Record<string, number> = {
   // issue #7902：「打印」列 = 勾 + 「已打印」+ `MM-DD HH:mm`（实测约 150px）
@@ -87,9 +88,9 @@ const ORDER_COLUMNS_BEFORE = [
   '操作',
 ]
 
-/** 改后（本分支）的列序 —— 与真渲染出来的 DOM 顺序逐字比对。 */
+/** 改后（本分支）的列序 —— 与真渲染出来的 DOM 顺序逐字比对。
+ *  issue #8052：选择列（表头全选 + 行内勾选框）已移除 ⇒ 首个表头就是「订单ID」，14 列。 */
 const ORDER_COLUMNS_AFTER = [
-  '~',
   '订单ID',
   '状态',
   '加急',
@@ -139,8 +140,6 @@ function renderOrderTable() {
     <OrderTable
       orders={[ORDER]}
       loading={false}
-      selectedIds={[]}
-      onSelectChange={noop}
       onView={noop}
       onRemark={noop}
       onClose={noop}

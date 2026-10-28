@@ -73,8 +73,14 @@ vi.mock('dayjs', () => ({
 }))
 
 // Mock OrderTable component
+// issue #8052：同时记下页面**实际传下去的 props** —— 选择态（`selectedIds` / `onSelectChange`）
+// 已随假勾选框一起移除；红证 = 页面把这两个 props 传回来 ⇒ 下面「不再传选择态」那条当场红。
+const orderTableProps = vi.hoisted(() => ({ current: null as Record<string, unknown> | null }))
 vi.mock('@/components/orders', () => ({
-  OrderTable: ({ orders, loading, onView, onClose, onRemark, onRefund, emptyText }: any) => (
+  OrderTable: (props: any) => {
+    orderTableProps.current = props
+    const { orders, loading, onView, onClose, onRemark, onRefund, emptyText } = props
+    return (
     <div data-testid="order-table">
       {loading && <div data-testid="table-loading">加载中...</div>}
       {/* issue #8040：把页面传的 `emptyText` **真的**渲染出来 —— 改前这里写死「暂无数据」，
@@ -97,7 +103,8 @@ vi.mock('@/components/orders', () => ({
         )
       })}
     </div>
-  ),
+    )
+  },
   CloseOrderModal: ({ open, onClose, onConfirm }: any) => (
     open ? <div data-testid="modal" role="dialog"><button onClick={() => onConfirm('缺货')}>确认关闭</button></div> : null
   ),
@@ -236,6 +243,18 @@ describe('OrdersPage', () => {
       expect(screen.getByTestId('order-1')).toBeInTheDocument()
       expect(screen.getByText('MG202600001')).toBeInTheDocument()
     })
+  })
+
+  // issue #8052：勾选框是**假动作**（选完没有任何批量动作消费它）⇒ 用户 2026-10-29 裁定先移除。
+  // 页面侧的判据 = 不再向表格传选择态 props；列头 / 行内形态与列数一致性由**真组件**的判据覆盖
+  // （`tests/unit/components/OrderTable.test.tsx` 与 `tests/unit/pages/orders-list-row-actions.test.tsx`）。
+  it('不再向 OrderTable 传选择态 props（selectedIds / onSelectChange 已移除）', async () => {
+    render(<OrdersPage />)
+    await waitFor(() => expect(mockGetOrders).toHaveBeenCalled())
+    expect(orderTableProps.current).toBeTruthy()
+    // 红证：把页面里的 `const [selectedIds, ...]` 与这两个 props 注回去 ⇒ 下面两条当场红
+    expect('selectedIds' in orderTableProps.current!).toBe(false)
+    expect('onSelectChange' in orderTableProps.current!).toBe(false)
   })
 
   // issue #8048：加载态 = **通用表格骨架**（#8036 已验收口径），不再是裸「加载中…」+ 空白表体
