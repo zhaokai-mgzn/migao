@@ -1,7 +1,7 @@
 'use client'
 
 import { ArrowDown, Check, Copy, MoreHorizontal } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import type { OrderBrief } from '@/types'
@@ -12,6 +12,8 @@ import OrderStatusBadge from './OrderStatusBadge'
 import { isUrgentFlag, urgentBadgeText } from '@/lib/order-urgency'
 import { processingFeeOf } from '@/lib/order-fee-display'
 import RemarkPopover from './RemarkPopover'
+// 行内快捷发货录入区（issue #8013）：展开在该行**下方**，不跳页、不用遮罩模态
+import InlineShipForm from './InlineShipForm'
 import { printDocTypeLabel } from '@/lib/print-doc'
 
 /**
@@ -63,7 +65,25 @@ export interface OrderTableProps {
   onView: (order: OrderBrief) => void
   onRemark: (order: OrderBrief) => void
   onClose: (order: OrderBrief) => void
-  onShip: (order: OrderBrief) => void
+  /**
+   * 兜底路径：跳**既有**发货页 `/orders/{id}/ship`。
+   *
+   * issue #8013 起主行动「发货」不再跳页（走 `onToggleShip` 就地展开）——本回调只在页面
+   * 没接行内形态时兜底（老调用方 / 组件级测试），形态与改前一致。
+   */
+  onShip?: (order: OrderBrief) => void
+  /**
+   * issue #8013（列表即队列）：点行内主行动「发货」⇒ **展开 / 收起**该行下方的紧凑录入区。
+   *
+   * 与 `onShip` 的分工：本回调在场 ⇒ 行内形态（**不发生路由跳转**）；缺席 ⇒ 回退到 `onShip`。
+   */
+  onToggleShip?: (order: OrderBrief) => void
+  /** 当前展开了录入区的订单 id（`null`/缺省 = 全部收起；收起态**不进 DOM**，不是 CSS 隐藏） */
+  shippingOrderId?: string | null
+  /** 录入区提交成功 ⇒ 页面收起 + **按既有方式刷新列表**（行状态随服务端真值更新 / 按筛选移出） */
+  onShipped?: () => void
+  /** 既有发货页仍是兜底路径（issue #8013 第 ⑤ 条）—— ⋯ 菜单里的「去发货页」 */
+  onGoShipPage?: (order: OrderBrief) => void
   onRefund?: (order: OrderBrief) => void
   onConfirmPayment?: (order: OrderBrief) => void
   onConfirmReceive?: (order: OrderBrief) => void
@@ -220,6 +240,10 @@ export default function OrderTable({
   onRemark,
   onClose,
   onShip,
+  onToggleShip,
+  shippingOrderId = null,
+  onShipped,
+  onGoShipPage,
   onRefund,
   onConfirmPayment,
   onConfirmReceive,
@@ -264,8 +288,13 @@ export default function OrderTable({
     const primary: RowMenuItem | null =
       displayStatus === 'pending_payment' && onConfirmPayment
         ? { key: 'payment', label: '收款', onClick: () => onConfirmPayment(order) }
-        : displayStatus === 'pending_shipment'
-          ? { key: 'ship', label: '发货', onClick: () => onShip(order) }
+        : displayStatus === 'pending_shipment' && (onToggleShip || onShip)
+          ? {
+              key: 'ship',
+              label: '发货',
+              // issue #8013：列表即队列 —— **就地展开**录入区（不跳页）；没接行内形态时回退发货页
+              onClick: () => (onToggleShip ? onToggleShip(order) : onShip?.(order)),
+            }
           : displayStatus === 'shipped' && onConfirmReceive
             ? { key: 'receive', label: '确认收货', onClick: () => onConfirmReceive(order) }
             : null
@@ -280,6 +309,10 @@ export default function OrderTable({
     if (refundable && !alreadyRefunded && onRefund) {
       menuItems.push({ key: 'refund', label: '处理退款', onClick: () => onRefund(order) })
     }
+    if (displayStatus === 'pending_shipment' && onGoShipPage) {
+      // 兜底路径（issue #8013 第 ⑤ 条）：既有整页发货表单仍在 —— 想看商品 / 收货人再发货时走它
+      menuItems.push({ key: 'ship-page', label: '去发货页', onClick: () => onGoShipPage(order) })
+    }
 
     return (
       <div
@@ -290,7 +323,15 @@ export default function OrderTable({
           // 行内主行动走 `ghost`（§32.2 / §32.4：表格行内不用实心主色 —— 一屏至多一个 primary，
           // 那一个是页面头的「新增订单」）
           <span data-testid={`order-primary-${order.id}`}>
-            <Button variant="ghost" size="sm" className="px-2" type="button" onClick={primary.onClick}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="px-2"
+              type="button"
+              onClick={primary.onClick}
+              // 展开态要让读屏 / 键盘用户可感知（issue #8013：就地展开必须是一次「看得见的状态变化」）
+              aria-expanded={primary.key === 'ship' ? shippingOrderId === order.id : undefined}
+            >
               {primary.label}
             </Button>
           </span>
@@ -387,8 +428,9 @@ export default function OrderTable({
             orders.map((order) => {
               const checked = selectedIds.includes(order.id)
               return (
+                // issue #8013：行 + （可选）它自己的展开行 —— 两行同属一单，故外层用 Fragment 承 key
+                <Fragment key={order.id}>
                 <tr
-                  key={order.id}
                   className={cn(
                     'border-b border-neutral-100 align-top transition-colors',
                     // issue #6717：「操作」列是 `sticky right-0`，而 sticky 格的背景**只能**继承
@@ -584,6 +626,23 @@ export default function OrderTable({
                     {renderActions(order)}
                   </td>
                 </tr>
+                {shippingOrderId === order.id && (
+                  // 展开行（issue #8013）：录入区就在**这一行的下方** —— 不跳页、不用遮罩模态。
+                  // 收起态整行**不进 DOM**（§31 P1 的机器读数：不是 CSS 隐藏、不是 `sr-only`）。
+                  <tr
+                    data-testid={`ship-inline-row-${order.id}`}
+                    className="border-b border-neutral-100 bg-neutral-50/60"
+                  >
+                    <td colSpan={15} className="px-4 py-4">
+                      <InlineShipForm
+                        order={order}
+                        onClose={() => onToggleShip?.(order)}
+                        onShipped={() => onShipped?.()}
+                      />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               )
             })
           )}

@@ -326,12 +326,15 @@ describe('销售订单列表 · 行内操作收敛 + 噪声清理（issue #8011�
     expect(await screen.findByText('添加备注')).toBeInTheDocument()
   })
 
-  it('主行动仍是原行为：待发货行「发货」跳发货页；待付款行「收款」开确认弹框（不直接改状态）', async () => {
+  it('主行动仍是原行为：待付款行「收款」开确认弹框（不直接改状态）；待发货行「发货」**不跳页**（issue #8013 起就地展开）', async () => {
     renderPage()
     await waitForRows()
 
+    // issue #8013：待发货行的主行动「发货」= **就地展开录入区**，不再是整页跳转
+    // （录入区自身的判据在 tests/unit/pages/orders-inline-ship.test.tsx，本文件只钉「不跳页」这一条边界）
     fireEvent.click(within(screen.getByTestId('order-primary-ship')).getByRole('button'))
-    expect(routerMock.push).toHaveBeenCalledWith('/orders/ship/ship')
+    expect(routerMock.push).not.toHaveBeenCalled()
+    expect(screen.getByTestId('ship-inline-form')).toBeInTheDocument()
 
     // 收款 = 旧「确认付款」的同一个弹框闸门（弹框里点确认才发请求）
     fireEvent.click(within(screen.getByTestId('order-primary-pay')).getByRole('button'))

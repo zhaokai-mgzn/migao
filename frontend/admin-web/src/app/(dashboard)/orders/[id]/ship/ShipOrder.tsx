@@ -12,6 +12,8 @@ import { useAuthStore } from '@/store/auth'
 import type { Order, OrderItem } from '@/types'
 import { cn } from '@/lib/utils'
 import { LOGISTICS_COMPANIES, LOGISTICS_TYPES } from '@/lib/logistics'
+// 发货幂等键（`X-Client-Request-Id`）的**唯一生成点**（issue #6935 / #6983；列表行内发货共用，issue #8013）
+import { newClientRequestId } from '@/lib/client-request-id'
 // 商品身份（品名/货号/颜色/门幅）的**唯一读取口**（issue #6882：原先这里直读三个不存在的键）
 import { orderItemSku } from '@/lib/order-item-sku'
 // 「发货前要不要作业」的唯一读点 + 按型分岔的阻断文案（issue #7079 第 5 包）
@@ -26,23 +28,6 @@ function formatAmount(amount?: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`
-}
-
-/**
- * 本次发货请求的**幂等键**（`X-Client-Request-Id`，issue #6935 / #6983）。
- *
- * 口径（与服务端 `ClientRequestIdService` 的「同键回放、失败释放占位」配套）：
- * ① **提交期间一次生成**；② 失败后**重试复用同值**（否则一次超时重试就变成两次发货）；
- * ③ **成功后作废**（下一次发货是一件新事，该拿新键）。
- * 故键存在 ref 里（不触发重渲染），且**只在成功路径清空**。
- *
- * 用 `crypto.randomUUID()`，缺失时退到时间戳 + 随机串（老浏览器 / 非安全上下文下
- * `randomUUID` 不可用；键只要**唯一**即可，服务端按 `(tenant_id, client_request_id)` 去重）。
- */
-function newShipRequestId(): string {
-  const uuid = globalThis.crypto?.randomUUID?.()
-  if (uuid) return uuid
-  return `ship-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
 interface ProductGroup {
@@ -228,7 +213,13 @@ export default function ShipOrder() {
 
   const productGroups = useMemo(() => groupItems(order?.items), [order?.items])
 
-  /** 幂等键（见文件头 `newShipRequestId` 的口径）；`null` = 下一件发货是新事。 */
+  /**
+   * 本次发货请求的**幂等键**（`X-Client-Request-Id`，issue #6935 / #6983）；`null` = 下一件发货是新事。
+   *
+   * 生成口径住在 `src/lib/client-request-id.ts`（列表的行内快捷发货 issue #8013 是**同一个写面**的
+   * 第二个入口，规则抄两份迟早漂）。本页只负责「何时生成 / 何时作废」：提交期间一次生成、
+   * 失败重试复用同值、成功后作废。
+   */
   const shipRequestIdRef = useRef<string | null>(null)
 
   /**
@@ -252,7 +243,7 @@ export default function ShipOrder() {
       return
     }
     setSubmitting(true)
-    const clientRequestId = shipRequestIdRef.current ?? newShipRequestId()
+    const clientRequestId = shipRequestIdRef.current ?? newClientRequestId()
     shipRequestIdRef.current = clientRequestId
     try {
       await productionApi.shipOrder(

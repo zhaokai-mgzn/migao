@@ -316,7 +316,7 @@ describe('ShipOrder', () => {
   })
 
   /**
-   * 🔴 判据 C（issue #6983）· **类级元守卫**：发货页不得再出现「先 updateLogistics
+   * 🔴 判据 C（issue #6983）· **类级元守卫**：发货写面不得再出现「先 updateLogistics
    * 再 updateOrderStatus(shipped)」那条两步老路。
    *
    * 为什么扫**源码**而不是再断言一次 mock：那两步的病灶是「不建发货单 + 非原子 + 无幂等键」，
@@ -324,16 +324,18 @@ describe('ShipOrder', () => {
    * （如「无需物流」路径）把老路写回来，行为判据**看不见**。源码扫描是这条纪律的机械面：
    * 旧调用回潮 ⇒ 当场红并具名报出命中的那一处。
    *
+   * 🔴 2026-10-28（issue #8013）扩面：发货写面从**一个**入口变成**两个** —— 整页发货页
+   * `ShipOrder.tsx` 与销售订单列表的行内快捷发货 `InlineShipForm.tsx`。只扫其中一个 =
+   * 「换个入口写回老路」照样绿 ⇒ 扫描面必须覆盖两个入口（新入口随本单一起进扫描面）。
+   *
    * 判别力自证：把两条旧调用拼进内存字符串 ⇒ 同一份判据当场命中（证明它不是恒绿的空断言）。
    */
-  it('类级守卫：ShipOrder 源码不得再出现两步老路（扫源码，回潮即红）', async () => {
-    const source = readFileSync(
-      join(process.cwd(), 'src/app/(dashboard)/orders/[id]/ship/ShipOrder.tsx'),
-      'utf8'
-    )
-
-    // 前置条件（触发确认）：原子入口必须在场，否则「旧调用不在」是空跑
-    expect(source).toContain('productionApi.shipOrder(')
+  it('类级守卫：发货写面（整页 + 行内）源码不得再出现两步老路（扫源码，回潮即红）', async () => {
+    /** 发货写面的**全部**入口（新增入口必须登记到这里，否则它不受本判据约束） */
+    const WRITE_SURFACES = [
+      'src/app/(dashboard)/orders/[id]/ship/ShipOrder.tsx',
+      'src/components/orders/InlineShipForm.tsx',
+    ]
 
     // 判据 = 两条**老端点的调用形态**（`orderApi.<方法>(`）—— 只认调用、不认散文：
     // 注释里可以解释这条纪律（那正是它被写下来的方式），但**代码里不许再出现调用**。
@@ -341,12 +343,18 @@ describe('ShipOrder', () => {
       ['orderApi', 'updateLogistics('].join('.'),
       ['orderApi', 'updateOrderStatus('].join('.'),
     ]
-    const hits = forbidden.filter((needle) => source.includes(needle))
-    expect(hits, `发货页出现两步老路：${hits.join(', ')}`).toEqual([])
 
-    // 判别力自证：同一份判据对「把老路加回来」的文本当场命中（不是恒绿）
-    const regressed = `${source}\n await orderApi.${'updateLogistics'}(order.id, {})`
-    expect(forbidden.some((needle) => regressed.includes(needle))).toBe(true)
+    for (const rel of WRITE_SURFACES) {
+      const source = readFileSync(join(process.cwd(), rel), 'utf8')
+      // 前置条件（触发确认）：原子入口必须在场，否则「旧调用不在」是空跑
+      expect(source, `${rel} 没有走原子发货端点`).toContain('productionApi.shipOrder(')
+      const hits = forbidden.filter((needle) => source.includes(needle))
+      expect(hits, `${rel} 出现两步老路：${hits.join(', ')}`).toEqual([])
+
+      // 判别力自证：同一份判据对「把老路加回来」的文本当场命中（不是恒绿）
+      const regressed = `${source}\n await orderApi.${'updateLogistics'}(order.id, {})`
+      expect(forbidden.some((needle) => regressed.includes(needle))).toBe(true)
+    }
   })
 
   it('发货人清空时拒绝提交（纸质单据不能没有经手人）', async () => {

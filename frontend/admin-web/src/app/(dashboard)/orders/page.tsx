@@ -180,6 +180,12 @@ export default function OrdersPage() {
   const [orders, setOrders] = useState<OrderBrief[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  /**
+   * 行内快捷发货（issue #8013）：当前展开了录入区的订单 id（`null` = 全部收起）。
+   *
+   * 列表即队列 —— 点「发货」就地展开，不跳页；同一时刻只展开一行（连录运单号时不丢位置）。
+   */
+  const [shippingOrderId, setShippingOrderId] = useState<string | null>(null)
 
   // 弹窗
   const [closeModalOpen, setCloseModalOpen] = useState(false)
@@ -338,8 +344,30 @@ export default function OrdersPage() {
     setRefundModalOpen(true)
   }
 
-  const handleShip = (order: OrderBrief) => {
+  /**
+   * 行内快捷发货（issue #8013）：主行动「发货」⇒ **就地展开 / 收起**录入区，**不跳页**。
+   *
+   * 改前这里是 `router.push('/orders/{id}/ship')` ⇒ 49 单待发货 = 49 次整页往返；
+   * 商家实际是「连着录运单号」，不是「一单一趟出远门」。
+   */
+  const handleToggleShip = (order: OrderBrief) => {
+    setShippingOrderId((prev) => (prev === order.id ? null : order.id))
+  }
+
+  /** 兜底路径：既有整页发货表单（想看商品 / 收货人再发货时，「⋯」菜单里有入口） */
+  const handleGoShipPage = (order: OrderBrief) => {
     router.push(`/orders/${order.id}/ship`)
+  }
+
+  /**
+   * 录入区提交成功 ⇒ 收起 + **按既有方式刷新列表**（`loadOrders`）。
+   *
+   * 🔴 「已发货」这个行状态**只**来自服务端刷新结果，不做前端乐观改写 —— 否则服务端没写成功时
+   * 界面会替它撒谎（issue #8013 的缺口形态：商家以为发完了，实际仍是待发货）。
+   */
+  const handleInlineShipped = () => {
+    setShippingOrderId(null)
+    loadOrders()
   }
 
   const handleConfirmPayment = (order: OrderBrief) => {
@@ -619,7 +647,12 @@ export default function OrdersPage() {
           onView={handleView}
           onRemark={handleOpenRemark}
           onClose={handleOpenClose}
-          onShip={handleShip}
+          /* issue #8013：列表即队列 —— 主行动「发货」**就地展开**录入区（不跳页）；
+             兜底路径（既有整页发货表单）留在「⋯」菜单的「去发货页」里。 */
+          shippingOrderId={shippingOrderId}
+          onToggleShip={handleToggleShip}
+          onGoShipPage={handleGoShipPage}
+          onShipped={handleInlineShipped}
           onRefund={handleOpenRefund}
           onConfirmPayment={handleConfirmPayment}
           onConfirmReceive={handleConfirmReceive}
