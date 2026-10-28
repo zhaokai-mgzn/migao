@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { AlertTriangle, Plus, RotateCcw, Search, Calendar } from 'lucide-react'
-import { Button, Modal, PageHeader, PageCard, SELECT_CONTROL } from '@/components/ui'
+import { Button, Modal, PageHeader, PageCard, TableSkeleton, SELECT_CONTROL } from '@/components/ui'
 import ProductTable, { ProductSortField, ProductSortOrder } from '@/components/products/ProductTable'
 import { productApi } from '@/lib/api'
 import { toast } from 'sonner'
@@ -652,6 +652,12 @@ export default function ProductsPage() {
 
       {/* 表格 */}
       <PageCard padded={false} testId="products-empty">
+        {/* issue #8036：加载态渲染**通用表格骨架**（灰底 + 脉冲），不再让共享 `Table` 印出裸「加载中...」
+            + 空白表体 —— 2026-10-24 真栈截图里那形态会被商家读成「这个店没有商品」。
+            `columns` 与 `ProductTable` 的 10 列对齐（骨架是纯布局，不参与取数 / 分页 / 筛选）。 */}
+        {loading ? (
+          <TableSkeleton rows={pageSize} columns={10} />
+        ) : (
       <ProductTable
         products={products}
         loading={loading}
@@ -677,6 +683,7 @@ export default function ProductsPage() {
            本单**页面级**覆盖：失败时空串，读成功才回落到默认「暂无数据」。 */
         emptyText={loadFailed ? '' : '暂无数据'}
       />
+        )}
       </PageCard>
 
       {/* 确认弹窗（批量 / 单条共用） */}

@@ -12,6 +12,8 @@ export { default as SearchBar } from './SearchBar'
 export { default as EmptyState } from './EmptyState'
 export { default as Card } from './Card'
 export { default as Loading } from './Loading'
+// issue #8036：列表页**加载态**的唯一形态（灰底 + 脉冲占位，纯布局、无文案）
+export { default as TableSkeleton } from './TableSkeleton'
 export { default as FileUpload } from './FileUpload'
 export { default as NumberInput } from './NumberInput'
 // issue #7007：页内版式原语（页面头 / 页内一级容器 / 无状态筛选卡片）
