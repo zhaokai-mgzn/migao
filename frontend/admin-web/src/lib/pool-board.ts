@@ -92,6 +92,25 @@ export function singleDispatchLines(board: PoolBoard | null | undefined): PoolLi
 }
 
 /**
+ * **一张订单在逐单立即派表里的全部行** —— 「点一行派单」的批次指派取值口径（issue #7968）。
+ *
+ * 🔴 「立即派单」是**订单级动作**（服务端「一单一加工单」）：请求体的 `orderIds` 是整单，
+ * 但 `batches` 是**逐行**的批次指派（`ProcessingOrderService::buildDesignations` 只按 `batches`
+ * 里出现的行装配 `Designation`；`stampAssignedBatches` 也只给这些行写快照 `batchNo`）。
+ * ⇒ 只带被点的那一行 = **整单派出、只有那一套领料**（用户 2026-10-28 现场：
+ * 「一个加急订单有多套成品帘时……只有被选中的那套成品帘指定了批次号，应该要整单都指派」）。
+ *
+ * ⚠️ 「点哪一行」只决定**派哪张单**，不决定**哪几套领批次** ⇒ 同单的任意一行点下去，请求体都相同。
+ * 订单在看板上不存在（已被刷掉 / 刚被派走）⇒ 回空数组，由调用方兜底（不要在这里造行）。
+ */
+export function singleDispatchLinesOfOrder(
+  board: PoolBoard | null | undefined,
+  orderId: string,
+): PoolLine[] {
+  return singleDispatchLines(board).filter((line) => line.orderId === orderId)
+}
+
+/**
  * 派单**失败面**是否必须上屏（唯一口径）。
  *
  * 被拒绝的每一次都必须留下**看得见**的文案（PR-080 判据 3「整批显式拒绝，不静默少派」）：
