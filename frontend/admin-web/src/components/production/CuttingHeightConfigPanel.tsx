@@ -55,7 +55,11 @@ import NumberInput from '@/components/ui/NumberInput'
 // issue #7176：配置面表单的**唯一版式原语**（浅底面板 + 栅格 + 标签在上 + 单位入框）
 import FormPanel, { Field, FormGrid, fieldControl } from '@/components/ui/FormPanel'
 import { cuttingHeightApi, productionApi } from '@/lib/api'
-import { CRAFT_OPTIONS, SPECIAL_OPTIONS } from '@/lib/order-craft-fields'
+import {
+  CRAFT_OPTIONS,
+  selectedSpecialOptionDisplayNames,
+  specialOptionDisplayOptions,
+} from '@/lib/order-craft-fields'
 import { cn } from '@/lib/utils'
 import { SELECT_CONTROL, SELECT_CONTROL_FIELD } from '@/components/ui'
 import type {
@@ -231,7 +235,12 @@ function ConditionRow({
       <ValueMultiSelect
         ariaLabel={`条件取值-${itemIndex}-${conditionIndex}`}
         options={optionsOf(condition.kind)}
-        values={condition.values}
+        // 存量配置里可能是派生键（`余料带回-布`）⇒ 展示态收回语义名（issue #8007）；保存时写语义名
+        values={
+          condition.kind === 'option'
+            ? selectedSpecialOptionDisplayNames(condition.values)
+            : condition.values
+        }
         onChange={(values) => onChange({ ...condition, values })}
       />
       <button
@@ -421,7 +430,9 @@ export function CuttingHeightConfigPanel() {
 
   const optionsOf = useCallback(
     (kind: string): Option[] => {
-      if (kind === 'option') return SPECIAL_OPTIONS.map((name) => ({ value: name, label: name }))
+      // 🔴 issue #8007：取值词表是**语义选项**（`余料带回`），布/纱派生键不进配置面 ——
+      //    条件里写 base 名 ⇒ 后端按「族」匹配该订单行的任一派生键（纱帘/布帘都命中）。
+      if (kind === 'option') return specialOptionDisplayOptions().map((name) => ({ value: name, label: name }))
       if (kind === 'craft') return CRAFT_OPTIONS.map((name) => ({ value: name, label: name }))
       if (kind === 'processing_item') return processingItems.map((name) => ({ value: name, label: name }))
       if (kind === 'shaped') return SHAPED_VALUES
@@ -661,7 +672,7 @@ export function CuttingHeightConfigPanel() {
               buttonId="cutting-height-probe-options"
               buttonLabel="预演特殊选项"
               optionLabelPrefix="特殊选项"
-              options={SPECIAL_OPTIONS}
+              options={specialOptionDisplayOptions()}
               value={probe.options}
               onChange={(options) => setProbe({ ...probe, options })}
             />

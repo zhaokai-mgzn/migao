@@ -97,12 +97,33 @@ function openCount(value: unknown): string | null {
   return OPEN_COUNT_LABELS[String(n)] ?? `${n} 开`
 }
 
-/** 特殊选项（19 项，字符串数组）⇒ `加铅线、双褶`；空数组 ⇒ 不渲染 */
+/**
+ * 布/纱派生族的**展示归一**（issue #8007，2026-10-28 用户裁定）：
+ * `余料带回-布` / `余料带回-纱` 是落库 join key，语义选项只有一个「余料带回」——
+ * 材料由订单行的帘种决定 ⇒ 展示面不出现材料后缀。
+ *
+ * ⚠️ 本表与 `frontend/admin-web/src/lib/order-craft-fields.ts::SPECIAL_OPTION_FAMILIES`
+ * 是同一份口径；本文件三端**逐字同源**（`tests/unit_ci_workflows/test_craft_display_same_source.py`），
+ * 无法跨 app import ⇒ 两侧一致性由 `frontend/admin-web/tests/unit/lib/special-option-names.test.ts` 钉住。
+ */
+const SPECIAL_OPTION_FAMILIES: Record<string, readonly [string, string]> = {
+  余料带回: ['余料带回-布', '余料带回-纱'],
+}
+
+/** 落库键 ⇒ 展示名（族成员收回 base 名；其余原样） */
+function displayOptionName(name: string): string {
+  for (const [base, variants] of Object.entries(SPECIAL_OPTION_FAMILIES)) {
+    if (variants.includes(name)) return base
+  }
+  return name
+}
+
+/** 特殊选项（join key 字符串数组）⇒ `加铅线、双褶`；布/纱派生键收回语义名；空数组 ⇒ 不渲染 */
 function optionList(value: unknown): string | null {
   if (!Array.isArray(value)) return null
   const items = value
     .filter((item): item is string => typeof item === 'string')
-    .map((item) => item.trim())
+    .map((item) => displayOptionName(item.trim()))
     .filter((item) => item !== '')
   return items.length > 0 ? items.join('、') : null
 }
