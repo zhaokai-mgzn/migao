@@ -404,13 +404,15 @@ class WorkerCuttingHeightNullProductIdTest {
         static final Map<String, IndexSite> INDEX_SITES = Map.ofEntries(
                 // ── 本单：修完必须继续容忍空键（否则本单的判据当场红） ──
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/WorkerCuttingHeightService.java|brands",
-                        new IndexSite("brands", "brands", "productId", "item.getProductId()", 170, Verdict.KEY_NULLABLE,
+                        new IndexSite("brands", "brands", "productId", "item.getProductId()", 178, Verdict.KEY_NULLABLE,
                                 "本单病灶：product_id 可为空（存量明细）⇒ 已显式短路 + 空集改可变表（双重）。"
-                                + "2026-10-24（issue #7647）：`read()` 追加裁剪批次两键后行号下移 6 行（164→170），判定依据未变")),
+                                + "2026-10-24（issue #7647）：`read()` 追加裁剪批次两键后行号下移 6 行（164→170），判定依据未变。"
+                                + "2026-10-28（issue #7993）：`positionRow` 补「主帘缺省即布帘」的默认部位后下移 8 行（170→178），判定依据未变")),
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/WorkerCuttingHeightService.java|items",
-                        new IndexSite("items", "itemsOf", "itemId", "entry.get(\"order_item_id\")", 158, Verdict.KEY_NULLABLE,
+                        new IndexSite("items", "itemsOf", "itemId", "entry.get(\"order_item_id\")", 166, Verdict.KEY_NULLABLE,
                                 "itemId 来自扫描结果可能为 null ⇒ `itemId == null ? null : items.get(itemId)` 短路。"
-                                + "2026-10-24（issue #7647）：同上下移 6 行（152→158），判定依据未变")),
+                                + "2026-10-24（issue #7647）：同上下移 6 行（152→158），判定依据未变。"
+                                + "2026-10-28（issue #7993）：同上再下移 8 行（158→166），判定依据未变")),
                 // issue #7373 段 2：盘点完成时按**下标**对齐「明细行 ↔ 计算行」——
                 // 两个 List 都是本方法内直接构造的可变 ArrayList/stream().toList()，
                 // 下标由 `for (int i = 0; i < items.size(); i++)` 给出 ⇒ 永不为 null，也不查不可变表。
