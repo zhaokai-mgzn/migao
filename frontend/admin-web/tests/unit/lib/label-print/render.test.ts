@@ -136,24 +136,24 @@ describe('renderWashLabelJobs — 调度与几何（issue #6439 判据 ③）', 
     expect(await renderWashLabelJobs([], [], null)).toEqual([])
   })
 
-  it('🔴 纸长**固定 50mm × 119mm**（issue #7948）：入参三个、画布高取矩阵纸长、宽被打印头钳住', async () => {
+  it('🔴 纸长**固定 50mm × 140mm**（issue #7979）：入参三个、画布高取矩阵纸长、宽被打印头钳住', async () => {
     const { canvases } = installCanvasStub()
-    const dots = printDotGeometry('label-50x119')
-    const box = printPageBoxMm('label-50x119')
+    const dots = printDotGeometry('label-50x140')
+    const box = printPageBoxMm('label-50x140')
 
     // ① 签名 = `(labels, qrSources, printerInfo)` —— **没有第 4 个**纸长参数
     //    （#7776 时代 playwright 传 `labelLengthMm`；纸型固定后再传 ⇒ 纸长又有第二个来源）
     expect(renderWashLabelJobs.length).toBe(3)
 
-    // ② 未连机器 ⇒ 介质矩阵兜底：纸型 50mm × 119mm（不是 150mm / 70mm，也不是任何调用方给的长度）
-    expect(box).toEqual({ widthMm: 50, heightMm: 119 })
+    // ② 未连机器 ⇒ 介质矩阵兜底：纸型 50mm × 140mm（不是 150mm / 119mm，也不是任何调用方给的长度）
+    expect(box).toEqual({ widthMm: 50, heightMm: 140 })
     const geometry = resolveLabelGeometry(null)
     // 纸宽 50mm 换来的像素被**打印头**钳住（右侧约 2mm 打不到）⇒ 出图必须按有效打宽
     expect(geometry.widthPx).toBe(dots.headWidthPx)
     expect(geometry.widthPx).toBe(dots.effectiveWidthPx)
-    // 纸长 119mm × 8 dots/mm = 952 点（介质矩阵登记的整点口径）；实现按 203 / 25.4 = 7.9921 dots/mm
-    // 重算 ⇒ 879 点，两者只许差 **1 点**（dpi 取整）。差更多 ⇒ 纸长换了来源（例如又按调用方传的长度画）。
-    expect(box.heightMm * dots.dotsPerMm).toBe(952)
+    // 纸长 140mm × 8 dots/mm = 1120 点（介质矩阵登记的整点口径）；实现按 203 / 25.4 = 7.9921 dots/mm
+    // 重算 ⇒ 1119 点，两者只许差 **1 点**（dpi 取整）。差更多 ⇒ 纸长换了来源（例如又按调用方传的长度画）。
+    expect(box.heightMm * dots.dotsPerMm).toBe(1120)
     expect(geometry.heightPx).toBe(Math.round(box.heightMm * (dots.dpi / 25.4)))
     expect(Math.abs(geometry.heightPx - box.heightMm * dots.dotsPerMm)).toBeLessThanOrEqual(1)
     // ③ 换一台机器 ⇒ 点阵变、纸长不变（纸型是介质的属性，不是机器的属性）
@@ -162,7 +162,7 @@ describe('renderWashLabelJobs — 调度与几何（issue #6439 判据 ③）', 
     expect(other.heightPx).not.toBe(geometry.heightPx)
     expect(other.widthPx).toBe(576)
 
-    // ④ 画布真按这套几何开（两张 = 两张 50×119mm 的点阵）
+    // ④ 画布真按这套几何开（两张 = 两张 50×140mm 的点阵）
     await renderWashLabelJobs(LABELS, [null, null], null)
     expect(canvases).toEqual([
       { width: dots.headWidthPx, height: geometry.heightPx },

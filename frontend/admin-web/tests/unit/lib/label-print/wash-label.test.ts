@@ -1,18 +1,20 @@
 // case_ids: PP-011
 // @vitest-environment jsdom
 //
-// PP-011（issue #6439 建版式 → #6656 与系统打印同一份纸面 → **2026-10-27 固定纸型 50×119 / 正文 11pt**）：
+// PP-011（issue #6439 建版式 → #6656 与系统打印同一份纸面 → **2026-10-28（#7979）固定纸型 50×140 / 上下各留白 15mm**）：
 // 免驱动直连通道的**位图版式**（`frontend/admin-web/src/lib/label-print/wash-label.ts`）。
 //
 // 用户 2026-10-26 逐字（issue #7816）：「水洗唛长度不足，设置为打印50*150」「字体还是太小，可以再大一点」
 // 「二维码放到底部居中」「移除扫码报工和短码文字」「二维码可以放大一点」「移除加工单号」。
-// 2026-10-27 逐字（issue #7948）：「把水洗唛的尺寸改成50*110，现在偏长了」「二维码不能直接沉底，
-// 务必和底部留点距离」⇒ 纸长 119mm；二维码下沿与纸底（底部虚线）恒 ≥ 6mm（从纸边起算）。
+// 2026-10-28 逐字（issue #7979）：「水洗唛还是要调整到50*150，当前是50*120，多的30要添加到顶部和
+// 底部虚线下处各15，顶部需要让最顶端的字体上面留白15」「二维码紧挨文字排版，当前留白太多，这样尺寸
+// 就能缩小到50*140」⇒ 纸长 140mm；顶部留白 15mm；二维码**紧挨正文**（只隔 0.5mm 块距）；
+// 码下沿与纸底（底部虚线）恒 ≥ 15mm（从纸边起算）。
 //
 // 逐条判据（都能判红）：
 // ① **几何由机器自报值 + 介质矩阵推出**：`printerDPI` / `printerWidth` 一变，`dpmm` 与画布尺寸跟着变
 //    —— **写死机型口径 ⇒ 必红**（「不做打印机定制功能」的落点：接别家机器不改码）；
-//    兜底值转发介质矩阵（纸宽 50mm × 纸长 **119mm** 固定）；
+//    兜底值转发介质矩阵（纸宽 50mm × 纸长 **140mm** 固定）；
 // ② **纸面内容 = 行清单**（折行只插入断点、**不增删字**）—— 版式自己编字段 ⇒ 必红；
 //    **issue #7833 起正文不设行数预算**（`WashLabelRow` 无 `maxLines`）：末行**不再**以省略号收尾；
 // ③ **二维码在底部居中**，无码 ⇒ 虚线占位框（不画假码）；**不再有**加工单号 / 扫码报工 / 人可读短码；
@@ -40,8 +42,9 @@ import {
   WASH_LABEL_BOTTOM_CLEARANCE_MM,
   WASH_LABEL_COMPANY_FONT_PT,
   WASH_LABEL_COMPANY_SUBTITLE_FONT_PT,
+  WASH_LABEL_BLOCK_GAP_MM,
   WASH_LABEL_LINE_HEIGHT,
-  WASH_LABEL_QR_TEXT_GAP_LINES,
+  WASH_LABEL_TOP_BLANK_MM,
 } from '@/lib/label-print/wash-label-metrics'
 
 /** 正文行高（px）= 字号 × 行高倍数 —— 与 `layoutWashLabel` 里的 `lineStep` 同口径 */
@@ -49,8 +52,8 @@ const lineStepOf = (dpmm: number) =>
   Math.round(Math.round((WASH_LABEL_BODY_FONT_PT / 72) * 25.4 * dpmm) * WASH_LABEL_LINE_HEIGHT)
 
 /** 介质矩阵里的口径（**唯一真值源**）—— 本文件的期望值从它取，不写第二份像素字面量 */
-const MATRIX = printDotGeometry('label-50x119')
-const BOX = printPageBoxMm('label-50x119')
+const MATRIX = printDotGeometry('label-50x140')
+const BOX = printPageBoxMm('label-50x140')
 
 /** 确定性「量字」替身：0.6em/字符（等宽近似）—— 真机走 canvas `measureText` */
 const measure = (text: string, fontPx: number) => text.length * fontPx * 0.6
@@ -78,17 +81,17 @@ describe('resolveLabelGeometry — 几何取自机器自报值 + 介质矩阵（
     expect(geo.widthPx).toBe(MATRIX.effectiveWidthPx)
     expect(geo.widthPx).toBe(LABEL_HEAD_DOTS_DEFAULT)
     expect(geo.heightPx).toBe(Math.round(WASH_LABEL_DEFAULT_LENGTH_MM * geo.dpmm))
-    // 纸长 119mm × 203dpi = 951.1 → 951 点（矩阵里的 952 = 119 × 8 dots/mm 的整点口径，差 1 点是 dpi 取整）
+    // 纸长 140mm × 203dpi = 1118.9 → 1119 点（矩阵里的 1120 = 140 × 8 dots/mm 的整点口径，差 1 点是 dpi 取整）
     expect(geo.heightPx).toBe(Math.round(BOX.heightMm * (MATRIX.dpi / 25.4)))
     expect(LABEL_DPI_DEFAULT).toBe(MATRIX.dpi)
   })
 
-  it('🔴 两条通道**同一份介质**：纸长 / 纸宽都取自 `label-50x119`（写死 150mm / 70mm / 40mm ⇒ 必红）', () => {
+  it('🔴 两条通道**同一份介质**：纸长 / 纸宽都取自 `label-50x140`（写死 150mm / 70mm / 40mm ⇒ 必红）', () => {
     expect(WASH_LABEL_DEFAULT_WIDTH_MM).toBe(BOX.widthMm)
     expect(WASH_LABEL_DEFAULT_LENGTH_MM).toBe(BOX.heightMm)
-    // 2026-10-27 用户裁定「客户要求小于120mm」⇒ 纸长 119mm（#7816 的 150mm 作废）
-    expect(WASH_LABEL_DEFAULT_LENGTH_MM).toBe(119)
-    expect(WASH_LABEL_MEDIA).toBe('label-50x119')
+    // 2026-10-28 用户裁定「这样尺寸就能缩小到50*140」⇒ 纸长 140mm（#7960 的 119mm 作废）
+    expect(WASH_LABEL_DEFAULT_LENGTH_MM).toBe(140)
+    expect(WASH_LABEL_MEDIA).toBe('label-50x140')
   })
 
   it('🔴 机器自报 300dpi / 576dot ⇒ 几何整体跟着变（写死兜底值 ⇒ 必红）', () => {
@@ -145,22 +148,25 @@ describe('layoutWashLabel — 版式是纯函数（#6439 → #6656 → #7816）'
 
     const noCompany = layoutWashLabel(input(), geo, measure)
     expect(noCompany.company).toEqual([])
-    // 正反对照：没有抬头块 ⇒ 正文从内边距开始（不是空出两行）
-    expect(noCompany.lines[0].y).toBe(noCompany.margin)
+    // 正反对照：没有抬头块 ⇒ 正文从**顶部留白**开始（不是空出两行，也不是从左右内边距开始）
+    expect(noCompany.lines[0].y).toBe(noCompany.topBlank)
+    // 顶部留白 = 15mm（用户 2026-10-28「顶部需要让最顶端的字体上面留白15」）—— 从纸边起算
+    expect(noCompany.topBlank).toBe(Math.round(WASH_LABEL_TOP_BLANK_MM * geo.dpmm))
+    expect(noCompany.company).toEqual([])
   })
 
-  it('判据 ③：二维码**不沉底** —— 正文后隔两行、离纸底（虚线）留白（用户 2026-10-26 逐字「二维码不要沉底，跟文字隔两行即可，要离底部虚线留空」）', () => {
+  it('判据 ③：二维码**紧挨正文**且**不沉底** —— 正文后只隔一个块距、离纸底（虚线）恒 ≥ 15mm（2026-10-28「二维码紧挨文字排版，当前留白太多」）', () => {
     const layout = layoutWashLabel(input(), geo, measure)
     const qr = layout.qr
     if (!qr) throw new Error('有码的输入却没算出二维码位 —— 判据无从取值')
     // 水平居中
     expect(qr.x).toBe(Math.round((geo.widthPx - qr.size) / 2))
-    // 竖直：正文最后一行之下**恰好两行**（不是贴纸底）
+    // 竖直：正文最后一行之下**只隔一个块间距**（2026-10-28「二维码紧挨文字排版」；旧口径是隔两行）
     const lineStep = lineStepOf(geo.dpmm)
     const lastLine = layout.lines[layout.lines.length - 1]
-    expect(qr.y).toBe(lastLine.y + lineStep * (1 + WASH_LABEL_QR_TEXT_GAP_LINES))
+    expect(qr.y).toBe(lastLine.y + lineStep + Math.round(WASH_LABEL_BLOCK_GAP_MM * geo.dpmm))
     // 离纸的下沿（底部虚线）至少留 WASH_LABEL_BOTTOM_CLEARANCE_MM（**从纸边起算**，与系统打印
-    // 的 `padding-bottom: 6mm` 同口径；改回「贴底」或按旧的「内边距 + 6mm = 7.2mm」⇒ 必红）
+    // 的 `padding-bottom: 15mm` 同口径；改回「贴底」或旧值 6mm ⇒ 必红）
     expect(qr.y + qr.size).toBeLessThanOrEqual(
       geo.heightPx - Math.round(WASH_LABEL_BOTTOM_CLEARANCE_MM * geo.dpmm),
     )
@@ -181,7 +187,7 @@ describe('layoutWashLabel — 版式是纯函数（#6439 → #6656 → #7816）'
     // 占位框同口径：跟在正文后两行、不贴纸底（与有码时同一套版式）
     const lineStep = lineStepOf(geo.dpmm)
     const lastLine = layout.lines[layout.lines.length - 1]
-    expect(placeholder.rect.y).toBe(lastLine.y + lineStep * (1 + WASH_LABEL_QR_TEXT_GAP_LINES))
+    expect(placeholder.rect.y).toBe(lastLine.y + lineStep + Math.round(WASH_LABEL_BLOCK_GAP_MM * geo.dpmm))
     expect(placeholder.rect.y + placeholder.rect.size).toBeLessThanOrEqual(
       geo.heightPx - Math.round(WASH_LABEL_BOTTOM_CLEARANCE_MM * geo.dpmm),
     )
@@ -203,7 +209,9 @@ describe('layoutWashLabel — 版式是纯函数（#6439 → #6656 → #7816）'
     // 最后一行仍在二维码之上（没被挤出纸外），且码与末行之间仍有**两行**空位
     const lastLine = layout.lines[layout.lines.length - 1]
     expect(lastLine.y).toBeLessThan(layout.qr!.y)
-    expect(layout.qr!.y - (lastLine.y + lineStep)).toBeGreaterThanOrEqual(lineStep * WASH_LABEL_QR_TEXT_GAP_LINES)
+    expect(layout.qr!.y - (lastLine.y + lineStep)).toBeGreaterThanOrEqual(
+      Math.round(WASH_LABEL_BLOCK_GAP_MM * geo.dpmm),
+    )
     // 大量行被裁 ⇒ 但也确实画了东西（不是空断言）
     expect(layout.lines.length).toBeGreaterThan(5)
     expect(layout.lines.length).toBeLessThan(huge.length)
@@ -212,7 +220,7 @@ describe('layoutWashLabel — 版式是纯函数（#6439 → #6656 → #7816）'
   })
 
   it('纸宽连内边距都放不下 ⇒ 显式抛错（fail-closed，不静默画一张错纸）', () => {
-    expect(() => layoutWashLabel(input(), { dpmm: 8, widthPx: 2, heightPx: 952 }, measure)).toThrow(
+    expect(() => layoutWashLabel(input(), { dpmm: 8, widthPx: 2, heightPx: 1120 }, measure)).toThrow(
       WashLabelLayoutError,
     )
   })

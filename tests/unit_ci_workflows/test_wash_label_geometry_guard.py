@@ -7,7 +7,8 @@
 ① `@page { size: Wmm Hmm }`（分页尺寸）、② `.task-card-label { width; height }`（标签本体）、
 ③ 组件文件头那段**靠真机渲染量出来的垂直预算注释**（逐行行高 / 折行数 / 二维码行 / 内边距）。
 
-#4946（30×60）→ #5646（**50×60**）→ 2026-10-25（50×70）→ **2026-10-26（issue #7816：固定 50×150）**
+#4946（30×60）→ #5646（**50×60**）→ 2026-10-25（50×70）→ 2026-10-26（#7816：固定 50×150）
+→ 2026-10-27（#7960：50×119 / 11pt）→ **2026-10-28（issue #7979：50×140 + 上下各留白 15mm）**
 这次改版里，①② 一改就看得见，**③ 不会** ——
 旧读数（30mm 宽 / 27.6mm 版心 / 17 行上限）留在注释里**没有任何东西会变红**，
 下一个人照着过期预算加一行，就会把纸面底部的二维码与人可读短码挤出纸外。
@@ -22,7 +23,7 @@
 | G2 | 文件头预算注释**声明当前几何**（`Wmm × Hmm`） | 注释写回 `30mm × 60mm` ⇒ 必红 |
 | G3 | 预算注释**结构完整**：版心 / 每行 / 二维码 / 内边距 / `≤` 五要素齐备 | 删掉任一要素 / 清空预算段 ⇒ 必红 |
 | G4 | **版心宽可复算**：注释「版心宽 Xmm」== `width − 横向内边距`（±0.01mm） | **只把容器宽改回 30mm** ⇒ 必红（G2 挡不住这一路，见下） |
-| G5 | **可用高度可复算**：注释「可用 Hmm」== `height − 纵向内边距`（2026-10-27 起下沿 = 二维码 6mm 净空） | 只改 height 不改注释 ⇒ 必红 |
+| G5 | **可用高度可复算**：注释「可用 Hmm」== `height − 纵向内边距`（2026-10-28 起 = 上留白 15mm + 下净空 15mm） | 只改 height 不改注释 ⇒ 必红 |
 | G6 | **每行行高可复算**：注释「每行 Xmm」== `font-size × line-height`（±0.01mm） | 只改字号/行高不改注释 ⇒ 必红 |
 | G7 | 注入式红证 + **内容指纹**自证（禁 mtime/size，issue #4260） | 注入未生效 ⇒ 必红 |
 
@@ -87,7 +88,7 @@ def _page_mm_from_matrix(media_id: str) -> tuple[float, float]:
     raise AssertionError(f"介质 `{media_id}` 不在 {MEDIA_MATRIX.name} 里 ⇒ 判据无从判定（不静默）")
 #: `.task-card-label { width: Wmm; height: Hmm; … }`
 _LABEL_RE = re.compile(r"\.task-card-label\s*\{\s*width:\s*([0-9.]+)mm;\s*height:\s*([0-9.]+)mm")
-#: 标签本体的 padding（单个值或 CSS 简写：`padding: 1.2mm 1.2mm 6mm;`）
+#: 标签本体的 padding（单个值或 CSS 简写：`padding: 15mm 1.2mm 15mm;`）
 _PADDING_RE = re.compile(r"\.task-card-label\s*\{[^}]*?padding:\s*([^;}]+)")
 #: 标签本体的 font-size / line-height（`font-size: 6pt; line-height: 1.2;`）
 _FONT_RE = re.compile(r"\.task-card-label\s*\{[^}]*?font-size:\s*([0-9.]+)pt;\s*line-height:\s*([0-9.]+)")
@@ -173,9 +174,9 @@ def _padding_mm(raw: str) -> tuple[float, float]:
     """`padding` 简写 → `(横向合计, 纵向合计)`（mm）。
 
     支持 1~4 个值（CSS 简写口径：上 / 右 / 下 / 左；1 值 = 四边；2 值 = 上下 / 左右；
-    3 值 = 上 / 左右 / 下）。🔴 2026-10-27 起 `.task-card-label` 用 `padding: 1.2mm 1.2mm 6mm`
-    （下沿 6mm = 二维码与底部虚线的净空）—— 旧的「2 × 单值」会把可用高度算成 107.6mm，
-    而真实可用是 102.8mm（少算 4.8mm ⇒ 预算注释与代码会对不上却看不出来）。
+    3 值 = 上 / 左右 / 下）。🔴 2026-10-28 起 `.task-card-label` 用 `padding: 15mm 1.2mm 15mm`
+    （上 = 顶部留白、下 = 二维码与底部虚线的净空）—— 旧的「2 × 单值」会把可用高度算成 110mm 以外的值，
+    而真实可用是 **110mm**（少算 ⇒ 预算注释与代码会对不上却看不出来）。
     """
     values = [float(v) for v in re.findall(r"([0-9.]+)mm", raw)]
     if not values or len(values) > 4:
@@ -301,7 +302,7 @@ def test_g7_injected_geometry_drift_is_red():
     css = _css_block(src)
     page_w, page_h, _label_w, _label_h = _geometry(src, css)
     injected_a = _PAGE_RULE_CALL_RE.sub(lambda m: m.group(0).replace(m.group(1), "continuous-241x140"), src, count=1)
-    assert "label-50x119" in src, "找不到介质 id 的注入点 ⇒ 本红证会**空跑**"
+    assert "label-50x140" in src, "找不到介质 id 的注入点 ⇒ 本红证会**空跑**"
     assert injected_a != src, "找不到介质 id 的注入点 ⇒ 本红证会**空跑**"
     assert _fingerprint(injected_a) != _fingerprint(src), "注入后内容指纹未变（**禁 mtime/size**）"
     assert _problems(injected_a), "只改 `@page` 宽度后判据**没判红** ⇒ G1 是空判据"
