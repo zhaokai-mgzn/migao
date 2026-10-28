@@ -1072,7 +1072,26 @@ grep -rn "deleted = 1" backend/admin-api/src/main/java/com/migao/admin/service/P
 
 `operation.determined_by` 新增取值 `worker`（另两个既有取值 `inferred` / `picked` 不变）。
 
-### 12.4 边界（照实登记）
+### 12.4 屏上只摆他那道（issue #7965，2026-10-28 用户裁定）
+
+用户逐字两条：「如果工人绑定了工序，则扫码报工页面只需要展示绑定的工序，现在是全部列出来了」
++「只有绑定了裁剪工序的工人扫码报工后才能看到裁剪输出区块」。
+
+| 面 | 绑定工人（`worker_operation` 非空） | 不设工序 |
+|---|---|---|
+| `set_overview.positions[].operations[]` | 只留 `logical_name == worker_operation` 的行；没有这道的部位**整行不出** | 与改前逐字相同（全量） |
+| `set_overview.cut_plan`（「精裁输出（裁多长 × 几片）」） | **只在绑的就是「裁剪」**（`ProductionService.OPERATION_CUTTING`）时下发，其它绑定 = `[]` | 与改前逐字相同（恒下发） |
+
+实现落点 = `ProductionScanService#workerSetOverview`（扫码读面这一层，同 `scanDetailOverview`
+的分层理由）：商家 / agent 套件读面走 `ProcessingSetReadService#setOverview` 的原样输出，
+形状与内容一字不动。归并/判定**不新造第二份**：逻辑名走 `logicalOperationName`、裁剪走
+`ProductionService.OPERATION_CUTTING`（与批次三键同一个常量），前端不切字符串。
+
+⚠️ **接受的缺口（照实登记）**：未绑定工人（含尚未绑定的存量裁床）**不再**看到精裁输出 ——
+按用户逐字「只有绑定了裁剪工序的工人…才能看到」。恢复办法 = 工人档案上绑一道「裁剪」；
+**重启条件** = 现场反馈未绑定的裁床缺该数据面 ⇒ 改判成「本次要报的那道是裁剪即可见」。
+
+### 12.5 边界（照实登记）
 
 - 质检工序默认完成**不计件**（改前 = 质检员录「合格」按 1.5 元/套计件）；要保留需要给质检员
   一个确认动作，与本轮「不需要按钮」冲突 ⇒ 留待下一轮裁定。

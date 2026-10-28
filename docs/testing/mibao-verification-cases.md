@@ -9329,10 +9329,12 @@
 ```
 溯源: 2026-10-25 新增（issue #7723）。用户裁定三条：① 走 A（发加工不再必经）；② 外发粒度 = 整单；③ 加工厂主数据复用供应商档案、本期只做跟踪。设计取舍：承接方是「谁干」而不是「干什么活」⇒ 挂在派单（派单 = 分配承接方 + 批次），作业单只留工序与进度。数据侧复用既有 `processing_orders.processor` / `expected_delivery_date`，新增 `processor_supplier_id`（V193）+ `suppliers.type`。 ｜ tags: processing-order, dispatch, outsourcing, supplier
 
-### PG-096. 工人档案绑定工序 ⇒ 扫码自动选中该道直接报工（不出选择器）；质检默认合格、只记返工、不阻塞完工 🔵
+### PG-096. 工人档案绑定工序 ⇒ 扫码自动选中该道直接报工（不出选择器）、工人屏只摆他那道（精裁输出只给绑「裁剪」）；质检默认合格、只记返工、不阻塞完工 🔵
 ```
 你: 用户 2026-10-25 逐字：「工人要允许绑定一个工序，一个工人对应一个工序，对工人档案进行重新设计，工人扫码后直接报工，通过工人自动选择工序，质检不要显示合格，默认都合格，只有出现问题时允许直接选择返工，只提供一个返工选项，加一些备注说明即可」
 你: 用户 2026-10-25 补充裁定：「只要所有工序全部完成就算结束了，这样也不需要质检按钮，尽量少一些动作，如果工序没有完成随时可以进入质检判定就好」
+你: 用户 2026-10-28 逐字：「如果工人绑定了工序，则扫码报工页面只需要展示绑定的工序，现在是全部列出来了」
+你: 用户 2026-10-28 逐字：「只有绑定了裁剪工序的工人扫码报工后才能看到裁剪输出区块」
 数据: **判据 1·绑定写面（含校验）**：建号 `POST /api/admin/workers` 带 `workerOperation`、改绑 `PUT /api/admin/workers/{id}/operation` ⇒ 落 `users.worker_operation`；不在本租户活跃工序库 ⇒ **422 具名拒绝 + 零写入**；空白 ⇒ 清空绑定（显式写 NULL，不被 MyBatis-Plus NOT_NULL 策略静默漏掉）；跨租户 / 非工人档案 ⇒ 404。证据：backend/admin-api/src/test/java/com/migao/admin/service/WorkerAdminServiceTest.java（createWorkerStoresTheBoundOperation / unknownOperationIsRejectedWithoutWriting / updateWorkerOperationRebindsOrClears）+ backend/admin-api/src/test/java/com/migao/admin/controller/AdminWorkerControllerTest.java（workerOperationCatalogIsServed / updateWorkerOperationReturnsTheBinding）
 数据: **判据 2·扫码自动选工序**：同一张码，不设工序 ⇒ 推断 `determined_by=inferred`（改前形态）；绑定「复烫」⇒ 选中 `op-3` 且 `determined_by=worker`、`alternatives=[]`、`worker_operation="复烫"`。证据：backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanServiceTest.java（boundWorkerOperationIsAutoSelected）
 数据: **判据 3·不回落 / 不谎报完成**：绑定工人在本件没有该工序 ⇒ `operation=null` + `worker_operation_state=absent` + `completed=false`；这道已做完 ⇒ `state=done`；扫码完成入口对这种情形回 409 `WORKER_OPERATION_NOT_PENDING`（说人话，不再落到「推断不出待做工序」）。证据：ProductionScanServiceTest（boundWorkerOperationAbsentOnThisItem / boundWorkerOperationAlreadyDone）
@@ -9340,11 +9342,13 @@
 数据: **判据 5·质检默认合格、只记返工**：工人屏质检区块**不出** `data-quality-result`（无合格/报废选项），只有【返工】+ 问题说明必填；无记录显示「正常」且整块不出现「合格」二字。证据：frontend/worker-h5/tests/worker-h5-quality.test.mjs（②③④）
 数据: **判据 6·质检不阻塞完工 + 默认完成**：只剩「质检」未完成 ⇒ 报完最后一道其它工序即 `order_completed=true`，质检行被 CAS 推到 `done_qty=qty` 并落 `done_at`，且**不写报工**（不计件）。证据：backend/admin-api/src/test/java/com/migao/admin/service/ProductionServiceTest.java（pendingQualityOperationDoesNotBlockCompletionAndIsAutoCompleted）
 数据: **判据 7·工人档案面板（商家面）**：新增「工序」列 + 新建/改绑入口，选项来自服务端工序目录（`employee:list`，前端不维护第二份清单）；不设工序显示「不设工序」（出入库/仓库岗位本来就无工序，#7766）。证据：frontend/admin-web/tests/unit/components/WorkerProfilesPanel.test.tsx（⑥⑦）
-数据: **边界（照实登记）**：① 绑定粒度 = 逻辑工序（布/纱通用），不是工序库行 id；② 绑定**不是**权限码（只决定「这次报哪道」，不参与授权判定）；②′ 工序**不是必填**（#7766，用户逐字「也有工人不需要绑定工序，比如管理原材料出入库的工人」）—— 出入库/仓库岗位选「不设工序」即可，档案显示「不设工序」而不是「未配置」；③ 质检工序默认完成**不计件**（原按合格判定 1.5 元/套）；④ 观星台商家侧三态质检录入零回归，这些件的质检统计仍显示「未检」；⑤ 不动 `inspect` 页的写准入。
+数据: **判据 8·工人屏只摆他那一块（issue #7965，会红）**：绑定工人扫码 ⇒ `set_overview.positions[].operations[]` **只留** `logical_name == worker_operation` 的行、没有这道工序的部位**整行不出**；`set_overview.cut_plan` 只在该工人**绑的就是裁剪**（`ProductionService.OPERATION_CUTTING`，与批次三键同一个常量）时下发、否则为 `[]`（页面按「有行才渲染」⇒ 「精裁输出（裁多长 × 几片）」区块不出现）。**不设工序 ⇒ 两块与改前逐字一致（零回归）**。**红证（实测）**：`./mvnw -q -Dtest=ProductionScanServiceTest test` 在实现前跑 ⇒ 37 条中 2 failed（`boundWorkerOverviewListsOnlyHisOperation` 的 positions 期望 1 实得 2、`boundCuttingWorkerStillSeesCutPlan` 同形）。证据：backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanServiceTest.java（boundWorkerOverviewListsOnlyHisOperation / boundCuttingWorkerStillSeesCutPlan / unboundWorkerKeepsFullOverviewAndCutPlan）
+数据: **边界（照实登记）**：① 绑定粒度 = 逻辑工序（布/纱通用），不是工序库行 id；② 绑定**不是**权限码（只决定「这次报哪道」，不参与授权判定）；②′ 工序**不是必填**（#7766，用户逐字「也有工人不需要绑定工序，比如管理原材料出入库的工人」）—— 出入库/仓库岗位选「不设工序」即可，档案显示「不设工序」而不是「未配置」；③ 质检工序默认完成**不计件**（原按合格判定 1.5 元/套）；④ 观星台商家侧三态质检录入零回归，这些件的质检统计仍显示「未检」；⑤ 不动 `inspect` 页的写准入；⑥ 判据 8 只改**扫码读面**的 `set_overview` 组装（商家 / agent 套件读面走 `ProcessingSetReadService#setOverview` 原样，形状与内容不变）；⑦ 未绑定工人（含尚未绑定的存量裁床）**不再**看到精裁输出 —— 按用户逐字「只有绑定了裁剪工序的工人…才能看到」，恢复办法 = 档案上绑一道「裁剪」；重启条件：现场反馈未绑定裁床缺该数据面 ⇒ 改判成「本次要报的那道是裁剪即可见」。
 前置: 前置 = ① 工人档案（`users.worker_no` 非空）且 `users.worker_operation` 绑定了本租户活跃工序库里的一道**逻辑工序**（如「韩褶」）；② 一张带该工序实例的活跃加工单；③ 工人端「质检」页（`inspect`）逐人开（只影响质检区块，不影响绑定与报工）。后端夹具 = Mockito 单测；H5 / admin-web = 纯渲染与组件夹具（零 DOM 网络 / mock API）。
 跳过: [backend-contract] 服务端写面/读面 + 前端渲染与组件判据（零 LLM 行为），不进 agent-eval 冒烟
 ```
-溯源: 2026-10-25 新增（issue #7749；用户原话见 user_inputs）。落码：迁移 V195 `users.worker_operation` + `WorkerAdminService`（写面校验 / 改绑 / 清空）+ `AdminWorkerController`（目录 `GET /operations` + `PUT /{id}/operation`）+ `ProductionScanService`（`resolve` 追加 `workerOperation` 入参、`determined_by=worker`、`worker_operation_state`）+ `ProductionScanCompleteService`（读面/写面同一判据 + 409 `WORKER_OPERATION_NOT_PENDING`）+ `ProductionService`（质检不阻塞完工 + 默认完成不计件）+ worker-h5（「你的工序」一行 / 隐藏选择器 / 质检只记返工）+ admin-web（工序列 / 新建选工序 / 改绑弹窗）。取号 = 现取全仓 PG 已占号最大 PG-095 ⇒ 本单取 PG-096。 ｜ tags: worker-profile, production, quality-inspection, worker-h5, backend-contract
+溯源: 2026-10-25 新增（issue #7749；用户原话见 user_inputs）。落码：迁移 V195 `users.worker_operation` + `WorkerAdminService`（写面校验 / 改绑 / 清空）+ `AdminWorkerController`（目录 `GET /operations` + `PUT /{id}/operation`）+ `ProductionScanService`（`resolve` 追加 `workerOperation` 入参、`determined_by=worker`、`worker_operation_state`）+ `ProductionScanCompleteService`（读面/写面同一判据 + 409 `WORKER_OPERATION_NOT_PENDING`）+ `ProductionService`（质检不阻塞完工 + 默认完成不计件）+ worker-h5（「你的工序」一行 / 隐藏选择器 / 质检只记返工）+ admin-web（工序列 / 新建选工序 / 改绑弹窗）。取号 = 现取全仓 PG 已占号最大 PG-095 ⇒ 本单取 PG-096。
+  2026-10-28 追加判据 8（issue #7965；用户两条逐字见 user_inputs）：`ProductionScanService#workerSetOverview` —— 绑定工人的 `set_overview.positions[].operations[]` 只留他那道、无该道的部位整行不出；`cut_plan` 只在绑定「裁剪」时下发（常量复用 `ProductionService.OPERATION_CUTTING`，不在前端切字符串）。不设工序 ⇒ 逐字节零回归。 ｜ tags: worker-profile, production, quality-inspection, worker-h5, backend-contract
 
 ### PG-097. 外发加工标记：订单打标后不进成批候选、进派单页外发区逐单立即派，且派单必须选承接方（V194） 🔵
 ```
@@ -13848,7 +13852,7 @@
 - PG-093: 裁剪报工必须确认批次：派工批次预填可改 / 未指派必须手输 / 批次账同事务纠偏（issue #7647）
 - PG-094: 发加工不再必经：首工序报满即可进「加工中」（A6 后半裁定直达；issue #7723）
 - PG-095: 外发承接方搬到智能派单：整单加工厂 + 回厂日，作业单不再录入/展示（issue #7723）
-- PG-096: 工人档案绑定工序 ⇒ 扫码自动选中该道直接报工（不出选择器）；质检默认合格、只记返工、不阻塞完工
+- PG-096: 工人档案绑定工序 ⇒ 扫码自动选中该道直接报工（不出选择器）、工人屏只摆他那道（精裁输出只给绑「裁剪」）；质检默认合格、只记返工、不阻塞完工
 - PG-097: 外发加工标记：订单打标后不进成批候选、进派单页外发区逐单立即派，且派单必须选承接方（V194）
 - PG-098: 任一工序工人可报返工：把该笔报工改记为返工（回退 done_qty/done_at/加工单完成态、计件归零）+ 生成返工单 + 手机端返工加工单列表（逐人开）
 - PG-099: 返工与质检分离：返工写路径不再产生质检数据（类级守卫），质检判定只在手机端；两张单都定位到「套号 × 部位」

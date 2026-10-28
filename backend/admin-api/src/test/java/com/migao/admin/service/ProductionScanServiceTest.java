@@ -29,6 +29,7 @@ import org.mockito.quality.Strictness;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -210,6 +211,81 @@ class ProductionScanServiceTest {
 
         assertThat(result.get("operation")).isNull();
         assertThat(result.get("worker_operation_state")).isEqualTo("done");
+    }
+
+    // ============================================================ ①″ 绑定工人只看自己的那道（issue #7965）
+
+    @Test
+    @DisplayName("#7965 绑定工人 ⇒ 本套工序只列他那一道（别人的活 / 没有这道工序的部位整行不出），精裁输出不出")
+    void boundWorkerOverviewListsOnlyHisOperation() {
+        stubNewTokenScan(ITEM_CLOTH, standardOps());
+
+        // 绑「复烫」：本套的复烫只在布帘（op-3）⇒ 纱帘那一行（精裁-纱）整行不出
+        Map<String, Object> result = service.resolve(NEW_CODE, null, null, null, TENANT, "复烫");
+
+        List<Map<String, Object>> positions = overviewPositions(result);
+        assertThat(positions).as("没有这道工序的部位整行不出（不摆空分组）").hasSize(1);
+        assertThat(positions.get(0).get("order_item_id")).isEqualTo(ITEM_CLOTH);
+        assertThat(overviewOperations(positions.get(0)))
+                .as("本套工序只剩他绑定的那道 —— 别人的活（精裁 / 定型 / 外帘打卷）一条都不列")
+                .extracting(o -> String.valueOf(o.get("operation_id")))
+                .containsExactly("op-3");
+        assertThat(cutPlan(result))
+                .as("精裁输出是裁床的东西：绑的不是裁剪 ⇒ 不下发（页面据此不出区块）")
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("#7965 绑「裁剪」的工人 ⇒ 精裁输出照旧下发（本套工序只剩裁剪切的行）")
+    void boundCuttingWorkerStillSeesCutPlan() {
+        List<ProcessingPositionOperation> ops = new ArrayList<>(standardOps());
+        ops.add(op("op-0", ITEM_CLOTH, "布帘", "布艺遮光帘A", 0, "裁剪-布", "11", "0"));
+        stubNewTokenScan(ITEM_CLOTH, ops);
+
+        Map<String, Object> result = service.resolve(NEW_CODE, null, null, null, TENANT, "裁剪");
+
+        assertThat(operation(result).get("operation_id")).isEqualTo("op-0");
+        assertThat(operation(result).get("logical_name")).isEqualTo("裁剪");
+        assertThat(cutPlan(result))
+                .as("裁床要「裁多长 × 几片」：绑定裁剪的工人必须看得到（本套两个部位各一行）")
+                .hasSize(2);
+        assertThat(overviewPositions(result)).hasSize(1);
+        assertThat(overviewOperations(overviewPositions(result).get(0)))
+                .extracting(o -> String.valueOf(o.get("operation_id")))
+                .containsExactly("op-0");
+    }
+
+    @Test
+    @DisplayName("#7965 对照：不设工序 ⇒ 本套工序 / 精裁输出与改前逐字一致（零回归）")
+    void unboundWorkerKeepsFullOverviewAndCutPlan() {
+        stubNewTokenScan(ITEM_CLOTH, standardOps());
+
+        Map<String, Object> result = service.resolve(NEW_CODE, null, null, null, TENANT, null);
+
+        assertThat(overviewPositions(result)).as("两个部位都在").hasSize(2);
+        assertThat(overviewOperations(overviewPositions(result).get(0)))
+                .extracting(o -> String.valueOf(o.get("operation_id")))
+                .containsExactly("op-1", "op-2", "op-3", "op-9");
+        assertThat(cutPlan(result)).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("#7965 类级：绑定工人的响应里**任何**带 logical_name 的行都只能是他那道（将来新增的键也逃不过）")
+    void boundWorkerResponseCarriesNoOtherOperationRows() {
+        List<ProcessingPositionOperation> ops = new ArrayList<>(standardOps());
+        ops.add(op("op-0", ITEM_CLOTH, "布帘", "布艺遮光帘A", 0, "裁剪-布", "11", "0"));
+        stubNewTokenScan(ITEM_CLOTH, ops);
+
+        Map<String, Object> result = service.resolve(NEW_CODE, null, null, null, TENANT, "复烫");
+
+        // 结构式判据（不点名具体键）：响应里所有「工序行」的 logical_name 必须只有他绑定的那道
+        // ⇒ 将来谁再往响应里塞一个新的工序清单键（候选 / 推荐 / 下一道…），只要带 logical_name 就会被这条抓住。
+        List<String> names = new ArrayList<>();
+        collectLogicalNames(result, names);
+        assertThat(names).as("防空跑：响应里确实有工序行").isNotEmpty();
+        assertThat(names)
+                .as("绑定工人不得在响应里看到别人的活（裁剪 / 精裁 / 定型 / 外帘打卷）")
+                .containsOnly("复烫");
     }
 
     @Test
@@ -836,6 +912,51 @@ class ProductionScanServiceTest {
     @SuppressWarnings("unchecked")
     private static List<Map<String, Object>> alternatives(Map<String, Object> result) {
         return (List<Map<String, Object>>) result.get("alternatives");
+    }
+
+    /** 本套工序总览（issue #7965：绑定工人版只留他那道）。 */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> overview(Map<String, Object> result) {
+        return (Map<String, Object>) result.get("set_overview");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> overviewPositions(Map<String, Object> result) {
+        return (List<Map<String, Object>>) overview(result).get("positions");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> overviewOperations(Map<String, Object> position) {
+        return (List<Map<String, Object>>) position.get("operations");
+    }
+
+    /** 精裁输出清单（给裁床的「裁多长 × 几片」，issue #5693）。 */
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> cutPlan(Map<String, Object> result) {
+        return (List<Map<String, Object>>) overview(result).get("cut_plan");
+    }
+
+    /**
+     * 递归收集响应里**所有**工序行的 `logical_name`（issue #7965 的类级判据）。
+     *
+     * <p>为什么按结构扫而不是点名键：本单的缺陷形态是「服务端把全量工序下发给只该看自己那份的角色」，
+     * 而响应里可以承载工序行的键会继续新增（`operation` / `positions[].operations[]` 已经两个）
+     * ⇒ 点名键的判据抓不住下一个键。这条只认「带 {@code logical_name} 的表」= 工序行的形状。</p>
+     */
+    private static void collectLogicalNames(Object node, List<String> out) {
+        if (node instanceof Map<?, ?> map) {
+            Object name = map.get("logical_name");
+            if (name != null) {
+                out.add(String.valueOf(name));
+            }
+            for (Object value : map.values()) {
+                collectLogicalNames(value, out);
+            }
+        } else if (node instanceof List<?> list) {
+            for (Object item : list) {
+                collectLogicalNames(item, out);
+            }
+        }
     }
 
     @SuppressWarnings("unchecked")

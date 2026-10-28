@@ -530,8 +530,9 @@ public class ProductionScanService {
         //    全部来自**同一份** `setOperations`（与上面的推断/进度/卡点同源）
         //    ⇒ 页面不再另写一份聚合（第二份口径）。🔴 实现自 issue #5247 起在
         //    `ProcessingSetReadService`（全仓唯一一份），与商家/agent 套件读面**同一份**。
-        result.put("set_overview", scanDetailOverview(po, processingSetReadService
-                .setOverview(set, setOperations, po, tenantId), tenantId));
+        //    issue #7965：绑定工人只摆他自己的那道 + 精裁输出只给裁剪（见 workerSetOverview）。
+        result.put("set_overview", workerSetOverview(po, processingSetReadService
+                .setOverview(set, setOperations, po, tenantId), tenantId, workerOperation));
         result.put("operation", chosen == null
                 ? null
                 : operationView(chosen, determinedBy, rerouted));
@@ -741,6 +742,68 @@ public class ProductionScanService {
             overview.put("positions", withPositionDetail(raw, specByItemIdOf(po, tenantId)));
         }
         return overview;
+    }
+
+    /**
+     * 工人扫码屏的「本套工序 / 精裁输出」——**只摆这位工人该看的**（issue #7965，2026-10-28 用户逐字：
+     * 「如果工人绑定了工序，则扫码报工页面只需要展示绑定的工序，现在是全部列出来了」+
+     * 「只有绑定了裁剪工序的工人扫码报工后才能看到裁剪输出区块」）。
+     *
+     * <p>两条口径（只对**绑定工人**生效；不设工序 ⇒ 与改前逐字节相同，零回归）：</p>
+     * <ol>
+     *   <li>{@code positions[].operations[]} 只留 {@code logical_name == worker_operation} 的行；
+     *       某部位没有这道 ⇒ 该部位整行**不出**（不摆空分组）；</li>
+     *   <li>{@code cut_plan}（给裁床的「裁多长 × 几片」）只在**绑的就是裁剪**时下发，否则置空数组
+     *       —— 页面按「有行才渲染」⇒ 区块不出现。判据复用 {@link ProductionService#OPERATION_CUTTING}
+     *       （与批次三键同一个常量），不在这里另写一份工序名。</li>
+     * </ol>
+     *
+     * <p>🔴 过滤只发生**扫码读面这一层**（与 {@link #scanDetailOverview} 同一分层理由）：商家 / agent
+     * 套件读面走 {@link ProcessingSetReadService#setOverview} 的原始输出，形状与内容一字不动。</p>
+     */
+    private Map<String, Object> workerSetOverview(ProcessingOrder po, Map<String, Object> overview,
+                                                  Long tenantId, String workerOperation) {
+        Map<String, Object> view = scanDetailOverview(po, overview, tenantId);
+        if (!StringUtils.hasText(workerOperation)) {
+            return view;
+        }
+        if (view.get("positions") instanceof List<?> raw) {
+            view.put("positions", onlyOperationPositions(raw, workerOperation));
+        }
+        if (!ProductionService.OPERATION_CUTTING.equals(workerOperation)) {
+            view.put("cut_plan", List.of());
+        }
+        return view;
+    }
+
+    /** 绑定工人版的本套工序：每个部位只留他那一道；没有这道的部位整行不出。 */
+    private static List<Map<String, Object>> onlyOperationPositions(List<?> positions, String workerOperation) {
+        List<Map<String, Object>> kept = new ArrayList<>();
+        for (Object raw : positions) {
+            if (!(raw instanceof Map<?, ?> item)) {
+                continue;
+            }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> position = (Map<String, Object>) item;
+            List<Map<String, Object>> operations = new ArrayList<>();
+            if (position.get("operations") instanceof List<?> rawOperations) {
+                for (Object rawOperation : rawOperations) {
+                    if (rawOperation instanceof Map<?, ?> operation
+                            && workerOperation.equals(operation.get("logical_name"))) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> matched = (Map<String, Object>) operation;
+                        operations.add(matched);
+                    }
+                }
+            }
+            if (operations.isEmpty()) {
+                continue;
+            }
+            Map<String, Object> keptPosition = new LinkedHashMap<>(position);
+            keptPosition.put("operations", operations);
+            kept.add(keptPosition);
+        }
+        return kept;
     }
 
     /** {@link #scanDetailOverview} 的列表版（就地用 {@code positions} 的值建新表，不改入参）。 */
