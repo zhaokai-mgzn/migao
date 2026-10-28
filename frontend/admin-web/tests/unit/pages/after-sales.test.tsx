@@ -181,6 +181,15 @@ describe('AfterSalesPage', () => {
     })
   })
 
+  // issue #8048：加载态 = 通用表格骨架（#8036 口径），不再是 tbody 里的裸「加载中…」+ 空白表体。
+  it('加载中：渲染 table-skeleton，且不出现裸「加载中…」文案（#8048）', async () => {
+    mockGetTickets.mockReturnValue(new Promise(() => {}))
+    render(<AfterSalesPage />)
+    expect(await screen.findByTestId('table-skeleton')).toBeInTheDocument()
+    // 红证：把加载分支改回 tbody 里的裸「加载中…」行 ⇒ 本条红
+    expect(screen.queryByText(/加载中/)).not.toBeInTheDocument()
+  })
+
   it('should render search filters', () => {
     render(<AfterSalesPage />)
     expect(screen.getByText('关键词搜索')).toBeInTheDocument()

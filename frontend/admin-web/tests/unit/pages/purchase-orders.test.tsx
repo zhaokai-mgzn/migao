@@ -135,6 +135,16 @@ describe('采购单页面', () => {
     expect(row).toHaveTextContent('¥1000.00')
   })
 
+  // issue #8048：加载态 = 通用表格骨架（#8036 口径），不再是裸「加载中…」+ 空白表体。
+  it('加载中：渲染 table-skeleton，且不出现裸「加载中…」文案（#8048）', async () => {
+    mockList.mockReturnValue(new Promise(() => {}))
+    render(<PurchaseOrdersPage />)
+    expect(await screen.findByTestId('table-skeleton')).toBeInTheDocument()
+    // 红证：把加载分支改回裸「加载中…」div ⇒ 本条红
+    expect(screen.queryByText(/加载中/)).not.toBeInTheDocument()
+    expect(screen.queryByTestId('purchase-orders-loading')).not.toBeInTheDocument()
+  })
+
   it('状态上屏是人话；未登记的值给「其他」而不回显机器值（issue #6668）', async () => {
     expect(purchaseStatusLabel('ordered')).toBe('待收货')
     expect(purchaseStatusLabel('partially_received')).toBe('部分收货')

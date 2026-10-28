@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Plus, RotateCcw, Search, Send, Ban, PackageOpen, Upload, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import { inboundOrderApi, warehouseApi } from '@/lib/api'
-import { Modal, Button, Input, Select, Badge, PageCard, PageHeader } from '@/components/ui'
+import { Modal, Button, Input, Select, Badge, PageCard, PageHeader, TableSkeleton } from '@/components/ui'
 import type { InboundOrder, InboundOrderLine, InboundOrderStatus, OpeningImportReport } from '@/types'
 import type { Warehouse } from '@/types/stocktake'
 import { cn } from '@/lib/utils'
@@ -403,6 +403,13 @@ export default function InboundOrdersPage() {
       <PageCard padded={false} className="overflow-hidden">
         {/* issue #6398：`w-full` 会把列压到 CJK min-content（一个汉字）⇒ 必须给横向逃逸口 +
             `whitespace-nowrap`（否则表头折行、状态药丸竖排）。同省料看板 / 工艺路线的既有范式。 */}
+        {/* issue #8048：加载态 = 通用表格骨架（#8036 口径：页面级三元），列数随视图（原料 9 / 成品 7）；
+            不再在 tbody 里印裸「加载中…」+ 空白表体。
+            🔴 只在**首次加载**（列表为空）出骨架：过账 / 作废 / 查询会触发刷新，刷新时已有读数 ⇒
+            表格照旧在场（同 `quality-inspections` 的 `recordsLoading && pagedRecords.length === 0` 口径）。 */}
+        {loading && rows.length === 0 ? (
+          <TableSkeleton rows={8} columns={view === 'fabric' ? 9 : 7} />
+        ) : (
         <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-neutral-50 text-neutral-600">
@@ -504,9 +511,7 @@ export default function InboundOrdersPage() {
             {rows.length === 0 && (
               <tr>
                 <td colSpan={view === 'fabric' ? 9 : 7} className="px-3 py-10 text-center text-neutral-400">
-                  {loading ? (
-                    '加载中…'
-                  ) : loadError ? (
+                  {loadError ? (
                     // 失败态与空态**分离**（issue #6691）：说清「没读到」+ 重试出口
                     <span data-testid="inbound-load-error" role="alert" className="inline-flex items-center gap-3">
                       <span className="text-neutral-600">入库单加载失败 —— 没读到数据，请检查网络后重试</span>
@@ -537,6 +542,7 @@ export default function InboundOrdersPage() {
           </tbody>
         </table>
         </div>
+        )}
       </PageCard>
 
       {/* 期初建账导入弹窗（V118 / issue #5153） */}

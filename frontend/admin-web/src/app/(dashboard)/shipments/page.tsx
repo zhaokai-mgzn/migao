@@ -11,7 +11,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { RotateCcw, Search, Truck } from 'lucide-react'
 import { orderApi, shipmentApi } from '@/lib/api'
-import { Button, Input, PageCard, PageHeader } from '@/components/ui'
+import { Button, Input, PageCard, PageHeader, TableSkeleton } from '@/components/ui'
 // 来源展示口径（内部键不上屏，issue #6664 第 5 条）：与判据同一份模块
 import { sourceLabel } from '@/components/orders/shipment-source'
 import type { ShipmentListRow } from '@/types'
@@ -117,6 +117,13 @@ export default function ShipmentsPage() {
 
       {/* 列表 */}
       <PageCard padded={false} className="overflow-hidden">
+        {/* issue #8048：加载态 = 通用表格骨架（#8036 口径：页面级三元），与 8 列对齐；
+            不再在 tbody 里印裸「加载中…」+ 空白表体。
+            🔴 只在**首次加载**（列表为空）出骨架：点「查询」会触发刷新，刷新时已有读数 ⇒
+            表格照旧在场（同 `quality-inspections` 的 `recordsLoading && pagedRecords.length === 0` 口径）。 */}
+        {loading && rows.length === 0 ? (
+          <TableSkeleton rows={8} columns={8} />
+        ) : (
         <table className="w-full text-sm">
           <thead className="bg-neutral-50 text-neutral-600">
             <tr>
@@ -166,9 +173,7 @@ export default function ShipmentsPage() {
             {rows.length === 0 && (
               <tr>
                 <td colSpan={8} className="px-4 py-10 text-center text-neutral-400">
-                  {loading ? (
-                    '加载中…'
-                  ) : loadError ? (
+                  {loadError ? (
                     // 失败态与空态**分离**（issue #6664 第 3 条）：故障说「加载失败」+ 重试出口
                     <span
                       data-testid="shipments-load-failed"
@@ -196,6 +201,7 @@ export default function ShipmentsPage() {
             )}
           </tbody>
         </table>
+        )}
       </PageCard>
 
     </div>
