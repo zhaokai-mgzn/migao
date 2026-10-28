@@ -656,7 +656,7 @@ describe('Sidebar', () => {
     expect(STANDALONE_TOP_AFTER_GROUP_KEY).toBe(TOP_SLOT_KEY)
   })
 
-  it('（2026-10-28）**视觉层次不许倒置**：组标题/一级项 14px（修前 12px）+ 叶子项同为 14px 但更轻更暗；徽标是唯一的 text-xs 面', () => {
+  it('（2026-10-28）**视觉层次不许倒置**：组标题/一级项 14px（修前 12px）+ 叶子项同为 14px 但更轻更暗；菜单标题面里只有徽标用 text-xs', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     // ① 组标题（「大菜单」）：修前 `text-xs`（12px）⇒ **比叶子项（14px）还小**，正是用户说的
     //    「大菜单字小，叶子菜单字大」。修后 14px/600 亮色。

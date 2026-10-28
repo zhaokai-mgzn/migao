@@ -68,13 +68,13 @@ import {
 //
 // 判据（会红）：`tests/unit/components/Sidebar.test.tsx` 的「视觉层次」用例
 // —— 组标题/一级项 `text-sm`（不再是 `text-xs`）+ 叶子项仍 `text-sm`；
-// 一级项行高 `h-9` > 叶子 `h-8`；序号徽标是**唯一**的 `text-xs` 面。
+// 一级项行高 `h-9` > 叶子 `h-8`；菜单标题面里只有序号徽标用 `text-xs`。
 // ══════════════════════════════════════════════════════════════════════════════
 
 /** 组标题 / 「常用」标签行（**无图标**；32px） */
 const SECTION_ROW = 'flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left'
 const SECTION_LABEL = 'flex-1 text-sm font-semibold transition-colors'
-/** 计数徽标（组内项数 / 「常用」n/6）：本期唯一的 `text-xs` 面 */
+/** 计数徽标（组内项数 / 「常用」n/6）：**菜单标题面**里唯一的 `text-xs`（搜索框那枚属控件文案，不在菜单行） */
 const SECTION_COUNT = 'text-xs leading-none text-neutral-600'
 /** 一级项行（36px，比组标题更高 ⇒ 目的地重于标签） */
 const TOP_ROW = 'group/item relative flex h-9 items-center gap-2.5 rounded-md px-2.5 transition-colors'
