@@ -280,8 +280,15 @@ const PENDING_COLORS: Record<string, { tile: string; icon: string }> = {
  *
  * 判据：`frontend/admin-web/tests/unit/pages/dashboard.test.tsx` 的 #5881 用例
  * （形态判据 + 标题 ≤ 6 字的类级上限；像素读数由真浏览器截图复核，见 `migao-dev-flow` §15.7）。
+ *
+ * ## issue #8026：两卡是**子集**，并排会被相加
+ *
+ * 「含加工待发货」是「待发货订单」的**子集**（前者 = 前者 ∧ 含加工项），而两轮冒烟数据里两者
+ * 都是 49（那批待发货单全部含加工）⇒ 并排读成 `49 + 49 = 98`，多算 49 单。
+ * 修法**只加一处** `note`（数字下的副标题，本单用「其中」）：标题不动（#5881 的 ≤6 字口径）、
+ * 计数口径与下钻链接**一字不动**（`docs/design/dashboard-refactor-stage2.md` §1 的裁定）。
  */
-function PendingCard({ title, count, icon, color }: { title: string; count: MetricState; icon: React.ReactNode; color: string }) {
+function PendingCard({ title, count, icon, color, note }: { title: string; count: MetricState; icon: React.ReactNode; color: string; note?: string }) {
   const c = PENDING_COLORS[color] || PENDING_COLORS.blue
   return (
     <div data-testid="pending-card" className="group flex h-full items-center gap-3.5 rounded-xl border border-neutral-200 bg-white p-4 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-card-hover">
@@ -295,6 +302,8 @@ function PendingCard({ title, count, icon, color }: { title: string; count: Metr
         ) : (
           <p className="tnum text-2xl font-bold leading-tight text-neutral-900">{metricText(count, fmtNum)}</p>
         )}
+        {/* issue #8026：子集关系只说一处（数字下的副标题），不重复标题、不加第五张卡 */}
+        {note && <p data-testid="pending-card-note" className="text-[11px] leading-tight text-neutral-400">{note}</p>}
       </div>
       <ArrowRight className="w-4 h-4 text-neutral-300 transition-all group-hover:translate-x-0.5 group-hover:text-primary-500" />
     </div>
@@ -640,8 +649,10 @@ export default function DashboardPage() {
           <Link href="/orders?status=待发货"><PendingCard title="待发货订单" count={pendingShipmentState} icon={<Package className="w-4 h-4 text-primary-600" />} color="blue" /></Link>
           {/* issue #5881：文案「含加工待发货订单」（8 字）是同行最长的一项，恰好卡在换行临界点上
               ⇒ 把该卡撑高、与其余四张不一致。缩为「含加工待发货」（6 字，语义不变），
-              同排不再换行；`<Link>` 的查询参数 `category=含加工订单` 是**端点契约**，一字不动。 */}
-          <Link href="/orders?category=含加工订单&status=待发货"><PendingCard title="含加工待发货" count={processingShipmentState} icon={<Settings className="w-4 h-4 text-accent-600" />} color="purple" /></Link>
+              同排不再换行；`<Link>` 的查询参数 `category=含加工订单` 是**端点契约**，一字不动。
+              issue #8026：本卡是左邻「待发货订单」的**子集**（两者都 49 时会被相加成 98）
+              ⇒ 数字下加副标题「其中」说出这层关系；**计数与 href 仍逐字不变**。 */}
+          <Link href="/orders?category=含加工订单&status=待发货"><PendingCard title="含加工待发货" count={processingShipmentState} note="其中" icon={<Settings className="w-4 h-4 text-accent-600" />} color="purple" /></Link>
           {/* issue #5792：超时工单卡 —— 下钻 `?overdue=1` 与计数**同源**
               （`AfterSalesTicketMapper.applyOverdue`）：列表页会真的筛（已实装可见指示 + 可清除），
               不会出现「卡说 3 条、点进去一屏」。 */}
