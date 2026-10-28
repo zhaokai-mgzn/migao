@@ -31,8 +31,11 @@ import {
   toWashLabelInputs,
   washLabelCopies,
   washLabelDocNo,
+  washLabelOptionGroupsOf,
   washLabelPleats,
   washLabelRows,
+  washLabelSheets,
+  washLabelSubtitle,
   type WashLabelRowKey,
 } from '@/lib/wash-label-content'
 import type { ProcessingOrderItem, ProductionPosition } from '@/types'
@@ -458,5 +461,91 @@ describe('toWashLabelInputs — 加工单 ⇒ 逐张输入（#6439 → #6656 →
     expect(toWashLabelInputs()).toEqual([])
     expect(toWashLabelInputs({ positions: null })).toEqual([])
     expect(toWashLabelInputs({ positions: [] })).toEqual([])
+  })
+})
+
+describe('专属唛 —— 余料带回 / 绑带 每套一张（issue #8002）', () => {
+  const optionItem = (specialOptions: string[]) =>
+    ({ ...ITEM, specialOptions } as unknown as ProcessingOrderItem)
+  const twoPositions = [
+    POSITION,
+    {
+      ...POSITION,
+      order_item_id: 'item-2',
+      position_name: '纱帘B',
+      set_no: `${PROCESSING_ORDER_NO}-002`,
+      scan_url: 'https://app.migaozn.com/s/QW8Z2N4B',
+    },
+  ] as ProductionPosition[]
+
+  it('类别：选项名逐字命中；「余料做绑带 / 余料做帘头」不触发；副标题 = 成品定制 · 类别', () => {
+    expect(washLabelOptionGroupsOf(optionItem(['余料带回-布']))).toEqual([
+      { label: '余料带回', options: ['余料带回-布'] },
+    ])
+    expect(washLabelOptionGroupsOf(optionItem(['加logo条', '布绑带']))).toEqual([
+      { label: '绑带', options: ['布绑带'] },
+    ])
+    // 同一部位两类都勾（参考工单）⇒ 2 张，按类别顺序
+    expect(washLabelOptionGroupsOf(optionItem(['布绑带', '余料带回-布']))).toEqual([
+      { label: '余料带回', options: ['余料带回-布'] },
+      { label: '绑带', options: ['布绑带'] },
+    ])
+    // 不产生「交还客户的那袋东西」的选项不触发
+    expect(washLabelOptionGroupsOf(optionItem(['余料做绑带', '余料做帘头', '加logo条']))).toEqual([])
+    expect(washLabelOptionGroupsOf(undefined)).toEqual([])
+    expect(washLabelSubtitle('余料带回')).toBe('成品定制 · 余料带回')
+    expect(washLabelSubtitle('绑带')).toBe('成品定制 · 绑带')
+    expect(washLabelSubtitle(null)).toBe('成品定制')
+    expect(washLabelSubtitle('')).toBe('成品定制')
+  })
+
+  it('张数：常规唛 = 开数；专属唛 = 每套每类别 1 张（不乘开数）、排在常规唛之后', () => {
+    const sheets = washLabelSheets({ positions: [POSITION], items: [optionItem(['余料带回-布', '布绑带'])] })
+    // 双开 ⇒ 常规 2 张 + 专属 2 张
+    expect(sheets).toHaveLength(4)
+    expect(sheets.map((sheet) => sheet.optionLabel)).toEqual([null, null, '余料带回', '绑带'])
+    expect(sheets.map((sheet) => sheet.subtitle)).toEqual([
+      '成品定制',
+      '成品定制',
+      '成品定制 · 余料带回',
+      '成品定制 · 绑带',
+    ])
+    // 专属唛：码 / 套序 / 快照行都沿用该部位（不另造内容）
+    expect(sheets[2].qrValue).toBe(POSITION.scan_url)
+    expect(sheets[2].position).toBe(POSITION)
+    expect(sheets[2].item).toBeDefined()
+    expect(sheets[2].setNo).toBe(1)
+    // 没有命中选项 ⇒ 零专属唛（常规唛原样）
+    const plain = washLabelSheets({ positions: [POSITION], items: [ITEM] })
+    expect(plain).toHaveLength(2)
+    expect(plain.every((sheet) => sheet.optionLabel === null)).toBe(true)
+  })
+
+  it('一套一张：两套各自出自己那一张（套序 / 类别各自独立）', () => {
+    const sheets = washLabelSheets({
+      positions: twoPositions,
+      items: [optionItem(['余料带回-布']), { itemId: 'item-2', openCount: 1, specialOptions: ['纱绑带'] } as unknown as ProcessingOrderItem],
+    })
+    // 常规 = 双开 2 + 单开 1；专属 = 第 1 套的余料 + 第 2 套的绑带
+    expect(sheets).toHaveLength(5)
+    expect(sheets.map((sheet) => sheet.optionLabel)).toEqual([null, null, null, '余料带回', '绑带'])
+    expect(sheets[3].setNo).toBe(1)
+    expect(sheets[4].setNo).toBe(2)
+    expect(sheets[3].qrValue).toBe(POSITION.scan_url)
+    expect(sheets[4].qrValue).toBe(twoPositions[1].scan_url)
+  })
+
+  it('直连通道同样含专属唛（与系统打印同源）：条数 / 副标题 / 行清单一致', () => {
+    const labels = toWashLabelInputs({
+      processingOrderNo: PROCESSING_ORDER_NO,
+      customerName: CUSTOMER,
+      positions: [POSITION],
+      items: [optionItem(['余料带回-布'])],
+    })
+    // 双开 2 + 余料 1
+    expect(labels).toHaveLength(3)
+    expect(labels.map((label) => label.optionLabel ?? null)).toEqual([null, null, '余料带回'])
+    // 专属唛的行清单 = 同一份 `washLabelRows`（不另写推导）
+    expect(labels[2].rows?.map((row) => row.text)).toEqual(labels[0].rows?.map((row) => row.text))
   })
 })

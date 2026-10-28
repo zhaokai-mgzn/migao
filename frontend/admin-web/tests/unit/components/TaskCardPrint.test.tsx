@@ -490,6 +490,52 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×140mm 单列，issue #7979）',
     expect(screen.getByTestId('task-card-label-doc-no-0')).toHaveTextContent('单号: 20260921-8237')
   })
 
+  it('🔴 专属唛（issue #8002）：勾了余料带回 / 绑带 ⇒ 每套每类别追加 1 张，副标题 = 成品定制 · 类别（12pt 加粗）', () => {
+    companyNameStub.value = '亿家纺织'
+    const optionItems = [
+      { ...items[0], specialOptions: ['余料带回-布', '布绑带'] },
+      items[1],
+    ] as unknown as ProcessingOrderItem[]
+    printCard({ items: optionItems })
+
+    // 常规 6 张（2 + 1 + 3）+ 专属 2 张（余料带回 / 绑带 各 1 张，**不乘开数**）
+    const labels = screen.getAllByTestId(/^task-card-label-\d+$/)
+    expect(labels).toHaveLength(8)
+
+    // 常规唛副标题仍是「成品定制」（10pt，无标记 testid）；专属唛才有标记
+    expect(screen.getAllByText('成品定制')).toHaveLength(6)
+    const markers = screen.getAllByTestId('task-card-option-label')
+    expect(markers).toHaveLength(2)
+    expect(markers[0]).toHaveTextContent('成品定制 · 余料带回')
+    expect(markers[1]).toHaveTextContent('成品定制 · 绑带')
+    expect(markers[0].className).toContain('text-[12pt]')
+    expect(markers[0].className).toContain('font-bold')
+
+    // 专属唛 = 该部位自己的码与行清单（内容同源，不另造）
+    const extra = labels[6]
+    expect(within(extra).getByTestId('task-card-label-special-options-6')).toHaveTextContent(
+      '特殊选项: 余料带回-布、布绑带',
+    )
+    expect(within(extra).getByTestId('task-card-qr').querySelector('title')?.textContent).toBe(SCAN_BL)
+    companyNameStub.value = ''
+  })
+
+  it('🔴 缺企业名：常规唛不出抬头块，专属唛的标记照印（标记不依赖企业名是否设置）', () => {
+    companyNameStub.value = ''
+    const optionItems = [
+      { ...items[0], specialOptions: ['余料带回-布'] },
+      items[1],
+    ] as unknown as ProcessingOrderItem[]
+    printCard({ items: optionItems })
+
+    const headers = screen.getAllByTestId('task-card-company')
+    expect(headers).toHaveLength(1)
+    expect(headers[0]).toHaveTextContent('成品定制 · 余料带回')
+    expect(within(headers[0]).queryByText('亿家纺织')).toBeNull()
+    // 专属唛也带本部位的码（与常规唛同一个码，不做第二套码）
+    expect(within(screen.getByTestId('task-card-label-6')).getByTestId('task-card-qr')).toBeTruthy()
+  })
+
   it('打印样式：@page 50mm×140mm（竖版）+ 标签本体 50mm×140mm + 上下各留白 15mm（码距底虚线 15mm）+ 正文 11pt + 逐张分页（最后一张不分页）', () => {
     printCard()
 

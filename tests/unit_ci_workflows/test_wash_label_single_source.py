@@ -38,14 +38,16 @@
 
 🔴 **本守卫只扫这三份源码**：测试与文档里出现这些词是**在描述口径**，不在射程。
 
-## SS7：份数口径也只许一处（issue #7816）
+## SS7：份数 / 张数口径也只许一处（issue #7816 → issue #8002）
 
 用户 2026-10-26 逐字「如果订单是双开的要打印两份，单开的要打印1份，三开打印3份，4开打印4份」。
 份数读的是 `order_items` 的开数（`openCount`）—— 若两个渲染器各写一份映射（一个写 `2`、一个写
 `openCount ?? 1`），**两条通道的出纸张数就会不一样**，而今天没有任何行为判据能同时看见两条通道
 （系统打印断言 DOM 张数、直连断言 job 数，各自的 fixture 各自给开数）。
-⇒ 判据：两个渲染器的**代码面**都必须出现 `washLabelCopies`，且 `openCount` 这个键**只许**出现在
-内容真值模块里（自己读一遍开数 = 第二份映射）。
+
+🔴 **issue #8002 起口径再收窄**：份数 / 张数 / 张序（含「专属唛 = 每套每类别 1 张」）全部由
+`washLabelSheets` 派生 ⇒ 系统打印渲染器必须调用它（不再自己按开数展开），直连通道也经它展开；
+`washLabelCopies(` 与 `openCount` 这个键**只许**出现在内容真值模块里（自己读一遍开数 = 第二份映射）。
 """
 from __future__ import annotations
 
@@ -77,6 +79,8 @@ CONTENT_SPECIFIER = "@/lib/wash-label-content"
 ROW_BUILDER = "washLabelRows"
 #: 份数口径的**唯一实现**（issue #7816）：两个渲染器都必须调它
 COPIES_READER = "washLabelCopies("
+#: 出纸清单工厂（issue #8002）：张数 / 张序 / 专属唛都在这里派生 —— 系统打印渲染器必须读它
+SHEET_BUILDER = "washLabelSheets("
 #: 开数键：只许出现在内容真值模块（渲染器自己读 = 第二份份数映射）
 OPEN_COUNT_KEY = "openCount"
 
@@ -161,18 +165,22 @@ def _problems(sources: dict[str, str]) -> list[str]:
                 f"前缀只许在 `{CONTENT_MODULE}` 里拼（自己再拼一遍 = 第二份会漂移的真值）"
             )
 
-    # SS7：份数口径只有一处
-    #   - 系统打印：`TaskCardPrint` 自己按张渲染 ⇒ 必须调 `washLabelCopies`
-    #   - 直连通道：份数在**内容真值模块**的 `toWashLabelInputs` 里展开（位图渲染器只逐张画）
-    if COPIES_READER not in css_face:
+    # SS7：份数 / 张数口径只有一处（issue #7816 → #8002：收敛到内容模块的 `washLabelSheets`）
+    #   - 系统打印：`TaskCardPrint` 不再自己按开数展开 ⇒ 必须调 `washLabelSheets(`
+    #   - 直连通道：`toWashLabelInputs` 同样经它展开（位图渲染器只逐张画）
+    if SHEET_BUILDER not in css_face:
         problems.append(
-            f"SS7 {CSS_RENDERER} 没有调用 `{COPIES_READER}` —— 份数（= 打开方式开数）必须读单一真值，"
-            "自己算一份 ⇒ 两条通道出纸张数会不一样"
+            f"SS7 {CSS_RENDERER} 没有调用 `{SHEET_BUILDER}` —— 张数（含专属唛）必须读共享出纸清单，"
+            "自己按开数展开 ⇒ 两条通道出纸张数会不一样"
         )
     if COPIES_READER not in code_face(content):
         problems.append(
             f"SS7 `{CONTENT_MODULE}` 没有调用 `{COPIES_READER}` —— 直连通道的份数展开点就在这里，"
             "缺了它 ⇒ 蓝牙打出来永远每部位一张"
+        )
+    if SHEET_BUILDER not in code_face(content):
+        problems.append(
+            f"SS7 `{CONTENT_MODULE}` 没有 `{SHEET_BUILDER}` —— 共享出纸清单缺席 ⇒ 两条通道会各算一份"
         )
     for rel, source in ((CSS_RENDERER, css), (BITMAP_RENDERER, bitmap), (CONTENT_MODULE, content)):
         if rel != CONTENT_MODULE and OPEN_COUNT_KEY in code_face(source):
@@ -243,8 +251,14 @@ def test_injection_turns_red_with_attribution():
     for prefix in ROW_PREFIX_LITERALS:
         content = content.replace(f"'{prefix}'", "''")
     broken[CONTENT_MODULE] = content
-    assert _fingerprint(broken[CONTENT_MODULE]) != baseline[CONTENT_MODULE], "注入 ③ 未生效"
+    assert _fingerprint(broken[CONTENT_MODULE]) != baseline[CONTENT_MODULE], "注入 ④ 未生效"
     assert any("SS4" in p for p in _problems(broken)), "真值模块被掏空却没判红 ⇒ 正向锚是空断言"
+
+    # ⑤ SS7（issue #8002）：系统打印渲染器不再读共享出纸清单（改回自己按开数展开）⇒ 必红
+    broken = dict(sources)
+    broken[CSS_RENDERER] = broken[CSS_RENDERER].replace("washLabelSheets(", "washLabelRows(")
+    assert _fingerprint(broken[CSS_RENDERER]) != baseline[CSS_RENDERER], "注入 ⑤ 未生效"
+    assert any("SS7" in p for p in _problems(broken)), "不读共享出纸清单却没判红 ⇒ SS7 是空断言"
 
 
 def test_comment_mention_is_not_a_violation():
