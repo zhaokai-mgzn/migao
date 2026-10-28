@@ -44,10 +44,14 @@
     它是「订单选配 → 车间工序 / 计件系数」的 **join key** —— 错一个字 ⇒ 查不到 ⇒ 条件工序不加、
     计件系数静默退回 1.0（**少发工人钱**）。本清单此前的写法（`一分二`、`余料带回(布)/(纱)`）
     是同一批选项的**旧拼法**，已作废，不得再写回。
-  - ERP 截图里「余料带回」另有**第三种形态** `余料带回`（无后缀），**不在**上列 19 项里 ⇒
-    归属（加工序 / 加系数 / 不计件）**待客户确认**；代码侧已显式登记在
-    `app/production/routing.py::PENDING_CUSTOMER_CONFIRMATION_OPTIONS`（既不是「忘了映射」，
-    也不假装已定论）。
+  - ERP 截图里「余料带回」另有**第三种形态** `余料带回`（无后缀）。**已定论**（issue #8007，用户 2026-10-28）：
+    它是这一族选项的 **base 名**（录入 / 展示面唯一该出现的名字），`-布` / `-纱` 是**派生键** ——
+    材料由订单明细行的**帘种**决定（纱帘 ⇒ `-纱`，布帘 / 帘头 / 缺省 ⇒ `-布`）。
+    ⇒ 商家不再选材料；join key 注册表（`NON_PIECEWORK_OPTIONS`）仍按派生键登记，工资口径一字不动。
+    代码承载体：`app/production/routing.py::SPECIAL_OPTION_FAMILIES`（真值源镜像）·
+    `frontend/admin-web/src/lib/order-craft-fields.ts::SPECIAL_OPTION_FAMILIES`（录入派生）·
+    `backend/admin-api/src/main/java/com/migao/admin/service/SpecialOptionNames.java`（读侧兼容）。
+    详见 [docs/design/special-option-display-and-derivation.md](design/special-option-display-and-derivation.md)。
 - 【默】保证金机制：保证金余额 / 保证金使用 / 本次收款 / 收款备注（定金制，配合企业收款二维码）。
 
 ## 2. 工序库

@@ -234,6 +234,93 @@ export const SPECIAL_OPTIONS = [
 //    企业侧与它相关的唯一落点 = **派生的「拼接」加工项**（走 `processingItems[]`，见
 //    `lib/craft-calc-request.ts::derivedJoinSpliceItemOf`）。
 
+/**
+ * **布/纱派生族**（issue #8007，用户 2026-10-28 裁定）。
+ *
+ * 用户逐字：「特殊选项里的这两项要改，只需要展示**余料带回**即可，后面的 `-布` 和 `-纱`
+ * 应该是默认**跟随订单套行的帘种**来决定的，这样语义更清晰」「这个规则要**适用于全系统**」。
+ *
+ * ⇒ 三条口径（全系统，录入 → 落库 → 展示）：
+ * 1. **录入 / 展示只出现 base 名**（`余料带回`）—— 材料（布/纱）不是商家的选择题；
+ * 2. **落库键由该明细行的帘种派生**：`纱帘 ⇒ -纱`；`布帘 / 帘头 / 未指定 ⇒ -布`；
+ * 3. `SPECIAL_OPTIONS`（join key 词表）**一字不改** —— 历史数据、工序规则、计件口径都不动；
+ *    派生只发生在**边界**（录入时正向派生、展示时反向收回）。
+ *
+ * ⚠️ 展示侧的同一份归一还写在三端同源的 `craft-display.ts::optionList` 里（那三个文件必须
+ * **逐字同源**，无法跨 app import 本文件）⇒ 两侧一致性由 `special-option-names.test.ts` 钉住。
+ */
+export const SPECIAL_OPTION_FAMILIES = {
+  余料带回: { cloth: '余料带回-布', sheer: '余料带回-纱' },
+} as const
+
+/** 派生族成员（base 名） */
+export type SpecialOptionFamily = keyof typeof SPECIAL_OPTION_FAMILIES
+
+/**
+ * 名字属于哪个派生族（`base` / `base-布` / `base-纱` 三种形态都认）；非族成员 ⇒ `null`。
+ *
+ * 用**族成员遍历**而不是拆 `-` 后缀：`加立边` / `布绑带` 这类名字里也有材料字，但它们
+ * **不是**同一语义选项的两种材料形态（各自是独立的 ERP 选项名 + 独立工序）⇒ 不得被折叠。
+ */
+export function specialOptionFamilyOf(name: string): SpecialOptionFamily | null {
+  for (const [base, variants] of Object.entries(SPECIAL_OPTION_FAMILIES)) {
+    if (name === base || name === variants.cloth || name === variants.sheer) {
+      return base as SpecialOptionFamily
+    }
+  }
+  return null
+}
+
+/** 落库键 ⇒ 展示名（族成员收回 base 名；其余原样）。展示面**唯一**收敛点（写侧勿用）。 */
+export function specialOptionDisplayName(name: string): string {
+  return specialOptionFamilyOf(name) ?? name
+}
+
+/**
+ * 录入 / 展示词表：把 join key 清单折叠成**语义选项**（保序、去重）。
+ *
+ * 默认吃 `SPECIAL_OPTIONS` ⇒ 19 项落库键 → 18 个可选项（`余料带回-布`/`-纱` 合为 `余料带回`）。
+ */
+export function specialOptionDisplayOptions(options: readonly string[] = SPECIAL_OPTIONS): string[] {
+  const out: string[] = []
+  for (const option of options) {
+    const display = specialOptionDisplayName(option)
+    if (!out.includes(display)) out.push(display)
+  }
+  return out
+}
+
+/**
+ * 语义选项名（或任一派生键）⇒ 该帘种下的**落库键**。非族成员 ⇒ 原样返回。
+ *
+ * 帘种 = 本行的 `curtainType`（§4.2）；缺省即「布帘」（与 `DEFAULT_CURTAIN_TYPE` 同口径）。
+ */
+export function resolveSpecialOptionName(name: string, curtainType?: string | null): string {
+  const family = specialOptionFamilyOf(name)
+  if (family === null) return name
+  return curtainType === CURTAIN_TYPE_SHEER
+    ? SPECIAL_OPTION_FAMILIES[family].sheer
+    : SPECIAL_OPTION_FAMILIES[family].cloth
+}
+
+/** 已落库列表 ⇒ 展示选择态（族成员折叠成一个 base 名；保序去重） */
+export function selectedSpecialOptionDisplayNames(stored: readonly string[]): string[] {
+  return specialOptionDisplayOptions(stored)
+}
+
+/** 展示选择态 ⇒ 该帘种下要落库的完整列表（族成员按帘种正向派生；其余原样） */
+export function derivedSpecialOptionValues(
+  displayNames: readonly string[],
+  curtainType?: string | null
+): string[] {
+  const out: string[] = []
+  for (const name of displayNames) {
+    const value = resolveSpecialOptionName(name, curtainType)
+    if (!out.includes(value)) out.push(value)
+  }
+  return out
+}
+
 /** 明细行角色（§4.8）：主布 / 配布边 */
 export const COMPONENT_ROLE_MAIN = '主布'
 export const COMPONENT_ROLE_EDGE = '配布边'

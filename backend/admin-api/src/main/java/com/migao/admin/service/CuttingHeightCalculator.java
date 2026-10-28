@@ -170,13 +170,22 @@ final class CuttingHeightCalculator {
             return false;
         }
         return switch (kind) {
-            case "option" -> anyOf(values, vars.specialOptions());
+            // 特殊选项：逐字相等 ⇒ 命中；规则写**语义名**（`余料带回`）⇒ 按布/纱派生族匹配
+            // （issue #8007：配置面只出语义名，订单侧落的是 `-布` / `-纱` 派生键）
+            case "option" -> optionAnyOf(values, vars.specialOptions());
             case "craft" -> values.stream().anyMatch(value -> value.equals(vars.craft()));
             case "processing_item" -> anyOf(values, vars.processingItems());
             case "shaped" -> values.stream()
                     .anyMatch(value -> value.equals(String.valueOf(Boolean.TRUE.equals(vars.isShaped()))));
             default -> false;
         };
+    }
+
+    /** 特殊选项条件的命中：{@link SpecialOptionNames#ruleValueMatches} 承借口径（语义名按族展开）。 */
+    private static boolean optionAnyOf(List<String> values, List<String> pool) {
+        List<String> source = pool == null ? List.of() : pool;
+        return values.stream().anyMatch(value ->
+                source.stream().anyMatch(option -> SpecialOptionNames.ruleValueMatches(value, option)));
     }
 
     private static boolean anyOf(List<String> values, List<String> pool) {

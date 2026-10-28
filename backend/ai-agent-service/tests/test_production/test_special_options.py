@@ -35,7 +35,7 @@ from app.production.routing import (
     NON_PIECEWORK_OPTIONS,
     OPERATION_CATALOG,
     OPTION_FACTOR_SCOPES,
-    PENDING_CUSTOMER_CONFIRMATION_OPTIONS,
+    SPECIAL_OPTION_FAMILIES,
     SPECIAL_OPTION_ROUTINGS,
     build_routing,
     instance_operations,
@@ -50,10 +50,10 @@ TRUTH_SOURCE_OPTIONS = [
     "扣环", "抱枕", "防翘扣", "一分为二", "余料做绑带", "余料做帘头",
 ]
 
-# ERP 截图实证、但**不在**真值源 §1 的 19 项清单里的选项（issue #4389 判据 2）。
-# `余料带回`（无后缀）是 ERP 的第三种形态；§1 只列了 `余料带回-布/-纱` ⇒ 它该归三类中的
-# 哪一类**无真值源依据**（只有截图）⇒ 登记在 `PENDING_CUSTOMER_CONFIRMATION_OPTIONS`
-# 等客户确认，**不猜**、也不让它落进静默黑洞。
+# ERP 截图实证、但**不在**真值源 §1 的 19 项清单里的名字（issue #4389 判据 2）。
+# `余料带回`（无后缀）是**布/纱派生族的 base 名**（issue #8007，用户 2026-10-28 裁定：
+# 「只需要展示余料带回即可，-布 / -纱 跟随订单套行的帘种」）⇒ 注册表仍按派生键登记，
+# 它自己显式登记在 `SPECIAL_OPTION_FAMILIES`（不再有「待客户确认」这一类）。
 ERP_ONLY_OPTIONS = ["余料带回"]
 
 # 布帘·韩褶基准走线（真值源 §3，行业实证 11 道）
@@ -121,16 +121,17 @@ class TestCriterion1CoverageGate:
         )
 
     def test_every_erp_only_option_is_explicitly_registered(self):
-        """§1 之外的 ERP 实证选项（`余料带回`）同样**不得零登记**（issue #4389 判据 2）。
+        """§1 之外的 ERP 实证名字（`余料带回`）同样**不得零登记**（issue #4389 判据 2）。
 
-        第四类「**待客户确认**」（`PENDING_CUSTOMER_CONFIRMATION_OPTIONS`）不是「未登记」：
-        它是一份**显式**的登记，语义 = 「已知其存在、尚未定论归哪一类」——
-        与 `.get(opt) → None` 的静默黑洞在数据上**可区分**。
+        issue #8007（2026-10-28 用户裁定）把它定论为**布/纱派生族的 base 名**：
+        它不落任何 join key 注册表（注册表按派生键登记），但**显式登记在**
+        `SPECIAL_OPTION_FAMILIES` ⇒ 与「忘了映射」在数据上**可区分**
+        （`.get(opt) → None` 那种静默黑洞）。
         """
         unregistered = [opt for opt in ERP_ONLY_OPTIONS
-                        if opt not in PENDING_CUSTOMER_CONFIRMATION_OPTIONS]
+                        if opt not in SPECIAL_OPTION_FAMILIES]
         assert unregistered == [], (
-            f"ERP 实证但 §1 未列的选项既没登记进三类、也没进待确认集合（静默黑洞）: {unregistered}"
+            f"ERP 实证但 §1 未列的名字既没登记进三类、也没登记为派生族 base（静默黑洞）: {unregistered}"
         )
 
     def test_option_registered_in_exactly_one_category(self):
@@ -150,7 +151,7 @@ class TestCriterion1CoverageGate:
         known = set(TRUTH_SOURCE_OPTIONS) | set(ERP_ONLY_OPTIONS)
         registered = (
             set(SPECIAL_OPTION_ROUTINGS) | set(OPTION_FACTOR_SCOPES)
-            | set(NON_PIECEWORK_OPTIONS) | set(PENDING_CUSTOMER_CONFIRMATION_OPTIONS)
+            | set(NON_PIECEWORK_OPTIONS) | set(SPECIAL_OPTION_FAMILIES)
         )
         assert registered - known == set()
 
@@ -484,22 +485,22 @@ class TestCriterion7ErpNameAlignment:
         assert option not in SPECIAL_OPTION_ROUTINGS
         assert option not in OPTION_FACTOR_SCOPES
 
-    def test_third_leftover_return_is_explicitly_registered(self):
-        """判据 2：ERP 的**第三种**形态 `余料带回`（无后缀）必须显式登记（不落静默黑洞）。
+    def test_family_base_is_explicitly_registered(self):
+        """判据 2 + issue #8007：`余料带回`（无后缀）是**派生族 base 名**，显式登记且不冒充 join key。
 
-        登记在 `PENDING_CUSTOMER_CONFIRMATION_OPTIONS`（**待客户确认**集合）而非
-        `NON_PIECEWORK_OPTIONS`：真值源 §1 的 19 项清单里**没有**它（只有 `余料带回(布/纱)`），
-        我们手上只有截图这一个证据 ⇒ **不猜**它归哪一类，但**也不让它变成「忘了映射」**。
+        base 名与两个派生键的关系是**一对二**：派生的那一半仍在 `NON_PIECEWORK_OPTIONS`
+        （注册表按派生键登记，工资口径不动）；base 名自己只在 `SPECIAL_OPTION_FAMILIES`。
         """
-        assert "余料带回" in PENDING_CUSTOMER_CONFIRMATION_OPTIONS
-        # 「不假装已定论」：它不得同时出现在任何一个已定论的三类登记里
+        assert "余料带回" in SPECIAL_OPTION_FAMILIES
+        assert set(SPECIAL_OPTION_FAMILIES["余料带回"].values()) == set(NON_PIECEWORK_OPTIONS)
+        # base 名**不是** join key ⇒ 不得出现在任何注册表里（冒充 join key 会让工序查不到）
         assert "余料带回" not in SPECIAL_OPTION_ROUTINGS
         assert "余料带回" not in OPTION_FACTOR_SCOPES
         assert "余料带回" not in NON_PIECEWORK_OPTIONS
 
-    def test_pending_option_is_not_a_silent_black_hole(self):
-        """判据 2 的判别性半边：待确认选项**不加工序、不改系数**（行为同不计件），
-        但它在数据上**有名字**（本集合）⇒ 与「忘了映射」可区分。
+    def test_family_base_is_not_a_silent_black_hole(self):
+        """判据 2 的判别性半边：base 名**不加工序、不改系数**（行为同不计件），
+        但它在数据上**有名字**（派生族登记）⇒ 与「忘了映射」可区分。
 
         判别性：换成**已定论**的不计件项（`余料带回-布`）行为一致、换成**未登记**的假名行为
         也一致 —— 所以「行为一致」不是判据；判据是**登记表里有它**（上一条）+ 本条的行为可预期。
@@ -509,8 +510,9 @@ class TestCriterion7ErpNameAlignment:
         assert all("factor" not in i for i in instance_operations(
             {**POSITION, "special_options": ["余料带回"]}, CALC))
 
-    def test_pending_set_is_disjoint_from_decided_categories(self):
-        """待确认集合与三类已定论登记**互斥**（否则「待确认」会被读成「已定论」）。"""
+    def test_family_variants_are_the_non_piecework_set(self):
+        """派生键只能落在「不计件」这一档；base 名不得混进 join key 注册表（否则同词两义）。"""
         decided = (set(SPECIAL_OPTION_ROUTINGS) | set(OPTION_FACTOR_SCOPES)
                    | set(NON_PIECEWORK_OPTIONS))
-        assert PENDING_CUSTOMER_CONFIRMATION_OPTIONS & decided == set()
+        assert set(SPECIAL_OPTION_FAMILIES["余料带回"].values()) == set(NON_PIECEWORK_OPTIONS)
+        assert "余料带回" not in decided

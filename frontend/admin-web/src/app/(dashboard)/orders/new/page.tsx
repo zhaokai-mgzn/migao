@@ -99,6 +99,7 @@ import {
   createDefaultCraftSpec,
   curtainTypeOfBody,
   defaultIsShapedForBody,
+  resolveSpecialOptionName,
   type CraftSpecInput,
   type CurtainBody,
 } from '@/lib/order-craft-fields'
@@ -2160,6 +2161,14 @@ export default function NewOrderPage() {
           curtainBody: body,
           // 纱帘与布帘**同一算法**（2026-09-21 裁定）⇒ 切帘体后一律回到「公式计算」
           metersSource: METERS_SOURCE_FORMULA,
+          // 🔴 布/纱派生键**跟随帘种**（issue #8007）：切到纱帘 ⇒ 已勾的族成员换成 `余料带回-纱`
+          //    （不重派 = 布帘下勾的键被带进纱帘行，语义与落库都对不上）
+          craft: {
+            ...it.craft,
+            specialOptions: it.craft.specialOptions?.map((name) =>
+              resolveSpecialOptionName(name, curtainTypeOfBody(body))
+            ),
+          },
         }
         // 定型默认随帘体（#4566）：写「定型」加工项的勾选态，商家手改过则不覆盖
         // （⚠️ 与用料算法无关，不动）；韩褶（工艺默认，2026-09-28）同批按同一入口补
@@ -6747,7 +6756,12 @@ function LineItemBlock({
                   改前传人工勾选态 ⇒ 面板说「已并入特殊选项」而这里没选，同一件事两个真值。 */}
               <div className="mt-4 pt-4 border-t border-neutral-100">
                 <div className="text-sm font-medium text-neutral-700 mb-2">特殊选项</div>
-                <OrderExtraOptions value={effectiveOptions} onChange={onChangeSpecialOptions} />
+                {/* 🔴 issue #8007：布/纱派生键按**本行帘种**落库 ⇒ 选择器必须拿到 `curtainType` */}
+                <OrderExtraOptions
+                  value={effectiveOptions}
+                  curtainType={curtainTypeOfBody(line.curtainBody)}
+                  onChange={onChangeSpecialOptions}
+                />
               </div>
 
               {/* **部位备注**（issue #5685）：商家自由文本 —— 写「**这个数字怎么来的**」
