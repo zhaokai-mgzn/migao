@@ -139,7 +139,7 @@ describe('CustomerDetailPage', () => {
 
   it('shows loading state initially', () => {
     render(<CustomerDetailPage />)
-    expect(screen.getByText('加载中...')).toBeInTheDocument()
+    expect(screen.getByText('加载中…')).toBeInTheDocument()
   })
 
   it('loads and displays real customer name from API (not hardcoded)', async () => {

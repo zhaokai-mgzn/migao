@@ -471,7 +471,9 @@ export default function OutboundOrdersPage() {
               columns={finishedColumns}
               dataSource={finished}
               rowKey={(row) => String(row.id)}
-              emptyText="成品仓暂时是空的"
+              /* issue #8040：与同页「还没有出库单」同一口径 —— 说清为什么空、去哪看/建，
+                 不再用一句裸描述（同页两套口径统一成详说）。 */
+              emptyText="成品仓暂时是空的 —— 工人在手机端完成打包后，会自动分配成品仓仓位号"
             />
           )}
         </PageCard>

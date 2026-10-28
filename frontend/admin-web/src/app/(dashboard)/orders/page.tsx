@@ -162,6 +162,13 @@ export default function OrdersPage() {
   // Tab
   const [activeTab, setActiveTab] = useState<OrderStatusTab>(initialTab)
 
+  /**
+   * 空态分流（issue #8040）：只读**已提交**的 `search`（草稿不参与，与 `summarizeSearch` 同口径），
+   * 把「筛选下为空」与「近一个月真的没有单」分成两句话 ——
+   * 后者必须说清「默认只覆盖近一个月」，否则商家会把「没筛到」读成「单子丢了」。
+   */
+  const hasActiveFilter = activeTab !== 'all' || SUMMARY_FIELDS.some(({ key }) => Boolean(search[key]))
+
   // 当 category + status 同时指定时，叠加 status 过滤（#387）
   const [extraStatusFilter, setExtraStatusFilter] = useState<OrderStatus | null>(initialExtraStatus)
 
@@ -656,10 +663,17 @@ export default function OrdersPage() {
           onRefund={handleOpenRefund}
           onConfirmPayment={handleConfirmPayment}
           onConfirmReceive={handleConfirmReceive}
-          /* 🔴 issue #6733：读失败 ⇒ 表体**不得**印「暂无数据」（那是「今天没有订单」的事实性断言，
+          /* 🔴 issue #6733：读失败 ⇒ 表体**不得**印空态文案（那是「今天没有订单」的事实性断言，
              而真相是**没读到** —— 上面那行「共 — 条」已经在诚实地说"不可知"，横幅也说了读失败；
-             三处说法不能打架）。读成功才回落到默认的「暂无数据」。 */
-          emptyText={loadError ? '' : '暂无数据'}
+             三处说法不能打架）。读成功才印下面的空态文案。
+             issue #8040：空态**分流**（筛选下为空 / 近一个月真为空）+ 说清下一步 —— 不再是一句裸「暂无数据」。 */
+          emptyText={
+            loadError
+              ? ''
+              : hasActiveFilter
+                ? '没有符合当前筛选的订单 —— 换个关键词或把日期范围放宽再查一次'
+                : '最近一个月还没有订单 —— 点右上角「新增订单」开始；要看更早的单子，把日期范围往前调'
+          }
         />
 
         {/* 分页 */}

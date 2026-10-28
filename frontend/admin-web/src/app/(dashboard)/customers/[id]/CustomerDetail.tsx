@@ -295,7 +295,7 @@ export default function CustomerDetailPage() {
       <div className="p-6 flex items-center justify-center min-h-[400px]">
         <div className="flex items-center gap-2 text-neutral-500">
           <div className="w-5 h-5 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
-          加载中...
+          加载中…
         </div>
       </div>
     )

@@ -55,10 +55,12 @@ const SEVERITY_DOT: Record<string, string> = {
 }
 
 // 状态筛选 Tab 配置
+// issue #8040：三个 tab 的空态各自说清「为什么空」——「全部」说通知从哪来，
+// 「未读」说看完了，「已读」说怎么才会有已读。
 const statusTabs: { key: NotificationStatus | ''; label: string; emptyText: string }[] = [
-  { key: '', label: '全部', emptyText: '暂无通知' },
-  { key: 'sent', label: '未读', emptyText: '暂无未读通知' },
-  { key: 'read', label: '已读', emptyText: '暂无已读通知' },
+  { key: '', label: '全部', emptyText: '还没有通知 —— 订单、售后、入库单有进展时会自动发到这里' },
+  { key: 'sent', label: '未读', emptyText: '没有未读通知 —— 已经全部看过了' },
+  { key: 'read', label: '已读', emptyText: '还没有已读的通知 —— 打开一条通知后它就会移到这里' },
 ]
 
 export default function NotificationsPage() {
@@ -193,8 +195,10 @@ export default function NotificationsPage() {
 
   // 获取当前筛选的空状态文案
   const getEmptyText = () => {
+    // issue #8040：业务类型筛选下为空 ⇒ 说清是「这一类没筛到」，不是「一条通知都没有」
+    if (bizTypeFilter) return '这个业务类型下还没有通知 —— 把「业务类型」改回全部再看看'
     const tab = statusTabs.find(t => t.key === statusFilter)
-    return tab?.emptyText || '暂无通知'
+    return tab?.emptyText || '还没有通知'
   }
 
   return (

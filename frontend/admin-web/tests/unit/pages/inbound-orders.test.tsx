@@ -679,3 +679,31 @@ describe('入库单列表按仓库筛选（#7807）', () => {
     expect(filterEl()).toBeNull()
   })
 })
+
+describe('空态话术（issue #8040）：说清「为什么空 / 去哪建」，两个视图各自说人话', () => {
+  it('原料仓视图：真没有入库单 ⇒ 说清去哪建；筛了单号 ⇒ 说清换个条件', async () => {
+    mockList.mockResolvedValue({ data: { data: [] } })
+    render(<InboundOrdersPage />)
+
+    // ① 真为空：说清建单入口（不再是裸「暂无入库单」）
+    const trulyEmpty = await screen.findByText(/还没有原料仓入库单/)
+    expect(trulyEmpty.textContent).toContain('新建入库单')
+    expect(screen.queryByText('暂无入库单')).toBeNull()
+
+    // ② 成品视图 + 筛了单号 ⇒ 改口说「换个条件」（原料视图带单号走的是深链提示，见既有用例）
+    fireEvent.click(screen.getByTestId('inbound-tab-finished'))
+    fireEvent.change(screen.getByPlaceholderText('入库单号'), { target: { value: 'RK-NOT-EXIST' } })
+    expect(await screen.findByText(/没有符合筛选条件的入库单/)).toBeInTheDocument()
+  })
+
+  it('成品仓视图：空态说清「打包后自动生成」，不说成手工建单', async () => {
+    mockList.mockResolvedValue({ data: { data: [] } })
+    render(<InboundOrdersPage />)
+    fireEvent.click(screen.getByTestId('inbound-tab-finished'))
+
+    const finishedEmpty = await screen.findByText(/还没有成品仓入库单/)
+    expect(finishedEmpty.textContent).toContain('打包')
+    // 反向对照：成品单没有手工建单入口 ⇒ 空态不许让商家去点一个不存在的按钮
+    expect(finishedEmpty.textContent).not.toContain('新建入库单')
+  })
+})

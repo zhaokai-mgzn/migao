@@ -88,6 +88,12 @@ export default function CustomersPage() {
   const [channel, setChannel] = useState('')
   const [vipLevel, setVipLevel] = useState('')
 
+  /**
+   * 空态分流（issue #8040）：只看**已提交**的 `searchParams`（草稿不算 —— 与 `loadData` 同源），
+   * 把「筛选下为空」与「真还没有客户」分成两句话。
+   */
+  const hasActiveFilter = Boolean(searchParams.keyword || searchParams.channel || searchParams.vipLevel)
+
   // 标签管理状态
   const [tagModalOpen, setTagModalOpen] = useState(false)
   const [tags, setTags] = useState<CustomerTag[]>([])
@@ -434,11 +440,18 @@ export default function CustomersPage() {
           loading={loading}
           rowKey="id"
           onRowClick={(record) => router.push(`/customers/${record.id}`)}
-          /* 🔴 issue #6728：读失败 ⇒ 表体**不得**印「暂无数据」（那是「没有客户」的事实性断言，
+          /* 🔴 issue #6728：读失败 ⇒ 表体**不得**印空态文案（那是「没有客户」的事实性断言，
              而真相是**没读到** —— 失败面已在上面，且条数已标不可信）。共享 `ui/Table` 的默认
              `emptyText` 是**全站默认值**（不动它）⇒ 本单**页面级**覆盖：失败时空串，
-             读成功才回落到默认「暂无数据」。 */
-          emptyText={loadError ? '' : '暂无数据'}
+             读成功才印下面的空态文案。
+             issue #8040：空态**分流**（筛选下为空 / 真还没有客户）+ 说清客户从哪来。 */
+          emptyText={
+            loadError
+              ? ''
+              : hasActiveFilter
+                ? '没有符合筛选条件的客户 —— 换个关键词、渠道或客户等级再查一次'
+                : '还没有客户 —— 客户在对话里留过联系方式、或下过单后会自动建档'
+          }
         />
         <Pagination
           current={current}
@@ -502,7 +515,9 @@ export default function CustomersPage() {
           <div className="border-t border-neutral-200 pt-4">
             <h4 className="text-sm font-medium text-neutral-700 mb-3">已有标签</h4>
             {tags.length === 0 ? (
-              <p className="text-sm text-neutral-500 text-center py-4">暂无标签</p>
+              <p className="text-sm text-neutral-500 text-center py-4">
+                还没有标签 —— 在上面的输入框里填名称新建一个，之后就能按标签筛客户
+              </p>
             ) : (
               <div className="space-y-2">
                 {tags.map((tag) => (

@@ -98,6 +98,14 @@ export default function ProductsPage() {
     !!searchParams.get('sortBy') || lowStockOnly
   )
 
+  /**
+   * 空态分流（issue #8040）：读**已提交的 URL 参数**（与 `loadProducts` 取数同源），
+   * 不读输入草稿 —— 否则「刚打了个字还没点查询」会被说成「筛选下为空」。
+   */
+  const hasActiveFilter =
+    lowStockOnly ||
+    ['name', 'skuCode', 'status', 'createdFrom', 'createdTo'].some((k) => Boolean(searchParams.get(k)))
+
   // ===== 数据 =====
   const [products, setProducts] = useState<Product[]>([])
   const [total, setTotal] = useState(0)
@@ -678,10 +686,17 @@ export default function ProductsPage() {
         onRecommend={handleRecommend}
         onUnrecommend={handleUnrecommend}
         onDelete={handleDeleteSingle}
-        /* 🔴 issue #6728：读失败 ⇒ 表体**不得**印「暂无数据」（那是「没有商品」的事实性断言，
+        /* 🔴 issue #6728：读失败 ⇒ 表体**不得**印空态文案（那是「没有商品」的事实性断言，
            而真相是**没读到**）。共享 `ui/Table` 的默认 `emptyText` 是**全站默认值**（不动它）⇒
-           本单**页面级**覆盖：失败时空串，读成功才回落到默认「暂无数据」。 */
-        emptyText={loadFailed ? '' : '暂无数据'}
+           本单**页面级**覆盖：失败时空串，读成功才印下面的空态文案。
+           issue #8040：空态**分流**（筛选下为空 / 真的一件都没有）+ 说清下一步。 */
+        emptyText={
+          loadFailed
+            ? ''
+            : hasActiveFilter
+              ? '没有符合筛选条件的商品 —— 换个商品名、规格编码或上架状态再查一次'
+              : '还没有商品 —— 点右上角「新增商品」开始，也可以点「导入商品」从 Excel 批量导入'
+        }
       />
         )}
       </PageCard>

@@ -183,7 +183,7 @@ describe('#6691 ① 入库单列表：读失败 ⇒「加载失败 + 重新加�
     const alert = await screen.findByTestId('inbound-load-error')
     expect(alert).toHaveTextContent('入库单加载失败')
     // 🔴 不冒充空态：失败时**不得**出现「暂无入库单」
-    expect(screen.queryByText('暂无入库单')).toBeNull()
+    expect(screen.queryByText(/还没有原料仓入库单/)).toBeNull()
 
     // 出口：点「重新加载」真的重发请求；成功后失败态消失、数据上屏
     mockInboundList.mockResolvedValue(ok([inboundRow]))
@@ -195,7 +195,7 @@ describe('#6691 ① 入库单列表：读失败 ⇒「加载失败 + 重新加�
   it('对照读数：读成功且真的没有数据 ⇒ 仍然是「暂无入库单」（失败态**没有**把空态吃掉）', async () => {
     mockInboundList.mockResolvedValue(ok([]))
     render(<InboundOrdersPage />)
-    expect(await screen.findByText('暂无入库单')).toBeInTheDocument()
+    expect(await screen.findByText(/还没有原料仓入库单/)).toBeInTheDocument()
     expect(screen.queryByTestId('inbound-load-error')).toBeNull()
   }, TEST_TIMEOUT)
 })

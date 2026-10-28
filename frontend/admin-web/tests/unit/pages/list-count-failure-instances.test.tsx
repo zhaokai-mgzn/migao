@@ -294,7 +294,7 @@ describe('#6703 ③ /after-sales：读失败 ⇒ 计数行不可信 + 不冒充�
     expect(container.textContent).not.toMatch(NO_FAKE_ZERO)
     expect(container.textContent).toContain('共 — 条记录')
     // 不冒充空态（#6691 同族）：读不到时不说「暂无售后工单」
-    expect(screen.queryByText('暂无售后工单')).toBeNull()
+    expect(screen.queryByText(/还没有售后工单/)).toBeNull()
 
     const callsBefore = mockGetTickets.mock.calls.length
     mockGetTickets.mockResolvedValue(paged([ticketRow], 2))
@@ -306,7 +306,7 @@ describe('#6703 ③ /after-sales：读失败 ⇒ 计数行不可信 + 不冒充�
   it('对照读数：读成功但没有工单 ⇒ 空态话术照旧', async () => {
     mockGetTickets.mockResolvedValue(paged([], 0))
     render(<AfterSalesPage />)
-    expect(await screen.findByText('暂无售后工单')).toBeInTheDocument()
+    expect(await screen.findByText(/还没有售后工单/)).toBeInTheDocument()
     expect(screen.queryByTestId('after-sales-load-error')).toBeNull()
   }, TEST_TIMEOUT)
 })
@@ -394,7 +394,7 @@ describe('#6703 ⑥ /stock-ledger：流水读失败 ⇒ 「共 — 条」+ 真�
     expect(alert).toHaveTextContent('库存明细暂时读不到')
     expect(alert.textContent || '').not.toMatch(/没有[^。，；]*权限/)
     expect(container.textContent).not.toMatch(NO_FAKE_ZERO)
-    expect(screen.queryByText('暂无库存流水')).toBeNull()
+    expect(screen.queryByText(/还没有库存流水/)).toBeNull()
 
     const callsBefore = mockLedger.mock.calls.length
     mockLedger.mockResolvedValue(paged([ledgerRow], 9))
@@ -406,7 +406,7 @@ describe('#6703 ⑥ /stock-ledger：流水读失败 ⇒ 「共 — 条」+ 真�
   it('对照读数：读成功但没有流水 ⇒ 空态话术照旧 + 计数行印「共 0 条」', async () => {
     mockLedger.mockResolvedValue(paged([], 0))
     render(<StockLedgerPage />)
-    expect(await screen.findByText('暂无库存流水')).toBeInTheDocument()
+    expect(await screen.findByText(/还没有库存流水/)).toBeInTheDocument()
     expect(screen.getByTestId('ledger-total')).toHaveTextContent('共 0 条')
     expect(screen.queryByTestId('stock-ledger-error')).toBeNull()
   }, TEST_TIMEOUT)

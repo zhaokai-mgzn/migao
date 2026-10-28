@@ -84,10 +84,12 @@ vi.mock('@/components/ui', async (importOriginal) => {
     // 摊开真值后，新增原语不必再逐个补 mock。口径与同目录
     // `production-remnants-paging.test.tsx` 既有写法同源。
     ...actual,
-  Table: ({ columns, dataSource, loading, rowKey }: any) => (
+  Table: ({ columns, dataSource, loading, rowKey, emptyText }: any) => (
     <div data-testid="data-table">
       {loading && <div data-testid="table-loading">加载中...</div>}
-      {!loading && (!dataSource || dataSource.length === 0) && <div>暂无数据</div>}
+      {/* issue #8040：把页面传的 `emptyText` **真的**渲染出来 —— 改前这里写死「暂无数据」，
+          页面怎么改空态话术，判据都看不见（撞的正是本单要修的那句裸文案）。 */}
+      {!loading && (!dataSource || dataSource.length === 0) && <div data-testid="table-empty">{emptyText}</div>}
       {dataSource?.map((record: any, index: number) => (
         <div
           key={typeof rowKey === 'function' ? rowKey(record) : record[rowKey]}
@@ -251,6 +253,25 @@ describe('EmployeesPage', () => {
     const lastArgs = calls[calls.length - 1]?.[0] || {}
     expect(lastArgs).not.toHaveProperty('role')
     expect(lastArgs).toHaveProperty('keyword', '张')
+  })
+
+  it('空态分流（issue #8040）：真没有员工 ⇒ 说清去哪建；筛选下为空 ⇒ 说清换个条件', async () => {
+    mockGetEmployees.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
+    render(<EmployeesPage />)
+
+    // ① 真为空：说清下一步（去哪建员工）—— 不再是裸「暂无数据」
+    const trulyEmpty = await screen.findByTestId('table-empty')
+    expect(trulyEmpty.textContent).toContain('还没有员工')
+    expect(trulyEmpty.textContent).toContain('新增员工')
+    expect(screen.queryByText('暂无数据')).toBeNull()
+
+    // ② 筛选下为空：改口说「换个条件」，不让商家以为一个员工都没有
+    fireEvent.change(screen.getByPlaceholderText('输入姓名或手机号搜索'), { target: { value: '不存在的人' } })
+    fireEvent.click(screen.getByRole('button', { name: '查询' }))
+    await waitFor(() =>
+      expect(mockGetEmployees).toHaveBeenLastCalledWith(expect.objectContaining({ keyword: '不存在的人' })),
+    )
+    expect(screen.getByTestId('table-empty').textContent).toContain('没有符合筛选条件的员工')
   })
 
   it('renders pagination', async () => {

@@ -400,7 +400,7 @@ export default function SuppliersPage() {
         )}
 
         {loading ? (
-          <div className="py-10 text-center text-sm text-neutral-500">加载中...</div>
+          <div className="py-10 text-center text-sm text-neutral-500">加载中…</div>
         ) : loadError ? null : suppliers.length === 0 ? (
           <div className="py-12 text-center text-sm text-neutral-500" data-testid="supplier-empty">
             <Truck className="w-8 h-8 mx-auto mb-2 text-neutral-300" />

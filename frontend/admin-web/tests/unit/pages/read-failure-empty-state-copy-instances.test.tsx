@@ -130,14 +130,14 @@ describe('读面失败不得与空态同屏（issue #6714）', () => {
       const surface = await screen.findByTestId('notifications-load-failed')
       expect(surface).toHaveAttribute('role', 'alert')
       // 🔴 改前：屏上就是「暂无通知」
-      expect(screen.queryByText('暂无通知')).not.toBeInTheDocument()
+      expect(screen.queryByText(/还没有通知/)).not.toBeInTheDocument()
 
       mockGetNotifications.mockResolvedValueOnce({ data: { data: { items: [], total: 0 } } })
       fireEvent.click(screen.getByTestId('notifications-load-failed-retry'))
       await waitFor(() => expect(mockGetNotifications).toHaveBeenCalledTimes(2))
       // 反向对照：重试成功且**真为空** ⇒ 「暂无通知」照旧（空态没有被判红）
       expect(await screen.findByTestId('notifications-empty')).toBeInTheDocument()
-      expect(screen.getByText('暂无通知')).toBeInTheDocument()
+      expect(screen.getByText(/还没有通知/)).toBeInTheDocument()
     },
     TEST_TIMEOUT,
   )

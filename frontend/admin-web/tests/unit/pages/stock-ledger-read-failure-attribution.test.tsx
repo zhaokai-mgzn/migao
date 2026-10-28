@@ -72,7 +72,7 @@ describe('#6707 /stock-ledger 读失败归因：按状态分流（403 才谈权�
       expect(PERM_BLAME_RE.test(surface.textContent || '')).toBe(false)
       // 失败态与零值读数**不得并存**：计数印 `—`，空态话术不许上屏
       expect(screen.getByTestId('ledger-total').textContent).toMatch(/共\s*—\s*条/)
-      expect(screen.queryByText('暂无库存流水')).not.toBeInTheDocument()
+      expect(screen.queryByText(/还没有库存流水/)).not.toBeInTheDocument()
     },
     TEST_TIMEOUT,
   )
@@ -122,7 +122,7 @@ describe('#6707 /stock-ledger 读失败归因：按状态分流（403 才谈权�
       mockLedger.mockResolvedValue(ok({ items: [], total: 0 }))
       render(<StockLedgerPage />)
 
-      expect(await screen.findByText('暂无库存流水')).toBeInTheDocument()
+      expect(await screen.findByText(/还没有库存流水/)).toBeInTheDocument()
       expect(screen.getByTestId('ledger-total').textContent).toMatch(/共\s*0\s*条/)
       expect(screen.queryByTestId('stock-ledger-error')).not.toBeInTheDocument()
     },

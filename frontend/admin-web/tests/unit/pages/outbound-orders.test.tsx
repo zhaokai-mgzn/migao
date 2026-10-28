@@ -10,6 +10,9 @@
 //   ⑤ 「成品库存」空态可进入「仓位管理」视图（issue #7785）。
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+// issue #8040：成品仓表格分支的 `emptyText` 在当前渲染路径下不可达（空数据由 EmptyState 承接）
+// ⇒ 那一处的口径只能按源码核（读文件断言），不假装有运行期证据。
+import { readFileSync } from 'node:fs'
 
 const authMock = vi.hoisted(() => ({
   state: {
@@ -253,6 +256,25 @@ describe('成品库存页签（WH-005）', () => {
     fireEvent.click(screen.getByTestId('outbound-tab-finished'))
 
     expect(await screen.findByText('成品仓暂时是空的')).toBeTruthy()
+  })
+
+  it('空态口径统一（issue #8040）：成品仓与同页出库单一样说清「为什么空 / 怎么才会有」', async () => {
+    mockFinished.mockResolvedValue({ data: { data: [] } })
+    render(<OutboundOrdersPage />)
+    await waitFor(() => expect(screen.getByText('CK-20261025-0001')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('outbound-tab-finished'))
+
+    // ① 屏上可见的空态：说清「打包后自动分配仓位号」（不是只有标题、不知道下一步）
+    const empty = await screen.findByText(/工人在手机端完成打包后/)
+    expect(empty.textContent).toContain('仓位号')
+
+    // ② 表格分支的 `emptyText` 用的是**同一口径的详说**（该分支在当前渲染路径下不可达 ——
+    //    空数据由上面的 EmptyState 承接 ⇒ 只能按源码核，故读文件断言）
+    const src = readFileSync('src/app/(dashboard)/outbound-orders/page.tsx', 'utf8')
+    expect(src).toContain('emptyText="成品仓暂时是空的 —— 工人在手机端完成打包后，会自动分配成品仓仓位号"')
+    expect(src, '同页不许再留裸「成品仓暂时是空的」这套口径').not.toContain('emptyText="成品仓暂时是空的"')
+    // 反向对照：出库单那处的详说**仍在**（不是把两句都删掉冒充统一）
+    expect(src).toContain('还没有出库单：布料出库点右上角「新建出库单」；成品出库在发货时自动生成')
   })
 })
 describe('仓位管理入口（WH-009）', () => {

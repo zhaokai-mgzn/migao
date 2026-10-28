@@ -251,7 +251,7 @@ export default function ApprovalsPage() {
         )}
 
         {loading ? (
-          <div className="py-10 text-center text-sm text-neutral-500">加载中...</div>
+          <div className="py-10 text-center text-sm text-neutral-500">加载中…</div>
         ) : loadError ? null : visible.length === 0 ? (
           <EmptyState
             testId="approvals-empty"

@@ -74,10 +74,12 @@ vi.mock('dayjs', () => ({
 
 // Mock OrderTable component
 vi.mock('@/components/orders', () => ({
-  OrderTable: ({ orders, loading, onView, onClose, onRemark, onRefund }: any) => (
+  OrderTable: ({ orders, loading, onView, onClose, onRemark, onRefund, emptyText }: any) => (
     <div data-testid="order-table">
       {loading && <div data-testid="table-loading">加载中...</div>}
-      {!loading && orders.length === 0 && <div>暂无数据</div>}
+      {/* issue #8040：把页面传的 `emptyText` **真的**渲染出来 —— 改前这里写死「暂无数据」，
+          页面怎么改空态话术，判据都看不见。 */}
+      {!loading && orders.length === 0 && <div data-testid="order-table-empty">{emptyText}</div>}
       {orders.map((o: any) => {
         // 镜像真实 OrderTable 的退款按钮条件（后端可退状态 + refundAmount === 0）
         const refundable = ['confirmed', 'producing', 'shipped', 'completed'].includes(o.status)
@@ -172,6 +174,9 @@ vi.mock('@/types', () => ({
     completed: 'completed',
     closed: 'cancelled',
   },
+  // issue #8040 的空态分流用例要点一次状态 tab ⇒ 页面的 `loadOrders` 会调它
+  // （真实实现把前端 tab 映射成后端状态；本文件只需它存在且原样下传）。
+  toBackendStatusParam: (s: string) => s,
   OrderStatusTabs: [
     { key: 'all', label: '全部' },
     { key: 'pending_payment', label: '待付款' },
@@ -231,6 +236,23 @@ describe('OrdersPage', () => {
       expect(screen.getByTestId('order-1')).toBeInTheDocument()
       expect(screen.getByText('MG202600001')).toBeInTheDocument()
     })
+  })
+
+  it('空态分流（issue #8040）：真没有订单 ⇒ 说清「近一个月」与去哪建；筛了 tab ⇒ 说清换个条件', async () => {
+    mockGetOrders.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
+    render(<OrdersPage />)
+
+    // ① 真为空：说清默认只覆盖近一个月 + 去哪建（不再是裸「暂无数据」）
+    const trulyEmpty = await screen.findByTestId('order-table-empty')
+    expect(trulyEmpty.textContent).toContain('最近一个月还没有订单')
+    expect(trulyEmpty.textContent).toContain('新增订单')
+    expect(screen.queryByText('暂无数据')).toBeNull()
+
+    // ② 切了状态 tab ⇒ 改口说「没有符合当前筛选的订单」（与「真没有单」分开说）
+    await user.click(screen.getAllByRole('button', { name: '待付款' })[0])
+    await waitFor(() =>
+      expect(screen.getByTestId('order-table-empty').textContent).toContain('没有符合当前筛选的订单'),
+    )
   })
 
   it('should render search filters（筛选区默认收起：展开后才在）', async () => {
