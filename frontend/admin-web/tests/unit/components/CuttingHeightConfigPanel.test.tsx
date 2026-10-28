@@ -297,6 +297,25 @@ describe('CuttingHeightConfigPanel', () => {
     )
   })
 
+  it('⑨ 条件 chip 必须**单行**：类型下拉不得 `w-full`、chip 容器不得折行（否则取值被顶到下一行）', async () => {
+    // 病灶（真机截图 2026-10-28）：`<select className="w-full">` 落在 `flex-wrap` 行里会**独占一行**
+    // ⇒ 取值按钮被顶到下一行、每条目高度翻倍、整页看起来「乱套」。这条钉的是**结构成因**，
+    // 不是「此刻像不像」：把 `w-auto` 改回 `w-full` / 把容器去掉 `inline-flex` 都会红。
+    render(<CuttingHeightConfigPanel />)
+    await waitFor(() => expect(screen.getByTestId('cutting-height-items')).toBeTruthy())
+
+    const kind = screen.getByLabelText('条件类型-0-0') as HTMLElement
+    const chip = kind.parentElement as HTMLElement
+    expect(chip.className).toContain('inline-flex')
+    expect(chip.className).not.toContain('flex-wrap')
+    expect(kind.className.split(/\s+/)).not.toContain('w-full')
+
+    // 取值触发件是个可截断的按钮（长取值不撑破行）
+    const value = screen.getByLabelText('条件取值-0-0') as HTMLElement
+    expect(value.tagName).toBe('BUTTON')
+    expect(value.className).toContain('max-w-')
+  })
+
   it('⑧ 存量 v1 报文（hit 形态）不白屏：按工序专用组渲染', async () => {
     const legacy = {
       data: {

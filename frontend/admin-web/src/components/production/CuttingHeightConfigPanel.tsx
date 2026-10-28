@@ -18,6 +18,28 @@
  *    「哪些项命中」一律由 `POST …/preview` 回答 —— 前端再写一份匹配 = 第二份口径。
  * 3. **本版只算不写机器**：面板的终点是「给人一个可核对的数」（用户 2026-09-29 裁定①：下发先不做）。
  *
+ * ## 版式自查（本机没有运行栈时，怎么「真的看一眼」）
+ *
+ * 2026-10-28 实证：本面板第一版把条件下拉写成 `w-full`，它落在 `flex-wrap` 行里**独占一行**
+ * ⇒ 取值按钮被顶到下一行、每条目高度翻倍、整页「乱套」——**这类形态单测看不出来**（jsdom 无几何）。
+ * 可复算入口（不需要起 3001 / 不连后端，用本机已装的 chromium headless）：
+ *
+ * ```bash
+ * cd frontend/admin-web
+ * # ① 建 .harness/：entry.tsx 里 `createRoot(...).render(<CuttingHeightConfigPanel />)`
+ * #    api-mock.ts 导出 `cuttingHeightApi` / `productionApi` 的固定夹具；sonner 同理
+ * ./node_modules/.bin/tailwindcss -c tailwind.config.ts -i src/app/globals.css -o .harness/out.css
+ * ./node_modules/.bin/esbuild .harness/entry.tsx --bundle --format=iife --jsx=automatic \
+ *   --inject:./.harness/globals-shim.ts --alias:@=./src \
+ *   --alias:@/lib/api=./.harness/api-mock.ts --alias:sonner=./.harness/sonner-mock.ts \
+ *   --outfile=.harness/bundle.js
+ * "$HOME/Library/Caches/ms-playwright/chromium_headless_shell-<版本>/chrome-headless-shell-mac-arm64/chrome-headless-shell" \
+ *   --headless --hide-scrollbars --force-device-scale-factor=2 --window-size=1440,1150 \
+ *   --screenshot=/tmp/panel.png "file://$PWD/.harness/index.html"
+ * ```
+ *
+ * ⇒ 读图判定：条件 chip **一行**、`部位` 下拉文字与箭尖完整、无横向滚动。`.harness/` 是临时物，不入库。
+ *
  * ## 版式（修 #7153 残留、issue #7997）
  * 表格已退场：**列宽 + 单元格内边距**是「布帘被裁成布」的成因（`SELECT_CONTROL` 的 `pl-3 pr-9`
  * 在 11% 宽的列里放不下两个字），靠调百分比只是在改临界点。现在每条增量项是一张卡（字段在上、
@@ -35,7 +57,7 @@ import FormPanel, { Field, FormGrid, fieldControl } from '@/components/ui/FormPa
 import { cuttingHeightApi, productionApi } from '@/lib/api'
 import { CRAFT_OPTIONS, SPECIAL_OPTIONS } from '@/lib/order-craft-fields'
 import { cn } from '@/lib/utils'
-import { SELECT_CONTROL_FIELD } from '@/components/ui'
+import { SELECT_CONTROL, SELECT_CONTROL_FIELD } from '@/components/ui'
 import type {
   CuttingHeightCondition,
   CuttingHeightConfigBody,
@@ -140,11 +162,12 @@ function ValueMultiSelect({
         title={values.length > 0 ? text : undefined}
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          'max-w-[16rem] truncate rounded px-1.5 py-0.5 text-xs underline decoration-dotted',
-          values.length === 0 ? 'text-neutral-400' : 'text-primary-700',
+          SELECT_CONTROL,
+          'w-auto max-w-[13rem] text-left',
+          values.length === 0 && 'text-neutral-400',
         )}
       >
-        {text}
+        <span className="block truncate">{text}</span>
       </button>
       {open && (
         <div className="absolute left-0 top-full z-40 mt-1 max-h-56 w-52 overflow-y-auto rounded-lg border border-neutral-200 bg-white p-1 shadow-card-hover">
@@ -189,10 +212,12 @@ function ConditionRow({
   onRemove: () => void
 }) {
   return (
-    <div className="flex max-w-full flex-wrap items-center gap-1 rounded-lg border border-neutral-200 bg-neutral-50 p-1">
+    // 关键：容器**不折行**、类型下拉**不定宽占满**（`w-full` 会在 flex 行里独占一行 ⇒ 取值被顶到下一行，
+    // 那正是用户截图里「条件框两行、整页乱套」的成因）。chips 之间的换行由外层的 `flex-wrap` 负责。
+    <div className="inline-flex max-w-full items-center gap-1">
       {/* 下拉走共享铬（issue #7397 的类级判据：业务面每个 `<select>` 必须引用 `SELECT_CONTROL*`） */}
       <select
-        className={cn(SELECT_CONTROL_FIELD, 'w-full max-w-[8.5rem]')}
+        className={cn(SELECT_CONTROL, 'w-auto min-w-[6.25rem]')}
         aria-label={`条件类型-${itemIndex}-${conditionIndex}`}
         value={condition.kind}
         onChange={(e) => onChange({ kind: e.target.value, values: [] })}
@@ -212,10 +237,10 @@ function ConditionRow({
       <button
         type="button"
         aria-label={`删除条件-${itemIndex}-${conditionIndex}`}
-        className="text-neutral-400 hover:text-danger-600"
+        className="shrink-0 rounded p-1 text-neutral-400 hover:text-danger-600"
         onClick={onRemove}
       >
-        <X className="h-3.5 w-3.5" />
+        <X className="h-4 w-4" />
       </button>
     </div>
   )
@@ -248,11 +273,11 @@ function ItemRow({
 
   return (
     <div
-      className="rounded-lg border border-neutral-200 bg-white p-3"
+      className="rounded-lg border border-neutral-200 bg-white p-2.5"
       data-testid={`cutting-height-item-${index}`}
     >
-      <div className="grid items-end gap-3 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,0.8fr)_minmax(0,0.9fr)_auto_auto]">
-        <Field label="名称" htmlFor={`ch-name-${index}`}>
+      <div className="flex flex-wrap items-end gap-2">
+        <Field label="名称" htmlFor={`ch-name-${index}`} className="w-[17rem] max-w-full">
           <input
             id={`ch-name-${index}`}
             className={fieldControl()}
@@ -261,7 +286,7 @@ function ItemRow({
             onChange={(e) => onChange({ name: e.target.value })}
           />
         </Field>
-        <Field label="取值" unit="米" htmlFor={`ch-value-${index}`}>
+        <Field label="取值" unit="米" htmlFor={`ch-value-${index}`} className="w-28">
           <input
             id={`ch-value-${index}`}
             className={fieldControl('米')}
@@ -274,7 +299,7 @@ function ItemRow({
             }
           />
         </Field>
-        <Field label="部位" htmlFor={`ch-position-${index}`}>
+        <Field label="部位" htmlFor={`ch-position-${index}`} className="w-28">
           <select
             id={`ch-position-${index}`}
             className={cn(SELECT_CONTROL_FIELD, 'w-full')}
@@ -290,7 +315,7 @@ function ItemRow({
             ))}
           </select>
         </Field>
-        <label className="flex items-center gap-2 whitespace-nowrap pb-2 text-sm text-neutral-600">
+        <label className="flex h-9 items-center gap-1.5 whitespace-nowrap text-sm text-neutral-600">
           <input
             type="checkbox"
             aria-label={`启用-${index}`}
@@ -301,7 +326,7 @@ function ItemRow({
         </label>
         <button
           type="button"
-          className="whitespace-nowrap pb-2 text-sm text-neutral-400 underline"
+          className="h-9 whitespace-nowrap px-1 text-sm text-neutral-400 underline"
           data-testid={`cutting-height-remove-${index}`}
           onClick={onRemove}
         >
@@ -310,7 +335,7 @@ function ItemRow({
       </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <span className="whitespace-nowrap text-xs text-neutral-500">触发条件（同时满足）</span>
+        <span className="whitespace-nowrap text-xs text-neutral-500">条件（同时满足）</span>
         {conditions.map((condition, conditionIndex) => (
           <ConditionRow
             key={`${item.key}-${conditionIndex}`}
@@ -324,11 +349,11 @@ function ItemRow({
         ))}
         <button
           type="button"
-          className="whitespace-nowrap text-xs text-primary-600 underline"
+          className="h-9 whitespace-nowrap px-1 text-xs text-primary-600 underline"
           data-testid={`cutting-height-add-condition-${index}`}
           onClick={addCondition}
         >
-          ＋ 条件
+          + 条件
         </button>
         {conditions.length === 0 && (
           <span className="text-xs text-neutral-400">无附加条件（只按部位圈范围）</span>
