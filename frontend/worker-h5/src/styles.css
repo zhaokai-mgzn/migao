@@ -758,6 +758,34 @@ a.wh5-machine__back:active { color: var(--wh5-machine-ink); }
 .wh5-rework { border-color: #e7d3ae; }
 .wh5-rework .wh5-q-head { display: flex; align-items: center; justify-content: space-between; }
 
+/* ── 问题记录列表（issue #7973）：返工 / 质检记录共用一套版式 ──
+   §31 P1 常驻面克制：记录再多也不吃掉整屏（封顶 + 内滚）；§31 P2 单号/时间只在记录里说一次。 */
+.wh5-record-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.wh5-record {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--wh5-line);
+  border-radius: var(--wh5-radius);
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.wh5-record-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.wh5-record-title { font-size: 15px; font-weight: 600; color: var(--wh5-ink); }
+.wh5-record-time { font-size: 12px; color: var(--wh5-muted); white-space: nowrap; }
+/* 页头「返工处理中」= 不可点状态（不是死按钮：`.wh5-entry` 的按钮形态 + 虚线弱化） */
+.wh5-entry.is-blocked { color: var(--wh5-muted); border-style: dashed; background: var(--wh5-surface-soft); }
+
 /* ── 成品出库卡片（V197 / issue #7762）：扫水洗唛后的标签预览 ── */
 .wh5-finished-label .wh5-fl-rows { margin: 2mm 0; }
 .wh5-finished-label .wh5-fl-row { display: flex; gap: 2mm; font-size: 13px; line-height: 1.5; }

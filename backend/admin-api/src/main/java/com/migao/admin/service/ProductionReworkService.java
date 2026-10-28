@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 工人报返工（issue #7860，用户 2026-10-26 裁定）。
@@ -82,6 +83,12 @@ public class ProductionReworkService {
 
     /** 返工原因长度上限（与迁移 V199 的 {@code reason VARCHAR(500)} 同宽）。 */
     private static final int REASON_MAX = 500;
+
+    /** 未完结 = 这两态（与件级部分唯一索引 {@code uk_rework_orders_open_per_piece} 的谓词逐字一致）。 */
+    private static final Set<String> OPEN_STATUSES = Set.of(ReworkState.DRAFT, ReworkState.IN_PROGRESS);
+
+    /** 件级记录读面上限（§31 P1 常驻面克制：一屏最多 20 条，更早的历史去 PC「返工单」看）。 */
+    private static final int PIECE_RECORD_LIMIT = 20;
 
     private final ProductionScanService scanService;
     private final ProductionService productionService;
@@ -158,6 +165,9 @@ public class ProductionReworkService {
         ProductionWorkLog normalLog = target.log();
         // 「质检」工序照旧没有报工动作（issue #7186）：与扫码报工同一份判据
         DocumentOperationLinkage.rejectManualReport(op);
+        // 件级闭环（issue #7973）：同一件还有未完结返工单 ⇒ 不再受理新报（页面同时收起入口）。
+        // DB 的 uk_rework_orders_open_per_piece 仍是最后一道；这里先给可行动的人话，不让工人拿到 500/重复键。
+        requireNoOpenRework(tenantId, op);
         BigDecimal revertQty = nz(normalLog.getQualifiedQty());
         if (revertQty.signum() <= 0) {
             throw new BusinessException("REWORK_NO_REPORT_TO_AMEND",
@@ -321,6 +331,92 @@ public class ProductionReworkService {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("orders", rows);
         return out;
+    }
+
+    /**
+     * 这一件（套号 × 部位）的返工记录（issue #7973）—— 工人扫码屏「返工记录（布料）」块的**唯一**数据源。
+     *
+     * <p>口径：只取车间来源（{@code source='worker'}）；最新在前；上限 {@link #PIECE_RECORD_LIMIT} 条。
+     * 套号给了就按件过滤（多套同部位不串件）；存量行没有件键（#7945 之前）⇒ 不在本读面出现，
+     * 但仍可在 PC「返工单」列表看到（**不猜、不回填**）。</p>
+     *
+     * @return 每行 {@code rework_no / operation_name / logical_name / qty / reason / status /
+     *         worker_name / created_at / position_name}；没有记录 ⇒ 空列表（页面据此渲染空态）
+     */
+    public List<Map<String, Object>> pieceRecords(Long tenantId, String setNo, String orderItemId) {
+        if (!StringUtils.hasText(orderItemId)) {
+            return List.of();
+        }
+        LambdaQueryWrapper<ReworkOrder> wrapper = new LambdaQueryWrapper<ReworkOrder>()
+                .eq(ReworkOrder::getTenantId, tenantId)
+                .eq(ReworkOrder::getSource, ReworkOrderService.SOURCE_WORKER)
+                .eq(ReworkOrder::getDeleted, 0)
+                .eq(ReworkOrder::getOrderItemId, orderItemId.trim())
+                .orderByDesc(ReworkOrder::getCreatedAt);
+        if (StringUtils.hasText(setNo)) {
+            wrapper.eq(ReworkOrder::getSetNo, setNo.trim());
+        }
+        List<ReworkOrder> rows = reworkOrderMapper.selectList(wrapper);
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (ReworkOrder row : rows) {
+            if (out.size() >= PIECE_RECORD_LIMIT) {
+                break;
+            }
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("rework_no", row.getReworkNo());
+            // 成对给出逻辑名（与返工列表同一份口径：快照名可能是变体名）
+            m.put("operation_name", row.getOperationName());
+            m.put("logical_name", ProductionOperationQueryService.logicalOperationName(row.getOperationName()));
+            m.put("qty", row.getQty());
+            m.put("reason", row.getReason());
+            m.put("status", row.getStatus());
+            m.put("worker_name", row.getWorkerName());
+            m.put("created_at", row.getCreatedAt());
+            m.put("position_name", row.getPositionName());
+            out.add(m);
+        }
+        return out;
+    }
+
+    /**
+     * 件级门禁（issue #7973）：这一件已有未完结返工单 ⇒ 409，点名那张单 + 状态。
+     *
+     * <p>只对**有件键**的工序实例生效：存量实例没有 {@code set_no} / {@code order_item_id}
+     * ⇒ 无法判件（DB 部分唯一索引对 NULL 也不生效）⇒ 保持既有行为，不在这里误挡。</p>
+     */
+    private void requireNoOpenRework(Long tenantId, ProcessingPositionOperation op) {
+        if (op == null || !StringUtils.hasText(op.getSetNo()) || !StringUtils.hasText(op.getOrderItemId())) {
+            return;
+        }
+        List<ReworkOrder> open = reworkOrderMapper.selectList(new LambdaQueryWrapper<ReworkOrder>()
+                .eq(ReworkOrder::getTenantId, tenantId)
+                .eq(ReworkOrder::getSource, ReworkOrderService.SOURCE_WORKER)
+                .eq(ReworkOrder::getDeleted, 0)
+                .eq(ReworkOrder::getSetNo, op.getSetNo())
+                .eq(ReworkOrder::getOrderItemId, op.getOrderItemId())
+                .in(ReworkOrder::getStatus, OPEN_STATUSES)
+                .orderByDesc(ReworkOrder::getCreatedAt));
+        if (open == null || open.isEmpty()) {
+            return;
+        }
+        ReworkOrder row = open.get(0);
+        throw new BusinessException("REWORK_OPEN_EXISTS",
+                "这一件还有一张未处理完的返工单（" + row.getReworkNo() + " · "
+                        + reworkStatusLabel(row.getStatus()) + "）",
+                409,
+                "等车间把这张返工单处理完（完成或取消）后再报；同一件同时只能有一张未完结的返工单");
+    }
+
+    /** 返工单状态的人话（未完结两态；未知值如实回 null，不猜）。 */
+    private static String reworkStatusLabel(String status) {
+        if (status == null) {
+            return null;
+        }
+        return switch (status) {
+            case ReworkState.DRAFT -> "待处理";
+            case ReworkState.IN_PROGRESS -> "处理中";
+            default -> null;
+        };
     }
 
     /** 改记目标 = 工序实例 + 那一笔要改记的报工（同一对，拆开传必漂）。 */

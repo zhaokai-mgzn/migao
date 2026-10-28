@@ -72,3 +72,4 @@
 {"id":"1793145285.30021.12584","ts":"2026-10-27T23:54:46Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7968-pool-single-dispatch-all-lines","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793145338.35221.23376","ts":"2026-10-27T23:55:38Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7968-pool-single-dispatch-all-lines","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1793145403.40618.14429","ts":"2026-10-27T23:56:43Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7968-pool-single-dispatch-all-lines","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1793147681.20668.14087","ts":"2026-10-28T00:34:42Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/7973-worker-report-record-loop","why":"子包 worktree 直跑全量（无批次标记）"}

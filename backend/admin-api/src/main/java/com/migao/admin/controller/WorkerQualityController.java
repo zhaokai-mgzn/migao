@@ -17,9 +17,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -52,43 +54,69 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class WorkerQualityController {
 
+    /** 质检记录读面上限（issue #7973，§31 P1：常驻面克制，一屏最多 20 条）。 */
+    private static final int RECORD_LIMIT = 20;
+
     private final WorkerSessionService workerSessionService;
     private final WorkerAdminService workerAdminService;
     private final QualityCheckService qualityCheckService;
     private final BusinessClock businessClock;
 
     /**
-     * 某件成品帘的**最新质检判定**（无记录 ⇒ {@code latest=null}，界面写「未检」而不是「合格」）。
+     * 某件成品帘的**最新质检判定 + 记录列表**（无记录 ⇒ {@code latest=null}、{@code records=[]}）。
      *
-     * <p>工人扫水洗唛后，报工页用这个读面显示「这件检过没有、上次判了什么」。</p>
+     * <p>工人扫水洗唛后，报工页用这个读面渲染「质检记录（做工）」块并判断是否处于「待复检」。
+     * 件 = 套号 × 部位（issue #7945 / #7973）：给了 {@code set_no} ⇒ 只读这一件，
+     * {@code latest} 与 {@code records[0]} **同源**（多套同部位不串）；没给 ⇒ 沿用按部位行的存量口径。</p>
      */
     @GetMapping("/latest")
     public ApiResponse<Map<String, Object>> latest(
             @RequestHeader(value = WorkerSessionService.SESSION_HEADER, required = false) String sessionId,
-            @RequestParam(name = "order_item_id", required = false) String orderItemId) {
+            @RequestParam(name = "order_item_id", required = false) String orderItemId,
+            // issue #7973：件 = 套号 × 部位；只按部位行取最新会把多套同部位串件
+            @RequestParam(name = "set_no", required = false) String setNo) {
         requireInspector(sessionId);
+        Long tenantId = TenantContext.getTenantId();
+        List<Map<String, Object>> records = qualityCheckService.records(tenantId, orderItemId, setNo, RECORD_LIMIT);
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("order_item_id", orderItemId);
-        // 未检 ≠ 合格：没有记录就如实给 null（读面不编值）
-        data.put("latest", qualityCheckService.latest(TenantContext.getTenantId(), orderItemId));
+        data.put("set_no", setNo);
+        // 未检 ≠ 合格：没有记录就如实给 null（读面不编值）。
+        // 件级（set_no 给了）⇒ latest 与 records 第一行**同源**（不再另走按部位行的 DISTINCT ON）；
+        // 没给套号（存量 / 旧调用方）⇒ 沿用既有 latest（按部位行，不猜套）。
+        data.put("latest", StringUtils.hasText(setNo)
+                ? (records.isEmpty() ? null : records.get(0))
+                : qualityCheckService.latest(tenantId, orderItemId));
+        // 记录列表（最新在前）：页面「质检记录（做工）」块 + 待复检门禁的**唯一**数据源
+        data.put("records", records);
         return ApiResponse.success(data);
     }
 
     /**
      * 录入一条质检判定 ⇒ 生成一张**质检单**（= {@code quality_inspections} 的一行）。
      *
-     * <p>body = {@code {order_item_id, result ∈ pass|rework|scrap, reason?}}；判定 ≠ 合格 ⇒ 原因必填
-     * （缺 ⇒ 422 具名报错、零写入 —— 与观星台同一份服务层校验，不重造第二份）。</p>
+     * <p>body = {@code {order_item_id, set_no?, result ∈ pass|rework|scrap, reason?, recheck?}}；
+     * 判定 ≠ 合格 ⇒ 原因必填（缺 ⇒ 422 具名报错、零写入 —— 与观星台同一份服务层校验，不重造第二份）。</p>
+     *
+     * <p>🔴 件级闭环（issue #7973）：这一件最新判定 = {@code rework} 且 {@code recheck != true}
+     * ⇒ 409（「正在等复检」），不给盲重复提交；【复检通过】用 {@code result=pass}，
+     * 【复检仍有问题】用 {@code result=rework&recheck=true}（显式的新一轮判定）。</p>
      */
     @PostMapping("/inspections")
     public ApiResponse<Map<String, Object>> create(
             @RequestHeader(value = WorkerSessionService.SESSION_HEADER, required = false) String sessionId,
             @RequestBody(required = false) Map<String, Object> body) {
         WorkerIdentity me = requireInspector(sessionId);
+        Long tenantId = TenantContext.getTenantId();
+        String orderItemId = str(body, "order_item_id");
+        String result = str(body, "result");
+        String setNo = str(body, "set_no");
+        // 件级闭环（issue #7973）：同一件已记「做工返工」且未复检 ⇒ 拒普通的重记
+        requireNoPendingRework(tenantId, orderItemId, setNo, result, flag(body, "recheck"));
         return ApiResponse.success(qualityCheckService.create(
-                TenantContext.getTenantId(),
-                str(body, "order_item_id"),
-                str(body, "result"),
+                tenantId,
+                orderItemId,
+                result,
                 str(body, "reason"),
                 me.workerId(),
                 me.workerName(),
@@ -98,7 +126,39 @@ public class WorkerQualityController {
                 // issue #7165：工人端录判定 ⇒ 合格时联动完成「质检」工序，计件记给这位工人
                 me,
                 // issue #7945：件 = 套号 × 部位；多套未给 ⇒ 服务端 422（不猜第 1 套）
-                str(body, "set_no")));
+                setNo));
+    }
+
+    /**
+     * 件级闭环（issue #7973）：最新判定 = {@code rework} ⇒ 这一件处于「待复检」，普通「记返工」被拒（409）。
+     *
+     * <p>🔴 为什么要有 {@code recheck} 这个显式入口：修好了要【复检通过】（{@code pass}），
+     * 没修好要【复检仍有问题】——后者是**新的一轮**判定（允许追加），不是盲重复提交。
+     * 两条路都必须由复检动作触发；只有它能把「报了还能一直报」变成「一次问题一条记录」。
+     * 服务端不验证「实物真的复检过」（与录入判定同一信任级：师傅点这一下就是复检动作）。</p>
+     */
+    private void requireNoPendingRework(Long tenantId, String orderItemId, String setNo,
+                                        String result, boolean recheck) {
+        if (!"rework".equals(result) || recheck) {
+            return;
+        }
+        Map<String, Object> latest = qualityCheckService.latestForPiece(tenantId, orderItemId, setNo);
+        if (latest == null || !"rework".equals(latest.get("result"))) {
+            return;
+        }
+        throw new BusinessException("QUALITY_REWORK_PENDING",
+                "这一件已记「做工返工」，正在等复检",
+                409,
+                "请在质检记录里点「复检通过」（修好了）或「复检仍有问题」（还没修好）；后者会追加一条新判定");
+    }
+
+    /** body 布尔开关（缺键 / 非 true ⇒ false；不把字符串 "false" 当真）。 */
+    private static boolean flag(Map<String, Object> body, String key) {
+        if (body == null) {
+            return false;
+        }
+        Object v = body.get(key);
+        return Boolean.TRUE.equals(v) || "true".equalsIgnoreCase(String.valueOf(v));
     }
 
     /**

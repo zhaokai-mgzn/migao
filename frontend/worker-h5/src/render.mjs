@@ -47,7 +47,8 @@ export function initialState() {
     // 工人端页面权限（V141 母单 #5161）：`null` = **还没读到**（fail-open 的初值，见 `effectivePages`）
     pages: null,
     pagesUnread: false,
-    // 质检（issue #7162）：最新判定 / 读取中 / 读失败；qualityForm = 展开中的录入表单
+    // 质检（issue #7162 / #7973）：最新判定 + 记录列表（`records`）/ 读取中 / 读失败；
+    // qualityForm = 展开中的录入表单（`recheck=true` = 从「待复检」里点的【复检仍有问题】）
     quality: null,
     qualityForm: null,
     // 裁剪报工确认批次（issue #7647）：`null` = 工人还没动过输入框（⇒ 用服务端预填的派工批次）；
@@ -56,9 +57,9 @@ export function initialState() {
     // 成品入库块（issue #7845）：服务端给的 `finished_inbound`（入库单号 / 仓位 / 标签 / 质检结论）；
     // `null` = 这张码还没入库 / 不是打包工序 ⇒ 整块卡片不渲染（不摆空壳）。
     finishedInbound: null,
-    // 报返工（issue #7860）：`rework` = 最近一次的返工回执（返工单号 / 工序）；`reworkForm` = 展开中的表单。
-    // 与质检（`quality`）**两套**：返工改的是报工三态（计件归零），质检落的是成品帘判定。
-    rework: null,
+    // 报返工（issue #7860 / #7973）：`reworkForm` = 展开中的表单；**记录本身在 `view.rework_records`**
+    // （服务端下发 ⇒ 重扫 / 刷新 / 换设备都还在）。一次性回执已撤：它一刷新就消失，正是用户问的
+    // 「报返工的操作记录没有体现在扫码页面上」。
     reworkForm: null,
   }
 }
@@ -253,6 +254,11 @@ export function reduce(state, action) {
         // 🔴 换成**这一张码**的成品入库块（issue #7845）：服务端随扫码视图下发已入库的那一件；
         //    没入库 ⇒ null（**不沿用**上一件——那会把 A 的仓位/入库单画到 B 的码上）。
         finishedInbound: action.finishedInbound ?? view?.finished_inbound ?? null,
+        // 🔴 新的一屏 = 新的一件（issue #7973）：上一件的质检判定/记录、返工/质检表单**一律不带走**
+        //    （否则扫下一张码时，A 的「待复检」会先画到 B 上，直到读面返回才纠正）。
+        quality: null,
+        qualityForm: null,
+        reworkForm: null,
       }
     }
     // 报工在飞（issue #6667 第 4 条）：置位在按钮点下的那一刻、清位在下面三处（换了屏 / 有了结论 / 登出）
@@ -301,14 +307,15 @@ export function reduce(state, action) {
     // ── 质检（issue #7162）：读最新判定 / 录判定（生成质检单） ──
     // 🔴 「未检 ≠ 合格」：无记录 ⇒ latest=null，界面写「未检」，不折成「合格」。
     case 'qualityLoading':
-      return { ...state, quality: { loading: true, latest: state.quality?.latest ?? null, error: null } }
+      return { ...state, quality: { loading: true, latest: state.quality?.latest ?? null, records: state.quality?.records ?? [], error: null } }
     case 'qualityLoaded':
-      return { ...state, quality: { loading: false, latest: action.latest ?? null, error: null } }
+      return { ...state, quality: { loading: false, latest: action.latest ?? null, records: Array.isArray(action.records) ? action.records : [], error: null } }
     case 'qualityFailed':
-      return { ...state, quality: { loading: false, latest: null, error: action.error ?? '质检状态读不到' } }
+      return { ...state, quality: { loading: false, latest: null, records: [], error: action.error ?? '质检状态读不到' } }
     case 'qualityFormOpen':
-      // 唯一可录的判定 = 返工（issue #7749；合格是默认态，屏上不给这个按钮）
-      return { ...state, qualityForm: { result: 'rework', submitting: false, error: null } }
+      // 唯一可录的判定 = 返工（issue #7749；合格是默认态，屏上不给这个按钮）。
+      // issue #7973：`recheck=true` = 从「待复检」点的【复检仍有问题】（新的一轮判定，服务端放行）。
+      return { ...state, qualityForm: { result: 'rework', recheck: action.recheck === true, submitting: false, error: null } }
     case 'qualityFormClose':
       return { ...state, qualityForm: null }
     case 'qualitySubmitting':
@@ -318,11 +325,16 @@ export function reduce(state, action) {
     case 'qualitySubmitted':
       return {
         ...state,
-        quality: { loading: false, latest: action.latest ?? null, error: null },
+        quality: { loading: false, latest: action.latest ?? null, records: state.quality?.records ?? [], rechecking: false, error: null },
         qualityForm: null,
-        notice: '质检单已生成',
+        notice: action.notice ?? '质检已登记',
         error: null,
       }
+    // 复检通过（issue #7973）：`pass` 是一条新判定（关闭「待复检」）—— 沿用同一个写端点，不新开端点
+    case 'qualityRecheckStart':
+      return { ...state, quality: { ...(state.quality ?? {}), rechecking: true, error: null } }
+    case 'qualityRecheckFailed':
+      return { ...state, quality: { ...(state.quality ?? {}), rechecking: false, error: action.error ?? null } }
     // ── 报返工（issue #7860）：任一工序工人都能报；这一笔被服务端改记为返工（不计件）并生成返工单 ──
     case 'reworkFormOpen':
       return { ...state, reworkForm: { submitting: false, error: null } }
@@ -333,12 +345,11 @@ export function reduce(state, action) {
     case 'reworkFormError':
       return { ...state, reworkForm: { ...(state.reworkForm ?? {}), submitting: false, error: action.error ?? null } }
     case 'reworkSubmitted':
-      // 服务端已改记 ⇒ 表单收起、屏上留一张回执；`view` 由装配层用同一张码重解析后带进来
-      // （进度被退回 ⇒ 这一屏要回到真实值，不能停在被改记前的旧读数上）。
+      // 服务端已改记 ⇒ 表单收起；`view` 由装配层用同一张码**重解析**后带进来（进度被退回 ⇒ 这一屏要回到
+      // 真实值），记录随之来自服务端（`view.rework_records`）—— 不再消费一次性回执。
       return {
         ...state,
         view: action.view ?? state.view,
-        rework: action.rework ?? null,
         reworkForm: null,
         notice: action.notice ?? null,
         error: null,
@@ -402,6 +413,15 @@ export const QUALITY_RESULTS = [
  * 合格是默认态、没有「合格」这个动作 ⇒ 屏上只在**有返工记录**时说话；其余一律「正常」。
  */
 const QUALITY_LABELS = { pass: '正常', rework: '已记做工返工', scrap: '已记报废' }
+
+/**
+ * 质检**状态**词（记录卡右上角，issue #7973）—— 只描述**下一步**：待复检 ≠ 已解决。
+ * 🔴 仍不出现「合格」：默认态说「正常」；「复检通过」只作为**已有返工记录之后**的动作出现。
+ */
+const QUALITY_STATE_LABELS = { pass: '正常', rework: '待复检', scrap: '已判报废' }
+
+/** 返工单状态词（与后端 `ReworkState` 四态逐字同名；未知值不渲染，内部值不上屏）。 */
+const REWORK_STATUS_LABELS = { draft: '待处理', in_progress: '处理中', done: '已完成', cancelled: '已取消' }
 
 /**
  * 本屏这道工序是不是「质检」（issue #7186）。
@@ -752,6 +772,7 @@ function doneNoticeBase(receipt, auto) {
  */
 function workerEntriesBar(state) {
   const { opened } = effectivePages(state)
+  const itemId = state.view?.position?.order_item_id
   const machine = opened.has(PAGE_CUT_CALC)
     ? `<a class="wh5-entry" id="wh5-machine-entry" href="${MACHINE_ENTRY_HREF}">裁高计算（一体机）</a>` : ''
   // 返工记录（issue #7860）：`rework` ∈ 页面集才出入口（用户裁定「在工人档案中设置过可见权限的工人」）；
@@ -760,12 +781,17 @@ function workerEntriesBar(state) {
     ? `<a class="wh5-entry" id="wh5-rework-entry" href="${REWORK_ENTRY_HREF}">返工记录</a>` : ''
   // 质检（2026-10-27 改判 issue #7945）：入口只在 `inspect` ∈ 页面集**且已扫到一件**时出现
   // （没扫码时点了也无对象可判 ⇒ 不给死按钮）；点开 = 当前件的「做工判定」面板。
-  const inspect = opened.has(PAGE_INSPECT) && state.view?.position?.order_item_id
+  // issue #7973：最新判定 = 待复检 ⇒ 入口收起（动作换成记录卡里的【复检通过】/【复检仍有问题】）。
+  const inspect = opened.has(PAGE_INSPECT) && itemId && !qualityPending(state)
     ? `<button class="wh5-entry" id="wh5-quality-entry" type="button">质检</button>` : ''
-  // 报返工（2026-10-27 上移）：任一工序工人、已扫到一件就能报（布料问题，不看页面键）；
-  // 与「质检」（做工问题）并列在页头，工人不用再滑到页面底部找按钮。
-  const reworkAction = state.view?.position?.order_item_id
-    ? `<button class="wh5-entry" id="wh5-rework-action" type="button">报返工</button>` : ''
+  // 报返工（2026-10-27 上移；issue #7973 件级闭环）：任一工序工人、已扫到一件就能报（布料问题，不看页面键）；
+  // 但这一件**已有未完结返工单** ⇒ 不给可点按钮（摆一句状态，点也点不进去），车间处理完自然恢复。
+  const reworkOpen = openReworkRecord(state.view) !== null
+  const reworkAction = !itemId
+    ? ''
+    : reworkOpen
+      ? '<span class="wh5-entry is-blocked" id="wh5-rework-blocked" aria-disabled="true">返工处理中</span>'
+      : '<button class="wh5-entry" id="wh5-rework-action" type="button">报返工</button>'
   if (!machine && !rework && !inspect && !reworkAction) return ''
   return `<nav class="wh5-entries" id="wh5-worker-entries" aria-label="工人面入口">
     ${machine}${rework}${inspect}${reworkAction}
@@ -922,35 +948,52 @@ function qualityBlock(state, view) {
   const itemId = view?.position?.order_item_id
   if (itemId === null || itemId === undefined || itemId === '') return ''
 
-  const q = state.quality ?? { loading: true, latest: null, error: null }
+  const q = state.quality ?? { loading: true, latest: null, records: [], error: null }
   const latest = q.latest ?? null
   const result = latest?.result ?? null
-  // 没有记录 = **默认没问题**（「正常」，不写「合格」）；有记录才显示记了什么
-  const stateText = QUALITY_LABELS[result] ?? '正常'
-  const stateClass = result && QUALITY_LABELS[result] ? `is-${result}` : 'is-pending'
-  const moment = typeof latest?.inspected_at === 'string'
-    ? latest.inspected_at.slice(0, 16).replace('T', ' ')
+  const pending = result === 'rework'
+  const records = Array.isArray(q.records) ? q.records : []
+  // 没有记录 = **默认没问题**（「正常」，不写「合格」）；返工记录未复检 ⇒ 「待复检」（复检通过才关闭）。
+  // 🔴 「还没读到」≠「没有记录」：读面失败时不许说「正常」，也不许说「本件还没有质检记录」。
+  const loadingOnly = q.loading === true && records.length === 0 && latest === null
+  const errored = Boolean(q.error) && records.length === 0 && latest === null
+  const stateText = loadingOnly
+    ? '读取中'
+    : errored
+      ? '未读到'
+      : pending ? QUALITY_STATE_LABELS.rework : (QUALITY_STATE_LABELS[result] ?? '正常')
+  const stateClass = loadingOnly || errored
+    ? 'is-pending'
+    : pending ? 'is-rework' : (result === 'scrap' ? 'is-scrap' : 'is-pass')
+  const list = records.length > 0
+    ? `<ul class="wh5-record-list" id="wh5-quality-records">${records.map(qualityRecordView).join('')}</ul>`
+    : errored
+      ? ''
+      : q.loading
+        ? '<p class="wh5-sub" id="wh5-quality-loading">质检记录读取中…</p>'
+        : '<p class="wh5-sub" id="wh5-quality-empty">本件还没有质检记录（默认没问题；做工有问题才记）</p>'
+  // 待复检 = 这一件已记做工返工、还没被复检关闭 ⇒ 只给复检两个动作（不再给普通「记返工」）
+  const pendingNote = pending
+    ? '<p class="wh5-sub" id="wh5-quality-pending">返工做好后在这里复检 —— 通过才关闭这条记录。</p>'
     : ''
-  const meta = latest
-    ? `<div class="wh5-q-meta" id="wh5-quality-meta">检验人 ${esc(latest.inspector_name || '—')}${moment ? ` · ${esc(moment)}` : ''}</div>`
+  const actions = pending
+    ? `<div class="wh5-q-actions" id="wh5-quality-recheck">
+        <button id="wh5-quality-recheck-pass" class="wh5-primary" type="button"${q.rechecking ? ' disabled' : ''}>${q.rechecking ? '提交中…' : '复检通过'}</button>
+        <button id="wh5-quality-recheck-open" class="wh5-ghost" type="button"${q.rechecking ? ' disabled' : ''}>复检仍有问题</button>
+      </div>`
     : ''
-  const reason = latest?.reason
-    ? `<div class="wh5-q-reason" id="wh5-quality-reason-latest">原因：${esc(latest.reason)}</div>`
-    : ''
-  const loadingText = q.loading ? '<p class="wh5-sub" id="wh5-quality-loading">质检状态读取中…</p>' : ''
   const errorText = q.error ? `<p class="wh5-error" id="wh5-quality-error">${esc(q.error)}</p>` : ''
   const form = state.qualityForm ? qualityFormView(state) : ''
 
   return `<section class="wh5-card wh5-quality" id="wh5-quality">
     <div class="wh5-q-head">
-      <span class="wh5-q-title">质检（做工）</span>
+      <span class="wh5-q-title">质检记录（做工）</span>
       <span class="wh5-q-state ${stateClass}" id="wh5-quality-state">${stateText}</span>
     </div>
-    ${meta}
-    ${reason}
-    ${loadingText}
+    ${list}
+    ${pendingNote}
+    ${actions}
     ${errorText}
-    <p class="wh5-sub">做工有问题才在这里记（例如缝线开裂 / 走线歪）；布料/来料问题走下面的「返工」，两者不是一回事。${state.qualityForm ? '' : '要记就点上方菜单「质检」。'}</p>
     ${form}
   </section>`
 }
@@ -960,23 +1003,28 @@ function qualityBlock(state, view) {
  *
  * <p>用户逐字「只提供一个返工选项，加一些备注说明即可」⇒ 不再有判定单选组（合格 / 报废都退场）；
  * 说明在提交时由装配层从 DOM 读值（不在 input 事件里重绘 ⇒ 每敲一个字不会丢焦点）。</p>
+ *
+ * <p>issue #7973：`recheck=true` = 复检时发现**仍有问题**（追加一条新判定）；文案随之改成「复检」，
+ * 仍然只有一个动作、仍然必填，不多造第二个按钮。</p>
  */
 function qualityFormView(state) {
-  const f = state.qualityForm
+  const f = state.qualityForm ?? {}
+  const recheck = f.recheck === true
   return `<div class="wh5-q-form" id="wh5-quality-form">
-      <p class="wh5-sub" id="wh5-quality-hint">这次记为「做工返工」：写明问题，提交后生成质检单。</p>
+      <p class="wh5-sub" id="wh5-quality-hint">${recheck
+        ? '这次复检记为「仍有问题」：写明问题，提交后追加一条质检记录。'
+        : '这次记为「做工返工」：写明问题，提交后生成质检单。'}</p>
       <label class="wh5-label">问题说明（必填）
         <textarea id="wh5-quality-reason" class="wh5-input" rows="2"
           placeholder="例如：缝线开裂 / 走线歪 / 拼缝不齐"></textarea>
       </label>
       ${f.error ? `<p class="wh5-error" id="wh5-quality-form-error">${esc(f.error)}</p>` : ''}
       <div class="wh5-q-actions">
-        <button id="wh5-quality-submit" class="wh5-primary" type="button"${f.submitting ? ' disabled' : ''}>${f.submitting ? '提交中…' : '提交质检'}</button>
+        <button id="wh5-quality-submit" class="wh5-primary" type="button"${f.submitting ? ' disabled' : ''}>${f.submitting ? '提交中…' : (recheck ? '提交复检' : '提交质检')}</button>
         <button id="wh5-quality-cancel" class="wh5-ghost" type="button"${f.submitting ? ' disabled' : ''}>取消</button>
       </div>
     </div>`
 }
-
 
 /**
  * 「成品入库」卡片（issue #7845）：**打包工序**扫码报工成功后出现在报工页顶部。
@@ -1028,16 +1076,88 @@ function finishedInboundCard(state) {
 function reworkBlock(state, view) {
   const itemId = view?.position?.order_item_id
   if (itemId === null || itemId === undefined || itemId === '') return ''
-  const r = state.rework ?? null
-  const receipt = r
-    ? `<p class="wh5-sub" id="wh5-rework-done">返工单 ${esc(r.reworkNo ?? '')} 已生成${r.operationName ? ` · 工序 ${esc(r.operationName)}` : ''}（这一笔已改记为返工，不计件）</p>`
+  // 旧后端 / 服务未接线 ⇒ 没有 `rework_records` 键：不摆空壳，也不谎报「这一件没有返工」
+  if (!Array.isArray(view?.rework_records)) return ''
+  const records = view.rework_records
+  const open = openReworkRecord(view)
+  const head = open
+    ? `<span class="wh5-q-state is-rework" id="wh5-rework-state">${esc(REWORK_STATUS_LABELS[open.status])}</span>`
+    : ''
+  const list = records.length > 0
+    ? `<ul class="wh5-record-list" id="wh5-rework-records">${records.map(reworkRecordView).join('')}</ul>`
+    : '<p class="wh5-sub" id="wh5-rework-empty">本件没有返工记录 · 布料/来料有问题点页头「报返工」</p>'
+  const openNo = open && typeof open.rework_no === 'string' ? open.rework_no.trim() : ''
+  const openNote = open
+    ? `<p class="wh5-sub" id="wh5-rework-open">${openNo ? `返工单 ${esc(openNo)}：` : ''}处理完后才能再报（车间在「返工单」里完成或取消）。</p>`
     : ''
   return `<section class="wh5-card wh5-rework" id="wh5-rework">
-    <div class="wh5-q-head"><span class="wh5-q-title">返工（布料）</span></div>
-    ${receipt}
-    <p class="wh5-sub">布料/来料有问题就报返工：这一笔记为返工（不计件），同时生成一张返工单给车间跟进；做工问题请走「质检」。要报就点页头「报返工」。</p>
+    <div class="wh5-q-head"><span class="wh5-q-title">返工记录（布料）</span>${head}</div>
+    ${list}
+    ${openNote}
     ${state.reworkForm ? reworkFormView(state) : ''}
   </section>`
+}
+
+/** 件级返工记录里的**未完结**一张（issue #7973）：draft / in_progress = 车间还没处理完。 */
+function openReworkRecord(view) {
+  const records = Array.isArray(view?.rework_records) ? view.rework_records : []
+  return records.find((r) => r?.status === 'draft' || r?.status === 'in_progress') ?? null
+}
+
+/** 质检是否「待复检」（最新判定 = 做工返工、还没被复检关闭）。页头入口与记录卡共用这一份判据。 */
+function qualityPending(state) {
+  return state?.quality?.latest?.result === 'rework'
+}
+
+/** 记录时刻：`2026-10-27T14:32:00+08:00` ⇒ `2026-10-27 14:32`（只切不改；缺值 / 太短 ⇒ ''）。 */
+function recordTime(value) {
+  const raw = typeof value === 'string' ? value.trim() : ''
+  return raw.length >= 16 ? raw.slice(0, 16).replace('T', ' ') : ''
+}
+
+/** 记录数量写法：`2.00` ⇒ `2`（记录行只做「数字本身的写法」，不做任何聚合）。 */
+function recordQty(value) {
+  if (value === null || value === undefined || value === '') return ''
+  const num = Number(value)
+  return Number.isFinite(num) ? String(num) : ''
+}
+
+/** 一条返工记录：工序 ×数量 / 时间 / 原因 / 单号 · 报工人 · 状态（缺值整项不渲染）。 */
+function reworkRecordView(r) {
+  const name = typeof r?.logical_name === 'string' && r.logical_name.trim()
+    ? r.logical_name.trim()
+    : (typeof r?.operation_name === 'string' ? r.operation_name.trim() : '')
+  const qty = recordQty(r?.qty)
+  const time = recordTime(r?.created_at)
+  const reason = typeof r?.reason === 'string' ? r.reason.trim() : ''
+  const no = typeof r?.rework_no === 'string' ? r.rework_no.trim() : ''
+  const who = typeof r?.worker_name === 'string' ? r.worker_name.trim() : ''
+  const status = REWORK_STATUS_LABELS[r?.status] ?? ''
+  const meta = [no ? `返工单 ${no}` : '', who, status].filter(Boolean).join(' · ')
+  return `<li class="wh5-record">
+      <div class="wh5-record-top">
+        <span class="wh5-record-title">${esc(name ? `${name}${qty ? ` ×${qty}` : ''}` : '返工')}</span>
+        ${time ? `<span class="wh5-record-time">${esc(time)}</span>` : ''}
+      </div>
+      ${reason ? `<p class="wh5-q-reason">${esc(reason)}</p>` : ''}
+      ${meta ? `<p class="wh5-q-meta">${esc(meta)}</p>` : ''}
+    </li>`
+}
+
+/** 一条质检记录：判定 / 时间 / 原因 / 检验人（缺值整项不渲染，不印占位）。 */
+function qualityRecordView(r) {
+  const label = QUALITY_LABELS[r?.result] ?? ''
+  const time = recordTime(r?.inspected_at)
+  const reason = typeof r?.reason === 'string' ? r.reason.trim() : ''
+  const who = typeof r?.inspector_name === 'string' ? r.inspector_name.trim() : ''
+  return `<li class="wh5-record">
+      <div class="wh5-record-top">
+        <span class="wh5-record-title">${esc(label || '质检')}</span>
+        ${time ? `<span class="wh5-record-time">${esc(time)}</span>` : ''}
+      </div>
+      ${reason ? `<p class="wh5-q-reason">${esc(reason)}</p>` : ''}
+      ${who ? `<p class="wh5-q-meta">检验人 ${esc(who)}</p>` : ''}
+    </li>`
 }
 
 /** 返工录入表单（issue #7860）：只有一个动作 —— 返工 + 问题说明（必填）。 */
@@ -1068,13 +1188,13 @@ function mainView(state) {
   <section class="wh5-card">
     <div class="wh5-set" id="wh5-set">第 ${esc(v.set_no)} 套 · ${esc(v.position?.position_name ?? '')}</div>
     ${ternLine(v)}
-    ${qualityBlock(state, v)}
-    ${reworkBlock(state, v)}
     ${v.completed === true
       ? '<p class="wh5-done" id="wh5-completed">本套工序都已报工 🎉</p>'
       : v.worker_operation
         ? `<p class="wh5-sub" id="wh5-no-operation">你的工序是「${esc(v.worker_operation)}」：本件${v.worker_operation_state === 'done' ? '的这道已经做完' : '没有这道工序'}，不用报工。</p>`
         : '<p class="wh5-sub" id="wh5-no-operation">本部位推断不出待报工序（工序未确定 ⇒ 不得记账）</p>'}
+    ${qualityBlock(state, v)}
+    ${reworkBlock(state, v)}
     ${overviewView(v)}
     ${cutPlanView(v)}
     ${state.notice ? `<p class="wh5-notice" id="wh5-notice">${esc(state.notice)}</p>` : ''}
@@ -1109,8 +1229,6 @@ function mainView(state) {
   <section class="wh5-card">
     <div class="wh5-set" id="wh5-set">第 ${esc(v.set_no)} 套 · ${esc(v.position?.position_name ?? '')}</div>
     ${ternLine(v)}
-    ${qualityBlock(state, v)}
-    ${reworkBlock(state, v)}
     ${workerOperationLine(v)}
     <div class="wh5-op" id="wh5-operation">${esc(operationDisplayName(op))}</div>
     <div class="wh5-qty" id="wh5-qty">应做 ${fmtQty(op.qty)} ${esc(op.unit ?? '')}</div>
@@ -1120,6 +1238,8 @@ function mainView(state) {
     ${state.notice ? `<p class="wh5-notice" id="wh5-notice">${esc(state.notice)}</p>` : ''}
     ${state.error ? `<p class="wh5-error" id="wh5-error">${esc(state.error)}</p>` : ''}
     ${picker}
+    ${qualityBlock(state, v)}
+    ${reworkBlock(state, v)}
     ${qualityOnlyNote(state, v)}
     ${workTypePicker(state, v)}
     ${batchBlock(state, v)}
