@@ -419,10 +419,9 @@ public class CuttingHeightConfigService {
      * </ul>
      */
     static Map<String, Object> normalizeConfig(Map<String, Object> config) {
-        if (config == null) {
-            return Map.of();
-        }
-        Map<String, Object> out = new LinkedHashMap<>(config);
+        // 空值也返回**可变** `LinkedHashMap`（不返回 `Map.of()`：不可变空表遇到空键索引会 NPE 500，
+        // 那是 issue #6219 那一族；判据 = `WorkerCuttingHeightNullProductIdTest` 的产出方台账）。
+        Map<String, Object> out = config == null ? new LinkedHashMap<>() : new LinkedHashMap<>(config);
         List<Map<String, Object>> items = new ArrayList<>();
         for (Map<String, Object> item : maps(config.get("items"))) {
             items.add(normalizeItem(item));

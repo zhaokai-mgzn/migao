@@ -8,7 +8,7 @@
  * 用户逐字：「裁高参数是根据工序来的」「如果有布绑带工序，则需要根据加工项韩褶还是打孔分别自动算高度」
  * 「如果有接高工序，则需要一个画线参数」「其他情况都是默认定高参数」
  * 「要根据特殊选项+加工项+部位来定高度」「再允许一个默认公共（兜底）裁高参数」。
- * ⇒ 配置分**两个区块**（`scope`）：工序专用 / 公共兜底；每项的命中是**条件组**
+ * ⇒ 配置分**两个区块**（`scope`）：工序专用 / 公共默认；每项的命中是**条件组**
  * （跨 kind 与、组内 values 或）+ 部位。兜底是**替换**语义（用户裁定 A）。
  *
  * ## 三条实现纪律（v1 起不变）
@@ -56,14 +56,14 @@ const SCOPES: { value: string; label: string; hint: string; addLabel: string }[]
   {
     value: 'specific',
     label: '工序专用参数',
-    hint: '勾了布绑带 / 接高等工序时用这一组。只要有一条命中，「公共兜底」整组就不参与。',
+    hint: '勾了布绑带 / 接高等工序时用这一组。只要有一条命中，「公共默认参数」整组就不参与。',
     addLabel: '添加工序专用项',
   },
   {
     value: 'fallback',
-    label: '公共兜底参数',
+    label: '公共默认参数',
     hint: '没有任何工序专用参数命中时才用这一组（「其他情况都是默认定高参数」）。',
-    addLabel: '添加兜底项',
+    addLabel: '添加默认项',
   },
 ]
 
@@ -189,9 +189,10 @@ function ConditionRow({
   onRemove: () => void
 }) {
   return (
-    <div className="flex max-w-full flex-wrap items-center gap-1 rounded-lg border border-neutral-200 bg-neutral-50 py-0.5 pl-1.5 pr-1">
+    <div className="flex max-w-full flex-wrap items-center gap-1 rounded-lg border border-neutral-200 bg-neutral-50 p-1">
+      {/* 下拉走共享铬（issue #7397 的类级判据：业务面每个 `<select>` 必须引用 `SELECT_CONTROL*`） */}
       <select
-        className="max-w-[7rem] rounded border-0 bg-transparent py-0.5 text-xs text-neutral-600 focus:outline-none"
+        className={cn(SELECT_CONTROL_FIELD, 'w-full max-w-[8.5rem]')}
         aria-label={`条件类型-${itemIndex}-${conditionIndex}`}
         value={condition.kind}
         onChange={(e) => onChange({ kind: e.target.value, values: [] })}
