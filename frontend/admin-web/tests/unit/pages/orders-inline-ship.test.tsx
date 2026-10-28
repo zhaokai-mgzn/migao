@@ -198,8 +198,7 @@ describe('销售订单列表 · 行内快捷发货（issue #8013）', () => {
 
     // 「在该行下方」= 录入区住在本行自己的展开 `<tr>` 里（不是整页顶部、也不是遮罩模态）
     const row = form.closest('tr')
-    expect(row).not.toBeNull()
-    expect(row!.getAttribute('data-testid')).toBe('ship-inline-row-ship1')
+    expect(row?.getAttribute('data-testid')).toBe('ship-inline-row-ship1')
     expect(screen.queryByRole('dialog')).toBeNull()
 
     // 四个字段齐 + 发货人默认当前登录人（不是空、也不是「管理员」这类角色名）
