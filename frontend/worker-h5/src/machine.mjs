@@ -388,13 +388,22 @@ function remarkText(position) {
   return product === EMPTY ? remark : `${product} · ${remark}`
 }
 
+/**
+ * 单屏改造（issue #7990）：裁床最常看的三格**放大**，其余等宽密排 ——
+ * 一屏内先看到「裁多长」，再看到「哪一单」。
+ */
+const MACHINE_KEY_ROWS = new Set(['宽', '高', '用料'])
+
 function kvRows(rows) {
   return rows
     .map(([label, value, unit, format]) => {
       // 值 → 文本走**共享**口径（`position-spec.mjs::formatSpecValue`）—— 机台屏的 `m` / `int` / 缺值 `—`
       // 读数逐字不变，只是不再在第二处各写一份（母单 #6901）。
       const shown = formatSpecValue(value, format)
-      return `<div class="wh5-machine__kv"><dt>${esc(label)}</dt><dd>${esc(shown)}${shown === EMPTY ? '' : esc(unit ?? '')}</dd></div>`
+      // 放大标记放 `<dd>` 上（不是 `<div>`）：既有判据按 `<div class="wh5-machine__kv">` 精确切行，
+      // 往外层加类名会把它们全部打断（worker-h5-position-spec 的负控当场红）。
+      const ddClass = MACHINE_KEY_ROWS.has(label) ? ' class="is-key"' : ''
+      return `<div class="wh5-machine__kv"><dt>${esc(label)}</dt><dd${ddClass}>${esc(shown)}${shown === EMPTY ? '' : esc(unit ?? '')}</dd></div>`
     })
     .join('')
 }
@@ -527,6 +536,20 @@ export function renderCalc(state) {
     </section>`
 }
 
+/** 详情屏内联参数 chips（issue #7990）：与计算器同一份命中项与勾选状态，工人不用换屏就能改。 */
+function detailChips(state, position) {
+  const digits = digitsOf(position)
+  const rows = hitRows(position, state.unchecked)
+  if (!rows.length) return '<p class="wh5-machine__empty">本部位没有命中的增量项 ⇢ 裁高 = 成品高</p>'
+  return rows
+    .map((hit) => `<label class="wh5-machine__chip${hit.checked ? '' : ' is-off'}">
+        <input type="checkbox" data-machine-hit="${esc(hit.key)}"${hit.checked ? ' checked' : ''} />
+        <span class="wh5-machine__chip-name">${esc(hit.name)}</span>
+        <b class="wh5-machine__chip-value">${hit.direction === 'subtract' ? '−' : '+'}${esc(fmtNumber(hit.value, digits))}</b>
+      </label>`)
+    .join('')
+}
+
 /** 屏一 订单详情。 */
 export function renderDetail(state) {
   const position = selectedPosition(state)
@@ -544,13 +567,15 @@ export function renderDetail(state) {
       <div class="wh5-machine__body">
         <dl class="wh5-machine__kv-list">${kvRows(detailRows(state.data, position))}</dl>
         <div class="wh5-machine__col">
+          <div class="wh5-machine__chips">${detailChips(state, position)}</div>
+          ${isEdited(position, state.unchecked) ? '<p class="wh5-machine__edited">已手改：只改本次显示与下发值，不写订单、不留痕</p>' : ''}
           ${reportBlock(state, {
-            value: position?.cutting_height,
+            value: machineTotal(position, state.unchecked),
             digits: digitsOf(position),
             missingNote: missingText(position?.missing),
           })}
           <div class="wh5-machine__actions">
-            <button type="button" class="wh5-machine__back" data-machine-open-calc>裁高计算器 ▶（看命中项 / 手改）</button>
+            <button type="button" class="wh5-machine__back" data-machine-open-calc>裁高计算器 ▶（明细 / 手改）</button>
           </div>
         </div>
       </div>

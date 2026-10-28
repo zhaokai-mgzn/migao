@@ -798,3 +798,35 @@ a.wh5-machine__back:active { color: var(--wh5-machine-ink); }
 .wh5-finished-label .wh5-fl-v { flex: 1 1 auto; font-weight: 600; }
 .wh5-finished-label .wh5-fl-code { margin: 1mm 0 2mm; letter-spacing: .5px; font-weight: 700; }
 .wh5-finished-label .wh5-fl-actions { display: flex; gap: 2mm; }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   机台屏「一屏放下」（issue #7990，2026-10-28 用户逐字「要一个屏幕把关键信息都放下」）
+
+   布局：左 = 4 列 × N 行关键信息（宽/高/用料放大）；右 = 参数 chips + 大字裁高值 + 动作。
+   判据：`tests/worker-h5-machine-single-screen.test.mjs`（结构）+ 真机 1024×768 无滚动（截图）。
+   ══════════════════════════════════════════════════════════════════════════════ */
+@media (min-width: 768px) {
+  .wh5-machine { padding: 12px 16px; }
+  .wh5-machine__body { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 14px; align-items: start; }
+  .wh5-machine__kv-list { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .wh5-machine__kv { padding: 6px 10px; border-radius: 10px; }
+  .wh5-machine__kv dt { font-size: 12px; }
+  .wh5-machine__kv dd { font-size: 18px; margin-top: 2px; line-height: 1.2; }
+  .wh5-machine__kv dd.is-key { font-size: 26px; font-weight: 800; }
+  .wh5-machine__head h1 { font-size: 26px; }
+  .wh5-machine__worker { font-size: 18px; }
+}
+
+.wh5-machine__chips { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+.wh5-machine__chip {
+  display: flex; align-items: center; gap: 8px;
+  min-height: 52px; padding: 0 12px; border-radius: 12px;
+  border: 2px solid transparent;
+  background: var(--wh5-machine-surface); color: var(--wh5-machine-ink);
+  font-size: 16px; touch-action: manipulation;
+}
+.wh5-machine__chip input { width: 22px; height: 22px; }
+.wh5-machine__chip-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wh5-machine__chip-value { font-variant-numeric: tabular-nums; }
+.wh5-machine__chip.is-off { opacity: .5; }
+.wh5-machine__chip:not(.is-off) { border-color: var(--wh5-machine-accent); background: var(--wh5-brand); color: #fff; }

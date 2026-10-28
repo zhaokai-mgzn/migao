@@ -492,8 +492,15 @@ test('🔴 ④ 机台屏屏一：#6901 新增规格行上屏 + 缺值 `—`（�
   const kvList = html.match(/<dl class="wh5-machine__kv-list">([\s\S]*?)<\/dl>/)?.[1] ?? ''
   const rows = kvList.match(/<div class="wh5-machine__kv">[\s\S]*?<\/div>/g) ?? []
 
-  // 负控：既有 12 行仍是最前面的 12 行，且逐字不变（文案 / 顺序 / 精度 / 缺值形态）
-  assert.equal(rows.slice(0, 12).join(''), LEGACY_12_ROWS.join(''), '既有 12 行逐字不变（本单只加判据、不动它们）')
+  // 负控：既有 12 行仍是最前面的 12 行，且**内容**逐字不变（文案 / 顺序 / 精度 / 缺值形态）。
+  // issue #7990 起「宽 / 高 / 用料」三格的 `<dd>` 带一个**排版标记** `class="is-key"`（单屏版放大这三格）；
+  // 它不改文案、不改顺序、不改精度 ⇒ 负控按**内容**逐字比较（两侧同时剥掉该标记），判据强度不变。
+  const stripKeyMark = (htmlText) => htmlText.replace(/ class="is-key"/g, '')
+  assert.equal(
+    stripKeyMark(rows.slice(0, 12).join('')),
+    stripKeyMark(LEGACY_12_ROWS.join('')),
+    '既有 12 行内容逐字不变（本单只加判据、不动它们）',
+  )
 
   // 新增行上屏（逐行逐字）
   for (const [label, text] of ADDED_ROWS) {
@@ -558,7 +565,13 @@ test('🔴 ⑥ 报工屏去尾零：`3.000` → `3`、`6.300` → `6.3`；机台
   // 负控：机台屏是机器读数（mm 级三位小数）—— 去尾零只发生在报工屏
   const machine = renderMachine(machineDetailState())
   const kvList = machine.match(/<dl class="wh5-machine__kv-list">([\s\S]*?)<\/dl>/)?.[1] ?? ''
-  assert.equal(kvList.includes(kvRow('宽', '2.800米')), true, '机台屏保持三位小数（既有真值，本单不动）')
+  // issue #7990：机台屏「宽 / 高 / 用料」的 `<dd>` 多了排版标记 `class="is-key"`（单屏版放大），
+  // 负控按内容比较 ⇒ 剥掉该标记再断言（精度口径本身一字未动）。
+  assert.equal(
+    kvList.replace(/ class="is-key"/g, '').includes(kvRow('宽', '2.800米')),
+    true,
+    '机台屏保持三位小数（既有真值，本单不动）',
+  )
 })
 
 // ══════════════════════════════════════════════════════════════════════════════
