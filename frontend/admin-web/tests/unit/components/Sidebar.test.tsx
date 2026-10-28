@@ -65,6 +65,15 @@ import Sidebar from '@/components/layout/Sidebar'
 // #5877：一级项的插入位（席位常量 = 三源同批表达的同一件事）
 import { STANDALONE_TOP_AFTER_GROUP_KEY } from '@/config/menu'
 
+/**
+ * 类名「整词」判定（issue #8025）：`shrink-0` / `min-w-0` / `truncate` 必须**逐词**命中，
+ * 不许被 `flex-shrink-0`、`min-w-[4.5em]` 这类同前缀串蒙过（同族坑见 `PageCard.test.ts` 的注释）。
+ * 🔴 用法约定：**判据 + 负控成对出现** —— 同一节点摘掉该 token 后判据必须翻 `false`，
+ * 否则那条 `expect(...).toBe(true)` 是恒真的空断言（`migao-acceptance`「不会红的断言=空断言」）。
+ */
+const classTokens = (el: Element): string[] => (el.getAttribute('class') ?? '').split(/\s+/).filter(Boolean)
+const hasToken = (el: Element, token: string): boolean => classTokens(el).includes(token)
+
 /** issue #7087 + #7369 新 IA：**6 组**（「工作台」组整组撤销；#7369 新增「供应链」组） */
 const GROUPS: { key: string; name: string; items: [string, string][] }[] = [
   {
@@ -234,6 +243,45 @@ describe('Sidebar', () => {
     // 它改到顶栏用户菜单「关于观星台」按需查看；这里出现即红。
     expect(screen.queryByTestId('sidebar-company')).toBeNull()
     expect(screen.queryByText('杭州词元通达科技有限公司')).toBeNull()
+  })
+
+  // issue #8025（2026-10-28 真栈截图实证）：页脚左下角只剩「N 星台」——「观星台」被右侧「‹ 收起」压住/裁掉。
+  // 机制 = 同一 flex 行里**两边都可压缩**：品牌块没有 `min-w-0`（flex 项 min-width:auto ⇒ 缩不下来）、
+  // 名称没有截断（只能被挤/被遮），收起按钮没有 `shrink-0`（跟着一起被挤）⇒ 窄侧栏里互相压。
+  // ⚠️ jsdom 量不了真实重叠（`getBoundingClientRect` 恒 0）⇒ 本用例钉的是**让重叠不可能发生的那两类类名**；
+  // 「真机上还压不压」由集成侧截图复核（issue #8025 的边界节）。
+  it('🔴 #8025：页脚品牌可收缩且单行截断、收起按钮不可压缩（不再被按钮压住）', () => {
+    mockUseAuthStore.mockReturnValue({
+      user: { id: '1', username: 'admin', name: '管理员', roles: ['admin'], permissions: ['*'], tenantName: '测试企业' },
+    })
+    render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+    const footer = screen.getByTestId('sidebar-footer')
+    const brand = screen.getByTestId('sidebar-brand')
+    const name = within(brand).getByTestId('sidebar-brand-name')
+    const collapse = within(footer).getByTitle('收起侧边栏')
+
+    // ① 名称节点单行截断（`truncate` = overflow-hidden + text-overflow-ellipsis + whitespace-nowrap）
+    expect(hasToken(name, 'truncate')).toBe(true)
+    // ① 的机制前提：品牌块**自己**可收缩 —— 否则 flex 项的 `min-width: auto` 让截断永不生效
+    //    （「祖先里随便哪个有 min-w-0」不算，必须是这一块）
+    expect(hasToken(brand, 'min-w-0')).toBe(true)
+    // ② 收起按钮不可压缩：永不被品牌挤扁，始终完整可点
+    expect(hasToken(collapse, 'shrink-0')).toBe(true)
+
+    // ③ 负控（量具自证）：把同一节点的 token 摘掉后判据必须翻 `false` —— 证明 ①② 不是恒真的空断言。
+    //    （**真红证**另跑：实现里删掉 `shrink-0` / `min-w-0` / `truncate` 后本用例整条红，PR body 记读数。）
+    const withoutToken = (el: Element, token: string) => {
+      const clone = el.cloneNode(false) as HTMLElement
+      clone.className = classTokens(el).filter((t) => t !== token).join(' ')
+      return clone
+    }
+    expect(hasToken(withoutToken(collapse, 'shrink-0'), 'shrink-0')).toBe(false)
+    expect(hasToken(withoutToken(brand, 'min-w-0'), 'min-w-0')).toBe(false)
+    expect(hasToken(withoutToken(name, 'truncate'), 'truncate')).toBe(false)
+
+    // ④ 负控（本次不动的东西）：文案与折叠入口逐字不变（版式修复不许顺手改文案/删按钮文字）
+    expect(collapse.textContent).toContain('收起')
+    expect(name.textContent).toBe('观星台')
   })
 
   it('折叠态不渲染品牌文本（issue #7476）', () => {
