@@ -337,9 +337,11 @@ export default function FinancePage() {
 
         {summaryError && (
           // 失败态 ≠ 空态（issue #6703）：上面四张卡片的金额位此刻印 `—`，这里说清为什么 + 真重发出口
+          // issue #8049：这条锚点**同屏承接「收支汇总」tab 的两张表**（同一次读面）—— 改前它只点名卡片，
+          // 于是读失败时那两张表照样印「还没有收付款 / 没有收支」（把故障画成空）。
           <ListLoadError
             testId="finance-summary-load-error"
-            message="收支汇总加载失败 —— 没读到数据，上面四张卡片的金额不可信。请检查网络后重试。"
+            message="收支汇总加载失败 —— 没读到数据，上面四张卡片与「收支汇总」两张表的读数都不可信。请检查网络后重试。"
             onRetry={() => void loadSummary()}
             retrying={summaryLoading}
           />
@@ -503,9 +505,12 @@ export default function FinancePage() {
               </thead>
               <tbody className="divide-y divide-neutral-100">
                 {(summary?.byPaymentMethod ?? []).length === 0 ? (
-                  /* issue #8040：说清「为什么是空的」—— 有收付才有这张汇总表 */
+                  /* issue #8040：说清「为什么是空的」—— 有收付才有这张汇总表；
+                     issue #8049：读失败 ≠ 空（与同页「资金流水」「应收对账」同口径）—— 改前故障被画成「还没有收付款」 */
                   <tr><td colSpan={4} className="px-4 py-8 text-center text-neutral-400">
-                    这个时间范围里还没有收付款 —— 有收款或退款后才会按支付方式汇总
+                    {summaryError
+                      ? '收支汇总没读到 —— 见上方失败提示'
+                      : '这个时间范围里还没有收付款 —— 有收款或退款后才会按支付方式汇总'}
                   </td></tr>
                 ) : (
                   (summary?.byPaymentMethod ?? []).map((m) => (
@@ -534,9 +539,12 @@ export default function FinancePage() {
               </thead>
               <tbody className="divide-y divide-neutral-100">
                 {(summary?.dailyTrend ?? []).length === 0 ? (
-                  /* issue #8040：与「按支付方式」分开说 —— 这张表是按日汇总 */
+                  /* issue #8040：与「按支付方式」分开说 —— 这张表是按日汇总；
+                     issue #8049：同上 —— 读失败时改口「没读到」，不说「没有收支」 */
                   <tr><td colSpan={4} className="px-4 py-8 text-center text-neutral-400">
-                    这个时间范围里没有收支 —— 换个月份或把日期范围放宽再看看
+                    {summaryError
+                      ? '收支汇总没读到 —— 见上方失败提示'
+                      : '这个时间范围里没有收支 —— 换个月份或把日期范围放宽再看看'}
                   </td></tr>
                 ) : (
                   (summary?.dailyTrend ?? []).map((d) => (

@@ -65,6 +65,7 @@ import { settingsApi, uploadApi, briefingApi, productionApi } from '@/lib/api'
 import { CalcCaliberPanel } from '@/components/settings/CalcCaliberPanel'
 import { RemnantItemSizesPanel } from '@/components/settings/RemnantItemSizesPanel'
 import { ConfigReadinessBar } from '@/components/settings/ConfigReadinessBar'
+import ListLoadError from '@/components/common/ListLoadError'
 import ProcessingItemsPanel from '@/components/production-config/ProcessingItemsPanel'
 import FeeCombinationsPanel from '@/components/production-config/FeeCombinationsPanel'
 import { OperationPricePanel } from '@/components/production-config/OperationPricePanel'
@@ -222,6 +223,15 @@ export default function SettingsPage() {
   // ============ 配置主线（第一屏读数；判据全部来自 @/lib/config-readiness）============
   const [readinessLoading, setReadinessLoading] = useState(true)
   const [states, setStates] = useState<Record<string, ReadinessState>>({})
+  /**
+   * 主线读面**这次失败了吗**（issue #8049）。
+   *
+   * 为什么不能只靠 `states`：五条读面各自独立（`Promise.allSettled`），失败的那一步会被画成
+   * `unknown`「读不到」—— 那句话说得对（读不到 ≠ 没配置），但它**只描述结果、不给出口**：
+   * 于是「刷新可重试」成了一句**没有按钮的话**（§31 P4：只陈述事实 + 该做什么）。
+   * ⇒ 单独记「有读面失败」，由页面给**常驻失败锚 + 真重发出口**（与 `/finance` 的汇总锚同口径）。
+   */
+  const [readinessFailed, setReadinessFailed] = useState(false)
   const [calc, setCalc] = useState<CraftCalcConfigResponse | null>(null)
   const [calcError, setCalcError] = useState('')
   /**
@@ -311,6 +321,7 @@ export default function SettingsPage() {
           : undefined,
       ),
     })
+    setReadinessFailed([posRes, routingsRes, comboRes, gapRes, calcRes].some((r) => r.status === 'rejected'))
     setReadinessLoading(false)
   }, [])
 
@@ -363,6 +374,16 @@ export default function SettingsPage() {
             }}
           />
       </div>
+
+      {/* 主线读面失败（issue #8049）：**常驻**失败锚 + 真重发出口（读不到 ≠ 没配置，也不是不用管） */}
+      {readinessFailed && (
+        <ListLoadError
+          testId="config-readiness-load-error"
+          message="配置状态读取失败 —— 有几步没读到（展开「配置主线」看是哪几步），「读不到」不等于没配置。"
+          onRetry={() => void load()}
+          retrying={readinessLoading}
+        />
+      )}
 
       <div className="flex gap-6">
         {/* ── 左栏：四区 + 八个域（**唯一真值源** = @/lib/config-center-domains） ── */}

@@ -297,6 +297,24 @@ describe('#6459 省料看板页（结论数字 + 趋势 + 明细）', () => {
     expect(screen.queryByTestId('saving-comparison-saved-meters')).toBeNull()
   })
 
+  it('🔴 四态①（issue #8049）：首屏读取中 ⇒ 有加载占位、**不先印「无数据」**（在途 ≠ 没有）', async () => {
+    let release!: (v: unknown) => void
+    mockBoard.mockReturnValue(new Promise((r) => { release = r }))
+    render(<SavingBoardPage />)
+
+    // 加载中：占位在，三块空态**都不在**（改前这里直接印三处「无数据」= 把在途画成没有）
+    expect(screen.getByTestId('saving-loading')).toBeTruthy()
+    expect(screen.queryByTestId('saving-metric-saved-meters')).toBeNull()
+    expect(screen.queryByText('无数据')).toBeNull()
+    expect(screen.queryByTestId('saving-batch-trend-empty')).toBeNull()
+
+    // 读面落地 ⇒ 占位退场、真读数上屏（红证：去掉 `pending` 闸门 ⇒ 上面三条必红）
+    release(ok(BOARD))
+    const meters = await screen.findByTestId('saving-metric-saved-meters')
+    expect(screen.queryByTestId('saving-loading')).toBeNull()
+    expect(within(meters).getByText('55 米')).toBeTruthy()
+  })
+
   it('🔴 判据2：趋势只吃服务端 batchTrend —— 存量/来源未知的批次不进序列（页面不自己分来源）', async () => {
     await renderPage()
     // 页面渲染的期数 == 服务端给的期数（多出来的一行只可能来自前端自己聚合 batchGroups）
