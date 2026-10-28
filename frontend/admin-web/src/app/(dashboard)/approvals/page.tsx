@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Button, EmptyState, Input, Modal, PageCard, PageHeader } from '@/components/ui'
+import { Button, EmptyState, Input, Modal, PageCard, PageHeader, RowActions } from '@/components/ui'
+import type { RowActionItem } from '@/components/ui'
 import { SELECT_CONTROL_FIELD } from '@/components/ui/Select'
 import { displayEnum } from '@/lib/enum-display'
 // 五类对象显示名的唯一真值源（issue #7593）：顶栏待办入口 `ApprovalBell` 共用同一份，
@@ -186,6 +187,39 @@ export default function ApprovalsPage() {
     }
   }
 
+  /**
+   * 行内「⋯」菜单（issue #8039）：主行动「通过」走 `RowActions` 的 children，
+   * 这里只装**其余**动作（驳回 / 撤回）。菜单项照改前的 `disabled={busy}` 与二次确认路径，
+   * 只换容器不换语义。
+   */
+  function menuFor(row: ApprovalItem, acts: ReturnType<typeof actionsFor>): RowActionItem[] {
+    const items: RowActionItem[] = []
+    if (acts.includes('reject')) {
+      items.push({
+        key: 'reject',
+        label: '驳回',
+        danger: true,
+        disabled: busy,
+        testId: `approval-reject-${row.id}`,
+        onClick: () => {
+          setDecideError('')
+          setDecideNote('')
+          setDecide({ item: row, approve: false })
+        },
+      })
+    }
+    if (acts.includes('withdraw')) {
+      items.push({
+        key: 'withdraw',
+        label: '撤回',
+        disabled: busy,
+        testId: `approval-withdraw-${row.id}`,
+        onClick: () => void runWithdraw(row),
+      })
+    }
+    return items
+  }
+
   return (
     <div className="p-6">
       <PageHeader
@@ -335,49 +369,32 @@ export default function ApprovalsPage() {
                         )}
                       </td>
                       <td className="py-2 text-right sticky right-0 bg-white">
-                        <div className="flex justify-end gap-2">
-                          {acts.includes('approve') && (
-                            <Button
-                              size="sm"
-                              disabled={busy}
-                              onClick={() => {
-                                setDecideError('')
-                                setDecideNote('')
-                                setDecide({ item: row, approve: true })
-                              }}
-                              data-testid={`approval-approve-${row.id}`}
+                        {acts.length === 0 ? (
+                          <span className="text-xs text-neutral-400">—</span>
+                        ) : (
+                          <div className="flex justify-end">
+                            <RowActions
+                              testId={`approval-actions-${row.id}`}
+                              menuTestId={`approval-row-menu-${row.id}`}
+                              items={menuFor(row, acts)}
                             >
-                              通过
-                            </Button>
-                          )}
-                          {acts.includes('reject') && (
-                            <Button
-                              variant="danger"
-                              size="sm"
-                              disabled={busy}
-                              onClick={() => {
-                                setDecideError('')
-                                setDecideNote('')
-                                setDecide({ item: row, approve: false })
-                              }}
-                              data-testid={`approval-reject-${row.id}`}
-                            >
-                              驳回
-                            </Button>
-                          )}
-                          {acts.includes('withdraw') && (
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              disabled={busy}
-                              onClick={() => void runWithdraw(row)}
-                              data-testid={`approval-withdraw-${row.id}`}
-                            >
-                              撤回
-                            </Button>
-                          )}
-                          {acts.length === 0 && <span className="text-xs text-neutral-400">—</span>}
-                        </div>
+                              {acts.includes('approve') && (
+                                <Button
+                                  size="sm"
+                                  disabled={busy}
+                                  onClick={() => {
+                                    setDecideError('')
+                                    setDecideNote('')
+                                    setDecide({ item: row, approve: true })
+                                  }}
+                                  data-testid={`approval-approve-${row.id}`}
+                                >
+                                  通过
+                                </Button>
+                              )}
+                            </RowActions>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   )
