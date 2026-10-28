@@ -5280,6 +5280,38 @@ cases:
         - pr-check.yml
       verifies: []
 
+
+  - id: UI-138
+    legacy_id: ""
+    title: "数值输入框的小数录入口径：<input> 的 onChange 不许 Number/parseFloat(target.value) 往返（类级判据 + 裁高取值框三位小数；单测覆盖，非 LLM 行为）"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - frontend
+      - numeric-input
+      - class-level-guard
+    truths_ref:
+      - frontend-fix.vitest
+    user_inputs:
+      - "这里的输入框不允许输入小数点，这里应该要支持3位小数，后续要注意，已经发现几次新增的输入框都不支持输入小数点，这个默认开发规则是不符合实际业务需要的"
+    precondition: "纯前端契约用例：静态扫描 + jsdom 输入事件，不碰真库、不起服务栈；`NumberInput` 的草稿口径由 frontend/admin-web/src/components/ui/NumberInput.tsx 提供（issue #5198/#5210）"
+    expectations: []
+    data_checks:
+      - "**判据 1·类级（会红）**：三个前端包 `src/**` 里每个 `<input …>` 开标签，若 `onChange` 内出现 `Number(...target.value)` / `parseFloat(...)` / `parseInt(...)`（含 `currentTarget` / 跨行）⇒ 红；真语料**零容忍**（落地时全仓唯一一处 = 裁高配置的取值框，已改 `NumberInput`）。红证 = 把该框改回手写往返 ⇒ 当场红。执行点 = frontend/admin-web/tests/unit/numeric-input-draft-guard.test.ts 的 ①②③④。"
+      - "**判据 2·实例（会红）**：裁高配置「取值（米）」敲 `0.`（中间态）后输入框仍是 `0.`（旧实现 `Number('0.')===0` ⇒ 上屏 `0`，小数点打不出来），再敲成 `0.145` 后保存报文里 `value === 0.145`。执行点 = frontend/admin-web/tests/unit/components/CuttingHeightConfigPanel.test.tsx 的 ⑩。"
+    skip_reason: "[frontend-contract] 只登记「数值输入的草稿口径」这一层**确定性**判据（静态扫描 + jsdom 输入事件），由单元测试全量覆盖 ⇒ 不进 agent-eval 冒烟（同 UI-131 / UI-138 家族惯例）。"
+    merge_log: "2026-10-28 新增（issue #8003，用户逐字「这里的输入框不允许输入小数点…已经发现几次新增的输入框都不支持输入小数点，这个默认开发规则是不符合实际业务需要的」）：病灶 = 受控输入在 onChange 里 `Number(e.target.value)` 往返，`Number('0.')===0` ⇒ 中间态被吞、三位小数不可录入。修法 = 该字段改用仓库唯一正确口径 `NumberInput`（字符串草稿 + 失焦归一）；固化 = 类级判据「`<input>` 的 onChange 不许数字往返」（零容忍、不开台账）+ 实例判据（`0.` 保留 / 0.145 入报文）。边界：`type=\"number\"` 存量 14 处是否也有该问题需逐处真机复验（另开审计单，不在本条射程）。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/numeric-input-draft-guard.test.ts"
+        - "frontend/admin-web/tests/unit/components/CuttingHeightConfigPanel.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
   - id: UI-138
     legacy_id: ""
     title: "纸面加工项绑商品：销售单 / 报价单 / 发货单在商品行下印水洗唛式「加工项 + 特殊选项」，发货单底部独立加工项区退场（issue #7891）"

@@ -18,7 +18,9 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
  *   ⑦ **版式（修 #7153 残留）**：表格已退场（无 `<table>` / `<colgroup>`），控件满列、条件 chips 可折行
  *      —— 「部位」下拉不再被 11% 宽的列压到只显示「布」（红证：把 `<select>` 的 `w-full` 去掉 /
  *      把 chips 容器换成不折行的 `flex` ⇒ 红）；
- *   ⑧ **存量 v1 报文不白屏**：旧后端（`hit` 形态）在滚动发布窗口里也要能渲染（按工序专用组显示）。
+ *   ⑧ **存量 v1 报文不白屏**：旧后端（`hit` 形态）在滚动发布窗口里也要能渲染（按工序专用组显示）；
+ *   ⑨ **条件 chip 单行**（结构成因：类型下拉不得 `w-full`、容器不得折返）；
+ *   ⑩ **取值支持三位小数**（中间态 `0.` 不被吞、`0.145` 原样进报文）—— issue #8003 的实例判据。
  */
 import { CRAFT_OPTIONS, SPECIAL_OPTIONS } from '@/lib/order-craft-fields'
 
@@ -295,6 +297,26 @@ describe('CuttingHeightConfigPanel', () => {
     expect((screen.getByTestId('cutting-height-remove-0') as HTMLElement).className).toContain(
       'whitespace-nowrap',
     )
+  })
+
+  it('⑩ 取值支持三位小数：中间态 `0.` 不被吞，`0.145` 原样进报文', async () => {
+    // 病灶（2026-10-28 用户截图）：手写 `Number(e.target.value)` 往返 ⇒ `Number('0.') === 0`
+    // ⇒ 小数点当场消失、0.015 / 0.145 这类三位小数永远打不出来。改用 NumberInput 的字符串草稿后，
+    // 中间态留在框里、只有能解析成有限数时才回调。
+    mockUpdate.mockResolvedValue(configResponse('stored'))
+    render(<CuttingHeightConfigPanel />)
+    const input = (await screen.findByLabelText('取值-1')) as HTMLInputElement   // 画线（原本空值）
+
+    fireEvent.change(input, { target: { value: '0.' } })
+    expect(input.value).toBe('0.')          // 旧实现：上屏 '0'（小数点被吞）
+
+    fireEvent.change(input, { target: { value: '0.145' } })
+    expect(input.value).toBe('0.145')
+
+    fireEvent.click(screen.getByTestId('cutting-height-save'))
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled())
+    const body = mockUpdate.mock.calls[0][0] as { items: Array<{ key: string; value: number | null }> }
+    expect(body.items.find((i) => i.key === 'huaxian')?.value).toBe(0.145)
   })
 
   it('⑨ 条件 chip 必须**单行**：类型下拉不得 `w-full`、chip 容器不得折行（否则取值被顶到下一行）', async () => {
