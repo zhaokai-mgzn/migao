@@ -43,6 +43,7 @@ import {
   WASH_LABEL_COMPANY_FONT_PT,
   WASH_LABEL_COMPANY_SUBTITLE_FONT_PT,
   WASH_LABEL_BLOCK_GAP_MM,
+  WASH_LABEL_EMPHASIS_ROW_KEYS,
   WASH_LABEL_LINE_HEIGHT,
   WASH_LABEL_TOP_BLANK_MM,
 } from '@/lib/label-print/wash-label-metrics'
@@ -219,6 +220,20 @@ describe('layoutWashLabel — 版式是纯函数（#6439 → #6656 → #7816）'
     expect(layout.qr!.y + layout.qr!.size).toBeLessThanOrEqual(bottomLimit)
   })
 
+  it('🔴 加工项（加工方式行）= **加黑加粗**，其余行不加粗（用户 2026-10-28「把加工项信息加黑加粗」，issue #7987）', () => {
+    const layout = layoutWashLabel(input(), geo, measure)
+    const craftText = ROWS.find((row) => row.key === 'craft')!.text
+    const craftLines = layout.lines.filter((line) => craftText.includes(line.text) || line.text === craftText)
+    if (craftLines.length === 0) throw new Error('布局里找不到加工项行 —— 判据无从取值')
+    expect(craftLines.every((line) => line.bold === true)).toBe(true)
+    // 反向对照：别的正文行**不得**加粗（全纸加粗 = 没有重点）
+    const others = layout.lines.filter((line) => !craftLines.includes(line))
+    expect(others.length).toBeGreaterThan(3)
+    expect(others.some((line) => line.bold === true)).toBe(false)
+    // 🔴 单一真值：加粗行由 metrics 的一份常量决定，两条通道同源
+    expect(WASH_LABEL_EMPHASIS_ROW_KEYS).toEqual(['craft'])
+  })
+
   it('纸宽连内边距都放不下 ⇒ 显式抛错（fail-closed，不静默画一张错纸）', () => {
     expect(() => layoutWashLabel(input(), { dpmm: 8, widthPx: 2, heightPx: 1120 }, measure)).toThrow(
       WashLabelLayoutError,
@@ -252,6 +267,7 @@ describe('wrapText / ellipsize — 折行（正文印全文，issue #7833）', (
 /** 记录调用面的假 ctx（真 canvas 在 jsdom 里没有） */
 function fakeContext() {
   const calls: string[] = []
+  const fonts: { text: string; font: string }[] = []
   const ctx = {
     fillStyle: '',
     strokeStyle: '',
@@ -261,12 +277,15 @@ function fakeContext() {
     lineWidth: 1,
     fillRect: (x: number, y: number, w: number, h: number) => calls.push(`fillRect:${x},${y},${w},${h}`),
     strokeRect: (x: number, y: number, w: number, h: number) => calls.push(`strokeRect:${x},${y},${w},${h}`),
-    fillText: (text: string, x: number, y: number) => calls.push(`fillText:${text}@${x},${y}`),
+    fillText: (text: string, x: number, y: number) => {
+      fonts.push({ text, font: ctx.font })
+      calls.push(`fillText:${text}@${x},${y}`)
+    },
     drawImage: (_image: CanvasImageSource, x: number, y: number, w: number, h: number) =>
       calls.push(`drawImage:${x},${y},${w},${h}`),
     setLineDash: (segments: number[]) => calls.push(`setLineDash:${segments.join(',')}`),
   }
-  return { ctx, calls }
+  return { ctx, calls, fonts }
 }
 
 describe('paintWashLabel — 只照单绘制（判据 ⑤）', () => {
@@ -293,6 +312,21 @@ describe('paintWashLabel — 只照单绘制（判据 ⑤）', () => {
     expect(dashYs.every((y) => y === geo.heightPx - 2)).toBe(true)
     const topCalls = calls.filter((call) => call.startsWith('fillRect:') && call.split(',')[1] === '0')
     expect(topCalls).toEqual([`fillRect:0,0,${geo.widthPx},${geo.heightPx}`])
+  })
+
+  it('🔴 绘制层：加工项那几行用 **bold** 字体画（与系统打印的 font-bold 同源，issue #7987）', () => {
+    const layout = layoutWashLabel(input(), geo, measure)
+    const { ctx, fonts } = fakeContext()
+    paintWashLabel(ctx, layout, {} as CanvasImageSource)
+    const craftText = ROWS.find((row) => row.key === 'craft')!.text
+    const craftPainted = fonts.filter((entry) => craftText.includes(entry.text) && entry.text !== '')
+    if (craftPainted.length === 0) throw new Error('绘制回调里找不到加工项行 —— 判据无从取值')
+    expect(craftPainted.every((entry) => entry.font.startsWith('bold '))).toBe(true)
+    // 反向对照：客户行不加粗
+    const customerText = ROWS.find((row) => row.key === 'customer')!.text
+    const customerPainted = fonts.filter((entry) => customerText.includes(entry.text) && entry.text !== '')
+    expect(customerPainted.length).toBeGreaterThan(0)
+    expect(customerPainted.every((entry) => !entry.font.startsWith('bold '))).toBe(true)
   })
 
   it('无码位图 ⇒ 画虚线占位框（不静默留白，也不画假码）', () => {

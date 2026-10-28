@@ -59,6 +59,7 @@ import { WASH_LABEL_COMPANY_SUBTITLE, type WashLabelInput, type WashLabelRow } f
 // 🔴 版面度量的**唯一一份**（issue #7776 建立）：字号 / 行高 / 内边距 / 二维码 / 块间距全在
 // `wash-label-metrics` —— 系统打印的 CSS 与画布通道读同一份，改一处另一处不会静默漂移。
 import {
+  WASH_LABEL_EMPHASIS_ROW_KEYS as LABEL_EMPHASIS_ROW_KEYS,
   WASH_LABEL_BLOCK_GAP_MM as LABEL_BLOCK_GAP_MM,
   WASH_LABEL_BODY_FONT_PT as LABEL_BODY_FONT_PT,
   WASH_LABEL_COMPANY_FONT_PT as LABEL_COMPANY_FONT_PT,
@@ -206,6 +207,8 @@ export interface LabelText {
   fontPx: number
   /** 对齐（缺省 `left`）；纸面抬头块居中，与系统打印的 `text-center` 同口径 */
   align?: 'left' | 'center'
+  /** **加黑加粗**（加工项等强调行）—— 与系统打印的 `font-bold` 同一份来源 */
+  bold?: boolean
 }
 
 /** 缺码（或位图缺失）时的占位框：**看得见**的「这里本来有码」，不是留白也不是假码 */
@@ -323,7 +326,14 @@ export function layoutWashLabel(
         exhausted = true
         break
       }
-      lines.push({ text, x: margin, y: cursor, fontPx: bodyFontPx })
+      lines.push({
+        text,
+        x: margin,
+        y: cursor,
+        fontPx: bodyFontPx,
+        // 加工项**加黑加粗**（用户 2026-10-28「把加工项信息加黑加粗」）—— 与系统打印同读一份常量
+        ...(LABEL_EMPHASIS_ROW_KEYS.includes(row.key) ? { bold: true } : {}),
+      })
       cursor += lineStep
     }
   }
@@ -423,7 +433,8 @@ export function paintWashLabel(
   if (layout.company.length > 0) ctx.textAlign = 'left'
 
   for (const line of layout.lines) {
-    ctx.font = `${line.fontPx}px ${BODY_FONT}`
+    // 加粗行（加工项）= `bold` 前缀 —— 与系统打印的 `font-bold` 同源（`WASH_LABEL_EMPHASIS_ROW_KEYS`）
+    ctx.font = `${line.bold ? 'bold ' : ''}${line.fontPx}px ${BODY_FONT}`
     ctx.fillText(line.text, line.x, line.y)
   }
 

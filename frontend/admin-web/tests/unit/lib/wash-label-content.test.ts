@@ -116,12 +116,20 @@ describe('washLabelRows — 纸面内容与行序（issue #6656 → #7816 → #7
     // 🔴 issue #7872（2026-10-26 用户逐字「这里的颜色文案改成货号，右侧的内容不要变化了」）
     //    ⇒ 前缀由 `颜色` 改 **`货号`**、值一字不动（`米白` 原样）
     expect(textOf(rows, 'color')).toBe('货号: 米白')
-    // issue #7856：安装去向（小区 = 订单级、位置 = 件级）—— 都印、且**紧跟在帘种之后**
+    // issue #7856：安装去向（小区 = 订单级、位置 = 件级）—— 都印。
+    // 🔴 **issue #7986（2026-10-28 用户逐字「把安装小区和安装位置放置到客户那一行下面」）**
+    //    ⇒ 紧跟在**客户**之后（改回「帘种之后」⇒ 下面两条绝对位次断言必红）
     expect(textOf(rows, 'installCommunity')).toBe('安装小区: 春江花园 3栋2单元')
     expect(textOf(rows, 'installRoom')).toBe('安装位置: 主卧')
     const order = rows.map((row) => row.key)
-    expect(order.indexOf('installCommunity')).toBe(order.indexOf('positionKind') + 1)
+    expect(order.indexOf('installCommunity')).toBe(order.indexOf('customer') + 1)
     expect(order.indexOf('installRoom')).toBe(order.indexOf('installCommunity') + 1)
+    // 绝对位次（纸面第 3、4 行；第 1 = 单号、第 2 = 客户）
+    expect(rows[2].key).toBe('installCommunity')
+    expect(rows[3].key).toBe('installRoom')
+    // 其余行的相对顺序不动：套序仍在安装行之后、帘种仍在货号之后
+    expect(order.indexOf('setNo')).toBeGreaterThan(order.indexOf('installRoom'))
+    expect(order.indexOf('positionKind')).toBe(order.indexOf('color') + 1)
     expect(textOf(rows, 'doorWidth')).toBe('门幅: 2.8米')
     expect(textOf(rows, 'meters')).toBe('用料: 6.3米')
     expect(textOf(rows, 'size')).toBe('宽高: 3×2.75米')

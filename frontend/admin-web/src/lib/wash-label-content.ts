@@ -83,14 +83,17 @@ export const WASH_LABEL_ROW_KEYS: readonly WashLabelRowKey[] = [
   // 也是这叠纸对应的那张加工单的主标识；订单号仍可在系统里查。
   'docNo',
   'customer',
+  // 安装去向（小区 = 订单级 / 位置 = 件级）：只编入纸面，不参与任何计算。
+  // 🔴 **2026-10-28（issue #7986）用户逐字「把安装小区和安装位置放置到客户那一行下面」**
+  //    ⇒ 这两行紧跟在「客户」之后（安装位置紧跟安装小区）；其余行的相对顺序一字不动。
+  //    改回「帘种之后」⇒ 判据（`wash-label-content.test.ts` 的绝对位次断言）必红。
+  'installCommunity',
+  'installRoom',
   'setNo',
   // 颜色在**帘种上面**：用户 2026-10-26 逐字「再加个帘种，放到货号下面」
   // ⇒ 帘种紧跟在原「货号」行之后；同一批裁定「货号不要展示sku，展示颜色的内容」⇒ 该行改印颜色
   'color',
   'positionKind',
-  // 安装去向（小区 = 订单级 / 位置 = 件级）：只编入纸面，不参与任何计算
-  'installCommunity',
-  'installRoom',
   'doorWidth',
   'meters',
   'size',
