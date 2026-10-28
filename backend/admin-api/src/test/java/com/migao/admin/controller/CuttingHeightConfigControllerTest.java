@@ -147,18 +147,18 @@ class CuttingHeightConfigControllerTest extends BaseControllerTest {
     }
 
     private static Map<String, Object> validBody() {
-        Map<String, Object> hit = new LinkedHashMap<>();
-        hit.put("trigger_kind", "option");
-        hit.put("trigger_value", "布贴");
-        hit.put("position", "布帘");
+        Map<String, Object> condition = new LinkedHashMap<>();
+        condition.put("kind", "option");
+        condition.put("values", List.of("布贴"));
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("key", "butie");
         item.put("name", "布贴");
         item.put("value", new BigDecimal("0.015"));
         item.put("direction", "add");
         item.put("height_join", false);
-        item.put("hit", hit);
-        item.put("hit_expr", null);
+        item.put("scope", "fallback");
+        item.put("position", "布帘");
+        item.put("conditions", List.of(condition));
         item.put("enabled", true);
         item.put("order", 10);
         Map<String, Object> rounding = new LinkedHashMap<>();

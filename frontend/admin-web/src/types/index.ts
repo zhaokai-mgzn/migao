@@ -4582,21 +4582,31 @@ export interface RemnantMatchView {
 
 
 // ── 裁高（定高）配置（母单 #5161；设计单 docs/design/cutting-height-config-and-terminal.md）──
-/** 命中口径：与 production_route_rules 同集合（trigger_kind + 触发值 + 部位限定）。 */
-export interface CuttingHeightHit {
-  trigger_kind: string
-  trigger_value: string
-  position: string | null
+/**
+ * 命中条件（issue #7997）—— **跨 kind 与（AND）、组内 values 或（OR）**；空数组 = 恒真（「公共」项）。
+ *
+ * `kind` 闭词表与 `production_route_rules.trigger_kind` 同集合：
+ * `option`=特殊选项 · `craft`=安装工艺 · `processing_item`=加工项 · `shaped`=是否定型。
+ */
+export interface CuttingHeightCondition {
+  kind: string
+  values: string[]
 }
-/** 增量项档案；`value === null` = **有项无值**（如壁达的「画线」）。 */
+/**
+ * 增量项档案；`value === null` = **有项无值**（如壁达的「画线」）。
+ *
+ * `scope`：`specific` = 工序专用（默认）· `fallback` = 公共兜底 —— 兜底是**替换**语义：
+ * 只要有一条专用项命中，兜底组整组不参与（用户 2026-10-28 裁定 A）。
+ */
 export interface CuttingHeightItem {
   key: string
   name: string
   value: number | null
   direction: string
   height_join: boolean
-  hit: CuttingHeightHit
-  hit_expr: string | null
+  scope: string
+  position: string | null
+  conditions: CuttingHeightCondition[]
   enabled: boolean
   order: number
 }

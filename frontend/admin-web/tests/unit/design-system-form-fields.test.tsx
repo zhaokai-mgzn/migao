@@ -58,9 +58,11 @@ const CHROME_BASELINE = 1
  * 冻结于 2026-10-18（issue #7176）：算料口径 / 阈值试算 / 预演在本包已迁到 `Field`，
  * 剩余在这一个面（裁剪高度的**取整 / 保留位数**两个工具栏下拉，随该页整体迁移处理）。
  */
-const INLINE_LABEL_LEDGER: string[] = ['src/components/production/CuttingHeightConfigPanel.tsx']
+// 2026-10-28（issue #7997）：裁高配置的「取整 / 保留位数」已迁入 `Field`（标签在上）
+// ⇒ 最后一个存量条目退场，台账清空、基线 1 → 0（只许缩短的方向）。
+const INLINE_LABEL_LEDGER: string[] = []
 /** 冻结读数（条数现取；只许下调） */
-const INLINE_LABEL_BASELINE = 1
+const INLINE_LABEL_BASELINE = 0
 
 /** `src/**` 下所有 `.ts` / `.tsx`（仓库相对路径，`/` 分隔） */
 function walk(dir: string, base = SRC_DIR, out: string[] = []): string[] {

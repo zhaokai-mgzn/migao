@@ -79,7 +79,6 @@ const FROZEN_TABLES: string[] = [
   // 2026-10-11（issue #6754）：`CutPlanTable`（精裁输出清单）**补 nowrap ⇒ 缺陷已修** ⇒ 条目**删除**、
   // 基线下调（23 → 22）。⚠️ 与上面 #6717 那条相反：那条只是**表头顺序**变了、缺陷仍在（不删）；
   // 本条是**真修好**（每个 th 都补了 `whitespace-nowrap`）⇒ 留着就是死条目，本判据「台账不得腐坏」那一条会具名报红。
-  'src/components/production/CuttingHeightConfigPanel.tsx::表[名称|取值（米）|触发|触发值|部位|启用|~]',
   'src/components/products/BatchStockPanel.tsx::表[批次号|货号|入库量|已消耗|余量|收货日期]',
   'src/components/products/BatchStockPanel.tsx::表[档位|批次数|占比]',
   'src/components/products/BatchStockPanel.tsx::表[货号|SKU 库存|批次余量|差额|已售扣减|已派工扣减|其它台账|台账外存量|恒等式]',
@@ -90,7 +89,9 @@ const FROZEN_TABLES: string[] = [
 ]
 // 2026-10-24（issue #7644）：入库单**建单页**明细表头改成「卷数 / 卷长(米/卷) / 数量（米）」并补齐 nowrap
 // ⇒ 该表**真修好** ⇒ 条目删除、基线 20 → 19。
-const TABLE_BASELINE = 18
+// 2026-10-28（issue #7997）：裁高配置的增量项表**整体退场**（改成分组卡片 + 条件 chips，
+// 结构上不存在「列被压到低于内容宽度」这条路径）⇒ 条目删除、基线 19 → 18。
+const TABLE_BASELINE = 17
 
 /**
  * 存量台账·规则 ②（手写药丸）：同上，冻结于 2026-10-06（issue #6398），**改前** 6 条 → **5**。

@@ -37,11 +37,14 @@ import static org.mockito.Mockito.when;
  *
  * <p>守五条会被下一位验收者重开的判据（每条都能红）：</p>
  * <ol>
- *   <li><b>缺行 = 默认种子</b>（{@code source='default'}）：7 项**逐字**（含「画线」有项无值）——
+ *   <li><b>缺行 = 默认种子</b>（{@code source='default'}）：9 项**逐字**（3 项工序专用 + 6 项公共兜底）——
  *       红证：把种子里的值改掉 / 去掉画线 ⇒ 本条红；</li>
  *   <li><b>非法值 ⇒ 422 + 逐条理由</b>，<b>不得静默回退默认值</b>：红证：静默接受 ⇒ 不抛 + 落库 ⇒ 红；</li>
  *   <li><b>命中而<u>未配置取值</u>的项不计入、也不按 0 算</b>（壁达「画线」形态）：红证：按 0 算 / 静默吞 ⇒ 红；</li>
- *   <li><b>部位限定生效</b>：纱帘的项不得出现在布帘里：红证：忽略 {@code hit.position} ⇒ 红；</li>
+ *   <li><b>部位限定生效</b>：纱帘的项不得出现在布帘里：红证：忽略 {@code position} ⇒ 红；</li>
+ *   <li><b>兜底是「替换」</b>（用户 2026-10-28 裁定 A）：专用项命中 ⇒ 兜底组整组不参与；</li>
+ *   <li><b>存量 v1 读面单点归一</b>（{@code hit} → {@code conditions} + {@code scope=specific}）：
+ *       旧库里的配置不改一行也照旧算得对；红证：去掉归一 ⇒ 旧行读出来没有 conditions ⇒ 什么都不命中 ⇒ 红。</li>
  *   <li><b>upsert 单行</b>：无行 ⇒ insert（确定性 id），有行 ⇒ updateById（不产生第二行）。</li>
  * </ol>
  */
@@ -70,26 +73,28 @@ class CuttingHeightConfigServiceTest {
     // ────────────────────────── 1. 缺行 = 默认种子 ──────────────────────────
 
     @Test
-    @DisplayName("缺行 ⇒ source=default + 壁达现场那 7 项（逐字，含「画线」有项无值）")
-    void defaultsAreTheSevenItemsFromTheVendorDialog() {
+    @DisplayName("缺行 ⇒ source=default + 9 项（3 工序专用 + 6 公共兜底，逐字）")
+    void defaultsAreThreeProcessSpecificPlusSixFallbackItems() {
         when(mapper.selectActiveByTenant(TENANT)).thenReturn(null);
 
         Map<String, Object> data = service.get(TENANT);
 
         assertThat(data.get("source")).isEqualTo("default");
         List<Map<String, Object>> items = itemsOf(configOf(data));
-        assertThat(items).extracting(i -> i.get("key"))
-                .containsExactly("baobuzhe", "baobukong", "baoshazhe", "baoshakong", "huaxian", "butie", "shatie");
-        assertThat(items).extracting(i -> i.get("name"))
-                .containsExactly("包布折", "包布孔", "包纱折", "包纱孔", "画线", "布贴", "纱贴");
+        assertThat(items).extracting(i -> i.get("key")).containsExactly(
+                "bangdai_hanzhe", "bangdai_dakong", "huaxian",
+                "baobuzhe", "baobukong", "baoshazhe", "baoshakong", "butie", "shatie");
+        // 现场便签三值（用户 2026-10-28 裁定 3-A：进默认种子）
+        assertThat(valueOf(items, "bangdai_hanzhe")).isEqualByComparingTo("0.14");
+        assertThat(valueOf(items, "bangdai_dakong")).isEqualByComparingTo("0.16");
+        assertThat(valueOf(items, "huaxian")).isEqualByComparingTo("0.145");
         assertThat(valueOf(items, "baobuzhe")).isEqualByComparingTo("0.08");
-        assertThat(valueOf(items, "baobukong")).isEqualByComparingTo("0.1");
-        assertThat(valueOf(items, "baoshazhe")).isEqualByComparingTo("0.08");
-        assertThat(valueOf(items, "baoshakong")).isEqualByComparingTo("0.1");
-        // 🔴 画线 = **有项无值**（壁达那边它就没值，现场因此要在机器上贴便签）⇒ 我们既不编数也不按 0 算。
-        assertThat(valueOf(items, "huaxian")).isNull();
         assertThat(valueOf(items, "butie")).isEqualByComparingTo("0.015");
         assertThat(valueOf(items, "shatie")).isEqualByComparingTo("0.01");
+        // 作用域逐字：前三项工序专用、后六项公共兜底
+        assertThat(items).extracting(i -> i.get("scope")).containsExactly(
+                "specific", "specific", "specific",
+                "fallback", "fallback", "fallback", "fallback", "fallback", "fallback");
     }
 
     @Test
@@ -106,18 +111,48 @@ class CuttingHeightConfigServiceTest {
     // ────────────────────────── 2. 写面 fail-closed ──────────────────────────
 
     @Test
-    @DisplayName("hit 与 hit_expr 同时给 ⇒ 422 并点名该字段（两套判据并存 = 迟早漂）")
-    void hitAndHitExprTogetherAreRejected() {
-        Map<String, Object> body = validBody();
-        itemOf(body).put("hit_expr", "包含(特殊选项,\"包布折\")");
-
-        assertThatThrownBy(() -> service.put(TENANT, body))
+    @DisplayName("命中条件 fail-closed：同 kind 写两条 / values 空 / 未知条件键 ⇒ 422 并点名")
+    void conditionValidationIsFailClosed() {
+        Map<String, Object> duplicated = validBody();
+        conditionsOf(duplicated).add(condition("option", "布绑带"));
+        assertThatThrownBy(() -> service.put(TENANT, duplicated))
                 .isInstanceOfSatisfying(BusinessException.class, e -> {
                     assertThat(e.getHttpStatus()).isEqualTo(422);
-                    assertThat(fieldsOf(e)).contains("items[0].hit_expr");
+                    assertThat(fieldsOf(e)).contains("items[0].conditions[1].kind");
                 });
+
+        Map<String, Object> emptyValues = validBody();
+        conditionsOf(emptyValues).clear();
+        conditionsOf(emptyValues).add(condition("option"));
+        assertThatThrownBy(() -> service.put(TENANT, emptyValues))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        e -> assertThat(fieldsOf(e)).contains("items[0].conditions[0].values"));
+
+        Map<String, Object> unknownKey = validBody();
+        conditionsOf(unknownKey).get(0).put("expr", "1+1");
+        assertThatThrownBy(() -> service.put(TENANT, unknownKey))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        e -> assertThat(fieldsOf(e)).contains("items[0].conditions[0].expr"));
+
         verify(mapper, never()).insert(any(CuttingHeightConfig.class));
         verify(mapper, never()).updateById(any(CuttingHeightConfig.class));
+    }
+
+    @Test
+    @DisplayName("存量 v1 读面归一：hit → conditions + scope=specific，且不再回吐 hit / hit_expr")
+    void legacyHitIsNormalizedOnRead() {
+        when(mapper.selectActiveByTenant(TENANT)).thenReturn(storedBody());
+
+        List<Map<String, Object>> items = itemsOf(configOf(service.get(TENANT)));
+
+        Map<String, Object> butie = items.stream().filter(i -> "butie".equals(i.get("key"))).findFirst().orElseThrow();
+        assertThat(butie).doesNotContainKeys("hit", "hit_expr");
+        assertThat(butie.get("scope")).isEqualTo("specific");
+        assertThat(butie.get("position")).isEqualTo("布帘");
+        assertThat(conditionsOfItem(butie)).satisfiesExactly(c -> {
+            assertThat(c.get("kind")).isEqualTo("option");
+            assertThat(c.get("values")).isEqualTo(List.of("布贴"));
+        });
     }
 
     @Test
@@ -267,23 +302,49 @@ class CuttingHeightConfigServiceTest {
                         e -> assertThat(fieldsOf(e)).contains("finished_height"));
     }
 
+    @Test
+    @DisplayName("🔴 预演：专用项命中 ⇒ 兜底组整组不参与（替换语义）")
+    void previewFallbackIsReplacedWhenSpecificHits() {
+        Map<String, Object> rounding = new LinkedHashMap<>();
+        rounding.put("mode", "half_up");
+        rounding.put("digits", 3);
+        List<Map<String, Object>> items = new ArrayList<>();
+        items.add(itemV2("bangdai_hanzhe", "布绑带-韩褶", "0.14", "specific", "布帘",
+                List.of(condition("option", "布绑带"), condition("craft", "韩褶"))));
+        items.add(itemV2("butie", "布贴", "0.015", "fallback", "布帘",
+                List.of(condition("option", "布贴"))));
+        when(mapper.selectActiveByTenant(TENANT)).thenReturn(CuttingHeightConfig.builder()
+                .id("chc-7").tenantId(TENANT).status("active").deleted(0)
+                .items(items).rounding(rounding).build());
+
+        Map<String, Object> hitBoth = service.preview(TENANT,
+                request("布帘", "2.92", List.of("布绑带", "布贴"), "韩褶", null, null));
+        assertThat(keysOf(hitBoth.get("hits"))).containsExactly("bangdai_hanzhe");
+        assertThat((BigDecimal) hitBoth.get("cutting_height")).isEqualByComparingTo("3.06");
+
+        Map<String, Object> onlyFallback = service.preview(TENANT,
+                request("布帘", "2.92", List.of("布贴"), null, null, null));
+        assertThat(keysOf(onlyFallback.get("hits"))).containsExactly("butie");
+        assertThat((BigDecimal) onlyFallback.get("cutting_height")).isEqualByComparingTo("2.935");
+    }
+
     // ────────────────────────── helpers ──────────────────────────
 
     /** 一份**合法**的全量配置（PUT 是全量替换 ⇒ 键必须齐）。 */
     static Map<String, Object> validBody() {
         Map<String, Object> body = new LinkedHashMap<>();
         List<Map<String, Object>> items = new ArrayList<>();
-        Map<String, Object> hit = new LinkedHashMap<>();
-        hit.put("trigger_kind", "option");
-        hit.put("trigger_value", "包布折");
-        hit.put("position", "布帘");
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("key", "baobuzhe");
         item.put("name", "包布折");
         item.put("value", "0.08");          // 字符串也要能收（前端表单原样发）
         item.put("direction", "add");
         item.put("height_join", false);
-        item.put("hit", hit);
+        item.put("scope", "fallback");
+        item.put("position", "布帘");
+        List<Map<String, Object>> conditions = new ArrayList<>();
+        conditions.add(condition("option", "包布折"));
+        item.put("conditions", conditions);
         item.put("enabled", true);
         item.put("order", 10);
         items.add(item);
@@ -309,6 +370,39 @@ class CuttingHeightConfigServiceTest {
         return CuttingHeightConfig.builder()
                 .id("chc-7").tenantId(TENANT).status("active").deleted(0)
                 .items(items).rounding(rounding).build();
+    }
+
+    private static Map<String, Object> condition(String kind, String... values) {
+        Map<String, Object> condition = new LinkedHashMap<>();
+        condition.put("kind", kind);
+        condition.put("values", List.of(values));
+        return condition;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> conditionsOfItem(Map<String, Object> item) {
+        return (List<Map<String, Object>>) item.get("conditions");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> conditionsOf(Map<String, Object> body) {
+        return (List<Map<String, Object>>) itemOf(body).get("conditions");
+    }
+
+    private static Map<String, Object> itemV2(String key, String name, String value, String scope,
+                                              String position, List<Map<String, Object>> conditions) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("key", key);
+        item.put("name", name);
+        item.put("value", value == null ? null : new BigDecimal(value));
+        item.put("direction", "add");
+        item.put("height_join", false);
+        item.put("scope", scope);
+        item.put("position", position);
+        item.put("conditions", conditions);
+        item.put("enabled", true);
+        item.put("order", 10);
+        return item;
     }
 
     private static Map<String, Object> item(String key, String name, String value,

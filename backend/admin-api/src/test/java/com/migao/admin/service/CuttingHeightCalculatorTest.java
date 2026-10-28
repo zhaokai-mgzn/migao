@@ -17,47 +17,86 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 裁剪高度纯计算测试（V140，母单 #5161）—— 命中推导 + 求和 + 取整。
+ * 裁剪高度纯计算测试（V140 母单 #5161；v2 = issue #7997）—— 命中推导 + 求和 + 取整。
  *
  * <p>判据（每条都能红）：</p>
  * <ol>
+ *   <li><b>条件组是「与」</b>：{@code 布绑带 ∧ 韩褶} 才命中，只有布绑带 ⇒ 不命中
+ *       （红证：把 {@code conditions} 循环改成「任一命中」⇒ 红）；</li>
+ *   <li><b>组内 values 是「或」</b>：{@code 接高 ∨ 双眼皮接高} 都能命中 0.145 那条
+ *       （红证：只比第一个值 ⇒ 双眼皮接高不命中 ⇒ 红）；</li>
  *   <li><b>四类触发逐字比对</b>：特殊选项 / 工艺 / 加工项 / 定型（红证：改成「包含」匹配 ⇒ 红）；</li>
  *   <li><b>部位限定生效</b>（{@code position} 不匹配 ⇒ 不命中）；</li>
- *   <li><b>未配置取值（{@code value=null}）⇒ 不计入、也不按 0 算</b>，进 {@code misses(unresolved)}；</li>
- *   <li><b>未启用的项不参与</b>；</li>
- *   <li><b>减项（{@code direction=subtract}）真的减</b>；</li>
- *   <li><b>取整三档</b>（half_up / down / up）+ 位数上界 3；</li>
- *   <li><b>未知 trigger_kind ⇒ 不命中</b>（fail-closed：写面已拒，走到这里的只能是历史脏数据）。</li>
+ *   <li><b>兜底是「替换」</b>（用户 2026-10-28 裁定 A）：专用项一旦命中，兜底组<b>整组</b>不参与
+ *       ⇒ 布绑带单不会又加一份布贴；专用项<b>零命中</b>时兜底组才参与
+ *       （红证：把两组合并成一遍求和 ⇒ 两条断言同时红）；</li>
+ *   <li><b>命中但未配置取值</b>（{@code value=null}）⇒ 进 {@code misses(unresolved)}、不计入、不按 0 算，
+ *       且<b>不回落兜底</b>（缺项要被看见，不许用兜底把它盖掉）；</li>
+ *   <li><b>空 {@code conditions} = 恒真</b>（「公共」项）；<b>未知 kind / 空 values ⇒ 不命中</b>（fail-closed）；</li>
+ *   <li><b>未启用的项不参与</b>；<b>减项真的减</b>；</li>
+ *   <li><b>取整三档</b>（half_up / down / up）+ 位数上界 3。</li>
  * </ol>
  */
-@DisplayName("CuttingHeightCalculator 裁剪高度计算（V140 / 母单 #5161）")
+@DisplayName("CuttingHeightCalculator 裁剪高度计算（v2 / issue #7997）")
 class CuttingHeightCalculatorTest {
 
     @Test
-    @DisplayName("四类触发逐字比对 + 部位限定")
-    void matchesAllFourTriggerKindsVerbatim() {
+    @DisplayName("条件组「与」+ 组内「或」：布绑带∧韩褶 命中 0.14，布绑带∧打孔 不命中")
+    void conditionsAreAndAcrossKindsAndOrWithinValues() {
+        Vars vars = new Vars("布帘", new BigDecimal("2.92"), "韩褶",
+                List.of("布绑带"), List.of("韩褶"), true);
+
+        Map<String, Object> hanzhe = item("bangdai_hanzhe", "布绑带-韩褶", "0.14", "add", true, "布帘",
+                conditions(condition("option", "布绑带"), condition("craft", "韩褶")));
+        Map<String, Object> dakong = item("bangdai_dakong", "布绑带-打孔", "0.16", "add", true, "布帘",
+                conditions(condition("option", "布绑带"), condition("craft", "打孔")));
+
+        assertThat(CuttingHeightCalculator.matches(hanzhe, vars)).isTrue();
+        // 与：工艺不匹配 ⇒ 整条不命中（不是「有一个条件对就算」）
+        assertThat(CuttingHeightCalculator.matches(dakong, vars)).isFalse();
+
+        // 或：values 里任一个命中即可
+        Vars jiegao = new Vars("布帘", new BigDecimal("2.92"), "韩褶",
+                List.of("双眼皮接高"), List.of(), false);
+        Map<String, Object> huaxian = item("huaxian", "画线", "0.145", "add", true, "布帘",
+                conditions(condition("option", "接高", "双眼皮接高")));
+        assertThat(CuttingHeightCalculator.matches(huaxian, jiegao)).isTrue();
+
+        Result result = CuttingHeightCalculator.compute(
+                config(List.of(hanzhe, dakong, huaxian), "half_up", 3), vars);
+        assertThat(result.cuttingHeight()).isEqualByComparingTo("3.06");   // 2.92 + 0.14
+        assertThat(result.hits()).extracting(Hit::key).containsExactly("bangdai_hanzhe");
+    }
+
+    @Test
+    @DisplayName("四类触发逐字比对 + 部位限定 + 空 conditions 恒真 + 未知 kind fail-closed")
+    void fourTriggerKindsAreVerbatim() {
         Vars vars = new Vars("布帘", new BigDecimal("2.92"), "韩褶",
                 List.of("布贴", "接高"), List.of("韩褶"), true);
 
-        assertThat(CuttingHeightCalculator.matches(hit("option", "布贴", "布帘"), vars)).isTrue();
-        assertThat(CuttingHeightCalculator.matches(hit("craft", "韩褶", "布帘"), vars)).isTrue();
-        assertThat(CuttingHeightCalculator.matches(hit("processing_item", "韩褶", null), vars)).isTrue();
-        assertThat(CuttingHeightCalculator.matches(hit("shaped", "true", null), vars)).isTrue();
+        assertThat(matches(conditions(condition("option", "布贴")), vars, "布帘")).isTrue();
+        assertThat(matches(conditions(condition("craft", "韩褶")), vars, null)).isTrue();
+        assertThat(matches(conditions(condition("processing_item", "韩褶")), vars, null)).isTrue();
+        assertThat(matches(conditions(condition("shaped", "true")), vars, null)).isTrue();
 
         // 逐字：多一个字就不命中（不做「包含」匹配 —— 那会把「布贴」和「布贴加厚」混成一件事）
-        assertThat(CuttingHeightCalculator.matches(hit("option", "布贴加厚", "布帘"), vars)).isFalse();
+        assertThat(matches(conditions(condition("option", "布贴加厚")), vars, "布帘")).isFalse();
         // 部位限定
-        assertThat(CuttingHeightCalculator.matches(hit("option", "布贴", "纱帘"), vars)).isFalse();
-        assertThat(CuttingHeightCalculator.matches(hit("option", "布贴", null), vars)).isTrue();
-        // 未知类型 fail-closed
-        assertThat(CuttingHeightCalculator.matches(hit("whatever", "布贴", null), vars)).isFalse();
+        assertThat(matches(conditions(condition("option", "布贴")), vars, "纱帘")).isFalse();
+        // 空 conditions = 恒真（「公共」项：只靠部位圈范围）
+        assertThat(matches(conditions(), vars, "布帘")).isTrue();
+        assertThat(matches(conditions(), vars, "纱帘")).isFalse();
+        // 未知 kind / 空 values ⇒ fail-closed
+        assertThat(matches(conditions(condition("whatever", "布贴")), vars, null)).isFalse();
+        assertThat(matches(conditions(condition("option")), vars, null)).isFalse();
     }
 
     @Test
     @DisplayName("求和 + 取整：2.92 + 0.015 = 2.935（三位小数）")
     void sumsAndRounds() {
         Map<String, Object> config = config(List.of(
-                item("butie", "布贴", "0.015", "add", true, hit("option", "布贴", null))), "half_up", 3);
+                item("butie", "布贴", "0.015", "add", true, null,
+                        conditions(condition("option", "布贴")))), "half_up", 3);
 
         Result result = CuttingHeightCalculator.compute(config, vars("2.92", List.of("布贴")));
 
@@ -68,15 +107,55 @@ class CuttingHeightCalculatorTest {
     }
 
     @Test
-    @DisplayName("命中但未配置取值（画线）⇒ 进 misses(unresolved)、不计入、不按 0 算")
+    @DisplayName("🔴 兜底是「替换」：专用项命中 ⇒ 兜底组整组不参与")
+    void fallbackGroupIsReplacedNotAdded() {
+        Map<String, Object> config = config(List.of(
+                item("bangdai_hanzhe", "布绑带-韩褶", "0.14", "add", true, "布帘",
+                        CuttingHeightCalculator.SCOPE_SPECIFIC,
+                        conditions(condition("option", "布绑带"), condition("craft", "韩褶"))),
+                item("butie", "布贴", "0.015", "add", true, "布帘",
+                        CuttingHeightCalculator.SCOPE_FALLBACK, conditions())), "half_up", 3);
+
+        // 布绑带 ∧ 韩褶 命中 ⇒ 专用组生效；工艺必须逐字给（craft=null 时两条专用项都不命中 ⇒ 会走兜底）
+        Vars vars = new Vars("布帘", new BigDecimal("2.92"), "韩褶",
+                List.of("布绑带", "布贴"), List.of(), null);
+        Result result = CuttingHeightCalculator.compute(config, vars);
+
+        // 2.92 + 0.14（不带布贴那 0.015）
+        assertThat(result.cuttingHeight()).isEqualByComparingTo("3.06");
+        assertThat(result.hits()).extracting(Hit::key).containsExactly("bangdai_hanzhe");
+    }
+
+    @Test
+    @DisplayName("专用项零命中 ⇒ 兜底组参与（「其他情况都是默认定高参数」）")
+    void fallbackGroupAppliesWhenNoSpecificItemHits() {
+        Map<String, Object> config = config(List.of(
+                item("bangdai_hanzhe", "布绑带-韩褶", "0.14", "add", true, "布帘",
+                        CuttingHeightCalculator.SCOPE_SPECIFIC,
+                        conditions(condition("option", "布绑带"), condition("craft", "韩褶"))),
+                item("butie", "布贴", "0.015", "add", true, "布帘",
+                        CuttingHeightCalculator.SCOPE_FALLBACK, conditions())), "half_up", 3);
+
+        Result result = CuttingHeightCalculator.compute(config, vars("2.92", List.of("布贴")));
+
+        assertThat(result.cuttingHeight()).isEqualByComparingTo("2.935");
+        assertThat(result.hits()).extracting(Hit::key).containsExactly("butie");
+    }
+
+    @Test
+    @DisplayName("命中但未配置取值（画线）⇒ 进 misses(unresolved)、不计入、不按 0 算、且不回落兜底")
     void unresolvedItemsAreReportedNotAssumedZero() {
         Map<String, Object> config = config(List.of(
-                item("huaxian", "画线", null, "add", true, hit("option", "画线", null)),
-                item("butie", "布贴", "0.015", "add", true, hit("option", "布贴", null))), "half_up", 3);
+                item("huaxian", "画线", null, "add", true, "布帘",
+                        CuttingHeightCalculator.SCOPE_SPECIFIC, conditions(condition("option", "接高"))),
+                item("butie", "布贴", "0.015", "add", true, "布帘",
+                        CuttingHeightCalculator.SCOPE_FALLBACK, conditions())), "half_up", 3);
 
-        Result result = CuttingHeightCalculator.compute(config, vars("2.92", List.of("画线", "布贴")));
+        Result result = CuttingHeightCalculator.compute(config, vars("2.92", List.of("接高", "布贴")));
 
-        assertThat(result.cuttingHeight()).isEqualByComparingTo("2.935");   // 只加了布贴
+        // 画线命中但没值 ⇒ 不计入；兜底组**不参与**（否则「未配置取值」会被 0.015 盖住、再没人发现）
+        assertThat(result.cuttingHeight()).isEqualByComparingTo("2.92");
+        assertThat(result.hits()).isEmpty();
         assertThat(result.misses()).singleElement()
                 .satisfies(m -> {
                     assertThat(m.key()).isEqualTo("huaxian");
@@ -88,9 +167,10 @@ class CuttingHeightCalculatorTest {
     @DisplayName("未启用 / 未命中 / 减项：停用不参与、未命中不报、subtract 真的减")
     void disabledMissedAndSubtractItemsBehave() {
         Map<String, Object> config = config(List.of(
-                item("disabled", "已停用", "1", "add", false, hit("option", "已停用", null)),
-                item("missed", "没勾", "1", "add", true, hit("option", "没勾", null)),
-                item("deduct", "减项", "0.02", "subtract", true, hit("option", "减项", null))), "half_up", 3);
+                item("disabled", "已停用", "1", "add", false, null, conditions(condition("option", "已停用"))),
+                item("missed", "没勾", "1", "add", true, null, conditions(condition("option", "没勾"))),
+                item("deduct", "减项", "0.02", "subtract", true, null, conditions(condition("option", "减项")))),
+                "half_up", 3);
 
         Result result = CuttingHeightCalculator.compute(config, vars("2.92", List.of("减项")));
 
@@ -118,24 +198,41 @@ class CuttingHeightCalculatorTest {
         return new Vars("布帘", new BigDecimal(finishedHeight), null, options, List.of(), null);
     }
 
-    private static Map<String, Object> hit(String kind, String value, String position) {
-        Map<String, Object> hit = new LinkedHashMap<>();
-        hit.put("trigger_kind", kind);
-        hit.put("trigger_value", value);
-        hit.put("position", position);
-        return hit;
+    private static boolean matches(List<Map<String, Object>> conditions, Vars vars, String position) {
+        return CuttingHeightCalculator.matches(
+                item("k", "n", "0.01", "add", true, position, conditions), vars);
+    }
+
+    private static Map<String, Object> condition(String kind, String... values) {
+        Map<String, Object> condition = new LinkedHashMap<>();
+        condition.put("kind", kind);
+        condition.put("values", List.of(values));
+        return condition;
+    }
+
+    @SafeVarargs
+    private static List<Map<String, Object>> conditions(Map<String, Object>... conditions) {
+        return new ArrayList<>(List.of(conditions));
     }
 
     private static Map<String, Object> item(String key, String name, String value, String direction,
-                                            boolean enabled, Map<String, Object> hit) {
+                                            boolean enabled, String position,
+                                            List<Map<String, Object>> conditions) {
+        return item(key, name, value, direction, enabled, position, CuttingHeightCalculator.SCOPE_SPECIFIC, conditions);
+    }
+
+    private static Map<String, Object> item(String key, String name, String value, String direction,
+                                            boolean enabled, String position, String scope,
+                                            List<Map<String, Object>> conditions) {
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("key", key);
         item.put("name", name);
         item.put("value", value == null ? null : new BigDecimal(value));
         item.put("direction", direction);
         item.put("height_join", false);
-        item.put("hit", hit);
-        item.put("hit_expr", null);
+        item.put("scope", scope);
+        item.put("position", position);
+        item.put("conditions", conditions);
         item.put("enabled", enabled);
         item.put("order", 10);
         return item;
