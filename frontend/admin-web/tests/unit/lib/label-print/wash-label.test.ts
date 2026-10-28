@@ -45,6 +45,7 @@ import {
   WASH_LABEL_BLOCK_GAP_MM,
   WASH_LABEL_EMPHASIS_ROW_KEYS,
   WASH_LABEL_LINE_HEIGHT,
+  WASH_LABEL_OPTION_SUBTITLE_FONT_PT,
   WASH_LABEL_TOP_BLANK_MM,
 } from '@/lib/label-print/wash-label-metrics'
 
@@ -154,6 +155,31 @@ describe('layoutWashLabel — 版式是纯函数（#6439 → #6656 → #7816）'
     // 顶部留白 = 15mm（用户 2026-10-28「顶部需要让最顶端的字体上面留白15」）—— 从纸边起算
     expect(noCompany.topBlank).toBe(Math.round(WASH_LABEL_TOP_BLANK_MM * geo.dpmm))
     expect(noCompany.company).toEqual([])
+  })
+
+  it('🔴 专属唛（issue #8002）：副标题 = 成品定制 · 类别（12pt 加粗）；企业名缺值也照画', () => {
+    const onlyOption = layoutWashLabel(input({ optionLabel: '余料带回' }), geo, measure)
+    expect(onlyOption.company.map((line) => line.text)).toEqual(['成品定制 · 余料带回'])
+    expect(onlyOption.company[0].fontPx).toBe(
+      Math.round((WASH_LABEL_OPTION_SUBTITLE_FONT_PT / 72) * 25.4 * geo.dpmm),
+    )
+    expect(onlyOption.company[0].bold).toBe(true)
+    // 正文仍从抬头块之下开始（抬头占位照算，不压正文）
+    expect(onlyOption.company[0].y).toBe(onlyOption.topBlank)
+    expect(onlyOption.lines[0].y).toBeGreaterThan(onlyOption.company[0].y)
+
+    // 反面对照：常规唛副标题 10pt、不加粗
+    const normal = layoutWashLabel(input({ companyName: '亿家纺织' }), geo, measure)
+    expect(normal.company[1].fontPx).toBe(
+      Math.round((WASH_LABEL_COMPANY_SUBTITLE_FONT_PT / 72) * 25.4 * geo.dpmm),
+    )
+    expect(WASH_LABEL_OPTION_SUBTITLE_FONT_PT).toBeGreaterThan(WASH_LABEL_COMPANY_SUBTITLE_FONT_PT)
+    expect(normal.company[1].bold).toBeUndefined()
+
+    // 企业名 + 专属唛：两行，企业名与标记都加粗
+    const both = layoutWashLabel(input({ companyName: '亿家纺织', optionLabel: '绑带' }), geo, measure)
+    expect(both.company.map((line) => line.text)).toEqual(['亿家纺织', '成品定制 · 绑带'])
+    expect(both.company.every((line) => line.bold === true)).toBe(true)
   })
 
   it('判据 ③：二维码**紧挨正文**且**不沉底** —— 正文后只隔一个块距、离纸底（虚线）恒 ≥ 15mm（2026-10-28「二维码紧挨文字排版，当前留白太多」）', () => {

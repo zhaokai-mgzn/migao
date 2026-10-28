@@ -13,14 +13,13 @@ import type { PrintTarget } from '@/lib/print-doc'
 import {
   WASH_LABEL_COMPANY_SUBTITLE,
   washLabelCompanyName,
-  washLabelCopies,
   washLabelRows,
+  washLabelSheets,
   type WashLabelRowKey,
+  type WashLabelSheet,
 } from '@/lib/wash-label-content'
 // 纸面抬头用的企业名（与发货单 / 报价单 / 加工单 / 销售单**同一份**读取口，issue #7219）
 import { useCompanyName } from '@/lib/use-company-name'
-// 「第 N 套 / 共 M 套」的**唯一实现**：与进度表**同一份**口径 —— 纸面与屏幕不得各算一套
-import { groupBySet } from './ProductionProgressTable'
 // 需要「加黑加粗」的行（加工项 = 加工方式行）：与位图通道**同一份**常量（issue #7986 同批）
 import { WASH_LABEL_EMPHASIS_ROW_KEYS } from '@/lib/label-print/wash-label-metrics'
 import type { ProcessingOrderItem, ProductionPosition } from '@/types'
@@ -75,13 +74,18 @@ import type { ProcessingOrderItem, ProductionPosition } from '@/types'
  *
  * - **2026-10-28（issue #7986 / #7987）**：「把安装小区和安装位置放置到客户那一行下面」⇒ 这两行
  *   紧跟「客户」；「把加工项信息加黑加粗」⇒ 加工方式行 `font-bold`（位图通道同口径加粗）。
+ * - **2026-10-28（issue #8002，专属唛）**：勾了「余料带回 / 绑带」的套**额外**打印水洗唛
+ *   （每套每类别 1 张、**不乘开数**）—— 抬头副标题 = `成品定制 · 余料带回`（12pt 加粗）标清
+ *   「这张纸是给哪个特殊选项的」；行清单与常规唛**同一份**（`washLabelRows`），追加在常规唛之后。
+ *   张数 / 张序 / 副标题统一由 `washLabelSheets` 派生（与免驱动直连通道**同源**）—— 本文件不自己展开。
  *
- * 字段面（从上到下）= **纸面抬头（企业名 / 成品定制）** → **单号（加工单号）** / 客户 /
+ * 字段面（从上到下）= **纸面抬头（企业名 / 成品定制；专属唛的第二行为 `成品定制 · 余料带回`）** →
+ * **单号（加工单号）** / 客户 /
  * 第 N 套共 M 套 / **帘种** / **货号**（值 = 颜色内容，issue #7872 起文案由「颜色」改「货号」）/
  * 安装小区 / 安装位置 / 门幅 / 用料 / 宽高 / 加工方式（含加工费组合项，无前缀）/
  * 褶法 / 特殊选项 / 备注 / **布料批次（末行，值 = 快照 `batchNo`，issue #7872）**
  * → 底部**居中二维码**（80 CSS px = 21.17mm）。
- * 一行粒度 = 一部位（商品行）**一张 × 开数份**。
+ * 一行粒度 = 一部位（商品行）**一张 × 开数份**；专属唛 = **每套每类别 1 张**（不乘开数，排在常规唛之后）。
  *
  * 🔴 **退场项（历次字段裁定未选，勿"顺手加回"）**：
  *   ① **工序摘要** —— 工人扫部位码后在 H5 看该部位工序清单（`#4967`），纸面不印；
@@ -158,13 +162,6 @@ interface TaskCardPrintProps {
   inline?: boolean
   className?: string
 }
-
-/**
- * 快照行 id 的读取口：后端 `buildSnapshot` **无条件**落 `itemId`（= `order_items.id` 主键，
- * 也是 `position.order_item_id` 的来源），但 `ProcessingOrderItem` 类型未登记该键
- * ⇒ 本地补一个读取口，用它把**快照行**与**部位**对齐（对不上 ⇒ 该张不出这些行，不猜）。
- */
-type SnapshotItem = ProcessingOrderItem & { itemId?: string }
 
 /** 行 ⇒ `data-testid` 的中段（与 issue #5646 起的既有 testid 逐字一致，别改名） */
 const WASH_LABEL_TESTID_SEGMENT: Record<WashLabelRowKey, string> = {
@@ -244,45 +241,44 @@ export default function TaskCardPrint({
   if (!mounted) return null
 
   const list = positions ?? []
-  // 快照行按 `itemId` 索引（与 position.order_item_id 对齐）
-  const itemsById = new Map<string, ProcessingOrderItem>()
-  for (const item of items ?? []) {
-    const id = (item as SnapshotItem).itemId
-    if (id) itemsById.set(id, item)
-  }
-  // 0 个部位 ⇒ 仍出**一张**显式占位（明确「无商品/无码可打印」），而不是什么都不打
-  const labels: (ProductionPosition | null)[] = list.length > 0 ? list : [null]
-  // 套序/套数走**与进度表同一份**实现
-  const setViews = groupBySet(list)
 
   /**
-   * 逐张展开：部位 × **开数**（2026-10-26 用户裁定「双开打两份…单开打一份」）。
+   * 逐张出纸清单（**单一真值** = `lib/wash-label-content.ts::washLabelSheets`，与免驱动直连通道同一份）：
+   * 常规唛 = 部位 × **开数**（2026-10-26 用户裁定「双开打两份…单开打一份」）；
+   * 专属唛（余料带回 / 绑带，issue #8002）= **每套每类别 1 张**、不乘开数、追加在常规唛之后。
    *
-   * 🔴 份数口径只读 `washLabelCopies`（与免驱动直连通道**同一个**函数）；
-   * `sourceIndex` 保留部位序（套序 / 快照行都按它对齐），`sheetIndex` 是纸面张序（testid 用它）。
+   * 🔴 本文件**不再自己**按开数展开 —— 展开口径各写一份 ⇒ 两条通道出纸张数会不一样。
    */
-  const sheets = labels.flatMap((position, sourceIndex) => {
-    const item = position?.order_item_id ? itemsById.get(position.order_item_id) : undefined
-    const copies = position ? washLabelCopies(item) : 1
-    return Array.from({ length: copies }, () => ({ position, sourceIndex }))
-  })
+  const sheets: WashLabelSheet[] =
+    list.length > 0
+      ? washLabelSheets({ positions: list, items })
+      : // 0 个部位 ⇒ 仍出**一张**显式占位（明确「无商品/无码可打印」），而不是什么都不打
+        [
+          {
+            position: null,
+            setNo: 1,
+            setCount: 1,
+            optionLabel: null,
+            subtitle: WASH_LABEL_COMPANY_SUBTITLE,
+            qrValue: null,
+          },
+        ]
 
   // 🔴 纸面**内容与行序**的唯一来源（issue #6656；与免驱动直连通道同一份）：
   // 单号 / 客户 / 套序 / 部位 / 货号 / 门幅 / 用料 / 宽高 / 加工方式 / 褶法 / 特殊选项 / 备注
   // 的取值口径全在 `washLabelRows` 里面 —— 本文件**不再自己派生**（派生两份 = 两条通道会画得不一样）。
-  const rowsBySheet = sheets.map(({ position, sourceIndex }) => {
-    if (!position) return []
-    const setView = setViews[sourceIndex]
-    const item = position.order_item_id ? itemsById.get(position.order_item_id) : undefined
-    return washLabelRows({
-      position,
-      item,
-      setNo: (setView?.setIndex ?? 0) + 1,
-      setCount: setView?.setCount ?? 1,
-      customerName,
-      processingOrderNo,
-    })
-  })
+  const rowsBySheet = sheets.map((sheet) =>
+    sheet.position
+      ? washLabelRows({
+          position: sheet.position,
+          item: sheet.item,
+          setNo: sheet.setNo,
+          setCount: sheet.setCount,
+          customerName,
+          processingOrderNo,
+        })
+      : [],
+  )
 
   const doc = (
     <div
@@ -321,8 +317,8 @@ export default function TaskCardPrint({
         }
       `}</style>
 
-      {sheets.map(({ position }, sheetIndex) => {
-        const qrValue = position ? (position.scan_url ?? position.part_token ?? null) : null
+      {sheets.map((sheet, sheetIndex) => {
+        const { position } = sheet
         const rows = rowsBySheet[sheetIndex] ?? []
 
         return (
@@ -333,13 +329,20 @@ export default function TaskCardPrint({
             data-testid={`task-card-label-${sheetIndex}`}
           >
             {/* ① 纸面抬头（用户 2026-10-25 裁定照参考工单「亿家纺织 / 成品定制」的形态）：
-                企业名 + 副标题，居中两行。企业名缺值 ⇒ **整块不渲染**（纸面是给客户看的，
-                不印空行、不印「未设置」）。与免驱动直连通道（`lib/label-print/wash-label.ts`
+                企业名 + 副标题，居中两行。**常规唛**企业名缺值 ⇒ 整块不渲染（纸面是给客户看的，
+                不印空行、不印「未设置」）；**专属唛**（issue #8002）的副标题就是「这张纸给哪个特殊
+                选项」的标记 ⇒ 企业名缺值也照印。与免驱动直连通道（`lib/label-print/wash-label.ts`
                 的 `company` 块）同字号同位置。 */}
-            {companyName !== '' && (
+            {(companyName !== '' || sheet.optionLabel !== null) && (
               <div className="shrink-0 text-center" data-testid="task-card-company">
-                <div className="text-[14pt] font-bold">{companyName}</div>
-                <div className="text-[10pt] text-neutral-600">{WASH_LABEL_COMPANY_SUBTITLE}</div>
+                {companyName !== '' && <div className="text-[14pt] font-bold">{companyName}</div>}
+                {sheet.optionLabel !== null ? (
+                  <div className="text-[12pt] font-bold" data-testid="task-card-option-label">
+                    {sheet.subtitle}
+                  </div>
+                ) : (
+                  <div className="text-[10pt] text-neutral-600">{sheet.subtitle}</div>
+                )}
               </div>
             )}
 
@@ -388,8 +391,8 @@ export default function TaskCardPrint({
                 🔴 下沿仍由容器 `padding-bottom: 15mm` 兜住（与位图通道
                 `WASH_LABEL_BOTTOM_CLEARANCE_MM` 同值）—— 减掉那 9mm 只让纸变短，不让码贴虚线。 */}
             <div className="mt-[0.5mm] flex shrink-0 items-center justify-center">
-              {qrValue ? (
-                <QRCodeSVG value={qrValue} size={80} level="M" title={qrValue} data-testid="task-card-qr" />
+              {sheet.qrValue ? (
+                <QRCodeSVG value={sheet.qrValue} size={80} level="M" title={sheet.qrValue} data-testid="task-card-qr" />
               ) : (
                 <div
                   data-testid="task-card-qr-placeholder"

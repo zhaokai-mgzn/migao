@@ -31,6 +31,9 @@
  * ⇒ 满字段 15 行 = 抬头块 10.16 + 块距 0.5 + 正文 69.85 + 块距 0.5 + 二维码 21.17 = **102.18mm ≤ 110mm**
  * （余 7.82mm ≈ 1.6 行）；17 行 = 111.49mm > 110mm ⇒ **有折行即裁**（文字块 `overflow-hidden`；
  * 二维码永不被裁、离纸边恒 ≥ 15mm；预算账见 `TaskCardPrint.tsx`）。
+ *
+ * 专属唛（余料带回 / 绑带，issue #8002）只把抬头副标题由 10pt 抬到 12pt 加粗 ⇒ 抬头块
+ * 10.16 → **11.01mm**、满字段 15 行 = **103.03mm ≤ 110mm**（余 6.97mm）；行清单与常规唛同一份。
  */
 
 /** 纸面行的类型（引真值模块的类型，避免本文件另立一套键名） */
@@ -55,6 +58,18 @@ export const WASH_LABEL_BODY_FONT_PT = 11
 export const WASH_LABEL_COMPANY_FONT_PT = 14
 /** 纸面抬头副标题（「成品定制」）字号（pt）—— 与抬头块副行 `text-[10pt]` 同一口径 */
 export const WASH_LABEL_COMPANY_SUBTITLE_FONT_PT = 10
+/**
+ * **专属唛**（余料带回 / 绑带）抬头副标题的字号（pt）—— 与抬头块 `text-[12pt] font-bold` 同一口径。
+ *
+ * 用户 2026-10-28（issue #8002）：「只是需要标记清楚这个水洗唛是用于某个特殊选项的」⇒ 副标题
+ * 从 `成品定制` 变成 `成品定制 · 余料带回` 并**加粗放大**（10pt → 12pt）—— 这张纸的第一眼
+ * 就该读出「它是给哪个选项的」。
+ *
+ * 只影响专属唛：常规唛仍是 {@link WASH_LABEL_COMPANY_SUBTITLE_FONT_PT}（10pt / 常规字重）。
+ * 垂直预算：抬头块由 14pt + 10pt（10.16mm）变成 14pt + 12pt（11.01mm），满字段 15 行
+ * = 103.03mm ≤ 可用 110mm（余 6.97mm）—— 仍装得下。
+ */
+export const WASH_LABEL_OPTION_SUBTITLE_FONT_PT = 12
 /**
  * 二维码边长（CSS px）—— 与 `QRCodeSVG size={80}` / `size={80}` 同一口径（1 CSS px = 1/96 英寸）。
  *

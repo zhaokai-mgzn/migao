@@ -191,7 +191,71 @@ export function washLabelMeters(item?: ProcessingOrderItem | null): string {
  * 「把特殊选项，备注也加上」：两者是不同来源的两种事实，合并后纸上分不出哪句是哪类）。
  */
 export function washLabelSpecialOptions(item?: ProcessingOrderItem | null): string {
-  return specValue(craftSpecRows(item), '特殊选项')
+  return washLabelSpecialOptionNames(item).join('、')
+}
+
+/**
+ * 快照里的特殊选项原文（camelCase 优先，兼容 snake_case；非字符串 / 空串剔除）。
+ *
+ * 🔴 纸面「特殊选项」行与**专属唛触发**读**同一条取值链**（issue #8002）：各写一份 ⇒
+ * 纸上印着 `余料带回-布`、却不出余料唛（或反过来），而两边都不会红。
+ */
+export function washLabelSpecialOptionNames(item?: ProcessingOrderItem | null): string[] {
+  const record = item as (ProcessingOrderItem & { special_options?: unknown }) | null | undefined
+  const value = record?.specialOptions ?? record?.special_options
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((option): option is string => typeof option === 'string')
+    .map((option) => option.trim())
+    .filter((option) => option !== '')
+}
+
+/**
+ * **特殊选项专属水洗唛**的类别（issue #8002，用户 2026-10-28 裁定）。
+ *
+ * 余料带回 / 绑带是**套级**要交还客户的实物（余料袋 / 绑带），而常规唛按部位出纸 ⇒
+ * 这两样东西没有纸面身份。规则：**每套每个类别出 1 张**（不乘开数），抬头第二行标清
+ * 属于哪个选项（`成品定制 · 余料带回`），行清单与常规唛**完全同源**（`washLabelRows`）。
+ *
+ * 用户 2026-10-28 逐字：「当成品帘选择这两个特殊选项时还需要额外打印水洗唛，每套成品帘打印一张，
+ * 格式以我们系统中的位置，图中给你参考，只是需要标记清楚这个水洗唛是用于某个特殊选项的」
+ * 「一套要么布要么纱，不会都勾，一套一张水洗唛」。
+ *
+ * 🔴 **选项名逐字对齐 ERP**（`SPECIAL_OPTIONS` / `routing.py` 的 join key）：差一个字 ⇒
+ * 该选项永远不出专属唛，而**不会有任何东西变红**。`余料做绑带` / `余料做帘头` **不在册**
+ * —— 它们不产生「要交还客户的那袋东西」。
+ */
+export const WASH_LABEL_OPTION_GROUPS = [
+  { label: '余料带回', options: ['余料带回-布', '余料带回-纱'] },
+  { label: '绑带', options: ['布绑带', '纱绑带'] },
+] as const
+
+export type WashLabelOptionLabel = (typeof WASH_LABEL_OPTION_GROUPS)[number]['label']
+
+/**
+ * 该部位命中的专属唛类别（按 {@link WASH_LABEL_OPTION_GROUPS} 顺序，0~2 个）。
+ *
+ * 同一个部位**可以同时**勾「余料带回-布」与「布绑带」（参考工单就是）⇒ 返回 2 个类别 = 2 张纸。
+ */
+export function washLabelOptionGroupsOf(
+  item?: ProcessingOrderItem | null,
+): { label: WashLabelOptionLabel; options: string[] }[] {
+  const names = washLabelSpecialOptionNames(item)
+  const groups: { label: WashLabelOptionLabel; options: string[] }[] = []
+  for (const group of WASH_LABEL_OPTION_GROUPS) {
+    const hit = group.options.filter((option) => names.includes(option))
+    if (hit.length > 0) groups.push({ label: group.label, options: hit })
+  }
+  return groups
+}
+
+/**
+ * 纸面抬头副标题：普通唛 = `成品定制`；专属唛 = `成品定制 · 余料带回` / `成品定制 · 绑带`
+ * （用户 2026-10-28 选定：保留单据类型 + 一句话标清这张纸属于哪个特殊选项）。
+ */
+export function washLabelSubtitle(optionLabel?: string | null): string {
+  const label = (optionLabel ?? '').trim()
+  return label === '' ? WASH_LABEL_COMPANY_SUBTITLE : `${WASH_LABEL_COMPANY_SUBTITLE} · ${label}`
 }
 
 /** 备注 = 快照备注（`processing_info.remark`，自由文本；缺值不渲染） */
@@ -381,12 +445,82 @@ export function washLabelRows(input: WashLabelRowsInput): WashLabelRow[] {
 export interface WashLabelInput {
   /** 二维码内容（该部位自己的 `scan_url ?? part_token`）；`null` ⇒ **不画假码**（出占位框） */
   qrValue: string | null
-  /** 纸面抬头：企业名（缺值 ⇒ 抬头块整块不渲染；副标题见 {@link WASH_LABEL_COMPANY_SUBTITLE}） */
+  /** 纸面抬头：企业名（缺值 ⇒ 抬头块整块不渲染；副标题见 {@link washLabelSubtitle}） */
   companyName?: string
+  /** 专属唛标记（`余料带回` / `绑带`）；缺省 / `null` = 普通唛（副标题 = `成品定制`） */
+  optionLabel?: WashLabelOptionLabel | null
   /** 正文行（有序，来自 {@link washLabelRows}） */
   rows?: WashLabelRow[]
   /** 缺码时的占位文案（默认「待生成」） */
   qrPlaceholderHint?: string
+}
+
+/**
+ * 水洗唛的**出纸身份**（issue #8002）—— 两条打印通道（系统打印 / 免驱动直连）都读它：
+ * 普通唛 = 部位 × 开数；专属唛 = **每套每类别 1 张**（不乘开数），排在常规唛之后。
+ *
+ * 🔴 **张数 / 张序 / 副标题只有这一处**：`TaskCardPrint` 与 `toWashLabelInputs` 各算一份 ⇒
+ * 两条通道出纸张数不一样（#6656 的老病），而没有任何判据会因此变红。
+ */
+export interface WashLabelSheet {
+  /** 部位（= 商品行）；`null` 只出现在系统打印的空态占位纸上 */
+  position: ProductionPosition | null
+  /** 与 `position.order_item_id` 对齐的快照行 */
+  item?: ProcessingOrderItem
+  setNo: number
+  setCount: number
+  /** 专属唛类别；普通唛 = `null` */
+  optionLabel: WashLabelOptionLabel | null
+  /** 抬头副标题（普通唛 = `成品定制`；专属唛 = `成品定制 · 余料带回`） */
+  subtitle: string
+  /** 码 = `scan_url ?? part_token`；两者都没有 ⇒ `null`（不画假码） */
+  qrValue: string | null
+}
+
+export interface WashLabelSheetsInput {
+  positions?: ProductionPosition[] | null
+  items?: ProcessingOrderItem[] | null
+}
+
+/**
+ * 加工单 ⇒ **逐张出纸清单**（单一处映射：系统打印与免驱动直连都走它）。
+ *
+ * - 常规唛：每个部位 × 开数（{@link washLabelCopies}，2026-10-26 用户裁定「双开打两份」）；
+ * - 专属唛（{@link WASH_LABEL_OPTION_GROUPS}）：每个命中部位 × 每个类别 **1 张**，追加在常规唛之后
+ *   —— 用户 2026-10-28「每套成品帘打印一张」；一套只会勾布或纱之一 ⇒ 常规情形 = 每套每类别 1 张，
+ *   同一套两类都勾（参考工单）= 2 张。数据里两个部位都勾了同一类别 ⇒ 出 2 张（不合并、不静默丢）；
+ * - 套序走 `groupBySet`（与进度表 / 系统打印**同一份**实现）；
+ * - 0 个部位 ⇒ 空数组（**不造占位**：直连入口据此禁用，不是打一张空白纸）。
+ */
+export function washLabelSheets(input: WashLabelSheetsInput = {}): WashLabelSheet[] {
+  const positions = input.positions ?? []
+  const setViews = groupBySet(positions)
+  /** 快照行按 `itemId` 索引（= `order_items.id` 主键，也是 `position.order_item_id` 的来源） */
+  const itemsById = new Map<string, ProcessingOrderItem>()
+  for (const item of input.items ?? []) {
+    const id = (item as ProcessingOrderItem & { itemId?: string }).itemId
+    if (id) itemsById.set(id, item)
+  }
+
+  const regular: WashLabelSheet[] = []
+  const optionLabels: WashLabelSheet[] = []
+  positions.forEach((position, index) => {
+    const item = position.order_item_id ? itemsById.get(position.order_item_id) : undefined
+    const setView = setViews[index]
+    const setNo = (setView?.setIndex ?? 0) + 1
+    const setCount = setView?.setCount ?? 1
+    const qrValue = position.scan_url ?? position.part_token ?? null
+    const base = { position, item, setNo, setCount, qrValue }
+    // 常规唛：份数 = 开数（两条通道读**同一个**函数，不各算一份）
+    for (let copy = 0; copy < washLabelCopies(item); copy += 1) {
+      regular.push({ ...base, optionLabel: null, subtitle: WASH_LABEL_COMPANY_SUBTITLE })
+    }
+    // 专属唛：每套每类别 1 张，**不随开数翻倍**
+    for (const group of washLabelOptionGroupsOf(item)) {
+      optionLabels.push({ ...base, optionLabel: group.label, subtitle: washLabelSubtitle(group.label) })
+    }
+  })
+  return [...regular, ...optionLabels]
 }
 
 export interface WashLabelSource {
@@ -403,39 +537,22 @@ export interface WashLabelSource {
  * 加工单 ⇒ 直连通道的**逐张**输入（**单一处**映射：页面与测试都走它，不各写一份）。
  *
  * - 码 = `scan_url ?? part_token`，两者都没有 ⇒ `null`（**不画假码**，与 `TaskCardPrint` 同口径）
- * - 套序走 `groupBySet`（与进度表 / 系统打印**同一份**实现）
- * - **份数 = 开数**（{@link washLabelCopies}）：双开商品 ⇒ 同一张纸出两份（与系统打印同一份口径）
+ * - 张数 / 张序 / 副标题全部来自 {@link washLabelSheets}（与系统打印**同源**）
  * - 0 个部位 ⇒ 空数组（**不造占位**：直连入口据此禁用，不是打一张空白纸）
  */
 export function toWashLabelInputs(source: WashLabelSource = {}): WashLabelInput[] {
-  const positions = source.positions ?? []
-  const setViews = groupBySet(positions)
-  /** 快照行按 `itemId` 索引（= `order_items.id` 主键，也是 `position.order_item_id` 的来源） */
-  const itemsById = new Map<string, ProcessingOrderItem>()
-  for (const item of source.items ?? []) {
-    const id = (item as ProcessingOrderItem & { itemId?: string }).itemId
-    if (id) itemsById.set(id, item)
-  }
-
-  const labels: WashLabelInput[] = []
-  positions.forEach((position, index) => {
-    const item = position.order_item_id ? itemsById.get(position.order_item_id) : undefined
-    const setView = setViews[index]
-    const label: WashLabelInput = {
-      qrValue: position.scan_url ?? position.part_token ?? null,
-      companyName: washLabelCompanyName(source.companyName) || undefined,
-      qrPlaceholderHint: undefined,
-      rows: washLabelRows({
-        position,
-        item,
-        setNo: (setView?.setIndex ?? 0) + 1,
-        setCount: setView?.setCount ?? 1,
-        customerName: source.customerName,
-        processingOrderNo: source.processingOrderNo,
-      }),
-    }
-    // 🔴 份数 = 开数（2026-10-26 用户裁定）：两条通道读**同一个**函数，不各算一份
-    for (let copy = 0; copy < washLabelCopies(item); copy += 1) labels.push(label)
-  })
-  return labels
+  return washLabelSheets({ positions: source.positions, items: source.items }).map((sheet) => ({
+    qrValue: sheet.qrValue,
+    companyName: washLabelCompanyName(source.companyName) || undefined,
+    optionLabel: sheet.optionLabel,
+    qrPlaceholderHint: undefined,
+    rows: washLabelRows({
+      position: sheet.position,
+      item: sheet.item,
+      setNo: sheet.setNo,
+      setCount: sheet.setCount,
+      customerName: source.customerName,
+      processingOrderNo: source.processingOrderNo,
+    }),
+  }))
 }
