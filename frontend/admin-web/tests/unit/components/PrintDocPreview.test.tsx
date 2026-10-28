@@ -35,7 +35,7 @@ describe('打印机引导与本机登记（issue #7957）', () => {
     localStorage.clear()
   })
 
-  function renderWith(media: 'a4' | 'continuous-241x140' | 'label-50x119', extra: Record<string, unknown> = {}) {
+  function renderWith(media: 'a4' | 'continuous-241x140' | 'label-50x140', extra: Record<string, unknown> = {}) {
     return render(
       <PrintDocPreview
         target="processing"
@@ -61,7 +61,7 @@ describe('打印机引导与本机登记（issue #7957）', () => {
     renderWith('continuous-241x140')
     expect(screen.getByTestId('print-printer-hint')).toHaveTextContent('针式打印机（连续纸）')
     cleanup()
-    renderWith('label-50x119')
+    renderWith('label-50x140')
     expect(screen.getByTestId('print-printer-hint')).toHaveTextContent('标签打印机')
   })
 
@@ -270,27 +270,27 @@ describe('纸面自检层 PrintDocPreview（issue #5914）', () => {
     expect(screen.getByTestId('print-preview-media').textContent).toContain('241mm × 140mm')
   })
 
-  it('①b 水洗唛纸型**固定 50mm × 119mm**（issue #7960）：纸框 / 边距 / 正文字号全从介质矩阵读（旧 50×150 已作废）', () => {
+  it('①b 水洗唛纸型**固定 50mm × 140mm**（issue #7979）：纸框 / 边距 / 正文字号全从介质矩阵读（旧 50×119 已作废）', () => {
     render(
-      <PrintDocPreview target="labels" title="水洗唛" media="label-50x119" onPrint={() => {}} onClose={() => {}}>
+      <PrintDocPreview target="labels" title="水洗唛" media="label-50x140" onPrint={() => {}} onClose={() => {}}>
         <div>单据</div>
       </PrintDocPreview>
     )
     const paper = screen.getByTestId('print-preview-paper')
-    // 纸型 = 矩阵里的 `label-50x119`（固定 50mm × 119mm，不再是"按内容撑开"的动态长度）
-    expect(printPageBoxMm('label-50x119')).toEqual({ widthMm: 50, heightMm: 119 })
+    // 纸型 = 矩阵里的 `label-50x140`（固定 50mm × 140mm，不再是"按内容撑开"的动态长度）
+    expect(printPageBoxMm('label-50x140')).toEqual({ widthMm: 50, heightMm: 140 })
     expect(paper.style.width).toBe('50mm')
-    expect(paper.style.minHeight).toBe('119mm')
+    expect(paper.style.minHeight).toBe('140mm')
     // 热敏标签：`@page` 边距 0 且无版面内缩 ⇒ 纸框 padding 为 0（纸边即版心）
-    expect(printContentInsetMm('label-50x119')).toEqual({ xMm: 0, yMm: 0 })
+    expect(printContentInsetMm('label-50x140')).toEqual({ xMm: 0, yMm: 0 })
     // ⚠️ 读长写法而不是 shorthand：jsdom 会把 `0mm 0mm` 归一成 `0mm`（序列化细节，不是版面差异）
     expect(paper.style.paddingTop).toBe('0mm')
     expect(paper.style.paddingLeft).toBe('0mm')
     // 正文字号由介质矩阵给（minFontPt = 11pt）—— 9pt 时代随 #7816 退场
     expect(paper.style.fontSize).toBe('11pt')
-    expect(printBodyFontPt('label-50x119')).toBe(11)
+    expect(printBodyFontPt('label-50x140')).toBe(11)
     const mediaText = screen.getByTestId('print-preview-media').textContent ?? ''
-    expect(mediaText).toContain('50mm × 119mm')
+    expect(mediaText).toContain('50mm × 140mm')
     expect(mediaText).toContain('无边距')
     expect(mediaText).toContain('正文 11pt')
   })
@@ -401,7 +401,7 @@ describe('纸面自检层 PrintDocPreview（issue #5914）', () => {
       <PrintDocPreview
         target="labels"
         title="水洗唛"
-        media="label-50x119"
+        media="label-50x140"
         onPrint={() => {}}
         onClose={() => {}}
         actions={<button data-testid="extra-action">蓝牙无线打印</button>}
@@ -424,7 +424,7 @@ describe('纸面自检层 PrintDocPreview（issue #5914）', () => {
       <PrintDocPreview
         target="labels"
         title="水洗唛"
-        media="label-50x119"
+        media="label-50x140"
         onPrint={() => {}}
         onClose={() => {}}
       >

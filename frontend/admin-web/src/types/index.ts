@@ -733,7 +733,7 @@ export interface PrintLogView {
   docType: string
   /** 打印当时的纸面名（快照；如「加工单」/「面料单」/「水洗唛」） */
   docTitle?: string | null
-  /** 纸型 id（介质矩阵真值：a4 / continuous-241x140 / label-50x119） */
+  /** 纸型 id（介质矩阵真值：a4 / continuous-241x140 / label-50x140） */
   mediaId?: string | null
   /** 本次出纸张数（水洗唛按部位一张） */
   sheets: number

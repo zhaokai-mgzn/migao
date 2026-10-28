@@ -5,7 +5,7 @@
  * 为什么要有这一条（实测形态，不是假想）：字号 / 内边距 / 二维码尺寸在**三个地方**各存在一份 ——
  * ① `lib/label-print/wash-label-metrics.ts`（TS：画布通道 + 打印通道读它）；
  * ② `components/production/TaskCardPrint.tsx` 里那段 CSS / Tailwind 字号（系统打印）；
- * ③ 介质矩阵 `label-50x119`（固定纸型 50mm × 119mm）。
+ * ③ 介质矩阵 `label-50x140`（固定纸型 50mm × 140mm）。
  * 改一处不改另一处**不会报错**，只会让两条通道画得不一样。⇒ 本文件**解析组件源码**逐值比对。
  *
  * 2026-10-26（issue #7816）改判：纸长**不再按内容撑开**（作废 #7776 的动态纸长），
@@ -21,12 +21,13 @@ import {
   WASH_LABEL_BOTTOM_CLEARANCE_MM,
   WASH_LABEL_COMPANY_FONT_PT,
   WASH_LABEL_COMPANY_SUBTITLE_FONT_PT,
+  WASH_LABEL_BLOCK_GAP_MM,
   WASH_LABEL_LINE_HEIGHT,
   WASH_LABEL_PADDING_MM,
   WASH_LABEL_QR_CSS_PX,
   WASH_LABEL_QR_PLACEHOLDER_FONT_PT,
   WASH_LABEL_QR_PLACEHOLDER_MM,
-  WASH_LABEL_QR_TEXT_GAP_LINES,
+  WASH_LABEL_TOP_BLANK_MM,
 } from '@/lib/label-print/wash-label-metrics'
 
 const COMPONENT = resolve(process.cwd(), 'src/components/production/TaskCardPrint.tsx')
@@ -44,30 +45,34 @@ function labelCss(): string {
 const css = labelCss()
 
 describe('水洗唛版面度量：TS 单一真值 ⇄ 组件 CSS（改一处不改另一处 ⇒ 红）', () => {
-  it('内边距 / 行高 / 正文字号：CSS 与 metrics 逐值一致', () => {
-    // 🔴 下内边距 = 二维码与底部虚线的净空（2026-10-27 用户逐字「二维码不能直接沉底，务必和底部留点距离」）
-    //    —— 与画布通道读**同一个**常量，两条通道不会各写一份
+  it('内边距 / 顶部留白 / 行高 / 正文字号：CSS 与 metrics 逐值一致', () => {
+    // 🔴 上内边距 = 顶部留白（2026-10-28「顶部需要让最顶端的字体上面留白15」）、
+    //    下内边距 = 码与底部虚线的净空（同批「多的30要添加到顶部和底部虚线下处各15」）
+    //    —— 与画布通道读**同一组**常量，两条通道不会各写一份
     expect(css).toContain(
-      `padding: ${WASH_LABEL_PADDING_MM}mm ${WASH_LABEL_PADDING_MM}mm ${WASH_LABEL_BOTTOM_CLEARANCE_MM}mm`,
+      `padding: ${WASH_LABEL_TOP_BLANK_MM}mm ${WASH_LABEL_PADDING_MM}mm ${WASH_LABEL_BOTTOM_CLEARANCE_MM}mm`,
     )
+    // 两个 15mm 是**同一批裁定**的两个 15：改一个不改另一个 ⇒ 必红
+    expect(WASH_LABEL_TOP_BLANK_MM).toBe(15)
+    expect(WASH_LABEL_BOTTOM_CLEARANCE_MM).toBe(15)
     expect(css).toContain(`line-height: ${WASH_LABEL_LINE_HEIGHT}`)
     expect(css).toContain(`font-size: ${WASH_LABEL_BODY_FONT_PT}pt`)
     // 正向锚：字体确实比上一版（9pt）大 —— 用户 2026-10-26「字体还是太小，可以再大一点」
     expect(WASH_LABEL_BODY_FONT_PT).toBeGreaterThan(9)
   })
 
-  it('固定纸型 50mm × 119mm：CSS 与介质矩阵逐值一致（issue #7960）', () => {
+  it('固定纸型 50mm × 140mm：CSS 与介质矩阵逐值一致（issue #7960）', () => {
     expect(css).toContain('width: 50mm')
     // 纸长**写死**在 CSS 里（不再有行内 style 覆盖）—— 纸型是固定的，不是按内容撑开
-    expect(css).toContain('height: 119mm')
+    expect(css).toContain('height: 140mm')
     expect(source).not.toContain('style={{ height:')
-    // 唯一纸型写法：printPageRule('label-50x119')，不许自写 @page 字面量
-    expect(source).toContain("printPageRule('label-50x119')")
+    // 唯一纸型写法：printPageRule('label-50x140')，不许自写 @page 字面量
+    expect(source).toContain("printPageRule('label-50x140')")
     expect(source).not.toMatch(/@page\s*\{\s*size:/)
-    expect(printPageRule('label-50x119')).toBe('@page { size: 50mm 119mm; margin: 0; }')
-    expect(printPageBoxMm('label-50x119')).toEqual({ widthMm: 50, heightMm: 119 })
-    // 点阵侧同一份纸：119mm × 8 dots/mm = 952px（直连通道的画布高度）
-    expect(printDotGeometry('label-50x119').heightPx).toBe(952)
+    expect(printPageRule('label-50x140')).toBe('@page { size: 50mm 140mm; margin: 0; }')
+    expect(printPageBoxMm('label-50x140')).toEqual({ widthMm: 50, heightMm: 140 })
+    // 点阵侧同一份纸：140mm × 8 dots/mm = 1120px（直连通道的画布高度）
+    expect(printDotGeometry('label-50x140').heightPx).toBe(1120)
   })
 
   it('抬头 / 二维码 / 占位框的字号与边长逐值一致', () => {
@@ -80,17 +85,18 @@ describe('水洗唛版面度量：TS 单一真值 ⇄ 组件 CSS（改一处不�
     expect(WASH_LABEL_QR_CSS_PX).toBe(80)
   })
 
-  it('二维码**不沉底**（正文后两行、离底部虚线留白）；「扫码报工」与短码文字已退场（用户 2026-10-26 逐字）', () => {
-    // 二维码行 = `mt-[<两行 mm>] … justify-center`；两行 = 2 × 11pt × 1.2 = 26.4pt ≈ 9.31mm
-    const gapMm = Number(
-      (WASH_LABEL_QR_TEXT_GAP_LINES * (WASH_LABEL_BODY_FONT_PT / 72) * 25.4 * WASH_LABEL_LINE_HEIGHT).toFixed(2),
-    )
+  it('二维码**紧挨正文**（只隔一个块距）且**不沉底**（离底部虚线 15mm）；「扫码报工」与短码文字已退场', () => {
+    // 二维码行 = `mt-[<一个块距 mm>] … justify-center` —— 2026-10-28「二维码紧挨文字排版，当前留白太多」
+    // （旧口径是「隔两行 9.31mm」，那 ≈9mm 正是纸长能从 150mm 收到 140mm 的来源）
+    const gapMm = Number(WASH_LABEL_BLOCK_GAP_MM.toFixed(2))
     const qrRow = `mt-[${gapMm}mm] flex shrink-0 items-center justify-center`
     if (!source.includes(qrRow)) throw new Error(`找不到「二维码行 = ${qrRow}」—— 判据无从取值`)
     // 🔴 反向护栏：正文块**不得**再 `flex-1`（那会把码顶到纸底 = 用户说的「二维码沉底」）
     expect(source).not.toMatch(/min-h-0 flex-1 overflow-hidden/)
-    // 纸底（底部虚线）之上必须留白 —— 2026-10-27 用户再次强调「务必和底部留点距离」⇒ 定值 6mm
-    expect(WASH_LABEL_BOTTOM_CLEARANCE_MM).toBe(6)
+    // 🔴 反向护栏：不得再出现「两行」那个 9.31mm 的间距（改回去 ⇒ 纸长又得变长）
+    expect(source).not.toContain('mt-[9.31mm]')
+    // 纸底（底部虚线）之上必须留白 —— 2026-10-28 由 6mm 抬到 15mm（「底部…各15」）
+    expect(WASH_LABEL_BOTTOM_CLEARANCE_MM).toBe(15)
     // 断言打在 **JSX 文本节点**上（文件头注释里会提到这个词，用裸子串会假红）
     expect(source).not.toMatch(/>\s*扫码报工\s*</)
     expect(source).not.toContain('task-card-label-short-code')
