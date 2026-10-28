@@ -1,12 +1,13 @@
 'use client'
 
-import { ArrowDown, Check, Copy, MoreHorizontal } from 'lucide-react'
+import { ArrowDown, Check, Copy } from 'lucide-react'
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import type { OrderBrief } from '@/types'
 import { normalizeOrderStatus } from '@/types'
-import { Badge, Button } from '@/components/ui'
+import { Badge, Button, RowActions } from '@/components/ui'
+import type { RowActionItem } from '@/components/ui'
 import DateTimeCell from '@/components/common/DateTimeCell'
 import OrderStatusBadge from './OrderStatusBadge'
 import { isUrgentFlag, urgentBadgeText } from '@/lib/order-urgency'
@@ -113,112 +114,15 @@ function getItemAmount(item: { amount?: number; subtotal?: number; unitPrice?: n
 }
 
 /**
- * 行内「⋯」菜单（issue #8011）—— 把同名级文字链收进一个菜单，行内只留 **1 主行动 + 1 触发器**。
+ * 行内「⋯」菜单（issue #8011 由本表首例；issue #8038 收成**共享原语** `ui/RowActions`）。
  *
- * ## 为什么必须收（真机读数，2026-10-24 `14-orders-list.png`）
+ * 本表是那一形态的首例，改前实现就写在本文件里；#8038 把它抽到 `components/ui/RowActions.tsx`
+ * （`products` / `knowledge` 同批接入）—— 菜单的开合、键盘可达、`fixed` 落点、**收起态不进 DOM**
+ * 现在**只有一份实现**。这里**不再**保留本地副本：抄一份 = 第二份会漂的口径
+ * （`RowActionLink` 头注释已登记过同款教训）。
  *
- * 改前每行 4 个同级文字链（`查看 · 备注 · 发货 · 处理退款`）⇒ 20 行/页 = **单屏 80 个可点文本**，
- * 没有层级、没有主行动（`migao-dev-flow` §31 P1/P2：常驻面克制 + 信息不重复）。
- *
- * ## 实现口径
- *
- * - **收起态菜单项不进 DOM**（`{open && …}`，不是 CSS 隐藏）—— 否则「单屏 80 个可点文本」只换了长相；
- * - 面板 `position: fixed`：本表在 `overflow-x-auto` 里（#6717 右缘冻结列），
- *   绝对定位的子面板会被横向滚动容器**纵向裁掉**（最后一行的菜单点开就没了）⇒ 用 fixed 脱离裁切，
- *   并在滚动 / 缩放时收起（否则面板与行脱位）；
- * - 键盘：`aria-haspopup="menu"` / `aria-expanded` / `role="menu"` / `role="menuitem"`，
- *   `Escape` 与「点外部」都收起 —— 收敛**不得**把动作藏成不可达。
+ * 本表自己的判据（形态/主行动派生/复制订单号）：`tests/unit/pages/orders-list-row-actions.test.tsx`。
  */
-interface RowMenuItem {
-  key: string
-  label: string
-  onClick: () => void
-}
-
-function RowActionMenu({ menuId, items }: { menuId: string; items: RowMenuItem[] }) {
-  /** `null` = 收起；有坐标 = 展开（坐标在**点开的那一刻**量，避免与行脱位） */
-  const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null)
-  const triggerRef = useRef<HTMLButtonElement>(null)
-  const open = anchor !== null
-
-  useEffect(() => {
-    if (!open) return
-    const close = () => setAnchor(null)
-    const onPointerDown = (e: MouseEvent) => {
-      const target = e.target as HTMLElement | null
-      // 触发器自己交给 onClick 处理（否则一次点击会先关后开）
-      if (triggerRef.current?.contains(target as Node)) return
-      // 面板里的动作同样不在这里关（它的 onClick 自己关，保证动作先执行）
-      if (target?.closest?.(`[data-row-menu="${menuId}"]`)) return
-      close()
-    }
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close()
-    }
-    document.addEventListener('mousedown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown)
-    // 表格容器可横滚、页面可竖滚 ⇒ 面板会与行脱位，直接收起（比假装还在正确位置诚实）
-    window.addEventListener('scroll', close, true)
-    window.addEventListener('resize', close)
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown)
-      window.removeEventListener('scroll', close, true)
-      window.removeEventListener('resize', close)
-    }
-  }, [open, menuId])
-
-  const toggle = () => {
-    if (open) {
-      setAnchor(null)
-      return
-    }
-    const rect = triggerRef.current?.getBoundingClientRect()
-    if (!rect) return
-    setAnchor({ top: rect.bottom + 4, left: rect.right })
-  }
-
-  return (
-    <span className="relative inline-flex" data-testid={menuId}>
-      {/* 纯图标按钮必须 `aria-label`（§32.2 第 5 条）；行内层级一律 ghost（不用实心主色） */}
-      <Button
-        ref={triggerRef}
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="px-1.5"
-        aria-label="更多操作"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={toggle}
-        icon={<MoreHorizontal className="h-4 w-4" />}
-      />
-      {open && (
-        <div
-          role="menu"
-          data-row-menu={menuId}
-          style={{ top: anchor.top, left: anchor.left, transform: 'translateX(-100%)' }}
-          className="fixed z-50 min-w-[9rem] rounded-lg border border-neutral-200 bg-white py-1 shadow-lg"
-        >
-          {items.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setAnchor(null)
-                item.onClick()
-              }}
-              className="flex w-full items-center px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-50"
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </span>
-  )
-}
 
 /** 订单号复制（issue #8011）：17 位纯数字手抄必错，给一个**明确的**复制入口 */
 async function copyOrderNo(orderNo: string) {
@@ -316,7 +220,7 @@ export default function OrderTable({
     const alreadyRefunded = (order.refundAmount ?? 0) > 0
 
     // 主行动：**只**按状态派生；回调缺席（页面没接线）⇒ 同样不渲染，不摆一个点不动的按钮
-    const primary: RowMenuItem | null =
+    const primary: RowActionItem | null =
       displayStatus === 'pending_payment' && onConfirmPayment
         ? { key: 'payment', label: '收款', onClick: () => onConfirmPayment(order) }
         : displayStatus === 'pending_shipment' && (onToggleShip || onShip)
@@ -330,7 +234,7 @@ export default function OrderTable({
             ? { key: 'receive', label: '确认收货', onClick: () => onConfirmReceive(order) }
             : null
 
-    const menuItems: RowMenuItem[] = [
+    const menuItems: RowActionItem[] = [
       { key: 'view', label: '查看详情', onClick: () => onView(order) },
       { key: 'remark', label: '备注', onClick: () => onRemark(order) },
     ]
@@ -346,9 +250,10 @@ export default function OrderTable({
     }
 
     return (
-      <div
-        className="flex items-center gap-1 whitespace-nowrap"
-        data-testid={`order-actions-${order.id}`}
+      <RowActions
+        testId={`order-actions-${order.id}`}
+        menuTestId={`order-menu-${order.id}`}
+        items={menuItems}
       >
         {primary && (
           // 行内主行动走 `ghost`（§32.2 / §32.4：表格行内不用实心主色 —— 一屏至多一个 primary，
@@ -373,8 +278,7 @@ export default function OrderTable({
             </Button>
           </span>
         )}
-        <RowActionMenu menuId={`order-menu-${order.id}`} items={menuItems} />
-      </div>
+      </RowActions>
     )
   }
 

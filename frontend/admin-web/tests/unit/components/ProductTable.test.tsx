@@ -7,7 +7,7 @@
  *       #5877 移除「商品ID」列 — 表头不再有该列，且 colSpan（列数）随之收敛
  *       #6669 追加任务 3 — 「销售额」列小数位口径（同一列不得并存 `¥25,049` 与 `¥26,099.8`）
  */
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import ProductTable from '@/components/products/ProductTable'
 import type { Product, ProductStatus } from '@/types'
@@ -196,69 +196,144 @@ describe('ProductTable (#646 — 移除 in_warehouse)', () => {
     })
   })
 
-  describe('操作按钮 — 按状态', () => {
-    it('on_sale 显示：查看 编辑 下架 删除', () => {
+  describe('操作列 — 「1 主行动 + ⋯ 菜单」（issue #8038）', () => {
+    // issue #8038：行内动作收进共享原语 `ui/RowActions`。**收起态菜单项不进 DOM**
+    // （不是 CSS 隐藏）⇒ 判据必须先点开菜单，再断言菜单项。
+    const openMenu = (id = 'p001') => {
+      fireEvent.click(
+        within(screen.getByTestId(`product-actions-${id}`)).getByRole('button', { name: '更多操作' }),
+      )
+      return screen.getByRole('menu')
+    }
+    const menuLabels = () => screen.getAllByRole('menuitem').map((m) => m.textContent)
+    const primaryOf = (id = 'p001') =>
+      within(screen.getByTestId(`product-actions-${id}`)).getAllByRole('button')[0]
+
+    it('每行可点元素 ≤ 2：1 主行动 + 1 个 ⋯ 触发器（改前在架行是 5 个平级文字链）', () => {
+      const products: Product[] = [
+        { ...baseProduct, id: 'p1', status: 'on_sale' },
+        { ...baseProduct, id: 'p2', status: 'off_sale' },
+        { ...baseProduct, id: 'p3', status: 'draft' },
+        { ...baseProduct, id: 'p4', status: 'under_review' },
+      ]
+      render(<ProductTable {...defaultProps} products={products} total={4} />)
+      for (const id of ['p1', 'p2', 'p3', 'p4']) {
+        const cell = screen.getByTestId(`product-actions-${id}`)
+        expect(
+          within(cell).getAllByRole('button').length,
+          `商品 ${id} 的操作区可点元素 > 2（又回到平铺文字链的形态了）`,
+        ).toBeLessThanOrEqual(2)
+      }
+    })
+
+    it('收起态：菜单项**不进 DOM**（不是 CSS 隐藏），屏上只剩主行动 + ⋯', () => {
       render(<ProductTable {...defaultProps} />)
-      expect(screen.getByText('查看')).toBeTruthy()
-      expect(screen.getByText('编辑')).toBeTruthy()
-      expect(screen.getByText('下架')).toBeTruthy()
-      expect(screen.getByText('删除')).toBeTruthy()
+      const cell = screen.getByTestId('product-actions-p001')
+      expect(within(cell).queryByRole('menu')).toBeNull()
+      expect(within(cell).queryByText('删除')).toBeNull()
+      expect(within(cell).queryByText('查看')).toBeNull()
+      expect(primaryOf().textContent).toBe('编辑')
     })
 
-    it('on_sale 未推荐时显示「推荐」按钮，点击触发 onRecommend', () => {
+    it('主行动按状态派生：在架→编辑、已下架→上架、审核中→查看、草稿→编辑', () => {
+      const cases: Array<[ProductStatus, string]> = [
+        ['on_sale', '编辑'],
+        ['off_sale', '上架'],
+        ['under_review', '查看'],
+        ['draft', '编辑'],
+      ]
+      for (const [status, expected] of cases) {
+        const { unmount } = render(
+          <ProductTable {...defaultProps} products={[{ ...baseProduct, id: 'x', status }]} />,
+        )
+        expect(primaryOf('x').textContent, `状态 ${status} 的主行动`).toBe(expected)
+        unmount()
+      }
+    })
+
+    it('在架行菜单项：查看 / 推荐 / 下架 / 删除（危险动作进菜单，回调一字未改）', () => {
+      const onView = vi.fn()
       const onRecommend = vi.fn()
-      render(<ProductTable {...defaultProps} onRecommend={onRecommend} />)
-      const btn = screen.getByText('推荐')
-      expect(btn).toBeTruthy()
-      fireEvent.click(btn)
-      expect(onRecommend).toHaveBeenCalledTimes(1)
+      const onTakeOffShelf = vi.fn()
+      const onDelete = vi.fn()
+      render(
+        <ProductTable
+          {...defaultProps}
+          onView={onView}
+          onRecommend={onRecommend}
+          onTakeOffShelf={onTakeOffShelf}
+          onDelete={onDelete}
+        />,
+      )
+      openMenu()
+      expect(menuLabels()).toEqual(['查看', '推荐', '下架', '删除'])
+
+      fireEvent.click(screen.getByRole('menuitem', { name: '查看' }))
+      expect(onView).toHaveBeenCalledTimes(1)
+      // 点了就收起（菜单不赖在屏上）
+      expect(screen.queryByRole('menu')).toBeNull()
+
+      openMenu()
+      fireEvent.click(screen.getByRole('menuitem', { name: '删除' }))
+      // 危险动作只换容器：回调仍是页面那一个（二次确认由页面 Modal 承担，见 products.test.tsx）
+      expect(onDelete).toHaveBeenCalledTimes(1)
     })
 
-    it('on_sale 已推荐时显示「取消推荐」并触发 onUnrecommend', () => {
-      const product = { ...baseProduct, recommended: true as const }
+    it('已推荐商品的菜单项是「取消推荐」（不是两个都出现）', () => {
       const onUnrecommend = vi.fn()
-      render(<ProductTable {...defaultProps} products={[product]} onUnrecommend={onUnrecommend} />)
-      const btn = screen.getByText('取消推荐')
-      expect(btn).toBeTruthy()
-      expect(screen.queryByText('推荐')).toBeNull()
-      fireEvent.click(btn)
+      render(
+        <ProductTable
+          {...defaultProps}
+          products={[{ ...baseProduct, recommended: true }]}
+          onUnrecommend={onUnrecommend}
+        />,
+      )
+      openMenu()
+      expect(menuLabels()).toEqual(['查看', '取消推荐', '下架', '删除'])
+      fireEvent.click(screen.getByRole('menuitem', { name: '取消推荐' }))
       expect(onUnrecommend).toHaveBeenCalledTimes(1)
     })
 
-    it('off_sale 不显示推荐按钮', () => {
-      const product = { ...baseProduct, status: 'off_sale' as const }
-      render(<ProductTable {...defaultProps} products={[product]} />)
-      expect(screen.queryByText('推荐')).toBeNull()
-      expect(screen.queryByText('取消推荐')).toBeNull()
+    it('已下架行：主行动「上架」，菜单里 查看 / 编辑 / 删除（不再出现「下架」）', () => {
+      const onPutOnShelf = vi.fn()
+      render(
+        <ProductTable
+          {...defaultProps}
+          products={[{ ...baseProduct, status: 'off_sale' }]}
+          onPutOnShelf={onPutOnShelf}
+        />,
+      )
+      expect(primaryOf().textContent).toBe('上架')
+      fireEvent.click(primaryOf())
+      expect(onPutOnShelf).toHaveBeenCalledTimes(1)
+
+      openMenu()
+      expect(menuLabels()).toEqual(['查看', '编辑', '删除'])
+      expect(screen.queryByRole('menuitem', { name: '下架' })).toBeNull()
     })
 
-    it('off_sale 显示：查看 编辑 上架 删除', () => {
-      const product = { ...baseProduct, status: 'off_sale' as const }
-      render(<ProductTable {...defaultProps} products={[product]} />)
-      expect(screen.getByText('查看')).toBeTruthy()
-      expect(screen.getByText('编辑')).toBeTruthy()
-      expect(screen.getByText('上架')).toBeTruthy()
-      expect(screen.getByText('删除')).toBeTruthy()
-      expect(screen.queryByText('下架')).toBeNull()
+    it('审核中：只有「查看」，没有 ⋯ 触发器（items 为空不渲染空菜单）', () => {
+      render(<ProductTable {...defaultProps} products={[{ ...baseProduct, status: 'under_review' }]} />)
+      const cell = screen.getByTestId('product-actions-p001')
+      expect(within(cell).getAllByRole('button').map((b) => b.textContent)).toEqual(['查看'])
+      expect(within(cell).queryByRole('button', { name: '更多操作' })).toBeNull()
     })
 
-    it('under_review 仅显示查看', () => {
-      const product = { ...baseProduct, status: 'under_review' as const }
-      render(<ProductTable {...defaultProps} products={[product]} />)
-      expect(screen.getByText('查看')).toBeTruthy()
-      expect(screen.queryByText('编辑')).toBeNull()
-      expect(screen.queryByText('上架')).toBeNull()
-      expect(screen.queryByText('下架')).toBeNull()
-      expect(screen.queryByText('删除')).toBeNull()
+    it('草稿：主行动「编辑」，菜单里只有「删除」', () => {
+      render(<ProductTable {...defaultProps} products={[{ ...baseProduct, status: 'draft' }]} />)
+      expect(primaryOf().textContent).toBe('编辑')
+      openMenu()
+      expect(menuLabels()).toEqual(['删除'])
     })
 
-    it('draft 显示：编辑 删除', () => {
-      const product = { ...baseProduct, status: 'draft' as const }
-      render(<ProductTable {...defaultProps} products={[product]} />)
-      expect(screen.getByText('编辑')).toBeTruthy()
-      expect(screen.getByText('删除')).toBeTruthy()
-      expect(screen.queryByText('查看')).toBeNull()
-      expect(screen.queryByText('上架')).toBeNull()
+    it('危险项红字（`danger`）；行内层级不走实心主色（§32.2）', () => {
+      render(<ProductTable {...defaultProps} />)
+      openMenu()
+      expect(screen.getByRole('menuitem', { name: '删除' }).className).toMatch(/text-red-600/)
+      // 行内主行动 = ghost：一屏至多一个 primary，那一个是页面头的「新增商品」
+      for (const b of within(screen.getByTestId('product-actions-p001')).getAllByRole('button')) {
+        expect(b.className).not.toMatch(/bg-primary-600/)
+      }
     })
   })
 
@@ -281,29 +356,32 @@ describe('ProductTable (#646 — 移除 in_warehouse)', () => {
     })
   })
 
-  describe('#1400 — 操作按钮横排 + whitespace-nowrap', () => {
-    it('操作按钮容器应有 flex items-center gap-3 whitespace-nowrap', () => {
+  describe('#1400 — 行内动作横排 + whitespace-nowrap（issue #8038 起容器 = 共享原语）', () => {
+    it('动作面容器（`ui/RowActions`）有 flex items-center gap-1 whitespace-nowrap', () => {
       render(<ProductTable {...defaultProps} />)
-      const viewBtn = screen.getByText('查看')
-      const actionContainer = viewBtn.closest('div.flex')
-      expect(actionContainer).toBeTruthy()
-      expect(actionContainer!.className).toMatch(/\bflex\b/)
-      expect(actionContainer!.className).toMatch(/\bitems-center\b/)
-      expect(actionContainer!.className).toMatch(/\bgap-3\b/)
-      expect(actionContainer!.className).toMatch(/\bwhitespace-nowrap\b/)
+      const cell = screen.getByTestId('product-actions-p001')
+      // 容器 = RowActions 的外层 div（同一行内不折行）
+      expect(cell.className).toMatch(/\bflex\b/)
+      expect(cell.className).toMatch(/\bitems-center\b/)
+      expect(cell.className).toMatch(/\bgap-1\b/)
+      expect(cell.className).toMatch(/\bwhitespace-nowrap\b/)
     })
 
-    it('操作按钮应有 text-primary-600 hover:underline 样式（匹配 ActionLink）', () => {
+    it('主行动走 `Button` ghost（行内层级不用实心主色），不再是自拼文字链', () => {
       render(<ProductTable {...defaultProps} />)
-      const viewBtn = screen.getByText('查看')
-      expect(viewBtn.className).toMatch(/\btext-primary-600\b/)
-      expect(viewBtn.className).toMatch(/\bhover:underline\b/)
+      const primary = within(screen.getByTestId('product-actions-p001')).getAllByRole('button')[0]
+      expect(primary.textContent).toBe('编辑')
+      // ghost = text-neutral-600；size="sm" = h-8（§32.2）
+      expect(primary.className).toMatch(/\btext-neutral-600\b/)
+      expect(primary.className).toMatch(/\bh-8\b/)
     })
 
-    it('删除按钮应有 text-red-500 危险样式', () => {
+    it('删除（危险动作）在菜单里是红字', () => {
       render(<ProductTable {...defaultProps} />)
-      const deleteBtn = screen.getByText('删除')
-      expect(deleteBtn.className).toMatch(/\btext-red-500\b/)
+      fireEvent.click(
+        within(screen.getByTestId('product-actions-p001')).getByRole('button', { name: '更多操作' }),
+      )
+      expect(screen.getByRole('menuitem', { name: '删除' }).className).toMatch(/\btext-red-600\b/)
     })
   })
 
