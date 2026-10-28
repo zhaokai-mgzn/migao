@@ -22,7 +22,9 @@ import Button from './Button'
  * ② `aria-haspopup="menu"` / `aria-expanded` / `role="menu"` / `role="menuitem"` ——
  *    收敛**不得**把动作藏成键盘不可达；
  * ③ `Escape` 与「点外部」都收起；滚动 / 缩放也收起（面板 `fixed` 定位，不收起就与行脱位）；
- * ④ `items` 为空 ⇒ **不渲染触发器**（不摆一个点开是空盒子的「⋯」）。
+ * ④ `items` 为空 ⇒ **不渲染触发器**（不摆一个点开是空盒子的「⋯」）；
+ * ⑤ `disabled` 项**照改前形态可见但点不动**（`title` 说清为什么，如「占用中的仓位不能删除」）——
+ *    藏起来会让人以为「本来就没这个功能」（改前的行内按钮就是 `disabled` + `title`）。
  *
  * ## 与「主行动」的分工
  *
@@ -46,6 +48,17 @@ export interface RowActionItem {
   onClick: () => void
   /** 破坏性动作（删除 / 下架…）：红字。**不改变**调用方已有的二次确认 */
   danger?: boolean
+  /**
+   * 不可用（「占用中的仓位不能删除」这类**有原因的禁用**）。
+   *
+   * 🔴 照改前形态**可见但点不动**，不是隐藏 —— 藏起来会让人以为「本来就没这个功能」
+   * （改前的行内按钮就是 `disabled` + `title` 说明为什么）。
+   */
+  disabled?: boolean
+  /** 禁用时的原因（原生 `title`，悬停可见） */
+  title?: string
+  /** 逐项 `data-testid`：既有页面的行内动作钩子（页面判据按动作取用，不必靠文案定位） */
+  testId?: string
 }
 
 export interface RowActionsProps {
@@ -142,16 +155,23 @@ export default function RowActions({
                   key={item.key}
                   type="button"
                   role="menuitem"
+                  data-testid={item.testId}
+                  disabled={item.disabled}
+                  title={item.title}
                   onClick={(e) => {
                     // 行内动作不得触发行点击（`ui/Table` 支持 `onRowClick`）
                     e.stopPropagation()
+                    // 原生 `disabled` 已挡住点击；这里再兜一道（`disabled` 被误摘也不执行）
+                    if (item.disabled) return
                     setAnchor(null)
                     item.onClick()
                   }}
                   className={
-                    item.danger
-                      ? 'flex w-full items-center px-3 py-1.5 text-left text-sm text-red-600 hover:bg-red-50'
-                      : 'flex w-full items-center px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-50'
+                    item.disabled
+                      ? 'flex w-full items-center px-3 py-1.5 text-left text-sm text-neutral-400 cursor-not-allowed'
+                      : item.danger
+                        ? 'flex w-full items-center px-3 py-1.5 text-left text-sm text-red-600 hover:bg-red-50'
+                        : 'flex w-full items-center px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-50'
                   }
                 >
                   {item.label}

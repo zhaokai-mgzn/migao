@@ -299,11 +299,18 @@ export function loadLedger() {
   return JSON.parse(readFileSync(LEDGER_PATH, 'utf8'))
 }
 
-/** 正向核：本单已收口的三面必须逐字含共享原语（防「删掉整列 ⇒ 密度 0」的假绿） */
+/**
+ * 正向核：本单已收口的**五面**必须逐字含共享原语（防「删掉整列 ⇒ 密度 0」的假绿）。
+ *
+ * 前三面 = #8038 的主面（#8011 起 orders 已是该形态）；后两面 = 本单收口的两块面板
+ * （集成侧裁定「别留无主债务」，与三页同批收口 ⇒ 同批进正向锚）。
+ */
 export const FIXED_SURFACES = [
   { name: '销售订单列表', file: 'src/components/orders/OrderTable.tsx' },
   { name: '商品列表', file: 'src/components/products/ProductTable.tsx' },
   { name: '知识库', file: 'src/app/(dashboard)/knowledge/page.tsx' },
+  { name: '工人档案面板', file: 'src/components/employees/WorkerProfilesPanel.tsx' },
+  { name: '成品仓仓位面板', file: 'src/components/stock/WarehouseLocationPanel.tsx' },
 ]
 
 export function missingFixedAnchors(root) {

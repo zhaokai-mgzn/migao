@@ -16,7 +16,8 @@
  * ③ `Escape` 收起、**点外部**收起；
  * ④ 点菜单项 ⇒ **先执行回调再收起**（顺序反了动作就丢）；
  * ⑤ `items` 为空 ⇒ **不渲染触发器**（不摆一个点开是空盒子的「⋯」）；
- * ⑥ 危险项红字（`danger`）只是观感；**二次确认仍由页面承担**（本原语不弹任何确认）。
+ * ⑥ 危险项红字（`danger`）只是观感；**二次确认仍由页面承担**（本原语不弹任何确认）；
+ * ⑦ **有原因的禁用**：`disabled` 项可见但点不动、`title` 说明原因、`testId` 供页面钩子。
  *
  * ## 注入式红证（复核用，非本文件运行时执行）
  *
@@ -122,6 +123,31 @@ describe('ui/RowActions — 「1 主行动 + ⋯ 菜单」的单一实现（issu
     expect(cell.contains(trigger())).toBe(true)
     // 实测读数：一行恰好 2 个可点元素（主行动 + 触发器）—— 类级扫描器的同一口径
     expect(screen.getAllByRole('button')).toHaveLength(2)
+  })
+
+  it('⑦ 有原因的禁用：`disabled` 项可见但点不动、`title` 说明原因、`testId` 供页面钩子', () => {
+    const onDelete = vi.fn()
+    render(
+      <RowActions
+        menuTestId="row-menu"
+        items={[
+          { key: 'delete', label: '删除', onClick: onDelete, danger: true, disabled: true, title: '占用中的仓位不能删除' },
+          { key: 'view', label: '查看', onClick: vi.fn(), testId: 'row-view' },
+        ]}
+      />,
+    )
+    fireEvent.click(trigger())
+
+    const del = screen.getByRole('menuitem', { name: '删除' }) as HTMLButtonElement
+    // 可见但点不动（禁用是**有原因**的，不是把入口藏起来）
+    expect(del.disabled).toBe(true)
+    expect(del.getAttribute('title')).toBe('占用中的仓位不能删除')
+    expect(del.className).toMatch(/text-neutral-400/)
+    fireEvent.click(del)
+    expect(onDelete).not.toHaveBeenCalled()
+
+    // 逐项 testId：页面判据按动作取用，不必靠文案定位
+    expect(screen.getByTestId('row-view')).toBeInTheDocument()
   })
 
   it('行内动作不触发行点击（`ui/Table` 支持 onRowClick，触发器与菜单项都要吞事件）', () => {

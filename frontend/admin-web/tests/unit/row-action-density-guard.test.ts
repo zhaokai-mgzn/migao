@@ -152,8 +152,8 @@ describe('类级守卫：「操作」列行内动作密度 ≤ 2（issue #8038�
     ).toEqual([])
   })
 
-  it('④ 正向锚：orders / products / knowledge 必须真用共享原语（防「删掉整列」的假绿）', () => {
-    // 三面都在册（台账以外不许有僵尸面）
+  it('④ 正向锚：已收口的五面（orders / products / knowledge / 工人档案 / 仓位面板）必须真用共享原语', () => {
+    // 五面都在扫描面内（台账以外不许有僵尸面）
     const { sites } = rowActionSites(ADMIN_WEB_ROOT)
     const keys = new Set(sites.map((s) => s.key))
     for (const f of FIXED_SURFACES) {
