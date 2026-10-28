@@ -51,7 +51,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { AlertCircle, ChevronDown, X } from 'lucide-react'
 
-import { formatDraft } from '@/components/ui/NumberInput'
+import NumberInput from '@/components/ui/NumberInput'
 // issue #7176：配置面表单的**唯一版式原语**（浅底面板 + 栅格 + 标签在上 + 单位入框）
 import FormPanel, { Field, FormGrid, fieldControl } from '@/components/ui/FormPanel'
 import { cuttingHeightApi, productionApi } from '@/lib/api'
@@ -296,16 +296,17 @@ function ItemRow({
           />
         </Field>
         <Field label="取值" unit="米" htmlFor={`ch-value-${index}`} className="w-28">
-          <input
+          {/* 🔴 必须用 `NumberInput`（issue #8003）：手写 `Number(e.target.value)` 往返会把
+              「0.」这类中间态当场归一成 0 ⇒ 小数点打不出来（取值要 3 位小数：0.015 / 0.145）。 */}
+          <NumberInput
             id={`ch-value-${index}`}
             className={fieldControl('米')}
             aria-label={`取值-${index}`}
-            value={formatDraft(item.value)}
+            value={item.value}
+            decimals={3}
             placeholder="可留空"
             title="取值留空 = 有项无值：会命中，但会显式报出「未配置取值」，不按 0 算"
-            onChange={(e) =>
-              onChange({ value: e.target.value.trim() === '' ? null : Number(e.target.value) })
-            }
+            onChange={(value) => onChange({ value })}
           />
         </Field>
         <Field label="部位" htmlFor={`ch-position-${index}`} className="w-28">
