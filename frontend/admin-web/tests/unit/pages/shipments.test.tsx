@@ -137,10 +137,10 @@ describe('发货单列表页（issue #5939 / UI-078）', () => {
     await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ keyword: undefined }))
   })
 
-  it('⑤ 空列表 ⇒「暂无发货单」；读面失败 ⇒ **失败态**（不是空态，issue #6664 第 3 条）', async () => {
+  it('⑤ 空列表 ⇒「还没有发货单」（说清它从哪来）；读面失败 ⇒ **失败态**（不是空态，issue #6664 第 3 条）', async () => {
     mockList.mockResolvedValue({ data: { data: [] } })
     const { unmount } = render(<Shipments />)
-    expect(await screen.findByText('暂无发货单')).toBeInTheDocument()
+    expect(await screen.findByText(/还没有发货单/)).toBeInTheDocument()
     // 空态不得同时说「加载失败」（两态互斥）
     expect(screen.queryByText(/加载失败/)).toBeNull()
     unmount()
@@ -149,7 +149,7 @@ describe('发货单列表页（issue #5939 / UI-078）', () => {
     mockList.mockRejectedValue(new Error('boom'))
     render(<Shipments />)
     expect(await screen.findByText(/加载失败/)).toBeInTheDocument()
-    expect(screen.queryByText('暂无发货单')).toBeNull()
+    expect(screen.queryByText(/还没有发货单/)).toBeNull()
     expect(screen.queryAllByTestId('shipment-row')).toHaveLength(0)
     expect(screen.getByRole('button', { name: /重试/ })).toBeEnabled()
   })
@@ -164,6 +164,22 @@ describe('发货单列表页（issue #5939 / UI-078）', () => {
 
     expect(await screen.findByText('FH-20261002120000-A001')).toBeInTheDocument()
     expect(screen.queryByText(/加载失败/)).toBeNull()
+  })
+
+  it('⑤c 空态分流（issue #8040）：真没有发货单 ⇒ 说清它从哪来；筛选下为空 ⇒ 说清换个条件', async () => {
+    const user = userEvent.setup()
+    mockList.mockResolvedValue({ data: { data: [] } })
+    render(<Shipments />)
+
+    // ① 真为空：说清「在订单里点发货后自动生成」，而不是一句裸「暂无发货单」
+    const trulyEmpty = await screen.findByText(/还没有发货单/)
+    expect(trulyEmpty.textContent).toContain('「发货」')
+
+    // ② 筛了关键词仍为空：改口说「换个条件」，不让商家以为一单都没发过
+    await user.type(screen.getByLabelText('搜索发货单'), 'CSO-NOT-EXIST')
+    await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ keyword: 'CSO-NOT-EXIST' }))
+    expect(await screen.findByText(/没有符合筛选条件的发货单/)).toBeInTheDocument()
+    expect(screen.queryByText(/还没有发货单/)).toBeNull()
   })
 
   it('⑥ 发货单**不再**提供补打（issue #7902：发货单这张纸整体退场，纸统一在销售订单详情出）', async () => {

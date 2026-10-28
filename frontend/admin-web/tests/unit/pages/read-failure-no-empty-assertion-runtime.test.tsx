@@ -121,7 +121,7 @@ describe('读失败后屏上不得有「没有数据」断言（运行期，issu
       render(<OrdersPage />)
       await waitFor(() => expect(mockGetOrders).toHaveBeenCalled())
 
-      expect(await screen.findByText('暂无数据')).toBeInTheDocument()
+      expect(await screen.findByText(/最近一个月还没有订单/)).toBeInTheDocument()
       expect(screenText()).toMatch(/共\s*0\s*条/)
       expect(screen.queryByTestId('orders-load-error')).not.toBeInTheDocument()
     },

@@ -349,7 +349,7 @@ export default function AfterSalesPage() {
                   <td colSpan={9} className="px-4 py-12 text-center text-neutral-400">
                     <div className="flex items-center justify-center gap-2">
                       <div className="w-4 h-4 border-2 border-neutral-300 border-t-primary-600 rounded-full animate-spin" />
-                      加载中...
+                      加载中…
                     </div>
                   </td>
                 </tr>
@@ -357,12 +357,15 @@ export default function AfterSalesPage() {
                 <tr>
                   <td colSpan={9} className="px-4 py-12 text-center text-neutral-400">
                     {loadError ? (
-                      // 失败态**不冒充**空态（issue #6703）：读不到时不说「暂无工单」
+                      // 失败态**不冒充**空态（issue #6703）：读不到时不说「没有工单」
                       <span className="text-neutral-500">工单没读到 —— 见上方失败提示</span>
                     ) : (
                       <>
                         <FileText className="w-8 h-8 mx-auto mb-2 text-neutral-300" />
-                        暂无售后工单
+                        {/* issue #8040：筛选下为空 / 真还没有工单，两句话分开说；后者说清去哪建 */}
+                        {searchParams.keyword || searchParams.status
+                          ? '没有符合筛选条件的工单 —— 换个关键词或状态再查一次'
+                          : '还没有售后工单 —— 点右上角「新建工单」登记退货、换货或维修'}
                       </>
                     )}
                   </td>

@@ -705,7 +705,7 @@ function EnterpriseDomainPanel() {
       {/* #5899：把「没有保存按钮」这件事**说出来** —— 否则商家会去找按钮 */}
       <p className="text-xs text-neutral-400 -mt-2">修改后自动保存，无需手动提交</p>
       {loadingSettings ? (
-        <div className="text-sm text-neutral-500 py-8 text-center">加载中...</div>
+        <div className="text-sm text-neutral-500 py-8 text-center">加载中…</div>
       ) : (
         <div className="space-y-6">
           <div>
@@ -869,7 +869,7 @@ function EnterpriseDomainPanel() {
               </div>
             </div>
             {loadingBriefing ? (
-              <div className="text-sm text-neutral-500 py-4 text-center">加载中...</div>
+              <div className="text-sm text-neutral-500 py-4 text-center">加载中…</div>
             ) : briefingReadError ? (
               /* 🔴 失败态 ≠ 关闭态（issue #6663）：读不到时**不画开关** ——
                  画一个「关」的开关等于告诉商家「简报没开」，而真相是「不知道」。 */
@@ -1041,7 +1041,7 @@ function AiDomainPanel() {
         </div>
       </div>
       {loadingAiConfig ? (
-        <div className="text-sm text-neutral-500 py-8 text-center">加载中...</div>
+        <div className="text-sm text-neutral-500 py-8 text-center">加载中…</div>
       ) : (
         <div className="space-y-6">
           <div>

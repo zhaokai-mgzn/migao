@@ -193,14 +193,21 @@ describe('AfterSalesPage', () => {
     expect(screen.getByText('查询')).toBeInTheDocument()
   })
 
-  it('should show empty state when no tickets', async () => {
+  it('空态分流（issue #8040）：真没有工单 ⇒ 说清去哪建；筛了状态 ⇒ 说清换个条件', async () => {
     mockGetTickets.mockResolvedValue({
       data: { data: { items: [], total: 0 } },
     })
     render(<AfterSalesPage />)
-    await waitFor(() => {
-      expect(screen.getByText('暂无售后工单')).toBeInTheDocument()
-    })
+
+    // ① 真为空：不只说「没有」，还说清下一步（去哪里建单）—— 裸「暂无售后工单」不再出现
+    const trulyEmpty = await screen.findByText(/还没有售后工单/)
+    expect(trulyEmpty.textContent, '空态要说清去哪建（「新建工单」）').toContain('新建工单')
+    expect(screen.queryByText('暂无售后工单')).toBeNull()
+
+    // ② 筛选下为空：改口说「换个条件」，不让商家以为一张工单都没有过
+    await user.click(screen.getByRole('button', { name: '待处理' }))
+    expect(await screen.findByText(/没有符合筛选条件的工单/)).toBeInTheDocument()
+    expect(screen.queryByText(/还没有售后工单/)).toBeNull()
   })
 
   it('should open create ticket modal', async () => {

@@ -185,8 +185,11 @@ export default function ShipmentsPage() {
                         重试
                       </Button>
                     </span>
+                  ) : keyword ? (
+                    // issue #8040：筛选下为空（换个条件再查）—— 与「真还没有发货单」分开说
+                    <span data-testid="shipments-empty">没有符合筛选条件的发货单 —— 换个单号或客户名再查一次</span>
                   ) : (
-                    <span data-testid="shipments-empty">暂无发货单</span>
+                    <span data-testid="shipments-empty">还没有发货单 —— 在订单里点「发货」后会自动生成一张发货单</span>
                   )}
                 </td>
               </tr>

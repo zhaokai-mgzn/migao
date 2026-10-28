@@ -446,7 +446,7 @@ export default function RolesPage() {
       ) : loading ? (
         <div className="flex items-center justify-center py-20">
           <div className="w-6 h-6 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
-          <span className="ml-2 text-neutral-500">加载中...</span>
+          <span className="ml-2 text-neutral-500">加载中…</span>
         </div>
       ) : roles.length === 0 ? (
         <div className="text-center py-20 text-neutral-500">
@@ -592,7 +592,7 @@ export default function RolesPage() {
               </button>
             </div>
           ) : workerCatalog === null ? (
-            <p className="text-xs text-neutral-400">加载中...</p>
+            <p className="text-xs text-neutral-400">加载中…</p>
           ) : (
             <>
               <p className="text-xs text-neutral-400 mb-1">

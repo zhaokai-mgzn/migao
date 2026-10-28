@@ -57,10 +57,12 @@ vi.mock('@/components/ui', async (importOriginal) => {
     // ⇒ `No "Select" export is defined on the "@/components/ui" mock`（本文件 11 条红）。
     // 摊开真值后，新增 / 换用原语不必再逐个补 mock。
     ...actual,
-    Table: ({ columns, dataSource, loading, rowKey, onRowClick }: any) => (
+    Table: ({ columns, dataSource, loading, rowKey, onRowClick, emptyText }: any) => (
       <div data-testid="data-table">
         {loading && <div data-testid="table-loading">加载中...</div>}
-        {!loading && dataSource.length === 0 && <div>暂无数据</div>}
+        {/* issue #8040：把页面传的 `emptyText` **真的**渲染出来 —— 改前这里写死「暂无数据」，
+            页面怎么改空态话术，判据都看不见（撞的正是本单要修的那句裸文案）。 */}
+        {!loading && dataSource.length === 0 && <div data-testid="table-empty">{emptyText}</div>}
         {dataSource.map((record: any) => (
           <div
             key={typeof rowKey === 'function' ? rowKey(record) : record[rowKey]}
@@ -156,6 +158,33 @@ describe('CustomersPage', () => {
       expect(screen.getByTestId('customer-1')).toBeInTheDocument()
       expect(screen.getByText('张美丽')).toBeInTheDocument()
     })
+  })
+
+  it('空态分流（issue #8040）：真没有客户 ⇒ 说清客户从哪来；筛选下为空 ⇒ 说清换个条件', async () => {
+    mockGetCustomers.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
+    render(<CustomersPage />)
+
+    // ① 真为空：说清客户怎么来的（不再是裸「暂无数据」）
+    const trulyEmpty = await screen.findByTestId('table-empty')
+    expect(trulyEmpty.textContent).toContain('还没有客户')
+    expect(trulyEmpty.textContent).toContain('自动建档')
+    expect(screen.queryByText('暂无数据')).toBeNull()
+
+    // ② 筛选下为空：改口说「换个条件」，不让商家以为一个客户都没有
+    await user.type(screen.getByPlaceholderText('客户名/手机号'), '不存在的客户')
+    await user.click(screen.getByRole('button', { name: '查询' }))
+    await waitFor(() =>
+      expect(mockGetCustomers).toHaveBeenLastCalledWith(expect.objectContaining({ keyword: '不存在的客户' })),
+    )
+    expect((await screen.findByTestId('table-empty')).textContent).toContain('没有符合筛选条件的客户')
+  })
+
+  it('标签空态说清下一步（issue #8040）：不是裸「暂无标签」', async () => {
+    mockGetCustomerTags.mockResolvedValue({ data: { data: [] } })
+    render(<CustomersPage />)
+    await user.click(screen.getByText('标签管理'))
+    expect(await screen.findByText(/还没有标签/)).toBeInTheDocument()
+    expect(screen.queryByText('暂无标签')).toBeNull()
   })
 
   it('should display customer phone numbers', async () => {

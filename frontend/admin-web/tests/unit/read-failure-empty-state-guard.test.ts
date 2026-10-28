@@ -347,29 +347,29 @@ describe('判据 ④：共享表格的 emptyText 必须接住失败读数（issu
     const opts = { file: page, failureKey: FAIL_KEY, root: ADMIN_WEB_ROOT }
     const pageKey = `${page}::EmployeesPage`
 
+    // issue #8040：空态文案改成**多行**三元（分流 + 说下一步）⇒ 注入切面按属性切，不再按整行字面量切。
+    // 非贪婪到属性闭合花括号（该表达式内部不含 `}`）⇒ 两种排版都切得准。
+    const PROP_RE = /emptyText=\{[\s\S]*?\}/
+    const PROP_LINE_RE = /[ \t]*emptyText=\{[\s\S]*?\}\n/
+
     // 对照读数：改后**本页不报**（同页那个「工人档案」面在台账里，另算 —— 见 ⑥）
     expect(tableEmptySitesFromSource(pageSrc, opts).map((s) => s.key)).not.toContain(pageKey)
 
     // 🔴 摘掉本页传给共享表的 `emptyText`（= 改前形态）⇒ 当场红，且报出**是本页哪一处**
-    const noProp = pageSrc.replace("          emptyText={loadFailed ? '' : '暂无数据'}\n", '')
+    const noProp = pageSrc.replace(PROP_LINE_RE, '')
     expect(noProp).not.toBe(pageSrc) // 注入**自证生效**（没生效时下面那条会假红在别处）
     const a = tableEmptySitesFromSource(noProp, opts).filter((s) => s.key === pageKey)
     expect(a.map((s) => s.key)).toEqual([pageKey])
     expect(a[0].emptyText).toBeNull() // 「缺席 = 继承共享默认值」
 
-    // 🔴 位子还在、但**失败读数没接进去**（恒真文案 = 失败时照样印「暂无数据」）⇒ 也红
-    const staticText = pageSrc.replace(
-      "emptyText={loadFailed ? '' : '暂无数据'}",
-      "emptyText={'暂无数据'}",
-    )
+    // 🔴 位子还在、但**失败读数没接进去**（恒真文案 = 失败时照样印空态）⇒ 也红
+    const staticText = pageSrc.replace(PROP_RE, "emptyText={'暂无数据'}")
     expect(staticText).not.toBe(pageSrc)
     expect(tableEmptySitesFromSource(staticText, opts).map((s) => s.key)).toContain(pageKey)
 
     // 🔴 `emptyText` 换成**本文件自己的局部量**（不是形参透传）⇒ 照样红（不拿「透传」当免死金牌）
-    const localVar = pageSrc.replace(
-      "emptyText={loadFailed ? '' : '暂无数据'}",
-      "emptyText={emptyTextLocal}",
-    ).replace('  // 列表状态', "  const emptyTextLocal = '暂无数据'\n  // 列表状态")
+    const localVar = pageSrc.replace(PROP_RE, 'emptyText={emptyTextLocal}')
+      .replace('  // 列表状态', "  const emptyTextLocal = '暂无数据'\n  // 列表状态")
     expect(localVar).toContain('emptyText={emptyTextLocal}')
     expect(tableEmptySitesFromSource(localVar, opts).map((s) => s.key)).toContain(pageKey)
 
@@ -396,7 +396,7 @@ describe('判据 ④：共享表格的 emptyText 必须接住失败读数（issu
     const custOpts = { file: custPage, failureKey: 'loadError', root: ADMIN_WEB_ROOT }
     const custKey = `${custPage}::CustomersPage`
     expect(tableEmptySitesFromSource(custSrc, custOpts).map((s) => s.key)).not.toContain(custKey)
-    const custNoProp = custSrc.replace("          emptyText={loadError ? '' : '暂无数据'}\n", '')
+    const custNoProp = custSrc.replace(PROP_LINE_RE, '')
     expect(custNoProp).not.toBe(custSrc)
     expect(tableEmptySitesFromSource(custNoProp, custOpts).map((s) => s.key)).toContain(custKey)
   })

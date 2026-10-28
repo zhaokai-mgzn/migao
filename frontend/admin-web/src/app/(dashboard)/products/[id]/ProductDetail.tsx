@@ -155,7 +155,7 @@ export default function ProductDetailPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loading size="lg" text="加载中..." />
+        <Loading size="lg" text="加载中…" />
       </div>
     )
   }

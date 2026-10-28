@@ -291,7 +291,7 @@ export default function StocktakesPage() {
         )}
 
         {loading ? (
-          <div className="py-10 text-center text-sm text-neutral-500">加载中...</div>
+          <div className="py-10 text-center text-sm text-neutral-500">加载中…</div>
         ) : loadError ? null : rows.length === 0 ? (
           <EmptyState
             testId="stocktakes-empty"

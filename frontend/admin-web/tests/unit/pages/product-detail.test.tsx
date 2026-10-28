@@ -159,7 +159,7 @@ describe('ProductDetailPage', () => {
 
   it('should show loading state initially', () => {
     render(<ProductDetailPage />)
-    expect(screen.getByText('加载中...')).toBeInTheDocument()
+    expect(screen.getByText('加载中…')).toBeInTheDocument()
   })
 
   it('should render product name after loading', async () => {

@@ -149,7 +149,7 @@ describe('CategoriesPage', () => {
     mockGetCategories.mockImplementation(() => new Promise(() => {}))
     render(<CategoriesPage />)
     expect(screen.getByTestId('loading')).toBeInTheDocument()
-    expect(screen.getByText('加载中...')).toBeInTheDocument()
+    expect(screen.getByText('加载中…')).toBeInTheDocument()
   })
 
   // ── Empty state ──

@@ -74,10 +74,12 @@ vi.mock('next/link', () => ({
 
 // Mock ProductTable
 vi.mock('@/components/products/ProductTable', () => ({
-  default: ({ products, loading, total, page, pageSize, onPageChange, onDelete, onSelectChange }: any) => (
+  default: ({ products, loading, total, page, pageSize, onPageChange, onDelete, onSelectChange, emptyText }: any) => (
     <div data-testid="product-table">
       {loading && <div data-testid="table-loading">加载中...</div>}
-      {!loading && products.length === 0 && <div data-testid="table-empty">暂无数据</div>}
+      {/* issue #8040：把页面传的 `emptyText` **真的**渲染出来 —— 改前这里写死「暂无数据」，
+          页面怎么改空态话术，判据都看不见。 */}
+      {!loading && products.length === 0 && <div data-testid="table-empty">{emptyText}</div>}
       {products.map((p: any) => (
         <div key={p.id} data-testid={`product-${p.id}`}>
           <span>{p.name}</span>
@@ -275,7 +277,26 @@ describe('ProductsPage', () => {
     render(<ProductsPage />)
     const emptyState = await screen.findByTestId('table-empty')
     expect(emptyState).toBeInTheDocument()
-    expect(screen.getByText('暂无数据')).toBeInTheDocument()
+    expect(screen.getByText(/还没有商品/)).toBeInTheDocument()
+  })
+
+  it('空态分流（issue #8040）：真没有商品 ⇒ 说清去哪建/导入；筛选下为空 ⇒ 说清换个条件', async () => {
+    mockGetProducts.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
+    render(<ProductsPage />)
+
+    // ① 真为空：说清去处（新建 / 导入）—— 不再是裸「暂无数据」
+    const trulyEmpty = await screen.findByTestId('table-empty')
+    expect(trulyEmpty.textContent).toContain('还没有商品')
+    expect(trulyEmpty.textContent).toContain('导入商品')
+    expect(screen.queryByText('暂无数据')).toBeNull()
+
+    // ② 筛选下为空：改口说「换个条件」，不让商家以为一件商品都没有
+    //    （选状态是**立即** syncUrl 的路径 ⇒ 不会留下 300ms 防抖计时器干扰后续用例）
+    await user.selectOptions(screen.getByRole('combobox'), 'off_sale')
+    await waitFor(() =>
+      expect(mockGetProducts).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'off_sale' })),
+    )
+    expect((await screen.findByTestId('table-empty')).textContent).toContain('没有符合筛选条件的商品')
   })
 
   it('should call API with search params', async () => {

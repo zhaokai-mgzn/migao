@@ -244,12 +244,22 @@ describe('库存明细页（issue #6404 / UI-087）', () => {
     )
   })
 
-  it('⑦ 空列表 ⇒「暂无库存流水」（不显示假数据）', async () => {
+  it('⑦ 空列表 ⇒ 说清「真还没有流水」；筛选下为空 ⇒ 说清换个条件（issue #8040）', async () => {
     mockLedger.mockResolvedValue(paged([]))
     render(<StockLedgerPage />)
 
-    expect(await screen.findByText('暂无库存流水')).toBeInTheDocument()
+    // ① 真为空：说清流水从哪来 —— 不再是裸「暂无库存流水」
+    const trulyEmpty = await screen.findByText(/还没有库存流水/)
+    expect(trulyEmpty.textContent, '空态要说清流水从哪来').toContain('入库、出库、盘点调整')
+    expect(screen.queryByText('暂无库存流水')).toBeNull()
     expect(screen.queryAllByTestId('stock-ledger-row')).toHaveLength(0)
+
+    // ② 筛了单据号 ⇒ 空态改口（不让商家以为一条流水都没有）
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('业务单据号'), 'RK-NOT-EXIST')
+    await user.click(screen.getByRole('button', { name: '查询' }))
+    expect(await screen.findByText(/没有符合筛选条件的流水/)).toBeInTheDocument()
+    expect(screen.queryByText(/还没有库存流水/)).toBeNull()
   })
 
   it('⑧ 读面失败 ⇒ 可行动话术（说清可能是权限，不是空白页）', async () => {

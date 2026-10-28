@@ -631,8 +631,8 @@ export const PENDING_AUDIT = {
     evidence: '客户信息随当前会话载荷下发（`customerInfo`），无独立读接口 ⇒ 行内缺失占位，非列表体空态。',
   },
   'finance-fund-flow-rows': {
-    observed: 'src/app/(dashboard)/finance/page.tsx 的「暂无资金流水 / 暂无数据 / 暂无对账数据」',
-    evidence: '该页已有 `finance-summary-load-error` 一族失败锚（#6703 已修），但**表体空态**与失败态是否同屏**未复核**（本包不碰 finance 面）⇒ 登记待复核单。',
+    observed: 'src/app/(dashboard)/finance/page.tsx 的表体空态（issue #8040 已改成「说清为什么空 / 换个条件」的详写文案：资金流水 / 按支付方式 / 按日趋势 / 应收对账四处）',
+    evidence: '该页已有 `finance-summary-load-error` 一族失败锚（#6703 已修）；资金流水与应收对账两处**已**按失败读数分流（`txnError` / `recError`）。issue #8040 只改话术、**不动**失败态门 ⇒ 「收支汇总两张表的空态与 `summaryError` 是否同屏」**仍未复核**（本包不碰失败态）⇒ 登记待复核单。',
   },
   'knowledge-cards': {
     observed: 'src/app/(dashboard)/knowledge/page.tsx 的「暂无知识卡片 / 暂无待确认候选 / 暂无可用模板」',
@@ -689,19 +689,21 @@ export const EMPTY_STATE_LEDGER = [
   'src/components/chat/SessionInsight.tsx::暂无待办',
   'src/components/chat/SessionInsight.tsx::本会话还没有记录',
   'src/components/chat/CustomerPanel.tsx::暂无',
-  'src/app/(dashboard)/finance/page.tsx::暂无资金流水',
-  'src/app/(dashboard)/finance/page.tsx::暂无数据',
-  'src/app/(dashboard)/finance/page.tsx::暂无对账数据',
+  // ── issue #8040 删掉的四条（台账**只许缩短**）：`/finance` 三处 + `/after-sales` 一处
+  //    已改成「说清为什么空 / 去哪建」的空态，且都落在失败读数门内 ⇒ 不再需要豁免 ──
   'src/app/(dashboard)/knowledge/page.tsx::暂无知识卡片，点击「新建知识卡片」或从行业模板一键套用',
   'src/app/(dashboard)/knowledge/page.tsx::暂无待确认候选。人工客服会话结束后将自动提炼知识；也可通过「文档提炼」从资料中提炼。',
   'src/app/(dashboard)/knowledge/page.tsx::暂无可用模板',
   'src/app/(dashboard)/orders/[id]/ship/ShipOrder.tsx::暂无商品',
-  'src/app/(dashboard)/after-sales/page.tsx::暂无售后工单',
   'src/app/(dashboard)/agent-workspace/human-sessions/page.tsx::暂无转人工会话',
 ]
 
-/** 台账冻结基线（**只许缩短**；`EMPTY_STATE_LEDGER.length > EMPTY_STATE_LEDGER_FLOOR` ⇒ 红） */
-export const EMPTY_STATE_LEDGER_FLOOR = 16
+/**
+ * 台账冻结基线（**只许缩短**；`EMPTY_STATE_LEDGER.length > EMPTY_STATE_LEDGER_FLOOR` ⇒ 红）。
+ *
+ * 现取 = **12**（issue #8040 收口后由 16 降到 12：`/finance` 三条 + `/after-sales` 一条已改好并删条目）。
+ */
+export const EMPTY_STATE_LEDGER_FLOOR = 12
 
 /** 判据 1：票据点名的读面三张表都没登记的（**未登记即红**） */
 export function unregisteredSurfaces(surfaces = READ_SURFACES, pending = PENDING_AUDIT, outOfScope = OUT_OF_SCOPE) {

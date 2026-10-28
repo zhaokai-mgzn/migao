@@ -112,7 +112,7 @@ export default function CategoriesPage() {
       <PageCard>
         {loading ? (
           <div className="py-12">
-            <Loading text="加载中..." />
+            <Loading text="加载中…" />
           </div>
         ) : categories.length === 0 ? (
           /* 空态（issue #7007，用户裁定「文案精简美化」）：**文案不与副标题逐字重复** ——

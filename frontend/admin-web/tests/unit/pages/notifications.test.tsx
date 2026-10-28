@@ -196,12 +196,34 @@ describe('NotificationsPage', () => {
     })
   })
 
-  it('shows empty state when no notifications', () => {
+  it('空态分流（issue #8040）：三个 tab 各说各的「为什么空」，业务类型筛空另说', async () => {
     mockGetNotifications.mockResolvedValue({
       data: { data: { items: [], total: 0 } },
     })
     render(<NotificationsPage />)
-    expect(screen.getByText('通知中心')).toBeInTheDocument()
+
+    // 「全部」：说清通知从哪来 —— 不再是裸「暂无通知」
+    const allEmpty = await screen.findByText(/还没有通知/)
+    expect(allEmpty.textContent).toContain('自动发到这里')
+    expect(screen.queryByText('暂无通知')).toBeNull()
+
+    // 「未读」：是「看完了」，不是「一条通知都没有」
+    fireEvent.click(screen.getByRole('button', { name: '未读' }))
+    await waitFor(() =>
+      expect(mockGetNotifications).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'sent' })),
+    )
+    expect(await screen.findByText(/没有未读通知/)).toBeInTheDocument()
+
+    // 「已读」：打开一条才会移过来
+    fireEvent.click(screen.getByRole('button', { name: '已读' }))
+    await waitFor(() =>
+      expect(mockGetNotifications).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'read' })),
+    )
+    expect(await screen.findByText(/还没有已读的通知/)).toBeInTheDocument()
+
+    // 业务类型筛空：提示改回「全部类型」（不许说成「一条通知都没有」）
+    fireEvent.change(screen.getByLabelText('按业务类型筛选'), { target: { value: 'inbound_order' } })
+    expect(await screen.findByText(/这个业务类型下还没有通知/)).toBeInTheDocument()
   })
 
   it('renders pagination when data exists', async () => {

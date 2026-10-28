@@ -512,7 +512,12 @@ export default function StockLedgerPage() {
             </table>
 
             {!loading && rows.length === 0 && !error && (
-              <p className="px-4 py-8 text-center text-sm text-neutral-400">暂无库存流水</p>
+              /* issue #8040：筛选下为空（换个条件再查）与「真还没有流水」（说清流水从哪来）分开说 */
+              <p className="px-4 py-8 text-center text-sm text-neutral-400">
+                {product || appliedRefNo
+                  ? '没有符合筛选条件的流水 —— 换个商品、批次号或单号再查一次'
+                  : '还没有库存流水 —— 入库、出库、盘点调整等每次库存变动都会在这里记一条'}
+              </p>
             )}
             {loading && <p className="px-4 py-8 text-center text-sm text-neutral-400">库存明细加载中…</p>}
           </div>

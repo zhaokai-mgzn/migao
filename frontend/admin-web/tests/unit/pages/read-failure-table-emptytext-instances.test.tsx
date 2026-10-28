@@ -99,6 +99,17 @@ const TEST_TIMEOUT = 20_000
 /** 表的**默认**空态文案（`ui/Table` 的默认值 —— 本判据断言它在失败态下**不出现**） */
 const DEFAULT_EMPTY = '暂无数据'
 
+/**
+ * issue #8040 后三页的**页面级**空态文案（本文件原本按共享默认值断言 ——
+ * 页面改成「说清为什么空 / 去哪建」的详写空态后，`暂无数据` 已不再上屏）。
+ * 判据形态不变：**失败态下这三句一条都不许出现**，成功且真为空时**必须**出现。
+ */
+const PAGE_EMPTY = {
+  employees: /还没有员工/,
+  products: /还没有商品/,
+  customers: /还没有客户/,
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   localStorage.clear()
@@ -123,6 +134,8 @@ describe('读失败时共享表格不得印「暂无数据」（issue #6728）',
 
       // 🔴 ① 改前**就是这条红**：表格继承共享默认值 ⇒ 屏上印「暂无数据」
       expect(screen.queryByText(DEFAULT_EMPTY)).not.toBeInTheDocument()
+      // issue #8040：页面级空态文案同样**不得**在失败态下出现
+      expect(screen.queryByText(PAGE_EMPTY.employees)).not.toBeInTheDocument()
     },
     TEST_TIMEOUT,
   )
@@ -140,23 +153,25 @@ describe('读失败时共享表格不得印「暂无数据」（issue #6728）',
 
       // 🔴 ① 改前**就是这条红**：`ProductTable` 没传 `emptyText` ⇒ 共享默认值上屏
       expect(screen.queryByText(DEFAULT_EMPTY)).not.toBeInTheDocument()
+      // issue #8040：页面级空态文案同样**不得**在失败态下出现
+      expect(screen.queryByText(PAGE_EMPTY.products)).not.toBeInTheDocument()
     },
     TEST_TIMEOUT,
   )
 
   it(
-    '③ 反向对照：读**成功且真为空** ⇒ 「暂无数据」照旧显示（空态不许被判红）',
+    '③ 反向对照：读**成功且真为空** ⇒ 页面空态照旧显示（空态不许被判红）',
     async () => {
       mockGetEmployees.mockResolvedValueOnce({ data: { data: { items: [], total: 0 } } })
       const e = render(<EmployeesPage />)
       // 读成功且零条 ⇒ 空态文案照旧（这是**真**「没有员工」）
-      expect(await screen.findByText(DEFAULT_EMPTY)).toBeInTheDocument()
+      expect(await screen.findByText(PAGE_EMPTY.employees)).toBeInTheDocument()
       expect(screen.queryByTestId('employees-load-failed')).not.toBeInTheDocument()
       e.unmount()
 
       mockGetProducts.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
       render(<ProductsPage />)
-      expect(await screen.findByText(DEFAULT_EMPTY)).toBeInTheDocument()
+      expect(await screen.findByText(PAGE_EMPTY.products)).toBeInTheDocument()
       expect(screen.queryByTestId('products-load-failed')).not.toBeInTheDocument()
     },
     TEST_TIMEOUT,
@@ -176,6 +191,7 @@ describe('读失败时共享表格不得印「暂无数据」（issue #6728）',
       render(<EmployeesPage />)
       expect(await screen.findByText('张三')).toBeInTheDocument()
       expect(screen.queryByText(DEFAULT_EMPTY)).not.toBeInTheDocument()
+      expect(screen.queryByText(PAGE_EMPTY.employees)).not.toBeInTheDocument()
     },
     TEST_TIMEOUT,
   )
@@ -192,12 +208,14 @@ describe('读失败时共享表格不得印「暂无数据」（issue #6728）',
       expect(screen.getByTestId('customers-load-error-retry')).toBeInTheDocument()
       // 🔴 改前：失败面在、共享表仍继承默认「暂无数据」⇒ 同屏「没读到」+「没有客户」
       expect(screen.queryByText(DEFAULT_EMPTY)).not.toBeInTheDocument()
+      // issue #8040：页面级空态文案同样**不得**在失败态下出现
+      expect(screen.queryByText(PAGE_EMPTY.customers)).not.toBeInTheDocument()
       c.unmount()
 
-      // 反向对照：读成功且真为空 ⇒ 「暂无数据」照旧
+      // 反向对照：读成功且真为空 ⇒ 页面空态照旧
       mockGetCustomers.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
       render(<CustomersPage />)
-      expect(await screen.findByText(DEFAULT_EMPTY)).toBeInTheDocument()
+      expect(await screen.findByText(PAGE_EMPTY.customers)).toBeInTheDocument()
       expect(screen.queryByTestId('customers-load-error')).not.toBeInTheDocument()
     },
     TEST_TIMEOUT,

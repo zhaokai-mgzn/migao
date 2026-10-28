@@ -204,6 +204,12 @@ export default function EmployeesPage() {
     loadEmployees()
   }, [loadEmployees])
 
+  /**
+   * 空态分流（issue #8040）：`searchKeyword` / `searchStatus` 是**已提交**的筛选值
+   * （`keyword` / `statusFilter` 是输入草稿）⇒ 用前者判「筛选下为空」。
+   */
+  const hasActiveFilter = Boolean(searchKeyword || searchStatus)
+
   // 搜索
   const handleSearch = () => {
     setCurrent(1)
@@ -609,11 +615,18 @@ export default function EmployeesPage() {
           dataSource={employees}
           loading={loading}
           rowKey="id"
-          /* 🔴 issue #6728：读失败 ⇒ 表体**不得**印「暂无数据」（那是「没有员工」的事实性断言，
+          /* 🔴 issue #6728：读失败 ⇒ 表体**不得**印空态文案（那是「没有员工」的事实性断言，
              而真相是**没读到**）。共享 `frontend/admin-web/src/components/ui/Table.tsx` 的默认
              `emptyText = '暂无数据'` 是**全站默认值**（改它会波及几十张表）⇒ 本单只在**页面级**覆盖：
-             失败时空串（失败原因由上方常驻失败面说），读成功才回落到默认「暂无数据」。 */
-          emptyText={loadFailed ? '' : '暂无数据'}
+             失败时空串（失败原因由上方常驻失败面说），读成功才印下面的空态文案。
+             issue #8040：空态**分流**（筛选下为空 / 真还没有员工）+ 说清去哪建。 */
+          emptyText={
+            loadFailed
+              ? ''
+              : hasActiveFilter
+                ? '没有符合筛选条件的员工 —— 换个姓名、岗位或状态再查一次'
+                : '还没有员工 —— 点右上角「新增员工」开始，建好后就能给员工分配岗位和登录账号'
+          }
         />
         <Pagination
           current={current}

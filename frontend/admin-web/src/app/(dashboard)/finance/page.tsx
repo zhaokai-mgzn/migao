@@ -436,9 +436,16 @@ export default function FinancePage() {
               </thead>
               <tbody className="divide-y divide-neutral-100">
                 {txnLoading ? (
-                  <tr><td colSpan={9} className="px-4 py-12 text-center text-neutral-400">加载中...</td></tr>
+                  <tr><td colSpan={9} className="px-4 py-12 text-center text-neutral-400">加载中…</td></tr>
                 ) : txns.length === 0 ? (
-                  <tr><td colSpan={9} className="px-4 py-12 text-center text-neutral-400">{txnError ? '流水没读到 —— 见上方失败提示' : '暂无资金流水'}</td></tr>
+                  /* issue #8040：筛选下为空 / 真还没有流水分开说 —— 后者说清流水从哪来 */
+                  <tr><td colSpan={9} className="px-4 py-12 text-center text-neutral-400">
+                    {txnError
+                      ? '流水没读到 —— 见上方失败提示'
+                      : txnSearch.type || txnSearch.method || txnSearch.keyword
+                        ? '这个时间范围里没有符合条件的流水 —— 换个类型、支付方式或关键词再查一次'
+                        : '这个时间范围里还没有资金流水 —— 收款、退款、费用支出都会记在这里'}
+                  </td></tr>
                 ) : (
                   txns.map((t) => (
                     <tr key={t.id} className="hover:bg-neutral-50/50 transition-colors">
@@ -496,7 +503,10 @@ export default function FinancePage() {
               </thead>
               <tbody className="divide-y divide-neutral-100">
                 {(summary?.byPaymentMethod ?? []).length === 0 ? (
-                  <tr><td colSpan={4} className="px-4 py-8 text-center text-neutral-400">暂无数据</td></tr>
+                  /* issue #8040：说清「为什么是空的」—— 有收付才有这张汇总表 */
+                  <tr><td colSpan={4} className="px-4 py-8 text-center text-neutral-400">
+                    这个时间范围里还没有收付款 —— 有收款或退款后才会按支付方式汇总
+                  </td></tr>
                 ) : (
                   (summary?.byPaymentMethod ?? []).map((m) => (
                     <tr key={m.paymentMethod} className="hover:bg-neutral-50/50">
@@ -524,7 +534,10 @@ export default function FinancePage() {
               </thead>
               <tbody className="divide-y divide-neutral-100">
                 {(summary?.dailyTrend ?? []).length === 0 ? (
-                  <tr><td colSpan={4} className="px-4 py-8 text-center text-neutral-400">暂无数据</td></tr>
+                  /* issue #8040：与「按支付方式」分开说 —— 这张表是按日汇总 */
+                  <tr><td colSpan={4} className="px-4 py-8 text-center text-neutral-400">
+                    这个时间范围里没有收支 —— 换个月份或把日期范围放宽再看看
+                  </td></tr>
                 ) : (
                   (summary?.dailyTrend ?? []).map((d) => (
                     <tr key={d.date} className="hover:bg-neutral-50/50">
@@ -595,9 +608,16 @@ export default function FinancePage() {
               </thead>
               <tbody className="divide-y divide-neutral-100">
                 {recLoading ? (
-                  <tr><td colSpan={9} className="px-4 py-12 text-center text-neutral-400">加载中...</td></tr>
+                  <tr><td colSpan={9} className="px-4 py-12 text-center text-neutral-400">加载中…</td></tr>
                 ) : visibleRecs.length === 0 ? (
-                  <tr><td colSpan={9} className="px-4 py-12 text-center text-neutral-400">{recError ? '对账数据没读到 —— 见上方失败提示' : '暂无对账数据'}</td></tr>
+                  /* issue #8040：勾了「仅看异常」时的空 ≠ 真没有可对账的订单，两句话分开说 */
+                  <tr><td colSpan={9} className="px-4 py-12 text-center text-neutral-400">
+                    {recError
+                      ? '对账数据没读到 —— 见上方失败提示'
+                      : onlyDiff
+                        ? '当前没有差额异常的订单 —— 取消「仅看异常」看全部'
+                        : '这个时间范围里没有可对账的订单 —— 把日期范围放宽再看看'}
+                  </td></tr>
                 ) : (
                   visibleRecs.map((r) => (
                     <tr key={r.orderId} className="hover:bg-neutral-50/50 transition-colors">

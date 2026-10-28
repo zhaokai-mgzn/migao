@@ -169,7 +169,7 @@ describe('EditProductPage', () => {
     mockGetProduct.mockImplementation(() => new Promise(() => {}))
     render(<EditProductPage />)
     expect(screen.getByTestId('loading')).toBeInTheDocument()
-    expect(screen.getByText('加载中...')).toBeInTheDocument()
+    expect(screen.getByText('加载中…')).toBeInTheDocument()
   })
 
   it('should show large loading spinner', () => {

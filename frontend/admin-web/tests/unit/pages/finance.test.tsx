@@ -346,6 +346,50 @@ describe('FinancePage', () => {
     expect(mockCreateTransaction).not.toHaveBeenCalled()
   })
 
+  it('空态分流（issue #8040）：资金流水真为空 ⇒ 说清从哪来；筛了条件 ⇒ 说清换个条件', async () => {
+    mockGetTransactions.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
+    render(<FinancePage />)
+
+    // ① 真为空：说清流水记什么（不再是裸「暂无资金流水」）
+    const trulyEmpty = await screen.findByText(/这个时间范围里还没有资金流水/)
+    expect(trulyEmpty.textContent).toContain('收款、退款、费用支出')
+
+    // ② 筛了关键词仍为空：改口说「换个条件」（两个「查询」都在：区间一个、筛选一个 ⇒ 点后一个）
+    await user.type(screen.getByPlaceholderText('流水号 / 订单号'), 'FIN-NOT-EXIST')
+    await user.click(screen.getAllByRole('button', { name: '查询' })[1])
+    await waitFor(() =>
+      expect(mockGetTransactions).toHaveBeenLastCalledWith(
+        expect.objectContaining({ keyword: 'FIN-NOT-EXIST' }),
+      ),
+    )
+    expect(await screen.findByText(/这个时间范围里没有符合条件的流水/)).toBeInTheDocument()
+  })
+
+  it('空态分流（issue #8040）：收支汇总两张表各自说清「为什么空」', async () => {
+    mockGetSummary.mockResolvedValue({
+      data: { data: { ...mockSummary, byPaymentMethod: [], dailyTrend: [] } },
+    })
+    render(<FinancePage />)
+    await user.click(screen.getByRole('button', { name: '收支汇总' }))
+
+    expect(await screen.findByText(/这个时间范围里还没有收付款/)).toBeInTheDocument()
+    expect(screen.getByText(/这个时间范围里没有收支/)).toBeInTheDocument()
+    expect(screen.queryByText('暂无数据')).toBeNull()
+  })
+
+  it('空态分流（issue #8040）：应收对账 —— 「仅看异常」下的空不是「没有可对账的订单」', async () => {
+    mockGetReconciliation.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
+    render(<FinancePage />)
+    await user.click(screen.getByRole('button', { name: '应收对账' }))
+
+    expect(await screen.findByText(/这个时间范围里没有可对账的订单/)).toBeInTheDocument()
+
+    // 勾「仅看异常」⇒ 空的原因换了：是「没有异常」，不是「没有可对账的订单」
+    fireEvent.click(screen.getByLabelText(/仅看异常/))
+    expect(await screen.findByText(/当前没有差额异常的订单/)).toBeInTheDocument()
+    expect(screen.queryByText(/这个时间范围里没有可对账的订单/)).toBeNull()
+  })
+
   it('金额 `0` ⇒ 显式拒绝（不是静默按 0 提交、也不是被当空吞掉）', async () => {
     await openCreateWithAmount('0')
     const { toast } = await import('sonner')
