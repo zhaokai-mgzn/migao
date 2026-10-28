@@ -257,6 +257,18 @@ describe('OrdersPage', () => {
     expect('onSelectChange' in orderTableProps.current!).toBe(false)
   })
 
+  // issue #8048：加载态 = **通用表格骨架**（#8036 已验收口径），不再是裸「加载中…」+ 空白表体
+  // （页面级三元 —— 骨架不在 OrderTable 内部渲染，组件被 mock 掉也照样能断言）。
+  it('加载中：渲染 table-skeleton，且不出现裸「加载中…」文案（#8048）', async () => {
+    // 取数挂起 ⇒ 页面停在加载态
+    mockGetOrders.mockReturnValue(new Promise(() => {}))
+    render(<OrdersPage />)
+    expect(await screen.findByTestId('table-skeleton')).toBeInTheDocument()
+    // 红证：把加载分支改回「裸文案 / 交给 OrderTable 内部 loading」⇒ 本条红
+    expect(screen.queryByText(/加载中/)).not.toBeInTheDocument()
+    expect(screen.queryByTestId('table-loading')).not.toBeInTheDocument()
+  })
+
   it('空态分流（issue #8040）：真没有订单 ⇒ 说清「近一个月」与去哪建；筛了 tab ⇒ 说清换个条件', async () => {
     mockGetOrders.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
     render(<OrdersPage />)

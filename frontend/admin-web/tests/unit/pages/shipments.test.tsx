@@ -96,6 +96,15 @@ describe('发货单列表页（issue #5939 / UI-078）', () => {
     expect(screen.queryByText(/0 卷/)).toBeNull()
   })
 
+  // issue #8048：加载态 = 通用表格骨架（#8036 口径），不再是 tbody 里的裸「加载中…」+ 空白表体。
+  it('加载中：渲染 table-skeleton，且不出现裸「加载中…」文案（#8048）', async () => {
+    mockList.mockReturnValue(new Promise(() => {}))
+    render(<Shipments />)
+    expect(await screen.findByTestId('table-skeleton')).toBeInTheDocument()
+    // 红证：把加载分支改回 tbody 里的裸「加载中…」行 ⇒ 本条红
+    expect(screen.queryByText(/加载中/)).not.toBeInTheDocument()
+  })
+
   it('② 缺值显式：未发货 ⇒「未发货」（不填时间）、发货人未采集 ⇒「-」、无明细 ⇒「无实发明细」', async () => {
     render(<Shipments />)
 

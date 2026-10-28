@@ -140,6 +140,16 @@ describe('CustomersPage', () => {
     expect(screen.getByText('标签管理')).toBeInTheDocument()
   })
 
+  // issue #8048：加载态 = 通用表格骨架（#8036 口径），不再是裸「加载中…」+ 空白表体。
+  it('加载中：渲染 table-skeleton，且不出现裸「加载中…」文案（#8048）', async () => {
+    mockGetCustomers.mockReturnValue(new Promise(() => {}))
+    render(<CustomersPage />)
+    expect(await screen.findByTestId('table-skeleton')).toBeInTheDocument()
+    // 红证：把加载分支改回交给共享 `Table` 的 loading 分支 ⇒ 本条红
+    expect(screen.queryByText(/加载中/)).not.toBeInTheDocument()
+    expect(screen.queryByTestId('table-loading')).not.toBeInTheDocument()
+  })
+
   it('should render search bar', async () => {
     render(<CustomersPage />)
     // 🔴 2026-10-16（issue #7007）改判：客户页的筛选区由 `SearchBar`（自带 state）

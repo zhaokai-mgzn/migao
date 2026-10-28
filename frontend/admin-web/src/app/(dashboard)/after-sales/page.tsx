@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Plus, Search, FileText, ExternalLink } from 'lucide-react'
 import { toast } from 'sonner'
 import { afterSalesApi, orderApi } from '@/lib/api'
-import { Pagination, Modal, Button, Badge, StatusBadge, PageHeader, PageCard, SearchPanel, SELECT_CONTROL } from '@/components/ui'
+import { Pagination, Modal, Button, Badge, StatusBadge, PageHeader, PageCard, SearchPanel, SELECT_CONTROL, TableSkeleton } from '@/components/ui'
 import type { SearchFieldSpec } from '@/components/ui'
 import type {
   AfterSalesTicket,
@@ -328,6 +328,13 @@ export default function AfterSalesPage() {
             />
           </div>
         )}
+        {/* issue #8048：加载态 = 通用表格骨架（#8036 口径：页面级三元），与 9 列对齐；
+            不再在 tbody 里印裸「加载中…」+ 空白表体。
+            🔴 只在**首次加载**（列表为空）出骨架：建单 / 查询会触发刷新，刷新时已有读数 ⇒
+            表格照旧在场（同 `quality-inspections` 的 `recordsLoading && pagedRecords.length === 0` 口径）。 */}
+        {loading && tickets.length === 0 ? (
+          <TableSkeleton rows={pageSize} columns={9} />
+        ) : (
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -344,16 +351,7 @@ export default function AfterSalesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
-              {loading ? (
-                <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center text-neutral-400">
-                    <div className="flex items-center justify-center gap-2">
-                      <div className="w-4 h-4 border-2 border-neutral-300 border-t-primary-600 rounded-full animate-spin" />
-                      加载中…
-                    </div>
-                  </td>
-                </tr>
-              ) : tickets.length === 0 ? (
+              {tickets.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="px-4 py-12 text-center text-neutral-400">
                     {loadError ? (
@@ -429,6 +427,7 @@ export default function AfterSalesPage() {
             </tbody>
           </table>
         </div>
+        )}
 
         {/* 分页 */}
         <Pagination

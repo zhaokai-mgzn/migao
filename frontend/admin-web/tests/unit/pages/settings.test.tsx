@@ -354,6 +354,17 @@ describe('判据 1：配置主线（G1 / §4 P1）—— 一屏只有一个就�
     fireEvent.click(screen.getByTestId('config-readiness-toggle'))
     expect(screen.getByTestId('readiness-state-fee-combinations')).toHaveTextContent('读不到')
     expect(screen.queryAllByText('待配置')).toHaveLength(0)
+
+    // issue #8049：读失败还要有**常驻失败锚 + 真重发出口** —— 只把步骤画成「读不到」时，
+    // headline 说「刷新可重试」而页面上**没有任何刷新入口**（这句承诺没有可点的对象）。
+    expect(screen.getByTestId('config-readiness-load-error')).toBeInTheDocument()
+    mockGetFeeGaps.mockResolvedValue(ok({ unpriced_combination_total: 0 }))
+    fireEvent.click(screen.getByTestId('config-readiness-load-error-retry'))
+    await waitFor(() =>
+      expect(screen.getByTestId('config-readiness-headline')).toHaveTextContent('配置已完成 5/5'),
+    )
+    // 读面恢复 ⇒ 失败锚退场（常驻面不残留）
+    expect(screen.queryByTestId('config-readiness-load-error')).toBeNull()
   })
 })
 

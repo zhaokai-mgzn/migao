@@ -412,11 +412,14 @@ describe('销售订单列表 · 选择列已移除（issue #8052）', () => {
   })
 
   it('② 列数 = 14，加载态 / 空态的 colSpan 一并收敛（列数变了 colSpan 没跟上 = 表格错位）', async () => {
-    // 加载态：读面挂起 ⇒ 表体只有「加载中…」那一个整行格
+    // 加载态：issue #8048 起是**通用表格骨架**（页面级三元），此时根本没有 <table>
+    // ⇒ 列数一致性改为在**骨架**上量：首行占位格必须同样 14 个，否则「骨架比真实列多」的错位又回来了
     api.getOrders.mockReturnValue(new Promise(() => {}))
     const loading = renderPage()
-    expect(document.querySelectorAll('table thead th')).toHaveLength(14)
-    expect(document.querySelector('table tbody td')!.getAttribute('colspan')).toBe('14')
+    const skeleton = await screen.findByTestId('table-skeleton')
+    expect(document.querySelector('table')).toBeNull()
+    const firstRow = skeleton.querySelectorAll('[data-testid="table-skeleton-row"]')[0]
+    expect(firstRow.querySelectorAll('div')).toHaveLength(14)
     loading.unmount()
 
     // 空态：同样必须 14（改前这里是 15 —— 那正是「骨架/占位比真实列数多」的错位形态）

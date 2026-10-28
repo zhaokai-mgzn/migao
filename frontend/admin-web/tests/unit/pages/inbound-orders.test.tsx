@@ -148,6 +148,15 @@ describe('入库单页面（PR-037 / issue #5034）', () => {
     expect(mockList).toHaveBeenCalledWith({ keyword: undefined, status: '', bizCategory: 'fabric' })
   })
 
+  // issue #8048：加载态 = 通用表格骨架（#8036 口径），不再是 tbody 里的裸「加载中…」+ 空白表体。
+  it('加载中：渲染 table-skeleton，且不出现裸「加载中…」文案（#8048）', async () => {
+    mockList.mockReturnValue(new Promise(() => {}))
+    render(<InboundOrdersPage />)
+    expect(await screen.findByTestId('table-skeleton')).toBeInTheDocument()
+    // 红证：把加载分支改回 tbody 里的裸「加载中…」行 ⇒ 本条红
+    expect(screen.queryByText(/加载中/)).not.toBeInTheDocument()
+  })
+
   it('「新建入库单」**导航**到独立整页 /inbound-orders/new（issue #5844：不再是弹窗）', async () => {
     render(<InboundOrdersPage />)
     await screen.findByText('RK-20260923-0001')

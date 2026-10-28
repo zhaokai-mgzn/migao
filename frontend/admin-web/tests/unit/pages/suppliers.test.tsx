@@ -87,6 +87,15 @@ describe('供应商档案页', () => {
     expect(screen.getByTestId('supplier-terms-sup-2')).toHaveTextContent('现结')
   })
 
+  // issue #8048：加载态 = 通用表格骨架（#8036 口径），不再是裸「加载中…」+ 空白表体。
+  it('加载中：渲染 table-skeleton，且不出现裸「加载中…」文案（#8048）', async () => {
+    mockList.mockReturnValue(new Promise(() => {}))
+    render(<SuppliersPage />)
+    expect(await screen.findByTestId('table-skeleton')).toBeInTheDocument()
+    // 红证：把加载分支改回裸「加载中…」div ⇒ 本条红
+    expect(screen.queryByText(/加载中/)).not.toBeInTheDocument()
+  })
+
   it('账期展示口径：未设置 / 现结 / N 天 三态可分', () => {
     expect(paymentTermsLabel(null)).toBe('未设置')
     expect(paymentTermsLabel(undefined)).toBe('未设置')
