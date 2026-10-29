@@ -24,7 +24,10 @@
 //    两者都判不出 ⇒ 不印（不猜）；
 // ⑤ **份数 = 开数**（`washLabelCopies`）：1/2/3/4、表外 N、缺值/非法值 ⇒ 1；
 // ⑥ `toWashLabelInputs`：码 = `scan_url ?? part_token`、按 `itemId` 对齐快照行、**按开数展开 N 条**、
-//    0 部位 ⇒ 空数组（不造占位）。
+//    0 部位 ⇒ 空数组（不造占位）；
+// ⑦ **张序 = 每套连续**（issue #8074，用户 2026-10-29 逐字「每套连续排版，不要拆开」）：
+//    `washLabelSheets` 按套聚合 —— 每套先常规唛（部位序 × 开数）、再本套专属唛；套间不交叉。
+//    改前 = 全部常规唛在前、全部专属唛追加在最后（多套时同套的纸被拆到两处）。
 import { describe, expect, it } from 'vitest'
 import {
   WASH_LABEL_ROW_KEYS,
@@ -521,18 +524,96 @@ describe('专属唛 —— 余料带回 / 绑带 每套一张（issue #8002）',
     expect(plain.every((sheet) => sheet.optionLabel === null)).toBe(true)
   })
 
-  it('一套一张：两套各自出自己那一张（套序 / 类别各自独立）', () => {
+  it('一套一张：两套各自出自己那一张（套序 / 类别各自独立，且**每套连续**——issue #8074）', () => {
     const sheets = washLabelSheets({
       positions: twoPositions,
       items: [optionItem(['余料带回-布']), { itemId: 'item-2', openCount: 1, specialOptions: ['纱绑带'] } as unknown as ProcessingOrderItem],
     })
     // 常规 = 双开 2 + 单开 1；专属 = 第 1 套的余料 + 第 2 套的绑带
     expect(sheets).toHaveLength(5)
-    expect(sheets.map((sheet) => sheet.optionLabel)).toEqual([null, null, null, '余料带回', '绑带'])
-    expect(sheets[3].setNo).toBe(1)
-    expect(sheets[4].setNo).toBe(2)
-    expect(sheets[3].qrValue).toBe(POSITION.scan_url)
+    // 🔴 用户 2026-10-29「每套连续排版，不要拆开」：第 1 套常规 2 张 → 第 1 套专属 1 张
+    // → 第 2 套常规 1 张 → 第 2 套专属 1 张（改前 = 全部常规在前、专属整体追加到最后）
+    expect(sheets.map((sheet) => sheet.optionLabel)).toEqual([null, null, '余料带回', null, '绑带'])
+    expect(sheets.map((sheet) => sheet.setNo)).toEqual([1, 1, 1, 2, 2])
+    expect(sheets[2].qrValue).toBe(POSITION.scan_url)
     expect(sheets[4].qrValue).toBe(twoPositions[1].scan_url)
+  })
+
+  it('🔴 多套交叉入参 ⇒ 出纸仍「每套连续」（issue #8074）', () => {
+    // 真实读面顺序：后端 `listOperations` 按 `position_name` 升序 ⇒ 多套同商品同色号时
+    // 「第 1 套布 / 第 2 套布 / 第 1 套纱 / 第 2 套纱」交叉进来。
+    const crossed = [
+      { ...POSITION, order_item_id: 'item-1', set_no: `${PROCESSING_ORDER_NO}-001`, scan_url: 'scan-1-bu' },
+      { ...POSITION, order_item_id: 'item-2', set_no: `${PROCESSING_ORDER_NO}-002`, scan_url: 'scan-2-bu' },
+      { ...POSITION, order_item_id: 'item-3', set_no: `${PROCESSING_ORDER_NO}-001`, scan_url: 'scan-1-sha' },
+      { ...POSITION, order_item_id: 'item-4', set_no: `${PROCESSING_ORDER_NO}-002`, scan_url: 'scan-2-sha' },
+    ] as ProductionPosition[]
+    const sheets = washLabelSheets({
+      positions: crossed,
+      items: [
+        { itemId: 'item-1', openCount: 2, specialOptions: ['余料带回-布'] },
+        { itemId: 'item-2', openCount: 1, specialOptions: [] },
+        { itemId: 'item-3', openCount: 1, specialOptions: [] },
+        { itemId: 'item-4', openCount: 1, specialOptions: ['纱绑带'] },
+      ] as unknown as ProcessingOrderItem[],
+    })
+    // 第 1 套：布 ×2 → 纱 ×1 → 余料 ×1；第 2 套：布 ×1 → 纱 ×1 → 绑带 ×1
+    expect(sheets).toHaveLength(7)
+    expect(sheets.map((sheet) => sheet.setNo)).toEqual([1, 1, 1, 1, 2, 2, 2])
+    expect(sheets.map((sheet) => sheet.qrValue)).toEqual([
+      'scan-1-bu',
+      'scan-1-bu',
+      'scan-1-sha',
+      'scan-1-bu',
+      'scan-2-bu',
+      'scan-2-sha',
+      'scan-2-sha',
+    ])
+    expect(sheets.map((sheet) => sheet.optionLabel)).toEqual([
+      null,
+      null,
+      null,
+      '余料带回',
+      null,
+      null,
+      '绑带',
+    ])
+  })
+
+  it('🔴 不变量（类级）：**任意部位入参顺序** ⇒ 出纸的套序单调不降、每套是连续段（issue #8074）', () => {
+    // 交叉入参只是**一种**顺序；读面顺序会随 `position_name` / 数据漂移 ⇒ 用全排列钉住「与入参顺序无关」。
+    const base = [
+      { ...POSITION, order_item_id: 'item-1', set_no: `${PROCESSING_ORDER_NO}-001`, scan_url: 'scan-1-bu' },
+      { ...POSITION, order_item_id: 'item-2', set_no: `${PROCESSING_ORDER_NO}-002`, scan_url: 'scan-2-bu' },
+      { ...POSITION, order_item_id: 'item-3', set_no: `${PROCESSING_ORDER_NO}-001`, scan_url: 'scan-1-sha' },
+      { ...POSITION, order_item_id: 'item-4', set_no: `${PROCESSING_ORDER_NO}-002`, scan_url: 'scan-2-sha' },
+    ] as ProductionPosition[]
+    const itemList = [
+      { itemId: 'item-1', openCount: 2, specialOptions: ['余料带回-布'] },
+      { itemId: 'item-2', openCount: 1, specialOptions: [] },
+      { itemId: 'item-3', openCount: 1, specialOptions: [] },
+      { itemId: 'item-4', openCount: 1, specialOptions: ['纱绑带'] },
+    ] as unknown as ProcessingOrderItem[]
+    const permutations = (list: ProductionPosition[]): ProductionPosition[][] =>
+      list.length <= 1
+        ? [list]
+        : list.flatMap((head, index) =>
+            permutations([...list.slice(0, index), ...list.slice(index + 1)]).map((rest) => [head, ...rest]),
+          )
+    let checked = 0
+    for (const positions of permutations(base)) {
+      const setNos = washLabelSheets({ positions, items: itemList }).map((sheet) => sheet.setNo)
+      expect(setNos).toHaveLength(7)
+      // ① 套序单调不降：第 N 套的纸不得出现在第 N+1 套之后
+      expect(setNos).toEqual([...setNos].sort((a, b) => a - b))
+      // ② 每个套号占的下标集合必须是**连续段**（= 每套的纸不拆开）
+      for (const setNo of new Set(setNos)) {
+        const indices = setNos.map((value, index) => (value === setNo ? index : -1)).filter((index) => index >= 0)
+        expect(indices[indices.length - 1] - indices[0] + 1).toBe(indices.length)
+      }
+      checked += 1
+    }
+    expect(checked).toBe(24)
   })
 
   it('直连通道同样含专属唛（与系统打印同源）：条数 / 副标题 / 行清单一致', () => {

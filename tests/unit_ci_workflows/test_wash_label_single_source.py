@@ -35,6 +35,7 @@
 | SS4 | 真值模块**真的产出**全部前缀（**反空跑锚点**：防止「删掉别处的词」被当成「改完了」） | 清空真值模块里的前缀 ⇒ 必红 |
 | SS5 | **注入式红证**：上面三种坏形态在内存里各自判红，且**内容指纹自证**（禁 mtime/size，issue #4260） | 注入未生效 ⇒ 必红 |
 | SS6 | **反向对照**：注释里**提及**这些词不得判红（沿革要写得清，`migao-dev-flow` §2.2「引用即实例」） | 注释里加一句沿革 ⇒ **不**红 |
+| SS8 | **张序 / 每套连续只许在真值模块里决定**（issue #8074）：渲染器不得自己调 `groupBySet(` 重排 / 分组出纸清单；真值模块必须真有该调用（反空跑锚点） | 在 `TaskCardPrint.tsx` 里加一句 `groupBySet([])` ⇒ 必红 |
 
 🔴 **本守卫只扫这三份源码**：测试与文档里出现这些词是**在描述口径**，不在射程。
 
@@ -48,6 +49,12 @@
 🔴 **issue #8002 起口径再收窄**：份数 / 张数 / 张序（含「专属唛 = 每套每类别 1 张」）全部由
 `washLabelSheets` 派生 ⇒ 系统打印渲染器必须调用它（不再自己按开数展开），直连通道也经它展开；
 `washLabelCopies(` 与 `openCount` 这个键**只许**出现在内容真值模块里（自己读一遍开数 = 第二份映射）。
+
+🔴 **issue #8074 再补一条 SS8**：用户 2026-10-29 逐字「当订单多套时，且选择了余料带回/布绑带，
+打印的水洗唛排版顺序不对，每套连续排版，不要拆开」⇒ **张序（按套聚合、每套连续）也只许在内容模块里决定**：
+渲染器若自己调 `groupBySet(` 重排 / 分组出纸清单，就是第二份套序口径（系统打印排一套、直连通道另排一套，
+而两条通道的 fixture 各自成立 ⇒ 没有任何行为判据会同时看见）。行为面的「任意入参顺序 ⇒ 套序单调不降 +
+每套连续段」不变量在 `frontend/admin-web/tests/unit/lib/wash-label-content.test.ts`。
 """
 from __future__ import annotations
 
@@ -197,11 +204,28 @@ def _problems(sources: dict[str, str]) -> list[str]:
             "真值模块不再产出它们（判据 3 的「别处没有」就退化成空断言）"
         )
 
+    # SS8（issue #8074）：**张序 / 每套连续**只许在内容模块里决定
+    #   （用户 2026-10-29 逐字「当订单多套时…每套连续排版，不要拆开」）
+    #   - 真值模块必须调用 `groupBySet(`：套序 / 每套连续的判定点，缺了它本判据退化成空断言；
+    #   - 两个渲染器**不得**自己调 `groupBySet(` 重排 / 分组出纸清单 —— 那是第二份套序口径，
+    #     正是「系统打印自己排一套、直连通道另排一套」的入口（#6656 同族的接线病）。
+    if "groupBySet(" not in code_face(content):
+        problems.append(
+            f"SS8 `{CONTENT_MODULE}` 没有调用 `groupBySet(` —— 套序 / 每套连续的判定点缺席"
+            "（出纸张序退回按部位平铺 ⇒ 多套被拆开，issue #8074）"
+        )
+    for rel, source in ((CSS_RENDERER, css), (BITMAP_RENDERER, bitmap)):
+        if "groupBySet(" in code_face(source):
+            problems.append(
+                f"SS8 {rel} 自己调 `groupBySet(` 重排 / 分组出纸清单 —— "
+                f"张序（每套连续）只许由 `{CONTENT_MODULE}` 的 `{SHEET_BUILDER}` 决定（issue #8074）"
+            )
+
     return problems
 
 
 def test_renderers_read_the_single_content_truth():
-    """SS1~SS4：两个渲染器都读唯一真值模块，且不自己拼纸面行前缀。"""
+    """SS1~SS4 / SS7 / SS8：两个渲染器都读唯一真值模块，且不自己拼纸面行前缀 / 不另排张序。"""
     sources = {rel: _read(rel) for rel in _MANAGED}
     problems = _problems(sources)
     assert problems == [], "\n".join(problems)
@@ -259,6 +283,15 @@ def test_injection_turns_red_with_attribution():
     broken[CSS_RENDERER] = broken[CSS_RENDERER].replace("washLabelSheets(", "washLabelRows(")
     assert _fingerprint(broken[CSS_RENDERER]) != baseline[CSS_RENDERER], "注入 ⑤ 未生效"
     assert any("SS7" in p for p in _problems(broken)), "不读共享出纸清单却没判红 ⇒ SS7 是空断言"
+
+    # ⑥ SS8（issue #8074）：系统打印渲染器自己调 `groupBySet(` 重排出纸清单 ⇒ 必红（第二份套序口径）
+    broken = dict(sources)
+    broken[CSS_RENDERER] = broken[CSS_RENDERER].replace(
+        "export default function TaskCardPrint({",
+        "const legacySetOrder = groupBySet([]) // 注入：渲染器里另排一套套序\nexport default function TaskCardPrint({",
+    )
+    assert _fingerprint(broken[CSS_RENDERER]) != baseline[CSS_RENDERER], "注入 ⑥ 未生效"
+    assert any("SS8" in p for p in _problems(broken)), "渲染器自己排套序却没判红 ⇒ SS8 是空断言"
 
 
 def test_comment_mention_is_not_a_violation():
