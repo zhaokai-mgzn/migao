@@ -208,31 +208,30 @@ describe('「常用（收藏）」：权限与有效性过滤（🔴 不得成�
     expect(menuOrder.indexOf('orders')).toBeLessThan(menuOrder.indexOf('finance'))
   })
 
-  it('🔴 一级项**不进「常用」**（#5877）：钉过 `products` / 最前席位 `dashboard` 都解析为空 ⇒ 不出现重复入口', () => {
-    // 前提（面非空自证）：products 确实是一级项（尾席位）、且**不在**任何组内
-    expect(standaloneTopItems.map((i) => i.key)).toContain('products')
-    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).not.toContain('products')
+  it('🔴 一级项**不进「常用」**（#5877）：钉过最前席位 `dashboard` / 尾席位 `settings` 都解析为空 ⇒ 不出现重复入口', () => {
+    // 🔴 2026-10-29（issue #8086）：`products` 已降入「基础资料」组（**可收藏**）⇒ 样本改为两个席位项
+    expect(standaloneTopItems.map((i) => i.key)).toEqual(['settings'])
+    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).not.toContain('settings')
     // 🔴 2026-10-17（issue #7087）：最前席位（「经营看板」）是**第三个席位** ⇒ 同一条口径同样适用
-    //（它也没有星标：见 Sidebar.test.tsx 的 `sidebar-standalone-head` 渲染面判据）
     expect(standaloneHeadItems.map((i) => i.key)).toEqual(['dashboard', 'reports'])
     expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).not.toContain('dashboard')
     // 一级项没星标、也不进「常用」⇒ 解析为空（**不是**「找不到就静默跳过」的假绿：见下一行对照）
-    expect(resolvePinnedItems(menuGroups, standaloneItems, ['products'], ADMIN)).toEqual([])
-    expect(pinnedGroup(menuGroups, standaloneItems, ['products'], ADMIN)).toBeNull()
+    expect(resolvePinnedItems(menuGroups, standaloneItems, ['settings'], ADMIN)).toEqual([])
+    expect(pinnedGroup(menuGroups, standaloneItems, ['settings'], ADMIN)).toBeNull()
     expect(resolvePinnedItems(menuGroups, standaloneItems, ['dashboard'], ADMIN)).toEqual([])
     expect(pinnedGroup(menuGroups, standaloneItems, ['dashboard'], ADMIN)).toBeNull()
-    // 对照：同一次调用里，组内项照旧解析得出来（说明函数本身没坏）
+    // 对照：同一次调用里，组内项（含 #8086 起进组的 products）照旧解析得出来
     expect(resolvePinnedItems(menuGroups, standaloneItems, ['orders'], ADMIN).map((i) => i.key)).toEqual(['orders'])
+    expect(resolvePinnedItems(menuGroups, standaloneItems, ['products'], ADMIN).map((i) => i.key)).toEqual(['products'])
     // 对照：尾部独立项（通知中心）**仍可**收藏（它仍是普通项、带星标）
     expect(resolvePinnedItems(menuGroups, standaloneItems, ['notifications'], ADMIN).map((i) => i.key)).toEqual(
       ['notifications'],
     )
   })
-
-  it('🔴 localStorage 里残留的 `products`（旧版本用户数据）⇒ 静默丢弃，不抛错、不留死链', () => {
-    window.localStorage.setItem('migao.sidebar.pinned.v1', JSON.stringify(['products', 'orders']))
+  it('🔴 localStorage 里残留的 `dashboard`（最前席位，旧版本用户数据）⇒ 静默丢弃，不抛错、不留死链', () => {
+    window.localStorage.setItem('migao.sidebar.pinned.v1', JSON.stringify(['dashboard', 'orders']))
     expect(() => loadPinned()).not.toThrow()
-    expect(loadPinned()).toEqual(['products', 'orders'])
+    expect(loadPinned()).toEqual(['dashboard', 'orders'])
     expect(resolvePinnedItems(menuGroups, standaloneItems, loadPinned(), ADMIN).map((i) => i.key)).toEqual(['orders'])
   })
 })

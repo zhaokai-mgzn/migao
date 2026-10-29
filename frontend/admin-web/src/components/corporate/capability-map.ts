@@ -97,12 +97,7 @@ export const capabilityDomains: CapabilityDomain[] = [
         detail: '人工坐席工作台：会话列表（待接待 / 接待中 / 已结束 / 已转接）+ 对话区 + 回复。',
         icon: Headphones,
       },
-      {
-        name: '客户列表',
-        detail: '客户档案、来源渠道、VIP 等级与标签；手机号默认脱敏展示。',
-        icon: UserCircle,
-      },
-      {
+            {
         name: '知识库',
         detail: '知识卡片有草稿 / 待审核 / 已发布 / 已归档四态，只有已发布的卡片会被 AI 检索到。',
         icon: BookOpen,
@@ -115,18 +110,42 @@ export const capabilityDomains: CapabilityDomain[] = [
     ],
   },
   {
+    key: 'basic-data',
+    name: '基础资料',
+    summary: '所有动线共用的档案与条件：商品、客户、供应商、价格。',
+    items: [
+      {
+          name: '商品管理',
+          detail:
+            '状态四态（出售中 / 已下架 / 审核中 / 草稿）、多规格 SKU、Excel 批量导入导出与商品分类树。',
+          icon: Package,
+        },
+      {
+              name: '客户列表',
+              detail: '客户档案、来源渠道、VIP 等级与标签；手机号默认脱敏展示。',
+              icon: UserCircle,
+            },
+      {
+              name: '供应商',
+              detail:
+                '谁在供货、账期几天、停没停：名称 / 联系人 / 电话 / 账期（未设置、现结、N 天）/ 在用或停用，一处维护。',
+              icon: Handshake,
+            },
+      {
+              // issue #7375：价格本是交易的前置配置（先定价，才谈得上开单与收款）。
+              name: '价格本',
+              detail:
+                '商品对客户、等级、数量各自可以有价：协议价优先于等级价，等级价优先于阶梯价；价格必须大于 0，低于成本的改价要先走审批。',
+              icon: Tags,
+            },
+    ],
+  },
+  {
     key: 'trade-center',
     name: '交易管理',
     summary: '先定价，再下单，最后对账。',
     items: [
-      {
-        // issue #7375：价格本是交易的前置配置（先定价，才谈得上开单与收款）。
-        name: '价格本',
-        detail:
-          '商品对客户、等级、数量各自可以有价：协议价优先于等级价，等级价优先于阶梯价；价格必须大于 0，低于成本的改价要先走审批。',
-        icon: Tags,
-      },
-      {
+            {
         name: '销售订单',
         detail: '按订单号 / 收货人 / 下单时间 / 商品编码 / 是否含加工多维检索，支持备注、关闭与发货。',
         icon: ClipboardList,
@@ -158,16 +177,23 @@ export const capabilityDomains: CapabilityDomain[] = [
         detail: '按人 / 工序 / 部位 / 套四档下钻；返工与报废不计件，系统会自动排除。',
         icon: Coins,
       },
+                ],
+  },
+  {
+    key: 'quality',
+    name: '质量',
+    summary: '做出来的活合不合格、不合格怎么补。',
+    items: [
       {
-        name: '质检记录',
-        detail: '待检成品帘清单（未检 / 合格 / 返工 / 报废）+ 三态判定录入与质检流水；作业单明细内也能直接判定，不合格必须写原因。',
-        icon: ClipboardCheck,
-      },
+              name: '质检记录',
+              detail: '待检成品帘清单（未检 / 合格 / 返工 / 报废）+ 三态判定录入与质检流水；作业单明细内也能直接判定，不合格必须写原因。',
+              icon: ClipboardCheck,
+            },
       {
-        name: '返工单',
-        detail: '售后判定要返工的活在这里开返工单并跟到完工；完工后售后状态才跟着推进，同一售后单同时只能有未完结返工单。',
-        icon: Wrench,
-      },
+              name: '返工单',
+              detail: '售后判定要返工的活在这里开返工单并跟到完工；完工后售后状态才跟着推进，同一售后单同时只能有未完结返工单。',
+              icon: Wrench,
+            },
     ],
   },
   {
@@ -175,13 +201,7 @@ export const capabilityDomains: CapabilityDomain[] = [
     name: '供应链',
     summary: '从谁家进的货、买了什么、什么时候到，上下游看全。',
     items: [
-      {
-        name: '供应商',
-        detail:
-          '谁在供货、账期几天、停没停：名称 / 联系人 / 电话 / 账期（未设置、现结、N 天）/ 在用或停用，一处维护。',
-        icon: Handshake,
-      },
-      {
+            {
         name: '采购单',
         detail:
           '采购登记、分次到货、关闭都在同一处：采购单下可分几次收货，已收和未收按收货记录实时算；到不齐或断货就关闭并写原因，单据不删除、原因留着备查。',
@@ -257,13 +277,7 @@ export const capabilityDomains: CapabilityDomain[] = [
 
 /** 不在 6 组内的独立入口（`config/menu.ts` 的 `standaloneTopItems` / `standaloneItems`） */
 export const standaloneEntries: CapabilityItem[] = [
-  {
-    name: '商品管理',
-    detail:
-      '状态四态（出售中 / 已下架 / 审核中 / 草稿）、多规格 SKU、Excel 批量导入导出与商品分类树。',
-    icon: Package,
-  },
-  {
+    {
     // 🔴 issue #6580：本席位原为「参数总览」—— 该一级项已撤掉（内容回到 `/settings`
     // 页内的配置域），改由**由组织管理组升为一级项**的「企业基础设置」占位（原名「企业基础信息」）。
     // ⚠️ 本文件属「官网源码」⇒ 不得写无出处的年份/时间陈述（`corporate-home.test.tsx` 会判红），

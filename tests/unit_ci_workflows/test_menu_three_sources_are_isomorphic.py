@@ -718,7 +718,9 @@ def _inject_auth_swap_items(src: str) -> str:
     售后工单已移入客户服务组，那两个 add 不再同组（交换它们只会变成组层/归属漂移，
     验不到「**组内顺序**」这一条）。锚点随之改为客户服务组内相邻的两项。
     """
-    a = 'customerServiceChildren.add(menuItem("customers", "客户列表", "/customers"));'
+    # 🔴 2026-10-29（issue #8086）：客户列表已移入「基础资料」组 ⇒ 锚点改为客户服务组内相邻的
+    # 「知识库 ↔ 售后工单」（仍是同组内两项，验的还是「组内顺序」这一条）。
+    a = 'customerServiceChildren.add(menuItem("after-sales", "售后工单", "/after-sales"));'
     b = 'customerServiceChildren.add(menuItem("knowledge", "知识库", "/knowledge"));'
     assert a in src and b in src, "注入锚点失配：`AuthService` 客户服务组的两个 add 语句找不到"
     return src.replace(a, "@@TMP@@", 1).replace(b, a, 1).replace("@@TMP@@", b, 1)
@@ -742,9 +744,11 @@ def _inject_controller_top_item_renamed(src: str) -> str:
     anchor = "        return List.of(\n"
     assert anchor in src, "注入锚点失配：`MenuController` 找不到 `return List.of(` 行"
     head, tail = src.split(anchor, 1)
-    inner = 'new MenuNode("product:list", "商品管理")'
-    assert inner in tail, "注入锚点失配：`MenuController` 顶层 List.of 里找不到「商品管理」条目"
-    tail = re.sub(re.escape(inner) + r",?", 'new MenuNode("product:list", "商品管理X"),', tail, count=1)
+    # 🔴 2026-10-29（issue #8086）：商品管理已进「基础资料」组（不再是顶层内联条目）
+    # ⇒ 锚点改为仍在尾席位的「企业基础设置」。
+    inner = 'new MenuNode("production:view", "企业基础设置")'
+    assert inner in tail, "注入锚点失配：`MenuController` 顶层 List.of 里找不到「企业基础设置」条目"
+    tail = re.sub(re.escape(inner) + r",?", 'new MenuNode("production:view", "企业基础设置X"),', tail, count=1)
     return head + anchor + tail
 
 
@@ -772,8 +776,9 @@ def _inject_controller_top_item_moved_to_front(src: str) -> str:
     anchor = "        return List.of(\n"
     assert anchor in src, "注入锚点失配：`MenuController` 找不到 `return List.of(` 行"
     head, tail = src.split(anchor, 1)
-    entry = 'new MenuNode("product:list", "商品管理")'
-    assert entry in tail, "注入锚点失配：`MenuController` 顶层 List.of 里找不到「商品管理」条目"
+    # 🔴 2026-10-29（issue #8086）：商品管理已进组 ⇒ 用仍在尾席位的「企业基础设置」当锚点。
+    entry = 'new MenuNode("production:view", "企业基础设置")'
+    assert entry in tail, "注入锚点失配：`MenuController` 顶层 List.of 里找不到「企业基础设置」条目"
     tail = re.sub(re.escape(entry) + r",?\n", "", tail, count=1)
     return head + anchor + '            ' + entry + ",\n" + tail
 
@@ -795,29 +800,29 @@ def _inject_front_slot_constant(src: str) -> str:
 
 
 #: `AuthService` 里一级项的那一段（`if` + `add`）—— 三个位置注入共用同一段原文
-_AUTH_PRODUCTS_BLOCK = (
-    '        if (isAll || permissions.contains("product:list")) {\n'
-    '            menus.add(menuItem("products", "商品管理", "/products"));\n'
+_AUTH_TOP_BLOCK = (
+    '        if (isAll || permissions.contains("production:view")) {\n'
+    '            menus.add(menuItem("settings", "企业基础设置", "/settings"));\n'
     '        }\n'
 )
 
 
 def _inject_auth_top_item_moved_to_front(src: str) -> str:
     """把 `AuthService` 的一级项 block 挪回**方法最前面**（= 旧位置）⇒ 布局序列漂移。"""
-    assert _AUTH_PRODUCTS_BLOCK in src, "注入锚点失配：`AuthService` 里找不到一级项 block"
-    src2 = src.replace(_AUTH_PRODUCTS_BLOCK, "", 1)
+    assert _AUTH_TOP_BLOCK in src, "注入锚点失配：`AuthService` 里找不到一级项 block"
+    src2 = src.replace(_AUTH_TOP_BLOCK, "", 1)
     anchor = "        List<UserInfoResponse.MenuItem> menus = new java.util.ArrayList<>();\n"
     assert anchor in src2, "注入锚点失配：`AuthService` 找不到 `menus` 初始化行"
-    return src2.replace(anchor, anchor + "\n" + _AUTH_PRODUCTS_BLOCK, 1)
+    return src2.replace(anchor, anchor + "\n" + _AUTH_TOP_BLOCK, 1)
 
 
 def _inject_auth_top_item_moved_between_groups(src: str) -> str:
     """把一级项挪到**两个组之间**（客户服务组之后）⇒ 证明判据抓的是「任意位置错」而非只抓「最前/最后」。"""
-    assert _AUTH_PRODUCTS_BLOCK in src, "注入锚点失配：`AuthService` 里找不到一级项 block"
-    src2 = src.replace(_AUTH_PRODUCTS_BLOCK, "", 1)
+    assert _AUTH_TOP_BLOCK in src, "注入锚点失配：`AuthService` 里找不到一级项 block"
+    src2 = src.replace(_AUTH_TOP_BLOCK, "", 1)
     anchor = 'menus.add(menuGroup("customer-service", "客户服务", customerServiceChildren));\n'
     assert anchor in src2, "注入锚点失配：`AuthService` 找不到客户服务组的 add 行"
-    return src2.replace(anchor, anchor + "\n" + _AUTH_PRODUCTS_BLOCK, 1)
+    return src2.replace(anchor, anchor + "\n" + _AUTH_TOP_BLOCK, 1)
 
 
 def _inject_empty_source(src: str) -> str:

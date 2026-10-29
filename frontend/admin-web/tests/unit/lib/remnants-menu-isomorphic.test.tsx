@@ -194,9 +194,11 @@ describe('余料台账菜单三处同构（PR-106 / issue #5191）', () => {
     fireEvent.click(screen.getByTestId('sidebar-group-toggle-supply-chain'))
     expect(await screen.findByRole('link', { name: '入库单' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: NAME })).toBeNull()
-    // 本组 = 3 项：入库单 + 供应商 + 采购单（issue #7369：档案 / 单据 / 采购同码，同一条 inbound:view 带出）
+    // 🔴 #8086：供应商已移入「基础资料」组 ⇒ 本组 = 2 项（入库单 + 采购单，同一条 inbound:view 带出）；
+    // 「基础资料」组因同码也可见（供应商一项）—— 这正是「同码同权、但分组各归其位」的读数。
     expect(within(screen.getByText('供应链').closest('[data-group-key]') as HTMLElement)
-      .queryAllByRole('link')).toHaveLength(3)
+      .queryAllByRole('link')).toHaveLength(2)
+    expect(screen.queryByText('基础资料')).toBeInTheDocument()
     cleanup()
   })
 })

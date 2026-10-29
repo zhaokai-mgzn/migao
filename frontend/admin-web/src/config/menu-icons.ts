@@ -28,6 +28,10 @@ import {
   Factory,
   Handshake,
   Headphones,
+  // 基础资料（issue #8086）：档案/资料架
+  Library,
+  // 质量（issue #8086）：质检与返工的告警盾牌（与「岗位权限」的 ShieldCheck 不同形）
+  ShieldAlert,
   Layers,
   LayoutDashboard,
   MessageSquare,
@@ -69,6 +73,8 @@ export const menuIconMap: Record<string, LucideIcon> = {
   Factory,
   Handshake,
   Headphones,
+  Library,
+  ShieldAlert,
   Layers,
   MessageSquare,
   Package,

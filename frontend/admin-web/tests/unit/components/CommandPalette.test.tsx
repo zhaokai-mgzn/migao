@@ -49,31 +49,40 @@ const ALL_KEYS = [
   // 最前席位（issue #7087 + #7376）：⌘K 索引的**前两项**（都在所有分组之前）
   'dashboard',
   'reports',
+  // 客户服务（#8086 起 3 项）
   'human-sessions',
   'knowledge',
   'after-sales',
+  // 基础资料（#8086）：商品管理 / 客户列表 / 供应商 / 价格本
+  'products',
   'customers',
-  // 价格本（#7375 段 3）：交易管理组内第一项
+  'suppliers',
   'price-books',
+  // 交易管理
   'orders',
   'finance',
+  // 生产管理
   'production-board',
   'production-pool',
   'production-piecework',
-  'quality-inspections', 'rework-orders',
-  'inbound-orders', 'suppliers', 'purchase-orders',
+  // 质量（#8086）
+  'quality-inspections',
+  'rework-orders',
+  // 供应链（#8086 起 2 项）
+  'inbound-orders',
+  'purchase-orders',
+  // 仓储与物料
   'stock-ledger',
   'stocktakes',
   'outbound-orders',
   'shipments',
   'production-remnants',
   'production-saving-board',
+  // 组织管理
   'employees',
   'roles',
-  // 尾席位一级项（#6580：「企业基础设置」由组织管理组的组内项升为一级项）
-  'products',
+  // 尾席位（#8086：商品管理已进组 ⇒ 只剩企业基础设置）+ 通知中心
   'settings',
-  // 尾部独立项
   'notifications',
 ]
 
@@ -201,30 +210,29 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
   it('↑/↓ 移动高亮 + Enter 跳转：router.push 收到**被高亮那一项**的 path', () => {
     render(<CommandPalette open onClose={mockOnClose} />)
     typeQuery('lb') // keywords 命中：商品列表(splb) / 销售订单(ddlb) / 客户列表(khlb)
-    // 顺序 = **菜单自身顺序**（同档稳定）⇒ 2026-10-06 方案 A1 后：客户列表（客户服务）→ 销售订单（交易管理）
-    // → 商品管理（一级项，排在所有分组之后）
-    // 「lb」只命中三个 keyword（商品列表 / 销售订单 / 客户列表）—— 价格本的关键词不含 lb
-    expect(renderedKeys()).toEqual(['customers', 'orders', 'products'])
-    expect(highlightedKeys()).toEqual(['customers'])
+    // 顺序 = **菜单自身顺序**（同档稳定）⇒ #8086 后：商品管理（基础资料）→ 客户列表（基础资料）
+    // → 销售订单（交易管理）。「lb」只命中三个 keyword（商品列表 / 销售订单 / 客户列表）。
+    expect(renderedKeys()).toEqual(['products', 'customers', 'orders'])
+    expect(highlightedKeys()).toEqual(['products'])
 
     press('ArrowDown')
-    expect(highlightedKeys()).toEqual(['orders'])
+    expect(highlightedKeys()).toEqual(['customers'])
     press('ArrowDown')
-    expect(highlightedKeys()).toEqual(['products'])
+    expect(highlightedKeys()).toEqual(['orders'])
 
     press('Enter')
     expect(mockPush).toHaveBeenCalledTimes(1)
-    expect(mockPush).toHaveBeenCalledWith('/products')
+    expect(mockPush).toHaveBeenCalledWith('/orders')
     expect(mockOnClose).toHaveBeenCalledTimes(1)
   })
 
   it('↑ 从首项回绕到末项（不是停在原地），Enter 跳到末项', () => {
     render(<CommandPalette open onClose={mockOnClose} />)
-    typeQuery('lb')   // 多结果集：客户列表 → 销售订单 → 商品管理（顺序 = 菜单自身顺序）
+    typeQuery('lb')   // 多结果集：商品管理 → 客户列表 → 销售订单（顺序 = 菜单自身顺序）
     press('ArrowUp')
-    expect(highlightedKeys()).toEqual(['products'])
+    expect(highlightedKeys()).toEqual(['orders'])
     press('Enter')
-    expect(mockPush).toHaveBeenCalledWith('/products')
+    expect(mockPush).toHaveBeenCalledWith('/orders')
   })
 
   it('查询变化 ⇒ 高亮归零（否则会停在越界/错位的下标上）', () => {
@@ -232,7 +240,8 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
     typeQuery('lb')
     press('ArrowDown')
     press('ArrowDown')
-    expect(highlightedKeys()).toEqual(['products'])
+    // #8086：商品管理已进「基础资料」组 ⇒ lb 命中序 = 商品管理 → 客户列表 → 销售订单，下移两次 = 销售订单
+    expect(highlightedKeys()).toEqual(['orders'])
 
     typeQuery('caiwu') // 单结果集：若不归零，高亮下标会停在 2（越界 ⇒ 无高亮）
     expect(renderedKeys()).toEqual(['finance'])

@@ -255,7 +255,16 @@ describe('RolesPage', () => {
     // 而**菜单项「商品管理」当时根本没渲染**（#5778 把它升为 `standaloneTopItems` 一级项时本页没跟）。
     // 真实判据 = 本文件 #5895 三条（一级项块 `perm-standalone-top` 的位置/名称/码 + 勾选落库）。
     expect(tree.queryByText('商品与加工项')).not.toBeInTheDocument()
-    expect(within(tree.getByTestId('perm-standalone-top')).getByText('商品管理')).toBeInTheDocument()
+    // 🔴 2026-10-29（issue #8086）：商品管理已降入「基础资料」组（不再是尾席位一级项）
+    const basicSection = tree.getByText('基础资料').closest('div')!.parentElement as HTMLElement
+    expect(within(basicSection).getByText('商品管理')).toBeInTheDocument()
+    expect(within(basicSection).getByText('客户列表')).toBeInTheDocument()
+    expect(within(basicSection).getByText('供应商')).toBeInTheDocument()
+    expect(within(basicSection).getByText('价格本')).toBeInTheDocument()
+    // 质量组（#8086）：质检记录 / 返工单（从生产管理拆出，权限码不变）
+    const qualitySection = tree.getByText('质量').closest('div')!.parentElement as HTMLElement
+    expect(within(qualitySection).getByText('质检记录')).toBeInTheDocument()
+    expect(within(qualitySection).getByText('返工单')).toBeInTheDocument()
     expect(tree.queryByText('智能客服')).not.toBeInTheDocument()
     expect(tree.queryByText('订单管理')).not.toBeInTheDocument()
     expect(tree.queryByText('客户管理')).not.toBeInTheDocument()
@@ -450,8 +459,9 @@ describe('RolesPage', () => {
     // 报表中心（#7376）与经营看板同码（报表是看板的下钻）⇒ 同码两节点各自渲染，勾任一即授予该码
     expect(within(head).getByText('报表中心')).toBeInTheDocument()
     expect(within(head).getAllByText('dashboard:view')).toHaveLength(2)
-    expect(within(top).getByText('商品管理')).toBeInTheDocument()
-    expect(within(top).getByText('product:list')).toBeInTheDocument()
+    // 🔴 #8086：商品管理已进「基础资料」组 ⇒ 尾席位只剩「企业基础设置」
+    expect(within(top).getByText('企业基础设置')).toBeInTheDocument()
+    expect(within(top).queryByText('商品管理')).toBeNull()
     // 位置与侧边栏同序（一级项块 → 分组 → 尾部项）：**席位块是权限树的第一个子块**
     // （#7087 前这条判的是 `perm-standalone-top`；最前席位加入后它退到第二个 —— 断言强度不降：
     //  现在多钉了「最前席位在最前」且「两个席位块连续」）。
@@ -592,12 +602,15 @@ describe('RolesPage', () => {
     expect(visibleText(container)).not.toMatch(/[a-z_]+:[a-z_]+/) // 撤掉注入 ⇒ 绿（判别力自证）
   })
 
-  it('#5895 勾选一级项「商品管理」→ 创建岗位时 permissionIds 含 product:list 的权限ID（勾得动）', async () => {
+  it('#5895 勾选「基础资料 → 商品管理」→ 创建岗位时 permissionIds 含 product:list 的权限ID（勾得动）', async () => {
     mockGetRoles.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
     render(<RolesPage />)
     fireEvent.click(await screen.findByText('新增岗位'))
-    const top = within(await screen.findByTestId('perm-menu-sections')).getByTestId('perm-standalone-top')
-    fireEvent.click(within(top).getByText('商品管理').closest('label')!.querySelector('input')!)
+    // 🔴 #8086：商品管理已进「基础资料」组 ⇒ 在该组小节内取标签（「操作权限」节里另有一个
+    // 同名的 `product:manage` 旧码，全容器取会撞名 —— 与 #5895 的原始坑同源）
+    const sections = within(await screen.findByTestId('perm-menu-sections'))
+    const basic = sections.getByText('基础资料').closest('div')!.parentElement as HTMLElement
+    fireEvent.click(within(basic).getByText('商品管理').closest('label')!.querySelector('input')!)
     const textboxes = screen.getAllByRole('textbox')
     fireEvent.change(textboxes[0], { target: { value: '商品运营' } })
     fireEvent.change(textboxes[1], { target: { value: 'product_operator' } })

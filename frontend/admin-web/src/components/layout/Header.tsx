@@ -57,7 +57,8 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   // 🔴 #5877（用户 2026-10-01 裁定）：一级项**没有父组** ⇒ 面包屑是**单级**（与「通知中心」同口径）——
   // 原实现给的是 `[商品管理, 商品管理]`（两个**同名**项，纯噪声）。
   // ⚠️ 面包屑取「有无父组」，与渲染位（`menu.ts` 的 `STANDALONE_TOP_AFTER_GROUP_KEY`）无关。
-  { match: (p) => p.startsWith('/products'), crumbs: [{ label: '商品管理' }] },
+  // 🔴 2026-10-29（issue #8086）：商品管理已进「基础资料」组 ⇒ 面包屑带上组名
+  { match: (p) => p.startsWith('/products'), crumbs: [{ label: '基础资料' }, { label: '商品管理' }] },
   { match: (p) => p.startsWith('/categories'), crumbs: [{ label: '商品管理' }, { label: '商品分类管理' }] },
   // 顺序敏感：/processing-orders 必须先于 /processing（find 按数组序取首个命中）
   // issue #4357：加工单并入生产管理组 ⇒ 本目录下只剩「生产明细」子路由（列表页已重定向）
@@ -98,9 +99,9 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   { match: (p) => p.startsWith('/production/piecework'), crumbs: [{ label: '生产管理' }, { label: '计件工资' }] },
   // 质检记录（issue #7140）：菜单名与 `config/menu.ts` 的 `quality-inspections`、服务端两处菜单节点
   // **逐字一致**（§15.2「面包屑末项 == 侧边栏菜单名」，守卫 menu-breadcrumb-coverage.test.tsx）。
-  { match: (p) => p.startsWith('/quality-inspections'), crumbs: [{ label: '生产管理' }, { label: '质检记录' }] },
+  { match: (p) => p.startsWith('/quality-inspections'), crumbs: [{ label: '质量' }, { label: '质检记录' }] },
   // 返工单（issue #7377）：与 `config/menu.ts` 的 `rework-orders`、服务端两处菜单节点同名同组
-  { match: (p) => p.startsWith('/rework-orders'), crumbs: [{ label: '生产管理' }, { label: '返工单' }] },
+  { match: (p) => p.startsWith('/rework-orders'), crumbs: [{ label: '质量' }, { label: '返工单' }] },
   // 审批中心（issue #7593，用户 2026-10-24 裁定）：**侧边栏菜单项已撤除**，入口改到顶栏
   // `ApprovalBell`（图标 + 待审数徽标 + 面板）⇒ 它现在**没有父组**，面包屑是**单级**
   // （与「商品管理」「通知中心」同口径）。菜单名 / 页面名仍是「审批中心」，与 `/approvals` 页一致。
@@ -113,9 +114,9 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   // 供应商（issue #7369）：新增菜单项同批补面包屑（V111/#5034 漏过一次的教训）。
   // 🔴 issue #7369（用户 2026-10-20 裁定「得加个新大菜单」）：三项已从「仓储与物料」移到「供应链」
   // —— 面包屑的组名必须与菜单组名逐字一致（本文件文件头的硬约束），漏改就是「同页面两个组名」。
-  { match: (p) => p.startsWith('/suppliers'), crumbs: [{ label: '供应链' }, { label: '供应商' }] },
+  { match: (p) => p.startsWith('/suppliers'), crumbs: [{ label: '基础资料' }, { label: '供应商' }] },
   // 价格本（issue #7375 段 3）：归属「交易管理」组 —— 定价是交易前置。
-  { match: (p) => p.startsWith('/price-books'), crumbs: [{ label: '交易管理' }, { label: '价格本' }] },
+  { match: (p) => p.startsWith('/price-books'), crumbs: [{ label: '基础资料' }, { label: '价格本' }] },
   { match: (p) => p.startsWith('/purchase-orders'), crumbs: [{ label: '供应链' }, { label: '采购单' }] },
   { match: (p) => p.startsWith('/inbound-orders'), crumbs: [{ label: '供应链' }, { label: '入库单' }] },
   // 发货单（issue #5939，用户 2026-10-02 裁定）：与「入库单」对称的出口单据，同属「仓储与物料」组。
@@ -139,7 +140,7 @@ const ROUTE_BREADCRUMB_MAP: Array<{
 
   // 客户服务组的两项业务页（与上面的 /agent-workspace、/knowledge 同组）
   { match: (p) => p.startsWith('/after-sales'), crumbs: [{ label: '客户服务' }, { label: '售后工单' }] },
-  { match: (p) => p.startsWith('/customers'), crumbs: [{ label: '客户服务' }, { label: '客户列表' }] },
+  { match: (p) => p.startsWith('/customers'), crumbs: [{ label: '基础资料' }, { label: '客户列表' }] },
 
   // 组织管理组（与侧边栏"组织管理"分组对齐，#2969 员工/岗位权限/企业信息归入本组）
   { match: (p) => p.startsWith('/employees'), crumbs: [{ label: '组织管理' }, { label: '员工管理' }] },

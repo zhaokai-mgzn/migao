@@ -242,19 +242,29 @@ public class MenuController {
             // 🔴 **组内顺序 = `menu.ts` 的 `customer-service` 组顺序**（在线接待 / 知识库 /
             // 售后工单 / 客户列表 —— 用户 2026-10-06 调整：接待与工具相邻、档案沉底）
             // —— 三源同构守卫按**前缀子序列**比对，乱序即红。
-            new MenuNode("customer-service", "客户服务", List.of(cs1, cs2, o3, c1)),
+            new MenuNode("customer-service", "客户服务", List.of(cs1, cs2, o3)),
+            // 🔴 2026-10-29（issue #8086，用户裁定 Q2/Q5/Q6）：**基础资料** 组（前端 `basic-data`）——
+            // 商品管理 / 客户列表 / 供应商 / 价格本；位置 = **客户服务之后、交易管理之前**（用户 Q5 逐字）。
+            // 三处同批：前端 `menu.ts` 的组顺序 / 本处的顶层节点顺序 / `AuthService` 的 `menus.add` 顺序。
+            // ⚠️ 本组**推翻**两条旧裁定（都是用户 2026-10-29 的明确改判）：2026-09-29「客户管理属于服务客户」
+            // （客户列表移出客户服务）、2026-10-06「商品管理作为一级项沉底」（商品管理进组）。
+            new MenuNode("basic-data", "基础资料", List.of(p1, c1, iSupplier, priceBooks)),
             // 交易管理（本轮收窄为「下单 → 收款」两项）
             // 价格本（issue #7375 段 3）：交易前置 ⇒ 排在「销售订单」之前（同组，码 order:list）
             // 🔴 2026-10-24（issue #7593）：`approvals` 节点已撤除（入口改顶栏）⇒ 本组只剩价格本 / 销售订单 / 财务对账。
-            new MenuNode("trade-center", "交易管理", List.of(priceBooks, o1, f1, o2)),
+            new MenuNode("trade-center", "交易管理", List.of(o1, f1, o2)),
             // 生产管理（用户 2026-10-06 组内重排后，再随 issue #6580 收拢为**作业看板 → 智能派单
             // → 计件工资**三项 —— 「加工项管理」「工艺配置」两个菜单项按用户裁定**移除**，
             // 功能体并入 `/settings`（企业基础设置）页内的配置域；旧路径保留为重定向）。
-            new MenuNode("production-center", "生产管理", List.of(pr1, prPool, pr3, pr4, prRework, prUpdate)),
+            new MenuNode("production-center", "生产管理", List.of(pr1, prPool, pr3, prUpdate)),
+            // 🔴 2026-10-29（issue #8086，用户裁定 Q3）：**质量** 组（前端 `quality`）——
+            // 质检记录 / 返工单从「生产管理」拆出（三种角色的活混在一组：计划派单 / 计件工资 / 质检返工）。
+            // 权限码本组不动（production:inspect / after_sales:view），拆码见 issue #8087。
+            new MenuNode("quality", "质量", List.of(pr4, prRework)),
             // 供应链（issue #7369，用户 2026-10-20 裁定「新增的菜单不能放到仓储与物料下，得加个新大菜单」）：
             // 谁供货 → 买什么 → 到货登记；三项同码 inbound:view（采购与收货同岗位）。
             // ⚠️「入库单」必须排本组第一个：手机端标注取该码树序首个承载节点（#6781）。
-            new MenuNode("supply-chain", "供应链", List.of(i1, iSupplier, iPurchases)),
+            new MenuNode("supply-chain", "供应链", List.of(i1, iPurchases)),
             // 仓储与物料（用户 2026-10-20 起只留**库存与出库**：单据类节点已移到「供应链」）
             // 🔴 issue #6759：组尾追加动作码节点「入库单操作」（`inbound:create` = 手机端过账的写码）。
             // 盘点单紧跟「库存明细」（先看账 → 再对账），排在发货单之前。
@@ -266,7 +276,6 @@ public class MenuController {
             // `STANDALONE_TOP_AFTER_GROUP_KEY`（现取最后一个组 `org-center`）那个组**之后**；
             // ⚠️ 位置 = 与前端渲染顺序、`AuthService` 的 add 顺序**逐项一致**
             //（判据 = 三源同构守卫的**顶层布局序列**比对，含位置）。
-            new MenuNode("product:list", "商品管理"),
             // 🔴 2026-10-09（issue #6580）：「企业基础设置」（原 `org-center` 组内的「企业基础信息」）
             // 移到这里 —— 与前端 `standaloneTopItems` 的第 2 项、`AuthService` 的第 2 个顶层 add
             // 三处同批表达同一位置。
