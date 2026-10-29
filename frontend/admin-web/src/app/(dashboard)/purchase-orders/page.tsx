@@ -95,6 +95,8 @@ export default function PurchaseOrdersPage() {
 
   const [orders, setOrders] = useState<PurchaseOrderView[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
+  /** 供应商选项读失败（issue #8066）：与列表读失败**分立** —— 建单时选不到供应商 ≠ 没有供应商。 */
+  const [suppliersReadError, setSuppliersReadError] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
 
@@ -123,12 +125,14 @@ export default function PurchaseOrdersPage() {
   }, [])
 
   const loadSuppliers = useCallback(async () => {
+    setSuppliersReadError(false)
     try {
       const res = await supplierApi.list()
       setSuppliers(res.data.data || [])
     } catch (error) {
-      // 供应商只是建单时的选项：拉不到就让建单入口给出可行动提示，不影响列表可读
-      setSuppliers([])
+      // issue #8066：供应商只是建单时的选项（不影响列表可读），但**不许**吞成「没有供应商」——
+      // 置显式失败态（不清空已有读数），建单入口处给常驻提示 + 重试。
+      setSuppliersReadError(true)
       console.error('加载供应商失败:', error)
     }
   }, [])
@@ -441,6 +445,14 @@ export default function PurchaseOrdersPage() {
                     </option>
                   ))}
                 </select>
+                {/* issue #8066：下拉里空 = 读不到，不是「没有供应商」—— 常驻说清 + 重试。 */}
+                {suppliersReadError && (
+                  <ListLoadError
+                    testId="purchase-form-suppliers-error"
+                    message="供应商清单读取失败 —— 选项为空不是「没有供应商」，请重新加载后再建单"
+                    onRetry={() => void loadSuppliers()}
+                  />
+                )}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <Input

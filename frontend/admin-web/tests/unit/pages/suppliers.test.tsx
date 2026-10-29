@@ -261,4 +261,52 @@ describe('供应商档案页', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('必须大于 0'))
     expect(mockCreatePayment).not.toHaveBeenCalled()
   })
+
+  // ── issue #8066（扫描器判据①「读失败被吞」收口）────────────────────────────
+  // 改前：两块补充读面的 catch 里 `setUnassigned([])` / `setPayables(null)` ⇒ 条件渲染整块消失，
+  // 屏上只剩主列表 ⇒ 商家读成「没有待建档的供应商」/「没有应付」。两条各钉 失败面 / 不冒充 / 重试真重发。
+  it('待指派清单读失败：常驻失败锚在场 + 不画成「没有待建档的供应商」+ 重试真的重发', async () => {
+    mockUnassigned.mockRejectedValueOnce(new Error('unassigned down'))
+    render(<SuppliersPage />)
+
+    const anchor = await screen.findByTestId('supplier-unassigned-error')
+    expect(anchor).toHaveTextContent('待指派清单读取失败')
+    expect(anchor).toHaveTextContent('不是「没有待建档的供应商」')
+    expect(screen.queryByTestId('supplier-unassigned')).toBeNull()
+
+    const before = mockUnassigned.mock.calls.length
+    mockUnassigned.mockResolvedValue({ data: { data: [
+      { supplierName: '没建过档的厂', orderCount: 3, lastInboundDate: '2026-10-01' },
+    ] } })
+    fireEvent.click(screen.getByTestId('supplier-unassigned-error-retry'))
+    await waitFor(() => expect(screen.queryByTestId('supplier-unassigned-error')).toBeNull())
+    // 重试**真的**重发（不是只把失败态擦掉）
+    expect(mockUnassigned.mock.calls.length).toBe(before + 1)
+    await waitFor(() => expect(screen.getByTestId('supplier-unassigned')).toBeInTheDocument())
+  }, 20_000) // ⏱ 整例 20s：失败面等到底时 RTL 的 asyncUtilTimeout 是 5s（否则红成 Test timed out = 没跑到断言）
+
+  it('应付对账读失败：常驻失败锚在场 + 不画成「没有应付」+ 重试真的重发', async () => {
+    mockPayables.mockRejectedValueOnce(new Error('payables down'))
+    render(<SuppliersPage />)
+
+    const anchor = await screen.findByTestId('supplier-payables-error')
+    expect(anchor).toHaveTextContent('应付对账读取失败')
+    expect(anchor).toHaveTextContent('不是「没有应付」')
+    expect(screen.queryByTestId('supplier-payables')).toBeNull()
+
+    const before = mockPayables.mock.calls.length
+    mockPayables.mockResolvedValue({ data: { data: {
+      suppliers: [{
+        supplierId: 'sup-1', supplierName: '杭州染整一厂', status: 'active',
+        receivedAmount: 500, orderCount: 2, lastInboundDate: '2026-10-01',
+        paidAmount: 0, paymentsRecorded: false,
+      }],
+      totalReceived: 500, totalOutstanding: 500, paymentsRecorded: false,
+    } } })
+    fireEvent.click(screen.getByTestId('supplier-payables-error-retry'))
+    await waitFor(() => expect(screen.queryByTestId('supplier-payables-error')).toBeNull())
+    // 重试**真的**重发（不是只把失败态擦掉）
+    expect(mockPayables.mock.calls.length).toBe(before + 1)
+    await waitFor(() => expect(screen.getByTestId('supplier-payables')).toBeInTheDocument())
+  }, 20_000) // ⏱ 同上：整例预算必须长于 asyncUtilTimeout，红要显形为断言失败
 })
