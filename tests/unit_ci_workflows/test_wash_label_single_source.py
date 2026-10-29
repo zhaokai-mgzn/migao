@@ -36,6 +36,7 @@
 | SS5 | **注入式红证**：上面三种坏形态在内存里各自判红，且**内容指纹自证**（禁 mtime/size，issue #4260） | 注入未生效 ⇒ 必红 |
 | SS6 | **反向对照**：注释里**提及**这些词不得判红（沿革要写得清，`migao-dev-flow` §2.2「引用即实例」） | 注释里加一句沿革 ⇒ **不**红 |
 | SS8 | **张序 / 每套连续只许在真值模块里决定**（issue #8074）：渲染器不得自己调 `groupBySet(` 重排 / 分组出纸清单；真值模块必须真有该调用（反空跑锚点） | 在 `TaskCardPrint.tsx` 里加一句 `groupBySet([])` ⇒ 必红 |
+| SS9 | **专属唛的行集合只许在真值模块里决定**（issue #8107）：`WASH_LABEL_OPTION_ROW_KEYS` 与 `input.variant === 'option'` 的过滤点必须在内容模块；渲染器只读 `sheet.variant`、**不得**自己挑行 | 在 `TaskCardPrint.tsx` 里写 `WASH_LABEL_OPTION_ROW_KEYS`（自己过滤）/ 删掉内容模块的 variant 过滤 ⇒ 必红 |
 
 🔴 **本守卫只扫这三份源码**：测试与文档里出现这些词是**在描述口径**，不在射程。
 
@@ -90,6 +91,12 @@ COPIES_READER = "washLabelCopies("
 SHEET_BUILDER = "washLabelSheets("
 #: 开数键：只许出现在内容真值模块（渲染器自己读 = 第二份份数映射）
 OPEN_COUNT_KEY = "openCount"
+#: 专属唛的**行集合**（issue #8107）：只许在内容真值模块里定义并用于过滤（渲染器自己挑行 = 第二份行集合口径）
+OPTION_ROW_KEYS = "WASH_LABEL_OPTION_ROW_KEYS"
+#: 内容模块里「按变体收窄行集合」的**判定点**（缺了它 SS9 的反空跑锚点就没了）
+VARIANT_FILTER = "input.variant === 'option'"
+#: 渲染器读变体的**唯一**途径（由内容模块在 sheet 上给出，渲染器不自己判 optionLabel）
+SHEET_VARIANT_READ = "variant: sheet.variant"
 
 #: 纸面行前缀（`washLabelRows` 是**唯一**拼它们的地方）
 # ⚠️ 2026-10-25（issue #7776）：`色号` → `颜色`、新增 `门幅`（用户逐字「保留货号，颜色，门幅和其他工艺信息」；
@@ -221,6 +228,28 @@ def _problems(sources: dict[str, str]) -> list[str]:
                 f"张序（每套连续）只许由 `{CONTENT_MODULE}` 的 `{SHEET_BUILDER}` 决定（issue #8074）"
             )
 
+    # SS9（issue #8107）：**专属唛的行集合**只许在内容模块决定
+    #   （用户 2026-10-29 逐字「保留货号，门幅，宽高，工艺和特殊选项 + 二维码即可」）
+    #   - 内容模块必须**定义**行集合常量、并真有「按变体收窄」的过滤点（缺 ⇒ 本判据退化）；
+    #   - 渲染器**不得**自己过滤（出现行集合常量 = 渲染器自己挑行 ⇒ 两条通道会分叉）；
+    #   - 渲染器读变体的唯一途径 = 内容模块在 `sheet` 上给（`variant: sheet.variant`）。
+    if OPTION_ROW_KEYS not in code_face(content) or VARIANT_FILTER not in code_face(content):
+        problems.append(
+            f"SS9 `{CONTENT_MODULE}` 缺专属唛行集合（`{OPTION_ROW_KEYS}`）或按变体收窄的过滤点"
+            "（issue #8107）—— 专属唛的行集合必须只有一处真值"
+        )
+    for rel, source in ((CSS_RENDERER, css), (BITMAP_RENDERER, bitmap)):
+        if OPTION_ROW_KEYS in code_face(source):
+            problems.append(
+                f"SS9 {rel} 的**代码面**出现 `{OPTION_ROW_KEYS}` —— 渲染器自己挑行 = 第二份行集合口径；"
+                f"行集合只许由 `{CONTENT_MODULE}` 的 `{ROW_BUILDER}` 按 `sheet.variant` 决定"
+            )
+    if SHEET_VARIANT_READ not in css_face:
+        problems.append(
+            f"SS9 {CSS_RENDERER} 没有读内容模块给的 `{SHEET_VARIANT_READ}` —— "
+            "渲染器自己判 `optionLabel` 挑行就是第二份口径"
+        )
+
     return problems
 
 
@@ -292,6 +321,16 @@ def test_injection_turns_red_with_attribution():
     )
     assert _fingerprint(broken[CSS_RENDERER]) != baseline[CSS_RENDERER], "注入 ⑥ 未生效"
     assert any("SS8" in p for p in _problems(broken)), "渲染器自己排套序却没判红 ⇒ SS8 是空断言"
+
+    # ⑦ SS9（issue #8107）：系统打印渲染器自己挑专属唛行集合 ⇒ 必红（第二份行集合口径）
+    broken = dict(sources)
+    broken[CSS_RENDERER] = broken[CSS_RENDERER].replace(
+        "export default function TaskCardPrint({",
+        "const optionOnly = WASH_LABEL_OPTION_ROW_KEYS.filter(Boolean) // 注入：渲染器自己挑行\n"
+        "export default function TaskCardPrint({",
+    )
+    assert _fingerprint(broken[CSS_RENDERER]) != baseline[CSS_RENDERER], "注入 ⑦ 未生效"
+    assert any("SS9" in p for p in _problems(broken)), "渲染器自己挑行却没判红 ⇒ SS9 是空断言"
 
 
 def test_comment_mention_is_not_a_violation():

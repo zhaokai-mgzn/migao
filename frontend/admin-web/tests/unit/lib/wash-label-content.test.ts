@@ -30,6 +30,9 @@
 //    改前 = 全部常规唛在前、全部专属唛追加在最后（多套时同套的纸被拆到两处）。
 import { describe, expect, it } from 'vitest'
 import {
+  WASH_LABEL_OPTION_MEDIA,
+  WASH_LABEL_OPTION_ROW_KEYS,
+  WASH_LABEL_REGULAR_MEDIA,
   WASH_LABEL_ROW_KEYS,
   toWashLabelInputs,
   washLabelCopies,
@@ -481,7 +484,7 @@ describe('专属唛 —— 余料带回 / 绑带 每套一张（issue #8002）',
     },
   ] as ProductionPosition[]
 
-  it('类别：选项名逐字命中；「余料做绑带 / 余料做帘头」不触发；副标题 = 成品定制 · 类别', () => {
+  it('类别：选项名逐字命中；「余料做绑带 / 余料做帘头」不触发；副标题 = 语义名（**去**「成品定制」前缀）', () => {
     expect(washLabelOptionGroupsOf(optionItem(['余料带回-布']))).toEqual([
       { label: '余料带回', options: ['余料带回-布'] },
     ])
@@ -496,10 +499,15 @@ describe('专属唛 —— 余料带回 / 绑带 每套一张（issue #8002）',
     // 不产生「交还客户的那袋东西」的选项不触发
     expect(washLabelOptionGroupsOf(optionItem(['余料做绑带', '余料做帘头', '加logo条']))).toEqual([])
     expect(washLabelOptionGroupsOf(undefined)).toEqual([])
-    expect(washLabelSubtitle('余料带回')).toBe('成品定制 · 余料带回')
-    expect(washLabelSubtitle('绑带')).toBe('成品定制 · 绑带')
+    // 🔴 2026-10-29（用户逐字「洗水唛的副标题 成品定制.余料带回 改成余料带回，移除前面的成品定制」）：
+    // 专属唛副标题**只印语义名**；常规唛仍是 `成品定制`（一字未改）
+    expect(washLabelSubtitle('余料带回')).toBe('余料带回')
+    expect(washLabelSubtitle('绑带')).toBe('绑带')
     expect(washLabelSubtitle(null)).toBe('成品定制')
     expect(washLabelSubtitle('')).toBe('成品定制')
+    // 反向：专属唛的副标题里不得再出现前缀（改回 `成品定制 · X` ⇒ 必红）
+    expect(washLabelSubtitle('余料带回')).not.toContain('成品定制')
+    expect(washLabelSubtitle('绑带')).not.toContain('成品定制')
   })
 
   it('张数：常规唛 = 开数；专属唛 = 每套每类别 1 张（不乘开数）、排在常规唛之后', () => {
@@ -510,8 +518,8 @@ describe('专属唛 —— 余料带回 / 绑带 每套一张（issue #8002）',
     expect(sheets.map((sheet) => sheet.subtitle)).toEqual([
       '成品定制',
       '成品定制',
-      '成品定制 · 余料带回',
-      '成品定制 · 绑带',
+      '余料带回',
+      '绑带',
     ])
     // 专属唛：码 / 套序 / 快照行都沿用该部位（不另造内容）
     expect(sheets[2].qrValue).toBe(POSITION.scan_url)
@@ -616,7 +624,7 @@ describe('专属唛 —— 余料带回 / 绑带 每套一张（issue #8002）',
     expect(checked).toBe(24)
   })
 
-  it('直连通道同样含专属唛（与系统打印同源）：条数 / 副标题 / 行清单一致', () => {
+  it('直连通道同样含专属唛（与系统打印同源）：条数 / 副标题 / 纸型一致；行清单 = 专属唛 5 行', () => {
     const labels = toWashLabelInputs({
       processingOrderNo: PROCESSING_ORDER_NO,
       customerName: CUSTOMER,
@@ -626,7 +634,194 @@ describe('专属唛 —— 余料带回 / 绑带 每套一张（issue #8002）',
     // 双开 2 + 余料 1
     expect(labels).toHaveLength(3)
     expect(labels.map((label) => label.optionLabel ?? null)).toEqual([null, null, '余料带回'])
-    // 专属唛的行清单 = 同一份 `washLabelRows`（不另写推导）
-    expect(labels[2].rows?.map((row) => row.text)).toEqual(labels[0].rows?.map((row) => row.text))
+    // 🔴 issue #8107：专属唛的行清单 = 同一份 `washLabelRows`（**`variant: 'option'`**，不另写推导）——
+    //    与常规唛共用取值链、只是行集合收窄到 5 行
+    expect(labels[2].rows?.map((row) => row.text)).toEqual(
+      washLabelRows({
+        position: POSITION,
+        item: optionItem(['余料带回-布']),
+        setNo: 1,
+        setCount: 1,
+        customerName: CUSTOMER,
+        processingOrderNo: PROCESSING_ORDER_NO,
+        variant: 'option',
+      }).map((row) => row.text),
+    )
+    // 纸型也跟着这张纸走（两条通道同读 `sheet.media`）
+    expect(labels.map((label) => label.media)).toEqual(['label-50x140', 'label-50x140', 'label-50x100'])
+  })
+})
+
+describe('专属唛瘦身 —— 只印 5 行 + 二维码，纸型 50×100（issue #8107）', () => {
+  const OPTION_ITEM = { ...ITEM, specialOptions: ['余料带回-布', '布绑带'] } as unknown as ProcessingOrderItem
+
+  it('🔴 专属唛的行集合 = 恰好 5 行，顺序 = 货号 / 门幅 / 宽高 / 工艺 / 特殊选项', () => {
+    const rows = washLabelRows({
+      position: POSITION,
+      item: OPTION_ITEM,
+      setNo: 1,
+      setCount: 2,
+      customerName: CUSTOMER,
+      processingOrderNo: PROCESSING_ORDER_NO,
+      variant: 'option',
+    })
+    expect(rows.map((row) => row.key)).toEqual([...WASH_LABEL_OPTION_ROW_KEYS])
+    expect(rows.map((row) => row.key)).toEqual(['color', 'doorWidth', 'size', 'craft', 'specialOptions'])
+    // 逐行文本 = 与常规唛**同一套取值链**（不是另写的推导）
+    expect(rows.map((row) => row.text)).toEqual([
+      '货号: 米白',
+      '门幅: 2.8米',
+      '宽高: 3×2.75米',
+      '韩褶 · 超高 · 倒幅 · 双开 · 定型',
+      '特殊选项: 余料带回、布绑带',
+    ])
+  })
+
+  it('🔴 负控：退场行在专属唛里**一条都取不到**（10 个键逐个反查）', () => {
+    const rows = washLabelRows({
+      position: POSITION,
+      item: OPTION_ITEM,
+      setNo: 1,
+      setCount: 2,
+      customerName: CUSTOMER,
+      processingOrderNo: PROCESSING_ORDER_NO,
+      variant: 'option',
+    })
+    const keys = rows.map((row) => row.key)
+    for (const gone of [
+      'docNo',
+      'customer',
+      'setNo',
+      'positionKind',
+      'installCommunity',
+      'installRoom',
+      'meters',
+      'pleats',
+      'remark',
+      'batchNo',
+    ] as const) {
+      expect(keys, `专属唛不得印「${gone}」`).not.toContain(gone)
+    }
+    // 纸面文本里也不得出现它们的值（改回全字段 ⇒ 任一条必红）
+    const paper = rows.map((row) => row.text).join('｜')
+    expect(paper).not.toContain(CUSTOMER)
+    expect(paper).not.toContain('20260921-8237')
+    expect(paper).not.toContain('第 1 套')
+    expect(paper).not.toContain('春江花园')
+    expect(paper).not.toContain('主卧')
+    expect(paper).not.toContain('用料')
+    expect(paper).not.toContain('韩褶公式 52折')
+    expect(paper).not.toContain('加铅块')
+    expect(paper).not.toContain('PC-20261026-0001')
+  })
+
+  it('🔴 负控：常规唛仍是 15 行、一字未改（专属唛瘦身不许波及常规唛）', () => {
+    const rows = fullRows()
+    expect(rows).toHaveLength(15)
+    expect(rows.map((row) => row.key)).toEqual([...WASH_LABEL_ROW_KEYS])
+    // 缺省 variant = 常规
+    expect(rows.map((row) => row.key)).toEqual(
+      washLabelRows({
+        position: POSITION,
+        item: ITEM,
+        setNo: 1,
+        setCount: 2,
+        customerName: CUSTOMER,
+        processingOrderNo: PROCESSING_ORDER_NO,
+        variant: 'regular',
+      }).map((row) => row.key),
+    )
+  })
+
+  it('🔴「特殊选项」行印**展示名**（issue #8007 的展示归一落点）：`余料带回-布` ⇒ `余料带回`', () => {
+    const regular = textOf(fullRows(), 'specialOptions')
+    // 常规唛：落库键不上纸（改回 `加logo条、防翘扣` 之外的原样键 ⇒ 本例只判去族化）
+    expect(regular).toBe('特殊选项: 加logo条、防翘扣')
+    const family = textOf(
+      washLabelRows({ position: POSITION, item: { ...ITEM, specialOptions: ['余料带回-布', '加logo条'] } as unknown as ProcessingOrderItem }),
+      'specialOptions',
+    )
+    expect(family).toBe('特殊选项: 余料带回、加logo条')
+    // 反向：落库键后缀不得上纸
+    expect(family).not.toContain('余料带回-布')
+    // 语义名（AI / 其它写入口）同样原样印（它本来就是展示名）
+    const semantic = textOf(
+      washLabelRows({ position: POSITION, item: { ...ITEM, specialOptions: ['余料带回'] } as unknown as ProcessingOrderItem }),
+      'specialOptions',
+    )
+    expect(semantic).toBe('特殊选项: 余料带回')
+    // 专属唛同一份取值链 ⇒ 同样印展示名
+    const option = textOf(
+      washLabelRows({
+        position: POSITION,
+        item: { ...ITEM, specialOptions: ['余料带回-纱'] } as unknown as ProcessingOrderItem,
+        variant: 'option',
+      }),
+      'specialOptions',
+    )
+    expect(option).toBe('特殊选项: 余料带回')
+  })
+
+  it('🔴 触发：落库键与**语义名**都认（AI / 其它写入口可能写语义名）；`余料做绑带` 仍不触发', () => {
+    expect(washLabelOptionGroupsOf({ specialOptions: ['余料带回'] } as unknown as ProcessingOrderItem)).toEqual([
+      { label: '余料带回', options: ['余料带回'] },
+    ])
+    expect(washLabelOptionGroupsOf({ specialOptions: ['绑带'] } as unknown as ProcessingOrderItem)).toEqual([
+      { label: '绑带', options: ['绑带'] },
+    ])
+    // 落库键仍照旧（这一条不是替代，而是**额外**）
+    expect(washLabelOptionGroupsOf({ specialOptions: ['余料带回-布'] } as unknown as ProcessingOrderItem)).toEqual([
+      { label: '余料带回', options: ['余料带回-布'] },
+    ])
+    expect(washLabelOptionGroupsOf({ specialOptions: ['布绑带'] } as unknown as ProcessingOrderItem)).toEqual([
+      { label: '绑带', options: ['布绑带'] },
+    ])
+    // 不产生「要交还客户的那袋东西」的选项不触发（改宽表 ⇒ 必红）
+    expect(washLabelOptionGroupsOf({ specialOptions: ['余料做绑带', '余料做帘头'] } as unknown as ProcessingOrderItem)).toEqual(
+      [],
+    )
+  })
+
+  it('🔴 纸型：专属唛 = label-50x100、常规唛 = label-50x140（sheet 上给，两条通道同读）', () => {
+    const sheets = washLabelSheets({ positions: [POSITION], items: [OPTION_ITEM] })
+    // 双开 ⇒ 常规 2 张 + 专属 2 张（余料 / 绑带）
+    expect(sheets).toHaveLength(4)
+    expect(sheets.map((sheet) => sheet.media)).toEqual([
+      'label-50x140',
+      'label-50x140',
+      'label-50x100',
+      'label-50x100',
+    ])
+    expect(sheets.map((sheet) => sheet.variant)).toEqual(['regular', 'regular', 'option', 'option'])
+    // 常量本身 = 矩阵里那两张纸（写死别的 id ⇒ TS 类型 + 本判据双红）
+    expect(WASH_LABEL_REGULAR_MEDIA).toBe('label-50x140')
+    expect(WASH_LABEL_OPTION_MEDIA).toBe('label-50x100')
+    // 直连通道按 sheet 给到每张输入
+    const labels = toWashLabelInputs({ positions: [POSITION], items: [OPTION_ITEM] })
+    expect(labels.map((label) => label.media)).toEqual([
+      'label-50x140',
+      'label-50x140',
+      'label-50x100',
+      'label-50x100',
+    ])
+  })
+
+  it('🔴 张数 / 张序 / 每套连续（#8074 既有判据）**一字不改**（瘦身只动行集合与纸型）', () => {
+    const sheets = washLabelSheets({ positions: [POSITION], items: [OPTION_ITEM] })
+    expect(sheets.map((sheet) => sheet.optionLabel)).toEqual([null, null, '余料带回', '绑带'])
+    expect(sheets.map((sheet) => sheet.subtitle)).toEqual([
+      '成品定制',
+      '成品定制',
+      '余料带回',
+      '绑带',
+    ])
+    // 抬头标记保留（它是「这张纸属于哪个特殊选项」的标记）：常规唛 = `成品定制`、专属唛 = 语义名本身
+    expect(sheets[0].subtitle).toBe('成品定制')
+    expect(sheets[2].subtitle).toBe('余料带回')
+    expect(sheets.slice(2).every((sheet) => sheet.subtitle !== '成品定制' && sheet.subtitle !== '')).toBe(true)
+    // 码与快照行沿用该部位（不另造内容）
+    expect(sheets[2].qrValue).toBe(POSITION.scan_url)
+    expect(sheets[2].position).toBe(POSITION)
+    expect(sheets[2].item?.itemId).toBe('item-1')
   })
 })

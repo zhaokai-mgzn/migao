@@ -51,6 +51,11 @@ export interface SheetCheckResult {
    * 「内容超出」只报一个总高度时，商家不知道该改哪一张/哪一行；具名到张才是可行动的读数。
    */
   overflowSheets: number[]
+  /**
+   * 这一次出纸里出现的**纸型**（按 DOM 顺序去重；issue #8107）—— 同一份打印任务可以有**两种纸长**
+   * （常规唛 50×140 / 专属唛 50×100）。空数组 = 各张都没声明自己的纸（用文档级 limit）。
+   */
+  papers: { widthMm: number; heightMm: number; note?: string }[]
 }
 
 const PX_PER_MM = 96 / 25.4
@@ -59,13 +64,33 @@ function round1(value: number): number {
   return Math.round(value * 10) / 10
 }
 
+/**
+ * 一张纸**自己声明**的纸型（issue #8107）：`data-sheet-paper-mm="50x100"`（+ 可选 `data-sheet-note`）。
+ *
+ * 🔴 为什么要有这个：水洗唛同一份出纸里**两种纸长并存**，用文档级单一 limit 判溢出会把
+ * 100mm 那张按 140mm 判成「装得下」⇒ 纸面被裁而自检报绿。纸型由**单据**声明（它知道每张印什么），
+ * 预览层只读，不写第二份纸型真值。
+ */
+function sheetPaper(sheet: HTMLElement): { widthMm: number; heightMm: number; note?: string } | null {
+  const raw = (sheet.dataset.sheetPaperMm ?? '').trim()
+  const hit = /^([0-9.]+)x([0-9.]+)$/.exec(raw)
+  if (!hit) return null
+  const widthMm = Number(hit[1])
+  const heightMm = Number(hit[2])
+  if (!Number.isFinite(widthMm) || !Number.isFinite(heightMm) || heightMm <= 0) return null
+  const note = (sheet.dataset.sheetNote ?? '').trim()
+  return note === '' ? { widthMm, heightMm } : { widthMm, heightMm, note }
+}
+
 /** 量出纸面自检结果（纯几何，无业务口径）；`sheets` 为空 ⇒ `null`（没有可量的纸） */
 export function measureSheets(stage: HTMLElement, limitMm: number): SheetCheckResult | null {
   const sheets = Array.from(stage.querySelectorAll<HTMLElement>('[data-print-sheet]'))
   if (sheets.length === 0) return null
-  const limitPx = limitMm * PX_PER_MM
   let maxContentPx = 0
+  /** 逐张按**它自己的纸高**算超出量，取最大值（issue #8107：不再用文档级单一 limit） */
+  let maxOverflowMm = Number.NEGATIVE_INFINITY
   const overflowSheets: number[] = []
+  const papers: { widthMm: number; heightMm: number; note?: string }[] = []
   sheets.forEach((sheet, index) => {
     // 🔴 量的是**内容真实高度**，不是容器高度：销售单的 `.sales-sheet` 固定 128mm + `overflow:hidden`
     // ⇒ `scrollHeight` **恒 ≥ 纸高**（装得下也报 128mm，实测还会因取整变成 128.1mm ⇒ 5 行明细
@@ -78,11 +103,23 @@ export function measureSheets(stage: HTMLElement, limitMm: number): SheetCheckRe
     const contentPx = sheet.scrollHeight > 0 ? sheet.scrollHeight : sheet.offsetHeight
     sheet.style.height = savedHeight
     sheet.style.overflow = savedOverflow
-    if (contentPx > limitPx) overflowSheets.push(index + 1)
+    const paper = sheetPaper(sheet)
+    if (paper) {
+      // 同一种纸只留一条（按 DOM 顺序）；先出现的那张没给说明、后面的给了 ⇒ 补上（不丢信息）
+      const seen = papers.find((item) => item.widthMm === paper.widthMm && item.heightMm === paper.heightMm)
+      if (!seen) papers.push(paper)
+      else if (!seen.note && paper.note) seen.note = paper.note
+    }
+    // 本张的纸高：自己声明优先，缺省回落文档级 limit（销售单 / 加工单这类单纸型单据不受影响）
+    const sheetLimitMm = paper?.heightMm ?? limitMm
+    if (contentPx > sheetLimitMm * PX_PER_MM) overflowSheets.push(index + 1)
+    maxOverflowMm = Math.max(maxOverflowMm, contentPx / PX_PER_MM - sheetLimitMm)
     maxContentPx = Math.max(maxContentPx, contentPx)
   })
   const contentMm = round1(maxContentPx / PX_PER_MM)
-  const overflowMm = round1(contentMm - limitMm)
+  const overflowMm = round1(
+    Number.isFinite(maxOverflowMm) ? maxOverflowMm : contentMm - limitMm
+  )
   return {
     contentMm,
     limitMm,
@@ -90,6 +127,7 @@ export function measureSheets(stage: HTMLElement, limitMm: number): SheetCheckRe
     pages: Math.max(1, Math.ceil(contentMm / limitMm)),
     sheets: sheets.length,
     overflowSheets,
+    papers,
   }
 }
 
@@ -262,6 +300,18 @@ export default function PrintDocPreview({
   const paperWidthPx = box.widthMm * PX_PER_MM * scale
   const paperHeightPx = box.heightMm * PX_PER_MM * scale
 
+  /**
+   * 表头的**纸型文案**（issue #8107）：主纸型 = 本单据的文档级介质；**额外的纸型**由每张纸
+   * 自己声明（`data-sheet-paper-mm`，例：水洗唛专属唛 50mm × 100mm）——
+   * 本层只读声明、不写第二份纸型真值（纸型只有一个来源：`lib/print-media.json`）。
+   */
+  const paperText = [
+    `${box.widthMm}mm × ${box.heightMm}mm`,
+    ...(check?.papers ?? [])
+      .filter((paper) => paper.widthMm !== box.widthMm || paper.heightMm !== box.heightMm)
+      .map((paper) => `${paper.note ? `${paper.note} ` : ''}${paper.widthMm}mm × ${paper.heightMm}mm`),
+  ].join(' · ')
+
   async function handleCapture() {
     const stage = stageRef.current
     const paper = stage?.querySelector<HTMLElement>('[data-print-paper]')
@@ -314,7 +364,7 @@ export default function PrintDocPreview({
           <div className="min-w-0">
             <div className="text-base font-semibold text-neutral-900">{title} · 打印预览</div>
             <div className="text-xs text-neutral-500" data-testid="print-preview-media">
-              纸型 {box.widthMm}mm × {box.heightMm}mm（可用 {usable.widthMm}mm × {usable.heightMm}mm
+              纸型 {paperText}（可用 {usable.widthMm}mm × {usable.heightMm}mm
               {margin.xMm > 0 || margin.yMm > 0
                 ? ` · 页边距 ${margin.yMm}mm ${margin.xMm}mm`
                 : ' · 无边距'}
@@ -576,9 +626,9 @@ export default function PrintDocPreview({
                 <span className="text-neutral-500">正在量纸面…</span>
               ) : check.overflowMm > 0 ? (
                 <span className="text-amber-700">
-                  内容 {check.contentMm}mm &gt; 可用 {check.limitMm}mm，超出 {check.overflowMm}mm
+                  内容 {check.contentMm}mm，超出纸长 {check.overflowMm}mm
                   {check.overflowSheets.length > 0
-                    ? `（第 ${check.overflowSheets.join('、')} 张）`
+                    ? `（第 ${check.overflowSheets.join('、')} 张${check.papers.length > 1 ? `，纸型 ${paperText}` : ''}）`
                     : ''}
                   —— 直接打印会被裁掉（纸面从底部丢内容）；请拆单，或改用其它介质再打。
                 </span>

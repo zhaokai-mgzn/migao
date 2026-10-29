@@ -37,11 +37,12 @@ export async function renderWashLabelJobs(
   qrSources: Array<CanvasImageSource | null>,
   printerInfo?: LabelPrinterInfoLike | null,
 ): Promise<PrintJob[]> {
-  // 几何 = 机器自报值 + 介质矩阵（issue #7816：纸型固定 50×150，纸长不再由调用方给）
-  const geometry = resolveLabelGeometry(printerInfo)
+  // 几何 = 机器自报值 + **该张自己的介质**（issue #7816 纸型固定；issue #8107 两种纸长并存：
+  // 常规唛 50×140 / 专属唛 50×100 ⇒ 画布高必须逐张按同一份 media 开，不能用一张批级几何）
   const jobs: PrintJob[] = []
 
   for (let index = 0; index < labels.length; index += 1) {
+    const geometry = resolveLabelGeometry(printerInfo, null, labels[index].media)
     const canvas = document.createElement('canvas')
     canvas.width = geometry.widthPx
     canvas.height = geometry.heightPx
