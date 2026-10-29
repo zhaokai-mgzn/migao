@@ -19,6 +19,9 @@ from app.graph.skills.skill_config import SkillConfig
 # 订单 / 加工单 / 生产只读工具（全部 read_only=True；写工具已解绑，见模块 docstring）
 ORDER_TOOLS = [
     "order_query",
+    # 商品归因（issue #8157）：读订单行按商品聚合两窗口销售额 + 涨跌 Top N。
+    # 只读、单据来自订单列表读面（order:list）；按 #4125 只读工具在全 mibao 域共享。
+    "sales_attribution",
     "logistics_track",
     "product_search",
     "product_detail",

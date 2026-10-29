@@ -3112,12 +3112,12 @@
 真值: dashboard-jump.proactive-follow-up, dashboard-jump.proactive-action-required
 溯源: 2026-10-30 新增（issue #8155）：族 1 × 族 4 —— 日报条目带追问入口，且追问在**对话内闭环**（不是只多一句建议文案）。取号 DA-026：`scripts/next_case_id.py DA` 因 gh 抖动 fail-closed（exit 3，`stream error`）⇒ 按 `migao-dev-flow` §26.3 手工核在飞面：origin/main 与**改过 `.github/cases/**` 的三个** open PR 分支（`mibao-p1e-noprogress` / `mibao-p2b-page-actions` / `mibao-fix-pr133`）的 `.github/cases/data.yml` 最大号均为 **DA-025**（命令：`git show <ref>:.github/cases/data.yml | grep -oE 'DA-[0-9]+' | sort -u | tail -1`；其余 open PR 未改用例语料）⇒ DA-026 未被占用。**未覆盖面（如实登记）**：① finds 由**模型转述**（前端 `BriefingCard` 只渲染 LLM 简报与 `proactive_status` 面板，不渲染 findings 列表）⇒ 卡片面「可点追问」不在本单，要做得另开单；② 「模型是否每次都真的照 `tool_hint` 直接调、不再问一遍」属 LLM 行为面，本单**不派评测**（用户裁定：评测集中跑一次），只落用例；确定性面由 `backend/ai-agent-service/tests/test_brief_followup.py` 承担 ｜ tags: dashboard, briefing, follow-up, llm_behavior
 
-### DA-027. 问「这周为什么少卖」直接看商品归因（product_attribution）：涨跌 Top N 逐字转述、不口算（issue #8157） 🔵
+### DA-027. 问「这周为什么少卖」直接看商品归因（sales_attribution）：涨跌 Top N 逐字转述、不口算（issue #8157） 🔵
 ```
 你: 这周哪个商品卖得比上周少？
 你: 为什么这周比上周少了？是哪个商品拖的？
 端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
-期望: dashboard_stats(action=product_attribution)
+期望: sales_attribution
 数据: success=true
 数据: 🔴 排名与数字必须逐字来自工具返回：`top_down` / `top_up` 每条的 `product_name` / `current` / `previous` / `delta` / `delta_pct` / `orders`，以及 `current_total` / `previous_total` / `delta` / `delta_pct` 都不得改写、不得只报总量；模型**不得**自己按订单口算商品销售额，也不得凭空给出归因原因
 数据: 上期为 0（`previous_is_zero=true`）时 `delta_pct` 必须为 null ⇒ 如实说「上期没有数据，无法算百分比」，**不得**编造百分比、**不得**写 0%
@@ -3125,9 +3125,9 @@
 数据: 工具 success=false（服务端或订单明细结构异常）时如实说明本次拿不到归因，**不得**口算、估算或编造下降原因；本能力**只给数字与排名**，不得输出「AI 结论 / 建议」类文案
 数据: delta=0 的商品不进涨跌榜属正常（涨跌榜不是全量回显）⇒ 不得把全部商品念一遍冒充归因
 前置: 评测栈需有跨两个等长窗口的订单 seed 才能得到非零读数；无 seed 时工具仍 success=true 但 top_up/top_down 为空、delta_pct=null ⇒ 本条按「如实转述口径」判定，不把空读数当失败。**前置不成立时红的伪装形态**：seed 只有单窗口 ⇒ 所有商品都进 top_up（上期 0），此时红的落点是数据层（seed 不足）而不是 agent 行为层；机器判据见 data_checks 的 previous_is_zero 与 delta=0 两条
-必须成功: dashboard_stats
+必须成功: sales_attribution
 ```
-溯源: 2026-10-30 新增（issue #8157）：黄金策分析能力 P1-3 后半「归因」——按商品聚合两个等长窗口的销售额并给出涨跌 Top N，全部算术在工具内（dashboard_stats(action=product_attribution)），模型只转述。取号 DA-027：`python3 scripts/next_case_id.py DA`（候选 = origin/main ∪ 全部 open PR 的分支 ∪ 本工作区，rc=0）读数 = main:001-025 · PR #8156:026 ⇒ 取 DA-027。**未覆盖面（如实登记）**：只覆盖「按商品」归因；按客户 / 按状态归因、以及「下一步建议」不在本单（审计 F5 的其余部分，另包）；prompt 段本单未改（工具描述自带触发说明） ｜ tags: dashboard, attribution, readonly, llm_behavior
+溯源: 2026-10-30 新增（issue #8157）：黄金策分析能力 P1-3 后半「归因」——按商品聚合两个等长窗口的销售额并给出涨跌 Top N，全部算术在独立的只读工具内（sales_attribution，权限码 = 订单查看 order:list），模型只转述。取号 DA-027：`python3 scripts/next_case_id.py DA`（候选 = origin/main ∪ 全部 open PR 的分支 ∪ 本工作区，rc=0）读数 = main:001-025 · PR #8156:026 ⇒ 取 DA-027。**未覆盖面（如实登记）**：只覆盖「按商品」归因；按客户 / 按状态归因、以及「下一步建议」不在本单（审计 F5 的其余部分，另包）；prompt 段本单未改（工具描述自带触发说明） ｜ tags: dashboard, attribution, readonly, llm_behavior
 
 ## 防御域（24 case）
 
@@ -13830,7 +13830,7 @@
 - DA-022: 缺料风险视图：material_shortage（商品级需求 vs SKU 权威库存）的缺口分层与「未知≠0」披露（issue #6280）
 - DA-024: 评测目标租户收敛到单一可注入配置（EVAL_TENANT_ID），并钉住「非 DEBUG 不接受外部租户」（issue #6288）
 - DA-025: 经营环比对比由工具确定性计算（trend_compare / get_summary compare=true），模型只转述不口算（issue #8120）
-- DA-027: 问「这周为什么少卖」直接看商品归因（product_attribution）：涨跌 Top N 逐字转述、不口算（issue #8157）
+- DA-027: 问「这周为什么少卖」直接看商品归因（sales_attribution）：涨跌 Top N 逐字转述、不口算（issue #8157）
 - KN-001: 元元知识问答 - 面料问题先检索本店知识卡片（query 必填）
 - KN-002: 元元知识问答 - 清洗保养类问题走知识卡片检索
 - KN-003: 黄金策知识问答 - 本店售后政策先检索知识卡片（B 端接线回归，issue #3059）

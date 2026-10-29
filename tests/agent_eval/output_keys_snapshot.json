@@ -429,24 +429,6 @@
       "count"
      ]
     },
-    "product_attribution": {
-     "dynamic": false,
-     "keys": [
-      "action",
-      "current_total",
-      "days",
-      "delta",
-      "delta_pct",
-      "previous_is_zero",
-      "previous_total",
-      "requested_days",
-      "top",
-      "top_down",
-      "top_up",
-      "window",
-      "window_capped"
-     ]
-    },
     "product_ranking": {
      "dynamic": true,
      "keys": [
@@ -514,13 +496,9 @@
     "sessions",
     "todayOrderCount",
     "todaySalesAmount",
-    "top",
-    "top_down",
-    "top_up",
     "totalAmount",
     "totalOrders",
     "trend",
-    "window",
     "window_capped",
     "window_days"
    ],
@@ -530,7 +508,7 @@
     "data ← response.get('data', {})",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "3019b9a5cc9519de2f1fd88fa9c3a405db1bf13337812f839feb79dd2b577347"
+   "source_sha256": "39b0790def47e7ad064bc4af262bfeb4af4a1a5601572b5e3364e54fe6f7e6ad"
   },
   "employee_manage": {
    "actions": {
@@ -1388,6 +1366,27 @@
     "data=response.get('data', {})"
    ],
    "source_sha256": "3684cc79937d348f6a09e576f247b547c636436442d2e10b3b444aff3406ec66"
+  },
+  "sales_attribution": {
+   "actions": null,
+   "dynamic": false,
+   "file": "backend/ai-agent-service/app/tools/sales_attribution.py",
+   "keys": [
+    "current_total",
+    "days",
+    "delta",
+    "delta_pct",
+    "previous_is_zero",
+    "previous_total",
+    "requested_days",
+    "top",
+    "top_down",
+    "top_up",
+    "window",
+    "window_capped"
+   ],
+   "literal_keys": [],
+   "source_sha256": "dabedd11516eee5ae0b8fded0f60b64def839174ecdf53b2bc68e32464306536"
   },
   "scheduled_task_manage": {
    "actions": {

@@ -637,6 +637,7 @@ def create_default_registry() -> ToolRegistry:
     - employee_manage: 员工管理
     - role_manage: 角色管理
     - dashboard_stats: 经营数据看板
+    - sales_attribution: 商品归因（按商品聚合两窗口销售额，给涨跌 Top N）
     - after_sales_manage: 售后管理
     - knowledge_manage: 知识库管理
     - notification_manage: 通知管理
@@ -679,6 +680,9 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.employee_manage import EmployeeManageTool
     from app.tools.role_manage import RoleManageTool
     from app.tools.dashboard_stats import DashboardStatsTool
+    # 商品归因（issue #8157）：只读；权限码 = 订单列表读面 `order:list`（与端点同码）。
+    # 可达性由 persona 的 skill 工具集决定（黄金策 order；C 端一律不绑）。
+    from app.tools.sales_attribution import SalesAttributionTool
     from app.tools.finance_api import FinanceApiTool
     from app.tools.after_sales_manage import AfterSalesManageTool
     from app.tools.aftersale_create import AftersaleCreateTool
@@ -762,6 +766,7 @@ def create_default_registry() -> ToolRegistry:
     registry.register(EmployeeManageTool())
     registry.register(RoleManageTool())
     registry.register(DashboardStatsTool())
+    registry.register(SalesAttributionTool())
     registry.register(FinanceApiTool())
     registry.register(AfterSalesManageTool())
     registry.register(AftersaleCreateTool())
