@@ -26,6 +26,15 @@ export const CLIENT_REQUEST_ID_HEADER = 'X-Client-Request-Id'
 /** 本地登录态键（设备记住登录；401 时整键清除）。 */
 export const STORAGE_KEY = 'migao:worker-h5:session'
 
+/**
+ * 手持标签机：工人先在 `/b/` 小程序工人首页登录，再扫码进 `/w/` 报工 —— 两份页面同 origin，
+ * 共用一份 `X-Worker-Session-Id`，只是存储键不同。这两个键与 bmini 的
+ * `utils/constants.ts`（`worker_session_id` / `worker_current`）**逐字相同**；
+ * Taro H5 的 `setStorageSync` 落盘形态是 `{"data": ...}`。
+ */
+export const BIMINI_SESSION_KEY = 'worker_session_id'
+export const BIMINI_WORKER_KEY = 'worker_current'
+
 /** session 过期/失效的错误码（页面据此回落「未登录」）。 */
 export const SESSION_EXPIRED = 'SESSION_EXPIRED'
 
@@ -128,10 +137,40 @@ function shapeMessage(error) {
 
 function readStore(storage) {
   try {
-    return JSON.parse(storage.getItem(STORAGE_KEY) ?? 'null')
+    const own = JSON.parse(storage.getItem(STORAGE_KEY) ?? 'null')
+    if (own?.sessionId) return own
+  } catch {}
+  // 手持机：`/b/` 已经登录过 ⇒ `/w/` 直接复用，不让工人扫完码再登一次。
+  const sessionId = readTaroStorage(storage, BIMINI_SESSION_KEY)
+  if (!sessionId) return null
+  const worker = readTaroStorage(storage, BIMINI_WORKER_KEY) || {}
+  return {
+    sessionId: String(sessionId),
+    workerId: worker.worker_id,
+    workerNo: worker.worker_no,
+    workerName: worker.worker_name,
+    idleMinutes: worker.idle_minutes,
+    idleExpiresAt: worker.idle_expires_at,
+  }
+}
+
+/** 读 Taro H5 落的键（`{"data": ...}`）；兼容非该形态（旧版本 / 手写）。 */
+function readTaroStorage(storage, key) {
+  try {
+    const raw = storage.getItem(key)
+    if (raw == null) return null
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' && 'data' in parsed ? parsed.data : parsed
   } catch {
     return null
   }
+}
+
+/** 按 Taro H5 的落盘形态写（bmini 的 `Taro.getStorageSync` 才读得到）。 */
+function writeTaroStorage(storage, key, value) {
+  try {
+    storage.setItem(key, JSON.stringify({ data: value }))
+  } catch {}
 }
 
 /**
@@ -153,8 +192,23 @@ export function createApi(opts = {}) {
 
   const persist = (s) => {
     session = s
-    if (s) storage.setItem(STORAGE_KEY, JSON.stringify(s))
-    else storage.removeItem(STORAGE_KEY)
+    if (s) {
+      storage.setItem(STORAGE_KEY, JSON.stringify(s))
+      // 同一台手持机：`/w/` 登录后也让 `/b/` 工人首页看到这份身份（否则切过去还要再登）。
+      writeTaroStorage(storage, BIMINI_SESSION_KEY, s.sessionId)
+      writeTaroStorage(storage, BIMINI_WORKER_KEY, {
+        session_id: s.sessionId,
+        worker_id: s.workerId,
+        worker_no: s.workerNo,
+        worker_name: s.workerName,
+        idle_minutes: s.idleMinutes,
+        idle_expires_at: s.idleExpiresAt,
+      })
+    } else {
+      storage.removeItem(STORAGE_KEY)
+      storage.removeItem(BIMINI_SESSION_KEY)
+      storage.removeItem(BIMINI_WORKER_KEY)
+    }
   }
 
   const clear = () => persist(null)

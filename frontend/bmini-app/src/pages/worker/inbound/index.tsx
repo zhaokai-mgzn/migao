@@ -74,7 +74,7 @@ import {
   renderLabelPreview,
 } from '../../../utils/inbound/labelPageKit'
 import { printInboundLabel } from '../../../utils/inbound/labelPrint'
-import { createLpapiTransport, loadLpapi } from '../../../utils/inbound/lpapiTransport'
+import { createPrintTransport } from '../../../utils/inbound/terminalTransport'
 import {
   INBOUND_PHOTO_FAILED_HINT,
   INBOUND_WORKER_LOGIN_REQUIRED,
@@ -357,8 +357,8 @@ export default function WorkerInboundPage() {
       return
     }
     setBusy(true)
-    const lpapi = await loadLpapi()
-    if (!lpapi) {
+    const transport = await createPrintTransport()
+    if (!transport) {
       setBusy(false)
       setPrintState(SDK_UNAVAILABLE_HINT)
       return
@@ -366,7 +366,7 @@ export default function WorkerInboundPage() {
     const result = await printInboundLabel({
       shortCode,
       capability,
-      transport: createLpapiTransport({ lpapi }),
+      transport,
       recordPrint: async (code) => {
         const res = await recordInboundLabelPrint(code)
         if (!res.success || !res.data) throw new Error(res.message || '打印留痕失败')
