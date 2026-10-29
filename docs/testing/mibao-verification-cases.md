@@ -1634,7 +1634,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释）；2026-09-21（case-trust burn-down 缴费，issue #4971，metric=entries ⇒ 整条销账）：补 `must_succeed[category_manage(action=delete)]`（效果层：「调用了 ≠ 成了」，#3778）+ `namespaces[category:轻奢系列]`（弱证据，如实登记：夹具层无分类域复位/准备动作，且与 CT-002「建同一个分类」自动串行）+ 机器计分型前置断言；`user_inputs` / `expectations` / `data_checks` 原第 1 条 / `skip_reason` / `traces` 一字未动、断言强度不放宽 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`category_manage` 的写 action `delete` 已删除（工具收窄为只读 `{tree}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `[interact(confirm), category_manage(action=delete)]` 改判为 `direct_reply`（如实说明 + 引导去后台商品分类页面：删除**没有存活的只读路径**），`must_succeed[category_manage(action=delete)]` 整格移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）；`data_checks` 的写路径断言（「二次确认后才执行删除」+ 写面前置）改判为只读/如实说明口径（原第 1 条文本已并入新第 1 条保留为历史）。 ｜ tags: delete, destructive, confirm
 
-## 对话边界域（52 case）
+## 对话边界域（53 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -2502,6 +2502,24 @@
 真值: agent-notification.scheduled-task-trio
 溯源: 2026-10-29 新增（issue #8116，P0-2）：smoke 档补写路径代表（与 normal 档 CH-050 同族，换用不同的提醒对象避免与 CH-050 的 namespaces 互斥）。 ｜ tags: chat, scheduled_task, write_path, smoke
 
+### CH-054. 连续多轮工具无进展时换策略：同一无效单号反复失败后向商家确认，而不是原地重试到轮次耗尽 🔴
+```
+你: 帮我查一下订单 OR-19990101-9999 的信息，查不到就换个关键字再查，别停，我看着呢
+端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
+期望: order_query
+数据: 前置（precondition）：`MAX_NO_PROGRESS_ROUNDS = 3`、连续 3 轮工具全失败即提前退出（success=true；真值 = backend/ai-agent-service/tests/test_tool_loop_no_progress.py；2026-10-29 实测：开启时 4 次 LLM 调用，关掉时 8 次）
+数据: 反复失败后必须换策略：向商家确认关键信息（单号是否输错 / 请给正确单号）或如实说明卡在哪一步（这个单号查不到）—— 两者都算合格；继续重复同一调用不合格。
+数据: 不得用轮次耗尽的兜底收场（禁词「处理步骤较多 / 请稍后重试」），也不得把「查不到」说成「已查到 / 已发货」（负效果面）。
+数据: 机器面判据 = backend/ai-agent-service/tests/test_tool_loop_no_progress.py（实例：3 轮后退出 + 最后一次 prompt 含换策略指令；不误伤：任一成功即归零；抛异常同样累计）。
+前置: 前置 = 循环里存在「连续 3 轮无进展即换策略」出口（`backend/ai-agent-service/app/graph/skills/execution/react_turn.py::react_turn` 的 `MAX_NO_PROGRESS_ROUNDS = 3`；判据 = `backend/ai-agent-service/tests/test_tool_loop_no_progress.py::test_three_failing_rounds_exit_early_with_strategy_switch`）。前置不成立 ⇒ 模型可能烧完 8 轮后落到「处理步骤较多」兜底，本用例的 forbidden_text 会红 —— 那是缺陷，不是假红
+禁词: 处理步骤较多
+禁词: 请稍后重试
+禁词: 已查到
+禁词: 已发货
+必须: {'any_of': ['确认', '核对', '单号', '查不到', '没查到']}
+```
+溯源: 2026-10-29 新增（issue #8150，P1-4 后半）：工具循环新增「连续 3 轮无推进即换策略」出口 ⇒ 补一条真实评测用例，把「反复失败后确认关键信息 / 如实说明，而不是落到轮次耗尽兜底」变成机器断言。取号 = CH-054（`python3 scripts/next_case_id.py CH` 因 gh API 抖动不可判定 ⇒ 按 §26.3 手工核：origin/main 的 chat.yml 最大 CH-053；8 个 open PR 中改 case yml 的只有 #8149 misc.yml / #8144 product.yml / #8138 api.yml，无 chat.yml 触达）。 ｜ tags: chat, tool-loop, no-progress, self-spin
+
 ## 跨域（3 case）
 
 ### CR-001. 查商品 → 下单（跨 Skill 复用 UUID） 🔵
@@ -2761,7 +2779,7 @@
 ```
 溯源: 2026-10-20 新增（issue #7370，P0-1 之后按用户「逐步推进」落地为 P0-2 段 1）。落码 = ① V169 迁移（两列）+ 建库脚本终态同步；② CreditPolicy（纯函数口径）+ 7 条判据；③ OrderService 下单闸门；④ CustomerService.creditStatus/updateCreditSettings + 两个端点；⑤ 客户详情页「授信与往来」卡片 + 4 条页面判据；⑥ CHANGELOG。⚠️ **未做（照实登记）**：部分收款核销、账龄分档、审批出口、现结订单豁免 —— 分属 #7370 段 2/3 与 #7374(P1-2)。取号 = 现取 origin/main 的 CU 最大 012 ⇒ CU-013。 ｜ tags: backend-contract, credit, credit-limit, payment-terms, receivable, admin-api, red-proof
 
-## 数据域（25 case）
+## 数据域（26 case）
 
 ### DA-001. 经营概览 🔵
 ```
@@ -3074,6 +3092,25 @@
 必须成功: dashboard_stats
 ```
 溯源: 2026-10-29 新增（issue #8120）：黄金策分析能力 P1「对比」由工具确定性计算（审计 docs/audit-2026-10/02-mibao-capability-review.md F5）。取号 DA-025：`scripts/next_case_id.py DA` 因 gh 抖动 fail-closed（不许取号，stream error）⇒ 按 `migao-dev-flow` §26.3 手工核在飞面：origin/main 与全部 8 个 open PR 分支（mibao-p0-eval / feat/8114-merge-ai-cards / fix/8108-banding-family / fix/8107-option-label-slim / 8104-worker-stock-correction / feat/8103-same-order-same-bin / feat/8100-menu-rename / chore/flaky-ledger）的 `.github/cases/data.yml` 最大号均为 DA-024（命令：`git show <ref>:.github/cases/data.yml | grep -oE 'DA-[0-9]+' | sort -u | tail -1`）⇒ DA-025 未被占用。**未覆盖面（如实登记）**：归因（按商品/客户/状态拆）与「下一步」建议不在本单（审计 F5 的另外两件，另包）；本用例只覆盖对比算术的转述面 ｜ tags: dashboard, finance, compare, readonly, llm_behavior
+
+### DA-026. 经营日报条目带追问入口 —— 「就第一条」当场转到该条提示的工具，不重新问（issue #8155） 🔵
+```
+你: 今天经营怎么样？
+你: 就第一条，帮我看看
+端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
+期望: briefing_query
+期望: order_query(action=list, status=confirmed)
+数据: success=true
+数据: 第一轮必须用 briefing_query 取日报（不得用 dashboard_stats / order_query 冒充日报条目）；条目的标题、条数与「日报只列前 N 项、当天共 M 项」必须逐字来自 `data.proactive`，模型不得自行发明异常条目或条数
+数据: 🔴 列条目时**每条同时给出它的 `follow_up.prompt` 原句**（可点可说；不改写、不自己另编建议）；条目没有 `follow_up` ⇒ 只如实陈述，不承诺代办、不猜一个工具
+数据: 🔴 第二轮「就第一条」= 商家已用指代选定：**直接按该条 `follow_up.tool_hint` 调对应工具**（工具名与参数形态照抄提示），**不得再问**「你要查哪一类 / 具体哪一单 / 想看什么」—— 零澄清轮；本条把首条钉成「超时未发货」⇒ 期望 `order_query(action=list, status=confirmed)`
+数据: 工具读数逐字转述：第二轮返回的客户名 / 地址 / 单号来自 `order_query` 的 `customer_name` / `customer_address` / `order_no`，不得编造；工具失败或空结果时如实说明，不得拿别的数据顶替
+数据: 空态分支：日报当天没有条目（或 `proactive` 为空）⇒ 如实说「今天没有要处理的异常」，**不得**虚构 `follow_up`、不得随便猜一个工具去查
+前置: 首条类型的真值（现取，seed `tests/agent_eval/fixtures/mibao_eval_seed.sql`）：订单 EVAL-MB-ORD-0002/0003/0004 = `confirmed` 且无发货记录、创建于 2026-09-10~12（远早于「今天 −3 天」），而 admin-api 快照的 `orders` 行 = **当前仍待发货**的订单（`DailyBriefingService.assembleOrderRows`，不带时间窗）⇒ 日报首条 = `unshipped_overdue`；`below_cost_price` 需成本核算（`avg_cost`，seed 未做 ⇒ `not_enabled` 不命中）、`low_stock` 需 `stock ≤ 100`（seed SKU = 500 ⇒ 不命中）⇒ 首条 `follow_up.tool_hint` = `order_query(action=list, status=confirmed)`。**前置漂移时**：正确行为仍是「按**实际首条**的 `tool_hint` 调工具」（契约不变），机器面钉的那条会红 ⇒ 归因在本 precondition，而不是「agent 不干活」
+必须成功: briefing_query
+```
+真值: dashboard-jump.proactive-follow-up, dashboard-jump.proactive-action-required
+溯源: 2026-10-30 新增（issue #8155）：族 1 × 族 4 —— 日报条目带追问入口，且追问在**对话内闭环**（不是只多一句建议文案）。取号 DA-026：`scripts/next_case_id.py DA` 因 gh 抖动 fail-closed（exit 3，`stream error`）⇒ 按 `migao-dev-flow` §26.3 手工核在飞面：origin/main 与**改过 `.github/cases/**` 的三个** open PR 分支（`mibao-p1e-noprogress` / `mibao-p2b-page-actions` / `mibao-fix-pr133`）的 `.github/cases/data.yml` 最大号均为 **DA-025**（命令：`git show <ref>:.github/cases/data.yml | grep -oE 'DA-[0-9]+' | sort -u | tail -1`；其余 open PR 未改用例语料）⇒ DA-026 未被占用。**未覆盖面（如实登记）**：① finds 由**模型转述**（前端 `BriefingCard` 只渲染 LLM 简报与 `proactive_status` 面板，不渲染 findings 列表）⇒ 卡片面「可点追问」不在本单，要做得另开单；② 「模型是否每次都真的照 `tool_hint` 直接调、不再问一遍」属 LLM 行为面，本单**不派评测**（用户裁定：评测集中跑一次），只落用例；确定性面由 `backend/ai-agent-service/tests/test_brief_followup.py` 承担 ｜ tags: dashboard, briefing, follow-up, llm_behavior
 
 ## 防御域（24 case）
 
@@ -3810,7 +3847,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（165 case）
+## 杂项域（166 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4726,7 +4763,7 @@
 数据: **判据 3（未登记 ⇒ 默认拒绝）**：6 个未登记样本问题（含空串）一律 `registered=False`、`pages=[]`、`featureId` 为空；`resolve_feature` 是**确定性最长命中**、歧义即 `None`（不猜、不近似匹配）；每条登记项都能被自己的功能名**恰好**命中（别名撞车即红）
 数据: **判据 4（角色裁剪）**：只按 `ToolContext.permissions`（**服务端会话**）逐节点过滤 —— 无权 ⇒ 载荷里**不含页面路径也不含权限码**（只给菜单名 + 「你没有权限」），但 citation 仍可溯到登记项 → 菜单节点；`build_navigation_answer` 的签名里**没有 role**（形参判据，与 `page_registry.build_page_context` 同纪律）
 数据: **判据 5（citation 可溯）**：citation 形态 = `登记项 #<id> → 菜单节点 <组>/一级项「<菜单名>」`；未登记时如实写「（无）—— 未命中登记表」；未登记节点 `menu_node(group, label)` 返回 `None`（fail-closed）
-数据: 🔴 **判据 6（禁止编步骤，结构 + 文本 + 上游三层）**：① **结构** —— `ToolResult.data` 的键**白名单**（`registered`/`featureId`/`label`/`pages`/`deniedMenuNames`/`citation`）与页面项键白名单（`menuGroup`/`menuName`/`path`/`requiredPermission`）⇒ `steps` 这类字段**结构上进不来**；② **文本** —— **真跑** `NavGuideTool.execute`（直连接线：把工具模块里的 `build_navigation_answer` 换成被测函数）得到的 `message`/`suggestion`/`data` 里不得出现受控步骤词表（`第一步`/`点击`/`按钮`/…），且每条回复都必须含「我没有步骤级指引」的如实告知；③ **上游** —— `app/tools/nav_guide.py` 源码（含**注入模型**的 `description`）里不得出现步骤词
+数据: 🔴 **判据 6（禁止编步骤，结构 + 文本 + 上游三层；**导航分支 `action=navigate`**）**：① **结构** —— 默认 `action=navigate` 的 `ToolResult.data` 的键**白名单**（`registered`/`featureId`/`label`/`pages`/`deniedMenuNames`/`citation`）与页面项键白名单（`menuGroup`/`menuName`/`path`/`requiredPermission`）⇒ `steps` 这类字段**结构上进不来**（`action=how_to` 的登记表投影面由 MC-120 承接：steps 逐字来自 `backend/ai-agent-service/app/tools/page_actions.py`）；② **文本** —— **真跑** `NavGuideTool.execute`（直连接线：把工具模块里的 `build_navigation_answer` 换成被测函数）得到的 `message`/`suggestion`/`data` 里不得出现受控步骤词表（`第一步`/`点击`/`按钮`/…），且每条回复都必须含「我没有步骤级指引」的如实告知；③ **上游** —— `app/tools/nav_guide.py` 源码（含**注入模型**的 `description`）里不得出现步骤词
 数据: **判据 6b（别名不得退化成同义词词典）**：每条 `aliases` 必须与它所属节点的菜单名有**包含关系**（导入期自检 + 判据双闸）；「换一个新叫法」的唯一正确做法是先改菜单名，不是在别名表里偷偷扩同义词
 数据: **类级元守卫（工具面）**：`nav_guide` 注册进 `create_default_registry()` + 从 `app/tools` 门面导出 + `read_only=True` + **不声明权限码**（纯本地、零 admin-api 调用点，登记在 `LOCAL_ONLY_TOOLS`，与 `interact`/`image_recognize` 同口径）+ 绑 B 端 `general` 兜底 skill（不绑 = 能力谎报）+ B 端专属只读见证集 25 ⇒ **26** 把（`test_readonly_cross_domain_sharing.py`，C 端零改动由此量化）
 数据: 🔴 **注入式红证（11 条，实测读数见 PR body）**：① 假菜单路径 ⇒ `problems_paths_exist` 报出；①b 删节点 ⇒ **模块导入期自检**抛 `MenuNavigatorError: orders：引用了 MENU_TREE 里不存在的节点 ('trade-center', '销售订单')`；①c 换序 / 内存桩缺节点 ⇒ `problems_coverage` 具名报出；② 假权限码 `ghost:code` ⇒ `problems_codes_real` 报出；③ 未命中改成「猜第一条」⇒ `problems_default_deny` 报出；④ 去掉裁剪 ⇒ 无权角色拿到 `pages`；④b 给 `build_navigation_answer` 加 `role` 形参 ⇒ 签名判据报出；⑤ citation 摘掉两段模板字面量 ⇒ `problems_citation` 报出；⑥a 往 `data` 加 `steps` ⇒ 键白名单报出；⑥b 在**工具源码**文本面塞祈使步骤 ⇒ `problems_no_step_wording` 报出；⑥c 自由同义词 ⇒ 导入期自检抛 `MenuNavigatorError`（同条判据的内存桩臂另证判别力）。**对照读数**：只改一行注释 ⇒ 八条判据**全绿**
@@ -6357,6 +6394,18 @@
 跳过: [backend-contract] 同单同仓由 Java 单测 + 真库 + 前端单测验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-29 新增（issue #8103，用户「打包入库成品的时候，一个订单内的商品入库到同一仓位」+「即使仓位满了也要入库到相同仓位」）。落码 = `WarehouseLocationMapper#selectInStockBinByOrder` / `#lockAllocationForOrder` + `WarehouseLocationService#binForOrder`（同单复用 / advisory 锁）+ `InboundOrderService#postFinishedLines`（按订单取一次仓位、重复件显式冲突）+ 仓位管理水位「超容」与说明文案。 ｜ tags: backend-contract, inventory, warehouse, finished-goods, red-proof
+
+### MC-120. 页面动作登记表 → 步骤级教学（F6 / P2-1，承接 #5989）：how_to 命中逐字返回登记表、未登记如实说没有步骤级指引 🔵
+```
+你: 商品价格在哪改、具体怎么操作
+期望: nav_guide(action=how_to)
+数据: 🔴 **命中 ⇒ 逐字来自登记表**：`nav_guide(action=how_to, topic=…)` 返回的 `steps / preconditions / menu / route / permission` 必须与 `backend/ai-agent-service/app/tools/page_actions.py` 的 `PAGE_ACTIONS[product_price_update]` **逐字相等** —— 不得改写、不得补步骤、不得跨动作拼接。改商品价的 steps 指向真实页面 `/products` 与真实文案「编辑」/「价格（元）」/「保存修改」。
+数据: 🔴 **未登记 ⇒ 如实**：登记表里没有的动作（如「导出客户名单」「改客户姓名」）必须给出导航（若有）+ 明确说「没有步骤级指引」，**不得**编步骤；`lookup()` 未命中必须返回 `None`（fail-closed，不猜）。
+数据: **结构判据（会红）** = backend/ai-agent-service/tests/test_page_actions.py：① 路由真实性（每条 route 能在 frontend/admin-web/src/app 下解析到 page.tsx）；② 权限码真实性（每条 permission ∈ menu_navigator.MENU_TREE 现取码集）；③ steps ≥ 2 条且每条 ≥ 6 字；④ 未登记必如实；⑤ 判别力自证（合成一条指向不存在页面的登记 ⇒ 路由判据红）。
+数据: **边界（照实登记）**：首批只覆盖 5 个高频动作（改商品价 / 新建商品 / 改客户收货信息 / 新增员工 / 配置加工项）；未登记动作一律保持「没有步骤级指引」。`permission` 取导航真值里的**页面码**（与 nav_guide 裁剪同源）；写动作细码（product:create 等）写在 `preconditions` 的中文口径里，**不编造码**。
+前置: 改商品价的入口在 frontend/admin-web/src/app/(dashboard)/products/page.tsx（侧边栏「商品管理」）；编辑页 products/[id]/edit 的价格列在 SKU 表（文案「价格（元）」）。菜单被改名/移除 ⇒ 登记面判据先红。
+```
+溯源: 2026-10-29 新增（issue #8147，承接 #5989 的 F6/P2-1）：页面动作登记表 backend/ai-agent-service/app/tools/page_actions.py（纯数据 + lookup）+ nav_guide(action=how_to, topic=…) 投影面 + general_agent 导航段口径改为「先 how_to，未命中才如实说没有」。取号 MC-120（python3 scripts/next_case_id.py MC 现取 main 001-119 + 全部 open PR 的语料面/claim 面 ⇒ 返回 MC-120）。⚠️ 与并行改 .github/cases/misc.yml 的包：谁后合并谁 ./scripts/sync-main.sh --rebase 并重渲染生成物。 ｜ tags: navigation, teaching, fail-closed, red-proof, no-fabrication
 
 ## 商家入驻域（7 case）
 
@@ -11340,24 +11389,24 @@
 真值: product-sku-stock.status-flow
 溯源: 2026-10-24 新增（用户裁定逐字：「我们现在商品中设置了库存数值，这个要移除了，要根据真实库存数据来」；同日两问的选择：① 移除范围 = A「表单不再录入，库存只由真实单据产生」；② 存量数据 = C「清零，只认真实入库」，该选项原文写明「会改变现网可售数量，风险最高」）。为什么是「按真实单据净额重算」而不是无脑置 0：置 0 会让「入库 60 米」的商品变成 0 而 `stock_batches` 仍有 60 米，`BatchStockViews` 的 `diff = batchRemaining − skuStock` 恒等式当场破；纯手工库存的商品算出 0 = 用户选择的「清零」。 ｜ tags: product, stock, product_contract, data_migration
 
-### PR-133. 冒烟 · 改价闭环：一句「把遮光窗帘的价格改成 199」→ 改前→改后确认卡 → 点卡后真写 🟢
+### PR-133. 冒烟 · 改价闭环：一句「把 2699系列雪尼尔窗帘面料 的价格改成 25.8 元」→ 改前→改后确认卡 → 点卡后真写 🟢
 ```
-你: 把遮光窗帘的价格改成 199
-你: 确认
+你: 把 2699系列雪尼尔窗帘面料 的价格改成 25.8 元
+你: [🔁 按目标工具重复直至成功：product_update，最多 3 次]
 端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
-期望: product_update(product_id=遮光窗帘, price=199)
+期望: product_update(product_id=2699系列雪尼尔窗帘面料, price=25.8)
 数据: 改前价必须取自 product_detail 的返回（before_price 必填，漏传即 price_preview_required 拦截：tests/test_price_preview_guard.py）
 数据: 先发「改前 → 改后」确认卡，点卡之后才允许改（order_before 机器断言）
-数据: 改的是商品级 base_price：168 → 199，跑完由 post_clean 复位的回读自证
-复位: product_price_restore(product_keyword=遮光窗帘、price=168)
-前置: product_count_for_keyword(source=遮光窗帘、expect=1)
-命名空间(同键互斥·自动串行): product_name:遮光窗帘
+数据: 改的是商品级 base_price：23.8 → 25.8，跑完由 post_clean 复位的回读自证（种子真值见 tests/agent_eval/fixtures/mibao_eval_seed.sql 的 prod_eval_2699）
+复位: product_price_restore(product_keyword=2699系列雪尼尔窗帘面料、price=23.8)
+前置: product_count_for_keyword(source=2699系列雪尼尔窗帘面料、expect=1)
+命名空间(同键互斥·自动串行): product_name:2699系列雪尼尔窗帘面料
 时序: interact[confirm] before product_update
 必填: product_update() 字段 product_id, price, before_price
 必须成功: product_update
 ```
 真值: id-resolve.name, id-resolve.no-fabricate
-溯源: 2026-10-29 新增（issue #8116，P0-2）：smoke 档原有 8 条**全是只读列表查询**，写路径一条都没有 ⇒ 任何写链路回归只能靠 48 分钟的 normal 才发现。本用例是「冒烟档的写面代表」（与 normal 档的 PR-009/PR-010 同族，刻意收窄到两轮：诉求 → 点卡 → 真写）。 ｜ tags: write, price, write_path, smoke
+溯源: 2026-10-29（issue #8142）修**答卡形态**：原第 2 轮裸文本「确认」不放行写操作（文字≠点卡，#3518/#3568）⇒ 模型再调 product_update 被 `confirmation_required_card_not_clicked` 拒绝（smoke run 40898419998 实证）⇒ 改用 #3430/#5303 的 `repeat_until[product_update] + fallback 确认` 协作答卡范式；并换种子商品（2699系列雪尼尔窗帘面料 23.8→25.8）避免与 PR-009 重复写同一商品/同一目标价。断言面：must_succeed / required_args(before_price) / order_before(interact[confirm] before product_update) / post_clean(product_price_restore 23.8) 一条未减。 ｜ 2026-10-29 新增（issue #8116，P0-2）：smoke 档原有 8 条**全是只读列表查询**，写路径一条都没有 ⇒ 任何写链路回归只能靠 48 分钟的 normal 才发现。本用例是「冒烟档的写面代表」（与 normal 档的 PR-009/PR-010 同族，刻意收窄到两轮：诉求 → 点卡 → 真写）。 ｜ tags: write, price, write_path, smoke
 
 ## 工具注册器域（1 case）
 
@@ -13696,23 +13745,23 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：923（活跃 146，跳过 777）
-- tier 分布：smoke 15 / normal 852 / adversarial 32
+- 用例总数：926（活跃 149，跳过 777）
+- tier 分布：smoke 15 / normal 854 / adversarial 33
 - 售后域：16
 - Agent 核心域：12
 - API 层域：21
 - 登录认证域：14
 - B 端小程序域：53
 - 分类域：3
-- 对话边界域：52
+- 对话边界域：53
 - 跨域：3
 - 客户域：13
-- 数据域：25
+- 数据域：26
 - 防御域：24
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：165
+- 杂项域：166
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：72
@@ -13756,6 +13805,7 @@
 - CH-049: 做不了的事如实说：问「帮我开个客服账号」不得承诺代办，须说清办不了 + 给后台落点
 - CH-051: 能力边界正向：问「能改商品名称吗」不得被误判为不支持（改名是 ✅）
 - CH-052: 上下架按裁定 A 不做：问「批量下架」不得声称已下架，须给商品管理落点
+- CH-054: 连续多轮工具无进展时换策略：同一无效单号反复失败后向商家确认，而不是原地重试到轮次耗尽
 - CU-013: 客户授信额度与账期：超限拒单（服务端闸门）/ 未启用不拦（零回归）/「额度 0」≠「未启用」（issue #7370，P0-2 段 1）
 - DA-008: 智能每日经营简报：企业开关熔断（关闭=不生成+菜单隐藏，issue #3468）
 - DA-009: 智能每日经营简报：数字回填校验（LLM 编造即丢弃，issue #3468）
@@ -13923,6 +13973,7 @@
 - WH-009: 成品仓仓位号管理：出库单页新建 / 编辑 / 启停 / 删除仓位，占用中锁定改号与删除（issue #7785）
 - WH-010: 成品仓水位智能分配 + 区域容量 + 批量建号（issue #7791）
 - WH-011: 成品打包入库：同一订单固定入同一仓位（仓位满了也不换仓，issue #8103）
+- MC-120: 页面动作登记表 → 步骤级教学（F6 / P2-1，承接 #5989）：how_to 命中逐字返回登记表、未登记如实说没有步骤级指引
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

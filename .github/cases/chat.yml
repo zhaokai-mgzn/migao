@@ -2996,3 +2996,48 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+
+  - id: CH-054
+    legacy_id: ""
+    title: "连续多轮工具无进展时换策略：同一无效单号反复失败后向商家确认，而不是原地重试到轮次耗尽"
+    domains:
+      - chat
+      - order
+    tier: adversarial
+    persona: mibao
+    tags:
+      - chat
+      - tool-loop
+      - no-progress
+      - self-spin
+    truths_ref: []
+    user_inputs:
+      - "帮我查一下订单 OR-19990101-9999 的信息，查不到就换个关键字再查，别停，我看着呢"
+    expectations:
+      - tool: order_query
+    forbidden_text:
+      - "处理步骤较多"
+      - "请稍后重试"
+      - "已查到"
+      - "已发货"
+    want_text:
+      - any_of:
+          - "确认"
+          - "核对"
+          - "单号"
+          - "查不到"
+          - "没查到"
+    precondition: "前置 = 循环里存在「连续 3 轮无进展即换策略」出口（`backend/ai-agent-service/app/graph/skills/execution/react_turn.py::react_turn` 的 `MAX_NO_PROGRESS_ROUNDS = 3`；判据 = `backend/ai-agent-service/tests/test_tool_loop_no_progress.py::test_three_failing_rounds_exit_early_with_strategy_switch`）。前置不成立 ⇒ 模型可能烧完 8 轮后落到「处理步骤较多」兜底，本用例的 forbidden_text 会红 —— 那是缺陷，不是假红"
+    data_checks:
+      - "前置（precondition）：`MAX_NO_PROGRESS_ROUNDS = 3`、连续 3 轮工具全失败即提前退出（success=true；真值 = backend/ai-agent-service/tests/test_tool_loop_no_progress.py；2026-10-29 实测：开启时 4 次 LLM 调用，关掉时 8 次）"
+      - "反复失败后必须换策略：向商家确认关键信息（单号是否输错 / 请给正确单号）或如实说明卡在哪一步（这个单号查不到）—— 两者都算合格；继续重复同一调用不合格。"
+      - "不得用轮次耗尽的兜底收场（禁词「处理步骤较多 / 请稍后重试」），也不得把「查不到」说成「已查到 / 已发货」（负效果面）。"
+      - "机器面判据 = backend/ai-agent-service/tests/test_tool_loop_no_progress.py（实例：3 轮后退出 + 最后一次 prompt 含换策略指令；不误伤：任一成功即归零；抛异常同样累计）。"
+    skip_reason: ""
+    merge_log: "2026-10-29 新增（issue #8150，P1-4 后半）：工具循环新增「连续 3 轮无推进即换策略」出口 ⇒ 补一条真实评测用例，把「反复失败后确认关键信息 / 如实说明，而不是落到轮次耗尽兜底」变成机器断言。取号 = CH-054（`python3 scripts/next_case_id.py CH` 因 gh API 抖动不可判定 ⇒ 按 §26.3 手工核：origin/main 的 chat.yml 最大 CH-053；8 个 open PR 中改 case yml 的只有 #8149 misc.yml / #8144 product.yml / #8138 api.yml，无 chat.yml 触达）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tool_loop_no_progress.py"
+      ci:
+        - agent-eval.yml
+      verifies: []

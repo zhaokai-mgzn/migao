@@ -756,13 +756,31 @@
    "actions": null,
    "dynamic": true,
    "file": "backend/ai-agent-service/app/tools/nav_guide.py",
-   "keys": [],
-   "literal_keys": [],
+   "keys": [
+    "action",
+    "label",
+    "menu",
+    "permission",
+    "preconditions",
+    "registered",
+    "route",
+    "steps"
+   ],
+   "literal_keys": [
+    "action",
+    "label",
+    "menu",
+    "permission",
+    "preconditions",
+    "registered",
+    "route",
+    "steps"
+   ],
    "shape_notes": [
     "data ← answer.to_data()",
     "data=answer.to_data()"
    ],
-   "source_sha256": "7caced7f189f9d3e234a42169148ba114da6d953e2ae554da43f91cfe7879ee5"
+   "source_sha256": "a46db4e491bc0cd715ce6b9b91d04cdfe1ce6fc350825a1fd61e264afb868141"
   },
   "notification_manage": {
    "actions": {

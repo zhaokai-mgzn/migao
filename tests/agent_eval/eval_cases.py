@@ -3268,6 +3268,27 @@ _CASE_CH_053 = EvalCase(
     precondition='前置 = reminder skill 绑定 `scheduled_task_manage`、且当前身份具备 admin/operator 角色（2026-10-19 B 端可达集实测含该工具）；不成立 ⇒ 期望 unmatched，红会伪装成「agent 不会建提醒」',
 )
 
+# ── CH-054 [ADVERSARIAL] 连续多轮工具无进展时换策略：同一无效单号反复失败后向商家确认，而不是原地重试到轮次耗尽（源: cases/chat.yml）──
+_CASE_CH_054 = EvalCase(
+    id='CH-054',
+    legacy_id='',
+    title='连续多轮工具无进展时换策略：同一无效单号反复失败后向商家确认，而不是原地重试到轮次耗尽',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.ADVERSARIAL,
+    user_inputs=['帮我查一下订单 OR-19990101-9999 的信息，查不到就换个关键字再查，别停，我看着呢'],
+    expectations=['order_query'],
+    data_checks=['前置（precondition）：`MAX_NO_PROGRESS_ROUNDS = 3`、连续 3 轮工具全失败即提前退出（success=true；真值 = backend/ai-agent-service/tests/test_tool_loop_no_progress.py；2026-10-29 实测：开启时 4 次 LLM 调用，关掉时 8 次）', '反复失败后必须换策略：向商家确认关键信息（单号是否输错 / 请给正确单号）或如实说明卡在哪一步（这个单号查不到）—— 两者都算合格；继续重复同一调用不合格。', '不得用轮次耗尽的兜底收场（禁词「处理步骤较多 / 请稍后重试」），也不得把「查不到」说成「已查到 / 已发货」（负效果面）。', '机器面判据 = backend/ai-agent-service/tests/test_tool_loop_no_progress.py（实例：3 轮后退出 + 最后一次 prompt 含换策略指令；不误伤：任一成功即归零；抛异常同样累计）。'],
+    skip_reason='',
+    tags=['chat', 'tool-loop', 'no-progress', 'self-spin'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=['处理步骤较多', '请稍后重试', '已查到', '已发货'],
+    want_text=[{'any_of': ['确认', '核对', '单号', '查不到', '没查到']}],
+    precondition='前置 = 循环里存在「连续 3 轮无进展即换策略」出口（`backend/ai-agent-service/app/graph/skills/execution/react_turn.py::react_turn` 的 `MAX_NO_PROGRESS_ROUNDS = 3`；判据 = `backend/ai-agent-service/tests/test_tool_loop_no_progress.py::test_three_failing_rounds_exit_early_with_strategy_switch`）。前置不成立 ⇒ 模型可能烧完 8 轮后落到「处理步骤较多」兜底，本用例的 forbidden_text 会红 —— 那是缺陷，不是假红',
+)
+
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
 _CASE_CR_001 = EvalCase(
     id='CR-001',
@@ -4036,6 +4057,26 @@ _CASE_DA_025 = EvalCase(
     forbidden_card_text=[],
     must_succeed=[{'tool': 'dashboard_stats'}],
     precondition='评测栈需有订单/资金流水 seed 才能得到非零读数；无 seed 时工具仍返回 success=true 但读数全 0（delta_pct=null / partial=true）⇒ 本条按「如实转述口径」判定，不把空读数当失败。**前置不成立时红的伪装形态**：序列长度 < 2×days 时 `partial=true`、上期全 0 时 `delta_pct=null` 会如实披露 ⇒ 此时「少了/多了」的红落在**数据层**（seed 不足），不是 agent 行为层；机器判据见本用例 data_checks 的 `previous_is_zero` / `partial` 两条',
+)
+
+# ── DA-026 [NORMAL] 经营日报条目带追问入口 —— 「就第一条」当场转到该条提示的工具，不重新问（issue #8155）（源: cases/data.yml）──
+_CASE_DA_026 = EvalCase(
+    id='DA-026',
+    legacy_id='',
+    title='经营日报条目带追问入口 —— 「就第一条」当场转到该条提示的工具，不重新问（issue #8155）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['今天经营怎么样？', '就第一条，帮我看看'],
+    expectations=['briefing_query', 'order_query(action=list, status=confirmed)'],
+    data_checks=['success=true', '第一轮必须用 briefing_query 取日报（不得用 dashboard_stats / order_query 冒充日报条目）；条目的标题、条数与「日报只列前 N 项、当天共 M 项」必须逐字来自 `data.proactive`，模型不得自行发明异常条目或条数', '🔴 列条目时**每条同时给出它的 `follow_up.prompt` 原句**（可点可说；不改写、不自己另编建议）；条目没有 `follow_up` ⇒ 只如实陈述，不承诺代办、不猜一个工具', '🔴 第二轮「就第一条」= 商家已用指代选定：**直接按该条 `follow_up.tool_hint` 调对应工具**（工具名与参数形态照抄提示），**不得再问**「你要查哪一类 / 具体哪一单 / 想看什么」—— 零澄清轮；本条把首条钉成「超时未发货」⇒ 期望 `order_query(action=list, status=confirmed)`', '工具读数逐字转述：第二轮返回的客户名 / 地址 / 单号来自 `order_query` 的 `customer_name` / `customer_address` / `order_no`，不得编造；工具失败或空结果时如实说明，不得拿别的数据顶替', '空态分支：日报当天没有条目（或 `proactive` 为空）⇒ 如实说「今天没有要处理的异常」，**不得**虚构 `follow_up`、不得随便猜一个工具去查'],
+    skip_reason='',
+    tags=['dashboard', 'briefing', 'follow-up', 'llm_behavior'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'briefing_query'}],
+    precondition='首条类型的真值（现取，seed `tests/agent_eval/fixtures/mibao_eval_seed.sql`）：订单 EVAL-MB-ORD-0002/0003/0004 = `confirmed` 且无发货记录、创建于 2026-09-10~12（远早于「今天 −3 天」），而 admin-api 快照的 `orders` 行 = **当前仍待发货**的订单（`DailyBriefingService.assembleOrderRows`，不带时间窗）⇒ 日报首条 = `unshipped_overdue`；`below_cost_price` 需成本核算（`avg_cost`，seed 未做 ⇒ `not_enabled` 不命中）、`low_stock` 需 `stock ≤ 100`（seed SKU = 500 ⇒ 不命中）⇒ 首条 `follow_up.tool_hint` = `order_query(action=list, status=confirmed)`。**前置漂移时**：正确行为仍是「按**实际首条**的 `tool_hint` 调工具」（契约不变），机器面钉的那条会红 ⇒ 归因在本 precondition，而不是「agent 不干活」',
 )
 
 # ── DF-001 [ADVERSARIAL] Token攻击 - 要求生成超长回复（源: cases/defense.yml）──
@@ -6174,7 +6215,7 @@ _CASE_MC_065 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['当登记表里引用了一条 config/menu.ts 里**不存在**的菜单路径、或声明了一个权限目录里没有的**假权限码**、或把「未登记」的问题猜成一条登记项、或去掉了按会话权限的裁剪（让无权角色拿到页面路径）、或把 citation 摘成不可溯、或往载荷里加 `steps` / 往文案里塞步骤词时 —— 都必须有东西**具名**报出；而只改一行注释时不得报红'],
     expectations=['direct_reply'],
-    data_checks=['**判据 1 / 1b（结构层 = `config/menu.ts` 的镜像）**：`app/context/menu_navigator.py` 的 `MENU_TREE` 与 `frontend/admin-web/src/config/menu.ts` **逐节点逐字段逐序**相等（6 组 20 项 + 2 个一级独立项 = 22），且 `MENU_TREE_ORDER_LOCKED` 是注入式红证的锚；`menu.ts` 解析器**复用** `tests/unit_ci_workflows/test_agent_permission_parity.py::parse_menu_ts_nodes`（**不造第二套解析器**，§17.3 ⑤）', '**判据 2（权限码是真码）**：每个非空 `permission_code` 必须落在 `RegistrationService` / `PermissionService` 两处权限目录（复用 `parse_catalog`，两处目录逐值相等也由它核）；无码节点必须**显式**列举（现取 = 仅 `/notifications`）', '**判据 3（未登记 ⇒ 默认拒绝）**：6 个未登记样本问题（含空串）一律 `registered=False`、`pages=[]`、`featureId` 为空；`resolve_feature` 是**确定性最长命中**、歧义即 `None`（不猜、不近似匹配）；每条登记项都能被自己的功能名**恰好**命中（别名撞车即红）', '**判据 4（角色裁剪）**：只按 `ToolContext.permissions`（**服务端会话**）逐节点过滤 —— 无权 ⇒ 载荷里**不含页面路径也不含权限码**（只给菜单名 + 「你没有权限」），但 citation 仍可溯到登记项 → 菜单节点；`build_navigation_answer` 的签名里**没有 role**（形参判据，与 `page_registry.build_page_context` 同纪律）', '**判据 5（citation 可溯）**：citation 形态 = `登记项 #<id> → 菜单节点 <组>/一级项「<菜单名>」`；未登记时如实写「（无）—— 未命中登记表」；未登记节点 `menu_node(group, label)` 返回 `None`（fail-closed）', '🔴 **判据 6（禁止编步骤，结构 + 文本 + 上游三层）**：① **结构** —— `ToolResult.data` 的键**白名单**（`registered`/`featureId`/`label`/`pages`/`deniedMenuNames`/`citation`）与页面项键白名单（`menuGroup`/`menuName`/`path`/`requiredPermission`）⇒ `steps` 这类字段**结构上进不来**；② **文本** —— **真跑** `NavGuideTool.execute`（直连接线：把工具模块里的 `build_navigation_answer` 换成被测函数）得到的 `message`/`suggestion`/`data` 里不得出现受控步骤词表（`第一步`/`点击`/`按钮`/…），且每条回复都必须含「我没有步骤级指引」的如实告知；③ **上游** —— `app/tools/nav_guide.py` 源码（含**注入模型**的 `description`）里不得出现步骤词', '**判据 6b（别名不得退化成同义词词典）**：每条 `aliases` 必须与它所属节点的菜单名有**包含关系**（导入期自检 + 判据双闸）；「换一个新叫法」的唯一正确做法是先改菜单名，不是在别名表里偷偷扩同义词', '**类级元守卫（工具面）**：`nav_guide` 注册进 `create_default_registry()` + 从 `app/tools` 门面导出 + `read_only=True` + **不声明权限码**（纯本地、零 admin-api 调用点，登记在 `LOCAL_ONLY_TOOLS`，与 `interact`/`image_recognize` 同口径）+ 绑 B 端 `general` 兜底 skill（不绑 = 能力谎报）+ B 端专属只读见证集 25 ⇒ **26** 把（`test_readonly_cross_domain_sharing.py`，C 端零改动由此量化）', "🔴 **注入式红证（11 条，实测读数见 PR body）**：① 假菜单路径 ⇒ `problems_paths_exist` 报出；①b 删节点 ⇒ **模块导入期自检**抛 `MenuNavigatorError: orders：引用了 MENU_TREE 里不存在的节点 ('trade-center', '销售订单')`；①c 换序 / 内存桩缺节点 ⇒ `problems_coverage` 具名报出；② 假权限码 `ghost:code` ⇒ `problems_codes_real` 报出；③ 未命中改成「猜第一条」⇒ `problems_default_deny` 报出；④ 去掉裁剪 ⇒ 无权角色拿到 `pages`；④b 给 `build_navigation_answer` 加 `role` 形参 ⇒ 签名判据报出；⑤ citation 摘掉两段模板字面量 ⇒ `problems_citation` 报出；⑥a 往 `data` 加 `steps` ⇒ 键白名单报出；⑥b 在**工具源码**文本面塞祈使步骤 ⇒ `problems_no_step_wording` 报出；⑥c 自由同义词 ⇒ 导入期自检抛 `MenuNavigatorError`（同条判据的内存桩臂另证判别力）。**对照读数**：只改一行注释 ⇒ 八条判据**全绿**", '🔴 **本文件跑在没装 ai-agent 依赖的解释器里**（CI 的 `ci workflow helper unit tests` job 只装 `pytest pyyaml`）：因此**一律不 import `app.*`**（`app.tools.*` 会拉 `pydantic` / `langchain_core` ⇒ 本地绿、CI 红，实测 6 failed）。本文件只做**静态**判据（AST / 源码文本）+ 运行**零依赖**的纯函数（`app/context/menu_navigator.py` 只依赖标准库）；**需要真 import 的行为面**（工具真跑一遍的返回形状、`visible_nodes` 的裁剪、回复里也无步骤词）在 `backend/ai-agent-service/tests/test_nav_guide.py`（那里有依赖）——两处不重复同一断言。**复算方式（两侧都要跑）**：`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=<毒化 pydantic/langchain_core/app 的目录> python3 -m pytest tests/unit_ci_workflows/test_menu_navigator.py -q` ⇒ 31 passed（在**装不了**这些包的环境里也全绿）'],
+    data_checks=['**判据 1 / 1b（结构层 = `config/menu.ts` 的镜像）**：`app/context/menu_navigator.py` 的 `MENU_TREE` 与 `frontend/admin-web/src/config/menu.ts` **逐节点逐字段逐序**相等（6 组 20 项 + 2 个一级独立项 = 22），且 `MENU_TREE_ORDER_LOCKED` 是注入式红证的锚；`menu.ts` 解析器**复用** `tests/unit_ci_workflows/test_agent_permission_parity.py::parse_menu_ts_nodes`（**不造第二套解析器**，§17.3 ⑤）', '**判据 2（权限码是真码）**：每个非空 `permission_code` 必须落在 `RegistrationService` / `PermissionService` 两处权限目录（复用 `parse_catalog`，两处目录逐值相等也由它核）；无码节点必须**显式**列举（现取 = 仅 `/notifications`）', '**判据 3（未登记 ⇒ 默认拒绝）**：6 个未登记样本问题（含空串）一律 `registered=False`、`pages=[]`、`featureId` 为空；`resolve_feature` 是**确定性最长命中**、歧义即 `None`（不猜、不近似匹配）；每条登记项都能被自己的功能名**恰好**命中（别名撞车即红）', '**判据 4（角色裁剪）**：只按 `ToolContext.permissions`（**服务端会话**）逐节点过滤 —— 无权 ⇒ 载荷里**不含页面路径也不含权限码**（只给菜单名 + 「你没有权限」），但 citation 仍可溯到登记项 → 菜单节点；`build_navigation_answer` 的签名里**没有 role**（形参判据，与 `page_registry.build_page_context` 同纪律）', '**判据 5（citation 可溯）**：citation 形态 = `登记项 #<id> → 菜单节点 <组>/一级项「<菜单名>」`；未登记时如实写「（无）—— 未命中登记表」；未登记节点 `menu_node(group, label)` 返回 `None`（fail-closed）', '🔴 **判据 6（禁止编步骤，结构 + 文本 + 上游三层；**导航分支 `action=navigate`**）**：① **结构** —— 默认 `action=navigate` 的 `ToolResult.data` 的键**白名单**（`registered`/`featureId`/`label`/`pages`/`deniedMenuNames`/`citation`）与页面项键白名单（`menuGroup`/`menuName`/`path`/`requiredPermission`）⇒ `steps` 这类字段**结构上进不来**（`action=how_to` 的登记表投影面由 MC-120 承接：steps 逐字来自 `backend/ai-agent-service/app/tools/page_actions.py`）；② **文本** —— **真跑** `NavGuideTool.execute`（直连接线：把工具模块里的 `build_navigation_answer` 换成被测函数）得到的 `message`/`suggestion`/`data` 里不得出现受控步骤词表（`第一步`/`点击`/`按钮`/…），且每条回复都必须含「我没有步骤级指引」的如实告知；③ **上游** —— `app/tools/nav_guide.py` 源码（含**注入模型**的 `description`）里不得出现步骤词', '**判据 6b（别名不得退化成同义词词典）**：每条 `aliases` 必须与它所属节点的菜单名有**包含关系**（导入期自检 + 判据双闸）；「换一个新叫法」的唯一正确做法是先改菜单名，不是在别名表里偷偷扩同义词', '**类级元守卫（工具面）**：`nav_guide` 注册进 `create_default_registry()` + 从 `app/tools` 门面导出 + `read_only=True` + **不声明权限码**（纯本地、零 admin-api 调用点，登记在 `LOCAL_ONLY_TOOLS`，与 `interact`/`image_recognize` 同口径）+ 绑 B 端 `general` 兜底 skill（不绑 = 能力谎报）+ B 端专属只读见证集 25 ⇒ **26** 把（`test_readonly_cross_domain_sharing.py`，C 端零改动由此量化）', "🔴 **注入式红证（11 条，实测读数见 PR body）**：① 假菜单路径 ⇒ `problems_paths_exist` 报出；①b 删节点 ⇒ **模块导入期自检**抛 `MenuNavigatorError: orders：引用了 MENU_TREE 里不存在的节点 ('trade-center', '销售订单')`；①c 换序 / 内存桩缺节点 ⇒ `problems_coverage` 具名报出；② 假权限码 `ghost:code` ⇒ `problems_codes_real` 报出；③ 未命中改成「猜第一条」⇒ `problems_default_deny` 报出；④ 去掉裁剪 ⇒ 无权角色拿到 `pages`；④b 给 `build_navigation_answer` 加 `role` 形参 ⇒ 签名判据报出；⑤ citation 摘掉两段模板字面量 ⇒ `problems_citation` 报出；⑥a 往 `data` 加 `steps` ⇒ 键白名单报出；⑥b 在**工具源码**文本面塞祈使步骤 ⇒ `problems_no_step_wording` 报出；⑥c 自由同义词 ⇒ 导入期自检抛 `MenuNavigatorError`（同条判据的内存桩臂另证判别力）。**对照读数**：只改一行注释 ⇒ 八条判据**全绿**", '🔴 **本文件跑在没装 ai-agent 依赖的解释器里**（CI 的 `ci workflow helper unit tests` job 只装 `pytest pyyaml`）：因此**一律不 import `app.*`**（`app.tools.*` 会拉 `pydantic` / `langchain_core` ⇒ 本地绿、CI 红，实测 6 failed）。本文件只做**静态**判据（AST / 源码文本）+ 运行**零依赖**的纯函数（`app/context/menu_navigator.py` 只依赖标准库）；**需要真 import 的行为面**（工具真跑一遍的返回形状、`visible_nodes` 的裁剪、回复里也无步骤词）在 `backend/ai-agent-service/tests/test_nav_guide.py`（那里有依赖）——两处不重复同一断言。**复算方式（两侧都要跑）**：`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=<毒化 pydantic/langchain_core/app 的目录> python3 -m pytest tests/unit_ci_workflows/test_menu_navigator.py -q` ⇒ 31 passed（在**装不了**这些包的环境里也全绿）'],
     skip_reason='[backend-contract] 真值源与菜单单一源的结构对账（源码静态事实 + 内存注入 + 真跑工具形状），零 LLM、秒级、不连网不连库；承载体 = tests/unit_ci_workflows/test_menu_navigator.py，非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ci', 'permission', 'rbac', 'fail-closed', 'red-proof', 'navigation', 'no-steps'],
     persona='',
@@ -8067,6 +8108,25 @@ _CASE_WH_011 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     precondition='本用例是 [backend-contract + frontend-contract]：前置 = V196/V198 成品在库 + 仓位容量 + 成品入库单（`biz_category=finished`）。零网络、零 LLM。',
+)
+
+# ── MC-120 [NORMAL] 页面动作登记表 → 步骤级教学（F6 / P2-1，承接 #5989）：how_to 命中逐字返回登记表、未登记如实说没有步骤级指引（源: cases/misc.yml）──
+_CASE_MC_120 = EvalCase(
+    id='MC-120',
+    legacy_id='',
+    title='页面动作登记表 → 步骤级教学（F6 / P2-1，承接 #5989）：how_to 命中逐字返回登记表、未登记如实说没有步骤级指引',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商品价格在哪改、具体怎么操作'],
+    expectations=['nav_guide(action=how_to)'],
+    data_checks=['🔴 **命中 ⇒ 逐字来自登记表**：`nav_guide(action=how_to, topic=…)` 返回的 `steps / preconditions / menu / route / permission` 必须与 `backend/ai-agent-service/app/tools/page_actions.py` 的 `PAGE_ACTIONS[product_price_update]` **逐字相等** —— 不得改写、不得补步骤、不得跨动作拼接。改商品价的 steps 指向真实页面 `/products` 与真实文案「编辑」/「价格（元）」/「保存修改」。', '🔴 **未登记 ⇒ 如实**：登记表里没有的动作（如「导出客户名单」「改客户姓名」）必须给出导航（若有）+ 明确说「没有步骤级指引」，**不得**编步骤；`lookup()` 未命中必须返回 `None`（fail-closed，不猜）。', '**结构判据（会红）** = backend/ai-agent-service/tests/test_page_actions.py：① 路由真实性（每条 route 能在 frontend/admin-web/src/app 下解析到 page.tsx）；② 权限码真实性（每条 permission ∈ menu_navigator.MENU_TREE 现取码集）；③ steps ≥ 2 条且每条 ≥ 6 字；④ 未登记必如实；⑤ 判别力自证（合成一条指向不存在页面的登记 ⇒ 路由判据红）。', '**边界（照实登记）**：首批只覆盖 5 个高频动作（改商品价 / 新建商品 / 改客户收货信息 / 新增员工 / 配置加工项）；未登记动作一律保持「没有步骤级指引」。`permission` 取导航真值里的**页面码**（与 nav_guide 裁剪同源）；写动作细码（product:create 等）写在 `preconditions` 的中文口径里，**不编造码**。'],
+    skip_reason='',
+    tags=['navigation', 'teaching', 'fail-closed', 'red-proof', 'no-fabrication'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='改商品价的入口在 frontend/admin-web/src/app/(dashboard)/products/page.tsx（侧边栏「商品管理」）；编辑页 products/[id]/edit 的价格列在 SKU 表（文案「价格（元）」）。菜单被改名/移除 ⇒ 登记面判据先红。',
 )
 
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
@@ -14335,16 +14395,16 @@ _CASE_PR_132 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── PR-133 [SMOKE] 冒烟 · 改价闭环：一句「把遮光窗帘的价格改成 199」→ 改前→改后确认卡 → 点卡后真写（源: cases/product.yml）──
+# ── PR-133 [SMOKE] 冒烟 · 改价闭环：一句「把 2699系列雪尼尔窗帘面料 的价格改成 25.8 元」→ 改前→改后确认卡 → 点卡后真写（源: cases/product.yml）──
 _CASE_PR_133 = EvalCase(
     id='PR-133',
     legacy_id='',
-    title='冒烟 · 改价闭环：一句「把遮光窗帘的价格改成 199」→ 改前→改后确认卡 → 点卡后真写',
+    title='冒烟 · 改价闭环：一句「把 2699系列雪尼尔窗帘面料 的价格改成 25.8 元」→ 改前→改后确认卡 → 点卡后真写',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.SMOKE,
-    user_inputs=['把遮光窗帘的价格改成 199', '确认'],
-    expectations=['product_update(product_id=遮光窗帘, price=199)'],
-    data_checks=['改前价必须取自 product_detail 的返回（before_price 必填，漏传即 price_preview_required 拦截：tests/test_price_preview_guard.py）', '先发「改前 → 改后」确认卡，点卡之后才允许改（order_before 机器断言）', '改的是商品级 base_price：168 → 199，跑完由 post_clean 复位的回读自证'],
+    user_inputs=['把 2699系列雪尼尔窗帘面料 的价格改成 25.8 元', {'repeat_until': {'tool_called': 'product_update', 'max': 3}, 'fallback': '确认'}],
+    expectations=['product_update(product_id=2699系列雪尼尔窗帘面料, price=25.8)'],
+    data_checks=['改前价必须取自 product_detail 的返回（before_price 必填，漏传即 price_preview_required 拦截：tests/test_price_preview_guard.py）', '先发「改前 → 改后」确认卡，点卡之后才允许改（order_before 机器断言）', '改的是商品级 base_price：23.8 → 25.8，跑完由 post_clean 复位的回读自证（种子真值见 tests/agent_eval/fixtures/mibao_eval_seed.sql 的 prod_eval_2699）'],
     skip_reason='',
     tags=['write', 'price', 'write_path', 'smoke'],
     persona='mibao',
@@ -14354,9 +14414,9 @@ _CASE_PR_133 = EvalCase(
     order_before=['interact[confirm] before product_update'],
     required_args=[{'tool': 'product_update', 'fields': ['product_id', 'price', 'before_price']}],
     must_succeed=[{'tool': 'product_update'}],
-    post_clean=[{'type': 'product_price_restore', 'product_keyword': '遮光窗帘', 'price': 168}],
-    namespaces=['product_name:遮光窗帘'],
-    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
+    post_clean=[{'type': 'product_price_restore', 'product_keyword': '2699系列雪尼尔窗帘面料', 'price': 23.8}],
+    namespaces=['product_name:2699系列雪尼尔窗帘面料'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '2699系列雪尼尔窗帘面料', 'expect': 1}],
 )
 
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
@@ -17480,6 +17540,7 @@ ALL_CASES = (
     _CASE_CH_051,
     _CASE_CH_052,
     _CASE_CH_053,
+    _CASE_CH_054,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,
@@ -17521,6 +17582,7 @@ ALL_CASES = (
     _CASE_DA_022,
     _CASE_DA_024,
     _CASE_DA_025,
+    _CASE_DA_026,
     _CASE_DF_001,
     _CASE_DF_002,
     _CASE_DF_003,
@@ -17738,6 +17800,7 @@ ALL_CASES = (
     _CASE_WH_009,
     _CASE_WH_010,
     _CASE_WH_011,
+    _CASE_MC_120,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
