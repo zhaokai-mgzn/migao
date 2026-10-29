@@ -317,7 +317,7 @@ export default function TaskCardPrint({
       {printTarget === 'labels' && (
         <>
           <style>{printPageRule('label-50x140')}</style>
-          {/* 🔴 专属唛的**命名页**（issue #8107）：同一次出纸里两种纸高并存 ——
+          {/* 🔴 专属唛的命名页（issue #8107）：同一次出纸里两种纸高并存 ——
               常规唛吃上面那条文档级 `@page`（50mm × 140mm），专属唛吃这条
               `@page wash-label-option`（50mm × 100mm）。尺寸由 `printNamedPageRule` 从介质矩阵取，
               本文件不写第二份纸型（守卫 G9 把命名页与矩阵逐字比对）。 */}

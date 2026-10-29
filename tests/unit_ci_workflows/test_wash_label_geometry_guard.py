@@ -439,7 +439,9 @@ def test_g0_anti_noop_geometry_is_parsed_and_nonempty():
     # 反空跑锚点（issue #8107）：专属唛的短纸型 / 命名页 / 专属预算段**都真解析出来了** ——
     # 否则 G8~G10 是一组空判据（文件里没有这些东西时它们只会生产「缺失」类问题，看起来一样红）
     option = _OPTION_RE.search(_css_block(src))
-    assert option is not None, "`.task-card-label--option` 解析失败 ⇒ G8 无从判定"
+    assert option is not None and option.group(2).strip() != "", (
+        "`.task-card-label--option` 解析失败（或解析不出命名页）⇒ G8 无从判定"
+    )
     assert float(option.group(1)) > 0, "专属唛容器高解析出非正数"
     named = dict(_NAMED_PAGE_CALL_RE.findall(src))
     assert option.group(2) in named, "容器声明的命名页在源码里找不到 ⇒ G9 无从判定"
@@ -505,7 +507,9 @@ def test_g11_injected_option_label_regressions_are_red():
 
     css = _css_block(src)
     option = _OPTION_RE.search(css)
-    assert option is not None, "找不到 `.task-card-label--option { … }` 注入点 ⇒ 本红证会**空跑**"
+    assert option is not None and option.group(2).strip() != "", (
+        "找不到 `.task-card-label--option { … }` / 其中的命名页 ⇒ 本红证会**空跑**"
+    )
     page_name = option.group(2)
     option_h = float(option.group(1))
     named_media = dict(_NAMED_PAGE_CALL_RE.findall(src))[page_name]
@@ -537,7 +541,9 @@ def test_g11_injected_option_label_regressions_are_red():
     # 注入 D：把专属唛预算段的「可用 Xmm」改成常规唛那张的可用高 ⇒ G10 恒等式必红
     region = _budget_regions(_header(src))[1]
     got_avail = _declared(region, "可用")
-    assert got_avail is not None, "专属唛预算段没写「可用 …mm」⇒ 本红证会**空跑**"
+    assert got_avail is not None and got_avail > 0, (
+        "专属唛预算段没写「可用 …mm」（或解析出非正数）⇒ 本红证会**空跑**"
+    )
     declared = f"可用 {got_avail:g}mm"
     assert declared in region, f"找不到注入点「{declared}」⇒ 本红证会**空跑**"
     injected_d = src.replace(declared, f"可用 {got_avail + 40:g}mm", 1)
