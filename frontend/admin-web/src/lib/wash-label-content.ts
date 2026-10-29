@@ -457,7 +457,8 @@ export interface WashLabelInput {
 
 /**
  * 水洗唛的**出纸身份**（issue #8002）—— 两条打印通道（系统打印 / 免驱动直连）都读它：
- * 普通唛 = 部位 × 开数；专属唛 = **每套每类别 1 张**（不乘开数），排在常规唛之后。
+ * 普通唛 = 部位 × 开数；专属唛 = **每套每类别 1 张**（不乘开数），紧跟本套常规唛之后
+ * （issue #8074：每套连续，不整体追加到最后）。
  *
  * 🔴 **张数 / 张序 / 副标题只有这一处**：`TaskCardPrint` 与 `toWashLabelInputs` 各算一份 ⇒
  * 两条通道出纸张数不一样（#6656 的老病），而没有任何判据会因此变红。
@@ -486,9 +487,12 @@ export interface WashLabelSheetsInput {
  * 加工单 ⇒ **逐张出纸清单**（单一处映射：系统打印与免驱动直连都走它）。
  *
  * - 常规唛：每个部位 × 开数（{@link washLabelCopies}，2026-10-26 用户裁定「双开打两份」）；
- * - 专属唛（{@link WASH_LABEL_OPTION_GROUPS}）：每个命中部位 × 每个类别 **1 张**，追加在常规唛之后
+ * - 专属唛（{@link WASH_LABEL_OPTION_GROUPS}）：每个命中部位 × 每个类别 **1 张**
  *   —— 用户 2026-10-28「每套成品帘打印一张」；一套只会勾布或纱之一 ⇒ 常规情形 = 每套每类别 1 张，
  *   同一套两类都勾（参考工单）= 2 张。数据里两个部位都勾了同一类别 ⇒ 出 2 张（不合并、不静默丢）；
+ * - 张序 = **每套连续**（issue #8074，用户 2026-10-29 逐字「每套连续排版，不要拆开」）：
+ *   套序升序；每套先本套常规唛（部位序 × 开数）、再本套专属唛。入参 `positions` 可能套间交叉
+ *   （读面按 `position_name` 排序，多套同名部位会交错）⇒ 本函数**不假设**入参已按套连续；
  * - 套序走 `groupBySet`（与进度表 / 系统打印**同一份**实现）；
  * - 0 个部位 ⇒ 空数组（**不造占位**：直连入口据此禁用，不是打一张空白纸）。
  */
@@ -502,8 +506,8 @@ export function washLabelSheets(input: WashLabelSheetsInput = {}): WashLabelShee
     if (id) itemsById.set(id, item)
   }
 
-  const regular: WashLabelSheet[] = []
-  const optionLabels: WashLabelSheet[] = []
+  /** 按套聚合：每套两个桶（常规 / 专属），出纸时套内常规在前 —— 同套的纸必须连续 */
+  const bySet = new Map<number, { regular: WashLabelSheet[]; optionLabels: WashLabelSheet[] }>()
   positions.forEach((position, index) => {
     const item = position.order_item_id ? itemsById.get(position.order_item_id) : undefined
     const setView = setViews[index]
@@ -511,16 +515,24 @@ export function washLabelSheets(input: WashLabelSheetsInput = {}): WashLabelShee
     const setCount = setView?.setCount ?? 1
     const qrValue = position.scan_url ?? position.part_token ?? null
     const base = { position, item, setNo, setCount, qrValue }
+    let bucket = bySet.get(setNo)
+    if (!bucket) {
+      bucket = { regular: [], optionLabels: [] }
+      bySet.set(setNo, bucket)
+    }
     // 常规唛：份数 = 开数（两条通道读**同一个**函数，不各算一份）
     for (let copy = 0; copy < washLabelCopies(item); copy += 1) {
-      regular.push({ ...base, optionLabel: null, subtitle: WASH_LABEL_COMPANY_SUBTITLE })
+      bucket.regular.push({ ...base, optionLabel: null, subtitle: WASH_LABEL_COMPANY_SUBTITLE })
     }
     // 专属唛：每套每类别 1 张，**不随开数翻倍**
     for (const group of washLabelOptionGroupsOf(item)) {
-      optionLabels.push({ ...base, optionLabel: group.label, subtitle: washLabelSubtitle(group.label) })
+      bucket.optionLabels.push({ ...base, optionLabel: group.label, subtitle: washLabelSubtitle(group.label) })
     }
   })
-  return [...regular, ...optionLabels]
+  // 套序升序（= `groupBySet` 的首次出现序，与纸面「第 N 套 / 共 M 套」同一个数）
+  return [...bySet.entries()]
+    .sort(([left], [right]) => left - right)
+    .flatMap(([, bucket]) => [...bucket.regular, ...bucket.optionLabels])
 }
 
 export interface WashLabelSource {

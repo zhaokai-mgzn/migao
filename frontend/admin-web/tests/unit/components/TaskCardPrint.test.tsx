@@ -490,7 +490,7 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×140mm 单列，issue #7979）',
     expect(screen.getByTestId('task-card-label-doc-no-0')).toHaveTextContent('单号: 20260921-8237')
   })
 
-  it('🔴 专属唛（issue #8002）：勾了余料带回 / 绑带 ⇒ 每套每类别追加 1 张，副标题 = 成品定制 · 类别（12pt 加粗）', () => {
+  it('🔴 专属唛（issue #8002 / #8074）：勾了余料带回 / 绑带 ⇒ 每套每类别 1 张、紧跟本套常规唛（每套连续），副标题 = 成品定制 · 类别（12pt 加粗）', () => {
     companyNameStub.value = '亿家纺织'
     const optionItems = [
       { ...items[0], specialOptions: ['余料带回-布', '布绑带'] },
@@ -512,11 +512,16 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×140mm 单列，issue #7979）',
     expect(markers[0].className).toContain('font-bold')
 
     // 专属唛 = 该部位自己的码与行清单（内容同源，不另造）
-    const extra = labels[6]
-    expect(within(extra).getByTestId('task-card-label-special-options-6')).toHaveTextContent(
+    // 张序（issue #8074，用户 2026-10-29「每套连续排版，不要拆开」）：
+    // 第 1 套 = 布 ×2 + 纱 ×1 → 余料 / 绑带；第 2 套 = 帘头 ×3（改前：专属唛整体追加到最后）
+    const extra = labels[3]
+    expect(within(extra).getByTestId('task-card-label-special-options-3')).toHaveTextContent(
       '特殊选项: 余料带回-布、布绑带',
     )
     expect(within(extra).getByTestId('task-card-qr').querySelector('title')?.textContent).toBe(SCAN_BL)
+    expect(within(labels[4]).getByTestId('task-card-option-label')).toHaveTextContent('成品定制 · 绑带')
+    // 第 2 套从第 6 张开始 —— 专属唛不得再被排到它之后
+    expect(within(labels[5]).getByTestId('task-card-label-set-no-5')).toHaveTextContent('第 2 套 / 共 2 套')
     companyNameStub.value = ''
   })
 
@@ -532,8 +537,8 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×140mm 单列，issue #7979）',
     expect(headers).toHaveLength(1)
     expect(headers[0]).toHaveTextContent('成品定制 · 余料带回')
     expect(within(headers[0]).queryByText('亿家纺织')).toBeNull()
-    // 专属唛也带本部位的码（与常规唛同一个码，不做第二套码）
-    expect(within(screen.getByTestId('task-card-label-6')).getByTestId('task-card-qr')).toBeTruthy()
+    // 专属唛也带本部位的码（与常规唛同一个码，不做第二套码）；第 1 套专属唛紧跟本套常规唛（#8074）
+    expect(within(screen.getByTestId('task-card-label-3')).getByTestId('task-card-qr')).toBeTruthy()
   })
 
   it('打印样式：@page 50mm×140mm（竖版）+ 标签本体 50mm×140mm + 上下各留白 15mm（码距底虚线 15mm）+ 正文 11pt + 逐张分页（最后一张不分页）', () => {
