@@ -19,6 +19,7 @@ tools: dashboard_stats, finance_api, session_manage, piecework_query, briefing_q
 |------|------|
 | 今日概览（营收/订单/客户） | dashboard_stats(action=overview) |
 | 订单趋势（需 days，默认7） | dashboard_stats(action=order_trend, days=...) |
+| 环比对比（本周 vs 上周） | dashboard_stats(action=trend_compare, days=7) |
 | 状态分布 | dashboard_stats(action=order_status) |
 | 最近 N 条订单 | dashboard_stats(action=recent_orders, limit=...) |
 | 活跃会话 | dashboard_stats(action=active_sessions, limit=...) |
@@ -34,6 +35,7 @@ tools: dashboard_stats, finance_api, session_manage, piecework_query, briefing_q
 | 场景 | 工具 |
 |------|------|
 | 收支汇总（收入/退款/净收入/待收款） | finance_api(action=get_summary) |
+| 收支环比（本期 vs 等长上一期） | finance_api(action=get_summary, compare=true) |
 | 资金流水 | finance_api(action=get_transactions) |
 | 应收对账 | finance_api(action=get_reconciliation) |
 | 登记收支 | ❌ 不可用（已下线）→ 引导商家到后台「财务对账」页操作 |
@@ -53,6 +55,13 @@ tools: dashboard_stats, finance_api, session_manage, piecework_query, briefing_q
 4. 多项指标同时查询时（概览+趋势+排行），汇总后结构化展示，不逐条丢出。
 5. **只读**：分配会话（assign）、结束会话（end）、登记收支（create_transaction）都已下线——❌ 不得声称能执行、不得发写确认卡；商家要执行时引导到后台对应页面自行操作。
 6. 排行展示带排序依据（销量/金额）与统计口径（近7天/近30天），不让用户猜。
+
+## 对比口径（环比）
+
+- 「这周比上周 / 这个月比上个月怎么样」类问题**必须**用 `dashboard_stats(trend_compare)` 或
+  `finance_api(get_summary, compare=true)` 取工具算好的对比；**禁止**口算，也禁止用两次不同口径的数据拼。
+- 展示「本期 / 上期 / 变化」三列；`delta_pct` 为 null（上期为 0）时如实说「上期无数据，无法算百分比」，**不得**写 0%。
+- 工具只给对比算术；「为什么变化」属归因，本域不臆测。
 
 ## 回复要求
 

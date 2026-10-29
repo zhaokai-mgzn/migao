@@ -443,30 +443,72 @@
       "list",
       "records"
      ]
+    },
+    "trend_compare": {
+     "dynamic": true,
+     "keys": [
+      "action",
+      "amount",
+      "current_daily",
+      "current_daily_avg",
+      "current_period",
+      "current_total",
+      "days",
+      "delta",
+      "delta_pct",
+      "partial",
+      "previous_daily",
+      "previous_daily_avg",
+      "previous_is_zero",
+      "previous_period",
+      "previous_total",
+      "requested_days",
+      "window_capped",
+      "window_days"
+     ]
     }
    },
    "dynamic": true,
    "file": "backend/ai-agent-service/app/tools/dashboard_stats.py",
    "keys": [
+    "action",
+    "amount",
     "count",
+    "current_daily",
+    "current_daily_avg",
+    "current_period",
+    "current_total",
+    "days",
+    "delta",
+    "delta_pct",
     "distribution",
     "items",
     "list",
+    "partial",
     "points",
+    "previous_daily",
+    "previous_daily_avg",
+    "previous_is_zero",
+    "previous_period",
+    "previous_total",
     "records",
+    "requested_days",
     "sessions",
     "todayOrderCount",
     "todaySalesAmount",
     "totalAmount",
     "totalOrders",
-    "trend"
+    "trend",
+    "window_capped",
+    "window_days"
    ],
    "literal_keys": [],
    "shape_notes": [
+    "**orders_compare",
     "data ← response.get('data', {})",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "c9bb08ace53b04597de9644c7192238724a01232d82ad6ab5972de59cc166275"
+   "source_sha256": "f048757421386005168d69f1973dc2c63a2cc3d5ee7b1723e0ca0d9a23e27e3e"
   },
   "employee_manage": {
    "actions": {
@@ -519,6 +561,7 @@
     "get_summary": {
      "dynamic": true,
      "keys": [
+      "compare",
       "netIncome",
       "pendingReceivable",
       "totalIncome",
@@ -536,6 +579,7 @@
    "dynamic": true,
    "file": "backend/ai-agent-service/app/tools/finance_api.py",
    "keys": [
+    "compare",
     "items",
     "netIncome",
     "pendingReceivable",
@@ -549,9 +593,10 @@
    ],
    "shape_notes": [
     "data ← response.get('data', {})",
+    "data=dict(data)",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "0fd92bf1153fc5a6f74ecb04be18d1e76412ea870525e98176cec438ec42dcca"
+   "source_sha256": "c67a718034d37b2e97b4e0b4f329e3ffe8388620aec73eb1ecefeb69ff076876"
   },
   "human_handoff": {
    "actions": null,
