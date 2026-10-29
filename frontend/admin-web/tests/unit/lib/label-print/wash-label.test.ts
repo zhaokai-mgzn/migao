@@ -295,13 +295,17 @@ describe('🔴 专属唛短纸（issue #8107）：纸高按 `input.media` 取，
   })
 
   it('🔴 两通道纸型同源：`resolveLabelGeometry(.., media)` 的纸高 == 矩阵 `pageBoxMm` × 自报 dpi', () => {
+    // 🔴 机器口径**从矩阵取**、不在判据里写第二份像素字面量（打印头宽 384 只许出现在
+    //    `print-media.json`；守卫 `frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts`
+    //    的 C2b 会扫全仓 `frontend/**` 并把判据里的副本判红 —— 实测抓到过一次）
+    const device = printDotGeometry('label-50x100')
     for (const media of ['label-50x140', 'label-50x100'] as const) {
       const box = printPageBoxMm(media)
       // 机器自报的 dpi 变了纸高跟着变（写死像素 ⇒ 必红）
-      expect(resolveLabelGeometry({ printerDPI: 203, printerWidth: 384 }, null, media).heightPx).toBe(
-        Math.round(box.heightMm * (203 / 25.4)),
+      expect(resolveLabelGeometry({ printerDPI: device.dpi, printerWidth: device.headWidthPx }, null, media).heightPx).toBe(
+        Math.round(box.heightMm * (device.dpi / 25.4)),
       )
-      expect(resolveLabelGeometry({ printerDPI: 300, printerWidth: 576 }, null, media).heightPx).toBe(
+      expect(resolveLabelGeometry({ printerDPI: 300, printerWidth: device.headWidthPx * 1.5 }, null, media).heightPx).toBe(
         Math.round(box.heightMm * (300 / 25.4)),
       )
     }
