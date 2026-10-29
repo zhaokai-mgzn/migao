@@ -57,6 +57,11 @@ from app.context.menu_navigator import build_navigation_answer
 from app.tools.base import BaseTool, ToolContext, ToolResult
 from app.tools.page_actions import lookup
 
+#: `action` 的两条分支（**单一真值**：schema 的 enum 由它派生）—— 供
+#: `backend/ai-agent-service/tests/test_tool_schema_contract_invariants.py` 的
+#: 「enum ⊆ VALID_ACTIONS」不变式对账（防「枚举里留着运行时必拒的死分支」）。
+VALID_ACTIONS = ("navigate", "how_to")
+
 
 class NavGuideTool(BaseTool):
     """「功能在哪一页 / 你有没有权限 / 已登记动作怎么做」指引（只读，纯本地）"""
@@ -91,7 +96,7 @@ class NavGuideTool(BaseTool):
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["navigate", "how_to"],
+                "enum": list(VALID_ACTIONS),
                 "description": (
                     "navigate（默认）= 问功能在哪一页 / 有没有权限；"
                     "how_to = 问某个动作具体怎么操作（走页面动作登记表）"
