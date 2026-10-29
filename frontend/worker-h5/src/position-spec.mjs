@@ -157,8 +157,9 @@ function nameList(value) {
 /**
  * 特殊选项清单 → `余料带回、加铅块`（**顿号**并列，与商家端同一形态）。
  *
- * <p>派生族的**展示归一**（issue #8007，用户 2026-10-28 裁定）：`余料带回-布` / `-纱` 是落库
- * join key，语义选项只有一个「余料带回」—— 工人屏不印材料后缀（部位行本来就写了布帘/纱帘）。
+ * <p>派生族的**展示归一**（issue #8007 立机制；issue #8108 接入「绑带」族）：`余料带回-布` / `-纱`、
+ * `布绑带` / `纱绑带` 都是落库 join key，语义选项各只有一个（`余料带回` / `绑带`）——
+ * 工人屏不印材料形态的名字（部位行本来就写了布帘/纱帘）。同族两键并存 ⇒ 收回同名后去重。
  * 该表与 `admin-web/src/lib/order-craft-fields.ts::SPECIAL_OPTION_FAMILIES` 同口径
  * （worker-h5 无构建期共享，判据见 `worker-h5-special-option-display.test.mjs`）。</p>
  *
@@ -170,11 +171,16 @@ function optionListValue(value) {
     .filter((item) => typeof item === 'string')
     .map((item) => displayOptionName(item.trim()))
     .filter((item) => item !== '')
+    // 同族两个派生键并存（历史单切过帘体 / 手改过 specialOptions）⇒ 收回同名后去重
+    .filter((item, index, all) => all.indexOf(item) === index)
   return names.length > 0 ? names.join('、') : EMPTY
 }
 
-/** 布/纱派生族：落库键 ⇒ 展示名（族成员收回 base 名；其余原样） */
-const SPECIAL_OPTION_FAMILIES = { 余料带回: ['余料带回-布', '余料带回-纱'] }
+/** 布/纱派生族：落库键 ⇒ 展示名（族成员收回 base 名；其余原样；`余料做绑带` 不属任何族） */
+const SPECIAL_OPTION_FAMILIES = {
+  余料带回: ['余料带回-布', '余料带回-纱'],
+  绑带: ['布绑带', '纱绑带'],
+}
 
 function displayOptionName(name) {
   for (const [base, variants] of Object.entries(SPECIAL_OPTION_FAMILIES)) {
