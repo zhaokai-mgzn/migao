@@ -67,7 +67,7 @@ export const capabilityDomains: CapabilityDomain[] = [
     summary: '经营全景入口：当日经营状况与待处理事项一屏可见。',
     items: [
       {
-        name: '经营看板',
+        name: '经营概览',
         detail:
           '订单量、销售额、环比与待处理事项一屏可见；无上期可比数据时显示「—」，不以 0 代替。',
         icon: BarChart3,
@@ -163,7 +163,7 @@ export const capabilityDomains: CapabilityDomain[] = [
     summary: '布艺行业纵深环节：加工单、工序、报工与计件。',
     items: [
       {
-        name: '作业看板',
+        name: '作业单',
         detail: '作业单列表 + 每单工序进度 + 计件合计；作业单的唯一入口（加工单 / 出库作业单两型）。',
         icon: ClipboardCheck,
       },
@@ -232,7 +232,7 @@ export const capabilityDomains: CapabilityDomain[] = [
         icon: Recycle,
       },
       {
-        name: '省料看板',
+        name: '省料分析',
         detail: '逐单比对公式米数与排料米数、按批次看余量分档、按单位产出看面料消耗。',
         icon: TrendingDown,
       },
@@ -318,7 +318,7 @@ export const industryDepth = [
     icon: Recycle,
     title: '批次与余料',
     description:
-      '入库按批次与缸号记账，余料台账记尺寸、来源订单与状态；省料看板比对公式米数与排料米数。',
+      '入库按批次与缸号记账，余料台账记尺寸、来源订单与状态；省料分析比对公式米数与排料米数。',
   },
 ]
 

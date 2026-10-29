@@ -36,7 +36,7 @@ const ROUTE_BREADCRUMB_MAP: Array<{
 }> = [
   // 经营看板（2026-10-17 issue #7087：由「工作台」组升为**一级项**、并撤掉「工作台」组）
   // 🔴 一级项**没有父组** ⇒ 面包屑是**单级**（与「商品管理」「通知中心」同口径；#5877）。
-  { match: (p) => p === '/' || p === '/dashboard', crumbs: [{ label: '经营看板' }] },
+  { match: (p) => p === '/' || p === '/dashboard', crumbs: [{ label: '经营概览' }] },
   // 报表中心（issue #7376 / #7377）：一级项（与经营看板同席位），面包屑只有自己一层。
   { match: (p) => p === '/reports', crumbs: [{ label: '报表中心' }] },
   // 每日简报（issue #3468；2026-10-17 issue #7087 撤掉菜单项）：`/briefing` 现为**重定向薄壳**
@@ -89,7 +89,7 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   // 省料看板（issue #5159）：同样**必须排在 `/production` 之前**（本表 `find` 取首个命中，
   // `/production` 会抢走它 ⇒ 面包屑退化成「作业看板」= §15.2 不成立）。
   // 组名/菜单名与 `config/menu.ts` 的 `production-saving-board`、服务端两处菜单节点逐字一致。
-  { match: (p) => p.startsWith('/production/saving-board'), crumbs: [{ label: '仓储与物料' }, { label: '省料看板' }] },
+  { match: (p) => p.startsWith('/production/saving-board'), crumbs: [{ label: '仓储与物料' }, { label: '省料分析' }] },
   // 余料台账（issue #5146 建页 / issue #5191 **进侧边栏**）：菜单项名 = 「余料台账」，
   // 与 `config/menu.ts` 的 `production-remnants`、服务端两处菜单节点**逐字一致**
   // （§15.2「面包屑末项 == 侧边栏菜单名」；守卫 tests/unit/lib/menu-breadcrumb-coverage.test.tsx）。
@@ -107,7 +107,7 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   // （与「商品管理」「通知中心」同口径）。菜单名 / 页面名仍是「审批中心」，与 `/approvals` 页一致。
   { match: (p) => p.startsWith('/approvals'), crumbs: [{ label: '审批中心' }] },
   // /production = 作业单唯一入口（issue #4357 与原「加工单」菜单合并）
-  { match: (p) => p.startsWith('/production'), crumbs: [{ label: '生产管理' }, { label: '作业看板' }] },
+  { match: (p) => p.startsWith('/production'), crumbs: [{ label: '生产管理' }, { label: '作业单' }] },
   // 入库单（issue #5071）：V111（#5034）新增菜单项时**漏了本表这一处** ⇒ 面包屑只剩「工作台」一项。
   // 组名/菜单名与侧边栏 `config/menu.ts` 的 `inbound-orders` 逐字一致；
   // issue #5271：随「面料进出与消耗」动线**移入「仓储与物料」组**（原生产管理组）。
@@ -156,11 +156,11 @@ const ROUTE_BREADCRUMB_MAP: Array<{
 ]
 
 function resolveBreadcrumbs(pathname: string | null): { label: string; href?: string }[] {
-  if (!pathname) return [{ label: '经营看板' }]
+  if (!pathname) return [{ label: '经营概览' }]
   const matched = ROUTE_BREADCRUMB_MAP.find((m) => m.match(pathname))
   // 兜底（未知路径）：给一条**真实存在的入口**回得来 —— 2026-10-17（issue #7087）「工作台」组撤销后，
-  // 兜底项 = 一级项「经营看板」（与 `/`、`/dashboard` 同一条），不再是已不存在的组名。
-  return matched ? matched.crumbs : [{ label: '经营看板', href: '/dashboard' }]
+  // 兜底项 = 一级项「经营概览」（与 `/`、`/dashboard` 同一条），不再是已不存在的组名。
+  return matched ? matched.crumbs : [{ label: '经营概览', href: '/dashboard' }]
 }
 
 export default function Header({ title, breadcrumbs, onOpenMobileNav }: HeaderProps) {
@@ -199,7 +199,7 @@ export default function Header({ title, breadcrumbs, onOpenMobileNav }: HeaderPr
 
   // 优先级：显式 breadcrumbs > 显式 title > 基于路由的动态面包屑
   const resolvedBreadcrumbs = breadcrumbs ?? (title ? null : resolveBreadcrumbs(pathname))
-  const pageTitle = title || resolvedBreadcrumbs?.[resolvedBreadcrumbs.length - 1]?.label || '经营看板'
+  const pageTitle = title || resolvedBreadcrumbs?.[resolvedBreadcrumbs.length - 1]?.label || '经营概览'
 
   return (
     <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-neutral-200/80 bg-white/85 px-6 backdrop-blur-sm">

@@ -137,7 +137,7 @@ describe('菜单图标注册表（issue #5271 / PR-106 / MC-019）', () => {
     // 面非空自证：解析失灵（0 条）时下面的断言会恒真 ⇒ 先自证，并点名几个已知节点
     expect(items.length).toBe(36)
     expect(items.map((i) => i.name)).toEqual(
-      expect.arrayContaining(['经营看板', '省料看板', '售后工单', '岗位权限', '财务对账', '计件工资', '组织管理', '企业基础设置']),
+      expect.arrayContaining(['经营概览', '省料分析', '售后工单', '岗位权限', '财务对账', '计件工资', '组织管理', '企业基础设置']),
     )
 
     const collisions = iconCollisions(items)
@@ -153,14 +153,14 @@ describe('菜单图标注册表（issue #5271 / PR-106 / MC-019）', () => {
     expect(new Set(items.map((i) => i.icon)).size).toBe(items.length)
   })
 
-  it('判据④ 注入式红证：把「省料看板」的图标改回重复值 ⇒ 检查器**具名**报出那两个节点', () => {
+  it('判据④ 注入式红证：把「省料分析」的图标改回重复值 ⇒ 检查器**具名**报出那两个节点', () => {
     const items = allItems()
     // 未注入 ⇒ 绿（现状无重复）
     expect(iconCollisions(items)).toEqual([])
 
     // 注入生效自证 + 判别力落在被注入的那一格上
-    const injected = items.map((i) => (i.name === '省料看板' ? { ...i, icon: 'BarChart3' } : i))
-    expect(injected.find((i) => i.name === '省料看板')?.icon).toBe('BarChart3')
-    expect(iconCollisions(injected)).toEqual(['BarChart3 → 经营看板、省料看板'])
+    const injected = items.map((i) => (i.name === '省料分析' ? { ...i, icon: 'BarChart3' } : i))
+    expect(injected.find((i) => i.name === '省料分析')?.icon).toBe('BarChart3')
+    expect(iconCollisions(injected)).toEqual(['BarChart3 → 经营概览、省料分析'])
   })
 })

@@ -111,12 +111,12 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
     }
     // 真实菜单项抽样（旧版官网只讲「商品 / 订单 / 知识库」三件事）
     for (const item of [
-      '经营看板',
+      '经营概览',
       '每日简报',
       '智能派单',
       '计件工资',
       '余料台账',
-      '省料看板',
+      '省料分析',
       '岗位权限',
     ]) {
       expect(screen.getAllByText(item).length).toBeGreaterThanOrEqual(1)

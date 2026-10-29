@@ -2,7 +2,7 @@
   "schema": 1,
   "issue": "#5699",
   "stage": "P5+P6+I4",
-  "_note": "**声明真值源**（形态 A′，设计 §2.2/§2.3）：本文件是人可改的**唯一**声明；`rbac/readings.json` 是它的机器现取快照（生成物，不得手改）。**对账的唯一口径 = 两者逐值相等**（P1 落了「清单 == 生成物 == 现值」；P2 另加由本清单**派生**的八面投影 —— `roles.login`（A7 登录面）与 `codes.names`（目录名称列）；**P3 另加 `pages[]`**（**页面 → 码**：`gate` 菜单可见码 + `units` 第一屏读码 → 端点 + 逐页 `visibility_rule`））（判据 tests/unit_ci_workflows/test_rbac_single_source_manifest.py + tests/unit_ci_workflows/test_rbac_derived_pages.py；派生器 rbac/derive.py）。P1/P2/P3 三者零 delta，P4 才是第一次改行为。 ｜ 2026-09-29（issue #5778）：菜单 IA 重排（客户服务组新建 / 加工项归生产管理 / 商品管理升为一级项 / 交易管理收窄）—— 本清单的 `menu_nodes` 与 `menus.{frontend,controller,auth}` 随之改判；其余段（codes/roles/route_guard/pages/ledger_counts）不受影响。 ｜ 🔴 **解析器盲区（如实登记，2026-09-29 issue #5778 实测）**：`menus.auth` 的值由 `tests/unit_ci_workflows/test_agent_permission_parity.py` 的 `_iter_menu_auth` 现取，它的形态是「`permissions.contains(\"X\")) {` **紧跟** `var.add(menuItem(...))`」⇒ ① **顶层一级项**（商品管理）**在**读数里（它被一个 `permissions.contains(\"product:list\")` 门控着，只是 add 位置在组之前 —— 顺序差异由同构守卫的「一级项层」判据管），而 ② **顶层无码项**（通知中心，根本没有权限门控）**都不在** `menus.auth` 读数里 —— 本清单照现值填写（不补、不猜）；这两项的真实性由 `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py` 的「一级项层 / 独立项层」判据守着。同族：`{` 与 `.add` 之间插入注释行会让该项**静默从读数消失**（本单第一次生成时「生产看板」即如此）。 ｜ 2026-09-29（issue #5778）：`codes.names[\"product:list\"]` 随菜单改名由「商品列表」改为「商品管理」（两处目录 Java 与迁移链同批）。 ｜ 2026-10-06（issue #6457，用户裁定方案 A1）：菜单**顺序**重排（组名/码/路径一字未动）——客户服务组「在线接待 → 知识库 → 售后工单 → 客户列表」、生产管理组「加工项管理 → 工艺配置 → 生产看板 → 智能派单 → 计件工资」、仓储与物料组「入库单 → 库存明细 → 发货单 → 余料台账 → 省料看板」、一级项「商品管理」沉到**所有分组之后**（原「工作台组之后」）⇒ 本清单的 `menu_nodes`（有序）随之改判；`menus.{frontend,controller,auth}` 按名取码、**集合不变**故逐字未动；⚠️ 同时实测到菜单顺序的**第四处**承载体 = `backend/ai-agent-service/app/context/menu_navigator.py` 的 `MENU_TREE`（不在「三源」口径里，由 `tests/unit_ci_workflows/test_menu_navigator.py` 守着；已在 issue #6462 登记）。 ｜ 2026-10-18（issue #7282，用户裁定「可以删」）：死码 `product:manage` 从 `codes.{registration,permission_service,names}` 移除（两处 Java 目录 + 新迁移 V168 同批删库）—— 全目录普查里「可授予但服务端零消费」的码由此归零。",
+  "_note": "**声明真值源**（形态 A′，设计 §2.2/§2.3）：本文件是人可改的**唯一**声明；`rbac/readings.json` 是它的机器现取快照（生成物，不得手改）。**对账的唯一口径 = 两者逐值相等**（P1 落了「清单 == 生成物 == 现值」；P2 另加由本清单**派生**的八面投影 —— `roles.login`（A7 登录面）与 `codes.names`（目录名称列）；**P3 另加 `pages[]`**（**页面 → 码**：`gate` 菜单可见码 + `units` 第一屏读码 → 端点 + 逐页 `visibility_rule`））（判据 tests/unit_ci_workflows/test_rbac_single_source_manifest.py + tests/unit_ci_workflows/test_rbac_derived_pages.py；派生器 rbac/derive.py）。P1/P2/P3 三者零 delta，P4 才是第一次改行为。 ｜ 2026-09-29（issue #5778）：菜单 IA 重排（客户服务组新建 / 加工项归生产管理 / 商品管理升为一级项 / 交易管理收窄）—— 本清单的 `menu_nodes` 与 `menus.{frontend,controller,auth}` 随之改判；其余段（codes/roles/route_guard/pages/ledger_counts）不受影响。 ｜ 🔴 **解析器盲区（如实登记，2026-09-29 issue #5778 实测）**：`menus.auth` 的值由 `tests/unit_ci_workflows/test_agent_permission_parity.py` 的 `_iter_menu_auth` 现取，它的形态是「`permissions.contains(\"X\")) {` **紧跟** `var.add(menuItem(...))`」⇒ ① **顶层一级项**（商品管理）**在**读数里（它被一个 `permissions.contains(\"product:list\")` 门控着，只是 add 位置在组之前 —— 顺序差异由同构守卫的「一级项层」判据管），而 ② **顶层无码项**（通知中心，根本没有权限门控）**都不在** `menus.auth` 读数里 —— 本清单照现值填写（不补、不猜）；这两项的真实性由 `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py` 的「一级项层 / 独立项层」判据守着。同族：`{` 与 `.add` 之间插入注释行会让该项**静默从读数消失**（本单第一次生成时「生产看板」即如此）。 ｜ 2026-09-29（issue #5778）：`codes.names[\"product:list\"]` 随菜单改名由「商品列表」改为「商品管理」（两处目录 Java 与迁移链同批）。 ｜ 2026-10-06（issue #6457，用户裁定方案 A1）：菜单**顺序**重排（组名/码/路径一字未动）——客户服务组「在线接待 → 知识库 → 售后工单 → 客户列表」、生产管理组「加工项管理 → 工艺配置 → 生产看板 → 智能派单 → 计件工资」、仓储与物料组「入库单 → 库存明细 → 发货单 → 余料台账 → 省料分析」、一级项「商品管理」沉到**所有分组之后**（原「工作台组之后」）⇒ 本清单的 `menu_nodes`（有序）随之改判；`menus.{frontend,controller,auth}` 按名取码、**集合不变**故逐字未动；⚠️ 同时实测到菜单顺序的**第四处**承载体 = `backend/ai-agent-service/app/context/menu_navigator.py` 的 `MENU_TREE`（不在「三源」口径里，由 `tests/unit_ci_workflows/test_menu_navigator.py` 守着；已在 issue #6462 登记）。 ｜ 2026-10-18（issue #7282，用户裁定「可以删」）：死码 `product:manage` 从 `codes.{registration,permission_service,names}` 移除（两处 Java 目录 + 新迁移 V168 同批删库）—— 全目录普查里「可授予但服务端零消费」的码由此归零。",
   "codes": {
     "registration": [
       "dashboard:view",
@@ -312,7 +312,7 @@
   },
   "menus": {
     "frontend": {
-      "经营看板": "dashboard:view",
+      "经营概览": "dashboard:view",
       "报表中心": "dashboard:view",
       "客户服务": null,
       "在线接待": "agent:session",
@@ -327,7 +327,7 @@
       "销售订单": "order:list",
       "财务对账": "finance:view",
       "生产管理": null,
-      "作业看板": "production:view",
+      "作业单": "production:view",
       "智能派单": "processing:view",
       "计件工资": "production:view",
       "质量": null,
@@ -342,7 +342,7 @@
       "出库单": "inbound:view",
       "发货单": "order:list",
       "余料台账": "processing:manage",
-      "省料看板": "product:list",
+      "省料分析": "product:list",
       "组织管理": null,
       "员工管理": "employee:list",
       "岗位权限": "system:view",
@@ -350,7 +350,7 @@
       "通知中心": null
     },
     "controller": {
-      "经营看板": "dashboard:view",
+      "经营概览": "dashboard:view",
       "在线接待": "agent:session",
       "知识库": "knowledge:view",
       "商品管理": "product:list",
@@ -360,7 +360,7 @@
       "客户列表": "customer:view",
       "财务对账": "finance:view",
       "订单详情": "order:detail",
-      "作业看板": "production:view",
+      "作业单": "production:view",
       "智能派单": "processing:view",
       "计件工资": "production:view",
       "质检记录": "production:inspect",
@@ -370,7 +370,7 @@
       "入库单": "inbound:view",
       "发货单": "order:list",
       "余料台账": "processing:manage",
-      "省料看板": "product:list",
+      "省料分析": "product:list",
       "库存明细": "product:list",
       "员工管理": "employee:list",
       "岗位权限": "system:view",
@@ -382,7 +382,7 @@
       "出库单": "inbound:view"
     },
     "auth": {
-      "经营看板": "dashboard:view",
+      "经营概览": "dashboard:view",
       "报表中心": "dashboard:view",
       "在线接待": "agent:session",
       "知识库": "knowledge:view",
@@ -393,7 +393,7 @@
       "价格本": "order:list",
       "销售订单": "order:list",
       "财务对账": "finance:view",
-      "作业看板": "production:view",
+      "作业单": "production:view",
       "智能派单": "processing:view",
       "计件工资": "production:view",
       "质检记录": "production:inspect",
@@ -405,7 +405,7 @@
       "出库单": "inbound:view",
       "发货单": "order:list",
       "余料台账": "processing:manage",
-      "省料看板": "product:list",
+      "省料分析": "product:list",
       "员工管理": "employee:list",
       "岗位权限": "system:view",
       "企业基础设置": "production:view"
@@ -415,7 +415,7 @@
   "menu_nodes": [
     {
       "key": "dashboard",
-      "name": "经营看板",
+      "name": "经营概览",
       "path": "/dashboard",
       "code": "dashboard:view"
     },
@@ -505,7 +505,7 @@
     },
     {
       "key": "production-board",
-      "name": "作业看板",
+      "name": "作业单",
       "path": "/production",
       "code": "production:view"
     },
@@ -595,7 +595,7 @@
     },
     {
       "key": "production-saving-board",
-      "name": "省料看板",
+      "name": "省料分析",
       "path": "/production/saving-board",
       "code": "product:list"
     },
@@ -813,7 +813,7 @@
     },
     {
       "key": "dashboard",
-      "name": "经营看板",
+      "name": "经营概览",
       "path": "/dashboard",
       "gate": "dashboard:view",
       "units": {
@@ -928,7 +928,7 @@
     },
     {
       "key": "production-board",
-      "name": "作业看板",
+      "name": "作业单",
       "path": "/production",
       "gate": "production:view",
       "units": {
@@ -977,7 +977,7 @@
     },
     {
       "key": "production-saving-board",
-      "name": "省料看板",
+      "name": "省料分析",
       "path": "/production/saving-board",
       "gate": "product:list",
       "units": {
@@ -1141,5 +1141,5 @@
     "A7_VS_MIRROR_DIVERGENCES": 0,
     "PAGE_VISIBILITY_GAPS": 1
   },
-  "_boundary": "本清单**只**覆盖既有解析器能读到的八段事实（码目录两处 + **它们的名称列（P2 新增）** / 岗位种子的码集 / 岗位回退的码集 / **登录面 A7 的码集（P2 新增）** / 三处菜单源 + 第四处的「已删」读数 / `menu.ts` 节点表 / 路由守卫表 / 菜单树与登录菜单 / 路由守卫 / **`pages[]`：页面 → 码（P3 新增：`gate` + 第一屏读码 `units` → 端点 + 逐页 `visibility_rule`）**）+ 既有台账的条数（含 P2/P3 新增的三张只许缩短的台账）。**不含**：D1 端点注解与 D3 工具声明（co-located 真值，设计 §2.2 有意不搬）、码的 resource_type / action / description（三列与 name 同源，喂进清单不增加判别力 —— 名称列才是 B3 标签的对照面）、`roles.mirror_placeholders` 之外的镜像键（A3 的键集 = seed ∪ fallback ∪ 该占位表，由 P2 判据逐值钉住）、`users.permissions` 快照（实例数据，不是声明）、A4 迁移链的存量授权谓词（与「角色 → 默认码」不是同一个读数 —— 设计 §3.1 已登记该差距，归 P5）。**P3 的额外边界**：① C2（`MenuController` 的 `MENU_TREE` 码列）**不由 `pages[]` 派生** —— 它有 4 个**动作节点**（新增商品 / 商品分类管理 / 新增员工 / 订单详情，不是页面）且『经营看板』节点无码而控制器有码 ⇒ 码列不属「页面 → 码」面（现值由 M1 形态面 `menu-tree` 登记）；② `pages[].units` 的 `label`（tab 中文名）/ icon / 关键词 / 组序**不搬进清单**（散文与展示属性，判据读不到就只能靠人核 —— 要它们时由 P4 的 `partial_visibility_ack` 带理由引入）；③ 可见性投影的岗位全集 = **种子 ∪ 回退**（租户自建岗位读不到 ⇒ 见 P3 判据的 `UNCOVERED_FACES`）。**未对账的段一律不许进本文件**（判据 test_manifest_segments_are_all_reconciled 会红）。"
+  "_boundary": "本清单**只**覆盖既有解析器能读到的八段事实（码目录两处 + **它们的名称列（P2 新增）** / 岗位种子的码集 / 岗位回退的码集 / **登录面 A7 的码集（P2 新增）** / 三处菜单源 + 第四处的「已删」读数 / `menu.ts` 节点表 / 路由守卫表 / 菜单树与登录菜单 / 路由守卫 / **`pages[]`：页面 → 码（P3 新增：`gate` + 第一屏读码 `units` → 端点 + 逐页 `visibility_rule`）**）+ 既有台账的条数（含 P2/P3 新增的三张只许缩短的台账）。**不含**：D1 端点注解与 D3 工具声明（co-located 真值，设计 §2.2 有意不搬）、码的 resource_type / action / description（三列与 name 同源，喂进清单不增加判别力 —— 名称列才是 B3 标签的对照面）、`roles.mirror_placeholders` 之外的镜像键（A3 的键集 = seed ∪ fallback ∪ 该占位表，由 P2 判据逐值钉住）、`users.permissions` 快照（实例数据，不是声明）、A4 迁移链的存量授权谓词（与「角色 → 默认码」不是同一个读数 —— 设计 §3.1 已登记该差距，归 P5）。**P3 的额外边界**：① C2（`MenuController` 的 `MENU_TREE` 码列）**不由 `pages[]` 派生** —— 它有 4 个**动作节点**（新增商品 / 商品分类管理 / 新增员工 / 订单详情，不是页面）且『经营概览』节点无码而控制器有码 ⇒ 码列不属「页面 → 码」面（现值由 M1 形态面 `menu-tree` 登记）；② `pages[].units` 的 `label`（tab 中文名）/ icon / 关键词 / 组序**不搬进清单**（散文与展示属性，判据读不到就只能靠人核 —— 要它们时由 P4 的 `partial_visibility_ack` 带理由引入）；③ 可见性投影的岗位全集 = **种子 ∪ 回退**（租户自建岗位读不到 ⇒ 见 P3 判据的 `UNCOVERED_FACES`）。**未对账的段一律不许进本文件**（判据 test_manifest_segments_are_all_reconciled 会红）。"
 }

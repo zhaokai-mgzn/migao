@@ -230,7 +230,7 @@ export default function ProductionBoardPage() {
   return (
     <div className="p-6 space-y-4">
       <PageHeader
-        title="作业看板"
+        title="作业单"
         subtitle="作业单在产进度与计件合计"
         actions={
           <Button variant="secondary" size="sm" onClick={refresh} disabled={loading}>

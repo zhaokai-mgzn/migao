@@ -81,7 +81,7 @@ describe('formatMobileTitles（issue #6759 手机端可见面标注）', () => {
 describe('mobileTitlesByCodeFromTree（整棵树收表）', () => {
   it('顶层独立项也收（dashboard:view 在顶层，不是任何组的 children）', () => {
     const tree = [
-      { code: 'dashboard:view', label: '经营看板', mobileTitles: ['数据'] },
+      { code: 'dashboard:view', label: '经营概览', mobileTitles: ['数据'] },
       {
         code: 'production-center',
         label: '生产管理',
@@ -99,7 +99,7 @@ describe('mobileTitlesByCodeFromTree（整棵树收表）', () => {
       {
         code: 'group-a',
         label: 'A',
-        children: [{ code: 'production:view', label: '作业看板', mobileTitles: ['计件工资报表'] }],
+        children: [{ code: 'production:view', label: '作业单', mobileTitles: ['计件工资报表'] }],
       },
       { code: 'production:view', label: '企业基础设置', mobileTitles: ['不该覆盖'] },
     ]

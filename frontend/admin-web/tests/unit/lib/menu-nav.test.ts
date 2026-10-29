@@ -168,7 +168,7 @@ describe('新 IA 事实（issue #5778 + #6404 + #6457 + #6573 + #6580 + #7087 + 
     // 用户 2026-10-17 逐字：「经营看板直接作为一级菜单，移除工作台，这样用户一进来就很直观的看到经营看板了」
     expect(standaloneHeadItems.map((i) => i.key)).toEqual(EXPECTED_STANDALONE_HEAD)
     // 报表中心（issue #7376 / #7377）**紧随其后**：两者同属经营数据面，位置本身是信息架构决定
-    expect(standaloneHeadItems.map((i) => i.name)).toEqual(['经营看板', '报表中心'])
+    expect(standaloneHeadItems.map((i) => i.name)).toEqual(['经营概览', '报表中心'])
     expect(standaloneHeadItems.map((i) => i.path)).toEqual(['/dashboard', '/reports'])
     expect(standaloneHeadItems.map((i) => i.permissionCode)).toEqual(['dashboard:view', 'dashboard:view'])
     // 它**不得**同时出现在任何组里（升为一级项 = 从原组移出）

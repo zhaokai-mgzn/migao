@@ -120,12 +120,12 @@ class MenuNode:
 #: —— 经营看板 / 报表中心 / 企业基础设置 / 通知中心）。
 #: 顺序 = `menu.ts` 的渲染顺序；判据按 `MENU_TREE_ORDER_LOCKED` 比对（**顺序也锁**）。
 #: 🔴 2026-10-29（issue #8086，用户四条裁定）：新增「基础资料」（商品管理 / 客户列表 / 供应商 / 价格本）
-#: 与「质量」（质检记录 / 返工单）两组；三处正名（经营看板→经营看板、作业看板→作业看板、省料看板→省料看板）；
+#: 与「质量」（质检记录 / 返工单）两组；三处正名（经营看板→经营概览、作业看板→作业单、省料看板→省料分析）；
 #: 商品管理不再是一级项 ⇒ 独立项从 5 项降为 4 项。本镜像**必须**与 `menu.ts` 同批（判据 =
 #: tests/unit_ci_workflows/test_menu_navigator.py 的「MENU_TREE 的顺序与 menu.ts 的渲染顺序不同」）。
 MENU_TREE: Tuple[MenuNode, ...] = (
     # 最前席位一级项（issue #7087）：渲染在**所有分组之前**（登录落点 = 第一个可见菜单项）。
-    MenuNode(STANDALONE_GROUP, "经营看板", "/dashboard", "dashboard:view"),
+    MenuNode(STANDALONE_GROUP, "经营概览", "/dashboard", "dashboard:view"),
     MenuNode(STANDALONE_GROUP, "报表中心", "/reports", "dashboard:view"),
     # 客户服务（2026-10-29：客户列表移入「基础资料」）
     MenuNode("customer-service", "在线接待", "/agent-workspace/human-sessions", "agent:session"),
@@ -140,7 +140,7 @@ MENU_TREE: Tuple[MenuNode, ...] = (
     MenuNode("trade-center", "销售订单", "/orders", "order:list"),
     MenuNode("trade-center", "财务对账", "/finance", "finance:view"),
     # 生产管理（2026-10-29：质检/返工拆出 →「质量」；issue #6580 起只有三项）
-    MenuNode("production-center", "作业看板", "/production", "production:view"),
+    MenuNode("production-center", "作业单", "/production", "production:view"),
     MenuNode("production-center", "智能派单", "/production/pool", "processing:view"),
     MenuNode("production-center", "计件工资", "/production/piecework", "production:view"),
     # 质量（issue #8086）：质检记录（production:inspect）/ 返工单（after_sales:view）
@@ -155,7 +155,7 @@ MENU_TREE: Tuple[MenuNode, ...] = (
     MenuNode("inventory-center", "出库单", "/outbound-orders", "inbound:view"),
     MenuNode("inventory-center", "发货单", "/shipments", "order:list"),
     MenuNode("inventory-center", "余料台账", "/production/remnants", "processing:manage"),
-    MenuNode("inventory-center", "省料看板", "/production/saving-board", "product:list"),
+    MenuNode("inventory-center", "省料分析", "/production/saving-board", "product:list"),
     # 组织管理
     MenuNode("org-center", "员工管理", "/employees", "employee:list"),
     MenuNode("org-center", "岗位权限", "/roles", "system:view"),
@@ -228,7 +228,7 @@ NAV_FEATURES: Tuple[NavFeature, ...] = (
     # 登记项与菜单项必须一一对应 —— 判据 ①「每个菜单节点至少一条可命中的说法」/②「没有空登记」）。
     # ⚠️ 不登记「工作台」这类旧组名当说法：判据「接地」要求说法与所属节点菜单名 / 本功能 label
     # 有包含关系 —— 已不存在的组名既不接地、也会把「说到一个没有的页面」变成可命中路径。
-    NavFeature("dashboard", "经营看板（原经营看板 / 经营数据）", ((STANDALONE_GROUP, "经营看板"),), ("经营看板", "经营看板", "经营数据")),
+    NavFeature("dashboard", "经营概览（原经营看板 / 经营数据）", ((STANDALONE_GROUP, "经营概览"),), ("经营概览", "经营看板", "经营数据")),
     # 价格本（issue #7375 段 3）：用户问「这个客户什么价 / 能不能便宜 / 阶梯价怎么设」时引导到这里。
     # ⚠️ 说法里必须**逐字**含菜单名「价格本」（判据要求每个菜单节点都有一条能被问到的说法）。
     NavFeature("price-books", "价格本（协议价 / 等级价 / 阶梯价）",
@@ -252,7 +252,7 @@ NAV_FEATURES: Tuple[NavFeature, ...] = (
     # 只是不再有「带你去那一页」的导航动作（顶栏入口不参与菜单接地判据，见 issue #7593 已知缺口）。
     # 2026-10-19（issue #7332）：菜单正名「作业看板」。登记名里保留「作业看板 / 加工单 / 原生产看板」三个旧说法：
     # 判据 6b（problems_aliases_grounded）要求说法与登记名有包含关系；菜单本身只叫「作业看板」。
-    NavFeature("production-board", "作业看板（原作业看板 / 加工单 / 生产看板）", (("production-center", "作业看板"),), ("作业看板", "作业看板", "加工单", "生产看板")),
+    NavFeature("production-board", "作业单（原作业看板 / 加工单 / 生产看板）", (("production-center", "作业单"),), ("作业单", "作业看板", "加工单", "生产看板")),
     NavFeature("production-pool", "智能派单（派单）", (("production-center", "智能派单"),), ("智能派单", "派单")),
     # 🔴 2026-10-09（issue #6580）：「加工项管理」「工艺配置」两个菜单项已**移除**（功能体并入
     # 「企业基础设置」页内的配置域）⇒ 它们原来的两个登记项**同批删除**，不改成指向 `/settings`：
@@ -278,7 +278,7 @@ NAV_FEATURES: Tuple[NavFeature, ...] = (
     # 「出库单」必须能解出**本页**（`_self_check` 会当场判红「命不中自己」）。
     NavFeature("outbound-orders", "出库单（布料 / 成品出库）", (("inventory-center", "出库单"),), ("出库单", "出库")),
     NavFeature("remnants", "余料台账（余料）", (("inventory-center", "余料台账"),), ("余料台账", "余料")),
-    NavFeature("saving-board", "省料看板（原省料看板 / 省料）", (("inventory-center", "省料看板"),), ("省料看板", "省料看板", "省料")),
+    NavFeature("saving-board", "省料分析（原省料看板 / 省料）", (("inventory-center", "省料分析"),), ("省料分析", "省料看板", "省料")),
     NavFeature("stock-ledger", "库存明细（库存流水）", (("inventory-center", "库存明细"),), ("库存明细", "库存流水")),
     # 盘点单（issue #7373）：账实核对的落点 —— 用户问「盘亏怎么办 / 怎么对账」时引到这里。
     NavFeature("stocktakes", "盘点单（账实核对）",

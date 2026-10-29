@@ -202,7 +202,7 @@ describe('EmployeesPage', () => {
       data: {
         data: [
           { id: 'r1', name: '客服', code: 'customer_service', permissions: [{ id: 'p1', code: 'products:view', name: '查看商品' }, { id: 'p2', code: 'order:list', name: '订单列表' }] },
-          { id: 'r2', name: '运营', code: 'operator', permissions: [{ id: 'p3', code: 'dashboard:view', name: '经营看板' }] },
+          { id: 'r2', name: '运营', code: 'operator', permissions: [{ id: 'p3', code: 'dashboard:view', name: '经营概览' }] },
         ],
       },
     })
@@ -311,7 +311,7 @@ describe('EmployeesPage', () => {
             code: 'workspace',
             label: '工作台',
             children: [
-              { code: 'dashboard:view', label: '经营看板' },
+              { code: 'dashboard:view', label: '经营概览' },
               { code: 'dashboard:view', label: '每日简报' },
             ],
           },
@@ -333,7 +333,7 @@ describe('EmployeesPage', () => {
       expect(screen.getByTestId('employee-1')).toBeInTheDocument()
     })
     // 修复前：labelMap 按 code 后写覆盖先写 ⇒ 徽标显示「每日简报」；修复后首见优先 ⇒ 「经营看板」
-    expect(within(screen.getByTestId('employee-1')).getByText('经营看板')).toBeInTheDocument()
+    expect(within(screen.getByTestId('employee-1')).getByText('经营概览')).toBeInTheDocument()
     expect(within(screen.getByTestId('employee-1')).queryByText('每日简报')).not.toBeInTheDocument()
   })
 
@@ -570,7 +570,7 @@ describe('EmployeesPage', () => {
               // 手机端有面 ⇒ 必须出现标注
               { code: 'processing:view', label: '智能派单', mobileTitles: ['智能派单'] },
               // 手机端没有面 ⇒ 不得出现标注（纯 PC 权限）
-              { code: 'production:view', label: '作业看板', mobileTitles: [] },
+              { code: 'production:view', label: '作业单', mobileTitles: [] },
             ],
           },
           {
@@ -596,7 +596,7 @@ describe('EmployeesPage', () => {
     expect(screen.getByText('入库单 · 手机端：入库过账')).toBeInTheDocument()
 
     // ② 没有手机端面的码 ⇒ **不追加任何标注**（不摆内部标识、不产生噪音）
-    expect(screen.getByText('作业看板')).toBeInTheDocument()
+    expect(screen.getByText('作业单')).toBeInTheDocument()
     expect(screen.queryByText(/作业看板 · 手机端/)).not.toBeInTheDocument()
     expect(screen.getByText('发货单')).toBeInTheDocument()
     expect(screen.queryByText(/发货单 · 手机端/)).not.toBeInTheDocument()
@@ -660,7 +660,7 @@ describe('EmployeesPage', () => {
       data: {
         data: [
           // #7087 后「经营看板」是**顶层独立项**（无 children）—— 改前只扫 children ⇒ 这个码没中文名
-          { code: 'dashboard:view', label: '经营看板' },
+          { code: 'dashboard:view', label: '经营概览' },
           {
             code: 'inventory-center',
             label: '仓储与物料',
@@ -687,7 +687,7 @@ describe('EmployeesPage', () => {
     render(<EmployeesPage />)
     await waitFor(() => expect(screen.getByTestId('employee-21')).toBeInTheDocument())
     const cell = within(screen.getByTestId('employee-21')).getByTestId('cell-permissions')
-    expect(cell.textContent).toContain('经营看板')
+    expect(cell.textContent).toContain('经营概览')
     expect(cell.textContent).toContain('库存明细')
     expect(cell.textContent).not.toContain('dashboard:view')
   })
@@ -696,13 +696,13 @@ describe('EmployeesPage', () => {
     mockRequestGet.mockResolvedValue({
       data: {
         data: [
-          { code: 'dashboard:view', label: '经营看板', mobileTitles: ['数据'] },
+          { code: 'dashboard:view', label: '经营概览', mobileTitles: ['数据'] },
           {
             code: 'production-center',
             label: '生产管理',
             children: [
               { code: 'processing:view', label: '智能派单', mobileTitles: ['智能派单'] },
-              { code: 'production:view', label: '作业看板', mobileTitles: ['计件工资报表', '生产待办'] },
+              { code: 'production:view', label: '作业单', mobileTitles: ['计件工资报表', '生产待办'] },
             ],
           },
         ],

@@ -442,7 +442,7 @@ describe('useAuthStore (Zustand auth store)', () => {
             },
             roles: ['admin'],
             permissions: ['*'],
-            menus: [{ key: 'dashboard', name: '经营看板', path: '/dashboard' }],
+            menus: [{ key: 'dashboard', name: '经营概览', path: '/dashboard' }],
           },
         },
       })
@@ -461,7 +461,7 @@ describe('useAuthStore (Zustand auth store)', () => {
       // 角色/权限/菜单保留（侧边栏过滤等依赖）
       expect(user.roles).toEqual(['admin'])
       expect(user.permissions).toEqual(['*'])
-      expect(user.menus).toEqual([{ key: 'dashboard', name: '经营看板', path: '/dashboard' }])
+      expect(user.menus).toEqual([{ key: 'dashboard', name: '经营概览', path: '/dashboard' }])
     })
 
     it('应把 /api/auth/me 顶层的 capabilities 并入 user（#5642：黄金策门禁/看板 AI 卡在页面刷新后仍为真值）', async () => {
