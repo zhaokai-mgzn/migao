@@ -3247,6 +3247,27 @@ _CASE_CH_052 = EvalCase(
     precondition='前置 = A 口径已落地：`product_update.parameters` 无 status、`product_batch_update.batch_type.enum` 无 product_status（判据 = backend/ai-agent-service/tests/test_capability_boundary.py::test_decided_off_status_is_not_exposed_by_tools + test_product_batch_update.py::test_status_batch_type_is_rejected）；前置不成立 ⇒ 模型可能真的调用成功，判红会伪装成「agent 不听话」',
 )
 
+# ── CH-053 [SMOKE] 冒烟 · 定时提醒闭环：说「3 天后提醒我跟进李总」→ 确认卡 → 落一条待办；再说取消（源: cases/chat.yml）──
+_CASE_CH_053 = EvalCase(
+    id='CH-053',
+    legacy_id='',
+    title='冒烟 · 定时提醒闭环：说「3 天后提醒我跟进李总」→ 确认卡 → 落一条待办；再说取消',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.SMOKE,
+    user_inputs=['3 天后提醒我跟进李总', '确认', '算了，把刚才那条提醒取消掉'],
+    expectations=['scheduled_task_manage', 'interact', 'scheduled_task_manage'],
+    data_checks=['三件套（fire_at / task_type / criterion）必须由模型从自然语言抽全：缺任一 ⇒ 工具在发 HTTP 之前就拒（missing_arguments）⇒ 调用成功即证明抽全', '写面必须走确认卡（interact component=confirm）：A 档可逆写不得免卡直写', '取消必须带创建时返回的 task id（action 闭集 = create/list/cancel，真值见 tests/test_scheduled_task_manage.py）'],
+    skip_reason='',
+    tags=['chat', 'scheduled_task', 'write_path', 'smoke'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'scheduled_task_manage'}],
+    namespaces=['scheduled_task:跟进李总'],
+    precondition='前置 = reminder skill 绑定 `scheduled_task_manage`、且当前身份具备 admin/operator 角色（2026-10-19 B 端可达集实测含该工具）；不成立 ⇒ 期望 unmatched，红会伪装成「agent 不会建提醒」',
+)
+
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
 _CASE_CR_001 = EvalCase(
     id='CR-001',
@@ -11834,6 +11855,30 @@ _CASE_PG_089 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PP-023 [NORMAL] 算料口径变更真跑：说「上下卷边改成 0.25」→ 先查本店真值 + 逐键「改前 → 改后」确认卡 → 点卡后才真写（源: cases/processing.yml）──
+_CASE_PP_023 = EvalCase(
+    id='PP-023',
+    legacy_id='',
+    title='算料口径变更真跑：说「上下卷边改成 0.25」→ 先查本店真值 + 逐键「改前 → 改后」确认卡 → 点卡后才真写',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['上下卷边改成 0.25', '确认'],
+    expectations=['craft_calc_config_query', 'interact', 'craft_calc_config_update'],
+    data_checks=['改前值必须逐字取自 craft_calc_config_query 的返回（服务端逐键核对，不符即 craft_calc_config_stale 且零写入 —— 不得凭记忆/默认常量填 before）', '确认卡必须逐键展示「改前 → 改后」并用中文字段名（「上下卷边合计」），不摆内部键名（hem_margin）', '未点卡不得调用 craft_calc_config_update；点卡后必须真写成功（success=true）——「只发了一张卡」不算做过', '只改商家点名的键，其余配置原样保留（PUT 是全量替换；工具侧以 current+changes 合并，判据在 tests/test_tools_craft_calc_config_update.py）'],
+    skip_reason='',
+    tags=['write', 'craft_calc', 'write_path', 'confirm_card'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    order_before=['interact[confirm] before craft_calc_config_update'],
+    required_args=[{'tool': 'craft_calc_config_update', 'fields': ['changes', 'before']}],
+    must_succeed=[{'tool': 'craft_calc_config_update'}],
+    pre_clean=[{'type': 'craft_calc_config_restore', 'keys': {'hem_margin': 0.3}}],
+    post_clean=[{'type': 'craft_calc_config_restore', 'keys': {'hem_margin': 0.3}}],
+    precondition='前置 = 本店算料配置可读（`GET /api/admin/production/craft-calc-config` 返回 `data.config`，且含 `hem_margin`）；不成立时查询/写工具都 fail-closed，红会伪装成「agent 不会改算料口径」而不是数据层问题',
+)
+
 # ── PR-001 [SMOKE] 商品搜索 - 关键词模糊匹配（源: cases/product.yml）──
 _CASE_PR_001 = EvalCase(
     id='PR-001',
@@ -14290,6 +14335,30 @@ _CASE_PR_132 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PR-133 [SMOKE] 冒烟 · 改价闭环：一句「把遮光窗帘的价格改成 199」→ 改前→改后确认卡 → 点卡后真写（源: cases/product.yml）──
+_CASE_PR_133 = EvalCase(
+    id='PR-133',
+    legacy_id='',
+    title='冒烟 · 改价闭环：一句「把遮光窗帘的价格改成 199」→ 改前→改后确认卡 → 点卡后真写',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.SMOKE,
+    user_inputs=['把遮光窗帘的价格改成 199', '确认'],
+    expectations=['product_update(product_id=遮光窗帘, price=199)'],
+    data_checks=['改前价必须取自 product_detail 的返回（before_price 必填，漏传即 price_preview_required 拦截：tests/test_price_preview_guard.py）', '先发「改前 → 改后」确认卡，点卡之后才允许改（order_before 机器断言）', '改的是商品级 base_price：168 → 199，跑完由 post_clean 复位的回读自证'],
+    skip_reason='',
+    tags=['write', 'price', 'write_path', 'smoke'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    order_before=['interact[confirm] before product_update'],
+    required_args=[{'tool': 'product_update', 'fields': ['product_id', 'price', 'before_price']}],
+    must_succeed=[{'tool': 'product_update'}],
+    post_clean=[{'type': 'product_price_restore', 'product_keyword': '遮光窗帘', 'price': 168}],
+    namespaces=['product_name:遮光窗帘'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -14493,6 +14562,28 @@ _CASE_ST_012 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     must_succeed=[{'tool': 'payment_qrcode_query'}],
+)
+
+# ── ST-013 [SMOKE] 冒烟 · 通知标记已读：说一句「把新订单通知标为已读」→ 确认门禁 → 点卡后真做（不得先声张）（源: cases/settings.yml）──
+_CASE_ST_013 = EvalCase(
+    id='ST-013',
+    legacy_id='',
+    title='冒烟 · 通知标记已读：说一句「把新订单通知标为已读」→ 确认门禁 → 点卡后真做（不得先声张）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.SMOKE,
+    user_inputs=['把新订单通知标为已读', '确认'],
+    expectations=['notification_manage(action=mark_read)'],
+    data_checks=['写确认门禁：R1 只能提出 + 发确认卡（或先确认再改），**不得**在 R1 就声称已完成（forbidden_text 收窄到 R1）', '真做：mark_read 必须 success=true（工具调用失败不算做过）', '前置由 pre_clean 复位成未读（首跑消费掉唯一夹具行后，重跑前置等价，#7048 P10 同款）'],
+    skip_reason='',
+    tags=['write', 'notification', 'write_path', 'smoke'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=[{'round': 1, 'text': '已标记为已读'}],
+    must_succeed=[{'tool': 'notification_manage'}],
+    pre_clean=[{'type': 'notification_unread_restore', 'notification_id': 'ntf_eval_new_order_0001', 'recipient_id': 'dev_user'}],
+    precondition='前置 = 本店通知中心存在未读通知 `ntf_eval_new_order_0001`（由 pre_clean 复位成未读；夹具行缺失时 agent **合理地**答「这条已是已读」，此时的红是数据层、不是行为层）',
 )
 
 # ── TR-001 [NORMAL] refresh-success — 401 自动刷新并重放原请求（源: cases/token-refresh.yml）──
@@ -17388,6 +17479,7 @@ ALL_CASES = (
     _CASE_CH_050,
     _CASE_CH_051,
     _CASE_CH_052,
+    _CASE_CH_053,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,
@@ -17845,6 +17937,7 @@ ALL_CASES = (
     _CASE_PG_074,
     _CASE_PG_075,
     _CASE_PG_089,
+    _CASE_PP_023,
     _CASE_PR_001,
     _CASE_PR_002,
     _CASE_PR_003,
@@ -17977,6 +18070,7 @@ ALL_CASES = (
     _CASE_PR_073,
     _CASE_PR_074,
     _CASE_PR_132,
+    _CASE_PR_133,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,
@@ -17988,6 +18082,7 @@ ALL_CASES = (
     _CASE_ST_010,
     _CASE_ST_011,
     _CASE_ST_012,
+    _CASE_ST_013,
     _CASE_TR_001,
     _CASE_TR_002,
     _CASE_TR_003,

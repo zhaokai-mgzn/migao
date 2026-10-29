@@ -523,3 +523,48 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+  - id: ST-013
+    legacy_id: ""
+    title: "冒烟 · 通知标记已读：说一句「把新订单通知标为已读」→ 确认门禁 → 点卡后真做（不得先声张）"
+    domains:
+      - settings
+      - notification
+    tier: smoke
+    persona: mibao
+    tags:
+      - write
+      - notification
+      - write_path
+      - smoke
+    truths_ref:
+      - agent-notification.notification-status
+    user_inputs:
+      - "把新订单通知标为已读"
+      - "确认"
+    precondition: "前置 = 本店通知中心存在未读通知 `ntf_eval_new_order_0001`（由 pre_clean 复位成未读；夹具行缺失时 agent **合理地**答「这条已是已读」，此时的红是数据层、不是行为层）"
+    pre_clean:
+      - type: notification_unread_restore
+        notification_id: "ntf_eval_new_order_0001"
+        recipient_id: "dev_user"
+    expectations:
+      - tool: notification_manage
+        args:
+          action: mark_read
+    must_succeed:
+      - tool: notification_manage
+    forbidden_text:
+      - round: 1
+        text: "已标记为已读"
+    data_checks:
+      - "写确认门禁：R1 只能提出 + 发确认卡（或先确认再改），**不得**在 R1 就声称已完成（forbidden_text 收窄到 R1）"
+      - "真做：mark_read 必须 success=true（工具调用失败不算做过）"
+      - "前置由 pre_clean 复位成未读（首跑消费掉唯一夹具行后，重跑前置等价，#7048 P10 同款）"
+    skip_reason: ""
+    merge_log: "2026-10-29 新增（issue #8116，P0-2）：smoke 档补写路径代表（与 normal 档 ST-005 同族，收窄为「一句话 → 点卡 → 真做」两轮）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_notification_manage_change_actions.py"
+        - "backend/ai-agent-service/tests/test_tools_notification_manage.py"
+      ci:
+        - agent-eval.yml
+      verifies: []

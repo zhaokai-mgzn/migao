@@ -672,6 +672,16 @@ _CLEAN_TYPES: dict[str, dict] = {
     # ⚠️ 只声明 `pre`（**不**声明 `post`）：复位对象是**下一次尝试的前置**（#3751 语义），
     # 用例结束后把商家的已读结果改回去 = 抹掉本次尝试的真实产物（#4075 的红线）。
     "notification_unread_restore": {"phases": ("pre",), "attr": ""},
+    # ── 复位族第五批（PP-023）：写方改的是**算料口径配置**（`craft_calc_config_update`）──
+    # 为什么需要：算料口径是**租户级共享真值**（`GET`/`PUT /api/admin/production/craft-calc-config`，
+    # PUT 是 upsert + **全量替换**）——首跑改掉「上下卷边」后，同栈按配置算料/省料的用例
+    # （PR-102 省料、CH-043 门幅推导…）读到的是被改过的世界，且重跑同一用例时 `before` 与
+    # 服务端当前值仍然相符 ⇒ **第二次跑不再是同一道题**（#4075 / #3751 的同族）。
+    # B 端工具面**没有**「重置默认」（`craft_calc_config_update` 明确不支持）⇒ 复位走
+    # admin-api 的同一端点直接写回（与 `product_price_restore` 同思路：写回声明的值 + 回读核对）。
+    # ⚠️ `attr` 留空是**有意**的（同 `order_status_restore`）：算料口径不是商品夹具属性，
+    # 编一个属性键会让 `test_runner_restore_attrs_have_a_known_writer_surface` 判「无对应写方」。
+    "craft_calc_config_restore": {"phases": ("pre", "post"), "attr": ""},
 }
 
 # 派生视图（**不要**再各写一份字面量：类型清单只在上面那张表里）
@@ -777,6 +787,7 @@ _PRECLEAN_FAILURE_PREFIXES: dict[str, tuple[str, ...]] = {
     "customer_profile_restore": (),  # 同上（#4992）
     "session_credential_restore": (),  # 同上（#5482）
     "notification_unread_restore": (),  # 同上（#7048 P10）：不在位/写失败/回读不符走 `_clean_not_applied`
+    "craft_calc_config_restore": (),    # 同上（#8116 P0）：算料口径复位，未应用走 `_clean_not_applied`
     # 幂等型：目标不存在 = **无缺口**（"有重复商品"是待清理物，不是用例依赖的前置）
     # ⇒ 无「该在位而不在位」的语义，失败形态由动作自身（HTTP 非 2xx → 抛异常 → 通用
     # `⚠️ pre_clean 失败` 文案）承载。
@@ -1375,6 +1386,76 @@ async def _restore_product_price(token: str, spec: dict, phase: str) -> str:
     return f"已复位 {_who} 的商品级基准价 → {want}（回读一致）"
 
 
+def _same_craft_config_value(a, b) -> bool:
+    """算料配置值比对：数值按容差比（JSON 里 0.3 与 0.30000000000000004 应视为同值）。"""
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)) and not isinstance(a, bool):
+        return abs(float(a) - float(b)) <= 1e-9
+    return a == b
+
+
+async def _restore_craft_calc_config(token: str, spec: dict, phase: str) -> str:
+    """`craft_calc_config_restore`：把**声明的算料口径键**复位回给定值（PP-023 的写方）。
+
+    为什么需要：`craft_calc_config_update`（issue #7514，A 档可逆写）改的是**租户级共享配置**，
+    而 admin-api 的 `PUT` 是 upsert + **全量替换** ⇒ 不复位时：① 同栈按配置算料/省料的用例
+    读到被改过的世界（#4075 的同族）；② 重跑同一用例时 `before` 仍与服务端相符 ⇒ 重试前置
+    不再等价（#3751）。B 端工具面没有「重置默认」⇒ 只能走 admin-api 同一端点写回。
+
+    `keys` 必填（缺 = 配置错误，交由调用侧 `_run_clean_specs` 折进结论）。
+    ⚠️ 只写**声明的键**（`{**current, **keys}`）：其余键逐字保留，避免"复位把别的键清空"。
+    幂等：当前值**逐键等于**声明值 ⇒ 不发 PUT，直接成功返回。
+    失败可见（fail-closed，走 `_clean_not_applied` 的稳定标记）：GET/PUT 非 2xx /
+    `data.config` 取不到 / 回读缺键或与声明值不符。
+    ⚠️ 措辞红线（#3751）：**成功路径**的消息不得含「未复位」/「失败」。
+    """
+    keys = spec.get("keys") or {}
+    if not isinstance(keys, dict) or not keys:
+        return _clean_not_applied(
+            phase, "`craft_calc_config_restore` 缺 `keys`（无法确定复位目标键值）")
+    url = f"{ADMIN_API}/api/admin/production/craft-calc-config"
+    async with httpx.AsyncClient() as c:
+        h = _admin_headers(token)
+        r = await c.get(url, headers=h, timeout=15)
+        if getattr(r, "status_code", 0) >= 300:
+            return _clean_not_applied(
+                phase, f"算料口径复位读取当前配置失败（HTTP {r.status_code}）")
+        try:
+            payload = r.json() or {}
+        except Exception:
+            payload = {}
+        data = payload.get("data") if isinstance(payload, dict) else None
+        current = data.get("config") if isinstance(data, dict) else None
+        if not isinstance(current, dict) or not current:
+            return _clean_not_applied(
+                phase, "算料口径复位读取不到 `data.config`（服务端未返回当前配置）")
+        stale = [k for k, v in keys.items() if not _same_craft_config_value(current.get(k), v)]
+        if not stale:
+            return f"算料口径 {sorted(keys)} 本就是声明值，无需复位（幂等）"
+        merged = {**current, **keys}
+        w = await c.put(url, headers=h, json=merged, timeout=15)
+        if getattr(w, "status_code", 0) >= 300:
+            return _clean_not_applied(
+                phase, f"算料口径复位写回失败（HTTP {w.status_code}；键={sorted(stale)}）")
+        r2 = await c.get(url, headers=h, timeout=15)
+        if getattr(r2, "status_code", 0) >= 300:
+            return _clean_not_applied(
+                phase, f"算料口径复位**未证实** —— 回读失败（HTTP {r2.status_code}）")
+        try:
+            payload2 = r2.json() or {}
+        except Exception:
+            payload2 = {}
+        data2 = payload2.get("data") if isinstance(payload2, dict) else None
+        got = data2.get("config") if isinstance(data2, dict) else None
+        if not isinstance(got, dict):
+            return _clean_not_applied(
+                phase, "算料口径复位**未证实** —— 回读里没有 `data.config`")
+        bad = [k for k, v in keys.items() if not _same_craft_config_value(got.get(k), v)]
+        if bad:
+            return _clean_not_applied(
+                phase, f"算料口径复位**未生效** —— 回读与声明值不符的键={sorted(bad)}")
+    return f"已复位算料口径 {sorted(keys)}（回读一致）"
+
+
 async def _restore_order_status(token: str, spec: dict, phase: str) -> str:
     """`order_status_restore`：把**被点名的订单**状态复位到给定值（issue #4992）。
 
@@ -1944,6 +2025,9 @@ async def _run_clean_action(token: str, spec: dict, phase: str = "pre") -> str:
         # 首跑消费掉那条唯一夹具行后，同一栈上的第二次尝试前置不再等价）。
         # 实现体见 `_restore_notification_unread`。
         return await _restore_notification_unread(token, spec, phase)
+    if _type == "craft_calc_config_restore":
+        # 复位族第五批（PP-023）：把**算料口径配置**复位回声明值（实现体见 `_restore_craft_calc_config`）。
+        return await _restore_craft_calc_config(token, spec, phase)
     # ── customer_tag_remove（登记表里的最后一个 ⇒ 落到这里即它；其余情况是
     #    "登记了但漏写实现体"，同样走配置错误，不许退回静默）──
     # 配置错误**不是**静默跳过（issue #3781）：旧行为 `（跳过）` 只被打印一行，

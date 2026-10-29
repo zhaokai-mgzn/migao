@@ -2957,3 +2957,42 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+  - id: CH-053
+    legacy_id: ""
+    title: "冒烟 · 定时提醒闭环：说「3 天后提醒我跟进李总」→ 确认卡 → 落一条待办；再说取消"
+    domains:
+      - chat
+    tier: smoke
+    persona: mibao
+    tags:
+      - chat
+      - scheduled_task
+      - write_path
+      - smoke
+    truths_ref:
+      - agent-notification.scheduled-task-trio
+    user_inputs:
+      - "3 天后提醒我跟进李总"
+      - "确认"
+      - "算了，把刚才那条提醒取消掉"
+    precondition: "前置 = reminder skill 绑定 `scheduled_task_manage`、且当前身份具备 admin/operator 角色（2026-10-19 B 端可达集实测含该工具）；不成立 ⇒ 期望 unmatched，红会伪装成「agent 不会建提醒」"
+    expectations:
+      - tool: scheduled_task_manage
+      - tool: interact
+      - tool: scheduled_task_manage
+    must_succeed:
+      - tool: scheduled_task_manage
+    namespaces:
+      - "scheduled_task:跟进李总"
+    data_checks:
+      - "三件套（fire_at / task_type / criterion）必须由模型从自然语言抽全：缺任一 ⇒ 工具在发 HTTP 之前就拒（missing_arguments）⇒ 调用成功即证明抽全"
+      - "写面必须走确认卡（interact component=confirm）：A 档可逆写不得免卡直写"
+      - "取消必须带创建时返回的 task id（action 闭集 = create/list/cancel，真值见 tests/test_scheduled_task_manage.py）"
+    skip_reason: ""
+    merge_log: "2026-10-29 新增（issue #8116，P0-2）：smoke 档补写路径代表（与 normal 档 CH-050 同族，换用不同的提醒对象避免与 CH-050 的 namespaces 互斥）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_scheduled_task_manage.py"
+      ci:
+        - agent-eval.yml
+      verifies: []

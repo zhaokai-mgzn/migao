@@ -116,6 +116,14 @@ DISPOSITIONS = {
         "（**与 `_restore_sku_price` 正交**：商品级 `products.base_price` ≠ `product_skus.price`，"
         "回读错字段就抓不到这个写点的静默空转 —— 红证见 test_shared_fixture_write_restore.py）",
     # ── 复位族第二批（issue #4992）：同为**已校验**档（状态码 + 回读值比对）──
+    # ── 复位族（issue #8116 P0）：租户级算料口径复位（PUT 是**全量替换**，写错面会清空配置）──
+    ("_restore_craft_calc_config", "put", 1):
+        "已校验（issue #8116）：① **成功判据** = HTTP < 300 **且** 回读 `data.config` 里**声明键**"
+        "逐值相等（`_same_craft_config_value`，浮点按 1e-9 容差，避开二进制浮点噪声）；"
+        "② **失败可见** = status_code >= 300 / 缺 `data.config` / 回读不符 ⇒ `_clean_not_applied`"
+        "（`PRECONDITION_NOT_RESTORED: post_clean` 进用例结论，不静默当成功）；"
+        "③ **幂等** = 声明键本就等于目标值 ⇒ 直接返回成功且**不发** PUT（否则每跑一次都写库）；"
+        "④ **只写声明键** = 载荷 `{**current, **keys}`：PUT 全量替换，缺键会把整份算料配置清空",
     ("_restore_customer_profile", "put", 1):
         "已校验（issue #4992）：status_code >= 300 记账 + **回读** `data.profile.phone`（与可选 "
         "`wechatNickname`）比对；2xx 但值未落地 ⇒ `PRECONDITION_NOT_RESTORED: post_clean` 进结论"
