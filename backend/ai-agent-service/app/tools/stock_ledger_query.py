@@ -41,6 +41,7 @@ class StockLedgerQueryTool(BaseTool):
         "【反例】单个商品档案里的库存字段用 product_detail；某商品实时库存数用 inventory_manage(query)；"
         "批次余量与省料度量用 batch_stock_query；到货/入库单与批次来源用 inbound_order_query。"
         "【标注】READONLY — 只读查询"
+        "【不要用于】订单发货占用/是否已出库（用 order_query）；销量排行与滞销（用 dashboard_stats）"
     )
 
     # 权限码（admin-api 目录）：`StockLedgerController.GET /api/admin/stock-ledger` 方法级

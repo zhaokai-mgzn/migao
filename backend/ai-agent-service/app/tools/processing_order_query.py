@@ -68,6 +68,7 @@ class ProcessingOrderQueryTool(BaseTool):
         "其中「排产交期 / 承诺发货日」在既有端点里**没有来源** ⇒ 一律为「未知」，**不是当天、不是 0**；"
         "没填交期的加工单落「风险未知」（**不是**「不紧急」）。"
         "【标注】READONLY — 只读查询"
+        "【不要用于】加工项目录与分类（用 processing_item_query）；订单金额/状态（用 order_query）"
     )
 
     # 权限码（admin-api 目录，issue #5291）：加工单**查看**取生产域读码 `production:view`

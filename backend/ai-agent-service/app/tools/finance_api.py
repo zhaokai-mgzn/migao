@@ -40,6 +40,7 @@ class FinanceApiTool(BaseTool):
         "【反例】查订单金额/明细用 order_query；看经营看板/趋势用 dashboard_stats。"
         "【反例】登记收支**不在本工具能力内**——引导用户到后台「财务对账」页登记。"
         "【标注】READONLY — 纯查询，不含任何写 action"
+        "【不要用于】工人计件工资/人工成本（用 piecework_query）；售后工单的退款进度（用 after_sales_manage）"
     )
     # 权限码（admin-api 目录）：读面 `finance:view`；issue #5246 起 `POST /finance/transactions`
     # （登记收支）走写码 `finance:create`（此前挂在读码上）。旧白名单里的 `operation_manager`
