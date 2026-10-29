@@ -856,7 +856,7 @@ cases:
       - "窗口被上限截断（`window_capped=true`）时如实说明实际窗口（`days` / `window_days`），不得把截断窗口说成用户要求的窗口"
       - "对比失败（工具 success=false）或服务端序列不足两期（`partial=true`）时如实说明「本次对比数据不完整/不可用」，不得口算或估算"
       - "财务口径同理：`finance_api(action=get_summary, compare=true)` 的 `compare.previous` / `compare.delta` / `compare.delta_pct` 逐项转述，本期四项不得被上一期数字顶替；`get_summary` 不传 compare 时保持旧的单次汇总行为"
-    precondition: "评测栈需有订单/资金流水 seed 才能得到非零读数；无 seed 时工具仍返回 success=true 但读数全 0（delta_pct=null / partial=true）⇒ 本条按「如实转述口径」判定，不把空读数当失败"
+    precondition: "评测栈需有订单/资金流水 seed 才能得到非零读数；无 seed 时工具仍返回 success=true 但读数全 0（delta_pct=null / partial=true）⇒ 本条按「如实转述口径」判定，不把空读数当失败。**前置不成立时红的伪装形态**：序列长度 < 2×days 时 `partial=true`、上期全 0 时 `delta_pct=null` 会如实披露 ⇒ 此时「少了/多了」的红落在**数据层**（seed 不足），不是 agent 行为层；机器判据见本用例 data_checks 的 `previous_is_zero` / `partial` 两条"
     skip_reason: ""
     merge_log: "2026-10-29 新增（issue #8120）：黄金策分析能力 P1「对比」由工具确定性计算（审计 docs/audit-2026-10/02-mibao-capability-review.md F5）。取号 DA-025：`scripts/next_case_id.py DA` 因 gh 抖动 fail-closed（不许取号，stream error）⇒ 按 `migao-dev-flow` §26.3 手工核在飞面：origin/main 与全部 8 个 open PR 分支（mibao-p0-eval / feat/8114-merge-ai-cards / fix/8108-banding-family / fix/8107-option-label-slim / 8104-worker-stock-correction / feat/8103-same-order-same-bin / feat/8100-menu-rename / chore/flaky-ledger）的 `.github/cases/data.yml` 最大号均为 DA-024（命令：`git show <ref>:.github/cases/data.yml | grep -oE 'DA-[0-9]+' | sort -u | tail -1`）⇒ DA-025 未被占用。**未覆盖面（如实登记）**：归因（按商品/客户/状态拆）与「下一步」建议不在本单（审计 F5 的另外两件，另包）；本用例只覆盖对比算术的转述面"
     traces:
