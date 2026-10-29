@@ -578,14 +578,16 @@ class AuthServiceTest {
         // → 通知中心）—— 与前端渲染顺序逐项一致。
         // 🔴 2026-10-22（issue #7376）：最前席位增至**两项** —— 经营看板 → 报表中心
         //（同属经营数据面：报表是看板的下钻；同码 `dashboard:view` ⇒ 零授权 delta）。
+        // 🔴 2026-10-29（issue #8086）：新增「基础资料」（客户服务之后）与「质量」（生产管理之后）；
+        // 商品管理降入「基础资料」组 ⇒ 尾席位只剩「企业基础设置」。
         assertThat(keysOf(menus)).containsExactly(
-                "dashboard", "reports", "customer-service", "trade-center",
-                "production-center", "supply-chain", "inventory-center", "org-center",
-                "products", "settings", "notifications");
+                "dashboard", "reports", "customer-service", "basic-data", "trade-center",
+                "production-center", "quality", "supply-chain", "inventory-center", "org-center",
+                "settings", "notifications");
         assertThat(namesOf(menus)).containsExactly(
-                "经营看板", "报表中心", "客户服务", "交易管理",
-                "生产管理", "供应链", "仓储与物料", "组织管理",
-                "商品管理", "企业基础设置", "通知中心");
+                "经营看板", "报表中心", "客户服务", "基础资料", "交易管理",
+                "生产管理", "质量", "供应链", "仓储与物料", "组织管理",
+                "企业基础设置", "通知中心");
 
         // 🔴 #7087：最前席位 = 「经营看板」**顶层一级项**（不是组）—— key / name / path 三项逐值，
         // 且 `children` 为空（旧形态是 `workspace` 组，组内两个节点：经营看板 + 每日简报）。
@@ -598,22 +600,30 @@ class AuthServiceTest {
         assertThat(keysOf(menus)).doesNotContain("workspace", "briefing");
         assertThat(allNames(menus)).doesNotContain("工作台", "每日简报");
 
-        // 客户服务组（#5778 新建）：原「智能客服」组 + 客户侧两项
+        // 客户服务组（#8086：客户列表移入「基础资料」）
         var cs = groupByKey(menus, "customer-service");
-        // 🔴 2026-10-06（方案 A1）：接待与工具相邻 → 售后出口 → 客户档案（最低频）
         assertThat(keysOf(cs.getChildren()))
-                .containsExactly("human-sessions", "knowledge", "after-sales", "customers");
+                .containsExactly("human-sessions", "knowledge", "after-sales");
         assertThat(pathsOf(cs.getChildren())).containsExactly(
-                "/agent-workspace/human-sessions", "/knowledge", "/after-sales", "/customers");
+                "/agent-workspace/human-sessions", "/knowledge", "/after-sales");
+
+        // 基础资料组（#8086 新建）：商品管理 / 客户列表 / 供应商 / 价格本
+        var basic = groupByKey(menus, "basic-data");
+        assertThat(basic.getName()).isEqualTo("基础资料");
+        assertThat(keysOf(basic.getChildren()))
+                .containsExactly("products", "customers", "suppliers", "price-books");
+        assertThat(pathsOf(basic.getChildren())).containsExactly(
+                "/products", "/customers", "/suppliers", "/price-books");
 
         var trade = groupByKey(menus, "trade-center");
         // 🔴 2026-10-22（issue #7375 段 3）：交易管理组新增「价格本」（交易前置）⇒ 组内第一项
         // 🔴 2026-10-24（issue #7593，用户裁定）：「审批中心」撤出侧边栏 —— 入口改**顶栏待办入口**
         // （前端 `components/layout/ApprovalBell.tsx`），`/approvals` 页面与路由守卫保留 ⇒ 本组只剩三项。
+        // 🔴 #8086：价格本移入「基础资料」组 ⇒ 本组 = 销售订单 → 财务对账
         assertThat(keysOf(trade.getChildren()))
-                .containsExactly("price-books", "orders", "finance");
+                .containsExactly("orders", "finance");
         assertThat(pathsOf(trade.getChildren()))
-                .containsExactly("/price-books", "/orders", "/finance");
+                .containsExactly("/orders", "/finance");
 
         var production = groupByKey(menus, "production-center");
         // 🔴 2026-10-09（issue #6580）：本组**由 5 项收拢为 3 项** —— 「加工项管理」
@@ -621,18 +631,24 @@ class AuthServiceTest {
         //（功能体并入一级项「企业基础设置」页内的配置域；旧路径保留为重定向）。
         // 🔴 2026-10-17（issue #7140）：本组新增「质检记录」（`production:inspect`）
         // 🔴 2026-10-23（issue #7377）：本组新增「返工单」（`after_sales:view`，复用售后读码 ⇒ 零授权 delta）
+        // 🔴 #8086：质检记录 / 返工单拆到「质量」组
         assertThat(keysOf(production.getChildren())).containsExactly(
-                "production-board", "production-pool", "production-piecework", "quality-inspections",
-                "rework-orders");
+                "production-board", "production-pool", "production-piecework");
         assertThat(pathsOf(production.getChildren())).containsExactly(
-                "/production", "/production/pool", "/production/piecework", "/quality-inspections",
-                "/rework-orders");
+                "/production", "/production/pool", "/production/piecework");
+
+        // 质量组（#8086 新建）：质检记录 / 返工单（拆组不改码）
+        var quality = groupByKey(menus, "quality");
+        assertThat(quality.getName()).isEqualTo("质量");
+        assertThat(keysOf(quality.getChildren())).containsExactly(
+                "quality-inspections", "rework-orders");
 
         // 🔴 2026-10-20（issue #7369，用户裁定「得加个新大菜单」）：单据三节点已移到「供应链」组；
         // 本组只剩库存与出库（库存明细 → 发货单 → 余料台账 → 省料看板）。
         var supplyChain = groupByKey(menus, "supply-chain");
+        // 🔴 #8086：供应商移入「基础资料」组 ⇒ 本组 = 入库单 → 采购单
         assertThat(keysOf(supplyChain.getChildren())).containsExactly(
-                "inbound-orders", "suppliers", "purchase-orders");
+                "inbound-orders", "purchase-orders");
         var inventory = groupByKey(menus, "inventory-center");
         assertThat(keysOf(inventory.getChildren())).containsExactly(
                 "stock-ledger", "stocktakes", "outbound-orders", "shipments", "production-remnants",
@@ -653,7 +669,7 @@ class AuthServiceTest {
         assertThat(keysOf(menus)).doesNotContain("customer-center", "product-center",
                 "smart-customer-service");
         assertThat(allNames(menus)).doesNotContain("客户管理", "商品与加工项", "智能客服");
-        // #5778：顶层一级项「商品管理」不在任何组内（它不是 `menuGroup`）
+        // 🔴 #8086：商品管理已进「基础资料」组（不再是顶层一级项），仍在下发菜单里
         assertThat(allNames(menus)).contains("商品管理");
         // 🔴 issue #6580：第 2 个一级项改为「企业基础设置」（原「参数总览」的席位）——同样不在
         // `orgChildren` 里（它是顶层 `menuItem`），路径 = `/settings`。
@@ -736,7 +752,9 @@ class AuthServiceTest {
         // 🔴 #5939：「仓储与物料」在**该权限下可见**了 —— 因为「发货单」取的就是 order:list（与销售订单
         // 同一批人在用）。这不是放宽门禁：该组里**只有**发货单一项，余料台账/省料看板仍各要自己的码
         // （见下方「同组不等于同权」专条）。
-        assertThat(keysOf(menus)).containsExactly("trade-center", "inventory-center", "notifications");
+        // 🔴 #8086：价格本（order:list）在「基础资料」组 ⇒ 该组也可见（组内只有价格本一项）
+        assertThat(keysOf(menus)).containsExactly(
+                "basic-data", "trade-center", "inventory-center", "notifications");
         assertThat(keysOf(groupByKey(menus, "inventory-center").getChildren())).containsExactly("shipments");
         assertThat(allNames(menus)).doesNotContain("经营看板", "每日简报", "工作台");
         // 负控（整组不出现，不得漏权限门控）
@@ -756,12 +774,16 @@ class AuthServiceTest {
         // #5699 P4：经营看板也按 `dashboard:view` 门控（#7087 起它是**顶层一级项**）⇒ 只持 inbound:view 时
         //**它这一项**不出现（本条因此顺带成为「经营看板不再无条件出现」的负控）。
         // #7373：盘点单也持 inbound:view ⇒ 本权限集下「仓储与物料」组**在**（组内只这一项）
-        assertThat(keysOf(menus)).containsExactly("supply-chain", "inventory-center", "notifications");
+        // 🔴 #8086：供应商移入「基础资料」组 ⇒ 该组也可见（组内只有供应商一项）
+        assertThat(keysOf(menus)).containsExactly(
+                "basic-data", "supply-chain", "inventory-center", "notifications");
+        var basicForSupplier = groupByKey(menus, "basic-data");
+        assertThat(namesOf(basicForSupplier.getChildren())).containsExactly("供应商");
         var supply = groupByKey(menus, "supply-chain");
         assertThat(supply.getName()).isEqualTo("供应链");
-        assertThat(namesOf(supply.getChildren())).containsExactly("入库单", "供应商", "采购单");
+        assertThat(namesOf(supply.getChildren())).containsExactly("入库单", "采购单");
         assertThat(pathsOf(supply.getChildren()))
-                .containsExactly("/inbound-orders", "/suppliers", "/purchase-orders");
+                .containsExactly("/inbound-orders", "/purchase-orders");
         var inventoryGroup = groupByKey(menus, "inventory-center");
         // #7750：出库单与盘点单同码 inbound:view ⇒ 同一权限集下两项都在
         assertThat(namesOf(inventoryGroup.getChildren())).containsExactly("盘点单", "出库单");
@@ -778,12 +800,12 @@ class AuthServiceTest {
                 menusForPermissions("customer:view", "finance:view");
 
         // #5699 P4：经营看板按 `dashboard:view` 门控（#7087 起 = 顶层**一级项**）⇒ 本权限集不含它时该项不出现。
-        // 🔴 #5778：客户列表移入「客户服务」组、财务对账留在「交易管理」组 ⇒ 两个组同时出现。
-        assertThat(keysOf(menus)).containsExactly("customer-service", "trade-center", "notifications");
-        var customerService = groupByKey(menus, "customer-service");
-        assertThat(customerService.getName()).isEqualTo("客户服务");
-        assertThat(namesOf(customerService.getChildren())).containsExactly("客户列表");
-        assertThat(pathsOf(customerService.getChildren())).containsExactly("/customers");
+        // 🔴 #8086：客户列表已移入「基础资料」组 ⇒ 本权限集出现的是「基础资料 + 交易管理」
+        assertThat(keysOf(menus)).containsExactly("basic-data", "trade-center", "notifications");
+        var basic = groupByKey(menus, "basic-data");
+        assertThat(basic.getName()).isEqualTo("基础资料");
+        assertThat(namesOf(basic.getChildren())).containsExactly("客户列表");
+        assertThat(pathsOf(basic.getChildren())).containsExactly("/customers");
         var trade = groupByKey(menus, "trade-center");
         assertThat(trade.getName()).isEqualTo("交易管理");
         // 🔴 2026-10-24（issue #7593）：「审批中心」菜单项已撤除（入口改顶栏）⇒ 只持 finance:view 时
