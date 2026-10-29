@@ -3268,6 +3268,27 @@ _CASE_CH_053 = EvalCase(
     precondition='前置 = reminder skill 绑定 `scheduled_task_manage`、且当前身份具备 admin/operator 角色（2026-10-19 B 端可达集实测含该工具）；不成立 ⇒ 期望 unmatched，红会伪装成「agent 不会建提醒」',
 )
 
+# ── CH-054 [ADVERSARIAL] 连续多轮工具无进展时换策略：同一无效单号反复失败后向商家确认，而不是原地重试到轮次耗尽（源: cases/chat.yml）──
+_CASE_CH_054 = EvalCase(
+    id='CH-054',
+    legacy_id='',
+    title='连续多轮工具无进展时换策略：同一无效单号反复失败后向商家确认，而不是原地重试到轮次耗尽',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.ADVERSARIAL,
+    user_inputs=['帮我查一下订单 OR-19990101-9999 的信息，查不到就换个关键字再查，别停，我看着呢'],
+    expectations=['order_query'],
+    data_checks=['前置（precondition）：`MAX_NO_PROGRESS_ROUNDS = 3`、连续 3 轮工具全失败即提前退出（success=true；真值 = backend/ai-agent-service/tests/test_tool_loop_no_progress.py；2026-10-29 实测：开启时 4 次 LLM 调用，关掉时 8 次）', '反复失败后必须换策略：向商家确认关键信息（单号是否输错 / 请给正确单号）或如实说明卡在哪一步（这个单号查不到）—— 两者都算合格；继续重复同一调用不合格。', '不得用轮次耗尽的兜底收场（禁词「处理步骤较多 / 请稍后重试」），也不得把「查不到」说成「已查到 / 已发货」（负效果面）。', '机器面判据 = backend/ai-agent-service/tests/test_tool_loop_no_progress.py（实例：3 轮后退出 + 最后一次 prompt 含换策略指令；不误伤：任一成功即归零；抛异常同样累计）。'],
+    skip_reason='',
+    tags=['chat', 'tool-loop', 'no-progress', 'self-spin'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=['处理步骤较多', '请稍后重试', '已查到', '已发货'],
+    want_text=[{'any_of': ['确认', '核对', '单号', '查不到', '没查到']}],
+    precondition='前置 = 循环里存在「连续 3 轮无进展即换策略」出口（`backend/ai-agent-service/app/graph/skills/execution/react_turn.py::react_turn` 的 `MAX_NO_PROGRESS_ROUNDS = 3`；判据 = `backend/ai-agent-service/tests/test_tool_loop_no_progress.py::test_three_failing_rounds_exit_early_with_strategy_switch`）。前置不成立 ⇒ 模型可能烧完 8 轮后落到「处理步骤较多」兜底，本用例的 forbidden_text 会红 —— 那是缺陷，不是假红',
+)
+
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
 _CASE_CR_001 = EvalCase(
     id='CR-001',
@@ -17480,6 +17501,7 @@ ALL_CASES = (
     _CASE_CH_051,
     _CASE_CH_052,
     _CASE_CH_053,
+    _CASE_CH_054,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,

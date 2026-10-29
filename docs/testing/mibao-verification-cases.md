@@ -1634,7 +1634,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释）；2026-09-21（case-trust burn-down 缴费，issue #4971，metric=entries ⇒ 整条销账）：补 `must_succeed[category_manage(action=delete)]`（效果层：「调用了 ≠ 成了」，#3778）+ `namespaces[category:轻奢系列]`（弱证据，如实登记：夹具层无分类域复位/准备动作，且与 CT-002「建同一个分类」自动串行）+ 机器计分型前置断言；`user_inputs` / `expectations` / `data_checks` 原第 1 条 / `skip_reason` / `traces` 一字未动、断言强度不放宽 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`category_manage` 的写 action `delete` 已删除（工具收窄为只读 `{tree}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `[interact(confirm), category_manage(action=delete)]` 改判为 `direct_reply`（如实说明 + 引导去后台商品分类页面：删除**没有存活的只读路径**），`must_succeed[category_manage(action=delete)]` 整格移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）；`data_checks` 的写路径断言（「二次确认后才执行删除」+ 写面前置）改判为只读/如实说明口径（原第 1 条文本已并入新第 1 条保留为历史）。 ｜ tags: delete, destructive, confirm
 
-## 对话边界域（52 case）
+## 对话边界域（53 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -2501,6 +2501,24 @@
 ```
 真值: agent-notification.scheduled-task-trio
 溯源: 2026-10-29 新增（issue #8116，P0-2）：smoke 档补写路径代表（与 normal 档 CH-050 同族，换用不同的提醒对象避免与 CH-050 的 namespaces 互斥）。 ｜ tags: chat, scheduled_task, write_path, smoke
+
+### CH-054. 连续多轮工具无进展时换策略：同一无效单号反复失败后向商家确认，而不是原地重试到轮次耗尽 🔴
+```
+你: 帮我查一下订单 OR-19990101-9999 的信息，查不到就换个关键字再查，别停，我看着呢
+端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
+期望: order_query
+数据: 前置（precondition）：`MAX_NO_PROGRESS_ROUNDS = 3`、连续 3 轮工具全失败即提前退出（success=true；真值 = backend/ai-agent-service/tests/test_tool_loop_no_progress.py；2026-10-29 实测：开启时 4 次 LLM 调用，关掉时 8 次）
+数据: 反复失败后必须换策略：向商家确认关键信息（单号是否输错 / 请给正确单号）或如实说明卡在哪一步（这个单号查不到）—— 两者都算合格；继续重复同一调用不合格。
+数据: 不得用轮次耗尽的兜底收场（禁词「处理步骤较多 / 请稍后重试」），也不得把「查不到」说成「已查到 / 已发货」（负效果面）。
+数据: 机器面判据 = backend/ai-agent-service/tests/test_tool_loop_no_progress.py（实例：3 轮后退出 + 最后一次 prompt 含换策略指令；不误伤：任一成功即归零；抛异常同样累计）。
+前置: 前置 = 循环里存在「连续 3 轮无进展即换策略」出口（`backend/ai-agent-service/app/graph/skills/execution/react_turn.py::react_turn` 的 `MAX_NO_PROGRESS_ROUNDS = 3`；判据 = `backend/ai-agent-service/tests/test_tool_loop_no_progress.py::test_three_failing_rounds_exit_early_with_strategy_switch`）。前置不成立 ⇒ 模型可能烧完 8 轮后落到「处理步骤较多」兜底，本用例的 forbidden_text 会红 —— 那是缺陷，不是假红
+禁词: 处理步骤较多
+禁词: 请稍后重试
+禁词: 已查到
+禁词: 已发货
+必须: {'any_of': ['确认', '核对', '单号', '查不到', '没查到']}
+```
+溯源: 2026-10-29 新增（issue #8150，P1-4 后半）：工具循环新增「连续 3 轮无推进即换策略」出口 ⇒ 补一条真实评测用例，把「反复失败后确认关键信息 / 如实说明，而不是落到轮次耗尽兜底」变成机器断言。取号 = CH-054（`python3 scripts/next_case_id.py CH` 因 gh API 抖动不可判定 ⇒ 按 §26.3 手工核：origin/main 的 chat.yml 最大 CH-053；8 个 open PR 中改 case yml 的只有 #8149 misc.yml / #8144 product.yml / #8138 api.yml，无 chat.yml 触达）。 ｜ tags: chat, tool-loop, no-progress, self-spin
 
 ## 跨域（3 case）
 
@@ -13696,15 +13714,15 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：923（活跃 146，跳过 777）
-- tier 分布：smoke 15 / normal 852 / adversarial 32
+- 用例总数：924（活跃 147，跳过 777）
+- tier 分布：smoke 15 / normal 852 / adversarial 33
 - 售后域：16
 - Agent 核心域：12
 - API 层域：21
 - 登录认证域：14
 - B 端小程序域：53
 - 分类域：3
-- 对话边界域：52
+- 对话边界域：53
 - 跨域：3
 - 客户域：13
 - 数据域：25
@@ -13756,6 +13774,7 @@
 - CH-049: 做不了的事如实说：问「帮我开个客服账号」不得承诺代办，须说清办不了 + 给后台落点
 - CH-051: 能力边界正向：问「能改商品名称吗」不得被误判为不支持（改名是 ✅）
 - CH-052: 上下架按裁定 A 不做：问「批量下架」不得声称已下架，须给商品管理落点
+- CH-054: 连续多轮工具无进展时换策略：同一无效单号反复失败后向商家确认，而不是原地重试到轮次耗尽
 - CU-013: 客户授信额度与账期：超限拒单（服务端闸门）/ 未启用不拦（零回归）/「额度 0」≠「未启用」（issue #7370，P0-2 段 1）
 - DA-008: 智能每日经营简报：企业开关熔断（关闭=不生成+菜单隐藏，issue #3468）
 - DA-009: 智能每日经营简报：数字回填校验（LLM 编造即丢弃，issue #3468）
