@@ -5,6 +5,7 @@ import { Plus, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { workerApi, workerPageCatalogApi } from '@/lib/api'
 import { toastRequestError } from '@/lib/api-error'
+import ListLoadError from '@/components/common/ListLoadError'
 import { Button, Input, Select, Modal, Table, Badge, Pagination, RowActions } from '@/components/ui'
 import type { TableColumn, RowActionItem } from '@/components/ui'
 import type { EmployeeStatus, WorkerOperationOption, WorkerProfile } from '@/types'
@@ -162,6 +163,13 @@ interface WorkerProfilesPanelProps {
 export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelProps) {
   const [workers, setWorkers] = useState<WorkerProfile[]>([])
   const [loading, setLoading] = useState(false)
+  /**
+   * 列表读失败（与「还没有工人档案」**互斥**，issue #8063）。
+   *
+   * 改前 `loadWorkers` 失败只 `toastRequestError`（≈4s 消失），屏上留着共享表渲染的**静态**空态文案
+   * ⇒ 商家看到的是「还没有工人档案」这个**事实性断言**，而真相是没读到（同 `/employees` 主列表 #6714 的形态）。
+   */
+  const [loadFailed, setLoadFailed] = useState(false)
   const [total, setTotal] = useState(0)
   const [current, setCurrent] = useState(1)
   const [pageSize, setPageSize] = useState(10)
@@ -237,7 +245,10 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
       const data = res.data.data
       setWorkers(data?.items || [])
       setTotal(data?.total || 0)
+      setLoadFailed(false)
     } catch (e) {
+      // 读面失败**不清零**（保留上次成功值）、只标失败态 —— 故障 ≠「还没有工人档案」（issue #8063）
+      setLoadFailed(true)
       toastRequestError(e, '加载工人档案失败')
     } finally {
       setLoading(false)
@@ -667,13 +678,29 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
         </div>
       </div>
 
+      {/* 🔴 issue #8063：读失败 ⇒ 常驻失败面 + 真重发（与「还没有工人档案」**互斥**） */}
+      {loadFailed && (
+        <ListLoadError
+          testId="worker-profiles-load-failed"
+          message="工人档案加载失败 —— 不是没有工人，是没读到。请检查网络后重试"
+          onRetry={() => void loadWorkers()}
+          retrying={loading}
+        />
+      )}
+
       <div className="bg-white rounded-lg border border-neutral-200 shadow-card">
         <Table<WorkerProfile>
           columns={columns}
           dataSource={workers}
           loading={loading}
           rowKey="id"
-          emptyText="还没有工人档案：点右上角「新建工人档案」录入工号与 PIN 即可"
+          /* 🔴 issue #8063：失败时表体**不得**印空态文案（那是「没有工人」的事实性断言）——
+             说清失败原因的是上面那个常驻失败面；读成功才印这句。 */
+          emptyText={
+            loadFailed
+              ? ''
+              : '还没有工人档案：点右上角「新建工人档案」录入工号与 PIN 即可'
+          }
         />
         <Pagination
           current={current}
