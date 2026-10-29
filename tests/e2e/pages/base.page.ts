@@ -44,7 +44,7 @@ const SIDEBAR_MENU: Record<string, string> = {
   // 最前席位一级项（2026-10-17 issue #7087）：渲染在**所有分组之前**
   //（原「工作台」组已整组撤销、原组内第二项「每日简报」菜单项已删除 ⇒ 本表不再有 `/briefing`
   // —— 该路由保留为**重定向薄壳** → `/dashboard`，但它**不是菜单项**，菜单名也就无从谈起）
-  '/dashboard': '经营看板',
+  '/dashboard': '经营概览',
   // 智能客服
   '/agent-workspace/human-sessions': '在线接待',
   '/knowledge': '知识库',
@@ -60,14 +60,14 @@ const SIDEBAR_MENU: Record<string, string> = {
   '/customers': '客户列表',
   '/finance': '财务对账',
   // 生产管理
-  '/production': '作业看板',
+  '/production': '作业单',
   '/production/pool': '池看板',
   '/production/routings': '工艺配置',
   '/production/piecework': '计件工资',
   // 仓储与物料（issue #5271 新组）
   '/inbound-orders': '入库单',
   '/production/remnants': '余料台账',
-  '/production/saving-board': '省料看板',
+  '/production/saving-board': '省料分析',
   // 组织管理
   '/employees': '员工管理',
   '/roles': '岗位权限',
