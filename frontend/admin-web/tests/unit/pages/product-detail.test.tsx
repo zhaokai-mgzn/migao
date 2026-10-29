@@ -419,3 +419,36 @@ describe('ProductDetailPage — 行内改价失焦必须落库（issue #6662 判
     await waitFor(() => expect(toast.error).toHaveBeenCalled())
   })
 })
+
+// ── 详情面四态（issue #8057）：失败 ≠ 空 / 失败有出口 / 空态说清 ──────────────────
+describe('ProductDetailPage — 详情面四态（issue #8057）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetProduct.mockResolvedValue({ data: { data: mockProduct } })
+  })
+
+  // 修前形态：`catch` 里 `toast.error('加载商品失败')` + `router.push('/products')`，
+  // 随后 `if (!product) return null` ⇒ 一旦没跳走就是**整页空白**（故障画成空、且没有任何出口）。
+  it('读失败：常驻失败锚 + 重试出口，不跳走、不印空态（失败 ≠ 空）', async () => {
+    mockGetProduct.mockRejectedValueOnce(new Error('boom'))
+    render(<ProductDetailPage />)
+
+    const anchor = await screen.findByTestId('product-detail-load-error')
+    expect(anchor).toHaveTextContent('加载失败')
+    expect(screen.queryByText('暂无图片')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('product-detail-load-error-retry'))
+    await waitFor(() => expect(mockGetProduct).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.queryByTestId('product-detail-load-error')).toBeNull())
+    expect(await screen.findByText('2699色卡')).toBeInTheDocument()
+  })
+
+  it('商品图集为空 ⇒ 空态说清去哪上传（不是裸「暂无图片」）', async () => {
+    mockGetProduct.mockResolvedValue({ data: { data: { ...mockProduct, images: [], detailImages: [] } } })
+    render(<ProductDetailPage />)
+
+    const empty = await screen.findByTestId('product-images-empty')
+    expect(empty).toHaveTextContent(/暂无图片/)
+    expect(empty).toHaveTextContent(/编辑商品/)
+  })
+})

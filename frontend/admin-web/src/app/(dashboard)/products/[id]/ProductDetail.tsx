@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, Edit, ArrowUpCircle, ArrowDownCircle } from 'lucide-react'
 import Image from 'next/image'
 import { Button, Badge, Loading } from '@/components/ui'
+import ListLoadError from '@/components/common/ListLoadError'
 import BatchStockPanel from '@/components/products/BatchStockPanel'
 import { productApi } from '@/lib/api'
 import { ROLL_LENGTH_HINT, ROLL_LENGTH_LABEL, STOCK_UNIT } from '@/lib/product-roll-length'
@@ -124,20 +125,30 @@ export default function ProductDetailPage() {
   const [product, setProduct] = useState<Product | null>(null)
   const [loading, setLoading] = useState(true)
   const [previewImg, setPreviewImg] = useState<string | null>(null)
+  /**
+   * 商品本体读失败（issue #8057，「四态契约」③）：修前 `catch` 是 `toast.error` +
+   * `router.push('/products')`，随后 `if (!product) return null` ⇒ 没跳走时就是**整页空白**，
+   * 屏上既没说「没读到」也没有重试出口。
+   */
+  const [loadError, setLoadError] = useState(false)
 
   const loadProduct = useCallback(async () => {
     if (!productId) return
     setLoading(true)
+    setLoadError(false)
     try {
       const res = await productApi.getProduct(productId)
       setProduct(res.data.data)
     } catch (e) {
+      console.error('加载商品失败:', e)
       toast.error('加载商品失败')
-      router.push('/products')
+      // 失败**留在本页**（issue #8057）：修前这里 `router.push('/products')` + `return null`
+      // ⇒ 故障被画成空白页，「没读到」在屏上没有任何常驻痕迹。
+      setLoadError(true)
     } finally {
       setLoading(false)
     }
-  }, [productId, router])
+  }, [productId])
 
   useEffect(() => { loadProduct() }, [loadProduct])
 
@@ -160,7 +171,29 @@ export default function ProductDetailPage() {
     )
   }
 
-  if (!product) return null
+  if (!product) {
+    // 失败 ≠ 不存在 ≠ 空白页（issue #8057）：失败时说「没读到」+ 给重试出口，
+    // 只有**服务端明确没这只商品**时才说「不存在」。
+    if (loadError) {
+      return (
+        <div className="p-6 space-y-4">
+          <ListLoadError
+            testId="product-detail-load-error"
+            message="商品详情加载失败 —— 不是「商品不存在」，是没读到。请检查网络后重试。"
+            onRetry={() => void loadProduct()}
+            retrying={loading}
+          />
+          <Button variant="secondary" onClick={() => router.push('/products')}>返回商品列表</Button>
+        </div>
+      )
+    }
+    return (
+      <div className="p-6 text-center py-12">
+        <p className="text-neutral-500 mb-4">商品不存在或已被删除</p>
+        <Button onClick={() => router.push('/products')}>返回商品列表</Button>
+      </div>
+    )
+  }
 
   const statusVariant: Record<ProductStatus, 'success' | 'default' | 'warning' | 'info'> = {
     on_sale: 'success',
@@ -501,8 +534,13 @@ export default function ProductDetailPage() {
                 )}
               </div>
             ) : (
-              <div className="w-full aspect-square rounded-lg bg-neutral-200 flex items-center justify-center text-neutral-400">
-                暂无图片
+              // 空态说清「去哪补」（issue #8057 第 2 条）：裸「暂无图片」不说下一步。
+              <div
+                className="w-full aspect-square rounded-lg bg-neutral-200 flex flex-col items-center justify-center gap-1 text-neutral-400"
+                data-testid="product-images-empty"
+              >
+                <span>暂无图片</span>
+                <span className="text-xs">在「编辑商品」里上传主图或详情图</span>
               </div>
             )}
           </div>

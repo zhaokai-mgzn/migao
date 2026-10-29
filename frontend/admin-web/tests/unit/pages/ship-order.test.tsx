@@ -1,7 +1,7 @@
 // case_ids: UI-040, UI-047, OR-072
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -624,5 +624,21 @@ describe('ShipOrder', () => {
     expect(text, `出现币符重复：${text.match(DUPLICATE_CURRENCY)?.[0] ?? ''}`).not.toMatch(DUPLICATE_CURRENCY)
     // 判别力自证：同一条正则对**改前**的字符串必命中
     expect(`订单实收款：¥3,500.00元`).toMatch(DUPLICATE_CURRENCY)
+  })
+
+  // ── 读失败 ≠ 不存在（issue #8057）──────────────────────────────────────────
+  // 修前形态：`catch` 只 `toastRequestError`，`order` 留在 null ⇒ 本页印「订单不存在或已被删除」
+  // —— 与销售订单详情同一种「把没读到说成单子没了」。
+  it('读失败：常驻失败锚 + 重试出口，且不印「订单不存在或已被删除」（失败 ≠ 不存在）', async () => {
+    mockGetOrder.mockRejectedValueOnce(new Error('boom'))
+    render(<ShipOrder />)
+
+    const anchor = await screen.findByTestId('ship-order-load-error')
+    expect(anchor).toHaveTextContent('加载失败')
+    expect(screen.queryByText('订单不存在或已被删除')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('ship-order-load-error-retry'))
+    await waitFor(() => expect(mockGetOrder).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.queryByTestId('ship-order-load-error')).toBeNull())
   })
 })

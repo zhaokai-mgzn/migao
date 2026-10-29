@@ -274,6 +274,24 @@ describe('OrderDetailPage', () => {
     })
   })
 
+  // ── 读失败 ≠ 不存在（issue #8057）──────────────────────────────────────────
+  // 修前形态：`catch` 只 `toastRequestError` + `console.error`，`order` 留在 null ⇒ 页面印
+  // 「订单不存在或已被删除」—— 把**没读到**说成**这张单没了**（商家可能据此去重开单）。
+  it('读失败：常驻失败锚 + 重试出口，且不印「订单不存在或已被删除」（失败 ≠ 不存在）', async () => {
+    mockGetOrder.mockRejectedValueOnce(new Error('boom'))
+    render(<OrderDetailPage />)
+
+    const anchor = await screen.findByTestId('order-detail-load-error')
+    expect(anchor).toHaveTextContent('加载失败')
+    expect(screen.queryByText('订单不存在或已被删除')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('order-detail-load-error-retry'))
+    await waitFor(() => expect(mockGetOrder).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.queryByTestId('order-detail-load-error')).toBeNull())
+    // 重试成功 ⇒ 真页面渲染出来（用 h1 这一处锚点：面包屑里也有「订单详情」四个字）
+    expect(await screen.findByRole('heading', { name: '订单详情', level: 1 })).toBeInTheDocument()
+  })
+
   it('should render amount summary with discount and actual amount', async () => {
     render(<OrderDetailPage />)
     await waitFor(() => {

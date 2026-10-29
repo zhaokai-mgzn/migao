@@ -1,7 +1,7 @@
 // case_ids: AS-004, RWK-002
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 // Mock API
@@ -472,5 +472,32 @@ describe('AfterSalesDetailPage', () => {
     expect(await screen.findByTestId('after-sales-rework-load-error')).toHaveTextContent('返工单没读到')
     // 🔴 不拖垮主业务：状态动作仍在
     expect(screen.getByRole('button', { name: '接受处理' })).toBeInTheDocument()
+  })
+
+  // ── 读失败 ≠ 不存在（issue #8057）──────────────────────────────────────────
+  // 修前形态：`catch` 只 `toast.error('加载工单详情失败')`，`ticket` 留在 null ⇒ 页面印
+  // 「工单不存在或已被删除」—— 把**没读到**说成**这张单没了**。
+  it('读失败：常驻失败锚 + 重试出口，且不印「工单不存在或已被删除」（失败 ≠ 不存在）', async () => {
+    mockGetTicket.mockRejectedValueOnce({ response: { status: 500 } })
+    render(<AfterSalesDetailPage />)
+
+    const anchor = await screen.findByTestId('after-sales-detail-load-error')
+    expect(anchor).toHaveTextContent('加载失败')
+    expect(screen.queryByText('工单不存在或已被删除')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('after-sales-detail-load-error-retry'))
+    await waitFor(() => expect(mockGetTicket).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.queryByTestId('after-sales-detail-load-error')).toBeNull())
+    expect(await screen.findByText('工单详情')).toBeInTheDocument()
+  })
+
+  // 空态说清（issue #8057 第 2 条）：处理时间线为空时给「为什么空」，不是裸「暂无处理记录」。
+  it('处理时间线为空 ⇒ 说清为什么空（不是裸「暂无处理记录」）', async () => {
+    mockGetTicket.mockResolvedValue({ data: { data: { ...mockTicket, statusHistory: [] } } })
+    render(<AfterSalesDetailPage />)
+
+    const empty = await screen.findByTestId('after-sales-history-empty')
+    expect(empty).toHaveTextContent(/暂无处理记录/)
+    expect(empty).toHaveTextContent(/接单|每一步/)
   })
 })
