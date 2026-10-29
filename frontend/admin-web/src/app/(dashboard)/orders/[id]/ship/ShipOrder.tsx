@@ -12,7 +12,12 @@ import ListLoadError from '@/components/common/ListLoadError'
 import { useAuthStore } from '@/store/auth'
 import type { Order, OrderItem } from '@/types'
 import { cn } from '@/lib/utils'
-import { LOGISTICS_COMPANIES, LOGISTICS_TYPES } from '@/lib/logistics'
+import {
+  DEFAULT_LOGISTICS_TYPE,
+  LOGISTICS_TYPES,
+  logisticsCompaniesFor,
+  switchCarrier,
+} from '@/lib/logistics'
 // 发货幂等键（`X-Client-Request-Id`）的**唯一生成点**（issue #6935 / #6983；列表行内发货共用，issue #8013）
 import { newClientRequestId } from '@/lib/client-request-id'
 // 商品身份（品名/货号/颜色/门幅）的**唯一读取口**（issue #6882：原先这里直读三个不存在的键）
@@ -86,8 +91,13 @@ export default function ShipOrder() {
 
   // 物流表单
   const [shippingMethod, setShippingMethod] = useState<'logistics' | 'none'>('logistics')
-  const [logisticsType, setLogisticsType] = useState<string>('express')
-  const [logisticsCompany, setLogisticsCompany] = useState<string>(LOGISTICS_COMPANIES[0])
+  const [logisticsType, setLogisticsType] = useState<string>(DEFAULT_LOGISTICS_TYPE)
+  /** 承运商默认 = **该物流类型第一家**（issue #8079：专线单不能默认配一家快递公司） */
+  const [logisticsCompany, setLogisticsCompany] = useState<string>(
+    () => logisticsCompaniesFor(DEFAULT_LOGISTICS_TYPE)[0],
+  )
+  /** 切换物流类型时承运商被同步过来的一次性提示（issue #8079：不静默改） */
+  const [carrierNotice, setCarrierNotice] = useState('')
   const [logisticsTouched, setLogisticsTouched] = useState(false)
   const [trackingNo, setTrackingNo] = useState('')
   const [shipperName, setShipperName] = useState(defaultShipperName)
@@ -173,7 +183,12 @@ export default function ShipOrder() {
   // 用户已手动改过（`logisticsTouched`）⇒ 任何来源都不覆盖（手改留痕，与发货人预填同一口径）。
   useEffect(() => {
     if (logisticsTouched) return
-    if (orderLogisticsType) setLogisticsType(orderLogisticsType)
+    if (orderLogisticsType) {
+      setLogisticsType(orderLogisticsType)
+      // 订单只记了类型、没记承运商 ⇒ 承运商取该类型第一家（issue #8079：
+      // 否则「物流/专线」会配上一家快递公司，落库即自相矛盾）
+      if (!orderLogisticsCompany) setLogisticsCompany(logisticsCompaniesFor(orderLogisticsType)[0])
+    }
     if (orderLogisticsCompany) setLogisticsCompany(orderLogisticsCompany)
   }, [orderLogisticsType, orderLogisticsCompany, logisticsTouched])
 
@@ -200,7 +215,12 @@ export default function ShipOrder() {
         )
         if (!hit) return
         // 只补**订单没记**的那一半（订单有值时不覆盖 —— 这正是「订单优先」的落点）
-        if (hit.defaultLogisticsType && !orderLogisticsType) setLogisticsType(hit.defaultLogisticsType)
+        if (hit.defaultLogisticsType && !orderLogisticsType) {
+          setLogisticsType(hit.defaultLogisticsType)
+          // 档案只记了类型、没记承运商 ⇒ 承运商取该类型第一家（issue #8079，与 ① 同口径）
+          if (!hit.defaultLogisticsCompany && !orderLogisticsCompany)
+            setLogisticsCompany(logisticsCompaniesFor(hit.defaultLogisticsType)[0])
+        }
         if (hit.defaultLogisticsCompany && !orderLogisticsCompany)
           setLogisticsCompany(hit.defaultLogisticsCompany)
       })
@@ -212,12 +232,13 @@ export default function ShipOrder() {
     }
   }, [order?.customerPhone, logisticsTouched, orderLogisticsType, orderLogisticsCompany])
 
-  // 常用公司可能是预置列表之外的自定义承运商 ⇒ 补进下拉，否则 select 显示不出已存值
+  // 候选随「物流类型」收敛（issue #8079：选快递就不该列专线承运商，反之亦然）；
+  // 已存的自定义/历史承运商仍补进下拉，否则 select 显示不出已存值。
   const logisticsCompanyOptions = useMemo(() => {
-    const list: string[] = [...LOGISTICS_COMPANIES]
+    const list = logisticsCompaniesFor(logisticsType)
     if (logisticsCompany && !list.includes(logisticsCompany)) list.unshift(logisticsCompany)
     return list
-  }, [logisticsCompany])
+  }, [logisticsType, logisticsCompany])
 
   const productGroups = useMemo(() => groupItems(order?.items), [order?.items])
 
@@ -481,7 +502,11 @@ export default function ShipOrder() {
                       key={t.value}
                       checked={logisticsType === t.value}
                       onChange={() => {
+                        // 已选承运商不属于新类型 ⇒ 落到该类型第一家 + 一次可见提示（issue #8079）
+                        const next = switchCarrier(logisticsCompany, t.value)
                         setLogisticsType(t.value)
+                        setLogisticsCompany(next.company)
+                        setCarrierNotice(next.notice ?? '')
                         setLogisticsTouched(true)
                       }}
                       label={t.label}
@@ -494,20 +519,33 @@ export default function ShipOrder() {
                 <span className="text-neutral-700 w-20 shrink-0">
                   <span className="text-red-500 mr-1">*</span>物流公司：
                 </span>
-                <select
-                  value={logisticsCompany}
-                  onChange={(e) => {
-                    setLogisticsCompany(e.target.value)
-                    setLogisticsTouched(true)
-                  }}
-                  className={cn(SELECT_CONTROL, 'min-w-[220px]')}
-                >
-                  {logisticsCompanyOptions.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
+                <div>
+                  <select
+                    value={logisticsCompany}
+                    onChange={(e) => {
+                      setLogisticsCompany(e.target.value)
+                      setLogisticsTouched(true)
+                      setCarrierNotice('')
+                    }}
+                    className={cn(SELECT_CONTROL, 'min-w-[220px]')}
+                  >
+                    {logisticsCompanyOptions.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                  {/* 切换类型时承运商被同步过来 ⇒ 说一句（issue #8079：不静默改）；手改承运商即消失 */}
+                  {carrierNotice && (
+                    <p
+                      role="status"
+                      data-testid="ship-carrier-notice"
+                      className="mt-1 text-xs text-neutral-500"
+                    >
+                      {carrierNotice}
+                    </p>
+                  )}
+                </div>
               </div>
 
               {/* 快递单号 */}

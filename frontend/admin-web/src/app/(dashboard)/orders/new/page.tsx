@@ -104,7 +104,7 @@ import {
   type CurtainBody,
 } from '@/lib/order-craft-fields'
 // 常用物流/快递（issue #4874）：词表唯一真值在 `lib/logistics.ts`，**不另造**一份候选
-import { LOGISTICS_COMPANIES, LOGISTICS_TYPES, describeLogisticsProfile } from '@/lib/logistics'
+import { LOGISTICS_TYPES, describeLogisticsProfile, logisticsCompaniesFor } from '@/lib/logistics'
 // 工艺规格的**展示行**（标签 + 格式化）—— 与订单详情 / 加工单 / 任务卡 / C 端报价卡**同一份**
 // （`craftSpecRows`）：收起态的「当前工艺参数」读数直接复用它，见 `craftPlanCurrentRows`。
 import { craftSpecRows } from '@/lib/craft-display'
@@ -3546,7 +3546,8 @@ export default function NewOrderPage() {
                   >
                     常用物流公司
                   </label>
-                  {/* 候选来自 `LOGISTICS_COMPANIES`，但**允许自定义**（词表只是候选，不是白名单） */}
+                  {/* 候选来自 `lib/logistics.ts` 并按「常用物流/快递」收敛（issue #8079），
+                      但**允许自定义**（词表只是候选，不是白名单） */}
                   <input
                     id="order-logistics-company"
                     data-testid="order-logistics-company"
@@ -3557,7 +3558,7 @@ export default function NewOrderPage() {
                     className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                   />
                   <datalist id="order-logistics-company-options">
-                    {LOGISTICS_COMPANIES.map((c) => (
+                    {logisticsCompaniesFor(logisticsType).map((c) => (
                       <option key={c} value={c} />
                     ))}
                   </datalist>
