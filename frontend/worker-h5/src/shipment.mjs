@@ -21,6 +21,31 @@ export const SHIPMENT_PREFIX = '/api/worker/shipment'
 export const SHIPMENT_FIELD_KEYS = ['order_no', 'product_name', 'quantity', 'width', 'height']
 
 /**
+ * 物流类型词表（issue #8071：用户 2026-10-29 裁定「工人端也要区分物流和快递」）——
+ * **与 `frontend/admin-web/src/lib/logistics.ts` 的 `LOGISTICS_TYPES` 同口径**：
+ * `express` 快递 / `logistics` 物流专线（词表只做候选，越界值由服务端白名单 422 兜底）。
+ *
+ * ⚠️ 本文件是**零依赖 `.mjs`**（浏览器 `<script type="module">` 直接加载，无构建步骤）
+ * ⇒ **不能** import admin-web 的 TS 模块；这里写一份小表并**逐值**保持同名同义。
+ */
+export const LOGISTICS_TYPES = [
+  { value: 'express', label: '快递' },
+  { value: 'logistics', label: '物流专线' },
+]
+
+/**
+ * 本单默认选中的物流类型：订单已带 `logistics_type` 就用它，没有 ⇒ `express`。
+ *
+ * @param {{logistics_type?: string|null}|null} [order] 待发货行 / 发货读面（两者都下发
+ *        `logistics_type`：`WorkerShipmentReadyService.rowView` 与 `OrderShipmentService.readShipment`）
+ * @returns {string} 词表内的取值（词表外的值不猜测 ⇒ 回落到 `express`，与列默认一致）
+ */
+export function defaultLogisticsType(order) {
+  const value = order?.logistics_type
+  return LOGISTICS_TYPES.some((type) => type.value === value) ? value : 'express'
+}
+
+/**
  * 识别候选 → 可编辑的表格行（**不确定的格子留空**）。
  *
  * @param {Array<{key:string,label:string,value:?string,source:?string,reason:?string}>} fields
@@ -56,12 +81,14 @@ export function prefillFromRecognition(fields) {
  * @param {object} p
  * @param {string} p.trackingNo 货运单号（必填；服务端也校验）
  * @param {string} [p.logisticsCompany]
+ * @param {string} [p.logisticsType] 物流类型：`express` 快递 / `logistics` 物流专线（issue #8071）
  * @param {string[]} [p.photoRefs] 照片引用（上传后的 URL）
  * @param {object} [p.recognition] 识别留痕（**原样**搬运，服务端只存不算）
  * @param {Array<{order_item_id?:string, product_name?:string, shipped_quantity:number|string, unit:string}>} p.items
- * @returns {object} 恰好五个键（`trackingNo` / `logisticsCompany` / `photoRefs` / `recognition` / `items`）
+ * @returns {object} `trackingNo` / `items` + **有值才带**的 `logisticsCompany` / `logisticsType` /
+ *          `photoRefs` / `recognition`（缺值维度不进 body —— 不是填空串）
  */
-export function buildShipBody({ trackingNo, logisticsCompany, photoRefs, recognition, items } = {}) {
+export function buildShipBody({ trackingNo, logisticsCompany, logisticsType, photoRefs, recognition, items } = {}) {
   const body = {
     trackingNo: trackingNo ?? '',
     items: (items ?? []).map((it) => ({
@@ -74,6 +101,9 @@ export function buildShipBody({ trackingNo, logisticsCompany, photoRefs, recogni
     })),
   }
   if (logisticsCompany) body.logisticsCompany = logisticsCompany
+  // 物流类型：**只在有值时**放进 body（与 `logisticsCompany` 同款）—— 没值 = 「本次没说这件事」，
+  // 服务端据此不覆盖既有 `order_logistics.logistics_type`（issue #8071 的负控就是这样钉的）。
+  if (logisticsType) body.logisticsType = logisticsType
   if (Array.isArray(photoRefs) && photoRefs.length > 0) body.photoRefs = [...photoRefs]
   if (recognition) body.recognition = recognition
   // 刻意**不含** worker_id / worker_name / order_id / status：身份与状态都由服务端定

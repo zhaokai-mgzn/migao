@@ -108,7 +108,13 @@ public class WorkerShipmentController {
      * 发货：记**实发**明细 + 物流 + 原子流转 {@code shipped}（一次事务，一个入口）。
      *
      * <p>POST /api/worker/shipment/orders/{orderId}/ship
-     * body {@code {trackingNo, logisticsCompany?, photoRefs?, recognition?, items[]}}</p>
+     * body {@code {trackingNo, logisticsCompany?, logisticsType?, photoRefs?, recognition?, items[]}}</p>
+     *
+     * <p>{@code logisticsType} 物流类型（{@code express} 快递 / {@code logistics} 物流专线，issue #8071）：
+     * 可空 —— 缺席 / 空串 = 「本次没说这件事」⇒ 不覆盖既有 {@code order_logistics.logistics_type}；
+     * 非空且不在白名单 ⇒ <b>422</b>（判定本体在
+     * {@link OrderShipmentService#ship(String, Map, Long, String, com.migao.admin.worker.WorkerIdentity)}
+     * 的任何写之前，本端点只转发）。</p>
      */
     @PostMapping("/orders/{orderId}/ship")
     public ApiResponse<Map<String, Object>> ship(

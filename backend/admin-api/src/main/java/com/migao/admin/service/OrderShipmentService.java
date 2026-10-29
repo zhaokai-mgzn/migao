@@ -115,6 +115,15 @@ public class OrderShipmentService {
      */
     public static final List<String> SHIPPABLE_FROM = List.of("confirmed", "producing", "packed");
 
+    /**
+     * 物流类型白名单（issue #8071）：{@code express} 快递 / {@code logistics} 物流专线。
+     *
+     * <p>与商家发货页的**同一份词表**（{@code frontend/admin-web/src/lib/logistics.ts} 的
+     * {@code LOGISTICS_TYPES}、{@code order_logistics.logistics_type} 的列口径 V47 / #3984）。
+     * 工人端此前不采集这一列（车间不做这个选择），用户 2026-10-29 裁定「工人端也要区分物流和快递」。</p>
+     */
+    private static final java.util.Set<String> LOGISTICS_TYPES = java.util.Set.of("express", "logistics");
+
     /** 撤销打包理由上限（与 {@code orders.close_reason} 同量级）。 */
     private static final int MAX_UNPACK_REASON = 500;
 
@@ -278,6 +287,7 @@ public class OrderShipmentService {
      * {
      *   "trackingNo": "SF123",                 // 必填（没有单号的"发货"在车间不可核对）
      *   "logisticsCompany": "顺丰",             // 可空 ⇒ 取既有物流记录的承运商
+     *   "logisticsType": "logistics",          // 可空：express 快递 / logistics 物流专线（issue #8071）
      *   "photoRefs": ["https://..."],          // 可空（手工录入时没有照片，是**正常路径**不是降级）
      *   "recognition": { ... },                // 可空：识别留痕原样搬运
      *   "items": [                             // 必填非空
@@ -328,6 +338,14 @@ public class OrderShipmentService {
         if (!StringUtils.hasText(company)) {
             throw BusinessException.validationError("承运商不能为空（客户档案未带出常用物流时需显式选择）");
         }
+        // 物流类型（issue #8071）：**非空且不在白名单 ⇒ 422，且在任何写之前**（不静默落默认值 ——
+        // 把物流专线单记成快递，正是本单要消灭的那件事）。**缺席 / 空串不拒绝**：老工人端根本不发
+        // 这个键，「没这句话」≠「说了个坏值」⇒ 与商家路（{@code OrderController.updateLogistics}）同口径。
+        String logisticsType = text(body, "logisticsType");
+        if (StringUtils.hasText(logisticsType) && !LOGISTICS_TYPES.contains(logisticsType.trim())) {
+            throw BusinessException.validationError(String.format(
+                    "无效的物流类型: %s（只接受 express 快递 / logistics 物流专线）", logisticsType.trim()));
+        }
 
         List<OrderItem> orderItems = OrderShipGuard.loadOrderItems(orderItemMapper, orderId, tenantId);
         List<OrderShipmentItem> details = parseDetails(body, orderId, tenantId, orderItems);
@@ -371,10 +389,14 @@ public class OrderShipmentService {
             orderShipmentItemMapper.insert(detail);
         }
 
-        // 物流面复用**同一份**写入口径（存在则更新、否则新建 + 发货人只在新建时解析）
-        // ⚠️ 工人路不产生 logisticsType / shippingMethod（车间不做这两个选择）⇒ 传 null = 不覆盖
+        // 物流面复用**同一份**写入口径（存在则更新、否则新建 + 发货人只在新建时解析）。
+        // 物流类型（issue #8071）：工人端也采集了 ⇒ 显式非空才覆盖既有值；**没传 ⇒ null = 本次没说这件事
+        // ⇒ 不覆盖**（老工人端 / 老客户端的行为逐字不变）。
+        // 发货方式（shippingMethod）工人路仍不产生（「无需物流」不是车间能做的决定）⇒ 传 null。
         OrderLogisticsWriter.upsert(orderLogisticsMapper, tenantId, orderId, company.trim(),
-                trackingNo.trim(), new OrderLogisticsWriter.ShippingDetails(identity.workerName(), null, null),
+                trackingNo.trim(),
+                new OrderLogisticsWriter.ShippingDetails(identity.workerName(),
+                        StringUtils.hasText(logisticsType) ? logisticsType.trim() : null, null),
                 () -> identity.workerName());
 
         // 成品入/出库（V196）：一步发货（未打包）时先补入库（分配仓位），再把在库行出库。
@@ -689,6 +711,15 @@ public class OrderShipmentService {
         result.put("order_id", order.getId());
         result.put("order_no", order.getOrderNo());
         result.put("status", order.getStatus());
+        // 本单**当前生效**的物流类型（issue #8071）：最新物流行的值优先，否则建单时采集的
+        // `orders.logistics_type`（V100 / #4872）；两者都缺 ⇒ null（**不在服务端编值**）。
+        // 工人发货页据此**预选**单选 —— 否则「订单是物流专线、屏上却默认快递」会让工人直接提交
+        // （那正是 #8071 要消灭的那类记错），而端侧想自己判断就得多一条读路径。
+        List<com.migao.admin.entity.OrderLogistics> logisticsRows =
+                orderLogisticsMapper.selectByOrderId(orderId, tenantId);
+        String storedType = (logisticsRows == null || logisticsRows.isEmpty())
+                ? null : logisticsRows.get(0).getLogisticsType();
+        result.put("logistics_type", StringUtils.hasText(storedType) ? storedType : order.getLogisticsType());
         result.put("shipments", shipmentViews);
         result.put("shipped_totals", totals(allItems));
         // 成品仓位（V196）：打包后货在哪一目了然（工人端/商家端读同一份）。
