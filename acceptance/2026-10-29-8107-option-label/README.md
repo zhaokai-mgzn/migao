@@ -20,6 +20,12 @@
 打印时驱动里**两张自定义纸型都要各登记一次**，纸卷也要**真的换** —— 本目录量的是「浏览器接受混合页高」，
 不是「打印机出纸正确」。
 
+**证据强度边界（issue #8145 收口）**：样张是**手写 HTML 复刻**（不是真组件、不读组件常量）⇒
+它**只**证「Chromium 在同一次出纸里接受两种页高」，**证不到** 5 行内容 / 16pt 副标题 —— 那两件事由
+`frontend/admin-web/tests/unit/lib/wash-label-content.test.ts`（行集合逐字）与
+`frontend/admin-web/tests/unit/components/TaskCardPrint.test.tsx`（DOM 子节点 + `style.fontSize`）钉住。
+样张上的「特殊选项」行按**展示名**印（`余料带回、绑带`），与真组件同口径（改回 join key ⇒ 单测必红）。
+
 ## 3. 读数（实测原文）
 
 命令：
