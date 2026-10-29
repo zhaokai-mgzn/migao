@@ -1432,24 +1432,37 @@ public class AuthService {
         if (isAll || permissions.contains("after_sales:view")) {
             customerServiceChildren.add(menuItem("after-sales", "售后工单", "/after-sales"));
         }
-        // 客户列表（本轮由交易管理组移入本组）：码不变 `customer:view`。
-        // 2026-10-06 沉到本组末（档案面：查档 / 建档，不是每次接待都会走的一步）。
-        if (isAll || permissions.contains("customer:view")) {
-            customerServiceChildren.add(menuItem("customers", "客户列表", "/customers"));
-        }
         if (!customerServiceChildren.isEmpty()) {
             menus.add(menuGroup("customer-service", "客户服务", customerServiceChildren));
         }
+        // 🔴 2026-10-29（issue #8086，用户裁定 Q2/Q5/Q6）：「基础资料」组（前端 `basic-data`）——
+        // 商品管理 / 客户列表 / 供应商 / 价格本；位置 = **客户服务之后、交易管理之前**（用户 Q5 逐字）。
+        // 四项都是被所有动线引用的档案/条件。⚠️ 本组推翻两条旧裁定（用户 2026-10-29 明确改判）：
+        //   2026-09-29「客户管理属于服务客户」（客户列表移出客户服务）、
+        //   2026-10-06「商品管理作为一级项沉底」（商品管理进组、不再占尾席位）。
+        // ⚠️ 一条 add 一个 if（`_iter_menu_auth` 的解析形态；两个 add 塞一个 if 会让解析器只认第一条）。
+        List<UserInfoResponse.MenuItem> basicDataChildren = new java.util.ArrayList<>();
+        if (isAll || permissions.contains("product:list")) {
+            basicDataChildren.add(menuItem("products", "商品管理", "/products"));
+        }
+        if (isAll || permissions.contains("customer:view")) {
+            basicDataChildren.add(menuItem("customers", "客户列表", "/customers"));
+        }
+        if (isAll || permissions.contains("inbound:view")) {
+            basicDataChildren.add(menuItem("suppliers", "供应商", "/suppliers"));
+        }
+        if (isAll || permissions.contains("order:list")) {
+            basicDataChildren.add(menuItem("price-books", "价格本", "/price-books"));
+        }
+        if (!basicDataChildren.isEmpty()) {
+            menus.add(menuGroup("basic-data", "基础资料", basicDataChildren));
+        }
+
 
         // 交易管理分组（本轮 2026-09-29 收窄为**「下单 → 收款」两项**：客户列表 / 售后工单
         // 已移入「客户服务」组 —— 用户原话「客户管理也不属于交易管理」）。
         // 顺序 = 销售订单 → 财务对账（与 `menu.ts` 的 `trade-center` 组逐值一致）。
         List<UserInfoResponse.MenuItem> tradeChildren = new java.util.ArrayList<>();
-        // 价格本（issue #7375 段 3）：**交易前置**（先定价，再开单）⇒ 组内第一项；
-        // 读面码 `order:list`（= `PricingController` 的类级码 = 该页第一屏读码，repo 规则「每页恰好一个码」）。
-        if (isAll || permissions.contains("order:list")) {
-            tradeChildren.add(menuItem("price-books", "价格本", "/price-books"));
-        }
         if (isAll || permissions.contains("order:list")) {
             tradeChildren.add(menuItem("orders", "销售订单", "/orders"));
         }
@@ -1479,7 +1492,7 @@ public class AuthService {
         // auth 菜单解析器）用的形态是 `permissions.contains("X")) {` **紧跟** `var.add(menuItem(...))`
         // —— `{` 与 `.add` 之间插入任何一行（注释也一样）⇒ 该项**静默从读数里消失**（实测：一行注释
         // 曾让「作业看板」从 `rbac/readings.json` 的 `menus.auth` 里消失，「清单 == 生成物」对账因此判红）。
-        // /production = 作业单唯一入口（issue #4357 与原「加工单」菜单合并）。
+        // /production = 作业看板唯一入口（issue #4357 与原「加工单」菜单合并）。
         if (isAll || permissions.contains("production:view")) {
             productionChildren.add(menuItem("production-board", "作业看板", "/production"));
         }
@@ -1492,20 +1505,27 @@ public class AuthService {
         if (isAll || permissions.contains("production:view")) {
             productionChildren.add(menuItem("production-piecework", "计件工资", "/production/piecework"));
         }
+        if (!productionChildren.isEmpty()) {
+            menus.add(menuGroup("production-center", "生产管理", productionChildren));
+        }
+        // 🔴 2026-10-29（issue #8086，用户裁定 Q3）：「质量」组（前端 `quality`）——
+        // 质检记录 / 返工单从「生产管理」拆出（一个组里塞了三种角色的活：计划派单 / 计件工资 / 质检返工）。
+        // 权限码本组不动（production:inspect / after_sales:view），拆码见 issue #8087。
+        List<UserInfoResponse.MenuItem> qualityChildren = new java.util.ArrayList<>();
         // 质检记录（issue #7140 = #5652 的商家面）：节点码 = 该页三个端点的**方法级**
         // `production:inspect`（写与读同一把尺子）—— 只授质检员 + 管理员（用户 2026-10-17 裁定）。
-        // 🔴 注释必须写在这个 `if` **之外**（`_iter_menu_auth` 的形态要求，见上方 #5291 的盲区说明）。
         if (isAll || permissions.contains("production:inspect")) {
-            productionChildren.add(menuItem("quality-inspections", "质检记录", "/quality-inspections"));
+            qualityChildren.add(menuItem("quality-inspections", "质检记录", "/quality-inspections"));
         }
         // 返工单（issue #7377）：节点码 = 该页第一屏读端点码 `after_sales:view`（与售后工单同码）
         // ⇒ 有售后读权就能看到（零授权 delta）；写动作走 `order:refund`，不在菜单码里体现。
         if (isAll || permissions.contains("after_sales:view")) {
-            productionChildren.add(menuItem("rework-orders", "返工单", "/rework-orders"));
+            qualityChildren.add(menuItem("rework-orders", "返工单", "/rework-orders"));
         }
-        if (!productionChildren.isEmpty()) {
-            menus.add(menuGroup("production-center", "生产管理", productionChildren));
+        if (!qualityChildren.isEmpty()) {
+            menus.add(menuGroup("quality", "质量", qualityChildren));
         }
+
 
         // 仓储与物料分组（#5271 **新组**）：用户 2026-10-06 组内重排为
         // **单据（进 → 账 → 出）→ 台账 → 分析**，与「生产管理」组拆开（一个仓管找「入库单」时
@@ -1516,15 +1536,8 @@ public class AuthService {
         // 供应链（issue #7369，用户 2026-10-20 裁定「得加个新大菜单」）：谁供货 → 买什么 → 到货登记
         List<UserInfoResponse.MenuItem> supplyChainChildren = new java.util.ArrayList<>();
         List<UserInfoResponse.MenuItem> inventoryChildren = new java.util.ArrayList<>();
-        // 供应商（issue #7369）：档案面，码与 MenuController / menu.ts 三处逐字一致（inbound:view）。
-        // 与「入库单」**各自一个 if**：本仓的菜单解析器认「`permissions.contains(...)` 之后紧接
-        // `xxx.add(menuItem(...))`」这一形态（每条 add 一个 if 是既有写法，两个 add 塞一个 if 会让
-        // 解析器只认第一条 —— 实测 `auth:入库单` 与 `auth:供应商` 同时读成 None）。
         if (isAll || permissions.contains("inbound:view")) {
             supplyChainChildren.add(menuItem("inbound-orders", "入库单", "/inbound-orders"));
-        }
-        if (isAll || permissions.contains("inbound:view")) {
-            supplyChainChildren.add(menuItem("suppliers", "供应商", "/suppliers"));
         }
         // 采购单（issue #7369 段 4）：一条 add 一个 if —— 合并进上面的 if 会让解析器只读到第一条（#6781 同族）。
         if (isAll || permissions.contains("inbound:view")) {
@@ -1588,15 +1601,6 @@ public class AuthService {
         }
         if (!orgChildren.isEmpty()) {
             menus.add(menuGroup("org-center", "组织管理", orgChildren));
-        }
-
-        // 🔴 一级项「商品管理」（2026-09-29 由「商品与加工项」组升为一级菜单项）：
-        // **排在所有分组之后**（用户 2026-10-06 裁定，原为「工作台组之后」）—— 与前端
-        // `menu.ts` 的 `STANDALONE_TOP_AFTER_GROUP_KEY`（现取最后一个组 `org-center`）、
-        // `MenuController.MENU_TREE` 的顶层节点顺序**三处同批表达同一位置**；
-        // 三源同构守卫按**顶层布局序列**（含位置）比对，挪错一处即判红。
-        if (isAll || permissions.contains("product:list")) {
-            menus.add(menuItem("products", "商品管理", "/products"));
         }
 
         // 🔴 2026-10-09（issue #6580）：**企业基础设置**（原「企业基础信息」，原在 `org-center` 组内）

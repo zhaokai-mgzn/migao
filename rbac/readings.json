@@ -313,20 +313,23 @@
       "在线接待": "agent:session",
       "知识库": "knowledge:view",
       "售后工单": "after_sales:view",
+      "基础资料": null,
+      "商品管理": "product:list",
       "客户列表": "customer:view",
-      "交易管理": null,
+      "供应商": "inbound:view",
       "价格本": "order:list",
+      "交易管理": null,
       "销售订单": "order:list",
       "财务对账": "finance:view",
       "生产管理": null,
       "作业看板": "production:view",
       "智能派单": "processing:view",
       "计件工资": "production:view",
+      "质量": null,
       "质检记录": "production:inspect",
       "返工单": "after_sales:view",
       "供应链": null,
       "入库单": "inbound:view",
-      "供应商": "inbound:view",
       "采购单": "inbound:view",
       "仓储与物料": null,
       "库存明细": "product:list",
@@ -338,7 +341,6 @@
       "组织管理": null,
       "员工管理": "employee:list",
       "岗位权限": "system:view",
-      "商品管理": "product:list",
       "企业基础设置": "production:view",
       "通知中心": null
     },
@@ -380,7 +382,9 @@
       "在线接待": "agent:session",
       "知识库": "knowledge:view",
       "售后工单": "after_sales:view",
+      "商品管理": "product:list",
       "客户列表": "customer:view",
+      "供应商": "inbound:view",
       "价格本": "order:list",
       "销售订单": "order:list",
       "财务对账": "finance:view",
@@ -390,7 +394,6 @@
       "质检记录": "production:inspect",
       "返工单": "after_sales:view",
       "入库单": "inbound:view",
-      "供应商": "inbound:view",
       "采购单": "inbound:view",
       "库存明细": "product:list",
       "盘点单": "inbound:view",
@@ -400,7 +403,6 @@
       "省料看板": "product:list",
       "员工管理": "employee:list",
       "岗位权限": "system:view",
-      "商品管理": "product:list",
       "企业基础设置": "production:view"
     },
     "user": {}
@@ -443,22 +445,40 @@
       "code": "after_sales:view"
     },
     {
+      "key": "basic-data",
+      "name": "基础资料",
+      "path": null,
+      "code": null
+    },
+    {
+      "key": "products",
+      "name": "商品管理",
+      "path": "/products",
+      "code": "product:list"
+    },
+    {
       "key": "customers",
       "name": "客户列表",
       "path": "/customers",
       "code": "customer:view"
     },
     {
-      "key": "trade-center",
-      "name": "交易管理",
-      "path": null,
-      "code": null
+      "key": "suppliers",
+      "name": "供应商",
+      "path": "/suppliers",
+      "code": "inbound:view"
     },
     {
       "key": "price-books",
       "name": "价格本",
       "path": "/price-books",
       "code": "order:list"
+    },
+    {
+      "key": "trade-center",
+      "name": "交易管理",
+      "path": null,
+      "code": null
     },
     {
       "key": "orders",
@@ -497,6 +517,12 @@
       "code": "production:view"
     },
     {
+      "key": "quality",
+      "name": "质量",
+      "path": null,
+      "code": null
+    },
+    {
       "key": "quality-inspections",
       "name": "质检记录",
       "path": "/quality-inspections",
@@ -518,12 +544,6 @@
       "key": "inbound-orders",
       "name": "入库单",
       "path": "/inbound-orders",
-      "code": "inbound:view"
-    },
-    {
-      "key": "suppliers",
-      "name": "供应商",
-      "path": "/suppliers",
       "code": "inbound:view"
     },
     {
@@ -591,12 +611,6 @@
       "name": "岗位权限",
       "path": "/roles",
       "code": "system:view"
-    },
-    {
-      "key": "products",
-      "name": "商品管理",
-      "path": "/products",
-      "code": "product:list"
     },
     {
       "key": "settings",

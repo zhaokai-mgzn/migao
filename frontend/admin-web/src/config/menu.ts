@@ -165,7 +165,7 @@ export interface MenuGroup {
 export const standaloneHeadItems: MenuItem[] = [
   // 经营看板（原「工作台」组的首项）：issue #5699（P4）节点码 = 该页第一屏读码 `dashboard:view`
   //（5 个读端点与前端路由守卫同码）—— 「菜单看得见」与「点进去进得去」必须同一把尺子。
-  { key: 'dashboard', name: '经营看板', icon: 'BarChart3', path: '/dashboard', permissionCode: 'dashboard:view', keywords: ['jycb', 'kanban', '看板', '工作台'] },
+  { key: 'dashboard', name: '经营看板', icon: 'BarChart3', path: '/dashboard', permissionCode: 'dashboard:view', keywords: ['jycb', 'kanban', '看板', '经营看板', '工作台'] },
   // 报表中心（issue #7376 / #7377）：与「经营看板」同属**经营数据面**，所以紧跟其后、同为最前席位
   // 一级项（而不是塞进「交易管理」——报表不是交易操作）。码取**同一把尺子** `dashboard:view`
   // （报表就是看板的下钻，零授权 delta）；`/dashboard` 仍是登录落点（= 第一个可见项，未变）。
@@ -217,9 +217,39 @@ export const menuGroups: MenuGroup[] = [
       // issue #5246（已合入 main）：售后工单节点用**读**码 `after_sales:view` —— `order:refund`
       // 是「处理退款」的写码，节点挂在它上面 = 「能看工单」必须连写权一起给。**必须保留**该码。
       { key: 'after-sales', name: '售后工单', icon: 'LifeBuoy', path: '/after-sales', permissionCode: 'after_sales:view', keywords: ['shgd', 'shouhou', 'tuihuan', '退换货'] },
+    ],
+  },
+  // 基础资料（2026-10-29 issue #8086，用户裁定 Q2/Q5/Q6）：商品管理 + 客户列表 + 供应商 + 价格本。
+  // 位置 = **客户服务之后、交易管理之前**（用户 Q5 逐字）：「服务动线在最前，主数据紧跟其后作为交易的前置」。
+  // 为什么收这四项：它们都是**被所有动线引用的档案/条件**（商品 = 生产与发货的输入，客户 = 下单与售后的对象，
+  // 供应商 = 采购的对手方，价格本 = 开单前必须先定下来的价）。⚠️ 本组**推翻**了两条旧裁定：
+  //   · 2026-09-29「客户管理属于服务客户」⇒ 客户列表移出「客户服务」；
+  //   · 2026-10-06「商品管理作为一级项沉底」⇒ 商品管理进组（不再占尾席位）。两者都是用户 2026-10-29 的明确改判。
+  {
+    key: 'basic-data',
+    name: '基础资料',
+    // 组图标 `Library`：与组内四项（Package / UserCircle / Handshake / Tags）及所有其它组图标两两不同（#5582）。
+    icon: 'Library',
+    children: [
+      // 商品管理（本轮 2026-09-29 用户裁定：**由「商品与加工项」组升为一级菜单项**，原话
+      // 🔴 2026-10-29（issue #8086，用户裁定）：随「基础资料」组新建迁入本组（原属：尾席位（standaloneTopItems））。
+      { key: 'products', name: '商品管理', icon: 'Package', path: '/products', permissionCode: 'product:list', keywords: ['splb', 'spgl', 'shangpin', '商品'] },
+      // 🔴 2026-10-29（issue #8086，用户裁定）：随「基础资料」组新建迁入本组（原属：客户服务组）。
       // #2969：客户列表原在「客户管理」组；#5271 曾并入交易管理组；#5778 移入本组（服务客户动线）。
       // 2026-10-06 沉到本组末：它是**档案面**（查档 / 建档），不是每次接待都会走的一步。
       { key: 'customers', name: '客户列表', icon: 'UserCircle', path: '/customers', permissionCode: 'customer:view', keywords: ['khlb', 'kehu'] },
+      // 🔴 2026-10-29（issue #8086，用户裁定）：随「基础资料」组新建迁入本组（原属：供应链组）。
+      // 供应商（issue #7369，P0-1 段 1）：进货**之前**的主数据（谁供货、账期几天、停没停）。
+      // ⚠️ 必须排在「入库单」之后：手机端标注取该码树序首个承载节点（#6781）。
+      // 停用后仍要能看见（档案要能改回来）⇒ 不按状态门控。
+      { key: 'suppliers', name: '供应商', icon: 'Handshake', path: '/suppliers', permissionCode: 'inbound:view', keywords: ['gys', 'gongyingshang', 'caigou', 'supplier'] },
+      // 🔴 2026-10-29（issue #8086，用户裁定）：随「基础资料」组新建迁入本组（原属：交易管理组）。
+      // 🔴 2026-10-20（issue #7354，用户逐字「把菜单订单列表改成销售订单」）：菜单正名「销售订单」。
+      // 旧名「订单列表」保留为关键词（⌘K 按老叫法仍能搜到）；权限码 `order:list` / 路径 `/orders` 一字不动。
+      // 价格本（issue #7375 段 3）：**交易前置** —— 先把价定下来，才谈得上开单与收款，
+      // 所以排在「销售订单」之前。节点码 `order:list` = 该页第一屏读码（`GET /api/admin/pricing/books`
+      // 的类级码）—— 与「每页恰好一个码」的既有口径一致（#7087 / #6580）。
+      { key: 'price-books', name: '价格本', icon: 'Tags', path: '/price-books', permissionCode: 'order:list', keywords: ['jgb', 'jiage', 'price', '价格', '协议价', '等级价', '阶梯价'] },
     ],
   },
   // 交易管理（本轮 2026-09-29 收窄为**「下单 → 收款」两项**）：客户列表 / 售后工单是**服务客户**
@@ -230,12 +260,6 @@ export const menuGroups: MenuGroup[] = [
     name: '交易管理',
     icon: 'ShoppingCart',
     children: [
-      // 🔴 2026-10-20（issue #7354，用户逐字「把菜单订单列表改成销售订单」）：菜单正名「销售订单」。
-      // 旧名「订单列表」保留为关键词（⌘K 按老叫法仍能搜到）；权限码 `order:list` / 路径 `/orders` 一字不动。
-      // 价格本（issue #7375 段 3）：**交易前置** —— 先把价定下来，才谈得上开单与收款，
-      // 所以排在「销售订单」之前。节点码 `order:list` = 该页第一屏读码（`GET /api/admin/pricing/books`
-      // 的类级码）—— 与「每页恰好一个码」的既有口径一致（#7087 / #6580）。
-      { key: 'price-books', name: '价格本', icon: 'Tags', path: '/price-books', permissionCode: 'order:list', keywords: ['jgb', 'jiage', 'price', '价格', '协议价', '等级价', '阶梯价'] },
       { key: 'orders', name: '销售订单', icon: 'ClipboardList', path: '/orders', permissionCode: 'order:list', keywords: ['xsdd', 'xiaoshou', 'ddlb', 'dingdan', '订单列表'] },
       // #2969：财务对账原在「客户管理」组；#5271 并入交易管理组（订单 → 收款 → 对账）
       { key: 'finance', name: '财务对账', icon: 'Calculator', path: '/finance', permissionCode: 'finance:view', keywords: ['cw', 'caiwu', 'duizhang', '对账'] },
@@ -289,15 +313,27 @@ export const menuGroups: MenuGroup[] = [
       //     路线是**用工序名拼出的有序序列**）；工序库半边 = 该页**左栏**；
       //   · 节点码（两者）自 issue #5291 起 = 生产域**读**码 `production:view`；
       //   · issue #5699（P4）：工艺配置页第一屏 6 个读端点整页收敛到**页面码** production:view。
-      // /production = 作业单唯一入口（issue #4357 与原「加工单」菜单合并；#7079 起上位概念 = 作业单）
+      // /production = 作业看板唯一入口（issue #4357 与原「加工单」菜单合并；#7079 起上位概念 = 作业看板）
       // 2026-10-19（issue #7332）：菜单正名「作业看板」；旧名「生产看板」保留为**关键词**（⌘K 按老叫法仍能搜到）。
-      { key: 'production-board', name: '作业看板', icon: 'ClipboardCheck', path: '/production', permissionCode: 'production:view', keywords: ['sckb', 'shengchan', 'jiagongdan', '加工单', '作业', '作业单', '作业看板', 'zuoye', 'zykb', '生产看板', '生产'] },
+      { key: 'production-board', name: '作业看板', icon: 'ClipboardCheck', path: '/production', permissionCode: 'production:view', keywords: ['sckb', 'shengchan', 'jiagongdan', '加工单', '作业', '作业看板', '作业看板', 'zuoye', 'zykb', '生产看板', '生产'] },
       // 智能派单（issue #5177）：池化派单的**决策屏** —— 加急插队区（不进池、立即单派）
       // + 物料分组成批区（勾选 → 预览 → 一键成批派单）+ 超时未派告警。
       // issue #5699（P4）：节点码 = 该页第一屏读码 `processing:view`（此前挂 processing:manage ⇒ 节点码 ≠ 页面读码），
       // 路由守卫同批改挂读码（`app/(dashboard)/layout.tsx`）。
       { key: 'production-pool', name: '智能派单', icon: 'Layers', path: '/production/pool', permissionCode: 'processing:view', keywords: ['zndp', 'zhineng', 'paidan', '派单', 'ckb'] },
       { key: 'production-piecework', name: '计件工资', icon: 'Coins', path: '/production/piecework', permissionCode: 'production:view', keywords: ['jjgz', 'jijian', 'gongzi'] },
+    ],
+  },
+  // 质量（2026-10-29 issue #8086，用户裁定 Q3）：质检记录 + 返工单从「生产管理」拆出，独立成组。
+  // 理由：这三件事是**三种角色的活**（计划派单 / 计件工资 / 质检返工）塞在同一个组里，质检员进组还会看到
+  // 计件工资；拆开后生产管理回到「作业 → 派单 → 计件」，质量成为质检员自己的域。
+  // ⚠️ 权限码本组不动（质检记录 = production:inspect、返工单 = after_sales:view），拆码见 issue #8087。
+  {
+    key: 'quality',
+    name: '质量',
+    // 组图标 `ShieldAlert`：与组内「质检记录 BadgeCheck / 返工单 Wrench」及「岗位权限 ShieldCheck」两两不同（#5582）。
+    icon: 'ShieldAlert',
+    children: [
       // 质检记录（issue #7140 = #5652 的**商家面**）：成品帘级三态判定（合格 / 返工 / 报废 + 原因）。
       // 🔴 为什么要补这条菜单：质检端点与工人端三态**早就在**，但 admin-web 里**0 处消费**
       // ⇒ 质检员登录观星台没有工作台、商家查不到任何质检读数（用户 2026-10-17 实测原话：
@@ -333,10 +369,6 @@ export const menuGroups: MenuGroup[] = [
       // 自动加库存 + 移动加权平均成本）/ 作废（仅草稿）；批次与库存台账可查。
       // 用户 2026-10-20 裁定：它是**采购到货**的登记面，随供应链走（不在仓储与物料里）。
       { key: 'inbound-orders', name: '入库单', icon: 'PackageOpen', path: '/inbound-orders', permissionCode: 'inbound:view', keywords: ['rkd', 'ruku', 'caigou'] },
-      // 供应商（issue #7369，P0-1 段 1）：进货**之前**的主数据（谁供货、账期几天、停没停）。
-      // ⚠️ 必须排在「入库单」之后：手机端标注取该码树序首个承载节点（#6781）。
-      // 停用后仍要能看见（档案要能改回来）⇒ 不按状态门控。
-      { key: 'suppliers', name: '供应商', icon: 'Handshake', path: '/suppliers', permissionCode: 'inbound:view', keywords: ['gys', 'gongyingshang', 'caigou', 'supplier'] },
       // 采购单（issue #7369，P0-1 段 4）：下单（买什么/多少钱/什么时候到）→ 分次收货 → 关闭。
       // 与入库单**一对多**（支持部分收货）；状态由后端按 Σ收货派生。
       { key: 'purchase-orders', name: '采购单', icon: 'ShoppingBag', path: '/purchase-orders', permissionCode: 'inbound:view', keywords: ['cgd', 'caigou', 'caigoudan', 'purchase', 'po'] },
@@ -365,7 +397,7 @@ export const menuGroups: MenuGroup[] = [
       // 余料台账（PR-106 / issue #5191）：码 = `processing:manage`（`RemnantController` 类级码逐字同码）
       { key: 'production-remnants', name: '余料台账', icon: 'Recycle', path: '/production/remnants', permissionCode: 'processing:manage', keywords: ['yltz', 'yuliao', 'huishou'] },
       // 省料看板（issue #5699 P4）：两个读端点在 `StockBatchController` 上是方法级 `product:list`
-      { key: 'production-saving-board', name: '省料看板', icon: 'TrendingDown', path: '/production/saving-board', permissionCode: 'product:list', keywords: ['slkb', 'shengliao', 'haoliao'] },
+      { key: 'production-saving-board', name: '省料看板', icon: 'TrendingDown', path: '/production/saving-board', permissionCode: 'product:list', keywords: ['slkb', 'shengliao', 'haoliao', '省料看板'] },
     ],
   },
   {
@@ -428,14 +460,6 @@ export const menuGroups: MenuGroup[] = [
  */
 export const STANDALONE_TOP_AFTER_GROUP_KEY = 'org-center'
 export const standaloneTopItems: MenuItem[] = [
-  // 商品管理（本轮 2026-09-29 用户裁定：**由「商品与加工项」组升为一级菜单项**，原话
-  // 「商品列表改成商品管理，直接作为一级菜单使用」）。
-  // · 组名/菜单名取值：用户原话是「商品列表改成商品管理」⇒ 菜单名 = **「商品管理」**；
-  // · 路径与权限码一字不动（`/products`、`product:list`）⇒ 纯信息架构调整，零授权 delta；
-  // · 与它同动线的「加工项管理」已移入「生产管理」组 ⇒ 原「商品与加工项」组（`product-center`）
-  //   **不再存在**（组内已空）。原组里的两个动作码节点（`product:create` / `product:category`）
-  //   由服务端权限树承载（判据里的 `ACTION_NODES` 按**节点归属组**登记）。
-  { key: 'products', name: '商品管理', icon: 'Package', path: '/products', permissionCode: 'product:list', keywords: ['splb', 'spgl', 'shangpin', '商品'] },
   // 🔴 2026-10-09（issue #6580，用户裁定 —— **同一天的第三次改判**）：原 #6573 在这里新增的
   // 「参数总览」一级项**已撤掉**。用户逐字：「参数总揽不要单独搞个菜单，这些信息都**直接做到
   // 企业基础信息中**」「我的目的是要能**移除加工项管理和工艺配置这两个菜单**」。

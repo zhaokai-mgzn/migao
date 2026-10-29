@@ -363,11 +363,12 @@ def problems_citation(mod, source: str) -> List[str]:
     out: List[str] = []
     answer = mod.build_navigation_answer("商品管理在哪", ["product:list"])
     citation = answer.to_data()["citation"]
-    if citation != "登记项 #products → 菜单节点 一级项「商品管理」":
+    if citation != "登记项 #products → 菜单节点 菜单组「商品管理」":
         out.append(f"citation 不可溯到「登记项 → 菜单节点」：{citation!r}")
-    node = mod.menu_node(mod.STANDALONE_GROUP, "商品管理")
+    # 🔴 2026-10-29（issue #8086）：商品管理已进「基础资料」组（不再是一级项）
+    node = mod.menu_node("basic-data", "商品管理")
     if node is None:
-        out.append("`menu_node(STANDALONE_GROUP, '商品管理')` 查不到 —— 登记表被改坏了")
+        out.append("`menu_node('basic-data', '商品管理')` 查不到 —— 登记表被改坏了")
     if mod.menu_node("no-such-group", "商品管理") is not None:
         out.append("未登记节点竟返回了节点对象（默认拒绝失效）")
     literals = _module_string_literals(source)

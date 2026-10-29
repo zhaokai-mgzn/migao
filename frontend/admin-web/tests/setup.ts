@@ -189,6 +189,9 @@ vi.mock('lucide-react', async (importOriginal) => {
   MapPin: iconStub('map-pin'),
   Truck: iconStub('truck'),
   Handshake: iconStub('handshake'),
+  // 基础资料 / 质量（issue #8086）
+  Library: iconStub('library'),
+  ShieldAlert: iconStub('shield-alert'),
   // #3102: 下单选客户（选择客户入口）
   UserPlus: iconStub('user-plus'),
   Building2: iconStub('building2'),
