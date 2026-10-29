@@ -1,4 +1,4 @@
-// case_ids: WH-003
+// case_ids: WH-003, WH-011
 package com.migao.admin.mapper;
 
 import com.migao.admin.entity.WarehouseLocation;
@@ -138,6 +138,21 @@ class WarehouseLocationMapperTest {
                 .as("手写 SQL 未标 @InterceptorIgnore(tenantLine=true)：%s（全局租户插件会二次注入 tenant_id，"
                         + "在 INSERT … ON CONFLICT / 子查询上改出错误 SQL）", offenders)
                 .isEmpty();
+    }
+
+    @Test
+    @DisplayName("🔴 同单同仓（issue #8103）：按订单取在库仓位、容量不是过滤条件；分配按订单拿 advisory 锁")
+    void sameOrderBinLookupIgnoresCapacityAndSerializesPerOrder() throws Exception {
+        String sql = sqlOf("selectInStockBinByOrder", Select.class);
+        assertThat(sql).contains("finished_goods_stock", "s.order_id = #{orderId}",
+                "s.status = 'in_stock'", "s.warehouse_id = #{warehouseId}", "l.deleted = 0");
+        assertThat(sql).as("同单追加不受容量约束（容量只用于新订单首件选仓）")
+                .doesNotContain("< l.capacity");
+        assertThat(sql).as("停用仓位里的在库货不因停用而换仓（不筛 active）")
+                .doesNotContain("status = 'active'");
+        assertThat(sqlOf("lockAllocationForOrder", Select.class))
+                .as("同单并发必须排队：锁键 = tenant:order 的 PG advisory 事务锁")
+                .contains("pg_advisory_xact_lock", "#{key}");
     }
 
     @Test

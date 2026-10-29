@@ -1,4 +1,4 @@
-// case_ids: WH-010
+// case_ids: WH-010, WH-011
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -60,12 +60,20 @@ class WarehouseLocationAllocationRealDbTest {
     /** 并发用独立租户：bin_code 是**租户内**唯一，两个成品仓同租户会共用号段。 */
     private static final long RACE_TENANT = 7792L;
     private static final String RACE_TENANT_CODE = "acc-7792";
+    /** 同单同仓（issue #8103）：单事务里「仓位已满仍复用」用独立租户，互不影响。 */
+    private static final long STICKY_TENANT = 7793L;
+    private static final String STICKY_TENANT_CODE = "acc-7793";
+    /** 同单同仓（issue #8103）：并发两事务用独立租户（避免与上面的「已满」夹具串味）。 */
+    private static final long RACE2_TENANT = 7794L;
+    private static final String RACE2_TENANT_CODE = "acc-7794";
 
     private static PgCluster cluster;
     private static DataSource dataSource;
     private static SqlSessionFactory factory;
     private static long mainWarehouseId;
     private static long raceWarehouseId;
+    private static long stickyWarehouseId;
+    private static long race2WarehouseId;
 
     @BeforeAll
     static void startRealPostgres() throws Exception {
@@ -75,7 +83,9 @@ class WarehouseLocationAllocationRealDbTest {
             st.execute(Files.readString(Path.of("src/main/resources/db/init/schema.sql")));
             st.execute("INSERT INTO tenants (id, name, code) OVERRIDING SYSTEM VALUE VALUES ("
                     + TENANT + ", '" + TENANT_CODE + "', '" + TENANT_CODE + "'), ("
-                    + RACE_TENANT + ", '" + RACE_TENANT_CODE + "', '" + RACE_TENANT_CODE + "')");
+                    + RACE_TENANT + ", '" + RACE_TENANT_CODE + "', '" + RACE_TENANT_CODE + "'), ("
+                    + STICKY_TENANT + ", '" + STICKY_TENANT_CODE + "', '" + STICKY_TENANT_CODE + "'), ("
+                    + RACE2_TENANT + ", '" + RACE2_TENANT_CODE + "', '" + RACE2_TENANT_CODE + "')");
             try (ResultSet rs = st.executeQuery("INSERT INTO warehouses (tenant_id, code, name, warehouse_type) "
                     + "VALUES (" + TENANT + ", 'CP-7791', '成品仓', 'finished') RETURNING id")) {
                 assertThat(rs.next()).isTrue();
@@ -86,6 +96,22 @@ class WarehouseLocationAllocationRealDbTest {
                 assertThat(rs.next()).isTrue();
                 raceWarehouseId = rs.getLong(1);
             }
+            try (ResultSet rs = st.executeQuery("INSERT INTO warehouses (tenant_id, code, name, warehouse_type) "
+                    + "VALUES (" + STICKY_TENANT + ", 'STK-8103', '同单同仓成品仓', 'finished') RETURNING id")) {
+                assertThat(rs.next()).isTrue();
+                stickyWarehouseId = rs.getLong(1);
+            }
+            try (ResultSet rs = st.executeQuery("INSERT INTO warehouses (tenant_id, code, name, warehouse_type) "
+                    + "VALUES (" + RACE2_TENANT + ", 'RC2-8103', '同单并发成品仓', 'finished') RETURNING id")) {
+                assertThat(rs.next()).isTrue();
+                race2WarehouseId = rs.getLong(1);
+            }
+            st.execute("INSERT INTO warehouse_locations (tenant_id, warehouse_id, bin_code, capacity) VALUES ("
+                    + STICKY_TENANT + ", " + stickyWarehouseId + ", 'A-01', 1), ("
+                    + STICKY_TENANT + ", " + stickyWarehouseId + ", 'A-02', 1)");
+            st.execute("INSERT INTO warehouse_locations (tenant_id, warehouse_id, bin_code, capacity) VALUES ("
+                    + RACE2_TENANT + ", " + race2WarehouseId + ", 'A-01', 1), ("
+                    + RACE2_TENANT + ", " + race2WarehouseId + ", 'A-02', 1)");
             st.execute("INSERT INTO warehouse_locations (tenant_id, warehouse_id, bin_code, capacity) VALUES ("
                     + TENANT + ", " + mainWarehouseId + ", 'A-01', 2), ("
                     + TENANT + ", " + mainWarehouseId + ", 'A-02', 2)");
@@ -178,6 +204,82 @@ class WarehouseLocationAllocationRealDbTest {
                 assertThat(rs.next()).isTrue();
                 assertThat(rs.getInt("n")).isEqualTo(1);
             }
+        } finally {
+            pool.shutdownNow();
+            first.close();
+            second.close();
+        }
+    }
+
+    @Test
+    @DisplayName("🔴 同单同仓（issue #8103）：该单仓位已满（1/1）⇒ 第二件仍入同一仓位（2/1）")
+    void sameOrderStaysInItsBinWhenFull() throws Exception {
+        // 该订单的首件已在 A-01 ⇒ A-01 满（容量 1）
+        try (Connection conn = dataSource.getConnection(); Statement st = conn.createStatement()) {
+            st.execute("INSERT INTO finished_goods_stock "
+                    + "(tenant_id, warehouse_id, location_id, bin_code, order_id, order_item_id, quantity) "
+                    + "SELECT " + STICKY_TENANT + ", " + stickyWarehouseId + ", id, 'A-01', 'ORD-STICKY-FULL', "
+                    + "'ITEM-1', 1 FROM warehouse_locations WHERE tenant_id = " + STICKY_TENANT
+                    + " AND warehouse_id = " + stickyWarehouseId + " AND bin_code = 'A-01'");
+        }
+        try (SqlSession session = factory.openSession(false)) {
+            WarehouseLocationService service = new WarehouseLocationService(
+                    session.getMapper(WarehouseLocationMapper.class),
+                    session.getMapper(FinishedGoodsStockMapper.class), null);
+
+            assertThat(service.nextFreeBin(STICKY_TENANT, stickyWarehouseId).getBinCode())
+                    .as("新订单仍按水位选仓：A-01 已满 ⇒ A-02")
+                    .isEqualTo("A-02");
+            assertThat(service.binForOrder(STICKY_TENANT, stickyWarehouseId, "ORD-STICKY-FULL").getBinCode())
+                    .as("同一订单即使仓位已满也不换仓（容量只约束新订单首件）")
+                    .isEqualTo("A-01");
+            session.rollback();
+        }
+    }
+
+    @Test
+    @DisplayName("🔴 同单并发入库（issue #8103）：两个事务必须落同一个仓位（advisory 锁按订单串行）")
+    void concurrentSameOrderAllocationsShareOneBin() throws Exception {
+        SqlSession first = factory.openSession(false);
+        SqlSession second = factory.openSession(false);
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            WarehouseLocationService firstService = new WarehouseLocationService(
+                    first.getMapper(WarehouseLocationMapper.class),
+                    first.getMapper(FinishedGoodsStockMapper.class), null);
+            WarehouseLocation firstBin = firstService.binForOrder(RACE2_TENANT, race2WarehouseId, "ORD-RACE-8103");
+            assertThat(firstBin.getBinCode()).isEqualTo("A-01");
+            try (PreparedStatement insert = first.getConnection().prepareStatement(
+                    "INSERT INTO finished_goods_stock "
+                            + "(tenant_id, warehouse_id, location_id, bin_code, order_id, order_item_id, quantity) "
+                            + "VALUES (?, ?, ?, 'A-01', 'ORD-RACE-8103', 'ITEM-1', 1)")) {
+                insert.setLong(1, RACE2_TENANT);
+                insert.setLong(2, race2WarehouseId);
+                insert.setLong(3, firstBin.getId());
+                assertThat(insert.executeUpdate()).isEqualTo(1);
+            }
+
+            CountDownLatch started = new CountDownLatch(1);
+            Future<WarehouseLocation> allocation = pool.submit(() -> {
+                WarehouseLocationService service = new WarehouseLocationService(
+                        second.getMapper(WarehouseLocationMapper.class),
+                        second.getMapper(FinishedGoodsStockMapper.class), null);
+                started.countDown();
+                return service.binForOrder(RACE2_TENANT, race2WarehouseId, "ORD-RACE-8103");
+            });
+            assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+            Thread.sleep(500);
+            assertThat(allocation.isDone())
+                    .as("第二个同单入库必须在 advisory 锁上等待（isDone=true 说明锁没生效）")
+                    .isFalse();
+
+            // 原始 JDBC insert 不会把 MyBatis 的 dirty 标记置上 ⇒ 直接提交底层连接
+            first.getConnection().commit();
+            WarehouseLocation allocated = allocation.get(10, TimeUnit.SECONDS);
+            assertThat(allocated.getBinCode())
+                    .as("A-01 容量 1 已被同单首件填满，但同单第二件仍必须进 A-01（不是顺延 A-02）")
+                    .isEqualTo("A-01");
+            second.commit();
         } finally {
             pool.shutdownNow();
             first.close();

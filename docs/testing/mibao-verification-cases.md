@@ -3754,7 +3754,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（164 case）
+## 杂项域（165 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5824,11 +5824,12 @@
 数据: **判据 3（🔴 占号原子、冲突不抛异常）**：新增走 `INSERT … ON CONFLICT DO NOTHING`（唯一冲突不会把 PG 事务打成 aborted），抢不到就重算下一轮；连续 8 次抢不到 ⇒ 显式冲突（可重试），**不**静默返回一个可能被占的号。新建的号不直接返回，下一轮带行锁与容量复核。判据 = `#claimConflictRetriesThenSucceeds` + `#exhaustedAttemptsThrows`。
 数据: **判据 4（水位没有第二份真相）**：在库件数只从 `finished_goods_stock` 的 `in_stock` 行按 bin_code 派生（GROUP BY，不按 500 行截断）；仓位表**没有** occupied / in_stock_count 之类字段。V198 去掉 `uk_finished_goods_bin_in_stock`（允许一仓多件），同套装/部位仍由 `uk_finished_goods_set_part_in_stock` 唯一。判据 = `WarehouseLocationMapperTest#allocationUsesWaterLevelCapacityAndNoOccupancyColumn` + `FinishedGoodsStockMapperTest#oneBinHoldsMultiplePackagesUpToCapacity`。
 数据: **判据 5（并发容量闸门）**：候选仓位行 `SELECT … FOR UPDATE OF l`；调用方 `InboundOrderService.post` 是 `@Transactional`，同一事务内锁住候选行、复核在库件数再 insert，并发过账不会把同一仓塞过容量。判据 = `WarehouseLocationAllocationRealDbTest`（真库两事务：第二事务在行锁上等待；第一事务填满后第二事务复核并顺延新建）+ Mapper SQL 的 `FOR UPDATE` 断言。
+数据: **判据 6（同单同仓改判，issue #8103）**：同一订单的成品固定入同一仓位（该仓满了也不换仓），水位只在「新订单首件选仓」时生效 —— 判据与真库并发见 WH-011；本条其余口径不变。
 数据: **边界（照实登记）**：容量按区域统一（1~999 件，默认 10）；一仓可放多件到容量；不做货架层级 / 体积 / 重量维度；容量下调到低于当前在库件数时不驱逐已有件，只停止继续分配。
 前置: 本用例是 [backend-contract]：前置 = `warehouse_locations` / `finished_goods_stock`（V196）+ `warehouses.warehouse_type` 含 `finished`。零网络、零 LLM。
 跳过: [backend-contract] 仓位分配口径由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
-溯源: 2026-10-25 新增（issue #7750）。2026-10-26 改判（issue #7791，用户「根据仓位水位智能分配」）：V198 增 capacity（区域统一，默认 10）、去掉 `uk_finished_goods_bin_in_stock`（一仓多件）、分配从 `selectFirstFreeBin` 改为 `selectBestBinForAllocation`（count/capacity + `FOR UPDATE`）；`claimBin` 带容量。 ｜ tags: backend-contract, inventory, warehouse, finished-goods, red-proof
+溯源: 2026-10-25 新增（issue #7750）。2026-10-26 改判（issue #7791，用户「根据仓位水位智能分配」）：V198 增 capacity（区域统一，默认 10）、去掉 `uk_finished_goods_bin_in_stock`（一仓多件）、分配从 `selectFirstFreeBin` 改为 `selectBestBinForAllocation`（count/capacity + `FOR UPDATE`）；`claimBin` 带容量。2026-10-29 改判（issue #8103）：同单固定同一仓位、容量只约束新订单首件选仓（细节见 WH-011）。 ｜ tags: backend-contract, inventory, warehouse, finished-goods, red-proof
 
 ### WH-004. 出库单：布料手工出库「建单即过账」（扣库存 + 落台账），库存不足整笔拒绝（issue #7750） 🔵
 ```
@@ -5866,7 +5867,7 @@
 ```
 你: 用户（2026-10-25，逐字）：「允许工人扫码水洗唛进行成品出库打标签操作，参考图中的格式」。
 你: 用户（2026-10-25，确认口径）：「扫码水洗唛进入手机端报工页面后操作打印出库，只有关联打包工序的工人扫码后才能操作出库」。
-数据: **判据 1（一张唛 = 一行在库 + 一个仓位号）**：打包按 `processing_order_sets` × `processing_set_part_tokens` 逐行入库 —— 同一订单 5 套的布帘 = 5 行在库。V198（issue #7791）起一仓可放多件到区域容量 ⇒ 5 件可落在同一仓位（选水位最低者），**不再要求 5 个不同仓号**；标签仍打 `bin_code`，扫唛按 token/短码定位到具体件。判据 = `FinishedWashLabelTest` + `V197__finished_goods_set_part_granularity.sql` 的套装唯一索引 + `V198__warehouse_capacity_and_water_level.sql`。
+数据: **判据 1（一张唛 = 一行在库 + 一个仓位号）**：打包按 `processing_order_sets` × `processing_set_part_tokens` 逐行入库 —— 同一订单 5 套的布帘 = 5 行在库。V198（issue #7791）起一仓可放多件到区域容量 ⇒ 5 件落在**同一个仓位**（issue #8103 起固定同单同仓，满了也不换仓），**不再要求 5 个不同仓号**；标签仍打 `bin_code`，扫唛按 token/短码定位到具体件。判据 = `FinishedWashLabelTest` + `V197__finished_goods_set_part_granularity.sql` 的套装唯一索引 + `V198__warehouse_capacity_and_water_level.sql`。
 数据: **判据 2（🔴 非打包工序工人被拒）**：授权 = `production_work_logs` 里该加工单存在 `operation_name ILIKE '%打包%'` 且 `worker_id = 当前工人`。非打包工人 ⇒ `allowed=false` + 原因「只有做过打包工序的工人才能扫码出库」，写面 409，**零库存变动、零出库单**。判据 = `FinishedWashLabelTest#nonPackerIsRejectedWithZeroInventoryChange`。
 数据: **判据 3（出库即过账）**：打包工人扫在库唛 ⇒ 在库行 `in_stock → shipped`（释放仓位）+ 成品出库单 `source=scan` 单行（仓位号 = 标签「打包区域」）。判据 = `FinishedWashLabelTest#outboundMarksStockShippedAndCreatesScanDocIdempotently`。
 数据: **判据 4（幂等）**：同一张唛第二次提交 ⇒ 409「已经出库」，不重复扣减、不建第二张单（`clearInvocations` 后 `never()` 断言）。
@@ -5894,7 +5895,7 @@
 ```
 你: 用户（2026-10-25，逐字）：「做成入库即过账，不要单独再点击过账了」。
 数据: **判据 1（建单即过账）**：`POST /api/admin/inbound-orders` = create → post（同一个事务）；建单失败不留孤立草稿，过账失败整笔回滚。判据 = `InboundStockDocumentTest#createAndPostComposesCreateThenPost` + `InboundOrderController` 的建单端点改为 `createAndPost`。
-数据: **判据 2（🔴 成品单过账不碰布料口径）**：`biz_category=finished` 过账只做两件事 —— 逐行分配仓位（`claimInStock` 原子占位）+ 回写明细分位；**不**建 `stock_batches`、**不**加 SKU 米数库存、**不**落库存台账。判据 = `#finishedPostAllocatesBinsOnly`（四条 never 断言）。
+数据: **判据 2（🔴 成品单过账不碰布料口径）**：`biz_category=finished` 过账只做两件事 —— 按订单取一次仓位（同单同仓，issue #8103）+ 逐行 `claimInStock` 原子占位 + 回写明细分位；**不**建 `stock_batches`、**不**加 SKU 米数库存、**不**落库存台账。判据 = `#finishedPostKeepsWholeOrderInOneBin`（四条 never 断言 + 仓位只取一次）。
 数据: **判据 3（fail-closed）**：成品单缺仓库 / 明细缺订单行引用 ⇒ 拒绝过账（不猜仓库、不分配孤儿仓位）。判据 = `#finishedPostWithoutWarehouseRejected` + `#finishedPostWithoutOrderItemRejected`。
 数据: **判据 4（页面口径）**：入库单新建页提交后提示「已入库（批次号已生成、库存已加、成本已重算）」，按钮文案 = 「确认入库」（不再有「保存为草稿 → 再点过账」两步）；工人拍照入库的**识别草稿**仍保留过账端点（那张草稿是识别结果，不是待办）。判据 = `frontend/admin-web/tests/unit/pages/inbound-orders-new.test.tsx`。
 数据: **边界（照实登记）**：① 商家端不再能建「草稿态」入库单（工人拍照识别草稿走 `WorkerInboundService` 的独立路径）；② `PATCH /{id}` 的 `post`/`cancel` 动作保留给这些草稿。
@@ -6284,6 +6285,22 @@
 跳过: [backend-contract] 水位 / 容量 / 批量建号由 Java 单测 + 前端单测验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-26 新增（issue #7791，用户「根据仓位水位智能分配」+「批量创建，输入数字区间」）。落码 = V198 + `WarehouseLocation.capacity` + `selectBestBinForAllocation`（FOR UPDATE）/ `selectZoneCapacity` / `updateCapacityByZone` + `FinishedGoodsStockMapper#selectInStockCounts` + `WarehouseLocationService`（水位分配 / 区域容量同步 / batchCreate）+ `POST /warehouse-locations/batch` + 前端水位列 / 容量字段 / 批量弹窗。 ｜ tags: backend-contract, inventory, warehouse, finished-goods, master-data, red-proof
+
+### WH-011. 成品打包入库：同一订单固定入同一仓位（仓位满了也不换仓，issue #8103） 🔵
+```
+你: 用户（2026-10-29，逐字）：「有个问题，打包入库成品的时候，一个订单内的商品入库到同一仓位」。
+你: 用户（2026-10-29，逐字）：「即使仓位满了也要入库到相同仓位，这个是新规则」。
+数据: **判据 1（🔴 同单同仓）**：同一订单（`order_id`）的成品入库固定落在该订单已在库的仓位 —— 先按订单查在库行（`WarehouseLocationMapper#selectInStockBinByOrder`），命中即复用；一张单里同一订单只取一次仓位（`InboundOrderService#postFinishedLines` 按 orderId 缓存）。判据 = `WarehouseLocationServiceTest#sameOrderReusesItsBinEvenWhenFull` + `InboundStockDocumentTest#finishedPostKeepsWholeOrderInOneBin`（仓位只取一次、两行同一个 bin）。
+数据: **判据 2（🔴 满了也不换仓）**：该仓在库件数已达 / 超过 capacity ⇒ 同单后续成品**仍进该仓**（容量只约束新订单首件选仓）；在库仓位查询**不带** `count < capacity` 过滤。真库判据 = `WarehouseLocationAllocationRealDbTest#sameOrderStaysInItsBinWhenFull`（A-01 容量 1 已满 ⇒ 同单第二件仍返回 A-01，而 `nextFreeBin` 给 A-02）。
+数据: **判据 3（同单并发串行）**：`pg_advisory_xact_lock(hashtextextended(tenantId:orderId))` 按订单排队 —— 后到的事务拿到锁才读「该单已有仓位」，因此看到前者已提交的事实。判据 = `WarehouseLocationAllocationRealDbTest#concurrentSameOrderAllocationsShareOneBin`（第二事务在锁上等待；提交后两事务同仓）+ `WarehouseLocationMapperTest#sameOrderBinLookupIgnoresCapacityAndSerializesPerOrder`。
+数据: **判据 4（新订单口径不变）**：没有在库行的订单仍按 V198 水位规则选未满仓（本区全满才顺延新建号）；无订单引用 ⇒ 不走同单规则、不拿锁。判据 = `#firstPieceOfOrderLocksThenUsesWaterLevel` + `#noOrderReferenceFallsBackToWaterLevel`。
+数据: **判据 5（重复占用显式失败）**：同一件成品（同一张唛 / 同一订单行）重复入库 ⇒ `claimInStock` 0 行 ⇒ 409 冲突、整笔回滚，**不**换下一个仓位重试。判据 = `InboundStockDocumentTest#finishedPostRejectsDuplicatePiece`。
+数据: **判据 6（商家面水位显示超容）**：在库件数 > capacity ⇒ 状态显示「超容」（不是「已满」），件数照实显示 `12 / 10`；说明文案写明同单同仓。判据 = `frontend/admin-web/tests/unit/components/WarehouseLocationWaterLevelBatch.test.tsx`。
+数据: **边界（照实登记）**：① 容量仍约束新订单首件选仓，不再约束同单追加；② 不做自动移库 / 调拨，已入在库行不回迁；③ 发货（`shipped`）/ 撤销打包（`unpacked`）后重新打包 ⇒ 该单无在库行 ⇒ 按首件规则重选仓（不是「永远记住上次的仓」）；④ 真库并发判据是两个事务的点对点对照，不是长时间压测。
+前置: 本用例是 [backend-contract + frontend-contract]：前置 = V196/V198 成品在库 + 仓位容量 + 成品入库单（`biz_category=finished`）。零网络、零 LLM。
+跳过: [backend-contract] 同单同仓由 Java 单测 + 真库 + 前端单测验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-29 新增（issue #8103，用户「打包入库成品的时候，一个订单内的商品入库到同一仓位」+「即使仓位满了也要入库到相同仓位」）。落码 = `WarehouseLocationMapper#selectInStockBinByOrder` / `#lockAllocationForOrder` + `WarehouseLocationService#binForOrder`（同单复用 / advisory 锁）+ `InboundOrderService#postFinishedLines`（按订单取一次仓位、重复件显式冲突）+ 仓位管理水位「超容」与说明文案。 ｜ tags: backend-contract, inventory, warehouse, finished-goods, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -13564,8 +13581,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：916（活跃 142，跳过 774）
-- tier 分布：smoke 12 / normal 848 / adversarial 32
+- 用例总数：917（活跃 142，跳过 775）
+- tier 分布：smoke 12 / normal 849 / adversarial 32
 - 售后域：16
 - Agent 核心域：12
 - API 层域：21
@@ -13580,7 +13597,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：164
+- 杂项域：165
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：72
@@ -13789,6 +13806,7 @@
 - QC-005: 质量成本补上「报废工时」：报工 work_type=scrap 可采集，报废「料」仍未采集（issue #7377 段 8）
 - WH-009: 成品仓仓位号管理：出库单页新建 / 编辑 / 启停 / 删除仓位，占用中锁定改号与删除（issue #7785）
 - WH-010: 成品仓水位智能分配 + 区域容量 + 批量建号（issue #7791）
+- WH-011: 成品打包入库：同一订单固定入同一仓位（仓位满了也不换仓，issue #8103）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

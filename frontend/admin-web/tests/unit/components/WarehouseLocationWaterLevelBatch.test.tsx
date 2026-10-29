@@ -1,4 +1,4 @@
-// case_ids: WH-010
+// case_ids: WH-010, WH-011
 //
 // issue #7791：仓位管理的水位列 + 区域容量 + 批量建号。
 //
@@ -94,6 +94,19 @@ describe('仓位水位 / 批量建号（WH-010）', () => {
     expect(screen.getByText('已满')).toBeTruthy()
     expect(screen.getByText('占用中')).toBeTruthy()
     expect(screen.getByText('空闲')).toBeTruthy()
+  })
+
+  it('同单同仓（issue #8103）：在库件数超过容量 ⇒ 状态「超容」，件数照实显示', async () => {
+    mockLocations.mockResolvedValue({
+      data: { data: [{ ...rows[0], id: 41, binCode: 'A-09', inStockCount: 12 }] },
+    })
+    render(<WarehouseLocationPanel canWrite refreshKey={0} />)
+    await screen.findByTestId('warehouse-location-water-41')
+
+    expect(screen.getByTestId('warehouse-location-water-41')).toHaveTextContent('12 / 10')
+    expect(screen.getByText('超容')).toBeTruthy()
+    expect(screen.queryByText('已满')).toBeNull()
+    expect(screen.getByText(/同一订单的成品固定放同一仓位/)).toBeTruthy()
   })
 
   it('批量新建：默认从本区最大号 +1 起，区间 A 1~20 ⇒ 调用批量接口并提示新建/跳过', async () => {

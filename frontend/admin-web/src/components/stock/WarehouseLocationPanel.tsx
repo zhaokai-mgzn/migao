@@ -25,6 +25,7 @@ import type { WarehouseLocation } from '@/types'
  *
  * - 仓位号租户内唯一、统一大写；占用中（有在库成品）**不能改号 / 删除**（在库行与已贴标签认这个号）；
  * - 水位 = 在库件数 / 每仓容量（容量按区域统一，默认 10 件）；打包优先放**水位最低且未满**的仓位；
+ *   同一订单的成品固定放同一仓位（满了也继续放 ⇒ 水位可超过容量，状态显示「超容」，issue #8103）；
  * - 停用只影响后续自动分配，已占用库存不受影响，可重新启用；
  * - 删除是软删；批量建号按数字区间生成，已存在的自动跳过；
  * - 容量按区域统一：改一个仓的容量会同步本区所有仓位。
@@ -324,11 +325,14 @@ export default function WarehouseLocationPanel({
         const state =
           row.status === 'inactive'
             ? { label: '已停用', dot: 'bg-neutral-400', text: 'text-neutral-500' }
-            : count >= capacity
-              ? { label: '已满', dot: 'bg-red-500', text: 'text-red-600' }
-              : count > 0
-                ? { label: '占用中', dot: 'bg-amber-500', text: 'text-neutral-700' }
-                : { label: '空闲', dot: 'bg-emerald-500', text: 'text-neutral-700' }
+            : count > capacity
+              // 同单同仓（issue #8103）：同一订单的成品满了也继续入同一仓位 ⇒ 在库件数可超过容量
+              ? { label: '超容', dot: 'bg-red-500', text: 'text-red-600' }
+              : count >= capacity
+                ? { label: '已满', dot: 'bg-red-500', text: 'text-red-600' }
+                : count > 0
+                  ? { label: '占用中', dot: 'bg-amber-500', text: 'text-neutral-700' }
+                  : { label: '空闲', dot: 'bg-emerald-500', text: 'text-neutral-700' }
         return (
           <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
             <span className={`h-1.5 w-1.5 rounded-full ${state.dot}`} aria-hidden />
@@ -393,7 +397,7 @@ export default function WarehouseLocationPanel({
           <div className="min-w-0">
             <h3 className="text-sm font-semibold text-neutral-900">成品仓仓位</h3>
             <p className="mt-1 text-xs leading-5 text-neutral-500">
-              {'按水位（在库件数 / 每仓容量）分配：打包优先放水位最低且未满的仓位；同一区域容量统一。占用中的仓位不能改号或删除。'}
+              {'按水位（在库件数 / 每仓容量）分配：打包优先放水位最低且未满的仓位；同一订单的成品固定放同一仓位（该仓满了也继续放，水位可超容量）。同一区域容量统一。占用中的仓位不能改号或删除。'}
             </p>
           </div>
           {canWrite && rows.length > 0 && (

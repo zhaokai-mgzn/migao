@@ -1,4 +1,4 @@
-// case_ids: WH-006
+// case_ids: WH-006, WH-011
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -145,32 +145,52 @@ class InboundStockDocumentTest {
     }
 
     @Test
-    @DisplayName("成品过账：逐行分配仓位 + 原子占用（一个订单行一个仓位），不碰 SKU 库存/批次/台账")
-    void finishedPostAllocatesBinsOnly() {
+    @DisplayName("🔴 同单同仓（issue #8103）：两行同一订单 ⇒ 仓位只取一次，两行都落 A-01；不碰 SKU 库存/批次/台账")
+    void finishedPostKeepsWholeOrderInOneBin() {
         when(inboundOrderMapper.selectOne(any())).thenReturn(draftFinished("9"));
         when(inboundOrderItemMapper.selectList(any())).thenReturn(List.of(
                 finishedLine("item-1"), finishedLine("item-2")));
         when(inboundOrderMapper.markPosted(any(), any(), any(), any())).thenReturn(1);
-        when(warehouseLocationService.nextFreeBin(TENANT, 9L))
-                .thenReturn(bin("A-01", 7L), bin("A-02", 8L));
+        when(warehouseLocationService.binForOrder(TENANT, 9L, "order-1")).thenReturn(bin("A-01", 7L));
         when(finishedGoodsStockMapper.claimInStock(any(), any(), any(), anyString(), any(), any(), any(),
-                any(), any(), any(), any())).thenReturn(42L);
+                any(), any(), any(), any())).thenReturn(42L, 43L);
 
         InboundOrderResponse response = service.post("doc-1", TENANT, "op");
 
         assertThat(response.getStatus()).isEqualTo(InboundOrder.STATUS_POSTED);
-        verify(finishedGoodsStockMapper, times(2)).claimInStock(eq(TENANT), eq(9L), any(), anyString(),
+        // 同单同仓：仓位只取一次，且两件都进同一个 bin（不再逐行按水位换仓）
+        verify(warehouseLocationService, times(1)).binForOrder(TENANT, 9L, "order-1");
+        verify(warehouseLocationService, never()).nextFreeBin(anyLong(), anyLong());
+        verify(finishedGoodsStockMapper, times(2)).claimInStock(eq(TENANT), eq(9L), eq(7L), eq("A-01"),
                 eq("order-1"), eq("DD-20261025-0001"), any(), eq("prod-1"), eq("遮光布帘"),
                 eq(BigDecimal.ONE), eq("doc-1"));
-        // 明细行回写仓位（A-01 / A-02）
+        // 明细行回写的是同一个仓位
         verify(inboundOrderItemMapper, times(2)).updateById(
                 org.mockito.ArgumentMatchers.<InboundOrderItem>argThat(
-                        line -> line.getBinCode() != null && line.getLocationId() != null));
+                        line -> "A-01".equals(line.getBinCode()) && Long.valueOf(7L).equals(line.getLocationId())));
         // 布料口径一字不动：不建批次、不加米数库存、不落台账
         verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), anyLong());
         verify(stockBatchMapper, never()).update(any(StockBatch.class));
         verify(stockLedgerService, never()).record(anyLong(), anyString(), anyLong(), anyString(),
                 any(), any(), anyString(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("同一件成品已在库（占位 0 行）⇒ 显式冲突、整笔回滚，不换下一个仓位重试")
+    void finishedPostRejectsDuplicatePiece() {
+        when(inboundOrderMapper.selectOne(any())).thenReturn(draftFinished("9"));
+        when(inboundOrderItemMapper.selectList(any())).thenReturn(List.of(finishedLine("item-1")));
+        when(inboundOrderMapper.markPosted(any(), any(), any(), any())).thenReturn(1);
+        when(warehouseLocationService.binForOrder(TENANT, 9L, "order-1")).thenReturn(bin("A-01", 7L));
+        // claimInStock 返回 null = 这件已在库（唯一索引兜住）；Mockito 对 Long 的默认值是 0L，必须显式钉 null
+        when(finishedGoodsStockMapper.claimInStock(any(), any(), any(), anyString(), any(), any(), any(),
+                any(), any(), any(), any())).thenReturn(null);
+
+        assertThatThrownBy(() -> service.post("doc-1", TENANT, "op"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("已在库");
+        verify(inboundOrderItemMapper, never()).updateById(
+                org.mockito.ArgumentMatchers.<InboundOrderItem>any());
     }
 
     @Test

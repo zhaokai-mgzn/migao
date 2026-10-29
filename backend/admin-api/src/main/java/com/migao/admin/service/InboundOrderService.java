@@ -83,9 +83,6 @@ public class InboundOrderService {
     /** 批次号序号（PC-yyyyMMdd-NNNN） */
     private static final AtomicInteger BATCH_SEQ = new AtomicInteger(0);
 
-    /** 成品仓位分配的尝试上限（每次「找空闲 → 占位」失败都换下一个候选；正常 1 次内命中）。 */
-    private static final int FINISHED_BIN_ATTEMPTS = 8;
-
     /** 列表一次最多返回的单据数（同族页面口径；入库单是流水型单据，不做深分页） */
     private static final int LIST_LIMIT = 200;
     /** 批次查询一次最多返回的行数 */
@@ -277,68 +274,70 @@ public class InboundOrderService {
     }
 
     /**
-     * 成品单过账：逐行分配仓位 + 原子占位写入 {@code finished_goods_stock}。
+     * 成品单过账：**按订单取一次仓位** → 逐行原子占位写入 {@code finished_goods_stock}。
+     *
+     * <p>🔴 同单同仓（issue #8103，用户 2026-10-29 新规则）：一张单里的成品全部落在该订单**已在库**
+     * 的那个仓位（{@code WarehouseLocationService#binForOrder}）—— 即使该仓在库件数已达到 / 超过
+     * capacity 也不换仓。V198 的水位容量规则只用于**新订单的首件选仓**（本区全满才顺延新建号）。</p>
      *
      * <p>占位走 {@code ON CONFLICT DO NOTHING}（{@code FinishedGoodsStockMapper#claimInStock}）：
-     * 同套装/部位重复时冲突不会把事务打成 aborted，抢不到就换下一个候选。并发容量由
-     * {@code WarehouseLocationMapper#selectBestBinForAllocation} 在**本过账事务**内对候选仓位行
-     * {@code FOR UPDATE} + 复核在库件数闸住（V198 / issue #7791；bin 唯一索引已移除）。</p>
+     * 同一件成品（同一张唛 / 同一订单行）重复入库 ⇒ 0 行 ⇒ 显式冲突、整笔回滚 ——
+     * **不**换下一个仓位重试（换仓正是本改动要消灭的形态，且冲突来自「这件已在库」而非「仓被占」）。</p>
      */
     private void postFinishedLines(InboundOrder order, List<InboundOrderItem> lines, Long tenantId) {
         Long warehouseId = order.getWarehouseId();
         if (warehouseId == null) {
             throw BusinessException.validationError("成品入库单缺少成品仓，无法分配仓位");
         }
+        // 同一张单里同一订单只取一次仓位，多行共用（同单同仓）
+        Map<String, WarehouseLocation> binByOrder = new HashMap<>();
         for (InboundOrderItem line : lines) {
             if (!StringUtils.hasText(line.getOrderItemId())) {
                 throw BusinessException.validationError("成品入库单的明细行缺少订单行引用，无法分配仓位");
             }
-            boolean claimed = false;
-            for (int attempt = 0; attempt < FINISHED_BIN_ATTEMPTS && !claimed; attempt++) {
-                WarehouseLocation bin = warehouseLocationService.nextFreeBin(tenantId, warehouseId);
-                // 套 × 部位（V197）：标签要「第 N 套 / 共 M 套」与短码 ⇒ 从部位码行回读，
-                // 不信任调用方传进来的重复字段（单一来源 = processing_set_part_tokens）。
-                ProcessingSetPartToken tokenRow = line.getSetId() == null
-                        ? null
-                        : setPartTokenMapper.selectOne(new LambdaQueryWrapper<ProcessingSetPartToken>()
-                        .eq(ProcessingSetPartToken::getTenantId, tenantId)
-                        .eq(ProcessingSetPartToken::getSetId, line.getSetId())
-                        .eq(ProcessingSetPartToken::getOrderItemId, line.getOrderItemId())
-                        .eq(ProcessingSetPartToken::getDeleted, 0)
-                        .last("LIMIT 1"));
-                Integer setIndex = null;
-                if (line.getSetId() != null) {
-                    ProcessingOrderSet setRow = processingOrderSetMapper.selectById(line.getSetId());
-                    setIndex = setRow == null ? null : setRow.getSetIndex();
-                }
-                BigDecimal qty = line.getQuantity() == null ? BigDecimal.ONE : line.getQuantity();
-                // 遗留（订单行粒度）走 11 参重载：与 V196 的调用形态逐字相同（既有判据按它验参数）
-                Long stockId = line.getSetId() == null
-                        ? finishedGoodsStockMapper.claimInStock(
-                        tenantId, warehouseId, bin.getId(), bin.getBinCode(),
-                        line.getOrderId(), line.getOrderNo(), line.getOrderItemId(),
-                        line.getProductId(), line.getProductName(), qty, order.getId())
-                        : finishedGoodsStockMapper.claimInStock(
-                        tenantId, warehouseId, bin.getId(), bin.getBinCode(),
-                        line.getOrderId(), line.getOrderNo(), line.getOrderItemId(),
-                        line.getProductId(), line.getProductName(), qty, order.getId(),
-                        line.getSetId(), line.getSetNo(), setIndex,
-                        tokenRow == null ? null : tokenRow.getId(),
-                        tokenRow == null ? null : tokenRow.getShortCode());
-                if (stockId != null) {
-                    InboundOrderItem patch = new InboundOrderItem();
-                    patch.setId(line.getId());
-                    patch.setLocationId(bin.getId());
-                    patch.setBinCode(bin.getBinCode());
-                    patch.setUnit(FinishedGoodsStock.UNIT_SET);
-                    inboundOrderItemMapper.updateById(patch);
-                    claimed = true;
-                }
+            WarehouseLocation bin = binByOrder.computeIfAbsent(line.getOrderId(),
+                    orderId -> warehouseLocationService.binForOrder(tenantId, warehouseId, orderId));
+            // 套 × 部位（V197）：标签要「第 N 套 / 共 M 套」与短码 ⇒ 从部位码行回读，
+            // 不信任调用方传进来的重复字段（单一来源 = processing_set_part_tokens）。
+            ProcessingSetPartToken tokenRow = line.getSetId() == null
+                    ? null
+                    : setPartTokenMapper.selectOne(new LambdaQueryWrapper<ProcessingSetPartToken>()
+                    .eq(ProcessingSetPartToken::getTenantId, tenantId)
+                    .eq(ProcessingSetPartToken::getSetId, line.getSetId())
+                    .eq(ProcessingSetPartToken::getOrderItemId, line.getOrderItemId())
+                    .eq(ProcessingSetPartToken::getDeleted, 0)
+                    .last("LIMIT 1"));
+            Integer setIndex = null;
+            if (line.getSetId() != null) {
+                ProcessingOrderSet setRow = processingOrderSetMapper.selectById(line.getSetId());
+                setIndex = setRow == null ? null : setRow.getSetIndex();
             }
-            if (!claimed) {
-                throw BusinessException.conflict("成品仓位分配失败（连续 " + FINISHED_BIN_ATTEMPTS + " 次占位冲突）",
-                        "请重试；同一个仓位不会被两件成品同时占用");
+            BigDecimal qty = line.getQuantity() == null ? BigDecimal.ONE : line.getQuantity();
+            // 遗留（订单行粒度）走 11 参重载：与 V196 的调用形态逐字相同（既有判据按它验参数）
+            Long stockId = line.getSetId() == null
+                    ? finishedGoodsStockMapper.claimInStock(
+                    tenantId, warehouseId, bin.getId(), bin.getBinCode(),
+                    line.getOrderId(), line.getOrderNo(), line.getOrderItemId(),
+                    line.getProductId(), line.getProductName(), qty, order.getId())
+                    : finishedGoodsStockMapper.claimInStock(
+                    tenantId, warehouseId, bin.getId(), bin.getBinCode(),
+                    line.getOrderId(), line.getOrderNo(), line.getOrderItemId(),
+                    line.getProductId(), line.getProductName(), qty, order.getId(),
+                    line.getSetId(), line.getSetNo(), setIndex,
+                    tokenRow == null ? null : tokenRow.getId(),
+                    tokenRow == null ? null : tokenRow.getShortCode());
+            if (stockId == null) {
+                // 同一件成品已在库：重复入库会把库存与标签对不上（#7845 已按 token 跳过重复行，
+                // 走到这里说明是并发重复提交）⇒ 显式冲突、整笔回滚，不静默漏一件
+                throw BusinessException.conflict("这件成品已在库，不能重复入库",
+                        "同一张水洗唛 / 同一订单行只能入库一次；已入库的成品可在成品库存里查到仓位");
             }
+            InboundOrderItem patch = new InboundOrderItem();
+            patch.setId(line.getId());
+            patch.setLocationId(bin.getId());
+            patch.setBinCode(bin.getBinCode());
+            patch.setUnit(FinishedGoodsStock.UNIT_SET);
+            inboundOrderItemMapper.updateById(patch);
         }
     }
 
