@@ -511,13 +511,18 @@ def _capability_boundary(skill_name: str) -> str:
     为什么由代码投影而不是写在 prompt 文件里：边界声明原先手抄在 10 个文件里，
     其中 9 处与工具真值相反（#7291 现取证据）。投影的单一事实源 = 注册表 × mibao 绑定面，
     工具一变文案自动跟随；真值变化由 `tests/test_capability_boundary.py` 的快照判据变红提醒。
+
+    🔴 **必须把 skill_name 传进渲染**（issue #8119）：写能力是**按 skill 绑定**的（order /
+    customer / staff / data / knowledge / aftersales / general 零写工具），而原先的投影按
+    persona 全局给 —— 于是 order 回合也宣称「✅ 商品改名可直接办理」，本轮却没有
+    `product_update` 工具（判据 `test_every_mibao_skill_projects_its_own_scope`）。
     """
     cfg = _skill_config(skill_name)
     if cfg is None or "mibao" not in set(cfg.system_prompts or {}):
         return ""
     from app.agents.capability_boundary import MARKER, render_capability_boundary
 
-    text = render_capability_boundary()
+    text = render_capability_boundary(skill_name=skill_name)
     # 两处常量漂移会让「段在不在」被判错（测试也抓不到的那类静默失效）⇒ 就地自证。
     assert text.startswith(MARKER) and MARKER == _CAPABILITY_BOUNDARY_MARKER
     return text
