@@ -2,32 +2,35 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Sparkles, AlertTriangle, Lightbulb, ListTodo, ArrowRight, RefreshCw, Newspaper, ShieldCheck, ChevronDown, ChevronUp } from 'lucide-react'
+import { Sparkles, AlertTriangle, Lightbulb, ListTodo, ArrowRight, RefreshCw, Newspaper, ShieldCheck } from 'lucide-react'
 import { briefingApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import ProactiveStatusPanel from '@/components/dashboard/ProactiveStatusPanel'
 import type { BriefingContent, BriefingItem, BriefingReviewItem, ProactiveStatus } from '@/types'
 
 /**
- * 智能每日经营简报卡（issue #3468，设计文档 docs/design/daily-briefing-design.md v0.2）
+ * 智能每日经营简报（issue #3468，设计文档 docs/design/daily-briefing-design.md v0.2）
  *
  * 四区块：昨日回顾（review）/ 今日必办（todo）/ 风险预警（risks）/ 优化建议（suggestions）。
  * 数据安全：内容来自后端（LLM 输出已经数字回填校验，verifyStatus=verified/partial 才展示条目）；
  * 未生成/生成失败 → 引导空态（不展示假数据，红线 4）。
  *
- * 使用方：经营看板首页（dashboard）顶部。
+ * 使用方（issue #8114）：
+ * ① 经营看板「黄金策 · 今日经营」合并卡 `DailyBusinessCard` —— `embedded` 形态：
+ *    不渲染自己的卡片外壳与头部，由合并卡统一「展开 / 收起」（收起态 = 速览那一句话）；
+ * ② 独立卡片形态（`variant='page'`）—— 组件保留给 /briefing 深链与既有单测。
  */
 export interface BriefingCardProps {
-  /** 是否启用简报（企业开关）。关闭时不渲染整卡（菜单/首页同时隐藏，红线 3） */
-  enabled?: boolean
+  /**
+   * 企业开关（issue #8114 四态之一）：
+   * `true` = 开启；`false` = **未开启**（卡片仍在，段内说「未开启」+ 去开启入口）；
+   * `null` = **开关还没回来** ⇒ 按「加载中」处理（改前若先渲染「未开启」会闪一句错话 —— #8012）。
+   */
+  enabled?: boolean | null
   /** `page` = 日报页（逐规则原因全展开）；`dashboard` = 看板首页（紧凑，绿行收起） */
   variant?: 'page' | 'dashboard'
-  /**
-   * 默认收起为**一行**（issue #8105）：看板首页传 `true`，第一眼留给「待处理」；
-   * 点「展开」才渲染完整卡片（摘要 + 主动检查 + 昨日回顾 + 今日必办）。
-   * 不持久化 —— 刷新回默认收起。空态（未开启 / 未生成）不受本开关影响，走 #8012 的 `briefing-collapsed-hint`。
-   */
-  defaultCollapsed?: boolean
+  /** 嵌进合并卡（issue #8114）：只出**内容**，不渲染卡片外壳 / 头部（展开收起由调用方持有） */
+  embedded?: boolean
 }
 
 const PRIORITY_STYLES: Record<string, string> = {
@@ -42,20 +45,8 @@ const PRIORITY_LABELS: Record<string, string> = {
   low: '普通',
 }
 
-/** 数字校验未通过时的事实（收起态一行 / 展开态完整句**共用同一句**，不造第二套说法） */
+/** 数字校验未通过时的事实（简报没有可展示内容时**共用同一句**，不造第二套说法） */
 const VERIFY_FAILED = '简报生成未通过数字校验，已安全丢弃不实条目'
-
-/** 收起态那一行摘要（issue #8105）：优先当日摘要首句；无摘要 ⇒ 关键读数；未过校验 ⇒ 说清已丢弃 */
-function collapsedSummary({ loading, briefing }: { loading: boolean; briefing: BriefingContent | null }): string {
-  if (loading) return '正在读取今日简报…'
-  if (!briefing) return VERIFY_FAILED
-  const first = briefing.summary?.split('。')[0]?.trim()
-  if (first) return first
-  const todo = briefing.todo?.length ?? 0
-  const risks = briefing.risks?.length ?? 0
-  if (todo || risks) return `今日必办 ${todo} 项 · 风险预警 ${risks} 项`
-  return '今日没有待办与预警条目'
-}
 
 function SeverityBadge({ item }: { item: BriefingItem }) {
   const level = item.priority || item.severity || 'medium'
@@ -130,14 +121,9 @@ function ReviewStrip({ items }: { items: BriefingReviewItem[] }) {
   )
 }
 
-export default function BriefingCard({ enabled = true, variant = 'dashboard', defaultCollapsed = false }: BriefingCardProps) {
+export default function BriefingCard({ enabled = true, variant = 'dashboard', embedded = false }: BriefingCardProps) {
   // 开启时首帧就是「加载中」（issue #8012）：否则会先闪一下「尚未生成」摘要再变回卡片
-  const [loading, setLoading] = useState(enabled)
-  /**
-   * 展开态（issue #8105）：看板首页默认收起一行，点「展开」才渲染完整卡片。
-   * **不持久化** —— 刷新回默认收起（看板第一职责是「今天该处理什么」，不是日报全文）。
-   */
-  const [expanded, setExpanded] = useState(!defaultCollapsed)
+  const [loading, setLoading] = useState(enabled !== false)
   const [briefing, setBriefing] = useState<BriefingContent | null>(null)
   const [verifyStatus, setVerifyStatus] = useState<string | null>(null)
   const [generated, setGenerated] = useState(false)
@@ -145,7 +131,7 @@ export default function BriefingCard({ enabled = true, variant = 'dashboard', de
   const [proactiveStatus, setProactiveStatus] = useState<ProactiveStatus | null>(null)
 
   const fetchBriefing = useCallback(async () => {
-    if (!enabled) return
+    if (enabled !== true) return
     setLoading(true)
     try {
       const res = await briefingApi.getToday()
@@ -173,74 +159,156 @@ export default function BriefingCard({ enabled = true, variant = 'dashboard', de
 
   useEffect(() => { fetchBriefing() }, [fetchBriefing])
 
-  // ── 空态压缩（issue #8012）──────────────────────────────────────────────
-  // 改前：开关关闭 ⇒ 整块不渲染；开关开启但今日未生成 ⇒ 一个约 300px 的常驻盒子
-  //       （图标 + 「今日简报尚未生成」+ 三行长说明 + 「去开启」）⇒ 把「待处理」推到 1440×900
-  //       折叠线以下（2026-10-24 真栈截图 03-briefing.png 即此现象）。
-  // 改后：两种空态都降级为**一行摘要**（`migao-dev-flow` §31 P1 常驻面克制）：
-  //       一句话说清状态 + 一个可行动入口；有数据时仍是原来的完整卡片（不压缩）。
-  if (!enabled || (!loading && !generated)) {
+  // ── 空态（issue #8012 常驻面克制 / issue #8114 四态）──────────────────────
+  // 两种空态都只有**一行**（一句话说清状态 + 一个可行动入口）：
+  //   未开启（enabled=false）⇒ 「每日经营简报未开启」+ 去开启入口；
+  //   已开启但今日未生成   ⇒ 「今日简报尚未生成」+ 查看设置入口。
+  // 🔴 合并进「今日经营」卡后，空态由**展开态**承载（收起态就是速览那一句话），
+  //    但形态与 testid（`briefing-collapsed-hint`）沿用同一套语义 —— 不造第二套空态。
+  const hint = (
+    <div
+      data-testid="briefing-collapsed-hint"
+      className={cn(
+        'flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg text-xs text-neutral-500',
+        embedded ? 'bg-neutral-50 px-3 py-2' : 'border border-neutral-200 bg-white px-4 py-2.5 shadow-card',
+      )}
+    >
+      <Newspaper className="h-3.5 w-3.5 flex-shrink-0 text-neutral-400" />
+      <span className="font-medium text-neutral-700">
+        {enabled === false ? '每日经营简报未开启' : '今日简报尚未生成'}
+      </span>
+      <span className="text-neutral-400">
+        {enabled === false
+          ? '开启后每日自动整理经营要点'
+          : '每日生成时刻自动整理经营要点；生成失败时不会展示不实数据'}
+      </span>
+      <Link
+        href="/settings?tab=basic"
+        className="ml-auto inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-primary-600 transition-colors hover:bg-primary-50 hover:text-primary-700"
+      >
+        {enabled === false ? '开启' : '查看设置'} <ArrowRight className="h-3 w-3" />
+      </Link>
+    </div>
+  )
+  const emptyState = (
+    <div className={cn('space-y-2', !embedded && 'mb-6')}>
+      {hint}
+      {/* 简报没生成 ≠ 没有主动检查结论：有采集到就说清楚「哪些方面本次没有数据」 */}
+      {enabled === true && <ProactiveStatusPanel status={proactiveStatus} variant={variant} />}
+    </div>
+  )
+
+  if (enabled === false) return emptyState
+
+  // 加载中（issue #8114 四态之四）：配置开关还没回来（null）或 getToday 未落定 ⇒ 简报骨架。
+  const skeleton = (
+    <div data-testid="briefing-skeleton" className="space-y-3">
+      <div className="h-4 w-2/3 animate-pulse rounded bg-neutral-100" />
+      <div className="grid grid-cols-3 gap-3">
+        {Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-14 animate-pulse rounded-lg bg-neutral-100" />)}
+      </div>
+      <div className="h-10 animate-pulse rounded-lg bg-neutral-100" />
+    </div>
+  )
+
+  if (enabled === null || loading) {
+    if (embedded) return skeleton
     return (
-      <div className="mb-6 space-y-2">
-        <div
-          data-testid="briefing-collapsed-hint"
-          className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-neutral-200 bg-white px-4 py-2.5 text-xs text-neutral-500 shadow-card"
-        >
-          <Newspaper className="h-3.5 w-3.5 flex-shrink-0 text-neutral-400" />
-          <span className="font-medium text-neutral-700">
-            {enabled ? '今日简报尚未生成' : '每日经营简报未开启'}
-          </span>
-          <span className="text-neutral-400">
-            {enabled
-              ? '每日生成时刻自动整理经营要点；生成失败时不会展示不实数据'
-              : '开启后每日自动整理经营要点'}
-          </span>
-          <Link
-            href="/settings?tab=basic"
-            className="ml-auto inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-primary-600 transition-colors hover:bg-primary-50 hover:text-primary-700"
-          >
-            {enabled ? '查看设置' : '开启'} <ArrowRight className="h-3 w-3" />
-          </Link>
-        </div>
-        {/* 简报没生成 ≠ 没有主动检查结论：有采集到就说清楚「哪些方面本次没有数据」 */}
-        {enabled && <ProactiveStatusPanel status={proactiveStatus} variant={variant} />}
+      <div className="mb-6 rounded-xl border border-neutral-200 bg-white shadow-card">
+        {headerNode()}
+        <div className="p-5">{skeleton}</div>
       </div>
     )
   }
 
-  // ── 收起态（issue #8105）────────────────────────────────────────────────
-  // 有数据时也默认一行（图标 + 标题 + 一句关键摘要 + 「展开」）。改前完整卡片约 400px 高，
-  // 把「待处理」推到 1440×900 首屏之外 663px（2026-10-29 真栈实测 y=1563）。
-  // 🔴 空态（未开启 / 未生成）**不**走这里 —— 它沿用上面 #8012 的 `briefing-collapsed-hint`（别造第二套）。
-  if (!expanded) {
-    return (
-      <div className="mb-6">
-        <button
-          type="button"
-          data-testid="briefing-toggle"
-          aria-expanded={false}
-          onClick={() => setExpanded(true)}
-          className="flex w-full items-center gap-2.5 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-left shadow-card transition-colors hover:border-primary-200"
-        >
-          <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary-50 to-accent-50">
-            <Newspaper className="h-3.5 w-3.5 text-primary-600" />
-          </span>
-          <span className="flex-shrink-0 text-sm font-semibold text-neutral-900">每日经营简报</span>
-          <span className="min-w-0 flex-1 truncate text-xs text-neutral-500">
-            {collapsedSummary({ loading, briefing })}
-          </span>
-          <span className="flex flex-shrink-0 items-center gap-1 text-xs font-medium text-primary-600">
-            展开
-            <ChevronDown className="h-3.5 w-3.5" />
-          </span>
-        </button>
+  if (!generated) return emptyState
+
+  const content = !briefing ? (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 py-2 text-sm text-neutral-500">
+        <ShieldCheck className="h-4 w-4 text-neutral-400" />
+        {VERIFY_FAILED}（不会展示编造数据）。
       </div>
-    )
-  }
+      <ProactiveStatusPanel status={proactiveStatus} variant={variant} />
+    </div>
+  ) : (
+    <div className="space-y-5">
+      {/* 一句话总览 */}
+      {briefing.summary && (
+        <p className="rounded-lg bg-neutral-50 px-4 py-3 text-sm text-neutral-700">{briefing.summary}</p>
+      )}
+
+      {/* 主动检查 · 逐规则四态（issue #5955）：让「今天为什么没有提示」可解释 */}
+      <ProactiveStatusPanel status={proactiveStatus} variant={variant} />
+
+      {/* 昨日回顾 */}
+      {briefing.review?.length > 0 && (
+        <div>
+          <h3 className="mb-2 text-xs font-semibold text-neutral-500">昨日回顾</h3>
+          <ReviewStrip items={briefing.review} />
+        </div>
+      )}
+
+      {/* 今日必办 */}
+      {briefing.todo?.length > 0 && (
+        <div>
+          <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-neutral-500">
+            <ListTodo className="h-3.5 w-3.5 text-primary-500" /> 今日必办
+          </h3>
+          <div className="space-y-1">
+            {briefing.todo.map((item, i) => <ItemRow key={i} item={item} tone="todo" />)}
+          </div>
+        </div>
+      )}
+
+      {/* 风险预警 */}
+      {briefing.risks?.length > 0 && (
+        <div>
+          <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-neutral-500">
+            <AlertTriangle className="h-3.5 w-3.5 text-red-500" /> 风险预警
+          </h3>
+          <div className="space-y-1">
+            {briefing.risks.map((item, i) => <ItemRow key={i} item={item} tone="risk" />)}
+          </div>
+        </div>
+      )}
+
+      {/* 优化建议 */}
+      {briefing.suggestions?.length > 0 && (
+        <div>
+          <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-neutral-500">
+            <Lightbulb className="h-3.5 w-3.5 text-amber-500" /> 优化建议
+          </h3>
+          <div className="space-y-1">
+            {briefing.suggestions.map((item, i) => <ItemRow key={i} item={item} tone="suggestion" />)}
+          </div>
+        </div>
+      )}
+
+      {/* 全部区块为空（如全部条目被校验丢弃但 summary 存在）→ 提示性兜底。
+          🔴 措辞只说「简报没有可执行条目」，**不**说「经营平稳 / 一切正常」：
+          「没命中」到底等于「没问题」还是「本次没检查」，只有上面的主动检查面板说得清。 */}
+      {(briefing.todo?.length ?? 0) === 0 && (briefing.risks?.length ?? 0) === 0 && (briefing.suggestions?.length ?? 0) === 0 && (
+        <p className="text-xs text-neutral-400">
+          今日简报没有待办与预警条目（是否代表「没问题」请看上方「主动检查」的逐规则结论）。
+        </p>
+      )}
+    </div>
+  )
+
+  // 合并卡（issue #8114）：只出内容，外壳与展开/收起由调用方持有
+  if (embedded) return content
 
   return (
     <div className="mb-6 rounded-xl border border-neutral-200 bg-white shadow-card">
-      {/* 头部 */}
+      {headerNode()}
+      <div className="p-5">{content}</div>
+    </div>
+  )
+
+  /** 独立卡片形态的头部（refresh + AI 标记）；embedded 形态不渲染它 */
+  function headerNode() {
+    return (
       <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4">
         <div className="flex items-center gap-2.5">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary-50 to-accent-50">
@@ -265,104 +333,8 @@ export default function BriefingCard({ enabled = true, variant = 'dashboard', de
             <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
             刷新
           </button>
-          {/* 收起（issue #8105）：只有「默认可收起」的调用方才给这个入口 —— 其它调用面行为不变 */}
-          {defaultCollapsed && (
-            <button
-              type="button"
-              data-testid="briefing-toggle"
-              aria-expanded={true}
-              onClick={() => setExpanded(false)}
-              className="flex items-center gap-1 rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-500 shadow-sm transition-colors hover:border-primary-200 hover:text-primary-600"
-            >
-              收起
-              <ChevronUp className="h-3.5 w-3.5" />
-            </button>
-          )}
         </div>
       </div>
-
-      <div className="p-5">
-        {loading ? (
-          <div className="space-y-3">
-            <div className="h-4 w-2/3 animate-pulse rounded bg-neutral-100" />
-            <div className="grid grid-cols-3 gap-3">
-              {Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-14 animate-pulse rounded-lg bg-neutral-100" />)}
-            </div>
-            <div className="h-10 animate-pulse rounded-lg bg-neutral-100" />
-          </div>
-        ) : !briefing ? (
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 py-2 text-sm text-neutral-500">
-              <ShieldCheck className="h-4 w-4 text-neutral-400" />
-              {VERIFY_FAILED}（不会展示编造数据）。
-            </div>
-            <ProactiveStatusPanel status={proactiveStatus} variant={variant} />
-          </div>
-        ) : (
-          <div className="space-y-5">
-            {/* 一句话总览 */}
-            {briefing.summary && (
-              <p className="rounded-lg bg-neutral-50 px-4 py-3 text-sm text-neutral-700">{briefing.summary}</p>
-            )}
-
-            {/* 主动检查 · 逐规则四态（issue #5955）：让「今天为什么没有提示」可解释 */}
-            <ProactiveStatusPanel status={proactiveStatus} variant={variant} />
-
-            {/* 昨日回顾 */}
-            {briefing.review?.length > 0 && (
-              <div>
-                <h3 className="mb-2 text-xs font-semibold text-neutral-500">昨日回顾</h3>
-                <ReviewStrip items={briefing.review} />
-              </div>
-            )}
-
-            {/* 今日必办 */}
-            {briefing.todo?.length > 0 && (
-              <div>
-                <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-neutral-500">
-                  <ListTodo className="h-3.5 w-3.5 text-primary-500" /> 今日必办
-                </h3>
-                <div className="space-y-1">
-                  {briefing.todo.map((item, i) => <ItemRow key={i} item={item} tone="todo" />)}
-                </div>
-              </div>
-            )}
-
-            {/* 风险预警 */}
-            {briefing.risks?.length > 0 && (
-              <div>
-                <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-neutral-500">
-                  <AlertTriangle className="h-3.5 w-3.5 text-red-500" /> 风险预警
-                </h3>
-                <div className="space-y-1">
-                  {briefing.risks.map((item, i) => <ItemRow key={i} item={item} tone="risk" />)}
-                </div>
-              </div>
-            )}
-
-            {/* 优化建议 */}
-            {briefing.suggestions?.length > 0 && (
-              <div>
-                <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-neutral-500">
-                  <Lightbulb className="h-3.5 w-3.5 text-amber-500" /> 优化建议
-                </h3>
-                <div className="space-y-1">
-                  {briefing.suggestions.map((item, i) => <ItemRow key={i} item={item} tone="suggestion" />)}
-                </div>
-              </div>
-            )}
-
-            {/* 全部区块为空（如全部条目被校验丢弃但 summary 存在）→ 提示性兜底。
-                🔴 措辞只说「简报没有可执行条目」，**不**说「经营平稳 / 一切正常」：
-                「没命中」到底等于「没问题」还是「本次没检查」，只有上面的主动检查面板说得清。 */}
-            {(briefing.todo?.length ?? 0) === 0 && (briefing.risks?.length ?? 0) === 0 && (briefing.suggestions?.length ?? 0) === 0 && (
-              <p className="text-xs text-neutral-400">
-                今日简报没有待办与预警条目（是否代表「没问题」请看上方「主动检查」的逐规则结论）。
-              </p>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  )
+    )
+  }
 }

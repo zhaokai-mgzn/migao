@@ -152,12 +152,13 @@ describe('DashboardPage', () => {
     })
   })
 
-  // ── 黄金策「今日经营速览」洞察条 ──
+  // ── 黄金策「今日经营」合并卡（issue #8114：速览条 + 简报卡 → 一张卡） ──
 
   it('洞察条置于经营看板顶部，渲染一句话经营解读（订单/环比/加工/库存串联）', async () => {
     render(<DashboardPage />)
     await waitFor(() => {
-      expect(screen.getByText(/今日经营速览/)).toBeInTheDocument()
+      // issue #8114：两块 AI 内容合并成「黄金策 · 今日经营」一张卡
+      expect(screen.getByText(/黄金策 · 今日经营/)).toBeInTheDocument()
       // 一句话解读：主句（订单+销售额）
       expect(screen.getByText(/今日订单 10 单、销售额 ¥3\.98万/)).toBeInTheDocument()
       // 环比句（订单+销售额）
@@ -166,10 +167,10 @@ describe('DashboardPage', () => {
       expect(screen.getByText(/含加工订单占 38%/)).toBeInTheDocument()
       expect(screen.getByText(/2 款商品库存偏低/)).toBeInTheDocument()
     })
-    // 顶部定位：洞察条先于「待处理」区块
-    const bar = screen.getByTestId('today-overview-bar')
+    // 顶部定位：合并卡先于「待处理」区块
+    const card = screen.getByTestId('daily-business-card')
     const pending = screen.getByText('待处理')
-    expect(bar.compareDocumentPosition(pending) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(card.compareDocumentPosition(pending) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('洞察句数字全部来自 API 返回值（无硬编码假数据）', async () => {
