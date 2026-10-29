@@ -3997,6 +3997,26 @@ _CASE_DA_024 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── DA-025 [NORMAL] 经营环比对比由工具确定性计算（trend_compare / get_summary compare=true），模型只转述不口算（issue #8120）（源: cases/data.yml）──
+_CASE_DA_025 = EvalCase(
+    id='DA-025',
+    legacy_id='',
+    title='经营环比对比由工具确定性计算（trend_compare / get_summary compare=true），模型只转述不口算（issue #8120）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这周订单比上周怎么样？', '最近7天和再前7天比，订单是多了还是少了？'],
+    expectations=['dashboard_stats(action=trend_compare, days=7)'],
+    data_checks=['success=true', '🔴 数字必须逐字来自工具返回：本期/上期订单数与变化百分比必须等于 `dashboard_stats(trend_compare)` 返回的 `current_total` / `previous_total` / `delta_pct`（金额口径 = 同返回的 `amount.*`）；模型**不得**自己算 `(本期-上期)/上期`，也不得用两次不同 days / 不同区间的 order_trend 数据拼出对比', '上期为 0（`previous_is_zero=true`）时 `delta_pct` 必须为 null ⇒ 合格行为 = 如实说「上期没有数据，无法算百分比」；**不得**编造百分比、**不得**写 0%', '窗口被上限截断（`window_capped=true`）时如实说明实际窗口（`days` / `window_days`），不得把截断窗口说成用户要求的窗口', '对比失败（工具 success=false）或服务端序列不足两期（`partial=true`）时如实说明「本次对比数据不完整/不可用」，不得口算或估算', '财务口径同理：`finance_api(action=get_summary, compare=true)` 的 `compare.previous` / `compare.delta` / `compare.delta_pct` 逐项转述，本期四项不得被上一期数字顶替；`get_summary` 不传 compare 时保持旧的单次汇总行为'],
+    skip_reason='',
+    tags=['dashboard', 'finance', 'compare', 'readonly', 'llm_behavior'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'dashboard_stats'}],
+    precondition='评测栈需有订单/资金流水 seed 才能得到非零读数；无 seed 时工具仍返回 success=true 但读数全 0（delta_pct=null / partial=true）⇒ 本条按「如实转述口径」判定，不把空读数当失败。**前置不成立时红的伪装形态**：序列长度 < 2×days 时 `partial=true`、上期全 0 时 `delta_pct=null` 会如实披露 ⇒ 此时「少了/多了」的红落在**数据层**（seed 不足），不是 agent 行为层；机器判据见本用例 data_checks 的 `previous_is_zero` / `partial` 两条',
+)
+
 # ── DF-001 [ADVERSARIAL] Token攻击 - 要求生成超长回复（源: cases/defense.yml）──
 _CASE_DF_001 = EvalCase(
     id='DF-001',
@@ -17408,6 +17428,7 @@ ALL_CASES = (
     _CASE_DA_023,
     _CASE_DA_022,
     _CASE_DA_024,
+    _CASE_DA_025,
     _CASE_DF_001,
     _CASE_DF_002,
     _CASE_DF_003,
