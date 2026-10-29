@@ -47,6 +47,9 @@ import {
   pinnedGroup,
   PINNED_GROUP_KEY,
   PINNED_MAX,
+  // issue #8085：过滤后的单成员组按一级项渲染（组名退化后不再画空壳标题）
+  promoteSingleItemGroups,
+  type MenuRenderBlock,
 } from '@/lib/menu-nav'
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -203,7 +206,9 @@ export default function Sidebar({
           onTogglePin(item.key)
         }}
         className={cn(
-          'flex-shrink-0 rounded p-0.5 transition-opacity',
+          // 🔴 issue #8085：星标是 `<a>` 的**兄弟**节点（原来是 `<a>` 的子元素 = 无效 HTML，
+          // 键盘会在链接里再落一次焦点）⇒ 绝对定位盖在行尾，链接右侧留 `pr-9` 让位。
+          'absolute right-2.5 top-1/2 -translate-y-1/2 flex-shrink-0 rounded p-0.5 transition-opacity',
           'text-neutral-400 hover:bg-white/10 hover:text-white',
           opts.active && 'text-white',
           visible ? 'opacity-100' : 'opacity-0 group-hover/item:opacity-100',
@@ -219,29 +224,35 @@ export default function Sidebar({
     const Icon = resolveMenuIcon(item.icon)
     const active = isActive(item.path)
     return (
-      <Link
-        key={item.key}
-        href={item.path}
-        onClick={onMobileClose}
-        data-menu-key={item.key}
-        className={cn(
-          LEAF_ROW,
-          active
-            ? 'bg-primary-600 font-medium text-white shadow-sm'
-            : 'text-neutral-300 hover:bg-white/5 hover:text-neutral-50',
-          collapsed && 'justify-center px-2',
-        )}
-        title={collapsed ? item.name : undefined}
-      >
-        {active && (
-          <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-white/90" />
-        )}
-        <Icon
-          className={cn('h-4 w-4 flex-shrink-0', active ? 'text-white' : 'text-neutral-500')}
-        />
-        {!collapsed && <span className="flex-1 truncate text-sm">{item.name}</span>}
+      // wrapper 承载 hover 组与相对定位：星标是链接的**兄弟**（#8085 a11y），
+      // 行内其它元素（图标 / 文字 / 当前项指示条）仍在链接里 ⇒ `nav a[data-menu-key]` 的既有判据不变。
+      <div key={item.key} className="group/item relative">
+        <Link
+          href={item.path}
+          onClick={onMobileClose}
+          data-menu-key={item.key}
+          aria-current={active ? 'page' : undefined}
+          className={cn(
+            LEAF_ROW,
+            // 让位给绝对定位的星标（未折叠时才渲染星标）
+            !collapsed && 'pr-9',
+            active
+              ? 'bg-primary-600 font-medium text-white shadow-sm'
+              : 'text-neutral-300 hover:bg-white/5 hover:text-neutral-50',
+            collapsed && 'justify-center px-2',
+          )}
+          title={collapsed ? item.name : undefined}
+        >
+          {active && (
+            <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-white/90" />
+          )}
+          <Icon
+            className={cn('h-4 w-4 flex-shrink-0', active ? 'text-white' : 'text-neutral-500')}
+          />
+          {!collapsed && <span className="flex-1 truncate text-sm">{item.name}</span>}
+        </Link>
         {!collapsed && renderPinButton(item, { alwaysShow: opts.alwaysShowPin, active })}
-      </Link>
+      </div>
     )
   }
 
@@ -264,6 +275,21 @@ export default function Sidebar({
   // ⚠️ 切分口径的**唯一实现**在 `menu-nav.splitGroupsAtTopItemSlot`（与 `flattenMenu` 同源，
   // 保证「侧边栏渲染顺序」与「⌘K 索引顺序」不会各漂各的）。
   const { head, tail } = splitGroupsAtTopItemSlot(groups, STANDALONE_TOP_AFTER_GROUP_KEY)
+
+  // 🔴 issue #8085：**过滤后**只剩 1 项的组 ⇒ 渲染成一级项（不画空壳组标题）。
+  // 只改形态：位置 / ⌘K 顺序 / 权限树都不动（判据 = `menu-nav.test.ts` 的 8 岗位投影）。
+  const renderBlocks = (blocks: MenuRenderBlock[]) =>
+    blocks.map((block) =>
+      block.kind === 'group' ? (
+        // `MenuRenderBlock` 的 `items` 与 `MenuGroup` 的 `children` 同构（一个纯数据的形状差异）
+        renderGroup({ key: block.key, name: block.name, icon: block.icon, children: block.items })
+      ) : (
+        // 提升项自己是组内项 ⇒ **仍可收藏**（#5877 的「一级项不进常用」只约束三个席位）
+        <div key={block.key} data-group-key={block.key} className="mb-1">
+          {renderStandaloneItem(block.item, { withPin: true })}
+        </div>
+      ),
+    )
 
   const renderGroup = (group: MenuGroup) => {
     const GroupIcon = resolveMenuIcon(group.icon)
@@ -332,28 +358,31 @@ export default function Sidebar({
     const Icon = resolveMenuIcon(item.icon)
     const active = isActive(item.path)
     return (
-      <Link
-        key={item.key}
-        href={item.path}
-        onClick={onMobileClose}
-        data-menu-key={item.key}
-        className={cn(
-          TOP_ROW,
-          active
-            ? 'bg-primary-600 text-white shadow-sm'
-            : 'text-neutral-50 hover:bg-white/5 hover:text-white',
-          collapsed && 'justify-center px-2',
-        )}
-        title={collapsed ? item.name : undefined}
-      >
-        {active && (
-          <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-white/90" />
-        )}
-        <Icon className="h-[18px] w-[18px] flex-shrink-0" />
-        {!collapsed && <span className={TOP_LABEL}>{item.name}</span>}
+      <div key={item.key} className="group/item relative">
+        <Link
+          href={item.path}
+          onClick={onMobileClose}
+          data-menu-key={item.key}
+          aria-current={active ? 'page' : undefined}
+          className={cn(
+            TOP_ROW,
+            opts.withPin && !collapsed && 'pr-9',
+            active
+              ? 'bg-primary-600 text-white shadow-sm'
+              : 'text-neutral-50 hover:bg-white/5 hover:text-white',
+            collapsed && 'justify-center px-2',
+          )}
+          title={collapsed ? item.name : undefined}
+        >
+          {active && (
+            <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-white/90" />
+          )}
+          <Icon className="h-[18px] w-[18px] flex-shrink-0" />
+          {!collapsed && <span className={TOP_LABEL}>{item.name}</span>}
+        </Link>
         {/* 只有「尾部独立项」（通知中心）可收藏；最前 / 尾席位的一级项不进「常用」（#5877） */}
         {!collapsed && opts.withPin && renderPinButton(item, { alwaysShow: false, active })}
-      </Link>
+      </div>
     )
   }
 
@@ -479,7 +508,7 @@ export default function Sidebar({
         {renderStandaloneBlock(standaloneHead, 'sidebar-standalone-head', { separator: false })}
 
         {/* ── head 组（含尾席位插入位那个组）── */}
-        {head.map((group) => renderGroup(group))}
+        {renderBlocks(promoteSingleItemGroups(head))}
 
         {/* ── 尾席位一级项（「商品管理」「企业基础设置」）──
             位置 = **所有分组之后**（用户 2026-10-06 裁定：大菜单项并列；见 `STANDALONE_TOP_AFTER_GROUP_KEY`），
@@ -495,7 +524,7 @@ export default function Sidebar({
         {renderStandaloneBlock(standaloneTop, 'sidebar-standalone-top', { separator: true })}
 
         {/* ── tail 组（一级项之后的其余组）── */}
-        {tail.map((group) => renderGroup(group))}
+        {renderBlocks(promoteSingleItemGroups(tail))}
 
         {/* 尾部独立项（「通知中心」）：同属一级项 ⇒ 与两个席位**同一套视觉**（可收藏 ⇒ withPin） */}
         {renderStandaloneBlock(standalone, 'sidebar-standalone-tail', {

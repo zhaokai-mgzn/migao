@@ -191,6 +191,64 @@ export function pinnedGroup(
   return items.length > 0 ? { key: PINNED_GROUP_KEY, name: PINNED_GROUP_NAME, items } : null
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// 「页面归属」兜底（issue #8085）—— 非菜单页面也要有「我在哪」的锚点
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// ## 为什么需要
+//
+// 侧边栏高亮只对**菜单项 path** 匹配 ⇒ 没有菜单节点的页面（顶栏入口 / 页内下钻 / 模态页）
+// 会「27 项全灭」：用户从顶栏铃铛进 `/approvals`、从商品页进 `/categories`、从客服工作台进
+// `/agent-workspace/sessions` 时，侧边栏**一个亮项都没有** ⇒ 失去「我在哪个域」的锚点。
+// 主流后台（Shopify 进 Settings 子页、NetSuite 的 center 标签）都保留父级高亮。
+//
+// ## 两张表，语义不同（别合并）
+//
+//   · `PARENT_ITEM_HINTS`：**真有父级菜单项**（商品分类是商品管理的子页）⇒ 高亮该菜单项；
+//   · `PARENT_GROUP_HINTS`：只有**域**清楚、没有对应的菜单项（审批中心跨交易/供应链/仓储，
+//     但它今天只有 `finance:view` 一个读码）⇒ 只把该域的分组标题提亮 + 自动展开，
+//     **不**去点亮一个语义不符的菜单项（点亮「财务对账」会让用户以为自己在财务页）。
+//
+// ℹ️ 只写**真实存在**的页面；没有归属的（`/chat` 走右下角 FAB，有意不进菜单）不登记。
+const PARENT_ITEM_HINTS: Record<string, string> = {
+  '/categories': '/products',
+  // 重定向薄壳：`/briefing` → `/dashboard`；`/processing` → `/production/processing`
+  // （加工项管理已并入「企业基础设置」⇒ 归属项取 `/settings`，不是 `/production`）
+  '/briefing': '/dashboard',
+  '/processing': '/settings',
+}
+
+const PARENT_GROUP_HINTS: Record<string, string> = {
+  // 审批中心（五类业务闸门共用裁决屏；入口 = 顶栏 ApprovalBell）⇒ 交易域
+  '/approvals': 'trade-center',
+  // 客服工作台首页（重定向）+ 会话监控 ⇒ 客户服务域
+  '/agent-workspace': 'customer-service',
+  '/agent-workspace/sessions': 'customer-service',
+}
+
+/** 最长前缀命中（`/agent-workspace/sessions` 必须优先于 `/agent-workspace`） */
+function longestHint(map: Record<string, string>, pathname: string): string | null {
+  let best: string | null = null
+  for (const prefix of Object.keys(map)) {
+    if (pathname === prefix || pathname.startsWith(prefix + '/')) {
+      if (!best || prefix.length > best.length) best = prefix
+    }
+  }
+  return best ? map[best] : null
+}
+
+/** 非菜单页 → 归属菜单项的 path（无归属 ⇒ null）；resolver 用它做**兜底**，不覆盖既有最长前缀口径 */
+export function hintedMenuItemPath(pathname: string | null): string | null {
+  if (!pathname) return null
+  return longestHint(PARENT_ITEM_HINTS, pathname)
+}
+
+/** 非菜单页 → 归属分组 key（无归属 ⇒ null） */
+export function hintedGroupKey(pathname: string | null): string | null {
+  if (!pathname) return null
+  return longestHint(PARENT_GROUP_HINTS, pathname)
+}
+
 /** 路由是否命中某菜单项（`/dashboard` 额外认 `/`；其余按「自身或子路径」前缀匹配） */
 /**
  * **旧深链 → 菜单项 path** 的别名（issue #4439）。
@@ -226,8 +284,11 @@ export function matchesRoute(itemPath: string, current: string): boolean {
 export function resolveActivePath(paths: string[], pathname: string | null): string | null {
   if (!pathname) return null
   const hits = paths.filter((p) => matchesRoute(p, pathname))
-  if (hits.length === 0) return null
-  return hits.reduce((a, b) => (b.length > a.length ? b : a))
+  if (hits.length > 0) return hits.reduce((a, b) => (b.length > a.length ? b : a))
+  // 兜底：**真有父级菜单项**的非菜单页（issue #8085）。只在「一项都没命中」时生效 ⇒
+  // 不改变既有「最长前缀胜出」的任何读数。
+  const hinted = hintedMenuItemPath(pathname)
+  return hinted && paths.includes(hinted) ? hinted : null
 }
 
 /**
@@ -246,7 +307,11 @@ export function resolveActiveGroupKey(groups: MenuGroup[], pathname: string | nu
     groups.flatMap((g) => g.children.map((c) => c.path)),
     pathname,
   )
-  if (!active) return null
+  if (!active) {
+    // 兜底：只有「域」清楚的非菜单页 ⇒ 提亮该域的组标题并自动展开（不点亮语义不符的菜单项）
+    const hinted = hintedGroupKey(pathname)
+    return hinted && groups.some((g) => g.key === hinted) ? hinted : null
+  }
   for (const g of groups) {
     if (g.children.some((c) => c.path === active)) return g.key
   }
@@ -293,6 +358,38 @@ export function splitGroupsAtTopItemSlot(
   return i < 0
     ? { head: groups, tail: [] }
     : { head: groups.slice(0, i + 1), tail: groups.slice(i + 1) }
+}
+
+/**
+ * **单成员组提升**（issue #8085）：权限过滤后组内只剩 1 项 ⇒ 渲染成**一级项**，不再画组标题。
+ *
+ * ## 为什么是运行时、而不是改菜单数据
+ *
+ * `menu.ts` 里「唯一成员的组会退化成一个没有分组的名字」这条原则（2026-09-29）只对**静态菜单**
+ * 执行过（商品管理升为一级项）。**权限过滤是运行时的**：`knowledge_editor` 的「客户服务」只剩
+ * 「知识库」、`finance` / `sales` 的「客户服务」「生产管理」各只剩 1 项 —— 静态菜单里它们都是
+ * 4~5 项的多成员组，所以过滤后没人管。视觉上等于「一个父子关系不成立的空壳标题」。
+ *
+ * ## 口径（改的是**形态**，不是**数据**）
+ *
+ *   · 位置不变（就在原组的位置）、⌘K 顺序不变（`flattenMenu` 仍按**组**拍平）、权限树不变；
+ *   · 组名**不渲染**（它已经退化成一个没有分组的名字）；
+ *   · 该项按一级项渲染 ⇒ **仍可收藏**（它是组内项，不属于「一级项不进常用」的约束）。
+ *
+ * ## 边界
+ *
+ *   只对**分组**生效；「常用」是渲染层合成分组（不是 `MenuGroup`），不走本函数。
+ */
+export type MenuRenderBlock =
+  | { kind: 'group'; key: string; name: string; icon: string; items: MenuItem[] }
+  | { kind: 'promoted'; key: string; name: string; item: MenuItem }
+
+export function promoteSingleItemGroups(groups: MenuGroup[]): MenuRenderBlock[] {
+  return groups.map((g) =>
+    g.children.length === 1
+      ? { kind: 'promoted' as const, key: g.key, name: g.name, item: g.children[0] }
+      : { kind: 'group' as const, key: g.key, name: g.name, icon: g.icon, items: g.children },
+  )
 }
 
 /**

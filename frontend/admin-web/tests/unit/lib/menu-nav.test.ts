@@ -23,6 +23,8 @@
  * （不是拿 `menuGroups` 反推 `menuGroups`），而是**独立写死的期望值**：实现漂了这里就红。
  */
 import { describe, it, expect } from 'vitest'
+import { readdirSync, statSync } from 'node:fs'
+import { join, relative, sep } from 'node:path'
 import {
   hasPermission,
   isItemVisible,
@@ -36,6 +38,9 @@ import {
   splitGroupsAtTopItemSlot,
   searchMenu,
   landingPath,
+  promoteSingleItemGroups,
+  hintedMenuItemPath,
+  hintedGroupKey,
   FALLBACK_LANDING_PATH,
   type MenuFilterOptions,
 } from '@/lib/menu-nav'
@@ -550,9 +555,11 @@ describe('resolveActiveGroupKey / initialExpandedGroups：默认只展开当前�
     ).toEqual(EXPECTED_GROUPS.map(() => false))
   })
 
-  it('重定向型旧路径：/production/processing ⇒ 生产管理（#5778 起加工项归生产组）；/processing 无对应项 ⇒ null', () => {
+  it('重定向型旧路径：/production/processing ⇒ 生产管理（#5778 起加工项归生产组）；/processing ⇒ 归属兜底到「企业基础设置」', () => {
     expect(resolveActiveGroupKey(menuGroups, '/production/processing')).toBe('production-center')
-    // /processing 已无菜单项（重定向页）⇒ 无组可展开（与重设计前「该路径不高亮」一致）
+    // /processing 是重定向壳（→ /production/processing；加工项管理已并入「企业基础设置」）：
+    // #8085 起走**菜单项归属兜底**（而不是「一项都不亮」）；企业基础设置是尾席位、不属任何组。
+    expect(hintedMenuItemPath('/processing')).toBe('/settings')
     expect(resolveActiveGroupKey(menuGroups, '/processing')).toBeNull()
   })
 
@@ -916,4 +923,108 @@ describe('🔴 landingPath（登录落点 = 第一个可见菜单项，issue #67
     expect(withoutHead.key).toBe('human-sessions')
     expect(withoutHead.path).not.toBe('/dashboard')
   })
+
+// ══════════════════════════════════════════════════════════════════════════════
+// issue #8085：单成员组提升 + 非菜单页归属兜底
+// ══════════════════════════════════════════════════════════════════════════════
+describe('promoteSingleItemGroups：过滤后的单成员组按一级项渲染（issue #8085）', () => {
+  const ROLES: Record<string, string[]> = {
+    admin: ['*'],
+    operator: ['after_sales:view', 'agent:session', 'customer:create', 'customer:view', 'dashboard:view', 'employee:list', 'finance:create', 'finance:view', 'inbound:create', 'inbound:view', 'knowledge:view', 'order:create', 'order:detail', 'order:list', 'order:refund', 'order:update', 'processing:manage', 'processing:update', 'processing:view', 'product:category', 'product:category:view', 'product:create', 'product:list', 'production:execute', 'production:view'],
+    customer_service: ['after_sales:view', 'agent:session', 'agent:session:manage', 'customer:view', 'dashboard:view', 'inbound:view', 'knowledge:view', 'order:detail', 'order:list', 'order:refund', 'processing:view', 'production:execute'],
+    finance: ['customer:view', 'dashboard:view', 'finance:create', 'finance:view', 'inbound:view', 'order:detail', 'order:list', 'processing:view', 'production:execute'],
+    sales: ['customer:view', 'dashboard:view', 'inbound:view', 'order:create', 'order:detail', 'order:list', 'processing:view', 'product:list', 'production:execute'],
+    product_manager: ['dashboard:view', 'processing:manage', 'processing:view', 'product:category', 'product:category:view', 'product:create', 'product:list', 'production:view'],
+    knowledge_editor: ['dashboard:view', 'knowledge:manage', 'knowledge:view', 'product:list'],
+    inspector: ['production:inspect', 'production:view'],
+  }
+
+  it('8 个岗位：提升后**不存在**「组内只剩 1 项」的组块（会红：任一岗位出现单成员组）', () => {
+    for (const [role, permissions] of Object.entries(ROLES)) {
+      const blocks = promoteSingleItemGroups(
+        visibleMenuGroups(menuGroups, { permissions, roles: [role === 'admin' ? 'admin' : role] }),
+      )
+      for (const block of blocks) {
+        if (block.kind === 'group') {
+          expect(block.items.length, `${role} 的「${block.name}」`).toBeGreaterThan(1)
+        }
+      }
+    }
+  })
+
+  it('提升只改形态：项数与项 key 序列与「直接拍平 groups」逐值相等', () => {
+    const opts = { permissions: ROLES.finance, roles: ['finance'] }
+    const groups = visibleMenuGroups(menuGroups, opts)
+    const blocks = promoteSingleItemGroups(groups)
+    const fromBlocks = blocks.flatMap((b) => (b.kind === 'group' ? b.items.map((i) => i.key) : [b.item.key]))
+    expect(fromBlocks).toEqual(groups.flatMap((g) => g.children.map((i) => i.key)))
+    // 提升项带原组名（可追溯）与真实的 item 对象（不是重建的壳）
+    const promoted = blocks.find((b) => b.kind === 'promoted')
+    expect(promoted && promoted.kind === 'promoted' ? promoted.item.key : null).toBe('customers')
+  })
+
+  it('判别力自证：多成员组不会被误提升（admin 全量 ⇒ 0 个 promoted）', () => {
+    const blocks = promoteSingleItemGroups(visibleMenuGroups(menuGroups, { permissions: ['*'] }))
+    expect(blocks.every((b) => b.kind === 'group')).toBe(true)
+  })
+})
+
+describe('非菜单页归属兜底（issue #8085）', () => {
+  it('真有父级菜单项的页面 ⇒ 高亮该菜单项（/categories → 商品管理）', () => {
+    const paths = flattenMenu(
+      visibleMenuGroups(menuGroups, { permissions: ['*'] }),
+      standaloneHeadItems,
+      standaloneTopItems,
+      standaloneItems,
+    ).map((i) => i.path)
+    expect(resolveActivePath(paths, '/categories')).toBe('/products')
+  })
+
+  it('只有「域」清楚的页面 ⇒ 提亮分组并自动展开（/approvals → trade-center）', () => {
+    expect(resolveActiveGroupKey(menuGroups, '/approvals')).toBe('trade-center')
+    expect(resolveActiveGroupKey(menuGroups, '/agent-workspace/sessions')).toBe('customer-service')
+    // 最长前缀：/agent-workspace/sessions 不能被 /agent-workspace 抢走（两者同组，此条是口径自证）
+    expect(hintedGroupKey('/agent-workspace')).toBe('customer-service')
+  })
+
+  it('🔴 类级：**每个**后台静态路由都至少有一个锚点（当前项 或 所属组）—— 新增页面忘了登记归属 ⇒ 当场红', () => {
+    const paths = flattenMenu(
+      visibleMenuGroups(menuGroups, { permissions: ['*'] }),
+      standaloneHeadItems,
+      standaloneTopItems,
+      standaloneItems,
+    ).map((i) => i.path)
+    const groups = visibleMenuGroups(menuGroups, { permissions: ['*'] })
+    // 有意排除：外部门户/认证页（无侧边栏）+ `/chat`（黄金策对话经右下角 FAB，**有意**不进菜单）
+    const EXCLUDED = new Set(['/', '/login', '/register', '/about', '/contact', '/services', '/change-password', '/chat'])
+    const routes = dashboardStaticRoutes().filter((r) => !EXCLUDED.has(r))
+    expect(routes.length).toBeGreaterThan(30)
+    for (const route of routes) {
+      const item = resolveActivePath(paths, route)
+      const group = resolveActiveGroupKey(groups, route)
+      expect(Boolean(item || group), `${route} 在侧边栏没有任何锚点（补 PARENT_ITEM_HINTS / PARENT_GROUP_HINTS）`).toBe(true)
+    }
+  })
+})
+
+/** 枚举 `src/app` 下的**静态**后台路由（跳过动态段 `[id]`、剔除路由组括号） */
+function dashboardStaticRoutes(): string[] {
+  const appDir = join(process.cwd(), 'src/app')
+  const out: string[] = []
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      const p = join(dir, name)
+      if (statSync(p).isDirectory()) walk(p)
+      else if (name === 'page.tsx') {
+        const parts = relative(appDir, dir)
+          .split(sep)
+          .filter((seg) => seg && !(seg.startsWith('(') && seg.endsWith(')')))
+        if (parts.some((seg) => seg.startsWith('['))) continue
+        out.push('/' + parts.join('/'))
+      }
+    }
+  }
+  walk(appDir)
+  return out
+}
 })
