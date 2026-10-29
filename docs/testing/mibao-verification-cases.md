@@ -13558,18 +13558,19 @@
 ```
 溯源: 2026-10-28 新增（issue #8011）。取号 = scripts/next_case_id.py UI 现取。形态依据 = 2026-10-24 真栈截图 acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/14-orders-list.png（每行 §31-P2 同级文字链、单屏约 80 个可点文本）。未验证面：菜单 `position: fixed` 展开后的视觉落点只靠真机，jsdom 证明不了 ⇒ 重启条件 = 下次动该文件时点开截图。 ｜ tags: orders-list, row-actions, noise
 
-### UI-143. 经营看板首屏：待处理前置 + 简报默认收起一行 + 骨架 + 环比破 ±500% 改倍数（issue #8012 / #8105） 🔵
+### UI-143. 经营看板首屏：待处理前置 + 顶部两块 AI 内容合并成一卡（四态齐全）+ 骨架 + 环比改倍数（issue #8012 / #8105 / #8114） 🔵
 ```
 你: 用户 2026-10-28 评审：首屏第一眼要能看到要做的事
 期望: direct_reply
-数据: 判据 1·简报空态压成一行（会红）：未开启 / 今日未生成两种空态都渲染 `briefing-collapsed-hint`，旧的大盒子 `briefing-empty-state` 取不到。issue #8105 起**有数据时也默认收起一行**（`briefing-toggle` 在场、带 `aria-expanded=false`，主动检查 / 昨日回顾不在屏上），点「展开」才出完整卡片。执行点 = frontend/admin-web/tests/unit/pages/dashboard-first-screen.test.tsx。
+数据: 判据 1·顶部只有一张 AI 卡（issue #8114，会红）：`daily-business-card` 在场，旧速览条 `today-overview-bar` 与旧简报块 `dashboard-briefing-section` 均取不到；卡头有 `briefing-toggle`（`aria-expanded`）与 AI 标记；收起态只有一句话（`today-overview-sentence` 同款文案），简报正文不在 DOM。执行点 = frontend/admin-web/tests/unit/pages/dashboard-first-screen.test.tsx。
 数据: 判据 2·加载出骨架（会红）：待处理卡与经营数据格在加载中渲染骨架块，卡上不出现 `…`。执行点同上。
-数据: 判据 4·首屏顺序（issue #8105，会红）：`dashboard-pending-section`（待处理）在 `dashboard-briefing-section`（简报）之前，且简报仍在「经营数据」之前；1440×900 真机下待处理 5 卡底边 ≤ 900（改前 y=1563，改后 y=303 / 卡底 435）。执行点同上 + 真机读数见 acceptance/2026-10-29/8105-dashboard/。
+数据: 判据 4·首屏顺序（issue #8105 / #8114，会红）：`daily-business-card` 在 `dashboard-pending-section`（待处理）之前，待处理在「经营数据」之前；1440×900 真机下待处理 5 卡底边 ≤ 900（#8105 实测 1563→303 / 卡底 435；#8114 合并后卡底仍 435）。真机读数见 acceptance/2026-10-29/8105-dashboard/ 与 acceptance/2026-10-29/8114-merged-ai/。
+数据: 判据 5·合并卡四态（issue #8114，会红）：①开启且有数据 ⇒ 展开出完整简报（摘要 / 主动检查 / 昨日回顾 / 今日必办）；②开启但未生成 ⇒ 沿用 `briefing-collapsed-hint` + 查看设置入口；③**未开启** ⇒ 合并卡**仍在**（页面不再按开关整块隐藏），展开显示「每日经营简报未开启」+ 开启入口，且速览那句话照常（`getToday` 不发请求）；④开关未回 / 加载中 ⇒ 展开出 `briefing-skeleton`，收起态不等简报。负控：`stats=null` ⇒ 「经营数据没读到」而非「今日 0 单」；计数 null ⇒ `—` 不显示 0。执行点同上。
 数据: 判据 3·环比大基数保护（会红）：`|change| ≥ 500%` 改倍数（+23× / -8×）并带「基数较小」说明；阈值以下仍是百分比；上期为 0 仍是 `—`（#5792 裁定不回退）；页面上不再出现 `2300%`。执行点同上 + dashboard.test.tsx。
 前置: 本用例是 [backend-contract] 纯前端契约：mock `@/lib/api`，不依赖真实服务
 跳过: [backend-contract] 纯前端契约（不经过 LLM 对话/工具），由 admin-web vitest 执行，不进入 agent-eval 冒烟
 ```
-溯源: 2026-10-29 更新（issue #8105）：看板首屏重排 —— 待处理提到简报之前、简报有数据时也默认收起一行（判据 1 与新增判据 4）。原判据「有数据时卡片形态不变」已失效并改写。2026-10-28 新增（issue #8012）。取号 = scripts/next_case_id.py UI 现取。后端口径：DashboardController 的 *Change 已是百分比 ⇒ changeBadge 收比值、页面经 asRatio() 单一换算。未做：简报未开启态现在会多出**一行**提示（改前整块不渲染），若后续裁定收回，删 BriefingCard 的 !enabled 分支并同步本判据。 ｜ tags: dashboard, first-screen, skeleton
+溯源: 2026-10-29 再更新（issue #8114）：顶部两块 AI 内容（速览条 + 简报卡）合并成一张 `daily-business-card` —— 判据 1 与 4 改写、新增判据 5（四态，重点是「简报未开启时卡片仍在」）。2026-10-29 更新（issue #8105）：看板首屏重排 —— 待处理提到简报之前、简报有数据时也默认收起一行（判据 1 与新增判据 4）。原判据「有数据时卡片形态不变」已失效并改写。2026-10-28 新增（issue #8012）。取号 = scripts/next_case_id.py UI 现取。后端口径：DashboardController 的 *Change 已是百分比 ⇒ changeBadge 收比值、页面经 asRatio() 单一换算。未做：简报未开启态现在会多出**一行**提示（改前整块不渲染），若后续裁定收回，删 BriefingCard 的 !enabled 分支并同步本判据。 ｜ tags: dashboard, first-screen, skeleton
 
 ## 跨切面工具域（2 case）
 
@@ -14019,5 +14020,5 @@
 - UI-130: 销售订单列表查询区默认折叠：常驻一行摘要 + 展开才渲染筛选项（issue #7388）
 - UI-131: 全站下拉框只有一种形态（共享 SELECT_CONTROL / 自绘箭尖）+ 筛选条字段参与伸缩（issue #7397）
 - UI-142: 销售订单列表：4 个同级文字链收敛为「1 主行动 + ⋯ 菜单」，非加急行不再印「不加急」，订单号可复制（issue #8011）
-- UI-143: 经营看板首屏：待处理前置 + 简报默认收起一行 + 骨架 + 环比破 ±500% 改倍数（issue #8012 / #8105）
+- UI-143: 经营看板首屏：待处理前置 + 顶部两块 AI 内容合并成一卡（四态齐全）+ 骨架 + 环比改倍数（issue #8012 / #8105 / #8114）
 
