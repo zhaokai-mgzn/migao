@@ -114,7 +114,7 @@ export const PRINT_MEDIA_IDS = [
   'label-50x140',
   // issue #8107：水洗唛**专属唛**（余料带回 / 绑带，只印 5 行 + 二维码）的短纸型 ——
   // 与 `label-50x140` 是同一台机、同一条 50mm 卷，只有纸长不同（两种纸长 = 两种标签纸）
-  'label-50x100',
+  'label-50x80-option',
   'label-50x70',
   'label-50x80',
   'continuous-241x140',
@@ -183,7 +183,7 @@ export function printPageRule(media: PrintMediaId): string {
 /**
  * **命名** `@page` 规则的唯一写法（issue #8107）—— 同一份打印任务里**两种纸高并存**时用它。
  *
- * 例：`printNamedPageRule('wash-label-option', 'label-50x100')`
+ * 例：`printNamedPageRule('wash-label-option', 'label-50x80-option')`
  * ⇒ `@page wash-label-option { size: 50mm 100mm; margin: 0; }`，容器上写 `page: wash-label-option`
  *   ⇒ 那种纸按自己的尺寸分页；未命名的那一部分仍吃文档级 `@page`（{@link printPageRule}）。
  *

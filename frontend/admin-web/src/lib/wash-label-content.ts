@@ -524,12 +524,12 @@ export interface WashLabelInput {
 export const WASH_LABEL_REGULAR_MEDIA: PrintMediaId = 'label-50x140'
 
 /**
- * **专属唛**（余料带回 / 绑带）的纸型：`label-50x100`（issue #8107）。
+ * **专属唛**（余料带回 / 绑带）的纸型：`label-50x80-option`（issue #8107 立 50×100 → **#8163 收到 50×80**）。
  *
  * 只印 5 行 + 二维码 ⇒ 用**短纸**（用户逐字「把长度再缩减一些，能放下以上信息即可」）；
  * 常规唛仍是 140mm。两种纸长 = 两种标签纸（物理上是两卷纸，不是同一张纸上的两段）。
  */
-export const WASH_LABEL_OPTION_MEDIA: PrintMediaId = 'label-50x100'
+export const WASH_LABEL_OPTION_MEDIA: PrintMediaId = 'label-50x80-option'
 
 /**
  * 水洗唛的**出纸身份**（issue #8002）—— 两条打印通道（系统打印 / 免驱动直连）都读它：
@@ -649,7 +649,7 @@ export function toWashLabelInputs(source: WashLabelSource = {}): WashLabelInput[
     qrValue: sheet.qrValue,
     companyName: washLabelCompanyName(source.companyName) || undefined,
     optionLabel: sheet.optionLabel,
-    // 纸型跟着**这张纸**走（issue #8107）：专属唛 = label-50x100，常规唛 = label-50x140
+    // 纸型跟着**这张纸**走（issue #8107 / #8163）：专属唛 = label-50x80-option，常规唛 = label-50x140
     media: sheet.media,
     qrPlaceholderHint: undefined,
     rows: washLabelRows({

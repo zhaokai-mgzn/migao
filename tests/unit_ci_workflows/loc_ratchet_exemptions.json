@@ -1,0 +1,302 @@
+{
+ "schema": "loc-ratchet-exemptions/v1",
+ "what": "存量「已越过 800 警戒线」源码文件的**登记册**（issue #8166）：每条 {path, reason, date}，条数现取（声明的条数 = declared_count）。🔴 本表回答的唯一问题是「这个 ≥800 行的文件**凭什么**允许这么大」—— 其中 > 2000 行的另在 `loc_freeze_ledger.json` 冻结**逐行上限**（本表只登记存在，不承担逐行棘轮）。判据 = `tests/unit_ci_workflows/test_loc_ratchet.py`。",
+ "why": "「新增文件 ≥800 行」必须有个**可判的界面**：未登记即红（判据里不硬编码清单，读本表）。本表同时是**存量上限**（只许缩短）—— 文件已删 / 改名 / 已拆到 800 行以下 ⇒ 必须销账，否则红；因此「豁免」不会腐烂成永久白名单。台账为空**合法**（没有大文件时它就该是空的）。",
+ "seeded_at": "2026-10-30",
+ "seeded_from": "origin/main @ 456e0632a（2026-10-30 现取）：源码面 ≥ 800 行的全部 60 个文件（> 2000 行的 12 个 + 800–2000 行的 48 个）；判据侧逐条与现取行数对账。",
+ "declared_count": 58,
+ "declared_count_note": "条数**现取**：判据不做「>= N」下界，而是断言 `declared_count == len(exemptions)`（少一条/多一条且不同步声明 ⇒ 红）。增删条目必须同步本字段 —— 一次改动 = diff 里看得见。",
+ "shrink_only_note": "① 条目指向的文件已不存在 ⇒ 红（销账即删）；② 文件已跌破 800 线 ⇒ 红（本表是存量上限，不是永久白名单）；③ 台账为空合法；④ 本表**不**给 > 2000 行的文件发放「可以继续长」的许可（那由 loc_freeze_ledger.json 逐行冻结）。",
+ "exemptions": [
+  {
+   "path": "frontend/admin-web/src/app/(dashboard)/orders/new/page.tsx",
+   "reason": "已进冻结清单（> 2000 行）—— 本表登记仅为保证「删掉冻结条目 ⇒ 绿」不会退化成「文件变未登记大文件 ⇒ 红」；逐行上限见 loc_freeze_ledger.json::frozen",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "frontend/admin-web/src/types/index.ts",
+   "reason": "已进冻结清单（> 2000 行）—— 本表登记仅为保证「删掉冻结条目 ⇒ 绿」不会退化成「文件变未登记大文件 ⇒ 红」；逐行上限见 loc_freeze_ledger.json::frozen",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java",
+   "reason": "已进冻结清单（> 2000 行）—— 本表登记仅为保证「删掉冻结条目 ⇒ 绿」不会退化成「文件变未登记大文件 ⇒ 红」；逐行上限见 loc_freeze_ledger.json::frozen",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/ai-agent-service/app/graph/skills/base_skill.py",
+   "reason": "已进冻结清单（> 2000 行）—— 本表登记仅为保证「删掉冻结条目 ⇒ 绿」不会退化成「文件变未登记大文件 ⇒ 红」；逐行上限见 loc_freeze_ledger.json::frozen",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java",
+   "reason": "已进冻结清单（> 2000 行）—— 本表登记仅为保证「删掉冻结条目 ⇒ 绿」不会退化成「文件变未登记大文件 ⇒ 红」；逐行上限见 loc_freeze_ledger.json::frozen",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java",
+   "reason": "已进冻结清单（> 2000 行）—— 本表登记仅为保证「删掉冻结条目 ⇒ 绿」不会退化成「文件变未登记大文件 ⇒ 红」；逐行上限见 loc_freeze_ledger.json::frozen",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/ai-agent-service/app/api/chat.py",
+   "reason": "已进冻结清单（> 2000 行）—— 本表登记仅为保证「删掉冻结条目 ⇒ 绿」不会退化成「文件变未登记大文件 ⇒ 红」；逐行上限见 loc_freeze_ledger.json::frozen",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java",
+   "reason": "已进冻结清单（> 2000 行）—— 本表登记仅为保证「删掉冻结条目 ⇒ 绿」不会退化成「文件变未登记大文件 ⇒ 红」；逐行上限见 loc_freeze_ledger.json::frozen",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/ai-agent-service/app/tools/curtain_calc.py",
+   "reason": "已进冻结清单（> 2000 行）—— 本表登记仅为保证「删掉冻结条目 ⇒ 绿」不会退化成「文件变未登记大文件 ⇒ 红」；逐行上限见 loc_freeze_ledger.json::frozen",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "frontend/admin-web/src/lib/api.ts",
+   "reason": "已进冻结清单（> 2000 行）—— 本表登记仅为保证「删掉冻结条目 ⇒ 绿」不会退化成「文件变未登记大文件 ⇒ 红」；逐行上限见 loc_freeze_ledger.json::frozen",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/service/StockBatchConsumptionService.java",
+   "reason": "已进冻结清单（> 2000 行）—— 本表登记仅为保证「删掉冻结条目 ⇒ 绿」不会退化成「文件变未登记大文件 ⇒ 红」；逐行上限见 loc_freeze_ledger.json::frozen",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/ai-agent-service/app/tools/order_create.py",
+   "reason": "已进冻结清单（> 2000 行）—— 本表登记仅为保证「删掉冻结条目 ⇒ 绿」不会退化成「文件变未登记大文件 ⇒ 红」；逐行上限见 loc_freeze_ledger.json::frozen",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/ai-agent-service/app/graph/skills/execution/react_turn.py",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/service/DailyBriefingService.java",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/service/InboundOrderService.java",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionOperationQueryService.java",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/ai-agent-service/app/graph/nodes.py",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "frontend/admin-web/src/app/(dashboard)/orders/[id]/OrderDetail.tsx",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "frontend/admin-web/src/components/production-config/features.ts",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/controller/ProductionController.java",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "frontend/admin-web/src/app/(dashboard)/settings/page.tsx",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "frontend/admin-web/src/components/production-config/ProcessConfigBoard.tsx",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/ai-agent-service/app/memory/session_memory.py",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "frontend/admin-web/src/components/products/ProductForm.tsx",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "frontend/admin-web/src/components/production-config/OperationPricePanel.tsx",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/ai-agent-service/app/production/routing.py",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/service/QualityCheckService.java",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/ai-agent-service/app/api/internal.py",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/service/CustomerService.java",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/service/OrderShipmentService.java",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/service/AfterSalesTicketService.java",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingFeeCalculator.java",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/ai-agent-service/app/briefing/proactive.py",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionScanService.java",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "frontend/admin-web/src/components/products/SkuMatrix.tsx",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionOperationCommandService.java",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/service/ReportService.java",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "frontend/admin-web/src/app/(dashboard)/dashboard/page.tsx",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingSetReadService.java",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/config/MigrationRunner.java",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "frontend/admin-web/src/components/employees/WorkerProfilesPanel.tsx",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/service/RemnantService.java",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/service/RoleService.java",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "frontend/admin-web/src/store/chat.ts",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionSeedTemplateService.java",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "frontend/admin-web/src/app/(dashboard)/inbound-orders/page.tsx",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/ai-agent-service/app/tools/registry.py",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "frontend/admin-web/src/app/(dashboard)/employees/page.tsx",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/ai-agent-service/app/context/menu_navigator.py",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "frontend/admin-web/src/app/(dashboard)/production/pool/page.tsx",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "frontend/admin-web/src/app/(dashboard)/processing-orders/[id]/production/page.tsx",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "frontend/admin-web/src/components/settings/CalcCaliberPanel.tsx",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/service/WorkerInboundService.java",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "frontend/admin-web/src/components/production/CuttingHeightConfigPanel.tsx",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  },
+  {
+   "path": "frontend/admin-web/src/app/(dashboard)/knowledge/page.tsx",
+   "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
+   "date": "2026-10-30"
+  }
+ ]
+}

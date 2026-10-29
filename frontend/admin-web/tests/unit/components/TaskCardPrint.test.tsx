@@ -548,7 +548,7 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×140mm 单列，issue #7979）',
     expect(within(screen.getByTestId('task-card-label-3')).getByTestId('task-card-qr')).toBeTruthy()
   })
 
-  it('🔴 专属唛瘦身（issue #8107）：那张纸**只有 5 行** + 二维码、纸型 50mm × 100mm（命名页），常规唛仍是 140mm / 15 行', () => {
+  it('🔴 专属唛瘦身（issue #8107 → #8163）：那张纸**只有 5 行** + 二维码、纸型 50mm × 80mm（留白 8/8、命名页），常规唛仍是 140mm / 15 行 + 15/15', () => {
     companyNameStub.value = '亿家纺织'
     const optionItems = [
       { ...items[0], specialOptions: ['余料带回-布'] },
@@ -612,9 +612,13 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×140mm 单列，issue #7979）',
     const css = Array.from(printArea().querySelectorAll('style'))
       .map((el) => el.textContent || '')
       .join('\n')
-    expect(css).toContain('@page wash-label-option { size: 50mm 100mm; margin: 0; }')
+    expect(css).toContain('@page wash-label-option { size: 50mm 80mm; margin: 0; }')
     expect(css).toContain('@page { size: 50mm 140mm; margin: 0; }')
-    expect(css).toContain('.task-card-label--option { height: 100mm; page: wash-label-option; }')
+    expect(css).toContain(
+      '.task-card-label--option { height: 80mm; padding: 8mm 1.2mm 8mm; page: wash-label-option; }',
+    )
+    // 负控：常规唛的基类仍是 140mm / 15-15（改专属唛不许波及常规唛）
+    expect(css).toContain('padding: 15mm 1.2mm 15mm')
     // 基类仍是 140mm（两类同宽 / 同 padding / 同字号，只有纸高与命名页不同）
     expect(css).toContain('.task-card-label { width: 50mm; height: 140mm;')
     companyNameStub.value = ''
