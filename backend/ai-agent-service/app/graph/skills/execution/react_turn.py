@@ -1376,6 +1376,23 @@ async def react_turn(
                     _run_one_tool(tc, allow_card=_card_allow[_i])
                     for _i, tc in enumerate(response.tool_calls)])
 
+                # ── 会话级工作记忆（焦点对象，issue #8173）：**仅 B 端（mibao）** ──
+                # 工具结果里出现可识别实体（订单号 / 客户 id / 商品 id）⇒ 更新焦点 + 来源工具名，
+                # 跨轮持久化到 SessionStateStore（与会话同寿命）；C 端（xiaobu）不写、不注入。
+                if session_id and state.get("agent_type") == "mibao":
+                    try:
+                        from app.memory.focus import remember_from_tool_results
+                        _focus_turn = sum(
+                            1 for _m in state.get("messages", [])
+                            if isinstance(_m, HumanMessage))
+                        _focus = await remember_from_tool_results(
+                            session_id, tool_results, turn=_focus_turn)
+                        if _focus:
+                            state["focus"] = _focus
+                    except Exception as _e_focus:
+                        logger.warning(
+                            f"[{skill_name}] focus memory update failed (non-fatal): {_e_focus}")
+
                 # ── 模式 C 代码兜底：加工项漏问 → confirm 卡改写为加工项 choice 卡（OR-017）──
                 # 仅作用于 C 端下单/售后写流程：这些 Skill 的商品详情含加工项数据、
                 # 且业务铁律要求 confirm 前必须先问。B 端流程不动。

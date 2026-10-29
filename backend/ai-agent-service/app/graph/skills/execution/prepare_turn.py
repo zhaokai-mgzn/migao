@@ -24,6 +24,7 @@ from app.graph.skills.base_skill import (
     _usable_vision_analysis, _vision_retry_needed, build_tool_context, has_images,
     llm_breaker_name,
 )
+from app.memory.focus import inject_focus_prompt
 
 
 async def prepare_turn(
@@ -191,6 +192,9 @@ async def prepare_turn(
     # 越权请求不尝试、权限拒绝不重试、如实说明缺哪项能力并给开通路径。C 端 / 空权限 /
     # admin 通配一律**原样返回**（逐字节不变 ⇒ C 端零回归）；标签取自 admin-api 权限目录镜像。
     system_prompt = _inject_permission_scope(system_prompt, state)
+    # 4g. 会话级工作记忆（焦点对象，issue #8173）：B 端 system prompt 末尾 ≤3 行
+    # （「当前焦点：订单 #7732（来源 order_query，第 4 轮）」）；空焦点 / C 端 ⇒ 原样返回。
+    system_prompt = inject_focus_prompt(system_prompt, state)
 
     if is_multimodal:
         system_prompt = (
