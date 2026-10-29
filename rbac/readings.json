@@ -17,6 +17,9 @@
       "production:execute",
       "production:inspect",
       "inbound:view",
+      "supplier:view",
+      "purchase:view",
+      "stock:view",
       "inbound:create",
       "knowledge:manage",
       "knowledge:view",
@@ -51,6 +54,9 @@
       "production:execute",
       "production:inspect",
       "inbound:view",
+      "supplier:view",
+      "purchase:view",
+      "stock:view",
       "inbound:create",
       "knowledge:manage",
       "knowledge:view",
@@ -85,6 +91,9 @@
       "production:execute": "生产执行",
       "production:inspect": "质检录入",
       "inbound:view": "入库单查看",
+      "supplier:view": "供应商查看",
+      "purchase:view": "采购单查看",
+      "stock:view": "库存单证查看",
       "inbound:create": "入库单操作",
       "knowledge:manage": "知识库管理",
       "knowledge:view": "知识库查看",
@@ -173,7 +182,10 @@
         "product:create",
         "product:list",
         "production:execute",
-        "production:view"
+        "production:view",
+        "purchase:view",
+        "stock:view",
+        "supplier:view"
       ],
       "product_manager": [
         "dashboard:view",
@@ -262,7 +274,10 @@
         "product:create",
         "product:list",
         "production:execute",
-        "production:view"
+        "production:view",
+        "purchase:view",
+        "stock:view",
+        "supplier:view"
       ],
       "product_manager": [
         "dashboard:view",
@@ -316,7 +331,7 @@
       "基础资料": null,
       "商品管理": "product:list",
       "客户列表": "customer:view",
-      "供应商": "inbound:view",
+      "供应商": "supplier:view",
       "价格本": "order:list",
       "交易管理": null,
       "销售订单": "order:list",
@@ -330,11 +345,11 @@
       "返工单": "after_sales:view",
       "供应链": null,
       "入库单": "inbound:view",
-      "采购单": "inbound:view",
+      "采购单": "purchase:view",
       "仓储与物料": null,
       "库存明细": "product:list",
-      "盘点单": "inbound:view",
-      "出库单": "inbound:view",
+      "盘点单": "stock:view",
+      "出库单": "stock:view",
       "发货单": "order:list",
       "余料台账": "processing:manage",
       "省料分析": "product:list",
@@ -360,8 +375,8 @@
       "计件工资": "production:view",
       "质检记录": "production:inspect",
       "返工单": "after_sales:view",
-      "供应商": "inbound:view",
-      "采购单": "inbound:view",
+      "供应商": "supplier:view",
+      "采购单": "purchase:view",
       "入库单": "inbound:view",
       "发货单": "order:list",
       "余料台账": "processing:manage",
@@ -373,8 +388,8 @@
       "新增员工": "employee:create",
       "加工单操作": "processing:update",
       "入库单操作": "inbound:create",
-      "盘点单": "inbound:view",
-      "出库单": "inbound:view"
+      "盘点单": "stock:view",
+      "出库单": "stock:view"
     },
     "auth": {
       "经营概览": "dashboard:view",
@@ -384,7 +399,7 @@
       "售后工单": "after_sales:view",
       "商品管理": "product:list",
       "客户列表": "customer:view",
-      "供应商": "inbound:view",
+      "供应商": "supplier:view",
       "价格本": "order:list",
       "销售订单": "order:list",
       "财务对账": "finance:view",
@@ -394,10 +409,10 @@
       "质检记录": "production:inspect",
       "返工单": "after_sales:view",
       "入库单": "inbound:view",
-      "采购单": "inbound:view",
+      "采购单": "purchase:view",
       "库存明细": "product:list",
-      "盘点单": "inbound:view",
-      "出库单": "inbound:view",
+      "盘点单": "stock:view",
+      "出库单": "stock:view",
       "发货单": "order:list",
       "余料台账": "processing:manage",
       "省料分析": "product:list",
@@ -466,7 +481,7 @@
       "key": "suppliers",
       "name": "供应商",
       "path": "/suppliers",
-      "code": "inbound:view"
+      "code": "supplier:view"
     },
     {
       "key": "price-books",
@@ -550,7 +565,7 @@
       "key": "purchase-orders",
       "name": "采购单",
       "path": "/purchase-orders",
-      "code": "inbound:view"
+      "code": "purchase:view"
     },
     {
       "key": "inventory-center",
@@ -568,13 +583,13 @@
       "key": "stocktakes",
       "name": "盘点单",
       "path": "/stocktakes",
-      "code": "inbound:view"
+      "code": "stock:view"
     },
     {
       "key": "outbound-orders",
       "name": "出库单",
       "path": "/outbound-orders",
-      "code": "inbound:view"
+      "code": "stock:view"
     },
     {
       "key": "shipments",
@@ -716,11 +731,11 @@
     ],
     [
       "/suppliers",
-      "inbound:view"
+      "supplier:view"
     ],
     [
       "/purchase-orders",
-      "inbound:view"
+      "purchase:view"
     ],
     [
       "/inbound-orders",
@@ -732,11 +747,11 @@
     ],
     [
       "/stocktakes",
-      "inbound:view"
+      "stock:view"
     ],
     [
       "/outbound-orders",
-      "inbound:view"
+      "stock:view"
     ],
     [
       "/employees",
@@ -901,9 +916,9 @@
       "key": "outbound-orders",
       "name": "出库单",
       "path": "/outbound-orders",
-      "gate": "inbound:view",
+      "gate": "stock:view",
       "units": {
-        "inbound:view": [
+        "stock:view": [
           "GET /api/admin/outbound-orders"
         ]
       },
@@ -998,9 +1013,9 @@
       "key": "purchase-orders",
       "name": "采购单",
       "path": "/purchase-orders",
-      "gate": "inbound:view",
+      "gate": "purchase:view",
       "units": {
-        "inbound:view": [
+        "purchase:view": [
           "GET /api/admin/purchase-orders"
         ]
       },
@@ -1103,9 +1118,9 @@
       "key": "stocktakes",
       "name": "盘点单",
       "path": "/stocktakes",
-      "gate": "inbound:view",
+      "gate": "stock:view",
       "units": {
-        "inbound:view": [
+        "stock:view": [
           "GET /api/admin/stocktakes"
         ]
       },
@@ -1115,9 +1130,9 @@
       "key": "suppliers",
       "name": "供应商",
       "path": "/suppliers",
-      "gate": "inbound:view",
+      "gate": "supplier:view",
       "units": {
-        "inbound:view": [
+        "supplier:view": [
           "GET /api/admin/suppliers"
         ]
       },
@@ -1129,7 +1144,7 @@
     "MULTI_READ_ENDPOINT_PAGES": 0,
     "READ_WRITE_EXCEPTIONS": 0,
     "ROLE_FALLBACK_DIVERGENCES": 0,
-    "AUTHORIZATION_CENSUS": 19,
+    "AUTHORIZATION_CENSUS": 22,
     "UNANNOTATED_ENDPOINTS": 24,
     "REGISTERED_RESIDUALS": 9,
     "A7_CODES_BEYOND_CATALOG": 0,

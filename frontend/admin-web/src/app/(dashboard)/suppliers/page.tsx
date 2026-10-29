@@ -39,7 +39,7 @@ import type {
  *
  * ## 权限
  *
- * 节点码 = `inbound:view`（与入库单同群：仓管看收货、财务看账期），写面 `inbound:create`
+ * 节点码 = `supplier:view`（issue #8087 拆码：档案面独立于入库单），写面 `inbound:create`
  * —— 复用既有码，**零授权 delta**（新造 `supplier:*` 会让页面与菜单对所有人不可见，#4203 同族坑）。
  */
 
@@ -91,7 +91,7 @@ const EMPTY_FORM: FormState = {
 
 export default function SuppliersPage() {
   // 写面按 `inbound:create` 门控（#5983 范式）：无写码的岗位**看不到**建/改入口，
-  // 而不是点下去才 403（菜单节点码是读码 `inbound:view`）。
+  // 而不是点下去才 403（菜单节点码是读码 `supplier:view`）。
   const { has: hasPermission } = usePermission()
   const canWrite = hasPermission('inbound:create')
   // 付款是财务动作（后端 finance:create）⇒ 按钮按该码门控，不按档案写码

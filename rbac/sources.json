@@ -317,6 +317,22 @@
       "kind": "declaration",
       "derived_from": "manifest.roles.*",
       "note": "issue #5652：由 `rbac/generate_migration.py` 渲染的新岗位迁移 —— 质检员 `inspector` 建 roles 行 + 授权 production:view / production:execute（1 条 role_permissions 语句）。🔴 与 V136/V137 的**有意差异**：它**尚未发布** ⇒ 渲染输入 = **活清单**（不是冻结快照）⇒ 清单前进即重渲染、手改产物即判红（`test_rbac_migration_convergence.py`）"
+    },
+    {
+      "face": "sql-permission-rows",
+      "file": "backend/admin-api/src/main/resources/db/migration/V203__split_inbound_view_into_three.sql",
+      "hits": 1,
+      "kind": "declaration",
+      "derived_from": "RegistrationService.defaultPermissions / PermissionService.ensureFullPermissionCatalog",
+      "note": "A3 迁移链的 permissions 目录补行（issue #8087 三把拆出的读码）"
+    },
+    {
+      "face": "sql-role-grants",
+      "file": "backend/admin-api/src/main/resources/db/migration/V203__split_inbound_view_into_three.sql",
+      "hits": 1,
+      "kind": "declaration",
+      "derived_from": "manifest.roles.*",
+      "note": "A4 迁移链的 role_permissions 授权（存量租户一次性；只 admin/operator）"
     }
   ]
 }

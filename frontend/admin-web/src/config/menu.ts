@@ -244,7 +244,7 @@ export const menuGroups: MenuGroup[] = [
       // 供应商（issue #7369，P0-1 段 1）：进货**之前**的主数据（谁供货、账期几天、停没停）。
       // ⚠️ 必须排在「入库单」之后：手机端标注取该码树序首个承载节点（#6781）。
       // 停用后仍要能看见（档案要能改回来）⇒ 不按状态门控。
-      { key: 'suppliers', name: '供应商', icon: 'Handshake', path: '/suppliers', permissionCode: 'inbound:view', keywords: ['gys', 'gongyingshang', 'caigou', 'supplier'] },
+      { key: 'suppliers', name: '供应商', icon: 'Handshake', path: '/suppliers', permissionCode: 'supplier:view', keywords: ['gys', 'gongyingshang', 'caigou', 'supplier'] },
       // 🔴 2026-10-29（issue #8086，用户裁定）：随「基础资料」组新建迁入本组（原属：交易管理组）。
       // 🔴 2026-10-20（issue #7354，用户逐字「把菜单订单列表改成销售订单」）：菜单正名「销售订单」。
       // 旧名「订单列表」保留为关键词（⌘K 按老叫法仍能搜到）；权限码 `order:list` / 路径 `/orders` 一字不动。
@@ -373,7 +373,7 @@ export const menuGroups: MenuGroup[] = [
       { key: 'inbound-orders', name: '入库单', icon: 'PackageOpen', path: '/inbound-orders', permissionCode: 'inbound:view', keywords: ['rkd', 'ruku', 'caigou'] },
       // 采购单（issue #7369，P0-1 段 4）：下单（买什么/多少钱/什么时候到）→ 分次收货 → 关闭。
       // 与入库单**一对多**（支持部分收货）；状态由后端按 Σ收货派生。
-      { key: 'purchase-orders', name: '采购单', icon: 'ShoppingBag', path: '/purchase-orders', permissionCode: 'inbound:view', keywords: ['cgd', 'caigou', 'caigoudan', 'purchase', 'po'] },
+      { key: 'purchase-orders', name: '采购单', icon: 'ShoppingBag', path: '/purchase-orders', permissionCode: 'purchase:view', keywords: ['cgd', 'caigou', 'caigoudan', 'purchase', 'po'] },
     ],
   },
   // 仓储与物料（用户 2026-10-20 裁定：本组不再含单据类节点，只留**库存与出库**）
@@ -389,10 +389,10 @@ export const menuGroups: MenuGroup[] = [
       // 盘点单（issue #7373 段 2 后端 / 本项 = 商家面）：账面快照 → 逐批次录实盘 → 有差异先审批再完成。
       // 节点码 = 该页第一屏读端点码（`GET /api/admin/stocktakes` 的**方法级** `inbound:view`）—— 逐字同码
       //（repo 规则「每页恰好一个码」）。紧跟「库存明细」：先看账，再对账。
-      { key: 'stocktakes', name: '盘点单', icon: 'ScanLine', path: '/stocktakes', permissionCode: 'inbound:view', keywords: ['pdb', 'pandian', 'kucunpandian', 'pandian', '盘点', '盘点单', '盘库', '盘亏', '盘盈'] },
+      { key: 'stocktakes', name: '盘点单', icon: 'ScanLine', path: '/stocktakes', permissionCode: 'stock:view', keywords: ['pdb', 'pandian', 'kucunpandian', 'pandian', '盘点', '盘点单', '盘库', '盘亏', '盘盈'] },
       // 出库单（V194 / issue #7750）：与「入库单」对称的**出口**单据 —— 布料手工出库 + 成品发货出库
       // 共用一套单据形状（单号 CK-…、建单即过账）。节点码复用 `inbound:view`（收发同岗位，零授权 delta）。
-      { key: 'outbound-orders', name: '出库单', icon: 'PackageMinus', path: '/outbound-orders', permissionCode: 'inbound:view', keywords: ['ckd', 'chuku', 'outbound', '出库单', '出库'] },
+      { key: 'outbound-orders', name: '出库单', icon: 'PackageMinus', path: '/outbound-orders', permissionCode: 'stock:view', keywords: ['ckd', 'chuku', 'outbound', '出库单', '出库'] },
       // 发货单（issue #5939，用户 2026-10-02 裁定）：与「入库单」对称的**出口**单据；
       // 取**既有** `order:list`（与销售订单同码、零授权 delta）。
       { key: 'shipments', name: '发货单', icon: 'Truck', path: '/shipments', permissionCode: 'order:list', keywords: ['fhd', 'fahuo', 'shipment', 'chuku', '出库', '发货'] },

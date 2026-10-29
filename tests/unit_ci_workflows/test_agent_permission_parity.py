@@ -3059,6 +3059,36 @@ class AuthorizationCensusEntry:
 #:   · 登记的岗位集必须 == 现取；列的端点必须真存在**且生效码就是本码**；菜单节点同理；工具同理。
 #: 于是「补码」这件事不可能悄悄发生 —— 每一个码都必须同时交代它打开了哪几扇门。
 AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
+    # 🔴 issue #8087（用户 2026-10-29 裁定 C）：`inbound:view` 上背着的三类负载拆成三把独立读码，
+    # 运营（operator）是**唯一**新增持有者 —— 客服 / 销售 / 财务 / 商品管理员一律不回填，
+    # 也就是「新的门只对运营开，其余岗位保持/收窄到他们本来该看的」。
+    "supplier:view": AuthorizationCensusEntry(
+        roles=('operator',),
+        endpoints=('GET /api/admin/suppliers', 'GET /api/admin/suppliers/payables'),
+        menu_nodes=('auth:供应商', 'controller:供应商', 'frontend:供应商'),
+        tools=(),
+        reachable=('拆码前「供应商」与入库单共用一个码 ⇒ 看不到供应商的岗位连入库单也看不到、反之亦然；'
+                   '拆码后运营凭本码直达供应商档案与应付款，而客服 / 销售 / 财务**不再**经 `inbound:view` '
+                   '顺带看到供应商（裁定 C：只管理员与运营保留三把）。'),
+    ),
+    "purchase:view": AuthorizationCensusEntry(
+        roles=('operator',),
+        endpoints=('GET /api/admin/purchase-orders', 'GET /api/admin/purchase-orders/{}'),
+        menu_nodes=('auth:采购单', 'controller:采购单', 'frontend:采购单'),
+        tools=(),
+        reachable=('采购单从 `inbound:view` 拆出后只由运营持有；其余岗位的「采购单」菜单项随之消失，'
+                   '端点由 200 变 403 —— 这是裁定 C 要求的收缩，不是回归。'),
+    ),
+    "stock:view": AuthorizationCensusEntry(
+        roles=('operator',),
+        endpoints=('GET /api/admin/stocktakes', 'GET /api/admin/stocktakes/{}',
+                   'GET /api/admin/outbound-orders', 'GET /api/admin/outbound-orders/{}'),
+        menu_nodes=('auth:盘点单', 'controller:盘点单', 'frontend:盘点单',
+                    'auth:出库单', 'controller:出库单', 'frontend:出库单'),
+        tools=(),
+        reachable=('盘点单与出库单从 `inbound:view` 拆出后只由运营持有；仓管类页面守卫（`/stocktakes`、'
+                   '`/outbound-orders`）同批改成 `stock:view`，地址栏直达也不再放行其他岗位。'),
+    ),
     "after_sales:view": AuthorizationCensusEntry(
         roles=('customer_service',),
         endpoints=('GET /api/admin/after-sales', 'GET /api/admin/after-sales/{}', 'GET /api/admin/agent/after-sales/mine'),
@@ -3119,10 +3149,11 @@ AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
     ),
     "inbound:view": AuthorizationCensusEntry(
         roles=('customer_service', 'finance', 'operator', 'sales'),
-        # issue #7369：供应商档案页的第一屏读端点（`GET /api/admin/suppliers`）也挂本码。
-        endpoints=('GET /api/admin/inbound-orders', 'GET /api/admin/inbound-orders/batches', 'GET /api/admin/inbound-orders/{}', 'GET /api/admin/purchase-orders', 'GET /api/admin/purchase-orders/{}', 'GET /api/admin/suppliers'),
-        # issue #7369：节点「供应商」与「采购单」在三处菜单源上与本码同码（同一岗位群：仓管/采购）。
-        menu_nodes=('auth:入库单', 'auth:采购单', 'auth:供应商', 'controller:入库单', 'controller:采购单', 'controller:供应商', 'frontend:入库单', 'frontend:采购单', 'frontend:供应商'),
+        # 🔴 issue #8087：供应商 / 采购单 / 盘点单 / 出库单 已从本码拆出（各自的独立读码见上面三条 census）
+        # ⇒ 本码现在只承载入库单（及其批次/详情）三个读端点。
+        endpoints=('GET /api/admin/inbound-orders', 'GET /api/admin/inbound-orders/batches', 'GET /api/admin/inbound-orders/{}'),
+        # issue #7369 / #8087：拆码后三处菜单源上只剩「入库单」与本码同码。
+        menu_nodes=('auth:入库单', 'controller:入库单', 'frontend:入库单'),
         tools=('inbound_order_query',),
         reachable=('「入库单」菜单节点的**节点码就是本码**（三处菜单源一致）⇒ 补码前回退账号**根本看不见该节点**（issue #5271 新增的页面 = 菜单凭空消失）；补码后节点出现且三个读端点同时可读。Agent 侧 `inbound_order_query`（只读）同批对回退账号开放。'),
     ),

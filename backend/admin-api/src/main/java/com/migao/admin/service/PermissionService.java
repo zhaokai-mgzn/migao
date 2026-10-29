@@ -147,6 +147,11 @@ public class PermissionService {
                 // RegistrationService 的同一行**逐字同源**（两处目录必须逐值相等，见本方法头注）。
                 {"质检录入", "production:inspect", "production", "inspect", "成品帘质检判定录入（独立质检员）"},
                 {"入库单查看", "inbound:view", "inbound-order", "view", "查看入库单/批次"},
+                // 🔴 issue #8087（用户 2026-10-29 裁定 C）：供应商 / 采购单 / 库存单证三把独立读码 ——
+                // 与 RegistrationService 的同三行**逐字同源同序**（两处目录必须逐值相等）。
+                {"供应商查看", "supplier:view", "supplier", "view", "查看供应商档案（联系人与账期）"},
+                {"采购单查看", "purchase:view", "purchase-order", "view", "查看采购单与到货进度"},
+                {"库存单证查看", "stock:view", "stock-document", "view", "查看盘点单与出库单"},
                 {"入库单操作", "inbound:create", "inbound-order", "create", "建单/过账/作废入库单"},
                 {"知识库管理", "knowledge:manage", "knowledge", "manage", "管理知识库"},
                 {"知识库查看", "knowledge:view", "knowledge", "view", "查看知识卡片"},

@@ -176,10 +176,10 @@ public class MenuController {
         // ⚠️ 必须落在「入库单」**之后**：手机端可见面标注按「该码在树序上的首个承载节点」派生
         // （#6781）⇒ 排在前面会让「供应商」被标成「入库过账」（它没有移动页）。
         // （新码今天无人持有 ⇒ 节点对所有人不可见，#4203 同族坑；同组「发货单」取 order:list 是先例）。
-        MenuNode iSupplier = new MenuNode("inbound:view", "供应商");
+        MenuNode iSupplier = new MenuNode("supplier:view", "供应商");
         // 采购单（issue #7369，P0-1 段 4）：同样取既有码 inbound:view（不新造 purchase:view）；
         // 同样排在「入库单」之后（手机端标注取树序首个承载节点，#6781）。
-        MenuNode iPurchases = new MenuNode("inbound:view", "采购单");
+        MenuNode iPurchases = new MenuNode("purchase:view", "采购单");
         MenuNode i1 = new MenuNode("inbound:view", "入库单");
         // 发货单（issue #5939）：**取既有码 order:list**（与「销售订单」节点、以及该页第一屏读端点
         // GET /api/admin/shipments 的 @RequirePermission 逐字同码）—— 不新造 `shipment:view`：
@@ -223,11 +223,11 @@ public class MenuController {
         MenuNode iCreate = new MenuNode("inbound:create", "入库单操作");
         // 盘点单（issue #7373 段 3 前端）：节点码 = 该页第一屏读端点 `GET /api/admin/stocktakes` 的
         // **方法级** `inbound:view` —— 与 `menu.ts` / `AuthService` 三处逐字同码。
-        MenuNode stocktakes = new MenuNode("inbound:view", "盘点单");
+        MenuNode stocktakes = new MenuNode("stock:view", "盘点单");
         // 出库单（V196 / issue #7750）：与「入库单」对称的出口单据；节点码复用 `inbound:view`
         //（仓管收发同岗，零授权 delta）—— 与 `menu.ts` / `AuthService` 三处逐字同码。
         // 位置 = 盘点单之后、发货单之前：本组顺序「库存 → 对账 → 出库 → 台账 → 分析」。
-        MenuNode iOutbound = new MenuNode("inbound:view", "出库单");
+        MenuNode iOutbound = new MenuNode("stock:view", "出库单");
 
         return List.of(
             // 🔴 2026-10-17（issue #7087）：**最前席位**一级项「经营看板」（前端 `standaloneHeadItems`）——

@@ -80,7 +80,9 @@ class RoleServiceTest {
             "agent:session", "agent:session:manage",
             "employee:list",
             "after_sales:view", "knowledge:view",
-            "production:execute");   // issue #5699 的 I4：生产执行**写**码（四个真写端点的守卫码）
+            "production:execute",    // issue #5699 的 I4：生产执行**写**码（四个真写端点的守卫码）
+            // 🔴 issue #8087（用户 2026-10-29 裁定 C）：`inbound:view` 拆出的三把只给 admin/operator
+            "supplier:view", "purchase:view", "stock:view");
 
     @BeforeEach
     void setUp() {

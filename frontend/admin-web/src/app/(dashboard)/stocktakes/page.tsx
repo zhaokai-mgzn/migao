@@ -34,7 +34,7 @@ import type { Stocktake, StocktakeLine, StocktakeStatus, Warehouse } from '@/typ
  *
  * ## 权限
  *
- * 读 `inbound:view`（菜单/路由守卫同码）、写 `inbound:create` —— 与仓/库存**同域复用既有码**，
+ * 读 `stock:view`（issue #8087 拆码：库存单证独立读码；菜单/路由守卫同码）、写 `inbound:create` ——
  * 零授权 delta（新造 `stocktake:*` 会让页面与菜单对所有人不可见，#4203 同族坑）。
  *
  * ## 边界（照实登记）

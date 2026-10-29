@@ -95,6 +95,17 @@ describe('打印介质矩阵（issue #5651）', () => {
     expect(option.pageMargin).toBe('0')
     expect(option.minFontPt).toBe(11)
     expect(option.measurement).toBe('measured')
+    // 🔴 issue #8145：note 里的**垂直预算读数**必须与现行口径逐值一致（16pt 副标题 ⇒ 12.7 / 58.15 / 88.15）。
+    // 只写一处数字、另一处漂移过（2026-10-29：副标题抬到 16pt 后 note 还留着 12pt / 11.01 / 56.46 / 86.5）⇒ 这里钉住。
+    expect(option.note).toContain('16pt')
+    expect(option.note).toContain('12.7mm')
+    expect(option.note).toContain('58.15mm')
+    expect(option.note).toContain('88.15mm')
+    // 过期读数（12pt 时代的 11.01 / 56.46 / 86.5）**不得残留** —— 沿革句里出现 `12pt → 16pt` 是合法的，
+    // 所以这里钉的是**读数**而不是字号字样（钉字样会把沿革句误判成漂移）。
+    expect(option.note).not.toContain('11.01mm')
+    expect(option.note).not.toContain('56.46mm')
+    expect(option.note).not.toContain('86.5mm')
     expect(option.pendingMeasurements).toEqual([])
     expect(option.pageBoxMm).toEqual({ widthMm: 50, heightMm: 100 })
     const optionDots = option.dotGeometry?.dotsPerMm as number

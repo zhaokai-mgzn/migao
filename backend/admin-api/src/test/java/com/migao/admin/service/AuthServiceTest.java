@@ -774,23 +774,18 @@ class AuthServiceTest {
         // #5699 P4：经营看板也按 `dashboard:view` 门控（#7087 起它是**顶层一级项**）⇒ 只持 inbound:view 时
         //**它这一项**不出现（本条因此顺带成为「经营看板不再无条件出现」的负控）。
         // #7373：盘点单也持 inbound:view ⇒ 本权限集下「仓储与物料」组**在**（组内只这一项）
-        // 🔴 #8086：供应商移入「基础资料」组 ⇒ 该组也可见（组内只有供应商一项）
-        assertThat(keysOf(menus)).containsExactly(
-                "basic-data", "supply-chain", "inventory-center", "notifications");
-        var basicForSupplier = groupByKey(menus, "basic-data");
-        assertThat(namesOf(basicForSupplier.getChildren())).containsExactly("供应商");
+        // 🔴 issue #8087（裁定 C）：`inbound:view` 只开入库单 —— 供应商/采购/盘点/出库各有独立读码
+        assertThat(keysOf(menus)).containsExactly("supply-chain", "notifications");
         var supply = groupByKey(menus, "supply-chain");
         assertThat(supply.getName()).isEqualTo("供应链");
-        assertThat(namesOf(supply.getChildren())).containsExactly("入库单", "采购单");
-        assertThat(pathsOf(supply.getChildren()))
-                .containsExactly("/inbound-orders", "/purchase-orders");
-        var inventoryGroup = groupByKey(menus, "inventory-center");
-        // #7750：出库单与盘点单同码 inbound:view ⇒ 同一权限集下两项都在
-        assertThat(namesOf(inventoryGroup.getChildren())).containsExactly("盘点单", "出库单");
-        assertThat(pathsOf(inventoryGroup.getChildren())).containsExactly("/stocktakes", "/outbound-orders");
-        // 自证渲染面非空（入库单自己）+ 反向：processing:manage 的两项确实被门控挡在外面
+        assertThat(namesOf(supply.getChildren())).containsExactly("入库单");
+        assertThat(pathsOf(supply.getChildren())).containsExactly("/inbound-orders");
+        // 🔴 issue #8087（裁定 C）：盘点单/出库单改挂 `stock:view` ⇒ 只持 inbound:view 时「仓储与物料」整组不在
+        assertThat(keysOf(menus)).doesNotContain("inventory-center");
+        // 自证渲染面非空（入库单自己）+ 反向：processing:manage / 拆出的三码都不在
         assertThat(allNames(menus)).contains("入库单");
-        assertThat(allNames(menus)).doesNotContain("余料台账", "省料分析", "作业单");
+        assertThat(allNames(menus)).doesNotContain(
+                "余料台账", "省料分析", "作业单", "供应商", "采购单", "盘点单", "出库单");
     }
 
     @Test
