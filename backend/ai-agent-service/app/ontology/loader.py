@@ -13,7 +13,6 @@ from typing import Dict, List, Optional
 import yaml
 
 from app.ontology.models import (
-    ActionDef,
     IntentOwnership,
     Ontology,
     OntologyObject,
@@ -153,7 +152,6 @@ def _parse_object(name: str, obj_raw: object) -> OntologyObject:
             )
 
     relations = _parse_relations(name, obj_raw.get("relations"))
-    actions = _parse_actions(name, obj_raw.get("actions"))
     rules = _parse_rules(name, obj_raw.get("rules"))
 
     return OntologyObject(
@@ -161,7 +159,6 @@ def _parse_object(name: str, obj_raw: object) -> OntologyObject:
         display_name=display_name,
         properties=properties,
         relations=relations,
-        actions=actions,
         rules=rules,
     )
 
@@ -202,26 +199,6 @@ def _parse_relations(obj_name: str, relations_raw: object) -> List[RelationDef]:
             )
         )
     return relations
-
-
-def _parse_actions(obj_name: str, actions_raw: object) -> List[ActionDef]:
-    actions: List[ActionDef] = []
-    if not isinstance(actions_raw, list):
-        return actions
-    for a_raw in actions_raw:
-        if not isinstance(a_raw, dict):
-            raise _schema_error(f"对象 {obj_name} actions 项必须为映射")
-        allowed = a_raw.get("allowed_agents")
-        actions.append(
-            ActionDef(
-                name=str(a_raw.get("name", "")),
-                confirmation_required=bool(a_raw.get("confirmation_required", False)),
-                allowed_agents=[str(x) for x in allowed] if isinstance(allowed, list) else None,
-                preconditions=[str(x) for x in a_raw.get("preconditions", [])],
-                description=str(a_raw.get("description", "")),
-            )
-        )
-    return actions
 
 
 def _parse_rules(obj_name: str, rules_raw: object) -> List[RuleDef]:

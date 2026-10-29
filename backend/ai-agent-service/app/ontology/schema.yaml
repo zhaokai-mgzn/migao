@@ -1,10 +1,17 @@
 # =============================================================================
 # MIGAO 领域本体 schema — 机器可消费单一事实源（issue #2821 切片 1）
 #
-# 范围：切片 1 四核心对象（订单/商品SKU/售后单/客户）× 四要素（属性/关系/动作/规则）
+# 范围：切片 1 四核心对象（订单/商品SKU/售后单/客户）× 三要素（属性/关系/规则）
 # 状态枚举铁律来源：docs/wiki/CONTRACT-LEDGER.md §一（勿在此处私自改枚举，
 # 修改必须同步 CONTRACT-LEDGER 与 loader.STATUS_LEXICON，否则加载直接拒绝）。
 # 字段挂载点（source）指向 admin-api Java 实体，供跨端对账。
+#
+# 🔴 2026-10-30 动作要素（原第 4 要素）出库（issue #8172）：原 7 个对象共 19 条动作已删除。
+# 它曾是**工具元数据的第二事实源**且已漂移 —— 19 条里 13 条指向 `app/tools/registry.py` 里
+# 不存在的工具名，`confirmation_required` / `allowed_agents` 又与 #8133 的工具元数据单源化重复。
+# 动作真值只有一处 = `app/tools/**`（registry + 各工具的 `requires_confirmation` / action 枚举）。
+# **本文件再出现动作键 ⇒ `tests/test_ontology_schema.py::TestActionsSectionStaysOut` 判红**
+# （loader 已不再解析它 ⇒ 加回去也**不会报错**，只能靠这条元守卫拦住回潮）。
 # =============================================================================
 version: "1.0"
 
@@ -270,17 +277,6 @@ objects:
         target: aftersales
         cardinality: "1:N"
         description: 订单可挂多个售后工单
-    actions:
-      - name: order_query
-        description: 查询订单（B 端 order_query / C 端 customer_order_query）
-      - name: order_create
-        confirmation_required: true
-        description: 创建订单（写工具确认闸，GB-03）
-      - name: order_update
-        confirmation_required: true
-        preconditions:
-          - "action ∈ {update_status, update_logistics, confirm_payment, cancel, refund}"
-        description: Agent 统一改单（PATCH /api/admin/agent/orders/{id}）
     rules:
       - text: "订单状态枚举以 CONTRACT-LEDGER 为准（producing 非 processing）"
         severity: must
@@ -345,17 +341,6 @@ objects:
       # 依据：绑定表 `product_processing_items` 与列 `processing_items.applicable_product_categories`
       # 均由 V66__decouple_product_processing_items.sql DROP（此前注释误记为 V61）。
       # 真值源：docs/design/position-instance-routing-model.md §9.4。
-    actions:
-      - name: product_query
-        description: 查询商品/SKU（B 端 product / C 端 customer_product）
-      - name: product_create
-        confirmation_required: true
-        description: 创建商品（含图片建品属性求证）
-      - name: sku_price_update
-        confirmation_required: true
-        preconditions:
-          - "price >= 0"
-        description: 单 SKU 改价（PATCH /api/admin/agent/products/{id}/skus/{skuId}）
     rules:
       - text: "SKU 价格是权威价：下单/改价一律以 SKU 价格为基准，禁止向顾客索要价格"
         severity: must
@@ -415,17 +400,6 @@ objects:
         target: order
         cardinality: "N:1"
         description: 售后单关联订单
-    actions:
-      - name: aftersales_create
-        confirmation_required: true
-        preconditions:
-          - "创建恒 pending，由商户审核"
-        description: 创建售后工单（写工具确认闸，GB-03）
-      - name: aftersales_query
-        description: 查询售后（B 端 / C 端 customer_aftersales，C 端强制按本人订单反查）
-      - name: aftersales_update
-        confirmation_required: true
-        description: 售后处理（B 端）
     rules:
       - text: "售后申请创建恒 pending，由商户审核；AI 只解释规则与收集材料，不做终态承诺"
         severity: must
@@ -487,12 +461,6 @@ objects:
         target: aftersales
         cardinality: "1:N"
         description: 客户名下售后
-    actions:
-      - name: customer_query
-        description: 查询客户（B 端 customer_query / C 端仅本人）
-      - name: customer_create
-        confirmation_required: true
-        description: 客户建档（下单自动建档）
     rules:
       - text: "老客户只刷新 lastActiveAt，不重复累计画像（勿重复实现）"
         severity: must
@@ -547,17 +515,6 @@ objects:
         target: tenant
         cardinality: "N:1"
         description: 员工归属租户
-    actions:
-      - name: employee_manage
-        description: 员工管理（查询/新增/状态变更，B 端 staff skill）
-      - name: staff_manage
-        description: 人事管理（B 端 staff skill）
-      - name: role_manage
-        confirmation_required: true
-        description: 角色管理（分配角色，B 端 staff skill）
-      - name: permission_manage
-        confirmation_required: true
-        description: 权限管理（B 端 staff skill）
     rules:
       - text: "员工状态合法值为 online/offline/busy，非法值拒绝（AgentEmployeeService）"
         severity: must
@@ -616,12 +573,6 @@ objects:
       # 原 `linked_to_products → product_sku`（N:M）已删除（issue #4431 B4 附带）：
       # 它是 `product_sku.has_processing_items` 的**反向同一绑定**，#4371 解耦后两个方向
       # 一起退场（绑定表已由 V66 DROP）。留一个方向 = 同一份假声明换个位置继续存在。
-    actions:
-      - name: processing_item_query
-        description: 查询加工项（算料）
-      - name: processing_manage
-        confirmation_required: true
-        description: 加工项管理（创建/修改，B 端）
     rules:
       - text: "加工项状态合法值为 active/inactive（前端 ProcessingItemStatus）"
         severity: must
@@ -674,12 +625,6 @@ objects:
         target: category
         cardinality: "N:1"
         description: 父分类
-    actions:
-      - name: category_query
-        description: 查询分类
-      - name: category_manage
-        confirmation_required: true
-        description: 分类管理（创建/修改，B 端 product skill）
     rules:
       - text: "分类状态合法值为 active/inactive（CategoryCreateRequest 注释）"
         severity: must
