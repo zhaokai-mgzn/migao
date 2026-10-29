@@ -105,18 +105,17 @@ describe('Header', () => {
     expect(document.querySelector('nav')!.textContent).toBe('经营看板')
   })
 
-  // 🔴 #5877（用户 2026-10-01 裁定）：一级项**没有父组** ⇒ 面包屑是**单级**「商品管理」
-  //（与「通知中心」同口径）—— 原来的「商品管理 / 商品管理」是两个同名项，纯噪声。
-  it('/products 路径应显示**单级**「商品管理」面包屑（一级项无父组）', async () => {
+  // 🔴 2026-10-29（issue #8086）：商品管理由**一级项**降入「基础资料」组 ⇒ 面包屑恢复**两级**
+  //（组名 + 菜单名），与侧边栏分组逐字一致；旧口径（单级、无父组）随席位一起退场。
+  it('/products 路径应显示「基础资料 > 商品管理」面包屑（#8086 商品管理进组）', async () => {
     mockPathname = '/products'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getAllByText('商品管理')).toHaveLength(1)
+    expect(screen.getByText('基础资料')).toBeInTheDocument()
+    expect(screen.getByText('商品管理')).toBeInTheDocument()
     expect(screen.queryByText('商品与加工项')).not.toBeInTheDocument()
-    // 单级 = 整个面包屑容器里没有分隔符（不是「碰巧只剩一项」）
-    const nav = document.querySelector('nav')!
-    expect(nav.textContent).toBe('商品管理')
+    expect(document.querySelector('nav')!.textContent).toBe('基础资料/商品管理')
   })
 
   // issue #5271：原「订单管理」组与原「客户管理」组的客户列表/财务对账**并为一组**「交易管理」
@@ -129,14 +128,15 @@ describe('Header', () => {
     expect(screen.getByText('销售订单')).toBeInTheDocument()
   })
 
-  // 🔴 #5778：客户列表由「交易管理」移入**客户服务**组（「客户管理不属于交易管理」）
-  it('/customers 路径应显示"客户服务 > 客户列表"面包屑（#5778 归入客户服务组）', async () => {
+  // 🔴 #8086：客户列表由「客户服务」移入**基础资料**组（用户 2026-10-29 裁定的第二处改判）
+  it('/customers 路径应显示「基础资料 > 客户列表」面包屑（#8086 归入基础资料组）', async () => {
     mockPathname = '/customers'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('客户服务')).toBeInTheDocument()
+    expect(screen.getByText('基础资料')).toBeInTheDocument()
     expect(screen.getByText('客户列表')).toBeInTheDocument()
+    expect(screen.queryByText('客户服务')).not.toBeInTheDocument()
     expect(screen.queryByText('交易管理')).not.toBeInTheDocument()
   })
 
@@ -190,13 +190,14 @@ describe('Header', () => {
 
   // ─── 子路径匹配 ───
 
-  it('/products/123 子路径应匹配单级「商品管理」（前缀命中）', async () => {
+  it('/products/123 子路径应匹配「基础资料 > 商品管理」（前缀命中）', async () => {
     mockPathname = '/products/123'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getAllByText('商品管理')).toHaveLength(1)
-    expect(document.querySelector('nav')!.textContent).toBe('商品管理')
+    expect(screen.getByText('基础资料')).toBeInTheDocument()
+    expect(screen.getByText('商品管理')).toBeInTheDocument()
+    expect(document.querySelector('nav')!.textContent).toBe('基础资料/商品管理')
   })
 
   it('/agent-workspace 子路径优先匹配（/agent-workspace/sessions）', async () => {
