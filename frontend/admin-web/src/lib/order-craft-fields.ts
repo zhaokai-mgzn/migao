@@ -248,9 +248,17 @@ export const SPECIAL_OPTIONS = [
  *
  * ⚠️ 展示侧的同一份归一还写在三端同源的 `craft-display.ts::optionList` 里（那三个文件必须
  * **逐字同源**，无法跨 app import 本文件）⇒ 两侧一致性由 `special-option-names.test.ts` 钉住。
+ *
+ * **第二族「绑带」**（issue #8108，用户 2026-10-29 逐字「把这两项也合并成一个绑带选项，
+ * 布/纱是跟随帘种来确定的」）：`布绑带` / `纱绑带` 与 `余料带回-布` / `-纱` 走**同一套**机制 ——
+ * 录入 / 展示只出 `绑带`，落库键按该明细行的帘种派生（纱帘 ⇒ `纱绑带`，布帘 / 帘头 / 未指定
+ * ⇒ `布绑带`）；`SPECIAL_OPTIONS`（join key）与工序规则（`布绑带` ⇒ 工序 `绑带-布`）一字不动。
+ * 🔴 **族 ≠ 同义**：`余料带回` 族是「客户带走余料」，`绑带` 族**不是** —— 读侧任何「客户带走」
+ * 判定**只能**认 `余料带回` 族（见 `backend/.../service/OptionFamilyNames.isCustomerTakeAway`）。
  */
 export const SPECIAL_OPTION_FAMILIES = {
   余料带回: { cloth: '余料带回-布', sheer: '余料带回-纱' },
+  绑带: { cloth: '布绑带', sheer: '纱绑带' },
 } as const
 
 /** 派生族成员（base 名） */
@@ -259,8 +267,10 @@ export type SpecialOptionFamily = keyof typeof SPECIAL_OPTION_FAMILIES
 /**
  * 名字属于哪个派生族（`base` / `base-布` / `base-纱` 三种形态都认）；非族成员 ⇒ `null`。
  *
- * 用**族成员遍历**而不是拆 `-` 后缀：`加立边` / `布绑带` 这类名字里也有材料字，但它们
- * **不是**同一语义选项的两种材料形态（各自是独立的 ERP 选项名 + 独立工序）⇒ 不得被折叠。
+ * 用**族成员遍历**而不是拆材料字 / 后缀：`加立边` / `余料做绑带` 这类名字里也有材料字或
+ * 「绑带」字样，但它们**不是**同一语义选项的两种材料形态（各自是独立的 ERP 选项名 + 独立工序）
+ * ⇒ 不得被折叠。反过来，凡是 `X-布`/`X-纱` 或 `布X`/`纱X` **成对**出现的选项名，都**必须**
+ * 登记在这里（类级守卫 = `special-option-names.test.ts` 的「成对变体未登记即红」）。
  */
 export function specialOptionFamilyOf(name: string): SpecialOptionFamily | null {
   for (const [base, variants] of Object.entries(SPECIAL_OPTION_FAMILIES)) {
@@ -279,7 +289,8 @@ export function specialOptionDisplayName(name: string): string {
 /**
  * 录入 / 展示词表：把 join key 清单折叠成**语义选项**（保序、去重）。
  *
- * 默认吃 `SPECIAL_OPTIONS` ⇒ 19 项落库键 → 18 个可选项（`余料带回-布`/`-纱` 合为 `余料带回`）。
+ * 默认吃 `SPECIAL_OPTIONS` ⇒ 19 项落库键 → **17** 个可选项
+ * （`余料带回-布`/`-纱` ⇒ `余料带回`，`布绑带`/`纱绑带` ⇒ `绑带`）。
  */
 export function specialOptionDisplayOptions(options: readonly string[] = SPECIAL_OPTIONS): string[] {
   const out: string[] = []
