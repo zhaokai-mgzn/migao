@@ -544,6 +544,29 @@ def test_unit_labels_carry_no_delimiter():
     assert not offenders, f"单元标签含顿号，`_segment` 会切错：{offenders}"
 
 
+def test_available_units_probe_are_write_tools():
+    """判域前提（issue #8119）：**可办**单元的探针必须是**写工具**。
+
+    为什么必须钉住：按本轮 skill 的 `tool_names`（声明面）判域，成立的前提是
+    「写能力只来自声明面」—— `create_skill_registry` 的 #4125 家族合并**只并只读工具**。
+    若某个 ✅ 单元的探针是只读工具，它会经家族合并出现在**别的** skill 回合，
+    只看声明面就会把**能办**的说成「本域不直接办」（把能力弄丢，比空头承诺更隐蔽）。
+    本判据把这个前提从注释里的假设变成会红的事实；真出现时，修法是给该单元换写探针，
+    或把判域改成「声明面 ∪ 家族只读可达」——**不要**默默放宽这里的断言。
+    """
+    tools = _registered_tools()
+    states = resolve_units()
+    offenders = sorted(
+        (u.key, str(u.tool), "未注册" if tools.get(u.tool) is None else "read_only=True")
+        for u in UNITS
+        if states.get(u.key) and not u.decided_off and u.tool
+        and (tools.get(u.tool) is None or getattr(tools.get(u.tool), "read_only", False))
+    )
+    assert offenders == [], (
+        f"可办单元的探针不是写工具 ⇒「按声明面判域」的前提被破坏：{offenders}"
+    )
+
+
 def test_unscoped_render_stays_persona_wide():
     """向后兼容契约：不传 skill_name ⇒ 保持全局投影，且**不出现**「本域不直接办」段。
 
