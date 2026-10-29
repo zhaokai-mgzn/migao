@@ -469,15 +469,38 @@ class TestReconcile:
         assert len(result["fixed_not_deducted"]) == 1, result
         assert "fixed_by" in result["fixed_not_deducted"][0]["why"]
 
-    def test_state3_fixed_then_recurrence_is_red(self):
-        """态③ 已修未销账（b）：标了 fixed，**之后又复发** ⇒ 修复不成立（假账）。"""
+    def test_state3_fixed_then_untracked_recurrence_is_red(self):
+        """态③ 已修未销账（b）：复发且**新事件自己没人跟** ⇒ 修复不成立（假账）。
+
+        #8118：欠账的**真身是新事件**「未登记修复路径」，出口 = 给**它**落跟踪单
+        （旧条目的 `fixed_by` 是历史凭据，不许为变绿而改写）。
+        """
         ledger = {"entries": [
             _entry(run_id=1, status="fixed", fixed_by="PR 4700", follow_up=1),
-            _entry(run_id=2, status="open", follow_up=2),
+            _entry(run_id=2, status="open", follow_up=None),
         ]}
         result = FL.reconcile(ledger)
         assert len(result["fixed_not_deducted"]) == 1, result
         assert "复发" in result["fixed_not_deducted"][0]["why"]
+        assert result["fixed_not_deducted"][0]["newer_index"] == 1
+        report = FL.render_reconcile_report(ledger, result)
+        assert "--run-id 2" in report, f"出口必须指向**新事件**（现取：{report}）"
+
+    def test_state3_fixed_then_tracked_recurrence_is_clean(self):
+        """#8118 回归：复发的那条**已有跟踪单** ⇒ 旧条目的销账仍是历史凭据，**不是**欠账。
+
+        旧口径只凭 `(workflow, job)` 判「假账」，而它是 **job 级**身份（一个 job 几百条测试）⇒
+        任何后续 flake 都把**有凭据的历史销账**变成永久欠账；台账又**只追加**（写者只 push 新条目，
+        不改旧条目）⇒ 旧条目**没有任何合法动作能改** ⇒ 结构性死锁：台账分支的 required 测试恒红
+        ⇒ 台账落不了 main，而 `flaky-ledger-reconcile.yml` 在每个 PR 上都复现那条红（#8118 现取：
+        分支领先 main 41 条、PR #7927 卡住、条目 run 36280962072 自 2026-10-27 起每轮判假账）。
+        """
+        ledger = {"entries": [
+            _entry(run_id=1, status="fixed", fixed_by="PR 4700", follow_up=1),
+            _entry(run_id=2, status="open", follow_up=2),
+        ]}
+        assert FL.reconcile(ledger)["fixed_not_deducted"] == []
+        assert FL.reconcile(ledger) == CLEAN_RECONCILE
 
     def test_fixed_with_evidence_and_no_recurrence_is_clean(self):
         ledger = {"entries": [
@@ -824,6 +847,92 @@ class TestFollowUpRedProofs:
         capsys.readouterr()
         assert fail_closed_violations(rc, before, json.loads(path.read_text(encoding="utf-8"))) != [], (
             "非法单号被接受却没有被判红 ⇒ fail-closed 判据是空断言")
+
+
+# ── ⑤g #8118：**每种欠账都必须有可机械清零的出口**（类级元守卫） ────────────────────
+#
+# 为什么需要这一节（#8118 的病灶，**现取**）：`fixed_not_deducted` 的复发判据只凭
+# `(workflow, job)` 就否定一条**有 `fixed_by` 凭据**的历史销账，而台账是**只追加**的
+# （唯一写者 `flaky-triage.yml` 只 push 新条目）⇒ 旧条目**没有任何合法动作能改** ⇒ 那条欠账
+# **不可清零** ⇒ 台账分支的 required 测试恒红 ⇒ 台账落不了 main，而 `flaky-ledger-reconcile.yml`
+# 在**每个 PR** 上都红（存量债，见 `migao-dev-flow` §2.2）。⇒ 判据收窄（见 `reconcile` 的
+# docstring），并把「欠账桶 ⇄ 清零出口」登记成**机械判据**：新加一个没有出口的桶 ⇒ 当场红。
+
+#: 欠账桶 ⇄ 能被机械执行的清零出口（`None` = 登记在案的豁免，必须写进下面那个集合）。
+RECONCILE_REPAIRS = {
+    "new_events": "follow-up --issue <N>（给该条目落跟踪单）",
+    "fixed_not_deducted": "follow-up --issue <N>（复发 ⇒ 给**新事件**落跟踪单；"
+                          "缺凭据 ⇒ 给旧条目补 `fixed_by`）",
+    "duplicates": None,
+}
+
+#: 登记在案的豁免（**只许缩短**）：`duplicates` 没有机械出口 —— 台账语义是「只追加」，
+#: 没有任何 CLI 能删条目（它只可能由写入方幂等失效产生，属**人工核账**面）。
+RECONCILE_REPAIR_EXEMPT = {"duplicates"}
+
+
+class TestReconcileRepairPaths:
+    """#8118 类级元守卫：**欠账必须可清零**（不可清零 = 结构性死锁，不是「先放着」）。
+
+    实例面 = 下面「跑登记动作 ⇒ 归零」三条（`new_events` / 缺凭据 / 复发）；
+    类级面 = 「未登记的新桶 ⇒ 红」+ 注回式红证。
+    """
+
+    def test_every_reconcile_bucket_is_registered(self):
+        dirty = {"entries": [
+            _entry(run_id=1),                                # new_events（flaky/open/无跟踪单）
+            _entry(run_id=1),                                # duplicates（幂等键重复）
+            _entry(run_id=2, status="fixed", follow_up=3),   # 缺 fixed_by
+        ]}
+        result = FL.reconcile(dirty)
+        assert set(result) == {"new_events", "duplicates", "fixed_not_deducted"}, (
+            f"夹具没有覆盖全部桶（现取 {sorted(result)}）⇒ 下面的断言会退化成空断言")
+        assert set(result) == set(RECONCILE_REPAIRS), (
+            "reconcile 新增了欠账桶却没有登记**清零出口** ⇒ 那类欠账会永久红（#8118 的形态）："
+            f"缺 {sorted(set(result) - set(RECONCILE_REPAIRS))}")
+
+    def test_registered_repairs_clear_every_non_exempt_bucket(self):
+        """跑登记的那条动作 ⇒ 该桶归零（非豁免的每个桶都必须有这条证明）。"""
+        # ① `new_events`：给该条目落跟踪单
+        untracked = {"entries": [_entry(run_id=1)]}
+        assert FL.reconcile(untracked)["new_events"], "前提：new_events 欠账存在"
+        FL.apply_follow_up(untracked, [0], issue=42)
+        assert FL.reconcile(untracked) == CLEAN_RECONCILE
+
+        # ② `fixed_not_deducted`（缺凭据）：给旧条目补 `fixed_by`
+        no_evidence = {"entries": [_entry(run_id=1, status="fixed", follow_up=1)]}
+        assert FL.reconcile(no_evidence)["fixed_not_deducted"], "前提：缺凭据欠账存在"
+        FL.apply_follow_up(no_evidence, [0], status="fixed", fixed_by="PR 4700")
+        assert FL.reconcile(no_evidence) == CLEAN_RECONCILE
+
+        # ③ `fixed_not_deducted`（复发）：给**新事件**落跟踪单（**不是**改写旧条目 —— 它改不了）
+        recurred = {"entries": [
+            _entry(run_id=1, status="fixed", fixed_by="PR 4700", follow_up=1),
+            _entry(run_id=2),
+        ]}
+        assert FL.reconcile(recurred)["fixed_not_deducted"], "前提：复发欠账存在"
+        FL.apply_follow_up(recurred, [1], issue=42)
+        assert FL.reconcile(recurred) == CLEAN_RECONCILE
+
+    def test_exemptions_are_shrinking_only(self):
+        """豁免只许**缩短**：被豁免的桶必须显式登记为 `None`，集合**冻结**（新增豁免要改这条判据
+        并写明理由 —— 让「又出现一类不可清零的欠账」必须经过一次显式决定）。"""
+        assert RECONCILE_REPAIR_EXEMPT == {"duplicates"}, (
+            "豁免变多了 ⇒ 新增了一条**无法机械清零**的欠账（#8118 的形态）")
+        for bucket, action in RECONCILE_REPAIRS.items():
+            assert (action is None) == (bucket in RECONCILE_REPAIR_EXEMPT), bucket
+
+    def test_red_proof_new_bucket_without_a_repair_path(self):
+        """红证：给 `reconcile` 注回一个**没有登记出口**的新桶 ⇒ 元守卫必须红。"""
+        mutated = REAL_SCRIPT_SOURCE.replace(
+            '    return {"new_events": new_events, "duplicates": duplicates,\n'
+            '            "fixed_not_deducted": fixed_not_deducted}',
+            '    return {"new_events": new_events, "duplicates": duplicates,\n'
+            '            "fixed_not_deducted": fixed_not_deducted, "unrepairable": []}', 1)
+        assert mutated != REAL_SCRIPT_SOURCE, "注入锚点失效（先修本测试）"
+        mutant = _load_mutant(mutated, "m_flaky_new_bucket")
+        assert set(mutant.reconcile({"entries": []})) - set(RECONCILE_REPAIRS) == {"unrepairable"}, (
+            "新增欠账桶没有判红 ⇒ 类级元守卫是空断言")
 
 
 # ── ⑤d 条目必须**可行动**（照 #4757 形态：每条带 reason + remedy） ─────────────
