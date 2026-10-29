@@ -1,9 +1,15 @@
 """
 领域本体数据模型（issue #2821 切片 1）
 
-四对象（订单/商品SKU/售后单/客户）× 四要素（属性/关系/动作/规则）——
-对应 Palantir 式 Object/Link/Action/Rule 骨架，作为 MIGAO 业务语义的
+四对象（订单/商品SKU/售后单/客户）× 三要素（属性/关系/规则）——
+对应 Palantir 式 Object/Link/Rule 骨架，作为 MIGAO 业务语义的
 机器可消费单一事实源（TBox）。全部 frozen dataclass，加载后不可变。
+
+🔴 2026-10-30 动作要素出库（issue #8172）：原 `ActionDef`（Palantir 骨架里的 Action 位）
+连同 schema 的动作段一起删除 —— 它是**工具元数据的第二事实源**且已经漂移（19 条里
+13 条指向注册表里不存在的工具）。动作的真值只有一处 = `app/tools/**`（registry +
+各工具的 `requires_confirmation` / action 枚举）。回潮判据见
+`backend/ai-agent-service/tests/test_ontology_schema.py::TestActionsSectionStaysOut`。
 """
 
 from dataclasses import dataclass, field
@@ -45,23 +51,6 @@ class RelationDef:
 
 
 @dataclass(frozen=True)
-class ActionDef:
-    """对象动作定义（Action）
-
-    name: 动作名（对齐工具/端点语义）
-    confirmation_required: 是否需确认闸（写操作守卫，GB-03）
-    allowed_agents: 允许的 Agent 白名单（缺省=两端都允许；[]=不允许任何 Agent）
-    preconditions: 前置条件（本体规则化表达）
-    description: 动作语义
-    """
-    name: str
-    confirmation_required: bool = False
-    allowed_agents: Optional[List[str]] = None
-    preconditions: List[str] = field(default_factory=list)
-    description: str = ""
-
-
-@dataclass(frozen=True)
 class RuleDef:
     """业务规则（Axiom）——机器可校验的约束声明
 
@@ -79,7 +68,6 @@ class OntologyObject:
     display_name: str
     properties: Dict[str, PropertyDef] = field(default_factory=dict)
     relations: List[RelationDef] = field(default_factory=list)
-    actions: List[ActionDef] = field(default_factory=list)
     rules: List[RuleDef] = field(default_factory=list)
 
     def get_property(self, name: str) -> Optional[PropertyDef]:

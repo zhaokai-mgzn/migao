@@ -6535,7 +6535,7 @@
 你: 加载默认本体 schema，校验七对象（订单/商品SKU/售后单/客户 + 员工/加工项/分类）定义、状态枚举、关系目标与 source 挂载点（issue #5245）
 期望: direct_reply
 数据: 默认 schema.yaml 存在且可加载，返回 Ontology 七对象：order/product_sku/aftersales/customer + employee/processing_item/category（knowledge_document 已随旧 RAG 知识库退场，issue #3051）
-数据: 每个对象具备属性/关系/动作/规则四要素
+数据: 每个对象具备属性/关系/规则三要素（动作段已出库，issue #8172）——能力/确认闸/白名单的真值只认 tools registry；schema.yaml 再出现动作键 ⇒ backend/ai-agent-service/tests/test_ontology_schema.py::TestActionsSectionStaysOut 判红（含注入式红证 + 「只改注释不红」的对照读数）
 数据: 订单状态枚举 == [pending, confirmed, producing, shipped, completed, cancelled]（与 CONTRACT-LEDGER 的 OrderService.java 状态机一致，生产中是 producing 非 processing）
 数据: 售后工单状态枚举 == [pending, processing, rejected, resolved, closed]；商品状态枚举 == [draft, on_sale, off_sale, under_review]（载体是商品级 Product.status，SKU 表无状态列）
 数据: 扩展对象状态枚举与代码真值一致：员工 == [online, offline, busy]（AgentEmployeeService 错误消息）、加工项/分类 == [active, inactive]（DTO 注释）
@@ -6545,7 +6545,7 @@
 跳过: [backend-contract] 本体模块为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_schema.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: ai-chat.context-memory
-溯源: 2026-09-04 新增：issue #2821 本体模块切片 1（schema + loader + 校验）；延续切片 B 扩展四对象。2026-09-23 更新（issue #5245 B 组）：知识文档对象随 #3051 退场 ⇒ 七对象（原写八对象是陈旧文案）；删 `knowledge_document.status` 死条目；补关系目标 fail-closed 校验 + external_targets 登记（order_item/product/processing_category/agent_session/tenant）；source 挂载点改指真实载体（product_sku.status→Product.status、删产品 SKU 的 attributes、aftersales.type→ticket_type、customer name/address/user_id→wechat_nickname/wechat_openid/default_receiver_address） ｜ tags: ontology, schema, enum_alignment
+溯源: 2026-09-04 新增：issue #2821 本体模块切片 1（schema + loader + 校验）；延续切片 B 扩展四对象。2026-09-23 更新（issue #5245 B 组）：知识文档对象随 #3051 退场 ⇒ 七对象（原写八对象是陈旧文案）；删 `knowledge_document.status` 死条目；补关系目标 fail-closed 校验 + external_targets 登记（order_item/product/processing_category/agent_session/tenant）；source 挂载点改指真实载体（product_sku.status→Product.status、删产品 SKU 的 attributes、aftersales.type→ticket_type、customer name/address/user_id→wechat_nickname/wechat_openid/default_receiver_address）；2026-10-30 更新（issue #8172）：动作段出库（7 对象 19 条，13 条指向不存在的工具）——删 schema 动作段 / ActionDef / _parse_actions，本体口径由四要素改三要素；新增元守卫 TestActionsSectionStaysOut（注入式红证 + 只改注释不红的对照） ｜ tags: ontology, schema, enum_alignment
 
 ### ON-002. vision 分析候选实体写入上下文实体槽（G10 修复） 🔵
 ```
