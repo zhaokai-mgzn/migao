@@ -10,9 +10,11 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  LOGISTICS_TYPES,
   SHIPMENT_FIELD_KEYS,
   SHIPMENT_PREFIX,
   buildShipBody,
+  defaultLogisticsType,
   formatShippedTotals,
   prefillFromRecognition,
   renderShipmentSummary,
@@ -74,6 +76,33 @@ test('没给照片 / 没给识别留痕 ⇒ 请求体里就没有这两个键（
   const body = buildShipBody({ trackingNo: 'SF123', items: [], photoRefs: [] })
   assert.equal(body.photoRefs, undefined)
   assert.equal(body.recognition, undefined)
+})
+
+// ── ④ 物流类型（issue #8071：工人端也要区分物流和快递）────────────────────────────
+
+test('物流类型：有值才进 body（与承运商同款），没值就不带这个键', () => {
+  const withType = buildShipBody({ trackingNo: 'SF123', logisticsType: 'logistics', items: [] })
+  assert.equal(withType.logisticsType, 'logistics')
+
+  // 负控：不传 ⇒ body 里连这个键都没有（服务端据此不覆盖既有 logistics_type）
+  const withoutType = buildShipBody({ trackingNo: 'SF123', items: [] })
+  assert.equal('logisticsType' in withoutType, false)
+  // 空串也是「没说这件事」—— 不许把空串递上去冒充一个坏值
+  const blank = buildShipBody({ trackingNo: 'SF123', logisticsType: '', items: [] })
+  assert.equal('logisticsType' in blank, false)
+})
+
+test('物流类型词表与商家端同口径（express 快递 / logistics 物流专线）', () => {
+  assert.deepEqual(LOGISTICS_TYPES.map((type) => type.value), ['express', 'logistics'])
+  assert.deepEqual(LOGISTICS_TYPES.map((type) => type.label), ['快递', '物流专线'])
+})
+
+test('默认物流类型：订单已带的就用它，没有 ⇒ express（词表外的值不猜）', () => {
+  assert.equal(defaultLogisticsType({ logistics_type: 'logistics' }), 'logistics')
+  assert.equal(defaultLogisticsType({ logistics_type: 'express' }), 'express')
+  assert.equal(defaultLogisticsType({}), 'express')
+  assert.equal(defaultLogisticsType(null), 'express')
+  assert.equal(defaultLogisticsType({ logistics_type: 'air' }), 'express')
 })
 
 // ── ② 识别不确定 ⇒ 不预填 ─────────────────────────────────────────────────────

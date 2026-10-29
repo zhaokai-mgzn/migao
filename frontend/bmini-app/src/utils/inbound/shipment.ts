@@ -21,6 +21,33 @@
 /** 识别字段面：与后端 `app/vision/targets.py` 的 `shipment` target **逐字同名**。 */
 export const SHIPMENT_FIELD_KEYS = ['order_no', 'product_name', 'quantity', 'width', 'height']
 
+/** 物流类型：`express` 快递 / `logistics` 物流专线（与 `order_logistics.logistics_type` 同词表）。 */
+export type LogisticsType = 'express' | 'logistics'
+
+/**
+ * 物流类型词表（issue #8071：用户 2026-10-29 裁定「工人端也要区分物流和快递」）——
+ * **与 `frontend/admin-web/src/lib/logistics.ts` 的 `LOGISTICS_TYPES` 同口径**：
+ * `express` 快递 / `logistics` 物流专线。
+ *
+ * ⚠️ bmini 是**独立构建包**，不 import 跨包文件（会让部署构建上下文红，见 issue #6744 / #6745）
+ * ⇒ 这里写一份小表并**逐值**保持同名同义；词表只做候选，越界值由服务端白名单 422 兜底。
+ */
+export const LOGISTICS_TYPES: { value: LogisticsType; label: string }[] = [
+  { value: 'express', label: '快递' },
+  { value: 'logistics', label: '物流专线' },
+]
+
+/**
+ * 本单**默认选中**的物流类型：订单已带 `logistics_type` 就用它，没有（或词表外）⇒ `express`。
+ *
+ * @param order 发货读面 / 待发货行（两者都由服务端下发 `logistics_type`）
+ * @returns 词表内取值（不猜词表外的值 —— 回落到 `express`，与列默认一致）
+ */
+export function defaultLogisticsType(order?: { logistics_type?: string | null } | null): LogisticsType {
+  const value = order?.logistics_type
+  return LOGISTICS_TYPES.some((type) => type.value === value) ? (value as LogisticsType) : 'express'
+}
+
 /**
  * 识别回执里的一格（后端**原样搬运** ai-agent 的字段表：`{key,label,value,source,reason,…}`）。
  *
@@ -80,6 +107,8 @@ export interface ShipmentItemBody {
 export interface ShipBodyInput {
   trackingNo?: string
   logisticsCompany?: string | null
+  /** 物流类型：`express` 快递 / `logistics` 物流专线（缺省 = 本次没说 ⇒ 服务端不覆盖既有值） */
+  logisticsType?: string | null
   photoRefs?: string[] | null
   recognition?: ShipmentRecognition | null
   /**
@@ -90,11 +119,12 @@ export interface ShipBodyInput {
   items?: (ShipmentItemInput | ShipmentItemBody)[]
 }
 
-/** 发货请求体（**白名单**后的形状：恰好这五个键里用得上的那几个）。 */
+/** 发货请求体（**白名单**后的形状：这六个键里用得上的那几个）。 */
 export interface ShipBody {
   trackingNo: string
   items: ShipmentItemBody[]
   logisticsCompany?: string
+  logisticsType?: string
   photoRefs?: string[]
   recognition?: ShipmentRecognition
 }
@@ -142,6 +172,11 @@ export interface ShipmentView {
   order_id?: string | null
   order_no?: string | null
   status?: string | null
+  /**
+   * 本单**当前生效**的物流类型（issue #8071）：最新物流行的值优先，否则建单时采集的
+   * `orders.logistics_type`；两者都缺 ⇒ `null`（**服务端不编值**，端侧据此预选单选）。
+   */
+  logistics_type?: string | null
   shipments?: ShipmentRow[] | null
   shipped_totals?: ShippedTotals | null
   /**
@@ -222,6 +257,9 @@ export function buildShipBody(input: ShipBodyInput = {}): ShipBody {
     items: (input.items ?? []).map((item) => normaliseItem(item)),
   }
   if (input.logisticsCompany) body.logisticsCompany = input.logisticsCompany
+  // 物流类型：**只在有值时**放进 body（与 `logisticsCompany` 同款）—— 没值 = 「本次没说这件事」，
+  // 服务端据此不覆盖既有 `order_logistics.logistics_type`（issue #8071）。
+  if (input.logisticsType) body.logisticsType = input.logisticsType
   if (Array.isArray(input.photoRefs) && input.photoRefs.length > 0) body.photoRefs = [...input.photoRefs]
   if (input.recognition) body.recognition = input.recognition
   return body

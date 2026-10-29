@@ -32,13 +32,16 @@ import type {
 } from '../utils/inbound/shipment'
 
 export {
+  LOGISTICS_TYPES,
   SHIPMENT_FIELD_KEYS,
   buildShipBody,
   buildShipmentItem,
+  defaultLogisticsType,
   formatShippedTotals,
   prefillFromRecognition,
 } from '../utils/inbound/shipment'
 export type {
+  LogisticsType,
   ShipBody,
   ShipBodyInput,
   ShipmentDraft,

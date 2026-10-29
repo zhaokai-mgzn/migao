@@ -135,7 +135,7 @@ describe('WorkerShipmentOrdersPage 待发货单列表（issue #7806 P1a）', () 
     expect(screen.getByTestId('shipment-orders-sets-0').textContent).toContain('3 套（全完工）')
     expect(screen.getByTestId('shipment-orders-sets-1').textContent).toContain('1/3 套')
 
-    // 收货信息与物流：`物流方式 · 公司`
+    // 收货信息与物流类型：`物流类型标签 · 公司`
     expect(screen.getByTestId('shipment-orders-consignee-0').textContent).toContain('肖风伟')
     expect(screen.getByTestId('shipment-orders-consignee-0').textContent).toContain('13849944707')
     expect(screen.getByTestId('shipment-orders-address-0').textContent).toContain('洛阳市涧西区珠江路')

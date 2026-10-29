@@ -38,6 +38,9 @@ import {
   postWorkerShipment,
   readWorkerShipment,
   newShipmentRequestId,
+  LOGISTICS_TYPES,
+  defaultLogisticsType,
+  type LogisticsType,
   type ShipmentDraft,
   type ShipmentRecognition,
   type ShipmentView,
@@ -89,6 +92,8 @@ export default function WorkerShipmentPage() {
   const [orderId, setOrderId] = useState('')
   const [trackingNo, setTrackingNo] = useState('')
   const [company, setCompany] = useState('')
+  /** 物流类型（issue #8071）：默认 `express`，定位到订单后按**订单已带的**值预选。 */
+  const [logisticsType, setLogisticsType] = useState<LogisticsType>('express')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [view, setView] = useState<ShipmentView | null>(null)
@@ -162,6 +167,14 @@ export default function WorkerShipmentPage() {
         throw new Error(res.message || '没能定位到订单，请核对单号')
       }
       setOrderId(String(res.data.order_id))
+      // 物流类型**默认取订单已带的**（读面同一份数据源 `logistics_type`；读不到 ⇒ 列默认 express）：
+      // 不预选就会把「物流专线」的单在屏上显示成快递 —— 工人顺手提交就记错了（issue #8071）。
+      try {
+        const detail = await readWorkerShipment(String(res.data.order_id))
+        if (detail.success && detail.data) setLogisticsType(defaultLogisticsType(detail.data))
+      } catch {
+        // 预选失败不挡住发货：屏上保持 express，工人仍可自己选
+      }
     } catch (e: any) {
       setOrderId('')
       setError(e?.message || '没能定位到订单，请核对单号')
@@ -195,6 +208,7 @@ export default function WorkerShipmentPage() {
     const body = buildShipBody({
       trackingNo: trackingNo.trim(),
       logisticsCompany: company.trim(),
+      logisticsType,
       photoRefs: photoUrls,
       // 识别留痕**原样**随发货请求提交（识别本身不落库，服务端只存不算）
       recognition,
@@ -218,7 +232,7 @@ export default function WorkerShipmentPage() {
     } finally {
       setBusy(false)
     }
-  }, [orderId, draft, trackingNo, company, photoUrls, recognition])
+  }, [orderId, draft, trackingNo, company, logisticsType, photoUrls, recognition])
 
   if (!workerReady) {
     return (
@@ -373,6 +387,20 @@ export default function WorkerShipmentPage() {
                 setDraft((prev) => (prev ? { ...prev, unit: e?.detail?.value ?? '' } : prev))
               }
             />
+
+            <Text className='admin-card__label'>物流类型（订单带了就按订单预选）</Text>
+            <View className='shipment-units'>
+              {LOGISTICS_TYPES.map((option) => (
+                <View
+                  className={`admin-action${logisticsType === option.value ? ' admin-action--gold' : ''}`}
+                  data-testid={`shipment-logistics-type-${option.value}`}
+                  key={`logistics-type-${option.value}`}
+                  onClick={() => setLogisticsType(option.value)}
+                >
+                  <Text>{option.label}</Text>
+                </View>
+              ))}
+            </View>
 
             <Text className='admin-card__label'>货运单号（必填）</Text>
             <Input

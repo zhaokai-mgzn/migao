@@ -5,7 +5,7 @@
  *
  * 「车间今天能发哪些单」。数据源 = `GET /api/worker/shipment/orders`
  * （#7764 上线；`WorkerShipmentReadyService.listReadyOrders`）—— 服务端只回
- * **多套全部完工 + 可发货状态 + 作业单已完成**的订单，行内带收货信息与物流方式 / 公司。
+ * **多套全部完工 + 可发货状态 + 作业单已完成**的订单，行内带收货信息与物流类型 / 公司。
  *
  * ## 四条纪律（每条都有对应断言，见 `tests/worker-shipment-orders-page.test.tsx`）
  *
@@ -16,7 +16,7 @@
  *    「读不到」**不得**渲染成「暂无」—— 那是两个事实（前者可能只是网差，工人据此决定要不要等）。
  * 3. 🔴 **401 单独一态**：未登录 / 会话失效 ⇒ 引导去工人登录，不清商家态、不跳商家登录页
  *    （工人端点的 401 不是「商家会话过期」，见 `utils/request.ts` 的身份分流口径）。
- * 4. 🔴 **内部值不上屏**：物流方式只用 `logistics_type_label`（`express` / `logistics` 是内部值）；
+ * 4. 🔴 **内部值不上屏**：物流类型只用 `logistics_type_label`（`express` / `logistics` 是内部值）；
  *    缺值一律 `—`（不印 0、不猜「快递」）。
  *
  * ## 边界（照实登记）
@@ -72,7 +72,12 @@ export function setsText(order: ReadyShipmentOrder | null | undefined): string {
   return `${completed}/${total} 套`
 }
 
-/** 物流一行：`物流方式 · 公司`；两侧都缺 ⇒ `—`（**不**回退成「快递」）。 */
+/**
+ * 物流类型一行：`物流类型标签 · 公司`；两侧都缺 ⇒ `—`（**不**回退成「快递」）。
+ *
+ * ⚠️ 用词是「物流类型」（= `logistics_type`，快递 / 物流专线），**不是**「物流方式」
+ * （那是 `shippingMethod`：物流发货 / 无需物流）—— 两个列撞词会让工人读错行（issue #8071）。
+ */
 export function logisticsText(order: ReadyShipmentOrder | null | undefined): string {
   const parts = [order?.logistics_type_label, order?.logistics_company]
     .map((part) => (part == null ? '' : String(part).trim()))
@@ -97,7 +102,7 @@ function OrderRow({ order, index }: { order: ReadyShipmentOrder; index: number }
         地址：{textOrMissing(order.customer_address)}
       </Text>
       <Text className='shipment-orders__line' data-testid={`shipment-orders-logistics-${index}`}>
-        物流：{logisticsText(order)}
+        物流类型：{logisticsText(order)}
       </Text>
       <Text className='shipment-orders__line' data-testid={`shipment-orders-sets-${index}`}>
         套数：{setsText(order)}
