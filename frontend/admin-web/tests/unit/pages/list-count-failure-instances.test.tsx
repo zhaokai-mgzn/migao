@@ -29,9 +29,9 @@
  * ## 边界（照实登记）
  *
  * - 只覆盖本包文件族（`/orders` `/finance` `/customers` `/after-sales` `/knowledge`
- *   `/stock-ledger` + 共享 `Pagination`）；`/employees` `/notifications` `/products`
- *   `/components/employees/WorkerProfilesPanel` 是**同族存量债**，登记在
- *   `frontend/admin-web/scripts/count-row-derived-scan.mjs` 的 `LEDGER`（归后续包）；
+ *   `/stock-ledger` + 共享 `Pagination`）；`/employees` `/notifications` `/products` 曾属同族存量债，
+ *   登记在 `frontend/admin-web/scripts/count-row-derived-scan.mjs` 的 `LEDGER`；
+ *   该台账现已**清零**（`WorkerProfilesPanel` 由 #8063 补上常驻失败面后同批删条目）；
  * - `/production/remnants`（#6702）与工作台金额面（#6701）**不在本文件射程**。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'

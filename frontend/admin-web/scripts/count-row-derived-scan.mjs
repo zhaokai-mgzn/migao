@@ -263,16 +263,20 @@ export function countRowSites(root) {
  * 它们是本包文件族之外的**存量债**（本包 = `/orders` `/finance` `/customers` `/after-sales`
  * `/knowledge` `/stock-ledger` + 共享 `Pagination`），归零靠后续包逐批删条目 ——
  * **不是**「已修」，也**不是**「不算缺陷」。
+ *
+ * ## 现状（issue #8063 取数）：**空数组** = 目标形态（台账已清零）
+ *
+ * 归零沿革（**只许缩短**，条目**删除**而非注释掉）：
+ *   · 3 → 1：**issue #6714 本包**补上 `employees-load-failed` / `notifications-load-failed` 失败锚
+ *     + 重试出口（`totalReliable={!loadFailed}` 同步标「计数不可信」）⇒ 两条**同批删掉**；
+ *   · 1 → 0：**issue #8063** 给 `src/components/employees/WorkerProfilesPanel.tsx`（`/employees` 的
+ *     工人档案 tab）补上常驻失败面 `worker-profiles-load-failed` + 重试 ⇒ 它自带失败标记
+ *     （不再由 `total` 兜底静默印 0）⇒ 该条目**同批删掉**、台账归零。
+ *
+ * ⇒ 此后新增命中一律**先修**（照 `src/app/(dashboard)/orders/page.tsx` 范式），
+ *   确需豁免再登记 —— 且登记后修好必须同批删（`staleLedger` 判红会逼着删）。
  */
-export const LEDGER = [
-  // ── 存量债（`setXxxTotal` 由读响应赋值；文件里无读面失败标记）──
-  //
-  // 归零沿革（**只许缩短**，条目**删除**而非注释掉）：
-  //   · `employees/page.tsx` / `notifications/page.tsx` —— **issue #6714 本包**补上
-  //     `employees-load-failed` / `notifications-load-failed` 失败锚 + 重试出口
-  //     （`totalReliable={!loadFailed}` 同步标「计数不可信」）⇒ 两条**同批删掉**；
-  'src/components/employees/WorkerProfilesPanel.tsx', // 工人档案面板：同上
-]
+export const LEDGER = []
 
 /**
  * 正向核：本包已改对的页面 ⇒ 必须**逐字**含失败态锚点（`data-testid` + 重试出口）。

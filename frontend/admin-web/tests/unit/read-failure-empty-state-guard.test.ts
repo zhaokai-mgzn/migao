@@ -147,7 +147,7 @@ type SurfaceSpec = {
   file: string
   anchor: string
   retryAnchor?: string
-  emptyTestId: string
+  emptyTestId: string | null
   failureKey: string
   failureFrom?: { file: string }
 }
@@ -201,13 +201,20 @@ describe('类级守卫：读面失败不得与空态同屏（issue #6713 + #6714
       // 此前这一行只认 `data-testid` 字面量 ⇒ 页面把空态收敛到 `PageCard testId=…` 之后，
       // 判据报「缺空态锚」，而 DOM 上那个锚**明明在**。判据该钉的是**锚点到没到 DOM**，
       // 不是「作者用哪种写法写出来」；两种写法都验，机制不同、约束相同。
-      const emptyAnchorPresent =
-        source.includes(`testId="${surf.emptyTestId}"`) ||
-        source.includes(`data-testid="${surf.emptyTestId}"`)
-      expect(
-        emptyAnchorPresent,
-        `${surf.file} 缺空态锚（两种形态都不认：\`testId="${surf.emptyTestId}"\` / \`data-testid="${surf.emptyTestId}"\`）`,
-      ).toBe(true)
+      // `emptyTestId: null` = 该读面的空态由**共享表的 `emptyText`** 承载（没有独立空态 DOM 元素可锚，
+      // 如 #8063 的工人档案面板）⇒ 不要求空态锚；但必须**真的传了** `emptyText`（否则「不要求锚」
+      // 会变成「空态无人管」的免死金牌）。
+      if (surf.emptyTestId === null) {
+        expect(source, `${surf.file} 声明 emptyTestId=null ⇒ 空态必须由共享表 emptyText 承载`).toContain('emptyText=')
+      } else {
+        const emptyAnchorPresent =
+          source.includes(`testId="${surf.emptyTestId}"`) ||
+          source.includes(`data-testid="${surf.emptyTestId}"`)
+        expect(
+          emptyAnchorPresent,
+          `${surf.file} 缺空态锚（两种形态都不认：\`testId="${surf.emptyTestId}"\` / \`data-testid="${surf.emptyTestId}"\`）`,
+        ).toBe(true)
+      }
       expect(source, `${surf.file} 缺失败读数 key`).toContain(surf.failureKey)
       // 失败面必须是 role=alert（读屏器会播报，不是视觉装饰）——共享件 `ListLoadError` 自带
       expect(
@@ -322,11 +329,19 @@ describe('判据 ④：共享表格的 emptyText 必须接住失败读数（issu
   it('⑥ 台账只许缩短 + 未登记即红（面自证 + 真文件读数）', () => {
     const { sites, unregistered, stale } = tableEmptyOffenders(ADMIN_WEB_ROOT)
 
-    // 面自证：登记读面的闭包**真的被扫到了**（空集 = 判据在扫空气）
-    expect(sites.length).toBeGreaterThan(0)
-    // 台账里那一条真值在面里（把它删了 ⇒ 僵尸条目判红）；本单修好的三层**不在**（见下一条）
-    const keys = sites.map((s) => s.key)
-    expect(keys).toContain('src/components/employees/WorkerProfilesPanel.tsx::WorkerProfilesPanel')
+    // #8063 台账清零后的**目标形态**：命中面 = 空数组（改前这里恰是工人档案面板那 1 条）
+    expect(sites).toEqual([])
+    expect(Object.keys(READ_SURFACES)).toContain('worker-profiles')
+    // 面自证（**不是**在扫空气）：把登记读面 `worker-profiles` 的 `emptyText` 换回静态文案 ⇒ 必红且具名。
+    // 这条同时守住「它真的进了判据 ④ 的扫面」—— 只断言 `sites` 为空的话，扫面空掉也是绿的。
+    const PANEL = 'src/components/employees/WorkerProfilesPanel.tsx'
+    const panelSrc = read(PANEL)
+    const PANEL_EMPTY_PROP = /emptyText=\{[\s\S]*?\}/
+    const panelStatic = panelSrc.replace(PANEL_EMPTY_PROP, 'emptyText="还没有工人档案"')
+    expect(panelStatic).not.toBe(panelSrc) // 注入**自证生效**
+    expect(
+      tableEmptySitesFromSource(panelStatic, { file: PANEL, failureKey: FAIL_KEY, root: ADMIN_WEB_ROOT }).map((s) => s.key),
+    ).toContain(`${PANEL}::WorkerProfilesPanel`)
     // 判红面必须为空（未登记命中 / 僵尸条目都没有）
     expect(unregistered).toEqual([])
     expect(stale).toEqual([])

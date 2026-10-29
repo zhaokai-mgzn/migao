@@ -623,4 +623,35 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
     expect(within(picker).getByText(/出入库\/仓库等岗位：不设工序即可/)).toBeInTheDocument()
   })
 
+  // ── issue #8063：读面失败不得伪装成空态（与 /employees 主列表同一条尺子） ─────────
+  //
+  // 改前面板只 `toastRequestError`（≈4s 消失），屏上留着共享 `ui/Table` 的静态空态文案
+  // 「还没有工人档案…」⇒ 商家看到的是**事实性断言**，而真相是没读到。
+  // 判据：① 失败 ⇒ 常驻失败面在场；② 失败 ⇒ 静态空态文案**不出现**（失败 ≠ 空）；
+  //       ③ 重试 = 真重发（不是装饰）；④ 反向对照：读成功且真为空 ⇒ 空态文案照旧上屏。
+  it('⑪ 列表读失败 ⇒ 常驻失败面在场、不印「还没有工人档案」，重试能再取', async () => {
+    mockListWorkers.mockRejectedValueOnce(new Error('500'))
+    render(<WorkerProfilesPanel canWrite />)
+
+    const surface = await screen.findByTestId('worker-profiles-load-failed')
+    expect(surface).toHaveAttribute('role', 'alert')
+    // 🔴 失败 ≠ 空：静态空态文案不得与失败面同屏
+    expect(screen.queryByText(/还没有工人档案/)).not.toBeInTheDocument()
+
+    // 重试出口 = 真重发（第二次成功 ⇒ 失败面撤掉、行回来）
+    mockListWorkers.mockResolvedValueOnce(okPage([worker()]))
+    fireEvent.click(screen.getByTestId('worker-profiles-load-failed-retry'))
+    await waitFor(() => expect(mockListWorkers).toHaveBeenCalledTimes(2))
+    expect(await screen.findByText('W-1001')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByTestId('worker-profiles-load-failed')).not.toBeInTheDocument())
+  })
+
+  it('⑪ 反向对照：读成功且真为空 ⇒ 「还没有工人档案」照旧上屏（空态不许被判红）', async () => {
+    mockListWorkers.mockResolvedValue(okPage([]))
+    render(<WorkerProfilesPanel canWrite />)
+
+    expect(await screen.findByText(/还没有工人档案/)).toBeInTheDocument()
+    expect(screen.queryByTestId('worker-profiles-load-failed')).not.toBeInTheDocument()
+  })
+
 })

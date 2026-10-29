@@ -534,6 +534,7 @@ export const FAILURE_ANCHOR_RE = /data-testid=\{?["'`][A-Za-z0-9_-]*(?:-(?:error
  *
  * ⚠️ 键是**可读名**（不是判据），机器核的对象是 `file` / `anchor` / `emptyTestId` / `failureKey`：
  *   · `anchor` / `emptyTestId` ⇒ 判据 2 的逐字接线锚（缺一即红并**具名**报出缺哪条）；
+ *     `emptyTestId: null` = 空态由**共享表的 `emptyText`** 承载（无独立空态元素，如 #8063 的工人档案面板）；
  *   · `failureKey` ⇒ 「这次读失败了」的**前端读数**（必须是 store/state 里真的存在的那个 key）。
  */
 export const READ_SURFACES = {
@@ -599,6 +600,20 @@ export const READ_SURFACES = {
     emptyTestId: 'customers-empty',
     failureKey: 'loadError',
   },
+  // #8063：`/employees` 的**工人档案 tab**（同一页的另一个面）。改前 `loadWorkers` 失败只 toast、
+  // 共享表仍印**静态**空态「还没有工人档案…」⇒ 失败被画成「没有工人」。本面板的失败面走共享件
+  // `ListLoadError`（`worker-profiles-load-failed` + `-retry` 由组件内部渲染）、失败读数 = 本地
+  // `loadFailed`，失败时 `emptyText` 置空 ⇒ 登记后判据 ④ 才看得见它（不登记 = 假绿）。
+  'worker-profiles': {
+    issue: '#8063',
+    file: 'src/components/employees/WorkerProfilesPanel.tsx',
+    anchor: 'worker-profiles-load-failed',
+    failureViaSharedComponent: true,
+    // 该面板的空态由共享表的 `emptyText` 承载（**没有**独立空态 DOM 元素可锚）⇒ `null` = 不要求空态锚，
+    // 「失败时不印空态」由判据 ④ 的 `emptyText` 接线 + 面板实例判据共同钉住（不是放行）。
+    emptyTestId: null,
+    failureKey: 'loadFailed',
+  },
 }
 
 
@@ -611,6 +626,10 @@ export const READ_SURFACES = {
  * 给两个串等于要求**同时**出现两种写法 ⇒ 必然假红。
  */
 function emptyAnchorForms(emptyTestId) {
+  // `null` = 该读面的空态**由共享表的 `emptyText` 承载**（没有独立的空态 DOM 元素可锚，
+  // 如 `/employees` 的「工人档案」面板）⇒ 不要求空态锚。「失败时不印空态」由判据 ④ 的
+  // `emptyText` 接线 + 面板实例判据钉住 —— 是**换了一条判据**，不是放行（#8063）。
+  if (emptyTestId === null) return []
   return [`\u0000either:testId="${emptyTestId}"|data-testid="${emptyTestId}"`]
 }
 
@@ -1254,34 +1273,25 @@ export function tableEmptySitesFromSource(
  *
  * 键 = `渲染 ui/Table 的那个文件::该组件名`（**不写行号**：活跃文件一行新增就失效）。
  *
- * 现状（issue #6728 取数）：本单**把自己的两处修好并删条目** ——
- *   · `src/app/(dashboard)/employees/page.tsx::EmployeesPage`（页面级 `emptyText={loadFailed ? '' : '暂无数据'}`）；
- *   · `src/components/products/ProductTable.tsx::ProductTable`（由 `/products` 页面**显式传入**）。
- * ⇒ 目标形态 = **空数组**（同 `LEDGER` 的规矩：先修，确需豁免再登记，登记后修好必须同批删）。
+ * 现状（issue #8063 取数）：**空数组**（= 目标形态，台账已清零）。
+ *
+ * #6728 立账时留的最后一条是 `src/components/employees/WorkerProfilesPanel.tsx::WorkerProfilesPanel`
+ * （`/employees` 的工人档案 tab：`loadWorkers` 失败只 toast、共享表仍印静态空态「还没有工人档案…」）。
+ * 它的**重启条件**已由 #8063 兑现：面板补上常驻失败面（`worker-profiles-load-failed` + 重试）、
+ * 失败时 `emptyText` 置空，并同批登记进 `READ_SURFACES`（`worker-profiles`）⇒ 条目删除、基线降到 0。
+ *
+ * ⇒ 此后新增命中一律**先修**（照 `/employees` 主列表范式：失败读数接进 `emptyText`）；
+ *   确需豁免再登记 —— 且登记后修好必须同批删（`stale` 判红会逼着删）。
  */
-export const TABLE_EMPTY_LEDGER = [
-  // ── 本单修好的两处**不登记**（先修；目标形态 = 空数组）──
-  //   · `src/app/(dashboard)/employees/page.tsx::EmployeesPage`
-  //   · `src/components/products/ProductTable.tsx::ProductTable`（由 `/products` 页面显式传入）
-  //
-  // #6728 发现的**同页第三处**（如实记账，**不收编成「已修」**）：
-  //   `src/components/employees/WorkerProfilesPanel.tsx` 是 `/employees` 的**工人档案 tab**（同一页的另一个面），
-  //   它渲染共享 `ui/Table` 且 `emptyText` 是**静态**文案（「还没有工人档案…」）；
-  //   它的 `loadWorkers` 失败时**只 toast**（`toastRequestError`）、**没有常驻失败面**
-  //   ⇒ 本形态要修的是它自己的失败面（那是 §「读面失败不得伪装成空态」的另一条链，不在 #6728 的
-  //   两页 + 传参边界内，本单**故意不动**它，免得与在飞包撞写面）。
-  //   **重启条件**：给该面板补常驻失败面（`worker-profiles-load-failed` + 重试）时**同批**把它写进
-  //   `READ_SURFACES` 并**删掉这条条目**（`stale` 判红会逼着删）。
-  'src/components/employees/WorkerProfilesPanel.tsx::WorkerProfilesPanel',
-]
+export const TABLE_EMPTY_LEDGER = []
 
 /**
  * 台账冻结基线（**只许缩短**；`length > FLOOR` ⇒ 红）。
  *
- * 现取 = **1**（本单那天：`WorkerProfilesPanel` 一条 —— 见上面台账里的重启条件）。
- * 🔴 该面板补上常驻失败面并删掉台账条目时，**同批把本常量降到 0**（否则「只许缩短」这条就断在这里）。
+ * 现取 = **0**（#8063 清零：最后一条 `WorkerProfilesPanel` 修好并删条目）。
+ * 🔴 新增豁免必须**同批**把本常量降到新的 `length`（否则「只许缩短」这条就断在这里）。
  */
-export const TABLE_EMPTY_LEDGER_FLOOR = 1
+export const TABLE_EMPTY_LEDGER_FLOOR = 0
 
 /** 判据 4 的判红面（未登记即红）+ 台账空转 */
 export function tableEmptyOffenders(root, ledger = TABLE_EMPTY_LEDGER, surfaces = READ_SURFACES) {
