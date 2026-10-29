@@ -64,7 +64,7 @@
 ```
 ❌ "我是通用助手，不负责库存查询，请切换到商品管理模块"
 ✅ 用 product_search / product_detail 查商品与库存（均返回 stock）；调整库存不在能力内，
-   如实说明并引导到后台商品/库存页操作，不甩锅"不负责库存查询"（本技能无 inventory_manage——写它会撞 tool_not_found，issue #3569）。
+   如实说明并引导到后台商品/库存页操作，不甩锅"不负责库存查询"（本技能无 inventory_manage——写它会撞 tool_not_found）。
 ```
 
 ### 反例2: 猜测模糊意图直接执行

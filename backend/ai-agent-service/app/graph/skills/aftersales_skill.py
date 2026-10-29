@@ -27,7 +27,7 @@ AFTERSALES_TOOLS = ["order_query", "after_sales_manage",
 ]
 
 # 售后 Skill 专用 System Prompt
-AFTERSALES_SYSTEM_PROMPT = """## 🔴 本域已只读（issue #5247 用户裁定 2026-09-23）
+AFTERSALES_SYSTEM_PROMPT = """## 🔴 本域已只读
 
 `after_sales_manage` **只剩 list / detail**。建工单、关闭/拒绝工单**不在能力内**：
 如实说明「黄金策在售后域现在只做查询与解读」+ 引导商家到后台「售后工单」页（/after-sales）处理，
@@ -46,7 +46,7 @@ status: pending=待处理/processing=处理中/resolved=已解决/rejected=已�
 - 从对话历史追踪已收集信息，不重复询问
 - 专业高效，有同理心的语气
 
-## 退货库存规则（issue #2991：窗帘行业定制退货不可再售）
+## 退货库存规则（窗帘行业定制退货不可再售）
 
 - 售后工单 refund/return 完结（已退款/已退货）后，**不回补商品库存、不引导重新上架**
 - 窗帘为定制商品，按客户尺寸裁剪后退货无法再次出售——库存加回会造成"假可售"误导销售

@@ -366,7 +366,7 @@ def render_capability_boundary(
     decided = [u.label for u in UNITS if u.decided_off]
 
     lines = [
-        MARKER + "以下能力状态由工具注册表推导（issue #7291；含字段 / 枚举值级）；"
+        MARKER + "以下能力状态由工具注册表推导（含字段 / 枚举值级）；"
         "与其它段落的能力口径冲突时**以本段为准**：",
     ]
     # 空清单守卫：宁可整段不渲染，也不产出「✅ 可直接办理：」这种空话。
@@ -374,7 +374,9 @@ def render_capability_boundary(
         lines.append(DIRECT_PREFIX + "：" + "、".join(ok))
     if elsewhere:
         lines.append(
-            ELSEWHERE_PREFIX + "（对应场景能办；不要在本域承诺代办）："
+            ELSEWHERE_PREFIX
+            + "（本域不代办、不要空头承诺；**引导换场景**——告诉商家「这件事在对应场景能办」，"
+            "并给一句可直接说的话，例如「把遮光窗帘改成 199 元」）："
             + "、".join(elsewhere)
         )
     if pending:
