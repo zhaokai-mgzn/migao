@@ -1596,3 +1596,57 @@ cases:
       ci:
         - worker-h5-tests.yml
       verifies: []
+  - id: PP-023
+    legacy_id: ""
+    title: "算料口径变更真跑：说「上下卷边改成 0.25」→ 先查本店真值 + 逐键「改前 → 改后」确认卡 → 点卡后才真写"
+    domains:
+      - product
+      - processing
+    tier: normal
+    persona: mibao
+    tags:
+      - write
+      - craft_calc
+      - write_path
+      - confirm_card
+    truths_ref:
+      - fabric-calc.craft-calc-config
+      - ai-chat.tool-classes
+    user_inputs:
+      - "上下卷边改成 0.25"
+      - "确认"
+    precondition: "前置 = 本店算料配置可读（`GET /api/admin/production/craft-calc-config` 返回 `data.config`，且含 `hem_margin`）；不成立时查询/写工具都 fail-closed，红会伪装成「agent 不会改算料口径」而不是数据层问题"
+    pre_clean:
+      - type: craft_calc_config_restore
+        keys:
+          hem_margin: 0.3
+    expectations:
+      - tool: craft_calc_config_query
+      - tool: interact
+      - tool: craft_calc_config_update
+    must_succeed:
+      - tool: craft_calc_config_update
+    required_args:
+      - tool: craft_calc_config_update
+        fields: [changes, before]
+    order_before:
+      - "interact[confirm] before craft_calc_config_update"
+    data_checks:
+      - "改前值必须逐字取自 craft_calc_config_query 的返回（服务端逐键核对，不符即 craft_calc_config_stale 且零写入 —— 不得凭记忆/默认常量填 before）"
+      - "确认卡必须逐键展示「改前 → 改后」并用中文字段名（「上下卷边合计」），不摆内部键名（hem_margin）"
+      - "未点卡不得调用 craft_calc_config_update；点卡后必须真写成功（success=true）——「只发了一张卡」不算做过"
+      - "只改商家点名的键，其余配置原样保留（PUT 是全量替换；工具侧以 current+changes 合并，判据在 tests/test_tools_craft_calc_config_update.py）"
+    post_clean:
+      - type: craft_calc_config_restore
+        keys:
+          hem_margin: 0.3
+    skip_reason: ""
+    merge_log: "2026-10-29 新增（issue #8116，黄金策能力优化 P0）：`craft_calc_config_update` 是 B 端最新的写工具（issue #7514），但此前**零个正向用例**（`scripts/mibao_coverage.py` 实测「0 条（正向 0）」）⇒ 它的确认链（查真值 → 逐键改前改后 → 点卡才写）从未被真实 LLM 跑过。本用例补上这条写路径；同批给 `tests/agent_eval/local_runner.py` 补复位手段 `craft_calc_config_restore`（共享租户配置的写方必须能复位，#4075 口径），判据 = tests/agent_eval/test_craft_calc_config_restore.py。取号说明：`scripts/next_case_id.py PP` 因 gh contents API 抖动（stream error）判不出（exit 3）；改为按 §26.3 手工核在飞面 —— main 最大 PP-022，唯一改 `cases/processing.yml` 的 open PR #8111 的最大号同为 PP-022（已 fetch refs/pull/8111/head 逐文件比对）⇒ PP-023 空闲。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_craft_calc_config_update.py"
+        - "backend/ai-agent-service/tests/test_tools_craft_calc_config_query.py"
+        - "tests/agent_eval/test_craft_calc_config_restore.py"
+      ci:
+        - agent-eval.yml
+      verifies: []

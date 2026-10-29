@@ -5662,3 +5662,56 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+  - id: PR-133
+    legacy_id: ""
+    title: "冒烟 · 改价闭环：一句「把遮光窗帘的价格改成 199」→ 改前→改后确认卡 → 点卡后真写"
+    domains:
+      - product
+    tier: smoke
+    persona: mibao
+    tags:
+      - write
+      - price
+      - write_path
+      - smoke
+    truths_ref:
+      - id-resolve.name
+      - id-resolve.no-fabricate
+    user_inputs:
+      - "把遮光窗帘的价格改成 199"
+      - "确认"
+    namespaces:
+      - "product_name:遮光窗帘"
+    precondition:
+      - type: product_count_for_keyword
+        source: "遮光窗帘"
+        expect: 1
+    expectations:
+      - tool: product_update
+        args:
+          product_id: 遮光窗帘
+          price: "199"
+    must_succeed:
+      - tool: product_update
+    required_args:
+      - tool: product_update
+        fields: [product_id, price, before_price]
+    order_before:
+      - "interact[confirm] before product_update"
+    post_clean:
+      - type: product_price_restore
+        product_keyword: "遮光窗帘"
+        price: 168
+    data_checks:
+      - "改前价必须取自 product_detail 的返回（before_price 必填，漏传即 price_preview_required 拦截：tests/test_price_preview_guard.py）"
+      - "先发「改前 → 改后」确认卡，点卡之后才允许改（order_before 机器断言）"
+      - "改的是商品级 base_price：168 → 199，跑完由 post_clean 复位的回读自证"
+    skip_reason: ""
+    merge_log: "2026-10-29 新增（issue #8116，P0-2）：smoke 档原有 8 条**全是只读列表查询**，写路径一条都没有 ⇒ 任何写链路回归只能靠 48 分钟的 normal 才发现。本用例是「冒烟档的写面代表」（与 normal 档的 PR-009/PR-010 同族，刻意收窄到两轮：诉求 → 点卡 → 真写）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_product_search.py"
+        - "backend/ai-agent-service/tests/test_price_preview_guard.py"
+      ci:
+        - agent-eval.yml
+      verifies: []

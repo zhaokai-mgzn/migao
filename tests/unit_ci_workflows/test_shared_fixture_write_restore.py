@@ -274,6 +274,13 @@ PRODUCT_ATTR_WRITERS: dict = {
     # 前置等价性由用例自己承担（CH-050 声明 `namespaces: scheduled_task:…` 并行互斥，
     # 且第 3 轮就地把该提醒**取消**掉 ⇒ 重跑前置等价）。
     ("scheduled_task_manage", ""): "",
+    # ── #8116（2026-10-29，P0 修尺子）：`PP-023` 让「算料口径变更」第一次成为**活写方** ──────
+    # 写的是**租户级算料配置**（`PUT /api/admin/production/craft-calc-config`，全量替换），
+    # **不触达任何商品属性** ⇒ 属性键 = `""`（与 `order_create` / `aftersale_create` 同档）；
+    # 判据 ②③（要不要复位）对它**不适用**，而不是被豁免。
+    # 前置等价性由 PP-023 自己承担：`pre_clean` + `post_clean` 都声明
+    # `craft_calc_config_restore`（runner 侧新增的复位类型，回读逐键核对）。
+    ("craft_calc_config_update", ""): "",
     ("notification_manage", "mark_read"): "",
     ("notification_manage", "read_all"): "",
     # ── 具名批量写方（issue #5314）：属性由**用例声明的 `batch_type`** 决定 ⇒ 3 元组键 ──

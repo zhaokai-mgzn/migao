@@ -1633,7 +1633,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释）；2026-09-21（case-trust burn-down 缴费，issue #4971，metric=entries ⇒ 整条销账）：补 `must_succeed[category_manage(action=delete)]`（效果层：「调用了 ≠ 成了」，#3778）+ `namespaces[category:轻奢系列]`（弱证据，如实登记：夹具层无分类域复位/准备动作，且与 CT-002「建同一个分类」自动串行）+ 机器计分型前置断言；`user_inputs` / `expectations` / `data_checks` 原第 1 条 / `skip_reason` / `traces` 一字未动、断言强度不放宽 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`category_manage` 的写 action `delete` 已删除（工具收窄为只读 `{tree}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `[interact(confirm), category_manage(action=delete)]` 改判为 `direct_reply`（如实说明 + 引导去后台商品分类页面：删除**没有存活的只读路径**），`must_succeed[category_manage(action=delete)]` 整格移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）；`data_checks` 的写路径断言（「二次确认后才执行删除」+ 写面前置）改判为只读/如实说明口径（原第 1 条文本已并入新第 1 条保留为历史）。 ｜ tags: delete, destructive, confirm
 
-## 对话边界域（51 case）
+## 对话边界域（52 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -2481,6 +2481,25 @@
 必须: {'any_of': ['后台', '商品管理']}
 ```
 溯源: 2026-10-19 新增（issue #7334 二次审计 P0-A）：用户裁定「上下架都 ❌」后，补一条真实说法用例把「不得声称已下架 + 给后台落点」变成机器断言；此前只有 PR-007/PR-025 的退役条目，没有一条在跑的 B 端拒绝用例。取号 = CH-050 + 2 = CH-052（同 CH-051 的取号说明）。 ｜ tags: chat, capability-boundary, refusal-integrity
+
+### CH-053. 冒烟 · 定时提醒闭环：说「3 天后提醒我跟进李总」→ 确认卡 → 落一条待办；再说取消 🟢
+```
+你: 3 天后提醒我跟进李总
+你: 确认
+你: 算了，把刚才那条提醒取消掉
+端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
+期望: scheduled_task_manage
+期望: interact
+期望: scheduled_task_manage
+数据: 三件套（fire_at / task_type / criterion）必须由模型从自然语言抽全：缺任一 ⇒ 工具在发 HTTP 之前就拒（missing_arguments）⇒ 调用成功即证明抽全
+数据: 写面必须走确认卡（interact component=confirm）：A 档可逆写不得免卡直写
+数据: 取消必须带创建时返回的 task id（action 闭集 = create/list/cancel，真值见 tests/test_scheduled_task_manage.py）
+前置: 前置 = reminder skill 绑定 `scheduled_task_manage`、且当前身份具备 admin/operator 角色（2026-10-19 B 端可达集实测含该工具）；不成立 ⇒ 期望 unmatched，红会伪装成「agent 不会建提醒」
+命名空间(同键互斥·自动串行): scheduled_task:跟进李总
+必须成功: scheduled_task_manage
+```
+真值: agent-notification.scheduled-task-trio
+溯源: 2026-10-29 新增（issue #8116，P0-2）：smoke 档补写路径代表（与 normal 档 CH-050 同族，换用不同的提醒对象避免与 CH-050 的 namespaces 互斥）。 ｜ tags: chat, scheduled_task, write_path, smoke
 
 ## 跨域（3 case）
 
@@ -7775,7 +7794,7 @@
 ```
 溯源: 2026-10-27 新增（issue #7902）。取号 = scripts/next_case_id.py OR 现取 ⇒ OR-072。口径：① 一处入口 = 销售订单详情（发货页 / 发货记录页 / 生产明细页的打印入口一并退场）；② 加工单/面料单/水洗唛的纸面名与是否出现由派单产物（processing_orders.order_kind）决定；③ 联合打印 = 勾选 + 逐张引导（浏览器不保证 window.print 阻塞到出纸，且四份纸的纸型不同，物理上必须一张一张换纸）；④ 打印流水只记「已发起 + 结果」，不假装能确认物理出纸。⚠️ 未固化（照实登记）：① 生产明细页撤掉打印后，车间岗位需 order:detail 才能在订单详情打水洗唛（用户 2026-10-27 已选该方案）；② 真机纸面与驱动分页仍由打印介质矩阵守卫承担，本用例不重复；③ 蓝牙直连（Web Bluetooth）在 jsdom 里只能判「入口存在 + 上报通道为 ble」，真实出纸不在面内。 ｜ 2026-10-28（issue #7964）判据 5 改判：入口搬进**打印预览表头**、订单明细页的常驻区块下线（用户逐字「打印流水应该放到打印预览界面上……不要放到订单明细中」）；数据面 / 端点 / 权限码 / 列表聚合口径不动。 ｜ tags: order, print-center, print-log
 
-## 加工项域（31 case）
+## 加工项域（32 case）
 
 ### PP-002. 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query） 🔵
 ```
@@ -8263,6 +8282,28 @@
 跳过: [backend-contract] 本条只登记「长延时不得溢出 2^31-1 + 到期才发起一轮对账」这一层**确定性调度行为**（零网络，假时钟），由 frontend/worker-h5/tests/worker-h5-7251-idle-timer.test.mjs 单测执行 ⇒ 不进 agent-eval 冒烟。
 ```
 溯源: 2026-10-18 新增（issue #7251）：只修**调度**，不改 30 天口径 —— `armIdle()` 改为按 `idleSlices()` 分片排队（每片 ≤ `MAX_TIMER_DELAY_MS`，前 N-1 片只续排、末片到期才 `checkAlive()`），并新增同文件 ⑥ 的全区间类级判据；同批修好测试侧因「长定时器不再 1ms 立即触发」而挂住测试进程的一处（frontend/worker-h5/tests/worker-h5-6749-stale-login-error.test.mjs 用 `t.after(() => app.destroy())` 显式销毁）。取号 = PG-089（`python3 scripts/next_case_id.py pg` 实跑：PG → main:001-087 · PR #7224:088 → 取 PG-089）。 ｜ tags: processing, worker, session, timer, backend-contract
+
+### PP-023. 算料口径变更真跑：说「上下卷边改成 0.25」→ 先查本店真值 + 逐键「改前 → 改后」确认卡 → 点卡后才真写 🔵
+```
+你: 上下卷边改成 0.25
+你: 确认
+端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
+期望: craft_calc_config_query
+期望: interact
+期望: craft_calc_config_update
+数据: 改前值必须逐字取自 craft_calc_config_query 的返回（服务端逐键核对，不符即 craft_calc_config_stale 且零写入 —— 不得凭记忆/默认常量填 before）
+数据: 确认卡必须逐键展示「改前 → 改后」并用中文字段名（「上下卷边合计」），不摆内部键名（hem_margin）
+数据: 未点卡不得调用 craft_calc_config_update；点卡后必须真写成功（success=true）——「只发了一张卡」不算做过
+数据: 只改商家点名的键，其余配置原样保留（PUT 是全量替换；工具侧以 current+changes 合并，判据在 tests/test_tools_craft_calc_config_update.py）
+清理: craft_calc_config_restore(keys={'hem_margin': 0.3})
+复位: craft_calc_config_restore(keys={'hem_margin': 0.3})
+前置: 前置 = 本店算料配置可读（`GET /api/admin/production/craft-calc-config` 返回 `data.config`，且含 `hem_margin`）；不成立时查询/写工具都 fail-closed，红会伪装成「agent 不会改算料口径」而不是数据层问题
+时序: interact[confirm] before craft_calc_config_update
+必填: craft_calc_config_update() 字段 changes, before
+必须成功: craft_calc_config_update
+```
+真值: fabric-calc.craft-calc-config, ai-chat.tool-classes
+溯源: 2026-10-29 新增（issue #8116，黄金策能力优化 P0）：`craft_calc_config_update` 是 B 端最新的写工具（issue #7514），但此前**零个正向用例**（`scripts/mibao_coverage.py` 实测「0 条（正向 0）」）⇒ 它的确认链（查真值 → 逐键改前改后 → 点卡才写）从未被真实 LLM 跑过。本用例补上这条写路径；同批给 `tests/agent_eval/local_runner.py` 补复位手段 `craft_calc_config_restore`（共享租户配置的写方必须能复位，#4075 口径），判据 = tests/agent_eval/test_craft_calc_config_restore.py。取号说明：`scripts/next_case_id.py PP` 因 gh contents API 抖动（stream error）判不出（exit 3）；改为按 §26.3 手工核在飞面 —— main 最大 PP-022，唯一改 `cases/processing.yml` 的 open PR #8111 的最大号同为 PP-022（已 fetch refs/pull/8111/head 逐文件比对）⇒ PP-023 空闲。 ｜ tags: write, craft_calc, write_path, confirm_card
 
 ## 加工单域（85 case）
 
@@ -9462,7 +9503,7 @@
 ```
 溯源: 2026-10-27 改判（issue #7945；用户逐字见 user_inputs）⇒ 上一版（#7919）的「返工报工自动落质检」**整体删除**：`QualityCheckService#recordReworkReport` 与 `ProductionService#recordReworkQuality` 双双移除（不是藏起来），并由类级守卫 ReworkQualitySeparationGuardTest 钉住「返工写路径不持有任何质检依赖」；QC 判定入口迁回**手机端**（`inspect` 页面集，质检员扫码），PC 质检记录页移除「待检成品帘 + 录入判定」只留指标 + 流水。两单补件键：V202 迁移给 `rework_orders.order_item_id/set_id/set_no/position_name` 与 `quality_inspections.set_id/set_no`，车间返工从工序实例取件、质检由手机端扫码带 `set_no`（多套未给 ⇒ 422，不猜）。取号沿用 PG-099（原用途随 #7919 撤销）。 2026-10-28 追加（issue #7973）：质检读面按件返回 `records`（带 `set_no`）+ 待复检门禁（409 `QUALITY_REWORK_PENDING`）+ 复检两个动作（`pass` / `recheck=true` + `rework`）——把「报了还能一直报」变成「一次问题一条记录、复检才闭环」。 ｜ tags: quality-inspection, rework, worker-h5, backend-contract, piece-key
 
-## 商品域（132 case）
+## 商品域（133 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -11298,6 +11339,25 @@
 真值: product-sku-stock.status-flow
 溯源: 2026-10-24 新增（用户裁定逐字：「我们现在商品中设置了库存数值，这个要移除了，要根据真实库存数据来」；同日两问的选择：① 移除范围 = A「表单不再录入，库存只由真实单据产生」；② 存量数据 = C「清零，只认真实入库」，该选项原文写明「会改变现网可售数量，风险最高」）。为什么是「按真实单据净额重算」而不是无脑置 0：置 0 会让「入库 60 米」的商品变成 0 而 `stock_batches` 仍有 60 米，`BatchStockViews` 的 `diff = batchRemaining − skuStock` 恒等式当场破；纯手工库存的商品算出 0 = 用户选择的「清零」。 ｜ tags: product, stock, product_contract, data_migration
 
+### PR-133. 冒烟 · 改价闭环：一句「把遮光窗帘的价格改成 199」→ 改前→改后确认卡 → 点卡后真写 🟢
+```
+你: 把遮光窗帘的价格改成 199
+你: 确认
+端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
+期望: product_update(product_id=遮光窗帘, price=199)
+数据: 改前价必须取自 product_detail 的返回（before_price 必填，漏传即 price_preview_required 拦截：tests/test_price_preview_guard.py）
+数据: 先发「改前 → 改后」确认卡，点卡之后才允许改（order_before 机器断言）
+数据: 改的是商品级 base_price：168 → 199，跑完由 post_clean 复位的回读自证
+复位: product_price_restore(product_keyword=遮光窗帘、price=168)
+前置: product_count_for_keyword(source=遮光窗帘、expect=1)
+命名空间(同键互斥·自动串行): product_name:遮光窗帘
+时序: interact[confirm] before product_update
+必填: product_update() 字段 product_id, price, before_price
+必须成功: product_update
+```
+真值: id-resolve.name, id-resolve.no-fabricate
+溯源: 2026-10-29 新增（issue #8116，P0-2）：smoke 档原有 8 条**全是只读列表查询**，写路径一条都没有 ⇒ 任何写链路回归只能靠 48 分钟的 normal 才发现。本用例是「冒烟档的写面代表」（与 normal 档的 PR-009/PR-010 同族，刻意收窄到两轮：诉求 → 点卡 → 真写）。 ｜ tags: write, price, write_path, smoke
+
 ## 工具注册器域（1 case）
 
 ### RG-001. ToolRegistry 注册/查询/执行审计 🔵
@@ -11312,7 +11372,7 @@
 真值: ai-chat.tool-classes, ai-chat.permission-layers
 溯源: 2026-08-25 新增：ai-agent-service tools-mixed-part2 覆盖率补全（issue #2426） ｜ tags: registry, tool_execute, audit
 
-## 设置域（10 case）
+## 设置域（11 case）
 
 ### ST-001. 系统设置 - 读取 🔵
 ```
@@ -11446,6 +11506,23 @@
 ```
 真值: ai-chat.tool-classes, settings-manage.ai-config
 溯源: 2026-09-18 新增（issue #4085 第 1 项）：用户 2026-09-18 裁定「建触发机制」——新增 C 端只读工具 payment_qrcode_query（数据源复用 GET /api/admin/agent/payment-qrcodes，不新造数据源）→ _detect_card_type 映射 payment → 恢复 mini-app 渲染分支 → 放行「渲染端 ⊆ 后端可产出」L0 契约守卫。本用例提供该工具的工具级正向覆盖（Case Coverage Gate 的 uncovered/missing_positive 缺口由此关闭）。 ｜ tags: xiaobu, payment, settings
+
+### ST-013. 冒烟 · 通知标记已读：说一句「把新订单通知标为已读」→ 确认门禁 → 点卡后真做（不得先声张） 🟢
+```
+你: 把新订单通知标为已读
+你: 确认
+端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
+期望: notification_manage(action=mark_read)
+数据: 写确认门禁：R1 只能提出 + 发确认卡（或先确认再改），**不得**在 R1 就声称已完成（forbidden_text 收窄到 R1）
+数据: 真做：mark_read 必须 success=true（工具调用失败不算做过）
+数据: 前置由 pre_clean 复位成未读（首跑消费掉唯一夹具行后，重跑前置等价，#7048 P10 同款）
+清理: notification_unread_restore(notification_id=ntf_eval_new_order_0001、recipient_id=dev_user)
+前置: 前置 = 本店通知中心存在未读通知 `ntf_eval_new_order_0001`（由 pre_clean 复位成未读；夹具行缺失时 agent **合理地**答「这条已是已读」，此时的红是数据层、不是行为层）
+禁词（第 1 轮）: 已标记为已读
+必须成功: notification_manage
+```
+真值: agent-notification.notification-status
+溯源: 2026-10-29 新增（issue #8116，P0-2）：smoke 档补写路径代表（与 normal 档 ST-005 同族，收窄为「一句话 → 点卡 → 真做」两轮）。 ｜ tags: write, notification, write_path, smoke
 
 ## 令牌刷新域（4 case）
 
@@ -13618,15 +13695,15 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：919（活跃 143，跳过 776）
-- tier 分布：smoke 12 / normal 851 / adversarial 32
+- 用例总数：923（活跃 147，跳过 776）
+- tier 分布：smoke 15 / normal 852 / adversarial 32
 - 售后域：16
 - Agent 核心域：12
 - API 层域：21
 - 登录认证域：14
 - B 端小程序域：53
 - 分类域：3
-- 对话边界域：51
+- 对话边界域：52
 - 跨域：3
 - 客户域：13
 - 数据域：25
@@ -13638,11 +13715,11 @@
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：72
-- 加工项域：31
+- 加工项域：32
 - 加工单域：85
-- 商品域：132
+- 商品域：133
 - 工具注册器域：1
-- 设置域：10
+- 设置域：11
 - 令牌刷新域：4
 - 前端 UI 域：143
 - 跨切面工具域：2
