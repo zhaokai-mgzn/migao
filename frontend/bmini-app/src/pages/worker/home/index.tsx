@@ -53,6 +53,7 @@ import {
   REWORK_PAGE_ROUTE,
   SHIPMENT_ORDERS_PAGE_ROUTE,
   SHIPMENT_PAGE_ROUTE,
+  STOCK_PAGE_ROUTE,
   WORKER_HOME_LOGIN_REQUIRED,
   WORKER_TAB_LOGIN_ROUTE,
 } from '../../../utils/inbound/gaps'
@@ -63,6 +64,7 @@ import {
   WORKER_MENU_KEYS,
   menuVisible,
   REWORK_PAGE_KEY,
+  STOCK_PAGE_KEY,
   TO_SHIP_PAGE_KEY,
 } from '../../../utils/workerMenu'
 
@@ -115,6 +117,8 @@ export default function WorkerHomePage() {
   const showToShip = menuVisible(pages, pagesUnread, TO_SHIP_PAGE_KEY)
   const showShipment = menuVisible(pages, pagesUnread, WORKER_MENU_KEYS.shipment)
   const showRework = menuVisible(pages, pagesUnread, REWORK_PAGE_KEY)
+  // 库存修正（issue #8104）：物料组的一张行卡 —— 这一批实际还剩多少，工人当场改。
+  const showStock = menuVisible(pages, pagesUnread, STOCK_PAGE_KEY)
   // 我的计件（issue #7934）：显隐键 = 工人档案的 `piecework`（后端 `WorkerPages` 闭词表里**本来就有**
   // 这个键 —— 此前只有 H5 `/w/piecework.html` 消费它）。本卡把它归位到工人菜单页。
   const showPiecework = menuVisible(pages, pagesUnread, WORKER_MENU_KEYS.piecework)
@@ -235,6 +239,24 @@ export default function WorkerHomePage() {
             </View>
             <Text className='worker-home__entry-go'>›</Text>
           </View>
+
+          {/* 库存修正（issue #8104；用户 2026-10-29：「手机端还要增加一个库存修正的功能……
+              允许工人对某个批次的布匹进行修正」）。显隐键 = 工人档案的 `stock`（默认开、可逐人关）。
+              入口是**静态字面锚点**（`Taro.navigateTo({ url: STOCK_PAGE_ROUTE })`）：
+              入口可达性守卫按它静态证明「页面有入口」，数据驱动会让它解析不到。 */}
+          {showStock ? (
+          <View
+            className='worker-home__entry'
+            onClick={() => Taro.navigateTo({ url: STOCK_PAGE_ROUTE })}
+          >
+            <View className='worker-home__entry-bar worker-home__entry-bar--a' />
+            <View className='worker-home__entry-body'>
+              <Text className='worker-home__entry-text'>库存修正</Text>
+              <Text className='worker-home__entry-sub'>这一批实际剩多少 ⇒ 按实盘改过来</Text>
+            </View>
+            <Text className='worker-home__entry-go'>›</Text>
+          </View>
+          ) : null}
 
           {showShipment ? (
           <View

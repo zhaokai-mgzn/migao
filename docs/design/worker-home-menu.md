@@ -57,6 +57,7 @@
 | 干活 | **裁高计算** | `/w/machine.html`（一体机那台屏同一份）或端内页 | `cut_calc` | ✅ 已有（`/w/` 侧）· bmini 侧需跨应用入口 |
 | 物料 | **拍照入库** | `pages/worker/inbound/index` | —（工人面固有） | ✅ 已有 |
 | 物料 | **补打入库标签** | `pages/worker/reprint/index` | —（工人面固有） | ✅ 已有 |
+| 物料 | **库存修正**（按批次把余量改成实盘米数） | bmini `pages/worker/stock/index`（issue #8104） | **`stock`**（issue #8104 新增；默认开、可逐人关） | ✅ 已落地（2026-10-29）· 端点 `GET/POST /api/worker/batch-stock/**`（复用按批次盘点的唯一写面）· **手机 `/b/` 与 APK 观星台终端同源**（同一份 `/b/` 页面） |
 | 出货 | **拍照发货** | `pages/worker/shipment/index`（在飞） | `shipment` | 🚧 在飞（#6761） |
 | 出货 | **待发货单**（全完工订单列表 + 发货标签） | `/w/shipment.html`（`/w/` 侧已落地，issue #7761）+ bmini `pages/worker/shipment-orders/index`（issue #7806 P1a） | **`to_ship`**（issue #7814 新增 —— 与 `shipment`=拍照发货的**写面**分开，商家可分别勾选） | ✅ `/w/` 侧已有（列表 + 50×70 发货标签；端点 `GET /api/worker/shipment/orders`）· bmini 侧列表已上（打印待 #7803） |
 | 我的 | **我的计件**（**含金额**） | bmini `pages/worker/piecework/index`（端内，issue #7934）· H5 `/b/report/piecework.html`（兼容期可直连） | `piecework` | ✅ 已上线（2026-10-27）· 端点 `GET /api/worker/piecework`（#6767 即已就绪，复用商家端同一份聚合）· 入口在**工人菜单**（报工详情页页头的那条已于 #7934 撤除） |
@@ -82,7 +83,7 @@
 商家端「设置 → 工人端页面」            WorkerPageConfigPanel（V141）
         │  写
         ▼
-WorkerPages 闭词表 { report, piecework, order, cut_calc, shipment, to_ship }  ← 全仓唯一真值（+ inspect 逐人开）
+WorkerPages 闭词表 { report, piecework, order, cut_calc, shipment, to_ship, stock }  ← 全仓唯一真值（+ inspect / rework 逐人开）
         │  GET /api/worker/me → pages（+ labels）
         ▼
 工人端渲染 ──┬── worker-h5 `/w/`：`effectivePages()` 已消费（report / cut_calc）
@@ -105,6 +106,7 @@ WorkerPages 闭词表 { report, piecework, order, cut_calc, shipment, to_ship } 
 | `shipment` | 发货 | 拍照发货 | 拍运单 / 商品标签 ⇒ 生成发货单 |
 | `piecework`（**已落地**：#6767 端点 / #7934 端内页） | — | 我的计件 | 本月做了多少、这一笔怎么算的 |
 | `to_ship`（**已落地**，issue #7814） | — | 待发货单 | 不用先记住单号，从列表点进去 |
+| `stock`（**已落地**，issue #8104） | — | 库存修正 | 这一批实际剩多少 ⇒ 按实盘改过来 |
 
 ---
 

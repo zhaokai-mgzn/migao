@@ -49,6 +49,9 @@ const COPY_SOURCES: { file: string; mode: 'all' | 'exported' }[] = [
   { file: 'src/utils/inbound/skuSuggest.ts', mode: 'all' },
   { file: 'src/utils/inbound/gaps.ts', mode: 'exported' },
   { file: 'src/utils/inbound/reprintFlow.ts', mode: 'exported' },
+  // issue #8104：库存修正页的回执文案由它产出（`describeCorrection` 直接上屏）——
+  // 登记进来才受「零 markdown / 零研发术语」的机械覆盖。
+  { file: 'src/utils/workerStock.ts', mode: 'all' },
 ]
 
 /** markdown 强调 / 行内代码 / 标题（Taro 不渲染 ⇒ 原样上屏） */

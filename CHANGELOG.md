@@ -35,6 +35,23 @@
 
 判据：`WarehouseLocationServiceTest`（同单复用不看容量 / 首件走水位 / advisory 键）、`InboundStockDocumentTest`（两行同单只取一次仓位、重复件 409）、`WarehouseLocationAllocationRealDbTest`（真库：满仓复用 + 并发两事务同仓）、`WarehouseLocationMapperTest`（SQL 不带容量过滤 + advisory 锁）、前端 `WarehouseLocationWaterLevelBatch.test.tsx`（超容显示）；用例 WH-011。
 
+### 工人端新增「库存修正」：手机 / 手持机按批次把余量改成实盘米数（2026-10-29，issue #8104）
+
+用户逐字：「手机端还要增加一个库存修正的功能，apk程序也要同步增加这个功能，允许工人对某个批次的布匹进行修正」。
+
+- **手机端（bmini `/b/` 工人工作台）新增「库存修正」行卡**：搜批次（批次号 / 货号 / 缸号 / 入库单号）→
+  看系统余量 → 填实盘米数 + 选原因（数量记错了 / 破损报废 / 报工选错批次 / 其他）→ 二次确认 → 提交；
+  回执给盘前 / 实盘 / 差异 / 盘后，三态分开说（已修正 / 与系统一致未写入 / 此前已记过账）。
+- **APK（观星台终端，商米手持机）同源即有**：APK 加载的就是同一份 `/b/` 页面 ⇒ 行卡随页面发布出现，
+  **无需重新打包**（Android 壳只拦黄金策登录页与机台页）。
+- **服务端复用按批次盘点的唯一写面**（`/api/worker/batch-stock/{batches,correction}`）：批次分录 + SKU 库存同一事务对齐，
+  不新造第二套库存逻辑、不加迁移；实盘 == 系统余量 ⇒ **零写入**；幂等键 `clientRequestId`（重试 / 连点只记一笔）。
+- **台账答得出「谁、为什么」**：批次分录 `operator` = 工人姓名、`note` 以「工人库存修正：姓名（工号），原因 …」开头
+  （工人 session 原本会记成 `system` = 假账）。
+- **菜单可设**：`WorkerPages` 闭词表新增 `stock` 并默认开启，商家后台「设置工人端菜单」可逐人关。
+- 边界：不做盘点单（无单号 / 审批 / 打印）；一次提交只改一个批次；不新增批次来源 reason（工人修正沿用 `reason=stocktake`）。
+- 判据：`WorkerBatchStockControllerTest` / `WorkerBatchStockServiceTest`（后端）、`worker-stock` / `worker-stock-page`（端侧）、
+  入口可达 + 写入口台账 + 卡片对比度 / 纯文本 / 输入面台账（类级）。用例 = BM-056。
 
 ### 物流类型打通全链路：工人端、智能体、承运商候选（2026-10-29，issue #8071 / #8079 / #8080）
 用户裁定「工人端要区分物流和快递，全链路都要区分」。上一轮只补了商家后台两个入口（#8070 / #8073），这一轮把剩下三条路补齐。

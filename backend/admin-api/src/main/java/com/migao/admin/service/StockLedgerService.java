@@ -83,6 +83,32 @@ public class StockLedgerService extends ServiceImpl<StockLedgerMapper, StockLedg
     public void record(Long tenantId, String productId, Long skuId, String skuCode,
                        BigDecimal beforeQty, BigDecimal afterQty, String reason, String refNo, String note,
                        BigDecimal unitCost, BigDecimal avgCostBefore, BigDecimal avgCostAfter) {
+        record(tenantId, productId, skuId, skuCode, beforeQty, afterQty, reason, refNo, note,
+                null, null, null, null);
+    }
+
+    /**
+     * 记录一次 SKU 库存变更（追加写）+ **显式操作人**（issue #8104）。
+     *
+     * <p>为什么需要它：{@link #resolveOperator()} 只认商家 JWT 的 principal，而工人 session 的
+     * principal 是工人 id 字符串 ⇒ 回落 {@code system}。工人侧的库存写（批次库存修正）若记成
+     * 「系统自己改的」，读流水的人会误判「没人动过」—— 那是**假账**。</p>
+     *
+     * @param operator 台账 {@code operator}；{@code null} / 空白 ⇒ 回落既有 {@link #resolveOperator()}
+     *                 （admin 路径零改动）—— 工人侧由 {@code WorkerBatchStockService} 显式传姓名
+     */
+    public void record(Long tenantId, String productId, Long skuId, String skuCode,
+                       BigDecimal beforeQty, BigDecimal afterQty, String reason, String refNo, String note,
+                       String operator) {
+        record(tenantId, productId, skuId, skuCode, beforeQty, afterQty, reason, refNo, note,
+                null, null, null, operator);
+    }
+
+    /** 全部参数形态的唯一落库点（成本三参 + 操作人；{@code null} = 该次未知 / 回落既有口径）。 */
+    private void record(Long tenantId, String productId, Long skuId, String skuCode,
+                        BigDecimal beforeQty, BigDecimal afterQty, String reason, String refNo, String note,
+                        BigDecimal unitCost, BigDecimal avgCostBefore, BigDecimal avgCostAfter,
+                        String operator) {
         StockLedger entry = StockLedger.builder()
                 .tenantId(tenantId)
                 .productId(productId)
@@ -100,7 +126,7 @@ public class StockLedgerService extends ServiceImpl<StockLedgerMapper, StockLedg
                 .costAmount(costAmountOf(afterQty.subtract(beforeQty), unitCost))
                 .avgCostBefore(avgCostBefore)
                 .avgCostAfter(avgCostAfter)
-                .operator(resolveOperator())
+                .operator(operatorOrCurrent(operator))
                 .createdAt(OffsetDateTime.now())
                 .build();
         stockLedgerMapper.insert(entry);
@@ -196,6 +222,15 @@ public class StockLedgerService extends ServiceImpl<StockLedgerMapper, StockLedg
                     ? securityUser.getUsername() : securityUser.getUserId();
         }
         return OPERATOR_SYSTEM;
+    }
+
+    /**
+     * 台账 {@code operator}（列宽 64）：显式给了就用它（工人写入必须记真人，见 #8104），
+     * 空 ⇒ 回落既有 JWT 口径；超长截断（不让它变成写库时才炸的 500）。
+     */
+    private static String operatorOrCurrent(String operator) {
+        String value = StringUtils.hasText(operator) ? operator.trim() : resolveOperator();
+        return value.length() <= 64 ? value : value.substring(0, 64);
     }
 
     private static BigDecimal stockOf(ProductSku sku) {

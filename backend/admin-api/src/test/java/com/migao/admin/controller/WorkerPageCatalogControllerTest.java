@@ -1,6 +1,6 @@
 package com.migao.admin.controller;
 
-// case_ids: PG-072, PG-065, HR-001, HR-002
+// case_ids: PG-072, PG-065, BM-056, HR-001, HR-002
 
 import com.migao.admin.security.RequirePermission;
 import com.migao.admin.worker.WorkerPages;
@@ -51,8 +51,10 @@ class WorkerPageCatalogControllerTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.data.pages[4]").value("shipment"))
                 // issue #7814：`to_ship`（待发货单）与 `shipment`（拍照发货）是**两个能力**，排在其后
                 .andExpect(jsonPath("$.data.pages[5]").value("to_ship"))
+                // issue #8104：`stock`（库存修正）默认开（操作工具，与 shipment 同档）
+                .andExpect(jsonPath("$.data.pages[6]").value("stock"))
                 // issue #7162：质检在闭词表里、但**不在默认集合**（逐人开；同时是服务端写准入）
-                .andExpect(jsonPath("$.data.pages[6]").value("inspect"))
+                .andExpect(jsonPath("$.data.pages[7]").value("inspect"))
                 .andExpect(jsonPath("$.data.default_pages.length()").value(WorkerPages.defaultPages().size()))
                 .andExpect(jsonPath("$.data.default_pages").value(
                         org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasItem("inspect"))))
@@ -61,7 +63,9 @@ class WorkerPageCatalogControllerTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.data.labels.shipment").value(WorkerPages.labels().get("shipment")))
                 // issue #7814：商家后台「设置工人端菜单」里必须能看到「待发货单」这一项
                 // （目录端点漏了它 ⇒ 面板里根本没有勾选项 ⇒ 用户报的那个形态）
-                .andExpect(jsonPath("$.data.labels.to_ship").value("待发货单"));
+                .andExpect(jsonPath("$.data.labels.to_ship").value("待发货单"))
+                // issue #8104：商家后台「设置工人端菜单」里必须能看到「库存修正」这一项
+                .andExpect(jsonPath("$.data.labels.stock").value("库存修正"));
     }
 
     @Test

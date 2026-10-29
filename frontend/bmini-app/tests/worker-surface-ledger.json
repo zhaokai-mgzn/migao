@@ -82,6 +82,21 @@
         "BM-015",
         "BM-025"
       ]
+    },
+    {
+      "page": "src/pages/worker/stock/index.tsx",
+      "call": "submitBatchCorrection(",
+      "label": "库存修正提交（按批次把余量改成实盘米数 —— 写库存）",
+      "requires_worker_session": true,
+      "gate_tokens": [
+        "const workerReady = hasWorkerSession()",
+        "if (!workerReady || phase === 'unauthorized') {"
+      ],
+      "guide_token": "STOCK_WORKER_LOGIN_REQUIRED",
+      "login_route_token": "WORKER_LOGIN_ROUTE",
+      "case_ids": [
+        "BM-056"
+      ]
     }
   ]
 }

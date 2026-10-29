@@ -1,6 +1,6 @@
 package com.migao.admin.worker;
 
-// case_ids: PG-072, PG-065, BM-006, HR-001, HR-002, UI-091
+// case_ids: PG-072, PG-065, BM-006, BM-056, HR-001, HR-002, UI-091
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,13 +36,15 @@ class WorkerPagesTest {
         // issue #6767（2026-10-12 用户逐字「需要给工人看」）：新增 `piecework`（我的计件，含金额）
         // —— 键与商家面人话名同批登记（WorkerPages.labels），默认与可选页同源 ⇒ 本条即闭词表守卫。
         assertThat(WorkerPages.defaultPages())
-                .containsExactly("report", "piecework", "order", "cut_calc", "shipment", "to_ship");
+                .containsExactly("report", "piecework", "order", "cut_calc", "shipment", "to_ship",
+                        "stock");
         // issue #7814（用户 2026-10-26「新增的工人菜单在这里也要能设置」）：`to_ship`（待发货单）
         // 与 `shipment`（拍照发货）是**两个能力** —— 读面 / 写面。合并成一个键 ⇒ 商家想关掉其中一个
         // 就得两个都关（菜单开关 = 显隐，关错了现场就没入口）。默认集合里两者都在。
         // issue #7162：`inspect`（质检）在闭词表里，但**不在默认集合**（逐人开、且是服务端写准入）
         assertThat(WorkerPages.ALL).containsExactly(
-                "report", "piecework", "order", "cut_calc", "shipment", "to_ship", "inspect", "rework");
+                "report", "piecework", "order", "cut_calc", "shipment", "to_ship", "stock", "inspect",
+                "rework");
         // issue #7860：`rework`（手机端「报返工的加工单列表」）也不在默认集合 —— 用户裁定
         // 「在工人档案中设置过可见权限的工人」才看得到；报返工的**写**准入与此无关。
         assertThat(WorkerPages.defaultPages()).doesNotContain("inspect", "rework");
@@ -115,8 +117,8 @@ class WorkerPagesTest {
             + "（工人端把空数组读成「没读到权限 ⇒ 全开」，原样下发等于服务端与端侧口径分叉）")
     void dirtyRestrictionFallsBackToAllPages() {
         // 全是未知键 ⇒ 归一为空集（只裁不放宽）⇒ 下发侧回落全开（fail-open，与 H5 的 effectivePages 同口径）
-        assertThat(WorkerPages.restrictedOrNull(List.of("stock"))).isEmpty();
-        assertThat(WorkerPages.effectiveFor(List.of("stock")))
+        assertThat(WorkerPages.restrictedOrNull(List.of("stocktake"))).isEmpty();
+        assertThat(WorkerPages.effectiveFor(List.of("stocktake")))
                 .containsExactlyElementsOf(WorkerPages.defaultPages());
         assertThat(WorkerPages.effectiveFor("[]")).containsExactlyElementsOf(WorkerPages.defaultPages());
         assertThat(WorkerPages.effectiveFor(List.of(1, 2)))

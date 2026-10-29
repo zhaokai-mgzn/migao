@@ -2162,6 +2162,24 @@ _CASE_BM_055 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── BM-056 [NORMAL] 工人端库存修正 - 手机/APK 按批次把余量改成实盘米数（复用按批次盘点唯一写面 + 幂等 + 台账可答「谁/为什么」）（源: cases/bmini.yml）──
+_CASE_BM_056 = EvalCase(
+    id='BM-056',
+    legacy_id='',
+    title='工人端库存修正 - 手机/APK 按批次把余量改成实盘米数（复用按批次盘点唯一写面 + 幂等 + 台账可答「谁/为什么」）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工人（工号 + PIN 登录后）在工作台点「库存修正」→ 搜批次（批次号 / 货号 / 缸号 / 入库单号任一段，空关键词 = 最近入库）→ 看到系统余量 → 选中该批 → 填实盘米数（例如系统说 45.5 米、实盘 42 米）+ 选原因（数量记错了 / 破损报废 / 报工选错批次 / 其他）→ 二次确认「系统 45.5 米 → 实盘 42 米」→ 提交 → 回执显示盘前 / 实盘 / 差异 / 盘后'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**未登录零读写**：无工人 session ⇒ 两个端点都 401，服务层零调用；页面只渲染引导 + 去登录（`WORKER_LOGIN_ROUTE`）。红证：摘掉 gate ⇒ `tests/worker-stock-page.test.tsx` ① 红；控制器侧 = `WorkerBatchStockControllerTest` ①（无 session ⇒ 401 且 `verify(never())`）', '判据 2·**复用唯一写面（不是第二套库存逻辑）**：本类不写任何表，只调 `BatchStocktakeService#stocktake`，参数逐值钉住（tenant 来自会话上下文、productId 由批次行解析、runId = `wc-<client_request_id>`、实盘行、审计来源）。红证：把 productId 改成请求体自带 ⇒ `WorkerBatchStockServiceTest` ① 的 ArgumentCaptor 断言红', '判据 3·**幂等**：同一 `client_request_id` 的重复提交 ⇒ 第二遍 `status=replayed`、库存只变一次；缺 / 超长 / 非法字符 ⇒ 422（`WORKER_STOCK_CORRECTION_REQUEST_ID`）。红证：把 runId 换成随机值 ⇒ 重放判据红（真库面 = `uk_batch_consumption_stocktake` 唯一索引）', '判据 4·**实盘为准、零差异零写入**：实盘 == 当刻余量 ⇒ `unchanged`，不落批次分录、不动 SKU 库存。红证：把 `unchanged` 也当 `applied` 回 ⇒ 回执判据红', '判据 5·**准入先于写入**：负数 ⇒ 400（`WORKER_STOCK_CORRECTION_ACTUAL_NEGATIVE`，文案说清「最小 0，报损请选破损/报废」）；超 1 位小数 / 缺实盘 / 未知原因 / 备注超 60 字 ⇒ 422；批次不属于本租户 ⇒ 404；以上全部零写入。红证：放行 `-1` ⇒ `WorkerBatchStockServiceTest` ③ 红', '判据 6·**台账答得出谁/为什么**：批次分录 `operator` = 工人姓名；`note` 以「工人库存修正：姓名（工号 X），原因 …」开头（工人 session 在 `resolveOperator()` 里是 system ⇒ 不显式给就是假账）。红证：把 audit 去掉 ⇒ `WorkerBatchStockServiceTest` ① 的 audit 断言红', '判据 7·**端侧三态分开说 + 传输白名单**：applied / unchanged / replayed 三句互不相同（「已修正 / 与系统一致未写入 / 此前已记过账」）；提交体只有 `batch_id` / `actual_meters` / `reason` / `note` / `client_request_id`，**没有** worker_id / worker_name / tenant_id。红证：把身份字段塞进 body ⇒ `tests/worker-stock.test.ts` ③ 红', '判据 8·**端侧幂等键语义**：同一份输入重试 ⇒ 复用同一个 `client_request_id`；改了米数 / 原因 / 备注 ⇒ 换新键（否则服务端按回放处理，静默不落账）。红证：每次提交都新生成 ⇒ `tests/worker-stock-page.test.tsx` ⑦ 红', '判据 9·**入口可达 + 写入口台账 + 视觉形态**：`pages/worker/stock/index` 登记进 `app.config.ts` 且工人首页有**真导航**（漏登记 = 死链 ⇒ `page-entry-reachability` 红）；`submitBatchCorrection(` 登记进工人写入口台账（未登记即红，且必须命中身份分流 + 引导登录记号）；新页 `__gate` 卡片有可见边界、页面有非白底色（`worker-card-contrast-guard`）', '判据 10·**菜单开关可设**：`WorkerPages.STOCK = stock` 进闭词表与默认集合，商家后台「设置工人端菜单」能看到「库存修正」（目录端点 `labels.stock`）；`/w/` 的闭词表镜像同批更新（`worker-h5-pages` 逐值比对）。红证：只改后端不改镜像 ⇒ `frontend/worker-h5/tests/worker-h5-pages.test.mjs` 红'],
+    skip_reason='[backend-contract] 确定性判据（maven: WorkerBatchStockControllerTest / WorkerBatchStockServiceTest / WorkerPagesTest / WorkerPageCatalogControllerTest；jest: worker-stock-page / worker-stock / page-entry-reachability / worker-surface-ledger / worker-card-contrast-guard；node: worker-h5-pages），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'worker', 'stock', 'batch-stocktake', 'idempotency'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── CT-001 [NORMAL] 分类树（源: cases/category.yml）──
 _CASE_CT_001 = EvalCase(
     id='CT-001',
@@ -17295,6 +17313,7 @@ ALL_CASES = (
     _CASE_BM_053,
     _CASE_BM_054,
     _CASE_BM_055,
+    _CASE_BM_056,
     _CASE_CT_001,
     _CASE_CT_002,
     _CASE_CT_003,

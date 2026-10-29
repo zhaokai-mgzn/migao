@@ -831,7 +831,7 @@
 真值: auth.qr-login-ticket
 溯源: 2026-10-26 新增（issue #7825）：现场 = 顶栏「手机端」二维码只是裸链接（不带登录交接），换浏览器 / App 或本机存储被清后每次扫码都要重新输密码。冻结口径 = 一次性票据（JWT 类型 qr_login、120 秒、兑换即吊销 jti）+ 手机端兑换后与密码登录同一套 30 天会话 + 签发失败降级裸入口 + 启动探针（续期失败原因本地可读）。 ｜ tags: auth, session, qr-login, bmini, admin-web
 
-## B 端小程序域（52 case）
+## B 端小程序域（53 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -1577,6 +1577,25 @@
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-10-27 新增（issue #7944）：用户要求手机端登录记住企业编码 + 员工账号拆两格固定 `@`。口径 = 企业编码按登录面分开记住（员工面 / 工人面）、只在成功登录后写、退出登录不清；`@` 是静态文本不用输入；旧版整串标识按最后一个 `@` 拆开迁移；🔴 issue #6478 的凭据红线**一格不放宽**（密码 / PIN / 验证码仍绝不落盘）。口径替换（用户口述「让浏览器记录」→ 仓内既有 localStorage 约定）已写进 CHANGELOG 与 PR body。取号说明：scripts/next_case_id.py 现取最小空闲号返回 BM-007，但该号是 issue #6868 退役用例（PR #6877 删除）的墓碑号，复用会让历史引用（原 BM-007 = 部位规格行）指错 ⇒ 本包取现取最大号 + 1 = BM-055，理由与命令登记在本 PR body。 ｜ tags: bmini, auth, login, ux
+
+### BM-056. 工人端库存修正 - 手机/APK 按批次把余量改成实盘米数（复用按批次盘点唯一写面 + 幂等 + 台账可答「谁/为什么」） 🔵
+```
+你: 工人（工号 + PIN 登录后）在工作台点「库存修正」→ 搜批次（批次号 / 货号 / 缸号 / 入库单号任一段，空关键词 = 最近入库）→ 看到系统余量 → 选中该批 → 填实盘米数（例如系统说 45.5 米、实盘 42 米）+ 选原因（数量记错了 / 破损报废 / 报工选错批次 / 其他）→ 二次确认「系统 45.5 米 → 实盘 42 米」→ 提交 → 回执显示盘前 / 实盘 / 差异 / 盘后
+期望: direct_reply
+数据: 判据 1·**未登录零读写**：无工人 session ⇒ 两个端点都 401，服务层零调用；页面只渲染引导 + 去登录（`WORKER_LOGIN_ROUTE`）。红证：摘掉 gate ⇒ `tests/worker-stock-page.test.tsx` ① 红；控制器侧 = `WorkerBatchStockControllerTest` ①（无 session ⇒ 401 且 `verify(never())`）
+数据: 判据 2·**复用唯一写面（不是第二套库存逻辑）**：本类不写任何表，只调 `BatchStocktakeService#stocktake`，参数逐值钉住（tenant 来自会话上下文、productId 由批次行解析、runId = `wc-<client_request_id>`、实盘行、审计来源）。红证：把 productId 改成请求体自带 ⇒ `WorkerBatchStockServiceTest` ① 的 ArgumentCaptor 断言红
+数据: 判据 3·**幂等**：同一 `client_request_id` 的重复提交 ⇒ 第二遍 `status=replayed`、库存只变一次；缺 / 超长 / 非法字符 ⇒ 422（`WORKER_STOCK_CORRECTION_REQUEST_ID`）。红证：把 runId 换成随机值 ⇒ 重放判据红（真库面 = `uk_batch_consumption_stocktake` 唯一索引）
+数据: 判据 4·**实盘为准、零差异零写入**：实盘 == 当刻余量 ⇒ `unchanged`，不落批次分录、不动 SKU 库存。红证：把 `unchanged` 也当 `applied` 回 ⇒ 回执判据红
+数据: 判据 5·**准入先于写入**：负数 ⇒ 400（`WORKER_STOCK_CORRECTION_ACTUAL_NEGATIVE`，文案说清「最小 0，报损请选破损/报废」）；超 1 位小数 / 缺实盘 / 未知原因 / 备注超 60 字 ⇒ 422；批次不属于本租户 ⇒ 404；以上全部零写入。红证：放行 `-1` ⇒ `WorkerBatchStockServiceTest` ③ 红
+数据: 判据 6·**台账答得出谁/为什么**：批次分录 `operator` = 工人姓名；`note` 以「工人库存修正：姓名（工号 X），原因 …」开头（工人 session 在 `resolveOperator()` 里是 system ⇒ 不显式给就是假账）。红证：把 audit 去掉 ⇒ `WorkerBatchStockServiceTest` ① 的 audit 断言红
+数据: 判据 7·**端侧三态分开说 + 传输白名单**：applied / unchanged / replayed 三句互不相同（「已修正 / 与系统一致未写入 / 此前已记过账」）；提交体只有 `batch_id` / `actual_meters` / `reason` / `note` / `client_request_id`，**没有** worker_id / worker_name / tenant_id。红证：把身份字段塞进 body ⇒ `tests/worker-stock.test.ts` ③ 红
+数据: 判据 8·**端侧幂等键语义**：同一份输入重试 ⇒ 复用同一个 `client_request_id`；改了米数 / 原因 / 备注 ⇒ 换新键（否则服务端按回放处理，静默不落账）。红证：每次提交都新生成 ⇒ `tests/worker-stock-page.test.tsx` ⑦ 红
+数据: 判据 9·**入口可达 + 写入口台账 + 视觉形态**：`pages/worker/stock/index` 登记进 `app.config.ts` 且工人首页有**真导航**（漏登记 = 死链 ⇒ `page-entry-reachability` 红）；`submitBatchCorrection(` 登记进工人写入口台账（未登记即红，且必须命中身份分流 + 引导登录记号）；新页 `__gate` 卡片有可见边界、页面有非白底色（`worker-card-contrast-guard`）
+数据: 判据 10·**菜单开关可设**：`WorkerPages.STOCK = stock` 进闭词表与默认集合，商家后台「设置工人端菜单」能看到「库存修正」（目录端点 `labels.stock`）；`/w/` 的闭词表镜像同批更新（`worker-h5-pages` 逐值比对）。红证：只改后端不改镜像 ⇒ `frontend/worker-h5/tests/worker-h5-pages.test.mjs` 红
+跳过: [backend-contract] 确定性判据（maven: WorkerBatchStockControllerTest / WorkerBatchStockServiceTest / WorkerPagesTest / WorkerPageCatalogControllerTest；jest: worker-stock-page / worker-stock / page-entry-reachability / worker-surface-ledger / worker-card-contrast-guard；node: worker-h5-pages），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: batch-stocktake.worker-correction
+溯源: 2026-10-29 新增（issue #8104）：用户逐字「手机端还要增加一个库存修正的功能，apk程序也要同步增加这个功能，允许工人对某个批次的布匹进行修正」。形态 = bmini 新页 `pages/worker/stock/index`（手机 `https://app.migaozn.com/b/` 与 APK 观星台终端加载的同一份 `/b/` 页面 ⇒ APK 无需重打包，菜单随页面发布出现）。服务端 = `/api/worker/batch-stock/{batches,correction}`，**复用**按批次盘点的唯一写面（不新造第二套库存逻辑、不新增迁移）。边界：不做盘点单（无单号/审批/打印）；一次提交只改一个批次；不新增批次来源 reason（工人修正 = 实盘为准，沿用 `reason=stocktake`，如需在台账上把「工人修正 / 商家盘点」分列 ⇒ 另开迁移单）；小程序发版是人工环节（#7806：合并 ≠ 用户手机已是新版，`/b/` H5 腿自动发布）。 ｜ tags: bmini, worker, stock, batch-stocktake, idempotency
 
 ## 分类域（3 case）
 
@@ -13581,13 +13600,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：917（活跃 142，跳过 775）
-- tier 分布：smoke 12 / normal 849 / adversarial 32
+- 用例总数：918（活跃 142，跳过 776）
+- tier 分布：smoke 12 / normal 850 / adversarial 32
 - 售后域：16
 - Agent 核心域：12
 - API 层域：21
 - 登录认证域：14
-- B 端小程序域：52
+- B 端小程序域：53
 - 分类域：3
 - 对话边界域：51
 - 跨域：3
