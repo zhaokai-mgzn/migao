@@ -53,9 +53,10 @@ describe('打印介质矩阵（issue #5651）', () => {
       // 🔴 `label-50x70` **仍在册** —— 它只服务**工人端发货标签**（#7761/#7786，
       // `frontend/worker-h5/src/shipment.mjs` 逐字指它），仍是「纸长按内容撑开」的那张纸。
       'label-50x140',
-      // 🔴 2026-10-29（issue #8107）：水洗唛**专属唛**（余料带回 / 绑带，只印 5 行 + 二维码）的短纸型
-      // —— 与 `label-50x140` 是同一台机、同一条 50mm 卷，只有纸长不同（两种纸长 = 两种标签纸）
-      'label-50x100',
+      // 🔴 2026-10-29（issue #8107）立、**2026-10-30（issue #8163）纸长 100 → 80**：水洗唛**专属唛**
+      // （余料带回 / 绑带，只印 5 行 + 二维码）的短纸型 —— 与 `label-50x140` 是同一台机、同一条 50mm 卷，
+      // 只有纸长不同（两种纸长 = 两种标签纸）。id 不复用 `label-50x80`（入库标签、待实测）
+      'label-50x80-option',
       'label-50x70',
       'label-50x80',
       'continuous-241x140',
@@ -90,8 +91,8 @@ describe('打印介质矩阵（issue #5651）', () => {
     expect(ship.lengthMm?.maxMm).toBe(150)
     // 🔴 专属唛短纸（issue #8107）：50mm × 100mm / 11pt / 已实测（不留待实测项）——
     // 与 label-50x140 **同设备口径、只有纸长不同**（同一台 DP235S、同一条 50mm 卷）
-    const option = printMediaSpec('label-50x100')
-    expect(option.pageSize).toBe('50mm 100mm')
+    const option = printMediaSpec('label-50x80-option')
+    expect(option.pageSize).toBe('50mm 80mm')
     expect(option.pageMargin).toBe('0')
     expect(option.minFontPt).toBe(11)
     expect(option.measurement).toBe('measured')
@@ -100,26 +101,37 @@ describe('打印介质矩阵（issue #5651）', () => {
     expect(option.note).toContain('16pt')
     expect(option.note).toContain('12.7mm')
     expect(option.note).toContain('58.15mm')
-    expect(option.note).toContain('88.15mm')
+    // 🔴 issue #8163：纸长 80 ⇒ 留白随纸长收窄到 8/8（可用 64mm），整张 ≈ 8 + 58.15 + 8 = 74.15mm ≤ 80mm
+    expect(option.note).toContain('74.15mm')
+    expect(option.note).toContain('64mm')
+    expect(option.note).toContain('8mm')
+    // 留白为什么收：原来的上下各 15mm 是 140mm 纸的口径 —— note 必须写明，否则下一个人只会看到「怎么变 8 了」
+    expect(option.note).toContain('140mm 纸')
     // 过期读数（12pt 时代的 11.01 / 56.46 / 86.5）**不得残留** —— 沿革句里出现 `12pt → 16pt` 是合法的，
     // 所以这里钉的是**读数**而不是字号字样（钉字样会把沿革句误判成漂移）。
     expect(option.note).not.toContain('11.01mm')
     expect(option.note).not.toContain('56.46mm')
     expect(option.note).not.toContain('86.5mm')
+    expect(option.note).not.toContain('88.15mm')
     expect(option.pendingMeasurements).toEqual([])
-    expect(option.pageBoxMm).toEqual({ widthMm: 50, heightMm: 100 })
+    expect(option.pageBoxMm).toEqual({ widthMm: 50, heightMm: 80 })
     const optionDots = option.dotGeometry?.dotsPerMm as number
     expect(optionDots).toBe(labelDots) // 同一台机器 ⇒ 同一份 dpi / dots-per-mm
     expect(option.dotGeometry?.dpi).toBe(label.dotGeometry?.dpi)
     expect(option.dotGeometry?.headWidthPx).toBe(label.dotGeometry?.headWidthPx)
     expect(option.dotGeometry?.widthPx).toBe(optionDots * 50)
-    // 纸长 100mm ⇒ 800px（与 140mm 那张的 1120px 只差纸长）
-    expect(option.dotGeometry?.heightPx).toBe(optionDots * 100)
+    // 纸长 80mm ⇒ 640px（与 140mm 那张的 1120px 只差纸长）
+    expect(option.dotGeometry?.heightPx).toBe(optionDots * 80)
+    expect(option.dotGeometry?.heightPx).toBe(640)
     expect(option.dotGeometry?.heightPx).not.toBe(label.dotGeometry?.heightPx)
     expect(option.dotGeometry?.effectiveWidthPx).toBe(optionDots * 48)
     // note 必须写清「专属唛专用短纸」+ 垂直预算（下一个读它的人要能复算）
     expect(option.note).toContain('专属唛专用短纸')
-    expect(option.note).toContain('70mm')
+    // 可用高度 = 80 − 8 − 8 = 64mm（#8163 由 70mm 收窄）
+    expect(option.note).toContain('64mm')
+    // 🔴 退场即红：旧介质不得残留在矩阵里（否则「只登记在用介质」这条就形同虚设）
+    // @ts-expect-error 故意传已退场的 id
+    expect(() => printMediaSpec('label-50x100')).toThrow(/未知打印介质/)
     // 入库标签 50×80（issue #7820，2026-10-26 用户裁定改尺寸 / 去品名 / 加入库日期 / 码到底部）：
     // 纸型 + 点阵口径同源在矩阵里，**待实测**（真机参数未核实）
     const inbound = printMediaSpec('label-50x80')
@@ -178,18 +190,18 @@ describe('打印介质矩阵（issue #5651）', () => {
 
   it('🔴 ③·命名页：printNamedPageRule 是同一份纸型的第二个出口（尺寸仍只从矩阵取，issue #8107）', () => {
     // 同一份打印任务里两种纸高并存：常规唛吃文档级 `@page`（50mm 140mm），
-    // 专属唛吃**命名页** `@page wash-label-option`（50mm 100mm）—— 两处都不许自写纸型字面量。
-    expect(printNamedPageRule('wash-label-option', 'label-50x100')).toBe(
-      '@page wash-label-option { size: 50mm 100mm; margin: 0; }',
+    // 专属唛吃**命名页** `@page wash-label-option`（50mm 80mm，#8163）—— 两处都不许自写纸型字面量。
+    expect(printNamedPageRule('wash-label-option', 'label-50x80-option')).toBe(
+      '@page wash-label-option { size: 50mm 80mm; margin: 0; }',
     )
     // 逐字对齐矩阵（改矩阵不跟着改 ⇒ 这里红）
-    const spec = printMediaSpec('label-50x100')
-    expect(printNamedPageRule('wash-label-option', 'label-50x100')).toContain(`size: ${spec.pageSize}`)
-    expect(printNamedPageRule('wash-label-option', 'label-50x100')).toContain(`margin: ${spec.pageMargin}`)
+    const spec = printMediaSpec('label-50x80-option')
+    expect(printNamedPageRule('wash-label-option', 'label-50x80-option')).toContain(`size: ${spec.pageSize}`)
+    expect(printNamedPageRule('wash-label-option', 'label-50x80-option')).toContain(`margin: ${spec.pageMargin}`)
     // 命名页与文档级页**指两张不同的纸**（合并成一张 = 专属唛又回到 140mm）
-    expect(printPageRule('label-50x100')).toBe('@page { size: 50mm 100mm; margin: 0; }')
-    expect(printPageBoxMm('label-50x100')).toEqual({ widthMm: 50, heightMm: 100 })
-    expect(printUsableHeightMm('label-50x100')).toBe(100)
+    expect(printPageRule('label-50x80-option')).toBe('@page { size: 50mm 80mm; margin: 0; }')
+    expect(printPageBoxMm('label-50x80-option')).toEqual({ widthMm: 50, heightMm: 80 })
+    expect(printUsableHeightMm('label-50x80-option')).toBe(80)
     // 未知介质/名字不许静默通过：介质未登记 ⇒ 抛错
     // @ts-expect-error 故意传非法 id
     expect(() => printNamedPageRule('x', 'label-50x999')).toThrow(/未知打印介质/)
@@ -208,7 +220,7 @@ describe('打印介质矩阵（issue #5651）', () => {
       expect(joined).toContain(keyword)
     }
     // 有实测读数的介质则**不许**留待实测项（否则「待实测」会退化成永久标签）
-    for (const id of ['a4', 'label-50x140', 'label-50x100'] as const) {
+    for (const id of ['a4', 'label-50x140', 'label-50x80-option'] as const) {
       expect(printMediaSpec(id).measurement).toBe('measured')
       expect(printMediaSpec(id).pendingMeasurements).toEqual([])
     }

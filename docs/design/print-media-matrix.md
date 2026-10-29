@@ -26,7 +26,7 @@
 |---|---|---|---|---|---|---|
 | `a4` | 激光 / 喷墨（浏览器 `window.print()`） | `size: A4; margin: 0`（版面内缩 12mm 走容器 padding，issue #7309） | 否 | 1 | 9pt（= 既有 12px 口径） | 已实测（既有单据在用） |
 | `label-50x140` | 热敏 / 热转印（BLE 直打，通道归 #5052） | `size: 50mm 140mm; margin: 0`（整幅出图，纸边即版心）；🔴 **纸型固定**（issue #7979，2026-10-28 用户逐字「这样尺寸就能缩小到50*140」）—— 作废 #7816 的 150mm、#7960 的 119mm 与 #7776 的「纸长按内容撑开」；**上下各留白 15mm**（顶部 = 抬头首行距纸边；底部 = 码下沿距底部虚线；系统打印 `padding: 15mm 1.2mm 15mm` / 位图 `WASH_LABEL_TOP_BLANK_MM` + `WASH_LABEL_BOTTOM_CLEARANCE_MM`）；**二维码紧挨正文**（只隔 0.5mm 块距） | 否 | 1 | **11pt**（2026-10-27 客户要求 <120mm + 用户「字体小一号」；抬头 14pt） | **已实测（纸宽侧）**（#5646：容器 49.998mm 宽、正文右边界 48.799mm；点阵 140mm × 8 dots/mm = 1120px。140mm 扣掉上下各 15mm ⇒ 可用 110mm，满字段 15 行 = 102.18mm（余 7.82mm ≈ 1.6 行），17 行起裁 ⇒ 文字块被裁、码永不被裁，见 §2 下方） |
-| `label-50x100` | 热敏 / 热转印（BLE 直打，通道归 #5052） | `size: 50mm 100mm; margin: 0`（整幅出图，纸边即版心）；🔴 **水洗唛「专属唛」专用短纸**（issue #8107，2026-10-29 用户逐字「余料带回和绑带的水洗唛打印功能中，用户反馈打印的信息太多了，可以适当删减，保留货号，门幅，宽高，工艺和特殊选项 + 二维码即可」「把长度再缩减一些，能放下以上信息即可」）；与 `label-50x140` **同一台机、同一条 50mm 卷**，只有纸长不同 ⇒ 同一份出纸里靠 CSS **命名页** `@page wash-label-option` 并存 | 否 | 1 | **11pt**（同 `label-50x140`；抬头 14pt / 专属唛副标题 **16pt 加粗**、只印语义名 `余料带回` / `绑带`） | **已实测（纸宽侧同 `label-50x140`）**（点阵 100mm × 8 dots/mm = 800px；可用 100 − 15 − 15 = 70mm，抬头块 12.7mm（14pt + 16pt），满字段 **5 行** + 二维码 = 58.15mm ≤ 70mm，整张 ≈ 88.15mm ≤ 100mm ⇒ 可容 7 行。预算真值两处：`wash-label-metrics.ts` 文件头 + `TaskCardPrint.tsx` 的【专属唛预算】段） |
+| `label-50x80-option` | 热敏 / 热转印（BLE 直打，通道归 #5052） | `size: 50mm 80mm; margin: 0`（整幅出图，纸边即版心）；🔴 **水洗唛「专属唛」专用短纸**（issue #8107 立 50×100 → **issue #8163 改 50×80**，2026-10-30 用户逐字「1，那就再缩小到80mm」）；与 `label-50x140` **同一台机、同一条 50mm 卷**，只有纸长不同 ⇒ 同一份出纸里靠 CSS **命名页** `@page wash-label-option` 并存。⛔ **不复用 `label-50x80`**（入库标签、`measurement = pending-field-measurement`：把水洗唛挂到待实测介质上会削弱几何证据）；旧 id `label-50x100` 已**退场** | 否 | 1 | **11pt**（同 `label-50x140`；抬头 14pt / 专属唛副标题 **16pt 加粗**、只印语义名 `余料带回` / `绑带`） | **已实测（纸宽侧同 `label-50x140`）**（点阵 80mm × 8 dots/mm = 640px；**留白随纸长收窄到 8/8**：原来的上下各 15mm 是 140mm 纸的口径，80mm 纸仍按 15/15 就装不下内容 ⇒ 必然静默裁行；可用 80 − 8 − 8 = 64mm，抬头块 12.7mm（14pt + 16pt），满字段 **5 行** + 二维码 = 58.15mm ≤ 64mm（余 5.85mm），整张 ≈ 74.15mm ≤ 80mm，工艺折 1 行 = 62.81mm 仍装得下。预算真值两处：`wash-label-metrics.ts` 文件头 + `TaskCardPrint.tsx` 的【专属唛预算】段） |
 | `label-50x70` | 热敏 / 热转印（**工人端发货标签**，通道归 #7761/#7786） | `size: 50mm 70mm; margin: 0`（整幅出图）；🔴 **纸长按内容撑开**：宽度固定 50mm、长度由 `frontend/worker-h5/src/shipment.mjs` 的 `shipLabelLengthMm()` 按纸面内容算（70mm = **最短**，上限 150mm，issue #7776 仍对发货标签有效） | 否 | 1 | 9pt | **已实测**（#5646 纸宽侧；2026-10-25 纸长 60→70mm；点阵 560px = 最短 70mm） |
 | `continuous-241x140` | **针式点阵 + 连续纸 + 压感复写** | `size: 241mm 140mm; margin: 0`（版面内缩 6mm 12mm 走容器 padding，2026-10-25） | **是** | **3**（纸承担） | 9pt（**通用下限**，待实测） | 🚧 **待现场实测**（见 §5；含「边距 0 + 容器内缩」的真机对齐） |
 
@@ -50,14 +50,15 @@ Chrome 把自己的页眉页脚（版式日期 / 文档标题 / 页面 URL / 页
 `label-50x70`：内容 = 订单号 / 收货人 / 电话 / 地址 / 物流方式 / 物流公司 / 套数 / 备注。
 🔴 **水洗唛自 issue #8107 起一张纸两种纸型（两种纸长 = 两种标签纸）**：
 **常规唛** = `label-50x140`（50mm × 140mm / 15 行，一字未改）；**专属唛**（余料带回 / 绑带）
-= `label-50x100`（50mm × 100mm / **只印 5 行**：货号 / 门幅 / 宽高 / 工艺 / 特殊选项 + 二维码；
+= `label-50x80-option`（50mm × 80mm / **只印 5 行**：货号 / 门幅 / 宽高 / 工艺 / 特殊选项 + 二维码；
 副标题 = 语义名 `余料带回` / `绑带`（16pt 加粗，2026-10-29 去 `成品定制` 前缀））。
 两者**同一次出纸**：文档级 `@page`（`printPageRule('label-50x140')`）管常规唛，
-**命名页** `@page wash-label-option`（`printNamedPageRule('wash-label-option', 'label-50x100')`）
-管专属唛，容器 `.task-card-label--option { height: 100mm; page: wash-label-option; }`（宽度 / padding /
-字号 / 二维码与基类同值，只有纸高与命名页不同）。实测（Chromium，`page.pdf({preferCSSPageSize:true})`）：
+**命名页** `@page wash-label-option`（`printNamedPageRule('wash-label-option', 'label-50x80-option')`）
+管专属唛，容器 `.task-card-label--option { height: 80mm; padding: 8mm 1.2mm 8mm; page: wash-label-option; }`
+（宽度 / 字号 / 二维码与基类同值；纸高、留白与命名页专属 —— 常规唛仍是 `140mm` + `15mm 1.2mm 15mm`，
+**一个字都不动**）。实测（Chromium，`page.pdf({preferCSSPageSize:true})`）：
 同一次出纸接受混合页高，逐页 MediaBox 与两份纸型一致 —— 读数见
-`acceptance/2026-10-29-8107-option-label/README.md`（**不是真机热敏打印读数**，真机仍需人核对）。
+`acceptance/2026-10-30-8163-option-label-80/README.md`（**不是真机热敏打印读数**，真机仍需人核对）。
 判据 = `tests/unit_ci_workflows/test_print_media_matrix_guard.py` 的 C13（两种纸都在射程、双向对称）
 + `test_wash_label_geometry_guard.py` 的 G8~G11（专属唛高 / 命名页 / 专属预算可复算）。
 

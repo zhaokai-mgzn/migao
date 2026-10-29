@@ -359,17 +359,17 @@ describe('纸面自检层 PrintDocPreview（issue #5914）', () => {
     expect(check!.overflowSheets).toEqual([2])
   })
 
-  it('🔴 每张按**自己的纸长**判溢出（issue #8107）：同一份出纸里 50×140 与 50×100 并存，不再用文档级单一 limit', () => {
+  it('🔴 每张按**自己的纸长**判溢出（issue #8107 → #8163）：同一份出纸里 50×140 与 50×80 并存，不再用文档级单一 limit', () => {
     const stage = document.createElement('div')
     // 第 1 张 = 常规唛（140mm，自己声明），内容 60mm ⇒ 装得下
     const regular = stubSheet(60 * MM_TO_PX, 140 * MM_TO_PX)
     regular.setAttribute('data-sheet-paper-mm', '50x140')
-    // 第 2 张 = 专属唛（100mm），内容 60mm ⇒ 装得下
-    const optionFits = stubSheet(60 * MM_TO_PX, 100 * MM_TO_PX)
-    optionFits.setAttribute('data-sheet-paper-mm', '50x100')
-    // 第 3 张 = 专属唛，内容 105mm ⇒ 超过**自己的** 100mm（按文档级 140 判会**假绿**）
-    const optionOver = stubSheet(105 * MM_TO_PX, 100 * MM_TO_PX)
-    optionOver.setAttribute('data-sheet-paper-mm', '50x100')
+    // 第 2 张 = 专属唛（80mm），内容 60mm ⇒ 装得下
+    const optionFits = stubSheet(60 * MM_TO_PX, 80 * MM_TO_PX)
+    optionFits.setAttribute('data-sheet-paper-mm', '50x80')
+    // 第 3 张 = 专属唛，内容 85mm ⇒ 超过**自己的** 80mm（按文档级 140 判会**假绿**）
+    const optionOver = stubSheet(85 * MM_TO_PX, 80 * MM_TO_PX)
+    optionOver.setAttribute('data-sheet-paper-mm', '50x80')
     optionOver.setAttribute('data-sheet-note', '专属唛')
     stage.append(regular, optionFits, optionOver)
 
@@ -377,38 +377,38 @@ describe('纸面自检层 PrintDocPreview（issue #5914）', () => {
     const check = measureSheets(stage, 140)
     if (!check) throw new Error('量不到纸 ⇒ 判据无从取值')
     expect(check.sheets).toBe(3)
-    expect(check.contentMm).toBeCloseTo(105, 1)
+    expect(check.contentMm).toBeCloseTo(85, 1)
     expect(check.overflowSheets).toEqual([3])
     expect(check.overflowMm).toBeCloseTo(5, 1)
     // 纸型清单（按 DOM 顺序去重）—— 预览表头据此显示两种纸
     expect(check.papers).toEqual([
       { widthMm: 50, heightMm: 140 },
-      { widthMm: 50, heightMm: 100, note: '专属唛' },
+      { widthMm: 50, heightMm: 80, note: '专属唛' },
     ])
     // 反向对照：同一张 105mm 纸若不声明纸型（= 按文档级 140mm 判）⇒ 空 ——
     // 说明上一条真的靠「每张自己的纸」才红（否则它只是重复了旧的单一 limit 口径）
     const loose = document.createElement('div')
-    loose.appendChild(stubSheet(105 * MM_TO_PX, 100 * MM_TO_PX))
+    loose.appendChild(stubSheet(85 * MM_TO_PX, 80 * MM_TO_PX))
     expect(measureSheets(loose, 140)?.overflowSheets).toEqual([])
   })
 
-  it('🔴 表头纸型能反映**两种纸**（issue #8107）：常规唛 50mm × 140mm · 专属唛 50mm × 100mm', async () => {
+  it('🔴 表头纸型能反映**两种纸**（issue #8107 → #8163）：常规唛 50mm × 140mm · 专属唛 50mm × 80mm', async () => {
     render(
       <PrintDocPreview target="labels" title="水洗唛" media="label-50x140" onPrint={() => {}} onClose={() => {}}>
         <div>
           <div data-print-sheet data-sheet-paper-mm="50x140" />
-          <div data-print-sheet data-sheet-paper-mm="50x100" data-sheet-note="专属唛" />
+          <div data-print-sheet data-sheet-paper-mm="50x80" data-sheet-note="专属唛" />
         </div>
       </PrintDocPreview>
     )
     // 纸面自检异步量一次（重试窗口 1s）⇒ 等它落定，别断言首帧
     await waitFor(() => {
-      expect(screen.getByTestId('print-preview-media').textContent).toContain('专属唛 50mm × 100mm')
+      expect(screen.getByTestId('print-preview-media').textContent).toContain('专属唛 50mm × 80mm')
     })
     const mediaText = screen.getByTestId('print-preview-media').textContent ?? ''
     // 主纸型仍是本单据的介质；额外那张由每张纸自己声明（不改写、不加第二种真值）
     expect(mediaText).toContain('50mm × 140mm')
-    expect(mediaText).toContain('专属唛 50mm × 100mm')
+    expect(mediaText).toContain('专属唛 50mm × 80mm')
   })
 
   it('④ 🔴 预览副本**不上纸**：显形规则必须包在 `@media screen` 里（否则会出两张）', () => {
