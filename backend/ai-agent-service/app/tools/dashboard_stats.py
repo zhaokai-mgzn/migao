@@ -158,6 +158,7 @@ class DashboardStatsTool(BaseTool):
         "【反例】查某个具体订单/订单列表用 order_query；查客服会话详情用 session_manage；"
         "查加工单用 processing_order_query。"
         "【标注】READONLY — 经营分析专用，不查具体记录、不改动任何数据"
+        "【不要用于】资金流水/应收对账明细（用 finance_api）；某个客户的画像与消费额（用 customer_manage）"
     )
     # 权限码（admin-api 目录）：DashboardController 类级 `@RequirePermission("dashboard:view")`。
     # 目录里 6 个商户角色都持此码 ⇒ 不再按角色名硬编码（#4106 F4）。

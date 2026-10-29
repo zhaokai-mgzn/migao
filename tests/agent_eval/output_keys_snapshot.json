@@ -350,7 +350,7 @@
     "data=dict(result)",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "d54c0bbb8532bd9395938d8a521a132bb4fe7b20a43d37001c75cb674ec82a52"
+   "source_sha256": "1c8204ba7ed375e6dd75f8c04bcab6e7772132941762859a8a21fde446b34d43"
   },
   "customer_order_query": {
    "actions": null,
@@ -508,7 +508,7 @@
     "data ← response.get('data', {})",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "f048757421386005168d69f1973dc2c63a2cc3d5ee7b1723e0ca0d9a23e27e3e"
+   "source_sha256": "3cc5fa1f8140c1883082f2af51d31b2e3eac255a581ad5a2f81daa8ddfe24eb3"
   },
   "employee_manage": {
    "actions": {
@@ -596,7 +596,7 @@
     "data=dict(data)",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "c67a718034d37b2e97b4e0b4f329e3ffe8388620aec73eb1ecefeb69ff076876"
+   "source_sha256": "6d678bcd825b136f4aaf345866df04856ff403b27bdedd552a3d9a78728275fd"
   },
   "human_handoff": {
    "actions": null,
@@ -913,7 +913,7 @@
     "data ← response.get('data', {})",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "a1f0a5d9dd210916e43f92542ca6b2778357dd28b18994bc4c0e5a05e6d68261"
+   "source_sha256": "19cedc9c257da3ae3b3fff196ebbddf105095bdd4deffc11983b13f4dc73318a"
   },
   "payment_qrcode_query": {
    "actions": null,
@@ -1069,7 +1069,7 @@
    "shape_notes": [
     "data=dict(result)"
    ],
-   "source_sha256": "4241a92905c257b505e5e1022e254219359ef71a808e0e46a025a82193aabdd5"
+   "source_sha256": "cfa37dec4a9114f58699f0f6f413de5cd84927b4ec46ac82d6927e332e776444"
   },
   "processing_order_set_query": {
    "actions": null,
@@ -1490,7 +1490,7 @@
    "literal_keys": [
     "list"
    ],
-   "source_sha256": "17c25f6ad0b3f5c1ade94f4bc9e90fb98a1ea48240cae36b4256003ae9f66689"
+   "source_sha256": "a8b0c9fee577e7cf6e09daaab056e2c2d08db745590970f7fca7d699977472d0"
   },
   "validate_input": {
    "actions": null,
