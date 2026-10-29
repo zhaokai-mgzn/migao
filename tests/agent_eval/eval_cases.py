@@ -17105,16 +17105,16 @@ _CASE_UI_142 = EvalCase(
     precondition='本用例是 [backend-contract] 纯前端交互契约：页面渲染时 mock `@/lib/api` 与 `@/components/orders`，不依赖共享夹具与真实服务',
 )
 
-# ── UI-143 [NORMAL] 经营看板首屏：简报空态压成一行、待处理与经营数据出骨架、环比破 ±500% 改倍数（issue #8012）（源: cases/ui.yml）──
+# ── UI-143 [NORMAL] 经营看板首屏：待处理前置 + 简报默认收起一行 + 骨架 + 环比破 ±500% 改倍数（issue #8012 / #8105）（源: cases/ui.yml）──
 _CASE_UI_143 = EvalCase(
     id='UI-143',
     legacy_id='',
-    title='经营看板首屏：简报空态压成一行、待处理与经营数据出骨架、环比破 ±500% 改倍数（issue #8012）',
+    title='经营看板首屏：待处理前置 + 简报默认收起一行 + 骨架 + 环比破 ±500% 改倍数（issue #8012 / #8105）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
     user_inputs=['用户 2026-10-28 评审：首屏第一眼要能看到要做的事'],
     expectations=['direct_reply'],
-    data_checks=['判据 1·简报空态压成一行（会红）：未开启 / 今日未生成两种空态都渲染 `briefing-collapsed-hint`，旧的大盒子 `briefing-empty-state` 取不到；有数据时卡片形态不变。执行点 = frontend/admin-web/tests/unit/pages/dashboard-first-screen.test.tsx。', '判据 2·加载出骨架（会红）：待处理卡与经营数据格在加载中渲染骨架块，卡上不出现 `…`。执行点同上。', '判据 3·环比大基数保护（会红）：`|change| ≥ 500%` 改倍数（+23× / -8×）并带「基数较小」说明；阈值以下仍是百分比；上期为 0 仍是 `—`（#5792 裁定不回退）；页面上不再出现 `2300%`。执行点同上 + dashboard.test.tsx。'],
+    data_checks=['判据 1·简报空态压成一行（会红）：未开启 / 今日未生成两种空态都渲染 `briefing-collapsed-hint`，旧的大盒子 `briefing-empty-state` 取不到。issue #8105 起**有数据时也默认收起一行**（`briefing-toggle` 在场、带 `aria-expanded=false`，主动检查 / 昨日回顾不在屏上），点「展开」才出完整卡片。执行点 = frontend/admin-web/tests/unit/pages/dashboard-first-screen.test.tsx。', '判据 2·加载出骨架（会红）：待处理卡与经营数据格在加载中渲染骨架块，卡上不出现 `…`。执行点同上。', '判据 4·首屏顺序（issue #8105，会红）：`dashboard-pending-section`（待处理）在 `dashboard-briefing-section`（简报）之前，且简报仍在「经营数据」之前；1440×900 真机下待处理 5 卡底边 ≤ 900（改前 y=1563，改后 y=303 / 卡底 435）。执行点同上 + 真机读数见 acceptance/2026-10-29/8105-dashboard/。', '判据 3·环比大基数保护（会红）：`|change| ≥ 500%` 改倍数（+23× / -8×）并带「基数较小」说明；阈值以下仍是百分比；上期为 0 仍是 `—`（#5792 裁定不回退）；页面上不再出现 `2300%`。执行点同上 + dashboard.test.tsx。'],
     skip_reason='[backend-contract] 纯前端契约（不经过 LLM 对话/工具），由 admin-web vitest 执行，不进入 agent-eval 冒烟',
     tags=['dashboard', 'first-screen', 'skeleton'],
     persona='',
