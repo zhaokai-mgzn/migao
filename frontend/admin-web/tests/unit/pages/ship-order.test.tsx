@@ -3,6 +3,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { switchCarrier } from '@/lib/logistics'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -540,6 +541,87 @@ describe('ShipOrder', () => {
     expect(screen.getByRole('radio', { name: '快递' })).not.toBeChecked()
     // 订单两半都齐 ⇒ **不发**反查请求（订单值就是权威来源）
     expect(mockGetCustomers).not.toHaveBeenCalled()
+  })
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 承运商候选按物流类型收敛（issue #8079）
+  //
+  // 改前 `LOGISTICS_TYPES` 与 `LOGISTICS_COMPANIES` 是**两套互不相关的词表**：选「快递」照样
+  // 能选「四季安物流」，选「物流/专线」照样全是快递公司 ⇒ 真机上「物流类型 = 快递 +
+  // 物流公司 = 德邦快递」这种自相矛盾的组合还能提交。用户 2026-10-29：「全链路都要区分」。
+  //
+  // 与行内发货（`orders-inline-ship.test.tsx` 的 ⑧ 组）**同一组断言**（同一份词表函数）。
+  // ══════════════════════════════════════════════════════════════════════════
+  const companySelect = () => screen.getAllByRole('combobox')[0] as HTMLSelectElement
+  const companyOptionValues = () => Array.from(companySelect().options).map((o) => o.value)
+  const carrierTypeRadio = (label: string) => screen.getByRole('radio', { name: label })
+
+  it('#8079 ① 选「物流/专线」⇒ 候选里不含任何快递公司（含顺丰速运）', async () => {
+    render(<ShipOrder />)
+    // 订单没记类型 ⇒ express + 快递第一家（既有默认值不回归）
+    await waitFor(() => expect(companySelect()).toHaveValue('德邦快递'))
+    fireEvent.click(carrierTypeRadio('物流/专线'))
+    expect(companyOptionValues()).toEqual(['四季安物流'])
+    expect(companyOptionValues()).not.toContain('顺丰速运')
+  })
+
+  it('#8079 ② 选「快递」⇒ 候选里不含专线承运商（四季安物流）', async () => {
+    // 订单记的是专线 ⇒ 表单带出专线第一家；切回快递必须换成快递候选
+    mockGetOrder.mockResolvedValue({ data: { data: { ...mockOrder, logisticsType: 'logistics' } } })
+    render(<ShipOrder />)
+    await waitFor(() => expect(carrierTypeRadio('物流/专线')).toBeChecked())
+    fireEvent.click(carrierTypeRadio('快递'))
+    expect(companyOptionValues()).not.toContain('四季安物流')
+    expect(companyOptionValues()).toEqual([
+      '德邦快递',
+      '顺丰速运',
+      '中通快递',
+      '圆通速递',
+      '韵达快递',
+      '申通快递',
+    ])
+  })
+
+  it('#8079 ③ 从「快递-顺丰」切到「物流/专线」⇒ 承运商落到专线第一家，并给一次可见提示', async () => {
+    render(<ShipOrder />)
+    await waitFor(() => expect(companySelect()).toHaveValue('德邦快递'))
+    fireEvent.change(companySelect(), { target: { value: '顺丰速运' } })
+    expect(companySelect()).toHaveValue('顺丰速运')
+
+    fireEvent.click(carrierTypeRadio('物流/专线'))
+
+    // 不残留顺丰：落到专线第一家
+    expect(companySelect()).toHaveValue('四季安物流')
+    expect(companySelect()).not.toHaveValue('顺丰速运')
+    // 可见提示（不是静默改）—— 文案唯一真值在 `lib/logistics.ts`，两处不各写一句会漂的话
+    expect(screen.getByTestId('ship-carrier-notice')).toHaveTextContent(
+      switchCarrier('顺丰速运', 'logistics').notice ?? '',
+    )
+    // 手改承运商 ⇒ 提示消失（不留一条过期提示）
+    fireEvent.change(companySelect(), { target: { value: '四季安物流' } })
+    expect(screen.queryByTestId('ship-carrier-notice')).toBeNull()
+  })
+
+  it('#8079 ④ 订单带 logisticsType=logistics 且没记承运商 ⇒ 默认取该类型第一家（不落成「专线 + 德邦快递」）', async () => {
+    mockGetOrder.mockResolvedValue({ data: { data: { ...mockOrder, logisticsType: 'logistics' } } })
+    render(<ShipOrder />)
+    await waitFor(() => expect(carrierTypeRadio('物流/专线')).toBeChecked())
+    expect(companySelect()).toHaveValue('四季安物流')
+  })
+
+  it('#8079 ④b 客户档案只记了物流类型（没记承运商）⇒ 承运商取该类型第一家', async () => {
+    mockGetCustomers.mockResolvedValue({
+      data: {
+        data: {
+          items: [{ id: 'c-hit', phone: '13900139000', defaultLogisticsType: 'logistics' }],
+          total: 1,
+        },
+      },
+    })
+    render(<ShipOrder />)
+    await waitFor(() => expect(mockGetCustomers).toHaveBeenCalled())
+    await waitFor(() => expect(companySelect()).toHaveValue('四季安物流'))
+    expect(carrierTypeRadio('物流/专线')).toBeChecked()
   })
 
   it('#4874 订单两列都缺（存量单）⇒ 回落客户档案反查（既有兜底不退化）', async () => {

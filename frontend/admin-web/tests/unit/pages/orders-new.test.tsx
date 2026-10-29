@@ -2233,6 +2233,23 @@ describe('NewOrderPage', () => {
       expect(payload.logisticsType).toBe('express')
       expect(payload.logisticsCompany).toBe('顺丰')
     })
+
+    it('判据 ④c（#8079）：承运商候选随「常用物流/快递」收敛（未指定 ⇒ 全量，不凭空缩小）', async () => {
+      await setupCurtain()
+      fillSize(0, '6.6', '2.6')
+      const options = () =>
+        Array.from(document.querySelectorAll('#order-logistics-company-options option')).map(
+          (o) => (o as HTMLOptionElement).value,
+        )
+      // 「未指定」是真值 ⇒ 全量候选（不替商家凭空缩小词表）
+      expect(options()).toContain('四季安物流')
+      expect(options()).toContain('顺丰速运')
+      fireEvent.change(logisticsType(), { target: { value: 'logistics' } })
+      expect(options()).toEqual(['四季安物流'])
+      fireEvent.change(logisticsType(), { target: { value: 'express' } })
+      expect(options()).not.toContain('四季安物流')
+      expect(options()).toContain('顺丰速运')
+    })
   })
 
   it('🔴 超授信被拦 ⇒ 就地弹授信申请：ref = 客户手机号、金额 = 尚缺额（issue #7374 段 4）', async () => {

@@ -9,6 +9,8 @@
  * 领域口径（docs/curtain-production-rules.md §6 物流）：
  * - `express` 快递（顺丰/中通等）/ `logistics` 物流专线（四季安等）；POC 客户更多选物流专线。
  * - 客户基本固定选同一家承运商 ⇒ 客户级档案，下单/发货自动带出、可改。
+ * - 承运商**带物流类型归属**（issue #8079）：候选按用户选的类型收敛，否则真机上能填出
+ *   「物流类型 = 快递 + 物流公司 = 德邦快递」这种自相矛盾的组合（用户 2026-10-29：「全链路都要区分」）。
  *
  * ⚠️ 词表只做**候选**：两处下拉一律允许自定义填写（POC 客户可能有其他承运商），
  * 因此不得把它当成白名单校验（后端列是自由文本 VARCHAR，无 DB CHECK）。
@@ -20,16 +22,77 @@ export const LOGISTICS_TYPES = [
   { value: 'logistics', label: '物流/专线' },
 ] as const
 
-/** 常用承运商候选（发货页原有 6 家 + 域文档点名的物流专线承运商） */
-export const LOGISTICS_COMPANIES = [
-  '德邦快递',
-  '顺丰速运',
-  '中通快递',
-  '圆通速递',
-  '韵达快递',
-  '申通快递',
-  '四季安物流',
-] as const
+/** 物流类型枚举值（单据列是自由文本，前端只在**候选面**收敛，见文件头 ⚠️） */
+export type LogisticsType = (typeof LOGISTICS_TYPES)[number]['value']
+
+/** 后端列默认值（V47 `logistics_type DEFAULT 'express'`）：订单没记类型时表单取它（唯一真值） */
+export const DEFAULT_LOGISTICS_TYPE: LogisticsType = 'express'
+
+/** 承运商候选 = 名称 + **物流类型归属**（issue #8079；原先是纯 `string[]`，与类型词表互不相关） */
+export interface LogisticsCompany {
+  name: string
+  type: LogisticsType
+}
+
+/**
+ * 常用承运商候选（发货页原有 6 家 + 域文档点名的物流专线承运商）。
+ *
+ * 🔴 顺序即优先级：每种类型的**第一位 = 该类型的默认承运商**
+ * （`express` ⇒ 德邦快递，`logistics` ⇒ 四季安物流）；E2E 依赖「德邦快递」是快递默认值。
+ */
+export const LOGISTICS_COMPANIES: readonly LogisticsCompany[] = [
+  { name: '德邦快递', type: 'express' },
+  { name: '顺丰速运', type: 'express' },
+  { name: '中通快递', type: 'express' },
+  { name: '圆通速递', type: 'express' },
+  { name: '韵达快递', type: 'express' },
+  { name: '申通快递', type: 'express' },
+  { name: '四季安物流', type: 'logistics' },
+]
+
+/** 是否为**登记过**的物流类型（其余一律按「未知」处理，不参与收敛） */
+export function isLogisticsType(value?: string | null): value is LogisticsType {
+  return LOGISTICS_TYPES.some((t) => t.value === value)
+}
+
+/**
+ * 某物流类型下的承运商候选（顺序 = {@link LOGISTICS_COMPANIES}，**第一家即该类型默认承运商**）。
+ *
+ * 未知 / 空类型 ⇒ **全量**：档案面「常用物流方式」未指定、建单页「未指定」时不能凭空缩小候选。
+ */
+export function logisticsCompaniesFor(type?: string | null): string[] {
+  const source = isLogisticsType(type)
+    ? LOGISTICS_COMPANIES.filter((c) => c.type === type)
+    : LOGISTICS_COMPANIES
+  return source.map((c) => c.name)
+}
+
+/** 切换物流类型的结果：校正后的承运商 + 一次**可见提示**（`notice = null` ⇒ 没改动，不该提示） */
+export interface CarrierSwitch {
+  company: string
+  notice: string | null
+}
+
+/**
+ * 切换「物流类型」时校正已选承运商（issue #8079）—— 调用方负责渲染 `notice`（**不静默改**）。
+ *
+ * 口径：
+ * - 当前承运商属于**另一种**类型 ⇒ 落到新类型第一家 + 提示（例：「快递-顺丰速运」切到「物流/专线」
+ *   ⇒ 四季安物流，不残留顺丰）；
+ * - 当前已在新类型里 ⇒ 不动、不提示（商家自己的选择不被覆盖）；
+ * - 当前是**词表之外的自定义承运商** ⇒ 不动：词表只是候选、不是白名单，自定义值的归属无从判断，
+ *   改写它等于替商家丢数据。
+ */
+export function switchCarrier(current: string, nextType: LogisticsType): CarrierSwitch {
+  const entry = LOGISTICS_COMPANIES.find((c) => c.name === current)
+  if (!entry || entry.type === nextType) return { company: current, notice: null }
+  const [first] = logisticsCompaniesFor(nextType)
+  if (!first) return { company: current, notice: null }
+  return {
+    company: first,
+    notice: `已将物流公司改为「${first}」（${logisticsTypeLabel(nextType)}）`,
+  }
+}
 
 /** 物流类型 → 中文标签；未知/空值回退到「快递」（与后端列默认值 express 一致） */
 export function logisticsTypeLabel(type?: string | null): string {

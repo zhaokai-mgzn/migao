@@ -50,6 +50,8 @@
 import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
+// 切换物流类型时承运商校正的**唯一真值**（issue #8079：两处不各写一句会漂的提示文案）
+import { switchCarrier } from '@/lib/logistics'
 
 // 页面按 `order:create` 显隐「新增订单」（issue #5983）⇒ 渲染必须带登录态（与 orders.test.tsx 同口径）
 const authMock = vi.hoisted(() => ({
@@ -537,5 +539,64 @@ describe('销售订单列表 · 行内快捷发货（issue #8013）', () => {
     // 序列化后的 HTTP body 里**没有**这个键（JSON 丢弃 undefined）⇒ 服务端「不传 = 不改」，
     // 不会把这条记录的类型静默写成 express
     expect(JSON.stringify(buildLogisticsPayload(payload))).not.toContain('logisticsType')
+  })
+
+  // ================= ⑧ 承运商候选按物流类型收敛（issue #8079）=================
+  // 与发货页（`ship-order.test.tsx` 的 #8079 组）**同一组断言**：候选按类型收敛、切换时校正
+  // 已选项、给一次可见提示；词表/判定/文案都来自 `@/lib/logistics`，两处不各写一份会漂的逻辑。
+  const companySelectEl = () => screen.getByLabelText('物流公司') as HTMLSelectElement
+  const companyOptionValues = () => Array.from(companySelectEl().options).map((o) => o.value)
+
+  it('⑧ ① 选「物流/专线」⇒ 候选里不含任何快递公司（含顺丰速运）', async () => {
+    render(<OrdersPage />)
+    await waitForRows()
+    await expandShip('ship1')
+    // 订单没记类型 ⇒ express + 快递第一家（与发货页同一默认口径）
+    expect(companySelectEl()).toHaveValue('德邦快递')
+    fireEvent.click(typeRadio('物流/专线'))
+    expect(companyOptionValues()).toEqual(['四季安物流'])
+    expect(companyOptionValues()).not.toContain('顺丰速运')
+  })
+
+  it('⑧ ② 选「快递」⇒ 候选里不含专线承运商（四季安物流）', async () => {
+    render(<OrdersPage />)
+    await waitForRows()
+    await expandShip('ship2') // ship2 订单记着 logistics ⇒ 表单带出专线第一家
+    expect(typeRadio('物流/专线')).toBeChecked()
+    fireEvent.click(typeRadio('快递'))
+    expect(companyOptionValues()).not.toContain('四季安物流')
+    expect(companyOptionValues()).toEqual([
+      '德邦快递',
+      '顺丰速运',
+      '中通快递',
+      '圆通速递',
+      '韵达快递',
+      '申通快递',
+    ])
+  })
+
+  it('⑧ ③ 从「快递-顺丰」切到「物流/专线」⇒ 承运商落到专线第一家，并给一次可见提示', async () => {
+    render(<OrdersPage />)
+    await waitForRows()
+    await expandShip('ship1')
+    expect(companySelectEl()).toHaveValue('德邦快递')
+    selectCompany('顺丰速运')
+    expect(companySelectEl()).toHaveValue('顺丰速运')
+
+    fireEvent.click(typeRadio('物流/专线'))
+
+    expect(companySelectEl()).toHaveValue('四季安物流')
+    expect(companySelectEl()).not.toHaveValue('顺丰速运')
+    expect(screen.getByTestId('ship-inline-carrier-notice')).toHaveTextContent(
+      switchCarrier('顺丰速运', 'logistics').notice ?? '',
+    )
+  })
+
+  it('⑧ ④ 订单带 logisticsType=logistics 且没记承运商 ⇒ 默认取该类型第一家（不落成「专线 + 德邦快递」）', async () => {
+    render(<OrdersPage />)
+    await waitForRows()
+    await expandShip('ship2')
+    expect(typeRadio('物流/专线')).toBeChecked()
+    expect(companySelectEl()).toHaveValue('四季安物流')
   })
 })

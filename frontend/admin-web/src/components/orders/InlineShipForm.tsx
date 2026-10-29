@@ -44,7 +44,13 @@ import FormPanel, { Field, FormGrid, fieldControl } from '@/components/ui/FormPa
 import { productionApi } from '@/lib/api'
 import { extractApiErrorMessage } from '@/lib/api-error'
 import { newClientRequestId } from '@/lib/client-request-id'
-import { LOGISTICS_COMPANIES, LOGISTICS_TYPES } from '@/lib/logistics'
+import {
+  DEFAULT_LOGISTICS_TYPE,
+  LOGISTICS_TYPES,
+  isLogisticsType,
+  logisticsCompaniesFor,
+  switchCarrier,
+} from '@/lib/logistics'
 import { useAuthStore } from '@/store/auth'
 import type { OrderBrief } from '@/types'
 
@@ -68,10 +74,16 @@ export default function InlineShipForm({ order, onClose, onShipped }: InlineShip
    * 订单上记着的值**落在词表白名单内**才用它，否则与后端列默认值一致回落「快递」——
    * 不把未知值原样渲染成一个选不中的单选，也不让它悄悄落库。
    */
-  const [logisticsType, setLogisticsType] = useState<string>(() =>
-    LOGISTICS_TYPES.some((t) => t.value === order.logisticsType) ? (order.logisticsType as string) : 'express',
+  const initialType = isLogisticsType(order.logisticsType)
+    ? order.logisticsType
+    : DEFAULT_LOGISTICS_TYPE
+  const [logisticsType, setLogisticsType] = useState<string>(initialType)
+  /** 承运商默认 = **该物流类型第一家**（issue #8079：与发货页同一条口径，专线单不给德邦快递） */
+  const [logisticsCompany, setLogisticsCompany] = useState<string>(
+    () => logisticsCompaniesFor(initialType)[0],
   )
-  const [logisticsCompany, setLogisticsCompany] = useState<string>(LOGISTICS_COMPANIES[0])
+  /** 切换物流类型时承运商被同步过来的一次性提示（issue #8079：不静默改） */
+  const [carrierNotice, setCarrierNotice] = useState('')
   const [trackingNo, setTrackingNo] = useState('')
   const [shipperName, setShipperName] = useState(defaultShipperName)
   const [shipperTouched, setShipperTouched] = useState(false)
@@ -174,7 +186,11 @@ export default function InlineShipForm({ order, onClose, onShipped }: InlineShip
                       disabled={submitting}
                       className="h-4 w-4 border-neutral-300 text-primary-600 focus:ring-primary-500"
                       onChange={() => {
+                        // 已选承运商不属于新类型 ⇒ 落到该类型第一家 + 一次可见提示（issue #8079）
+                        const next = switchCarrier(logisticsCompany, t.value)
                         setLogisticsType(t.value)
+                        setLogisticsCompany(next.company)
+                        setCarrierNotice(next.notice ?? '')
                         setError('')
                       }}
                     />
@@ -192,15 +208,26 @@ export default function InlineShipForm({ order, onClose, onShipped }: InlineShip
                 disabled={submitting}
                 onChange={(e) => {
                   setLogisticsCompany(e.target.value)
+                  setCarrierNotice('')
                   setError('')
                 }}
               >
-                {LOGISTICS_COMPANIES.map((company) => (
+                {logisticsCompaniesFor(logisticsType).map((company) => (
                   <option key={company} value={company}>
                     {company}
                   </option>
                 ))}
               </select>
+              {/* 切换类型时承运商被同步过来 ⇒ 说一句（issue #8079：不静默改）；手改承运商即消失 */}
+              {carrierNotice && (
+                <p
+                  role="status"
+                  data-testid="ship-inline-carrier-notice"
+                  className="mt-1 text-xs text-neutral-500"
+                >
+                  {carrierNotice}
+                </p>
+              )}
             </Field>
 
             <Field label="运单号" htmlFor={`ship-tracking-${order.id}`}>
