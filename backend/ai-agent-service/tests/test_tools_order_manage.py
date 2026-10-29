@@ -47,6 +47,57 @@ class TestOrderUpdateLogistics:
         assert json_data["logisticsCompany"] == "顺丰"
         assert json_data["trackingNumber"] == "SF123"
 
+    def test_schema_declares_optional_logistics_type(self, tool):
+        """工具 schema 必须声明 `logistics_type`（issue #8080）。
+
+        缺陷形态（改前）：参数表只有 logistics_company / tracking_number ⇒ 模型没有「物流类型」
+        这个维度，智能体代客发货只能吃列默认 `express`（用户说「发物流 / 走专线」也被记成快递）。
+        负控：把 `logistics_type` 从 `parameters.properties` 删掉 ⇒ 本用例红。
+        """
+        schema = OrderManageTool.parameters
+        props = schema["properties"]
+        assert "logistics_type" in props, "缺 logistics_type ⇒ 智能体无法区分快递与物流专线"
+        assert props["logistics_type"]["enum"] == ["express", "logistics"]
+        # 可选字段：不传 = 本次没说这件事（服务端不覆盖），故不得进 required
+        assert "logistics_type" not in schema["required"]
+
+    @patch("app.tools.order_manage.get_admin_api_client")
+    async def test_update_logistics_forwards_type(self, mock_get_client, tool, admin_tool_context):
+        """用户说了「走物流专线」⇒ body 必须带 `logisticsType`（改前该键根本不存在）。"""
+        mock_client = AsyncMock()
+        mock_client.patch = AsyncMock(return_value={"success": True, "data": {}})
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=admin_tool_context, action="update_logistics",
+            order_id="order-1", logistics_company="四季安", tracking_number="SJA001",
+            logistics_type="logistics")
+
+        assert result.success is True
+        json_data = mock_client.patch.call_args.kwargs["json_data"]
+        assert json_data["logisticsType"] == "logistics"
+
+    @patch("app.tools.order_manage.get_admin_api_client")
+    async def test_update_logistics_omits_type_when_user_did_not_say(
+            self, mock_get_client, tool, admin_tool_context):
+        """用户没说物流类型 ⇒ body **不得**出现该键（负控：补一个 "express" 兜底就红）。
+
+        为什么不猜：admin-api 的写面是
+        `logistics_type = COALESCE(NULLIF(#{logisticsType}, ''), logistics_type)` ⇒ 省略键 = 保留原值；
+        兜底成 express 会把客户已记录的「物流专线」静默改回快递。
+        """
+        mock_client = AsyncMock()
+        mock_client.patch = AsyncMock(return_value={"success": True, "data": {}})
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=admin_tool_context, action="update_logistics",
+            order_id="order-1", logistics_company="四季安", tracking_number="SJA001")
+
+        assert result.success is True
+        json_data = mock_client.patch.call_args.kwargs["json_data"]
+        assert "logisticsType" not in json_data, "没说就不许猜（缺键 = 服务端不覆盖原值）"
+
 
 class TestOrderCancel:
     @patch("app.tools.order_manage.get_admin_api_client")

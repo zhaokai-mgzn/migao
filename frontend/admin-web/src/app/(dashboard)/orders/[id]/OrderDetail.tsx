@@ -49,7 +49,7 @@ import { cn } from '@/lib/utils'
 // 发货方式回填（issue #6254）：判定在 lib 里（本页只接线），口径 = 只透传**真采集到**的取值、
 // 未采集（NULL）返回 undefined = 未记录
 import { shippingMethodForEdit } from '@/lib/data-adapter'
-// 物流方式词表（issue #7850）：详情页「收货信息」块的**只读**读数 —— 复用 `lib/logistics.ts`
+// 物流类型词表（issue #7850）：详情页「收货信息」块的**只读**读数 —— 复用 `lib/logistics.ts`
 // 的单一真值定义，**不新造第二份 express/logistics 中文词表**。
 // 🔴 用 `logisticsTypeText()`（枚举转中文、未登记原样回显、缺值 ⇒ null）而**不**用同文件的
 // `logisticsTypeLabel()`：后者是**表单**口径（缺值回落「快递」，下拉框需要一个可选中的值），
@@ -722,11 +722,13 @@ export default function OrderDetailPage() {
           <div className="col-span-2">
             <InfoRow label="安装小区" value={order.installCommunity || '-'} />
           </div>
-          {/* 物流方式 / 物流公司（issue #7850）：下单页自 #5840 起把这两项当必填，服务端落在
+          {/* 物流类型 / 物流公司（issue #7850）：下单页自 #5840 起把这两项当必填，服务端落在
               `orders.logistics_type` / `logistics_company` 两列并随详情读面下发，但本块此前只印
               收货人 / 电话 / 地址 ⇒ 商家在详情页看不出这一单走快递还是物流专线、哪家承运。
-              缺值一律印 `-`（本页既有 `InfoRow` 纪律），**不臆造「快递」**。 */}
-          <InfoRow label="物流方式" value={logisticsTypeText(order.logisticsType) ?? '-'} />
+              缺值一律印 `-`（本页既有 `InfoRow` 纪律），**不臆造「快递」**。
+              术语（issue #8080）：这一格印的是 `logistics_type` ⇒ 叫「物流类型」；
+              「物流方式」在本系统里专指 `shippingMethod`（物流发货 / 无需物流），不能共用同一个词。 */}
+          <InfoRow label="物流类型" value={logisticsTypeText(order.logisticsType) ?? '-'} />
           <InfoRow label="物流公司" value={order.logisticsCompany?.trim() || '-'} />
         </div>
       </SectionCard>

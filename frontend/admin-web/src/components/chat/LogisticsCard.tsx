@@ -2,6 +2,10 @@
 
 import { Truck, CheckCircle, Clock, MapPin } from 'lucide-react'
 import { cn } from '@/lib/utils'
+// 物流类型（issue #8080）：词表取 `lib/logistics.ts` 的单一真值定义。
+// 🔴 必须用 `logisticsTypeText()`（未采集 ⇒ null，不印）而**不是** `logisticsTypeLabel()`
+// （表单口径，缺值回退「快递」）—— 卡是只读面，把「没记录」印成「快递」就是编值。
+import { logisticsTypeText } from '@/lib/logistics'
 
 interface LogisticsCardProps {
   data: Record<string, unknown>
@@ -33,6 +37,11 @@ export default function LogisticsCard({ data }: LogisticsCardProps) {
   const tracking = (data.tracking_info as Record<string, unknown>) || data
   const trackingNo = (tracking.trackingNo as string) || (tracking.tracking_no as string) || ''
   const company = (tracking.company as string) || ''
+  // 物流类型（issue #8080）：`logistics_track` 的卡载荷是服务端注入的 `logistics_type`（snake），
+  // 详情读面另给 `logisticsType`（camel）—— 两种都认，与上面 trackingNo 的双键口径一致。
+  const typeText = logisticsTypeText(
+    (tracking.logisticsType as string) || (tracking.logistics_type as string),
+  )
   const status = (tracking.status as string) || ''
   const tracks = (tracking.tracks as Array<Record<string, unknown>>) || []
 
@@ -45,6 +54,11 @@ export default function LogisticsCard({ data }: LogisticsCardProps) {
           <p className="text-xs font-medium text-neutral-800">
             {company || '物流信息'}
           </p>
+          {typeText && (
+            <p className="text-[10px] text-neutral-500 mt-0.5" data-testid="logistics-type">
+              物流类型：{typeText}
+            </p>
+          )}
           {trackingNo && (
             <p className="text-[10px] text-neutral-500 mt-0.5">
               运单号: {trackingNo}

@@ -29,7 +29,11 @@ class OrderManageTool(BaseTool):
     name = "order_manage"
     description = (
         "【触发】用户说'取消订单''退款''修改订单''标记发货''更新物流''确认支付'时调用。"
-        "【参数】需要 action + order_id（订单 ID 或订单号 ORD-xxx）。cancel/refund 是破坏性操作，必须二次确认。"
+        "【参数】需要 action + order_id（订单 ID 或订单号 ORD-xxx）。"
+        "update_logistics 必填 logistics_company + tracking_number；"
+        "物流类型 logistics_type 可选 —— 用户明说「发物流 / 走专线」才传 logistics、明说「发快递」才传 express，"
+        "没说就不传（不传 = 服务端保留原值，不要猜）。"
+        "cancel/refund 是破坏性操作，必须二次确认。"
         "【反例】仅查看订单用 order_query。创建新订单用 order_create。"
         "【标注】WRITE|DESTRUCTIVE — 取消/退款前必须二次确认"
     )
@@ -61,6 +65,17 @@ class OrderManageTool(BaseTool):
             },
             "logistics_company": {"type": "string", "description": "快递公司（update_logistics 时必填）"},
             "tracking_number": {"type": "string", "description": "运单号（update_logistics 时必填）"},
+            # 物流类型（issue #8080）：与物流公司 / 运单号**并列的独立维度**（「发快递」还是「走物流专线」）。
+            # 枚举只给两个登记值；**缺省不传** —— 写面语义是「显式才覆盖」，猜一个值就会把客户已记录的
+            # 「物流专线」静默改成快递（这正是 #8070 之前商家行内发货的老毛病）。
+            "logistics_type": {
+                "type": "string",
+                "enum": ["express", "logistics"],
+                "description": (
+                    "物流类型（update_logistics 时可选）：用户说「发物流 / 走专线」⇒ logistics（物流专线）；"
+                    "说「发快递」⇒ express（快递）；**没说就不传**（不传 = 服务端保留原值，绝不猜）"
+                ),
+            },
             "cancel_reason": {"type": "string", "description": "取消原因（cancel 时可选）"},
             "refund_amount": {"type": "number", "description": "退款金额（refund 时可选）"},
             "refund_reason": {"type": "string", "description": "退款原因（refund 时可选）"},
@@ -76,6 +91,7 @@ class OrderManageTool(BaseTool):
         status: Optional[str] = None,
         logistics_company: Optional[str] = None,
         tracking_number: Optional[str] = None,
+        logistics_type: Optional[str] = None,
         cancel_reason: Optional[str] = None,
         refund_amount: Optional[float] = None,
         refund_reason: Optional[str] = None,
@@ -117,7 +133,8 @@ class OrderManageTool(BaseTool):
 
         try:
             return await self._execute_action(context, action, order_id, status,
-                logistics_company, tracking_number, cancel_reason, refund_amount, refund_reason)
+                logistics_company, tracking_number, cancel_reason, refund_amount, refund_reason,
+                logistics_type)
         except Exception as e:
             logger.error(f"Order manage error: action={action}, order_id={order_id}, error={e}", exc_info=True)
             return ToolResult(
@@ -128,7 +145,7 @@ class OrderManageTool(BaseTool):
 
     async def _execute_action(self, context, action, order_id, status,
                                logistics_company, tracking_number, cancel_reason,
-                               refund_amount, refund_reason) -> ToolResult:
+                               refund_amount, refund_reason, logistics_type=None) -> ToolResult:
         """统一通过 Agent PATCH 端点执行所有操作。ID 解析由 Java 负责。"""
         json_data: Dict[str, Any] = {"action": action}
 
@@ -155,6 +172,11 @@ class OrderManageTool(BaseTool):
                 )
             json_data["logisticsCompany"] = logistics_company
             json_data["trackingNumber"] = tracking_number
+            # 物流类型（issue #8080）：**显式才传该键**。admin-api 的 `OrderLogisticsWriter` 口径是
+            # 「新建写入、更新仅在显式非空时覆盖」⇒ 省略键 = 不动原值；这里若补一个 "express" 兜底，
+            # 只改运单号就会把「物流专线」静默改成快递。
+            if logistics_type:
+                json_data["logisticsType"] = logistics_type
         elif action == "cancel":
             if cancel_reason:
                 json_data["cancelReason"] = cancel_reason

@@ -231,7 +231,7 @@ export function shipLabelDateText(value) {
   return year && month && day ? `${year}-${month}-${day}` : SHIP_LABEL_MISSING
 }
 
-/** 物流方式：服务端已给展示名就照用；没给（未采集 / 未知取值）⇒ `—`，**绝不回退「快递」**。 */
+/** 物流类型：服务端已给展示名就照用；没给（未采集 / 未知取值）⇒ `—`，**绝不回退「快递」**。 */
 function logisticsText(order) {
   const label = order?.logistics_type_label
   return labelText(label)
@@ -249,7 +249,7 @@ function setsText(order) {
 /**
  * 发货联（整套出库单）的**行清单**（唯一真值）：屏幕预览、打印、测试都读它。
  *
- * 行序 = 拣货/贴箱的人从上到下核对的顺序：单号 → 收件人 → 电话 → 地址 → 物流方式 → 物流公司 →
+ * 行序 = 拣货/贴箱的人从上到下核对的顺序：单号 → 收件人 → 电话 → 地址 → 物流类型 → 物流公司 →
  * 下单日期 → 套数 → 备注（issue #7786：抬头改「发货联」、补「下单日期」，与用户那张现场发货联对齐）。
  * 🔴 **不重复印「客户」**：本系统的客户 = 收货人（`orders.customer_name`），
  * 同一个人印两遍只是白吃 50mm 版心的两行（信息不重复，`migao-dev-flow` §31 P2）。
@@ -281,7 +281,10 @@ export function buildShipLabelRows(order) {
     if (value !== '') rows.push({ key, label, value, ...(multiline ? { multiline: true } : {}) })
   }
   rows.push(
-    { key: 'logistics_type', label: '物流方式', value: logisticsText(order) },
+    // 术语（issue #8080）：这一栏是 **物流类型**（快递 / 物流专线），不是「物流方式」——
+    // 商家后台的「物流方式」= `shippingMethod`（物流发货 / 无需物流），同一个词两端口径不同
+    // 会让工人与商家对不上话。逐字对齐商家发货页 / 行内快捷发货的「物流类型」。
+    { key: 'logistics_type', label: '物流类型', value: logisticsText(order) },
     { key: 'logistics_company', label: '物流公司', value: labelText(order?.logistics_company) },
     { key: 'order_date', label: '下单日期', value: shipLabelDateText(order?.created_at) },
     { key: 'sets', label: '套数', value: setsText(order) },
