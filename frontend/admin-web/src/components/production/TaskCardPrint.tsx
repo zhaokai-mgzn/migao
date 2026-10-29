@@ -96,7 +96,7 @@ import type { ProcessingOrderItem, ProductionPosition } from '@/types'
  *   「把长度再缩减一些，能放下以上信息即可」⇒ ① **专属唛只印 5 行 + 二维码**（货号 / 门幅 / 宽高 /
  *   工艺 / 特殊选项；行集合 = `wash-label-content.ts::WASH_LABEL_OPTION_ROW_KEYS`，抬头照旧是
  *   「这张纸属于哪个特殊选项」的标记）；② **专属唛用自己的短纸 50mm × 100mm**
- *   （介质 `label-50x100`；同一次出纸里两种纸高靠 **CSS 命名页** `@page wash-label-option` 并存，
+ *   （介质 `label-50x80-option`，issue #8163 由 50×100 收到 50×80；同一次出纸里两种纸高靠 **CSS 命名页** `@page wash-label-option` 并存，
  *   见 `printNamedPageRule`）。🔴 **常规唛一字不改**：50mm × 140mm / 15 行。
  *   ⛔ 退场行（专属唛上不得出现）：单号 / 客户 / 套序 / 帘种 / 安装小区 / 安装位置 / 用料 / 褶法 /
  *   备注 / 布料批次 —— 它们由内容模块的行集合决定，本文件**不自己挑行**（单源守卫 SS9）。
@@ -137,15 +137,18 @@ import type { ProcessingOrderItem, ProductionPosition } from '@/types'
  *
  * ##### 【专属唛预算】（issue #8107，可复算；守卫 G8~G11 按本节读数复算）
  *
- * 专属唛（`.task-card-label--option`）纸型 = **50mm × 100mm**（真值源 = `label-50x100`；
+ * 专属唛（`.task-card-label--option`）纸型 = **50mm × 80mm**（真值源 = `label-50x80-option`；
  * 命名页 = `@page wash-label-option`，由 `printNamedPageRule` 从矩阵取，本文件不写第二份纸型）。
- * 版心宽 47.6mm（= 50 − 2 × 1.2 内边距，与常规唛同宽）；可用 70mm（= 100 − 15 上留白 − 15 下净空）；
+ * 2026-10-30（issue #8163）用户逐字「1，那就再缩小到80mm」⇒ 纸长 100 → 80，**留白同步由 15/15 收到 8/8**
+ * （原来的 15/15 是 140mm 纸的口径；80mm 纸若仍按 15/15，纵向就只剩 50mm < 内容 58.15mm ⇒ 必然静默裁行）。
+ * 版心宽 47.6mm（= 50 − 2 × 1.2 内边距，与常规唛同宽）；可用 64mm（= 80 − 8 上留白 − 8 下净空）；
  * 每行 4.6567mm（正文 11pt × 行高 1.2）；抬头块 12.7mm（14pt 5.93 + **16pt 6.77**，行高 1.2；
  * 副标题 2026-10-29 由 12pt 抬到 16pt = 用户「余料带回 /绑带字体再加大加粗」）；
  * 二维码 21.17mm（80 CSS px）、块距 0.5mm × 2。
- * 满字段 5 行 = 12.7 + 0.5 + 5 × 4.6567 + 0.5 + 21.17 = **58.15mm ≤ 70mm**
- * ⇒ 整张 ≈ 15 + 58.15 + 15 = **88.15mm ≤ 100mm**（余 11.85mm ≈ 2.5 行 ⇒ **可容 7 行**：
- * 工艺 / 特殊选项各折一次仍装得下；再多即裁尾部文字，二维码永不被裁且离底虚线恒 15mm）。
+ * 满字段 5 行 = 12.7 + 0.5 + 5 × 4.6567 + 0.5 + 21.17 = **58.15mm ≤ 64mm**（余 5.85mm ≈ 1.25 行）
+ * ⇒ 整张 ≈ 8 + 58.15 + 8 = **74.15mm ≤ 80mm**；工艺折 1 行 = **62.81mm ≤ 64mm** 仍装得下，
+ * 两条行都折 = 67.47mm > 64mm ⇒ 裁尾部文字，**二维码永不被裁**且离底虚线恒 ≥ 8mm
+ * （常规唛仍是 110mm / 15 行 / 离底 15mm —— 负控，改专属唛不许波及它）。
  *
  * 打印隔离沿用项目既有范式（见 `frontend/admin-web/src/components/orders/ShipmentDoc.tsx` 文件头的 6 条约束）：
  * 1. **屏幕隐藏、打印可见**：页面已有屏幕布局，本组件 `display:none` + `@media print` 显形；
@@ -323,9 +326,9 @@ export default function TaskCardPrint({
           <style>{printPageRule('label-50x140')}</style>
           {/* 🔴 专属唛的命名页（issue #8107）：同一次出纸里两种纸高并存 ——
               常规唛吃上面那条文档级 `@page`（50mm × 140mm），专属唛吃这条
-              `@page wash-label-option`（50mm × 100mm）。尺寸由 `printNamedPageRule` 从介质矩阵取，
+              `@page wash-label-option`（50mm × 80mm，#8163 由 100 收到 80）。尺寸由 `printNamedPageRule` 从介质矩阵取，
               本文件不写第二份纸型（守卫 G9 把命名页与矩阵逐字比对）。 */}
-          <style>{printNamedPageRule('wash-label-option', 'label-50x100')}</style>
+          <style>{printNamedPageRule('wash-label-option', 'label-50x80-option')}</style>
         </>
       )}
       <style>{`
@@ -343,11 +346,15 @@ export default function TaskCardPrint({
           break-after: page; page-break-after: always; }
         /* 最后一张不再分页（否则末尾多吐一张空白） */
         .task-card-label:last-child { break-after: auto; page-break-after: auto; }
-        /* 专属唛（余料带回 / 绑带，issue #8107）：只印 5 行 + 二维码 ⇒ 短纸 50mm × 100mm。
-           宽度 / padding / 字号 / 二维码与基类同值（上面那条），只有纸高与命名页不同 ——
-           命名页让同一份打印任务里两种纸高并存（尺寸见 printNamedPageRule，本文件不写第二份）。
+        /* 专属唛（余料带回 / 绑带，issue #8107 → #8163）：只印 5 行 + 二维码 ⇒ 短纸 50mm × 80mm。
+           宽度 / 字号 / 二维码与基类同值（上面那条），纸高与命名页不同 ——
+           命名页让同一份打印任务里两种纸高并存（尺寸见 printNamedPageRule，本文件不写第二份纸型）。
+           上下内边距 8mm：原来的 15mm 是 140mm 纸的口径；纸长砍到 80mm 后仍按 15/15 会让可用只剩 50mm
+           （内容 58.15mm）⇒ 必然静默裁行。8/8 与 wash-label-metrics.ts 的
+           WASH_LABEL_OPTION_TOP_BLANK_MM / WASH_LABEL_OPTION_BOTTOM_CLEARANCE_MM 同值，
+           两条通道同取这一对数；常规唛（上面那条 15mm）一个字都不动。
            ⚠️ 这段注释在模板字面量里 ⇒ 不许写 markdown 星号（copy-no-markdown-emphasis 判据会红） */
-        .task-card-label--option { height: 100mm; page: wash-label-option; }
+        .task-card-label--option { height: 80mm; padding: 8mm 1.2mm 8mm; page: wash-label-option; }
         @media print {
           body > *:not(.print-doc) { display: none !important; }
           /* 🔴 只有「本次目标」上纸（issue #5914）：否则打印会同时吐出别的单据的版面 */

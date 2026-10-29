@@ -25,6 +25,8 @@ import {
   WASH_LABEL_EMPHASIS_ROW_KEYS,
   WASH_LABEL_LINE_HEIGHT,
   WASH_LABEL_OPTION_SUBTITLE_FONT_PT,
+  WASH_LABEL_OPTION_BOTTOM_CLEARANCE_MM,
+  WASH_LABEL_OPTION_TOP_BLANK_MM,
   WASH_LABEL_PADDING_MM,
   WASH_LABEL_QR_CSS_PX,
   WASH_LABEL_QR_PLACEHOLDER_FONT_PT,
@@ -77,26 +79,40 @@ describe('水洗唛版面度量：TS 单一真值 ⇄ 组件 CSS（改一处不�
     expect(printDotGeometry('label-50x140').heightPx).toBe(1120)
   })
 
-  it('🔴 两种纸长同源（issue #8107）：专属唛容器 = 矩阵 `label-50x100`、命名 `@page` 与矩阵逐字一致（改一处 ⇒ 两处红）', () => {
+  it('🔴 两种纸长同源（issue #8107 → #8163）：专属唛容器 = 矩阵 `label-50x80-option`、命名 `@page` 与矩阵逐字一致（改一处 ⇒ 两处红）', () => {
     // ① 基类仍是 140mm —— 瘦身只发生在 `--option` 那个修饰类上
     expect(css).toContain('height: 140mm')
     expect(css).not.toContain('height: 100mm')
     const optionBlock = /\.task-card-label--option\s*\{([^}]*)\}/.exec(source)
     if (!optionBlock?.[1]) throw new Error('找不到 `.task-card-label--option { … }` —— 判据无从取值（不得静默通过）')
-    // ② 专属唛容器高 == 介质矩阵的 `label-50x100` 高（只改 CSS 不改矩阵 ⇒ 红；反之亦然）
-    expect(optionBlock[1]).toContain(`height: ${printPageBoxMm('label-50x100').heightMm}mm`)
+    // ② 专属唛容器高 == 介质矩阵的 `label-50x80-option` 高（只改 CSS 不改矩阵 ⇒ 红；反之亦然）
+    expect(optionBlock[1]).toContain(`height: ${printPageBoxMm('label-50x80-option').heightMm}mm`)
+    // 🔴 issue #8163：留白随纸长收窄（8/8）—— 基类 15/15 一字不动（上一段的断言就是负控）
+    expect(optionBlock[1]).toContain(
+      `padding: ${WASH_LABEL_OPTION_TOP_BLANK_MM}mm ${WASH_LABEL_PADDING_MM}mm ${WASH_LABEL_OPTION_BOTTOM_CLEARANCE_MM}mm`,
+    )
+    expect(WASH_LABEL_OPTION_TOP_BLANK_MM).toBe(8)
+    expect(WASH_LABEL_OPTION_BOTTOM_CLEARANCE_MM).toBe(8)
+    // 专属唛的留白**不得**等于常规唛的 15（写回 15 ⇒ 80mm 纸上必然裁行）
+    expect(WASH_LABEL_OPTION_TOP_BLANK_MM).not.toBe(WASH_LABEL_TOP_BLANK_MM)
+    expect(WASH_LABEL_OPTION_BOTTOM_CLEARANCE_MM).not.toBe(WASH_LABEL_BOTTOM_CLEARANCE_MM)
     // ③ 命名页名在 CSS 里（同一份打印任务里两种纸高并存）
     expect(optionBlock[1]).toContain('page: wash-label-option')
     // ④ 命名 `@page` 由 printNamedPageRule 从**矩阵**取，渲染器不自写 `@page` 字面量
-    expect(source).toContain("printNamedPageRule('wash-label-option', 'label-50x100')")
-    expect(printNamedPageRule('wash-label-option', 'label-50x100')).toBe(
-      '@page wash-label-option { size: 50mm 100mm; margin: 0; }',
+    expect(source).toContain("printNamedPageRule('wash-label-option', 'label-50x80-option')")
+    expect(printNamedPageRule('wash-label-option', 'label-50x80-option')).toBe(
+      '@page wash-label-option { size: 50mm 80mm; margin: 0; }',
     )
     // ⑤ 位图通道读**同一份**介质（`input.media` ⇒ 矩阵），不写第二份纸长
     const bitmap = readFileSync(resolve(process.cwd(), 'src/lib/label-print/wash-label.ts'), 'utf-8')
-    expect(bitmap).toContain('printPageBoxMm(washLabelMediaOf(input))')
-    expect(printPageBoxMm('label-50x100')).toEqual({ widthMm: 50, heightMm: 100 })
-    expect(printDotGeometry('label-50x100').heightPx).toBe(800)
+    // 纸高与留白都从**同一个** `media` 变量取（issue #8163：两个数各自判来源 ⇒ 可能 80mm 纸 + 15/15 留白）
+    expect(bitmap).toContain('const media = washLabelMediaOf(input)')
+    expect(bitmap).toContain('printPageBoxMm(media)')
+    // 🔴 留白也必须按同一张纸取（否则 80mm 纸仍按 15/15 排版 ⇒ 静默裁行）
+    expect(bitmap).toContain('WASH_LABEL_OPTION_TOP_BLANK_MM')
+    expect(bitmap).toContain('WASH_LABEL_OPTION_BOTTOM_CLEARANCE_MM')
+    expect(printPageBoxMm('label-50x80-option')).toEqual({ widthMm: 50, heightMm: 80 })
+    expect(printDotGeometry('label-50x80-option').heightPx).toBe(640)
   })
 
   it('🔴 加工项 = **加黑加粗**（两条通道同读一份常量；一方加粗一方不加 ⇒ 红；issue #7987）', () => {
