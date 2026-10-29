@@ -29,9 +29,15 @@ import {
   printFailureText,
   probePrintCapability,
   printFailureHint,
+  PRINT_READY_HINT_TERMINAL,
   type PrintFailureReason,
 } from '../src/utils/inbound/printCapability'
 import { LABEL_PRINT_PARAMS, createLpapiTransport } from '../src/utils/inbound/lpapiTransport'
+import {
+  createPrintTransport,
+  createTerminalTransport,
+  hasTerminalPrintBridge,
+} from '../src/utils/inbound/terminalTransport'
 import {
   createPrinterLinkStore,
   isAbnormalPrintable,
@@ -67,6 +73,9 @@ function printChannelProblems(files: { file: string; code: string }[]): string[]
   const problems: string[] = []
   const ENTRY = 'src/utils/inbound/labelPrint.ts'
   const TRANSPORT = 'src/utils/inbound/lpapiTransport.ts'
+  // 手持标签机（issue #8089）：这一个文件是**通道选择**的唯一出口（终端内置打印 vs 浏览器蓝牙），
+  // 它自己不送数据；页面拿到的 transport 仍必须交给 printInboundLabel（上面的 .print 检查照旧全扫）。
+  const FACTORY = 'src/utils/inbound/terminalTransport.ts'
   for (const source of files) {
     const code = stripComments(source.code)
     for (const site of callSites(code, /\.print\s*\(/g)) {
@@ -83,6 +92,7 @@ function printChannelProblems(files: { file: string; code: string }[]): string[]
       }
     }
     for (const site of callSites(code, /createLpapiTransport\s*\(/g, { skipDefinitions: true })) {
+      if (source.file === FACTORY) continue
       if (!site.span.includes('printInboundLabel(')) {
         problems.push(`${source.file} 的 ${site.fn || '<模块顶层>'}() 造了一条传输通道却**没有**喂给 printInboundLabel —— 第二条第 送打印通道`)
       }
@@ -783,5 +793,66 @@ describe('打印通道：真实 SDK 回执包络（statusCode）', () => {
     expect(LABEL_PRINT_PARAMS.gapType).toBe(2)
     expect(LABEL_PRINT_PARAMS.gapLength).toBe(3)
     expect(LABEL_PRINT_PARAMS.orientation).toBe(0)
+  })
+})
+
+/**
+ * 手持标签机（观星台 Android 终端，issue #8089）：WebView 没有 Web Bluetooth，
+ * 标签位图必须走终端注入的 `migaoTerminal` → 商米内置打印机；能力探测也要先认这条桥。
+ */
+describe('terminal print bridge（手持标签机）', () => {
+  afterEach(() => {
+    delete (window as any).chrome
+    delete (window as any).migaoTerminal
+  })
+
+  test('T1 能力探测：终端桥 ⇒ 可打印 + 机身内置打印机文案', () => {
+    const cap = probePrintCapability({
+      platform: 'h5',
+      secureContext: true,
+      hasBluetoothApi: false,
+      terminalBridge: true,
+    })
+    expect(cap.ok).toBe(true)
+    expect(cap.readyHint).toBe(PRINT_READY_HINT_TERMINAL)
+  })
+
+  test('T2 运输：标签画布 PNG 交给终端 print 桥，等回执才 resolve', async () => {
+    const posted: any[] = []
+    ;(window as any).chrome = { webview: {} }
+    ;(window as any).migaoTerminal = {
+      post: (o: any) => {
+        posted.push(o)
+        window.dispatchEvent(new CustomEvent('migao-terminal', { detail: { cmd: 'print', ok: true } }))
+      },
+    }
+    await createTerminalTransport().print(
+      { canvas: { toDataURL: () => 'data:image/png;base64,AAAA' } } as any,
+      { printCount: 1 },
+    )
+    expect(posted).toEqual([
+      { cmd: 'print', image: 'data:image/png;base64,AAAA', label: true, copies: 1 },
+    ])
+  })
+
+  test('T3 失败：终端回 ok:false ⇒ LabelTransportError(print-failed)，页面给逐种文案', async () => {
+    ;(window as any).chrome = { webview: {} }
+    ;(window as any).migaoTerminal = {
+      post: () =>
+        window.dispatchEvent(new CustomEvent('migao-terminal', { detail: { cmd: 'print', ok: false, err: '缺纸' } })),
+    }
+    await expect(
+      createTerminalTransport().print(
+        { canvas: { toDataURL: () => 'data:image/png;base64,AAAA' } } as any,
+        { printCount: 1 },
+      ),
+    ).rejects.toMatchObject({ reason: 'print-failed' })
+  })
+
+  test('T4 工厂：有终端桥就不加载 LPAPI，直接返回终端运输', async () => {
+    ;(window as any).chrome = { webview: {} }
+    ;(window as any).migaoTerminal = { post: jest.fn() }
+    expect(hasTerminalPrintBridge()).toBe(true)
+    await expect(createPrintTransport()).resolves.toMatchObject({ id: 'terminal-print-bridge' })
   })
 })

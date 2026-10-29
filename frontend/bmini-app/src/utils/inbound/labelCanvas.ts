@@ -37,6 +37,8 @@ export interface LabelCanvasElementLike {
   width: number
   height: number
   getContext(type: '2d'): LabelCanvasContextLike | null
+  /** 真 canvas 有；测试替身可不提供（终端打印运输用它出 PNG data URL）。 */
+  toDataURL?(type?: string, quality?: number): string
 }
 
 export interface RenderedLabel {
