@@ -99,7 +99,8 @@ public class FinishedGoodsService {
     @Transactional(rollbackFor = Exception.class)
     public List<FinishedGoodsStock> receiveOnPack(Order order, Long tenantId, String operator) {
         List<FinishedGoodsStock> existing = stockMapper.selectInStockByOrder(tenantId, order.getId());
-        // 🔴 V197（issue #7762）：有部位码 ⇒ 按「套 × 部位」逐行入库（5 套 × 布帘 = 5 行 = 5 个仓位）；
+        // 🔴 V197（issue #7762）：有部位码 ⇒ 按「套 × 部位」逐行入库（5 套 × 布帘 = 5 行；issue #8103 起
+        // 同一订单固定同一个仓位，不再一行一个仓位）；
         // 没有码（布料单 / 未印码的历史单）⇒ 退回 V196 的订单行粒度（不造空行）。
         // 🔴 issue #7845：**先判有没有部位码，再判"是否已有在库行"** —— 打包工人扫码报工已经按件入过库的
         // 那些 token 必须跳过、**剩余部位照常补入**；改前「只要有一行在库就整单返回」会让其余部位永远不入库。

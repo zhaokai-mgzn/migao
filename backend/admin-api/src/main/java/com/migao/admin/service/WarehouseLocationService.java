@@ -29,10 +29,14 @@ import java.util.stream.Collectors;
 /**
  * 仓位（V196，issue #7750）—— 成品仓的货位分配与档案管理（issue #7785 / #7791）。
  *
- * <h3>分配口径（V198 / issue #7791：水位最低且未满）</h3>
+ * <h3>分配口径（V198 / issue #7791：水位最低且未满；issue #8103：同单同仓）</h3>
  * <p>水位 = 该仓在库件数 / 区域容量（默认 10 件/仓）。打包过账时选**水位最低且未满**的 active 仓位，
  * 同水位按仓位号（{@code A-01} 优先）；本区所有仓位都满 ⇒ 按序号新建下一个号（沿用 V196 的顺延）。
  * 水位只从 {@code finished_goods_stock} 的在库行派生 —— 仓位表上没有计数字段（第二份真相）。</p>
+ *
+ * <p>🔴 **同单同仓**（issue #8103，用户 2026-10-29 新规则）：同一订单的成品入库**固定落在该订单
+ * 已在库的仓位** —— 即使该仓已达到 / 超过容量也继续放（容量只约束「新订单首件选仓」）。
+ * 入口 = {@link #binForOrder}；同单并发由 PG advisory 事务锁按订单串行。</p>
  *
  * <p>为什么不再「取最小空闲号」：一仓一件时所有空闲仓等价，最小号只是最省事的确定性；
  * 允许一仓多件后，最小号会把 A-01 填满才用 A-02，正是用户要避免的。按水位分配让货均匀落在
@@ -124,6 +128,29 @@ public class WarehouseLocationService {
         }
         throw BusinessException.conflict("成品仓位分配失败（连续 " + ALLOCATE_ATTEMPTS + " 次占号冲突）",
                 "请重试；同一个仓位不会被两件成品同时占用");
+    }
+
+    /**
+     * 打包入库取仓位（issue #8103「同单同仓」）：该订单**已有在库仓位** ⇒ 直接复用它（**不再看容量**）；
+     * 没有 ⇒ 按 V198 水位规则选一个未满的仓（本区全满才顺延新建号）。
+     *
+     * <p>用户口径（2026-10-29 逐字）：「打包入库成品的时候，一个订单内的商品入库到同一仓位」
+     * 「即使仓位满了也要入库到相同仓位，这个是新规则」⇒ 容量**只约束新订单的首件选仓**；
+     * 同单追加允许把仓位放到超过容量（水位显示可为 {@code 2 / 1}，管理面叫「超容」）。
+     * 现场按单找货只跑一个货位 —— 这是本规则要换来的东西。</p>
+     *
+     * <p>并发：{@code lockAllocationForOrder} 先按订单排队，再读「该单已有仓位」⇒ 后到的事务
+     * 看到的是前者已提交的事实，不会各自挑一个不同的空仓。**必须在事务内调用**（调用方
+     * {@code InboundOrderService} 的过账事务满足这一点）。</p>
+     */
+    public WarehouseLocation binForOrder(Long tenantId, Long warehouseId, String orderId) {
+        if (orderId == null || orderId.isBlank()) {
+            // 没有订单引用就没有「同单」可言（正常路径调用方已校验非空）
+            return nextFreeBin(tenantId, warehouseId);
+        }
+        locationMapper.lockAllocationForOrder(tenantId + ":" + orderId);
+        WarehouseLocation existing = locationMapper.selectInStockBinByOrder(tenantId, warehouseId, orderId);
+        return existing != null ? existing : nextFreeBin(tenantId, warehouseId);
     }
 
     // ============================================================ 档案读面（出库单页「仓位管理」）
