@@ -34,22 +34,37 @@
  *
  * 专属唛（余料带回 / 绑带，issue #8002 → **#8107**）的抬头副标题 = **16pt 加粗**、且**只印语义名**
  * （`余料带回` / `绑带`，无 `成品定制` 前缀）⇒ 抬头块 10.16 → **12.7mm**（14pt 5.93 + 16pt 6.77）；
- * 专属唛自 issue #8107 起印在 100mm 短纸上、**只有 5 行**（预算见下节），常规唛仍是 140mm / 15 行。
+ * 专属唛自 issue #8107 起印在短纸、**只有 5 行**（预算见下节；#8163 又收到 80mm），常规唛仍是 140mm / 15 行。
  *
  * ## 专属唛的**短纸**预算（issue #8107，2026-10-29）—— 可复算
  *
  * 用户逐字：「余料带回和绑带的水洗唛打印功能中…保留货号，门幅，宽高，工艺和特殊选项 + 二维码即可」
  * 「把长度再缩减一些，能放下以上信息即可」⇒ 专属唛只印 **5 行**（`WASH_LABEL_OPTION_ROW_KEYS`）
- * ⇒ 纸型由 50×140 收到 **50×100**（介质 `label-50x100`；**常规唛仍是 50×140**）。
+ * ⇒ 纸型由 50×140 收到 50×100（介质曾是 `label-50x100`；**已被 #8163 的 50×80 取代、该 id 退场**；
+ * **常规唛仍是 50×140**）。
  * 同日追加：副标题**只印语义名**且字号提至 **16pt 加粗**（见 {@link WASH_LABEL_OPTION_SUBTITLE_FONT_PT}）。
  *
+ * ## 专属唛再收到 **50×80**（issue #8163，2026-10-30）—— 留白必须跟着收
+ *
+ * 用户 2026-10-30 逐字「1，那就再缩小到80mm」⇒ 纸长 100mm → **80mm**，介质由 `label-50x100`
+ * 换成 **`label-50x80-option`**（旧 id 退场；新 id **不复用** `label-50x80` —— 那是入库标签且
+ * `measurement = pending-field-measurement`，把水洗唛挂上去会削弱几何证据）。
+ *
+ * 🔴 **留白随纸长收窄**（物理约束，不是口味）：原来的**上下各 15mm 是 140mm 纸的口径**
+ * （2026-10-28「多的30要添加到顶部和底部虚线下处各15」）。纸长砍到 80mm 后若仍按 15/15，
+ * 可用只剩 80 − 15 − 15 = 50mm < 内容 58.15mm ⇒ **必然静默裁行**（两条通道都不报错，纸面就是少几行）。
+ * 所以专属唛单独取 {@link WASH_LABEL_OPTION_TOP_BLANK_MM} / {@link WASH_LABEL_OPTION_BOTTOM_CLEARANCE_MM}
+ * = **8mm / 8mm**（系统打印 = `.task-card-label--option` 的 `padding: 8mm 1.2mm 8mm`，画布通道按
+ * `input.media` 取 —— 两条通道同一个数）。**常规唛的 15/15 一个字都不动**（负控：改它 ⇒ 判据必红）。
+ *
  * 预算（同一组常量，所以下面每个数都能从本文件与介质矩阵复算）：
- * 可用 = 100 − 15（{@link WASH_LABEL_TOP_BLANK_MM}）− 15（{@link WASH_LABEL_BOTTOM_CLEARANCE_MM}）
- * = **70mm**；抬头块 = 14pt + **16pt**，行高 1.2 ⇒ **12.7mm**；
+ * 可用 = 80 − 8（{@link WASH_LABEL_OPTION_TOP_BLANK_MM}）− 8（{@link WASH_LABEL_OPTION_BOTTOM_CLEARANCE_MM}）
+ * = **64mm**；抬头块 = 14pt + **16pt**，行高 1.2 ⇒ **12.7mm**；
  * 每行 = 11pt × 1.2 ⇒ **4.6567mm**；块距 0.5（{@link WASH_LABEL_BLOCK_GAP_MM}）× 2；
  * 二维码 = 80 CSS px ⇒ **21.17mm**。
- * 满字段 5 行 = 12.7 + 0.5 + 5 × 4.6567 + 0.5 + 21.17 = **58.15mm ≤ 70mm**
- * ⇒ 整张 ≈ 88.15mm ≤ 100mm（余 11.85mm ≈ 2.5 行 ⇒ 可容 **7 行**）。
+ * 满字段 5 行 = 12.7 + 0.5 + 5 × 4.6567 + 0.5 + 21.17 = **58.15mm ≤ 64mm**（余 5.85mm ≈ 1.25 行）
+ * ⇒ 整张 ≈ 8 + 58.15 + 8 = **74.15mm ≤ 80mm**；工艺折 1 行 = **62.81mm ≤ 64mm** 仍装得下，
+ * 两条行都折 = 67.47mm > 64mm ⇒ 裁尾部文字，**码永不被裁**。
  * 真值副本只在这一段注释里；纸面几何与预算的**判据**在 `test_wash_label_geometry_guard.py` 的 G8~G11。
  */
 
@@ -65,8 +80,20 @@ export const WASH_LABEL_PADDING_MM = 1.2
  * 用户 2026-10-28 逐字「顶部需要让最顶端的字体上面留白15」。
  * 🔴 系统打印 = `.task-card-label` 的 `padding-top: 15mm`；画布通道 = `wash-label.ts` 的 `topBlank`
  * （两条通道同一数值，改一处另一处会红）。
+ * ⚠️ 这是**常规唛（140mm 纸）**的口径；专属唛（80mm 短纸）用
+ * {@link WASH_LABEL_OPTION_TOP_BLANK_MM}（8mm，issue #8163）—— 两个值互不覆盖。
  */
 export const WASH_LABEL_TOP_BLANK_MM = 15
+/**
+ * **专属唛的顶部留白**（mm，issue #8163）—— 纸长收到 80mm 后与下净空各收窄到 8mm。
+ *
+ * 为什么不是 15：那两个 15mm 是 140mm 纸的口径（2026-10-28「多的30要添加到顶部和底部虚线下处各15」）；
+ * 80mm 纸若仍按 15/15，可用只剩 50mm < 内容 58.15mm ⇒ **必然静默裁行**。
+ * 🔴 系统打印 = `.task-card-label--option` 的 `padding-top: 8mm`；画布通道 = `wash-label.ts` 按
+ * `input.media` 取；两条通道同一个数，改一处另一处会红。
+ * ⛔ **不要**拿它去改常规唛的 `padding-top`。
+ */
+export const WASH_LABEL_OPTION_TOP_BLANK_MM = 8
 /** 正文行高倍数 —— 与 `.task-card-label { line-height: 1.2 }` 同一口径 */
 export const WASH_LABEL_LINE_HEIGHT = 1.2
 /** 正文基准字号（pt）—— 与 `.task-card-label { font-size }` 同一口径（2026-10-26：9pt → 12pt；2026-10-27 晚：12pt → 11pt） */
@@ -87,9 +114,9 @@ export const WASH_LABEL_COMPANY_SUBTITLE_FONT_PT = 10
  *
  * 只影响专属唛：常规唛仍是 {@link WASH_LABEL_COMPANY_SUBTITLE_FONT_PT}（10pt / 常规字重）。
  *
- * 垂直预算（专属唛 = 100mm 短纸 / 5 行）：抬头块 = 14pt（5.93mm）+ **16pt（6.77mm）= 12.7mm**
- * （行高 1.2）；整张 ≈ 15（上留白）+ 12.7 + 0.5 + 5 × 4.6567 + 0.5 + 21.17 + 15（下净空）
- * = **88.15mm ≤ 100mm**（余 11.85mm ≈ 2.5 行 ⇒ 仍可容 7 行：工艺 / 特殊选项各折一次装得下）。
+ * 垂直预算（专属唛 = 80mm 短纸 / 5 行，issue #8163）：抬头块 = 14pt（5.93mm）+ **16pt（6.77mm）= 12.7mm**
+ * （行高 1.2）；整张 ≈ 8（上留白）+ 12.7 + 0.5 + 5 × 4.6567 + 0.5 + 21.17 + 8（下净空）
+ * = **74.15mm ≤ 80mm**（可用 64mm、余 5.85mm ≈ 1.25 行 ⇒ 工艺折 1 行 = 62.81mm 仍装得下）。
  */
 export const WASH_LABEL_OPTION_SUBTITLE_FONT_PT = 16
 /**
@@ -129,3 +156,10 @@ export const WASH_LABEL_EMPHASIS_ROW_KEYS: readonly WashLabelRowKey[] = ['craft'
  * 画布通道 = `wash-label.ts` 的 `footerBottomMax = heightPx - 本值`（两条通道同一数值，改一处另一处会红）。
  */
 export const WASH_LABEL_BOTTOM_CLEARANCE_MM = 15
+/**
+ * **专属唛的下净空**（mm，issue #8163）：二维码下沿距纸边（底部虚线）必须留出的空白 ——
+ * 与 {@link WASH_LABEL_OPTION_TOP_BLANK_MM} 同源、同步收窄到 **8mm**（为什么不是 15 见那一条）。
+ * 🔴 系统打印 = `.task-card-label--option` 的 `padding-bottom: 8mm`；画布通道按 `input.media` 取。
+ * ⛔ **不要**拿它去改常规唛的 `padding-bottom: 15mm`。
+ */
+export const WASH_LABEL_OPTION_BOTTOM_CLEARANCE_MM = 8

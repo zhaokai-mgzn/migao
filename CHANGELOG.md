@@ -5,6 +5,27 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 余料带回 / 绑带 专属唛纸长 50mm × 100mm ⇒ **50mm × 80mm**，上下留白随纸长收窄到 8mm / 8mm（2026-10-30，issue #8163）
+
+- **用户逐字**（2026-10-30，回答「纸长还能再短吗」）：「1，那就再缩小到80mm」。
+- **改前**：专属唛印在 `label-50x100`（50mm × 100mm / 点阵 800）上，上下留白沿用常规唛的 15/15。
+- **改后**：专属唛纸长收到 **50mm × 80mm**（新介质 `label-50x80-option` / 点阵 640，旧 id `label-50x100` 退场；
+  **不复用** `label-50x80` —— 那是入库标签且 `measurement = pending-field-measurement`）。
+- **留白必须一起收（物理约束）**：上下各 15mm 是 **140mm 纸**的口径。80mm 纸若仍按 15/15，纵向只剩 50mm
+  < 内容 58.15mm ⇒ **必然静默裁行**（位图通道不报错、纸面少几行）。故专属唛单独取 **8mm / 8mm**
+  （`WASH_LABEL_OPTION_TOP_BLANK_MM` / `WASH_LABEL_OPTION_BOTTOM_CLEARANCE_MM`；系统打印 = 该修饰类的
+  `padding: 8mm 1.2mm 8mm`、位图通道按同一张纸的 `input.media` 取）—— **常规唛的 15/15 一个字都不动**。
+- **预算重算**（真值两处：`wash-label-metrics.ts` 文件头 + `TaskCardPrint.tsx` 的【专属唛预算】段）：
+  可用 80 − 8 − 8 = **64mm**；5 行内容 58.15mm ≤ 64mm；整张 ≈ **74.15mm ≤ 80mm**；
+  工艺折 1 行 = 62.81mm 仍装得下，两条行都折 = 67.47mm > 64mm ⇒ 裁尾部文字、**码永不被裁**。
+- **不动**：5 行内容与顺序、副标题 16pt 加粗只印语义名、二维码 80 CSS px、张数 / 张序（#8074）、
+  常规唛（50×140 / 15 行 / 15-15 留白 / `成品定制`）。
+- **判据**：`wash-label-content.test.ts` / `TaskCardPrint.test.tsx` / `wash-label.test.ts` / `wash-label-metrics.test.ts` /
+  `print-media.test.ts` / `PrintDocPreview.test.tsx` + Python `test_wash_label_geometry_guard.py`（G8~G13）/
+  `test_print_media_matrix_guard.py`（C1/C2/C13）/ `test_wash_label_single_source.py`（SS9）。
+  红证：容器高改回 140mm ⇒ G8 红；位图留白退回 15/15 ⇒ `wash-label.test.ts` 抓到**行被裁**（正是「静默裁行」形态）。
+
+
 ### 问「这周为什么少卖」能直接看到是哪些商品拖的（2026-10-30，issue #8157）
 
 改前：黄金策能答「这周比上周怎么样」（`trend_compare`，两个总量），但商家接着问「为什么少、哪个商品拖的」

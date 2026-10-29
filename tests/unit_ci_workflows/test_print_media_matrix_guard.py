@@ -18,7 +18,7 @@
 | C4 | **待实测登记必须存在**：非 `measured` 的介质要有非空 `pendingMeasurements`（且 ≥3 条） | 删掉三联纸的 `pendingMeasurements` ⇒ 红 |
 | C5 | **单份字段映射**：每张单据的列清单（有序标签串）在 `src/**` 里**恰好出现在一个文件** | 把销售单的列清单复制一份（如「A4 版」）⇒ 红 |
 | C6 | 注入式红证 + **内容指纹**自证（禁 mtime / size，issue #4260） | 注入未生效 ⇒ 红（红证自己是空断言） |
-| C13 | **同一份单据两种纸型**（issue #8107：水洗唛常规唛 50×140 + 专属唛 50×100）⇒ 两种 `@page` 都在射程：命名页 `printNamedPageRule` 带出来的介质必须在 `PRINT_DOCS` 登记，登记的每种纸也必须真被用到（**双向对称**） | 少登记一种（命名页用了未登记介质）/ 登记了却没人用（删命名页）/ 同一单据自写 `@page` 字面量 ⇒ 红 |
+| C13 | **同一份单据两种纸型**（issue #8107：水洗唛常规唛 50×140 + 专属唛 50×80）⇒ 两种 `@page` 都在射程：命名页 `printNamedPageRule` 带出来的介质必须在 `PRINT_DOCS` 登记，登记的每种纸也必须真被用到（**双向对称**） | 少登记一种（命名页用了未登记介质）/ 登记了却没人用（删命名页）/ 同一单据自写 `@page` 字面量 ⇒ 红 |
 | C8 | **纸面不印工序清单**（issue #7274：用户逐字「工序细节不用在打印单上，移除掉工序相关的表格信息」） | 把工序清单（`operationsByItem` / `OPERATIONS_DOC_COLUMNS` / `processing-doc-operation`）接回任一受管打印单据 ⇒ 红 |
 | C9 | **加工项绑在商品行下、一行文案、走单一构建器**（issue #7275 用户逐字「加工项表格应该用一行表达…比如改成a+b+c这样？」→ #7605 数据二态 → #7891 用户逐字「发货单的加工项需要和商品绑定…商品下面是加工项…都放在加工项那一栏里面」） | 退回表外一行（`shipment-processing-items` 锚点）/ 退回逐项两列表（`<DocTh>加工项</DocTh>`）/ 本地另拼一份文案（不 import `@/lib/processing-item-text`）/ 构建器里塞回 `×` ⇒ 红 |
 | C11 | **纸面扫码码值只取服务端下发**（issue #7530）：受管打印单据里不得出现扫码短链路径段（`/o/` 作业单级 · `/s/` 部位级）—— 前端拼域名 / 路径段 = 第二份真值，而**纸上的码印出去就收不回来** | 把销售单的码值改成 `` `${base}/o/${processingOrder.short_code}` `` ⇒ 红 |
@@ -46,7 +46,7 @@ MATRIX_JSON = SRC / "lib" / "print-media.json"
 #: 受管**可打印单据**登记表：（文件, 申报的介质 id / 介质 id 元组）
 #: 🔴 新增任何门户式打印单据都必须在这里登记介质（C3 会扫出未登记者）——
 #: 「这张单据印在什么纸上」是**必答项**，不是注释里的一句话。
-#: 📌 元组形态用于「同一份单据印两种纸」（issue #8107：水洗唛常规唛 50×140 + 专属唛 50×100，
+#: 📌 元组形态用于「同一份单据印两种纸」（issue #8107：水洗唛常规唛 50×140 + 专属唛 50×80，
 #:    靠 CSS 命名页 `@page wash-label-option` 在同一次出纸里并存）—— C2 要求
 #:    **登记的每一种纸都必须真的被 @page 用到、用到的每一种纸都必须登记**（两边不对称 ⇒ 红）。
 PRINT_DOCS: tuple[tuple[str, str | tuple[str, ...]], ...] = (
@@ -55,7 +55,7 @@ PRINT_DOCS: tuple[tuple[str, str | tuple[str, ...]], ...] = (
     ("frontend/admin-web/src/components/orders/SalesDoc.tsx", "continuous-241x140"),
     (
         "frontend/admin-web/src/components/production/TaskCardPrint.tsx",
-        ("label-50x140", "label-50x100"),
+        ("label-50x140", "label-50x80-option"),
     ),
 )
 
@@ -1043,25 +1043,25 @@ def test_c12_customer_visible_docs_never_print_internal_short_code():
 # ── C13：同一份单据两种纸型，两种 @page 都在射程（issue #8107）────────────────
 
 def test_c13_two_papers_of_one_doc_are_both_in_scope():
-    """C13：水洗唛的文档级 `@page`（50×140）与命名页 `@page wash-label-option`（50×100）都在射程。"""
+    """C13：水洗唛的文档级 `@page`（50×140）与命名页 `@page wash-label-option`（50×80）都在射程。"""
     matrix = _matrix()
     rel = "frontend/admin-web/src/components/production/TaskCardPrint.tsx"
     code = _strip_comments(_read(rel))
     declared = next(_declared_media(entry) for entry in PRINT_DOCS if entry[0] == rel)
-    assert declared == ("label-50x140", "label-50x100"), (
-        f"水洗唛必须登记**两种纸**（常规唛 50×140 + 专属唛 50×100），现登记 {declared}"
+    assert declared == ("label-50x140", "label-50x80-option"), (
+        f"水洗唛必须登记**两种纸**（常规唛 50×140 + 专属唛 50×80），现登记 {declared}"
     )
 
     # 反空跑锚点：两种 @page 真的都在文件里（文档级 + 命名页）
     assert _PAGE_RULE_CALL_RE.findall(code) == ["label-50x140"], "文档级 @page 不在射程"
-    assert _NAMED_PAGE_CALL_RE.findall(code) == ["label-50x100"], "命名页 @page 不在射程"
+    assert _NAMED_PAGE_CALL_RE.findall(code) == ["label-50x80-option"], "命名页 @page 不在射程"
     assert _doc_page_problems(rel, declared, code, matrix) == []
 
-    # ① 删掉命名页 ⇒ 「登记了 label-50x100 却没人用」⇒ 红
+    # ① 删掉命名页 ⇒ 「登记了 label-50x80-option 却没人用」⇒ 红
     without_named = _NAMED_PAGE_CALL_RE.sub("", code)
     assert _fingerprint(without_named) != _fingerprint(code), "注入 ① 未生效"
     assert _doc_page_problems(rel, declared, without_named, matrix), (
-        "删掉命名页后登记表里的 label-50x100 无人使用却没判红 ⇒ 登记表变成没人校验的清单"
+        "删掉命名页后登记表里的 label-50x80-option 无人使用却没判红 ⇒ 登记表变成没人校验的清单"
     )
 
     # ② 少登记一种纸（登记表退回单张）⇒ 命名页用了未登记介质 ⇒ 红

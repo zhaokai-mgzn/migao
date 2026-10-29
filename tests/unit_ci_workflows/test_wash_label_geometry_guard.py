@@ -66,6 +66,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: 洗水码版式组件（唯一受管文件）
 LABEL_SRC = "frontend/admin-web/src/components/production/TaskCardPrint.tsx"
+#: 水洗唛版面度量的 TS 单一真值（专属唛留白常量从**这里**读，不在守卫里抄第二份 8mm）
+METRICS_SRC = "frontend/admin-web/src/lib/label-print/wash-label-metrics.ts"
 
 #: `@page { size: Wmm Hmm; … }`
 _PAGE_RE = re.compile(r"@page\s*\{\s*size:\s*([0-9.]+)mm\s+([0-9.]+)mm")
@@ -96,9 +98,14 @@ def _page_mm_from_matrix(media_id: str) -> tuple[float, float]:
     raise AssertionError(f"介质 `{media_id}` 不在 {MEDIA_MATRIX.name} 里 ⇒ 判据无从判定（不静默）")
 #: `.task-card-label { width: Wmm; height: Hmm; … }`
 _LABEL_RE = re.compile(r"\.task-card-label\s*\{\s*width:\s*([0-9.]+)mm;\s*height:\s*([0-9.]+)mm")
-#: 专属唛的修饰类（issue #8107）：`.task-card-label--option { height: Hmm; page: <命名页>; }`
+#: 专属唛的修饰类（issue #8107 / **#8163**）：`.task-card-label--option { height: Hmm; padding: 8mm 1.2mm 8mm; page: <命名页>; }`
+#: 组：1 = 容器高（mm）、2 = padding（可能缺 ⇒ None）、3 = 命名页名。
+#: 🔴 padding 是**可选组**而不是随手放过：#8163 起专属唛的上下留白从 15/15 收到 8/8，
+#: 少了它就会沿用基类 15/15 ⇒ 80mm 纸必然静默裁行（G12 专判这一路）。
 _OPTION_RE = re.compile(
-    r"\.task-card-label--option\s*\{\s*height:\s*([0-9.]+)mm;\s*page:\s*([A-Za-z0-9_-]+)\s*;?\s*\}"
+    r"\.task-card-label--option\s*\{\s*height:\s*([0-9.]+)mm;\s*"
+    r"(?:padding:\s*([0-9.]+mm(?:\s+[0-9.]+mm){0,3});\s*)?"
+    r"page:\s*([A-Za-z0-9_-]+)\s*;?\s*\}"
 )
 #: 命名 `@page` 的写法：`printNamedPageRule('<名字>', '<介质id>')`（issue #8107）
 _NAMED_PAGE_CALL_RE = re.compile(r"printNamedPageRule\(\s*'([A-Za-z0-9_-]+)'\s*,\s*'([a-z0-9-]+)'\s*\)")
@@ -184,6 +191,31 @@ def _declared(header: str, keyword: str) -> float | None:
     """注释里 `关键词 … Xmm` 声明的读数；没写 ⇒ `None`（判据据此判红）。"""
     match = re.search(re.escape(keyword) + r"[^0-9]{0,14}([0-9]+(?:\.[0-9]+)?)\s*mm", header)
     return float(match.group(1)) if match else None
+
+
+def _option_blank_mm() -> tuple[float, float]:
+    """从 `wash-label-metrics.ts` 读专属唛的上下留白（**单一真值**，守卫不抄第二份数字）。
+
+    缺常量 ⇒ 抛错（不静默）：这两条常量是「留白随纸长收窄」的唯一落点，
+    删掉它们等于让两条通道各自拍脑袋。
+    """
+    src = _read(METRICS_SRC)
+    blank: list[float] = []
+    for name in ("WASH_LABEL_OPTION_TOP_BLANK_MM", "WASH_LABEL_OPTION_BOTTOM_CLEARANCE_MM"):
+        match = re.search(re.escape(name) + r"\s*=\s*([0-9]+(?:\.[0-9]+)?)", src)
+        if match is None:
+            raise AssertionError(f"`{METRICS_SRC}` 里找不到 `{name} = <数字>` ⇒ 专属唛留白无从判定（不静默）")
+        blank.append(float(match.group(1)))
+    return blank[0], blank[1]
+
+
+def _pair_mm(region: str, keyword: str) -> tuple[float, float] | None:
+    """注释里 `关键词 … Xmm ≤ Ymm` 这一对读数；没写 ⇒ `None`（判据据此判红）。"""
+    match = re.search(
+        re.escape(keyword) + r"[^\n]*?([0-9]+(?:\.[0-9]+)?)mm\s*≤\s*([0-9]+(?:\.[0-9]+)?)mm",
+        region,
+    )
+    return (float(match.group(1)), float(match.group(2))) if match else None
 
 
 def _budget_regions(header: str) -> tuple[str, str]:
@@ -361,14 +393,39 @@ def _problems(src: str) -> list[str]:
     option = _OPTION_RE.search(css)
     named = dict(_NAMED_PAGE_CALL_RE.findall(src))
     option_h: float | None = None
+    pad_x_option: float | None = None
+    pad_y_option: float | None = None
     if option is None:
         problems.append(
-            "G8 找不到 `.task-card-label--option { height: …mm; page: … }` —— 专属唛的短纸型缺失"
+            "G8 找不到 `.task-card-label--option { height: …mm; padding: …; page: … }` —— 专属唛的短纸型缺失"
             "（或改形）；判据按字面量解析，改写法必须同步本守卫（**不得**静默跳过）"
         )
     else:
         option_h = float(option.group(1))
-        page_name = option.group(2)
+        page_name = option.group(3)
+        # ── G12：专属唛**必须单独声明留白**，且与 metrics 的专属常量逐值一致（issue #8163）──
+        # 缺 padding ⇒ 沿用基类 15/15 ⇒ 80mm 纸可用只剩 50mm < 内容 58.15mm ⇒ 必然静默裁行
+        blank_top, blank_bottom = _option_blank_mm()
+        if option.group(2) is None:
+            problems.append(
+                "G12 `.task-card-label--option` 没有自己的 `padding` —— 它会沿用基类 `15mm 1.2mm 15mm`"
+                f"（那是 140mm 纸的口径）⇒ {option_h:g}mm 纸上可用只剩 "
+                f"{option_h - pad_y:g}mm 装不下 5 行内容；专属唛必须写 `padding: {blank_top:g}mm … {blank_bottom:g}mm`"
+            )
+        else:
+            pad_x_option, pad_y_option = _padding_mm(option.group(2))
+            got = re.findall(r"([0-9.]+)mm", option.group(2))
+            top, bottom = float(got[0]), float(got[-1])
+            if abs(top - blank_top) > LINES_TOLERANCE_MM or abs(bottom - blank_bottom) > LINES_TOLERANCE_MM:
+                problems.append(
+                    f"G12 `.task-card-label--option` 的上下留白是 {top:g}/{bottom:g}mm，但 "
+                    f"`{METRICS_SRC}` 的专属常量是 {blank_top:g}/{blank_bottom:g}mm ⇒ 两条通道留白不同源"
+                )
+            if pad_y is not None and abs((pad_y_option or 0) - pad_y) <= LINES_TOLERANCE_MM:
+                problems.append(
+                    "G12 专属唛的纵向留白与常规唛相同 —— 但那 15/15 是 140mm 纸的口径；"
+                    "纸长收到 80mm 后必须同步收窄（issue #8163）"
+                )
         # G8：容器高 == 介质矩阵里那张短纸的高（只改 CSS 不改矩阵、或反过来 ⇒ 必红）
         if page_name not in named:
             problems.append(
@@ -399,13 +456,16 @@ def _problems(src: str) -> list[str]:
             "（改了纸高却没人重算预算 = #4946 的老病）"
         )
     elif option_h is not None and pad_x is not None and pad_y is not None:
+        # 🔴 用**专属唛自己的**留白复算（issue #8163）：拿常规唛的 30mm 去算 ⇒ 可用会算成 50mm，
+        #    与注释的 64mm 不符 —— 那正是「改了纸高却没改留白」要抓的形态。
+        avail_option = option_h - (pad_y_option if pad_y_option is not None else pad_y)
         problems.extend(
             _budget_identities(
                 option_header,
                 width_mm=label_w,
                 height_mm=option_h,
-                pad_x=pad_x,
-                pad_y=pad_y,
+                pad_x=pad_x_option if pad_x_option is not None else pad_x,
+                pad_y=pad_y_option if pad_y_option is not None else pad_y,
                 font_pt=font_pt,
                 line_height=line_height,
                 tag="G10",
@@ -417,6 +477,28 @@ def _problems(src: str) -> list[str]:
                 f"G10 专属唛预算注释没有 `≤ {option_h:g}mm` 比较式 —— 预算必须对**这张短纸**成立"
                 "（写成 140mm 那张 ⇒ 专属唛的纸长就又成了一句空话）"
             )
+        # ── G13：**内容必须装得下**（issue #8163）—— 只看「注释与代码相等」不够 ──
+        # 把留白改回 15/15 并把「可用」同步改成 50mm 也能让 G10 绿；真正该红的是
+        # 「5 行内容 58.15mm > 可用 50mm」。所以这里要求注释里的两处 `Xmm ≤ 可用` 同时成立。
+        for keyword, label in (("满字段", "满字段 5 行"), ("折 1 行", "工艺折 1 行")):
+            pair = _pair_mm(option_header, keyword)
+            if pair is None:
+                problems.append(
+                    f"G13 专属唛预算注释没写「{label} … = Xmm ≤ Ymm」—— 内容装不装得下无法判定"
+                    "（只写「可用 …mm」只能证明数字对得上，证明不了 5 行装得下）"
+                )
+                continue
+            content_mm, limit_mm = pair
+            if content_mm > limit_mm + LINES_TOLERANCE_MM:
+                problems.append(
+                    f"G13 {label} = {content_mm:g}mm > {limit_mm:g}mm ⇒ **纸面装不下**（会被静默裁行）"
+                )
+            if abs(limit_mm - avail_option) > LINES_TOLERANCE_MM:
+                problems.append(
+                    f"G13 {label} 的比较式右侧是 {limit_mm:g}mm，但按现取几何复算可用高度 = "
+                    f"{option_h:g} − 纵向留白 {(pad_y_option if pad_y_option is not None else pad_y):g} = "
+                    f"{avail_option:g}mm ⇒ 预算没跟着留白/纸高重算"
+                )
 
     return problems
 
@@ -439,18 +521,24 @@ def test_g0_anti_noop_geometry_is_parsed_and_nonempty():
     # 反空跑锚点（issue #8107）：专属唛的短纸型 / 命名页 / 专属预算段**都真解析出来了** ——
     # 否则 G8~G10 是一组空判据（文件里没有这些东西时它们只会生产「缺失」类问题，看起来一样红）
     option = _OPTION_RE.search(_css_block(src))
-    assert option is not None and option.group(2).strip() != "", (
+    assert option is not None and option.group(3).strip() != "", (
         "`.task-card-label--option` 解析失败（或解析不出命名页）⇒ G8 无从判定"
     )
     assert float(option.group(1)) > 0, "专属唛容器高解析出非正数"
+    assert option.group(2) is not None and "mm" in option.group(2), (
+        "专属唛的 `padding` 解析失败 ⇒ G12（留白随纸长收窄）无从判定"
+    )
+    blank_top, blank_bottom = _option_blank_mm()
+    assert blank_top > 0 and blank_bottom > 0, "metrics 里的专属唛留白解析出非正数 ⇒ G12 无从判定"
     named = dict(_NAMED_PAGE_CALL_RE.findall(src))
-    assert option.group(2) in named, "容器声明的命名页在源码里找不到 ⇒ G9 无从判定"
-    assert _box_height_mm(_spec(named[option.group(2)])) > 0, "命名页介质的纸高解析出非正数"
+    assert option.group(3) in named, "容器声明的命名页在源码里找不到 ⇒ G9 无从判定"
+    assert _box_height_mm(_spec(named[option.group(3)])) > 0, "命名页介质的纸高解析出非正数"
     assert _budget_regions(_header(src))[1].strip(), "专属唛预算段为空 ⇒ G10 无从判定"
 
 
 def test_g8_g10_option_label_short_paper_and_budget_are_consistent():
-    """真值侧（issue #8107）：专属唛的短纸型 = 矩阵 `label-50x100`、命名 @page 与它同源、预算可复算。"""
+    """真值侧（issue #8107 → **#8163**）：专属唛的短纸型 = 矩阵 `label-50x80-option`、命名 @page 与它同源、
+    留白 8/8 与 metrics 同源、预算（可用 64 / 满字段 58.15 / 整张 ≤ 80 / 折 1 行 62.81）可复算。"""
     problems = _problems(_read(LABEL_SRC))
     assert problems == [], (
         f"`{LABEL_SRC}` 专属唛几何/预算违规：\n  " + "\n  ".join(problems)
@@ -510,17 +598,13 @@ def test_g11_injected_option_label_regressions_are_red():
     assert option is not None and option.group(2).strip() != "", (
         "找不到 `.task-card-label--option { … }` / 其中的命名页 ⇒ 本红证会**空跑**"
     )
-    page_name = option.group(2)
+    page_name = option.group(3)
     option_h = float(option.group(1))
     named_media = dict(_NAMED_PAGE_CALL_RE.findall(src))[page_name]
     assert named_media != "", "找不到命名页的介质 id ⇒ 本红证会**空跑**"
 
     # 注入 A：把专属唛容器高改回常规唛那张（140mm）⇒ G8 必红
-    injected_a = src.replace(
-        f"height: {option_h:g}mm; page: {page_name}",
-        "height: 140mm; page: wash-label-option",
-        1,
-    )
+    injected_a = src.replace(f"height: {option_h:g}mm;", "height: 140mm;", 1)
     assert injected_a != src, "找不到专属唛容器高的注入点 ⇒ 本红证会**空跑**"
     assert _fingerprint(injected_a) != _fingerprint(src), "注入 A 后内容指纹未变（**禁 mtime/size**）"
     assert any("G8" in p for p in _problems(injected_a)), "专属唛高改回 140mm 却没判红 ⇒ G8 是空断言"

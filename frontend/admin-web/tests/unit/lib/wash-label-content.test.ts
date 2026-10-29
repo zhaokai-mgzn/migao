@@ -648,11 +648,11 @@ describe('专属唛 —— 余料带回 / 绑带 每套一张（issue #8002）',
       }).map((row) => row.text),
     )
     // 纸型也跟着这张纸走（两条通道同读 `sheet.media`）
-    expect(labels.map((label) => label.media)).toEqual(['label-50x140', 'label-50x140', 'label-50x100'])
+    expect(labels.map((label) => label.media)).toEqual(['label-50x140', 'label-50x140', 'label-50x80-option'])
   })
 })
 
-describe('专属唛瘦身 —— 只印 5 行 + 二维码，纸型 50×100（issue #8107）', () => {
+describe('专属唛瘦身 —— 只印 5 行 + 二维码，纸型 50×80（issue #8107 → #8163）', () => {
   const OPTION_ITEM = { ...ITEM, specialOptions: ['余料带回-布', '布绑带'] } as unknown as ProcessingOrderItem
 
   it('🔴 专属唛的行集合 = 恰好 5 行，顺序 = 货号 / 门幅 / 宽高 / 工艺 / 特殊选项', () => {
@@ -798,27 +798,31 @@ describe('专属唛瘦身 —— 只印 5 行 + 二维码，纸型 50×100（iss
     )
   })
 
-  it('🔴 纸型：专属唛 = label-50x100、常规唛 = label-50x140（sheet 上给，两条通道同读）', () => {
+  it('🔴 纸型：专属唛 = label-50x80-option、常规唛 = label-50x140（sheet 上给，两条通道同读）', () => {
     const sheets = washLabelSheets({ positions: [POSITION], items: [OPTION_ITEM] })
     // 双开 ⇒ 常规 2 张 + 专属 2 张（余料 / 绑带）
     expect(sheets).toHaveLength(4)
     expect(sheets.map((sheet) => sheet.media)).toEqual([
       'label-50x140',
       'label-50x140',
-      'label-50x100',
-      'label-50x100',
+      'label-50x80-option',
+      'label-50x80-option',
     ])
     expect(sheets.map((sheet) => sheet.variant)).toEqual(['regular', 'regular', 'option', 'option'])
     // 常量本身 = 矩阵里那两张纸（写死别的 id ⇒ TS 类型 + 本判据双红）
     expect(WASH_LABEL_REGULAR_MEDIA).toBe('label-50x140')
-    expect(WASH_LABEL_OPTION_MEDIA).toBe('label-50x100')
+    expect(WASH_LABEL_OPTION_MEDIA).toBe('label-50x80-option')
+    // 🔴 issue #8163：专属唛纸长 100 → 80，旧介质**退场**（矩阵只登记在用介质）；
+    //    新介质**不复用** `label-50x80`（那是入库标签且 measurement = 待实测）
+    expect(WASH_LABEL_OPTION_MEDIA as string).not.toBe('label-50x100')
+    expect(WASH_LABEL_OPTION_MEDIA).not.toBe('label-50x80')
     // 直连通道按 sheet 给到每张输入
     const labels = toWashLabelInputs({ positions: [POSITION], items: [OPTION_ITEM] })
     expect(labels.map((label) => label.media)).toEqual([
       'label-50x140',
       'label-50x140',
-      'label-50x100',
-      'label-50x100',
+      'label-50x80-option',
+      'label-50x80-option',
     ])
   })
 

@@ -46,6 +46,8 @@ import {
   WASH_LABEL_EMPHASIS_ROW_KEYS,
   WASH_LABEL_LINE_HEIGHT,
   WASH_LABEL_OPTION_SUBTITLE_FONT_PT,
+  WASH_LABEL_OPTION_BOTTOM_CLEARANCE_MM,
+  WASH_LABEL_OPTION_TOP_BLANK_MM,
   WASH_LABEL_TOP_BLANK_MM,
 } from '@/lib/label-print/wash-label-metrics'
 
@@ -279,19 +281,23 @@ describe('🔴 专属唛短纸（issue #8107）：纸高按 `input.media` 取，
     { key: 'specialOptions', text: '特殊选项: 余料带回、布绑带' },
   ]
 
-  it('🔴 专属唛 ⇒ 纸高 100mm（点阵 800）；常规唛仍 140mm（1120）', () => {
-    const option = layoutWashLabel(input({ media: 'label-50x100' }), geo, measure)
+  it('🔴 专属唛 ⇒ 纸高 80mm（点阵 640）+ 留白 8/8；常规唛仍 140mm（1120）+ 留白 15/15', () => {
+    const option = layoutWashLabel(input({ media: 'label-50x80-option' }), geo, measure)
     // 纸高 = 该张自己的介质 × 机器自报 dpi（与 140mm 那张同一套算法）
-    expect(option.geometry.heightPx).toBe(Math.round(printPageBoxMm('label-50x100').heightMm * geo.dpmm))
-    // 🔴 矩阵整点口径 100mm × 8 dots/mm = 800px；canvas 按自报 dpi 重算 ⇒ 允许差 1 点
+    expect(option.geometry.heightPx).toBe(Math.round(printPageBoxMm('label-50x80-option').heightMm * geo.dpmm))
+    // 🔴 矩阵整点口径 80mm × 8 dots/mm = 640px；canvas 按自报 dpi 重算 ⇒ 允许差 1 点
     //    （与既有 140mm ⇒ 1120 / 现算 1119 同一条登记口径，见 print-media.ts 的 PrintDotGeometry）
-    expect(Math.abs(option.geometry.heightPx - printDotGeometry('label-50x100').heightPx)).toBeLessThanOrEqual(1)
-    // 常规唛（缺省 media）仍是 140mm 那张 —— 瘦身不许波及常规唛
+    expect(Math.abs(option.geometry.heightPx - printDotGeometry('label-50x80-option').heightPx)).toBeLessThanOrEqual(1)
+    // 🔴 留白**按张取**（issue #8163）：专属唛 8/8、常规唛 15/15 —— 同一份代码里两向都钉住
+    expect(option.topBlank).toBe(Math.round(WASH_LABEL_OPTION_TOP_BLANK_MM * geo.dpmm))
+    // 常规唛（缺省 media）仍是 140mm 那张、留白仍是 15/15 —— 瘦身不许波及常规唛（负控）
     const regular = layoutWashLabel(input(), geo, measure)
     expect(regular.geometry.heightPx).toBe(Math.round(printPageBoxMm('label-50x140').heightMm * geo.dpmm))
     expect(regular.geometry.heightPx).toBeGreaterThan(option.geometry.heightPx)
+    expect(regular.topBlank).toBe(Math.round(WASH_LABEL_TOP_BLANK_MM * geo.dpmm))
+    expect(option.topBlank).toBeLessThan(regular.topBlank)
     // 纸高**只由 input.media 决定**：传进来的 geometry.heightPx 说 100mm 也没用（不再读常量/入参）
-    const forced = layoutWashLabel(input({ media: 'label-50x100' }), { ...geo, heightPx: 99999 }, measure)
+    const forced = layoutWashLabel(input({ media: 'label-50x80-option' }), { ...geo, heightPx: 99999 }, measure)
     expect(forced.geometry.heightPx).toBe(option.geometry.heightPx)
   })
 
@@ -299,8 +305,8 @@ describe('🔴 专属唛短纸（issue #8107）：纸高按 `input.media` 取，
     // 🔴 机器口径**从矩阵取**、不在判据里写第二份像素字面量（打印头宽 384 只许出现在
     //    `print-media.json`；守卫 `frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts`
     //    的 C2b 会扫全仓 `frontend/**` 并把判据里的副本判红 —— 实测抓到过一次）
-    const device = printDotGeometry('label-50x100')
-    for (const media of ['label-50x140', 'label-50x100'] as const) {
+    const device = printDotGeometry('label-50x80-option')
+    for (const media of ['label-50x140', 'label-50x80-option'] as const) {
       const box = printPageBoxMm(media)
       // 机器自报的 dpi 变了纸高跟着变（写死像素 ⇒ 必红）
       expect(resolveLabelGeometry({ printerDPI: device.dpi, printerWidth: device.headWidthPx }, null, media).heightPx).toBe(
@@ -311,14 +317,14 @@ describe('🔴 专属唛短纸（issue #8107）：纸高按 `input.media` 取，
       )
     }
     // 两种纸长真的不同（合并成一张 = 专属唛又回到 140mm）
-    expect(resolveLabelGeometry(null, null, 'label-50x100').heightPx).not.toBe(
+    expect(resolveLabelGeometry(null, null, 'label-50x80-option').heightPx).not.toBe(
       resolveLabelGeometry(null, null, 'label-50x140').heightPx,
     )
   })
 
-  it('🔴 5 行专属唛在 100mm 纸上**一行都不裁**（预算账见 metrics 与组件文件头）', () => {
+  it('🔴 5 行专属唛在 80mm 纸上**一行都不裁**（预算账见 metrics 与组件文件头）', () => {
     const layout = layoutWashLabel(
-      input({ media: 'label-50x100', rows: OPTION_ROWS, companyName: '亿家纺织', optionLabel: '余料带回' }),
+      input({ media: 'label-50x80-option', rows: OPTION_ROWS, companyName: '亿家纺织', optionLabel: '余料带回' }),
       geo,
       measure,
     )
@@ -327,11 +333,11 @@ describe('🔴 专属唛短纸（issue #8107）：纸高按 `input.media` 取，
     // 抬头标记照画（**16pt 加粗**，issue #8107 追加口径；改小 / 去掉 ⇒ 本条与 metrics 判据必红），且不压正文
     expect(layout.company.map((line) => line.text)).toEqual(['亿家纺织', '余料带回'])
     expect(layout.lines[0].y).toBeGreaterThan(layout.company[layout.company.length - 1].y)
-    // 二维码仍在纸内、离底（底部虚线）恒 ≥ 15mm
+    // 二维码仍在纸内、离底（底部虚线）恒 ≥ 专属唛自己的 8mm（#8163：随纸长收窄，别退回 15mm）
     const qr = layout.qr
     if (!qr) throw new Error('有码却没算出二维码位 —— 判据无从取值')
     expect(qr.y + qr.size).toBeLessThanOrEqual(
-      layout.geometry.heightPx - Math.round(WASH_LABEL_BOTTOM_CLEARANCE_MM * geo.dpmm),
+      layout.geometry.heightPx - Math.round(WASH_LABEL_OPTION_BOTTOM_CLEARANCE_MM * geo.dpmm),
     )
   })
 })
