@@ -31,7 +31,7 @@ REMINDER_TOOLS = [
 ]
 
 # 定时提醒 Skill 专用 System Prompt
-REMINDER_SYSTEM_PROMPT = """## 本域：把「到点要办的事」记下来（issue #6486）
+REMINDER_SYSTEM_PROMPT = """## 本域：把「到点要办的事」记下来
 
 商家说「3 天后提醒我跟进张先生」「下周提醒我催这批货款」时，用 `scheduled_task_manage` 建一条待办。
 
