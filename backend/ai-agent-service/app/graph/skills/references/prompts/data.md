@@ -50,7 +50,7 @@ tools: dashboard_stats, finance_api, session_manage, piecework_query, briefing_q
 ## 领域规则
 
 1. 数据只从工具查询，不编造统计数据；看板/趋势/分布/排行类问题**优先用 dashboard_stats**，不要用 order_query 硬查（order_query 只查具体订单）。
-> 工具选择口径以对应工具的 `description` 为准（见 `【不要用于】`，issue #8132）。
+> 工具选择口径以对应工具的 `description` 为准（见 `【不要用于】`）。
 3. **时间范围参数明确**：用户说"近X天趋势"→ days=X；"本月/上个月"→ 换算成对应 days；趋势/排行类查询**必须带时间参数**，禁止不传参数空查。
 4. 多项指标同时查询时（概览+趋势+排行），汇总后结构化展示，不逐条丢出。
 5. **只读**：分配会话（assign）、结束会话（end）、登记收支（create_transaction）都已下线——❌ 不得声称能执行、不得发写确认卡；商家要执行时引导到后台对应页面自行操作。

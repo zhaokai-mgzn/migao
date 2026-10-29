@@ -39,7 +39,8 @@ DATA_PROMPT = SERVICE_ROOT / "app" / "graph" / "skills" / "references" / "prompt
 
 MARKER = "【不要用于】"
 MAX_LINE_CHARS = 120
-ISSUE = "#8132"
+#: 装配面去噪口径（tests/test_prompt_denoise.py）：会进 system prompt 的正文里不得有内部编号。
+ISSUE_REF_RE = re.compile(r"#\d{4,}")
 
 #: 本切片覆盖的 6 个最易混 B 端只读工具（选错工具的失败面集中在这里）。
 TOOLS = (
@@ -134,9 +135,16 @@ def test_deleted_prompt_rule_is_gone_and_truth_lives_in_tool_description(descrip
         f"它现在只该在工具描述里（{MARKER}）"
     )
 
-    assert "工具选择口径以对应工具的" in text, "`prompts/data.md` 的指路行不见了（删了规则却没指向工具描述）"
-    assert "`description`" in text and MARKER in text and ISSUE in text, (
-        "`prompts/data.md` 的指路行必须同时点名工具 `description`、`【不要用于】` 与本 issue 号"
+    pointer_lines = [line for line in text.splitlines() if "工具选择口径以对应工具的" in line]
+    assert len(pointer_lines) == 1, (
+        f"`prompts/data.md` 里应有且只有 1 行指路行（删了规则却没指向工具描述）：{pointer_lines}"
+    )
+    assert "`description`" in pointer_lines[0] and MARKER in pointer_lines[0], (
+        f"指路行必须同时点名工具 `description` 与 `{MARKER}`：{pointer_lines[0]}"
+    )
+    # 该行会**原样进 system prompt** ⇒ 不得带内部编号（口径 = tests/test_prompt_denoise.py）。
+    assert not ISSUE_REF_RE.search(pointer_lines[0]), (
+        f"指路行不得带内部 issue 编号（会被渲染进 system prompt）：{pointer_lines[0]}"
     )
 
     order_query_targets = named_targets(not_for_line(descriptions["order_query"]))
