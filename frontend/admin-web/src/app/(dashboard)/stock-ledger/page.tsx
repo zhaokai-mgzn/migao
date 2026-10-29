@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ClipboardList, Layers, RefreshCw, Search, X } from 'lucide-react'
 import { InlineMarkdown } from '@/lib/inline-markdown'
-import { Button, PageCard, PageHeader } from '@/components/ui'
+import { Button, PageCard, PageHeader, TableSkeleton } from '@/components/ui'
 import ListLoadError from '@/components/common/ListLoadError'
 import { batchStockApi, productApi, stockLedgerApi } from '@/lib/api'
 import { formatCost, formatDelta, formatQty, formatTime, reasonLabel } from '@/lib/stock-ledger'
@@ -460,7 +460,14 @@ export default function StockLedgerPage() {
       {/* ── 视图 ①：SKU 级流水（issue #6404）────────────────────────────── */}
       {view === 'flow' && (
         <>
+          {/* issue #8056：加载态 = 通用表格骨架（#8036 / #8048 已验收口径：页面级三元），与本表 9 列对齐；
+              不再在表体下方印裸「库存明细加载中…」+ 空白表。
+              🔴 闸门 = `loading && 列表为空`：查询 / 翻页 / 切视图都会触发刷新，刷新时已有读数 ⇒
+              表格照旧在场（不换骨架、行内按钮与焦点不被摘掉 —— #8048 直出 `loading` 踩过的回归）。 */}
           <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
+            {loading && rows.length === 0 ? (
+              <TableSkeleton rows={PAGE_SIZE} columns={9} />
+            ) : (
             <table className="min-w-full text-sm">
               <thead className="bg-neutral-50 text-neutral-500">
                 <tr>
@@ -510,6 +517,7 @@ export default function StockLedgerPage() {
                 ))}
               </tbody>
             </table>
+            )}
 
             {!loading && rows.length === 0 && !error && (
               /* issue #8040：筛选下为空（换个条件再查）与「真还没有流水」（说清流水从哪来）分开说 */
@@ -519,7 +527,6 @@ export default function StockLedgerPage() {
                   : '还没有库存流水 —— 入库、出库、盘点调整等每次库存变动都会在这里记一条'}
               </p>
             )}
-            {loading && <p className="px-4 py-8 text-center text-sm text-neutral-400">库存明细加载中…</p>}
           </div>
 
           {/* 分页 */}
@@ -553,7 +560,11 @@ export default function StockLedgerPage() {
       {/* ── 视图 ②：批次余量（每卷剩多少，issue #6417；默认分页列表 = issue #7604）────── */}
       {view === 'batch' && (
         <>
+          {/* issue #8056：与流水视图同一口径，与本表 8 列对齐（同一个 `PAGE_SIZE` 分页）。 */}
           <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
+            {batchLoading && batches.length === 0 ? (
+              <TableSkeleton rows={PAGE_SIZE} columns={8} />
+            ) : (
             <table className="min-w-full text-sm">
               <thead className="bg-neutral-50 text-neutral-500">
                 <tr>
@@ -605,13 +616,13 @@ export default function StockLedgerPage() {
                 ))}
               </tbody>
             </table>
+            )}
 
             {!batchLoading && batches.length === 0 && !batchError && (
               <p className="px-4 py-8 text-center text-sm text-neutral-400">
                 没有匹配的批次（批次来自入库过账 —— 按批次入库后，这里才有每卷的剩余米数）
               </p>
             )}
-            {batchLoading && <p className="px-4 py-8 text-center text-sm text-neutral-400">批次余量加载中…</p>}
           </div>
 
           {/* 分页（职责同流水视图：计数 + 翻页；读失败时计数印 `—`，不印 0） */}

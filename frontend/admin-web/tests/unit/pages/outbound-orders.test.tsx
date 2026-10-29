@@ -143,6 +143,24 @@ describe('出库单列表（WH-004）', () => {
     expect(screen.getByText('已过账')).toBeTruthy()
   })
 
+  // issue #8056：加载态 = 通用表格骨架（#8036 / #8048 已验收口径），不再是裸「加载中…」+ 空白表体。
+  it('加载中（出库单列表）：渲染 table-skeleton，且不出现裸「加载中…」文案（#8056）', async () => {
+    mockList.mockReturnValue(new Promise(() => {}))
+    render(<OutboundOrdersPage />)
+    expect(await screen.findByTestId('table-skeleton')).toBeInTheDocument()
+    // 红证：把加载分支改回裸文案 ⇒ 本条红
+    expect(screen.queryByText(/加载中/)).not.toBeInTheDocument()
+  })
+
+  it('加载中（成品库存）：渲染 table-skeleton，且不出现裸「加载中…」文案（#8056）', async () => {
+    mockFinished.mockReturnValue(new Promise(() => {}))
+    render(<OutboundOrdersPage />)
+    await waitFor(() => expect(screen.getByText('CK-20261025-0001')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('outbound-tab-finished'))
+    expect(await screen.findByTestId('table-skeleton')).toBeInTheDocument()
+    expect(screen.queryByText(/加载中/)).not.toBeInTheDocument()
+  })
+
   it('读失败 ≠ 空态：显示常驻错误出口，点重试再读一次', async () => {
     mockList.mockRejectedValueOnce(new Error('boom'))
     render(<OutboundOrdersPage />)

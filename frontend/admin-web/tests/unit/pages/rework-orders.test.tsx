@@ -114,6 +114,15 @@ describe('返工单页面', () => {
     expect(screen.queryByTestId('rework-orders-table')).toBeNull()
   })
 
+  // issue #8056：加载态 = 通用表格骨架（#8036 / #8048 已验收口径），不再是裸「加载中…」+ 空白表体。
+  it('加载中：渲染 table-skeleton，且不出现裸「加载中…」文案（#8056）', async () => {
+    reworkOrderApi.list.mockReturnValue(new Promise(() => {}))
+    render(<ReworkOrdersPage />)
+    expect(await screen.findByTestId('table-skeleton')).toBeInTheDocument()
+    // 红证：把加载分支改回裸文案 ⇒ 本条红
+    expect(screen.queryByText(/加载中/)).not.toBeInTheDocument()
+  })
+
   it('🟢 状态机唯一：待开工只有「开工/取消」，返工中只有「完工/取消」，已闭环没有动作', () => {
     expect(actionsFor('draft')).toEqual(['start', 'cancel'])
     expect(actionsFor('in_progress')).toEqual(['complete', 'cancel'])
