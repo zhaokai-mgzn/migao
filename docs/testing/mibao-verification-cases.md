@@ -2779,7 +2779,7 @@
 ```
 溯源: 2026-10-20 新增（issue #7370，P0-1 之后按用户「逐步推进」落地为 P0-2 段 1）。落码 = ① V169 迁移（两列）+ 建库脚本终态同步；② CreditPolicy（纯函数口径）+ 7 条判据；③ OrderService 下单闸门；④ CustomerService.creditStatus/updateCreditSettings + 两个端点；⑤ 客户详情页「授信与往来」卡片 + 4 条页面判据；⑥ CHANGELOG。⚠️ **未做（照实登记）**：部分收款核销、账龄分档、审批出口、现结订单豁免 —— 分属 #7370 段 2/3 与 #7374(P1-2)。取号 = 现取 origin/main 的 CU 最大 012 ⇒ CU-013。 ｜ tags: backend-contract, credit, credit-limit, payment-terms, receivable, admin-api, red-proof
 
-## 数据域（25 case）
+## 数据域（26 case）
 
 ### DA-001. 经营概览 🔵
 ```
@@ -3092,6 +3092,25 @@
 必须成功: dashboard_stats
 ```
 溯源: 2026-10-29 新增（issue #8120）：黄金策分析能力 P1「对比」由工具确定性计算（审计 docs/audit-2026-10/02-mibao-capability-review.md F5）。取号 DA-025：`scripts/next_case_id.py DA` 因 gh 抖动 fail-closed（不许取号，stream error）⇒ 按 `migao-dev-flow` §26.3 手工核在飞面：origin/main 与全部 8 个 open PR 分支（mibao-p0-eval / feat/8114-merge-ai-cards / fix/8108-banding-family / fix/8107-option-label-slim / 8104-worker-stock-correction / feat/8103-same-order-same-bin / feat/8100-menu-rename / chore/flaky-ledger）的 `.github/cases/data.yml` 最大号均为 DA-024（命令：`git show <ref>:.github/cases/data.yml | grep -oE 'DA-[0-9]+' | sort -u | tail -1`）⇒ DA-025 未被占用。**未覆盖面（如实登记）**：归因（按商品/客户/状态拆）与「下一步」建议不在本单（审计 F5 的另外两件，另包）；本用例只覆盖对比算术的转述面 ｜ tags: dashboard, finance, compare, readonly, llm_behavior
+
+### DA-026. 经营日报条目带追问入口 —— 「就第一条」当场转到该条提示的工具，不重新问（issue #8155） 🔵
+```
+你: 今天经营怎么样？
+你: 就第一条，帮我看看
+端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
+期望: briefing_query
+期望: order_query(action=list, status=confirmed)
+数据: success=true
+数据: 第一轮必须用 briefing_query 取日报（不得用 dashboard_stats / order_query 冒充日报条目）；条目的标题、条数与「日报只列前 N 项、当天共 M 项」必须逐字来自 `data.proactive`，模型不得自行发明异常条目或条数
+数据: 🔴 列条目时**每条同时给出它的 `follow_up.prompt` 原句**（可点可说；不改写、不自己另编建议）；条目没有 `follow_up` ⇒ 只如实陈述，不承诺代办、不猜一个工具
+数据: 🔴 第二轮「就第一条」= 商家已用指代选定：**直接按该条 `follow_up.tool_hint` 调对应工具**（工具名与参数形态照抄提示），**不得再问**「你要查哪一类 / 具体哪一单 / 想看什么」—— 零澄清轮；本条把首条钉成「超时未发货」⇒ 期望 `order_query(action=list, status=confirmed)`
+数据: 工具读数逐字转述：第二轮返回的客户名 / 地址 / 单号来自 `order_query` 的 `customer_name` / `customer_address` / `order_no`，不得编造；工具失败或空结果时如实说明，不得拿别的数据顶替
+数据: 空态分支：日报当天没有条目（或 `proactive` 为空）⇒ 如实说「今天没有要处理的异常」，**不得**虚构 `follow_up`、不得随便猜一个工具去查
+前置: 首条类型的真值（现取，seed `tests/agent_eval/fixtures/mibao_eval_seed.sql`）：订单 EVAL-MB-ORD-0002/0003/0004 = `confirmed` 且无发货记录、创建于 2026-09-10~12（远早于「今天 −3 天」），而 admin-api 快照的 `orders` 行 = **当前仍待发货**的订单（`DailyBriefingService.assembleOrderRows`，不带时间窗）⇒ 日报首条 = `unshipped_overdue`；`below_cost_price` 需成本核算（`avg_cost`，seed 未做 ⇒ `not_enabled` 不命中）、`low_stock` 需 `stock ≤ 100`（seed SKU = 500 ⇒ 不命中）⇒ 首条 `follow_up.tool_hint` = `order_query(action=list, status=confirmed)`。**前置漂移时**：正确行为仍是「按**实际首条**的 `tool_hint` 调工具」（契约不变），机器面钉的那条会红 ⇒ 归因在本 precondition，而不是「agent 不干活」
+必须成功: briefing_query
+```
+真值: dashboard-jump.proactive-follow-up, dashboard-jump.proactive-action-required
+溯源: 2026-10-30 新增（issue #8155）：族 1 × 族 4 —— 日报条目带追问入口，且追问在**对话内闭环**（不是只多一句建议文案）。取号 DA-026：`scripts/next_case_id.py DA` 因 gh 抖动 fail-closed（exit 3，`stream error`）⇒ 按 `migao-dev-flow` §26.3 手工核在飞面：origin/main 与**改过 `.github/cases/**` 的三个** open PR 分支（`mibao-p1e-noprogress` / `mibao-p2b-page-actions` / `mibao-fix-pr133`）的 `.github/cases/data.yml` 最大号均为 **DA-025**（命令：`git show <ref>:.github/cases/data.yml | grep -oE 'DA-[0-9]+' | sort -u | tail -1`；其余 open PR 未改用例语料）⇒ DA-026 未被占用。**未覆盖面（如实登记）**：① finds 由**模型转述**（前端 `BriefingCard` 只渲染 LLM 简报与 `proactive_status` 面板，不渲染 findings 列表）⇒ 卡片面「可点追问」不在本单，要做得另开单；② 「模型是否每次都真的照 `tool_hint` 直接调、不再问一遍」属 LLM 行为面，本单**不派评测**（用户裁定：评测集中跑一次），只落用例；确定性面由 `backend/ai-agent-service/tests/test_brief_followup.py` 承担 ｜ tags: dashboard, briefing, follow-up, llm_behavior
 
 ## 防御域（24 case）
 
@@ -13737,7 +13756,7 @@
 - 对话边界域：53
 - 跨域：3
 - 客户域：13
-- 数据域：25
+- 数据域：26
 - 防御域：24
 - 财务对账域：6
 - 人事域：13

@@ -4059,6 +4059,26 @@ _CASE_DA_025 = EvalCase(
     precondition='评测栈需有订单/资金流水 seed 才能得到非零读数；无 seed 时工具仍返回 success=true 但读数全 0（delta_pct=null / partial=true）⇒ 本条按「如实转述口径」判定，不把空读数当失败。**前置不成立时红的伪装形态**：序列长度 < 2×days 时 `partial=true`、上期全 0 时 `delta_pct=null` 会如实披露 ⇒ 此时「少了/多了」的红落在**数据层**（seed 不足），不是 agent 行为层；机器判据见本用例 data_checks 的 `previous_is_zero` / `partial` 两条',
 )
 
+# ── DA-026 [NORMAL] 经营日报条目带追问入口 —— 「就第一条」当场转到该条提示的工具，不重新问（issue #8155）（源: cases/data.yml）──
+_CASE_DA_026 = EvalCase(
+    id='DA-026',
+    legacy_id='',
+    title='经营日报条目带追问入口 —— 「就第一条」当场转到该条提示的工具，不重新问（issue #8155）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['今天经营怎么样？', '就第一条，帮我看看'],
+    expectations=['briefing_query', 'order_query(action=list, status=confirmed)'],
+    data_checks=['success=true', '第一轮必须用 briefing_query 取日报（不得用 dashboard_stats / order_query 冒充日报条目）；条目的标题、条数与「日报只列前 N 项、当天共 M 项」必须逐字来自 `data.proactive`，模型不得自行发明异常条目或条数', '🔴 列条目时**每条同时给出它的 `follow_up.prompt` 原句**（可点可说；不改写、不自己另编建议）；条目没有 `follow_up` ⇒ 只如实陈述，不承诺代办、不猜一个工具', '🔴 第二轮「就第一条」= 商家已用指代选定：**直接按该条 `follow_up.tool_hint` 调对应工具**（工具名与参数形态照抄提示），**不得再问**「你要查哪一类 / 具体哪一单 / 想看什么」—— 零澄清轮；本条把首条钉成「超时未发货」⇒ 期望 `order_query(action=list, status=confirmed)`', '工具读数逐字转述：第二轮返回的客户名 / 地址 / 单号来自 `order_query` 的 `customer_name` / `customer_address` / `order_no`，不得编造；工具失败或空结果时如实说明，不得拿别的数据顶替', '空态分支：日报当天没有条目（或 `proactive` 为空）⇒ 如实说「今天没有要处理的异常」，**不得**虚构 `follow_up`、不得随便猜一个工具去查'],
+    skip_reason='',
+    tags=['dashboard', 'briefing', 'follow-up', 'llm_behavior'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'briefing_query'}],
+    precondition='首条类型的真值（现取，seed `tests/agent_eval/fixtures/mibao_eval_seed.sql`）：订单 EVAL-MB-ORD-0002/0003/0004 = `confirmed` 且无发货记录、创建于 2026-09-10~12（远早于「今天 −3 天」），而 admin-api 快照的 `orders` 行 = **当前仍待发货**的订单（`DailyBriefingService.assembleOrderRows`，不带时间窗）⇒ 日报首条 = `unshipped_overdue`；`below_cost_price` 需成本核算（`avg_cost`，seed 未做 ⇒ `not_enabled` 不命中）、`low_stock` 需 `stock ≤ 100`（seed SKU = 500 ⇒ 不命中）⇒ 首条 `follow_up.tool_hint` = `order_query(action=list, status=confirmed)`。**前置漂移时**：正确行为仍是「按**实际首条**的 `tool_hint` 调工具」（契约不变），机器面钉的那条会红 ⇒ 归因在本 precondition，而不是「agent 不干活」',
+)
+
 # ── DF-001 [ADVERSARIAL] Token攻击 - 要求生成超长回复（源: cases/defense.yml）──
 _CASE_DF_001 = EvalCase(
     id='DF-001',
@@ -17562,6 +17582,7 @@ ALL_CASES = (
     _CASE_DA_022,
     _CASE_DA_024,
     _CASE_DA_025,
+    _CASE_DA_026,
     _CASE_DF_001,
     _CASE_DF_002,
     _CASE_DF_003,

@@ -100,6 +100,8 @@ from app.tools.stock_semantics import LOW_STOCK_THRESHOLD
 
 __all__ = [
     "MAX_EVIDENCE_ROWS",
+    "FOLLOW_UP_MAX_PROMPT",
+    "FOLLOW_UPS",
     "UNSHIPPED_STATUSES",
     "WIRED",
     "NOT_WIRED",
@@ -113,6 +115,7 @@ __all__ = [
     "scan_snapshot",
     "daily_findings",
     "daily_findings_total",
+    "follow_up_for",
 ]
 
 #: 判据里逐条例出的观测值上限（超出以 `observed_total` 给全量计数）——防判据本身膨胀
@@ -611,6 +614,91 @@ RULES: Tuple[RuleSpec, ...] = (
 )
 
 
+# ── 追问入口（族 1 × 族 4，issue #8155）：日报条目 → 一句可说的下一步 ────────────
+#
+# 病：条目读出来是**一段结论**，商家想接着办（「那帮我看看是哪几个」）时得自己把
+# 「要查什么、查哪一类」重新描述一遍 —— 条目与**可执行动作**之间没有桥。
+# 药：每条 finding 带 `follow_up = {prompt, tool_hint}`，`prompt` 由**该条真值**派生
+# （计数 / 窗口天数 …）、`tool_hint` 指向**真能回答这个问题**的已注册工具 ⇒ 商家说
+# 「就这个 / 第 N 条」时模型可直接照着调，不用再来一轮澄清。
+#
+# 🔴 三条硬口径：
+# ① **不猜**：`tool_hint` 的工具与参数形态都按注册表 schema 核实过（判据
+#    `tests/test_brief_followup.py` 现取注册表机械复算）；核实不了的类型**不入表**。
+# ② **fail-closed**：`follow_up_for()` 只认本表里的 `rule_id` —— 新增规则尚未登记、
+#    或调用方自定义了 `rules=`，该条 finding **不带** `follow_up`（宁可没有，也不给一个错工具）。
+# ③ **确定性**：同一份快照两次扫描 ⇒ `prompt` 逐字一致（无时间、无随机、无模型参与）。
+
+#: `follow_up.prompt` 的长度上限：它必须是**一句**能直接对助手说的话，不是一段建议
+FOLLOW_UP_MAX_PROMPT = 40
+
+
+def _follow_up_below_cost(hit: _Hit, cfg: ProactiveConfig) -> Dict[str, str]:
+    """低于成本价 ⇒ 逐单看客户与明细（`order_query` 返回 customer_name / items / total_amount）"""
+    return {
+        "prompt": f"帮我看下这 {hit.count} 单的客户和明细",
+        "tool_hint": "order_query(action=list, order_id=<单号>)",
+    }
+
+
+def _follow_up_unshipped(hit: _Hit, cfg: ProactiveConfig) -> Dict[str, str]:
+    """超时未发货 ⇒ 看这些单的客户与地址（`order_query` 的 status 枚举含 confirmed = 待发货）"""
+    return {
+        "prompt": f"帮我看下这 {hit.count} 单的客户和地址",
+        "tool_hint": "order_query(action=list, status=confirmed)",
+    }
+
+
+def _follow_up_low_stock(hit: _Hit, cfg: ProactiveConfig) -> Dict[str, str]:
+    """库存告急 ⇒ 低库存清单（`inventory_manage` 的 action 枚举含 low_stock_alert，
+    与 `low_stock` 规则**同源口径** `stock <= threshold`）"""
+    return {
+        "prompt": f"帮我看下这 {hit.count} 个 SKU 的具体库存",
+        "tool_hint": "inventory_manage(action=low_stock_alert)",
+    }
+
+
+def _follow_up_repeat_returns(hit: _Hit, cfg: ProactiveConfig) -> Dict[str, str]:
+    """连续退货 ⇒ 窗口内的退货工单（`after_sales_manage` 的 ticket_type 枚举含 refund）"""
+    return {
+        "prompt": f"帮我看下最近 {cfg.repeat_return_window_days} 天的退货工单",
+        "tool_hint": "after_sales_manage(action=list, ticket_type=refund)",
+    }
+
+
+def _follow_up_price_change(hit: _Hit, cfg: ProactiveConfig) -> Dict[str, str]:
+    """改价幅度超阈值 ⇒ 这几个商品**现在**的价格（`product_detail` 返回 price / 逐 SKU 价格）"""
+    return {
+        "prompt": f"帮我看下这 {hit.count} 个商品现在的价格",
+        "tool_hint": "product_detail(product_id=<商品ID>)",
+    }
+
+
+def _follow_up_discount(hit: _Hit, cfg: ProactiveConfig) -> Dict[str, str]:
+    """让利幅度超阈值 ⇒ 这些客户的让利率（`customer_manage` 的 value_view 逐客户给让利率）"""
+    return {
+        "prompt": f"帮我看下这 {hit.count} 单对应客户的让利率",
+        "tool_hint": "customer_manage(action=value_view)",
+    }
+
+
+#: `rule_id` → 追问构造器（**唯一登记处**；键集必须与 `RULES` 逐条相等，判据机械比对）
+FOLLOW_UPS: Dict[str, Callable[[_Hit, ProactiveConfig], Dict[str, str]]] = {
+    "below_cost_price": _follow_up_below_cost,
+    "unshipped_overdue": _follow_up_unshipped,
+    "low_stock": _follow_up_low_stock,
+    "repeat_returns": _follow_up_repeat_returns,
+    "price_change_over": _follow_up_price_change,
+    "discount_over": _follow_up_discount,
+}
+
+
+def follow_up_for(rule_id: Any, hit: _Hit, cfg: ProactiveConfig) -> Optional[Dict[str, str]]:
+    """该条命中的追问入口；**未登记的 `rule_id` 一律不给**（fail-closed，不猜工具）。"""
+    builder = FOLLOW_UPS.get(str(rule_id or ""))
+    return builder(hit, cfg) if builder is not None else None
+
+
 # ── 装配与扫描 ──────────────────────────────────────────────────────────────
 
 
@@ -788,10 +876,10 @@ def _resolve_as_of(snapshot: Any, as_of: Any) -> Optional[_dt.date]:
 
 
 def _assemble(spec: RuleSpec, hit: _Hit, cfg: ProactiveConfig) -> Optional[Dict[str, Any]]:
-    """装配一条命中条目（三件套）。🔴 没有处置入口 ⇒ 返回 None（不发）。"""
+    """装配一条命中条目（三件套 + 追问入口）。🔴 没有处置入口 ⇒ 返回 None（不发）。"""
     if not (spec.action_label and spec.action_url):
         return None
-    return {
+    finding = {
         "rule_id": spec.rule_id,
         "rule_name": spec.rule_name,
         "severity": spec.severity,
@@ -811,6 +899,12 @@ def _assemble(spec: RuleSpec, hit: _Hit, cfg: ProactiveConfig) -> Optional[Dict[
         },
         "action": {"label": spec.action_label, "url": spec.action_url},
     }
+    # 追问入口（issue #8155）：**只认登记过的 rule_id**；未登记 ⇒ 本条不带该键
+    # （不是 `follow_up: None` —— 键缺席才是「没有入口」，下游不必区分两种空）。
+    follow_up = follow_up_for(spec.rule_id, hit, cfg)
+    if follow_up is not None:
+        finding["follow_up"] = follow_up
+    return finding
 
 
 def scan_snapshot(
