@@ -721,11 +721,12 @@ describe('Sidebar', () => {
     // ② 每个条目（组内项 / 三个席位的一级项）的标题 `span.flex-1`：逐个 text-sm
     const titles = ALL_MENU_KEYS.map((key) => {
       const a = document.querySelector(`nav a[data-menu-key="${key}"]`)
-      expect(a, key).not.toBeNull()
+      // 真断言（不是「存在性」弱断言）：必须是**链接**本身，而不是任意同名元素（issue #8074 顺带收口）
+      expect(a, key).toBeInstanceOf(HTMLAnchorElement)
       return a!.querySelector('span.flex-1') as HTMLElement | null
     })
     for (const el of titles) {
-      expect(el).not.toBeNull()
+      expect(el).toBeInstanceOf(HTMLElement)
       expect(el!.className, el!.textContent ?? '').toContain('text-sm')
       // 修前的倒置形态 = 标题用 text-xs（12px，只该给计数徽标）
       expect(el!.className, el!.textContent ?? '').not.toContain('text-xs')

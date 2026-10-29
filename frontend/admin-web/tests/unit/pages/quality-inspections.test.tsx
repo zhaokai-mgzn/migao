@@ -169,7 +169,8 @@ describe('质检记录页（/quality-inspections）', () => {
     expect(within(card).getByText('加载中…')).toBeInTheDocument()
     // 「卡片体不是空白」的机器读数：占位里既有转圈的图标、也有文案；且没有提前画空态 / 失败态
     // （⚠️ 图标在测试环境里由 lucide-react 的 mock 渲染成 `<span>`，故按 `.animate-spin` 取，不写死 `svg`）
-    expect(placeholder.querySelector('.animate-spin')).not.toBeNull()
+    // 真断言（不是「存在性」弱断言）：转圈图标**恰一个** ⇒ 既证明占位体非空、也证明没有重复渲染（issue #8074 顺带收口）
+    expect(placeholder.querySelectorAll('.animate-spin')).toHaveLength(1)
     expect(placeholder).toHaveTextContent('加载中…')
     expect(within(card).queryByTestId('quality-records-empty')).not.toBeInTheDocument()
     expect(within(card).queryByTestId('quality-records-load-error')).not.toBeInTheDocument()
