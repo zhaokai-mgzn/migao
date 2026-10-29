@@ -103,6 +103,8 @@ KNOWN_REGISTERED_TOOLS: frozenset[str] = frozenset({
     "interact", "inventory_manage", "knowledge_search", "logistics_track",
     "notification_manage", "order_create", "order_manage", "order_query", "piecework_query",
     "processing_item_manage", "processing_item_query",
+    # issue #8157（P1-3 后半 归因）：独立只读工具（`order:list`），按商品聚合两等长窗口的销售额
+    "sales_attribution",
     # 加工单三工具（issue #4196 恢复接入；#3917 下线期间本名单**没有**它们 ——
     # 正是「注册行被注释掉 ⇒ 解析集合少一个」这条摩擦的实例）
     "processing_order_generate", "processing_order_query", "processing_order_update",
