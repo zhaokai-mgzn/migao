@@ -43,6 +43,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.clearInvocations;
@@ -254,6 +255,105 @@ class OrderShipmentServiceTest {
         assertThat(items.get(0).getRollCount()).isNull();
         verify(orderLogisticsMapper).insert(any(OrderLogistics.class));
         verify(orderMapper).update(isNull(), any());
+    }
+
+    // ── 物流类型（issue #8071）：用户 2026-10-29 裁定「工人端也要区分物流和快递」──────────────
+
+    @Test
+    @DisplayName("🔴 工人发货带 logisticsType ⇒ 落库该值（新建物流行）")
+    void shipPersistsWorkerLogisticsTypeOnCreate() {
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order("packed"));
+        givenOrderItems(plainItem());
+        when(orderShipmentMapper.selectByOrderId(ORDER_ID, TENANT)).thenReturn(new ArrayList<>());
+        Map<String, Object> body = shipBody();
+        body.put("logisticsType", "logistics");
+
+        service.ship(ORDER_ID, body, TENANT, KEY, worker());
+
+        org.mockito.ArgumentCaptor<OrderLogistics> captor =
+                org.mockito.ArgumentCaptor.forClass(OrderLogistics.class);
+        verify(orderLogisticsMapper).insert(captor.capture());
+        assertThat(captor.getValue().getLogisticsType())
+                .as("工人选了「物流专线」就必须落 logistics —— 否则物流单在对账里被当成快递（issue #8071）")
+                .isEqualTo("logistics");
+    }
+
+    @Test
+    @DisplayName("已有物流行 ⇒ 物流类型走**同一份**写入器（存在则更新，不另写一份落库口径）")
+    void shipUpdatesLogisticsTypeOnExistingRow() {
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order("packed"));
+        givenOrderItems(plainItem());
+        when(orderShipmentMapper.selectByOrderId(ORDER_ID, TENANT)).thenReturn(new ArrayList<>());
+        when(orderLogisticsMapper.updateShippingDetails(
+                any(), any(), any(), any(), any(), any(), any())).thenReturn(1);
+        Map<String, Object> body = shipBody();
+        body.put("logisticsType", "logistics");
+
+        service.ship(ORDER_ID, body, TENANT, KEY, worker());
+
+        verify(orderLogisticsMapper).updateShippingDetails(
+                TENANT, ORDER_ID, "顺丰", "SF123456", WORKER_NAME, "logistics", null);
+        verify(orderLogisticsMapper, never()).insert(any(OrderLogistics.class));
+    }
+
+    @Test
+    @DisplayName("🔴 负控：不传 logisticsType（老工人端）⇒ 落库口径逐字不变（null = 本次没说，不覆盖）")
+    void shipWithoutLogisticsTypeKeepsExistingWriteBehaviour() {
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order("packed"));
+        givenOrderItems(plainItem());
+        when(orderShipmentMapper.selectByOrderId(ORDER_ID, TENANT)).thenReturn(new ArrayList<>());
+
+        // 与改动前逐字同形：body 里没有 logisticsType 这个键
+        service.ship(ORDER_ID, shipBody(), TENANT, KEY, worker());
+
+        org.mockito.ArgumentCaptor<OrderLogistics> captor =
+                org.mockito.ArgumentCaptor.forClass(OrderLogistics.class);
+        verify(orderLogisticsMapper).insert(captor.capture());
+        assertThat(captor.getValue().getLogisticsType())
+                .as("不传 ⇒ null（= 不覆盖既有值），与 issue #8071 之前的行为逐字一致")
+                .isNull();
+        // 更新路径同样传 null：老客户端不会因为本单把既有 logistics_type 抹掉
+        verify(orderLogisticsMapper).updateShippingDetails(
+                TENANT, ORDER_ID, "顺丰", "SF123456", WORKER_NAME, null, null);
+    }
+
+    @Test
+    @DisplayName("空串 = 「没说这件事」⇒ 不拒绝也不写（与商家路「缺席/空串不拒绝」同口径）")
+    void blankLogisticsTypeIsTreatedAsAbsent() {
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order("packed"));
+        givenOrderItems(plainItem());
+        when(orderShipmentMapper.selectByOrderId(ORDER_ID, TENANT)).thenReturn(new ArrayList<>());
+        Map<String, Object> body = shipBody();
+        body.put("logisticsType", "   ");
+
+        service.ship(ORDER_ID, body, TENANT, KEY, worker());
+
+        org.mockito.ArgumentCaptor<OrderLogistics> captor =
+                org.mockito.ArgumentCaptor.forClass(OrderLogistics.class);
+        verify(orderLogisticsMapper).insert(captor.capture());
+        assertThat(captor.getValue().getLogisticsType()).isNull();
+    }
+
+    @Test
+    @DisplayName("🔴 非法 logisticsType ⇒ 422 且**一个字节都没写**（不静默落默认值）")
+    void invalidLogisticsTypeIsRejectedBeforeAnyWrite() {
+        when(orderMapper.selectById(ORDER_ID)).thenReturn(order("packed"));
+        givenOrderItems(plainItem());
+        Map<String, Object> body = shipBody();
+        body.put("logisticsType", "air");
+
+        BusinessException error = catchThrowableOfType(
+                () -> service.ship(ORDER_ID, body, TENANT, KEY, worker()), BusinessException.class);
+
+        assertThat(error).isNotNull();
+        assertThat(error.getHttpStatus()).as("白名单外取值 ⇒ 422（不是静默落默认值）").isEqualTo(422);
+        assertThat(error.getMessage()).contains("物流类型");
+        verify(orderShipmentMapper, never()).insert(any(OrderShipment.class));
+        verify(orderShipmentItemMapper, never()).insert(any(OrderShipmentItem.class));
+        verify(orderLogisticsMapper, never()).insert(any(OrderLogistics.class));
+        verify(orderLogisticsMapper, never())
+                .updateShippingDetails(any(), any(), any(), any(), any(), any(), any());
+        verify(orderMapper, never()).update(isNull(), any());
     }
 
     @Test

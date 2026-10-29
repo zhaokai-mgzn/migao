@@ -54,6 +54,9 @@ jest.mock('../src/services/workerShipmentService', () => ({
   postWorkerShipment: jest.fn(),
   readWorkerShipment: jest.fn(),
   newShipmentRequestId: jest.fn(() => 'shipment-key-fixed'),
+  // 物流类型词表与默认值用**真实现**（mock 掉它 = 测不到页面真正预选/递出去的值，issue #8071）
+  LOGISTICS_TYPES: jest.requireActual('../src/utils/inbound/shipment').LOGISTICS_TYPES,
+  defaultLogisticsType: jest.requireActual('../src/utils/inbound/shipment').defaultLogisticsType,
 }))
 
 jest.mock('../src/services/workerInboundService', () => ({
@@ -337,7 +340,8 @@ describe('拍照发货页：实发读面说人话（判据 P6）', () => {
   })
 
   it('P6 读面没有发货单 ⇒ 不渲染空的「实发 —」面板（只报状态）', async () => {
-    mockRead.mockResolvedValueOnce({
+    // ⚠️ 必须是 `mockResolvedValue`（不是 Once）：定位订单时也会读一次读面（物流类型的默认值）。
+    mockRead.mockResolvedValue({
       success: true,
       message: '',
       data: { order_id: ORDER_ID, order_no: 'ORD-20260926-0001', status: 'shipped', shipments: [] },
@@ -347,6 +351,73 @@ describe('拍照发货页：实发读面说人话（判据 P6）', () => {
 
     expect(screen.queryByTestId('shipment-totals')).toBeNull()
     expect(screen.getByTestId('shipment-summary').textContent).toContain('shipped')
+  })
+})
+
+describe('拍照发货页：物流类型（issue #8071）', () => {
+  /** 走到「已定位订单」这一步（定位会把订单已带的物流类型带出来预选） */
+  async function reachLocated() {
+    render(<WorkerShipmentPage />)
+    await reachReview()
+    fireEvent.click(screen.getByTestId('shipment-locate'))
+    await screen.findByTestId('shipment-located')
+  }
+
+  /** 填完必填项并提交（停在回执屏） */
+  async function submitShipment() {
+    fireEvent.input(screen.getByTestId('shipment-quantity'), { target: { value: '12' } })
+    fireEvent.input(screen.getByTestId('shipment-unit'), { target: { value: '米' } })
+    fireEvent.input(screen.getByTestId('shipment-tracking'), { target: { value: 'SF123456' } })
+    fireEvent.click(screen.getByTestId('shipment-submit'))
+    await screen.findByTestId('shipment-summary')
+  }
+
+  it('🔴 两个中文候选（内部值不上屏）；订单没带类型 ⇒ 默认快递并随请求提交', async () => {
+    await reachLocated()
+
+    expect(screen.getByTestId('shipment-logistics-type-express').textContent).toBe('快递')
+    expect(screen.getByTestId('shipment-logistics-type-logistics').textContent).toBe('物流专线')
+
+    await submitShipment()
+
+    // 默认值 = `express`（= order_logistics.logistics_type 的列默认），且**显式**提交
+    expect(mockShip.mock.calls[0][1].logisticsType).toBe('express')
+  })
+
+  it('🔴 订单已带「物流专线」⇒ 预选它（不被默认成快递），提交的就是它', async () => {
+    mockRead.mockResolvedValue({
+      success: true,
+      message: '',
+      data: {
+        order_id: ORDER_ID,
+        order_no: 'ORD-20260926-0001',
+        status: 'packed',
+        // 读面下发的「本单当前生效的物流类型」（最新物流行 → 订单建单采集）
+        logistics_type: 'logistics',
+        shipments: [],
+      },
+    })
+
+    await reachLocated()
+
+    // 定位时读了这一单的物流口径（同一份读面，不新造端点）
+    expect(mockRead).toHaveBeenCalledWith(ORDER_ID)
+    await submitShipment()
+    expect(mockShip.mock.calls[0][1].logisticsType).toBe('logistics')
+  })
+
+  it('🔴 默认值只是预选：工人改选「快递」⇒ 提交的是改后的值（选择权在人）', async () => {
+    mockRead.mockResolvedValue({
+      success: true,
+      message: '',
+      data: { order_id: ORDER_ID, status: 'packed', logistics_type: 'logistics', shipments: [] },
+    })
+
+    await reachLocated()
+    fireEvent.click(screen.getByTestId('shipment-logistics-type-express'))
+    await submitShipment()
+
+    expect(mockShip.mock.calls[0][1].logisticsType).toBe('express')
   })
 })
 
