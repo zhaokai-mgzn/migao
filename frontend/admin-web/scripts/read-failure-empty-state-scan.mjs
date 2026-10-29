@@ -639,15 +639,15 @@ export const PENDING_AUDIT = {
   },
   'products-detail-images': {
     observed: 'src/app/(dashboard)/products/[id]/ProductDetail.tsx 的「暂无图片」',
-    evidence: '商品图集随商品载荷下发（**没有独立读接口**）⇒ 不产生「读不到 vs 真是空」的分歧，本形态不成立；归零判据 = 该区接入独立读接口时同批修。',
+    evidence: '商品图集随商品载荷下发（**没有独立读接口**）⇒ 不产生「读不到 vs 真是空」的分歧，本形态不成立；**issue #8062 复核后维持**：`EMPTY_STATE_LEDGER` 保留该条，源码处（图集空态上方）有逐行注释写明理由；归零判据 = 该区接入独立读接口时同批修。',
   },
   'chat-insight-panels': {
     observed: 'src/components/chat/SessionInsight.tsx 的「暂无待办 / 本会话还没有记录」',
-    evidence: '洞察抽屉的待办与消息区来自**当前会话消息里的载荷**（无独立读接口）⇒ 无分歧面；归零判据 = 接入独立读接口时同批修。',
+    evidence: '**已由 issue #8062 处理**（原登记不准确：简报由 `messages` 推导，而 `messages` 有读面 `chatApi.getHistory`，其 catch 只 `console.error` ⇒ 读失败时仍落「本会话还没有记录」）。修后：store 给 `messagesLoadFailed`，抽屉渲染常驻失败面 `session-insight-load-failed` + 重试，三态（失败 / 加载 / 真为空）互斥 ⇒ 删台账条目。保留登记作为审计沿革。',
   },
   'chat-customer-panel': {
     observed: 'src/components/chat/CustomerPanel.tsx 的「暂无」（电话 / 注册天数）',
-    evidence: '客户信息随当前会话载荷下发（`customerInfo`），无独立读接口 ⇒ 行内缺失占位，非列表体空态。',
+    evidence: '**已由 issue #8062 裁定并处理**：行内字段占位（非列表体空态）；`customerInfo` 随会话载荷下发且当前恒为 `null`（从未读过任何数据）⇒ 既不能说「客户没提供」也不能说「没读到」，不需要失败锚。占位由裸「暂无」（事实性断言）改成 `—`（不做断言）⇒ 删台账条目。保留登记作为审计沿革。',
   },
   'finance-fund-flow-rows': {
     observed: 'src/app/(dashboard)/finance/page.tsx 的表体空态（issue #8040 已改成「说清为什么空 / 换个条件」的详写文案：资金流水 / 按支付方式 / 按日趋势 / 应收对账四处）',
@@ -655,11 +655,11 @@ export const PENDING_AUDIT = {
   },
   'knowledge-cards': {
     observed: 'src/app/(dashboard)/knowledge/page.tsx 的「暂无知识卡片 / 暂无待确认候选 / 暂无可用模板」',
-    evidence: '该页已有 `knowledge-load-error` + 逐区失败文案（#6703 已修）；表体空态的互斥性**未复核** ⇒ 登记待复核单。',
+    evidence: '**已由 issue #8062 复核并收口**：三处空态互斥性逐条核过 —— 卡片列表 `emptyText` 按 `entriesError` 分流、候选空态按 `!candidatesError` 互斥、模板读失败补 `templatesError` + `knowledge-templates-load-error`（+ 重试）⇒ 全部「说清为什么空 / 去哪做」且与失败不同屏 ⇒ 删三条台账。保留登记作为审计沿革。',
   },
   'ship-order-items': {
     observed: 'src/app/(dashboard)/orders/[id]/ship/ShipOrder.tsx 的「暂无商品」',
-    evidence: '发货页明细随订单载荷下发（无独立读接口）⇒ 无分歧面。',
+    evidence: '发货页明细随订单载荷下发（无独立读接口）⇒ 无分歧面。**issue #8062 复核后维持**：`EMPTY_STATE_LEDGER` 保留该条，`ProductTable` 空态分支有逐行注释写明理由（订单详情读失败走 `ship-order-load-error`，渲染不到这一行）。',
   },
 }
 
@@ -701,29 +701,48 @@ export const REQUIRED_SURFACES = [
  * 条目一旦不再命中其声明的文案 ⇒ `emptyStateStale` 判红 ⇒ 逼着删干净。
  */
 export const EMPTY_STATE_LEDGER = [
-  // ── issue #8057 删掉的三条（台账**只许缩短**）：详情面三处空态已改成「说清为什么空 / 去哪建」
-  //    （`<EmptyState>`），且所在页补上了**常驻失败锚点**（`ListLoadError`）⇒ 读失败不再与空态同屏，
-  //    不再需要豁免。`ProductDetail.tsx::暂无图片` 与 `ShipOrder.tsx::暂无商品` **保留**：那两处的
-  //    理由不同（图集 / 明细随单据载荷下发，**没有独立读接口** ⇒ 不产生「读不到 vs 真是空」的分歧）。
+  // ═══ issue #8062：本面**最后 9 条**逐条核到底（9 → 2）═══════════════════════════
+  // 判据 = 「商家看到这句话时，知不知道该干什么」+「读失败会不会画成空」。
+  // 删掉的 7 条各自给了会红的实例判据（见 PR body 的逐条表）；留下的 2 条理由见下。
+  //
+  // ── 保留 · 条目 1（`ProductDetail.tsx::暂无图片`）──
+  //    图集随商品载荷下发（`product.images`），**没有独立读接口** ⇒ 不产生
+  //    「图片没读到 vs 商品真的没有图」的分歧（详情读失败走 `product-detail-load-error`，
+  //    根本渲染不到图集这一块）。源码处有逐行注释（`ProductDetail.tsx` 图集空态上方）。
+  //    归零判据 = 图集接入独立读接口时同批补失败锚并删这条。
   'src/app/(dashboard)/products/[id]/ProductDetail.tsx::暂无图片',
-  'src/components/chat/SessionInsight.tsx::暂无待办',
-  'src/components/chat/SessionInsight.tsx::本会话还没有记录',
-  'src/components/chat/CustomerPanel.tsx::暂无',
-  // ── issue #8040 删掉的四条（台账**只许缩短**）：`/finance` 三处 + `/after-sales` 一处
-  //    已改成「说清为什么空 / 去哪建」的空态，且都落在失败读数门内 ⇒ 不再需要豁免 ──
-  'src/app/(dashboard)/knowledge/page.tsx::暂无知识卡片，点击「新建知识卡片」或从行业模板一键套用',
-  'src/app/(dashboard)/knowledge/page.tsx::暂无待确认候选。人工客服会话结束后将自动提炼知识；也可通过「文档提炼」从资料中提炼。',
-  'src/app/(dashboard)/knowledge/page.tsx::暂无可用模板',
+  // ── 保留 · 条目 2（`ShipOrder.tsx::暂无商品`）──
+  //    发货明细随订单载荷下发（`order.items`），同上（读失败走 `ship-order-load-error`）。
+  //    源码处有逐行注释（`ShipOrder.tsx` 的 `ProductTable` 空态分支）。
   'src/app/(dashboard)/orders/[id]/ship/ShipOrder.tsx::暂无商品',
-  'src/app/(dashboard)/agent-workspace/human-sessions/page.tsx::暂无转人工会话',
+  //
+  // 删条目的沿革（台账**只许缩短**，`emptyStateStale` 会逼着删干净）：
+  // · issue #8040 删掉 `/finance` 三处 + `/after-sales` 一处（改成「说清为什么空 / 去哪建」）；
+  // · issue #8057 删掉详情面三处（`<EmptyState>` + 所在页补常驻失败锚 `ListLoadError`）；
+  // · issue #8062 删掉这 7 条：
+  //   - `knowledge/page.tsx::暂无知识卡片…` / `::暂无待确认候选…`：早已是「说清为什么空 / 去哪做」
+  //     且所在页有 `knowledge-load-error` / `knowledge-candidates-load-error` 常驻失败锚
+  //     ⇒ 只是**豁免过期**，本轮删条目（候选空态并收敛成 `<EmptyState>`）；
+  //   - `knowledge/page.tsx::暂无可用模板`：修好 —— 模板读失败补 `templatesError` +
+  //     `knowledge-templates-load-error`（+ 重试），空态与失败互斥；
+  //   - `agent-workspace/human-sessions/page.tsx::暂无转人工会话`：修好 —— 失败面补
+  //     `human-sessions-load-failed`（+ `-retry`）常驻锚点，空态收敛成 `<EmptyState>`；
+  //   - `chat/SessionInsight.tsx::本会话还没有记录` / `::暂无待办`：修好 —— 简报四个区块都由
+  //     `messages` 推导，而 `getHistory` 失败时它是 `[]`（修前 = 「没读到」画成「没有」）；
+  //     现在 store 给 `messagesLoadFailed`，抽屉渲染常驻失败面 `session-insight-load-failed`
+  //     （+ `-retry`），三态互斥；
+  //   - `chat/CustomerPanel.tsx::暂无`：裁定为**行内字段占位**（不是列表体空态）——
+  //     数据源 `customerInfo` 随会话载荷下发且当前恒为 `null`（从未读过任何数据）
+  //     ⇒ 既不能说「客户没提供」也不能说「没读到」，故**不需要失败锚**；占位改成 `—`（不做断言）。
 ]
 
 /**
  * 台账冻结基线（**只许缩短**；`EMPTY_STATE_LEDGER.length > EMPTY_STATE_LEDGER_FLOOR` ⇒ 红）。
  *
- * 现取 = **9**（issue #8057 由 12 降到 9：详情面三处空态改成「说清为什么空」且所在页补了失败锚点后删条目）。
+ * 现取 = **2**（16 → 12（#8040）→ 9（#8057）→ **2**（#8062）：最后 9 条逐条核到底，
+ * 7 条改好/豁免过期后删条目，2 条「随载荷下发、无独立读接口」保留并逐条写明理由）。
  */
-export const EMPTY_STATE_LEDGER_FLOOR = 9
+export const EMPTY_STATE_LEDGER_FLOOR = 2
 
 /** 判据 1：票据点名的读面三张表都没登记的（**未登记即红**） */
 export function unregisteredSurfaces(surfaces = READ_SURFACES, pending = PENDING_AUDIT, outOfScope = OUT_OF_SCOPE) {

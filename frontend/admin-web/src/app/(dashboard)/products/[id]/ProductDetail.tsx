@@ -535,6 +535,11 @@ export default function ProductDetailPage() {
               </div>
             ) : (
               // 空态说清「去哪补」（issue #8057 第 2 条）：裸「暂无图片」不说下一步。
+              // 🔴 这里**有意不配失败锚点**（issue #8062 裁定，台账 `EMPTY_STATE_LEDGER` 保留这一条）：
+              //    图集随商品载荷一起下发（`product.images`），**没有独立读接口** ⇒ 不存在
+              //    「图片没读到 vs 商品真的没有图」的分歧：能走到这里就说明商品详情本身读到了
+              //    （详情读失败走 `product-detail-load-error` 那一支，根本不渲染这一块）。
+              //    归零判据 = 将来图集接入独立读接口时，同批补失败锚并删台账条目。
               <div
                 className="w-full aspect-square rounded-lg bg-neutral-200 flex flex-col items-center justify-center gap-1 text-neutral-400"
                 data-testid="product-images-empty"

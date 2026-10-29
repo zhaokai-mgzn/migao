@@ -25,6 +25,7 @@ import { agentSessionApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { AI_ROLES } from '@/config/ai-roles'
 import Button from '@/components/ui/Button'
+import EmptyState from '@/components/ui/EmptyState'
 import DateTimeCell from '@/components/common/DateTimeCell'
 import type { AgentMessageItem, AgentSession, AgentSessionDetail } from '@/lib/api'
 
@@ -159,17 +160,34 @@ export default function HumanAgentSessionsPage() {
         {/* 左侧：会话列表 */}
         <div className="w-72 flex-shrink-0 border-r border-neutral-200/80 overflow-y-auto">
           {sessionsError && (
-            <div role="alert" className="p-4 text-center text-sm text-neutral-600 space-y-2">
+            // 常驻失败锚点（issue #8062 补 `data-testid`）：机器核「失败态真的画出来了」靠它，
+            // 而不是靠文案 —— 同时让 `read-failure-empty-state-scan` 认得出「本文件有失败面」。
+            <div
+              role="alert"
+              data-testid="human-sessions-load-failed"
+              className="p-4 text-center text-sm text-neutral-600 space-y-2"
+            >
               <div>会话列表加载失败，请检查网络后重试</div>
-              <Button variant="secondary" size="sm" onClick={() => void loadSessions()}>重试</Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                data-testid="human-sessions-load-failed-retry"
+                onClick={() => void loadSessions()}
+              >
+                重试
+              </Button>
             </div>
           )}
           {!sessionsError && sessions.length === 0 && (
-            <div className="p-6 text-center text-sm text-neutral-400">
-              暂无转人工会话
-              <br />
-              <span className="text-xs">（C 端用户触发转人工后在此显示）</span>
-            </div>
+            // 空态说清「为什么空 / 从哪来」（issue #8062）：裸「暂无转人工会话」只说了「没有」，
+            // 商家不知道是不是该等着、还是要去别处点一下。
+            <EmptyState
+              icon="inbox"
+              testId="human-sessions-empty"
+              title="暂无转人工会话"
+              description="顾客在元元对话里点「转人工」后，会话会出现在这里。"
+              className="py-6"
+            />
           )}
           {sessions.map(s => (
             <button
@@ -209,11 +227,16 @@ export default function HumanAgentSessionsPage() {
         {/* 右侧：对话区 */}
         <div className="flex-1 flex flex-col min-w-0">
           {detailError && !detail ? (
-            <div role="alert" className="flex-1 flex flex-col items-center justify-center gap-2 text-sm text-neutral-600">
+            <div
+              role="alert"
+              data-testid="human-session-detail-load-failed"
+              className="flex-1 flex flex-col items-center justify-center gap-2 text-sm text-neutral-600"
+            >
               <span>会话内容加载失败，请检查网络后重试</span>
               <Button
                 variant="secondary"
                 size="sm"
+                data-testid="human-session-detail-load-failed-retry"
                 onClick={() => selectedId && void loadDetail(selectedId)}
               >
                 重试

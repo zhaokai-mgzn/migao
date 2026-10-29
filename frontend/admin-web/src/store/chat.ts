@@ -57,6 +57,14 @@ interface ChatState {
    */
   sessionsLoadFailed: boolean
   isLoadingMessages: boolean
+  /**
+   * 会话**消息记录读面失败**（issue #8062）：与「这个会话真的还没有记录」互斥。
+   *
+   * 为什么必须有它：`selectSession` 的 `catch` 只 `console.error`（`getHistory` 失败时
+   * `messageStore` 不落值）⇒ `messages` 仍是 `[]` ⇒ 右侧「会话简报」抽屉把**没读到**
+   * 画成「本会话还没有记录」这句事实性断言。同一形态的姐妹条 = `sessionsLoadFailed`（#6713）。
+   */
+  messagesLoadFailed: boolean
   searchKeyword: string
   quickActions: QuickAction[]
   /** 工具类快捷入口（issue #7351：营销海报等「动作」入口，与六格问句分开渲染） */
@@ -171,6 +179,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   isLoadingSessions: false,
   sessionsLoadFailed: false,
   isLoadingMessages: false,
+  messagesLoadFailed: false,
   searchKeyword: '',
   quickActions: [],
   quickTools: [],
@@ -181,6 +190,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
   clearCurrentSession: () => set(state => withView(state, {
     currentSessionId: null,
+    messagesLoadFailed: false,
     choiceSelections: {},
   })),
 
@@ -314,6 +324,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       set(state => withView(state, {
         sessions: [newSession, ...state.sessions],
         currentSessionId: newSession.session_id,
+        messagesLoadFailed: false,
         messageStore: { ...state.messageStore, [newSession.session_id]: [] },
       }))
       persistSessionId(newSession.session_id)
@@ -325,7 +336,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
   selectSession: async (id: string) => {
     const { currentSessionId } = get()
-    if (id === currentSessionId) return
+    // 同一会话：常态直接返回（不重复拉取）；但**读失败后必须允许重试**
+    // （issue #8062：否则简报抽屉的「重试」是死胡同 —— 同一个 id 永远进不来）。
+    if (id === currentSessionId && !get().messagesLoadFailed) return
 
     // 检查是否有未完成的交互组件，避免中断交互流程
     if (hasPendingTools(get().messages)) {
@@ -335,7 +348,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
     const requestId = generateId() // 请求去重标记
     // 先切视图：已缓存会话即时渲染（messageStore 快照 + 该会话在途流占位），再拉最新历史
-    set(state => withView(state, { currentSessionId: id, isLoadingMessages: true, choiceSelections: {} }))
+    set(state => withView(state, { currentSessionId: id, isLoadingMessages: true, messagesLoadFailed: false, choiceSelections: {} }))
     persistSessionId(id)
 
     try {
@@ -366,6 +379,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       }
     } catch (error) {
       console.error('获取历史消息失败:', error)
+      // 读失败 ≠ 会话没有记录（issue #8062）：把失败读数交出去，由消费方画常驻失败面 + 重试。
+      set({ messagesLoadFailed: true })
     } finally {
       set({ isLoadingMessages: false })
     }
