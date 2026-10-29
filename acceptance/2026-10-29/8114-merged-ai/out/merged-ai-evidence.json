@@ -5,7 +5,7 @@
     "disabledExpanded": "/Users/guangzhen.zk/ai native/migao-wt/8114-merge-ai-cards/acceptance/2026-10-29/8114-merged-ai/out/screenshots/merged-ai-disabled.png"
   },
   "consoleErrors": [],
-  "briefingEnabledBefore": true,
+  "briefingEnabledBefore": false,
   "collapsed": {
     "viewport": {
       "width": 1440,
