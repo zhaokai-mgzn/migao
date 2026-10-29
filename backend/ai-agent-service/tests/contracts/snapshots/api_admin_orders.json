@@ -1,67 +1,39 @@
 {
   "success": true,
   "data": {
-    "total": 15,
+    "total": 20,
     "page": 1,
     "size": 5,
     "items": [
       {
-        "id": "051758cfb6d8c8dfb8d85f21d84d59dc",
-        "orderNo": "20261024245800006",
-        "customerName": "链路验证客778898",
-        "customerPhone": "13977881111",
-        "customerAddress": "上海市浦东新区张江高科技园区",
-        "totalAmount": 199.0,
-        "actualAmount": 199.0,
-        "processingFee": 0,
-        "hasProcessing": false,
-        "status": "pending",
-        "remark": "fullchain-probe",
-        "createdAt": "2026-10-24T02:08:19.068277+08:00",
-        "updatedAt": "2026-10-24T02:08:19.068345+08:00",
-        "isUrgent": false,
-        "isOutsourced": false,
-        "createdByName": "评测管理员",
-        "items": [
-          {
-            "id": "303ecb3f48a372fc175e481cba82ca80",
-            "productId": "a7387a4c89f5b2098c61f17c259493ab",
-            "productName": "冒烟SKU商品1792778519758",
-            "productCode": "",
-            "quantity": 1.0,
-            "unitPrice": 199.0,
-            "amount": 199.0,
-            "subtotal": 199.0
-          }
-        ],
-        "printCount": 0,
-        "printedDocTypes": []
-      },
-      {
-        "id": "5ff272bea067de2bfd7bb14b9da6d7d5",
-        "orderNo": "20261024472430005",
+        "id": "3d95fed68d45226d6a1db5a33d3bff97",
+        "orderNo": "20261028677150005",
         "customerName": "冒烟售后",
         "customerPhone": "13900002222",
         "customerAddress": "杭州市西湖区冒烟路 2 号",
-        "totalAmount": 47.6,
-        "actualAmount": 47.6,
+        "logisticsType": "express",
+        "totalAmount": 336.0,
+        "actualAmount": 336.0,
         "processingFee": 0.0,
         "hasProcessing": true,
         "status": "confirmed",
-        "createdAt": "2026-10-24T02:04:06.826757+08:00",
-        "updatedAt": "2026-10-24T02:04:06.826848+08:00",
+        "createdAt": "2026-10-28T20:20:36.900265+08:00",
+        "updatedAt": "2026-10-28T20:20:36.900284+08:00",
         "isUrgent": false,
         "isOutsourced": false,
         "createdByName": "评测管理员",
+        "printCount": 0,
+        "printedDocTypes": [],
         "items": [
           {
-            "id": "7f30891da43f191f68d31bcb8d7e23e0",
-            "productId": "deff0be6c885cbf0469abe4f7b8da608",
-            "productName": "2699系列雪尼尔窗帘面料",
+            "id": "ef2f08868fbcd1ac1fadeadd2c833e68",
+            "productId": "prod_eval_blackout",
+            "productName": "遮光窗帘",
+            "productCode": "EVAL-BLK-28",
             "quantity": 2.0,
-            "unitPrice": 23.8,
-            "amount": 47.6,
-            "subtotal": 47.6,
+            "unitPrice": 168.0,
+            "amount": 336.0,
+            "subtotal": 336.0,
             "processingInfo": {
               "doorWidth": "2.8",
               "processingFee": 15,
@@ -91,65 +63,69 @@
               }
             }
           }
-        ],
-        "printCount": 0,
-        "printedDocTypes": []
+        ]
       },
       {
-        "id": "a429f0ead2d3da19225095ab041cd229",
-        "orderNo": "20261024916790004",
-        "customerName": "冒烟发货提交1792778611879",
+        "id": "8000f794da47c4d2e7a943f26272c876",
+        "orderNo": "20261028842380004",
+        "customerName": "冒烟发货提交1793189989395",
         "customerPhone": "13900002223",
         "customerAddress": "杭州市西湖区冒烟路 3 号",
-        "totalAmount": 47.6,
-        "actualAmount": 47.6,
+        "logisticsType": "express",
+        "totalAmount": 336.0,
+        "actualAmount": 336.0,
         "processingFee": 0,
         "hasProcessing": false,
-        "status": "shipped",
-        "createdAt": "2026-10-24T02:03:32.461444+08:00",
-        "updatedAt": "2026-10-24T02:03:32.46156+08:00",
+        "status": "confirmed",
+        "createdAt": "2026-10-28T20:19:49.670702+08:00",
+        "updatedAt": "2026-10-28T20:19:49.670725+08:00",
         "isUrgent": false,
         "isOutsourced": false,
         "createdByName": "评测管理员",
+        "printCount": 0,
+        "printedDocTypes": [],
         "items": [
           {
-            "id": "272869083b33af3fdcbd5189ea7ba76e",
-            "productId": "deff0be6c885cbf0469abe4f7b8da608",
-            "productName": "2699系列雪尼尔窗帘面料",
+            "id": "3a3e6c2c8062cd2edc451f87dcace219",
+            "productId": "prod_eval_blackout",
+            "productName": "遮光窗帘",
+            "productCode": "EVAL-BLK-28",
             "quantity": 2.0,
-            "unitPrice": 23.8,
-            "amount": 47.6,
-            "subtotal": 47.6
+            "unitPrice": 168.0,
+            "amount": 336.0,
+            "subtotal": 336.0
           }
-        ],
-        "printCount": 0,
-        "printedDocTypes": []
+        ]
       },
       {
-        "id": "79eff834bf73c853895adc439a92548b",
-        "orderNo": "20261024355240003",
+        "id": "954bf6aa4941acc589d7bd12b3c8140a",
+        "orderNo": "20261028297880003",
         "customerName": "冒烟路线探测",
         "customerPhone": "13900002222",
         "customerAddress": "杭州市西湖区冒烟路 2 号",
-        "totalAmount": 47.6,
-        "actualAmount": 47.6,
+        "logisticsType": "express",
+        "totalAmount": 336.0,
+        "actualAmount": 336.0,
         "processingFee": 0.0,
         "hasProcessing": true,
         "status": "confirmed",
-        "createdAt": "2026-10-24T02:03:19.610549+08:00",
-        "updatedAt": "2026-10-24T02:03:19.610568+08:00",
-        "isUrgent": false,
+        "createdAt": "2026-10-28T20:19:07.944675+08:00",
+        "updatedAt": "2026-10-28T20:19:29.525485+08:00",
+        "isUrgent": true,
         "isOutsourced": false,
         "createdByName": "评测管理员",
+        "printCount": 0,
+        "printedDocTypes": [],
         "items": [
           {
-            "id": "752590266dc851e81772e51e29b5bf4b",
-            "productId": "deff0be6c885cbf0469abe4f7b8da608",
-            "productName": "2699系列雪尼尔窗帘面料",
+            "id": "7b9d05edfaddd7fa451b642dccfc1c38",
+            "productId": "prod_eval_blackout",
+            "productName": "遮光窗帘",
+            "productCode": "EVAL-BLK-28",
             "quantity": 2.0,
-            "unitPrice": 23.8,
-            "amount": 47.6,
-            "subtotal": 47.6,
+            "unitPrice": 168.0,
+            "amount": 336.0,
+            "subtotal": 336.0,
             "processingInfo": {
               "doorWidth": "2.8",
               "processingFee": 15,
@@ -179,35 +155,37 @@
               }
             }
           }
-        ],
-        "printCount": 0,
-        "printedDocTypes": []
+        ]
       },
       {
-        "id": "cdba9596669ed841880b56741d1fe2ab",
-        "orderNo": "20261024853780002",
+        "id": "a6077ab59219f6583e63a825d66853e5",
+        "orderNo": "20261028251660002",
         "customerName": "冒烟路线探测",
         "customerPhone": "13900002222",
         "customerAddress": "杭州市西湖区冒烟路 2 号",
-        "totalAmount": 47.6,
-        "actualAmount": 47.6,
+        "logisticsType": "express",
+        "totalAmount": 336.0,
+        "actualAmount": 336.0,
         "processingFee": 0.0,
         "hasProcessing": true,
         "status": "confirmed",
-        "createdAt": "2026-10-24T02:03:07.391549+08:00",
-        "updatedAt": "2026-10-24T02:03:07.39157+08:00",
-        "isUrgent": false,
+        "createdAt": "2026-10-28T20:18:35.902069+08:00",
+        "updatedAt": "2026-10-28T20:18:51.155855+08:00",
+        "isUrgent": true,
         "isOutsourced": false,
         "createdByName": "评测管理员",
+        "printCount": 0,
+        "printedDocTypes": [],
         "items": [
           {
-            "id": "ee4dc2a41a72c281cdb4d15d92320779",
-            "productId": "deff0be6c885cbf0469abe4f7b8da608",
-            "productName": "2699系列雪尼尔窗帘面料",
+            "id": "683a03bf293a6605bb406afdbe521c55",
+            "productId": "prod_eval_blackout",
+            "productName": "遮光窗帘",
+            "productCode": "EVAL-BLK-28",
             "quantity": 2.0,
-            "unitPrice": 23.8,
-            "amount": 47.6,
-            "subtotal": 47.6,
+            "unitPrice": 168.0,
+            "amount": 336.0,
+            "subtotal": 336.0,
             "processingInfo": {
               "doorWidth": "2.8",
               "processingFee": 15,
@@ -237,12 +215,70 @@
               }
             }
           }
-        ],
+        ]
+      },
+      {
+        "id": "b2319a274d95c851fc5413e393fdb93c",
+        "orderNo": "20261028367950001",
+        "customerName": "冒烟路线探测",
+        "customerPhone": "13900002222",
+        "customerAddress": "杭州市西湖区冒烟路 2 号",
+        "logisticsType": "express",
+        "totalAmount": 336.0,
+        "actualAmount": 336.0,
+        "processingFee": 0.0,
+        "hasProcessing": true,
+        "status": "confirmed",
+        "createdAt": "2026-10-28T20:18:11.537729+08:00",
+        "updatedAt": "2026-10-28T20:18:22.569468+08:00",
+        "isUrgent": true,
+        "isOutsourced": false,
+        "createdByName": "评测管理员",
         "printCount": 0,
-        "printedDocTypes": []
+        "printedDocTypes": [],
+        "items": [
+          {
+            "id": "fefa1b3bde45ba0789bd489ae2a6c34d",
+            "productId": "prod_eval_blackout",
+            "productName": "遮光窗帘",
+            "productCode": "EVAL-BLK-28",
+            "quantity": 2.0,
+            "unitPrice": 168.0,
+            "amount": 336.0,
+            "subtotal": 336.0,
+            "processingInfo": {
+              "doorWidth": "2.8",
+              "processingFee": 15,
+              "sellingMethod": "bulk_cut",
+              "processingItems": [
+                {
+                  "id": "proc_item_1",
+                  "name": "锁边",
+                  "unit": "米",
+                  "quantity": 2
+                }
+              ],
+              "processingFeeDetail": {
+                "hint": "选配组合「锁边」在「加工费组合」里没有价 ⇒ 本行**组合那半**按 0 计（未定价），**不套任何默认价**。请去「企业基础设置 → 加工费组合」为该组合定价，或确认这些加工项不该组合收费",
+                "items": [
+                  "锁边"
+                ],
+                "amount": 0,
+                "set_key": "#0",
+                "fee_source": "unpriced",
+                "composition": "锁边",
+                "special_options": [],
+                "mixed_color_options": [],
+                "mixed_color_surcharge": 0,
+                "special_options_total": 0.0,
+                "mixed_color_surcharge_per_meter": 2.4
+              }
+            }
+          }
+        ]
       }
     ]
   },
-  "requestId": "req_907d4adf31e04dd8",
-  "timestamp": 1792915040
+  "requestId": "req_9b2ae64588b04633",
+  "timestamp": 1793254757
 }
