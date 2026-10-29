@@ -26,6 +26,10 @@
 | G5 | **可用高度可复算**：注释「可用 Hmm」== `height − 纵向内边距`（2026-10-28 起 = 上留白 15mm + 下净空 15mm） | 只改 height 不改注释 ⇒ 必红 |
 | G6 | **每行行高可复算**：注释「每行 Xmm」== `font-size × line-height`（±0.01mm） | 只改字号/行高不改注释 ⇒ 必红 |
 | G7 | 注入式红证 + **内容指纹**自证（禁 mtime/size，issue #4260） | 注入未生效 ⇒ 必红 |
+| G8 | **专属唛的短纸高 == 矩阵**（issue #8107）：`.task-card-label--option { height: Hmm }` 的 H == 命名页介质 `pageBoxMm.heightMm` | 把专属唛高改回 140mm（常规唛那张）⇒ 必红 |
+| G9 | **命名页同源**：容器 `page: <名字>` 与 `printNamedPageRule('<名字>', '<介质id>')` 逐字对上，且该介质的 `pageSize` 与容器宽/高一致 | 删命名页 / 换一个介质 id ⇒ 必红 |
+| G10 | **专属唛预算段可复算**（`【专属唛预算】` 之后的段）：版心宽 / 可用 / 每行三条恒等式按**短纸**复算，且 `≤ Hmm` 用的是这张短纸的高 | 删段 / 把「可用」改成 110mm（常规唛的）⇒ 必红 |
+| G11 | 注入式红证（专属唛：改回 140 / 删命名页 / 删预算段 / 改预算读数）+ 内容指纹自证 | 注入未生效 ⇒ 必红 |
 
 🔴 **G2 与 G4 必须成对，缺一不可**（本守卫第一版只有 G2，被自己的红证实测打回）：
 预算注释里**必须**写清沿革（「由 #4946 的 30mm × 60mm 改成本版的 50mm × 60mm」），
@@ -37,6 +41,10 @@
 ⚠️ **G4/G5/G6 刻意用「可复算恒等式」而不是钉死读数**：读数是**从几何算出来的**，
 几何一变恒等式自己就红 —— 这才是「让改动者停下来重算」的摩擦，
 而不是在守卫里再抄一份会漂移的数字（§17.3「同一真值两处投影」）。
+
+🔴 **G2~G6 只在「常规唛段」上跑、G8~G10 只在「专属唛段」上跑**（issue #8107 的两段预算以
+`【专属唛预算】` 分段）：两段都写「版心宽 / 可用 / 每行」，全文 `re.search` 只会取到第一处 ⇒
+专属唛那段的读数将**永远不会被复算**（改坏了也不红 = 空判据）。
 
 ⚠️ **本守卫只扫组件源码**。用例库（`.github/cases/processing.yml`）的 `merge_log` 与
 `docs/**` 沿革里**引用**旧几何是**历史记录**，不在射程 —— 判据不区分「引用」与「使用」会产出假红
@@ -88,6 +96,14 @@ def _page_mm_from_matrix(media_id: str) -> tuple[float, float]:
     raise AssertionError(f"介质 `{media_id}` 不在 {MEDIA_MATRIX.name} 里 ⇒ 判据无从判定（不静默）")
 #: `.task-card-label { width: Wmm; height: Hmm; … }`
 _LABEL_RE = re.compile(r"\.task-card-label\s*\{\s*width:\s*([0-9.]+)mm;\s*height:\s*([0-9.]+)mm")
+#: 专属唛的修饰类（issue #8107）：`.task-card-label--option { height: Hmm; page: <命名页>; }`
+_OPTION_RE = re.compile(
+    r"\.task-card-label--option\s*\{\s*height:\s*([0-9.]+)mm;\s*page:\s*([A-Za-z0-9_-]+)\s*;?\s*\}"
+)
+#: 命名 `@page` 的写法：`printNamedPageRule('<名字>', '<介质id>')`（issue #8107）
+_NAMED_PAGE_CALL_RE = re.compile(r"printNamedPageRule\(\s*'([A-Za-z0-9_-]+)'\s*,\s*'([a-z0-9-]+)'\s*\)")
+#: 文件头里把两段预算分开的**唯一标记**（缺它 ⇒ G10 判红；两段各自可复算，互不干扰）
+OPTION_BUDGET_MARK = "【专属唛预算】"
 #: 标签本体的 padding（单个值或 CSS 简写：`padding: 15mm 1.2mm 15mm;`）
 _PADDING_RE = re.compile(r"\.task-card-label\s*\{[^}]*?padding:\s*([^;}]+)")
 #: 标签本体的 font-size / line-height（`font-size: 6pt; line-height: 1.2;`）
@@ -170,6 +186,35 @@ def _declared(header: str, keyword: str) -> float | None:
     return float(match.group(1)) if match else None
 
 
+def _budget_regions(header: str) -> tuple[str, str]:
+    """把文件头的预算注释切成 `(常规唛段, 专属唛段)`（issue #8107）。
+
+    🔴 **为什么要切段**：两段都写「版心宽 / 可用 / 每行」，全文 `re.search` 只会取到**第一处** ⇒
+    专属唛那段的读数**永远不会被复算**（改坏了也不红 = 空判据）。切段后两段各自复算，
+    缺标记 ⇒ 专属唛段为空串 ⇒ G10 判红（不是静默通过）。
+    """
+    if OPTION_BUDGET_MARK not in header:
+        return header, ""
+    regular, option = header.split(OPTION_BUDGET_MARK, 1)
+    return regular, option
+
+
+def _spec(media_id: str) -> dict:
+    """介质矩阵里的一条（未登记 ⇒ 抛错，不静默）。"""
+    spec = _matrix().get(media_id)
+    if spec is None:
+        raise AssertionError(f"介质 `{media_id}` 不在 {MEDIA_MATRIX.name} 里 ⇒ 判据无从判定（不静默）")
+    return spec
+
+
+def _box_height_mm(spec: dict) -> float:
+    box = spec.get("pageBoxMm") or {}
+    height = box.get("heightMm")
+    if not isinstance(height, (int, float)):
+        raise AssertionError(f"介质 `{spec.get('id')}` 缺 `pageBoxMm.heightMm` ⇒ 纸高无法复算（不静默）")
+    return float(height)
+
+
 def _padding_mm(raw: str) -> tuple[float, float]:
     """`padding` 简写 → `(横向合计, 纵向合计)`（mm）。
 
@@ -194,9 +239,63 @@ def _padding_mm(raw: str) -> tuple[float, float]:
     return left + right, top + bottom
 
 
+def _budget_identities(
+    region: str,
+    *,
+    width_mm: float,
+    height_mm: float,
+    pad_x: float,
+    pad_y: float,
+    font_pt: float | None,
+    line_height: float | None,
+    tag: str,
+) -> list[str]:
+    """三段**可复算恒等式**（版心宽 / 可用高度 / 每行行高）—— 常规唛与专属唛各跑一次（issue #8107）。
+
+    读数一律**现取 CSS**（width / height / padding / font-size / line-height），因此几何一变，
+    注释里的数就不再相等 ⇒ 判红（这才是「让改动者停下来重算」的摩擦，而不是再抄一份会漂移的数字）。
+    """
+    problems: list[str] = []
+    expect_content = width_mm - pad_x
+    got_content = _declared(region, "版心宽")
+    if got_content is None:
+        problems.append(f"{tag} 预算注释未声明「版心宽 …mm」")
+    elif abs(got_content - expect_content) > LINES_TOLERANCE_MM:
+        problems.append(
+            f"{tag} 注释声明「版心宽 {got_content}mm」，但按现取几何复算 `{width_mm:g} − 横向内边距 {pad_x:g}` = "
+            f"{expect_content:g}mm ⇒ 注释没跟着几何重算（**G2 的子串判定挡不住这一路**）"
+        )
+
+    expect_avail = height_mm - pad_y
+    got_avail = _declared(region, "可用")
+    if got_avail is None:
+        problems.append(f"{tag} 预算注释未声明「可用 …mm」高度")
+    elif abs(got_avail - expect_avail) > LINES_TOLERANCE_MM:
+        problems.append(
+            f"{tag} 注释声明「可用 {got_avail}mm」，但按现取几何复算 `{height_mm:g} − 纵向内边距 {pad_y:g}` = "
+            f"{expect_avail:g}mm ⇒ 注释没跟着几何重算"
+        )
+
+    if font_pt is None or line_height is None:
+        problems.append(f"{tag} 解析不出正文字号 / 行高 ⇒ 每行行高无法复算")
+        return problems
+    expect_line = font_pt * line_height * PT_TO_MM
+    got_line = _declared(region, "每行")
+    if got_line is None:
+        problems.append(f"{tag} 预算注释未声明「每行 …mm」行高")
+    elif abs(got_line - expect_line) > LINES_TOLERANCE_MM:
+        problems.append(
+            f"{tag} 注释声明「每行 {got_line}mm」，但按现取 `{font_pt:g}pt × {line_height:g}` 复算 = "
+            f"{expect_line:.3f}mm ⇒ 注释没跟着字号/行高重算"
+        )
+    return problems
+
+
 def _problems(src: str) -> list[str]:
-    """G1~G6 的全部违规（纯函数 ⇒ 便于注入式红证）。空列表 = 合规。"""
+    """G1~G10 的全部违规（纯函数 ⇒ 便于注入式红证）。空列表 = 合规。"""
     css, header = _css_block(src), _header(src)
+    # 🔴 两段预算各自复算（issue #8107）：常规唛段 / 专属唛段（后者以 OPTION_BUDGET_MARK 起头）
+    regular_header, option_header = _budget_regions(header)
     problems: list[str] = []
     if not css:
         return ["找不到活 CSS 块（`<style>{` … `}</style>`）—— 判据无从取值（**不得**静默通过）"]
@@ -212,8 +311,8 @@ def _problems(src: str) -> list[str]:
             "两处是同一份几何，必须同时改"
         )
 
-    # G2：文件头注释声明同一对几何
-    if f"{page_w:g}mm × {page_h:g}mm" not in header:
+    # G2：文件头注释声明同一对几何（**常规唛段**——专属唛段另有自己的几何，见 G8/G10）
+    if f"{page_w:g}mm × {page_h:g}mm" not in regular_header:
         problems.append(
             f"G2 文件头预算注释**未声明**当前几何 `{page_w:g}mm × {page_h:g}mm` —— "
             "注释与代码脱节（#4946→#5646 的形态：代码改了、实测读数还留着旧值）"
@@ -226,49 +325,97 @@ def _problems(src: str) -> list[str]:
     if "≤" not in header:
         problems.append("G3 预算注释缺 `≤` 比较 —— 没有「合计 ≤ 可用高度」这一步就不叫预算")
 
-    # G4/G5：版心宽 == width − 横向内边距；可用高度 == height − 纵向内边距（全部现取 CSS）
+    # G4/G5/G6：常规唛的三段可复算恒等式（现取 CSS 复算，注释与代码脱节 ⇒ 红）
     # ⚠️ G4 是**必需**的第二道：预算注释必须写沿革（旧几何也会合法地出现在注释里），
     # 于是「代码退回旧几何、注释里新旧两个值都在」时 G2 的子串判定照样通过（实测假绿）——
     # 恒等式才能在代码宽一变时立刻红。
     pad = _PADDING_RE.search(css)
+    font = _FONT_RE.search(css)
+    pad_x: float | None = None
+    pad_y: float | None = None
+    font_pt: float | None = None
+    line_height: float | None = None
     if not pad:
         problems.append("G4/G5 解析不出 `.task-card-label` 的 `padding` ⇒ 版心宽 / 可用高度均无法复算")
     else:
         pad_x, pad_y = _padding_mm(pad.group(1))
-
-        expect_content = label_w - pad_x
-        got_content = _declared(header, "版心宽")
-        if got_content is None:
-            problems.append("G4 预算注释未声明「版心宽 …mm」")
-        elif abs(got_content - expect_content) > LINES_TOLERANCE_MM:
-            problems.append(
-                f"G4 注释声明「版心宽 {got_content}mm」，但按现取几何复算 `{label_w:g} − 横向内边距 {pad_x:g}` = "
-                f"{expect_content:g}mm ⇒ 注释没跟着几何重算（**G2 的子串判定挡不住这一路**）"
-            )
-
-        expect_avail = label_h - pad_y
-        got_avail = _declared(header, "可用")
-        if got_avail is None:
-            problems.append("G5 预算注释未声明「可用 …mm」高度")
-        elif abs(got_avail - expect_avail) > LINES_TOLERANCE_MM:
-            problems.append(
-                f"G5 注释声明「可用 {got_avail}mm」，但按现取几何复算 `{label_h:g} − 纵向内边距 {pad_y:g}` = "
-                f"{expect_avail:g}mm ⇒ 注释没跟着几何重算"
-            )
-
-    # G6：每行行高 == font-size × line-height
-    font = _FONT_RE.search(css)
     if not font:
         problems.append("G6 解析不出 `.task-card-label` 的 `font-size` / `line-height` ⇒ 行高无法复算")
     else:
-        expect_line = float(font.group(1)) * float(font.group(2)) * PT_TO_MM
-        got_line = _declared(header, "每行")
-        if got_line is None:
-            problems.append("G6 预算注释未声明「每行 …mm」行高")
-        elif abs(got_line - expect_line) > LINES_TOLERANCE_MM:
+        font_pt, line_height = float(font.group(1)), float(font.group(2))
+    if pad_x is not None and pad_y is not None:
+        problems.extend(
+            _budget_identities(
+                regular_header,
+                width_mm=label_w,
+                height_mm=label_h,
+                pad_x=pad_x,
+                pad_y=pad_y,
+                font_pt=font_pt,
+                line_height=line_height,
+                tag="G4/G5/G6",
+            )
+        )
+
+    # ── G8/G9/G10：专属唛（短纸 50×100）各自可复算（issue #8107）──────────────────
+    option = _OPTION_RE.search(css)
+    named = dict(_NAMED_PAGE_CALL_RE.findall(src))
+    option_h: float | None = None
+    if option is None:
+        problems.append(
+            "G8 找不到 `.task-card-label--option { height: …mm; page: … }` —— 专属唛的短纸型缺失"
+            "（或改形）；判据按字面量解析，改写法必须同步本守卫（**不得**静默跳过）"
+        )
+    else:
+        option_h = float(option.group(1))
+        page_name = option.group(2)
+        # G8：容器高 == 介质矩阵里那张短纸的高（只改 CSS 不改矩阵、或反过来 ⇒ 必红）
+        if page_name not in named:
             problems.append(
-                f"G6 注释声明「每行 {got_line}mm」，但按现取 `{font.group(1)}pt × {font.group(2)}` 复算 = "
-                f"{expect_line:.3f}mm ⇒ 注释没跟着字号/行高重算"
+                f"G9 容器声明 `page: {page_name}`，但源码里没有 `printNamedPageRule('{page_name}', '<介质id>')`"
+                " —— 命名页缺失 ⇒ 专属唛会按文档级 @page 分页（两种纸高并存失效）"
+            )
+        else:
+            media_id = named[page_name]
+            spec = _spec(media_id)
+            expect_h = _box_height_mm(spec)
+            if abs(option_h - expect_h) > LINES_TOLERANCE_MM:
+                problems.append(
+                    f"G8 `.task-card-label--option` 高 {option_h:g}mm，但命名页介质 `{media_id}` 的"
+                    f" pageBoxMm 高是 {expect_h:g}mm ⇒ 容器与纸型不是同一张纸（两种纸长 = 两种标签纸）"
+                )
+            # G9：命名页名与 CSS 的 `page:` 一致，且介质登记的是「Wmm Hmm」可解析值
+            size_w, size_h = _page_mm_from_matrix(media_id)
+            if abs(size_h - option_h) > LINES_TOLERANCE_MM or abs(size_w - label_w) > LINES_TOLERANCE_MM:
+                problems.append(
+                    f"G9 命名页 `@page {page_name}` 的纸型 {size_w:g}mm × {size_h:g}mm 与容器"
+                    f"（{label_w:g}mm 宽 / {option_h:g}mm 高）不一致 —— 命名 @page 必须与介质矩阵逐字一致"
+                )
+
+    # G10：专属唛的**预算注释段**（缺段 / 读数与代码脱节 ⇒ 红）
+    if not option_header.strip():
+        problems.append(
+            f"G10 文件头没有专属唛预算段（标记 `{OPTION_BUDGET_MARK}`）—— 专属唛的短纸型读数与代码脱节"
+            "（改了纸高却没人重算预算 = #4946 的老病）"
+        )
+    elif option_h is not None and pad_x is not None and pad_y is not None:
+        problems.extend(
+            _budget_identities(
+                option_header,
+                width_mm=label_w,
+                height_mm=option_h,
+                pad_x=pad_x,
+                pad_y=pad_y,
+                font_pt=font_pt,
+                line_height=line_height,
+                tag="G10",
+            )
+        )
+        # 整张预算的比较式必须拿**这张短纸**的高（写成 140mm ⇒ 必红）
+        if f"≤ {option_h:g}mm" not in option_header:
+            problems.append(
+                f"G10 专属唛预算注释没有 `≤ {option_h:g}mm` 比较式 —— 预算必须对**这张短纸**成立"
+                "（写成 140mm 那张 ⇒ 专属唛的纸长就又成了一句空话）"
             )
 
     return problems
@@ -288,6 +435,23 @@ def test_g0_anti_noop_geometry_is_parsed_and_nonempty():
     page_w, page_h, label_w, label_h = _geometry(src, _css_block(src))
     assert page_w > 0 and page_h > 0 and label_w > 0 and label_h > 0, (
         f"几何解析出非正数：page={page_w}×{page_h} label={label_w}×{label_h}"
+    )
+    # 反空跑锚点（issue #8107）：专属唛的短纸型 / 命名页 / 专属预算段**都真解析出来了** ——
+    # 否则 G8~G10 是一组空判据（文件里没有这些东西时它们只会生产「缺失」类问题，看起来一样红）
+    option = _OPTION_RE.search(_css_block(src))
+    assert option is not None, "`.task-card-label--option` 解析失败 ⇒ G8 无从判定"
+    assert float(option.group(1)) > 0, "专属唛容器高解析出非正数"
+    named = dict(_NAMED_PAGE_CALL_RE.findall(src))
+    assert option.group(2) in named, "容器声明的命名页在源码里找不到 ⇒ G9 无从判定"
+    assert _box_height_mm(_spec(named[option.group(2)])) > 0, "命名页介质的纸高解析出非正数"
+    assert _budget_regions(_header(src))[1].strip(), "专属唛预算段为空 ⇒ G10 无从判定"
+
+
+def test_g8_g10_option_label_short_paper_and_budget_are_consistent():
+    """真值侧（issue #8107）：专属唛的短纸型 = 矩阵 `label-50x100`、命名 @page 与它同源、预算可复算。"""
+    problems = _problems(_read(LABEL_SRC))
+    assert problems == [], (
+        f"`{LABEL_SRC}` 专属唛几何/预算违规：\n  " + "\n  ".join(problems)
     )
 
 
@@ -330,3 +494,52 @@ def test_g7_injected_geometry_drift_is_red():
     assert injected_d != css, "找不到 `line-height: 1.2` 注入点 ⇒ 本红证会**空跑**"
     injected_d_src = src.replace(css, injected_d, 1)
     assert _problems(injected_d_src), "改行高后判据**没判红** ⇒ G6 是空判据"
+
+
+# ── G11：专属唛短纸型（issue #8107）的注入式红证 ─────────────────────────────
+
+def test_g11_injected_option_label_regressions_are_red():
+    """G11：专属唛高改回 140 / 删命名页 / 删专属预算段 / 改预算读数 ⇒ 判据必红（内容指纹自证注入生效）。"""
+    src = _read(LABEL_SRC)
+    assert _problems(src) == [], "原文件本应干净（G1~G10 已单独判）—— 这里先红说明判据或预期已变"
+
+    css = _css_block(src)
+    option = _OPTION_RE.search(css)
+    assert option is not None, "找不到 `.task-card-label--option { … }` 注入点 ⇒ 本红证会**空跑**"
+    page_name = option.group(2)
+    option_h = float(option.group(1))
+    named_media = dict(_NAMED_PAGE_CALL_RE.findall(src))[page_name]
+    assert named_media != "", "找不到命名页的介质 id ⇒ 本红证会**空跑**"
+
+    # 注入 A：把专属唛容器高改回常规唛那张（140mm）⇒ G8 必红
+    injected_a = src.replace(
+        f"height: {option_h:g}mm; page: {page_name}",
+        "height: 140mm; page: wash-label-option",
+        1,
+    )
+    assert injected_a != src, "找不到专属唛容器高的注入点 ⇒ 本红证会**空跑**"
+    assert _fingerprint(injected_a) != _fingerprint(src), "注入 A 后内容指纹未变（**禁 mtime/size**）"
+    assert any("G8" in p for p in _problems(injected_a)), "专属唛高改回 140mm 却没判红 ⇒ G8 是空断言"
+
+    # 注入 B：删掉命名 `@page` ⇒ G9 必红（专属唛会按文档级 @page 分页 = 两种纸高并存失效）
+    injected_b = _NAMED_PAGE_CALL_RE.sub("", src)
+    assert injected_b != src, "找不到 `printNamedPageRule(...)` 注入点 ⇒ 本红证会**空跑**"
+    assert _fingerprint(injected_b) != _fingerprint(src), "注入 B 后内容指纹未变"
+    assert any("G9" in p for p in _problems(injected_b)), "删掉命名页却没判红 ⇒ G9 是空断言"
+
+    # 注入 C：删掉专属唛预算段的标记（= 「删掉专属唛预算注释」的形态）⇒ G10 必红
+    assert OPTION_BUDGET_MARK in src, "找不到专属唛预算段标记 ⇒ 本红证会**空跑**"
+    injected_c = src.replace(OPTION_BUDGET_MARK, "", 1)
+    assert injected_c != src, "找不到专属唛预算段标记的注入点 ⇒ 本红证会**空跑**"
+    assert _fingerprint(injected_c) != _fingerprint(src), "注入 C 后内容指纹未变"
+    assert any("G10" in p for p in _problems(injected_c)), "删掉专属唛预算段却没判红 ⇒ G10 是空断言"
+
+    # 注入 D：把专属唛预算段的「可用 Xmm」改成常规唛那张的可用高 ⇒ G10 恒等式必红
+    region = _budget_regions(_header(src))[1]
+    got_avail = _declared(region, "可用")
+    assert got_avail is not None, "专属唛预算段没写「可用 …mm」⇒ 本红证会**空跑**"
+    declared = f"可用 {got_avail:g}mm"
+    assert declared in region, f"找不到注入点「{declared}」⇒ 本红证会**空跑**"
+    injected_d = src.replace(declared, f"可用 {got_avail + 40:g}mm", 1)
+    assert _fingerprint(injected_d) != _fingerprint(src), "注入 D 后内容指纹未变"
+    assert any("G10" in p for p in _problems(injected_d)), "专属唛预算读数被改却没判红 ⇒ G10 恒等式是空断言"

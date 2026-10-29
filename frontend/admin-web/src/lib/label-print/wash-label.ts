@@ -1,5 +1,6 @@
 /**
- * 水洗唛**位图版式**（issue #6439 建立 → #6656 与系统打印同一份纸面 → **2026-10-28（issue #7979）固定纸型 50×140**）。
+ * 水洗唛**位图版式**（issue #6439 建立 → #6656 与系统打印同一份纸面 → **2026-10-28（issue #7979）固定纸型 50×140**
+ * → **2026-10-29（issue #8107）专属唛改用短纸 50×100**）。
  *
  * ## 与系统打印的关系（issue #6656 的核心，别改回去）
  *
@@ -31,6 +32,11 @@
  * - **2026-10-28（issue #8002，专属唛）**：`WashLabelInput.optionLabel`（余料带回 / 绑带）⇒
  *   抬头副标题 `成品定制 · 余料带回`（12pt 加粗）；企业名缺值也照画（标记不能依赖企业名）。
  *   张数 / 张序由 `lib/wash-label-content.ts::washLabelSheets` 派生，本文件只排一张纸。
+ * - **2026-10-29（issue #8107，专属唛短纸）**：专属唛只印 5 行 + 二维码（内容面由 `washLabelRows`
+ *   的 `variant: 'option'` 决定）⇒ 纸长由 140mm 收到 **100mm**（介质 `label-50x100`）。
+ *   🔴 **纸型按 `input.media` 取**（不再一律读 `label-50x140` 常量）：同一批出纸里两种纸长并存
+ *   —— 本文件按每张自己的纸算版式，画布高由 `render.ts` 逐张按同一份 media 开。
+ *   常规唛仍是 50mm × 140mm，一字未改。
  * - 「字体还是太小，可以再大一点」⇒ 正文 9pt → **12pt**（抬头 14pt / 副标题 10pt）；
  * - 「二维码放到底部居中」「移除扫码报工和短码文字」「二维码可以放大一点」⇒ 底部只有**居中**二维码
  *   （80 CSS px = 21.17mm），不再画短码与说明字；
@@ -79,8 +85,14 @@ import {
 
 export type { WashLabelInput, WashLabelRow }
 
-/** 两条通道**同一份介质**（系统打印的 `@page` 与直连的画布都指它）—— 这是 #6656 的核心 */
+/** 两条通道**同一份介质**（系统打印的 `@page` 与直连的画布都指它）—— 这是 #6656 的核心。
+ *  ⚠️ 它是**常规唛**那张纸；专属唛读 `WashLabelInput.media`（issue #8107，缺省回落到本常量）。 */
 export const WASH_LABEL_MEDIA: PrintMediaId = 'label-50x140'
+
+/** 该张纸用的介质（issue #8107）：专属唛 = `label-50x100`、其余 = 常规唛那张 */
+export function washLabelMediaOf(input?: WashLabelInput | null): PrintMediaId {
+  return input?.media ?? WASH_LABEL_MEDIA
+}
 
 /** 机器自报的打印参数（`getPrinterInfo()` 的子集） */
 export interface LabelPrinterInfoLike {
@@ -134,12 +146,15 @@ const ptToPx = (pt: number, dpmm: number): number => Math.max(1, Math.round((pt 
  *
  * @param printer   机器自报参数（未连上传 null/undefined ⇒ 用矩阵兜底）
  * @param paperWidthMm 纸宽（mm）；取「纸宽 × dpmm」与**打印头宽度**的**较小者**（不越纸、不越头）
+ * @param media     纸型（issue #8107：常规唛 `label-50x140` / 专属唛 `label-50x100`；缺省 = 常规唛）
  *
- * 纸长**不由调用方给**（issue #7816）：固定 = 介质矩阵的 `pageBoxMm.heightMm`（140mm ⇒ 1120px）。
+ * 纸长**不由调用方给**（issue #7816）：固定 = 该介质的 `pageBoxMm.heightMm`
+ * （常规唛 140mm ⇒ 1120px；专属唛 100mm ⇒ 800px）。
  */
 export function resolveLabelGeometry(
   printer?: LabelPrinterInfoLike | null,
   paperWidthMm?: number | null,
+  media: PrintMediaId = WASH_LABEL_MEDIA,
 ): LabelDotGeometry {
   const dpi = positive(printer?.printerDPI) ?? LABEL_DPI_DEFAULT
   const headDots = positive(printer?.printerWidth) ?? LABEL_HEAD_DOTS_DEFAULT
@@ -148,7 +163,7 @@ export function resolveLabelGeometry(
   return {
     dpmm,
     widthPx: Math.min(Math.round(byPaper * dpmm), headDots),
-    heightPx: Math.round(WASH_LABEL_DEFAULT_LENGTH_MM * dpmm),
+    heightPx: Math.round(printPageBoxMm(media).heightMm * dpmm),
   }
 }
 
@@ -263,6 +278,10 @@ function placeholderHintLines(
  * 版式（**纯函数**）：抬头在上、正文块居中、底部 = **居中二维码**（issue #7816；
  * 不再有加工单号行 / 扫码报工 / 人可读短码）。
  *
+ * 🔴 **纸高按 `input.media` 取**（issue #8107）：专属唛 = `label-50x100`（100mm ⇒ 800px）、
+ * 常规唛 = `label-50x140`（140mm ⇒ 1120px）—— 不再一律读常量（否则专属唛会被按 140mm 排版，
+ * 内容与画布高度对不上，而两条通道都不会报错）。纸宽仍由 `geometry` 给（受打印头钳制）。
+ *
  * @throws WashLabelLayoutError 纸宽连内边距都放不下（fail-closed，**不静默**）
  */
 export function layoutWashLabel(
@@ -270,7 +289,9 @@ export function layoutWashLabel(
   geometry: LabelDotGeometry,
   measure: TextMeasure,
 ): WashLabelLayout {
-  const { dpmm, widthPx, heightPx } = geometry
+  const { dpmm, widthPx } = geometry
+  // 纸长 = 该张自己的介质（issue #8107）；`geometry.heightPx` 不再决定纸面高度
+  const heightPx = Math.round(printPageBoxMm(washLabelMediaOf(input)).heightMm * dpmm)
   const mm = (value: number) => value * dpmm
   const margin = Math.round(mm(LABEL_PADDING_MM))
   // 顶部留白（用户 2026-10-28「顶部需要让最顶端的字体上面留白15」）—— 与系统打印的
@@ -376,7 +397,7 @@ export function layoutWashLabel(
           ),
         }
 
-  return { geometry, margin, topBlank, company, lines, qr, qrPlaceholder }
+  return { geometry: { ...geometry, heightPx }, margin, topBlank, company, lines, qr, qrPlaceholder }
 }
 
 /** 绘制上下文的最小面（只取本模块要用的那几个 —— 假 ctx 因此可测） */

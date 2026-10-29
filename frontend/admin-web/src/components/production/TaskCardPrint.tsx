@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { QRCodeSVG } from 'qrcode.react'
-import { printPageRule } from '@/lib/print-media'
+import { printNamedPageRule, printPageBoxMm, printPageRule } from '@/lib/print-media'
 import { cn } from '@/lib/utils'
 import type { PrintTarget } from '@/lib/print-doc'
 // 纸面**内容**的单一真值（issue #6656）：本组件与免驱动直连通道（`lib/label-print/*`）读
@@ -12,6 +12,7 @@ import type { PrintTarget } from '@/lib/print-doc'
 // 取值口径（工艺规格 → `lib/craft-display.ts`、套序 → `groupBySet`）全在这个模块里，本文件不再自己派生。
 import {
   WASH_LABEL_COMPANY_SUBTITLE,
+  WASH_LABEL_REGULAR_MEDIA,
   washLabelCompanyName,
   washLabelRows,
   washLabelSheets,
@@ -87,6 +88,16 @@ import type { ProcessingOrderItem, ProductionPosition } from '@/types'
  * → 底部**居中二维码**（80 CSS px = 21.17mm）。
  * 一行粒度 = 一部位（商品行）**一张 × 开数份**；专属唛 = **每套每类别 1 张**（不乘开数，排在常规唛之后）。
  *
+ * - **2026-10-29（issue #8107，专属唛瘦身）**：用户逐字「余料带回和绑带的水洗唛打印功能中，用户反馈
+ *   打印的信息太多了，可以适当删减，保留货号，门幅，宽高，工艺和特殊选项 + 二维码即可」
+ *   「把长度再缩减一些，能放下以上信息即可」⇒ ① **专属唛只印 5 行 + 二维码**（货号 / 门幅 / 宽高 /
+ *   工艺 / 特殊选项；行集合 = `wash-label-content.ts::WASH_LABEL_OPTION_ROW_KEYS`，抬头照旧是
+ *   「这张纸属于哪个特殊选项」的标记）；② **专属唛用自己的短纸 50mm × 100mm**
+ *   （介质 `label-50x100`；同一次出纸里两种纸高靠 **CSS 命名页** `@page wash-label-option` 并存，
+ *   见 `printNamedPageRule`）。🔴 **常规唛一字不改**：50mm × 140mm / 15 行。
+ *   ⛔ 退场行（专属唛上不得出现）：单号 / 客户 / 套序 / 帘种 / 安装小区 / 安装位置 / 用料 / 褶法 /
+ *   备注 / 布料批次 —— 它们由内容模块的行集合决定，本文件**不自己挑行**（单源守卫 SS9）。
+ *
  * 🔴 **退场项（历次字段裁定未选，勿"顺手加回"）**：
  *   ① **工序摘要** —— 工人扫部位码后在 H5 看该部位工序清单（`#4967`），纸面不印；
  *   ② **完整套号**（`JG-…-001`）—— 与加工单号重复，纯占纸面；
@@ -120,6 +131,17 @@ import type { ProcessingOrderItem, ProductionPosition } from '@/types'
  * **继续降字号 / 再抬纸长 / 减字段** —— 都是用户裁定项，**不要在本文件里偷偷调**。
  * 🔴 **折行印全文（issue #7833）**：行里**没有** `truncate` / `line-clamp-*`（省略号 = 静默吃掉半截字），
  * 长值（客户 / 部位 / 货号 / 加工方式 / 特殊选项 / 备注 / 布料批次）一律折行。
+ *
+ * ##### 【专属唛预算】（issue #8107，可复算；守卫 G8~G11 按本节读数复算）
+ *
+ * 专属唛（`.task-card-label--option`）纸型 = **50mm × 100mm**（真值源 = `label-50x100`；
+ * 命名页 = `@page wash-label-option`，由 `printNamedPageRule` 从矩阵取，本文件不写第二份纸型）。
+ * 版心宽 47.6mm（= 50 − 2 × 1.2 内边距，与常规唛同宽）；可用 70mm（= 100 − 15 上留白 − 15 下净空）；
+ * 每行 4.6567mm（正文 11pt × 行高 1.2）；抬头块 11.01mm（14pt + 12pt，行高 1.2）；
+ * 二维码 21.17mm（80 CSS px）、块距 0.5mm × 2。
+ * 满字段 5 行 = 11.01 + 0.5 + 5 × 4.6567 + 0.5 + 21.17 = **56.46mm ≤ 70mm**
+ * ⇒ 整张 ≈ 15 + 56.46 + 15 = **86.46mm ≤ 100mm**（余 13.54mm ≈ 2.9 行 ⇒ **可容 7 行**：
+ * 工艺 / 特殊选项各折一次仍装得下；再多即裁尾部文字，二维码永不被裁且离底虚线恒 15mm）。
  *
  * 打印隔离沿用项目既有范式（见 `frontend/admin-web/src/components/orders/ShipmentDoc.tsx` 文件头的 6 条约束）：
  * 1. **屏幕隐藏、打印可见**：页面已有屏幕布局，本组件 `display:none` + `@media print` 显形；
@@ -259,6 +281,8 @@ export default function TaskCardPrint({
             setNo: 1,
             setCount: 1,
             optionLabel: null,
+            variant: 'regular',
+            media: WASH_LABEL_REGULAR_MEDIA,
             subtitle: WASH_LABEL_COMPANY_SUBTITLE,
             qrValue: null,
           },
@@ -276,6 +300,9 @@ export default function TaskCardPrint({
           setCount: sheet.setCount,
           customerName,
           processingOrderNo,
+          // 🔴 行集合（常规 15 行 / 专属唛 5 行）由内容模块的 `sheet.variant` 决定（issue #8107）——
+          // 渲染器自己按 optionLabel 挑行 = 第二份行集合口径（单源守卫 SS9 判红）
+          variant: sheet.variant,
         })
       : [],
   )
@@ -287,7 +314,16 @@ export default function TaskCardPrint({
     >
       {/* 🔴 纸型规则**只在本次打印目标为本单据时**进文档（issue #5914 的 P1-2）：
           `@page` 是**文档级**规则 —— 同页多份单据并存时**最后声明的那条赢**。 */}
-      {printTarget === 'labels' && <style>{printPageRule('label-50x140')}</style>}
+      {printTarget === 'labels' && (
+        <>
+          <style>{printPageRule('label-50x140')}</style>
+          {/* 🔴 专属唛的**命名页**（issue #8107）：同一次出纸里两种纸高并存 ——
+              常规唛吃上面那条文档级 `@page`（50mm × 140mm），专属唛吃这条
+              `@page wash-label-option`（50mm × 100mm）。尺寸由 `printNamedPageRule` 从介质矩阵取，
+              本文件不写第二份纸型（守卫 G9 把命名页与矩阵逐字比对）。 */}
+          <style>{printNamedPageRule('wash-label-option', 'label-50x100')}</style>
+        </>
+      )}
       <style>{`
         .task-card-print-area { display: none; }
         /* 水洗唛本体：固定 50mm × 140mm（issue #7979，2026-10-28 用户裁定），超出一律裁掉（纸面只有这么大）。
@@ -303,6 +339,11 @@ export default function TaskCardPrint({
           break-after: page; page-break-after: always; }
         /* 最后一张不再分页（否则末尾多吐一张空白） */
         .task-card-label:last-child { break-after: auto; page-break-after: auto; }
+        /* 专属唛（余料带回 / 绑带，issue #8107）：只印 5 行 + 二维码 ⇒ 短纸 50mm × 100mm。
+           宽度 / padding / 字号 / 二维码**与基类同值**（上面那条），只有纸高与命名页不同 ——
+           命名页让同一份打印任务里两种纸高并存（尺寸见 printNamedPageRule，本文件不写第二份）。
+           ⚠️ 这段注释在模板字面量里 ⇒ 不许写 markdown 星号（copy-no-markdown-emphasis 判据会红） */
+        .task-card-label--option { height: 100mm; page: wash-label-option; }
         @media print {
           body > *:not(.print-doc) { display: none !important; }
           /* 🔴 只有「本次目标」上纸（issue #5914）：否则打印会同时吐出别的单据的版面 */
@@ -320,12 +361,17 @@ export default function TaskCardPrint({
       {sheets.map((sheet, sheetIndex) => {
         const { position } = sheet
         const rows = rowsBySheet[sheetIndex] ?? []
+        // 该张自己的纸型（issue #8107：常规 50×140 / 专属唛 50×100）——
+        // 打印预览的纸面自检按**每张自己的纸高**判溢出，读的就是这里，不用文档级单一 limit
+        const paper = printPageBoxMm(sheet.media)
 
         return (
           <div
             key={`${position?.order_item_id ?? 'label'}-${sheetIndex}`}
-            className="task-card-label"
+            className={cn('task-card-label', sheet.variant === 'option' && 'task-card-label--option')}
             data-print-sheet
+            data-sheet-paper-mm={`${paper.widthMm}x${paper.heightMm}`}
+            {...(sheet.variant === 'option' ? { 'data-sheet-note': '专属唛' } : {})}
             data-testid={`task-card-label-${sheetIndex}`}
           >
             {/* ① 纸面抬头（用户 2026-10-25 裁定照参考工单「亿家纺织 / 成品定制」的形态）：

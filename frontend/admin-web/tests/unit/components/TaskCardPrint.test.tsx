@@ -28,7 +28,8 @@ import type { ComponentProps } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import TaskCardPrint from '@/components/production/TaskCardPrint'
-import { washLabelRows } from '@/lib/wash-label-content'
+import { WASH_LABEL_OPTION_MEDIA, WASH_LABEL_REGULAR_MEDIA, washLabelRows } from '@/lib/wash-label-content'
+import { printPageBoxMm } from '@/lib/print-media'
 import {
   WASH_LABEL_BOTTOM_CLEARANCE_MM,
   WASH_LABEL_PADDING_MM,
@@ -515,9 +516,11 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×140mm 单列，issue #7979）',
     // 张序（issue #8074，用户 2026-10-29「每套连续排版，不要拆开」）：
     // 第 1 套 = 布 ×2 + 纱 ×1 → 余料 / 绑带；第 2 套 = 帘头 ×3（改前：专属唛整体追加到最后）
     const extra = labels[3]
-    expect(within(extra).getByTestId('task-card-label-special-options-3')).toHaveTextContent(
-      '特殊选项: 余料带回-布、布绑带',
-    )
+    // 🔴 issue #8107：专属唛的「特殊选项」行印**展示名**（`余料带回-布` ⇒ `余料带回`）——
+    // 展示归一属 issue #8007（全系统），纸面不能与界面不一致；「绑带」那一档由 #8108 归一，
+    // 故这里只钉 `余料带回` 且**不锁** `布绑带` 的最终形态（两包合并后自然读作 `余料带回、绑带`）
+    expect(within(extra).getByTestId('task-card-label-special-options-3')).toHaveTextContent('特殊选项: 余料带回')
+    expect(within(extra).getByTestId('task-card-label-special-options-3')).not.toHaveTextContent('余料带回-布')
     expect(within(extra).getByTestId('task-card-qr').querySelector('title')?.textContent).toBe(SCAN_BL)
     expect(within(labels[4]).getByTestId('task-card-option-label')).toHaveTextContent('成品定制 · 绑带')
     // 第 2 套从第 6 张开始 —— 专属唛不得再被排到它之后
@@ -539,6 +542,78 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×140mm 单列，issue #7979）',
     expect(within(headers[0]).queryByText('亿家纺织')).toBeNull()
     // 专属唛也带本部位的码（与常规唛同一个码，不做第二套码）；第 1 套专属唛紧跟本套常规唛（#8074）
     expect(within(screen.getByTestId('task-card-label-3')).getByTestId('task-card-qr')).toBeTruthy()
+  })
+
+  it('🔴 专属唛瘦身（issue #8107）：那张纸**只有 5 行** + 二维码、纸型 50mm × 100mm（命名页），常规唛仍是 140mm / 15 行', () => {
+    companyNameStub.value = '亿家纺织'
+    const optionItems = [
+      { ...items[0], specialOptions: ['余料带回-布'] },
+      items[1],
+    ] as unknown as ProcessingOrderItem[]
+    printCard({ items: optionItems })
+
+    // 张序：第 1 套 = 布 ×2 + 纱 ×1 → 余料 ×1；第 2 套 = 帘头 ×3 ⇒ 共 7 张，专属唛 = 第 4 张（0 起 = 3）
+    const labels = screen.getAllByTestId(/^task-card-label-\d+$/)
+    expect(labels).toHaveLength(7)
+    const option = labels[3]
+    const regularPaper = printPageBoxMm(WASH_LABEL_REGULAR_MEDIA)
+    const optionPaper = printPageBoxMm(WASH_LABEL_OPTION_MEDIA)
+
+    // ① 类 + 该张自己的纸型（打印预览按 `data-sheet-paper-mm` 判每张的溢出）
+    expect(option.className).toContain('task-card-label--option')
+    expect(option.getAttribute('data-sheet-paper-mm')).toBe(`${optionPaper.widthMm}x${optionPaper.heightMm}`)
+    expect(option.getAttribute('data-sheet-note')).toBe('专属唛')
+    for (const regular of labels.slice(0, 3)) {
+      expect(regular.className).not.toContain('task-card-label--option')
+      expect(regular.getAttribute('data-sheet-paper-mm')).toBe(
+        `${regularPaper.widthMm}x${regularPaper.heightMm}`,
+      )
+      expect(regular.getAttribute('data-sheet-note')).toBeNull()
+    }
+
+    // ② 行集合**恰好 5 行**（逐 `data-testid`）：货号 / 门幅 / 宽高 / 工艺 / 特殊选项
+    const rowsBlock = within(option).getByTestId('task-card-label-rows-3')
+    expect(Array.from(rowsBlock.children).map((el) => el.getAttribute('data-testid'))).toEqual([
+      'task-card-label-color-3',
+      'task-card-label-door-width-3',
+      'task-card-label-size-3',
+      'task-card-label-craft-3',
+      'task-card-label-special-options-3',
+    ])
+    // 退场行**一条都取不到**（改回全字段 ⇒ 必红；行集合由内容模块决定，渲染器不自己挑）
+    for (const gone of [
+      'doc-no',
+      'customer',
+      'set-no',
+      'kind',
+      'install-community',
+      'install-room',
+      'meters',
+      'pleats',
+      'remark',
+      'batch-no',
+    ]) {
+      expect(within(option).queryByTestId(`task-card-label-${gone}-3`), `专属唛不得印「${gone}」`).toBeNull()
+    }
+
+    // ③ 抬头标记保留（它是「这张纸属于哪个特殊选项」的标记），且这张仍有自己的码
+    expect(within(option).getByTestId('task-card-option-label')).toHaveTextContent('成品定制 · 余料带回')
+    expect(within(option).getByTestId('task-card-qr').querySelector('title')?.textContent).toBe(SCAN_BL)
+
+    // ④ 常规唛**一字未改**：仍是 140mm 那张、15 行
+    expect(within(labels[0]).getByTestId('task-card-label-rows-0').children).toHaveLength(15)
+    expect(within(labels[0]).getByTestId('task-card-label-batch-no-0')).toHaveTextContent('布料批次')
+
+    // ⑤ 命名 `@page` 在文档里，且与文档级 `@page` **并存**（同一份打印任务两种纸高）
+    const css = Array.from(printArea().querySelectorAll('style'))
+      .map((el) => el.textContent || '')
+      .join('\n')
+    expect(css).toContain('@page wash-label-option { size: 50mm 100mm; margin: 0; }')
+    expect(css).toContain('@page { size: 50mm 140mm; margin: 0; }')
+    expect(css).toContain('.task-card-label--option { height: 100mm; page: wash-label-option; }')
+    // 基类仍是 140mm（两类同宽 / 同 padding / 同字号，只有纸高与命名页不同）
+    expect(css).toContain('.task-card-label { width: 50mm; height: 140mm;')
+    companyNameStub.value = ''
   })
 
   it('打印样式：@page 50mm×140mm（竖版）+ 标签本体 50mm×140mm + 上下各留白 15mm（码距底虚线 15mm）+ 正文 11pt + 逐张分页（最后一张不分页）', () => {

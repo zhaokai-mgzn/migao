@@ -109,7 +109,16 @@ export interface PrintMediaSpec {
  * `tests/unit/lib/print-media.test.ts` 钉住：只改一边 ⇒ 必红（否则新增介质会静默地
  * 「矩阵里有、类型上没有」，调用方只能写 `as any` 绕过类型）。
  */
-export const PRINT_MEDIA_IDS = ['a4', 'label-50x140', 'label-50x70', 'label-50x80', 'continuous-241x140'] as const
+export const PRINT_MEDIA_IDS = [
+  'a4',
+  'label-50x140',
+  // issue #8107：水洗唛**专属唛**（余料带回 / 绑带，只印 5 行 + 二维码）的短纸型 ——
+  // 与 `label-50x140` 是同一台机、同一条 50mm 卷，只有纸长不同（两种纸长 = 两种标签纸）
+  'label-50x100',
+  'label-50x70',
+  'label-50x80',
+  'continuous-241x140',
+] as const
 
 export type PrintMediaId = (typeof PRINT_MEDIA_IDS)[number]
 
@@ -169,6 +178,23 @@ export function printDotGeometry(media: PrintMediaId): PrintDotGeometry {
 export function printPageRule(media: PrintMediaId): string {
   const spec = printMediaSpec(media)
   return `@page { size: ${spec.pageSize}; margin: ${spec.pageMargin}; }`
+}
+
+/**
+ * **命名** `@page` 规则的唯一写法（issue #8107）—— 同一份打印任务里**两种纸高并存**时用它。
+ *
+ * 例：`printNamedPageRule('wash-label-option', 'label-50x100')`
+ * ⇒ `@page wash-label-option { size: 50mm 100mm; margin: 0; }`，容器上写 `page: wash-label-option`
+ *   ⇒ 那种纸按自己的尺寸分页；未命名的那一部分仍吃文档级 `@page`（{@link printPageRule}）。
+ *
+ * 🔴 尺寸/边距**只从矩阵取**（本函数是第二个出口、不是第二份真值）：
+ * 守卫 `tests/unit_ci_workflows/test_wash_label_geometry_guard.py` 把命名页与矩阵逐字比对。
+ * 实测（Chromium，`page.pdf({preferCSSPageSize:true})`）：同一次出纸接受混合页高
+ * （验收读数见 `acceptance/2026-10-29-8107-option-label/`）。
+ */
+export function printNamedPageRule(name: string, media: PrintMediaId): string {
+  const spec = printMediaSpec(media)
+  return `@page ${name} { size: ${spec.pageSize}; margin: ${spec.pageMargin}; }`
 }
 
 /** 正文基准字号（pt）：介质决定版面预算，单据只读它、不自己定字号 */

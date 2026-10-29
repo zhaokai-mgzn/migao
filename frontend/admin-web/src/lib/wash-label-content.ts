@@ -28,6 +28,11 @@
  */
 import { craftSpecRows, type CraftSpecRow } from './craft-display'
 import { processingComboNames } from './processing-combo'
+// 特殊选项的**展示名**归一（issue #8007 的全系统展示归一）：纸面不能与界面不一致 ——
+// `余料带回-布` ⇒ `余料带回`。映射只在 `order-craft-fields.ts` 一处，本模块不另写一份。
+import { specialOptionDisplayOptions } from './order-craft-fields'
+// 纸型 id 的**类型**（取值由介质矩阵给，`lib/print-media.json`；本模块不写第二份纸型字面量）
+import type { PrintMediaId } from './print-media'
 import { groupBySet } from '@/components/production/ProductionProgressTable'
 import type { ProcessingOrderItem, ProductionPosition } from '@/types'
 
@@ -105,6 +110,30 @@ export const WASH_LABEL_ROW_KEYS: readonly WashLabelRowKey[] = [
   // 布料批次：xxx」）—— 位置就是用户给的「最下面」，排到别处（例如紧跟货号）不算做到。
   'batchNo',
 ]
+
+/**
+ * **特殊选项专属唛**的纸面行集合（issue #8107，用户 2026-10-29 逐字）：
+ *
+ * > 「余料带回和绑带的水洗唛打印功能中，用户反馈打印的信息太多了，可以适当删减，
+ * >   保留货号，门幅，宽高，工艺和特殊选项 + 二维码即可」「把长度再缩减一些，能放下以上信息即可」
+ *
+ * 顺序即纸面顺序：**货号 / 门幅 / 宽高 / 工艺 / 特殊选项**（5 行）+ 底部二维码；
+ * 抬头保留（它是「这张纸属于哪个特殊选项」的标记）。
+ *
+ * 🔴 **常规唛的 `WASH_LABEL_ROW_KEYS` 一字不改**（15 行）—— 专属唛只是它的**子集**，
+ * 取值仍走同一条 `push()` 链（不另写推导）；退场行 = 单号 / 客户 / 套序 / 帘种 / 安装小区 /
+ * 安装位置 / 用料 / 褶法 / 备注 / 布料批次。
+ */
+export const WASH_LABEL_OPTION_ROW_KEYS: readonly WashLabelRowKey[] = [
+  'color',
+  'doorWidth',
+  'size',
+  'craft',
+  'specialOptions',
+]
+
+/** 纸面变体：`regular` = 常规唛（全字段）；`option` = 特殊选项专属唛（{@link WASH_LABEL_OPTION_ROW_KEYS}） */
+export type WashLabelVariant = 'regular' | 'option'
 
 /**
  * 纸面单号 = 加工单号**去掉 `JG-` 前缀**（用户 2026-10-26 逐字「加工单号不要带 JG- 了，简约点」）。
@@ -191,7 +220,10 @@ export function washLabelMeters(item?: ProcessingOrderItem | null): string {
  * 「把特殊选项，备注也加上」：两者是不同来源的两种事实，合并后纸上分不出哪句是哪类）。
  */
 export function washLabelSpecialOptions(item?: ProcessingOrderItem | null): string {
-  return washLabelSpecialOptionNames(item).join('、')
+  // 🔴 纸面印**展示名**、不印落库键（issue #8007：展示归一「适用于全系统」）——
+  // `余料带回-布` ⇒ `余料带回`；映射只在 `order-craft-fields.ts::specialOptionDisplayName` 一处，
+  // 纸面与界面因此永远同一个词（各写一份归一 ⇒ 改一处另一处不会红）。
+  return specialOptionDisplayOptions(washLabelSpecialOptionNames(item)).join('、')
 }
 
 /**
@@ -244,7 +276,13 @@ export function washLabelOptionGroupsOf(
   const groups: { label: WashLabelOptionLabel; options: string[] }[] = []
   for (const group of WASH_LABEL_OPTION_GROUPS) {
     const hit = group.options.filter((option) => names.includes(option))
-    if (hit.length > 0) groups.push({ label: group.label, options: hit })
+    if (hit.length > 0) {
+      groups.push({ label: group.label, options: hit })
+      continue
+    }
+    // 🔴 **额外认语义名**（`余料带回` / `绑带`，issue #8107）：落库键才是 join key，但 AI / 其它
+    // 写入口可能直接写语义名 ⇒ 只认落库键会让那种数据**永远不出专属唛且没有任何东西变红**。
+    if (names.includes(group.label)) groups.push({ label: group.label, options: [group.label] })
   }
   return groups
 }
@@ -341,6 +379,16 @@ export interface WashLabelRowsInput {
   companyName?: string | null
   /** 加工单号（纸面第一行的「单号」；issue #7833 起取代 17 位订单号） */
   processingOrderNo?: string | null
+  /**
+   * 纸面变体（issue #8107，缺省 `regular`）：
+   * - `regular` = 常规唛 ⇒ 全部行（{@link WASH_LABEL_ROW_KEYS}）；
+   * - `option` = 特殊选项专属唛（余料带回 / 绑带）⇒ **只保留** {@link WASH_LABEL_OPTION_ROW_KEYS}
+   *   （货号 / 门幅 / 宽高 / 工艺 / 特殊选项 = 5 行 + 底部二维码）。
+   *
+   * 🔴 **取值仍走下面同一套 `push()` 链**：变体只决定「印哪几行」，不另写推导
+   * （另写一份 = 同一字段两处口径，改一处另一处不会红）。
+   */
+  variant?: WashLabelVariant
 }
 
 /**
@@ -436,9 +484,14 @@ export function washLabelRows(input: WashLabelRowsInput): WashLabelRow[] {
 
   // 🔴 算料公式（褶倍公式）**已退场**（issue #7776，用户 2026-10-25 逐字「移除褶倍公式字段展示」）。
 
-  // 行序是纸面契约：即使某几行缺席，剩下的也必须按 `WASH_LABEL_ROW_KEYS` 排
+  // 行序是纸面契约：即使某几行缺席，剩下的也必须按 `WASH_LABEL_ROW_KEYS` 排。
+  // 🔴 issue #8107：专属唛只保留 `WASH_LABEL_OPTION_ROW_KEYS`（货号 / 门幅 / 宽高 / 工艺 / 特殊选项）——
+  //    判定点在本模块（渲染器自己挑行 = 第二份行集合口径）。
+  const kept = input.variant === 'option' ? new Set<WashLabelRowKey>(WASH_LABEL_OPTION_ROW_KEYS) : null
   const order = new Map(WASH_LABEL_ROW_KEYS.map((key, index) => [key, index]))
-  return rows.sort((a, b) => (order.get(a.key) ?? 0) - (order.get(b.key) ?? 0))
+  return rows
+    .filter((row) => kept === null || kept.has(row.key))
+    .sort((a, b) => (order.get(a.key) ?? 0) - (order.get(b.key) ?? 0))
 }
 
 /** 直连通道一张标签要打的东西（= 有序行 + 底部二维码） */
@@ -449,11 +502,30 @@ export interface WashLabelInput {
   companyName?: string
   /** 专属唛标记（`余料带回` / `绑带`）；缺省 / `null` = 普通唛（副标题 = `成品定制`） */
   optionLabel?: WashLabelOptionLabel | null
+  /**
+   * 该张的**纸型**（issue #8107：两种纸长 = 两种标签纸）——
+   * 常规唛 {@link WASH_LABEL_REGULAR_MEDIA}（50×140）、专属唛 {@link WASH_LABEL_OPTION_MEDIA}（50×100）。
+   * 缺省 = 常规唛那张（位图通道据此取纸高，不再一律读常量）。
+   */
+  media?: PrintMediaId
   /** 正文行（有序，来自 {@link washLabelRows}） */
   rows?: WashLabelRow[]
   /** 缺码时的占位文案（默认「待生成」） */
   qrPlaceholderHint?: string
 }
+
+/**
+ * 常规唛的纸型（真值源 = 介质矩阵 `label-50x140`）—— 两条通道同读这一份。
+ */
+export const WASH_LABEL_REGULAR_MEDIA: PrintMediaId = 'label-50x140'
+
+/**
+ * **专属唛**（余料带回 / 绑带）的纸型：`label-50x100`（issue #8107）。
+ *
+ * 只印 5 行 + 二维码 ⇒ 用**短纸**（用户逐字「把长度再缩减一些，能放下以上信息即可」）；
+ * 常规唛仍是 140mm。两种纸长 = 两种标签纸（物理上是两卷纸，不是同一张纸上的两段）。
+ */
+export const WASH_LABEL_OPTION_MEDIA: PrintMediaId = 'label-50x100'
 
 /**
  * 水洗唛的**出纸身份**（issue #8002）—— 两条打印通道（系统打印 / 免驱动直连）都读它：
@@ -472,6 +544,10 @@ export interface WashLabelSheet {
   setCount: number
   /** 专属唛类别；普通唛 = `null` */
   optionLabel: WashLabelOptionLabel | null
+  /** 纸面变体（issue #8107）：常规唛 = `regular`、专属唛 = `option`（渲染器据此挑行，不自己判） */
+  variant: WashLabelVariant
+  /** 该张的**纸型**（issue #8107）：常规唛 50×140、专属唛 50×100 —— 两条通道同读这一份 */
+  media: PrintMediaId
   /** 抬头副标题（普通唛 = `成品定制`；专属唛 = `成品定制 · 余料带回`） */
   subtitle: string
   /** 码 = `scan_url ?? part_token`；两者都没有 ⇒ `null`（不画假码） */
@@ -522,11 +598,23 @@ export function washLabelSheets(input: WashLabelSheetsInput = {}): WashLabelShee
     }
     // 常规唛：份数 = 开数（两条通道读**同一个**函数，不各算一份）
     for (let copy = 0; copy < washLabelCopies(item); copy += 1) {
-      bucket.regular.push({ ...base, optionLabel: null, subtitle: WASH_LABEL_COMPANY_SUBTITLE })
+      bucket.regular.push({
+        ...base,
+        optionLabel: null,
+        variant: 'regular',
+        media: WASH_LABEL_REGULAR_MEDIA,
+        subtitle: WASH_LABEL_COMPANY_SUBTITLE,
+      })
     }
-    // 专属唛：每套每类别 1 张，**不随开数翻倍**
+    // 专属唛：每套每类别 1 张，**不随开数翻倍**；纸型 = 短纸（issue #8107）
     for (const group of washLabelOptionGroupsOf(item)) {
-      bucket.optionLabels.push({ ...base, optionLabel: group.label, subtitle: washLabelSubtitle(group.label) })
+      bucket.optionLabels.push({
+        ...base,
+        optionLabel: group.label,
+        variant: 'option',
+        media: WASH_LABEL_OPTION_MEDIA,
+        subtitle: washLabelSubtitle(group.label),
+      })
     }
   })
   // 套序升序（= `groupBySet` 的首次出现序，与纸面「第 N 套 / 共 M 套」同一个数）
@@ -557,6 +645,8 @@ export function toWashLabelInputs(source: WashLabelSource = {}): WashLabelInput[
     qrValue: sheet.qrValue,
     companyName: washLabelCompanyName(source.companyName) || undefined,
     optionLabel: sheet.optionLabel,
+    // 纸型跟着**这张纸**走（issue #8107）：专属唛 = label-50x100，常规唛 = label-50x140
+    media: sheet.media,
     qrPlaceholderHint: undefined,
     rows: washLabelRows({
       position: sheet.position,
@@ -565,6 +655,8 @@ export function toWashLabelInputs(source: WashLabelSource = {}): WashLabelInput[
       setCount: sheet.setCount,
       customerName: source.customerName,
       processingOrderNo: source.processingOrderNo,
+      // 行集合（5 行 / 15 行）由内容模块的 `sheet.variant` 决定，渲染器不自己挑
+      variant: sheet.variant,
     }),
   }))
 }

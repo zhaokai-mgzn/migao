@@ -15,7 +15,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { printDotGeometry, printPageBoxMm, printPageRule } from '@/lib/print-media'
+import { printDotGeometry, printNamedPageRule, printPageBoxMm, printPageRule } from '@/lib/print-media'
 import {
   WASH_LABEL_BODY_FONT_PT,
   WASH_LABEL_BOTTOM_CLEARANCE_MM,
@@ -75,6 +75,28 @@ describe('水洗唛版面度量：TS 单一真值 ⇄ 组件 CSS（改一处不�
     expect(printPageBoxMm('label-50x140')).toEqual({ widthMm: 50, heightMm: 140 })
     // 点阵侧同一份纸：140mm × 8 dots/mm = 1120px（直连通道的画布高度）
     expect(printDotGeometry('label-50x140').heightPx).toBe(1120)
+  })
+
+  it('🔴 两种纸长同源（issue #8107）：专属唛容器 = 矩阵 `label-50x100`、命名 `@page` 与矩阵逐字一致（改一处 ⇒ 两处红）', () => {
+    // ① 基类仍是 140mm —— 瘦身只发生在 `--option` 那个修饰类上
+    expect(css).toContain('height: 140mm')
+    expect(css).not.toContain('height: 100mm')
+    const optionBlock = /\.task-card-label--option\s*\{([^}]*)\}/.exec(source)
+    if (!optionBlock?.[1]) throw new Error('找不到 `.task-card-label--option { … }` —— 判据无从取值（不得静默通过）')
+    // ② 专属唛容器高 == 介质矩阵的 `label-50x100` 高（只改 CSS 不改矩阵 ⇒ 红；反之亦然）
+    expect(optionBlock[1]).toContain(`height: ${printPageBoxMm('label-50x100').heightMm}mm`)
+    // ③ 命名页名在 CSS 里（同一份打印任务里两种纸高并存）
+    expect(optionBlock[1]).toContain('page: wash-label-option')
+    // ④ 命名 `@page` 由 printNamedPageRule 从**矩阵**取，渲染器不自写 `@page` 字面量
+    expect(source).toContain("printNamedPageRule('wash-label-option', 'label-50x100')")
+    expect(printNamedPageRule('wash-label-option', 'label-50x100')).toBe(
+      '@page wash-label-option { size: 50mm 100mm; margin: 0; }',
+    )
+    // ⑤ 位图通道读**同一份**介质（`input.media` ⇒ 矩阵），不写第二份纸长
+    const bitmap = readFileSync(resolve(process.cwd(), 'src/lib/label-print/wash-label.ts'), 'utf-8')
+    expect(bitmap).toContain('printPageBoxMm(washLabelMediaOf(input))')
+    expect(printPageBoxMm('label-50x100')).toEqual({ widthMm: 50, heightMm: 100 })
+    expect(printDotGeometry('label-50x100').heightPx).toBe(800)
   })
 
   it('🔴 加工项 = **加黑加粗**（两条通道同读一份常量；一方加粗一方不加 ⇒ 红；issue #7987）', () => {
