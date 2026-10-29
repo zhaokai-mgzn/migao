@@ -57,6 +57,10 @@ GUARD_GLOBS = (
 CLASS_LEVEL_GUARDS = (
     "backend/ai-agent-service/tests/test_capability_boundary.py",
     "tests/unit_ci_workflows/test_craft_calc_config_contract.py",
+    # 2026-10-29（集成侧纠偏）：任务点名的这条**确实存在**于 origin/main
+    # （`git cat-file -e origin/main:tests/agent_eval/test_craft_calc_config_restore.py` ⇒ 存在），
+    # 原报告"不存在"是误判 ⇒ 补进类级提名（否则"登记 = 枚举产物"会漏掉一整类：复位契约）。
+    "tests/agent_eval/test_craft_calc_config_restore.py",
 )
 REQUIRED_FIELDS = ("path", "guards", "red_proof", "owner")
 MIN_TEXT = 10

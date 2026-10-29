@@ -444,6 +444,12 @@
       "guards": "算料配置的五个源（引擎默认 / V80 迁移列 / schema.sql / Java 实体 / 写面 CONFIG_KEYS）逐键一致——少一列即「商家改了没生效」或「读回静默用默认」；已退场键 side_margin 与提案键 default_fabric_width 不得出现在任何源",
       "red_proof": "从 V80__create_craft_calc_configs.sql 删掉 hem_margin 列 ⇒ test_migration_columns_match_engine_keys 红；把 sideMargin 字段加回 Java 实体 ⇒ test_java_entity_side_margin_is_gone_everywhere 红",
       "owner": "#4528"
+    },
+    {
+      "path": "tests/agent_eval/test_craft_calc_config_restore.py",
+      "guards": "算料口径复位（`craft_calc_config_restore`）的契约：只写声明键（PUT 全量替换不得清空其它键）/ 声明键已等值即不发 PUT / 回读不符 fail-closed / 缺 keys 判配置错误 / 浮点噪声按 1e-9 容差",
+      "red_proof": "把 `_restore_craft_calc_config` 的载荷从 `{**current, **keys}` 改成只发 `keys` ⇒「只写声明键」判据红；去掉回读比对 ⇒「回读不符即 fail-closed」判据红；去掉幂等短路 ⇒「已等值不发 PUT」判据红",
+      "owner": "#8116"
     }
   ]
 }
