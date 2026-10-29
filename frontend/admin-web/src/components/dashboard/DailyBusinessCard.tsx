@@ -49,7 +49,7 @@ export default function DailyBusinessCard({ briefingEnabled, ...overview }: Dail
           <Sparkles className="h-3 w-3" />
           黄金策 · 今日经营
         </span>
-        <span className="text-[11px] text-neutral-400">AI 生成内容仅供参考</span>
+        <span className="text-xs text-neutral-400">AI 生成内容仅供参考</span>
         {/* 展开 / 收起：可聚焦按钮 + `aria-expanded`（键盘可达） */}
         <button
           type="button"
