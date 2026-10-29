@@ -508,7 +508,7 @@
     "data ← response.get('data', {})",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "3cc5fa1f8140c1883082f2af51d31b2e3eac255a581ad5a2f81daa8ddfe24eb3"
+   "source_sha256": "39b0790def47e7ad064bc4af262bfeb4af4a1a5601572b5e3364e54fe6f7e6ad"
   },
   "employee_manage": {
    "actions": {
@@ -1366,6 +1366,27 @@
     "data=response.get('data', {})"
    ],
    "source_sha256": "3684cc79937d348f6a09e576f247b547c636436442d2e10b3b444aff3406ec66"
+  },
+  "sales_attribution": {
+   "actions": null,
+   "dynamic": false,
+   "file": "backend/ai-agent-service/app/tools/sales_attribution.py",
+   "keys": [
+    "current_total",
+    "days",
+    "delta",
+    "delta_pct",
+    "previous_is_zero",
+    "previous_total",
+    "requested_days",
+    "top",
+    "top_down",
+    "top_up",
+    "window",
+    "window_capped"
+   ],
+   "literal_keys": [],
+   "source_sha256": "dabedd11516eee5ae0b8fded0f60b64def839174ecdf53b2bc68e32464306536"
   },
   "scheduled_task_manage": {
    "actions": {

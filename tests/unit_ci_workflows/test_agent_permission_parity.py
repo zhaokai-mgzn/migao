@@ -769,6 +769,8 @@ TOOL_MENU_NODE: dict[str, str] = {
     "order_manage": "销售订单",
     "logistics_track": "销售订单",
     "order_create": "销售订单",
+    # issue #8157：商品归因只读取订单列表读面（`order:list` = 本节点码）⇒ 登记在同一节点。
+    "sales_attribution": "销售订单",
     "after_sales_manage": "售后工单",
     "customer_manage": "客户列表",
     "dashboard_stats": "经营概览",

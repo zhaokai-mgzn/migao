@@ -5,11 +5,12 @@ AI 智能客服系统 - 数据看板 Tool
 """
 
 import datetime as _dt
-import math
 from typing import Any, Dict, List, Optional
 from loguru import logger
 
 from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
+# 环比算术的唯一实现（issue #8157：trend_compare 与 sales_attribution 共用同一份口径）
+from app.utils.compare import MAX_PERIOD_DAYS, MAX_WINDOW_DAYS, delta_pct, finite_number
 from app.utils.http_client import get_admin_api_client
 
 
@@ -36,23 +37,8 @@ VALID_ACTIONS = {
 # 读源复核：admin-api `DashboardController#getOrderTrend` 的 days **没有**上限校验
 # （`@RequestParam(defaultValue = "7") int days`），本工具的 30 天/期、60 天窗口是**参数契约**
 # 上的上限 ⇒ 超出即截断并显式披露（`window_capped` + 实际窗口），不悄悄退化。
-MAX_PERIOD_DAYS = 30
-MAX_WINDOW_DAYS = 2 * MAX_PERIOD_DAYS
-
-
-def _finite_number(value: Any) -> Optional[float]:
-    """服务端数值原样返回（int 保持 int）；bool / 非数值 / NaN / ±Inf ⇒ None（结构异常）。
-
-    `OrderTrendPointResponse` 逐日给 `date` / `orders`（int）/ `amount`（long），JSON 里恒为数字
-    ⇒ 拿到字符串或非有限值只可能是上游异常，**不得**当 0 参与算术（会把"没查到"算成"下降"）。
-    """
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return value if math.isfinite(value) else None
-    return None
+# MAX_PERIOD_DAYS / MAX_WINDOW_DAYS 与 finite_number 的**唯一实现**已抽到
+# app/utils/compare.py（issue #8157）—— 本模块 import 后仍是模块级名字，既有引用不变。
 
 
 def _parse_trend_points(response: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
@@ -78,8 +64,8 @@ def _parse_trend_points(response: Dict[str, Any]) -> Optional[List[Dict[str, Any
             day = _dt.date.fromisoformat(date_value.strip())
         except ValueError:
             return None
-        orders = _finite_number(item.get("orders"))
-        amount = _finite_number(item.get("amount"))
+        orders = finite_number(item.get("orders"))
+        amount = finite_number(item.get("amount"))
         if orders is None or amount is None:
             return None
         points.append({"date": day.isoformat(), "orders": orders, "amount": amount})
@@ -116,7 +102,7 @@ def _compare_points(
         "previous_total": previous_total,
         "delta": delta,
         # 上期为 0 时**没有**百分比可言 ⇒ null（绝不返回 Infinity/NaN）
-        "delta_pct": None if previous_is_zero else round(delta / previous_total * 100, 2),
+        "delta_pct": delta_pct(delta, previous_total),
         "current_daily_avg": round(current_total / len(current), 2) if current else None,
         "previous_daily_avg": round(previous_total / len(previous), 2) if previous else None,
         "previous_is_zero": previous_is_zero,

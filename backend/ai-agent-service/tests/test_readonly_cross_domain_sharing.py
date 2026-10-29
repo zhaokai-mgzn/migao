@@ -364,8 +364,12 @@ class TestPersonaBoundaryIsHard:
             # 三条逐条成立：① `read_only = True`（不写库、不改商品主图）；② 只绑 B 端两个 skill；
             # ③ 声明 `product:list`（C 端 JWT 无权限码 ⇒ 即便可达也会被工具层拒绝）。
             "product_image_generate",
+            # ── #8157 进场（商品归因）：只读，绑 B 端 order；C 端零绑定 ──
+            # 三条逐条成立：① `read_only = True`（只读订单，不写库）；② 只绑 B 端 order
+            # （元元一个都不绑）；③ 声明 `order:list`（C 端 JWT 无权限码 ⇒ 即便可达也会被工具层拒绝）。
+            "sales_attribution",
         }, (
-            f"B 端专属只读工具集实测 {sorted(b_only_readonly)} —— 与见证集（28 把）不等，口径漂移"
+            f"B 端专属只读工具集实测 {sorted(b_only_readonly)} —— 与见证集（29 把）不等，口径漂移"
             "（进场/退场都必须在本见证里显式改判，见 docstring 的 2026-09-21 / 2026-09-23 /"
             "2026-09-24 / 2026-09-25 / 2026-09-24(#5368) / 2026-10-02(#4923) /"
             "2026-10-02(#5989) 七次改判说明）")

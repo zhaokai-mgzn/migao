@@ -909,3 +909,39 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+  - id: DA-027
+    legacy_id: ""
+    title: "问「这周为什么少卖」直接看商品归因（sales_attribution）：涨跌 Top N 逐字转述、不口算（issue #8157）"
+    domains:
+      - data
+    tier: normal
+    persona: mibao
+    tags:
+      - dashboard
+      - attribution
+      - readonly
+      - llm_behavior
+    truths_ref: []
+    user_inputs:
+      - "这周哪个商品卖得比上周少？"
+      - "为什么这周比上周少了？是哪个商品拖的？"
+    expectations:
+      - tool: sales_attribution
+    must_succeed:
+      - tool: sales_attribution
+    data_checks:
+      - "success=true"
+      - "🔴 排名与数字必须逐字来自工具返回：`top_down` / `top_up` 每条的 `product_name` / `current` / `previous` / `delta` / `delta_pct` / `orders`，以及 `current_total` / `previous_total` / `delta` / `delta_pct` 都不得改写、不得只报总量；模型**不得**自己按订单口算商品销售额，也不得凭空给出归因原因"
+      - "上期为 0（`previous_is_zero=true`）时 `delta_pct` 必须为 null ⇒ 如实说「上期没有数据，无法算百分比」，**不得**编造百分比、**不得**写 0%"
+      - "截断披露：`window.truncated=true` 时如实说明「订单量超过分页上限（`window.page_cap` 条/期），排名可能不含全部订单」，不得把截断排名说成完整排名"
+      - "工具 success=false（服务端或订单明细结构异常）时如实说明本次拿不到归因，**不得**口算、估算或编造下降原因；本能力**只给数字与排名**，不得输出「AI 结论 / 建议」类文案"
+      - "delta=0 的商品不进涨跌榜属正常（涨跌榜不是全量回显）⇒ 不得把全部商品念一遍冒充归因"
+    precondition: "评测栈需有跨两个等长窗口的订单 seed 才能得到非零读数；无 seed 时工具仍 success=true 但 top_up/top_down 为空、delta_pct=null ⇒ 本条按「如实转述口径」判定，不把空读数当失败。**前置不成立时红的伪装形态**：seed 只有单窗口 ⇒ 所有商品都进 top_up（上期 0），此时红的落点是数据层（seed 不足）而不是 agent 行为层；机器判据见 data_checks 的 previous_is_zero 与 delta=0 两条"
+    skip_reason: ""
+    merge_log: "2026-10-30 新增（issue #8157）：黄金策分析能力 P1-3 后半「归因」——按商品聚合两个等长窗口的销售额并给出涨跌 Top N，全部算术在独立的只读工具内（sales_attribution，权限码 = 订单查看 order:list），模型只转述。取号 DA-027：`python3 scripts/next_case_id.py DA`（候选 = origin/main ∪ 全部 open PR 的分支 ∪ 本工作区，rc=0）读数 = main:001-025 · PR #8156:026 ⇒ 取 DA-027。**未覆盖面（如实登记）**：只覆盖「按商品」归因；按客户 / 按状态归因、以及「下一步建议」不在本单（审计 F5 的其余部分，另包）；prompt 段本单未改（工具描述自带触发说明）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_sales_attribution.py"
+      ci:
+        - agent-eval.yml
+      verifies: []

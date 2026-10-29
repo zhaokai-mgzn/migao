@@ -56,6 +56,8 @@ from app.tools.customer_manage import CustomerManageTool
 from app.tools.employee_manage import EmployeeManageTool
 from app.tools.role_manage import RoleManageTool
 from app.tools.dashboard_stats import DashboardStatsTool
+# 商品归因（issue #8157）：只读、订单域（`order:list`）；注册集双向核对 = tests/test_tools_registry.py
+from app.tools.sales_attribution import SalesAttributionTool
 from app.tools.finance_api import FinanceApiTool
 from app.tools.after_sales_manage import AfterSalesManageTool
 from app.tools.aftersale_create import AftersaleCreateTool
@@ -108,7 +110,7 @@ __all__ = [
     "ProcessingOrderGenerateTool", "ProcessingOrderQueryTool",
     "ProcessingOrderUpdateTool",
     "ProcessingItemQueryTool", "CustomerManageTool", "EmployeeManageTool",
-    "RoleManageTool", "DashboardStatsTool", "FinanceApiTool",
+    "RoleManageTool", "DashboardStatsTool", "SalesAttributionTool", "FinanceApiTool",
     "AfterSalesManageTool", "AftersaleCreateTool", "AftersaleQueryTool",
     "NotificationManageTool", "SettingsManageTool",
     "SessionManageTool", "CategoryManageTool", "ProcessingItemManageTool",

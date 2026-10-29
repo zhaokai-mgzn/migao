@@ -313,6 +313,10 @@ TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
     "order_create": ("order:create", "product:list"),
     "order_manage": ("order:update",),
     "order_query": ("order:list",),
+    # issue #8157（P1-3 后半 归因）：独立只读工具，唯一端点 `GET /api/admin/orders` ⇒ 挂订单读码
+    # `order:list`（与 `order_query` 同码；不挂 `dashboard:view` —— 那条会让 product_manager /
+    # knowledge_editor 这两个「持看板码、不持订单码」的岗位静默 403，见 PR #8158 的形态说明）。
+    "sales_attribution": ("order:list",),
     # issue #5247 进场：加工项目录（店铺级）读面（与 `category_manage` 的分类码无关：
     # 那是**商品分类**，不是加工项）。
     # issue #5291：读面改挂生产域读码 `production:view`（写面仍是原码）。
@@ -406,6 +410,8 @@ EXPECTED_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     "order_create": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
     "order_manage": frozenset({"operator"}),
     "order_query": frozenset({"customer_service", "finance", "operator", "sales"}),
+    # 同上：`order:list` 的持有角色（目录推导，与 `order_query` 逐值相同）
+    "sales_attribution": frozenset({"customer_service", "finance", "operator", "sales"}),
     # issue #5247 进场；issue #5291：改挂 `production:view` 后持有角色不变（目录推导）。
     "operation_catalog_query": frozenset({"operator", "product_manager", "inspector"}),
     # issue #5246 改判：计件/报工/加工单读面 = 生产域读码；issue #5291 起即 `production:view`
