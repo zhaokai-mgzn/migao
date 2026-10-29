@@ -1,0 +1,77 @@
+{
+ "schema": "loc-freeze-ledger/v1",
+ "what": "存量「已臃肿」源码文件的**冻结清单**（issue #8166）：源码面 > 2000 行的文件逐个登记 path + lines + frozen_at。🔴 本表是**只许向下**的棘轮：每条 `lines` 是**上限**（现值 > 冻结值 ⇒ 判据红，含「追加一行」这种最小增幅）；要缩短就**删条目**（文件已删/已拆到 2000 行以下 ⇒ 必须销账），但**清空整张表 ⇒ 红**（fail-closed）。判据 = `tests/unit_ci_workflows/test_loc_ratchet.py`。",
+ "why": "仓库有《最少代码》管「怎么写少」，但**没有机制管「已经写多了」** —— 没有棘轮，删完半年就长回去（近 400 提交里 CHANGELOG 改 210 次、生成物改 182 次即证据）。本表把「已经写多了」变成会变红的东西：**已冻结文件的每一行增长都要显式裁定**，而不是靠「记得去看」。",
+ "seeded_at": "2026-10-30",
+ "seeded_from": "origin/main @ 456e0632a（2026-10-30 现取；worktree 与 origin/main 逐文件行数核对 0 差异：1369 个源文件 / 298460 行，其中 > 2000 行的 12 个本单冻结）",
+ "thresholds": {
+  "freeze": 2000,
+  "new_file": 800
+ },
+ "thresholds_note": "阈值是**真值源**（判据读它，不重新计算）：`freeze` = 进本表的下限（> freeze 行）；`new_file` = 新增源码文件的登记下限（≥ new_file 行且未登记 ⇒ 红）。判据侧另有镜像常量（FREEZE_THRESHOLD_MIRROR / NEW_FILE_THRESHOLD_MIRROR）⇒ **放宽**必须同时改两处且数字变大（diff 里看得见），收紧则立刻生效。",
+ "shrink_only_note": "① 每条 `lines` 只许下降（现值 > 冻结值 ⇒ 红）；② 条目对应的文件已不存在 ⇒ 红（必须销账）；③ `frozen` 被清空 ⇒ 红（fail-closed：没东西可判不是通过）。**不自动改代码** —— 判红只给出口（拆分 / 下沉复用件 / 显式改台账）。",
+ "frozen": [
+  {
+   "path": "frontend/admin-web/src/app/(dashboard)/orders/new/page.tsx",
+   "lines": 6913,
+   "frozen_at": "2026-10-30"
+  },
+  {
+   "path": "frontend/admin-web/src/types/index.ts",
+   "lines": 4803,
+   "frozen_at": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java",
+   "lines": 4402,
+   "frozen_at": "2026-10-30"
+  },
+  {
+   "path": "backend/ai-agent-service/app/graph/skills/base_skill.py",
+   "lines": 4356,
+   "frozen_at": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java",
+   "lines": 3690,
+   "frozen_at": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java",
+   "lines": 3043,
+   "frozen_at": "2026-10-30"
+  },
+  {
+   "path": "backend/ai-agent-service/app/api/chat.py",
+   "lines": 3004,
+   "frozen_at": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java",
+   "lines": 2981,
+   "frozen_at": "2026-10-30"
+  },
+  {
+   "path": "backend/ai-agent-service/app/tools/curtain_calc.py",
+   "lines": 2727,
+   "frozen_at": "2026-10-30"
+  },
+  {
+   "path": "frontend/admin-web/src/lib/api.ts",
+   "lines": 2362,
+   "frozen_at": "2026-10-30"
+  },
+  {
+   "path": "backend/admin-api/src/main/java/com/migao/admin/service/StockBatchConsumptionService.java",
+   "lines": 2352,
+   "frozen_at": "2026-10-30"
+  },
+  {
+   "path": "backend/ai-agent-service/app/tools/order_create.py",
+   "lines": 2110,
+   "frozen_at": "2026-10-30"
+  }
+ ],
+ "frozen_count_max": 12,
+ "frozen_count_max_note": "条数**只许减少**：删条目 ⇒ 绿；加条目 ⇒ 红，除非同批显式抬高本字段（判据侧另有镜像 FROZEN_COUNT_MAX_MIRROR ⇒ 两处都要变大，diff 里看得见）。清空 `frozen` ⇒ 红（fail-closed）。"
+}
