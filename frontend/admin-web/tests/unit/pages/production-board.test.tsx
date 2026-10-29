@@ -306,19 +306,19 @@ describe('生产管理菜单入口（侧边栏）', () => {
       'production:view',    // 计件工资
       // 🔴 #8086：质检记录（production:inspect）/ 返工单（after_sales:view）已随「质量」组拆出
     ])
-    // issue #7369：单据三项整组搬去「供应链」⇒ 三项**同码** inbound:view（采购与收货同岗位，零授权 delta），
+    // issue #7369：单据整组搬去「供应链」。🔴 issue #8087（用户裁定 C）：采购单改挂 `purchase:view`，
     // 入库单仍排组内第一（手机端标注取树序首个承载节点，#6781）。
     const supply = menuGroups.find((g) => g.key === 'supply-chain')
-    // 🔴 #8086：供应商移入「基础资料」组 ⇒ 本组 2 项同码
+    // #8086：供应商移入「基础资料」组 ⇒ 本组 2 项，但已不同码（#8087 拆码）
     expect(supply!.children.map((c) => c.permissionCode)).toEqual([
-      'inbound:view',       // 入库单
-      'inbound:view',       // 采购单（issue #7369 段 4：采购与收货同岗位同码 ⇒ 零授权 delta）
+      'inbound:view',       // 入库单（#8087 后本码只承载这一页）
+      'purchase:view',      // 采购单（#8087：独立读码，只 admin/operator）
     ])
     const inventory = menuGroups.find((g) => g.key === 'inventory-center')
     expect(inventory!.children.map((c) => c.permissionCode)).toEqual([
       'product:list',       // 库存明细（issue #6404：同取既有 product:list ⇒ 零授权 delta）
-      'inbound:view',       // 盘点单（issue #7373：与入库/仓库同域 ⇒ 复用既有码，零授权 delta）
-      'inbound:view',       // 出库单（issue #7750：与入库单对称 ⇒ 复用既有码，零授权 delta）
+      'stock:view',         // 盘点单（issue #8087：库存单证独立读码）
+      'stock:view',         // 出库单（issue #8087：同上）
       'order:list',         // 发货单（issue #5939：取**既有** order:list ⇒ 与销售订单同码、零授权 delta）
       'processing:manage',  // 余料台账（`RemnantController` 类级码）
       'product:list',       // 省料看板（issue #5699 P4：节点码 = 该页两个读端点的码）

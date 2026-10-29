@@ -45,10 +45,10 @@ class StocktakeControllerTest {
     }
 
     @Test
-    @DisplayName("权限码零 delta：读 inbound:view / 写 inbound:create")
+    @DisplayName("权限码：读 stock:view（issue #8087 拆码） / 写 inbound:create")
     void permissionCodes() {
-        assertThat(method("list").getAnnotation(RequirePermission.class).value()).isEqualTo("inbound:view");
-        assertThat(method("detail").getAnnotation(RequirePermission.class).value()).isEqualTo("inbound:view");
+        assertThat(method("list").getAnnotation(RequirePermission.class).value()).isEqualTo("stock:view");
+        assertThat(method("detail").getAnnotation(RequirePermission.class).value()).isEqualTo("stock:view");
         for (String action : new String[]{"open", "count", "complete", "cancel"}) {
             assertThat(method(action).getAnnotation(RequirePermission.class).value())
                     .as("写面码：%s", action).isEqualTo("inbound:create");

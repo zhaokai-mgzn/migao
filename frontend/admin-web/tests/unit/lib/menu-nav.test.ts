@@ -320,7 +320,8 @@ describe('岗位矩阵：role_permissions（种子）× menu.ts 两条件 ⇒ �
         'processing:view', 'inbound:view', 'after_sales:view', 'knowledge:view',
         'agent:session:manage', 'production:execute', 'order:refund',
       ],
-      expected: ['dashboard', 'reports', 'human-sessions', 'knowledge', 'after-sales', 'customers', 'suppliers', 'price-books', 'orders', 'production-pool', 'rework-orders', 'inbound-orders', 'purchase-orders', 'stocktakes', 'outbound-orders', 'shipments', 'notifications']
+      // 🔴 issue #8087（用户裁定 C）：`inbound:view` 不再顺带开出 供应商/采购单/盘点单/出库单
+      expected: ['dashboard', 'reports', 'human-sessions', 'knowledge', 'after-sales', 'customers', 'price-books', 'orders', 'production-pool', 'rework-orders', 'inbound-orders', 'shipments', 'notifications']
     },
     {
       name: '销售 sales（9 码）',
@@ -328,7 +329,8 @@ describe('岗位矩阵：role_permissions（种子）× menu.ts 两条件 ⇒ �
         'dashboard:view', 'order:list', 'order:detail', 'customer:view', 'processing:view',
         'product:list', 'inbound:view', 'order:create', 'production:execute',
       ],
-      expected: ['dashboard', 'reports', 'products', 'customers', 'suppliers', 'price-books', 'orders', 'production-pool', 'inbound-orders', 'purchase-orders', 'stock-ledger', 'stocktakes', 'outbound-orders', 'shipments', 'production-saving-board', 'notifications']
+      // 🔴 issue #8087（裁定 C）：同上，四类库存/采购面随之消失（库存明细/省料分析仍靠 product:list）
+      expected: ['dashboard', 'reports', 'products', 'customers', 'price-books', 'orders', 'production-pool', 'inbound-orders', 'stock-ledger', 'shipments', 'production-saving-board', 'notifications']
     },
     {
       name: '财务 finance（9 码）',
@@ -336,7 +338,8 @@ describe('岗位矩阵：role_permissions（种子）× menu.ts 两条件 ⇒ �
         'dashboard:view', 'order:list', 'order:detail', 'customer:view', 'finance:view',
         'processing:view', 'inbound:view', 'finance:create', 'production:execute',
       ],
-      expected: ['dashboard', 'reports', 'customers', 'suppliers', 'price-books', 'orders', 'finance', 'production-pool', 'inbound-orders', 'purchase-orders', 'stocktakes', 'outbound-orders', 'shipments', 'notifications']
+      // 🔴 issue #8087（裁定 C）：财务只剩入库单与发货单两类单据面
+      expected: ['dashboard', 'reports', 'customers', 'price-books', 'orders', 'finance', 'production-pool', 'inbound-orders', 'shipments', 'notifications']
     },
     {
       name: '知识编辑 knowledge_editor（4 码）',
@@ -352,13 +355,15 @@ describe('岗位矩阵：role_permissions（种子）× menu.ts 两条件 ⇒ �
       expected: ['dashboard', 'reports', 'products', 'production-board', 'production-pool', 'production-piecework', 'stock-ledger', 'production-remnants', 'production-saving-board', 'settings', 'notifications']
     },
     {
-      name: '运营 operator（26 码）',
+      name: '运营 operator（29 码）',
       permissions: [
         'dashboard:view', 'order:list', 'order:detail', 'order:update', 'order:create', 'order:refund',
         'product:list', 'product:create', 'product:category', 'product:category:view',
         'processing:view', 'processing:manage', 'processing:update', 'production:view', 'production:execute',
         'inbound:view', 'inbound:create', 'customer:view', 'customer:create', 'finance:view', 'finance:create',
         'agent:session', 'agent:session:manage', 'employee:list', 'after_sales:view', 'knowledge:view',
+        // 🔴 issue #8087（裁定 C）：运营是**唯一**新增持有三把读码的岗位
+        'supplier:view', 'purchase:view', 'stock:view',
       ],
       expected: ['dashboard', 'reports', 'human-sessions', 'knowledge', 'after-sales', 'products', 'customers', 'suppliers', 'price-books', 'orders', 'finance', 'production-board', 'production-pool', 'production-piecework', 'rework-orders', 'inbound-orders', 'purchase-orders', 'stock-ledger', 'stocktakes', 'outbound-orders', 'shipments', 'production-remnants', 'production-saving-board', 'employees', 'settings', 'notifications']
     },
@@ -799,7 +804,7 @@ describe('权限过滤的端到端口径（可见项 key 集合，逐条精确�
       ALL_KEYS.filter((k) => k !== 'dashboard' && k !== 'reports'),
     ],
     [
-      '生产（读码+管理码）/仓管混合权限 ⇒ 基础资料组 1 项（供应商）+ 生产管理组 2 项 + 供应链组 2 项 + 仓储与物料组 3 项 + 一级项「企业基础设置」（#8086）',
+      '生产（读码+管理码）/仓管混合权限 ⇒ 生产管理组 2 项 + 供应链组 1 项（入库单）+ 仓储与物料组 1 项（余料） + 一级项「企业基础设置」（#8087 拆码后）',
       // issue #5291：作业看板/计件工资挂**读**码 production:view。
       // 🔴 issue #5699（P4）：**每个子菜单恰好一个码** —— 智能派单 = processing:view（该页读码）、
       // 省料看板 = product:list（该页读码）⇒ 本组权限（读码+管理码、无 product:list、无 processing:view）
@@ -817,22 +822,20 @@ describe('权限过滤的端到端口径（可见项 key 集合，逐条精确�
         // 尾席位一级项各自按自己的码判定 —— 「商品管理」要 product:list（本权限集**无** ⇒ 不出现）、
         // 「企业基础设置」要 production:view（本权限集**有** ⇒ 出现）。
         'dashboard', 'reports',
-        // 🔴 #8086：供应商在「基础资料」组（组序在供应链之前）⇒ 先出现
-        'suppliers',
+        // 🔴 issue #8087（裁定 C）：本权限集只有 `inbound:view` ⇒ 供应商/采购/盘点/出库**都不在**
+        //（它们各自要 `supplier:view` / `purchase:view` / `stock:view`）
         'production-board',
         'production-piecework',
-        'inbound-orders', 'purchase-orders',
-        'stocktakes', 'outbound-orders',
+        'inbound-orders',
         'production-remnants',
         'settings',
         'notifications',
       ],
     ],
     [
-      '只有 inbound:view ⇒ 「基础资料」的供应商 +「供应链」2 项（入库单 / 采购单）+「仓储与物料」的盘点单/出库单（#7373/#7750 同码）；余料要 processing:manage、省料要 product:list ⇒ 那两项不在',
+      '只有 inbound:view ⇒ **只**开「入库单」一扇门（issue #8087 裁定 C：供应商 / 采购单 / 盘点单 / 出库单 各有独立读码）',
       { permissions: ['inbound:view'] },
-      // 🔴 #8086：供应商移入「基础资料」组 ⇒ 组序（基础资料在供应链之前）决定它排最前
-      ['suppliers', 'inbound-orders', 'purchase-orders', 'stocktakes', 'outbound-orders', 'notifications'],
+      ['inbound-orders', 'notifications'],
     ],
     [
       '只有 processing:manage ⇒ 入库单**不在**（inbound:view 是独立门禁）；生产组整组消失、仓储组只剩余料台账（#5699 P4）',

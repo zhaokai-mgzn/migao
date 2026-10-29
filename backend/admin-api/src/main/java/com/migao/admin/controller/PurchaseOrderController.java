@@ -37,7 +37,7 @@ public class PurchaseOrderController {
 
     /** 采购单列表（可按状态 / 供应商过滤）。 */
     @GetMapping("/api/admin/purchase-orders")
-    @RequirePermission("inbound:view")
+    @RequirePermission("purchase:view")
     public ApiResponse<List<PurchaseOrderView>> list(@RequestParam(required = false) String status,
                                                     @RequestParam(required = false) String supplierId) {
         return ApiResponse.success(
@@ -46,7 +46,7 @@ public class PurchaseOrderController {
 
     /** 采购单详情（含逐行已收/未收与收货记录）。 */
     @GetMapping("/api/admin/purchase-orders/{id}")
-    @RequirePermission("inbound:view")
+    @RequirePermission("purchase:view")
     @TenantOwnedResource("purchaseOrder")
     public ApiResponse<PurchaseOrderView> detail(@PathVariable String id) {
         return ApiResponse.success(purchaseOrderService.detail(id, TenantContext.getTenantId()));

@@ -335,7 +335,7 @@ class MenuControllerTest {
         assertEquals("基础资料", basic.path("label").asText());
         // 组内顺序 = `menu.ts` 的 `basic-data` 组逐字顺序（三源同构守卫按前缀子序列比对）
         assertEquals(List.of("商品管理", "客户列表", "供应商", "价格本"), labels(basic.path("children")));
-        assertEquals(List.of("product:list", "customer:view", "inbound:view", "order:list"),
+        assertEquals(List.of("product:list", "customer:view", "supplier:view", "order:list"),
                 codes(basic.path("children")));
     }
 
@@ -390,7 +390,7 @@ class MenuControllerTest {
         // issue #7369：「供应商」与「入库单」同码（inbound:view）—— 档案面与单据面同群，零授权 delta。
         // 用户 2026-10-20：单据类节点（入库单/供应商/采购单）已移到「供应链」组 ⇒ 本组只剩库存与出库。
         // #7373：「盘点单」取**既有** inbound:view（与入库/仓库同域；该页第一屏读端点就是这个码）。
-        assertEquals(List.of("product:list", "inbound:view", "inbound:view", "order:list", "processing:manage",
+        assertEquals(List.of("product:list", "stock:view", "stock:view", "order:list", "processing:manage",
                         "product:list", "inbound:create"),
                 codes(inventory.path("children")));
     }
@@ -655,7 +655,7 @@ class MenuControllerTest {
         // ③ 真语料读数：真树上被标注的恰好是这 6 处（同码后继节点一个都不许再带标注）
         // 🔴 #8086：`inbound:view` 的树序首个承载节点 = 供应商（「基础资料」组在「供应链」之前）
         // ⇒ 标注点从「入库单」改到「供应商」（拆码见 issue #8087）。
-        assertEquals(List.of("经营概览", "在线接待", "售后工单", "供应商", "作业单", "智能派单"),
+        assertEquals(List.of("经营概览", "在线接待", "售后工单", "作业单", "智能派单", "入库单"),
                 new ArrayList<>(annotated.keySet()),
                 "真树上的标注点必须收敛到这 6 处（实得 = " + annotated + "）");
         // 🔴 2026-10-17（issue #7087）：「每日简报」删除、「经营看板」升为顶层一级项 ⇒ `dashboard:view`

@@ -31,7 +31,7 @@ import static org.mockito.Mockito.when;
  *
  * <p>守三条：① 三个端点都把**当前租户**透传给服务（跨租户读 = 数据泄漏，不是过滤问题）；
  * ② 建单走 {@code createAndPost}（**建单即过账**，不存在「先建草稿」的入口）；
- * ③ 权限码复用入库域的 {@code inbound:view} / {@code inbound:create}（零授权 delta，
+ * ③ 读码 = 独立读码 {@code stock:view}、写码沿用 {@code inbound:create}（issue #8087 拆码，
  * 不新造 {@code outbound:*} —— 新码今天无人持有，页面会对所有人不可见）。</p>
  */
 @ExtendWith(MockitoExtension.class)
@@ -84,10 +84,10 @@ class OutboundOrderControllerTest {
     }
 
     @Test
-    @DisplayName("权限边界：读 inbound:view / 写 inbound:create（不挪用 product:list 或 processing:manage）")
+    @DisplayName("权限边界：读 stock:view / 写 inbound:create（不挪用 product:list 或 processing:manage）")
     void permissionCodesMatchInboundDomain() throws Exception {
-        assertThat(permissionOf("list", String.class, String.class)).isEqualTo("inbound:view");
-        assertThat(permissionOf("detail", String.class)).isEqualTo("inbound:view");
+        assertThat(permissionOf("list", String.class, String.class)).isEqualTo("stock:view");
+        assertThat(permissionOf("detail", String.class)).isEqualTo("stock:view");
         assertThat(permissionOf("create", OutboundOrderCreateRequest.class)).isEqualTo("inbound:create");
     }
 

@@ -1047,23 +1047,20 @@ describe('Sidebar', () => {
     // ── #5271 新组的权限边界（正负控：菜单可见性与页面门禁同码，不互相顶替）──
 
     it('入库单（inbound:view）与余料台账（processing:manage）**互不顶替**：正负控双向', async () => {
-      // ① 只有 inbound:view ⇒「基础资料」的供应商（#8086 起在该组，**1 项 ⇒ 提升为一级项**）
-      //    +「供应链」组（入库单 / 采购单）可见；余料台账/省料看板不在；
-      //    「仓储与物料」组整组不在（它的四项分别要 product:list / order:list / processing:manage）
+      // ① 只有 inbound:view ⇒ **只剩入库单**（issue #8087 裁定 C：供应商 / 采购单 / 盘点单 / 出库单
+      //    各自要 `supplier:view` / `purchase:view` / `stock:view`）；「供应链」组只剩 1 项 ⇒ 提升为一级项
       mockUseAuthStore.mockReturnValue({
         user: { id: '8', username: 'wh', name: '仓管', permissions: ['inbound:view'], roles: [] },
       })
       const { unmount } = render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-      expect(screen.getByText('供应链')).toBeInTheDocument()
-      expandGroups('supply-chain')
+      expect(screen.queryByTestId('sidebar-group-toggle-supply-chain')).toBeNull()
       expect(screen.getByText('入库单')).toBeInTheDocument()
+      expect(screen.queryByText('供应商')).not.toBeInTheDocument()
+      expect(screen.queryByText('采购单')).not.toBeInTheDocument()
       expect(screen.queryByText('余料台账')).not.toBeInTheDocument()
       expect(screen.queryByText('省料分析')).not.toBeInTheDocument()
-      // 🔴 issue #8086：供应商已在「基础资料」组 ⇒ 该组 1 项被提升，排在供应链组之前（组序）
-      expect(screen.getByText('供应商')).toBeInTheDocument()
-      expect(screen.queryByTestId('sidebar-group-toggle-basic-data')).toBeNull()
-      // #5699 P4：经营概览要 dashboard:view ⇒ 不在
-      expect(menuKeys()).toEqual(['suppliers', 'inbound-orders', 'purchase-orders', 'notifications'])
+      // #5699 P4：经营概览要 dashboard:view ⇒ 不在（拆码后只剩入库单）
+      expect(menuKeys()).toEqual(['inbound-orders', 'notifications'])
       unmount()
 
       // ② 只有 processing:manage ⇒ 入库单**不在**（独立门禁，不因邻组而放行），余料台账/省料看板在

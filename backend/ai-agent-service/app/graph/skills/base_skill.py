@@ -3391,6 +3391,11 @@ PERMISSION_LABELS = {
     # 入库单（V111，issue #5034）：名称逐字取 admin-api RegistrationService 的同码条目
     "inbound:view": "入库单查看",
     "inbound:create": "入库单操作",
+    # 🔴 issue #8087（用户 2026-10-29 裁定 C）：`inbound:view` 拆出的三把读码，名称逐字取
+    # admin-api RegistrationService/PermissionService 的同码条目（两处目录必须逐值相等）。
+    "supplier:view": "供应商查看",
+    "purchase:view": "采购单查看",
+    "stock:view": "库存单证查看",
     "knowledge:manage": "知识库管理",
     # issue #5246：售后 / 知识库拆出**读**码 —— 镜像必须与 admin-api 权限目录逐码对齐
     # （判据：tests/test_permission_scope_injection.py 的两条「目录 ⊆ 标签」）。

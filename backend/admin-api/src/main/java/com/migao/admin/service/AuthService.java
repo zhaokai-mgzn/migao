@@ -1448,7 +1448,8 @@ public class AuthService {
         if (isAll || permissions.contains("customer:view")) {
             basicDataChildren.add(menuItem("customers", "客户列表", "/customers"));
         }
-        if (isAll || permissions.contains("inbound:view")) {
+        // 🔴 issue #8087（用户 2026-10-29 裁定 C）：供应商改挂独立读码 `supplier:view`（原 `inbound:view`）。
+        if (isAll || permissions.contains("supplier:view")) {
             basicDataChildren.add(menuItem("suppliers", "供应商", "/suppliers"));
         }
         if (isAll || permissions.contains("order:list")) {
@@ -1540,7 +1541,8 @@ public class AuthService {
             supplyChainChildren.add(menuItem("inbound-orders", "入库单", "/inbound-orders"));
         }
         // 采购单（issue #7369 段 4）：一条 add 一个 if —— 合并进上面的 if 会让解析器只读到第一条（#6781 同族）。
-        if (isAll || permissions.contains("inbound:view")) {
+        // 🔴 issue #8087：采购单改挂 `purchase:view`（原 `inbound:view`）。
+        if (isAll || permissions.contains("purchase:view")) {
             supplyChainChildren.add(menuItem("purchase-orders", "采购单", "/purchase-orders"));
         }
         // 库存明细（issue #6404）：SKU 级库存**变化流水**的读面 —— 后端端点（issue #4055）与 agent
@@ -1554,13 +1556,15 @@ public class AuthService {
         }
         // 盘点单（issue #7373 段 3 前端）：读码 `inbound:view`（与仓 / 入库同域；仓管做账实核对）。
         // 与 MenuController 的 `stocktakes`、前端 `config/menu.ts` 的 `stocktakes` 三处同构。
-        if (isAll || permissions.contains("inbound:view")) {
+        // 🔴 issue #8087：盘点单改挂 `stock:view`（原 `inbound:view`）。
+        if (isAll || permissions.contains("stock:view")) {
             inventoryChildren.add(menuItem("stocktakes", "盘点单", "/stocktakes"));
         }
         // 出库单（V196 / issue #7750）：与「入库单」对称的出口单据（布料手工出库 + 成品发货出库）。
         // 一条 add 一个 if（解析器口径，见上）；码复用 inbound:view（收发同岗，零授权 delta）。
         // 与 MenuController 的 `iOutbound`、前端 `config/menu.ts` 的 `outbound-orders` 三处同构。
-        if (isAll || permissions.contains("inbound:view")) {
+        // 🔴 issue #8087：出库单改挂 `stock:view`（原 `inbound:view`）。
+        if (isAll || permissions.contains("stock:view")) {
             inventoryChildren.add(menuItem("outbound-orders", "出库单", "/outbound-orders"));
         }
         // 发货单（issue #5939）：与按单读面（GET /api/admin/orders/{id}/shipments）**逐字同码**

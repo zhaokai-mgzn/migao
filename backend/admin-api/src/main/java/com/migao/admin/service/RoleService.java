@@ -392,6 +392,8 @@ public class RoleService {
                     // ⚠️ issue #5291 那处注释曾逐字声称「与种子矩阵逐值同步」而实际少码：改注释无用，
                     // 值级不变量由上面 javadoc 点名的判据 14 机械守住。
                     "processing:view", "processing:update", "inbound:view", "inbound:create",
+                    // 🔴 issue #8087（用户裁定 C）：运营是本轮**唯一**新增三把读码的岗位
+                    "supplier:view", "purchase:view", "stock:view",
                     // issue #5291：两个域读码与种子矩阵逐值同步 —— 回退路径（无 role_permissions 记录）
                     // 若不跟上，「菜单/Agent 面看得见看不见」会按账号有没有权限快照分叉。
                     "customer:view",

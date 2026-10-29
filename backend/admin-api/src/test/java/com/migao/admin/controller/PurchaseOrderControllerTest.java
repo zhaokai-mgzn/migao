@@ -17,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * 采购单端点契约（issue #7369 段 4）。
  *
- * <p>守三件不会自己报错的事：① 路由逐字；② 权限码复用**既有** {@code inbound:view} / {@code inbound:create}
+ * <p>守三件不会自己报错的事：① 路由逐字；② 权限码复用**既有** {@code purchase:view} / {@code inbound:create}
  * （新造 {@code purchase:*} 今天没人持有 ⇒ 页面与菜单对所有人不可见）；③ 三个带 id 的写/读端点标归属认定。</p>
  */
 @DisplayName("采购单端点契约：路由 + 权限码 + 归属认定")
@@ -52,10 +52,10 @@ class PurchaseOrderControllerTest {
     }
 
     @Test
-    @DisplayName("权限码：读用既有 inbound:view，写用既有 inbound:create（零授权 delta）")
+    @DisplayName("权限码：读用 `purchase:view`、写用既有 inbound:create（issue #8087 拆码）")
     void permissionCodesReuseInboundCodes() {
-        assertThat(permissionOf(method("list"))).isEqualTo("inbound:view");
-        assertThat(permissionOf(method("detail"))).isEqualTo("inbound:view");
+        assertThat(permissionOf(method("list"))).isEqualTo("purchase:view");
+        assertThat(permissionOf(method("detail"))).isEqualTo("purchase:view");
         assertThat(permissionOf(method("create"))).isEqualTo("inbound:create");
         assertThat(permissionOf(method("receive"))).isEqualTo("inbound:create");
         assertThat(permissionOf(method("close"))).isEqualTo("inbound:create");

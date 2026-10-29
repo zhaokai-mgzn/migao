@@ -42,7 +42,7 @@ public class OutboundOrderController {
      * GET /api/admin/outbound-orders?keyword=&bizCategory=
      */
     @GetMapping
-    @RequirePermission("inbound:view")
+    @RequirePermission("stock:view")
     public ApiResponse<List<OutboundOrderView>> list(@RequestParam(required = false) String keyword,
                                                      @RequestParam(required = false) String bizCategory) {
         return ApiResponse.success(
@@ -54,7 +54,7 @@ public class OutboundOrderController {
      * GET /api/admin/outbound-orders/{id}
      */
     @GetMapping("/{id}")
-    @RequirePermission("inbound:view")
+    @RequirePermission("stock:view")
     public ApiResponse<OutboundOrderView> detail(@PathVariable String id) {
         return ApiResponse.success(outboundOrderService.detail(id, TenantContext.getTenantId()));
     }

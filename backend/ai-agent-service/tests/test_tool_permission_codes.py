@@ -125,6 +125,11 @@ PERMISSION_CATALOG = frozenset({
     "production:inspect",
     "inbound:view",
     "inbound:create",
+    # issue #8087（用户 2026-10-29 裁定 C）：`inbound:view` 拆出的三把读码 ——
+    # 供应商档案 / 采购单 / 库存单证（盘点单 + 出库单）；只 admin/operator 持。
+    "supplier:view",
+    "purchase:view",
+    "stock:view",
     "knowledge:manage",
     # 知识库**读**码（issue #5246）：读（卡片列表/搜索）与写（增删改/发布/归档）此前同用
     # `knowledge:manage` ⇒ 只想看看卡片的客服/运营必须被授予写权才进得去；本次按读写拆开。
@@ -184,6 +189,8 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
         "processing:manage", "processing:update", "processing:view",
         # issue #5699 的 I4：生产执行写码（运营今日持 order:list；四个端点本来就放行）
         "production:execute",
+        # 🔴 issue #8087（用户裁定 C）：`inbound:view` 拆出的三把只给 admin/operator
+        "supplier:view", "purchase:view", "stock:view",
         # issue #5291：operator 原持 `product:category` / `processing:manage` ⇒ 同批回填两个域读码，
         # 否则拆码会把它的分类 / 生产面**收权**（「只收窄不放宽」的反面：原持管理码者不受影响）。
         # `system:view` **不给** —— 它属 admin 专属，多授 = 让运营读到岗位与权限目录，属放宽，本单不做。

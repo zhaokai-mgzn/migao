@@ -197,6 +197,7 @@
     "V200__seed_rework_created_notification.sql": "sha256:a812436261e8d004490e95aa8bd1f0be36cadc379bd2995ec88977b8bbe28a54",
     "V201__create_print_logs.sql": "sha256:d99321b286a3f78dc4ba40d6c0e6b3a1851f05cbee8dd8c4852c0a2d11ef1e36",
     "V202__quality_piece_key_and_rework_piece.sql": "sha256:1c3d6f5aaca74335ff9a1089b3e9031f6d249a7df2ab34e45df561fffa3e160b",
+    "V203__split_inbound_view_into_three.sql": "sha256:28703d8abaa23cc5a4b20ec4b1129c1eea0b485120c089e00a0e193b2f1f0bbc",
     "schema.sql": "sha256:ef9004056a4f04bcc8b97ca1580c75aae3d5dbd60cb62131c1a8ed863fd9c7f2"
   }
 }
