@@ -184,7 +184,7 @@ class WorkerProfileControllerTest extends BaseControllerTest {
 
         User unknownOnly = new User();
         unknownOnly.setId(ZHANG.workerId());
-        unknownOnly.setWorkerPages("[\"stock\"]");
+        unknownOnly.setWorkerPages("[\"stocktake\"]");
         when(workerAdminService.findOwnedWorker(ZHANG.workerId())).thenReturn(unknownOnly);
 
         mockMvc.perform(get(URL).header(WorkerSessionService.SESSION_HEADER, SESSION))

@@ -153,6 +153,11 @@
       "why": "经 `@RequestParam` 取 page/size ⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"
     },
     {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/WorkerBatchStockController.java::batches",
+      "source": "@RequestParam",
+      "why": "经 `@RequestParam` 取 page/size（工人端「库存修正」搜批次，issue #8104）⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"
+    },
+    {
       "key": "backend/admin-api/src/main/java/com/migao/admin/controller/agent/AgentAfterSalesController.java::getMyTickets",
       "source": "@RequestParam",
       "why": "经 `@RequestParam` 取 page/size ⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"

@@ -42,6 +42,7 @@ import {
   REPRINT_PAGE_ROUTE,
   REWORK_PAGE_ROUTE,
   SHIPMENT_ORDERS_PAGE_ROUTE,
+  STOCK_PAGE_ROUTE,
   SHIPMENT_PAGE_ROUTE,
   WORKER_HOME_ROUTE,
   WORKER_LOGIN_ROUTE,
@@ -236,6 +237,17 @@ export const PAGE_ENTRY_LEDGER: PageEntry[] = [
   // issue #6761：工人工作台的**第 4** 条入口（「拍照发货」）—— #5648 的 UI 面收口。
   // 为什么必须有这一条：#5648 的后端与纯逻辑早已就绪，而**从来没有页面入口**
   // （`gh pr view 5664` §9 逐字登记为半成品）⇒ 不登记它，这一页就是一条死链（L2 未登记即红）。
+  // issue #8104（用户 2026-10-29：「手机端还要增加一个库存修正的功能……允许工人对某个批次的布匹进行修正」）：
+  // 工人工作台的第 5 条入口（物料组：拍照入库 / 补打之后 = 这一批实际剩多少）。**写面** = 改批次余量。
+  {
+    route: STOCK_PAGE_ROUTE,
+    from: 'src/pages/worker/home/index.tsx',
+    nav: 'navigateTo',
+    via: 'STOCK_PAGE_ROUTE',
+    viaBinding: 'src/utils/inbound/gaps.ts',
+    audience:
+      '工人身份（工人首页 →「库存修正」；未登录时该页自身引导去工号 + PIN 登录，先登录再改库存）',
+  },
   {
     route: SHIPMENT_PAGE_ROUTE,
     from: 'src/pages/worker/home/index.tsx',

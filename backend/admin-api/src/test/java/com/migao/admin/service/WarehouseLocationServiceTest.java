@@ -1,4 +1,4 @@
-// case_ids: WH-003
+// case_ids: WH-003, WH-011
 package com.migao.admin.service;
 
 import com.migao.admin.entity.WarehouseLocation;
@@ -147,5 +147,45 @@ class WarehouseLocationServiceTest {
         assertThatThrownBy(() -> service.nextFreeBin(TENANT, WAREHOUSE))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("成品仓位分配失败");
+    }
+
+    @Test
+    @DisplayName("🔴 同单同仓（issue #8103）：该订单已有在库仓位 ⇒ 直接复用它，**满仓也不换**")
+    void sameOrderReusesItsBinEvenWhenFull() {
+        WarehouseLocation full = bin("A-01", 11L);
+        full.setCapacity(1);
+        when(locationMapper.selectInStockBinByOrder(TENANT, WAREHOUSE, "order-9")).thenReturn(full);
+
+        WarehouseLocation allocated = service.binForOrder(TENANT, WAREHOUSE, "order-9");
+
+        assertThat(allocated.getBinCode()).isEqualTo("A-01");
+        // 「满了也不换」的机器读数：既不重新选仓，也不复核件数、不涨号
+        verify(locationMapper, never()).selectBestBinForAllocation(anyLong(), anyLong());
+        verify(stockMapper, never()).countInStockByBinCode(anyLong(), anyString());
+        verify(locationMapper, never()).claimBin(anyLong(), anyLong(), anyString(), anyString(),
+                anyString(), eq(10));
+    }
+
+    @Test
+    @DisplayName("同单首件：没有在库仓位 ⇒ 仍按水位选未满仓；同单并发由 advisory 锁串行")
+    void firstPieceOfOrderLocksThenUsesWaterLevel() {
+        when(locationMapper.selectInStockBinByOrder(TENANT, WAREHOUSE, "order-9")).thenReturn(null);
+        when(locationMapper.selectBestBinForAllocation(TENANT, WAREHOUSE)).thenReturn(bin("A-02", 12L));
+
+        WarehouseLocation allocated = service.binForOrder(TENANT, WAREHOUSE, "order-9");
+
+        assertThat(allocated.getBinCode()).isEqualTo("A-02");
+        verify(locationMapper).lockAllocationForOrder(TENANT + ":order-9");
+    }
+
+    @Test
+    @DisplayName("没有订单引用 ⇒ 不走同单规则、不拿锁（按水位选仓）")
+    void noOrderReferenceFallsBackToWaterLevel() {
+        when(locationMapper.selectBestBinForAllocation(TENANT, WAREHOUSE)).thenReturn(bin("A-03", 13L));
+
+        WarehouseLocation allocated = service.binForOrder(TENANT, WAREHOUSE, "  ");
+
+        assertThat(allocated.getBinCode()).isEqualTo("A-03");
+        verify(locationMapper, never()).lockAllocationForOrder(anyString());
     }
 }

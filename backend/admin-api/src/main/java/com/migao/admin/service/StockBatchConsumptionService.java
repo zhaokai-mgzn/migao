@@ -441,6 +441,40 @@ public class StockBatchConsumptionService {
     }
 
     /**
+     * 盘点落账的**审计来源**（issue #8104）：谁做的、这条台账该带什么前言。
+     *
+     * <p>为什么需要它：{@link StockLedgerService#resolveOperator()} 只认商家 JWT 的 principal，
+     * 工人 session 的 principal 是**工人 id 字符串** ⇒ 它回落成 {@code system}。
+     * 「系统自己改了库存」是一条假账（读库存流水的人会据此判断没人动过）⇒ 工人修正必须显式给来源。</p>
+     *
+     * @param operator   台账 {@code operator} 列（姓名 / 工号；空 ⇒ 回落既有 {@code resolveOperator()}）
+     * @param notePrefix 台账 {@code note} 的前缀（如「工人库存修正：张三（工号 CY-1001），原因 数量记错了」）
+     */
+    public record StocktakeAudit(String operator, String notePrefix) {
+    }
+
+    /** 审计来源的 operator（空 ⇒ 既有 JWT 口径；截到列宽 64，不让它变成一个写库时才炸的 500）。 */
+    private static String auditOperator(StocktakeAudit audit) {
+        if (audit == null || !StringUtils.hasText(audit.operator())) {
+            return StockLedgerService.resolveOperator();
+        }
+        String operator = audit.operator().trim();
+        return operator.length() <= 64 ? operator : operator.substring(0, 64);
+    }
+
+    /** 审计来源的 note（前缀 + 批次盘点的原句；{@code note} 列宽 255，截到 250 留余量）。 */
+    private static String auditNote(StocktakeAudit audit, BatchStockViews.BatchRemaining b,
+                                    BigDecimal delta) {
+        String base = String.format("批次盘点：批次 %s 盘前 %s 米 → 实盘 %s 米", b.batchNo(),
+                plain(b.remainingMeters()), plain(b.remainingMeters().add(delta)));
+        if (audit == null || !StringUtils.hasText(audit.notePrefix())) {
+            return base;
+        }
+        String full = audit.notePrefix().trim() + " · " + base;
+        return full.length() <= 250 ? full : full.substring(0, 250);
+    }
+
+    /**
      * 该盘点运行（run id）**已经落过账**的批次 id 集合 —— 幂等判据的**读**半边。
      *
      * <p>幂等的**写**半边在 DB：部分唯一索引 {@code uk_batch_consumption_stocktake}
@@ -489,6 +523,18 @@ public class StockBatchConsumptionService {
      *         调用方必须按「回放」出回执，**并且不得再动 SKU 库存**）
      */
     public Set<Long> applyStocktake(Long tenantId, String runId, List<StocktakeAdjustment> adjustments) {
+        return applyStocktake(tenantId, runId, adjustments, null);
+    }
+
+    /**
+     * 盘点差异落账（**带审计来源**；issue #8104）—— 与上面那条的唯一区别 = 台账 {@code note} / {@code operator}
+     * 的来源：工人库存修正要答得出「谁、为什么」，而 {@link StockLedgerService#resolveOperator()} 只认商家 JWT
+     * ⇒ 工人请求在它眼里是 system（那是**假账**：读库存流水的人会以为系统自己改的）。
+     *
+     * <p>{@code audit} 为 {@code null} 时与改前**逐字相同**（admin 盘点路径一字不动）。</p>
+     */
+    public Set<Long> applyStocktake(Long tenantId, String runId, List<StocktakeAdjustment> adjustments,
+                                    StocktakeAudit audit) {
         Set<Long> recorded = new LinkedHashSet<>();
         if (adjustments == null || adjustments.isEmpty()) {
             return recorded;
@@ -513,9 +559,8 @@ public class StockBatchConsumptionService {
                     .unitCost(b.unitCost())
                     .reason(REASON_STOCKTAKE)
                     .stocktakeRunId(runId)
-                    .operator(StockLedgerService.resolveOperator())
-                    .note(String.format("批次盘点：批次 %s 盘前 %s 米 → 实盘 %s 米", b.batchNo(),
-                            plain(b.remainingMeters()), plain(b.remainingMeters().add(delta))))
+                    .operator(auditOperator(audit))
+                    .note(auditNote(audit, b, delta))
                     .createdAt(OffsetDateTime.now())
                     .build()) > 0) {
                 recorded.add(b.batchId());
@@ -964,6 +1009,30 @@ public class StockBatchConsumptionService {
             rows.add(toRemaining(b, consumed.getOrDefault(b.getId(), BigDecimal.ZERO)));
         }
         return PageResponse.of(result.getTotal(), result.getCurrent(), result.getSize(), rows);
+    }
+
+    /**
+     * **单个批次**的当刻派生余量（issue #8104）—— 工人库存修正「按批次」找的就是它。
+     *
+     * <p>与 {@link #remaining} / {@link #remainingPage} 走**同一个** {@link #toRemaining} 派生点：
+     * 工人屏上的「系统说还剩 45.5 米」与商家盘点 / 对账看到的是同一个数（第二份算法会漂，而漂的那份不会红）。</p>
+     *
+     * @return {@code null} = 本租户没有这个批次（调用方按 404 拒绝，不猜是不是别人的）
+     */
+    public BatchStockViews.BatchRemaining remainingOfBatch(Long tenantId, Long batchId) {
+        if (batchId == null) {
+            return null;
+        }
+        StockBatch batch = stockBatchMapper.selectOne(new LambdaQueryWrapper<StockBatch>()
+                .eq(StockBatch::getTenantId, tenantId)
+                .eq(StockBatch::getId, batchId)
+                .eq(StockBatch::getDeleted, 0));
+        if (batch == null) {
+            return null;
+        }
+        BigDecimal used = consumedByBatchId(tenantId, List.of(batchId))
+                .getOrDefault(batchId, BigDecimal.ZERO);
+        return toRemaining(batch, used);
     }
 
     /** 一行的余量三值（**唯一**派生点：入库量 / 已消耗 / 剩余 = 入库 + Σdelta） */

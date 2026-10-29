@@ -81,6 +81,12 @@ export default defineAppConfig({
     // 路由字面量是**单一真值**：`src/utils/inbound/gaps.ts` 的 `PIECEWORK_PAGE_ROUTE`
     // 必须逐字等于它（没登记 = 死链 ⇒ 入口台账 tests/page-entry-reachability.test.ts 的 L0/L2 判红）
     'pages/worker/piecework/index',
+    // 工人**库存修正**（issue #8104；用户 2026-10-29 逐字「允许工人对某个批次的布匹进行修正」）：
+    // 搜批次（批次号 / 货号 / 缸号 / 入库单号）→ 看系统余量 → 填实盘米数 + 选原因 → 二次确认 → 提交。
+    // 走 `/api/worker/batch-stock/**`（工人零商家权限码，不是管理面）；服务端复用按批次盘点的唯一写面。
+    // 路由字面量是**单一真值**：`src/utils/inbound/gaps.ts` 的 `STOCK_PAGE_ROUTE` 必须逐字等于它
+    // （守卫 tests/page-entry-reachability.test.ts 的 L2：没登记进这里 = 死链 ⇒ 红）
+    'pages/worker/stock/index',
     // ── 管理面 4 项（issue #5654）：管理员离店后也要能办的事 ──
     // 路由字面量是**单一真值**：`src/utils/adminPermission.ts` 的 `ADMIN_SURFACES[].route`
     // 必须逐字等于这里的字符串（守卫 tests/admin-surfaces-platform-guard.test.ts 核验：

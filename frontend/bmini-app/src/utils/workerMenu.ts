@@ -42,6 +42,8 @@ export const WORKER_MENU_KEYS = {
   inspect: 'inspect',
   /** 返工记录（逐人开；issue #7921 —— 后端键见 `WorkerPages.REWORK`，商家面名字「返工记录」） */
   rework: 'rework',
+  /** 库存修正（issue #8104 —— 后端键见 `WorkerPages.STOCK`，默认开、可逐人关） */
+  stock: 'stock',
 } as const
 
 /**
@@ -59,6 +61,14 @@ export const TO_SHIP_PAGE_KEY = 'to_ship'
  * 工作台入口显隐由它决定，直接打开页面照旧可用（显隐 ≠ 访问拦截）。
  */
 export const REWORK_PAGE_KEY = 'rework'
+
+/**
+ * 「库存修正」的页面键（issue #8104；后端 `WorkerPages.STOCK`，默认集合里就有它）。
+ *
+ * 🔴 它只是**入口显隐**（显隐 ≠ 访问拦截）：关掉菜单不等于工人改不了库存，
+ * 只是他不必看见这个入口；真正的准入是有效工人 session。
+ */
+export const STOCK_PAGE_KEY = 'stock'
 
 /** 工人面固有入口（后端无页面键 ⇒ 恒显示；仅登记，不参与计算）。 */
 export const ALWAYS_VISIBLE = ['拍照入库', '补打入库标签'] as const

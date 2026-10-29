@@ -54,6 +54,39 @@ public interface WarehouseLocationMapper extends BaseMapper<WarehouseLocation> {
                                                  @Param("warehouseId") Long warehouseId);
 
     /**
+     * 该订单**已在库**的成品所在仓位（issue #8103「同单同仓」）。
+     *
+     * <p>打包入库时先看这一条：命中 ⇒ 后续成品**即使该仓已满也继续放这个仓位**（容量只约束
+     * 「新订单首件选仓」）；未命中 ⇒ 走 {@link #selectBestBinForAllocation}，V198 水位规则不变。</p>
+     *
+     * <p>刻意**不**筛 {@code l.status = 'active'}：已经入过库的货不因仓位被停用而换仓（停用只影响
+     * 「还能不能分给新订单」）。{@code l.deleted = 0} 是防御 —— 占用中的仓位不允许删除。</p>
+     */
+    @InterceptorIgnore(tenantLine = "true")
+    @Select("SELECT l.* FROM finished_goods_stock s "
+            + "JOIN warehouse_locations l ON l.tenant_id = s.tenant_id AND l.bin_code = s.bin_code "
+            + "WHERE s.tenant_id = #{tenantId} AND s.warehouse_id = #{warehouseId} "
+            + "  AND s.order_id = #{orderId} AND s.status = 'in_stock' AND s.deleted = 0 "
+            + "  AND l.deleted = 0 "
+            + "ORDER BY s.id LIMIT 1")
+    WarehouseLocation selectInStockBinByOrder(@Param("tenantId") Long tenantId,
+                                              @Param("warehouseId") Long warehouseId,
+                                              @Param("orderId") String orderId);
+
+    /**
+     * 按订单串行化成品入库的仓位分配（issue #8103）：**同一订单的并发入库必须排队**，
+     * 否则两个事务都看不见对方的在库行 ⇒ 各自挑一个空仓 ⇒ 同单被拆到两个仓位（正是本规则要消灭的形态）。
+     *
+     * <p>键 = {@code tenantId:orderId}（PG advisory 事务锁，事务提交/回滚自动释放，不占表行、
+     * 不需要清理）。**必须在事务内调用** —— 自动提交下锁立即释放，互斥失效。
+     * 返回恒为 1（锁已拿到）；用 {@code SELECT 1 FROM} 而不是裸 {@code SELECT func()}，
+     * 因为 PG 的 void 返回在 MyBatis 侧会被当成要映射的对象（实测 {@code No constructor found in void}）。</p>
+     */
+    @InterceptorIgnore(tenantLine = "true")
+    @Select("SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(#{key}, 0))")
+    int lockAllocationForOrder(@Param("key") String key);
+
+    /**
      * **原子占号**：插入一个仓位；同号已存在（并发建了同一个号）⇒ 0 行、**不抛异常**。
      *
      * <p>为什么不用「先查后插」：唯一索引冲突会让 PG 当前事务进入 aborted 态
