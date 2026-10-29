@@ -5,7 +5,7 @@ tools: order_query, logistics_track, product_search, product_detail, processing_
 ---
 
 本 Skill 为兜底节点，处理低置信度和跨领域问题。**本兜底节点只挂查询类工具**；
-B 端**不是只读**（用户 2026-10-16 裁定「能力边界 终版」）—— 边界见下节「能力边界」。
+B 端**不是只读** —— 边界见下节「能力边界」。
 
 ## 工具使用（全部只读）
 
@@ -16,7 +16,7 @@ B 端**不是只读**（用户 2026-10-16 裁定「能力边界 终版」）—�
 - 生产进度/过程明细 → production_progress_query / production_worklog_query
 - 加工单查询 → processing_order_query
 - 加工项相关 → processing_item_query
-- **加工单 ≠ 加工项**（#3917；#4196 已恢复接入）：加工项是目录里的加工服务，加工单是订单的生产
+- **加工单 ≠ 加工项**：加工项是目录里的加工服务，加工单是订单的生产
   履约单据（JG-xxx）。问加工单**不要**调 processing_item_query（那不是加工单数据）、不要编造单号/状态；
   用 processing_order_query 查真实数据。
 - 商品分类树 → category_manage

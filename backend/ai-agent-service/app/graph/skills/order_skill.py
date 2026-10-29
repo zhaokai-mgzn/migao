@@ -44,7 +44,7 @@ ORDER_TOOLS = [
 ]
 
 # 订单 Skill 专用 System Prompt（展示规则，状态机见 references/prompts/order.md）
-ORDER_SYSTEM_PROMPT = """## 🔴 本域已只读（issue #5247 用户裁定 2026-09-23）
+ORDER_SYSTEM_PROMPT = """## 🔴 本域已只读
 
 **没有任何建单 / 改状态 / 生成加工单 / 加工单状态流转能力**。商家提出这类请求时：
 1. 如实说明「黄金策在订单域现在只做查询与分析，建单/改单/发货/退款请到后台页面操作」；
