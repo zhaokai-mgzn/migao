@@ -44,6 +44,20 @@ CLI 又没有回填子命令 ⇒ 回填变成「**文档要求做、却没有合
 **不**新增/删除/重排条目）；② 欠账清单 + **可直接复制**的回填命令落进 `reconcile` 输出与
 `flaky-ledger-reconcile.yml` 的 job summary（可见性：那条红此前**没有任何消费面**）。
 
+#8118：**判据把「有凭据的历史销账」变成永久欠账**（本单修）
+------------------------------------------------------------
+`reconcile` 的复发判据（`status=fixed` 但同一 `(workflow, job)` 之后**又出现 flaky 事件**）原先
+只凭 **job 级**身份就否定旧条目 —— 而台账**只追加**（唯一写者只 push 新条目、**不改旧条目**）⇒
+旧条目**没有任何合法动作能改** ⇒ **不可清零的欠账**：台账分支上 required 测试
+`test_shipped_ledger_reconciles_clean` 恒红 ⇒ **台账落不了 main**；而 `flaky-ledger-reconcile.yml`
+又在**每个 PR** 上都复现那条红（存量债，`migao-dev-flow` §2.2）。**现取（2026-10-29）**：台账分支
+领先 main **41** 条、PR #7927 卡住、`fixed_not_deducted=1`（run 36280962072；复发的是
+run 40497531264，**它自己有跟踪单 #7931**）。
+⇒ 判据收窄为「**新事件自己没人跟**」才算欠账（`recurrence_is_tracked`）：出口 = 给**新事件**跑
+`follow-up --issue`（机械执行、幂等），旧条目的 `fixed_by` 是历史凭据、**不许**为变绿改写。
+类级元守卫 = 「**每个欠账桶都必须有可机械清零的出口**」（`tests/unit_ci_workflows/test_flaky_triage.py`
+的 `TestReconcileRepairPaths`）—— 新加一个没有出口的欠账桶 ⇒ 当场红。
+
 #5310：判据不许跨时刻读数（本单修）
 ----------------------------------
 `ledger-drift` 的 main 侧旧口径 = `--main-file`（= 工作区 = **job 启动时的检出快照**），
@@ -1293,6 +1307,18 @@ def ledger_violations(ledger: dict) -> list:
     return bad
 
 
+def recurrence_is_tracked(entry: dict) -> bool:
+    """#8118：这条 flaky **有没有人跟**（有跟踪单 / 自己已带凭据销账）—— 判据②的收敛条件。
+
+    为什么「有没有人跟」才配当复发判据（**现取的病灶**）：`(workflow, job)` 是 **job 级**身份
+    （一个 job 下有几百条测试），后续 flake 完全可能是**另一个机制**；而台账是**只追加**的
+    （唯一写者 `flaky-triage.yml` 只 push 新条目、不改旧条目）⇒ 旧条目**没有任何合法动作能改**
+    ⇒ 只凭 job 级身份否定它 = **不可清零的欠账** = 结构性死锁（台账分支 required 测试恒红 ⇒
+    台账落不了 main，且 `flaky-ledger-reconcile.yml` 在每个 PR 上都红 —— issue #8118）。
+    """
+    return bool(entry.get("follow_up")) or entry.get("status") == "fixed"
+
+
 def reconcile(ledger: dict) -> dict:
     """**三态对账**（照 #4757 存量账本的口径，适配「事件追加日志」语义）。返回三个清单。
 
@@ -1300,7 +1326,19 @@ def reconcile(ledger: dict) -> dict:
     |---|---|---|
     | `new_events` | `kind=flaky` 且 `status=open` 却**没有 `follow_up` 跟踪单** | 新 flaky 事件没登记修复路径 = 随机红照旧变成噪音（正是 #4717 要治的形态） |
     | `duplicates` | 幂等键 `(workflow, run_id, job)` 重复 | 同一次失败被记多条 ⇒ 计数被灌水（「N 次标 flaky」的 N 不可信） |
-    | `fixed_not_deducted` | `status=fixed` 却（a）缺 `fixed_by` 凭据，或（b）同一 `(workflow, job)` 在它**之后**又出现 flaky 事件 | 销账不成立 / **修了又复发** ⇒ 「已修」是假账 |
+    | `fixed_not_deducted` | `status=fixed` 却（a）缺 `fixed_by` 凭据，或（b）同一 `(workflow, job)` 在它**之后**又出现 flaky 事件、**且那条新事件自己没人跟**（无 `follow_up` 且未销账） | 销账不成立 / **复发无人跟** ⇒ 「已修」是假账 |
+
+    🔴 **#8118：判据（b）为什么必须收窄到「新事件没人跟」**（本仓已踩过的**结构性死锁**）：
+    `(workflow, job)` 是 **job 级**身份（一个 job 下有几百条测试），后续 flake 完全可能是**另一个
+    机制**；而台账**只追加**（唯一写者只 push 新条目）⇒ 旧条目**没有任何合法动作能改** ⇒
+    一条新 flake 就把一条**有 `fixed_by` 凭据的历史销账**变成**永久欠账**：台账分支上 required 测试
+    `test_shipped_ledger_reconciles_clean` 恒红 ⇒ **台账落不了 main**（积压条目无人落地），
+    而本兜底在**每个 PR** 上都红。**现取（2026-10-29）**：台账分支领先 main **41** 条、PR #7927
+    卡住、`reconcile` 的 `fixed_not_deducted=1`（条目 run 36280962072 / `PR Check` /
+    `admin-api unit tests`；复发的是 run 40497531264，**它自己有跟踪单 #7931**）。
+    ⇒ 收窄后欠账的**真身就是新事件**「未登记修复路径」（与 `new_events` 同一语义），出口 = 给
+    **新事件**跑 `follow-up --issue`（可机械执行、幂等）；旧条目的 `fixed_by` 是历史凭据，
+    **不许**为变绿而改写（那正是「只改 status」被禁的形态）。
 
     键全空 = 无欠账。**本判据不设阈值、不写死计数**；也**未接 required 门禁**（照实登记：
     它是**消费接口**，由后续单 / agent 按需调用）。
@@ -1341,11 +1379,16 @@ def reconcile(ledger: dict) -> dict:
                     "why": "status=fixed 但缺 fixed_by（修复凭据）⇒ 销账不成立",
                 })
             elif latest_flaky.get(group, -1) > i:
-                fixed_not_deducted.append({
-                    "index": i, "key": list(entry_key(entry)),
-                    "why": "已标 fixed，但同一 (workflow, job) 之后**又出现 flaky 事件** ⇒ "
-                           "修复不成立（复发）",
-                })
+                newer_index = latest_flaky[group]
+                # #8118：只有**新事件自己没人跟**时才算欠账（见 `reconcile` docstring）——
+                # 否则一条新 flake 会把**有凭据的历史销账**变成不可清零的永久欠账（结构性死锁）。
+                if not recurrence_is_tracked(entries[newer_index]):
+                    fixed_not_deducted.append({
+                        "index": i, "key": list(entry_key(entry)),
+                        "newer_index": newer_index,
+                        "why": "已标 fixed，但同一 (workflow, job) 之后**又出现 flaky 事件** ⇒ "
+                               "修复不成立（复发无人跟）",
+                    })
     return {"new_events": new_events, "duplicates": duplicates,
             "fixed_not_deducted": fixed_not_deducted}
 
@@ -1550,8 +1593,13 @@ def render_reconcile_report(ledger, result, ledger_path: str = LEDGER_REL) -> st
         if "fixed_by" in str(row.get("why") or ""):
             hint = "    ⇒ " + cmd(entry, " --status fixed --fixed-by '<修复凭据：PR / run / 用例>'")
         else:
-            hint = (f"    ⇒ 该 (workflow, job) 之后**又出现 flaky 事件**（修复不成立）："
-                    f"先按条目 `remedy` 重新定位机制并给红证，**不许**只改 status")
+            # #8118：出口必须**真的可行动** —— 复发的欠账真身是**新事件**（旧条目在只追加的台账里
+            # 改不了，且它的 `fixed_by` 是历史凭据）；给新事件落跟踪单即归零。
+            newer = entry_at({"index": row.get("newer_index")})
+            hint = ("    ⇒ 人工核账（本行缺新事件下标，见回填口径）" if not newer else
+                    "    ⇒ 复发的是**新事件**、且它自己没人跟（旧条目已有 `fixed_by` 凭据，"
+                    "**不许**为变绿改写它）：给新事件落跟踪单后即归零\n"
+                    f"      {cmd(newer, ' --issue <跟踪单号>')}")
         lines += [f"  · [已修未销账] {where(entry)}（{row.get('why')}）", hint]
     for row in result.get("duplicates") or []:
         entry = entry_at(row)
