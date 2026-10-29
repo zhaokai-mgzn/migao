@@ -13,9 +13,9 @@
  * | ② | 登录后**页头工人来自服务端**（不是本机拼），批次行显示系统余量 + 品名/货号/缸号 | 用本机缓存的名字 ⇒ 红 |
  * | ③ | 选中批次 ⇒ 修正面板 + 原因**来自服务端**（端侧不写第二份选项），默认选第一个 | 端侧硬编码原因列表 ⇒ 服务端多/少一项时红 |
  * | ④ | 🔴 **提交前二次确认**，文案里同时有「系统读数」和「实盘读数」；取消 ⇒ 一个写请求都不发 | 去掉 `showModal` ⇒ 红 |
- * | ⑤ | 🔴 **提交体是白名单**（`batch_id` / `actual_meters` / `reason` / `note` / `client_request_id`）；**没有** worker_id / worker_name | 把身份塞进 body ⇒ 红 |
+ * | ⑤ | 🔴 **提交体是白名单**（camelCase：`batchId` / `actualMeters` / `reason` / `note` / `clientRequestId`）；**没有** workerId / workerName | 把身份塞进 body ⇒ 红 |
  * | ⑥ | **回执四数上屏** + 三态分开说；零差异（unchanged）明说「未写入」 | 三态并成一句 ⇒ 红 |
- * | ⑦ | 🔴 **幂等**：同一份输入重试 ⇒ 同一个 `client_request_id`；改了输入再提交 ⇒ 换新键 | 每次提交都新生成 ⇒ 重试双记，红 |
+ * | ⑦ | 🔴 **幂等**：同一份输入重试 ⇒ 同一个 `clientRequestId`；改了输入再提交 ⇒ 换新键 | 每次提交都新生成 ⇒ 重试双记，红 |
  * | ⑧ | **校验先于请求**：空 / 负数 / 2 位小数 ⇒ 不发请求 + 可行动文案 | 放行 `-1` ⇒ 红 |
  * | ⑨ | 🔴 **401 单独一态**：会话失效 ⇒ 引导登录（清本机工人身份），不是「读不到」/「没有批次」 | 把 401 当空态 ⇒ 红 |
  * | ⑩ | **空态 / 读失败互斥**：空结果给「换个关键词」，读失败给「重试」；点重试会再读一次 | 两者共用一个态 ⇒ 红 |
@@ -199,15 +199,15 @@ it('④ 提交前二次确认：文案同时含系统读数与实盘读数；确
   await waitFor(() => expect(mockSubmit).toHaveBeenCalledTimes(1))
   const body = mockSubmit.mock.calls[0][0]
   expect(Object.keys(body).sort()).toEqual(
-    ['actual_meters', 'batch_id', 'client_request_id', 'reason'].sort(),
+    ['actualMeters', 'batchId', 'clientRequestId', 'reason'].sort(),
   )
-  expect(body.batch_id).toBe(7)
-  expect(body.actual_meters).toBe(42.5)
+  expect(body.batchId).toBe(7)
+  expect(body.actualMeters).toBe(42.5)
   expect(body.reason).toBe('damaged')
-  expect(typeof body.client_request_id).toBe('string')
-  expect(body.client_request_id.length).toBeGreaterThan(0)
-  expect(body).not.toHaveProperty('worker_id')
-  expect(body).not.toHaveProperty('worker_name')
+  expect(typeof body.clientRequestId).toBe('string')
+  expect(body.clientRequestId.length).toBeGreaterThan(0)
+  expect(body).not.toHaveProperty('workerId')
+  expect(body).not.toHaveProperty('workerName')
 
   const receiptCard = await screen.findByTestId('worker-stock-receipt')
   expect(receiptCard.textContent).toContain('已修正')
@@ -261,18 +261,18 @@ it('⑦ 同一份输入重试 ⇒ 复用同一个 client_request_id；改了米�
   await selectAndFill('42')
   fireEvent.click(screen.getByTestId('worker-stock-submit'))
   await waitFor(() => expect(mockSubmit).toHaveBeenCalledTimes(1))
-  const firstKey = mockSubmit.mock.calls[0][0].client_request_id
+  const firstKey = mockSubmit.mock.calls[0][0].clientRequestId
 
   // 同一份输入，再点一次 ⇒ 幂等键必须一致（服务端按回放处理，不双记）
   fireEvent.click(screen.getByTestId('worker-stock-submit'))
   await waitFor(() => expect(mockSubmit).toHaveBeenCalledTimes(2))
-  expect(mockSubmit.mock.calls[1][0].client_request_id).toBe(firstKey)
+  expect(mockSubmit.mock.calls[1][0].clientRequestId).toBe(firstKey)
 
   // 改了米数 ⇒ 这是一次**新的**提交 ⇒ 新键（否则服务端按上一次回放、静默不落账）
   fireEvent.change(screen.getByTestId('worker-stock-meters'), { target: { value: '40' } })
   fireEvent.click(screen.getByTestId('worker-stock-submit'))
   await waitFor(() => expect(mockSubmit).toHaveBeenCalledTimes(3))
-  expect(mockSubmit.mock.calls[2][0].client_request_id).not.toBe(firstKey)
+  expect(mockSubmit.mock.calls[2][0].clientRequestId).not.toBe(firstKey)
 })
 
 // ═══════════════════════════════════════════════════ ⑧ 校验先于请求

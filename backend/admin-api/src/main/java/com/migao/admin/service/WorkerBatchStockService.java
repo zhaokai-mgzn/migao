@@ -5,7 +5,6 @@ import com.migao.admin.dto.BatchStocktakeRequest;
 import com.migao.admin.dto.BatchStockViews;
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.dto.WorkerBatchCorrectionRequest;
-import com.migao.admin.dto.WorkerBatchStockViews;
 import com.migao.admin.entity.Product;
 import com.migao.admin.entity.User;
 import com.migao.admin.exception.BusinessException;
@@ -42,6 +41,13 @@ import java.util.Set;
  * {@code tests/unit_ci_workflows/test_batch_stocktake_write_point.py} 钉住「批次台账的写入点唯一」）。
  * 于是「工人修正」与「商家盘点」在账上是**同一种事实**（实盘为准），差异只在
  * {@code note} 里写明是谁、为什么 —— 不需要新迁移、不需要新的 reason 族。</p>
+ *
+ * <h2>读面的键形：Map + snake_case（不是 DTO）</h2>
+ * <p>与工人端其它读面（发货单 / 返工记录 / 计件）**同一口径**：响应是手拼的
+ * {@code Map<String, Object>}，键一律 snake_case。为什么不用 record + {@code @JsonNaming}：
+ * 全仓**唯一**的冻结键声明手段是显式 {@code @JsonProperty}（类级守卫
+ * {@code tests/unit_ci_workflows/test_read_face_json_key_guard.py} 的前提就是「没有显式命名策略」），
+ * 而工人读面历来绕开它、直接拼 Map —— 引入第二套命名机制会让那条守卫的前提失效。</p>
  *
  * <h2>五条口径（每条都有会红的判据）</h2>
  * <ol>
@@ -86,11 +92,11 @@ public class WorkerBatchStockService {
      * <p>取值不参与库存算法 —— 只进台账 {@code note}。验收集合的意义是「工人必须说出为什么」，
      * 而不是「不同原因走不同口径」（那会把一次盘点拆成几个族，见类注释的边界）。</p>
      */
-    public static final List<WorkerBatchStockViews.Reason> REASONS = List.of(
-            new WorkerBatchStockViews.Reason("miscount", "数量记错了"),
-            new WorkerBatchStockViews.Reason("damaged", "破损 / 报废"),
-            new WorkerBatchStockViews.Reason("wrong_batch", "报工选错批次"),
-            new WorkerBatchStockViews.Reason("other", "其他"));
+    public static final List<Reason> REASONS = List.of(
+            new Reason("miscount", "数量记错了"),
+            new Reason("damaged", "破损 / 报废"),
+            new Reason("wrong_batch", "报工选错批次"),
+            new Reason("other", "其他"));
 
     /** 幂等键 → 盘点运行标识的前缀（与裁剪报工的 {@code wc-} 形态同族，但**不复用**它的键空间）。 */
     public static final String RUN_PREFIX = "wc-";
@@ -101,8 +107,12 @@ public class WorkerBatchStockService {
     /** 幂等键上限（{@code wc-} + 48 = 51 ≤ 列宽 64）。 */
     public static final int MAX_REQUEST_ID_LENGTH = 48;
 
+    /** 一个修正原因（内部类型：上屏时由 {@link #reasonViews()} 拼成 snake_case Map）。 */
+    public record Reason(String code, String label) {
+    }
+
     private static final Set<String> REASON_CODES = REASONS.stream()
-            .map(WorkerBatchStockViews.Reason::code)
+            .map(Reason::code)
             .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
 
     private final StockBatchConsumptionService batchStockService;
@@ -118,18 +128,32 @@ public class WorkerBatchStockService {
      *
      * @param keyword 可为空（空 = 最近入库的批次，工人可直接浏览）
      */
-    public WorkerBatchStockViews.BatchPage search(Long tenantId, String keyword, long page, long size) {
+    public Map<String, Object> search(Long tenantId, String keyword, long page, long size) {
         PageResponse<BatchStockViews.BatchRemaining> result =
                 batchStockService.remainingPage(tenantId, null, null, keyword, page, size);
         Map<String, String> names = productNames(tenantId, result.getItems());
-        List<WorkerBatchStockViews.BatchRow> rows = new ArrayList<>();
+        List<Map<String, Object>> items = new ArrayList<>();
         for (BatchStockViews.BatchRemaining row : result.getItems()) {
-            rows.add(new WorkerBatchStockViews.BatchRow(row.batchId(), row.batchNo(), row.productId(),
-                    names.get(row.productId()), row.skuCode(), row.dyeLot(), row.inboundNo(),
-                    row.receivedDate(), row.remainingMeters()));
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("batch_id", row.batchId());
+            item.put("batch_no", row.batchNo());
+            item.put("product_id", row.productId());
+            // getOrDefault：键可能就是 null（批次没挂商品）⇒ 不拿不可变表的 get(null) 冒险
+            item.put("product_name", names.getOrDefault(row.productId(), null));
+            item.put("sku_code", row.skuCode());
+            item.put("dye_lot", row.dyeLot());
+            item.put("inbound_no", row.inboundNo());
+            item.put("received_date", row.receivedDate());
+            item.put("remaining_meters", row.remainingMeters());
+            items.add(item);
         }
-        return new WorkerBatchStockViews.BatchPage(rows, result.getTotal(), result.getPage(),
-                result.getSize(), REASONS);
+        Map<String, Object> pageView = new LinkedHashMap<>();
+        pageView.put("items", items);
+        pageView.put("total", result.getTotal());
+        pageView.put("page", result.getPage());
+        pageView.put("size", result.getSize());
+        pageView.put("reasons", reasonViews());
+        return pageView;
     }
 
     /**
@@ -139,9 +163,10 @@ public class WorkerBatchStockService {
      * 任一不合法 ⇒ 一个字节都不落（上游 {@code BatchStocktakeService} 的「校验先于写入」再兜一层）。</p>
      *
      * @param identity 由 {@code WorkerSessionService} 从工人 session 解出的身份（**不是**请求体里的字段）
+     * @return 回执 Map（snake_case：盘前 / 实盘 / 差异 / 盘后 + 谁做的）
      */
-    public WorkerBatchStockViews.Correction correct(Long tenantId, WorkerIdentity identity,
-                                                    WorkerBatchCorrectionRequest request) {
+    public Map<String, Object> correct(Long tenantId, WorkerIdentity identity,
+                                       WorkerBatchCorrectionRequest request) {
         if (identity == null) {
             throw BusinessException.authFailed("尚未登录工人身份，请先用工号 + PIN 登录");
         }
@@ -175,7 +200,7 @@ public class WorkerBatchStockService {
         String operator = operatorOf(identity);
         String reasonLabel = REASONS.stream()
                 .filter(r -> r.code().equals(reason))
-                .map(WorkerBatchStockViews.Reason::label)
+                .map(Reason::label)
                 .findFirst()
                 .orElse(reason);
         String prefix = notePrefix(identity, workerNo, reasonLabel, note);
@@ -197,9 +222,20 @@ public class WorkerBatchStockService {
         log.info("工人库存修正: tenant={}, worker={}({}), batch={}, before={}, actual={}, delta={}, status={}",
                 tenantId, identity.workerName(), workerNo, batch.batchNo(),
                 line.beforeMeters(), line.actualMeters(), line.delta(), line.status());
-        return new WorkerBatchStockViews.Correction(runId, line.batchId(), line.batchNo(),
-                names(batch.productId()), line.skuCode(), line.status(), line.beforeMeters(),
-                line.actualMeters(), line.delta(), line.afterMeters(), identity.workerName(), workerNo);
+        Map<String, Object> receipt = new LinkedHashMap<>();
+        receipt.put("run_id", runId);
+        receipt.put("batch_id", line.batchId());
+        receipt.put("batch_no", line.batchNo());
+        receipt.put("product_name", names(batch.productId()));
+        receipt.put("sku_code", line.skuCode());
+        receipt.put("status", line.status());
+        receipt.put("before_meters", line.beforeMeters());
+        receipt.put("actual_meters", line.actualMeters());
+        receipt.put("delta_meters", line.delta());
+        receipt.put("after_meters", line.afterMeters());
+        receipt.put("worker_name", identity.workerName());
+        receipt.put("worker_no", workerNo);
+        return receipt;
     }
 
     // ══════════════════════════════════════════════════════════════════════════════
@@ -211,7 +247,7 @@ public class WorkerBatchStockService {
         if (!REASON_CODES.contains(reason)) {
             throw BusinessException.validationError(String.format(
                     "请选择修正原因（可选：%s）—— 台账要答得出「这批为什么变了」",
-                    String.join(" / ", REASONS.stream().map(WorkerBatchStockViews.Reason::code).toList())));
+                    String.join(" / ", REASONS.stream().map(Reason::code).toList())));
         }
         return reason;
     }
@@ -270,6 +306,18 @@ public class WorkerBatchStockService {
         return operator.length() <= 64 ? operator : operator.substring(0, 64);
     }
 
+    /** 原因清单的读面形态（snake_case；端侧按它渲染选项，不写第二份）。 */
+    private static List<Map<String, Object>> reasonViews() {
+        List<Map<String, Object>> views = new ArrayList<>(REASONS.size());
+        for (Reason reason : REASONS) {
+            Map<String, Object> view = new LinkedHashMap<>();
+            view.put("code", reason.code());
+            view.put("label", reason.label());
+            views.add(view);
+        }
+        return views;
+    }
+
     /** 工号（会话行里有，但 {@link WorkerIdentity} 不承载 ⇒ 按 workerId 读一次；读不到不编）。 */
     private String workerNo(WorkerIdentity identity) {
         if (!StringUtils.hasText(identity.workerId())) {
@@ -288,6 +336,11 @@ public class WorkerBatchStockService {
         return products.isEmpty() ? null : products.get(0).getName();
     }
 
+    /**
+     * 一批次的品名（一次查库，避免 N+1）。
+     *
+     * <p>返回值恒为可变 Map（空集也是）—— 调用方用 {@code getOrDefault} 取，键可能是 null。</p>
+     */
     private Map<String, String> productNames(Long tenantId,
                                              List<BatchStockViews.BatchRemaining> rows) {
         Set<String> ids = new LinkedHashSet<>();
@@ -296,13 +349,13 @@ public class WorkerBatchStockService {
                 ids.add(row.productId());
             }
         }
+        Map<String, String> out = new LinkedHashMap<>();
         if (ids.isEmpty()) {
-            return Map.of();
+            return out;
         }
         List<Product> products = productMapper.selectList(new LambdaQueryWrapper<Product>()
                 .eq(Product::getTenantId, tenantId)
                 .in(Product::getId, ids));
-        Map<String, String> out = new LinkedHashMap<>();
         for (Product product : products) {
             out.put(product.getId(), product.getName());
         }

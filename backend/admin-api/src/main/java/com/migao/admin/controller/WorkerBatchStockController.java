@@ -3,7 +3,6 @@ package com.migao.admin.controller;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.dto.WorkerBatchCorrectionRequest;
-import com.migao.admin.dto.WorkerBatchStockViews;
 import com.migao.admin.service.WorkerBatchStockService;
 import com.migao.admin.worker.WorkerIdentity;
 import com.migao.admin.worker.WorkerSessionService;
@@ -16,6 +15,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Map;
 
 /**
  * 工人端**批次库存修正**（issue #8104）——{@code /api/worker/batch-stock/**}。
@@ -60,7 +61,7 @@ public class WorkerBatchStockController {
      * {@code page} 从 1 起、{@code size} 服务端夹到上限（{@code StockBatchConsumptionService} 的既有口径）。</p>
      */
     @GetMapping("/batches")
-    public ApiResponse<WorkerBatchStockViews.BatchPage> batches(
+    public ApiResponse<Map<String, Object>> batches(
             @RequestParam(name = "keyword", required = false) String keyword,
             @RequestParam(name = "page", defaultValue = "1") long page,
             @RequestParam(name = "size", defaultValue = "20") long size,
@@ -81,7 +82,7 @@ public class WorkerBatchStockController {
      * （零写入）· {@code replayed} 同一次提交此前已记过（幂等回放，未重复修正）。</p>
      */
     @PostMapping("/correction")
-    public ApiResponse<WorkerBatchStockViews.Correction> correction(
+    public ApiResponse<Map<String, Object>> correction(
             @RequestBody(required = false) WorkerBatchCorrectionRequest request,
             @RequestHeader(value = WorkerSessionService.SESSION_HEADER, required = false) String sessionId) {
         WorkerIdentity identity = workerSessionService.resolveIdentity(sessionId);

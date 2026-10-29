@@ -4,7 +4,6 @@ package com.migao.admin.controller;
 
 import com.migao.admin.dto.BatchStockViews;
 import com.migao.admin.dto.WorkerBatchCorrectionRequest;
-import com.migao.admin.dto.WorkerBatchStockViews;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.security.RequirePermission;
 import com.migao.admin.service.WorkerBatchStockService;
@@ -20,7 +19,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -78,16 +79,48 @@ class WorkerBatchStockControllerTest extends BaseControllerTest {
         mockMvc = buildMockMvc(new WorkerBatchStockController(workerBatchStockService, workerSessionService));
     }
 
-    private static WorkerBatchStockViews.BatchRow row() {
-        return new WorkerBatchStockViews.BatchRow(7L, "PC-20261020-0007", "prod-1", "雪尼尔窗帘布",
-                "2659-04-28", "A12", "RK-20261020-0001", LocalDate.of(2026, 10, 20),
-                new BigDecimal("45.5"));
+    private static Map<String, Object> row() {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("batch_id", 7L);
+        row.put("batch_no", "PC-20261020-0007");
+        row.put("product_id", "prod-1");
+        row.put("product_name", "雪尼尔窗帘布");
+        row.put("sku_code", "2659-04-28");
+        row.put("dye_lot", "A12");
+        row.put("inbound_no", "RK-20261020-0001");
+        row.put("received_date", LocalDate.of(2026, 10, 20));
+        row.put("remaining_meters", new BigDecimal("45.5"));
+        return row;
     }
 
-    private static WorkerBatchStockViews.Correction correction(String status) {
-        return new WorkerBatchStockViews.Correction("wc-8f2b", 7L, "PC-20261020-0007", "雪尼尔窗帘布",
-                "2659-04-28", status, new BigDecimal("45.5"), new BigDecimal("42"),
-                new BigDecimal("-3.5"), new BigDecimal("42"), "张三", "CY-1001");
+    private static Map<String, Object> page() {
+        Map<String, Object> reason = new LinkedHashMap<>();
+        reason.put("code", "miscount");
+        reason.put("label", "数量记错了");
+        Map<String, Object> page = new LinkedHashMap<>();
+        page.put("items", List.of(row()));
+        page.put("total", 1L);
+        page.put("page", 1L);
+        page.put("size", 20L);
+        page.put("reasons", List.of(reason));
+        return page;
+    }
+
+    private static Map<String, Object> correction(String status) {
+        Map<String, Object> receipt = new LinkedHashMap<>();
+        receipt.put("run_id", "wc-8f2b");
+        receipt.put("batch_id", 7L);
+        receipt.put("batch_no", "PC-20261020-0007");
+        receipt.put("product_name", "雪尼尔窗帘布");
+        receipt.put("sku_code", "2659-04-28");
+        receipt.put("status", status);
+        receipt.put("before_meters", new BigDecimal("45.5"));
+        receipt.put("actual_meters", new BigDecimal("42"));
+        receipt.put("delta_meters", new BigDecimal("-3.5"));
+        receipt.put("after_meters", new BigDecimal("42"));
+        receipt.put("worker_name", "张三");
+        receipt.put("worker_no", "CY-1001");
+        return receipt;
     }
 
     // ────────────────────────────────────────────────────────── ① 无 session ⇒ 401 + 零调用
@@ -112,11 +145,8 @@ class WorkerBatchStockControllerTest extends BaseControllerTest {
     @Test
     @DisplayName("② 搜批次 ⇒ 200 + 服务端行原样下发（含原因闭词表；tenant 来自会话上下文）")
     void searchPassesTheSessionTenantAndReturnsRowsVerbatim() throws Exception {
-        WorkerBatchStockViews.BatchPage page = new WorkerBatchStockViews.BatchPage(
-                List.of(row()), 1L, 1L, 20L,
-                List.of(new WorkerBatchStockViews.Reason("miscount", "数量记错了")));
         when(workerBatchStockService.search(eq(TEST_TENANT_ID), eq("PC-20261020"), eq(1L), eq(20L)))
-                .thenReturn(page);
+                .thenReturn(page());
 
         mockMvc.perform(get(BATCHES_URL)
                         .param("keyword", "PC-20261020")
@@ -141,8 +171,8 @@ class WorkerBatchStockControllerTest extends BaseControllerTest {
         mockMvc.perform(post(CORRECTION_URL)
                         .contentType(MediaType.APPLICATION_JSON)
                         .header(WorkerSessionService.SESSION_HEADER, SESSION)
-                        .content("{\"batch_id\":7,\"actual_meters\":42,\"reason\":\"miscount\","
-                                + "\"client_request_id\":\"8f2b-1\"}"))
+                        .content("{\"batchId\":7,\"actualMeters\":42,\"reason\":\"miscount\","
+                                + "\"clientRequestId\":\"8f2b-1\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("applied"))
                 .andExpect(jsonPath("$.data.before_meters").value(45.5))
@@ -156,7 +186,7 @@ class WorkerBatchStockControllerTest extends BaseControllerTest {
         ArgumentCaptor<WorkerBatchCorrectionRequest> body =
                 ArgumentCaptor.forClass(WorkerBatchCorrectionRequest.class);
         verify(workerBatchStockService).correct(eq(TEST_TENANT_ID), eq(ZHANG), body.capture());
-        // 请求体契约 = snake_case（与工人端其它读面 / 写法同口径）
+        // 请求体契约 = camelCase（与工人端其它**写面**同口径；读面才是 snake_case）
         assertThat(body.getValue().getBatchId()).isEqualTo(7L);
         assertThat(body.getValue().getActualMeters()).isEqualByComparingTo("42");
         assertThat(body.getValue().getReason()).isEqualTo("miscount");
@@ -171,8 +201,8 @@ class WorkerBatchStockControllerTest extends BaseControllerTest {
                 .when(workerBatchStockService).correct(any(), any(), any());
         mockMvc.perform(post(CORRECTION_URL).contentType(MediaType.APPLICATION_JSON)
                         .header(WorkerSessionService.SESSION_HEADER, SESSION)
-                        .content("{\"batch_id\":7,\"actual_meters\":-1,\"reason\":\"miscount\","
-                                + "\"client_request_id\":\"x\"}"))
+                        .content("{\"batchId\":7,\"actualMeters\":-1,\"reason\":\"miscount\","
+                                + "\"clientRequestId\":\"x\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("WORKER_STOCK_CORRECTION_ACTUAL_NEGATIVE"));
 
@@ -180,7 +210,7 @@ class WorkerBatchStockControllerTest extends BaseControllerTest {
                 .when(workerBatchStockService).correct(any(), any(), any());
         mockMvc.perform(post(CORRECTION_URL).contentType(MediaType.APPLICATION_JSON)
                         .header(WorkerSessionService.SESSION_HEADER, SESSION)
-                        .content("{\"batch_id\":7,\"actual_meters\":42,\"client_request_id\":\"x\"}"))
+                        .content("{\"batchId\":7,\"actualMeters\":42,\"clientRequestId\":\"x\"}"))
                 .andExpect(status().isUnprocessableEntity());
     }
 

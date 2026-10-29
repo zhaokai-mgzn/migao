@@ -5,7 +5,6 @@ package com.migao.admin.service;
 import com.migao.admin.dto.BatchStockViews;
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.dto.WorkerBatchCorrectionRequest;
-import com.migao.admin.dto.WorkerBatchStockViews;
 import com.migao.admin.entity.Product;
 import com.migao.admin.entity.User;
 import com.migao.admin.exception.BusinessException;
@@ -20,6 +19,7 @@ import org.mockito.ArgumentCaptor;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -107,6 +107,17 @@ class WorkerBatchStockServiceTest {
         return request;
     }
 
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> itemsOf(Map<String, Object> page) {
+        return (List<Map<String, Object>>) page.get("items");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<String> reasonCodes(Map<String, Object> page) {
+        List<Map<String, Object>> reasons = (List<Map<String, Object>>) page.get("reasons");
+        return reasons.stream().map(r -> (String) r.get("code")).toList();
+    }
+
     // ────────────────────────────────────────────── ① 复用唯一写面 + 审计来源
 
     @Test
@@ -121,7 +132,7 @@ class WorkerBatchStockServiceTest {
         WorkerBatchCorrectionRequest request = request("42", "miscount", "8f2b");
         request.setNote("裁过一截");
 
-        WorkerBatchStockViews.Correction receipt = service.correct(TENANT, zhang(), request);
+        Map<String, Object> receipt = service.correct(TENANT, zhang(), request);
 
         // 唯一写面：批次归属由服务端从批次行解析（不是请求体自带的 productId）
         ArgumentCaptor<List<com.migao.admin.dto.BatchStocktakeRequest.Line>> lines =
@@ -139,14 +150,16 @@ class WorkerBatchStockServiceTest {
         assertThat(audit.getValue().notePrefix())
                 .contains("工人库存修正", WORKER_NAME, WORKER_NO, "数量记错了", "裁过一截");
 
-        // 回执四数原样透传
-        assertThat(receipt.status()).isEqualTo(BatchStockViews.STOCKTAKE_APPLIED);
-        assertThat(receipt.beforeMeters()).isEqualByComparingTo("45.5");
-        assertThat(receipt.actualMeters()).isEqualByComparingTo("42");
-        assertThat(receipt.deltaMeters()).isEqualByComparingTo("-3.5");
-        assertThat(receipt.afterMeters()).isEqualByComparingTo("42");
-        assertThat(receipt.productName()).isEqualTo("雪尼尔窗帘布");
-        assertThat(receipt.workerNo()).isEqualTo(WORKER_NO);
+        // 回执四数原样透传（读面键形 = snake_case，与工人端其它读面同口径）
+        assertThat(receipt.get("run_id")).isEqualTo("wc-8f2b");
+        assertThat(receipt.get("status")).isEqualTo(BatchStockViews.STOCKTAKE_APPLIED);
+        assertThat((BigDecimal) receipt.get("before_meters")).isEqualByComparingTo("45.5");
+        assertThat((BigDecimal) receipt.get("actual_meters")).isEqualByComparingTo("42");
+        assertThat((BigDecimal) receipt.get("delta_meters")).isEqualByComparingTo("-3.5");
+        assertThat((BigDecimal) receipt.get("after_meters")).isEqualByComparingTo("42");
+        assertThat(receipt.get("product_name")).isEqualTo("雪尼尔窗帘布");
+        assertThat(receipt.get("worker_name")).isEqualTo(WORKER_NAME);
+        assertThat(receipt.get("worker_no")).isEqualTo(WORKER_NO);
     }
 
     @Test
@@ -158,14 +171,14 @@ class WorkerBatchStockServiceTest {
                         BigDecimal.ZERO,
                         List.of(line(BatchStockViews.STOCKTAKE_UNCHANGED, "42", "42", "0", "42"))));
 
-        assertThat(service.correct(TENANT, zhang(), request("42", "miscount", "a")).status())
+        assertThat(service.correct(TENANT, zhang(), request("42", "miscount", "a")).get("status"))
                 .isEqualTo(BatchStockViews.STOCKTAKE_UNCHANGED);
 
         when(batchStocktakeService.stocktake(any(), anyString(), anyString(), any(), any()))
                 .thenReturn(new BatchStockViews.StocktakeResult("wc-b", PRODUCT_ID, 0, 0, 1,
                         BigDecimal.ZERO,
                         List.of(line(BatchStockViews.STOCKTAKE_REPLAYED, "45.5", "42", "0", "45.5"))));
-        assertThat(service.correct(TENANT, zhang(), request("42", "damaged", "b")).status())
+        assertThat(service.correct(TENANT, zhang(), request("42", "damaged", "b")).get("status"))
                 .isEqualTo(BatchStockViews.STOCKTAKE_REPLAYED);
     }
 
@@ -243,15 +256,16 @@ class WorkerBatchStockServiceTest {
         when(batchStockService.remainingPage(eq(TENANT), any(), any(), eq("PC"), eq(2L), eq(10L)))
                 .thenReturn(PageResponse.of(1L, 2L, 10L, List.of(remaining("45.5"))));
 
-        WorkerBatchStockViews.BatchPage page = service.search(TENANT, "PC", 2, 10);
+        Map<String, Object> page = service.search(TENANT, "PC", 2, 10);
 
-        assertThat(page.items()).hasSize(1);
-        assertThat(page.items().get(0).productName()).isEqualTo("雪尼尔窗帘布");
-        assertThat(page.items().get(0).remainingMeters()).isEqualByComparingTo("45.5");
-        assertThat(page.total()).isEqualTo(1);
-        assertThat(page.reasons()).isEqualTo(WorkerBatchStockService.REASONS);
-        assertThat(page.reasons()).extracting(WorkerBatchStockViews.Reason::code)
-                .containsExactly("miscount", "damaged", "wrong_batch", "other");
+        List<Map<String, Object>> items = itemsOf(page);
+        assertThat(items).hasSize(1);
+        assertThat(items.get(0).get("product_name")).isEqualTo("雪尼尔窗帘布");
+        assertThat(items.get(0).get("batch_no")).isEqualTo("PC-20261020-0007");
+        assertThat((BigDecimal) items.get(0).get("remaining_meters")).isEqualByComparingTo("45.5");
+        assertThat(page.get("total")).isEqualTo(1L);
+        // 原因清单跟读面一起下发（端侧不写第二份选项）
+        assertThat(reasonCodes(page)).containsExactly("miscount", "damaged", "wrong_batch", "other");
     }
 
     @Test
@@ -261,9 +275,9 @@ class WorkerBatchStockServiceTest {
         assertThat(WorkerBatchStockService.REASONS)
                 .allSatisfy(r -> assertThat(r.code()).isNotBlank())
                 .allSatisfy(r -> assertThat(r.label()).isNotBlank());
-        assertThat(WorkerBatchStockService.REASONS).extracting(WorkerBatchStockViews.Reason::code)
+        assertThat(WorkerBatchStockService.REASONS).extracting(WorkerBatchStockService.Reason::code)
                 .doesNotHaveDuplicates();
-        assertThat(WorkerBatchStockService.REASONS).extracting(WorkerBatchStockViews.Reason::label)
+        assertThat(WorkerBatchStockService.REASONS).extracting(WorkerBatchStockService.Reason::label)
                 .doesNotHaveDuplicates();
     }
 }

@@ -51,7 +51,12 @@
 
 ---
 
-## 3. 接口契约（snake_case，与工人端其它读面同口径）
+## 3. 接口契约（读面 snake_case / 写面 camelCase —— 与工人端既有口径一致）
+
+> 键形不是随便定的：工人端**读面**一律手拼 `Map` + snake_case（发货单 / 返工记录 / 计件都这样），
+> **写面**一律 camelCase DTO（`WorkerShipmentController` 的 `trackingNo` / `logisticsType`）。
+> 混用会让某一侧静默不绑定，而屏上「明明填了」（类级守卫 `test_read_face_json_key_guard.py`
+> 的前提就是「全仓没有显式命名策略」，故这里**不**引入 `@JsonNaming` 这一套）。
 
 ### `GET /api/worker/batch-stock/batches?keyword=&page=1&size=20`
 
@@ -73,8 +78,10 @@
 ### `POST /api/worker/batch-stock/correction`
 
 ```json
-{"batch_id": 7, "actual_meters": 42, "reason": "miscount", "note": "裁过一截", "client_request_id": "8f2b-…"}
+{"batchId": 7, "actualMeters": 42, "reason": "miscount", "note": "裁过一截", "clientRequestId": "8f2b-…"}
 ```
+
+- 字段集 = 能力集：**没有** `workerId` / `workerName` / `tenantId`（身份由 `X-Worker-Session-Id` 解，租户由会话上下文定）。
 
 回执（**四数一起回**，读的人不必自己减）：
 

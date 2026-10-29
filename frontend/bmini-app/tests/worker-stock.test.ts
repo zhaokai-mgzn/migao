@@ -6,7 +6,7 @@
  *
  * | # | 判据 | 红证（怎么让它单独变红） |
  * |---|---|---|
- * | ① | **提交体是构造式白名单**：只有 5 个键，**没有** worker_id / worker_name / tenant_id | 把身份字段塞进 body ⇒ 键集断言红 |
+ * | ① | **提交体是构造式白名单**：只有 5 个键（camelCase），**没有** workerId / workerName / tenantId | 把身份字段塞进 body ⇒ 键集断言红 |
  * | ② | **米数口径与库存链路同一把尺**：非负、最多 1 位小数、非数字/空 ⇒ 明确文案 | 放行 `-1` / `42.55` / `abc` ⇒ 红 |
  * | ③ | **三态分开说**：applied / unchanged / replayed 三句**互不相同**，未知状态如实显示 | 三态并成一句「提交成功」⇒ 红 |
  * | ④ | **缺值不冒充 0**：米数缺值 ⇒ `—`；差异 0 ⇒ 「无差异」（不印 `+0`） | 缺值回落 0 ⇒ 红 |
@@ -58,17 +58,20 @@ describe('buildCorrectionBody（构造式白名单）', () => {
   it('③ 只有 5 个键；身份 / 租户字段**结构上不存在**', () => {
     const body = buildCorrectionBody(ROW, 42.5, 'miscount', '  裁过一截  ', 'req-1')
     expect(Object.keys(body).sort()).toEqual(
-      ['actual_meters', 'batch_id', 'client_request_id', 'note', 'reason'].sort(),
+      ['actualMeters', 'batchId', 'clientRequestId', 'note', 'reason'].sort(),
     )
-    expect(body.batch_id).toBe(7)
-    expect(body.actual_meters).toBe(42.5)
+    expect(body.batchId).toBe(7)
+    expect(body.actualMeters).toBe(42.5)
     expect(body.reason).toBe('miscount')
     // 备注去掉首尾空白（不把空格当内容发上去）
     expect(body.note).toBe('裁过一截')
-    expect(body.client_request_id).toBe('req-1')
-    expect(body).not.toHaveProperty('worker_id')
-    expect(body).not.toHaveProperty('worker_name')
-    expect(body).not.toHaveProperty('tenant_id')
+    expect(body.clientRequestId).toBe('req-1')
+    expect(body).not.toHaveProperty('workerId')
+    expect(body).not.toHaveProperty('workerName')
+    expect(body).not.toHaveProperty('tenantId')
+    // 🔴 写面键形 = camelCase（与工人端其它写面同口径）；读面才是 snake_case
+    expect(body).not.toHaveProperty('batch_id')
+    expect(body).not.toHaveProperty('actual_meters')
   })
 
   it('④ 空备注 ⇒ 不带 note 键（不是空串、不是 null）', () => {

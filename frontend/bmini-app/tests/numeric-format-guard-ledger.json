@@ -5,7 +5,9 @@
     { "file": "src/services/adminOpsService.ts", "fn": "formatWaitHours", "guard": "Number.isFinite" },
     { "file": "src/services/adminOpsService.ts", "fn": "formatYuanAmount", "guard": "Number.isFinite" },
     { "file": "src/services/dashboardService.ts", "fn": "formatPercent", "guard": "Number.isFinite" },
-    { "file": "src/services/dashboardService.ts", "fn": "formatYuan", "guard": "Number.isFinite" }
+    { "file": "src/services/dashboardService.ts", "fn": "formatYuan", "guard": "Number.isFinite" },
+    { "file": "src/utils/workerStock.ts", "fn": "formatDelta", "guard": "Number.isFinite" },
+    { "file": "src/utils/workerStock.ts", "fn": "formatMeters", "guard": "Number.isFinite" }
   ],
   "exempt": []
 }

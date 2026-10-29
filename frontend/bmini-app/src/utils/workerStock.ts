@@ -10,8 +10,8 @@
  *
  * ## 三条口径（与服务端逐字对齐，不在这里「再宽松一点」）
  *
- * 1. 🔴 **提交体是构造式白名单**：只有 `batch_id` / `actual_meters` / `reason` / `note` /
- *    `client_request_id` 五个键 —— `worker_id` / `worker_name` / `tenant_id` **结构上不存在**
+ * 1. 🔴 **提交体是构造式白名单**：只有 `batchId` / `actualMeters` / `reason` / `note` /
+ *    `clientRequestId` 五个键（写面 camelCase）—— `workerId` / `workerName` / `tenantId` **结构上不存在**
  *    （身份由 `X-Worker-Session-Id` 解；工人端点的请求体里带身份字段 = 把责任凭证交给客户端）；
  * 2. 🔴 **米数口径与库存链路同一把尺**：0.1 米粒度、**不接受负数**、**不做静默取整**
  *    （服务端 `StockQuantity.requireOneDecimal` 会 422；前端先拦一道只是少一次往返，不是第二条判据）；
@@ -54,13 +54,19 @@ export interface CorrectionReceipt {
   worker_no?: string | null
 }
 
-/** 提交体（**构造式白名单**：多一个键都要在这里显式加，页面不能自己拼）。 */
+/**
+ * 提交体（**构造式白名单**：多一个键都要在这里显式加，页面不能自己拼）。
+ *
+ * 🔴 键形 = **camelCase**：与工人端其它**写面**同口径（`buildShipBody` 的 `trackingNo` 等）；
+ * 工人端**读面**才是 snake_case（GET 的行 / 回执）。两条口径混用会让 `actual_meters`
+ * 这类键在写面静默不绑定（服务端 422「请填实盘米数」，而屏上明明填了）。
+ */
 export interface CorrectionBody {
-  batch_id: number
-  actual_meters: number
+  batchId: number
+  actualMeters: number
   reason: string
   note?: string
-  client_request_id: string
+  clientRequestId: string
 }
 
 /** 服务端三态（与 `BatchStockViews.STOCKTAKE_*` 逐字同名）。 */
@@ -128,10 +134,10 @@ export function buildCorrectionBody(
   requestId: string,
 ): CorrectionBody {
   const body: CorrectionBody = {
-    batch_id: Number(row.batch_id),
-    actual_meters: Number(actual),
+    batchId: Number(row.batch_id),
+    actualMeters: Number(actual),
     reason,
-    client_request_id: requestId,
+    clientRequestId: requestId,
   }
   const trimmed = note == null ? '' : String(note).trim()
   if (trimmed !== '') {
