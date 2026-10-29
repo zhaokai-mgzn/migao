@@ -126,9 +126,10 @@ hero 标题单行、眉标 / 正文 / 法务三级分布与后台不同），但
 - `frontend/admin-web/tests/unit/read-failure-empty-state-guard.test.ts`（UI-057/058）——
   治「**catch 只清空读数**」（扫 catch 块的 setter）；
 - `frontend/admin-web/tests/unit/design-baseline-page-state-contract.test.ts`（盲区④）——
-  治「**渲染出来的态**」：凡有空态字面量的页面必须有失败态锚点；
-  当前**已知缺口 3 条**写在 `frontend/admin-web/tests/unit/page-state-contract-ledger.json`
-  （`finance/page.tsx` / `customers/page.tsx` / `customers/[id]/CustomerDetail.tsx`），**只许缩短**。
+  治「**渲染出来的态**」：① 凡有空态字面量的页面必须有失败态锚点；⑥ 凡渲染「不存在 / 已被删除」
+  这类**事实性断言**的详情面同样必须有失败态锚点（失败 ≠ 空，**失败也 ≠ 不存在**，issue #8057）；
+  已知缺口写在 `frontend/admin-web/tests/unit/page-state-contract-ledger.json`，**只许缩短** ——
+  现为**归零**（0 条；最后一条 `customers/[id]/CustomerDetail.tsx` 已在 issue #8057 修好并删条目）。
 - 范式（抄它）= `frontend/admin-web/src/app/(dashboard)/dashboard/page.tsx` 的
   `dashboard-load-failed` + `dashboard-retry-block`：「加载失败 + 是哪几块 + 上次成功值仍在」。
 

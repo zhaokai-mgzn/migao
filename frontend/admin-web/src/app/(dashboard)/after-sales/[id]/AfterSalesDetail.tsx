@@ -20,7 +20,8 @@ import { toast } from 'sonner'
 import { afterSalesApi, reworkOrderApi } from '@/lib/api'
 import { loadErrorMessage } from '@/lib/api-error'
 import { displayEnum } from '@/lib/enum-display'
-import { Button, Card, Loading, Modal, Badge } from '@/components/ui'
+import { Button, Card, Loading, Modal, Badge, EmptyState } from '@/components/ui'
+import ListLoadError from '@/components/common/ListLoadError'
 import { useRouteId } from '@/lib/use-route-id'
 import { usePermission } from '@/lib/permission'
 import type { AfterSalesTicket, AfterSalesStatus } from '@/types'
@@ -130,6 +131,11 @@ export default function AfterSalesDetailPage() {
 
   const [ticket, setTicket] = useState<AfterSalesTicket | null>(null)
   const [loading, setLoading] = useState(true)
+  /**
+   * 工单本体读失败（issue #8057，「四态契约」③）：修前 `catch` 只 `toast.error`，
+   * `ticket` 留在 `null` ⇒ 页面印「工单不存在或已被删除」——把**没读到**说成**这张单没了**。
+   */
+  const [loadError, setLoadError] = useState(false)
 
   // 返工单（issue #7377 段 4）：本页是**发起返工**的入口，返工本身的推进在 `/rework-orders`
   const [reworkOrders, setReworkOrders] = useState<ReworkOrder[]>([])
@@ -151,12 +157,14 @@ export default function AfterSalesDetailPage() {
   const loadTicket = useCallback(async () => {
     if (!ticketId) return
     setLoading(true)
+    setLoadError(false)
     try {
       const res = await afterSalesApi.getTicket(ticketId)
       const data = res.data?.data
       if (data) setTicket(data)
     } catch (error) {
       console.error('加载售后工单失败:', error)
+      setLoadError(true)
       toast.error('加载工单详情失败')
     } finally {
       setLoading(false)
@@ -263,6 +271,20 @@ export default function AfterSalesDetailPage() {
   }
 
   if (!ticket) {
+    // 失败 ≠ 不存在（issue #8057）：没读到时不许印「工单不存在或已被删除」这句事实性断言。
+    if (loadError) {
+      return (
+        <div className="p-6 space-y-4">
+          <ListLoadError
+            testId="after-sales-detail-load-error"
+            message="工单详情加载失败 —— 不是「工单不存在」，是没读到。请检查网络后重试。"
+            onRetry={() => void loadTicket()}
+            retrying={loading}
+          />
+          <Button onClick={() => router.push('/after-sales')}>返回工单列表</Button>
+        </div>
+      )
+    }
     return (
       <div className="p-6 text-center py-12">
         <p className="text-neutral-500 mb-4">工单不存在或已被删除</p>
@@ -496,7 +518,14 @@ export default function AfterSalesDetailPage() {
                   </div>
                 </div>
               ) : (
-                <p className="text-neutral-400 text-center py-8">暂无处理记录</p>
+                // 空态说清「为什么空」（issue #8057 第 2 条）：裸「暂无处理记录」不解释
+                // 这张单到底有没有动过、什么时候才会有记录。
+                <EmptyState
+                  icon="inbox"
+                  testId="after-sales-history-empty"
+                  title="暂无处理记录"
+                  description="这张单还没有状态变更 —— 接单、派工、完成后，每一步都会记在这里。"
+                />
               )}
             </div>
           </Card>

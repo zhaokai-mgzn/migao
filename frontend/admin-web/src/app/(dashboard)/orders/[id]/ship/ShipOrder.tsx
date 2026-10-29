@@ -8,6 +8,7 @@ import { toastRequestError } from '@/lib/api-error'
 import { orderApi, productionApi, processingOrderApi, customerApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
 import { Button, Loading, SELECT_CONTROL } from '@/components/ui'
+import ListLoadError from '@/components/common/ListLoadError'
 import { useAuthStore } from '@/store/auth'
 import type { Order, OrderItem } from '@/types'
 import { cn } from '@/lib/utils'
@@ -70,6 +71,11 @@ export default function ShipOrder() {
 
   const [order, setOrder] = useState<Order | null>(null)
   const [loading, setLoading] = useState(true)
+  /**
+   * 订单本体读失败（issue #8057）：修前 `catch` 只 `toastRequestError`，`order` 留在 `null`
+   * ⇒ 本页印「订单不存在或已被删除」——把**没读到**说成**这张单没了**（与销售订单详情同一种病）。
+   */
+  const [loadError, setLoadError] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
   // 加工单前置守卫（issue #3889）：订单详情接口不下发加工单状态，
@@ -97,12 +103,14 @@ export default function ShipOrder() {
   const loadOrder = useCallback(async () => {
     if (!orderId) return
     setLoading(true)
+    setLoadError(false)
     try {
       const res = await orderApi.getOrder(orderId)
       const data = res.data?.data
       if (data) setOrder(data)
     } catch (e) {
       console.error('加载订单失败:', e)
+      setLoadError(true)
       toastRequestError(e, '加载订单详情失败')
     } finally {
       setLoading(false)
@@ -285,6 +293,20 @@ export default function ShipOrder() {
   }
 
   if (!order) {
+    // 失败 ≠ 不存在（issue #8057）：没读到时不许印「订单不存在或已被删除」这句事实性断言。
+    if (loadError) {
+      return (
+        <div className="p-6 space-y-4">
+          <ListLoadError
+            testId="ship-order-load-error"
+            message="订单详情加载失败 —— 不是「订单不存在」，是没读到。请检查网络后重试。"
+            onRetry={() => void loadOrder()}
+            retrying={loading}
+          />
+          <Button variant="secondary" onClick={() => router.push('/orders')}>返回销售订单</Button>
+        </div>
+      )
+    }
     return (
       <div className="p-6 text-center py-12">
         <p className="text-neutral-500 mb-4">订单不存在或已被删除</p>

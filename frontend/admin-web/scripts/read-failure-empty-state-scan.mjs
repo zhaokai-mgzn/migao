@@ -612,11 +612,11 @@ export const PENDING_AUDIT = {
   },
   'customers-detail-sessions': {
     observed: 'src/app/(dashboard)/customers/[id]/CustomerDetail.tsx 的「暂无订单记录 / 暂无会话记录」',
-    evidence: '明细页内嵌的两个列表空态（读面失败只 toast ⇒ 两个列表同时印空态）。**存量债**：票据未点名，是否按同范式修由后续单裁定 ⇒ 登记待另单。',
+    evidence: '**已由 issue #8057 处理**（原登记：明细页内嵌的两个列表空态，读面失败只 toast ⇒ 两个列表同时印空态）。修后：读失败走常驻 `customer-detail-load-error` + 重试，两处空态改成 `<EmptyState>`（说清为什么空 / 去哪建）⇒ 不再与失败同屏。保留登记作为审计沿革。',
   },
   'after-sales-detail-records': {
     observed: 'src/app/(dashboard)/after-sales/[id]/AfterSalesDetail.tsx 的「暂无处理记录」',
-    evidence: '同 `customers-detail-sessions`：明细页内嵌列表空态，票据未点名 ⇒ 登记待另单。',
+    evidence: '**已由 issue #8057 处理**（同 `customers-detail-sessions` 的形态）。修后：读失败走常驻 `after-sales-detail-load-error` + 重试；空态改成 `<EmptyState>` 并说明「接单 / 派工 / 完成后才会记这里」。保留登记作为审计沿革。',
   },
   'products-detail-images': {
     observed: 'src/app/(dashboard)/products/[id]/ProductDetail.tsx 的「暂无图片」',
@@ -682,9 +682,10 @@ export const REQUIRED_SURFACES = [
  * 条目一旦不再命中其声明的文案 ⇒ `emptyStateStale` 判红 ⇒ 逼着删干净。
  */
 export const EMPTY_STATE_LEDGER = [
-  'src/app/(dashboard)/customers/[id]/CustomerDetail.tsx::暂无订单记录',
-  'src/app/(dashboard)/customers/[id]/CustomerDetail.tsx::暂无会话记录',
-  'src/app/(dashboard)/after-sales/[id]/AfterSalesDetail.tsx::暂无处理记录',
+  // ── issue #8057 删掉的三条（台账**只许缩短**）：详情面三处空态已改成「说清为什么空 / 去哪建」
+  //    （`<EmptyState>`），且所在页补上了**常驻失败锚点**（`ListLoadError`）⇒ 读失败不再与空态同屏，
+  //    不再需要豁免。`ProductDetail.tsx::暂无图片` 与 `ShipOrder.tsx::暂无商品` **保留**：那两处的
+  //    理由不同（图集 / 明细随单据载荷下发，**没有独立读接口** ⇒ 不产生「读不到 vs 真是空」的分歧）。
   'src/app/(dashboard)/products/[id]/ProductDetail.tsx::暂无图片',
   'src/components/chat/SessionInsight.tsx::暂无待办',
   'src/components/chat/SessionInsight.tsx::本会话还没有记录',
@@ -701,9 +702,9 @@ export const EMPTY_STATE_LEDGER = [
 /**
  * 台账冻结基线（**只许缩短**；`EMPTY_STATE_LEDGER.length > EMPTY_STATE_LEDGER_FLOOR` ⇒ 红）。
  *
- * 现取 = **12**（issue #8040 收口后由 16 降到 12：`/finance` 三条 + `/after-sales` 一条已改好并删条目）。
+ * 现取 = **9**（issue #8057 由 12 降到 9：详情面三处空态改成「说清为什么空」且所在页补了失败锚点后删条目）。
  */
-export const EMPTY_STATE_LEDGER_FLOOR = 12
+export const EMPTY_STATE_LEDGER_FLOOR = 9
 
 /** 判据 1：票据点名的读面三张表都没登记的（**未登记即红**） */
 export function unregisteredSurfaces(surfaces = READ_SURFACES, pending = PENDING_AUDIT, outOfScope = OUT_OF_SCOPE) {

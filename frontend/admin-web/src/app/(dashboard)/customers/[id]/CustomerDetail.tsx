@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Phone, MapPin, Star, Plus, X, MessageSquare, ShoppingCart, Save } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button, Badge, SELECT_CONTROL } from '@/components/ui'
+import { Button, Badge, SELECT_CONTROL, EmptyState } from '@/components/ui'
+import ListLoadError from '@/components/common/ListLoadError'
 import { useRouteId } from '@/lib/use-route-id'
 import { customerApi } from '@/lib/api'
 import type { CustomerDetail, CustomerTag, CustomerOrder, CustomerSession, CustomerChannel, CustomerDetailResponse, CustomerCreditStatus } from '@/types'
@@ -71,6 +72,13 @@ export default function CustomerDetailPage() {
 
   const [customer, setCustomer] = useState<CustomerDetail | null>(null)
   const [loading, setLoading] = useState(true)
+  /**
+   * 读失败标记（issue #8057，「四态契约」③）：
+   * 修前 `catch` 只 `toast.error`（≈4s 后消失），而 `customer` 留在 `null` ⇒ 页面印
+   * 「客户不存在」这句**事实性断言**（`docs/design/design-baseline.md` §5 明确列为反例）。
+   * 失败必须与「真不存在」「真的没有订单/会话」都分开：屏上给**常驻**失败面 + 重试出口。
+   */
+  const [loadError, setLoadError] = useState(false)
   // 🔴 只有「订单历史 / 会话历史」两个页签（issue #6669 第 1 条）：原第三个页签「跟进记录」的正文
   // 逐字是「暂无跟进记录，功能开发中...」—— 试用现场点一次就等于把「没做完」写在商家脸上。
   // 该功能**本期不做** ⇒ 直接**收起页签**（判据：`queryByText('跟进记录')` 取不到，见
@@ -103,6 +111,7 @@ export default function CustomerDetailPage() {
   const loadCustomer = useCallback(async () => {
     if (!id) return
     setLoading(true)
+    setLoadError(false)
     try {
       // 并行加载：客户详情 + 全量标签定义
       const [detailRes, tagsRes, creditRes] = await Promise.all([
@@ -130,6 +139,7 @@ export default function CustomerDetailPage() {
       setReceiver(loadedReceiver)
       setReceiverBaseline(loadedReceiver)
     } catch (error) {
+      setLoadError(true)
       toast.error('加载客户信息失败')
       console.error('加载客户信息失败:', error)
     } finally {
@@ -302,6 +312,20 @@ export default function CustomerDetailPage() {
   }
 
   if (!customer) {
+    // 失败 ≠ 不存在（issue #8057）：没读到时**不许**印「客户不存在」这句事实性断言。
+    if (loadError) {
+      return (
+        <div className="p-6 space-y-4">
+          <ListLoadError
+            testId="customer-detail-load-error"
+            message="客户信息加载失败 —— 不是「客户不存在」，是没读到。请检查网络后重试。"
+            onRetry={() => void loadCustomer()}
+            retrying={loading}
+          />
+          <Button variant="secondary" onClick={() => router.push('/customers')}>返回客户列表</Button>
+        </div>
+      )
+    }
     return (
       <div className="p-6 text-center text-neutral-500">
         <p>客户不存在</p>
@@ -539,7 +563,15 @@ export default function CustomerDetailPage() {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              {(!customer.tags || customer.tags.length === 0) && <span className="text-xs text-neutral-400">暂无标签</span>}
+              {/* 空态说清「为什么空 / 去哪做」（issue #8057，`design-baseline.md` §5 ②）：
+                  修前是裸「暂无标签」—— 商家不知道是「系统没标签」还是「这个客户还没打标」。 */}
+              {(!customer.tags || customer.tags.length === 0) && (
+                <span className="text-xs text-neutral-400" data-testid="customer-tags-empty">
+                  {allTags.length === 0
+                    ? '暂无标签 —— 系统里还没有可用的标签，先在「标签管理」建一个'
+                    : '暂无标签 —— 点右上角「+」给这个客户选一个'}
+                </span>
+              )}
               {(customer.tags || []).map((tag) => (
                 <span
                   key={tag.id}
@@ -614,7 +646,14 @@ export default function CustomerDetailPage() {
               {activeTab === 'orders' && (
                 <div className="space-y-3">
                   {(!customer.orders || customer.orders.length === 0) ? (
-                    <p className="text-center text-neutral-500 py-8 text-sm">暂无订单记录</p>
+                    // 空态说清「为什么空 / 去哪建」（issue #8057 第 2 条）：裸「暂无订单记录」
+                    // 分不出「这个客户没下过单」与「订单没读到」。
+                    <EmptyState
+                      icon="inbox"
+                      testId="customer-orders-empty"
+                      title="暂无订单记录"
+                      description="这个客户还没有下过单 —— 在「销售订单」新建后，订单会自动归到这里。"
+                    />
                   ) : (
                     customer.orders.map((order) => {
                       const statusInfo = getOrderStatusLabel(order.status)
@@ -643,7 +682,13 @@ export default function CustomerDetailPage() {
               {activeTab === 'sessions' && (
                 <div className="space-y-3">
                   {(!customer.sessions || customer.sessions.length === 0) ? (
-                    <p className="text-center text-neutral-500 py-8 text-sm">暂无会话记录</p>
+                    // 同「订单历史」：说清为什么空 + 会话从哪来（issue #8057）
+                    <EmptyState
+                      icon="inbox"
+                      testId="customer-sessions-empty"
+                      title="暂无会话记录"
+                      description="这个客户还没有发起过咨询 —— 客户在微信 / 小程序里发消息后，会话会出现在这里。"
+                    />
                   ) : (
                     customer.sessions.map((session) => (
                       <div key={session.id} className="flex items-start gap-3 p-4 border border-neutral-100 rounded-lg hover:bg-neutral-50 transition-colors">

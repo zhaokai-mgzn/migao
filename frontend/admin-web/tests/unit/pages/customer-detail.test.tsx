@@ -474,4 +474,58 @@ describe('CustomerDetailPage', () => {
     })
     expect(customerApi.updateCredit).not.toHaveBeenCalled()
   })
+
+  // ── 失败 ≠ 空（issue #8057；`page-state-contract-ledger.json` 最后一条在册缺口）──────
+  // 修前形态：读失败只 `toast.error('加载客户信息失败')`（拦截器 toast ≈4s 后消失），而
+  // `customer` 留在 null ⇒ 页面印**事实性断言**「客户不存在」；若把三块空态也放出来，
+  // 「这个客户没有订单」与「订单没读到」就长得一模一样（`docs/design/design-baseline.md` §5 ③）。
+  const emptyDetail = {
+    id: 'cus-001',
+    profile: {
+      wechatNickname: '空空',
+      phone: '13800138000',
+      sourceChannel: 'wechat_mini',
+      vipLevel: 'normal',
+      lastActiveAt: '2026-04-20T14:30:00',
+      registeredAt: '2026-01-15T10:00:00',
+    },
+    tags: [],
+    orders: [],
+    sessions: [],
+  }
+
+  it('读失败：常驻失败锚 + 重试出口，且不印「客户不存在」/「暂无X」（失败 ≠ 空）', async () => {
+    vi.mocked(customerApi.getCustomer).mockRejectedValueOnce(new Error('boom'))
+    render(<CustomerDetailPage />)
+
+    const anchor = await screen.findByTestId('customer-detail-load-error')
+    expect(anchor).toHaveTextContent('加载失败')
+    // 失败 ≠ 不存在：这句事实性断言在**没读到**时不得上屏
+    expect(screen.queryByText('客户不存在')).toBeNull()
+    // 失败 ≠ 空：三处空态一条都不许印
+    expect(screen.queryByText('暂无标签')).toBeNull()
+    expect(screen.queryByText('暂无订单记录')).toBeNull()
+    expect(screen.queryByText('暂无会话记录')).toBeNull()
+
+    // 重试是真出口（不是装饰）：重发读接口 ⇒ 成功后失败面退场、真数据上屏
+    fireEvent.click(screen.getByTestId('customer-detail-load-error-retry'))
+    await waitFor(() => expect(customerApi.getCustomer).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.queryByTestId('customer-detail-load-error')).toBeNull())
+    await waitFor(() => expect(screen.getAllByText('张三').length).toBeGreaterThan(0))
+  })
+
+  it('空态说清「为什么空 / 去哪建」：订单 / 会话 / 标签三处各自给原因（不是裸「暂无X」）', async () => {
+    vi.mocked(customerApi.getCustomer).mockResolvedValueOnce({ data: { data: emptyDetail } } as any)
+    render(<CustomerDetailPage />)
+
+    const ordersEmpty = await screen.findByTestId('customer-orders-empty')
+    expect(ordersEmpty).toHaveTextContent(/还没有下过单/) // 为什么空
+    expect(ordersEmpty).toHaveTextContent(/销售订单/) // 去哪建
+    // 标签：为空时说清该做什么（系统无标签 vs 这个客户还没打标）
+    expect(screen.getByTestId('customer-tags-empty')).toHaveTextContent(/「\+」|标签管理/)
+
+    fireEvent.click(screen.getByRole('button', { name: /会话历史/ }))
+    const sessionsEmpty = await screen.findByTestId('customer-sessions-empty')
+    expect(sessionsEmpty).toHaveTextContent(/还没有发起过咨询/) // 为什么空
+  })
 })

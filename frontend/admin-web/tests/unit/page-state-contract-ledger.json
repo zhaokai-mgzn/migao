@@ -1,11 +1,6 @@
 {
-  "why": "issue #6668 盲区④的类级台账：`src/app/(dashboard)` 下凡渲染**空态字面量**的页面，都必须同时有**失败态锚点**（`data-testid` 带 `-error` 或失败态文案）—— 「四态齐备、失败 ≠ 空」。未登记即红；台账只许缩短（页面补上失败态 ⇒ 删条目）。判据 = frontend/admin-web/tests/unit/design-baseline-page-state-contract.test.ts。与 UI-057/058（catch 只清空读数）分工：那条扫 catch 块，本条扫「渲染出来的态」。**归零沿革**：`finance` / `customers` 两条在 issue #6703（PR 关联该单）补上常驻失败锚点后**同批删条目**（本台账只许缩短）；余下 `customers/[id]/CustomerDetail.tsx` 一条是**另一读面**（详情面三处空态）的存量债。",
+  "why": "issue #6668 盲区④的类级台账：`src/app/(dashboard)` 下凡渲染**空态字面量**（或「不存在 / 已被删除」这类**事实性断言**，issue #8057 补判据 ⑥）的页面，都必须同时有**失败态锚点**（`data-testid` 带 `-error` / `-failed`，或共享件 `ListLoadError` 的 `testId` prop，或失败态文案）—— 「四态齐备、失败 ≠ 空、失败 ≠ 不存在」。未登记即红；台账只许缩短（页面补上失败态 ⇒ 删条目）。判据 = frontend/admin-web/tests/unit/design-baseline-page-state-contract.test.ts。与 UI-057/058（catch 只清空读数）分工：那条扫 catch 块，本条扫「渲染出来的态」。**归零沿革**：`finance` / `customers` 两条在 issue #6703 补上常驻失败锚点后同批删条目（3 → 1）；最后一条 `customers/[id]/CustomerDetail.tsx`（读失败只 toast，屏上照印「客户不存在」与三处「暂无X」）在 issue #8057 修好（失败态与「不存在」/空态分离：常驻 `customer-detail-load-error` + 重试）后同批删条目 ⇒ **台账归零（1 → 0）**，冻结上界同步降到 0。",
   "scope": "src/app/(dashboard)/**/*.tsx",
-  "ledger": {
-    "src/app/(dashboard)/customers/[id]/CustomerDetail.tsx": {
-      "kind": "gap",
-      "reason": "**修前现场（已知缺口，未修）**：详情面有三处纯空态（「暂无标签」/「暂无订单记录」/「暂无会话记录」），而客户信息读失败只走 `toast.error('加载客户信息失败')` ⇒ 三个列表同时印空态，商家分不清「这个客户没有订单」与「订单没读到」。修法 = 同 finance：失败态与空态分离（哪一块没读到就点名那一块）。"
-    }
-  },
-  "boundary": "只扫商家后台（`src/app/(dashboard)`），只认源码文本形态：空态字面量清单 = `暂无数据 / 暂无记录 / 暂无订单 / 暂无库存 / 暂无发货单 / 暂无标签 / 暂无权限`。**有意不收 `还没有`**：实测在本仓它是「计算不可用」的描述（`—（还没有可算的数据）`），收它只会制造假红。**加载态（第三态）没有机械判据**（`loading` 变量名五花八门），本判据只钉「失败态与空态必须可区分」—— 那正是用户看得见的那一半。"
+  "ledger": {},
+  "boundary": "只扫商家后台（`src/app/(dashboard)`），只认源码文本形态：空态字面量清单 = `暂无数据 / 暂无记录 / 暂无订单 / 暂无库存 / 暂无发货单 / 暂无标签 / 暂无权限`；「不存在」类字面量清单（issue #8057）= `不存在或已被删除 / 客户不存在 / 未找到该加工单`。**有意不收 `还没有`**：实测在本仓它是「计算不可用」的描述（`—（还没有可算的数据）`），收它只会制造假红。**加载态（第三态）没有机械判据**（`loading` 变量名五花八门），本判据只钉「失败态与空态 / 不存在必须可区分」—— 那正是用户看得见的那一半。"
 }

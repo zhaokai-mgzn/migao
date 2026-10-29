@@ -16,6 +16,7 @@ import AccessDenied from '@/components/common/AccessDenied'
 import { orderApi, productionApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
 import { Button, Loading, Modal } from '@/components/ui'
+import ListLoadError from '@/components/common/ListLoadError'
 import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, QuotationDoc, SalesDoc, ProcessingDoc, OrderUrgencyPanel, EditOrderContentModal, PrintDocPreview } from '@/components/orders'
 import { PRINT_TARGET_SPECS, printTargetTitle, usePrintBatch, usePrintDoc, type PrintTarget } from '@/lib/print-doc'
 // 洗水唛（issue #7902 从「加工单生产明细」页搬回销售订单页）：**同一份**数据映射与**同一份**纸面
@@ -111,6 +112,11 @@ export default function OrderDetailPage() {
 
   const [order, setOrder] = useState<Order | null>(null)
   const [loading, setLoading] = useState(true)
+  /**
+   * 订单本体读失败（issue #8057，「四态契约」③）：修前 `catch` 只 `toastRequestError`，
+   * `order` 留在 `null` ⇒ 页面印「订单不存在或已被删除」——把**没读到**说成**这张单没了**。
+   */
+  const [loadError, setLoadError] = useState(false)
   /**
    * 发货读面（issue #5651 收口）：`null` = 还没取到 / 取失败 —— 销售单据此显式标「未取到」，
    * **不**退回「未发货」的无标记形态。
@@ -310,6 +316,7 @@ export default function OrderDetailPage() {
   const loadOrder = useCallback(async () => {
     if (!orderId) return
     setLoading(true)
+    setLoadError(false)
     try {
       const res = await orderApi.getOrder(orderId)
       const data = res.data?.data
@@ -318,6 +325,7 @@ export default function OrderDetailPage() {
       await Promise.all([loadShipments(), loadOperations()])
     } catch (e) {
       console.error('加载订单失败:', e)
+      setLoadError(true)
       toastRequestError(e, '加载订单详情失败')
     } finally {
       setLoading(false)
@@ -437,6 +445,20 @@ export default function OrderDetailPage() {
   }
 
   if (!order) {
+    // 失败 ≠ 不存在（issue #8057）：没读到时不许印「订单不存在或已被删除」这句事实性断言。
+    if (loadError) {
+      return (
+        <div className="p-6 space-y-4">
+          <ListLoadError
+            testId="order-detail-load-error"
+            message="订单详情加载失败 —— 不是「订单不存在」，是没读到。请检查网络后重试。"
+            onRetry={() => void loadOrder()}
+            retrying={loading}
+          />
+          <Button onClick={() => router.push('/orders')}>返回销售订单</Button>
+        </div>
+      )
+    }
     return (
       <div className="p-6 text-center py-12">
         <p className="text-neutral-500 mb-4">订单不存在或已被删除</p>

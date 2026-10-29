@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useCallback, useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import ProductForm from '@/components/products/ProductForm'
 import { productApi } from '@/lib/api'
-import { Loading } from '@/components/ui'
+import { Button, Loading } from '@/components/ui'
+import ListLoadError from '@/components/common/ListLoadError'
 import { useRouteId } from '@/lib/use-route-id'
 import { toEnglishSpecKeys } from '@/lib/attribute-keys'
 import { toast } from 'sonner'
@@ -16,23 +17,31 @@ export default function EditProductPage() {
 
   const [product, setProduct] = useState<Product | null>(null)
   const [loading, setLoading] = useState(true)
+  /**
+   * 读失败标记（issue #8057，「四态契约」③）：修前 `catch` 是 `toast.error` + `router.push('/products')`，
+   * 随即 `if (!product) return null` —— 失败被画成**整页空白**（没有一句话、没有重试出口）。
+   */
+  const [loadError, setLoadError] = useState(false)
+
+  const loadProduct = useCallback(async () => {
+    if (!productId) return
+    setLoading(true)
+    setLoadError(false)
+    try {
+      const res = await productApi.getProduct(productId)
+      setProduct(res.data.data)
+    } catch (e) {
+      console.error('加载商品失败:', e)
+      toast.error('加载商品失败')
+      setLoadError(true)
+    } finally {
+      setLoading(false)
+    }
+  }, [productId])
 
   useEffect(() => {
-    if (!productId) return
-    const loadProduct = async () => {
-      setLoading(true)
-      try {
-        const res = await productApi.getProduct(productId)
-        setProduct(res.data.data)
-      } catch (e) {
-        toast.error('加载商品失败')
-        router.push('/products')
-      } finally {
-        setLoading(false)
-      }
-    }
     loadProduct()
-  }, [productId, router])
+  }, [loadProduct])
 
   const handleSubmit = async (data: ProductFormData) => {
     await productApi.updateProduct(productId, data)
@@ -46,7 +55,29 @@ export default function EditProductPage() {
     )
   }
 
-  if (!product) return null
+  if (!product) {
+    // 失败 ≠ 不存在 ≠ 空白页（issue #8057）：失败时说「没读到」+ 给重试出口；
+    // 只有**服务端明确没这只商品**时才说「不存在」。
+    if (loadError) {
+      return (
+        <div className="p-6 space-y-4">
+          <ListLoadError
+            testId="edit-product-load-error"
+            message="商品加载失败 —— 不是「商品不存在」，是没读到。表单没有回填，请重试。"
+            onRetry={() => void loadProduct()}
+            retrying={loading}
+          />
+          <Button variant="secondary" onClick={() => router.push('/products')}>返回商品列表</Button>
+        </div>
+      )
+    }
+    return (
+      <div className="p-6 text-center py-12">
+        <p className="text-neutral-500 mb-4">商品不存在或已被删除</p>
+        <Button onClick={() => router.push('/products')}>返回商品列表</Button>
+      </div>
+    )
+  }
 
   const initialData: Partial<ProductFormData> = {
     name: product.name,

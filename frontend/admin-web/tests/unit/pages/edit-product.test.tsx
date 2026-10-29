@@ -2,7 +2,7 @@
 // #4371：加工项与商品解耦 —— 编辑页不再由 processingItemConfigs 派生 supportsProcessing
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 
 // ===== Mock useRouteId =====
 const mockProductId = 'prod-123'
@@ -265,25 +265,34 @@ describe('EditProductPage', () => {
     })
   })
 
-  // ── Error handling ──
+  // ── Error handling（issue #8057：失败 ≠ 空白页 ≠ 静默跳转）──
 
-  it('should redirect to /products on load error', async () => {
-    mockGetProduct.mockRejectedValue(new Error('Network error'))
+  it('读失败：常驻失败锚 + 重试出口，成功后表单回填（修前：`return null` 整页空白 + 静默跳回列表）', async () => {
+    mockGetProduct.mockRejectedValueOnce(new Error('Network error'))
     render(<EditProductPage />)
-    await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith('/products')
-    })
+
+    const anchor = await screen.findByTestId('edit-product-load-error')
+    expect(anchor).toHaveTextContent('加载失败')
+    // 修前形态 = 整页空白（页面一句话都不说，商家只能猜）
+    expect(screen.queryByTestId('product-form')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('edit-product-load-error-retry'))
+    await waitFor(() => expect(mockGetProduct).toHaveBeenCalledTimes(2))
+    expect(await screen.findByTestId('product-form')).toBeInTheDocument()
   })
 
-  // ── Null product state ──
+  // ── Null product state（真不存在 ≠ 读失败）──
 
-  it('should render nothing when product is null after loading', async () => {
+  it('服务端明确返回空（真不存在）：说「商品不存在」并给返回出口，不报失败', async () => {
     mockGetProduct.mockResolvedValue({
       data: { data: null },
     })
-    const { container } = render(<EditProductPage />)
-    await waitFor(() => {
-      expect(container.innerHTML).toBe('')
-    })
+    render(<EditProductPage />)
+
+    expect(await screen.findByText('商品不存在或已被删除')).toBeInTheDocument()
+    expect(screen.queryByTestId('edit-product-load-error')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: /返回商品列表/ }))
+    expect(mockPush).toHaveBeenCalledWith('/products')
   })
 })
