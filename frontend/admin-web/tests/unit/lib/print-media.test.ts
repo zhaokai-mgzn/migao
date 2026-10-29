@@ -15,6 +15,7 @@ import {
   printContentInsetCss,
   printContentInsetMm,
   printMediaSpec,
+  printNamedPageRule,
   printPageBoxMm,
   printPageRule,
   printUsableBoxMm,
@@ -44,7 +45,7 @@ describe('打印介质矩阵（issue #5651）', () => {
     expect(fromJson.length).toBeGreaterThanOrEqual(3)
   })
 
-  it('② 五种介质都在册，且技术/复写/连续走纸口径与 issue #5651 的矩阵表一致', () => {
+  it('② 六种介质都在册，且技术/复写/连续走纸口径与 issue #5651 的矩阵表一致', () => {
     expect(matrix.media.map((m) => m.id)).toEqual([
       'a4',
       // 2026-10-27（issue #7948，用户逐字「把水洗唛的尺寸改成50*110，现在偏长了」）：
@@ -52,6 +53,9 @@ describe('打印介质矩阵（issue #5651）', () => {
       // 🔴 `label-50x70` **仍在册** —— 它只服务**工人端发货标签**（#7761/#7786，
       // `frontend/worker-h5/src/shipment.mjs` 逐字指它），仍是「纸长按内容撑开」的那张纸。
       'label-50x140',
+      // 🔴 2026-10-29（issue #8107）：水洗唛**专属唛**（余料带回 / 绑带，只印 5 行 + 二维码）的短纸型
+      // —— 与 `label-50x140` 是同一台机、同一条 50mm 卷，只有纸长不同（两种纸长 = 两种标签纸）
+      'label-50x100',
       'label-50x70',
       'label-50x80',
       'continuous-241x140',
@@ -84,6 +88,27 @@ describe('打印介质矩阵（issue #5651）', () => {
     expect(ship.pageSize).toBe('50mm 70mm')
     expect(ship.lengthMm?.minMm).toBe(70)
     expect(ship.lengthMm?.maxMm).toBe(150)
+    // 🔴 专属唛短纸（issue #8107）：50mm × 100mm / 11pt / 已实测（不留待实测项）——
+    // 与 label-50x140 **同设备口径、只有纸长不同**（同一台 DP235S、同一条 50mm 卷）
+    const option = printMediaSpec('label-50x100')
+    expect(option.pageSize).toBe('50mm 100mm')
+    expect(option.pageMargin).toBe('0')
+    expect(option.minFontPt).toBe(11)
+    expect(option.measurement).toBe('measured')
+    expect(option.pendingMeasurements).toEqual([])
+    expect(option.pageBoxMm).toEqual({ widthMm: 50, heightMm: 100 })
+    const optionDots = option.dotGeometry?.dotsPerMm as number
+    expect(optionDots).toBe(labelDots) // 同一台机器 ⇒ 同一份 dpi / dots-per-mm
+    expect(option.dotGeometry?.dpi).toBe(label.dotGeometry?.dpi)
+    expect(option.dotGeometry?.headWidthPx).toBe(label.dotGeometry?.headWidthPx)
+    expect(option.dotGeometry?.widthPx).toBe(optionDots * 50)
+    // 纸长 100mm ⇒ 800px（与 140mm 那张的 1120px 只差纸长）
+    expect(option.dotGeometry?.heightPx).toBe(optionDots * 100)
+    expect(option.dotGeometry?.heightPx).not.toBe(label.dotGeometry?.heightPx)
+    expect(option.dotGeometry?.effectiveWidthPx).toBe(optionDots * 48)
+    // note 必须写清「专属唛专用短纸」+ 垂直预算（下一个读它的人要能复算）
+    expect(option.note).toContain('专属唛专用短纸')
+    expect(option.note).toContain('70mm')
     // 入库标签 50×80（issue #7820，2026-10-26 用户裁定改尺寸 / 去品名 / 加入库日期 / 码到底部）：
     // 纸型 + 点阵口径同源在矩阵里，**待实测**（真机参数未核实）
     const inbound = printMediaSpec('label-50x80')
@@ -140,6 +165,25 @@ describe('打印介质矩阵（issue #5651）', () => {
     expect(() => printPageRule('a3')).toThrow(/未知打印介质/)
   })
 
+  it('🔴 ③·命名页：printNamedPageRule 是同一份纸型的第二个出口（尺寸仍只从矩阵取，issue #8107）', () => {
+    // 同一份打印任务里两种纸高并存：常规唛吃文档级 `@page`（50mm 140mm），
+    // 专属唛吃**命名页** `@page wash-label-option`（50mm 100mm）—— 两处都不许自写纸型字面量。
+    expect(printNamedPageRule('wash-label-option', 'label-50x100')).toBe(
+      '@page wash-label-option { size: 50mm 100mm; margin: 0; }',
+    )
+    // 逐字对齐矩阵（改矩阵不跟着改 ⇒ 这里红）
+    const spec = printMediaSpec('label-50x100')
+    expect(printNamedPageRule('wash-label-option', 'label-50x100')).toContain(`size: ${spec.pageSize}`)
+    expect(printNamedPageRule('wash-label-option', 'label-50x100')).toContain(`margin: ${spec.pageMargin}`)
+    // 命名页与文档级页**指两张不同的纸**（合并成一张 = 专属唛又回到 140mm）
+    expect(printPageRule('label-50x100')).toBe('@page { size: 50mm 100mm; margin: 0; }')
+    expect(printPageBoxMm('label-50x100')).toEqual({ widthMm: 50, heightMm: 100 })
+    expect(printUsableHeightMm('label-50x100')).toBe(100)
+    // 未知介质/名字不许静默通过：介质未登记 ⇒ 抛错
+    // @ts-expect-error 故意传非法 id
+    expect(() => printNamedPageRule('x', 'label-50x999')).toThrow(/未知打印介质/)
+  })
+
   it('🔴 ③ 三联纸的**待实测**登记必须存在（红证：删掉 pendingMeasurements ⇒ 必红）', () => {
     const tri = printMediaSpec('continuous-241x140')
     expect(tri.measurement).toBe('pending-field-measurement')
@@ -153,7 +197,7 @@ describe('打印介质矩阵（issue #5651）', () => {
       expect(joined).toContain(keyword)
     }
     // 有实测读数的介质则**不许**留待实测项（否则「待实测」会退化成永久标签）
-    for (const id of ['a4', 'label-50x140'] as const) {
+    for (const id of ['a4', 'label-50x140', 'label-50x100'] as const) {
       expect(printMediaSpec(id).measurement).toBe('measured')
       expect(printMediaSpec(id).pendingMeasurements).toEqual([])
     }

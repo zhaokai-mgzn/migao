@@ -60,6 +60,32 @@
       "note": "热敏 / 热转印 + 蓝牙直打（通道归 #5052）。🔴 **纸型固定 50mm × 140mm**（2026-10-28 用户逐字「水洗唛还是要调整到50*150，当前是50*120，多的30要添加到顶部和底部虚线下处各15，顶部需要让最顶端的字体上面留白15」+「二维码紧挨文字排版，当前留白太多，这样尺寸就能缩小到50*140」，issue #7979；同日更早的 50×119 作废）：`@page` 由 `printPageRule()` 从本矩阵取、直连画布高度取 `dotGeometry.heightPx`、预览纸框取 `pageBoxMm` —— 三处仍是**同一个数**（没有第二份纸型真值）。正文 11pt（`minFontPt`）、抬头 14pt / 副标题 10pt / 二维码 80 CSS px（底部居中、**紧挨正文**，只隔 0.5mm 块距）。🔴 **上下各留白 15mm**：顶部 = 最顶端的字（抬头首行）距纸边 15mm（系统打印 = `.task-card-label` 的 `padding-top: 15mm`，画布通道 = `wash-label-metrics.ts` 的 `WASH_LABEL_TOP_BLANK_MM`）；底部 = 二维码下沿距底部虚线 15mm（同文件的 `WASH_LABEL_BOTTOM_CLEARANCE_MM` / `padding-bottom: 15mm`）。垂直预算：可用 140 − 15 − 15 = **110mm**，满字段 15 行 = **102.18mm ≤ 110mm**（余 7.82mm ≈ 1.6 行）；17 行 = 111.49mm > 110mm ⇒ 有折行即裁、码永不被裁（预览逐张报）。⛔ 本矩阵只登记**在用**介质：`label-50x70` 是工人端发货标签（#7761/#7786）、`label-50x80` 是入库标签（#5052）。"
     },
     {
+      "id": "label-50x100",
+      "label": "水洗唛 专属唛 50mm × 100mm（竖版 · 短纸）",
+      "technology": "thermal-transfer",
+      "pageSize": "50mm 100mm",
+      "pageMargin": "0",
+      "pageBoxMm": {
+        "widthMm": 50,
+        "heightMm": 100
+      },
+      "continuousFeed": false,
+      "carbonCopies": 1,
+      "minFontPt": 11,
+      "dotGeometry": {
+        "dpi": 203,
+        "dotsPerMm": 8,
+        "widthPx": 400,
+        "effectiveWidthPx": 384,
+        "headWidthPx": 384,
+        "heightPx": 800,
+        "note": "设备侧**点阵口径**（issue #6439 免驱动直连通道 / #8107 专属唛短纸）—— 与 `label-50x140` 是**同一台 DP235S**、同一条 50mm 卷，只有纸长不同（100mm ⇒ 800px；140mm ⇒ 1120px）。🔴 纸宽 50mm ⇒ 400px，打印头只有 384px(48mm) ⇒ effectiveWidthPx = 384：**右侧约 2mm 打不到**，出图必须按 effectiveWidthPx（越头的像素会被静默丢掉）。dpi 与 headWidthPx 仍是**安全侧待实测**值（同 label-50x80 的 pendingMeasurements 第 1 条），连上机器后按 getPrinterInfo() 自报值覆盖。"
+      },
+      "measurement": "measured",
+      "pendingMeasurements": [],
+      "note": "热敏 / 热转印 + 蓝牙直打（通道归 #5052）。🔴 **余料带回 / 绑带 专属唛专用短纸**（issue #8107，用户 2026-10-29 逐字「余料带回和绑带的水洗唛打印功能中，用户反馈打印的信息太多了，可以适当删减，保留货号，门幅，宽高，工艺和特殊选项 + 二维码即可」「把长度再缩减一些，能放下以上信息即可」）：专属唛只印 **5 行 + 二维码** ⇒ 纸长由 140mm 收到 **100mm**；**常规唛仍是 `label-50x140`**（15 行）—— 两种纸长 = **两种标签纸**，同一个打印任务里靠 CSS **命名页** `@page wash-label-option` 并存（`printNamedPageRule('wash-label-option', 'label-50x100')`；容器 `.task-card-label--option { height: 100mm; page: wash-label-option; }`，宽度 / padding / 字号 / 二维码与基类同值）。🔴 **专属唛垂直预算（可复算，真值在 `frontend/admin-web/src/components/production/TaskCardPrint.tsx` 文件头的【专属唛预算】段）**：可用 100 − 15（上留白）− 15（下净空）= **70mm**；抬头块 14pt + 12pt（行高 1.2）= **11.01mm**；块距 0.5 + 5 行 × 4.6567（11pt × 1.2）+ 块距 0.5 + 二维码 21.17mm ⇒ 正文合计 11.01 + 0.5 + 23.28 + 0.5 + 21.17 = **56.46mm**；连上下留白整张 ≈ **86.5mm ≤ 100mm**（余 13.5mm ⇒ 可容 **7 行**，工艺 / 特殊选项各折一次仍装得下）。⛔ 本矩阵只登记**在用**介质：`label-50x70` 是工人端发货标签（#7761/#7786）、`label-50x80` 是入库标签（#5052）。"
+    },
+    {
       "id": "label-50x70",
       "label": "发货标签 50mm × 70mm（竖版 · 工人端）",
       "technology": "thermal-transfer",

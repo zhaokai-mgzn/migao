@@ -24,6 +24,8 @@ export const PRINTER_KIND_BY_MEDIA: Record<PrintMediaId, string> = {
   a4: 'A4 激光打印机',
   'continuous-241x140': '针式打印机（连续纸）',
   'label-50x140': '标签打印机',
+  // issue #8107：水洗唛**专属唛**的短纸（余料带回 / 绑带）——同一类外设
+  'label-50x100': '标签打印机',
   // 历史/旁支标签纸（介质矩阵里仍在册，见 `PRINT_MEDIA_IDS`）——同一类外设
   'label-50x70': '标签打印机',
   'label-50x80': '标签打印机',
