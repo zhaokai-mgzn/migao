@@ -123,6 +123,7 @@ class CustomerManageTool(BaseTool):
         "该视图里「未接线」的字段（欠款 / 客单价 / 最近活跃天数）在既有端点里**根本没有来源**"
         "⇒ 一律为「未知」，**不是 0 元、不是「从未发生」**。"
         "【标注】READONLY — 纯查询，不含任何写 action"
+        "【不要用于】售后工单/退款进度（用 after_sales_manage）；工人计件工资（用 piecework_query）"
     )
     # 权限码（admin-api 目录）：issue #5246 起 `CustomerController` 的读面 `customer:view`、
     # 写面（改/删客户、标签增删）`customer:create`（此前整类挂在读码上，只读持有者能删客户）。
