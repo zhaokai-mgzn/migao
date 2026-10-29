@@ -705,7 +705,11 @@ describe('Sidebar', () => {
     expect(notifications.className).toContain('text-neutral-50')
     expect(within(notifications).getByText('通知中心').className).toContain('text-sm')
     // 但仍**可收藏**（#5877 的「一级项无星标」只约束最前 / 尾席位，不是星标整体被删）
-    expect(within(notifications).getByTestId('sidebar-pin-notifications')).toBeInTheDocument()
+    // 🔴 issue #8085：星标是链接的**兄弟**（`<a>` 内嵌 `<button>` 是无效 HTML）⇒ 用全局查询 + 反向断言
+    const notificationsPin = screen.getByTestId('sidebar-pin-notifications')
+    expect(notificationsPin).toBeInTheDocument()
+    expect(notifications.contains(notificationsPin)).toBe(false)
+    expect(notificationsPin.closest('a')).toBeNull()
     // ⑤ 分隔线与席位口径不变：尾席位块前有分隔线；最前席位紧接「常用」⇒ 无分隔线
     expect(screen.getByTestId('sidebar-standalone-top').className).toContain('border-t')
     expect(screen.getByTestId(STANDALONE_HEAD_TESTID).className).not.toContain('border-t')
@@ -853,13 +857,12 @@ describe('Sidebar', () => {
       // 有权限的：最前席位两项（本权限集持 dashboard:view ⇒ 看板与报表中心同码同可见）
       expect(screen.getByText('经营看板')).toBeInTheDocument()
       expect(screen.getByText('报表中心')).toBeInTheDocument()
-      expect(screen.getByText('交易管理')).toBeInTheDocument()
       // 🔴 2026-10-29（issue #8086）：商品管理/价格本在「基础资料」组内 ⇒ 展开后可见
       expandGroups('basic-data')
       expect(screen.getByText('商品管理')).toBeInTheDocument()
-      expect(screen.getByText('交易管理')).toBeInTheDocument()
-      expandGroups('trade-center')
-      expect(screen.getByText('销售订单')).toBeInTheDocument()
+      // 🔴 issue #8085：「交易管理」在本权限下只剩「销售订单」1 项 ⇒ 提升为一级项
+      //（无组头、无需展开；组头不渲染正是这条判据要盯的行为）
+      expect(screen.queryByText('交易管理')).not.toBeInTheDocument()
       expect(screen.getByText('销售订单')).toBeInTheDocument()
       // 无权限的
       expect(screen.queryByText('商品分类管理')).not.toBeInTheDocument()
@@ -933,8 +936,9 @@ describe('Sidebar', () => {
         user: { id: '5', username: 'cs', name: '客服', permissions: ['agent:session'], roles: [] },
       })
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-      expect(screen.getByText('客户服务')).toBeInTheDocument()
-      expandGroups('customer-service')
+      // 🔴 issue #8085：过滤后「客户服务」只剩 1 项 ⇒ **提升为一级项**（不画空壳组标题、无需展开）
+      expect(screen.queryByText('客户服务')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('sidebar-group-toggle-customer-service')).toBeNull()
       expect(screen.queryByText('黄金策 · 在线对话')).not.toBeInTheDocument()
       expect(screen.getByText('在线接待')).toBeInTheDocument()
       expect(screen.queryByText('AI 客服配置')).not.toBeInTheDocument()
@@ -949,8 +953,9 @@ describe('Sidebar', () => {
         user: { id: '6', username: 'kb', name: '知识管理员', permissions: ['knowledge:view'], roles: [] },
       })
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-      expect(screen.getByText('客户服务')).toBeInTheDocument()
-      expandGroups('customer-service')
+      // 🔴 issue #8085：只剩「知识库」一项 ⇒ 提升为一级项（组名不再渲染）
+      expect(screen.queryByText('客户服务')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('sidebar-group-toggle-customer-service')).toBeNull()
       expect(screen.getByText('知识库')).toBeInTheDocument()
       expect(screen.queryByText('黄金策 · 在线对话')).not.toBeInTheDocument()
       expect(screen.queryByText('在线接待')).not.toBeInTheDocument()
@@ -979,10 +984,13 @@ describe('Sidebar', () => {
       })
       const { unmount } = render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
       // #5778：售后工单已随「服务客户」动线移入**客户服务**组（原交易管理组）
-      expandGroups('customer-service')
+      // 🔴 issue #8085：只剩这一项 ⇒ 提升为一级项
+      expect(screen.queryByTestId('sidebar-group-toggle-customer-service')).toBeNull()
       expect(screen.getByText('售后工单')).toBeInTheDocument()
       expect(screen.queryByText('销售订单')).not.toBeInTheDocument()
-      expect(menuKeys()).toEqual(['after-sales', 'notifications'])   // #5699 P4：经营看板要 dashboard:view
+      // 🔴 issue #8085：客户服务（售后工单）与生产管理（返工单，同码 after_sales:view）都只剩 1 项
+      // ⇒ 两者都被提升为一级项（恒可见，不再靠折叠隐藏）
+      expect(menuKeys()).toEqual(['after-sales', 'rework-orders', 'notifications'])   // #5699 P4：经营看板要 dashboard:view
       unmount()
 
       mockUseAuthStore.mockReturnValue({
@@ -1021,23 +1029,26 @@ describe('Sidebar', () => {
         user: { id: '4', username: 'partial', name: '部分权限', permissions: ['dashboard:view', 'order:list'], roles: [] },
       })
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-      // 交易管理 group should show (has order:list)
-      expect(screen.getByText('交易管理')).toBeInTheDocument()
-      expandGroups('trade-center')
+      // 🔴 issue #8085：本权限下「交易管理」只剩「销售订单」1 项 ⇒ 提升为一级项（无组头）
+      expect(screen.queryByText('交易管理')).not.toBeInTheDocument()
       expect(screen.getByText('销售订单')).toBeInTheDocument()
       // 但售后工单不应该出现
       expect(screen.queryByText('售后工单')).not.toBeInTheDocument()
       // 商品与加工项 group should be completely hidden（无 product:list / processing:manage）
       expect(screen.queryByText('商品与加工项')).not.toBeInTheDocument()
-      // dashboard:view ⇒ 看板 + 报表中心同码同可见（#7376）；价格本（order:list）在「基础资料」组
-      expandGroups('basic-data')
-      expect(menuKeys()).toEqual(['dashboard', 'reports', 'price-books', 'orders', 'notifications'])
+      // dashboard:view ⇒ 看板 + 报表中心同码同可见（#7376）
+      // 🔴 issue #8085：本权限下「基础资料」只剩「价格本」1 项，「仓储与物料」只剩「发货单」1 项
+      // ⇒ 两处都被**提升为一级项**（无组头、恒可见、不靠折叠隐藏）—— 这正是本测试的判据面
+      expect(screen.getByText('价格本')).toBeInTheDocument()
+      expect(screen.queryByTestId('sidebar-group-toggle-basic-data')).toBeNull()
+      expect(menuKeys()).toEqual(['dashboard', 'reports', 'price-books', 'orders', 'shipments', 'notifications'])
     })
 
     // ── #5271 新组的权限边界（正负控：菜单可见性与页面门禁同码，不互相顶替）──
 
     it('入库单（inbound:view）与余料台账（processing:manage）**互不顶替**：正负控双向', async () => {
-      // ① 只有 inbound:view ⇒ 「供应链」组在（入库单 / 供应商 / 采购单可见），余料台账/省料看板不在；
+      // ① 只有 inbound:view ⇒「基础资料」的供应商（#8086 起在该组，**1 项 ⇒ 提升为一级项**）
+      //    +「供应链」组（入库单 / 采购单）可见；余料台账/省料看板不在；
       //    「仓储与物料」组整组不在（它的四项分别要 product:list / order:list / processing:manage）
       mockUseAuthStore.mockReturnValue({
         user: { id: '8', username: 'wh', name: '仓管', permissions: ['inbound:view'], roles: [] },
@@ -1048,7 +1059,11 @@ describe('Sidebar', () => {
       expect(screen.getByText('入库单')).toBeInTheDocument()
       expect(screen.queryByText('余料台账')).not.toBeInTheDocument()
       expect(screen.queryByText('省料看板')).not.toBeInTheDocument()
-      expect(menuKeys()).toEqual(['inbound-orders', 'purchase-orders', 'notifications'])   // #5699 P4：经营看板要 dashboard:view
+      // 🔴 issue #8086：供应商已在「基础资料」组 ⇒ 该组 1 项被提升，排在供应链组之前（组序）
+      expect(screen.getByText('供应商')).toBeInTheDocument()
+      expect(screen.queryByTestId('sidebar-group-toggle-basic-data')).toBeNull()
+      // #5699 P4：经营看板要 dashboard:view ⇒ 不在
+      expect(menuKeys()).toEqual(['suppliers', 'inbound-orders', 'purchase-orders', 'notifications'])
       unmount()
 
       // ② 只有 processing:manage ⇒ 入库单**不在**（独立门禁，不因邻组而放行），余料台账/省料看板在
@@ -1056,9 +1071,9 @@ describe('Sidebar', () => {
         user: { id: '9', username: 'op', name: '生产', permissions: ['processing:manage'], roles: [] },
       })
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-      // ⚠️ 只展开仓储组：生产组在本组权限下**整组被剔除**（没有 toggle 可点）——
-      // 这本身就是 #5699 P4 后的读数（生产组四项分别要 production:view / processing:view）。
-      expandGroups('inventory-center')
+      // ⚠️ 生产组在本组权限下**整组被剔除**（没有 toggle 可点）—— #5699 P4 后的读数。
+      // 🔴 issue #8085：「仓储与物料」只剩「余料台账」1 项 ⇒ 提升为一级项（无组标题可展开）
+      expect(screen.queryByTestId('sidebar-group-toggle-inventory-center')).toBeNull()
       expect(screen.getByText('余料台账')).toBeInTheDocument()
       expect(screen.queryByText('入库单')).not.toBeInTheDocument()
       // issue #5291：作业看板/计件工资 改挂读码 production:view ⇒ 只持 processing:manage 时不在
@@ -1070,6 +1085,36 @@ describe('Sidebar', () => {
       expect(screen.queryByText('生产管理')).not.toBeInTheDocument()
       expect(menuKeys()).toEqual(['production-remnants', 'notifications'])
     })
+  })
+
+  // ── issue #8085：a11y 与「单成员组提升」契约 ──────────────────────────────
+
+  it('（#8085）星标是链接的**兄弟**（不再是 `<a>` 的后代）+ 当前项 `aria-current="page"`', () => {
+    render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+    // 当前路由 /dashboard ⇒ 最前席位「经营看板」带 aria-current
+    const dash = document.querySelector('nav a[data-menu-key="dashboard"]') as HTMLAnchorElement
+    expect(dash.getAttribute('aria-current')).toBe('page')
+    // 非当前项没有 aria-current
+    const reports = document.querySelector('nav a[data-menu-key="reports"]') as HTMLAnchorElement
+    expect(reports.getAttribute('aria-current')).toBeNull()
+    // 星标与链接是**兄弟**：`<a>` 内嵌 `<button>` 是无效 HTML，键盘会在链接里再落一次焦点
+    expandGroups('trade-center')
+    const orders = document.querySelector('nav a[data-menu-key="orders"]') as HTMLAnchorElement
+    const pin = screen.getByTestId('sidebar-pin-orders')
+    expect(orders.contains(pin)).toBe(false)
+    expect(pin.closest('a')).toBeNull()
+    expect(pin.parentElement?.contains(orders)).toBe(true)
+  })
+
+  it('（#8085）单成员组提升：⌘K 顺序/菜单数据**不变**，只是不画空壳组标题', () => {
+    mockUseAuthStore.mockReturnValue({
+      user: { id: '9', username: 'kb', name: '知识管理员', permissions: ['knowledge:view'], roles: [] },
+    })
+    render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+    // ⌘K / 数据面的顺序仍按**组**拍平（提升只发生在渲染层）
+    expect(menuKeys()).toEqual(['knowledge', 'notifications'])
+    // 提升项仍可收藏（它是组内项，不属于「一级项不进常用」的 #5877 约束）
+    expect(screen.getByTestId('sidebar-pin-knowledge')).toBeInTheDocument()
   })
 
   // ── 菜单图标两两不同（issue #5582）─────────────────────────────────────────────
@@ -1198,9 +1243,9 @@ describe('Sidebar', () => {
         user: { id: '2', username: 'pm', name: '商品', permissions: ['product:list'], roles: [] },
       })
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-      // 🔴 2026-10-29（issue #8086）：商品管理已进「基础资料」组（默认收起）⇒ 等组头出现再展开
-      await waitFor(() => expect(screen.getByText('基础资料')).toBeInTheDocument())
-      expandGroups('basic-data')
+      // 🔴 issue #8086：商品管理已在「基础资料」组；本权限下该组只剩它 1 项
+      // 🔴 issue #8085：1 项 ⇒ 提升为一级项（无组头、无需展开）⇒ 直接等菜单项出现作正信号
+      await waitFor(() => expect(screen.getByText('商品管理')).toBeInTheDocument())
       expect(document.querySelector('[data-group-key="pinned"]')).toBeNull()
     })
 
