@@ -1,4 +1,4 @@
-# case_ids: HR-009, DF-003, HR-002
+# case_ids: HR-009, DF-003, HR-002, AG-008
 """B 端能力边界的**投影判据**（issue #7291；#7334 二次审计收口）。
 
 为什么需要它：能力边界原先靠人工抄写在 10 个 prompt 文件里，其中 9 处与工具真值相反
@@ -21,6 +21,10 @@
 - `test_write_tool_completeness_has_red_power`
 - `test_forbidden_exposure_has_red_power`
 - `test_prose_guard_has_red_power`
+
+#8119（按本轮 skill 投影）追加：`render_capability_boundary(skill_name=...)` 必须把**本域不可达**
+的写能力从「✅ 可直接办理」移到「➡️ 本域不直接办」，而本域可办的不得降格。注入式红证 =
+把投影里的 skill 过滤摘掉（退回 persona 全局）⇒ 7 个零写 skill 的判据立刻红（读数见 PR body）。
 """
 
 from __future__ import annotations
@@ -31,8 +35,11 @@ from pathlib import Path
 import pytest
 
 from app.agents.capability_boundary import (
+    DIRECT_PREFIX,
+    ELSEWHERE_PREFIX,
     UNITS,
     _compute_mibao_reachable_tool_names,
+    declared_tool_names,
     forbidden_exposures,
     mibao_reachable_tool_names,
     render_capability_boundary,
@@ -489,3 +496,156 @@ def test_reachability_probe_does_not_leak_tool_scope():
     _compute_mibao_reachable_tool_names()
     assert get_tool_scope() == before, "可达性探测泄漏了 tool_scope（执行域被改写）"
     set_tool_scope(None)
+
+
+# ────────────────────── 按本轮 skill 投影（issue #8119）──────────────────────
+# 病灶：投影按 **persona 全局**给 ⇒ 每个 mibao 回合都注入「✅ 商品改名可直接办理（以本段为准）」，
+# 而 order / customer / staff / data / knowledge / aftersales / general 这 7 个 skill **零写工具**
+# （现取）⇒ 模型只能空头承诺或误拒（同族真实缺陷 #7347 边界问句触发工具调用 / #7758 守卫误判锁死会话）。
+
+
+def _mibao_skill_names() -> list[str]:
+    """现取：所有 mibao persona 的 skill（**不写死清单** —— 新增域自动进判据）。"""
+    from app.graph.skills.base_skill import _all_skill_configs
+
+    return sorted(
+        cfg.name for cfg in _all_skill_configs()
+        if "mibao" in set(cfg.system_prompts or {})
+    )
+
+
+def _declared_write_tool_names(skill_name: str) -> list[str]:
+    """独立复算：本 skill **声明面**里的写工具（不经过被判的渲染函数）。"""
+    from app.graph.skills.skill_registry import get_skill_registry
+    from app.tools.registry import get_tool_registry
+
+    tools = {t.name: t for t in get_tool_registry().get_all_tools()}
+    cfg = get_skill_registry().get(skill_name)
+    return sorted(
+        name for name in (cfg.tool_names or ())
+        if (tool := tools.get(name)) is not None and not getattr(tool, "read_only", False)
+    )
+
+
+def _segment(text: str, prefix: str) -> list[str]:
+    """取某一段的单元清单（行首标记；该段不存在 ⇒ 空列表）。
+
+    单元标签里不含中文顿号（`、`）—— 段落里唯一的 `、` 只做分隔符（下方判据自证）。
+    """
+    line = next((ln for ln in text.splitlines() if ln.startswith(prefix)), "")
+    if not line:
+        return []
+    return [s for s in line.rsplit("：", 1)[-1].split("、") if s]
+
+
+def test_unit_labels_carry_no_delimiter():
+    """解析前提自证：单元标签不含顿号（`_segment` 用它做分隔符）。"""
+    offenders = [u.label for u in UNITS if "、" in u.label]
+    assert not offenders, f"单元标签含顿号，`_segment` 会切错：{offenders}"
+
+
+def test_unscoped_render_stays_persona_wide():
+    """向后兼容契约：不传 skill_name ⇒ 保持全局投影，且**不出现**「本域不直接办」段。
+
+    既有判据 / 其它调用方按全局口径读（`test_render_contains_every_unit_label`，
+    `tests/agent_projection_ledger.json` 登记的就是这个缝）。
+    """
+    text = render_capability_boundary()
+    assert "商品改名" in _segment(text, DIRECT_PREFIX)
+    assert ELSEWHERE_PREFIX not in text
+
+
+def test_zero_write_skills_never_claim_direct_capability():
+    """本域不可达的写能力不得出现在「✅ 可直接办理」段（issue #8119）。
+
+    红证（注入式）：把 `render_capability_boundary` 的 skill 过滤摘掉（`scope` 恒 None，
+    = 退回 persona 全局投影）⇒ 下面 7 个零写 skill 的 ✅ 段立刻出现商品改价 / 改名 ⇒ 红。
+
+    正向对照（防「干脆不渲染」的假绿）：同一批能力必须出现在「本域不直接办」段，
+    既不在 ✅ 也不在该段 ⇒ 红（能力被弄丢同样是错）。
+    """
+    # 判别力自证：解析器必须**看得见** ✅ 段，否则「✅ 段为空」就是空断言。
+    assert "商品改名" in _segment(render_capability_boundary(), DIRECT_PREFIX)
+
+    zero_write = [s for s in _mibao_skill_names() if not _declared_write_tool_names(s)]
+    assert len(zero_write) >= 7, f"零写 skill 现取集合异常（应含 order 等 7 个）：{zero_write}"
+
+    states = resolve_units()
+    available = [u.label for u in UNITS if states[u.key] and not u.decided_off]
+    for skill_name in zero_write:
+        text = render_capability_boundary(skill_name=skill_name)
+        direct = _segment(text, DIRECT_PREFIX)
+        assert not direct, (
+            f"{skill_name} 回合的「✅ 可直接办理」仍含本域不可达的能力：{direct} —— "
+            f"本轮工具集里没有对应写工具（零写 skill），模型只能空头承诺（#7347 / #7758）"
+        )
+        elsewhere = _segment(text, ELSEWHERE_PREFIX)
+        missing = [label for label in available if label not in elsewhere]
+        assert not missing, (
+            f"{skill_name} 回合把可办能力弄丢了（既不在 ✅ 也不在「本域不直接办」）：{missing}"
+        )
+        for label in ("商品改价", "商品改名"):
+            assert label in elsewhere, (
+                f"{skill_name} 回合未把「{label}」登记为「本域不直接办」（本店已支持、本域不可达）"
+            )
+
+
+def test_product_turn_keeps_own_writes_direct():
+    """不得把可办的说成不可办：product 自己的写能力必须留在 ✅ 段（issue #8119）。"""
+    text = render_capability_boundary(skill_name="product")
+    direct = _segment(text, DIRECT_PREFIX)
+    elsewhere = _segment(text, ELSEWHERE_PREFIX)
+    for label in ("商品改价", "商品改名", "单规格改价", "批量撤销", "算料口径变更"):
+        assert label in direct, f"product 回合把本域可办的「{label}」降格了：{direct}"
+        assert label not in elsewhere, f"product 回合把可办的「{label}」列进了「本域不直接办」"
+    # 反向对照：别的域的写能力不得混进 product 的 ✅ 段。
+    for label in ("通知标记已读", "定时提醒的建与取消"):
+        assert label not in direct, f"product 回合的 ✅ 段混进了非本域能力「{label}」"
+        assert label in elsewhere, f"product 回合未把非本域能力「{label}」登记为「本域不直接办」"
+
+
+@pytest.mark.parametrize(
+    ("skill_name", "own", "other"),
+    [
+        ("reminder", "定时提醒的建与取消", "通知标记已读"),
+        ("notification", "通知标记已读", "定时提醒的建与取消"),
+    ],
+)
+def test_single_write_skills_scope_their_own_writes(skill_name, own, other):
+    """reminder / notification 各只有一把写工具（现取）⇒ ✅ 段只该有自家那条。"""
+    text = render_capability_boundary(skill_name=skill_name)
+    direct = _segment(text, DIRECT_PREFIX)
+    elsewhere = _segment(text, ELSEWHERE_PREFIX)
+    assert own in direct, f"{skill_name} 回合丢了本域能力「{own}」：{direct}"
+    assert own not in elsewhere
+    assert other in elsewhere, f"{skill_name} 回合未把非本域能力「{other}」移到「本域不直接办」"
+    assert other not in direct
+    assert "商品改名" in elsewhere
+
+
+def test_every_mibao_skill_projects_its_own_scope():
+    """类级元守卫：**每个** mibao skill 的边界段都必须按本 skill 的声明面投影（#8119）。
+
+    为什么需要：只要有人把 `base_skill._capability_boundary(skill)` 里的 `skill_name` 漏掉
+    （退回 persona 全局投影），所有 skill 都渲染成同一段，而**上面每条实例判据都在自己那一侧
+    绿**（= 判据绿、接线没了）。这里从注册表**现取** mibao skill 清单并独立复算 ✅ 段
+    ⇒ 以后新增 skill 忘传 skill_name 也当场红。
+    """
+    from app.graph.skills.base_skill import _capability_boundary
+
+    states = resolve_units()
+    for skill_name in _mibao_skill_names():
+        declared = declared_tool_names(skill_name) or frozenset()
+        expected = [
+            u.label for u in UNITS
+            if states[u.key] and not u.decided_off and (not u.tool or u.tool in declared)
+        ]
+        got = _segment(_capability_boundary(skill_name), DIRECT_PREFIX)
+        assert got == expected, (
+            f"{skill_name}: 能力边界段没有按本 skill 的声明面投影\n"
+            f"现取：{got}\n应得：{expected}\n"
+            "修法：`_capability_boundary` 必须把 skill_name 传给 render_capability_boundary"
+            "（issue #8119）"
+        )
+    # 反向对照：写面不同的两个域必须渲染不同 —— 漏传 skill_name 时两者逐字相同，本行先红。
+    assert _capability_boundary("order") != _capability_boundary("product")

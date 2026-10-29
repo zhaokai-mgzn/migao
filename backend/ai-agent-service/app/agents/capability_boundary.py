@@ -16,10 +16,14 @@ B 端能力边界投影（issue #7291；#7334 收口）。
 产品裁定 ❌ 的单元用 `forbidden_props` / `forbidden_prop_values` 反向钉住：
 工具若仍暴露该字段/枚举值，`forbidden_exposures()` 会具名报出（不再靠快照静默冻结）。
 
-Seam: `render_capability_boundary()` → str（只给 mibao；调用方按 persona 门控）。
+Seam: `render_capability_boundary(skill_name=...)` → str（只给 mibao；调用方按 persona 门控）。
+`skill_name` 给定时按**本轮 skill 的声明面**投影（issue #8119）：persona 全局投影会让**每个**
+mibao 回合都宣称「✅ 商品改名可直接办理」，而该回合的工具集里根本没有 `product_update`
+⇒ 模型只能空头承诺或误拒（同族：#7347 能力边界问句触发工具调用 / #7758 边界陈述被下单守卫误判 ⇒ 会话锁死）。
 
 判据：`tests/test_capability_boundary.py`（探针已注册 / 独立复算一致 / 现实快照 /
-字段级与批量枚举值 / 写工具全覆盖 / 手写声明不得回流 / 只注入 mibao / 内存注入判别力自证）。
+字段级与批量枚举值 / 写工具全覆盖 / 手写声明不得回流 / 只注入 mibao / 内存注入判别力自证 /
+按本轮 skill 投影：零写域不得宣称可直接办理 + 每域独立复算 + 漏传 skill_name 的类级元守卫）。
 """
 
 from __future__ import annotations
@@ -306,19 +310,73 @@ def forbidden_exposures(
     return problems
 
 
-def render_capability_boundary(states: Optional[Mapping[str, bool]] = None) -> str:
-    """渲染 prompt 段。分组顺序固定（可直接办理 → 暂未接线 → 按裁定不做）。"""
-    states = resolve_units() if states is None else states
+#: 「✅ 可直接办理」段行首（issue #8119）：探针工具在**本轮 skill 的声明面**内。
+DIRECT_PREFIX = "- ✅ 可直接办理"
+#: 「本域不直接办」段行首（issue #8119）：本店能力面可达，但**不在本轮 skill 的声明面**内。
+#: 与 DIRECT_PREFIX 互斥 —— 判据据此分段解析（`tests/test_capability_boundary.py`）。
+ELSEWHERE_PREFIX = "- ➡️ 本域不直接办"
 
-    ok = [u.label for u in UNITS if states.get(u.key)]
+
+def declared_tool_names(skill_name: str) -> Optional[FrozenSet[str]]:
+    """本轮 skill 的**声明面**（`SkillConfig.tool_names`）；不在注册表 ⇒ None（判不了域）。
+
+    为什么用声明面而不是「实际注册后」的工具集（issue #8119）：
+    ① **写能力只来自声明面** —— `create_skill_registry` 的 #4125 家族合并只并**只读**工具，
+       而每条能力单元的探针都是写工具 ⇒ 判域时两者等价（现取：每个 skill 的写工具 ⊆ 声明面）；
+    ② 声明面是**静态代码事实**：不实例化 registry（单次注册会打 300+ 行 `Tool registered` 日志）、
+       不动全局 `tool_scope`（A5 设计，误写会让域内目标被误判越域）。
+       本函数**每个回合**都会被 `_build_system_prompt` 调到，副作用不可接受。
+    """
+    from app.graph.skills.skill_registry import get_skill_registry
+
+    cfg = get_skill_registry().get(skill_name)
+    if cfg is None:
+        return None
+    return frozenset(cfg.tool_names or ())
+
+
+def render_capability_boundary(
+    states: Optional[Mapping[str, bool]] = None,
+    skill_name: Optional[str] = None,
+) -> str:
+    """渲染 prompt 段。分组顺序固定（本轮可办 → 本域不可达 → 暂未接线 → 按裁定不做）。
+
+    `skill_name`（issue #8119）：给定时按**本轮 skill 的声明面**投影 —— 本域不可达的写能力
+    不进「✅ 可直接办理」，而进「➡️ 本域不直接办、但黄金策在对应场景可以办」。
+    为什么必须这样：#7291 的投影原先按 **persona 全局**给，于是 order 回合的 prompt 里既有
+    「✅ 商品改名可直接办理（以本段为准）」、又有 `prompts/order.md` 的「本域无可写工具」，
+    而本轮**确实没有** `product_update` ⇒ 两句话互相打架（同族 #7347 / #7758）。
+    不传 `skill_name` ⇒ 保持全量渲染（向后兼容：既有判据 / 其它调用方按全局口径读）；
+    `skill_name` 不在注册表（判不了域）⇒ 同样退回全量 —— **证明不了不可达就不缩小口径**。
+    """
+    states = resolve_units() if states is None else states
+    scope = declared_tool_names(skill_name) if skill_name is not None else None
+
+    ok: List[str] = []
+    elsewhere: List[str] = []
+    for unit in UNITS:
+        if not states.get(unit.key):
+            continue
+        # 无探针单元（如供应商）判不了域 ⇒ 保守留在原段，不猜「不可达」。
+        if scope is not None and unit.tool and unit.tool not in scope:
+            elsewhere.append(unit.label)
+        else:
+            ok.append(unit.label)
     pending = [u for u in UNITS if not states.get(u.key) and not u.decided_off]
     decided = [u.label for u in UNITS if u.decided_off]
 
     lines = [
         MARKER + "以下能力状态由工具注册表推导（issue #7291；含字段 / 枚举值级）；"
         "与其它段落的能力口径冲突时**以本段为准**：",
-        "- ✅ 可直接办理：" + "、".join(ok),
     ]
+    # 空清单守卫：宁可整段不渲染，也不产出「✅ 可直接办理：」这种空话。
+    if ok:
+        lines.append(DIRECT_PREFIX + "：" + "、".join(ok))
+    if elsewhere:
+        lines.append(
+            ELSEWHERE_PREFIX + "（对应场景能办；不要在本域承诺代办）："
+            + "、".join(elsewhere)
+        )
     if pending:
         lines.append(
             "- ❌ 暂未接线（如实说「现在做不了」+ 给后台路径，**不得**承诺代办）："
@@ -328,9 +386,6 @@ def render_capability_boundary(states: Optional[Mapping[str, bool]] = None) -> s
         lines.append(
             "- ❌ 按产品裁定不做（提交永远在页面）：" + "、".join(decided)
         )
-    # 空清单守卫：宁可整段不渲染，也不产出「✅ 可直接办理：」这种空话。
-    if not ok:
-        lines.pop(1)
     lines.append(
         "- ⚠️ 以上是能力面；当前账号能不能执行，以【权限范围】与工具返回为准"
         "（无权限时如实说明，不要重试）。"
