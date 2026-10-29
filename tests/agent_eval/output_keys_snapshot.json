@@ -691,7 +691,7 @@
     "data=await get_logistics_trace_cache().get(context.tenant_id, tra",
     "data=self._transform_api_response(api_result, tracking_number, co"
    ],
-   "source_sha256": "14951e249fbfd96d7d3ef1d5eef778b6c3dbfe533b672e19b31766cae4e2238b"
+   "source_sha256": "b07b60ae43ef6ee7dc7d3c0f73353266b407428de4cdad807c103c0c1da37353"
   },
   "marketing_poster": {
    "actions": null,
@@ -827,7 +827,7 @@
     "order_id",
     "result"
    ],
-   "source_sha256": "742f2159bcc515889b03cc9fc8539212104e9c7e1355119280b378668eb974e6"
+   "source_sha256": "f304e36e3920ec8ab765a523eef6e49fdd808edacab78b4bba7c449efba6b7a9"
   },
   "order_query": {
    "actions": {
@@ -1459,7 +1459,7 @@
     "params",
     "validated"
    ],
-   "source_sha256": "a08135cc31e95017d067ecf2fd1939a3f0fda5c36a55326bc61450716cb5af67"
+   "source_sha256": "f881b225c8f65d9945641b576ae2af775995c89071a53bcdb4eb15a16dba3ec8"
   }
  }
 }
