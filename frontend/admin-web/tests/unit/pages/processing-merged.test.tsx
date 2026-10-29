@@ -144,17 +144,17 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
       'production:view',    // 计件工资
       // 🔴 #8086：质检记录 / 返工单已移出本组（「质量」组）
     ])
-    // 拆出去的单据三项落在**新组「供应链」**，且三项**同码** inbound:view（采购与收货同岗位 ⇒
-    // 零授权 delta；不新造 supplier:* / purchase:* —— 新码今天没人持有 ⇒ 菜单对所有人不可见）：
+    // 拆出去的单据落在「供应链」组。🔴 issue #8087（用户 2026-10-29 裁定 C）：采购单改挂独立读码
+    // `purchase:view`（原与入库单同码）—— 「新码今天没人持有 ⇒ 菜单对所有人不可见」这条旧口径
+    // 已被本次裁定取代：新码与授权同批落地（admin/operator），不再有「空码」。
     // 入库单必须排组内第一（手机端可见面标注取该码树序首个承载节点，#6781）。
-    // 🔴 2026-10-29（issue #8086）：供应商移入「基础资料」组 ⇒ 本组 = 入库单 → 采购单
     expect(supplyGroup()!.children.map((c) => c.path)).toEqual([
       '/inbound-orders',
       '/purchase-orders',   // #7369 段 4：采购单（入库单之后 —— 采购 → 收货同群）
     ])
     expect(supplyGroup()!.children.map((c) => c.permissionCode)).toEqual([
-      'inbound:view',   // 入库单
-      'inbound:view',   // 采购单（#7369 段 4：零授权 delta）
+      'inbound:view',   // 入库单（#8087 后本码只承载这一页）
+      'purchase:view',  // 采购单（#8087：独立读码）
     ])
     // 余下的库存/出库/台账/分析仍留在「仓储与物料」组，且**权限码不统一是有意的**：
     // 余料台账 = processing:manage（`RemnantController` 类级码）、
@@ -162,6 +162,7 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     // #5939：与入库单对称的出口单据「发货单」（`/shipments`，码 = 既有 `order:list`）。
     // #6404：本组首项「库存明细」（`/stock-ledger`，同取 `product:list`）。
     // 反恒真：入库单的 inbound:view **不得**再出现在本组（否则「搬组」只搬了半边）。
+    // 🔴 issue #8087：盘点单/出库单也不再是 inbound:view ⇒ 本组只剩 product:list / order:list / processing:manage。
     expect(inventoryGroup()!.children.map((c) => c.path)).toEqual([
       '/stock-ledger',
       '/stocktakes',
@@ -174,8 +175,8 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     // 所有人不可见，见 #4203 同族坑）。
     expect(inventoryGroup()!.children.map((c) => c.permissionCode)).toEqual([
       'product:list',   // 库存明细（#6404：同取既有 product:list ⇒ 零授权 delta）
-      'inbound:view',   // 盘点单（#7373：与入库/仓库同域 ⇒ 复用既有码，零授权 delta）
-      'inbound:view',   // 出库单（#7750：与入库单对称 ⇒ 复用既有码，零授权 delta）
+      'stock:view',     // 盘点单（#8087：库存单证独立读码）
+      'stock:view',     // 出库单（#8087：同上）
       'order:list',     // 发货单（#5939：取既有 order:list ⇒ 与订单列表同码、零授权 delta）
       'processing:manage',
       'product:list',   // 省料看板（#5699 P4）
