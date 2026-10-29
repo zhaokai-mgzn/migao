@@ -43,9 +43,9 @@ export interface ReadyShipmentOrder {
   customer_name?: string | null
   customer_phone?: string | null
   customer_address?: string | null
-  /** 物流方式：`express` / `logistics`（**内部值不上屏**，页面只用 `logistics_type_label`） */
+  /** 物流类型：`express` / `logistics`（**内部值不上屏**，页面只用 `logistics_type_label`） */
   logistics_type?: string | null
-  /** 物流方式的中文展示名（`快递` / `物流专线`；未采集 ⇒ null，**不猜**） */
+  /** 物流类型的中文展示名（`快递` / `物流专线`；未采集 ⇒ null，**不猜**） */
   logistics_type_label?: string | null
   logistics_company?: string | null
   /** 套数：服务端给的读数（`completed_sets === total_sets` 才是「全完工」） */

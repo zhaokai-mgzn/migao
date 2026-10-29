@@ -16,11 +16,13 @@
  */
 import Taro from '@tarojs/taro'
 import {
+  LOGISTICS_TYPES,
   SHIPMENT_ENDPOINTS,
   SHIPMENT_FIELD_KEYS,
   SHIPMENT_IDEMPOTENCY_HEADER,
   buildShipBody,
   buildShipmentItem,
+  defaultLogisticsType,
   formatShippedTotals,
   newShipmentRequestId,
   postWorkerShipment,
@@ -227,6 +229,32 @@ describe('拍照发货服务：识别候选 ⇒ 不预填（不确定的格子�
 
     expect(draft.quantity).toBe('0')
     expect(draft.uncertain).toEqual([])
+  })
+})
+
+describe('拍照发货服务：物流类型（issue #8071：工人端也要区分物流和快递）', () => {
+  it('S7 物流类型：有值才进请求体；不传 / 空串都不带这个键', () => {
+    const withType = buildShipBody({ trackingNo: 'SF1', logisticsType: 'logistics' })
+    expect(withType.logisticsType).toBe('logistics')
+
+    // 负控：不传 ⇒ 连键都没有（服务端据此不覆盖既有 logistics_type）
+    expect('logisticsType' in buildShipBody({ trackingNo: 'SF1' })).toBe(false)
+    expect('logisticsType' in buildShipBody({ trackingNo: 'SF1', logisticsType: '' })).toBe(false)
+  })
+
+  it('S7 默认物流类型取订单已带的；没有 / 词表外 ⇒ express（不猜）', () => {
+    expect(defaultLogisticsType({ logistics_type: 'logistics' })).toBe('logistics')
+    expect(defaultLogisticsType({ logistics_type: 'express' })).toBe('express')
+    expect(defaultLogisticsType({})).toBe('express')
+    expect(defaultLogisticsType(null)).toBe('express')
+    expect(defaultLogisticsType({ logistics_type: 'air' })).toBe('express')
+  })
+
+  it('S7 词表中文标签与商家端同口径（express 快递 / logistics 物流专线），内部值不上屏', () => {
+    expect(LOGISTICS_TYPES).toEqual([
+      { value: 'express', label: '快递' },
+      { value: 'logistics', label: '物流专线' },
+    ])
   })
 })
 
