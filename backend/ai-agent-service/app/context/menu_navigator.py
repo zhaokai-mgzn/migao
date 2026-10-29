@@ -134,7 +134,7 @@ MENU_TREE: Tuple[MenuNode, ...] = (
     # 基础资料（issue #8086）：档案与交易条件 —— 位置 = 客户服务之后、交易管理之前
     MenuNode("basic-data", "商品管理", "/products", "product:list"),
     MenuNode("basic-data", "客户列表", "/customers", "customer:view"),
-    MenuNode("basic-data", "供应商", "/suppliers", "inbound:view"),
+    MenuNode("basic-data", "供应商", "/suppliers", "supplier:view"),
     MenuNode("basic-data", "价格本", "/price-books", "order:list"),
     # 交易管理（2026-10-29：价格本移入「基础资料」；issue #7354 正名「销售订单」）
     MenuNode("trade-center", "销售订单", "/orders", "order:list"),
@@ -148,11 +148,11 @@ MENU_TREE: Tuple[MenuNode, ...] = (
     MenuNode("quality", "返工单", "/rework-orders", "after_sales:view"),
     # 供应链（issue #7369；2026-10-29：供应商移入「基础资料」）
     MenuNode("supply-chain", "入库单", "/inbound-orders", "inbound:view"),
-    MenuNode("supply-chain", "采购单", "/purchase-orders", "inbound:view"),
+    MenuNode("supply-chain", "采购单", "/purchase-orders", "purchase:view"),
     # 仓储与物料（2026-10-20 起只留库存与出库）
     MenuNode("inventory-center", "库存明细", "/stock-ledger", "product:list"),
-    MenuNode("inventory-center", "盘点单", "/stocktakes", "inbound:view"),
-    MenuNode("inventory-center", "出库单", "/outbound-orders", "inbound:view"),
+    MenuNode("inventory-center", "盘点单", "/stocktakes", "stock:view"),
+    MenuNode("inventory-center", "出库单", "/outbound-orders", "stock:view"),
     MenuNode("inventory-center", "发货单", "/shipments", "order:list"),
     MenuNode("inventory-center", "余料台账", "/production/remnants", "processing:manage"),
     MenuNode("inventory-center", "省料分析", "/production/saving-board", "product:list"),

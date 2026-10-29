@@ -826,6 +826,11 @@ public class RegistrationService {
                 {"质检录入", "production:inspect", "production", "inspect", "成品帘质检判定录入（独立质检员）"},
                 // 入库单（V111，issue #5034）：与 V111 迁移的存量租户权限补齐**同源同码**
                 {"入库单查看", "inbound:view", "inbound-order", "view", "查看入库单/批次"},
+                // 🔴 issue #8087（用户 2026-10-29 裁定 C）：把「入库单查看」上背着的三类负载拆成独立读码 ——
+                // 供应商档案 / 采购单 / 库存单证（盘点单 + 出库单）各一把，互不牵连。
+                {"供应商查看", "supplier:view", "supplier", "view", "查看供应商档案（联系人与账期）"},
+                {"采购单查看", "purchase:view", "purchase-order", "view", "查看采购单与到货进度"},
+                {"库存单证查看", "stock:view", "stock-document", "view", "查看盘点单与出库单"},
                 {"入库单操作", "inbound:create", "inbound-order", "create", "建单/过账/作废入库单"},
                 {"知识库管理", "knowledge:manage", "knowledge", "manage", "管理知识库"},
                 // 知识库查看（issue #5246）：知识库的**读**码。此前读（列表/搜索/待确认队列/模板）
@@ -926,6 +931,9 @@ public class RegistrationService {
                 //   多授 = 让运营看见「岗位权限」页并读到权限目录，属**放宽**，本单不做）。
                 "processing:manage", "production:view",
                 "processing:view", "processing:update", "inbound:view", "inbound:create",
+                // 🔴 issue #8087（用户裁定 C）：只有**管理员与运营**保留供应商 / 采购 / 库存单证三把读码；
+                // 客服 / 销售 / 财务 / 商品管理员不再经 `inbound:view` 顺带看到这三类（见各岗列表：一字未加）。
+                "supplier:view", "purchase:view", "stock:view",
                 "customer:view", "finance:view", "agent:session", "employee:list",
                 "after_sales:view", "knowledge:view",
                 "order:update", "order:create", "customer:create", "finance:create",

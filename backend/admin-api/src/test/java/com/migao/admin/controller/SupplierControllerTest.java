@@ -23,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>守三件**不会自己报错**的事：
  * <ol>
  *   <li><b>路由</b>：三条端点的动词 + 路径逐字（前端 `supplierApi` 与菜单锚点都按这个路径）；
- *   <li><b>权限码</b>：读 = `inbound:view`、写 = `inbound:create` —— 与菜单节点码 / RBAC 清单
+ *   <li><b>权限码</b>：读 = `supplier:view`、写 = `inbound:create` —— 与菜单节点码 / RBAC 清单
  *       / `AUTHORIZATION_CENSUS` 逐字同码（不新造 `supplier:*`，否则菜单对所有人不可见）；</li>
  *   <li><b>归属认定</b>：`PUT /{id}` 必须标 `@TenantOwnedResource("supplier")`（#6158/#6167），
  *       读端点**不该**标（没有 id 归属可言）。</li>
@@ -58,9 +58,9 @@ class SupplierControllerTest {
     }
 
     @Test
-    @DisplayName("权限码：读面 inbound:view / 写面 inbound:create（与菜单节点码、RBAC 清单逐字同码）")
+    @DisplayName("权限码：读面 supplier:view / 写面 inbound:create（与菜单节点码、RBAC 清单逐字同码）")
     void permissionCodesAreTheInboundOnes() {
-        assertThat(permissionOf(method("list"))).isEqualTo("inbound:view");
+        assertThat(permissionOf(method("list"))).isEqualTo("supplier:view");
         assertThat(permissionOf(method("create"))).isEqualTo("inbound:create");
         assertThat(permissionOf(method("update"))).isEqualTo("inbound:create");
     }
@@ -92,22 +92,22 @@ class SupplierControllerTest {
     }
 
     @Test
-    @DisplayName("待指派端点：GET /api/admin/suppliers/unassigned-inbound + 读码 inbound:view（无 id ⇒ 不标归属）")
+    @DisplayName("待指派端点：GET /api/admin/suppliers/unassigned-inbound + 读码 supplier:view（无 id ⇒ 不标归属）")
     void unassignedEndpointContract() {
         java.lang.reflect.Method m = method("unassignedInbound");
         assertThat(m.getAnnotation(GetMapping.class).value())
                 .containsExactly("/api/admin/suppliers/unassigned-inbound");
-        assertThat(permissionOf(m)).isEqualTo("inbound:view");
+        assertThat(permissionOf(m)).isEqualTo("supplier:view");
         assertThat(m.getAnnotation(TenantOwnedResource.class)).isNull();
     }
 
     @Test
-    @DisplayName("应付对账端点：GET /api/admin/suppliers/payables + 读码 inbound:view（金额不新增暴露面）")
+    @DisplayName("应付对账端点：GET /api/admin/suppliers/payables + 读码 supplier:view（金额不新增暴露面）")
     void payablesEndpointContract() {
         java.lang.reflect.Method m = method("payables");
         assertThat(m.getAnnotation(GetMapping.class).value())
                 .containsExactly("/api/admin/suppliers/payables");
-        assertThat(permissionOf(m)).isEqualTo("inbound:view");
+        assertThat(permissionOf(m)).isEqualTo("supplier:view");
         assertThat(m.getAnnotation(TenantOwnedResource.class)).isNull();
     }
 

@@ -199,17 +199,13 @@ describe('余料台账菜单三处同构（PR-106 / issue #5191）', () => {
     // 把 processing:manage 的项带出来。
     mockPermissions = ['inbound:view']
     render(<Sidebar collapsed={false} onToggle={() => {}} />)
-    fireEvent.click(screen.getByTestId('sidebar-group-toggle-supply-chain'))
+    // 🔴 issue #8087（裁定 C）：`inbound:view` 现在**只**开入库单；「供应链」组只剩 1 项 ⇒ 提升为一级项
+    //（无组头可展开），供应商/采购单各有独立读码 ⇒ 不在。
+    expect(screen.queryByTestId('sidebar-group-toggle-supply-chain')).toBeNull()
     expect(await screen.findByRole('link', { name: '入库单' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: NAME })).toBeNull()
-    // 🔴 #8086：供应商已移入「基础资料」组 ⇒ 本组 = 2 项（入库单 + 采购单，同一条 inbound:view 带出）；
-    // 「基础资料」组因同码也可见（供应商一项）—— 这正是「同码同权、但分组各归其位」的读数。
-    expect(within(screen.getByText('供应链').closest('[data-group-key]') as HTMLElement)
-      .queryAllByRole('link')).toHaveLength(2)
-    // 🔴 issue #8085：本权限下「基础资料」只剩「供应商」1 项 ⇒ 提升为一级项（无组头），
-    // 所以判据从「组头在」改成「供应商这一项在、组头不在」—— 要证的事（供应商确实挪进该组）没变。
-    expect(screen.queryByText('基础资料')).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '供应商' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '采购单' })).toBeNull()
+    expect(screen.queryByRole('link', { name: '供应商' })).toBeNull()
     cleanup()
   })
 })

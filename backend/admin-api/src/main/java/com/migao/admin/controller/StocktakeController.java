@@ -37,14 +37,14 @@ public class StocktakeController {
 
     /** 列表：`GET /api/admin/stocktakes`。 */
     @GetMapping
-    @RequirePermission("inbound:view")
+    @RequirePermission("stock:view")
     public ApiResponse<List<StocktakeView>> list() {
         return ApiResponse.success(stocktakeService.list());
     }
 
     /** 详情：`GET /api/admin/stocktakes/{id}`。 */
     @GetMapping("/{id}")
-    @RequirePermission("inbound:view")
+    @RequirePermission("stock:view")
     public ApiResponse<StocktakeView> detail(@PathVariable String id) {
         return ApiResponse.success(stocktakeService.detail(id));
     }
