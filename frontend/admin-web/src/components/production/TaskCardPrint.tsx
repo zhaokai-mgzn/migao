@@ -340,7 +340,7 @@ export default function TaskCardPrint({
         /* 最后一张不再分页（否则末尾多吐一张空白） */
         .task-card-label:last-child { break-after: auto; page-break-after: auto; }
         /* 专属唛（余料带回 / 绑带，issue #8107）：只印 5 行 + 二维码 ⇒ 短纸 50mm × 100mm。
-           宽度 / padding / 字号 / 二维码**与基类同值**（上面那条），只有纸高与命名页不同 ——
+           宽度 / padding / 字号 / 二维码与基类同值（上面那条），只有纸高与命名页不同 ——
            命名页让同一份打印任务里两种纸高并存（尺寸见 printNamedPageRule，本文件不写第二份）。
            ⚠️ 这段注释在模板字面量里 ⇒ 不许写 markdown 星号（copy-no-markdown-emphasis 判据会红） */
         .task-card-label--option { height: 100mm; page: wash-label-option; }
