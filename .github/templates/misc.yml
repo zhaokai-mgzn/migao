@@ -20,7 +20,7 @@ business_truths:
   - [misc.factory-invoke-text-safe] invoke_text_safe：清洗多模态 content list 仅保留 text；SystemMessage/HumanMessage/AIMessage 分别重建（Human 空文本→'[图片]'）；返回 response.content.strip()
   - [misc.main-create-app] create_app：setup_logging(debug)；FastAPI title/version；CORS 从 CORS_ALLOWED_ORIGINS 拆分去空白，DEBUG 时追加 localhost:3000/3001/5173 开发源；注册 api_router 前缀 API_PREFIX；/health 返回 status=healthy+service+version
   - [misc.main-lifespan] lifespan：启动 init_db/init_redis（非 DEBUG 异常 re-raise，DEBUG 仅 log）；启动 _session_auto_close_loop 后台任务；关闭时 cancel 任务 + close_redis + close_db（异常仅 log 不阻断）
-  - [misc.main-auto-close-loop] _session_auto_close_loop：每 SESSION_CLEANUP_INTERVAL(300s) 扫描 close_idle_sessions(idle_minutes=240)；每天 cleanup_closed_sessions(older_than_days=90)；CancelledError re-raise、其他异常 warning 非致命
+  - [misc.main-auto-close-loop] _session_auto_close_loop：每 SESSION_CLEANUP_INTERVAL(300s) 扫描 close_idle_sessions(idle_minutes=720)；每天 cleanup_closed_sessions(older_than_days=90)；CancelledError re-raise、其他异常 warning 非致命
   - [misc.rule-extract-text] _extract_text：None→''/str 原样/list 仅拼 type=='text'/其他 str(content)；match 空文本/空白→None
   - [misc.rule-match-priority] 关键词匹配优先级：capabilities 长短语→farewell→订单统计/订单数据(order_query)→遍历 KEYWORD_MAP；greeting 仅 ≤10 字符才高置信度(1.0)，长消息含问候词跳过
   - [misc.rule-regex] 关键词命中 confidence=0.95 source='rule' matched_keywords；REGEX_RULES 命中 0.9 source='rule'（ORD-* 订单号、创建商品正则排除订单/工单/售后）；均未命中返回 None

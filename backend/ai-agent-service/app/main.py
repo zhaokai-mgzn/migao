@@ -28,7 +28,7 @@ from app.utils.database import init_db, close_db
 from app.utils.redis_client import init_redis, close_redis
 
 # 会话空闲自动关闭配置
-SESSION_AUTO_CLOSE_MINUTES = 240    # 空闲超时分钟数（4 小时）
+SESSION_AUTO_CLOSE_MINUTES = 720    # 空闲超时分钟数（12 小时；用户裁定 2026-10-30，issue #8182）
 SESSION_CLEANUP_INTERVAL = 300      # 后台扫描间隔（秒）
 SESSION_RETENTION_DAYS = 90         # 已关闭会话保留天数
 SESSION_STARTUP_GRACE_S = 600       # 启动宽限期（秒）：进程启动后 N 秒内不执行关闭扫描（issue #2915）
