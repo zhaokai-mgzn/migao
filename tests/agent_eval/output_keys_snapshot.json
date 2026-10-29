@@ -429,6 +429,24 @@
       "count"
      ]
     },
+    "product_attribution": {
+     "dynamic": false,
+     "keys": [
+      "action",
+      "current_total",
+      "days",
+      "delta",
+      "delta_pct",
+      "previous_is_zero",
+      "previous_total",
+      "requested_days",
+      "top",
+      "top_down",
+      "top_up",
+      "window",
+      "window_capped"
+     ]
+    },
     "product_ranking": {
      "dynamic": true,
      "keys": [
@@ -496,9 +514,13 @@
     "sessions",
     "todayOrderCount",
     "todaySalesAmount",
+    "top",
+    "top_down",
+    "top_up",
     "totalAmount",
     "totalOrders",
     "trend",
+    "window",
     "window_capped",
     "window_days"
    ],
@@ -508,7 +530,7 @@
     "data ← response.get('data', {})",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "3cc5fa1f8140c1883082f2af51d31b2e3eac255a581ad5a2f81daa8ddfe24eb3"
+   "source_sha256": "3019b9a5cc9519de2f1fd88fa9c3a405db1bf13337812f839feb79dd2b577347"
   },
   "employee_manage": {
    "actions": {

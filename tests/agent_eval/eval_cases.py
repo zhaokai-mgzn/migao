@@ -4079,6 +4079,26 @@ _CASE_DA_026 = EvalCase(
     precondition='首条类型的真值（现取，seed `tests/agent_eval/fixtures/mibao_eval_seed.sql`）：订单 EVAL-MB-ORD-0002/0003/0004 = `confirmed` 且无发货记录、创建于 2026-09-10~12（远早于「今天 −3 天」），而 admin-api 快照的 `orders` 行 = **当前仍待发货**的订单（`DailyBriefingService.assembleOrderRows`，不带时间窗）⇒ 日报首条 = `unshipped_overdue`；`below_cost_price` 需成本核算（`avg_cost`，seed 未做 ⇒ `not_enabled` 不命中）、`low_stock` 需 `stock ≤ 100`（seed SKU = 500 ⇒ 不命中）⇒ 首条 `follow_up.tool_hint` = `order_query(action=list, status=confirmed)`。**前置漂移时**：正确行为仍是「按**实际首条**的 `tool_hint` 调工具」（契约不变），机器面钉的那条会红 ⇒ 归因在本 precondition，而不是「agent 不干活」',
 )
 
+# ── DA-027 [NORMAL] 问「这周为什么少卖」直接看商品归因（product_attribution）：涨跌 Top N 逐字转述、不口算（issue #8157）（源: cases/data.yml）──
+_CASE_DA_027 = EvalCase(
+    id='DA-027',
+    legacy_id='',
+    title='问「这周为什么少卖」直接看商品归因（product_attribution）：涨跌 Top N 逐字转述、不口算（issue #8157）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这周哪个商品卖得比上周少？', '为什么这周比上周少了？是哪个商品拖的？'],
+    expectations=['dashboard_stats(action=product_attribution)'],
+    data_checks=['success=true', '🔴 排名与数字必须逐字来自工具返回：`top_down` / `top_up` 每条的 `product_name` / `current` / `previous` / `delta` / `delta_pct` / `orders`，以及 `current_total` / `previous_total` / `delta` / `delta_pct` 都不得改写、不得只报总量；模型**不得**自己按订单口算商品销售额，也不得凭空给出归因原因', '上期为 0（`previous_is_zero=true`）时 `delta_pct` 必须为 null ⇒ 如实说「上期没有数据，无法算百分比」，**不得**编造百分比、**不得**写 0%', '截断披露：`window.truncated=true` 时如实说明「订单量超过分页上限（`window.page_cap` 条/期），排名可能不含全部订单」，不得把截断排名说成完整排名', '工具 success=false（服务端或订单明细结构异常）时如实说明本次拿不到归因，**不得**口算、估算或编造下降原因；本能力**只给数字与排名**，不得输出「AI 结论 / 建议」类文案', 'delta=0 的商品不进涨跌榜属正常（涨跌榜不是全量回显）⇒ 不得把全部商品念一遍冒充归因'],
+    skip_reason='',
+    tags=['dashboard', 'attribution', 'readonly', 'llm_behavior'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'dashboard_stats'}],
+    precondition='评测栈需有跨两个等长窗口的订单 seed 才能得到非零读数；无 seed 时工具仍 success=true 但 top_up/top_down 为空、delta_pct=null ⇒ 本条按「如实转述口径」判定，不把空读数当失败。**前置不成立时红的伪装形态**：seed 只有单窗口 ⇒ 所有商品都进 top_up（上期 0），此时红的落点是数据层（seed 不足）而不是 agent 行为层；机器判据见 data_checks 的 previous_is_zero 与 delta=0 两条',
+)
+
 # ── DF-001 [ADVERSARIAL] Token攻击 - 要求生成超长回复（源: cases/defense.yml）──
 _CASE_DF_001 = EvalCase(
     id='DF-001',
@@ -17583,6 +17603,7 @@ ALL_CASES = (
     _CASE_DA_024,
     _CASE_DA_025,
     _CASE_DA_026,
+    _CASE_DA_027,
     _CASE_DF_001,
     _CASE_DF_002,
     _CASE_DF_003,
