@@ -1,0 +1,71 @@
+{
+  "viewport": {
+    "w": 1440,
+    "h": 900
+  },
+  "overviewBar": {
+    "y": 186,
+    "h": 93,
+    "bottom": 279
+  },
+  "pendingHeading": {
+    "y": 303,
+    "h": 24,
+    "bottom": 327
+  },
+  "pendingCards": [
+    {
+      "y": 339,
+      "h": 96,
+      "bottom": 435
+    },
+    {
+      "y": 339,
+      "h": 96,
+      "bottom": 435
+    },
+    {
+      "y": 339,
+      "h": 96,
+      "bottom": 435
+    },
+    {
+      "y": 339,
+      "h": 96,
+      "bottom": 435
+    },
+    {
+      "y": 339,
+      "h": 96,
+      "bottom": 435
+    }
+  ],
+  "pendingBottom": 435,
+  "briefing": {
+    "y": 459,
+    "h": 50,
+    "bottom": 509
+  },
+  "statsHeading": {
+    "y": 533,
+    "h": 24,
+    "bottom": 557
+  },
+  "collapsedForm": true,
+  "toggleAria": "false",
+  "toggleText": "每日经营简报昨日成交 5 单、销售额 1680 元，今日暂无新订单；当前 14 个订单待发货、8 个商品库存偏低、1 个售后工单待处理展开",
+  "hintText": null,
+  "fullCardVisible": false,
+  "scrollHeight": 1973,
+  "cardsFullyVisible": true,
+  "pendingBeforeBriefing": true,
+  "briefingBeforeStats": true,
+  "screenshot": "/Users/guangzhen.zk/ai native/migao-wt/8105-dash-order/acceptance/2026-10-29/8105-dashboard/8105-after-1440x900.png",
+  "expandedBriefing": {
+    "y": 459,
+    "h": 1237,
+    "bottom": 1695
+  },
+  "expandedScreenshot": "/Users/guangzhen.zk/ai native/migao-wt/8105-dash-order/acceptance/2026-10-29/8105-dashboard/8105-after-expanded.png",
+  "expandedFullCardVisible": true
+}

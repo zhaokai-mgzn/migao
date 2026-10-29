@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Sparkles, AlertTriangle, Lightbulb, ListTodo, ArrowRight, RefreshCw, Newspaper, ShieldCheck } from 'lucide-react'
+import { Sparkles, AlertTriangle, Lightbulb, ListTodo, ArrowRight, RefreshCw, Newspaper, ShieldCheck, ChevronDown, ChevronUp } from 'lucide-react'
 import { briefingApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import ProactiveStatusPanel from '@/components/dashboard/ProactiveStatusPanel'
@@ -22,6 +22,12 @@ export interface BriefingCardProps {
   enabled?: boolean
   /** `page` = 日报页（逐规则原因全展开）；`dashboard` = 看板首页（紧凑，绿行收起） */
   variant?: 'page' | 'dashboard'
+  /**
+   * 默认收起为**一行**（issue #8105）：看板首页传 `true`，第一眼留给「待处理」；
+   * 点「展开」才渲染完整卡片（摘要 + 主动检查 + 昨日回顾 + 今日必办）。
+   * 不持久化 —— 刷新回默认收起。空态（未开启 / 未生成）不受本开关影响，走 #8012 的 `briefing-collapsed-hint`。
+   */
+  defaultCollapsed?: boolean
 }
 
 const PRIORITY_STYLES: Record<string, string> = {
@@ -34,6 +40,21 @@ const PRIORITY_LABELS: Record<string, string> = {
   high: '紧急',
   medium: '高',
   low: '普通',
+}
+
+/** 数字校验未通过时的事实（收起态一行 / 展开态完整句**共用同一句**，不造第二套说法） */
+const VERIFY_FAILED = '简报生成未通过数字校验，已安全丢弃不实条目'
+
+/** 收起态那一行摘要（issue #8105）：优先当日摘要首句；无摘要 ⇒ 关键读数；未过校验 ⇒ 说清已丢弃 */
+function collapsedSummary({ loading, briefing }: { loading: boolean; briefing: BriefingContent | null }): string {
+  if (loading) return '正在读取今日简报…'
+  if (!briefing) return VERIFY_FAILED
+  const first = briefing.summary?.split('。')[0]?.trim()
+  if (first) return first
+  const todo = briefing.todo?.length ?? 0
+  const risks = briefing.risks?.length ?? 0
+  if (todo || risks) return `今日必办 ${todo} 项 · 风险预警 ${risks} 项`
+  return '今日没有待办与预警条目'
 }
 
 function SeverityBadge({ item }: { item: BriefingItem }) {
@@ -109,9 +130,14 @@ function ReviewStrip({ items }: { items: BriefingReviewItem[] }) {
   )
 }
 
-export default function BriefingCard({ enabled = true, variant = 'dashboard' }: BriefingCardProps) {
+export default function BriefingCard({ enabled = true, variant = 'dashboard', defaultCollapsed = false }: BriefingCardProps) {
   // 开启时首帧就是「加载中」（issue #8012）：否则会先闪一下「尚未生成」摘要再变回卡片
   const [loading, setLoading] = useState(enabled)
+  /**
+   * 展开态（issue #8105）：看板首页默认收起一行，点「展开」才渲染完整卡片。
+   * **不持久化** —— 刷新回默认收起（看板第一职责是「今天该处理什么」，不是日报全文）。
+   */
+  const [expanded, setExpanded] = useState(!defaultCollapsed)
   const [briefing, setBriefing] = useState<BriefingContent | null>(null)
   const [verifyStatus, setVerifyStatus] = useState<string | null>(null)
   const [generated, setGenerated] = useState(false)
@@ -182,6 +208,36 @@ export default function BriefingCard({ enabled = true, variant = 'dashboard' }: 
     )
   }
 
+  // ── 收起态（issue #8105）────────────────────────────────────────────────
+  // 有数据时也默认一行（图标 + 标题 + 一句关键摘要 + 「展开」）。改前完整卡片约 400px 高，
+  // 把「待处理」推到 1440×900 首屏之外 663px（2026-10-29 真栈实测 y=1563）。
+  // 🔴 空态（未开启 / 未生成）**不**走这里 —— 它沿用上面 #8012 的 `briefing-collapsed-hint`（别造第二套）。
+  if (!expanded) {
+    return (
+      <div className="mb-6">
+        <button
+          type="button"
+          data-testid="briefing-toggle"
+          aria-expanded={false}
+          onClick={() => setExpanded(true)}
+          className="flex w-full items-center gap-2.5 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-left shadow-card transition-colors hover:border-primary-200"
+        >
+          <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary-50 to-accent-50">
+            <Newspaper className="h-3.5 w-3.5 text-primary-600" />
+          </span>
+          <span className="flex-shrink-0 text-sm font-semibold text-neutral-900">每日经营简报</span>
+          <span className="min-w-0 flex-1 truncate text-xs text-neutral-500">
+            {collapsedSummary({ loading, briefing })}
+          </span>
+          <span className="flex flex-shrink-0 items-center gap-1 text-xs font-medium text-primary-600">
+            展开
+            <ChevronDown className="h-3.5 w-3.5" />
+          </span>
+        </button>
+      </div>
+    )
+  }
+
   return (
     <div className="mb-6 rounded-xl border border-neutral-200 bg-white shadow-card">
       {/* 头部 */}
@@ -200,14 +256,29 @@ export default function BriefingCard({ enabled = true, variant = 'dashboard' }: 
             <p className="mt-0.5 text-[11px] text-neutral-400">昨日回顾 · 今日必办 · 风险预警 · 优化建议</p>
           </div>
         </div>
-        <button
-          onClick={fetchBriefing}
-          disabled={loading}
-          className="flex items-center gap-1.5 rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-500 shadow-sm transition-colors hover:border-primary-200 hover:text-primary-600 disabled:opacity-50"
-        >
-          <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
-          刷新
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={fetchBriefing}
+            disabled={loading}
+            className="flex items-center gap-1.5 rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-500 shadow-sm transition-colors hover:border-primary-200 hover:text-primary-600 disabled:opacity-50"
+          >
+            <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
+            刷新
+          </button>
+          {/* 收起（issue #8105）：只有「默认可收起」的调用方才给这个入口 —— 其它调用面行为不变 */}
+          {defaultCollapsed && (
+            <button
+              type="button"
+              data-testid="briefing-toggle"
+              aria-expanded={true}
+              onClick={() => setExpanded(false)}
+              className="flex items-center gap-1 rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-500 shadow-sm transition-colors hover:border-primary-200 hover:text-primary-600"
+            >
+              收起
+              <ChevronUp className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="p-5">
@@ -223,7 +294,7 @@ export default function BriefingCard({ enabled = true, variant = 'dashboard' }: 
           <div className="space-y-4">
             <div className="flex items-center gap-2 py-2 text-sm text-neutral-500">
               <ShieldCheck className="h-4 w-4 text-neutral-400" />
-              简报生成未通过数字校验，已安全丢弃不实条目（不会展示编造数据）。
+              {VERIFY_FAILED}（不会展示编造数据）。
             </div>
             <ProactiveStatusPanel status={proactiveStatus} variant={variant} />
           </div>

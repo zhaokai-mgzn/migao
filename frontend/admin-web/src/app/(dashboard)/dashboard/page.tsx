@@ -636,11 +636,8 @@ export default function DashboardPage() {
         lowStockCount={lowStockCount}
       />
 
-      {/* 智能每日经营简报（issue #8012：未开启 / 未生成 ⇒ 一行摘要；已开启且有数据 ⇒ 完整卡片） */}
-      {briefingConfigLoaded && <BriefingCard enabled={briefingEnabled} />}
-
-      {/* ① 待处理任务 */}
-      <div className="mb-6">
+      {/* ① 待处理任务（issue #8105：提到简报**之前** —— 看板第一职责是「今天该处理什么」） */}
+      <div className="mb-6" data-testid="dashboard-pending-section">
         <SectionHeading icon={<Package className="h-3.5 w-3.5 text-amber-600" />} colorClass="bg-amber-50">待处理</SectionHeading>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
           {/* issue #5792 第二阶段：待支付订单（钱还没到）。下钻用**端点枚举值**
@@ -661,7 +658,16 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ② 经营数据卡片（4 卡自洽：订单数 × 客单价 ≈ 销售额） */}
+      {/* ② 智能每日经营简报（issue #8012 空态压缩 + issue #8105 有数据时也默认收起为一行；
+          摘要 · 主动检查 · 昨日回顾 · 今日必办按需展开）。常驻面克制（§31 P1）——
+          可行动区（待处理）因此留在首屏内，而不是被约 400px 的日报全文挤到折叠线以下。 */}
+      {briefingConfigLoaded && (
+        <div data-testid="dashboard-briefing-section">
+          <BriefingCard enabled={briefingEnabled} defaultCollapsed />
+        </div>
+      )}
+
+      {/* ③ 经营数据卡片（4 卡自洽：订单数 × 客单价 ≈ 销售额） */}
       <div className="mb-6">
         <SectionHeading icon={<TrendingUp className="h-3.5 w-3.5 text-primary-600" />} colorClass="bg-primary-50">经营数据</SectionHeading>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -717,7 +723,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ②′ 可插拔指标区（issue #5792）：**只在企业启用对应能力时出现**
+      {/* ③′ 可插拔指标区（issue #5792）：**只在企业启用对应能力时出现**
           —— 未购买/未下发 ⇒ 整块**不渲染**（不是渲染成 0、不是空白占位）。
           当前只有「AI 接待占比」一张；新增卡片只改 `@/lib/dashboard-cards` 的注册表。 */}
       {pluggableCards.length > 0 && (
@@ -752,7 +758,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ③ 趋势图 */}
+      {/* ④ 趋势图 */}
       <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* 订单趋势 */}
         <div className="bg-white rounded-xl border border-neutral-200 shadow-card p-5">
@@ -844,7 +850,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ③′ 订单状态分布（issue #5792 第二阶段）：端点与组件此前都已写好、从未接线 */}
+      {/* ④′ 订单状态分布（issue #5792 第二阶段）：端点与组件此前都已写好、从未接线 */}
 
       <div className="mb-6">
 
@@ -855,7 +861,7 @@ export default function DashboardPage() {
       </div>
 
 
-      {/* ④ 列表 */}
+      {/* ⑤ 列表 */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* 近期订单 — #2544: 复用 RecentOrders 组件（语义色 chips + 空态治理） */}
         <RecentOrders
