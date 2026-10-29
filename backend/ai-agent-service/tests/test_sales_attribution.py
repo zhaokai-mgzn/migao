@@ -60,8 +60,13 @@ def _install(mock_get_client, pages_by_window):
     async def fake_get(path, **kwargs):
         assert path == "/api/admin/orders", path
         params = kwargs.get("params") or {}
-        window = pages_by_window.get(params.get("startDate"))
-        assert window is not None, f"未预期的窗口 startDate={params.get('startDate')!r}"
+        # 弱断言门禁（growth_gate --check-weak）不认 `is not None`：改成**具名成员断言**，
+        # 失败时直接列出已装窗口，仍能一眼看出是夹具装错窗口而不是被测逻辑的错。
+        assert params.get("startDate") in pages_by_window, (
+            f"未预期的窗口 startDate={params.get('startDate')!r}"
+            f"（夹具已装窗口={sorted(pages_by_window)}）"
+        )
+        window = pages_by_window[params["startDate"]]
         if isinstance(window, dict):
             return {"success": True, "data": window}
         return {"success": True, "data": window[int(params.get("page", 1)) - 1]}
