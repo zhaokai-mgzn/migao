@@ -1,0 +1,64 @@
+{
+  "viewport": {
+    "w": 1440,
+    "h": 900
+  },
+  "overviewBar": {
+    "y": 186,
+    "h": 93,
+    "bottom": 279
+  },
+  "pendingHeading": {
+    "y": 1563,
+    "h": 24,
+    "bottom": 1587
+  },
+  "pendingCards": [
+    {
+      "y": 1599,
+      "h": 96,
+      "bottom": 1695
+    },
+    {
+      "y": 1599,
+      "h": 96,
+      "bottom": 1695
+    },
+    {
+      "y": 1599,
+      "h": 96,
+      "bottom": 1695
+    },
+    {
+      "y": 1599,
+      "h": 96,
+      "bottom": 1695
+    },
+    {
+      "y": 1599,
+      "h": 96,
+      "bottom": 1695
+    }
+  ],
+  "pendingBottom": 1695,
+  "briefing": {
+    "y": 303,
+    "h": 1237,
+    "bottom": 1539
+  },
+  "statsHeading": {
+    "y": 1719,
+    "h": 24,
+    "bottom": 1743
+  },
+  "collapsedForm": false,
+  "toggleAria": null,
+  "toggleText": null,
+  "hintText": null,
+  "fullCardVisible": true,
+  "scrollHeight": 3159,
+  "cardsFullyVisible": false,
+  "pendingBeforeBriefing": false,
+  "briefingBeforeStats": true,
+  "screenshot": "/Users/guangzhen.zk/ai native/migao-wt/8105-dash-order/acceptance/2026-10-29/8105-dashboard/8105-before-1440x900.png"
+}
