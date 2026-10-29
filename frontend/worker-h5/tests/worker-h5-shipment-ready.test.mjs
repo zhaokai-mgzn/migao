@@ -8,7 +8,7 @@
 // 本文件的判据（每条都能单独变红）：
 //   ① **筛选不在前端**：服务端给几行就渲染几行；**半完工行不得被前端补成「全完工」**，
 //      也不得被前端偷偷丢掉（丢掉 = 出了事看不出是谁改的口径）；
-//   ② **标签行清单是唯一真值**：行序 + 缺值 `—` + 不印两遍「客户」+ 物流方式**不回退「快递」**；
+//   ② **标签行清单是唯一真值**：行序 + 缺值 `—` + 不印两遍「客户」+ 物流类型**不回退「快递」**；
 //   ③ **纸型只有一个来源**：`SHIP_LABEL_PAGE_SIZE` 必须逐字等于介质矩阵 `print-media.json`
 //      的 `label-50x70.pageSize`，且 `@page` **只在** `ship-label.css` 出现（类级守卫：
 //      混进共用的 styles.css ⇒ 报工页也被印成 50×70）；
@@ -97,14 +97,17 @@ test('地址折行而不是省略（省略 = 工人不知道发去哪）', () =>
 
 // ── ② 发货联：行清单是唯一真值 ─────────────────────────────────────────────────
 
-test('标签行序与字段面：订单号 / 收货人 / 电话 / 地址 / 物流方式 / 物流公司 / 下单日期 / 套数 / 备注', () => {
+test('标签行序与字段面：订单号 / 收货人 / 电话 / 地址 / 物流类型 / 物流公司 / 下单日期 / 套数 / 备注', () => {
   const rows = buildShipLabelRows(READY_ROW)
   assert.deepEqual(rows.map((r) => r.label),
-    ['订单号', '收货人', '电话', '地址', '物流方式', '物流公司', '下单日期', '套数', '备注'])
+    ['订单号', '收货人', '电话', '地址', '物流类型', '物流公司', '下单日期', '套数', '备注'])
   assert.equal(rows[0].value, '0901-000084')
   assert.equal(rows[1].value, '肖风伟')
   assert.equal(rows[2].value, '13849944707')
-  assert.equal(rows[4].value, '物流专线', '物流方式取服务端展示名（express/logistics 这类内部键不得上纸）')
+  assert.equal(rows[4].value, '物流专线', '物流类型取服务端展示名（express/logistics 这类内部键不得上纸）')
+  // 术语（issue #8080）：这一栏是「物流类型」（快递 / 物流专线）。商家后台的「物流方式」专指
+  // `shippingMethod`（物流发货 / 无需物流）—— 负控：把 label 改回「物流方式」⇒ 上面 deepEqual 与本行都红。
+  assert.ok(!rows.some((r) => r.label === '物流方式'), '「物流方式」是发货方式的专名，两端不得共用一个词')
   assert.equal(rows[5].value, '四季安')
   assert.equal(rows[6].value, '2026-09-01', '下单日期 = 服务端 created_at 按业务时区的 YYYY-MM-DD（issue #7786）')
   assert.equal(rows[7].value, '3 套（全完工）')
@@ -137,7 +140,7 @@ test('帘种 / 安装小区 / 安装位置：有值就印、缺值整行不印�
   assert.ok(!blank.some((r) => r.key === 'install_rooms'))
 })
 
-test('缺值不编造：null / 空串 ⇒ `—`，且物流方式**不回退「快递」**', () => {
+test('缺值不编造：null / 空串 ⇒ `—`，且物流类型**不回退「快递」**', () => {
   const rows = buildShipLabelRows({
     order_no: '0901-000086', customer_name: '', customer_phone: null,
     customer_address: '   ', logistics_type: null, logistics_type_label: null,
@@ -147,7 +150,7 @@ test('缺值不编造：null / 空串 ⇒ `—`，且物流方式**不回退「�
   assert.equal(byKey.consignee, SHIP_LABEL_MISSING)
   assert.equal(byKey.customer_phone, SHIP_LABEL_MISSING)
   assert.equal(byKey.customer_address, SHIP_LABEL_MISSING)
-  assert.equal(byKey.logistics_type, SHIP_LABEL_MISSING, '未采集的物流方式不得被猜成「快递」（那会把物流专线发成快递）')
+  assert.equal(byKey.logistics_type, SHIP_LABEL_MISSING, '未采集的物流类型不得被猜成「快递」（那会把物流专线发成快递）')
   assert.equal(byKey.logistics_company, SHIP_LABEL_MISSING)
   assert.ok(!rows.some((r) => r.key === 'remark'), '备注为空 ⇒ 整行不渲染（不留空行）')
   assert.ok(!rows.some((r) => r.value === '0' || r.value === 'undefined'), '缺值不得印成 0 / undefined')

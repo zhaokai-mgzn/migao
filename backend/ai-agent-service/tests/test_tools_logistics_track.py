@@ -129,6 +129,66 @@ class TestLogisticsTrackByOrder:
         assert "receiverPhone" not in result.data
 
     @patch("app.tools.logistics_track.get_admin_api_client")
+    async def test_logistics_type_injected_when_collected(
+        self, mock_get_client, tool, sample_tool_context
+    ):
+        """采集到物流类型 ⇒ 卡载荷带 `logistics_type`（会话卡据此印「物流/专线」）—— issue #8080。"""
+        mock_client = AsyncMock()
+
+        async def mock_get(url, **kwargs):
+            if "/api/admin/orders" == url and kwargs.get("params", {}).get("keyword"):
+                return {"success": True, "data": {"items": [{"id": "order_001"}]}}
+            return {
+                "success": True,
+                "data": {
+                    "id": "order_001",
+                    "status": "shipped",
+                    "logistics": {
+                        "trackingNo": "SJA001",
+                        "logisticsCompany": "四季安",
+                        "logisticsType": "logistics",
+                    },
+                },
+            }
+        mock_client.get = mock_get
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(context=sample_tool_context, order_id="order_001")
+
+        assert result.success is True
+        assert result.data["logistics_type"] == "logistics"
+
+    @patch("app.tools.logistics_track.get_admin_api_client")
+    async def test_logistics_type_not_invented_when_missing(
+        self, mock_get_client, tool, sample_tool_context
+    ):
+        """未采集物流类型 ⇒ **不注入该键**（负控：旧实现兜底 `"express"` ⇒ 红）。
+
+        病根（issue #8080）：`logistics.get("logisticsType", "express")` 把「库里没采集过」
+        洗成「采集到快递」⇒ 会话卡无法区分，只能把没记录的单子印成「快递」（编值）。
+        """
+        mock_client = AsyncMock()
+
+        async def mock_get(url, **kwargs):
+            if "/api/admin/orders" == url and kwargs.get("params", {}).get("keyword"):
+                return {"success": True, "data": {"items": [{"id": "order_001"}]}}
+            return {
+                "success": True,
+                "data": {
+                    "id": "order_001",
+                    "status": "shipped",
+                    "logistics": {"trackingNo": "SF1234567890", "logisticsCompany": "顺丰速运"},
+                },
+            }
+        mock_client.get = mock_get
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(context=sample_tool_context, order_id="order_001")
+
+        assert result.success is True
+        assert "logistics_type" not in result.data, "没采集就不许编成「快递」"
+
+    @patch("app.tools.logistics_track.get_admin_api_client")
     async def test_logistics_track_by_order_legacy_records_shape(
         self, mock_get_client, tool, sample_tool_context, sample_order_with_logistics
     ):

@@ -515,6 +515,97 @@ class AgentOrderServiceTest {
             return req;
         }
 
+        /**
+         * 物流类型透传（issue #8080）—— 病：agent 代客发货把这一栏写死 {@code null}
+         * ⇒ 用户说「发物流 / 走专线」也只会落列默认 {@code express}，全链路的「区分」在智能体这里断掉。
+         *
+         * <p>判据钉的是**写面入参**（{@code updateShippingDetails} 第 6 参）：那条 SQL 是
+         * {@code logistics_type = COALESCE(NULLIF(#{logisticsType}, ''), logistics_type)}
+         * ⇒ 传值 = 覆盖、传 {@code null} = 保留。所以「有没有透传」在这一层就能判死。</p>
+         */
+        @Test
+        @DisplayName("物流类型透传：说了「走物流专线」⇒ 条件更新收到 logisticsType=logistics")
+        void forwardsLogisticsType() {
+            AgentOrderUpdateRequest req = buildRequest("四季安", "SJA001");
+            req.setLogisticsType("logistics");
+
+            OrderLogistics existing = OrderLogistics.builder()
+                    .id("log-003").orderId("order-uuid-001").tenantId(1L)
+                    .logisticsCompany("顺丰").trackingNo("SFOLD").status("in_transit").build();
+
+            when(orderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testOrder);
+            when(orderLogisticsMapper.selectByOrderId(eq("order-uuid-001"), any())).thenReturn(List.of(existing));
+            when(orderLogisticsMapper.updateShippingDetails(any(), any(), any(), any(), any(), any(), any()))
+                    .thenReturn(1);
+            when(orderMapper.selectById("order-uuid-001")).thenReturn(testOrder);
+            when(orderMapper.update(any(), any())).thenReturn(1);
+            when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+            when(orderItemMapper.selectByOrderId(any(), any())).thenReturn(List.of());
+
+            orderService.updateOrderForAgent("order-uuid-001", req, 1L);
+
+            verify(orderLogisticsMapper).updateShippingDetails(any(),
+                    eq("order-uuid-001"), eq("四季安"), eq("SJA001"),
+                    org.mockito.ArgumentMatchers.<String>isNull(),
+                    eq("logistics"),
+                    org.mockito.ArgumentMatchers.<String>isNull());
+        }
+
+        /**
+         * **不覆盖**负控（issue #8080）：订单已经记着「物流专线」，本次只说改运单号
+         * ⇒ 类型那一栏必须传 {@code null}（= 本次没说这件事），由 SQL 的 COALESCE 保留原值。
+         * 缺陷形态（猜一个 {@code "express"} 兜底 / 更新时整实体回写）⇒ 本用例红。
+         */
+        @Test
+        @DisplayName("物流类型缺省：既有记录的类型不被覆盖（负控：兜底 express ⇒ 红）")
+        void doesNotOverwriteTypeWhenOmitted() {
+            AgentOrderUpdateRequest req = buildRequest("中通", "ZT123456");
+
+            OrderLogistics existing = OrderLogistics.builder()
+                    .id("log-004").orderId("order-uuid-001").tenantId(1L)
+                    .logisticsCompany("四季安").trackingNo("SJA001")
+                    .logisticsType("logistics").status("in_transit").build();
+
+            when(orderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testOrder);
+            when(orderLogisticsMapper.selectByOrderId(eq("order-uuid-001"), any())).thenReturn(List.of(existing));
+            when(orderLogisticsMapper.updateShippingDetails(any(), any(), any(), any(), any(), any(), any()))
+                    .thenReturn(1);
+            when(orderMapper.selectById("order-uuid-001")).thenReturn(testOrder);
+            when(orderMapper.update(any(), any())).thenReturn(1);
+            when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+            when(orderItemMapper.selectByOrderId(any(), any())).thenReturn(List.of());
+
+            orderService.updateOrderForAgent("order-uuid-001", req, 1L);
+
+            verify(orderLogisticsMapper).updateShippingDetails(any(),
+                    eq("order-uuid-001"), eq("中通"), eq("ZT123456"),
+                    org.mockito.ArgumentMatchers.<String>isNull(),
+                    org.mockito.ArgumentMatchers.<String>isNull(),
+                    org.mockito.ArgumentMatchers.<String>isNull());
+            // 整实体回写会让实体里读到的旧值盖掉别处刚写的值 ⇒ 这条路必须一直关着
+            verify(orderLogisticsMapper, never()).updateById(any(OrderLogistics.class));
+        }
+
+        @Test
+        @DisplayName("新建物流行：物流类型落库（此前恒为 null ⇒ 只能吃列默认 express）")
+        void insertsRowWithLogisticsType() {
+            AgentOrderUpdateRequest req = buildRequest("四季安", "SJA002");
+            req.setLogisticsType("logistics");
+
+            when(orderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testOrder);
+            when(orderLogisticsMapper.selectByOrderId(eq("order-uuid-001"), any())).thenReturn(List.of());
+            when(orderLogisticsMapper.insert(any(OrderLogistics.class))).thenReturn(1);
+            when(orderMapper.selectById("order-uuid-001")).thenReturn(testOrder);
+            when(orderMapper.update(any(), any())).thenReturn(1);
+            when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+            when(orderItemMapper.selectByOrderId(any(), any())).thenReturn(List.of());
+
+            orderService.updateOrderForAgent("order-uuid-001", req, 1L);
+
+            verify(orderLogisticsMapper).insert(org.mockito.ArgumentMatchers.<OrderLogistics>argThat(l ->
+                    "logistics".equals(l.getLogisticsType())));
+        }
+
         @Test
         @DisplayName("无物流记录时新建物流并将 confirmed 订单流转为 shipped")
         void createsLogisticsAndShips() {

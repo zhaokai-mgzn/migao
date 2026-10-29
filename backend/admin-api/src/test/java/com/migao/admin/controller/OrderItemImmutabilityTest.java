@@ -138,9 +138,12 @@ class OrderItemImmutabilityTest {
         for (Field f : AgentOrderUpdateRequest.class.getDeclaredFields()) {
             fields.add(f.getName());
         }
+        // issue #8080：`logisticsType` 是**物流元数据**（快递 / 物流专线），不是订单内容
+        // ⇒ 显式登记进固定字段集。本判据的用途是「字段集一变就逼人看一眼」，
+        // 看一眼之后该登记就登记；**下一条 `noneMatch("item")` 仍然守着内容编辑那条线**。
         assertThat(fields).containsExactly(
-                "action", "cancelReason", "logisticsCompany", "refundAmount", "refundReason",
-                "status", "trackingNumber");
+                "action", "cancelReason", "logisticsCompany", "logisticsType", "refundAmount",
+                "refundReason", "status", "trackingNumber");
         assertThat(fields).noneMatch(f -> f.toLowerCase().contains("item"));
     }
 }
