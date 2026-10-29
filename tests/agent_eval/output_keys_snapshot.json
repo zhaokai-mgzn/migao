@@ -753,24 +753,7 @@
    "source_sha256": "299974d7361e6c3099d663a4d23d516338d251fbcadf7906d0e500351e1bbcef"
   },
   "nav_guide": {
-   "actions": {
-    "how_to": {
-     "dynamic": false,
-     "keys": [
-      "action",
-      "label",
-      "menu",
-      "permission",
-      "preconditions",
-      "registered",
-      "route",
-      "steps"
-     ]
-    }
-   },
-   "actions_unattributed": [
-    "navigate"
-   ],
+   "actions": null,
    "dynamic": true,
    "file": "backend/ai-agent-service/app/tools/nav_guide.py",
    "keys": [
@@ -797,7 +780,7 @@
     "data ← answer.to_data()",
     "data=answer.to_data()"
    ],
-   "source_sha256": "adc66f8ff9a5dbe7c07c80bcf0fbe030e5e81a6b58745b8bbe91fd7aa9f0e94d"
+   "source_sha256": "a46db4e491bc0cd715ce6b9b91d04cdfe1ce6fc350825a1fd61e264afb868141"
   },
   "notification_manage": {
    "actions": {
