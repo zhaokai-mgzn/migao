@@ -33,7 +33,7 @@
 | 用例覆盖 | `python3 scripts/mibao_coverage.py --md` |
 | 评测触发面 | `grep -n "^on:" -A6 .github/workflows/{agent-eval,post-deploy-eval,agent-eval-adversarial}.yml` |
 | 最近评测读数 | `gh run list --workflow=post-deploy-eval.yml`；artifact `post-deploy-eval-mibao.zip` |
-| 守卫规模 | `wc -l app/graph/skills/base_skill.py`；`ls tests \| grep guard` |
+| 守卫规模 | `wc -l backend/ai-agent-service/app/graph/skills/base_skill.py`；`ls tests \| grep guard` |
 
 复算脚本（只读，不调 LLM）：
 
@@ -189,7 +189,7 @@ PY
 ### F4 · 后置守卫层已经在承担"能力判断"，且缺冲突/死锁判据（P1）
 
 **读数**：`app/graph/skills/base_skill.py` **4,346 行**；`tests/` 下 `*guard*.py` **13 个**；
-`grep -n "guard\|corrective\|rewrite\|_hit(" base_skill.py` 命中 **15 行**（另有 `nodes.py` 6 行）。它们在**生成之后**改话术、拦工具、补链路。
+`grep -n "guard\|corrective\|rewrite\|_hit(" backend/ai-agent-service/app/graph/skills/base_skill.py` 命中 **15 行**（另有 `nodes.py` 6 行）。它们在**生成之后**改话术、拦工具、补链路。
 
 **为什么这是问题**：每一层守卫都要自己判断"模型刚才是不是说错了"，而判断依据是正则 + 上下文特征
 ⇒ 误判即新故障（#7758 就是因为"下单守卫"把图片/海报域的请求判成下单流程）。
