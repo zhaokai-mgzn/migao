@@ -60,6 +60,29 @@ UNBOUND = object()
 #: 判据：`tests/test_skill_skills/test_react_turn.py`（删掉这个机制会让那条判据当场报错）。
 GATE_EVAL_HOOK = None
 
+#: 「连续无进展」出口的阈值（P1-4 后半，issue #8150）。
+#: 为什么是 **3**（对照 `execute_skill` 的 `max_iterations = 8`）：连续 3 轮**结果全失败**
+#: 已足够判定「这条路走不通」—— 同一工具同一参数再试一次也不会变对（#7758 的锁死形态正是
+#: 下单守卫误判后不断重试同一调用），留 5 轮给「换策略」之后的重试。
+#: ⚠️ 这不是把上限改小：`max_iterations` 一字未动，新增的是**判据**（连续无推进就早退）。
+MAX_NO_PROGRESS_ROUNDS = 3
+
+#: 连续无进展时喂给**最后一次**模型调用的内部 system 指令（只进那一次调用的 prompt，
+#: **不进会话历史** —— 它是系统指令，不是对话内容）。
+#: 只做两件事：① 禁止再用同一工具同一参数重试；② 给出两条可执行的出路。
+_NO_PROGRESS_STRATEGY_SWITCH = (
+    "【系统提示：换策略】刚才连续 {rounds} 轮工具调用**全部失败**"
+    "（含同一工具同一参数反复重试）。不要再调用同一个工具的同一组参数 —— "
+    "那样只会继续失败。请改为：① **向对方确认关键信息**（缺哪个字段就问哪个，"
+    "一次问清）；② 或**如实说明当前卡在哪一步**、需要对方提供什么。"
+)
+
+#: 换策略的那次调用仍没给出可用文本时的用户可见兜底（不暴露内部标识、不责备）。
+_NO_PROGRESS_FALLBACK = (
+    "这一步我反复尝试没能办成，先跟您确认一下关键信息（比如单号、商品或金额），"
+    "您给我之后我再继续办理。"
+)
+
 
 async def react_turn(
     state: AgentState,
@@ -179,6 +202,14 @@ async def react_turn(
             # 不是"每个 ReAct 迭代一次" —— 后者在同一故障持续时会把 8 个迭代全烧在重试上，
             # 最后退化成"轮次耗尽"话术（用户仍得不到任何进展，且白烧 8 次配额）。
             _llm_error_retried = False
+            # 连续「**没有任何工具成功**」的迭代计数（P1-4 后半，issue #8150）：
+            # 有任一工具成功 ⇒ 归零（正常路径逐字不变）；连续 `MAX_NO_PROGRESS_ROUNDS`
+            # 轮全失败 ⇒ 提前结束循环并换策略（不再烧完 `max_iterations`）。
+            # 与上面两条既有纠偏**不是同一判据**（不重造）：`_stall_corrected` 是 C 端
+            # 「顾客已确认却不动手」的**一次性语义纠正**（看「本轮有没有推进类工具调用」）；
+            # 本条看的是「连续多轮的**结果**是否全失败」。`grep -n "no_progress|streak|stagnant"`
+            # 在 `app/graph/` 零命中（2026-10-29）⇒ 没有可复用的既有计数。
+            _no_progress_streak = 0
             for iteration in range(max_iterations):
                 logger.info(f"[{skill_name}] Iteration {iteration+1}/{max_iterations} | session={session_id}")
 
@@ -1636,6 +1667,55 @@ async def react_turn(
                                 await _store.commit(session_id, _full)
                         except Exception as e:
                             logger.warning(f"[{skill_name}] last_card persist failed (non-fatal): {e}")
+
+                # ── 连续无进展出口（P1-4 后半，issue #8150）──
+                # 判据只看**结果事实**：本轮所有工具都失败（`success=False`；工具抛异常也
+                # 统一走 `_execute_tool_safe` 的失败出口 ⇒ 同样计入）⇒ streak += 1；
+                # 本轮有任一工具成功 ⇒ 归零。**「只复读同一 (tool, args) 且未成功」是
+                # 「本轮全部失败」的子集** ⇒ 不必再比对 args（真推进了就会成功；被守卫
+                # 拦回的重试本身就是失败）。
+                # 正常路径（任一轮有成功）逐字不变：归零后下面的分支不会触发。
+                if any(bool((_rd or {}).get("success")) for _tc, _rs, _rd in tool_results):
+                    _no_progress_streak = 0
+                else:
+                    _no_progress_streak += 1
+                # ⚠️ `iteration + 1 < max_iterations`：若阈值被配成 >= `max_iterations`
+                # （= 红证注入「关掉本判据」的形态）⇒ 落回**既有**「轮次耗尽」出口，
+                # 一个字符都不改；正常配置（3 < 8）不受影响。
+                if (_no_progress_streak >= MAX_NO_PROGRESS_ROUNDS
+                        and iteration + 1 < max_iterations):
+                    logger.warning(
+                        f"[{skill_name}] 连续 {_no_progress_streak} 轮无进展（工具全部失败）"
+                        f" → 提前结束循环并换策略 | session={session_id} "
+                        f"iter={iteration+1}/{max_iterations}")
+                    # 最后一次模型调用：**只这一次**的 prompt 里带换策略指令（不进会话历史），
+                    # 且**不执行**它可能再发出的工具调用（循环随即 break 出去）——
+                    # 所以「不再调同一工具同一参数」在代码侧也成立（不靠模型自律）。
+                    try:
+                        _switch_resp = await asyncio.wait_for(
+                            (llm_no_thinking or llm_with_tools).ainvoke(
+                                full_messages + new_messages + [SystemMessage(
+                                    content=_NO_PROGRESS_STRATEGY_SWITCH.format(
+                                        rounds=_no_progress_streak))]),
+                            timeout=LLM_CALL_TIMEOUT_S,
+                        )
+                        _track_llm_cost(_switch_resp, model=llm_model_name,
+                                        tenant_id=state.get("tenant_id"),
+                                        session_id=session_id)
+                        _switch_text = _extract_content(_switch_resp)
+                    except Exception as _e_np:
+                        logger.warning(
+                            f"[{skill_name}] 换策略的最后一次调用失败，改用过渡话术"
+                            f"（非致命）: {_e_np} | session={session_id}")
+                        _switch_text = ""
+                    if _switch_text:
+                        # 只留**文本**：这一轮没有可配对的工具结果，把带 tool_calls 的
+                        # AIMessage 塞进历史会让下一轮出现「有调用无结果」的非法消息序列。
+                        new_messages.append(AIMessage(content=_switch_text))
+                        final_content = _switch_text
+                    else:
+                        final_content = _NO_PROGRESS_FALLBACK
+                    break
 
                 # ── 「顾客已确认却不动手」：一次纠正重试（issue #3445/#3477 类）──
                 # 实测（run 34794687762 的 OR-024 首跑，`ai=` 让轨迹第一次可读）：
