@@ -98,9 +98,11 @@ function openCount(value: unknown): string | null {
 }
 
 /**
- * 布/纱派生族的**展示归一**（issue #8007，2026-10-28 用户裁定）：
- * `余料带回-布` / `余料带回-纱` 是落库 join key，语义选项只有一个「余料带回」——
- * 材料由订单行的帘种决定 ⇒ 展示面不出现材料后缀。
+ * 布/纱派生族的**展示归一**（issue #8007 立机制；issue #8108 接入「绑带」族）：
+ * `余料带回-布` / `-纱`、`布绑带` / `纱绑带` 都是落库 join key，语义选项各只有一个
+ * （`余料带回` / `绑带`）—— 材料由订单行的帘种决定 ⇒ 展示面不出现材料形态的名字。
+ *
+ * ⚠️ 只按**族成员**精确匹配，不拆材料字 / 后缀：`加立边` / `余料做绑带` 是独立选项名，不属任何族。
  *
  * ⚠️ 本表与 `frontend/admin-web/src/lib/order-craft-fields.ts::SPECIAL_OPTION_FAMILIES`
  * 是同一份口径；本文件三端**逐字同源**（`tests/unit_ci_workflows/test_craft_display_same_source.py`），
@@ -108,6 +110,7 @@ function openCount(value: unknown): string | null {
  */
 const SPECIAL_OPTION_FAMILIES: Record<string, readonly [string, string]> = {
   余料带回: ['余料带回-布', '余料带回-纱'],
+  绑带: ['布绑带', '纱绑带'],
 }
 
 /** 落库键 ⇒ 展示名（族成员收回 base 名；其余原样） */
@@ -118,13 +121,19 @@ function displayOptionName(name: string): string {
   return name
 }
 
-/** 特殊选项（join key 字符串数组）⇒ `加铅线、双褶`；布/纱派生键收回语义名；空数组 ⇒ 不渲染 */
+/**
+ * 特殊选项（join key 字符串数组）⇒ `加铅线、双褶`；布/纱派生键收回语义名；空数组 ⇒ 不渲染。
+ *
+ * 去重（issue #8108）：同族两个派生键并存（历史单切过帘体 / 手改过 `specialOptions`）收回同一个
+ * 名字后只留一个 —— 它们是**同一语义选项的两种材料形态**，不是两个并列事实（不印「绑带、绑带」）。
+ */
 function optionList(value: unknown): string | null {
   if (!Array.isArray(value)) return null
   const items = value
     .filter((item): item is string => typeof item === 'string')
     .map((item) => displayOptionName(item.trim()))
     .filter((item) => item !== '')
+    .filter((item, index, all) => all.indexOf(item) === index)
   return items.length > 0 ? items.join('、') : null
 }
 

@@ -18,6 +18,7 @@
 | C4 | **待实测登记必须存在**：非 `measured` 的介质要有非空 `pendingMeasurements`（且 ≥3 条） | 删掉三联纸的 `pendingMeasurements` ⇒ 红 |
 | C5 | **单份字段映射**：每张单据的列清单（有序标签串）在 `src/**` 里**恰好出现在一个文件** | 把销售单的列清单复制一份（如「A4 版」）⇒ 红 |
 | C6 | 注入式红证 + **内容指纹**自证（禁 mtime / size，issue #4260） | 注入未生效 ⇒ 红（红证自己是空断言） |
+| C13 | **同一份单据两种纸型**（issue #8107：水洗唛常规唛 50×140 + 专属唛 50×100）⇒ 两种 `@page` 都在射程：命名页 `printNamedPageRule` 带出来的介质必须在 `PRINT_DOCS` 登记，登记的每种纸也必须真被用到（**双向对称**） | 少登记一种（命名页用了未登记介质）/ 登记了却没人用（删命名页）/ 同一单据自写 `@page` 字面量 ⇒ 红 |
 | C8 | **纸面不印工序清单**（issue #7274：用户逐字「工序细节不用在打印单上，移除掉工序相关的表格信息」） | 把工序清单（`operationsByItem` / `OPERATIONS_DOC_COLUMNS` / `processing-doc-operation`）接回任一受管打印单据 ⇒ 红 |
 | C9 | **加工项绑在商品行下、一行文案、走单一构建器**（issue #7275 用户逐字「加工项表格应该用一行表达…比如改成a+b+c这样？」→ #7605 数据二态 → #7891 用户逐字「发货单的加工项需要和商品绑定…商品下面是加工项…都放在加工项那一栏里面」） | 退回表外一行（`shipment-processing-items` 锚点）/ 退回逐项两列表（`<DocTh>加工项</DocTh>`）/ 本地另拼一份文案（不 import `@/lib/processing-item-text`）/ 构建器里塞回 `×` ⇒ 红 |
 | C11 | **纸面扫码码值只取服务端下发**（issue #7530）：受管打印单据里不得出现扫码短链路径段（`/o/` 作业单级 · `/s/` 部位级）—— 前端拼域名 / 路径段 = 第二份真值，而**纸上的码印出去就收不回来** | 把销售单的码值改成 `` `${base}/o/${processingOrder.short_code}` `` ⇒ 红 |
@@ -42,15 +43,27 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC = REPO_ROOT / "frontend" / "admin-web" / "src"
 MATRIX_JSON = SRC / "lib" / "print-media.json"
 
-#: 受管**可打印单据**登记表：（文件, 申报的介质 id）
+#: 受管**可打印单据**登记表：（文件, 申报的介质 id / 介质 id 元组）
 #: 🔴 新增任何门户式打印单据都必须在这里登记介质（C3 会扫出未登记者）——
 #: 「这张单据印在什么纸上」是**必答项**，不是注释里的一句话。
-PRINT_DOCS: tuple[tuple[str, str], ...] = (
+#: 📌 元组形态用于「同一份单据印两种纸」（issue #8107：水洗唛常规唛 50×140 + 专属唛 50×100，
+#:    靠 CSS 命名页 `@page wash-label-option` 在同一次出纸里并存）—— C2 要求
+#:    **登记的每一种纸都必须真的被 @page 用到、用到的每一种纸都必须登记**（两边不对称 ⇒ 红）。
+PRINT_DOCS: tuple[tuple[str, str | tuple[str, ...]], ...] = (
     ("frontend/admin-web/src/components/orders/QuotationDoc.tsx", "a4"),
     ("frontend/admin-web/src/components/orders/ProcessingDoc.tsx", "a4"),
     ("frontend/admin-web/src/components/orders/SalesDoc.tsx", "continuous-241x140"),
-    ("frontend/admin-web/src/components/production/TaskCardPrint.tsx", "label-50x140"),
+    (
+        "frontend/admin-web/src/components/production/TaskCardPrint.tsx",
+        ("label-50x140", "label-50x100"),
+    ),
 )
+
+
+def _declared_media(entry: tuple[str, str | tuple[str, ...]]) -> tuple[str, ...]:
+    """登记项的介质 id 元组（单张纸 = 1 元组；两种纸长 = 2 元组）。"""
+    media = entry[1]
+    return tuple(media) if isinstance(media, (tuple, list)) else (media,)
 
 #: 单份字段映射：（单据名, 实现文件, 有序列清单）
 #: 列清单**全仓只许出现在一个文件里** —— 介质是参数，不是复制粘贴（issue #5651 核心架构要求）。
@@ -91,6 +104,10 @@ _PAGE_LITERAL_RE = re.compile(r"@page\s*\{\s*size:\s*([^;]+);\s*margin:\s*([^;]+
 #: （用户 2026-10-26 裁定水洗唛固定 50×150）⇒ 本正则只认 `printPageRule`：有人把动态写法加回来 ⇒
 #: 介质 id 解析不出来 ⇒ C2 直接红（不是静默放过）。
 _PAGE_RULE_CALL_RE = re.compile(r"printPageRule\(\s*'([a-z0-9-]+)'")
+#: 命名 `@page` 的写法（issue #8107）：`printNamedPageRule('<名字>', '<介质id>')` ——
+#: 同一份单据印两种纸时靠它让两种纸高并存。🔴 **它带出来的介质 id 同样必须在 `PRINT_DOCS` 登记**
+#: （漏登记 = 那张短纸无人负责：纸型改了没有任何东西会红）。
+_NAMED_PAGE_CALL_RE = re.compile(r"printNamedPageRule\(\s*'[A-Za-z0-9_-]+'\s*,\s*'([a-z0-9-]+)'\s*\)")
 #: 介质矩阵读取口调用：`printPageRule(media)`（**参数化**形式 —— 同一单据可切介质）
 _PAGE_RULE_PARAM_RE = re.compile(r"printPageRule\(\s*([A-Za-z_$][\w$]*)\s*\)")
 #: 剥注释时要跳过的文件（二进制 / 大文件）与扫描范围
@@ -174,38 +191,60 @@ def _src_files() -> list[Path]:
 
 # ── 判据本体（纯函数，便于注入式红证）─────────────────────────────────────────
 
-def _doc_page_problems(rel: str, media_id: str, code: str, matrix: dict[str, dict]) -> list[str]:
+def _doc_page_problems(rel: str, media_ids: tuple[str, ...], code: str, matrix: dict[str, dict]) -> list[str]:
     """C2：单据的 `@page` 必须与矩阵里它申报的介质**同源**（三种合法写法，见下）。
 
     写法 A `printPageRule('a4')` —— 单据只印一种纸（尺寸天然同源）；
+    写法 A′ `printNamedPageRule('<名字>', '<介质id>')` —— 单据印**两种纸**（issue #8107），
+           命名页的介质同样必须在登记表里；
     写法 B 自写 `@page { size: X; margin: Y; }` —— 允许，但必须与矩阵**逐字一致**
            （钉等价：防「改矩阵不跟着改」的第二份真值漂移）；
     写法 C `printPageRule(media)` —— **参数化**（同一单据可切介质，issue #5651 的架构目标）：
            此时申报的介质必须是**组件的缺省介质**（字面量出现在该文件里），介质取值域由
            `PrintMediaId` 类型收口、切换后字段映射不变由 TS 用例判（`SalesDoc.test.tsx`）。
+
+    🔴 两种纸长的单据（`media_ids` > 1）必须**双向对称**：用到的每种纸都登记、登记的每种纸都用到
+    —— 单边不对称 ⇒ 红（否则「登记了 100mm 但没人用」或「偷偷多打一张别的纸」都不会有人知道）。
     """
     problems: list[str] = []
-    spec = matrix.get(media_id)
-    if spec is None:
-        return [f"申报的介质 `{media_id}` 不在矩阵里（{sorted(matrix)}）—— 未登记的介质 = 纸型无人负责"]
-    want_size = str(spec.get("pageSize", "")).strip()
-    want_margin = str(spec.get("pageMargin", "")).strip()
+    if isinstance(media_ids, str):  # 单张纸的单据可以直接传一个 id（红证里就是这么用的）
+        media_ids = (media_ids,)
+    specs: dict[str, dict] = {}
+    for media_id in media_ids:
+        spec = matrix.get(media_id)
+        if spec is None:
+            return [f"申报的介质 `{media_id}` 不在矩阵里（{sorted(matrix)}）—— 未登记的介质 = 纸型无人负责"]
+        specs[media_id] = spec
 
     literal = _PAGE_LITERAL_RE.search(code)
     calls = _PAGE_RULE_CALL_RE.findall(code)
-    if calls:
-        # 写法 A：由矩阵生成 ⇒ 尺寸天然同源，只校验 id 一致
-        for called in calls:
-            if called != media_id:
+    named = _NAMED_PAGE_CALL_RE.findall(code)
+    used = [*calls, *named]
+    if used or named:
+        # 写法 A / A′：由矩阵生成 ⇒ 尺寸天然同源，只校验 id 与登记表**双向**一致
+        if literal is not None:
+            problems.append(
+                "单据同时自写 `@page { size: … }` 字面量与 `printPageRule(...)` / `printNamedPageRule(...)` "
+                "—— 纸型有了两个来源（改一处另一处不会红）"
+            )
+        for called in used:
+            if called not in specs:
                 problems.append(
-                    f"单据用 `printPageRule('{called}')` 生成 @page，与登记介质 `{media_id}` 不一致"
+                    f"单据用 `printPageRule('{called}')` / `printNamedPageRule(..., '{called}')` 生成 @page，"
+                    f"但登记介质 {media_ids} 里没有它（未登记的介质 = 纸型无人负责）"
+                )
+        for media_id in media_ids:
+            if media_id not in used:
+                problems.append(
+                    f"登记介质 `{media_id}` 在单据里找不到对应的 @page（`printPageRule` / `printNamedPageRule`）"
+                    " —— 登记与实际用法脱节（登记表会退化成一份没人校验的清单）"
                 )
         return problems
     if _PAGE_RULE_PARAM_RE.search(code):
         # 写法 C：参数化 —— 申报的介质必须是缺省值（改了缺省却不改登记 ⇒ 红）
-        if f"'{media_id}'" not in code and f'"{media_id}"' not in code:
+        if not any(f"'{media_id}'" in code or f'"{media_id}"' in code for media_id in media_ids):
             problems.append(
-                f"单据用 `printPageRule(<变量>)` 参数化介质，但文件里找不到登记介质 `{media_id}` "
+                f"单据用 `printPageRule(<变量>)` 参数化介质，但文件里找不到登记介质 {media_ids} "
                 "的字面量（= 缺省介质与登记不一致）"
             )
         return problems
@@ -215,7 +254,16 @@ def _doc_page_problems(rel: str, media_id: str, code: str, matrix: dict[str, dic
             "「印在什么纸上」没法判定（未声明介质 ⇒ 红）"
         )
         return problems
+    if len(specs) > 1:
+        return [
+            f"单据登记了 {media_ids} 但没有 `printPageRule(...)` / `printNamedPageRule(...)` 调用 —— "
+            "多纸型单据不许自写 `@page` 字面量（第二份纸型真值）"
+        ]
     # 写法 B：自写字面量 —— 必须与矩阵逐字一致
+    media_id = media_ids[0]
+    spec = specs[media_id]
+    want_size = str(spec.get("pageSize", "")).strip()
+    want_margin = str(spec.get("pageMargin", "")).strip()
     got_size, got_margin = literal.group(1).strip(), literal.group(2).strip()
     if got_size != want_size:
         problems.append(
@@ -278,11 +326,13 @@ def test_c1_registry_is_not_vacuous_and_points_at_real_media():
     assert len(PRINT_DOCS) >= 4, (
     )
     matrix = _matrix()
-    for rel, media_id in PRINT_DOCS:
+    for entry in PRINT_DOCS:
+        rel = entry[0]
         _read(rel)  # 不存在 ⇒ 抛错（不静默跳过）
-        assert media_id in matrix, (
-            f"`{rel}` 申报的介质 `{media_id}` 不在介质矩阵里（现有：{sorted(matrix)}）"
-        )
+        for media_id in _declared_media(entry):
+            assert media_id in matrix, (
+                f"`{rel}` 申报的介质 `{media_id}` 不在介质矩阵里（现有：{sorted(matrix)}）"
+            )
     for name, rel, columns in SINGLE_PROJECTION:
         _read(rel)
         # 非空下限（防「列清单被清空 / 只剩一两列 ⇒ 判据空跑」）：取**现有最短**的单据列数。
@@ -298,8 +348,9 @@ def test_c2_every_print_doc_page_rule_matches_the_media_matrix():
     """C2：`@page` 逐字等于矩阵里那份介质 —— 单据不许各写一份纸型。"""
     matrix = _matrix()
     offenders: list[str] = []
-    for rel, media_id in PRINT_DOCS:
-        for problem in _doc_page_problems(rel, media_id, _strip_comments(_read(rel)), matrix):
+    for entry in PRINT_DOCS:
+        rel = entry[0]
+        for problem in _doc_page_problems(rel, _declared_media(entry), _strip_comments(_read(rel)), matrix):
             offenders.append(f"{rel}: {problem}")
     assert offenders == [], (
         "可打印单据的 `@page` 与**介质矩阵**不一致（issue #5651）：介质是**参数**，"
@@ -828,8 +879,9 @@ def _browser_chrome_problems(
             )
 
     if docs is not None:
-        for rel, media_id in PRINT_DOCS:
-            spec = matrix.get(media_id) or {}
+        for entry in PRINT_DOCS:
+            rel = entry[0]
+            spec = matrix.get(_declared_media(entry)[0]) or {}
             if str(spec.get("technology")) not in BROWSER_PRINT_TECHNOLOGIES:
                 continue
             code = docs.get(rel)
@@ -986,3 +1038,43 @@ def test_c12_customer_visible_docs_never_print_internal_short_code():
     assert _internal_short_code_refs("const c = processingOrder.short_code") == ["short_code"]
     assert _internal_short_code_refs("const c = po.shortCode ?? ''") == ["shortCode"]
     assert _internal_short_code_refs("const v = processingOrder.scan_url") == []
+
+
+# ── C13：同一份单据两种纸型，两种 @page 都在射程（issue #8107）────────────────
+
+def test_c13_two_papers_of_one_doc_are_both_in_scope():
+    """C13：水洗唛的文档级 `@page`（50×140）与命名页 `@page wash-label-option`（50×100）都在射程。"""
+    matrix = _matrix()
+    rel = "frontend/admin-web/src/components/production/TaskCardPrint.tsx"
+    code = _strip_comments(_read(rel))
+    declared = next(_declared_media(entry) for entry in PRINT_DOCS if entry[0] == rel)
+    assert declared == ("label-50x140", "label-50x100"), (
+        f"水洗唛必须登记**两种纸**（常规唛 50×140 + 专属唛 50×100），现登记 {declared}"
+    )
+
+    # 反空跑锚点：两种 @page 真的都在文件里（文档级 + 命名页）
+    assert _PAGE_RULE_CALL_RE.findall(code) == ["label-50x140"], "文档级 @page 不在射程"
+    assert _NAMED_PAGE_CALL_RE.findall(code) == ["label-50x100"], "命名页 @page 不在射程"
+    assert _doc_page_problems(rel, declared, code, matrix) == []
+
+    # ① 删掉命名页 ⇒ 「登记了 label-50x100 却没人用」⇒ 红
+    without_named = _NAMED_PAGE_CALL_RE.sub("", code)
+    assert _fingerprint(without_named) != _fingerprint(code), "注入 ① 未生效"
+    assert _doc_page_problems(rel, declared, without_named, matrix), (
+        "删掉命名页后登记表里的 label-50x100 无人使用却没判红 ⇒ 登记表变成没人校验的清单"
+    )
+
+    # ② 少登记一种纸（登记表退回单张）⇒ 命名页用了未登记介质 ⇒ 红
+    assert _doc_page_problems(rel, "label-50x140", code, matrix), (
+        "命名页用了未登记的介质却没判红 ⇒ 那张短纸的纸型无人负责"
+    )
+
+    # ③ 多登记一种没用到的纸 ⇒ 红（双向对称：登记表不许长出一条没人用的条目）
+    assert _doc_page_problems(rel, (*declared, "label-50x80"), code, matrix), (
+        "多登记一种没被任何 @page 用到的纸却没判红 ⇒ 双向对称失效"
+    )
+
+    # ④ 同页两种纸的分页语义在**同一份样式集**里（不是两个组件）：命名页名要与容器 `page:` 对得上
+    #    这一半由几何守卫 G8/G9 判（`tests/unit_ci_workflows/test_wash_label_geometry_guard.py`）——
+    #    这里只钉「纸型登记面」，两处各自可红、互不替代。
+    assert ".task-card-label--option" in code

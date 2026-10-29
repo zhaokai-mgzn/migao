@@ -54,7 +54,10 @@ TRUTH_SOURCE_OPTIONS = [
 # `余料带回`（无后缀）是**布/纱派生族的 base 名**（issue #8007，用户 2026-10-28 裁定：
 # 「只需要展示余料带回即可，-布 / -纱 跟随订单套行的帘种」）⇒ 注册表仍按派生键登记，
 # 它自己显式登记在 `SPECIAL_OPTION_FAMILIES`（不再有「待客户确认」这一类）。
-ERP_ONLY_OPTIONS = ["余料带回"]
+# issue #8108（用户 2026-10-29 逐字「把这两项也合并成一个绑带选项，布/纱是跟随帘种来确定的」）：
+# `绑带` 同理 —— `布绑带` / `纱绑带` 是**派生键**（仍是 join key，工序/计件口径不动），
+# `绑带` 只做录入 / 展示，不落任何注册表。
+ERP_ONLY_OPTIONS = ["余料带回", "绑带"]
 
 # 布帘·韩褶基准走线（真值源 §3，行业实证 11 道）
 BASE_ROUTE = [
@@ -158,6 +161,22 @@ class TestCriterion1CoverageGate:
     def test_non_piecework_options_are_exactly_the_leftover_returns(self):
         """C 类显式登记：只是把余料还给客户，不增加车间工序 ⇒ 不计件（键 = ERP 名）。"""
         assert NON_PIECEWORK_OPTIONS == {"余料带回-布", "余料带回-纱"}
+
+    def test_option_families_are_well_formed(self):
+        """派生族登记表：每族恰好两个派生键，且**派生键都是真值源 19 项里的 join key**。
+
+        issue #8007 立机制（`余料带回`），issue #8108 接入第二族（`绑带`）。
+        红证：把 `绑带` 族的 cloth 键写成不存在的名字（如 `绑带-布`）⇒ 派生出来的落库值查不到
+        映射 ⇒ 该选项的工序**静默漏插**、计件口径也不认；本判据当场红。
+        """
+        # 族集合**逐值**钉住：新增第三族必须显式改这里（不是静默扩表）
+        assert set(SPECIAL_OPTION_FAMILIES) == {"余料带回", "绑带"}
+        for base, variants in SPECIAL_OPTION_FAMILIES.items():
+            assert set(variants) == {"cloth", "sheer"}, f"{base} 族的派生键登记不完整：{variants}"
+            for key in ("cloth", "sheer"):
+                assert variants[key] in TRUTH_SOURCE_OPTIONS, (
+                    f"{base} 族的派生键 {variants[key]} 不在真值源 19 项里（派生出的值查不到映射）"
+                )
 
     def test_every_mapped_operation_exists_in_catalog(self):
         """映射指向的工序必须在工序库里（否则 `instance_operations` 会 KeyError）。"""
