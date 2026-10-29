@@ -824,3 +824,45 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: DA-025
+    legacy_id: ""
+    title: "经营环比对比由工具确定性计算（trend_compare / get_summary compare=true），模型只转述不口算（issue #8120）"
+    domains:
+      - data
+    tier: normal
+    persona: mibao
+    tags:
+      - dashboard
+      - finance
+      - compare
+      - readonly
+      - llm_behavior
+    truths_ref: []
+    user_inputs:
+      - "这周订单比上周怎么样？"
+      - "最近7天和再前7天比，订单是多了还是少了？"
+    expectations:
+      - tool: dashboard_stats
+        args:
+          action: trend_compare
+          days: 7
+    must_succeed:
+      - tool: dashboard_stats
+    data_checks:
+      - "success=true"
+      - "🔴 数字必须逐字来自工具返回：本期/上期订单数与变化百分比必须等于 `dashboard_stats(trend_compare)` 返回的 `current_total` / `previous_total` / `delta_pct`（金额口径 = 同返回的 `amount.*`）；模型**不得**自己算 `(本期-上期)/上期`，也不得用两次不同 days / 不同区间的 order_trend 数据拼出对比"
+      - "上期为 0（`previous_is_zero=true`）时 `delta_pct` 必须为 null ⇒ 合格行为 = 如实说「上期没有数据，无法算百分比」；**不得**编造百分比、**不得**写 0%"
+      - "窗口被上限截断（`window_capped=true`）时如实说明实际窗口（`days` / `window_days`），不得把截断窗口说成用户要求的窗口"
+      - "对比失败（工具 success=false）或服务端序列不足两期（`partial=true`）时如实说明「本次对比数据不完整/不可用」，不得口算或估算"
+      - "财务口径同理：`finance_api(action=get_summary, compare=true)` 的 `compare.previous` / `compare.delta` / `compare.delta_pct` 逐项转述，本期四项不得被上一期数字顶替；`get_summary` 不传 compare 时保持旧的单次汇总行为"
+    precondition: "评测栈需有订单/资金流水 seed 才能得到非零读数；无 seed 时工具仍返回 success=true 但读数全 0（delta_pct=null / partial=true）⇒ 本条按「如实转述口径」判定，不把空读数当失败"
+    skip_reason: ""
+    merge_log: "2026-10-29 新增（issue #8120）：黄金策分析能力 P1「对比」由工具确定性计算（审计 docs/audit-2026-10/02-mibao-capability-review.md F5）。取号 DA-025：`scripts/next_case_id.py DA` 因 gh 抖动 fail-closed（不许取号，stream error）⇒ 按 `migao-dev-flow` §26.3 手工核在飞面：origin/main 与全部 8 个 open PR 分支（mibao-p0-eval / feat/8114-merge-ai-cards / fix/8108-banding-family / fix/8107-option-label-slim / 8104-worker-stock-correction / feat/8103-same-order-same-bin / feat/8100-menu-rename / chore/flaky-ledger）的 `.github/cases/data.yml` 最大号均为 DA-024（命令：`git show <ref>:.github/cases/data.yml | grep -oE 'DA-[0-9]+' | sort -u | tail -1`）⇒ DA-025 未被占用。**未覆盖面（如实登记）**：归因（按商品/客户/状态拆）与「下一步」建议不在本单（审计 F5 的另外两件，另包）；本用例只覆盖对比算术的转述面"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_dashboard_trend_compare.py"
+        - "backend/ai-agent-service/tests/test_finance_summary_compare.py"
+      ci:
+        - agent-eval.yml
+      verifies: []

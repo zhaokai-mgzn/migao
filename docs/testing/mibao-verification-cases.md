@@ -2741,7 +2741,7 @@
 ```
 溯源: 2026-10-20 新增（issue #7370，P0-1 之后按用户「逐步推进」落地为 P0-2 段 1）。落码 = ① V169 迁移（两列）+ 建库脚本终态同步；② CreditPolicy（纯函数口径）+ 7 条判据；③ OrderService 下单闸门；④ CustomerService.creditStatus/updateCreditSettings + 两个端点；⑤ 客户详情页「授信与往来」卡片 + 4 条页面判据；⑥ CHANGELOG。⚠️ **未做（照实登记）**：部分收款核销、账龄分档、审批出口、现结订单豁免 —— 分属 #7370 段 2/3 与 #7374(P1-2)。取号 = 现取 origin/main 的 CU 最大 012 ⇒ CU-013。 ｜ tags: backend-contract, credit, credit-limit, payment-terms, receivable, admin-api, red-proof
 
-## 数据域（24 case）
+## 数据域（25 case）
 
 ### DA-001. 经营概览 🔵
 ```
@@ -3037,6 +3037,23 @@
 跳过: [backend-contract] 本用例是基建/安全护栏判据（非 LLM 行为）：静态与结构判据由 tests/unit_ci_workflows/test_eval_tenant_single_source.py 验证（零 LLM，pr-check 的 ci workflow helper unit tests job 每次 PR 都跑），行为面由 backend/ai-agent-service/tests/test_eval_tenant_config.py 验证（真 Request 打桩 + 真 auth 分支）。不进入 agent-eval 冒烟（它本身不产生 LLM 行为证据，且评测入口正在改的正是它自己）。
 ```
 溯源: 2026-10-09 新增（issue #6288）：云测试环境重建后，评测链路把租户写死成 1 —— auth.py 的 DEBUG 降级身份两处 + local_runner.py 的 8 处 SQL 字面量（前置复位 4 处 + db 校验 3 处 + 内联查询 3 处）。2026-10-19（issue #7340）再次收口：共享库实际只剩 tenant 46，旧的 tenant 25 已不存在；建会话在 sessions.tenant_id 外键上 500。现统一回 seed 租户 1（config.py / local_runner / agent-eval 三处同值），并给 create_session 的 IntegrityError 日志点名约束。**未覆盖面（如实登记）**：① 共享云端 tenant 1 需由 seed 恢复；本用例只钉静态真值与护栏，不声称共享云已 seed；② 部署侧 .env.ai-agent 的 DEBUG 取值不在本机可得（外部输入）⇒ 服务端实际走哪条分支未取证。 ｜ tags: eval-infra, tenant, single-source, security-guard
+
+### DA-025. 经营环比对比由工具确定性计算（trend_compare / get_summary compare=true），模型只转述不口算（issue #8120） 🔵
+```
+你: 这周订单比上周怎么样？
+你: 最近7天和再前7天比，订单是多了还是少了？
+端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
+期望: dashboard_stats(action=trend_compare, days=7)
+数据: success=true
+数据: 🔴 数字必须逐字来自工具返回：本期/上期订单数与变化百分比必须等于 `dashboard_stats(trend_compare)` 返回的 `current_total` / `previous_total` / `delta_pct`（金额口径 = 同返回的 `amount.*`）；模型**不得**自己算 `(本期-上期)/上期`，也不得用两次不同 days / 不同区间的 order_trend 数据拼出对比
+数据: 上期为 0（`previous_is_zero=true`）时 `delta_pct` 必须为 null ⇒ 合格行为 = 如实说「上期没有数据，无法算百分比」；**不得**编造百分比、**不得**写 0%
+数据: 窗口被上限截断（`window_capped=true`）时如实说明实际窗口（`days` / `window_days`），不得把截断窗口说成用户要求的窗口
+数据: 对比失败（工具 success=false）或服务端序列不足两期（`partial=true`）时如实说明「本次对比数据不完整/不可用」，不得口算或估算
+数据: 财务口径同理：`finance_api(action=get_summary, compare=true)` 的 `compare.previous` / `compare.delta` / `compare.delta_pct` 逐项转述，本期四项不得被上一期数字顶替；`get_summary` 不传 compare 时保持旧的单次汇总行为
+前置: 评测栈需有订单/资金流水 seed 才能得到非零读数；无 seed 时工具仍返回 success=true 但读数全 0（delta_pct=null / partial=true）⇒ 本条按「如实转述口径」判定，不把空读数当失败
+必须成功: dashboard_stats
+```
+溯源: 2026-10-29 新增（issue #8120）：黄金策分析能力 P1「对比」由工具确定性计算（审计 docs/audit-2026-10/02-mibao-capability-review.md F5）。取号 DA-025：`scripts/next_case_id.py DA` 因 gh 抖动 fail-closed（不许取号，stream error）⇒ 按 `migao-dev-flow` §26.3 手工核在飞面：origin/main 与全部 8 个 open PR 分支（mibao-p0-eval / feat/8114-merge-ai-cards / fix/8108-banding-family / fix/8107-option-label-slim / 8104-worker-stock-correction / feat/8103-same-order-same-bin / feat/8100-menu-rename / chore/flaky-ledger）的 `.github/cases/data.yml` 最大号均为 DA-024（命令：`git show <ref>:.github/cases/data.yml | grep -oE 'DA-[0-9]+' | sort -u | tail -1`）⇒ DA-025 未被占用。**未覆盖面（如实登记）**：归因（按商品/客户/状态拆）与「下一步」建议不在本单（审计 F5 的另外两件，另包）；本用例只覆盖对比算术的转述面 ｜ tags: dashboard, finance, compare, readonly, llm_behavior
 
 ## 防御域（24 case）
 
@@ -13600,8 +13617,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：918（活跃 142，跳过 776）
-- tier 分布：smoke 12 / normal 850 / adversarial 32
+- 用例总数：919（活跃 143，跳过 776）
+- tier 分布：smoke 12 / normal 851 / adversarial 32
 - 售后域：16
 - Agent 核心域：12
 - API 层域：21
@@ -13611,7 +13628,7 @@
 - 对话边界域：51
 - 跨域：3
 - 客户域：13
-- 数据域：24
+- 数据域：25
 - 防御域：24
 - 财务对账域：6
 - 人事域：13
@@ -13666,6 +13683,7 @@
 - DA-010: 智能每日经营简报：PII 不进 prompt + RLS 隔离（issue #3468）
 - DA-022: 缺料风险视图：material_shortage（商品级需求 vs SKU 权威库存）的缺口分层与「未知≠0」披露（issue #6280）
 - DA-024: 评测目标租户收敛到单一可注入配置（EVAL_TENANT_ID），并钉住「非 DEBUG 不接受外部租户」（issue #6288）
+- DA-025: 经营环比对比由工具确定性计算（trend_compare / get_summary compare=true），模型只转述不口算（issue #8120）
 - KN-001: 元元知识问答 - 面料问题先检索本店知识卡片（query 必填）
 - KN-002: 元元知识问答 - 清洗保养类问题走知识卡片检索
 - KN-003: 黄金策知识问答 - 本店售后政策先检索知识卡片（B 端接线回归，issue #3059）
