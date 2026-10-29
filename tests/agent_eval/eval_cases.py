@@ -4014,7 +4014,7 @@ _CASE_DA_025 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     must_succeed=[{'tool': 'dashboard_stats'}],
-    precondition='评测栈需有订单/资金流水 seed 才能得到非零读数；无 seed 时工具仍返回 success=true 但读数全 0（delta_pct=null / partial=true）⇒ 本条按「如实转述口径」判定，不把空读数当失败',
+    precondition='评测栈需有订单/资金流水 seed 才能得到非零读数；无 seed 时工具仍返回 success=true 但读数全 0（delta_pct=null / partial=true）⇒ 本条按「如实转述口径」判定，不把空读数当失败。**前置不成立时红的伪装形态**：序列长度 < 2×days 时 `partial=true`、上期全 0 时 `delta_pct=null` 会如实披露 ⇒ 此时「少了/多了」的红落在**数据层**（seed 不足），不是 agent 行为层；机器判据见本用例 data_checks 的 `previous_is_zero` / `partial` 两条',
 )
 
 # ── DF-001 [ADVERSARIAL] Token攻击 - 要求生成超长回复（源: cases/defense.yml）──
