@@ -102,6 +102,9 @@ export default function SuppliersPage() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [unassigned, setUnassigned] = useState<UnassignedInboundSupplier[]>([])
   const [payables, setPayables] = useState<SupplierPayableSummary | null>(null)
+  /** 两块补充读面的失败态（issue #8066）：与主列表读失败**分立**，各自有锚 + 重试。 */
+  const [unassignedReadError, setUnassignedReadError] = useState(false)
+  const [payablesReadError, setPayablesReadError] = useState(false)
   const [payForm, setPayForm] = useState<PayFormState | null>(null)
   const [payError, setPayError] = useState<string | null>(null)
   const [paySaving, setPaySaving] = useState(false)
@@ -124,24 +127,28 @@ export default function SuppliersPage() {
   }, [])
 
   // 待指派清单（issue #7369 段 2）：A 口径「匹配不上不猜」的人工出口 —— 不列出来那批单据就是沉默的。
-  // 它是**补充信息**：单独拉、失败就当作没有（主列表的读失败仍由 ListLoadError 承接，二者不混）。
+  // 它是**补充信息**：单独拉、失败**不拖垮主列表**（主列表的读失败仍由 ListLoadError 承接，二者不混）。
+  // 🔴 issue #8066：改前 catch 里 `setUnassigned([])` ⇒ 整块条件渲染消失 = 「没有待指派」的假象。
   const loadUnassigned = useCallback(async () => {
+    setUnassignedReadError(false)
     try {
       const res = await supplierApi.unassignedInbound()
       setUnassigned(res.data.data || [])
     } catch (error) {
-      setUnassigned([])
+      setUnassignedReadError(true)
       console.error('加载待指派清单失败:', error)
     }
   }, [])
 
   // 应付对账（issue #7369 段 3-A）：只读汇总，与本页列表相互独立 —— 它失败不该让档案列表变空。
+  // 🔴 issue #8066：改前 catch 里 `setPayables(null)` ⇒ 整块条件渲染消失 = 「没有应付」的假象。
   const loadPayables = useCallback(async () => {
+    setPayablesReadError(false)
     try {
       const res = await supplierApi.payables()
       setPayables(res.data.data || null)
     } catch (error) {
-      setPayables(null)
+      setPayablesReadError(true)
       console.error('加载应付对账失败:', error)
     }
   }, [])
@@ -276,6 +283,17 @@ export default function SuppliersPage() {
         }
       />
 
+      {/* 待指派清单读失败（issue #8066）：块不出现**不等于**没有待建档的供应商 —— 必须说出来 + 重试。 */}
+      {unassignedReadError && (
+        <div className="mt-4">
+          <ListLoadError
+            testId="supplier-unassigned-error"
+            message="待指派清单读取失败 —— 不是「没有待建档的供应商」，请重新加载"
+            onRetry={() => void loadUnassigned()}
+          />
+        </div>
+      )}
+
       {unassigned.length > 0 && (
         <PageCard className="mt-4">
           <div data-testid="supplier-unassigned">
@@ -306,6 +324,17 @@ export default function SuppliersPage() {
           </ul>
           </div>
         </PageCard>
+      )}
+
+      {/* 应付对账读失败（issue #8066）：块不出现**不等于**没有应付 —— 必须说出来 + 重试。 */}
+      {payablesReadError && (
+        <div className="mt-4">
+          <ListLoadError
+            testId="supplier-payables-error"
+            message="应付对账读取失败 —— 不是「没有应付」，请重新加载"
+            onRetry={() => void loadPayables()}
+          />
+        </div>
       )}
 
       {payables && payables.suppliers.length > 0 && (

@@ -450,4 +450,41 @@ describe('报表中心页面', () => {
     expect(screen.getByTestId('reports-inventory-warehouse').textContent).toContain('全部仓库')
     expect(screen.getByTestId('reports-inventory-warehouse').textContent).toContain('主仓')
   })
+
+  // ── issue #8066（扫描器判据①「读失败被吞」收口）────────────────────────────
+  // 改前：`loadBreakdown` 的 catch 里 `setQcBreakdown(null)` ⇒ `!qcBreakdown?.hasData` 成立 ⇒
+  // 屏上印「暂无数据 —— 这个时间范围里没有返工/报废报工或退款」= 把读失败画成业务结论。
+  it('质量成本维度读失败：常驻失败锚在场 + 不印「暂无数据」+ 重试真的重发读请求', async () => {
+    emptyAll()
+    reportApi.qualityCostBreakdown.mockRejectedValueOnce(new Error('breakdown down'))
+    render(<ReportsPage />)
+
+    const anchor = await screen.findByTestId('reports-quality-breakdown-error')
+    expect(anchor).toHaveTextContent('质量成本维度读取失败')
+    expect(anchor).toHaveTextContent('不是「这个时间范围里没有数据」')
+    expect(screen.queryByTestId('reports-quality-breakdown-empty')).toBeNull()
+
+    const before = reportApi.qualityCostBreakdown.mock.calls.length
+    reportApi.qualityCostBreakdown.mockImplementation((dim: string) =>
+      wrap({
+        dimension: dim,
+        scope: 'rework_by_processing_operation',
+        startDate: null,
+        endDate: null,
+        hasData: true,
+        rows: [{
+          key: 'k1', label: '精裁', rework: 10, scrap: 0, compensation: 0, total: 10,
+          reworkLines: 1, scrapLines: 0, compensationCount: 0,
+        }],
+        totals: null,
+        unattributed: { rework: 0, reworkLines: 0, compensation: 0, compensationCount: 0, total: 0, reason: '' },
+        notes: [],
+      }),
+    )
+    fireEvent.click(screen.getByTestId('reports-quality-breakdown-error-retry'))
+    await waitFor(() => expect(screen.queryByTestId('reports-quality-breakdown-error')).toBeNull())
+    // 重试**真的**重发（不是只把失败态擦掉）
+    expect(reportApi.qualityCostBreakdown.mock.calls.length).toBe(before + 1)
+    await waitFor(() => expect(screen.getByTestId('reports-quality-breakdown-row')).toBeInTheDocument())
+  }, 20_000) // ⏱ 整例 20s：失败面等到底时 RTL 的 asyncUtilTimeout 是 5s —— 整例也 5s 的话「锚没渲染出来」会红成 Test timed out（= 没跑到断言），读数会骗人
 })

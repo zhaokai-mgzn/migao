@@ -102,6 +102,8 @@ export default function ReportsPage() {
   const [qcDim, setQcDim] = useState<'customer' | 'process' | 'product'>('customer')
   const [qcBreakdown, setQcBreakdown] = useState<ReportQualityCostBreakdown | null>(null)
   const [qcBreakdownLoading, setQcBreakdownLoading] = useState(false)
+  /** 质量成本维度读失败（issue #8066）：与「暂无数据」**分立** —— 读不到不是「这个区间没有数据」。 */
+  const [qcBreakdownError, setQcBreakdownError] = useState(false)
   // 🔴 一张表一个加载态（issue #7582）：原来五张共用一个 `loading`，最慢的「订单毛利」把另外
   // 四张一起锁在「加载中…」—— 它们本来就是五个独立请求，谁先回来谁先上屏。
   const [loadingCards, setLoadingCards] = useState<Record<CardKey, boolean>>({
@@ -260,12 +262,14 @@ export default function ReportsPage() {
 
   const loadBreakdown = useCallback(async (dim: 'customer' | 'process' | 'product') => {
     setQcBreakdownLoading(true)
+    setQcBreakdownError(false)
     try {
       const res = await reportApi.qualityCostBreakdown(dim, rangeParams)
       setQcBreakdown(res.data?.data || null)
     } catch (error) {
+      // issue #8066（收口扫描器判据①）：读不到**不许**落进「暂无数据」——置失败态、不清空已有读数
       console.error('加载质量成本维度失败:', error)
-      setQcBreakdown(null)
+      setQcBreakdownError(true)
     } finally {
       setQcBreakdownLoading(false)
     }
@@ -625,6 +629,14 @@ export default function ReportsPage() {
                   <p className="mt-2 text-xs text-neutral-500" data-testid="reports-quality-breakdown-loading">
                     加载中…
                   </p>
+                ) : qcBreakdownError ? (
+                  <div className="mt-2">
+                    <ListLoadError
+                      testId="reports-quality-breakdown-error"
+                      message="质量成本维度读取失败 —— 不是「这个时间范围里没有数据」，请重新加载"
+                      onRetry={() => void loadBreakdown(qcDim)}
+                    />
+                  </div>
                 ) : !qcBreakdown?.hasData ? (
                   <p className="mt-2 text-xs text-neutral-500" data-testid="reports-quality-breakdown-empty">
                     暂无数据 —— 这个时间范围里没有返工/报废报工或退款
