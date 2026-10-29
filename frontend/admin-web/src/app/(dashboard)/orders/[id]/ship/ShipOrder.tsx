@@ -584,6 +584,10 @@ function RadioOption({
 
 function ProductTable({ groups }: { groups: ProductGroup[] }) {
   if (groups.length === 0) {
+    // 🔴 这里**有意不配失败锚点**（issue #8062 裁定，台账 `EMPTY_STATE_LEDGER` 保留这一条）：
+    //    发货明细随订单载荷下发（`order.items`），**没有独立读接口** ⇒ 不存在「明细没读到 vs
+    //    订单真的没有商品」的分歧：能渲染到这一行就说明订单详情已读到（读失败走本页
+    //    `ship-order-load-error` 一族，根本到不了这里）。归零判据 = 明细接入独立读接口时同批补锚。
     return <div className="text-center text-neutral-400 py-8 text-sm">暂无商品</div>
   }
 

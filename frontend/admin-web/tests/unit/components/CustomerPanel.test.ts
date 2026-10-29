@@ -399,3 +399,21 @@ describe('CustomerPanel —— RecentOrder 的可达性（如实登记 §19.1，
     expect(recentOrderRenderPoints).toHaveLength(1)
   })
 })
+
+// ─── 六、行内占位不得写成**事实性断言**（issue #8062）───
+
+describe('CustomerPanel —— 行内字段占位（issue #8062 裁定为「非列表体空态」）', () => {
+  it('✓ 电话 / 注册天数无数据 ⇒ 占位 `—`，不印「暂无」（那是在断言「客户没有」）', () => {
+    // 判据（源码「基本信息」段）：`customerInfo` 随会话载荷下发且当前恒为 `null`
+    //   （`useState(null)` 从未被赋值）⇒ 这两行**从来没有读过任何数据**，
+    //   既不能说「客户没提供」也不能说「没读到」⇒ 占位必须是**不做断言**的 `—`。
+    // 红证：把 `'—'` 改回 `'暂无'` ⇒ 本判据当场红（`queryByText('暂无')` 命中 2 处），
+    //   且 `read-failure-empty-state-scan` 会把它重新判成「无失败锚的空态断言」（那条已删的台账条目回来）。
+    chatState(SESSION_ID, [{ session_id: SESSION_ID, status: 'active' }])
+    renderPanel()
+
+    expect(screen.getByText('电话')).toBeTruthy()
+    expect(screen.getAllByText('—')).toHaveLength(2)
+    expect(screen.queryByText('暂无')).toBeNull()
+  })
+})

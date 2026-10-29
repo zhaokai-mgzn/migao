@@ -471,3 +471,58 @@ describe('KnowledgePage（LLM WIKI 知识卡片管理）', () => {
     expect(within(row).getByRole('button', { name: '更多操作' })).toBeInTheDocument()
   })
 })
+
+/**
+ * issue #8062：空态台账最后 9 条收口 —— `/knowledge` 的模板读面与候选真空。
+ *
+ * 判据要能单独变红：
+ * ① 模板读失败 ⇒ **常驻**失败面（`knowledge-templates-load-error` + 重试），
+ *    **不得**同时印「暂无可用模板」（那就是把「没读到」画成「平台没模板」）；
+ * ② 候选**真的为空** ⇒ 空态说清「怎么才会有」（含「文档提炼」这个动作入口）。
+ *
+ * 红证（改回缺陷形态 ⇒ 当场红）：
+ * ① 把 `loadTemplates` 的 `setTemplatesError(true)` 删掉（回到只 toast）⇒ 本判据第一段红；
+ * ② 把候选空态改回裸 `<p>暂无待确认候选</p>`（去掉 `knowledge-candidates-empty` 与后半句）⇒ 第二段红。
+ */
+describe('KnowledgePage —— 空态与失败态分离（issue #8062）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('① 行业模板读失败 ⇒ 常驻失败面 + 重试真重发；绝不印「暂无可用模板」', async () => {
+    const user = userEvent.setup()
+    const api = (await import('@/lib/api')).knowledgeApi as any
+    api.getTemplates.mockRejectedValueOnce(new Error('boom'))
+
+    render(<KnowledgePage />)
+    await user.click(await screen.findByText('行业模板'))
+
+    const failure = await screen.findByTestId('knowledge-templates-load-error')
+    expect(failure.textContent).toMatch(/行业模板加载失败/)
+    // 失败与空态**互斥**：失败时不得出现空态那一支
+    expect(screen.queryByTestId('knowledge-templates-empty')).toBeNull()
+    expect(screen.queryByText('暂无可用模板')).toBeNull()
+
+    // 重试**真重发**（不是只把失败文案抹掉）：这一次读到空列表 ⇒ 变成「真为空」的空态
+    api.getTemplates.mockResolvedValueOnce({ data: { success: true, data: [] } })
+    await user.click(screen.getByTestId('knowledge-templates-load-error-retry'))
+
+    expect(await screen.findByTestId('knowledge-templates-empty')).toBeInTheDocument()
+    expect(api.getTemplates).toHaveBeenCalledTimes(2)
+    expect(screen.queryByTestId('knowledge-templates-load-error')).toBeNull()
+  })
+
+  it('② 待确认候选真的为空 ⇒ 空态说清「怎么才会有」（含「文档提炼」入口）', async () => {
+    const user = userEvent.setup()
+    const api = (await import('@/lib/api')).knowledgeApi as any
+    api.getCandidates.mockResolvedValueOnce({ data: { success: true, data: { items: [], total: 0 } } })
+
+    render(<KnowledgePage />)
+    await user.click(await screen.findByText('待确认'))
+
+    const empty = await screen.findByTestId('knowledge-candidates-empty')
+    expect(empty.textContent).toMatch(/文档提炼/)
+    // 空态与失败态互斥（失败面在 `!candidatesError` 那一支之外）
+    expect(screen.queryByTestId('knowledge-candidates-load-error')).toBeNull()
+  })
+})
