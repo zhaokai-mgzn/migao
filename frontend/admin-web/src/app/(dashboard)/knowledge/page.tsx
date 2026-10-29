@@ -5,7 +5,7 @@ import { Plus, Pencil, Trash2, Send, Archive, Eye, RotateCcw } from 'lucide-reac
 import { toast } from 'sonner'
 import { knowledgeApi } from '@/lib/api'
 import { extractApiErrorMessage } from '@/lib/api-error'
-import { Table, Pagination, Modal, Button, Badge, SearchBar, PageHeader, SELECT_CONTROL, RowActions } from '@/components/ui'
+import { Table, Pagination, Modal, Button, Badge, SearchBar, PageHeader, SELECT_CONTROL, RowActions, EmptyState } from '@/components/ui'
 import type { TableColumn, RowActionItem } from '@/components/ui'
 import type { KnowledgeCard, KnowledgeCardStatus, KnowledgeCandidate, KnowledgeTemplateInfo } from '@/types'
 import DateTimeCell from '@/components/common/DateTimeCell'
@@ -58,6 +58,12 @@ export default function KnowledgePage() {
   const [entriesError, setEntriesError] = useState(false)
   /** 待确认队列读面失败标记（issue #6703）：读失败时不得说「暂无待确认候选」 */
   const [candidatesError, setCandidatesError] = useState(false)
+  /**
+   * 行业模板读面失败标记（issue #8062）：
+   * 修前 `loadTemplates` 的 catch 只 `toast.error`（≈4s 后消失），`templates` 留在 `[]`
+   * ⇒ 页签里照旧印「暂无可用模板」= 把「没读到」画成「平台没有模板」。
+   */
+  const [templatesError, setTemplatesError] = useState(false)
   const [current, setCurrent] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [keyword, setKeyword] = useState('')
@@ -234,7 +240,10 @@ export default function KnowledgePage() {
     try {
       const res = await knowledgeApi.getTemplates()
       setTemplates(res.data?.data ?? [])
+      setTemplatesError(false)
     } catch {
+      // 失败必须留**常驻**读数（toast ≈4s 就没了），否则模板页签会印「暂无可用模板」（issue #8062）
+      setTemplatesError(true)
       toast.error('加载行业模板失败')
     }
   }, [])
@@ -562,7 +571,14 @@ export default function KnowledgePage() {
               />
             )}
             {candidates.length === 0 && !candidatesError && (
-              <p className="py-4 text-sm text-neutral-500">暂无待确认候选。人工客服会话结束后将自动提炼知识；也可通过「文档提炼」从资料中提炼。</p>
+              // 空态说清「为什么空 / 去哪做」（issue #8062）：失败态已由上面的 `ListLoadError` 承担，
+              // 两支互斥 ⇒ 这一支只在**真的没有**候选时出现。
+              <EmptyState
+                icon="inbox"
+                testId="knowledge-candidates-empty"
+                title="暂无待确认候选"
+                description="人工客服会话结束后会自动提炼知识；也可以点「文档提炼」，从上传的资料里提炼。"
+              />
             )}
             {candidates.map((c) => (
               <div key={c.id} className="py-3 flex items-start justify-between gap-3">
@@ -597,7 +613,22 @@ export default function KnowledgePage() {
         <div className="p-5 space-y-3">
           <p className="text-sm text-neutral-500">平台预置行业知识模板，一键套用自动获得该行业的预置知识卡片（可编辑）；套用后自动跳转「知识卡片」并筛选来源=模板，便于核对</p>
           <div className="divide-y">
-            {templates.length === 0 && <p className="py-4 text-sm text-neutral-500">暂无可用模板</p>}
+            {templatesError && (
+              // 失败态 ≠ 空态（issue #8062）：读不到模板时不说「暂无可用模板」+ 真重发出口
+              <ListLoadError
+                testId="knowledge-templates-load-error"
+                message="行业模板加载失败 —— 没读到模板列表，这里的「暂无」不可信。请检查网络后重试。"
+                onRetry={() => void loadTemplates()}
+              />
+            )}
+            {templates.length === 0 && !templatesError && (
+              <EmptyState
+                icon="inbox"
+                testId="knowledge-templates-empty"
+                title="暂无可用模板"
+                description="平台还没有为你的行业预置模板 —— 可以先「新建知识卡片」，或等模板上架后再一键套用。"
+              />
+            )}
             {templates.map((t) => (
               <div key={t.templateId} className="py-3 flex items-start justify-between gap-3">
                 <div className="min-w-0">

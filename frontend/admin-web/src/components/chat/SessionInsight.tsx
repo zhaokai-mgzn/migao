@@ -34,6 +34,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
+import Button from '@/components/ui/Button'
 import { useChatStore } from '@/store/chat'
 import { useNow } from '@/hooks/useNow'
 import {
@@ -127,7 +128,8 @@ export default function SessionInsight({
   variant = 'overlay',
 }: SessionInsightProps = {}) {
   const [sessionIdCopied, setSessionIdCopied] = useState(false)
-  const { currentSessionId, sessions, messages, sendMessage } = useChatStore()
+  const { currentSessionId, sessions, messages, sendMessage, messagesLoadFailed, isLoadingMessages, selectSession } =
+    useChatStore()
 
   const copySessionId = () => {
     if (!currentSessionId) return
@@ -243,9 +245,34 @@ export default function SessionInsight({
             </div>
           </div>
 
-          {isEmpty ? (
-            /* ─── 空态：友好引导 ─── */
-            <div className="px-4 py-10 text-center">
+          {/*
+            四态（issue #8062）：本抽屉的四个区块**全部由 `messages` 推导**，而 `messages` 是
+            `chatApi.getHistory` 的读面 —— 读失败时它仍是 `[]`，修前就会落到下面那句
+            「本会话还没有记录」上：**把「没读到」画成「没有」**（同 `SessionList` 的「暂无会话」，#6713）。
+            ⇒ 失败 / 加载 / 真为空三态各自有面，互不吃掉（四态契约，`docs/design/design-baseline.md` §5）。
+          */}
+          {messagesLoadFailed ? (
+            <div data-testid="session-insight-load-failed" role="alert" className="px-4 py-6 text-center space-y-2">
+              <p className="text-xs text-neutral-600 leading-relaxed">
+                会话记录没读到 —— 简报暂时不可用
+                <br />
+                <span className="text-[11px] text-neutral-400">不是「这次会话没有内容」。检查网络后重试。</span>
+              </p>
+              {/* 重试走共享原语（`ui/Button`，migao-dev-flow §32.2 第 6 条：业务面不手拼按钮铬） */}
+              <Button
+                variant="secondary"
+                size="sm"
+                data-testid="session-insight-load-failed-retry"
+                onClick={() => currentSessionId && void selectSession(currentSessionId)}
+              >
+                重试
+              </Button>
+            </div>
+          ) : isLoadingMessages ? (
+            <div className="px-4 py-10 text-center text-xs text-neutral-400">正在读会话记录…</div>
+          ) : isEmpty ? (
+            /* ─── 空态：说清「为什么空 / 去哪做」 ─── */
+            <div className="px-4 py-10 text-center" data-testid="session-insight-empty">
               <p className="text-xs text-neutral-400 leading-relaxed">
                 本会话还没有记录
                 <br />

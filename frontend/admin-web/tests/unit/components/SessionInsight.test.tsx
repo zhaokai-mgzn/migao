@@ -9,7 +9,24 @@
  *  - 会话标识保留（弱化展示）；空会话显示友好空态
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, act } from '@testing-library/react'
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
+
+/**
+ * issue #8062：简报抽屉的**读面** = `chatApi.getHistory`（由 store 的 `selectSession` 调用）。
+ * 只桩这一个读接口，store / 组件走真代码（同族口径：`chat-session-read-failure.test.tsx` 的
+ * 「UI 读的失败读数与 store 写的失败读数同一个真值」）。
+ */
+vi.mock('@/lib/api', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, any>>()
+  return {
+    ...actual,
+    chatApi: {
+      ...(actual.chatApi ?? {}),
+      getHistory: vi.fn().mockResolvedValue({ data: { data: { messages: [] } } }),
+    },
+  }
+})
+
 import SessionInsight from '@/components/chat/SessionInsight'
 import { useChatStore } from '@/store/chat'
 import type { ChatSession, ChatMessage } from '@/types'
@@ -190,5 +207,68 @@ describe('SessionInsight 会话简报', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+/**
+ * issue #8062：**读面失败 ≠ 会话没有记录**。
+ *
+ * 修前缺陷形态：`selectSession` 的 catch 只 `console.error` ⇒ `messages` 恒为 `[]`
+ * ⇒ 抽屉落到「本会话还没有记录」—— 一句**事实性断言**（把「没读到」画成「没有」）。
+ * 本组判据各能单独变红：
+ * ① 读失败 ⇒ 常驻失败面 `session-insight-load-failed` 在场，且**不印**空态那句；
+ * ② 加载中 ⇒ 只说「正在读」，也不印空态那句（三态互斥）；
+ * ③ 点重试 ⇒ `getHistory` **真被重发**（不是只把失败文案抹掉），读到后失败面消失。
+ *
+ * 红证（改回缺陷形态 ⇒ 当场红）：把 `messagesLoadFailed` 那两支从渲染里摘掉
+ * （回到「isEmpty ? 空态 : 内容」两层三元）⇒ ① 与 ② 同时红。
+ */
+describe('SessionInsight —— 读面失败 ≠ 空（issue #8062）', () => {
+  it('① 读历史失败 ⇒ 常驻失败面 + 重试出口，且不得印「本会话还没有记录」', () => {
+    useChatStore.setState({
+      messages: [],
+      isLoadingMessages: false,
+      messagesLoadFailed: true,
+    } as Partial<typeof useChatStore.getState>)
+
+    render(<SessionInsight isOpen onClose={vi.fn()} />)
+
+    expect(screen.getByTestId('session-insight-load-failed')).toHaveTextContent(/会话记录没读到/)
+    expect(screen.getByTestId('session-insight-load-failed-retry')).toBeInTheDocument()
+    // 失败不是空：那句「本会话还没有记录」此刻一个字都不该出现
+    expect(screen.queryByText(/向黄金策提问后/)).toBeNull()
+  })
+
+  it('② 加载中 ⇒ 只印「正在读会话记录」，不印空态断言', () => {
+    useChatStore.setState({
+      messages: [],
+      isLoadingMessages: true,
+      messagesLoadFailed: false,
+    } as Partial<typeof useChatStore.getState>)
+
+    render(<SessionInsight isOpen onClose={vi.fn()} />)
+
+    expect(screen.getByText('正在读会话记录…')).toBeInTheDocument()
+    expect(screen.queryByText(/向黄金策提问后/)).toBeNull()
+  })
+
+  it('③ 点重试 ⇒ 真重发 getHistory（不是只抹掉失败文案），读到后转成「真为空」', async () => {
+    const { chatApi } = (await import('@/lib/api')) as any
+    chatApi.getHistory.mockClear()
+    useChatStore.setState({
+      currentSessionId: SESSION_ID,
+      messages: [],
+      isLoadingMessages: false,
+      messagesLoadFailed: true,
+    } as Partial<typeof useChatStore.getState>)
+
+    render(<SessionInsight isOpen onClose={vi.fn()} />)
+    fireEvent.click(screen.getByTestId('session-insight-load-failed-retry'))
+
+    await waitFor(() => expect(chatApi.getHistory).toHaveBeenCalledTimes(1))
+    expect(chatApi.getHistory.mock.calls[0][0]).toBe(SESSION_ID)
+    // 读到之后：失败面消失、转成「真的还没有记录」的空态（互斥、不叠着说）
+    await waitFor(() => expect(screen.queryByTestId('session-insight-load-failed')).toBeNull())
+    expect(screen.getByTestId('session-insight-empty')).toBeInTheDocument()
   })
 })

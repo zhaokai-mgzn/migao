@@ -259,6 +259,10 @@ describe('在线接待工作台 - 失败态 ≠ 空态（issue #6664 第 2 条�
     render(<HumanAgentSessionsPage />)
 
     expect(await screen.findByText(/加载失败/)).toBeInTheDocument()
+    // 常驻失败锚（issue #8062 补 `data-testid`）：判据钉「失败面真的画出来了」，
+    // 而不是靠文案 —— 文案会被改，锚点不会。
+    expect(screen.getByTestId('human-sessions-load-failed')).toBeInTheDocument()
+    expect(screen.getByTestId('human-sessions-load-failed-retry')).toBeInTheDocument()
     expect(screen.queryByText(/暂无转人工会话/)).toBeNull()
   })
 
@@ -268,6 +272,8 @@ describe('在线接待工作台 - 失败态 ≠ 空态（issue #6664 第 2 条�
     render(<HumanAgentSessionsPage />)
 
     expect(await screen.findByText(/暂无转人工会话/)).toBeInTheDocument()
+    // 空态说清「从哪来」（issue #8062，台账已删该条 ⇒ 由本判据兜住「说清 + 有锚点」两半）
+    expect(screen.getByTestId('human-sessions-empty').textContent).toMatch(/点「转人工」/)
     expect(screen.queryByText(/加载失败/)).toBeNull()
   })
 

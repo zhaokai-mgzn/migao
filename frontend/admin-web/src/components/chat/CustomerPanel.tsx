@@ -106,11 +106,19 @@ export default function CustomerPanel() {
             基本信息
           </h4>
           <div className="space-y-2">
-            <InfoRow icon={<Phone className="w-3.5 h-3.5" />} label="电话" value={customerInfo?.phone || '暂无'} />
+            {/*
+              行内字段占位，**不是列表体空态**（issue #8062 裁定）：
+              · 数据源 `customerInfo` 随会话载荷下发（没有独立读接口），且当前版本恒为 `null`
+                （`useState(null)` 从未被赋值）⇒ 这两个字段**从来没有读过任何数据**，
+                既不能说「客户没提供」，也不能说「没读到」⇒ 因此**不需要失败锚**；
+              · 修前这里是裸「暂无」—— 那是**事实性断言**（把「没读过」说成「没有」），
+                且商家看不出下一步。改用 `—`（无值的标准占位，不做任何断言）。
+            */}
+            <InfoRow icon={<Phone className="w-3.5 h-3.5" />} label="电话" value={customerInfo?.phone || '—'} />
             <InfoRow
               icon={<Clock className="w-3.5 h-3.5" />}
               label="注册"
-              value={customerInfo?.registeredDays !== undefined ? `${customerInfo.registeredDays} 天前` : '暂无'}
+              value={customerInfo?.registeredDays !== undefined ? `${customerInfo.registeredDays} 天前` : '—'}
             />
             <div className="flex items-center gap-2 text-xs">
               <span className="text-neutral-400 flex-shrink-0">
