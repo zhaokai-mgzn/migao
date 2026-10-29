@@ -57,7 +57,7 @@ class TestMetadataContract:
         assert tool.destructive is False
         assert tool.idempotent is True
         # 两端可用：顾客查自己的单、商户员工查任意单。issue #5246 起口径 =
-        # 权限码（= 页面节点『作业看板』的码）+ 双端标记，**不再**手写角色白名单
+        # 权限码（= 页面节点『作业单』的码）+ 双端标记，**不再**手写角色白名单
         # （手写清单必然与 admin-api 目录漂移，且会把 C 端角色写进 B 端独占工具）。
         # issue #5291：该节点码 = 生产域读码 `production:view`（此前与写面同用 `processing:manage`）。
         assert tool.required_permissions == ["production:view"]

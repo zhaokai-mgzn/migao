@@ -651,7 +651,7 @@ class TestPermissionLabelsMirrorTheAdminApiCatalog:
     def test_catalog_guard_goes_red_on_a_renamed_capability(self):
         """负例：Java 目录改了名字而 Python 镜像没跟上 ⇒ 报"名称不一致"。"""
         rows = java_catalog_rows(
-            'String[][] catalog = {\n    {"经营看板", "dashboard:view", "dashboard", "view", "x"}\n};')
+            'String[][] catalog = {\n    {"经营概览", "dashboard:view", "dashboard", "view", "x"}\n};')
         gaps = catalog_gaps(rows, PERMISSION_LABELS)
         assert "名称不一致:dashboard:view" in gaps
         assert not any(g.startswith("缺标签:") for g in gaps), "该码本就有标签 —— 夹具失效"
