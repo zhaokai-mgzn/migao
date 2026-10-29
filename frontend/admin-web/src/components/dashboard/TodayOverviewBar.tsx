@@ -39,7 +39,7 @@ export function processingRatio(processingCount: number, pendingCount: number): 
  * 大基数保护阈值（issue #8012）：`|环比| ≥ 500%` ⇒ 改倍数展示（`+23×` / `-8×`）。
  * 昨日只有 2 单时「+2300%」数学正确、可读性为零；阈值以下仍是百分比（`+40%` 才是习惯说法）。
  */
-const BIG_CHANGE_PCT = 500
+export const BIG_CHANGE_PCT = 500
 
 /**
  * 订单环比格式化：正数带加号、负数带负号、0 渲染 0%、非有限值渲染 —。
@@ -114,10 +114,13 @@ export function buildInsightSentence(p: InsightParams): string {
 }
 
 /**
- * 黄金策「今日经营速览」洞察条（经营看板顶部 AI 洞察一等公民）。
- * 以「一句话经营解读」形式呈现：数字串联成句，客户一眼读懂业务含义。
+ * 「一句话经营解读」这句话本身（issue #8114）—— 独立成组件是因为它现在有**两个**承载面：
+ * ① 既有独立速览条（本文件默认导出，保留形态与单测）；
+ * ② 合并卡 `DailyBusinessCard` 的**收起态常驻面**（速览与简报合并成一张卡后，
+ *    收起态就只剩这一句话）。
+ * ⇒ 文案口径只有 `buildInsightSentence` 这一份，两个承载面共用同一段渲染，不造第二套说法。
  */
-export default function TodayOverviewBar({
+export function TodayOverviewSentence({
   todayOrders,
   todaySales,
   orderChange,
@@ -141,6 +144,24 @@ export default function TodayOverviewBar({
   )
 
   return (
+    <p
+      data-testid="today-overview-sentence"
+      title={hasBigChange ? '基数较小，百分比不具参考性' : undefined}
+      className={cn('text-sm leading-relaxed text-neutral-700')}
+    >{sentence}</p>
+  )
+}
+
+/**
+ * 黄金策「今日经营速览」洞察条（经营看板顶部 AI 洞察一等公民）。
+ * 以「一句话经营解读」形式呈现：数字串联成句，客户一眼读懂业务含义。
+ *
+ * ⚠️ issue #8114 起**经营看板不再渲染本组件**（它已并入 `DailyBusinessCard` 的收起态），
+ * 组件与其单测保留（`.github/cases/ui.yml` 引用本文件路径，且文案判据 `buildInsightSentence`
+ * 一族仍以此处为唯一真值源）。
+ */
+export default function TodayOverviewBar(props: TodayOverviewBarProps) {
+  return (
     <section
       data-testid="today-overview-bar"
       className="relative mb-6 overflow-hidden rounded-xl border border-primary-200/70 bg-white shadow-card"
@@ -156,11 +177,7 @@ export default function TodayOverviewBar({
           </span>
           <span className="text-[11px] text-neutral-400">AI 生成内容仅供参考</span>
         </div>
-        <p
-          data-testid="today-overview-sentence"
-          title={hasBigChange ? '基数较小，百分比不具参考性' : undefined}
-          className={cn('text-sm leading-relaxed text-neutral-700')}
-        >{sentence}</p>
+        <TodayOverviewSentence {...props} />
       </div>
     </section>
   )

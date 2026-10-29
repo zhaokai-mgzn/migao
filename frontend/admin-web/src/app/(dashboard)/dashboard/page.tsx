@@ -10,10 +10,9 @@ import { visiblePluggableCards } from '@/lib/dashboard-cards'
 import { useAuthStore } from '@/store/auth'
 import { cn, formatFullDateTime } from '@/lib/utils'
 import type { DashboardStats, OrderTrendPoint, Order, ProductRanking, OrderStatusDistribution } from '@/types'
-import TodayOverviewBar from '@/components/dashboard/TodayOverviewBar'
+import DailyBusinessCard from '@/components/dashboard/DailyBusinessCard'
 import TrendChart from '@/components/dashboard/TrendChart'
 import RecentOrders from '@/components/dashboard/RecentOrders'
-import BriefingCard from '@/components/dashboard/BriefingCard'
 // issue #5792 第二阶段：订单状态分布（端点与组件此前都已写好，但**从未接线** —— 本次接上）
 import OrderStatusChart from '@/components/dashboard/OrderStatusChart'
 
@@ -624,16 +623,20 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 黄金策「今日经营速览」洞察条 — 一句话经营解读，置于页面顶部。
-          issue #6701：传**未取到**（null）而不是 0 —— 否则读面失败时这句话会说
+      {/* 黄金策「今日经营」合并卡（issue #8114）：**一张卡**装原先两块 AI 内容 ——
+          收起态 = 速览那一句话；展开态 = 那句话 + 简报（昨日回顾 / 今日必办 / 风险预警 / 优化建议 / 主动检查）。
+          简报未开启 / 未生成 / 加载中都由卡内展开态覆盖，卡片本身**恒在**（速览不依赖简报开关）。
+          issue #6701：速览传**未取到**（null）而不是 0 —— 否则读面失败时这句话会说
           「今日暂无新订单，销售额 ¥0」（把「读不到」说成「今天没卖出去」）。 */}
-      <TodayOverviewBar
+      <DailyBusinessCard
         todayOrders={stats?.todayOrders ?? null}
-        todaySales={stats?.todaySales ?? null}        orderChange={stats?.todayOrdersChange ?? null}
+        todaySales={stats?.todaySales ?? null}
+        orderChange={stats?.todayOrdersChange ?? null}
         salesChange={stats?.todaySalesChange ?? null}
         processingCount={processingShipment}
         pendingCount={pendingShipment}
         lowStockCount={lowStockCount}
+        briefingEnabled={briefingConfigLoaded ? briefingEnabled : null}
       />
 
       {/* ① 待处理任务（issue #8105：提到简报**之前** —— 看板第一职责是「今天该处理什么」） */}
@@ -658,16 +661,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ② 智能每日经营简报（issue #8012 空态压缩 + issue #8105 有数据时也默认收起为一行；
-          摘要 · 主动检查 · 昨日回顾 · 今日必办按需展开）。常驻面克制（§31 P1）——
-          可行动区（待处理）因此留在首屏内，而不是被约 400px 的日报全文挤到折叠线以下。 */}
-      {briefingConfigLoaded && (
-        <div data-testid="dashboard-briefing-section">
-          <BriefingCard enabled={briefingEnabled} defaultCollapsed />
-        </div>
-      )}
-
-      {/* ③ 经营数据卡片（4 卡自洽：订单数 × 客单价 ≈ 销售额） */}
+      {/* ② 经营数据卡片（4 卡自洽：订单数 × 客单价 ≈ 销售额） */}
       <div className="mb-6">
         <SectionHeading icon={<TrendingUp className="h-3.5 w-3.5 text-primary-600" />} colorClass="bg-primary-50">经营数据</SectionHeading>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
