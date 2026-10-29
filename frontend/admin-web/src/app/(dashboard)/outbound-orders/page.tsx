@@ -6,7 +6,7 @@ import { SALE_FORM_FABRIC } from '@/lib/sale-form'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { PackageMinus, Plus, RefreshCw, Search } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button, EmptyState, Input, Modal, PageCard, PageHeader, Select, Table } from '@/components/ui'
+import { Button, EmptyState, Input, Modal, PageCard, PageHeader, Select, Table, TableSkeleton } from '@/components/ui'
 import ListLoadError from '@/components/common/ListLoadError'
 import WarehouseLocationPanel from '@/components/stock/WarehouseLocationPanel'
 import SkuPicker, { type SkuPickerChoice, skuLineLabel } from '@/components/products/SkuPicker'
@@ -426,6 +426,11 @@ export default function OutboundOrdersPage() {
               onRetry={() => void loadOrders()}
               retrying={ordersLoading}
             />
+          ) : ordersLoading && orders.length === 0 ? (
+            /* issue #8056：加载态 = 通用表格骨架（#8036 / #8048 已验收口径：页面级三元），与本表 9 列对齐；
+               不再让共享 `Table` 的 loading 分支印裸「加载中…」+ 空白表体。
+               🔴 闸门 = `loading && 列表为空`：刷新时已有读数 ⇒ 表格照旧在场（#8048 直出 `loading` 踩过的回归）。 */
+            <TableSkeleton rows={8} columns={9} />
           ) : (
             <Table
               columns={orderColumns}
@@ -449,8 +454,9 @@ export default function OutboundOrdersPage() {
               onRetry={() => void loadFinished()}
               retrying={finishedLoading}
             />
-          ) : finishedLoading ? (
-            <div className="py-10 text-center text-sm text-neutral-500">加载中…</div>
+          ) : finishedLoading && finished.length === 0 ? (
+            /* issue #8056：与「出库单」页签同一口径，与本表 6 列对齐（成品库存 = 列表页）。 */
+            <TableSkeleton rows={8} columns={6} />
           ) : finished.length === 0 ? (
             <EmptyState
               title="成品仓暂时是空的"
