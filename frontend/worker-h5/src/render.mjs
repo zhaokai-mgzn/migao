@@ -117,6 +117,16 @@ export const PAGE_TO_SHIP = 'to_ship'
 export const PAGE_INSPECT = 'inspect'
 
 /**
+ * 页面键：**库存修正**（issue #8104；用户 2026-10-29 逐字
+ * 「手机端还要增加一个库存修正的功能，apk程序也要同步增加这个功能，允许工人对某个批次的布匹进行修正」）。
+ *
+ * 🔴 本键在 `/w/` 侧**没有对应面**：工人端新面一律落 bmini（2026-10-26 方向裁定，issue #7806），
+ * 本键登记在这里只为让「闭词表镜像」与后端 `WorkerPages.STOCK` 逐字相同（该镜像是
+ * `frontend/worker-h5/tests/worker-h5-pages.test.mjs` 逐值核对的冻结契约）。
+ */
+export const PAGE_STOCK = 'stock'
+
+/**
  * 页面键：**返工记录**（issue #7860）—— `/w/rework.html`：有返工报工的加工单列表。
  *
  * 🔴 与 `inspect` 的差别：它只是**读面可见性**（用户 2026-10-26 裁定「在工人档案中设置过可见权限的
@@ -131,7 +141,17 @@ export const PAGE_REWORK = 'rework'
  * ⚠️ 这是**第二份**默认值（真值在后端；前端不可能 import Java）⇒ 唯一防线是判据：
  * `tests/worker-h5-pages.test.mjs` 逐值比对**全部**键 + 顺序，改一边不改另一边 ⇒ 红。
  */
-export const DEFAULT_PAGES = [PAGE_REPORT, PAGE_PIECEWORK, PAGE_ORDER, PAGE_CUT_CALC, PAGE_SHIPMENT, PAGE_TO_SHIP]
+export const DEFAULT_PAGES = [
+  PAGE_REPORT,
+  PAGE_PIECEWORK,
+  PAGE_ORDER,
+  PAGE_CUT_CALC,
+  PAGE_SHIPMENT,
+  PAGE_TO_SHIP,
+  // issue #8104：`stock`（库存修正）默认开（操作工具，与 shipment 同档）—— 与后端
+  // `WorkerPages.defaultPages()` 逐值相同；本页没有对应面（新面在 bmini），仅镜像闭词表与默认集合。
+  PAGE_STOCK,
+]
 
 /** 裁高计算入口（同源静态页；`/w/` 与 `/w/machine.html` 同一静态根 ⇒ 相对路径、不写死域名）。
  *  文案 = 「裁高计算（一体机）」（2026-10-10 用户裁定：改前的「机台模式」只有内部人懂，issue #6635）。 */

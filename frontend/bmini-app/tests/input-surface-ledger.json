@@ -98,6 +98,14 @@
       "case_ids": [
         "BM-014"
       ]
+    },
+    {
+      "file": "src/pages/worker/stock/index.tsx",
+      "className": "worker-stock__input",
+      "label": "库存修正页的两格输入（搜批次的批次号关键词 / 实盘米数；备注共用同一 className）",
+      "case_ids": [
+        "BM-056"
+      ]
     }
   ]
 }

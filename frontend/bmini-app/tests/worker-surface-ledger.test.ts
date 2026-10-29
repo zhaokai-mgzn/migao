@@ -51,6 +51,9 @@ export const WORKER_WRITE_CALLS: string[] = [
   'workerLogout(',
   'createInboundDraft(',
   'postInboundDraft(',
+  // issue #8104：工人端**按批次修正库存**（写面 = POST /api/worker/batch-stock/correction）。
+  // 它必须登记：这是「改库存」的写入口，且必须先有工人身份（否则 401）。
+  'submitBatchCorrection(',
 ]
 
 export interface LedgerEntry {

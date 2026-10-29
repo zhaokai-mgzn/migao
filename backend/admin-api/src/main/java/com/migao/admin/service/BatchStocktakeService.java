@@ -93,6 +93,18 @@ public class BatchStocktakeService {
     @Transactional(rollbackFor = Exception.class)
     public BatchStockViews.StocktakeResult stocktake(Long tenantId, String productId, String runId,
                                                      List<BatchStocktakeRequest.Line> lines) {
+        return stocktake(tenantId, productId, runId, lines, null);
+    }
+
+    /**
+     * 盘点入口（**带审计来源**；issue #8104）—— 工人端批次库存修正走这里，
+     * 唯一区别 = 批次分录与库存流水的 {@code operator}/{@code note} 带上「谁、为什么」
+     * （{@link StockBatchConsumptionService.StocktakeAudit}）。{@code audit == null} 时与 4 参版本**逐字相同**。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public BatchStockViews.StocktakeResult stocktake(Long tenantId, String productId, String runId,
+                                                     List<BatchStocktakeRequest.Line> lines,
+                                                     StockBatchConsumptionService.StocktakeAudit audit) {
         if (!StringUtils.hasText(productId)) {
             throw BusinessException.validationError("货号（productId）不能为空");
         }
@@ -210,7 +222,7 @@ public class BatchStocktakeService {
         //    run id 请求在唯一索引处被判出来、返回已处理而不是抛异常 —— issue #6301）→
         //    SKU 库存 + 销售台账（唯一写入点 = StockLedgerService）。两段在**同一个事务**里：
         //    任一步失败整笔回滚。
-        Set<Long> recorded = batchStockService.applyStocktake(tenantId, runId, adjustments);
+        Set<Long> recorded = batchStockService.applyStocktake(tenantId, runId, adjustments, audit);
 
         // ⑤b 原子闸判退的批次 = 并发中的**另一请求**已把这一行记过（它的 SKU 库存也已由那一笔对齐）
         //     ⇒ 本次必须是**幂等回放**：改回执状态，并把该批次从 SKU 库存 / 台账的写入面里摘掉。
@@ -268,7 +280,8 @@ public class BatchStocktakeService {
                         running, next, StockLedger.REASON_MANUAL, line.batchNo(),
                         String.format("库存盘点：批次 %s 盘前 %s 米 → 盘后 %s 米（本次差异 %s 米）",
                                 line.batchNo(), plain(line.beforeMeters()), plain(line.afterMeters()),
-                                plain(line.delta())));
+                                plain(line.delta())),
+                        audit == null ? null : audit.operator());
                 running = next;
             }
         }

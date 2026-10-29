@@ -86,6 +86,16 @@ public final class WorkerPages {
     public static final String INSPECT = "inspect";
 
     /**
+     * 页面键：**库存修正**（issue #8104；用户 2026-10-29 逐字
+     * 「手机端还要增加一个库存修正的功能，apk程序也要同步增加这个功能，允许工人对某个批次的布匹进行修正」）。
+     *
+     * <p>工作台第 N 张卡「库存修正」的显隐键：工人发现某批布实际剩余与系统不符时，
+     * 在手机上按批次改成实测米数（写面 = `POST /api/worker/batch-stock/correction`，
+     * 复用按批次盘点的唯一写面）。默认开（操作工具，与 `shipment` 同档）；商家可在工人档案上逐人关。</p>
+     */
+    public static final String STOCK = "stock";
+
+    /**
      * 页面键：**返工记录**（issue #7860）—— 手机端「报返工的加工单列表」（`/w/rework.html`）。
      *
      * <p>🔴 用户 2026-10-26 裁定「在工人档案中设置过可见权限的工人」能看到：不在默认集合里、
@@ -100,7 +110,7 @@ public final class WorkerPages {
      * <p>顺序 = 工人端默认的页面顺序（读面原样回给前端，前端不再自己排一遍）。</p>
      */
     public static final Set<String> ALL = Collections.unmodifiableSet(new LinkedHashSet<>(List.of(
-            REPORT, PIECEWORK, ORDER, CUT_CALC, SHIPMENT, TO_SHIP, INSPECT, REWORK)));
+            REPORT, PIECEWORK, ORDER, CUT_CALC, SHIPMENT, TO_SHIP, STOCK, INSPECT, REWORK)));
 
     private WorkerPages() {
     }
@@ -115,7 +125,7 @@ public final class WorkerPages {
      * —— 配置面据此把「未收窄」渲染成默认勾选态，前端不另抄一份默认值。可选页全集 = {@link #ALL}。</p>
      */
     public static List<String> defaultPages() {
-        return List.of(REPORT, PIECEWORK, ORDER, CUT_CALC, SHIPMENT, TO_SHIP);
+        return List.of(REPORT, PIECEWORK, ORDER, CUT_CALC, SHIPMENT, TO_SHIP, STOCK);
     }
 
     /**
@@ -135,6 +145,7 @@ public final class WorkerPages {
         labels.put(CUT_CALC, "裁高计算器");
         labels.put(SHIPMENT, "发货");
         labels.put(TO_SHIP, "待发货单");
+        labels.put(STOCK, "库存修正");
         labels.put(INSPECT, "质检");
         labels.put(REWORK, "返工记录");
         return labels;

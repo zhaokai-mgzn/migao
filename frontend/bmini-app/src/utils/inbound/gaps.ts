@@ -255,6 +255,25 @@ export const PIECEWORK_PAGE_ROUTE = '/pages/worker/piecework/index'
 export const PIECEWORK_PAGE_FILE = 'src/pages/worker/piecework/index.tsx'
 
 /**
+ * **库存修正**页路由（issue #8104；用户 2026-10-29 逐字
+ * 「手机端还要增加一个库存修正的功能，apk程序也要同步增加这个功能，允许工人对某个批次的布匹进行修正」）。
+ *
+ * 工人发现某批布实际剩余与系统不符时，在手机上按批次改成实测米数（写面 =
+ * `POST /api/worker/batch-stock/correction`，复用按批次盘点的唯一写面）。
+ *
+ * 🔴 路由字面量是**单一真值**：`src/app.config.ts` 的 pages 必须逐字含它
+ * （没登记 = 死链；守卫 = `tests/page-entry-reachability.test.ts` 的 L2「未登记即红」）。
+ */
+export const STOCK_PAGE_ROUTE = '/pages/worker/stock/index'
+
+/** 库存修正页文件（入口台账 `from` 要核的落点） */
+export const STOCK_PAGE_FILE = 'src/pages/worker/stock/index.tsx'
+
+/** 库存修正页未登录时的引导（与入库 / 发货页同一口径，说清本页是「改库存」） */
+export const STOCK_WORKER_LOGIN_REQUIRED =
+  '请先用工号 + PIN 登录工人身份，再修正批次库存（商家账号不能走这条路径）。'
+
+/**
  * 守卫射程：**工人标签面**（入库页 + 补打页）+ 它们依赖的入库模块
  * （服务 / 门禁 / 解码 / 打印 / 共用件 / 确认框）。
  *

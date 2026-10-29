@@ -1,0 +1,301 @@
+@use "../../../styles/variables.scss" as *;
+
+// 工人端「库存修正」（issue #8104）—— 搜批次 → 看系统余量 → 填实盘 → 选原因 → 提交
+//
+// ## 视觉语言：与**商家端**同一套（issue #7240 的既有裁定）
+//   · 页面根声明**非白**底色 + `min-height: 100vh`（判据：`tests/worker-card-contrast-guard.test.ts` 判据 8/9）
+//   · 卡片 = 白底 + `$radius-lg` + 细描边 + `$shadow-card`（可见边界，同一守卫判据 1）
+//   · 字号按 **750 设计尺度**（本仓样式管线 `1px = 1/40 rem`），正文 / 次要字号下限 24
+//
+// 🔴 不新增颜色 / 字号 token（`check-ui-regression.sh` 判 UI 回退）——只取既有变量。
+// 🔴 `__gate`（未登录引导）是卡片形态守卫的登记面 ⇒ 必须给描边 + 阴影，
+//    不留「白底浮在白底上」的形态（issue #6760 的现场就是这个）。
+
+.worker-stock {
+  min-height: 100vh;
+  // 非白底：白卡片必须落在有区别的底上（判据 8/9），否则卡片形状整个消失
+  background: $bg-secondary;
+  padding: 0 0 40px;
+
+  &__header {
+    display: flex;
+    align-items: center;
+    padding: 40px 24px 16px;
+  }
+
+  &__heading {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  &__title {
+    display: block;
+    font-size: 40px;
+    font-weight: 700;
+    color: $text-primary;
+  }
+
+  &__worker {
+    display: block;
+    margin-top: 6px;
+    font-size: 24px;
+    color: $text-secondary;
+  }
+
+  // ── 搜索行：输入框 + 查询（输入框占满，按钮不换行） ──
+  &__search {
+    display: flex;
+    align-items: center;
+    margin: 0 24px 16px;
+  }
+
+  &__input {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 76px;
+    padding: 0 24px;
+    font-size: 28px;
+    color: $text-primary;
+    background: $bg-primary;
+    border: 1px solid $border-color;
+    border-radius: $radius-md;
+  }
+
+  &__search-button {
+    flex: 0 0 auto;
+    // 🔴 Taro 的 Button 默认 `width: 100%` ⇒ 只写 flex 不够：会独占一行（同款实证见待发货单页）
+    width: auto;
+    white-space: nowrap;
+    margin: 0 0 0 16px;
+    padding: 0 28px;
+    height: 76px;
+    line-height: 76px;
+    font-size: 26px;
+    color: $bg-primary;
+    background: $primary-color;
+    border: none;
+    border-radius: $radius-md;
+  }
+
+  &__message {
+    display: block;
+    margin: 0 24px 16px;
+    font-size: 26px;
+    line-height: 1.5;
+    color: $error-color;
+  }
+
+  // ── 状态块（读取中 / 读不到 / 没有批次）：同一形状，文案与出口不同 ──
+  &__notice {
+    display: block;
+    margin: 0 24px 20px;
+    padding: 32px;
+    background: $bg-primary;
+    border: 1px solid $border-color;
+    border-radius: $radius-lg;
+    box-shadow: $shadow-card;
+  }
+
+  &__notice-text {
+    display: block;
+    font-size: 26px;
+    line-height: 1.6;
+    color: $text-secondary;
+  }
+
+  &__retry {
+    width: auto;
+    margin: 24px 0 0;
+    padding: 0 28px;
+    height: 64px;
+    line-height: 64px;
+    font-size: 26px;
+    color: $primary-color;
+    background: $bg-primary;
+    border: 1px solid $border-color;
+    border-radius: $radius-full;
+  }
+
+  // ── 批次列表 ──
+  &__list {
+    display: block;
+  }
+
+  &__list-hint {
+    display: block;
+    margin: 0 24px 12px;
+    font-size: 24px;
+    color: $text-secondary;
+  }
+
+  &__row {
+    display: block;
+    margin: 0 24px 16px;
+    padding: 28px 32px;
+    background: $bg-primary;
+    border: 1px solid $border-color;
+    border-radius: $radius-lg;
+    box-shadow: $shadow-card;
+  }
+
+  // 选中态：主色描边（形状仍在，只是边界变强 —— 工人据此确认改的是这一批）
+  &__row--active {
+    border-color: $primary-color;
+  }
+
+  &__row-no {
+    display: block;
+    font-size: 32px;
+    font-weight: 700;
+    color: $text-primary;
+    word-break: keep-all;
+  }
+
+  &__row-meta {
+    display: block;
+    margin-top: 8px;
+    font-size: 26px;
+    color: $text-secondary;
+    line-height: 1.5;
+  }
+
+  &__row-rest {
+    display: block;
+    margin-top: 8px;
+    font-size: 28px;
+    font-weight: 600;
+    color: $text-primary;
+  }
+
+  // ── 修正面板（选中批次后出现） ──
+  &__panel {
+    display: block;
+    margin: 0 24px 20px;
+    padding: 28px 32px 32px;
+    background: $bg-primary;
+    border: 1px solid $border-color;
+    border-radius: $radius-lg;
+    box-shadow: $shadow-card;
+  }
+
+  &__panel-title {
+    display: block;
+    font-size: 32px;
+    font-weight: 700;
+    color: $text-primary;
+  }
+
+  &__panel-line {
+    display: block;
+    margin-top: 10px;
+    font-size: 28px;
+    color: $text-secondary;
+  }
+
+  &__label {
+    display: block;
+    margin: 24px 0 12px;
+    font-size: 26px;
+    color: $text-secondary;
+  }
+
+  &__reasons {
+    display: flex;
+    flex-wrap: wrap;
+    margin: -6px;
+  }
+
+  &__reason {
+    margin: 6px;
+    padding: 14px 24px;
+    background: $bg-secondary;
+    border: 1px solid $border-color;
+    border-radius: $radius-full;
+  }
+
+  &__reason--active {
+    background: $primary-light;
+    border-color: $primary-color;
+  }
+
+  &__reason-text {
+    font-size: 26px;
+    color: $text-primary;
+  }
+
+  &__submit {
+    width: 100%;
+    margin: 32px 0 0;
+    height: 84px;
+    line-height: 84px;
+    font-size: 30px;
+    font-weight: 600;
+    color: $bg-primary;
+    background: $primary-color;
+    border: none;
+    border-radius: $radius-md;
+  }
+
+  // ── 回执（四数 + 记录人） ──
+  &__receipt {
+    display: block;
+    margin: 0 24px 20px;
+    padding: 28px 32px;
+    background: $bg-primary;
+    border: 1px solid $border-color;
+    border-radius: $radius-lg;
+    box-shadow: $shadow-card;
+  }
+
+  &__receipt-title {
+    display: block;
+    font-size: 28px;
+    font-weight: 600;
+    line-height: 1.5;
+    color: $text-primary;
+  }
+
+  &__receipt-line {
+    display: block;
+    margin-top: 10px;
+    font-size: 26px;
+    color: $text-secondary;
+  }
+
+  &__receipt-worker {
+    display: block;
+    margin-top: 12px;
+    font-size: 24px;
+    color: $text-tertiary;
+  }
+
+  // ── 未登录引导（卡片形态守卫的登记面：必须有可见边界） ──
+  &__gate {
+    display: block;
+    margin: 40px 24px;
+    padding: 40px 32px;
+    background: $bg-primary;
+    border: 1px solid $border-color;
+    border-radius: $radius-lg;
+    box-shadow: $shadow-card;
+  }
+
+  &__gate-text {
+    display: block;
+    font-size: 28px;
+    line-height: 1.6;
+    color: $text-secondary;
+  }
+
+  &__login {
+    width: 100%;
+    margin: 32px 0 0;
+    height: 84px;
+    line-height: 84px;
+    font-size: 30px;
+    color: $bg-primary;
+    background: $primary-color;
+    border: none;
+    border-radius: $radius-md;
+  }
+}
