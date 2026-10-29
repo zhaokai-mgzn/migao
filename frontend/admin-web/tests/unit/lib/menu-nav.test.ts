@@ -959,8 +959,11 @@ describe('promoteSingleItemGroups：过滤后的单成员组按一级项渲染�
     const fromBlocks = blocks.flatMap((b) => (b.kind === 'group' ? b.items.map((i) => i.key) : [b.item.key]))
     expect(fromBlocks).toEqual(groups.flatMap((g) => g.children.map((i) => i.key)))
     // 提升项带原组名（可追溯）与真实的 item 对象（不是重建的壳）
+    // 🔴 #8086：不再写死某个 label（客户列表已移出客户服务）—— 判据改成「第一个单成员组的唯一子项」，
+    // 与实现无关、且仍能钉住「提升的是组内那个真对象」。
+    const firstSingle = groups.find((g) => g.children.length === 1)!
     const promoted = blocks.find((b) => b.kind === 'promoted')
-    expect(promoted && promoted.kind === 'promoted' ? promoted.item.key : null).toBe('customers')
+    expect(promoted && promoted.kind === 'promoted' ? promoted.item.key : null).toBe(firstSingle.children[0].key)
   })
 
   it('判别力自证：多成员组不会被误提升（admin 全量 ⇒ 0 个 promoted）', () => {
