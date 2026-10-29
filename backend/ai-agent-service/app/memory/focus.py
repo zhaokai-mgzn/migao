@@ -49,6 +49,14 @@ def _text(value: Any) -> str:
     return str(value or "").strip()
 
 
+def _safe_turn(value: Any) -> int:
+    """轮次归一化：脏值（非数字）按 0 处理 —— 注入路径不得因持久化脏数据抛错。"""
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _entry(
     entity: str,
     entity_id: str,
@@ -61,7 +69,7 @@ def _entry(
         "id": entity_id,
         "label": label or entity_id,
         "source_tool": source_tool,
-        "turn": int(turn or 0),
+        "turn": _safe_turn(turn),
     }
 
 

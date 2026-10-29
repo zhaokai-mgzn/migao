@@ -79,6 +79,38 @@ async def test_unrecognized_tool_result_does_not_touch_store(fake_store):
     assert fake_store.snapshot == {}
 
 
+async def test_customer_tool_result_writes_customer_focus(fake_store):
+    updated = await focus_mod.remember_from_tool_results(
+        "sess_cust",
+        [({"name": "customer_manage"}, "{}", {
+            "success": True,
+            "data": {"customers": [{"id": "c-1001", "name": "张三"}]},
+        })],
+        turn=5,
+    )
+    assert updated["entity"] == "customer"
+    assert updated["id"] == "c-1001"
+    assert updated["label"] == "张三"
+    assert updated["source_tool"] == "customer_manage"
+    assert focus_mod.resolve_reference("这个客户", updated) == "c-1001"
+
+
+async def test_product_tool_result_writes_product_focus(fake_store):
+    updated = await focus_mod.remember_from_tool_results(
+        "sess_prod",
+        [({"name": "product_detail"}, "{}", {
+            "success": True,
+            "data": {"id": 9, "name": "遮光窗帘"},
+        })],
+        turn=2,
+    )
+    assert updated["entity"] == "product"
+    assert updated["id"] == "9"
+    assert updated["label"] == "遮光窗帘"
+    assert updated["source_tool"] == "product_detail"
+    assert focus_mod.resolve_reference("这个商品", updated) == "9"
+
+
 # ── 2. 确定性指代解析（不调 LLM）───────────────────────────────────────────
 @pytest.mark.parametrize("text", ["这单的明细", "这一单呢", "该订单发货了吗", "刚才那单再看下"])
 def test_resolve_order_reference(text):
@@ -117,6 +149,16 @@ def test_prompt_injection_empty_focus_adds_zero_lines():
     assert focus_mod.inject_focus_prompt(
         "BASE", {"agent_type": "mibao", "focus": {}}
     ) == "BASE"
+
+
+def test_malformed_turn_does_not_break_injection():
+    """持久化脏数据（turn 非数字）不得让注入路径抛错（fire-and-forget 纪律）。"""
+    dirty = dict(_ORDER_FOCUS, turn="第4轮")
+    injected = focus_mod.inject_focus_prompt(
+        "BASE", {"agent_type": "mibao", "focus": dirty}
+    )
+    assert injected.startswith("BASE")
+    assert "当前焦点：订单 #7732（来源 order_query）" in injected
 
 
 def test_prompt_injection_skips_c_end():
