@@ -1632,8 +1632,12 @@ def aggregate(ledger: dict) -> dict:
         key = f"{entry.get('workflow')} :: {entry.get('job')}"
         slot = groups.setdefault(key, {
             "workflow": entry.get("workflow"), "job": entry.get("job"),
-            "total": 0, "flaky": 0, "confirmed_failure": 0, "infra_suspect": 0,
-            "deterministic": 0, "unknown": 0, "attributed": 0,
+            "total": 0,
+            # #8185：计数列**从单一事实源派生**（不手写清单）—— 手写清单会与 `ENTRY_KINDS` 漂移：
+            # #5687 新增 `suspect-window-deterministic` 时漏了这里 ⇒ 台账里一出现该类条目，
+            # `slot[entry["kind"]] += 1` 直接 KeyError（2026-10-30 台账分支实测，report 崩）。
+            **{kind: 0 for kind in ENTRY_KINDS},
+            "attributed": 0,
             "last_run_id": None, "last_observed_at": None,
         })
         slot["total"] += 1
@@ -3208,11 +3212,18 @@ def main(argv=None) -> int:
         print(f"📊 flaky 台账聚合（条目数现取 = {len(ledger.get('entries') or [])}，"
               f"不同 (workflow, job) = {len(rows)}）")
         for row in rows:
-            print(f"  · {row['workflow']} :: {row['job']} —— flaky={row['flaky']} "
-                  f"deterministic={row['deterministic']} infra_suspect={row['infra_suspect']} "
-                  f"**unknown={row['unknown']}**（不归因）· 旧口径 confirmed_failure="
-                  f"{row['confirmed_failure']} · 可归因小计 attributed={row['attributed']} "
-                  f"· 合计={row['total']}"
+            # #8185：打印列**从 `ENTRY_KINDS` 派生**（同一单一事实源）—— 手写列清单会静默漏印
+            # 新增的 kind（不崩、但读的人看不见那类事件）；`unknown` 保留「不归因」的强调。
+            columns = []
+            for kind in ENTRY_KINDS:
+                cell = f"{kind}={row[kind]}"
+                if kind == "unknown":
+                    cell = f"**{cell}**（不归因）"
+                elif kind in LEGACY_ENTRY_KINDS:
+                    cell = f"旧口径 {cell}"
+                columns.append(cell)
+            print(f"  · {row['workflow']} :: {row['job']} —— {' · '.join(columns)} "
+                  f"· 可归因小计 attributed={row['attributed']} · 合计={row['total']}"
                   f"（最近 run {row['last_run_id']} @ {row['last_observed_at']}）")
         print("⚠️ 本命令**不设阈值**（不写死计数）：「同一 job 反复 flaky ⇒ 必须修根因」的"
               "判定留给消费方，按 `migao-acceptance`「随机红 = 归因层失效」开单。")
