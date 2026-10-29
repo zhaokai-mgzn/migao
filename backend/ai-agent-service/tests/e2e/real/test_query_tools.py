@@ -94,7 +94,7 @@ class TestQueryTools:
     # ═══ 看板 ═══
 
     def test_dashboard_overview(self, sess):
-        """经营看板 → 验证数字与 admin-api 一致"""
+        """经营概览 → 验证数字与 admin-api 一致"""
         ev = sess.send("今天生意怎么样")
         assert "dashboard_stats" in sse_tools(ev), f"tools: {sse_tools(ev)}"
         text = sse_text(ev)

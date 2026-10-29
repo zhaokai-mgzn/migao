@@ -78,7 +78,7 @@ beforeEach(() => {
 async function renderPageText(): Promise<string> {
   const { container } = render(<SavingBoardPage />)
   await waitFor(() => expect(mockBoard).toHaveBeenCalled())
-  await waitFor(() => expect(container.textContent ?? '').toContain('省料看板'))
+  await waitFor(() => expect(container.textContent ?? '').toContain('省料分析'))
   return container.textContent ?? ''
 }
 

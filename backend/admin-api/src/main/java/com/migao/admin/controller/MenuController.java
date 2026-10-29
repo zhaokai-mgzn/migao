@@ -89,7 +89,7 @@ public class MenuController {
         //     只认这一形态（`rbac/manifest.json` 的 `menus.controller` 靠它）；
         //   · `List.of(...)` 里的**内联** `new MenuNode(…)` —— `test_menu_three_sources_are_isomorphic.py`
         //     的顶层布局序列解析器只认这一形态。
-        MenuNode d1 = new MenuNode("dashboard:view", "经营看板");
+        MenuNode d1 = new MenuNode("dashboard:view", "经营概览");
         // 智能客服：🔴 旧节点 `new MenuNode("agent:session", "会话监控")` 在 #5271 **删除** ——
         // `agent:session` 已由「在线接待」承载，而「会话监控」对应的页面 `/agent-workspace/sessions`
         // 从来不在侧边栏里 ⇒ 它只是权限树上一个重复勾选项。
@@ -155,7 +155,7 @@ public class MenuController {
         // 「改得动生产数据」就此分开）；「智能派单」按 `processing:view`（其读端点同码）。
         // 与 `AuthService.buildMenusByPermissions` 的侧边栏节点、前端 menu.ts **三处同构**
         // （漏一处 = 「岗位权限页勾得动、侧边栏看不到」）。
-        MenuNode pr1 = new MenuNode("production:view", "作业看板");
+        MenuNode pr1 = new MenuNode("production:view", "作业单");
         MenuNode prPool = new MenuNode("processing:view", "智能派单");   // #5699 P4：= 该页读码
         MenuNode pr3 = new MenuNode("production:view", "计件工资");
         // 质检记录（issue #7140 = #5652 的**商家面**）：节点码 = 该页三个端点的**方法级**
@@ -189,7 +189,7 @@ public class MenuController {
         // （2026-10-17 issue #7087 前这里举的先例是「经营看板 + 每日简报」；后者菜单项已撤，换例。）
         MenuNode i2 = new MenuNode("order:list", "发货单");
         MenuNode prRemnants = new MenuNode("processing:manage", "余料台账");
-        MenuNode prSaving = new MenuNode("product:list", "省料看板");   // #5699 P4：= 该页读码
+        MenuNode prSaving = new MenuNode("product:list", "省料分析");   // #5699 P4：= 该页读码
         // 库存明细（issue #6404）：SKU 级库存**变化流水**的读面，补 `StockLedgerController`
         //（issue #4055）javadoc 里逐字登记的显式延后项「不做前端页面」。
         // 🔴 权限码 = 该端点**方法级** `@RequirePermission("product:list")`（逐字同码，不新造码）。
@@ -234,7 +234,7 @@ public class MenuController {
             // 三处同批表达同一位置：本处（`MenuController` 顶层**首个**节点）/
             // `AuthService.buildMenusByPermissions` 的**首个**顶层 `menus.add` /
             // 前端 `menu.ts` 的 `standaloneHeadItems`（三源同构守卫按**顶层布局序列**比对，含位置）。
-            new MenuNode("dashboard:view", "经营看板"),
+            new MenuNode("dashboard:view", "经营概览"),
             // 报表中心（issue #7376 / #7377）：与经营看板同属**经营数据面** ⇒ 紧随其后、同为最前席位；
             // 码取同一把尺子 `dashboard:view`（报表是看板的下钻，零授权 delta）。
             new MenuNode("dashboard:view", "报表中心"),

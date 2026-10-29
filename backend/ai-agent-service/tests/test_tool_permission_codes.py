@@ -115,7 +115,7 @@ PERMISSION_CATALOG = frozenset({
     "processing:manage",
     "processing:view",
     "processing:update",
-    # 生产域**读**码（issue #5291）：作业看板 / 加工项 / 工艺配置 / 计件等读面此前与写面同用
+    # 生产域**读**码（issue #5291）：作业单 / 加工项 / 工艺配置 / 计件等读面此前与写面同用
     # `processing:manage`（写面码，只读持有者要么被假拒绝、要么被迫拿到写权）；本次拆出读码。
     "production:view",
     # 生产执行**写**码（issue #5699 的 I4）：把守建加工单/报工/打印/发货四个真写端点

@@ -585,7 +585,7 @@ class AuthServiceTest {
                 "production-center", "quality", "supply-chain", "inventory-center", "org-center",
                 "settings", "notifications");
         assertThat(namesOf(menus)).containsExactly(
-                "经营看板", "报表中心", "客户服务", "基础资料", "交易管理",
+                "经营概览", "报表中心", "客户服务", "基础资料", "交易管理",
                 "生产管理", "质量", "供应链", "仓储与物料", "组织管理",
                 "企业基础设置", "通知中心");
 
@@ -593,7 +593,7 @@ class AuthServiceTest {
         // 且 `children` 为空（旧形态是 `workspace` 组，组内两个节点：经营看板 + 每日简报）。
         var dashboard = menus.get(0);
         assertThat(dashboard.getKey()).isEqualTo("dashboard");
-        assertThat(dashboard.getName()).isEqualTo("经营看板");
+        assertThat(dashboard.getName()).isEqualTo("经营概览");
         assertThat(dashboard.getPath()).isEqualTo("/dashboard");
         assertThat(dashboard.getChildren()).isNullOrEmpty();
         // 反向：旧「工作台」组（含空组形态）与「每日简报」项都不再下发
@@ -690,7 +690,7 @@ class AuthServiceTest {
         // 🔴 issue #6580：「加工项管理」「工艺配置」两个菜单项已移除（功能体并入一级项
         // 「企业基础设置」页内的配置域）⇒ 只持 `production:view` 时本组剩「作业看板 + 计件工资」。
         assertThat(namesOf(production.getChildren()))
-                .containsExactly("作业看板", "计件工资");
+                .containsExactly("作业单", "计件工资");
         assertThat(pathsOf(production.getChildren())).containsExactly(
                 "/production", "/production/piecework");
         // 同组不同权：智能派单**不**随读码一起出现（拆码没有变成「一组一起放行」）
@@ -711,7 +711,7 @@ class AuthServiceTest {
         assertThat(keysOf(manageOnly)).doesNotContain("production-center");
         var inventory = groupByKey(manageOnly, "inventory-center");
         assertThat(namesOf(inventory.getChildren())).containsExactly("余料台账");
-        assertThat(allNames(manageOnly)).doesNotContain("入库单", "智能派单", "省料看板", "工艺配置", "企业基础设置");
+        assertThat(allNames(manageOnly)).doesNotContain("入库单", "智能派单", "省料分析", "工艺配置", "企业基础设置");
 
         // 新码持有者的正向读数（各自只点亮自己那一页 ⇒ 证明节点码 ≡ 页面读码）
         var poolOnly = groupByKey(menusForPermissions("processing:view"), "production-center");
@@ -721,7 +721,7 @@ class AuthServiceTest {
         // ⚠️ 2026-10-06（issue #6457）：组内顺序变为「进 → 账 → 出 → 台账 → 分析」
         // ⇒ 本权限集（只有这两页可见）的顺序是**库存明细 → 省料看板**。
         var savingOnly = groupByKey(menusForPermissions("product:list"), "inventory-center");
-        assertThat(namesOf(savingOnly.getChildren())).containsExactly("库存明细", "省料看板");
+        assertThat(namesOf(savingOnly.getChildren())).containsExactly("库存明细", "省料分析");
     }
 
     @Test
@@ -733,7 +733,7 @@ class AuthServiceTest {
         // 🔴 #7376：`dashboard:view` 现由**两个**最前席位一级项承载（经营看板 + 报表中心）。
         assertThat(keysOf(menus)).containsExactly("dashboard", "reports", "notifications");
         var dashboard = menus.get(0);
-        assertThat(dashboard.getName()).isEqualTo("经营看板");
+        assertThat(dashboard.getName()).isEqualTo("经营概览");
         assertThat(dashboard.getPath()).isEqualTo("/dashboard");
         assertThat(dashboard.getChildren()).isNullOrEmpty();
         // 反向：不得再有「工作台」组 / 「每日简报」项（也不再是「整组消失」的形态）
@@ -756,7 +756,7 @@ class AuthServiceTest {
         assertThat(keysOf(menus)).containsExactly(
                 "basic-data", "trade-center", "inventory-center", "notifications");
         assertThat(keysOf(groupByKey(menus, "inventory-center").getChildren())).containsExactly("shipments");
-        assertThat(allNames(menus)).doesNotContain("经营看板", "每日简报", "工作台");
+        assertThat(allNames(menus)).doesNotContain("经营概览", "每日简报", "工作台");
         // 负控（整组不出现，不得漏权限门控）
         assertThat(allNames(menus)).doesNotContain(
                 "每日简报", "生产管理", "智能客服", "商品与加工项", "组织管理", "客户服务");
@@ -790,7 +790,7 @@ class AuthServiceTest {
         assertThat(pathsOf(inventoryGroup.getChildren())).containsExactly("/stocktakes", "/outbound-orders");
         // 自证渲染面非空（入库单自己）+ 反向：processing:manage 的两项确实被门控挡在外面
         assertThat(allNames(menus)).contains("入库单");
-        assertThat(allNames(menus)).doesNotContain("余料台账", "省料看板", "作业看板");
+        assertThat(allNames(menus)).doesNotContain("余料台账", "省料分析", "作业单");
     }
 
     @Test

@@ -112,7 +112,7 @@ test.describe('岗位权限管理页面（#2969 由角色权限改名）', () =>
     // 「经营看板」是一级项、**不属于任何组** ⇒ 它渲染在专属容器 `perm-standalone-head` 里
     //（#5895 的缺陷形态 = 一级项整项缺席权限树；#7087 又把它从组内项升成一级项 ⇒ 容器随之改变）。
     const headTier = page.permissionTree.getByTestId('perm-standalone-head')
-    await expect(headTier.getByText('经营看板', { exact: true })).toBeVisible()
+    await expect(headTier.getByText('经营概览', { exact: true })).toBeVisible()
     await expect(headTier.getByText('dashboard:view', { exact: true })).toBeVisible()
     const topTier = page.permissionTree.getByTestId('perm-standalone-top')
     await expect(topTier.getByText('商品管理', { exact: true })).toBeVisible()

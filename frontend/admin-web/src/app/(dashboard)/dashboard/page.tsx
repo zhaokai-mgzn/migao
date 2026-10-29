@@ -578,7 +578,7 @@ export default function DashboardPage() {
       <div className="mb-5 flex items-center justify-between">
         <PageHeader
           className="w-full"
-          title="经营看板"
+          title="经营概览"
           subtitle={`数据更新时间：${updateTime}`}
           actions={
             <button

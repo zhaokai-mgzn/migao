@@ -193,7 +193,7 @@ describe('读失败不得与「0 / 暂无数据」式断言同屏（类级元守
     expect(probe("<X value={stats?.todayOrders?.toLocaleString() || '0'} />")).toEqual({ counts: [], empties: [] })
     expect(probe('const v = stats?.monthRevenue ?? 0')).toEqual({ counts: [], empties: [] })
     // ③ 无关文案：页头 / 区块标题 / 无断言的普通数字
-    expect(probe('<h1 className="text-xl font-semibold text-neutral-900">经营看板</h1>')).toEqual({ counts: [], empties: [] })
+    expect(probe('<h1 className="text-xl font-semibold text-neutral-900">经营概览</h1>')).toEqual({ counts: [], empties: [] })
     expect(probe('const todaySalesState = 0')).toEqual({ counts: [], empties: [] })
   })
 })

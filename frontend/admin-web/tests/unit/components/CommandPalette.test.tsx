@@ -136,7 +136,7 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
     expect(highlightedKeys()[0]).toBe('dashboard')
     // ③ 它是**一级项**：面板上不显示组名标签（`groupName` 空串）
     const item = screen.getByTestId('command-palette-item-dashboard')
-    expect(item.textContent).toContain('经营看板')
+    expect(item.textContent).toContain('经营概览')
     // 对照：组内项照旧显示所属组名（证明「不显示组名」不是渲染坏了）
     expect(screen.getByTestId('command-palette-item-orders').textContent).toContain('交易管理')
   })

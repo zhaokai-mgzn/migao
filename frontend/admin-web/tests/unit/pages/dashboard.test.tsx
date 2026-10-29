@@ -129,7 +129,7 @@ describe('DashboardPage', () => {
   it('should render page heading', async () => {
     render(<DashboardPage />)
     await waitFor(() => {
-      expect(screen.getByText('经营看板')).toBeInTheDocument()
+      expect(screen.getByText('经营概览')).toBeInTheDocument()
     })
   })
 
@@ -607,7 +607,7 @@ describe('DashboardPage', () => {
     mockGetStats.mockRejectedValue(new Error('Network error'))
     render(<DashboardPage />)
     await waitFor(() => {
-      expect(screen.getByText('经营看板')).toBeInTheDocument()
+      expect(screen.getByText('经营概览')).toBeInTheDocument()
     })
   })
 
@@ -771,7 +771,7 @@ describe('DashboardPage', () => {
       sel ? sel({ user: { capabilities: {} } }) : { user: { capabilities: {} } },
     )
     const { unmount } = render(<DashboardPage />)
-    await waitFor(() => expect(screen.getByText('经营看板')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('经营概览')).toBeInTheDocument())
     expect(screen.queryByTestId('dashboard-card-ai-service-rate')).toBeNull()
     // 反向自证：**不得**用 0 占位冒充「未购买」
     expect(screen.queryByText('AI 接待占比')).toBeNull()
@@ -782,7 +782,7 @@ describe('DashboardPage', () => {
       sel ? sel({ user: { capabilities: { aiService: false } } }) : { user: { capabilities: { aiService: false } } },
     )
     render(<DashboardPage />)
-    await waitFor(() => expect(screen.getByText('经营看板')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('经营概览')).toBeInTheDocument())
     expect(screen.queryByTestId('dashboard-card-ai-service-rate')).toBeNull()
   })
 
@@ -1071,7 +1071,7 @@ describe('DashboardPage', () => {
     await screen.findByTestId('dashboard-load-failed')
     await waitFor(() => {
       // 屏上确实渲染过（否则下面的否定断言在空页上恒真 —— 空断言）
-      expect(screen.getByText('经营看板')).toBeInTheDocument()
+      expect(screen.getByText('经营概览')).toBeInTheDocument()
     })
     const body = document.body.textContent ?? ''
     // N1：`total = data.reduce(…)` 的初值是 0 ⇒ 改前这里就是「共 0 单」

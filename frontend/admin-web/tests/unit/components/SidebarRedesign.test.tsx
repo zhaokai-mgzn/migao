@@ -327,7 +327,7 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
     for (const name of Object.values(GROUP_NAMES)) {
       expect(screen.queryByText(name)).toBeNull()
     }
-    for (const name of ['经营看板', '通知中心', '销售订单', '余料台账', '岗位权限']) {
+    for (const name of ['经营概览', '通知中心', '销售订单', '余料台账', '岗位权限']) {
       expect(screen.queryByText(name)).toBeNull()
     }
     // 但链接元素**在**（图标栏），且文本被剥掉（只剩图标）

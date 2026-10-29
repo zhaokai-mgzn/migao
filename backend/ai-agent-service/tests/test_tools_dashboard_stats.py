@@ -1,4 +1,4 @@
-"""DashboardStatsTool 单元测试 — 经营看板 5 类统计查询"""
+"""DashboardStatsTool 单元测试 — 经营概览 5 类统计查询"""
 # case_ids: DA-001, DA-002, DA-003, DA-005
 import pytest
 from unittest.mock import AsyncMock, patch
@@ -52,7 +52,7 @@ class TestDashboardPermission:
         assert tool.check_permission(customer_service_ctx) is True
 
     def test_operator_allowed(self, tool):
-        # operator 员工（admin-api 签发角色码）应能查经营看板
+        # operator 员工（admin-api 签发角色码）应能查经营概览
         op_ctx = ToolContext(
             tenant_id=1, user_id="op_001", session_id="s",
             role="operator", permissions=["dashboard:view"],

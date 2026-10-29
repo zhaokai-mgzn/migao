@@ -237,7 +237,7 @@ P4_AUTHORIZATION_CENSUS: dict[str, dict[str, object]] = {
             "这不是收窄（该岗位今日尚不存在），是**新增岗位的可见面定义**。"
         ),
         "units_changed": (),
-        "menu_nodes": ("frontend:经营看板", "auth:经营看板", "controller:经营看板"),
+        "menu_nodes": ("frontend:经营概览", "auth:经营概览", "controller:经营概览"),
     },
     "/production/pool": {
         "gate_before": "processing:manage",
@@ -268,7 +268,7 @@ P4_AUTHORIZATION_CENSUS: dict[str, dict[str, object]] = {
             "`operator` / `product_manager` / `admin` 两码都持 ⇒ 无变化。**失去者：无**。"
         ),
         "units_changed": (),
-        "menu_nodes": ("frontend:省料看板", "auth:省料看板", "controller:省料看板"),
+        "menu_nodes": ("frontend:省料分析", "auth:省料分析", "controller:省料分析"),
     },
     # 🔴 2026-10-09（issue #6580）：`/production/processing`（加工项管理）与 `/production/routings`
     # （工艺配置）两条 census 条目**随菜单项移除而销账**（两页已不在清单 `pages[]` 里 —— 它们不再是

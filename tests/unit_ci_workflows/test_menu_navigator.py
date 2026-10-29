@@ -1160,7 +1160,8 @@ class TestEveryJudgementCanGoRed:
             MENU_TREE = (
                 type("N", (), {"group": "org-center", "label": "员工管理",
                                "path": "/employees", "permission_code": "employee:list"})(),
-                type("N", (), {"group": "workspace", "label": "经营看板",
+                # 🔴 2026-10-29（issue #8100）：正名后菜单名 = 「经营概览」—— 红证要与**真**菜单树漂移
+                type("N", (), {"group": "workspace", "label": "经营概览",
                                "path": "/dashboard", "permission_code": "dashboard:view"})(),
             )
             menu_node = staticmethod(
@@ -1170,7 +1171,7 @@ class TestEveryJudgementCanGoRed:
         problems = problems_feature_map_sync(_Stub, menu_ts_nodes)
         with capsys.disabled():
             print(f"[MC-071][红证9] 镜像漂移 ⇒ problems={len(problems)} :: {problems[:1]}")
-        assert any("经营看板" in p for p in problems), f"未登记的菜单项没被报出：{problems}"
+        assert any("经营概览" in p for p in problems), f"未登记的菜单项没被报出：{problems}"
         assert problems_feature_map_sync(nav, menu_ts_nodes) == [], "对照：真模块必须绿"
 
         # 另一半：登记项**没有**一条逐字等于菜单名的说法（menu.ts 改名没同批改）⇒ 也红

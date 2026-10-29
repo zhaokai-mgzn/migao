@@ -277,7 +277,7 @@ describe('RolesPage', () => {
     // 它带的码 `dashboard:view` 因此仍**可授予**（否则「勾得动 / 看不到」漂移 —— 与 #5895 同一形态）；
     // 同批「每日简报」菜单项**已删除**（功能保留：企业开关仍驱动经营看板上的结论卡）。
     const head = within(tree.getByTestId('perm-standalone-head'))
-    expect(head.getByText('经营看板')).toBeInTheDocument()
+    expect(head.getByText('经营概览')).toBeInTheDocument()
     // 报表中心（issue #7376）与经营看板**同码**（报表就是看板的下钻，零授权 delta）⇒
     // 权限树里两个节点都渲染同一个码 —— 与既有「入库单 / 供应商 / 采购单 同取 inbound:view」同款，
     // 勾任一个即授予该码（这是码粒度决定的，不是本页的 bug）。
@@ -296,12 +296,12 @@ describe('RolesPage', () => {
     expect(tree.getByText('财务对账')).toBeInTheDocument()
     // #5778：生产管理组 5 项（含移入的「加工项管理」）+「仓储与物料」3 项都要在权限树里
     //（否则「勾得动/看不到」漂移）
-    expect(tree.getByText('作业看板')).toBeInTheDocument()
+    expect(tree.getByText('作业单')).toBeInTheDocument()
     expect(tree.getByText('智能派单')).toBeInTheDocument()
     expect(tree.getByText('计件工资')).toBeInTheDocument()
     expect(tree.getByText('入库单')).toBeInTheDocument()
     expect(tree.getByText('余料台账')).toBeInTheDocument()
-    expect(tree.getByText('省料看板')).toBeInTheDocument()
+    expect(tree.getByText('省料分析')).toBeInTheDocument()
     expect(tree.getByText('员工管理')).toBeInTheDocument()
     expect(tree.getByText('岗位权限')).toBeInTheDocument()
     // 🔴 #6580：「企业基础设置」（原名「企业基础信息」）现为**一级项**
@@ -442,7 +442,7 @@ describe('RolesPage', () => {
     ].filter(item => item.permissionCode)
     expect(coded.length).toBeGreaterThan(0) // 反空跑：没有可判的对象时本判据不算通过
     // 点名最前席位（避免将来又把它漏掉时这条判据「恰好」还是绿的）
-    expect(coded.map(i => i.name)).toContain('经营看板')
+    expect(coded.map(i => i.name)).toContain('经营概览')
     for (const item of coded) {
       const hit = rows.some(text => text.includes(item.name) && text.includes(item.permissionCode!))
       expect(hit, `菜单节点「${item.name}」(${item.permissionCode}) 未出现在权限树 —— 梯队接线漏了`).toBe(true)
@@ -455,7 +455,7 @@ describe('RolesPage', () => {
     const container = await screen.findByTestId('perm-menu-sections')
     const head = within(container).getByTestId('perm-standalone-head')
     const top = within(container).getByTestId('perm-standalone-top')
-    expect(within(head).getByText('经营看板')).toBeInTheDocument()
+    expect(within(head).getByText('经营概览')).toBeInTheDocument()
     // 报表中心（#7376）与经营看板同码（报表是看板的下钻）⇒ 同码两节点各自渲染，勾任一即授予该码
     expect(within(head).getByText('报表中心')).toBeInTheDocument()
     expect(within(head).getAllByText('dashboard:view')).toHaveLength(2)
@@ -738,8 +738,8 @@ describe('RolesPage 默认菜单 = 后台 + 手机端（issue #7146）', () => {
       data: [
         {
           code: 'dashboard',
-          label: '经营看板',
-          children: [{ code: 'dashboard:view', label: '经营看板', mobileTitles: titles['dashboard:view'] || [] }],
+          label: '经营概览',
+          children: [{ code: 'dashboard:view', label: '经营概览', mobileTitles: titles['dashboard:view'] || [] }],
         },
         {
           code: 'customer-service',
@@ -772,7 +772,7 @@ describe('RolesPage 默认菜单 = 后台 + 手机端（issue #7146）', () => {
     fireEvent.click(within(card).getByRole('button', { name: /默认菜单/ }))
     // 报表中心（#7376）与经营看板同码 ⇒ 勾了 dashboard:view 的岗位默认菜单里**两项都在**
     expect(await screen.findByTestId('role-default-menu-backend-customer_service')).toHaveTextContent(
-      '经营看板、报表中心、在线接待、价格本、销售订单',
+      '经营概览、报表中心、在线接待、价格本、销售订单',
     )
     expect(screen.getByTestId('role-default-menu-mobile-customer_service')).toHaveTextContent('数据、坐席')
     expect(within(card).getByRole('button', { name: /默认菜单/ })).toHaveAttribute('aria-expanded', 'true')
