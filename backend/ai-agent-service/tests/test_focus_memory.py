@@ -167,6 +167,31 @@ def test_prompt_injection_skips_c_end():
     assert focus_mod.inject_focus_prompt("BASE", state) == "BASE"
 
 
+# ── 3b. 指代接线：命中才追加一行（空 / 类型不匹配 / C 端 ⇒ 零追加）────────────
+def test_reference_hint_line_on_order_match():
+    line = focus_mod.reference_hint_line("这单的明细", _ORDER_FOCUS)
+    assert line == "本轮指代：「这单」= 订单 #7732"
+    assert "\n" not in line
+
+
+def test_reference_hint_line_customer_under_order_focus_is_empty():
+    # 负例：订单焦点下说「这个客户」⇒ 不追加（改成「出现」即本条红）
+    assert focus_mod.reference_hint_line("这个客户的电话", _ORDER_FOCUS) == ""
+
+
+def test_reference_hint_line_without_focus_is_empty():
+    assert focus_mod.reference_hint_line("这单的明细", {}) == ""
+
+
+def test_prepare_turn_wires_reference_hint():
+    """接线守卫（§28.2）：删掉 prepare_turn 里的追加 / mibao 门 ⇒ 本条红。"""
+    source = (_APP / "graph/skills/execution/prepare_turn.py").read_text(encoding="utf-8")
+    assert 'if resolve_reference(_confirm_msg, state.get("focus")):' in source
+    assert 'system_prompt += "\\n" + reference_hint_line(_confirm_msg, state.get("focus"))' in source
+    # C 端逐字节不变的结构门（xiaobu 不进这段）
+    assert 'if state.get("agent_type") == "mibao":' in source
+
+
 # ── 4. recent 封顶 3 条 ────────────────────────────────────────────────────
 def test_recent_is_capped_at_three():
     current = {}

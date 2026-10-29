@@ -11,7 +11,7 @@
 有意不做（边界）：长期画像 `user_memories`（B 端仍关闭，见 #2815）；LLM 指代消解。
 """
 
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 FOCUS_KEY = "focus"
 MAX_RECENT = 3
@@ -247,6 +247,20 @@ def inject_focus_prompt(system_prompt: str, state: Any) -> str:
     return f"{system_prompt}\n\n{block}"
 
 
+def _match_reference(text: Any) -> Tuple[str, str]:
+    """返回本轮文本命中的 (实体类型, 指代词)；未命中 ⇒ ("", "")。"""
+    content = str(text or "")
+    for entity, tokens in (
+        (ENTITY_ORDER, _ORDER_REF_TOKENS),
+        (ENTITY_CUSTOMER, _CUSTOMER_REF_TOKENS),
+        (ENTITY_PRODUCT, _PRODUCT_REF_TOKENS),
+    ):
+        for token in tokens:
+            if token in content:
+                return entity, token
+    return "", ""
+
+
 def resolve_reference(text: Any, focus: Any) -> Optional[str]:
     """确定性指代解析（不调 LLM）：命中且**焦点类型匹配**才返回 id，否则 None。
 
@@ -257,14 +271,25 @@ def resolve_reference(text: Any, focus: Any) -> Optional[str]:
     current = normalize_focus(focus)
     if not current:
         return None
-    content = str(text or "")
-    if any(token in content for token in _ORDER_REF_TOKENS):
-        return current["id"] if current["entity"] == ENTITY_ORDER else None
-    if any(token in content for token in _CUSTOMER_REF_TOKENS):
-        return current["id"] if current["entity"] == ENTITY_CUSTOMER else None
-    if any(token in content for token in _PRODUCT_REF_TOKENS):
-        return current["id"] if current["entity"] == ENTITY_PRODUCT else None
-    return None
+    entity, _token = _match_reference(text)
+    if entity != current["entity"]:
+        return None
+    return current["id"]
+
+
+def reference_hint_line(text: Any, focus: Any) -> str:
+    """命中且焦点类型匹配 ⇒ 一行「本轮指代：「这单」= 订单 #7732」；否则空串。
+
+    调用方（`prepare_turn`）只在 `resolve_reference` 命中时追加，空串一行都不加。
+    """
+    current = normalize_focus(focus)
+    if not current:
+        return ""
+    entity, token = _match_reference(text)
+    if entity != current["entity"]:
+        return ""
+    label = _ENTITY_LABELS.get(entity, entity)
+    return f"本轮指代：「{token}」= {label} {current['label']}"
 
 
 async def remember_from_tool_results(
