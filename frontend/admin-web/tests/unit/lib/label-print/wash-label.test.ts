@@ -324,7 +324,7 @@ describe('🔴 专属唛短纸（issue #8107）：纸高按 `input.media` 取，
     )
     // 逐行文本首尾相接 == 行清单（有行被裁 ⇒ 必红）
     expect(layout.lines.map((line) => line.text).join('')).toBe(OPTION_ROWS.map((row) => row.text).join(''))
-    // 抬头标记照画（12pt 加粗），且不压正文
+    // 抬头标记照画（**16pt 加粗**，issue #8107 追加口径；改小 / 去掉 ⇒ 本条与 metrics 判据必红），且不压正文
     expect(layout.company.map((line) => line.text)).toEqual(['亿家纺织', '余料带回'])
     expect(layout.lines[0].y).toBeGreaterThan(layout.company[layout.company.length - 1].y)
     // 二维码仍在纸内、离底（底部虚线）恒 ≥ 15mm

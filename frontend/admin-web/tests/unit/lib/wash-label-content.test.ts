@@ -721,6 +721,19 @@ describe('专属唛瘦身 —— 只印 5 行 + 二维码，纸型 50×100（iss
   it('🔴 负控：常规唛仍是 15 行、一字未改（专属唛瘦身不许波及常规唛）', () => {
     const rows = fullRows()
     expect(rows).toHaveLength(15)
+    // 🔴 issue #8145 收口：常规唛的**行集合与纸型**没变，但「特殊选项」行**确实**变了 ——
+    // 它随 #8007 全系统展示归一改印展示名（`余料带回-布` ⇒ `余料带回`、`布绑带` ⇒ `绑带`）。
+    // 有人把纸面改回 join key（`余料带回-布、布绑带`）⇒ 下面这条逐字断言必红。
+    const familyRegular = textOf(
+      washLabelRows({
+        position: POSITION,
+        item: { ...ITEM, specialOptions: ['余料带回-布', '布绑带'] } as unknown as ProcessingOrderItem,
+        variant: 'regular',
+      }),
+      'specialOptions',
+    )
+    expect(familyRegular).toBe('特殊选项: 余料带回、绑带')
+
     expect(rows.map((row) => row.key)).toEqual([...WASH_LABEL_ROW_KEYS])
     // 缺省 variant = 常规
     expect(rows.map((row) => row.key)).toEqual(

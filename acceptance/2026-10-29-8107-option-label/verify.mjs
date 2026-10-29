@@ -108,13 +108,13 @@ const HTML = `<!doctype html><html><head><meta charset="utf-8"><style>${CSS}</st
     <div>安装位置: 主卧</div><div>第 1 套 / 共 2 套</div><div>帘种: 布帘</div>
     <div>货号: 米白</div><div>门幅: 2.8米</div><div>用料: 6.3米</div><div>宽高: 3×2.75米</div>
     <div>韩褶 · 超高 · 倒幅 · 双开 · 定型</div><div>褶法: 韩褶公式 52折</div>
-    <div>特殊选项: 余料带回、布绑带</div><div>备注: 加铅块</div><div>布料批次: PC-20261026-0001</div>
+    <div>特殊选项: 余料带回、绑带</div><div>备注: 加铅块</div><div>布料批次: PC-20261026-0001</div>
     <div class="qr"></div>
   </div>
   <div class="task-card-label task-card-label--option" data-print-sheet data-sheet-paper-mm="50x100">
     <div style="font-size:14pt;font-weight:700">亿家纺织</div><div style="font-size:16pt;font-weight:700">余料带回</div>
     <div>货号: 米白</div><div>门幅: 2.8米</div><div>宽高: 3×2.75米</div>
-    <div>韩褶 · 超高 · 倒幅 · 双开 · 定型</div><div>特殊选项: 余料带回、布绑带</div>
+    <div>韩褶 · 超高 · 倒幅 · 双开 · 定型</div><div>特殊选项: 余料带回、绑带</div>
     <div class="qr"></div>
   </div>
 </body></html>`

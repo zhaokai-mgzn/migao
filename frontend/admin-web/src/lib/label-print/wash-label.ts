@@ -7,7 +7,8 @@
  * 用户 2026-10-10 逐字：「**直连打印机打印的样式和水洗唛预览打印的样式完全不一样，能不能做成一样的**」
  * ⇒ 本模块与 `frontend/admin-web/src/components/production/TaskCardPrint.tsx` 读**同一份**：
  * 同一份有序行清单（`lib/wash-label-content.ts` 的 `washLabelRows` = 唯一内容真值）、
- * 同一份介质（`label-50x140`）、同一份字号口径（`lib/label-print/wash-label-metrics.ts`）。
+ * 同一份**介质矩阵**（**按张取**：常规唛 `label-50x140` / 专属唛 `label-50x100`，issue #8107）、
+ * 同一份字号口径（`lib/label-print/wash-label-metrics.ts`）。
  * 本文件只负责**排版**（CSS 与 canvas 是两套排版引擎）。
  *
  * ## 两条通道**唯一不可统一**的一处：纸的物理宽度
