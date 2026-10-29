@@ -11340,24 +11340,24 @@
 真值: product-sku-stock.status-flow
 溯源: 2026-10-24 新增（用户裁定逐字：「我们现在商品中设置了库存数值，这个要移除了，要根据真实库存数据来」；同日两问的选择：① 移除范围 = A「表单不再录入，库存只由真实单据产生」；② 存量数据 = C「清零，只认真实入库」，该选项原文写明「会改变现网可售数量，风险最高」）。为什么是「按真实单据净额重算」而不是无脑置 0：置 0 会让「入库 60 米」的商品变成 0 而 `stock_batches` 仍有 60 米，`BatchStockViews` 的 `diff = batchRemaining − skuStock` 恒等式当场破；纯手工库存的商品算出 0 = 用户选择的「清零」。 ｜ tags: product, stock, product_contract, data_migration
 
-### PR-133. 冒烟 · 改价闭环：一句「把遮光窗帘的价格改成 199」→ 改前→改后确认卡 → 点卡后真写 🟢
+### PR-133. 冒烟 · 改价闭环：一句「把 2699系列雪尼尔窗帘面料 的价格改成 25.8 元」→ 改前→改后确认卡 → 点卡后真写 🟢
 ```
-你: 把遮光窗帘的价格改成 199
-你: 确认
+你: 把 2699系列雪尼尔窗帘面料 的价格改成 25.8 元
+你: [🔁 按目标工具重复直至成功：product_update，最多 3 次]
 端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
-期望: product_update(product_id=遮光窗帘, price=199)
+期望: product_update(product_id=2699系列雪尼尔窗帘面料, price=25.8)
 数据: 改前价必须取自 product_detail 的返回（before_price 必填，漏传即 price_preview_required 拦截：tests/test_price_preview_guard.py）
 数据: 先发「改前 → 改后」确认卡，点卡之后才允许改（order_before 机器断言）
-数据: 改的是商品级 base_price：168 → 199，跑完由 post_clean 复位的回读自证
-复位: product_price_restore(product_keyword=遮光窗帘、price=168)
-前置: product_count_for_keyword(source=遮光窗帘、expect=1)
-命名空间(同键互斥·自动串行): product_name:遮光窗帘
+数据: 改的是商品级 base_price：23.8 → 25.8，跑完由 post_clean 复位的回读自证（种子真值见 tests/agent_eval/fixtures/mibao_eval_seed.sql 的 prod_eval_2699）
+复位: product_price_restore(product_keyword=2699系列雪尼尔窗帘面料、price=23.8)
+前置: product_count_for_keyword(source=2699系列雪尼尔窗帘面料、expect=1)
+命名空间(同键互斥·自动串行): product_name:2699系列雪尼尔窗帘面料
 时序: interact[confirm] before product_update
 必填: product_update() 字段 product_id, price, before_price
 必须成功: product_update
 ```
 真值: id-resolve.name, id-resolve.no-fabricate
-溯源: 2026-10-29 新增（issue #8116，P0-2）：smoke 档原有 8 条**全是只读列表查询**，写路径一条都没有 ⇒ 任何写链路回归只能靠 48 分钟的 normal 才发现。本用例是「冒烟档的写面代表」（与 normal 档的 PR-009/PR-010 同族，刻意收窄到两轮：诉求 → 点卡 → 真写）。 ｜ tags: write, price, write_path, smoke
+溯源: 2026-10-29（issue #8142）修**答卡形态**：原第 2 轮裸文本「确认」不放行写操作（文字≠点卡，#3518/#3568）⇒ 模型再调 product_update 被 `confirmation_required_card_not_clicked` 拒绝（smoke run 40898419998 实证）⇒ 改用 #3430/#5303 的 `repeat_until[product_update] + fallback 确认` 协作答卡范式；并换种子商品（2699系列雪尼尔窗帘面料 23.8→25.8）避免与 PR-009 重复写同一商品/同一目标价。断言面：must_succeed / required_args(before_price) / order_before(interact[confirm] before product_update) / post_clean(product_price_restore 23.8) 一条未减。 ｜ 2026-10-29 新增（issue #8116，P0-2）：smoke 档原有 8 条**全是只读列表查询**，写路径一条都没有 ⇒ 任何写链路回归只能靠 48 分钟的 normal 才发现。本用例是「冒烟档的写面代表」（与 normal 档的 PR-009/PR-010 同族，刻意收窄到两轮：诉求 → 点卡 → 真写）。 ｜ tags: write, price, write_path, smoke
 
 ## 工具注册器域（1 case）
 
