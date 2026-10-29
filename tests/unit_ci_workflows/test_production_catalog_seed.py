@@ -1188,16 +1188,19 @@ def test_erp_leftover_return_forms_are_all_explicitly_registered():
     `余料带回-布` / `余料带回-纱` = 显式登记的**不计件**（注册表按派生键，join key 不动）；
     `余料带回`（无后缀）= **布/纱派生族的 base 名**（issue #8007，用户 2026-10-28 裁定
     「只需要展示余料带回即可，-布 / -纱 跟随订单套行的帘种」）⇒ 登记在 `SPECIAL_OPTION_FAMILIES`。
+    `绑带`（issue #8108，用户 2026-10-29 逐字「把这两项也合并成一个绑带选项，布/纱是跟随帘种
+    来确定的」）同理：它是 `布绑带` / `纱绑带` 两键的 base 名，同样只登记在派生族、不落任何表。
     """
     _, _, non_piecework, families = _routing_py_option_registries()
     assert {"余料带回-布", "余料带回-纱"} <= non_piecework, \
         f"ERP 名的不计件项未登记: {sorted({'余料带回-布', '余料带回-纱'} - non_piecework)}"
     assert "余料带回" in families, "派生族 base 名（无后缀 `余料带回`）零登记 = 静默黑洞"
+    assert "绑带" in families, "派生族 base 名 `绑带` 零登记 = 静默黑洞（issue #8108）"
     # 三形态都不得落表（「不计件」与「派生族 base」都**不是**「有映射」）
     for table, columns in (("production_option_factors", OPTION_FACTOR_COLUMNS),
                            ("production_option_routings", OPTION_ROUTING_COLUMNS)):
         names = {r["option_name"] for r in effective_option_rows(table, columns)}
-        assert names & {"余料带回-布", "余料带回-纱", "余料带回"} == set(), \
+        assert names & {"余料带回-布", "余料带回-纱", "余料带回", "绑带"} == set(), \
             f"{table} 里落了不计件/派生族 base（会把「不计件」变成「有映射但系数 1」）"
     # 终态面（issue #5245 A4 改判）：表已删 ⇒ 终态不存在「落表」这一可能（判据改指退场）
     _terminal_retired_tables_absent(SCHEMA.read_text(encoding="utf-8"))

@@ -38,7 +38,7 @@ NOTIFICATION_TOOLS = [
 ]
 
 # 通知域专用 System Prompt
-NOTIFICATION_SYSTEM_PROMPT = """## 本域：站内通知查询 + 标记已读（issue #7040）
+NOTIFICATION_SYSTEM_PROMPT = """## 本域：站内通知查询 + 标记已读
 
 商家问「有没有通知 / 未读数」时用 `notification_manage(action=list|unread_count)`；
 说「标为已读 / 都标已读」时用 `action=mark_read`（需 notification_id）或 `action=read_all`。

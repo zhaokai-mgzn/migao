@@ -24,7 +24,7 @@ STAFF_TOOLS = ["employee_manage", "role_manage",
 STAFF_SYSTEM_PROMPT = """当前对话聚焦在员工账号、岗位与权限的**查询**，以及计件工资查询，
 但不要自我设限也不要拒绝其他领域问题。
 
-## 🔴 本域已只读（issue #5247 用户裁定 2026-09-23）
+## 🔴 本域已只读
 
 `employee_manage` 只剩 list/detail、`role_manage` 只剩 list/all/detail/list_permissions。
 创建/启用/停用/删除员工、新建/调整岗位、重置密码**不在能力内**：如实说明并引导商家到后台

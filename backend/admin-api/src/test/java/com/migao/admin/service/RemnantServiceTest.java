@@ -244,6 +244,41 @@ class RemnantServiceTest {
                 .as("🔴 客户带走的余料不入可用池（行业做法 1：本来就是客户的）").isEqualTo(2);
     }
 
+    @Test
+    @DisplayName("🔴 issue #8108：勾「布绑带 / 纱绑带」的单 **不** 落 customer_taken（余料照常进可用池）")
+    void bandingOptionDoesNotMarkRemnantsAsCustomerTaken() throws Exception {
+        long batchId = db.newBatch("PC-8108-A1", RemnantTestDb.DYE_LOT);
+        RemnantService.Source source = new RemnantService.Source(batchId, "PC-8108-A1",
+                RemnantTestDb.PRODUCT_ID, RemnantTestDb.SKU_ID, RemnantTestDb.SKU_CODE);
+        List<RemnantService.Draft> drafts = List.of(
+                new RemnantService.Draft(1, FabricRemnant.KIND_WIDTH, new BigDecimal("3.00"),
+                        new BigDecimal("0.30")));
+
+        // 红证（修复前）：`OptionFamilyNames.isCustomerTakeAway` 用「任一族成员」判定 ⇒
+        // 「绑带」族登记进来之后，勾绑带的单会被误判成「客户带走余料」⇒ 余料落 customer_taken、
+        // 不进可用池、不可回收 / 不可报废 = 静默账错。本判据就是那条反向判据的服务级落点。
+        for (String banding : List.of("布绑带", "纱绑带")) {
+            String orderNo = "ORD-8108-" + banding;
+            String orderId = "acc-8108-" + banding;
+            db.exec("INSERT INTO orders (id, tenant_id, order_no, status, total_amount) VALUES"
+                    + " ('" + orderId + "', " + RemnantTestDb.TENANT_ID + ", '" + orderNo
+                    + "', 'confirmed', 0)");
+            db.exec("INSERT INTO order_items (id, tenant_id, order_id, product_id, quantity,"
+                    + " processing_info) VALUES ('" + orderId + "-ITEM', " + RemnantTestDb.TENANT_ID
+                    + ", '" + orderId + "', '" + RemnantTestDb.PRODUCT_ID + "', 1,"
+                    + " '{\"specialOptions\":[\"" + banding + "\"]}'::jsonb)");
+
+            assertThat(service.accrue(RemnantTestDb.TENANT_ID, "JG-" + orderNo, orderNo, source, drafts))
+                    .as("勾绑带的单照常登记余料（账要平，只是不归客户带走）").isEqualTo(1);
+            assertThat(db.scalar("SELECT COUNT(*) FROM fabric_remnants WHERE source_order_no = '"
+                    + orderNo + "' AND status = '" + FabricRemnant.STATUS_AVAILABLE + "'").longValue())
+                    .as("勾%s ≠ 客户带走余料 ⇒ 必须落可用池", banding).isEqualTo(1);
+            assertThat(db.scalar("SELECT COUNT(*) FROM fabric_remnants WHERE source_order_no = '"
+                    + orderNo + "' AND status = '" + FabricRemnant.STATUS_CUSTOMER_TAKEN + "'").longValue())
+                    .as("勾%s 不属「余料带回」族 ⇒ 不得进 customer_taken", banding).isZero();
+        }
+    }
+
     // ────────────────────────────────────────────── 判据：seeded 小件尺寸（可配参数）读面
 
     @Test

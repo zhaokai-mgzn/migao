@@ -15,7 +15,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { printDotGeometry, printPageBoxMm, printPageRule } from '@/lib/print-media'
+import { printDotGeometry, printNamedPageRule, printPageBoxMm, printPageRule } from '@/lib/print-media'
 import {
   WASH_LABEL_BODY_FONT_PT,
   WASH_LABEL_BOTTOM_CLEARANCE_MM,
@@ -77,6 +77,28 @@ describe('水洗唛版面度量：TS 单一真值 ⇄ 组件 CSS（改一处不�
     expect(printDotGeometry('label-50x140').heightPx).toBe(1120)
   })
 
+  it('🔴 两种纸长同源（issue #8107）：专属唛容器 = 矩阵 `label-50x100`、命名 `@page` 与矩阵逐字一致（改一处 ⇒ 两处红）', () => {
+    // ① 基类仍是 140mm —— 瘦身只发生在 `--option` 那个修饰类上
+    expect(css).toContain('height: 140mm')
+    expect(css).not.toContain('height: 100mm')
+    const optionBlock = /\.task-card-label--option\s*\{([^}]*)\}/.exec(source)
+    if (!optionBlock?.[1]) throw new Error('找不到 `.task-card-label--option { … }` —— 判据无从取值（不得静默通过）')
+    // ② 专属唛容器高 == 介质矩阵的 `label-50x100` 高（只改 CSS 不改矩阵 ⇒ 红；反之亦然）
+    expect(optionBlock[1]).toContain(`height: ${printPageBoxMm('label-50x100').heightMm}mm`)
+    // ③ 命名页名在 CSS 里（同一份打印任务里两种纸高并存）
+    expect(optionBlock[1]).toContain('page: wash-label-option')
+    // ④ 命名 `@page` 由 printNamedPageRule 从**矩阵**取，渲染器不自写 `@page` 字面量
+    expect(source).toContain("printNamedPageRule('wash-label-option', 'label-50x100')")
+    expect(printNamedPageRule('wash-label-option', 'label-50x100')).toBe(
+      '@page wash-label-option { size: 50mm 100mm; margin: 0; }',
+    )
+    // ⑤ 位图通道读**同一份**介质（`input.media` ⇒ 矩阵），不写第二份纸长
+    const bitmap = readFileSync(resolve(process.cwd(), 'src/lib/label-print/wash-label.ts'), 'utf-8')
+    expect(bitmap).toContain('printPageBoxMm(washLabelMediaOf(input))')
+    expect(printPageBoxMm('label-50x100')).toEqual({ widthMm: 50, heightMm: 100 })
+    expect(printDotGeometry('label-50x100').heightPx).toBe(800)
+  })
+
   it('🔴 加工项 = **加黑加粗**（两条通道同读一份常量；一方加粗一方不加 ⇒ 红；issue #7987）', () => {
     expect(WASH_LABEL_EMPHASIS_ROW_KEYS).toEqual(['craft'])
     // 系统打印：组件按该常量加 `font-bold`（写死行名 = 第二份真值 ⇒ 下面这条必红）
@@ -90,10 +112,19 @@ describe('水洗唛版面度量：TS 单一真值 ⇄ 组件 CSS（改一处不�
   it('抬头 / 二维码 / 占位框的字号与边长逐值一致', () => {
     expect(source).toContain(`text-[${WASH_LABEL_COMPANY_FONT_PT}pt] font-bold`)
     expect(source).toContain(`text-[${WASH_LABEL_COMPANY_SUBTITLE_FONT_PT}pt]`)
-    // 🔴 专属唛（issue #8002）的副标题 = 12pt 加粗、常规唛 = 10pt 常规 —— 两条通道同读这一份常量
-    expect(WASH_LABEL_OPTION_SUBTITLE_FONT_PT).toBe(12)
+    // 🔴 专属唛（issue #8002 → #8107）的副标题 = **16pt** 加粗、常规唛 = 10pt 常规 —— 两条通道同读这一份常量
+    expect(WASH_LABEL_OPTION_SUBTITLE_FONT_PT).toBe(16)
     expect(WASH_LABEL_OPTION_SUBTITLE_FONT_PT).toBeGreaterThan(WASH_LABEL_COMPANY_SUBTITLE_FONT_PT)
-    expect(source).toContain(`text-[${WASH_LABEL_OPTION_SUBTITLE_FONT_PT}pt] font-bold`)
+    // 「再加大加粗」（用户 2026-10-29）⇒ 比企业名 14pt **还大一号**
+    expect(WASH_LABEL_OPTION_SUBTITLE_FONT_PT).toBeGreaterThan(WASH_LABEL_COMPANY_FONT_PT)
+    // 🔴 字号**从 metrics 取**：组件里必须是模板取值，不许再写死 `12pt` / `16pt`
+    //    （写成字面量 ⇒ 改常量不会跟着改 = 第二份真值）。
+    //    ⚠️ 用行内 `fontSize` 而不是 Tailwind 任意值类：Tailwind v3 的候选提取是**静态**的，
+    //    模板插值出来的 `text-[…pt]` **不会被生成** ⇒ 纸面会静默退回 11pt（「加大」失效且无人报错）。
+    expect(source).toContain('fontSize: `${WASH_LABEL_OPTION_SUBTITLE_FONT_PT}pt`')
+    expect(source).toContain('className="font-bold"')
+    expect(source).not.toContain('text-[16pt]')
+    expect(source).not.toContain('text-[12pt]')
     expect(source).toContain("optionLabel !== null")
     expect(source).toContain(`size={${WASH_LABEL_QR_CSS_PX}}`)
     expect(source).toContain(`h-[${WASH_LABEL_QR_PLACEHOLDER_MM}mm] w-[${WASH_LABEL_QR_PLACEHOLDER_MM}mm]`)

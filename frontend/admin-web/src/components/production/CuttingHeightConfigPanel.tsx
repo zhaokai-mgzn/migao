@@ -57,6 +57,7 @@ import FormPanel, { Field, FormGrid, fieldControl } from '@/components/ui/FormPa
 import { cuttingHeightApi, productionApi } from '@/lib/api'
 import {
   CRAFT_OPTIONS,
+  derivedSpecialOptionValues,
   selectedSpecialOptionDisplayNames,
   specialOptionDisplayOptions,
 } from '@/lib/order-craft-fields'
@@ -479,7 +480,10 @@ export function CuttingHeightConfigPanel() {
         position: probe.position,
         finished_height: probe.finishedHeight,
         craft: probe.craft || undefined,
-        special_options: probe.options,
+        // 🔴 配置面只选语义名（`绑带` / `余料带回`）⇒ 发给服务端前按**部位帘种**派生落库键
+        //    （issue #8007 / #8108 的「录入边界正向派生」）。不派生的话，存量以派生键存储的规则
+        //    （如 `布绑带`）在预演里会静默不命中，而页面看不出任何异常。
+        special_options: derivedSpecialOptionValues(probe.options, probe.position),
         processing_items: probe.processingItems,
       })
       setPreview(res.data.data)

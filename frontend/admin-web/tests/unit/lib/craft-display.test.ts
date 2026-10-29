@@ -354,9 +354,23 @@ describe('craftSpecRows — 门幅（issue #5022：C 端报价卡展示系统自
     expect(rowValue(craftSpecRows({ specialOptions: ['余料带回-布', '加铅块'] }), '特殊选项')).toBe(
       '余料带回、加铅块'
     )
-    // 类级防误伤：布绑带 / 纱绑带 是**独立**选项名（各有独立工序），不得被折叠
-    expect(rowValue(craftSpecRows({ specialOptions: ['布绑带', '纱绑带'] }), '特殊选项')).toBe(
-      '布绑带、纱绑带'
+  })
+
+  it('🔴 issue #8108：绑带族同口径（布绑带 / 纱绑带 ⇒ 绑带；存量数据展示归一）', () => {
+    expect(rowValue(craftSpecRows({ specialOptions: ['布绑带'] }), '特殊选项')).toBe('绑带')
+    expect(rowValue(craftSpecRows({ special_options: ['纱绑带'] }), '特殊选项')).toBe('绑带')
+    expect(rowValue(craftSpecRows({ specialOptions: ['布绑带', '加铅块'] }), '特殊选项')).toBe(
+      '绑带、加铅块'
     )
+    // 同族两个派生键并存（历史单切过帘体 / 手改过 specialOptions）⇒ 收回同一个名字后**去重**，
+    // 不出现「绑带、绑带」（族成员是同一语义选项的两种材料形态，不是两个并列事实）
+    expect(rowValue(craftSpecRows({ specialOptions: ['布绑带', '纱绑带'] }), '特殊选项')).toBe('绑带')
+    expect(rowValue(craftSpecRows({ specialOptions: ['余料带回-布', '余料带回-纱'] }), '特殊选项')).toBe(
+      '余料带回'
+    )
+    // 类级防误伤：`余料做绑带`（名字含「绑带」）/ `加立边` / `加logo条` 是**独立**选项名，不得被折叠
+    expect(
+      rowValue(craftSpecRows({ specialOptions: ['余料做绑带', '加立边', '加logo条'] }), '特殊选项')
+    ).toBe('余料做绑带、加立边、加logo条')
   })
 })
