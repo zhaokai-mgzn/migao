@@ -80,3 +80,4 @@
 {"id":"1793186447.61750.15364","ts":"2026-10-28T11:20:47Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/8004-special-option-variant","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1793252696.91083.21274","ts":"2026-10-29T05:44:57Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/8074-wash-label-per-set","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1793261474.19830.31957","ts":"2026-10-29T08:11:14Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/8085-sidebar-rendering","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1793277810.92744.12015","ts":"2026-10-29T12:43:30Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/8114-merge-ai-cards","why":"子包 worktree 直跑全量（无批次标记）"}
