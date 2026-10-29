@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 253
+    "backend_contract_scoring_zero": 254
   },
   "history": [
     {
@@ -1072,6 +1072,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 253,
       "note": "issue #8003（数值输入框小数录入口径：<input> 的 onChange 不许 Number(target.value) 往返）新增 1 条 `[frontend-contract]` 用例 UI-141 —— 按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0`）⇒ 读数 252 → 253。机器判红通道 = `traces.tests` 的两个真测试文件（均非空且真实存在，本机实跑 4 + 10 passed）：frontend/admin-web/tests/unit/numeric-input-draft-guard.test.ts（4 条：真语料零命中 / 三种往返形态红证 / 五条负例 / 靶心文件走 NumberInput）、frontend/admin-web/tests/unit/components/CuttingHeightConfigPanel.test.tsx（10 条，含 ⑩ 三位小数实例判据）。"
+    },
+    {
+      "sha": "pending-pr-8106",
+      "date": "2026-10-29",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 254,
+      "note": "issue #8103（成品打包入库同单同仓：仓位满了也不换仓）新增 1 条 `[backend-contract]` 用例 WH-011 —— 按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0`）⇒ 读数 253 → 254。机器判红通道 = `traces.tests` 的 5 个真测试文件（均非空且真实存在，本机实跑 9 / 6 / 9 / 4 / 19 passed）：backend/admin-api/src/test/java/com/migao/admin/service/WarehouseLocationServiceTest.java（同单复用不看容量 / 首件走水位 / advisory 键）、backend/admin-api/src/test/java/com/migao/admin/service/InboundStockDocumentTest.java（两行同单只取一次仓位、重复件 409）、backend/admin-api/src/test/java/com/migao/admin/service/WarehouseLocationAllocationRealDbTest.java（真库：满仓复用 + 并发两事务同仓）、backend/admin-api/src/test/java/com/migao/admin/mapper/WarehouseLocationMapperTest.java（SQL 不带容量过滤 + advisory 锁）、frontend/admin-web/tests/unit/components/WarehouseLocationWaterLevelBatch.test.tsx（超容显示）；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests` / `admin-web typecheck + unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在**同一 PR 内实测重锚**：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3 -p no:randomly` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 254}` vs 锚点 253 ⇒ 差值 1 = 本 PR 新增那一条。"
     }
   ]
 }
