@@ -543,7 +543,7 @@ export function createApi(opts = {}) {
      * **全完工待发货列表**（issue #7761）：工人端发货页的第一屏。
      *
      * 只回「可发货状态 + **多套全部完工** + 作业单已完工」的订单（判据全在服务端，前端不筛）——
-     * 行内带收货信息（收货人 / 电话 / 地址）与物流方式 / 公司，发货标签直接读它，不再逐单回查。
+     * 行内带收货信息（收货人 / 电话 / 地址）与物流类型 / 公司，发货标签直接读它，不再逐单回查。
      */
     async listReadyShipments() {
       return request('/api/worker/shipment/orders')

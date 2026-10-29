@@ -74,6 +74,14 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
             "order_id": {"type": str, "min_len": 1, "label": "订单ID或订单号"},
             "logistics_company": {"type": str, "min_len": 1, "label": "快递公司"},
             "tracking_number": {"type": str, "min_len": 1, "label": "运单号"},
+            # 物流类型（issue #8080）：可选字段，但**给了就必须是登记值** —— 闸门比工具 schema 硬
+            # （schema 只约束模型，闸门拦的是「模型被诱导写了中文/别名」那种越界取值，避免脏值落库）。
+            # 不传 = 本次没说这件事（服务端不覆盖），故**不在 required 里**。
+            "logistics_type": {
+                "type": str,
+                "label": "物流类型（express 快递 / logistics 物流专线）",
+                "enum": ["express", "logistics"],
+            },
         },
         "confirm_payment": {
             "required": ["order_id"],

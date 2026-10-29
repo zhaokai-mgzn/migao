@@ -30,6 +30,16 @@ public class AgentOrderUpdateRequest {
     /** 运单号（update_logistics 时必填） */
     private String trackingNumber;
 
+    /**
+     * 物流类型（update_logistics 时可选，issue #8080）：{@code express} 快递 / {@code logistics} 物流专线。
+     *
+     * <p>缺省（null / 空白）⇒ <b>不覆盖</b>：写面 {@code OrderLogisticsWriter} 的既有语义是
+     * 「新建写入、更新仅在显式非空时覆盖」—— 只改运单号/纠错不该把客户已记录的「物流专线」
+     * 静默改回快递。取值的白名单由智能体侧工具 schema / 校验闸门保证（与表单路径
+     * {@code PUT /api/admin/orders/{id}/logistics} 同口径，本 DTO 不做二次校验）。</p>
+     */
+    private String logisticsType;
+
     /** 取消/关闭原因（cancel 时可选） */
     private String cancelReason;
 

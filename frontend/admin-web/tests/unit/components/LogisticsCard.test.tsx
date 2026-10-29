@@ -40,3 +40,25 @@ describe('LogisticsCard 物流状态：内部键 → 人话（issue #6664 第 5 
     expect(logisticsStatusLabel('')).toBe('')
   })
 })
+
+describe('LogisticsCard 物流类型：追单时看得出是快递还是专线（issue #8080）', () => {
+  it('⑤ 有类型 ⇒ 印中文；两种键名（snake 卡载荷 / camel 详情读面）都认', () => {
+    const { unmount } = render(
+      <LogisticsCard data={{ tracking_no: 'SJA001', company: '四季安', logistics_type: 'logistics' }} />,
+    )
+    expect(screen.getByTestId('logistics-type').textContent).toBe('物流类型：物流/专线')
+    unmount()
+
+    render(
+      <LogisticsCard data={{ tracking_info: { trackingNo: 'SF1', company: '顺丰', logisticsType: 'express' } }} />,
+    )
+    expect(screen.getByTestId('logistics-type').textContent).toBe('物流类型：快递')
+  })
+
+  it('⑥ 未采集 ⇒ **整行不印**（负控：换成 logisticsTypeLabel() 回退「快递」⇒ 红）', () => {
+    render(<LogisticsCard data={{ tracking_info: { trackingNo: 'SF1', company: '顺丰', status: 'in_transit' } }} />)
+    expect(screen.queryByTestId('logistics-type')).toBeNull()
+    expect(screen.queryByText('快递')).toBeNull()
+    expect(screen.queryByText('物流类型：', { exact: false })).toBeNull()
+  })
+})

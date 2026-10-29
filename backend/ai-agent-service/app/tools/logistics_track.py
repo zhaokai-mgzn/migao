@@ -255,7 +255,11 @@ class LogisticsTrackTool(BaseTool):
             # 后端 OrderDetailResponse.LogisticsInfo 字段是 logisticsCompany（无 company 字段）
             company = logistics.get("logisticsCompany", "未知")
             # 物流类型（issue #3984，V47）：express 快递 / logistics 物流专线（四季安等）
-            logistics_type = logistics.get("logisticsType", "express")
+            # 🔴 **未采集 ⇒ None，绝不回退 "express"**（issue #8080）：老实现给的是
+            # `logistics.get("logisticsType", "express")`，于是「库里没采集过」与「采集到快递」在
+            # 卡载荷里长得一模一样 ⇒ 会话卡无法区分，只能把没记录的单子印成「快递」（编值）。
+            # 与只读面 `lib/logistics.ts::logisticsTypeText` 同口径：缺值 ⇒ 不印。
+            logistics_type = logistics.get("logisticsType")
             # 顺丰/中通/申通等需要「运单号:收件人手机号后4位」才能查全量轨迹：
             # 收件人手机号 = 订单根级 customerPhone（OrderDetailResponse 提供），取末 4 位。
             # （2026-09 修复：此前误以为后端不提供手机号 → 尾号恒为 None → 此类快递恒降级 mock）
@@ -269,7 +273,8 @@ class LogisticsTrackTool(BaseTool):
                 context, tracking_no, company, order_id, phone_tail
             )
             # 注入物流类型（issue #3984，V47）：express 快递 / logistics 物流专线
-            if result.success and isinstance(result.data, dict):
+            # 只在**真采集到**时注入该键（issue #8080）：缺键 = 未采集 ⇒ 消费方（会话卡）不印。
+            if result.success and isinstance(result.data, dict) and logistics_type:
                 result.data["logistics_type"] = logistics_type
             return result
             

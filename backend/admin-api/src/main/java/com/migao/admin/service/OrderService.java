@@ -3379,7 +3379,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                     throw BusinessException.validationError("trackingNumber 不能为空");
                 }
                 upsertLogistics(resolvedId, request.getLogisticsCompany().trim(),
-                        request.getTrackingNumber().trim(), null);
+                        request.getTrackingNumber().trim(), null, request.getLogisticsType());
                 // 发货语义：记录物流后将订单流转为 shipped（与契约 order_manage(update_logistics) 可发货一致）
                 shipOrderIfApplicable(resolvedId);
                 yield getOrderById(resolvedId);
@@ -3413,12 +3413,16 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * 更新时**仅**在显式传入非空时覆盖 —— 后续改运单号/纠错不等于换发货人，
      * 也不能因为「别人来改单号」就把经手人改成那个人，更不能为存量历史数据猜一个经手人。
      */
-    private void upsertLogistics(String orderId, String logisticsCompany, String trackingNo, String shipperName) {
+    private void upsertLogistics(String orderId, String logisticsCompany, String trackingNo, String shipperName,
+                                 String logisticsType) {
         // 写入本体在 OrderLogisticsWriter（issue #5648 抽出，**单一实现点**）：工人可达面的发货端点
         // 走的是同一份「存在则更新、否则新建」口径与同一条发货人规则（不复制坑）。
+        // 物流类型（issue #8080）：本路此前把这一栏写死 null ⇒ 智能体代客发货只能落列默认 express
+        // （「发物流/专线」被静默记成快递）。现在按调用方显式给的值透传；空白 = 本次没说这件事，
+        // 由 OrderLogisticsWriter 的「显式才覆盖」保留原值。
         OrderLogisticsWriter.upsert(orderLogisticsMapper, TenantContext.getTenantId(), orderId,
                 logisticsCompany, trackingNo,
-                new OrderLogisticsWriter.ShippingDetails(shipperName, null, null),
+                new OrderLogisticsWriter.ShippingDetails(shipperName, logisticsType, null),
                 userService::resolveCurrentUserDisplayName);
     }
 
