@@ -42,7 +42,7 @@ import {
   renderLabelPreview,
 } from '../../../utils/inbound/labelPageKit'
 import { printInboundLabel } from '../../../utils/inbound/labelPrint'
-import { createLpapiTransport, loadLpapi } from '../../../utils/inbound/lpapiTransport'
+import { createPrintTransport } from '../../../utils/inbound/terminalTransport'
 import {
   PRINT_READY_HINT,
   printFailureText,
@@ -221,8 +221,8 @@ export default function WorkerReprintPage() {
       return
     }
     setBusy(true)
-    const lpapi = await loadLpapi()
-    if (!lpapi) {
+    const transport = await createPrintTransport()
+    if (!transport) {
       setBusy(false)
       setPrintState(SDK_UNAVAILABLE_HINT)
       return
@@ -230,7 +230,7 @@ export default function WorkerReprintPage() {
     const result = await printInboundLabel({
       shortCode,
       capability,
-      transport: createLpapiTransport({ lpapi }),
+      transport,
       // 先留痕（计数原子自增 + 审计），成功了才送数据给打印机
       recordPrint: async (code) => {
         const res = await recordInboundLabelPrint(code)

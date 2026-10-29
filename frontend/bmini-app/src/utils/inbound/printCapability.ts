@@ -81,6 +81,8 @@ export interface PrintEnv {
   isIos?: boolean
   /** 是否运行在微信内置浏览器（UA 含 `MicroMessenger`）—— 出口是「在浏览器打开」，不是「换浏览器」 */
   isWechat?: boolean
+  /** 是否运行在观星台手持终端（WebView + `window.chrome.webview` 桥）—— 打印走商米内置打印机 */
+  terminalBridge?: boolean
 }
 
 /** 浏览器真实环境快照（**只在 h5 分支被调用**） */
@@ -94,6 +96,7 @@ export function readPrintEnv(): PrintEnv {
     userAgent: ua,
     isIos: /iPhone|iPad|iPod/i.test(ua),
     isWechat: /MicroMessenger/i.test(ua),
+    terminalBridge: typeof window !== 'undefined' && !!(window as any).chrome?.webview,
   }
 }
 
@@ -120,6 +123,11 @@ export function probePrintCapability(env: PrintEnv = readPrintEnv()): PrintCapab
   //    会把唯一能在「微信里不跳出去」打标签的载体判成不可用（issue #7802）。
   if (env.platform === 'weapp') {
     return { ok: true, hint: '', readyHint: PRINT_READY_HINT_WX }
+  }
+  // 观星台手持标签机：页面跑在 Android WebView 里，打印走终端的商米内置打印机桥，
+  // 不依赖 Web Bluetooth（WebView 也没有这个接口）。
+  if (env.terminalBridge) {
+    return { ok: true, hint: '', readyHint: PRINT_READY_HINT_TERMINAL }
   }
   if (env.platform !== 'h5') {
     return { ok: false, reason: 'not-h5', hint: PRINT_FAILURE_HINTS['not-h5'] }
@@ -182,6 +190,9 @@ export const PRINT_READY_HINT = '点「打印标签」，在设备列表里选�
  */
 export const PRINT_READY_HINT_WX =
   '点「打印标签」即可：小程序会自己搜索附近的标签机（请先把打印机开机、放在 1~3 米内）'
+
+/** 手持标签机（观星台 Android 终端）的正向说法：打印走机身内置打印机，不需要选设备。 */
+export const PRINT_READY_HINT_TERMINAL = '点「打印标签」，由机身内置打印机直接出纸'
 
 /** 本页是否处在「可打印」平台（给页面做分支用；真正的判定仍是 `probePrintCapability`） */
 export function isPrintPlatform(): boolean {

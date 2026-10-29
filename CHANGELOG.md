@@ -5,6 +5,18 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 手持标签机对齐小程序工人首页：/b/ 工人登录/菜单 + 商米内置打印 + 扫码进 /w/ 报工（2026-10-29，issue #8089）
+
+用户 2026-10-29 选定：手持机完整对齐小程序工人首页（不是只做 /w/ 三件）；Windows 一体机登录页已 OK、不变。
+
+- `/b/` 的工人登录（共用登录页「工人登录」tab）与 V1 工人首页（拍照入库 / 补打入库标签 / 拍照发货）
+  直接复用到手持机；
+- 工人 session 在 `/b/` 与 `/w/` 之间共享（同一 `X-Worker-Session-Id`）⇒ 扫完码进报工页不再二次登录；
+- bmini 打印能力识别终端桥，入库 / 补打标签走商米内置打印机（浏览器 Web Bluetooth 原路径保留）；
+- 终端默认页改为 `/b/` 工人首页，顶栏扫码把码带进 `/w/` 报工页；Windows 一体机串口/机台页不变。
+- 判据：frontend/worker-h5/tests/worker-h5-api.test.mjs（/b/ ⇄ /w/ 会话共享）、
+  frontend/bmini-app/tests/worker-session-share.test.ts、frontend/bmini-app/tests/inbound-print-channel.test.ts（终端打印桥）。
+
 ### 物流与快递分开记：行内快捷发货补「物流类型」（2026-10-29，issue #8070 / #8073）
 - 现场：发货页 `/orders/[id]/ship` 早就有「物流类型：快递 / 物流·专线」，**行内快捷发货没有**
   ⇒ 商家在列表里点「发货」发出的单，`order_logistics.logistics_type` 一律落默认 `express` —— 走专线的单被记成快递。
