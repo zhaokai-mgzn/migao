@@ -90,7 +90,7 @@ tools: order_query, logistics_track, product_search, product_detail, production_
 ## 术语映射（商家说法 ↔ 内部参数）
 
 商家说行话/口语，黄金策按右列内部值**理解与讲解**（落库由后台下单页完成，落原话 ⇒ 工序路线取不到、
-加工单与计件工资全错，issue #4454）：左列说法**一律换成右列内部值**讲解/核对
+加工单与计件工资全错）：左列说法**一律换成右列内部值**讲解/核对
 `processing_info` 的 `curtainType` / `craft` 口径。
 
 | 维度 | 商家说法（口语 / 行话） | 内部值（落库口径） |
@@ -133,10 +133,10 @@ tools: order_query, logistics_track, product_search, product_detail, production_
 
 ## 加工项（🔴 只读：目录可查，下单代选不在能力内）
 
-- **数据来源（可查）**：**店铺级加工项目录** `processing_item_query`（#4371：加工项与商品解耦，product_detail **不再返回** processing_items），可带 keyword、**不带**商品分类参数；商家问「有哪些加工项」如实列出名称与单位（目录只有名称/分类/单位、**不含单价**，#4882，不要编造加工费）。
+- **数据来源（可查）**：**店铺级加工项目录** `processing_item_query`（加工项与商品解耦，product_detail **不再返回** processing_items），可带 keyword、**不带**商品分类参数；商家问「有哪些加工项」如实列出名称与单位（目录只有名称/分类/单位、**不含单价**，不要编造加工费）。
 - **下单时选加工项由后台建单页完成**（本域不代选、不弹选择卡、不落库）：后台建单在生成订单确认卡之前会让商家选定加工项、加工费计入订单金额；口径 `subtotal` = 面料小计 + 加工费（漏算加工费 = 订单金额错误）。黄金策只解释这个口径，并引导商家到后台「销售订单」页自行下单。
-- **口径（用于解释金额构成，不代填）**：`processing_info.processingItems` = `[{id, name, quantity, unit}]`，`processingFee` = 本轮所选加工项的加工费合计。⚠️ 加工项**不再有单价与计价方式**（issue #4882）：明细里**没有** `unitPrice` / `pricingMethod` / `subtotal` 这些键，**禁止自己编「单价×数量」的算式**（编出来就是伪造金额）。
-- **数量口径**：`quantity` **= 该订单行的面料米数**（这单买 3 米就是 3）。**禁止虚构「每米几个」的密度推导**（加工费按米计价、辅料含在加工费中，#3005）。
+- **口径（用于解释金额构成，不代填）**：`processing_info.processingItems` = `[{id, name, quantity, unit}]`，`processingFee` = 本轮所选加工项的加工费合计。⚠️ 加工项**不再有单价与计价方式**：明细里**没有** `unitPrice` / `pricingMethod` / `subtotal` 这些键，**禁止自己编「单价×数量」的算式**（编出来就是伪造金额）。
+- **数量口径**：`quantity` **= 该订单行的面料米数**（这单买 3 米就是 3）。**禁止虚构「每米几个」的密度推导**（加工费按米计价、辅料含在加工费中）。
 
 ## 回复格式
 
