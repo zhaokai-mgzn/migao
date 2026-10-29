@@ -40,12 +40,12 @@
 ### 1.1 规模
 
 - **28 个导航节点 = 6 组 23 项 + 5 个独立项**（最前席位 2：经营看板 / 报表中心；尾席位 2：商品管理 / 企业基础设置；尾部 1：通知中心）。
-  ⚠️ `menu.ts:13-14` 的文件头仍写「**5 组** 22 项（现取 2026-10-24）」—— 实为 6 组、且 10-28 又加了「出库单」；
+  ⚠️ `frontend/admin-web/src/config/menu.ts:13-14` 的文件头仍写「**5 组** 22 项（现取 2026-10-24）」—— 实为 6 组、且 10-28 又加了「出库单」；
   即文件头同时**漏了两轮**（见 §3 末尾 P3 第 1 条）。
   实际组：客户服务(4) · 交易管理(3) · 生产管理(5) · 供应链(3) · **仓储与物料(6)** · 组织管理(2)。
 - **层级 = 2 层**（组 → 项），无三级；组内最多 5 项。
 - **6 个渲染区**（从上到下）：`常用(收藏)` → `最前席位一级项` → `head 组` → `尾席位一级项` → `tail 组` → `尾部独立项` → 页脚
-  （语义与实现：`menu.ts:32-38`、`Sidebar.tsx:394-463`、`menu-nav.ts:288-296`）。
+  （语义与实现：`frontend/admin-web/src/config/menu.ts:32-38`、`frontend/admin-web/src/components/layout/Sidebar.tsx:394-463`、`frontend/admin-web/src/lib/menu-nav.ts:288-296`）。
 
 ### 1.2 八个岗位看到的菜单（真实代码复算）
 
@@ -64,7 +64,7 @@
 
 读数要点：
 - **4 / 8 岗位命中单成员组**，共 6 处（operator 1、finance 2、sales 2、knowledge_editor 1）——
-  而 `menu.ts:386-388` 恰恰把「唯一成员的组会退化成一个没有分组的名字」写成过设计原则，
+  而 `frontend/admin-web/src/config/menu.ts:386-388` 恰恰把「唯一成员的组会退化成一个没有分组的名字」写成过设计原则，
   但那条原则只在**静态菜单**上执行过（商品管理升为一级项），**没有对权限过滤后的结果执行**。
 - **质检员没有「经营看板 / 报表中心」**（`dashboard:view` 不持有），落点是 `/production`；
   它看不到与质检最有关的「质量成本」报表（`报表中心` 的关键词里就有它，但整项被 `dashboard:view` 门控）。
@@ -124,10 +124,10 @@ chevron、灰度上完全同级**，只有「有没有项数徽标」这一处�
 
 | 码 | 顺带打开 | 文件:行 |
 |---|---|---|
-| `inbound:view` | 入库单 + **供应商** + **采购单** + 盘点单 | `menu.ts:335/339/342/358` |
-| `product:list` | 商品管理 + **库存明细** + **省料看板** | `menu.ts:354/365/435` |
-| `production:view` | 作业看板 + **计件工资** + **企业基础设置** | `menu.ts:294/300/465` |
-| `after_sales:view` | 售后工单 + 返工单 | `menu.ts:219/312` |
+| `inbound:view` | 入库单 + **供应商** + **采购单** + 盘点单 | `frontend/admin-web/src/config/menu.ts:335/339/342/358` |
+| `product:list` | 商品管理 + **库存明细** + **省料看板** | `frontend/admin-web/src/config/menu.ts:354/365/435` |
+| `production:view` | 作业看板 + **计件工资** + **企业基础设置** | `frontend/admin-web/src/config/menu.ts:294/300/465` |
+| `after_sales:view` | 售后工单 + 返工单 | `frontend/admin-web/src/config/menu.ts:219/312` |
 
 **反向代价**（同样真实）：想配一个「仓管」岗位看到仓储与物料 5 项，得勾 **4 个码**
 （`product:list` + `inbound:view` + `order:list` + `processing:manage`），其中 `product:list`
@@ -170,7 +170,7 @@ chevron、灰度上完全同级**，只有「有没有项数徽标」这一处�
 - finance / sales：`客户服务 ① 客户列表`、`生产管理 ① 智能派单`
 - knowledge_editor：`客户服务 ① 知识库`
 
-**为什么是问题**：仓里自己的原则（`menu.ts:386-388`）写着「『唯一成员』的组会退化成一个没有分组的名字
+**为什么是问题**：仓里自己的原则（`frontend/admin-web/src/config/menu.ts:386-388`）写着「『唯一成员』的组会退化成一个没有分组的名字
 （点开只为看一项）⇒ 改为一**级项平铺**」—— 但那只对静态菜单执行过；**权限过滤是运行时的**，
 过滤后的单成员组没有同样处理。视觉上等于「一个父子关系不成立的空壳标题」，
 而它恰好出现在**最常见岗位**身上。
@@ -191,7 +191,7 @@ chevron、灰度上完全同级**，只有「有没有项数徽标」这一处�
 另有 4 个同象但不必修的：`/chat`（黄金策·在线对话，**有意**不进菜单、走右下角 FAB）
 与 3 个重定向壳（`/briefing` → `/dashboard`、`/agent-workspace` → `human-sessions`、`/processing` → `/production/processing`）。
 （`/production/processing` 这类被移除菜单项的旧页会**错误地**高亮到「作业看板」—— 前缀同源）
-`/processing-orders/{id}/production` 靠 `LEGACY_PATH_ALIASES` 已经正确高亮到「作业看板」（`menu-nav.ts:206-208`）。
+`/processing-orders/{id}/production` 靠 `LEGACY_PATH_ALIASES` 已经正确高亮到「作业看板」（`frontend/admin-web/src/lib/menu-nav.ts:206-208`）。
 
 **后果**：从顶栏点进审批中心，侧边栏 28 项**全灭** —— 用户失去「我在哪个域」的锚点（面包屑只给了页面名）。
 审批中心是 2026-10-24 主动撤掉菜单项的（#7593），撤得对（静态菜单没有信号），但**归属高亮没跟着补**。
@@ -206,7 +206,7 @@ chevron、灰度上完全同级**，只有「有没有项数徽标」这一处�
 
 ### P2-2 折叠态（rail）不可用
 
-**现象**：折叠后 `collapsed || isExpanded` ⇒ **28 项图标全部常显**（`Sidebar.tsx:267`），
+**现象**：折叠后 `collapsed || isExpanded` ⇒ **28 项图标全部常显**（`frontend/admin-web/src/components/layout/Sidebar.tsx:267`），
 组锚是**不可点的 `div`**（`:232-241`，只有 `title`）。实测纵向需求 ≈ **1260px**（28 项×36 + 6 组锚×28 + 搜索/页脚余量），
 在 900px 高的屏上要滚动，且**滚动区里没有任何分组文字**，只能靠 hover title 猜。
 主流：折叠后 hover 图标 → 飞出该组项（NetSuite / Fiori / Odoo 都是这个形态）。
@@ -253,12 +253,12 @@ chevron、灰度上完全同级**，只有「有没有项数徽标」这一处�
 
 ### P3 其它（登记，不单独成单）
 
-1. **陈旧数字**：`menu.ts:13` 写「5 组 22 项」实为 **6 组**；`Sidebar.tsx` 仍写「21 项」实为 **28 项**。
+1. **陈旧数字**：`frontend/admin-web/src/config/menu.ts:13` 写「5 组 22 项」实为 **6 组**；`Sidebar.tsx` 仍写「21 项」实为 **28 项**。
    （判据不会红 —— 测试里钉的是 27。）
 2. **设计规范脱节**：`docs/design/ui-design-spec.md:363-371` 仍是「三级缩进菜单」+ `:597-601` 「220px / 64px」，
    与实现的 2 层 / 240px / 6 渲染区不符。
-3. **展开态不持久化**：刷新后回到「只展开当前组」（`menu-nav.ts:257-259`），用户手动展开的组会缩回。
-4. **收藏不可排序**：顺序 = 钉的顺序（`menu-nav.ts:140-145`），主流收藏可拖拽。
+3. **展开态不持久化**：刷新后回到「只展开当前组」（`frontend/admin-web/src/lib/menu-nav.ts:257-259`），用户手动展开的组会缩回。
+4. **收藏不可排序**：顺序 = 钉的顺序（`frontend/admin-web/src/lib/menu-nav.ts:140-145`），主流收藏可拖拽。
 5. **无「最近访问」**：28 项里高频只有 3~5 项，⌘K 已缓解，但「最近」是零成本的高频补偿。
 6. **「价格本」** 非行业通用词（主流：价目表 / 价格政策 / Price List），⌘K 已收录「价目表」别名。
 

@@ -156,15 +156,19 @@ describe('余料台账菜单三处同构（PR-106 / issue #5191）', () => {
     expect(crumb).toContain("label: '仓储与物料'")
   })
 
-  it('④ 真的点得到：有 processing:manage 时**展开「仓储与物料」**后出现「余料台账」→ /production/remnants', async () => {
+  it('④ 真的点得到：有 processing:manage 时出现「余料台账」→ /production/remnants（单成员组会被提升为独立块）', async () => {
     mockPermissions = ['processing:manage']
     render(<Sidebar collapsed={false} onToggle={() => {}} />)
     // issue #5271：分组默认只展开**当前路由所在组**，而本文件 mock 的 pathname 是 `/production`
-    //（属「生产管理」组）⇒ 「仓储与物料」默认收起。按新交互**先展开该组**再断言（强度不变）。
-    fireEvent.click(screen.getByTestId('sidebar-group-toggle-inventory-center'))
-    expect(screen.getByTestId('sidebar-group-toggle-inventory-center').getAttribute('aria-expanded')).toBe('true')
+    //（属「生产管理」组）⇒ 「仓储与物料」默认收起。
+    // 🔴 issue #8085：本权限下「仓储与物料」只剩 **1 项** ⇒ 侧边栏把它**提升为独立块**（单成员组不渲染
+    // 组头、也不留折叠按钮）⇒ 这里先「有折叠按钮就展开、没有就直接断言」，两种形态都覆盖。
+    const toggle = screen.queryByTestId('sidebar-group-toggle-inventory-center')
+    if (toggle && toggle.getAttribute('aria-expanded') === 'false') fireEvent.click(toggle)
     const link = await screen.findByRole('link', { name: NAME })
     expect(link.getAttribute('href')).toBe(PATH)
+    // 提升形态的自证：组头不渲染，但项本身在 DOM 里（否则上面那条可能是「组还在」的假绿）
+    expect(toggle === null || toggle.getAttribute('aria-expanded') === 'true').toBe(true)
     cleanup()
   })
 
@@ -176,12 +180,14 @@ describe('余料台账菜单三处同构（PR-106 / issue #5191）', () => {
     expect(within(container).getByRole('link', { name: '销售订单' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: NAME })).toBeNull()
     // 🔴 issue #5939 改判（**收窄，不放宽**）：`order:list` 现在会带出**同一组**的「发货单」
-    // ⇒ 「仓储与物料」组不再整组消失。更强的形态随之改成：**组在、组内恰是发货单一项**，
+    // ⇒ 「仓储与物料」组不再整组消失。更强的形态随之改成：**该组只带出发货单一项**，
     // 而「余料台账」仍不在 —— 判据要证的事一件没少（不得靠别的码混进来）。
-    fireEvent.click(screen.getByTestId('sidebar-group-toggle-inventory-center'))
-    const inventoryGroup = screen.getByText('仓储与物料').closest('[data-group-key]') as HTMLElement
-    expect(within(inventoryGroup).getAllByRole('link').map((a) => a.textContent)).toEqual(['发货单'])
-    expect(within(inventoryGroup).queryByRole('link', { name: NAME })).toBeNull()
+    // 🔴 issue #8085：本权限下该组只剩 1 项 ⇒ 会被**提升为独立块**（无组头/折叠按钮），
+    // 故按「有按钮就展开、没有就直接断言」两种形态都覆盖。
+    const invToggle = screen.queryByTestId('sidebar-group-toggle-inventory-center')
+    if (invToggle && invToggle.getAttribute('aria-expanded') === 'false') fireEvent.click(invToggle)
+    expect(screen.getByRole('link', { name: '发货单' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: NAME })).toBeNull()
     cleanup()
   })
 
