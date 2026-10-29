@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 import { Plus, Search, RotateCcw, Wallet, ArrowDownCircle, ArrowUpCircle, TrendingUp } from 'lucide-react'
 import { financeApi } from '@/lib/api'
 import { usePermission } from '@/lib/permission'
-import { Button, Input, Select, Pagination, Modal, Badge, PageCard, PageHeader } from '@/components/ui'
+import { Button, Input, Select, Pagination, Modal, Badge, PageCard, PageHeader, TableSkeleton } from '@/components/ui'
 import type {
   FinanceTransaction,
   FinanceTransactionType,
@@ -421,6 +421,13 @@ export default function FinancePage() {
             </div>
           )}
 
+          {/* issue #8056：加载态 = 通用表格骨架（#8036 / #8048 已验收口径：页面级三元），与本表 9 列对齐；
+              不再在 tbody 里印裸「加载中…」+ 空白表体。
+              🔴 闸门 = `loading && 列表为空`：查询 / 翻页 / 改每页条数都会触发刷新，刷新时已有读数 ⇒
+              表格照旧在场（不换骨架、行内按钮与焦点不被摘掉 —— #8048 直出 `loading` 踩过的回归）。 */}
+          {txnLoading && txns.length === 0 ? (
+            <TableSkeleton rows={txnSize} columns={9} />
+          ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
@@ -437,9 +444,7 @@ export default function FinancePage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
-                {txnLoading ? (
-                  <tr><td colSpan={9} className="px-4 py-12 text-center text-neutral-400">加载中…</td></tr>
-                ) : txns.length === 0 ? (
+                {txns.length === 0 ? (
                   /* issue #8040：筛选下为空 / 真还没有流水分开说 —— 后者说清流水从哪来 */
                   <tr><td colSpan={9} className="px-4 py-12 text-center text-neutral-400">
                     {txnError
@@ -478,6 +483,7 @@ export default function FinancePage() {
               </tbody>
             </table>
           </div>
+          )}
           <Pagination
             current={txnPage}
             pageSize={txnSize}
@@ -599,6 +605,10 @@ export default function FinancePage() {
             </div>
           )}
 
+          {/* issue #8056：与资金流水同一口径（本页两张列表同一读面节奏），与本表 9 列对齐。 */}
+          {recLoading && recs.length === 0 ? (
+            <TableSkeleton rows={recSize} columns={9} />
+          ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
@@ -615,9 +625,7 @@ export default function FinancePage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
-                {recLoading ? (
-                  <tr><td colSpan={9} className="px-4 py-12 text-center text-neutral-400">加载中…</td></tr>
-                ) : visibleRecs.length === 0 ? (
+                {visibleRecs.length === 0 ? (
                   /* issue #8040：勾了「仅看异常」时的空 ≠ 真没有可对账的订单，两句话分开说 */
                   <tr><td colSpan={9} className="px-4 py-12 text-center text-neutral-400">
                     {recError
@@ -650,6 +658,7 @@ export default function FinancePage() {
               </tbody>
             </table>
           </div>
+          )}
           <Pagination
             current={recPage}
             pageSize={recSize}

@@ -131,6 +131,37 @@ beforeEach(() => {
 })
 
 describe('库存明细页（issue #6404 / UI-087）', () => {
+  // issue #8056：加载态 = 通用表格骨架（#8036 / #8048 已验收口径），不再是「库存明细加载中…」+ 空白表。
+  it('⑮ 加载中（流水视图）：渲染 table-skeleton，且不出现裸「加载中」文案（#8056）', async () => {
+    mockLedger.mockReturnValue(new Promise(() => {}))
+    render(<StockLedgerPage />)
+    expect(await screen.findByTestId('table-skeleton')).toBeInTheDocument()
+    // 红证：把加载分支改回裸文案 ⇒ 本条红
+    expect(screen.queryByText(/加载中/)).not.toBeInTheDocument()
+  })
+
+  it('⑯ 加载中（批次余量视图）：渲染 table-skeleton，且不出现裸「加载中」文案（#8056）', async () => {
+    const user = userEvent.setup()
+    mockBatchesPage.mockReturnValue(new Promise(() => {}))
+    render(<StockLedgerPage />)
+    await user.click(screen.getByTestId('view-batch'))
+    expect(await screen.findByTestId('table-skeleton')).toBeInTheDocument()
+    expect(screen.queryByText(/加载中/)).not.toBeInTheDocument()
+  })
+
+  // 🔴 闸门：**已有读数时刷新**照旧停在表格上 —— 直出 `loading` 会把整表换成骨架、卸载行内按钮（#8048 踩过的回归）。
+  it('⑰ 刷新中（已有读数）：表格照旧在场，不换骨架（#8056 闸门）', async () => {
+    const user = userEvent.setup()
+    render(<StockLedgerPage />)
+    await screen.findAllByTestId('stock-ledger-row')
+    // 第二次读面挂起 ⇒ 页面处于 loading，但列表非空
+    mockLedger.mockReturnValue(new Promise(() => {}))
+    await user.click(screen.getByRole('button', { name: '刷新库存明细' }))
+    await waitFor(() => expect(mockLedger).toHaveBeenCalledTimes(2))
+    expect(screen.queryByTestId('table-skeleton')).not.toBeInTheDocument()
+    expect(screen.getAllByTestId('stock-ledger-row')).toHaveLength(2)
+  })
+
   it('① 流水看得见：时间 / 货号·SKU / 变动 / 变动前 / 变动后 / 原因 / 单据号 / 操作人 / 成本', async () => {
     render(<StockLedgerPage />)
 

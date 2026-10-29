@@ -91,6 +91,15 @@ describe('盘点单页面', () => {
     expect(screen.getByTestId('stocktakes-empty').textContent).toContain('还没有盘点单')
   })
 
+  // issue #8056：加载态 = 通用表格骨架（#8036 / #8048 已验收口径），不再是裸「加载中…」+ 空白表体。
+  it('加载中：渲染 table-skeleton，且不出现裸「加载中…」文案（#8056）', async () => {
+    stocktakeApi.list.mockReturnValue(new Promise(() => {}))
+    render(<StocktakesPage />)
+    expect(await screen.findByTestId('table-skeleton')).toBeInTheDocument()
+    // 红证：把加载分支改回裸文案 ⇒ 本条红
+    expect(screen.queryByText(/加载中/)).not.toBeInTheDocument()
+  })
+
   it('列表逐列照服务端值：单号 / 仓库名 / 状态（仓名按 id 查，不信 null 的 warehouseCode）', async () => {
     render(<StocktakesPage />)
 

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Plus } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button, EmptyState, Input, Modal, PageCard, PageHeader, RowActions } from '@/components/ui'
+import { Button, EmptyState, Input, Modal, PageCard, PageHeader, RowActions, TableSkeleton } from '@/components/ui'
 import type { RowActionItem } from '@/components/ui'
 import { SELECT_CONTROL_FIELD } from '@/components/ui/Select'
 import { displayEnum } from '@/lib/enum-display'
@@ -235,8 +235,12 @@ export default function ReworkOrdersPage() {
           />
         )}
 
-        {loading ? (
-          <div className="py-10 text-center text-sm text-neutral-500">加载中…</div>
+        {/* issue #8056：加载态 = 通用表格骨架（#8036 / #8048 已验收口径：页面级三元），与本表 14 列对齐；
+            不再印裸「加载中…」+ 空白表体。
+            🔴 闸门 = `loading && 列表为空`：开工 / 完工 / 取消 / 筛选都会触发刷新，刷新时已有读数 ⇒
+            表格照旧在场（不换骨架、行内动作按钮与其焦点不被摘掉 —— #8048 直出 `loading` 踩过的回归）。 */}
+        {loading && visible.length === 0 ? (
+          <TableSkeleton rows={8} columns={14} />
         ) : loadError ? null : visible.length === 0 ? (
           <EmptyState
             testId="rework-orders-empty"

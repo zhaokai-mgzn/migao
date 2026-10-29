@@ -220,6 +220,24 @@ describe('FinancePage', () => {
     })
   })
 
+  // issue #8056：加载态 = 通用表格骨架（#8036 / #8048 已验收口径），不再是 tbody 里的裸「加载中…」+ 空白表体。
+  it('加载中（资金流水）：渲染 table-skeleton，且不出现裸「加载中…」文案（#8056）', async () => {
+    mockGetTransactions.mockReturnValue(new Promise(() => {}))
+    render(<FinancePage />)
+    expect(await screen.findByTestId('table-skeleton')).toBeInTheDocument()
+    // 红证：把加载分支改回 tbody 里的裸文案 ⇒ 本条红
+    expect(screen.queryByText(/加载中/)).not.toBeInTheDocument()
+  })
+
+  it('加载中（应收对账）：切页签后渲染 table-skeleton，且不出现裸「加载中…」文案（#8056）', async () => {
+    mockGetReconciliation.mockReturnValue(new Promise(() => {}))
+    render(<FinancePage />)
+    await waitFor(() => expect(mockGetTransactions).toHaveBeenCalled())
+    fireEvent.click(screen.getByText('应收对账'))
+    expect(await screen.findByTestId('table-skeleton')).toBeInTheDocument()
+    expect(screen.queryByText(/加载中/)).not.toBeInTheDocument()
+  })
+
   it('should open 登记收支 modal', async () => {
     render(<FinancePage />)
     await user.click(screen.getByText('登记收支'))
