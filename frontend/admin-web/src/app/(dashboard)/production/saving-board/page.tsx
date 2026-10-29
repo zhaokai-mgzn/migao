@@ -71,8 +71,8 @@ export default function SavingBoardPage() {
     } catch (e) {
       // 🔴 2026-10-17：改用共享原语（服务端业务文案优先）—— `e.message` 在 axios 错误上
       // 是传输层读数（`Request failed with status code NNN`），不许当失败原因上屏。
-      setError(extractApiErrorMessage(e, '加载省料看板失败'))
-      toastRequestError(e, '加载省料看板失败')
+      setError(extractApiErrorMessage(e, '加载省料分析失败'))
+      toastRequestError(e, '加载省料分析失败')
     } finally {
       setLoading(false)
     }
@@ -112,7 +112,7 @@ export default function SavingBoardPage() {
         title={
           <span className="flex items-center gap-2">
             <Layers className="w-5 h-5 text-primary-600" />
-            省料看板
+            省料分析
           </span>
         }
         subtitle={<span data-testid="saving-rule">{savedRule()}</span>}

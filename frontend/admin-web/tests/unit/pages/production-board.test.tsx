@@ -188,7 +188,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     //    旧深链 `/production/processing`、`/production/routings` 保留为**重定向薄壳**（不 404）。
     // 🔴 #8086：质检记录 / 返工单已拆到「质量」组 ⇒ 本组 **3 项**
     expect(links).toHaveLength(3)
-    expect(links[0].textContent).toContain('作业看板')
+    expect(links[0].textContent).toContain('作业单')
     expect(links[0]).toHaveAttribute('href', '/production')
     expect(links[1].textContent).toContain('智能派单')
     expect(links[1]).toHaveAttribute('href', '/production/pool')
@@ -204,7 +204,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     const productionText = Array.from(links).map((a) => a.textContent).join('|')
     expect(productionText).not.toContain('入库单')
     expect(productionText).not.toContain('余料台账')
-    expect(productionText).not.toContain('省料看板')
+    expect(productionText).not.toContain('省料分析')
   })
 
   it('单据三项落在新组「供应链」、库存/余料/省料仍在「仓储与物料」（issue #5271 + #7369），点得到且 href 正确', () => {
@@ -242,7 +242,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     expect(links[3]).toHaveAttribute('href', '/shipments')
     expect(links[4].textContent).toContain('余料台账')
     expect(links[4]).toHaveAttribute('href', '/production/remnants')
-    expect(links[5].textContent).toContain('省料看板')
+    expect(links[5].textContent).toContain('省料分析')
     expect(links[5]).toHaveAttribute('href', '/production/saving-board')
     // 反恒真：入库单**不再**出现在本组（搬组不得只搬半边）
     expect(Array.from(links).map((a) => a.textContent).join('|')).not.toContain('入库单')

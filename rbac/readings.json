@@ -307,7 +307,7 @@
   },
   "menus": {
     "frontend": {
-      "经营看板": "dashboard:view",
+      "经营概览": "dashboard:view",
       "报表中心": "dashboard:view",
       "客户服务": null,
       "在线接待": "agent:session",
@@ -322,7 +322,7 @@
       "销售订单": "order:list",
       "财务对账": "finance:view",
       "生产管理": null,
-      "作业看板": "production:view",
+      "作业单": "production:view",
       "智能派单": "processing:view",
       "计件工资": "production:view",
       "质量": null,
@@ -337,7 +337,7 @@
       "出库单": "inbound:view",
       "发货单": "order:list",
       "余料台账": "processing:manage",
-      "省料看板": "product:list",
+      "省料分析": "product:list",
       "组织管理": null,
       "员工管理": "employee:list",
       "岗位权限": "system:view",
@@ -345,7 +345,7 @@
       "通知中心": null
     },
     "controller": {
-      "经营看板": "dashboard:view",
+      "经营概览": "dashboard:view",
       "在线接待": "agent:session",
       "知识库": "knowledge:view",
       "商品管理": "product:list",
@@ -355,7 +355,7 @@
       "客户列表": "customer:view",
       "财务对账": "finance:view",
       "订单详情": "order:detail",
-      "作业看板": "production:view",
+      "作业单": "production:view",
       "智能派单": "processing:view",
       "计件工资": "production:view",
       "质检记录": "production:inspect",
@@ -365,7 +365,7 @@
       "入库单": "inbound:view",
       "发货单": "order:list",
       "余料台账": "processing:manage",
-      "省料看板": "product:list",
+      "省料分析": "product:list",
       "库存明细": "product:list",
       "员工管理": "employee:list",
       "岗位权限": "system:view",
@@ -377,7 +377,7 @@
       "出库单": "inbound:view"
     },
     "auth": {
-      "经营看板": "dashboard:view",
+      "经营概览": "dashboard:view",
       "报表中心": "dashboard:view",
       "在线接待": "agent:session",
       "知识库": "knowledge:view",
@@ -388,7 +388,7 @@
       "价格本": "order:list",
       "销售订单": "order:list",
       "财务对账": "finance:view",
-      "作业看板": "production:view",
+      "作业单": "production:view",
       "智能派单": "processing:view",
       "计件工资": "production:view",
       "质检记录": "production:inspect",
@@ -400,7 +400,7 @@
       "出库单": "inbound:view",
       "发货单": "order:list",
       "余料台账": "processing:manage",
-      "省料看板": "product:list",
+      "省料分析": "product:list",
       "员工管理": "employee:list",
       "岗位权限": "system:view",
       "企业基础设置": "production:view"
@@ -410,7 +410,7 @@
   "menu_nodes": [
     {
       "key": "dashboard",
-      "name": "经营看板",
+      "name": "经营概览",
       "path": "/dashboard",
       "code": "dashboard:view"
     },
@@ -500,7 +500,7 @@
     },
     {
       "key": "production-board",
-      "name": "作业看板",
+      "name": "作业单",
       "path": "/production",
       "code": "production:view"
     },
@@ -590,7 +590,7 @@
     },
     {
       "key": "production-saving-board",
-      "name": "省料看板",
+      "name": "省料分析",
       "path": "/production/saving-board",
       "code": "product:list"
     },
@@ -808,7 +808,7 @@
     },
     {
       "key": "dashboard",
-      "name": "经营看板",
+      "name": "经营概览",
       "path": "/dashboard",
       "gate": "dashboard:view",
       "units": {
@@ -923,7 +923,7 @@
     },
     {
       "key": "production-board",
-      "name": "作业看板",
+      "name": "作业单",
       "path": "/production",
       "gate": "production:view",
       "units": {
@@ -972,7 +972,7 @@
     },
     {
       "key": "production-saving-board",
-      "name": "省料看板",
+      "name": "省料分析",
       "path": "/production/saving-board",
       "gate": "product:list",
       "units": {

@@ -50,7 +50,7 @@ describe('deriveRoleDefaultMenu（后台 + 手机端 = 一份默认菜单）', (
     )
     // 后台：与侧边栏菜单名逐字一致（真值 = @/config/menu）
     expect(menu.backend).toEqual(
-      expect.arrayContaining(['经营看板', '在线接待', '知识库', '客户列表', '智能派单', '入库单', '售后工单']),
+      expect.arrayContaining(['经营概览', '在线接待', '知识库', '客户列表', '智能派单', '入库单', '售后工单']),
     )
     // 手机端：服务端给什么就是什么（本模块不自造名字）
     // 🔴 2026-10-29（issue #8086）：`供应商` 已移入「基础资料」组（排在「生产管理」之前），
@@ -79,7 +79,7 @@ describe('deriveRoleDefaultMenu（后台 + 手机端 = 一份默认菜单）', (
       ...standaloneItems,
     ].filter(i => i.permissionCode)
     expect(menu.backend.length).toBe(allCoded.length)
-    expect(menu.backend).toEqual(expect.arrayContaining(['经营看板', '商品管理', '企业基础设置']))
+    expect(menu.backend).toEqual(expect.arrayContaining(['经营概览', '商品管理', '企业基础设置']))
     expect(menu.mobile).toEqual(expect.arrayContaining(['数据', '坐席', '售后处理', '智能派单', '入库过账']))
   })
 

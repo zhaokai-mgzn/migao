@@ -629,18 +629,18 @@ def _inject_controller_head_renamed(src: str) -> str:
     """把 `MenuController` 的**最前席位**项（经营看板）改个名 ⇒ 席位项层漂移（`menu.ts` 未跟）。
 
     ⚠️ 锚点与另两条「一级项」注入**同为**「限定在 `return List.of(...)` 之内」的形态：
-    文件上方另有 `MenuNode d1 = new MenuNode("dashboard:view", "经营看板");` 的**声明**
+    文件上方另有 `MenuNode d1 = new MenuNode("dashboard:view", "经营概览");` 的**声明**
     （供 `test_agent_permission_parity.py` 的解析器用），只按内容替换会打在声明上 ⇒
     **树文本一字未改** ⇒ 这条红证**静默失效**（#5877 / 2026-10-06 两次实测踩到的形态）。
     """
     anchor = "        return List.of(\n"
     assert anchor in src, "注入锚点失配：`MenuController` 找不到 `return List.of(` 行"
     head, tail = src.split(anchor, 1)
-    inner = 'new MenuNode("dashboard:view", "经营看板")'
+    inner = 'new MenuNode("dashboard:view", "经营概览")'
     assert inner in tail, (
         "注入锚点失配：`MenuController` 顶层 List.of 里找不到**最前席位**「经营看板」条目"
         "（#7087：它必须是顶层首个节点；缺了它 ⇒ 判据当场红 —— 那正是本注入要证明的判别力）")
-    tail = re.sub(re.escape(inner) + r",?", 'new MenuNode("dashboard:view", "经营看板X"),', tail, count=1)
+    tail = re.sub(re.escape(inner) + r",?", 'new MenuNode("dashboard:view", "经营概览X"),', tail, count=1)
     return head + anchor + tail
 
 
@@ -654,7 +654,7 @@ def _inject_controller_head_demoted_into_group(src: str) -> str:
     anchor = "        return List.of(\n"
     assert anchor in src, "注入锚点失配：`MenuController` 找不到 `return List.of(` 行"
     head, tail = src.split(anchor, 1)
-    inner = 'new MenuNode("dashboard:view", "经营看板")'
+    inner = 'new MenuNode("dashboard:view", "经营概览")'
     assert inner in tail, (
         "注入锚点失配：`MenuController` 顶层 List.of 里找不到**最前席位**「经营看板」条目")
     tail = re.sub(r"[ \t]*" + re.escape(inner) + r",?\n", "", tail, count=1)
@@ -664,11 +664,11 @@ def _inject_controller_head_demoted_into_group(src: str) -> str:
 def _inject_auth_head_renamed(src: str) -> str:
     """把 `AuthService` 的**最前席位** `add`（经营看板）改个名 ⇒ 席位项层漂移（登录下发面）。
 
-    ⚠️ 锚点必须落在**顶层 add 语句**上（`menus.add(menuItem("dashboard", "经营看板", "/dashboard"));`）——
+    ⚠️ 锚点必须落在**顶层 add 语句**上（`menus.add(menuItem("dashboard", "经营概览", "/dashboard"));`）——
     只按「经营看板」四字替换会打在**上方注释**里（#7087 起该注释也逐字写着「经营看板」）⇒
     判据读的代码一字未改 ⇒ 红证**静默失效**。
     """
-    old = 'menus.add(menuItem("dashboard", "经营看板", "/dashboard"));'
+    old = 'menus.add(menuItem("dashboard", "经营概览", "/dashboard"));'
     assert old in src, (
         "注入锚点失配：`AuthService` 里找不到**最前席位**的顶层 add（经营看板）—— "
         "#7087：它必须是首个 `menus.add`")

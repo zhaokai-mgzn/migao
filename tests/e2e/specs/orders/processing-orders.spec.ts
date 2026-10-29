@@ -309,7 +309,7 @@ test.describe('作业看板 /production（作业单唯一入口）', () => {
     // 正信号等待（防竞态：'加载中… not visible' 可能在首次渲染前就通过）：
     // 标题出现 = 页面挂载；首行加工单号可见 = 列表数据已渲染。
     // 60s 容忍 Next dev on-demand 编译（冷启动/负载下可达数十秒）
-    await expect(page.getByRole('heading', { name: '作业看板' })).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByRole('heading', { name: '作业单' })).toBeVisible({ timeout: 60_000 })
     await expect(page.getByText('JG-20260601-0001')).toBeVisible({ timeout: 60_000 })
   })
 
@@ -318,10 +318,10 @@ test.describe('作业看板 /production（作业单唯一入口）', () => {
     // #4357 前 /production 没有任何面包屑条目 ⇒ 曾回落成「工作台 > 经营看板」。
     // 侧边栏 IA（加工单不再作为独立菜单项）由 vitest 单测断言 —— e2e 的 auth fixture
     // 不带 permissions ⇒ 侧边栏里所有带权限码的项都被过滤掉，此处断言不了菜单项。
-    await expect(page.getByRole('heading', { name: '作业看板' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '作业单' })).toBeVisible()
     const breadcrumb = page.getByRole('banner').getByRole('navigation')
     await expect(breadcrumb).toContainText('生产管理')
-    await expect(breadcrumb).toContainText('作业看板')
+    await expect(breadcrumb).toContainText('作业单')
 
     for (const po of MOCK_POS) {
       await expect(page.getByText(po.processingOrderNo)).toBeVisible()
@@ -461,7 +461,7 @@ test.describe('作业看板 /production（作业单唯一入口）', () => {
     await page.goto('/processing-orders')
     // 重定向后落到唯一入口：URL 与页面标题都是 /production 的作业看板
     await page.waitForURL(/\/production$/, { timeout: 30_000 })
-    await expect(page.getByRole('heading', { name: '作业看板' })).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByRole('heading', { name: '作业单' })).toBeVisible({ timeout: 60_000 })
     await expect(page.getByText('JG-20260601-0001')).toBeVisible({ timeout: 60_000 })
   })
 })

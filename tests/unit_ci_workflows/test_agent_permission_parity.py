@@ -771,7 +771,7 @@ TOOL_MENU_NODE: dict[str, str] = {
     "order_create": "销售订单",
     "after_sales_manage": "售后工单",
     "customer_manage": "客户列表",
-    "dashboard_stats": "经营看板",
+    "dashboard_stats": "经营概览",
     "finance_api": "财务对账",
     "session_manage": "在线接待",
     "employee_manage": "员工管理",
@@ -792,11 +792,11 @@ TOOL_MENU_NODE: dict[str, str] = {
     "category_manage": "商品管理",
     "processing_item_query": "企业基础设置",
     "processing_item_manage": "企业基础设置",
-    "processing_order_query": "作业看板",
-    "processing_order_generate": "作业看板",
-    "processing_order_update": "作业看板",
-    "production_progress_query": "作业看板",
-    "production_worklog_query": "作业看板",
+    "processing_order_query": "作业单",
+    "processing_order_generate": "作业单",
+    "processing_order_update": "作业单",
+    "production_progress_query": "作业单",
+    "production_worklog_query": "作业单",
     "piecework_query": "计件工资",
     "knowledge_search": "知识库",
     # ── B 端只读模块覆盖（issue #5247）：新增只读工具 → 逐个登记「它的码属于哪个菜单节点」──
@@ -805,12 +805,12 @@ TOOL_MENU_NODE: dict[str, str] = {
     "operation_catalog_query": "企业基础设置",   # 端点方法级 processing:manage（#5247 新增，收窄）
     # 🔴 2026-10-17（issue #7087）：「每日简报」菜单项已删除 ⇒ 本工具（码 `dashboard:view`）
     # 的锚点改钉**仍在树上的**「经营看板」节点（该码现在只由它承载，零授权 delta）。
-    "briefing_query": "经营看板",                # dashboard:view
+    "briefing_query": "经营概览",                # dashboard:view
     "craft_calc_config_query": "企业基础设置",   # processing:manage（生产域无专属读码）
     # issue #7514：算料配置**写面**（`processing:manage` = 该页的页内写码，见 PAGE_WRITE_CODES
     # 的 `production:view` 键）⇒ 判据 3 的「写工具可持页内写码」口径成立，零授权面改动。
     "craft_calc_config_update": "企业基础设置",
-    "processing_order_set_query": "作业看板",    # processing:manage（套件读面 = 加工单读面同码，#5246 收尾）
+    "processing_order_set_query": "作业单",    # processing:manage（套件读面 = 加工单读面同码，#5246 收尾）
     # 工艺配置读面聚合（issue #4923）：6 个读端点；工具声明生产域**读**码 `production:view`
     # （与「企业基础设置」节点同码）。⚠️ 端点侧生效码仍分三档（order:list / processing:manage /
     # production:view）⇒ 判据 2 的「工具码 ≡ 端点码」现为**具名缺口**，见 `CODE_DIVERGENCE_EXCEPTIONS`。
@@ -1928,7 +1928,7 @@ READ_CODE_ANCHORS: dict[str, ReadCodeAnchor] = {
         domain="生产域",
         tool="processing_order_query",
         node_sources=(
-            ("frontend", "作业看板"), ("controller", "作业看板"),
+            ("frontend", "作业单"), ("controller", "作业单"),
             ("frontend", "计件工资"), ("controller", "计件工资"),
             # 🔴 2026-10-09（issue #6580）：「加工项管理」「工艺配置」两个节点已**移除**，
             # 合并后的入口 = 尾部独立项「企业基础设置」（节点码即本读码）。
@@ -2084,7 +2084,7 @@ ROUTE_MENU_ANCHORS: dict[str, str] = {
     # issue #5699（P4）：『经营看板』节点在 P4 之前**无码**（两侧取值不同 ⇒ 曾登记在
     # `ROUTE_WITHOUT_MENU_NODE`）；P4 把节点码补成 `dashboard:view`（= 该页第一屏读码 = 守卫码）
     # ⇒ 销账后回到「有节点锚」这一侧。
-    "/dashboard": "经营看板",
+    "/dashboard": "经营概览",
     # issue #7375 段 3：价格本（`/price-books`）的守卫码锚到它自己的菜单节点（product:list）。
     "/price-books": "价格本",
     # issue #7376：报表中心（`/reports`）的守卫码锚到它自己的菜单节点（同码 `dashboard:view`，
@@ -2100,8 +2100,8 @@ ROUTE_MENU_ANCHORS: dict[str, str] = {
     "/processing": "企业基础设置",
     "/production/pool": "智能派单",
     "/production/remnants": "余料台账",
-    "/production/saving-board": "省料看板",
-    "/production": "作业看板",
+    "/production/saving-board": "省料分析",
+    "/production": "作业单",
     # 质检记录（issue #7140 = #5652 的商家面）：守卫码 = 菜单节点码 = 该页三个端点的**方法级**
     # `production:inspect`（读待检清单 / 读流水 / 录判定同码 —— 写面也在该码下，故不登记写例外）。
     "/quality-inspections": "质检记录",
@@ -2284,7 +2284,7 @@ class MenuReadAnchor:
 #: `product:list` 混进来，凭空造出并不存在的 403 受害者）。
 #: **每个带 `path` 的节点都必须在这里**（未登记即红）。
 MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
-    "/dashboard": MenuReadAnchor("经营看板", "dashboard/page.tsx", (
+    "/dashboard": MenuReadAnchor("经营概览", "dashboard/page.tsx", (
         "dashboardApi.getStats", "dashboardApi.getOrderTrend",
         "dashboardApi.getProductRanking", "dashboardApi.getRecentOrders",
         "briefingApi.getConfig")),
@@ -2316,7 +2316,7 @@ MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
     # 🔴 2026-10-24（issue #7593）：「审批中心」菜单项已撤除（入口改顶栏 `ApprovalBell`）⇒ 页面第一屏
     # 读端点（`approvalApi.list`，类级 `finance:view`）**不再有菜单节点可对**，本锚点同批销账。
     # 该页的读码仍由 `ROUTE_WITHOUT_MENU_NODE['/approvals']` 的理由承担（与 `/briefing` 同族形态）。
-    "/production": MenuReadAnchor("作业看板", "production/page.tsx", ("processingOrderApi.list",)),
+    "/production": MenuReadAnchor("作业单", "production/page.tsx", ("processingOrderApi.list",)),
     "/production/pool": MenuReadAnchor("智能派单", "production/pool/page.tsx",
                                        ("poolBoardApi.getBoard",)),
     # 计件工资（issue #5653 追加）：本页第一屏**两块读面** —— 报表（`summary`）+ 结算单列表
@@ -2348,7 +2348,7 @@ MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
     # 🔴 2026-10-07（issue #6459）：省料看板首屏重做后**只调一条读面**（`saving-board`）——
     #    旧的 `savingBoardApi.trend` 随「单位产出消耗」表一起从页面上退场 ⇒ 本锚点同步缩短
     #    （口径 = 只许缩短：声明陈旧会被判据 12 当场点名为「锚点声明的 X 不在 effect 驱动面上」）。
-    "/production/saving-board": MenuReadAnchor("省料看板", "production/saving-board/page.tsx",
+    "/production/saving-board": MenuReadAnchor("省料分析", "production/saving-board/page.tsx",
                                                ("savingBoardApi.board",)),
     # 库存明细（issue #6404）：节点码 `product:list` = 本页第一屏读端点
     # （`GET /api/admin/stock-ledger`，`StockLedgerController` 的**方法级** `@RequirePermission`）
@@ -3089,7 +3089,7 @@ AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
     "dashboard:view": AuthorizationCensusEntry(
         roles=('customer_service', 'finance', 'sales'),
         endpoints=('DELETE /api/admin/files/{}', 'DELETE /api/admin/upload/image', 'GET /api/admin/briefing/config', 'GET /api/admin/briefing/snapshot', 'GET /api/admin/briefing/today', 'GET /api/admin/dashboard/active-sessions', 'GET /api/admin/dashboard/order-status', 'GET /api/admin/dashboard/order-trend', 'GET /api/admin/dashboard/pending-shipment-count', 'GET /api/admin/dashboard/pending-tasks', 'GET /api/admin/dashboard/processing-shipment-count', 'GET /api/admin/dashboard/product-ranking', 'GET /api/admin/dashboard/recent-orders', 'GET /api/admin/dashboard/stats', 'POST /api/admin/files/upload', 'POST /api/admin/files/upload-batch', 'POST /api/admin/upload/image', 'POST /api/admin/upload/images'),
-        menu_nodes=('auth:经营看板', 'controller:经营看板', 'frontend:经营看板'),
+        menu_nodes=('auth:经营概览', 'controller:经营概览', 'frontend:经营概览'),
         tools=('briefing_query', 'dashboard_stats'),
         reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「经营看板」菜单节点（三处菜单源一致；2026-10-17 issue #7087 起它是**最前席位**一级项，原并列的「每日简报」菜单项已删除）对这些岗位**由不可见变可见**；18 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（DELETE /api/admin/files/{}；DELETE /api/admin/upload/image；GET /api/admin/briefing/config 等）；Agent 侧 2 个工具声明本码 ⇒ 黄金策对这批账号由「权限不足」变为可达（briefing_query / dashboard_stats）。'),
     ),
@@ -3692,8 +3692,8 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
         "⑭ 生产读码只在**一处菜单源**回退成管理码（MenuController 作业看板）⇒ 判据 10 红": (
             "menu:controller",
             lambda s: s.replace(
-                'new MenuNode("production:view", "作业看板")',
-                'new MenuNode("processing:manage", "作业看板")', 1),
+                'new MenuNode("production:view", "作业单")',
+                'new MenuNode("processing:manage", "作业单")', 1),
             problems_read_code_anchoring,
         ),
         "⑮ 承载工具退回管理码（processing_order_query → processing:manage）⇒ 判据 10 红": (
@@ -3971,10 +3971,10 @@ def _diverge_shared_node(text: str) -> str:
     后者在 `MenuController` 里叫「退换货」—— 名字都不同的节点本就不参与同构比对
     （这正是 `REGISTERED_RESIDUALS` 所登记「菜单源不做全树同构」的含义）。
     """
-    m = re.search(r'new MenuNode\("([^"]+)", "作业看板"\)', text)
+    m = re.search(r'new MenuNode\("([^"]+)", "作业单"\)', text)
     assert m, "注入锚点失配：`MenuController` 里找不到『作业看板』节点（同步本判据）"
     other = "order:list" if m.group(1) != "order:list" else "processing:manage"
-    return text.replace(m.group(0), f'new MenuNode("{other}", "作业看板")', 1)
+    return text.replace(m.group(0), f'new MenuNode("{other}", "作业单")', 1)
 
 
 def test_fourth_source_comment_mention_stays_green() -> None:
@@ -4246,7 +4246,7 @@ def test_multi_endpoint_registry_is_self_clearing(monkeypatch) -> None:
     # ③ 陈旧：把一个**单端点**页登记成多端点页 ⇒ 必须报「已不再并发多码 ⇒ 删掉这条登记」。
     monkeypatch.setattr(mod, "MULTI_READ_ENDPOINT_PAGES", {
         "/production/saving-board": MultiReadEndpointPage(
-            node="省料看板", codes=frozenset({"product:list"}),
+            node="省料分析", codes=frozenset({"product:list"}),
             reason="红证夹具（单端点页）", owner="本判据"),
     })
     hits = problems_menu_read_parity(w)

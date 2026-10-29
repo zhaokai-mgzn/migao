@@ -55,8 +55,8 @@ class BriefingQueryTool(BaseTool):
     )
 
     # 权限码（admin-api 目录）：`BriefingController.GET /api/admin/briefing/today` 方法级
-    # `@RequirePermission("dashboard:view")` —— 与侧边栏**「经营看板」节点**同码
-    #（2026-10-17 issue #7087：原「每日简报」菜单项已撤，该码现只由「经营看板」节点承载）。
+    # `@RequirePermission("dashboard:view")` —— 与侧边栏**「经营概览」节点**同码
+    #（2026-10-17 issue #7087：原「每日简报」菜单项已撤，该码现只由「经营概览」节点承载）。
     required_permissions = ["dashboard:view"]
     read_only = True
     destructive = False
@@ -86,7 +86,7 @@ class BriefingQueryTool(BaseTool):
                 success=False,
                 error="权限不足",
                 message="您没有权限查看经营日报",
-                suggestion="请联系管理员为您开通「经营看板」查看权限后重试",
+                suggestion="请联系管理员为您开通「经营概览」查看权限后重试",
             )
         if view and view not in VALUED_VIEWS:
             # 白名单之外一律拒绝（不猜、不降级）：具名视图的契约就是「一个高频问题一个视图」

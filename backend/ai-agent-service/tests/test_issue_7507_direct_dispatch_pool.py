@@ -1,5 +1,5 @@
 # case_ids: PG-090
-"""issue #7507：B 端「生成加工单」指引必须指向**智能派单**（不是作业看板）。
+"""issue #7507：B 端「生成加工单」指引必须指向**智能派单**（不是作业单）。
 
 用户 2026-10-23 裁定「为什么从订单可以直接生成加工单，而不是默认走智能派单流程？这里得限制下」
 ⇒ #7507 非加急走智能派单；#7634（用户 2026-10-24「一起收，也要统一走智能派单」）把所有订单都收进派单页。B 端 agent 的写能力自 #5247 起已下线
@@ -7,7 +7,7 @@
 `prompts/order.md` 与工具 description 必须与新口径同源，否则下一次恢复写能力时又把模型教错。
 
 红证：
-- 把 prompts/order.md 里「生成加工单…不可用」那两处指路改回「作业看板」⇒ 本文件红；
+- 把 prompts/order.md 里「生成加工单…不可用」那两处指路改回「作业单」⇒ 本文件红；
 - 把 `ProcessingOrderGenerateTool.description` 的「智能派单 / 非加急」去掉 ⇒ 本文件红。
 """
 
@@ -39,8 +39,8 @@ def test_generate_guidance_points_to_pool_not_board() -> None:
     assert lines, "order.md 丢了「生成加工单不在能力内」的指路行 —— 模型会以为可以代办"
     for line in lines:
         assert "智能派单" in line, f"指路没有指向智能派单：{line}"
-        assert "作业看板" not in line, (
-            f"旧指引（生成加工单 → 作业看板）必须退场：作业看板只能看、不能生成：{line}"
+        assert "作业单" not in line, (
+            f"旧指引（生成加工单 → 作业单）必须退场：作业单只能看、不能生成：{line}"
         )
 
 

@@ -9,7 +9,7 @@
  * 而手写形态的默认结局就是那个已被诊断过的坏形态：
  *
  * ```
- * <h1 className="text-xl font-semibold text-neutral-900">作业看板</h1>
+ * <h1 className="text-xl font-semibold text-neutral-900">作业单</h1>
  * ```
  *
  * `frontend/admin-web/src/lib/design-tokens.ts` 的 `TYPE_SCALE` 规定 **h1 = `text-2xl`**、
@@ -248,7 +248,7 @@ describe('判据 2：存量快照只许缩短（销账是必须动作）', () =>
 
 describe('判别力自证与 fail-closed', () => {
   it('坏形态判红、好形态放行（纯函数级）', () => {
-    expect(hasHandWrittenH1('<h1 className="text-xl font-semibold text-neutral-900">作业看板</h1>')).toBe(true)
+    expect(hasHandWrittenH1('<h1 className="text-xl font-semibold text-neutral-900">作业单</h1>')).toBe(true)
     expect(hasHandWrittenH1('<h2 className="text-xl font-semibold">区块</h2>')).toBe(false)
     expect(usesPageHeader("<PageHeader title=\"作业看板\" />")).toBe(true)
     expect(usesPageHeader('<div>no header primitive here</div>')).toBe(false)

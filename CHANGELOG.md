@@ -53,6 +53,22 @@
 - 判据：`WorkerBatchStockControllerTest` / `WorkerBatchStockServiceTest`（后端）、`worker-stock` / `worker-stock-page`（端侧）、
   入口可达 + 写入口台账 + 卡片对比度 / 纯文本 / 输入面台账（类级）。用例 = BM-056。
 
+### 侧边栏三处正名：经营看板→经营概览、作业看板→作业单、省料看板→省料分析（2026-10-29，issue #8100）
+
+用户 2026-10-29 裁定（issue #8086 四条裁定之四）：「**经营看板→经营概览**」「**作业看板→作业单**」「**省料看板→省料分析**」，三条一起改。
+
+- **五处副本同批**：`frontend/admin-web/src/config/menu.ts`、`MenuController.MENU_TREE`、
+  `AuthService.buildMenusByPermissions`、`menu_navigator.py`（`MENU_TREE` + `NAV_FEATURES`）、
+  `rbac/manifest.json`（`menu_nodes` / `menus.*`，`readings.json` 重生成）—— 只改 label，**权限码一字未动**（零授权 delta）。
+- **展示面跟随**：面包屑 `Header.tsx`（三条路由 + 兜底项）、页面 H1（`/dashboard`、`/production`、
+  `/production/saving-board`，§15.2 面包屑与菜单同名）、官网能力地图 `capability-map.ts`（与后台菜单同源判据）。
+- **旧名保留为搜索别名**：`keywords` 里留「经营看板 / 作业看板 / 生产看板 / 省料看板」⇒ ⌘K 按老叫法仍能搜到；
+  `menu_navigator` 的 `NAV_FEATURES` 登记名写成「经营概览（原经营看板 / 经营数据）」并保留旧说法别名
+  （判据 6b 要求说法与登记名有包含关系）。
+- **路径不变**：`/dashboard`、`/production`、`/production/saving-board` 一字未改（旧深链不破）。
+- 判据：三源同构守卫（label 逐字）、`test_menu_navigator.py`（含判据 9 红证锚点）、
+  `test_agent_permission_parity.py`（工具→菜单节点登记表 + `AUTHORIZATION_CENSUS`）、前端 35 个用例文件（690 条）。
+
 ### 物流类型打通全链路：工人端、智能体、承运商候选（2026-10-29，issue #8071 / #8079 / #8080）
 用户裁定「工人端要区分物流和快递，全链路都要区分」。上一轮只补了商家后台两个入口（#8070 / #8073），这一轮把剩下三条路补齐。
 

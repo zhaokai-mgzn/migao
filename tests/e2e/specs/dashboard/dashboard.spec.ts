@@ -160,15 +160,15 @@ test.describe('仪表盘页面', () => {
     await mockDashboardApis(page)
     await page.goto('/dashboard')
     // 页面标题出现即表示认证通过 + dashboard 渲染完成
-    await expect(page.getByRole('heading', { name: '经营看板' })).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByRole('heading', { name: '经营概览' })).toBeVisible({ timeout: 20_000 })
     // 等待数据加载完成（骨架屏消失）
     await expect(page.locator('.animate-pulse')).toHaveCount(0, { timeout: 10_000 })
   })
 
-  test('页面标题展示"经营看板"', async ({ page }) => {
+  test('页面标题展示"经营概览"', async ({ page }) => {
     // getByRole('heading') 精确匹配 h1，避免 strict mode violation —
-    // Header 面包屑也渲染"经营看板"（<span>），getByText 会匹配到两个元素
-    await expect(page.getByRole('heading', { name: '经营看板' })).toBeVisible()
+    // Header 面包屑也渲染"经营概览"（<span>），getByText 会匹配到两个元素
+    await expect(page.getByRole('heading', { name: '经营概览' })).toBeVisible()
   })
 
   test('两处「数据更新时间」都是**完整格式**且逐字一致（issue #5792）', async ({ page }) => {
@@ -318,7 +318,7 @@ test.describe('仪表盘页面', () => {
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200, data: Array.from({ length: 12 }) }) })
       })
       await page.goto('/dashboard')
-      await expect(page.getByRole('heading', { name: '经营看板' })).toBeVisible({ timeout: 15_000 })
+      await expect(page.getByRole('heading', { name: '经营概览' })).toBeVisible({ timeout: 15_000 })
       await expect(page.locator('.animate-pulse')).toHaveCount(0, { timeout: 10_000 })
     })
 

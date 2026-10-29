@@ -1393,7 +1393,7 @@ public class AuthService {
         // ⚠️ 位置在**三处**同批表达：本处 add 的文档位置（**最前**）/ `MenuController.MENU_TREE`
         // 的顶层**首个**节点 / 前端 `menu.ts` 的 `standaloneHeadItems`（三源同构守卫按顶层布局序列比对，含位置）。
         if (isAll || permissions.contains("dashboard:view")) {
-            menus.add(menuItem("dashboard", "经营看板", "/dashboard"));
+            menus.add(menuItem("dashboard", "经营概览", "/dashboard"));
         }
 
         // 报表中心（issue #7376 / #7377）：与经营看板同属经营数据面 ⇒ 紧随其后；同码零 delta。
@@ -1494,7 +1494,7 @@ public class AuthService {
         // 曾让「作业看板」从 `rbac/readings.json` 的 `menus.auth` 里消失，「清单 == 生成物」对账因此判红）。
         // /production = 作业看板唯一入口（issue #4357 与原「加工单」菜单合并）。
         if (isAll || permissions.contains("production:view")) {
-            productionChildren.add(menuItem("production-board", "作业看板", "/production"));
+            productionChildren.add(menuItem("production-board", "作业单", "/production"));
         }
         // 智能派单（issue #5177）：池化派单的决策屏。issue #5699 **P4** 起节点码 = 该页第一屏**读**码
         // `processing:view`（`ProductionPoolController` 的两个读端点同码）—— 此前节点挂
@@ -1578,7 +1578,7 @@ public class AuthService {
         //（StockBatchController 的 `/saving-board`、`/saving-trend`）是**方法级** `product:list`
         // ⇒ 按子菜单粒度把节点码收敛到该读码（此前节点挂 processing:manage = 节点码 ≠ 页面读码）。
         if (isAll || permissions.contains("product:list")) {
-            inventoryChildren.add(menuItem("production-saving-board", "省料看板", "/production/saving-board"));
+            inventoryChildren.add(menuItem("production-saving-board", "省料分析", "/production/saving-board"));
         }
         if (!supplyChainChildren.isEmpty()) {
             menus.add(menuGroup("supply-chain", "供应链", supplyChainChildren));

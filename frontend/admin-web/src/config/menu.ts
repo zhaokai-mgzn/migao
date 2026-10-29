@@ -167,7 +167,7 @@ export interface MenuGroup {
 export const standaloneHeadItems: MenuItem[] = [
   // 经营看板（原「工作台」组的首项）：issue #5699（P4）节点码 = 该页第一屏读码 `dashboard:view`
   //（5 个读端点与前端路由守卫同码）—— 「菜单看得见」与「点进去进得去」必须同一把尺子。
-  { key: 'dashboard', name: '经营看板', icon: 'BarChart3', path: '/dashboard', permissionCode: 'dashboard:view', keywords: ['jycb', 'kanban', '看板', '经营看板', '工作台'] },
+  { key: 'dashboard', name: '经营概览', icon: 'BarChart3', path: '/dashboard', permissionCode: 'dashboard:view', keywords: ['jycb', 'kanban', '看板', '经营概览', '经营看板', '工作台'] },
   // 报表中心（issue #7376 / #7377）：与「经营看板」同属**经营数据面**，所以紧跟其后、同为最前席位
   // 一级项（而不是塞进「交易管理」——报表不是交易操作）。码取**同一把尺子** `dashboard:view`
   // （报表就是看板的下钻，零授权 delta）；`/dashboard` 仍是登录落点（= 第一个可见项，未变）。
@@ -317,7 +317,7 @@ export const menuGroups: MenuGroup[] = [
       //   · issue #5699（P4）：工艺配置页第一屏 6 个读端点整页收敛到**页面码** production:view。
       // /production = 作业看板唯一入口（issue #4357 与原「加工单」菜单合并；#7079 起上位概念 = 作业看板）
       // 2026-10-19（issue #7332）：菜单正名「作业看板」；旧名「生产看板」保留为**关键词**（⌘K 按老叫法仍能搜到）。
-      { key: 'production-board', name: '作业看板', icon: 'ClipboardCheck', path: '/production', permissionCode: 'production:view', keywords: ['sckb', 'shengchan', 'jiagongdan', '加工单', '作业', '作业看板', '作业看板', 'zuoye', 'zykb', '生产看板', '生产'] },
+      { key: 'production-board', name: '作业单', icon: 'ClipboardCheck', path: '/production', permissionCode: 'production:view', keywords: ['sckb', 'shengchan', 'jiagongdan', '加工单', '作业', '作业单', '作业看板', 'zuoye', 'zykb', '生产看板', '生产'] },
       // 智能派单（issue #5177）：池化派单的**决策屏** —— 加急插队区（不进池、立即单派）
       // + 物料分组成批区（勾选 → 预览 → 一键成批派单）+ 超时未派告警。
       // issue #5699（P4）：节点码 = 该页第一屏读码 `processing:view`（此前挂 processing:manage ⇒ 节点码 ≠ 页面读码），
@@ -399,7 +399,7 @@ export const menuGroups: MenuGroup[] = [
       // 余料台账（PR-106 / issue #5191）：码 = `processing:manage`（`RemnantController` 类级码逐字同码）
       { key: 'production-remnants', name: '余料台账', icon: 'Recycle', path: '/production/remnants', permissionCode: 'processing:manage', keywords: ['yltz', 'yuliao', 'huishou'] },
       // 省料看板（issue #5699 P4）：两个读端点在 `StockBatchController` 上是方法级 `product:list`
-      { key: 'production-saving-board', name: '省料看板', icon: 'TrendingDown', path: '/production/saving-board', permissionCode: 'product:list', keywords: ['slkb', 'shengliao', 'haoliao', '省料看板'] },
+      { key: 'production-saving-board', name: '省料分析', icon: 'TrendingDown', path: '/production/saving-board', permissionCode: 'product:list', keywords: ['slkb', 'shengliao', 'haoliao', '省料分析', '省料看板'] },
     ],
   },
   {

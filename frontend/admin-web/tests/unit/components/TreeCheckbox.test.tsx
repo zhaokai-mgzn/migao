@@ -106,17 +106,17 @@ describe('TreeCheckbox', () => {
 describe('TreeCheckbox #6083 同码多节点', () => {
   const SAME_CODE_TREE: TreeNode[] = [
     { code: 'workspace', label: '工作台', children: [
-      { code: 'dashboard:view', label: '经营看板' },
+      { code: 'dashboard:view', label: '经营概览' },
       { code: 'dashboard:view', label: '每日简报' },
     ]},
     { code: 'production-center', label: '生产中心', children: [
-      { code: 'production:view', label: '作业看板' },
+      { code: 'production:view', label: '作业单' },
       { code: 'production:view', label: '加工项管理' },
       { code: 'production:view', label: '工艺配置' },
       { code: 'production:view', label: '计件工资' },
     ]},
   ]
-  const ALL_LEAF_LABELS = ['经营看板', '每日简报', '作业看板', '加工项管理', '工艺配置', '计件工资']
+  const ALL_LEAF_LABELS = ['经营概览', '每日简报', '作业单', '加工项管理', '工艺配置', '计件工资']
 
   afterEach(() => {
     cleanup()
@@ -137,23 +137,23 @@ describe('TreeCheckbox #6083 同码多节点', () => {
   })
 
   it('#6083: treeNodeKey 由 code+label 派生唯一 key（同码不同 label ⇒ key 不同，幂等）', () => {
-    const keyA = TreeCheckboxModule.treeNodeKey({ code: 'dashboard:view', label: '经营看板' })
+    const keyA = TreeCheckboxModule.treeNodeKey({ code: 'dashboard:view', label: '经营概览' })
     const keyB = TreeCheckboxModule.treeNodeKey({ code: 'dashboard:view', label: '每日简报' })
     expect(keyA).not.toBe(keyB)
     expect(keyA).toContain('dashboard:view')
     // 幂等：同输入同输出（重渲染时 key 稳定，不丢挂载状态）
-    expect(TreeCheckboxModule.treeNodeKey({ code: 'dashboard:view', label: '经营看板' })).toBe(keyA)
+    expect(TreeCheckboxModule.treeNodeKey({ code: 'dashboard:view', label: '经营概览' })).toBe(keyA)
   })
 
   it('#6083 类级守卫: 同码勾选语义不回退 —— 勾选其一上抛共享 code，同码节点一起高亮', () => {
     const onChange = vi.fn()
     const { rerender } = render(<TreeCheckbox tree={SAME_CODE_TREE} selected={[]} onChange={onChange} />)
-    fireEvent.click(cb('经营看板'))
+    fireEvent.click(cb('经营概览'))
     // 同码 = 同权限：上抛的是共享 code
     expect(onChange).toHaveBeenCalledWith(['dashboard:view'])
     rerender(<TreeCheckbox tree={SAME_CODE_TREE} selected={['dashboard:view']} onChange={onChange} />)
     // 同码各节点一起高亮（该语义是正确设计，禁因修 key 而改坏）
-    expect(cb('经营看板').checked).toBe(true)
+    expect(cb('经营概览').checked).toBe(true)
     expect(cb('每日简报').checked).toBe(true)
   })
 })
@@ -166,12 +166,12 @@ describe('TreeCheckbox #6759 手机端可见面标注', () => {
   const MOBILE_TREE: TreeNode[] = [
     { code: 'production-center', label: '生产管理', children: [
       { code: 'processing:view', label: '智能派单', mobileTitles: ['智能派单'] },
-      { code: 'production:view', label: '作业看板', mobileTitles: [] },
+      { code: 'production:view', label: '作业单', mobileTitles: [] },
     ]},
     { code: 'inventory-center', label: '仓储与物料', children: [
       { code: 'inbound:view', label: '入库单', mobileTitles: ['入库过账'] },
       // 同一码挂两个手机端面 ⇒ 用 `、` 连接
-      { code: 'dashboard:view', label: '经营看板', mobileTitles: ['数据'] },
+      { code: 'dashboard:view', label: '经营概览', mobileTitles: ['数据'] },
       { code: 'order:list', label: '发货单' },
     ]},
   ]
