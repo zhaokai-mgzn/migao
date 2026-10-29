@@ -1,9 +1,10 @@
 // case_ids: UI-003, UI-004, DA-005, DA-006, DA-007
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within, fireEvent } from '@testing-library/react'
 
 /**
- * 经营看板**首屏**判据（issue #8012：简报空态压缩 + 加载骨架 + 环比大基数保护）
+ * 经营看板**首屏**判据（issue #8012：简报空态压缩 + 加载骨架 + 环比大基数保护；
+ * issue #8105：待处理提到简报之前 + 简报**有数据时也默认收起一行**）
  *
  * 病灶（2026-10-24 真栈截图 `acceptance/2026-10-24/merchant-ui-smoke-t46/out/screenshots/`）：
  *   ① 简报空态是一个约 300px 的常驻盒子（标题 + 三行说明 + 「去开启」）⇒ 「待处理」被挤到折叠线以下；
@@ -83,6 +84,33 @@ function mockApiSuccess(overrides: Record<string, unknown> = {}) {
   mockBriefingGetToday.mockResolvedValue({ data: { data: { generated: false, verifyStatus: null, content: null } } })
 }
 
+/** 简报已开启且**有数据**（issue #8105 的收起判据针对这一态：改前是约 400px 的完整卡片） */
+function mockBriefingWithData() {
+  mockBriefingGetConfig.mockResolvedValue({ data: { data: { enabled: true } } })
+  mockBriefingGetToday.mockResolvedValue({
+    data: {
+      data: {
+        generated: true,
+        verifyStatus: 'verified',
+        content: {
+          summary: '昨日订单 5 单，经营平稳',
+          review: [{ label: '今日订单', value: 5, unit: '单', change: '较昨日 +66.7%' }],
+          todo: [],
+          risks: [],
+          suggestions: [],
+        },
+        // 主动检查面板：要有采集结果才渲染（收起态不应看到它）
+        proactive_status: {
+          low_stock: {
+            rule_id: 'low_stock', rule_name: '库存告急', status: 'not_wired',
+            reason: null, missing: [], gaps: [], caveats: [], display: '这项检查还没有可用数据',
+          },
+        },
+      },
+    },
+  })
+}
+
 /** 永不落定的请求 ⇒ 页面停在「加载中」（判据只看骨架，不看时序） */
 function holdLoading() {
   const pending = () => new Promise(() => {})
@@ -121,6 +149,8 @@ describe('经营看板首屏（issue #8012）', () => {
     // 旧形态（约 300px：标题 + 三行说明 + 去开启）必须整块不在
     expect(screen.queryByTestId('briefing-empty-state')).toBeNull()
     expect(screen.queryByText(/开启「智能每日经营简报」后/)).toBeNull()
+    // 负控（issue #8105）：空态与「有数据时的一行收起」是**两套**形态，不许混用
+    expect(screen.queryByTestId('briefing-toggle')).toBeNull()
   })
 
   it('① 简报已开启但今日未生成 ⇒ 也压缩成一行（真栈截图里那 300px 大盒子就是这一态）', async () => {
@@ -133,31 +163,52 @@ describe('经营看板首屏（issue #8012）', () => {
     expect(hint.textContent).toContain('今日简报尚未生成')
     expect(screen.queryByTestId('briefing-empty-state')).toBeNull()
     expect(screen.queryByText(/开启「智能每日经营简报」后/)).toBeNull()
+    // 负控（issue #8105）：空态与「有数据时的一行收起」是**两套**形态，不许混用
+    expect(screen.queryByTestId('briefing-toggle')).toBeNull()
   })
 
-  it('① 已开启且有数据 ⇒ 保持现有卡片形态（压缩只针对空态，不动有数据的卡）', async () => {
-    mockBriefingGetConfig.mockResolvedValue({ data: { data: { enabled: true } } })
-    mockBriefingGetToday.mockResolvedValue({
-      data: {
-        data: {
-          generated: true,
-          verifyStatus: 'verified',
-          content: {
-            summary: '昨日订单 5 单，经营平稳',
-            review: [{ label: '今日订单', value: 5, unit: '单', change: '较昨日 +66.7%' }],
-            todo: [],
-            risks: [],
-            suggestions: [],
-          },
-        },
-      },
-    })
-
+  it('①【#8105 顺序】待处理区块在简报区块之前；简报仍在经营数据之前', async () => {
+    mockBriefingWithData()
     render(<DashboardPage />)
 
-    await waitFor(() => expect(screen.getByText('每日经营简报')).toBeInTheDocument())
-    // 卡片内容来自异步 getToday ⇒ 必须等渲染，否则断言的是「还没回来」
+    // 用**标题文本**定位两个区块（改前「每日经营简报」确实在「待处理」之前 ⇒ 这条会红）
+    const briefingTitle = await screen.findByText('每日经营简报')
+    const pendingHeading = screen.getByText('待处理')
+    // jsdom 没有真实布局 ⇒ 用**文档顺序**替代 y 坐标（真机 1440×900 的 y 坐标见 PR body 实测）
+    expect(pendingHeading.compareDocumentPosition(briefingTitle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // 简报仍在「经营数据」之前（目标顺序：待处理 → 简报 → 经营数据）
+    expect(briefingTitle.compareDocumentPosition(screen.getByText('经营数据')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // 结构锚点：两个区块都在页面上（顺序判据之外的最小存在性判据）
+    expect(screen.getByTestId('dashboard-pending-section')).toBeInTheDocument()
+    expect(screen.getByTestId('dashboard-briefing-section')).toBeInTheDocument()
+  })
+
+  it('①【#8105 收起】简报有数据时默认只占一行：完整卡片内容不在 DOM，点「展开」出现，再点「收起」消失', async () => {
+    mockBriefingWithData()
+    render(<DashboardPage />)
+
+    const toggle = await screen.findByTestId('briefing-toggle')
+    // 一行摘要 = 图标 + 标题 + 一句关键摘要 + 展开；触发器是可聚焦按钮且带 aria-expanded
+    expect(toggle.tagName).toBe('BUTTON')
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle.textContent).toContain('每日经营简报')
+    // 摘要来自异步 getToday：首帧同一行是「正在读取今日简报…」⇒ 等它落定再断言（否则测的是时序）
+    await waitFor(() => expect(toggle.textContent).toContain('昨日订单 5 单，经营平稳'))
+    expect(toggle.textContent).toContain('展开')
+    // 完整卡片内容（主动检查 / 昨日回顾）默认**不在 DOM** —— 不是 CSS 隐藏
+    expect(screen.queryByText('昨日回顾')).toBeNull()
+    expect(screen.queryByText('主动检查')).toBeNull()
+
+    fireEvent.click(toggle)
     await waitFor(() => expect(screen.getByText('昨日回顾')).toBeInTheDocument())
+    expect(screen.getByText('主动检查')).toBeInTheDocument()
+    expect(screen.getByTestId('briefing-toggle')).toHaveAttribute('aria-expanded', 'true')
+
+    fireEvent.click(screen.getByTestId('briefing-toggle'))
+    await waitFor(() => expect(screen.queryByText('昨日回顾')).toBeNull())
+    expect(screen.queryByText('主动检查')).toBeNull()
+    expect(screen.getByTestId('briefing-toggle')).toHaveAttribute('aria-expanded', 'false')
+    // 空态提示（#8012）与收起行是**两套**形态，不许同屏
     expect(screen.queryByTestId('briefing-collapsed-hint')).toBeNull()
   })
 
