@@ -15,15 +15,16 @@ prompt>)` 取**最终** system prompt，断言：
 1. `#\\d{4,}` = **0**（`test_prompt_sources_have_no_issue_ref`）；
 2. `<!--` 不出现（`test_no_html_comment_marker`）—— 渲染层 `_read_cached()` **不剥离** HTML
    注释（原样读文件、只 `strip()` 首尾空白）⇒ 必须断言「**原文**不含」，而不是「剥离后不含」；
-3. 唯一具名残留 `_REGISTRY_DERIVED_RESIDUE`（见下）**只许缩短**。
+3. 具名残留台账 `_REGISTRY_DERIVED_RESIDUE` **只许缩短**（清零后 = 空集 ⇒ 任何编号回潮即红）。
 
 ## 为什么 1 要减去「能力边界」段
 
-该段由 `app/agents/capability_boundary.py` 按工具注册表**现算投影**（段首括注 `issue #7291`），
-**不在本包的写面**（该文件由能力边界包独占）。⇒ 判据把 `_capability_boundary()` 的返回值
-（逐字相等才替换）从被测文本里摘掉，判**其余全部** prompt 正文；残留另由
-`test_issue_ref_residue_is_only_the_known_anchor` 具名兜住 —— 在别处新增 issue 号（含在
-能力边界段里）⇒ 红。
+该段由 `app/agents/capability_boundary.py` 按工具注册表**现算投影**，段首括注曾带一个
+`issue #7291`（每 skill 1 处 ⇒ 渲染后残留 11 处）。**本 PR 已把它一并清掉**（该文件的写面在
+P1-1 包合并后空出），渲染后读数因此 **130 → 0**。⇒ 判据仍把 `_capability_boundary()` 的返回值
+（逐字相等才替换）从被测文本里摘掉、判**其余全部** prompt 正文，**另外**用它当回归闸：
+`test_issue_ref_residue_is_only_the_known_anchor` 的台账 `_REGISTRY_DERIVED_RESIDUE` 已收成
+**空集**（只许缩短）⇒ 那个段首括注将来回潮（或该段里出现任何新编号）⇒ 红。
 
 ## 红证（注入式，逐条命令见 PR body）
 
@@ -58,10 +59,11 @@ from app.graph.skills.skill_registry import get_skill_registry
 #: 内部 issue 号形态（4 位以上；与审计 F7 的读数口径逐字一致）。
 ISSUE_REF_RE = re.compile(r"#\d{4,}")
 
-#: **唯一具名残留**（只许缩短，不许新增）：能力边界段的段首括注由
-#: `app/agents/capability_boundary.py` 现算投影生成，那个文件不在本包写面。
-#: 它被清掉时本集合可以一并变空（`<=` 断言不会因此变红）；**新增**任意一条 ⇒ 红。
-_REGISTRY_DERIVED_RESIDUE = frozenset({"#7291"})
+#: **具名残留台账**（只许缩短，不许新增）：能力边界段的段首括注由
+#: `app/agents/capability_boundary.py` 现算投影生成。
+#: 🔴 本 PR 已把段首那个编号清掉 ⇒ 台账**收成空集**（集合保持 `<=` 语义：清掉不假红，
+#: **新增/回潮任何一条 ⇒ 红**）。
+_REGISTRY_DERIVED_RESIDUE = frozenset()
 
 #: 必须被覆盖的 B 端域（fail-closed：注册表里少一个域 ⇒ 判据不空转）。
 EXPECTED_MIBAO_SKILLS = frozenset({
