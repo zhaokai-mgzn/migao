@@ -9827,7 +9827,7 @@ _CASE_OR_074 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     forbidden_tools=[{'tool': 'order_query'}],
-    want_text=[{'round': 1, 'any_of': ['哪一单', '哪一笔', '请提供', '麻烦提供', '需要您提供']}],
+    want_text=[{'round': 1, 'any_of': ['哪一单', '哪一笔', '请提供', '麻烦提供', '麻烦您提供', '请告诉', '需要您提供', '告诉我单号']}],
     precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
 )
 

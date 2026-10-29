@@ -7883,7 +7883,7 @@
 数据: 无焦点 ⇒ 必须追问（不得猜）：`app/memory/focus.py` 的 resolve_reference 在空焦点下返回 None（判据 = backend/ai-agent-service/tests/test_focus_memory.py），因此本轮不得复用任何订单号；机器侧由 `expectations: direct_reply`（不得有工具调用）+ `forbidden_tools: order_query`（不得先查列表再挑一笔）+ 追问措辞 `want_text` 三条共同钉住。前置 = 张三名下确有订单（order_count_for_phone），证明「有单可猜」时仍选择追问
 前置: order_count_for_phone(source=13800138000)
 全程禁用: order_query
-必须: {'round': 1, 'any_of': ['哪一单', '哪一笔', '请提供', '麻烦提供', '需要您提供']}
+必须: {'round': 1, 'any_of': ['哪一单', '哪一笔', '请提供', '麻烦提供', '麻烦您提供', '请告诉', '需要您提供', '告诉我单号']}
 ```
 真值: ai-chat.context-memory
 溯源: 2026-10-30 新增（issue #8173）：与 OR-073 成对——OR-073 证明「有焦点 ⇒ 确定性复用」，本用例证明「无焦点 ⇒ 保持追问、不许猜」。单轮用例（新会话天然无焦点）；`precondition[order_count_for_phone: 13800138000]` 保证库里确实有单可猜，否则「不猜」会被空库洗成假绿。取号 = scripts/next_case_id.py OR ⇒ OR-074。 ｜ tags: order, multi_turn, focus_memory, negative
