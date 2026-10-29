@@ -112,13 +112,13 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     expect(allItems.find((c) => c.path === '/production/routings')).toBeUndefined()
     // #5778：原「商品与加工项」组已撤销（商品列表升为**一级项**，现名「商品管理」）
     expect(productGroup()).toBeUndefined()
-    // 生产管理组（#6580 起 **3 项**；两项已移除）
+    // 🔴 2026-10-29（issue #8086）：质检记录 / 返工单已拆到「质量」组 ⇒ 生产管理回到 **3 项**
     expect(productionGroup()!.children.map((c) => c.key)).toEqual([
-      'production-board', 'production-pool', 'production-piecework', 'quality-inspections', 'rework-orders',
+      'production-board', 'production-pool', 'production-piecework',
     ])
   })
 
-  it('生产管理组现为 **4 项**（#6580 移除两个菜单项；#7140 加「质检记录」）；单据三项移至新组「供应链」、库存/余料/省料仍在「仓储与物料」组（#5778 + #5271 + #7369）', () => {
+  it('生产管理组现为 **3 项**（#8086 把质检/返工拆到「质量」组）；单据移至「供应链」、库存/余料/省料仍在「仓储与物料」组（#5778 + #5271 + #7369 + #8086）', () => {
     // 🔴 #6580：本组由 5 项收拢为 3 项（「加工项管理」「工艺配置」菜单项已移除、功能体并入
     // 一级项「企业基础设置」页）；而面料进出与消耗（入库单 / 余料台账 / 省料看板）
     // 原归**「仓储与物料」**组（issue #5271 的拆组保留）—— 🔴 issue #7369（用户 2026-10-20 裁定
@@ -129,8 +129,7 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
       '/production',
       '/production/pool',
       '/production/piecework',
-      '/quality-inspections',   // issue #7140：质检记录
-      '/rework-orders',         // issue #7377：返工单（紧跟质检记录：判定 → 要返工就开单）
+      // 🔴 #8086：质检记录 / 返工单已拆到「质量」组
     ])
     // 反向：面料三项**不得**在本科目里（它们属「供应链」/「仓储与物料」）
     expect(productionPaths).not.toContain('/inbound-orders')
@@ -143,21 +142,19 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
       'production:view',    // 作业看板
       'processing:view',    // 智能派单
       'production:view',    // 计件工资
-      'production:inspect', // 质检记录（issue #7140）
-      'after_sales:view',   // 返工单（issue #7377：复用售后读码 ⇒ 零授权 delta）
+      // 🔴 #8086：质检记录 / 返工单已移出本组（「质量」组）
     ])
     // 拆出去的单据三项落在**新组「供应链」**，且三项**同码** inbound:view（采购与收货同岗位 ⇒
     // 零授权 delta；不新造 supplier:* / purchase:* —— 新码今天没人持有 ⇒ 菜单对所有人不可见）：
     // 入库单必须排组内第一（手机端可见面标注取该码树序首个承载节点，#6781）。
+    // 🔴 2026-10-29（issue #8086）：供应商移入「基础资料」组 ⇒ 本组 = 入库单 → 采购单
     expect(supplyGroup()!.children.map((c) => c.path)).toEqual([
       '/inbound-orders',
-      '/suppliers',
-      '/purchase-orders',   // #7369 段 4：采购单（入库单之后、供应商之后 —— 采购 → 收货同群）
+      '/purchase-orders',   // #7369 段 4：采购单（入库单之后 —— 采购 → 收货同群）
     ])
     expect(supplyGroup()!.children.map((c) => c.permissionCode)).toEqual([
       'inbound:view',   // 入库单
-      'inbound:view',   // 供应商（#7369：档案面与入库单同码 ⇒ 零授权 delta）
-      'inbound:view',   // 采购单（#7369 段 4：同上，零授权 delta）
+      'inbound:view',   // 采购单（#7369 段 4：零授权 delta）
     ])
     // 余下的库存/出库/台账/分析仍留在「仓储与物料」组，且**权限码不统一是有意的**：
     // 余料台账 = processing:manage（`RemnantController` 类级码）、
@@ -204,8 +201,8 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     // #7375 段 3：交易管理 +「价格本」⇒ 19 → 20；
     // 🔴 2026-10-24（issue #7593，用户裁定）：「审批中心」撤出侧边栏（入口改顶栏 `ApprovalBell`）
     // ⇒ 组内项 23 → **22**（只减这一项，其它组一项不少）
-    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).toHaveLength(23)
-    expect(allNames).toHaveLength(23)
+    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).toHaveLength(24)
+    expect(allNames).toHaveLength(24)
   })
 })
 
@@ -355,18 +352,23 @@ describe('顶层分组顺序（issue #4510 立判据；issue #5271 按业务动�
     // `workspace`**整组撤销** ⇒ 序列从它开始少一组（它的两项：经营看板 → 最前席位一级项、每日简报 → 删除）。
     // 🔴 2026-10-20（issue #7369）：新增「供应链」组，落在生产管理与仓储与物料之间
     //（物流动线：生产 → 采购/到货 → 库存/出库），组数 5 → **6**。
+    // 🔴 #8086：新增「基础资料」（客户服务之后）与「质量」（生产管理之后）⇒ 组数 6 → **8**
     expect(menuGroups.map((g) => g.key)).toEqual([
       'customer-service',
+      'basic-data',
       'trade-center',
       'production-center',
+      'quality',
       'supply-chain',
       'inventory-center',
       'org-center',
     ])
     expect(menuGroups.map((g) => g.name)).toEqual([
       '客户服务',
+      '基础资料',
       '交易管理',
       '生产管理',
+      '质量',
       '供应链',
       '仓储与物料',
       '组织管理',
@@ -390,17 +392,18 @@ describe('顶层分组顺序（issue #4510 立判据；issue #5271 按业务动�
     const keys = menuGroups.map((g) => g.key)
     // 生产管理在交易管理之下（动线：谁下单 → 单到哪 → 售后 → 收款 → 加工执行）
     expect(keys.indexOf('production-center')).toBeGreaterThan(keys.indexOf('trade-center'))
-    // 供应链紧随生产管理之后（单据三项从仓储组拆出，落在生产与仓储之间）
-    expect(keys.indexOf('supply-chain')).toBe(keys.indexOf('production-center') + 1)
+    // 🔴 #8086：生产管理之后先落「质量」组，供应链紧随其后（单据从仓储组拆出、落在生产与仓储之间）
+    expect(keys.indexOf('quality')).toBe(keys.indexOf('production-center') + 1)
+    expect(keys.indexOf('supply-chain')).toBe(keys.indexOf('quality') + 1)
     // 仓储与物料紧随供应链之后（同一物流动线：买 → 进 → 存 → 出）
     expect(keys.indexOf('inventory-center')).toBe(keys.indexOf('supply-chain') + 1)
     // 组织管理仍是**最后一个分组**
     expect(menuGroups[menuGroups.length - 1].key).toBe('org-center')
     // #5778：客户服务在交易管理**之上**（先服务客户 → 再谈交易）
     expect(keys.indexOf('customer-service')).toBeLessThan(keys.indexOf('trade-center'))
-    // 面非空自检：6 组（不是解析失灵造成的空序列）—— issue #7087 撤销「工作台」组后由 6 → 5；
-    // issue #7369 新增「供应链」组后由 5 → 6
-    expect(menuGroups).toHaveLength(6)
+    // 面非空自检：8 组（不是解析失灵造成的空序列）—— #7087 撤「工作台」6→5、#7369 加「供应链」5→6、
+    // #8086 加「基础资料」「质量」6→8
+    expect(menuGroups).toHaveLength(8)
   })
 
   it('通知中心仍是 `standaloneItems`（渲染在分组之后）—— 「最下面」= 最后一个**分组**', () => {
