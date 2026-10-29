@@ -24,6 +24,10 @@
  * ⑥ 收起后**焦点归位**（issue #8027）：提交成功 / `Escape` / 「取消」三条路径收完之后
  *    `document.activeElement` 都回到**触发这一行**的「发货」按钮（改前落 `body`：连续录单时
  *    键盘 / 读屏用户每单都要重新找回位置）。焦点只在**收起**时搬动，换行展开不会把上一行的焦点抢回来。
+ * ⑦ **物流类型**（issue #8070）：物流发货时单选「快递 / 物流/专线」（与发货页**同款控件同款文案**，
+ *    词表取 `@/lib/logistics` 的 `LOGISTICS_TYPES`，不另造常量）。默认取订单的 `logisticsType`，
+ *    不在白名单内则回落 `express`；该单选**只在物流发货时出现**；提交时**只在物流发货时**带上
+ *    `logisticsType`（`none` ⇒ 线上 body 里没有这个键，服务端「不传 = 不改」）。
  *
  * **注入式红证**（复核用，非本文件运行时执行）：
  * - 把 `handleShip` 改回 `router.push(...)` ⇒ ① 的 `push` 0 次与 ② 的「不跳页」当场红；
@@ -33,7 +37,9 @@
  * - 把失败分支改成 `toast.error` + 清空输入 ⇒ ④ 的红；
  * - 把「去发货页」从菜单里删掉 ⇒ ⑤ 红；
  * - 去掉焦点归位（或只在同步收起时还一次、刷新回来就不管）⇒ ⑥ 的提交成功那条红
- *   （刷新期间表体整体换成「加载中…」，行按钮是新的一茬节点）。
+ *   （刷新期间表体整体换成「加载中…」，行按钮是新的一茬节点）；
+ * - 把 `logisticsType` 从提交 payload 里去掉（或无条件写成 `'express'`）⇒ ⑦ 的三条判据同时红；
+ *   把默认值的白名单判断改成直接取 `order.logisticsType` ⇒ ⑦ 的「非白名单值回落快递」红。
  *
  * ## 与相邻判据的分工（不重复）
  *
@@ -131,6 +137,9 @@ const ROWS = [
     totalAmount: 2600,
     actualAmount: 2600,
     customerName: '赵先生',
+    // 订单上记着这单走**物流专线**（issue #8070）⇒ 行内发货的「物流类型」必须默认选中它，
+    // 而不是一律落库默认 `express`（走物流的单被记成快递）。
+    logisticsType: 'logistics',
     hasProcessing: false,
     createdAt: '2026-10-22T10:00:00Z',
     items: [],
@@ -458,5 +467,75 @@ describe('销售订单列表 · 行内快捷发货（issue #8013）', () => {
     await waitFor(() => expect(screen.queryByTestId('ship-inline-form')).toBeNull())
     await waitFor(() => expect(document.activeElement).toBe(primaryButton('ship2')))
     expect(document.activeElement).not.toBe(primaryButton('ship1'))
+  })
+
+  // ================= ⑦ 物流类型（issue #8070）：物流与快递不再混为一谈 =================
+
+  /** 「物流类型」单选组（与发货页同款：`LOGISTICS_TYPES` 的两个候选） */
+  const typeGroup = () => screen.getByRole('radiogroup', { name: '物流类型' })
+  const typeRadio = (label: string) => within(typeGroup()).getByRole('radio', { name: label })
+
+  it('⑦ 默认取订单的 logisticsType：ship2 = 物流专线 ⇒ 选中；订单没有 ⇒ 默认「快递」（ship1）', async () => {
+    render(<OrdersPage />)
+    await waitForRows()
+
+    await expandShip('ship2')
+    // 订单上记着这单走专线 ⇒ 必须是选中态，不能被表单默认的「快递」顶掉
+    expect(typeRadio('物流/专线')).toBeChecked()
+    expect(typeRadio('快递')).not.toBeChecked()
+
+    await expandShip('ship1')
+    // 订单没记 ⇒ 与后端列默认值（express）一致
+    expect(typeRadio('快递')).toBeChecked()
+    expect(typeRadio('物流/专线')).not.toBeChecked()
+    // 只有两个候选：词表唯一真值 = `@/lib/logistics` 的 `LOGISTICS_TYPES`（不另造常量）
+    expect(within(typeGroup()).getAllByRole('radio')).toHaveLength(2)
+  })
+
+  it('⑦ 非白名单值 ⇒ 回落「快递」（不把未知值渲染成第三个选项）', async () => {
+    api.getOrders.mockResolvedValue(pageOf([{ ...ROWS[0], logisticsType: 'carrier-x' }]))
+    render(<OrdersPage />)
+    await waitForRows()
+
+    await expandShip('ship1')
+    expect(typeRadio('快递')).toBeChecked()
+    expect(within(typeGroup()).getAllByRole('radio')).toHaveLength(2)
+  })
+
+  it('⑦ 切到「物流/专线」⇒ payload / HTTP body 的 logisticsType 都是 `logistics`', async () => {
+    render(<OrdersPage />)
+    await waitForRows()
+
+    const form = await expandShip('ship1')
+    typeTracking('SF1234567890')
+    fireEvent.click(typeRadio('物流/专线'))
+    fireEvent.click(within(form).getByRole('button', { name: '确认发货' }))
+
+    await waitFor(() => expect(shipApi.shipOrder).toHaveBeenCalledTimes(1))
+    const [, payload] = shipApi.shipOrder.mock.calls[0]
+    expect(payload.logisticsType).toBe('logistics')
+    // 真值落在**发出去的 body** 上（唯一键名映射在 `buildLogisticsPayload`）
+    expect(buildLogisticsPayload(payload)).toEqual(
+      expect.objectContaining({ logisticsType: 'logistics', shippingMethod: 'logistics' }),
+    )
+  })
+
+  it('⑦ 负控：「无需物流」⇒ 单选不出现、payload 不带 logisticsType（线上 body 里没有这个键）', async () => {
+    render(<OrdersPage />)
+    await waitForRows()
+
+    const form = await expandShip('ship1')
+    selectMethod('none')
+    // 「物流类型」只对物流发货有意义 ⇒ 无需物流时不摆这个选项（与发货页一致）
+    expect(screen.queryByRole('radiogroup', { name: '物流类型' })).toBeNull()
+    fireEvent.click(within(form).getByRole('button', { name: '确认发货' }))
+
+    await waitFor(() => expect(shipApi.shipOrder).toHaveBeenCalledTimes(1))
+    const [, payload] = shipApi.shipOrder.mock.calls[0]
+    expect(payload.shippingMethod).toBe('none')
+    expect(payload.logisticsType).toBeUndefined()
+    // 序列化后的 HTTP body 里**没有**这个键（JSON 丢弃 undefined）⇒ 服务端「不传 = 不改」，
+    // 不会把这条记录的类型静默写成 express
+    expect(JSON.stringify(buildLogisticsPayload(payload))).not.toContain('logisticsType')
   })
 })

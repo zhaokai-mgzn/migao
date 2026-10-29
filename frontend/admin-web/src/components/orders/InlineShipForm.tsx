@@ -44,7 +44,7 @@ import FormPanel, { Field, FormGrid, fieldControl } from '@/components/ui/FormPa
 import { productionApi } from '@/lib/api'
 import { extractApiErrorMessage } from '@/lib/api-error'
 import { newClientRequestId } from '@/lib/client-request-id'
-import { LOGISTICS_COMPANIES } from '@/lib/logistics'
+import { LOGISTICS_COMPANIES, LOGISTICS_TYPES } from '@/lib/logistics'
 import { useAuthStore } from '@/store/auth'
 import type { OrderBrief } from '@/types'
 
@@ -63,6 +63,14 @@ export default function InlineShipForm({ order, onClose, onShipped }: InlineShip
   const defaultShipperName = currentUser?.name || currentUser?.nickname || currentUser?.username || ''
 
   const [shippingMethod, setShippingMethod] = useState<'logistics' | 'none'>('logistics')
+  /**
+   * 物流类型（issue #8070）：`express` 快递 / `logistics` 物流专线。
+   * 订单上记着的值**落在词表白名单内**才用它，否则与后端列默认值一致回落「快递」——
+   * 不把未知值原样渲染成一个选不中的单选，也不让它悄悄落库。
+   */
+  const [logisticsType, setLogisticsType] = useState<string>(() =>
+    LOGISTICS_TYPES.some((t) => t.value === order.logisticsType) ? (order.logisticsType as string) : 'express',
+  )
   const [logisticsCompany, setLogisticsCompany] = useState<string>(LOGISTICS_COMPANIES[0])
   const [trackingNo, setTrackingNo] = useState('')
   const [shipperName, setShipperName] = useState(defaultShipperName)
@@ -106,6 +114,8 @@ export default function InlineShipForm({ order, onClose, onShipped }: InlineShip
           company: shippingMethod === 'logistics' ? logisticsCompany : '',
           trackingNo: shippingMethod === 'logistics' ? trackingNo.trim() : '',
           shippingMethod,
+          // 物流类型（issue #8070）：与发货页逐字一致 —— 只在物流发货时带上，无需物流不写
+          logisticsType: shippingMethod === 'logistics' ? logisticsType : undefined,
           shipperName: shipperName.trim(),
         },
         clientRequestId,
@@ -147,6 +157,33 @@ export default function InlineShipForm({ order, onClose, onShipped }: InlineShip
 
         {shippingMethod === 'logistics' && (
           <>
+            {/* 物流类型（issue #8070）：物流 / 快递是**两个维度**，别混为一谈 ——
+                控件与文案照抄发货页（`ShipOrder.tsx` 的「物流类型」单选），词表取 `@/lib/logistics`。 */}
+            <Field label="物流类型">
+              <div role="radiogroup" aria-label="物流类型" className="flex h-9 items-center gap-4">
+                {LOGISTICS_TYPES.map((t) => (
+                  <label
+                    key={t.value}
+                    className="flex cursor-pointer items-center gap-1.5 text-sm text-neutral-700"
+                  >
+                    <input
+                      type="radio"
+                      name={`ship-type-${order.id}`}
+                      value={t.value}
+                      checked={logisticsType === t.value}
+                      disabled={submitting}
+                      className="h-4 w-4 border-neutral-300 text-primary-600 focus:ring-primary-500"
+                      onChange={() => {
+                        setLogisticsType(t.value)
+                        setError('')
+                      }}
+                    />
+                    {t.label}
+                  </label>
+                ))}
+              </div>
+            </Field>
+
             <Field label="物流公司" htmlFor={`ship-company-${order.id}`}>
               <select
                 id={`ship-company-${order.id}`}
