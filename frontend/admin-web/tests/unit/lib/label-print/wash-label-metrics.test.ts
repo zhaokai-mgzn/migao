@@ -112,10 +112,19 @@ describe('水洗唛版面度量：TS 单一真值 ⇄ 组件 CSS（改一处不�
   it('抬头 / 二维码 / 占位框的字号与边长逐值一致', () => {
     expect(source).toContain(`text-[${WASH_LABEL_COMPANY_FONT_PT}pt] font-bold`)
     expect(source).toContain(`text-[${WASH_LABEL_COMPANY_SUBTITLE_FONT_PT}pt]`)
-    // 🔴 专属唛（issue #8002）的副标题 = 12pt 加粗、常规唛 = 10pt 常规 —— 两条通道同读这一份常量
-    expect(WASH_LABEL_OPTION_SUBTITLE_FONT_PT).toBe(12)
+    // 🔴 专属唛（issue #8002 → #8107）的副标题 = **16pt** 加粗、常规唛 = 10pt 常规 —— 两条通道同读这一份常量
+    expect(WASH_LABEL_OPTION_SUBTITLE_FONT_PT).toBe(16)
     expect(WASH_LABEL_OPTION_SUBTITLE_FONT_PT).toBeGreaterThan(WASH_LABEL_COMPANY_SUBTITLE_FONT_PT)
-    expect(source).toContain(`text-[${WASH_LABEL_OPTION_SUBTITLE_FONT_PT}pt] font-bold`)
+    // 「再加大加粗」（用户 2026-10-29）⇒ 比企业名 14pt **还大一号**
+    expect(WASH_LABEL_OPTION_SUBTITLE_FONT_PT).toBeGreaterThan(WASH_LABEL_COMPANY_FONT_PT)
+    // 🔴 字号**从 metrics 取**：组件里必须是模板取值，不许再写死 `12pt` / `16pt`
+    //    （写成字面量 ⇒ 改常量不会跟着改 = 第二份真值）。
+    //    ⚠️ 用行内 `fontSize` 而不是 Tailwind 任意值类：Tailwind v3 的候选提取是**静态**的，
+    //    模板插值出来的 `text-[…pt]` **不会被生成** ⇒ 纸面会静默退回 11pt（「加大」失效且无人报错）。
+    expect(source).toContain('fontSize: `${WASH_LABEL_OPTION_SUBTITLE_FONT_PT}pt`')
+    expect(source).toContain('className="font-bold"')
+    expect(source).not.toContain('text-[16pt]')
+    expect(source).not.toContain('text-[12pt]')
     expect(source).toContain("optionLabel !== null")
     expect(source).toContain(`size={${WASH_LABEL_QR_CSS_PX}}`)
     expect(source).toContain(`h-[${WASH_LABEL_QR_PLACEHOLDER_MM}mm] w-[${WASH_LABEL_QR_PLACEHOLDER_MM}mm]`)

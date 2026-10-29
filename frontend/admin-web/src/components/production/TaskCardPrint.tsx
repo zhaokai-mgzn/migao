@@ -22,7 +22,10 @@ import {
 // 纸面抬头用的企业名（与发货单 / 报价单 / 加工单 / 销售单**同一份**读取口，issue #7219）
 import { useCompanyName } from '@/lib/use-company-name'
 // 需要「加黑加粗」的行（加工项 = 加工方式行）：与位图通道**同一份**常量（issue #7986 同批）
-import { WASH_LABEL_EMPHASIS_ROW_KEYS } from '@/lib/label-print/wash-label-metrics'
+import {
+  WASH_LABEL_EMPHASIS_ROW_KEYS,
+  WASH_LABEL_OPTION_SUBTITLE_FONT_PT,
+} from '@/lib/label-print/wash-label-metrics'
 import type { ProcessingOrderItem, ProductionPosition } from '@/types'
 
 /**
@@ -76,11 +79,11 @@ import type { ProcessingOrderItem, ProductionPosition } from '@/types'
  * - **2026-10-28（issue #7986 / #7987）**：「把安装小区和安装位置放置到客户那一行下面」⇒ 这两行
  *   紧跟「客户」；「把加工项信息加黑加粗」⇒ 加工方式行 `font-bold`（位图通道同口径加粗）。
  * - **2026-10-28（issue #8002，专属唛）**：勾了「余料带回 / 绑带」的套**额外**打印水洗唛
- *   （每套每类别 1 张、**不乘开数**）—— 抬头副标题 = `成品定制 · 余料带回`（12pt 加粗）标清
+ *   （每套每类别 1 张、**不乘开数**）—— 抬头副标题 = `余料带回`（**16pt 加粗**，2026-10-29 去前缀）标清
  *   「这张纸是给哪个特殊选项的」；行清单与常规唛**同一份**（`washLabelRows`），追加在常规唛之后。
  *   张数 / 张序 / 副标题统一由 `washLabelSheets` 派生（与免驱动直连通道**同源**）—— 本文件不自己展开。
  *
- * 字段面（从上到下）= **纸面抬头（企业名 / 成品定制；专属唛的第二行为 `成品定制 · 余料带回`）** →
+ * 字段面（从上到下）= **纸面抬头（企业名 / 成品定制；专属唛的第二行为语义名 `余料带回` / `绑带`）** →
  * **单号（加工单号）** / 客户 /
  * 第 N 套共 M 套 / **帘种** / **货号**（值 = 颜色内容，issue #7872 起文案由「颜色」改「货号」）/
  * 安装小区 / 安装位置 / 门幅 / 用料 / 宽高 / 加工方式（含加工费组合项，无前缀）/
@@ -137,10 +140,11 @@ import type { ProcessingOrderItem, ProductionPosition } from '@/types'
  * 专属唛（`.task-card-label--option`）纸型 = **50mm × 100mm**（真值源 = `label-50x100`；
  * 命名页 = `@page wash-label-option`，由 `printNamedPageRule` 从矩阵取，本文件不写第二份纸型）。
  * 版心宽 47.6mm（= 50 − 2 × 1.2 内边距，与常规唛同宽）；可用 70mm（= 100 − 15 上留白 − 15 下净空）；
- * 每行 4.6567mm（正文 11pt × 行高 1.2）；抬头块 11.01mm（14pt + 12pt，行高 1.2）；
+ * 每行 4.6567mm（正文 11pt × 行高 1.2）；抬头块 12.7mm（14pt 5.93 + **16pt 6.77**，行高 1.2；
+ * 副标题 2026-10-29 由 12pt 抬到 16pt = 用户「余料带回 /绑带字体再加大加粗」）；
  * 二维码 21.17mm（80 CSS px）、块距 0.5mm × 2。
- * 满字段 5 行 = 11.01 + 0.5 + 5 × 4.6567 + 0.5 + 21.17 = **56.46mm ≤ 70mm**
- * ⇒ 整张 ≈ 15 + 56.46 + 15 = **86.46mm ≤ 100mm**（余 13.54mm ≈ 2.9 行 ⇒ **可容 7 行**：
+ * 满字段 5 行 = 12.7 + 0.5 + 5 × 4.6567 + 0.5 + 21.17 = **58.15mm ≤ 70mm**
+ * ⇒ 整张 ≈ 15 + 58.15 + 15 = **88.15mm ≤ 100mm**（余 11.85mm ≈ 2.5 行 ⇒ **可容 7 行**：
  * 工艺 / 特殊选项各折一次仍装得下；再多即裁尾部文字，二维码永不被裁且离底虚线恒 15mm）。
  *
  * 打印隔离沿用项目既有范式（见 `frontend/admin-web/src/components/orders/ShipmentDoc.tsx` 文件头的 6 条约束）：
@@ -383,7 +387,15 @@ export default function TaskCardPrint({
               <div className="shrink-0 text-center" data-testid="task-card-company">
                 {companyName !== '' && <div className="text-[14pt] font-bold">{companyName}</div>}
                 {sheet.optionLabel !== null ? (
-                  <div className="text-[12pt] font-bold" data-testid="task-card-option-label">
+                  // 🔴 字号**从 metrics 取**（issue #8107：用户「余料带回 /绑带字体再加大加粗」⇒ 16pt）。
+                  //    这里用行内 `fontSize` 而不是 Tailwind 任意值类（`text-[…pt]`）：Tailwind v3 的
+                  //    候选提取是**静态**的，模板插值出来的类名不会被生成 ⇒ 纸面会静默退回 11pt
+                  //    （「加大」失效且没有任何判据会红）。行内样式在屏幕态与打印态都生效。
+                  <div
+                    className="font-bold"
+                    style={{ fontSize: `${WASH_LABEL_OPTION_SUBTITLE_FONT_PT}pt` }}
+                    data-testid="task-card-option-label"
+                  >
                     {sheet.subtitle}
                   </div>
                 ) : (

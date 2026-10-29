@@ -157,9 +157,10 @@ describe('layoutWashLabel — 版式是纯函数（#6439 → #6656 → #7816）'
     expect(noCompany.company).toEqual([])
   })
 
-  it('🔴 专属唛（issue #8002）：副标题 = 成品定制 · 类别（12pt 加粗）；企业名缺值也照画', () => {
+  it('🔴 专属唛（issue #8002 / #8107）：副标题 = 语义名（去前缀 / 16pt 加粗）；企业名缺值也照画', () => {
     const onlyOption = layoutWashLabel(input({ optionLabel: '余料带回' }), geo, measure)
-    expect(onlyOption.company.map((line) => line.text)).toEqual(['成品定制 · 余料带回'])
+    expect(onlyOption.company.map((line) => line.text)).toEqual(['余料带回'])
+    expect(onlyOption.company[0].text).not.toContain('成品定制')
     expect(onlyOption.company[0].fontPx).toBe(
       Math.round((WASH_LABEL_OPTION_SUBTITLE_FONT_PT / 72) * 25.4 * geo.dpmm),
     )
@@ -178,7 +179,7 @@ describe('layoutWashLabel — 版式是纯函数（#6439 → #6656 → #7816）'
 
     // 企业名 + 专属唛：两行，企业名与标记都加粗
     const both = layoutWashLabel(input({ companyName: '亿家纺织', optionLabel: '绑带' }), geo, measure)
-    expect(both.company.map((line) => line.text)).toEqual(['亿家纺织', '成品定制 · 绑带'])
+    expect(both.company.map((line) => line.text)).toEqual(['亿家纺织', '绑带'])
     expect(both.company.every((line) => line.bold === true)).toBe(true)
   })
 
@@ -324,7 +325,7 @@ describe('🔴 专属唛短纸（issue #8107）：纸高按 `input.media` 取，
     // 逐行文本首尾相接 == 行清单（有行被裁 ⇒ 必红）
     expect(layout.lines.map((line) => line.text).join('')).toBe(OPTION_ROWS.map((row) => row.text).join(''))
     // 抬头标记照画（12pt 加粗），且不压正文
-    expect(layout.company.map((line) => line.text)).toEqual(['亿家纺织', '成品定制 · 余料带回'])
+    expect(layout.company.map((line) => line.text)).toEqual(['亿家纺织', '余料带回'])
     expect(layout.lines[0].y).toBeGreaterThan(layout.company[layout.company.length - 1].y)
     // 二维码仍在纸内、离底（底部虚线）恒 ≥ 15mm
     const qr = layout.qr

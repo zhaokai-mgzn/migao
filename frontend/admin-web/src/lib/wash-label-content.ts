@@ -247,7 +247,7 @@ export function washLabelSpecialOptionNames(item?: ProcessingOrderItem | null): 
  *
  * 余料带回 / 绑带是**套级**要交还客户的实物（余料袋 / 绑带），而常规唛按部位出纸 ⇒
  * 这两样东西没有纸面身份。规则：**每套每个类别出 1 张**（不乘开数），抬头第二行标清
- * 属于哪个选项（`成品定制 · 余料带回`），行清单与常规唛**完全同源**（`washLabelRows`）。
+ * 属于哪个选项（副标题只印语义名 `余料带回` / `绑带`，2026-10-29 用户逐字「移除前面的成品定制」）。
  *
  * 用户 2026-10-28 逐字：「当成品帘选择这两个特殊选项时还需要额外打印水洗唛，每套成品帘打印一张，
  * 格式以我们系统中的位置，图中给你参考，只是需要标记清楚这个水洗唛是用于某个特殊选项的」
@@ -288,12 +288,16 @@ export function washLabelOptionGroupsOf(
 }
 
 /**
- * 纸面抬头副标题：普通唛 = `成品定制`；专属唛 = `成品定制 · 余料带回` / `成品定制 · 绑带`
+ * 纸面抬头副标题：普通唛 = `成品定制`；专属唛 = **只印语义名** `余料带回` / `绑带`（2026-10-29 去前缀）
  * （用户 2026-10-28 选定：保留单据类型 + 一句话标清这张纸属于哪个特殊选项）。
  */
 export function washLabelSubtitle(optionLabel?: string | null): string {
   const label = (optionLabel ?? '').trim()
-  return label === '' ? WASH_LABEL_COMPANY_SUBTITLE : `${WASH_LABEL_COMPANY_SUBTITLE} · ${label}`
+  // 🔴 2026-10-29 追加口径（issue #8107，用户逐字「洗水唛的副标题 成品定制.余料带回 改成余料带回，
+  // 移除前面的成品定制，余料带回 /绑带字体再加大加粗」）⇒ 专属唛副标题**只印语义名**
+  // （`余料带回` / `绑带`）：那个词本身就是「这张纸是给哪个特殊选项的」标记，
+  // `成品定制` 前缀只是重复身份、还白占字高。常规唛仍是 `成品定制`（一字未改）。
+  return label === '' ? WASH_LABEL_COMPANY_SUBTITLE : label
 }
 
 /** 备注 = 快照备注（`processing_info.remark`，自由文本；缺值不渲染） */
@@ -548,7 +552,7 @@ export interface WashLabelSheet {
   variant: WashLabelVariant
   /** 该张的**纸型**（issue #8107）：常规唛 50×140、专属唛 50×100 —— 两条通道同读这一份 */
   media: PrintMediaId
-  /** 抬头副标题（普通唛 = `成品定制`；专属唛 = `成品定制 · 余料带回`） */
+  /** 抬头副标题（普通唛 = `成品定制`；专属唛 = 语义名本身 `余料带回` / `绑带`） */
   subtitle: string
   /** 码 = `scan_url ?? part_token`；两者都没有 ⇒ `null`（不画假码） */
   qrValue: string | null

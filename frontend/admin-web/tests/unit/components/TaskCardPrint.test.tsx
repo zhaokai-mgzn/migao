@@ -491,7 +491,7 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×140mm 单列，issue #7979）',
     expect(screen.getByTestId('task-card-label-doc-no-0')).toHaveTextContent('单号: 20260921-8237')
   })
 
-  it('🔴 专属唛（issue #8002 / #8074）：勾了余料带回 / 绑带 ⇒ 每套每类别 1 张、紧跟本套常规唛（每套连续），副标题 = 成品定制 · 类别（12pt 加粗）', () => {
+  it('🔴 专属唛（issue #8002 / #8074 / #8107）：勾了余料带回 / 绑带 ⇒ 每套每类别 1 张、紧跟本套常规唛（每套连续），副标题 = 语义名（去「成品定制」前缀 / 16pt 加粗）', () => {
     companyNameStub.value = '亿家纺织'
     const optionItems = [
       { ...items[0], specialOptions: ['余料带回-布', '布绑带'] },
@@ -507,9 +507,13 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×140mm 单列，issue #7979）',
     expect(screen.getAllByText('成品定制')).toHaveLength(6)
     const markers = screen.getAllByTestId('task-card-option-label')
     expect(markers).toHaveLength(2)
-    expect(markers[0]).toHaveTextContent('成品定制 · 余料带回')
-    expect(markers[1]).toHaveTextContent('成品定制 · 绑带')
-    expect(markers[0].className).toContain('text-[12pt]')
+    // 🔴 2026-10-29（用户逐字「副标题 成品定制.余料带回 改成余料带回，移除前面的成品定制，
+    // 余料带回 /绑带字体再加大加粗」）⇒ 只印语义名 + 16pt 加粗（比企业名 14pt 还大一号）
+    expect(markers[0]).toHaveTextContent('余料带回')
+    expect(markers[1]).toHaveTextContent('绑带')
+    expect(markers[0]).not.toHaveTextContent('成品定制')
+    // 字号走行内样式（Tailwind 的任意值类名无法静态提取动态插值，见组件注释）
+    expect(markers[0].style.fontSize).toBe('16pt')
     expect(markers[0].className).toContain('font-bold')
 
     // 专属唛 = 该部位自己的码与行清单（内容同源，不另造）
@@ -522,7 +526,7 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×140mm 单列，issue #7979）',
     expect(within(extra).getByTestId('task-card-label-special-options-3')).toHaveTextContent('特殊选项: 余料带回')
     expect(within(extra).getByTestId('task-card-label-special-options-3')).not.toHaveTextContent('余料带回-布')
     expect(within(extra).getByTestId('task-card-qr').querySelector('title')?.textContent).toBe(SCAN_BL)
-    expect(within(labels[4]).getByTestId('task-card-option-label')).toHaveTextContent('成品定制 · 绑带')
+    expect(within(labels[4]).getByTestId('task-card-option-label')).toHaveTextContent('绑带')
     // 第 2 套从第 6 张开始 —— 专属唛不得再被排到它之后
     expect(within(labels[5]).getByTestId('task-card-label-set-no-5')).toHaveTextContent('第 2 套 / 共 2 套')
     companyNameStub.value = ''
@@ -538,7 +542,7 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×140mm 单列，issue #7979）',
 
     const headers = screen.getAllByTestId('task-card-company')
     expect(headers).toHaveLength(1)
-    expect(headers[0]).toHaveTextContent('成品定制 · 余料带回')
+    expect(headers[0]).toHaveTextContent('余料带回')
     expect(within(headers[0]).queryByText('亿家纺织')).toBeNull()
     // 专属唛也带本部位的码（与常规唛同一个码，不做第二套码）；第 1 套专属唛紧跟本套常规唛（#8074）
     expect(within(screen.getByTestId('task-card-label-3')).getByTestId('task-card-qr')).toBeTruthy()
@@ -597,7 +601,7 @@ describe('TaskCardPrint（水洗唛 竖版 50mm×140mm 单列，issue #7979）',
     }
 
     // ③ 抬头标记保留（它是「这张纸属于哪个特殊选项」的标记），且这张仍有自己的码
-    expect(within(option).getByTestId('task-card-option-label')).toHaveTextContent('成品定制 · 余料带回')
+    expect(within(option).getByTestId('task-card-option-label')).toHaveTextContent('余料带回')
     expect(within(option).getByTestId('task-card-qr').querySelector('title')?.textContent).toBe(SCAN_BL)
 
     // ④ 常规唛**一字未改**：仍是 140mm 那张、15 行

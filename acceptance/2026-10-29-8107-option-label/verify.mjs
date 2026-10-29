@@ -14,6 +14,9 @@
  *   .task-card-label         { height: 140mm; … }
  *   .task-card-label--option { height: 100mm; page: wash-label-option; }
  *
+ * 纸上那一行副标题也照 2026-10-29 追加口径取值：专属唛 = `余料带回`（**只印语义名**，去 `成品定制` 前缀）
+ * + 16pt 加粗、常规唛 = `成品定制` 10pt —— 与 `washLabelSubtitle` / `WASH_LABEL_OPTION_SUBTITLE_FONT_PT` 同值。
+ *
  * 本脚本用 Chromium 按 `preferCSSPageSize: true` 出 PDF，**逐页读 MediaBox**，
  * 断言两页分别是 50mm × 140mm 与 50mm × 100mm（±0.5mm）。
  *
@@ -100,7 +103,7 @@ const CSS = `
 
 const HTML = `<!doctype html><html><head><meta charset="utf-8"><style>${CSS}</style></head><body>
   <div class="task-card-label" data-print-sheet data-sheet-paper-mm="50x140">
-    <div>亿家纺织</div><div>成品定制</div>
+    <div style="font-size:14pt;font-weight:700">亿家纺织</div><div style="font-size:10pt">成品定制</div>
     <div>单号: 20261021-8237</div><div>客户: 赵凯</div><div>安装小区: 春江花园</div>
     <div>安装位置: 主卧</div><div>第 1 套 / 共 2 套</div><div>帘种: 布帘</div>
     <div>货号: 米白</div><div>门幅: 2.8米</div><div>用料: 6.3米</div><div>宽高: 3×2.75米</div>
@@ -109,7 +112,7 @@ const HTML = `<!doctype html><html><head><meta charset="utf-8"><style>${CSS}</st
     <div class="qr"></div>
   </div>
   <div class="task-card-label task-card-label--option" data-print-sheet data-sheet-paper-mm="50x100">
-    <div>亿家纺织</div><div>成品定制 · 余料带回</div>
+    <div style="font-size:14pt;font-weight:700">亿家纺织</div><div style="font-size:16pt;font-weight:700">余料带回</div>
     <div>货号: 米白</div><div>门幅: 2.8米</div><div>宽高: 3×2.75米</div>
     <div>韩褶 · 超高 · 倒幅 · 双开 · 定型</div><div>特殊选项: 余料带回、布绑带</div>
     <div class="qr"></div>

@@ -484,7 +484,7 @@ describe('专属唛 —— 余料带回 / 绑带 每套一张（issue #8002）',
     },
   ] as ProductionPosition[]
 
-  it('类别：选项名逐字命中；「余料做绑带 / 余料做帘头」不触发；副标题 = 成品定制 · 类别', () => {
+  it('类别：选项名逐字命中；「余料做绑带 / 余料做帘头」不触发；副标题 = 语义名（**去**「成品定制」前缀）', () => {
     expect(washLabelOptionGroupsOf(optionItem(['余料带回-布']))).toEqual([
       { label: '余料带回', options: ['余料带回-布'] },
     ])
@@ -499,10 +499,15 @@ describe('专属唛 —— 余料带回 / 绑带 每套一张（issue #8002）',
     // 不产生「交还客户的那袋东西」的选项不触发
     expect(washLabelOptionGroupsOf(optionItem(['余料做绑带', '余料做帘头', '加logo条']))).toEqual([])
     expect(washLabelOptionGroupsOf(undefined)).toEqual([])
-    expect(washLabelSubtitle('余料带回')).toBe('成品定制 · 余料带回')
-    expect(washLabelSubtitle('绑带')).toBe('成品定制 · 绑带')
+    // 🔴 2026-10-29（用户逐字「洗水唛的副标题 成品定制.余料带回 改成余料带回，移除前面的成品定制」）：
+    // 专属唛副标题**只印语义名**；常规唛仍是 `成品定制`（一字未改）
+    expect(washLabelSubtitle('余料带回')).toBe('余料带回')
+    expect(washLabelSubtitle('绑带')).toBe('绑带')
     expect(washLabelSubtitle(null)).toBe('成品定制')
     expect(washLabelSubtitle('')).toBe('成品定制')
+    // 反向：专属唛的副标题里不得再出现前缀（改回 `成品定制 · X` ⇒ 必红）
+    expect(washLabelSubtitle('余料带回')).not.toContain('成品定制')
+    expect(washLabelSubtitle('绑带')).not.toContain('成品定制')
   })
 
   it('张数：常规唛 = 开数；专属唛 = 每套每类别 1 张（不乘开数）、排在常规唛之后', () => {
@@ -513,8 +518,8 @@ describe('专属唛 —— 余料带回 / 绑带 每套一张（issue #8002）',
     expect(sheets.map((sheet) => sheet.subtitle)).toEqual([
       '成品定制',
       '成品定制',
-      '成品定制 · 余料带回',
-      '成品定制 · 绑带',
+      '余料带回',
+      '绑带',
     ])
     // 专属唛：码 / 套序 / 快照行都沿用该部位（不另造内容）
     expect(sheets[2].qrValue).toBe(POSITION.scan_url)
@@ -807,11 +812,13 @@ describe('专属唛瘦身 —— 只印 5 行 + 二维码，纸型 50×100（iss
     expect(sheets.map((sheet) => sheet.subtitle)).toEqual([
       '成品定制',
       '成品定制',
-      '成品定制 · 余料带回',
-      '成品定制 · 绑带',
+      '余料带回',
+      '绑带',
     ])
-    // 抬头保留（它是「这张纸属于哪个特殊选项」的标记）
-    expect(sheets.every((sheet) => sheet.subtitle.startsWith('成品定制'))).toBe(true)
+    // 抬头标记保留（它是「这张纸属于哪个特殊选项」的标记）：常规唛 = `成品定制`、专属唛 = 语义名本身
+    expect(sheets[0].subtitle).toBe('成品定制')
+    expect(sheets[2].subtitle).toBe('余料带回')
+    expect(sheets.slice(2).every((sheet) => sheet.subtitle !== '成品定制' && sheet.subtitle !== '')).toBe(true)
     // 码与快照行沿用该部位（不另造内容）
     expect(sheets[2].qrValue).toBe(POSITION.scan_url)
     expect(sheets[2].position).toBe(POSITION)
