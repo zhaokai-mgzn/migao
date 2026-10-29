@@ -117,7 +117,10 @@ describe('承运商候选按物流类型收敛（issue #8079）', () => {
   it('反向同理：从「物流/专线-四季安物流」切到「快递」⇒ 落到快递第一家', () => {
     const next = switchCarrier('四季安物流', 'express')
     expect(next.company).toBe('德邦快递')
-    expect(next.notice).not.toBeNull()
+    // 🔴 #8096：原判据是 `not.toBeNull()`（只证非空、不证内容，命中仓库的 TS 弱断言形态 ⇒ main 红）——
+    // 换成触业务数据的判据：提示必须点名落到的承运商并说明切到的类型。
+    expect(next.notice).toContain('德邦快递')
+    expect(next.notice).toContain('快递')
   })
 
   it('已在新类型里 ⇒ 不动、不提示（商家自己的选择不被覆盖）', () => {
