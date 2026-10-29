@@ -1,0 +1,455 @@
+{
+  "schema": "guard-ledger/1.0",
+  "entries": [
+    {
+      "path": "backend/ai-agent-service/tests/test_admin_api_client_kwargs_guard.py",
+      "guards": "自研 AdminApiClient 的调用关键字：app/tools/ 下不得出现 httpx 风 `json=`（客户端只收 `json_data=`；拼错即每次调用 TypeError ⇒ 工具 100% 失效，正是 #3548 让 FN-001 恒红的形态）",
+      "red_proof": "在 app/tools/ 任一处调用 AdminApiClient.post 的地方把 `json_data=payload` 改回 `json=payload` ⇒ tests/test_admin_api_client_kwargs_guard.py::TestNoJsonKwargInTools::test_app_tools_have_no_admin_api_json_kwarg 红并具名该文件",
+      "owner": "#3548"
+    },
+    {
+      "path": "backend/ai-agent-service/tests/test_capability_denial_guard.py",
+      "guards": "「能力自我否定该不该纠正」必须由「在办下单流程状态（跨轮 pending 锁 / 已接地商品 / 已校验下单参数）× 工具注册表事实」决定，禁止读 skill 名字面量；并锁住执行族源码里不得出现 skill 名常量",
+      "red_proof": "① 把 customer_order 流程的就绪判定改成「本轮消息含下单关键词才算 in_progress」⇒ test_pending_lock_plus_grounded_is_in_progress_without_keywords 红；② 在任一守卫判定函数里写 `if skill_name == \"product\":` ⇒ test_no_guard_predicate_takes_a_skill_name 红",
+      "owner": "#3389"
+    },
+    {
+      "path": "backend/ai-agent-service/tests/test_card_db_consistency_guard.py",
+      "guards": "确认卡字段值 ↔ 落库事实一致（卡 ¥498/10米+2.8米 vs 落库 ¥133.80/1米 必须判 mismatch 并同时具名两边值）；无卡 / 无落库值 / 快照读不懂 ⇒ undecidable 而不是绿；写面普查表不许有未登记路径",
+      "red_proof": "把 `order_confirmation_verdict` 对 mismatch 的分支改成返回 MATCH ⇒ TestCardValueVsDbValue::test_card_498_vs_db_133_80_is_mismatch_and_names_both 红；从写面普查表里删掉一条路径 ⇒ TestCoverageCensus::test_every_write_path_is_enrolled 红",
+      "owner": "#4025"
+    },
+    {
+      "path": "backend/ai-agent-service/tests/test_chat_card_claim_guard.py",
+      "guards": "文本说「请点下方确认卡」而该回合根本没发卡（无 interactive payload / interact 未调用）时改写这句话；真发了卡、或 interact 调用失败则不误改；「卡其色」「页面动作确认」不得被当成卡主张",
+      "red_proof": "把 TestStreamCardClaimGuard 那一轮的 interactive payload 去掉而保留「请点下方确认卡片，我立即写入」⇒ test_no_payload_claim_text_rewritten_before_save 红；从颜色词表移除「卡其」⇒ test_color_khaki_is_not_a_card_noun 红",
+      "owner": "#3929"
+    },
+    {
+      "path": "backend/ai-agent-service/tests/test_clarify_guard.py",
+      "guards": "澄清轮次状态机：连续澄清计数递增 / 实质轮清零 / 达上限后强制给示例，且 SessionStateStore 读写失败时必须降级放行（不许因存储抖动阻断对话）",
+      "red_proof": "把 judge_clarify 的上限判断从 `>=` 改成 `>` ⇒ TestJudgeClarify::test_at_limit_forces_example 红；让 _mock_store 的 commit 抛异常且不捕获 ⇒ test_guard_degrades_gracefully_on_store_failure 红",
+      "owner": "#2796"
+    },
+    {
+      "path": "backend/ai-agent-service/tests/test_customer_order_draft_reply_guard.py",
+      "guards": "写未成功前（草稿态）的回复不得出现「已更新/已修改/已记录」类话术、也不得再索要验证码；确认卡块必须逐字保留，写成功后不得再归一（OR-026 两条真实失败指纹）",
+      "red_proof": "把 normalize_draft_state_reply 的 claim 标记表清空（或直接 return 原文）⇒ test_claim_marker_replaced_by_draft_phrase 与 TestRedProofAgainstLegacyBehaviour::test_or026_r2_reply_legacy_hits_claim_marker 同时红",
+      "owner": "#3750"
+    },
+    {
+      "path": "backend/ai-agent-service/tests/test_destructive_tool_confirm_guard.py",
+      "guards": "destructive=True 的写工具执行前，本轮用户消息必须是明确确认（短确认词 / 确认值 / 卡回填值）；普通问句、「取消」、长句里夹一个确认词都不算；只读 action 豁免、普通写工具不强制",
+      "red_proof": "把 _is_explicit_confirmation 改成恒 True ⇒ test_plain_query_is_not_confirmation 与 test_long_message_with_confirm_substring_is_rejected 红；把 requires_confirmation 对 destructive 的判断去掉 ⇒ test_destructive_write_action_without_confirm 红",
+      "owner": "#3594"
+    },
+    {
+      "path": "backend/ai-agent-service/tests/test_internal_tool_execute_guard.py",
+      "guards": "内部 /api/internal/tools/execute 只许执行只读工具（写工具必须被拒），且 SERVICE_TOKEN 未配置时 verify_service_token 必须 fail-closed 而非放行——否则任何持 token 的调用方可对任意租户跑破坏性写",
+      "red_proof": "把该端点的只读过滤改成恒放行 ⇒ TestToolExecuteReadOnlyGuard::test_write_tool_rejected 红；把 verify_service_token 的空 token 分支改成 return True ⇒ TestServiceTokenFailClosed::test_empty_service_token_fails_closed 红",
+      "owner": "N/A（该文件的来源是 DF-008 用例与一次安全加固，源码内未引用任何 issue 号；出事按 ai-agent-service 内网执行面归因）"
+    },
+    {
+      "path": "backend/ai-agent-service/tests/test_or014_flow_owner_guard.py",
+      "guards": "OR-014 的「商品线自称无落单能力」话术必须被识别，并按 persona 图可达性派生的流程归属把会话重锁回正确 skill；未知 persona 不许猜，C 端会话不得被误锁，合法的显式切域必须仍然可用",
+      "red_proof": "把流程归属派生改成硬编码 \"order\" ⇒ TestFlowOwnerIsFactDerived::test_owner_is_reachable_in_persona_graph 与 test_unknown_persona_does_not_guess 红；摘掉 TestDenialIsCorrectedAndRelocked 里那次重锁调用 ⇒ test_denial_is_corrected_and_session_relocked_to_order 红",
+      "owner": "#3571"
+    },
+    {
+      "path": "backend/ai-agent-service/tests/test_price_preview_guard.py",
+      "guards": "改价写（product_update / sku_update）的预览必须同时给出「改前价」与「改后价」：缺 before_price 即拒绝写（fail-closed），确认卡字段成对回显，非价格写不受影响",
+      "red_proof": "把 product_update 的 before_price 断言改成跳过 ⇒ TestWriteToolsFailClosed::test_product_update_refuses_without_before_price 红；把 confirm_card_fields 里 before 值删掉 ⇒ TestConfirmCardShowsBeforeAndAfter::test_card_fields_pair_before_and_after 红",
+      "owner": "#5303"
+    },
+    {
+      "path": "backend/ai-agent-service/tests/test_product_image_denial_guard.py",
+      "guards": "商品图片域的能力误宣（「我这边不能传图 / 拿不到可写地址」）在 product_manage(action=update, images=…) 真可达时必须被识别并纠正，且纠正话术不得指向不可达工具；中性陈述与订单域否定不受影响",
+      "red_proof": "把可达性判断里的 images 参数检查删掉（或把 image 能力恒置不可用）⇒ TestProductImageCapabilityFactDriven::test_available_when_registry_has_product_manage_with_images 红；把纠正话术改回引用不可达工具 ⇒ test_corrective_names_no_unreachable_tool 红",
+      "owner": "#3931"
+    },
+    {
+      "path": "backend/ai-agent-service/tests/test_tool_idempotent_retry_guard.py",
+      "guards": "非幂等写工具（order_create / aftersale_create / human_handoff / notification_manage 等）不得被 _self_correct_retry 自动重试（重试即重复副作用）；每个注册写工具必须显式声明幂等性，未声明按非幂等处理",
+      "red_proof": "让 _self_correct_retry 重新忽略 idempotent 属性（恢复 #3564 原形）⇒ TestNonIdempotentRetrySuppressed::test_non_idempotent_write_tool_not_retried 红；把某写工具的幂等声明删掉 ⇒ TestIdempotencyClassificationLock::test_every_registered_write_tool_declares_idempotency 红",
+      "owner": "#3564"
+    },
+    {
+      "path": "backend/ai-agent-service/tests/test_tool_permission_retry_guard.py",
+      "guards": "授权类失败（PERMISSION_DENIED / FORBIDDEN / 401 系列）不得被自修复重试（同身份同权限再调一次必然再拒）；可重试码与缺 code 仍重试；退出字典必须携带该 code 字段且字段名单一出处",
+      "red_proof": "从 NON_RETRYABLE_ERROR_CODES 里删掉 PERMISSION_DENIED ⇒ TestNonRetryableDenialIsNotRetried::test_permission_denied_is_not_retried 红；把 _exit_dict 里的 code 键改名 ⇒ TestFieldNameIsSingleSourced::test_retry_gate_reads_a_declared_and_exported_field 红",
+      "owner": "#4109"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_admin_role_read_surface_guard.py",
+      "guards": "岗位目录读端点必须带权限注解且已登记在 RBAC 控制器注册表里，注解码必须在权限目录内；豁免重加即红，注释/幽灵码不算命中",
+      "red_proof": "从某个 /admin/roles 端点方法上删掉 @RequirePermission ⇒ TestGuardDiscriminates::test_removing_an_annotation_is_red 红；把该端点加回豁免台账 ⇒ test_readding_exempt_is_red 红",
+      "owner": "#5980"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_admin_web_token_restore_guard.py",
+      "guards": "admin-web 裸 fetch+Bearer 面的清单只许缩短，且每个面必须保留 token 恢复接线（initialize 时把 access_token 写回 store）；行为判据本身不得消失",
+      "red_proof": "把 frontend/admin-web/src/lib/api.ts 里 initialize 恢复 access_token 的那行删掉 ⇒ test_initialize_restores_access_token 红；从冻结面清单里删掉一个面 ⇒ test_raw_fetch_bearer_surfaces_are_frozen 红",
+      "owner": "#6352"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_agent_presets_guard.py",
+      "guards": ".agent-presets/** 版本只许升不许降（worktree 快照落后 ⇒ 一次 git add -A 就静默回退研发模式）；不可解析 / 非 semver / 参照 ref 缺失一律 fail-closed",
+      "red_proof": "把某份 SKILL.md 的 version 从当前值改回上一版再 git add ⇒ test_downgraded_version_is_rejected 同形红（scripts/agent-presets-guard.py 非零退出并具名文件）；把版本改成 `v1.x` ⇒ test_non_semver_version_fails_closed 红",
+      "owner": "#3851"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_ai_agent_prompt_reference_guard.py",
+      "guards": "基础规则层三份 prompt 文件必须在磁盘上存在，且读取处必须带 required 标志（缺失要启动失败，不许静默降级成空规则）",
+      "red_proof": "删掉基础规则层三份 prompt 文件之一 ⇒ test_required_prompt_files_exist_on_disk 红；把读取处的 required=True 删掉 ⇒ test_required_files_are_read_with_the_required_flag 红",
+      "owner": "#4057"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_behavior_mapping_guard_family_coverage.py",
+      "guards": "行为映射门禁的「守卫族」登记表：发现到的族文件集合必须等于登记集合（新增族文件未登记即红），每族至少映射一条真实存在的用例，映射表里不许有死 case_id",
+      "red_proof": "新建 tests/unit_ci_workflows/test_x_guard.py 而不登记族表 ⇒ test_discovered_family_set_equals_registry 红并具名该文件；把某族的用例映射删到 0 ⇒ TestGuardFamilyIsMappedToCases::test_every_family_has_at_least_one_mapped_case 红",
+      "owner": "#3786"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_capability_guard_invariants.py",
+      "guards": "能力自我否定族的 L0 静态不变式：守卫判定函数不得出现 skill_name 形参或 skill 名常量，写流程覆盖面必须从工具属性派生（不许靠白名单）",
+      "red_proof": "在 backend/ai-agent-service/app/graph/skills/base_skill.py 任一守卫判定函数上多加一个 skill_name 形参 ⇒ test_guard_predicates_cannot_see_skill_name 红；在函数体里写 \"product\" 常量 ⇒ test_guard_predicates_have_no_skill_name_literal 红",
+      "owner": "#3571"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_chat_richtext_surface_guard.py",
+      "guards": "聊天气泡的富文本渲染接线普查：每个气泡包必须真接 markdown（remark-breaks 等），气泡面清单冻结只许缩短，行为判据本身不得被删",
+      "red_proof": "把 frontend/admin-web/src/components/chat/MessageList.tsx 的 markdown 渲染换成纯文本 ⇒ test_bubble_packages_wire_rich_text 红；从冻结面清单删一个气泡包 ⇒ test_bubble_surface_census_is_frozen 红",
+      "owner": "#6346"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_cjk_position_anchor_guard.py",
+      "guards": "判据不得把中文/注释级文案当结构位置锚点（find/index 的位置比较）；命中面必须等于登记台账，新增命中即红",
+      "red_proof": "在任一判据里写 `src.index(\"确认卡\") < src.index(\"落库\")` 这种位置比较 ⇒ 扫描新增命中 ⇒ test_detected_sites_equal_ledger 红",
+      "owner": "#6802"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_classpath_migration_staleness_guard.py",
+      "guards": "classpath 上存在而源码树没有的陈旧构建产物（build 目录里的迁移/类）必须被源码树枚举器覆盖，枚举器不许为空",
+      "red_proof": "往 backend/admin-api/target/classes 放一个源码树里不存在的 .class（或删掉一条源码枚举根）⇒ test_build_artifacts_are_covered_by_the_source_tree 红",
+      "owner": "#5981"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_credential_login_has_failure_guard.py",
+      "guards": "每个凭据类登录入口必须有失败计数；未守护的站点必须登记台账且台账只许缩短，不留陈旧条目",
+      "red_proof": "把 AuthService.java 里 loginByEmployee 的失败计数分支删掉 ⇒ scan_sites 命中未守护 ⇒ test_every_credential_site_is_guarded_or_registered 红",
+      "owner": "#5531"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_dead_capability_meta_guard.py",
+      "guards": "能力下线后的「死引用 / 死守卫 / 死绑定」：prompt、工具 schema 描述、校验器、skill 绑定里提到的已下线能力必须零活命中或登记台账；豁免面只许缩短，每个判定都要能变红",
+      "red_proof": "在 app/graph/skills/*/prompt 或某工具的 schema description 里写回一个已下线能力的工具名 ⇒ 该能力在 live_hit_counts 里不再为 0 ⇒ test_every_judgement_is_green 红（未登记的引用直接落在 Scan.keys_of 里）",
+      "owner": "#5331"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_declaration_truth_guards.py",
+      "guards": "声明与插入行必须一致：评测用例声明的订单必须真被插入、注释声明的客户必须等于插入行的客户、工单必须挂在同客户订单上；Java javadoc 不得硬编码目录计数",
+      "red_proof": "改某条 eval 用例的订单声明使其与插入行不符 ⇒ test_every_eval_order_is_really_inserted 红；把注释里的客户改成另一个手机号 ⇒ test_comment_declared_customer_matches_the_inserted_row 红",
+      "owner": "#4259"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_denial_guard_or014_invariants.py",
+      "guards": "能力自我否定族第 6 次复发的 L0：否定词表必须是形态而非整句、判定函数体内不得有整句字面量、重锁目标必须事实派生且不得点名任何 skill",
+      "red_proof": "把整句「我这单不具备提交能力」写成判定函数里的常量 ⇒ test_judgment_functions_hold_no_sentence_literals 红；把重锁目标改成 \"order\" 字面量 ⇒ test_relock_target_is_fact_derived_and_named_nothing 红",
+      "owner": "#3571"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_doc_present_value_guard.py",
+      "guards": "文档里的易变现值（写死计数 / 写死版本）必须由真值源派生：登记站点不得写字面量、必须点名真值源、每条 claim 要有隔离注入红证、历史叙述不误判",
+      "red_proof": "在登记的文档站点里把「N 个」写成当前真实数字 ⇒ violations_C1 命中 ⇒ test_C1_registered_site_writes_no_literal_present_value 红",
+      "owner": "#5082"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_double_signature_guard.py",
+      "guards": "测试替身的方法签名不得落后于生产签名（少形参 / 位置错位即红）；找不到替身或生产源码时 fail-closed，不许静默通过",
+      "red_proof": "把某个 SessionStateStore 替身的方法形参从 4 个删到 2 个 ⇒ test_flags_store_double_with_short_positional_arity 红；把替身类删掉 ⇒ test_fails_closed_when_no_double_is_found 红",
+      "owner": "#4070"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_endpoint_receipt_race_guard.py",
+      "guards": "每个原子门禁站点（并发扣减/核销）必须登记一条端点级判据，且该判据的 case_id 在 .github/cases/*.yml 里真实存在（服务级绿不算端点级绿）",
+      "red_proof": "新增一个 atomic gate 站点而不登记 ⇒ test_every_atomic_gate_site_is_registered_with_an_endpoint_level_criterion 红；登记里写一个不存在的 case id ⇒ test_injected_bad_corpora_are_named 红",
+      "owner": "#6318"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_guard_ledger.py",
+      "guards": "本台账自身：`path` 集合必须等于「现取枚举」（缺一条 / 多一条都具名报出），每条文本不许空话且 red_proof 必须点名具体对象，owner 可追溯；并自证判别力（五种内存坏台账各自红）",
+      "red_proof": "从 `tests/guard_ledger.json` 删掉任一条 entry（如本文件那条）⇒ test_ledger_matches_the_live_enumeration 红并具名「漏登记：<path>」；把某条 red_proof 改成「同类缺陷出现时它会红」⇒ test_judge_has_discriminating_power 红",
+      "owner": "#8139"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_guard_no_mutable_ref_baseline.py",
+      "guards": "判据面不得把基线绑在浅克隆下不可达的可变引用上（origin/main 的 HEAD 一移动，基线就静默失效）；命中必须登记且基线只许缩短；注释与字符串里的提及不算",
+      "red_proof": "在 tests/unit_ci_workflows 任一判据里写 `subprocess.check_output([\"git\",\"show\",\"origin/main:...\"])` 当基线 ⇒ mutable_ref_hits 命中 ⇒ test_no_unregistered_mutable_ref_baseline 红",
+      "owner": "#5814"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py",
+      "guards": "判据的「原文口径」：拿原文做匹配的调用点必须剥离注释/字符串，每个裸用点登记理由与 issue，且登记必须仍然活着",
+      "red_proof": "新增一处未剥注释的 re.search 抓取面 ⇒ test_surface_is_complete_and_anchored 红；把某条登记的注入换成只改注释（不碰代码）⇒ test_every_ledger_entry_is_live_and_e... 红（登记条目失去判别力）",
+      "owner": "#5325"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_guard_scope_declaration.py",
+      "guards": "守卫声称的射程必须等于实际扫描的路径集（声明 ≠ 射程即红）；未被扫到的语料面必须登记且只许缩短",
+      "red_proof": "把某判据的 glob 从 scripts/** 收窄成单个文件，而台账仍声明覆盖全目录 ⇒ test_declared_range_equals_actually_scanned_path_set 红",
+      "owner": "#5284"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_h5_freshness_guard.py",
+      "guards": "C 端 H5 线上产物的 Last-Modified 必须新于源码最近改动（含宽限窗口）；取不到头 / 源码缺失 ⇒ unknown 不可判定，不许当绿；CLI 默认在 stale 时判红",
+      "red_proof": "让本地服务的 Last-Modified 落后源码超过宽限 ⇒ test_cli_defaults_to_red_when_stale 红；让 handler 不回 Last-Modified ⇒ test_fetch_fails_closed_without_header 红",
+      "owner": "#4184"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_idempotent_unique_write_guard.py",
+      "guards": "每个唯一键/幂等键写入点必须登记，且必须用原子冲突处理（ON CONFLICT / 捕获 duplicate-key）而不是先查后写；未登记站点即红",
+      "red_proof": "把 StockBatchConsumptionMapper.java 的 INSERT ... ON CONFLICT 改成裸 INSERT ⇒ test_the_stocktake_write_point_uses_an_atomic_conflict_handler 红；新增一个唯一键写入点不登记 ⇒ test_every_unique_write_site_is_registered 红",
+      "owner": "#6301"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_issue_dedup_guard.py",
+      "guards": "六个失败上报 workflow 在 issue create 前必须做同日同标题去重（存在则评论而非新建），且必须用存在的 search API 方法名",
+      "red_proof": "把某 workflow 的 dedup 搜索步骤删掉 ⇒ test_create_step_contains_dedup_search 红；把 api 方法改成不存在的 search_issues ⇒ test_no_nonexistent_search_issues_method 红",
+      "owner": "#2746"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_l0_reachability_guards.py",
+      "guards": ".github/assertion_taxonomy.py 的 WRITE_TOOLS 与 action 名必须都是已注册工具（判据知道工具存在，才谈得上有射程）",
+      "red_proof": "往 WRITE_TOOLS 里加一个不存在的工具名 ⇒ test_write_tools_are_registered_tools 红；把某 action 名改成该工具未声明的 action ⇒ test_write_tool_actions_are_registered_tools 红",
+      "owner": "#4012"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_label_guard.py",
+      "guards": "ci-daily-report 建 issue 时按「活的 labels」补 ai-draft（不看事件 payload 里的过期快照），且标签词汇在 workflow 与判据两侧同源",
+      "red_proof": "把读取 label 的来源从实际 issue 换成 event payload ⇒ test_case_draft_reads_live_labels_not_the_event_payload 红；改一侧词表 ⇒ test_vocabulary_identical_on_both_sides 红",
+      "owner": "#729"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_logical_name_single_source_guard.py",
+      "guards": "「旧工序名 → 逻辑名」映射在生产 Java 里只许有一处，且必须与真值对逐条相等（三份并存 ⇒ 改一份不带另两份即静默分叉）",
+      "red_proof": "在另一处 Java 里复制一张旧名映射表 ⇒ test_only_one_legacy_name_table_in_production_java 红；删掉真值源里的一条 pair ⇒ test_sole_source_has_exactly_the_truth_pairs 红",
+      "owner": "#4637"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_main_freshness_guard.py",
+      "guards": "main 侧生成物新鲜度腿：触发面齐全、判定只有一份共享实现、缺渲染器不许当绿、漂移必须具名报告、该腿不得放宽既有门禁（它只是 report-only）",
+      "red_proof": "从 .github/workflows/main-freshness-guard.yml 去掉一条触发面 ⇒ test_dropping_any_trigger_face_turns_it_red 红；把 fail-closed 改成 skip ⇒ test_replacing_fail_closed_with_skip_turns_it_green 红",
+      "owner": "#5687"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_mapper_null_param_type_guard.py",
+      "guards": "Mapper SQL 的裸参不得出现在 PG 无法推断类型的位置（LIMIT / 比较右侧等），豁免必须活且预算只许缩",
+      "red_proof": "在 ProductSkuMapper.java 的 SQL 里写 `LIMIT #{limit}` ⇒ 命中未登记 ⇒ test_no_unregistered_bare_param_in_type_blind_context 红；删掉一条豁免项而源码仍命中 ⇒ test_exemptions_are_live_and_justified 红",
+      "owner": "#5975"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_onboarding_required_seed_guard.py",
+      "guards": "开租必需初始数据清单 ⇄ 入驻链路的播种调用双向一致：缺锚点、未登记播种协作方、后置校验未接线、默认名单非单一出处都红；豁免台账只许缩短",
+      "red_proof": "从入驻链路删掉一处必需 seed 调用 ⇒ test_required_seed_anchors_are_present_in_onboarding 红；在入驻链路加一条未登记的播种调用 ⇒ test_no_unregistered_seed_collaborators_in_onboarding 红",
+      "owner": "#6295"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_op_name_registry_guard.py",
+      "guards": "web 面工序命名的变体字面量不得绕过统一命名（前端各面、Java 读面、文案拼接三条腿），豁免必须活且只许缩短",
+      "red_proof": "在某个受管理面上直接渲染变体名（不经共享 helper）⇒ test_c2_managed_faces_use_the_single_helper 红；新增一处未登记的变体字面量 ⇒ test_c1_fe_code_has_no_variant_name_literals 红",
+      "owner": "#4626"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_operation_display_name_guard.py",
+      "guards": "工序显示名的组合只有一处（共享 helper），每个面必须导入它、且不得直接渲染 variant 名（赋值读取不算违规）",
+      "red_proof": "把某个面改成直接渲染 variant 名而不经 helper ⇒ test_c3_faces_never_render_the_variant_name 红；让某面不再导入共享 helper ⇒ test_c2_every_face_imports_the_shared_helper 红",
+      "owner": "#4621"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_order_logistics_first_ship_backfill_guard.py",
+      "guards": "order_logistics 的每个「读-改-写」写面都必须补首次发货时刻（漏一个写面 ⇒ 首次发货时刻被覆盖成 NULL）；扫描面自身不许为空",
+      "red_proof": "去掉 OrderLogisticsWriter.java 更新路径里 first_ship 的补写 ⇒ test_every_order_logistics_update_site_backfills_first_ship_moment 红；把扫描根改空 ⇒ test_scan_surface_is_not_empty 红",
+      "owner": "#6276"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_orders_barrel_mock_guard.py",
+      "guards": "@/components/orders 桶导出 ⇄ 页面测试 mock 文件的完整性：桶导出了却缺 stub，页面测试就会拿到 undefined（测试绿得毫无意义）",
+      "red_proof": "往 frontend/admin-web/src/components/orders/ 的桶里新增一个导出，而页面测试 mock 文件不加对应 stub ⇒ test_c2_every_barrel_export_has_a_stub_in_every_mock_file 红",
+      "owner": "#5651"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_panels_cross_language_algorithm_guard.py",
+      "guards": "分幅数 panels 的算法跨语言同源：引擎按毫米整数除法、前端不再持第二份实现，金标表与公式一致且覆盖单门幅",
+      "red_proof": "把 app/tools/curtain_calc.py 的毫米整数除法改成浮点 ⇒ test_engine_source_uses_millimeter_integer_division 红；在前端 door-width-plan.ts 里重新实现一份 panels ⇒ test_frontend_no_longer_holds_a_panels_implementation 红",
+      "owner": "#5038"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_persistence_failure_swallow_guard.py",
+      "guards": "落库/持久化调用外层不得有裸 `except: pass` / `except: continue`（静默吞掉写失败）；带 trace 的 fail-open 放行，非持久化函数体不误判",
+      "red_proof": "把 app/memory/session_memory.py 的 save_message 外层 except 改成 pass ⇒ test_flags_bare_pass_around_save_message 红；把某处落库包在只有 docstring 的 handler 里 ⇒ test_flags_docstring_only_handler 红",
+      "owner": "#4084"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_plaintext_credential_guard.py",
+      "guards": "产物面（两个根 × 三种后缀）不得出现明文凭据值或禁用形态；唯一豁免通道是带理由的 pragma，字符串里的 # 不当注释；真仓今日必须零命中",
+      "red_proof": "在 .session.json 这类产物里写入明文 SERVICE_TOKEN 值 ⇒ test_repo_has_no_service_token_value_left 红；把 pragma 的理由删掉 ⇒ test_pragma_must_carry_a_reason 红",
+      "owner": "#6172"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_pr_body_guard.py",
+      "guards": "PR body 必须落在本工作区内、被 .gitignore 覆盖的唯一名（真并发不撞车）；落共享根 / 工作区外 / 未忽略目录即拒绝；check 要能报出关闭关键词与首行",
+      "red_proof": "把共享根清单指向 /tmp 再执行 new ⇒ test_new_refuses_shared_tmp_root 红；把 output 目录指到工作区外 ⇒ test_new_refuses_dir_outside_worktree 红",
+      "owner": "#4232"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_print_doc_convention_guard.py",
+      "guards": "portal 化的打印单据必须遵守共享隔离约定；已不符合的存量条目一旦改对必须销账；付款二维码只属报价单",
+      "red_proof": "给某个打印单据加回自选择器（self selector）⇒ test_c5_injected_self_selector_is_red 红；给非报价单加付款二维码 ⇒ test_c6_payment_qr_belongs_to_quotation_paper_only 红",
+      "owner": "#4983"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_print_media_matrix_guard.py",
+      "guards": "每个打印单据的页规则必须落在介质矩阵里、新 portal 单据必须声明介质、每个单据恰有一处字段投影；待测字段必须登记",
+      "red_proof": "新增一个 A4 模板页规则而不登记介质 ⇒ test_c3_new_portaled_print_docs_must_declare_a_media 红；给某单据加第二处字段投影 ⇒ test_c5_each_doc_has_exactly_one_field_projection 红",
+      "owner": "#5651"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_print_paper_full_text_guard.py",
+      "guards": "纸面单据必须打印全文而不是截断（省略号 / 截断样式即红），且所有纸面单据都在射程内",
+      "red_proof": "给 frontend/admin-web/src/components/orders/SalesDoc.tsx 的商品行加 line-clamp（或省略号截断）⇒ truncation_hits 命中 ⇒ test_c1_sales_doc_prints_full_text 红",
+      "owner": "#7715"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_prose_constant_drift_guard.py",
+      "guards": "散文里的数值常量不得与引擎真值分叉：quote-rules §3 不许写字面量、符号必须被消费、checklist 值必须等于引擎真值",
+      "red_proof": "把 docs/curtain-fabric-quote-rules.md checklist 里的一个数值改成与 curtain_calc.py 不同 ⇒ test_checklist_values_equal_engine_truth 红；在 §3 里写回一个常数 ⇒ test_section3_has_no_constant_literal 红",
+      "owner": "#4819"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_read_face_json_key_guard.py",
+      "guards": "读面 JSON 键的类级一致：键名蛇形、键清单与代码双向相等、null 形态与 docs/wiki/CONTRACT-LEDGER.md 对齐、作用域与登记表双向一致",
+      "red_proof": "把 ProcessingOrderResponse.java 某字段的 snake_case 注解去掉（输出变驼峰）⇒ style_violations 命中 ⇒ test_frozen_key_names_are_snake_case 红；在代码里新增一个未登记的键 ⇒ test_key_inventory_matches_code_both_ways 红",
+      "owner": "#6890"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_red_proof_guard.py",
+      "guards": "红证生成动作的缓存卫生与注入自证：同秒同长度替换必须被内容指纹识破（不许被旧 .pyc 掩盖），注入无效 / 未恢复 / 清单缺失都必须报错而不是成功",
+      "red_proof": "把指纹从内容 sha 改为 mtime ⇒ test_fingerprint_is_content_based_not_mtime_based 红；让注入前后内容相同 ⇒ test_injected_detects_noop_injection 红",
+      "owner": "#4260"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_remedy_registry_guard.py",
+      "guards": "失败 → 原因 → 补救的登记表：每个活失败码都有登记或已计账、可重试性与 NON_RETRYABLE_ERROR_CODES 同源、商家可见文案纯中文且不点过时页面",
+      "red_proof": "在 app/api 里新增一个失败码而不登记 ⇒ test_every_live_failure_code_is_registered_or_accounted 红；把默认补救文案改成「未知错误」⇒ test_default_wording_is_not_unknown_error 红",
+      "owner": "#5441"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_removed_page_copy_guard.py",
+      "guards": "已移除的页面名不得出现在服务端面向商家的文案里（除非登记且理由成立），台账条目必须活且只许缩短",
+      "red_proof": "在 backend/admin-api 的服务端文案里写回一个已移除页面名 ⇒ unregistered_hits 命中 ⇒ test_no_removed_page_name_in_server_copy_without_ledger_entry 红",
+      "owner": "#6827"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_schema_health_guards.py",
+      "guards": "schema 形态三条健康线：单表列数预算、孤儿列不许增长、每个 jsonb 列必须登记（防 ERP 化）",
+      "red_proof": "在 schema 里新增一张超列预算的宽表 ⇒ test_unregistered_wide_table_goes_red 与 test_no_table_exceeds_the_column_budget 红；新增一个未登记的 jsonb 列 ⇒ test_unregistered_jsonb_goes_red 红",
+      "owner": "#7359"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_self_destruct_assert_guard.py",
+      "guards": "「自毁式真值主张」（断言自己就是当前最高迁移版本号 / 最大常量）必须零命中；注释里的反例不算，非代码区排除掉了就得红（排除项是承重的）",
+      "red_proof": "在迁移 SQL 或迁移测试里写死当前最高版本号（如断言 == \"V188\"）⇒ 注入形态 ⇒ test_injected_violation_is_red_and_named 同形红，真树判据 test_real_tree_has_zero_violations 也红",
+      "owner": "#5166"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_served_leg_mime_guard.py",
+      "guards": "每条发布自检腿都必须带可用的 MIME 判据（.mjs 的 Content-Type 正确、白名单非恒真、有 fail-closed 分支）；坐标必须活，不许扫空气",
+      "red_proof": "从某条发布腿（如 .github/workflows/worker-h5-publish.yml）删掉 MIME 判据调用点 ⇒ test_red_proof_leg_without_the_call_site_is_reported 红；把白名单改成恒 True ⇒ test_red_proof_always_true_whitelist_is_reported 红",
+      "owner": "#6293"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_session_worktree_guard.py",
+      "guards": "pre-commit 钩子：主工作树在非 main 分支上提交必须被拒（否则提交落到别的会话分支），linked worktree 与非 main 分支放行，逃生口放行但要告警；钩子本身必须可执行且声明 case_ids",
+      "red_proof": "在主工作树 checkout 非 main 分支后跑钩子 ⇒ exit≠0（人工注入：删掉钩子里的 main_tree 判断 ⇒ test_blocks_commit_in_main_tree_on_non_main_branch 红）",
+      "owner": "#7229"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_shipment_read_surface_guard.py",
+      "guards": "同一真值的两个读面必须都落地：真值视图键只能有一处投影、桌面面必须消费 admin 面、且绝不把「读不到」渲染成 0",
+      "red_proof": "把桌面读面改成直接渲染 0 而不是用 admin 面 ⇒ test_c4_desktop_consumes_the_admin_face_and_never_renders_missing_as_zero 红；给同一真值键加第二处投影 ⇒ test_c3_truth_view_key_has_exactly_one_projection 红",
+      "owner": "#5651"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_swas_bootstrap_same_source_guard.py",
+      "guards": "swas-deploy-ci.sh bootstrap 的部署脚本与镜像 tag 必须同源：fetch 到的脚本不许是 main 的、回滚要取自己的 ref、404 必须 fail-closed、curl 护栏不许摘",
+      "red_proof": "让 bootstrap 的 fetch 固定取 main（忽略 ref）⇒ crit_fetched_is_not_main 与 crit_same_source 红；把 fetch 的 404 分支改成继续执行 ⇒ crit_fetch_404_fails_closed 红",
+      "owner": "#5120"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_sync_main_case_surface_guard.py",
+      "guards": "scripts/sync-main.sh 的 merge 模式不得静默回退 main 的用例销账（两侧都动用例面即拒），rebase 模式必须保留 main 的台账块",
+      "red_proof": "摘掉 merge 模式的两层内容校验让 merge driver 丢掉 main 的追加 ⇒ test_content_check_reds_when_merge_driver_drops_main_additions 与 test_merge_mode_rejects_stale_snapshot_silent_revert 红",
+      "owner": "#4984"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_time_flaky_guard.py",
+      "guards": "「用墙钟造期望值」形态 A：墙钟读数流进 expect 实参区间即红；夹具输入、停表时长、冻结时钟不算；豁免台账每条带理由且只许缩短；扫描面必须同时覆盖 frontend/*/src 与 frontend/*/tests",
+      "red_proof": "在 frontend/*/src 任一 .test.ts 里写 `expect(x).toHaveBeenCalledWith({period: new Date().toISOString().slice(0,7)})` ⇒ 门禁命中未登记 ⇒ test_4713_verbatim_prefix_still_red 同形红；把停表豁免删掉 ⇒ test_stopwatch_duration_is_not_red 红",
+      "owner": "#4717"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_tool_input_contract_guards.py",
+      "guards": "工具入参契约被真实消费：get_args_schema 不得是 stub、共享执行路径必须真调校验器、角色条件必填不许被放宽；中文措辞判据的密度不许增长",
+      "red_proof": "把某工具的 get_args_schema 改回返回 {} 的 stub ⇒ test_get_args_schema_is_not_a_stub 红；从共享执行路径摘掉 validate 调用 ⇒ test_shared_execution_paths_call_the_validator 红",
+      "owner": "#4080"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_truth_retirement_guard.py",
+      "guards": "已被否证的活真值必须有地方变红：把 retired truth 当活真值引用、case 引用 retired truth、条目缺证据，三者都阻塞",
+      "red_proof": "在 .github/cases 里引用已 retired 的 product_link 真值 ⇒ test_no_case_references_a_retired_truth 与 test_injected_reference_to_retired_truth_is_blocking 红；把 retired 条目改回 live ⇒ test_product_link_is_no_longer_a_live_truth 红",
+      "owner": "#4430"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_unchecked_rc_evidence_guard.py",
+      "guards": "`check=False` 的子进程调用把 stdout 当证据时必须判退出码；普查必须等于台账，台账缺失 fail-closed，命名的合法形态不误判",
+      "red_proof": "在 scripts/ 里写一处 check=False 且只读 stdout 的调用形态 ⇒ test_census_matches_ledger_and_guard_body_is_clean 红（未进台账）；删掉台账文件 ⇒ test_ledger_missing_fails_closed 红",
+      "owner": "#5430"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_wash_label_geometry_guard.py",
+      "guards": "洗水码纸面几何与垂直预算注释必须一致（页面 mm 取自介质矩阵，注释里的预算数字等于实测几何）；几何解析不许空转",
+      "red_proof": "改 frontend/admin-web/src/components/production/TaskCardPrint.tsx 里洗水码块的高度而不动注释预算（或反之）⇒ test_g7_injected_geometry_drift_is_red 同形红，test_g1 判据也红",
+      "owner": "#5646"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_worker_h5_module_closure_guard.py",
+      "guards": "工人端发布自检腿必须有 module 闭包加载判据（入口 glob、dynamic import 扫描、空集合分支、样式表四件），坐标必须是活的、豁免必须点名理由",
+      "red_proof": "从该腿的 run 正文删掉 entry glob 那一行 ⇒ test_red_proof_dropping_the_entry_glob_is_reported 同形红（该腿不再能判定闭包）；删掉 dynamic import 扫描 ⇒ 对应 red proof 判据红",
+      "owner": "#6306"
+    },
+    {
+      "path": "tests/unit_ci_workflows/time_flaky_guard.py",
+      "guards": "「墙钟期望值」守卫的实现体（本文件不是测试，pytest 收集为 0）：墙钟污点传播 + 冻结/停表豁免 + `--check` 三态退出码（0/1/3），由兄弟文件 test_time_flaky_guard.py 驱动",
+      "red_proof": "删掉 analyze_taint 里的停表豁免（_has_stopwatch_operand 分支）⇒ 合法的时长断言被误判 ⇒ test_time_flaky_guard.py::test_stopwatch_duration_is_not_red 红；把 main 的不可判定分支返回 0 ⇒ test_time_flaky_guard.py 的 CLI 三态判据红",
+      "owner": "#4717"
+    },
+    {
+      "path": "backend/ai-agent-service/tests/test_capability_boundary.py",
+      "guards": "B 端能力边界的投影必须等于工具注册表真值：每个可达写工具都要被探针覆盖、prompt 里不许手写能力主张（10 份 prompt 里 9 处曾与 action enum 相反）、边界只注入米宝、探针不得泄漏工具作用域",
+      "red_proof": "把 prompt 里一条「✅ 支持」改回与 registry 矛盾（如 employee_manage 无 create 却写支持）⇒ test_capability_prose_matches_registry_state 红；把某可达写工具从探针表移除 ⇒ test_every_reachable_write_tool_is_probed 红",
+      "owner": "#7291"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_craft_calc_config_contract.py",
+      "guards": "算料配置的五个源（引擎默认 / V80 迁移列 / schema.sql / Java 实体 / 写面 CONFIG_KEYS）逐键一致——少一列即「商家改了没生效」或「读回静默用默认」；已退场键 side_margin 与提案键 default_fabric_width 不得出现在任何源",
+      "red_proof": "从 V80__create_craft_calc_configs.sql 删掉 hem_margin 列 ⇒ test_migration_columns_match_engine_keys 红；把 sideMargin 字段加回 Java 实体 ⇒ test_java_entity_side_margin_is_gone_everywhere 红",
+      "owner": "#4528"
+    },
+    {
+      "path": "tests/agent_eval/test_craft_calc_config_restore.py",
+      "guards": "算料口径复位（`craft_calc_config_restore`）的契约：只写声明键（PUT 全量替换不得清空其它键）/ 声明键已等值即不发 PUT / 回读不符 fail-closed / 缺 keys 判配置错误 / 浮点噪声按 1e-9 容差",
+      "red_proof": "把 `_restore_craft_calc_config` 的载荷从 `{**current, **keys}` 改成只发 `keys` ⇒「只写声明键」判据红；去掉回读比对 ⇒「回读不符即 fail-closed」判据红；去掉幂等短路 ⇒「已等值不发 PUT」判据红",
+      "owner": "#8116"
+    }
+  ]
+}
