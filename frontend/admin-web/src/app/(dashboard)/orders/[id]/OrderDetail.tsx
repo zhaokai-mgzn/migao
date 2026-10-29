@@ -140,10 +140,12 @@ export default function OrderDetailPage() {
    * 自 issue #7274 起**不印**工序 ⇒ 不再向下传。
    *
    * 取不到 / 空 ⇒ `[]` ⇒ 屏幕块**不出现**工序清单（缺值不渲染，不印空表）。
-   * 失败**不打扰商家**（本轮不弹 toast）：它只影响屏幕加工单块的一块内容，而工序读面失败与
-   * 「订单/加工单读失败」不是一回事（后者必须让商家知道）。
+   * 🔴 issue #8066（收口扫描器判据①「读失败被吞」）：**失败不得被吞成「没有工序」** —— 改前 catch 里
+   * `setOrderOperations([])` ⇒ 屏幕块看起来像「这单还没派工序」，而真相是没读到。修后：置显式失败态
+   * （**不清空**已有读数）+ 常驻失败锚 + 只重发这一条读面的重试出口。
    */
   const [orderOperations, setOrderOperations] = useState<ProductionPosition[]>([])
+  const [orderOperationsReadError, setOrderOperationsReadError] = useState(false)
 
   const { has: hasPermission } = usePermission()
   /**
@@ -303,12 +305,14 @@ export default function OrderDetailPage() {
    */
   const loadOperations = useCallback(async () => {
     if (!orderId) return
+    setOrderOperationsReadError(false)
     try {
       const res = await productionApi.getOrderOperations(orderId)
       setOrderOperations(res.data?.data?.positions ?? [])
     } catch (e) {
+      // issue #8066：读失败**不许**清空成「没有工序」（那是业务结论）—— 保留已有读数，只标失败态
       console.error('加载工序清单失败:', e)
-      setOrderOperations([])
+      setOrderOperationsReadError(true)
     }
   }, [orderId])
 
@@ -581,6 +585,16 @@ export default function OrderDetailPage() {
           refundAt={order.refundAt}
         />
       </SectionCard>
+
+      {/* 工序清单读失败（issue #8066）：屏幕加工单块的工序来自它 —— 读不到时那块是零工序，
+          所以**必须**说出来（不许画成「这单没有工序」），并给只重发这一条读面的重试出口。 */}
+      {canViewProcessingOrder && orderOperationsReadError && (
+        <ListLoadError
+          testId="order-operations-read-error"
+          message="工序清单读取失败 —— 屏幕加工单的工序会显示不全（不是「这单没有工序」），请重新加载"
+          onRetry={() => void loadOperations()}
+        />
+      )}
 
       {/* 加工单（issue #3340）：订单 producing 阶段的子进度。
           🔴 issue #7634：本块**只读** —— 派单在「智能派单」页、状态流转在生产明细页；

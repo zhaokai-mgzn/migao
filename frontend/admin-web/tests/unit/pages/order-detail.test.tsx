@@ -1177,4 +1177,25 @@ describe('OrderDetailPage', () => {
     await screen.findByText('测试窗帘布')
     expect(screen.queryByTestId('order-item-install-room')).toBeNull()
   })
+
+  // ── issue #8066（扫描器判据①「读失败被吞」收口）────────────────────────────
+  // 改前：`loadOperations` 的 catch 里 `setOrderOperations([])` 且不表达失败 ⇒ 屏幕加工单块
+  // 一个工序都不印 ⇒ 商家读成「这单还没派工序」，而真相是没读到。
+  it('工序清单读失败：常驻失败锚在场 + 重试只重发这一条读面（不重取订单详情）', async () => {
+    mockGetOrderOperations.mockRejectedValueOnce(new Error('operations down'))
+    render(<OrderDetailPage />)
+
+    const anchor = await screen.findByTestId('order-operations-read-error')
+    expect(anchor).toHaveTextContent('工序清单读取失败')
+    expect(anchor).toHaveTextContent('不是「这单没有工序」')
+
+    const orderCalls = mockGetOrder.mock.calls.length
+    const opCalls = mockGetOrderOperations.mock.calls.length
+    mockGetOrderOperations.mockResolvedValue({ data: { data: { positions: [] } } })
+    fireEvent.click(screen.getByTestId('order-operations-read-error-retry'))
+    await waitFor(() => expect(screen.queryByTestId('order-operations-read-error')).toBeNull())
+    // 重试**真的**重发工序读面，且**不**顺带重取订单详情（失败隔离：一条失败不拖另一条）
+    expect(mockGetOrderOperations.mock.calls.length).toBe(opCalls + 1)
+    expect(mockGetOrder.mock.calls.length).toBe(orderCalls)
+  }, 20_000) // ⏱ 整例 20s：失败面等到底时 RTL 的 asyncUtilTimeout 是 5s（否则红成 Test timed out = 没跑到断言）
 })

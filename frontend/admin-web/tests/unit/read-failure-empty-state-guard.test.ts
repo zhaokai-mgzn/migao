@@ -40,6 +40,12 @@ import { fileURLToPath } from 'node:url'
 
 import {
   SYNC_SCOPES,
+  // ── 判据 ①（「读失败被吞」+ 正向核 `FAILURE_ANCHORS`，issue #8066 补）──
+  LEDGER,
+  FAILURE_ANCHORS,
+  findOffenders,
+  staleLedger,
+  swallowSitesFromSource,
   REQUIRED_SURFACES,
   READ_SURFACES,
   POSITIVE_ANCHORS,
@@ -545,5 +551,84 @@ describe('判据 ⑤：运行期「读失败后屏上不得有『没有数据』
     expect(findEmptyDataAssertions('还没有订单记录').length).toBe(1)
     // 修后形态：空串空态 + 失败横幅同屏 ⇒ 不命中（这正是页面级修法要达到的读数）
     expect(findEmptyDataAssertions('订单加载失败 —— 没读到数据，下面的条数与列表都不可信。重试共 — 条‹1›')).toEqual([])
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 判据 ①（「读失败被吞」）+ 正向核（issue #8066）
+//
+// ## 为什么本文件此前对判据 ① 是**空跑**
+//
+// `scripts/read-failure-empty-state-scan.mjs` 的文件头写着两条判据（「扫描判据」+「正向核」），
+// 但 vitest 侧只接了判据 ③④⑤ ⇒ 判据 ① 之前**只有那条 CLI 手工命令**在判，
+// `LEDGER` 空转 / 未登记命中 / `FAILURE_ANCHORS` 里的锚被删 **都不会让任何测试变红**
+// （#8066 现场：CLI 报 6 条未登记命中，而 `npm test` 全绿）。
+// ⇒ 本组把两半都接上机器判据：**未登记即红** + **正向核不可摘**（删锚 ⇒ 红）+ 判别力自证。
+// ═══════════════════════════════════════════════════════════════════════════════
+describe('判据 ①：读失败被吞（swallowSites / LEDGER / FAILURE_ANCHORS，issue #8066）', () => {
+  it('⑫ 未登记即红 + 台账只许缩短：真文件读数必须 0 条未登记、0 条僵尸', () => {
+    const { files, offenders } = findOffenders(ADMIN_WEB_ROOT)
+    // 面自证：判据被自己扫成空集 = 假绿（这一支必须真的扫到文件）
+    expect(files.length).toBeGreaterThan(0)
+    expect(offenders.map((o) => o.key)).toEqual([])
+    expect(staleLedger(ADMIN_WEB_ROOT)).toEqual([])
+    // 台账归零是本条的**目标形态**（只许缩短）：非空就得逐条给理由，且必须是**未修好**的
+    expect(LEDGER.length).toBe(0)
+  })
+
+  it('⑬ 正向核不可摘：FAILURE_ANCHORS 每条锚在其声明的文件里**逐字**在场', () => {
+    // 正向核不许被删空（否则「删掉失败面」这条路无东西可拦）
+    expect(FAILURE_ANCHORS.length).toBeGreaterThan(0)
+    for (const entry of FAILURE_ANCHORS) {
+      const src = read(entry.file)
+      const missing = entry.anchors.filter((a: string) => !src.includes(a))
+      // 具名报出**缺哪条**（不写行号：行号会漂，符号/文本锚才稳）
+      expect({ name: entry.name, missing }).toEqual({ name: entry.name, missing: [] })
+    }
+  })
+
+  it('⑭ 判别力自证（内存假源码）：吞掉形态必红、修后形态不红、注释不误伤', () => {
+    const swallow = (body: string) => swallowSitesFromSource(`function Probe() {\n  const load = async () => {\n${body}\n  }\n}`)
+
+    // ① 坏形态（= #8066 六处的改前形态）：清空读数且不表达失败 ⇒ 必红，且报出**清空了谁**
+    const bad = swallow(`
+    try { await api.list() } catch (e) {
+      setRows([])
+      console.error(e)
+    }`)
+    expect(bad.length).toBe(1)
+    expect(bad[0].cleared).toEqual(['setRows'])
+    expect(bad[0].key).toBe('<probe>.tsx::load#1')
+
+    // ② 六种「清空 + 不表达失败」的空字面量都判红（`[]` / `null` / `''` / `false`）
+    for (const [body, cleared] of [
+      ['    try { await a() } catch (e) { setPayables(null) }', ['setPayables']],
+      ['    try { await a() } catch (e) { setNotice(\'\') }', ['setNotice']],
+      ['    try { await a() } catch (e) { setEnabled(false) }', ['setEnabled']],
+    ] as [string, string[]][]) {
+      const hits = swallow(body)
+      expect(hits.length).toBe(1)
+      expect(hits[0].cleared).toEqual(cleared)
+    }
+
+    // ③ 修后形态（= 本单六处的现状）：显式失败态 + 不清空 ⇒ 不红
+    expect(swallow(`
+    try { await a() } catch (e) { setOrderOperationsReadError(true) }`)).toEqual([])
+    // 清空读数但**同时**表达失败（`stock-ledger` 灰区那种专业形态）⇒ 也不红
+    expect(swallow(`
+    try { await a() } catch (e) { setData(null); setLoadError(true) }`)).toEqual([])
+    // `toast.error` 是第二种合法失败出口
+    expect(swallow(`
+    try { await a() } catch (e) { setRows([]); toast.error('读不到') }`)).toEqual([])
+    // 过程量（loading / hint）不是读数 —— 清它们不产生假的空态
+    expect(swallow(`
+    try { await a() } catch (e) { setLoading(false); setSearchHint('') }`)).toEqual([])
+
+    // ④ 同一符号内的多个 catch 各自独立编号（台账锚 = `文件::符号#序号`）
+    const two = swallowSitesFromSource(`function Probe() {
+  const a = async () => { try { await x() } catch (e) { setRows([]) } }
+  const load = async () => { try { await y() } catch (e) { setRows([]) } }
+}`)
+    expect(two.map((s) => s.key)).toEqual(['<probe>.tsx::a#1', '<probe>.tsx::load#1'])
   })
 })

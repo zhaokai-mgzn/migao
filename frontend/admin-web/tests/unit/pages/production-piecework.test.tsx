@@ -636,4 +636,28 @@ describe('计件结算单 /production/piecework（issue #5653）', () => {
     expect(screen.getByTestId('settlement-generate-open')).toBeDisabled()
     expect(screen.getByTestId('settlement-no-worker')).toHaveTextContent('未定价不等于 0 元')
   })
+
+  // ── issue #8066（扫描器判据①「读失败被吞」收口）────────────────────────────
+  // 改前：`load` 的 catch 只 `setData(null)` + 一句 notice ⇒ 摘要行落进「本期还没有结算单」，
+  // 而结算单列表整块消失 = 把读失败画成「本期一张都没生成」。
+  it('结算单读失败：常驻失败锚在场 + 不印「本期还没有结算单」+ 重试真的重发读请求', async () => {
+    mockGetPieceworkSettlements
+      .mockReset()
+      .mockImplementationOnce(() => Promise.reject(new Error('settlements down')))
+    render(<PieceworkReportPage />)
+
+    const anchor = await screen.findByTestId('settlement-load-error')
+    expect(anchor).toHaveTextContent('结算单读取失败')
+    expect(anchor).toHaveTextContent('不是「本期还没有结算单」')
+    expect(screen.queryByTestId('settlement-empty')).toBeNull()
+
+    const before = mockGetPieceworkSettlements.mock.calls.length
+    mockGetPieceworkSettlements.mockImplementation(() => laggedOk(listOf([])))
+    await userEvent.click(screen.getByTestId('settlement-load-error-retry'))
+    await waitFor(() => expect(screen.queryByTestId('settlement-load-error')).toBeNull())
+    // 重试**真的**重发（不是只把失败态擦掉）
+    expect(mockGetPieceworkSettlements.mock.calls.length).toBe(before + 1)
+    // 重试成功后回到**真**空态：失败面没有把空态吃掉
+    await waitFor(() => expect(screen.getByTestId('settlement-empty')).toBeInTheDocument())
+  }, 20_000) // ⏱ issue #8066 用例：整例 20s（失败面等到底时 RTL 的 asyncUtilTimeout 是 5s，否则红成 Test timed out = 没跑到断言）
 })

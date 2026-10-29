@@ -270,15 +270,27 @@ export const FAILURE_ANCHORS = [
     file: 'src/app/(dashboard)/inbound-orders/page.tsx',
     anchors: ["data-testid=\"inbound-load-error\"", '入库单加载失败', "data-testid=\"inbound-load-retry\""],
   },
+  // ⚠️ issue #8066 修复**正向核的存量漂移**（这两条此前指向的锚已随 issue #7567 迁走）：
+  // 入库单建单页的「搜商品 / 勾 SKU」整块搬进了共享件 `SkuPicker`（页面只传 `testIdPrefix="inbound"`），
+  // 旧的两条锚（`data-testid="inbound-product-search-error"` / `"inbound-sku-error"`）在页面里**已不存在**
+  // ⇒ 正向核此前**恒落地不了**，而它没有机器判据（见 `read-failure-empty-state-guard.test.ts` 判据 ⑬）⇒
+  // 「锚被删」这件事此前**没有任何东西会红**。现按新家逐字锚：组件里的模板字面量 + 页面侧的 prefix 接线。
   {
-    name: '入库单建单页 · 商品搜索读失败（issue #6691）',
-    file: 'src/app/(dashboard)/inbound-orders/new/page.tsx',
-    anchors: ["data-testid=\"inbound-product-search-error\"", '商品搜索失败', "data-testid=\"inbound-product-search-retry\""],
+    name: '入库单建单页 · 商品搜索读失败（issue #6691 → #7567 迁到共享件 SkuPicker）',
+    file: 'src/components/products/SkuPicker.tsx',
+    anchors: ['`${testIdPrefix}-product-search-error`', '商品搜索失败', '`${testIdPrefix}-product-search-retry`'],
   },
   {
-    name: '入库单建单页 · 规格明细读失败（issue #6691）',
+    name: '入库单建单页 · 规格明细读失败（issue #6691 → #7567 迁到共享件 SkuPicker）',
+    file: 'src/components/products/SkuPicker.tsx',
+    anchors: ['`${testIdPrefix}-sku-error`', '规格读取失败', '`${testIdPrefix}-sku-retry`'],
+  },
+  {
+    // 与上面两条**成对**：页面的 `testIdPrefix="inbound"` 是「锚真的长成 inbound-*」的接线；
+    // 摘掉它 ⇒ 上面两条的正向核锚在屏上就不再成立（无东西会报）⇒ 单独锚住这一行接线。
+    name: '入库单建单页 · 选品器 prefix 接线（issue #8066 补）',
     file: 'src/app/(dashboard)/inbound-orders/new/page.tsx',
-    anchors: ["data-testid=\"inbound-sku-error\"", '规格读取失败', "data-testid=\"inbound-sku-retry\""],
+    anchors: ['<SkuPicker', 'testIdPrefix="inbound"'],
   },
   {
     name: '订单详情 · 发货明细读失败（issue #6691）',
@@ -294,6 +306,39 @@ export const FAILURE_ANCHORS = [
     name: '库存明细 · 商品搜索读失败（issue #6691，灰区裁定后补出口）',
     file: 'src/app/(dashboard)/stock-ledger/page.tsx',
     anchors: ["data-testid=\"stock-ledger-search-hint\"", '商品搜索失败', '重试商品搜索'],
+  },
+  // ── issue #8066（判据① 存量未登记命中收口）：这 6 处从「未登记命中」挪到**正向核** ──
+  // 扫描判据只证明「不再命中清空形态」；逐字锚在这里 ⇒ 删掉失败面（页面退回空态/静默）当场红。
+  // 形态 = 共享件 `ListLoadError`（`testId="…"` + 内部渲染 `${testId}-retry`）⇒ 重试锚按 `onRetry=` prop 核。
+  {
+    name: '订单详情 · 工序清单读失败（issue #8066）',
+    file: 'src/app/(dashboard)/orders/[id]/OrderDetail.tsx',
+    anchors: ["testId=\"order-operations-read-error\"", '工序清单读取失败', 'onRetry={() => void loadOperations()}'],
+  },
+  {
+    name: '计件工资 · 结算单读失败（issue #8066）',
+    file: 'src/app/(dashboard)/production/piecework/page.tsx',
+    anchors: ["testId=\"settlement-load-error\"", '结算单读取失败', 'onRetry={() => void load()}'],
+  },
+  {
+    name: '采购单 · 供应商选项读失败（issue #8066）',
+    file: 'src/app/(dashboard)/purchase-orders/page.tsx',
+    anchors: ["testId=\"purchase-form-suppliers-error\"", '供应商清单读取失败', 'onRetry={() => void loadSuppliers()}'],
+  },
+  {
+    name: '报表中心 · 质量成本维度读失败（issue #8066）',
+    file: 'src/app/(dashboard)/reports/page.tsx',
+    anchors: ["testId=\"reports-quality-breakdown-error\"", '质量成本维度读取失败', 'onRetry={() => void loadBreakdown(qcDim)}'],
+  },
+  {
+    name: '供应商 · 待指派清单读失败（issue #8066）',
+    file: 'src/app/(dashboard)/suppliers/page.tsx',
+    anchors: ["testId=\"supplier-unassigned-error\"", '待指派清单读取失败', 'onRetry={() => void loadUnassigned()}'],
+  },
+  {
+    name: '供应商 · 应付对账读失败（issue #8066）',
+    file: 'src/app/(dashboard)/suppliers/page.tsx',
+    anchors: ["testId=\"supplier-payables-error\"", '应付对账读取失败', 'onRetry={() => void loadPayables()}'],
   },
 ]
 

@@ -288,4 +288,29 @@ describe('采购单页面', () => {
     await waitFor(() => expect(screen.getByTestId('purchase-orders-load-error')).toBeInTheDocument())
     expect(screen.queryByTestId('purchase-orders-empty')).not.toBeInTheDocument()
   })
+
+  // ── issue #8066（扫描器判据①「读失败被吞」收口）────────────────────────────
+  // 改前：`loadSuppliers` 的 catch 里 `setSuppliers([])` 且不表达失败 ⇒ 建单下拉里一个选项都没有，
+  // 商家只能读成「这个企业没有供应商」。本条钉三件事：失败面在场 / 不冒充「没有供应商」/ 重试真重发。
+  it('供应商清单读失败：常驻失败锚在场 + 不冒充「没有供应商」+ 重试真的重发读请求', async () => {
+    mockSuppliers.mockRejectedValueOnce(new Error('suppliers down'))
+    render(<PurchaseOrdersPage />)
+    // 供应商选项只在建单表单里消费 ⇒ 打开建单入口才看得到这一块
+    fireEvent.click(await screen.findByTestId('purchase-create'))
+
+    const anchor = await screen.findByTestId('purchase-form-suppliers-error')
+    expect(anchor).toHaveTextContent('供应商清单读取失败')
+    expect(anchor).toHaveTextContent('不是「没有供应商」')
+    // 失败期间下拉里**只有**占位项（不得把「读不到」画成「没有供应商」）
+    expect(screen.getByTestId('purchase-form-supplier').textContent).toBe('请选择供应商')
+
+    const before = mockSuppliers.mock.calls.length
+    fireEvent.click(screen.getByTestId('purchase-form-suppliers-error-retry'))
+    await waitFor(() => expect(screen.queryByTestId('purchase-form-suppliers-error')).toBeNull())
+    // 重试**真的**重发（不是只把失败态擦掉）
+    expect(mockSuppliers.mock.calls.length).toBe(before + 1)
+    await waitFor(() =>
+      expect(screen.getByTestId('purchase-form-supplier')).toHaveTextContent('杭州染整一厂'),
+    )
+  }, 20_000) // ⏱ 整例 20s：失败面等到底时 RTL 的 asyncUtilTimeout 是 5s —— 整例也 5s 的话「锚没渲染出来」会红成 Test timed out（= 没跑到断言），读数会骗人
 })

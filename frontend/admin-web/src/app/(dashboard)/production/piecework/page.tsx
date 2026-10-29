@@ -8,6 +8,7 @@ import { isAxiosError } from 'axios'
 // 工序显示名的**唯一**口径（issue #4621）：逻辑名 · 部位 —— 本页**不得**直接渲染变体名
 import { operationDisplayName } from '@/lib/operation-display'
 import UnpricedNotice from '@/components/production/UnpricedNotice'
+import ListLoadError from '@/components/common/ListLoadError'
 import { cn } from '@/lib/utils'
 // 🔴 issue #6669 第 7 条：涉钱读数的**唯一**展示口径（千分位 + 固定两位小数）——
 // 修前本页是 `toFixed(2)`（`¥123456.78`，无千分位），财务域是 `toLocaleString('zh-CN')`
@@ -367,9 +368,12 @@ function SettlementSection({ period, workers }: { period: string; workers: Piece
   const [busy, setBusy] = useState(false)
   const [voidingId, setVoidingId] = useState('')
   const [voidReason, setVoidReason] = useState('')
+  /** 读面失败态（issue #8066）：与 `notice`（写面提示）**分立** —— 它不随下次写操作被清掉。 */
+  const [loadError, setLoadError] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
+    setLoadError(false)
     try {
       // 一次取全（含已作废）：条数是「已作废 N 张」入口的依据；**渲染**默认只给生效单
       // （常驻面不随已作废条数增长 —— 折叠态下那些行不进 DOM）。
@@ -377,9 +381,10 @@ function SettlementSection({ period, workers }: { period: string; workers: Piece
         await productionApi.getPieceworkSettlements({ period, include_voided: true })
       setData(res.data?.data ?? null)
     } catch (e) {
+      // issue #8066（收口扫描器判据①）：读不到 ≠「本期还没有结算单」—— 置显式失败态，
+      // **不清空**已有读数（改前 `setData(null)` 会让整块落进空态分支）。
       console.error(e)
-      setData(null)
-      setNotice('结算单加载失败，请稍后重试')
+      setLoadError(true)
     } finally {
       setLoading(false)
     }
@@ -500,6 +505,13 @@ function SettlementSection({ period, workers }: { period: string; workers: Piece
       <div className="flex flex-wrap items-center gap-3 px-5 py-3 text-sm text-neutral-600">
         {loading ? (
           <span data-testid="settlement-loading">加载中…</span>
+        ) : loadError ? (
+          // issue #8066：读失败**不许**落进「本期还没有结算单」（那是业务结论）+ 重试只重发这一条读面
+          <ListLoadError
+            testId="settlement-load-error"
+            message="结算单读取失败 —— 不是「本期还没有结算单」，请重新加载"
+            onRetry={() => void load()}
+          />
         ) : active.length === 0 ? (
           <span data-testid="settlement-empty">本期还没有结算单</span>
         ) : (
