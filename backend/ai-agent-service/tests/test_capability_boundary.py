@@ -646,6 +646,41 @@ def test_single_write_skills_scope_their_own_writes(skill_name, own, other):
     assert "商品改名" in elsewhere
 
 
+#: 交接话术（2026-10-29 用户裁定）：只写「不要承诺代办」不够 —— 商家听到的仍是「我这里办不了」。
+#: 该段必须给模型**可执行的下一步** + 一句可直接说的话（示例随单元清单变化，故只钉形态不钉清单）。
+HANDOFF_GUIDE = "引导换场景"
+HANDOFF_EXAMPLE = "把遮光窗帘改成 199 元"
+
+
+def test_elsewhere_segment_carries_handoff_wording():
+    """➡️ 段必须给出**可执行的下一步**，不能只有「不要在本域承诺代办」这半句。
+
+    红证（注入式）：把 `capability_boundary.py` 里 `ELSEWHERE_PREFIX` 的后缀退回旧形态
+    「（对应场景能办；不要在本域承诺代办）：」⇒ 本判据红（逐 skill 报缺哪半句）。
+
+    为什么必须钉住：这一段的存在意义是「本域办不了 → 去对应场景能办，可以这么说」；
+    只剩禁令时模型只会复述「我这边办不了」，商家得到的仍是否定答复（2026-10-29 用户裁定
+    「说的是别承诺，但没给下一步」）。
+    """
+    targets = []
+    for skill_name in _mibao_skill_names():
+        text = render_capability_boundary(skill_name=skill_name)
+        line = next((ln for ln in text.splitlines() if ln.startswith(ELSEWHERE_PREFIX)), "")
+        if line:
+            # 抬头 = 段落前缀 + 括注（单元清单在最后一个「：」之后，`_segment` 的口径）
+            targets.append((skill_name, line.rsplit("：", 1)[0]))
+    assert targets, (
+        "没有任何 mibao skill 渲染出「➡️ 本域不直接办」段 —— 判据面为空（fail-closed："
+        "先确认不是整段渲染坏了，再谈交接话术）"
+    )
+    for skill_name, head in targets:
+        missing = [s for s in (HANDOFF_GUIDE, HANDOFF_EXAMPLE) if s not in head]
+        assert not missing, (
+            f"{skill_name} 回合的「➡️ 本域不直接办」缺交接话术 {missing} —— 只剩「别承诺」时"
+            f"商家听到的仍是「我这里办不了」；该段抬头现为：{head[:90]}…"
+        )
+
+
 def test_every_mibao_skill_projects_its_own_scope():
     """类级元守卫：**每个** mibao skill 的边界段都必须按本 skill 的声明面投影（#8119）。
 

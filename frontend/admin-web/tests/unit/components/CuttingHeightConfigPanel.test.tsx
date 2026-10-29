@@ -144,9 +144,11 @@ describe('CuttingHeightConfigPanel', () => {
     expect(fallback.textContent).toContain('没有任何工序专用参数命中时才用')
     expect(specific.textContent).toContain('只要有一条命中')
 
-    // 条件 chips：布绑带（特殊选项）∧ 韩褶（安装工艺）
+    // 条件 chips：绑带（特殊选项）∧ 韩褶（安装工艺）
+    // 🔴 issue #8108：存量规则值 `布绑带` 是派生键 ⇒ 配置面收回语义名 `绑带`（口径迁移不是放宽：
+    //    后端 ruleValueMatches 让 `绑带` 命中两种派生键，保存时写语义名 —— 与 #8007 同机制）
     expect(screen.getByLabelText('条件类型-0-0').tagName).toBe('SELECT')
-    expect(screen.getByLabelText('条件取值-0-0').textContent).toBe('布绑带')
+    expect(screen.getByLabelText('条件取值-0-0').textContent).toBe('绑带')
     expect(screen.getByLabelText('条件取值-0-1').textContent).toBe('韩褶')
     // 一项里两个取值 = 「或」
     expect(screen.getByLabelText('条件取值-1-0').textContent).toBe('接高、双眼皮接高')
@@ -201,7 +203,7 @@ describe('CuttingHeightConfigPanel', () => {
     fireEvent.change(screen.getByLabelText('预演成品高'), { target: { value: '2.92' } })
     fireEvent.change(screen.getByLabelText('预演工艺'), { target: { value: '打孔' } })
     fireEvent.click(screen.getByLabelText('预演特殊选项'))
-    fireEvent.click(screen.getByLabelText('特殊选项-布绑带'))
+    fireEvent.click(screen.getByLabelText('特殊选项-绑带'))
     fireEvent.click(screen.getByLabelText('预演加工项'))
     fireEvent.click(screen.getByLabelText('加工项-定型'))
     fireEvent.click(screen.getByTestId('cutting-height-preview'))
@@ -211,6 +213,8 @@ describe('CuttingHeightConfigPanel', () => {
       position: '布帘',
       finished_height: '2.92',
       craft: '打孔',
+      // 🔴 issue #8108：配置面只选语义名 `绑带`，预演发出去的是**按部位帘种派生**的落库键
+      //    （默认部位 = 布帘 ⇒ `布绑带`）—— 否则存量的 `布绑带` 规则在预演里会静默不命中
       special_options: ['布绑带'],
       processing_items: ['定型'],
     })
@@ -267,6 +271,10 @@ describe('CuttingHeightConfigPanel', () => {
     expect(screen.getByLabelText('特殊选项-余料带回')).toBeTruthy()
     expect(screen.queryByLabelText('特殊选项-余料带回-布')).toBeNull()
     expect(screen.queryByLabelText('特殊选项-余料带回-纱')).toBeNull()
+    // issue #8108：绑带族同口径 —— 只出 `绑带`，两种派生键不进配置面
+    expect(screen.getByLabelText('特殊选项-绑带')).toBeTruthy()
+    expect(screen.queryByLabelText('特殊选项-布绑带')).toBeNull()
+    expect(screen.queryByLabelText('特殊选项-纱绑带')).toBeNull()
     fireEvent.mouseDown(document.body)
     expect(screen.queryByLabelText('特殊选项-拼2次')).toBeNull()
 

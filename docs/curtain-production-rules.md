@@ -52,6 +52,12 @@
     `frontend/admin-web/src/lib/order-craft-fields.ts::SPECIAL_OPTION_FAMILIES`（录入派生）·
     `backend/admin-api/src/main/java/com/migao/admin/service/OptionFamilyNames.java`（读侧兼容）。
     详见 [docs/design/special-option-display-and-derivation.md](design/special-option-display-and-derivation.md)。
+  - 同一个「布/纱跟随帘种」口径也适用于 **绑带**（issue #8108，用户 2026-10-29 逐字「把这两项也合并成
+    一个绑带选项，布/纱是跟随帘种来确定的」）：特殊选项里 `布绑带` / `纱绑带` **合并为可选项 `绑带`**，
+    落库键仍按该明细行的帘种派生（纱帘 ⇒ `纱绑带`，布帘 / 帘头 / 缺省 ⇒ `布绑带`）。两键**仍是 join
+    key**（`布绑带` ⇒ 工序 `绑带-布`、`纱绑带` ⇒ 工序 `绑带-纱`），工序列名、`production_route_rules`
+    的 `trigger_value` 与计件口径**一字不动**。🔴 **勾绑带 ≠ 客户带走余料** —— 余料台账的「客户带走」
+    只认 `余料带回` 族（`OptionFamilyNames.isCustomerTakeAway`，issue #8108 收窄）。
 - 【默】保证金机制：保证金余额 / 保证金使用 / 本次收款 / 收款备注（定金制，配合企业收款二维码）。
 
 ## 2. 工序库

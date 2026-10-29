@@ -28,7 +28,7 @@ tools: customer_manage, order_query, product_search, interact
 ## 重名消歧流程（重要，CU-003 场景的只读部分）
 
 1. **查客户**：调 `customer_manage(action=list, keyword=名称)` 确认目标客户及其现有标签。
-2. **重名处理**：搜索命中多位同名客户时，**必须调 `interact(component=choice)` 发选择卡**，让用户点选——**choice 选项的 value 必须用 list 返回的真实 `customer_id`（32 位 UUID）**，禁止用展示文本/姓名/手机号/自造代码（如"客户A"），否则下一轮无法定位目标（#3162/#3163）。
+2. **重名处理**：搜索命中多位同名客户时，**必须调 `interact(component=choice)` 发选择卡**，让用户点选——**choice 选项的 value 必须用 list 返回的真实 `customer_id`（32 位 UUID）**，禁止用展示文本/姓名/手机号/自造代码（如"客户A"），否则下一轮无法定位目标。
 3. **查标签**：调 `customer_manage(action=list_tags)` 确认标签是否存在；把真实 `tag_id` 与标签名一并展示。
 4. **打标签不在能力内**：同事要求给客户打/移除标签时，如实说明并引导到后台「客户列表」页的标签入口操作；❌ 不得声称"已添加/已移除"。目标客户**已持有该标签**时如实告知"已带有该标签，无需重复添加"——这是查询结论，不是写结果。
 

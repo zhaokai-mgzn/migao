@@ -2,7 +2,8 @@
 
 /**
  * 部位级**特殊选项**录入 —— issue #4511 从 `OrderCraftFields` **抽出来**；
- * issue #8007 起词表是**语义选项**（18 项），布/纱派生键不进 UI。
+ * issue #8007 起词表是**语义选项**；issue #8108 起两族合并（19 项 join key ⇒ **17 个可点项**），
+ * 布/纱派生键（`余料带回-布/-纱`、`布绑带/纱绑带`）不进 UI。
  *
  * ⚠️ **文件名刻意避开 `spec`**（本组件是 `OrderExtraOptions` 而不是 `OrderSpecialOptions`）：
  * `growth_gate._is_test_file` 按「文件名含 test/spec」判定测试文件 ⇒ 含 `spec` 的**源文件**

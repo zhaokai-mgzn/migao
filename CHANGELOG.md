@@ -5,6 +5,30 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 特殊选项「布绑带 / 纱绑带」合并为「绑带」，材料跟随帘种（2026-10-29，issue #8108）
+
+用户逐字：「把这两项也合并成一个绑带选项，布/纱是跟随帘种来确定的」。与 issue #8007 的「余料带回」
+**同一套机制**（`SPECIAL_OPTION_FAMILIES` 加一行，不另发明）。
+
+- **改前**：特殊选项里 `布绑带` / `纱绑带` 是两个并列可点项 ⇒ 商家得自己回答「这樘窗的绑带是布还是纱」；
+  而明细行本来就有帘种，同一件事被问两次、两个答案还能互相矛盾（纱帘行勾了 `布绑带`）。
+- **改后**：录入 / 展示只出现 **`绑带`**（下单页、改单弹窗、裁高配置面板、订单详情、打印、水洗唛、
+  工人 H5、小程序端；19 项 join key ⇒ **17** 个语义选项）。落库键按**该明细行的帘种**派生：
+  纱帘 ⇒ `纱绑带`，布帘 / 帘头 / 未指定 ⇒ `布绑带`。
+- **存量数据与 join key 一字不动**：`SPECIAL_OPTIONS`（19 项）仍逐字是 join key；`布绑带` ⇒ 工序 `绑带-布`、
+  `纱绑带` ⇒ 工序 `绑带-纱`、`production_route_rules.trigger_value` 与计件口径都不动。派生只发生在边界
+  （录入时正向派生、展示时反向收回），历史单不迁移数据、照旧可读。
+- 🔴 **勾绑带 ≠ 客户带走余料**：余料台账的「客户带走」判定收窄为**只认 `余料带回` 族**（改前是「任一族
+  成员」—— 加族之后勾绑带的单会被误判成客户带走 ⇒ 余料落 `customer_taken`、不进可用池、不可回收 /
+  不可报废 = 静默账错）。判据 = `OptionFamilyNamesTest.customerTakeAwayIsScopedToTheLeftoverFamilyOnly`
+  + `RemnantServiceTest.bandingOptionDoesNotMarkRemnantsAsCustomerTaken`（注入回旧形态 ⇒ 两条同时红）。
+- **裁高配置面**：词表只出 `绑带`（存量以 `布绑带` 存储的条件值展示为 `绑带`，保存时写语义名，后端按族
+  匹配）；预演输入按所选部位派生落库键 ⇒ 存量按派生键存的规则不会静默不命中。
+- 判据：`special-option-names.test.ts`（含类级「成对变体未登记即红」，覆盖 `X-布`/`X-纱` 与 `布X`/`纱X`
+  两种形态）/ `OrderExtraOptions.test.tsx` / `craft-display.test.ts` /
+  `CuttingHeightConfigPanel.test.tsx` / `worker-h5-special-option-display.test.mjs` /
+  `OptionFamilyNamesTest` / `RemnantServiceTest` / `test_special_options.py` /
+  `test_production_catalog_seed.py`。
 ### 余料带回 / 绑带 的专属水洗唛只印 5 行 + 二维码，纸型收到 50mm × 100mm（常规唛仍是 50mm × 140mm / 15 行）（2026-10-29，issue #8107）
 
 用户 2026-10-29 逐字：「余料带回和绑带的水洗唛打印功能中，用户反馈打印的信息太多了，可以适当删减，
