@@ -320,6 +320,22 @@ describe('CustomerDetailPage', () => {
     })
   })
 
+  it('承运商候选随「常用物流方式」收敛（issue #8079）：专线 ⇒ 只列专线；快递 ⇒ 不含专线', async () => {
+    render(<CustomerDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByTestId('receiver-card')).toBeInTheDocument()
+    })
+    // 档案存的是「物流/专线 + 四季安物流」⇒ 候选里只有专线承运商
+    const options = () =>
+      Array.from(document.querySelectorAll('#receiver-logistics-companies option')).map(
+        (o) => (o as HTMLOptionElement).value,
+      )
+    expect(options()).toEqual(['四季安物流'])
+    fireEvent.change(screen.getByDisplayValue('物流/专线'), { target: { value: 'express' } })
+    expect(options()).not.toContain('四季安物流')
+    expect(options()).toContain('顺丰速运')
+  })
+
   // ── 清空语义的反馈口径（issue #4443）────────────────────────────────────
   // 后端 updateCustomer 是「非空拷贝」：空白一律不覆盖（#4419 有意为之，由
   // CustomerReceiverAddressPersistTest.updateCustomer_BlankReceiverFieldsDoNotWipeExisting 钉住）。
