@@ -25,6 +25,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -200,6 +201,56 @@ class OrderServiceTest {
         assertThat(result.getTotal()).isEqualTo(1);
         assertThat(result.getItems()).hasSize(1);
         assertThat(result.getItems().get(0).getCustomerName()).isEqualTo("张三");
+    }
+
+    // ============ 列表下发「物流类型」（issue #8073）============
+    //
+    // 病灶：`OrderListResponse` 不含 `logisticsType` ⇒ 列表行 `order.logisticsType === undefined`
+    // ⇒ 行内快捷发货（#8070）的物流类型默认值**恒落「快递」**，订单明明记着「物流专线」也要商家再切一次。
+    // 真值 = `orders.logistics_type`（V100 / issue #4872）：与 `OrderDetailResponse.logisticsType`
+    // **同源同口径**（两者都由 BeanUtils.copyProperties 从 `Order` 实体带出），**不是**
+    // `order_logistics.logistics_type` —— 那是发货后才有的行（`tracking_no NOT NULL` ⇒ 建单期恒无），
+    // 拿它做默认值等于「发货后才知道该选什么」。
+    //
+    // 判据取**线面**（前端消费的就是这段 JSON），并镜像全局 Jackson
+    // `spring.jackson.default-property-inclusion: non_null`（application.yml）⇒ 未采集时键缺席。
+    // 红证 = 摘掉 DTO 字段 ⇒ 第 1 条断言在运行期判红（不是靠编译失败）。
+
+    @Test
+    @DisplayName("订单分页查询 - 列表行下发订单已记的物流类型（issue #8073）")
+    void getOrderPage_CarriesOrderLogisticsType() throws Exception {
+        // given：一张记了「物流专线」的单 + 一张建单未传（未指定）的单
+        Order withLogistics = Order.builder()
+                .id("order-002")
+                .tenantId(1L)
+                .orderNo("ORD-20261029-0002")
+                .customerName("李四")
+                .status("pending")
+                .logisticsType("logistics")
+                .build();
+        Order withoutLogistics = Order.builder()
+                .id("order-003")
+                .tenantId(1L)
+                .orderNo("ORD-20261029-0003")
+                .customerName("王五")
+                .status("pending")
+                .build();
+        Page<Order> mockPage = new Page<>(1, 20);
+        mockPage.setRecords(List.of(withLogistics, withoutLogistics));
+        mockPage.setTotal(2);
+        when(orderMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class)))
+                .thenReturn(mockPage);
+
+        // when
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, null, null);
+
+        // then
+        ObjectMapper wire = new ObjectMapper().setSerializationInclusion(JsonInclude.Include.NON_NULL);
+        assertThat(result.getItems()).hasSize(2);
+        assertThat(wire.writeValueAsString(result.getItems().get(0)))
+                .contains("\"logisticsType\":\"logistics\"");
+        assertThat(wire.writeValueAsString(result.getItems().get(1)))
+                .doesNotContain("logisticsType");
     }
 
     @Test

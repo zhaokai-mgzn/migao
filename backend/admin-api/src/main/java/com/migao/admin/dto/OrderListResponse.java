@@ -41,6 +41,24 @@ public class OrderListResponse {
     private String customerAddress;
 
     /**
+     * 收货——**物流类型**（issue #8073）：{@code express} 快递 / {@code logistics} 物流专线。
+     *
+     * <p><b>与 {@link OrderDetailResponse#getLogisticsType()} 同源同口径</b>：都来自
+     * {@code orders.logistics_type}（V100 / issue #4872），都靠
+     * {@code BeanUtils.copyProperties(order, response)} 从 {@link com.migao.admin.entity.Order}
+     * 带出 —— <b>不另立第二份来源</b>。</p>
+     *
+     * <p>列表查询（{@code orderMapper.selectPage}，未加 {@code select(...)} 投影 ⇒ 全列选取）
+     * 本来就把该列取回来了 ⇒ <b>不需要 join / 没有 N+1</b>。</p>
+     *
+     * <p>消费方 = 列表行的快捷发货（issue #8070）：白名单命中本值 ⇒ 默认选中「物流/专线」，
+     * 否则回落「快递」。{@code null} = 建单未传（V100 <b>无列默认</b>、服务端不猜）⇒ 全局 Jackson
+     * {@code default-property-inclusion: non_null} ⇒ <b>键缺席</b>，前端读作 {@code undefined}
+     * （与「未指定」同义，不是「快递」）。</p>
+     */
+    private String logisticsType;
+
+    /**
      * 总金额（商品小计 + 加工费）
      */
     private BigDecimal totalAmount;
