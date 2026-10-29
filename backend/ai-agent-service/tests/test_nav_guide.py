@@ -13,8 +13,10 @@
 
 ## 明确边界（照实登记）
 
-- **不判 LLM 行为**（是否真的引用了 citation / 真的没编步骤）—— 那是 `MC-065` 的行为面，
-  本文件只判**结构**（工具**没有能力**返回步骤：`data` 键白名单里不存在 `steps`）。
+- **不判 LLM 行为**（是否真的引用了 citation / 真的逐字转述登记步骤）—— 那是 `MC-065` /
+  `MC-120` 的行为面，本文件只判**结构**：`action=navigate`（默认）的 `data` 键白名单里不存在
+  `steps`；`action=how_to` 的登记表投影面（命中逐字 / 未登记如实 / 裁剪）在
+  `backend/ai-agent-service/tests/test_page_actions.py`（**不重复**）。
 - **不重复** `tests/unit_ci_workflows/test_agent_permission_parity.py` 的四源对账（工具码 ↔ 端点码 ↔
   菜单节点 ↔ 岗位）：本工具是**纯本地**工具（零 admin-api 调用点）⇒ 按 `LOCAL_ONLY_TOOLS` 口径
   **不声明权限码**，那条对账在**工具层**结构性不适用；授权面落在**答案级**裁剪（下面判据 4）。
@@ -73,10 +75,16 @@ class TestToolSurface:
     def test_bound_to_a_b_side_skill(self):
         assert "nav_guide" in GENERAL_TOOLS, "没绑任何 B 端 skill ⇒ 模型拿不到（能力谎报）"
 
-    def test_parameters_carry_the_question(self):
+    def test_parameters_cover_both_actions(self):
         tool = NavGuideTool()
-        assert tool.parameters["properties"]["question"]["type"] == "string"
-        assert tool.parameters["required"] == ["question"]
+        properties = tool.parameters["properties"]
+        assert properties["question"]["type"] == "string"
+        assert properties["topic"]["type"] == "string"
+        assert properties["action"]["enum"] == ["navigate", "how_to"]
+        assert tool.parameters["required"] == [], (
+            "两个动作各有自己的必填参数（navigate→question / how_to→topic）⇒ 顶层不强制；"
+            "空值由 execute 的 fail-closed 分支兜住（如实说没有，不猜）"
+        )
 
 
 class TestExecuteSemantics:
@@ -123,7 +131,7 @@ class TestExecuteSemantics:
 
     @pytest.mark.asyncio
     async def test_no_steps_field_and_no_step_wording_in_replies(self):
-        """结构 + 文本：返回里既没有 `steps` 字段，也没有受控步骤词。"""
+        """结构 + 文本（**navigate 分支**）：返回里既没有 `steps` 字段，也没有受控步骤词。"""
         step_words = ("第一步", "第二步", "步骤如下", "点击", "按钮", "输入框", "下拉框", "依次")
         tool = NavGuideTool()
         for question in [f.label for f in nav.NAV_FEATURES] + ["怎么导出订单"]:
