@@ -13,6 +13,7 @@ import { get, post } from '../utils/request'
 import { API_BASE_URL } from '../utils/constants'
 import {
   clearWorkerSession,
+  mirrorWorkerSessionToH5,
   setCachedWorker,
   setWorkerSessionId,
   workerSessionHeaders,
@@ -208,4 +209,6 @@ function persistSession(payload: WorkerSessionPayload): void {
     idle_minutes: payload.idle_minutes,
     idle_expires_at: payload.idle_expires_at ?? null,
   })
+  // 手持标签机：同一份工人身份给 `/w/` 报工页（否则扫码后还要再登一次）。
+  mirrorWorkerSessionToH5(payload)
 }

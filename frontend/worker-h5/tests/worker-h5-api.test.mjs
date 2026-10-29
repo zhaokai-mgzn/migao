@@ -11,7 +11,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createApi, SESSION_HEADER, STORAGE_KEY } from '../src/api.mjs'
+import { BIMINI_SESSION_KEY, BIMINI_WORKER_KEY, createApi, SESSION_HEADER, STORAGE_KEY } from '../src/api.mjs'
 
 /** 极简 fetch 替身：记录每次调用，按队列返回响应。 */
 function stubFetch(responses) {
@@ -66,6 +66,44 @@ test('① 登录：工号 + PIN ⇒ /api/worker/login，并把 session_id / 工�
   assert.equal(api.sessionId(), 'sess-1')
   assert.equal(api.worker().workerName, '张三')
   assert.ok(store.getItem(STORAGE_KEY), '登录态必须落本地（设备记住登录）')
+})
+
+test('① 手持机：/w/ 登录也写 /b/ 的 worker_session_id（Taro H5 形态），切页不用再登', async () => {
+  const f = stubFetch([LOGIN_OK])
+  const store = memStorage()
+  const api = createApi({ fetchImpl: f, storage: store, baseUrl: 'https://app.migaozn.com' })
+
+  await api.login({ workerNo: 'A017', pin: '1234', enterpriseCode: 'migao' })
+
+  assert.deepEqual(JSON.parse(store.getItem(BIMINI_SESSION_KEY)), { data: 'sess-1' })
+  const current = JSON.parse(store.getItem(BIMINI_WORKER_KEY))
+  assert.equal(current.data.session_id, 'sess-1')
+  assert.equal(current.data.worker_name, '张三')
+})
+
+test('① 手持机：/b/ 小程序登录的 worker_session_id 被 /w/ 直接复用（不登第二次）', () => {
+  const store = memStorage({
+    [BIMINI_SESSION_KEY]: JSON.stringify({ data: 's-bmini' }),
+    [BIMINI_WORKER_KEY]: JSON.stringify({ data: { session_id: 's-bmini', worker_id: 'w1', worker_no: 'W1', worker_name: '李四' } }),
+  })
+  const api = createApi({ fetchImpl: stubFetch([]), storage: store, baseUrl: 'https://app.migaozn.com' })
+
+  assert.equal(api.sessionId(), 's-bmini')
+  assert.equal(api.worker().workerName, '李四')
+  assert.equal(api.worker().workerNo, 'W1')
+})
+
+test('① 手持机：/w/ 登出清 bmini 两份键（别让 /b/ 留在上一个人名下）', async () => {
+  const f = stubFetch([LOGIN_OK, { status: 200, body: { success: true, data: {} } }])
+  const store = memStorage()
+  const api = createApi({ fetchImpl: f, storage: store, baseUrl: 'https://app.migaozn.com' })
+
+  await api.login({ workerNo: 'A017', pin: '1234' })
+  await api.logout()
+
+  assert.equal(store.getItem(STORAGE_KEY), null)
+  assert.equal(store.getItem(BIMINI_SESSION_KEY), null)
+  assert.equal(store.getItem(BIMINI_WORKER_KEY), null)
 })
 
 test('① 后续请求带 X-Worker-Session-Id（与 #4733 逐字同名）', async () => {

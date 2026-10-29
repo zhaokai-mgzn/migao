@@ -16,6 +16,44 @@ import { STORAGE_KEYS } from './constants'
 /** 工人 session 请求头（与服务端 `WorkerSessionService.SESSION_HEADER` 逐字同名）。 */
 export const WORKER_SESSION_HEADER = 'X-Worker-Session-Id'
 
+/**
+ * 手持标签机：`/b/` 工人首页登录后，扫码进的 `/w/` 报工页必须直接复用这份身份。
+ * 键与 `frontend/worker-h5/src/api.mjs` 的 `STORAGE_KEY` **逐字同名**（同 origin 的 localStorage）。
+ */
+export const H5_WORKER_SESSION_KEY = 'migao:worker-h5:session'
+
+/** 登录/切换返回的工人 session（结构相容 `workerService.WorkerSessionPayload`；本模块不反向 import 服务）。 */
+export interface WorkerSessionLike {
+  session_id: string
+  worker_id?: string
+  worker_no?: string | null
+  worker_name?: string | null
+  idle_minutes?: number
+  idle_expires_at?: string | null
+}
+
+/** 把 `/b/` 的工人身份镜像到 `/w/` 报工页（同一 origin 的 localStorage）。 */
+export function mirrorWorkerSessionToH5(payload: WorkerSessionLike): void {
+  try {
+    if (typeof localStorage === 'undefined') return
+    localStorage.setItem(H5_WORKER_SESSION_KEY, JSON.stringify({
+      sessionId: payload.session_id,
+      workerId: payload.worker_id,
+      workerNo: payload.worker_no ?? null,
+      workerName: payload.worker_name ?? null,
+      idleMinutes: payload.idle_minutes,
+      idleExpiresAt: payload.idle_expires_at ?? null,
+    }))
+  } catch {}
+}
+
+/** 清镜像（登出 / 401 / 切换工人时与 Taro 两份键一起清）。 */
+export function clearH5WorkerSession(): void {
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.removeItem(H5_WORKER_SESSION_KEY)
+  } catch {}
+}
+
 /** 当前工人（服务端返回的快照；`worker_id` 由服务端解，前端不得自造）。 */
 export interface CurrentWorker {
   session_id: string
@@ -49,6 +87,7 @@ export function clearWorkerSession(): void {
     Taro.removeStorageSync(STORAGE_KEYS.WORKER_SESSION)
     Taro.removeStorageSync(STORAGE_KEYS.WORKER)
   } catch {}
+  clearH5WorkerSession()
 }
 
 /** 读取缓存的当前工人（仅用于首屏渲染；真值仍以服务端 `current-worker` 为准）。 */
