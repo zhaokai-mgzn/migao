@@ -11356,7 +11356,7 @@
 必须成功: product_update
 ```
 真值: id-resolve.name, id-resolve.no-fabricate
-溯源: 2026-10-29 新增（issue #8116，P0-2）：smoke 档原有 8 条**全是只读列表查询**，写路径一条都没有 ⇒ 任何写链路回归只能靠 48 分钟的 normal 才发现。本用例是「冒烟档的写面代表」（与 normal 档的 PR-009/PR-010 同族，刻意收窄到两轮：诉求 → 点卡 → 真写）。 ｜ tags: write, price, write_path, smoke
+溯源: 2026-10-29（issue #8142）修**答卡形态**：原第 2 轮裸文本「确认」不放行写操作（文字≠点卡，#3518/#3568）⇒ 模型再调 product_update 被 `confirmation_required_card_not_clicked` 拒绝（smoke run 40898419998 实证）⇒ 改用 #3430/#5303 的 `repeat_until[product_update] + fallback 确认` 协作答卡范式；并换种子商品（2699系列雪尼尔窗帘面料 23.8→25.8）避免与 PR-009 重复写同一商品/同一目标价。断言面：must_succeed / required_args(before_price) / order_before(interact[confirm] before product_update) / post_clean(product_price_restore 23.8) 一条未减。 ｜ 2026-10-29 新增（issue #8116，P0-2）：smoke 档原有 8 条**全是只读列表查询**，写路径一条都没有 ⇒ 任何写链路回归只能靠 48 分钟的 normal 才发现。本用例是「冒烟档的写面代表」（与 normal 档的 PR-009/PR-010 同族，刻意收窄到两轮：诉求 → 点卡 → 真写）。 ｜ tags: write, price, write_path, smoke
 
 ## 工具注册器域（1 case）
 
