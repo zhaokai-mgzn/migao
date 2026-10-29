@@ -21,6 +21,16 @@
 | **2** | **每个投影都有判据**：真值源 → 渲染缝 → 判据，三件套登记在 `tests/agent_projection_ledger.json`。 | `::test_projection_keys_are_frozen`（未登记即红）+ `::test_every_projection_has_resolvable_render_and_guard`（渲染缝不可解析 / 判据文件不存在即红） |
 | **3** | **真值变化必须红**：投影的判据里要有「现实快照」—— 工具 / 权限一变就红，逼作者核对文案。 | `tests/test_capability_boundary.py::test_availability_snapshot_is_current` |
 
+> **2026-10-29（issue #8119，按本轮 skill 投影）**：能力边界原先按 **persona 全局**给，
+> 于是 `order` 回合的 system prompt 里既有「✅ 商品改名可直接办理（以本段为准）」、又有
+> `prompts/order.md` 的「本域无可写工具」——而本轮**确实没有** `product_update` ⇒ 模型只能
+> 空头承诺或误拒（同族 #7347 / #7758）。现在按 **本轮 skill 的声明面**分层：
+> 「✅ 可直接办理 / ➡️ 本域不直接办 / ❌ 暂未接线 / ❌ 按裁定不做」。
+> 判据 = `test_capability_boundary.py` 的 `::test_zero_write_skills_never_claim_direct_capability`
+> （零写域不得宣称可直接办理）、`::test_every_mibao_skill_projects_its_own_scope`（类级：
+> 漏传 `skill_name` 即红）、`::test_available_units_probe_are_write_tools`（判域前提：
+> 可办单元的探针必须是写工具，否则「声明面 ∪ 家族只读」会让判域失效）。
+
 > 不变式 3 不是锦上添花：没有它，投影会在**下一次工具变更**时静默失真，
 > 而「静默失真」正是 #7291 的成因（9 个文件一起错，没有任何东西会红）。
 >
@@ -34,7 +44,7 @@
 | 投影 | 真值源 | 渲染缝 | 进模型？ |
 |---|---|---|---|
 | **能力索引** | `SkillConfig.tool_names` × `registry.read_only` | `app.graph.skills.base_skill::_capability_index` | ✅ Layer 2.6（域 → 写工具的地图） |
-| **能力边界** | 注册表 action enum / 字段 `required_props` / 批量 `batch_type` 枚举值 × mibao 绑定 skill | `app.agents.capability_boundary::render_capability_boundary` | ✅ Layer 2.7（能办什么 / 不能办去哪） |
+| **能力边界** | 注册表 action enum / 字段 `required_props` / 批量 `batch_type` 枚举值 × mibao 绑定 skill | `app.agents.capability_boundary::render_capability_boundary(skill_name=…)` | ✅ Layer 2.7（能办什么 / 不能办去哪；**按本轮 skill 投影**，issue #8119） |
 | **权限范围** | admin-api 权限目录镜像 × 会话角色 | `app.graph.skills.base_skill::_inject_permission_scope` | ✅ 注入（B 端） |
 | **意图归属** | `backend/ai-agent-service/app/ontology/schema.yaml::intent_ownership` | `scripts/check_ontology_contract.py` | ❌ CI 门禁（不进 prompt） |
 
