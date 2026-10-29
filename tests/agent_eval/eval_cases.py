@@ -14335,16 +14335,16 @@ _CASE_PR_132 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── PR-133 [SMOKE] 冒烟 · 改价闭环：一句「把遮光窗帘的价格改成 199」→ 改前→改后确认卡 → 点卡后真写（源: cases/product.yml）──
+# ── PR-133 [SMOKE] 冒烟 · 改价闭环：一句「把 2699系列雪尼尔窗帘面料 的价格改成 25.8 元」→ 改前→改后确认卡 → 点卡后真写（源: cases/product.yml）──
 _CASE_PR_133 = EvalCase(
     id='PR-133',
     legacy_id='',
-    title='冒烟 · 改价闭环：一句「把遮光窗帘的价格改成 199」→ 改前→改后确认卡 → 点卡后真写',
+    title='冒烟 · 改价闭环：一句「把 2699系列雪尼尔窗帘面料 的价格改成 25.8 元」→ 改前→改后确认卡 → 点卡后真写',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.SMOKE,
-    user_inputs=['把遮光窗帘的价格改成 199', '确认'],
-    expectations=['product_update(product_id=遮光窗帘, price=199)'],
-    data_checks=['改前价必须取自 product_detail 的返回（before_price 必填，漏传即 price_preview_required 拦截：tests/test_price_preview_guard.py）', '先发「改前 → 改后」确认卡，点卡之后才允许改（order_before 机器断言）', '改的是商品级 base_price：168 → 199，跑完由 post_clean 复位的回读自证'],
+    user_inputs=['把 2699系列雪尼尔窗帘面料 的价格改成 25.8 元', {'repeat_until': {'tool_called': 'product_update', 'max': 3}, 'fallback': '确认'}],
+    expectations=['product_update(product_id=2699系列雪尼尔窗帘面料, price=25.8)'],
+    data_checks=['改前价必须取自 product_detail 的返回（before_price 必填，漏传即 price_preview_required 拦截：tests/test_price_preview_guard.py）', '先发「改前 → 改后」确认卡，点卡之后才允许改（order_before 机器断言）', '改的是商品级 base_price：23.8 → 25.8，跑完由 post_clean 复位的回读自证（种子真值见 tests/agent_eval/fixtures/mibao_eval_seed.sql 的 prod_eval_2699）'],
     skip_reason='',
     tags=['write', 'price', 'write_path', 'smoke'],
     persona='mibao',
@@ -14354,9 +14354,9 @@ _CASE_PR_133 = EvalCase(
     order_before=['interact[confirm] before product_update'],
     required_args=[{'tool': 'product_update', 'fields': ['product_id', 'price', 'before_price']}],
     must_succeed=[{'tool': 'product_update'}],
-    post_clean=[{'type': 'product_price_restore', 'product_keyword': '遮光窗帘', 'price': 168}],
-    namespaces=['product_name:遮光窗帘'],
-    precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
+    post_clean=[{'type': 'product_price_restore', 'product_keyword': '2699系列雪尼尔窗帘面料', 'price': 23.8}],
+    namespaces=['product_name:2699系列雪尼尔窗帘面料'],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '2699系列雪尼尔窗帘面料', 'expect': 1}],
 )
 
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
