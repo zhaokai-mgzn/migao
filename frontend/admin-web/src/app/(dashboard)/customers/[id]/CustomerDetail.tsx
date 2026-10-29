@@ -10,7 +10,7 @@ import { useRouteId } from '@/lib/use-route-id'
 import { customerApi } from '@/lib/api'
 import type { CustomerDetail, CustomerTag, CustomerOrder, CustomerSession, CustomerChannel, CustomerDetailResponse, CustomerCreditStatus } from '@/types'
 import { CustomerChannelLabels } from '@/types'
-import { LOGISTICS_COMPANIES, LOGISTICS_TYPES } from '@/lib/logistics'
+import { LOGISTICS_TYPES, logisticsCompaniesFor } from '@/lib/logistics'
 import dayjs from 'dayjs'
 import { cn } from '@/lib/utils'
 
@@ -494,7 +494,8 @@ export default function CustomerDetailPage() {
               </label>
               <label className="block">
                 <span className="text-xs text-neutral-500">常用物流公司</span>
-                {/* datalist = 预置承运商下拉 + 允许自定义（承运商列是自由文本，不做白名单校验） */}
+                {/* datalist = 预置承运商下拉 + 允许自定义（承运商列是自由文本，不做白名单校验）；
+                    候选随「常用物流方式」收敛（issue #8079），已录的自定义值不因切类型被改写 */}
                 <input
                   list="receiver-logistics-companies"
                   className="mt-1 w-full px-3 py-2 rounded border border-neutral-300 text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
@@ -503,7 +504,7 @@ export default function CustomerDetailPage() {
                   onChange={(e) => setReceiver({ ...receiver, logisticsCompany: e.target.value })}
                 />
                 <datalist id="receiver-logistics-companies">
-                  {LOGISTICS_COMPANIES.map((c) => (
+                  {logisticsCompaniesFor(receiver.logisticsType).map((c) => (
                     <option key={c} value={c} />
                   ))}
                 </datalist>
