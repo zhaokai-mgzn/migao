@@ -9789,6 +9789,48 @@ _CASE_OR_072 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── OR-073 [NORMAL] B 端会话焦点：查过订单后说「这单的明细」⇒ 复用同一订单、不再反问单号（issue #8173）（源: cases/order.yml）──
+_CASE_OR_073 = EvalCase(
+    id='OR-073',
+    legacy_id='',
+    title='B 端会话焦点：查过订单后说「这单的明细」⇒ 复用同一订单、不再反问单号（issue #8173）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['查一下订单 EVAL-MB-ORD-0002', '这单的明细'],
+    expectations=['order_query'],
+    data_checks=['第 2 轮必须直接回答第 1 轮那笔订单的明细（不得再索要单号）：焦点由第 1 轮 order_query 的工具结果回写、跨轮持久化、下一轮 system prompt 注入；确定性判据 = backend/ai-agent-service/tests/test_focus_memory.py（回写 / store 往返恢复 / prompt ≤3 行 / 指代解析），红证 = 摘掉回写或注入后该文件红'],
+    skip_reason='',
+    tags=['order', 'multi_turn', 'focus_memory'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=[{'round': 2, 'any_of': ['请提供单号', '请提供订单号', '麻烦提供单号', '麻烦提供订单号', '是哪一单', '哪一笔订单', '哪个订单']}],
+    want_text=[{'round': 2, 'text': 'EVAL-MB-ORD-0002'}],
+    precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
+)
+
+# ── OR-074 [NORMAL] B 端会话焦点：无焦点时说「这单的明细」⇒ 必须追问是哪一单（不得猜、不得先查列表再挑一笔；issue #8173）（源: cases/order.yml）──
+_CASE_OR_074 = EvalCase(
+    id='OR-074',
+    legacy_id='',
+    title='B 端会话焦点：无焦点时说「这单的明细」⇒ 必须追问是哪一单（不得猜、不得先查列表再挑一笔；issue #8173）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这单的明细'],
+    expectations=['direct_reply'],
+    data_checks=['无焦点 ⇒ 必须追问（不得猜）：`app/memory/focus.py` 的 resolve_reference 在空焦点下返回 None（判据 = backend/ai-agent-service/tests/test_focus_memory.py），因此本轮不得复用任何订单号；机器侧由 `expectations: direct_reply`（不得有工具调用）+ `forbidden_tools: order_query`（不得先查列表再挑一笔）+ 追问措辞 `want_text` 三条共同钉住。前置 = 张三名下确有订单（order_count_for_phone），证明「有单可猜」时仍选择追问'],
+    skip_reason='',
+    tags=['order', 'multi_turn', 'focus_memory', 'negative'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_tools=[{'tool': 'order_query'}],
+    want_text=[{'round': 1, 'any_of': ['哪一单', '哪一笔', '请提供', '麻烦提供', '需要您提供']}],
+    precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
+)
+
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 作业单生成 + 订单进入生产中（派单即生产；issue #7723 改判）（源: cases/processing-order.yml）──
 _CASE_PG_001 = EvalCase(
     id='PG-001',
@@ -17905,6 +17947,8 @@ ALL_CASES = (
     _CASE_OR_070,
     _CASE_OR_071,
     _CASE_OR_072,
+    _CASE_OR_073,
+    _CASE_OR_074,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,
