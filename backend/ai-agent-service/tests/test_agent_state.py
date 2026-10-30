@@ -59,6 +59,8 @@ class TestBaseAgentState:
             "session_id", "role", "intent_result", "route_decision",
             "final_answer", "skill_used",
             "pending_interact_skill",
+            # 会话级工作记忆（焦点对象，issue #8173）
+            "focus",
         ]
         for field in required_fields:
             assert field in state, f"缺少字段: {field}"

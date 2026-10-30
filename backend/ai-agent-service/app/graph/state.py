@@ -54,3 +54,9 @@ class AgentState(TypedDict):
     last_card: dict                  # 最近一张交互卡的 interactive_data（component/options/…）
     last_card_skill: str             # 下发该卡的 skill 名
 
+    # 会话级工作记忆（焦点对象，issue #8173）：{entity, id, label, source_tool, turn, recent[]}。
+    # 仅 B 端（mibao）使用：_build_initial_state 从 SessionStateStore 恢复，react_turn 的
+    # 工具结果回写更新（订单号 / 客户 id / 商品 id），prepare_turn 注入 prompt；
+    # C 端（xiaobu）不写、不注入（空 dict）。
+    focus: dict
+
