@@ -64,7 +64,7 @@ class SessionService:
         """物理删除会话及消息（终态）"""
         return await self._memory.delete_session(session_id)
 
-    async def expire_idle(self, idle_minutes: int = 30, limit: int = AUTO_CLOSE_SCAN_LIMIT) -> int:
+    async def expire_idle(self, idle_minutes: int = 720, limit: int = AUTO_CLOSE_SCAN_LIMIT) -> int:
         """active → closed：批量关闭空闲会话（与手动 close 同落 closed）
 
         limit：单次扫描关闭上限（issue #2915），积压分多轮消化，防批量误杀。

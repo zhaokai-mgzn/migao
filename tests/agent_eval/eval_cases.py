@@ -5245,7 +5245,7 @@ _CASE_MC_009 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['ai-agent-service 创建 FastAPI 应用并管理启动/关闭生命周期'],
     expectations=['direct_reply'],
-    data_checks=['create_app 返回 FastAPI，/health 返回 status=healthy+service+version；CORS 白名单 + DEBUG 追加开发源；api_router 挂 API_PREFIX', 'lifespan 启动 init_db/init_redis（非 DEBUG 异常 re-raise，DEBUG 仅 log）；后台 _session_auto_close_loop；关闭 cancel + close_redis + close_db', '_session_auto_close_loop 每 300s 扫描 close_idle_sessions(240min)，每天 cleanup_closed_sessions(90d)；CancelledError re-raise'],
+    data_checks=['create_app 返回 FastAPI，/health 返回 status=healthy+service+version；CORS 白名单 + DEBUG 追加开发源；api_router 挂 API_PREFIX', 'lifespan 启动 init_db/init_redis（非 DEBUG 异常 re-raise，DEBUG 仅 log）；后台 _session_auto_close_loop；关闭 cancel + close_redis + close_db', '_session_auto_close_loop 每 300s 扫描 close_idle_sessions(720min)，每天 cleanup_closed_sessions(90d)；CancelledError re-raise'],
     skip_reason='[backend-contract] 依赖注入 mock 由 pytest 单测验证（tests/test_main.py），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['app', 'main', 'lifespan'],
     persona='',

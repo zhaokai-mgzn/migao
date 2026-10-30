@@ -1095,7 +1095,7 @@ class SessionMemory:
                 logger.error(f"[session-memory] Cleanup failed error={e}")
                 raise
 
-    async def close_idle_sessions(self, idle_minutes: int = 30, limit: int = AUTO_CLOSE_SCAN_LIMIT) -> int:
+    async def close_idle_sessions(self, idle_minutes: int = 720, limit: int = AUTO_CLOSE_SCAN_LIMIT) -> int:
         """
         自动关闭空闲超过指定分钟数的活跃会话。
 
