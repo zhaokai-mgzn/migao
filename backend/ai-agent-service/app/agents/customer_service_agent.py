@@ -205,6 +205,8 @@ class BaseAgent:
         # 已校验待执行写（issue #3976）：validate_input 通过后由 base_skill 落库的
         # pending_validated_input；路由层答卡轮据此判断确认卡执行目标归属哪个 skill。
         pending_validated_input: dict = {}
+        # 会话级工作记忆（焦点对象，issue #8173）——仅 B 端（mibao）；C 端恒为空 dict。
+        focus: dict = {}
         if context.session_id:
             try:
                 from app.memory.session_state_store import SessionStateStore
@@ -219,6 +221,9 @@ class BaseAgent:
                 last_card_skill = str(_card_state.get("last_card_skill") or "")
                 _pvi = _card_state.get("pending_validated_input")
                 pending_validated_input = _pvi if isinstance(_pvi, dict) else {}
+                if self._agent_type == "mibao":
+                    _focus = _card_state.get("focus")
+                    focus = _focus if isinstance(_focus, dict) else {}
             except Exception as e:
                 logger.warning(
                     f"[_build_initial_state] Failed to load last_confirm_*/last_card "
@@ -245,6 +250,7 @@ class BaseAgent:
             "last_card": last_card,
             "last_card_skill": last_card_skill,
             "pending_validated_input": pending_validated_input,
+            "focus": focus,
         }
     
     async def achat(

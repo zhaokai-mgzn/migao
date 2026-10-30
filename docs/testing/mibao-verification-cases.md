@@ -6586,7 +6586,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（72 case）
+## 订单域（74 case）
 
 ### OR-061. 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262） 🔵
 ```
@@ -7860,6 +7860,33 @@
 跳过: [backend-contract] 本用例是打印中心的确定性前端判据（vitest：渲染 + 交互 + 纸型读数；无 LLM 环节 ⇒ 不进 agent-eval 冒烟）：计分通道 = traces.tests
 ```
 溯源: 2026-10-27 新增（issue #7902）。取号 = scripts/next_case_id.py OR 现取 ⇒ OR-072。口径：① 一处入口 = 销售订单详情（发货页 / 发货记录页 / 生产明细页的打印入口一并退场）；② 加工单/面料单/水洗唛的纸面名与是否出现由派单产物（processing_orders.order_kind）决定；③ 联合打印 = 勾选 + 逐张引导（浏览器不保证 window.print 阻塞到出纸，且四份纸的纸型不同，物理上必须一张一张换纸）；④ 打印流水只记「已发起 + 结果」，不假装能确认物理出纸。⚠️ 未固化（照实登记）：① 生产明细页撤掉打印后，车间岗位需 order:detail 才能在订单详情打水洗唛（用户 2026-10-27 已选该方案）；② 真机纸面与驱动分页仍由打印介质矩阵守卫承担，本用例不重复；③ 蓝牙直连（Web Bluetooth）在 jsdom 里只能判「入口存在 + 上报通道为 ble」，真实出纸不在面内。 ｜ 2026-10-28（issue #7964）判据 5 改判：入口搬进**打印预览表头**、订单明细页的常驻区块下线（用户逐字「打印流水应该放到打印预览界面上……不要放到订单明细中」）；数据面 / 端点 / 权限码 / 列表聚合口径不动。 ｜ tags: order, print-center, print-log
+
+### OR-073. B 端会话焦点：查过订单后说「这单的明细」⇒ 复用同一订单、不再反问单号（issue #8173） 🔵
+```
+你: 查一下订单 EVAL-MB-ORD-0002
+你: 这单的明细
+端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
+期望: order_query
+数据: 第 2 轮必须直接回答第 1 轮那笔订单的明细（不得再索要单号）：焦点由第 1 轮 order_query 的工具结果回写、跨轮持久化、下一轮 system prompt 注入；确定性判据 = backend/ai-agent-service/tests/test_focus_memory.py（回写 / store 往返恢复 / prompt ≤3 行 / 指代解析），红证 = 摘掉回写或注入后该文件红
+前置: order_count_for_phone(source=13800138000)
+禁词（第 2 轮）: 请提供单号、请提供订单号、麻烦提供单号、麻烦提供订单号、是哪一单、哪一笔订单、哪个订单
+必须: {'round': 2, 'text': 'EVAL-MB-ORD-0002'}
+```
+真值: ai-chat.context-memory
+溯源: 2026-10-30 新增（issue #8173）：B 端会话级工作记忆（焦点对象）。第 1 轮点名种子内真实订单 EVAL-MB-ORD-0002（tests/agent_eval/fixtures/mibao_eval_seed.sql，张三 13800138000），第 2 轮只靠指代「这单」⇒ 合格行为 = 复用焦点、不再问单号；`want_text` 钉第 2 轮仍出现该订单号，`forbidden_text` 钉第 2 轮不再索要单号（均轮次作用域，避免全程语义假红）。取号 = scripts/next_case_id.py OR（main 001-072 ∪ 全部 open PR）⇒ OR-073。 ｜ tags: order, multi_turn, focus_memory
+
+### OR-074. B 端会话焦点：无焦点时说「这单的明细」⇒ 必须追问是哪一单（不得猜、不得先查列表再挑一笔；issue #8173） 🔵
+```
+你: 这单的明细
+端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
+期望: direct_reply
+数据: 无焦点 ⇒ 必须追问（不得猜）：`app/memory/focus.py` 的 resolve_reference 在空焦点下返回 None（判据 = backend/ai-agent-service/tests/test_focus_memory.py），因此本轮不得复用任何订单号；机器侧由 `expectations: direct_reply`（不得有工具调用）+ `forbidden_tools: order_query`（不得先查列表再挑一笔）+ 追问措辞 `want_text` 三条共同钉住。前置 = 张三名下确有订单（order_count_for_phone），证明「有单可猜」时仍选择追问
+前置: order_count_for_phone(source=13800138000)
+全程禁用: order_query
+必须: {'round': 1, 'any_of': ['哪一单', '哪一笔', '请提供', '麻烦提供', '麻烦您提供', '请告诉', '需要您提供', '告诉我单号']}
+```
+真值: ai-chat.context-memory
+溯源: 2026-10-30 新增（issue #8173）：与 OR-073 成对——OR-073 证明「有焦点 ⇒ 确定性复用」，本用例证明「无焦点 ⇒ 保持追问、不许猜」。单轮用例（新会话天然无焦点）；`precondition[order_count_for_phone: 13800138000]` 保证库里确实有单可猜，否则「不猜」会被空库洗成假绿。取号 = scripts/next_case_id.py OR ⇒ OR-074。 ｜ tags: order, multi_turn, focus_memory, negative
 
 ## 加工项域（32 case）
 
@@ -13762,8 +13789,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：927（活跃 150，跳过 777）
-- tier 分布：smoke 15 / normal 855 / adversarial 33
+- 用例总数：929（活跃 152，跳过 777）
+- tier 分布：smoke 15 / normal 857 / adversarial 33
 - 售后域：16
 - Agent 核心域：12
 - API 层域：21
@@ -13781,7 +13808,7 @@
 - 杂项域：166
 - 商家入驻域：7
 - 领域本体域：4
-- 订单域：72
+- 订单域：74
 - 加工项域：32
 - 加工单域：85
 - 商品域：133

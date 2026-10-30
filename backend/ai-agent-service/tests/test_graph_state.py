@@ -25,6 +25,8 @@ class TestAgentStateFields:
             "intent_result", "route_decision",
             "final_answer", "skill_used",
             "pending_interact_skill",
+            # 会话级工作记忆（焦点对象，issue #8173）
+            "focus",
         ]
         for field in expected_fields:
             assert field in annotations, f"Missing field: {field}"
@@ -51,6 +53,8 @@ class TestAgentStateFields:
         assert annotations["user_id"] is int
         # session_id 应该是 str
         assert annotations["session_id"] is str
+        # focus（会话级工作记忆，issue #8173）应该是 dict
+        assert annotations["focus"] is dict
 
 
 class TestAddMessagesReducer:
