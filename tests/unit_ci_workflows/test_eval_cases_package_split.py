@@ -26,7 +26,7 @@ tests/agent_eval/eval_cases/
 | 1 | **域 ⇄ 模块双向相等** | `.github/cases/*.yml` 的域集合 == `eval_cases/` 的模块集合；**缺模块** / **未登记模块**（手塞一个 `.py`）⇒ 红；非域模块只有固定清单 `__init__.py` + `_schema.py` |
 | 2 | **逐值相等** | 模块里的 `EvalCase(...)` 字面量与 yml 真值逐 `(文件, id, 字段)` 相等 —— **复用** `render_leg_compare.py`（唯一比较器，本文件**不写第二份**）；且比较器必须真的看到**每个模块**的用例（防「只解析 `__init__.py` 就宣称相等」） |
 | 3 | **收益判据（本单的核心）** | 临时副本里**只改 `order.yml` 的一条 `data_check`** ⇒ 重渲染 ⇒ **只有 `order.py` 变化**，其余模块逐字节不变（拆分的收益就是这条） |
-| 4 | **包顶层导入面不变** | `from eval_cases import ALL_CASES, EvalCase, Skill, Difficulty`（`tests/agent_eval/local_runner.py` 第 29 行的**逐字**导入）⇒ 条数 / ID 序列与 yml 真值**逐位相同** |
+| 4 | **包顶层导入面不变** | `from eval_cases import ALL_CASES, EvalCase, Skill, Difficulty`（`tests/agent_eval/local_runner.py` 模块级的 `from eval_cases import …` **逐字**导入）⇒ 条数 / ID 序列与 yml 真值**逐位相同** |
 | 5 | **模块被删 ⇒ `ALL_CASES` 少条 ⇒ 红** | 注入：拷包 → 删 `order.py` **并**顺手删掉 `__init__.py` 的对应 import（「为了让 import 过」的坏修法）⇒ 包能导入、但条数**少 72** ⇒ 判据 1/4 都红 |
 | 6 | **稳定点** | 同参数再渲染一次 ⇒ 与提交版**逐模块逐字节相同**（零 diff）；旧单文件 `eval_cases.py` **必须已不存在** |
 
@@ -288,7 +288,7 @@ class TestImportSurfaceAndDeletion:
         """`local_runner.py` 的逐字导入面可用，且 `ALL_CASES` 与 yml 真值**逐位相同**。"""
         module = importlib.import_module("eval_cases")     # = `from eval_cases import ...` 的同一份
         assert module.EvalCase and module.Skill and module.Difficulty, (
-            "包顶层必须能导入 EvalCase / Skill / Difficulty（local_runner.py 第 29 行）")
+            "包顶层必须能导入 EvalCase / Skill / Difficulty（= `tests/agent_eval/local_runner.py` 的模块级 `from eval_cases import …`）")
         truth = [c.get("id", "") for c in _truth_cases()]
         got = [c.id for c in module.ALL_CASES]
         assert got == truth, (
