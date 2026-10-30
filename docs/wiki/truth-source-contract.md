@@ -40,7 +40,7 @@
 | # | 判定方式 | 违反后的处置 | 落码 |
 |---|---|---|---|
 | I1-a | 逐技能比**预设语料**（🔴 S4 / issue #6020 起：**预设仓** `zhaokai-mgzn/migao-agent-presets` 的镜像 / 本仓 git 基线，解析见 `drift_audit.preset_root()`；夹具仓自带 `.agent-presets/` 时用它）的 `skills/*/SKILL.md` 的 `version:`：**下降 ⇒ 红**；**同版本但内容不同 ⇒ 红**（那是分叉）；上升/相同且内容一致 ⇒ 绿。参照物取**与语料同源**的上一版 | 改预设到**预设仓**提 PR；合并后 `./scripts/preset-anchor-refresh.sh` 让活锚镜像跟上 | `preset-monotonic` |
-| I1-b | 生成物 `eval_cases.py` / `mibao-verification-cases.md` 重跑 `.github/render_cases.py` 后**逐字节相等**；且用例库里的 `pre_clean` 字段在渲染结果里**存在** | 以 `.github/cases/` 为唯一源重渲染并提交生成物；**不要手改生成物** | `generated-freshness` |
+| I1-b | 生成物 `eval_cases/`（目录型，逐模块）/ `mibao-verification-cases.md` 重跑 `.github/render_cases.py` 后**逐字节相等**；且用例库里的 `pre_clean` 字段在渲染结果里**存在** | 以 `.github/cases/` 为唯一源重渲染并提交生成物；**不要手改生成物** | `generated-freshness` |
 | I1-c | 受管引用面上每个 `path:NNN`：① 路径能解析（否则**悬空**）；② 行号 ≤ 目标文件在 `base` 上的行数（否则**越界**）；③ 带 `@<sha>` 限定（否则**裸行号**）；带文件名的裸 `第 N 行` 同理 | 改成**符号/文本锚点**（首选）或 `第 N 行` + `@<sha>`（限定值）；越界引用删掉行号只留符号。见 dev-flow §18.1 / §16.7 | `ref-freshness` |
 | I1-d | 派生文档**自称**是某权威源的副本时，它声明的版本必须等于权威源当前 `version:`；声明的权威源路径必须存在；副本不得有权威源没有的章节 | 见 §4「同步副本」——**兑现或撤回**，二选一 | `sync-copy` |
 | I1-e | 报告的 `(base, cases_fingerprint, policy_version)` 三元组随每次审计落盘（JSON 报告头部） | 运行期护栏把它写进 `run_key`（见 §3.2） | `drift_audit.py` 报告头 |
@@ -169,7 +169,7 @@ policy_version        # 判据口径版本（口径一改即失效）
 
 **处置（二选一，落地留给后续小单，见 §6「未实装」）**：
 
-1. **兑现（首选）**：把该页**由权威源生成**（脚本渲染，像 `eval_cases.py` 那样）——
+1. **兑现（首选）**：把该页**由权威源生成**（脚本渲染，像 `eval_cases/` 那样）——
    于是"重生成后 `diff == 0`"成为**合法**判据。
    最最小实现：`scripts/render_dev_flow.py` 取 `SKILL.md` 去 frontmatter + 加 4 行页头
    （权威源路径 / `@<sha>` / 生成命令 / "本页由脚本生成，勿手改"），输出到 `docs/wiki/DEV-FLOW.md`；

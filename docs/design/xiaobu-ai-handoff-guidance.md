@@ -213,7 +213,7 @@ D3 信号命中 & 冷却未过 & 未拒绝  → offer（建议卡片）
 | `tests/test_handoff_judge.py`（新） | judge 纯函数：S1/S2/S3 命中、D1/D2 优先、词表边界、冷却输入 | 对应新增 case（见 §7） |
 | `tests/test_xiaobu_handoff_offer.py`（新，mock LLM） | 情绪信号 → 建议节点产出（final_answer + interact 卡片）→ 点"转人工"→ human_handoff 调用 → 人工会话创建；拒绝 → 不再建议；显式请求直转不弹卡 | 同上 |
 | `.github/cases/chat.yml` | 新增用例（chat 域，见 §7） | CH-xxx |
-| `docs/testing/mibao-verification-cases.md` + `tests/agent_eval/eval_cases.py` | render_cases.py 重渲染提交 | — |
+| `docs/testing/mibao-verification-cases.md` + `tests/agent_eval/eval_cases/` | render_cases.py 重渲染提交 | — |
 
 ### 契约与前端
 
@@ -280,7 +280,7 @@ D3 信号命中 & 冷却未过 & 未拒绝  → offer（建议卡片）
 ## 10. 验收标准（Done 定义）
 
 1. `test_handoff_judge.py` / `test_xiaobu_handoff_offer.py` 全绿，头部含 case_ids；
-2. cases 渲染生成物同步提交（eval_cases.py + mibao-verification-cases.md）；
+2. cases 渲染生成物同步提交（eval_cases/ + mibao-verification-cases.md）；
 3. `./verify-all.sh gate` 通过、`./check-ui-regression.sh` 通过；
 4. Agent Eval smoke：CH-008/ST-008 不退化 + 新 CH-013~016 通过（或列为 manual）；
 5. 提交小步、走 PR 关联 Issue（禁直推 main / 禁 add -A）。
