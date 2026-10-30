@@ -37,7 +37,7 @@ from app.tools.base import (
     ToolResult,
 )
 from app.tools.registry import (
-    ToolRegistry, set_tool_context, get_tool_context, set_tool_scope, get_tool_scope,
+    set_tool_context, get_tool_context, get_tool_scope,
     audit_write_tool,
 )
 from app.utils.log_sanitizer import LogSanitizer
@@ -414,70 +414,40 @@ _CAPABILITY_INDEX_HEADER = (
     "写操作只能在下表所属流程内执行（跨流程写会失败）—— 需要别的流程办理时，"
     "按提示引导用户到对应流程或转人工："
 )
+#: 裁剪态抬头（issue #8174）：读面按意图裁到 ≤ `TOOL_TRIM_MAX_READ` 后，上面的
+#: 「所有流程内都可直接调用」就**成了假真值**（模型会去调本轮没绑定的工具 → Tool not found）。
+#: 换成只陈述事实的短句（同时去掉与【能力边界】重复的「去哪儿办」指路，信息不重复）。
+_CAPABILITY_INDEX_HEADER_TRIMMED = (
+    _CAPABILITY_INDEX_MARKER
+    + "本轮只读工具仅限已绑定者（未绑定的只读工具需先切换流程）；"
+    "写操作只能在下表所属流程内执行（跨流程写会失败）："
+)
 
 
-def _all_skill_configs() -> List[Any]:
-    """全部 SkillConfig。**函数内**延迟导入：`skills/*_skill.py` 依赖本模块，
-    模块顶层 import `skill_registry` 会形成循环（调用期取值同时也保住 patch 接缝）。"""
-    from app.graph.skills.skill_registry import get_skill_registry
-
-    return list(get_skill_registry().get_all())
-
-
-def _skill_config(skill_name: str) -> Optional[Any]:
-    """按名取 SkillConfig（延迟导入，理由同上）；未注册 → None（调用方决定降级）。"""
-    from app.graph.skills.skill_registry import get_skill_registry
-
-    return get_skill_registry().get(skill_name)
-
-
-def _read_only_tool_names() -> frozenset:
-    """注册表事实：`read_only is True` 的工具名（**唯一口径**，不用源码正则近似）。"""
-    from app.tools.registry import get_tool_registry
-
-    return frozenset(
-        t.name for t in get_tool_registry().get_all_tools()
-        if getattr(t, "read_only", False)
-    )
+# ⚠️ 上面 #4125 的事实四件套（`_all_skill_configs` / `_skill_config` / `_read_only_tool_names` /
+# `_family_personas` / `_family_read_only_tool_names`）与 `create_skill_registry` 已**整体搬到**
+# `app/graph/skills/tool_selection.py`（issue #8174：本文件受 LOC 棘轮 4356 行约束，裁剪逻辑
+# 只能搬出去再加）。下方 import 是**re-export** —— 既有调用点与 `patch(...base_skill.X)` 接缝
+# 逐字保持可用（`prepare_turn` 仍按 `_base.create_skill_registry` 取值）。
+from app.graph.skills.tool_selection import (  # noqa: E402,F401 — re-export（#8174）
+    _all_skill_configs,
+    _family_personas,
+    _family_read_only_tool_names,
+    _read_only_tool_names,
+    _skill_config,
+    create_skill_registry,
+)
 
 
-def _family_personas(tool_names: List[str]) -> frozenset:
-    """请求的工具集**能被哪些 persona 家族解释** —— 逐工具取"绑定它的 skill 的 persona"再取交集。
-
-    交集恰好唯一 ⇒ 家族成立（该域的只读工具可共享）；歧义（>1）或任一工具无人绑定（=∅）
-    ⇒ **空集 = 不放宽**（fail-closed：宁可少共享，也不把一端工具泄给另一端）。
-    """
-    cfgs = _all_skill_configs()
-    personas: Optional[set] = None
-    for name in tool_names:
-        owners = {
-            persona
-            for cfg in cfgs if name in (cfg.tool_names or [])
-            for persona in (cfg.system_prompts or {})
-        }
-        personas = owners if personas is None else (personas & owners)
-    return frozenset(personas or ())
-
-
-def _family_read_only_tool_names(tool_names: List[str]) -> List[str]:
-    """**同一 persona 家族**里的全部只读工具名（现算；家族不唯一 ⇒ `[]` = 不放宽）。"""
-    personas = _family_personas(tool_names)
-    if len(personas) != 1:
-        return []
-    read_only = _read_only_tool_names()
-    names: set = set()
-    for cfg in _all_skill_configs():
-        if personas & set(cfg.system_prompts or {}):
-            names.update(t for t in (cfg.tool_names or []) if t in read_only)
-    return sorted(names)
-
-
-def _capability_index(skill_name: str) -> str:
+def _capability_index(skill_name: str, trimmed: bool = False) -> str:
     """静态能力索引（**给模型看的小地图**，不是给用户说的文本，见 `_CAPABILITY_INDEX_HEADER`）。
 
     内容 = `域 → 该域可执行的写工具`，一行一个；只读工具不逐条列举（它们已在抬头里表述为
     所有流程可用 —— 逐条列会白烧每轮预算）。**全部从 SkillConfig/注册表事实 derive**，
     不写死任何 skill 名 / 工具名（本仓对"白名单复发"有专门守卫）。
+
+    `trimmed=True`（issue #8174）：本轮的读面被 `tool_selection.plan_read_tools` 裁过 ⇒
+    抬头换成**只陈述事实**的版本（#8174 的 prompt 字符数棘轮 + 不许对模型说假真值）。
     """
     cfg = _skill_config(skill_name)
     if cfg is None:
@@ -497,7 +467,8 @@ def _capability_index(skill_name: str) -> str:
             lines.append("- " + other.name + ": " + " ".join(writes))
     if not lines:
         return ""
-    return _CAPABILITY_INDEX_HEADER + "\n" + "\n".join(lines)
+    return (_CAPABILITY_INDEX_HEADER_TRIMMED if trimmed
+            else _CAPABILITY_INDEX_HEADER) + "\n" + "\n".join(lines)
 
 
 #: 能力边界段首标记（issue #7291）。与 `_CAPABILITY_INDEX_MARKER` 同族但**不同物**：
@@ -528,50 +499,8 @@ def _capability_boundary(skill_name: str) -> str:
     return text
 
 
-def create_skill_registry(tool_names: List[str]) -> ToolRegistry:
-    """创建仅包含指定 Tool 的 Registry 子集
-
-    从全局单例 ToolRegistry 中引用 Tool 实例（不重复创建），
-    避免每次 Skill 执行都实例化全部 Tool。
-
-    **非对称切分**（issue #4125）：入参声明的工具之外，再并入**同一 persona 家族**的
-    只读工具（写工具仍按域收紧，见模块内 #4125 说明）。
-
-    Args:
-        tool_names: 需要的 Tool 名称列表（该 skill 声明的工具集）
-
-    Returns:
-        ToolRegistry: 包含指定 Tool 子集 + 家族只读工具的注册器
-    """
-    from app.tools.registry import get_tool_registry
-
-    full_registry = get_tool_registry()
-    skill_registry = ToolRegistry()
-
-    for name in tool_names:
-        tool = full_registry.get_tool(name)
-        if tool:
-            skill_registry.register(tool)
-        else:
-            logger.warning(f"[base_skill] Tool '{name}' not found in global registry")
-
-    # 只读工具跨域共享（#4125）：并入后**同一份并集**登记执行域（下面 set_tool_scope 用的就是
-    # `skill_registry.get_tool_names()`）—— 校验域与执行域必须逐名一致，**不能一边并一边不并**
-    # （#4017 的不变式：否则 validate_input 放行、模型却 `Tool not found` → 空头承诺、订单不落库）。
-    for name in _family_read_only_tool_names(tool_names):
-        if skill_registry.get_tool(name) is None:
-            tool = full_registry.get_tool(name)
-            if tool:
-                skill_registry.register(tool)
-
-    # A5（issue #4017）：把**本轮可执行工具集**登记为执行域事实（`validate_input` 执行期
-    # 据此拒绝域外目标）。为什么不新造一套域判定：这里返回的 registry **就是**执行域本身 ——
-    # `prepare_turn` 随后用同一个对象 `get_langchain_tools()` 绑定给模型（"你有哪些工具"），
-    # 而 skill 外工具名在该 registry 里一律 `get_tool() is None` → `Tool not found`。
-    # 登记的是**实际注册成功**的名单（不是入参 `tool_names`）：全局注册表缺失的工具不会
-    # 出现在模型可见工具集里，也就不该被当成"域内可执行"。
-    set_tool_scope(skill_registry.get_tool_names())
-    return skill_registry
+# `create_skill_registry` 已搬到 `app/graph/skills/tool_selection.py`（#8174；上方 import 已
+# re-export）。`prepare_turn` 仍按 `_base.create_skill_registry` 取值 ⇒ patch 接缝与调用语义不变。
 
 
 def _sanitize_messages_for_text_path(messages):
@@ -744,7 +673,8 @@ def _read_cached(path: str, required: bool = False) -> str:
     return text
 
 
-def _build_system_prompt(skill_name: str, inline_prompt: str = "") -> str:
+def _build_system_prompt(skill_name: str, inline_prompt: str = "",
+                         trimmed: bool = False) -> str:
     """分层组装 System Prompt
 
     层级（从底到顶）：
@@ -792,7 +722,7 @@ def _build_system_prompt(skill_name: str, inline_prompt: str = "") -> str:
     # ⚠️ 这是**给模型看**的（system prompt），不是给用户说的 —— 用户可见路径不得复用
     # `_capability_index`（`references/base/principles.md` 第 21 行禁止回复里出现工具名/字段名）；
     # 该边界由 `tests/test_capability_index_prompt.py` 的静态扫描 + 植入负例锁定。
-    capability_index = _capability_index(skill_name)
+    capability_index = _capability_index(skill_name, trimmed=trimmed)
     if capability_index:
         parts.append(capability_index)
 
