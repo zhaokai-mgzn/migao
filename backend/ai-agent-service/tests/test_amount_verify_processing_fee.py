@@ -147,10 +147,12 @@ class TestAmountChecksVocabulary:
 
     def test_ch010_declares_processing_fee_check(self):
         """CH-010 的 amount_verify 必须真的开启加工费一致性检查（配置层可见）。"""
-        import importlib.util as iu
-        spec = iu.spec_from_file_location("ec_ch010", REPO_ROOT / "tests/agent_eval/eval_cases.py")
-        mod = iu.module_from_spec(spec)
-        spec.loader.exec_module(mod)
+        # 生成物 = 包目录（issue #8188）；走 `from eval_cases import ...` 的同一导入面
+        import importlib
+        pkg = REPO_ROOT / "tests" / "agent_eval"
+        if str(pkg) not in sys.path:
+            sys.path.insert(0, str(pkg))
+        mod = importlib.import_module("eval_cases")
         case = next(c for c in mod.ALL_CASES if c.id == "CH-010")
         specs = [s for s in (case.amount_verify or []) if isinstance(s, dict)]
         assert specs, "CH-010 必须保留 amount_verify"

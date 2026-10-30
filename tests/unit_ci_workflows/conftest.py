@@ -2,7 +2,7 @@
 
 ## 病灶
 
-`tests/agent_eval/eval_cases.py`（生成物，源 = `.github/cases/**`）的 `ALL_CASES` 是
+`tests/agent_eval/eval_cases/`（生成物包目录，源 = `.github/cases/**`）的 `ALL_CASES` 是
 **模块级共享单例**：同进程内任何测试原地改写它（如 `x.namespaces = []`）都会污染其后
 所有测试，而 **CI 判不出来** —— `pr-check.yml` 从仓库根按路径字母序收集，
 `test_eval_case_asset_truth` 排在 `test_eval_namespace_isolation` **之前** ⇒

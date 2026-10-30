@@ -319,14 +319,14 @@ class TestPreTurnsAreConstructed:
 class TestTheFieldIsWiredEndToEnd:
     def test_the_renderer_emits_the_field_and_the_dataclass_exposes_it(self):
         """声明了 `pre_turns` 的用例必须在**生成物**里出现该字面量（否则=声明无消费）。"""
-        gen = render_cases.to_eval_py([{
+        gen = render_cases.package_text([{
             "id": "STUB-1", "title": "t", "tier": "normal", "_domain": "chat",
             "user_inputs": ["确认"], "expectations": [],
             "pre_turns": ["有没有遮光窗帘", {"auto_select": True}],
         }])
         assert "pre_turns=['有没有遮光窗帘', {'auto_select': True}]" in gen
         # 缺省不落字面量（"缺省不改变既有行为"在 diff 上可读；dataclass 头那一行不算字面量）
-        gen_plain = render_cases.to_eval_py([{
+        gen_plain = render_cases.package_text([{
             "id": "STUB-2", "title": "t", "tier": "normal", "_domain": "chat",
             "user_inputs": ["确认"], "expectations": [],
         }])

@@ -1731,7 +1731,7 @@ class TestFormPrefillLoaderPath:
         import sys as _sys, pathlib as _pl
         root = _pl.Path(lr.__file__).resolve().parents[2]
         _sys.path.insert(0, str(root / ".github"))
-        from render_cases import to_eval_py
+        from render_cases import package_text
         tmp = _pl.Path(tmp_path)
         (tmp / "x.yml").write_text(
             "cases:\n"
@@ -1748,7 +1748,7 @@ class TestFormPrefillLoaderPath:
         cases = _yl.load_file(str(tmp / "x.yml"))["cases"]
         for c in cases:
             c.setdefault("_domain", "x")
-        out = _rc.to_eval_py(cases)
+        out = _rc.package_text(cases)
         assert "form_prefill=[{'field': 'customer_phone'" in out, out[:400]
         assert "forbidden_card_text=['用量']" in out, out[:400]
 
@@ -1774,8 +1774,8 @@ class TestForbiddenCardTextLoaderPath:
         import sys as _sys, pathlib as _pl
         root = _pl.Path(lr.__file__).resolve().parents[2]
         _sys.path.insert(0, str(root / ".github"))
-        from render_cases import load_case_dicts, to_eval_py
-        out = to_eval_py(load_case_dicts(str(root / ".github" / "cases")))
+        from render_cases import load_case_dicts, package_text
+        out = package_text(load_case_dicts(str(root / ".github" / "cases")))
         idx = out.index("id='OR-024'")
         assert "forbidden_card_text=['用量'" in out[idx:idx + 4000], (
             "渲染器没有输出 forbidden_card_text（生成物会丢断言）")
@@ -4997,7 +4997,7 @@ class TestAssertionVocabularyIsMappedByLoader:
     而 CI 走的正是 YAML 路径 → **断言永不生效**，用例照样绿。
 
     逐字段补测治不了这个类（下一个新字段照样漏）。这里改成**词汇表驱动**：
-    词汇表 = 生成物 `EvalCase` 的字段（单一源，`tests/agent_eval/eval_cases.py`）。
+    词汇表 = 生成物 `EvalCase` 的字段（单一源，`tests/agent_eval/eval_cases/_schema.py`）。
       ① 新增断言字段若没在这里配 probe → 直接红（强制作者想清楚装载路径）；
       ② 配了 probe 但装载器没映射 → 红。
     """
@@ -5064,12 +5064,13 @@ class TestAssertionVocabularyIsMappedByLoader:
     def _vocabulary(self):
         """从生成物 dataclass 解析字段（单一源；渲染器与装载器都以它为准）"""
         import ast
-        src = (REPO_ROOT / "tests" / "agent_eval" / "eval_cases.py").read_text(encoding="utf-8")
+        src = (REPO_ROOT / "tests" / "agent_eval" / "eval_cases" / "_schema.py").read_text(
+            encoding="utf-8")
         for node in ast.parse(src).body:
             if isinstance(node, ast.ClassDef) and node.name == "EvalCase":
                 return [s.target.id for s in node.body
                         if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name)]
-        raise AssertionError("eval_cases.py 里找不到 EvalCase dataclass —— 解析失效")
+        raise AssertionError("eval_cases/_schema.py 里找不到 EvalCase dataclass —— 解析失效")
 
     def _assertion_fields(self):
         return [f for f in self._vocabulary() if f not in self.META]

@@ -38,12 +38,12 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / ".github"))
 
-from render_cases import load_case_dicts, to_eval_py, to_md  # noqa: E402
+from render_cases import load_case_dicts, package_files, package_text, to_md  # noqa: E402
 
 CASES_DIR = REPO_ROOT / ".github" / "cases"
 DOC_PATH = REPO_ROOT / "docs" / "design" / "door-width-auto-selection.md"
 ENGINE_PATH = REPO_ROOT / "backend" / "ai-agent-service" / "app" / "tools" / "curtain_calc.py"
-EVAL_CASES_PATH = REPO_ROOT / "tests" / "agent_eval" / "eval_cases.py"
+EVAL_CASES_PATH = REPO_ROOT / "tests" / "agent_eval" / "eval_cases"   # 目录型生成物（issue #8188）
 CASEBOOK_PATH = REPO_ROOT / "docs" / "testing" / "mibao-verification-cases.md"
 
 CASE_ID = "CH-042"
@@ -165,8 +165,10 @@ class TestCriterion1CaseChecksHaveNoLegacyFormula:
 class TestCriterion2ArtifactsSameSource:
     def test_rerender_matches_committed_artifacts(self):
         cases = load_case_dicts(str(CASES_DIR))
-        assert to_eval_py(cases) == EVAL_CASES_PATH.read_text(encoding="utf-8"), (
-            "eval_cases.py 与 .github/cases/ 不同源 ⇒ 跑 .github/render_cases.py 并提交生成物")
+        files = package_files(cases)
+        for name, text in files.items():
+            assert text == (EVAL_CASES_PATH / name).read_text(encoding="utf-8"), (
+                f"eval_cases/{name} 与 .github/cases/ 不同源 ⇒ 跑 .github/render_cases.py 并提交生成物")
         assert to_md(cases) == CASEBOOK_PATH.read_text(encoding="utf-8"), (
             "mibao-verification-cases.md 与 .github/cases/ 不同源 ⇒ 同上")
 
@@ -176,7 +178,8 @@ class TestCriterion2ArtifactsSameSource:
         ⚠️ **有意不做全文件否定**：CH-042 的 `merge_log` 会**如实留档**旧口径算式
         （「改了什么」必须写清），故只否掉**已退役的 `data_checks` 原句**与**渲染出的 `数据:` 行**。
         """
-        eval_cases = EVAL_CASES_PATH.read_text(encoding="utf-8")
+        eval_cases = "".join(p.read_text(encoding="utf-8")
+                             for p in sorted(EVAL_CASES_PATH.glob("*.py")))
         casebook = CASEBOOK_PATH.read_text(encoding="utf-8")
         assert "不参与算料" in eval_cases
         assert "不参与算料" in casebook
@@ -187,14 +190,17 @@ class TestCriterion2ArtifactsSameSource:
     def test_red_proof_editing_cases_without_rerendering(self):
         """红证：只改用例文字、不重渲染 ⇒ 生成物与重渲染结果必不一致。"""
         cases = load_case_dicts(str(CASES_DIR))
-        assert to_eval_py(cases) == EVAL_CASES_PATH.read_text(encoding="utf-8")
+        committed = {p.name: p.read_text(encoding="utf-8")
+                     for p in EVAL_CASES_PATH.glob("*.py")}
+        assert package_files(cases) == committed, (
+            "eval_cases/ 与 .github/cases/ 不同源（逐模块比较）⇒ 重渲染并提交生成物")
         mutated = copy.deepcopy(cases)
         for case in mutated:
             if case.get("id") == CASE_ID:
                 case["data_checks"] = [d.replace("不参与算料", "参与算料")
                                        for d in case["data_checks"]]
-        assert to_eval_py(mutated) != to_eval_py(cases), "用例文字改动未传导到生成物 ⇒ 判据失效"
-        assert to_eval_py(mutated) != EVAL_CASES_PATH.read_text(encoding="utf-8")
+        assert package_text(mutated) != package_text(cases), "用例文字改动未传导到生成物 ⇒ 判据失效"
+        assert package_files(mutated) != committed, "用例文字改动未传导到提交版生成物 ⇒ 判据失效"
 
 
 # ── 判据 3：文档不得把旧口径 A 写成**现行** ─────────────────────────────────

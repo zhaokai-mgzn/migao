@@ -49,7 +49,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 GH = REPO_ROOT / ".github"
 CASES = GH / "cases"
 RENDER = GH / "render_cases.py"
-GEN_EVAL = REPO_ROOT / "tests" / "agent_eval" / "eval_cases.py"
+GEN_EVAL = REPO_ROOT / "tests" / "agent_eval" / "eval_cases"   # 目录型生成物（issue #8188）
 GEN_MD = REPO_ROOT / "docs" / "testing" / "mibao-verification-cases.md"
 
 for _p in (str(GH), str(Path(__file__).parent)):
@@ -195,9 +195,14 @@ def test_boundary_undefined_escape_is_not_taken_over():
 def _render(out_dir: Path) -> None:
     p = subprocess.run(
         [sys.executable, str(RENDER), "--cases", str(CASES),
-         "--out-eval", str(out_dir / "eval_cases.py"), "--out-md", str(out_dir / "casebook.md")],
+         "--out-eval", str(out_dir / "eval_cases"), "--out-md", str(out_dir / "casebook.md")],
         cwd=str(REPO_ROOT), capture_output=True, text=True)
     assert p.returncode == 0, f"真用例库渲染失败：\n{p.stdout}\n{p.stderr}"
+
+
+def _dir_bytes(root: Path) -> dict[str, bytes]:
+    """目录里的模块文件 → `{文件名: 字节}`（`__pycache__` 不算生成物）。"""
+    return {p.name: p.read_bytes() for p in sorted(root.glob("*.py"))}
 
 
 def test_render_is_a_stable_fixpoint_and_matches_committed(tmp_path):
@@ -211,14 +216,16 @@ def test_render_is_a_stable_fixpoint_and_matches_committed(tmp_path):
     b.mkdir()
     _render(a)
     _render(b)
-    for produced, committed in ((a / "eval_cases.py", GEN_EVAL),
-                                (a / "casebook.md", GEN_MD)):
-        twin = b / produced.name
-        assert produced.read_bytes() == twin.read_bytes(), (
-            f"{produced.name} 两次渲染结果不同 —— 渲染腿不是纯函数（稳定点破了）")
-        assert produced.read_bytes() == committed.read_bytes(), (
-            f"{committed.relative_to(REPO_ROOT)} 与重渲染结果**不是逐字节一致** ⇒ "
-            f"生成物不新鲜（改完用例库要跑 render_cases.py 并提交生成物）")
+    dir_a, dir_b, dir_committed = a / "eval_cases", b / "eval_cases", GEN_EVAL
+    assert _dir_bytes(dir_a) == _dir_bytes(dir_b), (
+        "eval_cases/ 两次渲染结果不同 —— 渲染腿不是纯函数（稳定点破了）")
+    assert _dir_bytes(dir_a) == _dir_bytes(dir_committed), (
+        f"{GEN_EVAL.relative_to(REPO_ROOT)}/ 与重渲染结果**不是逐模块逐字节一致** ⇒ "
+        f"生成物不新鲜（改完用例库要跑 render_cases.py 并提交生成物）")
+    assert (a / "casebook.md").read_bytes() == (b / "casebook.md").read_bytes(), (
+        "casebook.md 两次渲染结果不同 —— 渲染腿不是纯函数（稳定点破了）")
+    assert (a / "casebook.md").read_bytes() == GEN_MD.read_bytes(), (
+        f"{GEN_MD.relative_to(REPO_ROOT)} 与重渲染结果**不是逐字节一致** ⇒ 生成物不新鲜")
 
 
 # ══════════════════════════════════════════════════════════════════════════════

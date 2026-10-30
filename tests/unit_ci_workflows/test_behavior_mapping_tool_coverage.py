@@ -155,6 +155,8 @@ DECLARED_TOOL_FILE_COVERAGE = {
 }
 
 # 真实入口见证用的 diff：**PR #3831 的完整变更集**（改了低库存口径那一次，含用例/生成物文件）
+# ⚠️ 这是**历史 diff 快照**（当时的生成物 = 单文件 `eval_cases.py`，issue #8188 之前）；
+#    不作为现役路径引用，故意逐字保留。
 PR_3831_CHANGED_FILES = [
     "backend/ai-agent-service/app/tools/inventory_manage.py",
     "backend/ai-agent-service/app/tools/product_search.py",

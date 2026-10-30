@@ -70,7 +70,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 GH = REPO_ROOT / ".github"
 CASES = GH / "cases"
 RENDER = GH / "render_cases.py"
-GEN_EVAL = REPO_ROOT / "tests" / "agent_eval" / "eval_cases.py"
+GEN_EVAL = REPO_ROOT / "tests" / "agent_eval" / "eval_cases"   # 目录型生成物（issue #8188）
 GEN_MD = REPO_ROOT / "docs" / "testing" / "mibao-verification-cases.md"
 
 sys.path.insert(0, str(GH))          # yaml_light 是零依赖模块，直接导入即可
@@ -320,13 +320,16 @@ def test_render_leg_still_produces_byte_identical_artifacts(tmp_path):
     out.mkdir()
     p = subprocess.run(
         [sys.executable, str(RENDER), "--cases", str(CASES),
-         "--out-eval", str(out / "eval_cases.py"), "--out-md", str(out / "casebook.md")],
+         "--out-eval", str(out / "eval_cases"), "--out-md", str(out / "casebook.md")],
         cwd=str(REPO_ROOT), capture_output=True, text=True)
     assert p.returncode == 0, f"真用例库渲染失败：\n{p.stdout}\n{p.stderr}"
-    for produced, committed in ((out / "eval_cases.py", GEN_EVAL), (out / "casebook.md", GEN_MD)):
-        assert produced.read_bytes() == committed.read_bytes(), (
-            f"{committed.relative_to(REPO_ROOT)} 与重新渲染结果**不是逐字节一致** —— "
-            f"改动只该让多行标量取值变对，不该改真用例库的产物")
+    produced_dir = {q.name: q.read_bytes() for q in sorted((out / "eval_cases").glob("*.py"))}
+    committed_dir = {q.name: q.read_bytes() for q in sorted(GEN_EVAL.glob("*.py"))}
+    assert produced_dir == committed_dir, (
+        f"{GEN_EVAL.relative_to(REPO_ROOT)}/ 与重新渲染结果**不是逐模块逐字节一致** —— "
+        f"改动只该让多行标量取值变对，不该改真用例库的产物")
+    assert (out / "casebook.md").read_bytes() == GEN_MD.read_bytes(), (
+        f"{GEN_MD.relative_to(REPO_ROOT)} 与重新渲染结果**不是逐字节一致**")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

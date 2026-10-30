@@ -59,7 +59,7 @@
 - **`eval_case_filter` 之外的其它剔除路径**：本文件只判"写法与账本"，不判 runner 是否
   真的用 `skip_reason` 过滤（那是 runner 的行为，由 runner 侧测试承担）。
 - **生成物账本里看不到 `skip_issue` / `skip_expires`**：`render_cases.py` 只渲染
-  `skip_reason` 与 `traces` 之外的少量字段 ⇒ casebook md / `eval_cases.py` 里**没有**
+  `skip_reason` 与 `traces` 之外的少量字段 ⇒ casebook md / `eval_cases/` 里**没有**
   这两个追踪字段（`migao-dev-flow` §18.5「账本里看不出来的字段 = 缺陷的盲区」）。
   本判据直接读 `.github/cases/*.yml`，不受该盲区影响；账本侧的补齐属 `render_cases.py`
   的所有权（该文件有在飞分支），**本 PR 未做**，如实登记。

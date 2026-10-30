@@ -75,7 +75,7 @@ RENDER = GH / "render_cases.py"
 SHARED = GH / "cases_yaml.py"
 DRIFT = REPO_ROOT / "scripts" / "drift_audit.py"
 CASES = GH / "cases"
-GEN_EVAL = REPO_ROOT / "tests" / "agent_eval" / "eval_cases.py"
+GEN_EVAL = REPO_ROOT / "tests" / "agent_eval" / "eval_cases"   # 目录型生成物（issue #8188）
 GEN_MD = REPO_ROOT / "docs" / "testing" / "mibao-verification-cases.md"
 
 #: **#5147 的真实坏输入**（原样收进夹具，不是构造样例）：`.github/cases/product.yml` 里那条
@@ -217,7 +217,7 @@ def _render(cases_dir: Path, out: Path, *, env: dict | None = None) -> subproces
     """跑**真的**渲染器（与 CI 同命令形态）。"""
     return subprocess.run(
         [sys.executable, str(RENDER), "--cases", str(cases_dir),
-         "--out-eval", str(out / "eval_cases.py"), "--out-md", str(out / "casebook.md")],
+         "--out-eval", str(out / "eval_cases"), "--out-md", str(out / "casebook.md")],
         cwd=str(REPO_ROOT), capture_output=True, text=True, env=env)
 
 
@@ -282,7 +282,7 @@ def test_render_leg_fails_closed_on_unescaped_quote(tmp_path):
     assert "product.yml" in both, f"报错没有**指名文件**（#5151 判据 1）：\n{both}"
     assert re.search(r"product\.yml:\d+:\d+", both), (
         f"报错没有**指明位置**（`文件:行:列`）：\n{both}")
-    assert not (out / "eval_cases.py").exists(), (
+    assert not (out / "eval_cases").exists(), (
         "严格判定失败后仍写出了生成物 —— 半成品生成物会被误读成「已渲染成功」")
     # 反向：把那一处**转义**（= 合法 YAML）⇒ 恢复绿（证明红的是"那个字符"，不是"这个夹具"）
     _case_dir(tmp_path, product=FIXED_CASE)
@@ -359,10 +359,13 @@ def test_real_case_library_passes_and_artifacts_are_byte_identical(tmp_path):
     out.mkdir()
     p = _render(CASES, out)
     assert p.returncode == 0, f"真用例库渲染失败：\n{p.stdout}\n{p.stderr}"
-    for produced, committed in ((out / "eval_cases.py", GEN_EVAL), (out / "casebook.md", GEN_MD)):
-        assert produced.read_bytes() == committed.read_bytes(), (
-            f"{committed.relative_to(REPO_ROOT)} 与重新渲染结果**不是逐字节一致** —— "
-            f"本改动只该让坏输入失败，不该改好输入的结果（跑 render_cases.py 重渲染并提交）")
+    produced_dir = {q.name: q.read_bytes() for q in sorted((out / "eval_cases").glob("*.py"))}
+    committed_dir = {q.name: q.read_bytes() for q in sorted(GEN_EVAL.glob("*.py"))}
+    assert produced_dir == committed_dir, (
+        f"{GEN_EVAL.relative_to(REPO_ROOT)}/ 与重新渲染结果**不是逐模块逐字节一致** —— "
+        f"本改动只该让坏输入失败，不该改好输入的结果（跑 render_cases.py 重渲染并提交）")
+    assert (out / "casebook.md").read_bytes() == GEN_MD.read_bytes(), (
+        f"{GEN_MD.relative_to(REPO_ROOT)} 与重新渲染结果**不是逐字节一致**")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

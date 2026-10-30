@@ -209,7 +209,7 @@ def _assert_render_rejects(tmp_path: Path, body: str, *, needle: str, env: dict 
     combined = proc.stdout + proc.stderr
     if needle not in combined:
         raise AssertionError(f"渲染腿红了但**没指名** {needle!r} ⇒ 判红不可归因：\n{combined[-600:]}")
-    if (out / "eval_cases.py").exists() or (out / "casebook.md").exists():
+    if (out / "eval_cases").exists() or (out / "casebook.md").exists():
         raise AssertionError("渲染腿红了却**仍产出了生成物**（半成品生成物会被下游当真相读）")
     return combined
 

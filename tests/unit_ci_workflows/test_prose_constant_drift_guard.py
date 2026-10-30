@@ -374,7 +374,7 @@ NOT_JUDGED = {
         "否则本判据的红证根本写不出来 —— 与 `drift_audit` 的 `refs-are-fixtures` 同一取舍",
     ".github/cases/": "由 `.github/templates/**` 经渲染脚本生成（判源面）",
     "docs/testing/mibao-verification-cases.md": "由 `.github/cases/**` 生成",
-    "tests/agent_eval/eval_cases.py": "与用例库同步的生成物",
+    "tests/agent_eval/eval_cases/": "与用例库同步的生成物（issue #8188 起是按域分包的目录）",
 }
 
 

@@ -5,7 +5,7 @@
 | 侧 | 来源 | 取法 |
 |---|---|---|
 | **真值** | `.github/cases/*.yml`（用例库单一源） | `yaml.safe_load`（标准 YAML 就是"真值"的定义） |
-| **产物** | `tests/agent_eval/eval_cases.py` | `ast.literal_eval` 取每个 `EvalCase(...)` 的**关键字字面量**（**不 exec** —— 产物是数据，不是该被执行的代码） |
+| **产物** | `tests/agent_eval/eval_cases/`（目录型生成物，issue #8188） | `ast.literal_eval` 取每个 `EvalCase(...)` 的**关键字字面量**（**不 exec** —— 产物是数据，不是该被执行的代码）；目录形态 = **逐模块**解析后按用例 id 合并 |
 
 比的是**取值**（不是"能不能解析"）：逐 `(文件, 用例 id, 字段)` 深比较。
 `expectations` 是派生字段，两侧都过 `render_cases.exp_to_str`（**同一份实现**，不复制第二份）。
@@ -89,7 +89,7 @@ class Report:
             "比较器坏了：真值侧（yaml.safe_load 用例库）解析出 **0 条** —— 结构猜错了？"
             "「0 条」不是「没有差异」。")
         assert self.artifact_count > 0, (
-            "比较器坏了：产物侧（eval_cases.py 的 EvalCase 字面量）解析出 **0 条** —— "
+            "比较器坏了：产物侧（eval_cases/ 里的 EvalCase 字面量）解析出 **0 条** —— "
             "`ast.literal_eval` 的取法过时了？「0 条」不是「没有差异」。")
         assert not self.missing_in_artifact, (
             f"产物缺用例（渲染腿丢条）：{self.missing_in_artifact[:10]}")
@@ -112,12 +112,25 @@ def truth_cases(cases_dir) -> dict[str, dict]:
 def artifact_cases(path) -> tuple[dict[str, dict], set[str]]:
     """产物侧：`ast.literal_eval` 取每个 `EvalCase(...)` 的关键字字面量（**不 exec**）。
 
+    `path` 可以是**单文件**，也可以是**目录**（按域分包的生成物，issue #8188：逐模块解析后
+    按用例 id 合并）—— 两种形态走**同一份**取法，不另写第二份比较器。
+
     返回 `({用例 id: 字段 dict}, 取不出字面量的关键字名)` —— 后者应恰为两个枚举
     （`skill` / `difficulty`），它是"产物结构没变"的自证之一。
     """
-    tree = ast.parse(Path(path).read_text(encoding="utf-8"))
+    p = Path(path)
+    files = sorted(p.glob("*.py")) if p.is_dir() else [p]
+    assert files, f"产物侧路径既不是文件也不是含 *.py 的目录：{path}"
     out: dict[str, dict] = {}
     non_literal: set[str] = set()
+    for f in files:
+        _merge_artifact_file(f, out, non_literal)
+    return out, non_literal
+
+
+def _merge_artifact_file(path: Path, out: dict[str, dict], non_literal: set[str]) -> None:
+    """解析**一个**产物文件，把其中的 `_CASE_* = EvalCase(...)` 合并进 `out`。"""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
     for stmt in tree.body:
         if not isinstance(stmt, ast.Assign):
             continue
@@ -132,7 +145,6 @@ def artifact_cases(path) -> tuple[dict[str, dict], set[str]]:
             except ValueError:
                 non_literal.add(kw.arg)
         out[case["id"]] = case
-    return out, non_literal
 
 
 def _norm(value, field_name: str):

@@ -105,7 +105,7 @@ def test_resolve_auto_respond_falls_back_when_no_card():
 
 # ── ② CI 的 YAML 装载路径必须把 auto_fill 装进 EvalCase（#3804）──────────────
 # 这一格是"声称修了其实没修"的重灾区（`debug_user`/`output_verify`/`namespaces` 四次同款）：
-# CI 跑的是 `--cases .github/cases` 的 **YAML 装载路径**，不是生成物 `eval_cases.py`
+# CI 跑的是 `--cases .github/cases` 的 **YAML 装载路径**，不是生成物 `eval_cases/`
 # ⇒ 漏映射 = 用例声明了没人消费 = 载荷窗口仍绑死在某些轮次。
 
 def test_ci_yaml_loader_carries_case_level_auto_fill():
@@ -117,8 +117,9 @@ def test_ci_yaml_loader_carries_case_level_auto_fill():
 
 
 def test_generated_eval_cases_also_carry_it():
-    """生成物 `eval_cases.py` 与 YAML 单一源同口径（防止只改了一边）。"""
-    src = (REPO_ROOT / "tests" / "agent_eval" / "eval_cases.py").read_text(encoding="utf-8")
+    """生成物 `eval_cases/` 与 YAML 单一源同口径（防止只改了一边）。"""
+    pkg = REPO_ROOT / "tests" / "agent_eval" / "eval_cases"
+    src = "".join(p.read_text(encoding="utf-8") for p in sorted(pkg.glob("*.py")))
     assert re.search(r"auto_fill=\{[^}]*customer_name", src), (
         "生成物里没有 OR-014/OR-022/… 的用例级 auto_fill —— 生成物与 cases/*.yml 脱同步")
 
