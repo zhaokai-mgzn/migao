@@ -4,25 +4,33 @@ render_cases.py — 用例契约渲染器（case-contract 单一源的两端）
 
 输入 : cases/*.yml（唯一行为用例源，schema 见 design/16-case-contract.md）
 输出 :
-  1. eval_cases.py              — 生成物，供 local_runner.py 导入（兼容期）
+  1. eval_cases/                 — 生成物**包目录**（按域分包），供 local_runner.py 导入
+     ├ __init__.py               — 按固定顺序汇总各域 CASES ⇒ ALL_CASES（+ 再导出 schema / 查询函数）
+     ├ _schema.py                — EvalCase / Skill / Difficulty（**唯一**一份定义）
+     └ <domain>.py               — 每域一个模块（由 cases/<domain>.yml 渲染）
   2. mibao-verification-cases.md — 生成物，人读 casebook
+
+  历史（issue #8188）：这两个产物原先是一个 18000+ 行的单文件 `eval_cases.py`
+  （全仓 churn 第一）⇒ 改成按域分包；`--out-eval` 的**参数名不变**，值改成**目录**。
 
 ★ 生成物禁止手改：改用例 → 改 cases/*.yml → 重新渲染。
   头部均有 GENERATED 标记；与源不一致时以 cases/*.yml 为准。
 
 用法:
-  python3 render_cases.py --cases seed/migao/cases \
-      --out-eval tests/agent_eval/eval_cases.py \
+  python3 render_cases.py --cases .github/cases \
+      --out-eval tests/agent_eval/eval_cases \
       --out-md docs/testing/mibao-verification-cases.md
 """
 import argparse
+import importlib.util
 import os
 import re
 import sys
 
 GENERATED_HEADER = "# GENERATED FILE — DO NOT EDIT\n" \
+                   "# 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）\n" \
                    "# 源: cases/*.yml（case-contract 单一源）\n" \
-                   "# 重新生成: python3 render_cases.py --cases <dir> --out-eval <py> --out-md <md>\n"
+                   "# 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>\n"
 
 # 域 → 旧 eval_cases Skill 枚举（生成物兼容 local_runner 的导入面）
 #
@@ -207,186 +215,297 @@ def _py_repr(s):
     return repr(s)
 
 
-def to_eval_py(cases):
-    """cases → eval_cases.py 文本（与旧 eval_cases.py 同一导入面）。"""
-    out = [GENERATED_HEADER, "",
-           "from dataclasses import dataclass, field",
-           "from typing import List, Optional",
-           "from enum import Enum",
-           "", "",
-           "class Difficulty(Enum):",
-           '    SMOKE = "smoke"       # 冒烟，必须 100% 通过',
-           '    NORMAL = "normal"     # 正常流程',
-           '    EDGE = "edge"         # 边缘情况',
-           '    ADVERSARIAL = "adversarial"  # 对抗性，弱 LLM 可能挂',
-           "", "",
-           "class Skill(Enum):",
-           '    PRODUCT = "product"',
-           '    ORDER = "order"',
-           '    AFTERSALES = "aftersales"',
-           '    CUSTOMER = "customer"',
-           '    CROSS = "cross"',
-           '    MULTI_TURN = "multi_turn"',
-           '    GENERAL = "general"',
-           "", "",
-           "@dataclass",
-           "class EvalCase:",
-           "    id: str",
-           "    title: str",
-           "    skill: Skill",
-           "    difficulty: Difficulty",
-           "    # 每轮可为 str（纯文本）或 dict（{text, images[]} 带图消息，issue #2794）",
-           "    user_inputs: List[str]",
-           "    expectations: List[str]",
-           '    data_checks: List[str]',
-           '    skip_reason: str = ""',
-           '    legacy_id: str = ""',
-           "    tags: List[str] = field(default_factory=list)",
-            # 历史轮次（issue #5482）：同一会话里**先构造** N 轮前置对话（语法同 user_inputs：
-            # str / 同一批控制轮 dict）。⚠️ 必须落在**有默认值**的那一段之后 —— 它前面
-            # （user_inputs / expectations / data_checks）是无默认值字段，插错位置会让
-            # dataclass 直接抛 `non-default argument follows default argument`（实测踩过）。
-            "    pre_turns: List = field(default_factory=list)",
-           '    persona: str = ""   # 归属 agent: mibao / xiaobu / ""(双端)，issue #2855',
-           '    order_before: List[str] = field(default_factory=list)   # 时序断言 "A before B"（跨轮，acceptance-protocol §3.1）',
-           '    forbidden_text: List[str] = field(default_factory=list) # final_text 反模式词，命中即失败（§3.4 幻觉式撤回/报错文案）',
-           '    forbidden_tools: List = field(default_factory=list) # 全程禁用工具断言（任何轮都不得调用；must_succeed 的镜像，issue #3544 收口批）',
-            '    want_text: List[str] = field(default_factory=list) # final_text 正向关键词，全缺即失败（§3.4 正反关键词双轨）',
-           '    required_args: List[dict] = field(default_factory=list) # 必填参数断言（create 缺 specifications/加工项价格即失败，§3.2）',
+SCHEMA_MODULE = "_schema.py"
+
+#: 包内唯一 schema 的源码行（`EvalCase` / `Skill` / `Difficulty`）—— 由 `_schema_text()` 落盘。
+_SCHEMA_LINES = [
+    "from dataclasses import dataclass, field",
+    "from typing import List, Optional",
+    "from enum import Enum",
+    "", "",
+    "class Difficulty(Enum):",
+    '    SMOKE = "smoke"       # 冒烟，必须 100% 通过',
+    '    NORMAL = "normal"     # 正常流程',
+    '    EDGE = "edge"         # 边缘情况',
+    '    ADVERSARIAL = "adversarial"  # 对抗性，弱 LLM 可能挂',
+    "", "",
+    "class Skill(Enum):",
+    '    PRODUCT = "product"',
+    '    ORDER = "order"',
+    '    AFTERSALES = "aftersales"',
+    '    CUSTOMER = "customer"',
+    '    CROSS = "cross"',
+    '    MULTI_TURN = "multi_turn"',
+    '    GENERAL = "general"',
+    "", "",
+    "@dataclass",
+    "class EvalCase:",
+    "    id: str",
+    "    title: str",
+    "    skill: Skill",
+    "    difficulty: Difficulty",
+    "    # 每轮可为 str（纯文本）或 dict（{text, images[]} 带图消息，issue #2794）",
+    "    user_inputs: List[str]",
+    "    expectations: List[str]",
+    '    data_checks: List[str]',
+    '    skip_reason: str = ""',
+    '    legacy_id: str = ""',
+    "    tags: List[str] = field(default_factory=list)",
+    # 历史轮次（issue #5482）：同一会话里**先构造** N 轮前置对话（语法同 user_inputs：
+    # str / 同一批控制轮 dict）。⚠️ 必须落在**有默认值**的那一段之后 —— 它前面
+    # （user_inputs / expectations / data_checks）是无默认值字段，插错位置会让
+    # dataclass 直接抛 `non-default argument follows default argument`（实测踩过）。
+    "    pre_turns: List = field(default_factory=list)",
+    '    persona: str = ""   # 归属 agent: mibao / xiaobu / ""(双端)，issue #2855',
+    '    order_before: List[str] = field(default_factory=list)   # 时序断言 "A before B"（跨轮，acceptance-protocol §3.1）',
+    '    forbidden_text: List[str] = field(default_factory=list) # final_text 反模式词，命中即失败（§3.4 幻觉式撤回/报错文案）',
+    '    forbidden_tools: List = field(default_factory=list) # 全程禁用工具断言（任何轮都不得调用；must_succeed 的镜像，issue #3544 收口批）',
+    '    want_text: List[str] = field(default_factory=list) # final_text 正向关键词，全缺即失败（§3.4 正反关键词双轨）',
+    '    required_args: List[dict] = field(default_factory=list) # 必填参数断言（create 缺 specifications/加工项价格即失败，§3.2）',
     '    forbidden_args: List[dict] = field(default_factory=list) # 禁止参数断言（隔离/越权下限：如物流工具不得接受快递单号，issue #3270）',
-            '    must_succeed: List[dict] = field(default_factory=list) # 写工具成功断言（至少成功一次；"调了≠成了"，§3.2/issue #3361）',
-            '    must_fail: List[dict] = field(default_factory=list) # 必须失败断言（零成功调用；must_succeed 的镜像，issue #3544 收口批）',
-            '    amount_verify: List[dict] = field(default_factory=list) # 金额正确性断言（单价接地/小计/总额，§3.2/issue #3365）',
-            '    db_verify: List[dict] = field(default_factory=list) # 落库层验证（创建后查 admin-api 断言价格=确认价，§3.2/issue #3056）',
-            '    output_verify: List[dict] = field(default_factory=list) # 产出侧断言（工具计算结果 payload，如算料用布量/spec公式，issue #3367）',
-            '    pre_clean: List[dict] = field(default_factory=list) # 评测前数据清理（写类 case 自我污染防线）',
-            '    post_clean: List[dict] = field(default_factory=list) # 用例结束后复位共享夹具（写方复位，issue #4075）',
-            '    post_session: List[dict] = field(default_factory=list) # 会话关闭后落库断言（user_memories 只在 close 时 flush，issue #3357）',
-           '    debug_user: str = ""   # 多身份评测：以哪个 DEBUG 顾客身份跑（如 debug_customer_new，issue #3391）',
-           '    debug_permissions: str = ""   # 评测可控权限（B 端）：逗号分隔权限码，非空才下发 X-Debug-Permissions（issue #4108）',
-           '    form_prefill: List[dict] = field(default_factory=list) # form 卡预填断言（老客户收货信息自动带出，issue #3397）',
-           '    forbidden_card_text: List = field(default_factory=list) # 卡片内容反模式（卡里不得出现「用量/倍数」等把金额翻倍的框架，issue #3402）',
-           '    forbidden_interact: List = field(default_factory=list) # 负向**按轮**卡片约束（该轮不得出现 interact 卡 = 用例判别性红路径的形状前提，issue #3789）',
-           '    arg_values: List[dict] = field(default_factory=list) # 入参**值级**断言（值相等；证据 = 落盘的 round_trace[*].call_args，issue #3823）',
-           '    namespaces: List[str] = field(default_factory=list) # 全局命名空间声明（<kind>:<值>，如 customer_phone:13800138000）；两条用例有交集 → 自动串行（issue #3781 并行污染隔离）',
-           '    precondition: List[dict] = field(default_factory=list) # 运行期前置断言（order_count_for_phone：运行期间订单数不得增长；不成立则判「前置不成立」而非行为失败，issue #3781）',
-            '    auto_fill: dict = field(default_factory=dict) # **用例级**表单载荷（全场可用）：让客户信息脱离轮次位置（issue #3804）',
-           "", ""]
+    '    must_succeed: List[dict] = field(default_factory=list) # 写工具成功断言（至少成功一次；"调了≠成了"，§3.2/issue #3361）',
+    '    must_fail: List[dict] = field(default_factory=list) # 必须失败断言（零成功调用；must_succeed 的镜像，issue #3544 收口批）',
+    '    amount_verify: List[dict] = field(default_factory=list) # 金额正确性断言（单价接地/小计/总额，§3.2/issue #3365）',
+    '    db_verify: List[dict] = field(default_factory=list) # 落库层验证（创建后查 admin-api 断言价格=确认价，§3.2/issue #3056）',
+    '    output_verify: List[dict] = field(default_factory=list) # 产出侧断言（工具计算结果 payload，如算料用布量/spec公式，issue #3367）',
+    '    pre_clean: List[dict] = field(default_factory=list) # 评测前数据清理（写类 case 自我污染防线）',
+    '    post_clean: List[dict] = field(default_factory=list) # 用例结束后复位共享夹具（写方复位，issue #4075）',
+    '    post_session: List[dict] = field(default_factory=list) # 会话关闭后落库断言（user_memories 只在 close 时 flush，issue #3357）',
+    '    debug_user: str = ""   # 多身份评测：以哪个 DEBUG 顾客身份跑（如 debug_customer_new，issue #3391）',
+    '    debug_permissions: str = ""   # 评测可控权限（B 端）：逗号分隔权限码，非空才下发 X-Debug-Permissions（issue #4108）',
+    '    form_prefill: List[dict] = field(default_factory=list) # form 卡预填断言（老客户收货信息自动带出，issue #3397）',
+    '    forbidden_card_text: List = field(default_factory=list) # 卡片内容反模式（卡里不得出现「用量/倍数」等把金额翻倍的框架，issue #3402）',
+    '    forbidden_interact: List = field(default_factory=list) # 负向**按轮**卡片约束（该轮不得出现 interact 卡 = 用例判别性红路径的形状前提，issue #3789）',
+    '    arg_values: List[dict] = field(default_factory=list) # 入参**值级**断言（值相等；证据 = 落盘的 round_trace[*].call_args，issue #3823）',
+    '    namespaces: List[str] = field(default_factory=list) # 全局命名空间声明（<kind>:<值>，如 customer_phone:13800138000）；两条用例有交集 → 自动串行（issue #3781 并行污染隔离）',
+    '    precondition: List[dict] = field(default_factory=list) # 运行期前置断言（order_count_for_phone：运行期间订单数不得增长；不成立则判「前置不成立」而非行为失败，issue #3781）',
+    '    auto_fill: dict = field(default_factory=dict) # **用例级**表单载荷（全场可用）：让客户信息脱离轮次位置（issue #3804）',
+    "", ""
+]
 
+#: 包内**非域模块**的固定清单：`__init__.py`（按固定顺序汇总）与 ``_schema.py``（唯一 schema）。
+#: ⚠️ **未登记即红**：包目录里任何别的 `.py` 都必须是某个域的模块（域 ⇄ 模块**双向相等**）。
+#: 判据 = `tests/unit_ci_workflows/test_eval_cases_package_split.py`；新鲜度腿
+#: （`scripts/generated_artifacts_freshness.py`）把包里**多出来的模块文件**判红
+#: ⇒ 手塞一份进生成物目录会当场红，而不是被下一次重渲染静默忽视。
+NON_DOMAIN_MODULES = ("__init__.py", SCHEMA_MODULE)
+
+_MODULE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def module_name(domain: str) -> str:
+    """域 → 模块文件名（`<name>.py`）。**唯一实现**（判据腿 / 新鲜度腿都调这里）。
+
+    `.github/cases/*.yml` 的文件名里有 `-`（`processing-order` / `token-refresh`），
+    那不是合法的 Python 标识符字符 ⇒ 换成 `_`。两处各写一份映射必然漂移，故只留这一份。
+    """
+    stem = str(domain).replace("-", "_")
+    if not _MODULE_NAME_RE.match(stem):
+        raise ValueError(f"域 {domain!r} 无法映射成合法模块名：{stem!r}")
+    return stem + ".py"
+
+
+def package_files(cases) -> dict[str, str]:
+    """`cases` → `{文件名: 文本}`（``_schema.py`` + 每域一个模块 + `__init__.py`）。
+
+    顺序固定（``_schema.py`` → 域按 `<domain>.yml` **文件名字典序** → `__init__.py`），
+    `__init__.py` 按同一顺序汇总 ⇒ `ALL_CASES` 的顺序与拆分前（`sorted(os.listdir(cases))`）
+    **逐位相同**。⚠️ 必须按**文件名**排，不能按域名排：`-`(45) < `.`(46) ⇒
+    `processing-order.yml` 排在 `processing.yml` **之前**，而按域名排会是 `processing` 在前。
+    """
+    by_domain: dict[str, list] = {}
     for c in cases:
-        cid = c.get("id", "")
-        skill = SKILL_MAP.get(c.get("_domain", ""), "GENERAL")
-        tier = TIER_MAP.get(c.get("tier", "normal"), "NORMAL")
-        out.append(f"# ── {cid} [{tier}] {c.get('title', '')}（源: cases/{c.get('_domain')}.yml）──")
-        out.append(f'_CASE_{c.get("id", "?").replace("-", "_")} = EvalCase(')
-        out.append(f"    id={_py_repr(cid)},")
-        out.append(f"    legacy_id={_py_repr(c.get('legacy_id', ''))},")
-        out.append(f"    title={_py_repr(c.get('title', ''))},")
-        out.append(f"    skill=Skill.{skill},")
-        out.append(f"    difficulty=Difficulty.{tier},")
-        out.append(f"    user_inputs={c.get('user_inputs') or []!r},")
-        # 历史轮次（issue #5482）：与 `pre_clean` 同口径 —— 只在**声明时**落字面量，
-        # 未声明的用例走 dataclass 默认（缺省 = 无历史，行为与旧版逐字一致）。
-        # ⚠️ 必须渲染：不渲染 = 用例在 yml 里声明了 `pre_turns` 却被生成物**静默丢掉**
-        # （"声明无消费"，本仓库反复踩的形态 —— 与 #3836 给 `pre_clean` 补渲染同因）。
-        if c.get("pre_turns"):
-            out.append(f"    pre_turns={c.get('pre_turns')!r},")
-        exps = [exp_to_str(e) for e in (c.get("expectations") or [])]
-        out.append(f"    expectations={exps!r},")
-        out.append(f"    data_checks={c.get('data_checks') or []!r},")
-        out.append(f"    skip_reason={_py_repr(c.get('skip_reason', ''))},")
-        out.append(f"    tags={c.get('tags') or []!r},")
-        out.append(f"    persona={_py_repr(c.get('persona', ''))},")
-        # 多身份评测（issue #3391）：C 端 case 可声明以哪个 debug 用户身份跑
-        out.append(f"    debug_user={_py_repr(c.get('debug_user', ''))},")
-        # 评测可控权限（issue #4108）：只在**声明时**落字面量 —— 未声明的用例走 dataclass
-        # 默认（`""` = 不下发该头 = 服务端仍给通配权限），生成物里逐字不含该行，
-        # "缺省不改变既有行为"这条在 diff 上可读（同 namespaces/auto_fill 的约定）。
-        if c.get("debug_permissions"):
-            out.append(f"    debug_permissions={_py_repr(c.get('debug_permissions'))},")
-        out.append(f"    form_prefill={_py_repr(c.get('form_prefill') or [])},")
-        out.append(f"    forbidden_card_text={_py_repr(c.get('forbidden_card_text') or [])},")
-        # 负向按轮卡片约束 + 入参值级断言（issue #3789 / #3823）：与 `forbidden_tools` /
-        # `required_args` 同口径 —— 只在**声明时**落字面量（未声明走 dataclass 默认，
-        # 生成物 diff 上"缺省不改变既有行为"可读）。
-        if c.get("forbidden_interact"):
-            out.append(f"    forbidden_interact={c.get('forbidden_interact')!r},")
-        if c.get("arg_values"):
-            out.append(f"    arg_values={c.get('arg_values')!r},")
-        if c.get("order_before"):
-            out.append(f"    order_before={c.get('order_before')!r},")
-        if c.get("forbidden_text"):
-            out.append(f"    forbidden_text={c.get('forbidden_text')!r},")
-        if c.get("forbidden_tools"):
-            out.append(f"    forbidden_tools={c.get('forbidden_tools')!r},")
-        if c.get("want_text"):
-            out.append(f"    want_text={c.get('want_text')!r},")
-        if c.get("required_args"):
-            out.append(f"    required_args={c.get('required_args')!r},")
-        if c.get("forbidden_args"):
-            out.append(f"    forbidden_args={c.get('forbidden_args')!r},")
-        if c.get("must_succeed"):
-            out.append(f"    must_succeed={c.get('must_succeed')!r},")
-        if c.get("must_fail"):
-            out.append(f"    must_fail={c.get('must_fail')!r},")
-        if c.get("amount_verify"):
-            out.append(f"    amount_verify={c.get('amount_verify')!r},")
-        if c.get("db_verify"):
-            out.append(f"    db_verify={c.get('db_verify')!r},")
-        if c.get("output_verify"):
-            out.append(f"    output_verify={c.get('output_verify')!r},")
-        if c.get("pre_clean"):
-            out.append(f"    pre_clean={c.get('pre_clean')!r},")
-        # `post_clean`（issue #4075）：与 `pre_clean` 同口径 —— 只在声明时落字面量，
-        # 未声明的用例走 dataclass 默认（缺省 = 不复位，行为与旧版逐字一致）。
-        if c.get("post_clean"):
-            out.append(f"    post_clean={c.get('post_clean')!r},")
-        if c.get("post_session"):
-            out.append(f"    post_session={c.get('post_session')!r},")
-        # 全局命名空间声明 + 运行期前置断言（issue #3781）：只在声明时落字面量，
-        # 未声明的用例走 dataclass 默认（缺省 = 不参与隔离/不设前置，保持既有行为不变）
-        if c.get("namespaces"):
-            out.append(f"    namespaces={c.get('namespaces')!r},")
-        if c.get("precondition"):
-            out.append(f"    precondition={c.get('precondition')!r},")
-        # 用例级表单载荷（issue #3804）：只在声明时落字面量，未声明的用例走 dataclass 默认
-        # （缺省 = 无 case 级载荷，行为与旧版逐字一致）
-        if c.get("auto_fill"):
-            out.append(f"    auto_fill={c.get('auto_fill')!r},")
-        out.append(")")
-        out.append("")
+        by_domain.setdefault(c.get("_domain", ""), []).append(c)
+    domains = sorted(by_domain, key=lambda d: d + ".yml")
+    if not domains:
+        raise ValueError("没有任何域 ⇒ 会渲染出空包（不许发生）")
+    files: dict[str, str] = {SCHEMA_MODULE: _schema_text()}
+    seen: dict[str, str] = {}
+    for domain in domains:
+        name = module_name(domain)
+        if name in seen:
+            raise ValueError(f"域 {domain!r} 与 {seen[name]!r} 映射到同一个模块 {name} "
+                             "⇒ 后一个会静默覆盖前一个")
+        seen[name] = domain
+        files[name] = _domain_module_text(domain, by_domain[domain])
+    files["__init__.py"] = _init_text(domains)
+    return files
 
-    refs = ", ".join(f'_CASE_{c.get("id", "?").replace("-", "_")}' for c in cases)
-    out.append("ALL_CASES = (")
+
+def package_text(cases) -> str:
+    """包内全部文件的**拼接视图**（人读 / 文本断言用；逐文件判定请用 `package_files`）。"""
+    return "\n".join(package_files(cases).values())
+
+
+def _header_lines(*extra: str) -> list[str]:
+    """文件头：**首行仍是 `# GENERATED FILE — DO NOT EDIT`**（既有生成物识别按首行判定）。"""
+    return GENERATED_HEADER.rstrip("\n").split("\n") + list(extra) + [""]
+
+
+def _schema_text() -> str:
+    out = _header_lines("# 包内唯一 schema：EvalCase / Skill / Difficulty **只定义这一份**"
+                        "（域模块从 `._schema` 导入，不许复制第二份定义）")
+    out.extend(_SCHEMA_LINES)
+    return "\n".join(out) + "\n"
+
+
+def _case_literal_lines(c) -> list[str]:
+    """一条用例 → `_CASE_<ID> = EvalCase(...)` 的字面量行（未声明字段不落行）。"""
+    out: list[str] = []
+    cid = c.get("id", "")
+    skill = SKILL_MAP.get(c.get("_domain", ""), "GENERAL")
+    tier = TIER_MAP.get(c.get("tier", "normal"), "NORMAL")
+    out.append(f"# ── {cid} [{tier}] {c.get('title', '')}（源: cases/{c.get('_domain')}.yml）──")
+    out.append(f'_CASE_{c.get("id", "?").replace("-", "_")} = EvalCase(')
+    out.append(f"    id={_py_repr(cid)},")
+    out.append(f"    legacy_id={_py_repr(c.get('legacy_id', ''))},")
+    out.append(f"    title={_py_repr(c.get('title', ''))},")
+    out.append(f"    skill=Skill.{skill},")
+    out.append(f"    difficulty=Difficulty.{tier},")
+    out.append(f"    user_inputs={c.get('user_inputs') or []!r},")
+    # 历史轮次（issue #5482）：与 `pre_clean` 同口径 —— 只在**声明时**落字面量，
+    # 未声明的用例走 dataclass 默认（缺省 = 无历史，行为与旧版逐字一致）。
+    # ⚠️ 必须渲染：不渲染 = 用例在 yml 里声明了 `pre_turns` 却被生成物**静默丢掉**
+    # （"声明无消费"，本仓库反复踩的形态 —— 与 #3836 给 `pre_clean` 补渲染同因）。
+    if c.get("pre_turns"):
+        out.append(f"    pre_turns={c.get('pre_turns')!r},")
+    exps = [exp_to_str(e) for e in (c.get("expectations") or [])]
+    out.append(f"    expectations={exps!r},")
+    out.append(f"    data_checks={c.get('data_checks') or []!r},")
+    out.append(f"    skip_reason={_py_repr(c.get('skip_reason', ''))},")
+    out.append(f"    tags={c.get('tags') or []!r},")
+    out.append(f"    persona={_py_repr(c.get('persona', ''))},")
+    # 多身份评测（issue #3391）：C 端 case 可声明以哪个 debug 用户身份跑
+    out.append(f"    debug_user={_py_repr(c.get('debug_user', ''))},")
+    # 评测可控权限（issue #4108）：只在**声明时**落字面量 —— 未声明的用例走 dataclass
+    # 默认（`""` = 不下发该头 = 服务端仍给通配权限），生成物里逐字不含该行，
+    # "缺省不改变既有行为"这条在 diff 上可读（同 namespaces/auto_fill 的约定）。
+    if c.get("debug_permissions"):
+        out.append(f"    debug_permissions={_py_repr(c.get('debug_permissions'))},")
+    out.append(f"    form_prefill={_py_repr(c.get('form_prefill') or [])},")
+    out.append(f"    forbidden_card_text={_py_repr(c.get('forbidden_card_text') or [])},")
+    # 负向按轮卡片约束 + 入参值级断言（issue #3789 / #3823）：与 `forbidden_tools` /
+    # `required_args` 同口径 —— 只在**声明时**落字面量（未声明走 dataclass 默认，
+    # 生成物 diff 上"缺省不改变既有行为"可读）。
+    if c.get("forbidden_interact"):
+        out.append(f"    forbidden_interact={c.get('forbidden_interact')!r},")
+    if c.get("arg_values"):
+        out.append(f"    arg_values={c.get('arg_values')!r},")
+    if c.get("order_before"):
+        out.append(f"    order_before={c.get('order_before')!r},")
+    if c.get("forbidden_text"):
+        out.append(f"    forbidden_text={c.get('forbidden_text')!r},")
+    if c.get("forbidden_tools"):
+        out.append(f"    forbidden_tools={c.get('forbidden_tools')!r},")
+    if c.get("want_text"):
+        out.append(f"    want_text={c.get('want_text')!r},")
+    if c.get("required_args"):
+        out.append(f"    required_args={c.get('required_args')!r},")
+    if c.get("forbidden_args"):
+        out.append(f"    forbidden_args={c.get('forbidden_args')!r},")
+    if c.get("must_succeed"):
+        out.append(f"    must_succeed={c.get('must_succeed')!r},")
+    if c.get("must_fail"):
+        out.append(f"    must_fail={c.get('must_fail')!r},")
+    if c.get("amount_verify"):
+        out.append(f"    amount_verify={c.get('amount_verify')!r},")
+    if c.get("db_verify"):
+        out.append(f"    db_verify={c.get('db_verify')!r},")
+    if c.get("output_verify"):
+        out.append(f"    output_verify={c.get('output_verify')!r},")
+    if c.get("pre_clean"):
+        out.append(f"    pre_clean={c.get('pre_clean')!r},")
+    # `post_clean`（issue #4075）：与 `pre_clean` 同口径 —— 只在声明时落字面量，
+    # 未声明的用例走 dataclass 默认（缺省 = 不复位，行为与旧版逐字一致）。
+    if c.get("post_clean"):
+        out.append(f"    post_clean={c.get('post_clean')!r},")
+    if c.get("post_session"):
+        out.append(f"    post_session={c.get('post_session')!r},")
+    # 全局命名空间声明 + 运行期前置断言（issue #3781）：只在声明时落字面量，
+    # 未声明的用例走 dataclass 默认（缺省 = 不参与隔离/不设前置，保持既有行为不变）
+    if c.get("namespaces"):
+        out.append(f"    namespaces={c.get('namespaces')!r},")
+    if c.get("precondition"):
+        out.append(f"    precondition={c.get('precondition')!r},")
+    # 用例级表单载荷（issue #3804）：只在声明时落字面量，未声明的用例走 dataclass 默认
+    # （缺省 = 无 case 级载荷，行为与旧版逐字一致）
+    if c.get("auto_fill"):
+        out.append(f"    auto_fill={c.get('auto_fill')!r},")
+    out.append(")")
+    out.append("")
+
+    return out
+
+
+def _domain_module_text(domain: str, cases) -> str:
+    """一个域的模块：该域每条用例的 `EvalCase(...)` 字面量 + `CASES` 元组。"""
+    out = _header_lines(f"# 域: {domain}（源: cases/{domain}.yml，{len(cases)} 条）")
+    out.append("from ._schema import Difficulty, EvalCase, Skill")
+    out.append("")
+    for c in cases:
+        out.extend(_case_literal_lines(c))
+    out.append("CASES = (")
     for c in cases:
         out.append(f"    _CASE_{c.get('id', '?').replace('-', '_')},")
     out.append(")")
-    out.append("")
-    out.append("def get_active_cases() -> List[EvalCase]:")
-    out.append("    return [c for c in ALL_CASES if not c.skip_reason]")
-    out.append("")
-    out.append("def get_smoke_cases() -> List[EvalCase]:")
-    out.append("    return [c for c in ALL_CASES if c.difficulty == Difficulty.SMOKE and not c.skip_reason]")
-    out.append("")
-    out.append("def get_adversarial_cases() -> List[EvalCase]:")
-    out.append("    return [c for c in ALL_CASES if c.difficulty == Difficulty.ADVERSARIAL and not c.skip_reason]")
-    out.append("")
-    out.append("def print_summary():")
-    out.append("    active = get_active_cases()")
-    out.append('    print(f"评测用例总数: {len(active)} (跳过 {len(ALL_CASES) - len(active)})")')
-    out.append('    print(f"  冒烟: {len(get_smoke_cases())}")')
-    out.append('    print(f"  正常: {len([c for c in active if c.difficulty == Difficulty.NORMAL])}")')
-    out.append('    print(f"  对抗: {len(get_adversarial_cases())}")')
-    out.append('    for skill in Skill:')
-    out.append('        cs = [c for c in active if c.skill == skill]')
-    out.append("        if cs:")
-    out.append('            print(f"\\n## {skill.value}")')
-    out.append("            for c in cs:")
-    out.append('                print(f"  [{c.difficulty.value.upper():4}] {c.id}: {c.title}")')
-    out.append("")
-    out.append('if __name__ == "__main__":')
-    out.append("    print_summary()")
     return "\n".join(out) + "\n"
+
+
+def _init_text(domains) -> str:
+    """包顶层：按固定顺序汇总各域 `CASES`，并**再导出** schema 与既有查询函数。
+
+    `from eval_cases import ALL_CASES, EvalCase, Skill, Difficulty` 是 `local_runner.py`
+    的导入面（逐字不变）；`get_active_cases` / `get_smoke_cases` / `get_adversarial_cases`
+    的位置与语义也与拆分前一致。
+    """
+    mods = [module_name(d)[:-3] for d in domains]
+    out = _header_lines(
+        "# 包顶层：按固定顺序（= `<domain>.yml` 文件名字典序）汇总各域 CASES ⇒ ALL_CASES 顺序与拆分前逐位相同",
+        "",
+        "from typing import List",
+        "",
+        "from ._schema import Difficulty, EvalCase, Skill  # noqa: F401 —— 包顶层再导出（local_runner 的导入面）",
+        "",
+    )
+    for mod in mods:
+        out.append(f"from .{mod} import CASES as _{mod}")
+    out += ["", "ALL_CASES = ("]
+    for mod in mods:
+        out.append(f"    *_{mod},")
+    out.append(")")
+    out.append("")
+    out.extend(_init_tail_lines())
+    return "\n".join(out) + "\n"
+
+
+def _init_tail_lines() -> list[str]:
+    """包顶层的查询 / 打印函数（与拆分前逐字一致；只被 `_init_text` 消费）。"""
+    _out: list[str] = []
+    _out.append("def get_active_cases() -> List[EvalCase]:")
+    _out.append("    return [c for c in ALL_CASES if not c.skip_reason]")
+    _out.append("")
+    _out.append("def get_smoke_cases() -> List[EvalCase]:")
+    _out.append("    return [c for c in ALL_CASES if c.difficulty == Difficulty.SMOKE and not c.skip_reason]")
+    _out.append("")
+    _out.append("def get_adversarial_cases() -> List[EvalCase]:")
+    _out.append("    return [c for c in ALL_CASES if c.difficulty == Difficulty.ADVERSARIAL and not c.skip_reason]")
+    _out.append("")
+    _out.append("def print_summary():")
+    _out.append("    active = get_active_cases()")
+    _out.append('    print(f"评测用例总数: {len(active)} (跳过 {len(ALL_CASES) - len(active)})")')
+    _out.append('    print(f"  冒烟: {len(get_smoke_cases())}")')
+    _out.append('    print(f"  正常: {len([c for c in active if c.difficulty == Difficulty.NORMAL])}")')
+    _out.append('    print(f"  对抗: {len(get_adversarial_cases())}")')
+    _out.append('    for skill in Skill:')
+    _out.append('        cs = [c for c in active if c.skill == skill]')
+    _out.append("        if cs:")
+    _out.append('            print(f"\\n## {skill.value}")')
+    _out.append("            for c in cs:")
+    _out.append('                print(f"  [{c.difficulty.value.upper():4}] {c.id}: {c.title}")')
+    _out.append("")
+    _out.append('if __name__ == "__main__":')
+    _out.append("    print_summary()")
+    return _out
 
 
 def to_md(cases):
@@ -625,7 +744,7 @@ def to_md(cases):
 def main(argv=None):
     p = argparse.ArgumentParser(description="case-contract 渲染器（YAML → eval_cases.py + casebook）")
     p.add_argument("--cases", required=True, help="用例库目录（cases/*.yml）")
-    p.add_argument("--out-eval", required=True, help="eval_cases.py 输出路径")
+    p.add_argument("--out-eval", required=True, help="eval_cases 包目录输出路径（目录，非 .py 文件）")
     p.add_argument("--out-md", required=True, help="mibao-verification-cases.md 输出路径")
     args = p.parse_args(argv)
 
@@ -644,22 +763,55 @@ def main(argv=None):
         print(f"❌ {args.cases} 下无用例文件", file=sys.stderr)
         return 1
 
-    py = to_eval_py(cases)
-    with open(args.out_eval, "w", encoding="utf-8") as f:
-        f.write(py)
-    print(f"✓ eval_cases.py → {args.out_eval}（{len(cases)} 条）")
+    files = package_files(cases)
+    out_dir = args.out_eval
+    if out_dir.endswith(".py"):
+        print(f"❌ `--out-eval` 的值现在是**包目录**（issue #8188 按域分包），不再接受 `.py` 文件路径："
+              f"{out_dir}\n   正确形态：--out-eval tests/agent_eval/eval_cases（无 `.py` 后缀）",
+              file=sys.stderr)
+        return 2
+    os.makedirs(out_dir, exist_ok=True)
+    for name, text in files.items():
+        with open(os.path.join(out_dir, name), "w", encoding="utf-8") as f:
+            f.write(text)
+    n_domain = len(files) - len(NON_DOMAIN_MODULES)
+    print(f"✓ eval_cases/ → {out_dir}（{len(cases)} 条 / {len(files)} 个文件："
+          f"{n_domain} 个域模块 + {len(NON_DOMAIN_MODULES)} 个包文件）")
+
+    # 🔴 包目录里**多出来的** `.py` 不会被本次渲染覆盖（**有意不自动删**：自动删会把
+    #    「有人手塞一份进生成物」这件事藏起来）。⇒ 出声；判据 / 新鲜度腿会把它们判红。
+    extra = sorted(n for n in os.listdir(out_dir)
+                   if n.endswith(".py") and n not in files)
+    if extra:
+        print(f"⚠️  {out_dir} 里有 {len(extra)} 个**未登记**的模块文件（本次渲染未产出，"
+              f"**不会**被自动删除）：{extra}\n"
+              f"   ⇒ 手工删掉它们（生成物目录不许手塞）；"
+              f"新鲜度腿与包结构判据会把「未登记模块」判红。", file=sys.stderr)
 
     md = to_md(cases)
     with open(args.out_md, "w", encoding="utf-8") as f:
         f.write(md)
     print(f"✓ casebook → {args.out_md}（{len(cases)} 条）")
 
-    # 自检：生成物可导入（防渲染出语法错误）
-    ns = {}
-    exec(compile(py, "<generated eval_cases.py>", "exec"), ns)
-    assert len(ns["ALL_CASES"]) == len(cases), "ALL_CASES 数量与源不一致"
-    assert ns["get_smoke_cases"]() and ns["get_adversarial_cases"](), "冒烟/对抗子集为空"
-    print(f"✓ 生成物自检通过（ALL_CASES={len(ns['ALL_CASES'])}）")
+    # 自检：把刚写出的包**真的导入一次**（防渲染出语法错误 / 汇总顺序错）
+    spec = importlib.util.spec_from_file_location(
+        "_generated_eval_cases", os.path.join(out_dir, "__init__.py"),
+        submodule_search_locations=[out_dir])
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    # 自检导入**不落 `__pycache__`**：生成物目录是要提交的，落字节码会脏工作区
+    prev_bytecode = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        spec.loader.exec_module(mod)
+        assert len(mod.ALL_CASES) == len(cases), "ALL_CASES 数量与源不一致"
+        assert [c.id for c in mod.ALL_CASES] == [c.get("id", "") for c in cases], \
+            "ALL_CASES 顺序与源不一致（包顶层汇总顺序错了）"
+        assert mod.get_smoke_cases() and mod.get_adversarial_cases(), "冒烟/对抗子集为空"
+        print(f"✓ 生成物自检通过（ALL_CASES={len(mod.ALL_CASES)}；顺序与 cases/*.yml 逐位一致）")
+    finally:
+        sys.dont_write_bytecode = prev_bytecode
+        sys.modules.pop(spec.name, None)
     return 0
 
 
