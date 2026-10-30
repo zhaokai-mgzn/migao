@@ -136,7 +136,7 @@ class TestSessionAutoCloseLoop:
              patch("app.main.time.monotonic", side_effect=mono):
             with pytest.raises(asyncio.CancelledError):
                 await main_module._session_auto_close_loop()
-        mock_svc.expire_idle.assert_awaited_once_with(idle_minutes=240)
+        mock_svc.expire_idle.assert_awaited_once_with(idle_minutes=720)
         mock_svc.purge.assert_awaited_once_with(older_than_days=90)
 
     @pytest.mark.asyncio
@@ -149,7 +149,7 @@ class TestSessionAutoCloseLoop:
             with pytest.raises(asyncio.CancelledError):
                 await main_module._session_auto_close_loop()
         # 第一次 expire_idle 抛异常被吞（非致命），循环继续到第二次 sleep 后 CancelledError 重抛
-        mock_svc.expire_idle.assert_awaited_once_with(idle_minutes=240)
+        mock_svc.expire_idle.assert_awaited_once_with(idle_minutes=720)
         mock_svc.purge.assert_not_awaited()
 
     # ── issue #2915：启动宽限期，防部署/重启后首次扫描批量误杀 ──
