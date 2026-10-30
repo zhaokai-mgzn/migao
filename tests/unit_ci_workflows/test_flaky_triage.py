@@ -442,6 +442,28 @@ class TestLedgerReport:
              "entries": [_entry(run_id=i, job="A") for i in range(9)]}), encoding="utf-8")
         assert FL.main(["report", "--ledger", str(ledger)]) == 0
 
+    def test_every_entry_kind_has_a_counter_and_a_report_column(self, tmp_path, capsys):
+        """#8185：`ENTRY_KINDS` 与**消费面**必须同步（每一类 kind 都要有计数列 + 报告列）。
+
+        现取病灶（2026-10-30，台账 PR #7927 的 required 检查逐字）：
+        `aggregate` 的计数列是**手写清单**（缺 `suspect-window-deterministic`），而计数用的是条目
+        自己的 kind ⇒ 台账里一出现该类条目（#5687 口径的**合法**条目）`report` 直接
+        `KeyError: 'suspect-window-deterministic'`；打印列也是手写清单 ⇒ 即使不崩也会**静默少一列**。
+        判据：每一类 kind 都要有计数列**且**在报告输出里有自己的名字（漏了 ⇒ 红并具名）。
+        """
+        kinds = list(FL.ENTRY_KINDS)
+        path = tmp_path / "kinds.json"
+        path.write_text(json.dumps({
+            "version": 1, "note": "", "_schema": {},
+            "entries": [_entry(run_id=i + 1, kind=kind) for i, kind in enumerate(kinds)],
+        }, ensure_ascii=False), encoding="utf-8")
+        row = next(iter(FL.aggregate(FL.load_ledger(path)).values()))
+        assert set(kinds) <= set(row), f"aggregate 缺计数列：{sorted(set(kinds) - set(row))}"
+        assert FL.main(["report", "--ledger", str(path)]) == 0
+        out = capsys.readouterr().out
+        missing = [kind for kind in kinds if kind not in out]
+        assert missing == [], f"report 漏印 kind：{missing}（静默少一列 = 读的人看不见那类事件）"
+
 
 # ── ⑤c 三态对账（照 #4757 存量账本口径，适配「事件追加日志」语义） ──────────────
 
