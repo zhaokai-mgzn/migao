@@ -471,7 +471,7 @@ redproof_preflight() {
 #    —— 否则会把不碰用例库的 PR 卡在用例库上（与 `burn_down.scope=case_touching_prs` 的既有取舍
 #    冲突，#4155）。
 managed_case_paths() {
-  grep -E '^(\.github/cases/.*|\.github/case-trust-(baseline|unimplemented)\.json|tests/agent_eval/eval_cases\.py|docs/testing/mibao-verification-cases\.md)$' || true
+  grep -E '^(\.github/cases/.*|\.github/case-trust-(baseline|unimplemented)\.json|tests/agent_eval/eval_cases(/.*)?|docs/testing/mibao-verification-cases\.md)$' || true
 }
 
 # 变更集（CHANGE_SET，**共享实现**，见文件头）是否命中受管面。

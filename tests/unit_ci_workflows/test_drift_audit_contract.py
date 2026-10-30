@@ -477,17 +477,25 @@ def test_sync_copy_dangling_declared_source_red(tmp_path):
 # ─────────────────────────────────────────────────────────────────────────────
 # ④ 生成物新鲜度（I1）
 # ─────────────────────────────────────────────────────────────────────────────
+#: 桩渲染器：`--out-eval` 现在是**目录**（issue #8188）⇒ 写 `<dir>/__init__.py`。
+_STUB_RENDERER = (
+    "import pathlib, sys\n"
+    "out = pathlib.Path(sys.argv[sys.argv.index('--out-eval') + 1])\n"
+    "out.mkdir(parents=True, exist_ok=True)\n"
+    "(out / '__init__.py').write_text('X=1\\n')\n"
+    "m = pathlib.Path(sys.argv[sys.argv.index('--out-md') + 1])\n"
+    "m.write_text('M\\n')\n"
+)
 def test_generated_view_dropping_preclean_red(tmp_path):
     """红证：**渲染器静默丢字段**（`pre_clean` 曾不被 `render_cases.py` 渲染 ⇒ 账本盲区）。
 
     夹具：渲染器被换成"只写一行、不含 pre_clean"的桩，而用例库里有 `pre_clean` ⇒ 必红。
     """
-    stub = "import sys,pathlib\np=pathlib.Path(sys.argv[sys.argv.index('--out-eval')+1]);p.write_text('X=1\\n')\n" \
-           "m=pathlib.Path(sys.argv[sys.argv.index('--out-md')+1]);m.write_text('M\\n')\n"
+    stub = _STUB_RENDERER
     repo = mk_repo(tmp_path, {
         ".github/render_cases.py": stub,
         ".github/cases/order.yml": CASE_TMPL.format(extra='pre_clean:\n      - type: product_dedupe\n        product_keyword: "遮光窗帘"'),
-        "tests/agent_eval/eval_cases.py": "X=1\n",
+        "tests/agent_eval/eval_cases/__init__.py": "X=1\n",
         "docs/testing/mibao-verification-cases.md": "M\n",
     })
     rc, out, rep = run(repo, "--check", "--only", "generated-freshness")
@@ -498,17 +506,16 @@ def test_generated_view_dropping_preclean_red(tmp_path):
 
 def test_generated_view_diverged_red(tmp_path):
     """红证：改了 `.github/cases/` 却没提交生成物 ⇒ 重渲染 diff ≠ 0 ⇒ 必红。"""
-    stub = "import sys,pathlib\np=pathlib.Path(sys.argv[sys.argv.index('--out-eval')+1]);p.write_text('X=1\\n')\n" \
-           "m=pathlib.Path(sys.argv[sys.argv.index('--out-md')+1]);m.write_text('M\\n')\n"
+    stub = _STUB_RENDERER
     repo = mk_repo(tmp_path, {
         ".github/render_cases.py": stub,
         ".github/cases/order.yml": CASE_TMPL.format(extra=""),
-        "tests/agent_eval/eval_cases.py": "X=1\n",
+        "tests/agent_eval/eval_cases/__init__.py": "X=1\n",
         "docs/testing/mibao-verification-cases.md": "M\n",
     })
     rc, out, rep = run(repo, "--check", "--only", "generated-freshness")
     assert rc == 0, out  # 与桩输出一致 ⇒ 新鲜
-    _write(repo, "tests/agent_eval/eval_cases.py", "X=2\n")   # 手改了生成物
+    _write(repo, "tests/agent_eval/eval_cases/__init__.py", "X=2\n")   # 手改了生成物
     rc2, out2, rep2 = run(repo, "--check", "--only", "generated-freshness")
     assert rc2 == 1, out2
     assert any("重渲染结果不一致" in f["detail"]
