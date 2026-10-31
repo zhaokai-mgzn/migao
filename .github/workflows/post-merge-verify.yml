@@ -509,6 +509,11 @@ jobs:
         if: github.event_name != 'pull_request'
         env:
           TLS_WARN_DAYS: '21'
+          # 🔴 `scripts/prod_alert.sh` 走 issue 通道要 `GH_TOKEN`（Actions **不会**自动把
+          #    `github.token` 注入环境变量；缺它 = `gh` 报「set the GH_TOKEN environment variable」
+          #    ⇒ 投递 rc=3、只留一条 warning ⇒ 又回到「没人被惊动」）。与下面「判红出口」步同一口径。
+          GH_TOKEN: ${{ github.token }}
+          MIGAO_ALERT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -uo pipefail
           if [ ! -f deploy/scripts/tls-expiry-check.sh ]; then
@@ -525,6 +530,37 @@ jobs:
             printf '%s\n' "${OUT}"
             echo '```'
           } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+
+          # ── 告警触达（上线审计 P0-04 / issue #8203）──────────────────────────
+          # 判红**不只是让腿变红**：审计原文的缺口是「5xx / 证书到期 / 发布失败**都不会主动惊动人**」
+          # （`acceptance/2026-10-31-launch-audit/findings.md` 的 P0-04 行 + `docs/deployment/production-deployment.md::5. 生产安全基线`）。
+          # 投递本体 = `scripts/prod_alert.sh`（**唯一**出口：issue 标题去重 + 指纹去重 + 可选 webhook）。
+          # 🔴 **投递失败只降级为 `::warning::`，不改腿色**（设计选择与理由见该脚本头部）：腿的红/绿只由
+          #    **事件判据**决定 —— 一次 GitHub API 抖动不该制造第二套失败语义（P1-04「成功即红」的近亲）。
+          # 去重口径：指纹 = key + **读数分级**（TLS 用 `TLS_EXPIRY_SUMMARY` 的分档计数，**不含**逐日变化的
+          #   剩余天数）⇒ 同分级不重复评论；分级变了（临期→过期 / 受影响域名变多）才追加一条。
+          if [ "${RC}" != '0' ]; then
+            TLS_BUCKET="rc${RC}_$(printf '%s\n' "${OUT}" | sed -n 's/^TLS_EXPIRY_SUMMARY rc=[0-9]* //p' | head -1)"
+            {
+              echo '### TLS 证书到期判据判红（issue #8201）'
+              echo ''
+              echo "退出码 \`${RC}\`（0=充足 / 1=临期·过期·域名不匹配 / 3=无法判定 —— **3 不当 0 读**）· 阈值 ${TLS_WARN_DAYS} 天"
+              echo ''
+              echo '```'
+              printf '%s\n' "${OUT}"
+              echo '```'
+              echo ''
+              echo '- 复算：`bash deploy/scripts/tls-expiry-check.sh`（只读；0/1/3 三态）'
+              echo '- 处置 runbook：`docs/deployment/tls-renewal.md`（服务器侧一次性兜底 + 排查）'
+              echo '- 告警通道 / 去重 / 已接受缺口：`docs/deployment/observability-minimum.md`'
+            } | bash scripts/prod_alert.sh \
+                  --key tls-expiry \
+                  --title '[prod-alert] TLS 证书临期 / 过期 / 域名不匹配（四域共用一张证书）' \
+                  --bucket "${TLS_BUCKET:-rc${RC}}" \
+                  --body-file - \
+              || echo "::warning::TLS 告警**投递失败**（不改腿色；通道配置与复算见 docs/deployment/observability-minimum.md）"
+          fi
+
           if [ "${RC}" = '0' ]; then
             echo "::notice::TLS 证书剩余天数充足（阈值 ${TLS_WARN_DAYS} 天）"
             exit 0
@@ -534,6 +570,73 @@ jobs:
             exit 3
           fi
           echo "::error::TLS 证书临期 / 过期 / 域名不匹配（退出码 ${RC}，阈值 ${TLS_WARN_DAYS} 天）⇒ 在服务器 /opt/migao-deploy 执行 bash /opt/migao-deploy/tls-renew.sh；一次性兜底与排查见 docs/deployment/tls-renewal.md"
+          exit "${RC}"
+
+      # ── 5xx 计数窗口判红（上线审计 P0-04 / issue #8203）─────────────────────────
+      # 审计原文：「5xx 计数阈值 + 证书到期 + 发布失败三类事件必须能真的响，落到一个有人看的通道；
+      # 当前只有腿本身红/绿，无告警触达」。证书到期（P0-01）与发布失败（P0-02/P1-04）已在既有腿里
+      # 有判据与通道；**5xx 之前一条都没有** ⇒ 本步补的就是这一条。
+      # 判据本体 = `deploy/scripts/prod-5xx-window.sh`（只读合成探针：审计点名的四面 × N 轮窗口，
+      # 数 5xx 条数；0=未超阈值 / 1=超阈值 / 3=无法判定（连不上或没有面给出 2xx·3xx）—— **3 不当 0 读**）。
+      # ⚠️ 为什么是**合成探针**而不是宿主机 nginx access log：CI 是 GitHub 托管 runner，读
+      # `/var/log/nginx/access.log` 要额外的 SSH 凭据（本仓探针位没有 SSH）⇒ 合成探针有**稳定分母**、
+      # 零新凭据。代价（探测窗口内的面，而非全站 5xx 率）登记在 docs/deployment/observability-minimum.md。
+      # ⚠️ `if: always()`：判定步判红时本步**仍要跑**（生产 5xx 与「窗口里某条判据红了」是两回事，
+      #    不该因为前者被跳过）。`!= 'pull_request'` 同 TLS 步：PR 的红只该反映 PR。
+      # ⚠️ 必须排在下面 `if: failure()` 的 P1 出口**之前**（判红要产生值班单）。
+      # ⛔ 不新增 schedule（铁律 10）：挂在既有腿的 push / 每日 / 手动三个触发面上。
+      # 判据 / 接线守卫 = tests/unit_ci_workflows/test_prod_alerting.py
+      - name: 5xx 计数窗口判红（审计 P0-04：生产 5xx 涨了要能惊动人）
+        if: always() && github.event_name != 'pull_request'
+        env:
+          PROD_5XX_THRESHOLD: '3'   # 窗口内 5xx 条数阈值（≈15s 窗口：4 轮 × 4 面 = 16 次请求）
+          PROD_5XX_ROUNDS: '4'
+          PROD_5XX_INTERVAL: '5'
+          # 与 TLS 步同口径：投递走 issue 通道必需 `GH_TOKEN`（Actions 不自动注入）。
+          GH_TOKEN: ${{ github.token }}
+          MIGAO_ALERT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          if [ ! -f deploy/scripts/prod-5xx-window.sh ]; then
+            echo "::error::判据本体 deploy/scripts/prod-5xx-window.sh 不在检出里（5xx 判据被拆掉）⇒ 视为无法判定，判红"
+            exit 1
+          fi
+          OUT=$(bash deploy/scripts/prod-5xx-window.sh 2>&1)
+          RC=$?
+          printf '%s\n' "${OUT}"
+          {
+            echo '## 5xx 计数窗口（上线审计 P0-04 / issue #8203）'
+            echo ''
+            echo '```'
+            printf '%s\n' "${OUT}"
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+          if [ "${RC}" = '0' ]; then
+            echo "::notice::窗口内 5xx 未达阈值（阈值 ${PROD_5XX_THRESHOLD} 条 / ${PROD_5XX_ROUNDS} 轮）"
+            exit 0
+          fi
+          # 去重用的**读数分级**（`band=none|1-5|6-20|20+`，由判据本体给出）：精确条数每轮会抖，
+          # 直接当指纹会让值班单被逐轮刷评论（同一事件不许刷屏）。
+          BAND=$(printf '%s\n' "${OUT}" | sed -n 's/^PROD-5XX-SUMMARY rc=[0-9]* .*band=\([A-Za-z0-9+_-]*\).*/\1/p' | head -1)
+          {
+            echo '### 5xx 计数窗口判红（上线审计 P0-04）'
+            echo ''
+            echo "退出码 \`${RC}\`（0=未超阈值 / 1=超阈值 / 3=无法判定 —— **3 不当 0 读**）· 阈值 ${PROD_5XX_THRESHOLD} 条 / ${PROD_5XX_ROUNDS} 轮（轮间 ${PROD_5XX_INTERVAL}s）"
+            echo ''
+            echo '```'
+            printf '%s\n' "${OUT}"
+            echo '```'
+            echo ''
+            echo '- 复算：`bash deploy/scripts/prod-5xx-window.sh`（只读合成探针，零凭据）'
+            echo '- 下一步：`docker ps` + `docker logs --tail 200 migao-nginx`（看 502/504 指向哪个上游）⇒ 该上游容器日志；'
+            echo '  回滚判据见 `docs/deployment/rollback.md`（注意它第一条判据地址必须自己先 200，P1-05）'
+            echo '- 告警通道 / 去重 / 已接受缺口：`docs/deployment/observability-minimum.md`'
+          } | bash scripts/prod_alert.sh \
+                --key 5xx-window \
+                --title '[prod-alert] 生产 5xx 计数超阈值（合成探针窗口）' \
+                --bucket "rc${RC}_${BAND:-unknown}" \
+                --body-file - \
+            || echo "::warning::5xx 告警**投递失败**（不改腿色；通道配置与复算见 docs/deployment/observability-minimum.md）"
           exit "${RC}"
 
       # ── 判红出口：沿用既有通道（mechanism-liveness / redproof-sweep 的同一形态）──────
