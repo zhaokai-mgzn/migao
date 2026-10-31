@@ -1,4 +1,4 @@
-// case_ids: DA-029
+// case_ids: DA-029, DA-032
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
