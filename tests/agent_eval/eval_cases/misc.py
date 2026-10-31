@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，167 条）
+# 域: misc（源: cases/misc.yml，168 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3081,6 +3081,24 @@ _CASE_MC_121 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-122 [NORMAL] 观星台终端正式发布链路（issue #8195）：/terminal/ 是纯静态下载面（缺失文件必须 404、不得回落 SPA、不限流、MIME 可判），官网 /download 有下载页，发布腿把终端仓 Release 的 exe/apk 幂等落到静态根并自证「线上字节 == 本地载荷」（源: cases/misc.yml）──
+_CASE_MC_122 = EvalCase(
+    id='MC-122',
+    legacy_id='',
+    title='观星台终端正式发布链路（issue #8195）：/terminal/ 是纯静态下载面（缺失文件必须 404、不得回落 SPA、不限流、MIME 可判），官网 /download 有下载页，发布腿把终端仓 Release 的 exe/apk 幂等落到静态根并自证「线上字节 == 本地载荷」',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['终端自己检查更新打的地址是 app.migaozn.com/terminal/latest.json 与 /terminal/android/latest.json，官网没有下载页，产物也没有发布通路；要一条能发、能回滚、发错了会红的链路'],
+    expectations=['direct_reply'],
+    data_checks=['**nginx 面（会红）**：`app.migaozn.com` 的 443 server 段必须有 `location /terminal/`，其 `try_files` 必须是 `$uri =404`（缺失文件 404）——回落任何 HTML 都是「200 + 别人的页面」（客户端会把 HTML 当清单/安装包解析，失败形态与「没有新版本」无法区分）。裸前缀 `location /terminal` 必须 `return 301 /terminal/`（否则它同样落进 SPA fallback）。该 location 不得挂 `limit_req`（批量更新会误伤），必须有 `default_type application/octet-stream`（exe/apk 按二进制落盘）与 `X-Content-Type-Options: nosniff`；**不许**用 `types {}`（替换继承表，类级判据 test_served_leg_mime_guard.py 禁止）。判据是**真解析 + 真模拟**（`_serve()`：前缀最长者 + try_files + return），不是文本匹配；变异（删 location / 改回 SPA fallback / 删 301 / default_type 改文本 / 挂限流 / 注入 types{}）各自判红。', '**发布腿结构（会红）**：`.github/workflows/terminal-publish.yml` 只允许 `workflow_dispatch` 且 `release_tag` 必填（发布是人工闸：没有 tag 就不知道该发哪一版，`push` 触发会让合并即发布）；发布/断言步骤不得带 `continue-on-error` / `|| true` / 恒假 `if`；ACR 登录必须走唯一实现 `scripts/acr_login.sh --fatal`（本腿把载荷推进 ACR ⇒ 登录承重）；静态根 `/opt/migao-deploy/h5` + 子目录 `terminal` 逐字在案。', '**CI 脚本契约（会红）**：`deploy/scripts/terminal-publish-ci.sh` 必须逐字含四条验收断言（远端 latest.json / android/latest.json 哈希 == 本地载荷、静态根 index.html 前后一致、PAYLOAD_MANIFEST_OK=1 自证行、InvocationStatus 必须 Success）与命令内容字节前置断言（`COMMAND_CONTENT_LIMIT_BYTES` 16384 + 官方出处 URL），且**不许内联远端执行体**（台账 swas_command_content_legs_ledger.json 的射程）。', '**沙箱行为（真跑脚本，会红）**：`prepare` 从「已下载的 Release 目录」生成两份清单，字段名与终端客户端逐字对齐（Windows `version` / `notes` / `download_url`；Android `versionCode`(int) / `versionName` / `download_url`），sha256/size 与实际文件一致；坏输入（缺目录 / versionCode 非整数 / tag 含引号 / version 为空）一律拒绝。远端脚本把载荷落到沙箱静态根：父目录 index.html 哈希不变、陈旧文件被收敛、不属于发布面的文件不搬、**幂等**（连跑两次逐字节一致）；清单与载荷不一致 / 缺件 / 多出未知文件 / 越界子目录 / 缺静态根 ⇒ 非零退出且**什么都没改**。', '**发布文档（会红）**：`docs/deployment/terminal-release.md` 必须写清发布步骤、回滚、证书现状（Windows 未签名 + SmartScreen + SHA256 公布）、不上架应用市场、`versionCode` 单调、两个清单地址。'],
+    skip_reason='[backend-contract] 静态结构 + 沙箱真跑判据（零网络、零云调用、不碰真实静态根）由 tests/unit_ci_workflows/test_terminal_release_leg.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'nginx', 'terminal', 'publish-leg', 'no-spa-fallback', 'idempotent', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -3249,4 +3267,5 @@ CASES = (
     _CASE_WH_011,
     _CASE_MC_120,
     _CASE_MC_121,
+    _CASE_MC_122,
 )
