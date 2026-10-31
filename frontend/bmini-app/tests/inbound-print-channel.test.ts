@@ -1,4 +1,4 @@
-// case_ids: BM-014, BM-015
+// case_ids: BM-014, BM-015, BM-060, BM-061
 /**
  * **打印必留痕 + 前端不自行计数 + 失败逐种文案**（issue #5052 P3/P4；设计 §7.3 / §8.3；
  * 验收判据 4 / 5 / 9）
@@ -11,7 +11,7 @@
  * | D4 | 计数**原样转发**服务端回执（两次不同读数 ⇒ 两次都原样，不做本地 +1） | 本地 +1 ⇒ 红 |
  * | D5 | 失败文案**逐种不同且可行动**（合并成一句通用文案 ⇒ 红） | 两条相同 ⇒ 红 |
  * | D6 | 台账条目活着：`INBOUND_PRINT_GAP_WIRING` 的键集 == 文案表的键集 | 删一条 ⇒ 红 |
- * | D7 | 🔴 送打印**唯一通道**（调用点级）：全 `src/**` 里 `.print(…)` 只许出现在 `printInboundLabel` 内 | 页面里加一条直连 `createLpapiTransport().print()` ⇒ 红 |
+ * | D7 | 🔴 送打印**唯一通道**（调用点级）：全 `src/**` 里 `.print(…)` 只许出现在 `labelPrint.ts` 的两个送打印入口（`printInboundLabel` / `printRowsLabel`）内 | 页面里加一条直连 `createLpapiTransport().print()` ⇒ 红 |
  * | D8 | 🔴 文案不得对**运行期**事实下结论：静态 hint 里不许出现"记没记打印次数"，该事实只由 `printRecorded` 说 | 把文案改回「重打不会重复计数」⇒ 红 |
  * | D9 | 🔴 页面必须**消费** `printRecorded`（`printFailureText(result.hint, result.printRecorded)`） | 页面只上屏静态 hint ⇒ 红 |
  */
@@ -19,6 +19,7 @@ import fs from 'fs'
 import path from 'path'
 import {
   printInboundLabel,
+  printRowsLabel,
   classifyPrintError,
   LabelTransportError,
   type LabelTransport,
@@ -65,13 +66,17 @@ function srcSources(): { file: string; code: string }[] {
  * 送打印**唯一通道**的调用点级判定（真判据与注入式红证共用同一份）。
  *
  * 判三件事（射程 = 全 `src/**`，不是只扫 `src/utils/inbound`）：
- * ① `.print(…)` 只许出现在 `src/utils/inbound/labelPrint.ts` 的 `printInboundLabel` **内**；
+ * ① `.print(…)` 只许出现在 `src/utils/inbound/labelPrint.ts` 的**送打印入口**内
+ *    （issue #8287：入口有两个 —— `printInboundLabel` 必留痕；`printRowsLabel` 服务无留痕端点的
+ *    50×70 行式标签。**页面里仍然一个都不许有**）；
  * ② `printImageData(` 只许出现在传输层实现 `src/utils/inbound/lpapiTransport.ts`；
  * ③ `createLpapiTransport(` 的每一处调用都必须**喂给 `printInboundLabel`**（不许另起一条通道）。
  */
 function printChannelProblems(files: { file: string; code: string }[]): string[] {
   const problems: string[] = []
   const ENTRY = 'src/utils/inbound/labelPrint.ts'
+  // 送打印入口白名单（issue #8287）：**只许扩充到本文件里已存在的函数**，页面永远不在名单里。
+  const PRINT_ENTRY_FNS = new Set(['printInboundLabel', 'printRowsLabel'])
   const TRANSPORT = 'src/utils/inbound/lpapiTransport.ts'
   // 手持标签机（issue #8089）：这一个文件是**通道选择**的唯一出口（终端内置打印 vs 浏览器蓝牙），
   // 它自己不送数据；页面拿到的 transport 仍必须交给 printInboundLabel（上面的 .print 检查照旧全扫）。
@@ -79,10 +84,10 @@ function printChannelProblems(files: { file: string; code: string }[]): string[]
   for (const source of files) {
     const code = stripComments(source.code)
     for (const site of callSites(code, /\.print\s*\(/g)) {
-      if (source.file !== ENTRY || site.fn !== 'printInboundLabel') {
+      if (source.file !== ENTRY || !PRINT_ENTRY_FNS.has(site.fn ?? '')) {
         problems.push(
           `${source.file} 的 ${site.fn || '<模块顶层>'}() 里有一处**直连送数据**（.print(…)）—— ` +
-            `送打印只许走 printInboundLabel（它先调服务端留痕）`,
+            `送打印只许走 labelPrint.ts 的送打印入口（入库标签还会先调服务端留痕）`,
         )
       }
     }
@@ -478,6 +483,72 @@ describe('打印通道：必留痕 / 不自行计数 / 逐种文案', () => {
         : source,
     )
     expect(printChannelProblems(orphan).join('\n')).toContain('第二条第 送打印通道')
+  })
+
+  it('D7 50×70 行式标签入口（printRowsLabel）：render → transport，**没有** recordPrint 这一步', async () => {
+    const log: string[] = []
+    const result = await printRowsLabel({
+      capability: OK_CAPABILITY,
+      transport: {
+        id: 'fake-rows',
+        label: '测试打印机',
+        print: async () => {
+          log.push('transport')
+        },
+      },
+      render: () => {
+        log.push('render')
+        return fakeLabel()
+      },
+    })
+    // 顺序 = render → transport（这两类纸没有服务端留痕端点；不许多出一步、也不许先送后画）
+    expect(log).toEqual(['render', 'transport'])
+    expect(result).toEqual({ ok: true, transportId: 'fake-rows', transportLabel: '测试打印机' })
+  })
+
+  it('D7 行式标签：能力不可用 ⇒ 一步都不走（不渲染、不连打印机）', async () => {
+    const log: string[] = []
+    const blocked = await printRowsLabel({
+      capability: probePrintCapability({
+        platform: 'h5',
+        secureContext: false,
+        hasBluetoothApi: true,
+      }),
+      transport: {
+        id: 'x',
+        label: 'x',
+        print: async () => {
+          log.push('transport')
+        },
+      },
+      render: () => {
+        log.push('render')
+        return fakeLabel()
+      },
+    })
+    expect(log).toEqual([])
+    expect(blocked.ok).toBe(false)
+    if (!blocked.ok) expect(blocked.reason).toBe('insecure-context')
+  })
+
+  it('D7 行式标签：渲染失败 ⇒ 不送数据（render-failed，不静默打白图）', async () => {
+    let printed = 0
+    const result = await printRowsLabel({
+      capability: OK_CAPABILITY,
+      transport: {
+        id: 'x',
+        label: 'x',
+        print: async () => {
+          printed += 1
+        },
+      },
+      render: () => {
+        throw new Error('no canvas')
+      },
+    })
+    expect(printed).toBe(0)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.reason).toBe('render-failed')
   })
 
   it('D8 🔴 文案不得对**运行期**事实下结论（"记没记打印次数"只由 printRecorded 说）', () => {

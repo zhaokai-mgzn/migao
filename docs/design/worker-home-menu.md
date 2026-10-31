@@ -59,7 +59,7 @@
 | 物料 | **补打入库标签** | `pages/worker/reprint/index` | —（工人面固有） | ✅ 已有 |
 | 物料 | **库存修正**（按批次把余量改成实盘米数） | bmini `pages/worker/stock/index`（issue #8104） | **`stock`**（issue #8104 新增；默认开、可逐人关） | ✅ 已落地（2026-10-29）· 端点 `GET/POST /api/worker/batch-stock/**`（复用按批次盘点的唯一写面）· **手机 `/b/` 与 APK 观星台终端同源**（同一份 `/b/` 页面） |
 | 出货 | **拍照发货** | `pages/worker/shipment/index`（在飞） | `shipment` | 🚧 在飞（#6761） |
-| 出货 | **待发货单**（全完工订单列表 + 发货标签） | `/w/shipment.html`（`/w/` 侧已落地，issue #7761）+ bmini `pages/worker/shipment-orders/index`（issue #7806 P1a） | **`to_ship`**（issue #7814 新增 —— 与 `shipment`=拍照发货的**写面**分开，商家可分别勾选） | ✅ `/w/` 侧已有（列表 + 50×70 发货标签；端点 `GET /api/worker/shipment/orders`）· bmini 侧列表已上（打印待 #7803） |
+| 出货 | **待发货单**（全完工订单列表 + 发货标签） | `/w/shipment.html`（`/w/` 侧已落地，issue #7761）+ bmini `pages/worker/shipment-orders/index`（issue #7806 P1a） | **`to_ship`**（issue #7814 新增 —— 与 `shipment`=拍照发货的**写面**分开，商家可分别勾选） | ✅ `/w/` 侧已有（列表 + 50×70 发货标签；端点 `GET /api/worker/shipment/orders`）· bmini 侧列表 + 发货联（整套出库单）预览 / 50×70 打印已上（issue #8287；#7803 通道已接） |
 | 我的 | **我的计件**（**含金额**） | bmini `pages/worker/piecework/index`（端内，issue #7934）· H5 `/b/report/piecework.html`（兼容期可直连） | `piecework` | ✅ 已上线（2026-10-27）· 端点 `GET /api/worker/piecework`（#6767 即已就绪，复用商家端同一份聚合）· 入口在**工人菜单**（报工详情页页头的那条已于 #7934 撤除） |
 | （页脚） | 切换工人 / 退出工人身份 | 既有 | — | ✅ 已有 |
 
