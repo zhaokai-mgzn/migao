@@ -597,8 +597,13 @@ def test_read_paths_still_read_the_persisted_detail():
     所有历史订单金额跟着漂移（R13 冻结被破）。判据落在 `OrderService` 的读面接线形态上。
     """
     order_service = (JAVA_MAIN / "com/migao/admin/service/OrderService.java").read_text(encoding="utf-8")
-    assert "ProcessingFeeCalculator.storedFee(" in order_service, \
-        "OrderService 读面不再读落库的 processingFeeDetail（改成重算 ⇒ R13 冻结被破）"
+    # issue #8191（P2-1a）：读面方法（含 storedProcessingFee）已从 OrderService 拆出到 OrderQueryService。
+    # 判据扫**读面载体集合**而不是钉死一个文件名：载体再搬家/再拆，判据跟着覆盖即可；
+    # 回归面不变 —— 两个载体里都找不到 storedFee 调用（= 改成按当前价目表重算）⇒ 红。
+    order_query_service = (JAVA_MAIN / "com/migao/admin/service/OrderQueryService.java").read_text(encoding="utf-8")
+    read_face = order_service + "\n" + order_query_service
+    assert "ProcessingFeeCalculator.storedFee(" in read_face, \
+        "读面（OrderService + OrderQueryService）不再读落库的 processingFeeDetail（改成重算 ⇒ R13 冻结被破）"
     assert "lineAmount()" in order_service, \
         "OrderService 的行金额不再含 Σ 选项价（#4525 的 R5 口径未接线）"
 
