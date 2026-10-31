@@ -2833,7 +2833,7 @@
 ```
 溯源: 2026-10-20 新增（issue #7370，P0-1 之后按用户「逐步推进」落地为 P0-2 段 1）。落码 = ① V169 迁移（两列）+ 建库脚本终态同步；② CreditPolicy（纯函数口径）+ 7 条判据；③ OrderService 下单闸门；④ CustomerService.creditStatus/updateCreditSettings + 两个端点；⑤ 客户详情页「授信与往来」卡片 + 4 条页面判据；⑥ CHANGELOG。⚠️ **未做（照实登记）**：部分收款核销、账龄分档、审批出口、现结订单豁免 —— 分属 #7370 段 2/3 与 #7374(P1-2)。取号 = 现取 origin/main 的 CU 最大 012 ⇒ CU-013。 ｜ tags: backend-contract, credit, credit-limit, payment-terms, receivable, admin-api, red-proof
 
-## 数据域（33 case）
+## 数据域（34 case）
 
 ### DA-001. 经营概览 🔵
 ```
@@ -3262,6 +3262,20 @@
 跳过: [backend-contract] 纯确定性视图判据（零 LLM）：`product_health` 是纯函数、规则表，不进 agent-eval；判据 = backend/ai-agent-service/tests/test_briefing_product_health_money.py（16 条，含两条注入式红证 + 工具层摘要断言）
 ```
 溯源: 2026-10-31 新增（issue #8276）：第 6 层「权衡」从等级补到金额。**未覆盖面（如实登记）**：① **价格弹性 / 销量预测**（第 7 层「推演」的事，需要历史成交 + 回归）；② 「清仓能回收多少」——属不可逆动作，P3 明确不进选项表，需业务裁定；③ **多目标优化求解**（本单只给刻度、不给排序：回收现金与保毛利不能互相换算，AI 排序就是替老板做他没授权的价值判断）。 ｜ tags: proactive, briefing, decision, money
+
+### DA-034. 归因：同款对照只对 SKU 级信号有效（毛利能指到变体、退货率只能指到商品）；并修正毛利 verdict 方向 🔵
+```
+你: 这个变体为什么毛利这么低？是不是整款都有问题？
+数据: 行内 `attribution` 两种 `kind`：`sibling_margin_contrast`（`level=sku`，能指到具体变体）/ `product_level_only`（`level=product`，退货率用，**明说指不到变体**）。顶层 `attribution_basis`。
+数据: 🔴 **退货率不许做变体对照**：`DailyBriefingService.assembleProductReturnStats` 按 `product_id` 聚合 ⇒ 同商品所有 SKU 的 `return_rate` **必然相同** ⇒ 「本行 vs 最好兄弟」的 gap **恒为 0**，那是假归因。判据 `test_high_return_rate_yields_product_level_only` 断言 `"gap" not in attr`；红证：给 `product_level_only` 也加一个 gap ⇒ 必红。
+数据: 🔴 **毛利 verdict 方向**（缺陷单 #8280，本单链内修）：`_verdict` 原本只为退货率写（`<= peer_median ⇒ good`），毛利直接复用 ⇒ **毛利越低越判 good**。修法 = `higher_is_better=True` ⇒ `>= peer_median ⇒ good`，`< 0` 仍由 `absolute_bad` 兜底。红证：去掉该参数 ⇒ `test_positive_margin_uses_the_peer_baseline` + 归因 3 条必红（共 4 红）。
+数据: **旧断言把 bug 固化了**：`test_positive_margin_uses_the_peer_baseline` 原写「毛利 10（最低）⇒ good、毛利 50（最高）⇒ bad」——**测试和实现一起错**，所以 CI 一直绿。已改正方向并注红证。
+数据: 🔴 **没有对照就不给**：独款商品（同商品只有 1 个 SKU）⇒ `attribution = None`（**不是**「没问题」）。兄弟毛利未知 ⇒ 不算进来（脏数据算出的差值是噪音）。
+数据: **不给因果断言**：`sample_note` 必须并排给出两者销量 + 自述「这是差异证据，不是因果结论」（样本量差很多时差异可能只是样本量）。
+数据: **good 行不给归因**：没毛病时解释「为什么好」是噪音。工具层 `message` 只说能指向变体的那一类（毛利），退货率不进 message 的变体归因。
+跳过: [backend-contract] 纯确定性视图判据（零 LLM）：`product_health` 是纯函数 + 规则表；判据 = backend/ai-agent-service/tests/test_briefing_product_health_attribution.py（8 条，含两条注入式红证）+ test_briefing_product_health_baseline.py 的方向断言
+```
+溯源: 2026-10-31 新增（issue #8279 + 缺陷 #8280）：第 3 层「归因」。**关键发现**：原设想的「同款退货率对照」不成立（退货率是商品级）⇒ 改用 SKU 级毛利对照 + 退货率诚实标注 `product_level_only`。**顺手修了 P0 遗留的毛利 verdict 方向 bug**（#8280，低毛利 SKU 标绿）。**未覆盖面**：① 退货原因的**结构化字段**（`after_sales_tickets` 只有自由文本 `description`，要分类得上 LLM，需裁定值不值）；② 因果推断 / 显著性检验（只并排给读数，不做统计判定）。 ｜ tags: proactive, briefing, decision, attribution
 
 ## 防御域（24 case）
 
@@ -13994,8 +14008,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：944（活跃 152，跳过 792）
-- tier 分布：smoke 15 / normal 872 / adversarial 33
+- 用例总数：945（活跃 152，跳过 793）
+- tier 分布：smoke 15 / normal 873 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14005,7 +14019,7 @@
 - 对话边界域：53
 - 跨域：3
 - 客户域：13
-- 数据域：33
+- 数据域：34
 - 防御域：24
 - 财务对账域：6
 - 人事域：13
@@ -14070,6 +14084,7 @@
 - DA-031: 复盘第一块原料：历史简报回溯（过去 N 天 AI 提醒过什么），空历史必须自述「没有记录」
 - DA-032: 决策采纳记录：AI 建议了什么 → 人做了什么（item_key 稳定 hash、幂等、不记原文）
 - DA-033: 权衡补刻度：压货资金 / 离同行差多少 / 每件多赚多少（未知不当 0、不乘销量、不做预测）
+- DA-034: 归因：同款对照只对 SKU 级信号有效（毛利能指到变体、退货率只能指到商品）；并修正毛利 verdict 方向
 - KN-001: 元元知识问答 - 面料问题先检索本店知识卡片（query 必填）
 - KN-002: 元元知识问答 - 清洗保养类问题走知识卡片检索
 - KN-003: 黄金策知识问答 - 本店售后政策先检索知识卡片（B 端接线回归，issue #3059）
