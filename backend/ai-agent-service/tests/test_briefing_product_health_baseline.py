@@ -22,7 +22,7 @@
 case_ids 说明：`DA-028`（本单新增：跨域视图的**判断层** —— 数值之外给出同行基线与 `good/watch/bad/unknown`）。
 """
 
-# case_ids: DA-028
+# case_ids: DA-028, DA-034
 
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
