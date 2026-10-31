@@ -98,7 +98,12 @@ def _distill(tmp_path: Path, sessions: "list[dict]") -> dict:
 
 
 def _tree_files(root: Path) -> "set[str]":
-    return {path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file()}
+    """目录树里的文件集合（排除 `__pycache__`：并行 worker 里的 import 会写字节码，与只读无关）。"""
+    return {
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*")
+        if path.is_file() and "__pycache__" not in path.relative_to(root).parts
+    }
 
 
 def test_three_constructed_sessions_yield_exactly_one_correction(tmp_path: Path) -> None:
