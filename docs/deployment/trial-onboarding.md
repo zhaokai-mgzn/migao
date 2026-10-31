@@ -35,7 +35,7 @@
 | **A. 客户自助注册** | `https://merchant.migaozn.com/register`（`frontend/admin-web/src/app/register/page.tsx`）⇒ 提交后 **pending** | 客户填，运营审批 | 审批后建租户 |
 | **B. 运营代开** | `POST /api/auth/register` + `PUT /api/super-admin/registrations/{id}/approve`（`RegistrationController`） | 运营 | 同上 |
 
-审批（`RegistrationService.approve`，CAS `approveIfPending` 防重复开租）的**副作用链**：
+审批（`RegistrationService.approveApplication`，CAS `approveIfPending` 防重复开租）的**副作用链**：
 
 1. **企业编码**自动生成 = 公司名 slug（≤24）+ `-` + 4 位随机（`LoginIdentifiers.defaultTenantCode`）；
    形态 `^[a-z0-9][a-z0-9_-]{1,31}$`（**允许下划线**，存量编码有 `tenant_7478359537` 这种），
@@ -63,6 +63,9 @@
   （能改岗位/权限），而那条路对工人根本不成立。
 - 岗位/角色是 **fail-closed**：三样都不给 ⇒ `422`（不兜底成运营级权限）。页面强制选岗位 ⇒ 只有 API 直连会撞到。
 - 工号冲突是 `409` + 明确文案（不是 500）。
+- 🔴 **员工密码不要留默认值**：`POST /api/admin/users` 的 `password` 是**可选**的，不传就**默认等于手机号**
+  ⇒ 试用期建号**必须显式给密码**，并让员工首登改密（首登强制改密由 `PasswordChangeRequiredFilter` +
+  `users.must_change_password` 承担，改密出口是 `POST /api/auth/password/change`）。
 
 **判据**：建号这半边**没有公开面可判**（需要凭据）⇒ 它属于 §7.2 的人工 checklist，逐格勾选 + 截图留证。
 
@@ -366,7 +369,7 @@ python3 scripts/trial_onboarding_check.py \
 
 | 动作 | 手段 | 可逆 | 说明 |
 |---|---|---|---|
-| **停用（推荐第一步）** | `tenants.status` 改为非 `active` | ✅ 改回即恢复 | 登录只在 `status='active'` 的租户里解析 ⇒ 全员**立即**登不进来（`AuthService.employeeLogin`） |
+| **停用（推荐第一步）** | `tenants.status` 改为非 `active` | ✅ 改回即恢复 | 登录只在 `status='active'` 的租户里解析 ⇒ 全员**立即**登不进来（`AuthService.loginByEmployee`） |
 | **数据导出** | 管理员在该租户内自查导出（各列表页导出） | —— | 试用期结束前**必须**由客户确认收到导出件 |
 | **删除** | ❌ **仓内无删除实现**（`grep -rln "deleteTenant\|dropTenant\|terminateTenant"` 零命中） | ❌ | 删除 = **人工工单**：先全量备份 + 逐表清单 + 双人复核；**不做**无人值守删除（铁律 10） |
 
