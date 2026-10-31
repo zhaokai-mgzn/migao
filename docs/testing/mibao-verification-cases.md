@@ -846,7 +846,7 @@
 真值: auth.qr-login-ticket
 溯源: 2026-10-26 新增（issue #7825）：现场 = 顶栏「手机端」二维码只是裸链接（不带登录交接），换浏览器 / App 或本机存储被清后每次扫码都要重新输密码。冻结口径 = 一次性票据（JWT 类型 qr_login、120 秒、兑换即吊销 jti）+ 手机端兑换后与密码登录同一套 30 天会话 + 签发失败降级裸入口 + 启动探针（续期失败原因本地可读）。 ｜ tags: auth, session, qr-login, bmini, admin-web
 
-## B 端小程序域（53 case）
+## B 端小程序域（54 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -1384,7 +1384,7 @@
 你: 用户 2026-10-07 原话「H5 的输入框中的提示信息都不是居中的，文字偏上了」—— 生产 `https://app.migaozn.com/b/#/pages/auth/login/index`（390×844）实测：内层原生 input 26px 贴在 49.9px 外框顶部（上留白 0.5px / 下留白 23.4px）
 期望: direct_reply
 数据: 判据 1·**根因与修法**：Taro h5 的 `<Input>` 是两层 —— 外层 `taro-input-core`（拿 `className`，即用户看到的圆角框）+ 内层原生 `<input class="weui-input">`（Taro 自带 `height:1.47059em`）；外层 `display:block` 且无居中规则 ⇒ 内层行盒贴顶。修法落在**共享样式层** frontend/bmini-app/src/styles/input-center.scss（① 外框 `display:flex` + `align-items:center`；② 内层 `height:100%`），由 frontend/bmini-app/src/app.scss 引入。**只改竖向对齐**，不动任何尺寸 / 圆角 / 字号。
-数据: 判据 2·**真几何判据（不是字符串断言）**：tests/e2e/specs/bmini/bmini-input-center.spec.ts（配置 tests/playwright.bmini.config.ts；CI = .github/workflows/bmini-app.yml 的 `tabbar-geometry` job，该 job 的 run 自 issue #6478 起跑整个 `specs/bmini/` 目录）—— 对**未登录即可到达的 3 个输入面 / 16 个输入框**（登录页 9 + 工人登录页 4 + 首登强制改密页 3；2026-10-27 按实测校正，旧文写的 13 = #6564 之后未更新的读数）逐个量「内层 input 高 ÷ 外框高 ≥ 0.90」「内层相对外框的上留白 == 下留白（±1 CSS px）」「上留白 > 0」。实测读数（390×844，Chromium，本地 dist 重建）：修后 登录页 47.906/49.906（上/下留白 1.0/1.0）、工人登录页 45.75/47.75（1.0/1.0）、改密页 45.75/47.75（1.0/1.0）；修前（临时撤掉共享层引入 + 重建后同一 spec 实跑）登录页 26.0/49.906（1.0/22.91）、工人登录页 22.94/47.75（1.0/23.81）、改密页 24.47/47.75（1.0/22.28）⇒ **3 failed** 且逐面具名报出占比与留白。未实测的输入面（报工页 / 坐席详情 / 工人入库 / 工人补打 / WorkerBar / FormCard）靠同一全局选择器构造性覆盖 + 台账登记（见 BM-043）。
+数据: 判据 2·**真几何判据（不是字符串断言）**：tests/e2e/specs/bmini/bmini-input-center.spec.ts（配置 tests/playwright.bmini.config.ts；CI = .github/workflows/bmini-app.yml 的 `tabbar-geometry` job，该 job 的 run 自 issue #6478 起跑整个 `specs/bmini/` 目录）—— 对**未登录即可到达的 3 个输入面 / 15 个输入框**（登录页 9 + 工人登录页 3 + 首登强制改密页 3；2026-10-31 按 issue #8194 校正：工人登录页重写成共享组件 `WorkerLoginForm` ⇒ 选择器改 `.worker-login-form__input`、去掉「设备标签」一格，4 → 3；旧文写的 16 / 13 都是历史读数）逐个量「内层 input 高 ÷ 外框高 ≥ 0.90」「内层相对外框的上留白 == 下留白（±1 CSS px）」「上留白 > 0」。实测读数（390×844，Chromium，本地 dist 重建）：修后 登录页 47.906/49.906（上/下留白 1.0/1.0）、改密页 45.75/47.75（1.0/1.0）；修前（临时撤掉共享层引入 + 重建后同一 spec 实跑）登录页 26.0/49.906（1.0/22.91）、改密页 24.47/47.75（1.0/22.28）⇒ **3 failed** 且逐面具名报出占比与留白。⚠️ **工人登录页的新几何读数未重测**（issue #8194 重写该页；同一缺陷口径与同一全局共享层照旧判它，读数由 CI 腿的 `[input-center]` 日志打印，红了按日志逐面归因）—— 旧页的读数（45.75/47.75 修后、22.94/47.75 修前）保留在 `tests/e2e/specs/bmini/bmini-input-center.spec.ts` 的表里并标注为该页旧形态。未实测的输入面（报工页 / 坐席详情 / 工人入库 / 工人补打 / WorkerBar / FormCard）靠同一全局选择器构造性覆盖 + 台账登记（见 BM-043）。
 数据: 判据 3·**共享层必须真的接线且只许一份**：frontend/bmini-app/tests/input-center-guard.test.ts 断言共享层文件在位 + 被 frontend/bmini-app/src/app.scss 引入 + 三条居中声明都在；且 `taro-input-core` 只许出现在 frontend/bmini-app/src/styles 下的 scss（逐页打补丁 ⇒ 判红）。注入式红证（in-memory，实跑）：删 `@use` ⇒ 红；外框改回 `display:block` ⇒ 红；内层改回 `height:1.47059em` ⇒ 红；把规则抄进 frontend/bmini-app/src/pages/auth/login/index.scss ⇒ 红并具名。
 数据: 判据 4·**小程序端逐字不变**：共享层的两条选择器（`taro-input-core` / `.weui-input`）只存在于 Taro **h5** 产物 DOM；小程序编译产物里 `<Input>` 是单层原生 input，选择器一个元素都匹配不到 ⇒ 对小程序零影响。
 跳过: [backend-contract] 确定性判据（jest: frontend/bmini-app/tests/input-center-guard.test.ts；playwright: tests/e2e/specs/bmini/bmini-input-center.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟
@@ -1612,6 +1612,20 @@
 ```
 真值: batch-stocktake.worker-correction
 溯源: 2026-10-29 新增（issue #8104）：用户逐字「手机端还要增加一个库存修正的功能，apk程序也要同步增加这个功能，允许工人对某个批次的布匹进行修正」。形态 = bmini 新页 `pages/worker/stock/index`（手机 `https://app.migaozn.com/b/` 与 APK 观星台终端加载的同一份 `/b/` 页面 ⇒ APK 无需重打包，菜单随页面发布出现）。服务端 = `/api/worker/batch-stock/{batches,correction}`，**复用**按批次盘点的唯一写面（不新造第二套库存逻辑、不新增迁移）。边界：不做盘点单（无单号/审批/打印）；一次提交只改一个批次；不新增批次来源 reason（工人修正 = 实盘为准，沿用 `reason=stocktake`，如需在台账上把「工人修正 / 商家盘点」分列 ⇒ 另开迁移单）；小程序发版是人工环节（#7806：合并 ≠ 用户手机已是新版，`/b/` H5 腿自动发布）。 2026-10-31 追加（issue #8210；用户逐字「移动端……通过拍照来识别批次号」）：加识别入口 `POST /api/worker/batch-stock/recognize`（工人 session，复用 `POST /api/worker/inbound/upload` 上传腿）+ ai-agent 新 vision target `batch`（一格 `batch_no`，阈值 0.90，形状硬闸在置信度闸之前）；端侧顺序 = 扫标签二维码（0 次 LLM）→ OCR 兜底 → 手输，认出后按批次号精确定位到**既有**修正页。边界：不新增库存写面 / 不新增 reason 族 / 不新增迁移；未过账标签**不退回 OCR 猜**；旧系统批次号不认（手输）。 ｜ tags: bmini, worker, stock, batch-stocktake, idempotency
+
+### BM-057. 小程序工人登录 = 终端 /w/ 同一份表单 - 扫码报工页未登录就地登录（不跳三角色登录页），工人首页入口复用同一组件 🔵
+```
+你: 新手机第一次扫纸上的码（GET /s/<短码> → 302 → /b/?t=<token>）⇒ 本机没有工人 session ⇒ 扫码报工页**就地**显示登录表单：标题「工人报工」/ 副标题「工号 + PIN 登录（手机 / PAD 均可，无需微信）」/ 企业编码（向商家索取）→ 工号 → PIN / 按钮「登 录」，与终端 /w/ 逐字一致；**没有**「设备标签」一格，也**没有**「去登录工人身份」跳转按钮；登录成功留在本页继续手里的那个码（无码则回工人首页）
+期望: direct_reply
+数据: 判据 1·**跨端逐字一致**（真值 = frontend/worker-h5/src/render.mjs 的 loginView()）：标题 / 副标题 / 三个字段标签**及顺序** / 按钮文案逐字相等，且不出现「设备标签」字段；渲染面同序（标题 → 副标题 → 企业编码 → 工号 → PIN → 按钮），错误位在字段**上方**（与 /w/ 的 .wh5-error 同位）。红证（实跑，真语料注入）：改一个标签 ⇒ 4 failed / 2 passed；把两个字段换顺序 ⇒ 3 failed / 3 passed。证据：frontend/bmini-app/tests/worker-login-parity.test.ts
+数据: 判据 2·**报工页未登录就地登录**：渲染三个输入 + 「登 录」，没有「去登录工人身份」跳转按钮、不导航去三角色登录页、不出报工按钮；🔴 未登录**不渲染页头**（`/w/` 的登录屏只有一张卡片 —— 用户 2026-10-31 裁定「不一致，需要收口」：否则「扫码报工」+「工人报工」两层标题），登录成功后才出现页头（含当前工人）。红证（实跑）：摘掉就地表单渲染（只留 import）⇒ 9 failed / 5 passed（台账具名「就地渲染工人登录表单」+ 页面 find 不到表单）；未登录态把页头加回来 ⇒ 2 failed / 9 passed（两条 ① 各自具名 `worker-report-header`）。证据：frontend/bmini-app/tests/worker-report-login.test.tsx + frontend/bmini-app/tests/worker-report-page.test.tsx
+数据: 判据 3·**登录后接着报手里的码**：带码（/b/?t=<token>）⇒ 留在本页并 scanResolve 该码（不回首页、不跳走）；无码 ⇒ 回工人首页；失败 ⇒ 错误上屏、不解析码。跨登录那一步的码走 utils/reportEntry.ts 的既有一次性记录 rememberReportReturn / takeReportReturn（登录前 write、成功后 take 即清），不新造第二套「待报码」通道。证据：frontend/bmini-app/tests/worker-report-login.test.tsx
+数据: 判据 4·**工人首页入口复用同一组件**（同一份表单的**第二个入口**，不是第二份实现）：「去登录工人身份」与「退出工人身份」都落 frontend/bmini-app/src/pages/worker/login/index.tsx（WORKER_LOGIN_ROUTE）；三角色登录页（/pages/auth/login/index?tab=worker）保留为常规入口、本单不改；该页重写成共享组件的一层壳（只负责调 workerLogin 与登录后去向：有 pending code 回报工页、从入库/补打/库存 navigateTo 过来则 navigateBack、页面栈只有自己则回工人首页）。证据：frontend/bmini-app/tests/worker-home-page.test.tsx + frontend/bmini-app/tests/login-identifier-split.test.tsx + frontend/bmini-app/tests/login-remember-account.test.tsx
+数据: 判据 5·**台账同批更新（未登记即红 / 只许缩短）**：报工页新增 workerLogin( 写入口登记；其引导形态改成 login_in_place_token（认 JSX 渲染形态 <WorkerLoginForm，import 提及不算）；工人首页 login_route_token 改 WORKER_LOGIN_ROUTE；入口台账把「工人首页 → 三角色登录页」换成「工人首页 → 工人登录页」；输入面台账把 worker-login__input 换成共享组件的 worker-login-form__input。证据：frontend/bmini-app/tests/worker-surface-ledger.test.ts + frontend/bmini-app/tests/input-center-guard.test.ts + frontend/bmini-app/tests/page-entry-reachability.test.ts
+跳过: [backend-contract] 确定性跨端文案/装配判据（jest: worker-login-parity / worker-report-login / worker-report-page / worker-home-page / worker-surface-ledger / input-center-guard / page-entry-reachability），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.worker-narrow-surface
+溯源: 2026-10-31 新增（issue #8194）：改前扫码报工页未登录把工人**踢到三角色登录页**（表单的标题 / 副标题 / 字段（还多一格「设备标签」）/ 配色都与终端 /w/ 不同，手里的码还要绕一圈才接着报）；改后未登录在报工页**就地**渲染与 /w/ 逐字一致的共享组件 WorkerLoginForm，登录成功留在本页继续那个码（无码回工人首页）。工人首页的「去登录工人身份」也改落同一份组件（pages/worker/login/index 重写为壳）。三角色登录页与 ?tab=worker **一字未动**（保留为常规入口）。卡片形态与 `/w/` 的 `.wh5-card` **同值**（padding 16 CSS px / 圆角 16 / 间距 12 / 同一条阴影，白卡落在 `#faf7f2` 页面底上）；未登录态**不渲染报工页页头**（用户同日裁定「不一致，需要收口」——`/w/` 的登录屏只有一张卡片，两层标题会读成两个页面）。视觉对比（/b/ vs /w/，390×844）留给多模态验收（migao-dev-flow §15.7）。 ｜ tags: bmini, worker, login, parity, h5
 
 ## 分类域（3 case）
 
@@ -6452,10 +6466,10 @@
 数据: **根因（双向核对 DNS）**：`admin.migaozn.com` **没有 A 记录**（`dig +short` 空；其余 7 个 SAN 都解析到 `121.40.28.213`），而 `migao` 证书的 SAN 含 `admin` ⇒ HTTP-01 对 admin 必失败 ⇒ 整张证书续期失败。⇒ **订正审计口径**：仓内确实没有续期腿 / 到期判据，但「仓内零续期机制」漏掉了「宿主 cron 已存在且在失败、且失败无告警」这一半（PR body 逐字登记）。
 数据: **判别力自证（注入式红证，本包实跑）**：① 正常态（剩余 60 天）⇒ rc=0 + 逐域 `days_left` + 复算命令；② 临期 20/10/1 天 ⇒ rc=1 `status=expiring`；③ 已过期（剩余 −3 天）⇒ rc=1 `status=expired`；④ 取不到（s_client 失败）/ notAfter 为空 / notAfter 是垃圾 ⇒ 各自 rc=**3** `status=unknown` 且明说「无法判定」；⑤ SAN 不含 api/ai-api/app ⇒ rc=1 `status=mismatch`；`*.migaozn.com` 只覆盖 `api/api/ai-api/app` 而**不覆盖裸域** ⇒ 只有 `domain=migaozn.com status=mismatch`；⑥ 阈值边界：21 天 ⇒ 0、20 天 ⇒ 1；⑦ lineage：`migao` used=yes / `api.migaozn.com` used=no / `authenticator=manual` 冲突被具名；无 letsencrypt 目录 ⇒ `TLS_LINEAGE_SUMMARY status=skipped` 且**仍退 0**（不因缺诊断读数判红）；⑧ 续期腿：成功 ⇒ 只出现 `nginx -s reload`（无 `compose restart`）、`TLS_RENEW_RESULT=renewed`；失败 ⇒ 非零 + 无 reload + 归因；noop ⇒ 两次都 0 且无 reload；⑨ cron：有旧条目 ⇒ 退 3 且**不写** cron 文件、文案给 `--replace-legacy-cron`；替换 ⇒ 备份 + 过滤旧行 + 幂等（第二次「已就位」且逐字节相同）；非 root ⇒ 退 3 不写文件。
 数据: **红证读数**（本包实测）：先写判据、实现全缺时 `29 failed`；实现后 `29 passed`（复算：`python3 -m pytest tests/unit_ci_workflows/test_tls_renewal.py -q`）。接线面的红证是**内存变异**（把该步从 YAML 里删掉 / 挪到 `if: failure()` 之后 / 把 `exit 3` 改成 `exit 0` / 摘掉 `if:`）四种注入各自让 `tls_wiring_problems()` 非空 —— 而不是「读一遍 YAML 看着对」。
-数据: **边界（照实登记，不粉饰）**：① 判据**不联网**（openssl / certbot / docker / crontab 全是 PATH 垫片）⇒ 证的是「脚本在给定输入下会做什么」，**不是**「阿里云 / Let's Encrypt 真的这么回」；② **本单未执行**任何真实续期 / 重签 / DNS 变更（用户边界：执行留给人工确认），PR body 的「未覆盖项」逐条登记需要人执行的那一步；③ 「宿主 cron 真的每天跑了 / 续上了」只能事后看 `/var/log/migao-tls-renew.log` 与 `tls-expiry-check.sh` 的读数；④ 路径②（`certbot certonly --expand` 去掉 admin）**改变 SAN 集合** ⇒ 与「不改域名集合」的边界冲突，runbook 里明确写成「需人裁定」的例外，**不默认执行**；⑤ 陈旧 lineage 只给「不删证书」的禁用 / 修正方式（`mv renewal/api.migaozn.com.conf → renewal-disabled/`），**不静默 delete**；⑥ 不新增任何 GitHub schedule（铁律 10），只沿用 `post-merge-verify.yml` 既有的 push / schedule / dispatch 触发面。
+数据: **边界（照实登记，不粉饰）**：① 判据**不联网**（openssl / certbot / docker / crontab 全是 PATH 垫片）⇒ 证的是「脚本在给定输入下会做什么」，**不是**「阿里云 / Let's Encrypt 真的这么回」；② **本单未执行**任何真实续期 / 重签 / DNS 变更（用户边界：执行留给人工确认），PR body 的「未覆盖项」逐条登记需要人执行的那一步；③ 「宿主 cron 真的每天跑了 / 续上了」只能事后看 `/var/log/migao-tls-renew.log` 与 `tls-expiry-check.sh` 的读数；④ 路径②（`certbot certonly --expand --force-renewal` 去掉 admin）**改变 SAN 集合** ⇒ 与「不改域名集合」的边界冲突；该例外已由用户在 **2026-10-31 裁定走路径②**（runbook 记为「已裁定执行」），`--force-renewal` 明确标注为**一次性动作、不许写进 cron**；⑤ 陈旧 lineage 已裁定执行「移出 renewal 目录、不删证书」（唯一口径 `/etc/letsencrypt/renewal-disabled/`），**不静默 delete**；⑥ 不新增任何 GitHub schedule（铁律 10），只沿用 `post-merge-verify.yml` 既有的 push / schedule / dispatch 触发面。
 跳过: [backend-contract] 运维判据（只读仓内脚本 + PATH 垫片伪造 openssl/certbot/docker/crontab + 真 YAML）由 tests/unit_ci_workflows/test_tls_renewal.py 验证，零网络、零真实续期、不写共享 /tmp、不烧 token，非 LLM 行为，不进入 agent-eval 冒烟
 ```
-溯源: 2026-10-31 新增（issue #8201，P0：四域共用证书 2026-11-27 到期，LE 的 30 天续期窗口已于 2026-10-28 过去仍未续）。取号 MC-121（`python3 scripts/next_case_id.py MC` 现取最小空闲号；候选 = main ∪ open PR 分支 ∪ 本工作区）。落码 = ① `deploy/scripts/tls-expiry-check.sh`（只读、四域 + 可选 www、阈值 21 天、0/1/3、lineage 诊断）② `deploy/scripts/tls-renew.sh`（host certbot 优先 / docker 兜底、`--dry-run`、成功才 reload、`--install-cron` 幂等 + 双跑 guard + 备份替换）③ `.github/workflows/post-merge-verify.yml` 的 `TLS 证书到期判红` 步（main 侧、在 `if: failure()` 出口之前、不新增 schedule）④ `deploy/swas/deploy.sh` 的 `2.6.1`（幂等刷新宿主 cron，跳过/失败不拖垮部署；同步脚本带 `[ -f ]` 守卫以保回滚）⑤ `docs/deployment/tls-renewal.md`（现状 / 两条修复路径与代价 / 陈旧 lineage 不删证书 / cron 加固 / 验收复算 / 回滚 / 影响面）。**订正审计口径**：PR #8200 的 P0-01「仓内零续期机制」应读作「机制在宿主 cron，但已连天失败 + 无告警」。 ｜ tags: ops, tls, deploy, certbot, alarm
+溯源: 2026-10-31 新增（issue #8201，P0：四域共用证书 2026-11-27 到期，LE 的 30 天续期窗口已于 2026-10-28 过去仍未续）。取号 MC-121（`python3 scripts/next_case_id.py MC` 现取最小空闲号；候选 = main ∪ open PR 分支 ∪ 本工作区）。落码 = ① `deploy/scripts/tls-expiry-check.sh`（只读、四域 + 可选 www、阈值 21 天、0/1/3、lineage 诊断）② `deploy/scripts/tls-renew.sh`（host certbot 优先 / docker 兜底、`--dry-run`、成功才 reload、`--install-cron` 幂等 + 双跑 guard + 备份替换）③ `.github/workflows/post-merge-verify.yml` 的 `TLS 证书到期判红` 步（main 侧、在 `if: failure()` 出口之前、不新增 schedule）④ `deploy/swas/deploy.sh` 的 `2.6.1`（幂等刷新宿主 cron，跳过/失败不拖垮部署；同步脚本带 `[ -f ]` 守卫以保回滚）⑤ `docs/deployment/tls-renewal.md`（现状 / 两条修复路径与代价 / 陈旧 lineage 不删证书 / cron 加固 / 验收复算 / 回滚 / 影响面）。**订正审计口径**：PR #8200 的 P0-01「仓内零续期机制」应读作「机制在宿主 cron，但已连天失败 + 无告警」。**2026-10-31 用户裁定**：修复走路径②（重签去掉 admin、只带 7 个可解析 SAN）；陈旧 lineage 移出 renewal 目录（不删证书）；`--replace-legacy-cron` 等合并+部署后再跑，「先手工改旧 cron 的 restart→reload」为**可选**。 ｜ tags: ops, tls, deploy, certbot, alarm
 
 ## 商家入驻域（7 case）
 
@@ -13822,13 +13836,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：931（活跃 152，跳过 779）
-- tier 分布：smoke 15 / normal 859 / adversarial 33
+- 用例总数：932（活跃 152，跳过 780）
+- tier 分布：smoke 15 / normal 860 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
 - 登录认证域：14
-- B 端小程序域：53
+- B 端小程序域：54
 - 分类域：3
 - 对话边界域：53
 - 跨域：3

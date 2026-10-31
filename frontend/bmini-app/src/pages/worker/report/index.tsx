@@ -12,7 +12,8 @@
  *
  * ① 旧码（`granularity:'order'`）⇒ 进选套/选部位态，**绝不默认取第 1 套**；
  * ② 工序未确定（`operation == null`）⇒ **不出报工按钮**；
- * ③ 未登录 ⇒ **不出报工按钮**（本页直接给登录引导）；
+ * ③ 未登录 ⇒ **不出报工按钮**，**就地**给与终端 `/w/` 逐字一致的登录表单（issue #8194：
+ *    不再跳三角色登录页 —— 手里那个码不绕路、扫码这一步不被别的页面打断）；
  * ④ 回执 ⇒ 只显示服务端给的「下一道 / 本套已完成」，**前端不猜下一道**。
  *
  * ## 与 H5 `/w/` 的关系（收口方向 = #7806）
@@ -29,7 +30,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Input, Text, View } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
-import { fetchCurrentWorker } from '../../../services/workerService'
+import { fetchCurrentWorker, workerLogin } from '../../../services/workerService'
 import { completeByScan, scanResolve } from '../../../services/productionService'
 import {
   clearWorkerSession,
@@ -57,18 +58,26 @@ import {
   type ReportView,
   type WorkType,
 } from '../../../utils/reportState'
-import { WORKER_TAB_LOGIN_ROUTE } from '../../../utils/inbound/gaps'
+import { WORKER_HOME_ROUTE } from '../../../utils/inbound/gaps'
 // 🔴 入口参数的提取**不在本页判平台**（issue #7879）：h5 读 URL search、小程序读
 // `getEnterOptionsSync()` / 页面参数，两条都收口到 `utils/scanInput.ts` 的同一个解析器
-import { currentEntryLanding, rememberReportReturn } from '../../../utils/reportEntry'
+import {
+  currentEntryLanding,
+  rememberReportReturn,
+  takeReportReturn,
+} from '../../../utils/reportEntry'
+// 🔴 未登录**就地**登录（issue #8194）：表单 = 与终端 `/w/` 逐字一致的共享组件
+// （判据 tests/worker-login-parity.test.ts）。本页不再跳三角色登录页。
+import WorkerLoginForm, {
+  WORKER_LOGIN_FAILED_FALLBACK,
+  type WorkerLoginSubmitResult,
+  type WorkerLoginValues,
+} from '../../../components/WorkerLoginForm'
 import { resolveScanLanding } from '../../../utils/scanInput'
 // 🔴 小程序专有 API 的 h5 出路（守卫 tests/h5-platform-api-guard.test.ts）：h5 产物里没有
 // 原生扫码 ⇒ 不摆「扫一扫」按钮，手输码这条降级路径仍然可用（不是把页面弄死）。
 import { canUseNativeScan } from '../../../utils/platform'
 import './index.scss'
-
-/** 未登录（本机没有工人身份）时的一句话。 */
-export const REPORT_LOGIN_REQUIRED = '请先用工号 + PIN 登录工人身份，再扫码报工。'
 
 /** 读面失败兜底（技术原文留在请求层）。 */
 export const RESOLVE_FAILED_HINT = '扫码结果读取失败，请重试'
@@ -144,15 +153,6 @@ export default function WorkerReportPage() {
     }, [state.worker]),
   )
 
-  const goLogin = useCallback(() => {
-    // 🔴 登录后**回跳本页继续报工**（issue #7879；新手机首次扫码时本机还没有工人 session）：
-    // 把「要接着报的那个码」临时记在本机，登录成功后由 `pages/auth/login/index.tsx` 读它
-    // `redirectTo` 回本页（不是停在登录页、也不是落到工人首页就把手里的活丢了）。存的是**码**，
-    // 不是身份（PIN 绝不落盘，与 `rememberAccount` 的既有口径一致）。
-    rememberReportReturn(token || manual.trim())
-    Taro.navigateTo({ url: WORKER_TAB_LOGIN_ROUTE })
-  }, [token, manual])
-
   /** 解析：token（+ 可选工序 / 旧码选择）→ 一屏。 */
   const resolve = useCallback(
     async (value: string, options: { operationId?: string | null; selection?: any } = {}) => {
@@ -185,7 +185,7 @@ export default function WorkerReportPage() {
    * `currentEntryLanding()` 归一 ⇒ 工人扫码后**不必再手输一次**。
    *
    * 只消费返回值（页面里**不判平台**）；身份未就绪时先等（下面的身份 effect 会把它设成
-   * `scan` / `unauthorized`），未登录则先记下码再引导登录（`goLogin` 的 `rememberReportReturn`）。
+   * `scan` / `unauthorized`）。未登录时**就地**登录（下面的 `signIn`），登录成功后由它接着解析。
    */
   const entryDoneRef = useRef(false)
   useEffect(() => {
@@ -199,6 +199,58 @@ export default function WorkerReportPage() {
     entryDoneRef.current = true
     void resolve(landing.code)
   }, [state.mode, state.worker, resolve])
+
+  /**
+   * 🔴 **未登录 + 手里有码 ⇒ 先记下「登录后接着报这个码」**（issue #8194）：走
+   * `utils/reportEntry.ts` 的**同一份**一次性记录（不是第二套待报码通道）——
+   * 工人填 PIN 期间页面被系统回收 / 刷新，码不会丢；登录成功后由下面的 `signIn` 读回（读到即清）。
+   */
+  useEffect(() => {
+    if (state.mode !== 'unauthorized') return
+    const landing = currentEntryLanding()
+    if (landing.kind === 'report' && landing.code) rememberReportReturn(landing.code)
+  }, [state.mode])
+
+  /**
+   * 未登录 ⇒ **就地**登录（issue #8194；不再跳三角色登录页）。
+   *
+   * 表单 = 共享组件 `WorkerLoginForm`（与终端 `/w/` 逐字一致，判据 `tests/worker-login-parity.test.ts`）。
+   * 成功后**留在本页**继续手里的那个码；无码 ⇒ 回工人首页（不在报工页留一个空壳）。
+   */
+  const signIn = useCallback(
+    async (values: WorkerLoginValues): Promise<WorkerLoginSubmitResult> => {
+      // 设备标签不传：`/w/` 没有那一格
+      const res = await workerLogin(
+        values.workerNo,
+        values.pin,
+        undefined,
+        values.enterpriseCode,
+      )
+      if (!res.success) {
+        return { ok: false, message: res.message || WORKER_LOGIN_FAILED_FALLBACK }
+      }
+      // 登录已签发工人 session ⇒ 读回服务端认定的身份（页头的「当前工人」是计件凭证，不自己拼）
+      const current = await fetchCurrentWorker()
+      if (!current.success || !current.data) {
+        clearWorkerSession()
+        return { ok: false, message: '登录已成功，但没能读到工人身份，请再试一次' }
+      }
+      setState(initialState(current.data as CurrentWorker))
+      // 一次性记录读回（读到即清）；存储写失败时退回直接读当前入口（码不能因为记不住就丢）
+      const back = takeReportReturn()
+      const landing = currentEntryLanding()
+      const code = back.code || (landing.kind === 'report' ? landing.code : '')
+      // 上面那条入口 effect 不得再解析一次（同一个码只递一次服务端）
+      entryDoneRef.current = true
+      if (code) {
+        await resolve(code)
+      } else {
+        Taro.redirectTo({ url: WORKER_HOME_ROUTE })
+      }
+      return { ok: true, workerName: res.data?.worker_name ?? null }
+    },
+    [resolve],
+  )
 
   /** 扫一扫（小程序原生；扫码结果可能是短链 / 带 t 参数 / 裸码）。 */
   const scan = useCallback(async () => {
@@ -276,21 +328,24 @@ export default function WorkerReportPage() {
 
   return (
     <View className='worker-report'>
-      <View className='worker-report__header'>
-        <Text className='worker-report__title'>扫码报工</Text>
-        {state.worker ? (
-          <Text className='worker-report__worker' data-testid='worker-report-worker'>
-            当前工人：{state.worker.worker_name || MISSING}
-          </Text>
-        ) : null}
-      </View>
+      {/* 🔴 未登录**不渲染页头**（2026-10-31 用户裁定，issue #8194）：终端 `/w/` 的登录屏只有
+          一张卡片（`loginView()` = `.wh5-card`），页头是**登录后**的页面身份 —— 若这里照样印
+          「扫码报工」，小程序扫码进入时就变成「扫码报工」+「工人报工」两层标题，与 APK / `/w/` 不一致。
+          登录成功（`state.worker` 就绪）后页头出现。 */}
+      {state.mode === 'unauthorized' ? null : (
+        <View className='worker-report__header' data-testid='worker-report-header'>
+          <Text className='worker-report__title'>扫码报工</Text>
+          {state.worker ? (
+            <Text className='worker-report__worker' data-testid='worker-report-worker'>
+              当前工人：{state.worker.worker_name || MISSING}
+            </Text>
+          ) : null}
+        </View>
+      )}
 
       {state.mode === 'unauthorized' ? (
-        <View className='worker-report__gate' data-testid='worker-report-login-required'>
-          <Text className='worker-report__gate-text'>{REPORT_LOGIN_REQUIRED}</Text>
-          <Button className='worker-report__primary' data-testid='worker-report-login' onClick={goLogin}>
-            去登录工人身份
-          </Button>
+        <View className='worker-report__login' data-testid='worker-report-login-required'>
+          <WorkerLoginForm onSubmit={signIn} />
         </View>
       ) : null}
 

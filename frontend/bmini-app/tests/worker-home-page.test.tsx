@@ -1,4 +1,4 @@
-// case_ids: BM-034
+// case_ids: BM-034, BM-057
 /**
  * 工人首页（issue #6467 切片 1，S2）：纯工人设备的落地页 —— **只**给工人面三件事，
  * 一件商家面东西都不出现。
@@ -83,7 +83,7 @@ import {
   REWORK_PAGE_ROUTE,
   SHIPMENT_ORDERS_PAGE_ROUTE,
   SHIPMENT_PAGE_ROUTE,
-  WORKER_TAB_LOGIN_ROUTE,
+  WORKER_LOGIN_ROUTE,
 } from '../src/utils/inbound/gaps'
 import { listReadyShipmentOrders } from '../src/services/workerShipmentOrdersService'
 import { listWorkerReworkOrders } from '../src/services/workerReworkService'
@@ -187,7 +187,7 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
     }
   })
 
-  it('🔴 退出工人身份 ⇒ workerLogout() + 清本机工人态 + 回登录页的工人入口', async () => {
+  it('🔴 退出工人身份 ⇒ workerLogout() + 清本机工人态 + 回工人登录页', async () => {
     await renderLoggedIn()
     expect(getWorkerSessionId()).toBe(WORKER.session_id)
 
@@ -198,10 +198,11 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
     // 服务端 session 必须结束（只清本机 ⇒ 下一个人扫码记到上一个人头上）
     expect(mockLogout).toHaveBeenCalledTimes(1)
     expect(getWorkerSessionId()).toBeNull()
-    expect(Taro.redirectTo).toHaveBeenCalledWith({ url: WORKER_TAB_LOGIN_ROUTE })
+    // issue #8194：退出后回**工人登录页**（与 `/w/` 同一份表单），不再回三角色登录页
+    expect(Taro.redirectTo).toHaveBeenCalledWith({ url: WORKER_LOGIN_ROUTE })
   })
 
-  it('无工人身份 ⇒ 不给工人功能入口，渲染引导 + 「去登录工人身份」', async () => {
+  it('无工人身份 ⇒ 不给工人功能入口，渲染引导 + 「去登录工人身份」（落工人登录页）', async () => {
     clearWorkerSession()
     mockFetch.mockResolvedValue({ success: false, message: '未登录工人身份' })
 
@@ -213,7 +214,8 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
     expect(screen.queryByText('退出')).toBeNull()
 
     fireEvent.click(screen.getByText('去登录工人身份'))
-    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: WORKER_TAB_LOGIN_ROUTE })
+    // issue #8194：这一跳落到 `pages/worker/login/index`（重写成与 `/w/` 同一份共享表单）
+    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: WORKER_LOGIN_ROUTE })
   })
 
   it('服务端读不到当前工人（如 session 已失效）⇒ 回落成「未登录」而不是留着上一个人的名字', async () => {

@@ -1,7 +1,7 @@
 {
   "_what": "工人面写入口台账（issue #6467 切片 1，S8 类级固化）。登记「哪些页面渲染工人写入口 / 哪些页面必须先有工人身份」——未登记即红。判据 = tests/worker-surface-ledger.test.ts。",
   "_how_to_regen": "条数现取：cd frontend/bmini-app && node -e \"const l=require('./tests/worker-surface-ledger.json');console.log(l.entries.length)\"（台账本体不许手写死条数：守卫按 src/pages 下全部 .tsx 现取配对集，双向相等才算过）",
-  "_detection": "守卫扫 src/pages 下全部 .tsx（先剥注释）里出现的『工人写调用』记号（completeByScan( / reportOperationFree( / workerLogin( / workerLogout( / createInboundDraft( / postInboundDraft(）；每个 (页面, 调用) 配对都必须在 entries 里登记，且每条登记都必须仍能被扫到（台账只许缩短）。requires_worker_session=true 的条目还必须逐条命中 gate_tokens（= 该页「必须先有工人身份」的**声明 + 用到它的渲染条件**两个记号；只写声明不接到渲染条件 ⇒ 红）。🔴 2026-10-14（issue #6868 实现包 D1）：报工页（src/pages/production/index/index.tsx）已整页删除 ⇒ 它那两条（completeByScan( / reportOperationFree( ，原先分别用 `{workerReady ? (` / `{workerReady && (` 两处**刻意不同**的闸门记号）随之删掉。**同页两条写路各用不同闸门记号**这个形态当前**没有现役实例**（如实登记，不粉饰）：保留的工人面里 src/pages/worker/inbound/index.tsx 有两条写路（createInboundDraft( / postInboundDraft( ）但共用同一处闸门 `if (!workerReady) {`。台账仍按「每条登记各自给出闸门记号」判定 —— 摘掉任一条的闸门记号 ⇒ 该条判红并具名。",
+  "_detection": "守卫扫 src/pages 下全部 .tsx（先剥注释）里出现的『工人写调用』记号（completeByScan( / reportOperationFree( / workerLogin( / workerLogout( / createInboundDraft( / postInboundDraft(）；每个 (页面, 调用) 配对都必须在 entries 里登记，且每条登记都必须仍能被扫到（台账只许缩短）。requires_worker_session=true 的条目还必须逐条命中 gate_tokens（= 该页「必须先有工人身份」的**声明 + 用到它的渲染条件**两个记号；只写声明不接到渲染条件 ⇒ 红）。🔴 2026-10-14（issue #6868 实现包 D1）：报工页（src/pages/production/index/index.tsx）已整页删除 ⇒ 它那两条（completeByScan( / reportOperationFree( ，原先分别用 `{workerReady ? (` / `{workerReady && (` 两处**刻意不同**的闸门记号）随之删掉。**同页两条写路各用不同闸门记号**这个形态当前**没有现役实例**（如实登记，不粉饰）：保留的工人面里 src/pages/worker/inbound/index.tsx 有两条写路（createInboundDraft( / postInboundDraft( ）但共用同一处闸门 `if (!workerReady) {`。台账仍按「每条登记各自给出闸门记号」判定 —— 摘掉任一条的闸门记号 ⇒ 该条判红并具名。 🔴 2026-10-31（issue #8194）：工人登录表单收口成共享组件 `src/components/WorkerLoginForm.tsx`（报工页未登录**就地**渲染 / 独立工人登录页 / 与终端 `/w/` 逐字一致）。本条台账的**判据 4「引导可行动」因此多一种合法形态**：`login_route_token`（跳工人登录页）**或** `login_in_place_token`（就地渲染该共享表单，记号 = `<WorkerLoginForm`，认 JSX 渲染形态而不是 import 提及）。报工页随之从「跳走登录」改成「就地登录」，并新增一条 `workerLogin(` 登记（它也是一条工人写入口）。",
   "entries": [
     {
       "page": "src/pages/worker/home/index.tsx",
@@ -13,7 +13,7 @@
         "{worker ? ("
       ],
       "guide_token": "WORKER_HOME_LOGIN_REQUIRED",
-      "login_route_token": "WORKER_TAB_LOGIN_ROUTE",
+      "login_route_token": "WORKER_LOGIN_ROUTE",
       "case_ids": [
         "BM-034"
       ]
@@ -60,10 +60,11 @@
     {
       "page": "src/pages/worker/login/index.tsx",
       "call": "workerLogin(",
-      "label": "独立工人登录页（工号 + PIN）",
+      "label": "独立工人登录页（工号 + PIN；与终端 `/w/` 同一份共享表单 WorkerLoginForm）",
       "requires_worker_session": false,
       "case_ids": [
-        "BM-019"
+        "BM-019",
+        "BM-057"
       ]
     },
     {
@@ -75,12 +76,21 @@
         "const workerReady = hasWorkerSession()",
         "state.mode === 'unauthorized'"
       ],
-      "guide_token": "REPORT_LOGIN_REQUIRED",
-      "login_route_token": "WORKER_TAB_LOGIN_ROUTE",
       "case_ids": [
         "BM-014",
         "BM-015",
-        "BM-025"
+        "BM-025",
+        "BM-057"
+      ],
+      "login_in_place_token": "<WorkerLoginForm"
+    },
+    {
+      "page": "src/pages/worker/report/index.tsx",
+      "call": "workerLogin(",
+      "label": "扫码报工页的**未登录就地登录**（工号 + PIN；与 /w/ 同一份表单）",
+      "requires_worker_session": false,
+      "case_ids": [
+        "BM-057"
       ]
     },
     {
