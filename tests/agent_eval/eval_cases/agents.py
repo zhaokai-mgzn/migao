@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: agents（源: cases/agents.yml，12 条）
+# 域: agents（源: cases/agents.yml，13 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -132,6 +132,24 @@ _CASE_AG_007 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── AG-009 [NORMAL] B 端工具面按意图裁剪（读面 ≤16 / 保底不被裁 / 关闭等价 / C 端不变）（源: cases/agents.yml）──
+_CASE_AG_009 = EvalCase(
+    id='AG-009',
+    legacy_id='',
+    title='B 端工具面按意图裁剪（读面 ≤16 / 保底不被裁 / 关闭等价 / C 端不变）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['B 端商家一轮：帮我查一下最近订单的物流到哪了'],
+    expectations=['order_query'],
+    data_checks=['裁剪开启时每轮绑定工具数 ≤ `TOOL_TRIM_MAX_READ`（默认 16）；改前现取 35~39（把上限调到 100 ⇒ 判据红）', '保底集合永不被裁：本轮 skill 的全部写工具 + nav_guide/knowledge_search/interact/validate_input/confirm_value + 上一轮用过的读工具（清空保底集合 ⇒ 判据红）', '`TOOL_TRIM_ENABLED=false` ⇒ B 端绑定集合与改前逐名相等；C 端（xiaobu）任何开关下逐名相等', '只裁 `read_only=True`：写工具集合前后相等；同一输入连跑两次结果逐字一致（含顺序）', '字符数棘轮：各 skill 的 prompt 字符数与工具 schema 字符数都下降（关闭裁剪 ⇒ 回落）'],
+    skip_reason='[backend-contract] 纯单测（backend/ai-agent-service/tests/test_tool_selection_trim.py）；不改工具实现与权限，只改「本轮暴露哪些」；真实误选面由人工集中跑一次手动 eval 清单（#4262 不自动派发）',
+    tags=['agents', 'tools', 'cost', 'regression'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── AG-010 [NORMAL] 定时任务（用户「预约」）服务端：三件套 fail-closed + 幂等 + 取消 + 到点投递只读（源: cases/agents.yml）──
 _CASE_AG_010 = EvalCase(
     id='AG-010',
@@ -233,6 +251,7 @@ CASES = (
     _CASE_AG_005,
     _CASE_AG_006,
     _CASE_AG_007,
+    _CASE_AG_009,
     _CASE_AG_010,
     _CASE_AG_011,
     _CASE_AG_012,
