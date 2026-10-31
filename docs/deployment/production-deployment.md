@@ -68,6 +68,47 @@ rollback.md 回滚（重新发布上一稳定版本）
 - 生产可观测性：SLS 采集 + 告警（CPU/内存/磁盘/5xx/健康检查）触达值班
 - 生产发布记录（发布日志/版本表）+ 季度恢复演练
 
+### 5.1 安全响应头（issue #8218 P1-08 / P1-09 —— 已落地的形态，改它之前先读这一节）
+
+| 面 | 谁发 | 带什么 | 备注 |
+|---|---|---|---|
+| `api.migaozn.com` | **Spring Security**（`backend/admin-api/src/main/java/com/migao/admin/security/SecurityConfig.java`） | HSTS `max-age=31536000; includeSubDomains` + `nosniff` + `X-Frame-Options: DENY` | 依赖 `backend/admin-api/src/main/resources/application.yml` 的 `server.forward-headers-strategy: native`（Tomcat RemoteIpValve；否则 nginx 终止 TLS 后应用认为请求是 http ⇒ HSTS **一个字都不发**，审计前的实际形态）。**不能选 `framework`**：它会剥离 `X-Forwarded-*` 请求头，而 `SameOriginOriginHeaderFilter` 直接读这些头 ⇒ 同源判定会翻成跨域（app 域写请求被 CORS 拦） |
+| `ai-api.migaozn.com` | **nginx**（`deploy/swas/nginx.conf` 的 ai-api server 段） | HSTS + `nosniff` | FastAPI 一个安全头都不发 |
+| `merchant.migaozn.com` / `migaozn.com` / `www` | **nginx**（admin-web server 段的 `location /`） | HSTS + `nosniff` | 含官网 `/download`；**有意不加 CSP**（Next.js App Router 内联 RSC 脚本，非 nonce 的最 CSP 会白屏） |
+| `app.migaozn.com` 的 `/`、`/w/`、`/b/`、`/b/report/`、`/terminal/` | **nginx**（各静态 location） | HSTS + `nosniff`；`/w/` 与 `/b/` 另有 **CSP** | 见下方「CSP 的刻意放宽」 |
+
+**红线**：`api.migaozn.com` 的 HSTS **只能由 Spring 发** —— nginx 再补一条 ⇒ 响应里出现两个 STS 头，
+按 RFC 6797 浏览器会**整条忽略**（等于把 HSTS 关掉）。判据 = `tests/unit_ci_workflows/test_prod_security_headers.py`
+（含「nginx 的 api server 段不得出现 `add_header … Strict-Transport-Security`」这条反向断言）。
+
+**CSP 的刻意放宽（照实登记，不是遗漏）**：`/b/`（bmini h5）的 `script-src` 含 `'unsafe-inline'`
+—— 它的 `frontend/bmini-app/src/index.html` 自带两段内联脚本（`window.TARO_ENV` 占位 + 响应式根字号，
+后者是 issue #5721 的修法，删掉字号只剩设计值 40%）。**重启条件**：把这两段搬成外部脚本
+（或加 build-time hash / nonce）后收紧到 `'self'`。`/`（C 端元元）与 admin-web **暂不加 CSP**，
+同一原因（Taro / Next 的内联脚本），**重启条件**同上。
+
+**线上判据**（只读，0/1/3 三态，**3 不得当 0 读**）= `deploy/scripts/prod-security-headers.sh`，
+挂在 `deploy-admin-api.yml` 的部署后探针位（该腿的 `on.push.paths` 同时覆盖 `backend/admin-api/**`
+与 `deploy/swas/**` ⇒ 改了任一面都会被它探到；⛔ 不新增 schedule）。
+
+### 5.2 短链 token：**有意取舍** + 日志侧脱敏（issue #8218 P1-10）
+
+**接受的取舍（有意，不是待修）**：报工 / 入库 / 加工单三种短码把 token 放在 URL query
+（`/b/?t=<token>`、`/w/?t=<token>`，由 `WorkerShortLinkController` / `InboundLabelShortLinkController` /
+`ProcessingOrderShortLinkController` 302 出来）。它同时出现在：浏览器历史、Referer、以及**任一**
+访问日志。代价面：纸上的二维码被拍照即可复用，且**改撤前一直有效**（token 不是一次性票据）。
+之所以接受：换一次性票据是**后端契约变更**（工人端 / 打印侧 / 扫码 SDK 全部要动），不在加固包内。
+**重启条件**：与 `POST /api/auth/qr/exchange` 同族的一次性票据方案落地时，改为一次性票据并删掉本节的取舍。
+
+**日志侧脱敏（已落地）**：`deploy/swas/nginx.conf` 用 `log_format migao_no_token` ——
+请求行记 `$request_method $uri $server_protocol`（**不含** query），且**不带** `$http_referer`
+⇒ token 在 access log 里**物理上不可能出现**（既不来自请求行、也不来自 Referer）。
+**每个 `listen 443` 的 server 块都必须用这个格式**（判据 = `tests/unit_ci_workflows/test_nginx_log_redaction.py`，
+新增 TLS 面忘了切 ⇒ 红）。代价：`?page=cut_calc` 这类非敏感 query 与 Referer 也不再进日志（诊断改走
+浏览器侧 / 应用侧日志）。
+**服务器侧复核（可复制）**：`docker compose exec -T nginx grep -c 't=' /var/log/nginx/access.log` ⇒ 期望 `0`
+（改前该命令会数出成片的 token）。
+
 ## 6. 与测试环境的差异提醒
 
 - **自动部署只在测试环境**：push main → 测试环境自动部署（快速迭代）；生产必须走受控发布

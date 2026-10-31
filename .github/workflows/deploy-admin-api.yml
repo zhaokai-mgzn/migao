@@ -512,6 +512,39 @@ jobs:
             exit "$rc"
           fi
 
+      # ══════════════════════════════════════════════════════════════════════════
+      # 线上**安全响应头**判据（issue #8218 P1-08 / P1-09）
+      #
+      # 为什么挂在**这一条**腿（而不是新开 schedule）：
+      #   · 本腿的 `on.push.paths` 同时覆盖 `backend/admin-api/**`（= P1-08 的
+      #     `server.forward-headers-strategy`）**与** `deploy/swas/**`（= P1-09 的 nginx.conf）
+      #     —— 见该 workflow 头部「只改配置也必须触发一次部署」那一段；而**应用配置的只有部署腿**
+      #     （`deploy.sh` 的 `cp nginx.conf` + reload）。⇒ 「改了哪一面就有哪一面的判据」对得上。
+      #   · 它是**部署后**探针（与本 job 上面那条 served-sha 断言同位置）⇒ 不会出现
+      #     「合并了就判红、而部署还没跑完」的假红。⛔ 不新增 schedule（铁律 10）。
+      #
+      # 判据本体只有一份 = `deploy/scripts/prod-security-headers.sh`（**只读**，0/1/3 三态）。
+      # 红证（改前线上读数，2026-10-31）：7 个面**全部**缺头（api 缺 STS；/w/ /b/ 连 nosniff 与 CSP
+      # 都没有）⇒ rc=1。绿 = 同一命令 rc=0（见该脚本输出的 `PROD-HEADERS-SUMMARY rc=0`）。
+      # 判据 / 接线守卫 = tests/unit_ci_workflows/test_prod_security_headers.py
+      # ══════════════════════════════════════════════════════════════════════════
+      - name: "Assert production security headers (HSTS / nosniff / CSP，issue #8218 P1-08/P1-09)"
+        if: always()
+        run: |
+          set -uo pipefail
+          if [ ! -f deploy/scripts/prod-security-headers.sh ]; then
+            echo "::error::判据本体 deploy/scripts/prod-security-headers.sh 不在检出里（安全头判据被拆掉）⇒ 视为无法判定，判红"
+            exit 1
+          fi
+          set +e
+          bash deploy/scripts/prod-security-headers.sh
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::线上安全响应头未达标（exit=${rc}）—— 1=确定缺头 / 3=无法判定（3 不得当 0 读）；复算：bash deploy/scripts/prod-security-headers.sh"
+            exit "$rc"
+          fi
+
       # schedule 兜底档的「没跑冒烟」必须**出声**（issue #6951 第 2 条判据）：
       # 冒烟 job 的新条件是 `github.event_name != 'schedule' || deployed == 'true'`（见下方 smoke-test）
       # ⇒ **schedule + 未发生实际同步**时，`Post-Deploy Smoke Test` 整段 skipped，

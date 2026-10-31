@@ -301,6 +301,35 @@ disk_used_mb() { df -Pk / | awk 'NR==2 {print int($3/1024)}'; }
 # 可用空间（MB）：**唯一一份**口径 —— 构建前置门槛与缓存回收的水位判定共用它（两处不许各写各的）。
 disk_free_mb() { df -Pk / | awk 'NR==2 {print int($4/1024)}'; }
 
+# ── 容器日志上界（issue #8218 P1-02）──────────────────────────────────────────────
+# 口径 = `deploy/swas/docker-compose.yml` 的 `x-logging` 锚点（max-size / max-file）。
+# 🔴 这两条常量**不是**第二个真值源：它们是**同一份口径的读数侧**，判据
+#    `tests/unit_ci_workflows/test_swas_container_runtime.py` 逐字比对两边（不一致即红）。
+LOG_CAP_MB=${LOG_CAP_MB:-50}
+LOG_MAX_FILES=${LOG_MAX_FILES:-3}
+
+#: 单容器日志上界（MB）= max-size × max-file（compose 的 json-file 轮转语义）
+log_cap_per_container_mb() { echo $((LOG_CAP_MB * LOG_MAX_FILES)); }
+
+#: 本 compose 项目**容器 json-file 日志的实际占用**（MB）+ 计入的容器数：`<mb> <count>`
+#: ⚠️ **只读**：只 `docker compose ps -q` + `docker inspect` + `du`，不删任何东西
+#:    （铁律 10：本读数不新增任何无人值守的删除动作）。
+#: ⚠️ 取不到（无 docker / 容器不是 json-file 驱动 / 无权限）⇒ 容器数与 MB 都照实给 0 ——
+#:    `0` 在这里的含义是「本机没数到这个项目的容器」，**不是**「日志占用为零」；
+#:    消费面（`::warning::` 门）只在**数到了容器**且超过上界时才响。
+container_log_footprint_mb() {
+  local total=0 count=0 cid path kb
+  for cid in $(docker compose ps -q 2>/dev/null || true); do
+    [ -n "$cid" ] || continue
+    path=$(docker inspect -f '{{.LogPath}}' "$cid" 2>/dev/null || true)
+    [ -n "$path" ] && [ -f "$path" ] || continue
+    kb=$(du -k "$path" 2>/dev/null | awk '{print $1}')
+    total=$((total + ${kb:-0}))
+    count=$((count + 1))
+  done
+  echo "$((total / 1024)) $count"
+}
+
 # ══════════════════════════════════════════════════════════════════════════
 # 构建缓存的**水位联动回收**（issue #6508）—— 只碰构建缓存，永不碰镜像/保留集
 #
@@ -1384,6 +1413,33 @@ if [ "${DISK_PCT_AFTER:-0}" -gt "$DISK_WARN_PCT" ]; then
   echo "     若持续高于阈值 ⇒ 说明单次增长 > 保留策略的回收量，需扩容或调大清理力度（人工判断）"
 fi
 report_rollback_point
+
+# ══════════════════════════════════════════════════════════════════════════
+# 2.8 磁盘与**容器日志**水位读数（issue #8218 P1-02）—— **只读**，不删任何东西
+#
+# 病：四个服务的 json-file 日志原先**无上限**（compose 无 `logging:` 段）⇒ 单机磁盘单调爬升；
+#     写满后四服务同时 502（`restart: unless-stopped` 救不了「写不进去」），而**没有任何读数**
+#     会先变红 —— 「日志到底涨到多少了」改前只能靠人上机器 `du`。
+# 修：compose 给每个服务 `max-size: 50m` / `max-file: 3`（见该文件的 `x-logging` 锚点）。
+# 本段把**实测占用**打进每次部署的日志（与上面磁盘水位同一形态），并与**上界总和**对账：
+#     越过上界 ⇒ 轮转没生效（`logging:` 被删 / docker 不认）⇒ 那是一次**具名**的告警，
+#     而不是等磁盘满了才发现。
+# 🔴 本段**只读**：不 prune、不 rm、不 truncate 日志文件（无人值守删除不安全 —— 铁律 10）。
+# 判据 = tests/unit_ci_workflows/test_swas_container_runtime.py（含「本段不得出现删除动作」）
+# ══════════════════════════════════════════════════════════════════════════
+echo "== 2.8 磁盘 / 容器日志水位读数（只读；issue #8218 P1-02）=="
+LOG_READING=$(container_log_footprint_mb || echo "0 0")
+LOG_FOOTPRINT_MB=${LOG_READING%% *}
+LOG_CONTAINER_COUNT=${LOG_READING##* }
+LOG_CAP_PER_CONTAINER_MB=$(log_cap_per_container_mb)
+LOG_CAP_TOTAL_MB=$((LOG_CAP_PER_CONTAINER_MB * LOG_CONTAINER_COUNT))
+echo "MIGAO-DISK-WATERMARK root_pct=$(disk_pct) root_free_mb=$(disk_free_mb) container_logs_mb=${LOG_FOOTPRINT_MB} containers=${LOG_CONTAINER_COUNT} log_cap_per_container_mb=${LOG_CAP_PER_CONTAINER_MB} cap_total_mb=${LOG_CAP_TOTAL_MB}"
+if [ "${LOG_CONTAINER_COUNT:-0}" -gt 0 ] && [ "${LOG_FOOTPRINT_MB:-0}" -gt "$LOG_CAP_TOTAL_MB" ]; then
+  echo "  ::warning::容器 json-file 日志实测 ${LOG_FOOTPRINT_MB}MB > 上界总和 ${LOG_CAP_TOTAL_MB}MB"
+  echo "     （= ${LOG_CAP_PER_CONTAINER_MB}MB × ${LOG_CONTAINER_COUNT} 个容器）⇒ **轮转没有生效**："
+  echo "     核对 deploy/swas/docker-compose.yml 的 x-logging（max-size=${LOG_CAP_MB}m / max-file=${LOG_MAX_FILES}）"
+  echo "     与 \`docker inspect <容器> --format '{{json .HostConfig.LogConfig}}'\`；日志无界增长会把磁盘写满 ⇒ 四服务 502。"
+fi
 
 echo "== 3. 健康检查（正式容器，最终判据；与蓝绿预验证**同一份**判据）=="
 HC_FAILED=0
