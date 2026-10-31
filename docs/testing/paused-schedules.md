@@ -88,6 +88,11 @@ sed -n '1,30p' .github/workflows/e2e-real.yml
 | 3 | **陈旧登记即红**：台账条目的腿已恢复 / 已删 / 已改名 | 恢复后忘销账 ⇒ 红 |
 | 5 | **复查新鲜度**：`review_due` 早于今天 ⇒ 红 | **过了 2026-12-31 没人复查 ⇒ 每个 PR 都会红**（停用不许永久静默） |
 | 8 | **文档接线**：本文件的锚（原因 / 替代腿 / 复查日期）与停用腿注释里的指针 | 删掉本节或删掉注释指针 ⇒ 红（否则又回到「注释里停了、无人知道」） |
+| 9 | **漂移审计的口径也改了**（`scripts/drift_audit.py::paused_finding_for`）：登记且未过复查日期 ⇒ 只出 note（不算漂移）；**过期 ⇒ `<wf>|paused-expired` 判红**（该 key 不在基线里） | 有人把过期登记当放行 ⇒ Drift Audit 红；有人把 `|paused` 重新塞回基线当放行 ⇒ 本文件判据红（**僵尸基线即红**） |
+
+`scripts/drift_audit_baseline.json` 里原有两条**放行**：`e2e-real.yml|paused` / `nightly-verification.yml|paused`
+—— 本包把两条都**销账**（基线只许缩短）。⇒ 停用从此只有一条路「不算漂移」：**本文件登记 + 复查日期未过**；
+「基线放行」这条路已经没有了。
 
 判据 = `tests/unit_ci_workflows/test_paused_schedule_registry.py`（`case_ids: MC-012`）；
 `tests/unit_ci_workflows/` 全量在 `./verify-all.sh gate` 里跑 ⇒ 「过期」在**下一次 PR** 就红。

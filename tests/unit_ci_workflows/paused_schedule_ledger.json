@@ -10,6 +10,7 @@
     "判不了「值班真的按文档复算了」——复查是人的动作；本判据只把「过了复查日期没人复查」变成红。",
     "停用形态只认 `# schedule:` / `# - cron:`（唯一出处 = drift_audit）；「改名成 .yml.disabled」这类停用不在射程内，两边口径一致。"
   ],
+  "_drift_wiring": "漂移审计（`scripts/drift_audit.py`）的 C6 心跳判据**改挂到本台账**（`load_paused_registry` / `paused_finding_for`，issue #8218 P1-03）：登记的腿且 `review_due` 未过 ⇒ 只出一行 note（**不算漂移**）；`review_due` 已过 ⇒ `<wf>|paused-expired` finding（该 key **不在**基线里 ⇒ 真红）；未登记 ⇒ 照旧 `<wf>|paused`。同时把 `scripts/drift_audit_baseline.json` 里原有的 `e2e-real.yml|paused` / `nightly-verification.yml|paused` 两条放行**销账**（`--prune-zeroed`，基线只许缩短）⇒ 「停用不算漂移」从此只有一条合法路径 = 本台账登记 + 复查日期未过；「基线放行」那条静默路径已删除（判据 = `tests/unit_ci_workflows/test_paused_schedule_registry.py::test_drift_baseline_carries_no_paused_allowance`，**僵尸基线即红**）。",
   "entries": [
     {
       "file": "nightly-verification.yml",

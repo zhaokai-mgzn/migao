@@ -430,3 +430,46 @@ def test_negative_control_unrelated_comment_edit_stays_green():
     workflows["nightly-verification.yml"] = src + "\n# 与本判据无关的一句话（负控）\n"
     v = _judge_from(workflows=workflows)
     assert not v, "无关注释不该判红：\n- " + "\n- ".join(v)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 与漂移审计的接线（issue #8218 P1-03：停用不许再靠「基线放行」静默）
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def test_drift_baseline_carries_no_paused_allowance():
+    """**僵尸基线即红**：停用再回到 `|paused` 基线放行 ⇒ 又变回「没人看得见」。"""
+    baseline = json.loads((REPO / "scripts" / "drift_audit_baseline.json").read_text(encoding="utf-8"))
+    heartbeat = (baseline.get("entries") or {}).get("heartbeat") or {}
+    zombies = sorted(k for k in heartbeat if "|paused" in k)
+    assert not zombies, (
+        "drift 基线的 heartbeat 仍有 `|paused` 放行条目：" + ", ".join(zombies)
+        + " ⇒ 停用会重新变成静默；正确形态 = 登记进 paused_schedule_ledger.json（drift 只出 note），"
+        "过期由 `<wf>|paused-expired` 判红"
+    )
+
+
+def test_drift_heartbeat_decision_is_registration_aware():
+    """单一判定（`drift_audit.paused_finding_for`）三态：未登记 / 已登记未过期 / 已过期（缺日期 ⇒ fail-closed）。"""
+    sys.path.insert(0, str(REPO / "scripts"))
+    import drift_audit  # noqa: PLC0415  # 复用漂移审计的判定，不另写一份
+
+    today = date(2026, 10, 31)
+    entry = {"reason_issue": 2957, "review_due": "2026-12-31"}
+    unregistered = drift_audit.paused_finding_for("x.yml", None, today)
+    assert unregistered and unregistered[0] == "x.yml|paused", f"未登记的停用腿必须判漂移：{unregistered}"
+    assert drift_audit.paused_finding_for("x.yml", entry, today) is None, (
+        "已登记且复查日期未过却仍判漂移（那复查日期就白写了）")
+    expired = drift_audit.paused_finding_for("x.yml", entry, date(2027, 1, 1))
+    assert expired and expired[0] == "x.yml|paused-expired", f"过了复查日期必须判红：{expired}"
+    missing_due = drift_audit.paused_finding_for("x.yml", {"reason_issue": 2957}, today)
+    assert missing_due and missing_due[0] == "x.yml|paused-expired", (
+        "缺复查日期时必须 fail-closed 判红（不许当成「永久登记」）")
+
+
+def test_heartbeat_really_consults_the_registry():
+    """接线（§28.2：判据本体绿 ≠ 接线在）：`check_heartbeat` 必须真的调那唯一判定。"""
+    src = (REPO / "scripts" / "drift_audit.py").read_text(encoding="utf-8")
+    assert "paused_finding_for(name, registry.get(name), today)" in src, (
+        "check_heartbeat 没有接线到 paused_finding_for（登记台账被旁路 ⇒ 停用又能静默漂移）")
+    assert "load_paused_registry(a.repo)" in src, "check_heartbeat 没有读停用台账"
