@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: bmini（源: cases/bmini.yml，54 条）
+# 域: bmini（源: cases/bmini.yml，56 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -978,6 +978,42 @@ _CASE_BM_057 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── BM-058 [NORMAL] 微信「扫普通链接二维码打开小程序」（A 档）- 短链 JSON 解析换 token、q 四种落地与解码边界、校验文件承接（源: cases/bmini.yml）──
+_CASE_BM_058 = EvalCase(
+    id='BM-058',
+    legacy_id='',
+    title='微信「扫普通链接二维码打开小程序」（A 档）- 短链 JSON 解析换 token、q 四种落地与解码边界、校验文件承接',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工人在微信里用「扫一扫」扫纸上的 https://app.migaozn.com/s/<短码> ⇒ 微信按后台规则**直接打开小程序** pages/worker/report/index（整条链接在 getEnterOptionsSync().query.q，URL-encoded）；小程序不跟随 302 ⇒ 页面先调 GET /s/<短码>/json 拿 token，再走既有报工 / 就地登录流程'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**JSON 面的形状与不泄露**（backend/admin-api/src/test/java/com/migao/admin/controller/WorkerShortLinkControllerTest.java）：GET /s/{短码}/json ⇒ 200 `{reportPath, token}`，键集**恰好**这两个（不含工人 / 工序 / 订单 / 价格 / 租户参数，也不查企业编码）；未知 ⇒ 404 `{error:not_found}`、已撤销 ⇒ 410 `{error:revoked}`；手输抄错形态（小写 / O→0）同样可用；`/s/{32位token}/json` ⇒ 404 且一次库都不查。', '判据 2·**印刷品红线：旧路径任何 Accept 下仍是 302**（同文件）：GET /s/{短码} 在 `Accept: text/html`、`Accept: application/json`、**无 Accept** 三种姿态下都 302 到 `/b/report/?t=…` —— 落点因此选显式子路径而**不是**内容协商（不带 Accept 的扫码工具不会被切成 JSON 文本）。', '判据 3·**A 档端侧四种落地**（frontend/bmini-app/tests/worker-report-wechat-qr.test.tsx）：q=/s/<短码> ⇒ 先 JSON 解析（只一次）再以 **token** 解析一屏（不是短码）；未登录 ⇒ 登录**前**就解析（无效码当场说清）、登录后接着报这个 token；q=…/b/report/?t= ⇒ 不调 JSON、直接用 t；页面参数 t 与无码直进行为不变（无码不发请求、不导航）；未知/撤销 ⇒ 明确错误上屏、只解析一次、不出报工入口、死码不跨登录带走；JSON 面读不到 ⇒ 退回「短码原样交给工人扫码端点」。', '判据 4·**解码边界**（同文件）：q 里的链接 URL-encoded（中文 / 百分号 / `+` / 重复参数）都能取出同一个短码；非法百分号编码**不抛**（读参数不许变成白屏）；重复 t 取第一个；`/s/` 链接同时带 t 参数时以 t 为准（不再申请 JSON 解析）。', '判据 5·**客户端请求形状**（frontend/bmini-app/tests/worker-short-link-service.test.ts）：GET …/s/<短码>/json、`Accept: application/json`、**不带**商家凭据（短码在纸上，这一跳不是身份入口）；404/410 不抛、状态码原样带回；200 无 token ⇒ 当成读不到（不把空 token 交给报工解析）。', '判据 6·**校验文件承接**（tests/unit_ci_workflows/test_wechat_verify_route.py）：`app.migaozn.com` 段有**唯一**一条窄正则 location（`^/[^/]+\\.txt$` + `try_files $uri =404`）⇒ 根下 .txt 缺失 **404**、绝不回落 index.html；不劫持 /b/ /w/ /terminal/ 与根级 SPA 路由；`deploy.sh` 的落位段**真跑**：只拷 *.txt、只增/覆盖、幂等、父目录 index.html 哈希不变、源空/缺目录时出声且退出 0；仓库不许预置假校验文件（README 写清「原样放入、别改名」）。'],
+    skip_reason='[backend-contract] 确定性前后端判据（Java MockMvc + jest + pytest 的 nginx 语义模拟/沙箱真跑），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'worker', 'qr', 'wechat', 'short-link', 'nginx'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── BM-059 [NORMAL] 工人菜单页面键闭词表：bmini 的 WORKER_MENU_KEYS 必须是后端 WorkerPages 常量的子集（只许缩小，不许发明）（源: cases/bmini.yml）──
+_CASE_BM_059 = EvalCase(
+    id='BM-059',
+    legacy_id='',
+    title='工人菜单页面键闭词表：bmini 的 WORKER_MENU_KEYS 必须是后端 WorkerPages 常量的子集（只许缩小，不许发明）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家后台「设置工人端菜单」勾了某项而工人端没出现 / 后端改了页面键而小程序没跟上：两处各自测试都绿，没有任何判据会红'],
+    expectations=['direct_reply'],
+    data_checks=['判据（frontend/bmini-app/tests/worker-menu-single-source.test.ts，**现取**两端源码、不做文本快照）：bmini `src/utils/workerMenu.ts` 的 `WORKER_MENU_KEYS` 每个值都必须在 `backend/admin-api/src/main/java/com/migao/admin/worker/WorkerPages.java` 的 `public static final String <键名> = <键值>;` 常量值里**逐字**找到（前端**不许发明**后端没有的键）；键值唯一（两个菜单名同一个键会互相影响显隐）；后端闭词表解析为空 / bmini 键集为空 ⇒ fail-closed；判别力自证 = 发明键（kitchen）/ 重复键 / 后端撤键（to_ship）各自判红。方向 = **只许缩小**：后端新增键**不**强制小程序加菜单（后端键还服务 /w/ 与工人档案配置）。'],
+    skip_reason='[backend-contract] 跨语言静态同源判据（jest 现取 Java 常量 + TS 常量），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'worker', 'worker-menu', 'single-source', 'cross-language'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_BM_001,
     _CASE_BM_002,
@@ -1033,4 +1069,6 @@ CASES = (
     _CASE_BM_055,
     _CASE_BM_056,
     _CASE_BM_057,
+    _CASE_BM_058,
+    _CASE_BM_059,
 )

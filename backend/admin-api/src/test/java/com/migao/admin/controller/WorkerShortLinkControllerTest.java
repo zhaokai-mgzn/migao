@@ -1,4 +1,4 @@
-// case_ids: PG-018, BM-006, DF-017, BM-045
+// case_ids: PG-018, BM-006, DF-017, BM-045, BM-058
 package com.migao.admin.controller;
 
 import com.migao.admin.entity.ProcessingSetPartToken;
@@ -15,6 +15,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -27,6 +28,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -192,5 +194,111 @@ class WorkerShortLinkControllerTest {
                 .andExpect(status().isFound())
                 .andExpect(header().string("Location", "/b/report/?t=" + PART_CODE + "&tenant_id=7&tenant_code=migao"));
         verify(workerShortLinkService).tenantCodeOf(7L);
+    }
+
+    // ────────────────────────────────────────────── ④ JSON 解析（issue #8196 A 档）
+
+    /**
+     * 微信「扫普通链接二维码打开小程序」的 A 档：小程序**不跟随 HTTP 302**
+     * （页面拿到的是 EnterOptions 里的 `q` = 完整链接）⇒ 同一个短码必须还有一份**显式**的
+     * JSON 解析面，否则小程序只能看到一张 302 空响应。
+     *
+     * <p>落点选**显式子路径** `/s/{短码}/json` 而**不是**内容协商（`Accept: application/json`）——
+     * 理由见 {@link WorkerShortLinkController#resolveJson}（印刷品红线：不带 Accept / 带 `*&#47;*` 的
+     * 扫码工具会在内容协商下从 302 变成 JSON）。本组判据把这条决策钉死：JSON 面在**自己的路径**上，
+     * 浏览器姿态（`Accept: text/html` 或干脆带 `Accept: application/json`）打到 `GET /s/{短码}` 仍是 302。</p>
+     */
+    @Test
+    @DisplayName("🔴 JSON 解析面：GET /s/{短码}/json ⇒ 200 + reportPath/token（小程序 A 档用，改前 404 必红）")
+    void jsonResolveReturnsReportPathAndToken() throws Exception {
+        when(workerShortLinkService.resolve(anyString())).thenReturn(row(PART_CODE, SHORT_CODE));
+
+        mockMvc.perform(get("/s/" + SHORT_CODE + "/json"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.reportPath").value("/b/report/"))
+                .andExpect(jsonPath("$.token").value(PART_CODE))
+                // 🔴 不泄露超出 302 目标的信息：**只有** 302 的 Location 里那两个可用字段
+                // （报告路径 + token）；工人身份 / 工序 / 订单 / 价格一律不出现。
+                .andExpect(jsonPath("$.tenantId").doesNotExist())
+                .andExpect(jsonPath("$.tenantCode").doesNotExist())
+                .andExpect(jsonPath("$.workerId").doesNotExist())
+                .andExpect(jsonPath("$.orderNo").doesNotExist())
+                .andExpect(jsonPath("$.operation").doesNotExist())
+                .andExpect(header().doesNotExist("Location"));
+        // JSON 面**不查**企业编码（那是 302 才需要的登录预填参数）⇒ 少一次库、也少一项可泄露面
+        verify(workerShortLinkService, never()).tenantCodeOf(any());
+    }
+
+    @Test
+    @DisplayName("🔴 印刷品红线：`GET /s/{短码}` **不因 Accept** 变成 JSON —— 浏览器与扫码工具永远拿到 302")
+    void browserPathStays302WhateverTheAcceptHeader() throws Exception {
+        when(workerShortLinkService.resolve(anyString())).thenReturn(row(PART_CODE, SHORT_CODE));
+        when(workerShortLinkService.tenantCodeOf(7L)).thenReturn("migao");
+
+        String expected = "/b/report/?t=" + PART_CODE + "&tenant_id=7&tenant_code=migao";
+        // 浏览器姿态
+        mockMvc.perform(get("/s/" + SHORT_CODE).header("Accept", "text/html,application/xhtml+xml"))
+                .andExpect(status().isFound())
+                .andExpect(header().string("Location", expected));
+        // 即使客户端明说想要 JSON，旧的短码路径也**不**换语义（否则不带/带 */* 的扫码工具会静默失联）
+        mockMvc.perform(get("/s/" + SHORT_CODE).header("Accept", MediaType.APPLICATION_JSON_VALUE))
+                .andExpect(status().isFound())
+                .andExpect(header().string("Location", expected));
+        // 没有 Accept 头（部分扫码工具）同样是 302
+        mockMvc.perform(get("/s/" + SHORT_CODE))
+                .andExpect(status().isFound())
+                .andExpect(header().string("Location", expected));
+    }
+
+    @Test
+    @DisplayName("未知短码 ⇒ JSON 面 404（可判读的 error 体，且不含任何 token）")
+    void jsonResolveUnknownIs404() throws Exception {
+        when(workerShortLinkService.resolve(anyString())).thenReturn(null);
+
+        mockMvc.perform(get("/s/ZZZZZZZZ/json"))
+                .andExpect(status().isNotFound())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.error").value("not_found"))
+                .andExpect(jsonPath("$.token").doesNotExist())
+                .andExpect(jsonPath("$.reportPath").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("🔴 已撤销（token 置 NULL）⇒ JSON 面 **410**（不是 404、不落任何可用的 token）")
+    void jsonResolveRevokedIs410() throws Exception {
+        when(workerShortLinkService.resolve(anyString())).thenReturn(row(null, SHORT_CODE));
+
+        mockMvc.perform(get("/s/" + SHORT_CODE + "/json"))
+                .andExpect(status().isGone())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.error").value("revoked"))
+                .andExpect(jsonPath("$.token").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("手输抄错形态在 JSON 面同样归一（小写 / O→0）—— 归一化仍只有服务层一份")
+    void jsonResolveNormalizesHumanTypedForms() throws Exception {
+        ProcessingSetPartTokenMapper mapper = mock(ProcessingSetPartTokenMapper.class);
+        when(mapper.selectByShortCode(CODE_ZERO)).thenReturn(row(PART_CODE, CODE_ZERO));
+        MockMvc real = realMvc(mapper);
+
+        real.perform(get("/s/7k3m9qp0/json"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").value(PART_CODE));
+        real.perform(get("/s/7K3M9QPO/json"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").value(PART_CODE));
+    }
+
+    @Test
+    @DisplayName("JSON 面**只**认短码：喂 32 位 token 进去 ⇒ 404（token 解析语义一字未扩）")
+    void jsonResolveDoesNotAcceptRawToken() throws Exception {
+        ProcessingSetPartTokenMapper mapper = mock(ProcessingSetPartTokenMapper.class);
+        MockMvc real = realMvc(mapper);
+
+        real.perform(get("/s/" + PART_CODE + "/json"))
+                .andExpect(status().isNotFound());
+        verify(mapper, never()).selectByShortCode(anyString());
     }
 }

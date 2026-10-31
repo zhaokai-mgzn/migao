@@ -846,7 +846,7 @@
 真值: auth.qr-login-ticket
 溯源: 2026-10-26 新增（issue #7825）：现场 = 顶栏「手机端」二维码只是裸链接（不带登录交接），换浏览器 / App 或本机存储被清后每次扫码都要重新输密码。冻结口径 = 一次性票据（JWT 类型 qr_login、120 秒、兑换即吊销 jti）+ 手机端兑换后与密码登录同一套 30 天会话 + 签发失败降级裸入口 + 启动探针（续期失败原因本地可读）。 ｜ tags: auth, session, qr-login, bmini, admin-web
 
-## B 端小程序域（54 case）
+## B 端小程序域（56 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -1626,6 +1626,31 @@
 ```
 真值: inbound-order-flow.worker-narrow-surface
 溯源: 2026-10-31 新增（issue #8194）：改前扫码报工页未登录把工人**踢到三角色登录页**（表单的标题 / 副标题 / 字段（还多一格「设备标签」）/ 配色都与终端 /w/ 不同，手里的码还要绕一圈才接着报）；改后未登录在报工页**就地**渲染与 /w/ 逐字一致的共享组件 WorkerLoginForm，登录成功留在本页继续那个码（无码回工人首页）。工人首页的「去登录工人身份」也改落同一份组件（pages/worker/login/index 重写为壳）。三角色登录页与 ?tab=worker **一字未动**（保留为常规入口）。卡片形态与 `/w/` 的 `.wh5-card` **同值**（padding 16 CSS px / 圆角 16 / 间距 12 / 同一条阴影，白卡落在 `#faf7f2` 页面底上）；未登录态**不渲染报工页页头**（用户同日裁定「不一致，需要收口」——`/w/` 的登录屏只有一张卡片，两层标题会读成两个页面）。视觉对比（/b/ vs /w/，390×844）留给多模态验收（migao-dev-flow §15.7）。 ｜ tags: bmini, worker, login, parity, h5
+
+### BM-058. 微信「扫普通链接二维码打开小程序」（A 档）- 短链 JSON 解析换 token、q 四种落地与解码边界、校验文件承接 🔵
+```
+你: 工人在微信里用「扫一扫」扫纸上的 https://app.migaozn.com/s/<短码> ⇒ 微信按后台规则**直接打开小程序** pages/worker/report/index（整条链接在 getEnterOptionsSync().query.q，URL-encoded）；小程序不跟随 302 ⇒ 页面先调 GET /s/<短码>/json 拿 token，再走既有报工 / 就地登录流程
+期望: direct_reply
+数据: 判据 1·**JSON 面的形状与不泄露**（backend/admin-api/src/test/java/com/migao/admin/controller/WorkerShortLinkControllerTest.java）：GET /s/{短码}/json ⇒ 200 `{reportPath, token}`，键集**恰好**这两个（不含工人 / 工序 / 订单 / 价格 / 租户参数，也不查企业编码）；未知 ⇒ 404 `{error:not_found}`、已撤销 ⇒ 410 `{error:revoked}`；手输抄错形态（小写 / O→0）同样可用；`/s/{32位token}/json` ⇒ 404 且一次库都不查。
+数据: 判据 2·**印刷品红线：旧路径任何 Accept 下仍是 302**（同文件）：GET /s/{短码} 在 `Accept: text/html`、`Accept: application/json`、**无 Accept** 三种姿态下都 302 到 `/b/report/?t=…` —— 落点因此选显式子路径而**不是**内容协商（不带 Accept 的扫码工具不会被切成 JSON 文本）。
+数据: 判据 3·**A 档端侧四种落地**（frontend/bmini-app/tests/worker-report-wechat-qr.test.tsx）：q=/s/<短码> ⇒ 先 JSON 解析（只一次）再以 **token** 解析一屏（不是短码）；未登录 ⇒ 登录**前**就解析（无效码当场说清）、登录后接着报这个 token；q=…/b/report/?t= ⇒ 不调 JSON、直接用 t；页面参数 t 与无码直进行为不变（无码不发请求、不导航）；未知/撤销 ⇒ 明确错误上屏、只解析一次、不出报工入口、死码不跨登录带走；JSON 面读不到 ⇒ 退回「短码原样交给工人扫码端点」。
+数据: 判据 4·**解码边界**（同文件）：q 里的链接 URL-encoded（中文 / 百分号 / `+` / 重复参数）都能取出同一个短码；非法百分号编码**不抛**（读参数不许变成白屏）；重复 t 取第一个；`/s/` 链接同时带 t 参数时以 t 为准（不再申请 JSON 解析）。
+数据: 判据 5·**客户端请求形状**（frontend/bmini-app/tests/worker-short-link-service.test.ts）：GET …/s/<短码>/json、`Accept: application/json`、**不带**商家凭据（短码在纸上，这一跳不是身份入口）；404/410 不抛、状态码原样带回；200 无 token ⇒ 当成读不到（不把空 token 交给报工解析）。
+数据: 判据 6·**校验文件承接**（tests/unit_ci_workflows/test_wechat_verify_route.py）：`app.migaozn.com` 段有**唯一**一条窄正则 location（`^/[^/]+\.txt$` + `try_files $uri =404`）⇒ 根下 .txt 缺失 **404**、绝不回落 index.html；不劫持 /b/ /w/ /terminal/ 与根级 SPA 路由；`deploy.sh` 的落位段**真跑**：只拷 *.txt、只增/覆盖、幂等、父目录 index.html 哈希不变、源空/缺目录时出声且退出 0；仓库不许预置假校验文件（README 写清「原样放入、别改名」）。
+跳过: [backend-contract] 确定性前后端判据（Java MockMvc + jest + pytest 的 nginx 语义模拟/沙箱真跑），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: processing-manage.scan-report-landing-path, processing-manage.wechat-qr-a-open
+溯源: 2026-10-31 新增（issue #8196）：A 档「扫普通链接二维码打开小程序」的**仓库侧**。小程序不能跟随 302 ⇒ 新增显式 JSON 面 `GET /s/{短码}/json`（旧 `/s/` 任何 Accept 仍 302，已印出去的码不受影响）；报工页从 `q` 取短码→token（未登录就地登录后继续）；微信校验文件的落位（`deploy/swas/wechat-verify/` + `deploy.sh` 幂等拷贝 + nginx 根下 `.txt` 显式面）。用户侧的 appid / 上传私钥 / 后台规则 / 提审未做 ⇒ **部分交付**（PR 不写关闭词）。 ｜ tags: bmini, worker, qr, wechat, short-link, nginx
+
+### BM-059. 工人菜单页面键闭词表：bmini 的 WORKER_MENU_KEYS 必须是后端 WorkerPages 常量的子集（只许缩小，不许发明） 🔵
+```
+你: 商家后台「设置工人端菜单」勾了某项而工人端没出现 / 后端改了页面键而小程序没跟上：两处各自测试都绿，没有任何判据会红
+期望: direct_reply
+数据: 判据（frontend/bmini-app/tests/worker-menu-single-source.test.ts，**现取**两端源码、不做文本快照）：bmini `src/utils/workerMenu.ts` 的 `WORKER_MENU_KEYS` 每个值都必须在 `backend/admin-api/src/main/java/com/migao/admin/worker/WorkerPages.java` 的 `public static final String <键名> = <键值>;` 常量值里**逐字**找到（前端**不许发明**后端没有的键）；键值唯一（两个菜单名同一个键会互相影响显隐）；后端闭词表解析为空 / bmini 键集为空 ⇒ fail-closed；判别力自证 = 发明键（kitchen）/ 重复键 / 后端撤键（to_ship）各自判红。方向 = **只许缩小**：后端新增键**不**强制小程序加菜单（后端键还服务 /w/ 与工人档案配置）。
+跳过: [backend-contract] 跨语言静态同源判据（jest 现取 Java 常量 + TS 常量），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: processing-manage.worker-menu-pages
+溯源: 2026-10-31 新增（issue #8196 目标 ⑤）：收口「工人菜单有第二份映射」—— bmini 把后端页面键字面量抄了一份（WORKER_MENU_KEYS），两端之间原先**没有判据**（后端加键 / 前端拼错都不会红）。新增子集守卫（只许缩小）；菜单的标签与路由仍只在 bmini 一份（后端只下发可见页面键集合），故不另造标签映射。 ｜ tags: bmini, worker, worker-menu, single-source, cross-language
 
 ## 分类域（3 case）
 
@@ -3919,7 +3944,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（168 case）
+## 杂项域（169 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -6509,6 +6534,18 @@
 跳过: [backend-contract] 静态结构 + 沙箱真跑判据（零网络、零云调用、不碰真实静态根）由 tests/unit_ci_workflows/test_terminal_release_leg.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-31 新增（issue #8195）：交付 = ① nginx 的 `/terminal` 归一 + `/terminal/` 纯静态下载面 ② 官网 `(corporate)/download` 下载页 + nav/footer/sitemap 入口 + next rewrites 同源转发 ③ `deploy/terminal-dist/Dockerfile` + `deploy/scripts/terminal-publish-ci.sh`（prepare / publish）+ `deploy/swas/terminal-publish-remote.sh` + `.github/workflows/terminal-publish.yml`（只有 workflow_dispatch）④ `docs/deployment/terminal-release.md` ⑤ 判据 = tests/unit_ci_workflows/test_terminal_release_leg.py（含注入式红证）+ test_public_code_spaces_are_disjoint.py 的 `/terminal` 归属登记与两条红证。取号 MC-122（python3 scripts/next_case_id.py MC 现取 main 001-120 + 在飞 PR 面 ⇒ 返回 MC-122）。⚠️ 未闭合（照实登记）：终端仓的 Release 自动出包（terminal#12）与 `secrets.TERMINAL_REPO_TOKEN`（人工前置）不在本用例射程；真实发布与 served 断言由 workflow 在线上跑。 ｜ tags: ci, nginx, terminal, publish-leg, no-spa-fallback, idempotent, red-proof
+
+### MC-125. 微信「扫普通链接二维码打开小程序」校验文件（issue #8196）：nginx 根下 .txt 是显式静态面（缺失 404、不回落 SPA、只吃单段），deploy.sh 幂等只拷 *.txt 到静态根根下（只增/覆盖、父目录 index.html 哈希不变、跳过要出声） 🔵
+```
+你: 微信后台要求把生成的根下 `<名字>.txt` 放到 https://app.migaozn.com/<名字>.txt；仓库侧要能承接这个文件，且文件缺失时不能伪装成「已就位」
+期望: direct_reply
+数据: **nginx 面（会红）**：`app.migaozn.com` 的 443 段必须有**唯一**一条窄正则 location（`^/[^/]+\.txt$`，`try_files $uri =404`，无 proxy / 无 rewrite）：根下 .txt 存在 ⇒ 200 该文件；**缺失 ⇒ 404**（绝不回落 `location /` 的 `index.html` —— 回落就是 HTTP 200 的一页 HTML，与「内容对不上」无法区分）；该正则只匹配根下单段 ⇒ `/b/…` 仍回落 `b/index.html`、`/w/…` 与 `/terminal/…` 不被劫持、根级 SPA 路由仍是 `index.html`。`location /` 的 SPA fallback 必须原样保留（404 是新面带来的，不是把全站改成 404）。判据 = **真解析 + 真模拟**（正则 location 先于前缀 + 前缀最长者 + try_files + index），不是文本匹配；三种变异（删 location / 把 `=404` 换成 `/index.html` / 把正则放宽成 `^/.*\.txt$`）各自判红。
+数据: **落位拷贝语义（真跑 deploy.sh 的 `# >>> wechat-verify` 段，会红）**：只拷 `*.txt`（非 txt 不落盘）；**只增/覆盖**，静态根里别的文件（`index.html` / `js/` / `b/` / 已有 `keep.txt`）逐字节不变；**幂等**（连跑两次快照逐字节一致）；同名以源为准；源目录为空 / 源目录不存在 / 静态根不存在 ⇒ 退出码 **0** 且**出声**（不拖垮部署）；🔴 **默认源 = `src/deploy/swas/wechat-verify`**（线上配置包解出来的源码树；该目录在 C′ 构建后被删 ⇒ 段必须放在取配置之后、构建之前，否则永远「跳过」= 静默不落位）；源码层红线 = 该段不得出现 `rm` / `rsync` / `mv` / `--delete` / `find`。
+数据: **仓库不许编文件名/内容（但真文件必须能提交）**：部署只从**仓库源码包**取文件 ⇒ 用户从微信后台下载的真 `*.txt` 可以入库；判据禁的是**伪造 / 占位**（文件名含 `example/sample/…`、内容含 `TODO/PLACEHOLDER/…`、空文件）。README 必须写清「原样放进来、别改名/改内容」、首次部署要跑第二次、以及部署后的三条 `curl` 自证（内容 diff / `content-type` / 缺失 404）。
+数据: **类级不变式同步**：`app` 段「不出现非前缀 location」的两条守卫（tests/unit_ci_workflows/test_bmini_h5_hosting.py / test_terminal_release_leg.py）改为**唯一白名单**（只允许本条 `.txt` 面）；其余任何正则 location 仍判红。
+跳过: [backend-contract] 静态结构 + 沙箱真跑判据（零网络、零云调用、不碰真实静态根）由 tests/unit_ci_workflows/test_wechat_verify_route.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8196）：微信「扫普通链接二维码打开小程序」的**校验文件承接**。交付 = ① `deploy/swas/wechat-verify/README.md`（承接位，不预置文件）② `deploy/swas/deploy.sh` 的 1.3.1 段（在**取配置之后、C′ 构建之前**：源码树 `src/` 只在那时存在；幂等只拷 *.txt 到静态根根下）③ `deploy/swas/nginx.conf` 的根下 `.txt` 显式面（缺失 404、不回落 SPA）④ 判据 tests/unit_ci_workflows/test_wechat_verify_route.py（nginx 语义模拟 + 真跑拷贝段 + 变异红证）⑤ 两条「无正则 location」类级守卫的唯一白名单。取号 MC-125（python3 scripts/next_case_id.py MC 现取 main 001-122 + 在飞 PR #8214 的 123-124 ⇒ 返回 MC-125）。⚠️ 未闭合：微信后台生成的真实文件名/内容与真机扫码属用户侧。🔴 自查改判：早先那版判据写「本目录不许出现任何 .txt」，会把用户唯一的合法路径（提交真文件）也堵死 —— 现改为只禁伪造/占位，并把「真文件可提交」写进 README。 ｜ tags: ci, nginx, wechat, static-root, no-spa-fallback, idempotent, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -13888,13 +13925,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：936（活跃 152，跳过 784）
-- tier 分布：smoke 15 / normal 864 / adversarial 33
+- 用例总数：939（活跃 152，跳过 787）
+- tier 分布：smoke 15 / normal 867 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
 - 登录认证域：14
-- B 端小程序域：54
+- B 端小程序域：56
 - 分类域：3
 - 对话边界域：53
 - 跨域：3
@@ -13904,7 +13941,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：168
+- 杂项域：169
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：74
@@ -14123,6 +14160,7 @@
 - MC-120: 页面动作登记表 → 步骤级教学（F6 / P2-1，承接 #5989）：how_to 命中逐字返回登记表、未登记如实说没有步骤级指引
 - MC-121: 四域共用一张 Let's Encrypt 证书的自动续期与到期判红（issue #8201）：续期机制在**宿主 cron** 但已连天失败且无告警 ⇒ 到期判据（0/1/3）+ 一次性修复 runbook + cron 加固
 - MC-122: 观星台终端正式发布链路（issue #8195）：/terminal/ 是纯静态下载面（缺失文件必须 404、不得回落 SPA、不限流、MIME 可判），官网 /download 有下载页，发布腿把终端仓 Release 的 exe/apk 幂等落到静态根并自证「线上字节 == 本地载荷」
+- MC-125: 微信「扫普通链接二维码打开小程序」校验文件（issue #8196）：nginx 根下 .txt 是显式静态面（缺失 404、不回落 SPA、只吃单段），deploy.sh 幂等只拷 *.txt 到静态根根下（只增/覆盖、父目录 index.html 哈希不变、跳过要出声）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

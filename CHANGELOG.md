@@ -5,6 +5,28 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 微信里扫纸上的码 ⇒ **直接打开小程序报工页**（A 档 + 校验文件承接）（2026-10-31，issue #8196）
+
+- **改前**：纸上的码 `https://app.migaozn.com/s/<短码>` 在微信里扫只会打开浏览器（靠服务端 302）；
+  小程序**不跟随 302** ⇒ 即便配了「扫普通链接二维码打开小程序」，页面手里也只有短码、换不到 token
+  （扫码后停在报工页、报工按钮一直不出来，且没有任何东西会变红）。
+- **改后**：
+  - 服务端新增**显式** JSON 解析面 `GET /s/<短码>/json` ⇒ `{reportPath, token}`（未知 404 / 已撤销 410；
+    旧 `/s/<短码>` 在**任何** Accept 下仍是 302 —— 已印出去的码不换、扫码工具不受影响）。
+  - 报工页按微信给的 `q` 分流：`q=/s/<短码>` ⇒ 先 JSON 换 token；`q=…/b/report/?t=<token>` ⇒ 直接用 `t`；
+    页面参数 `t` / 无码行为不变。未知/撤销 ⇒ **明确错误**、不重试；JSON 面读不到 ⇒ 退回短码直递
+    工人扫码端点（旧后端上也照常能报工）。未登录仍**就地登录**，登录后接着报手里的码。
+  - 微信校验文件承接：`deploy/swas/wechat-verify/`（用户原样放入）+ `deploy.sh` 幂等只拷 `*.txt` 到
+    静态根根下 + nginx 根下 `.txt` 显式面（缺失 **404**、绝不回落 SPA 页）。
+  - 工人菜单页面键收口：bmini 的键集必须是后端 `WorkerPages` 常量的**子集**（前端不许发明后端没有的键）。
+- **判据**：`frontend/bmini-app/tests/worker-report-wechat-qr.test.tsx`（4 类落地 + 解码边界）·
+  `frontend/bmini-app/tests/worker-short-link-service.test.ts` ·
+  `backend/admin-api/src/test/java/com/migao/admin/controller/WorkerShortLinkControllerTest.java`（JSON 面 + 印刷品红线）·
+  `tests/unit_ci_workflows/test_wechat_verify_route.py`（nginx 语义模拟 + 落位段真跑）·
+  `frontend/bmini-app/tests/worker-menu-single-source.test.ts`。
+- ⚠️ **用户侧未做**：微信 appid / 上传私钥 / 后台二维码规则 / 提审发布 / 服务器域名白名单 / 真机扫码
+  （步骤见 `docs/deployment/wechat-mini-program-qr.md`）。
+
 ### 经营日报条目多一个「问黄金策」：点一下就把这条交给 AI 处理（2026-10-31，issue #8236）
 
 - **改前**：简报条目只有「一键直达」箭头（跳后台页面），**建议 / 风险类条目根本没有 link** —— 整行不可点，看见了也只能自己去想、自己去翻。
