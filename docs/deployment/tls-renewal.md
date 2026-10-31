@@ -64,7 +64,7 @@ lineage 到期不影响四域 HTTPS，但它会让每天的 `certbot renew` 整�
 > **用户已于 2026-10-31 裁定：走路径 ②**（重签、去掉 `admin`、保留 7 个可解析 SAN）。
 > 本单的边界原本是「不改域名集合」⇒ 这条被登记为**需人裁定的例外**，现已由用户裁定**执行**。
 
-### 路径 ②（**已裁定，先跑这条**）：重签，只带 7 个可解析 SAN（去掉 `admin`）
+### 路径 ②（**已裁定、已执行**）：重签，只带可解析 SAN（先去掉无 A 记录的 `admin`，同日晚些再移除已废弃的 `ops` ⇒ 现为 6 个）
 
 ```bash
 # 在服务器上、/opt/migao-deploy 目录下执行（一次性动作；**2026-10-31 已由用户授权、经 aliyun CLI 在宿主执行完毕**，结果见下方「执行记录」）
@@ -73,7 +73,9 @@ certbot certonly --cert-name migao \
   --webroot -w /opt/migao-deploy/certbot-www \
   --expand --force-renewal --non-interactive \
   -d migaozn.com -d www.migaozn.com -d api.migaozn.com -d ai-api.migaozn.com \
-  -d app.migaozn.com -d merchant.migaozn.com -d ops.migaozn.com
+  -d app.migaozn.com -d merchant.migaozn.com
+# （2026-10-31 第一刀保留过 ops.migaozn.com = 7 SAN；同日用户裁定把已废弃的 ops 一并移除，
+#   第二刀收窄到 6 个 —— `-d ops` 已删。admin 与 ops 都没有 DNS 记录，留在 SAN 里会让下一次续期必失败。）
 # 然后由用户执行 reload（不重启，避免整断在途请求）：
 cd /opt/migao-deploy && docker compose exec -T nginx nginx -s reload
 ```
@@ -102,7 +104,7 @@ cd /opt/migao-deploy && bash /opt/migao-deploy/tls-renew.sh             # 真续
 ### 落地后自证（裁定路径跑完必须做）
 
 ```bash
-# ① 新 SAN 集合里应该没有 admin，且 7 个域名都在
+# ① 新 SAN 集合里应该没有 admin / ops，且 6 个域名都在
 openssl s_client -connect api.migaozn.com:443 -servername api.migaozn.com </dev/null 2>/dev/null \
   | openssl x509 -noout -dates -ext subjectAltName
 # ② 通路：dry-run 应该不再报 challenge 失败
@@ -128,13 +130,17 @@ bash deploy/scripts/tls-expiry-check.sh; echo "rc=$?"
 | 判据 | `TLS_EXPIRY_SUMMARY rc=0 checked=7 ok=7 expiring=0 expired=0 mismatch=0 unknown=0 threshold_days=21`（`days_left=89`） |
 | 外部复探 | 7 个域名 `openssl s_client` 全部返回新证书；`api/api/version`、`ai-api/health`、`/b/`、`/w/`、`merchant/login`、`/`、`/download` 全 200 |
 | 安全头回归 | `PROD-HEADERS-SUMMARY rc=0 failed=0 unknown=0 probed=7` |
+| 第二刀（移除 `ops`） | 用户 2026-10-31 裁定「这个也可以移除」⇒ 证书收窄到 **6 SAN**：`notAfter=Jan 29 10:42:46 2027 GMT`；`nginx -t` + `-s reload` OK；`TLS_EXPIRY_SUMMARY rc=0 checked=6 ok=6` |
+| `ops` DNS | `ops.migaozn.com A 121.40.28.213`（RecordId `2088230894053550080`）已删除；权威 NS `dns11/dns12.hichina.com` 均返回空 |
+| cron 加固 | `/opt/migao-deploy/tls-renew.sh`（sha256 `29d00953…`；宿主到 `raw.githubusercontent.com` 被墙，经 jsDelivr 取回）→ `--install-cron --replace-legacy-cron` ⇒ 旧条目备份 `/var/backups/crontab-20261031T114052Z.bak`，新 `/etc/cron.d/migao-tls-renew`（每天 03:00，日志 `/var/log/migao-tls-renew.log`），`crond` active |
 | 续期通路证明 | `certbot renew --dry-run`（后台跑，2026-10-31 19:32→19:34 CST）⇒ `DRYRUN_RC=0` + `Congratulations, all simulated renewals succeeded` ⇒ **7-SAN + webroot 的续期通路真的能过**，不是只看配置猜 |
-| 仍未做 | 宿主 cron 仍是旧条目（`certbot renew --quiet ... --post-hook 'docker compose restart nginx'`，无失败告警、用 restart 而非 reload）⇒ §4 的加固**未执行**（改生产 cron 属另一动作，未经授权不动） |
+| dry-run（cron 脚本） | `bash /opt/migao-deploy/tls-renew.sh --dry-run` ⇒ `TLS_RENEW_RESULT=ok-dry-run` + `DRYRUN_RC=0`（`all simulated renewals succeeded`，6-SAN + webroot 通路成立） |
+| 仍未做 | **无**（P0-01 的仓内判据 + 宿主重签 + 陈旧 lineage + cron 加固都已执行）；剩余仅观察项：等 2026-12-30 前后 cron 真续一次，看 `/var/log/migao-tls-renew.log` 与每日 TLS 判据 |
 
 > 续期窗口：新证书 2027-01-29 到期 ⇒ 宿主 cron 会在 **2026-12-30 前后**开始真续（`renew_before_expiry = 30 days`）。
 > 在那之前，P0-04 的每日 TLS 判据（21 天阈值）不会再误报；若那时 cron 仍失败，`post-merge-verify` 的告警会自己开单。
 
-## 4. cron 加固（把「整断」换成 reload + 可观测）
+## 4. cron 加固（把「整断」换成 reload + 可观测）——**2026-10-31 已执行**
 
 现状那条 crontab 用 `docker compose restart nginx`（**整断**在途请求），且失败没有任何非零信号被谁消费。
 本单把它收敛成 `deploy/scripts/tls-renew.sh`（日志 `/var/log/migao-tls-renew.log`，失败**非零退出**）：
