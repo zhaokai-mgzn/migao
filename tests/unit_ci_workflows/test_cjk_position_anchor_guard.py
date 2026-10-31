@@ -37,7 +37,7 @@ r"""「把**中文/注释级文案**当**结构位置**」的类级元守卫（i
 | 2 | **台账不许空转**：每条须有 `file` / `anchor` / `kind` / `reason`（≥ 20 字，且含现取证据） | 空台账 / 空 reason / 只写「有意如此」⇒ 红 |
 | 3 | **只许缩短**：条数 ≤ `FROZEN_MAX_SITES`（= 台账 `frozen_max_sites`，两处必须一致） | 加条目「消红」而不改大冻结数 ⇒ 红 |
 | 4 | **判别力自证（内存注入）**：脆弱片段（cmp / slice / sorted / dataflow）必红；**代码符号锚**（ASCII）不红；**仅存在性判断**（`x.find(…) < 0`）不红；**只改注释 ⇒ 检出集不变** | 守卫退化成恒绿 / 被自己的说明文字喂红 ⇒ 红 |
-| 5 | **射程自证（基线制）**：台账文件必在扫描集；**未提交的新文件**（`git ls-files --others`）立刻进扫描集并被检出 | 新文件漏扫（判据恒绿）⇒ 红 |
+| 5 | **射程自证（基线制）**：台账文件必在扫描集；**未跟踪的新文件**（`git ls-files --others`）立刻进扫描集并被检出 —— 探针建在**临时 git 仓**（`tmp_path`）里，不往真目录写（避免与 `test_case_prose_test_names` 的 glob→读并行竞态） | 新文件漏扫（判据恒绿）⇒ 红 |
 
 ## 边界（照实登记，§19.1）
 
@@ -59,6 +59,7 @@ import ast
 import json
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -318,30 +319,46 @@ def test_scan_scope_is_ledger_plus_change_set():
         assert a in hits, f"台账登记的锚在文件里检不出来（台账已腐坏）：{f} :: {a!r}"
 
 
-def test_scan_scope_picks_up_fresh_file():
-    """`_fresh_files()` 真的来自 git：**未提交**的新文件立刻进扫描集 ⇒ 台账复算会把它判红。"""
-    probe = UNIT_CI_DIR / "test_cjk_anchor_probe.py"
+def test_scan_scope_picks_up_fresh_file(tmp_path, monkeypatch):
+    """`_fresh_files()` 真的来自 git：**未跟踪**的新文件立刻进扫描集 ⇒ 台账复算会把它判红。
+
+    🔴 **探针写在临时 git 仓里（`tmp_path`），不落真目录**：原版往 `tests/unit_ci_workflows/` 写
+    `test_cjk_anchor_probe.py`、`finally` 再删 —— 而 CI 是 `pytest -n 4`，`test_case_prose_test_names`
+    会「先 glob 出文件名、再读内容」，两步之间探针被删 ⇒ `FileNotFoundError`（main run 41162304491：
+    1 failed / 3421 passed；本机 `-n 4` 连跑 5 次未复现 = 时序竞态）。探针不落真目录 ⇒ 该竞态
+    **结构上不存在**；被测对象仍是**真 git**：在临时仓里 `git init` 后跑 `git ls-files --others`。
+    """
+    repo = tmp_path / "repo"
+    unit_ci = repo / "tests" / "unit_ci_workflows"
+    unit_ci.mkdir(parents=True)
+    probe = unit_ci / "test_cjk_anchor_probe.py"
     probe.write_text(
         'def ok(text):\n'
         '    return text.find("mvnw spring-boot:run") < text.find("启动 admin-api")\n',
         encoding="utf-8",
     )
-    try:
-        names = {p.name for p in scanned_files()}
-        assert probe.name in names, f"未提交的新文件必须进扫描集（现取：{sorted(names)}）"
-        hits = [a for _f, a, _v, _l, _s in detected_sites_in_source(
-            probe.read_text(encoding="utf-8"), probe.name)]
-        assert hits == ["启动 admin-api"], hits
-        detected = [(f, a) for f, a, _v, _l, _s in detected_sites()]
-        assert (str(probe.relative_to(REPO_ROOT)), "启动 admin-api") in detected, (
-            "扫描集里的新文件必须被检出（注入自证）"
-        )
-        registered = [(f, a) for f, a, _k, _r in registered_sites()]
-        assert (str(probe.relative_to(REPO_ROOT)), "启动 admin-api") not in registered, (
-            "（注入自证）这个锚**没有**登记 ⇒ 台账复算会把它判红"
-        )
-    finally:
-        probe.unlink(missing_ok=True)
+    subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
+
+    ledger = tmp_path / "cjk_position_anchor_ledger.json"
+    ledger.write_text(json.dumps({"frozen_max_sites": 0, "sites": []}), encoding="utf-8")
+    guard = sys.modules[__name__]
+    monkeypatch.setattr(guard, "REPO_ROOT", repo)
+    monkeypatch.setattr(guard, "UNIT_CI_DIR", unit_ci)
+    monkeypatch.setattr(guard, "LEDGER_PATH", ledger)
+
+    names = {p.name for p in scanned_files()}
+    assert probe.name in names, f"未跟踪的新文件必须进扫描集（现取：{sorted(names)}）"
+    hits = [a for _f, a, _v, _l, _s in detected_sites_in_source(
+        probe.read_text(encoding="utf-8"), probe.name)]
+    assert hits == ["启动 admin-api"], hits
+    detected = [(f, a) for f, a, _v, _l, _s in detected_sites()]
+    assert (str(probe.relative_to(REPO_ROOT)), "启动 admin-api") in detected, (
+        "扫描集里的新文件必须被检出（注入自证）"
+    )
+    registered = [(f, a) for f, a, _k, _r in registered_sites()]
+    assert (str(probe.relative_to(REPO_ROOT)), "启动 admin-api") not in registered, (
+        "（注入自证）这个锚**没有**登记 ⇒ 台账复算会把它判红"
+    )
 
 
 def test_ledger_is_frozen_and_well_formed():
