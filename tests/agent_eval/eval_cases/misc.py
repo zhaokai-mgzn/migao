@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，166 条）
+# 域: misc（源: cases/misc.yml，167 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3063,6 +3063,24 @@ _CASE_MC_120 = EvalCase(
     precondition='改商品价的入口在 frontend/admin-web/src/app/(dashboard)/products/page.tsx（侧边栏「商品管理」）；编辑页 products/[id]/edit 的价格列在 SKU 表（文案「价格（元）」）。菜单被改名/移除 ⇒ 登记面判据先红。',
 )
 
+# ── MC-121 [NORMAL] 四域共用一张 Let's Encrypt 证书的自动续期与到期判红（issue #8201）：续期机制在**宿主 cron** 但已连天失败且无告警 ⇒ 到期判据（0/1/3）+ 一次性修复 runbook + cron 加固（源: cases/misc.yml）──
+_CASE_MC_121 = EvalCase(
+    id='MC-121',
+    legacy_id='',
+    title="四域共用一张 Let's Encrypt 证书的自动续期与到期判红（issue #8201）：续期机制在**宿主 cron** 但已连天失败且无告警 ⇒ 到期判据（0/1/3）+ 一次性修复 runbook + cron 加固",
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=["四个域名（api / ai-api / app / migaozn.com）共用同一张 CN=migaozn.com 的 Let's Encrypt 证书，notAfter=Nov 27 10:29:18 2026 GMT（SAN 含 admin/ai-api/api/app/merchant/migaozn/ops/www）；宿主有 cron 在跑 certbot 却每天失败、且失败没有任何告警 —— 到期这件事必须有人被叫醒，而不是等 TLS 握手开始报错"],
+    expectations=['**到期判据在**（`deploy/scripts/tls-expiry-check.sh`，只读）：默认查四域（可加 www），逐域打印 notAfter + 剩余天数 + **可复制的复算命令**；剩余 <21 天 ⇒ 退出 1；已过期 ⇒ 1；证书 SAN 不覆盖被查域名 ⇒ 1（具名「不匹配」）；取不到 / notAfter 解析不了 ⇒ 退出 **3**（**不可判定不得当 0**）。`openssl` / `certbot` / `docker` / `crontab` 全经 PATH 垫片注入 ⇒ 判据零网络、秒级。', '**lineage 诊断在**：当本机存在 letsencrypt 目录时，解析 `certbot certificates` 的每条 lineage（到期日 + `used=yes|no`：nginx 用的是 `live/migao/fullchain.pem` ⇒ `api.migaozn.com` 这条陈旧 lineage 标 `used=no`），并读出 `renewal/<name>.conf` 的 `authenticator` / `pref_challs` 与 `--webroot` 的冲突；**不因此判红**（未使用的 lineage 到期不影响四域 HTTPS），但必须**具名**；本机没有 letsencrypt 目录 ⇒ 明说 `status=skipped`（缺失 ≠ 没问题）。', '**续期腿在**（`deploy/scripts/tls-renew.sh`）：`--dry-run` 必须把 `--dry-run` 传给 certbot 且**不 reload**；成功才 reload（`docker compose exec -T nginx nginx -s reload`，**不是** restart）；「没有到期证书」⇒ 幂等 no-op（`TLS_RENEW_RESULT=noop`）且不 reload；失败 ⇒ **非零退出** + 归因清单 + 日志位置（cron 才看得见）。', '**cron 加固在**：`--install-cron` 幂等写 `/etc/cron.d/migao-tls-renew`（内容未变不重写）；检测到既有 `certbot renew` crontab 条目 ⇒ **拒绝安装**并退 3（否则同一条续期一天跑两遍），加 `--replace-legacy-cron` 才**先备份**（`/var/backups/crontab-*.bak`）再替换；非 root / 无 letsencrypt 目录 ⇒ 跳过并退 3（**出声**，不静默）。', "**接线在且会红**：`.github/workflows/post-verify` 一族里由 `.github/workflows/post-merge-verify.yml` 的 `TLS 证书到期判红` 步承接（只在 main 侧跑 —— `if: github.event_name != 'pull_request'`，PR 红该反映 PR），**必须排在 `if: failure()` 的 P1 出口之前**（之后 ⇒ 判红不产生值班单 = 静默），`exit 3` 不许归一化成 0。判据 = tests/unit_ci_workflows/test_tls_renewal.py::test_workflow_wiring_is_present + ::test_wiring_removal_turns_it_red（摘掉该步 / 挪到出口之后 / 把 3 改成 0 / 摘掉 `if:` 四种注入各自判红）；**不新增 schedule**（铁律 10）。", '**部署侧幂等**：`deploy/swas/deploy.sh` 在 nginx reload **之后**跑 `tls-renew.sh --install-cron`，失败 / 跳过只出声、**不拖垮部署**；同步 `src/deploy/scripts/tls-renew.sh` 带 `[ -f ]` 守卫（回滚到旧 tag 时 tarball 里没有该文件，无条件 `cp` 会让回滚部署 abort）。'],
+    data_checks=["**病（现取读数，2026-10-31 在服务器上核实）**：`openssl s_client -connect api.migaozn.com:443 -servername api.migaozn.com | openssl x509 -noout -dates` ⇒ `notBefore=Aug 29 10:29:19 2026 GMT` / `notAfter=Nov 27 10:29:18 2026 GMT`；宿主 `crontab -l` 有 `0 3 * * * certbot renew --quiet --webroot -w /opt/migao-deploy/certbot-www --post-hook 'cd /opt/migao-deploy && docker compose restart nginx >/dev/null 2>&1' >> /var/log/certbot-renew.log 2>&1`；`/var/log/certbot-renew.log` 每天重复两条失败：`api.migaozn.com` lineage 的 `None of the preferred challenges are supported by the selected plugin`（renewal conf = `authenticator=manual` + `pref_challs=dns-01`，与 `--webroot` 冲突；该 lineage **未被 nginx 使用**，到期 2026-11-12）与 `migao` lineage 的 `Some challenges have failed.`。", '**根因（双向核对 DNS）**：`admin.migaozn.com` **没有 A 记录**（`dig +short` 空；其余 7 个 SAN 都解析到 `121.40.28.213`），而 `migao` 证书的 SAN 含 `admin` ⇒ HTTP-01 对 admin 必失败 ⇒ 整张证书续期失败。⇒ **订正审计口径**：仓内确实没有续期腿 / 到期判据，但「仓内零续期机制」漏掉了「宿主 cron 已存在且在失败、且失败无告警」这一半（PR body 逐字登记）。', '**判别力自证（注入式红证，本包实跑）**：① 正常态（剩余 60 天）⇒ rc=0 + 逐域 `days_left` + 复算命令；② 临期 20/10/1 天 ⇒ rc=1 `status=expiring`；③ 已过期（剩余 −3 天）⇒ rc=1 `status=expired`；④ 取不到（s_client 失败）/ notAfter 为空 / notAfter 是垃圾 ⇒ 各自 rc=**3** `status=unknown` 且明说「无法判定」；⑤ SAN 不含 api/ai-api/app ⇒ rc=1 `status=mismatch`；`*.migaozn.com` 只覆盖 `api/api/ai-api/app` 而**不覆盖裸域** ⇒ 只有 `domain=migaozn.com status=mismatch`；⑥ 阈值边界：21 天 ⇒ 0、20 天 ⇒ 1；⑦ lineage：`migao` used=yes / `api.migaozn.com` used=no / `authenticator=manual` 冲突被具名；无 letsencrypt 目录 ⇒ `TLS_LINEAGE_SUMMARY status=skipped` 且**仍退 0**（不因缺诊断读数判红）；⑧ 续期腿：成功 ⇒ 只出现 `nginx -s reload`（无 `compose restart`）、`TLS_RENEW_RESULT=renewed`；失败 ⇒ 非零 + 无 reload + 归因；noop ⇒ 两次都 0 且无 reload；⑨ cron：有旧条目 ⇒ 退 3 且**不写** cron 文件、文案给 `--replace-legacy-cron`；替换 ⇒ 备份 + 过滤旧行 + 幂等（第二次「已就位」且逐字节相同）；非 root ⇒ 退 3 不写文件。', '**红证读数**（本包实测）：先写判据、实现全缺时 `29 failed`；实现后 `29 passed`（复算：`python3 -m pytest tests/unit_ci_workflows/test_tls_renewal.py -q`）。接线面的红证是**内存变异**（把该步从 YAML 里删掉 / 挪到 `if: failure()` 之后 / 把 `exit 3` 改成 `exit 0` / 摘掉 `if:`）四种注入各自让 `tls_wiring_problems()` 非空 —— 而不是「读一遍 YAML 看着对」。', "**边界（照实登记，不粉饰）**：① 判据**不联网**（openssl / certbot / docker / crontab 全是 PATH 垫片）⇒ 证的是「脚本在给定输入下会做什么」，**不是**「阿里云 / Let's Encrypt 真的这么回」；② **本单未执行**任何真实续期 / 重签 / DNS 变更（用户边界：执行留给人工确认），PR body 的「未覆盖项」逐条登记需要人执行的那一步；③ 「宿主 cron 真的每天跑了 / 续上了」只能事后看 `/var/log/migao-tls-renew.log` 与 `tls-expiry-check.sh` 的读数；④ 路径②（`certbot certonly --expand` 去掉 admin）**改变 SAN 集合** ⇒ 与「不改域名集合」的边界冲突，runbook 里明确写成「需人裁定」的例外，**不默认执行**；⑤ 陈旧 lineage 只给「不删证书」的禁用 / 修正方式（`mv renewal/api.migaozn.com.conf → renewal-disabled/`），**不静默 delete**；⑥ 不新增任何 GitHub schedule（铁律 10），只沿用 `post-merge-verify.yml` 既有的 push / schedule / dispatch 触发面。"],
+    skip_reason='[backend-contract] 运维判据（只读仓内脚本 + PATH 垫片伪造 openssl/certbot/docker/crontab + 真 YAML）由 tests/unit_ci_workflows/test_tls_renewal.py 验证，零网络、零真实续期、不写共享 /tmp、不烧 token，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ops', 'tls', 'deploy', 'certbot', 'alarm'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -3230,4 +3248,5 @@ CASES = (
     _CASE_WH_010,
     _CASE_WH_011,
     _CASE_MC_120,
+    _CASE_MC_121,
 )
