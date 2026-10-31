@@ -290,14 +290,21 @@ def _deploy_block() -> str:
     return text.split(BLOCK_START, 1)[1].split(BLOCK_END, 1)[0]
 
 
-def _run_block(static_root: Path, src_dir: Path) -> subprocess.CompletedProcess:
-    script = (
-        "set -euo pipefail\n"
-        f"export MIGAO_STATIC_ROOT={shlex.quote(str(static_root))}\n"
-        f"export MIGAO_WECHAT_VERIFY_DIR={shlex.quote(str(src_dir))}\n"
-        + _deploy_block()
-    )
-    return subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+def _run_block(
+    static_root: Path,
+    src_dir: Path | None = None,
+    cwd: Path | None = None,
+) -> subprocess.CompletedProcess:
+    """真跑 deploy.sh 的落位段。
+
+    `src_dir=None` ⇒ **不注入** `MIGAO_WECHAT_VERIFY_DIR`（判默认解析：优先 `src/deploy/swas/wechat-verify`，
+    那是线上部署形态 —— 配置包解到 `src/` 后**只在那儿**存在）；`cwd` 用来造那个形态的沙箱。
+    """
+    script = "set -euo pipefail\n" + f"export MIGAO_STATIC_ROOT={shlex.quote(str(static_root))}\n"
+    if src_dir is not None:
+        script += f"export MIGAO_WECHAT_VERIFY_DIR={shlex.quote(str(src_dir))}\n"
+    script += _deploy_block()
+    return subprocess.run(["bash", "-c", script], capture_output=True, text=True, cwd=cwd)
 
 
 def _snapshot(root: Path) -> dict[str, str]:
@@ -387,6 +394,42 @@ def test_copy_block_skips_loudly_when_nothing_to_copy(tmp_path):
     missing_root = _run_block(tmp_path / "nope-static", src)
     assert missing_root.returncode == 0, missing_root.stderr
     assert "跳过微信校验文件" in missing_root.stdout
+
+
+def test_block_defaults_to_the_extracted_source_tree(tmp_path):
+    """🔴 部署形态：配置包解到 `src/`（`deploy/swas/deploy.sh` 的 1.3 段）⇒ 默认必须从 `src/…` 取。
+
+    改前这条段被放在 2.6：C′ 构建成功后 `src/` 已被删 ⇒ 永远「跳过」= **静默不落位**
+    （判据会在没有 `MIGAO_WECHAT_VERIFY_DIR` 注入时把两个目录都放上、并断言只落 `src/` 那一份）。
+    """
+    server = tmp_path / "srv"
+    extracted = server / "src" / "deploy" / "swas" / "wechat-verify"
+    extracted.mkdir(parents=True)
+    (extracted / "a1b2c3d4e5.txt").write_text("from-extracted-tree", encoding="utf-8")
+    checkout = server / "deploy" / "swas" / "wechat-verify"
+    checkout.mkdir(parents=True)
+    (checkout / "from-checkout.txt").write_text("from-repo-checkout", encoding="utf-8")
+
+    static_root = tmp_path / "h5"
+    static_root.mkdir()
+    result = _run_block(static_root, src_dir=None, cwd=server)
+
+    assert result.returncode == 0, result.stderr
+    assert (static_root / "a1b2c3d4e5.txt").read_text(encoding="utf-8") == "from-extracted-tree"
+    assert not (static_root / "from-checkout.txt").exists(), "部署形态取的是 `src/`，不是仓检出那份（同名文件会打架）"
+
+
+def test_block_skips_loudly_when_source_tree_absent(tmp_path):
+    """配置复用（同 ref 重部署、盘上没有 `src/`）⇒ 出声跳过、退出 0（不拖垮部署）。"""
+    server = tmp_path / "srv"
+    server.mkdir()
+    static_root = tmp_path / "h5"
+    static_root.mkdir()
+
+    result = _run_block(static_root, src_dir=None, cwd=server)
+    assert result.returncode == 0, result.stderr
+    assert "跳过微信校验文件" in result.stdout
+    assert list(static_root.iterdir()) == []
 
 
 # ── 判据 5：仓库不许编文件名 / 内容 ────────────────────────────────────────

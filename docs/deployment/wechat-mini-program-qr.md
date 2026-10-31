@@ -67,7 +67,7 @@
 ## 4. 校验文件落位与部署（仓库侧已自动化）
 
 - 承接位：[`deploy/swas/wechat-verify/`](../../deploy/swas/wechat-verify/README.md)（只有 README，**不预置任何 `.txt`**）。
-- 落位：[`deploy/swas/deploy.sh`](../../deploy/swas/deploy.sh) 的 `2.6.2` 段把该目录下**所有 `*.txt`**
+- 落位：[`deploy/swas/deploy.sh`](../../deploy/swas/deploy.sh) 的 `1.3.1` 段把该目录下**所有 `*.txt`**
   **幂等**拷到静态根根下；只**增 / 覆盖**、**不删**任何别的文件（那个根同时是 C 端 h5 的落地面）；
   源目录空 / 源码树不在 / 静态根不存在 ⇒ **出声跳过**，不拖垮部署。
 - 服务：[`deploy/swas/nginx.conf`](../../deploy/swas/nginx.conf) 的
