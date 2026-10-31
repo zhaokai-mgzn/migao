@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: data（源: cases/data.yml，33 条）
+# 域: data（源: cases/data.yml，34 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -610,6 +610,24 @@ _CASE_DA_033 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── DA-034 [NORMAL] 归因：同款对照只对 SKU 级信号有效（毛利能指到变体、退货率只能指到商品）；并修正毛利 verdict 方向（源: cases/data.yml）──
+_CASE_DA_034 = EvalCase(
+    id='DA-034',
+    legacy_id='',
+    title='归因：同款对照只对 SKU 级信号有效（毛利能指到变体、退货率只能指到商品）；并修正毛利 verdict 方向',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这个变体为什么毛利这么低？是不是整款都有问题？'],
+    expectations=[],
+    data_checks=['行内 `attribution` 两种 `kind`：`sibling_margin_contrast`（`level=sku`，能指到具体变体）/ `product_level_only`（`level=product`，退货率用，**明说指不到变体**）。顶层 `attribution_basis`。', '🔴 **退货率不许做变体对照**：`DailyBriefingService.assembleProductReturnStats` 按 `product_id` 聚合 ⇒ 同商品所有 SKU 的 `return_rate` **必然相同** ⇒ 「本行 vs 最好兄弟」的 gap **恒为 0**，那是假归因。判据 `test_high_return_rate_yields_product_level_only` 断言 `"gap" not in attr`；红证：给 `product_level_only` 也加一个 gap ⇒ 必红。', '🔴 **毛利 verdict 方向**（缺陷单 #8280，本单链内修）：`_verdict` 原本只为退货率写（`<= peer_median ⇒ good`），毛利直接复用 ⇒ **毛利越低越判 good**。修法 = `higher_is_better=True` ⇒ `>= peer_median ⇒ good`，`< 0` 仍由 `absolute_bad` 兜底。红证：去掉该参数 ⇒ `test_positive_margin_uses_the_peer_baseline` + 归因 3 条必红（共 4 红）。', '**旧断言把 bug 固化了**：`test_positive_margin_uses_the_peer_baseline` 原写「毛利 10（最低）⇒ good、毛利 50（最高）⇒ bad」——**测试和实现一起错**，所以 CI 一直绿。已改正方向并注红证。', '🔴 **没有对照就不给**：独款商品（同商品只有 1 个 SKU）⇒ `attribution = None`（**不是**「没问题」）。兄弟毛利未知 ⇒ 不算进来（脏数据算出的差值是噪音）。', '**不给因果断言**：`sample_note` 必须并排给出两者销量 + 自述「这是差异证据，不是因果结论」（样本量差很多时差异可能只是样本量）。', '**good 行不给归因**：没毛病时解释「为什么好」是噪音。工具层 `message` 只说能指向变体的那一类（毛利），退货率不进 message 的变体归因。'],
+    skip_reason='[backend-contract] 纯确定性视图判据（零 LLM）：`product_health` 是纯函数 + 规则表；判据 = backend/ai-agent-service/tests/test_briefing_product_health_attribution.py（8 条，含两条注入式红证）+ test_briefing_product_health_baseline.py 的方向断言',
+    tags=['proactive', 'briefing', 'decision', 'attribution'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_DA_001,
     _CASE_DA_002,
@@ -644,4 +662,5 @@ CASES = (
     _CASE_DA_031,
     _CASE_DA_032,
     _CASE_DA_033,
+    _CASE_DA_034,
 )

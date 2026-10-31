@@ -22,7 +22,7 @@
 case_ids 说明：`DA-028`（本单新增：跨域视图的**判断层** —— 数值之外给出同行基线与 `good/watch/bad/unknown`）。
 """
 
-# case_ids: DA-028
+# case_ids: DA-028, DA-034
 
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
@@ -224,12 +224,20 @@ class TestNegativeMarginIsAbsolute:
             assert row["gross_margin_verdict"] == VERDICT_BAD
 
     def test_positive_margin_uses_the_peer_baseline(self):
+        """🔴 毛利**越大越好** —— 方向曾经是反的（issue #8280）。
+
+        旧断言写的是「毛利 10（最低）⇒ good、毛利 50（最高）⇒ bad」，等于把 bug 固化成期望：
+        低毛利 SKU 标绿、且 P3 的选项永远不会给它建议（只给 bad/watch）。
+        红证：把 `higher_is_better=True` 去掉 ⇒ 本用例必红。
+        """
         margins = [10.0, 20.0, 30.0, 40.0, 50.0]
         view = product_health(_snapshot([5] * 5, margins=margins), tenant_id=1)
         rows = _rows_by_product(view)
 
-        assert rows["P1"]["gross_margin_verdict"] == VERDICT_GOOD
-        assert rows["P5"]["gross_margin_verdict"] == VERDICT_BAD
+        # 中位 = 30：>= 30 ⇒ good；< 30 且 > 0 ⇒ watch（值得看一眼，但不是「健康」）
+        assert rows["P1"]["gross_margin_verdict"] == VERDICT_WATCH, "毛利最低 ⇒ 不该判 good"
+        assert rows["P3"]["gross_margin_verdict"] == VERDICT_GOOD, "毛利 = 中位 ⇒ good"
+        assert rows["P5"]["gross_margin_verdict"] == VERDICT_GOOD, "毛利最高 ⇒ good"
 
     def test_unknown_margin_yields_unknown_verdict(self):
         snap = _snapshot(TICKETS)
