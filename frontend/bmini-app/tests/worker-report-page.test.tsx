@@ -114,7 +114,7 @@ describe('扫码报工页（issue #7812）', () => {
     ;(Taro as any).__clearStorage()
   })
 
-  it('① 未登录 ⇒ 没有报工按钮；**就地**给工人登录表单（不跳三角色登录页）', async () => {
+  it('① 未登录 ⇒ 没有报工按钮；**就地**给工人登录表单（不跳三角色登录页、无页头）', async () => {
     ;(Taro as any).__clearStorage()
     render(<WorkerReportPage />)
     expect(await screen.findByTestId('worker-report-login-required')).toBeTruthy()
@@ -123,6 +123,9 @@ describe('扫码报工页（issue #7812）', () => {
     expect(screen.getByTestId('worker-login-form')).toBeTruthy()
     expect(screen.queryByText('去登录工人身份')).toBeNull()
     expect(Taro.navigateTo).not.toHaveBeenCalled()
+    // 🔴 未登录**不渲染页头**（`/w/` 的登录屏只有一张卡片；两层标题会读成两个页面）
+    expect(screen.queryByTestId('worker-report-header')).toBeNull()
+    expect(screen.queryByText('扫码报工')).toBeNull()
   })
 
   it('② 工序未确定 ⇒ 没有报工按钮，并说明原因', async () => {

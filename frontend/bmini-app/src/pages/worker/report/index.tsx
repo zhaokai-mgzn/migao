@@ -328,14 +328,20 @@ export default function WorkerReportPage() {
 
   return (
     <View className='worker-report'>
-      <View className='worker-report__header'>
-        <Text className='worker-report__title'>扫码报工</Text>
-        {state.worker ? (
-          <Text className='worker-report__worker' data-testid='worker-report-worker'>
-            当前工人：{state.worker.worker_name || MISSING}
-          </Text>
-        ) : null}
-      </View>
+      {/* 🔴 未登录**不渲染页头**（2026-10-31 用户裁定，issue #8194）：终端 `/w/` 的登录屏只有
+          一张卡片（`loginView()` = `.wh5-card`），页头是**登录后**的页面身份 —— 若这里照样印
+          「扫码报工」，小程序扫码进入时就变成「扫码报工」+「工人报工」两层标题，与 APK / `/w/` 不一致。
+          登录成功（`state.worker` 就绪）后页头出现。 */}
+      {state.mode === 'unauthorized' ? null : (
+        <View className='worker-report__header' data-testid='worker-report-header'>
+          <Text className='worker-report__title'>扫码报工</Text>
+          {state.worker ? (
+            <Text className='worker-report__worker' data-testid='worker-report-worker'>
+              当前工人：{state.worker.worker_name || MISSING}
+            </Text>
+          ) : null}
+        </View>
+      )}
 
       {state.mode === 'unauthorized' ? (
         <View className='worker-report__login' data-testid='worker-report-login-required'>

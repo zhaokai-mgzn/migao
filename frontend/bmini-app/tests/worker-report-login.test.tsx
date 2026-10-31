@@ -137,6 +137,12 @@ describe('扫码报工页 · 未登录就地登录（issue #8194）', () => {
     expect(Taro.navigateTo).not.toHaveBeenCalledWith({ url: WORKER_TAB_LOGIN_ROUTE })
     // 未登录 ⇒ 不出报工按钮
     expect(screen.queryByTestId('worker-report-submit')).toBeNull()
+
+    // 🔴 未登录**不渲染页头**（用户 2026-10-31 裁定）：`/w/` 的登录屏只有一张卡片，
+    // 若这里照样印「扫码报工」就变成两层标题（扫码报工 + 工人报工）⇒ 与 /w/ 不一致
+    expect(screen.queryByTestId('worker-report-header')).toBeNull()
+    expect(screen.queryByText('扫码报工')).toBeNull()
+    expect(screen.queryByTestId('worker-report-worker')).toBeNull()
   })
 
   it('② 带码登录成功 ⇒ 留在本页并解析该码（不回首页、不跳走）', async () => {
@@ -155,6 +161,10 @@ describe('扫码报工页 · 未登录就地登录（issue #8194）', () => {
     // 判据 2：手里的码被继续解析，且**留在本页**
     await waitFor(() => expect(mockResolve).toHaveBeenCalledWith(TOKEN, undefined, null))
     expect(Taro.redirectTo).not.toHaveBeenCalled()
+    // 登录成功 ⇒ 页头（页面身份 + 当前工人）出现：谁在干活是计件凭证
+    expect(await screen.findByTestId('worker-report-header')).toBeTruthy()
+    expect(screen.getByText('扫码报工')).toBeTruthy()
+    expect(screen.getByTestId('worker-report-worker').textContent).toContain('张三')
     // 判据 5：一次性记录被读走（读到即清）—— 不会把上一次的码带给下一次登录
     expect(Taro.getStorageSync(PENDING_REPORT_RETURN_KEY)).toBe('')
   })
