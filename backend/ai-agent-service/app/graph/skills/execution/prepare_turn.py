@@ -114,7 +114,12 @@ async def prepare_turn(
     _relocked_this_round: bool = False
     tool_context = build_tool_context(state)
     set_tool_context(tool_context)
-    skill_registry = create_skill_registry(tool_names)
+    # 读面按意图裁剪（issue #8174）：**只对 B 端**生效；非 B 端 / 开关关闭 ⇒ None
+    # （= 与改动前逐字相同的分支，C 端回归面为零）。函数体内 import：本模块顶层的名字
+    # 会参与 `tests/unit/test_execute_skill_split.py` 的 patch 接缝扫描，别加进去。
+    from app.graph.skills.tool_selection import plan_read_tools_for_state
+    read_keep = plan_read_tools_for_state(state, tool_names)
+    skill_registry = create_skill_registry(tool_names, read_keep=read_keep)
     langchain_tools = skill_registry.get_langchain_tools()
     intent_name = _extract_intent_name(state)
 
@@ -167,7 +172,8 @@ async def prepare_turn(
         )
     if identity_prefix:
         system_prompt = identity_prefix + "\n" + system_prompt
-    system_prompt = _build_system_prompt(skill_name, inline_prompt=system_prompt)
+    system_prompt = _build_system_prompt(skill_name, inline_prompt=system_prompt,
+                                         trimmed=read_keep is not None)
 
     # 4b. C 端长期记忆注入（issue #2815：仅 xiaobu；mibao 不注入）
     system_prompt = await _inject_user_memories(system_prompt, state)
