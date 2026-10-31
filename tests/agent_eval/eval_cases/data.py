@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: data（源: cases/data.yml，31 条）
+# 域: data（源: cases/data.yml，32 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -574,6 +574,24 @@ _CASE_DA_031 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── DA-032 [NORMAL] 决策采纳记录：AI 建议了什么 → 人做了什么（item_key 稳定 hash、幂等、不记原文）（源: cases/data.yml）──
+_CASE_DA_032 = EvalCase(
+    id='DA-032',
+    legacy_id='',
+    title='决策采纳记录：AI 建议了什么 → 人做了什么（item_key 稳定 hash、幂等、不记原文）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这个月黄金策提醒我的事，我处理了多少？'],
+    expectations=[],
+    data_checks=['表 `briefing_actions`（Flyway V196，bootstrap `schema.sql` 已同步终态）：`tenant_id` / `biz_date` / `item_kind` / `item_key` / `action` / `actor_id`，`UNIQUE(tenant_id, biz_date, item_kind, item_key)` 兜底幂等。', '🔴 **item_key = 标题 sha256 前 16 位**：同标题同 key、不同标题不同 key、**不含标题原文**（判据 `doesNotContain("补货")`）—— 存原文等于把 `daily_briefings.content` 抄一份，内容冗余 + PII 面扩大；存下标则简报每次重排都会把同一条记成两条。', '🔴 **幂等**：同一条目第二次上报走 `updateById` 而不是再 `insert`。红证：把 `if (existing != null)` 改成 `if (false)`（永远 insert）⇒ `repeated_actions_upsert_instead_of_inserting` 必红；恢复 ⇒ 5 passed。', '动作白名单不猜：`opened_agent` 通过，`done` / 空 / null 一律 `false`（`done` / `ignored` 需要 UI 上的「已处理 / 忽略」按钮，属产品决策，不在本单）。', '空查询 ⇒ 空列表不是 null；`days` 上限 90（与 `getBriefingHistory` 同口径）。', '🔴 前端 **fire-and-forget**：点「问黄金策」⇒ 上报被调用**且**浮窗照常打开；上报抛错**不影响**浮窗（红证：去掉 `reportAsked()` 调用 ⇒ 上报断言必红；恢复 ⇒ 6 passed）。', '**记录 ≠ 采纳**：`opened_agent` 只表示「点开问了」，不表示「照着做了」—— 报表文案必须区分，不许说成「采纳率」。'],
+    skip_reason='[backend-contract] 跨端事件面：Java 判据 = backend/admin-api/src/test/java/com/migao/admin/service/BriefingActionServiceTest.java（5 条，含幂等注入式红证）；前端判据 = frontend/admin-web/tests/unit/components/BriefingCardAskAgent.test.tsx（6 条，含上报失败不影响交互）—— 零 LLM，不进 agent-eval',
+    tags=['proactive', 'briefing', 'review', 'event'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_DA_001,
     _CASE_DA_002,
@@ -606,4 +624,5 @@ CASES = (
     _CASE_DA_029,
     _CASE_DA_030,
     _CASE_DA_031,
+    _CASE_DA_032,
 )

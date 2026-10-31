@@ -2833,7 +2833,7 @@
 ```
 溯源: 2026-10-20 新增（issue #7370，P0-1 之后按用户「逐步推进」落地为 P0-2 段 1）。落码 = ① V169 迁移（两列）+ 建库脚本终态同步；② CreditPolicy（纯函数口径）+ 7 条判据；③ OrderService 下单闸门；④ CustomerService.creditStatus/updateCreditSettings + 两个端点；⑤ 客户详情页「授信与往来」卡片 + 4 条页面判据；⑥ CHANGELOG。⚠️ **未做（照实登记）**：部分收款核销、账龄分档、审批出口、现结订单豁免 —— 分属 #7370 段 2/3 与 #7374(P1-2)。取号 = 现取 origin/main 的 CU 最大 012 ⇒ CU-013。 ｜ tags: backend-contract, credit, credit-limit, payment-terms, receivable, admin-api, red-proof
 
-## 数据域（31 case）
+## 数据域（32 case）
 
 ### DA-001. 经营概览 🔵
 ```
@@ -3234,6 +3234,20 @@
 跳过: [backend-contract] 跨端只读回溯：Java 判据 = backend/admin-api/src/test/java/com/migao/admin/service/DailyBriefingHistoryTest.java（5 条，含 90 天上限注入式红证）；Python 判据 = backend/ai-agent-service/tests/test_briefing_query_history.py（8 条，含空历史诚实性红证）—— 零 LLM，不进 agent-eval
 ```
 溯源: 2026-10-31 新增（issue #8253）：黄金策决策能力 P2「复盘」第一包。**只给原料，不给结论**：历史原文交回模型，是否被处理 / 有没有效让模型自己调当前视图对比 —— 因为「有没有被处理」需要决策事件记录（新表），本单不做。**未覆盖面（如实登记）**：① 决策采纳记录（谁点了、有没有执行）；② 季度价值报告（PDF / 推送）；③ 历史指标对比的本体（本单只确保历史原文可达）。 ｜ tags: proactive, briefing, review
+
+### DA-032. 决策采纳记录：AI 建议了什么 → 人做了什么（item_key 稳定 hash、幂等、不记原文） 🔵
+```
+你: 这个月黄金策提醒我的事，我处理了多少？
+数据: 表 `briefing_actions`（Flyway V196，bootstrap `schema.sql` 已同步终态）：`tenant_id` / `biz_date` / `item_kind` / `item_key` / `action` / `actor_id`，`UNIQUE(tenant_id, biz_date, item_kind, item_key)` 兜底幂等。
+数据: 🔴 **item_key = 标题 sha256 前 16 位**：同标题同 key、不同标题不同 key、**不含标题原文**（判据 `doesNotContain("补货")`）—— 存原文等于把 `daily_briefings.content` 抄一份，内容冗余 + PII 面扩大；存下标则简报每次重排都会把同一条记成两条。
+数据: 🔴 **幂等**：同一条目第二次上报走 `updateById` 而不是再 `insert`。红证：把 `if (existing != null)` 改成 `if (false)`（永远 insert）⇒ `repeated_actions_upsert_instead_of_inserting` 必红；恢复 ⇒ 5 passed。
+数据: 动作白名单不猜：`opened_agent` 通过，`done` / 空 / null 一律 `false`（`done` / `ignored` 需要 UI 上的「已处理 / 忽略」按钮，属产品决策，不在本单）。
+数据: 空查询 ⇒ 空列表不是 null；`days` 上限 90（与 `getBriefingHistory` 同口径）。
+数据: 🔴 前端 **fire-and-forget**：点「问黄金策」⇒ 上报被调用**且**浮窗照常打开；上报抛错**不影响**浮窗（红证：去掉 `reportAsked()` 调用 ⇒ 上报断言必红；恢复 ⇒ 6 passed）。
+数据: **记录 ≠ 采纳**：`opened_agent` 只表示「点开问了」，不表示「照着做了」—— 报表文案必须区分，不许说成「采纳率」。
+跳过: [backend-contract] 跨端事件面：Java 判据 = backend/admin-api/src/test/java/com/migao/admin/service/BriefingActionServiceTest.java（5 条，含幂等注入式红证）；前端判据 = frontend/admin-web/tests/unit/components/BriefingCardAskAgent.test.tsx（6 条，含上报失败不影响交互）—— 零 LLM，不进 agent-eval
+```
+溯源: 2026-10-31 新增（issue #8260）：黄金策 P2「复盘」第二包 —— 把「AI 建议了什么」补上后半句「人做了什么」。**未覆盖面（如实登记）**：① `done` / `ignored` 动作（需产品决策与 UI 按钮）；② **效果跟踪**（建议后指标怎么变，需要指标快照对齐）；③ 季度价值报告（PDF / 推送）；④ 工具侧的「采纳率」视图（等数据攒够）。 ｜ tags: proactive, briefing, review, event
 
 ## 防御域（24 case）
 
@@ -13951,8 +13965,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：941（活跃 152，跳过 789）
-- tier 分布：smoke 15 / normal 869 / adversarial 33
+- 用例总数：942（活跃 152，跳过 790）
+- tier 分布：smoke 15 / normal 870 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -13962,7 +13976,7 @@
 - 对话边界域：53
 - 跨域：3
 - 客户域：13
-- 数据域：31
+- 数据域：32
 - 防御域：24
 - 财务对账域：6
 - 人事域：13
@@ -14025,6 +14039,7 @@
 - DA-029: 简报条目 → 问黄金策：洞察到执行的入口（有 link / 无 link 都有，点一下就把这条交给 AI）
 - DA-030: 视图的「然后呢」：bad/watch 行给可选动作 + 代价 + 可逆性 + 验证方法（issue #8251）
 - DA-031: 复盘第一块原料：历史简报回溯（过去 N 天 AI 提醒过什么），空历史必须自述「没有记录」
+- DA-032: 决策采纳记录：AI 建议了什么 → 人做了什么（item_key 稳定 hash、幂等、不记原文）
 - KN-001: 元元知识问答 - 面料问题先检索本店知识卡片（query 必填）
 - KN-002: 元元知识问答 - 清洗保养类问题走知识卡片检索
 - KN-003: 黄金策知识问答 - 本店售后政策先检索知识卡片（B 端接线回归，issue #3059）

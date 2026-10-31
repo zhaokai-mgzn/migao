@@ -1645,6 +1645,24 @@ CREATE TABLE IF NOT EXISTS daily_briefings (
 CREATE INDEX IF NOT EXISTS idx_daily_briefings_tenant_date
     ON daily_briefings (tenant_id, biz_date);
 
+-- 决策采纳记录（issue #8260，V196 迁移终态同步）：「AI 建议了什么 → 人做了什么」的后半句。
+-- item_key = 条目标题 sha256 前 16 位：稳定、不含原文、不随简报重排漂移。
+-- action 目前只有 opened_agent（点开问了）—— **记录 ≠ 采纳**，不表示人照着做了。
+CREATE TABLE IF NOT EXISTS briefing_actions (
+    id VARCHAR(32) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    biz_date DATE NOT NULL,
+    item_kind VARCHAR(16) NOT NULL,   -- todo / risk / suggestion
+    item_key VARCHAR(16) NOT NULL,    -- 标题 sha256 前 16 位
+    action VARCHAR(32) NOT NULL,      -- opened_agent（白名单见 BriefingActionService.ACTIONS）
+    actor_id VARCHAR(64),             -- 操作人用户 id（不含姓名 / 手机号）
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    CONSTRAINT uk_briefing_actions_item UNIQUE (tenant_id, biz_date, item_kind, item_key)
+);
+CREATE INDEX IF NOT EXISTS idx_briefing_actions_tenant_date
+    ON briefing_actions (tenant_id, biz_date DESC);
+
 -- ================================================
 -- 9.7 库存流水/台账（issue #4055，V53 迁移）
 -- ================================================

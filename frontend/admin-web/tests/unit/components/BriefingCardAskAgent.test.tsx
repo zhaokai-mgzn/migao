@@ -9,10 +9,12 @@ vi.mock('next/link', () => ({
 
 const getToday = vi.fn()
 const getConfig = vi.fn()
+const recordAction = vi.fn()
 vi.mock('@/lib/api', () => ({
   briefingApi: {
     getToday: () => getToday(),
     getConfig: () => getConfig(),
+    recordAction: (data: any) => recordAction(data),
   },
 }))
 
@@ -44,6 +46,8 @@ const content: BriefingContent = {
 }
 
 async function renderCard() {
+  recordAction.mockReset()
+  recordAction.mockResolvedValue({ data: { data: { recorded: true } } })
   getToday.mockResolvedValue({
     data: { data: { generated: true, verifyStatus: 'verified', content, bizDate: '2026-10-31' } },
   })
@@ -81,6 +85,25 @@ describe('简报条目 → 问黄金策（issue #8236，DA-029）', () => {
     // 预置问题要能落成「查数据 + 给建议 + 批量确认卡」，不是一句空泛的「帮我看看」
     expect(state.assistantDraft).toContain('处理建议')
     expect(state.assistantDraft).toContain('确认卡')
+
+    // 🔴 上报（issue #8260）：点开 = opened_agent —— 只表示「点开问了」，**不表示**「照着做了」
+    await waitFor(() => expect(recordAction).toHaveBeenCalledWith({
+      bizDate: '2026-10-31',
+      itemKind: 'suggestion',
+      title: '补充知识库',
+      action: 'opened_agent',
+    }))
+  })
+
+  it('上报失败**不影响**浮窗打开（fire-and-forget：用户点的是「问黄金策」，不是「记日志」）', async () => {
+    recordAction.mockRejectedValue(new Error('网络炸了'))
+    await renderCard()
+
+    fireEvent.click(screen.getByRole('button', { name: '问黄金策：补充知识库' }))
+
+    const state = useChatStore.getState()
+    expect(state.assistantOpen).toBe(true)
+    expect(state.assistantDraft).toContain('补充知识库')
   })
 
   it('草稿取一次即消费（防严格模式/重渲染重复发送）', async () => {
