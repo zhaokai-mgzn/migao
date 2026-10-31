@@ -542,7 +542,7 @@ $REMOTE_FETCH"
   exit 0
   ;;
 *)
-  echo "未知子命令：$MODE（只支持 prepare / publish；-h 看用法）" >&2
+  echo "未知子命令：${MODE}（只支持 prepare / publish；-h 看用法）" >&2
   exit 2
   ;;
 esac
