@@ -84,3 +84,4 @@
 {"id":"1793277810.92744.12015","ts":"2026-10-29T12:43:30Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/8114-merge-ai-cards","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1793416557.68907.16933","ts":"2026-10-31T03:15:57Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/8196-wechat-qr","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1793422710.31917.15808","ts":"2026-10-31T04:58:31Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/8218-p1-hardening","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1793429719.8934.447","ts":"2026-10-31T06:55:19Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/8218-p1-residual","why":"子包 worktree 直跑全量（无批次标记）"}
