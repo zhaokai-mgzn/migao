@@ -12,6 +12,8 @@ const CORPORATE_PREFIXES = [
   '/services',
   '/register',
   '/login',
+  // 终端下载页（issue #8195）：公开可见面。漏了它 ⇒ 裸域访问会被末段「未知路径」改写 404。
+  '/download',
 ]
 
 /** Dashboard paths: on bare domain, redirect to merchant */
