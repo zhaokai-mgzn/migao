@@ -65,4 +65,19 @@ public interface AgentBatchMapper extends BaseMapper<AgentBatch> {
                       @Param("tenantId") Long tenantId,
                       @Param("revertableA") String revertableA,
                       @Param("revertableB") String revertableB);
+
+    /**
+     * 执行中的进度（issue #8283）：只写计数，不碰 status / executed_at。
+     *
+     * <p>谓词带 {@code status='executing'} ⇒ 批次已进入终态（或已被人工处置）时本条更新自然失效，
+     * 不会把终态计数改回去。逐条写只发生在同一个 job 线程内，不需要 CAS。</p>
+     *
+     * @return 影响行数：{@code 1} = 仍在执行；{@code 0} = 已不在执行态（忽略即可）
+     */
+    @Update("UPDATE agent_batches SET success_count = #{successCount}, fail_count = #{failCount} "
+            + "WHERE id = #{id} AND tenant_id = #{tenantId} AND status = 'executing'")
+    int updateProgress(@Param("id") String id,
+                       @Param("tenantId") Long tenantId,
+                       @Param("successCount") int successCount,
+                       @Param("failCount") int failCount);
 }

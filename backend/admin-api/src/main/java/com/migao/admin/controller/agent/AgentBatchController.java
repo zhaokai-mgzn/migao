@@ -27,9 +27,11 @@ import org.springframework.web.bind.annotation.RestController;
  *                                                req  {batchType, items:[{resourceId, field, oldValue, newValue}]}
  *                                                resp {batchId, itemCount, status:"preview"}
  *                                                batchType ∈ product_price | product_status | inventory_stock（#5950）
- * POST /api/admin/agent/batches/{batchId}/execute 执行 → {batchId, status, results:[{resourceId, success, error?}]}
- * POST /api/admin/agent/batches/{batchId}/revert  撤销 → {batchId, status, results:[...]}
- * GET  /api/admin/agent/batches/{batchId}         查询进度 / 结果 / 可撤销性
+ * POST /api/admin/agent/batches/{batchId}/execute 执行（同步，保留冻结契约）→ {batchId, status, results:[...]}
+ * POST /api/admin/agent/batches/{batchId}/execute-async 后台执行（issue #8283）→ {batchId, status:"executing"}
+ * POST /api/admin/agent/batches/{batchId}/revert  撤销（同步，保留冻结契约）→ {batchId, status, results:[...]}
+ * POST /api/admin/agent/batches/{batchId}/revert-async  后台撤销（issue #8283）→ {batchId, status:"executing"}
+ * GET  /api/admin/agent/batches/{batchId}         查询进度 / 结果 / 可撤销性（异步路径的进度面）
  * </pre>
  *
  * <h2>权限码：与逐条写**同码**，不新开权限面</h2>
@@ -61,16 +63,33 @@ public class AgentBatchController {
         return ApiResponse.success(batchService.create(tenantId, userId, request));
     }
 
-    /** POST /api/admin/agent/batches/{batchId}/execute —— 执行（逐条落 status / error）。 */
+    /** POST /api/admin/agent/batches/{batchId}/execute —— 执行（同步；逐条落 status / error）。 */
     @PostMapping("/{batchId}/execute")
     public ApiResponse<AgentBatchViews.Batch> execute(@PathVariable String batchId) {
         return ApiResponse.success(batchService.execute(TenantContext.getTenantId(), batchId));
     }
 
-    /** POST /api/admin/agent/batches/{batchId}/revert —— 撤销（逐条还原 old_value）。 */
+    /**
+     * POST /api/admin/agent/batches/{batchId}/execute-async —— 提交后台执行（issue #8283）。
+     *
+     * <p>立即返回 {@code status=executing}；进度 / 终态用 {@code GET /{batchId}} 查询。
+     * 与同步端点共用同一套 CAS 准入与逐条执行逻辑，区别只在「在哪条线程上跑」。</p>
+     */
+    @PostMapping("/{batchId}/execute-async")
+    public ApiResponse<AgentBatchViews.Batch> executeAsync(@PathVariable String batchId) {
+        return ApiResponse.success(batchService.executeAsync(TenantContext.getTenantId(), batchId));
+    }
+
+    /** POST /api/admin/agent/batches/{batchId}/revert —— 撤销（同步；逐条还原 old_value）。 */
     @PostMapping("/{batchId}/revert")
     public ApiResponse<AgentBatchViews.Batch> revert(@PathVariable String batchId) {
         return ApiResponse.success(batchService.revert(TenantContext.getTenantId(), batchId));
+    }
+
+    /** POST /api/admin/agent/batches/{batchId}/revert-async —— 提交后台撤销（issue #8283）。 */
+    @PostMapping("/{batchId}/revert-async")
+    public ApiResponse<AgentBatchViews.Batch> revertAsync(@PathVariable String batchId) {
+        return ApiResponse.success(batchService.revertAsync(TenantContext.getTenantId(), batchId));
     }
 
     /** GET /api/admin/agent/batches/{batchId} —— 查询进度 / 结果 / 可撤销性。 */

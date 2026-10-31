@@ -23,6 +23,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.task.SyncTaskExecutor;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import javax.sql.DataSource;
@@ -380,7 +381,7 @@ class AgentBatchStatusRaceRealDbTest {
                 new CountingProductService(s.getMapper(com.migao.admin.mapper.ProductMapper.class),
                         s.getMapper(com.migao.admin.mapper.ProductSkuMapper.class));
         return new AgentBatchService(s.getMapper(AgentBatchMapper.class),
-                s.getMapper(AgentBatchItemMapper.class), productService);
+                s.getMapper(AgentBatchItemMapper.class), productService, new SyncTaskExecutor());
     }
 
     /**
