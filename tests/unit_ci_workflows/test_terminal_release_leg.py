@@ -44,7 +44,9 @@ r"""观星台终端（工人端 APK / Windows 一体机 EXE）**正式发布链�
   `.github/workflows/terminal-publish.yml` 的 served 步骤跑；**本文件不代替它**。
 - `_serve()` 只模拟 nginx 的**前缀 / 精确 location + try_files + return**（本段用到的全集）；
   正则 location / `alias` / `rewrite` 不在面内 —— 故本文件另有一条判据要求 `app.migaozn.com` 段里
-  **不出现**正则 location（否则模拟的前提不成立即红）。
+  **不出现**正则 location（否则模拟的前提不成立即红）。🔴 唯一例外 = issue #8196 的微信校验文件面
+  `location ~ ^/[^/]+\.txt$`（名字由用户在微信后台生成 ⇒ 前缀 location 表达不了）；它不在本文件的
+  模拟器面内，语义由 `tests/unit_ci_workflows/test_wechat_verify_route.py` 判。
 """
 from __future__ import annotations
 
@@ -285,11 +287,16 @@ def _nginx_problems(conf: str) -> list[str]:
     files = _canonical_fs()
 
     for m in LOCATION_HEAD_RE.finditer(block):
-        if m.group("spec").strip()[:1] in ("~", "^", "*"):
-            problems.append(
-                f"{SERVER_NAME} 段出现了非前缀 location（模拟器不覆盖该形态，需同步判据）："
-                f"{m.group(0).strip()[:60]}"
-            )
+        head = m.group("spec").strip()
+        if head[:1] not in ("~", "^", "*"):
+            continue
+        # 🔴 唯一例外（issue #8196）：微信根下校验文件面（名字用户侧生成，前缀表达不了）
+        if head == "~ ^/[^/]+\\.txt$":
+            continue
+        problems.append(
+            f"{SERVER_NAME} 段出现了非前缀 location（模拟器不覆盖该形态，需同步判据）："
+            f"{m.group(0).strip()[:60]}"
+        )
 
     loc = _terminal_location(block)
     if loc is None:
@@ -389,7 +396,35 @@ def test_nginx_terminal_surface_has_no_problems():
     assert problems == [], "终端静态面判据不通过：\n  - " + "\n  - ".join(problems)
 
 
+def _terminal_body_span(conf: str) -> tuple[int, int]:
+    """`location /terminal/ { … }` 的**块内**区间（花括号配平）。"""
+    head = f"location /{SUBDIR}/ {{"
+    start = conf.index(head)
+    open_brace = conf.index("{", start)
+    depth, j = 0, open_brace
+    while j < len(conf):
+        if conf[j] == "{":
+            depth += 1
+        elif conf[j] == "}":
+            depth -= 1
+            if depth == 0:
+                break
+        j += 1
+    return open_brace, j
+
+
 def _replace_in_terminal(conf: str, old: str, new: str) -> str:
+    """往 `location /terminal/` 里注入变异。
+
+    🔴 **优先只在块内替换**（issue #8196 教训）：`app.migaozn.com` 段现在还有**根下 `.txt` 面**
+    （微信校验文件，同样含 `try_files $uri =404;`）。全文件「首个命中」会把那一处当成 `/terminal/`
+    改掉 ⇒ 变异注入打错对象、红证退化成空断言（实测：`给 /terminal/ 挂上限流` 不再判红）。
+    块头字符串（`location /terminal/ {` 等）不在块内 ⇒ 退回全文替换（那两处本来就唯一）。
+    """
+    a, b = _terminal_body_span(conf)
+    body = conf[a:b]
+    if old in body:
+        return conf[:a] + body.replace(old, new, 1) + conf[b:]
     assert old in conf, f"变异注入未生效（找不到 {old!r}）"
     return conf.replace(old, new, 1)
 

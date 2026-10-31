@@ -1306,6 +1306,35 @@ else
   echo "  ⏭️ 跳过 TLS 自动续期安装：盘上没有 ./tls-renew.sh（本次未取源码树）—— **部署不受影响**"
 fi
 
+# ── 2.6.2 微信「扫普通链接二维码打开小程序」校验文件落位（issue #8196）────────────
+# 微信后台生成的是一个**根下随机的 `<一串字符>.txt`**（文件名/内容都由微信给，仓库不编、不改）。
+# 它必须出现在 `https://app.migaozn.com/<名字>.txt` —— 也就是静态根的**根下**。
+# 用户在微信后台下载后原样放进 `deploy/swas/wechat-verify/`（说明见该目录 README），本段负责落位。
+# 🔴 只**增/覆盖** `.txt`：静态根同时是 C 端 h5 的落地面（`index.html` / `js/` / `b/` / `w/` /
+#    `terminal/` 都不归本段所有）⇒ 这里**不删**任何别的文件、也不做清理。
+# 幂等：同一份输入连跑两次结果逐字节一致（判据 = tests/unit_ci_workflows/test_wechat_verify_route.py）。
+# 任何跳过都**出声**且**不拖垮部署**（还没放文件是常态，不是故障）。
+# >>> wechat-verify
+MIGAO_VERIFY_STATIC_ROOT=${MIGAO_STATIC_ROOT:-/opt/migao-deploy/h5}
+MIGAO_VERIFY_SRC_DIR=${MIGAO_WECHAT_VERIFY_DIR:-deploy/swas/wechat-verify}
+MIGAO_VERIFY_COPIED=0
+if [ ! -d "$MIGAO_VERIFY_SRC_DIR" ]; then
+  echo "  ⏭️ 跳过微信校验文件：盘上没有 ${MIGAO_VERIFY_SRC_DIR}（本次未取源码树）—— **部署不受影响**"
+elif [ ! -d "$MIGAO_VERIFY_STATIC_ROOT" ]; then
+  echo "  ⏭️ 跳过微信校验文件：静态根 ${MIGAO_VERIFY_STATIC_ROOT} 不存在（h5 尚未落位）—— **部署不受影响**"
+else
+  for _migao_verify_file in "$MIGAO_VERIFY_SRC_DIR"/*.txt; do
+    [ -e "$_migao_verify_file" ] || continue
+    cp -f "$_migao_verify_file" "$MIGAO_VERIFY_STATIC_ROOT/$(basename "$_migao_verify_file")"
+    MIGAO_VERIFY_COPIED=$((MIGAO_VERIFY_COPIED + 1))
+    echo "  微信校验文件：$(basename "$_migao_verify_file") → ${MIGAO_VERIFY_STATIC_ROOT}/"
+  done
+  if [ "$MIGAO_VERIFY_COPIED" -eq 0 ]; then
+    echo "  ℹ️ 微信校验文件：${MIGAO_VERIFY_SRC_DIR} 里还没有 *.txt（微信后台生成后原样放进来；**部署不受影响**）"
+  fi
+fi
+# <<< wechat-verify
+
 # ══════════════════════════════════════════════════════════════════════════
 # 2.7 部署成功后：按**保留策略**清理（issue #4808 ①）——替换原来那句只清 dangling 的
 #     `docker image prune -f`（它**不带 `-a`** ⇒ 带 tag 的 `sha-*` 旧镜像**永远不被清**
