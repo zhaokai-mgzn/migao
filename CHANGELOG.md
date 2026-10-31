@@ -5,6 +5,12 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 生产事故会主动叫人了：5xx 计数 / 证书到期 / 发布失败三类事件落到同一条值班通道（2026-10-31，issue #8203）
+
+- **改前**：上线审计 P0-04 的读数 —— 仓库里对 5xx **一条判据都没有**（`.github/workflows/` 无 alert 腿、`deploy/` 无 metrics），线上唯一可信探针是 `GET /api/version`；三类事件（5xx / 证书到期 / 发布失败）发生时**只有腿本身红/绿**，不会主动惊动人。
+- **改后**：新增 `deploy/scripts/prod-5xx-window.sh`（只读合成探针：审计点名的四面 × N 轮窗口，数 5xx 条数；0=未超阈值 / 1=超阈值 / 3=无法判定）+ `scripts/prod_alert.sh`（**唯一**投递出口：GitHub Issue `priority/P1` 标题去重 + 读数分级指纹去重，webhook 由 `MIGAO_ALERT_WEBHOOK_URL` 可选）。5xx 与证书到期（21 天阈值）都接进既有 `post-merge-verify` 腿（`push: main` / 每日 / 手动三个既有触发面，**不新增 schedule**）；发布失败沿用既有 `[deploy-leg]` 通道。同一事件**只开一条单**，读数分级没变就不再评论。
+- **边界**：全站 5xx 率（nginx access log 口径）与 30s 级外部监控**未覆盖**；短信/电话/邮件直发**未做**（需外部账号）；告警投递失败**不改腿色**（只降级为 `::warning::`，理由与重启条件见 `docs/deployment/observability-minimum.md`）。
+
 ### 黄金策能回看历史了：过去 N 天提醒过什么，一句话问得出来（2026-10-31，issue #8253）
 
 - **改前**：`briefing_query` 工具只能拿**当日** —— 老板问「上个月你建议我改价，效果如何？」，答不出来（连「提醒过什么」都不知道）。

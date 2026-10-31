@@ -66,6 +66,8 @@ rollback.md 回滚（重新发布上一稳定版本）
 - 生产 RDS/Redis 仅 VPC 内网白名单
 - 生产镜像扫描（trivy）接入 tag 构建链（block critical）
 - 生产可观测性：SLS 采集 + 告警（CPU/内存/磁盘/5xx/健康检查）触达值班
+  —— **已落地的形态**（5xx 计数 / 证书到期 / 发布失败三类事件各自的判据 + 值班通道 + 去重 + 演练读数，
+  以及**仍未覆盖项**）见 [observability-minimum.md](observability-minimum.md)（issue #8203，上线审计 P0-04）
 - 生产发布记录（发布日志/版本表）+ 季度恢复演练
 
 ### 5.1 安全响应头（issue #8218 P1-08 / P1-09 —— 已落地的形态，改它之前先读这一节）
