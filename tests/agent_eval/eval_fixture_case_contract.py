@@ -94,7 +94,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 LEDGER_REL = "tests/agent_eval/eval_fixture_data_contract.json"
 CASES_DIR_REL = ".github/cases"
-EVAL_CASES_REL = "tests/agent_eval/eval_cases.py"
+EVAL_CASES_REL = "tests/agent_eval/eval_cases"   # 目录型生成物（issue #8188）
 SEED_SCRIPT_REL = "scripts/eval_stack_seed.sh"
 SCHEMA_REL = "backend/admin-api/src/main/resources/db/init/schema.sql"
 TOOLS_DIR_REL = "backend/ai-agent-service/app/tools"
@@ -154,7 +154,7 @@ class Root:
 
 
 def case_library(root: Root):
-    """读 `.github/cases/*.yml`（唯一源；`eval_cases.py` 是它的生成物）。
+    """读 `.github/cases/*.yml`（唯一源；`eval_cases/` 是它的生成物）。
 
     ⚠️ 判据读**源**不读生成物：生成物由 `render_cases.py` 渲染，读它会把「忘了重渲染」
     误判成「夹具缺数据」（两件事必须可分辨）。
@@ -347,7 +347,10 @@ def contract_problems(root: Root = None, ledger: dict = None) -> list:
     # 判据 4：case_id 必须真实存在于仓内（用 `eval_cases.py` 的现取 ID 集 —— 它是
     # `.github/cases/*.yml` 的生成物，且 `render_cases.py` 只渲染**带 `id` 字段**的条目）
     if root.exists(EVAL_CASES_REL):
-        known = set(re.findall(r"\bid\s*=\s*'([^']+)'", root.read_text(EVAL_CASES_REL)))
+        pkg = root.path(EVAL_CASES_REL)
+        src = ("".join(p.read_text(encoding="utf-8") for p in sorted(pkg.glob("*.py")))
+               if pkg.is_dir() else root.read_text(EVAL_CASES_REL))
+        known = set(re.findall(r"\bid\s*=\s*'([^']+)'", src))
         if not known:
             problems.append(f"{EVAL_CASES_REL}: 一条 `id=` 都没解析到（生成物形态变了 ⇒ 判据失效，不许静默绿）")
         for key, entry in sorted(entries.items()):

@@ -18,7 +18,7 @@
 | # | 判据 | 怎么让它单独红 |
 |---|---|---|
 | a | **用例面**：`.github/cases/chat.yml` 的 CH-043 计分断言里有 `fabric_widths`，且值 ⊇ {2.8, 3.2} | 删掉该键 / 只留 2.8 ⇒ 红 |
-| b | **渲染面**：`render_cases.to_eval_py` 产出里含 `curtain_calc(fabric_widths=[2.8, 3.2])`，且该串经 runner 的 `_parse_expectation` 解析回**两个元素**的列表 | 把 `exp_to_str` 的 list 分支改成 `str(v)` ⇒ 红 |
+| b | **渲染面**：`render_cases.package_text` 产出里含 `curtain_calc(fabric_widths=[2.8, 3.2])`，且该串经 runner 的 `_parse_expectation` 解析回**两个元素**的列表 | 把 `exp_to_str` 的 list 分支改成 `str(v)` ⇒ 红 |
 | c | **判据面（红证）**：喂**负向轨迹**给 runner 的 `check_expectation` ⇒ 必判红；喂**正向轨迹** ⇒ 必判绿 | 把子集语义改成"只要键在"⇒「只填 [2.8]」那条红证失败 |
 
 没有 c，a/b 只证明「文字写对了」，**不证明这条断言真会红** —— 那正是本仓库反复踩的
@@ -119,9 +119,9 @@ class TestCaseAssertsFabricWidths:
 
 class TestRenderedExpectationShape:
     def test_renderer_emits_list_literal(self):
-        """`render_cases.to_eval_py` 必须把列表渲染成 `k=[a, b]`（不是字符串）。"""
-        from render_cases import to_eval_py
-        out = to_eval_py([_case()])
+        """`render_cases.package_text` 必须把列表渲染成 `k=[a, b]`（不是字符串）。"""
+        from render_cases import package_text
+        out = package_text([_case()])
         assert WANT_LITERAL in out, (
             f"生成物里没有 {WANT_LITERAL!r} —— 渲染器把 list 渲染成了别的形态"
             f"（字符串形态会让值级比较恒假 = 恒红空断言）")

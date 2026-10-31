@@ -59,7 +59,7 @@
 ## ③ 行为层（真实 LLM）
 
 - 用例单一源：`.github/cases/<域>.yml` → `render_cases.py` 渲染 →
-  `tests/agent_eval/eval_cases.py`（CI agent-eval 消费）。
+  `tests/agent_eval/eval_cases/`（按域分包的目录，CI agent-eval 消费）。
 - **B 端复杂交互用例模板**（以加工项 PR-014/PR-015 为样板）：
   1. 触发引导（如「录入这个商品」）→ 断言 interact(key 控件)；
   2. 用户按前端**真实发送的文本**回复（如「已选加工项：打孔加工、韩式折边」——

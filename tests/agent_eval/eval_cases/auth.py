@@ -1,0 +1,276 @@
+# GENERATED FILE — DO NOT EDIT
+# 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
+# 源: cases/*.yml（case-contract 单一源）
+# 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
+# 域: auth（源: cases/auth.yml，14 条）
+
+from ._schema import Difficulty, EvalCase, Skill
+
+# ── AU-001 [SMOKE] 员工登录 用户名@企业编码 + 密码 → 成功签发 JWT（源: cases/auth.yml）──
+_CASE_AU_001 = EvalCase(
+    id='AU-001',
+    legacy_id='',
+    title='员工登录 用户名@企业编码 + 密码 → 成功签发 JWT',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.SMOKE,
+    user_inputs=['员工在登录页填 用户名@企业编码（如 zhangsan@acme）+ 密码 → POST /api/auth/employee/login → 成功，进入该企业'],
+    expectations=['direct_reply'],
+    data_checks=["端点形状：body = {identifier, password}；成功 200 + success=true + data.accessToken 非空 + data.user.identityType='employee' + data.user.tenantId = 企业编码解析出的租户（refresh token 只经 HttpOnly cookie，不进响应体）。红证：backend/admin-api/src/test/java/com/migao/admin/controller/EmployeeLoginControllerTest.java 断言响应字段与 cookie 口径，删掉 mustChangePassword 字段即红。", "租户上下文：登录成功后 TenantContext = 解析出的 tenant_id（后续 roles/permissions/租户名查询都按它走）。红证：EmployeeLoginServiceTest 断言 TenantContext.getTenantId()==1L 且 userMapper.selectActiveByTenantAndUsername(1L,'zhangsan') 被以该租户调用。", '标识切分按**最后一个** @：`a@b@acme` 的 username 段是 `a@b`（会被用户名格式校验拒绝，但切分本身不歧义）；两侧任一为空 ⇒ 401（不是 500、不是放行）。', '存量带下划线的企业编码（tenant_7478359537 形态）**必须能登录** —— 编码字符集含 `_`；改成只允许连字符 ⇒ 该用例必红。证据：backend/admin-api/src/test/java/com/migao/admin/service/EmployeeLoginServiceTest.java'],
+    skip_reason='[backend-contract] 纯后端单测契约（AuthService.loginByEmployee / AuthController 端点），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['auth', 'login', 'employee'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── AU-002 [NORMAL] 跨租户隔离：同名员工分属 A/B，凭据只解析到自己企业（源: cases/auth.yml）──
+_CASE_AU_002 = EvalCase(
+    id='AU-002',
+    legacy_id='',
+    title='跨租户隔离：同名员工分属 A/B，凭据只解析到自己企业',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['企业 A 与企业 B 都有员工 zhangsan：用 zhangsan@A的企业编码 登录 → 只进 A；用 zhangsan@B的企业编码 登录 → 只进 B'],
+    expectations=['direct_reply'],
+    data_checks=['查询**本身**带租户条件（不变式 I1）：`UserMapper.selectActiveByTenantAndUsername` 的 SQL 逐字含 `tenant_id = #{tenantId}` 与 `username = #{username}`。红证：backend/admin-api/src/test/java/com/migao/admin/service/EmployeeLoginServiceTest.java 反射读 @Select 的 SQL 文本，删掉租户谓词即红。', '绝不跨租户兜底：解析到 A 时**一次都不**用 B 的 tenantId 查用户（`verify(never())`）。红证：同上，把 tenant_id 换成「先按 username 全局查、再取第一条」即红。', '类级元守卫（让同类进不来）：任意 `@InterceptorIgnore(tenantLine="true")` 且查 `users`、SQL 里却没有 `tenant_id` 谓词的方法**必须登记豁免台账**，否则判红；台账条数只许缩短。判据：tests/unit_ci_workflows/test_tenant_scoped_user_queries.py（含注入式自证：临时加一个无租户谓词的同形方法 ⇒ 必红）。'],
+    skip_reason='[backend-contract] 纯后端单测契约 + 静态类级守卫，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['auth', 'tenant_isolation', 'defense'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── AU-003 [NORMAL] 反枚举：企业编码不存在 / 用户不存在 / 密码错 → 统一 401 文案（源: cases/auth.yml）──
+_CASE_AU_003 = EvalCase(
+    id='AU-003',
+    legacy_id='',
+    title='反枚举：企业编码不存在 / 用户不存在 / 密码错 → 统一 401 文案',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['分别用「不存在的企业编码」「该企业下不存在的用户名」「错误密码」「已禁用账号」「格式非法的标识」尝试员工登录'],
+    expectations=['direct_reply'],
+    data_checks=['五种失败走**同一出口**：HTTP 401 + 错误码 AUTH_FAILED + message 逐字相同（`账号或密码错误`；该错误码由后端契约测试断言，本用例属 [backend-contract] 不进 agent-eval 计分），不泄露是哪一项错。红证：backend/admin-api/src/test/java/com/migao/admin/service/EmployeeLoginServiceTest.java 把五种病因聚合成一个断言（`containsOnly`），任一分支换成别的文案/状态码即红；端点层同判据见 backend/admin-api/src/test/java/com/migao/admin/controller/EmployeeLoginControllerTest.java。', '失败不许产生副作用：不下发 access/refresh cookie、不建用户、不改任何行。', '文案的**唯一来源**是 LoginIdentifiers.AUTH_FAILED_MESSAGE（三处各写一份字符串 ⇒ 口径必然漂移，属禁止形态）。'],
+    skip_reason='[backend-contract] 纯后端单测契约（AuthService.loginByEmployee 的反枚举出口），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['auth', 'anti_enumeration', 'defense'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── AU-004 [NORMAL] 短信登录角色门禁：非 admin 员工走短信 → 拒绝（源: cases/auth.yml）──
+_CASE_AU_004 = EvalCase(
+    id='AU-004',
+    legacy_id='',
+    title='短信登录角色门禁：非 admin 员工走短信 → 拒绝',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['普通员工（role=operator / employee）与 C 端顾客（role=customer）用「手机号 + 短信验证码」登录 → 被拒绝，并提示改用账号密码登录'],
+    expectations=['direct_reply'],
+    data_checks=['门禁在**签发之前**：非管理员命中 ⇒ 401 + 文案含「非管理员」「员工登录入口」；一个 token 都不许签发（verify(never()) generateAccessToken/generateRefreshToken）。红证：backend/admin-api/src/test/java/com/migao/admin/service/SmsLoginRoleGateTest.java，把门禁删掉或放宽成「有账号即可」⇒ 三条拒绝用例当场变绿/不抛，测试即红。', '评测种子同形数据同样被拒：role=employee（debug_employee_wangwu 形态）与 role=customer（debug_customer_1 形态，手机号 13800138000）都不得通过短信登录。', '多租户歧义口径**不回退**（审计 07 P1-2）：同手机号命中多个租户且未指定租户 ⇒ 拒绝，禁止静默 LIMIT 1 落错租户。'],
+    skip_reason='[backend-contract] 纯后端单测契约（AuthService.loginBySms 的角色门禁），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['auth', 'sms', 'role_gate'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── AU-005 [SMOKE] 管理员短信登录（企业管理员 + 平台超管）仍可用（源: cases/auth.yml）──
+_CASE_AU_005 = EvalCase(
+    id='AU-005',
+    legacy_id='',
+    title='管理员短信登录（企业管理员 + 平台超管）仍可用',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.SMOKE,
+    user_inputs=['企业管理员（users.role=admin）与平台超管（platform_admins）用「手机号 + 短信验证码」登录 → 成功'],
+    expectations=['direct_reply'],
+    data_checks=['平台超管路径**逻辑一字不改**：仍先查 platform_admins，tenantId=-1、role=super_admin，且**不经过**角色门禁（没有 users 行）。红证：backend/admin-api/src/test/java/com/migao/admin/service/SmsLoginRoleGateTest.java 断言 super_admin + tenantId=-1 + `verify(userService, never()).getUserRoles(...)`；把门禁挪到平台路径之前即红。', "企业管理员照旧：role=admin 命中 ⇒ 签发（identityType='sms'），并携带 mustChangePassword 字段（默认 false）。", '真值订正留档：模板 auth-sms.login-order 原文「不限 admin 角色」已被本单推翻（本次改判逐字写在模板里）。'],
+    skip_reason='[backend-contract] 纯后端单测契约（AuthService.loginBySms 的管理员路径），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['auth', 'sms', 'admin'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── AU-006 [NORMAL] 首登强制改密：未改密访问业务 API → 403；改密后放行（源: cases/auth.yml）──
+_CASE_AU_006 = EvalCase(
+    id='AU-006',
+    legacy_id='',
+    title='首登强制改密：未改密访问业务 API → 403；改密后放行',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['管理员给员工设了初始密码 → 员工用初始密码首登 → 除改密/登出/读自己信息外一律 403（PASSWORD_CHANGE_REQUIRED）→ 改密成功后正常使用'],
+    expectations=['direct_reply'],
+    data_checks=['签发侧按**数据库当前值**算 claim，且**登录与刷新两条路径都算**：未改密时刷新一次拿到的新 access token **仍带** pwd_change_required（只在登录时算 ⇒ 本判据必红）。红证：backend/admin-api/src/test/java/com/migao/admin/service/ForcePasswordChangeServiceTest.java + backend/admin-api/src/test/java/com/migao/admin/security/PasswordChangeEnforcementTest.java（真实 RSA 签发 + 真实过滤链串联）。', '拦截侧**默认拒绝**：带该 claim 的会话访问 /api/admin/** 一律 403 + 错误码 PASSWORD_CHANGE_REQUIRED，且请求**到不了业务链**；白名单只有 POST /api/auth/password/change、POST /api/auth/logout、GET /api/auth/me、POST /api/auth/refresh。', '改密即换发：POST /api/auth/password/change（需认证、校验旧密码、策略 ≥8 位且含字母与数字否则 422）成功后清 must_change_password，并**直接**在响应里给一份不带标记的新 access token ⇒ 用「改密响应里的那个 token」访问同一业务 API **放行**（200）。红证：PasswordChangeEnforcementTest 第 ④⑤ 步；若改回「只清标记不发新 token」⇒ 该步必然拿不到可放行的 token 而红。', '旧 token 仍被拦（拦截侧只看 claim、不看库）：客户端必须用改密响应里的新 token —— 这一性质被显式钉住（第 ⑥ 步），以免「改密后旧 token 自动放行」被当成实现细节悄悄改变。', '平台超管调本端点 ⇒ 明确业务错误（不是 NPE/404）：platform_admins 没有 users 行。'],
+    skip_reason='[backend-contract] 纯后端单测契约（签发侧 + 过滤链全链路），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['auth', 'must_change_password', 'defense'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── AU-007 [NORMAL] 管理员设 用户名+初始密码 → 员工可登录；租户内重名 → 拒绝（源: cases/auth.yml）──
+_CASE_AU_007 = EvalCase(
+    id='AU-007',
+    legacy_id='',
+    title='管理员设 用户名+初始密码 → 员工可登录；租户内重名 → 拒绝',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['管理员在员工管理里给员工设「用户名 + 初始密码」→ 员工可用该凭据登录；同一企业内用户名重复 → 明确拒绝并提示换一个'],
+    expectations=['direct_reply'],
+    data_checks=['写面规整与校验：POST /api/admin/users / PUT /api/admin/users/{id} 的 username 统一转小写、按 ^[a-z0-9][a-z0-9._-]{2,31}$ 校验（违规 422 + 明确文案，不写库）。红证：backend/admin-api/src/test/java/com/migao/admin/service/AdminUserUsernameTest.java。', '租户内重复 ⇒ 422（不是数据库异常裸抛 500）且提示「请换一个」；并发下由唯一索引兜底（DuplicateKeyException 转 422）。红证：同上两条用例（应用层查重命中 / insert 抛 DuplicateKeyException）。', '创建带初始密码、PUT 带 password、PUT /{id}/reset-password ⇒ must_change_password=true（**仅当确实设了密码**：没密码的账号被标强制改密会永久锁死 —— 改密要校验旧密码而旧密码是 null）。', '响应字段别漏：员工详情/列表里新列以 `employeeUsername` 下发（`username` 这个键历史上等于手机号，**不动它**以免打碎存量消费者），并附 `mustChangePassword`。'],
+    skip_reason='[backend-contract] 纯后端单测契约（UserService 的员工用户名写面），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['auth', 'employee_manage', 'username'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── AU-008 [NORMAL] 不同租户可用相同用户名（源: cases/auth.yml）──
+_CASE_AU_008 = EvalCase(
+    id='AU-008',
+    legacy_id='',
+    title='不同租户可用相同用户名',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['A 企业已有员工 zhangsan；在 B 企业再建一个用户名 zhangsan 的员工 → 允许（两家互不影响）'],
+    expectations=['direct_reply'],
+    data_checks=['应用层查重**必须带 tenant_id**：把租户条件删掉就退化成「全球唯一」，本用例必红（判据捕获 wrapper 的 SQL 片段并断言含 username 与 tenant_id）。证据：backend/admin-api/src/test/java/com/migao/admin/service/AdminUserUsernameTest.java', '数据库侧唯一索引只到租户内：`uk_users_tenant_username ON users (tenant_id, username) WHERE username IS NOT NULL AND deleted = 0` —— 改成 `ON users (username)`（全球唯一）或丢掉部分索引谓词（存量 NULL 行互相冲突 / 软删行占位）⇒ 必红。判据：tests/unit_ci_workflows/test_tenant_scoped_user_queries.py 同时校验**迁移 V128 与建库脚本**两份真相。', '改自己的用户名时查重**排除自己**（否则管理员改不动任何已有用户名的员工）；不传 username（null）表示不修改，不误清空。'],
+    skip_reason='[backend-contract] 纯后端单测契约 + 静态数据面守卫，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['auth', 'tenant_isolation', 'username'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── AU-009 [NORMAL] 企业编码设置：格式 / 唯一性 / 保留字校验（源: cases/auth.yml）──
+_CASE_AU_009 = EvalCase(
+    id='AU-009',
+    legacy_id='',
+    title='企业编码设置：格式 / 唯一性 / 保留字校验',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['管理员在「企业基础信息」里设置企业编码：格式不合规 / 已被别的企业占用 / 是保留字 → 明确拒绝并说明原因'],
+    expectations=['direct_reply'],
+    data_checks=['三类拒绝都是 422 + 明确文案：格式（含大写/空格/@/超长/单字符）、保留字（admin/api/www/app/platform/support/system/root/login/auth）、已被占用（大小写不敏感、排除自己）。红证：backend/admin-api/src/test/java/com/migao/admin/controller/TenantCodeSettingsTest.java，任一类放宽成「静默接受」即红。', '设置入口**复用**既有 PUT /api/admin/settings 的 code 字段（GET /api/admin/settings 本就下发 code；权限码沿用 system:manage）—— 不新造端点、不新造权限码；响应里带出新编码。', '存量兼容不变式 ①：编码**未变更即跳过校验**（管理员打开企业基础信息**原样保存**不能被自己的新校验拒掉，否则那页的 name/logo/通知开关一起废掉）；② 字符集**含下划线**（dev 库现存 tenant_7478359537 / tenant_5321056468 两个租户，只允许连字符会让它们的员工永远登不进来且管理员无自救路径）。', '新租户默认编码符合该格式且可读：`<企业名 slug>-<4 位随机>`（纯中文企业名退化为 `shop`），淘汰 `tenant_%06d%04d`（含下划线、不可读）；唯一性靠查重 + 重试，最终兜底是数据库 UNIQUE(tenants.code)（并发撞车 ⇒ 注册失败而非静默撞号）。'],
+    skip_reason='[backend-contract] 纯后端单测契约（SettingsController 的企业编码校验），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['auth', 'tenant_code', 'settings'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── AU-010 [NORMAL] 存量员工（无用户名）无法用员工登录（源: cases/auth.yml）──
+_CASE_AU_010 = EvalCase(
+    id='AU-010',
+    legacy_id='',
+    title='存量员工（无用户名）无法用员工登录',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['存量员工（users.username 仍为 NULL）尝试用员工登录 → 失败；管理员补设用户名后才能登录（不做自动迁移、不自动生成用户名）'],
+    expectations=['direct_reply'],
+    data_checks=['存量行（username IS NULL）落不进员工登录的查询：SQL 逐字含 `username = #{username}` ⇒ NULL 永不匹配；登录统一返回 401 同一文案。红证：backend/admin-api/src/test/java/com/migao/admin/service/EmployeeLoginServiceTest.java（查询不命中即拒绝），把查询改成 `(username = ? OR username IS NULL)` 兜底即红。', '迁移不迁移数据：V128 只加列 + 部分唯一索引，`username` 保持 NULL、`must_change_password` 默认 FALSE（存量行不受影响）。判据：迁移 V128 与建库脚本的 SQL 文本由 tests/unit_ci_workflows/test_tenant_scoped_user_queries.py 校验；指纹账本 tests/unit_ci_workflows/migration_fingerprints.json 冻结两份载体。', '定位仍只在自己企业内发生（没有「全平台按用户名找人」的兜底路径）：`selectActiveByTenantAndUsername(tenantId, ...)` 被以非空 tenantId 调用过。'],
+    skip_reason='[backend-contract] 纯后端单测契约（存量行的登录失败路径），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['auth', 'legacy', 'no_migration'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── AU-011 [NORMAL] 登录失败计数/锁定 - 凭据类登录入口达阈值即锁，且不泄露账号是否存在（源: cases/auth.yml）──
+_CASE_AU_011 = EvalCase(
+    id='AU-011',
+    legacy_id='',
+    title='登录失败计数/锁定 - 凭据类登录入口达阈值即锁，且不泄露账号是否存在',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['员工登录入口连续提交 5 次错误口令；未知用户名同样连提 5 次；工人 PIN 入口同理'],
+    expectations=['direct_reply'],
+    data_checks=['同一标识窗口内失败达 5 次 ⇒ 第 6 次被拒，文案 = `尝试次数过多，请 5 分钟后再试`（**即便口令正确**）', '锁定后**不再查库**（判据：mapper 调用次数停在第 5 次）', '**不存在的用户名同样被计数与锁定** ⇒ 锁定文案不泄露账号是否存在（与反枚举 I1 相容）', '大小写/空白变体共享同一计数键（防绕道）；成功登录清零；首次失败即置 TTL、后续失败刷新', 'Redis 不可用 ⇒ fail-closed（503 AUTH_UNAVAILABLE + 读数 migao.auth.login_guard_unavailable），不放行'],
+    skip_reason='[backend-contract] 后端单测契约（EmployeeLoginLockoutTest / WorkerLoginLockoutTest）+ 类级元守卫（test_credential_login_has_failure_guard.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['auth', 'brute_force', 'defense'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── AU-012 [NORMAL] 整页加载后的会话恢复必须换回 accessToken —— 只跑 /api/auth/me 会让「裸 fetch + Bearer」面（聊天）静默 401（源: cases/auth.yml）──
+_CASE_AU_012 = EvalCase(
+    id='AU-012',
+    legacy_id='',
+    title='整页加载后的会话恢复必须换回 accessToken —— 只跑 /api/auth/me 会让「裸 fetch + Bearer」面（聊天）静默 401',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['本机实测（issue #6352）：真实登录 → 进 /chat → 点「新建对话」逐字「创建会话失败，请稍后重试」；ai-agent 日志 `Authentication failed: no token provided` + `POST /api/chat/sessions status=401`'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·会话恢复换 token：frontend/admin-web/src/store/auth.ts 的 initialize 在无内存 token 时**先调 refreshAccessToken()**（`POST /api/auth/refresh`，HttpOnly cookie 轮换）再 fetchUserInfo()。执行点 = frontend/admin-web/tests/unit/store/auth.test.ts 的「AU-012 无内存 token ⇒ 先 refresh 再 /me」与「无 cookie ⇒ 不抛、保持未认证」两条', '判据 2·`GET /api/auth/me` **不下发 accessToken**（实测键集 = user/roles/permissions/menus/capabilities）⇒ 只跑 /me 得到 isAuthenticated=true ∧ accessToken=null；而聊天面是**裸 fetch + Bearer、零 401 重试**（axios 面有 token-refresh-manager 自动重放 ⇒ 业务页面照常，现象极具误导性）', "🔴 红证（改前实测，migao-dev-flow §28.1 出口① 临时反转）：把 frontend/admin-web/src/store/auth.ts 换回 origin/main 版本再跑 ⇒ `expected null to be 'restored-access'`，**1 failed / 29 passed**；恢复后 **30 passed**。复算 = 在 frontend/admin-web 跑 npx vitest run tests/unit/store/auth.test.ts", '类级守卫（同批）：tests/unit_ci_workflows/test_admin_web_token_restore_guard.py —— ① `frontend/admin-web/src/**` 里「同时出现 Bearer 与 fetch( 」的文件集合逐项冻结（现取 = lib/api.ts ∪ store/chat.ts，新面即红）② initialize 必须调用 refreshAccessToken()（摘掉即红）③ 判别力自证'],
+    skip_reason='[backend-contract] 纯前端会话恢复由 vitest 单测 + 类级接线守卫验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['auth', 'session-restore', 'token', 'admin-web'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── AU-013 [NORMAL] 手机端商家 H5 登录态 1 个月：access token 2 小时过期后用 refresh cookie 续期并重放（不再每 2 小时被踢回登录页）（源: cases/auth.yml）──
+_CASE_AU_013 = EvalCase(
+    id='AU-013',
+    legacy_id='',
+    title='手机端商家 H5 登录态 1 个月：access token 2 小时过期后用 refresh cookie 续期并重放（不再每 2 小时被踢回登录页）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-18 逐字：「为什么界面上手机端的二维码扫码后每次都要登录，我设置过登录有效期是一月的吧」→ 现场：扫顶栏「手机端」二维码（issue #7198）打开 https://app.migaozn.com/b/ ，隔一段时间再打开必停「请先登录」并跳 /pages/auth/login/index。用户随即裁定：「是/b，方案选择A，但是登录态改为1个月」'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·配置与兜底同值：backend/admin-api/src/main/resources/application.yml 的 `jwt.refresh-token-expiration` = 2592000（30 天），且 backend/admin-api/src/main/java/com/migao/admin/security/JwtTokenProvider.java 的 `@Value` 兜底同为 2592000（两处漂移 ⇒ 缺省环境静默回到 7 天）。执行点 = tests/unit_ci_workflows/test_refresh_token_lifetime.py::test_refresh_token_is_one_month_and_fallback_matches', '判据 2·cookie 有效期单一来源：backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java 不再声明 `REFRESH_TOKEN_COOKIE_MAX_AGE` 字面量，`setRefreshTokenCookie` 取自 `jwtTokenProvider.getRefreshTokenExpiration()`。执行点 = 同文件::test_cookie_ttl_has_single_source', '判据 3·手机端续期接线：frontend/bmini-app/src/utils/request.ts 导出 `refreshAccessToken()`（单飞）并在 `request()` 的 401 分支调用、且 `canRefreshSession` 排除 `/api/worker/` 与 `skipAuth`；frontend/bmini-app/src/store/authStore.ts 的 `initialize` / `checkAuth` 在 exp 过期时先续期、续不到才登出。执行点 = 同文件::test_mobile_refresh_wiring_exists', '行为判据：frontend/bmini-app/tests/request.test.ts 的「401 会话续期（issue #7249）」五条（换新 token + 重放 / 续期失败回落既有行为 / 并发单飞 / 工人端点不续期 / 登录面不续期）＋ frontend/bmini-app/tests/store-auth.test.ts 四条（有效不续期 / 过期+成功 / 过期+失败 / initialize 同款）', '🔴 红证（改前实测，migao-dev-flow §28.1 出口① 临时反转）：`cd frontend/bmini-app && npx jest frontend/bmini-app/tests/request.test.ts frontend/bmini-app/tests/store-auth.test.ts` ⇒ **2 failed / 18 passed**（store 两条：续期成功后仍判未登录、token 仍为 null）＋ request suite 因 `refreshAccessToken` 不存在而编译失败；`python3 -m pytest tests/unit_ci_workflows/test_refresh_token_lifetime.py` ⇒ **4 failed**。改后同命令 = **46 passed** / **4 passed**；全量 `npx jest` = 910 passed；`npx tsc --noEmit` 通过'],
+    skip_reason='[backend-contract] 会话续期是「后端配置 + 前端请求层」的确定性行为，由 jest / pytest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['auth', 'session', 'token-refresh', 'bmini'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── AU-014 [NORMAL] 手机端扫码即登录：PC 已登录签发一次性二维码票据（120 秒），手机扫码免密换出 30 天会话；续期失败原因可在 ?diag=1 读到（源: cases/auth.yml）──
+_CASE_AU_014 = EvalCase(
+    id='AU-014',
+    legacy_id='',
+    title='手机端扫码即登录：PC 已登录签发一次性二维码票据（120 秒），手机扫码免密换出 30 天会话；续期失败原因可在 ?diag=1 读到',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-26 逐字：「现在每次扫码后都要重新登录，不能保持登录态吗」（截图 = 顶栏「手机端」二维码弹层）；随后选项裁定：「做扫码即登录，并加启动探针定位掉线原因（推荐）」。'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·签发需已登录、兑换公开：`/api/auth/qr/ticket` 不在 SecurityConfig 放行名单（未认证 ⇒ 401），`/api/auth/qr/exchange` 在放行名单且票据端点不读 body（不接受「替别人签发」）。执行点 = tests/unit_ci_workflows/test_qr_login_public_surface.py', '判据 2·类型隔离（真签名）：`qr_login` 票据不是 access / refresh，access / refresh 也不是票据；票据过不了 JwtAuthenticationFilter。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/QrLoginTicketServiceTest.java::tokenTypesAreMutuallyExclusive', '判据 3·单次有效 + fail-closed：兑换一次成功后二次必 401（兑换即吊销 jti）；吊销状态不可判定（Redis 不可用）⇒ 503 不放行。执行点 = 同文件::consume_secondTimeIsRejected / consume_revocationUnavailable_failsClosed', '判据 4·二维码内容单一真值：二维码 = `buildMobileEntryUrl(getBminiH5Url(), ticket)`，组件里不许自己拼 `qr=`。执行点 = tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py + frontend/admin-web/tests/unit/lib/bmini-h5-url.test.ts', '判据 5·工人优先（issue #7878）：工人设备（本地有 `worker_sessions` 的 session id）扫「手机端」码 ⇒ **不兑换**商家会话、抹掉 `?qr=`、落地标记为真；商家入口页按 `merchantEntryTarget({workerOnly, workerLanding})` 先于 `checkAuth()` 判定并 `redirectTo` 工人工作台。执行点 = frontend/bmini-app/tests/qr-login.test.ts::工人设备扫「手机端」码 与 frontend/bmini-app/tests/role-guard.test.tsx::merchantEntryTarget', '行为判据：frontend/admin-web/tests/unit/components/MobileEntry.test.tsx（票据随码上屏 / 倒计时 / 过期自动换新 / 签发失败降级裸入口）＋ frontend/bmini-app/tests/qr-login.test.ts（读取·抹参·兑换落地·失败不毁既有会话·启动门先兑换）＋ frontend/bmini-app/tests/auth-diag.test.tsx（探针环形缓冲 / 只在 ?diag=1 显示）'],
+    skip_reason='[backend-contract] 扫码兑换是「签名票据 + Cookie 会话」的确定性契约，由 JUnit / vitest / jest / pytest 判据验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['auth', 'session', 'qr-login', 'bmini', 'admin-web'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+CASES = (
+    _CASE_AU_001,
+    _CASE_AU_002,
+    _CASE_AU_003,
+    _CASE_AU_004,
+    _CASE_AU_005,
+    _CASE_AU_006,
+    _CASE_AU_007,
+    _CASE_AU_008,
+    _CASE_AU_009,
+    _CASE_AU_010,
+    _CASE_AU_011,
+    _CASE_AU_012,
+    _CASE_AU_013,
+    _CASE_AU_014,
+)

@@ -663,7 +663,7 @@ STRIP_COMMENT_DEF_RE = re.compile(
     r"^[ \t]*(?:async[ \t]+)?def[ \t]+strip_comment(?![A-Za-z0-9_])[ \t]*\(",
     re.MULTILINE,
 )
-# 生成物（`tests/agent_eval/eval_cases.py`）的文件头：它的正文是**用例散文**（会提到那个函数名），
+# 生成物（`tests/agent_eval/eval_cases/`，issue #8188 起按域分包）的文件头：它的正文是**用例散文**（会提到那个函数名），
 # **不是**实现 —— 逐字排除它（`strip_comment_scan_sources` 的 ③），并由
 # `test_no_generated_artifact_defines_the_yardstick` 正向钉住「生成物里从不出现那个**定义**」。
 # ⚠️ 判定看的是**首行**（本文件自己的说明文字里也有这个词组 ⇒ 不能用「文件里出现过它」来判，
@@ -715,7 +715,7 @@ def strip_comment_scan_sources():
        「只许缩短」当场失效）。⚠️ 不许把这条排除写成「跳过整个 `tests/**`」—— 那正是本包要堵的洞。
     ② `ledger_path`（同上）= 台账本体的 `_why_*` 字段也要引用那个函数名（可读性），
        它**不是**被扫对象（没有 `.py` 后缀）⇒ 排除它是**显式**豁免，不是靠后缀侥幸。
-    ③ `GENERATED_FILE_HEADER`（**约定**，不是台账条目）= `tests/agent_eval/eval_cases.py` 这类
+    ③ `GENERATED_FILE_HEADER`（**约定**，不是台账条目）= `tests/agent_eval/eval_cases/` 这类
        **生成物**：它的正文是**用例散文**（`data_checks` 里会出现那个函数名 —— 本包 MC-060 就写了），
        而 `tests/**` 的 `.py` 里**恰好只有一个**这样的文件 ⇒ 逐字排在扫描面之外；它**从不**定义
        那个函数这件事由 `test_no_generated_artifact_defines_the_yardstick` 单独钉住（不靠排除侥幸）。
@@ -791,7 +791,7 @@ class TestCriterion11YardstickIsSingleSource:
                                if STRIP_COMMENT_HITS_PREDICATE in p.read_text(encoding="utf-8"))
         assert prefix_family == [
             CANONICAL_STRIP_COMMENT,
-            "tests/agent_eval/eval_cases.py",                      # ← **生成物**的用例散文（MC-060 的 data_checks 里引了这个串）
+            "tests/agent_eval/eval_cases/misc.py",                 # ← **生成物**的用例散文（MC-060 的 data_checks 里引了这个串；issue #8188 起按域分包 ⇒ 落在 misc）
             GUARD_FILE,                                            # 自匹配（已排除）
             "tests/unit_ci_workflows/test_deploy_breaker_allowlist.py",
             "tests/unit_ci_workflows/test_logic_delete_write_shape.py",
@@ -874,10 +874,16 @@ class TestCriterion11YardstickIsSingleSource:
         本条正向钉住「生成物里一个**定义**都没有」—— 若有人把一份实现塞进生成物/或 render 出这种内容，
         本条当场红（`hits` 里会出现定义）。
         """
-        generated = [p.relative_to(REPO_ROOT).as_posix() for p in REPO_ROOT.rglob("*.py")
-                     if is_generated_artifact(p)]
-        assert generated == ["tests/agent_eval/eval_cases.py"], \
-            f"生成物清单变了（扫描面的生成物排除要跟着重取）：{generated}"
+        generated = sorted(p.relative_to(REPO_ROOT).as_posix() for p in REPO_ROOT.rglob("*.py")
+                           if is_generated_artifact(p))
+        pkg = REPO_ROOT / "tests" / "agent_eval" / "eval_cases"
+        expected = sorted(p.relative_to(REPO_ROOT).as_posix() for p in pkg.glob("*.py"))
+        assert generated == expected, (
+            f"生成物清单变了（扫描面的生成物排除要跟着重取）：现取 {len(generated)} 个 / "
+            f"期望 `eval_cases/` 下 {len(expected)} 个模块；差集 "
+            f"{sorted(set(generated) ^ set(expected))}")
+        assert len(generated) >= 20, (
+            f"生成物清单塌到 {len(generated)} 个 —— 包结构变了 / 生成物没提交（不许静默缩小扫描面）")
         defined = [g for g in generated
                    if STRIP_COMMENT_DEF_RE.search((REPO_ROOT / g).read_text(encoding="utf-8"))]
         assert defined == [], f"生成物里出现了那个函数定义（= 藏起来的第二把尺子）：{defined}"

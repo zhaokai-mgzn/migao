@@ -206,9 +206,9 @@ def probes_by_face(repo_root="."):
         _ci("用例 → 生成物域映射覆盖", "tests/unit_ci_workflows/test_render_cases_domain_map.py"),
         Probe("重渲染两端生成物 + 复算新鲜度（**禁手改生成物**）", "",
               raw="python3 .github/render_cases.py --cases .github/cases "
-                  "--out-eval tests/agent_eval/eval_cases.py "
+                  "--out-eval tests/agent_eval/eval_cases "
                   "--out-md docs/testing/mibao-verification-cases.md && "
-                  "git diff --exit-code tests/agent_eval/eval_cases.py "
+                  "git diff --exit-code tests/agent_eval/eval_cases "
                   "docs/testing/mibao-verification-cases.md",
               source=".github/render_cases.py"),
         Probe("真值引用完整性（fail-closed，rc 必须 0）", "",

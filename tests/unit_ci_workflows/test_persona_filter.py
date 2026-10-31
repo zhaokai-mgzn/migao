@@ -96,8 +96,8 @@ class TestDebugUserField:
         渲染器坏掉时它**照样在**（只是下次重渲染才消失）；只读生成物的测试对渲染器完全免疫。
         故这里**真跑一次渲染**断言输出。
         """
-        from render_cases import to_eval_py
-        out = to_eval_py(_all_cases())
+        from render_cases import package_files
+        out = "\n".join(package_files(_all_cases()).values())
         idx = out.index("id='OR-022'")
         block = out[idx:idx + 2500]
         assert "debug_user='debug_customer_new'" in block, (
@@ -105,10 +105,12 @@ class TestDebugUserField:
 
     def test_committed_eval_cases_match_renderer(self):
         """提交的生成物必须与渲染器当前输出一致（防"改了渲染器忘了重渲染"）。"""
-        from render_cases import to_eval_py
-        committed = (REPO_ROOT / "tests" / "agent_eval" / "eval_cases.py").read_text(encoding="utf-8")
-        assert to_eval_py(_all_cases()) == committed, (
-            "eval_cases.py 与渲染器输出不一致 —— 请跑 render_cases.py 并提交生成物")
+        from render_cases import package_files
+        committed_dir = REPO_ROOT / "tests" / "agent_eval" / "eval_cases"
+        for name, text in package_files(_all_cases()).items():
+            committed = (committed_dir / name).read_text(encoding="utf-8")
+            assert text == committed, (
+                f"eval_cases/{name} 与渲染器输出不一致 —— 请跑 render_cases.py 并提交生成物")
 
 
 class TestFilterByPersona:
@@ -147,10 +149,11 @@ class TestFilterByPersona:
 
 
 class TestGeneratedArtifact:
-    """eval_cases.py 生成物透传 persona（禁手写，源头一致）"""
+    """eval_cases/ 生成物透传 persona（禁手写，源头一致）"""
 
     def test_generated_has_persona_field(self):
-        eval_py = (REPO_ROOT / "tests" / "agent_eval" / "eval_cases.py").read_text(encoding="utf-8")
+        pkg = REPO_ROOT / "tests" / "agent_eval" / "eval_cases"
+        eval_py = "".join(p.read_text(encoding="utf-8") for p in sorted(pkg.glob("*.py")))
         assert "persona: str = \"\"" in eval_py, "EvalCase dataclass 应含 persona 字段"
         assert eval_py.count("persona='xiaobu'") == len(XIAOBU_ONLY), \
             "生成物应包含 xiaobu 专属用例的 persona 声明（数量与 XIAOBU_ONLY 一致）"

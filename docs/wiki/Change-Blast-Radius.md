@@ -37,7 +37,7 @@ Python 面优先 `.venv/bin/python`，缺失时退回 `python3`。设 `SVC=backe
 | <code>batch</code> 新增/删除 **batch_type** / 写点 / 事件通道 | `tests/unit_ci_workflows/test_batch_stocktake_write_point.py`（写入点唯一 + 来源族列形状互斥）· `tests/unit_ci_workflows/test_eval_write_site_dispositions.py`（评测写点处置表）· `tests/unit_ci_workflows/test_case_machine_fail_channel.py`（事件通道基线快照） | `python3 -m pytest tests/unit_ci_workflows/test_batch_stocktake_write_point.py tests/unit_ci_workflows/test_eval_write_site_dispositions.py tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` | ✅ 红证 ④ |
 | <code>eval-fixture</code> 改夹具 / **复位族** / **产出键** | `tests/unit_ci_workflows/test_eval_preclean_registry.py`（pre/post_clean 登记 + 阶段一致性）· `tests/unit_ci_workflows/test_assertion_specs_wellformed.py`（产出键可生产 / 推导钉死 / 快照） | `python3 -m pytest tests/unit_ci_workflows/test_eval_preclean_registry.py tests/unit_ci_workflows/test_assertion_specs_wellformed.py -q` | ✅ 红证 ⑤ |
 | <code>rbac</code> 改权限码 / 菜单码（`menu.ts` ↔ 后端注解） | `tests/unit_ci_workflows/test_rbac_single_source_manifest.py`（清单 == 生成物 == 现值 + 副本未登记即红）· `tests/unit_ci_workflows/test_agent_permission_parity.py`（菜单三源同构 + 岗位码面） | `python3 -m pytest tests/unit_ci_workflows/test_rbac_single_source_manifest.py tests/unit_ci_workflows/test_agent_permission_parity.py -q` | ✅ 红证 ⑥ |
-| <code>casebook</code> 改用例面（`cases/**`、`templates/**`、生成物） | `tests/unit_ci_workflows/test_cases_yaml_strictness.py` · `tests/unit_ci_workflows/test_render_cases_domain_map.py` · `.github/render_cases.py`（重渲染）· `.github/truths.py`（真值引用完整性） | `python3 -m pytest tests/unit_ci_workflows/test_cases_yaml_strictness.py tests/unit_ci_workflows/test_render_cases_domain_map.py -q` <br> `python3 .github/render_cases.py --cases .github/cases --out-eval tests/agent_eval/eval_cases.py --out-md docs/testing/mibao-verification-cases.md` <br> `python3 .github/truths.py check --templates .github/templates --cases .github/cases` | ✅ 红证 ⑦（生成物新鲜度） |
+| <code>casebook</code> 改用例面（`cases/**`、`templates/**`、生成物） | `tests/unit_ci_workflows/test_cases_yaml_strictness.py` · `tests/unit_ci_workflows/test_render_cases_domain_map.py` · `.github/render_cases.py`（重渲染）· `.github/truths.py`（真值引用完整性） | `python3 -m pytest tests/unit_ci_workflows/test_cases_yaml_strictness.py tests/unit_ci_workflows/test_render_cases_domain_map.py -q` <br> `python3 .github/render_cases.py --cases .github/cases --out-eval tests/agent_eval/eval_cases --out-md docs/testing/mibao-verification-cases.md` <br> `python3 .github/truths.py check --templates .github/templates --cases .github/cases` | ✅ 红证 ⑦（生成物新鲜度） |
 | <code>web</code> 改 web 页面 | `check-ui-regression.sh`（neutral token vs `origin/main`）+ **Playwright 页面多模态验收**（真实登录 + 截图 + AI 读图） | `./check-ui-regression.sh` <br> 多模态验收的承载体与假绿清单见 **`migao-dev-flow` §15.7** | ✅ 文件存在 + 命令可跑 |
 
 **为什么命令一律**从**仓根**用**仓库相对全路径**（不写「先 cd 进服务目录、再 pytest 相对路径」那种形态）：
@@ -138,16 +138,16 @@ main 在你的 merge-base 之后进了新用例 ⇒ **你分支上"自己新鲜"
 | ④ | `batch` | 给 `tests/agent_eval/local_runner.py` 加一条未登记的写调用 `await client.post("/api/redproof-probe")` | `test_eval_write_site_dispositions.py` **1 failed / 3 passed**：`新增了未登记的写操作 —— 请回答「这条写操作怎么算成功、失败是否可见」` | 4 passed |
 | ⑤ | `eval-fixture` | 往 `_CLEAN_TYPES` 注册一个没有实现分支的新类型 `redproof_probe_restore` | `test_eval_preclean_registry.py` **3 failed / 24 passed**：`注册表里有但没实现分支的 type：['redproof_probe_restore']` + `两张表条数不等：table=15 runner=16` | 27 passed |
 | ⑥ | `rbac` | 把 `frontend/admin-web/src/config/menu.ts` 里「售后工单」节点的 `permissionCode: 'after_sales:view'` 改成 `'order:view'` | 矩阵那条命令 **9 failed / 22 passed**（`test_agent_permission_parity.py` 9 条红，含 `权限对账判据未通过`、`前提：当前树判据 12 全绿`） | 31 passed |
-| ⑦ | `casebook` | 改 `.github/cases/misc.yml` 的一条 `merge_log` 后**不重渲染** | 重跑 `python3 .github/render_cases.py --cases .github/cases --out-eval tests/agent_eval/eval_cases.py --out-md docs/testing/mibao-verification-cases.md` 后，`git diff --exit-code <两个生成物>` **rc=1**（`mibao-verification-cases.md` 差 1 行） | diff rc=0 |
+| ⑦ | `casebook` | 改 `.github/cases/misc.yml` 的一条 `merge_log` 后**不重渲染** | 重跑 `python3 .github/render_cases.py --cases .github/cases --out-eval tests/agent_eval/eval_cases --out-md docs/testing/mibao-verification-cases.md` 后，`git diff --exit-code <两个生成物>` **rc=1**（`mibao-verification-cases.md` 差 1 行；`eval_cases/misc.py` 也差 1 行） | diff rc=0 |
 
 > ⚠️ **口径提醒（① 行实测得到的教训）**：**只新建工具文件、不注册**时工具面判据**全绿**
 > （`registry_tools()` 由 `create_default_registry()` 显式构造 ⇒ 未注册的类不进入判据射程）。
 > ⇒ 工具面真正的射程是**「文件 + 注册」两处**；而 `growth_gate` 的**缺测**判定在**只有文件**时就会响。
 > 两者互补：缺测门禁管「有没有配套测试」，射程提示管「还有哪些 meta 面要一起跑」。
 
-> ⚠️ **红线**：`eval_cases.py` 与 `docs/testing/mibao-verification-cases.md` 是**生成物**，
+> ⚠️ **红线**：`eval_cases/`（按域分包的目录）与 `docs/testing/mibao-verification-cases.md` 是**生成物**，
 > 带 `GENERATED — DO NOT EDIT` 头 —— **禁手改**，一律改 `.github/cases/*.yml` 后重跑
-> `python3 .github/render_cases.py --cases .github/cases --out-eval tests/agent_eval/eval_cases.py --out-md docs/testing/mibao-verification-cases.md`。
+> `python3 .github/render_cases.py --cases .github/cases --out-eval tests/agent_eval/eval_cases --out-md docs/testing/mibao-verification-cases.md`。
 
 ## 提示形态（`growth_gate` 的「B」半）
 

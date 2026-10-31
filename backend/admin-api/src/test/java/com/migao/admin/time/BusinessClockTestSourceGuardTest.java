@@ -184,7 +184,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       {@code BusinessClock} 之外的时钟源 —— 本守卫只读源码文本；</li>
  *   <li><b>为什么不在全仓按字面量扫</b>：会命中<b>注释 / 历史留档 / 叙述句</b> ⇒ 判据被自己的文案喂红
  *       （{@code migao-dev-flow} §23.4 T2）。本仓现成例子：{@code LocalDate.now(} 在<b>非 Java</b> 文件里
- *       就有命中 —— {@code tests/agent_eval/eval_cases.py}、{@code docs/testing/mibao-verification-cases.md}、
+ *       就有命中 —— {@code tests/agent_eval/eval_cases/}、{@code docs/testing/mibao-verification-cases.md}、
  *       {@code .github/cases/misc.yml}（正是<b>登记本守卫</b>的那条用例的说明文字）⇒ 全仓扫描会把
  *       <b>文档</b>数成违规。⇒ 语料 = <b>剥注释后的 Java 测试源码</b>，且按具名排除两个守卫文件
  *       （§23.8 B1：判据语料必须排除判据自身）。</li>

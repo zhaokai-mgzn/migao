@@ -1,0 +1,533 @@
+# GENERATED FILE — DO NOT EDIT
+# 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
+# 源: cases/*.yml（case-contract 单一源）
+# 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
+# 域: data（源: cases/data.yml，27 条）
+
+from ._schema import Difficulty, EvalCase, Skill
+
+# ── DA-001 [NORMAL] 经营概览（源: cases/data.yml）──
+_CASE_DA_001 = EvalCase(
+    id='DA-001',
+    legacy_id='7.1',
+    title='经营概览',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['今天生意怎么样'],
+    expectations=['dashboard_stats(action=overview)'],
+    data_checks=['订单数/销售额来自真实数据'],
+    skip_reason='',
+    tags=['dashboard', 'query'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-002 [NORMAL] 订单趋势（源: cases/data.yml）──
+_CASE_DA_002 = EvalCase(
+    id='DA-002',
+    legacy_id='7.2',
+    title='订单趋势',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['最近7天订单趋势'],
+    expectations=['dashboard_stats(action=order_trend, days=7)'],
+    data_checks=['返回趋势数据（不编造趋势，基于工具返回解读）'],
+    skip_reason='',
+    tags=['dashboard', 'query'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-003 [NORMAL] 最近订单（源: cases/data.yml）──
+_CASE_DA_003 = EvalCase(
+    id='DA-003',
+    legacy_id='7.3',
+    title='最近订单',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['最近5条订单'],
+    expectations=['dashboard_stats(action=recent_orders, limit=5)'],
+    data_checks=['返回 <= 5 条订单'],
+    skip_reason='',
+    tags=['dashboard', 'query'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-004 [NORMAL] 客服会话监控（源: cases/data.yml）──
+_CASE_DA_004 = EvalCase(
+    id='DA-004',
+    legacy_id='7.4',
+    title='客服会话监控',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['客服会话情况'],
+    expectations=['session_manage(action=monitor)'],
+    data_checks=['在线员工数/活跃/排队数来自真实数据'],
+    skip_reason='',
+    tags=['monitor', 'query'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-005 [NORMAL] 经营看板织物质感改版（样板页）（源: cases/data.yml）──
+_CASE_DA_005 = EvalCase(
+    id='DA-005',
+    legacy_id='',
+    title='经营看板织物质感改版（样板页）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['经营看板页面按织物质感方向重设计'],
+    expectations=[''],
+    data_checks=['token：主色靛蓝/点缀陶土/米白底，无默认蓝', '商品销量排行表头「环比」在 1440/1280 两视口无截断（#2984 口径治理：原名「日涨」易与今日订单数混淆）', '订单趋势 x 轴刻度在 1280 宽度下降采样不重叠', "订单/售后状态语义色 chips；空态「暂无数据」无 '-' 占位", '销售额趋势/迷你图使用真实 amount 数据，无 23.8 假乘数', '经营数据 4 卡自洽：客单价 = 今日销售额 ÷ 今日订单数', '涨跌语义色：上涨=绿色（好事）、下跌=红色（需关注）'],
+    skip_reason='[backend-contract] UI 页面改版：由 vitest 单测 + Playwright 多视口 E2E + 页面验收（page_accept）验证，不进入 agent-eval 冒烟',
+    tags=['dashboard', 'ui-redesign', 'visual'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-006 [NORMAL] 商品销量排行 - 黄金策答「哪个商品卖得最好」（dashboard_stats product_ranking）（源: cases/data.yml）──
+_CASE_DA_006 = EvalCase(
+    id='DA-006',
+    legacy_id='',
+    title='商品销量排行 - 黄金策答「哪个商品卖得最好」（dashboard_stats product_ranking）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这个月哪个商品卖得最好？', '最近一周卖得最多的是什么窗帘？'],
+    expectations=['dashboard_stats(action=product_ranking, period=month)'],
+    data_checks=['前置（precondition）：`dashboard_stats` 的 `action=product_ranking` 存在且 `period` 白名单接受 `month`（真值 = `dashboard_stats.py` 的 `VALID_ACTIONS` 含 `product_ranking`、`period = period if period in ("day", "month") else "day"`），且转发通道 `GET /api/admin/dashboard/product-ranking` 在 `DashboardController` 里存在（success=true）—— R1 的期望 `period=month` 正是按该白名单校准的；action 被改名/移除或 `month` 被静默降级为 `day` 时，期望 `unmatched`，判红会伪装成「agent 不会查销量排行」', 'dashboard_stats 支持 action=product_ranking：转发 admin-api GET /api/admin/dashboard/product-ranking（params period=day|month + limit）', '返回按 productId 聚合的销量排行（rank/productName/salesQty/salesAmount），ToolResult.data 为 dict 契约（list 响应包裹为 items）', '摘要含榜首商品名（如「本月销量排行: N个商品，榜首「星空全遮光窗帘」」）', '权限：admin/agent/tenant_admin/operator 可查；customer 拒绝（不越权）'],
+    skip_reason='[backend-contract] 非 LLM 行为：转发实现与权限由 ai-agent 单测验证（test_tools_dashboard_stats.py），不进入 agent-eval 冒烟',
+    tags=['dashboard', 'ranking', 'product'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-007 [NORMAL] 商品销量排行数据自洽：有效订单过滤 + 环比口径标注（#2984 生产实证）（源: cases/data.yml）──
+_CASE_DA_007 = EvalCase(
+    id='DA-007',
+    legacy_id='',
+    title='商品销量排行数据自洽：有效订单过滤 + 环比口径标注（#2984 生产实证）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商品销量排行口径自检'],
+    expectations=[],
+    data_checks=['selectProductRanking/selectPrevPeriodQuantities 均 JOIN orders 过滤有效状态 confirmed/producing/shipped/completed，排除 pending(未付款)/cancelled(已取消)；本期与上期同口径，环比分母一致', '原生 SQL 不手写 tenant_id（租户条件由 TenantLineInnerInterceptor 自动注入，order_items/orders 均已注册）', '排行表头列名「环比」+ title 标注周期口径（较上一统计周期），不标注「较昨日」；「成交量」列 title 标注近7天，与今日订单数时间口径显式区分', '修复后生产谱号：米白色遮光窗帘 356件/▲187.1% 的虚假涨跌不再出现（356 件全部来自 pending 测试单）', '#2989 幽灵行治理：selectProductRanking/selectPrevPeriodQuantities 排除 product_id 为 NULL/空的明细，不聚合展示不存在的商品（生产实证曾出现「遮光窗帘」54 件无 productId 的假排行行）'],
+    skip_reason='[backend-contract] SQL 口径由 admin-api 单测（OrderItemMapperTest）文本断言验证；UI 文案由 vitest（dashboard.test.tsx）验证；不进入 agent-eval 冒烟',
+    tags=['dashboard', 'ranking', 'ui', 'data-quality'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-008 [NORMAL] 智能每日经营简报：企业开关熔断（关闭=不生成+菜单隐藏，issue #3468）（源: cases/data.yml）──
+_CASE_DA_008 = EvalCase(
+    id='DA-008',
+    legacy_id='',
+    title='智能每日经营简报：企业开关熔断（关闭=不生成+菜单隐藏，issue #3468）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['智能每日经营简报企业开关行为自检'],
+    expectations=[],
+    data_checks=['tenants.briefing_enabled 默认 false；开关关闭时 generateForTenant 直接返回 null 且 LLM 调用数为 0（熔断）', '更新配置开启瞬间立即生成当日简报；关闭后调度跳过该租户（generateDueTenants 内部拦截），已生成历史保留但入口隐藏', '仅 admin（system:manage）可改开关；变更写操作日志（audit_logs：action=update, resource_type=briefing_config，含开关状态）'],
+    skip_reason='[backend-contract] 开关熔断由 admin-api 单测验证（DailyBriefingServiceTest$SwitchBreaker + BriefingControllerTest），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['briefing', 'toggle', 'security'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-009 [NORMAL] 智能每日经营简报：数字回填校验（LLM 编造即丢弃，issue #3468）（源: cases/data.yml）──
+_CASE_DA_009 = EvalCase(
+    id='DA-009',
+    legacy_id='',
+    title='智能每日经营简报：数字回填校验（LLM 编造即丢弃，issue #3468）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['智能每日经营简报数字校验行为自检'],
+    expectations=[],
+    data_checks=['LLM 输出每条目必须带 metrics 引用（key+value），key 不在聚合快照或 value 与快照不一致 → 条目丢弃（不展示编造数字）', '全部条目被丢弃 → verify_status=failed，前端展示安全提示而非假数据；部分丢弃 → partial', 'LLM 失败/超时 → 落 failed 记录，不 fallback 昨日数据冒充今日'],
+    skip_reason='[backend-contract] 数字回填校验由 admin-api 单测验证（DailyBriefingServiceTest$VerifyAndFilter）+ ai-agent 单测（test_briefing_generator.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['briefing', 'llm-verify', 'security'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-010 [NORMAL] 智能每日经营简报：PII 不进 prompt + RLS 隔离（issue #3468）（源: cases/data.yml）──
+_CASE_DA_010 = EvalCase(
+    id='DA-010',
+    legacy_id='',
+    title='智能每日经营简报：PII 不进 prompt + RLS 隔离（issue #3468）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['智能每日经营简报数据安全自检'],
+    expectations=[],
+    data_checks=['聚合快照只含数字指标 + 脱敏事实（订单数/工单数），不含客户手机号/姓名/地址/会话原文（快照 JSON 断言无 PII 字段）', 'daily_briefings 表含 tenant_id + RLS 策略 tenant_isolation_daily_briefings（fail-closed 兜底；应用层 TenantLineInnerInterceptor 注入 tenant_id 为主，RLS 为纵深防御）', '简报展示层脱敏别名「客户A/B」，点击查看真名复用客户详情 RBAC（customers:view），无权限角色点击不可见真名'],
+    skip_reason='[backend-contract] PII 隔离由 admin-api 单测（DailyBriefingServiceTest$Aggregation）+ migration 契约验证；RLS 由 V44 迁移/SchemaMigrationTest 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['briefing', 'privacy', 'security'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-011 [NORMAL] 主动发现：规则引擎确定性扫描（同一快照逐字复现，issue #5322）（源: cases/data.yml）──
+_CASE_DA_011 = EvalCase(
+    id='DA-011',
+    legacy_id='',
+    title='主动发现：规则引擎确定性扫描（同一快照逐字复现，issue #5322）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['主动发现规则引擎行为自检'],
+    expectations=[],
+    data_checks=['给定固定数据快照 ⇒ 命中集合逐字可复现：两次扫描同摘要，且**打乱快照内行序**后结果不变（确定性来自内容而非输入顺序）', '全量命中集合（规则 id + 命中日期 + 排序）逐字钉住；排序 = 日期倒序 → 紧急度 → 规则注册序', '空快照/无扫描基准日 ⇒ 返回空集合（判不出「当天」时不猜）；规则 id 唯一、具名、5 条首批规则齐备'],
+    skip_reason='[backend-contract] 确定性由 ai-agent 单测验证（tests/test_briefing_proactive.py），触发用规则不用 LLM 自由发挥，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['proactive', 'briefing', 'rules'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-012 [NORMAL] 主动发现：每条命中带三件套（判据 / 影响面 / 处置入口，issue #5322）（源: cases/data.yml）──
+_CASE_DA_012 = EvalCase(
+    id='DA-012',
+    legacy_id='',
+    title='主动发现：每条命中带三件套（判据 / 影响面 / 处置入口，issue #5322）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['主动发现条目结构自检'],
+    expectations=[],
+    data_checks=['每条命中必含 criterion（规则表达式 + 阈值 + 逐条观测值 + observed_total）/ impact（count+unit+amount）/ action（label+url）', 'criterion.observed = 真命中行（订单号/商品号/退货号），不是「大概识别出异常」；非数值或缺字段的行一律跳过（不猜）', 'impact.amount 与观测行逐条金额自洽（如低于成本价的亏损额合计）'],
+    skip_reason='[backend-contract] 三件套结构由 ai-agent 单测验证（tests/test_briefing_proactive.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['proactive', 'briefing', 'rules'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-013 [NORMAL] 主动发现：无处置入口的条目不进日报（注入式红证，issue #5322）（源: cases/data.yml）──
+_CASE_DA_013 = EvalCase(
+    id='DA-013',
+    legacy_id='',
+    title='主动发现：无处置入口的条目不进日报（注入式红证，issue #5322）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['主动发现处置入口门禁自检'],
+    expectations=[],
+    data_checks=['注入一条无处置入口（action 为空）的候选 ⇒ 该条**必不出现**在扫描输出里', '同一快照上未注入时该条**必须**出现（否则注入断言是空跑：注入的压根不是候选）；注入只影响被注入的那条', '处置入口 url 必须是站内路由（以 / 开头），指向能真正处理该异常的页面（订单/商品/售后列表）'],
+    skip_reason='[backend-contract] 处置入口门禁由 ai-agent 单测验证（tests/test_briefing_proactive.py 的 TestActionGate 注入式红证），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['proactive', 'briefing', 'security'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-014 [NORMAL] 主动发现：日报只放当天异常（历史异常不进日报，issue #5322）（源: cases/data.yml）──
+_CASE_DA_014 = EvalCase(
+    id='DA-014',
+    legacy_id='',
+    title='主动发现：日报只放当天异常（历史异常不进日报，issue #5322）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['今天有什么异常'],
+    expectations=['briefing_query'],
+    data_checks=['同一份快照里构造历史异常：全量扫描（scan_snapshot）里**在**、日报视图（daily_findings）里**必不在**（双侧断言，防「引擎完全不工作」也变绿）', '日报条目的 detected_on 全部等于扫描基准日（简报 bizDate 可由调用方钉住，不依赖机器当前时间）', 'briefing_query 集成面：data.proactive 只含当天异常、消息点出条数；无 sourceSnapshot ⇒ 空集合且不报错'],
+    skip_reason='[backend-contract] 日报窄口径由 ai-agent 单测验证（tests/test_briefing_proactive.py + tests/test_tools_briefing_query.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['proactive', 'briefing', 'narrow'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-015 [NORMAL] 主动发现：阈值可配且边界值有断言（N/N+1、含上界、恰等阈值，issue #5322）（源: cases/data.yml）──
+_CASE_DA_015 = EvalCase(
+    id='DA-015',
+    legacy_id='',
+    title='主动发现：阈值可配且边界值有断言（N/N+1、含上界、恰等阈值，issue #5322）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['主动发现阈值边界自检'],
+    expectations=[],
+    data_checks=['超 N 天未发货：恰 N 天不命中 / N+1 天命中（同一快照两侧断言）；库存告急口径 = stock ≤ 阈值（含上界），压阈值后恰等值落到界外', '连续退货：窗口内 ≥ N 次命中 / N+1 次不命中；改价幅度：恰等阈值不命中 / 超阈值命中（百分比保留 2 位小数后比较）', '阈值可由快照 config 下发（租户级配置落点），显式入参优先；非法阈值抛错（不得静默接受成「配了也不生效」）'],
+    skip_reason='[backend-contract] 阈值边界由 ai-agent 单测验证（tests/test_briefing_proactive.py 的 TestThresholdsAreConfigurable），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['proactive', 'briefing', 'threshold'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-016 [NORMAL] 跨域视图内核：行级快照按契约装配（orders/skus/returns/price_changes/order_discounts 有界 + 租户隔离，issue #5358）（源: cases/data.yml）──
+_CASE_DA_016 = EvalCase(
+    id='DA-016',
+    legacy_id='',
+    title='跨域视图内核：行级快照按契约装配（orders/skus/returns/price_changes/order_discounts 有界 + 租户隔离，issue #5358）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['经营日报数据快照装配自检'],
+    expectations=[],
+    data_checks=['快照带 orders/skus/returns/price_changes/order_discounts 五个行级数组，行键逐字等于契约（orders：order_no/status/customer_id/created_at/shipped_at/sale_amount/cost_amount；skus：sku_id/product_id/product_name/stock/sales_count/price/avg_cost；returns：return_no/customer_id/product_id/returned_at/amount；product_return_stats：product_id/return_tickets/order_lines；price_changes：change_no/tool_name/product_id/before_price/new_price/changed_at；order_discounts：order_no/total_amount/discount_amount/created_at），且与装配层自描述 row_fields 的声明**逐字一致**（键名不许两处各写一份）', "**改价的数据源 = 两条腿、一个数组**（issue #5388 裁定 C：**不建改价流水表** —— 不是「只许一个数据源」）：`price_changes` 由**两条腿合并**装配 —— **审计腿**筛 `audit_logs` 的 `resource_type='agent_tool'` 且 `tool_name ∈ {product_update, sku_update}`（🔴 **两者都是改价**：商品级统一定价 / 单 SKU 调价，只筛一个会漏一半），幅度取自 `action_details.priceChange` 的 `before_price`/`price` **真值**（脱敏纪律下 `params` 只记类型占位 ⇒ 真值走该独立键，issue #5388）；**批量腿**（issue #5411）取 `agent_batches`（`batch_type='product_price'` 且**已执行**）× `agent_batch_items` 的 `old_value` / `new_value`（`field='basePrice'`、排除「从未生效」的 `pending`/`failed`/`skipped`；批量执行时参数只有 `batch_id` ⇒ 审计行 `priceChange` 无值可放），两腿合并后按 `changed_at` 倒序、共用**同一个**行数上限（任一腿被截断 ⇒ `row_meta.truncated` 显式）；**让利的数据源 = `orders.discount_amount`**（`order_discounts`：只装窗口内 `discount_amount > 0` 的订单）。两条固有边界**如实登记**、不许静默：**审计腿**是 **fail-open**（3s 上限、允许丢行）⇒ 只可能漏报（**批量腿不是 fail-open 旁路**：`agent_batch_items` 是撤销依据，不允许丢行）；审计留痕自 #5303 起才带 `before_price` ⇒ 读不出数的历史行落 **NULL**（= 行级**未判定**，**不是「幅度 0」**，也**不是**「缺字段」）；orders 行的 **`cost_amount` 已装配**（issue #5348 接通成本价 join = Σ 行数量 × 该行 SKU 的 `avg_cost`）—— 🔴 该键**恒在**、值可为 **NULL**：NULL = **成本未知（整单不可判定）**，也**不出部分和**", '每条行数组查询都**有界**（行数上限落在查询上）且**带租户**（显式 tenantId；orders/product_skus/products/order_logistics 的 tenant_id 由 TenantLineInnerInterceptor 注入 ⇒ 这些表不在忽略清单里）'],
+    skip_reason='[backend-contract] 装配契约由 admin-api 单测验证（backend/admin-api/src/test/java/com/migao/admin/service/DailyBriefingServiceTest.java 的 SnapshotRows），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['proactive', 'briefing', 'snapshot'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-017 [NORMAL] 跨域视图内核：逐规则接线状态 ——「没数据」与「没问题」在数据层可分（issue #5358）（源: cases/data.yml）──
+_CASE_DA_017 = EvalCase(
+    id='DA-017',
+    legacy_id='',
+    title='跨域视图内核：逐规则接线状态 ——「没数据」与「没问题」在数据层可分（issue #5358）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['主动发现接线状态自检'],
+    expectations=[],
+    data_checks=['接线状态**逐规则**输出（rule_id → status + 原因 + 缺哪个数组/字段），且**四态可分**：`wired`（已接入**且本次完整** —— 只有它能被判成「这方面没问题」）/ `incomplete`（已接入但**本次不完整**：行数被上限截断、分组维度缺值、有行未判定）/ `not_enabled`（系统**有**该能力、**该租户没开**，**可行动**：引导开启）/ `not_wired`（系统**未实现**，**不可行动**）—— 🔴 `not_enabled` 与 `not_wired` **并列、不可合并**（一个是「去开就能用」、一个是「现在没有」），**不是**一个整体布尔', "六条规则逐条可判（rule_id 现取）：`unshipped_overdue` / `low_stock` / `repeat_returns` 装配行级数组后 `wired`（本次被上限截断或维度缺值 ⇒ `incomplete`）；`below_cost_price` 的状态**随租户三态** —— 做成本核算且行级完整 ⇒ `wired`、**有行成本未知**（该行 `cost_amount` 为 NULL）⇒ `incomplete`（+ `gaps` 点名该行**未判定**，不得读成「没命中」）、**不做**成本核算（该租户无 `avg_cost IS NOT NULL` 的 SKU）⇒ `not_enabled`（可行动：引导开启成本核算）；`price_change_over`（**数据源 = 两条腿、一个数组**，issue #5388 审计腿 + #5411 批量腿：审计腿 = `audit_logs` 的 `resource_type='agent_tool'` + `tool_name ∈ {product_update, sku_update}`，幅度取 `action_details.priceChange` **真值**；批量腿 = `agent_batches`（`batch_type='product_price'` 且**已执行**）× `agent_batch_items` 的 `old_value` / `new_value` —— 批量执行时参数只有 `batch_id`，审计行里没有价格可落；两腿合并进**同一个** `price_changes` 数组、键名同形）**同样随租户三态** —— 审计在跑且行级完整 ⇒ `wired`、**有行读不出改价真值**（#5303 之前的记录没有 before_price）⇒ `incomplete`（+ `gaps` 点名未判定）、**窗口内连一条写工具审计行都没有**（审计没在跑 ⇒ 无法区分「从没改过价」与「审计丢行」）⇒ `not_enabled`（可行动：让黄金策执行一次写操作以产生审计留痕）；🔴 该租户级前置 `audit_tool_logging` **只管审计腿** —— 它 false 时批量腿不受影响，该租户仍可能因批量改价而命中（那种情形下「本次未判定」只对审计腿成立）；`discount_over`（**数据源 = `orders.discount_amount`**，经营洞察）⇒ 数组已接入且完整即 `wired`（它是主库列、非 fail-open 旁路 ⇒ 空命中可信），行级金额缺失（`discount_amount` 默认 0 / `total_amount` 未知）⇒ `incomplete`（分母未知的**不判定**，不是 100% 让利）—— 部分接线场景有断言，不是整体一个布尔", '**不同性质的「没有」可分**：六条规则当天一条都没命中时，`not_wired`（系统没做）/ `not_enabled`（该租户没开）/ `incomplete`（本次不完整）与「`wired` 但当天无命中」在输出上必须不同 —— 前三种都带原因、只有 `wired` 不带 —— 注入式红证：抹掉 status 字段（或给已接线补原因）⇒ 判别断言必须变红；🔴 **「租户从没改过价」与「审计根本没在跑」也必须不同**（两者都表现为「没有改价记录」：前者正常的空 ⇒ `wired`、后者故障的空 ⇒ `not_enabled`，判据 = 租户级事实 `audit_tool_logging`）', '装配层自描述优先（声明里没给的字段就是没有，不靠某一行碰巧带上）；老快照没有 row_fields 时按实际行的字段并集兜底（滚动升级期不把已接线读成未接线）', '🔴 **有界不许变成静默少报**：行数组被行数上限截断 ⇒ 该规则落 `incomplete`（带原因：上限多少行 / 本次给出多少行）；分组维度在部分行缺值（如退货行没有商品）同样落 `incomplete` —— 注入式红证：抹掉截断标志 ⇒ 截断判据必红；把缺值补齐 ⇒ 维度判据必红', '不变式（一套口径）：`reason is None` ⟺ `status == wired`（= 已接入**且本次完整**）—— 只有 `wired` 才允许把空命中读成「这方面没问题」；日报条数被 max_findings 截断时，工具消息必须点出**真实条数**（日报只列前 N 项，当天共 M 项）'],
+    skip_reason='[backend-contract] 逐规则接线状态由 ai-agent 单测验证（tests/test_briefing_proactive.py 的 TestWiringStatusIsPerRule），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['proactive', 'briefing', 'wiring'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-018 [NORMAL] 未接线的能力如实说明「尚未接入」，不得用「今日无异常」覆盖（issue #5358）（源: cases/data.yml）──
+_CASE_DA_018 = EvalCase(
+    id='DA-018',
+    legacy_id='',
+    title='未接线的能力如实说明「尚未接入」，不得用「今日无异常」覆盖（issue #5358）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['今天有什么异常'],
+    expectations=[],
+    data_checks=['工具消息逐条点名**非 `wired`** 的能力（规则名）并给出**各自**的措辞：`not_wired` ⇒ 「尚未接入」（不可行动）；`not_enabled` ⇒ 「你还没开启<能力>」+ 开启引导（**可行动**，与「尚未接入」**分开说、不合并**）；`incomplete` ⇒ 本次数据不完整 + **只点名规则**（截断上限 / 字段名不进消息）；当天 0 条命中时也不得出现「今日无异常 / 无异常 / 一切正常 / 未发现异常」这类表述（消息是模型的唯一输入源，消息里没有的兜底模型编不出来）。🔴 issue #7201：消息**只读引擎 `display`**（商家话术）；`reason` / `caveats` 的工程原文（`fail-open` / `#5303` / 表名 / 快照键 / 「装配层」）**一个字都不进消息** —— 它们只在 `data.proactive_status` 里供按需下钻（判据 = `TestMerchantWordingOnly::test_message_never_carries_engineering_text`，五类快照逐一扫）', '逐规则状态进 data（`proactive_status`），调用方自己可分**四态**：`wired`（已接入**且本次完整**但当天无命中）/ `incomplete`（已接入但**本次不完整**）/ `not_enabled`（系统**有**、**该租户没开**，可行动）/ `not_wired`（系统**未实现**，不可行动）；全部 `wired` 时**不得**出现未接线措辞（披露不能因为总是出现而失去信息量）', '本次**不完整**（行数被上限截断 / 分组维度缺值）时同样如实说明（「本次数据不完整，空命中不代表没有问题」+ 点名规则），与未接线披露并列；注入式红证：抹掉截断标志 ⇒ 该判据必红', '注入式红证：从消息里抹掉某条未接线能力的名字、或往消息里塞「今日无异常」⇒ 同一判据必须变红'],
+    skip_reason='[backend-contract] 未接线话术由 ai-agent 单测验证（tests/test_tools_briefing_query.py 的 TestNotWiredDisclosure），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['proactive', 'briefing', 'honest-empty'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-019 [NORMAL] 今日经营日报（每日简报）—— 黄金策调 briefing_query 取当天日报并如实转述（覆盖 #5247 新接入的只读工具）（源: cases/data.yml）──
+_CASE_DA_019 = EvalCase(
+    id='DA-019',
+    legacy_id='',
+    title='今日经营日报（每日简报）—— 黄金策调 briefing_query 取当天日报并如实转述（覆盖 #5247 新接入的只读工具）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['今天的经营日报里有什么要处理的？'],
+    expectations=['briefing_query'],
+    data_checks=['success=true', '（散文、不计分）空态如实：评测栈 `daily_briefings` 无 seed ⇒ 工具返回**成功空态**（消息「今日暂无经营日报数据」；机器面由上面那条机器计分项覆盖）⇒ 合格行为 = 如实说明并给下一步；**不得**把空态读成「今天一切正常 / 今天无异常」（口径见真值 dashboard-jump.proactive-today-only 与 dashboard-jump.proactive-unwired-disclosure：日报只放当天成立的异常，未接线 / 本次不完整各有各的说法）', '（散文、不计分）内容逐条来自工具：异常条目、条数、以及「日报只列前 N 项、当天共 M 项」的点名必须与 `data.proactive` / `data.proactive_status` 一致；模型不得自行发明异常条目、条数或站内跳转链接'],
+    skip_reason='',
+    tags=['dashboard', 'briefing', 'mibao', 'readonly', 'llm_behavior'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'briefing_query'}],
+)
+
+# ── DA-020 [NORMAL] 客服会话列表（只读）—— 黄金策按 action=list 取会话列表，如实转述（销账 session_manage 薄覆盖）（源: cases/data.yml）──
+_CASE_DA_020 = EvalCase(
+    id='DA-020',
+    legacy_id='',
+    title='客服会话列表（只读）—— 黄金策按 action=list 取会话列表，如实转述（销账 session_manage 薄覆盖）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['现在有哪些客服会话？把会话列表给我看看'],
+    expectations=['session_manage(action=list)'],
+    data_checks=['success=true', '（散文、不计分）列表口径与空态：`GET /api/admin/agent-sessions`（page/size/status/employeeId/keyword，租户隔离由服务端过滤）⇒ 评测栈无 `agent_sessions` seed 时返回**空列表 + 成功状态**，合格行为 = 如实说「暂无会话」；不得编造会话/客户名/排队人数，也不得拿 `dashboard_stats` 的经营数字冒充会话列表', '（散文、不计分）动作分工（同域另一条用例不重复）：问「有哪些会话/会话列表」= list（本条，出条目 + total）；问「在线客服几个 / 排队多少人 / 客服情况」= monitor（DA-004）。两者都是只读，但载荷不同，不得互相顶替'],
+    skip_reason='',
+    tags=['monitor', 'session', 'mibao', 'readonly', 'llm_behavior'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'session_manage'}],
+)
+
+# ── DA-021 [NORMAL] 日报卡片面「proactive 四态」可视化：让「今天为什么没有提示」逐规则可见（issue #5955）（源: cases/data.yml）──
+_CASE_DA_021 = EvalCase(
+    id='DA-021',
+    legacy_id='',
+    title='日报卡片面「proactive 四态」可视化：让「今天为什么没有提示」逐规则可见（issue #5955）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['经营日报卡片面自检（主动检查面板）'],
+    expectations=[],
+    data_checks=['卡片面**只列「本次没有结果」的规则**（每条至多一行，§31 P1/P2）：`not_wired` = 「本次没有检查」；`not_enabled` = 「还没开启」+ **做什么能开启**（**可行动**，与「没有检查」**分开说、不合并**）；`incomplete` = 「数据不完整」；`wired` 只进汇总。**互斥红**：有规则没检查到 ⇒ 汇总说「N 项本次没有结果（不代表没问题）」并具名列出该规则（**不是**「今天没问题」）；规则齐全且无命中 ⇒ 只剩「全部已检查，无命中」一行、**无逐条列表**', '🔴 **商家面只读引擎给的 `display`**：`reason` / `caveats`（含文件路径 / issue 号 / 列名 / 「装配层」/ `fail-open`）**一个字都不上屏**（§31 P3/P4）；旧载荷（无 `display`）只显示状态标签、**不拿 `reason` 顶替**；`proactive_status` 为 NULL / 缺失（本列面世前的存量行）⇒ **不渲染**该面板（未知 ≠ 没问题，也不许用空壳冒充「已检查」）', '🔴 **状态字段不来自 LLM 出口**：`sanitize_briefing` 是**白名单**（只返回 summary/review/todo/risks/suggestions）⇒ 把 `proactive_status` 塞进 LLM 输出**被丢弃是预期**（断言对象），而**挂载点之后**的注入必须成功；挂上去的值 = 引擎 `proactive_status(snapshot)` 的**原样**（零重算、零改写、不改快照），且 admin-api 侧**数值回填校验层不得把它对账掉**（它不是数字、也不许混进 content）', '跨端契约：键名 `proactive_status`、规则 id（`below_cost_price`/`unshipped_overdue`/`low_stock`/`repeat_returns`/`price_change_over`/`discount_over`）与四个枚举值（`wired`/`not_wired`/`not_enabled`/`incomplete`）三端一致；卡片面**只读** —— 面板内无任何按钮/链接（不给「一键处置」入口）'],
+    skip_reason='[backend-contract] 卡片面渲染与挂载点由三端确定性单测验证（ai-agent：tests/test_briefing_proactive_status_visibility.py；admin-api：DailyBriefingServiceTest 的 ProactiveStatusPassThrough / BriefingControllerTest 的 GetToday；admin-web：tests/unit/components/ProactiveStatusPanel.test.tsx + tests/unit/components/BriefingProactiveStatus.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['proactive', 'briefing', 'card', 'ui'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-023 [NORMAL] 商品健康度的「空」必须归因到商品状态：有 SKU 却被「在售」口径过滤（issue #6347 Part B）（源: cases/data.yml）──
+_CASE_DA_023 = EvalCase(
+    id='DA-023',
+    legacy_id='',
+    title='商品健康度的「空」必须归因到商品状态：有 SKU 却被「在售」口径过滤（issue #6347 Part B）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商品健康度里是不是没有建 SKU？'],
+    expectations=['briefing_query(view=product_health)'],
+    data_checks=['🔴 快照侧的**过滤事实**必须透出（`row_meta.skus`）：`rows_before_filter` = 过滤前本数组查询命中的行数、`filtered_out` = 被排除的行数、`filtered_by_status` = 被排除商品的状态 × SKU 数、`filtered_product_ids` = 被排除的商品 id（有界）。**没有它，空数组在引擎侧与「表里真的没有 SKU」不可分** —— 这正是本单的成因（判据：删掉这些键 ⇒ 引擎断言必红）', '🔴 引擎侧**两种「空」可分**：过滤前 > 0 且过滤后 = 0 ⇒ 所有 `skus` 来源字段（`sales_count`/`stock`/`gross_margin`）落 **`not_on_sale`**（与 `not_wired`/`incomplete` **并列、不可合并**，`reason` 非 None）；真正未接线（无 `skus` 行数组）仍落 `not_wired`；退货率（另一对行数组）不受影响 ⇒ 逐字段可分', '原因与出路逐字落地：说清「有 N 个 SKU（M 个商品）**因未上架未纳入**」+ 被排除商品的**状态分布**；状态在状态机内（`off_sale`/`draft`）⇒「上架即可」；状态不在状态机内（如 `active`/`on_shelf`）⇒ 点出**上架动作会被拒**、需先改回 `off_sale`/`draft` 再上架（Part A 已让这条恢复边可走）；装配层读不到商品行（`unknown`）⇒ **不猜**出路，只说先核实', '🔴 **消息是模型的唯一输入源**：工具消息（`briefing_query` 的 `view=product_health`）必须含上述原因与出路，且**不得**出现任何 `forbidden_text` 表述；对照读数：没有过滤事实的空快照 ⇒ 退回旧口径（`not_wired`），**不得**改写成「被过滤」'],
+    skip_reason='[backend-contract] 快照装配由 admin-api 单测验证（DailyBriefingServiceTest 的 SnapshotRows 两条新判据：过滤事实透出 / 未过滤时不挂空集合）；引擎与工具披露由 ai-agent 单测验证（tests/test_briefing_product_health.py 的 TestFilteredSkusAreNotMisattributed、tests/test_tools_briefing_query.py 的两条），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['briefing', 'product_health', 'attribution', 'snapshot'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=['SKU 记录数 = 0', 'SKU 记录数为 0', 'SKU 层是空的', 'SKU 层为空', '建议检查商品规格', '建议先确认商品规格', '没有 SKU', '没有任何 SKU'],
+)
+
+# ── DA-022 [NORMAL] 缺料风险视图：material_shortage（商品级需求 vs SKU 权威库存）的缺口分层与「未知≠0」披露（issue #6280）（源: cases/data.yml）──
+_CASE_DA_022 = EvalCase(
+    id='DA-022',
+    legacy_id='',
+    title='缺料风险视图：material_shortage（商品级需求 vs SKU 权威库存）的缺口分层与「未知≠0」披露（issue #6280）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['哪些商品会被未完成订单吃空', '缺料风险 / 缺口多少米'],
+    expectations=['inventory_manage(action=material_shortage)'],
+    data_checks=['只读且不回归：material_shortage 在 VALID_ACTIONS 与 read_only_actions 里；**不传 action 时仍是旧的 query 行为**（默认值不许被新 action 改掉）；未知 action ⇒ 无效操作类型（不猜）', "取数面 = 只读端点 GET /api/admin/materials/shortage（权限码 product:list）：需求 = SUM(order_items.quantity) WHERE orders.status ∈ statuses **且 products.unit = '米'**（单位真值在**商品档案**，不在 order_items.selling_method）；供给 = **SUM(product_skus.stock) GROUP BY product_id** —— 🔴 **不读** products.stock（派生冗余列，实测与 SKU 合计差 3.3%）；租户闸两侧都在、软删逐表过滤", '🔴「未知 ≠ 0」：单位不可比的商品 ⇒ demand_qty = **null** + risk_band = unknown（**不是 0**）；真 0 需求（有订单行、可比、合计 0）⇒ 照实 0 且与前者**可分**；non_comparable.lines / products 必须披露。红证：把「不可比」填成 0 ⇒ 必红', '🔴「交期未知 ≠ 今天到期」：days_to_deadline = null ⇒ **不得回填 0**；「缺口确定、紧迫性未知」落 short **单列**，**不得并进 critical**。红证：把 null 填成 0 天 ⇒ 分层与同一断言必红（实测 dev 库未完成订单交期填充率 = 0，今天这一档会占满 —— 那是**正确**输出）', '六档分层 blocked / critical / soon / short / safe / unknown（阈值 3 / 7 天进 basis 可复算）；输出行序 = 分层降序 → gap 降序 → product_id 升序 ⇒ 同一快照**逐字相同**；聚合用**全量行**（band_counts / non_comparable 不随 limit 变）；limit 非法值显式 400，truncated ⇒ 每个有真值字段落 incomplete + 可归因读数', '逐字段三态：status ∈ wired / not_wired / incomplete，不变式 **reason is None ⟺ status == wired**。v1 的 rate_per_week / exhaust_date 一律 not_wired + 具名理由（真值存在于台账但装配层未接线：真实周桶深度 2 周 < 要求 8 周）；history_depth.sufficient = false 时**禁止硬算、禁止回填 0**', '披露纪律（工具面）：工具**必须用人话说出**「预测层未启用：历史深度 N 周 < 8 周」与单位不可比计数，**不得**静默省略、**不得**把 null 说成 0；端点失败 ⇒ fail-closed + 点名 product:list + 可行动建议，**不得**用空列表冒充「没有缺料」（「没查」与「没问题」必须可分）'],
+    skip_reason='[backend-contract] 视图语义由 admin-api 单测验证（backend/admin-api/src/test/java/com/migao/admin/service/MaterialShortageServiceTest.java：六档分层 / 未知≠0 注入式红证 / 确定性 / 三态不变式 / 有界），工具面由 backend/ai-agent-service/tests/test_tools_inventory_manage_shortage.py 验证（action 白名单 / 不回归 / fail-closed / 披露纪律），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['query', 'tool', 'cross-domain', 'material-shortage', 'disclosure'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 的**视图契约**用例（不进 agent-eval 冒烟）：两条 user_inputs 是**同一能力**的两种问法，不是两次会话。前置 = 端点可用且当前账号持 product:list。该前置由两侧单测直接构造并断言 ⇒ 前置不成立（端点 / 权限码改名）时单测直接红，不会表现为「agent 不干活」',
+)
+
+# ── DA-024 [NORMAL] 评测目标租户收敛到单一可注入配置（EVAL_TENANT_ID），并钉住「非 DEBUG 不接受外部租户」（issue #6288）（源: cases/data.yml）──
+_CASE_DA_024 = EvalCase(
+    id='DA-024',
+    legacy_id='',
+    title='评测目标租户收敛到单一可注入配置（EVAL_TENANT_ID），并钉住「非 DEBUG 不接受外部租户」（issue #6288）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['（基建判据，非 LLM 行为用例）评测链路的 DEBUG 降级身份与前置复位/db 校验 SQL 必须指向同一个可注入租户'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 源码面未登记即红：backend/ai-agent-service/app/utils/auth.py 与 tests/agent_eval/local_runner.py 的**代码行**里不得再出现裸 `tenant_id=1` / `tenant_id = 1`（注释豁免；判据 = tests/unit_ci_workflows/test_eval_tenant_single_source.py 的 audit_bare_tenant_literals）。红证：把本地运行器的一处参数化改回 `tenant_id = 1` ⇒ 该判据必红。', "配置面逐值：注入 EVAL_TENANT_ID=7 / 25 / 1000 ⇒ 运行器的 SQL 模板逐值落到注入租户（不是断言「非空」）；缺省/非法/越界（''、abc、0、-3、25.5）⇒ fail-closed 回落默认 1。判据 = 同文件 test_injected_tenant_value_is_used / test_sql_targets_use_the_configured_tenant。", '🔴 反向护栏（缺一不可）：生产路径（settings.DEBUG=False）下即使注入租户（配置值 / X-Debug-Role 头）也**不生效** —— auth.py 的每一次 `tenant_id=DEBUG_FALLBACK_TENANT_ID` 都必须落在「settings.DEBUG + debug_role」守卫的 if 体内；非 DEBUG 路径的租户只来自 JWT payload（源码里不得出现 os.environ/getenv 租户回落）。红证：把身份构造挪出守卫 ⇒ audit_debug_tenant_is_guarded 必红；给 payload 分支加环境变量兜底 ⇒ audit_non_debug_tenant_from_payload_only 必红。', '单一真值不漂移：app/config.py 的 EVAL_TENANT_ID 字段默认值 ≡ local_runner.py 的 EVAL_TENANT_ID 默认值 ≡ seed 租户 1（2026-10-19 / #7340 收口：共享云库恢复 seed 租户 1；旧的 tenant 25 已不存在）；只改一侧即红。', "已部署入口显式钉住：.github/workflows/agent-eval.yml（唯一打已部署云环境的入口）的评测步骤 EVAL_TENANT_ID == '1'；本地临时栈两条 workflow（post-deploy-eval / xiaobu-acceptance）显式回落 '1'（栈内种子租户），三处同值。", '行为面（真请求对象）：DEBUG=true + X-Debug-Role ⇒ 返回身份的 tenant_id == 配置值（管理员与 C 端 customer 两条各一）；DEBUG=false + 注入的调试头 ⇒ 401 fail-closed（生产路径永不产生「配置租户」的身份）。判据 = backend/ai-agent-service/tests/test_eval_tenant_config.py。'],
+    skip_reason='[backend-contract] 本用例是基建/安全护栏判据（非 LLM 行为）：静态与结构判据由 tests/unit_ci_workflows/test_eval_tenant_single_source.py 验证（零 LLM，pr-check 的 ci workflow helper unit tests job 每次 PR 都跑），行为面由 backend/ai-agent-service/tests/test_eval_tenant_config.py 验证（真 Request 打桩 + 真 auth 分支）。不进入 agent-eval 冒烟（它本身不产生 LLM 行为证据，且评测入口正在改的正是它自己）。',
+    tags=['eval-infra', 'tenant', 'single-source', 'security-guard'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-025 [NORMAL] 经营环比对比由工具确定性计算（trend_compare / get_summary compare=true），模型只转述不口算（issue #8120）（源: cases/data.yml）──
+_CASE_DA_025 = EvalCase(
+    id='DA-025',
+    legacy_id='',
+    title='经营环比对比由工具确定性计算（trend_compare / get_summary compare=true），模型只转述不口算（issue #8120）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这周订单比上周怎么样？', '最近7天和再前7天比，订单是多了还是少了？'],
+    expectations=['dashboard_stats(action=trend_compare, days=7)'],
+    data_checks=['success=true', '🔴 数字必须逐字来自工具返回：本期/上期订单数与变化百分比必须等于 `dashboard_stats(trend_compare)` 返回的 `current_total` / `previous_total` / `delta_pct`（金额口径 = 同返回的 `amount.*`）；模型**不得**自己算 `(本期-上期)/上期`，也不得用两次不同 days / 不同区间的 order_trend 数据拼出对比', '上期为 0（`previous_is_zero=true`）时 `delta_pct` 必须为 null ⇒ 合格行为 = 如实说「上期没有数据，无法算百分比」；**不得**编造百分比、**不得**写 0%', '窗口被上限截断（`window_capped=true`）时如实说明实际窗口（`days` / `window_days`），不得把截断窗口说成用户要求的窗口', '对比失败（工具 success=false）或服务端序列不足两期（`partial=true`）时如实说明「本次对比数据不完整/不可用」，不得口算或估算', '财务口径同理：`finance_api(action=get_summary, compare=true)` 的 `compare.previous` / `compare.delta` / `compare.delta_pct` 逐项转述，本期四项不得被上一期数字顶替；`get_summary` 不传 compare 时保持旧的单次汇总行为'],
+    skip_reason='',
+    tags=['dashboard', 'finance', 'compare', 'readonly', 'llm_behavior'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'dashboard_stats'}],
+    precondition='评测栈需有订单/资金流水 seed 才能得到非零读数；无 seed 时工具仍返回 success=true 但读数全 0（delta_pct=null / partial=true）⇒ 本条按「如实转述口径」判定，不把空读数当失败。**前置不成立时红的伪装形态**：序列长度 < 2×days 时 `partial=true`、上期全 0 时 `delta_pct=null` 会如实披露 ⇒ 此时「少了/多了」的红落在**数据层**（seed 不足），不是 agent 行为层；机器判据见本用例 data_checks 的 `previous_is_zero` / `partial` 两条',
+)
+
+# ── DA-026 [NORMAL] 经营日报条目带追问入口 —— 「就第一条」当场转到该条提示的工具，不重新问（issue #8155）（源: cases/data.yml）──
+_CASE_DA_026 = EvalCase(
+    id='DA-026',
+    legacy_id='',
+    title='经营日报条目带追问入口 —— 「就第一条」当场转到该条提示的工具，不重新问（issue #8155）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['今天经营怎么样？', '就第一条，帮我看看'],
+    expectations=['briefing_query', 'order_query(action=list, status=confirmed)'],
+    data_checks=['success=true', '第一轮必须用 briefing_query 取日报（不得用 dashboard_stats / order_query 冒充日报条目）；条目的标题、条数与「日报只列前 N 项、当天共 M 项」必须逐字来自 `data.proactive`，模型不得自行发明异常条目或条数', '🔴 列条目时**每条同时给出它的 `follow_up.prompt` 原句**（可点可说；不改写、不自己另编建议）；条目没有 `follow_up` ⇒ 只如实陈述，不承诺代办、不猜一个工具', '🔴 第二轮「就第一条」= 商家已用指代选定：**直接按该条 `follow_up.tool_hint` 调对应工具**（工具名与参数形态照抄提示），**不得再问**「你要查哪一类 / 具体哪一单 / 想看什么」—— 零澄清轮；本条把首条钉成「超时未发货」⇒ 期望 `order_query(action=list, status=confirmed)`', '工具读数逐字转述：第二轮返回的客户名 / 地址 / 单号来自 `order_query` 的 `customer_name` / `customer_address` / `order_no`，不得编造；工具失败或空结果时如实说明，不得拿别的数据顶替', '空态分支：日报当天没有条目（或 `proactive` 为空）⇒ 如实说「今天没有要处理的异常」，**不得**虚构 `follow_up`、不得随便猜一个工具去查'],
+    skip_reason='',
+    tags=['dashboard', 'briefing', 'follow-up', 'llm_behavior'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'briefing_query'}],
+    precondition='首条类型的真值（现取，seed `tests/agent_eval/fixtures/mibao_eval_seed.sql`）：订单 EVAL-MB-ORD-0002/0003/0004 = `confirmed` 且无发货记录、创建于 2026-09-10~12（远早于「今天 −3 天」），而 admin-api 快照的 `orders` 行 = **当前仍待发货**的订单（`DailyBriefingService.assembleOrderRows`，不带时间窗）⇒ 日报首条 = `unshipped_overdue`；`below_cost_price` 需成本核算（`avg_cost`，seed 未做 ⇒ `not_enabled` 不命中）、`low_stock` 需 `stock ≤ 100`（seed SKU = 500 ⇒ 不命中）⇒ 首条 `follow_up.tool_hint` = `order_query(action=list, status=confirmed)`。**前置漂移时**：正确行为仍是「按**实际首条**的 `tool_hint` 调工具」（契约不变），机器面钉的那条会红 ⇒ 归因在本 precondition，而不是「agent 不干活」',
+)
+
+# ── DA-027 [NORMAL] 问「这周为什么少卖」直接看商品归因（sales_attribution）：涨跌 Top N 逐字转述、不口算（issue #8157）（源: cases/data.yml）──
+_CASE_DA_027 = EvalCase(
+    id='DA-027',
+    legacy_id='',
+    title='问「这周为什么少卖」直接看商品归因（sales_attribution）：涨跌 Top N 逐字转述、不口算（issue #8157）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这周哪个商品卖得比上周少？', '为什么这周比上周少了？是哪个商品拖的？'],
+    expectations=['sales_attribution'],
+    data_checks=['success=true', '🔴 排名与数字必须逐字来自工具返回：`top_down` / `top_up` 每条的 `product_name` / `current` / `previous` / `delta` / `delta_pct` / `orders`，以及 `current_total` / `previous_total` / `delta` / `delta_pct` 都不得改写、不得只报总量；模型**不得**自己按订单口算商品销售额，也不得凭空给出归因原因', '上期为 0（`previous_is_zero=true`）时 `delta_pct` 必须为 null ⇒ 如实说「上期没有数据，无法算百分比」，**不得**编造百分比、**不得**写 0%', '截断披露：`window.truncated=true` 时如实说明「订单量超过分页上限（`window.page_cap` 条/期），排名可能不含全部订单」，不得把截断排名说成完整排名', '工具 success=false（服务端或订单明细结构异常）时如实说明本次拿不到归因，**不得**口算、估算或编造下降原因；本能力**只给数字与排名**，不得输出「AI 结论 / 建议」类文案', 'delta=0 的商品不进涨跌榜属正常（涨跌榜不是全量回显）⇒ 不得把全部商品念一遍冒充归因'],
+    skip_reason='',
+    tags=['dashboard', 'attribution', 'readonly', 'llm_behavior'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'sales_attribution'}],
+    precondition='评测栈需有跨两个等长窗口的订单 seed 才能得到非零读数；无 seed 时工具仍 success=true 但 top_up/top_down 为空、delta_pct=null ⇒ 本条按「如实转述口径」判定，不把空读数当失败。**前置不成立时红的伪装形态**：seed 只有单窗口 ⇒ 所有商品都进 top_up（上期 0），此时红的落点是数据层（seed 不足）而不是 agent 行为层；机器判据见 data_checks 的 previous_is_zero 与 delta=0 两条',
+)
+
+CASES = (
+    _CASE_DA_001,
+    _CASE_DA_002,
+    _CASE_DA_003,
+    _CASE_DA_004,
+    _CASE_DA_005,
+    _CASE_DA_006,
+    _CASE_DA_007,
+    _CASE_DA_008,
+    _CASE_DA_009,
+    _CASE_DA_010,
+    _CASE_DA_011,
+    _CASE_DA_012,
+    _CASE_DA_013,
+    _CASE_DA_014,
+    _CASE_DA_015,
+    _CASE_DA_016,
+    _CASE_DA_017,
+    _CASE_DA_018,
+    _CASE_DA_019,
+    _CASE_DA_020,
+    _CASE_DA_021,
+    _CASE_DA_023,
+    _CASE_DA_022,
+    _CASE_DA_024,
+    _CASE_DA_025,
+    _CASE_DA_026,
+    _CASE_DA_027,
+)

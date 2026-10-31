@@ -403,7 +403,7 @@ log = pathlib.Path(log_path).read_text(errors="ignore")
 #: 面 → 触发前缀（与 verify-all.sh 的 *_face_paths() 同源语义；这里是**归因用**的粗映射）
 FACES = [
     ("ci workflow helper", (".github/", "tests/unit_ci_workflows/")),
-    ("cases 面门禁", (".github/cases/", ".github/case-trust-", "tests/agent_eval/eval_cases.py",
+    ("cases 面门禁", (".github/cases/", ".github/case-trust-", "tests/agent_eval/eval_cases/",
                     "docs/testing/mibao-verification-cases.md")),
     ("bmini-app", ("frontend/bmini-app/", "frontend/admin-web/src/lib/print-media.json")),
     ("admin-api", ("backend/admin-api/",)),

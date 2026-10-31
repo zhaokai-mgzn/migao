@@ -1,0 +1,3233 @@
+# GENERATED FILE — DO NOT EDIT
+# 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
+# 源: cases/*.yml（case-contract 单一源）
+# 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
+# 域: misc（源: cases/misc.yml，166 条）
+
+from ._schema import Difficulty, EvalCase, Skill
+
+# ── MC-001 [NORMAL] 记忆提取解析 - 纯 JSON/内嵌数组/非法输入（源: cases/misc.yml）──
+_CASE_MC_001 = EvalCase(
+    id='MC-001',
+    legacy_id='',
+    title='记忆提取解析 - 纯 JSON/内嵌数组/非法输入',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 从 LLM 响应解析记忆列表，并跳过问候/感谢等短对话'],
+    expectations=['direct_reply'],
+    data_checks=['_parse_extraction_result 纯 JSON 数组直接 json.loads 返回；带说明文字时 re 提取 [...] 再解析；非 JSON/非 list → 返回 []', 'extract_memories_from_turn 在 user_message<4 且 assistant_reply<20 时直接返回 [] 且不调 LLM'],
+    skip_reason='[backend-contract] 纯函数由 pytest 单测验证（tests/test_memory_extractor.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['memory', 'extractor', 'parse'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-002 [NORMAL] 记忆提取与保存 - LLM 流程 + 落库计数（源: cases/misc.yml）──
+_CASE_MC_002 = EvalCase(
+    id='MC-002',
+    legacy_id='',
+    title='记忆提取与保存 - LLM 流程 + 落库计数',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 调轻量模型提取记忆并写入 user_memories'],
+    expectations=['direct_reply'],
+    data_checks=['extract_memories_from_turn prompt 截断 500 字符；LLM ainvoke 后逐条补 context（已有 context 不覆盖）；LLM 异常 → warning 返回 []', 'extract_and_save 无记忆返回 0；有记忆 batch_upsert 返回保存条数；batch_upsert 异常 → error 返回 0'],
+    skip_reason='[backend-contract] 依赖注入 mock 的 async 方法由 pytest 单测验证（tests/test_memory_extractor.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['memory', 'extractor', 'save'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-003 [NORMAL] 意图分类 - 文本提取 + 分类器 Prompt 构建（源: cases/misc.yml）──
+_CASE_MC_003 = EvalCase(
+    id='MC-003',
+    legacy_id='',
+    title='意图分类 - 文本提取 + 分类器 Prompt 构建',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 从消息提取文本并动态构建意图分类 Prompt'],
+    expectations=['direct_reply'],
+    data_checks=["_extract_text None→''、str 原样、list 仅拼接 type=='text' 的 text 块（空格 join）、其他类型 str(content)", '_build_classifier_prompt agent_intents=None 用全部意图；给定列表确保 general 兜底追加；未知意图 desc 回退 intent 名；消歧规则只展示当前意图相关'],
+    skip_reason='[backend-contract] 纯函数由 pytest 单测验证（tests/test_intent_classifier.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['intent', 'classifier', 'prompt'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-004 [NORMAL] 意图分类 - 响应解析 + 异常兜底（源: cases/misc.yml）──
+_CASE_MC_004 = EvalCase(
+    id='MC-004',
+    legacy_id='',
+    title='意图分类 - 响应解析 + 异常兜底',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 解析分类模型响应并在异常时回退 general'],
+    expectations=['direct_reply'],
+    data_checks=['_parse_response 空 content→general(0.5)；剥离 ```json；直接 loads；兜底 re 提取第一个 {...}；intent 非法→general；confidence 夹取 [0,1]；解析异常→default', 'classify 正常返回 source=classifier；成本追踪 usage_metadata 优先、response_metadata 兜底；整体异常 → general(0.5, source=default, matched_keywords=[])'],
+    skip_reason='[backend-contract] 依赖注入 mock 的 async 方法由 pytest 单测验证（tests/test_intent_classifier.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['intent', 'classifier', 'fallback'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-005 [NORMAL] RBAC 岗位目录读端点的权限注解守卫（AdminRoleController 逐端点台账 + 有意的跨码登记）（源: cases/misc.yml）──
+_CASE_MC_005 = EvalCase(
+    id='MC-005',
+    legacy_id='',
+    title='RBAC 岗位目录读端点的权限注解守卫（AdminRoleController 逐端点台账 + 有意的跨码登记）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当 AdminRoleController（`/api/admin/roles/**`）新增/改动端点却没登记它要哪把权限码，或已登记的注解被删/被改成别的码，或**任何 controller 的 `@RequirePermission`（含类级注解）写了权限目录里不存在的码**（现场：`PricingController` 类级 `order:view` ⇒ 三层价接口对所有人恒 403），或 `/api/admin/**` 上「无任何生效码」的端点总数增长时，必须有东西**具名**报出'],
+    expectations=['direct_reply'],
+    data_checks=['**判据 1+2（未登记即红 / 注解被删即红）**：controller 每个端点必须登记；`decision=annotated` 的条目现取生效码必须非空且逐字等于台账值 —— 摘掉 `@RequirePermission` ⇒ 当场红（issue #5980 的修前形态）', '**判据 3（三条读码逐值冻结）**：`GET /api/admin/roles` = `system:view`（岗位权限页第一屏）、`GET /api/admin/roles/all` = `employee:list`（员工管理页岗位下拉）、`GET /api/admin/roles/{id}` = `system:view` —— 少一条 / 改一个码 ⇒ 红', '**判据 4**：生效码必须在权限目录（`RegistrationService` 种子）里 —— 拼错 ⇒ 该端点对所有角色恒 403 ⇒ 红', '**判据 5（对照读数只许缩短）**：`/api/admin/**` 上「无任何生效码」的端点总数 ≤ 10（修前实测 13，本单 -3）；增长 ⇒ 红，缩短后须调低台账读数（台账读数与现取不一致亦红）', '**判据 6（判别力自证）**：五种坏形态（新增无注解读端点 / 摘掉注解 / 幽灵台账条目 / 码拼错 / 重新标 exempt）在**内存构造的源码**上各自判红；只改注释 ⇒ **不红**（对照读数）', "**跨码面（真值在同 PR 的判据 2）**：`/roles/all` 与黄金策 `role_manage` 工具跨码（页面守卫 `employee:list` vs 工具 `system:view`）⇒ 具名登记在 `CODE_DIVERGENCE_EXCEPTIONS['role_manage']`，未登记/陈旧 ⇒ 判据 2 红", '**判据 4b（类级尺度，2026-10-22 加）**：**全注解面**（剥注释后扫全部 controller，类级/方法级一视同仁）的码都必须在权限目录里 —— 现场 = `PricingController` 类级 `order:view`（目录不存在 ⇒ 报价与价格本对所有人恒 403，而旧判据只裁 AdminRoleController ⇒ 无东西会红）；红证 = 把该类级码改成 `order:view` ⇒ 具名报红；对照 = 只在注释里写幽灵码 ⇒ **不红**', '**覆盖面照实登记**：判据 1~3 只裁 `AdminRoleController` 这一个 controller（其余 `/api/admin/**` 无码端点归既有 `UNANNOTATED_ENDPOINTS` 台账）；**判据 4b 覆盖全部 controller 的注解面**；判「注解面」不判运行时授权（运行时身份级读数在 SecurityConfigTest）'],
+    skip_reason='[backend-contract] 注解面 / 台账的离线判据（零 LLM、秒级；只读源码文本，不连库/不跑 LLM）由 tests/unit_ci_workflows/test_admin_role_read_surface_guard.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'permission-annotation', 'endpoint-ledger', 'class-level-guard', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-006 [NORMAL] RBAC 岗位目录读端点的身份级鉴权（9 身份：无 employee:list/system:view ⇒ 403，持有者 ⇒ 200）（源: cases/misc.yml）──
+_CASE_MC_006 = EvalCase(
+    id='MC-006',
+    legacy_id='',
+    title='RBAC 岗位目录读端点的身份级鉴权（9 身份：无 employee:list/system:view ⇒ 403，持有者 ⇒ 200）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当商户员工（含 0 权限的自定义岗位）能读到 `GET /api/admin/roles` / `/roles/all`，或持有对应读码的岗位反而被拒（岗位下拉/岗位权限页 403），或 customer / worker 访问 `/api/admin/roles/all` 不再 403 时，必须有东西**具名**报出'],
+    expectations=['direct_reply'],
+    data_checks=['**拒绝半（修前形态）**：0 权限自定义岗位读 `/roles/all` 与 `/roles` ⇒ **403 且 `error.code = PERMISSION_DENIED`**，且服务层一次都没被调用（负向控制：旧实现无注解会放到服务层 ⇒ `verify(never())` 会红）', '**正向对照（零回归）**：持 `employee:list` 读 `/roles/all` ⇒ **200**（员工管理页岗位下拉）；持 `system:view` 读 `/roles` 与 `/roles/{id}` ⇒ **200**（岗位权限页第一屏与回显）', '**垂直越权不回归**：`customer` / `worker` 读 `/roles/all` ⇒ 403（门禁分支 ② 先拒，不进权限码判定，服务层零调用）', '**检索口径**：判据走真实安全过滤链 + `PermissionInterceptor`（`backend/admin-api/src/test/java/com/migao/admin/security/SecurityConfigTest.java` 的全上下文 Spring 测试 + `MockMvc`），身份与权限集由 `SecurityMockMvcRequestPostProcessors.user` + `roleService.getUserPermissions` 注入 —— 与生产解析顺序（方法级注解优先）逐字一致'],
+    skip_reason='[backend-contract] 身份级 403/200 由 admin-api 的 Spring 集成测（backend/admin-api/src/test/java/com/migao/admin/security/SecurityConfigTest.java）验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'permission-denied', 'identity', 'zero-regression', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-007 [NORMAL] 配置 - 默认值/向后兼容/生产密钥校验（源: cases/misc.yml）──
+_CASE_MC_007 = EvalCase(
+    id='MC-007',
+    legacy_id='',
+    title='配置 - 默认值/向后兼容/生产密钥校验',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 读取 Settings 配置并校验生产密钥'],
+    expectations=['direct_reply'],
+    data_checks=['Settings 默认值（APP_NAME/APP_VERSION/DEBUG/API_PREFIX/HOST/PORT 及 LLM 路由/成本/重试参数）正确', 'LLM_API_KEY/BASE_URL/MODEL 取 PRIMARY_* 优先 VISION_* 兜底（原 MINIMAX_* 语义）；DASHSCOPE_* property+setter 读写 PRIMARY/VISION 字段', 'validate_production_secrets 非 DEBUG 且缺 JWT_PUBLIC_KEY/SERVICE_TOKEN → ValueError；DEBUG=true 绕过；齐全通过'],
+    skip_reason='[backend-contract] 配置/纯函数由 pytest 单测验证（tests/test_config.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['config', 'settings', 'validation'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-008 [NORMAL] LLM 工厂 - 实例参数与多模态清洗（源: cases/misc.yml）──
+_CASE_MC_008 = EvalCase(
+    id='MC-008',
+    legacy_id='',
+    title='LLM 工厂 - 实例参数与多模态清洗',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 通过 LLMFactory 创建各 LLM 实例并清洗多模态内容'],
+    expectations=['direct_reply'],
+    data_checks=["_new_chat_model LLM_API_KEY=='ci-dummy' → ChatOpenAI，否则 ChatDeepSeek", 'create_skill_llm temperature=0.7/streaming/max_completion_tokens=2048/request_timeout=60；force_no_think→disabled；enable_thinking→enabled+384000', "create_vision_llm/intent/summary/suggestion 参数正确；invoke_text_safe 清洗 image_url 仅保留 text，Human 空文本→'[图片]'，返回 response.content.strip()"],
+    skip_reason='[backend-contract] 工厂/纯函数由 pytest 单测验证（tests/test_llm_factory.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['llm', 'factory', 'multimodal'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-009 [NORMAL] 应用入口 - create_app/健康检查/生命周期（源: cases/misc.yml）──
+_CASE_MC_009 = EvalCase(
+    id='MC-009',
+    legacy_id='',
+    title='应用入口 - create_app/健康检查/生命周期',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 创建 FastAPI 应用并管理启动/关闭生命周期'],
+    expectations=['direct_reply'],
+    data_checks=['create_app 返回 FastAPI，/health 返回 status=healthy+service+version；CORS 白名单 + DEBUG 追加开发源；api_router 挂 API_PREFIX', 'lifespan 启动 init_db/init_redis（非 DEBUG 异常 re-raise，DEBUG 仅 log）；后台 _session_auto_close_loop；关闭 cancel + close_redis + close_db', '_session_auto_close_loop 每 300s 扫描 close_idle_sessions(720min)，每天 cleanup_closed_sessions(90d)；CancelledError re-raise'],
+    skip_reason='[backend-contract] 依赖注入 mock 由 pytest 单测验证（tests/test_main.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['app', 'main', 'lifespan'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-010 [NORMAL] 规则匹配 - 文本提取与关键词优先级（源: cases/misc.yml）──
+_CASE_MC_010 = EvalCase(
+    id='MC-010',
+    legacy_id='',
+    title='规则匹配 - 文本提取与关键词优先级',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 用关键词规则快速匹配意图'],
+    expectations=['direct_reply'],
+    data_checks=["_extract_text None→''/str 原样/list 仅拼 type=='text'/其他 str(content)；match 空文本/空白→None", '关键词优先级 capabilities 长短语→farewell→订单统计/订单数据(order_query)→KEYWORD_MAP；greeting 仅 ≤10 字符才 1.0，长消息含问候词跳过'],
+    skip_reason='[backend-contract] 纯函数由 pytest 单测验证（tests/test_rule_matcher.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rule_matcher', 'intent', 'priority'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-011 [NORMAL] 规则匹配 - 正则规则与未命中（源: cases/misc.yml）──
+_CASE_MC_011 = EvalCase(
+    id='MC-011',
+    legacy_id='',
+    title='规则匹配 - 正则规则与未命中',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 用正则规则识别订单号/商品创建'],
+    expectations=['direct_reply'],
+    data_checks=["关键词命中 confidence=0.95 source='rule' matched_keywords；REGEX_RULES 命中 0.9 source='rule'（ORD-* 订单号、创建商品正则排除订单/工单/售后）", '均未命中返回 None'],
+    skip_reason='[backend-contract] 纯函数由 pytest 单测验证（tests/test_rule_matcher.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rule_matcher', 'regex', 'fallback'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-012 [NORMAL] CI 失败报告去重 - 同日同标题 open issue 存在时不重复建（源: cases/misc.yml）──
+_CASE_MC_012 = EvalCase(
+    id='MC-012',
+    legacy_id='',
+    title='CI 失败报告去重 - 同日同标题 open issue 存在时不重复建',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['e2e-real/nightly/xiaobu/agent-eval/fixture 等 CI 失败时自动建 issue，同日同标题已存在 open issue 应复用而非重复创建'],
+    expectations=['direct_reply'],
+    data_checks=['CI workflow 的 Create Issue step 必须先 search 同标题 open issue：已存在 → 仅评论追加 run 链接；不存在 → 才 issues.create', '守卫与创建逻辑同属一个 github-script step，避免 failure 时重复 issue 堆积', '**迁移指纹账本只追加**（issue #4235 判据 2；issue #5291 的 `V129__backfill_domain_read_permissions.sql` 是最近一次消费方）：新增迁移必须在 `tests/unit_ci_workflows/migration_fingerprints.json` **只追加一条**，**已登记条目的字节漂移一律判红**（判据本体 = `tests/unit_ci_workflows/test_migration_immutability.py`，**不新写第二份**；重生成入口 = 该脚本的 `--write-ledger`，它带前置断言：任何其它条目漂移即拒绝写出）', '**生成物新鲜度（零 diff 自证）**：`.github/cases/*.yml` 或 `.github/templates/*.yml` 改后必须跑 `python3 .github/render_cases.py --cases .github/cases --out-eval tests/agent_eval/eval_cases --out-md docs/testing/mibao-verification-cases.md` 重渲染；**同参数再跑一次必须零 diff**（生成物是派生物，手改生成物一律判红）', '**重活锁 `--wait`（issue #5863，2026-10-01）**：`machine-heavy-lock.sh acquire --wait <秒>` 是「排队等待」的合规入口（脚本内部轮询，间隔 **2~5 秒随机抖动**，到上限即止并**具名**拒绝）；`verify-all.sh` 用 `MIGAO_HEAVY_WAIT=<秒>` 显式开启，**未设置时拒绝语义一字不改**（拿不到锁仍立即出声拒绝）。判据 = `tests/unit_ci_workflows/test_machine_heavy_lock.py::TestWaitOption`（**真跑脚本**：空闲时不得变慢 / 被占则等到释放并出声「排队等待…后取得」/ 超时具名且不偷锁 / `--wait 0` 与不传等价 / 参数错误 rc=2 / 退避落在 [2,5] 且**非常数** / **变异红证**：把「可等待」那行拿掉 ⇒ 判据当场红）', '**重活锁**的**射程**（issue #5863，2026-10-01 改判）：`verify-all.sh` 的 `heavy_lock_wanted` 覆盖**所有会跑全量测试的档**（`quick` / `full` / `frontend` / `backend` / `agent` / `redproof` / `gate`），**未知 / 空档位不拿**。病史 = 原判据断言「只有 `gate` 拿锁」（理由「其余档不是同一台机器上的重活」）**与事实不符** —— `full` 按脚本自己的档位说明就是三模块全量 ~10-15 分钟，`redproof` 机具实跑单机具 2~30 分钟；实测 `gate` 持锁期间 `load average` 16.71 / 28.71 / 20.14（8 核）而单份档最多打满 ~8 核 ⇒ 锁外确有重活。判据 = `tests/unit_ci_workflows/test_machine_heavy_lock.py::TestVerifyAllWiring::test_every_tier_that_runs_tests_takes_the_lock`（正向七档全 WANT + 反向空/未知档 NONE）', '**双引号内的裸反引号 = bash 命令替换**（issue #6095 第四层同批扫出；判据 6）：报错文案里写行内代码标记（`die "…（`refs/heads/*`、`main`）…"`）⇒ bash 去**执行**它们 ⇒ 走到那个失败分支的人拿到 `refs/heads/*: No such file or directory` / `main: command not found`，**且原文案里的行内代码被吃掉** —— 而那句正是「参数传错时唯一可读的出口」。判据体 = `tests/unit_ci_workflows/test_scripts_bash32_var_brace.py` 判据 6（**全仓受控 `*.sh` 射程**，沿用同一 `GUARD_SCOPE`/`scanned_shell_files`）：只判「双引号内 + **未转义**」这一种形态 —— 已转义的 ``、单引号字面量、注释、**heredoc 正文**（本仓 `.sh` 里的内联 Python/JS 载荷）都不算（不做 heredoc 预处理时真语料上有 **35 处假红**）。红证 = 在真语料上注入同族形态 ⇒ 报出文件 + 行号；负例 = 上述四种形态必须不命中。行为面 = `test_c_end_h5_hosting.py::TestCiSideInjectedValuesAndMessages`：坏长度 `DIST_SHA` 必须**具名且文案干净**（不含 `command not found`），注入式红证 = 撤掉转义 ⇒ 噪音当场出现。⚠️ **这条类级判据在第五层真的抓到过一次**（本轮回放）：`deploy/scripts/c-end-h5-publish-ci.sh` 里那句『执行体 ref 为空：请给 `H5_PUBLISHED_COMMIT`』的文案中那对反引号忘了转义 ⇒ 空执行体 ref 时凭空多一行 `command not found`、文案被吃掉一块；**抓到它的是「全仓 `*.sh` 类级判据 6」，不是任何单点判据**（典型：窄跑看不见、全目录跑才红）⇒ 已修 + 补行为判据 `test_empty_executor_ref_dies_with_a_clean_named_message`，并按 `guard_scope_ledger.json` 的 exit ② 把本判据文件以 `kind=mentions` 入册（它只**点名**该语料、不扫描它）', '**非 git 目录 / `git` 不可用 ⇒ `unknown` ⇒ 拒绝（fail-closed）**（issue #6084 的未固化项，本包固化）：`verify-all.sh` 的角色守卫必须**先于「禁空跑」判定**（否则非 git 目录里`origin/main` 也不存在 ⇒ 变更集为空 ⇒ 先 `exit 3` 早退，**永远走不到拒绝分支**），且角色取值必须把「退出码 / 空输出」收进**同一条**判据（两次独立 `git rev-parse` 失败都返回空串 ⇒ `[ "" = "" ]` 判真 ⇒ 非 git 目录被算成 `primary` = **放行**）。判据 = `tests/unit_ci_workflows/test_package_heavy_entry_ban.py::TestNonGitFailsClosed`（真脚本落在**非 git 目录**里跑 / `PATH` 桩驱动「`git` 不在 PATH」）+ `TestUnknownRoleInjectionIsCaught`（注入式红证：把 `unknown` 当 `primary` ⇒ 必红）'],
+    skip_reason='[backend-contract] CI workflow 结构由 pytest 单测验证（tests/unit_ci_workflows/test_issue_dedup_guard.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'issue-dedup', 'nightly'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-013 [NORMAL] 记忆提取 C 端受控词表 + PII 变体过滤 + agent_type 分流（源: cases/misc.yml）──
+_CASE_MC_013 = EvalCase(
+    id='MC-013',
+    legacy_id='',
+    title='记忆提取 C 端受控词表 + PII 变体过滤 + agent_type 分流',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 记忆提取：仅 C 端（xiaobu）落库；key 受控词表约束；PII 变体 key/值拦截'],
+    expectations=['direct_reply'],
+    data_checks=["extract_memories_from_turn/extract_and_save 新增 agent_type 参数：agent_type != 'xiaobu' → 直接返回 0/[]（B 端不落库）", 'C 端受控词表 CEND_MEMORY_KEYS：LLM 返回的 key 不在词表内 → 丢弃；词表含 curtain_style/curtain_color/window_size/budget 等画像字段', '_filter_pii 变体拦截：key 词根匹配（phone/mobile/address/name/contact/wechat/id_card/idcard 等 40+ 变体）而非精确黑名单；value 含手机号/邮箱 → 丢弃', 'context 字段去 PII：不再写原始 user_message 明文（或做脱敏），避免手机号/地址落库'],
+    skip_reason='[backend-contract] 纯函数/依赖注入 mock 由 pytest 单测验证（tests/test_memory_extractor.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['memory', 'extractor', 'pii', 'agent_split'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-014 [NORMAL] 用户记忆 agent_type 读写 + format_for_prompt 消毒（源: cases/misc.yml）──
+_CASE_MC_014 = EvalCase(
+    id='MC-014',
+    legacy_id='',
+    title='用户记忆 agent_type 读写 + format_for_prompt 消毒',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 用户记忆管理：agent_type 维度读写；注入文本消毒防持久化注入'],
+    expectations=['direct_reply'],
+    data_checks=['upsert/batch_upsert 写入 agent_type（xiaobu/mibao）；get_important_memories/format_for_prompt 支持按 agent_type 过滤', 'format_for_prompt 输出消毒：XML 标签转义（<>&）、值长度截断、strip 控制字符 → 防跨会话持久化注入（审计 07 P1-L9）', '消毒后注入仅对 xiaobu 生效（agent_type 分流，CH-024 关联）'],
+    skip_reason='[backend-contract] 依赖注入 mock 的 async 方法由 pytest 单测验证（tests/test_user_memory.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['memory', 'user_memory', 'sanitize'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-015 [NORMAL] 用户记忆合规 API - 查询与删除（个保法查询权/删除权）（源: cases/misc.yml）──
+_CASE_MC_015 = EvalCase(
+    id='MC-015',
+    legacy_id='',
+    title='用户记忆合规 API - 查询与删除（个保法查询权/删除权）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 提供 GET/DELETE /memories：用户查询/删除自己保存的记忆（agent_type=xiaobu）'],
+    expectations=['direct_reply'],
+    data_checks=["GET /memories 调 UserMemoryManager.get_all_memories(tenant, user, agent_type='xiaobu')，返回记忆列表（type/key/value/importance/时间）", "DELETE /memories 调 delete_all(tenant, user, agent_type='xiaobu')，返回删除条数", '跨租户/跨用户不可访问（仅查当前登录用户自己的记忆）', '异常时返回空列表/0 条，不抛 500'],
+    skip_reason='[backend-contract] 依赖注入 mock 由 pytest 单测验证（tests/test_memories_api.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['memory', 'compliance', 'privacy'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-016 [NORMAL] 工人端 H5 静态落位 app.migaozn.com/w/（CI 自动发布 + 页面身份断言 + 静态根禁删）（源: cases/misc.yml）──
+_CASE_MC_016 = EvalCase(
+    id='MC-016',
+    legacy_id='',
+    title='工人端 H5 静态落位 app.migaozn.com/w/（CI 自动发布 + 页面身份断言 + 静态根禁删）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['frontend/worker-h5/ 变更合并到 main 后，CI 把 index.html + src/** 逐字发布到 app.migaozn.com 静态根下的 w/，并在发布后断言线上返回的是工人端 H5'],
+    expectations=['direct_reply'],
+    data_checks=['发布目标限定在 <静态根>/w 子树；静态根（同时承载线上 C 端 H5）不得被任何 --delete/清空/rm -rf 触碰：远端输出自证 PARENT_INDEX_BEFORE_SHA256 == PARENT_INDEX_AFTER_SHA256，且沙箱行为测试断言父目录 index.html 逐字节不变', '发布后 GET https://app.migaozn.com/w/ 的 body 哈希 == 仓库 frontend/worker-h5/index.html（同样断言 /w/index.html 与 /w/src/app.mjs），body 含 src/app.mjs 且不含 TARO_ / 元元智能助手 —— 修复前 /w/ 已是 200 的 C 端页面，故 200 本身不是判据', '越界子目录（.. / . / 空 / /etc / a/b）必须拒绝且静态根零改动；连跑两次结果一致（幂等），w/ 子树内的陈旧文件被收敛', '🔴 module **闭包加载**判据（issue #6306）：起点 = **发布集内每个 `*.html` 入口**（worker 有两个：`index.html → src/app.mjs`；`machine.html → src/machine-app.mjs`，只从 index 出发会漏掉 `machine.mjs` 那条链），沿**静态 `import … from` + 动态 `import(\'…\')` 字面量**递归取每个依赖，逐个断 `200`；闭包**空集判红**；另断入口引用的 `<link rel="stylesheet" href>` = 200 —— 病根是共享模块曾住仓根 `frontend/shared/`（发布集外）⇒ 线上被 nginx SPA 兜底接成 `200 text/html` ⇒ 浏览器拒绝执行 module script ⇒ 整页白屏，而身份 / 字节哈希 / MIME 三面**条条全绿**。判据 = `tests/unit_ci_workflows/test_worker_h5_module_closure_guard.py`（结构元守卫：按现取腿集合判 + 豁免台账只许缩短 + 四组锚的注入式红证 + 本地静态服务上真跑绿/红两面）'],
+    skip_reason='[backend-contract] 部署 workflow / 发布脚本由 pytest 单测 + 沙箱行为测试验证（tests/unit_ci_workflows/test_worker_h5_hosting.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'deploy', 'worker-h5', 'hosting'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-017 [NORMAL] 六个红证机具必须真的有人调用（门禁面 = 前提自检 + 登记表只许增）（源: cases/misc.yml）──
+_CASE_MC_017 = EvalCase(
+    id='MC-017',
+    legacy_id='',
+    title='六个红证机具必须真的有人调用（门禁面 = 前提自检 + 登记表只许增）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['scripts/*-red-proof.py 六个红证机具所守卫的源码 / 判据 / 机具自身被改动后，门禁必须真的调用它们（而不是只靠人手跑）'],
+    expectations=['direct_reply'],
+    data_checks=['verify-all.sh 的 gate 档命中红证面时把 redproof_preflight() 作为独立检查项真跑、未命中时显式声明「未跑」（不许静默通过）；redproof 实跑档对每个机具都有实跑调用（不带 --check）—— 红证：把派发 / 调用 / 未跑声明删掉 ⇒ 同名守卫变红', '每个机具 python3 scripts/<机具> --check 真跑（子进程）退出 0，并打印统一报告行「前提自检：跑了 N 条 / 未跑 M 条（腐烂）｜实跑未跑 K 条（原因：需 <heavy>；入口 ./verify-all.sh redproof）」—— 「没跑」必须长得像「没跑」', '四类腐烂逐机具各有注入式红证：① 被守卫文件消失；② 被守卫源码标识符改名（注入锚点失配）；③ 判据方法改名 / 判据文件消失；④ 从机具里删掉一条变异 ⇒ 登记表下限判据红（issue #5193 判据 1 的形态）。注入前后按 sha256 自证、finally 逐字节还原、还原后复跑必须回到绿（对照组）', '三态退出码：0 = 全部前提成立 / 1 = 有腐烂（具名报出哪条变异烂在哪）/ 3 = 无法判定（无声明）；实跑腿在桩仓库（无 scripts/*-red-proof.py，如 tests/unit_ci_workflows 复制本脚本的最小仓库）里必须显式「未跑」且不红'],
+    skip_reason='[backend-contract] 门禁接线与机具前提自检由 pytest 单测 + 真跑子进程验证（tests/unit_ci_workflows/test_redproof_harness_gate.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'red-proof', 'gate', 'mutation_testing'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-018 [NORMAL] 红证机具的报告卫生——跑前 unlink surefire 报告、缺失即「无法判定」（不许错误归因）（源: cases/misc.yml）──
+_CASE_MC_018 = EvalCase(
+    id='MC-018',
+    legacy_id='',
+    title='红证机具的报告卫生——跑前 unlink surefire 报告、缺失即「无法判定」（不许错误归因）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['scripts/auto-batch-red-proof.py / scripts/auto-batch-due-scan-red-proof.py 被并发打断或编译失败后，机具不得把「环境事故」读成「这条变异被抓到 / 没抓到」'],
+    expectations=['direct_reply'],
+    data_checks=['读 `target/surefire-reports/**` 的机具**跑 Maven 前必须先 unlink 目标报告**（报告由 Maven 在测试跑完后才重写 ⇒ 被打断 / 编译失败时它保持**上一次变异**的内容）。判据只对**真的读报告**的机具施加（由代码里的字符串常量判定，注释 / docstring 提及不算）；不读报告的机具 = 不适用（cutting-plan 读 Maven stdout、saving-metrics-backend 读退出码、saving-metrics-web 走 npm）', '报告缺失 ⇒ **fail-closed**（`if not <report>.exists(): raise`），实跑面退出码 `3` = **无法判定** —— 不回落读上一次的内容，也不当成「通过」', '🔴 红证（**实测**，非推断）：种一份**陈旧**报告（含目标判据的 FAILURE 行）+ 让编译失败 ⇒ 改前机具打印「✅ 判据有判别力」并 exit 0（**假绿**：把编译失败读成「这条变异被抓到」）；改后打印「surefire 报告未产出 ⇒ 无法判定」并 exit 3。两个机具各实测一次', '对照组（修法不改变正常路径）：同一条真变异（`--only default_on` / `--only tenant_context_not_set`）在改前 / 改后结论一致（exit 0 + 「✅ … 判据有判别力」逐字相同）', '静态守卫的注入式红证（三个读报告机具逐条参数化）：删掉跑前的 unlink ⇒ 判据红；把 fail-closed 削成 `return ""` ⇒ 判据红；另有一条对**修复前形态**（无 unlink + `else ""` 回落）的逐字节内联回归锚'],
+    skip_reason='[backend-contract] 机具的报告卫生由 pytest 纯函数判据 + 注入式红证，以及真跑 Maven 的红证 / 对照组验证（tests/unit_ci_workflows/test_redproof_harness_gate.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'red-proof', 'gate', 'mutation_testing'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-019 [NORMAL] 菜单三源同构的**图标维度**裁决——图标是前端专属（服务端不下发 icon）（源: cases/misc.yml）──
+_CASE_MC_019 = EvalCase(
+    id='MC-019',
+    legacy_id='',
+    title='菜单三源同构的**图标维度**裁决——图标是前端专属（服务端不下发 icon）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['改菜单图标（frontend/admin-web/src/config/menu.ts）或改服务端菜单下发面后，图标这一维必须按已裁决的口径判定（**前端专属**），而不是静默漂移'],
+    expectations=['direct_reply'],
+    data_checks=['裁决 = **方案 2「图标是前端专属」**，依据（**实测**，非推断）：`MenuNode`（`GET /api/admin/menus` 的节点 DTO）结构上只有 `code/label/children`（权限树本就没有图标这一维，走方案 1 得先**新增**该字段）；前端对「登录下发菜单」的读取点只有 `frontend/admin-web/src/types/index.ts` 的 `User.menus` 类型声明与 `frontend/admin-web/src/store/auth.ts` 的透传，**没有任何生产读取点**读 `menus[].icon`（真实侧边栏 `frontend/admin-web/src/components/layout/Sidebar.tsx` 的 `iconMap[...]` 取自 `@/config/menu`）⇒ 服务端那份 `icon` 是**无人消费、只会与前端漂移**的雷（实证 `production-piecework` 前端 `Calculator` / 服务端 `Coins`）', '落码 = **删字段**（而不是把服务端图标抄成前端值把漂移盖住）：`UserInfoResponse.MenuItem` 不再有 `icon`（`AuthService` 的 `menuItem` / `menuGroup` 形参一并删除、`UserController.generateMenus` 同步 —— ⚠️ 该私有方法已在 issue #5236 判为第四处菜单源并**整段删除**，本条对它的约束随之无对象）；前端 wire 类型 `types/index.ts` 的 `MenuItem` 不再声明 `icon`；`MenuNode` 不得长回 `icon`', '第四处菜单源不得长回来（issue #5236）：`UserController` 原私有持有的 `generateMenus`（5 项硬编码 dashboard/products/processing/knowledge/settings，与三处来源**都不一致**）**已整段删除** —— 取证（实测）：`git grep generateMenus origin/main` 除定义与唯一调用点外零调用方；端点全路径 = `GET /api/admin/user/info`（issue 正文写的复数 `users/info` 全库 0 命中）；该端点虽可达但**无消费方读它的 menus**（前端 `frontend/admin-web/src/lib/api.ts` 只调 `/api/auth/me`；`docs/wiki/CONTRACT-LEDGER.md` 无本端点条目；`backend/admin-api/src/test/java/com/migao/admin/security/SecurityConfigTest.java` 只断言状态码、不断言 `menus` 内容）⇒ 判据改挂到「**服务端不得再长出第四处独立菜单表**」：`UserController` 不得出现 `generateMenus`、不得出现 `MenuItem`（改名规避也拦得住）；且**不得把「删源」错做成「删字段」** —— `UserInfoResponse.menus` / `frontend/admin-web/src/types/index.ts` 的 wire 声明 / `frontend/admin-web/src/store/auth.ts` 的生产读取点必须还在（消费方在 `/api/auth/me`）', '「**不留读取点**」：`Sidebar.tsx` 的图标来源必须仍是 `@/config/menu`，且不得出现对登录下发菜单（`.menus`）的读取点——一旦出现，说明图标维度**不再是**前端专属，必须改回方案 1（把图标纳入同构判据）', '红证（五条注入**各能单独变红**）：① 服务端 DTO 长回 `icon` ② 前端 wire 类型长回 `icon` ③ `MenuNode` 长回 `icon` ④ `Sidebar` 改从登录下发菜单读 ⑤ `Sidebar` 不再从前端 config 取菜单 ⇒ 判据逐条变红', '**MC-012 守卫同批收口**（PR #5270 新增的 `tests/unit_ci_workflows/test_agent_permission_parity.py`）：它把「四处菜单源」写进了 S3 判据与 `REGISTERED_RESIDUALS`（第 4 处 = `UserController.generateMenus`）⇒ 本单删掉该对象后它必红（**自然红证**：`parse_menus` 的 fail-closed 断言 `菜单源 user（menu:user）解析出 0 个节点`，实测 2 failed）。收口口径 = **改挂而不删断言**：① 登记项改判为「第四处已于 issue #5236 删除」；② `parse_menus` 对 `menu:user` 允许**空表**，但前提 = `fourth_menu_source_symbols`（剥注释后的代码面）为空，否则照旧抛错（**不得静默恒绿**）；③ 判据 3 ④ **三面双向**钉死：符号面（`UserController` 代码面不得出现 `generateMenus`/`MenuItem`）+ 解析面（无符号却解析出节点 ⇒ 解析器认错对象）+ 结构面（响应构建不得再挂 `.menus(...)`，**名字无关**）；④ 现役三源的交集判据与 `CROSS_CHECKED_FLOOR` **一字未动**（实测三源交集 **19** 个节点 ≥ 下限 8 —— 该读数在 `#5271` 全树重排后重测：18 → 19；第四处对交集的贡献本就是 0）。⚠️ 九条判据的其余断言（工具码 / 端点码 / 岗位泄露 / 读写错配等）**零改动** —— 删断言 = 丢覆盖', '红证（第四处菜单源，issue #5236；五条注入**各能单独变红**）：① 以原名长回（还原调用点、不引入 `MenuItem` 字面量）⇒ 只触发「原名」条 ② 换名长回（控制器里重新构造 `MenuItem`）⇒ 只触发「结构」条 ③ 把删源错做成删 DTO 字段 ④ 错删前端 wire 声明 ⑤ 错删前端生产读取点；另有**负控**一条：只在 Java 注释里提到被删符号 ⇒ 判据**必须保持绿**（判据读的是**剥注释后的代码**，不吃自己的说明文字 —— 否则删除落码时写入的决策记录 javadoc 会把判据永久喂红）'],
+    skip_reason='[backend-contract] 图标归属裁决由纯函数判据 + 五条注入式红证验证（tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'menu', 'criteria'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-020 [NORMAL] 红证机具判别力判决的证据闸——先区分「跑起来了没有」再谈判别力（不许把编译失败读成「判据有判别力」）（源: cases/misc.yml）──
+_CASE_MC_020 = EvalCase(
+    id='MC-020',
+    legacy_id='',
+    title='红证机具判别力判决的证据闸——先区分「跑起来了没有」再谈判别力（不许把编译失败读成「判据有判别力」）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['红证机具所守卫的源码被改坏、或构建环境出事故（编译失败 / 测试收集失败）之后，机具给出的「判据有判别力」结论必须仍然可信 —— 拿不到「测试真的跑起来了」的证据时，结论只能是「无法判定」'],
+    expectations=['direct_reply'],
+    data_checks=['适用面（由 **AST** 决定，注释 / docstring 喂不动）：「用退出码判判别力」= 源码里有 `.returncode` 属性访问 **且** 渲染「判据有判别力」这个判决（非 docstring 字符串常量）⇒ 恰为 `saving-metrics-red-proof-backend.py` 与 `saving-metrics-red-proof-web.py` 两台；该集合本身被断言钉住（不得静默放宽，也不得在空集上恒真）', '证据闸（路线 B，stdout 面）：机具必须提供模块级 `run_evidence(out)`，输出里出现「测试真的跑起来了」的证据（`BUILD SUCCESS` / `Tests run: N` / vitest 带计数的 `Tests` 汇总行）才算跑过；判据把该函数**抽出来喂三组夹具真跑** —— 负向夹具（编译失败 / 变换·收集失败）必须得 None，正向夹具（判据真的被执行并失败）必须得证据', '位置性事实：证据闸（`if run_evidence(...) is None:`）的行号必须**小于**判决点行号（「先区分跑起来了没有，**再**谈判别力」的那个「先」）；闸里必须有三态出口 `sys.exit(UNKNOWN)`（= 3 = 无法判定），**不得**回落到「有判别力」；恢复后的复跑同样受这道闸约束（否则编译失败会被读成「恢复不干净」）', '红证（四条注入**各能单独变红**）：① 删掉证据闸 ② 三态出口削成 `sys.exit(1)` ③ `run_evidence()` 换成「永远说有证据」（= 退回只看退出码的语义；结构一字未动 ⇒ 红只能来自行为判据）④ 把闸写到判决**之后** ⇒ 同名判据逐条变红', '路线 A（#5216 报告面）的机具**不重复施加**本判据（同一口径只放一处，两处必然漂移）：`auto-batch-red-proof.py` / `auto-batch-due-scan-red-proof.py` / `pool-board-red-proof.py` 读 surefire 报告且已有「跑前 unlink + 缺失即 raise」⇒ 由同文件的 `_hygiene_problems()` 判；排除是**条件性**的 —— 那台机具的报告卫生一旦被拆掉，它立刻落回本判据管', '现状读数（**已复核，真跑贴原始输出**）：干净树上注入语法错误造一次编译失败 ⇒ **改前**机具对 5 条变异**全部**打印「✅ 红（判据有判别力）」、末行还打印「恢复后 rc=1（仍有红 ⇒ 恢复不干净）」（**两处错误归因**）；**改后**同一次注入 ⇒ 首条即「❓ 无法判定（编译失败 / 环境事故 ⇒ 测试一行都没跑）」+ 退出码 **3**。对照组 = 真变异 + 正常编译 ⇒ 判决行与改前**逐字一致**'],
+    skip_reason='[backend-contract] 红证机具的判决语义由 pytest 静态判据 + 注入式红证（含真跑 run_evidence 夹具）验证（tests/unit_ci_workflows/test_redproof_harness_gate.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'red-proof', 'mutation_testing', 'fail-closed'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-021 [NORMAL] B 端黄金策只读化：工具并集零写工具 + action 集 ⊆ 只读集 + 能力文案不谎报 + 共享工具与 C 端零改动（源: cases/misc.yml）──
+_CASE_MC_021 = EvalCase(
+    id='MC-021',
+    legacy_id='',
+    title='B 端黄金策只读化：工具并集零写工具 + action 集 ⊆ 只读集 + 能力文案不谎报 + 共享工具与 C 端零改动',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['把 order_create / product_manage / validate_input 等写工具重新绑回任一 B 端 skill，或把某个 B 端工具的 read_only 改回 False，或让 mibao 的能力文案重新承诺「创建商品」时，必须有东西变红'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1（L0）：mibao 的 skill 并集（`skill_names` + `fallback_skill`）里**每个**工具都必须 `read_only = True`，且不得有悬空绑定（绑了不存在的工具名 ⇒ 红）', '判据 2（L0）：写能力工具**一个都不得绑在 B 端**——具名清单 11 个（order_create / order_manage / product_manage / product_update / sku_update / processing_item_manage / processing_order_generate / processing_order_update / settings_manage / notification_manage / validate_input）', '判据 3（L0）：B 端可达工具的 `VALID_ACTIONS` ⊆ 其 `read_only_actions`；另有**写 action 闭词表**兜底（把写 action 挪进 read_only_actions 洗白也红）', '判据 4（L1 能力谎报）：`mibao.py` 的 `greeting` / `direct_replies.*` 在**非否定句**里不得出现写能力承诺词（闭词表；否定句豁免 —— 如实告知「黄金策不做这类操作」不算谎报）', '判据 5（边界）：与 C 端共享的 8 个工具（order_create / validate_input / interact / knowledge_search / processing_item_query / product_search / product_detail / production_progress_query）必须**仍然存在**且**仍被 C 端 skill 绑定** —— 「只解绑 B 端、绝不删除、C 端零改动」是用户裁定的硬边界', '红证（九条注入**各能单独变红**）：① order_create 绑回 order skill ①b settings_manage 绑回 product skill ② 工具 read_only 改回 False ②b 悬空绑定 ③ 塞回写 action ③b 把写 action 挪进 read_only_actions 洗白 ④ capabilities 注入「我可以帮您创建商品」④b greeting 注入写能力承诺 ⑤ 摘掉共享工具的 C 端绑定 ⇒ 对应判据逐条变红'],
+    skip_reason='[backend-contract] B 端只读化是源码静态事实（工具声明 / skill 绑定 / 能力文案），由零依赖 pytest 静态判据 + 九条注入式红证验证（tests/unit_ci_workflows/test_mibao_b_end_readonly.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'permission', 'readonly', 'red-proof', 'fail-closed'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-022 [NORMAL] 业务「今天」在**测试侧**也只能有一个来源（BusinessClock）：裸 now() 与 +08 业务日在 UTC 16:00–24:00 差一天 ⇒ required 检查每天红 8 小时（issue #5651 收口实测）（源: cases/misc.yml）──
+_CASE_MC_022 = EvalCase(
+    id='MC-022',
+    legacy_id='',
+    title='业务「今天」在**测试侧**也只能有一个来源（BusinessClock）：裸 now() 与 +08 业务日在 UTC 16:00–24:00 差一天 ⇒ required 检查每天红 8 小时（issue #5651 收口实测）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['把任一条测试的「今天」写回裸 LocalDate.now()（或再写一份 ZoneId.of("Asia/Shanghai") / 业务时区字面量）时，必须有东西变红'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1（L0 静态）：`backend/admin-api/src/test/java/**` 里不得出现五条禁则（无参 LocalDate.now( / LocalDateTime.now( / LocalTime.now( / 业务时区字面量 / ZoneId.of 业务时区），**剥注释后**判定。执行点 = BusinessClockTestSourceGuardTest.testSourcesReadBusinessTimeOnlyViaBusinessClock。', '判据 2（台账只许缩短）：存量 40 处 / 13 条按「文件 × 规则」登记，**未登记即红 / 超数即红 / 不再命中即红**（销账）。执行点 = 同类的 ledgerOnlyShrinks（三条注入式红证：未登记、超数、残留）。', '判据 3（实例判据）：本单修掉的三个类（PoolBoardUrgencyTest / InboundOrderServiceTest / ProcessingOrderServiceTest）**在扫描面内且命中为 0**。执行点 = theClassesFixedByThisChangeAreClean。', '判据 4（判别力）：五条禁则各能命中一个已知坏样本；且注释里的提及**不得**被判违规。执行点 = rulesHaveDiscriminatingPower。', '判据 5（隔离注入）：把裸 now() 放进隔离目录 ⇒ 扫描器逐条报出且对账判红（守卫自身判别力自证，不碰真源树）。执行点 = detectsInjectedViolationInIsolatedTree。', '🔴 红证（实跑，2026-09-27）：① 修复前 CI required 检查 admin-api unit tests 在 job 36280962072（跑于 2026-09-26T23:58Z–00:00Z）判红，逐条读数 expected 2026-09-26 / but was 2026-09-27、-3/-4、1/0；② 确定性复现：`TZ=America/Los_Angeles ./mvnw -Dtest=… test`（JVM 默认时区落后 +08 一天，与 runner 在 UTC 16:00–24:00 的处境等价）—— 修复前必红、修复后绿；③ 把 `businessClock.today()` 注回 `LocalDate.now()` ⇒ 判据 1/3 必红。'],
+    skip_reason='[backend-contract] 测试源码的日期基准是静态事实（无 LLM 环节）：由 admin-api 单测（backend/admin-api/src/test/java/com/migao/admin/time/BusinessClockTestSourceGuardTest.java）执行，跑在 required 的 admin-api unit tests job 里',
+    tags=['ci', 'time', 'flaky', 'business-clock', 'test-only'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-023 [NORMAL] 只改配置的改动必须能自动生效：deploy/swas/** 同时落在部署触发面与对账面（两处不许脱钩、不许窄化）（源: cases/misc.yml）──
+_CASE_MC_023 = EvalCase(
+    id='MC-023',
+    legacy_id='',
+    title='只改配置的改动必须能自动生效：deploy/swas/** 同时落在部署触发面与对账面（两处不许脱钩、不许窄化）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['只改 deploy/swas/nginx.conf（或 docker-compose*.yml）的提交合并后，必须有一次部署把它应用到线上；把 paths 改回去、或把对账面窄化成不覆盖 nginx.conf 的形态时，必须有东西变红'],
+    expectations=['direct_reply'],
+    data_checks=['端到端（执行式，本单唯一的「真的会生效」证明）：只动 `deploy/swas/nginx.conf` 的 commit（基准 = 上一次成功部署）⇒ `deploy-reconcile.yml` 的判定必须判「有漂移」并 dispatch `deploy-admin-api.yml`；不往 main 推任何测试提交', '应用面仍在：`deploy/swas/deploy.sh` 必须仍 `cp` 三份 canonical 配置（nginx.conf / docker-compose.yml / docker-compose.bluegreen.yml）+ 无条件 `docker compose up -d --no-deps nginx` + `nginx -s reload`（`nginx` 是 `UP_SERVICES` 初值）—— 触发了部署 ≠ 配置被应用', '类级 meta-guard：**每一个**有 deploy workflow 的服务，`on.push.paths` 的正向集合 ≡ 该服务对账腿的 pathspec 集合（排除项逐字对齐；`deploy/swas` 走第 4 个参数这个**附加包含项**的口子）；未落地的缺口逐条登记在 tests/unit_ci_workflows/reconcile_trigger_paths_ledger.json（条目必须逐字等于现取缺口 ⇒ 只许缩短）', '红证（四类注入各能单独变红）：① 从 `on.push.paths` 删掉 `deploy/swas/**` ② 从 reconcile 腿删掉 ③ 新增一条腿只写一处（触发面加/对账面加，两个方向各一条）④ 两处**一起**窄化成不覆盖 `nginx.conf` 的形态（`deploy/swas/*.sh`）⇒ 相等判据仍绿、覆盖判据必红；另有**执行式**版本（同一 diff 注入后零 dispatch）', '另外 4 条对账腿**逐值不变**：调用点冻结（改其中一条 ⇒ 红）+ 执行式验证各自仍只判自己的路径', '读数与事实一致（#5001 同族：读数被当结论读）：判定行必须**逐项点名**判定所用的 pathspec（`判定 pathspec：backend/admin-api deploy/swas`）—— 只打印 `${svc_path}` 会把「只改了配置」读成「服务代码改了」；红证 = 把该读数退回 ⇒ 必红（`test_judged_pathspec_is_named_in_the_summary` / `…has_discriminating_power`）'],
+    skip_reason='[backend-contract] 部署触发面 / 对账面的结构事实由 tests/unit_ci_workflows/test_config_change_triggers_deploy.py 的执行式桩跑判据验证（真跑对账 shell 正文 + 桩 gh/docker），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'deploy', 'trigger-surface', 'red-proof', 'fail-closed'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-025 [NORMAL] 生成物的人读摘要必须由现取推导：casebook 的「用例总数 / tier 分布」两行与源逐值相等，且摘要声称的条数 = 文档里真实出现的块数（源: cases/misc.yml）──
+_CASE_MC_025 = EvalCase(
+    id='MC-025',
+    legacy_id='',
+    title='生成物的人读摘要必须由现取推导：casebook 的「用例总数 / tier 分布」两行与源逐值相等，且摘要声称的条数 = 文档里真实出现的块数',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['改 .github/cases/** 后若忘了重渲染 casebook，或摘要行与源漂移，必须有东西变红（且红的信息指向摘要行，而不是指向下一个改别的文件的 PR）'],
+    expectations=['direct_reply'],
+    data_checks=['摘要行的三个数必须**逐值等于现取**（len(cases) / 无 skip_reason 数 / 其余）+ tier 分布三数等于现取 Counter(tier) —— 红证 = 把 `用例总数` 或 `normal` 各 +1（语义变异）⇒ 各自必红', '🔴 **独立于渲染器**的那条：摘要**声称的条数**必须等于文档里**真实出现的块数**（`^### <ID>. `）—— 两侧都在文档自身里 ⇒ 渲染器自己错了也拦得住（本形态最容易「两边一起漂」）', 'fail-closed 两条：语料解析出 0 条 ⇒ 报「语料为空」；摘要行缺失/改措辞 ⇒ 解析抛错（不许静默当「没有摘要」）', '对照读数（证明判据在判语义而不是判「文件变了没有」）：只插一段不含摘要形态的注释文字 ⇒ 必须**不**红（与三条红证读数不同）', '🔴 覆盖边界（显式登记）：只覆盖摘要两行 + 块数一致性；**不**覆盖 casebook 逐条块的逐字节新鲜度（由 verify-all.sh gate / pr-check 的生成物新鲜度校验读真文件比对）、**不**覆盖「某文件根本没被渲染器读到」（靠 test_render_cases_domain_map.py 的域覆盖）、**不**覆盖 main 侧（本判据是 pull_request 面腿 —— 本形态的起源正是「main 先漂移、下一个 PR 才红」）'],
+    skip_reason='[backend-contract] 生成物摘要与源的一致性由 tests/unit_ci_workflows/test_casebook_summary_is_derived.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'casebook', 'generated-artifact', 'summary-drift', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-024 [NORMAL] 「重跑通过」不再是 flaky 的充分条件：跨时间桶 ⇒ suspect-window-deterministic + 强制跟踪（类级 meta-guard：消红路径未登记即红）（源: cases/misc.yml）──
+_CASE_MC_024 = EvalCase(
+    id='MC-024',
+    legacy_id='',
+    title='「重跑通过」不再是 flaky 的充分条件：跨时间桶 ⇒ suspect-window-deterministic + 强制跟踪（类级 meta-guard：消红路径未登记即红）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['一次失败被自动重跑后通过时，系统必须能区分「同一时间桶内的真 flaky」与「跨时间桶（窗口型确定性缺陷被重跑掩盖）」，且后者必须留下跟踪单；把时间桶判据去掉、或把真 flaky 也判成疑似、或让消红路径不登记时，必须有东西变红'],
+    expectations=['direct_reply'],
+    data_checks=['时间桶口径 = 「**UTC 日期 × +08 业务日 × UTC 小时**」三键逐字相等（理由与粒度取舍写在 `.github/scripts/flaky_ledger.py` 的 `bucket_of` 上方）：跨桶 ⇒ `suspect-window-deterministic`（独立于 `flaky` 的一类）；同桶 ⇒ 仍是 `flaky`（**安全边界**：不许把真 flaky 一起关掉）；**取不到时刻 ⇒ 三态 `None`（证据不足）**，沿用旧口径并在 `reason` 里逐字声明，不得当「跨桶」读', '判定依据必须进条目（可离线复算，不必信 `kind` 这个结论）：`failed_at` / `rerun_at`（UTC）+ `failed_bucket` / `rerun_bucket` + `rerun_bucket_verdict`（true/false/null 三态）；且 `verdict` 与 `kind` **反向即判违规**（跨桶却判 flaky / 同桶却判新类，两个方向各一条）', '🔴 **本会话真实读数可复算**（验收第 5 条）：喂「失败 2026-09-26T22:12:00Z / 重跑 2026-09-27T00:05:00Z」（run 36280962072）⇒ 必须产出 `suspect-window-deterministic`（**不是** flaky），且 `failed_bucket.biz_date` 已是次日（复现实测窗口）', '**强制跟踪**（判据③）：该类条目必须带 `follow_up`，由 `flaky_ledger.py triage-follow-up` **机械**落（同 job 复用 open 单、否则新建并打 `flaky/tracking`）；缺 ⇒ `ledger_violations` 判违规 ⇒ `selftest` / `append` 非零退出；`reconcile` 的新事件态与 flaky **同判**', '类级 meta-guard（判据④）：`flaky_ledger.py` 里**每一个**「以重跑结果为唯一依据消红/降级」的函数必须在 tests/unit_ci_workflows/test_rerun_to_clear_paths.py 的 `RERUN_TO_CLEAR_PATHS` 里具名（未登记即红 / 只许缩短 / 字段不齐即红 / 语料读空即红）；覆盖面（**覆盖不到**的形态）显式登记在该文件 docstring 的「明确的边界」一节（非时间型环境差异：随机端口 / 并发时序 / 网络抖动；同小时内的跨时段；`rerun_result` 之外的消红路径）', 'workflow 侧动作与判据一致：`mark_suspect` 必须独占一步、必须 `--disable-auto` + `block/merge`（**仍然**不许自动放行）、**不得**打 `flaky/rerun-green`（跨桶 ≠ flaky）、必须有 `triage-follow-up` 调用；红证 = 摘掉该步 / 让它打上 flaky 标签 / 摘掉跟踪单调用 ⇒ 各自必红', '红证读数必须与病因相符（本单验收第 7 条）：每条注入式红证都注明**命中的是哪个分支**，并附「只改注释 ⇒ 不红」的**对照**（本守卫的语料面按 AST 代码面判，不吃自己的说明文字）'],
+    skip_reason='[backend-contract] CI 分流语义（判定函数 / 台账字段 / workflow 动作）由 tests/unit_ci_workflows/test_flaky_ledger_kind_semantics.py 与 tests/unit_ci_workflows/test_rerun_to_clear_paths.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'flaky-triage', 'time-bucket', 'red-proof', 'fail-closed'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-026 [NORMAL] RBAC 单一真值源 P1：清单 == 生成物 == 现值（逐项点名），M1 副本未登记即红，M3 生成物陈旧即红，M2 台账只许缩短（源: cases/misc.yml）──
+_CASE_MC_026 = EvalCase(
+    id='MC-026',
+    legacy_id='',
+    title='RBAC 单一真值源 P1：清单 == 生成物 == 现值（逐项点名），M1 副本未登记即红，M3 生成物陈旧即红，M2 台账只许缩短',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['新增一处「角色 → 码」的手抄副本、或手改生成物 rbac/readings.json、或让台账条目增长时，必须有东西变红；而清单与现值不一致时必须**逐项点名**报出（不是「数量相等」）'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 **零 delta 是 P1 唯一的验收口径**：rbac/manifest.json（声明）与 rbac/readings.json（生成物）**逐值相等**，且生成物 == 由 rbac/generate_readings.py 当场重新生成的结果；不等时判据输出**完整不一致清单**（每项一行：清单值 vs 现值）—— 「发现 delta」是正常交付，**不许**在本阶段抹平（那是 P4/P5 且须人点头）', 'M1 副本登记表（rbac/sources.json）：形态面（Java attachDefaultPermissions / switch case / 菜单树 / 路由守卫 / SQL INSERT INTO role_permissions|permissions / Python ROLE_PERMISSIONS|PERMISSION_CATALOG|PERMISSION_LABELS|AUTHORIZATION_CENSUS / bmini ADMIN_SURFACES）命中的每一处副本都须具名登记；**未登记即红 / 陈旧登记亦红 / UNRESOLVED 上限只许缩短**；红证 = 注入一处未登记命中 ⇒ 具名红', 'M1 的射程元判据：结构化声明 COPY_FACE_SCOPE == 判据实际枚举的语料集（收窄声明 ⇒ 必红）；**对照读数**：只写在注释里的同形文本**不**算副本（形态面在剥注释后的代码上匹配，不吃自己的说明文字）', 'M3 生成物新鲜度：手改 rbac/readings.json 一个字 ⇒ 必红并报出首个差异行；原样 ⇒ 不红（对照）', 'M2 台账只许缩短：既有七张台账（MENU_READ_PARITY_RESIDUALS 6 / MULTI_READ_ENDPOINT_PAGES 3 / READ_WRITE_EXCEPTIONS 0 / ROLE_FALLBACK_DIVERGENCES 0 / AUTHORIZATION_CENSUS 15 / UNANNOTATED_ENDPOINTS 21 / REGISTERED_RESIDUALS 9）现取条数 ≤ 上限，且清单里的条数 == 现取；**本阶段不改这些表本体、不动任何既有判据**', '覆盖面显式登记（设计 §5.3）：M1 覆盖不到的三类形态（Map.of/YAML/@ConfigurationProperties 的非约定形态 · 副本注释里的散文 · frontend/worker-h5）逐条写在判据的 UNCOVERED_FACES（含 reason/owner/issue，只许缩短）', '🔴 不新增并行真值：清单里出现任何**未被对账覆盖**的段 ⇒ 必红（新增段必须先让生成器也产出它，diff 里看得见）'],
+    skip_reason='[backend-contract] RBAC 声明清单与既有解析器读数的逐值对账 + 副本登记表 + 生成物新鲜度，全部由 tests/unit_ci_workflows/test_rbac_single_source_manifest.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'single-source', 'zero-delta', 'red-proof', 'fail-closed'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-027 [NORMAL] 文档/注释里的「可复算命令」必须指涉存在的路径：失效路径未登记即红、台账只许缩短、射程声明==实扫（源: cases/misc.yml）──
+_CASE_MC_027 = EvalCase(
+    id='MC-027',
+    legacy_id='',
+    title='文档/注释里的「可复算命令」必须指涉存在的路径：失效路径未登记即红、台账只许缩短、射程声明==实扫',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['文档或迁移注释里写下一条指向已归档/已迁移路径的「可复算命令」时，必须当场变红（而不是打印 0 装作通过）；既有失效路径必须逐条登记真身路径与「谁看」'],
+    expectations=['direct_reply'],
+    data_checks=['识别形态（设计 §5.2）= 反引号内的命令词（grep/rg/python3/pytest/sha256sum/sh/bash/node/npx/cat/wc/sed/awk/jq/find）+ **仓库相对路径字面量**；语料 = docs/**/*.md（全文本）+ 已发布迁移 *.sql（**只扫注释**）', '🔴 **现成靶子（设计 §1.4 实例 6）**：台账**置空**时三条迁移（V124/V125/V129）必须被**具名**报出（真语料、只在内存里换掉台账）；真台账下它们**不**报红（出口 ② 生效）—— 两个读数都要有', '台账（tests/unit_ci_workflows/recomputable_path_ledger.json）每条须有 kind/true_path/reason/owner/issue，且**只许缩短**（上限 = 落地现取 8 条）；条目已不命中 ⇒ 陈旧红；把仍在命中的条目删掉 ⇒ 未登记红（两个方向都判）', '射程元判据：声明的语料集 == 判据实际读入的语料集（收窄 ⇒ 必红）；对照读数三条：指向**存在**路径不红 · 不带反引号的散文不红 · `~` / `/opt` 这类**非仓库相对**路径不红；`.sql` 的**代码**里的字符串不被当注释读', '覆盖面（**覆盖不到什么**，照设计 §5.3 逐条登记）：裸文件名引用、不带反引号/不带仓库相对路径的命令、命令本身写错（路径存在但 grep 模式错）、以及 Java/Python/TS 注释与 workflow YAML 两个面 ⇒ 全部登记在判据的 UNCOVERED_FACES（只许缩短）', '本判据**不区分「引用」与「使用」**：设计 §1.4 实例 6 逐字引用了那条坏命令当病灶标本 ⇒ 这类条目以 kind=quoted-specimen 登记（改它等于改掉证据）'],
+    skip_reason='[backend-contract] 「可复算命令」的路径坐标（正则命中 + 路径存在性 + 台账）由 tests/unit_ci_workflows/test_recomputable_command_paths.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'stale-reference', 'recomputable-command', 'red-proof', 'fail-closed'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-028 [NORMAL] 容易犯的问题与 CI/台账反复出错点的固化**必须有承载体**：技能里的每条纪律三选一（判别动作 / 判据 / 只许缩短的台账），记号⇄台账双向绑定，覆盖面登记存在且被判据钉住；另补两条抢号判据（用例号 / 迁移版本号）（源: cases/misc.yml）──
+_CASE_MC_028 = EvalCase(
+    id='MC-028',
+    legacy_id='',
+    title='容易犯的问题与 CI/台账反复出错点的固化**必须有承载体**：技能里的每条纪律三选一（判别动作 / 判据 / 只许缩短的台账），记号⇄台账双向绑定，覆盖面登记存在且被判据钉住；另补两条抢号判据（用例号 / 迁移版本号）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['把「容易犯的问题」与「CI/台账反复出错的点」固化进研发模式时，不许只写一段劝告：每条必须落到判别动作（可复制命令）/ 判据（能变红的机械检查）/ 只许缩短的台账之一；删掉技能里的那一节、删掉某条纪律、把某条改成劝告、或在技能里加一条台账没记的纪律，都必须有东西变红'],
+    expectations=['direct_reply'],
+    data_checks=['记号 ⇄ 台账**双向**相等：技能 §25 里的 `FM-<族字母><序号>` 集合必须等于台账 `entries` 的 id 集合（单向会被『技能里写一条永不判的纪律』与『删台账条目』两个方向绕过）', '每条 `kind` ∈ {criterion, action, ledger}，且对应字段**可解析**：`criterion`/`evidence` 形态 = `<仓库相对路径>::<符号>`（文件在 + 符号逐字出现）；kind 缺失或取值非法 ⇒ 报『**这一条只写了劝告**』', '每条至少一条机器可核 `evidence`（解析不到 = 这条固化不可复核 ⇒ 红）；`refs` 里的 `#NNNN` 是叙述性引用，判据**不联网核**', '覆盖面登记（§25.6 边界子节）**必须存在且非空**，且必须含 `**判别动作行（现取）**：` 行 —— 该行列出的 id 集合**等于** `kind=action` 的 id 集合（涨跌都红：新增一条只靠人执行的条目而不登记 ⇒ 红；把某条升级成判据后不移出这一行 ⇒ 红）', 'CI 面（`docs/wiki/CI-CD.md` 的「CI / 台账反复出错点」节）：**现取 24 条（`FM-E1`~`FM-E25`；`FM-E6` 缺号），其中 `state=gap` 1 条**（#5707 本包销账 `FM-E17` ⇒ `GAPS_FROZEN` 2 → 1；另一条 `FM-E10` **仍留 gap，不许顺手销账**）；每条 `FM-EN` 必须**具名出现**（判据 7）；**反向也必须成立 —— 文档里具名的记号必须在台账 `ci_findings` 里登记**（判据 23：册外的按**只许缩短**的 `CI_MARKS_WITHOUT_ENTRY_FROZEN` 登记（现取 1 条 —— 就是本行前面那句「缺号」点名的那个号，由台账 `not_solidified` 的 `NS-1` 承接），该表陈旧同样红）；`state=guarded` ⇒ `criteria` 可解析；`state=registered` ⇒ `ledger_ref` 可解析；`state=gap` ⇒ 必须有 `gap_owner` + `gap_shows_when` 且**不得**带 criteria/ledger_ref（陈旧）', '**未守护台账只许缩短**：`state=gap` 条数 ≤ 判据里**冻结**的上限（上限写在判据文件里 ⇒ 台账改不动它）；`not_solidified`（本单未固化项）同口径，每条须有 `reason` + `restart_when`', '**抢号判据 ①**：`.github/cases/**` 的用例号**全局唯一**（重号 = 两个并行包各自取现取最大号 +1 ⇒ 重号**红在后合的那个 PR** 上）', '**抢号判据 ②**：活的 `backend/admin-api/src/main/resources/db/migration/` 里版本号**唯一**（射程只到活目录：`migration-archive/` 的存量重号**只许缩短**地登记在判据常量里，套到归档上会是存量假红）', '🔴 红证全部**内存构造**（真文件当基线 → 改内存对象 → 直接喂判据函数）：删边界子节 / 删一条纪律 / 加未登记纪律 / 把某条改成劝告 / 多加一条 gap 各自判红，且 **只加一条注释 ⇒ 不红**（对照读数），并有『变异真的被读到』的自证；空语料 ⇒ 非空违规（fail-closed，不许『没东西可判 ⇒ 绿』）', '用例文本（`.github/cases/**`）里的**台账读数必须等于现取**（判据 `tests/unit_ci_workflows/test_casebook_ledger_claims.py`）：`FM-<族字母><序号>` 记号必须在台账对应表里存在 · 范围写法 `FM-<族字母><i>`~`FM-<族字母><j>` 的端点必须等于该表现取 min/max · `kind=`/`state=` 键绑定的「N 条」必须在策展表 `CLAIMS` 里登记且等于现取（**未登记即红**，出口 = 改准或登记）· 锚必须**恰好命中一次**（删掉 / 复制都红）；覆盖面登记照判据 12 的写法：未覆盖面台账**只许缩短**、上限冻结在判据文件里', '覆盖边界（显式登记在 §25.6）：判据只保证『每条纪律都有承载体』，**不保证承载体本身是对的**（`criterion` 解析 = 符号在文件里逐字出现，不是『该判据真会为这条纪律变红』）；`kind=action` 的**现取 9 条**（口径 = 台账 `entries` 里 `kind=action` 的条数）**靠人执行**；**完全不写 `FM-` 记号的纯散文纪律在本判据面内看不见**（已知残余）'],
+    skip_reason='[backend-contract] 研发模式承载体的结构一致性由 tests/unit_ci_workflows/test_dev_mode_failure_modes.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'dev-mode', 'solidification', 'discriminator', 'red-proof', 'ledger'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-038 [NORMAL] 转述 / 派单面的纪律必须有承载体：§26 的条目（`FM-R1`~`FM-R15`）记号 ⇄ 台账 `relay_entries` 双向绑定，`state`/`kind` 一一配对（非三选一 ⇒ 报「只写了劝告」），判别动作行现取，relay 缺口只许缩短，§26 不许出现裸行号引用（源: cases/misc.yml）──
+_CASE_MC_038 = EvalCase(
+    id='MC-038',
+    legacy_id='',
+    title='转述 / 派单面的纪律必须有承载体：§26 的条目（`FM-R1`~`FM-R15`）记号 ⇄ 台账 `relay_entries` 双向绑定，`state`/`kind` 一一配对（非三选一 ⇒ 报「只写了劝告」），判别动作行现取，relay 缺口只许缩短，§26 不许出现裸行号引用',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['把「转述 / 派单」这一类容易犯的问题固化进研发模式时，不许只写一段劝告：每条必须落到判别动作（可复制命令）/ 判据（能变红的机械检查）/ 只许缩短的台账之一；删掉 §26、删掉某条纪律、把某条改成劝告、把 state 去掉、在 §26 里加一条台账没记的纪律、或在 §26 里写裸行号引用，都必须有东西变红'],
+    expectations=['direct_reply'],
+    data_checks=['记号 ⇄ 台账**双向**相等：技能 §26 里的 `FM-R<序号>` 集合必须等于台账 `relay_entries` 的 id 集合（**两面各自绑定**：§25⇄`entries` · §26⇄`relay_entries`；混成一个集合会把一方正文里的『引用』读成另一方的未登记纪律 ⇒ 假红）', '每条 `state` ∈ {guarded, registered, gap} **与** `kind` ∈ {criterion, action, ledger} **一一配对**（criterion↔guarded · ledger↔registered · action↔gap）；任一缺失或取值非法 ⇒ 报『这一条只写了劝告』。`guarded` ⇒ `criteria` 可解析；`registered` ⇒ `ledger_ref` 可解析；`gap` ⇒ 必须有 `gap_owner` + `gap_shows_when` 且**不得**带判据/台账引用', '每条必须有非空 `action`（判别动作 = 一次就能做、可复制）、`symptom`（症状）、`covers`（**它覆盖到哪一半**）、`same_family`（其中点名的记号必须在技能或 docs/wiki/CI-CD.md 里具名存在）与至少一条可解析 `evidence`', '§26 的覆盖面登记子节必须存在且非空，并含 `**判别动作行（现取）**：` 行 —— 该行列出的 `FM-R*` 集合**等于** `kind=action` 的 id 集合（涨跌都红：新增一条只靠人执行的条目而不登记 ⇒ 红；升级成判据后不移出 ⇒ 红）', '**relay 面缺口只许缩短**：`state=gap` 条数 ≤ 判据里**冻结**的 `RELAY_GAPS_FROZEN`（上限写在判据文件里 ⇒ 台账改不动它）', '**§26 不许出现「文件 + 冒号 + 数字」形态的裸行号引用**（行号会腐 = `FM-A10`）：出现即红；**符号锚形态与只加注释不红**（两条对照读数）', '🔴 红证全部**内存构造**（真文件当基线 → 改内存对象 → 直接喂判据函数）：删 §26 / 删一条记号 / 加未登记纪律 / 把 `kind` 改成散文 / 把 `state` 改成非三选一 / 多加一条 gap / 注入裸行号，各自判红；**只加一条注释 ⇒ 不红**（对照读数）；`guarded`/`registered` 条目的锚**删掉其全部出现** ⇒ 必红，且**面内 0 条 ⇒ 红**（防空跑）', '覆盖边界（显式登记在 §26.4）：判据只保证『每条纪律都有承载体』，**不保证承载体本身是对的**；`FM-R4`/`FM-R7`/`FM-R9`/`FM-R10`/`FM-R11`/`FM-R12`/`FM-R13`/`FM-R14`/`FM-R15` 九条 `kind=action` **靠人执行**；**「转述方到底核没核过」无法机械判**；判据 18 的射程只到 §26 节文本；完全不写 `FM-R` 记号的纯散文纪律在本判据面内看不见（已知残余）', '`FM-R8`（**派单模板让产物落在收尾半径外**）的**覆盖面登记**必须逐条点名（派单消息在仓外 / 存量半径外 worktree 不在射程 / `--detach` 纯检出豁免 / 路径写在命令之外）：由 `tests/unit_ci_workflows/test_dev_mode_failure_modes.py::test_relay_boundary_section_names_the_out_of_scope_forms` 按**现取标记**比对（删掉任一面 ⇒ 红）'],
+    skip_reason='[backend-contract] 转述面承载体的结构一致性由 tests/unit_ci_workflows/test_dev_mode_failure_modes.py 的离线判据（14~18）验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'dev-mode', 'solidification', 'relay', 'discriminator', 'red-proof', 'ledger'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-039 [NORMAL] 发布腿的兜底触发面：自走触发面只剩 push 的腿必须有 schedule / workflow_run 兜底（workflow_dispatch 是手动面、不算），登记表只许缩短且未登记即红，声明与现取双向，workflow_run 上游名必须可解析（源: cases/misc.yml）──
+_CASE_MC_039 = EvalCase(
+    id='MC-039',
+    legacy_id='',
+    title='发布腿的兜底触发面：自走触发面只剩 push 的腿必须有 schedule / workflow_run 兜底（workflow_dispatch 是手动面、不算），登记表只许缩短且未登记即红，声明与现取双向，workflow_run 上游名必须可解析',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当某条发布腿的自动触发面只剩 push（本仓会被 GITHUB_TOKEN 合并吞掉）、或把兜底面换成手动的 workflow_dispatch、或新建一条只靠 push 的腿而没登记、或登记表声明的兜底面与现取脱钩、或 workflow_run 的上游名解析不到时，都必须有东西具名报出；而只改注释时不得报红'],
+    expectations=['direct_reply'],
+    data_checks=['**自走触发面**口径：顶层事件去掉手动面与被调面（`workflow_dispatch` / `workflow_call` —— 两者都不能让一条腿自己起跑）= 能自己跑起来的面；该面**只剩 push** ⇒ 必须有兜底面（`schedule` 或 `workflow_run` 之一）。手动面**不算兜底**（把它当兜底 = 手动面冒充自动面）', '**登记表只许缩短 + 未登记即红 + 删光即红**：`tests/unit_ci_workflows/publish_leg_fallback_ledger.json` 的 `legs` 与判据里的冻结元组 `PUBLISH_LEG_FILES_FROZEN` 双向相等（删一条 / 加一条都必须同批改两处）；`frozen_max` 与判据里的 `LEGS_FROZEN` 两处不符 ⇒ 红；条数超上限 ⇒ 红；`legs` 为空 ⇒ 红（fail-closed：「没东西可判」不是通过）', '**全仓形状扫描（未登记即红）**：`.github/workflows/*.yml` 里任何一个自走面只剩 push 的 workflow 若不在登记表里 ⇒ 红（抓「新造一条 push-only 腿」）。**有意不用宽泛正则一把梭**（那会把无关 workflow 卷进来 ⇒ 噪声判据）⇒ 代价如实登记在覆盖边界第 7 条', '**登记表声明必须与现取双向对上**：声明的兜底事件必须在现取自走面里；声明 schedule 时其 cron 字面量必须逐字出现在该 workflow 的 `on:` 里 ⇒ 台账不许给不存在的保护盖章', '**`workflow_run` 上游名可解析**（全仓面，不限于已登记腿）：每个上游名必须命中仓内某个 workflow 的 `name:` ⇒ 上游改名后该兜底面**静默脱钩**（永不触发）判红（现取 10/10 全部解析成功）', '🔴 红证全部**内存构造**（真文件当基线 → `copy.deepcopy` 改内存对象 → 直接喂纯函数 `fallback_problems`）：删掉兜底面 / 换成 workflow_dispatch / 登记表删一条 / 登记表清空 / 登记的腿文件不存在 / 声明与现取脱钩 / workflow_run 上游名改错 / 新造一条未登记的 push-only 腿，各自判红；**只加一条注释 ⇒ 不红**（对照读数）；另有「坏形态读数 ≠ 基线读数」自证（防变异没生效 ⇒ 空断言）', '🔴 **在真语料上双向自证**（本条与其它判据最不同的一点）：判据跑在**未补兜底面**的语料上会**判红两条腿**（两条腿都报「自走触发面 = [push]，没有兜底面」）；补上 schedule 后 6 passed ⇒ 证明它是**真绊线**而不是纸面判据', '🔴 **判定方式是确定的**：只读仓内文件（`.github/workflows/*.yml` + 同目录登记表 JSON），**零 gh / 零网络 / 零时钟** ⇒ 同一份代码在任何时刻给出同一读数；运行期计数（gh run list）**刻意不进判据**，只作为「当时的读数 + 复算命令」写在登记表 `coverage_boundary` 与 `docs/wiki/CI-CD.md` 的 `FM-E17` 节', '覆盖边界（显式登记在登记表 `coverage_boundary`，由 `test_coverage_boundary_is_registered` 逐条核 face + reason + recompute）：cron 被 GitHub 节流（现取实测：`*/20` 名义 72 次/日 → 实得 6.3 次/日 = 8.4%，相邻间隔中位 244 / 最大 357 分钟；而每日档两条的中位间隔都是 ≈24.0h ⇒ 未被节流）· cron 到点被 concurrency 顶掉 · 「腿跑了但发布内容不对」（由运行期身份断言承接）· workflow_run 的上游自己没跑 · push 被吞这一运行期事实 · 「兜底面在位」不等于「线上字节与 main HEAD 一致」· 已登记腿之外的新族 · deploy-reconcile 那层不重复判（其调用点与 pathspec 已由 MC-023 冻结）'],
+    skip_reason='[backend-contract] 触发面静态形状判据（纯函数、零网络、零时钟）由 tests/unit_ci_workflows/test_publish_leg_fallback_surface.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'publish-leg', 'trigger-surface', 'fallback', 'discriminator', 'red-proof', 'ledger'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-041 [NORMAL] 取下一个用例号是**一条只读命令**：候选 = main ∪ 全部 open PR 的分支 ∪ 本工作区，取**最小空闲号**并在同一次调用里断言「返回的号 ∉ 候选集」；看不到在飞面（gh 不可用 / 未登录 / 离线）⇒ 拒绝给号并非零退出；`scripts/**` 里取号只有一个实现点（源: cases/misc.yml）──
+_CASE_MC_041 = EvalCase(
+    id='MC-041',
+    legacy_id='',
+    title='取下一个用例号是**一条只读命令**：候选 = main ∪ 全部 open PR 的分支 ∪ 本工作区，取**最小空闲号**并在同一次调用里断言「返回的号 ∉ 候选集」；看不到在飞面（gh 不可用 / 未登录 / 离线）⇒ 拒绝给号并非零退出；`scripts/**` 里取号只有一个实现点',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当有人在看不到在飞分支时仍然给出一个号（乐观给号）、或把取号退回「已合并最大号 + 1」、或让工具写盘 / 发 gh 写子命令、或把「返回的号 ∉ 候选集」这条自证删掉、或在本工作区已先占某号时仍把该号判成空闲、或在 `scripts/**` 里落第二份算号实现、或把手工取号的旧配方重新教回技能里时，都必须有东西具名报出；而只改注释时不得报红'],
+    expectations=['direct_reply'],
+    data_checks=["**只读（源码层，结构性）**：`scripts/next_case_id.py` 里**所有** `gh` / `git` 调用都必须经 `gh()` / `git()` 两个外壳，且外壳的 argv 白名单（`GH_READ_ONLY` / `GIT_READ_ONLY`）必须拒绝白名单外的子命令与 `gh api` 的写动词（`POST/PATCH/PUT/DELETE`）⇒ 源码里出现写文件 API（`write_text` / `open(...,'w')` / `os.remove` / `shutil`）或 `gh` 写子命令 ⇒ 红（判据把 argv 喂进外壳**实调**一次，断言抛错）", '🔴 **三态：看不到在飞面 ⇒ 不许取号**：`NCI_GH_BIN` 指向「不可用 / 未登录 / 离线」的替身可执行文件 ⇒ 必须打印「无法判定 ⇒ 不许取号」且 **exit 3**，并且输出里**一个号都不许出现**（`→ 取 ` 零命中）；某个 PR 的内容读不到（`gh pr diff` 非零退出）⇒ 同样 exit 3 ⇒ 「乐观给号」这条路径在判据面内**不存在**', '🔴 **「返回的号 ∉ 候选集」这条自证自身有断言**：`allocate()` 把该断言写在函数**内部**（不靠调用方记得核）；判据用内存构造把 `min_free` 换成「返回一个已被占用的号」⇒ 断言必须真的炸（`pytest.raises(AssertionError)`）⇒ 断言被删 / 被挪到调用方 ⇒ 红', '🔴 **用内存构造的语料复现「今天」的现场（核心牙齿）**：main 占 039/040/043/044/045/047、在飞 A 占 046、在飞 B 占 048 ⇒ 必须返回 **041**；把在飞 A 改成 041 ⇒ 必须返回 **042**（后者证明它**真的看得到在飞** —— 只看 main 的实现会两次都答 041），坏形态读数必须 ≠ 基线读数（防变异没生效 ⇒ 空断言）', '**最小空闲号 ≠ 最大号 + 1**：同一次调用里 `allocate()` 的答案必须**等于**该前缀占用集的补集最小值（内存构造 gap 语料逐值核对），且「取尾部 + 1」的实现在同一语料上会给出**不同的**读数 ⇒ 口径不是口号', '**本工作区已先占的号必须计入**：内存构造一份「工作区来源占 041」的候选集 ⇒ 答案必须是 042（把自己刚占的号判成空闲 = 本地先占失效）', '🔴 **类级：`scripts/**` 里取号只有一个实现点**（双向）：① 任何 `scripts/**` 模块里出现「用例号形态的正则字面量（真能匹配 `  - id: MC-041` / `MC-041`，且带数字类）」**且**带号空间的后继 / 极值运算 ⇒ 必须登记在判据里冻结的实现点元组里（未登记 ⇒ 红：「不许有第二个脚本各自算号」）；② 工具自己的 `ALLOCATION_SITE` 记号必须逐字等于它自己的仓库相对路径（删光 / 指到别处 ⇒ 红），且只有它一处声明', '**技能面口径唯一（防旧配方回来）**：`migao-dev-flow` §26.3 的取号命令必须调用 `scripts/next_case_id.py`；且技能里**不得**再出现手工取号的旧配方（「取已合并最大号 + 1」那一串）⇒ 两者都判红（否则下一个人照旧配方做，工具等于白造）', '🔴 **判定方式是确定的 + 红证全部内存构造**：判据本体**零 gh / 零网络 / 零时钟**（真语料只用于「解析口径 ⇄ 判据侧 `case_id_lines` 逐值对账」这一条离线等价检查，且 `origin/main` **刻意不读** —— CI 的 checkout 是 `fetch-depth: 1`）；红证逐条走内存构造（删三态分支 / 删自证 / 把答案换成已占号 / 只看 main / 只改注释 ⇒ 不红对照）'],
+    skip_reason='[backend-contract] 取号工具的只读性（源码 / 外壳白名单）+ 纯函数分配语义 + 技能面口径唯一的静态判据（零网络、零时钟）由 tests/unit_ci_workflows/test_next_case_id_allocator.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'case-id', 'allocator', 'readonly', 'discriminator', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-047 [NORMAL] 铁律 10 的窄例外有机械承载体：全仓新增 `on.schedule` 未登记即红（存量 14 条冻结快照只许缩短 + 具名实例带三个可解析证据锚；在飞实例放 `pending` 且一落地即须升格），规则本体（禁令 + 2026-09-21 / 2026-09-27 两个裁定日期）不许被删，具名与台账双向（源: cases/misc.yml）──
+_CASE_MC_047 = EvalCase(
+    id='MC-047',
+    legacy_id='',
+    title='铁律 10 的窄例外有机械承载体：全仓新增 `on.schedule` 未登记即红（存量 14 条冻结快照只许缩短 + 具名实例带三个可解析证据锚；在飞实例放 `pending` 且一落地即须升格），规则本体（禁令 + 2026-09-21 / 2026-09-27 两个裁定日期）不许被删，具名与台账双向',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当有人给任何 workflow 新增 `on.schedule` 而没有在台账里具名（带非破坏性证据锚）、或把新周期面塞进存量基线、或自创第三类例外、或把证据锚删光 / 复用、或把铁律 10 里的禁令本体删掉（把「收窄」写成「取消」）、或把裁定出处抹成「历来如此」、或在飞实例已经落地却仍留在 `pending`（不升格为 `exceptions`）时，都必须有东西具名报出；而只改注释时不得报红'],
+    expectations=['direct_reply'],
+    data_checks=['**未登记即红（牙齿）**：现取 `.github/workflows/*.yml` 里任何带 `on.schedule` 的 workflow（**结构性**取 `on.schedule[].cron`，注释里的 `# - cron:` 不算），既不在 `tests/unit_ci_workflows/schedule_scope_ledger.json` 的 `baseline`、也不是 `exceptions` 的具名实例 ⇒ 判红并给出可行动出口（登记 `exceptions` + 在仓库根 `AGENTS.md` 铁律 10 具名）', '**存量只许缩短（三处冻结）**：台账 `baseline` ⇄ 判据里 `BASELINE_FILES_FROZEN` 必须逐项相等（无多无少无重复）；条数 ≤ `BASELINE_COUNT_MAX` 且台账 `baseline_frozen` 与之相等 ⇒ 把新周期面塞进 `baseline` 必须同时改三处且数字变大（diff 里看得见）', '**陈旧登记即红**：登记的 workflow 现取没有 `on.schedule`（或文件已删）⇒ 红（台账只许缩短；`ghost-leg.yml` 这类死登记不许留着）', '**例外类封闭枚举**：`kind` ∈ {`republish`, `readonly_heartbeat`} ⇒ 自创第三类（如 `cleanup`）判红', '**三个证据锚可解析 + 非破坏性锚唯一**：`non_destructive_anchor` / `idempotency_anchor` / `self_proof_anchor` 都写成 `<仓库相对路径>::<符号或文本片段>`，路径必须存在且片段必须真在该文件里出现（**删光即红**）；`non_destructive_anchor` 不许被两条实例复用（一个锚给所有东西盖章）', '**具名双向（台账 ⇄ 铁律正文）**：`exceptions[].pr` 集合与 `AGENTS.md` 铁律 10 里「📌 已批准具名实例」那行的 `#N` 集合**双向相等** ⇒ 登记了却没具名 / 具名了却没登记，都判红（现取 = PR #5731）', '🔴 **规则本体不许被删（收窄 ≠ 取消）**：铁律 10 正文里必须**逐字**还有禁令（`⛔ 不新增 schedule/cron` + `无人值守`）与两个裁定日期（`2026-09-21` 原裁定 / `2026-09-27` 收窄裁定）；正文块取不到 ⇒ fail-closed 红', '**声明 ⇄ 现取（双向）**：登记的 `cron` 必须逐字出现在该 workflow 的 `on.schedule` 里，且该 workflow 的**每一条** cron 都被登记覆盖 ⇒ 台账不许给不存在的周期面盖章、也不许漏一条', '🔴 红证全部**内存构造**（真文件当基线 → `copy.deepcopy` 改内存对象 → 直接喂纯函数 `ledger_problems`；本仓已实测「改磁盘 → 跑 pytest」的变异**可能不被读到** ⇒ 判据恒绿 = 空断言）：删光 exceptions / 新造一条未登记的周期面 / 死登记 / 把新 schedule 塞进 baseline / 单改 `baseline_frozen` / 自创第三类 / 锚被删光 / 锚复用 / cron 与现取脱钩 / 删禁令本体 / 删裁定日期 / 删具名行 / 具名成别的 PR / 取不到正文块 / 在飞实例已落地却仍留在 pending / 在飞实例缺升格动作 / 在飞实例的 PR 没在铁律正文里具名，**17 条各自判红并点名命中分支**；**只改注释 ⇒ 不红**（对照读数）；另有「坏形态读数 ≠ 基线读数」自证（防变异没生效 ⇒ 空断言）', '🔴 **判定方式是确定的**：只读仓内文件（`.github/workflows/*.yml` + 同目录台账 JSON + `AGENTS.md`），**零 gh / 零网络 / 零时钟** ⇒ 同一份代码任何时刻同一读数；运行期读数（cron 是否被节流 / 发布是否真跑 / **PR body 里声明了没有**）**刻意不进判据**，只作为「当时的读数 + 复算命令」写在台账 `coverage_boundary`', '🔴 **在飞实例（`pending`）一落地即须升格**：`pending` **不构成登记**（不满足「未登记即红」的出口），只把跨包交接落成**远端可复原形式**（铁律 12(c)）；其 `pr` 也必须在铁律正文的具名行上；🔴 一旦 `pending[].file` 现取出现 `on.schedule` ⇒ **必须**移入 `exceptions` 并补齐三个证据锚 ⇒ 留在 `pending` 判红（`pending` 不许变成「永远的在飞」）', '覆盖边界（显式登记在台账 `coverage_boundary`，8 条，由 `test_coverage_boundary_is_registered` 逐条核 face + reason + recompute）：①「远端执行体到底删不删」是**运行期**事实（判据只核证据锚可解析，判不了远端那份字节与本仓同一）②「幂等」判不了实跑 ③「失败可见」判不了「真的有人看」（`Drift Audit` 不在 required 集合 ⇒ 非阻断 + 3 天延迟）④ 第 ④ 条「PR body 显式声明」判据**读不到** ⑤ **存量 14 条基线是否安全不在面内**（`stale.yml` / `close-linked-issues.yml` 本来就带无人值守写动作；本表只裁新增，不为存量背书）⑥ cron 跑没跑（节流 / concurrency 顶掉）⑦「周期档只报告、不写盘」判不了写盘档的 `if` 在**运行期**真的拦住（这是**声明面**的锁，不是行为面的锁）⑧ 与 MC-039 的 `publish_leg_fallback_ledger.json` **不互为副本、也互不重判**（一个判准入、一个判兜底面在位；判据侧只引用那条腿的登记册，不复制它的判定逻辑）'],
+    skip_reason='[backend-contract] 规则文本 ⇄ 触发面 ⇄ 台账一致性的静态判据（纯函数、零网络、零时钟）由 tests/unit_ci_workflows/test_iron_rule_10_schedule_scope.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'iron-rule-10', 'schedule', 'ledger', 'discriminator', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-029 [NORMAL] RBAC 单一真值源 P2：清单派生的「角色 → 码」（含 A7 登录面）与「码目录」（码 + 名称 + 持有角色）与现值逐值相等（源: cases/misc.yml）──
+_CASE_MC_029 = EvalCase(
+    id='MC-029',
+    legacy_id='',
+    title='RBAC 单一真值源 P2：清单派生的「角色 → 码」（含 A7 登录面）与「码目录」（码 + 名称 + 持有角色）与现值逐值相等',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当清单里「角色 → 码」或「码目录」的任一项与现值不再相等（哪怕只差一个码、一个名字、一个持有角色）时，必须有东西**具名**报出那一项；而只改清单的说明文字（`_note`）或只改源码注释时，**不得**报红'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 **零 delta 是 P2 唯一的验收口径**：八个消费面（A1 种子 / A2 回退 / **A7 登录面** / A3·B3·B4 ai-agent 镜像 / B1·B2 目录）的**派生结果**与**现值**逐值相等，且**逐项点名**（不是「数量相等」）；不等时输出**完整不一致清单**（每项一行：派生值 vs 现值）—— 「发现 delta」是正常交付，**不许**在本阶段抹平（那是 P4/P5 且须人点头）', '**A7 进清单**：`roles.login` 由既有解析器 `parse_role_fallback(..., anchor=…)` 读取（**复用同一个函数**，不是第二套解析器）；其四个码 `chat:read` / `chat:write` / `customer:read` / `order:read` 在权限目录里各 0 命中 ⇒ 由 `A7_CODES_BEYOND_CATALOG`（现取 4、只许缩短）钉住', '**码目录**（码 → 名称 + 持有角色）：`codes.names` 进清单并与 B1/B2 的名称列逐码对齐；两处目录的名称列不一致 ⇒ 具名红；持有角色由 `*` 展开成目录全集（admin 恒全部权限）后逐码比对', '**M2 覆盖面在 P2 扩大**：新增两张只许缩短的台账 `A7_CODES_BEYOND_CATALOG`（4）与 `A7_VS_MIRROR_DIVERGENCES`（2，A7 与 ai-agent 镜像对同一角色给出不同码集的对数）——条数涨 ⇒ 红（超上限），涨或跌都要在同 PR 更新清单（`ledger_count_drift`）', '**M1 覆盖面在 P2 扩大**：射程加入 `backend/admin-api/src/test`（设计 §1.3 的 A 类副本清单明写了测试面的逐码点名断言，而 P1 的射程只到 `src/main`），并新增形态面 `a7-login-codes-consumer`（扫 A7 的四个码字面量）⇒ 未登记即红 / 陈旧登记亦红（落地时该面自己先抓出 3 处未登记命中）', '**对照读数（证明变异真的被读到）**：在 `UserService.java` 的**注释**里写一个 A7 的码与一行假的 `getRolePermissions(` 调用 ⇒ 现值读数**逐值不变**（解析器先剥注释再取字面量）；改清单 `_note` 散文 ⇒ 派生读数不变', '覆盖面显式登记（设计 §5.3）：四条「覆盖不到什么」（A7 的**运行时**授予值未取证 · A7 的**存废**待人类裁定 · 非约定形态的声明看不见 · A4 迁移链的存量授权谓词归 P5）逐条写在 `UNCOVERED_FACES`（含 reason/owner/issue，只许缩短）'],
+    skip_reason='[backend-contract] RBAC 派生层与现值的逐值对账（既有解析器 + Python 标准库 AST）+ 码目录投影 + 覆盖面登记，全部由 tests/unit_ci_workflows/test_rbac_derived_roles_and_catalog.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'single-source', 'zero-delta', 'derivation', 'red-proof', 'fail-closed'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-030 [NORMAL] A7（登录面 getRolePermissions）消费面取证与退役：判定面零容忍目录外码、授予面在仓内不可达（机制存活读数）、身份面按角色判（源: cases/misc.yml）──
+_CASE_MC_030 = EvalCase(
+    id='MC-030',
+    legacy_id='',
+    title='A7（登录面 getRolePermissions）消费面取证与退役：判定面零容忍目录外码、授予面在仓内不可达（机制存活读数）、身份面按角色判',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当判定面（admin-api src/main + ai-agent app + frontend）里重新出现 A7 的四个码、或有人把 AuthenticationManager 的 authenticate 调用接上、或身份面常量与这些码混用、或 A7 又授予了目录外的码时，必须有东西变红'],
+    expectations=['direct_reply'],
+    data_checks=['**判定面零容忍**：`backend/admin-api/src/main` + `backend/ai-agent-service/app` + `frontend` 里出现 `chat:read` / `chat:write` / `customer:read` / `order:read` 的文件数**必须为 0**（退役后现取 = 空）；新增任一处 ⇒ 具名红（内存构造假想 controller 的红证已实跑）', '🔴 **退役已生效**：A7 授予的码里没有任何一个在权限目录之外（现取 = 0；退役前 = 4）。裁定 = 2026-09-27 人类选「A. 退役」（消除全仓唯一一处授予目录外码的地方、与 ai-agent 镜像对齐）；理由与落地 6 处见设计 §1.6 (d)', '**授予面在仓内不可达（机制存活读数）**：全仓无 `AuthenticationManager` 的 `authenticate(...)` 调用（现取 0）⇒ `UserDetailsService` 那条线没有调用方；谁接上它（哪怕一行）⇒ 红，必须重新取证', '**调用点唯一**：`UserService.getRolePermissions` 的调用点只在声明本体内部（`loadUserByUsername`）—— 口径是**词法**（先剥 Java 注释），注释里写一行假调用**不**算（对照读数已实跑）', '**身份面按角色判、不按码判**：`ServiceTokenFilter.C_END_ROLES` / `SecurityConfig.ADMIN_API_REJECTED_ROLES` / ai-agent `base.CUSTOMER_ONLY_ROLES` 三个常量都必须存在，且与 A7 的码**不相交**', '🔴 **取证先于裁定**：本判据先出九处消费方逐条证据 + 「授予面在仓内不可达」的读数，**再由人类裁定**（2026-09-27 选「退役」）⇒ 裁定结果被钉成三条只许缩短 / 零容忍的读数，实现者**不得**自行把码放回去', '**未取证项照实登记**：A7 的**运行时**授予值（customer / agent 账号登录后实际拿到的 authority 集）本机没有可跑环境 ⇒ 登记进 `UNCOVERED_FACES` 并写明重启条件，**不得**把本判据读成「A7 已验收」'],
+    skip_reason='[backend-contract] A7 的静态调用面读数（判定面语料命中表 + 调用点词法 + 身份面常量）由 tests/unit_ci_workflows/test_rbac_derived_roles_and_catalog.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'a7', 'forensics', 'retirement', 'red-proof', 'fail-closed'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-031 [NORMAL] main 侧生成物新鲜度守护腿：push + schedule + workflow_dispatch + 对账面（pull_request_target: [opened,reopened]），判定本体与 PR 面同源，判红具名（产物 + 差量 + 复算命令）（源: cases/misc.yml）──
+_CASE_MC_031 = EvalCase(
+    id='MC-031',
+    legacy_id='',
+    title='main 侧生成物新鲜度守护腿：push + schedule + workflow_dispatch + 对账面（pull_request_target: [opened,reopened]），判定本体与 PR 面同源，判红具名（产物 + 差量 + 复算命令）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['改了 .github/cases/** 却没提交生成物（漂移直接落在 main 上）时，必须有东西在 **main 侧当场**判红，且报错要具名到「哪个产物、差多少、怎么复算」；把 schedule 摘掉、把 fail-closed 换成「跳过」、把判定换成恒绿、把报错改成不具名的一句话时，都必须有东西变红'],
+    expectations=['direct_reply'],
+    data_checks=['守护腿 = .github/workflows/main-freshness-guard.yml（on 含 push:main + schedule + workflow_dispatch + **对账面** `pull_request_target: [opened, reopened]`（#6255 第 2 项补，见 MC-078）；**不挂 `pull_request`** —— 判定基准是 main 的当前状态，对账面只在对账时机量一次 main 的现状、不进 required）；判定本体 = scripts/generated_artifacts_freshness.py（三态 0 新鲜 / 1 陈旧 / 3 无法判定，**没有「跳过」这一态**）；调用面 = pr-check 的 Verify generated artifacts fresh 步 / 本腿的判定步 / verify-all.sh gate 的 cases 面门禁（**三处同一个脚本**，本地↔CI parity 由 tests/unit_ci_workflows/test_verify_all_gate_parity.py 继续钉住）', '判定对象 = tests/agent_eval/eval_cases.py 与 docs/testing/mibao-verification-cases.md 相对 .github/cases/** 的新鲜度；逐个**行为级**验证（只弄脏一个 ⇒ 只有它被具名报出），且登记表与判定本体的 ARTIFACTS **双向相等**（多一条 / 少一条都红）', '判红输出必须具名：产物名 + 差量（提交版 vs 现取的行数 + 首个差异的两侧原文）+ 可复制的复算/重渲染命令；漂移候选区间**只给读数、不下断言**（用提交级读数下断言正是本单要治的归因错误）', '告警面三件齐全：::error:: 注解 + $GITHUB_STEP_SUMMARY 落笔（失败也要有）+ 非零退出；判红出口 = P1 值班 issue（定时腿没有 PR 对象，block/merge 无处施加）；读数步 = job 最后一步且 if: always()，并登记进 scripts/mechanism-registry.json（含 schedule + 写作用域 ⇒ 未登记即红）', '覆盖面显式登记（**覆盖不到什么**，逐条 face/reason/owner/restart）：两次 cron 之间引入又修掉的漂移 / 需要网络或密钥才能算的新鲜度 / **渲染器本身坏了导致两侧一起错**（第 3 条由行为级证明是真的：同一个漂移夹具，真渲染器判红、坏渲染器判绿 ⇒ 边界不是手写的免责声明）', '每条判据各配注入式红证（清单见 tests/unit_ci_workflows/test_main_freshness_guard.py 的「本文件锁什么」表，不写死条数）；凡涉及改磁盘的变异一律**当场在内存里 exec 变异体**（依据 docs/wiki/CI-CD.md「改磁盘文件的变异可能不被读到」），并配「只改注释 ⇒ 不红」的对照读数', '**合并产物的两种伪装**（issue #5741 的现场，判据 10/11）：把 casebook 的**汇总读数整体减 1、不增减任何行**（真实现场 = 提交版 8112 行 / 现取 8112 行、仅 4 行不同；且**分域合计仍等于总数** ⇒ 内部自洽）⇒ 仍必红且具名；把「逐字节相等」换成「只比行数」的内存变异体 ⇒ 同一夹具变绿（判别力自证）。🔴 根因在**时序**（检查跑的快照 ≠ 落地的合并结果），两条出口登记在 docs/wiki/CI-CD.md 的 FM-E18（需人裁定）', '**独立验收驱动的订正**（2026-09-28，双 AI 交叉验证）：① `reap` 的远程删除是**四态**（`deleted`/`already-absent`/`absent-unverified`/`failed`）—— 回退路径（删前读数取不到）**判不了**「是不是我删的」，故**不许**报 `deleted`；② 一个坏 ref 会让整批 `push --delete` 被拒 ⇒ 对「仍在」的逐个补删（上限 20）；③ `pr-check` 的门控必须**判 `git diff` 的 rc**（「算不出」≠「未命中」）；④ `--merge-probe --json` 顶层补 `verdict_overall`/`exit_code`；⑤ `NS-3` 销账同批降 `NOT_SOLIDIFIED_FROZEN` 4→3（PD-10）'],
+    skip_reason='[backend-contract] main 侧 CI 守护腿的结构与判定由 tests/unit_ci_workflows/test_main_freshness_guard.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'freshness', 'main-side-guard', 'red-proof', 'fail-closed'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-078 [NORMAL] main 侧生成物新鲜度守护腿的**对账面**：`pull_request_target: [opened, reopened]`（bot 合并后唯一可靠的对账时机）—— 只检出 main、不翻 required、不折进 pr-check（源: cases/misc.yml）──
+_CASE_MC_078 = EvalCase(
+    id='MC-078',
+    legacy_id='',
+    title='main 侧生成物新鲜度守护腿的**对账面**：`pull_request_target: [opened, reopened]`（bot 合并后唯一可靠的对账时机）—— 只检出 main、不翻 required、不折进 pr-check',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['改了 .github/cases/** 却没提交生成物、且漂移随 bot 合并落到 main（不产生 push/closed 事件）时，必须有东西在**下一个 PR 打开/重开**的那一刻把 main 的现状量出来并具名判红；把对账面换成 `pull_request` / `[closed]` / `[synchronize]`、把判定基准从 main 换成 PR head、或把本腿翻成 required 时，都必须有东西变红'],
+    expectations=['direct_reply'],
+    data_checks=['对账面 = .github/workflows/main-freshness-guard.yml 的 `on.pull_request_target`，且**恰好** `types: [opened, reopened]` + `branches: [main]`（`closed` 对 bot 合并 100% 不触发 —— issue #3585，挂了等于没有；`synchronize` 会让每个 PR 的每次 push 都跑一遍 = 纯噪声）；判定基准仍是 main（checkout **恰好** `ref: main`，**永不**检出 PR head ⇒ 不引入 pwn-request 面）', '**这一面不把本腿变成门禁**：仍报告型 —— 不进 required 集合、不折进 pr-check.yml（检查名也不得出现）、不带 `paths:` 过滤；判红出口仍是 P1 值班 issue', '为什么必须有这一面（实测读数，可复算）：本腿 `push` 面对 2026-10-03 的两个 merge sha（14eb33212 / d45b7ff39）**零 run**（`gh run list --workflow=main-freshness-guard.yml --json headSha,event`）；`schedule` 实测投递 4~5 次/日、相邻最长 8.9h（`gh api repos/{owner}/{repo}/actions/workflows/368111215/runs?per_page=100&event=schedule`）⇒ 只靠这两面时 main 的漂移可静默近 9h', '**残余边界（照实登记，不粉饰）**：对账面也只在**事件**上跑 —— 若漂移落地后长时间没有任何新 PR 打开/重开，本腿仍只剩 `schedule`（4~5 次/日）⇒ 静默窗口仍可能达数小时。登记在 tests/unit_ci_workflows/test_main_freshness_guard.py 的 UNCOVERED_FACES 第 4 条（带 restart 条件）', '判据 8 v2 的四条新约束各配注入式红证（`pull_request` / `[closed]` / `[synchronize]` / `branches: [dev]` / 检出 PR head），且每条红证**必须归因到注入点**（判红信息里出现该注入的自证锚 —— 防「别的原因红」冒充本次红证）'],
+    skip_reason='[backend-contract] main 侧 CI 守护腿的对账面结构由 tests/unit_ci_workflows/test_main_freshness_guard.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'freshness', 'main-side-guard', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-032 [NORMAL] RBAC 单一真值源 P3：由清单 pages[] 派生的「页面 → 码」（C1/C2/C3/C4 码列 + 第一屏读码 + 可见性投影）与现值逐值相等（源: cases/misc.yml）──
+_CASE_MC_032 = EvalCase(
+    id='MC-032',
+    legacy_id='',
+    title='RBAC 单一真值源 P3：由清单 pages[] 派生的「页面 → 码」（C1/C2/C3/C4 码列 + 第一屏读码 + 可见性投影）与现值逐值相等',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当清单 pages[] 的任一项（菜单可见码 gate / 第一屏读码 units / 逐页 visibility_rule）与现值不再相等，或菜单三源与路由守卫的码列不再等于该页的 gate 时，必须有东西**具名**报出那一项；而只改清单的说明文字（_note / _boundary）或只改源码注释时，**不得**报红'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 **零 delta 是 P3 唯一的验收口径**：清单 pages[] 与现值 22 页逐值相等（逐页逐项点名）；C1（28 节点）/ C2（23 条）/ C3（21 条）/ C4（22 前缀）的**码列**逐条等于该页 gate（例外逐条具名）；第一屏读码 22 项、units 42 个端点、可见性 22 页 —— **P3 口径 = 204 项逐值**（摊平到叶的 (路径, 值) 对），不一致 = 0；不等时输出完整不一致清单（「发现 delta」是正常交付，**不许**本阶段抹平）。※ 2026-10-02（#5976/#5977）按现取校正了本行的计数（此前是 #5699 P4 / #5939 之后未同步的旧读数：21 页 / C2 24 / C3 14 / C4 19 / 24 项 / 27 端点 / 205 项）', '**四跳现取不另造解析器**：菜单节点 → 页面锚点表 → lib/api.ts 的 URL → Java 侧**生效码**（方法级优先），全部调既有守卫 test_agent_permission_workflows 的既有函数（`parse_menu_ts_nodes` / `parse_frontend_api_calls` / `_effective_codes` / `parse_menus` / `parse_route_guard`），判据与生成器共用 rbac/derive.py 的同一份投影实现', '**C2/C3 的节点集不属本面、码列属本面**：MenuController 只有 24 个节点、AuthService 只有 14 个（登录菜单是页面的子集）⇒ 「哪些节点进哪一列」是菜单结构的事实；本判据只判**码**（逐条 38 项），并把 4 个**动作节点**（新增商品 / 商品分类管理 / 新增员工 / 订单详情）与 1 处具名不一致（经营看板：节点无码而权限目录给 dashboard:view）逐条具名登记（未登记即红 / 陈旧亦红 ⇒ 只许缩短）', '**C4 的路由前缀按三类逐条闭合**：17 条直接命中某页 path + 1 条别名（/processing → 加工项管理）+ 4 条无页面前缀（/chat / /categories / /processing-orders / **/agent-workspace**（#5977 新增的子树父前缀，本次同 PR 显式把该账台上限 3 → 4），逐条带理由）—— 新增页面守卫不登记即红（#5699 P4 之后已无「守卫码 ≠ 该页 gate」的具名项：`ROUTE_GUARD_GATE_MISMATCHES` 现取为空）', '**对照读数（证明变异真的被读到）**：内存里把某页 gate 改掉 ⇒ 派生器读数跟着变（route_guard_codes 现取到新值）且 pages 对账报出；清单 _note / _boundary 只改散文 ⇒ 三条对账全绿（不红）', '覆盖面显式登记（设计 §5.3）：非派生面 1 条（C2 的 MENU_TREE 码列为何不属本面）+ 未覆盖面 5 条（自建岗位读不到 · bmini/worker-h5 不在射程 · units 的 label/icon/组序有意不搬 · 残留与 gap 的存废归 P4 人裁定 · 运行时未取证）逐条写在 NON_DERIVED_FACES / UNCOVERED_FACES（含 reason/owner/issue，只许缩短）'],
+    skip_reason='[backend-contract] RBAC「页面 → 码」派生层与现值的逐值对账（既有解析器四跳现取 + Python 标准库）由 tests/unit_ci_workflows/test_rbac_derived_pages.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'single-source', 'zero-delta', 'derivation', 'page-codes', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-033 [NORMAL] RBAC P3：一页多码与 6 条菜单残留**不被压平**（码集逐值冻结、只许缩短）+ 逐页 visibility_rule 默认 all（fail-closed）与 4 条 gap 具名（源: cases/misc.yml）──
+_CASE_MC_033 = EvalCase(
+    id='MC-033',
+    legacy_id='',
+    title='RBAC P3：一页多码与 6 条菜单残留**不被压平**（码集逐值冻结、只许缩短）+ 逐页 visibility_rule 默认 all（fail-closed）与 4 条 gap 具名',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当有人把某个多端点页压成一个码、把某条已登记的菜单残留悄悄销账、或在现值不要求时把某页的可见性规则改成 any（放宽）时，必须有东西**具名**变红'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 **多端点页不被压平**：派生出的多码页必须**恰好 3 页**且码集与既有冻结表 MULTI_READ_ENDPOINT_PAGES 逐值相等（/production/processing = order:list + processing:manage + production:view；/production/routings = processing:manage + production:view；/settings = dashboard:view + system:manage）—— 红证：内存里把加工的 3 码压成 1 码 ⇒ 多码页集立刻只剩 2 页 ⇒ 报红', '🔴 **6 条菜单残留由 pages[] 派生、逐条具名**：派生集必须与 MENU_READ_PARITY_RESIDUALS 的键集**逐值相等**（/dashboard · /production/pool · /production/saving-board · /production/processing · /production/routings · /settings）—— 修好一处而不同步销账 ⇒ 红；新增一处不一致而未登记 ⇒ 红（两侧都只许缩短）', '**visibility_rule 逐页 any|all、默认 all（fail-closed）**：规则集 = {all, any, node-code}；**字段缺失 ⇒ 按 all 算**（不是 any、也不是当空）；未登记的规则名 ⇒ fail-closed 抛错（三条都有单测）。现取 = all 17 页 / any 0 页 / node-code 4 页；把某页改成 any 而现值不要求 ⇒ 红', '**机制存活读数**：any（∪）与 all（∩）在同一组 unit 码上必须给出**不同**的岗位集（否则「支持逐页 any|all」是空话）；现取例 = processing:manage ∩/∪ order:list 的真子集关系', '**投影复现不了现值的 4 页必须具名**（/notifications 第一屏端点全未注解 · /production/pool · /production/saving-board · /production/processing 三页「节点码 ≠ 页面读码」）⇒ 进 PAGE_VISIBILITY_GAPS（清单 ledger_counts 与判据台账双向闭合、只许缩短；上限冻结在 P1 守卫的 LEDGER_CEILINGS = 4）'],
+    skip_reason='[backend-contract] 页面面结构事实（多码页 / 残留台账 / 可见性投影规则）的机械对账由 tests/unit_ci_workflows/test_rbac_derived_pages.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'multi-code-page', 'residual-ledger', 'fail-closed', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-034 [NORMAL] RBAC P3：M1/M2 覆盖面扩到「页面 → 码」（三个新形态面 25 处命中）——未登记即红、陈旧亦红、hits 涨跌都红、台账只许缩短，且锚条数冻结 + 改名必红（内存自证）（源: cases/misc.yml）──
+_CASE_MC_034 = EvalCase(
+    id='MC-034',
+    legacy_id='',
+    title='RBAC P3：M1/M2 覆盖面扩到「页面 → 码」（三个新形态面 25 处命中）——未登记即红、陈旧亦红、hits 涨跌都红、台账只许缩短，且锚条数冻结 + 改名必红（内存自证）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当有人在别处手写一张「页面 → 码」的表、或改了锚点表的条数而不同步登记表、或放宽任一只许缩短的台账上限时，必须有东西**具名**变红'],
+    expectations=['direct_reply'],
+    data_checks=['**M1 扩面（P3）**：新增三个形态面扫判据侧的手写副本 —— page-first-screen-anchors（21 条页面 → 第一屏调用锚点）/ page-parity-residual-ledger（2 张页面面台账）/ route-node-anchor-ledger（2 张路由 → 节点锚定表），共 3 行登记、25 处命中，全部在 rbac/sources.json 具名', '**未登记即红 · 陈旧亦红 · hits 涨跌都红**：注入一个未登记的假命中 ⇒ 具名报出；登记一个已不命中的面 / 文件 ⇒ 报陈旧；把登记的 hits 加 1 ⇒ 报「登记命中数漂移」（三条都是内存构造的红证，已实跑）', '**M2 扩面（P3）**：新增只许缩短台账 PAGE_VISIBILITY_GAPS（现取 4）；上限冻结在 P1 守卫的 LEDGER_CEILINGS 里，清单 ledger_counts 与现取逐值相等（涨跌都要同 PR 更新）', '🔴 **锚条数冻结 + 改名必红（自证）**：每个 P3 形态面的 shape 在目标文件里的出现次数必须 == 登记的 hits；把锚**就地改名**（内存变异、语法仍有效）⇒ 该面命中消失 ⇒ stale_registrations 具名报出 —— 即「删掉会红」是**可复算的断言**而不是空话。（第一版用「逐行删除」做变异，被剥注释器 fail-closed 抓出：删除多行表达式首行会让括号失衡 ⇒ 改为改名。）', '**对照读数**：把锚的写法放进**注释**追加到语料末尾 ⇒ 命中数不变（剥注释是同一份实现）；形态字面量在本判据里**拆开拼**（本文件第一版在 docstring 里举例，被自己的形态面抓成未登记副本 —— 「判据会读进你自己的举例」的现场实证）'],
+    skip_reason='[backend-contract] M1 副本登记表与 M2 台账上限的机械读数（形态面命中数 + 锚自证）由 tests/unit_ci_workflows/test_rbac_derived_pages.py 的离线判据验证（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'copy-registry', 'coverage', 'only-shrink', 'red-proof', 'anchor-uniqueness'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-035 [NORMAL] RBAC P4：子菜单粒度不变量 —— 每个侧边栏节点恰好一个可见性码，且持码者能打开该页全部第一屏端点（四个菜单/守卫面逐页同码）（源: cases/misc.yml）──
+_CASE_MC_035 = EvalCase(
+    id='MC-035',
+    legacy_id='',
+    title='RBAC P4：子菜单粒度不变量 —— 每个侧边栏节点恰好一个可见性码，且持码者能打开该页全部第一屏端点（四个菜单/守卫面逐页同码）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当某个子菜单的第一屏端点码不再等于该节点的可见性码、或持该节点码的岗位打不开它某个 unit、或四个菜单/守卫面（menu.ts / MenuController / AuthService / 路由守卫）与页面码不再逐页相等时，必须有东西**具名**报出；而只改清单的散文（_note / _boundary）时**不得**报红'],
+    expectations=['direct_reply'],
+    data_checks=['**不变量 1（恰好一个可见性码）**：每一页 `gate` 非空 ∧ 第一屏码集 == {gate}；「第一屏一个码都没有」的页必须具名在 FAIL_OPEN_PAGES（现取 1 条 = /notifications：两侧同一个**空码** ⇒ 可见面恒等于可做面）；「真的并发多码」的页必须具名在**既有**台账 MULTI_READ_ENDPOINT_PAGES（现取 1 条 = /settings，具名保留 + 硬理由）—— 本守卫读既有台账，不另立一份', '**不变量 2（零 403）**：持 `gate` 的岗位（种子 ∪ 回退）必须同时持该页每一个 unit 的码；多码页额外要求「可见面投影 == 持 gate 者」。判据当场复算，输出「谁看得见却打不开」的逐岗位点名', '**不变量 3（四面同码）**：C1 前端侧边栏 / C2 权限目录树 / C3 登录下发菜单 / C4 路由守卫，逐页与 pages[].gate 逐值相等（跨面映射复用判据 11 的 ROUTE_MENU_ANCHORS 与 P3 的 ROUTE_PREFIX_ALIASES，本守卫不新建映射）', '**红证（全部内存构造 + 对照读数）**：① 把某页端点改回独立码 ⇒ 「一页多码未登记」；② 给某页塞一个更宽的码 ⇒ 零 403 段点名；③ 抹掉某页 gate ⇒ 「没有可见性码」；④ 改现值里的 C1/C4 码 ⇒ 四面同码段点名；⑤ 只改清单散文 ⇒ 不红（判别力边界，不是判据失效）', '覆盖面显式登记（UNCOVERED_FACES，只许缩短、每条带 reason/owner）：租户自建岗位与员工级快照读不到 · 非约定形态的码表扫不到 · I4 只认命名形态不判语义 · 运行时可见性未取证'],
+    skip_reason='[backend-contract] RBAC 子菜单粒度不变量的离线结构判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_rbac_submenu_granularity.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'submenu-granularity', 'p4', 'behaviour-change', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-036 [NORMAL] RBAC P4：授权变更 census 逐页 + 逐端点，且「谁得 / 谁失」由判据当场复算（手写汇总不得与代码分叉）（源: cases/misc.yml）──
+_CASE_MC_036 = EvalCase(
+    id='MC-036',
+    legacy_id='',
+    title='RBAC P4：授权变更 census 逐页 + 逐端点，且「谁得 / 谁失」由判据当场复算（手写汇总不得与代码分叉）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当某次授权变更没有被逐页登记（改前码 / 改后码 / 方向 / 理由），或登记里的改后码与现值生效码不符，或某个岗位的可见面/可做面因此变化却没被点名时，必须有东西**具名**报出；而只改登记里的散文措辞时**不得**报红'],
+    expectations=['direct_reply'],
+    data_checks=['**D1/D3 的机械形态**：P4_AUTHORIZATION_CENSUS 逐页登记 {gate_before, gate_after, direction, reason, units_changed[], menu_nodes[]}；判据拿它与**现值**对账（改后码 == 清单/现值码；每个 units_changed 的改后码 == 端点现取生效码；改前≠改后，禁止凑数）', '**「谁得/谁失」当场复算**：岗位来源 = 种子 ∪ 回退（与判据 12 ④ 同口径）；复算出的每个新增/失去可见性或可做面的岗位都必须在理由里**被点名**，否则红 —— 这条把设计 §1.4 实例 5 的「手写汇总与代码分叉」变成机械可拦', '**红证**：把某页改后码改成与现值不符 ⇒ 红；把 units_changed 换成「改前码 == 改后码」⇒ 红（空变动）；把理由换成一句不点名任何人的散文 ⇒ 判据自己复算并指名报出失去者（本条即「手写汇总不可信」的判别力自证）', '**收窄单列**：凡 direction 含「收窄」的页，PR 正文必须单列一节说明「谁失去什么 / 为什么必须收 / 有没有替代路径」（本仓纪律；判据只能保证登记里点到了岗位，替代路径是散文）'],
+    skip_reason='[backend-contract] 授权变更 census 的离线对账判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_rbac_submenu_granularity.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'authorization-census', 'd1', 'd3', 'non-repudiation'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-037 [NORMAL] RBAC P4：I4 —— 端点层「写动作只由读码把守」具名报出（只许缩短的台账 + 未登记即红）（源: cases/misc.yml）──
+_CASE_MC_037 = EvalCase(
+    id='MC-037',
+    legacy_id='',
+    title='RBAC P4：I4 —— 端点层「写动作只由读码把守」具名报出（只许缩短的台账 + 未登记即红）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当某个写动词（POST/PUT/DELETE/PATCH）端点的生效码是**读**码而没有登记在 WRITE_UNDER_READ_CODE，或登记的条目已不再命中（端点已删/码已改），或台账超过上限时，必须有东西**具名**报出'],
+    expectations=['direct_reply'],
+    data_checks=['**射程 = 端点层**（判据 5 只有工具层）：现取 = 动词非 GET 且生效码动作段 ∈ READ_CODE_ACTIONS（list / view / detail / session）的全部端点，逐条端点点名（现取 16 条）', '**逐条带归类**：真写 / 真写（文件面）/ 计算/预览 —— 其中 #5699 发现 ① 点名的四条（建加工单 instantiate / 报工 report / 打印 print / 发货 ship，均只由 ProductionController 的**类级** order:list 把守）必须具名存在', '**台账只许缩短 + 未登记即红 + 陈旧亦红**：清空台账 ⇒ 逐条报出未登记（判据自证覆盖段有效）；条目不再命中 ⇒ 红；超过上限 ⇒ 红', '**本号不改任何行为**：I4 的处置（把写动作改挂写码）是授权变更，须人类裁定；本判据只保证「这一族从那一天起是可点名的」', '覆盖面边界（照实登记）：只认「动词 + 码的动作段」形态，不判「这个动作到底写不写库」；GET 而语义写库的端点不在射程'],
+    skip_reason='[backend-contract] I4 端点层 census 的离线判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_rbac_submenu_granularity.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'i4', 'endpoint-permission', 'read-write-mismatch', 'ledger'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-043 [NORMAL] RBAC P5：存量租户的内置岗位权限收敛到清单 —— 迁移链推演的差集由清单渲染成幂等迁移（admin 缺 11 码）（源: cases/misc.yml）──
+_CASE_MC_043 = EvalCase(
+    id='MC-043',
+    legacy_id='',
+    title='RBAC P5：存量租户的内置岗位权限收敛到清单 —— 迁移链推演的差集由清单渲染成幂等迁移（admin 缺 11 码）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当迁移链（V29…V138）推演出的「每个内置岗位累计拿到的码」不再等于清单声明（新租户 seed），或由清单渲染的收敛迁移与提交的产物不再逐字节相同，或 V136 的差集读数与现取不再一致时，必须有东西**具名**报出'],
+    expectations=['direct_reply'],
+    data_checks=['**生成物新鲜度（M3）**：V136 的内容必须 == `rbac/generate_migration.py` 当场由 `rbac/manifest.json` 渲染的结果（手改产物 ⇒ 红，报首个差异行；改清单没重渲染 ⇒ 红）', '**收敛不变量**：整条链推演（含 V136/V137/V138）后，每个种子岗位累计 == 清单声明（`*` ⇒ 目录全集）⇒ 「新租户 vs 存量租户逐值相等」常驻可判；任一岗位有差 ⇒ 具名报出该岗位与该码', '**差集是现取**（P5 的固定读数 = `admin` 的 11 个码、其余四个岗位 ∅）：给清单某岗位加一个链上没有的码 ⇒ 读数变化即红；`V136` 的授权语句必须逐值等于该差集', '**推演的边界**（照实登记）：只认约定 SQL 形态（`INSERT INTO role_permissions … r.code … p.code …`），语句数 == 解析数（读不懂的新写法 ⇒ 红，不静默放过）；不推演目录懒补种、不推演取消授权；真库读数只能接真库复算（设计 §6.1）', '**红证**：手改产物 ⇒ 新鲜度红；清单加一个链上没有的码 ⇒ 收敛不变量红（具名）；差集读数与现取不符 ⇒ 红；只改清单散文（`_note`）⇒ **不红**（对照）'],
+    skip_reason='[backend-contract] P5 迁移链收敛的离线判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_rbac_migration_convergence.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'p5', 'migration-chain', 'convergence', 'generated-artifact', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-044 [NORMAL] RBAC P6：两个历史岗位码正式定义（进种子矩阵 + V137 建 roles 行授权，seed == fallback 逐值）（源: cases/misc.yml）──
+_CASE_MC_044 = EvalCase(
+    id='MC-044',
+    legacy_id='',
+    title='RBAC P6：两个历史岗位码正式定义（进种子矩阵 + V137 建 roles 行授权，seed == fallback 逐值）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当 `product_manager` / `knowledge_editor` 不在种子矩阵（或 seed 与 fallback 不再逐值相等），或 V137 的授权语句与清单声明不逐值相等，或历史角色登记表未销账时，必须有东西**具名**报出'],
+    expectations=['direct_reply'],
+    data_checks=['**正式定义**：两个角色码必须在 `RegistrationService` 的种子矩阵里（建 roles 行 + 授默认码）⇒ 岗位权限页可编辑、员工弹窗可分配；**账号的有效权限集合逐值不变**（码集取自回退 switch，不增不减）', '**两条口径同码**：`roles.seed[role]` == `roles.fallback[role]` 逐值（与 test_agent_permission_parity.py 判据 14 一起守）', '**存量侧物化**：`V137__formalize_legacy_roles.sql` 的每个角色必须有建 `roles` 行语句 + 授权语句，且授权码集与清单声明**逐值相等**（少授 = 老租户拿不到；多授 = 绕过岗位权限页的放宽）', '**台账销账**：`LEGACY_ROLES_IN_FALLBACK` 必须为空（两个角色已进种子 ⇒ 留着一条不空的登记 = 两套真相）；销账后语义更严（任何种子外的回退角色都判红）', '**红证**：从种子里删掉一个角色 ⇒ 红；让 V137 多授一个码 ⇒ 红（逐值比较分支）；把登记表塞回一条 ⇒ 红；只改散文 ⇒ 不红'],
+    skip_reason='[backend-contract] P6 历史岗位码正式定义的离线判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_rbac_migration_convergence.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'p6', 'ghost-roles', 'formal-definition', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-045 [NORMAL] RBAC I4：四个真写端点改挂写码 production:execute（角色面零 403、别处零外溢、快照等价回填）（源: cases/misc.yml）──
+_CASE_MC_045 = EvalCase(
+    id='MC-045',
+    legacy_id='',
+    title='RBAC I4：四个真写端点改挂写码 production:execute（角色面零 403、别处零外溢、快照等价回填）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当四个真写端点的生效码不再是 production:execute（或被回退成类级读码 order:list），或新码出现在台账之外的端点/菜单/Agent 工具上，或「持旧码的岗位集」≠「持新码的岗位集」，或快照回填丢掉「含旧守卫码」前置条件时，必须有东西**具名**报出'],
+    expectations=['direct_reply'],
+    data_checks=['**四条对齐**：`POST …/instantiate` · `…/operations/{}/report` · `…/print` · `…/ship` 的生效码逐条 == `production:execute`，且它们的**类级**码仍是读码 `order:list`（证明「改前只由读码把守」这个事实可复核）', '**别处零外溢**：生效码 == 新码的端点集**恰好**是这四条（多一条 ⇒ 红）；新码不出现在任何菜单节点码列、也不被任何 B 端 Agent 工具声明', '**角色面零 403**：持旧码的岗位集 == 持新码的岗位集（现取两侧，种子 ∪ 回退）= admin · 客服 · 运营 · 销售 · 财务 ⇒ 不存在「今天能过、改后 403」', '**快照等价回填（设计 §2.9 的窄例外）**：V138 的 `UPDATE users` 必须同时带三条谓词 —— 严格 JSON 数组形态 / 含旧守卫码 `order:list` / 不含新码；丢掉「含旧码」⇒ 红（那是把窄例外读成放宽）', '**覆盖面照实登记**：判据算声明面 + 注解面，不是运行时授权；快照面只覆盖 `users.permissions` 一种形态；生产库受影响行数只能接真库用 V138 文件头的只读事前/事后 SQL 复核', '**红证**：删掉某端点的方法级写码注解 ⇒ 红；给别的端点也挂新码 ⇒ 「台账之外」红；快照谓词丢掉前置条件 ⇒ 红；只改散文 ⇒ 不红'],
+    skip_reason='[backend-contract] I4 端点写码对齐的离线判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_rbac_endpoint_write_codes.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'i4', 'write-code', 'authorization-change', 'snapshot-backfill', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-040 [NORMAL] 用例语料：围栏注释头的号必须等于块号（让号/改名后注释头不得与块脱钩，头号也不得重复）（源: cases/misc.yml）──
+_CASE_MC_040 = EvalCase(
+    id='MC-040',
+    legacy_id='',
+    title='用例语料：围栏注释头的号必须等于块号（让号/改名后注释头不得与块脱钩，头号也不得重复）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当某个用例块上方的围栏注释头写的号与它下面 `- id:` 的号不一致，或同一个号出现在两条注释头里，或语料里一条围栏头都没有（判据空跑）时，必须有东西**具名**报出'],
+    expectations=['direct_reply'],
+    data_checks=['**头 == 块**：围栏形态（`# ====…` 紧跟 `# <ID>（…`）的注释头，其号必须等于下方第一个 `- id:` 的号（不等 ⇒ 红，**两个号都点名**）', '**头号唯一**：同一个号不得出现在两条围栏注释头里（重复 ⇒ 红 —— 读号的人分不清它指哪一块）', '**散文不是头**（判别力边界，实测依据）：全语料有 14 处以 `# <ID>` 开头的**散文引用**（上一行不是围栏）⇒ 不得被判成块头（否则判据被自己的语料喂红）', '**fail-closed**：语料里一条围栏头都没有 ⇒ 红（不许静默退化成空断言）；现取围栏头 35 处、相符 32 处', '**红证**：头≠块 ⇒ 红；头号重复 ⇒ 红；空语料 ⇒ 红；散文引用 ⇒ **不红**；只改散文 ⇒ **不红**'],
+    skip_reason='[backend-contract] 用例语料的号一致性判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_case_header_ids_match_block_ids.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['casebook', 'case-id', 'header-consistency', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-048 [NORMAL] 真库/现场只读复核包：每个 sql 代码块不得含写/DDL 动词（原文与去注释两视图、大小写不敏感、词边界），诚实声明在位，总表与各节条目逐条对应且锚唯一，每节三件套齐备（源: cases/misc.yml）──
+_CASE_MC_048 = EvalCase(
+    id='MC-048',
+    legacy_id='',
+    title='真库/现场只读复核包：每个 sql 代码块不得含写/DDL 动词（原文与去注释两视图、大小写不敏感、词边界），诚实声明在位，总表与各节条目逐条对应且锚唯一，每节三件套齐备',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当复核包里的 sql 代码块混进写语句（原文直写 / 注释夹心拼回 / 小写），或删掉「未在真库上验证」声明，或总表多一行而没有对应节、删掉一整节、复制一节造成锚不唯一，或某节缺出处锚、预期形状、安全说明，或条目被清空、sql 块被清空时，都必须有东西具名报出；而只加散文或只改 SQL 注释时不得报红'],
+    expectations=['direct_reply'],
+    data_checks=['**判据 1（本号存在的唯一理由）**：docs/testing/production-readonly-verification-pack.md 里每个 sql 围栏块的**原文**与**去 SQL 注释**两个视图都不得含写 / DDL 动词（大小写不敏感 + 词边界；去注释视图抓 UP/*x*/DATE 这类注释夹心）；注释的剥离复用仓内唯一实现点 strip_sql_comments（tests/unit_ci_workflows/_sql_schema.py），不另起一把尺子', '**判据 2**：文档必须逐字含「未在真库上验证」——否则下一个人会把这份清单读成已取证的读数', '**判据 3**：总表行的条目 id 集合与各节标题的条目 id 集合互相钉住（总表有而各节没有、各节有而总表没有都红），且任一 id 在总表与各节里各自只出现一次（锚唯一）', '**判据 4**：每个条目节必须含出处锚 / 预期形状（判读口径）/ 安全说明三件套，缺失时具名到节', '**判据 5（fail-closed）**：文档不存在 / 文本为空 / 条目数低于下限 / 抽不到 sql 块 ⇒ 红（「没东西可判」不是通过）；另有一条强化：标「必做」的条目必须有 sql 块或显式说明「不开 SQL」', '🔴 红证全部**内存构造**（真文档当基线 → 字符串替换构造变异体 → 直接喂纯函数 pack_problems），逐条断言**命中的分支**（报文含「原文」「去注释后」「总表有而各节没有」「锚不唯一」「R2 节缺」这类点名串）并断言坏形态读数 ≠ 基线读数（防变异没生效 ⇒ 空断言）；对照读数两条：只追加一段散文 ⇒ 不红、往 sql 块里只加一行 SQL 注释 ⇒ 不红'],
+    skip_reason='[backend-contract] 文档结构与 SQL 只读性的静态判据（纯函数、零网络、零时钟、不连任何库）由 tests/unit_ci_workflows/test_readonly_verification_pack.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['readonly', 'verification-pack', 'sql-guard', 'doc-structure', 'red-proof', 'discriminator'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-046 [NORMAL] C 端 H5 静态根落地面：通路建好且只手动发布（合并不触发布）+ 发布绝不碰 w/ 与 b/ + 新鲜度判据默认判红（源: cases/misc.yml）──
+_CASE_MC_046 = EvalCase(
+    id='MC-046',
+    legacy_id='',
+    title='C 端 H5 静态根落地面：通路建好且只手动发布（合并不触发布）+ 发布绝不碰 w/ 与 b/ + 新鲜度判据默认判红',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['合并建通路的那个 PR 不发布任何东西；首次发布由人手动触发；发布之后线上 / 是本仓库产物，而 /w/ 与 /b/ 一个字节都没变；把触发面放宽、把 if 闸摘掉、或让删除范围越过托管清单时，必须有东西变红'],
+    expectations=['direct_reply'],
+    data_checks=['**合并不发布**（用户 2026-09-27 裁定 B）：`on.push.paths` **恰好**只有 `frontend/mini-app/**`（不含 `deploy/**`、不含 workflow 自身）**且**「模式判定」步（唯一决定会不会发布的地方）逐字读 `github.event_name` 与 `inputs.publish`、双向写 `mode=publish|notify`；`publish` 输入默认 `false` ⇒ 对账面的兜底 dispatch（`workflow_dispatch` 不带 input）也**不会**发布。红证 = 加 `deploy/**` / 加 workflow 自身 / 把默认改成 true / 把模式判定改成恒 publish / 删掉模式判定步，各自必红', "**三种触发形态只有一种会发布**：`push` / `schedule` / 不带 `publish=true` 的 dispatch ⇒ `notify`（只报告）；`publish=true` ⇒ `publish`（写盘）。写盘步 / `build:h5` / 落地面断言三步必须逐字 `if: steps.mode.outputs.mode == 'publish'`（纵深防线：判定步与 if 两处都要过）", '**兜底面必须在位且不是空转**（`FM-E17` 收口口径）：`push` 在本仓会被 `GITHUB_TOKEN` 合并吞掉 ⇒ 本腿必须有 `schedule`（cron 与 `tests/unit_ci_workflows/publish_leg_fallback_ledger.json` 的声明**逐字一致**），且 notify 步要真的会因「线上落后」判红（判据本体 = `scripts/h5_freshness_guard.py`，**不写第二份口径**）并给出可复制命令。红证 = 删 schedule / 改 cron / 把 notify 改成恒绿 / 把 notify 的 `::error::` 摘掉，各自必红。⚠️ **为什么 notify 不比 `dist/index.html`**：`dist/` 在 `.gitignore` 里 ⇒ CI 检出里没有它，那样写会**恒走「没跑」分支** = 空转的兜底面（本包初版踩过）', '🔴 **红线：绝不删/覆盖静态根**：删除集 = 上一次发布写下的托管清单 ∩ 磁盘现值（首次发布无清单 ⇒ 空集）；根上有**无人认领**的条目时判 `TAKEOVER_REQUIRED`（exit 2）并打印将要替换的计划。沙箱红证 = 预置根内容 ⇒ 不接管、逐字节不变', '🔴 **红线：不碰 `w/` 与 `b/`**：三层判据 —— ① 保留前缀（产物顶层/托管清单出现即 die）② 根 index.html 不许引用 `/<保留前缀>/…` ③ 发布前后逐子树的**规范化摘要**（路径+内容，不吃 mtime/顺序）与各自 `index.html` 哈希**逐字相等**（CI 侧四条读数缺一即判红）。沙箱红证 = 预置 `w/` `b/` ⇒ 发布后哈希不变；模拟器红证 = `/w/`（或 `/b/`）被覆盖成 C 端产物 ⇒ 落地面断言判红并指名', '**发布真的生效**有判据（不是「/ 返回 200 就算过」—— 修复前 `/` 一直是 200 的旧产物）：线上 body 哈希 == **本次构建**的 `dist/index.html`（陈旧 ⇒ 判红）；根级深层路径仍回 C 端自己的 index（路由面不串端）', '**新鲜度判据翻成 gate**（同批，用户裁定 B）：陈旧 ⇒ 默认 `::error::` + exit 2（`--no-gate` 仅人工诊断），且 **⛔ 无 cron** 不变、`workflow_run` 清单新增本腿；三态分离保持（取不到读数 = exit **3**，不得当新鲜、也不得与「确实陈旧」的 2 混在一起）', '**对账面同批接线**（FM-E3）：`deploy-reconcile.yml` 新增 `c-end-h5` 腿（走漂移判据 ②）+ 进 `SVC_TO_DEPLOY_WORKFLOW` 登记册 + 存活读数 `--seen` 随腿数改 6；触发面 ≠ 对账面那两条发布链路文件逐条登记进 `reconcile_trigger_paths_ledger.json` 并标 `never_in_trigger`（明文禁止「加进触发面消账」这条出路）', '**类级元守卫**：`h5_freshness_guard.py` 的默认口径与 workflow 的输入语义、三态、无 cron 由常驻判据钉住（改回 warning / 加 cron / 把反向开关改回 `gate` ⇒ 红）', '🔴 **远端执行体不进 SWAS 命令内容**（#6095；病 = run 37075737625 / sha f3e49752f 的 `400 CmdContent.ExceedLimit`）：命令内容只做「按**不可变 sha** 从 codeload 取回执行体并执行」，组装后**本机**前置断言字节数 < 上限（出处 = SWAS Open RunCommand 官方文档的 base64 综合 ≤ 16 KB；与 ECS 侧 64 KB 口径及本仓实测 43.8~50.7 KB 的冲突在脚本注释里照实登记，取最保守值）⇒ 超限在**本机**具名判红 + 给出「命令内容 N 字节 / 上限 M 字节」。红证 = ① 注入式：把上限压到 200 字节 ⇒ 判红并给读数 ② 把 20 KB 的远端脚本换进夹具 ⇒ 命令内容读数**不变**（解耦成立）③ 取不到执行体（坏 sha，真 404）⇒ 非零退出 + 「未做任何发布动作」具名原因（**实测教训**：`curl … | tar xz` 的管道会吞掉 curl 失败 ⇒ 引导必须用 `curl -o` + `-f` + 显式 `||` 判红）④ 把内联远端脚本的旧写法放回可执行行 ⇒ 结构判据判红（注释里**提及**不算 ⇒ 判据走 `_live_lines` 注释感知扫描）。取回通路与远端脚本自己取源码**同一条**（codeload；raw 在杭州机房超时）', '🔴 **CI 构建的 dist 必须真的到得了服务器**（#6095 第三层；病 = run 37078030820 / sha `d4babbf17`：远端报 `❌ 发布源里没有 index.html` —— `frontend/mini-app/dist/**` 是构建产物（`git ls-tree -r origin/main --name-only frontend/mini-app/dist` = **0 个文件**，`.gitignore` 有 `dist/`），而远端唯一的取回通道是「按不可变 sha 从 codeload 取 tarball」⇒ 源码 tarball 里永远没有 dist）：治法 = CI 用**孤儿单提交**（`git commit-tree` **不给 `-p`** ⇒ 无父 ⇒ 不胀历史；临时 `GIT_INDEX_FILE` ⇒ 不碰工作区/索引/HEAD）把 `dist/**` 推成专用分支 `h5-dist`，远端按**该提交的 sha** 取回（`H5_SRC_SUBPATH=frontend/mini-app/dist`）⇒ 改动面最小（远端 `stage_product()` 一行不改）。判据 = ① 链路存在且**被接线**（workflow 里 `build:h5` 之后有 1 个 step 真跑 `deploy/scripts/c-end-h5-dist-push.sh`，发布步逐字消费 `steps.dist.outputs.sha`，且**不许**出现 `${{ github.sha }}`）② 取回 ref **是不可变 sha**（发布腿只接受 40 位十六进制 ⇒ `refs/heads/main` / `h5-dist` 连格式都过不去）③ **注入式红证**：摘掉推送步 / 把 ref 改成 `refs/heads/main` / 把孤儿提交改成普通提交（`-p`）⇒ 各自必红 ④ identity 断言（`[ "$REMOTE_INDEX_SHA" = "$LOCAL_SHA" ]`）仍在 ⑤ 命令内容**仍 < 16 KB**（dist 是 MB 级 ⇒ 绝不塞进命令内容）。**端到端桩演练**（本地假 origin + 真 `git commit-tree`/`push`/`archive`）证明「推上去 → 按 sha 取回 → 真有 dist/index.html」这条链在对象层是通的', '🔴 **推送步骤不许继承运行环境**（#6095 第四层；病 = run **37081920188** / sha `aedc51ffb`：第三步（我新加的「Prepare dist ref」）在真 CI 上挂 —— `git commit-tree` 需要作者/提交者身份，而 CI runner 上没有身份源、系统 GECOS 为空 ⇒ `fatal: empty ident name (for <runner@…>) not allowed`（exit 128）；而**开发机会用 GECOS 自动兜一个非空身份** ⇒ 同一脚本**本机 rc=0 / runner rc=128**，即旧版桩演练「继承了环境」⇒ **证明不了 CI 会过**。同族：#6113（剔除继承来的 `MIGAO_HEAVY_L*`）。修法 = 造孤儿提交时**显式给身份**（`GIT_AUTHOR_NAME/EMAIL` + `GIT_COMMITTER_NAME/EMAIL` 四个**环境变量前缀** —— 取环境变量而不是 `-c user.name`，因为**环境变量优先于 config**：调用方环境里一个**空**的 `GIT_AUTHOR_NAME` 会把 `-c` 盖掉、仍然 `empty ident name`（实测）；身份 = `github-actions[bot]`（ID 41898282）⇒ 提交**可追溯**，承载的源码 commit 写在提交信息与托管清单的 `published_commit` 里）+ 清掉「我在哪个仓」的环境（`unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR` ⇒ 否则 `GIT_DIR` 指向另一个仓时「往哪推」由环境决定）。判据 = `TestDistPushIdentityIndependence`（4 条）+ **桩演练改为在「无 ambient 身份」下跑**：空 `HOME` + `GIT_CONFIG_GLOBAL/SYSTEM=/dev/null` + `GIT_AUTHOR_NAME`/`GIT_COMMITTER_NAME` **显式置空**（把开发机的自动兜底也堵掉）；注入式红证 = ① 摘掉显式身份 ⇒ 复现 CI 那条 `empty ident name` ② 摘掉 `unset` 行 + 敌意 `GIT_DIR` ⇒ 具名判红（`dist 目录不在检出内`）', '**新加的注入值必须过同一道白名单**（#6095 第四层同批扫出的**同类继承面**）：`H5_PUBLISHED_COMMIT`（本包新加、会被**拼进 SWAS 命令内容**）此前**没有**字符集校验，而该文件对 `SHA` / `STATIC_ROOT` / `MANIFEST` / `RESERVED_PREFIXES` 每个注入值都有白名单 ⇒ 新值不豁免同一道闸：只接受**空**（人工排障）或 **40 位十六进制**。判据 = `TestCiSideInjectedValuesAndMessages::test_published_commit_must_be_a_commit_sha_or_empty`（真跑组装段：坏值 / 短值判红，空值放行）', '🔴🔴 **两个 ref 各司其职：引导取执行体 ≠ 远端取产物**（#6095 第五层；run **37084280991** / sha `c22514360`）：第三层把命令内容第 5 参数换成**产物 ref**（`h5-dist` 上只含 17 个 dist 文件的孤儿单提交）之后，**引导也按它取 codeload tarball** ⇒ 取回的执行体目录里**没有** `deploy/swas/c-end-h5-publish-remote.sh` ⇒ 远端 `bash: /tmp/tmp.XXXX/deploy/swas/c-end-h5-publish-remote.sh: No such file or directory`（`InvocationStatus=Failed`，线上产物照旧陈旧）。**为什么前四层都放它过去了**：第三层的桩演练把「远端执行」**打桩**了（从不真取回并执行执行体），第二层的桩演练当时还没有「产物 ref ≠ 源码 commit」这个形态 ⇒ **两侧各自的假设都成立、组合不成立**（与第三/四层同族：每块判据都绿，拼起来错）。修法 = `DIST_SHA`（产物 ref，第 5 参数 / `H5_DIST_SHA`，**不再回落到 `$GITHUB_SHA`**）与 `SCRIPT_SHA`（执行体 ref = `H5_PUBLISHED_COMMIT` / `GITHUB_SHA`）分离：命令内容里 `export H5_PUBLISH_SHA=$SHA`（远端 `stage_product()` 按它取产物）、引导 URL 用 `$SCRIPT_SHA`；CLI 侧对执行体 ref 同等做白名单 + 40 位断言。判据 = `TestTwoRefsCombination`（**组合层**：真造两个提交 —— 一个含脚本、一个由**真** `c-end-h5-dist-push.sh` 产出只含 dist；真跑组装段；真 `git archive` 取回两棵 tarball；真执行取回的执行体 + 取回的产物 ⇒ rc=0 且清单里两个字段各就各位）4 条 + 静态接线判据两条（`BOOT_SCRIPT_REF_FORM` 必须在、`BOOT_PRODUCT_REF_FORM` 必须不在）+ `TestRedProofs` 两条混用形态变异；注入式红证 = ① 引导改回按产物 ref 取（**用合并后 main 上那份脚本喂进同一夹具 ⇒ 真复现 `No such file or directory` rc=127**）② 远端产物 ref 漂成执行体 ref（源码 tarball 里没有 dist）。审计面同族修：远端清单原先写 `published_commit or sha`（`sha` = 产物 ref）⇒ 没给源码 commit 时会把**产物 ref** 标成「源码 commit」，已改为 `published_commit or ""`（判据 = `test_audit_fields_never_conflate_the_two_refs`）', '**没跑 ≠ 通过**（如实登记）：本单**没有**真实发布过一次；线上 `/` 的 `last-modified` 是否变化、`RunCommand` 那一段能否跑通、`nginx -t`，本机都没有取证（没有 aliyun CLI / docker / nginx），属「没跑」'],
+    skip_reason='[backend-contract] CI/deploy 的结构与行为判据（真 YAML 的触发面与 if 闸 + 沙箱真跑远端执行体 + 本地 http server 上的落地面断言红绿两面）由 tests/unit_ci_workflows/test_c_end_h5_hosting.py 的离线判据（48 条，含 `TestCommandContentLimit` 的 5 条读数判据、`TestDistDeliveryWiring` 5 条、`TestCiSideInjectedValuesAndMessages` 4 条、`TestTwoRefsCombination` 4 条 + 两个端到端桩演练；零 LLM、秒级）验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'deploy', 'trigger-surface', 'red-proof', 'fail-closed', 'manual-only'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-042 [NORMAL] 控制流管道必须显式表态（`set -o pipefail` 或登记豁免）：判的到底是「命令自身失败」还是「管道末端的结果」（源: cases/misc.yml）──
+_CASE_MC_042 = EvalCase(
+    id='MC-042',
+    legacy_id='',
+    title='控制流管道必须显式表态（`set -o pipefail` 或登记豁免）：判的到底是「命令自身失败」还是「管道末端的结果」',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['在 workflow 的 run 块里用 `if <命令> | grep …` 判红时，必须让「命令自身失败」与「没匹配」可区分：要么 `set -o pipefail`，要么登记豁免并写明「本条判的是管道末端的结果」；新出现一处未登记的这类管道、或删掉命令自身 rc 的判定、或让豁免登记变陈旧，都必须有东西变红'],
+    expectations=['direct_reply'],
+    data_checks=['判定本体的唯一实现 = `if/elif/while` 行里出现「被判定命令（git/gh/npm/python3/bash/node） | grep|head|tail|wc|sort/uniq/sed/awk」，且该 `run` 块**没有** `-o pipefail` ⇒ 必须登记在 `PIPE_RC_EXEMPTIONS`（台账**只许缩短**）', '现取基线 = **2 条刻意的管道末端判定**：`.github/workflows/flaky-ledger-reconcile.yml::reconcile`（问 help 里有没有 `--branch`）与 `.github/workflows/pr-check.yml::label-needs-changes`（问标签在不在）—— 两条都逐字写明「加 pipefail 会把结论读反」', '判据四条：基线 / 注入红证（新增一处未登记管道 ⇒ 红）/ 对照（同一段加 `pipefail` ⇒ 不红）/ 对照（只在注释里提及 ⇒ 不红）/ 陈旧豁免（现取命中里找不到 ⇒ 删它，红）', "现场（2026-09-28 同一天两个地方各咬一次）：① `pr-check` 门控步原先 `if git diff origin/main...HEAD | grep -qE '<路径>'` ⇒ `git diff` 真失败（rc≠0）时管道 rc 取 `grep` 的 0 ⇒ 落 else 并把原因写成「未命中受管用例面」= 归因写错 + 静默跳过（已修：先 fetch + 判 `git diff` 的 rc + fail-closed 出声）；② 侦察命令 `gh pr checks --watch | grep … | tail` 把**判红吞成退出 0** ⇒ 「两条 dependabot 都红」一度被读成「有一条绿」（当场更正）"],
+    skip_reason='[backend-contract] CI shell 的结构判据（零 LLM、秒级）由 tests/unit_ci_workflows/test_dev_mode_failure_modes.py 的判据 22（pipe_rc_problems）验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'shell', 'exit-code', 'red-proof', 'ledger'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-050 [NORMAL] 本腿执行形态的登记与漂移守卫（issue #5814）：CI 与本地腿的并行度必须都等于台账声明的那一个值；跑整套时判据库存不得低于冻结基线、skip 读数不得偏离；只改其一或改台账不复算都必须有东西具名报出（源: cases/misc.yml）──
+_CASE_MC_050 = EvalCase(
+    id='MC-050',
+    legacy_id='',
+    title='本腿执行形态的登记与漂移守卫（issue #5814）：CI 与本地腿的并行度必须都等于台账声明的那一个值；跑整套时判据库存不得低于冻结基线、skip 读数不得偏离；只改其一或改台账不复算都必须有东西具名报出',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当 CI 的 `-n` 或本地腿的 `-n` 被改（只改一边、或改了没同步台账 `helper_leg_shape_ledger.json`）、台账声明的消费点被删或改名、冻结库存被填成 0、跑整套时本轮收集数低于冻结基线、或 skip 读数偏离冻结值时，都必须有东西具名报出；而只改注释、或跑子集（`pytest tests/unit_ci_workflows/<某个文件>`）时不得报红'],
+    expectations=['direct_reply'],
+    data_checks=['**判据 1（台账 ⇄ 两边声明三方一致）**：`.github/workflows/pr-check.yml` 的 `ci workflow helper unit tests` job 与 `verify-all.sh` 的 `ci_helper_leg()` 里那条 pytest argv 的 `-n` 取值，必须**都等于**台账 `shape.parallel_workers`（现取，不写死；只改一边 ⇒ 红）', '**判据 2（消费点逐字存在）**：台账 `consumption_marker` == `tests/unit_ci_workflows/conftest.py::CONSUMPTION_MARKER`，且该函数可调用、红证孔 `MIGAO_FAIL_HELPER_LEG_SHAPE` 在 conftest 里真存在（删判定 / 台账变成没人读的表 ⇒ 红）', '**判据 3（冻结库存是实值 + 两态 skip 读数自洽）**：`frozen_inventory.collected_total > 0`，`skipped_reading` 必须同时有 `MIGAO_REQUIRE_REALDB` 与 `default` 两态且都是非负整数，且更严形态（注入标记）的读数 ≤ 本地形态（放宽 / 只给一态 ⇒ 红）', '**判据 4（运行期牙齿，唯一在单进程与 `-n` 下都传得到退出码的通道）**：跑**整套**时本轮 `request.session.testscollected` ≥ 冻结基线、skip 读数 == 该环境冻结读数；**子集运行不判**（否则研发日常的定位运行会假红）；一旦收集面少了一份判据文件就不早退（fail-closed）', '**判据 5（分片三方一致，issue #6164）**：同一 job id（`ci-workflow-tests`）的 matrix 片名 == `verify-all.sh` 的 `ci_helper_leg()` 里 `MIGAO_CI_HELPER_SHARD=` 的取值 == 台账 `shape.shards.names`；且 env 名 / 盐 / 规则实现（`conftest.py::shard_of`）三方在位（只加一片 / 只删一片 / 改了盐没同步 / 台账没登记 ⇒ 红）', '**判据 6（分片是全划分）**：按**现取语料**（`test_*.py`）用 `conftest.shard_of` 复算 ⇒ 每个判据文件**恰好**落进一片（并集 == 目录全集、两两不相交、无空片）；这是「文件不属于任何片 ⇒ 静默少跑」的唯一堵法', '**判据 7（逐片冻结基线）**：`frozen_inventory.shards` 的键集合 == 片名集合且逐片 `collected_total > 0`；运行期**分片形态下缺本片基线 ⇒ fail-closed 判红**（区别于整套形态的「没填就早退」——前者是「台账建了却漏了这片」，正是拆腿最可能出的坏形态）', '🔴 红证（分片，各自能单独变红）：CI matrix 少一片 / 本地腿少一片 / 台账漏登记一片 / 盐漂移 / 某片没有冻结基线 / 台账整个缺 `shards` 块 / 片名与规则值域对不上（一整半文件不属于任何片）⇒ 各能单独变红；对照读数：真语料零问题', '⚠️ 分片最容易失效的一处（判据 4 的同族）：运行期的「本轮跑的是不是整套」若按「覆盖目录下**全部** `test_*.py`」写死，分片后**每条腿**都会被判成「子集运行」⇒ 早退 ⇒ 库存牙齿全掉（「变快」重新等于「少跑」）。⇒ 那条判定必须分片感知（`conftest.expected_test_files()` + 逐片基线）', '**判据 8（逐条本地 argv 都逐字比，issue #6164 收尾）**：拆腿后本地腿里有**两行** pytest 命令，任何「只取第一条」的现取写法都会只钉住两片中的一片 —— 实测退化：只把第二片的 `-n 4` 改成 `-n 8` 时，MT-031（`test_ci_helper_leg.py`）与 MC-050 的并行度判据**都没有反应**。现取改成**逐条都比**（`_local_pytest_argv_all` / `pytest_argv_lines`），并各配一条**只动第二片**的注入式红证', '**判据 9（分片要**平**，issue #6164 平衡臂）**：盐不是随便取的 —— 旧盐 74 的文件数几乎相等（172/170）却把**重判据**堆在片 1（安静机实测 388s vs 234s；CI 上片 1 恒慢 30~110s，四轮一致）⇒ 现用盐 130：重判据 **316/305**、用例数 **3241/3292**（差 51）、文件数 171/171。🔴 **读数是分片成员的函数**：改盐必须**同批重锚**逐片冻结基线 —— 实测过只改盐不同步 ⇒ 片 1 当场判红（`本轮收集 3057 < 冻结基线 3245`，fail-closed 生效）。选盐用的是**本机安静时段的代理读数**（CI 侧拿不到逐文件读数：canonical argv 不许加 `--durations`）⇒ 验收口径 = **CI 的两片读数**，且要连看几轮（同一片两轮之间实测差 40%）。', '**判据 10（关键路径的现取口径，issue #6164 收口）**：关键路径 = **两片里较慢那片的 step 秒数**（不是平均 —— PR 反馈等的是最慢的那条）；🔴 **分档**（让出档/全量档不可混算）+ **单轮不足以定论**（同一片两轮之间差过 40% ⇒ 至少 5 轮取中位）。现取：**~500s（拆腿前，60 个 run 的 step 中位）→ ~316s（换盐后 N=3 中位，全量档 299~318s）≈ −37%**；**~250s 两片到不了**（下界 = 总 step/2），2026-10-03 用户裁定**停在两片**。复算命令与逐轮读数 = 台账 `shape.shards.ci_readings`（写命令不写死数）。', '⚠️ **照实登记的缺口**：`skipped_reading` 是**整套**口径，运行期收口只判**逐片库存**、**不判 skip**；而「skip 逐值相等」这条不变式在分片下**结构上不可能同时成立**（冻结的整套 skip=1 只由片 2/2 里的文件产生）⇒ 要真接上必须先把读数改成「逐片 × 逐环境」的表（本包没做）', '🔴 红证：并行度漂移（CI 侧 / 本地侧各一）/ 库存塌陷（含「塌 10 条」量级）/ skip 变多与变少两个方向 / 台账缺字段 / 消费点对不上 / 缺一态 ⇒ 各能单独变红；对照读数：真语料零问题、跑子集不报。另有一条**端到端**红证：`MIGAO_FAIL_HELPER_LEG_SHAPE=1 python3 -m pytest tests/unit_ci_workflows -q -p no:cacheprovider -n 4` ⇒ 非零退出（读数记在 PR body）'],
+    skip_reason='[backend-contract] CI 执行形态的静态/结构判据（零网络、零时钟、不烧 token）由 tests/unit_ci_workflows/test_helper_leg_execution_shape.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'parallelism', 'xdist', 'execution-shape', 'red-proof', 'ledger'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-051 [NORMAL] 「判据本体绿 ≠ 接线在」的规范承载体（issue #5814）：凡测接线的判据必须显式声明被守的接线锚并登记台账；未登记 / 台账未兑现 / 接线锚被删或改名 / 台账清空，都必须有东西具名报出（源: cases/misc.yml）──
+_CASE_MC_051 = EvalCase(
+    id='MC-051',
+    legacy_id='',
+    title='「判据本体绿 ≠ 接线在」的规范承载体（issue #5814）：凡测接线的判据必须显式声明被守的接线锚并登记台账；未登记 / 台账未兑现 / 接线锚被删或改名 / 台账清空，都必须有东西具名报出',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当一条判据宣称自己守某个接线（钩子 / 入口接线 / 台账读取 / CI 步骤调用）时，它必须在测试文件里显式声明被守的接线锚并登记进台账 `wiring_claims_ledger.json`；有声明没登记、台账给不存在的声明盖章、接线锚被删或改名或不带 .py 后缀、台账被清空、登记缺 case_ids —— 都必须有东西具名报出；而只改注释不得报红'],
+    expectations=['direct_reply'],
+    data_checks=['**病（PR #5829 的实例，逐字）**：`pytest_sessionfinish` 收口钩子被 `#5825` 整个丢掉，而 5 条判据文件照样全绿 —— 因为判据本体被测到了、**消费点 / 接线没人测** ⇒ 落进 main。理由逐字：**判据绿只是「判据函数被调用过」，不代表「它接在真流程上」**', '**判据 1（未登记即红）**：全仓 `tests/unit_ci_workflows/**/*.py` 里出现声明标记 `WIRING_UNDER_TEST`，而台账 `claims` 里没有对应条目 ⇒ 具名报出该文件', '**判据 2（台账未被兑现即红）**：台账每条必须能在它声称的文件里逐字找到同一句声明（`WIRING_UNDER_TEST = "<锚>"`）⇒ 台账不许给不存在的声明盖章', '**判据 3（声明必须指名真对象）**：`::` 左边是仓内**存在**的文件、右边在该文件里**逐字出现**，且左边必须以 `.py` 结尾（避免与既有「裸文件名 + 冒号 + 行号」的禁令混淆）', '**判据 4（fail-closed）**：台账 `claims` 为空 ⇒ 红；**判据 5**：每条必须写下 `case_ids`（用例面关联）', '**判据 6（判别力自证）**：四种坏形态（声明未登记 / 台账未兑现 / 接线锚被删 / 台账清空）在**内存里各自判红**；另有真语料上的双向自证 —— 对**真** `tests/unit_ci_workflows/conftest.py` 的文本做内存变异（摘掉被守的接线行）⇒ 判据 3 报出该锚', '**判据 7（对照读数）**：只把声明行改成注释（同一段文本、不同语法） ⇒ **不红**'],
+    skip_reason='[backend-contract] 接线声明的静态/结构判据（只读仓内文件，零网络、零时钟、不跑被引用的测试、不烧 token）由 tests/unit_ci_workflows/test_wiring_claims_registry.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'wiring', 'evidence-quality', 'red-proof', 'ledger'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-052 [NORMAL] 技能加载面只放「执行时需要」的东西（issue #5853）：沿革必须外置到同目录 CHANGELOG.md，回流 SKILL.md 即红；**换了措辞的「旧落点」口径副本同样红**；外置 ≠ 删除（沿革文件缺失 / 被清空 / 指针丢失也要有东西具名报出）（源: cases/misc.yml）──
+_CASE_MC_052 = EvalCase(
+    id='MC-052',
+    legacy_id='',
+    title='技能加载面只放「执行时需要」的东西（issue #5853）：沿革必须外置到同目录 CHANGELOG.md，回流 SKILL.md 即红；**换了措辞的「旧落点」口径副本同样红**；外置 ≠ 删除（沿革文件缺失 / 被清空 / 指针丢失也要有东西具名报出）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当技能的变更沿革（纯历史记录、执行流程时零需要）写在 SKILL.md 加载面里时，加载该技能就要为它付一次上下文；沿革必须外置到同目录 CHANGELOG.md、SKILL.md 只留指针；回流、缺沿革文件、沿革被清空、缺指针、以及换了措辞的旧落点口径副本 —— 都必须有东西具名报出；而只改叙述不得报红'],
+    expectations=['direct_reply'],
+    data_checks=['**病（现取读数，2026-10-01）**：加载一个技能 = 把整份 SKILL.md 正文放进上下文（加载器只取 frontmatter 的 name + description，调用时 content = parsed.body.trim()）；`migao-dev-flow` 的**加载面**（name/description 值 + 正文，**不含** YAML 注释）改动前 **328,954 字符**，其中沿革 **98,219 字符 ≈ 29.9%**，而沿革执行流程时零需要 ⇒ **每次加载都付一次历史账**；且「沿革该放哪」过去**没有任何判据**', '**存量实证（判据写好后当场跑真实语料）**：命中 1 条 —— `- v1.91.0（…）` 整条沿革**散落在 §27 尾部**（沿革节里 v1.92.0 与 v1.90.0 之间缺的正是它）⇒ 该判据抓的不是假想形态；同 PR 已把它并入 CHANGELOG.md', '**独立验收实证（第二个 agent，只读复算、不信转述）**：又抓到**第 4 处口径副本** —— SKILL.md 的 frontmatter `description` 里写着「变更沿革已**迁至**正文「版本沿革」节」，**换了动词**故逃过按字面替换的同步，而它**就在加载面里**（每次会话注入的技能目录文案，比正文更早、更贵）⇒ 判据 6 与「加载面」定义（load_surface_text，不含 YAML 注释）就是为这一族加的。教训 = **「判据绿」≠「口径已同步」**', '**判据 1（语料非空，fail-closed）**：找不到任何 `skills/*/SKILL.md` ⇒ 红（「没东西可判」不是通过）', '**判据 2（牙齿：回流即红）**：任何 SKILL.md 的**加载面**出现沿革**节标题**（`## 版本沿革（…`）或沿革**条目行**（`- vN.N.N（…`）⇒ 具名报出该文件与命中行，出口 = 写进同目录 CHANGELOG.md', '**判据 3（外置 ≠ 删除）**：登记的技能缺同目录 `CHANGELOG.md`、或该文件不含任何 `- vN.N` 条目 ⇒ 红（沿革是「这条纪律为什么存在」的唯一出处）', '**判据 4（指针在位）**：登记的技能 SKILL.md 里没有指向 CHANGELOG.md 的指针行 ⇒ 红（读者 / agent 会以为沿革不存在）', '**判据 5（判别力自证，内存构造）**：含节标题 ⇒ 红；只含条目（半搬半留形态）⇒ 红；只含指针 ⇒ **不红**；正文提「沿革」二字（如 §19 的口径沿革）⇒ **不红**（对照）', '**判据 6（换了措辞的「旧落点」口径同样红）**：加载面出现「沿革 …（写进 / 迁至 / 移至 / 放进 / 放入 / 放在）… 正文」⇒ 红。红证**在真实文件上**：把 description 改回「已迁至正文「版本沿革」节」⇒ **具名判红**（旧落点口径：沿革已迁至正文），还原后 9 passed', '**「加载面」定义的对照（防假红 + 防假绿）**：同样的文字放在 YAML 注释里 ⇒ **不红**（注释不进上下文，刻意留着「此前写…」的历史说明）；放进 description ⇒ **必须红**'],
+    skip_reason='[backend-contract] 技能加载面的静态/结构判据（只读仓内两个文件，零网络、零时钟、不跑被引用的测试、不烧 token）由 tests/unit_ci_workflows/test_skill_load_surface.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'context-budget', 'skill-load-surface', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-053 [NORMAL] 批次账写入点唯一 + 余量口径唯一 + 来源族列形状互斥（issue #5865）：新写入点未登记即红、DB 约束被摘即红、Java 常量与 DB 取值漂移即红（源: cases/misc.yml）──
+_CASE_MC_053 = EvalCase(
+    id='MC-053',
+    legacy_id='',
+    title='批次账写入点唯一 + 余量口径唯一 + 来源族列形状互斥（issue #5865）：新写入点未登记即红、DB 约束被摘即红、Java 常量与 DB 取值漂移即红',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=["当批次台账（`stock_batch_consumptions`）多出一个来源（本单新增 `reason='stocktake'`）时，必须同时保证：写入点仍然唯一、余量派生（Σdelta）仍只有一份口径、盘点行与扣料行在**列形状上互斥** —— 任一条被破坏都要有东西具名报出"],
+    expectations=['direct_reply'],
+    data_checks=['**病（本单自己会踩的形态）**：给批次台账加第三个来源时，最省事的写法是在新服务里直接 `consumptionMapper.insert(...)`（写入点分叉 ⇒ 幂等闸 / 来源列形状 / 盘前盘后链全部绕过），或者让盘点行填上 `processing_order_no`（读面分不清「加工单扣料」与「盘点调整」= 假账）。两种写法**都不会让任何实例判据变红**：新路径自带测试、照样绿', '**判据 1（写入点唯一，未登记即红）**：全仓 `backend/admin-api/src/main/java/**/*.java` 里「写批次台账」的文件必须正好等于冻结登记 `BATCH_LEDGER_WRITE_POINTS`（现取 = `StockBatchConsumptionService.java` 一处）；多出来的文件**点名报出**并给出出口（并回台账服务，或登记 + 在 PR 说明幂等闸/列形状/链怎么保证）。判据 = tests/unit_ci_workflows/test_batch_stocktake_write_point.py 的 `test_batch_ledger_has_exactly_one_write_point`', '**判据 2（余量口径唯一）**：`sumDeltaByBatchIds(` / `sumDeltaBySku(`（Σdelta 的读口 = 「这批还剩多少」的唯一派生入口）只许出现在 `StockBatchConsumptionService.java` 与 `StockBatchConsumptionMapper.java`；第三处 = 第二份余量口径 ⇒ 红。判据 = 同文件 `test_batch_remaining_is_derived_in_one_place`', "**判据 3（来源族形状互斥是 DB 对象，三面都要有）**：`schema.sql` 必须含 `ck_batch_consumption_source_shape` 且其谓词同时包含「盘点行带 `stocktake_run_id`」「盘点行不带加工单号」「扣料行必须带加工单号」；`schema.sql` 与**活迁移**都必须含部分唯一索引 `uk_batch_consumption_stocktake`（谓词 `stocktake_run_id IS NOT NULL`）与 `reason` 取值集合里的 `'stocktake'`；Java 常量 `REASON_STOCKTAKE` 的取值必须与 DB 侧**逐字相同**（漂移 ⇒ DB 当场拒掉应用写出来的行）；引入该来源的活迁移必须在 `migration_fingerprints.json` 里登记。判据 = 同文件 `test_source_families_are_disjoint_in_the_database`", '**判据 4（fail-closed）**：登记表为空 ⇒ 红；扫描**零命中**（一个写入点都找不到）⇒ 红（判据自己失效必须自曝，不许静默绿）；登记的文件已不再写台账 ⇒ 红（陈旧登记只许缩短）。判据 = 同文件 `write_point_problems` 的三条分支', '**判据 5（判别力自证，随判据常驻）**：六种坏形态在**内存语料**上各自判红（第二个写入点 / 登记表清空 / 零命中 / 第二处 Σdelta 聚合 / 形状约束被删 / Java 常量与 DB 取值漂移 / 活迁移未登记指纹账本），另有一条**对照读数** —— 把 `consumptionMapper.insert(...)` 只写进**注释** ⇒ **不红**（注释不是写入点；判据不许被自己的文案喂红）。判据 = 同文件 `test_injected_bad_corpora_are_named`', '**边界（如实登记）**：判据只认仓内文本形态 `<mapper 标识符>.insert(`（标识符由 `StockBatchConsumptionMapper <名>` 的声明取得）与 `getMapper(StockBatchConsumptionMapper.class).insert(`；用反射 / 裸 SQL / `JdbcTemplate` 写台账的代码不在射程内（本仓没有这种写法，出现时也不会有东西提醒）；它判不了「盘点的业务口径对不对」（那是 PR-119 的真库/mock 判据）'],
+    skip_reason='[backend-contract] 静态结构守卫（只读仓内文件，零网络、零时钟、不起真库）由 tests/unit_ci_workflows/test_batch_stocktake_write_point.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'guard', 'inventory', 'ledger'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-054 [NORMAL] worktree 删除不许穿过软链 + 禁止「跨工作区 node_modules 软链」成为约定（issue #5930）：解链调用必须**可执行且先于** `git worktree remove`、外部目标逐字节完好、仓内不许把这个姿势教成步骤（源: cases/misc.yml）──
+_CASE_MC_054 = EvalCase(
+    id='MC-054',
+    legacy_id='',
+    title='worktree 删除不许穿过软链 + 禁止「跨工作区 node_modules 软链」成为约定（issue #5930）：解链调用必须**可执行且先于** `git worktree remove`、外部目标逐字节完好、仓内不许把这个姿势教成步骤',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当有人在 worktree 里把依赖软链到主工作区（`node_modules` → 主仓库同名目录）时，任何「删/重建 node_modules」的动作都不许把**仓库外**的目标打穿；`dev-worktree.sh rm` 必须先解链再删，且仓库里不许再有任何脚本/文档把这个姿势教成步骤 —— 任一条被破坏都要有东西具名报出'],
+    expectations=['direct_reply'],
+    data_checks=['**病（2026-10-01 22:18 现场事故，本机实测）**：主工作区 `tests/node_modules` 变成**空目录**（`frontend/admin-web/node_modules` 幸存）。这类破坏**在仓库外发生、git 里看不见**（软链不入库）⇒ 静默失效，没有任何判据会因此变红。共同根因是**一个类**：跨工作区共享 `node_modules` 的软链 × 任何删/重建 `node_modules` 的动作', '**归因取证（对 issue 原文的假设做了核对，铁律 11）**：issue 原文把主因写成「`git worktree remove --force` 的删除路径**跟着软链**把目标删了」—— 本包在**真 fixture**（真 git 仓库 + 真 worktree + 指向外部目录的 `node_modules` 软链）上实测 **git 2.54.0 不复现**：删除前后目标 **2 个文件逐字节完好**（`git worktree remove` 对软链走 `lstat`+`unlink`，不跟随）。另一候选因**实测复现且与现场读数逐字同形**：在软链所在目录跑一次 `npm ci`（第一步就是删 `node_modules`）⇒ 目标目录仍在、**内容全空**（fixture **3 → 0** 个文件）。⇒ 两条并列，但「空目录」这个现场形态由后者解释', '**判据 1（控制流元守卫）**：`scripts/dev-worktree.sh` 的 `cmd_rm` 里，对解链函数（`unlink_symlinks_before_remove`）的调用必须**可执行**（`#` 开头的注释行不算）且**排在** `git … worktree remove` **之前**。判据 = tests/unit_ci_workflows/test_dev_worktree_symlink_safety.py 的 `test_unlink_call_precedes_worktree_remove_and_is_not_a_comment`', '**判据 2（行为，真 fixture + 真 git）**：造「worktree 含指向外部目录的 `node_modules` 软链」形态 ⇒ 跑 `dev-worktree.sh rm` ⇒ ① 外部目标**逐字节完好**；② PATH 上的 `git` 垫片见证「真正执行 `worktree remove` 的那一刻，worktree 里**还有没有软链**」= **`no`**（= 解链确实先于删除）；③ worktree 正常消失；④ 解链**具名可见**地打在输出里（路径 → 目标）。判据 = 同文件 `test_rm_unlinks_before_removing_and_keeps_the_external_target_intact`', '**判据 2 的红证（注入，改前/改后双向对照）**：把解链调用那一行删掉（**先自证变异生效**）⇒ 见证器读到 **`LINK_PRESENT_AT_REMOVE=yes`**（= 删除动作暴露在**活链**上）；修后同 fixture 读 **`no`**。判据 = 同文件 `test_injected_missing_unlink_leaves_the_link_live_at_removal_time`。**实测读数**：改前（未实现）该判据与判据 2 双双判红、见证读数 = `yes`；改后 = `no`', '**判据 8（issue 要求 ① 的「可见提示」）**：两种危险形态必须**各自具名**点出来 —— 指向**本仓库工作区**（跨工作区共享依赖的典型形态 = 本事故成因）与指向**工作区之外**（删除动作若穿过它，打到的是仓库外的数据），且提示里带「路径 → 目标」。判据 = 同文件 `test_visible_warning_distinguishes_outside_repo_from_cross_workspace`', '**判据 3（反向对照，防「为安全把 rm 弄坏」）**：**不带软链**的 worktree 仍能正常移除（rc=0、目录消失、见证读数 `no`），且 `rm --delete-branch` 语义不变（分支真被删、主干保护一字未动）。判据 = 同文件 `test_worktree_without_links_still_removes_normally`', '**判据 4（危险面钉住，防判据 2 变空断言）**：仍**活着**的跨工作区软链一旦遇上**解引用式删除**（POSIX：操作数带尾斜杠）⇒ 目标被清空（`after == {}`）。判据 = 同文件 `test_dereferencing_removal_on_a_live_cross_workspace_link_empties_the_target`', '**判据 5（类级元守卫：教法扫描）**：仓内**任何** tracked 文本文件里，行首 `ln` + `-s` 族旗标 + 该行含 `node_modules` 的**配方形态**都必须已登记豁免；**未登记即红**、**陈旧登记即红**、**条数超冻结上界即红**（上界现取 = **1**，写死在判据里 ⇒ 台账自己改不大，只许缩短）。判据 = 同文件 `test_no_script_or_doc_teaches_cross_workspace_node_modules_symlink` + `test_teaching_scan_has_teeth_on_injected_corpora`', '**判据 5 的存量处置（现取 = 2 条命中，收口为 1 条豁免 + 1 条就地标注）**：① `tests/unit_ci_workflows/test_ui_smoke_worktree_deps.py` 的**病灶引用**（它是 issue #5241 的证据锚，改写会削弱证据链）⇒ **登记豁免**（台账 `tests/unit_ci_workflows/worktree_dep_symlink_ledger.json`，写清理由）；② `acceptance/2026-09-18/4307-4308-routing/REPORT.md` 的「复跑 recipe」是**真的步骤**⇒ **就地标注为禁止**（原命令行**逐字保留在注释里**，不改写历史读数），标注后不再是配方行', "**判据 6（同源：不许两处各写一份）**：`dev-worktree.sh add` 的**输出**与 `docs/wiki/Development.md` 的 `### worktree 依赖准备` 节必须带**同一句**逐字规范（现取 = 「依赖一律在本工作区内安装（npm ci）；禁止把 node_modules 软链到主工作区或其他工作区」）；任一侧缺失 ⇒ 具名判红。判据 = 同文件 `test_add_output_and_development_doc_share_one_canonical_rule`（**静态**：两侧逐字同一句 + `cmd_add` 的函数体里必须有它 + 文档承载节 `### worktree 依赖准备` 必须在）；**行为面**另有一条 —— `test_add_output_reaches_the_operator_with_the_discouragement` 真跑一次 `add`（真 git 仓库、真 worktree，全在 `tmp_path`），断言 rc=0、输出**走到最后**（不是半截）、规范句与文档指引都在。**这条是本包自己踩出来的**：第一版把 `echo` 里的占位符写坏成 `${'$'}{path}` ⇒ 运行期 bad substitution ⇒ `add` 建完工作区后**中途非零退出**，而 `bash -n` 与字符串搜索**都抓不到**（前者不查运行期替换、后者只看那句规范在不在）", '**判据 7（判别力自证）**：控制流判据在三种坏形态上各自判红（删掉调用 / 挪到删除之后 / 改成注释），未注入**不红**；教法扫描在「未登记 / 陈旧登记 / 超上界」上判红，在「都空」「真语料 + 现台账」上**不红**；本判据文件自身 `recipe_hits == []`（守卫不许被自己的语料喂红）。判据 = 同文件 `test_injected_control_flow_bad_shapes_are_all_red` / `test_teaching_scan_has_teeth_on_injected_corpora` / `test_helper_declares_no_recipe_shape_itself`；另外 `test_the_guarded_consumption_point_resolves` 钉住「消费点（`cmd_rm` 与解链函数定义）在真实文件里逐字可解析」——摘掉它判据 1 当场判红', '**fail-closed 与否的裁定（issue 要求写理由）**：`rm` **不** fail-closed（解链后照常删除，只打具名可见提示）。① 解链之后破坏动作已经**结构安全**（无论 remover 是 git / rm / npm / find，都没有可穿越的软链面）⇒ 拒绝只增摩擦不增安全；② worktree 里出现软链是**常态**（`.env`、编辑器目录…）⇒ 拒绝会逼人改用 `rm -rf <worktree>`，而**那一条不解链**、正是事故形态的入口；③ 信号由可见提示承担（每条软链具名打「路径 → 目标」，指向仓库外/本仓库工作区的另加 ⚠️ 点名）。真正 fail-closed 的是**非破坏面**：判据 1（控制流）与判据 5/6（教法与同源）', '**边界（如实登记，§19.1）**：射程只到 `dev-worktree.sh rm` 这一条删除路径 —— 别的会删/重建 `node_modules` 的动作（`npm ci` / `npm install` / 人手 `rm -rf`）**不在机械射程内**，它们由判据 5/6 的「不许教这个姿势」+ 文档正确姿势来防，**不是**被拦；见证器只认 `git -C <repo> worktree remove <path>` 这一种调用形态（换写法会 fail-closed 判红，刻意如此）；教法扫描只认「行首 `ln` + `-s` 族旗标 + 含 `node_modules`」一种配方形态（`os.symlink` / `cp -s` / `mklink` / 变量拼接不在射程，漏报方向）；判不了仓外文件系统里**已经建好**的存量软链（本单明确不做追溯修复，拦的是下一次）；判据 4 用的解引用式删除是 POSIX 的 `rm -rf <链接>/`，**不是** `npm ci` 本身（CI 的 helper 腿不装前端依赖），现场那一个的读数写在 `merge_log` 与本条的上文里、可离线复算'],
+    skip_reason='[backend-contract] 静态结构 + 真 fixture 行为守卫（只读仓内文件；真 git 仓库 / 真 worktree 一律造在 tmp_path，**不碰任何真实工作区**；零网络、零时钟、不起真库）由 tests/unit_ci_workflows/test_dev_worktree_symlink_safety.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'dev-tooling', 'worktree', 'symlink', 'red-proof', 'ledger'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-055 [NORMAL] 合并了但没上线必须有值守面（issue #5929）：main HEAD 合入超过 N 秒仍未部署 ⇒ 判红并自己开单、部署成功后自动关闭；C′ 之后「镜像不在 ACR」不得当判据（噪声判据是缺陷）；判不了必须 fail-closed（源: cases/misc.yml）──
+_CASE_MC_055 = EvalCase(
+    id='MC-055',
+    legacy_id='',
+    title='合并了但没上线必须有值守面（issue #5929）：main HEAD 合入超过 N 秒仍未部署 ⇒ 判红并自己开单、部署成功后自动关闭；C′ 之后「镜像不在 ACR」不得当判据（噪声判据是缺陷）；判不了必须 fail-closed',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当 main 上最新的那个 commit 该上线却没上线（超过 N 分钟）时，必须有人被叫醒 —— 不许只剩一行 `::notice::`（2026-10-01 实测：`deploy-frontend.yml` 的 push 触发 10:18 后再没跑过，22:41 线上仍停在 `bef78e7`，而 main HEAD 已是 `1fbdfb0`）'],
+    expectations=['**值守面在**（`.github/workflows/deploy-reconcile.yml` 的 step `值守面（超时未部署 ⇒ 判红 + 开/清值守 issue）`，`if: always()`，夹在对账步与存活读数步之间）：main HEAD 合入超过 N 秒、且该腿在本轮对账开始时既没有「已部署」信号也没有**在途 run** ⇒ `::error::` + **非零退出** + step summary，**并自己开/更 P1 值班 issue**；部署成功（同 sha 的 run 结论 success / 镜像在 / 无漂移）⇒ **自动关闭**该单（清零不靠人记得）。', '**N 的出处可复算**（不许是凭空数字）：N=2700s = 冷构建上界 2400s + 余量 300s（读数现取 `deploy/scripts/swas-deploy-ci.sh` 的 3000/4500s 预算那句）；**远端锁等待上限 1800s 有意不计入**（排队中的 run 由 `inflight` 判据覆盖）。判据现取这两个读数并断言 `N ≥ 2400 + 300`（改小 N / 删读数锚 ⇒ 红）。', '**类级元守卫（未登记即红）**：`reconcile_one` 的**每一条腿**必须登记在 `tests/unit_ci_workflows/deploy_watchdog_ledger.json`（`watchdog` 或**具名豁免** + 理由 + 仓内锚），三处（对账调用 / 值守面 `WATCHED_LEGS`+`EXEMPT_LEGS` / 台账）**逐项相等**；豁免条数只许缩短。新加一条 deploy 腿却忘了接值守 ⇒ 当场红。'],
+    data_checks=['**病（现取读数）**：对账判出「没部署」之后只做两件事 —— ① 补一次 dispatch ② summary 写一行 ⇒ **没有人会被叫醒**。实测 2026-10-01：`deploy-frontend.yml` 的 push 触发在 10:18 之后再没跑过，22:41 线上仍停在 `bef78e7`，而 main HEAD 已是 `1fbdfb0`（中间 `871db0c7f` 改了 `frontend/admin-web/**` 却没上线）—— 全仓只有 reconcile 的 `::notice::` 说了一句。', '**有意不照 issue 正文的字面判据**（「`sha-<head7>` 镜像仍不存在 ⇒ 判红」）：`#5814` 的 C′ 把构建搬到服务器侧 ⇒ CI **不再推 ACR** ⇒ 那条判据**恒为真**，照字面实现 = 每个 tick 都报警（噪声判据是缺陷）。⇒ 判据 = 对账步落的**每条腿状态**（`deployed` / `inflight` 不报；`terminal` / `dispatched` 超期即报；读不到 ⇒ fail-closed 退出码 3）。', '**执行式红证（16 条，桩 `gh`/`docker` + 真 git 仓库）**：超期未部署 ⇒ 红 + 具名（main HEAD + 哪条腿）+ 开单（含 `priority/P1`）；**反向对照**：镜像存在 ⇒ **不报警、不开单**（噪声判据是缺陷）；在途 run ⇒ 不报；宽限期内 ⇒ 不报；判不了 ⇒ 退出码 **3**（不得当 0 读）且照样开单；部署成功 ⇒ 自动 `gh issue close`；同一 HEAD 反复判红 ⇒ **不重复刷屏**（幂等）但单子仍开着。', '**判别力自证 + 对照读数**：六种坏形态（腿没进两个列表 / 台账条目被删 / 台账与值守面口径相反 / 豁免没写理由 / 豁免锚在 workflow 里找不到 / 豁免条数上涨）在**内存语料**上各自判红；**只往正文加注释 ⇒ 不红**（守卫不许被自己的文案喂红）。**修前红**：把本判据文件拿到 `origin/main` 的 workflow 上跑 ⇒ **14 failed / 2 passed**（复算见 PR body）。'],
+    skip_reason='[backend-contract] 部署值守面的静态/执行式结构判据（只读仓内文件 + 桩 gh/docker + 真 git 仓库；零网络、零真 ACR、不写共享 /tmp、不烧 token）由 tests/unit_ci_workflows/test_deploy_watchdog.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'deploy', 'watchdog', 'ledger'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-056 [NORMAL] CI 面记号与台账必须**双向**绑定（`FM-E24`/`FM-E25` 同批）：文档里具名而台账未登记 ⇒ 红；「CI 迟迟不来先看 `mergeable`」的判别动作必须留在加载面（文本锚，删掉即红）（源: cases/misc.yml）──
+_CASE_MC_056 = EvalCase(
+    id='MC-056',
+    legacy_id='',
+    title='CI 面记号与台账必须**双向**绑定（`FM-E24`/`FM-E25` 同批）：文档里具名而台账未登记 ⇒ 红；「CI 迟迟不来先看 `mergeable`」的判别动作必须留在加载面（文本锚，删掉即红）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['研发模式里写下的每一条 CI / 台账反复出错点都必须有承载体：① 文档里具名的 `FM-EN` 记号在台账 `ci_findings` 里**未登记**、或那条册外登记变陈旧；② 「CI 迟迟不来先跑 `gh pr view <N> --json mergeable`」这条判别动作从**加载面**（`migao-dev-flow` §2.2）里被删掉或改写 —— 两种形态都必须有东西变红'],
+    expectations=['direct_reply'],
+    data_checks=['**坑 A（`FM-E24`）：单个 step 的 `run` 正文超长 ⇒ 整份 workflow 判 invalid，该腿静默永不跑**。实测阈值（11 个变体二分）= **≤13,303 字符有效 / ≥13,399 invalid**（GitHub 侧**未文档化**约束；与文件总大小、行数无关）。现象 = `push` 面只留一条 **0 个 job** 的 `push/failure` run（`name` 回落成文件路径、页面提示 workflow file issue），`pull_request` 面**根本不建 run**，而**本地 PyYAML 解析 + 仓库全部守卫全绿**（完全静默）。判据（PR #5931 已落码，本单只登记）= `tests/unit_ci_workflows/test_deploy_watchdog.py::test_run_body_stays_under_the_github_limit`（逐 workflow 逐 step 现取 `run` 正文长度，上限 `RUN_BODY_LIMIT = 13250` = 低于已知有效读数 13,303 留 53 字符差）+ 反空跑锚点 + 对照读数。**存量风险现取（2026-10-02，`origin/main` 3fa84ab89；复算 = `python3 -m pytest tests/unit_ci_workflows/test_deploy_watchdog.py -q -k run_body`）= 全仓 238 条 run 正文，最长 **13,125**（`.github/workflows/deploy-reconcile.yml` 的 step `Reconcile deploys`，距上限仅 **125 字符**）、次长 **10,975**（`.github/workflows/automerge.yml`）。订正一处转述：12,524 是 PR #5931 **合并前**的读数（#5931 自己把它抬到 13,125）⇒ 余量不是 ~2.3K。出口 = 把实现体外置成 `.github/scripts/*.sh` 再 `source`。', '**坑 B（`FM-E25`）：「CI 迟迟不来」先看 PR 是否与 main 冲突**。`mergeable=CONFLICTING` ⇒ GitHub **建不出 merge ref** ⇒ **`pull_request` 类工作流根本不触发**，PR 页面上只剩 `pull_request_target` 的辅助腿（本仓现取 4 条：`Auto Merge` / `Close Linked Issues on Merge` / `Stale 清理` / `verify-trigger`，它们不需要 merge ref ⇒ 照跑）= 看着像在排队，**实际一个 required job 都不会来**（无红、无 pending、无任何东西会报）。实测出处 = 2026-10-01 PR #5922（开成 draft 后 **3 次 push 都没有 `PR Check` run**；`gh pr view 5922 --json mergeable` 读 `CONFLICTING`/`DIRTY`；`./scripts/sync-main.sh --rebase` 解冲突后 push ⇒ `PR Check` / `AI Agent Service Unit Tests` / `Mini-App CI` / `Bmini-App CI` **立即全部排队**）。顺带登记：draft 起手 + native auto-merge 的组合下 **`ready` 不是 `pull_request` 工作流的触发面**（`ready_for_review` 只在 `.github/workflows/automerge.yml` 的 `types` 里）⇒ 解冲突后要 **push**（`synchronize`）才会触发。复核边界（照实登记）：#5922 现已 MERGED ⇒ `mergeable` 现读 `UNKNOWN`（GitHub 只对 open PR 计算）⇒ 那条读数不能事后复算，可复算的是机制（触发面）与口诀本身。', '**判据两条**：① `tests/unit_ci_workflows/test_dev_mode_failure_modes.py::unregistered_ci_marks_problems`（**判据 23**，CI 面**缺失的那一个方向**：文档具名而台账未登记 ⇒ 红；册外的走**只许缩短**的 `CI_MARKS_WITHOUT_ENTRY_FROZEN`（现取 1 条 = MC-028 那句「缺号」点名的那个号，由台账 `not_solidified` 的 `NS-1` 承接；冻结表陈旧同样红）② `::conflict_diagnosis_problems`（**判据 24**，**文本锚**：§2.2 的加载面必须逐字留着 `gh pr view` / `--json mergeable` / `CONFLICTING` / `FM-E25` —— 删掉即红）。两条各带注入式红证 + 对照读数（已登记与册外的记号都不红 · 只加无关注释不红）+ fail-closed（取不到记号 / 取不到节 ⇒ 红）。', '**判据 24 为什么只是文本锚（照实登记边界）**：GitHub 侧的 merge-ref 可建性**不是仓内内容** ⇒ 没有可复算的机械判据（同 `FM-E15` 的 `CASE_ID_ALLOCATION_BOUNDARY` 形态：删掉即红）。它**只**证明「这条判别动作还在 agent 每次都看得到的那一面」，**不证明** GitHub 的行为。本包的修前红 = 两条判据先写出来、文档一行未加 ⇒ 判据 7 报 `FM-E24`/`FM-E25` 未具名，判据 23 报台账里的号在文档里找不到（具名读数见 PR body）。'],
+    skip_reason='[backend-contract] CI / 研发模式的静态结构判据（零 LLM、秒级、只读仓内文件 + 真 workflow YAML）由 tests/unit_ci_workflows/test_dev_mode_failure_modes.py 的判据 23/24 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'workflow', 'ledger', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-057 [NORMAL] 部署对账的「落状态」本身必须有判据 + 三态三分 + 事件驱动清零（issue #5935）：`gh workflow view --ref` 那条前置判据 100% 失败 ⇒ 六条腿全被误记 `notarget`；未落状态的腿必须具名判红、`notarget` 与机制故障不得混桶、部署完成事件必须能触发清零且不得自激（源: cases/misc.yml）──
+_CASE_MC_057 = EvalCase(
+    id='MC-057',
+    legacy_id='',
+    title='部署对账的「落状态」本身必须有判据 + 三态三分 + 事件驱动清零（issue #5935）：`gh workflow view --ref` 那条前置判据 100% 失败 ⇒ 六条腿全被误记 `notarget`；未落状态的腿必须具名判红、`notarget` 与机制故障不得混桶、部署完成事件必须能触发清零且不得自激',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当对账步**没为某条腿落状态**、或落下的状态**是错的**（例如把「在 main 上」判成「不在 main 上」）、或把「读不到状态」与「确认未部署」压成同一种告警、或部署成功这个事件不能触发清零时，都必须有东西**具名**报出；而只改注释时不得报红'],
+    expectations=['direct_reply'],
+    data_checks=['**病（现取读数，run `36911070357`，2026-10-01T19:00:20Z，main HEAD `3fa84ab`）**：六条腿**各落了一条**状态、但**六条全是 `notarget`** ⇒ 值守面报「5 条腿读不到对账状态」、`MECHANISM-LIVENESS seen=6 acted=0` 且三桶全 0 ⇒ **无法自我归因**。⚠️ issue 正文把它归因成「对账步失败，或目标 workflow 不在 main 上」——**两者都不成立**（对账步 rc=0、六份 workflow 都在 main 上）', '**真根因（本机实测复现，铁律 11 的正面案例）**：那条前置判据写作 `gh workflow view "$wf" --ref main`，而 gh 要求 `--ref` **必须**搭 `--yaml` ⇒ 它 **100% 失败**（stderr `` `--yaml` required when specifying `--ref` ``、退出 1、耗时 **0.063s**；run 日志里六条腿各报一次、每条 **≈58ms**，同量级）⇒ **问错对象的判据比没有判据更糟**：6/6 命中同一条坏分支，形态学判据全都看不见。⇒ 换成 `on_main()`：本步 checkout 是 `ref: main` + `fetch-depth: 0` ⇒ `HEAD` 就是 main 的 HEAD，用 `git` 直接问那棵树', '**判据 1（落状态本身有判据）**：腿清单的**唯一来源** = 本步自己的 `reconcile_one` 调用（现取，**不另立第二份清单**）；每条腿**先落 `unrecorded` 种子**、`watchdog_note` **整行替换**（⇒ 任何时刻**恰好一行/腿**）；**没落状态**的腿 ⇒ 对账步**自己**判红（退出码 3）并**具名到腿**，不许把「缺状态」甩给下游 fail-closed 兜。判据 = tests/unit_ci_workflows/test_deploy_watchdog.py 的 `test_every_leg_gets_exactly_one_state_row_with_a_seeded_placeholder` / `test_reconcile_step_is_red_and_named_when_a_leg_is_left_unrecorded`', '**判据 2（零动作必须归因）**：`seen=N acted=0` 且原因桶全 0 ⇒ 存活读数的 `why` 必须带上**具名**的未落状态清单（`未落状态=N 具名:<腿>`）。判据 = 同文件 `test_liveness_why_accounts_for_every_leg_when_acted_is_zero`', '**判据 3（三态三分）**：`deployed`/`inflight`（不报）· `terminal`/`dispatched`（**业务告警** ⇒ `priority/P1` 单）· `notarget`（尚未轮到，不报）· `unrecorded`/缺失（**机制故障** ⇒ 换标题 + `type/bug` 单，**不开**业务单）—— 四桶**各自可见**（`已判定=` / `计入告警=` / `机制故障=` / `尚未轮到=`）。判据 = 同文件 `test_mechanism_failure_gets_its_own_bucket_and_does_not_open_a_business_issue`（注入一条缺状态的腿 ⇒ 机制故障分支、**不**开 `[deploy-watchdog] main HEAD 超时未部署` 单）/ `test_leg_not_on_main_is_not_collapsed_into_mechanism_failure` / `test_deployed_legs_stay_out_of_both_alert_buckets`', '**判据 4（清零不依赖下一轮 cron）**：`on.workflow_run`（`types: [completed]`、`branches: [main]`）监听**全部六条** deploy 腿 ⇒ 部署**完成这个事件**即触发对账/清零；`workflow_run` 与 `schedule` 走**同一套**判定（事件只决定「什么时候跑」，不决定「怎么判」）；清零时单上写明「**清零条件已满足**」。判据 = 同文件 `test_workflow_run_is_wired_as_the_deploy_completion_event` / `test_workflow_run_and_schedule_share_one_judgement_body`', '**判据 4 的防自激（派单硬要求）**：部署**刚刚成功**（同 sha 结论 success）⇒ **不得**再 dispatch（否则事件自激成环）；部署落在**不可恢复终态**（failure/cancelled…）⇒ 断路器跳闸、**不得**再 dispatch（否则「失败完成 → 对账 → 再补 → 再失败」成无限环）。判据 = 同文件 `test_no_self_excitation_when_deploy_just_succeeded` / `test_terminal_state_does_not_redispatch`；既有断路器与「同 sha 有在途 run 就不重复派」两条判据**一字未动**', '**判别力自证 + 对照读数**：`on_main` 三态在**内联 fixture**（桩 `git` 垫片 + 真 HEAD sha）上逐态断言 —— **正例锚**（真的在 HEAD 里的 workflow ⇒ 0）+ **负例锚**（不存在的 ⇒ 1；HEAD 取不到 ⇒ 3）；末道闸的具名判红用**注入式红证**（把状态文件覆盖成「一条已记 + 一条未记」⇒ 退出码 3 且具名 `ghost-leg`）；**只加注释 ⇒ 不红**。判据 = tests/unit_ci_workflows/test_deploy_reconcile_state.py（全文件）+ test_deploy_watchdog.py 的 `test_reconcile_step_is_red_and_named_when_a_leg_is_left_unrecorded`', '**类级元守卫（未登记即红）**：`workflow_run.workflows` 的上游清单 ⇄ `deploy_watchdog_ledger.json` 登记的 `wf`**双向相等**，且每条腿必须声明 `clearing_event: true`（新加一条 deploy 腿却忘了让它的 `completed` 触发清零 ⇒ 当场红，而不是等「部署成功了单还挂着」）。判据 = 同文件 `test_watchdog_ledger_records_the_event_trigger_contract`', '**run 正文长度硬约束（本包改的正是那条全仓最长的正文）**：单个 step 的 `run` 正文 > 13,250 字符 ⇒ **整份 workflow 被 GitHub 判 invalid** ⇒ 该腿**完全不跑**（本地 PyYAML 与仓库守卫全绿，只有线上表现为「不建 run」）。⚠️ 改前现取 `Reconcile deploys` = **13,125**（余量仅 125）⇒ 本包把状态机**外置**成 `scripts/deploy_reconcile_state.sh`，改后 = **12,847**。判据 = 同文件 `test_run_body_stays_under_the_github_limit` / `test_reconciliation_step_body_stays_within_the_github_limit`'],
+    skip_reason='[backend-contract] 部署对账值守面的静态/执行式结构判据（只读仓内文件 + 桩 gh/docker + 真 git 仓库；零网络、零真 ACR、不写共享 /tmp、不烧 token）由 tests/unit_ci_workflows/test_deploy_watchdog.py 与 tests/unit_ci_workflows/test_deploy_reconcile_state.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'deploy', 'watchdog', 'ledger', 'red-proof', 'event-driven'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-058 [NORMAL] 部署腿的「已构建就跳过」判据必须**真的能生效**：同一份 `gh run list` 查询要有凭据（`permissions: actions: read` + step 级 `GH_TOKEN`）、失败要出声、fail-open 要具名；未接即红（源: cases/misc.yml）──
+_CASE_MC_058 = EvalCase(
+    id='MC-058',
+    legacy_id='',
+    title='部署腿的「已构建就跳过」判据必须**真的能生效**：同一份 `gh run list` 查询要有凭据（`permissions: actions: read` + step 级 `GH_TOKEN`）、失败要出声、fail-open 要具名；未接即红',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['同一 commit 在两轮 schedule 里被**完整**部署两次（sha=3fa84ab，19:04:47Z 与 23:11:07Z，各 6–8min）⇒「已构建就跳过」这道闸必须**真的生效**：同 sha 的部署 run 已 success 的 tick 必须走 `skip=true` 并在 step summary 写明理由；判据不可用时**可以**照旧全量部署，但必须**具名出声**（不许静默）'],
+    expectations=['direct_reply'],
+    data_checks=['**病（实测）**：三条 deploy 腿的 `Skip if already built (schedule reconcile)` 步用**同一次** `gh run list --workflow … --branch main --limit 30 --json …` 判定 C′「同 sha 已 success ⇒ 跳过」与「不可恢复终态 / 仍在跑 ⇒ 不重复派」，而三条 workflow 都**没有**给该步注入凭据（workflow 级只有 `contents: read`、step 里没有 `GH_TOKEN`）⇒ `gh` 未认证 ⇒ 查询恒失败，而 `2>/dev/null || echo "[]"` 把失败**整层吞掉**（本机实测：未认证 `gh run list` = exit 4 + `To get started with GitHub CLI, please run: gh auth login`；套上工作流那一行后 = exit 0、**stderr 为空**、stdout `[]`）⇒ `LAST_STATUS/LAST_CONCLUSION` 恒空 ⇒ 跳过臂**从未生效**。实测 run `36939400575`（2026-10-01T23:11:07Z，sha=3fa84ab，event=schedule）：step env 块里逐字没有 `GH_TOKEN`、输出逐字「最近一次同 sha 的 run 结论 = `无记录`」⇒ 跑完整 `npm ci → Type check → Unit tests → Deploy to SWAS`；而同一 sha 在 19:04:47Z 已完整部署成功过一次。', '**修法（三条，缺一不可）**：① 凭据 = workflow 级 `permissions: actions: read` + step 级 `env: GH_TOKEN: ${{ github.token }}`（最小权限）② 出声 = 凭据自检 `gh auth status` 的 exit code、查询 exit code、返回条数、**stderr 原文**一律打印（`2>/dev/null` 那层静默拿掉）③ fail-open 具名 = 查不到时**照旧全量部署**（现状口径：本检查自己出错绝不停掉部署），但日志 + step summary 必须写明「跳过判据不可用 ⇒ 本轮全量部署」。外加**二阶缺陷**：`gh run list` 把当前 in_progress 的 run 排在 `[0]`（本机现取 2026-10-02）⇒ `[.[] | select(.headSha == $s)][0]` 永远取到「自己」⇒ 即使注入凭据，C′ 的 `completed + success` 也恒不成立（改前实测：落到「不可恢复的终态」那一臂、**理由错**（把 `status=in_progress` 打成终态）、**step summary 为空**）⇒ 查询结果必须先排除本轮 run 自己（`databaseId` vs `GITHUB_RUN_ID`）。', '**判据**：`tests/unit_ci_workflows/test_deploy_skip_credential.py`（现取 22 passed）① 类级自动发现面 = `.github/workflows/deploy-*.yml` 里**每一步**跑 `gh run list` 的 step 都必须有凭据（step 级 token env + workflow 级 `actions: read|write`）② 跳过腿（写 `skip=`）还必须带自证面（逐字锚点 = 凭据自检 / 查询 exit code / 返回条数 / `::warning::` / `跳过判据**不可用**` / `GITHUB_STEP_SUMMARY` / 自排除表达式），且 `gh run list` 的**整条语句**（含续行）不得再挂 `2>/dev/null` ③ 双向登记进台账 `tests/unit_ci_workflows/deploy_skip_credential_ledger.json`（未登记即红；豁免上界冻结在判据里 `EXEMPTIONS_FROZEN = 0`，**只许缩短**）④ 执行式行为面（桩 `gh`/`docker`，零网络）：a) 无凭据 ⇒ 出声 + 具名 fail-open + `skip=false`（**不许**改成停部署）b) 同 sha 已 success 且本轮自己在跑 ⇒ `skip=true` + step summary 写明 C′ 理由 c) 同 sha 另一条在跑 ⇒ `skip=true`（不重复派）⑤ 注入式红证 8 条（拿掉凭据注入 / `actions: read` / 任一条自证 / 自排除表达式 ⇒ 各自具名红；只加注释 ⇒ 不红）。**修前红读数**（把 origin/main 三份正文喂进同一套判据函数）：凭据判据 **6** 条、自证判据 **21** 条。'],
+    skip_reason='[backend-contract] CI / workflow 结构判据（零 LLM、秒级、只读仓内 YAML + 桩 gh/docker）由 tests/unit_ci_workflows/test_deploy_skip_credential.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'deploy', 'credential', 'red-proof', 'ledger'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-059 [NORMAL] deploy 腿 `set -u` 未定义变量 lint 必须 **comment-aware**（issue #5944）：注释里的 `$foo`/`$bar` 不判红，同一句搬到可执行行照旧**具名**红；剥注释复用仓内唯一实现（`.github/danger_scan.py::strip_comment`）且**不得误截断** `${VAR#prefix}` / `${VAR##pattern}` / 引号内的 `#`（源: cases/misc.yml）──
+_CASE_MC_059 = EvalCase(
+    id='MC-059',
+    legacy_id='',
+    title='deploy 腿 `set -u` 未定义变量 lint 必须 **comment-aware**（issue #5944）：注释里的 `$foo`/`$bar` 不判红，同一句搬到可执行行照旧**具名**红；剥注释复用仓内唯一实现（`.github/danger_scan.py::strip_comment`）且**不得误截断** `${VAR#prefix}` / `${VAR##pattern}` / 引号内的 `#`',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['（研发工具 / 判据级，无 C 端行为）「注释里的 `$foo`」不得被判成未定义变量：注释**不参与执行** ⇒ 它既不是未定义引用、也不可能产生 `set -u` 的 unbound variable；而把**同一句**搬到可执行行必须照样具名判红 —— 本单治的是**假红**，**不放宽射程**'],
+    expectations=[],
+    data_checks=["**病（现取读数，2026-10-02）**：在某条 deploy 腿的 `run` 正文里写一句**只是注释**的说明，只要含 `$foo` 就判红。内存复算（直接调 `tests/unit_ci_workflows/test_deploy_leg_run_undefined_vars.py` 的 `_lint`，喂合成语料）= `['x.yml::demo::foo']`（假红）。根因 = 清洗只有 `SINGLE_QUOTED.sub` + `EXPR.sub`，**没有剥注释**。影响（为什么值得单独立案）：作者唯一的过关办法是**把注释改写成不含 `$` 的措辞** —— 这正是本仓最忌的「判红逼人把东西写得更差」（本次实测：同一 PR **被挡两次**，两次都是改写注释）。", "**修法（复用优先，不另造尺子）**：`_lint` 的清洗链前面加一环 `_without_comments(body)`（逐行调 `.github/danger_scan.py::strip_comment`，仓内**唯一**一份剥注释实现，issue #5268）—— **不新增第二份**（判据 4d 按 `is` 判同源）。⚠️ **顺序不许反**：剥注释必须在 `EXPR` / `SINGLE_QUOTED` **之前**，否则注释里的一个撇号（`# don't do this`）会跟后文任意一个 `'` 配对、把两者之间的**真代码整段抹掉** ⇒ 真未定义变量**漏检**（实测改前读数 `[]`、改后 `['x.yml::demo::REAL_UNDEFINED']`）—— 那是比假红更坏的**反向缺陷**，由负例锚 `test_comment_apostrophe_does_not_hide_a_real_ref` 钉住。", '**射程不放宽的现取证据（全仓 41 个 workflow 文件，改前 ⇄ 改后走同一入口）**：判红条数 **13 → 11**；**新增 0 条**（没有任何真判据被这次修复吃掉）；消失的 2 条**逐条都是注释形态**（`.github/workflows/deploy-reconcile.yml` 的 step `值守面（超时未部署 ⇒ 判红 + 开/清值守 issue）` 里那句注释 `变量一律 ${X:-} 兜底`；`.github/workflows/verify-trigger.yml` 里那句注释 `index($n)`）。三条 deploy 腿改前 = 改后 = `[]`。', "**判据 4~5（全部在 `tests/unit_ci_workflows/test_deploy_leg_run_undefined_vars.py`）**：① `test_comment_only_refs_are_not_flagged`（注释含 `$foo`/`$bar` ⇒ `[]`）② `test_executable_line_ref_is_flagged_by_name`（同一句搬到可执行行 ⇒ `['x.yml::demo::bar', 'x.yml::demo::foo']`；先断言「语料变异真的生效」）③ `test_comment_stripping_does_not_misfire`（**4 条负例锚**：`${VAR#prefix}` / `${VAR##pattern}` / 单引号 / 双引号内含 `#`；每条**尾部再挂一个真未定义引用** ⇒ 若被误当注释截断，尾部真判据会连带消失、断言当场红 —— 不是「恰好绿」）④ `test_comment_awareness_has_discriminating_power`（**注入式双向**：把尺子换成恒等函数 = 改前形态 ⇒ 注释语料**必须变红**、可执行行照旧红、撤掉注入回到 `[]`）⑤ `test_strip_comment_has_a_single_implementation`（同源 = 同一对象 + 本文件没有第二份实现）。另有 `test_shared_yardstick_is_shell_safe` 直接打在尺子本体上（4 条负例 + 1 条反向对照）。", '**修前红（§28.1 出口①：临时反转 / 注入）**：把 `_lint` 的清洗那一环临时退回改前形态（`_without_comments(body)` → `body`；逐字节恢复已用 `cmp` 自证）⇒ 本文件判据 **3 failed / 12 passed**，失败三条 = `test_comment_only_refs_are_not_flagged` / `test_comment_apostrophe_does_not_hide_a_real_ref` / `test_comment_awareness_has_discriminating_power`。复算 = `python3 -m pytest tests/unit_ci_workflows/test_deploy_leg_run_undefined_vars.py -q`。', '**接线声明（§28.2.1）**：本判据显式声明 `WIRING_UNDER_TEST = .github/danger_scan.py::strip_comment` 并登记进 `tests/unit_ci_workflows/wiring_claims_ledger.json` ⇒ 该锚被删 / 改名时 `tests/unit_ci_workflows/test_wiring_claims_registry.py` 的判据 3 具名判红（**摘掉接线 ⇒ 红**）。', '**未固化（照实登记）**：① 本仓**没有**「扫 shell 正文取 `$VAR` 的判据必须剥注释」的机械元守卫 —— 探测量过（用「只在注释里含 `$foo`」的语料喂判据面 372 个 `.py` 的每个常量正则）命中 **24 条**，绝大多数是通用引号正则的**假阳性**（判据分不清「这个正则扫的是不是 shell 正文」）⇒ 加这条规则要么背 24 条豁免台账、要么误伤，比不加更坏，故不加。② 既有「唯一性守卫」的扫描面**只有 `.github/**`**（`tests/unit_ci_workflows/test_automerge_bot_safe_path.py::TestCriterion11YardstickIsSingleSource`）：`tests/unit_ci_workflows/test_swas_nginx_rate_limit.py` 里另有一份同名 `strip_comment`（nginx.conf 语义，与 shell 的「空白前置」规则不同 ⇒ **有意不合并**）它扫不到 —— 属**顺带发现**，按铁律 12(b)③ 在会话内提出，不在本包修。'],
+    skip_reason='[backend-contract] deploy 腿 lint 的静态结构判据（零 LLM、秒级、只读仓内 workflow YAML + 内存合成语料）由 tests/unit_ci_workflows/test_deploy_leg_run_undefined_vars.py 的判据 4~5 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'workflow', 'lint', 'comment-aware', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-060 [NORMAL] 「剥注释实现全仓只许一份」的唯一性守卫扫描面扩到**整仓**（issue #5948）：口径显式收紧为**精确名 + 词边界**（不卷进 4 族同名不同义的实现）、**自匹配**（守卫自己）具名排除、nginx 语义那条**具名豁免且只许缩短**（不再命中 ⇒ 陈旧红）、`tests/**` 里再写一份同名同义实现 ⇒ 判红并具名（源: cases/misc.yml）──
+_CASE_MC_060 = EvalCase(
+    id='MC-060',
+    legacy_id='',
+    title='「剥注释实现全仓只许一份」的唯一性守卫扫描面扩到**整仓**（issue #5948）：口径显式收紧为**精确名 + 词边界**（不卷进 4 族同名不同义的实现）、**自匹配**（守卫自己）具名排除、nginx 语义那条**具名豁免且只许缩短**（不再命中 ⇒ 陈旧红）、`tests/**` 里再写一份同名同义实现 ⇒ 判红并具名',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['（研发工具 / 判据级，无 C 端行为）同一把「剥注释」尺子**不许在仓内静默长出第二份**：改前唯一性守卫只扫 `.github/**`，于是 `tests/**` 里写一份**同名同义**实现没有任何东西会红；而扩面又必须**具名**处置两种既有形态：① 守卫文件**自己**（断言/说明里逐字写着那个名字 ⇒ 自匹配陷阱）② 语义不同、**有意不合并**的实现（**nginx** 的「引号外任意 `#` 即注释」≠ shell 的「空白前置才算注释」）'],
+    expectations=[],
+    data_checks=["**病（现取，2026-10-02）**：用守卫自身的谓词复算 —— `.github` 面内命中 = **1**；**整仓 = 7**（`.github/danger_scan.py` 正典 + 守卫文件**自己** + `test_deploy_breaker_allowlist.py` / `test_logic_delete_write_shape.py` / `test_qty_stub_reads_calc_info.py` / `test_rbac_derived_roles_and_catalog.py` 四族同名不同义 + `test_swas_nginx_rate_limit.py` 同名不同义）。复算 = `grep -rn 'def strip_comment' --include='*.py' .`。⇒ 「静默两份」的真实风险面 = `tests/**`：改前**没有任何东西**会因此变红。", '**口径选择（显式二选一，本包选 ①）**：① **精确名 + 词边界**（`def strip_comment(`；谓词实现在守卫文件里、台账只登记它的名字，不复制正则）/ ② 前缀谓词（改前行为）。选 ① 的理由 = 「唯一性」的前提是**同一符号**：② 会把**四族同名不同义**的函数（`strip_comment_lines` 逐行去整行注释 / `strip_comments_and_strings` Java 注释+字符串涂白 / `strip_comments` Java 注释原地涂白 / `strip_comments` 复用 manifest 守卫的 `strip_for`）一起卷进来 ⇒ 台账要背 4 条**语义不同**的条目，等于教下一个人「它们可合并」；而真正需要豁免的**只有** nginx 那一条同名不同义。**代价如实登记** = 前缀族的新增变体不再被本判据看见 ⇒ 由 `.github/**` 面内的前缀族判据 + 分类器的 deny-definition 判据补位。', '**判据 11 系列（全部在 tests/unit_ci_workflows/test_automerge_bot_safe_path.py）**：① `test_only_one_strip_comment_implementation_in_the_repo`（扫描面 = **整仓**，逐字排除三个**具名**对象（守卫自己 / 台账本体 / **生成物** `tests/agent_eval/eval_cases.py`，判生成物看**首行**、不看文件名白名单）；命中集 == 正典 ∪ 活豁免；三条塌缩守卫：排除清单里没有守卫自己 / 扫描面不得只剩 `.github/**` / 必须真含 `tests/unit_ci_workflows/**`）② `test_the_predicate_itself_is_discriminating`（谓词口径自证 + **逐条具名**的 7 条前缀族读数 + 四族同名不同义**逐条不命中** + 自匹配陷阱两半）③ `test_yardstick_family_has_no_copy_in_the_bot_classifier`（deny-definition：分类器里不许有 `def <名字>(` / `def <名字>s(` —— 改前判的是**裸名字**，会命中分类器的**说明文字**、还会逼人改坏措辞）④ `test_no_prefix_family_copy_exists_in_the_github_face`（收紧后的补位）⑤ `test_live_exemptions_are_registered_and_complete`（四字段齐全 + 指回真 issue + **仍然命中**，不再命中 ⇒ 陈旧红）⑥ `test_the_live_exemption_list_only_shrinks`（条数现取 == 冻结锚 1）⑦ `test_the_nginx_exemption_is_named_and_rationale_is_specific`（理由必须点出 nginx 语义与不可合并）⑧ `test_skipped_same_family_implementations_are_named`（四条「有意跳过」逐条具名 + 与豁免表互斥）。', '**判别力自证（注入式红证，`TestUniquenessScopeInjectionsProveDiscriminatingPower`）**：① 在 `tmp_path` 的 `tests/**` 造一份**同名同义**实现（按词拼装，不落进本仓）⇒ 裸扫**必须红并具名**那两个对象；删掉 ⇒ **回绿** ② **反向对照**：只改注释 / 字符串（提及那个名字）⇒ **不红** ③ **自匹配**：把守卫文件真文件拷进临时树裸扫 ⇒ 它**当场命中自己**（这就是必须具名排除它的实测理由）；谓词现取**不**匹配本文件（注记用拆开的常量改写）④ **死条目**：把豁免指向一份没有那个定义的真实文件 ⇒ 「仍然命中」那条断言为假（陈旧红），「只许缩短」因此成立。**阳性对照**：`5 failed / 9 passed` 的改前读数（把 `test_only_one_*` 退回只扫 `.github/**`）见 PR body。', "**红证怎么在真 object 上重放（可复制）**：`python3 -m pytest tests/unit_ci_workflows/test_automerge_bot_safe_path.py -q -k 'Criterion11 or UniquenessScope'`。⚠️ 注入物一律建在 `tmp_path`、**不落进本仓** ⇒ 每次跑都在重新取证，不依赖本包是否「已删干净」。", '**活豁免台账（只许缩短）**：`tests/unit_ci_workflows/strip_comment_uniqueness_ledger.json` —— `live_exemptions` 现取 = **1**（`tests/unit_ci_workflows/test_swas_nginx_rate_limit.py::strip_comment`，用户 2026-10-02 具名裁定：**nginx** 语义、**有意不合并**），条数冻结在 `FROZEN_LIVE_EXEMPTIONS`；`scan_exclude` 两条**逐条写明理由**；`skipped_same_family` 四条是**口径选择的证据**（不是豁免，入豁免表即「陈旧红」）。', '**过程中撞到的第二个自匹配形态（同批修掉，如实登记）**：本用例的 `data_checks` 散文里逐字写了那个函数名 ⇒ render 之后它进了生成物 `tests/agent_eval/eval_cases.py` ⇒ **生成物**也成了被扫对象（前缀谓词下命中）。处置 = 按**首行**的文件头标记把生成物逐字排除（不是按文件名白名单），并用 `test_no_generated_artifact_defines_the_yardstick` 正向钉住「生成物清单 == 这一个 ∧ 生成物里一个定义都没有」。**未固化（照实登记）**：① 「同名不同义**将来**不会被合并」这一半机械判不了（那是能否**变红**的语义问题）—— 由 `skipped_same_family` 的理由文本 + code review 承担；② 「有人在**别的分支**上写第二份」由合并前 CI 拦，不在本判据射程；③ `.py` 之外的语言不在面内（本仓该实现在 Python）。'],
+    skip_reason='[backend-contract] CI / 研发工具的静态结构判据（零 LLM、秒级、只读仓内 `.py` 源文本 + 临时树上的注入式红证）由 tests/unit_ci_workflows/test_automerge_bot_safe_path.py 的判据 11 系列验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'guard', 'uniqueness', 'ledger', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-061 [NORMAL] 变更射程 → 必跑具名判据：射程注册表（面 → 具名判据 → 可复制命令）与 growth_gate 的**非阻塞**提示同源，两者漂移即红；射程表清空 ⇒ 提示消失而 blocker_count 不变（源: cases/misc.yml）──
+_CASE_MC_061 = EvalCase(
+    id='MC-061',
+    legacy_id='',
+    title='变更射程 → 必跑具名判据：射程注册表（面 → 具名判据 → 可复制命令）与 growth_gate 的**非阻塞**提示同源，两者漂移即红；射程表清空 ⇒ 提示消失而 blocker_count 不变',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['改了工具源码 / graph state / 迁移 / 用例面 / 权限菜单码时，我必须在**提交那一刻**就看到「这次射程还欠哪几张登记面、各跑哪条命令」，且这个提示**不许**把通过条件变严；射程表被清空、文档少一面、命令指向不存在的判据时，必须有东西变红'],
+    expectations=['direct_reply'],
+    data_checks=['**口径（逐字，注册表与文档共用）**：**「窄集」必须由「变更的射程」反推** —— 改了工具源码 ⇒ **所有扫工具源码的 meta 面都在射程内**；不是靠回忆清单。实证 = 2026-10-02 四条 PR 共 17 条红（#5961 复位族/写点/产出键 7 · #5963 state 必需字段 1 · #5965 工具见证集/权限码/门面/RBAC/死能力 5 · #5967 迁移指纹/bootstrap 建库面/事件通道基线/台账 4）', '**单一数据源**：`.github/scripts/blast_radius.py` 的 `FACES`（面 → 路径 glob）与 `probes_by_face()`（面 → 具名判据 + 可复制命令）是唯一来源；`docs/wiki/Change-Blast-Radius.md` 是人读镜像，`growth_gate` 按**同一份数据**打印提示 ⇒ 三处漂移即红（`test_doc_mirrors_every_face_exactly_once` / `test_doc_lists_the_named_judgement_of_every_probe`）', '**「不许凭印象写」的机械面**（本 bundle 的硬要求）：① 每个面必须能被**仓内某个真实文件**命中（否则提示永远沉默 —— 看起来像「已覆盖」，比没有提示更坏）② 每条探针的具名判据文件必须**真在仓里**（含命令 `cd` 目标与 `source` 两个解析基准）③ 命令不得是自然语言占位符', '🔴 **不改 blocker 语义**（硬约束）：提示是**独立段** + `--json` 新字段 `blast_radius`（与 `blockers` / `warnings` 零交集）；判据 = 命中射程时 `warning_count == 0`、`blocker_count` 与本组文件自身的判定一致；PR 评论文本里**连措辞都不出现**（否则会被读成阻塞项）', '**注入式红证（判据 1 的对照臂，不可省）**：把 `FACES` 清空 ⇒ 同一组文件下**提示必须消失**且 `blocker_count` 仍为 0 —— 否则提示不是从这份数据源来的（判据 1 假绿）', "**7 行实测红证（A 的验收核心，实测读数逐条写进文档表）**：① 新增工具**文件 + 注册**两处 ⇒ `test_tool_permission_codes.py` 1 failed / 37 passed（`以下 B 端工具既没有权限码、也不在登记表里：['redproof_probe']`；同一次改动 `growth_gate` 亦 BLOCKED 缺两个配套测试文件）② 改 `AgentState` 必需字段名 ⇒ `test_graph_state.py` 1 failed / 14 passed（`Missing field: pending_interact_skill`）③ 改已登记迁移一字节 ⇒ `test_migration_immutability.py` 1 failed / 6 passed ④ 加一条未登记写调用 ⇒ `test_eval_write_site_dispositions.py` 1 failed / 3 passed ⑤ 注册一个无实现的 clean type ⇒ `test_eval_preclean_registry.py` 3 failed / 24 passed（含 `table=15 runner=16`）⑥ 改 `menu.ts` 一个节点的权限码 ⇒ `test_agent_permission_parity.py` 4 failed / 11 passed ⑦ 改用例源不重渲染 ⇒ 生成物 `git diff --exit-code` rc=1。**每条都还原后复跑为绿**", '**① 行实测得到的口径提醒（写进文档）**：**只新建工具文件、不注册**时工具面判据**全绿**（`registry_tools()` 由 `create_default_registry()` 显式构造 ⇒ 未注册的类不进入判据射程）⇒ 工具面的真实射程是**「文件 + 注册」两处**；而 `growth_gate` 的**缺测**判定在**只有文件**时就会响 —— 两者互补（缺测门禁管「有没有配套测试」，射程提示管「还有哪些 meta 面要一起跑」）', '**覆盖面显式登记（照实，不粉饰）**：① `<venv>` 要自己建（新 worktree 里 `.venv` 常缺）⇒ 命令可复制但**不保证依赖已装** ② 只认**路径形态**，改了行为却没改任何路径时提示不响 ③ 人绕过 `growth_gate` 时不响 ④ `web` 行的多模态验收仍是 Playwright 剧本 + AI 读图（`migao-dev-flow` §15.7），**不是常驻判据** ⑤ 判据**不跑**被引用的测试（否则提示退化成再跑一遍全量套件）'],
+    skip_reason='[backend-contract] CI 展示面 / 射程注册表的静态结构判据（零 LLM、秒级、只读仓内文本 + 内存注入）由 tests/unit_ci_workflows/test_blast_radius_registry.py 与 tests/unit_ci_workflows/test_growth_gate_blast_radius.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'blast-radius', 'growth-gate', 'registry', 'red-proof', 'fail-closed'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-062 [NORMAL] 菜单码 ⊆ 路由守卫覆盖（C5）：带 permissionCode 的菜单节点必须被 ROUTE_PERMISSION_MAP 覆盖到**同一个码**，且 (dashboard) 下每条页面路由都有生效守卫码（唯一豁免由单一真值源派生 = 全员可见页）（源: cases/misc.yml）──
+_CASE_MC_062 = EvalCase(
+    id='MC-062',
+    legacy_id='',
+    title='菜单码 ⊆ 路由守卫覆盖（C5）：带 permissionCode 的菜单节点必须被 ROUTE_PERMISSION_MAP 覆盖到**同一个码**，且 (dashboard) 下每条页面路由都有生效守卫码（唯一豁免由单一真值源派生 = 全员可见页）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当有人给菜单节点加了 permissionCode（或给已有码的节点换了路径）却没有把对应前缀补进前端路由守卫表时，必须有东西**具名**变红（不许出现「菜单里看不见、地址栏直达却畅通」）；反之，把守卫表里某个前缀摘掉、或新增一个既没码也没守卫的页面时，同样必须变红'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 **判据交付面（实例面 + 类级元守卫，两条）**：tests/unit_ci_workflows/test_rbac_derived_pages.py::test_every_menu_code_node_is_covered_by_the_route_guard（C5①：带码节点的 `path` 上的**生效守卫码**必须逐字等于节点码；未覆盖/不等即**具名**）与 ::test_every_dashboard_page_route_resolves_to_a_guard_code（C5②：`app/(dashboard)/**/page.tsx` 的每条路由都要有生效守卫码）。两条都带**内存注入的对照臂**（把 `/inbound-orders`、`/agent-workspace` 从守卫表里摘掉 ⇒ 必须具名报出）——「判据本体绿」不等于「它有判别力」。', '**红读数（修复前，本机实测）**：`python3 -m pytest tests/unit_ci_workflows/test_rbac_derived_pages.py -q -k "route_guard or dashboard_page_route"` ⇒ C5① `带 permissionCode 的菜单节点 = 21 个 / 守卫码不一致 = 2 项`（『在线接待』`/agent-workspace/human-sessions` 期望 `agent:session` 实得 `None`；『入库单』`/inbound-orders` 期望 `inbound:view` 实得 `None`）；C5② `(dashboard) 页面路由 = 40 条 / 有守卫码 = 34 条 / 无守卫码 = 5 条`（`/agent-workspace`、`/agent-workspace/sessions`、`/agent-workspace/human-sessions`、`/inbound-orders`、`/inbound-orders/new`）+ 1 条**派生豁免**（`/notifications`：单一真值源该页 `gate` 为空）⇒ 与 issue #5977 的「无守卫路由 6/39」逐条对上。', '**绿读数（修复后）**：同一条命令 ⇒ C5① `不一致 = 0`；C5② `(dashboard) 页面路由 = 40 条 / 有守卫码 = 39 条 / 无守卫码 = 0 条`（`/notifications` 走派生豁免）；`tests/unit_ci_workflows/test_rbac_derived_pages.py` 全文件 **17 passed**。', '🔴 **6 条路由各自的码与依据（逐条对照 `config/menu.ts` 的 `permissionCode`）**：① `/inbound-orders` → `inbound:view`（菜单节点『入库单』码 = `rbac/manifest.json` 该页 `gate` = `backend/admin-api` 的 `InboundOrderController` 读码，三处同码）；② `/inbound-orders/new` → 同码且**不单列前缀**（父前缀 `/inbound-orders` 已覆盖；更宽的父前缀排在前面会让子路径成为 `find()` 永不命中的死条目 ⇒ 判据 11① 判红）；③ `/agent-workspace/human-sessions` → `agent:session`（菜单节点『在线接待』码 = 该页 `gate` = `AgentSessionController` 类级码）；④ `/agent-workspace/sessions` → `agent:session`（会话监控页与 `/chat` 共用同一份 `chatApi` / `useChatStore`，同属 AI 会话面，该域唯一码）；⑤ `/agent-workspace` → `agent:session`（根是**重定向占位页**，与子树同码）；⑥ `/notifications` → **不登记、不造码**：菜单节点**无 `permissionCode`**（全员可见，与顶栏铃铛同源）+ 清单该页 `gate` 为空 + 读端点无 `@RequirePermission`（只有『发送』挂 `system:manage`）⇒ 凭空的码反而会让 C4（守卫码 == 该页 `gate`）判红。', '**C5 是闭环的另一半（为什么 C4 不够）**：C4 只判「守卫表的每个前缀 → 必须是某页 `path` 的投影 / 别名 / 具名例外」；本缺陷形态是**守卫表里根本没有这一项** ⇒ 在 C4 的键空间里是**空集**。C5 从**菜单源**反查守卫表，两侧共用**同一份**现取（`parse_menu_ts_nodes` / `parse_route_guard`，不另造解析器），豁免**派生**（清单 `gate` 为空）而**不是**新手写台账。', '**同批登记（改守卫表必改，缺一条即红）**：① `rbac/manifest.json` 的 `route_guard` +2 条（`/agent-workspace`、`/inbound-orders`）② `rbac/readings.json` 重生成（`test_generated_readings_are_fresh` + 清单 vs 生成物零 delta）③ tests/unit_ci_workflows/test_agent_permission_parity.py 的 `ROUTE_MENU_ANCHORS` +2（判据 11③：未登记即红）④ tests/unit_ci_workflows/test_rbac_derived_pages.py 的 `ROUTE_PREFIX_EXCEPTIONS` +1（`/agent-workspace` = 子树父前缀，不是任何一页的 `path`）—— **该账台上限 3 → 4 是同 PR 显式上调**（diff 里看得见）：不是放宽门禁，而是把本次修复**新引入的非派生前缀**登记进来（不登记才是假绿）；台账**仍只许缩短**（销掉任一条 ⇒ 红）。', '**覆盖面（如实登记）**：C5② 也兜住「新增页面既没码也没守卫就上线」这一形态（issue #5977 的 6/39 正是这么数出来的）；但它判不了运行时可见性（真租户 / 真库上「这个岗位看不看得见这一页」），那一条归多模态验收与后端 @RequirePermission（本单的 API 侧 403 已在验收里实测）。'],
+    skip_reason='[backend-contract] 静态结构判据（零 LLM、秒级、只读仓内文本 + 内存注入）由 tests/unit_ci_workflows/test_rbac_derived_pages.py 的 C5 面验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'route-guard', 'meta-guard', 'defense-in-depth', 'red-proof', 'fail-closed'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-063 [NORMAL] 列表页写按钮漏接权限的类级元守卫（issue #5983）：未登记的新增/新建/登记类写按钮即红，豁免台账只许缩短（源: cases/misc.yml）──
+_CASE_MC_063 = EvalCase(
+    id='MC-063',
+    legacy_id='',
+    title='列表页写按钮漏接权限的类级元守卫（issue #5983）：未登记的新增/新建/登记类写按钮即红，豁免台账只许缩短',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['在 (dashboard)/**/page.tsx 上新增一个「新增 X / 新建 X / 登记 X」写按钮，却没在按钮上接写权限码（#5983 的形态）'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1（未登记即红）：某页出现新增/新建/**登记**类写按钮、文件内无 `hasPermission(...)` 引用、且不在豁免台账 ⇒ 红并**具名**报出「文件 + 行号:标签」', '判据 2（台账只许缩短）：台账条目对应的文件已不存在 / 已无写按钮 / 已接 `hasPermission` ⇒ 红（陈旧条目必须删）', '判据 3（冻结上限）：条目数 > `frozen_max_entries` ⇒ 红（新增豁免必须显式改上限、看得见）', '判据 4（fail-closed）：扫描面零命中 ⇒ 红（选择器 / 目录漂移时不许静默绿）', '判据 5（判别力自证 + 对照）：五种坏形态在**内存语料**上各自判红；合规语料 + 空台账 ⇒ **不红**（判据不许被自己的文案喂红）', '判据 6（实例面）：四张写码 `order:create` / `product:create` / `inbound:create` / `finance:create` 必须逐字出现在各自页面文件里。执行点 = 同文件 test_fixed_pages_really_gate_their_write_button', '🔴 红证（改前实测，2026-10-02）：`git stash push` 临时摘掉三页修复 ⇒ **2 failed / 3 passed**（`未登记的写按钮：…/orders/page.tsx …`、`orders/page.tsx 未接写码 order:create（实取 []）`）；恢复修复后 **5 passed**。复算命令 = `python3 -m pytest tests/unit_ci_workflows/test_list_page_write_button_gate.py -q`'],
+    skip_reason='[backend-contract] 静态结构守卫（只读仓内文本 + 内存注入；零网络、零时钟、不跑被引用的测试）由 pytest 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'guard', 'rbac', 'ui'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-065 [NORMAL] 导航类指引真值源（issue #5989 · P1）：登记表逐节点镜像 config/menu.ts + 权限码逐值真 + 未登记默认拒绝 + 只按服务端会话权限裁剪 + citation 可溯 + 结构上不含 steps（禁编步骤）（源: cases/misc.yml）──
+_CASE_MC_065 = EvalCase(
+    id='MC-065',
+    legacy_id='',
+    title='导航类指引真值源（issue #5989 · P1）：登记表逐节点镜像 config/menu.ts + 权限码逐值真 + 未登记默认拒绝 + 只按服务端会话权限裁剪 + citation 可溯 + 结构上不含 steps（禁编步骤）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当登记表里引用了一条 config/menu.ts 里**不存在**的菜单路径、或声明了一个权限目录里没有的**假权限码**、或把「未登记」的问题猜成一条登记项、或去掉了按会话权限的裁剪（让无权角色拿到页面路径）、或把 citation 摘成不可溯、或往载荷里加 `steps` / 往文案里塞步骤词时 —— 都必须有东西**具名**报出；而只改一行注释时不得报红'],
+    expectations=['direct_reply'],
+    data_checks=['**判据 1 / 1b（结构层 = `config/menu.ts` 的镜像）**：`app/context/menu_navigator.py` 的 `MENU_TREE` 与 `frontend/admin-web/src/config/menu.ts` **逐节点逐字段逐序**相等（6 组 20 项 + 2 个一级独立项 = 22），且 `MENU_TREE_ORDER_LOCKED` 是注入式红证的锚；`menu.ts` 解析器**复用** `tests/unit_ci_workflows/test_agent_permission_parity.py::parse_menu_ts_nodes`（**不造第二套解析器**，§17.3 ⑤）', '**判据 2（权限码是真码）**：每个非空 `permission_code` 必须落在 `RegistrationService` / `PermissionService` 两处权限目录（复用 `parse_catalog`，两处目录逐值相等也由它核）；无码节点必须**显式**列举（现取 = 仅 `/notifications`）', '**判据 3（未登记 ⇒ 默认拒绝）**：6 个未登记样本问题（含空串）一律 `registered=False`、`pages=[]`、`featureId` 为空；`resolve_feature` 是**确定性最长命中**、歧义即 `None`（不猜、不近似匹配）；每条登记项都能被自己的功能名**恰好**命中（别名撞车即红）', '**判据 4（角色裁剪）**：只按 `ToolContext.permissions`（**服务端会话**）逐节点过滤 —— 无权 ⇒ 载荷里**不含页面路径也不含权限码**（只给菜单名 + 「你没有权限」），但 citation 仍可溯到登记项 → 菜单节点；`build_navigation_answer` 的签名里**没有 role**（形参判据，与 `page_registry.build_page_context` 同纪律）', '**判据 5（citation 可溯）**：citation 形态 = `登记项 #<id> → 菜单节点 <组>/一级项「<菜单名>」`；未登记时如实写「（无）—— 未命中登记表」；未登记节点 `menu_node(group, label)` 返回 `None`（fail-closed）', '🔴 **判据 6（禁止编步骤，结构 + 文本 + 上游三层；**导航分支 `action=navigate`**）**：① **结构** —— 默认 `action=navigate` 的 `ToolResult.data` 的键**白名单**（`registered`/`featureId`/`label`/`pages`/`deniedMenuNames`/`citation`）与页面项键白名单（`menuGroup`/`menuName`/`path`/`requiredPermission`）⇒ `steps` 这类字段**结构上进不来**（`action=how_to` 的登记表投影面由 MC-120 承接：steps 逐字来自 `backend/ai-agent-service/app/tools/page_actions.py`）；② **文本** —— **真跑** `NavGuideTool.execute`（直连接线：把工具模块里的 `build_navigation_answer` 换成被测函数）得到的 `message`/`suggestion`/`data` 里不得出现受控步骤词表（`第一步`/`点击`/`按钮`/…），且每条回复都必须含「我没有步骤级指引」的如实告知；③ **上游** —— `app/tools/nav_guide.py` 源码（含**注入模型**的 `description`）里不得出现步骤词', '**判据 6b（别名不得退化成同义词词典）**：每条 `aliases` 必须与它所属节点的菜单名有**包含关系**（导入期自检 + 判据双闸）；「换一个新叫法」的唯一正确做法是先改菜单名，不是在别名表里偷偷扩同义词', '**类级元守卫（工具面）**：`nav_guide` 注册进 `create_default_registry()` + 从 `app/tools` 门面导出 + `read_only=True` + **不声明权限码**（纯本地、零 admin-api 调用点，登记在 `LOCAL_ONLY_TOOLS`，与 `interact`/`image_recognize` 同口径）+ 绑 B 端 `general` 兜底 skill（不绑 = 能力谎报）+ B 端专属只读见证集 25 ⇒ **26** 把（`test_readonly_cross_domain_sharing.py`，C 端零改动由此量化）', "🔴 **注入式红证（11 条，实测读数见 PR body）**：① 假菜单路径 ⇒ `problems_paths_exist` 报出；①b 删节点 ⇒ **模块导入期自检**抛 `MenuNavigatorError: orders：引用了 MENU_TREE 里不存在的节点 ('trade-center', '销售订单')`；①c 换序 / 内存桩缺节点 ⇒ `problems_coverage` 具名报出；② 假权限码 `ghost:code` ⇒ `problems_codes_real` 报出；③ 未命中改成「猜第一条」⇒ `problems_default_deny` 报出；④ 去掉裁剪 ⇒ 无权角色拿到 `pages`；④b 给 `build_navigation_answer` 加 `role` 形参 ⇒ 签名判据报出；⑤ citation 摘掉两段模板字面量 ⇒ `problems_citation` 报出；⑥a 往 `data` 加 `steps` ⇒ 键白名单报出；⑥b 在**工具源码**文本面塞祈使步骤 ⇒ `problems_no_step_wording` 报出；⑥c 自由同义词 ⇒ 导入期自检抛 `MenuNavigatorError`（同条判据的内存桩臂另证判别力）。**对照读数**：只改一行注释 ⇒ 八条判据**全绿**", '🔴 **本文件跑在没装 ai-agent 依赖的解释器里**（CI 的 `ci workflow helper unit tests` job 只装 `pytest pyyaml`）：因此**一律不 import `app.*`**（`app.tools.*` 会拉 `pydantic` / `langchain_core` ⇒ 本地绿、CI 红，实测 6 failed）。本文件只做**静态**判据（AST / 源码文本）+ 运行**零依赖**的纯函数（`app/context/menu_navigator.py` 只依赖标准库）；**需要真 import 的行为面**（工具真跑一遍的返回形状、`visible_nodes` 的裁剪、回复里也无步骤词）在 `backend/ai-agent-service/tests/test_nav_guide.py`（那里有依赖）——两处不重复同一断言。**复算方式（两侧都要跑）**：`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=<毒化 pydantic/langchain_core/app 的目录> python3 -m pytest tests/unit_ci_workflows/test_menu_navigator.py -q` ⇒ 31 passed（在**装不了**这些包的环境里也全绿）'],
+    skip_reason='[backend-contract] 真值源与菜单单一源的结构对账（源码静态事实 + 内存注入 + 真跑工具形状），零 LLM、秒级、不连网不连库；承载体 = tests/unit_ci_workflows/test_menu_navigator.py，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'permission', 'rbac', 'fail-closed', 'red-proof', 'navigation', 'no-steps'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-064 [NORMAL] Mapper SQL 类级守卫：类型盲区（`CASE WHEN #{x}` / `#{x} IS NULL` / `WHEN #{x}`）的裸参必须有显式 jdbcType 或 cast，未登记即红（issue #5975）（源: cases/misc.yml）──
+_CASE_MC_064 = EvalCase(
+    id='MC-064',
+    legacy_id='',
+    title='Mapper SQL 类级守卫：类型盲区（`CASE WHEN #{x}` / `#{x} IS NULL` / `WHEN #{x}`）的裸参必须有显式 jdbcType 或 cast，未登记即红（issue #5975）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当有人在 Mapper SQL 的**类型盲区位置**（空值判定的主语 / CASE WHEN 的布尔主语）写下无类型锚点的裸参 `#{x}` 时，必须有东西**具名**报出（文件:行:绑定 + 修法）；而只改注释时不得报红'],
+    expectations=['direct_reply'],
+    data_checks=['**病（真库实测，issue #5975）**：`CASE WHEN #{newAvgCost} IS NULL` 里的绑定没有类型锚点（左边无列/cast/函数签名）⇒ 实参为 **NULL** 时 PG 抛 `ERROR: could not determine data type of parameter $3` ⇒ BadSqlGrammarException ⇒ 接口 500；而「新 SKU 首次入库 + 明细不记单价」（入库页明示允许留空）**必然**走 null 实参。修一处不算修：同类形态只要是「类型盲区 + 裸参」就同族 ⇒ 落**类级元守卫**。', '**判据 1（未登记即红）**：扫 `backend/**/src/main/**` 的 Java 注解 SQL + XML 映射文件，`#{x}` 出现在 ①`IS NULL`/`IS NOT NULL` 主语 ②`WHEN #{x}` 布尔主语，且绑定里无 `jdbcType=` ⇒ 判红并具名（`文件:行:绑定` + 修法）。有锚点的一律放行：`jdbcType=` / `CAST(#{x} AS numeric)` / `#{x}::numeric`（后两者 `}` 与 `IS`/`WHEN` 之间夹了别的东西，正则天然不命中）。执行点 = tests/unit_ci_workflows/test_mapper_null_param_type_guard.py 的 `test_no_unregistered_bare_param_in_type_blind_context`。', '**判据 2（覆盖锚，防假绿）**：扫描面必须**真的读到** #5975 的缺陷点文件（backend/admin-api/src/main/java/com/migao/admin/mapper/ProductSkuMapper.java），且全仓 `#{}` 绑定数 > 0 —— 扫了个空集 ⇒ 后面断言恒绿。执行点 = 同文件 `test_scan_covers_the_known_defect_site`。', '**判据 3（对照读数 + 缺陷点现态）**：缺陷点现在必须是带类型的绑定（去掉 `jdbcType=NUMERIC` ⇒ 本守卫与真库判据同时红）。执行点 = 同文件 `test_known_defect_site_binding_is_typed`。', '**判据 4（豁免台账只许缩短）**：`tests/unit_ci_workflows/mapper_param_type_ledger.json` 的每条登记必须是**活的命中**（修好后条目变死 ⇒ 判红 ⇒ 不许留死条目凑数）、且带 `reason` + `case_ids`；条数上限 `max_exemptions` 另受守卫里 `FROZEN_MAX_EXEMPTIONS` 冻结（放行一条要同时改两处 = 一次被评审的动作）。现取 `exemptions = []`（0 条）。执行点 = 同文件 `test_exemptions_are_live_and_justified` / `test_exemption_budget_does_not_grow`。', '**判别力自证（8 种形态双向）**：坏形态三种各自判红（裸 `IS NULL` / `IS NOT NULL` / `CASE WHEN #{x}`）；好形态五种判**不**红（`jdbcType=` / `CAST(...)` / `#{x}::numeric` / 纯比较位（有列锚点）/ **注释里提一句** —— 最后一条防判据被自己的文案喂红）；XML 面用 tmp_path 真造一份语料证明它被读进来（仓内现取 0 份 XML mapper，不能只靠 glob 声称覆盖）；同一份 Java 语料的双向量（注入裸参 ⇒ 红 / 换成带类型 ⇒ 不红）。执行点 = 同文件 `test_blind_context_forms_are_flagged` / `test_anchored_forms_are_not_flagged` / `test_xml_mapper_form_is_scanned` / `test_temp_java_tree_injection_red_and_clean`。'],
+    skip_reason='[backend-contract] 静态扫描 + 内存注入式的类级元守卫（只读仓内文件 + tmp_path 自造语料；零真库、零网络、不烧 token）由 tests/unit_ci_workflows/test_mapper_null_param_type_guard.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'backend-contract', 'mapper', 'null-param', 'ledger', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-066 [NORMAL] 用例 id 取号登记台账（claim）：并行开发下不再撞号（撞了在 CI 里被具名抓住，而不是变成 misc.yml 的困惑冲突）（issue #6017）（源: cases/misc.yml）──
+_CASE_MC_066 = EvalCase(
+    id='MC-066',
+    legacy_id='',
+    title='用例 id 取号登记台账（claim）：并行开发下不再撞号（撞了在 CI 里被具名抓住，而不是变成 misc.yml 的困惑冲突）（issue #6017）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当两个并行 PR 各自取了同一个用例号、或**你自己这个 PR** 的 claim 与已用号相撞时，必须有东西**具名**报出（哪个号 + 哪两个 PR + 让号出口）；而**别人的历史 claim（含已落地的）** 与「没有任何 claim」都**不得**报红 —— 台账是**累积的分配登记**，不是垃圾'],
+    expectations=['direct_reply'],
+    data_checks=["**病（2026-10-02 一天三次撞号，实证记在 MC-064 的 merge_log 里）**：用例 `id` 是全局唯一登记键，而现行取号法 = 「现取 `origin/main` 最大号 + 1（再加'猜在飞 PR'）」⇒ 并行下必然失效。症状形态是 `.github/cases/misc.yml` 的**困惑冲突** + 生成物连带冲突，而不是「你撞号了，请让号」—— 诊断成本极高（要靠 `git merge-tree` 逐条比对两侧用例块）。", "**设计（零文本冲突）**：每个 PR 一个 claim 文件 `.github/cases/claims/<PR号>-<CASE_ID>.json`（最小集 `id` / `pr` / `title` / `claimed_at`）；**文件名含 PR 号 ⇒ 两个并行 PR 永远不写同一个文件 ⇒ 把'撞号'从文本冲突翻译成语义冲突**；起草者在同一 PR 里加它；**合并后留在原地**（累积台账，见判据 4）。", '**判据 1（形态）**：文件名 `<PR号>-<CASE_ID>.json`、字段最小集齐全、文件名里的 PR / 用例号与内容 `pr` / `id` 一致、`claimed_at` 是 `YYYY-MM-DD`；claim 目录里出现非 claim 文件（除 `.gitkeep` / `README.md`）也判红。执行点 = tests/unit_ci_workflows/test_case_id_claims.py 的 `test_red_proof_form_violations_are_named`。', '**判据 2（两 claim 同 id ⇒ 红）**：**具名报出两个 PR 号** + 「后合入者让号」—— 这是把撞号在 CI 里具名抓住的主路径（`MC-064` 的三次撞号正是这个形状）。执行点 = 同文件 `test_red_proof_two_claims_with_the_same_id`。', '**判据 3（本 PR 自己的 claim 与已用号相撞 ⇒ 红）**：**`claim.pr == 当前 PR`** 且该 `id` 已在用例库被占用 ⇒ 报出该号 + 让号出口（陷阱 3 的兜底）。执行点 = 同文件 `test_red_proof_claim_collides_with_a_used_id` / `test_red_proof_only_the_current_prs_claim_is_named`。', '**判据 4（他人 claim 一律不报 = 累积台账）**：`claim.pr ≠ 当前 PR` 的 claim（**含已落地的历史 claim**）是「这个号已分配过」的登记 ⇒ **一条都不报**（落地 claim 保留在 main 上**是有意的**，不是垃圾）。执行点 = 同文件 `test_control_another_prs_landed_claim_is_a_ledger_record_not_an_error` / `test_merge_state_approximation_does_not_flag_another_prs_landed_claim`。', '**判据 5（占位不得超额）**：每条 claim 的 `id` 必须在用例库里**有对应用例**（主防线）；同一 PR 的 claim 数 ≤ **现取上限**（= 用例库现取条数；变更集不可得时的兜底口径，**不拍魔法数**）。执行点 = 同文件 `test_red_proof_claim_without_a_case`。', '**判据 6（负向对照）**：没有 claim ⇒ 一条都不报；另有一条对照读数（形态齐全 + 号在自己 PR 的用例里 ⇒ 不红）。执行点 = 同文件 `test_negative_control_no_claims_is_green` / `test_control_clean_claim_is_green` / `test_duplicate_is_full_volume_while_collision_is_own_pr_scoped`。', '**纯静态自证**：本判据零 ai-agent 依赖（AST 取 import 名）+ 禁 `pytest.skip` —— CI 的 `ci workflow helper unit tests` 只装 `pytest` + `pyyaml`。执行点 = 同文件 `test_this_judgement_is_pure_static_and_never_skips`。', '🔴 **覆盖边界（显式登记）**：① 看不到在飞分支（别人的 open PR 上的 claim 不在我的树里）⇒ 「两个在飞 PR 同时取到同一个号」只有在其中一个合入后才现形；② 「claim 了号、还没写用例、而 main 恰好已有同号用例」这一角判不了（合并态近似把本 PR 的号扣掉了）；③ 判据**不查 GitHub / 不联网**，也**刻意不读 `origin/main`**（CI 的 checkout 是 `fetch-depth: 1`）⇒ 「已进 main」以**合并态近似**表达，精确主线段读数由 `MIGAO_CASE_CLAIMS_MAIN_DIR` 注入；④ main 侧没有守护（`pr-check` 只在 `pull_request` 触发）⇒ **本 PR 自己**撞号（判据 3）只能在它自己那个 PR 的 CI 上现形；**别人的** claim（含已落地）**不再是**判红对象（判据 4）。⑤ 本判据**不改**任何门禁的通过条件、不新增豁免。'],
+    skip_reason='[backend-contract] 纯静态扫描 + 内存 / tmp_path 注入式判别力自证（只读仓内 `.github/cases/**`；零真库、零网络、不烧 token、不 import ai-agent 依赖）由 tests/unit_ci_workflows/test_case_id_claims.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'casebook', 'case-id', 'claim', 'ledger', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-067 [NORMAL] §15.7 页面多模态验收承载体（issue #6009）：登录步先切「管理员登录」再填手机号 + 登录页形态指纹 fail-closed + 唯一入口与「取不到证据怎么判」三态（纯静态判据）（源: cases/misc.yml）──
+_CASE_MC_067 = EvalCase(
+    id='MC-067',
+    legacy_id='',
+    title='§15.7 页面多模态验收承载体（issue #6009）：登录步先切「管理员登录」再填手机号 + 登录页形态指纹 fail-closed + 唯一入口与「取不到证据怎么判」三态（纯静态判据）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当 §15.7 的承载体把「切管理员登录」删掉、或把它挪到填手机号之后、或某次改动把静默吞异常的 `.catch(() => {})` 加回来、或摘掉登录页形态指纹与 `--login-shape-check` 自检开关时，必须有判据**具名**报出；而 §15.7 若不再写明唯一入口与「取不到证据时怎么判」三态，也必须红'],
+    expectations=['direct_reply'],
+    data_checks=['**病（issue #6009，两包实测同形）**：承载体 `.agent-presets/migao/skills/migao-dev-flow/scripts/ui-multimodal-acceptance.mjs` 原登录步 = 「domcontentloaded + 1.2s 点提示文案『手机验证码』⇒ 填手机号」；而登录页是**客户端渲染**的（`useSearchParams` ⇒ SSR 出来的是空壳，连「手机验证码」四个字都不在 HTML 里）⇒ 慢首帧下那次点击打在**还不存在**的元素上、异常被 `.catch(() => {})` 吞掉 ⇒ 页面仍停在「员工登录」页签 ⇒ 等手机号输入框 30s ⇒ `TimeoutError`。症状与**被验功能无关**：任何会话跑 §15.7 都撞同一堵墙 = 「看起来跑了、其实拿不到证据」。', '**判据 1（顺序）**：登录步里「切管理员登录」的语义锚（`role=tab`）必须**先于**手机号输入框的「等可见 / 填值」锚 —— 否则必然停在员工表单、只能靠 30s 超时兜底。执行点 = tests/unit_ci_workflows/test_ui_multimodal_acceptance_carrier.py 的 `test_carrier_login_step_is_wired`。', '**判据 2（不许静默吞异常）**：承载体里**不许**出现空处理器形态的 `.catch`（空 body 的箭头函数）。执行点 = 同文件（正则扫，判据自身不含该字面量）。', '**判据 3（形态指纹 + 自检开关在位）**：`LOGIN_SHAPE`（两页签名 + 副标题、手机号/验证码占位、`获取验证码` / `登 录`）+ 两阶段判定函数（`probeLoginShape` / `judgeLoginTabs` / `judgeAdminForm`）+ `--login-shape-check` 自检开关必须在位。执行点 = 同文件。', '**判据 4（fail-closed）**：「页面形态已变」文案与非零退出必须在位；登录段里失败路径**逐个具名**（`dieShape(` / `die(` ≥ 4 处），不许退化成一次笼统超时。执行点 = 同文件。', '**判据 5（文档面）**：`migao-dev-flow` §15.7 必须写明**唯一入口**（本机 admin-web `:3001` + admin-api `:8080`；`CORS_ALLOWED_ORIGINS` 已含 `http://localhost:3001`）、`--login-shape-check`、以及「**取不到证据时怎么判**」三态（含「**未覆盖**」与「不许把跑不出来写成通过」）。执行点 = 同文件 `test_skill_15_7_states_entry_and_three_way_verdict`。', '**判别力自证（注入式红证：全部在内存里对**真语料**变异）**：顺序反转 / 加回静默 catch / 摘掉指纹常量 / 摘掉自检开关 / 把非零退出改成 0 / §15.7 删掉「唯一入口」·「取不到证据时怎么判」·「未覆盖」⇒ **各自判红**；只加一行注释 ⇒ **不红**（对照读数）。执行点 = 同文件 5 条 `test_red_proof_*` + `test_control_comment_only_change_is_green`。', '**纯静态自证**：本判据零 ai-agent 依赖（AST 取 import 名）+ 禁 pytest 的 skip / importorskip（针脚拼出来 —— 判据自身出现这两个字面量会扫到自己 ⇒ 永远红，本包实测踩过两次）。执行点 = 同文件 `test_this_judgement_is_pure_static_and_never_skips`。', '🔴 **覆盖边界（显式登记）**：① 判据是**形态学**的 —— 判「接线 / 文案 / 顺序在不在」，**判不了**「工具真跑起来能不能登进去」「截图看着对不对」（后者是 §15.7 的 AI 读图面，边界已在 §15.7 照实登记）；② **不跑** node / Playwright（CI 的 `ci workflow helper unit tests` 只装 `pytest` + `pyyaml`）；③ 逐字锚即契约：改承载体就必须同步改本判据（有意为之 —— 让「悄悄改工具」当场红）；④ 本判据**不改**任何门禁的通过条件、不新增豁免。'],
+    skip_reason='[backend-contract] 纯静态扫承载体与 §15.7 文本（只读仓内两个文件；零真库、零网络、不烧 token、不跑 node / Playwright、不 import ai-agent 依赖）由 tests/unit_ci_workflows/test_ui_multimodal_acceptance_carrier.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'ui', 'playwright', 'fail-closed', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-068 [NORMAL] RBAC 文档岗位清单 ⇄ 真值源逐值对账（issue #6036 的 F7 固化）：docs/wiki/RBAC.md 的「新租户种子岗位」清单必须逐值等于 rbac/manifest.json 的 roles.seed（纯静态判据）（源: cases/misc.yml）──
+_CASE_MC_068 = EvalCase(
+    id='MC-068',
+    legacy_id='',
+    title='RBAC 文档岗位清单 ⇄ 真值源逐值对账（issue #6036 的 F7 固化）：docs/wiki/RBAC.md 的「新租户种子岗位」清单必须逐值等于 rbac/manifest.json 的 roles.seed（纯静态判据）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当有人在 `rbac/manifest.json` 里增删一个种子岗位码而不同步 `docs/wiki/RBAC.md` 的清单声明行、或反过来只改文档、或把 V137 正式化的岗位码改掉而不同步它的声明行、或把声明行写到解析不出来的形态时，必须有判据**具名**报出（报出少/多了哪几个码）；而只改与清单无关的散文时不得报红'],
+    expectations=['direct_reply'],
+    data_checks=['**病（验收报告 §四·F7，issue #5984）**：`docs/wiki/RBAC.md` 写「新租户注册初始化**五岗**种子（管理员/客服/运营/销售/财务）」，而实测新租户是 **7 岗**（多出 `product_manager` / `knowledge_editor`，由 `V137__formalize_legacy_roles.sql` 正式定义）。#5992 改了字面但**没有留任何判据**把它钉住 ⇒ 清单再变时文档会静默漂移，而「文档 vs 实测」的差只能靠人工验收再发现一次。', '**判据 1（主判据：文档清单 ⇄ 真值源逐值相等）**：`docs/wiki/RBAC.md` 的清单声明行（以 `> 新租户注册初始化` 起头的那一行 + 它的**一行**续行）里的岗位码集合，必须与 `rbac/manifest.json` 的 `roles.seed` 键集合**逐值相等**；行内的 `**<中文数字>岗**` 必须等于真值源条数。执行点 = tests/unit_ci_workflows/test_rbac_role_list_doc_consistency.py 的 `test_doc_seed_role_list_matches_manifest`。', '**判据 2（正向钉死集合，不是数量相等）**：文档清单排序后必须逐值等于 `roles.seed`，且行内中文数字 == 条数。执行点 = 同文件 `test_doc_seed_roles_are_the_manifest_seed_exactly`。', '**判据 3（fail-closed）**：声明行缺失 / 中文数字不可解析 / 出现**两行**声明（多处同步 = 漂移温床）⇒ 一律判红，**不得**读成「没问题」。执行点 = 同文件的 `parse_doc_seed_roles` 抛 `RoleListDrift` + `test_redproof_missing_declaration_line_is_red` / `test_redproof_duplicate_declaration_lines_are_red`。', "**判别力自证（注入式红证，全部在内存里对真语料变异）**：① 文档改回 F7 的原始缺陷形态「五岗 / 只列历史五岗」⇒ 红且具名「文档写「5 岗」而真值源 roles.seed 有 7 个岗位码 + 漏了 ['knowledge_editor','product_manager']」；② 真值源**新增**一个岗位码而文档没跟 ⇒ 红（F7 的真正方向）；③ 文档把 `finance` 写成 `financial` ⇒ 红（逐值口径）；④ 声明行被删 / 数字写坏 ⇒ 红（fail-closed）；⑤ 声明行重复 ⇒ 红；**对照读数**：不注入 ⇒ 绿、只改无关散文 ⇒ 不红。执行点 = 同文件 7 条 `test_redproof_*` + 基线绿 + `test_control_only_comment_change_does_not_go_red`（共 10 条）。", '🔴 **覆盖边界（显式登记）**：① 只覆盖 `docs/wiki/RBAC.md` 这一处清单声明行；**判不了散文**（`docs/design/rbac-single-source.md`、`RegistrationService` 注释里的「七岗」不在语料里 —— 有意如此：散文描述可读性、不是声明）；② 判不了「岗位**应该**有哪些权限码」（那是 `rbac/readings.json` 的 `roles.seed` 值对账，归 tests/unit_ci_workflows/test_rbac_single_source_manifest.py）；③ **不**对账 `V137__formalize_legacy_roles.sql`（初稿尝试过、实测放弃：它是已登记不可变迁移 + 生成物 ⇒ 加锚会让 test_migration_immutability.py 与 test_rbac_migration_convergence.py 同时判红，而那两条本已守着它）；④ 不查 GitHub / 不联网；⑤ 本判据**不改**任何门禁的通过条件、不新增豁免。'],
+    skip_reason='[backend-contract] 纯静态文本 ⇄ 清单对账（只读仓内三个文件；零真库、零网络、不烧 token、不 import ai-agent 依赖）由 tests/unit_ci_workflows/test_rbac_role_list_doc_consistency.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'docs-drift', 'single-source', 'fail-closed', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-069 [NORMAL] B 端真实评测 3 缺陷的类级固化：批次取值白名单 ⊆ DB 约束（缺陷 A）+ 路由目的地恒在图上（缺陷 C）（源: cases/misc.yml）──
+_CASE_MC_069 = EvalCase(
+    id='MC-069',
+    legacy_id='',
+    title='B 端真实评测 3 缺陷的类级固化：批次取值白名单 ⊆ DB 约束（缺陷 A）+ 路由目的地恒在图上（缺陷 C）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当有人 ① 在 AgentBatchService 里加一个新的具名批量类型（batch_type / field 取值）却忘了同步 DB 约束、或只同步了迁移没同步建库脚本（或反过来），或 ② 把某个 skill 从某 agent 的 skill_names 解绑而它的 route_key 仍留在意图映射表里（或在图上没有 handoff_offer 的 agent 上返回该目的地）时，必须有判据**具名**报出少了哪个取值 / 哪个目的地不存在于该 agent 的图上；而只改无关注释时、以及绑定得上的 route_key，都不得被误判红'],
+    expectations=['direct_reply'],
+    data_checks=["**病（issue #6044 缺陷 A，2026-10-02 B 端真实评测实测）**：代码已能写 `batch_type='inventory_stock'`（#5950），而 V127 的 `ck_agent_batch_type` 只有两个值 ⇒ 真库上 `POST /api/admin/agent/batches` 100% 撞 23514 ⇒ 500（`AgentBatchService.create`）。同型第二处：`ck_agent_batch_item_field` 只有 `basePrice`/`status`，缺 `stock`（明细行照样写不进去）。⇒ 本单缺的正是「代码写入的取值集合 ⊆ DB 约束允许的取值集合」这条判据。", '**判据 1（值域 ⊆ 白名单）**：`AgentBatchService` 的 `TYPE_*` 常量字面量 ⊆ `ck_agent_batch_type` 允许值；`TYPE_FIELD` 引用的 `FIELD_*` 常量字面量 ⊆ `ck_agent_batch_item_field` 允许值（**别名要解析**：`FIELD_*` 的定义体是 `AgentWriteValues.FIELD_*`）。执行点 = tests/unit_ci_workflows/test_agent_batch_type_domain.py 的 `test_code_batch_domains_are_allowed_by_the_db_constraints`。', '**判据 2（两条终态一致）**：迁移链按版本号重放（DROP 置空 / ADD 重取 `CHECK (<列> IN …)`）得到的终态白名单 == `db/init/schema.sql`（基线）的终态；任一侧少一个值 ⇒ 红。执行点 = 同文件同判据函数（`migration_replay` ⇄ `schema_constraints` 的差集）。', '**判据 3（fail-closed）**：两个来源解析为空 / 变量解析不出字面量 / 约束在两处都不存在 ⇒ 一律判红，不得读成「没问题」。执行点 = 同文件 `domain_problems` 的 fail-closed 分支 + 判别力自证的 ⑤⑥ 两条。', '**判据 4（缺陷 C：路由目的地恒在图上）**：`_get_intent_to_route(agent)` 的每个值、以及 `route_by_intent(state)` 在边界输入（未绑定的 `pending_interact_skill` / `action=handoff_offer` 在黄金策上 / notification 意图）下的返回值，必须 ∈ 该 agent 的 `skill_route_map` 的 key ∪ value；另有「`_route_map` 的 value 必须是真的图节点」这条自证坐标。执行点 = backend/ai-agent-service/tests/test_route_destination_binding.py 的 `test_every_mapped_destination_is_a_node` / `test_known_intents_land_on_a_node` / `test_any_pending_skill_lands_on_a_node` / `test_handoff_offer_only_where_the_node_exists` / `test_route_map_values_are_real_nodes`。', "**判别力自证（注入式红证）**：① 约束里去掉 `inventory_stock` ⇒ `test_code_batch_domains_are_allowed_by_the_db_constraints` 红并具名「代码写入的取值 ['inventory_stock'] 不在 schema.sql 的 ck_agent_batch_type 的白名单里」（实测 1 failed / 2 passed）；② 摘掉 `pending_skill` 目的地闸 ⇒ `test_any_pending_skill_lands_on_a_node` 红并报出 `route_by_intent 返回 'settings'`（= 2026-10-02 实测崩溃形态，1 failed / 27 passed）；③ 摘掉 `handoff_offer` 目的地闸 ⇒ `test_handoff_offer_only_where_the_node_exists` 红（1 failed / 27 passed）；④ 对照：不注入 ⇒ 全绿、只改注释 ⇒ 不红。执行点 = 两文件各自的 `test_injected_bad_corpora_are_named` / 上列参数化用例。", '🔴 **覆盖边界（显式登记）**：① 批次取值判据只认落码形态（`public static final String X = <字面量>;` 与 `Map.of(TYPE_a, FIELD_b, …)` 两种落码形态）；拼接 / 枚举 / 反射 / 配置文件派生的取值不在射程。② 只对账 `schema.sql`（基线）与**活**迁移链；归档链有意不看（V127 已冻结在指纹账本里，其值由 V146 显式重建）。③ 路由判据只覆盖已登记的 `mibao` / `xiaobu`；`pending_interact_skill` 里图上没有的名字只在**本轮**改判到 fallback，会话状态面的清零不属射程。④ 真库面（索引/事务/端点）由 `AgentBatchMigrationTest` / `AgentBatchServiceTest` 承担。⑤ 不查 GitHub / 不联网 / 不起真库 / 不烧 token。⑥ 本判据不改任何门禁的通过条件、不新增豁免。'],
+    skip_reason='[backend-contract] 纯静态文本对账 + 纯内存图对象判定（零真库、零网络、不烧 token、不 import ai-agent 依赖）由 tests/unit_ci_workflows/test_agent_batch_type_domain.py 与 backend/ai-agent-service/tests/test_route_destination_binding.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['single-source', 'fail-closed', 'red-proof', 'db-contract', 'routing'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-070 [NORMAL] 黄金策**主动新手引导**（issue #5989 · P2）：首次进某个已登记页面 ⇒ 对话区主动发一条**导航提示**；**每页每会话最多 1 次**（服务端判，不靠前端自觉）· **只推该角色可见的**（只读服务端会话权限）· **未登记页面不推**（默认拒绝，静默）· **只给导航不给步骤**（结构 + 文案双层）· 拿不到「你在哪一页 / 入口怎么走」⇒ **不发**（可行动性）· 文案只写**商家话术**（内部标识 / 元指令不上屏）· **不落进会话历史**（存量行读侧消化，issue #7324）（源: cases/misc.yml）──
+_CASE_MC_070 = EvalCase(
+    id='MC-070',
+    legacy_id='',
+    title='黄金策**主动新手引导**（issue #5989 · P2）：首次进某个已登记页面 ⇒ 对话区主动发一条**导航提示**；**每页每会话最多 1 次**（服务端判，不靠前端自觉）· **只推该角色可见的**（只读服务端会话权限）· **未登记页面不推**（默认拒绝，静默）· **只给导航不给步骤**（结构 + 文案双层）· 拿不到「你在哪一页 / 入口怎么走」⇒ **不发**（可行动性）· 文案只写**商家话术**（内部标识 / 元指令不上屏）· **不落进会话历史**（存量行读侧消化，issue #7324）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户**首次进入**某个已登记页面（如商品管理 /products）⇒ 黄金策在对话区主动发一条**商家话术**：「你在【商品管理】。入口在左侧菜单。想了解这一页怎么用，直接问我就行。」（组内页面则给完整入口，如「你在【销售订单】。入口在左侧菜单「交易管理」→「销售订单」。想了解这一页怎么用，直接问我就行。」）——**不出现** route（/products）/ 登记项 id（#products）/ 菜单组 key（trade-center）/ 「只给导航…」元指令；同一会话再进同一页 ⇒ 静默；**这条提示不进会话历史**（换端 / 重登后不会回放）。'],
+    expectations=['direct_reply'],
+    data_checks=['**对照读数**：同一会话**第二次**进入同一页 ⇒ **什么都不发**（静默流：无 text 事件）；无权限的角色进入该页 ⇒ 不发；未登记页面（如 /nope）⇒ 不发。', '**每页每会话最多 1 次（服务端）**：判定本体 = `backend/ai-agent-service/app/context/menu_navigator.py::build_proactive_push`（纯函数，`already_pushed` 是入参）；上限的**落点** = `backend/ai-agent-service/app/api/chat.py::_load_pushed_features` / `_commit_pushed_feature`（会话维度 `session_states.state.onboarding_pushed_features`，存**功能 id** 而不是 route —— 同一功能多路径共享一次推送），且顺序是**先记账、后推送**（写失败 ⇒ 不发，不退化成「每次进页都推」）。红证：去掉上限臂 ⇒ 第二次也推（红）。', '**角色裁剪**：只按**服务端会话**的 `permissions` 判（`build_proactive_push` 签名里**没有 role** ⇒ 客户端递交的 role/permissions 结构上读不到）。无权 ⇒ `not_visible` ⇒ 静默。红证：删掉裁剪 ⇒ 无权角色照样收到路径（红）。', '**未登记页面不推**：route → 功能唯一对应（`_ROUTE_FEATURES` 从 `MENU_TREE`/`NAV_FEATURES` **现算**）；未登记 / 被多条登记项覆盖（歧义）⇒ `unregistered` / `ambiguous_route` ⇒ 静默。红证：把未登记 route 放行 ⇒ 红。', '**只给导航不给步骤（结构 + 文案双层）**：① 结构 = `ProactivePush.to_data()` 的键闭集 `{proactive, featureId, label, route, capabilities, citation}`（**没有** steps / 操作说明 / 图文）；② 文案 = `render()` / `capabilities` 不含受控步骤词（复用 `tests/unit_ci_workflows/test_menu_navigator.py::STEP_WORDS` 同一份词表）。红证：给 `data` 塞一个 `steps` 键 ⇒ 红。', '**可行动性**：文案必须带「你在哪一页」（`label`）+「入口怎么走」（`capabilities` 非空，且组名取 `MENU_GROUP_LABELS` 的**显示名**），否则 `unregistered` ⇒ **不发**（宁可静默）。`route` 只做判定入参、**不上屏**。红证：让 label/capabilities 取空仍发 ⇒ 红。', '**内部标识不上屏 + 不落历史（issue #7324，2026-10-19 用户裁定）**：① `render()` 的输出**不含** `登记项` / `只给导航` / 菜单组 key（`MENU_GROUPS` 的英文 key）/ `route` / `（只给导航…）` 元指令 —— 追溯锚只留在 `to_data().citation` 与审计里（红证：把 `self.citation` / `self.route` 拼回 `render()` ⇒ `tests/unit_ci_workflows/test_proactive_onboarding.py::test_render_has_no_internal_identifiers` 红；把 `node.group` 当显示名 ⇒ `test_capabilities_use_display_labels` 红）；② 主动推送段**不调用** `_save_message_or_report`（不落库；红证：恢复落库 ⇒ `test_push_is_not_written_into_history` + 行为面 `test_pushed_message_is_not_saved_into_history` 红）；③ 存量行（`（只给导航：` 签名）在 `get_history` 与 `_convert_history_to_agent_format` **读侧跳过**（不回放、不进模型历史；不回写库 —— 与 #7112 / #7236 同口径）。', '**不新建推送基础设施**：运输形态 = 客户端在路由变化时发 `__PAGE_ENTER__|{"route": "…"}`（复用既有 `POST /api/chat/send`），服务端判定后**不经 LLM** 直接回一条 `text` + `done`（文案全部来自登记表）。判据核「`chat.py` 不含**任何**定时 / 队列 / 主动 SSE 推送的原语（`asyncio.create_task` / `sleep` / `Queue` 等）」与「进页前缀的分派在 `page_context` 之前」。'],
+    skip_reason='[backend-contract] 判定本体是**零依赖纯函数**（登记表 + 会话权限 + 已推集三样入参）⇒ 由 tests/unit_ci_workflows/test_proactive_onboarding.py（静态面，**不 import `app.*` 运行时依赖**，CI 的 helper job 只装 pytest/pyyaml）+ backend/ai-agent-service/tests/test_proactive_onboarding.py（行为面，真跑 `_handle_page_enter_request`）+ frontend/admin-web/tests/unit/store/chat-proactive-onboarding.test.ts（前端只递交、不判定）验证，**非 LLM 行为**，不进入 agent-eval 冒烟',
+    tags=['ai-agent', 'onboarding', 'navigation', 'proactive-push', 'default-deny', 'role-trim', 'no-steps', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-049 [NORMAL] 评测用例与现实数据不匹配（issue #6041）：名称塞进 id 型参数必须声明对应前置 + 声明的 precondition.type 必须有实现（纯静态判据）（源: cases/misc.yml）──
+_CASE_MC_049 = EvalCase(
+    id='MC-049',
+    legacy_id='',
+    title='评测用例与现实数据不匹配（issue #6041）：名称塞进 id 型参数必须声明对应前置 + 声明的 precondition.type 必须有实现（纯静态判据）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当一条用例把人读名称塞进 id 型参数（如 `product_detail(product_id=遮光窗帘)`）却不声明对应前置、或声明了一个 runner 没实现的 `precondition.type` 时，必须有判据**具名**报出（哪个用例 + 哪个参数 + 缺哪种前置 + 出口）；而只改注释时不得报红'],
+    expectations=['direct_reply'],
+    data_checks=['**病（issue #6041，2026-10-02 活栈实测）**：`PR-003`（smoke 档）`expectations: [product_detail(product_id=遮光窗帘)]` 此前**无任何前置声明**，而本机活栈（`:8001`/`:8090` 打云 dev RDS，tenant_id=1）名字含「遮光窗帘」的商品实测 **7 件** ⇒ agent **正确地**反问「要查看哪一件」（发 choice 交互卡）⇒ 期望 unmatched ⇒ 被判 `🔬 确定性回归·禁止 rerun`（**假红**；`local_runner.py smoke` 读数 = `7/8 通过 均分 88%`，唯一失败 PR-003）。形态 = 「用例把**运行期数据事实**（该名称唯一与否）当成了常量」。', '**判据 1（名称塞进 id 型参数 ⇒ 必须声明对应前置）**：对真语料逐条期望核 —— 值不是 id 形态、不是「上轮产物」占位（`复用上轮 UUID` 这类）、不是跨用例引用（值里含 `MC-067` 这类用例号）、且不落在任一已声明 `precondition[].source` 里 ⇒ 该 `<tool, arg>` 规则项要求的前置 type 必须已声明 ⇒ 否则**具名判红**。规则表 = tests/unit_ci_workflows/test_eval_id_arg_precondition.py 的 `_PARAM_PRECONDITION_TYPES`（显式声明射程；全库现取命中 = PR-003 一条）。执行点 = 同文件 `test_id_typed_arguments_with_names_declare_matching_preconditions`。', '**判据 2（声明的 type 必须有实现）**：`.github/cases/**` 里每一条**结构化** `precondition[].type` 必须在 tests/agent_eval/local_runner.py 的 `_PRECONDITION_TYPES`（唯一真相源）键集里；且每个已登记 type 在 runner 源码里有运行期接线（结构形状 `f"{t}:{src}"`）。执行点 = tests/unit_ci_workflows/test_eval_precondition_types_implemented.py 的 `test_every_declared_precondition_type_is_implemented` / `test_every_registered_type_is_wired_in_the_runner`。', '**判据 3（判别力自证，注入式）**：摘掉某用例的前置声明 / 注入一个未实现的 type / 让规则表指向未登记 type ⇒ **各自判红**；只加一行注释 ⇒ **不红**（对照读数）。执行点 = 两个判据文件的 `test_red_proof_*` 与 `test_only_comments_change_is_green`。', '**纯静态自证**：两个判据文件零 ai-agent 依赖（AST 取 import 名）+ 禁「跑不了就跳」—— CI 的 `ci workflow helper unit tests` job 只装 `pytest` + `pyyaml`（不装 `pydantic` / `langchain_core`）。执行点 = 两个文件的 `test_this_judgement_is_pure_static_and_never_skips`。', '🔴 **覆盖边界（显式登记）**：① 判的是**声明层形态** —— 判不了「那条前置本身对不对」（值/下界是 test_precondition_target_present.py 的面），也判不了「该名称在某个栈上到底唯一与否」（那是运行期 `precondition[...]` 的读数）；② 「占位 = 上轮产物」的判定是**词法**的（含「上轮」或尖括号形态）；③ **散文形态**的 `precondition`（值本身是 str）不在射程（本仓现取 14 条，只输出条数作可见性登记）；④ 本判据**不跑**评测、不联网、不 import ai-agent 依赖；⑤ 本判据**不改**任何门禁的通过条件、不新增豁免。'],
+    skip_reason='[backend-contract] 纯静态扫真用例语料与 runner 的 type 注册表（只读仓内文件；零真库、零网络、不烧 token、不 import ai-agent 依赖）由 tests/unit_ci_workflows/test_eval_id_arg_precondition.py + tests/unit_ci_workflows/test_eval_precondition_types_implemented.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'casebook', 'precondition', 'id-resolve', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-071 [NORMAL] nav_guide 意图登记覆盖：每个菜单节点至少一条可命中说法 + 无空登记（死条目）+ 说法 ⇄ config/menu.ts 双向同步（issue #6062）（源: cases/misc.yml）──
+_CASE_MC_071 = EvalCase(
+    id='MC-071',
+    legacy_id='',
+    title='nav_guide 意图登记覆盖：每个菜单节点至少一条可命中说法 + 无空登记（死条目）+ 说法 ⇄ config/menu.ts 双向同步（issue #6062）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户问导航类问题的**登记面**：当某个菜单节点没有任何说法能命中它、或某条已登记的说法永远解不出它自己的功能（空登记）、或登记的说法与 config/menu.ts 的镜像漂移（页面增删 / 改名 / 编出来的页面）、或有人把一条被别的功能更长说法遮蔽的说法登记进去时，都必须有东西**具名**报出；而只改一行注释时不得报红。有据可依的常见说法样例：「怎么给员工开账号」（实测失败输入，同一说法亦在 HR-009 的 user_inputs）'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 **实测失败样例（本用例的起点）**：same-round 真跑 `build_navigation_answer("怎么给员工开账号", ["employee:list"])` ⇒ `registered=True`、`pages=[{"path": "/employees", …}]`、citation=「登记项 #employees → 菜单节点 菜单组「员工管理」」；且答案里**不含**任何受控步骤词（导航答案不给操作步骤）。执行点 = backend/ai-agent-service/tests/test_nav_guide.py 的 `TestExecuteSemantics::test_employee_account_phrasing_resolves_without_steps` 与 tests/unit_ci_workflows/test_menu_navigator.py 的 `test_measured_failure_common_phrasing_resolves`', '**判据 7（每个节点至少一条可命中的说法）**：`MENU_TREE` 的每个节点都必须至少有一条登记说法**逐字出现在该菜单名里** ⇒ 缺了它，那个页面用户永远问不到。注入式红证：加一个没有任何说法的节点 ⇒ 具名报出该节点。执行点 = tests/unit_ci_workflows/test_menu_navigator.py 的 `test_judgement_7_every_node_has_a_hit_alias` / `test_judgement_7_red_on_node_without_alias`', '**判据 8（没有空登记 = 死条目）**：每条登记说法都必须**能解出它自己的功能** —— 判法与 `resolve_feature` 的最长命中口径同源：被**别的功能**更长说法遮蔽的说法（如登记 `发货单` 的 `出库`，而别家登记了 `出库管理`）永远解不出自己 ⇒ 红并具名报出「哪条说法 / 解到了谁 / 被谁遮蔽」。执行点 = 同文件的 `test_judgement_8_no_shadowed_alias` / `test_judgement_8_red_on_shadowed_alias`', '**判据 9（说法 ⇄ config/menu.ts 双向同步）**：① `menu.ts` 的每个导航节点都要有登记项以它为主节点；② 每个登记项的主节点都要在 `menu.ts` 里，且**至少一条说法逐字等于**该节点 `name`（改名不同批改登记表 ⇒ 静默漂移）。执行点 = 同文件的 `test_judgement_9_feature_map_syncs_with_menu_ts` / `test_judgement_9_red_on_mirror_drift`', '**判据 6b（说法接地，同批对齐 `label`）**：说法必须与所属节点菜单名**或本功能 `label`（含括注）**有包含关系 —— 括注承载两件事：菜单名与口语的落差（「发货单（出库）」）与**无独立导航目标的**操作（「员工管理（员工开账号）」）。这**不放宽**判据实质：`label` 仍在本模块（人登记），不是 `menu.ts` 的任意文本。执行点 = 同文件的 `test_judgement_6c_aliases_grounded`', '**覆盖测绘（现取读数，零成本可复算）**：MENU_TREE 22 节点 ⇄ NAV_FEATURES 22 条登记（1:1）；「无任何说法能命中的节点」= 0；「空登记（死条目）」= 0；每条说法都能解出自己。复算命令 = 加载 backend/ai-agent-service/app/context/menu_navigator.py 后逐节点/逐说法跑 `resolve_feature`', '🔴 **未覆盖与风险（照实登记）**：① 说法**只做确定性子串命中**（无同义 / 拼音 / 纠错）⇒ 口语与登记说法的用词差异大时仍会**如实回「未登记」**（例如「员工账号怎么开通」「给员工开通账号」今天仍不命中 —— 见 PR body 的「未覆盖」节）；② `menu.ts` 的 `keywords`（拼音 / 常见叫法）**不是**本判据的强制对账面（它自己写着「只影响搜得到，不影响渲染与权限」）⇒ 拼音类关键词**有意不抬**进说法表，靠括注承载口语；③ 本判据只判**结构面**（登记面覆盖、可解析、镜像一致）与**确定性的解析结果**，**不判** LLM 是否真的引用了 citation / 真的没编步骤（那是 MC-065 的行为面）'],
+    skip_reason='[backend-contract] 登记面与菜单单一源的结构对账（源码静态事实 + 零依赖纯函数 + 内存注入红证），零 LLM、秒级、不连网不连库；承载体 = tests/unit_ci_workflows/test_menu_navigator.py 与 backend/ai-agent-service/tests/test_nav_guide.py，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'guard', 'navigation', 'fail-closed', 'red-proof', 'no-steps'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition=['员工管理页在 config/menu.ts 的导航节点里存在（key=employees / path=/employees / 码=employee:list）—— 本用例问的「员工账号开通」指向这一页；菜单被删或改名 ⇒ 本用例的前置不成立，应由登记面判据先红'],
+)
+
+# ── MC-072 [NORMAL] 机器级重活锁不得挂死：祖先已持锁 ⇒ 立即拒绝 + 有界等待（套件自带准入 / verify-all 接线）（源: cases/misc.yml）──
+_CASE_MC_072 = EvalCase(
+    id='MC-072',
+    legacy_id='',
+    title='机器级重活锁不得挂死：祖先已持锁 ⇒ 立即拒绝 + 有界等待（套件自带准入 / verify-all 接线）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['祖先（verify-all.sh / scripts/batch-gate.sh 那条链）已经持有机器级重活锁时，子进程直连整目录 pytest 必须立即出声拒绝（有界时间），不得挂死', 'verify-all.sh 拿锁成功后必须 export MIGAO_HEAVY_LOCK_HELD=1，让子代不再二次 acquire'],
+    expectations=['direct_reply'],
+    data_checks=['**病（2026-10-02 23:00 +08 实测，不是推断）**：在集成分支 worktree 跑 `./verify-all.sh gate` ⇒ **挂死 26 分钟**、且握着机器级重活锁（`~/.migao-heavy.lock` 里 `pid=34625 name=verify-all.sh gate`），只能 `kill -9`。进程树 = `verify-all.sh gate`（持锁）→ `python -m pytest tests/unit_ci_workflows`（26:28 / 0.0% CPU）。机理两层：① 祖先已持锁、但 `MIGAO_HEAVY_LOCK_HELD=1` 没传到子代（上游漏接线）⇒ 套件自带准入去抢**祖先手里的同一把锁**；② `scripts/batch-gate.sh` 给 `verify-all.sh` 默认注入 `MIGAO_HEAVY_WAIT=2700`，子进程**继承** ⇒ 锁脚本按上限排队 2700s ⇒ 把「缺接线」放大成「本机挂死」。CI 看不见（`CI` 为真 ⇒ 走豁免 ③）⇒ 典型「CI 绿 / 本机挂死」。', '**接线（根因那一半）**：`verify-all.sh` 的拿锁包装函数 `macquire` 必须在**拿锁成功后** `export MIGAO_HEAVY_LOCK_HELD=1`（`export` 而非普通赋值 ⇒ 落到**子进程环境**；位置在 acquire 之后）。判据 = `tests/unit_ci_workflows/test_machine_heavy_lock.py::TestVerifyAllWiring::test_macquire_exports_the_marker_after_a_successful_acquire`（结构化读函数体 + 剥注释，删那行 / 挪到 acquire 之前 / 改成普通赋值 ⇒ 各自判红）+ `::test_the_marker_really_reaches_a_child_process`（装真 `macquire` 起真子进程：正常 export ⇒ `CHILD_SEES=1`；注入普通赋值 ⇒ `CHILD_SEES=<unset>` ⇒ 判红）。', "**前置断言（可判定，CASE-TRUST-NO-PRECONDITION-ASSERTION）**：每条判据开跑前，夹具必须先在**临时锁面**（`tmp_path`）写好锁文件、且其中 `pid=` **真的等于一个活着的持有者**（祖先=探针进程自己 / 无关持有者=`sleep` 进程），并断言 `lock.exists() and f'pid={holder_pid}' in lock.read_text()` —— 前置不成立时判据立即红（`夹具前置失败：锁文件没有落到临时面（这一条不成立时下面就变成「没有持有者」的空断言）`），而不是静默按「没有持有者」跑过去（那等于让「祖先判定」这条求解通道**未被调用** = 空断言）。执行点 = `tests/unit_ci_workflows/test_suite_self_lock.py::_probe_child` 的前置断言（每条本用例判据都经它建场景）。", '**行为（核心，纵深防御）**：造「祖先已持锁（真锁文件 + 活持有者）+ `MIGAO_HEAVY_WAIT=2700`」的形态 ⇒ `pytest tests/unit_ci_workflows --collect-only` 必须**在有界时间内非零退出**并给出可归因报文（锁路径 / 持有者 / 怎么办），**不得挂死**。判据 = `tests/unit_ci_workflows/test_suite_self_lock.py::TestNeverHangsWhenAnAncestorHoldsTheLock::test_real_whole_directory_pytest_exits_instead_of_hanging`（**硬超时** 60s：挂死 ⇒ `TimeoutExpired` ⇒ 判红）。实现 = `tests/unit_ci_workflows/conftest.py`：`_lock_holder_is_an_ancestor`（读锁文件 `pid=` + `ps` 祖先链 ⇒ 祖先持锁则**不排队**）+ `_suite_lock_timeout_seconds`（`MIGAO_HEAVY_WAIT` + 60s / 未设置 60s 的墙钟预算）。', '**反向（不得砍掉有界性 / 不得误伤排队语义）**：① 拿一个永不返回的假锁脚本 ⇒ `acquire_suite_lock` 必须在预算内返回 fail-closed 报文（去掉 `subprocess` 的 `timeout` ⇒ 判据真跑硬超时 ⇒ 红）；② 持有者**不是祖先**（真·无关会话）⇒ `--wait` 仍必须排队并**等到释放后取得**（把「祖先判定」写宽成「只要锁被占就拒绝」⇒ 红）。判据 = 同文件的 `test_unrelated_holder_still_queues_until_release` / `::TestNeverHangsWhenAnAncestorHoldsTheLock::test_pure_predicate_fires_immediately_with_a_bounded_budget`，以及 `test_machine_heavy_lock.py::TestWaitOption` 既有的 `--wait` 语义判据。', '**类级固化**：① 上面两条接线判据的载体（`macquire` 的 export = `verify-all.sh::macquire`）登记进 `tests/unit_ci_workflows/wiring_claims_ledger.json`，由 `tests/unit_ci_workflows/test_wiring_claims_registry.py` 逐条保证「锚真实存在 + 声明与台账双向一致 + 摘线即红」（该表自本次起允许 `.sh` 载体 —— 判据 = 同文件 `test_shell_carrier_anchor_is_reachable_and_pinned`）；② 入口台账 `tests/unit_ci_workflows/heavy_entry_ledger.json` 的 `verify-all.sh` 条目写明这条接线与兜底（由 `test_heavy_suite_entry_ledger.py` 裁）；③ 纪律面 `docs/wiki/Development.md` 的「机器级重活并发准入」节同步（由 `test_suite_self_lock.py::TestDisciplineIsUpdated` 裁）。', '🔴 **覆盖边界（显式登记）**：① 「祖先已持锁」判定只认锁文件的 `pid=` 与 `ps` 祖先链 ⇒ `MIGAO_HEAVY_LOCK_FILE` 指向别的锁文件时判不了（那时按原有语义走锁脚本）；② 有界预算只覆盖**套件自带准入**这一路，`verify-all.sh` 自己的 `macquire` 仍按 `MIGAO_HEAVY_WAIT` 排队（那里是**合法的排队入口**，不是死等 —— 它的持有者不是自己的祖先）；③ 本判据**不跑** `verify-all.sh gate`（那会拉起全量套件 ⇒ 自我递归 + 打瘫开发机），接线面用「结构化读函数体 + 真 `macquire` 起子进程」承担；④ 不改任何门禁的通过条件、不新增豁免、不新增 `pytest.skip`。'],
+    skip_reason='[backend-contract] 本机研发机具（机器级重活锁 / 套件自带准入）的行为与接线由 tests/unit_ci_workflows/ 的 pytest 单测验证（真子进程 + 临时锁面 + 硬超时），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'heavy-lock', 'deadlock', 'flaky-infra'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-073 [NORMAL] 重活锁准入/溢出台账：五类 kind + stats 读出口径 + 槽满出声（蓝图 P2 测量面）（源: cases/misc.yml）──
+_CASE_MC_073 = EvalCase(
+    id='MC-073',
+    legacy_id='',
+    title='重活锁准入/溢出台账：五类 kind + stats 读出口径 + 槽满出声（蓝图 P2 测量面）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['本机重活单槽到底溢出多少次、每次等多久、谁在抢 —— 要有台账回答（蓝图 P2 的测量那一半）', '槽满时必须出声给出可行动出口，不许静默排队'],
+    expectations=['direct_reply'],
+    data_checks=['**前置自断言（机器计分型，不可省）**：`_ledger_append` 的记录必须有 `kind` 字段且 `stats --json` 能解析出 `overflow_count` —— 判据先断言这两条（前置：台账接口真的在），**前置不成立时判据立即红**；摘掉 `kind` / `overflow_count` ⇒ `::TestStatsReadings` 当场红（不是 unmatched expectation）。', '**病（蓝图 docs/wiki/Dev-Mode-Balance.md §4 行 4/5 + §10 的 P2 行）**：D 口径下本机是「并发=1 的重活单槽」，重活要么拿到锁、要么**安静排队**（实测排队 45 分钟的先例），而**没有任何台账**回答「到底溢出多少次、每次都等多久、是谁在抢」⇒ 「分档准入」与「批次粒度」都只能凭感觉。本包**只做测量/留痕**（埋点），**不做**分档准入本身。', '**埋点在唯一收窄点**：`scripts/machine-heavy-lock.sh`（acquire/release 都经它）。每次 acquire 尝试的**结局**落一条 JSONL，`kind` ∈ `acquired_nowait` / `acquired_after_wait` / `refused_busy`（= 溢出/准入被拒）/ `acquire_timeout`（等待档溢出）/ `stale_reaped` / `released`（`acquire_timeout` 是照实加的第六类：把「秒拒」与「等满上限」分开，否则两类混淆就读不出「白等了多少墙钟」。判据 `test_machine_heavy_lock_ledger.py::TestKinds` 逐条钉住）。字段 = `ts`（**带时区偏移**）/ `kind` / `req`（请求者名字，来自既有 `acquire <名字>` 参数）/ `wait_seconds` / `worktree` / `branch` / `surface` / `holder` / `holder_pid` / `owner_pid`。', '**台账落在本机、不进仓**：默认 `${MIGAO_HEAVY_LEDGER:-$HOME/.migao-heavy-lock-ledger.jsonl}`（与锁文件 `~/.migao-heavy.lock` 同域）。⛔ **不放进仓库**（⑨ 包把 JSONL 放仓里首轮就触发 `drift_audit` 的 ext-census 漂移 —— 本包有意避开这个坑）；判据一律把台账指到 `tmp_path`（`_run_lock` 强制注入 `MIGAO_HEAVY_LEDGER`），**绝不写用户的真台账**。', '**读出口径** `./scripts/machine-heavy-lock.sh stats [--since <ISO/相对>] [--json]`：按 kind 计数 + `wait_seconds` 的 p50/p95/max + top 请求者/持有者 + **一条明确的「溢出（准入被拒）次数」**。三条硬要求：① **离线可用**（不依赖网络/`gh`）② **读不到台账 ⇒ 明确说「暂无记录」**（不是 0 分的假绿 —— 「0 是读数，没有读数不是 0」）③ **台账损坏（半行/非法 JSON/非对象）⇒ 出声但不崩**（具名跳过几条）。判据 = `::TestStatsReadings`（固定夹具台账：含 p50/p95 与角例「空台账 / 半行损坏 / 只有 released / unknown kind」）。', '**槽满必须出声**（蓝图 §4 行 5）：拒绝报文要给**可行动**出口 —— ① 为什么（锁被谁占着 + PID + 已跑多久 + worktree/cwd）② **改走 CI**（推一次即可；CI 是权威、每 PR 并行、不占本机单槽）③ 在 PR body 写「**本机未跑 + 理由 + CI 覆盖清单**」。**不许**静默排队（`wait=0` 的既有默认语义保留；只有显式 `--wait` / `MIGAO_HEAVY_WAIT` 才排队）。判据 = `test_machine_heavy_lock.py::TestLockThreeStates::test_live_holder_refuses_with_actionable_report`（既有，本包只加出口文案）+ 本文件的 `::TestKinds::test_refused_busy_is_recorded_exactly_once_with_the_blocker`。', '**批次事件可识别**（「批次粒度」重启条件 = 批次记录 ≥5 次）：`scripts/batch-gate.sh` 发起的那一次全量**不改 batch-gate 一行**即可被数出来 —— 它跑的 worktree 里有 `#6084` 留的批次标记 `migao-package-heavy-entry-allow`（位置由 `git rev-parse --git-path` 现取、**不在工作树里** ⇒ 不进 `git status`），本脚本按 `surface=batch-integration` 记，`stats` 单独报 `batch_integration=`。判据 = `::TestBatchSurface`（自建一次性仓 + 真标记文件；不碰任何真 worktree）。', '**绝不动锁语义（埋点是旁路，三条硬约束）**：① **写台账时绝不持锁** —— 全部写点在 `_acquire_once` **之外**（判定已定、锁要么还没写、要么已删）⇒ 没有「持锁期间做 IO」这一步（#6076 同族的递归/死锁风险面）；② **写失败只 `::warning::`** —— `|| true` + `_ledger_warn`，**不**参与任何 `if`/`return` 判定、不改退出码；③ **零额外子进程**（一次 `printf >>`，O_APPEND 短行原子；不 fork `python3`）。判据 = `::TestSideChannelNeverTouchesAdmission`（含两条**注入式**：台账落点不可写 ⇒ acquire 仍 `rc=0` + 锁照写 + 出声；拒绝路径仍 `rc=1`）+ 一条**结构性红证** `::test_ledger_writes_happen_outside_the_held_lock_window`（把写点挪进 `_acquire_once` 即红）。', '🔴 **参数个数契约（本包实测踩过的坑，已固化成判据）**：`_ledger_append` 的 `printf` **实参个数必须 == 格式串 `%s` 个数**（多一个 ⇒ `printf` **重启格式串** ⇒ 每条记录后多出一行残缺 JSON，而**准入判定毫发无损** ⇒ 只有台账在坏，极难察觉）。判据 = `::test_ledger_append_argv_count_matches_the_printf_specifiers`（顶层实参计数，不误数嵌套引号）。', '**性能**：埋点不许让准入路径可感知变慢。实测（80 组 acquire+release 的均值）：`origin/main` 基线 `252.9ms` → 带台账 `293.3ms`（**+40.3ms / 组 ≈ +20ms 每次调用**；`status` 100 次 `mean=201ms` 与基线同量级）。三处优化都写进注释：`_ledger_git_probe` 一次 `git rev-parse` 取三个读数（分开调三次 = +126ms）、`_simple_json_value` 短路使常见值零 fork、`_ledger_git_values` 用 tab 分隔一行拆分。**这不是门禁**：读数再差也 `exit 0`（本命令是分母/事实，不设阈值、不拦任何东西）。', '**类级固化**：本包是**新能力**（不是缺陷修复），实例判据 = `tests/unit_ci_workflows/test_machine_heavy_lock_ledger.py`（20 条，每条能单独变红）；**未新增**机械元守卫 —— 因为台账面**新增即进本判据**（换文件/换 kind 都会当场红），且既有元守卫 `test_heavy_suite_entry_ledger.py` / `test_package_heavy_entry_ban.py` 的覆盖面未变（本包**不动**入口集合与角色判定）。**未固化项照实登记**：台账无限增长（轮转策略未做）/ 多机不适用 / `stats` 时区口径 = 本机。', '🔴 **覆盖边界（显式登记）**：① 本判据**不判**「分档准入实现了没有」（那是蓝图 P2 的另一半，本包有意不做）；② 不判「有人绕过入口直接 `pytest tests/unit_ci_workflows`」（那一路没有锁，见 `test_machine_heavy_lock.py` 的同款边界）；③ 台账的**轮转/上限**未做（只追加）。'],
+    skip_reason='[backend-contract] 本机研发机具（机器级重活锁的准入/溢出台账）的行为与读出口径由 tests/unit_ci_workflows/ 的 pytest 单测验证（真锁脚本 + 临时锁面/台账面 + 固定夹具），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'heavy-lock', 'ledger', 'observability'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 的**研发机具契约**（不进 agent-eval 冒烟）：两条 `user_inputs` 是对**同一个台账机制**的两条断言（要有读数 / 槽满要出声），**不是两次会话**。前置 = 机器级锁脚本 + 台账接口在位（`scripts/machine-heavy-lock.sh` 的 `acquire`/`release`/`stats` 与 `MIGAO_HEAVY_LEDGER` 注入口），由 `tests/unit_ci_workflows/test_machine_heavy_lock_ledger.py` 在 `tmp_path` 上直接构造锁面/台账面并断言 —— 前置不成立（脚本/函数/字段被摘掉）时那条 pytest **当场红**，不会表现为「agent 不干活」。',
+)
+
+# ── MC-074 [NORMAL] 凭据字面量不得进仓：明文 service token 一律走环境注入（不设 ⇒ 未就绪 / 不带该头），由仓内守卫按**现取**扫真源码判红（gitleaks 只扫新增行 ⇒ 存量明文它看不见）（源: cases/misc.yml）──
+_CASE_MC_074 = EvalCase(
+    id='MC-074',
+    legacy_id='',
+    title='凭据字面量不得进仓：明文 service token 一律走环境注入（不设 ⇒ 未就绪 / 不带该头），由仓内守卫按**现取**扫真源码判红（gitleaks 只扫新增行 ⇒ 存量明文它看不见）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['测试代码里再写明文 service token 必须**能红**（gitleaks 只扫新增行 ⇒ 存量明文永不报警）', '不设环境变量时必须按**未就绪（skip）**处理，不许变成失败'],
+    expectations=['direct_reply'],
+    data_checks=["**病（issue #6172 现取读数）**：`grep -rn '<64位十六进制>' backend/ai-agent-service/tests/` 命中 2 处明文（`tests/contracts/conftest.py` 的 `SERVICE_TOKEN = …` 与 `tests/test_e2e_mibao_scenarios.py` 的 `X-Service-Token` 头）。`gitleaks` 只扫 **diff 新增行** ⇒ 存量明文**永不报警**（「能红的地方看不见它」）。该 token 是内部服务凭据（`:8001` 内部面）：实测它**足以**指定任意租户读数据 ⇒ 拿到它 = 能跨租户读（写面另被 403 拦）。", '**修法（形态逐字照抄 issue #6170，不写第二套）**：`SERVICE_TOKEN = os.environ.get("MIGAO_SERVICE_TOKEN", "")` + `headers = {...} if SERVICE_TOKEN else {}`；不设 ⇒ **不带该头** / 按**未就绪**处理（skip），**不许**变成失败。两处落地：contracts 的 `_fetch`（无凭据 ⇒ 直接走缓存快照，CI 本来就这条路）+ e2e 场景的 `_is_service_available`（无凭据 ⇒ 未就绪）。', '**判据（本单重点）** = `.github/plaintext_credential_guard.py`（**现取**扫真源码，不钉手抄清单）；三态 `0` 干净 / `1` 命中（逐条具名 `文件:行号` + 规则 + **该改用什么**）/ `3` 扫描面不存在（无法判定，不得当 0 读）。三条规则：**R1** 凭据命名的键 = 字面量取值且取值够像凭据；**R2** `X-Service-Token` 头的字面量取值；**R3**（issue #6303，见下）产物面 / 测试面里的**裸 JWT**。消费点 = `pr-check.yml` 的 `ci workflow helper unit tests` job 新步 + `tests/unit_ci_workflows/test_plaintext_credential_guard.py`（L0，随该 job 套件跑）。', '**R3 = 产物面的「裸 JWT」（issue #6303，2026-10-09 追补）** —— 病根（现取实测）：R1 是「**凭据命名的键** = 字面量」⇒ `acceptance/**` 机器产物里三种真实形态**全部漏判**：键名 `tokenA` / `accessToken` 不匹配 `_CRED_NAME`；连键名匹配的 `"service_token": "<值>"` 也漏 —— 键的**闭引号**让 `_R1` 的消费式左边界 `[^\\w]*` 吃不下（实测三条全 `[]`）。风险 = 一条 `git add acceptance/` 就把**活 JWT** 推上远端（2026-10-04 实测 `race-sweep/out/fixtures.json` 落着登录后的真 token），而 gitleaks 只扫 **diff 新增行** ⇒ 存量永不报警。**判据形态** = 三段 base64url、点分，且**去掉固定头 `"ey"+"J"` 之后仍 ≥ `_R3_MIN_BODY`（40）个字符** —— 这条「**除固定头之外没有足够熵 ⇒ 不成立**」的判据是**刻意**的：`acceptance/2026-10-04/env/method-notes.md` 里那句**文档截断举例**（固定头 + `…`）⇒ **不判**（朴素形态 `eyJ[A-Za-z0-9_-]{10,}` 会在这一行上误报）。射程 = `acceptance/**` 与 `tests/**` 的 `.json`/`.log`/`.md` + 运行态会话存储的**可见**名（`.session.json`/`.store.json`，**被跟踪 + 未被忽略**才判）。判据 = `tests/unit_ci_workflows/test_plaintext_credential_guard.py::test_bare_jwt_in_artifacts_is_flagged` / `::test_truncated_or_short_forms_are_not_flagged` / `::test_r3_scope_is_the_artifact_face_only` / `::test_session_store_rule_fires_only_when_not_ignored` / `::test_gitignore_layer_excludes_runtime_session_state` / `::test_this_file_carries_no_literal_token`。', '**R3 的红证两侧（注入式，实跑，缺一不可）**：① 往**被跟踪**产物 `acceptance/_inject_probe/out/probe.json` 塞一个**带足够熵的**合成假 token（三段、签名段 43 字符）⇒ `python3 .github/plaintext_credential_guard.py` **rc=1**，逐字报 `acceptance/_inject_probe/out/probe.json` + `[R3-artifact-token-literal] eyJhbGciOiJSUzI1NiJ9.eyJ…` + 该行原文（**不写行号**：注入样本跑完即撤，`@<sha>` 无从挂在产物上）；② 同一位置改塞**截断举例**（固定头 + `…`）⇒ **rc=0（零命中）**；③ **负向对照**：不改任何文件 ⇒ rc=0。注入物跑完即撤（`git rm --cached` + 删目录），复算 = 同三条命令。', '**`.gitignore` 层（issue #6303 建议①的后半，本包同时交付）**：`.gitignore` 原先把 `out/` 排除后又用 `!acceptance/**/out/` 与 `!acceptance/**/out/**` **重新纳入**（否定的最后匹配生效）⇒ 运行态会话存储 `.session.json`/`.store.json` **从未被排除**（现取 `git check-ignore` rc=1）；这两个名字入册后**必须放在那两条 `!` 之后**（前置 = 被 `!` 覆盖 ⇒ 静默失效）。**只加 `.gitignore` 是无效的**（它管不了已入库文件）⇒ 4 个已入库的（`2026-10-03/worker-miniapp-writeface-sweep/out/.store.json`、`2026-10-04/replay-postdeploy/worker/.store.json`、`2026-10-04/worker-miniapp-sweep/out/.session.json`、`2026-10-04/worker-miniapp-sweep/out/.store.json`）**同批 `git rm --cached`**；判据 = `test_gitignore_layer_excludes_runtime_session_state`（现取 `git check-ignore` + `git ls-files` 两个读数）。⚠️ 这 4 个文件只是**不再入库**，**仍在磁盘上**（harness 的续跑缓存语义不变）。', "**写时脱敏：本包有意未做（照实登记 + 重启条件）** —— `acceptance/<date>/.../harness/lib.mjs` 是**每一轮各自复制的一份**（现取 `git grep -ln 'harness/lib.mjs' origin/main` 命中 20+ 路径，各轮自带 `lib.mjs`），**没有共享底座** ⇒ 「改一个底座」在当前形态下做不到；而 `acceptance/**` 是**证据留档**，改它等于篡改记录。**重启条件** = 仓库里真出现一份被各轮**复用**的 harness 模板（届时改它一处 + 把本判据的射程扩到写盘装置）。", '**有意不做（照实登记）**：不判「随机字符串但名字不叫 token/secret」（会误伤哈希 / 订单号 / 迁移指纹 —— 实测整仓那类噪声上千条）；不判「这个值**是不是**那枚 dev token」（本仓**不许**再出现该值 ⇒ 判的是**形态**，不是**具体值**）；曾试过「头引用凭据命名的常量」那一条，实测在真仓命中 **17 处全是有意的注入形态**（参数化夹具 / `settings.SERVICE_TOKEN` / `os.environ`）⇒ **有意不做**（判红会逼人把正确代码改坏）。', '**豁免通道**：行内 `# noqa: plaintext-credential :: <原因>`（与被豁免对象同生共死，不留会漂移的路径台账）；真凭据**不许**豁免；当前仓内**零**条（判据正向核）。', '**红证（注入式，实跑）**：在 `backend/ai-agent-service/tests/contracts/conftest.py` 末行注入一行 `INJECTED_SERVICE_TOKEN = "<64位十六进制>"` ⇒ ① `python3 .github/plaintext_credential_guard.py` **exit 1**，逐字报 `backend/ai-agent-service/tests/contracts/conftest.py:<行号>: [R1-credential-literal] SERVICE_TOKEN`；② `pytest tests/unit_ci_workflows/test_plaintext_credential_guard.py -k real_repo_is_clean` **1 failed**（报出同一行）；撤掉注入 ⇒ **exit 0 / 31 passed**。注入物**不落进本仓**（跑完即撤），复算 = 同两条命令。', '**轮换不在本单自动做**（改云 dev `.env` + 重启服务属外部动作）：PR body 写清「轮换建议 + 谁来做 + 不轮换的风险接受」，等人工定（用户裁定 2026-10-03）。'],
+    skip_reason='[backend-contract] 仓内静态守卫（零 LLM、零网络、只读真源码）由 tests/unit_ci_workflows/test_plaintext_credential_guard.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['security', 'credential', 'guard', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 的**仓内静态守卫契约**（不进 agent-eval 冒烟）：两条 `user_inputs` 是对**同一个守卫**的两条断言（要能红 / 不设要 skip），**不是两次会话**。前置 = 守卫脚本 + 判据文件在位（`.github/plaintext_credential_guard.py` 与 `tests/unit_ci_workflows/test_plaintext_credential_guard.py`）—— 前置不成立（脚本被删 / 扫描面塌缩）时判据**当场红**，不会表现为「agent 不干活」。',
+)
+
+# ── MC-075 [NORMAL] B 端黄金策页面上下文（族 4）登记收敛元守卫（issue #6215）：`menu.ts` 的 route 集合 ⇄ `PAGE_REGISTRY ∪ 豁免台账` 双向相等 —— 漏登记 / 多登记（悬挂）/ 真值源不在册 / 真值源 path 不存在 / 权限码不存在 ⇒ 逐条具名判红；豁免台账只许缩短（纯静态判据）（源: cases/misc.yml）──
+_CASE_MC_075 = EvalCase(
+    id='MC-075',
+    legacy_id='',
+    title='B 端黄金策页面上下文（族 4）登记收敛元守卫（issue #6215）：`menu.ts` 的 route 集合 ⇄ `PAGE_REGISTRY ∪ 豁免台账` 双向相等 —— 漏登记 / 多登记（悬挂）/ 真值源不在册 / 真值源 path 不存在 / 权限码不存在 ⇒ 逐条具名判红；豁免台账只许缩短（纯静态判据）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当 `frontend/admin-web/src/config/menu.ts` 新增一个菜单页而既没登记进 PAGE_REGISTRY、也没进豁免台账时；或登记表/台账里出现一条挂不到任何菜单项的 route 时；或某条登记引用了未登记的真值源 / 真值源 path 不存在 / 权限码不在 admin-api 权限目录里时；或有人往豁免台账**加**一条时 —— 必须有判据**具名**报出该 route / 真值源 / 权限码。'],
+    expectations=['direct_reply'],
+    data_checks=['**病（issue #6215 现取读数）**：族 4 的 `route → 真值源` 登记表只有 **6** 条 route，而 `menu.ts` 有 **22** 个菜单页 ⇒ 用户在其余 16 页问「这一页是干什么的 / 这个数怎么算的」时 `build_page_context` 走**默认拒绝**（安全默认是对的），而**覆盖面没有任何东西在管**：漏登记的形态是**沉默**（少一条登记 ⇒ 零判据变红）；反方向（登记不存在的 route / 引用不存在的真值源）也没有覆盖面判据。', '**判据 1（漏登记即红，本单的牙齿）**：菜单 route 有、`PAGE_REGISTRY` 与豁免台账**都没有** ⇒ 红并具名报出该 route。执行点 = tests/unit_ci_workflows/test_page_context_registry_coverage.py 的 `problems_coverage`。', '**判据 2（多登记 / 悬挂即红）**：登记表或台账里有、**挂不到任何菜单项**的 route ⇒ 红（登记一条不存在的页面 = 猜错页面）。同一函数，`covers()` 口径 = 精确相等 / 通配整族（`/orders/*` ↔ `/orders`）/ 子路由（`/orders/new`、`/production/routings` 挂在菜单项之下）。', '**判据 3/4（豁免台账只许缩短）**：同一条 route 既登记又豁免 ⇒ 红；`exempt_routes_frozen` 冻结快照 ⇄ 现取条目**逐项相等**、条数 == `baseline_frozen` 且 ≤ 判据侧 `EXEMPT_COUNT_MAX` ⇒ 新增豁免必须同批改三处且 `baseline_frozen` 只许变小。', '**判据 5/6/7（登记项自证）**：`truth_source` ∈ `TRUTH_SOURCES`（否则该条**不生效**）、真值源 `path` **真实存在**、页面级/对象级权限码在 admin-api 权限目录（**复用** `tests/unit_ci_workflows/test_agent_permission_parity.py` 的 `parse_catalog`，不造第二套解析器）。', '**判据 8/9（缺口不许匿名存在）**：豁免每条必须带 `route` + `reason`（为什么不登记）+ `restart_condition`（补哪一份**具名**口径文档才能重启）；`coverage_boundary` 每条带 `face`/`reason`/`recompute`，条数冻结（`coverage_boundary_frozen`）且只许缩短。', '**判别力自证（注入式红证，全部内存构造、不动仓内文件）**：① 摘掉一条已登记 route（`/production/piecework`）⇒ 判红且**具名**；② 往台账加一条 ⇒ 判红（只许缩短）；③ 造悬挂 route ⇒ 红；④ 幽灵真值源 id / 幽灵 path ⇒ 红；⑤ 幽灵权限码 ⇒ 红；⑥ 豁免缺 `reason`/`restart_condition` ⇒ 逐条红；⑦ 删一条覆盖面登记 ⇒ 红；⑧ **对照读数**：只给登记项加无关元数据键 / 只给台账加说明键 ⇒ **不红**。执行点 = 同文件 7 条 `test_red_proof_*` + `test_control_comment_only_change_is_green`。', '**纯静态自证**：本判据零 ai-agent 依赖（AST 取 import 名）+ 禁 pytest 的 skip / importorskip（针脚**拼出来** —— 判据自身出现这两个字面量会扫到自己 ⇒ 永远红）。执行点 = 同文件 `test_this_judgement_is_pure_static_and_never_skips`。', '**判据 10（🔴 只扫**上屏字段**：已移除的页面名不得出现在 `label` / `citation` 里）**：issue #6842 · B3（跟踪 #6826）。**病**：`label` 逐字是「用户可见的中文来源名（**上屏用**）」、`citation` 是「回复里**必须写出**它」⇒ 两者都被逐字渲染给商家；而判据 1~9 只核 route / 真值源名 / `path` / 权限码，**一个字都不核上屏文本** ⇒ `craft-calc-glossary` 的 label 带着 issue #6580 已撤掉的坐标「工艺配置页」漂了几天，**没有任何东西会红**（登记齐全、判据全绿、话术却把商家指去不存在的页面）。**判据形态**（与 MC-075 家族同源，不另创一套）：**真值源现取 = `frontend/admin-web/src/config/menu.ts` 的菜单名 ∪ `frontend/admin-web/src/lib/config-center-domains.ts` 的域 label（与既有「三源同构」口径同源，**不硬编码成新清单**）；两个真值源各自走**规范 / 结构性读法**（`menu.ts` **复用** `test_agent_permission_parity.py::parse_menu_ts_nodes` —— 「不另起第二个 menu.ts 解析器」是该文件 docstring 的既有纪律；域目录收**两个**商家可见名数组 = `CONFIG_ZONES` 区名 ∪ `CONFIG_DOMAINS` 域名 —— **只收域名 = 真值源变窄 ⇒ 一条正确的引用（如「企业基础设置 → 生产执行」）会被假红**；两个数组都只取**真值数组里的对象**，pattern **逐字字面量 + 行首排除注释**）；`label` / `citation` 里**引用号**（`「…」`/`《…》`）内的逐段候选，以及**补充括号**（`（…）`/`(…)`）内**以「页 / 页面」收尾**的候选，必须 ∈ 现存名集合。**只扫字段字面量** —— 注释 / docstring / `path` 一律不进语料（§19.1：解释 #6580 撤项的注释可以逐字保留旧名）。**fail-closed**：上屏语料为空 / 现存名解析 < 3 个 ⇒ 红（「没东西可判」不是通过）。**判别力自证（注入式，全部内存构造、不动仓内文件）**：① 对真语料做 **AST 定位 + 文本替换**变异，把旧名塞回 `craft-calc-glossary` 的 `label`（括号补充形态「工艺配置页」/「参数总览页」、书名号形态、《「…」》引用号形态四种）⇒ **各自判红并具名**报出真值源 id；② **对照读数**：只往**注释 / docstring** 里塞同一批旧名 ⇒ **不红**（且断言注释竟未进上屏语料）；③ 台账撤掉 / 掏空 `revoked_names_scan`（扫描面登记）、`frozen_extensions` 写成非 0 ⇒ **各自判红**（收窄射程 = 偷绿）；④ 语料为空 / 现存名只剩 1 个 ⇒ 判红（fail-open ⇒ 恒绿）。执行点 = 同文件 `test_red_proof_revoked_page_name_in_label_goes_red` / `test_control_revoked_name_only_in_comment_or_docstring_is_green` / `test_red_proof_revoked_name_scan_face_unregistered_goes_red` / `test_red_proof_empty_on_screen_corpus_goes_red` / `test_on_screen_corpus_is_not_hardcoded`。', "**判据 10 的真值源读法自证**（issue #6842 追加）：真值源**变宽 = 判据变松** ⇒ 「**注释掉的** `name:` / `label:` 不得进现存名集合」单列一条判据 —— `menu.ts` 走既有 `parse_menu_ts_nodes`（结构化切块、天然不吃注释，且「不另起第二个 menu.ts 解析器」是 `test_agent_permission_parity.py` docstring 的既有纪律 = issue #3570 的教训）；域目录收 **`CONFIG_ZONES` 区名 ∪ `CONFIG_DOMAINS` 域名**两个数组（`CONFIG_ZONES_EXPECTED` 是「不许被收窄」的下界自证）；两边各自做注释行注入对照（`// label: '…'` 读不进来）。执行点 = 同文件 `test_domain_labels_ignore_commented_out_entries`。", '🔴 **覆盖边界（显式登记）**：① 「这份文档真的是这一页的口径」是**判断**不是判据 —— 锚点逐条写在 PR body（`<仓库相对路径>::<符号>`），台账的 `reason`/`restart_condition` 是**自述**；② 判不了「黄金策真的按真值源解释了这一页」（行为面在 `backend/ai-agent-service/tests/test_page_context.py`，LLM 面按 issue #4262 本轮不跑评测）；③ `page_registry.py` 是 **AST 静态解析**，登记表被改写成非字面量形态 ⇒ fail-closed 判红；④ 本判据**不改**任何门禁的通过条件、不新增豁免。⑤ **判据 10 的边界（issue #6842 追加，照实登记）**：只认**显式引用形态**（引用号 / 以「页」收尾的补充括号）⇒ **裸写的旧页名判不了**（有意收窄：全文子串匹配会被「本店工序」这类**非页面名**喂红，且按 §19.1 缩不掉）；**判不了**「这句 label 是否有用 / 是否**假出口**」（指对了页面但**动作**错了，或指向一个**没有写面**的页面 —— 两者都属 `docs/design/user-facing-copy-standard.md` 的**评审**面）；**判不了**注释与 docstring 里的旧名（那正是它**有意排除**的面）。边界逐条登记在台账 `revoked_names_scan.candidate_face_boundary`（含复算命令）。'],
+    skip_reason='[backend-contract] 纯静态仓内守卫（只读 menu.ts / page_registry.py / admin-api 权限目录 / 豁免台账；零真库、零网络、零 LLM、不 import ai-agent 依赖）由 tests/unit_ci_workflows/test_page_context_registry_coverage.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ai-agent', 'page-context', 'coverage', 'exemption-ledger', 'shrink-only', 'default-deny', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-076 [NORMAL] 前端 types 里「联合类型字段 / 后端零生产者」族的类级元守卫（issue #6224）：语料 19 个联合类型字段 ⇄ 零生产者台账双向相等 —— 未登记即红 / 幽灵条目即红 / 每条带 why / 债务带跟单号 / 台账只许缩短 / 扫描面为空 fail-closed（源: cases/misc.yml）──
+_CASE_MC_076 = EvalCase(
+    id='MC-076',
+    legacy_id='',
+    title='前端 types 里「联合类型字段 / 后端零生产者」族的类级元守卫（issue #6224）：语料 19 个联合类型字段 ⇄ 零生产者台账双向相等 —— 未登记即红 / 幽灵条目即红 / 每条带 why / 债务带跟单号 / 台账只许缩短 / 扫描面为空 fail-closed',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=["在 frontend/admin-web/src/types/index.ts 的任一 interface 里新增一个「字符串字面量并集」类型字段（如 'a' | 'b'），而后端没有任何写点（无 setter 实参写入 / 不在 *Request 或 *Params / 无线上键字面量 / 无 SQL 写入 / ai-agent 无写入）—— 必须有判据具名报出该字段。"],
+    expectations=[],
+    data_checks=['**未登记即红**（机器断言 = backend/admin-api/src/test/java/com/migao/admin/contract/FrontendUnionFieldProducerMetaGuardTest.java 的 everyZeroProducerFieldIsRegisteredAndBacked）：语料 = types/index.ts 里 export interface 内部的字符串字面量并集字段（现取 19 个）；逐字段跑生产者判定 P1~P5（setter 实参写入 / *Request 或 *Params 里的声明 / Java 里的线上键字面量 / SQL INSERT 或 UPDATE / ai-agent 字典键写入；P1 排除 x.setFoo(y.getFoo()) 直通形态）⇒ 零生产者且未登记 ⇒ 具名红。', '**台账不许空转（幽灵条目即红）**（断言 = redproof_ghostEntryFieldVanished / redproof_staleEntryAfterProducerAppears）：登记的字段已从 types 删掉 ⇒ 红；或该字段已获得后端生产者（缺口已修却还挂着）⇒ 红 —— 台账只许缩短。', '**豁免必须可追**（断言 = redproof_debtWithoutIssueReference / redproof_exemptionWithoutReason）：登记为债务（BACKEND_ABSENT_DEBT）必须带跟进 issue 号；每条必须写 why，不许空口说「不是缺口」。', '**只许缩短**（断言 = redproof_baselineGrew / liveBaselineDoesNotExceedFrozenBaseline）：台账条数现取 2 ≤ 冻结上限 2；长过上限 ⇒ 红。', '**扫描面为空 fail-closed**（断言 = scanSurfaceIsNotEmpty / redproof_emptyScanFailsClosed）：发现规则扫不到任何联合类型字段（或 types 单一源被改名/搬走）⇒ 红，不许「扫不到 ⇒ 变绿」。', '**判别力自证 + 反向对照（注入式红证）**：真语料注入（把 AfterSalesTicket.refundMethod 加回 types）⇒ 具名判红（redproof_realCorpusCatchesRefundMethod，证明本守卫真能抓住本包修的那个字段）；内存注入 5 类坏形态各自判红；同一夹具不注入 ⇒ 零违规（cleanFixture_hasNoViolation）。', '**现取读数（2026-10-03 本包落库）**：语料 19；零生产者 2 = LogisticsFormData.shippingMethod（FRONTEND_ONLY：前端发货表单状态）+ LogisticsInfo.shippingMethod（BACKEND_ABSENT_DEBT：后端恒不下发、前端在 OrderDetail.tsx 真有消费者 ⇒ 恒 undefined，已开单 #6239 待人工裁业务口径）。', '🔴 **射程边界（照实登记）**：① 只覆盖「字符串字面量并集」字段，非联合类型字段（string/number/对象）与 types/ 之外的 TS 文件不在面内；② 「有生产者」判定含宽松项 P3（Java 里出现「字段名」加英文双引号的字面量即算）⇒ 名字越通用越容易被兜成「有生产者」，宁可漏不可误；③ 归类（FRONTEND_ONLY / BACKEND_ABSENT_DEBT）是人读 + 代码证据的判定，每条 why 给锚点，评审可逐条质疑；④ 判不了「有人把冻结上限改大」（落在 diff 评审里）。'],
+    skip_reason='[backend-contract] 纯源码扫描 + 内存注入判据（只读 types/index.ts / admin-api 源码 / 迁移 SQL / ai-agent 源码；零真库、零网络、零 LLM），由 Java 单测验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['meta-guard', 'dead-field', 'frontend-types', 'shrink-only', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-077 [NORMAL] worktree 登记表 × 磁盘不一致（issue #6235）：登记了但目录不在 ⇒ 入口前置断言 + 白名单自愈；`doctor` 只读判红、`doctor --heal` 打印将删清单后按白名单删除；安全护栏拒绝 `.git/worktrees` 之外的任何落点（含软链逃逸）（源: cases/misc.yml）──
+_CASE_MC_077 = EvalCase(
+    id='MC-077',
+    legacy_id='',
+    title='worktree 登记表 × 磁盘不一致（issue #6235）：登记了但目录不在 ⇒ 入口前置断言 + 白名单自愈；`doctor` 只读判红、`doctor --heal` 打印将删清单后按白名单删除；安全护栏拒绝 `.git/worktrees` 之外的任何落点（含软链逃逸）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当 `git worktree list` 登记了某个 worktree、但它的目录在磁盘上已经不存在时（该分支被判「已被该 worktree 占用」⇒ `git worktree add` 直接 fatal，而 `git worktree prune` 与 `git worktree remove --force` 都可能无效）；或有人想删掉一个落点在 `.git/worktrees/` 之外的目录时；或新增了一个会动 worktree 存量的命令函数却没过前置断言时 —— 必须有判据具名报出、且删除落点在白名单外一律拒绝。'],
+    expectations=['direct_reply'],
+    data_checks=['**病（2026-10-03 修复包 F-6219 实测撞见，主会话已核实）**：`git worktree list` 把某个 worktree 登记在册而它的目录**在磁盘上不存在** ⇒ ① 该分支被判「已被该 worktree 占用」，`git worktree add <path> <branch>` 直接 `fatal: … is already used by worktree at …`；② `git worktree prune` 与 `git worktree remove --force` **都可能无效**。代价 = 每个撞上的包**白花 3~4 轮**手工诊断，而**没有任何东西会因此变红**（与铁律 11「声明存在 ≠ 可达」同族）。', '**本机 git 2.54.0 实测的三种顽固形态（判据 1 逐条钉住）**：**A `locked` 形态**（`worktree lock` 后删目录）⇒ `prune -v` **rc=0 且什么都不删**（静默）、`remove --force` 报 `cannot remove a locked working tree`；**B 未锁 + 目录消失** ⇒ `prune` 真会删掉（故**主判据用 A 取红证**）、`remove --force` 报 `not a working tree`；**C 目录残留 + `$wt/.git` 已没** ⇒ `prune` 不动、`add` 报 `already exists`。唯一有效修法 = 清掉 `.git/worktrees/<name>` 再 `prune`。', '**判据 1（旧行为红证，先证明判据不是空断言）**：形态 A 下 `git worktree add` 必须复现 `missing but locked worktree`；`prune -v` 必须 **rc=0 且 stdout 为空**；`remove --force` 必须失败。三条读数都是 git 自己打的（本判据不复制任何 git 逻辑）。判据 = tests/unit_ci_workflows/test_dev_worktree_registry_drift.py 的 `test_old_behaviour_reproduces_the_reported_symptom`。', '**判据 2（新行为：只读判红 + 自愈）**：`doctor`（默认只读）在 A/B/C-空残留 上 exit=1、**逐条具名**（条目名 + 登记路径）、且登记目录**一字未动**；`doctor --heal` 自愈成功（**先打印将删清单** + 复检绿读数）⇒ 随后 `git worktree add` 成功。形态 C 的**非空残留**另有判据：只清登记条目 + **具名交代残留** + 给出显式入参的人工出口 `rm -rf -- <path>`，**绝不**替操作者删那个非空目录（里面可能有别人未提交的改动）。判据 = 同文件 `test_doctor_is_read_only_and_red_on_drift` / `test_doctor_heal_repairs_and_unblocks_add` / `test_nonempty_residue_is_named_and_never_deleted`。', '**判据 3/4（入口前置断言 + 类级元守卫）**：`add` / `rm` / `rebase` 三个命令函数都必须有**可执行**的 `wt_registry_assert_for_entry` 调用（写在注释里不算）；`add` 在漂移存在时自愈后仍把工作区建出来（`工作区就绪`）；`rm <健康工作区>` 在**另有漂移**时先自愈再动手、本操作照常完成。元守卫 = 脚本里**每个命令函数**要么过断言、要么在只读名单里写明理由（双向核：新增命令 / 只读名单陈旧都判红）。判据 = 同文件 `test_add_preflight_self_heals_then_creates_the_worktree` / `test_rm_entry_also_goes_through_the_assertion` / `test_rebase_entry_also_goes_through_the_assertion` / `test_static_judgement_has_teeth_in_memory`。', '**判据 6/7（安全护栏：白名单 + fail-closed）**：`rm -rf` 的落点**只允许** `<common git dir>/worktrees/<name>`；`…/migao-wt/<name>`、`…/migao-dev/<name>`、`$HOME` 前缀、本仓 worktree 根目录 / `.git` 本身、`..` 越界、以及**经软链逃逸**的条目**逐个拒绝并打印原因**；混合调用（1 允许 + 1 越界）整体**仍判红**（fail-closed）。**注入式红证**：把登记条目换成指向仓外的软链 ⇒ 守卫拒绝且软链与目标逐字节完好。判据 = 同文件 `test_guard_rejects_every_allowlist_outside_landing_zone` / `test_guard_allows_only_the_registry_landing_zone`。', '**判据 5（反向对照，防「为了自愈把正常条目删了」）**：健康登记表下 `doctor` exit=0、绿色读数、登记条目与 `gitdir` 字节不变、工作区目录仍在。判据 = 同文件 `test_healthy_registry_is_green_and_unchanged_and_untouched`。', '🔴 **覆盖边界（照实登记）**：① 只治「登记了但磁盘没有」**一个方向**；「磁盘有、git 不认」（`$wt/.git` 被换成别的仓库的 `.git` 等）是 issue #6235 的**观察项**，不在射程内；② 判不了「过去已建好的漂移」的追溯修复 —— 本包拦的是**下一次**（下次 `add` 开工即自愈），存量要人跑一次 `doctor --heal`；③ 判定口径 = 「登记路径的目录 + 其中的 `.git` 都在」，一个目录+`.git` 都在但内容被换成别的东西的工作区会被判健康（git 自己也认它，靠 `prune` 的 `prunable` 标记，本判据不重复判）；④ 本判据守的消费点是 shell 脚本 ⇒ 登记不进 §28.2.1 的 `wiring_claims_ledger.json`（其判据 3 要求 `::` 左边以 `.py` 结尾），缺口照实登记、**不放宽**那个门禁；⑤ 只跑定点判据，不跑 `verify-all.sh gate` / 全量 pytest（重活串行）。'],
+    skip_reason='[backend-contract] 真 fixture 行为 + 纯静态控制流守卫（在 tmp_path 里真 `git init` + 真 worktree，造「登记存在、磁盘没有」的三种形态；只读仓内脚本；零真库、零网络、零 LLM、不碰任何真实工作区）由 tests/unit_ci_workflows/test_dev_worktree_registry_drift.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'dev-tooling', 'worktree', 'registry-drift', 'fail-closed', 'allowlist', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-079 [NORMAL] 跨在飞 PR 的重号判据（issue #6245）：**本 PR** 的 claim 号 ∩ **另一个 open PR** 的 claim 号 ⇒ 红并**点名对方 PR 号**（开 PR 时就红，不等合并）；判定不了 ⇒ fail-closed 且文本写明「判定不了」（❓ 不许读成 ✅）；零新依赖（stdlib urllib）+ 逐请求超时 + 总预算 ⇒ 不拖重 CI（源: cases/misc.yml）──
+_CASE_MC_079 = EvalCase(
+    id='MC-079',
+    legacy_id='',
+    title='跨在飞 PR 的重号判据（issue #6245）：**本 PR** 的 claim 号 ∩ **另一个 open PR** 的 claim 号 ⇒ 红并**点名对方 PR 号**（开 PR 时就红，不等合并）；判定不了 ⇒ fail-closed 且文本写明「判定不了」（❓ 不许读成 ✅）；零新依赖（stdlib urllib）+ 逐请求超时 + 总预算 ⇒ 不拖重 CI',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当两个**同时在飞**的 PR 各自 claim 同一个用例号时（本轮实测 3 次：AS-011/012、PG-059/069、MC-076）；或取数面读不到（无凭据 / 离线 / 某个 PR 的 claim 读不了）时 —— 必须有判据在**开 PR 时**（不是合并时）判红，并**点名对方 PR 号**；判定不了时必须写明「判定不了」，不许静默变绿。'],
+    expectations=['direct_reply'],
+    data_checks=['**病（issue #6245，现取读数）**：用例号是全局唯一登记键，而 claim 台账（`.github/cases/claims/` + `tests/unit_ci_workflows/test_case_id_claims.py`）的 `CLAIMS_REL` 只看**本地工作树** ⇒ 它能看见「本 PR ↔ main 已合入」（一 rebase 就红），**看不见另一个还没合并的在飞 PR 的 claim** ⇒ **两个 PR 同时绿**，要等其中一个合入 / 另一个 rebase 才暴露。代价 = 每轮撞号一次「定位 + 改号 + 重渲染 + 复跑 + 强推」。', '**判据 7（跨在飞 PR 重号 ⇒ 红，本单的牙）**：GitHub REST 列同仓 **open PR**（`state=open`）⇒ 逐 PR 读它那个 ref 的 `.github/cases/claims/*.json` ⇒ 取「**本 PR** 的号 ∩ **别的 open PR** 的号」，非空即红并**点名对方 PR 号** + 给让号出口（陷阱 3「后合入者让号」）。🔴 **只跟别的 open PR 比**，**不**跟 main 比 —— 那一档（本 PR ↔ main）是既有判据 3 的面，两条互不重复。执行点 = `tests/unit_ci_workflows/test_case_id_claims.py` 的 `cross_pr_claims_problems` / `fetch_open_pr_claims`。', '**成本与稳定性红线（机械保证）**：① 唯一联网面，**只在**「当前 PR 号可判定 + Actions 环境」时发起（本机 `pytest` 零外呼）；② 只拉 `.github/cases/claims`（**不拉整库 / 不拉语料**）、逐请求 5s 超时、整轮 60s 预算（并行 4 路 + 逐 claim 文件按内容 SHA 去重），**到点即停**；③ **零新依赖**（stdlib `urllib`；CI 那个 job 只装 pytest + pyyaml）；④ **不拿机器级重活锁、不跑重活**。', '**fail-closed 且可读（本仓口径：❓ 不许读成 ✅）**：Actions 环境里没凭据 / 列不出 open PR / 读不到某个 PR 的 claim / open PR 数达取数上限 / 超预算 ⇒ 逐条**具名判红**，文本**写明「判定不了」**并说明「它的号这一轮没纳入比对（**不是「它没占号」**）」。非 Actions 环境（无 `GITHUB_REPOSITORY`）⇒ **不发起**判定（判据 7 整条不适用）—— 这条缺口**照实登记**：本机读不到跨在飞 PR 的重号。', "**判别力自证 / 双向对照（注入式红证，全部内存 + 本机 HTTP 替身；桩用 fetch 参数注入，纯函数面零网络零时钟）**：① 桩造「另一个 open PR 占同一个号」⇒ 红且**点名 #6061**；② **对照 1**：本 PR 内部跨域两条 claim（形如仓内真语料 `6223-CH-045` + `6223-MC-075`）⇒ **不红**、且取数面**确实被调用过**；③ **对照 2**：对方 PR 已合并 / 已关闭 ⇒ 不在 `state=open` 列表 ⇒ **不红**（同一夹具把它放回 open ⇒ 立刻红，判别力自证）；④ **对照 3**：`ids=None`（读不到）/ 取数面自报无凭据 / 本 PR 不在 open 列表 ⇒ 各自判红且带「判定不了」；⑤ 真 HTTP 面（本机替身服务器，真 `urllib`/真状态码）：401 ⇒ 判定不了、完整路径 ⇒ 读出两个 PR 同号并点名、必拒连端口 ⇒ 超时值**真被传下去**（`calls == [HTTP_TIMEOUT_S]`）且 fail-closed；⑥ 预算注入（`time.monotonic`）⇒ 第一个 PR 不读就停（`requests == ['GET /repos/.../pulls']`）；⑦ **接线判据**：`repo_problems()` 必须**真的**调用判据 7（桩被念到）—— 防「实现正确但没接进常驻出口」这种「判据绿但病原样复发」。执行点 = 同文件 `test_red_proof_two_in_flight_prs_claim_the_same_id` / `test_control_*`（3 条）/ `test_red_proof_unreadable_*` / `test_http_*`（4 条）/ `test_budget_*` / `test_cross_pr_check_is_wired_into_the_repo_exit`。", '**纯静态自证（不许 skip 型假绿）**：判据本体**零** ai-agent 依赖（AST 取 import 名，`FORBIDDEN_IMPORTS` 含 `app`）+ **禁** `pytest.skip` / `except ImportError`（三条都在同一函数里逐条判红）。执行点 = 同文件 `test_this_judgement_is_pure_static_and_never_skips`。', '🔴 **覆盖边界（显式登记）**：① **只看 claims 号面** —— 判不了生成物新鲜度 / 用例库文本冲突（那是 issue #6255 的面）；② **非互斥锁**：两个包**同一瞬间**开 PR 仍是「两边都红」而不是「后开者被挡住」—— 它把发现从「合并时人工核对」提前到「**开 PR 时就红**」，**不**做抢占；③ fork PR 的对象可能读不到 ⇒ 记「判定不了」（红），**不**当成「它没 claim」；④ 本判决**不改**任何门禁的通过条件、不新增豁免。'],
+    skip_reason='[backend-contract] 取号台账的仓内判据（本地 claims 目录 + 同仓 open PR 的 claims 目录；零 LLM、零真库；唯一外部面 = GitHub REST 只读，有超时/预算/无凭据 fail-closed）由 tests/unit_ci_workflows/test_case_id_claims.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'case-id-claims', 'cross-pr', 'fail-closed', 'red-proof', 'no-new-dependency'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-081 [NORMAL] 唯一键 / 幂等键写入点的类级元守卫（issue #6301）：全仓「写带唯一约束的表」的写入点 ⇄ 冻结台账双向相等 —— 未登记即红、登记即须属实（处理摘掉即红）、台账为空 / 扫描零命中即 fail-closed；#6301 那一处必须带 ON CONFLICT 原子闸（改回朴素 insert 即具名判红）（源: cases/misc.yml）──
+_CASE_MC_081 = EvalCase(
+    id='MC-081',
+    legacy_id='',
+    title='唯一键 / 幂等键写入点的类级元守卫（issue #6301）：全仓「写带唯一约束的表」的写入点 ⇄ 冻结台账双向相等 —— 未登记即红、登记即须属实（处理摘掉即红）、台账为空 / 扫描零命中即 fail-closed；#6301 那一处必须带 ON CONFLICT 原子闸（改回朴素 insert 即具名判红）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当同一个幂等键（如盘点的 runId）被并发提交、或网络重试把同一请求发两遍时，唯一索引本来会拒掉第二次写入；但如果代码里没有任何冲突处理，那次「拒绝」就变成用户侧的 500 —— 必须有判据在**新增这类写入点时就红**，而不是等下一个并发现场。'],
+    expectations=[],
+    data_checks=['**病（issue #6301 的形态，已在 main 复现）**：服务层「先查是否已记 → 再插入」是**非原子读**（TOCTOU）；并发时多个同 runId 的请求同时判定「未记」，随后争抢部分唯一索引 `uk_batch_consumption_stocktake` ⇒ 抛 `DuplicateKeyException` ⇒ 未映射成幂等回执 ⇒ 5 条 HTTP 500（探针 W5 读数 `[200,500,500,500,500,500]`，两个构建点都红）。数据本身正确（分录 1 行、库存 Δ 正确）⇒ 缺陷在**错误映射 / 回执语义**。', '**判据 1（未登记即红）**：全仓「服务/控制层里 `<XxxMapper 字段>.insert*(`，且该 mapper 经 `extends BaseMapper<实体>` → 实体的 `@TableName` 指向 schema.sql 里带 `CREATE UNIQUE INDEX` 的表」的写入点，必须**逐条**登记进 `tests/unit_ci_workflows/unique_write_ledger.json`（现取 26 处：9 处有处理、17 处是 `handling: none` 的已登记缺口）。多出来的 ⇒ **点名报出**该文件 / 字段 / 表，并给出口（补原子写 / 冲突映射，或按缺口登记）。判据 = `tests/unit_ci_workflows/test_idempotent_unique_write_guard.py::test_every_unique_write_site_is_registered`。', '**判据 2（登记即须属实，双向）**：台账说某文件在处理而该文件**没有**处理 ⇒ 红（唯一冲突会重新冒泡成 5xx）；台账说 `handling: none`（缺口）而语料里现在**有**处理 ⇒ 红（陈旧登记，台账**只许缩短**）；台账 / 现取的表名漂移 ⇒ 红。**逐方法判**（不是「文件里有 ON CONFLICT 就行」）—— 这是本判据的判别力来源：把 `insertStocktakeIfAbsent` 的 `ON CONFLICT … DO NOTHING` 摘掉 ⇒ 具名判红。', '**判据 3（#6301 那一处的具体形态）**：`StockBatchConsumptionMapper::insertStocktakeIfAbsent` 必须在场，且该方法的 SQL 里必须有 `ON CONFLICT`（在语句内部消解冲突 ⇒ 并发不再抛异常、事务不进 aborted 态）；盘点落账的写入点必须**不是** `handling: none`。判据 = 同文件 `test_the_stocktake_write_point_uses_an_atomic_conflict_handler`。', '**判据 4（fail-closed）**：台账为空 ⇒ 红；扫描**零命中**（一个写入点都找不到）⇒ 红（判据自己失效必须自曝，不许静默绿）；schema 解析出的唯一约束表少于 20 张 ⇒ 红（解析口径坏了）；mapper→表 一条都解析不出来 ⇒ 红。', '**判据 5（判别力自证，随判据常驻）**：八条坏形态在**内存语料**上各自判红（新增未登记写入点 / 台账清空 / 零命中 / 处理被摘掉 / 台账陈旧 / 表漂移 / 注释里的 `insert(` 不算写入点 / 无唯一约束的表不在射程），两条**对照读数**不红。判据 = 同文件 `test_injected_bad_corpora_are_named`。', '🔴 **覆盖边界（照实登记）**：① 只认**仓内文本形态**（`.` insert 调用 + `BaseMapper` 泛型 + `@TableName`）—— 裸 SQL / `JdbcTemplate` / 反射写这些表、或 mapper 不经 `BaseMapper` 声明的代码**不在射程内**；② 「处理」的判定是**形态学**的（服务文件出现 `DuplicateKeyException`，或该 mapper 被调用的插入方法带 `ON CONFLICT`）—— 它判不了「那条处理真的被调用 / 真的在并发下有效」（行为面由 `BatchStocktakeConcurrentRealDbTest` 承担）；③ `handling: none` 的 17 条是**已登记的观测缺口**，本判据**不为它们的安全性背书**，缺口的修复是各自独立的包；④ 它不判「某个写入点该不该用幂等键」（业务口径）。'],
+    skip_reason='[backend-contract] 纯静态判据（零 LLM、零真库、零网络、零时钟；只读 Java 源码 + schema.sql + 台账 JSON）由 tests/unit_ci_workflows/test_idempotent_unique_write_guard.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'idempotency', 'unique-key', 'fail-closed', 'red-proof', 'class-level-guard'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-082 [NORMAL] 端点级并发判据 + 日志面判据（issue #6318）：「冲突在 mapper 内以原子写消解」的写入点，其**回执契约**必须由**端点级**判据承担（真 MockMvc + 真 PG：同 runId 6 并发 ⇒ 全 2xx、1 applied + 5 replayed、5xx=0），配注入式红证（原子闸换回朴素 insert ⇒ 端点当场 5×500）与日志面判据（端点 500 必须有具名异常 + method/uri/tenant/type 坐标）；类级元守卫按**现取**端点集合判，未登记即红（源: cases/misc.yml）──
+_CASE_MC_082 = EvalCase(
+    id='MC-082',
+    legacy_id='',
+    title='端点级并发判据 + 日志面判据（issue #6318）：「冲突在 mapper 内以原子写消解」的写入点，其**回执契约**必须由**端点级**判据承担（真 MockMvc + 真 PG：同 runId 6 并发 ⇒ 全 2xx、1 applied + 5 replayed、5xx=0），配注入式红证（原子闸换回朴素 insert ⇒ 端点当场 5×500）与日志面判据（端点 500 必须有具名异常 + method/uri/tenant/type 坐标）；类级元守卫按**现取**端点集合判，未登记即红',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['同一个盘点单（同一 runId）被用户连点或网络重试并发提交 6 次时，用户应该看到 6 个**可读回执**（1 条生效 + 5 条「本次已记过」），而不是 5 个「服务器内部错误」；而且万一真的 500 了，运维在应用日志里必须能直接看出**是哪个端点、哪个租户、什么异常**，不用翻全量日志猜。'],
+    expectations=[],
+    data_checks=['**病（issue #6318 的形态：服务级绿、端点级红）**：`#6301` 的修复带的是**服务级**真库并发判据（`BatchStocktakeConcurrentRealDbTest`，调服务方法）—— 它证明「服务层不抛异常」；而用户看到的契约在更高一层：异常 → HTTP 状态的映射（`GlobalExceptionHandler`）与回执体（`data.lines[].status`）。两者之间任何一处走偏，服务级判据照旧全绿，端点上仍是 5 个 500（实测端点级读数 `[500,500,200,500,500,500]`）。⇒ 同一个写入点的回执契约必须有**端点级**判据。', '**判据①（端点级主判据）**：`POST /api/admin/batch-stock/stocktake` 同 runId 6 并发（`CyclicBarrier` 把 6 个请求全部压过「查已记批次」这一步 ⇒ TOCTOU 窗口必现）⇒ 6 个响应 HTTP **全部 2xx**（5xx=0）、回执行恰 1 个 `applied` + 5 个 `replayed`、该 run 分录恰 1 行、库存链恰一条 `60.0->58.5`。判据 = `backend/admin-api/src/test/java/com/migao/admin/service/StockBatchStocktakeEndpointRaceRealDbTest.java::concurrentStocktakeCallsGetIdempotentReceiptsNot500`（真 MockMvc + 真 Controller + 真 Service + 真 GlobalExceptionHandler + **真 PG**）。', '**判据②（注入式红证 · 端点级）**：把生产写入路径换回**朴素 insert**（`Proxy` 只替换 `insertStocktakeIfAbsent`，其余原样转发真 mapper）⇒ **同一端点**在同一份并发注入下当场 `5 × 500`（`INTERNAL_ERROR`）—— 逐字读数 `[500, 200, 500, 500, 500, 500]`。这条读数自证判据①的绿**有判别力**（不是「本来就不撞」），也是「把修复撤回 ⇒ 端点级判据会怎么红」的可执行答案。判据 = 同文件 `naiveInsertWiringTurnsTheEndpointIntoFiveHundreds`。', '**判据③（日志面：端点 500 必须查得到）**：端点 500 必须在应用日志里留下 **ERROR 事件**，且事件文本含 `method` / `uri` / `tenant`，throwable 链里有**具名异常**且消息带唯一索引名（`uk_batch_consumption_stocktake`）—— 「红了但查不到」是判据面缺陷。判据 = 同文件 `endpointFiveHundredCarriesANamedExceptionAndCoordinatesInLog`；落码 = `GlobalExceptionHandler#handleException` 改为记 `method/uri/tenant/type/msg` + 异常本体。', '**类级元守卫（判据 1~6）**：`tests/unit_ci_workflows/test_endpoint_receipt_race_guard.py` + 冻结台账 `tests/unit_ci_workflows/endpoint_receipt_race_ledger.json` —— 真值源 = `unique_write_ledger.json` 里「`handling` 指向 mapper 文件、且该文件里有 `ON CONFLICT`」的写入点（**每次运行现取**，现取 4 条）：① **未登记即红**（新增这类写入点必须挂端点级判据或写 deferred+理由）；② **登记即须属实（双向）**（台账给不存在/已改名的闸盖章 ⇒ 红）；③ **端点必须现取存在**（`sites` 里的 `POST /api/...` 端点串必须在控制器里真取得到）；④ **判据必须在场且是端点级**（`文件::符号` 逐字存在，且该文件里有 `MockMvc` 端点驱动标记 —— 服务级判据不能替端点级契约背书）；⑤ `deferred` 必须写理由 + 重启条件、`case_ids` 必须在用例库里存在；⑥ **fail-closed**（现取集合为空 / `sites` 为空 ⇒ 红）。判别力自证：八条坏形态在**内存语料**上各自判红 + 对照语料不红（同文件 `test_injected_bad_corpora_are_named`）。', '**同批重锚（新增用例 / 新增真库判据必须同批登记）**：新增本用例 ⇒ `tests/unit_ci_workflows/case_machine_fail_channel_baseline.json` 的 `backend_contract_scoring_zero` 124 → **125**（同批追加 history 行，`no_channel_total` 仍为 0）；新增 `StockBatchStocktakeEndpointRaceRealDbTest.java` ⇒ 同批登记进 `tests/unit_ci_workflows/test_realdb_failclosed.py` 的 `REALDB_FILES`。', '🔴 **覆盖边界（照实登记）**：① 元守卫的「端点」判定是**形态学**的（只认 `@RequestMapping` 类前缀 + 单字符串 `@Post/Put/Patch/DeleteMapping`；注解数组 / 无参映射不在射程）；② 「判据是端点级」用 `MockMvc` 驱动标记判 —— 判不了「那条判据真的断言了状态码」（行为面由判据自己承担）；③ 元守卫只裁**原子闸族**（mapper 内 `ON CONFLICT`），服务侧 `catch DuplicateKeyException` 那一族不在射程（对外语义各不相同）；④ 端点级判据走 MockMvc 栈（真 DispatcherServlet + 真处理器 + 真库），**没有**真 Tomcat 容器与 JWT/权限过滤器 —— 鉴权面由既有 `StockBatchControllerTest` 覆盖；⑤ 真库原始会话不经过 MyBatis-Spring 的异常翻译 ⇒ 判据③里具名异常是 `PersistenceException`（生产是 `DuplicateKeyException`），判据对**异常族**断言；⑥ `deferred` 的三条（入库标签 / 加工单集合 / 工人端取件令牌）是**已登记的缺口**，各自需要先定回执口径。'],
+    skip_reason='[backend-contract] 端点级判据（真 MockMvc + 真 PG：断言 HTTP 状态码与回执体）+ 元守卫（纯静态，只读 Java 源码 / 台账 JSON / cases yml）：判定层在单测与真库测试，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'idempotency', 'unique-key', 'endpoint-level', 'fail-closed', 'red-proof', 'class-level-guard'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PK-001 [NORMAL] 包级定点清单入口（scripts/pkg-narrow-check.sh）：两条必然项按 diff 路径自动带上（不改测试 / 不加用例的包不许跑它们）（源: cases/misc.yml）──
+_CASE_PK_001 = EvalCase(
+    id='PK-001',
+    legacy_id='',
+    title='包级定点清单入口（scripts/pkg-narrow-check.sh）：两条必然项按 diff 路径自动带上（不改测试 / 不加用例的包不许跑它们）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['并行修复包按「只跑定点」的纪律干活时，新增/修改 Java 测试、或新增 `[backend-contract]`（`expectations: []`）用例 —— 这两类改动必须**自动**带出它们各自那条必然判据，不靠人记得加开关；不改测试也不加用例的包则**不许**跑它们，也不许把全量档拖进来。'],
+    expectations=[],
+    data_checks=['**只读 + 只跑测试**（判据 = tests/unit_ci_workflows/test_pkg_narrow_check.py::TestReadOnly::test_entry_writes_nothing）：整跑一遍（两条必然项**都**触发）后工作树快照**逐字节相同** ⇒ 任何写盘 / 改文件即红。', '**自动探测（机械判定，不靠人记得加开关）**（判据 = test_java_test_file_auto_enables_wall_clock_leg / test_case_or_claim_change_auto_enables_anchor_leg）：变更集（`git diff --name-only <base>...HEAD` ∪ 工作区未提交，`-uall`）里出现 `src/test/**/*.java` ⇒ 自动带上 `--java-tests`，出现 `.github/cases/**` 或 `claims/**` ⇒ 自动带上 `--new-cases`；两条都由**真 runner 的调用记录**证明（不只是打印）。', '**反向对照（不该跑就不跑）**（判据 = test_neither_inevitable_leg_runs_when_nothing_triggers / test_lightweight_gates_run_and_no_full_suite_is_pulled）：只有一条无关文件变动时，两条必然项都 `⏭️ 未跑` 且 `mvnw-probe` / `test_case_machine_fail_channel.py` 都不在调用记录里；无开关时**只**跑三条轻量门禁（`case_trust_gate --base origin/main` / `generated_artifacts_freshness.py` / `test_realdb_failclosed.py`），调用记录里没有整目录 pytest。', '**不许静默跳过**（判据 = test_skips_are_never_silent）：未跑的腿必须打印「未跑 + 触发面 + 依据」三样；`--no-auto` 必须打印「已按 --no-auto 关闭」（与「没命中」分开措辞）。', '**fail-closed（无法判定 ⇒ 非零）**（判据 = TestFailClosed）：基准 ref 取不到 ⇒ `rc=3`；零 diff 树 ⇒ `rc=3`；有腿真红 ⇒ `rc=1`；`--dry-run` 只打印计划且不执行任何腿。三种都**不得**出现「该跑的腿全部通过」。', '**判别力自证 + 注入式红证**（判据 = TestMutationProvesDiscrimination，含内存变异体）：把 `AUTO_JAVA=1` / `AUTO_CASES=1` 从脚本里摘掉 ⇒ 同一夹具、同一注入下该腿不再被带上 ⇒ 判据当场红（§28.1 出口①）。', '**落点与出口（人可照做）**：`docs/wiki/Development.md` 新增「包级定点清单」节（并从上节「批次统一验证」交叉链接），写明「改 Java 测试 / 新增用例的包，必须跑 `./scripts/pkg-narrow-check.sh`」，把两条必然项的**窄跑命令逐字**与第 ② 条红了的重锚出口（`_how_to_regen`）一并写进文档。'],
+    skip_reason='[backend-contract] 纯离线判据（零 LLM、零真库、零网络；沙箱里跑**真脚本** + runner 桩）：由 tests/unit_ci_workflows/test_pkg_narrow_check.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['dev-flow', 'narrow-check', 'auto-detect', 'fail-closed', 'read-only'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-080 [NORMAL] 「跳过部署」不得被计成「已部署」（issue #6294，P0·部署）：`Skip if already built` 只看 run 结论 ⇒ 跳过路径上 `Deploy to SWAS` 整段 skipped 而 run 报 success ⇒ 对账断路器把 success 放进允许名单 ⇒ 环境停摆而台账全绿；三条部署腿同源修（判定本体 = 单份共享库；AK/SK 引用在 job env 只声明一次），`运行 tag == 目标 tag` 不成立即具名判红、探不到 fail-closed）（源: cases/misc.yml）──
+_CASE_MC_080 = EvalCase(
+    id='MC-080',
+    legacy_id='',
+    title='「跳过部署」不得被计成「已部署」（issue #6294，P0·部署）：`Skip if already built` 只看 run 结论 ⇒ 跳过路径上 `Deploy to SWAS` 整段 skipped 而 run 报 success ⇒ 对账断路器把 success 放进允许名单 ⇒ 环境停摆而台账全绿；三条部署腿同源修（判定本体 = 单份共享库；AK/SK 引用在 job env 只声明一次），`运行 tag == 目标 tag` 不成立即具名判红、探不到 fail-closed）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当 `Skip if already built (schedule reconcile)` 判「已部署」（镜像在 ACR / 同 sha 的 run 结论 success）、`Deploy to SWAS` 与 `Assert server-side build` 被整段跳过时，必须有一条**部署后**的机械判据把「**运行 tag == 目标 tag**」验出来：不一致 ⇒ **具名判红**（服务 / 期望 tag / 实测 tag / 可复制命令），而不是让 run 报绿；探不到就要 fail-closed，不许当成「一致」。'],
+    expectations=['direct_reply'],
+    data_checks=['**病（现取读数）**：issue #6294 现场（2026-10-04）—— `admin-web` 近 40 次 run 里两条 `success`（run `37156277078` / `37131394391`）**都是**「`Skip if already built (schedule reconcile)` 成功 + `Deploy to SWAS` **skipped**」，而 SWAS 实例上在跑的容器是 `admin-web:sha-877ac15`（40 小时前）、`.last-good-tag` = `sha-6838a05`、main HEAD = `9d82e2e60` ⇒ **环境一次都没换过而台账全绿**。复算：`gh run view <id> --json jobs` / `gh run list --workflow=deploy-frontend.yml`。', '**运行面读数（唯一一份实现）**：`deploy/scripts/swas_deploy_running_tag.sh`（**库**，被 `deploy/scripts/swas-deploy-ci.sh` 的 `--probe-running-tag` 分发段 source；`$@` 只在主脚本解包）经**同一条** SWAS `RunCommand` 通道**只读**取回在跑 tag（远端执行体 `deploy/swas/deploy.sh` 的 `--probe-running-tag` 分支，在远端 `flock` **之前** ⇒ 不被在跑的部署挡住；不 build / 不 pull / 不 up）。判据 = tests/unit_ci_workflows/test_deploy_skip_is_not_success.py::test_running_tag_probe_exists_and_is_a_single_shared_implementation / ::test_probe_runs_read_only_remote_command', '**注入式红证（本单核心）**：期望 `sha-abc1234`、实测 `sha-877ac15`（= 现场读数）⇒ 退出码 **1**，且输出必须含 **服务 / 期望 tag / 实测 tag / 可复制复算命令** 四件 + `::error::`。判据 = 同文件 ::test_diverging_running_tag_is_red_and_named（反向对照 ::test_matching_running_tag_passes 退 0 且不报警）', '**fail-closed 三态三分**：探不到（云调用失败 / 输出无 `RUNNING_TAG=` / 未知服务键）⇒ 退出码 **3**（与「确认不一致」的 1 分开，也与「一致」的 0 分开），文案必须写「探不到」。判据 = 同文件 ::test_unreadable_running_tag_is_fail_closed / ::test_cloud_api_failure_is_fail_closed_not_green / ::test_unknown_service_key_is_rejected；空读数（容器没起）**属不一致**（退 1，必须显式写「实测 tag：（空）」）= ::test_empty_running_tag_counts_as_divergence', "**接线 + 类级元守卫（铁律 8：同源修）**：三条腿（`deploy-frontend.yml` / `deploy-admin-api.yml` / `deploy-ai-agent-service.yml`）都必须把 `Assert running tag == target (skip 不得冒充已部署，issue #6294)` 接在 `Deploy to SWAS (测试环境)` **之后**、只在 `steps.sync.outputs.skip == 'true'` 时跑，且**调用同一份**共享脚本（禁止三份复制；期望 tag 经 env 取 `steps.tag.outputs.IMAGE_TAG`）。**未接线即红**：判据从仓库现取「带 `Skip if already built` 步的腿」⇒ 新加同形腿漏接 ⇒ 当场红。判据 = 同文件 ::test_every_skip_capable_leg_is_wired_to_the_probe / ::test_shared_script_is_referenced_by_exactly_one_path", '**同批落进既有的两条类级台账（未登记即红）**：本库也发 `RunCommand --command-content` ⇒ 必须登记在 tests/unit_ci_workflows/swas_command_content_legs_ledger.json（含字节前置断言 `${…:-16384}` + `-ge` 比较 + 官方出处 URL，且断言位置在云调用**之前**）—— 判据 = tests/unit_ci_workflows/test_swas_command_content_limit.py；三条腿新增跑 `deploy-*.yml` 的 step 后，`run` 正文仍须 ≤ 13250 字符（超限 ⇒ 整份 workflow invalid）—— 判据 = 同文件 ::test_workflow_run_bodies_stay_within_the_github_limit。', '**⚠️ 未覆盖（照实登记）**：`skip=false`（真跑了完整部署）那条路径本判据**不**自证运行 tag —— 它由 `deploy.sh` 自己的健康检查与 `EFFECTIVE_TAG=` 读数承担（`deploy.sh` 的 #4852「不许往回走」闸门在 target 是在跑 tag 的祖先时会跳过**该服务**并打 `DOWNGRADE_SKIPPED=`，那条路径的运行 tag 允许 ≠ target ⇒ 属既有语义、本单不扩）。⚠️ 桩的诚实标注：`aliyun` 是桩 ⇒ 本判据证明的是「脚本在给定输入下会做什么」，**不是**「阿里云真的会回这个读数」（后者只有真跑 CI 才能验证）。'],
+    skip_reason='[backend-contract] 纯离线判据（零 LLM、零真库、零网络：读仓内文件 + 在 tmp_path 自造沙箱、桩 `aliyun`）：判定层在单测，由 tests/unit_ci_workflows/test_deploy_skip_is_not_success.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'deploy', 'watchdog', 'ledger', 'red-proof', 'fail-closed'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-083 [NORMAL] 开租「必需初始数据清单」⇄ 入驻链路播种调用的类级元守卫（issue #6295）：清单里每条必须真的种、链路里每个种子协作者必须已登记（未登记即红）、后置条件校验必须接线在且逐项检查 enforced 项、豁免台账只许缩短、默认值字面量单一来源；判别力在内存语料上自证（源: cases/misc.yml）──
+_CASE_MC_083 = EvalCase(
+    id='MC-083',
+    legacy_id='',
+    title='开租「必需初始数据清单」⇄ 入驻链路播种调用的类级元守卫（issue #6295）：清单里每条必须真的种、链路里每个种子协作者必须已登记（未登记即红）、后置条件校验必须接线在且逐项检查 enforced 项、豁免台账只许缩短、默认值字面量单一来源；判别力在内存语料上自证',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['入驻链路漏种了某一项必需初始数据（例如商品分类）时，不应该等到客户第一次建商品撞 422 才被人发现 —— 作业面必须当场红，而不是靠下一次人工走查。', '以后有人给开租链路再加一项必需初始数据（客户标签 / 工艺 / 岗位…）时，也必须先登记清单，否则同样当场红。'],
+    expectations=[],
+    data_checks=['**病（issue #6295 的形态）**：开租链路种了行业生产种子模板、**唯独漏了商品分类** ⇒ 新租户 categories 表为空 ⇒ 开箱首建商品 422「分类ID不能为空」。这不是一处笔误，是**一族**：「开租必需种什么」只活在人的记忆里 ⇒ 下一次新增域还会再漏一次，且不会有任何东西变红。', '**判据 1（清单里的项，链路里必须真的种）**：OnboardingInitialData.REQUIRED 每条的 seedAnchor 必须逐字出现在 RegistrationService 的**代码**里（剥注释与字符串后判定 ⇒ 「注释里写一句调用」不算）—— 删掉某个播种调用（= #6295 的原始形态）⇒ 具名报出该 key。判据 = tests/unit_ci_workflows/test_onboarding_required_seed_guard.py::test_required_seed_anchors_are_present_in_onboarding。', '**判据 2（未登记即红）**：链路里出现的每个 *Seed*Service 协作者接收者都必须有清单条目认领 ⇒ 新增一个种子服务却忘了登记 ⇒ 具名报出该接收者。判据 = 同文件 test_no_unregistered_seed_collaborators_in_onboarding。', '**判据 3（后置条件校验接线在）**：assertRequiredInitialData( 必须在链路里被调用，且清单中**每个 enforced 项**的键常量必须出现在**该方法体内**（不是「全文提过」）⇒ 删掉校验调用 / 删掉某一项的检查行 ⇒ 具名报出。判据 = 同文件 test_onboarding_postcondition_guard_is_wired。', '**判据 4（豁免台账只许缩短 + 双向对齐）**：非 enforced（尽力而为）项必须在 tests/unit_ci_workflows/onboarding_required_seed_ledger.json 的 best_effort 里写明 reason + reopen_condition；台账里不许有清单中不存在的键；条数不得超过 exemptions_frozen_count（**现取**比对，不是快照断言）。判据 = 同文件 test_exemption_ledger_is_double_sided_and_only_shrinks。', '**判据 5（默认值单一来源）**：DEFAULT_PRODUCT_CATEGORY_NAME 的字面量在整个 admin-api 主源码里**恰出现一次**（只在定义处）⇒ 别处再抄一份字面量（「散落的魔法常量」）⇒ 具名报出文件。判据 = 同文件 test_default_category_name_has_a_single_source。', '**判据 6（判别力自证）**：八种坏形态在**内存语料**上各自判红（注释掉调用 / 摘掉播种调用 / 新增未登记种子协作者 / 摘掉后置条件校验 / 删掉某一 enforced 项的检查行 / 豁免没写理由 / 台账幽灵条目 / 超冻结上限 / 重复字面量），并有一条**对照读数**（只改注释 ⇒ 五条判据全不红）。判据 = 同文件 test_guard_has_discriminating_power_on_mutated_corpus。', '**同批重锚（新增用例 / 新增真库判据必须同批登记）**：新增本用例 ⇒ tests/unit_ci_workflows/case_machine_fail_channel_baseline.json 的 backend_contract_scoring_zero 同批追加 history 行（no_channel_total 仍为 0）；新增 NewTenantOnboardingCategoryRealDbTest.java ⇒ 同批登记进 tests/unit_ci_workflows/test_realdb_failclosed.py 的 REALDB_FILES。', '🔴 **覆盖边界（照实登记）**：① 判的是**接线锚在不在**（结构面）—— 「那段接线在真库上跑得对不对」由实例判据 backend/admin-api/src/test/java/com/migao/admin/service/NewTenantOnboardingCategoryRealDbTest.java 承担（真 PG：入驻 ⇒ 分类恰 1 行 ⇒ 首建商品成功；注入摘掉种子 ⇒ 逐字 422）；② 判据 2 的扫描面 = RegistrationService 一个文件里的 `*Seed*Service` 接收者，命名约定外的播种协作者**不在射程**（覆盖边界写在 data_checks 与守卫 docstring）；③ 本守卫不跑被它引用的 Dev 测试（不嵌套 pytest 跑 Java），否则「未登记即红」会退化成全量套件再跑一遍。'],
+    skip_reason='[backend-contract] 纯静态判据（零 LLM、零真库、零网络、零时钟；只读 3 份 Java/JSON 语料 + admin-api 主源码字面量）由 tests/unit_ci_workflows/test_onboarding_required_seed_guard.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'onboarding', 'required-initial-data', 'class-level-guard', 'fail-closed', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯静态元守卫用例：前置 = ① backend/admin-api/src/main/java/com/migao/admin/service/OnboardingInitialData.java（必需初始数据清单真值源）与同目录的 RegistrationService.java（入驻链路）在场；② tests/unit_ci_workflows/onboarding_required_seed_ledger.json 在场且含豁免冻结上限 `exemptions_frozen_count`。前置由判据自身持有：文件缺失 / 清单解析出 0 条 / 台账缺冻结上限 ⇒ 判据当场 fail-closed 判红（不会表现成「agent 不干活」）；agent-eval 栈不跑它',
+)
+
+# ── MC-084 [NORMAL] 合并凭据 ⇄ push 触发面：会 arm auto-merge 的 job 必须引用非内置凭据（secrets.AUTOMERGE_PAT）且缺 secret 时显式具名回落，arm job 登记表双向对齐、未登记即红；新增非内置 secrets 引用的 owner 确认通道逐名比对、无确认时逐字仍 BLOCK（源: cases/misc.yml）──
+_CASE_MC_084 = EvalCase(
+    id='MC-084',
+    legacy_id='',
+    title='合并凭据 ⇄ push 触发面：会 arm auto-merge 的 job 必须引用非内置凭据（secrets.AUTOMERGE_PAT）且缺 secret 时显式具名回落，arm job 登记表双向对齐、未登记即红；新增非内置 secrets 引用的 owner 确认通道逐名比对、无确认时逐字仍 BLOCK',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['合并完成后，改过 frontend/admin-web、backend/admin-api、backend/ai-agent-service 的代码应当在数分钟内自动部署，不该因为「合并用的是机器人 token」而静默不部署、只靠对账腿兜底。', '以后任何人再写一条会 arm auto-merge 的路径、或把合并凭据改回内置 token，作业面必须当场红，而不是等线上停更几天才被发现。'],
+    expectations=[],
+    data_checks=['**病（issue #6418 的形态）**：内置 token 合并 ⇒ 合并者恒为 `app/github-actions` ⇒ GitHub 的**反递归抑制**（GITHUB_TOKEN 引发的事件，除 `workflow_dispatch` / `repository_dispatch` 外不创建新的 workflow run）吞掉该次合并的 `push` 事件 ⇒ 三条部署腿的主触发面（`on.push`）整条失效，只靠 `deploy-reconcile` 的 cron 兜底（**实测被节流到 ~6 次/日**，不是「20 分钟一次」）。这不是一处配置笔误，是**一族**：「用哪枚凭据合并」这件事决定了此后整条 push 触发链有没有电，而当时没有任何判据看着它。', '**判据 1（实例：arm job 必须走非内置凭据）**：`automerge.yml` 里每个会 arm merge 的 job 必须引用 `secrets.AUTOMERGE_PAT`，且**不得**把内置凭据（`secrets.GITHUB_TOKEN` / `github.token`）直接绑到 `GH_TOKEN`（那正是被吞的形态）⇒ 删掉 PAT 引用 / 改回内置写法 ⇒ 具名报出该 job。判据 = tests/unit_ci_workflows/test_automerge_merge_credential.py::TestRealWorkflow::test_real_workflow_has_no_problems。', '**判据 2（类级元守卫：未登记即红 + 双向对齐）**：会 arm 的 job 由**冻结登记表** `MERGE_JOBS_FROZEN` 认领，且与**现取**（按 `gh pr merge` / `MERGE_CMD_FAILED` 形态扫出来的 job 集合）**双向相等** ⇒ 新造一条会 arm 的路径而没登记、或登记的 job 不再 arm ⇒ 各自判红（台账不许给不存在的保护盖章）。判据 = 同文件::TestRealWorkflow::test_registry_matches_reality（登记表不可为空靠 arm_jobs 的防空断言兜住）。', '**判据 3（出声：缺 secret 不得静默降级）**：每个 arm job 必须声明显式回落（`env.FALLBACK_TOKEN`）**且**在正文里写出具名告警（`::warning::` + 「AUTOMERGE_PAT 未配置」+ 抑制后果）⇒ 缺 secret 时仍能 arm（不卡合并），但 run 上必须看得见「本次合并仍会被抑制」。判据 = 同文件::TestRealWorkflow::test_real_workflow_has_no_problems 的三、四条检查。', '**判据 4（判别力自证 + 对照读数）**：七种坏形态在**内存语料**上各自判红（摘掉 PAT 引用 / 把内置 token 绑回 GH_TOKEN / 摘掉回落声明 / 摘掉回落告警 / 新增未登记 arm job / 删光所有 arm job 触发防空跑 / 注入注释），并有一条**对照读数**（只往 YAML 里加注释 —— 哪怕包含 PAT 名与 arm 命令字样 —— ⇒ 不红）。判据 = 同文件::TestRedProofs（8 条）。', '**判据 5（危险通道：新增非内置 secrets 引用的 owner 确认）**：Danger Scan 的「修改 workflow 且新增非内置 secrets 引用 ⇒ BLOCK」原本**结构性**挡死「合法地引入一枚新 secret」（无任何记录确认的地方）⇒ 新增 owner 评论通道 `/danger-ack new-secret <NAME|all>`：**逐名比对**（该 workflow 新增的名字 ⊆ 已确认集合才降 WARN）、**无确认时与补通道前逐字相同地 BLOCK**、非 owner 的 ack 一律不算、`all` 只能在解析侧展开成具体名字。判据 = tests/unit_ci_workflows/test_danger_scan.py::TestNewSecretAckChannel（11 条，含 fail-closed 与「内置 GITHUB_TOKEN 豁免口径一字未动」的对照）。', '**同批重锚（改了约束对象就必须同批改它的快照）**：① `tests/unit_ci_workflows/test_automerge_bot_safe_path.py` 的 `ORIGINAL_NONBOT_RUN_RAW`（非 bot 合并 step 的逐字快照）随「⓪ 选合并凭据」段同批重锚，并保留变异红证；② 原「本 PR 不得新增 `secrets.*` 引用」那条**自设硬约束**由 #6418 命题改写为「两个 arm job 引用的都是非内置的 `AUTOMERGE_PAT`」；③ `.github/workflows/deploy-reconcile.yml` 头部「主触发已失效 / 20 分钟兜底」两处**假真值**同批订正。', '**判据 6（夹具真跑：那段 bash 真跑起来会按预期分流）**：结构绿 ≠ 那段 `set -uo pipefail` 的 bash 真跑对了（少写一个 `:-`、`if` 分支写反、丢一行 `export` 结构判据全看不见）⇒ 把「⓪ 选合并凭据」段**逐字抽出来真跑**（PATH 放假 `gh` 记账、`GITHUB_STEP_SUMMARY` 指临时文件，零网络零真 gh）：**PAT 在** ⇒ 打 `🔑 合并凭据 = AUTOMERGE_PAT（actor=…）`、**无任何 `::warning::`**、`GH_TOKEN` == PAT 值、且真做了 `gh api user --jq .login` 读数；**PAT 在但 actor 解析成 `github-actions[bot]`** ⇒ 打「**等价物** ⇒ 抑制照旧」的具名告警（误配成内置等价物要当场可见）；**PAT 不在** ⇒ 具名 `::warning::AUTOMERGE_PAT 未配置` + step summary 写明出口 + `GH_TOKEN` == 回落值 + **退出码 0**（fail-open：缺 secret 不得卡住合并）；**两个 env 都没有** ⇒ 仍 rc=0（`:-` 守住 `set -u`）。判据 = tests/unit_ci_workflows/test_automerge_credential_selection_fixture.py::TestCredentialSelectionFixture（4 条）。', '**判据 7（夹具层的红证）**：注入式四条自证「上面那层会红」（把 `GH_TOKEN="$AUTOMERGE_PAT"` 改回 `GH_TOKEN="${FALLBACK_TOKEN:-}"` ⇒ 「PAT 在 ⇒ 用 PAT」失配；删掉回落告警行 ⇒ 「缺 secret 具名出声」失配；把「⓪ 段」整段删掉 ⇒ 抽取函数当场抛「命中 0 次」（防空跑）；基线抽取自证非空且含 `gh api user`）。判据 = 同文件::TestCredentialSelectionRedProofs（4 条）。', '🔴 **覆盖边界（照实登记）**：① 判据**不读**「`AUTOMERGE_PAT` 这枚 secret 在仓库里配没配、权限够不够」—— 它只读仓内文件（零 `gh`、零网络、零时钟，同 test_publish_leg_fallback_surface.py 口径）；运行期那一半由 arm step 自己打印的 actor 读数 + 缺 secret 时的 `::warning::` 承接；② 「PAT 合并确实不再被抑制」这条只能由**运行期读数**证明（合并后 `gh run list --branch main --event push` 当场见到 push run），本判据不覆盖；③ 兜底面（`schedule` / `deploy-reconcile` / `post-merge-verify` 的补偿面）**一条都没删** —— 凭据缺失或轮换时会退回当前形态，那时兜底面是唯一的保护；④ 判据 6 的夹具**用假 `gh`**：它证明的是「分流逻辑对」，**不**证明「真 `gh` 拿 PAT 合并后 GitHub 真的不再抑制」——那是 ② 的运行期面。'],
+    skip_reason='[backend-contract] 纯静态判据（零 LLM、零网络、零时钟；只读 `.github/workflows/automerge.yml` + `.github/danger_scan.py` 两份语料；判据 6/7 另用**假 `gh` + 临时目录**真跑那段 bash，仍不出网）由 tests/unit_ci_workflows/test_automerge_merge_credential.py、tests/unit_ci_workflows/test_automerge_credential_selection_fixture.py 与 tests/unit_ci_workflows/test_danger_scan.py::TestNewSecretAckChannel 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'ci', 'auto-merge', 'credential', 'trigger-surface', 'fail-closed', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯静态用例：前置 = ① `.github/workflows/automerge.yml` 在场且可被 `yaml.safe_load` 解析（含两个 arm job）；② `.github/danger_scan.py` 在场且可被 `sys.path` 导入（`tests/unit_ci_workflows/test_danger_scan.py` 的既有导入面）。前置由判据自身持有：文件缺失 / YAML 解析失败 / 一个 arm job 都取不到 ⇒ 判据当场 fail-closed 判红（不会表现成「agent 不干活」）；agent-eval 栈不跑它',
+)
+
+# ── MC-085 [NORMAL] 打印入口收口守卫：打印不跟订单状态挂钩（无「状态 × 单据」矩阵）+ 每页只有一个打印入口且不在状态分支里 + 单据名不手写 + 打印层选择器接线齐全 + 作业单区块无第二入口 + 加工单打印只在「加工单生产明细」页且与水洗唛同层（issue #6434 → #7544 → #7870）（源: cases/misc.yml）──
+_CASE_MC_085 = EvalCase(
+    id='MC-085',
+    legacy_id='',
+    title='打印入口收口守卫：打印不跟订单状态挂钩（无「状态 × 单据」矩阵）+ 每页只有一个打印入口且不在状态分支里 + 单据名不手写 + 打印层选择器接线齐全 + 作业单区块无第二入口 + 加工单打印只在「加工单生产明细」页且与水洗唛同层（issue #6434 → #7544 → #7870）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['「这几个打印按钮不要跟状态挂钩，允许任何状态都能进行打印这些单据，另外把按钮收拢到一个打印统一入口中？作业单区域也有两个按钮，应该都统一收口到打印中，点击打印后可以选择不同的单据预览再进行打印」（2026-10-23 用户逐字，附两张截图：状态卡右侧的「退款 | 打印报价单 | 打印加工单 | 打印销售单」+ 作业单区块右侧的「复制全部 | 打印」）—— 用户要的是「一个入口、与状态无关、进来再选单据」；旧形态（#6434 的状态 × 单据矩阵）把可用性绑在状态上，且四个按钮常驻占位。', '「加工单打印移到加工单和水洗唛放一起，也想订单一样统一收口到打印按钮」（2026-10-26 用户逐字，附订单详情「销售单 · 打印预览」截图，红框圈的是单据标签里的**加工单**）—— 加工单（A4）是车间用的纸，不该挂在销售面；它随「加工单生产明细」页（`/processing-orders/{id}/production`）的同一个「打印」入口承载，与水洗唛（任务卡）同层可选。'],
+    expectations=[],
+    data_checks=['**改判前后（写清为什么口径反过来）**：issue #6434（2026-10-06）把「四个打印按钮」从两个状态分支里的字面量副本收敛成 enum `PRINT_TARGETS_BY_STATUS` 一张「状态 × 可打单据」表；而 2026-10-23 用户裁定这条矩阵本身是病灶的另一半 —— `closed` / `refund` 两个状态**一张单据都打不出来**（商家要给客户补一张报价单时是死路），四个按钮又常驻把操作行铺满。⇒ 新口径 = **打印与订单状态完全解耦 + 全页唯一入口**，要打哪一份由打印层里的单据标签选（issue #7544）。', '**判据 1（实例：任何状态都有且只有一个入口）**：frontend/admin-web/tests/unit/pages/order-detail.test.tsx 的表驱动七条（待付款 / 待发货 / 生产中 / 已发货 / 已完成 / **已关闭** / **退款中**），每个状态断言「以『打印』开头的按钮**恰好 1 个**」（改前是 4 个，且后两个状态是 0 个）；另两条接线用例：①「点打印 → 在预览层换单据 → 打印」默认销售单（三联纸 241×140）、换**报价单**后纸型变 A4 210×297 且**换单据不出纸**，且 `print-preview-doc-processing` **取不到**（加工单已迁出本页，issue #7870）；②「已关闭订单也能打开打印层」。执行点 = 同文件::「打印不跟订单状态挂钩（issue #7544）…」/「点「打印」→ 在预览层里换单据 → 打印…」。', '**判据 2（类级元守卫：唯一入口）**：frontend/admin-web/src/app/(dashboard)/orders/[id]/OrderDetail.tsx 必须 ① **不含**「状态 → 可打单据」矩阵（`PRINT_TARGETS_BY_STATUS` 或任何 `Record<OrderStatus, …>`；去注释后判）② 「打印」入口（`data-testid="order-print-entry"`）**恰好 1 处**且**不在** `StatusSection` 里 ③ 代码里不得手写 `打印发货单|打印报价单|打印加工单|打印销售单` 字面量（单据名只能来自 `PRINT_TARGET_SPECS[*].title`）④ 打印层选择器接线齐全（`docs={ORDER_PRINT_DOCS}` + `onSelect={selectPreview}`），且清单含**三份**必打单据（销售单 / 报价单 / 发货单；加工单自 #7870 起迁出）、每项都在 frontend/admin-web/src/lib/print-doc.ts 的 `PRINT_TARGETS`（**现取**，不硬编码）⑤ frontend/admin-web/src/components/orders/ProcessingOrderBlock.tsx 不得再有打印入口（`onPrintProcessing` / `打印` 按钮）⑥（#7870）**订单详情页不得出现加工单打印痕迹**：去注释后无 `<ProcessingDoc`、无 `previewTarget === \'processing\'` / `printTarget === \'processing\'`、`ORDER_PRINT_DOCS` 不含 `processing` ⑦（#7870）**「加工单生产明细」页是加工单打印的唯一入口且与水洗唛同层**：`data-testid="production-print-button"` 恰好 1 处、`printDocs` 同时含 `labels` + `processing`、`docs={printDocs}` + `onSelect={selectPreview}` 接线、`<ProcessingDoc>` **两处**（页级挂载 = 真正上纸的那一份 + 预览副本 `inline`）。判据 = tests/unit_ci_workflows/test_order_print_entry_matrix.py::TestRealSources（5 条）+ ::TestProductionPrintEntry（2 条）。', "**判据 3（判别力自证 + 对照读数）**：G1~G5 各有**注入式**红证（把状态矩阵加回去 / 复制第二个入口 / 把入口搬进 `StatusSection` 函数体 / 写回字面量按钮 / 摘掉 `docs=` 与 `onSelect=` / 清单写错键 `'sale'` / 清单漏掉发货单 / 作业单区块加回 `onPrintProcessing` / **把加工单标签加回订单页清单** / **生产页摘掉 `processing` 或摘掉 `docs=`**），每条都断言「注入真生效（文本确实变了）」，防止锚点漂移把红证变成空断言；另有**对照读数**：只往页面里加注释（哪怕注释里写满四个按钮名与旧矩阵名、或写满 `labels` + `processing`）⇒ 一条都不红。判据 = 同文件::TestDiscriminatingPower（9 条）。", '🔴 **覆盖边界（照实登记）**：① 本判据只读**仓内三份语料**（零网络、零时钟、零运行时）⇒ 它判「入口是不是唯一、是不是还在跟状态走」，**不判**「真机上点得开、纸出得来、选不同单据出纸是对的」—— 那半边的机器判据 = tests/e2e/specs/orders/print-preview.spec.ts（真浏览器 `beforeprint` 抓 `data-print-target`，含「已关闭订单照样能打」那条；#7870 起还断言订单详情页文档里 `.processing-print-area` **一处都没有**）；⚠️ **「加工单生产明细」页至今没有 Playwright 旅程 spec**（该页 e2e 夹具需一整套 production mock）⇒ 该页的加工单标签只由单测覆盖，登记为缺口；② 它不校验入口的**位置/布局**（只判「不在状态分支里」），视觉回归由 `./check-ui-regression.sh` 与页面级旅程承接；③ 单据清单的**顺序**是产品口径（用得最多的在前），判据只钉「四份都在集合里」，不钉顺序。'],
+    skip_reason='[backend-contract] 纯静态判据（零 LLM、零网络、零时钟；只读 OrderDetail.tsx / lib/print-doc.ts / ProcessingOrderBlock.tsx 三份语料）由 tests/unit_ci_workflows/test_order_print_entry_matrix.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'frontend', 'order', 'print', 'single-entry', 'reuse-guard', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯静态用例：前置 = ① frontend/admin-web/src/app/(dashboard)/orders/[id]/OrderDetail.tsx 在场且含 `ORDER_PRINT_DOCS` 清单与唯一入口锚点；② frontend/admin-web/src/lib/print-doc.ts 在场且含 `export const PRINT_TARGETS`；③ frontend/admin-web/src/components/orders/ProcessingOrderBlock.tsx 在场；④（#7870）frontend/admin-web/src/app/(dashboard)/processing-orders/[id]/production/page.tsx 在场且含 `printDocs` 清单与 `data-testid="production-print-button"`。前置由判据自身持有：文件缺失 / 正则取不到清单或目标位集合 ⇒ 判据当场 fail-closed 判红（不会表现成「agent 不干活」）；agent-eval 栈不跑它',
+)
+
+# ── MC-086 [NORMAL] 控制台口令面「只能建、不能救」的死角进不来：建号即设口令的 client 必须同时有同族重置出口（未配对即红 / 台账只许缩短 / 零命中即红 + 判别力自证）（源: cases/misc.yml）──
+_CASE_MC_086 = EvalCase(
+    id='MC-086',
+    legacy_id='',
+    title='控制台口令面「只能建、不能救」的死角进不来：建号即设口令的 client 必须同时有同族重置出口（未配对即红 / 台账只许缩短 / 零命中即红 + 判别力自证）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这里管理员查不到工人的pin码', '应该加个查看Pin码的功能，只有管理员权限才能看'],
+    expectations=[],
+    data_checks=['**病（issue #6432 的形态）**：`workerApi.createWorker` 建号时能设 PIN，但建完**再也拿不到** —— PIN 落库是 BCrypt 哈希（不可逆）、列表与视图面还显式脱敏 ⇒ 工人忘记 PIN 时管理员无路可走（只能删号重建，而重建会把报工记到两个身份上）。同族的 `employeeApi` 早就有 `resetPassword` ⇒ 这是**一族**：「建号即设口令」的能力面必须有对应的**重置出口**，而当时没有任何判据看着它。', '**判据 1（未配对即红，具名）**：某 client 暴露了 `create*` 且其入参类型含 `password` / `pin` 字段，却没有 `reset|change|update` + `Password|Pin` 方法，且不在豁免台账里 ⇒ 报出「未配对：<client> 暴露了 <方法>…」。判据 = tests/unit_ci_workflows/test_credential_rotation_pairing.py::test_discriminates_unpaired_client（内存语料 = 去掉工人侧重置面的改前形态）', '**判据 2（台账只许缩短：陈旧即红 / 超预算即红）**：`frozen_max_entries` 现取为 0；给一个**其实已配对**的 client 盖章 ⇒ 「陈旧台账条目」；条目数超上限 ⇒ 「超预算」；条目缺 `reason` ⇒ 红。判据 = 同文件::test_discriminates_stale_ledger_entry / test_discriminates_ledger_budget / test_ledger_is_wellformed_and_shrink_only', '**判据 3（零命中即红，fail-closed）**：扫描面一个「建号即设口令」的 client 都找不到（选择器漂了 / api.ts 结构变了）⇒ 判据自己失效 ⇒ 红，不许静默绿。判据 = 同文件::test_discriminates_empty_corpus', '**判据 4（对照读数：真语料上确实看得见配对）**：真仓上 `workerApi.createWorker ↔ resetWorkerPin`、`employeeApi.createEmployee ↔ resetPassword` 两条都必须被扫出来（防「选择器漂了还能绿」）。判据 = 同文件::test_real_repo_actually_sees_the_pairing + test_real_repo_passes', '🔴 **覆盖边界（照实登记）**：判据只认 frontend/admin-web/src/lib/api.ts 的**对象字面量 client**（`export const X = { … }` 顶格 `}` 收口）与 frontend/admin-web/src/types/index.ts 的**顶层 interface 字段**；经变量间接构造的请求体、行内 `{ pin }` 字面量、小程序 / H5 侧的 api 封装**不在射程内**；也判不了「重置口有没有接权限码 / 有没有接 UI」（那是 `@RequirePermission` 与页面判据的事）。本判据**不为存量条目的安全性背书**，只裁新增。'],
+    skip_reason='[backend-contract] 纯静态元守卫（只读两份前端语料 + 一份台账）由 tests/unit_ci_workflows/test_credential_rotation_pairing.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'admin-web', 'credential', 'rotation', 'fail-closed', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯静态用例（零 LLM、零网络、零时钟）：前置 = frontend/admin-web/src/lib/api.ts 与 frontend/admin-web/src/types/index.ts 在场且可读、tests/unit_ci_workflows/credential_rotation_pairing_ledger.json 可被 json 解析。前置由判据自身持有：文件缺失 / 台账坏 ⇒ 当场红（不表现成「agent 不干活」）；agent-eval 栈不跑它',
+)
+
+# ── MC-087 [NORMAL] 部署链路的「磁盘水位 × 回收」联动 + 被前置闸门挡住时的收口归因（issue #6508 / #6505 / #6512）：恢复出口按水位选窗口（固定 168h 在真机是 `Total: 0B` 的空操作）；构建缓存读数不许是 `?`；`-af` 只许落在恢复出口；闸门中止打机读标记 `ABORT_REASON=`，CI 收口按标记分支（未开始部署 ≠ 环境可能坏）；构建后「回收量为 0」的告警由水位守卫（水位充裕 ⇒ 只打信息行「属预期」）+ 回收量口径 = 缓存占用差（源: cases/misc.yml）──
+_CASE_MC_087 = EvalCase(
+    id='MC-087',
+    legacy_id='',
+    title='部署链路的「磁盘水位 × 回收」联动 + 被前置闸门挡住时的收口归因（issue #6508 / #6505 / #6512）：恢复出口按水位选窗口（固定 168h 在真机是 `Total: 0B` 的空操作）；构建缓存读数不许是 `?`；`-af` 只许落在恢复出口；闸门中止打机读标记 `ABORT_REASON=`，CI 收口按标记分支（未开始部署 ≠ 环境可能坏）；构建后「回收量为 0」的告警由水位守卫（水位充裕 ⇒ 只打信息行「属预期」）+ 回收量口径 = 缓存占用差',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['有一次是磁盘把三条部署腿全挡住了，脚本给的恢复出口在本机跑出来是空的（Total: 0B），我是自己又算了一层才解开的', '同一次 run 里远端说「构建前磁盘可用 4045MB < 门槛 4096MB ⇒ 中止构建（旧容器保持不动）」，CI 收口却说「且自动回滚也失败 ⇒ 环境可能处于坏状态，请立即人工介入」——实际构建根本没开始'],
+    expectations=[],
+    data_checks=['**病 1（issue #6508，真机实测 2026-10-07）**：`deploy/swas/deploy.sh` 给运维的恢复出口写死 `docker builder prune --filter until=168h`，而缓存条目全是 72h 内建的 ⇒ 匹配 **0 条**、`Total: 0B`（同一时刻 `until=48h` 解出 6.745GB）⇒ **照着提示敲解决不了问题**；且 Build Cache 12.44GB / 184 条 / 100% RECLAIMABLE **完全不在保留策略里**（只增不减），部署日志那一格逐字是 `构建缓存：?`。', '**病 2（issue #6505）**：同一次 run 里，远端说「构建前磁盘可用：4045MB < 门槛 4096MB ⇒ 中止构建（旧容器保持不动、环境未受影响）」，CI 收口说「部署失败…且**自动回滚（tag=sha-e0e3bdf）也失败** ⇒ 环境可能处于坏状态，请立即人工介入」——实际**构建根本没开始、在跑的服务一动没动**；而回滚腿命中的是**同一道闸门**（4045MB / 4046MB 都 < 4096MB），不是第二次独立故障。', "**判据 1（读数不许是 `?`）**：构建路径里必须打印「／构建缓存：<前> → <后>」；读数解析必须把 `docker system df` 的 `1.9GB` 这类人类可读串转成 MB（`--format '{{.Type}} {{.Size}}'` 下尺寸在**第二列**）。判据 = tests/unit_ci_workflows/test_swas_deploy_disk_recovery.py::test_exec_cache_readout_is_a_number_never_a_question_mark。", '**判据 2（窗口按水位选 + 清到阈值以上为止）**：`pick_cache_window` 必须拿磁盘可用量做**多处**分档比较（`"$free" -ge` ≥ 4 处）⇒ 阶梯退化成一个固定窗口即红；`builder_cache_recover` 必须重测可用量并与门槛比较（`-lt "$want"`），且带**兜底档**（`docker builder prune -af`）。判据 = 同文件::test_window_tightens_as_free_space_drops + test_each_judge_is_clean_on_the_real_scripts[problems_ladder_links_to_waterline-deploy]。', '**判据 3/4（不得碰保留集）**：缓存回收段**只发 `docker builder prune`**；段内不许出现 `docker image rm/rmi/prune/system prune/volume rm`，也不许引用 `LAST_GOOD_FILE` / `rollback_tag` / `.last-good-tag` / `retained_tags` / `cleanup_project_images`（结构上碰不到「当前在用 + 回滚点 + 最近 N 个」）。判据 = 同文件::problems_only_build_cache_is_touched / problems_retention_set_untouched + 执行式 test_exec_recovery_never_touches_images_or_retention_set。', '**判据 5/6（机读标记 + 中止不动环境）**：闸门中止必须打 `ABORT_REASON=BUILD_MIN_FREE_MB`（与 `EFFECTIVE_TAG=` 同族、CI 按 `^ *ABORT_REASON=` 解析）并说明「旧容器保持不动」；中止分支内不许出现 `docker build` / `docker compose pull|up` / `docker image rm`。判据 = 同文件::problems_abort_marker / problems_abort_does_not_touch_env + test_exec_gate_abort_emits_marker_and_touches_nothing。', '**判据 7（`-af` 只许落在恢复出口）**：`docker builder prune -af` 是两档阶梯的第 2 档 ⇒ 必须在 `builder_cache_recover()` 函数体内（带 `RECOVER_TIER_1/2` 与 `CACHE_RECOVER_AF_CALL` 行锚）；出现在函数体之外（= 无条件清光缓存，会把稳态 2s 打回冷构建 29.7min）即红。判据 = 同文件::problems_aggressive_prune_only_in_recovery + tests/unit_ci_workflows/test_swas_server_side_build.py::test_disk_precheck_and_non_destructive_reclaim。', '**判据 8（fail-closed 一字未改）**：余量不足仍必须**中止构建**（`if [ "$_df_mb" -lt "$_need_mb" ]`），且**清缓存之后要重新比一次门槛**（不许「清完就放行」）。判据 = 同文件::problems_gate_fail_closed_kept。', '**判据 9/10（收口按标记分支）**：CI 收口按 `$(is_gate_abort)` 分支 —— 被前置闸门挡住 ⇒ 打印「**未开始部署**（旧容器保持不动、环境未受影响）」+ 出口（回收磁盘 / 扩容），**且不得**出现「环境可能处于坏状态」/「立即人工介入」；部署中途失败（无标记）⇒ 仍说「环境可能处于坏状态，请立即人工介入」（双向对照）；回滚腿被**同一闸门**挡住 ⇒ 具名「回滚腿被同一道闸门挡住」，不计入「环境可能坏」的证据。判据 = 同文件::test_ci_gate_abort_names_never_started_and_never_says_env_broken / test_ci_midway_failure_still_says_env_may_be_broken / test_ci_rollback_leg_blocked_by_same_gate_is_not_evidence_of_damage。', '**判别力自证（注入式红证，§28.1 出口①）**：9 条注入各自让对应判据单独变红（固定窗口 / 删标记 / 摘读数 / 缓存段删镜像 / 缓存段引用回滚点 / 中止分支动环境 / 砍 fail-closed 比较 / 收口退回只看退出码 / 把 `-af` 挪进构建路径），另有一条**对照读数**（只加注释 ⇒ 不红）。判据 = 同文件::test_injection_* + test_comment_only_change_stays_green。', '**判据 12（issue #6512 ①：假警）**：构建后「回收量为 0」的告警**必须由水位守卫** —— 只在回收后可用量低于门槛（`_df_after_mb < _need_mb`）时才发 `::warning::`；水位充裕时（真机 run `37634071278`：构建前 10059MB ≫ 门槛 4096MB、按 72h 档匹配 0 条 ⇒ 回收量 0 **是预期**）只打信息行「水位充裕 ⇒ 按 N h 档未匹配到可回收层，回收量 0 属预期（非异常）」。判据 = tests/unit_ci_workflows/test_swas_deploy_disk_recovery.py::problems_reclaim_zero_warning_gated_by_waterline + 执行式 test_exec_generous_waterline_zero_reclaim_is_info_not_warning。🔴 **反向面（防把假警修成假绿）**：水位告急（3000MB < 4096MB）而回收量 0 ⇒ **必须**告警（test_exec_low_waterline_zero_reclaim_still_warns），且既有 `ABORT_REASON=BUILD_CACHE_RECLAIM_INSUFFICIENT` 与「下次构建会被前置检查拦住」一字未动。', '**判据 13（issue #6512 ②：口径）**：回收量 = **构建缓存占用差**（`_cache_before_mb − _cache_after_mb`）；Δ整盘已用只作**参照**打印（它含构建自身写盘 ⇒「prune 腾 2GB + 构建写 2GB」读数 = 0 ⇒ 假警）；读数不可得（`?`）⇒ 显式打「无法判定」，**不许**拿 0 冒充「没腾出空间」。判据 = 同文件::problems_reclaim_metric_is_cache_delta + 执行式 test_exec_reclaim_metric_is_cache_delta_not_used_delta（注入 prune 腾 2048MB、Δ整盘已用恒 0 ⇒ 读数必须 2048MB）/ test_exec_cache_readout_unavailable_never_fabricates_zero。', '**判据 14（类级，issue #6512 / #6505 同族）**：构建段里**每一条** `::warning::` 都必须由门槛/水位守卫（最近的控制行含 `_need_mb`）—— 只钉「回收量」一处样例不够：一类病 = 把「不需要 / 没发生」说成「有问题」⇒ 每次健康部署一条黄标 ⇒ 永久噪音让真失败与噪音同形。判据 = 同文件::problems_build_block_warnings_are_waterline_gated。**判别力自证**：3 条静态注入（拆水位守卫 ⇒ 判据 12/14 红；口径换回 Δ整盘已用 ⇒ 判据 13 红；删「属预期」信息行 ⇒ 判据 12 红）+ 3 条**执行式反向红证**（§28.1 出口①：拆守卫 ⇒ 充裕水位夹具出现假警；删告警行 ⇒ 告急夹具读不到告警；换回 Δ已用 ⇒ 腾出空间的夹具读数变 0）。', '🔴 **覆盖边界（照实登记）**：① 判据证明「脚本在给定输入下会做什么」，**不是**「真机上 `docker builder prune` 真的解出 N GB」——后者只能真跑一次（复算命令：`docker system df -v` + `docker builder prune --filter until=<窗口>h -f`）；② 「`-af` 兜底后稳态是否退化」是运行期读数（改源码 2s vs 冷构建 29.7min），静态判据看不见；③ 阶梯档位（168/72/48/24/6h）是**人可读的取舍**，判据只钉「按可用 MB 单调变紧 + 必到兜底档」，不钉具体数值；④（issue #6512）「真机下一次健康部署的 run 上黄标真的消失」只能事后核对（`gh run list --workflow=deploy-admin-api`）—— 本包**未**派发真机部署（部署由 main 合并自动触发）。'],
+    skip_reason='[backend-contract] 纯离线判据（零 LLM、零网络、零真机；只读两份部署脚本 + 桩化外部依赖真跑）由 tests/unit_ci_workflows/test_swas_deploy_disk_recovery.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'deploy', 'swas', 'disk', 'cache', 'observability', 'fail-closed', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯静态 + 桩化执行式用例：前置 = `deploy/swas/deploy.sh` / `deploy/scripts/swas-deploy-ci.sh` 在场且可 `bash -n`；执行式判据在 `tmp_path` 里用桩 `df`/`docker`/`curl`/`flock`/`timeout`/`aliyun` 跑**真实**脚本（零网络、零真机、零删除）。前置由判据自身持有：文件缺失 / 脚本语法坏 / 桩取不到 ⇒ 当场红（不表现成「agent 不干活」）；agent-eval 栈不跑它',
+)
+
+# ── MC-088 [NORMAL] 写面幂等接线覆盖率的类级元守卫（issue #6209）：凡消费同一份 ClientRequestIdService 的写面必须登记；读了 X-Client-Request-Id 却不接点位 ⇒ 红；豁免只许缩短；禁新造第二套幂等框架（源: cases/misc.yml）──
+_CASE_MC_088 = EvalCase(
+    id='MC-088',
+    legacy_id='',
+    title='写面幂等接线覆盖率的类级元守卫（issue #6209）：凡消费同一份 ClientRequestIdService 的写面必须登记；读了 X-Client-Request-Id 却不接点位 ⇒ 红；豁免只许缩短；禁新造第二套幂等框架',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['issue #6209 边界：与上一轮发货面 K3b-1 同族 ⇒ 修复时一并核对同一机制在各写面的接入覆盖率，并把覆盖率落成类级元守卫（漏接即红）'],
+    expectations=[],
+    data_checks=['**判据 1·未登记即红**：现取 admin-api 主源里出现幂等消费形态（`clientRequestIdService.claim|complete|discard|replay(`）的每个 .java 必须登记在台账 `consume_sites`（issue #6209 台账 = tests/unit_ci_workflows/idempotency_writeface_ledger.json）。', '**判据 2·登记未被兑现即红**：每条登记的 `anchor` 必须在该文件里逐字出现（摘掉/改名接线 ⇒ 具名报出）。实测注入：把 ProductService 的 anchor 改成 `…ENDPOINT_DOES_NOT_EXIST` ⇒ `VIOLATION: 登记未被兑现即红：…ProductService.java 里逐字找不到 anchor「…」`。', '**判据 3·陈旧条目即红（台账只许缩短）**：台账里的文件必须仍被现取扫描到。', '**判据 4·声明侧闭合（#6209 的原始形态）**：读了 ClientRequestIdService.HEADER 的文件必须落在「自己消费 / 透传下游 / 缺口登记」三处之一 —— `ProductController` 改前正是「读了头、服务端没去重」，属此形态。', '**判据 5·豁免只许缩短**：`declared_but_unwired` 条数 ≤ 冻结基线（条数现取打印；本包落地时为 0 条 —— 现取声明面 7 个文件全部闭合）。', '**判据 6·同一份实现**：ClientRequestIdService 类文件恰一个、`public boolean claim(` 定义在它里面、`client_request_keys` 的 `UNIQUE (tenant_id, client_request_id)` 在 schema 终态的建表体里 ⇒ 禁新造第二套幂等框架。', '**判据 7·共享消费下界**：现取消费文件数 ≥ 台账 `consume_floor`（本包 = 8；建品漏接后回到 7 ⇒ 红），防「悄悄摘掉某些接线」。', '**判据 8·判别力自证**：未登记 / 登记未兑现 / 陈旧条目 / 新增豁免 / 扫描面为空五种坏形态在合成语料上各自判红，合规语料不红。复算命令 `python3 -m pytest tests/unit_ci_workflows/test_idempotency_writeface_coverage.py -q -p no:cacheprovider` ⇒ 13 passed；手动入口 `python3 tests/unit_ci_workflows/test_idempotency_writeface_coverage.py` 打印现取消费面=8 / 声明面=7。', '🔴 **覆盖边界（照实登记，不粉饰）**：① 形态判据不做 AST 解析（把服务注入到别的变量名 ⇒ 判「陈旧条目」，保守方向）；② **未接幂等的建单写面**（POST /api/admin/inbound-orders、POST /api/admin/orders、POST /api/admin/products/import）连请求头都没声明 ⇒ 形态判据天然看不见，登记在台账 `_known_unguarded_write_surfaces`（本包只登记、不代修）；③ 射程 = admin-api 主源，C 端 ai-agent 生成键侧由各自用例承担。'],
+    skip_reason='[backend-contract] 纯离线静态守卫（读 Java 源码 + 台账 + schema）由 tests/unit_ci_workflows/test_idempotency_writeface_coverage.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'idempotency', 'guard', 'ledger', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='纯静态判据：零 LLM、零网络、零 DB；前置 = admin-api 主源在场且非空（扫描面为空 ⇒ 当场红，不表现成「通过」）。',
+)
+
+# ── MC-089 [NORMAL] dev-worktree 的退出码：`list` 不许因存在会话锁（哪怕全是失效锁）而 exit 1；`scripts/*.sh` 里函数体末命令不得是会被当成返回值的 `[ … ] && …` 复合形态（issue #6243）（源: cases/misc.yml）──
+_CASE_MC_089 = EvalCase(
+    id='MC-089',
+    legacy_id='',
+    title='dev-worktree 的退出码：`list` 不许因存在会话锁（哪怕全是失效锁）而 exit 1；`scripts/*.sh` 里函数体末命令不得是会被当成返回值的 `[ … ] && …` 复合形态（issue #6243）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['`./scripts/dev-worktree.sh list` 把工作区表和会话锁清单都正常打出来了，可 `echo $?` 却是 1 —— 锁全是失效锁（进程已退出）时也这样'],
+    expectations=[],
+    data_checks=['**病（2026-10-09 22:43 +08 主会话现取）**：`scripts/dev-worktree.sh` 的 `lock_list` 末行写成 `[ "$found" = "0" ] && echo "（无会话锁）"` —— `found=1` 时 `&&` 短路 ⇒ 该复合命令退出码 = 1 ⇒ 它就是函数返回值，而 `lock_list` 又是 `cmd_list` 的最后一条命令 ⇒ **只要 `$LOCK_DIR` 里存在任何 `*.lock`（哪怕全部失效）**，`list` 就 exit 1。口径修正（比 issue 原文更宽）：判据按「存在任何 `*.lock`」写，**不是**「存在活锁」。', '**判据 1（实例判据，行为面：真 fixture + 真 git，issue #6243 的验收口径）**：造 `$LOCK_DIR` + 至少一把 `*.lock`（失效锁）⇒ `./scripts/dev-worktree.sh list` 必须 **exit 0**，且该锁按名列出。判据 = tests/unit_ci_workflows/test_dev_worktree_list_exit_code.py::test_list_exits_zero_with_stale_session_lock_present。', '**判据 2（修前红，注入式，§28.1 出口①）**：把末行还原成旧形态 ⇒ 同 fixture 必须 exit **1**（`rc=1` 就是红证；注入后另做 `bash -n` 自证，防「注入坏成语法错」冒充红证）。判据 = 同文件::test_injected_old_tail_makes_list_exit_nonzero。', '**判据 3（负向对照，防「一律 return 0」吞错）**：① 不存在的子命令 ⇒ 仍**非零**；② `git worktree list` **真失败**（注入式 `git` 垫片只让这一个子命令 rc=128，垫片生效另作断言）⇒ 仍**非零**。判据 = 同文件::test_negative_controls_stay_nonzero。', '**判据 4（类级元守卫）**：`scripts/*.sh` 里**任何函数体**的最后一条可执行命令都不得是 `[ … ] && …` 这种「退出码会被当成返回值」的复合形态（脚本级尾行同判）—— **未登记即红**；豁免台账 tests/unit_ci_workflows/scripts_locked_tail_ledger.json **只许缩短**（条数冻结上界 `LEDGER_MAX = 1` 写死在判据里 ⇒ 台账自己改不大）、**登记必须兑现**（该位置现在真是该形态）、**陈旧登记即红**（现取 1 条具名豁免，见下）。判据 = 同文件::test_no_unregistered_exit_code_tail_in_scripts。', '**判据 4 的具名豁免（现取 = 1 条，why 逐字）**：`dev-worktree.sh::lock_alive` —— 它是**谓词**（`[ -f "$f" ] || return 1` 之后 `[ -n "$pid" ] && kill -0 "$pid"`），调用点全是 `if lock_alive …; then` / `lock_alive … 2>/dev/null` 这类条件位置 ⇒ 非零正是「锁失效」这个语义本身（`add` 靠它拒绝重复建工作区、`rm` 靠它决定是否释放锁）；改成 `return 0` 会把「锁失效」判成「锁活跃」、正好把护栏改坏。`lock_list` 这一处**不在**台账里（本单已改成显式 `if … fi` + `return 0`）。', '**判据 5（判别力自证 + 射程钉住）**：扫描器在内存造的坏形态上判红（函数末命令 / 脚本级尾行各一），在对照形态上**不红**（`&&` 出现在函数中部 ⇒ 退出码由最后一条决定、无害；`if …; then …; fi` 结尾 ⇒ 退出码来自块尾，**故意**不误报）；射程内解析出的函数总数有下界（0 个函数 = 假绿），且 `dev-worktree.sh::lock_list` 必须在射程内、其末命令逐字是 `return 0`。判据 = 同文件::test_guard_has_teeth_and_a_nonempty_scope。', '🔴 **覆盖边界（照实登记，§19.1）**：① **只治退出码，不治锁的生命周期** —— `add` 把 `$$`（`add` 自己的 PID）写进锁文件，`add` 一结束该 PID 就退出 ⇒ 正常流程产出的锁**立刻失效**、且只在 `rm` 时才释放（失效锁长期累积，正是本单 `list` 长期 exit 1 的成因）；那是**另一个问题**，不在本判据射程内（本 PR body「边界 / 顺带发现」节登记）。② 类级守卫只扫 `scripts/*.sh`；③ 只看「函数体最后一条可执行命令」这一个位置（`&&` 在函数中部无害 ⇒ 有意不报）；④ **块结构尾部**（`fi`/`done`/`esac`/`}` 结尾）不在射程（退出码来自块内最后一条命令，静态行扫描判不了，需 AST）—— 对照读数：现扫 `scripts/*.sh` 共 3 处行尾命中，其中 `machine-heavy-lock.sh::_ledger_surface` 是 `if …; then …; fi`（退出码来自块尾，**不是**本缺陷）⇒ 按起始行 `if` 排除、**不登记**；⑤ 只跑定点判据，不跑 `verify-all.sh gate` / 全量 pytest（重活串行，`migao-dev-flow` §27）。'],
+    skip_reason='[backend-contract] 纯静态尾命令扫描 + 真 fixture 行为守卫（只读仓内脚本；真 git 仓库 / 真 worktree / 真会话锁一律造在 tmp_path，**不碰任何真实工作区**；零网络、零时钟、不起真库）由 tests/unit_ci_workflows/test_dev_worktree_list_exit_code.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'dev-tooling', 'worktree', 'session-lock', 'exit-code', 'meta-guard', 'ledger', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯离线判据：前置 = `scripts/*.sh` 在场且可解析；行为面判据在 `tmp_path` 里真 `git init` + 真 `add` 造真 worktree 与真会话锁（零网络、零其库、不碰任何真实工作区）。前置由判据自身持有：文件缺失 / 夹具造不出来 ⇒ 当场红（不表现成「agent 不干活」）；agent-eval 栈不跑它',
+)
+
+# ── MC-090 [NORMAL] 数据库**外键违例**的归口与日志面（issue #6210）：外键违例 ⇒ 4xx（VALIDATION_ERROR）且**不落兜底 500**，且这一类日志**不打异常本体与堆栈**（约束名 / 表名 / schema 不进日志）；射程**刻意只到外键** —— 唯一 / 非空 / 检查违例保持既有 500 契约（两向反向对照：非约束类未知异常仍 500 带堆栈、唯一键失败仍 500 带堆栈）；类级元守卫 = 分支台账 ⇄ 反射双向相等（新分支未登记即红）（源: cases/misc.yml）──
+_CASE_MC_090 = EvalCase(
+    id='MC-090',
+    legacy_id='',
+    title='数据库**外键违例**的归口与日志面（issue #6210）：外键违例 ⇒ 4xx（VALIDATION_ERROR）且**不落兜底 500**，且这一类日志**不打异常本体与堆栈**（约束名 / 表名 / schema 不进日志）；射程**刻意只到外键** —— 唯一 / 非空 / 检查违例保持既有 500 契约（两向反向对照：非约束类未知异常仍 500 带堆栈、唯一键失败仍 500 带堆栈）；类级元守卫 = 分支台账 ⇄ 反射双向相等（新分支未登记即红）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['转人工端点 `POST /api/admin/agent-sessions` 收到一个**不存在的 `aiSessionId`** 时，调用方该看到 4xx（引用不存在 / 数据与约束不符），而不是「服务器内部错误」（500）；并且服务端日志里**不该**出现数据库的约束名 / 表名 —— 那是内部实现细节，泄漏出去既难看也是信息面风险。'],
+    expectations=[],
+    data_checks=['**病（改前形态，逐字读数）**：`GlobalExceptionHandler` 无 `DataIntegrityViolationException` 分支 ⇒ 外键违例（PG `SQLState 23503`，Spring 包成 `DataIntegrityViolationException`）落兜底 `Exception` ⇒ `status=500` + 内部错误信封（`INTERNAL_ERROR` /「服务器内部错误」）；且兜底那行 `log.error(…, e)` 打**完整堆栈** ⇒ `logHasConstraintName=true logHasTableName=true`。留档出处（**只读、不改**）= `acceptance/2026-10-03/agent-service-sweep/REPORT.md` 的 `F-D1` 节（原始 `.log` **未入库**，如实登记）。', '**判据①（归口 · 4xx，不落兜底）**：外键违例 ⇒ HTTP **422** + 错误码 `VALIDATION_ERROR`（`isNotEqualTo(500)`）。选 422 而不选 404 的理由：这是**请求体字段**（`aiSessionId`）指向的行不存在，不是**端点**不存在；且与仓内 `IllegalArgumentException` 同档语义（本仓 `VALIDATION_ERROR` = 422）。判据 = `backend/admin-api/src/test/java/com/migao/admin/config/GlobalExceptionHandlerDataIntegrityTest.java::foreignKeyViolationMapsToClientErrorNotFiveHundred`。', '**判据②（日志脱敏 · 这一类不打堆栈）**：外键违例的日志事件 —— 格式化消息与异常链里**都不得**出现约束名 `agent_sessions_ai_session_id_fkey` / 表名 `agent_sessions` / PG 原始消息 / 堆栈帧，且 `event.getThrowableProxy()` **为 null**；同时**不得静默**：必须仍含请求坐标（`uri=/api/admin/agent-sessions`）与约束类别 `kind=FOREIGN_KEY`（类别取自 `SQLState` 短枚举，不含标识符）。判据 = 同文件 `foreignKeyViolationLogIsSanitizedAndStillAttributable`。', '**判据③（响应体不泄漏，改前已成立 · 记为对照）**：响应体是固定文案，不含约束名 / 表名（`responseHasConstraintName=false`。改前响应体就是固定串「服务器内部错误」，这一半**不是**本单引入的缺陷 —— 照实登记，不冒充修复）。判据 = 同文件 `responseBodyDoesNotLeakConstraintOrTableName`。', '**判据④（反向对照 · 防「一律不打堆栈 / 一律 4xx」）**：**非**约束类的未知异常 ⇒ 仍 **500** + `INTERNAL_ERROR`，且日志**仍带异常堆栈**（`throwableProxy` 非空、类名 = 异常类名、消息 = 异常 message，格式化消息含 `type=…`）。判据 = 同文件 `unknownExceptionStillFiveHundredWithStackTrace`。**没有这一条，本修法就可被读成「把所有 5xx 变成 4xx / 把所有日志堆栈砍掉」——那是放宽门禁**。', '**判据⑥（本案例自身的 case_ids 声明自检）**：本文件头部的声明行恰 1 行，且 `MC-090` 能在 `misc.yml` 里被解析到（`extract_case_ids` 只认**注释起始**的声明行、前 50 行内；判据 = `.github/growth_gate.py`）。**防复发（#5346 同族，本包实测踩过一次）**：新增用例的 `data_checks` 里**禁止**出现「关闭关键词 + 紧邻井号 + 号」的形态（哪怕只是**引用** PR body 模板）—— 那种串会被 `close-linked-issues.yml` 的朴素正则扫到并在合并后误关别的单；本包初稿写过一处，已改成「关键词与号分开」的措辞。自检命令：读 `close-linked-issues.yml` 里的正则本体，对自己写的 body / 用例跑一遍同一正则、命中数必须是**本意关闭的那些**（本单 = 1 条，即本 issue）。', '**判据⑤（同族反向对照 · 唯一约束刻意不拦）**：`SQLState 23505` ⇒ **不劫持**，仍 **500** 且日志**仍带堆栈**（保既有契约）。理由：本仓已有判据把「建单写面注入唯一键失败 ⇒ **必须仍 5xx**」钉住（`MerchantShipmentAtomicityTest` / `MerchantShipmentRouteTest`，它们判的是**回滚**，但状态码断言在那儿）⇒ 本分支**射程刻意收到「外键」**，所有非外键路径与原行为**逐字节相同**。**红证（实测）**：宽归口版本（唯一违例也返 422）在 CI 上把 `MerchantShipmentAtomicityTest` 两条判红 —— `admin-api unit tests` job 113894868123、`MERCHANT…:197 / :239 Range for response status value 422 expected:<SERVER_ERROR> but was:<CLIENT_ERROR>`；收窄到外键后本地 35 条（处理器族 + 发货族）全绿。判据 = 同文件 `uniqueViolationKeepsTheExistingFiveHundredContract`。', '**类级元守卫（判据 1~6，既有承载体 · 未登记即红）**：分支台账 `BRANCH_LEDGER` ⇄ 反射出的 `@ExceptionHandler` 目标类型**双向相等**（兜底 `Exception.class` 除外）—— 本条分支若未登记 ⇒ `branchLedgerMatchesReflection` 与 `guardDiscriminates` **当场具名判红**（红证逐字：`分支未登记到台账: org.springframework.dao.DataIntegrityViolationException`）。承载体 = `backend/admin-api/src/test/java/com/migao/admin/config/GlobalExceptionHandlerCoverageTest.java`（本单只把新分支登记进台账 + 补 `case_ids`）。形态级钉法 = `GlobalExceptionHandlerDataIntegrityTest::handlerRegistryHasTheDatabaseIntegrityBranchMappedToClientError`（反射断言「这一类有具名分支」且「归口落在 4xx 族」—— 防「登记了却仍返 500」的纸面修复）。', '**落码**：`backend/admin-api/src/main/java/com/migao/admin/config/GlobalExceptionHandler.java` —— 新增 `@ExceptionHandler(DataIntegrityViolationException.class)` 分支（422 + 固定文案 + 脱敏日志，`ConstraintKind` 由 `SQLState` 推类别）+ 私有 `firstSqlException` 沿 cause 链取 `SQLException`。**只降这一族**：`handleException` 兜底仍是 500 且仍打堆栈。', '🔴 **覆盖边界（照实登记，不粉饰）**：① 判据用**替身约束异常**（`SQLException` 子类，`getSQLState()` 返回真实码），**未连真库** —— 「MyBatis 的异常翻译链在真 PG 上把 `SQLState 23503` 原样送到 `getMostSpecificCause()`」这一环由生产读数（改前 `PSQLException` 进日志）与本替身同形推定，**未在本判据里真跑**；② 归口**只到外键**（`SQLState 23503`）；唯一 / 非空 / 检查与「取不到 state」一律**交回兜底 500**（既有契约），不区分具体表 / 约束；③ 管理端「先查存在性」的入口校验**不在本单射程**（本单只是异常归口兜底，不是把 FK 提前拦掉）；④ 端点级（真 MockMvc + 真库）判据**未落**，本判据是处理器级直调 + 真实日志事件。'],
+    skip_reason='[backend-contract] 处理器级直调判据（断言 HTTP 状态码 / 响应体 / logback 真实日志事件）+ 既有类级元守卫（纯静态：反射取 `@ExceptionHandler` ⇄ 台账双向相等）：判定层在 Java 单测，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'exception-mapping', 'log-sanitization', 'schema-leak', 'fail-closed', 'red-proof', 'class-level-guard', 'blast-radius'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-091 [NORMAL] 手机端可见面标注只有一份真值（issue #6759）：面清单只许在 `MobileSurfaces` 声明、`admin-web` 不许自备「码 → 手机端面」映射表、动作节点台账 ⇄ 服务端真值源 ⇄ `rbac/manifest.json` 四向相等，且标注**必须接线**在 `GET /api/admin/menus` 上（源: cases/misc.yml）──
+_CASE_MC_091 = EvalCase(
+    id='MC-091',
+    legacy_id='',
+    title='手机端可见面标注只有一份真值（issue #6759）：面清单只许在 `MobileSurfaces` 声明、`admin-web` 不许自备「码 → 手机端面」映射表、动作节点台账 ⇄ 服务端真值源 ⇄ `rbac/manifest.json` 四向相等，且标注**必须接线**在 `GET /api/admin/menus` 上',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['管理员在权限勾选树上要能看出「勾这个权限码 = 员工手机上多一个入口」，而这个对应关系**只许有一份出处**（服务端按权限码投影的手机端菜单），前端不许自己再抄一张表。'],
+    expectations=[],
+    data_checks=['**判据 1·面清单只许一处**：`backend/admin-api/src/main/java/com/migao/admin/service/MobileSurfaces.java` 是手机端可见面（面名 + 读码）的**唯一**声明处；别的 `backend/admin-api/src/main/java/**/*.java` 文件里出现「面构造形态（`new Surface(` + 字符串）+ 面中文名」即**具名**判红。执行点 = tests/unit_ci_workflows/test_mobile_surface_annotation_single_source.py::test_mobile_surface_truth_lives_in_exactly_one_java_file。', '**判据 2·四向相等（未登记即红 / 陈旧亦红）**：动作节点台账（tests/unit_ci_workflows/test_rbac_derived_pages.py 的 `ACTION_NODE_CODES`）⇄ 服务端真值源（`MenuController` 的节点声明，由既有解析器 `_iter_menu_controller` 现取）⇄ `rbac/manifest.json` 的 `menus.controller` ⇄ 三源同构守卫的 `ACTION_NODES`（组内多出节点）**逐条逐值相等**；只改一处 ⇒ 报出是哪一个节点、差在哪。执行点 = 同文件 ::test_action_nodes_are_registered_in_both_ledgers_and_the_manifest。', '**判据 3·前端没有第二张表**：`frontend/admin-web/src/**` 里**没有任何**生产源文件同时出现「**只可能是手机端面**的名字」（= 面名 − PC 菜单项名，现取 = 入库过账 / 售后处理 / 坐席 / 数据 / 生产待办 / 计件工资报表）与「手机端读码」；扫描面 268 个文件、命中 0。执行点 = 同文件 ::test_frontend_has_no_code_to_mobile_surface_table（附「唯一渲染实现 = frontend/admin-web/src/lib/mobile-surface-label.ts 必须在」的声音点，防空真）。', '**判据 4·标注必须接线**：`GET /api/admin/menus` 返回的常量**不得**是裸 `MENU_TREE`（形态级：必须是 `annotateMobileTitles(...)` 的产物）—— 防「标注只活在单测的想象里」。执行点 = 同文件 ::test_mobile_surface_annotation_is_wired_to_the_menu_endpoint。', '**判别力自证（红证，内存构造、不读磁盘）**：① 别处抄一份面清单 ⇒ 判据 1 具名红；② 前端一张映射表 ⇒ 判据 3 具名红；③ 台账码漂移 / 新节点未登记 / 清单缺项 / 清单值不等 / 陈旧登记 ⇒ 判据 2 **各自**判红；对照读数 = 只把面名与读码写进**注释** ⇒ **不红**、两者**各自独立出现**（不共现）⇒ **不红**、只引用读码而无面构造形态 ⇒ **不红**。执行点 = 同文件 ::test_guard_discriminates_bad_shapes。', '**渲染面判据（前端）**：**有**手机端面的码渲染 ` · 手机端：X`（多个面用 `、` 连接、顺序 = 服务端给的顺序），**没有**的（空数组 / 缺字段）**一个字符都不追加**。执行点 = frontend/admin-web/tests/unit/pages/employees.test.tsx（服务端下发什么就渲染什么 + 不下发即零标注的对照读数）与 frontend/admin-web/tests/unit/components/TreeCheckbox.test.tsx（真组件的三条判据）。', '🔴 **覆盖边界（照实登记，不粉饰）**：① 判据 3 的扫描面**有意只到 `frontend/admin-web/src/**`** —— `frontend/bmini-app` 早有一张端侧镜像台账（frontend/bmini-app/src/utils/adminPermission.ts 的 `ADMIN_SURFACES`，由 BM-046 判据 5 与 `MobileSurfaces` 逐值比对守着），本单**一字未改**它，纳入扫描面会把存量债误算成本单引入；② 判据 3 的判别力依赖「面名 ≠ 菜单名」这一**现取事实**（差分清单在判据里现算并打印）—— 若将来把某个面改成与 PC 菜单项同名，它会退化为漏报（**已知边界，登记不修**）；③ **判不了**「服务端下发的面名被前端改写」（如加后缀）与运行期才可见的第二份真值（localStorage 之类）。'],
+    skip_reason='[backend-contract] 源码形态 + 台账逐值 + 接线（Python 标准库现取解析，复用既有守卫的解析器）+ 前端 vitest 渲染断言（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'permission-tree', 'mobile-surfaces', 'single-source', 'class-level-guard', 'red-proof', 'admin-web'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-092 [NORMAL] 云 dev DB 白名单**一条命令**（幂等 / 只追加 / fail-closed / 不泄漏）+ 起栈入口预检与业务路由自检（issue #6789）：`scripts/dev-db-whitelist.sh` 是 `--ModifyMode Append` 的唯一承载体，覆盖语义与 `default` 组零改动，起栈入口在失败前就把处置命令说出来（源: cases/misc.yml）──
+_CASE_MC_092 = EvalCase(
+    id='MC-092',
+    legacy_id='',
+    title='云 dev DB 白名单**一条命令**（幂等 / 只追加 / fail-closed / 不泄漏）+ 起栈入口预检与业务路由自检（issue #6789）：`scripts/dev-db-whitelist.sh` 是 `--ModifyMode Append` 的唯一承载体，覆盖语义与 `default` 组零改动，起栈入口在失败前就把处置命令说出来',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['本机公网 IP 不在云 dev DB（阿里云 RDS）白名单时，本地起栈会失败 —— 这时我要**一条命令**把「当前 IP / 是否在列 / 追加 / 复测」走完，而不是人肉查实例号、手拼旧列表（手拼即整体覆盖语义，会误删别人的 IP）；并且起栈入口在失败前就该把这条命令告诉我，而不是甩 7403 行 Spring 栈给我当第一现场。'],
+    expectations=[],
+    data_checks=['**判据 1·幂等**：IP 已在 `dev_local` 组 ⇒ 正常模式 exit 0 且 `ModifySecurityIps` **调用次数 = 0**（只做 TCP 复测）。执行点 = tests/unit_ci_workflows/test_dev_db_whitelist_one_command.py::test_already_listed_is_idempotent_zero_modify。', '**判据 2·只追加**：不在列 + 显式 `--yes` ⇒ Modify 参数含 `--ModifyMode Append`、`--SecurityIps` **恰为新 IP**（不手拼旧列表）、`--DBInstanceIPArrayName dev_local`；`default` 组逐字未动、`dev_local` 旧条目保留。执行点 = 同文件 ::test_missing_ip_appends_and_never_overwrites。', '**判据 3·默认只诊断**：不在列且未给 `--yes` ⇒ 非零退出、**零** Modify 调用、文案点名 `./scripts/dev-db-whitelist.sh --yes`（不静默写云资源）。执行点 = 同文件 ::test_missing_ip_without_yes_writes_nothing。', '**判据 4·fail-closed 五形态**：`aliyun` 缺失 / Describe 失败 / Modify 失败 / 追加后回读读不到 / TCP 复测不可达 ⇒ **各自**非零退出。执行点 = 同文件 ::test_fail_closed_aliyun_missing / ::test_fail_closed_describe_failure / ::test_fail_closed_modify_failure / ::test_fail_closed_readback_miss / ::test_fail_closed_tcp_unreachable。', '**判据 5·不泄漏**：桩 `.env` 里放哨兵密码 `SENTINEL_PW_zz6789`，脚本在 9 种（形态 × 参数）组合下的全部输出（stdout+stderr）都不得含它。执行点 = 同文件 ::test_credentials_never_leak。', '**判据 6·`--check` 只读**：任何形态都不产生 Modify 调用；在列且可达 ⇒ exit 0、不在列 ⇒ 非零（0/1 语义）。执行点 = 同文件 ::test_check_is_readonly_and_reports_state。', '**判据 7·起栈入口预检（接线 + 时序）**：`scripts/ui_smoke_merchant.sh` 在启动 admin-api **之前** TCP 探 `RDS_HOST:RDS_PORT`（读同一个 .env）；桩 `nc` 不可达 ⇒ wrapper **非零退出**、输出含 `dev-db-whitelist.sh`、**不含** `PSQLException`、且**没走到**起栈。执行点 = 同文件 ::test_smoke_preflight_reports_actionable_line_not_spring_noise（负控 ::test_smoke_preflight_passes_through_when_reachable）。', '**判据 7b·业务路由自检（起栈后）**：桩 dev 对 `(dashboard)` 组路由（`/employees` / `/dashboard`）回 **404** ⇒ 输出含「`.next`」+ 可行动命令（`rm -rf frontend/admin-web/.next`）、非零退出、**没开始跑 spec**；只把 404 算坏（200/307/302 = 路由存在）；**只报不动手**（脚本不得执行清理）。执行点 = 同文件 ::test_smoke_route_check_catches_stale_next_cache / ::test_smoke_route_check_absent_before_web_and_spec。', '**判据 8·判别力自证（注入式，实跑）**：① `Append`→`Overwrite`（覆盖语义删掉旧条目）② 删掉整段 `--ModifyMode` 参数（回到手拼覆盖时代）③ 摘掉预检块 ⇒ 对应判据**各自**变红；还原 ⇒ 绿；**只改注释** ⇒ 不红。执行点 = 同文件 ::test_guard_discriminates_bad_shapes。', '**判据 9·类级元守卫**：`--ModifyMode Append` 的承载体在 `scripts/*.sh` 里**唯一**（再抄一份同名命令 ⇒ 红）；脚本文本不得出现 `Overwrite`（覆盖语义禁入）；空数组展开必须写成 `${A[@]+"${A[@]}"}`（macOS bash 3.2 + `set -u`，issue #6777）；预检与路由自检的**接线时序**（admin-api 之前 / admin-web ready 与 spec 之间）逐条钉住。执行点 = 同文件 ::test_class_level_guards_on_script_corpus。', '🔴 **覆盖边界（照实登记，不粉饰）**：① 判据全用**桩**（`aliyun`/`nc`/`curl`），**不真调 aliyun、不真改云资源** —— 真语料绿证 = issue #6789 的一次实测（`--ModifyMode Append` / TaskId 713392864 / `dev_local` 21→22 条 / `nc` succeeded）；② 判不了「真 RDS 上白名单到底写进去没有」；③ 预检只覆盖 `scripts/ui_smoke_merchant.sh` 这一条入口（有意的最小射程）；④ 「`.next` 跨上下文复用」在主仓侧没有机械判据（本判据只覆盖起栈这一条路径）。'],
+    skip_reason='[backend-contract] 脚本分支语义 + 参数形态 + 接线时序，由 pytest 子进程真跑（桩 aliyun / nc / curl）+ 注入式红证验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['dev-env', 'rds-whitelist', 'one-command', 'idempotent', 'fail-closed', 'no-credential-leak', 'preflight', 'red-proof', 'class-level-guard'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-093 [NORMAL] 已知 console 台账**只许缩短**的终态：售后 hydration + 加工页 measure 两条缺陷修好后 clearance 清零（机制保留、判据 H 判别力不依赖台账非空）（issue #6799）（源: cases/misc.yml）──
+_CASE_MC_093 = EvalCase(
+    id='MC-093',
+    legacy_id='',
+    title='已知 console 台账**只许缩短**的终态：售后 hydration + 加工页 measure 两条缺陷修好后 clearance 清零（机制保留、判据 H 判别力不依赖台账非空）（issue #6799）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['台账只许缩短 —— 缺陷修好后必须把那两条从「已知 console 错误」里删掉，并给出「删掉后判据仍绿」的读数；删不掉就说明没修好，不许留着台账当绿。'],
+    expectations=[],
+    data_checks=['🔴 判据 1·**台账已缩短**：`tests/unit_ci_workflows/ui_smoke_known_console.json` 的 `entries` 从 2 条（AFTERSALES_HYDRATION / PROCESSING_MEASURE_NEGATIVE）降到 **0 条**，`scripts/ui-smoke-merchant/spec.mjs` 的 `KNOWN_CONSOLE_ERRORS` 同步清空（逐字对账，改一处必须同批改两处）。执行点 = tests/unit_ci_workflows/test_ui_smoke_selector_liveness.py::test_known_console_registry_matches_spec_and_is_attributed。', '🔴 判据 2·**机制保留（不是把机制砍掉消红）**：spec 里 `isKnownConsoleError` / `knownConsoleIssue` / `allowKnownConsole` / `SMOKE_STRICT_CONSOLE` 四处接线**一字未减**（缺一即红）。执行点同上（判据本体里的接线检查）。', '🔴 判据 3·**判别力不依赖台账非空**：注入夹具改从**内存合成条目** + 逐字镜像进 `KNOWN_CONSOLE_ERRORS` 的 spec 文本构造（不再拿现状台账当夹具）—— id 改名 ⇒ 报「不逐字相等」、归口丢失 ⇒ 报「缺 issue 归口」，原样夹具 ⇒ 绿。判据本体**收窄了「entries 为空即红」**这一条（台账的正常终态就是空：在册缺陷都修好之后），理由逐字写在 `known_console_failures` 的 docstring 里。执行点 = 同文件 ::test_known_console_registry_has_teeth。', '**边界（照实登记）**：空台账**不再**保护「有人把条目删掉来消红」这一形态 —— 该形态在空台账下**不存在**（没有条目可删）；新的坏形态（把已修好的缺陷重新登记回去）由判据 1 的逐字对账承接不到（登记是合法动作）⇒ 由真栈冒烟本身承接（报错若真消失，登记反而会让它变 noise、而非变绿）。'],
+    skip_reason='[backend-contract] 台账 ⇄ spec 文本对账 + 注入式判别力自证（pytest，非 LLM 行为），不进入 agent-eval 冒烟',
+    tags=['ui-smoke', 'console-ledger', 'shrink-only', 'fail-closed', 'class-level-guard'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-094 [NORMAL] 验签公钥失配**不得伪装成产品失败**（issue #6801）：admin-api 签发密钥 ⇄ ai-agent 校验公钥的指纹对齐（`scripts/align_agent_jwt_key.py` 是唯一真值源），起栈预检在跑 spec 之前把「环境失配」与「产品缺陷」分开（源: cases/misc.yml）──
+_CASE_MC_094 = EvalCase(
+    id='MC-094',
+    legacy_id='',
+    title='验签公钥失配**不得伪装成产品失败**（issue #6801）：admin-api 签发密钥 ⇄ ai-agent 校验公钥的指纹对齐（`scripts/align_agent_jwt_key.py` 是唯一真值源），起栈预检在跑 spec 之前把「环境失配」与「产品缺陷」分开',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['全量冒烟只剩 `06-agent-sessions` / `07-chat` 两条报 401，而同一个浏览器会话里别的页面全 ✅ —— 我要知道这是**产品鉴权坏了**还是**我机器上的配置烂了**，而不是被一句 `401 Unauthorized` 引着去改产品代码；如果是环境，起栈入口就该在跑 spec 之前把成因和处置命令告诉我。'],
+    expectations=[],
+    data_checks=['**判据 1·识别**：两侧公钥同指纹 ⇒ `--state` 印 `aligned:<fp>`、单行、exit 0。执行点 = tests/unit_ci_workflows/test_agent_jwt_key_alignment.py ::test_aligned_reports_fingerprint_and_exit_zero', '**判据 2·失配**：`.env` 是陈旧键 ⇒ `mismatch:<api_fp>:<agent_fp>`，**两个指纹都印**且可区分。执行点 = 同文件 ::test_mismatch_names_both_fingerprints_and_exit_one', '**判据 3·判不了 ≠ 通过**：任一侧取不到 / 非法 PEM / 私钥当公钥 ⇒ `unknown:…`。执行点 = 同文件 ::test_unjudgeable_is_three_not_green（四形态参数化，**一条也不 skip**）', '**判据 4·形态兼容**：`JWT_PUBLIC_KEY=` 与 `export JWT_PUBLIC_KEY=` 两种写法都认。执行点 = 同文件 ::test_env_key_forms_both_recognized', '**判据 5·写盘安全**：修完该键仍是**单行**（`\\n` 转义）+ 留 `.bak-align`；连跑两次逐字节一致。执行点 = 同文件 ::test_write_keeps_single_line_key_and_is_idempotent', '**判据 6·起栈预检接线**：`scripts/ui_smoke_merchant.sh` 在跑 spec **之前**调 `align_agent_jwt_key.py --state`；失配 ⇒ 印可行动处置 + `SMOKE_UNCONFIGURED=1` + `SMOKE_UNCONFIGURED_WHY`（带指纹）。执行点 = 同文件 ::test_preflight_wired_before_spec_in_smoke_script / ::test_preflight_flags_mismatch_as_unconfigured_not_product / 负控 ::test_preflight_aligned_is_quiet', '**判据 7·严格档**：`SMOKE_STRICT_KEY_ALIGNMENT=1` + 失配 ⇒ 非零退出且**不越过预检**。执行点 = 同文件 ::test_strict_mode_refuses_to_run_on_mismatch', '**判据 8·判别力自证（注入式）**：注入另一对公钥 ⇒ 判据 2 当场红；还原 ⇒ 绿；只改注释 ⇒ 不红。执行点 = 同文件 ::test_guard_discriminates_injected_bad_key / ::test_negative_control_private_key_and_comment_only', '**判据 9·类级元守卫（单一真值源）**：指纹解析**只在** `scripts/align_agent_jwt_key.py` 一处，起栈脚本的预检块里不得再出现 `hashlib` / `b64decode`。执行点 = 同文件 ::test_fingerprint_logic_has_single_source'],
+    skip_reason='[backend-contract] 指纹三态 + 起栈预检接线 + 输出分类，由 pytest 子进程真跑（沙箱假仓，零网络 / 零真栈）；真栈两向读数（401 → 200）见 PR body 取证段',
+    tags=['dev-env', 'jwt', 'key-alignment', 'smoke-attribution', 'fail-closed', 'red-proof', 'class-level-guard'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-095 [NORMAL] 冲突态**不许静默**（issue #6815）：PR 与 base 冲突 ⇒ GitHub 造不出合并提交 ⇒ `pull_request` 工作流**连 run 都不创建**；判据必须把 ① 未创建 / ② pending / ③ 失败 **三态分开读**（源: cases/misc.yml）──
+_CASE_MC_095 = EvalCase(
+    id='MC-095',
+    legacy_id='',
+    title='冲突态**不许静默**（issue #6815）：PR 与 base 冲突 ⇒ GitHub 造不出合并提交 ⇒ `pull_request` 工作流**连 run 都不创建**；判据必须把 ① 未创建 / ② pending / ③ 失败 **三态分开读**',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['PR 推了新提交后必需检查**连行都没有**（不是 pending），而 Auto Merge 每次都照常跑 —— 我熬了一小时在怀疑「CI 哑了 / 队列堵了」。我要的是机制**当场说出**：这些检查在这条 HEAD 上**不存在**（不是还在跑），以及一条能直接粘走的出口命令。'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·态 ①（run 未创建）必红**：`mergeStateStatus=DIRTY`（`mergeable=CONFLICTING`）∧ head SHA 上**没有** `event=pull_request` 的 run ⇒ 退出码 1 + `::error::`；读数点名「**不存在，不是 pending**」+ 具名报出在 head SHA 上读不到 run 的工作流与 required 检查名 + 出口命令（`gh pr view <n> --json mergeable` / `gh pr update-branch <n>`）。执行点 = tests/unit_ci_workflows/test_dangling_pr_scan.py::test_conflict_no_pr_run_is_state_one_and_red', '🔴 **判据 2·三态分清（本单核心语义）**：① 未创建 ⇒ 红；② 创建但 pending ⇒ 不红且读数说「确实已创建」；③ 创建且失败 ⇒ 不红且读数说「已判红」⇒ 四夹具并列 `rc = 1/0/0/0`，且 ②/③ 也**分栏**出现在 step summary（报告面与判定面不许错开）。执行点 = 同文件 ::test_conflict_states_are_three_distinct_readings', '🔴 **判据 3·负控**：非 `DIRTY`（`CLEAN`/`UNSTABLE`/`BEHIND`）⇒ 不得红；`DIRTY` 但 `pull_request` run 已创建（pending / 红 / 绿）⇒ 不得红。**单变量差分对**：同 run 形状、只把 `mergeStateStatus` 从 `DIRTY` 换成 `BLOCKED` ⇒ 两列读数必须**各自归因**（冲突 ⇄ required 未达可合）且不相等。执行点 = 同文件 ::test_conflict_detector_does_not_false_positive / ::test_state_one_needs_the_conflict_condition_is_non_dirty_control', '🔴 **判据 4·不许放宽既有判据**：`BLOCKED` + 无 check + 无 run（族 B / `on.pull_request.paths` 过滤形态）仍判红，读数逐字保留 `on.pull_request.paths`，且**不得**被归因成「冲突」。执行点 = 同文件 ::test_blocked_dangling_is_unchanged（常驻判据本体仍是 tests/unit_ci_workflows/test_required_check_no_paths_filter.py）', '🔴 **判据 5·判别力自证（注入式）**：打掉冲突态闸 `if state in CONFLICT_STATES:` ⇒ 同一夹具**不再红**（复现原缺陷的静默）；把 `MERGE_REF_EVENT` 从 `pull_request` 换成 `pull_request_target` ⇒ 现场形状不再红、而「只有 `pull_request` run」的形状反被判红（**两个方向都翻**）。执行点 = 同文件 ::test_state_one_gate_has_discriminating_power / ::test_conflict_event_discriminator_has_discriminating_power', '**判据 6·第四态（判不了 ≠ 通过）**：run 读不到 `event` 字段 ⇒ 记未判定 + `::warning::`（不当 ① 乐观跳闸，也不当 0）。执行点 = 同文件 ::test_cannot_tell_when_event_field_is_missing_is_unjudged', '**边界（照实登记）**：① `DIRTY` 时 GitHub **不保证**每个 check 都进 rollup ⇒ 本判据**不**用 rollup 的 pending 面判 ②（否则「check 对象滞后」会被读成 ①）；② required 名单两条腿（`gh api …/protection` 需 admin / 仓内快照）都读不到时，读数**不列名单但判定照旧**（不降级）；③ `DIRTY` 在 PR 页面另有冲突横幅 + 本判据的 `--minutes` 阈值同时约束它（年龄 < 阈值不报）；④ 本判据只在 `schedule` / `workflow_dispatch` 上跑（挂在 PR 事件上会给每个 PR 刷一条无关的红）；⑤ **具名清单的边界**：required 名 → 工作流的映射走静态 `name:` ⇒ matrix 派生的名映射不上（现取：16 条 required 里 14 条可映射，`ci workflow helper unit tests` 与「（后半）」两条是 `pr-check.yml` 的 `${{ matrix.shard_suffix }}` 派生）—— **不影响判定**（判红看 `event=pull_request` 的 run 在不在），只是具名清单少列两条，同 HEAD 上 `pr-check.yml` 的 run 本来就在清单里。'],
+    skip_reason='[backend-contract] 判据是零 LLM 的确定性读数（真脚本 + `gh` 替身 + 真 YAML + 注入式变异），pytest 子进程真跑，零网络',
+    tags=['ci', 'dangling-pr', 'merge-conflict', 'event-delivery', 'tri-state', 'fail-closed', 'red-proof', 'class-level-guard'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-096 [NORMAL] 已移除的页面名不得出现在**服务端面向商家的文案**里（issue #6827）：#6580 收口后未配置提示与 422 理由仍指向「参数总览 → 余料回收」—— 类级守卫只扫**字符串字面量**（沿革注释合法），未登记即红 + 台账只许缩短（源: cases/misc.yml）──
+_CASE_MC_096 = EvalCase(
+    id='MC-096',
+    legacy_id='',
+    title='已移除的页面名不得出现在**服务端面向商家的文案**里（issue #6827）：#6580 收口后未配置提示与 422 理由仍指向「参数总览 → 余料回收」—— 类级守卫只扫**字符串字面量**（沿革注释合法），未登记即红 + 台账只许缩短',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['我在「企业基础设置 → 余料尺寸」域看到黄色未配置提示，文案让我去「参数总览 → 余料回收」填明细 —— 可那个一级项早就被撤掉了，照着点根本找不到地方；同一屏的「小件（工序名）」还得逐字手打，打错一个字这个部件就永远匹配不上。'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·未登记即红**：`backend/admin-api/src/main/java/**/*.java` 的**字符串字面量**里出现已移除页面名（判据里的 `REMOVED_PAGE_NAMES` = 参数总览 / 工艺配置 / 加工项管理 / 加工费管理），而台账 `tests/unit_ci_workflows/removed_page_copy_ledger.json` 里没有同键同数的条目 ⇒ 红，并具名报出 `文件 + 行 + 该串`。取法 = 共享词法实现 `tests/unit_ci_workflows/_source_parsing.py::java_literals`（注释不算）。执行点 = tests/unit_ci_workflows/test_removed_page_copy_guard.py::test_no_removed_page_name_in_server_copy_without_ledger_entry', '🔴 **判据 2·余料面永久清零（本单靶心）**：现取命中与台账条目的名字都不得是「参数总览」（判据里的 `CLEARED_NAMES`，**永不缩短**）。执行点 = 同文件 ::test_remnant_face_stays_cleared', '🔴 **判据 3·台账未被兑现即红 + 只许缩短**：台账每条必须在现取命中里有同键同数的对应（幽灵条目 / 命中数涨跌都红）；条数与命中数 ≤ `FROZEN_MAX_ENTRIES=12` / `FROZEN_MAX_HITS=13`（**精确现取读数**，两者都是「加条目必须同 PR 改大它」的显式动作）。执行点 = 同文件 ::test_ledger_entries_are_live_and_only_shrink / ::test_ledger_is_well_formed', '🔴 **判据 4·只扫字面量、不扫注释（对照读数）**：同一份真语料里加一行 `// 沿革：这里曾指向「参数总览 → 余料回收」` ⇒ **一条判据都不红**；把字面量里的新指针改回旧指针 ⇒ 判据 1/2 立刻红。真值源 = `_source_parsing.java_literals` 的**词法分段**（`//` / `/* */` / 字符串各自成段，`#5323` 的唯一实现）。执行点 = 同文件 ::test_injection_comment_only_change_is_not_red / ::test_injection_real_corpus_comment_vs_literal', '🔴 **判据 5·判别力自证（注入式：坏形态各自红 + 一条对照）**：未登记命中 / 台账幽灵条目 / 同键命中数漂移 / 余料面复发 / 台账清空各自判红；只改注释不红；台账键 = **文件 + 字面量原文** ⇒ 行号漂移不炸台账。执行点 = 同文件 ::test_injection_unregistered_hit_is_red / ::test_injection_ghost_ledger_entry_and_count_drift_are_red / ::test_corpus_key_is_stable_across_line_shifts', '🔴 **判据 6·射程非空 + 正控（fail-closed）**：扫描面 0 文件 ⇒ 红；正控 = `backend/admin-api/src/main/java/com/migao/admin/service/RemnantService.java` 的**新指针**「企业基础设置 → 余料尺寸」必须被同一把尺子读到（读不到 ⇒ 此时「零命中」是假绿）。执行点 = 同文件 ::test_scan_surface_is_live_and_detector_reads_literals', '**实例判据·服务端文案（读面 + 写面各一处 —— 读面改了写面没改 = 没修）**：未配置提示 `NOTICE_SPECS_UNCONFIGURED` 与 422 `ERR_REMNANT_SPEC_REQUIRED` 的 suggestion 都含「企业基础设置 → 余料尺寸」且**不含**「参数总览」。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/RemnantServiceTest.java::specsDefaultToEmptyWithAVisibleNotice / ::recoverFailsClosedInFourWays（真库夹具 `PgCluster`，跑法 = `cd backend/admin-api && MIGAO_REQUIRE_REALDB=1 ./mvnw -q test -Dtest=RemnantServiceTest`）', '**实例判据·交互（下拉辅助：正控 + 两条负控）**：正控 = 「小件（工序名）」输入框的 `list` 指向同屏 `datalist`（id = 组件导出的 `OPERATION_LIST_ID`），`option` 值逐字等于工序库 `name`、**保序去重**、不渲染库口径旧名 `library_name`、placeholder = 「从工序库里选，或逐字输入工序名」；负控 ① = 目录 403 ⇒ 仍可逐字输入且**不新增错误条**（`remnant-specs-error` 取不到）；负控 ② = 目录回 `data.data = null`（既有替身形状）⇒ 同上，且读面失败那条红条的路径不受影响。执行点 = frontend/admin-web/tests/unit/components/RemnantItemSizesPanel.test.tsx 的判据 7 三条', '**边界（照实登记）**：① 射程 = admin-api 的 Java **字符串字面量**面 —— 前端字面量与 `backend/ai-agent-service/**` **不在面内**（前端面由跟踪单 #6826 承担：本单**不建第二份会漂的口径**）；② 判不了「该文案会不会真的上屏」（那要 `migao-dev-flow` §15.7 的真机截图）；③ 判不了新指针与域 label 真值源逐字一致（`frontend/admin-web/src/lib/config-center-domains.ts` 的 `remnant-sizes`，由域自己的判据管）；④ 台账里剩下的 12 条 / 13 处是**跨单债务**（跟踪单 #6826），本用例不为它们的文案正确性背书。', '🔴 **2026-10-17（issue #7077）形态收口**：本域原「参数区底部另起一行 `改它会怎样：…`（带礼帽 + `border-t`）」与「术语条目的 `边界：…` 灰色独立行」**两种形态撤销** —— 参数影响并入参数标题下（无礼帽、无独立横线），边界文案并入该条「影响」同一行（**信息一字未丢**，只是不再各占一行）。判据 = `frontend/admin-web/tests/unit/components/RemnantItemSizesPanel.test.tsx` 的「三件套上屏」用例：`REMNANT_PARAM_COPY.impact` 必须在 ∧ `改它会怎样：` 礼帽必须**不在**（写回即红）。'],
+    skip_reason='[backend-contract] 判据是零 LLM 的确定性读数（词法扫 Java 字面量 ⇄ 台账 + 真库实例判据 + admin-web vitest 渲染判据），pytest / vitest / JUnit 真跑，零网络，不进入 agent-eval 冒烟',
+    tags=['copy', 'removed-page', 'config-center', 'class-level-guard', 'ledger-only-shrink', 'comment-vs-literal', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-097 [NORMAL] 已移除页面名的**旧指针**改指「企业基础设置 → <域 label>」（issue #6839 = #6826 的 B1 包·admin-api 面）：按**动作**拆指针、假出口改写动作、能力名显式不改（源: cases/misc.yml）──
+_CASE_MC_097 = EvalCase(
+    id='MC-097',
+    legacy_id='',
+    title='已移除页面名的**旧指针**改指「企业基础设置 → <域 label>」（issue #6839 = #6826 的 B1 包·admin-api 面）：按**动作**拆指针、假出口改写动作、能力名显式不改',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['后台提示我「请在「工艺配置 → 工艺路线」把一条工艺设为默认」——可「工艺配置」这个菜单早没了，我在「企业基础设置」里到底该点哪个域？'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·本包承包文件零已移除页面名**：`ProcessingFeeCalculator` / `ProcessingFeeCombinationCommandService` / `ProductionRoutingCommandService` / `ProcessingOrderService` / `ProductionInstanceRepricingService` / `ProductionService` 的**字符串字面量**里不再出现 `REMOVED_PAGE_NAMES`（参数总览 / 工艺配置 / 加工项管理 / 加工费管理）。执行点 = tests/unit_ci_workflows/test_removed_page_pointer_targets.py::test_contract_files_carry_no_removed_page_name（**改前红**：逐条具名报出旧串）', '🔴 **判据 2·逐域正控（指对域，不只是「不含旧名」）**：4 个目标域 label 各被对应服务逐字读到 —— `ProcessingFeeCalculator` ⇒ 「企业基础设置 → 加工费组合」（域 `fee-combinations`）、`ProcessingFeeCombinationCommandService` + `ProductionRoutingCommandService` ⇒ 「企业基础设置 → 加工项与分类」（域 `processing-items`）、`ProcessingOrderService` ⇒ 「企业基础设置 → 工艺路线」（域 `craft-route`）、`ProductionInstanceRepricingService` + `ProductionService` ⇒ 「企业基础设置 → 工序与部位单价」（域 `operation-prices`，**矩阵格 = 该域**）。执行点 = 同文件 ::test_each_domain_pointer_is_the_current_domain_label + ::test_domain_truth_source_is_live', '🔴 **判据 3·两处假出口改写动作（不是换个页面名）**：① `ProductionRoutingCommandService` 的 craft 触发值提示不再写「工艺词表」（商家面无该页、**也无写能力**：`production_crafts` 只经 `GET /route-rule-options` 供触发值下拉取值）⇒ 改写后说清**真边界**（触发值只能取自本店**已有的活跃工艺** / 换一个已有的 / 新增请联系服务方）；② `ProcessingOrderService` 的「缺 craft」提示不再写「工艺配置」，但**保留真出路**「下单时给出工艺」。执行点 = 同文件 ::test_false_exits_no_longer_name_a_nonexistent_coordinate', '🔴 **判据 6·§31 P3 类级（不摆内部标识）+ 只许缩短台账**：`backend/admin-api/src/main/java/**/*.java` 的字面量里「HTTP 动词 + `/api/` 路径」**且含中文字符**（= 人话提示里夹着端点）必须逐条在 `tests/unit_ci_workflows/restricted_literal_leaks_ledger.json` 里（未登记即红 / 幽灵条目即红 / 条数 == `LEAK_LEDGER_BASELINE`；键 = 文件::行::字面量 —— **必须带行**，`AgentBatchService` 有两条完全相同的字面量）。**判据面外的形态具名登记**（纯 ASCII 端点常量 / worker 端点文档串 —— 不是「商家答复」）。跟踪单 = issue #6841。执行点 = 同文件 ::test_merchant_hint_endpoint_leaks_are_all_registered', '🔴 **判据 7·镜像一致性**：本判据文件里的 `REMOVED_NAMES` 必须与 MC-096 守卫的 `REMOVED_PAGE_NAMES` **逐值相等**（读源码文本比对、**不 import**、解析失败 fail-closed）—— 这是「注释漂移」的解药（镜像漂了要红，不许静默用旧集合）。执行点 = 同文件 ::test_removed_names_mirror_mc096_guard', '🔴 **判据 3b·§31 P3（B1 承包文件面）**：`ProcessingOrderService` 的商家可见 suggestion 里不得出现内部端点字面量（`GET /api/admin/...`）—— 本包顺手销掉 4 处**存量**泄漏（`查看入口 GET /api/admin/production/routings` ×2、`工序库目录查看入口 GET /api/admin/production/operations-catalog` ×2），**不指路**而不是换一条假路。执行点 = 同文件 ::test_merchant_copy_leaks_no_internal_api_path', '🔴 **判据 4·台账只许缩短 + 常量与台账一致**：`removed_page_copy_ledger.json` 清到 **2 条 / 2 处**（只剩**能力名**：`PermissionService` ×1 / `RegistrationService` ×1），且每条的 `reason` 必须具名说清它是**能力名（不是坐标）**；守卫的 `FROZEN_MAX_ENTRIES` / `FROZEN_MAX_HITS` 与台账**逐值一致**（2 / 2）。🔻 2026-10-17（issue #7111）：原 3 条 / 3 处 ⇒ 2 条 / 2 处 —— `RegistrationService` 的**加工项管理**那条（旧商品管理员描述整句）随岗位描述改成「职责 + 默认可用模块」而消失，按「只许缩短」销账。执行点 = 同文件 ::test_ledger_shrunk_to_capability_names_only + tests/unit_ci_workflows/test_removed_page_copy_guard.py::test_ledger_entries_are_live_and_only_shrink', '🔴 **判据 4b·负控（能力名不得被改成坐标）**：`PermissionService` / `RegistrationService` 的字面量里**不得**出现「企业基础设置 →」（改成页面坐标 = 把岗位职责读成导航路径）。执行点 = 同文件 ::test_capability_names_stay_out_of_the_pointer_rewrite', '🔴 **判据 5·判别力自证（注入式）**：把真语料里 `ProductionService` 的新指针改回「工艺配置 → 工艺路线」⇒ 判据 1 当场红；**只加注释**（含旧页名）⇒ 一条判据都不红（沿革注释合法，与 MC-096 的对照读数同口径）。执行点 = 同文件 ::test_injection_detects_a_reverted_pointer / ::test_injection_comment_only_change_is_not_red', '**实例判据·Java 契约面**：`ProductionRoutingCommandServiceOptionCreateTest::craftTriggerValueOutsideVocabularyIsRejected` 的断言随文案同步（旧断言判的是旧词表名 ⇒ 新断言判的是新措辞（「已有的活跃工艺」），**判据不放宽**：仍是 422 + `field=trigger_value` + 零写入）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductionRoutingCommandServiceOptionCreateTest.java', '**边界（照实登记）**：① **能力名 3 处有意不改**（岗位/权限显示名，理由 + 重启条件写进台账 `reason` 与 PR body）；② **商家面无工艺维护入口**是**能力缺口**（是否补一个工艺维护入口 = 产品范围决策 ⇒ 有意不改 + 重启条件，**不许**读成已解决）；③ 判不了「假出口真的不可达」（那要遍历商家面写能力的语义判断）；④ 判不了「该文案会不会真的上屏」（要 `migao-dev-flow` §15.7 真机截图）；⑤ 前端字面量（B2）与 Agent 侧导航知识（B3）**不在本用例射程**。'],
+    skip_reason='[backend-contract] 判据是零 LLM 的确定性读数（词法扫 admin-api Java 字面量 + 域 label 真值源现取 + 台账现取 + JUnit 契约面），pytest / JUnit 真跑，零网络，不进入 agent-eval 冒烟',
+    tags=['copy', 'removed-page', 'config-center', 'domain-label', 'false-exit', 'capability-name', 'ledger-only-shrink', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-098 [NORMAL] **跨包指针消费者 ⇄ 后端下发面**双向核对：删锚点必红（issue #6853 的类级固化）（源: cases/misc.yml）──
+_CASE_MC_098 = EvalCase(
+    id='MC-098',
+    legacy_id='',
+    title='**跨包指针消费者 ⇄ 后端下发面**双向核对：删锚点必红（issue #6853 的类级固化）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['后端删掉一个指针常量时，凭什么相信「已无消费者」—— 包作者自己 grep 一遍就算数吗？'],
+    expectations=[],
+    data_checks=['🔴 **判据 8·双向核对**：`backend/admin-api/src/main/java/com/migao/admin/service/**` 的**字面量**里现取全部「企业基础设置 → <域>」指针（不写死清单，面塌了 fail-closed）⇄ `CROSS_PACKAGE_POINTER_CONSUMERS` 登记的每个消费者文件必须（a）**代码区**里逐字带着该指针、（b）其所指指针**仍被后端下发**。执行点 = tests/unit_ci_workflows/test_removed_page_pointer_targets.py::test_cross_package_pointer_consumers_still_exist', '🔴 **判别力自证（注入式）**：① 消费者换坐标 ⇒ 红；② 后端不再下发 ⇒ 红；③ 消费者文件被删/改名 ⇒ 红；④ **只写在注释里**不算消费者仍带着它（否则这条判据就是空断言；`_ts_code_only` 先剥块注释再剥行注释）。执行点 = 同文件 ::test_injection_cross_package_pointer_guard_discriminates', '**边界（照实登记）**：① 登记的是**已发现的**消费者（未登记的跨包消费者仍然无牙 —— 这是台账型守卫的固有射程，不粉饰）；② 剥注释**不做字符串字面量级解析**（字符串里的 `//` 会被当注释切掉；域指针串里没有 `//` ⇒ 对本判据无影响）；③ 判不了「消费者真的会跑」（那是 CI 腿的事 —— 本判据的价值正是**在前端腿之外**也能红）'],
+    skip_reason='[backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 字面量 + 读两个前端文件 + 纯函数判定 + 注入自证），pytest 真跑、零网络、不进 agent-eval 冒烟',
+    tags=['cross-package-anchor', 'liveness', 'ledger', 'backend-contract', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-099 [NORMAL] **admin-api → ai-agent 内部调用腿的可观测契约**：接线断了必须摆进 `/actuator/health`，且恒 UP 不熔断（issue #6896）（源: cases/misc.yml）──
+_CASE_MC_099 = EvalCase(
+    id='MC-099',
+    legacy_id='',
+    title='**admin-api → ai-agent 内部调用腿的可观测契约**：接线断了必须摆进 `/actuator/health`，且恒 UP 不熔断（issue #6896）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['本地漏设 `AI_AGENT_BASE_URL` / `AI_AGENT_SERVICE_TOKEN` 时，凭什么在业务侧静默驳回「系统繁忙」**之前**就知道这条腿断了？'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·事实必须在面上**：`AiAgentLinkHealthIndicator.health()` 的 details 必须含 `base_url` / `base_url_configured` / `token_configured` / `reachable` / `probe_error` / `probed_at` 六键 —— **去掉任一键即红**（执行点 = `backend/admin-api/src/test/java/com/migao/admin/config/AiAgentLinkHealthIndicatorTest.java`）', '🔴 **判据 2·恒 UP 不许熔断**：token 未配、base-url 不可达、base-url 未配置三种坏态下，`status` 必须**仍是 `UP`**。沿用 #5184 / #4517 的既有裁定 —— 把 `/actuator/health` 打成 DOWN 会连带部署腿 / 探活 / 负载均衡一起红，比原问题更糟。**有人顺手改成 DOWN ⇒ 红**', '🔴 **判据 3·只暴露有无，不暴露值**：注入非空 token 后 `details.toString()` 必须**不含**该 token 原文 —— 防「把配置值直接摆进对外健康端点」这类泄密（红证 = 把 `token_configured` 换成 `service_token`）', '**判据 4·坏配置降级为事实而非异常**：`base-url` 为空串时不得调用探针、不得抛异常，须落 `base_url_configured=false` + `reachable=false` + 带原因的 `probe_error`', '**边界（照实登记）**：① 本用例只判「事实有没有被摆出来」，**不判**「运维看到 DOWN 态的 details 后是否真会去修」—— 那是值守面的事；② 每次 health 现探一次（超时 800ms 封顶）、**不缓存**，故 health 被高频拉取时会给 ai-agent 增加等量 `/health` 请求，本仓 health 非热点路径 ⇒ 暂不引后台线程；③ 六个客户端里各自重复的坏默认值**本单未收敛到一处**（8000 对 `deploy/docker-compose.yml` 的 `8001:8000` 是正确的容器内地址，改默认值会弄坏容器那条路）'],
+    skip_reason='[backend-contract] 零 LLM 的确定性单测（假探针 + 纯函数判定），mvn 真跑、零网络、不进 agent-eval 冒烟',
+    tags=['backend-contract', 'liveness', 'observability'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-100 [NORMAL] **入库单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6928 的类级固化）（源: cases/misc.yml）──
+_CASE_MC_100 = EvalCase(
+    id='MC-100',
+    legacy_id='',
+    title='**入库单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6928 的类级固化）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['同一份状态迁移权上有两个写面，只有一个带 CAS —— 凭什么相信「下一个写面不会漏」？'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·扫描器非空跑自证**：现取「写 `inbound_orders.status` 的 mapper 手写 SQL」必须含 `markPosted` / `markCancelled`；现取「service 里出现状态列写的方法」必须含 `post` / `cancel` —— **返回空集 = 判据失明，不是通过**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderStatusCasMetaGuardTest.java::scannersAreNotBlind', "🔴 **判据 2·谓词完整性**：凡在 SET 侧写 `status` 的手写 `@Update` SQL，必须同时含 `tenant_id` 参数 + `status = 'draft'` 谓词 + `deleted = 0` 谓词（少任何一条 ⇒ 红）。执行点 = 同文件::everyStatusWriteCarriesTheFullPredicate", '🔴 **判据 3·无谓词写即红（判据本体）**：现取的每个状态写路径的方法体里**不得**出现 `inboundOrderMapper.updateById(` —— 状态迁移必须走条件更新 CAS。**实证过的隐蔽形态**：锚串留着（`if (false && …markCancelled(…)`）但真正落库换成 `updateById` ⇒ 仍判红并具名 `违规=[cancel]`（只判锚会被它骗过去）。执行点 = 同文件::noStatusWritePathUsesUnconditionalUpdateById', '🔴 **判据 4·未登记即红 + 台账不许给不存在的对象盖章**：service 状态写路径必须逐条登记（backend/admin-api/src/test/resources/inbound-order-status-cas-ledger.json 的 `service_write_paths`），且登记的 `call_anchor` 必须逐字出现在方法体里。执行点 = 同文件::serviceWritePathsAreRegisteredAndLedgerIsFaithful', '🔴 **判据 5·登记未被兑现即红**：每条 `evidence` 锚 = `<仓库相对全路径>::<可检索文本>`，左侧文件存在、右侧逐字出现（摘掉 CAS 调用 / 方法改名 ⇒ 红）。执行点 = 同文件::everyEvidenceAnchorIsLive', '🔴 **判据 6·豁免只许缩短**：`unverified` 必须是冻结基线 `unverified_baseline`（现取 0）的子集；新增豁免 ⇒ 红。执行点 = 同文件::serviceWritePathsAreRegisteredAndLedgerIsFaithful', '🔴 **判据 7·判别力自证（合成语料）**：无谓词状态写 / 缺 `deleted=0` / 缺 tenant 谓词 / 未登记写路径 / 锚留而落库无谓词 五种坏形态各自判红，合规语料判绿，**只加注释不红**。执行点 = 同文件::guardHasDiscriminatingPower', '**边界（照实登记）**：① 形态判据换措辞可绕过（真实防线仍是实例判据 `InboundOrderCancelRaceRealDbTest`）；② 射程只到 `InboundOrderService` + `InboundOrderMapper` 这一对文件；③ 判不了「拿 `updateById` 改非状态列」；④ 本守卫不跑被它引用的真库判据；⑤ 不改任何门禁的通过条件、不新增豁免。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 源码文本 + 台账现取 + 合成语料判别力自证），JUnit 真跑、零网络、不进 agent-eval 冒烟',
+    tags=['concurrency', 'state-transition', 'cas', 'ledger', 'backend-contract', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-101 [EDGE] **入驻审批并发双 approve ⇒ 租户数恰好 +1、恰好 1 次成功**：CAS 闸必须在副作用之前（issue #6954）（源: cases/misc.yml）──
+_CASE_MC_101 = EvalCase(
+    id='MC-101',
+    legacy_id='',
+    title='**入驻审批并发双 approve ⇒ 租户数恰好 +1、恰好 1 次成功**：CAS 闸必须在副作用之前（issue #6954）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.EDGE,
+    user_inputs=['同一张 pending 入驻申请单被严格同时审批两次（或 N 次）'],
+    expectations=[],
+    data_checks=['**病（根因，`git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java`）**：`#approveApplication` 是 check-then-act **且副作用在判之前** —— 读判 `pending` → **先建租户 + 管理员 + 初始数据** → 最后 `applicationMapper.updateById(application)`（WHERE 仅主键 ⇒ 无谓词）收尾。并发的第二个请求读到同一个 `pending` 并通过判断 ⇒ **两个租户都真的建出来**，后写覆盖前写 ⇒ 一个**无主租户**（不可逆：租户已落库、管理员已建、无人知道该删谁）。`#rejectApplication` 同形态，且与 approve **争同一份审批权**。', '**判据 1（恰好 1 次成功）**：真库并发判据 = backend/admin-api/src/test/java/com/migao/admin/service/TenantApplicationReviewCasRaceRealDbTest.java 的 `concurrentApprovalsCreateExactlyOneTenant`（N=6 线程 + `CountDownLatch` 对齐起跑）。**修后逐字读数**：`各状态码=[200, 409, 409, 409, 409, 409] 成功数=1 失败状态码=[409,409,409,409,409] 租户行=1 管理员行=1 单据终态=approved reviewed_by=ta-6954-reviewer 失败文案=[CONFLICT: 该入驻申请已被审结，当前状态: approved …]`。落败方必须是**显式 4xx**（CAS 落空 409 CONFLICT / 读判 400），不许 5xx。', '**判据 2（租户数恰好 +1，不可逆副作用的独立算式）**：以该企业名建出的 `tenants` 行**恰好 1 行**（改前实测 **6** 行）、该租户下的管理员用户**恰好 1 个**（改前实测 **6** 个）—— 判定用**落库事实**而非响应体。', '**判据 3（终态与赢家一致）**：申请单终态 `approved` 且 `reviewed_by` 落库非空。', '**判据 4（串行正对照·护栏不误杀）**：同文件 `serialApprovalStillSucceeds` —— 无并发时串行 approve 必须成功（谓词非空 ⇒ 正常请求不被 409 误杀）。修后读数 `状态码=200 租户行=1 单据终态=approved`。', "**红证（注入式 · 受控单变量）**：临时把 `TenantApplicationMapper#approveIfPending` / `#rejectIfPending` 的 `AND status = 'pending'` **摘掉**（注入前置自证：对两条 CAS 的 `AND status = 'pending'` 逐字计数由 2 → **0**）⇒ 判据 1/2 当场红，逐字读数 `各状态码=[200,200,200,200,200,200] 成功数=6 租户行=6 管理员行=6`；同时**串行正对照仍绿** ⇒ 红的不是「装置坏了」。撤回注入（复算 `grep -c` 回到 **2**）⇒ 2 passed / 0 failed。", '**为什么不需要窗口探针（与 #6928 的差别）**：窗口在收尾 `updateById` **之前**，而中间跑完整条开租链路（建租户 → 七岗 + 权限目录 → 管理员用户 → 默认商品分类 → 生产种子模板 → 后置条件校验）⇒ 窗口是**毫秒级**且随并发线程数放大 ⇒ `CountDownLatch` 对齐起跑即可稳定命中（本包最省成本的原因）。', '**边界（照实登记）**：① 跑的是**服务层真库并发**而非 HTTP 栈（controller 只是薄转发）；② 装配走裸 MyBatis（`autocommit`）而非 Spring 事务代理 ⇒ 证的是 **CAS 语句本身**的互斥性；③ 审阅人必须是 `users` 里的真行（`reviewed_by` 有外键），夹具自建；④ 探针对象全部自建（企业名前缀 `ta-6954`，随一次性临时集群销毁），不碰任何存量数据。'],
+    skip_reason='[backend-contract] 纯后端真库并发判据（真 PG 一次性集群，走 PgCluster.startOrAbort() 收口）：admin-api 单测面，零网络、零 LLM，不进 agent-eval 冒烟',
+    tags=['concurrency', 'state-transition', 'cas', 'onboarding', 'backend-contract', 'realdb', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-102 [NORMAL] **入驻审批写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 负谓词（本表无 deleted 列）即红 / 台账只许缩短（issue #6954 的类级固化）（源: cases/misc.yml）──
+_CASE_MC_102 = EvalCase(
+    id='MC-102',
+    legacy_id='',
+    title='**入驻审批写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 负谓词（本表无 deleted 列）即红 / 台账只许缩短（issue #6954 的类级固化）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['审批权上有两个写面（通过 / 驳回），凭什么相信「下一个写面不会漏」？'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·扫描器非空跑自证**：现取「写 `tenant_applications.status` 的 mapper 手写 SQL」必须含 `approveIfPending` / `rejectIfPending`；现取「service 里出现审结写的调用点」必须含 `approveApplication` / `rejectApplication` —— **返回空集 = 判据失明，不是通过**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/TenantApplicationReviewCasMetaGuardTest.java::scannersAreNotBlind', "🔴 **判据 2·CAS 谓词完整性**：凡在 SET 侧写 `status` 的手写 `@Update` SQL，必须同时含 `#{id}` 参数 + **WHERE 里的** `status = '<当前态>'` 谓词（少任何一条 ⇒ 红）。⚠️ 谓词判定**只看 WHERE 段** —— `SET status = 'approved'` 也像 `status = '<字面量>'`，对整条 SQL 判会把「无谓词写」判成合规（本判据第一版真的踩了这个坑，由判别力自证当场抓出）。执行点 = 同文件::everyStatusWriteCarriesTheCasPredicate + ::guardHasDiscriminatingPower", '🔴 **判据 3·无谓词写即红（判据本体）**：现取的每个审结写路径的方法体里**不得**出现 `applicationMapper.updateById(` —— 审批权的判断与写入必须在同一条语句上。**实证过的隐蔽形态**：锚串留着（`if (false && …approveIfPending(…)`）但真正落库换成 `updateById` ⇒ 仍判红并具名（只判锚会被它骗过去）。执行点 = 同文件::noStatusWritePathUsesUnconditionalUpdateById', '🔴 **判据 4·负谓词即红（本表独有）**：mapper 状态写 SQL **不得**出现 `deleted = 0` —— `tenant_applications` **没有该列**，照抄 #6928 / #6936 的三谓词模板会直接 SQL 报错（PG 报错形如 `column deleted does not exist`）。执行点 = 同文件::noDeletedPredicateBecauseTheColumnDoesNotExist', '🔴 **判据 5·未登记即红 + 台账不许给不存在的对象盖章**：service 审结写路径必须逐条登记（backend/admin-api/src/test/resources/tenant-application-review-cas-ledger.json 的 `service_write_paths`），且登记的 `call_anchor` 必须逐字出现在方法体里。执行点 = 同文件::serviceWritePathsAreRegisteredAndLedgerIsFaithful', '🔴 **判据 6·登记未被兑现即红**：每条 `evidence` 锚 = `<仓库相对全路径>::<可检索文本>`，左侧文件存在、右侧逐字出现（摘掉 CAS 调用 / 方法改名 ⇒ 红）。执行点 = 同文件::everyEvidenceAnchorIsLive', '🔴 **判据 7·豁免只许缩短**：`unverified` 必须是冻结基线 `unverified_baseline`（现取 0）的子集；新增豁免 ⇒ 红。执行点 = 同文件::serviceWritePathsAreRegisteredAndLedgerIsFaithful', '🔴 **判据 8·判别力自证（合成语料）**：无谓词状态写 / 缺 `status` 谓词 / 无谓词 `updateById` / 锚留而落库无谓词 / 未登记写路径 / 台账锚被摘掉 / 带了本表不存在的 `deleted` 谓词 六族坏形态各自判红，合规语料判绿，**只加注释不红**。执行点 = 同文件::guardHasDiscriminatingPower', '**边界（照实登记）**：① 形态判据换措辞可绕过（真实防线仍是实例判据 `TenantApplicationReviewCasRaceRealDbTest`）；② 射程只到 `RegistrationService` + `TenantApplicationMapper` 这一对文件；③ 判不了「拿 `updateById` 改非状态列」；④ 本守卫不跑被它引用的真库判据；⑤ 不改任何门禁的通过条件、不新增豁免。**与 MC-100 / PG-075 有意不重叠**：那两颗的射程是 `inbound_orders` 与 `production_operations.deleted`，本表是 `tenant_applications`，三张表谓词口径**有意不同**（正是判据 4 的对象）；本守卫一字未动那两颗。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 源码文本 + 台账现取 + 合成语料判别力自证），JUnit 真跑、零网络、不进 agent-eval 冒烟',
+    tags=['concurrency', 'state-transition', 'cas', 'ledger', 'onboarding', 'backend-contract', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-103 [NORMAL] **Post-Merge Verify 的取数面读数探针必须真有牙**：能打出 creds 读数 / 打不出即响亮判红 / driver 显式把凭据交给判据解释器（issue #6968）（源: cases/misc.yml）──
+_CASE_MC_103 = EvalCase(
+    id='MC-103',
+    legacy_id='',
+    title='**Post-Merge Verify 的取数面读数探针必须真有牙**：能打出 creds 读数 / 打不出即响亮判红 / driver 显式把凭据交给判据解释器（issue #6968）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['判定腿报「没有 API 凭据」，而它自带的诊断探针每轮只说「探针自身失败（不影响判定）」—— 那到底是没凭据，还是没人看得见凭据？'],
+    expectations=[],
+    data_checks=['判据 1（探针能取数）：`.github/workflows/post-merge-verify.yml` 的「取数面读数」步必须以 `PYTHONPATH=tests`（**包**形态 `unit_ci_workflows.*`）导入判据本体，并逐字打印 `creds = {...}` 行。执行点 = tests/unit_ci_workflows/test_post_merge_verify_credential_probe.py::test_probe_step_is_wired_to_answer_the_question', '判据 1 的直连真对象：`PYTHONPATH=tests` 下真能 `import unit_ci_workflows.test_case_id_claims` 并读 `TOKEN_ENVS` / `scan_claims` / `current_pr`（零网络）。执行点 = 同文件::test_probe_reads_the_real_criterion_module', '判据 2（探针失败必须响亮）：读数行打不出 ⇒ 本步 `::error::` + `exit 1`；不许再是「探针自己失败只打印，绝不判红」。执行点 = 同文件::test_negative_control_probe_is_green_on_the_real_tree（正向）', '判据 3（凭据链显式化）：`scripts/post_merge_verify.py` 的 `_judging_env` 必须把凭据**显式**交给判据解释器（只有 `GH_TOKEN` 时补 `GITHUB_TOKEN`；已有值不被覆盖），且 `credential_env_reading` 把读数带进报告。执行点 = 同文件::test_negative_control_probe_is_green_on_the_real_tree', '判据 4（判别力自证，注入式红证三条各能单独变红）：① `PYTHONPATH` 换回 `tests/unit_ci_workflows` ⇒ 判据 1 红；② 抹掉 `::error::` / `exit 1` ⇒ 判据 2 红；③ `_judging_env` 退化成纯拷贝 ⇒ 判据 3 红。执行点 = 同文件::test_red_proof_broken_import_path_turns_it_red / ::test_red_proof_silent_probe_turns_it_red / ::test_red_proof_dropping_credential_passthrough_turns_it_red', '判据 5（读行为不吃说明）：判定面必须先剥整行 shell 注释再匹配 —— 探针块里就写着「上一版插错成 tests/unit_ci_workflows」这类**给下一次的人看的说明**，读进判定会假红（实测踩过）。执行点 = 同文件::test_negative_control_probe_is_green_on_the_real_tree 的 `_strip_comments` 对照臂', '**边界（照实登记）**：① 判不了「CI 上凭据为什么是空的」（那要在真 runner 上读 step shell 与子进程两层读数，属 @外部输入）；② 不等于判据 7 的判定口径正确（那是 tests/unit_ci_workflows/test_case_id_claims.py 自己的面）；③ 不改任何门禁的通过条件、不新增豁免。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性读数（读 workflow YAML 文本 + 直连判据模块 + 纯函数注入），不进 agent-eval 冒烟',
+    tags=['ci', 'post-merge-verify', 'credential-chain', 'probe-liveness', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-104 [NORMAL] **加工单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6955 的类级固化）（源: cases/misc.yml）──
+_CASE_MC_104 = EvalCase(
+    id='MC-104',
+    legacy_id='',
+    title='**加工单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6955 的类级固化）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['同一份加工单状态迁移权上有**两个**写面（手工入口 `ProcessingOrderService#updateStatus` 与订单联动腿 `OrderService#cancelOrder`），凭什么相信「下一个写面不会漏」？'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·扫描器非空跑自证**：现取「写 `processing_orders.status` 的 mapper 手写 SQL」必须含 `markCompletedIfActive` / `markInProcessingIfFrom` / `markStatusIfFrom`；现取「**两条** service 里出现状态列写的方法」必须含 `ProcessingOrderService#updateStatus` 与 `OrderService#cancelOrder` —— **返回空集 = 判据失明，不是通过**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderStatusCasMetaGuardTest.java::scannersAreNotBlind', "🔴 **判据 2·谓词完整性**：凡在 SET 侧写 `status` 的手写 `@Update` SQL，必须同时含 `tenant_id` 参数 + **WHERE 侧 status 谓词**（`status = #{fromStatus}` / `status = 'x'` / `status IN (…)`）+ `deleted = 0` 谓词（少任何一条 ⇒ 红）。执行点 = 同文件::everyStatusWriteCarriesTheFullPredicate", '🔴 **判据 3·无谓词写即红（判据本体）**：现取的每个状态写路径的方法体里**不得**出现 `processingOrderMapper.updateById(` —— 状态迁移必须走条件更新 CAS。**实证过的隐蔽形态**：锚串留着（`if (false && …markStatusIfFrom(…)`）但真正落库换成 `updateById` ⇒ 仍判红并具名。执行点 = 同文件::noStatusWritePathUsesUnconditionalUpdateById', '🔴 **判据 4·未登记即红 + 台账不许给不存在的对象盖章**：两条 service 的状态写路径必须逐条登记（backend/admin-api/src/test/resources/processing-order-status-cas-ledger.json 的 `service_write_paths`），且登记的 `call_anchor` 必须逐字出现在方法体里。执行点 = 同文件::serviceWritePathsAreRegisteredAndLedgerIsFaithful', '🔴 **判据 5·登记未被兑现即红**：每条 `evidence` 锚 = `<仓库相对全路径>::<可检索文本>`，左侧文件存在、右侧逐字出现（摘掉 CAS 调用 / 方法改名 ⇒ 红）。执行点 = 同文件::everyEvidenceAnchorIsLive', '🔴 **判据 6·豁免只许缩短 + 台账不许空转**：`unverified` 必须是冻结基线 `unverified_baseline`（现取 0）的子集；新增豁免 ⇒ 红；`entries` / `service_write_paths` 为空 ⇒ 红（「空」不等于「全部合规」）。执行点 = 同文件::serviceWritePathsAreRegisteredAndLedgerIsFaithful', '🔴 **判据 7·判别力自证（合成语料）**：无谓词状态写 / 缺 `deleted=0` / 缺 tenant 谓词 / 缺 WHERE 侧 status 谓词 / 未登记写路径 / 锚留而落库无谓词 / 台账未兑现 七种坏形态各自判红，合规语料判绿，**只加注释不红**；另含**扫描器鲁棒性**两格（跨行签名必须仍被扫到；注释里的孤立 `{` 不得让深度错位）。执行点 = 同文件::guardHasDiscriminatingPower', '**本包在 MC-104 上抓到的两个真问题（如实登记，不粉饰）**：① **扫描器深度下沉**：`ProcessingOrderService#updateStatus` 的签名跨行（收尾 `) {` 在续行上），只认「签名行含 `) {`」的写法把**整个方法**跳过、而它的闭合花括号照样减深度 ⇒ 深度从此下沉一级 ⇒ **后面所有方法全部扫不到**；初版读数因此少了 `updateStatus`（`service 写路径=[OrderService#cancelOrder]`）而判据 1 只检查另一个对象 ⇒ **照样绿**。② **注释里的孤立花括号**：真实文件第一处 javadoc 含 `{@code route = [` 这类被截断的代码片段 ⇒ 花括号计数器把它当真代码 ⇒ 从此整体错位。两处均已修（跨行签名走「待定签名状态机」；扫描前先剥注释 / 字符串字面量），并各自补了一条合成语料判据防回归（判据 7）。⚠️ **同款形态在 MC-100（`InboundOrderStatusCasMetaGuardTest`）里同样存在**（它只扫一个文件、且没剥注释）—— 按 #6955 的写面纪律**本包不动它**，归 #6956 独占处理。', '**边界（照实登记）**：① 形态判据换措辞可绕过（真实防线仍是实例判据 `ProcessingOrderStatusCasRaceRealDbTest`）；② 射程只到 `ProcessingOrderMapper` + `ProcessingOrderService` + `OrderService` 三条文件；③ 判不了「拿 `updateById` 改非状态列」；④ 本守卫不跑被它引用的真库判据；⑤ **「写路径清单」由 `processingOrderMapper.` 前缀现取** ⇒ 别名形态（`baseMapper.updateById(` / `this.updateById(`）扫不到（未覆盖形态，重启条件写在台账 `coverage_boundary`）；⑥ 不改任何门禁的通过条件、不新增豁免。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 源码文本 + 台账现取 + 合成语料判别力自证），JUnit 真跑、零网络、不进 agent-eval 冒烟',
+    tags=['concurrency', 'state-transition', 'cas', 'ledger', 'backend-contract', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-105 [NORMAL] **部署腿的判据从「产物存在」换成「线上探到的 sha == 本次部署的 sha」**：admin-api 加只读版本端点 `GET /api/version`（构建期注入 sha/tag/builtAt，nginx 已放行面，无鉴权）+ 部署后 served-sha 断言（不一致 ⇒ 具名判红、探不到 ⇒ fail-closed 退 3）+ schedule 兜底档「本轮未部署」显式出声（issue #6951 / #6746 / #6611 / #6554）（源: cases/misc.yml）──
+_CASE_MC_105 = EvalCase(
+    id='MC-105',
+    legacy_id='',
+    title='**部署腿的判据从「产物存在」换成「线上探到的 sha == 本次部署的 sha」**：admin-api 加只读版本端点 `GET /api/version`（构建期注入 sha/tag/builtAt，nginx 已放行面，无鉴权）+ 部署后 served-sha 断言（不一致 ⇒ 具名判红、探不到 ⇒ fail-closed 退 3）+ schedule 兜底档「本轮未部署」显式出声（issue #6951 / #6746 / #6611 / #6554）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['部署腿报 success、`Post-Deploy Smoke Test` 却是 skipped —— 这个「绿」到底证明了什么？线上跑的又是哪个 build？'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·红证（判据自身能因注入错误期望 sha 而红）**：`deploy/scripts/served-version-verify.sh <BASE_URL> <EXPECTED_SHA>` 在「线上读数 = 真 sha / 期望值 = 注入的错误 sha」时必须以 **退 1** 判红，且输出里同时具备三件：**探到什么**（实测 sha）、**期望什么**（期望 sha）、**可复制复算命令**（`curl` + 脚本名）。执行点 = tests/unit_ci_workflows/test_served_version_verify.py::test_served_sha_mismatch_is_red_and_names_both_sides', '🔴 **判据 1 的对照臂（没有它 ⇒ 恒红也能过上面那条）**：同一场景只把期望 sha 换回真的 ⇒ **退 0** + `SERVED_VERSION=match`。执行点 = 同文件::test_served_sha_match_is_green_control_arm', '🔴 **判据 2·探不到 ⇒ fail-closed（退 3，**绝不当绿**）**：sha 为空（**老镜像没有构建期注入面** —— 本判据最容易退化成空断言的路径）、body 不是 JSON、HTTP 404、HTTP 429、sha 非 hex、期望 sha 形态不合法、期望 sha < 7 位、`app` 不是目标服务、端点连不上（端口没人听）九态各自 ⇒ 退 3 + `SERVED_VERSION=unknown` 且**不得**出现 `match`。执行点 = 同文件::test_unverifiable_is_exit_3_never_green（8 条参数化）/ ::test_unreachable_endpoint_is_exit_3', '🔴 **判据 3·结构判据：发布腿的命令里不再以「镜像/产物存在」作为通过条件**：`deploy-admin-api.yml` 必须**真的**调用共享判据本体（`deploy/scripts/served-version-verify.sh`）、期望值来自本次部署（`EXPECTED_SHA: ${{ github.sha }}`）、退出码**原样透传**（`exit "$rc"`，3 不许被归一化成 0）。执行点 = 同文件::test_deploy_leg_asserts_served_sha_not_artifact_existence', '🔴 **判据 4·类级形态：断言步的生效条件不得绑在「产物/结论」面上**：served-sha 断言的 `if:` 里不许出现 `steps.sync.outputs.skip`，且必须是 `always()`（跳过档也要探一次 —— 否则「本轮未部署」就没有任何线上读数）。执行点 = 同文件::test_deploy_leg_never_keys_pass_on_artifact_existence', "🔴 **判据 5·schedule 兜底档两态分开**：`skip=true`（本轮未部署）必须有**显式出声**的声明步（`::notice::` + 逐字「未跑 Post-Deploy Smoke Test」+ 落 run summary），且 `deployed` 的语义必须自洽（`skip != 'true'`，冒烟 job 条件随之 `== 'true'`）。执行点 = 同文件::test_schedule_skip_path_declares_that_no_smoke_ran", '🔴 **判据 6·注入面五跳同源**（少一环 ⇒ 端点报的就不是这次构建、sha 恒为空）：workflow（`build_id` 步解算 `git rev-parse HEAD` + 三个 env）→ **workflow 的远程调用参数**（`swas-deploy-ci.sh` 第 9/10 位 `"$BUILD_SHA"` / `"$BUILT_AT"`）→ **驱动脚本的 BOOTSTRAP 渲染**（`export …;` 串里的 `__BUILD_SHA__` / `__BUILT_AT__` + 显式渲染 + 未渲染即 fail-closed）→ `deploy/swas/deploy.sh`（`BUILD_SHA`/`BUILD_TAG`/`BUILT_AT` → `--build-arg MIGAO_BUILD_*`）→ `backend/admin-api/Dockerfile`（`ARG` 在 builder/runtime **两个** stage 各一次 + `ENV`）→ `VersionController`（读同名环境变量）。**第 2/3 跳（issue #6951 的真机缺陷）** 另由**执行式**断言加钉：真跑 `render_bootstrap` + `deploy_attempt`（只桩 `run_cmd`/`nap`）捕获**实发远端的命令内容**，身份必须在里面（纯文本断言会被「模板里有占位符、渲染点却空转」骗过）；`BUILD_TAG` **有意**不过参数面 ⇒ 反向也判红。执行点 = 同文件::test_build_identity_wiring_is_same_source_across_five_hops', '🔴 **判据 7·端点的泄露面白名单**：响应体**只许** 4 个非敏感键（`app`/`sha`/`tag`/`builtAt`），且只读（`@GetMapping`、无写映射）⇒ 有人加字段就判红（逼一次「它会不会泄露」的复核）。执行点 = 同文件::test_version_endpoint_field_whitelist_blocks_accidental_leaks', '🔴 **判据 8·端点落在已放行面 + 设计前提仍在**：`@GetMapping(value = "/api/version"`（nginx 已放行的 `/api/` 前缀，**不新增放行面**）+ `SecurityConfig` 的 `permitAll` 含 `"/api/version"`；同时 `nginx.conf` 那条 actuator/swagger 屏蔽块必须**仍在**且仍是 `return 404`（「探活面 ≠ 探版本面」正是本单的前提）。执行点 = 同文件::test_version_endpoint_is_under_the_already_allowed_api_prefix', '🔴 **判据 9·判别力自证（注入式红证，本包实跑）**：① 把脚本的比较改成恒真 ⇒ `test_served_sha_mismatch_is_red_and_names_both_sides` 红（1 failed / 19 passed）；② 摘掉 workflow 的 served-sha 断言步 ⇒ `test_deploy_leg_asserts_served_sha_not_artifact_existence` + `test_deploy_leg_never_keys_pass_on_artifact_existence` 双双红（2 failed / 18 passed）；③ 摘掉 Dockerfile 的 `ENV MIGAO_BUILD_SHA=…` ⇒ `test_build_identity_wiring_is_same_source_across_five_hops` 红（1 failed / 19 passed）；恢复后 20 passed。执行点 = 同文件（判据本体自带对照臂与负控）', '🔴 **判据 10·脚本自身的两类静默坏形态**（本包实测踩过第一类）：`bash -n` 必须能解析 + **不许**出现「裸 `$VAR` 紧跟非 ASCII」（bash 会把中文全角字节并进变量名 ⇒ `set -u` 下报 `EXPECTED\\ufffd: unbound variable`，而报错行号与真实坏点相差数行；同族还能造成未闭合引号把整段吞掉）。执行点 = 同文件::test_shared_script_parses_and_has_no_unquoted_cjk_adjacent_expansion', '🔴 **判据 11·端点主体的 Java 契约测试**（与 Node 侧判据**不重复实现**：这里判端点行为，那里判脚本/接线）：① `sha`/`tag`/`builtAt` **原样**出（它们就是判据比对的字符串，不许截断/加工）；② 字段面**恰好** 4 个（`app`/`sha`/`tag`/`builtAt`）⇒ 多一个键即泄露面变了；③ 未注入时 `sha` 是**空串**（不是 500 / 不是占位假值 —— 消费方据此判「探不到」exit 3）；③′ 注入值被 trim；④ `POST /api/version` ⇒ **405**（不给写面）；⑤ 注入「显眼标记」后断言响应里只出现白名单键名与注入值、不出现实例路径 / 环境变量形态。执行点 = backend/admin-api/src/test/java/com/migao/admin/controller/VersionControllerTest.java', '**边界（照实登记，不粉饰）**：① 线上真机复探 = **issue #6951 的那条评论**（`#6989` 合入后主会话真机复探）：`curl -sS -m 15 https://api.migaozn.com/api/version` ⇒ 逐字读数 `{app:admin-api, sha:(空), tag:sha-bab9538, builtAt:(空)}`（`tag` 有值、`sha`/`builtAt` 恒空），部署 run `38835344964` 判红在 `Assert served sha == deployed sha`（exit 3 = 探不到）—— 根因 = 第 5 跳（CI→服务器）没接，**已在本 case 的判据 6 里补上并加执行式断言**；终判仍是真机复探：执行 `bash deploy/scripts/served-version-verify.sh https://api.migaozn.com $(git rev-parse origin/main)` 应 **rc=0 + `SERVED_VERSION=match`**（需一次真实部署触发，由集成侧 `gh workflow run deploy-admin-api.yml --ref main`）；② `deploy-frontend.yml` / `deploy-ai-agent-service.yml` 两条腿**未接线**（同形缺口；前端那半边还依赖 #6611 的构建期注入面）—— 重启条件 = #6611 落地后给前端产物加 build id 并接同一条判据；③ Java 侧只做**静态接线判据**，本包**未**跑 `mvn test`（worktree 无构建产物、属全量档）；④ 本文件**不联网**（`/api/version` 由进程内 HTTP 桩提供）⇒ 证的是「脚本在给定输入下会做什么」，不是「阿里云/线上真的会这么回」；⑤ 不改任何门禁的通过条件、不新增豁免、不新增 schedule。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性读数（进程内 HTTP 桩驱动真脚本 + 读 workflow/deploy.sh/Dockerfile/Java 源码文本 + `bash -n`），零网络、不碰真实云，不进 agent-eval 冒烟',
+    tags=['deploy', 'ci-cd', 'version-probe', 'fail-closed', 'backend-contract', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-106 [NORMAL] **admin-web 发布腿的判据从「产物存在」换成「线上探到的 sha == 本次部署的 sha」**：构建期把 identity 烘焙进产物（`GET /version.json`，与 admin-api 的 `/api/version` 同族形态）+ 发布后 served-sha 断言（不一致 ⇒ 具名判红退 1、**探不到 ⇒ fail-closed 退 3**、**响应是 HTML（回落）⇒ 判探不到**）+ schedule 兜底档「本轮未部署 ⇒ 没有发生任何交付」显式出声（issue #6611 / #6746）（源: cases/misc.yml）──
+_CASE_MC_106 = EvalCase(
+    id='MC-106',
+    legacy_id='',
+    title='**admin-web 发布腿的判据从「产物存在」换成「线上探到的 sha == 本次部署的 sha」**：构建期把 identity 烘焙进产物（`GET /version.json`，与 admin-api 的 `/api/version` 同族形态）+ 发布后 served-sha 断言（不一致 ⇒ 具名判红退 1、**探不到 ⇒ fail-closed 退 3**、**响应是 HTML（回落）⇒ 判探不到**）+ schedule 兜底档「本轮未部署 ⇒ 没有发生任何交付」显式出声（issue #6611 / #6746）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['发布腿报 success，线上跑的却还是旧版本 —— 这个「绿」到底证明了什么？', 'schedule 兜底只跑了 22 秒也报 success：它是真的把新版本交付上去了，还是只是「镜像存在」？'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·红证（判据自身能因注入错误期望 sha 而红）**：`deploy/scripts/admin-web-version-probe.sh <BASE_URL> <EXPECTED_SHA>` 在「线上读数 = 真 sha / 期望值 = 注入的错误 sha」时必须以 **退 1** 判红，且输出里同时具备三件：**探到什么**（实测 sha）、**期望什么**（期望 sha）、**可复制复算命令**（`curl` + 脚本名）。执行点 = tests/unit_ci_workflows/test_admin_web_served_version.py::test_served_sha_mismatch_is_red_and_names_both_sides', '🔴 **判据 1 的对照臂（没有它 ⇒ 恒红也能过上面那条）**：同一场景只把期望 sha 换回真的 ⇒ **退 0** + `SERVED_VERSION=match`。执行点 = 同文件::test_served_sha_match_is_green_control_arm', '🔴 **判据 2·探不到 ⇒ fail-closed（退 3，绝不当绿）**：sha 为空（**老镜像没有构建期注入面** —— 本判据最容易退化成空断言的路径）、sha 是 unknown（**构建身份没过「CI→驱动脚本→服务器」边界**）、**响应是 HTML（回落）**、Content-Type 撒谎成 text/html、body 不是 JSON、HTTP 404、HTTP 503、sha 非 hex、`app` 不是 admin-web、期望 sha 形态不合法、期望 sha < 7 位、端点连不上（端口没人听）十二态各自 ⇒ 退 3 + `SERVED_VERSION=unknown` 且**不得**出现 `match`。执行点 = 同文件::test_unverifiable_is_exit_3_never_green（11 条参数化）/ ::test_unreachable_endpoint_is_exit_3', '🔴 **判据 3·陷阱二的正面处理（HTTP 200 不是证据）**：`try_files … /index.html` 的回落形态 = **200 + HTML**；探针必须判**探不到（退 3）**，且**具名**点出「HTML / 回落」而不是笼统的「sha 为空」（两者的排查方向与处置完全不同）。执行点 = 同文件::test_probe_reports_html_fallback_and_never_passes_on_status_200_alone', '🔴 **判据 4·结构判据：发布腿的通过条件不再可能是「镜像/产物存在」**：`deploy-frontend.yml` 必须**真的**调用本仓的身份探针本体（`deploy/scripts/admin-web-version-probe.sh`）、期望值来自本次部署（`EXPECTED_SHA: ${{ github.sha }}`）、退出码**原样透传**（`exit "$rc"`，3 不许被归一化成 0）。执行点 = 同文件::test_deploy_leg_asserts_served_sha_not_artifact_existence', '🔴 **判据 5·类级形态：断言步的生效条件不得绑在「产物/结论」面上**：served-sha 断言的 `if:` 里不许出现 `steps.sync.outputs.skip`，且必须是 `always()`（跳过档也要探一次 —— 否则「本轮未部署」就没有任何线上读数，那正是 issue #6746 的形态）。执行点 = 同文件::test_served_assertion_never_keys_pass_on_artifact_existence', '🔴 **判据 6·注入面五跳同源**（少一环 ⇒ 身份面报的就不是这次构建）：`deploy-frontend.yml`（`build_id` 步解算 `git rev-parse HEAD` + 三个 env）→ **远程调用参数面**（`swas-deploy-ci.sh` 第 9/10 位 `"$BUILD_SHA"` / `"$BUILT_AT"`）→ **驱动脚本的 BOOTSTRAP 渲染**（`export …;` 里的 `__BUILD_SHA__` / `__BUILT_AT__` + 显式渲染 + 未渲染即 fail-closed）→ `deploy/swas/deploy.sh`（`BUILD_SHA`/`BUILD_TAG`/`BUILT_AT` → `--build-arg MIGAO_BUILD_*`）→ `frontend/admin-web/Dockerfile`（三个 `ARG` + 构建期写出 `public/version.json`）。`BUILD_TAG` **有意不过参数面**（远端 `TAG` 已是同一个值）⇒ 反向也判红。执行点 = 同文件::test_build_identity_wiring_is_same_source_across_five_hops', "🔴 **判据 7·schedule 兜底档两态分开**：`deployed` 的语义必须是 `skip != 'true'`（真的部署了才为 true），探测 job 条件随之 `== 'true'`（两处同时翻转 ⇒ 行为等价、读数不再自相矛盾），且 `skip=true` 必须有**显式出声**的声明步（`::notice::` + 逐字「本轮未部署」+ 落 run summary）。同时校验 admin-api 腿仍是同形 ⇒ 防「只改了一条腿、两腿读数口径分裂」。执行点 = 同文件::test_schedule_skip_path_declares_that_nothing_was_delivered", '🔴 **判据 8·类级：另三条静态落地面腿的身份债必须登记在案**：`worker-h5` / `bmini-h5` / `c-end-h5` 的 `*-verify-served.sh` 用的仍是「线上字节 == 本仓产物」= **跨版本相同**的身份判据（issue #6611 逐条核过：`bmini-h5` 与 `c-end-h5` 只比 `index.html`、`worker-h5` 多比 `app.js` 但按需加载的分块仍不覆盖）—— 本单**只修 admin-web 一条腿**，本判据让「还有三条腿同形」进不了「已解决」的错觉：哪天有人把它们改成有判别力的身份面 ⇒ 判红，逼一次清单/PR body 同步更新。执行点 = 同文件::test_static_landing_legs_identity_debt_is_ledgered', '🔴 **判据 9·脚本自身的两类静默坏形态**：`bash -n` 必须能解析 + **不许**出现「裸 `$VAR` 紧跟非 ASCII」（bash 会把中文全角字节并进变量名 ⇒ `set -u` 下报 unbound variable，而报错行号与真实坏点相差数行）。执行点 = 同文件::test_shared_script_parses_and_has_no_unquoted_cjk_adjacent_expansion', '**边界（照实登记，不粉饰）**：① 线上**真机复探未做**（需要一次真实部署，本包无部署权；本机 `gh` token **无 `workflow` scope** ⇒ 触发不了真实部署）—— 重启条件 = 本 PR 合并并在 main 上跑过一次 frontend 部署后，执行 `bash deploy/scripts/admin-web-version-probe.sh https://merchant.migaozn.com "$(git rev-parse origin/main)"` 应 **rc=0 + `SERVED_VERSION=match`**；② 判不了「`docker build` 真的把 `public/version.json` 打进了镜像」（需要一次真构建；静态判据只钉住 Dockerfile 里那段 `RUN` 的形态与默认值）；③ 判不了「Next.js 会把该文件按原样发出去」（框架行为，真机复探才看得见）；④ **已接线**：`deploy-frontend.yml` 的 push 部署腿 + schedule 兜底腿（同一条 served-sha 断言步覆盖两条路径）；⑤ 不改任何门禁的通过条件、不新增豁免、**不新增 schedule**（改用例面只借既有 `deploy-frontend.yml` 的既有 cron）。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性读数（进程内 HTTP 桩驱动真脚本 + 读 workflow/Dockerfile/deploy.sh 源码文本 + `bash -n`），零网络、不碰真实云，不进 agent-eval 冒烟',
+    tags=['deploy', 'ci-cd', 'version-probe', 'fail-closed', 'backend-contract', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置 = 三样都在仓里可读：① 探针本体 `deploy/scripts/admin-web-version-probe.sh`；② 发布腿 `.github/workflows/deploy-frontend.yml` 里那条 served-sha 断言步；③ 构建身份的五跳载体（workflow 解算步 / 远程调用实参 / 驱动脚本 BOOTSTRAP 渲染 / `deploy/swas/deploy.sh` 的 `--build-arg` / `frontend/admin-web/Dockerfile` 的 ARG + 构建期写出 `public/version.json`）。**前置不成立时直接红**（每条判据开头都是 `read(<路径>)` 的 `assert path.is_file()` + 锚点断言，取不到就具名报出是哪个对象），**不表现成「agent 不干活」**；两条 `user_inputs` 是对**同一支发布腿**的两个真实疑问（「报绿到底证了什么」/「22 秒的 success 是真交付吗」），不是两次会话。',
+)
+
+# ── MC-107 [NORMAL] **部署腿 run 正文里编造的 `GITHUB_*` 环境变量名必须判红**：`GITHUB_RUN_STARTED_AT` 不是 GitHub 注入的环境变量⇒ shell 展开**恒为空串**，而 shell 里未定义变量只是空串、**没有任何东西会红** ⇒ `builtAt` 恒空（issue #7015）；同批给 `builtAt` 补一条**会红**的具名判据（探到空 ⇒ 判红点名「取值源未接」）（源: cases/misc.yml）──
+_CASE_MC_107 = EvalCase(
+    id='MC-107',
+    legacy_id='',
+    title='**部署腿 run 正文里编造的 `GITHUB_*` 环境变量名必须判红**：`GITHUB_RUN_STARTED_AT` 不是 GitHub 注入的环境变量⇒ shell 展开**恒为空串**，而 shell 里未定义变量只是空串、**没有任何东西会红** ⇒ `builtAt` 恒空（issue #7015）；同批给 `builtAt` 补一条**会红**的具名判据（探到空 ⇒ 判红点名「取值源未接」）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['部署腿说 success、`/api/version` 也报出了 sha，可 `builtAt` 却是空串 —— 这条「线上就是本次构建」的断言，到底证了几个字段？'],
+    expectations=[],
+    data_checks=['🔴 **判据 12·`builtAt` 具名判据（会红的实例判据，issue #7015）**：`deploy/scripts/served-version-verify.sh` 在「线上 `sha` == 期望 sha、而线上 `builtAt` 是**空串**」且调用方显式要求判它（`SERVED_VERSION_REQUIRE_BUILT_AT=1`）时，必须以 **退 1** 判红，且输出里**逐字点名** issue `#7015` + 「取值源未接」；🔴 **不得**与「探不到（退 3 / `SERVED_VERSION=unknown`）」混桶（两者处置不同：一个是取值源写错、一个是连不上/面被挡）。执行点 = tests/unit_ci_workflows/test_served_version_verify.py::test_empty_builtat_is_red_when_required_and_names_the_value_source', '🔴 **判据 12 的两条对照臂**（缺一不可：只有红证 ⇒ 恒红也能过）：① **opt-in**：同一场景**不**要求判 `builtAt` ⇒ 退 0 + `SERVED_VERSION=match`（没接这个面的调用方不会被一条它没要求过的判据误判红）；② **判别力**：要求判、而 `builtAt` **非空** ⇒ 退 0，且绿档把线上 `builtAt` 读数打出来（复算者能看见取值源是否真接上了）。执行点 = 同文件::test_empty_builtat_is_green_when_not_required / ::test_nonempty_builtat_is_green_when_required', "🔴 **判据 12 的接线面**：`deploy-admin-api.yml` 的 served-version 断言步**必须**在其 `env:` 里给 `SERVED_VERSION_REQUIRE_BUILT_AT: '1'` —— 否则上面那条具名判据在 CI 里**永不生效**（`builtAt` 又变回恒真的空断言）。执行点 = 同文件::test_deploy_leg_requires_builtat_so_it_cannot_be_a_vacuous_assertion", '🔴 **取值源（issue #7015 的病灶本身）**：`BUILT_AT` 的值必须由 **runner 时钟**现算（`date -u +%Y-%m-%dT%H:%M:%SZ`，**不经过任何变量名**），且解算步必须带「取值源为空 ⇒ 具名判红（不许静默写空串）」的 fail-closed 自检；**取值面**（非注释的 shell 正文）里**不许**再出现 `GITHUB_RUN_STARTED_AT`（找根因的注释提及它不算 —— 剥注释后判）。执行点 = 同文件::test_build_identity_value_source_is_the_runner_clock_not_an_invented_name（**2026-10-16 订正，issue #7029**：首版要求的是 context `${{ github.run_started_at }}` —— 该属性**不存在**，取值仍为空串）', '🔴 **判据 13·类级元守卫：编造的 `GITHUB_*` 名必须判红**（issue #7015 的固化面）：扫描 `.github/workflows/**.yml` 的 run 正文，凡**当默认值用 / 直接展开**的 `GITHUB_*` 字面量，必须是 GitHub **真的**会注入的环境变量（`DEFAULT_GITHUB_ENV_LITERALS` 白名单）或已被**显式登记**的例外（`GITHUB_ENV_LITERAL_EXEMPTIONS`，**只许缩短**、有 fail-closed 自证）⇒ 否则**具名判红** `<file>::$GITHUB_X`。执行点 = 同文件::test_workflow_run_bodies_never_expand_undefined_github_env_literals', '🔴 **判据 13 的判别力自证（注入式）**：把 `deploy-admin-api.yml` 的**改前逐字形态**（`echo "BUILT_AT=${GITHUB_RUN_STARTED_AT:-}"`）喂进**同一套**判定函数 ⇒ 必须报出 `GITHUB_RUN_STARTED_AT`；未注入的本树正文（对照臂）⇒ **不报**（防「扫不到任何东西所以恒绿」的空跑形态）。执行点 = 同文件::test_undefined_github_env_literal_guard_has_teeth', '🔴 **判据 14·YAML 形态（含本包实测踩到的一处静默截断）**：改完的 workflow 必须仍是**合法 YAML**，且解算步 / served-version 断言步的 `env:` 真挂在**它们自己**身上（YAML 层读数，与文本判据互为对照）；同时**不许**出现「未加引号且含 ` #` 的步名」—— 本包实测：`- name: Resolve build identity (issue #6951)` 因未加引号，YAML 把 ` #` 当**注释起点**，解析出来的步名被**静默截断**成 `"Resolve build identity (issue"`（真跑读数）⇒ 任何「按名字取步」的判据会取空、乃至静默空跑（已顺手加引号 + 补形态守卫）。执行点 = 同文件::test_workflow_yaml_still_parses_after_the_value_source_change', '**边界（照实登记，不粉饰）**：① **真机 `builtAt` 非空**这条终判**本包做不了**（本机 `gh` token 无 `workflow` scope ⇒ 触发不了真实部署）⇒ 必须由主会话/人类在**一次真实部署之后**复探：`curl -s https://api.migaozn.com/api/version`（期望 `builtAt` 非空）+ `bash deploy/scripts/served-version-verify.sh \'https://api.migaozn.com\' "$(git rev-parse origin/main)"`（期望 rc=0 + `SERVED_VERSION=match`）；⚠️ 部署触发面 = `push main` 且 paths 命中 `backend/admin-api/**` 或 `deploy/swas/**`（**只改 `.github/**` + `deploy/scripts/**` 不会自动触发**）。② 类级守卫只扫**字面量**形态：`${{ … }}` 表达式（由 Actions 求值）与 YAML 里其它动态取值面（`matrix.*` / `needs.*` / `inputs.*` 的编造字段）**不在射程内** —— 后者需另立判据，本单**不假装已覆盖**。③ 「**定义错了**」（env 定义成空/错值）不是本守卫的面，由判据 12 的实例判据承担。④ **admin-web 腿同批接线**（`deploy-frontend.yml` + `deploy/scripts/admin-web-version-probe.sh`）：本单把同一根因在本仓**所有**接了身份面的腿上一起修掉 —— 它的 `BUILT_AT` 改前同样读未定义的 `${GITHUB_RUN_STARTED_AT:-}`，且 Dockerfile 的兜底把 `builtAt` 写成 `unknown` 而探针只比 `sha`（同款空断言）；`deploy-ai-agent-service.yml` 现取**没有身份面**（无 `MIGAO_BUILD_*` ARG、无身份探针）⇒ 无同款病灶。执行点 = tests/unit_ci_workflows/test_admin_web_served_version.py::{test_empty_or_unknown_builtat_is_red_when_required,test_deploy_leg_requires_builtat_and_value_source_is_a_context_expression}。⑤ 不改任何门禁的通过条件、不新增豁免、不新增 schedule。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性读数（进程内 HTTP 桩驱动真脚本 + 静态扫 `.github/workflows/**.yml` 正文/步名/YAML 解析 + `bash -n`），零网络、不碰真实云，不进 agent-eval 冒烟',
+    tags=['deploy', 'ci-cd', 'version-probe', 'build-identity', 'fail-closed', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-108 [NORMAL] **workflow 的 `run:` 正文「表达式替换后必须是合法 bash」+「`${{ github.<prop> }}` 的属性名必须真实存在」都要有会红的判据**：#7016 把不存在的环境变量 `GITHUB_RUN_STARTED_AT` 换成了**同样不存在**的 context 属性 `github.run_started_at`（官方 `github` 上下文属性表 40 个里没有它）⇒ Actions 解出**空串**、不报错不告警；且其自检文案里「转义反引号 + 表达式」在**空替换**后只剩一个**裸反引号** ⇒ 该步 bash 在**解析阶段**就死（exit 2），步内的自检**一次都没跑过** ⇒ 真机两条部署腿红、构成永久死锁（issue #7029）（源: cases/misc.yml）──
+_CASE_MC_108 = EvalCase(
+    id='MC-108',
+    legacy_id='',
+    title='**workflow 的 `run:` 正文「表达式替换后必须是合法 bash」+「`${{ github.<prop> }}` 的属性名必须真实存在」都要有会红的判据**：#7016 把不存在的环境变量 `GITHUB_RUN_STARTED_AT` 换成了**同样不存在**的 context 属性 `github.run_started_at`（官方 `github` 上下文属性表 40 个里没有它）⇒ Actions 解出**空串**、不报错不告警；且其自检文案里「转义反引号 + 表达式」在**空替换**后只剩一个**裸反引号** ⇒ 该步 bash 在**解析阶段**就死（exit 2），步内的自检**一次都没跑过** ⇒ 真机两条部署腿红、构成永久死锁（issue #7029）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['部署腿报红说「取值源未接」，可那句话本身就把脚本弄崩了 —— 那次红到底证明了什么？', '写进 workflow 的变量名（`GITHUB_*`）和属性名（`${{ github.* }}`），我怎么知道它真的存在？'],
+    expectations=[],
+    data_checks=['🔴 **判据 A（实例面，会红）**：**全仓每一个 `run:` 正文**在把 `${{ … }}` 替换成**空串**（= 未知属性 / 空值的忠实模型）与**哨兵值**后，`bash -n` 必须干净；非零 ⇒ 具名判红（workflow / job / 步名 / bash 报错原文）。**这条如果当时就有，本次故障不会发生**（真机读数：`bash: line 9: unexpected EOF while looking for matching` 反引号）。执行点 = tests/unit_ci_workflows/test_workflow_run_body_is_valid_bash_after_substitution.py::test_every_run_body_stays_valid_bash_after_expression_substitution', '🔴 **判据 A 的判别力自证（注入式）**：把 `deploy-admin-api.yml` 的**改前逐字形态**（自检文案里用「转义反引号」包住 `${{ github.run_started_at }}`）注回解算步 ⇒ 判据 A 必须报出，且理由含 `unexpected EOF`（反引号未配对）；未注入的对照臂 ⇒ 不报。执行点 = 同文件::test_expression_substitution_guard_has_teeth', '🔴 **判据 B（命名空间面，会红）**：`${{ github.<prop> }}` 的 `<prop>` 必须落在**官方 `github` 上下文属性白名单**（冻结 40 个，含出处 URL + 复算命令）内；不在 ⇒ 具名判红；`github[...]` 方括号取值形态 ⇒ 显式判红（那是绕过点名的形态）。执行点 = 同文件::test_github_context_properties_used_in_run_bodies_exist', '🔴 **判据 B 的判别力自证（注入式）**：把 `${{ github.run_started_at }}` 注回去 ⇒ 必须判红且具名该属性；对照臂 ⇒ 不报。执行点 = 同文件::test_github_context_property_guard_has_teeth', '🔴 **反空跑（白名单与取样面）**：① 白名单必须含锚点属性（`sha` / `ref` / `event_name` / `run_id` / `run_number` / `repository` / `workspace`），且**不含** `run_started_at`（防有人把它加进白名单把判据 B 变恒绿）；② 取样面必须 ≥100 个 `run:` 正文、覆盖 `deploy-admin-api.yml` / `deploy-frontend.yml` / `pr-check.yml`，其中含表达式的 ≥20 个。执行点 = 同文件::test_github_context_property_allowlist_is_anchored / ::test_guard_really_scans_the_run_bodies', '🔴 **取值源（两条腿同批修）**：解算步的 `BUILT_AT` 必须由 **runner 时钟现算**（`date -u +%Y-%m-%dT%H:%M:%SZ`），**不许**再有 step 级 `env: RUN_STARTED_AT`；**取值面（非注释行）**里不许再出现 `GITHUB_RUN_STARTED_AT` / `github.run_started_at`；且必须带「空 ⇒ 具名判红（**点名当前来源**）+ ISO8601 形态」两段 fail-closed 自检。执行点 = tests/unit_ci_workflows/test_served_version_verify.py::test_build_identity_value_source_is_the_runner_clock_not_an_invented_name / tests/unit_ci_workflows/test_admin_web_served_version.py::test_deploy_leg_requires_builtat_and_value_source_is_the_runner_clock', '**边界（照实登记，不粉饰）**：① **空替换是「最坏值」模型** ⇒ 证「**空**值不会让脚本崩」，**不证**「非空值不会让脚本崩」（哨兵臂只部分覆盖，且哨兵**刻意保守**为无特殊字符值，以免假阳性 —— 现取全仓 0 假阳性）；② 白名单只覆盖 `github.*` 命名空间，`steps.*` / `needs.*` / `inputs.*` / `matrix.*` / `env.*` **不在射程内**（无可冻结的权威属性表）；③ `run:` 正文里的 shell 注释**也算在内**（Actions 一样会替换其中的表达式，注释里写错名字会把下一个人带沟里）；④ **真机 `builtAt` 非空**这条终判需**一次真实部署**后复探：`curl -s https://api.migaozn.com/api/version`（期望 `builtAt` 非空）与 `curl -s https://merchant.migaozn.com/version.json`（期望不再是 `unknown`）。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性读数（YAML 解析取样 + `bash -n` 三个替换臂 + 官方属性白名单冻结比对），零网络、不碰真实云，不进 agent-eval 冒烟',
+    tags=['deploy', 'ci-cd', 'build-identity', 'fail-closed', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置 = 三样都在仓里可读且**可判定**：① 元守卫本体 `tests/unit_ci_workflows/test_workflow_run_body_is_valid_bash_after_substitution.py`（含 `github` **上下文属性白名单**冻结清单 + 出处 URL + 复算命令）；② 被测面 `.github/workflows/**.yml`（现取 20 个 workflow、≥100 个 `run:` 正文、其中 ≥20 个含 `${{ … }}`）；③ 两条部署腿的解算步（`deploy-admin-api.yml` 的 `Resolve build identity (issue #6951)` / `deploy-frontend.yml` 的 `Resolve build identity (issue #6611)`）里 `BUILT_AT` 由 **runner 时钟**现算。**前置不成立时不许读成通过**：取样面塌了（`_runs_in` 少扫/空扫）或白名单被清空 ⇒ 由 `test_guard_really_scans_the_run_bodies` 与 `test_github_context_property_allowlist_is_anchored` 两条**反空跑**判据判红。',
+)
+
+# ── MC-109 [NORMAL] **`grep -c` 配 `|| echo "0"` 会捕获成两行 ⇒ `[ … -gt 0 ]` 报 `integer expression expected` ⇒ 判据走 else「绿着但没干活」**：#7012 的 `Clear stale needs-changes label` 步因此**从未**摘掉过期标签（job 还报 success）；同形态另有一处 `case-draft.yml` 的 `HAS_TRUTH`（issue #7022）（源: cases/misc.yml）──
+_CASE_MC_109 = EvalCase(
+    id='MC-109',
+    legacy_id='',
+    title='**`grep -c` 配 `|| echo "0"` 会捕获成两行 ⇒ `[ … -gt 0 ]` 报 `integer expression expected` ⇒ 判据走 else「绿着但没干活」**：#7012 的 `Clear stale needs-changes label` 步因此**从未**摘掉过期标签（job 还报 success）；同形态另有一处 `case-draft.yml` 的 `HAS_TRUTH`（issue #7022）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这个 job 明明每次都绿，为什么那个标签还是挂在那里？', 'X=$(cmd | grep -c pat || echo "0") —— 这行到底有什么问题？'],
+    expectations=[],
+    data_checks=['🔴 **判据 A（实例面，会红）**：`.github/workflows/**` 里不得出现「`grep -c`（可带 `-P` 等前置选项与 `-cP` 合并形态）+ 其后 200 字符内 `|| echo`」的形态；命中 ⇒ **具名**报出 `文件:行 + 原行文本`，并给出修法（`|| echo "0"` → `|| true`，保留「无命中不触发 `set -e`」的回退语义）。执行点 = tests/unit_ci_workflows/test_grep_c_echo_dupe.py::test_workflows_have_no_grep_c_echo_instances', '🔴 **判据 A 的判别力自证（夹具式）**：两个**逐字取自真语料**的正向夹具（`case-draft` 的 `grep -cP … || echo "0"`、`pr-check` 的**带单引号**那种）必须命中；四个负向夹具（仓内既有的正确写法 `|| true`、**引号内**的提及、无回退的裸 `grep -c`、`grep -m1` + 兜底文案）必须 0 命中。没有这一条，「扫不到任何东西」与「扫了但零违规」无法区分。执行点 = 同文件::test_detector_has_discriminating_power', '🔴 **反空跑（语料下限 + fail-closed）**：workflow 文件数必须 ≥20（扫描面被收窄 ⇒ 红）；`scan_workflows(不存在的目录)` 必须**抛异常**而不是返回空清单（否则「没东西可判」会被读成绿）。执行点 = 同文件::test_scanner_is_not_vacuous', '🔴 **判据 B（台账面，会红）**：已修实例台账 `tests/unit_ci_workflows/grep_c_echo_instances_ledger.json` **只许非增**（条数 ≤ 写在判据文件里的冻结上限 `LEDGER_ENTRIES_FROZEN = 2`）+ **不许清空** + 每条四要素齐全（`path`/`line`/`form`/`fixed_to`/`issue`）。执行点 = 同文件::test_ledger_only_shrinks_and_is_never_emptied', '🔴 **台账不许指向幽灵文件**：每条 `path` 必须在仓里真实存在（否则「已修」是空话）。执行点 = 同文件::test_ledger_entry_paths_exist', '🔴 **注入式红证（三条单变量，实测逐字节还原）**：① 把 `pr-check.yml` 的 `HAS_LABEL` 改回 `… | grep -c x || echo "0"` ⇒ 判据 A 当场红并具名；② 只把 `case-draft.yml` 改回坏形态 ⇒ 判据 A 单变量红；③ 把台账 `instances` 清空 ⇒ 判据 B 红。三条注入后均已还原（`git diff` 为空、`5 passed`）。', '📌 **真机现场（逐字）**：job `Clear stale needs-changes label`（run 38852214807 / job 116818084915）报 **success**，日志含 `[: 0` / `0: integer expression expected` 紧跟 `✅ 无需清除（标签不存在）`；同 PR **28 项检查全 pass** 而标签仍是 `review/needs-changes` ⇒ 已用 `gh pr edit --remove-label` 手工摘掉。**这条红的形态是「绿着但没干活」，只能靠「标签该消失却没消失」观察到。**', '📌 **为什么它不会自己变红**：报错的那个 `[` 处在 `if` 的**条件上下文**里（条件里的失败**不**触发 `set -e`），且不在 `set -e` 直接覆盖的语句位置 ⇒ 步报 success ⇒ 靠「看 CI 绿不绿」**永远发现不了**这一类，必须靠机械守卫扫形态。'],
+    skip_reason='[backend-contract] 纯 CI 判据面（静态扫 workflow YAML 文本 + 台账比对），零网络、零 LLM、不碰真实云，不进 agent-eval 冒烟',
+    tags=['ci-cd', 'shell', 'fail-closed', 'red-proof', 'empty-green'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置 = 两样都在仓里可读且**可判定**：① 元守卫本体 `tests/unit_ci_workflows/test_grep_c_echo_dupe.py`（含 `grep -c` 形态的剥引号/剥注释 lexer + 判别力自证夹具）；② 被测面 `.github/workflows/**.yml`（判定时现取 ≥20 个 workflow 文件，由 `test_scanner_is_not_vacuous` 的语料下限兜住）。**前置不成立时不许读成通过**：目录不存在 / 零个 workflow / 读不到文件 ⇒ 判据 `scan_workflows()` **抛异常**（fail-closed），而不是返回空清单变绿；台账被清空 ⇒ 判据 B 判红。',
+)
+
+# ── MC-110 [NORMAL] **标签收尾 job 的 `needs:` 必须覆盖全部 required 门禁**：`label-needs-changes` / `clear-needs-changes` 原各只等 **9** 个 job，缺 `case-coverage-gate` / `case-trust-gate` / `llm-sink-ledger` / `ui-regression-check` ⇒ 这 4 个红时**打不上标签**、且「它们红 + 其余绿」时 `clear-needs-changes` **照样把标签摘掉**（issue #7022 的第二条独立成因）（源: cases/misc.yml）──
+_CASE_MC_110 = EvalCase(
+    id='MC-110',
+    legacy_id='',
+    title='**标签收尾 job 的 `needs:` 必须覆盖全部 required 门禁**：`label-needs-changes` / `clear-needs-changes` 原各只等 **9** 个 job，缺 `case-coverage-gate` / `case-trust-gate` / `llm-sink-ledger` / `ui-regression-check` ⇒ 这 4 个红时**打不上标签**、且「它们红 + 其余绿」时 `clear-needs-changes` **照样把标签摘掉**（issue #7022 的第二条独立成因）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这个 job 明明每次都绿，为什么那个标签还是挂在那里？', '标签的「打」和「摘」是不是看同一组门禁？漏了几个会怎样？'],
+    expectations=[],
+    data_checks=['🔴 **判据 A（覆盖性，会红）**：`label-needs-changes` 与 `clear-needs-changes` 的 `needs:` 必须包含**本 workflow 里承接 required 检查的每一个 job**。取法 = **现取** `repos/zhaokai-mgzn/migao/branches/main/protection` 的 `required_status_checks.contexts` × YAML 解析 `pr-check.yml` 的 `jobs`。命中缺口 ⇒ **双向具名**报出（「它红时打不上标签」/「它红时仍会被摘掉标签」）。执行点 = tests/unit_ci_workflows/test_needs_changes_tail_job_coverage.py::test_tail_jobs_cover_every_required_gate', '🔴 **反空跑 + fail-closed**：required 名单 ≥10 项（读数面被收窄 ⇒ 红）；两个收尾 job 必须存在；`branches/main/protection` 取不到（`gh` 不可用/未登录/无权限）或 required 名单为空 ⇒ **抛异常判红**，**不许**当成「没有 required 检查 ⇒ 覆盖性自动成立」。执行点 = 同文件::test_guard_is_not_vacuous_and_has_teeth 的前半', '🔴 **注入式自证**：从 `clear-needs-changes` 的 `needs` 里删掉 `case-trust-gate` ⇒ `coverage_problems()` 必须报出且点名该 job（没有这条，「扫了但正好没缺口」与「判据没牙」无法区分）。执行点 = 同文件::test_guard_is_not_vacuous_and_has_teeth 的后半', '🔴 **注入式红证（两条单变量，实测逐字节还原）**：① 只从 `label-needs-changes` 段删掉 `ui-regression-check` ⇒ **2 failed**（判据 A + 自证）；② 两段都删掉 `case-trust-gate` ⇒ **2 failed**。还原后 **2 passed**，`git diff --stat` 只剩预期的 +18 行。', '📌 **真机读数（改前）**：两个收尾 job 的 `needs` 各 **9** 条，而它们所在的 `pr-check.yml` 里承接 required 检查的 job 有 **11** 个 ⇒ 缺 **4** 个：`case-coverage-gate` / `case-trust-gate` / `llm-sink-ledger` / `ui-regression-check`。改后各 **13** 条（9 + 4）。', '📌 **本单共三条独立成因，本条 = 第二条**：① `grep -c` 配 `|| echo "0"` 捕获成两行；**② 本条的 `needs:` 缺口**；③ 该 job **没有 checkout** ⇒ `gh` 连仓库都推断不出来（`GH_REPO`）—— **少修一条都治不好**这个症状。**为什么本条与 `grep -c` 那条是独立成因**：`grep -c` 那条让「摘标签的判据崩了」（永不摘）；本条的 `needs:` 缺口让「摘/打标签的**依赖面**少一半」（该挂的挂不住、该摘的照摘）。**只修一条治不好症状** ⇒ 同单一起收。该缺口**早已登记**在 `docs/wiki/gate-exemption-ledger.md` §1 第 6 行（当时那单禁止改 workflows ⇒ 只登记未修）。', "📌 **安全性前提（改前已核）**：这两个 job **不在**分支保护的 required 名单里（16 项 required 里无它们）⇒ 扩 `needs:` **不会**新增死锁；且那 4 个目标 job 的 `if` 都是无路径过滤的 `github.event_name == 'pull_request'` ⇒ 能形成 `needs` 汇合。另：`needs:` 只影响「等不等」，**不**影响「上游红了下游还跑不跑」（那是 `if: always()` 的职责，两个 job 都已正确带 `always()`，由 `test_gate_coverage_and_same_source.py` 的另一条判据把守）。"],
+    skip_reason='[backend-contract] 纯 CI 判据面（读 branch protection + 解析 workflow YAML），零 LLM、不碰真实云，不进 agent-eval 冒烟',
+    tags=['ci-cd', 'gating', 'fail-closed', 'red-proof', 'empty-green'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置 = 两样都**可判定**：① **外部读数** `repos/zhaokai-mgzn/migao/branches/main/protection` 的 `required_status_checks.contexts`（需 `gh` 可用且已登录；取不到 ⇒ 判据 **fail-closed 抛异常**，不许当成「没有 required 检查」）；② 被测面 `.github/workflows/pr-check.yml` 的 `jobs`（YAML 解析）。**前置不成立时不许读成通过**：读不到 workflow ⇒ `_pr_check_jobs()` **抛异常**（实测有 `test_missing_workflow_is_fail_closed` 把守）；冻结清单为空 / 两个收尾 job 不存在 / 语料下限（≥10）不满足 ⇒ 判据 B/C 判红。**闸门取值口径 = 冻结快照**（`REQUIRED_PR_GATES`，11 个成员逐项冻结在 `tests/unit_ci_workflows/declaration_gate_registry.json` 的 `frozen_declarations`）：**刻意不现取** `branches/main/protection` —— 第一版那么写在本机 2 passed、**CI 上直接红**（该 job 只注入 `GITHUB_TOKEN`，而 `gh` 认 `GH_TOKEN`、且 `/protection` 需 admin），与 `test_automerge_bot_safe_path.py` 挡下的「内置 `GITHUB_TOKEN` 不是 admin」是同一件事。',
+)
+
+# ── MC-111 [NORMAL] 取号工具对**未知前缀**必须出声（不得静默新建号段）：请求的前缀在候选集里 0 次出现 ⇒ 明说「这是**全新号段**」 + 点名**最接近的已知前缀**；已知前缀不得误报（issue #7052）（源: cases/misc.yml）──
+_CASE_MC_111 = EvalCase(
+    id='MC-111',
+    legacy_id='',
+    title='取号工具对**未知前缀**必须出声（不得静默新建号段）：请求的前缀在候选集里 0 次出现 ⇒ 明说「这是**全新号段**」 + 点名**最接近的已知前缀**；已知前缀不得误报（issue #7052）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['我把语料文件名当初前缀敲进去了，工具却给了我一个号 —— 我怎么会知道敲错了？'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 **判据 8（实例面，会红）**：请求的前缀**一次都没出现**在候选集里（main ∪ 全部 open PR ∪ 本工作区）⇒ 输出必须**明说**「本工具将把它当作**全新号段**」**并点名最接近的已知前缀**（`difflib`）。执行点 = tests/unit_ci_workflows/test_next_case_id_allocator.py::test_unknown_prefix_is_never_silent。**红证（实跑）**：把 `warn_unknown_prefix` 的提前返回改成**恒返回空** ⇒ 该条当场红（1 failed / 19 passed），已逐字节还原。', '🔴 **反面对照臂**：**已知**前缀（`MC`）不得被误报成「全新号段」⇒ 否则判据在乱咬。执行点 = 同文件 `test_unknown_prefix_is_never_silent` 的后半。', '🔴 **判别力自证（纯函数）**：`unknown_prefix_warnings()` 在「已知 / 未知且有近似 / 未知且无近似」三态上分别给「空 / 出声+近似 / 出声+不编造近似」。执行点 = 同文件::test_unknown_prefix_criterion_has_discriminating_power。', '📌 **真实误用现场（逐字，2026-10-16）**：我敲的是 `python3 scripts/next_case_id.py misc`，而该位置参数是**前缀**、不是**语料文件名**（`misc.yml` 里的前缀是 `MC`）⇒ 工具按前缀口径把 `misc` 大写成 `MISC`，**静默**给出 `MISC-001`（零警告）—— 看起来像个成功答案。⇒ issue #7052 的**原始归因"工具把人引向错号段"不成立，已在该单评论里更正**；残留的真实缺陷是「未知前缀静默新建号段」。', '📌 **为什么只出声、不拦**（照实登记的边界）：① 新前缀**合法** —— 既有用例 `test_cli_consults_the_inflight_face` 正是靠「全新前缀 `QX` 仍能被分配」来证明在飞面被读进去，拦它会破该用例；② 「文件名 vs 前缀」**不可判定** —— `API` / `HR` / `UI` 三个串**同时**是语料文件名与真实前缀（现取 26 个 stem ∩ 27 个前缀 = 3）⇒ 拦会误伤。⇒ 出声 + 给近似候选，让打错的人**当场自查**。', '📌 **近似候选的有效性（现取复算）**：26 个语料 stem 里 21 个形态不合法（≥5 字符，已被 `PREFIX_RE` 挡），余 5 个中 `API`/`HR`/`UI` 本就是真前缀，只有 `AUTH`/`CHAT`/`DATA`/`MISC` 四个会走到本告警，且四个都有近似项（`AUTH→UT`、`CHAT→CT`、`DATA→DA`、`MISC→MC`）。', '📌 **`known` 必须取合并集（实现要点，写错就会误报）**：告警要在**过滤 `occupied` 之前**算 —— 只看 main 会把「某个在飞 PR / 本工作区刚引进的新前缀」误报成「一次都没出现」。'],
+    skip_reason='[backend-contract] 纯只读取号工具的静态判据（源码只读性 + 纯函数分配语义 + 未知前缀告警），零网络、零时钟、非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'case-id', 'allocator', 'usability', 'fail-loud', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置 = 两样都在仓里可读且**可判定**：① 工具本体 `scripts/next_case_id.py`（含 `warn_unknown_prefix` 纯函数与 `UNKNOWN_PREFIX_MARKER` 措辞锚）；② 判据本体 `tests/unit_ci_workflows/test_next_case_id_allocator.py`（含 `NCI_GH_BIN` 🔴 替身与 `NCI_MAIN_REF=HEAD` —— **刻意不读 `origin/main`**，因 CI 的 checkout 是 `fetch-depth: 1`）。**前置不成立时不许读成通过**：`gh` 替身不可用 ⇒ 工具按既有三态语义 `exit 3`（判据 3 把守）；告警被删 ⇒ 判据 8 判红。',
+)
+
+# ── MC-112 [NORMAL] **「job 里调用 `gh` 却没有 git 上下文」的类级判据**：凡 `run:` 里调用 `gh` 的 job 必须有 `actions/checkout` 或 `GH_REPO`（同一形态已咬三次：#2929 automerge → #7022 两个收尾 job）；注释里的 `gh` 不算调用（源: cases/misc.yml）──
+_CASE_MC_112 = EvalCase(
+    id='MC-112',
+    legacy_id='',
+    title='**「job 里调用 `gh` 却没有 git 上下文」的类级判据**：凡 `run:` 里调用 `gh` 的 job 必须有 `actions/checkout` 或 `GH_REPO`（同一形态已咬三次：#2929 automerge → #7022 两个收尾 job）；注释里的 `gh` 不算调用',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['为什么有的 job 里 gh 命令明明写了、却什么都没干？'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 **复用共享尺子、不造第二把（本单自己的返工，照实登记）**：本判据需要「剥注释后匹配」，而仓里有**三条**判据盯着「别再造一把剥注释的尺子」—— `test_guard_parsing_is_comment_aware.py`（未登记的朴素 `#` 截断 ⇒ 红；台账**只许缩短**、不许靠加条目吸收新债）、`test_automerge_bot_safe_path.py::test_only_one_strip_comment_implementation_in_the_repo`（整仓同符号只有一处）、以及它的**前缀族对照臂**。**我第一版自造了一个复数版剥注释函数 + 朴素 `#` 截断，这三条当场把我判红** ⇒ 改为 `from danger_scan import strip_comment`（`.github/danger_scan.py` 是**全仓唯一实现**，按 YAML/shell 真实规则跳过引号内的 `#`），并以「逐行涂白」保持行结构。**教训 = 先理解再爬梯：仓里已有那把尺子，造第二把只会让两条判定漂移。**', '🔴 **判据 A（实例面，会红）**：全仓（41 个 workflow）凡 `run:` 里**调用 `gh`**（`gh` 作为命令词：行首 / 管道后 / `;`/`&&` / `$(` 之后）的 job，必须有 `actions/checkout` step，**或**该 job / 该 step 的 `env` 有 `GH_REPO`。现取命中 **17 个** job。执行点 = tests/unit_ci_workflows/test_workflow_gh_needs_git_context.py::test_every_gh_calling_job_has_git_context。', '🔴 **红证①（#2929 原现场，实跑）**：摘掉 `.github/workflows/automerge.yml::enable-auto-merge` 的 `Checkout` **并**摘掉该 step 的 `GH_REPO` ⇒ 判据当场红（1 failed / 2 passed），已逐字节还原。**⚠️ 只摘 `Checkout` 不会红** —— 该 step 自带 `GH_REPO`（#2929 当时的双保险）⇒ 这正是判据「二者其一即可」的口径，**不是漏检**。', '🔴 **红证②（#7022 原现场，实跑）**：摘掉 `.github/workflows/pr-check.yml::clear-needs-changes` 的 `GH_REPO`（该 job 无 checkout）⇒ 判据当场红，已逐字节还原。', '🔴 **反空跑 + fail-closed**：workflow 语料下限（≥20，现取 41）+ `gh` 命中面下限（≥10，现取 17）+ 目录不存在 ⇒ `scan_workflows` **抛**（不许把「没东西可判」读成绿）。执行点 = test_guard_is_not_vacuous。', '🔴 **判别力自证（纯函数）**：缺上下文 ⇒ 报出；`checkout` 一侧合法 / `GH_REPO` 一侧合法 ⇒ 都不报；**注释里的 `gh` 不算调用**（本会话反复踩到的假阳性形态）；`github`/`gherkin` 不是 `gh`；`$(gh …)` / `true | gh …` / `a && gh …` 三种真调用形态都要捉到。执行点 = test_criterion_has_discriminating_power。', '🔴 **必须先剥注释再匹配**：不剥的话本判据自己的说明注释里写一句 `gh pr view …` 就会被当成真调用 ⇒ 假红。定式（#7007 / #7022 同族）：**凡是「扫描源码找形状」的工具，先剥注释再匹配 —— 注释里的例子不是代码。**', '📌 **为什么必须静态拦（#7022 的实证）**：`clear-needs-changes` 原来写 `gh pr view … 2>/dev/null | grep -c … || echo "0"` ⇒ `|| echo` 把非零退出码**吞掉** ⇒ 步报 **success**、标签**从不脱落**，而错误被 `2>/dev/null` 藏了 ⇒ **「绿着但没干活」**。⇒ **这个缺陷自己不会变红，它只是让某件事静默不生效**，只能靠静态判据拦。', '📌 **触发时机**：本单（#7051）由 issue #7022 的收尾如实登记为**未固化项**后开单 —— #7022 修掉了那两处，但**没有**把这一类做成判据（当时判断：静态断言「凡 run 里有 gh 的 job 必须有 checkout 或 GH_REPO」是牵动全仓 workflow 的类级规则，不在那个 PR 射程）。本用例即该规则。', '📌 **边界（照实登记，不写成恒真判据）**：① 只证「有 git 上下文」，**不证能访问到目标数据** —— 权限面不在射程（例：`branches/main/protection` 即便有 `GH_REPO` 也可能因内置 token **非 admin** 而失败，#7022 的 `needs:` 判据因此改成冻结快照）；② `GH_REPO` 只认**字面键**，以**变量拼接**方式给出的写法看不见（现取 0 处）；③ 不判「该 job 该不该用 `gh`」（那是设计问题）；④ 本判据**不改**任何门禁的通过条件、**不新增豁免**。'],
+    skip_reason='[backend-contract] 全仓 workflow 的静态判据（YAML 解析 + 剥注释后匹配 gh 命令词），零网络、零时钟、非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'workflow', 'gh-context', 'checkout', 'fail-loud', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置 = 两样都在仓里可读：① `.github/workflows/**`（现取 41 个文件，语料下限 ≥20）；② 判据本体 tests/unit_ci_workflows/test_workflow_gh_needs_git_context.py。**前置不成立时不许读成通过**：目录不存在 / 文件数低于下限 ⇒ `scan_workflows` **抛**（fail-closed）；某文件没有 `jobs` 键 ⇒ 同样抛；`gh` 命中面低于下限（≥10）⇒ test_guard_is_not_vacuous 判红。',
+)
+
+# ── MC-113 [NORMAL] **「跑需要真实历史的脚本 ⇒ checkout 必须 `fetch-depth: 0`」的类级判据**：凡 workflow 的 job 里跑 `scripts/h5_freshness_guard.py`（登记在 `h5_script_checkout_depth_ledger.json::canonical_scripts`）的，该 job 的 checkout 必须 `fetch-depth: 0`，否则必须在豁免台账里逐字登记（现取 0 条 ⇒ 只许缩短）；未登记 ⇒ 判红并具名 workflow + job（源: cases/misc.yml）──
+_CASE_MC_113 = EvalCase(
+    id='MC-113',
+    legacy_id='',
+    title='**「跑需要真实历史的脚本 ⇒ checkout 必须 `fetch-depth: 0`」的类级判据**：凡 workflow 的 job 里跑 `scripts/h5_freshness_guard.py`（登记在 `h5_script_checkout_depth_ledger.json::canonical_scripts`）的，该 job 的 checkout 必须 `fetch-depth: 0`，否则必须在豁免台账里逐字登记（现取 0 条 ⇒ 只许缩短）；未登记 ⇒ 判红并具名 workflow + job',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['为什么 C 端 H5 那条腿每天都红一次，可线上明明是新的？'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 **判据 A（实例面，会红）**：`.github/workflows/c-end-h5-publish.yml` 的 `publish` job（notify 步跑 `scripts/h5_freshness_guard.py`）的 checkout 必须 `fetch-depth: 0`。红证（实跑）= 摘掉该 `with.fetch-depth` ⇒ 判据红并具名「c-end-h5-publish.yml / publish / 现取 None」。执行点 = tests/unit_ci_workflows/test_h5_freshness_needs_full_history.py::test_c_end_h5_publish_checkout_has_full_history。', '🔴 **判据 B（类级面，让同类进不来）**：全仓 workflow 逐 job 扫「是否跑登记脚本」⇒ 跑而没有 `fetch-depth: 0` 且未登记豁免 ⇒ 判红（红证②：在另一条腿加一个跑该判据的 job 而不给 depth ⇒ 红并具名 `a-new-leg`）。执行点 = test_all_workflows_running_the_guard_have_full_history。', '🔴 **判据 C（台账只许缩短 + fail-closed）**：`exemptions` 现取 **0 条**（`EXEMPTION_CAP_FROZEN = 0`）⇒ 加一条豁免即红（报出条数与上限）；空转的豁免（那条腿不跑该判据）/ 指向已不存在 workflow 的豁免 / 缺 `why` 的豁免 ⇒ 各自判红；把台账清空（`canonical_scripts` 空 / 整份为空对象 / 缺 `_` 自述）⇒ 判红（红证③）。执行点 = test_ledger_shape_is_fail_closed / test_exemption_table_only_shrinks / TestDiscriminatingPower::test_clearing_the_ledger_turns_it_red。', '🔴 **判据 D（三态不许塌，根因面）**：`scripts/h5_freshness_guard.py` 在浅克隆里必须判「读不到历史」⇒ `rc=3`（无法判定，具名点名「浅克隆」，`::error::` 上报），**不得**塌成 `rc=2`（确实陈旧）。红证（实跑，可复制）：`cd /tmp && rm -rf h5shallow && git clone --quiet --depth 1 --branch main "file://<本仓绝对路径>" h5shallow && cd h5shallow && git log -1 --format=\'%cI %h\' origin/main -- frontend/mini-app` ⇒ `2026-10-16T16:18:47Z 2f4b8b8`（= HEAD 自己的提交时间，即 CI 的假红读数）；修后同一命令链跑判据 ⇒ `rc=3` + stderr 具名「浅克隆」；全 history 面 ⇒ `2026-10-08T03:20:02Z`（`9ebdf73d8`）⇒ `rc=0 新鲜`。执行点 = tests/unit_ci_workflows/test_h5_freshness_guard.py::test_shallow_clone_is_unknown_not_stale。', '🔴 **判据 E（负控）**：只改注释 / 加一条不跑该判据的腿 ⇒ 不红；同一份「源代码里出现 `subprocess` 字样」的 AST 判据证明本文件不跑 git。执行点 = TestDiscriminatingPower::test_comment_only_change_stays_green / test_judgement_is_pure_static_and_never_imports_git_or_network。', '📌 **病根（逐字读数，不是推断）**：CI run 38971606256（`schedule` / sha `2f4b8b84b` / 2026-10-16T21:46Z）判「线上产物陈旧：2026-10-09T14:15Z 早于 frontend/mini-app 最近改动 2026-10-16T16:18Z（落后 7.1 天）」+ `::error::`；而 `2026-10-16T16:18Z` = `2f4b8b84b` 自己的提交时间（`git log -1 --format=%cI 2f4b8b84b`）—— 浅克隆里 `git log -1 <ref> -- <path>` **不判路径**（只有 1 个提交可取）的签名。真值（全 history 复算）= `2026-10-08T03:20:02Z`（`9ebdf73d8`）⇒ 线上**新鲜**（差 34.9h > 宽限 6h）。同一条腿近期连续 6 次 failure（38971606256 / 38941653472 / 38922020408 / 38917201131 / 38912912032 / 38908569922）。', '📌 **对照面**：`.github/workflows/h5-freshness-guard.yml` 跑**同一份**判据、一直有 `fetch-depth: 0` ⇒ 它不红。⇒ 同一个判据、两个调用面、其中一个面**结构性恒红**。判据 E 的对照读数把这一点钉住（另一条腿 ① 现有 depth 必须在 ② 摘掉它必须红）。', '📌 **边界（照实登记）**：① 本判据只判**结构**（checkout 步的 `with.fetch-depth`），不判「CI 上那个 job 真的检出了全 history」—— 运行时那一半由脚本自己的 `_is_shallow` 自证；② 只裁**登记进** `canonical_scripts` 的脚本（不做「扫全部脚本调 git」的语义一刀切）⇒ 新脚本要有它自己的登记，未登记即「本判据看不见它」；③ 本单**不改**发布语义（`publish=true` 人工授权 / `w`、`b` 保留前缀 / 首次接管需人工）、**不新增 schedule/cron**、**不降**任何门禁、不给存量开豁免。'],
+    skip_reason='[backend-contract] 纯静态 workflow 判据（YAML 解析 + 结构比较）+ 一个真浅克隆的本地 git 夹具，零网络、零时钟、非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'workflow', 'fetch-depth', 'shallow-clone', 'false-red', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置 = 三样都在仓里可读：① `.github/workflows/*.yml`（真文件，用 `yaml.safe_load` 解析后**看结构**，不是 grep 文本 —— 本 workflow 的提示文本里就写着 `h5_freshness_guard.py`，同族 `FM-A11`）；② 台账 tests/unit_ci_workflows/h5_script_checkout_depth_ledger.json（缺 `_` 自述 / 缺顶层键 / `exemptions` 非对象 ⇒ 抛红）；③ 判据本体 tests/unit_ci_workflows/test_h5_freshness_needs_full_history.py。判据**零网络、零 git**（AST 自证只 import json/yaml/ast/copy/pathlib）—— CI 的 `ci workflow helper unit tests` job 本身是 `fetch-depth: 1`，绑 `origin/main` 会因错的原因变绿。',
+)
+
+# ── MC-114 [NORMAL] 开租默认加工项目录的三源收敛元守卫（issue #7148）：Java 种子目录 ⇄（建库脚本目录 − 活迁移撤出项 + 改名映射）双向对账、分类名单一来源、判别力在内存语料上自证（源: cases/misc.yml）──
+_CASE_MC_114 = EvalCase(
+    id='MC-114',
+    legacy_id='',
+    title='开租默认加工项目录的三源收敛元守卫（issue #7148）：Java 种子目录 ⇄（建库脚本目录 − 活迁移撤出项 + 改名映射）双向对账、分类名单一来源、判别力在内存语料上自证',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['以后有人往库里加 / 撤一个加工项目录项（或改它的工艺声明）时，不应该只有老租户跟着变 —— 新租户拿到的默认目录必须同批对齐，否则两边静默分叉、且没有任何东西会变红。'],
+    expectations=[],
+    data_checks=['**病（本守卫要挡的形态）**：issue #7148 的修法是用 Java 常量目录（ProcessingItemSeedService.CATALOG）给新租户播种，而库里的目录另有两条真值源（归档迁移 backend/admin-api/src/main/resources/db/migration-archive/V83__seed_processing_item_catalog.sql + 建库脚本 backend/admin-api/src/main/resources/db/init/schema.sql 的终态块）⇒ **第三份副本 = 第三个会漂移的真值源**：谁改了库里的目录（或新加一条撤出迁移），Java 那份不会跟着变，也不会有任何东西变红。', '**判据 1（主判据）**：Java 目录 ⇄（建库脚本目录 − 活迁移的撤出项 + 改名映射）逐条同值（名字 + craftHint）。撤出项从**迁移本身**读（V123 撤「接高」）、改名从 tests/unit_ci_workflows/_migration_renames.py 的 processing_item_renames() 读（V139「韩折」→「韩褶」）—— 判据里不另抄一份名单。判据 = tests/unit_ci_workflows/test_onboarding_processing_catalog_seed.py::test_java_catalog_converges_with_the_live_database_catalog。', '**判据 1b**：目录里名字不重复；**已撤出的项不许出现**（出现 = 复活一个商家不该勾到的项）。判据 = 同文件 test_java_catalog_has_no_duplicates_and_the_retired_item_is_gone。', '**判据 2+3（单一来源）**：默认加工分类名的字面量在 admin-api 主源码里**恰出现一次**（定义处 OnboardingInitialData.DEFAULT_PROCESSING_CATEGORY_NAME）、其值 = 建库脚本种下的那个分类名、且种子服务**引用常量**而不是再抄一份字面量。判据 = 同文件 test_category_name_is_single_sourced。', '**判据 4（判别力自证）**：六种坏形态在**内存语料**上各自判红（删一行 / 名字改一个字 / 改 craftHint / 目录清空 / 漏读撤出迁移 / 重复名字），并有一条对照读数（只改注释 ⇒ 解析一字不变）。判据 = 同文件 test_guard_has_discriminating_power_on_mutated_corpus。', '🔴 **覆盖边界（照实登记）**：① 判的是**数据面**（目录内容同不同值），不是「播种那段代码真的跑在真入驻链路里」—— 后者由 backend/admin-api/src/test/java/com/migao/admin/service/NewTenantOnboardingCategoryRealDbTest.java 与 ProcessingItemSeedServiceTest.java 承担；② 「清单里登记了这条必需初始数据、且入驻链路真的调了它」由既有元守卫 tests/unit_ci_workflows/test_onboarding_required_seed_guard.py（用例 MC-083）承担，本守卫不重复判它；③ 只裁**目录（名字 + 工艺声明）**；description / unit / 排位不在此面（文案改动不该红在这里）。'],
+    skip_reason='[backend-contract] 纯静态判据（零 LLM、零真库、零网络、零时钟；只读 Java/SQL 语料）由 tests/unit_ci_workflows/test_onboarding_processing_catalog_seed.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'onboarding', 'required-initial-data', 'class-level-guard', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯静态元守卫用例：前置 = ① backend/admin-api/src/main/java/com/migao/admin/service/ProcessingItemSeedService.java（Java 种子目录）与同目录 OnboardingInitialData.java 在场；② backend/admin-api/src/main/resources/db/init/schema.sql（基线目录）与 db/migration/**（撤出 / 改名迁移）在场；③ tests/unit_ci_workflows/_migration_renames.py 与 test_processing_catalog_seed.py（既有解析器）可导入。前置由判据自身持有：文件缺失 / 目录解析出 0 条 / 撤出项集合为空 ⇒ 判据当场 fail-closed 判红（不会表现成「agent 不干活」）；agent-eval 栈不跑它',
+)
+
+# ── MC-116 [EDGE] 类级元守卫（#6962）：会话分配 / 候选处置 / 路线删除三类写面必须落到带谓词的条件更新（未登记即红 + 豁免只许缩短）（源: cases/misc.yml）──
+_CASE_MC_116 = EvalCase(
+    id='MC-116',
+    legacy_id='',
+    title='类级元守卫（#6962）：会话分配 / 候选处置 / 路线删除三类写面必须落到带谓词的条件更新（未登记即红 + 豁免只许缩短）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.EDGE,
+    user_inputs=['（非对话用例）对 admin-api 源码文本做词法扫描 + 台账现取 + 合成语料判别力自证'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·扫描器非空跑自证**：现取的三类写面必须含核心对象（`AgentSessionMapper#markAssignedIfWaiting` / `#lockEmployeeForQuota`、`KnowledgeCandidateMapper#markReviewedIfPending`、两条 `markDeletedByIdAndTenant`，以及 `AgentSessionService#assignSession` / `KnowledgeCandidateService#adoptInternal` / `#reject` / `ProductionRoutingCommandService#deleteRouting` / `#deleteRouteRule`）—— **返回空集 = 判据失明，不是通过**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ConcurrencyCasBatch6962MetaGuardTest.java', '🔴 **判据 2·谓词完整性**：凡在这些 mapper 里手写 `@Update` 并写受守状态列的 SQL，必须带 tenant 谓词 + 该表应有的状态谓词；`production_route_templates` / `production_route_rules` / `agent_sessions` 另需 `deleted = 0`。⚠️ **`knowledge_candidates` 没有 `deleted` 列**（对 backend/admin-api/src/main/resources/db/init/schema.sql 现取核对）⇒ 该表**不得**要求 `deleted = 0`；本批两例「模板写了 `deleted=0` 但该表没有该列」的坑在此作为正面登记。', '🔴 **判据 3·无谓词写即红（判据本体）**：受守方法体内**不得**出现受守 mapper 的 `updateById(` —— 状态迁移 / 软删必须走条件更新。**实证过的隐蔽形态**：锚串留着而真正落库换成 `updateById` ⇒ 仍判红并具名。', '🔴 **判据 4·插卡写序**：`KnowledgeCandidateService#adoptInternal` 里 `knowledgeCardMapper.insert(` 必须在 `markReviewedIfPending(` 及其 `== 0` 冲突检查**之后**（文本序判定）—— 挪回 CAS 之前 ⇒ 判红（「两张卡」的成因）。', '🔴 **判据 5·未登记即红 + 台账不许给不存在的对象盖章**：受守写路径必须逐条登记（concurrency-cas-batch-6962-ledger.json 的 `service_write_paths`），登记的 `call_anchor` 必须逐字出现在该方法体里；每条 `evidence` = `<仓库相对全路径>::<可检索文本>`，左侧文件存在、右侧逐字出现（摘掉 CAS 调用 / 方法改名 ⇒ 红）。', '🔴 **判据 6·豁免只许缩短 + 台账不许空转**：`unverified` 必须是冻结基线 `unverified_baseline` 的**子集**（新增豁免 ⇒ 红）；条数**现取**打印在断言消息上；`entries` / `service_write_paths` 为空 ⇒ 红。', '🔴 **判据 7·判别力自证（合成语料）**：无谓词写 / 缺 tenant 谓词 / 缺状态谓词 / 路由表缺 `deleted=0` / 未登记写路径 / 锚留而落库无谓词 / 台账未兑现 各判红，合规语料判绿，**只加注释不红**（对照读数）。', '**边界（照实登记）**：① 形态判据读源码文本（不做 AST）⇒ 换措辞可绕过，真实防线是实例判据 backend/admin-api/src/test/java/com/migao/admin/service/ConcurrentQuotaAdoptDeleteCas6962RealDbTest.java；② 射程只到上列六条文件 + 一张台账；③ 判不了「拿 `updateById` 改非受守列」；④ 本守卫**不跑**被它引用的真库判据；⑤ 不改任何门禁的通过条件、不新增豁免。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 源码文本 + 台账现取 + 合成语料判别力自证），JUnit 真跑、零网络、不进 agent-eval 冒烟',
+    tags=['meta-guard', 'concurrency', 'cas', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置 = ① 被守的六条文件（`AgentSessionMapper` / `AgentSessionService` / `KnowledgeCandidateMapper` / `KnowledgeCandidateService` / `ProductionRouteTemplateMapper` + `ProductionRouteRuleMapper` / `ProductionRoutingCommandService`）与台账 backend/admin-api/src/test/resources/concurrency-cas-batch-6962-ledger.json 均可读；② 台账 `entries` / `service_write_paths` 非空。两者不成立 ⇒ 判据**直接红**（不是跳过）—— 「空」不等于「全部合规」。',
+)
+
+# ── MC-117 [EDGE] 类级元守卫（#6956）：T3 逻辑删除族调用方必须判影响行数（未登记即红 + 豁免只许缩短）（源: cases/misc.yml）──
+_CASE_MC_117 = EvalCase(
+    id='MC-117',
+    legacy_id='',
+    title='类级元守卫（#6956）：T3 逻辑删除族调用方必须判影响行数（未登记即红 + 豁免只许缩短）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.EDGE,
+    user_inputs=['（非对话用例）对 admin-api service 源码做词法扫描 + 台账现取 + 合成语料判别力自证'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·未登记即红**：`service/*.java` 里**独立成句**（返回值被丢弃）的 `xxxMapper.deleteById(…)` / `deleteBatchIds(…)` 必须要么已改成读行数（`if (… == 0)` / `int rows = …`），要么在台账 `exempt` 里具名登记。修前读数：**18 处**丢弃形态 ⇒ 全部判红；修后只剩 4 处（父单级联删明细、导入差分清理 ×2、小件配置全量替换），逐条登记且写明重启条件。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/T3LogicalDeleteRowCountMetaGuardTest.java', '🔴 **判据 2·台账条目必须逐字兑现**：每条 `exempt` 的 `call_anchor` 必须在该文件里逐字出现（改方法名 / 摘掉调用 ⇒ 红）；缺 `reason` ⇒ 红。防「登记过了」的假绿。', '🔴 **判据 3·豁免只许缩短**：`exempt.size() <= exempt_baseline`（新增豁免必须写明为什么可以丢行数 + 重启条件）；条数**现取**打印。', '🔴 **判据 4·判别力自证（合成语料）**：① 丢弃形态 ⇒ 红；② 读行数形态 ⇒ 绿（否则恒红噪声）；③ 注释 / 字符串里的假调用不得算进射程（只应算真调用那一条）；④ 台账锚在文件里找不到 ⇒ 红。', '**实例判据（2~3 个代表点，会红）**：backend/admin-api/src/test/java/com/migao/admin/service/NotificationRuleServiceTest.java（deleteRule_zeroRows_conflict）/ NotificationTemplateServiceTest.java（deleteTemplate_zeroRows_conflict）/ OrderLogisticsServiceTest.java（Delete.zeroRows_conflict）——「读到时还在、真正删时影响 0 行」⇒ 必须 404，修前静默返回成功。', '**边界（照实登记）**：① 射程只到 `service/*.java` 的**丢弃返回值**形态，写法变成赋值/比较即出射程（那正是修后的样子）；② **不判**「0 行时抛 404 还是 409」（不同入口语义不同，交给各自的实例判据）；③ 不做 AST 解析 ⇒ 换措辞可绕过，真实防线是实例判据；④ 本守卫**不跑**被它引用的实例判据，也不改任何门禁的通过条件。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性读数（词法扫 admin-api service 源码文本 + 台账现取 + 合成语料判别力自证），JUnit 真跑、零网络、不进 agent-eval 冒烟',
+    tags=['meta-guard', 'concurrency', 'soft-delete', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置 = ① `backend/admin-api/src/main/java/com/migao/admin/service/*.java` 可读；② 台账 backend/admin-api/src/test/resources/t3-delete-rowcount-ledger.json 可读且带 `exempt_baseline`。两者不成立 ⇒ **直接红**（不是跳过）——「空」不等于「全部合规」。',
+)
+
+# ── MC-118 [NORMAL] dev-worktree 会话锁判活：PID 已退出但登记的工作区仍在且仍检出该分支 ⇒ 仍算占用（issue #7216）；`add` 入口自动清失效锁，`rm` 释放锁，prune 侧同一口径（源: cases/misc.yml）──
+_CASE_MC_118 = EvalCase(
+    id='MC-118',
+    legacy_id='',
+    title='dev-worktree 会话锁判活：PID 已退出但登记的工作区仍在且仍检出该分支 ⇒ 仍算占用（issue #7216）；`add` 入口自动清失效锁，`rm` 释放锁，prune 侧同一口径',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['并行跑 4~5 个会话后，`./scripts/dev-worktree.sh lock` 全是 💀 —— 刚建好、还在里面干活的工作区也被判「进程已退出，锁失效」，同一分支重复建工作区不会被拦'],
+    expectations=[],
+    data_checks=['**病（2026-10-18 项目卫生现取，逐字）**：`lock_register` 写的是 `$$` = `dev-worktree.sh add` 自己的 PID（`add` 一返回该 PID 必已退出）⇒ 只按 `kill -0` 判活时**每把锁一建出来就是失效**：`./scripts/dev-worktree.sh lock` 现取 84 条全 💀（含 7212 / 7213 两个随后仍在推送提交的活跃会话）；「同一分支已有活跃锁 ⇒ 拒绝建区」永不触发；失效锁只增不减。', '**判据 1（实例判据，行为面，真 fixture + 真 git）**：`add` 返回后其 PID 已退出，锁仍必须显示 🔒 且理由含「工作区仍在」；判据 = tests/unit_ci_workflows/test_dev_worktree_lock_liveness.py::test_lock_stays_active_after_add_process_exits。', '**判据 2（修前红，注入式，§28.1 出口①）**：把判活退回「只按 PID」⇒ 同 fixture 必须显示 💀（注入后另做 `bash -n` 自证，防语法错冒充红证）；判据 = 同文件::test_injected_pid_only_liveness_regresses_to_stale。', '**判据 3（prune 判据）**：`lock --prune` 只清「PID 死了**且**工作区不在（或不在该分支上）」的锁；工作区仍在且检出该分支的锁必须保留；判据 = 同文件::test_prune_drops_stale_but_keeps_live_worktree_lock / ::test_lock_for_another_branch_is_stale。', '**判据 4（事件驱动自愈，铁律 10：不新增 cron）**：`add` 入口自动清失效锁；判据 = 同文件::test_add_prunes_stale_locks。', '**判据 5（rm 释放）**：`rm <branch>` 后锁文件必须消失（旧写法以 `lock_alive` 为前提、在 add 之后永假 ⇒ 锁从不在 rm 时释放）；判据 = 同文件::test_rm_releases_session_lock。', '**判据 6（类级元守卫：跨消费者同源）**：`scripts/agent-presets-guard.py::_locked_branches`（`prune` 用）与 bash 判活必须同一口径（PID 活着 **或** 工作区仍在且仍检出该分支）；只改 bash ⇒ `prune` 仍把有会话的工作区判「可安全移除」。行为判据 = 同文件::test_guard_prune_uses_same_liveness_rule；静态判据 = 同文件::test_liveness_rule_has_single_implementation（`lock_alive` 必须委托、`kill -0` 全脚本只许一处、prune 侧必须同时看 pid_alive/worktree_present）。', '**边界（照实登记，§19.1）**：① PID 只是「创建瞬间」证据 —— 本用例不判「同一会话是否还在用」，只判「这个分支是否仍被占用」（保守方向：宁可不判可安全移除）；② 不做心跳/租约（会引入新进程与超时语义，超出本单半径）；③ 只跑定点判据，不跑 `verify-all.sh gate` / 全量 pytest（重活串行，migao-dev-flow §27）。'],
+    skip_reason='[backend-contract] 真 fixture 行为守卫（真 git 仓库 / 真 worktree / 真会话锁一律造在 tmp_path，零网络、零其库、不碰真实工作区）+ 静态单一实现守卫，由 tests/unit_ci_workflows/test_dev_worktree_lock_liveness.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'dev-tooling', 'worktree', 'session-lock', 'liveness', 'meta-guard', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯离线判据：前置 = `scripts/dev-worktree.sh` / `scripts/agent-presets-guard.py` 在场且可解析；行为面判据在 `tmp_path` 里真 `git init` + 真 `add` 造真 worktree 与真会话锁（零网络、零其库、不碰任何真实工作区；`gh` 用 rc=1 垫片、HOME 指向 tmp_path）。前置由判据自身持有：文件缺失 / 夹具造不出来 ⇒ 当场红；agent-eval 栈不跑它',
+)
+
+# ── MC-119 [NORMAL] schema 形态健康：单表列预算 ≤ 30（超限须台账具名 + 只许缩短）/ 孤儿列零增长（生产代码语料）/ JSONB 双向登记（issue #7359，防 ERP 化）（源: cases/misc.yml）──
+_CASE_MC_119 = EvalCase(
+    id='MC-119',
+    legacy_id='',
+    title='schema 形态健康：单表列预算 ≤ 30（超限须台账具名 + 只许缩短）/ 孤儿列零增长（生产代码语料）/ JSONB 双向登记（issue #7359，防 ERP 化）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-20，逐字）：「传统 ERP 软件就是堆积各种单据，最后显得臃肿庞大，一个单据几十几百个字段，领域建模很弱，我们的项目如何规避这种情况」—— 要求把规避手段落成规范与判据，而不是只写在文档里。'],
+    expectations=[],
+    data_checks=['**基线（2026-10-20 现取，逐字）**：`backend/admin-api/src/main/resources/db/init/schema.sql` = **84 张表 / 1140 列 / 平均 13.6 列**；超列预算 1 张（`customer_profiles` 42 列，台账具名登记并给收敛计划）；**孤儿列 0**（生产代码语料）；**JSONB 48 列**（全部登记）。台账 = `tests/unit_ci_workflows/schema_health_ledger.json`。', '**判据 1（列预算）**：`tests/unit_ci_workflows/test_schema_health_guards.py::test_no_table_exceeds_the_column_budget` —— 单表列数 > `column_ceiling`（30）且未登记 ⇒ 具名判红；台账宽度与现取不符（增宽 / 已收窄却仍留条目）⇒ 也红（台账只许缩短）。红证：拆掉台账里的 `customer_profiles` 例外 ⇒ 判红（`test_unregistered_wide_table_goes_red`）；把该表切到 20 列而台账不动 ⇒ 判「例外条目必须删除」（`test_wide_table_shrinking_forces_ledger_shrink`）。', '**判据 2（孤儿列零增长）**：同文件::`test_orphan_columns_do_not_grow` —— 生产代码语料（`CORPUS_ROOTS`，不含 tests/docs）里 `snake_case` 与 `camelCase` 都零引用的列出现即红；台账里的死列已被引用却没缩短也红。红证：给 `narrow` 表加 `nobody_reads_me` ⇒ 具名判红。', '**判据 3（JSONB 双向登记）**：同文件::`test_every_jsonb_column_is_registered` —— 新增 JSONB 未进台账 ⇒ 判红（强制一次显式决策：能排序/聚合/约束的应该是一列）；台账留了已删除的 JSONB ⇒ 也红。红证：`narrow.bag` / `gone.removed` 两向注入。', '**判据 4（判别力自证）**：同文件::`test_toy_world_is_green` 是负控 —— 合成世界与**真语料**都必须绿，否则上面四条红证是空跑。', '**边界（照实登记，§19.1）**：① 判不了设计判断（这张表该不该有、这个字段该不该拆）—— 那是评审与 `docs/wiki/Domain-Modeling.md` 的准入判据；② 孤儿列语料是**冻结清单**（新增服务目录须同 PR 加进语料，否则假红；这是有意的 fail-closed 方向）；③ 不新增 required check，跑在既有 `ci workflow helper unit tests` 腿里；④ 不改任何 schema —— 本单只加判据与台账，收敛 `customer_profiles` / `order_items` 属后续单（issue #7359 的承接项）。'],
+    skip_reason='[backend-contract] 纯静态 schema 形态判据（只读建库脚本与生产代码语料），由 tests/unit_ci_workflows/test_schema_health_guards.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'schema-health', 'domain-modeling', 'erp-bloat', 'column-budget', 'orphan-column', 'jsonb-registry', 'meta-guard', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯静态判据：前置 = `backend/admin-api/src/main/resources/db/init/schema.sql` 与 `tests/unit_ci_workflows/schema_health_ledger.json` 在场且可解析；生产代码语料只读（不小于 500 个文件，语料口径坏了判据当场红）。零网络、零时钟、不起真库。',
+)
+
+# ── SP-001 [NORMAL] 供应商主数据：新表 + 档案 CRUD（校验三态：名称/账期/状态）+ 菜单三源与路由守卫同构（issue #7369，P0-1 段 1）（源: cases/misc.yml）──
+_CASE_SP_001 = EvalCase(
+    id='SP-001',
+    legacy_id='',
+    title='供应商主数据：新表 + 档案 CRUD（校验三态：名称/账期/状态）+ 菜单三源与路由守卫同构（issue #7369，P0-1 段 1）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-20，逐字）：「p0 p1 逐步推进落地」—— P0-1 = 供应商主数据 + 采购收货 + 应付基础，本用例守其**段 1**（档案本身）。'],
+    expectations=[],
+    data_checks=['**现状（改前，代码实测）**：供应商在系统里只是入库单上的**一段文本** —— `InboundLabelView` 自注「MVP 不建主数据」；同族纪律见 `docs/wiki/Domain-Modeling.md`（主数据 vs 单据快照不得混表）。', '**判据 1（服务层三态校验）**：`backend/admin-api/src/test/java/com/migao/admin/service/SupplierServiceTest.java`（6 条）——① 名称去空白后为空 ⇒ 拒且**不落库**；② 账期 -1 / 366 ⇒ 拒，0 与 365 是合法边界；③ 状态只接受 active / inactive（`disabled` ⇒ 拒），`INACTIVE` 归一为 `inactive`；④ 跨租户 id 更新 ⇒ 404 且不落库。', '**判据 2（写端点归属先于载荷校验）**：`PUT /api/admin/suppliers/{id}` 标 `@TenantOwnedResource("supplier")`，认定键登记在 `TenantResourceOwnership.registerChecks()`（与 product/category 同款）；判据 = `ServiceLayerValidatedWriteEndpointGuardTest`（#6167）+ `TenantOwnedWriteEndpointGuardTest`（#6158）。', '**判据 3（页面判据）**：`frontend/admin-web/tests/unit/pages/suppliers.test.tsx`（5 条）—— 第一屏拉服务端列表并如实渲染；账期三态口径（未设置/现结/N 天）；建档名称去空白 + 账期留空发 **null**（不是 0）；停用走同一条更新写面；账期越界前端拦下且**不发请求**。', '**判据 4（菜单三源 + 路由守卫同构）**：节点「供应商」在 `menu.ts` / `MenuController` / `AuthService` 三处**逐字同码** `inbound:view`（不新造 `supplier:*` —— 新码无人持有 ⇒ 节点对所有人不可见，#4203 同族坑；同组「发货单」取 `order:list` 是先例）；路由守卫 `(dashboard)/layout.tsx` 的 `ROUTE_PERMISSION_MAP` 与节点成对登记。判据 = `test_agent_permission_parity.py`（判据 11/12）+ `test_rbac_derived_pages.py`。', '**判据 5（表形态）**：`suppliers` 11 列（无孤儿列：每列都被服务/页面消费）；租户 RLS 策略 `tenant_isolation_suppliers`；建库脚本与 V170 终态同步。判据 = `test_schema_health_guards.py` + 迁移指纹账本。', '**边界（照实登记）**：本用例**不覆盖**任何单据联动 —— 入库单仍写自己的文本供应商，`supplier_id` 引用、停用拦截、采购单/收货/应付全部属**段 2**（issue #7369 保持 OPEN）。'],
+    skip_reason='[backend-contract] 主数据 CRUD 的服务层校验 + 菜单/守卫同构契约，由 Java 单测与 vitest 页面判据验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'supplier', 'master-data', 'rbac', 'menu-parity', 'route-guard', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `suppliers` 表在场（V170 + 建库脚本终态）、`/api/admin/suppliers` 三个端点在控制器上、菜单节点「供应商」三源同构且路由守卫登记。零网络、零 LLM。',
+)
+
+# ── SP-002 [NORMAL] 入库单挂供应商档案：A 口径（名称精确匹配自动挂 / 同名多家不猜留 NULL / 待指派清单兜人工）（issue #7369 段 2）（源: cases/misc.yml）──
+_CASE_SP_002 = EvalCase(
+    id='SP-002',
+    legacy_id='',
+    title='入库单挂供应商档案：A 口径（名称精确匹配自动挂 / 同名多家不猜留 NULL / 待指派清单兜人工）（issue #7369 段 2）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-20，逐字）：「A,继续推进交付」—— 在 A/B/不迁移 三选里选了 **A（保守）**：按名称精确匹配自动填 supplier_id，匹配不上的留 NULL 并出一张「待指派」清单，**不改任何历史字段值**。'],
+    expectations=[],
+    data_checks=['**现状（改前）**：`inbound_orders.supplier` 是自由文本（V111 起的快照列），没有任何到 `suppliers` 档案的引用 ⇒ 「这家供应商一共收了多少货 / 还欠多少」在数据层无从聚合。', '**判据 1（回填口径 = A）**：V173 只新增 `supplier_id` 列并用 `btrim(o.supplier) = btrim(s.name)` **精确匹配**回填（同租户、双方未软删、**同名多家不填**）；`inbound_orders` 的既有列**一个字节都不改**。判据 = 迁移文件头 + 迁移指纹账本 + `test_migration_idempotency`（终态对账 DO 块）。', '**判据 2（服务层三分支）**：`backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderSupplierLinkTest.java`（6 条）——① 显式在用档案原样采用、不按名猜；② 跨租户/不存在 ⇒ 422「供应商档案不存在」（不泄露对方存在性）；③ 停用 ⇒ 422 并给可行动出口；④ 无 id + 文本唯一精确匹配 ⇒ 自动挂；⑤ **同名多家 = 歧义 ⇒ 留 NULL（不猜，猜错不可逆）**；⑥ 匹配不上/无文本 ⇒ NULL。', '**判据 3（人工出口）**：`GET /api/admin/suppliers/unassigned-inbound` 按文本名分组返回「有文本无档案」的入库单（单数 / 最近入库日）；前端供应商页置顶卡片列出并支持「建档」预填名字（`suppliers.test.tsx` 2 条）。判据 = `SupplierServiceTest#unassignedInboundSuppliersMapsRows` + `suppliers.test.tsx`。', '**边界（照实登记）**：本切片**不**做采购单/收货/应付；**不**做「把待指派批量指派到已有档案」（需要一次人工确认 UI，属下一段）；**不**改任何历史 `supplier` 文本。'],
+    skip_reason='[backend-contract] 迁移回填口径 + 服务层三分支 + 待指派清单契约，由 Java 单测与 vitest 页面判据验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'supplier', 'master-data', 'migration', 'backfill', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `inbound_orders.supplier_id` 列在场（V173 + 建库脚本终态）、`suppliers` 表在场（V170）。零网络、零 LLM。',
+)
+
+# ── SP-003 [NORMAL] 供应商应付对账（A 段轻口径）：按供应商累计收货额 + 合计；付款登记未做 ⇒ 显式标 paymentsRecorded=false 并显示「未登记」（issue #7369 段 3-A）（源: cases/misc.yml）──
+_CASE_SP_003 = EvalCase(
+    id='SP-003',
+    legacy_id='',
+    title='供应商应付对账（A 段轻口径）：按供应商累计收货额 + 合计；付款登记未做 ⇒ 显式标 paymentsRecorded=false 并显示「未登记」（issue #7369 段 3-A）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-20，逐字）：「a」—— 在段 3 的三选一里选 **A（轻）**：只做「欠这家供应商多少」的对账视图，**不做付款流水**。'],
+    expectations=[],
+    data_checks=['**改前**：系统里没有任何「按供应商看金额」的读面 —— 采购额只能靠人把入库单按名字肉眼加总。', "**判据 1（金额口径唯一真值）**：`InboundOrderMapper.selectSupplierPayables` 只算 `status = 'posted'` 的入库单（draft 未进库存、cancelled 作废，都不构成应付），金额取 `inbound_orders.total_amount`（过账时冻结），LEFT JOIN 让「刚建档没收货」的供应商也出现（金额 0、日期 null）。", '**判据 2（诚实标记）**：A 段没有付款登记 ⇒ `paidAmount = 0` 且 `paymentsRecorded = false`；前端据此把「已付」列显示为「未登记」而**不是**「¥0.00」。判据 = `SupplierServiceTest#payableSummaryMapsRowsAndTotals` + `suppliers.test.tsx`（断言行内含「未登记」且不含伪造的已付金额）。', '**判据 3（合计不重算）**：合计 = 逐行金额之和（服务层累加），前端只展示服务端给的 `totalReceived`；`totalReceived == totalOutstanding`（A 段恒等，付款段上线后才会分开）。', '**越权面**：读码沿用 `inbound:view`（该页读者与入库单同群，入库单列表本来就带金额）⇒ **不新增暴露面**，也不新造 `supplier:*`/`finance:*` 码（新码今天没有岗位持有 = 菜单对所有人才不可见）。', '**边界（照实登记）**：不做付款登记 / 账龄 / 对账单 / 红冲；不做「未挂档案的单据」金额汇总（由待指派清单承接，两处不重叠）。'],
+    skip_reason='[backend-contract] 只读聚合 + 响应契约 + 页面文案，由 Java 单测与 vitest 页面判据验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'supplier', 'payables', 'read-model', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `suppliers`(V170) + `inbound_orders.supplier_id`(V173) 在场。零网络、零 LLM。',
+)
+
+# ── SP-004 [NORMAL] 供应商付款：一笔付款可冲抵多张入库单；差额=预付合法；单张单不许超付；作废留痕必须写原因（issue #7369 段 3-B）（源: cases/misc.yml）──
+_CASE_SP_004 = EvalCase(
+    id='SP-004',
+    legacy_id='',
+    title='供应商付款：一笔付款可冲抵多张入库单；差额=预付合法；单张单不许超付；作废留痕必须写原因（issue #7369 段 3-B）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-20，逐字）：「按实际的来，2.根据常见做法来裁定」—— 段 3-B 付款按**实际业务**：一笔付款冲抵多张入库单（付款单 + 冲抵明细），支持先打款后到票（预付）；采购单按常见做法允许部分收货与提前关闭。'],
+    expectations=[],
+    data_checks=['**改前**：只有「累计收货额」这一个发生额视图（段 3-A），没有付款登记 ⇒ 「尚欠」永远等于收货额。', '**判据 1（一张付款多张单）**：`supplier_payments` + `supplier_payment_allocations`（V174）；`InboundOrderSupplierLinkTest` 之外由 `SupplierPaymentServiceTest#createAllocatesAcrossTwoOrders` 断言「1 笔付款 → 2 行冲抵、未冲抵=差额」。', '**判据 2（预付合法）**：不冲任何单 = 整笔未冲抵（`unallocatedAmount = amount`），**不许当错误拒**。判据 = `SupplierPaymentServiceTest#paymentWithoutAllocationIsPrepayment`。', '**判据 3（不许超付同一张单）**：单张单累计冲抵（仅计**有效**付款）≤ 该单金额。判据 = `#allocationCannotExceedOrderRemaining`；作废后额度释放 = `#voidedPaymentNoLongerOccupiesOrder`。红证方向：删掉这条比较 ⇒ 当场红。', '**判据 4（只冲本供应商的 posted 单）**：跨供应商 / 草稿单都拒。判据 = `#onlyOwnPostedOrdersCanBeAllocated`。', "**判据 5（作废留痕）**：`status='voided'` + 谁/何时/为什么，必须写原因、不许重复作废；作废不计入聚合。判据 = `#voidRequiresReasonAndIsIdempotentGuarded`。", '**判据 6（对账真值）**：`GET /api/admin/suppliers/payables` 的 `paidAmount` = 有效付款之和，`outstanding = 收货额 − 已付`（**负数 = 预付**，页面显示「预付 ¥x」而不截零）。判据 = `SupplierServiceTest#payableSummaryMapsRowsAndTotals` + `suppliers.test.tsx`。', '**判据 7（不替财务猜单）**：前端「登记付款」只提交金额/日期/方式，**不带 allocations**。判据 = `suppliers.test.tsx`（断言 payload.allocations === undefined）。', '**边界（照实登记）**：不做按单勾对 UI、不做对账单/账龄/红冲、不做付款审批流（属 P1-2 具名审批）。'],
+    skip_reason='[backend-contract] 涉钱写面的约束与读面聚合，由 Java 单测与 vitest 页面判据验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'supplier', 'payables', 'money', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `suppliers`(V170) + `inbound_orders.supplier_id`(V173) + 两张付款表(V174)。零网络、零 LLM。',
+)
+
+# ── SP-005 [NORMAL] 采购单：一单可分多次收货（状态由 Σ收货派生）；收货不许超收；提前关闭必须写原因（issue #7369 段 4）（源: cases/misc.yml）──
+_CASE_SP_005 = EvalCase(
+    id='SP-005',
+    legacy_id='',
+    title='采购单：一单可分多次收货（状态由 Σ收货派生）；收货不许超收；提前关闭必须写原因（issue #7369 段 4）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-20，逐字）：「继续推进，直到目标任务都交付」+ 前一轮「2.根据常见做法来裁定」—— 采购单按常见做法：与入库单**一对多**（支持部分收货）、允许提前关闭并必须写原因。'],
+    expectations=[],
+    data_checks=['**改前**：只有入库单（货已到），没有「我要买什么、多少钱」的单据面 ⇒ 采购金额只能事后从入库单反推。', '**判据 1（状态是派生值）**：`status` 不在请求体里；`receive`/`close` 之后按 Σ收货重算（部分 ⇒ partially_received、收齐 ⇒ received、关单 ⇒ closed）。判据 = `PurchaseOrderServiceTest#statusIsDerivedFromReceipts`。', '**判据 2（不许超收）**：本次收货数量 ≤ 采购数量 − 已收（收多了账永远对不上）。判据 = `#receiveCannotExceedRemaining`。红证方向：删掉上限比较 ⇒ 当场红。', '**判据 3（终态不可绕过）**：已关闭 / 已收齐都不能再收货；已关闭不能重复关；收齐的不能关。判据 = `#closedOrReceivedOrderCannotReceive` + `#closeRequiresReason`。', '**判据 4（关单必须写原因）**：断货 / 取消 / 到不齐都要留一句（半年后要能解释为什么少了货）；不删单。判据 = `#closeRequiresReason`。', '**判据 5（供应商与金额）**：停用供应商不许下新单；单价最多两位小数（`MoneyScale` 准入）；单号 `CG-yyyyMMdd-NNNN` 撞车换号重试（唯一键台账登记）。判据 = `#createRejectsInvalidInput` + 唯一键守卫。', '**判据 6（关联入库单）**：可把已过账、同供应商的入库单挂到收货行上（一对多的证据面）；跨供应商 / 草稿单拒。判据 = `#linkedInboundOrderMustMatch`。', '**边界（照实登记）**：本段只做采购单与收货记账，**不自动生成入库单**（收货行可关联已存在的入库单）；采购单页面与菜单属段 4-B。'],
+    skip_reason='[backend-contract] 单据状态机与收货约束，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'purchase', 'receiving', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `suppliers`(V170) + `inbound_orders.supplier_id`(V173) + 采购三表(V175)。零网络、零 LLM。',
+)
+
+# ── SP-006 [NORMAL] 采购单页面：列表真值 + 收货进度派生 + 建单/收货/关单三条写面（issue #7369 段 4-B）（源: cases/misc.yml）──
+_CASE_SP_006 = EvalCase(
+    id='SP-006',
+    legacy_id='',
+    title='采购单页面：列表真值 + 收货进度派生 + 建单/收货/关单三条写面（issue #7369 段 4-B）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-20，逐字）：「继续推进，直到目标任务都交付」—— 段 4 的后端面已合入（PR #7414），本用例盯**用户真正看得见的那一层**：菜单能进、列表能读、写面不猜。'],
+    expectations=[],
+    data_checks=['**判据 1（列表真值）**：第一屏读服务端，收货进度 `40 / 100` 是**后端派生值**（前端不自己算），金额两位小数。判据 = `purchase-orders.test.tsx#第一屏拉服务端列表`。', '**判据 2（状态人话 + 不回显机器值）**：四种状态各自中文；未登记的值给「其他」而不是 `cancelled_by_server`（issue #6668 出口安全）。判据 = `#状态上屏是人话`。', '**判据 3（建单不写状态）**：payload 里**没有 `status`**（状态由后端派生）；本地先拦「没选供应商 / 空明细 / 数量 ≤ 0」⇒ 不发请求。判据 = `#建单 payload` + `#建单拦截` + `#商家不许手打 SKU`。', '**判据 4（收货双保险）**：超过未收数量**本地先拦**（后端也会拦）；正常提交只带 `itemId + quantity`。判据 = `#收货`。', '**判据 5（关单须写原因）**：不写原因不发请求；写了才调接口 —— 单据不删，原因留着备查。判据 = `#关单`。', '**判据 6（只读岗位）**：无 `inbound:create` ⇒ 列表可读、三个写按钮一个都不渲染。判据 = `#只读岗位`。', '**判据 7（失败态不冒充空态）**：加载失败给可重试错误面，且**不**同时画「还没有采购单」（那是业务结论）。判据 = `#加载失败`（本条写完当场抓到页面一开始的错，已修）。', '**判据 8（issue #7567：SKU 只能选、不能打）**：建单明细**只从公共选品器**（`components/products/SkuPicker`）勾出来 —— 页面上**没有** SKU 文本输入框（改前是 `<input placeholder="SKU">`，要商家手抄 ≈19 位雪花号）；payload 逐行带 `productId`。判据 = `#商家不许手打 SKU`（`queryByPlaceholderText(\'SKU\')` 必须为 null）。', '**判据 9（issue #7567：收货面认商品，不印内部标识）**：收货弹窗逐行显示「商品 / 颜色 / 门幅」（服务端在读面给出的展示名）；取不到展示字段时如实说「商品信息缺失」，**绝不**拿 `skuId` 顶替。判据 = `#收货` + `#服务端取不到商品名时`。', '**类级守卫（同批被它们判红并已修）**：`wide-table-action-column-guard`（操作列 `sticky right-0`）、`user-copy-jargon-guard`（副标题不写实现链路）、`no-native-dialog-for-destructive-copy-guard`（关单原因改页面内弹层，不用 `window.prompt`）、`design-baseline-expression-fallback`（状态走 `displayEnum`）、`list-table-nowrap-guard`（明细表 th 全 nowrap + 逃逸口）、**`sku-id-input-guard`（issue #7567：`src/` 内不许再出现 placeholder 含 SKU 的输入框 / `value={…skuId…}` / `Number(…skuId)`；入库单·采购单·价格本三个消费面必须引用共用件）**。', '**边界（照实登记）**：收货**不自动生成**入库单（可关联已过账入库单）；采购单编辑（`ordered` 状态下改明细）未做 —— 要改就关单重开；按单勾对/对账单属后续段。'],
+    skip_reason='[frontend-contract] 页面写面与读面契约，由 vitest 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['frontend-contract', 'purchase', 'receiving', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [frontend-contract]：零网络（`@/lib/api` 全 mock）、零 LLM。菜单与路由守卫另行由 `menu-nav` / `remnants-menu-isomorphic` / `test_agent_permission_parity` 承担。',
+)
+
+# ── AR-001 [NORMAL] 应收账龄：到期日当天归未到期 / 五档边界逐格 / 汇总恒等式（issue #7370 段 2）（源: cases/misc.yml）──
+_CASE_AR_001 = EvalCase(
+    id='AR-001',
+    legacy_id='',
+    title='应收账龄：到期日当天归未到期 / 五档边界逐格 / 汇总恒等式（issue #7370 段 2）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-20，逐字）：「继续推进，直到目标任务都交付」—— 承接 issue #7370 的验收判据「账龄分档边界逐档有判据（到期日当天归未到期）」「余额恒等式」。'],
+    expectations=[],
+    data_checks=['**判据 1（到期日当天不算逾期）**：逾期天数 = 今天 − 到期日，`<= 0` 即未到期 ⇒ 客户今天付款仍算及时；昨天下单的现结客户才是逾期 1 天。判据 = `ReceivableAgingTest#dueDateItselfIsNotOverdue`。红证方向：把 `<= 0` 改 `< 0` ⇒ 当场红。', '**判据 2（五档边界逐格）**：0/负数→未到期 · 1→1-30 · 30→1-30 · **31 跳档** · 60 · **61 跳档** · 90 · **91 跳档**；枚举顺序 = 上屏顺序。判据 = `#bucketBoundaries`。', '**判据 3（账期口径）**：到期日 = 下单日 + 账期；账期 `null`/0 ⇒ **现结（到期日 = 下单日）**，不是「永不到期」（后者会让这类客户的应收永不出现在逾期面上）。判据 = `#dueDateFollowsTerms` + `#dueDateItselfIsNotOverdue`。', '**判据 4（应收口径 = 未收款订单）**：以 `paid_at IS NULL` 定性（与授信闸门 `selectOutstandingTotal` 同一真值源），应收 = 货值 − Σ退款。**不**用 `actual_amount IS NULL ⇒ 已收满` 的旧兜底 —— 那会把「没登记的收款」读成「已付清」，欠款静默消失。判据 = `ReceivableAgingRow` javadoc + `#remainingIsNetReceivable`。', '**判据 5（汇总恒等式）**：`totalOutstanding == Σ五档 == Σ客户行`，且逐档笔数正确；已对平/多收的单不进账龄面。判据 = `#summaryKeepsTheIdentity`。', '**判据 6（缺字段不丢钱）**：没留电话的散客单归到具名分组，不因缺字段从应收面消失。判据 = `#rowsWithoutPhoneAreKept`。', '**判据 7（端点契约）**：路由 `GET /api/admin/customers/receivable-aging` 逐字；权限码复用既有 `customer:view`（零授权 delta）；不带 id 不标归属认定。判据 = `ReceivableAgingControllerTest`。', '**边界（照实登记）**：部分收款（一笔钱冲多张单）随段 3「逐笔核销」上线；账龄页面/报表（段 4）与导出未做；黄金策暂无账龄工具（先用页面读面）。'],
+    skip_reason='[backend-contract] 账龄分档与汇总恒等式，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'receivable', 'aging', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `orders.paid_at`(V160) + `customer_profiles.credit_limit/payment_terms_days`(授信段) + `finance_transactions`。零网络、零 LLM。',
+)
+
+# ── AR-002 [NORMAL] 客户收款核销：一笔收款冲多张订单 / 收款侧与订单侧双上限 / 同批逐行余量（issue #7370 段 3）（源: cases/misc.yml）──
+_CASE_AR_002 = EvalCase(
+    id='AR-002',
+    legacy_id='',
+    title='客户收款核销：一笔收款冲多张订单 / 收款侧与订单侧双上限 / 同批逐行余量（issue #7370 段 3）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-20，逐字）：「继续推进，不要停止」—— 承接 issue #7370 的验收判据「收款核销：收款流水可指定订单」。'],
+    expectations=[],
+    data_checks=['**判据 1（收款侧上限）**：同一流水的 Σ核销 ≤ 流水金额；已核销 900 / 流水 1000 ⇒ 最多再冲 100，101 拒且报出「超出 1」。判据 = `ReceiptAllocationPolicyTest#receiptSideCapWinsWhenReceiptIsSmaller`。', '**判据 2（订单侧上限）**：某单的 Σ核销 ≤ 货值 − 退款；货值 600 / 退 100 / 已核销 400 ⇒ 最多再冲 100（流水的 10000 不作数）。判据 = `#orderSideCapWinsWhenOrderIsSmaller`。红证方向：只取收款侧剩余 ⇒ 当场红。', '**判据 3（取小 + 归零）**：可核销 = min(两侧剩余)；两侧任一为负（存量脏数据）一律归 0，不让页面 500。判据 = `#negativeCapacityIsClampedToZero` + `#fullyRefundedOrderHasNothingToAllocate`。', '**判据 4（0/负数/空值一律拒）**：不产生「冲了一点点」的空行；但「申请 0」时仍要如实给出可核销上限（前端要能显示「这单还能冲多少」）。判据 = `#zeroAndNegativeAreRejected`。', '**判据 5（批量逐行余量）**：一次提交多行时，第二行必须在「含第一行」的余量上判；两行各 600 对流水 1000 ⇒ 第二行拒。判据 = `ReceiptAllocationServiceTest#batchLinesShareTheReceiptCapacity`。', '**判据 6（只有收入且成功的流水能核销）**：退款/失败流水一律拒（现金真值源是 finance_transactions，核销只是去向）。判据 = `#onlySuccessfulIncomeReceiptsCanBeAllocated`。', '**判据 7（同客户 / 取消单 / 同批重复）**：冲到别人单上拒；已取消订单拒；同一张单在同一批出现两次直接拒（否则合计绕过单张单上限）。判据 = `#cannotAllocateToAnotherCustomersOrder` / `#cancelledOrderCannotBeAllocated` / `#duplicateOrderInOneBatchIsRejected`。', '**判据 8（金额准入与落库精度）**：超两位小数直接拒（issue #6221）；落库金额一律两位小数（列 NUMERIC(16,4)，值不许带第三位）。判据 = `#overPrecisionAmountIsRejected` / `#writesAmountThroughSingleSetter` + `MoneyEntryPrecisionMetaGuardTest` 的台账条目。', '**判据 9（端点契约）**：写 `POST /api/admin/finance/receipts/{id}/allocations` 用既有 `finance:create`，读面继承类级 `finance:view`；写端点标归属认定 `receiptTransaction`（注册在 TenantResourceOwnership）。判据 = `ReceiptAllocationControllerTest` + `TenantOwnedWriteEndpointGuardTest`。', '**判据 10（账龄口径升级）**：应收余额改为 `货值 − 退款 − Σ核销`（段 2 的 `ReceivableAgingRow` javadoc 已写明这是段 3 的收口点）。判据 = `ReceivableAgingTest` 全绿 + `OrderMapper.selectReceivableRows` 的 SQL 子查询。', '**边界（照实登记）**：核销的**撤回**（软删明细）尚无端点；账期利息/多币种/发票不在范围；账龄页面与报表中心（P1-4）未做；黄金策暂无核销工具。'],
+    skip_reason='[backend-contract] 核销上限算法与服务接线，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'receivable', 'allocation', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `finance_transactions`（现金真值）+ `receipt_allocations`（V176）。零网络、零 LLM。',
+)
+
+# ── AR-003 [NORMAL] 订单毛利：收入−退款−面料−加工，且**成本未知绝不当 0**（issue #7371 段 1+2）（源: cases/misc.yml）──
+_CASE_AR_003 = EvalCase(
+    id='AR-003',
+    legacy_id='',
+    title='订单毛利：收入−退款−面料−加工，且**成本未知绝不当 0**（issue #7371 段 1+2）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-20，逐字）：「继续推进，不要停止」—— 承接 issue #7371 的验收判据「成本未知 ⇒ 显示「成本未知」，绝不填 0（负向对照：缺进价时毛利不得显示为收入全额）」。'],
+    expectations=[],
+    data_checks=['**判据 1（未知 ≠ 0）**：有扣料行缺批次进价（`stock_batches.unit_cost IS NULL`）⇒ `fabricCost`/`grossMargin`/`marginRate` **全部 null**、`costKnown=false`；负向对照 = 绝不出现「毛利 = 收入全额」。判据 = `OrderMarginTest#unknownCostIsNeverZero` + `OrderMarginServiceTest#unknownCostIsNullNotZero`。红证方向：把未知当 0 ⇒ 当场红。', '**判据 2（真 0 是已知）**：没有任何扣料行（还没领料）⇒ 面料成本 **真 0**、毛利 = 收入 − 退款（不是「未知」）。两者不许混。判据 = `#zeroCostIsKnown` + `#noConsumptionIsRealZero`。', '**判据 3（算式）**：毛利 = 收入 − 已退款 − 面料成本；毛利率 = 毛利 ÷ **净收入**（收入 − 退款），四位小数。判据 = `#plainMargin`。', '**判据 4（亏本单不截断）**：成本 > 净收入 ⇒ 毛利为负、毛利率为负（不许截断成 0）。判据 = `#negativeMarginIsKept`。', '**判据 5（净收入 ≤ 0）**：退满/退超 ⇒ 毛利率 null（不做 0 除、不给负无穷），毛利照实给。判据 = `#rateIsNullWhenNetRevenueIsNotPositive`。', '**判据 6（脏值不 500）**：收入/退款 null、SQL 返回 null 一律当 0 处理，不 NPE。判据 = `#nullsAreTolerated` + `OrderMarginServiceTest#nullRowIsTreatedAsNoConsumption`。', '**判据 7（口径自述）**：`scope = revenue_minus_refund_minus_fabric_minus_labor` —— 段 2 起含**加工成本**；运费**系统未采集** ⇒ `freightCaptured=false`（数据缺口，不是 0 运费），不许被读成完全成本毛利。判据 = `#scopeIsSelfDescribing` + `OrderMarginServiceTest#knownCostProducesMargin`。', '**判据 7b（加工成本复用单一聚合）**：加工成本 = `ProductionService.piecework(...)` 的 `total` —— 与计件工资/期间报表**同一份聚合**（不新造第二套口径）。判据 = `OrderMarginServiceTest#knownCostProducesMargin`（150 计入）。', '**判据 7c（未定价报工 ⇒ 加工未知）**：有未定价报工（issue #4696 口径：未定价不进金额但必须能被数出来）⇒ `laborCost` 与 `grossMargin` 都 null、`unpricedLaborLines > 0`。判据 = `OrderMarginTest#unpricedLaborMakesCostUnknown` + `OrderMarginServiceTest#unpricedLaborMakesMarginUnknown`。', "**判据 8（取数口径）**：面料成本取自 `stock_batch_consumptions`（`reason='processing_order' ∧ deleted=0`，按 `order_no` 归属）× 该行 `unit_cost`（V119 起的**当时**快照）；退款取 `finance_transactions`（`refund ∧ success`）。判据 = `OrderMapper.selectFabricCost` 的 SQL + 上述用例。", '**判据 9（端点契约）**：`GET /api/admin/finance/orders/{orderId}/margin` 逐字，继承类级 `finance:view`；只有订单 id 一个入参（毛利算出来的，不接受客户端传金额）。判据 = `OrderMarginControllerTest`。', '**边界（照实登记）**：**运费未采集**（系统没有运费字段 —— 是数据缺口，不是 0）；退货的成本侧冲减（退回来的货回库）未做；批次级成本、标准成本/移动加权不在范围；订单/商品/客户三视图与报表中心（P1-4）未做；黄金策暂无毛利工具。'],
+    skip_reason='[backend-contract] 毛利算式与「未知当 0」禁令，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'margin', 'cost', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `stock_batches.unit_cost` + `stock_batch_consumptions.unit_cost`（V119 快照）+ `finance_transactions`。零网络、零 LLM、无迁移（纯读面）。',
+)
+
+# ── AR-004 [NORMAL] 数据范围 data scope：角色两态（tenant/self）+ 多角色取宽 + 越权=不存在（issue #7372 段 1）（源: cases/misc.yml）──
+_CASE_AR_004 = EvalCase(
+    id='AR-004',
+    legacy_id='',
+    title='数据范围 data scope：角色两态（tenant/self）+ 多角色取宽 + 越权=不存在（issue #7372 段 1）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-20，逐字）：「继续推进，不要停止」—— 承接 issue #7372 的验收判据「越权对象返回空集而非 403（不泄露存在性）」「判据必须覆盖新增一个查询面时默认继承范围（元守卫）」。'],
+    expectations=[],
+    data_checks=['**判据 1（两态 + 默认零回归）**：`roles.data_scope` ∈ {`tenant`（默认，全租户）, `self`（只看本人创建）}；存量角色都是默认值 ⇒ 行为与改前逐字一致。判据 = `DataScopeTest#scopeCodesAreStable` + V177 的 `ck_roles_data_scope`。', '**判据 2（多角色取宽）**：权限取并集 ⇒ 数据范围也取**最宽**：只要有一个 `tenant`，该用户就是 `tenant`；只有全部 `self` 才收窄。反向陷阱：多给一个只读角色**不许**缩小可见面。判据 = `#anyTenantRoleWins`。红证方向：改成取窄 ⇒ 当场红。', '**判据 3（配置缺失/拼错的分界）**：`null`（没写进来）⇒ 按默认 `tenant`；**拼错的取值**（如 `department`）⇒ 按最窄 `self`（fail-closed：宁可少给数据，不可因拼写错误放开全公司）。判据 = `#missingConfigFallsBackToTenant` + `#unknownValueNarrowsToSelf`。', '**判据 4（越权 = 不存在）**：`self` 范围下详情读面返回与「不存在」**同一个 404**，绝不 403 —— 403 等于告诉调用方「这个 id 存在」。判据 = `#outOfScopeIsIndistinguishableFromMissing` + `OrderService.getOrderById(id, owner)` 的同一条 notFound。', '**判据 5（列表与详情同一口径）**：列表按 `created_by = 当前用户` 收窄（`DataScope.ownerFilter` 产出过滤值），详情按同一条判定放行；控制器**不自己比较** `created_by`（单一出口）。判据 = `OrderDataScopeGuardTest`。', '**判据 6（元守卫：新查询面默认继承）**：订单域「按 id 读单张」的方法必须存在带 `dataScopeOwnerId` 的重载；列表方法的**最后一个参数**必须是范围 owner —— 新增读面若绕开范围就红。判据 = `OrderDataScopeGuardTest#detailHasScopedOverload` + `#listTakesScopeOwnerAsLastParameter`。', '**判据 7（客户域：负责人字段 + 未指派兜底）**：`customer_profiles.owner_user_id`（V178）是客户域归属真值载体；`self` 范围可见 = 自己是负责人，**或**未指派且自己有该客户（按 `phone` 关联）的单。判据 = `CustomerDataScopeTest`。', '**判据 8（指派优先于兜底）**：已指派给别人 ⇒ 不可见，**哪怕我出过单**（指派是明确业务决定，不能被「出过单」覆盖，否则客户永远抢不回来），且不再白查订单。判据 = `#assignedToOtherWinsOverMyOrders`。', '**判据 8b（负责人有唯一写入点）**：`PUT /api/admin/customers/{id}/owner`（`customer:create`）是指派/撤回的唯一写点；不传/传空 = 撤回（回到未指派，重新走兜底）。没有写点时 `owner_user_id` 恒 NULL ⇒「把客户分给某人」在系统里不存在。判据 = `CustomerProfileFieldTruthGateTest`（声明↔源码写入点↔遮蔽清单三方一致）。', '**判据 9（客户域越权=不存在 + 键名对账）**：详情范围外返回与「不存在」同一个 404；新增字段必须进 `CustomerProfileFieldTruth`（键名对账类级判据，`#5459`）否则当场红。判据 = `CustomerDataScopeTest` + `CustomerProfileWireKeyParityTest`。', '**边界（照实登记）**：**门店 / 部门 / 指定人员**三个维度本段不做（门店与部门在仓里没有实体 = 另一张需要人裁定的组织模型；指定人员是第三态需要关联表）⇒ 后续段；**导出面**、**黄金策工具查询**尚未接入（agent 走服务令牌、无最终用户身份 ⇒ 需要身份透传设计，属需裁定项）；客户「负责人」的指派 UI 未做（列已就位，指派人靠接口/后续段）。'],
+    skip_reason='[backend-contract] 数据范围解析与越权语义，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'rbac', 'data-scope', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `roles.data_scope`（V177）+ 订单表的 `created_by`（V142）。零网络、零 LLM。',
+)
+
+# ── PRC-001 [NORMAL] 价格解析：协议价 > 等级价 > 阶梯价 > 标准价，且**未定价绝不给 0**（issue #7375 段 1）（源: cases/misc.yml）──
+_CASE_PRC_001 = EvalCase(
+    id='PRC-001',
+    legacy_id='',
+    title='价格解析：协议价 > 等级价 > 阶梯价 > 标准价，且**未定价绝不给 0**（issue #7375 段 1）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-21，选定优先推进 P1-3）：承接 issue #7375 的验收判据「同一 SKU 对三个客户等级分别命中正确价格」「价格缺失时不得静默取 0（未定价 ≠ ¥0.00）」。'],
+    expectations=[],
+    data_checks=['**判据 1（优先级）**：同一 SKU 同时存在协议价 / 等级价 / 阶梯价 / 标准价时，按 **协议 > 等级 > 阶梯 > 标准** 命中。判据 = `PriceResolutionTest#protocolBeatsEverything` + `#fallsBackThroughLayersInOrder`。红证方向：改成标准价优先 ⇒ 当场红。', '**判据 2（逐格）**：三个客户等级（vip1/vip2/vip3）各自命中自己的等级价；没有该等级专属价 ⇒ 落到阶梯/标准价。判据 = `PriceServiceTest#vipLevelPriceUsedWhenNoProtocol`（按 `customer_profiles.vip_level` 取数，不按客户 id）。', '**判据 3（阶梯闭区间）**：区间 `[min, max]` 闭区间；`max IS NULL` = 无上限；多档重叠取**门槛更高**的那档（高价优先拦住「按便宜的档收」）。判据 = `#tierBoundariesAreInclusive`。', '**判据 4（🔴 未定价 ≠ 0）**：四层都没有价 ⇒ `source = unpriced`、`price = null`；SKU 标准价 `DEFAULT 0` **不算有价**（0 元 = 白送）。判据 = `#unpricedIsNeverZero` + `#zeroStandardPriceIsNotAPrice` + `PriceServiceTest#zeroStandardPriceIsUnpriced`。', '**判据 5（脏配置不崩）**：协议价/等级价/阶梯价为负或 0 一律跳过；数量为 null ⇒ 阶梯不参与（区间无法判定）。判据 = `#dirtyConfigFallsThrough`。', '**判据 6（端点契约）**：`GET /api/admin/pricing/quote?customerId=&skuId=&quantity=`；只读码 = 类级 `order:list`（既有读码，不新造码）；入参**只有**客户 + SKU + 数量 —— 价格不接受客户端传值（段 2「服务端为准」的前提）。判据 = `PricingControllerTest`。⚠️ **2026-10-22 归正**：原文写「沿用既有 `order:view`」是错的 —— 权限目录里**没有** `order:view`（两处种子目录都没有）⇒ 报价/价格本端点对所有人恒 403；类级尺度兜底见 `test_admin_role_read_surface_guard.py` 判据 4b。', '**判据 7（金额与自述）**：`amount = 单价 × 数量`（两位小数）；单价或数量缺失 ⇒ `amount = null`（不是 0）；`source` 自述命中层级（改价争议的第一份证据）。判据 = `PricingController.quote` + `PriceQuoteView` 契约。', '**边界（照实登记）**：**下单侧「服务端为准 + 客户端传价差异留痕」尚未接线**（段 2）；改价审批（P1-2）未接；促销/优惠券/满减/客户分组价/币种不在范围；价格本**管理端点**（录入协议价/等级价/阶梯价）未做（表与解析已就位）。'],
+    skip_reason='[backend-contract] 价格解析优先级与「未定价≠0」，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'pricing', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = 三张价格本（V179）+ `product_skus.price` + `customer_profiles.vip_level`。零网络、零 LLM。',
+)
+
+# ── PRC-002 [NORMAL] 下单服务端定价：价格本命中以服务端为准 + 逐行留痕（issue #7375 段 2）（源: cases/misc.yml）──
+_CASE_PRC_002 = EvalCase(
+    id='PRC-002',
+    legacy_id='',
+    title='下单服务端定价：价格本命中以服务端为准 + 逐行留痕（issue #7375 段 2）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-21，裁定段 2 前置走 A，逐字选项）：「下单请求补 skuId / skuCode，服务端有则用、无则按现有方式反推」；承接 issue #7375 判据 2「客户端传价与服务端解析不一致 ⇒ 服务端为准且记录差异」。'],
+    expectations=[],
+    data_checks=['**判据 1（服务端为准）**：请求`processingInfo` 带 SKU 且价格本命中 ⇒ 服务端解析价**覆盖**客户端 `unitPrice`，落库金额按服务端价重算。判据 = `OrderPricingServiceTest#protocolPriceOverridesClientPrice`。', '**判据 1b（SKU 只在既有键族）**：SKU 从 `processingInfo.skuId/skuCode` 读，**不加顶层字段** —— `OrderDtoContractTest` 的 D1 判据（顶层 skuCode 是死字段）必须先绿。判据 = `OrderDtoContractTest`（divergenceDisposition）。', '**判据 2（留痕）**：被改写的行记录「改前是多少」（`order_items.price_client_unit_price`）+ 命中层级（`price_source`）+ 一条 `price_server_override` 审计（details 逐行 client_price → 服务端价）。判据 = `#protocolPriceOverridesClientPrice` + `OrderPriceOverrideTest#clientPriceRecordedOnlyWhenOverridden`。', '**判据 3（🔴 无价格本依据不覆盖）**：只有 SKU 标准价（`STANDARD`）或根本未定价（`UNPRICED`）⇒ **不动**客户端价（覆盖 = 凭空改单，会让存量订单一夜变价），但标签如实写 `sku_standard_price` / `no_price_book`。判据 = `#standardPriceDoesNotTouchClientPrice` + `#unpricedKeepsClientPriceButIsLabelled`。', '**判据 4（无 SKU 不参与）**：明细没有 `skuId`/`skuCode`（手工行、存量调用）⇒ 不查价格、不改价、不报错，标签 `client`。判据 = `#itemWithoutSkuIsNotPriced`。', '**判据 5（货号定位）**：`processingInfo` 只给 `skuCode` ⇒ 按「租户 + 货号（+ 商品）」定位 SKU 后再定价，定位到的 `skuId` 写进 `order_items.sku_id`。判据 = `#skuCodeResolvesSku`。', '**判据 8（金额准入）**：改写值同样过 `MoneyScale.requireTwoDecimalsOrNull`（超两位小数直接拒，不静默四舍五入）—— 金额入口台账（#6228）登记为 `GATED` 且**真调用**。判据 = `MoneyEntryPrecisionMetaGuardTest`。', '**判据 6（散客不崩）**：无手机号 ⇒ 取不到客户 ⇒ 仍能定价/下单（按标准价，不 500）。判据 = `#noPhoneStillResolves`。', '**判据 7（只覆盖承诺过的价）**：覆盖判据集中在 `OrderPriceOverride.shouldOverride`（协议/等级/阶梯 = 是；标准/未定价 = 否），别处不再各写一套。判据 = `OrderPriceOverrideTest#priceBookHitsOverride` + `#standardAndUnpricedDoNotOverride`。红证方向：把 STANDARD 也算覆盖 ⇒ 存量订单全变价，判据当场红。', '**边界（照实登记）**：改单路径**不做**服务端定价（改价属 P1-2 审批面，`price_source` 留空）；低于底价审批未接；价格本录入端点/页面未做；带 `skuCode` 命中多条同货号 SKU 时取第一条（按租户+货号+商品限定后仍多条 = 数据问题，不是定价问题）。'],
+    skip_reason='[backend-contract] 下单定价覆盖与留痕，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'pricing', 'audit', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = 价格本三张表（V179）+ `order_items` 定价依据四列（V180）+ `product_skus.sku_code`。零网络、零 LLM。',
+)
+
+# ── APP-001 [NORMAL] 具名审批流：四态 + 不能自批 + 单次消费 + 超授信闸门出口（issue #7374 段 1）（源: cases/misc.yml）──
+_CASE_APP_001 = EvalCase(
+    id='APP-001',
+    legacy_id='',
+    title='具名审批流：四态 + 不能自批 + 单次消费 + 超授信闸门出口（issue #7374 段 1）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-21，逐字）：「继续推进」—— 承接 issue #7374 的验收判据「未审批的超阈动作**写面直接拒绝**（不是前端隐藏）；审批通过后同一动作放行」「审批结果与对象状态**不出现双真值**」「每条审批有完整留痕（谁/何时/旧值/新值）」。'],
+    expectations=[],
+    data_checks=['**判据 1（四态流转）**：`pending` 只能到 `approved | rejected | withdrawn`；只有待审能裁决、只有待审能撤回（已裁决的「撤回」等于绕过留痕）。判据 = `ApprovalStateTest#onlyPendingCanBeDecided` + `#onlyPendingCanBeWithdrawn`。', '**判据 2（不能自批）**：申请人不能裁决自己提交的那条（审批的全部意义）。判据 = `ApprovalServiceTest#cannotSelfApprove`。', "**判据 3（并发 CAS）**：裁决 / 撤回 / 消费都带 `status='pending'`（或 `consumed_at IS NULL`）条件按影响行数判成败 ⇒ 两个人同时点「通过」只有一个成功，另一个拿到可读的 409 语义而不是覆盖别人的结论。判据 = `#concurrentDecisionLosesCas` + `#consumeMarksUsed`。", '**判据 4（🔴 单次消费）**：超授信审批「批一次用一次」：只有**已通过 + 未用掉 + 金额覆盖本次超出额**的能被消费；消费后 `consumed_at` 非空，再下单不会再放行。判据 = `ApprovalStateTest#onlyApprovedAndUnconsumedCanBeConsumed` + `ApprovalServiceTest#consumeRequiresEnoughAmount`。', '**判据 5（🔴 未审批即拒，写面直接拒）**：超授信且没有可用审批 ⇒ 下单**写面**直接拒（不是前端藏按钮），错误信息给出申请路径（`objectType=credit_override` + `objectRef` + 金额下限）。判据 = `CreditApprovalGateTest#overLimitWithoutApprovalIsRejected`。', '**判据 6（审批通过后放行）**：同一条路径上有已通过审批（金额够）⇒ 放行并返回审批 id，下单成功后回填 `consumed_ref`（事后可查「这条审批用在哪张单」）。判据 = `#overLimitWithApprovalPassesAndConsumes`。', '**判据 7（额度内零开销）**：额度内不查审批、不消费（不给正常单增加一次写）。判据 = `#withinLimitNeverTouchesApprovals`。', '**判据 8（无不静默放行）**：没有审批组件（切片上下文 / 直接 new 的老单测）⇒ 退回**改前行为**（超限即拒），绝不静默放行。判据 = `#withoutApprovalBeanBehavesAsBefore`。', '**判据 9（不出现双真值）**：业务对象（订单）**不存**审批结论副本 —— 闸门只读 `approvals` + 消费；订单用 `consumed_ref` 反向指向审批。判据 = 代码结构（`OrderService` 无「已批准」字段）+ `#overLimitWithApprovalPassesAndConsumes`。', '**判据 10（类型封闭 + 端点契约）**：`object_type` 是五类封闭集合（表 CHECK + 服务层校验双保险，新增一类必须改迁移 + 改判据）；端点 `POST /api/admin/approvals`、`POST /{id}/approve|reject|withdraw`、`GET /`、`GET /{id}` 逐字；写面 `finance:create`、读面继承类级 `finance:view`（零授权 delta）。判据 = `ApprovalServiceTest#unknownTypeIsRejected` + `ApprovalControllerTest`。', '**边界（照实登记）**：本段只把**超授信下单**接到闸门上；改价（`price_change`）、退款（`refund`）、采购超额（`purchase_over`）、盘点差异（`stocktake_diff`）四类**类型与表已就位、闸门未接**（分别依赖 P1-3 改单审批面、退款流程改造、P0-1 采购预算、P1-1 盘点）；多级会签 / 条件分支 / SLA 升级不在范围；审批 UI 未做（接口已就位）。'],
+    skip_reason='[backend-contract] 审批四态 / 单次消费 / 超授信闸门，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'approval', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `approvals`（V181）+ 客户授信（P0-2 段 1）。零网络、零 LLM。',
+)
+
+# ── WH-001 [NORMAL] 多仓与调拨：仓库实体 + 默认仓唯一 + 调拨守恒与缸号随行（issue #7373 段 1）（源: cases/misc.yml）──
+_CASE_WH_001 = EvalCase(
+    id='WH-001',
+    legacy_id='',
+    title='多仓与调拨：仓库实体 + 默认仓唯一 + 调拨守恒与缸号随行（issue #7373 段 1）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-21，逐字）：「继续推进」—— 承接 issue #7373 验收判据「调拨两端数量守恒」「跨仓同批次可追溯（缸号不因调拨丢失）」。'],
+    expectations=[],
+    data_checks=['**判据 1（仓库实体）**：`warehouses` 有编码/名称/类型（`store` / `processing`，CHECK 封闭）/默认仓/状态；同租户编码唯一（部分唯一索引）。判据 = `WarehouseServiceTest#createDefaultsToStoreType` + `#unknownTypeRejected`。', '**判据 2（🔴 默认仓唯一是数据库约束）**：同租户只能一个默认仓 —— 部分唯一索引 `uk_warehouses_single_default WHERE is_default` 兜住，服务层「先取消旧默认」只是正常路径；并发建两个会被拦并映射成可读冲突。判据 = `StockTransferMapperTest#singleDefaultWarehouseIsAConstraint` + `WarehouseServiceTest#settingDefaultClearsPrevious` + `#duplicateCodeIsReadableConflict`。', '**判据 3（🔴 调拨两端数量守恒）**：调拨只改批次**归属仓**，**不改数量**；调拨前后总量一字不变（差 0.1 米也算错）。判据 = `StockTransferServiceTest#transferMovesWarehouseButKeepsQtyAndDyeLot` + `StockTransferPolicyTest#conservationHolds`。红证方向：把调拨写成「出库 + 新入库」或两边都减 ⇒ 当场红。', '**判据 4（🔴 缸号不因调拨丢失）**：调拨明细引用 `batch_id`（同一行改仓）⇒ `dye_lot` 与 `unit_cost` 原样保留，可追溯。判据 = `#transferMovesWarehouseButKeepsQtyAndDyeLot`（断言 dyeLot/unitCost 一字不动）+ `StockTransferMapperTest#transferItemsAreBatchScoped`。', '**判据 5（可调量与同仓拒）**：不能超过批次在调出仓的现有量（段 1 不做负库存）；调出 = 调入 一律拒（无意义且会掩盖写错仓，表上另有 `ck_stock_transfers_not_same`）。判据 = `StockTransferPolicyTest#movableUpToAvailable` + `StockTransferServiceTest#overAvailableRejected` + `#sameWarehouseRejected`。', '**判据 6（写错仓必须拦）**：批次不在调出仓 ⇒ 拒（写错仓 / 已调走两种都必须拦，不许「尽力而为」）。判据 = `#batchNotInFromWarehouseRejected`。', '**判据 7（脏值不猜）**：批次数量未知（null）、调拨量 0/负数/空 ⇒ 一律拒，不猜 0、不放行。判据 = `StockTransferPolicyTest#unknownBatchQtyCannotMove` + `#nonPositiveQtyIsRejected`。', '**判据 8（端点与零授权 delta）**：`GET|POST /api/admin/warehouses`、`POST /api/admin/stock-transfers`、`GET /api/admin/stock-transfers/{id}` 逐字；读 `inbound:view` / 写 `inbound:create`（仓与库存同域，不新造码）；调拨入参只认仓库 **id**（不接受目标仓字符串 —— 文本改仓正是本段要治的形态）。判据 = `WarehouseControllerTest`。', '**边界（照实登记）**：① **两阶段在途（`in_transit`）与「调拨中不可售」本段不做** —— 段 1 是即时调拨（确认即到位），没有在途窗口；② 仓库承载仍是 `stock_batches.warehouse`（文本，本服务改成调入仓编码），换成 `warehouse_id` 外键是结构性改造（段 2，要迁存量文本值）；③ **盘点单**未做（段 2，与 P1-2 的 `stocktake_diff` 审批同批）；④ 仓位/库位、负库存拦截（可配置豁免）未做（issue 明列非目标/后续）。'],
+    skip_reason='[backend-contract] 仓库约束与调拨守恒，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'inventory', 'warehouse', 'transfer', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `warehouses` / `stock_transfers` / `stock_transfer_items`（V182）+ `stock_batches`。零网络、零 LLM。',
+)
+
+# ── WH-002 [NORMAL] 开租即种默认主仓 + 盘点默认仓收「未指定仓」的批次（issue #7592）（源: cases/misc.yml）──
+_CASE_WH_002 = EvalCase(
+    id='WH-002',
+    legacy_id='',
+    title='开租即种默认主仓 + 盘点默认仓收「未指定仓」的批次（issue #7592）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-24，逐字）：「盘点单的上的仓库下拉选择没有数据，这个需要在先创建仓库吧？在哪去创建？」'],
+    expectations=[],
+    data_checks=['**判据 1（开租种默认主仓·真库）**：空库真跑入驻链路 ⇒ 该租户 `warehouses` 恰 1 行，`code`/`name` = `OnboardingInitialData.DEFAULT_WAREHOUSE_CODE/NAME`、`is_default = true`；再调一次播种 ⇒ 返回 0、行数仍 1（幂等、不种出第二个仓）。判据 = `NewTenantOnboardingCategoryRealDbTest#onboardingSeedsDefaultCategoryAndFirstProductSucceeds` + `WarehouseSeedServiceTest`。', '**判据 2（🔴 漏种必须红·注入红证）**：摘掉播种 + 摘掉后置条件探针 ⇒ 入驻「成功」但仓 0 行（= issue #7592 的原始读数：仓库下拉为空）；只摘播种、保留后置条件 ⇒ 入驻当场失败 `ONBOARDING_REQUIRED_DATA_MISSING`（缺 `default_warehouse`）。判据 = `#neuteredWarehouseSeedReproducesEmptyDropdown`。', '**判据 3（类级元守卫）**：开租必需初始数据清单 ⇄ 入驻链路双向对账（未登记即红、enforced 项的键必须在 `assertRequiredInitialData` 方法体内）。判据 = `tests/unit_ci_workflows/test_onboarding_required_seed_guard.py`。', '**判据 4（🔴 默认仓收「未指定仓」批次·真库）**：默认仓出任务 ⇒ 快照包含 `warehouse` 为空/空白的批次（入库单的「仓库」是自由文本，留空 ≠ 别的仓），且**不**包含别的仓（`WH-B`）的批次。判据 = `StocktakeRealDbTest#defaultWarehouseAlsoCountsUnspecifiedBatches`。', '**判据 5（迁移回填·幂等）**：V189 只给「一个仓都没有」的租户补一条默认主仓（`NOT EXISTS deleted = 0`）；已有仓档案的租户一行不动、不碰 `uk_warehouses_single_default`。', '**边界（照实登记）**：① 不做仓库管理页 / 调拨页（用户 2026-10-24 裁定「零 UI 最小解」）—— 多仓仍只能走 `POST /api/admin/warehouses`；② **不改写**历史批次的仓库自由文本 ⇒ 文本既非编码也非仓名、且非空的批次不计入主仓盘点（多仓建档页的归属）；③ 库存滞销报表「按仓筛选」按 `code` 与批次文本比对 ⇒ 对历史自由文本不生效（后续单）。'],
+    skip_reason='[backend-contract] 开租播种与盘点快照口径，由 Java 单测/真库验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'inventory', 'warehouse', 'onboarding', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `warehouses`（V182）+ 默认主仓播种（`WarehouseSeedService`）+ V189 回填。零网络、零 LLM。',
+)
+
+# ── WH-003 [NORMAL] 成品仓位自动分配：水位最低且未满优先，全满才顺延新增（issue #7750 / #7791）（源: cases/misc.yml）──
+_CASE_WH_003 = EvalCase(
+    id='WH-003',
+    legacy_id='',
+    title='成品仓位自动分配：水位最低且未满优先，全满才顺延新增（issue #7750 / #7791）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-25，逐字）：「对成品帘打包扫码时要自动给当前的成品进行成品仓区域分配仓位号」。', '用户（2026-10-26，逐字）：「后续成品帘打包入库时要自动分配仓位时要能根据仓位水位智能分配」。'],
+    expectations=[],
+    data_checks=['**判据 1（水位优先）**：水位 = 在库件数 / 区域容量；分配时选**水位最低且未满**的 active 仓位，同水位按仓位号（A-01 优先）。判据 = `WarehouseLocationMapper#selectBestBinForAllocation`（count / capacity + ORDER BY）+ `WarehouseLocationServiceTest#reusesLowestWaterBin`。', '**判据 2（全满才顺延）**：本区所有 active 仓位都满 ⇒ 新号 = 本区域现有行数 + 1（如 A-02），容量沿用本区容量；判据 = `#createsNextBinWhenAllCapacityFull` / `#newBinUsesZoneCapacity`。', '**判据 3（🔴 占号原子、冲突不抛异常）**：新增走 `INSERT … ON CONFLICT DO NOTHING`（唯一冲突不会把 PG 事务打成 aborted），抢不到就重算下一轮；连续 8 次抢不到 ⇒ 显式冲突（可重试），**不**静默返回一个可能被占的号。新建的号不直接返回，下一轮带行锁与容量复核。判据 = `#claimConflictRetriesThenSucceeds` + `#exhaustedAttemptsThrows`。', '**判据 4（水位没有第二份真相）**：在库件数只从 `finished_goods_stock` 的 `in_stock` 行按 bin_code 派生（GROUP BY，不按 500 行截断）；仓位表**没有** occupied / in_stock_count 之类字段。V198 去掉 `uk_finished_goods_bin_in_stock`（允许一仓多件），同套装/部位仍由 `uk_finished_goods_set_part_in_stock` 唯一。判据 = `WarehouseLocationMapperTest#allocationUsesWaterLevelCapacityAndNoOccupancyColumn` + `FinishedGoodsStockMapperTest#oneBinHoldsMultiplePackagesUpToCapacity`。', '**判据 5（并发容量闸门）**：候选仓位行 `SELECT … FOR UPDATE OF l`；调用方 `InboundOrderService.post` 是 `@Transactional`，同一事务内锁住候选行、复核在库件数再 insert，并发过账不会把同一仓塞过容量。判据 = `WarehouseLocationAllocationRealDbTest`（真库两事务：第二事务在行锁上等待；第一事务填满后第二事务复核并顺延新建）+ Mapper SQL 的 `FOR UPDATE` 断言。', '**判据 6（同单同仓改判，issue #8103）**：同一订单的成品固定入同一仓位（该仓满了也不换仓），水位只在「新订单首件选仓」时生效 —— 判据与真库并发见 WH-011；本条其余口径不变。', '**边界（照实登记）**：容量按区域统一（1~999 件，默认 10）；一仓可放多件到容量；不做货架层级 / 体积 / 重量维度；容量下调到低于当前在库件数时不驱逐已有件，只停止继续分配。'],
+    skip_reason='[backend-contract] 仓位分配口径由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'inventory', 'warehouse', 'finished-goods', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `warehouse_locations` / `finished_goods_stock`（V196）+ `warehouses.warehouse_type` 含 `finished`。零网络、零 LLM。',
+)
+
+# ── WH-004 [NORMAL] 出库单：布料手工出库「建单即过账」（扣库存 + 落台账），库存不足整笔拒绝（issue #7750）（源: cases/misc.yml）──
+_CASE_WH_004 = EvalCase(
+    id='WH-004',
+    legacy_id='',
+    title='出库单：布料手工出库「建单即过账」（扣库存 + 落台账），库存不足整笔拒绝（issue #7750）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-25，逐字）：「现在布料也只做了入库，也需要做入库出库，可以统一做成入库出库单，并且做成入库即过账，不要单独再点击过账了」。'],
+    expectations=[],
+    data_checks=['**判据 1（建单即过账）**：`POST /api/admin/outbound-orders` 一次请求内完成扣库存 + 落台账 + 写单据；落库状态恒为 `posted`（DB CHECK 只允许这一个取值，出库单**没有草稿态**）。判据 = `OutboundOrderServiceTest#createAndPostDeductsAndRecordsLedger` + 迁移 `ck_outbound_orders_status`。', '**判据 2（🔴 库存不足不许负库存）**：原子扣减（`WHERE stock >= 本单量 RETURNING`）返回 0 行 ⇒ 422 + 整笔回滚；**不**落台账、**不**落明细。判据 = `#insufficientStockRejected`（同时断言 `stockLedgerService.record` 与明细 insert 一次都没发生）。', '**判据 3（数量粒度）**：> 0 且最多 1 位小数（与 `product_skus.stock` 的 NUMERIC(12,1) 同粒度）；超精度**显式拒绝**、不静默取整。判据 = `#quantityPrecisionGate`。', '**判据 4（台账口径）**：`reason=outbound`、`refNo=出库单号`、before/after 来自扣减语句的 RETURNING（同基链断不了）。判据 = `#createAndPostDeductsAndRecordsLedger`。', '**判据 5（跨租户）**：SKU 不属于本租户 ⇒ 当「不存在」拒绝（不泄露存在性）。判据 = `#foreignTenantSkuRejected`。', '**判据 6（页面可达 + 写码门控 + 雪花号）**：出库单页列表/新建入口在；无 `inbound:create` 不渲染新建；提交体里 `skuId` 是字符串原样（`Number()` 会吞末位）；提交成功提示「已出库」。判据 = `frontend/admin-web/tests/unit/pages/outbound-orders.test.tsx`。', '**边界（照实登记）**：① 布料出库只扣 SKU 库存 + 台账，**不**写 `stock_batch_consumptions`（批次消耗仍由裁剪报工/盘点统计）；② 出库单**不可作废**（冲销须另开入库单）；③ 成品手工出库不支持（成品只随发货出库）。'],
+    skip_reason='[backend-contract] 出库扣减/台账/页面字段面由 Java 单测 + 前端单测验证，非 LLM 行为',
+    tags=['backend-contract', 'inventory', 'outbound', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `outbound_orders` / `outbound_order_items`（V196）+ `stock_ledger_entries.reason` 含 `outbound`。零网络、零 LLM。',
+)
+
+# ── WH-005 [NORMAL] 成品帘入/出库闭环：打包 ⇒ 成品入库（分仓位）+ 发货 ⇒ 成品出库 + 撤销打包冲销（issue #7750）（源: cases/misc.yml）──
+_CASE_WH_005 = EvalCase(
+    id='WH-005',
+    legacy_id='',
+    title='成品帘入/出库闭环：打包 ⇒ 成品入库（分仓位）+ 发货 ⇒ 成品出库 + 撤销打包冲销（issue #7750）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-25，逐字）：「要对成品帘进行入库出库」「对成品帘打包扫码时要自动给当前的成品进行成品仓区域分配仓位号」。'],
+    expectations=[],
+    data_checks=['**判据 1（打包 = 入库）**：打包动作给每个成品订单行分配一个成品仓仓位号，并自动生成一张 `source=packing`、`biz_category=finished` 的**已过账**成品入库单。判据 = `FinishedGoodsServiceTest#packReceivesFinishedGoodsWithBins` + `InboundStockDocumentTest#finishedPostAllocatesBinsOnly`。', '**判据 2（🔴 幂等）**：已有在库行 ⇒ 不重复入库（不建第二张单）；订单没有成品行 ⇒ 不造假单。判据 = `#packIsIdempotent` + `#packWithoutItemsCreatesNothing`。', '**判据 3（发货 = 出库）**：发货 ⇒ 生成 `source=ship` 的已过账成品出库单 + 在库行置 `shipped`（释放仓位）；**没有在库行（一步发货）⇒ 不造空出库单**。判据 = `#shipIssuesFinishedGoods` + `#shipWithoutStockCreatesNoDoc`。', '**判据 4（撤销打包 = 冲销）**：入库单作废 + 在库行置 `unpacked`；同一张入库单只冲一次（两行同一单 ⇒ 一次调用）。判据 = `#unpackReversesInboundOnce` + `#unpackWithoutStockIsNoop`。', '**判据 5（并发显式失败）**：出库时在库行已被并发改掉 ⇒ 409 + 整笔回滚（不静默成功）。判据 = `#shipConcurrentChangeConflicts`。', '**判据 6（工人端可见）**：发货读面带 `finished_bins`（仓位号），工人端拍照发货汇总必须上屏。判据 = `frontend/bmini-app/tests/worker-shipment-page.test.tsx`「成品仓位（V196）」。', '**判据 7（🔴 商家发货路同样出库）**：商家/生产发货路（`OrderShipmentService#recordMerchantShipment`，由 `OrderService#shipWithLogistics` 调）也必须先补入库再出库 —— 否则「工人打包 → 商家后台发货」的订单会永久留在成品仓「在库」，而货已经发走了。判据 = `MerchantShipmentAtomicityTest#happyPathCommitsTheTransaction`（`verify(receiveOnPack|issueOnShip)`）。', '**判据 8（商家面可见）**：出库单页「成品库存」页签显示仓位号 / 品名 / 订单号（打包自动分配的成品仓仓位）。判据 = `frontend/admin-web/tests/unit/pages/outbound-orders.test.tsx`「成品库存页签」。', '**边界（照实登记）**：① 入库时点 = **订单打包动作**（`packed`），**不是**扫码报「打包」工序 —— 报工在本仓的语义是领活（#4967），那一刻货还没打包好；② 一个成品订单行 = 一个在库行（不按套拆，与「一个 SKU 行 = 一个批次」同源）；③ 成品无成本口径（`unit_cost`/`amount` 留 NULL，不伪造 0）。'],
+    skip_reason='[backend-contract] 成品入出库编排由 Java 单测 + bmini 页面单测验证，非 LLM 行为',
+    tags=['backend-contract', 'inventory', 'finished-goods', 'shipment', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `finished_goods_stock` / `warehouse_locations`（V196）+ `inbound_orders.biz_category=finished` + 打包/发货/撤销三个状态迁移。零网络、零 LLM。',
+)
+
+# ── WH-007 [NORMAL] 扫描水洗唛出库：套×部位粒度 + 打包工序工人授权 + 幂等（issue #7762）（源: cases/misc.yml）──
+_CASE_WH_007 = EvalCase(
+    id='WH-007',
+    legacy_id='',
+    title='扫描水洗唛出库：套×部位粒度 + 打包工序工人授权 + 幂等（issue #7762）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-25，逐字）：「允许工人扫码水洗唛进行成品出库打标签操作，参考图中的格式」。', '用户（2026-10-25，确认口径）：「扫码水洗唛进入手机端报工页面后操作打印出库，只有关联打包工序的工人扫码后才能操作出库」。'],
+    expectations=[],
+    data_checks=['**判据 1（一张唛 = 一行在库 + 一个仓位号）**：打包按 `processing_order_sets` × `processing_set_part_tokens` 逐行入库 —— 同一订单 5 套的布帘 = 5 行在库。V198（issue #7791）起一仓可放多件到区域容量 ⇒ 5 件落在**同一个仓位**（issue #8103 起固定同单同仓，满了也不换仓），**不再要求 5 个不同仓号**；标签仍打 `bin_code`，扫唛按 token/短码定位到具体件。判据 = `FinishedWashLabelTest` + `V197__finished_goods_set_part_granularity.sql` 的套装唯一索引 + `V198__warehouse_capacity_and_water_level.sql`。', "**判据 2（🔴 非打包工序工人被拒）**：授权 = `production_work_logs` 里该加工单存在 `operation_name ILIKE '%打包%'` 且 `worker_id = 当前工人`。非打包工人 ⇒ `allowed=false` + 原因「只有做过打包工序的工人才能扫码出库」，写面 409，**零库存变动、零出库单**。判据 = `FinishedWashLabelTest#nonPackerIsRejectedWithZeroInventoryChange`。", '**判据 3（出库即过账）**：打包工人扫在库唛 ⇒ 在库行 `in_stock → shipped`（释放仓位）+ 成品出库单 `source=scan` 单行（仓位号 = 标签「打包区域」）。判据 = `FinishedWashLabelTest#outboundMarksStockShippedAndCreatesScanDocIdempotently`。', '**判据 4（幂等）**：同一张唛第二次提交 ⇒ 409「已经出库」，不重复扣减、不建第二张单（`clearInvocations` 后 `never()` 断言）。', '**判据 5（标签字段 = 服务端唯一源）**：逐行内容由服务端 `label.rows` 下发；缺值行不渲染（不印 `—`、不编造），无稳定来源的「项目名称 / 款式 / 安装工艺 / 扩展选项」不出现。判据 = `#packerCanOutboundAndLabelCarriesBinAndSetNo`。', '**判据 6（入口在报工页 + 打印）**：扫水洗唛 → 报工页出现「成品出库」卡片（服务端 rows 排版 + 打印 + 出库），打印走独立文档 `@page 50mm 70mm`。判据 = `frontend/worker-h5/tests/worker-h5-finished-label.test.mjs`。'],
+    skip_reason='[backend-contract] 扫唛出库的授权/幂等/标签内容由 Java 单测 + 页面静态判据验证，非 LLM 行为',
+    tags=['backend-contract', 'inventory', 'outbound', 'wash-label', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = V196 成品在库/仓位 + V197 套×部位列与唯一索引 + `production_work_logs` 既有报工记录。零网络、零 LLM。',
+)
+
+# ── WH-008 [NORMAL] 水洗唛出库标签格式：仓位号即「打包区域」、套数/尺寸/开数/部位/主布货号逐行（issue #7762）（源: cases/misc.yml）──
+_CASE_WH_008 = EvalCase(
+    id='WH-008',
+    legacy_id='',
+    title='水洗唛出库标签格式：仓位号即「打包区域」、套数/尺寸/开数/部位/主布货号逐行（issue #7762）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-25，附图）：车间实拍 50×70mm 热敏标签格式（订单编号 / 客户 / 下单日期 / 收货人 / 套数 / 尺寸 / 开数 / 部位 / 主布货号 / 打包区域 / 二维码 + 短码）。'],
+    expectations=[],
+    data_checks=['**判据 1（「打包区域」= 成品仓仓位号）**：标签末行「打包区域」的值 = 在库行 `bin_code`（与成品库存页同值）。判据 = `FinishedWashLabelTest#packerCanOutboundAndLabelCarriesBinAndSetNo` 的 filteredOn(打包区域)。', '**判据 2（套数行）**：`第 N 套 / 共 M 套`，N = `processing_order_sets.set_index`、M = 该加工单的套数（`selectCount`）。判据 = 同方法断言 `第3套/共5套`。', '**判据 3（尺寸 / 开数 / 部位 / 主布货号）**：尺寸 = `order_items.width*height`（去尾零，如 `3*2.7`）；开数 = `order_items.open_count`；部位 = 部位码 `position_kind`；主布货号 = `order_items.sku_code`。判据 = 同方法 + `labelOf` 实现。', '**判据 4（缺值不渲染）**：任一行值为空 ⇒ 该行不出现（不印 `—`、不编造）；「收货人」照实取 `orders.customer_name`（数据模型无独立收货人，不猜人名）。', '**边界（照实登记）**：① 二维码**图形**本单不渲染（worker-h5 无二维码生成器）⇒ 纸面印短码 + `qr_value` 由服务端给出（`/s/<短码>`），图形另单；② 蓝牙标签机（bmini `lpapi`）本单不接，打印载体 = 浏览器 `window.print()`。'],
+    skip_reason='[backend-contract] 标签字段来源与格式由 Java 单测断言，非 LLM 行为',
+    tags=['backend-contract', 'inventory', 'wash-label', 'label-format'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = V197 列 + 部位码短码（V99）。零网络、零 LLM。',
+)
+
+# ── WH-006 [NORMAL] 入库即过账（商家建单一次请求完成）+ 成品单过账语义与布料单分道（issue #7750）（源: cases/misc.yml）──
+_CASE_WH_006 = EvalCase(
+    id='WH-006',
+    legacy_id='',
+    title='入库即过账（商家建单一次请求完成）+ 成品单过账语义与布料单分道（issue #7750）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-25，逐字）：「做成入库即过账，不要单独再点击过账了」。'],
+    expectations=[],
+    data_checks=['**判据 1（建单即过账）**：`POST /api/admin/inbound-orders` = create → post（同一个事务）；建单失败不留孤立草稿，过账失败整笔回滚。判据 = `InboundStockDocumentTest#createAndPostComposesCreateThenPost` + `InboundOrderController` 的建单端点改为 `createAndPost`。', '**判据 2（🔴 成品单过账不碰布料口径）**：`biz_category=finished` 过账只做两件事 —— 按订单取一次仓位（同单同仓，issue #8103）+ 逐行 `claimInStock` 原子占位 + 回写明细分位；**不**建 `stock_batches`、**不**加 SKU 米数库存、**不**落库存台账。判据 = `#finishedPostKeepsWholeOrderInOneBin`（四条 never 断言 + 仓位只取一次）。', '**判据 3（fail-closed）**：成品单缺仓库 / 明细缺订单行引用 ⇒ 拒绝过账（不猜仓库、不分配孤儿仓位）。判据 = `#finishedPostWithoutWarehouseRejected` + `#finishedPostWithoutOrderItemRejected`。', '**判据 4（页面口径）**：入库单新建页提交后提示「已入库（批次号已生成、库存已加、成本已重算）」，按钮文案 = 「确认入库」（不再有「保存为草稿 → 再点过账」两步）；工人拍照入库的**识别草稿**仍保留过账端点（那张草稿是识别结果，不是待办）。判据 = `frontend/admin-web/tests/unit/pages/inbound-orders-new.test.tsx`。', '**边界（照实登记）**：① 商家端不再能建「草稿态」入库单（工人拍照识别草稿走 `WorkerInboundService` 的独立路径）；② `PATCH /{id}` 的 `post`/`cancel` 动作保留给这些草稿。'],
+    skip_reason='[backend-contract] 入库即过账与成品过账分道由 Java 单测验证，非 LLM 行为',
+    tags=['backend-contract', 'inventory', 'inbound', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `inbound_orders.biz_category`（V196）+ 现有入库过账链路（V111/#5034）。零网络、零 LLM。',
+)
+
+# ── OPS-001 [NORMAL] 云上「采购单加载失败」根因：BOOLEAN 逻辑删列 + 全局整数语义 ⇒ 真库 500（issue #7373 复盘）（源: cases/misc.yml）──
+_CASE_OPS_001 = EvalCase(
+    id='OPS-001',
+    legacy_id='',
+    title='云上「采购单加载失败」根因：BOOLEAN 逻辑删列 + 全局整数语义 ⇒ 真库 500（issue #7373 复盘）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-21，逐字）：「如果是 500：这里有个真缺陷，我建议一并修，现在页面就有问题，你自己去验证下」—— 要求自查云上采购单页面打不开的根因，而不是猜。'],
+    expectations=[],
+    data_checks=['**判据 1（真库现形）**：在**终态建库脚本**上真跑 `PurchaseOrderService.list/detail` —— 改前必红（`操作符不存在: boolean = integer`），改后必须读得出来（含逐行已收/未收）。判据 = `PurchaseOrderListRealDbTest`。', '**判据 2（根因）**：全局 `logic-not-delete-value: 0` ⇒ 自动追加 `deleted = 0`；若列是 `BOOLEAN`（`suppliers` / `supplier_payments` / `purchase_orders` / `purchase_order_items` / `purchase_order_receipts` / `supplier_payment_allocations` / `receipt_allocations` 七张）⇒ PG 直接报类型错误、读面 500。修法 = 七张表对应实体显式声明布尔语义的逻辑删注解（`@TableLogic(value = false, delval = true)`，**零迁移**：列本来就该是布尔）。判据 = `LogicDeleteColumnTypeGuardTest`。', '**判据 3（类级元守卫）**：扫全部实体的 `@TableLogic` 字段 × 建库脚本列类型：BOOLEAN 列必须用布尔注解、INTEGER 列必须用整数默认 —— 双向都拦（反向是 `integer = boolean`）。判据 = `LogicDeleteColumnTypeGuardTest#logicDeleteAnnotationMatchesColumnType`。红证方向：把 `PurchaseOrder.deleted` 的布尔注解摘掉 ⇒ 当场红（云上 500 的形态）。', '**判据 4（前提自证）**：建库脚本里仍存在 `deleted BOOLEAN`（否则上条判据永远绿、该退场）。判据 = `#booleanDeletedColumnsStillExist`。', '**判据 5（不是「猜」而是「移」）**：这次**没有**写迁移去把列改成 INTEGER —— 那会让历史迁移（V170/V173/V174/V175/V176 的 `WHERE deleted = FALSE` 部分索引）在 bootstrap 库上先红，且要重建 15 个索引；正确修法是把**代码**对齐既有列语义（零数据变更、零停机）。判据 = `MigrationRunnerLiveChainRealDbTest` + `MigrationBaselineSemanticsTest` 保持全绿。', '**判据 6（失败态说清为什么）**：页面失败态不再是一句「请重试」，而是「本页兜底句 + 服务端原文 + HTTP 状态码」；403 说权限、401 说要重新登录、断网说网络、服务端无原因时把状态码说出来。判据 = `frontend/admin-web/tests/unit/lib/api-error.test.ts`（6 格）+ 采购单/供应商两页接线。', '**判据 6b（页面外壳留白）**：供应链两页（供应商 / 采购单）根元素必须带页面级 `p-6`（与同族 `orders` / `products` / `inbound-orders` 一致）—— 缺了它标题/按钮/卡片全部贴边，整页视觉「歪」，而这种错**不报错也不白屏**。只钉这两页而非全仓 45 页（其余 18 页各有留白方案，写全仓守卫要 18 条例外）。判据 = `page-shell-padding.test.ts`。', '**判据 7（迁移事实可查）**：`GET /api/version/migrations` 暴露三个计数（真实失败 / 已知存量非幂等 / 台账已应用）；**取不到 runner 报 unknown 而不是 0**（0 会被读成「跑了且全过」）；只读 405；**不暴露迁移文件名**（公开端点不泄露内部表结构）。不塞进 `/api/version`（该端点字段面被 #6951 冻结为 4 个，是部署腿比对 served sha 的契约）。判据 = `VersionMigrationsEndpointTest`(4)。', '**边界（照实登记）**：`@TableLogic` 的布尔值语义只对 PostgreSQL 的 `BOOLEAN` 列成立（本仓仅 7 张表）；若将来统一改成 INTEGER，本守卫会连同注释一起退场（`#booleanDeletedColumnsStillExist` 会先红提醒）。'],
+    skip_reason='[backend-contract] 逻辑删列类型与采购单真库读面，由 Java 单测/真库判据验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'realdb', 'logic-delete', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例 [backend-contract] + 真库：前置 = 真实 PG 集群（`PgCluster`，CI 注入 `MIGAO_REQUIRE_REALDB`）+ 终态建库脚本。零网络、零 LLM。',
+)
+
+# ── STK-001 [NORMAL] 盘点单：账面快照 + 差异必经审批 + 调整只改数量（issue #7373 段 2）（源: cases/misc.yml）──
+_CASE_STK_001 = EvalCase(
+    id='STK-001',
+    legacy_id='',
+    title='盘点单：账面快照 + 差异必经审批 + 调整只改数量（issue #7373 段 2）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-21，逐字）：「继续主动推进，不要一直让我点头」—— 主动推进 P1-1 段 2（盘点单），承接 issue #7373 判据「盘点差异调整前后库存恒等式」与 issue #7374 的 `stocktake_diff` 闸门。'],
+    expectations=[],
+    data_checks=['**判据 1（账面快照）**：出任务时把该仓**当前还有剩余**的批次的**剩余米数**（派生 = 入库量 + Σdelta，唯一入口 = `StockBatchConsumptionService#remainingMeters`）快照成 `book_qty`（NOT NULL）。不留快照，事后 `stock_batches.quantity` 早变了，差异就无法复算、也解释不了「当时为什么判它少了 3 米」。🔴 issue #7618：改前快照的是 `quantity`（原始入库量）⇒ 裁剪过的批次账面偏高、已用尽的批次还要盘；现派生成剩余并**过滤掉剩余 0 的批次**。判据 = `StocktakeServiceTest#openSnapshotsRemainingNotInbound`（入库 67 / 已消耗 20.5 ⇒ 账面 46.5，不是 67）+ `#openSkipsExhaustedBatches` + `StocktakeMapperTest#bookQtyIsNotNull`。🔴 红证（2026-10-24 实测）：把 `bookQty` 换回 `batch.getQuantity()` 且去掉剩余过滤 ⇒ `StocktakeServiceTest` 14 条里恰 2 条红（正是上面两条），其余全绿；还原（md5 一致）⇒ 全绿。', '**判据 2（逐批次差异）**：`差异 = 实盘 − 账面`；**未录实盘 ⇒ 差异 null（不是 0）**。判据 = `StocktakePolicyTest#diffPerLine` + `#uncountedIsNullNotZero`。', '**判据 3（🔴 差异必经审批）**：完成盘点时有差异 ⇒ 必须有**已通过且未用掉**的 `stocktake_diff` 审批（对象 = 盘点单号，金额 = |差异| 合计），否则**写面直接拒**并给出申请路径；命中则当场消费（一笔一批）。判据 = `StocktakeServiceTest#completeRejectsDiffWithoutApproval`（红证：无审批即拒）。', '**判据 4（无差异不逼审批）**：账实相符 ⇒ 直接完成（把「盘点过、一样」也逼去审批，只会让人绕过盘点）。判据 = `#completeWithoutDiffNeedsNoApproval`。', '**判据 5（🔴 调整只改数量）**：差异调整只改 `stock_batches.quantity`，**不动 `unit_cost`**（盘点是账实对齐，不是成本重估；顺手改成本会让毛利凭空变化）。🔴 由于 `diff = 实盘 − 剩余`，落到 `quantity` 后**派生剩余恰等于实盘**（盘 46.5 → 50 ⇒ quantity 67 + 3.5，剩余 = 50）；判负准入改按**剩余**（`quantity` 够、剩余不够的盘亏必须拒）。判据 = `#completeAppliesDiffAndKeepsCost` + `#completeLandsRemainingEqualsCounted` + `#completeRejectsNegativeRemainingEvenIfInboundSufficient` + 真库 `StocktakeRealDbTest#fullFlowWithoutDiff`（断言 cost 一字不动）。', '**判据 6（恒等式与准入）**：`Σ(实盘−账面) == Σ存储差异`（抓「改了实盘没同步差异」的脏数据）；有一条没录实盘就不能完成；调整后数量不得为负。判据 = `StocktakePolicyTest#storedColumnsAgree` + `#allCountedRequired` + `#adjustmentNeverNegative`。', '**判据 7（同仓唯一进行中）**：同一仓库同时只能有一个 `counting` 盘点 —— **部分唯一索引**兜住（不是服务层查一遍），并发发起时映射成可读冲突。判据 = `StocktakeMapperTest#oneOpenStocktakePerWarehouseIsAConstraint` + `StocktakeServiceTest#openRejectsSecondOpenStocktake`。', "**判据 8（并发与端点契约）**：完成走 CAS（`status='counting'` 条件更新，落空 ⇒ 可读 409）；路由逐字、读 `inbound:view` / 写 `inbound:create`（零授权 delta）；**完成面只收盘点单 id**（差异/调整量由服务端算，客户端递进来就等于绕过审批）。判据 = `#completeLosesCas` + `StocktakeControllerTest`。", '**边界（照实登记）**：① **周期盘点计划**（定时生成任务）未做；② **库位级盘点**（issue 明列非目标）未做；③ **盘点差异的成本重估**未做（成本随行不动）；④ 盘点页面未做（接口已就位）；⑤ 差异审批的**申请人入口**复用既有 `/api/admin/approvals`（无独立页面）。'],
+    skip_reason='[backend-contract] 盘点恒等式 / 差异审批闸门 / 真库列一致性，由 Java 单测与真库判据验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'realdb', 'inventory', 'stocktake', 'approval', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例 [backend-contract] + 真库：前置 = `stocktakes`/`stocktake_items`（V184）+ `approvals`（V181）+ 真实 PG 集群（CI 注入 `MIGAO_REQUIRE_REALDB`）。零网络、零 LLM。',
+)
+
+# ── PRC-003 [NORMAL] 价格本可维护：协议价 / 等级价 / 阶梯价 upsert + 价格必须 > 0（issue #7375 段 3）（源: cases/misc.yml）──
+_CASE_PRC_003 = EvalCase(
+    id='PRC-003',
+    legacy_id='',
+    title='价格本可维护：协议价 / 等级价 / 阶梯价 upsert + 价格必须 > 0（issue #7375 段 3）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-21，逐字）：「继续主动推进，不要一直让我点头」—— 自主推进 P1-3 段 3，把价格本从「只能写库」变成可维护。'],
+    expectations=[],
+    data_checks=['**判据 1（价格必须 > 0）**：0 元与负数一律拒（0 元成交 = 白送；未定价就不该录）。判据 = `PriceBookServiceTest#priceMustBePositive`。', '**判据 2（阶梯区间合法）**：起订量必须 > 0，上限不得小于起订量。判据 = `#tierRangeMustBeSane`。', '**判据 3（upsert 靠唯一索引）**：协议价 / 等级价 / 阶梯价都走 `ON CONFLICT … DO UPDATE`（同客户同 SKU / 同等级同 SKU / 同 SKU 同门槛只留一条生效价），不靠服务层先查一遍。判据 = `#protocolUpsertUsesConflictClause`。', '**判据 4（软删与类型封闭）**：`kind` 必须是 protocol / vip-level / tier；找不到记录 ⇒ 404 语义（不是静默成功）。判据 = `#removeValidatesKindAndExistence`。', '**判据 5（读面按 SKU）**：读面必须指定 SKU（价格本是按 SKU 维护的），一次给出三层价（缺层 = 没有该层价）。判据 = `#listRequiresSku`。', '**判据 6（零授权 delta）**：读面沿用类级 `order:view`、写面 `product:create`（与商品维护同码，不新造权限码）。判据 = `PricingController`（既有报价端点契约 + 本段新增写面同码）。', '**边界（照实登记）**：**改价审批闸门（低于底价/成本必须审批）未接**（属 P1-3 段 4，要动 `ProductService` 的价格写面）；价格本**页面**未做（接口已就位）；客户分组价 / 币种 / 促销不在范围。'],
+    skip_reason='[backend-contract] 价格本录入校验与 upsert 语义，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'pricing', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = 三张价格本（V179）。零网络、零 LLM。',
+)
+
+# ── PRC-004 [NORMAL] 改价闸门：价格低于 SKU 成本必须先有「改价」审批（issue #7375 段 4）（源: cases/misc.yml）──
+_CASE_PRC_004 = EvalCase(
+    id='PRC-004',
+    legacy_id='',
+    title='改价闸门：价格低于 SKU 成本必须先有「改价」审批（issue #7375 段 4）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-21，逐字）：「继续主动推进，不要一直让我点头」—— 自主推进 P1-3 段 4，把 `price_change` 这个具名审批接到实际写面上。'],
+    expectations=[],
+    data_checks=['**判据 1（低于成本需审批）**：价格本录入价 < 该 SKU 成本（`product_skus.avg_cost`）⇒ 必须有一条**已通过且未用掉**的 `price_change` 审批（对象 = SKU id，金额 = 成本价），否则**写面直接拒**并给出申请路径。判据 = `PriceBookFloorGateTest#belowCostWithoutApprovalIsRejected` + `PriceFloorPolicyTest#belowCostNeedsApproval`。', '**判据 2（批过放行且消费）**：命中审批 ⇒ 当场消费（一笔一批），并记下「用的是哪条审批」。判据 = `#belowCostWithApprovalPasses`。', '**判据 3（等于/高于成本不阻断）**：等于成本不算亏本；不低于成本时不查审批（不给正常改价加一次写）。判据 = `PriceFloorPolicyTest#atOrAboveCostIsFine` + `#atOrAboveCostNeverTouchesApprovals`。', '**判据 4（🔴 成本未知不阻断，但如实留痕）**：`avg_cost` 为 NULL/0/负数 = 没有可信成本 ⇒ **放行**且标 `costUnknown`。理由：拿未知当零成本会让闸门变假；一律阻断则存量商品全都改不了价（运营会绕开系统）。判据 = `PriceFloorPolicyTest#unknownCostDoesNotBlockButIsLabelled` + `PriceBookFloorGateTest#unknownCostPassesWithoutApproval`。', '**判据 5（无装置不造假闸门）**：没有成本读数装置（切片上下文 / 直接 new 的老单测）⇒ 退回**改前行为**（无闸门），而不是静默放行或静默拒绝。判据 = `#withoutCostWiringGateIsAbsent`。', '**边界（照实登记）**：① 闸门只接在**价格本录入**（协议价/等级价/阶梯价）上；**商品/SKU 基础售价**的改价写面（`ProductService`）尚未接（下一段，动核心写面风险高）；② 底价是「成本」而非「最低毛利率」（毛利率口径未裁定）；③ 价格本页面未做；④ 成本未知的存量商品会以无闸门方式放行 —— 已在判据 4 显式登记，不假绿。'],
+    skip_reason='[backend-contract] 改价闸门判定与消费，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'pricing', 'approval', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = 价格本三表（V179）+ `approvals`（V181）+ `product_skus.avg_cost`。零网络、零 LLM。',
+)
+
+# ── RPT-001 [NORMAL] 报表中心：订单毛利报表（合计=明细之和 / 空数据≠0 / 成本未知单独计数）（issue #7376 段 1）（源: cases/misc.yml）──
+_CASE_RPT_001 = EvalCase(
+    id='RPT-001',
+    legacy_id='',
+    title='报表中心：订单毛利报表（合计=明细之和 / 空数据≠0 / 成本未知单独计数）（issue #7376 段 1）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-22，逐字）：「继续做」—— 自主推进 P1-4 报表中心，先做老板最常看的一张：订单毛利。'],
+    expectations=[],
+    data_checks=['**判据 1（合计 = 明细之和）**：逐单算完再求和（**不写第二条聚合 SQL**），判据用同一份纯函数复算；少算一行立刻不成立。判据 = `ReportTotalsTest#sumEqualsDetails` + `ReportServiceTest#totalsAreSumOfRows`。', '**判据 2（🔴 空数据 ≠ 0）**：没有命中订单时合计为 **null**、`hasData=false`；「本月毛利 0 元」与「本月还没有已完工订单」是两件相反的事。判据 = `ReportTotalsTest#emptyIsNullNotZero` + `ReportServiceTest#emptyReportHasNullTotals`。', '**判据 3（🔴 成本未知不进合计但单独计数）**：缺进价/有未定价报工的单**不进毛利合计**（当 0 会让毛利虚高），但 `unknownCostOrders` 要告诉读者「合计少算了 N 单」；若所有单都未知 ⇒ 合计毛利为 null。判据 = `#unknownCostRowsAreExcludedAndCounted` + `#allUnknownCostKeepsRevenueButNullMargin`。', '**判据 4（缺值与零的分界）**：明细里的 null 不参与求和也不当 0；全为 null ⇒ 没有合计。判据 = `ReportTotalsTest#nullDetailsAreSkipped`。', '**判据 5（数据范围同 P0-4 口径）**：`self` 范围只统计本人创建的订单；范围由**服务端**从角色配置解析，**不接受客户端递交**（客户端能传「看全公司」那范围就形同虚设）。判据 = `ReportControllerTest#takesOnlyDateRange` + `ReportServiceTest#dataScopeIsAppliedToQuery`。', '**判据 6（零授权 delta + 只读）**：读面沿用既有 `dashboard:view`（报表与看板同域，不新造权限码）；端点只有 GET，无写面。判据 = `ReportControllerTest`。', '**边界（照实登记）**：① **库存周转/滞销、员工业绩、应收账龄报表化**未做（段 2；账龄已有独立端点，报表化要新增分组读面）；② **CSV 导出**未做（issue 目标里写了，属段 2）；③ 明细上限 500 行（`LIMIT 500`），超出部分**未分页** —— 合计只覆盖命中的前 500 单，这一点必须在页面提示（否则合计会被误读成全量）；④ 报表页面未做（接口已就位）。'],
+    skip_reason='[backend-contract] 报表合计口径与空数据语义，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'report', 'red-proof', 'data-scope'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = P0-3 毛利（`OrderMarginService`）+ P0-4 数据范围（`role.data_scope`）。零网络、零 LLM、无迁移（纯只读面）。',
+)
+
+# ── RPT-002 [NORMAL] 报表中心：库存周转与滞销（满 90 天未出库 / 从未出库按入库日 / 缺日期不猜）（issue #7376 段 2）（源: cases/misc.yml）──
+_CASE_RPT_002 = EvalCase(
+    id='RPT-002',
+    legacy_id='',
+    title='报表中心：库存周转与滞销（满 90 天未出库 / 从未出库按入库日 / 缺日期不猜）（issue #7376 段 2）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-22，逐字）：「继续做」—— 继续推进 P1-4，做老板第二张表：库存周转与滞销。'],
+    expectations=[],
+    data_checks=['**判据 1（滞销口径写死）**：滞销 = **还有货** 且距上次出库满 `slowMovingDays`（默认 **90 天**，随响应自述）；阈值是**含边界**的（第 90 天算，89 天不算）。判据 = `InventoryAgePolicyTest#thresholdIsInclusive` + `#thresholdOverride`。', '**判据 2（无货不算滞销）**：0 库存批次不参与判定（谈压货没有意义，只会淹没清单）。判据 = `#zeroOnHandIsNotSlowMoving`。', '**判据 3（🔴 从未出库 ⇒ 按入库日起算）**：否则「一直没人动」的货永远进不了滞销清单 —— 最该被看见的反而隐身。判据 = `InventoryReportServiceTest#neverMovedUsesReceivedDate`。', '**判据 4（🔴 上次出库日现算，不落派生列）**：从 `stock_batch_consumptions` 的扣减行聚合（`delta<0`）；落一列就得在扣料/盘点/调拨每个写面同步，漏一处永久漂。判据 = `#recentOutboundClearsSlowMoving`。', '**判据 5（缺日期不猜）**：连入库日都没有 ⇒ 不判定、天数记 -1 并计入 `undeterminedRows`（不是 0 天，也不是假装滞销）。判据 = `InventoryAgePolicyTest#missingDatesAreNotJudged` + `InventoryReportServiceTest#missingAnchorIsCountedNotGuessed`；未来日期（脏数据）同样不判（`#futureDatesAreNotJudged`）。', '**判据 6（空数据 ≠ 0；合计=明细之和）**：没有命中批次 ⇒ 合计 null、`hasData=false`；滞销量为 0 时合计滞销量为 null（「没有滞销」与「滞销 0 米」不混）。判据 = `#emptyReportHasNullTotals` + `#recentOutboundClearsSlowMoving` 的合计断言。', '**判据 7（口径自述 + 零授权 delta）**：响应带 `slowMovingDays`（页面要显示「满 N 天未出库算滞销」）；读面沿用类级 `dashboard:view`，只读。判据 = `#thresholdIsSelfDescribed` + `ReportControllerTest`。', '**边界（照实登记）**：① **员工业绩报表、账龄报表化、CSV 导出**未做（段 3）；② 滞销只按**米数**衡量，**未折算金额**（要金额需批次成本，成本未知的批次会把合计拉偏，口径待裁定）；③ 「周转率」未算（需要期间出库量 / 平均库存，本段只做滞销侧）；④ 报表页面未做。'],
+    skip_reason='[backend-contract] 滞销判定与合计口径，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'report', 'inventory', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `stock_batches` + `stock_batch_consumptions`（V119 快照）+ P0-4 数据范围。零网络、零 LLM、无迁移（纯只读面）。',
+)
+
+# ── RPT-003 [NORMAL] 报表中心：员工业绩（按制单人归集 / 无主单不摊 / 客单价不做 0 除）（issue #7376 段 3）（源: cases/misc.yml）──
+_CASE_RPT_003 = EvalCase(
+    id='RPT-003',
+    legacy_id='',
+    title='报表中心：员工业绩（按制单人归集 / 无主单不摊 / 客单价不做 0 除）（issue #7376 段 3）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-22，逐字）：「继续做」—— 继续推进 P1-4，做老板第三张表：员工业绩。'],
+    expectations=[],
+    data_checks=['**判据 1（按制单人归集）**：单数 / 收入 / 客单价（= 收入 ÷ 单数）逐人给出；合计 = 各行之和。判据 = `StaffPerformanceReportTest#groupsByStaff`。', '**判据 2（🔴 无主订单不摊给任何人）**：没有制单人的订单（存量 / C 端自助单）**单独计数**（`unattributedOrders`），不计入任何人的业绩 —— 摊了就是凭空给人加分，而且不会有任何东西报错。判据 = `#unattributedOrdersAreNotBlamedOnAnyone`。', '**判据 3（客单价不做 0 除）**：单数为 0 ⇒ `avgOrderValue` 为 null；金额为 null 的订单按 0 计入收入但单数照算（不让一行脏值吞掉整单）。判据 = `#nullAmountCountsAsZeroButOrderStillCounted`。', '**判据 4（空数据 ≠ 0）**：没有命中订单 ⇒ 合计 null、`hasData=false`（与另两张报表同口径）。判据 = `#emptyReportHasNullTotals`。', '**判据 5（数据范围同 P0-4）**：`self` 范围只统计本人创建的单（业绩报表里就是「只看自己的业绩」）；范围由服务端解析，端点入参只有日期区间。判据 = `#dataScopeRestrictsToOwnPerformance` + `ReportControllerTest#takesOnlyDateRange`。', '**边界（照实登记）**：① **退款列本段不给** —— 退款真值在 `finance_transactions`（每单一次查询 = N+1），本段先只做「单数 + 收入 + 客单价」；宁可少一列，也不放一个恒为 0 的假字段（那会被读成「这人没退过款」）。② 明细上限 500 行且未分页 ⇒ 合计只覆盖命中的部分；③ 账龄报表化、CSV 导出、报表页面未做。'],
+    skip_reason='[backend-contract] 业绩归集口径与无主单语义，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'report', 'red-proof', 'data-scope'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `orders.created_by` / `created_by_name` + P0-4 数据范围。零网络、零 LLM、无迁移（纯只读面）。',
+)
+
+# ── QC-001 [NORMAL] 质量成本：返工工时 / 报废料 / 赔付三项分列，未知不折成 0（issue #7377 段 1）（源: cases/misc.yml）──
+_CASE_QC_001 = EvalCase(
+    id='QC-001',
+    legacy_id='',
+    title='质量成本：返工工时 / 报废料 / 赔付三项分列，未知不折成 0（issue #7377 段 1）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-22，逐字）：「继续做」—— 自主推进 P1-5，先把「质量成本到底多少」变成可看的数。'],
+    expectations=[],
+    data_checks=['**判据 1（三项分列）**：质量成本 = 返工工时 / 报废料 / 赔付三项**分别给出**（合并成一个数会让读者无法判断「高在哪」—— 三种成因对应三种处置）。判据 = `QualityCostPolicyTest` + `QualityCostReportTest#reworkUsesUnitPriceSnapshot`。', "**判据 2（返工工时口径）**：`production_work_logs.work_type='rework'` × **单价快照**（`unit_price`）；不读实例当前价（改价不能改历史）。判据 = `#reworkUsesUnitPriceSnapshot`。", "**判据 3（🔴 未定价 ≠ 0 元工时）**：`price_state='unpriced'`（或 `unit_price` 为空）的返工行**不计金额**，该项标未知并给出未定价行数；只算有价行然后当真 = 成本偏低。判据 = `QualityCostPolicyTest#reworkCostHonoursUnpricedRows` + `QualityCostReportTest#unpricedReworkIsNotZeroCost`。", '**判据 4（🔴 报废料恒未知）**：本仓**没有**质检记录→批次的关联（质检只到成品帘级）⇒ 该项未采集、金额为 null、说明里写明「不填 0」（填 0 会被读成「本月没有报废损失」）。判据 = `#scrapIsAlwaysUnknown` + `QualityCostReportTest#scrapIsUnknownNotZero`。', '**判据 5（🔴 未发生 ≠ 已核实为零）**：窗口内没有退款流水 ⇒ 赔付未知；有流水 ⇒ 按订单退款口径汇总（本仓无售后单→流水关联，口径差异写在 note 里）。判据 = `#compensationWithoutRefundsIsUnknown` + `QualityCostReportTest#noRefundsMeansUnknownCompensation` + `#refundsCountIntoTotal`。', '**判据 6（合计只加已知项 + 完整性自述）**：`total = Σ已知项`；任一未知 ⇒ `complete=false` 且 `unknownComponents` 列出 code；全未知 ⇒ total 为 null（不是 0）。判据 = `QualityCostPolicyTest#totalOnlySumsKnownComponents` + `#allUnknownGivesNullTotal`。', '**边界（照实登记）**：① **售后单 → 返工单的关联与回写未做**（issue 目标 1：需要新单据实体与状态机，段 2）；② **客户 / 商品 / 工序三维汇总未做**（段 2，要 join 加工单与订单）；③ **缺陷原因字典**未做（段 2，与 #7197 同源）；④ 报废料成本**仍未采集**（要先补「质检 → 批次」的关联）；⑤ 报表页面未做。'],
+    skip_reason='[backend-contract] 质量成本构成与未知传播，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'report', 'quality', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `production_work_logs`（V61 单价快照 / V90 定价三态）+ `finance_transactions`。零网络、零 LLM、无迁移（纯只读面）。',
+)
+
+# ── QC-002 [NORMAL] 返工单：售后 → 返工 → 回写，闭环唯一（不得「已闭环但返工单还在做」）（issue #7377 段 2）（源: cases/misc.yml）──
+_CASE_QC_002 = EvalCase(
+    id='QC-002',
+    legacy_id='',
+    title='返工单：售后 → 返工 → 回写，闭环唯一（不得「已闭环但返工单还在做」）（issue #7377 段 2）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-22，逐字）：「继续做」—— 继续推进 P1-5 段 2，补上这条链唯一缺的实体（返工单）。'],
+    expectations=[],
+    data_checks=['**判据 1（四态状态机）**：`draft → in_progress → done | cancelled`；只有 draft 能开工、只有 in_progress 能完成（未开工就完成 = 跳过返工）、未完结才能取消。判据 = `ReworkStateTest#transitionsAreStrict` + `ReworkOrderServiceTest#cannotCompleteDraft`。', '**判据 2（🔴 闭环唯一——issue 判据原文）**：已闭环/已驳回的售后单**不能再开返工**（否则就是「闭环了单子还在做」）；同一售后单**同时只能有一个未完结返工单**（部分唯一索引 `uk_rework_orders_open_per_ticket` 兜住，不是服务层查一遍）。判据 = `ReworkStateTest#closedTicketsCannotOpenRework` + `ReworkOrderServiceTest#closedTicketCannotOpen` + `#secondOpenReworkIsRejected` + `ReworkOrderMapperTest#oneOpenPerTicketIsAConstraint`。', '**判据 3（🔴 回写只从 processing 推进）**：完成时售后单是 `processing` ⇒ 推进 `resolved`；`pending`/`closed`/`rejected` **一律不动**（覆盖它们等于替客服下结论）；回写本身也是 CAS（别人先改过就不覆盖）。判据 = `ReworkStateTest#writeBackOnlyFromProcessing` + `ReworkOrderServiceTest#completeWritesBackFromProcessing` + `#completeDoesNotOverridePending`。', '**判据 4（取消不回退售后）**：返工取消 ≠ 售后已解决 ⇒ 不改售后状态。判据 = `#cancelDoesNotTouchTicket`。', '**判据 5（并发 CAS）**：start / complete / cancel 都以「当前状态」为条件更新，落空 ⇒ 可读 409（不静默覆盖）。判据 = `#casLosesOnStatusChange`。', '**判据 6（🔴 权限码零 delta）**：读面复用 `after_sales:view`；写面复用 `order:refund`（售后处理既有写码）。**不得新造 `after_sales:create`** —— 全仓权限目录只有 `after_sales:view`，新造码会让端点对所有人不可达（#4203 同族，采购单段 4-B 踩过）。判据 = `ReworkOrderControllerTest#permissionCodesReuseExisting`。', '**判据 7（真外键）**：`after_sales_ticket_id` 是真外键 ⇒ 返工单不能挂在不存在的售后单上。判据 = `ReworkOrderMapperTest#ticketReferenceIsForeignKey`。', "**边界（照实登记）**：① **返工成本归集到单据**未做（段 3：需 join 报工与批次成本）；② 客户/商品/工序**三维汇总**未做；③ **缺陷原因字典**未做（与 #7197 同源）；④ 返工页面未做（接口已就位）；⑤ 返工**工序明细**不新建表（沿用报工的 `work_type='rework'`）。"],
+    skip_reason='[backend-contract] 返工状态机与闭环一致性，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'quality', 'state-machine', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `rework_orders`（V185）+ `after_sales_tickets`。零网络、零 LLM。',
+)
+
+# ── RPT-004 [NORMAL] 报表中心页面：四张报表上屏 + 菜单归位「经营看板之后」+ 空数据不写 0（issue #7376 段 4）（源: cases/misc.yml）──
+_CASE_RPT_004 = EvalCase(
+    id='RPT-004',
+    legacy_id='',
+    title='报表中心页面：四张报表上屏 + 菜单归位「经营看板之后」+ 空数据不写 0（issue #7376 段 4）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-22，逐字）：「继续做吧，新菜单要符合当前业务逻辑」—— 报表已有接口但界面上看不到；新菜单必须按业务逻辑归位，不能乱塞。'],
+    expectations=[],
+    data_checks=["**判据 1（菜单归位）**：「报表中心」挂在**最前席位第二项**（经营看板之后）—— 两者同属经营数据面（报表是看板的下钻），所以不进「交易管理」等操作组；同码 `dashboard:view`（零授权 delta）。判据 = `menu-nav.test.ts`（`EXPECTED_STANDALONE_HEAD = ['dashboard','reports']`）+ `Sidebar.test.tsx`。", '**判据 2（🔴 空数据不写 0）**：四张报表没有数据时显示「暂无数据」，**不出现 ¥0.00**；金额缺值渲染成「—」。判据 = `reports.test.tsx#没有数据时显示「暂无数据」`。', '**判据 3（未知不填 0）**：质量成本未知分项显示「未采集 / 未知」，并在 `complete=false` 时明写「这不是完整质量成本，还缺 N 项」。判据 = `reports.test.tsx#质量成本未知分项显示「未采集 / 未知」`。', '**判据 4（成本未知要提示）**：毛利卡片在 `unknownCostOrders > 0` 时提示「另有 N 单成本未知，未计入以上毛利（不是 0 元）」。判据 = `reports.test.tsx#有数据时给出合计`。', '**判据 5（读失败常驻可见）**：四张报表任一失败 ⇒ 常驻失败卡片（不是空白页）+ 重试出口。判据 = `reports.test.tsx#加载失败`。', '**判据 6（路由守卫与黄金策页面上下文）**：`/reports` 有页面守卫码 `dashboard:view`（无码者地址栏直达被拦）；并在 `page_registry` 登记（真值源 = `ReportService` 的 javadoc 口径），否则黄金策在这页拿不到口径。判据 = `test_rbac_derived_pages.py` / `test_agent_permission_parity.py` / `test_page_context_registry_coverage.py`。', '**边界（照实登记）**：① 报表只有**汇总卡**，尚未做逐行明细表/导出/日期筛选控件（接口已支持 startDate/endDate/thresholdDays）；② 账龄报表化、CSV 导出仍未做；③ 菜单项与经营看板同码 ⇒ 权限树里同码出现两处（与「入库单/供应商/采购单同取 inbound:view」同款，已在 roles 用例登记）。'],
+    skip_reason='[frontend-contract] 报表页展示纪律与菜单归位，由前端单测与 rbac 判据验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['frontend-contract', 'report', 'menu', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [frontend-contract]：前置 = 四张报表接口（#7466 / #7468 / #7470 / #7472）+ 菜单五副本 + rbac 清单。零网络、零 LLM。',
+)
+
+# ── PRC-005 [NORMAL] 价格本页面：三层价一页录（协议/等级/阶梯）+ 价必须 > 0 + 后端拒因原样上屏 + 新增走弹窗/三层平铺/客户只能选（issue #7375 段 3 前端；issue #7622 交互改版）（源: cases/misc.yml）──
+_CASE_PRC_005 = EvalCase(
+    id='PRC-005',
+    legacy_id='',
+    title='价格本页面：三层价一页录（协议/等级/阶梯）+ 价必须 > 0 + 后端拒因原样上屏 + 新增走弹窗/三层平铺/客户只能选（issue #7375 段 3 前端；issue #7622 交互改版）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-22，逐字）：「继续做吧，新菜单要符合当前业务逻辑」+「新模块尽量一步到位…界面没验收过就部署了」—— 价格本接口已就位但界面上没入口；本次先截图验收再合并。', '用户（2026-10-24，两张截图，逐字）：「这里的交互很诡异，1，新增直接用弹窗，2直接把三种价格平铺，不要下拉 3，允许选择客户，有通用组件」'],
+    expectations=[],
+    data_checks=['**判据 1（菜单归位）**：「价格本」放在**交易管理**组内、**销售订单之前**（先定价，才谈得开单与收款）；节点码 `order:list` = 该页第一屏读码（repo 规则「每页恰好一个码」）。判据 = `menu-nav.test.ts` + `MenuControllerTest#tradeCenterGroupMirrorsMenuTs` + `AuthServiceTest`。', '**判据 2（🔴 没选 SKU 不打接口 + SKU 只能选）**：价格本按 SKU 维护 ⇒ 未选 SKU 时只给提示、不发请求；SKU 由公共选品器（`components/products/SkuPicker` 的单选态）产出，页面上**没有**手打编号的输入框（issue #7567）。判据 = `price-books.test.tsx#没选 SKU 时只给提示` + `#选中的 SKU 原样字符串交给后端`。', "**判据 2·补（雪花号不得数字化）**：`skuId` 全程**字符串**原样提交（≈2.1e18 > 2^53，`Number()` 会吞末位 ⇒ 查不到该 SKU；#5904 同族）。判据 = `#选中的 SKU 原样字符串交给后端`（断言 `typeof === 'string'` 且 ≠ `String(Number(...))`）。", '**判据 3（🔴 空层写「未设置」而非 ¥0.00）**：三层任一为空 ⇒ 该卡显示「未设置 —— 这一层没有专属价，下单会继续往下找」。判据 = `#三层价格为空时各自显示未设置`。', '**判据 4（三层分行）**：协议价显示**客户名**（不印客户编号）、等级价显示等级、阶梯价显示门槛。判据 = `#有价时按层列出`。', '**判据 5（🔴 价必须 > 0，前端先拦）**：0/负数在该层提交前就拒（报错只落在**触发它的那一层**），且不打保存接口。判据 = `#价格 ≤ 0 时前端先拦`。', '**判据 6（🔴 后端拒因原样上屏）**：低于成本的改价被后端拒时，把服务端原文（含「改价审批」路径）显示在表单下，而不是一句「保存失败」。判据 = `#后端拒绝时显示服务端原文`。', '**判据 7（视觉验收）**：`scripts/visual-check/price-books-page.mjs` 出「未选 SKU / 有价 / 无价 / 新增价格弹窗」四张图，人看三层卡对齐、金额右对齐、删除按钮在位、弹窗内三层平铺且客户是选择器。**不进 CI**（runner 无浏览器二进制）。', '**判据 8（🔴 新增走弹窗 + 三层平铺，issue #7622）**：点「新增价格」开**对话框**（`role=dialog` + `aria-modal`）；三层（协议 / 等级 / 阶梯）**同时在位**，页面上**没有**「价格类型」下拉；每层各有自己的保存入口（互不串层：存等级价只打等级价接口）。判据 = `price-books.test.tsx#「新增价格」开的是弹窗，三层价格平铺` + `#三层各自录、各自存`。', '**判据 9（🔴 客户只能选、不能抄，issue #7622）**：协议价的客户与页头「只看这个客户」都走公共件 `components/customers/CustomerPicker`（按姓名 / 手机号搜 → 选中 → 回传 `{id,label,phone}`，可一键清除），页面上**没有**客户 id 输入框；「只看这个客户」选中后按该客户重查、清除后不残留 `customerId`。判据 = `CustomerPicker.test.tsx`（3 条：选中回传 / 可清除 / 读故障≠空态）+ `price-books.test.tsx#协议价的客户从选择器里选` + `#「只看这个客户」也走客户选择器`。', '**判据 10（🔴 客户一律显示名字，不印内部编号，issue #7623）**：协议价的每一行由**服务端**给客户展示名（`customer_name`：微信昵称 → 手机号 → 「未命名客户」；客户档案不存在 ⇒ 「客户已移除」），页面只渲染名字、**绝不**把 `customer_id` 顶上屏。判据 = `PriceBookServiceTest#协议价的行给的是客户展示名`（SQL 必须 `LEFT JOIN customer_profiles` + 两级兜底，行内带 `customer_name`）+ `price-books.test.tsx#有价时按层列出`（含「王芳」且**不含** `c-9`）+ `#展示名缺失时写「未命名客户」，仍不把客户 id 顶上屏`。', '**边界（照实登记）**：① 只有汇总卡式列表，没有逐条编辑弹窗（改价 = 重新录入，靠 upsert）；② 协议价行只给**名字**（不显示手机号 / 地区 —— 同名客户在列表里仍不可区分，要定位请用「只看这个客户」）；③ 缺「生效期 / 审批中」状态展示（审批在 approvals 页面上看）；④ 价格本无导入导出；⑤ 客户选择器只在价格本落地，下单页「选择客户」弹窗（UI-038）仍是它自己那一份（回填收货信息的口径不同，未合并）。'],
+    skip_reason='[frontend-contract] 价格本页展示与提交前置校验，由前端单测与视觉脚本验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['frontend-contract', 'pricing', 'menu', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [frontend-contract]：前置 = 价格本接口（#7462）+ 菜单五副本 + rbac 清单 + 页面锚点/页面上下文登记。零网络、零 LLM。',
+)
+
+# ── STK-002 [NORMAL] 盘点单页面：账面快照 → 逐批次录实盘 → 差异须审批才完成（issue #7373 段 2 的商家面）（源: cases/misc.yml）──
+_CASE_STK_002 = EvalCase(
+    id='STK-002',
+    legacy_id='',
+    title='盘点单页面：账面快照 → 逐批次录实盘 → 差异须审批才完成（issue #7373 段 2 的商家面）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-22，逐字）：「继续主动推进，不要一直让我点头」+「新模块尽量一步到位，不要反复返工，最近几次界面都没验收过」—— 盘点后端与接口已在 #7458 落地，商家界面上没有入口，等于能力不存在。'],
+    expectations=[],
+    data_checks=['**判据 1（菜单归位）**：「盘点单」落在「仓储与物料」组、**紧跟库存明细**（先看账 → 再对账），码 = `inbound:view`（该页第一屏读端点码，与入库单/仓库同域、零授权 delta）⇒ 三处同一个码。判据 = `menu-nav.test.ts`（`EXPECTED_GROUPS` 的 inventory-center）+ `Sidebar.test.tsx` + `test_rbac_derived_pages.py`。', '**判据 2（🔴 未数 ≠ 0）**：还没录实盘的批次，实盘量与差异两列都写「未数」，输入框**留空**（不预填 0）；差异只显示服务端算出的 `diffQty`，前端不现算。判据 = `stocktakes.test.tsx#明细：账面 / 实盘 / 差异逐格；没数的行写「未数」`。', '**判据 3（🔴 部分未数不给合计）**：还有批次没数时，差异合计写「待录入（还有 N 个批次没数）」，**不给出一个看起来已对账的合计**；全部数完后照实显示（含 0）。判据 = 同文件两条合计用例。', '**判据 4（有差异要审批）**：完成被服务端拒绝（「必须先有已通过的盘点差异审批」）时，页面**原样显示服务端原文**，不吞成「操作失败」。判据 = 同文件#完成被服务端拒绝。', '**判据 5（实盘允许 0）**：实盘量可以提交 0（盘空的真实结果）、最多 1 位小数；两位小数/负数在前端拦下且不打接口。判据 = 同文件#录实盘：0 可以提交。', '**判据 6（账面口径说清，issue #7618）**：明细列名是「**账面剩余**」（不是「账面量」），表下有算式说明「账面剩余 = 入库米数 − 已派工消耗（出任务当刻快照）—— 与库存明细 ▸ 批次余量是同一个数，已用完的批次不会出现在这张单里」。判据 = `stocktakes.test.tsx#明细：账面 / 实盘 / 差异逐格` 里的列名 + `stocktake-book-basis` 两处断言。', '**判据 6（出任务必须选仓）**：不选仓 ⇒ 页面自己拦住且不打接口；选了仓 ⇒ `POST /api/admin/stocktakes?warehouseId=`（账面数 = 出任务当刻快照）。判据 = 同文件#出盘点任务。', '**边界（照实登记）**：① 不在本页建仓/改仓（仓库主数据归仓储域）；② 周期盘点计划（到点自动出任务）未做；③ 列表接口只回单头（`items` 恒空、`warehouseCode` 恒 null）⇒ 仓名由页面按 id 查、逐批次明细点击后才拉；④ 视觉验收走 mock `/api/**` 的生产构建截图（`acceptance/2026-10-22-7373-stocktake-page/`），验布局/空态/落位，不验真库读数（真库由后端单测承担）。'],
+    skip_reason='[frontend-contract] 盘点页的展示纪律（未数≠0 / 差异须审批）与菜单归位，由前端单测与 rbac 判据验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['frontend-contract', 'inventory', 'stocktake', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [frontend-contract]：前置 = 盘点接口（#7458）+ 菜单五副本 + rbac 清单。零网络、零 LLM。',
+)
+
+# ── RPT-005 [NORMAL] 应收账龄进报表中心：合计=明细之和、空数据不画 0、CSV 导出（issue #7376 段 5）（源: cases/misc.yml）──
+_CASE_RPT_005 = EvalCase(
+    id='RPT-005',
+    legacy_id='',
+    title='应收账龄进报表中心：合计=明细之和、空数据不画 0、CSV 导出（issue #7376 段 5）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-22，逐字）：「继续主动推进，不要一直让我点头」—— 账龄接口 P0-2 就有，但老板要看「谁欠得久」还得问 agent 或人工捞。'],
+    expectations=[],
+    data_checks=['**判据 1（🔴 空数据 ≠ 0）**：没有未结清应收时后端给 `hasData=false` 且 `totals=null`，页面写「暂无数据」——**不出现 ¥0.00**。判据 = `ReportReceivableAgingServiceTest#emptyAgingHasNullTotalsNotZero`（红证：把 `hasData` 改成恒 true ⇒ 该用例当场红，实测 `expected: null`）+ `reports.test.tsx#没有数据时显示「暂无数据」`。', '**判据 2（合计 = 明细之和）**：`totals.outstanding == Σ五档 == Σ客户行`；单数 = Σ各档单数（金额里读不出「欠了多少张单」）。判据 = `ReportReceivableAgingServiceTest#totalsEqualSumOfRows`。', '**判据 3（分档不重算）**：报表**不重算**分档/账期，直接复用 `ReceivableAging.summarize`（P0-2 真值源）；改分档规则只该改一处。判据 = `ReportService.receivableAging` 的实现 + `ReportReceivableAgingServiceTest`（桩住真值源，报表只搬数）。', '**判据 4（数据范围下传）**：`self` 范围把制单人原样交给账龄真值源 —— 报表不自己过滤，否则账龄口径分叉成两份。判据 = `ReportReceivableAgingServiceTest#scopeOwnerIsPassedThroughToTheAgingTruthSource` + `ReportControllerTest#receivableAgingRouteAndSignature`（端点零入参：范围不接受客户端传）。', "**判据 4b（🔴 可选参数不许写成 `#{x} IS NULL`）**：PG 在该位置推不出参数类型 ⇒ 实参为 NULL 时 `无法确定参数 $2 的数据类型` ⇒ 接口 500（issue #5975 形态）。**真库实证**：先按 `AND (#{createdBy,jdbcType=VARCHAR} IS NULL OR …)` 写，`ReceivableAgingScopeRealDbTest` 三例**全红**（`PSQLException: 无法确定参数 $2 的数据类型`）；改成 `<script>`+`<if test='createdBy != null'>` 拼条件后三例全绿。静态守卫 = `test_mapper_null_param_type_guard.py`。", '**判据 5（CSV 导出）**：导出的是**已加载**的读数（不额外请求、不重算）；带 UTF-8 BOM（Excel 中文不乱码）、缺值留空而**真 0 照写 0**、含逗号/引号/换行按 RFC 4180 转义。判据 = `csv.test.ts`（三条）+ `reports.test.tsx#导出 CSV`（断言 Blob 内容与「不额外请求」）。', '**判据 6（逾期要标出来）**：客户行除总额外，逾期额单列（总额里读不出「谁欠得久」）。判据 = `reports.test.tsx#账龄：有欠款时给合计与客户行`。', '**边界（照实登记）**：① 统一筛选控件（时间/仓库/客户/业务员）**未做**；② 只有五档汇总与客户 Top3 上行，**没有**逐单明细表；③ 导出是本页 CSV（Excel 双向迁移按 P2）；④ 分档基准 = 业务日（+08），跨日那一刻由服务端 `BusinessClock` 定，前端不自己算。'],
+    skip_reason='[frontend-contract] 账龄报表的展示纪律（空数据≠0 / 合计=明细之和）与 CSV 导出，由前端与 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['frontend-contract', 'report', 'receivable', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [frontend-contract]：前置 = 账龄真值源（P0-2 / #7370）+ 报表中心四张表（#7376 段 1~4）。零网络、零 LLM。',
+)
+
+# ── RWK-001 [NORMAL] 返工单进观星台：售后 → 返工 → 完工回写（状态机唯一 · 本页不产生金额 · 服务端原话上屏 · 车间来源带「套号 / 部位」）（issue #7377 段 3 / #7945）（源: cases/misc.yml）──
+_CASE_RWK_001 = EvalCase(
+    id='RWK-001',
+    legacy_id='',
+    title='返工单进观星台：售后 → 返工 → 完工回写（状态机唯一 · 本页不产生金额 · 服务端原话上屏 · 车间来源带「套号 / 部位」）（issue #7377 段 3 / #7945）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-22，逐字）：「继续主动推进，不要一直让我点头」—— 承接 #7377 的目标「售后工单可发起返工单；返工完成回写售后状态」。'],
+    expectations=[],
+    data_checks=["**判据 1（🔴 状态机唯一）**：动作按钮只按状态给 —— 待开工只有「开工/取消」、返工中只有「完工/取消」、已闭环（done/cancelled）**一个动作都没有**。负向对照 = 已闭环那张单的「完工」按钮必须不存在（否则就是验收里那条「已闭环但返工单还在做」）。判据 = `rework-orders.test.tsx#已闭环的单**不出现**完工/开工按钮`（红证：把 `actionsFor(...).includes('complete')` 改成恒 true ⇒ 该用例当场红）+ `#状态机唯一`。", "**判据 2（🔴 本页不产生金额）**：返工成本 = **返工报工**（`work_type='rework'`）的计件金额，由质量成本报表汇总；返工单页**整页不出现 ¥0.00**，并写明「返工成本按『返工报工』的计件金额计入质量成本」+ 给出去报表中心的出口。判据 = `#本页不产生金额`（断言 `document.body.textContent` 不含 `¥0.00`）。", '**判据 3（服务端拒绝原话上屏）**：「已闭环/已驳回的售后单不许开返工」「同一售后单已有未完结返工单」都是**服务端**判的 ⇒ 页面把 `message` 原样显示，不吞成「操作失败」。判据 = `#服务端拒绝的原话上屏`。', '**判据 4（开单必填）**：售后单号为空 ⇒ 当场拦、**不发请求**（返工是挂在售后单上的，空单号只会得到服务端的 404）。判据 = `#开单：售后单号必填`（`expect(reworkOrderApi.create).not.toHaveBeenCalled()`）。', '**判据 5（计数口径）**：未完结 = 待开工 + 返工中，与「已闭环但还在做」同一条口径；页面单列 已完成 / 已取消。判据 = `#状态计数`。', "**判据 6（三源同码 · 零授权 delta）**：菜单节点码 = 页面第一屏读端点码 = 路由守卫码 = `after_sales:view`（与售后工单同域复用，不新造 `rework:*`）；写动作走 `order:refund`。判据 = `test_agent_permission_parity.py` 的 `MENU_READ_ENDPOINT_ANCHORS['/rework-orders']` + `ROUTE_MENU_ANCHORS['/rework-orders']` + `MenuControllerTest` / `AuthServiceTest` 的生产组序 + 前端 `menu-nav` / `Sidebar` / `CommandPalette` / `SidebarRedesign` / `menu-icons` 五处。", '**边界（照实登记）**：① 本页不录返工工时/成本（成本口径 = 返工报工，另一条动线）；② 不改售后单状态机（只触发「完工回写」，且服务端仅在售后单为 `processing` 时推进）；③ 退回售后单原始状态（返工取消）不回退售后；④ 没有物理删除（开错就取消，留痕）。'],
+    skip_reason='[frontend-contract] 返工单页面的状态机纪律与「本页不产生金额」口径，由前端单测 + 菜单三源判据验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['frontend-contract', 'rework', 'quality', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [frontend-contract]：前置 = 返工单后端（issue #7377 段 2：`ReworkOrderController` / `ReworkOrderService`）+ 售后工单页。零网络、零 LLM。',
+)
+
+# ── RWK-002 [NORMAL] 售后详情页一键发起返工：已闭环不给入口、已有未完结不可点、返工读不到不拖垮页面（issue #7377 段 4）（源: cases/misc.yml）──
+_CASE_RWK_002 = EvalCase(
+    id='RWK-002',
+    legacy_id='',
+    title='售后详情页一键发起返工：已闭环不给入口、已有未完结不可点、返工读不到不拖垮页面（issue #7377 段 4）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-23，逐字）：「继续推进」—— 承接 #7377 的目标「售后工单可发起返工单」，段 3 只给了独立页面（要手抄售后单号），本段把它接到售后详情上。'],
+    expectations=[],
+    data_checks=['**判据 1（🔴 已闭环不给入口）**：售后单 `closed` / `resolved` / `rejected` ⇒ **不显示**「发起返工」（与后端 `ReworkState.canOpenFor` 同口径）。判据 = `after-sales-detail.test.tsx#已闭环的售后单 ⇒ 不显示入口`（红证：把 `closed` 判定改成恒 false ⇒ 该用例当场红，已注入并回滚）。', '**判据 2（🔴 已有未完结不可点）**：本单已有 `draft`/`in_progress` 返工单 ⇒ 入口**显示但 disabled**，并在提示里点出是哪一张（服务端同样拒，入口先讲清）；返工单也列在页面上（能看见在路上的那张）。判据 = `#已有未完结返工单 ⇒ 入口显示但不可点`。', '**判据 3（写权 = 开单权）**：只有读权 `after_sales:view` ⇒ 不显示入口（反恒真：状态动作照旧在）；开单走 `order:refund`（与返工单写码同码）。判据 = `#无 order:refund 写权 ⇒ 不显示发起返工`。', '**判据 4（原因必填）**：原因为空 ⇒ 当场拦、**不发请求**（师傅要知道返哪一步）。判据 = `#原因留空当场拦、不发请求`。', '**判据 5（开单参数）**：带本单 id + 原因；加工单号留空则**不传空串**（服务端 `@RequestParam(required=false)` 收到空串会当成一个值）。开完刷新返工列表。判据 = `#填了原因就开单`。', '**判据 6（🔴 附属读数不拖垮主业务）**：返工接口读不到 ⇒ 工单本身照常可看可操作，只在返工区块写一行失败提示。判据 = `#返工接口读不到 ⇒ 工单本身照常看`。', '**边界（照实登记）**：① 本页只**发起**返工，推进（开工/完工/取消）仍在 `/rework-orders`；② 不录返工工时/成本；③ 不做「售后单 → 关联加工单」的自动推断（要人填）；④ 返工取消不回退售后状态（服务端口径）。'],
+    skip_reason='[frontend-contract] 售后详情页的返工入口口径（已闭环不给、已有未完结不可点、附属读数不拖垮主业务），由前端单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['frontend-contract', 'rework', 'after-sales', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [frontend-contract]：前置 = 返工单后端（#7377 段 2）+ 返工单页（段 3）+ 售后详情页。零网络、零 LLM。',
+)
+
+# ── QC-003 [NORMAL] 质量成本能按客户/工序摊开：合计=Σ行+无法归属、赔付无工序信息、未定价不计金额（issue #7377 段 5）（源: cases/misc.yml）──
+_CASE_QC_003 = EvalCase(
+    id='QC-003',
+    legacy_id='',
+    title='质量成本能按客户/工序摊开：合计=Σ行+无法归属、赔付无工序信息、未定价不计金额（issue #7377 段 5）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-23，逐字）：「继续」—— 承接 #7377 目标 2「质量成本 … 按客户/商品/工序三维汇总」：整表只回答「贵多少」，回答不了「贵在谁身上 / 贵在哪一步」。'],
+    expectations=[],
+    data_checks=['**判据 1（🔴 恒等式：合计 = Σ行 + 无法归属）**：关联不上的金额（报工没挂加工单 / 退款没挂订单）必须进 `unattributed` 并带原因 —— 悄悄丢掉会让「各行之和」比整表小，而每行单看都正常。判据 = `QualityCostBreakdownTest#totalsEqualRowsPlusUnattributed`（逐项复算 rework / compensation，不只看总和）。', '**判据 2（🔴 工序维度下赔付整体进未归属）**：退款流水没有工序字段 ⇒ 工序维度里赔付全部计入 `unattributed`，且说明里点出「不是『赔付为 0』」。判据 = `#processDimensionPutsCompensationIntoUnattributed`。', '**判据 3（未标工序的报工不编行）**：报工行没记工序名 ⇒ 进未归属（不造一个「其他」行把金额藏起来）。判据 = 同上。', "**判据 4（未定价不计金额但被数出来）**：`price_state='unpriced'` 的行不计金额，`notes` 里给行数。判据 = `#unpricedReworkIsCountedButNotAmounted`。", '**判据 5（🔴 窗口真的生效）**：窗外报工/退款不计；**整表（质量成本卡）也同批修**——原实现收了 `startDate/endDate` 却**没用**。判据 = `#windowFiltersBothSides` + `#qualityCostCardAlsoHonoursWindow`。', '**判据 6（空数据 ≠ 0）**：没有读数 ⇒ `hasData=false`、`totals=null`，页面写「暂无数据」不画 ¥0.00。判据 = `#emptyWindowHasNoData` + `reports.test.tsx#维度汇总空态`。', '**判据 7（维度非法 ⇒ 400）**：`dimension` 只接受 `customer`/`process`，其它值抛可读校验错（不静默返回空表）。判据 = `#unknownDimensionIsRejected`。', '**判据 8（前端只重取这一块）**：切维度只重取维度汇总，不重打整页五个端点；未归属金额单独一行展示（红证：把该行条件改成恒 false ⇒ 前端用例当场红，已注入并回滚）。判据 = `reports.test.tsx#维度汇总：默认按客户…` + `#无法归属的金额必须露出来`。', '**边界（照实登记）**：① **商品维度未做**（订单多商品 ⇒ 单一归属会编数，需先定按行拆分口径）；② 报废料不进本视图（本仓未采集）；③ 本视图不含售后单维度（退款流水无售后单关联列）。'],
+    skip_reason='[frontend-contract] 维度汇总的恒等式与「未归属必须露出来」，由 Java 单测 + 前端单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['frontend-contract', 'quality-cost', 'breakdown', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例前端+后端口径：前置 = 质量成本整表（#7377 段 1）+ 返工报工（P0-3 成本快照）+ 退款流水。零网络、零 LLM。',
+)
+
+# ── RPT-007 [NORMAL] 报表中心统一时间区间：只有按下单日/报工日的三张表吃区间，库存与账龄是此刻读数（issue #7376 段 6）（源: cases/misc.yml）──
+_CASE_RPT_007 = EvalCase(
+    id='RPT-007',
+    legacy_id='',
+    title='报表中心统一时间区间：只有按下单日/报工日的三张表吃区间，库存与账龄是此刻读数（issue #7376 段 6）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-23，逐字）：「继续」—— 承接 #7376 的「统一筛选控件」：五张表不是同一条时间轴，各自挂一套控件反而更慢。'],
+    expectations=[],
+    data_checks=['**判据 1（只有三张表吃区间）**：换区间只重取「订单毛利 / 员工业绩 / 质量成本」+ 质量成本维度汇总；**库存滞销与应收账龄是此刻读数**（读面本来不收日期）⇒ 不重取。判据 = `reports.test.tsx#只有「按下单日/报工日」统计的三张表吃区间`（红证：把区间效应改调 `load()` ⇒ `inventoryAging` 被调 3 次 ⇒ 当场红，已注入并回滚）。', '**判据 2（预设四档算准）**：本月 / 上月 / 近 90 天 / 全部 —— 上月要跨年（1 月的上月是去年 12 月）与闰年 2 月（29 天）都对。判据 = `#区间预设四档的日期都是「当天算出来」的`（注入 today，不靠跑测那天）。', '**判据 3（清空 = 不传参）**：点「全部」⇒ 请求体是 `{}`，不是两个空串（空串会被服务端当值解析）。判据 = `#点「全部」⇒ 清空区间，请求不带日期参数`。', '**判据 4（🔴 页面写明谁吃区间）**：页面上必须有口径说明（哪些表按下单日、哪些按报工日、哪些是此刻）—— 不写就会出现「我筛了 10 月，滞销怎么没变」；且文案不许留字面 markdown 星号。判据 = `#页面上写明「哪些表吃区间」`。', '**判据 5（维度汇总同区间）**：质量成本维度汇总也用同一区间，否则「贵在哪」与上面的合计对不上。判据 = 判据 1 的同一用例（断言 breakdown 收到同参）。', '**边界（照实登记）**：① 没有仓库 / 客户 / 业务员维度筛选（要先把这三张表的归属键对齐，属下一段）；② 默认「全部」（不改变既有数字），要看本月点一下；③ 区间只到日粒度，不含时分。'],
+    skip_reason='[frontend-contract] 时间区间的作用面与预设算法，由前端单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['frontend-contract', 'report', 'filter', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [frontend-contract]：前置 = 报表中心五张表（#7376 段 1~5）。零网络、零 LLM。',
+)
+
+# ── APV-001 [NORMAL] 审批中心进观星台：只对「待审」给动作、批一次用一次、不能自批（issue #7374 段 2）（源: cases/misc.yml）──
+_CASE_APV_001 = EvalCase(
+    id='APV-001',
+    legacy_id='',
+    title='审批中心进观星台：只对「待审」给动作、批一次用一次、不能自批（issue #7374 段 2）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-23，逐字）：「继续任务」—— 承接 #7374 的目标：审批闸门早就在服务端（改价/超授信/退款/采购超量/盘点差异），但观星台里**没有任何入口**，谁能批、批到哪一步全靠问人。'],
+    expectations=[],
+    data_checks=['**判据 1（🔴 只对「待审」给动作）**：`actionsFor()` 按状态 × 写权 × 是否本人 × 是否已用 判定 —— 已通过/已驳回/已撤回**一律没有动作**。判据 = `approvals.test.tsx#动作矩阵`（纯函数逐格）+ `#已裁决的行不给通过/驳回按钮`。', '**判据 2（🔴 批一次用一次）**：`consumedAt` 非空 ⇒ 行上挂「已使用」且**不再给裁决按钮**，不让「已通过」被读成「还能再批一次」。判据 = `#批一次用一次`。', '**判据 3（撤回只对申请人本人）**：别人的申请没有「撤回」，自己的才有（服务端同样按当前操作人判）。判据 = `#撤回只对申请人本人显形`。', '**判据 4（驳回必须写原因）**：驳回不写原因 ⇒ 当场拦、**不发请求**（申请人会看到这句）；通过可以留空。判据 = `#驳回必须写原因`。', '**判据 5（服务端原话上屏）**：自批 / 已裁决过 ⇒ 服务端拒绝的 message 原样显示。判据 = `#服务端拒绝原话上屏`。', '**判据 6（金额为空写「—」）**：审批不对金额设限时 `amount=null` ⇒ 「—」，整页不出现 ¥0.00（没有金额约束 ≠ 金额为零）。判据 = `#金额为空写「—」`。', '**判据 7（零授权 delta）**：路由守卫码 = 页面第一屏读端点码 = `finance:view`（与财务对账同码）；写动作走 `finance:create`（与后端 ApprovalController 逐字同码）。🔴 **2026-10-24（issue #7593，用户裁定）**：本页**不再有侧边栏菜单节点**（入口改顶栏 `ApprovalBell`）⇒ 原「菜单节点码」那一跳销账，`/approvals` 改登记进 `test_agent_permission_parity` 的 `ROUTE_WITHOUT_MENU_NODE`（逐条带理由）。判据 = 该登记 + `MenuControllerTest` / `AuthServiceTest` 的交易组序（撤项后 3 项）+ 前端待办入口用例。', '**边界（照实登记）**：① 本页**不发起**申请（发起在各自的业务页）；② 不展示 `payload` 原文（内部 JSON 不上屏）；③ 不做「谁有权批哪一类」的具名配置（统一由 `finance:create` 决定）—— 具名到人是 #7374 的后续段。'],
+    skip_reason='[frontend-contract] 审批中心的裁决动作口径（只对待审、批一次用一次、不能自批），由前端单测 + 菜单三源判据验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['frontend-contract', 'approval', 'governance', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [frontend-contract]：前置 = 审批后端（#7374 段 1：`ApprovalController` / `ApprovalService` / `ApprovalState`）。零网络、零 LLM。',
+)
+
+# ── APV-002 [NORMAL] 业务页就地申请审批：ref 与金额门槛按闸门口径预填（改价 / 盘点差异 / 超授信）（issue #7374 段 3）（源: cases/misc.yml）──
+_CASE_APV_002 = EvalCase(
+    id='APV-002',
+    legacy_id='',
+    title='业务页就地申请审批：ref 与金额门槛按闸门口径预填（改价 / 盘点差异 / 超授信）（issue #7374 段 3）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-23，逐字）：「继续」—— 审批中心有了裁决面，但业务页被闸门拒时仍然只能看到一句「必须先有已通过的审批」，没有提交入口。'],
+    expectations=[],
+    data_checks=['**判据 1（🔴 ref 与门槛必须按闸门口径）**：`price_change` ⇒ ref = **SKU id**；`stocktake_diff` ⇒ ref = **盘点单号**（不是 id）；`credit_override` ⇒ ref = **客户手机号**。写错 ref 的后果是「审批通过了却用不上」，而审批中心看起来完全正常。判据 = `approval-request.test.ts` 三条逐格（含「盘点差异用 stocktakeNo」的注释级红证）。', '**判据 2（金额默认取门槛）**：盘点差异预填 = 差异合计**绝对值**（盘盈盘亏都要正数门槛）；改价不预填（前端拿不到成本价）但提示点名「要 ≥ 成本价」；差异合计未知（还没数完）⇒ 不预填并换提示。判据 = 同上 + `#还没数完` 用例。', '**判据 3（金额留空不传 0）**：留空 ⇒ 请求里**没有** `amount` 字段（传 0 会让「金额 ≥ 门槛」恒不成立，等于白提）。判据 = `RequestApprovalModal.test.tsx#金额留空 ⇒ 请求里不带 amount`。', '**判据 4（理由必填）**：不写理由当场拦、不发请求。判据 = `#理由必填`。', '**判据 5（服务端原话上屏）**：同一对象已有待审申请等拒绝原话照实显示。判据 = `#服务端拒的原话上屏`。', '**判据 6（🔴 就地预填 · 端到端）**：盘点单「完成」被拒（含「盘点差异」字样）⇒ 自动摆出申请弹窗，对象 = 该盘点单号、金额 = 差异合计；提交 payload 逐字正确。价格本保存被拒（含「改价」字样）⇒ 对象 = 当前 SKU id。判据 = `stocktakes.test.tsx#完成被拒 ⇒ 就地预填申请`（红证：把自动摆出的条件改恒 false ⇒ 该用例当场红，已注入并回滚）+ `price-books.test.tsx#低于成本被拒 ⇒ 就地开「改价」审批`。', '**判据 7（超授信入口 · issue #7374 段 4）**：订单创建被「超出客户授信额度」拒 ⇒ 自动弹申请，ref = **客户手机号**、金额取原文里的「尚缺额」而**不是**订单总额（批多了白占额度）；千分位逗号要一起吃掉（`尚缺 ¥1,200.50` 若只认到 `1`，申请的额度小 1000 倍 ⇒ 批了还是过不了）；不是授信拒绝的文案 / 没有手机号 ⇒ **不冒入口**（返回 `null`）。判据 = `approval-credit-draft.test.ts`（5 例，含上述三种边界）。', '**边界（照实登记）**：① 三个真正被闸门消费的类型（改价 / 盘点差异 / 超授信）都已有就地入口；② 退款 / 采购超量**没有闸门在消费**（`consume` 调用点只有三处）⇒ 不做假入口；③ 不做「谁会批」的展示（审批人由 `finance:create` 决定，用户 2026-10-23 裁定「暂时都默认管理员审批」）。'],
+    skip_reason='[frontend-contract] 审批申请的 ref/金额口径与就地预填，由前端单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['frontend-contract', 'approval', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [frontend-contract]：前置 = 审批后端（#7374 段 1）+ 裁决面（段 2）。零网络、零 LLM。',
+)
+
+# ── QC-004 [NORMAL] 质量成本按商品摊开：订单行小计占比分摊、逐分对得上、权重缺失不编（issue #7377 段 6）（源: cases/misc.yml）──
+_CASE_QC_004 = EvalCase(
+    id='QC-004',
+    legacy_id='',
+    title='质量成本按商品摊开：订单行小计占比分摊、逐分对得上、权重缺失不编（issue #7377 段 6）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-23，逐字）：「1.按比例」—— 裁定商品维度的分摊口径：一个订单多商品时按订单行金额比例摊。'],
+    expectations=[],
+    data_checks=['**判据 1（按比例）**：一单两行小计 600/400、赔付 100 ⇒ 摊成 60/40（不是平均分、也不是只算单商品订单）。判据 = `QualityCostBreakdownTest#productDimensionSplitsCompensationByLineSubtotal`。', '**判据 2（🔴 逐分对得上）**：100.01 摊两行 ⇒ Σ行 == 100.01（残差补给金额最大的一行）；否则「Σ行 + 未归属 = 合计」会破在分位上。判据 = `#productDimensionKeepsCentIdentity`。', '**判据 3（返工也按行摊）**：报工经「加工单 → 订单 → 行」按同一比例摊。判据 = `#productDimensionAttributesReworkThroughOrderLines`。', '**判据 4（🔴 权重缺失不编）**：订单查不到 / 没有明细行 / 报工没挂加工单 ⇒ 进未归属（恒等式仍成立）；行上连商品名都没有 ⇒ 整笔退回未归属，不静默丢。判据 = `#productDimensionFallsBackToUnattributed`。', '**判据 5（行金额全缺 ⇒ 等分）**：所有行都没有小计/单价 ⇒ 按行数等分（按比例的特例），不留空不编数。判据 = `#productDimensionSplitsEquallyWhenWeightsAreMissing`。', '**判据 6（维度白名单与前端）**：`product` 进白名单（非法值仍 400，三合法维度都不抛）；报表页维度切换三档（按客户 / 按工序 / 按商品），切到商品只重取这一块。判据 = `#unknownDimensionIsRejected` + `reports.test.tsx#维度汇总：默认按客户…`。', '**口径自述（notes 上屏）**：商品维度写明「多商品订单的赔付分摊是**口径**而非事实：退款流水本身不区分商品」。', '**边界（照实登记）**：① 分摊**不复刻**加工单的 items_snapshot（那是另一套归属键），统一按订单行小计比例；② 报废料仍不进本视图（未采集）；③ 退款流水不区分商品 ⇒ 分摊是口径，不是事实。'],
+    skip_reason='[frontend-contract] 商品维度的分摊算法与恒等式，由 Java 单测 + 前端单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['frontend-contract', 'quality-cost', 'breakdown', 'product', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例前后端口径：前置 = 质量成本维度汇总（#7377 段 5）+ 订单行（`order_items.subtotal`）。零网络、零 LLM。',
+)
+
+# ── RPT-008 [NORMAL] 报表筛选只挂在「吃该维度」的表上：库存滞销按仓库筛（issue #7377 段 7）（源: cases/misc.yml）──
+_CASE_RPT_008 = EvalCase(
+    id='RPT-008',
+    legacy_id='',
+    title='报表筛选只挂在「吃该维度」的表上：库存滞销按仓库筛（issue #7377 段 7）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-23，逐字）：「3，这个你自己决定，我也不清楚了」—— 授权 AI 裁定「多维筛选」怎么做。'],
+    expectations=[],
+    data_checks=['**裁定的依据（AI 自裁，2026-10-23）**：三张报表**没有共同的归属键**（订单毛利按订单、员工业绩按制单人、质量成本按客户/工序/商品、库存滞销按仓库）⇒ 不做全局筛选条，只给「吃该维度」的表加控件。第一处落地 = 库存滞销卡的**仓库下拉**（读端点 `/api/admin/reports/inventory` 本就支持 `warehouseCode`）。', '**判据 1（🔴 只重取这一张）**：换仓时**只**重打库存滞销，毛利/业绩/质量成本/账龄**不重打**（判据用调用次数前后对比）。判据 = `reports.test.tsx#库存滞销按仓库筛`（红证：把 `warehouseCode` 从请求里去掉 ⇒ 该用例当场红，已注入回滚）。', "**判据 2（参数带对）**：`inventoryAging` 收到 `{ warehouseCode: 'WH02' }`；「全部仓库」则不带参数（不是传空串）。", '**判据 3（下拉可用）**：选项 = 全部仓库 + `warehouseApi.list()` 回来的仓库名；取不到仓库列表时只剩「全部仓库」，**不挡报表本身**（可选增强不得变成新的失败面）。', '**边界（照实登记）**：① 其余四张表**没有**筛选控件（没有对应维度，不做假控件）；② 质量成本缺仓库维度（报工/退款都不带仓库，需先定「按哪张单的仓库算」）；③ 不做全局筛选条（裁定见判据 1 的依据）。'],
+    skip_reason='[frontend-contract] 报表筛选的挂载位置与请求参数，由前端单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['frontend-contract', 'report', 'filter', 'warehouse', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [frontend-contract]：前置 = 报表中心（#7377 段 4/5/6）。零网络、零 LLM。',
+)
+
+# ── QC-005 [NORMAL] 质量成本补上「报废工时」：报工 work_type=scrap 可采集，报废「料」仍未采集（issue #7377 段 8）（源: cases/misc.yml）──
+_CASE_QC_005 = EvalCase(
+    id='QC-005',
+    legacy_id='',
+    title='质量成本补上「报废工时」：报工 work_type=scrap 可采集，报废「料」仍未采集（issue #7377 段 8）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-23，逐字）：「按你建议继续做」—— 授权按 AI 建议处理「报废料未采集」这条缺口。'],
+    expectations=[],
+    data_checks=['**建议与依据（AI 裁定，2026-10-23）**：报废**料**（物料成本）确实采不到（`quality_inspections` 只到成品帘级，没有到批次）；但报工表有**三态** `normal/rework/scrap` 且每条报工带**单价快照** ⇒ 报废**工时**可采。所以**补工时、不编料**：新增分项「报废工时」，与返工同构同维度，`报废料` 一项照旧恒未知。', '**判据 1（整表）**：`work_type=scrap` 的报工按单价快照计入「报废工时」；窗口内没有报废报工 ⇒ 该项**未知**（未发生 ≠ 0），并进 `unknownComponents`。判据 = `QualityCostReportTest#scrapLaborIsCollected` / `#noScrapLogsMeansUnknownScrapLabor`。', '**判据 2（报废料仍恒未知）**：`scrap_material` 的 `known=false`、`amount=null` —— 补了工时**不许**顺手把料也填个数。判据 = `#scrapMaterialIsUnknownNotZero`。', '**判据 3（🔴 维度表分列 + 恒等式）**：维度汇总新增 `scrap` 列；行合计 = 返工 + 报废 + 赔付；`合计 == Σ行 + 未归属` 在含报废时仍成立；未定价报废报工不计金额但被数进 notes。判据 = `QualityCostBreakdownTest#scrapLaborHasItsOwnColumn` / `#scrapKeepsIdentity` / `#unpricedScrapIsCounted`。', '**判据 4（商品维度同构）**：报废工时也按订单行小计占比摊（与返工同一条 `allocateToProducts`）。判据 = `#scrapLaborIsAllocatedInProductDimension`。', '**判据 5（前端分列展示）**：维度行同时显示「返工 X · 报废 Y · 赔付 Z」，不把两者相加成一个数；CSV 增「报废工时 / 报废行数」两列；notes 写清「工时已采集、料未采集」。判据 = `reports.test.tsx#维度汇总：按客户列出金额与无法归属`。', '**边界（照实登记）**：① 报废**料**（物料成本）仍未采集，需要质检记录到批次才可采；② 报废工时是**报工成本**（工时×工序单价），不是物料价值；③ 报废工时精度取决于报工是否按实填写。'],
+    skip_reason='[frontend-contract] 报废工时的采集口径与分列展示，由 Java 单测 + 前端单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['frontend-contract', 'quality-cost', 'scrap', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例前後端口径：前置 = 质量成本四维（#7377 段 5/6）。零网络、零 LLM。',
+)
+
+# ── WH-009 [NORMAL] 成品仓仓位号管理：出库单页新建 / 编辑 / 启停 / 删除仓位，占用中锁定改号与删除（issue #7785）（源: cases/misc.yml）──
+_CASE_WH_009 = EvalCase(
+    id='WH-009',
+    legacy_id='',
+    title='成品仓仓位号管理：出库单页新建 / 编辑 / 启停 / 删除仓位，占用中锁定改号与删除（issue #7785）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-25，逐字）：「缺个仓位号管理功能吧？允许用户在这个页面上创建和管理」（附图 = 出库单页 / 成品库存空态，红框圈住「系统会自动给每个成品分配成品仓仓位号」）。'],
+    expectations=[],
+    data_checks=['**判据 1（新建）**：`POST /api/admin/warehouse-locations` 仓位号统一大写（`a-01` = `A-01`）、区域缺省 `A / 成品区`、落成品仓（不存在时自动建）；重复仓位号 ⇒ 422 可读提示（DB 唯一索引兜底，不冒 5xx）。判据 = `WarehouseLocationManagementTest#createNormalizesCodeAndDefaultsZone` / `#createDuplicateCodeIsReadableConflict` / `#createRejectsInvalidCodeBeforeCreatingWarehouse`。', '**判据 2（🔴 占用中锁定）**：有 `in_stock` 成品占着仓位时，改仓位号 / 删除 ⇒ 409 且零写入；备注 / 区域名 / 启停仍可改。判据 = `#updateRejectsRenamingOccupiedBin` / `#deleteRejectsOccupiedBin` / `#updateAllowsRemarkAndZoneOnOccupiedBin`。', "**判据 3（停用只影响后续分配）**：停用后 `nextFreeBin` 不再返回它（分配查询只看 `status='active'`），已占用库存不受影响，可重新启用。判据 = `#updateTogglesStatus` + `WarehouseLocationMapper#selectBestBinForAllocation` 的 `status = 'active'` 谓词。", '**判据 4（软删可追溯）**：删除 = 软删；历史单据的 `bin_code` 快照不动（V196 列注释）。判据 = `#deleteSoftDeletesFreeBin`。', '**判据 4b（并发双删不谎报）**：删除影响 0 行（另一请求刚删掉）⇒ 404 + 「可能刚被其他人删除」建议，不返回 200。判据 = `#deleteLostRaceIsNotFound`。', '**判据 5（租户隔离）**：跨租户改 / 删命中 404 且零写入。判据 = `#crossTenantIsInvisible`。', '**判据 6（清单口径）**：在库件数由 `finished_goods_stock` 的 in_stock 行按 `bin_code` 一次 GROUP BY 聚合（不按 500 行截断）；`includeInactive=true` 带出停用仓位；清单带 `capacity / inStockCount`（水位列）。判据 = `#listViewMarksWaterLevelAndIncludesInactive` + `FinishedGoodsStockMapper#selectInStockCounts`。', '**判据 7（权限 / 端点）**：读 `inbound:view`、写 `inbound:create`（零授权 delta）；清单 / 新建 / 批量新建 / 编辑 / 删除五个端点都透传当前租户。判据 = `WarehouseLocationControllerTest#permissionCodes` / `#listLocationsScopesTenantAndPassesIncludeInactive` / `#createLocationScopesTenant` / `#batchCreateScopesTenant` / `#updateAndDeleteScopeTenant`。', '**判据 8（商家面可达）**：出库单页第三页签「仓位管理」可新建 / 编辑 / 启停 / 删除；`inbound:create` 缺失时整块只读；占用中行内删除禁用、编辑弹窗仓位号禁用；成品库存空态有「管理仓位」入口。判据 = `frontend/admin-web/tests/unit/components/WarehouseLocationPanel.test.tsx` + `frontend/admin-web/tests/unit/pages/outbound-orders.test.tsx`「仓位管理入口」。', '**边界（照实登记）**：① 不做移库（把在库成品从 A-01 挪到 A-02）；② 容量 / 水位 / 批量建号见 WH-010；③ 仓位号只允许字母 / 数字 / 短横线 / 下划线（中文 / 空格拒绝）—— 与自动分配的 `A-01` 同形态。'],
+    skip_reason='[backend-contract] 仓位档案的 CRUD / 占用锁定 / 租户隔离由 Java 单测验证，商家面由前端单测验证，非 LLM 行为',
+    tags=['backend-contract', 'inventory', 'warehouse-location', 'master-data', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract + frontend-contract]：前置 = `warehouse_locations`（V196）+ `finished_goods_stock` 在库行 + `inbound:view/create`。零网络、零 LLM。',
+)
+
+# ── WH-010 [NORMAL] 成品仓水位智能分配 + 区域容量 + 批量建号（issue #7791）（源: cases/misc.yml）──
+_CASE_WH_010 = EvalCase(
+    id='WH-010',
+    legacy_id='',
+    title='成品仓水位智能分配 + 区域容量 + 批量建号（issue #7791）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-26，逐字）：「后续成品帘打包入库时要自动分配仓位时要能根据仓位水位智能分配」。', '用户（2026-10-26，逐字）：「另外仓位管理允许批量创建，用户输入一个数字区间后批量生成仓位号」。', '用户（2026-10-26，选择口径）：水位按件数；容量按区域统一（不是逐仓）；默认 10 件。'],
+    expectations=[],
+    data_checks=['**判据 1（水位 = 件数 / 容量）**：一仓多件后按 `count(in_stock) / capacity` 分配，选比值最低且 `count < capacity` 的 active 仓，同水位按仓位号；不再按「最小空闲号」。判据 = `WarehouseLocationMapper#selectBestBinForAllocation` + `WarehouseLocationCapacityBatchTest` / `WarehouseLocationServiceTest`。', '**判据 2（一仓多件）**：V198 去掉 `uk_finished_goods_bin_in_stock`（同套装/部位仍唯一）；容量列为 `capacity`（默认 10，CHECK 1~999）；`schema.sql` 终态与迁移一致。判据 = `FinishedGoodsStockMapperTest#oneBinHoldsMultiplePackagesUpToCapacity` + `V198__warehouse_capacity_and_water_level.sql`。', '**判据 3（容量按区域统一）**：改一个仓的容量 ⇒ 本区所有仓同步；新建不传容量 ⇒ 沿用本区现有容量，新区域缺省 10；批量给了不同容量 ⇒ 本区一起改。判据 = `WarehouseLocationCapacityBatchTest#createUsesZoneCapacity` / `#createWithCapacitySyncsZone` / `#updateCapacitySyncsZone` / `#batchWithCapacitySyncsZone`。', '**判据 4（🔴 批量建号幂等 + 有界）**：A 区 1~20 ⇒ A-01…A-20；重复执行 ⇒ 新建 0 / 跳过 20；单次 ≤500、编号 1~9999、结束不小于开始；跨区域不串号。判据 = `#batchCreatesRangeAndCountsSkipped` / `#batchRangeRejected` / `#batchNumberUpperBound` + `WarehouseLocationControllerTest#batchCreateScopesTenant`。', '**判据 5（并发闸门）**：候选行 `FOR UPDATE OF l`，过账事务内锁行后复核件数再 insert；并发不会把同仓塞过容量。判据 = `WarehouseLocationAllocationRealDbTest`（真库两事务：第二事务等锁、第一事务填满后复核并顺延 A-02；去掉 `FOR UPDATE` 则第二事务不阻塞 ⇒ 判据红）+ Mapper SQL 断言。', '**判据 6（商家面水位 / 批量）**：仓位管理清单显示「在库件数 / 容量」与满仓状态；有「批量新建」弹窗（数字区间 + 预览已存在数）；空态也能批量建号；单仓新建 / 编辑带容量。判据 = `frontend/admin-web/tests/unit/components/WarehouseLocationWaterLevelBatch.test.tsx`。', '**判据 7（容量下调不驱逐）**：容量改到低于当前在库件数 ⇒ 已有件保留，水位可 >100%，只停止继续分配；不做自动移库。判据 = 服务层不驱逐 + 清单原样显示（边界照实登记）。', '**判据 8（标签口径不变）**：一张唛仍是一行在库 + 标签上的 bin_code；一仓多件后靠短码/token 定位具体件，不改扫唛出库链路。判据 = WH-007 + `FinishedWashLabelTest`。', '**边界（照实登记）**：① 容量 = 件数，不做体积 / 重量 / 货架层级；② 不做移库 / 跨仓调拨；③ 真库两事务并发判据已做（`WarehouseLocationAllocationRealDbTest`），未做长时间高负载压测；④ 存量仓位迁移后容量统一为 10。'],
+    skip_reason='[backend-contract] 水位 / 容量 / 批量建号由 Java 单测 + 前端单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'inventory', 'warehouse', 'finished-goods', 'master-data', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract + frontend-contract]：前置 = V198（warehouse_locations.capacity + 去掉 bin 唯一索引）+ 成品在库行 + `inbound:view/create`。零网络、零 LLM。',
+)
+
+# ── WH-011 [NORMAL] 成品打包入库：同一订单固定入同一仓位（仓位满了也不换仓，issue #8103）（源: cases/misc.yml）──
+_CASE_WH_011 = EvalCase(
+    id='WH-011',
+    legacy_id='',
+    title='成品打包入库：同一订单固定入同一仓位（仓位满了也不换仓，issue #8103）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-29，逐字）：「有个问题，打包入库成品的时候，一个订单内的商品入库到同一仓位」。', '用户（2026-10-29，逐字）：「即使仓位满了也要入库到相同仓位，这个是新规则」。'],
+    expectations=[],
+    data_checks=['**判据 1（🔴 同单同仓）**：同一订单（`order_id`）的成品入库固定落在该订单已在库的仓位 —— 先按订单查在库行（`WarehouseLocationMapper#selectInStockBinByOrder`），命中即复用；一张单里同一订单只取一次仓位（`InboundOrderService#postFinishedLines` 按 orderId 缓存）。判据 = `WarehouseLocationServiceTest#sameOrderReusesItsBinEvenWhenFull` + `InboundStockDocumentTest#finishedPostKeepsWholeOrderInOneBin`（仓位只取一次、两行同一个 bin）。', '**判据 2（🔴 满了也不换仓）**：该仓在库件数已达 / 超过 capacity ⇒ 同单后续成品**仍进该仓**（容量只约束新订单首件选仓）；在库仓位查询**不带** `count < capacity` 过滤。真库判据 = `WarehouseLocationAllocationRealDbTest#sameOrderStaysInItsBinWhenFull`（A-01 容量 1 已满 ⇒ 同单第二件仍返回 A-01，而 `nextFreeBin` 给 A-02）。', '**判据 3（同单并发串行）**：`pg_advisory_xact_lock(hashtextextended(tenantId:orderId))` 按订单排队 —— 后到的事务拿到锁才读「该单已有仓位」，因此看到前者已提交的事实。判据 = `WarehouseLocationAllocationRealDbTest#concurrentSameOrderAllocationsShareOneBin`（第二事务在锁上等待；提交后两事务同仓）+ `WarehouseLocationMapperTest#sameOrderBinLookupIgnoresCapacityAndSerializesPerOrder`。', '**判据 4（新订单口径不变）**：没有在库行的订单仍按 V198 水位规则选未满仓（本区全满才顺延新建号）；无订单引用 ⇒ 不走同单规则、不拿锁。判据 = `#firstPieceOfOrderLocksThenUsesWaterLevel` + `#noOrderReferenceFallsBackToWaterLevel`。', '**判据 5（重复占用显式失败）**：同一件成品（同一张唛 / 同一订单行）重复入库 ⇒ `claimInStock` 0 行 ⇒ 409 冲突、整笔回滚，**不**换下一个仓位重试。判据 = `InboundStockDocumentTest#finishedPostRejectsDuplicatePiece`。', '**判据 6（商家面水位显示超容）**：在库件数 > capacity ⇒ 状态显示「超容」（不是「已满」），件数照实显示 `12 / 10`；说明文案写明同单同仓。判据 = `frontend/admin-web/tests/unit/components/WarehouseLocationWaterLevelBatch.test.tsx`。', '**边界（照实登记）**：① 容量仍约束新订单首件选仓，不再约束同单追加；② 不做自动移库 / 调拨，已入在库行不回迁；③ 发货（`shipped`）/ 撤销打包（`unpacked`）后重新打包 ⇒ 该单无在库行 ⇒ 按首件规则重选仓（不是「永远记住上次的仓」）；④ 真库并发判据是两个事务的点对点对照，不是长时间压测。'],
+    skip_reason='[backend-contract] 同单同仓由 Java 单测 + 真库 + 前端单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'inventory', 'warehouse', 'finished-goods', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract + frontend-contract]：前置 = V196/V198 成品在库 + 仓位容量 + 成品入库单（`biz_category=finished`）。零网络、零 LLM。',
+)
+
+# ── MC-120 [NORMAL] 页面动作登记表 → 步骤级教学（F6 / P2-1，承接 #5989）：how_to 命中逐字返回登记表、未登记如实说没有步骤级指引（源: cases/misc.yml）──
+_CASE_MC_120 = EvalCase(
+    id='MC-120',
+    legacy_id='',
+    title='页面动作登记表 → 步骤级教学（F6 / P2-1，承接 #5989）：how_to 命中逐字返回登记表、未登记如实说没有步骤级指引',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商品价格在哪改、具体怎么操作'],
+    expectations=['nav_guide(action=how_to)'],
+    data_checks=['🔴 **命中 ⇒ 逐字来自登记表**：`nav_guide(action=how_to, topic=…)` 返回的 `steps / preconditions / menu / route / permission` 必须与 `backend/ai-agent-service/app/tools/page_actions.py` 的 `PAGE_ACTIONS[product_price_update]` **逐字相等** —— 不得改写、不得补步骤、不得跨动作拼接。改商品价的 steps 指向真实页面 `/products` 与真实文案「编辑」/「价格（元）」/「保存修改」。', '🔴 **未登记 ⇒ 如实**：登记表里没有的动作（如「导出客户名单」「改客户姓名」）必须给出导航（若有）+ 明确说「没有步骤级指引」，**不得**编步骤；`lookup()` 未命中必须返回 `None`（fail-closed，不猜）。', '**结构判据（会红）** = backend/ai-agent-service/tests/test_page_actions.py：① 路由真实性（每条 route 能在 frontend/admin-web/src/app 下解析到 page.tsx）；② 权限码真实性（每条 permission ∈ menu_navigator.MENU_TREE 现取码集）；③ steps ≥ 2 条且每条 ≥ 6 字；④ 未登记必如实；⑤ 判别力自证（合成一条指向不存在页面的登记 ⇒ 路由判据红）。', '**边界（照实登记）**：首批只覆盖 5 个高频动作（改商品价 / 新建商品 / 改客户收货信息 / 新增员工 / 配置加工项）；未登记动作一律保持「没有步骤级指引」。`permission` 取导航真值里的**页面码**（与 nav_guide 裁剪同源）；写动作细码（product:create 等）写在 `preconditions` 的中文口径里，**不编造码**。'],
+    skip_reason='',
+    tags=['navigation', 'teaching', 'fail-closed', 'red-proof', 'no-fabrication'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='改商品价的入口在 frontend/admin-web/src/app/(dashboard)/products/page.tsx（侧边栏「商品管理」）；编辑页 products/[id]/edit 的价格列在 SKU 表（文案「价格（元）」）。菜单被改名/移除 ⇒ 登记面判据先红。',
+)
+
+CASES = (
+    _CASE_MC_001,
+    _CASE_MC_002,
+    _CASE_MC_003,
+    _CASE_MC_004,
+    _CASE_MC_005,
+    _CASE_MC_006,
+    _CASE_MC_007,
+    _CASE_MC_008,
+    _CASE_MC_009,
+    _CASE_MC_010,
+    _CASE_MC_011,
+    _CASE_MC_012,
+    _CASE_MC_013,
+    _CASE_MC_014,
+    _CASE_MC_015,
+    _CASE_MC_016,
+    _CASE_MC_017,
+    _CASE_MC_018,
+    _CASE_MC_019,
+    _CASE_MC_020,
+    _CASE_MC_021,
+    _CASE_MC_022,
+    _CASE_MC_023,
+    _CASE_MC_025,
+    _CASE_MC_024,
+    _CASE_MC_026,
+    _CASE_MC_027,
+    _CASE_MC_028,
+    _CASE_MC_038,
+    _CASE_MC_039,
+    _CASE_MC_041,
+    _CASE_MC_047,
+    _CASE_MC_029,
+    _CASE_MC_030,
+    _CASE_MC_031,
+    _CASE_MC_078,
+    _CASE_MC_032,
+    _CASE_MC_033,
+    _CASE_MC_034,
+    _CASE_MC_035,
+    _CASE_MC_036,
+    _CASE_MC_037,
+    _CASE_MC_043,
+    _CASE_MC_044,
+    _CASE_MC_045,
+    _CASE_MC_040,
+    _CASE_MC_048,
+    _CASE_MC_046,
+    _CASE_MC_042,
+    _CASE_MC_050,
+    _CASE_MC_051,
+    _CASE_MC_052,
+    _CASE_MC_053,
+    _CASE_MC_054,
+    _CASE_MC_055,
+    _CASE_MC_056,
+    _CASE_MC_057,
+    _CASE_MC_058,
+    _CASE_MC_059,
+    _CASE_MC_060,
+    _CASE_MC_061,
+    _CASE_MC_062,
+    _CASE_MC_063,
+    _CASE_MC_065,
+    _CASE_MC_064,
+    _CASE_MC_066,
+    _CASE_MC_067,
+    _CASE_MC_068,
+    _CASE_MC_069,
+    _CASE_MC_070,
+    _CASE_MC_049,
+    _CASE_MC_071,
+    _CASE_MC_072,
+    _CASE_MC_073,
+    _CASE_MC_074,
+    _CASE_MC_075,
+    _CASE_MC_076,
+    _CASE_MC_077,
+    _CASE_MC_079,
+    _CASE_MC_081,
+    _CASE_MC_082,
+    _CASE_PK_001,
+    _CASE_MC_080,
+    _CASE_MC_083,
+    _CASE_MC_084,
+    _CASE_MC_085,
+    _CASE_MC_086,
+    _CASE_MC_087,
+    _CASE_MC_088,
+    _CASE_MC_089,
+    _CASE_MC_090,
+    _CASE_MC_091,
+    _CASE_MC_092,
+    _CASE_MC_093,
+    _CASE_MC_094,
+    _CASE_MC_095,
+    _CASE_MC_096,
+    _CASE_MC_097,
+    _CASE_MC_098,
+    _CASE_MC_099,
+    _CASE_MC_100,
+    _CASE_MC_101,
+    _CASE_MC_102,
+    _CASE_MC_103,
+    _CASE_MC_104,
+    _CASE_MC_105,
+    _CASE_MC_106,
+    _CASE_MC_107,
+    _CASE_MC_108,
+    _CASE_MC_109,
+    _CASE_MC_110,
+    _CASE_MC_111,
+    _CASE_MC_112,
+    _CASE_MC_113,
+    _CASE_MC_114,
+    _CASE_MC_116,
+    _CASE_MC_117,
+    _CASE_MC_118,
+    _CASE_MC_119,
+    _CASE_SP_001,
+    _CASE_SP_002,
+    _CASE_SP_003,
+    _CASE_SP_004,
+    _CASE_SP_005,
+    _CASE_SP_006,
+    _CASE_AR_001,
+    _CASE_AR_002,
+    _CASE_AR_003,
+    _CASE_AR_004,
+    _CASE_PRC_001,
+    _CASE_PRC_002,
+    _CASE_APP_001,
+    _CASE_WH_001,
+    _CASE_WH_002,
+    _CASE_WH_003,
+    _CASE_WH_004,
+    _CASE_WH_005,
+    _CASE_WH_007,
+    _CASE_WH_008,
+    _CASE_WH_006,
+    _CASE_OPS_001,
+    _CASE_STK_001,
+    _CASE_PRC_003,
+    _CASE_PRC_004,
+    _CASE_RPT_001,
+    _CASE_RPT_002,
+    _CASE_RPT_003,
+    _CASE_QC_001,
+    _CASE_QC_002,
+    _CASE_RPT_004,
+    _CASE_PRC_005,
+    _CASE_STK_002,
+    _CASE_RPT_005,
+    _CASE_RWK_001,
+    _CASE_RWK_002,
+    _CASE_QC_003,
+    _CASE_RPT_007,
+    _CASE_APV_001,
+    _CASE_APV_002,
+    _CASE_QC_004,
+    _CASE_RPT_008,
+    _CASE_QC_005,
+    _CASE_WH_009,
+    _CASE_WH_010,
+    _CASE_WH_011,
+    _CASE_MC_120,
+)

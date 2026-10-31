@@ -1,0 +1,636 @@
+# GENERATED FILE — DO NOT EDIT
+# 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
+# 源: cases/*.yml（case-contract 单一源）
+# 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
+# 域: processing（源: cases/processing.yml，32 条）
+
+from ._schema import Difficulty, EvalCase, Skill
+
+# ── PP-002 [NORMAL] 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query）（源: cases/processing.yml）──
+_CASE_PP_002 = EvalCase(
+    id='PP-002',
+    legacy_id='2.14',
+    title='加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['基础加工分类下有哪些', '工序库里有哪些工序？'],
+    expectations=['processing_item_query', 'operation_catalog_query(action=operations)'],
+    data_checks=['两份目录逐条来自服务端（processing_item_query 加工项目录 / operation_catalog_query(action=operations) 工序库目录），不得编造；均为只读，回复里不得出现「已新增/已修改/已停用」类表述'],
+    skip_reason='',
+    tags=['processing_item', 'category'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition=[{'type': 'processing_item_count_for_keyword', 'source': '打孔', 'expect': 1}],
+)
+
+# ── PP-006 [NORMAL] 新增加工项只需名称+加工分类（不再有单价/计价方式），且必须真的调工具建出来（源: cases/processing.yml）──
+_CASE_PP_006 = EvalCase(
+    id='PP-006',
+    legacy_id='',
+    title='新增加工项只需名称+加工分类（不再有单价/计价方式），且必须真的调工具建出来',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['查询打孔加工', '新增加工项，名称叫测试加工，分类选窗帘加工（分类 ID：pcat_eval_curtain）', '确认'],
+    expectations=['processing_item_query(keyword=打孔)'],
+    data_checks=['前置（precondition）：评测栈种子里加工项「打孔」（`pi_eval_punch`）存在（status=active）、加工分类「窗帘加工」（`pcat_eval_curtain`）存在 —— 它们是 R1 的加工项查询与下面 `output_verify` 的接地对象（success=true）；前置不成立时 agent 只能如实回「找不到该加工项或分类」，判红会伪装成「agent 不会建加工项」', '加工项目录**不再有单价与计价方式**（issue #4882，用户裁定；V101 迁移删列）：`POST/PUT /api/admin/processing-items` 的请求体只认 `name` + `categoryId`（+ 可选 `craftHint` / `description`），`pricingMethod` / `unitPrice` 两键已随 DTO 一并退场 —— 新增加工项不得要求用户补「计价方式」或「单价」', 'processing_item_query 响应条目无 pricing_method / unit_price / per_meter_quantity（计价方式与单价已退场；每米数量更早已回滚，issue #3005）', '商品详情 processingItems 无 custom_per_meter_quantity / perMeterQuantity（商品级密度覆盖已回滚）'],
+    skip_reason='[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端黄金策只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「新增加工项（action=create_processing_item）」（processing_item_manage）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 只读路径 processing_item_query（加工项查询）+ 如实说明 + 引导去后台页面。',
+    tags=['processing_item', 'crud'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=['请提供计价方式', '请选择计价方式', '请输入单价', '请提供单价', '暂不支持', '功能不存在', '没有这个功能'],
+)
+
+# ── PP-007 [NORMAL] 黄金策加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）（源: cases/processing.yml）──
+_CASE_PP_007 = EvalCase(
+    id='PP-007',
+    legacy_id='',
+    title='黄金策加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['把加工项打孔的描述改成顶部打孔工艺', {'fallback': '确认'}, '再看下加工项打孔的描述', {'repeat_until': {'tool_called': 'processing_item_query', 'max': 3}, 'fallback': '确认'}],
+    expectations=['processing_item_query'],
+    data_checks=['前置（precondition）：评测栈种子里「打孔」（`pi_eval_punch`）存在且 `status=active`、`craft_hint=打孔` —— 它是下面 `update_item` 回读断言的接地对象（success=true）；前置不成立时 agent 只能如实回「找不到该加工项」，判红会伪装成「agent 不会改」', '回读结果中 name 仍为「打孔」、craftHint 仍为「打孔」、status 仍为 active（未被清空）——只改 description 不得清空其它字段'],
+    skip_reason='[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端黄金策只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「修改加工项（action=update_item）」（processing_item_manage）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 只读路径 processing_item_query（加工项查询）+ 如实说明 + 引导去后台页面。',
+    tags=['processing_item', 'llm_behavior', 'tool_call', 'update'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=['暂不支持', '功能不存在', '没有这个功能', '修改失败', '更新失败', '无法修改'],
+)
+
+# ── PP-008 [NORMAL] 黄金策加工项 LLM 行为：停用加工项（toggle_item_status → inactive）（源: cases/processing.yml）──
+_CASE_PP_008 = EvalCase(
+    id='PP-008',
+    legacy_id='',
+    title='黄金策加工项 LLM 行为：停用加工项（toggle_item_status → inactive）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['把加工项打孔停用', {'fallback': '确认'}],
+    expectations=['processing_item_query'],
+    data_checks=['前置（precondition）：评测栈种子里加工项「打孔」（`pi_eval_punch`）存在且 `status=active`、`craft_hint=打孔`（`xiaobu_eval_seed.sql`；**#4882 后加工项目录已无 `pricingMethod` / `unitPrice`**，前置判据随之改锚 `status` / `craft_hint`）—— 它是 R1 停用指令与 `output_verify`（status=inactive）的接地对象（success=true）；前置不成立时 agent 只能如实回「找不到该加工项」，判红会伪装成「agent 不会停用加工项」', 'status 目标值为 inactive（工具返回 `{item_id, status}` 可直接核对）；重复执行幂等（再停用一次仍是 inactive）'],
+    skip_reason='[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端黄金策只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「停用加工项（action=toggle_item_status）」（processing_item_manage）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 只读路径 processing_item_query（加工项查询）+ 如实说明 + 引导去后台页面。',
+    tags=['processing_item', 'llm_behavior', 'tool_call', 'toggle'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=['暂不支持', '功能不存在', '没有这个功能', '停用失败', '无法停用'],
+    precondition=[{'type': 'processing_item_count_for_keyword', 'source': '打孔', 'expect': 1}],
+)
+
+# ── PP-009 [NORMAL] 加工项已无单价与计价方式 ⇒ calculate_price 端点与 action 整体退场（退场守卫）（源: cases/processing.yml）──
+_CASE_PP_009 = EvalCase(
+    id='PP-009',
+    legacy_id='',
+    title='加工项已无单价与计价方式 ⇒ calculate_price 端点与 action 整体退场（退场守卫）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['success=true', '**退场事实（本用例的判据）**：`POST /api/admin/processing-items/calculate` 不存在（`ProcessingItemController` 已无该 `@PostMapping`；`dto/PriceCalculateRequest.java` / `dto/PriceCalculateResponse.java` 两个文件已删除），`processing_item_manage` 工具**不再暴露** `calculate_price` action。v1 证据：`ProcessingItemControllerTest.calculateEndpointIsGone`（MockMvc 实测 **405 Method Not Allowed**，**不是 404** —— 路径模式 `/{id}` 仍匹配 `/calculate`，Spring 对「路径命中、方法不命中」给 405；写成 404 会恒红）+ `tests/smoke/test_08_business_extended.py::test_calculate_price_endpoint_is_gone`（活栈同款退场守卫）+ `test_tools_processing_item_manage.py`（action 集不含 `calculate_price`）', '**为什么退场**：加工项目录已无 `pricing_method` / `unit_price`（V101 `DROP COLUMN`）⇒ 后端「按计价方式算价」没有输入了；对客加工费的真值源是**加工费组合**（`processing_fee_combinations`，元/米），R10 / issue #4882', '**覆盖损失（如实登记，不粉饰）**：原用例覆盖的 `calculate_price` 的「尺寸通路 / `dimensions` 不双计」（issue #3672 的 per_area 双计缺陷）这一断言面**随端点删除而消失**；per_area 计价路径在 #4572 已因 `刺绣工艺` 夹具真删而移出评测覆盖，本单使其**彻底不再存在**。若将来恢复「非米类加工项」，需同时恢复端点与该用例、并新增显式标注为评测夹具的 per_area 项'],
+    skip_reason="[backend-contract] 端点与工具 action 已随 issue #4882 整体退场（`ProcessingItemController` 去 `@PostMapping('/calculate')` + 两个 DTO 删除 + `ProcessingItemService.calculatePrice` 删除 + 工具 action 删除）⇒ 断言由 Java 单测与工具签名契约测试执行，无 LLM 环节，不进 agent-eval 冒烟",
+    tags=['processing_item', 'backend_contract', 'removed_capability'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PP-010 [NORMAL] 生产模块确定性核心 - 工艺路线实例化/计件/全部活跃工序实例报满自动完工（单测覆盖）（源: cases/processing.yml）──
+_CASE_PP_010 = EvalCase(
+    id='PP-010',
+    legacy_id='',
+    title='生产模块确定性核心 - 工艺路线实例化/计件/全部活跃工序实例报满自动完工（单测覆盖）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这个加工单走到哪了，还要多久完成'],
+    expectations=['direct_reply'],
+    data_checks=['工艺路线实例化：布帘·韩褶 11 道（精裁-布→…→外帘发货）；定型=否移除 定型-布/复烫-布；特殊选项插条件工序（拼2次→拼2次-布）', '应做数量=算料引擎输出（韩褶-布=折数 48、米工序=用料 12.3、套工序=1）—— 报工只确认不心算', '计件 = Σ(合格数量 × 单价 × **当时快照的**系数)（issue #4604 用户裁定 B：**不追溯**）—— 历史实例带着快照 `factor`（如「一分为二」1.7）⇒ 历史金额仍按 1.7×（**一字不变**）；#4589 起新实例**不带 `factor` 键** ⇒ 缺省 1 ⇒ **新报工不乘**（「计件工资 = 数量 × 计件单价」只对新报工成立）；返工/报废不计件；单工序一人制（无计件人数分摊）', '完工判定（**2026-09-21 改判，issue #4961**）：**该加工单的全部活跃工序实例**合格量满应做数量 ⇒ 加工单置 completed（订单保持 producing）—— 「必完工序（外帘装袋，打包前置）全绿 ⇒ 自动完工」这条口径**已整条退场**：库里 `is_must_finish` 列保留但值恒 false、判定**不消费**它，Python `piecework.is_production_done` 与 Java `ProductionService#allInstancesDone` 逐字同源。**反向护栏（判据只增不减）**：任一非必完工序（如 `精裁-布`）未报满 ⇒ **不得**判完工（红证：`ProductionServiceTest#unfinishedNonMustFinishOperationBlocksCompletion` 改前实测 `order_completed=true`、期望 `false`；Python 侧 `test_is_production_done_rejects_unfinished_non_must_finish_operation`）'],
+    skip_reason='[backend-contract] 生产确定性核心是纯函数（app/production/），由单元测试全量覆盖（tests/test_production/），非 LLM 行为，不进入 agent-eval 冒烟（同 CH-036/037/038 惯例）',
+    tags=['processing', 'production', 'piecework'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PP-013 [NORMAL] 特殊选项全登记 - 19 项无第四类未登记（条件工序/计件系数/不计件 三分类门禁）（源: cases/processing.yml）──
+_CASE_PP_013 = EvalCase(
+    id='PP-013',
+    legacy_id='',
+    title='特殊选项全登记 - 19 项无第四类未登记（条件工序/计件系数/不计件 三分类门禁）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这个加工单有哪些特殊选项，分别怎么算工序和计件'],
+    expectations=['direct_reply'],
+    data_checks=['19 项真值源特殊选项**每一项**都落在三类之一（加工序=SPECIAL_OPTION_ROUTINGS / 加系数=OPTION_FACTOR_SCOPES / 不计件=NON_PIECEWORK_OPTIONS），不允许第四类「未登记」', 'A′ 类 5 道新工序（绑带-纱/logo条-布/立边-布/扣环-布/防翘扣-布）在 OPERATION_CATALOG 中存在且分组/单位/单价齐全，且有映射指向它们', '三条复用映射的锚点位置正确：布绑带→绑带-布 在 布帘车被 之后、余料做帘头→帘头制作 在 布三边 之后、抱枕→抱枕 在 外帘打卷 之后（断言前后相邻工序）', '系数口径两半（issue #4604 改判，用户裁定 B 不追溯）：**下单流程**零消费 —— 真值源表 `OPTION_FACTOR_SCOPES` **保留**（它是 V59/V72 已发布迁移种子与 schema.sql 终态的真值源镜像，三源收敛守卫按它比对），「一分为二」命中该档位时工序实例**逐值不变**、且**没有 `factor` 键**（往表里注入逐工序/逐部位限定档后实例仍逐值不变）；**计件读取**半边 —— 新实例（无 `factor` 键）系数缺省 1 ⇒ 合计 = 不带选项，**历史实例（当时快照 1.7）仍按 1.7 倍**（历史金额一字不变）', '不计件显式：余料带回-布/-纱 ⇒ 路线与工序实例**逐值不变**（**没有 `factor` 键**），且它们是**被登记**为不计件而不是「查不到映射」'],
+    skip_reason='[backend-contract] 生产确定性核心是纯函数（app/production/），由单元测试全量覆盖（tests/test_production/test_special_options.py），非 LLM 行为，不进入 agent-eval 冒烟（同 PP-010 惯例）',
+    tags=['processing', 'production', 'piecework', 'special_options'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PP-011 [NORMAL] 加工单生产明细与洗水码渲染（工序进度 / 一部位一码 / 计件）（源: cases/processing.yml）──
+_CASE_PP_011 = EvalCase(
+    id='PP-011',
+    legacy_id='',
+    title='加工单生产明细与洗水码渲染（工序进度 / 一部位一码 / 计件）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['打开加工单生产明细，看工序进度和计件汇总，打印任务卡给工人扫码'],
+    expectations=['direct_reply'],
+    data_checks=['工序进度表按部位分组渲染，行内给出「工序名 / 分组 / 应做数量+单位 / 单价 / 状态（待做|已完成）/ 已完成数量 / 报工人」', '**「必完」标记已整体退场**（**2026-09-21 改判，issue #4961**；用户裁定「完工 = 全部工序实例报满」⇒ 不再有「必完」这个配置维度）：`ProductionProgressTable` **不渲染**任何必完 badge（改前形态 = 「必完工序（is_must_finish）加「必完」标记；非必完工序不得出现该标记」）；行内字段枚举 = 工序名 / 分组 / 应做数量+单位 / 单价 / 状态（待做|已完成）/ 已完成数量 / 报工人。读面键 `is_must_finish` **仍在**（服务端恒 `false`，历史载体）但**界面零消费**。红证（移除类判据 = 「改前**存在**、断言它**不存在**」）：把 badge 加回 ⇒ 该断言红。证据：frontend/admin-web/tests/unit/components/ProductionProgressTable.test.tsx', '进度条读 progress.percent 且与「已完成 done/total 道工序」文案一致（50% ⇒ 1/2）', '计件汇总渲染 total（¥ 两位小数）+ per_operation 明细；per_worker 非空时展示分人金额', '🔴 **洗水码打印（issue #4964 立版式；issue #5646 改判纸宽 30mm → 50mm，用户 2026-09-26 逐字「洗水码宽是50，长度根据我们实际需要来定」）**：纸型 = **竖版 50mm × 140mm 单列 + 上下各留白 15mm**（2026-10-28 改判，见本条尾部 🟡 段），照**真实工单**（亿家纺织「成品定制」58mm 竖排小票：单号/客户/第N套共M套/宽高/加工方式/用料表/备注/QR）的信息顺序；粒度仍是**一部位（商品行）一张**（N = `positions.length`）。判据（逐条可红）：① **张数** = **Σ 开数**（部位数 × 各自 `openCount`：3 个单开商品 ⇒ 3 张；双开/三开/四开按开数展开，2026-10-26 改判）；② **每张的码不同**（`task-card-qr` 的 `svg > title` 逐张不同，= 该部位自己的 `scan_url`，形态 `https://<稳定域名>/s/<8 位短码>`）；③ **可打印尺寸 = 竖版 50mm × 140mm**（`@page` 含 `size: 50mm 140mm`、标签容器 `50mm × 140mm`、`padding: 15mm 1.2mm 15mm` 且 `overflow: hidden`，每张独占一页）—— 旧值 `size: 50mm 150mm` / `size: 50mm 110mm` / `size: 30mm 60mm` / `size: 50mm 60mm` / `size: 50mm 70mm` / `width: 30mm` 一律不得残留（留一条即假绿）⇒ 改回 ⇒ 必红；④ **字段面**（用户 2026-09-21 字段裁定；2026-10-25 追加抬头与特殊选项行）：**纸面抬头 = 企业名 + 「成品定制」**（居中两行；企业名缺值 ⇒ 整块不渲染，不印空行/「未设置」）/ **单号（加工单号，第一行）** / 客户 / **安装小区** / **安装位置**（2026-10-28 用户逐字「把安装小区和安装位置放置到客户那一行下面」，issue #7986） / 第 N 套 · 共 M 套 / **帘种** / **货号（值 = 颜色内容）** / 门幅 / **用料米数** / **成品宽高** / **加工方式**（工艺 · 加工类型 · 打开方式 · 定型；🔴 **加黑加粗**，2026-10-28 用户逐字「把加工项信息加黑加粗」，issue #7987）/ **褶法**（= 是否采用韩褶公式 + 韩褶折数，**一个字段**：`韩褶公式 52折` / `倍数法`；判不出 ⇒ 该行不印）/ **特殊选项**（独立一行；与备注**不再合并**）/ **备注**（= 快照备注）/ **布料批次**（**末行**，值 = 快照键 `batchNo`；未指派批次印 `—`、无快照行整行不出现，issue #7872），逐张按 `order_item_id ↔ 快照 itemId` 对齐（货号/门幅/用料/加工方式/褶法**取值一律走** `frontend/admin-web/src/lib/craft-display.ts` + `wash-label-content.ts` 的单一真值，纸面不另写推导）；**加工单号 / 交期 / 件名 / 算料公式不上纸**（2026-10-26 改判）；⑤ **退场两项**：**工序摘要**与**完整套号**不得再出现（改回来 ⇒ 必红）；⑥ 主标识**不省略**（单号 = 加工单号，`break-all` 允许折行、**绝不 truncate / line-clamp**；17 位订单号自 issue #7833 起不上纸）—— #4949 实测过一次折行把纸面底部内容挤出纸外，但本版纸型固定 140mm / 正文 11pt / **上下各留白 15mm**：满字段 15 行 = 102.18mm 装得下（可用 110mm，余 7.82mm ≈ 1.6 行），17 行起裁尾部文字（码永不被裁且离底 ≥ 15mm），折行本身仍安全；⑦ 底部**居中二维码**行 `shrink-0`（空间不够只裁补充文字，**绝不裁码**；码下沿与底部虚线**恒 ≥ 15mm** = `.task-card-label` 的 `padding-bottom: 15mm`，2026-10-28 用户逐字「多的30要添加到顶部和底部虚线下处各15」；码**紧挨正文**（只隔 0.5mm 块距），不再空两行）；**「扫码报工」与人可读短码已退场**（2026-10-26 用户逐字「移除扫码报工和短码文字」；接受的缺口 = 纸上不再有手输码，扫不出码时走屏幕/重新出码，`docs/design/worker-h5-scan-and-report.md` §1.4 的「手输降级入口」随之作废，见下方 🟡 段）；⑧ **折行预算按新几何重算（issue #5646 推翻 #4946 为 27.6mm 窄版心设的三条妥协）**：**件名不再 clamp**（`line-clamp-*` 一律不得出现在件名行 —— 版心 47.599mm ≈ 22.5em/行，2 行可容 ~45em，实测最长件名只折 2 行；留着 clamp 只会砍掉真名；改回 `line-clamp-2` ⇒ 必红）；**加工方式**仍 `line-clamp-2` 但只作**预算上界**（实测最长形态「加工方式 罗马帘 · 定宽买高 · 三开 · 定型」在 47.599mm 下**恰好 1 行**，30mm 时代同样的值要 2 行）；**算料公式给足 2 行**（`line-clamp-2`；两条真公式串 —— `韩褶公式：…` 与 `褶倍数公式：…` —— 在 47.599mm 下都**恰好 2 行**。**这是容量迁移不是放宽**：2×22.5em = **45em** 反而大于旧口径 3×13em = **39em**，同时省下 2.538mm 高度。改回 `line-clamp-3` ⇒ 最坏构成（件名 2 + 加工方式 2 + 备注 2 + 公式 3 行）实测需 **61.4mm > 60mm** ⇒ 必红）；色号的**去重**（件名已含色号 ⇒ 不重复渲染）**保留**（50mm 下恢复独立渲染只是把同名信息多印一遍、白吃 2.538mm）。**缺码不编造**：该部位无 `scan_url`/`part_token` ⇒ **该张**出 `task-card-qr-placeholder` 占位、**不画假码**，其余张仍出真码；`positions` 为空 ⇒ 显式占位（不是空白）。**真机纸面几何实测**（方法同 #4949：真组件 → 内联真 Tailwind 产物 → Chromium（`@media print`）按 `@page` 出 PDF，逐元素量底边/右边）：**3 页 = 3 张、每张 50mm × 60mm、越界元素 0 个**（容器实测 49.998mm × 59.998mm、PDF MediaBox 142.08 × 169.92pt = 50.13 × 59.97mm）。**垂直预算在 50mm 新几何下重新实测并写进组件注释**（30mm 时代的 27.6mm 版心 / 17 行上限 / `@page size: 30mm 60mm` **全部作废**）：版心（正文右边界 48.799mm − 1.2mm 内边距）= **47.599mm**；6pt / `line-height 1.2` ⇒ **每行 2.538mm**（行高与旧版同值，变的是每行装多少字：13em/行 → **22.5em/行**）；60mm − 上下各 1.2mm ⇒ 可用 **57.6mm**；二维码行 45px = **11.906mm** + 中部上下各 0.5mm 间距。**最坏情况实测**（长件名 2 行 + 备注 2 行 + 算料公式 2 行 + 色号 + 其余单行）：正文总高 **56.337mm ≤ 60mm**（保守上界 —— 加工方式也折满 2 行 —— 为 58.878mm）；**长度取值理由**：`L` 逐值扫描 50/54/55/56/57/58/59/60/62mm，给出「中部文字块不被裁」的最小 L = **57mm**（56mm 实测被裁 **0.265mm**、55mm 被裁 1.323mm）⇒ 向上取整到标准标签长度 **60mm**（**是实测结论、不是沿用 #4946 的 60mm**）。红证（改前实测）：旧组件恒出 `@page size: 30mm 60mm`、件名带 `line-clamp-2`、算料公式为 `line-clamp-3` ⇒ ③「可打印尺寸」与 ⑧「折行预算」两条必红。🟡 **2026-10-25 改判（用户逐字「参考第二张图重新设计，把特殊选项，备注也加上」）**：① 纸面新增**抬头块**（企业名 + 「成品定制」，照参考工单「亿家纺织 / 成品定制」的形态）；② **特殊选项与备注各成一行**（改前把「特殊选项；快照备注」并成一行 ⇒ 纸上分不出哪句是哪类事实）；③ 纸长 60mm → **70mm**（`label-50x70`）——新增一个抬头块与一行后，60mm 的最坏构成已到 62.476mm > 可用 57.6mm。判据 ③/④ 随之改判，垂直预算注释同步重算（守卫 G4/G5/G6 的恒等式会在几何/字号漂移时判红）。 ⚠️ **DP30S 约束（登记）**：德佟 DP30S 是 203dpi 的 2 英寸头、**有效打印宽度通常只有 48mm（384 dots）** ⇒ **50mm 宽打不满**（右侧约 2mm 打不到，约束见 issue #5052「裁定记录 5」）；洗水码今天由 admin-web 走 A4/标签打印机出、**不是 DP30S**，该约束已写进组件注释。证据：`frontend/admin-web/tests/unit/components/TaskCardPrint.test.tsx`（16 条）+ 静态守卫 `tests/unit_ci_workflows/test_wash_label_geometry_guard.py`（G1~G8） 2026-10-25 改判（issue #7776，用户逐字「字体太小了，可以把长度延长些，因为长度可以无限长，宁愿长点也要把字体和信息都呈现出来……上下两头留白太多了」+「移除商品名称展示，保留货号，颜色，门幅和其他工艺信息，移除褶倍公式字段展示」）：① **纸长改为按内容撑开**（`washLabelLengthMm()` = 内容高上取整到 1mm、夹在 `[70,150]mm`；一批取最大值；系统打印 `@page` / 直连画布高 / 预览纸框**同一个数**），介质矩阵 `label-50x70` 的 70mm 降级为**最短**纸长；② **正文字号 6pt → 9pt**、短码 8pt → 12pt、企业名 10pt / 成品定制 7pt / 加工单号 10pt；③ **件名（商品名称）与算料公式（褶倍公式）两行退场**、**颜色恒印**（原「件名已含 ⇒ 去重」退场）、**门幅新增**（`item.doorWidth`，`2.8` / `2.8米` 都只补单位）；④ 货号：加工单快照尚无 `productCode` ⇒ **不拿 SKU 组合码冒充货号**（#7636 口径），后端补快照键后另单接。旧口径的「件名 `line-clamp` 不出现 / 算料公式 2 行 / 色号去重 / 固定 70mm」一律作废。 🟡 **2026-10-26（issue #7816）改判 —— 覆盖本条上面的全部几何 / 字号 / 字段 / 张数读数**（用户逐字：「水洗唛长度不足，设置为打印50*150」「如果订单是双开的要打印两份，单开的要打印1份，三开打印3份，4开打印4份，这个都要在打印预览中默认设置好」「字体还是太小，可以再大一点」「要体现出是否采用的韩褶公式以及韩褶的折数，用一个字段表示即可」「把订单号放到第一行，客户那一行上面，移除加工单号，二维码放到底部居中，移除扫码报工和短码文字，二维码可以放大一点，移除交期字段」）：① 纸型**固定 50mm × 150mm**（介质 `label-50x70` → **`label-50x150`**；#7776 的「按内容撑开 / 夹 70~150mm」**作废**）；② 正文 9pt → **12pt**（抬头 14pt / 副标题 10pt / 行高 1.2 / 内边距 1.2mm 不变；预算：版心 47.6mm、可用 147.6mm、每行 5.08mm，最坏构成 ≈ 111.93mm ≤ 147.6mm）；③ **份数 = 打开方式开数**（1/2/3/4，缺省 1，表外开数如实 N）—— 系统打印按张展开、直连通道在 `toWashLabelInputs` 展开，两条通道同读 `washLabelCopies()`；④ 新增 **褶法** 行；⑤ 订单号提为第一行；**加工单号 / 交期 / 扫码报工 / 人可读短码退场**、二维码 45 → **80 CSS px** 且底部居中；⑥ 静态守卫同步：几何守卫的 **G8（动态纸长）随 #7776 一起退场**、单源守卫新增 **SS7（份数口径只有一处）**。证据：`git show` 上的 frontend/admin-web/src/lib/wash-label-content.ts 与 TaskCardPrint.test.tsx / wash-label-content.test.ts / wash-label.test.ts / wash-label-metrics.test.ts。 ｜ 2026-10-27（issue #7948 → #7960，用户逐字「客户要求小于120mm」「要不字体小一号？」）：纸型**固定 50mm × 119mm / 正文 11pt**（介质 `label-50x150` → `label-50x119`；#7816 的 150mm 作废）；`.task-card-label` 高度 119mm、`padding: 1.2mm 1.2mm 6mm` ⇒ 二维码下沿与底部虚线**恒 ≥ 6mm**；位图通道 `footerBottomMax = heightPx - 6mm`（从纸边起算，与 CSS 同值）；119mm 可用 111.8mm，满字段 15 行刚好装下（余 0.81mm），有折行即裁尾部、码永不被裁（预览自检逐张报溢出）。判据同步：TaskCardPrint.test.tsx / wash-label.test.ts / wash-label-metrics.test.ts / print-media.test.ts / PrintDocPreview.test.tsx / test_wash_label_geometry_guard.py（G4/G5 改按 4 值 padding 复算）/ test_print_media_matrix_guard.py（PRINT_DOCS 介质 id）。 ｜ 2026-10-27（issue #7960，用户逐字「客户要求小于120mm」「要不字体小一号？」）：纸型 50×110/12pt → **50×119/11pt**（介质 label-50x119；点阵 952px）；可用 111.8mm，满字段 15 行 = 110.99mm（余 0.81mm），折行即裁；判据同步 TaskCardPrint.test.tsx / wash-label.test.ts / wash-label-metrics.test.ts / print-media.test.ts / PrintDocPreview.test.tsx / 几何守卫 G4~G6。 ｜ 2026-10-28（issue #8002，用户逐字「当成品帘选择这两个特殊选项时还需要额外打印水洗唛，每套成品帘打印一张……只是需要标记清楚这个水洗唛是用于某个特殊选项的」「一套要么布要么纱，不会都勾，一套一张水洗唛」）：新增**特殊选项专属水洗唛** —— 触发 = 快照 `specialOptions` 命中 `余料带回-布` / `余料带回-纱` / `布绑带` / `纱绑带`（`余料做绑带` / `余料做帘头` **不触发**，它们不产生要交还客户的实物）；张数 = **每套每类别 1 张、不乘开数**，**紧跟本套常规唛之后**（issue #8074，用户 2026-10-29 逐字「当订单多套时…每套连续排版，不要拆开」—— 改前专属唛整体追加在**全部**常规唛之后，多套时同一套的纸被拆到两处；出纸清单按套聚合，入参套间交叉也收口到套）（用户口径「一套要么布要么纱」⇒ 常规情形 = 每套每类别 1 张；同一套两类都勾（参考工单）= 2 张）；版式 = 同一张 50mm × 140mm、同一份行清单（`washLabelRows` 一字不动）（🔴 **2026-10-29 由 issue #8107 改判：专属唛改用短纸 50mm × 100mm、只印 5 行 —— 见本格尾部；常规唛仍是 50mm × 140mm / 15 行、一字未改**），只把抬头第二行改为 `成品定制 · 余料带回` / `成品定制 · 绑带`（**12pt 加粗**；企业名缺值也照印 —— 标记不得依赖企业名）；张数 / 张序 / 副标题收敛到 `washLabelSheets`（系统打印与免驱动直连**同源**；单源守卫 SS7 同步为「系统打印渲染器必须调 `washLabelSheets`」）。判据 = `frontend/admin-web/tests/unit/lib/wash-label-content.test.ts`（专属唛 6 条：类别命中 / 张数与张序 / 两套各自一张且**每套连续** / **多套交叉入参仍每套连续** / **任意入参顺序的「套序单调不降 + 每套连续段」不变量（全排列 24 种）** / 直连同源）+ `frontend/admin-web/tests/unit/components/TaskCardPrint.test.tsx`（2 条：8 张与 12pt 标记 / 缺企业名照印）+ `frontend/admin-web/tests/unit/lib/label-print/wash-label.test.ts`（位图抬头 12pt 加粗）+ `wash-label-metrics.test.ts`（`WASH_LABEL_OPTION_SUBTITLE_FONT_PT` 单源）+ `tests/unit_ci_workflows/test_wash_label_single_source.py`（SS7 注入 ⑤）。 ｜ 2026-10-29（issue #8107，专属唛瘦身）：用户逐字「余料带回和绑带的水洗唛打印功能中，用户反馈打印的信息太多了，可以适当删减，保留货号，门幅，宽高，工艺和特殊选项 + 二维码即可」「把长度再缩减一些，能放下以上信息即可」⇒ ① **专属唛（余料带回 / 绑带）只印 5 行 + 二维码**：货号 / 门幅 / 宽高 / 工艺 / 特殊选项（行集合 = `WASH_LABEL_OPTION_ROW_KEYS`，顺序即纸面顺序；退场行 = 单号 / 客户 / 套序 / 帘种 / 安装小区 / 安装位置 / 用料 / 褶法 / 备注 / 布料批次 —— 改回全字段 ⇒ `wash-label-content.test.ts` 与 `TaskCardPrint.test.tsx` 的退场行断言必红）；② **抬头副标题只印语义名**（`余料带回` / `绑带`，移除 `成品定制 · ` 前缀）、字号 **12pt → 16pt 加粗**（比企业名 14pt 还大一号；文案单一真值 = `washLabelSubtitle`，字号单一真值 = `WASH_LABEL_OPTION_SUBTITLE_FONT_PT`，组件按常量取、不写死）；②b **专属唛纸型 = 50mm × 100mm**（介质 `label-50x100`，点阵 800）（🔴 **2026-10-30 由 issue #8163 改判为 50mm × 80mm + 留白 8/8 —— 见本格尾部**），靠 CSS **命名页** `@page wash-label-option`（`printNamedPageRule(\'wash-label-option\', \'label-50x100\')`）与文档级 `@page`（`size: 50mm 140mm`）在同一次出纸里并存 —— 容器 `.task-card-label--option { height: 100mm; page: wash-label-option; }`，宽度 / padding / 字号 / 二维码与基类同值；**常规唛仍是 50mm × 140mm / 15 行、一字未改**（负控）；③b 抬头预算重算：抬头块 14pt(5.93) + 16pt(6.77) = 12.7mm，整张 ≈ 88.15mm ≤ 100mm（仍可容 7 行）；③ 「特殊选项」行改印**展示名**（`余料带回-布` ⇒ `余料带回`，走 `order-craft-fields.ts` 的 `specialOptionDisplayName`；常规唛同一行同口径 —— 纸面不得与界面不一致）；触发仍认落库键 `余料带回-布 / -纱 / 布绑带 / 纱绑带`，**额外**认语义名 `余料带回` / `绑带`（AI / 其它写入口可能写语义名）；④ 张数 / 张序**一字未改**：专属唛**每套每类别 1 张、不乘开数、紧跟本套常规唛之后**（#8074 口径保留）；⑤ 打印预览的纸面自检改为**按每张自己的纸高**判溢出（`data-sheet-paper-mm`），表头纸型显示 `纸型 50mm × 140mm · 专属唛 50mm × 100mm`。判据 = `wash-label-content.test.ts`（专属唛 5 行 / 退场行 / 常规 15 行负控 / 展示名 / 纸型 / 张序不变）+ `TaskCardPrint.test.tsx`（DOM 5 行 + `task-card-label--option` + 命名 @page 在文档里 + 常规 140mm/15 行）+ `wash-label.test.ts` / `wash-label-metrics.test.ts`（位图通道 100mm/800、两通道同源）+ `PrintDocPreview.test.tsx`（逐张纸高）+ `tests/unit_ci_workflows/test_wash_label_geometry_guard.py`（G8~G11）+ `test_print_media_matrix_guard.py`（C13）+ `test_wash_label_single_source.py`（SS9：专属唛行集合只许在内容模块决定）。 ｜ **2026-10-30（issue #8163，专属唛再收到 50×80 + 留白随纸长收窄）**：用户逐字「1，那就再缩小到80mm」⇒ ① 专属唛纸型 **50mm × 100mm → 50mm × 80mm**，新介质 **`label-50x80-option`**（点阵 640）；**不复用 `label-50x80`**（那是入库标签且 `measurement = pending-field-measurement`，把水洗唛挂上去会削弱几何证据）；旧 id `label-50x100` **退场**（矩阵只登记在用介质 —— 残留 ⇒ `print-media.test.ts` 的 `printMediaSpec(\'label-50x100\')` 必抛 + C1/C2/C13 必红）；② **上下留白必须一起收**（物理约束）：原来的上下各 15mm 是 **140mm 纸**的口径；80mm 纸若仍按 15/15，纵向只剩 50mm < 内容 58.15mm ⇒ **必然静默裁行**（位图通道不报错、纸面就是少几行）。所以新增 `WASH_LABEL_OPTION_TOP_BLANK_MM = 8` / `WASH_LABEL_OPTION_BOTTOM_CLEARANCE_MM = 8`，系统打印 = `.task-card-label--option { height: 80mm; padding: 8mm 1.2mm 8mm; page: wash-label-option; }`、位图通道**按同一张纸的 `input.media` 取**（纸高 / 上留白 / 下净空只用一个 `media` 变量决定）；**常规唛 140mm / `padding: 15mm 1.2mm 15mm` / 15 行 / 副标题 `成品定制` 一个字都不动**（负控）；③ 预算重算（可复算，真值两处：`wash-label-metrics.ts` 文件头 + `TaskCardPrint.tsx` 的【专属唛预算】段）：可用 80 − 8 − 8 = **64mm**；抬头块 12.7（14pt 5.93 + 16pt 6.77）+ 块距 0.5 + 5 行 × 4.6567 + 块距 0.5 + 二维码 21.17 = **58.15mm ≤ 64mm**（余 5.85mm）；整张 ≈ **74.15mm ≤ 80mm**；工艺折 1 行 = **62.81mm ≤ 64mm** 仍装得下，两条行都折 = 67.47mm > 64mm ⇒ 裁尾部文字、**码永不被裁**；④ 其余不动：5 行内容与顺序、副标题 16pt 加粗只印语义名、二维码 80 CSS px、张数 / 张序（#8074）、打印预览逐张纸高自检（表头变 `纸型 50mm × 140mm · 专属唛 50mm × 80mm`）。判据 = `wash-label-content.test.ts`（`WASH_LABEL_OPTION_MEDIA = label-50x80-option` + 不是 `label-50x100` / 不是 `label-50x80`）+ `TaskCardPrint.test.tsx`（`data-sheet-paper-mm="50x80"` + `height: 80mm; padding: 8mm 1.2mm 8mm` + 命名 `@page size: 50mm 80mm` + 常规唛仍 140mm / 15 行 / `padding: 15mm 1.2mm 15mm` 负控）+ `wash-label.test.ts`（位图 640 点、留白 8/8 vs 常规 15/15 两向、5 行不裁）+ `wash-label-metrics.test.ts`（新常量 8/8 + 与常规常量不相等 + CSS 的 padding 从常量取 + `printNamedPageRule` 逐字）+ `print-media.test.ts`（新介质在册 / 纸长 80 / 点阵 640 / note 预算读数 12.7 · 58.15 · 74.15 · 64mm / 退场 id 必抛）+ `PrintDocPreview.test.tsx`（两种纸高 50×140 与 50×80 并存）+ `test_wash_label_geometry_guard.py`（G8 容器高、G9 命名页同源、G10 预算恒等式、**G12 留白与 metrics 同源且不得等于常规的 15/15**、**G13 内容必须装得下**、G11 注入红证）+ `test_print_media_matrix_guard.py`（C1/C2/C13 登记表跟着改）+ `test_wash_label_single_source.py`（SS9）。', '洗水码**只承载摘要、不印工序**（issue #4964 改判 #4946：**工序摘要整体退场** —— 用户 2026-09-21 字段裁定未选「工序摘要」；工人扫部位码后在 H5 看该部位工序清单，见 issue #4967）⇒ 纸面**既没有** A4 的逐道工序表（部位 / 工序 / 应做数量 / 手工勾选位），**也没有**「工序 N 道 + 前几道显示名」的摘要行：`task-card-label-ops-<i>` 不得存在、纸面文案里不得出现「工序」二字。**「扫码报工」与人可读短码已退场**（2026-10-26 用户逐字「移除扫码报工和短码文字」）⇒ `task-card-label-short-code-<i>` **不得存在**、纸面文案不得出现「扫码报工」；底部只留**居中二维码**（80 CSS px）。反向护栏（issue #4621 继承）：纸面**不得**渲染**工人端快照名**（变体名，如 `精裁-布` / `布三边`）。', '工序显示名统一（issue #4621，web 面命名统一 · 阶段 1）：加工单进度表 / 计件报表「按工序」档 / 加工单生产页计件表 / 黄金策会话生产进度卡一律渲染 **逻辑名 · 部位**（如 `精裁 · 布帘`）；**变体名**（`精裁-布` / `布三边`）不得出现在界面文案或 `data-testid` 里。后端读面**只加不改**地给出 `logical_name` + `position`（**读时派生、不写库**；既有 `operation` / `operation_name` 是**工人端快照名**，一字未动、web 界面不得渲染）；边界：老数据缺 `logical_name` ⇒ 退回 `operation` 原文（不空白）、`position` 为空（部位无关工序如 `外帘装袋`）⇒ 只显示逻辑名。⚠️ **受管面清单在 issue #4964 后是 4 项（不再是 5 项）**：`TaskCardPrint.tsx` **退役**（洗水码不再印工序 ⇒ 不再消费带 `logical_name`/`position` 的读面），并由守卫 **C5** 反向钉住「退役面不得再渲染工序」（确要加回 ⇒ 必须同时加回白名单，否则就是 #4630 的漏改形态）。红证：改前 tests/unit/components/{ProductionProgressTable,TaskCardPrint}.test.tsx 与 tests/unit/pages/production-piecework.test.tsx 得 `Unable to find an element with the text: 精裁 · 布帘`；防复发守卫 = tests/unit_ci_workflows/test_operation_display_name_guard.py（C1~C5，注入式红证 + 内容指纹自证）。2026-09-20（issue #4630，同一 goal 的**漏改面**）：**第 4 个消费面** = 加工单「生产」页内嵌的计件表 `components/production/PieceworkTable.tsx`（#4621 只改了前三个面 ⇒ 它一直渲染变体名且**无任何判据会因此变红**）；守卫白名单同步补第 4 项。', '无工序 / 无计件 / 接口失败均渲染空态或错误提示 + 重试，不白屏', "🔴 **「生成二维码（测试用）」联调入口已退场（issue #7882；用户 2026-10-27 截图后逐字「删掉这个按钮」）**：本页页头**不再**渲染 `production-test-qr-button`，也不再有同名弹层（`production-test-qr-*` 系列 testid 全部消失）—— issue #4726 的联调测试入口（按钮 + 弹层 + 只读渲染）整体删除；**正式发码路径一字未改** = 洗水唛上的部位码（权威扫码入口，逐张 = 该部位的 `scan_url`）+「撤销二维码」后的「重新生成二维码」（issue #4287）。判据（反向、会红）：持有 `processing:manage` 的角色进本页 ⇒ `queryByTestId('production-test-qr-button')` 为 `null`、页内无同名 dialog；`production-print-button` 与（`qr_token` 非空时的）`production-revoke-button` 仍在。红证（改前实测）：上述断言在删除前必红（该入口对 manage 角色恒渲染）。证据：frontend/admin-web/tests/unit/pages/processing-orders-production.test.tsx 的 `#7882` 用例", '🔴 **「未定价」显式可见 + 定价入口（issue #4696，2026-09-20 补漏）**：计件汇总与计件工资报表**同一份** `UnpricedNotice` 组件渲染 `unpriced` 块 —— 工序数（`piecework-unpriced-title`「N 道工序未定价」）+ 合计数量（`piecework-unpriced-detail`）+ **逐条**工序（`piecework-unpriced-<i>` 显示「未定价」+ 数量、`piecework-unpriced-name-<i>` 显示**逻辑名 · 部位**，部位无关工序只显示逻辑名、**不拼空部位**）+ 定价入口（指向工艺配置 → 工艺路线 · 部位价目矩阵）。**判据的分量在「算钱的地方」**：改前未定价报工被静默折成 0 元、界面只在**读面徽标**上说「未定价」⇒ 工人白干且无人知道，且「没定价」与「价本来就是 0」**不可区分**。反向护栏：变体名（工人端快照名，如 `配料-布料`）**不得**出现在界面文案里（同 #4621/#4630 的显示名纪律）；只有未定价报工时**不得**再渲染「暂无计件数据」空态（空态判定已纳入 `unpriced`）。证据：frontend/admin-web/tests/unit/components/UnpricedNotice.test.tsx + frontend/admin-web/tests/unit/components/PieceworkTable.test.tsx', '🔴 **精裁输出清单（issue #5693，用户 2026-09-27 裁定形态 = A 只读清单）**：加工单生产明细页新增「精裁输出清单」块（`production-cut-plan`），表头照 issue 字段面 —— 套号 / 部位 / 组件 · 货号 / **用料（米）** / **裁多长（米） × 几片** / **批次号** / 备注，行粒度 = **套 × 部位**。🔴 **批次号（issue #6754）**：这一列 = 服务端 `cut_plan[].batch_no` = **派工指定批次**（真值源 = 批次消耗台账，与工人端部位规格面同一份）—— 裁床据此知道去哪一批拿料；**未指派 ⇒ 印 `—`**（**常驻列**：不省格、不猜一个批次，否则「本系统没有这个概念」与「这一行没指派」分不开）。取数 = 按**加工单号**调 `GET /api/admin/processing-order-sets?processingOrderNo=&size=100`（权限 `production:view`，与本页路由守卫同码；前端入口 `processingOrderSetApi.list`）。🔴 **前端不算第二份**：不按 `fabric_meters` 除幅数、不做单位换算、不把 `null` 折 0/1 —— 数字全部来自服务端**唯一实现**（`ProcessingSetReadService` 的 `set_overview.cut_plan`，与工人端扫码详情**同一份**；数量显示口径 `toFixed(2)` 与工人端 `render.mjs` 的 `fmtQty` 一致，不出现「商家看 12.3 / 工人看 12.30」）。**缺值不渲染假数据**：`fabric_meters` / `panel_count` / `panel_length_m` 为 `null` ⇒ 该格 `—`（`cut-plan-size-*` / `cut-plan-meters-*`）+ 原因小字（服务端 `missing_reason`），屏上**不得**出现 `0.00 米 × 0 片` / `× 1 片` 这类由 null 折出来的假数字；清单全空 ⇒ 一句可行动空态（`cut-plan-empty`），**不渲染假表格**。**截断显式**：服务端 `size` 上限 100 套，`total > items.length` ⇒ `production-cut-plan-truncated` 明说「共 N 套，这里只显示前 M 套（请分页核对后再下料）」（**不静默少显示**）。**降级隔离**：清单接口失败 ⇒ 只该块出 `production-cut-plan-error`，工序 / 计件 / 卡点照常（页面不白屏）。证据：frontend/admin-web/tests/unit/pages/processing-orders-production.test.tsx（按加工单号取数 + 渲染 + 缺值留空 / 接口失败只该块降级）+ frontend/admin-web/tests/unit/components/CutPlanTable.test.tsx（逐格渲染 / 缺值不造数 / 空态三条 / 批次号列）', '🔴 **免驱动直连打印 + 通道能力探测（issue #6439；用户 2026-10-06 逐字「其实我们不要做成打印机定制功能，因为可能企业内部用的是其他类型的打印机，只要我们功能支持能连接上不同类型的打印机即可」「这个需要考虑用户有通过 window 电脑安装打印机驱动或者蓝牙连接，或者 usb 连接各种情况」）**：本页**两条打印通道并存** —— ①「打印任务卡」（`production-print-button`）= **系统打印**（`window.print()` + `@page`，覆盖**任何**装了驱动的打印机：Windows 驱动 / USB / 网络 / 已配对蓝牙；本单**一字未改**）；②「蓝牙无线打印」（`production-direct-print-button`）= **免驱动网页直连**（Web Bluetooth / WebHID），**只覆盖带 SDK 协议的机型** —— 边界照实登记：Web Bluetooth 是点对点协议、**没有通用标准**，直连**不是**「任意打印机」的答案。判据（逐条可红）：① **入口真接线**（组件单测绿 ≠ 页面接上了）—— **打开「水洗唛 · 打印预览」后页脚**渲染出 `production-direct-print-button`（issue #7288：页面不再常驻该入口）且 `production-print-button` **仍在**（并存不是替换），jsdom 无 `navigator.bluetooth` ⇒ 按钮禁用 + 文案给系统打印兜底；② **动手前说清、失败逐类各有出口**：每类原因（非安全上下文 / 无 Web Bluetooth / iOS / 微信内置浏览器 / SDK 未加载 / 未选设备 / 取消 / 机型不支持 / 连不上 / 打不出 / 画不出来）都有**可行动**文案，且**每条都指回系统打印兜底路径** —— 文案两两不同、非空、含动作词（合并成一句通用文案 ⇒ 必红）；③ **几何不写死机型**：画布宽高由机器自报的 `printerDPI` / `printerWidth` 推出（写死 203/384 ⇒ 必红）；④ **短码永不被裁** ——🔴 **2026-10-26 改判（issue #7816）**：短码与「扫码报工」整体退场（用户逐字「移除扫码报工和短码文字」）⇒ 本项「短码永不被裁 / 窄纸靠缩字号 / 短码的 fail-closed」**作废**，改由「二维码底部居中 `shrink-0`、永不被裁」承担；`WashLabelLayoutError` 仍保留（纸宽连内边距都放不下时 fail-closed）；件名放不下 ⇒ **显式省略号**（看得见的截断）；⑤ **`openPrinter` 必须显式喂设备 + 关掉 `autoScan`**（真机实测 2026-10-06：**空参**会走 SDK 自己的 `searchPrinter()` 重扫，而 Web Bluetooth **没有用户手势扫不了** ⇒ 恒回 `ERROR_NO_PRINTER`「未搜索到到打印机设备！」；形态 = `{name, deviceId, checkDeviceName:false, autoScan:false}`，改回空参 ⇒ 必红）；⑥ 调用序 = 留痕 → 连接 → 渲染 → 送印；已连接过不重复弹设备框；⑦ 直连**不碰** `window.print()`（「`window.print` 只有一处」的纪律仍由 `tests/unit_ci_workflows/test_print_single_doc_on_paper.py` 钉住）；⑧ 留痕**两条通道共用一处**（页面 `recordPrintOnce`，fire-and-forget）—— 换通道**不换**「打印必留痕」。**真机读数（2026-10-06）**：德佟 DP235S 的 **BLE 口开放**（`requestDevice` 列出 `DP235S-Y608220585`）⇒ 设计 `docs/design/inbound-photo-and-label.md` §14.2 的「唯一支点」① 闭环；同根因缺陷已一并修于 `frontend/bmini-app/src/utils/inbound/lpapiTransport.ts`（同一 PR）。证据：frontend/admin-web/tests/unit/lib/label-print/capability.test.ts + frontend/admin-web/tests/unit/lib/label-print/wash-label.test.ts + frontend/admin-web/tests/unit/lib/label-print/lpapi.test.ts + frontend/admin-web/tests/unit/lib/label-print/render.test.ts + frontend/admin-web/tests/unit/components/DirectLabelPrint.test.tsx + frontend/admin-web/tests/unit/pages/processing-orders-production.test.tsx（`#6439` 用例）。**issue #7288 改判（2026-10-18，用户逐字「把这个直连打印机这个功能不如做到水洗唛打印预览中，在右下角加个按钮叫蓝牙无线打印」）**：入口由页面 header 下搬到「水洗唛 · 打印预览」页脚（`PrintDocPreview` 新增单据级 `actions` 槽）并改名「蓝牙无线打印」—— **只搬入口与改名，能力面（Web Bluetooth 免驱动、逐类可行动文案、`openPrinter` 非空参、调用序、不碰 `window.print`、留痕共用一处）一字未动**；判据 ① 的位置锚点随之改为「预览页脚」（页面侧改为**反向**判据：`production-direct-print-button` 在页面上**不再存在**），② 的兜底路径由「打印任务卡」改为页脚里的「打印」（弹层外那个按钮被遮住 = 指不动），并新增反向判据：文案里**不得**再出现旧按钮名「直连打印机打印」或「打印任务卡」。**issue #6656 改判（2026-10-10）**：④ 的「洗水码**精简版**（只有二维码 + 大字短码 + 件名/部位）」**作废** —— 直连通道改读与系统打印**同一份**纸面字段（用户逐字「直连打印机打印的样式和水洗唛预览打印的样式完全不一样，能不能做成一样的」）；本条其余判据（①能力探测 / ②逐类可行动文案 / ⑤ `openPrinter` 非空参 / ⑥ 调用序 / ⑦ 不碰 `window.print` / ⑧ 留痕）**一字未动**，详见本用例的「两条打印通道同一份纸面」那条', '🔴 **两条打印通道同一份纸面（issue #6656；用户 2026-10-10 逐字「直连打印机打印的样式和水洗唛预览打印的样式完全不一样，能不能做成一样的」）**：同一条加工单的水洗唛有两条通道 —— ①「打印任务卡」= 系统打印（`frontend/admin-web/src/components/production/TaskCardPrint.tsx`，即用户截图里「水洗唛 · 打印预览」那张）；②「蓝牙无线打印」= 免驱动位图（`frontend/admin-web/src/lib/label-print/wash-label.ts` + `render.ts`；issue #7288 起入口在预览页脚）。改动前两者**各写一份纸面字段**（页面只把 4 个键喂给直连通道 ⇒ 纸上只有二维码 + 大字短码 + 一行件名），用户看到的两张纸「完全不一样」—— 根因 = 同一真值两处投影（改一处另一处不会红）。判据（逐条可红）：① **内容与行序的单一真值** = `frontend/admin-web/src/lib/wash-label-content.ts` 的 `washLabelRows`（行序 = 客户 / 第 N 套共 M 套 / 部位 / 件名 / 色号（件名已含 ⇒ 不重复）/ 用料 / 宽高 / 加工方式 / 订单 / 交期 / 备注 / 算料公式；取值口径复用 `lib/craft-display.ts` 与 `ProgressTable` 的 `groupBySet`，不另写推导）—— **两条通道都读它**：系统打印的 DOM 逐行文本与它**逐字相等**（在本块内联多写一行 ⇒ 必红），位图的逐行文本**首尾相接与它逐字相等**（版式自己编字段 / 丢字 ⇒ 必红）；② **几何同一份介质** = `label-50x140`（2026-10-27 改判，issue #7948；`label-50x150` / `label-50x60` / `label-50x70` 作废）：纸宽 50mm 被打印头 384 点截成 **48mm 有效打印宽**，纸长 **140mm 固定**（`dotGeometry.heightPx` = 1120）—— 写回 150mm / 70mm / 40mm / 动态纸长 / 写死机型 ⇒ 必红；③ **不可统一的一处照实登记**：预览印 50mm 纸而打印头只有 48mm ⇒ 位图最宽 48mm，**字段一致、整体窄 2mm，这是物理上限**；203dpi = 8 点/mm 下 6pt 汉字约 17 点高，能画但比浏览器渲染毛糙（**清晰度仍需真机核对**）；④ 字号口径对齐预览：抬头 14pt / 副标题 10pt / 正文 = 介质矩阵 `minFontPt`（**11pt**）/ 行高 1.2 / 左右内边距 1.2mm / **上下各留白 15mm** / 底部 = **居中二维码 80 CSS px（紧挨正文，只隔 0.5mm 块距）**；**短码与「扫码报工」退场**（2026-10-26）；⑤ **#6439 的硬约束（2026-10-26 部分改判）**：「短码永不被裁」随短码退场而作废，改由「二维码 `shrink-0`、永不被裁」承担；无码不画假码（画**虚线占位框 + 占位文案**，不静默留白）、**装不下只裁文字块**（底部码位置不动）、几何由机器自报值推出 —— 这几条一字未动；⑥ **类级元守卫**（铁律 8）= `tests/unit_ci_workflows/test_wash_label_single_source.py`（SS1 系统打印渲染器必须真读真值模块 / SS2 位图渲染器必须引用它 / SS3 两个渲染器的**代码面**都不得自己拼纸面前缀 / SS4 真值模块必须真产出全部前缀（**反空跑锚点**）/ SS5 三种坏形态注入式红证 + 内容指纹自证 / SS6 注释里提及不算 —— 反向对照；**SS7 份数口径只有一处**：两条通道都读 `washLabelCopies()`、`openCount` 键只许出现在内容真值模块）；行为面判据 = `frontend/admin-web/tests/unit/components/TaskCardPrint.test.tsx`（纸面内容与行序 = `washLabelRows`，含「缺值不渲染在两条通道上同一条口径」）+ `frontend/admin-web/tests/unit/lib/label-print/wash-label.test.ts`（位图逐行文本 = 行清单 / 同一份介质 / 装不下只裁文字块）+ `frontend/admin-web/tests/unit/lib/wash-label-content.test.ts`（行序 / 前缀 / 缺值不渲染看**值**不看整行 / 色号去重 / 套序 / 定型措辞 / 逐张映射）。**未覆盖（照实登记）**：真机纸面效果（1:1 / 边距 / 短码可读 / 6pt 在 203dpi 下够不够清楚）**仍需人在打印机旁核对** —— Playwright 无人值守弹不出设备选择框；**重启条件** = 现场实测发现 6pt 不可读 ⇒ 抬字号并重算 60mm 预算（预算账在 `TaskCardPrint.tsx` 文件头）。 🟡 **2026-10-27（issue #7948）改判**（用户逐字「把水洗唛的尺寸改成50*110，现在偏长了」「二维码不能直接沉底，务必和底部留点距离」）：① 纸型 **50mm × 110mm → 50mm × 119mm / 正文 11pt**（介质 `label-50x119`；点阵高 1200 → **952px**）；② 二维码与底部虚线**恒 ≥ 6mm** —— 系统打印 = `.task-card-label` 的 `padding: 1.2mm 1.2mm 6mm`（内容再长只压缩文字块，码永不被裁），位图 = `footerBottomMax = heightPx - 6mm`（同一常量 `WASH_LABEL_BOTTOM_CLEARANCE_MM`，**从纸边起算**）；③ 119mm 的可用高度 = 119 − 1.2 − 6 = **111.8mm**，满字段 15 行 = 110.99mm ≤ 111.8mm（余 0.81mm）**刚好装下、折行即裁** ⇒ **文字块被裁、二维码永不被裁**，溢出由打印预览纸面自检**逐张**报出（不静默）；④ 判据同步：`TaskCardPrint.test.tsx`（`@page 50mm 119mm` + `padding: 1.2mm 1.2mm 6mm` + `font-size: 11pt`）、`wash-label.test.ts`（`label-50x119` + 码下沿离纸边 ≥ 6mm）、`wash-label-metrics.test.ts`、`print-media.test.ts`、`PrintDocPreview.test.tsx`、几何守卫 G4/G5（padding 支持 4 值简写）。', '🔴 **水洗唛纸面改版（issue #7833，用户 2026-10-26 逐字）**：① 「JG-20261026-8172 这个加工单有超高倒幅，但是在加工单的各个环节都没有体现出来，打印的洗水唛中也需要体现加工费组合中的信息」⇒ 加工方式行**并入** `processingItems[].name`（加工费组合键：韩褶 / 超高 / 超宽 / 倒幅 / 定型 …），纸面读作 `韩褶 · 超高 · 倒幅 · 双开 · 定型`；加工单 A4 纸面每套块内加「加工费组合」行、生产明细页页头加「加工费组合」（整单并集）；② 「加工方式这几个字可以移除」⇒ 该行**只印值**（纸面不得出现「加工方式」四字）；③ 「把定高买宽和定宽买高的工艺规格信息不要展示在洗水唛上」⇒ 不印加工类型；④ 「订单号是否可以短一些…只留加工单号，删掉订单行」⇒ 第一行 `单号 JG-…`，17 位订单号不上纸；⑤ 「打印后的结果出现了文字缩写…自动去换行打印」⇒ 行样式无 `truncate` / `line-clamp-*`、内容模块无 `maxLines`（折行印全文），装不下由纸面自检如实报出并**逐张具名**（`overflowSheets`）；⑥ 「头尾加下虚线，这样能清晰知道界线」⇒ `.task-card-label` 上下各一条 `1px dashed`（位图通道同口径画短划）。⑦ 2026-10-26 追加（同批用户逐字「把颜色改成货号，格式都改成 A: B，现在是缺了中间的：」）：颜色行**改印货号**（快照 `sku` = `products.sku_code`；缺值 ⇒ 该行不渲染、不拿颜色顶替、不拿 SKU 组合码冒充货号），所有**带标签的行**一律 **`标签: 值`**（冒号分隔；无标签行 = 加工方式，原样印值），`褶法` 值 = **`韩褶公式 52折`**（用户逐字「缺了公式这两个字」；无折数 ⇒ `韩褶公式`）。判据 = `TaskCardPrint.test.tsx` / `wash-label-content.test.ts` / `wash-label.test.ts` / `processing-combo.test.ts` / `ProcessingDoc.test.tsx` / `processing-orders-production.test.tsx` / `test_print_paper_full_text_guard.py::test_c4_*` / `test_wash_label_single_source.py` / `test_wash_label_geometry_guard.py`（G1~G6 按 50mm × 140mm / 11pt 重算预算；G4/G5 支持 4 值 padding 简写）。', '🔴 **纸面单号去 `JG-` 前缀 + 只留底部虚线（issue #7839，用户 2026-10-26 逐字「加工单号不要带 JG- 了，简约点」「水洗唛的顶部虚线移除掉」）**：① 第一行 `单号: 20261026-8172`（只剥开头一个 `JG-`、大小写不敏感；**系统编号不变** —— 按单号检索 / 对账 / 扫码短链 / A4 加工单表头仍是 `JG-…`）；空值仍 `单号: —`；② `.task-card-label` **只保留 `border-bottom: 1px dashed`**（顶部那条移除），位图通道同口径**只画下沿**短划。判据 = `wash-label-content.test.ts`（`washLabelDocNo`：只剥开头 / 大小写 / 空值 / 其它形态不动）、`TaskCardPrint.test.tsx`（纸面不出现 `JG-`、CSS 无 `border-top`）、`wash-label.test.ts`（顶部 y=0 只有整幅白底、无短划）、`processing-orders-production.test.tsx`。', '🔴 **页头按商品行展示「特殊选项」（issue #7851，用户 2026-10-26 逐字「加工单生产明细没有展示特殊选项信息」）**：截图 = 页头只有 订单号 / 状态 / 交付日期 / 加工费组合，而服务端按 `processingInfo.specialOptions` **插工序 + 计件**（`拼1次-布` / `接高-布`）⇒ 页头块内（紧跟那排格子）必须有 `production-special-options`，**逐商品行**一行：`商品名（颜色）` + `拼1次、接高`。取值 = `frontend/admin-web/src/lib/craft-display.ts::craftSpecRows()` 的「特殊选项」那一行（屏幕 / 纸面 / 订单详情同源；页面里**不得**出现第二份 `join(\'、\')`）。**缺键 / 空数组 / 全空白 ⇒ 该行不出现；整单都缺 ⇒ 整块（含标签）不出现**（存量单未携带 ≠ `—`，也不留空块）。⚠️ 断言必须 `within` 新块：洗水唛纸面层（`TaskCardPrint`，portal + 屏幕隐藏）**改前就印**「特殊选项：拼1次、接高」⇒ 全页 `getByText` 是改前就绿的空断言。执行点 = `frontend/admin-web/tests/unit/pages/processing-orders-production.test.tsx`（🔴 特殊选项（issue #7851）两条）。红证（已实跑）：渲染条件改 `{false && …}` ⇒ 该判据红（`Unable to find an element by: [data-testid="production-special-options"]`，1 failed / 44 passed）；恢复 ⇒ 45 passed。'],
+    skip_reason='[backend-contract] 前端渲染行为（admin-web 组件/页面），由 vitest 单测全量覆盖（tests/unit/components/{ProductionProgressTable,PieceworkTable,TaskCardPrint,UnpricedNotice}.test.tsx、tests/unit/pages/processing-orders-production.test.tsx、tests/unit/lib/use-route-id.test.ts），非 LLM 行为，不进入 agent-eval 冒烟（同 PP-010 惯例）',
+    tags=['processing', 'production', 'admin_web', 'print_task_card', 'qrcode'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PP-012 [NORMAL] 内部算料数量端点 - 应做数量=引擎输出/兜底 1/未知工序 fallback（单测覆盖）（源: cases/processing.yml）──
+_CASE_PP_012 = EvalCase(
+    id='PP-012',
+    legacy_id='',
+    title='内部算料数量端点 - 应做数量=引擎输出/兜底 1/未知工序 fallback（单测覆盖）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['success=true', '数量**只**来自算料引擎（真值源 §3）：冻结样例 calc_info={fabric_meters:12.3, pleat_count:24, panels:2, set_count:1} + 工序 [精裁-布, 布三边, 韩褶-布, 外帘装袋] ⇒ {精裁-布:12.3, 布三边:12.3, 韩褶-布:24.0, 外帘装袋:1.0}，且逐值 == routing._qty_for 直调结果（防复制第二份算料逻辑的守门断言）', '缺键**一律兜底 1、绝不落 0**（应做 0 ⇒ done_qty ≥ qty 恒真 ⇒ 假完工）：calc_info={} ⇒ 各工序 qty == 1.0 且 != 0', '引擎不认识的工序/单位 ⇒ qty=1.0 + qty_source=fallback，且 HTTP **仍 200**（不得把加工单生成打成硬失败）；判别性：若实现只把 _qty_for 原样透传（未知工序按「米」读 fabric_meters）会得到 12.3 ⇒ 本条仍红', '**非正数（显式 0 / 负数）与「个 / 件」类单位一律兜底 1 + `qty_source=fallback`**（issue #4228，用户 2026-09-25 裁定）：① `unit=个` 的工序（帘头制作/抱枕/扣环-布…）**不得**再静默按「米」读 `fabric_meters` —— 改前 `{fabric_meters: 12.3}` 算出 12.3 个、而同一输入的端点层给 1.0（值/标签分叉）；② `{fabric_meters: 0}` 改前返回 `(0.0, "fabric_meters")`（应做 0 ⇒ done_qty ≥ qty 恒真 ⇒ 假完工），现为 `(1.0, "fallback")`。⚠️ 「个 / 件」的 1 是**兜底口径、不是真值**（真值源 §4 未给「个」的数量定义、§2 只列单位取值域）⇒ 登记在 `FIXED_ONE_UNITS` 只为让「有意兜底」与「忘了建分支」可区分。证据：backend/ai-agent-service/tests/test_production/test_operation_qty_unit_fallback.py（两条红证 + 逐工序×逐 calc_info 的值/标签一致性普查 + 单位登记普查）', '鉴权：缺 X-Service-Token ⇒ 401（内部端点不得裸奔）', '「孔」类无 holes ⇒ 按每米 6 孔估算 12.3×6=73.8，来源 = fabric_meters_x6（**不等于** fallback）—— 让「真兜底」与「有依据的推算」可区分'],
+    skip_reason='[backend-contract] ai-agent 内部端点（服务间调用，非 LLM 行为）：由 pytest 全量覆盖 backend/ai-agent-service/tests/test_production/test_operation_qty.py（含 _qty_for 直调比对与三源键漂移门禁）与 test_operation_qty_unit_fallback.py（单位/非正数两处边界 + 登记普查），不进入 agent-eval 冒烟（同 PP-010 惯例）',
+    tags=['processing', 'production', 'qty-engine'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PP-014 [NORMAL] 工艺路线商家可配用户面 - 序列编辑护栏逐条可见 / 缺口区 / 信号映射 / 四态路线来源提示（前端单测覆盖）（源: cases/processing.yml）──
+_CASE_PP_014 = EvalCase(
+    id='PP-014',
+    legacy_id='',
+    title='工艺路线商家可配用户面 - 序列编辑护栏逐条可见 / 缺口区 / 信号映射 / 四态路线来源提示（前端单测覆盖）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['打开工艺路线，改一下布帘×韩褶的工序顺序，看看缺口里还有哪些工序没进路线'],
+    expectations=['direct_reply'],
+    data_checks=['路线列表渲染**真实数据**：路线数（`routings-total`）+ **路线名**（`routing-name-<id>` = 服务端 `name`）+ 默认徽标 + 主线道数徽标 + 每道工序的分组/单位/单价；**「必完」标记已整条退场**（**2026-09-21 改判，issue #4961**：完工口径 = 全部活跃工序实例报满 ⇒ 这枚标记在主表行尾 / 列头 / 抽屉 / 主线 chip 四处一起退场；移除类判据 = 「改前**存在** ⇒ 断言**不存在**」，`matrix-must-finish-*` / `variant-must-finish-*` / `routing-step-must-finish-*` 三族 testid 一律为空）。**2026-09-21 改判（issue #4886 去部位化：工艺配置面不再出现部位概念）**：① 列表标题**不再是「部位 × 工艺」**（改前那栏由 `positions` × `craft` 拼出，现在就是路线 `name`）；② **「适用帘种」徽标整条退场**（`适用帘种` 一词在本页已 grep 不到；新建路线也不再收集部位/工艺 —— body 判据见后条）；③ **必完标记的判据整条退场**（原「落在收敛后那一行的 `is_must_finish`」随 #4961 作废 —— 见「必完标记与含义提示退场」条）。反向护栏：默认徽标与主线道数徽标**不得**被顺手删掉。证据：frontend/admin-web/tests/unit/pages/production-routings.test.tsx「路线列表显示 name + 默认徽标 + 主线道数；不再出现「部位 × 工艺」标题与「适用帘种」」', '序列编辑：从**路线编辑区自带的「添加工序」选择器**（`routings-create-op-*` 一族；本页自 issue #4913 起是**同屏单列**：工序表在上、路线列表在下，**不再有「工序库调色板 / 路线编辑」左右半屏**那种布局）把工序加进当前编辑的路线 → 保存 ⇒ `PUT /api/admin/production/routings/{id}` 的 body 恰为 `{operations:[...]}`，且**顺序等于屏幕顺序**（注入：把上移/下移/删除任一处的 draft 变换去掉 ⇒ 「顺序等于屏幕顺序」「被删工序不在请求体」两条红）；**未进入编辑态时该「加入」按钮必须禁用**（注入：去掉 disabled ⇒ 误加进别的路线，断言红）', '保存被拒时**逐条**展示后端护栏理由，不得只弹「保存失败」：按**真实信封** `error.response.data.error.details[].message` **逐条** ⇒ 页面渲染独立条目、逐条带可读归因（工序不存在 / 工序重复；⚠️ **2026-09-21 订正（issue #4961）**：后端「至少一道必完工序」护栏**已整条退场**（见 PG-032）⇒「缺少必完工序」这条归因**不再有后端生产者**；前端 `describeRoutingGuard` 的该前缀分支**已删除**（该文件自述的死亡条件「后端护栏 4 与本文件同时被判据移除」**已满足**；**「识别不了的护栏理由原文透出、不吞成通用文案」这条判据逐字不放宽**，回归锁 = `frontend/admin-web/tests/unit/lib/production-guard-reasons.test.ts` 的 `#4961-⑥`），仍由夹具信封驱动「三条 details ⇒ 三条独立条目」这一格。**判据本身一字不放宽**：逐条独立成条、不得只弹「保存失败」）；`error.message` 单条形态退化兼容（⚠️ 后端**没有**顶层 `error_messages` 字段，`error` 也不是字符串 —— 按那个形状读会让真实失败路径静默退化成「Request failed with status code 422」，见 `docs/design/craft-routing-customization.md` §5.4 的假绿教训；注入：把 details 分支退化成一句通用文案 ⇒ 三条断言红）', '空序列**本地先拦**：删除最后一道后保存 ⇒ 不发出 PUT（`not called`），并给出「序列不能为空」理由（注入：去掉本地校验 ⇒ PUT 被调用，断言红）', '护栏**就地预检**（issue #4416，后端仍是唯一权威，前端只把「保存失败」提前成「看得见」）：**「一道必完工序都没有」这条预检整条退场**（**2026-09-21 改判，issue #4961**：完工判据换成「全部活跃工序实例报满」⇒ 该黄条失去前提；`lacksMustFinish` 与 `routing-precheck-*` 语族一并删除，证据 = 同文件「#4961-④」的反向断言）；删的是这**一条**预检、**不是**整个预检面（主线编辑器与保存照旧可用）；**另一半预检保留不放宽**：序列引用了工序库里不存在/已停用的工序 ⇒ 该行标红并**指名**是哪一道（注入：去掉任一预检 ⇒ 该条断言红）', '**空壳路线显性化 + 建路线自动进编辑**（issue #4416）：`POST /routings` 允许 `operations` 缺省（「空序列拒」护栏只拦 PUT），而 `ProductionOperationQueryService.findRouting` 对空序列路线**正常命中**并返回 `operation_count=0`/`missing_operations=[]` ⇒ `resolveRoute` 既不 fail-closed 也不报错 ⇒ **该部位静默拿到 0 道工序**。⇒ ① 序列为空的路线在列表上标「空壳 · 不可用」并说明后果（正常路线**不得**被误标）；② 新建路线后**自动进入该路线的序列编辑**（注入：去掉空壳标记 / 去掉自动进编辑 ⇒ 各自断言红）', '**就绪度检查器**（issue #4416）：把「工序库 → 工艺路线 → 缺口」的先后依赖渲染成三步状态（`data-state=done/todo`）；工序库为空 ⇒ 第 ① 步未完成且出现行业模板补救卡；存在空壳路线 ⇒ 第 ② 步判未完成并在提示里点出「空壳」（注入：把空壳路线当就绪 ⇒ 第 ② 步断言红）', '🔴 **补套行业模板卡已整体退场**（issue #5874；2026-10-01 用户裁定「移除这个功能」）：`seed-templates` / `seed-template-apply-*` 一族 testid **一律不得存在**（前端 api 客户端与后端两端点同批删除）。**保留**：开租审批通过时 `RegistrationService.applyProductionSeedTemplate` 仍按 `tenant.industry` **自动套用**（收口 #4316）—— 新租户开箱即有工序与路线。历史（改前形态，仅供回溯）：库为空时该卡作为**补套路径**出现且套用走 `POST /seed-templates/{id}/apply`、toast 报服务端真实数字', '缺口区两只清单可见，且**两类语义分开渲染**（issue #4416 修正：后端 `routingGaps()` javadoc 明写「不要让商家/前端把它们读成「系统漏了」」）：①「有工序但未进任何路线」逐条渲染（**真缺口**，可行动）②**「有意挂起 · 等客户确认」**单列一块并带 #4261 说明（真值源下 4 道：裁剪-布/裁剪-纱/质检/腰靠垫，`pending_confirmation=true`）——**不得**把挂起项渲染成「未进任何路线」；③「库里没有路线的信号组合」（罗马帘 × 韩褶）以清单形式给出（注入：去掉分类 ⇒ 挂起项落进真缺口列表，断言红）', "**「添加工序」下拉只列逻辑工序名**（issue #4609，P0 静默丢工序的**前端**半边）：取值域 = 价目表行键（`GET /operation-positions` 的 `operation`：天然逻辑名、天然去重），显示 = 逻辑名 + 该行分组的公共值；`加入` 写进草稿与 `PUT {mainline}` 的值 = **逻辑名**；下拉里**不得**出现 `精裁-布` / `布三边` 这类**变体名**（改前库口径 35 行、同一道逻辑工序按部位重复出现 ⇒ 商家看到「35 道」，且存进主线的变体名在实例化时按逻辑名查不到 ⇒ 静默丢工序）。**2026-09-21 改判（issue #4899 / #4886 去部位化）**：读面已按 `ProductionOperationQueryService#collapseToLogical` **收敛为「一道逻辑工序一行」**（30 行）⇒ 取值域的「天然去重」从「前端顺手去重」升级为「读面本就一行」；**判据本身一字不变**（值仍是逻辑名、变体名仍不得出现）。红证（修复前实测）：下拉项为 `['精裁-布','裁剪-布','韩褶-布','外帘装袋']` ⇒ 断言 `to deeply equal ['三边','精裁','车被','韩褶']` 红；「选『精裁』加入 ⇒ 请求体是 `精裁`」在下拉里找不到该项 ⇒ 红。", '**「必完」标记与必完含义提示已整体退场**（**2026-09-21 改判，issue #4961**；原形态 = issue #4610「必完标记还是得在这里展示」，2026-09-21 用户裁定「完工 = **全部**工序实例报满」⇒ 这个配置维度整条退场，不再有「必完门槛」要一眼看见）：① 主表行尾**不再**有必完标记（`matrix-must-finish-*` 一族 testid 为空；`matrix-meta-<逻辑工序>` 的文本**不得**含「必完」）；② 列头逐字 = `分组 · 单位 · 操作`（改前是 `分组 · 单位 · 必完 · 操作`）；③ 抽屉里「必完」勾选框（`variant-must-finish-*`）与它的说明句一并退场（抽屉文本不得含「必完」）。🔴 **改判要点（只改这一格、判据不放宽）**：原三态里的「必完（部分部位）」+ `title` 列出具体部位随**部位维度**退场（#4886），随后「必完」这一档**本身**整条退场（#4961）⇒ `matrix-must-finish-*` 的 testid 与「必完」文案**不再存在**（不是文案变了，是**被测对象消失**）；抽屉顶部说明句里解释「作用域 / 按套 / 按件 / 必完」的分句**一并作废**（#4960 删的是商家写面：`variant-scope-*` 控件与那句解释一起退场）。**反向护栏（判据不放宽）**：`分组` / `单位` 等行尾元数据**不得**被顺手删掉；读面键 `is_must_finish` **保留**（服务端恒 `false`，历史载体）但界面**零消费**；**主表不得出现「作用域」**，且现在**抽屉里也没有**了。红证（**移除类判据**：「改前**存在** ⇒ 断言它**不存在**」）：改前 `matrix-must-finish-精裁` 那枚标记与抽屉里的 `variant-must-finish-*` 勾选框都在场 ⇒ 把标记加回即红。证据：同文件「#4961-① 主表行尾的「必完」标记与列头里的「必完」一起退场」+「#4961-② 抽屉里的「必完」勾选框退场」+「#4961-③ 主线 chip 上的「必完」标记退场」+「#4961-④ 「一道必完工序都没有」预检黄条整体退场」', '**「条件工序规则」独立表整块退场 ⇒ 条件随工序落在抽屉的「适用条件」**（🔴 **2026-09-25 改判（issue #4650 阶段 1，随 issue #4369 收口）**：本条原判「规则表移除折叠、常驻展开」（issue #4613，用户原话「条件工序默认不要折叠，打开，移除可折叠功能」）—— 那个**被测对象已不存在**：独立规则表（标题 / `共 N 条` / 「新增规则」入口 / 表体 / 列头）与创建弹窗在**任何 tab** 都不再出现，`route-rules` / `route-rules-body` / `route-rules-total` / `route-rules-new` / `route-rule-create-modal` / `route-rules-toggle` 一族 testid 一律 `toBeNull()`；术语「条件工序规则 / 触发类型 / 触发值 / 部位限定 / 插入锚点 / 优先级 / 新增规则」页面文本零命中。「常驻可见」的口径**随条件迁到工序抽屉**：打开 `管理▸` 即见「适用条件」一节（`operation-conditions`，无折叠开关），规则逐条按**目标工序**归属、逐条人话渲染，删除仍走二次确认（`route-rule-delete-modal`）；后端 `GET/POST/DELETE /route-rules` 端点与 `production_route_rules` 表**一字未动**（零迁移、页面加载零写请求）。**判据一格不放宽**：改的是**被测对象**（独立表 ⇒ 抽屉），移除类判据（「改前存在 ⇒ 断言不存在」）与「条件可读可编辑」的能力判据一并保留。红证（**移除类判据**）：把独立规则表或其入口加回 ⇒ 上述 `toBeNull()` 断言红。证据：frontend/admin-web/tests/unit/pages/production-routings.test.tsx 的㉗组（独立表与 `route-rules-new` 一族 `toBeNull()`、抽屉里「适用条件」在场）+ ⑳组（适用条件常驻可见、无折叠开关）。', '**「新增工序」入口去重**（issue #4615，用户原话「这里还有个一样的按钮，可以移除掉，保留最上面的「新增」，但是要改成**新增工序**」）：入口**只在页头**（`routings-new-operation`，文案 = `新增工序`，仍走同一个 `openCreateOperation`）；「工艺项」面板内**重复**的 `operations-new-operation` **不存在**；价目表空态提示指向**右上**（空态逐字 = `暂无可定价的工序 —— 点右上「新增工序」建一道，再回这里定价` —— 入口换位置后不得留下「点上方…」这种**死引用**）。**2026-09-21 改判（issue #4886）**：改前这条写「不动弹窗内部（类型二选一与字段由 #4614 在飞）」—— 现在弹窗内部**已经变了**：「适用部位」多选**整条退场**、请求体不再带 `positions`（判据见本文件 body 那条 + PG-034），故本条只保留**入口位置与空态文案**两格判据。红证（修复前实测）：`expect(element).toHaveTextContent()` 两条红（页头文案仍是「新增」、空态仍写「点上方」）。', '**写面 body（2026-09-21 改判，issue #4886 / #4899 去部位化）**：① 新建路线 `POST /api/admin/production/routings` **只提交 `{name}`**（改前是 `{curtain_type, craft, operations: []}`，并有「部位/工艺为空时本地拦」的预检 —— 部位/工艺两维随去部位化退场，**该预检一并退场**；服务端仍接受可选的 `positions` / `is_default`）；② 新增工序 `POST /api/admin/production/operations` 提交 `{name, group_name?, unit?, unit_price}`（单价非数值时本地拦），**不带 `positions`** —— 省略 `positions` 时**后端照样建那一行价目行**（兜底 `position = 布帘`；active 工序恒有 `created_positions` / `skipped_positions` 两个响应键；**停用工序**省略 `positions` **不建行**）；显式传 `positions` 的行为与 422 护栏**一字未变**（值域/幂等/422 逐条见 PG-034）。', '**工序库半边同页可用**（issue #4416 合并后）：分组目录渲染真实工序（名称/部位/单位/计件单价），改单价走 `PUT /operations/{id}` body **只带** `unit_price`、改分组/单位只带 `{group_name, unit}`、停用只带 `{status}`（部分更新口径，注入：顺手带上无关字段 ⇒ 断言红）；**2026-09-21 改判（issue #4960 / #4961）：商家**写面**零 `scope` 零 `is_must_finish`** —— 本页**任何**写请求都不带 `scope` 键（`variant-scope-*` 控件退场）、也不带 `is_must_finish`（勾选框退场）。**边界（如实登记，防假真值）**：后端 `scope` **仍是可写契约键**（`PUT/POST /operations` 照旧接受并校验 ⇒ **不是** 422；DB 取值 `position`/`set` 一字未动，PG-039 判据 3 因此**一字未动**），退场的是**商家动作**；`is_must_finish` 相反 —— 写面**出现即 422**（PG-020 / PG-034）；`is_start_marker`（首工序）**不得**被渲染成「必完」（注入：把首工序当完工门槛 ⇒ 断言红）', '信号映射**降级为存量单兜底**（issue #4416 对齐 #4385 裁定 R-f）：该区默认**收起**，展开后文案说明「仅在订单**没有填**部位/工艺时才用」，且**不得**再出现旧口径「命中优先于默认路线」（注入：改回旧文案 / 去掉收起 ⇒ 各自断言红）', '信号映射：`GET` 列表渲染；新增走 `POST /route-signals`、编辑走 `PUT /route-signals/{id}`、删除**二次确认后**走 `DELETE /route-signals/{id}`（注入：删除改成不确认直接删 ⇒ confirm 断言红）', '接口失败不白屏：路线列表失败给错误提示 + 重试（重试后渲染出真实数据）；**工序库读取失败只在「配置就绪度」第 ① 步如实报错**（`readiness-step-operations` 的 label 变「工序与单价 读取失败」+ 状态词「读取失败」+ hint 给出路 ⇒ **不静默降级成「0 道工序」**）、**路线列表照常渲染**（不整页白屏；页内位置见前条的「同屏单列」口径）；缺口/信号单条失败只在**该区**给可读提示（注入：把 allSettled 改成 Promise.all ⇒ 单条失败即整页白屏，断言红）', '加工单四态路线来源提示（`route_source`）：default ⇒ 高亮提示「未识别工艺信号…请核对工序与计件单价」+ 报出实际使用的 `route_key`；partial ⇒ 提示「只识别出一半，另一半取默认值」；missing_route ⇒ 用 `route_requested_key` 报「本单识别的是 X，但工序库里没有这条路线」+ 报实际使用键；derived / 字段缺失 ⇒ **不提示**（静默 = 未知，**不得**显示成「已派生」）（注入：去掉任一分支 ⇒ 该态断言红；把未知值当 derived 正面渲染 ⇒ 第四条红）', '侧边栏入口（issue #4416 合并后；issue #4490 合并 + **同日规格修订**；🔴 **2026-09-23 组名与项数改判，issue #5271 菜单重设计**）：**「商品与加工项」组**（`product-center`；#5271 只改组名「商品管理」→「商品与加工项」、**成员不变**）共**两项** —— 商品列表 `/products` / **「加工项管理」`/production/processing`**（加工项管理 + 加工费管理**合并为单一入口**，页面两个 tab；用户裁定「合并后的菜单放入到**商品管理**大菜单下」，**组名后于 #5271 改判为「商品与加工项」**，取代原「加工项管理」的位置）；**生产管理组**（`production-center`）共**四项** —— 作业看板 `/production` / **智能派单 `/production/pool`**（#5177）/ **「工艺配置」`/production/routings`**（工序库 + 工艺路线**合并为单一入口**）/ 计件工资，**四项权限码统一 `processing:manage`**（🔴 **2026-09-25 改判（issue #5291）**：作业看板 / 工艺配置 / 计件工资 改用**读码 `production:view`**，**智能派单仍是 `processing:manage`**（同组不同权 = 「看得见这一页」与「改得动生产数据」分开）；只持 `processing:manage` 者看不到前三项）（改前本条写「共三项」且**漏了智能派单** ⇒ 那半句已作废）；**入库单 / 余料台账 / 省料看板三项已随 #5271 拆入新组「仓储与物料」（`inventory-center`）**，**不在**本组；**不再有**独立「工序库」菜单项（旧路径 `/production/operations` 重定向到 `/production/routings`）；两个旧路径 `/processing` 与 `/production/processing-fees` 都重定向到新入口（旧深链不 404）（注入：保留独立工序库项 ⇒ 生产管理组链接数 **4** 断言红（多出第 5 项）；把合并项留在生产管理组 ⇒ 「商品与加工项」组两项断言红；把物料三项留在生产管理组 ⇒ 「组内四项」与「仓储与物料组三项」两条断言红；删重定向 ⇒ 重定向断言红）', '**web 面只用一套工序名：矩阵行首与抽屉都不再出现变体名**（issue #4622 = goal「web 面工序命名统一」阶段 3；只换呈现，**能力不减**）：① 部位价目矩阵的**行首**只显示**逻辑工序名**（`精裁` / `三边`），**不再**显示该行落到工人端的变体名列表（`精裁-布 / 精裁-纱`、`布三边 / 纱三边`）—— **2026-09-21 改判（issue #4886 / #4899 去部位化）**：改前该行「哪个部位做 / 不做」由**列与格**表达，现在**整张部位矩阵的列与格都不存在了** —— 一道逻辑工序**只有一行、只有一个单价**（容器 `operation-price-matrix` / 表 `operation-workshop-table`；列头**逐字** = `[\'工序\',\'单价\',\'分组 · 单位 · 操作\']`（🔴 **2026-09-21 改判（issue #4961）**：原列头逐字是 `[\'工序\',\'单价\',\'分组 · 单位 · 必完 · 操作\']` —— 「必完」随完工口径改判**整条退场** ⇒ 这一维不再存在，`matrix-must-finish-*` 一族 testid 一律为空）；单价格 `operation-price-<逻辑工序名>`，`data-state` ∈ `priced` / `unpriced`（🔴 **2026-09-21 改判（issue #4939，配套 #4951 去部位化彻底版）**：取值域由**三态**收敛为**两态** —— 存活价目行的 `applicable` 恒 `TRUE` 且该字段已退场 ⇒ `na`（「不做」）**永不可达**，并补「『不做』不得出现在任何单价格里」的反向断言）；行首只显示逻辑工序名这条判据**不变**，承载变体名的节点与 `data-testid="matrix-variants-*"` 一并消失（testid 也是界面契约的一部分）；**`matrix-cell-*` / `matrix-applicable-*` / `matrix-price-input-<工序>-<部位>` / `drawer-applicable-*` 四族 testid 一律不得存在**（「不做 ⇄」适用性开关整条退场 —— 一道工序一个价 ⇒ 没有第二个维度）；**读面一侧**由 `ProductionOperationQueryService#collapseToLogical` 收敛（🔴 **2026-09-21 事实订正（issue #4939，配套 #4951）**：原收敛规则「`applicable=TRUE` 优先 → 其中布帘列优先 → `position` 字典序 → `id` 升序」里的**前两条已失去输入** —— 存活行 `applicable` 恒 `TRUE`、`position` 恒 `通用` ⇒ 剩下仍可判定的两条 = **`position` 字典序 → `id` 升序**，且 #4951 之后每个逻辑名**本就只有一行**；前端 `pickConvergedCell` 同步收敛为这两条，**只选行、不回落**），前端**保留收敛后那一行的 `id`** 作 `PUT /operation-positions/{id}` 的改价寻址（选错行 = 改了另一个价）；② 「管理▸」抽屉标题/说明改**商家语言**；**2026-09-21 改判（同批）**：条目**主标识 = 逻辑工序名**（改前是「它服务的部位集合」，如 `布帘` / `布帘 / 帘头` —— 部位维度退场后不再有这一层），**不显示变体名**，空态提示也不再写「变体 / 工人端」；③ 抽屉**能力一个都不许少**（🔴 **2026-09-21 改判（issue #4960 / #4961）：由「六项逐条断言」收敛为「四项逐条断言」** —— 退场的是**作用域**与**必完**这两个配置项，而**不是**能力被删：写面**零 `scope`**（`variant-scope-*` 控件退场、本页任何写请求都不带该键；后端该键**仍是可写契约键**、DB 取值一字未动）与**零 `is_must_finish`**（勾选框退场；后端写面**出现即 422**））：改分组 / 单位（`PUT /operations/{id}` body 恰为 `{group_name, unit}`）、停用（只带 `{status}`）、删除（二次确认后 `DELETE /operations/{id}`）；④ 「新增工序」对话框的「工序名称」placeholder 不再示范「把部位编进名字」的旧写法（`罗马帘-穿杆` ⇒ `罗马帘穿杆`），**2026-09-21 改判（同批）**：改前那句「工序名不要带部位 —— 部位在下面勾选」随**部位勾选**一并退场（弹窗内已无部位勾选、请求体不再带 `positions`；现文案 = `工序名只写这道活本身（如「精裁」「三边」），不要带任何前缀或后缀`）；**2026-09-21 改判（同批）**：#4614 的「至少勾一个部位」预检与默认勾选**已随部位维度退场**（不再是「前端不加」而是「前端没有这一格」）—— 但**写面**自 #4642 起仍由**后端 422 拒旧形态名**（见 ⑥；前端仍不做同名预检）；⑤ **不加新接口**：复用 `GET /operation-positions` 的 `id` / `variant_operation_id` / `group` / `unit` / `scope` / `is_must_finish`（`variant_name` 只在后端寻址用，不上界面）。红证（修复前实测，`frontend/admin-web` 窄跑）：9 failed / 115 passed —— 行首小字 `精裁-布` 命中「这一屏任何位置都不出现变体名」、抽屉「以部位为主标识」的旧断言（改钉后为「主标识 = 被管理的那个逻辑工序名」）红、标题 `「三边」在各部位的设置` 找不到、空态 `还没有设置` 红、placeholder `expected \'如 罗马帘-穿杆\' to be \'如 罗马帘穿杆\'`；实现后 124/124 绿。回归锁 = `frontend/admin-web/tests/unit/pages/production-routings.test.tsx`（㉖-① ~ ㉖-⑧）+ `frontend/admin-web/tests/unit/components/OperationsProvenance.test.tsx`。⑥ **写面旧形态工序名 ⇒ 422 拒（拒绝，不归一）**（issue #4642，2026-09-20；本条 ④ 的「不加阻断式校验」随之改判为「**前端**不加、**后端**拒」）：`POST /api/admin/production/operations` 的 `name` 走 `rejectVariantOperationName` —— 判据两条：① 归一后**不等于自身**（该名**是**归一表里的已登记旧形态，如 `布三边` / `布帘车被` / `精裁-布`；判据直接来自**既有** `normalizeOperationName`，不新造第二份表）；② 以 `-布` / `-纱` / `-帘` 结尾（**未登记**的「名字 + 部位后缀」写法，如 `定制-布` —— 部位词表是**闭**的 ⇒ 形态可判定，对已登记 / 未登记**一视同仁**）。命中 ⇒ **422 + 可行动 `error.details`** 且**不落库**；**为什么是拒绝而不是归一**：`布三边` 归一成 `三边` 会与**既有** `三边` 行撞唯一索引 `uk_production_operations_tenant_name`（⇒ 500 或建出重复/半成品）。病根（改前形态）：同一个请求里 `name` 原样落库、而 `attachPositions` 用归一后的逻辑名建矩阵行 ⇒ **同一道工序在库里两名并存**（库里 `布三边` + 矩阵行 `三边`），且 `name` 会经目录 / 孤儿接入弹窗上屏。**反向护栏**：合法逻辑名（`精裁` / `三边`）与不含部位后缀的自定义名（`测试22` / `罗马帘穿杆`）一律放行（**不得误伤**）；文案**不得**说「是旧形态」（判据 ② 命中的名字不在归一表里 ⇒ 说它「是旧形态」是事实错误，见 #4647 / D2）。证据：ProductionControllerTest「#4642 POST /operations 命中旧形态工序名（布三边）⇒ **422 + error.details 逐条**，不落库」+ ProductionOperationCommandServiceTest 的部位后缀边界三态（`-布`/`-纱`/`-帘` 一律拒 · 文案不得说「旧形态」 · 合法自定义名放行）。⑦ **读面：catalog / routing-gaps 的 `name` = 逻辑名，库口径原名另走显式新键 `library_name`**（issue #4642，同一条泄漏路径的读面半边）：`GET /operations-catalog` 的 `operationView` 与 `GET /routings` 缺口清单的 `routingGaps` **两处**，`name` 一律改为**读时归一后的逻辑名**（`精裁-布` ⇒ `精裁`、`布三边` ⇒ `三边`，走**同一份** `normalizeOperationName`，**没有第二份实现**）；库口径原名另走**显式新键 `library_name`**，并在 `operationView` 的 javadoc 明写「**web 界面不得渲染该键**（工人端快照名口径）」—— 机械判据 = `tests/unit_ci_workflows/test_op_name_registry_guard.py` 的「FE 不得在 JSX 渲染位置取 `library_name`」。**`production_operations.name` 列一字未动**（纯读时派生，**无数据迁移**）。**反向护栏**：归一**只**动 `name`（同行 `unit` / `unit_price` / `group` / `scope` 一字不变）、**幂等**（逻辑名再归一不变；自定义名 `测试22` 归一后等于自身 ⇒ 原样返回）、除新增 `library_name` 外键集不变。证据：ProductionControllerTest「operationsCatalogNormalizesLegacyVariantNamesOnRead」「routingGapsNormalizesLegacyVariantNamesOnRead」+ ProductionOperationQueryServiceTest「catalogGroupsOperationsByGroup」（**改判**：`name` 归一 + 新增 `library_name` 逐行断言，顺序与条数一字不变）。', '**接口层：`GET /operation-positions` 不再返回变体名**（issue #4622 补口③ —— goal 的硬判据是「变体名不得出现在 **web 可见的接口响应**」，只让前端「不渲染」不够）：① `ProductionRoutingReadService.positionView` **删除** `variant_name` 键（部位价目项由 11 键收敛为 **10 键**：`id` / `operation` / `position` / `unit_price` / `applicable` / `variant_operation_id` / `unit` / `group` / `scope` / `is_must_finish`）；② **反向护栏**：`variant_operation_id` / `unit` / `group` / `scope` / `is_must_finish` 5 键**仍在**（#4960 / #4961 **只删商家写面，读面键集一字不动**：`scope` 仍是**后端写面契约键**且 DB 取值一字未动（PG-039）；`is_must_finish` 变体存在时恒 `false`、变体缺失时保持既有 `null`（历史载体），前端**零消费**这两键），查不到变体时**键保留且全 null**；③ 前端 `OperationPosition` 类型同步删键；④ 契约守卫 `tests/unit_ci_workflows/test_routing_read_endpoints.py` 的 `POSITION_KEYS` 由 11 键改判为 10 键（**契约同步，不是放宽**：该常量仍是**冻结判据**，加/删/改名照旧红）。红证（修复前实测）：Java 侧 `ProductionRoutingReadServiceTest` / `ProductionRoutingReadControllerTest` 的键集与 `variant_name` 断言先红（改前 `variant_name == "布三边"`、键数 11）；前端侧契约守卫按 10 键断言先红。**边界**：与 #4621 的「只加不改」裁定**不冲突** —— 那条针对**历史快照键**（`operation` / `operation_name` = 工人端**当时**的快照名，历史读面必须保留），而 `variant_name` 是**当前**库口径的名字。**2026-09-21 事实订正（issue #4899，不削弱本条任何判据）**：读面已由 `ProductionOperationQueryService#collapseToLogical` **收敛为「一道逻辑工序一行」**（30 行），但**键集与上述四条判据一字不变**（仍是 **10 键**、仍冻结、加/删/改名照旧红）；「查不到变体时键保留且全 null」这一格**仍在**（收敛**只选行、不回落**，选中那一行的 `variant_operation_id` 仍取 `variantNameOf` 的返回值，查不到即 null）。', '**主线预检的存在性判定按逻辑名域 + chip「必完」按价目行**（issue #4622 补口①②）：① `missing` 只按**价目表里的逻辑工序名**判（原口径是「工序库 ∪ 矩阵」并集 —— 工序库键是**变体名**，会把主线里残留的变体名误判成「存在」而不报，而后端按逻辑名判 ⇒ 同一件事两边判得不一样）；反向护栏：合法逻辑名**不得**误报；② **主线 chip 上的「必完」标记整条退场**（**2026-09-21 改判，issue #4961**：完工口径换成全部活跃工序实例报满 ⇒ 不再有「必完」这一档；原「三态 ⇒ 布尔 / 落在收敛后那一行的 `is_must_finish` / 价目表里没有该行就不显示」整段**随被测对象消失**）—— 反向断言：`routing-step-must-finish-*` 一族 testid 为空、chip 文本**不得**含「必完」；③ **不加新接口**（本项退场后 chip 不再需要任何价目读面字段）。红证（**移除类判据**：「改前**存在** ⇒ 断言**不存在**」）：改前 chip 带 `routing-step-must-finish-11-1` / `-11-3` ⇒ 加回即红（原「找不到标记」是**缺陷形态**，已不是判据）。回归锁 = `frontend/admin-web/tests/unit/pages/production-routings.test.tsx`（㉖-⑦ / ㉖-⑧）。'],
+    skip_reason='[backend-contract] 前端组件/页面契约（admin-web），由 vitest 单测全量覆盖（frontend/admin-web/tests/unit/pages/production-routings.test.tsx、tests/unit/pages/production-operations.test.tsx（旧路径重定向守卫）、tests/unit/components/OperationsScopeColumn.test.tsx、tests/unit/components/OperationsProvenance.test.tsx、tests/unit/lib/route-source.test.ts、tests/unit/pages/processing-orders-production.test.tsx、tests/unit/pages/production-board.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟（同 PP-010/PP-011 惯例）',
+    tags=['processing', 'production', 'admin_web', 'routing', 'route_signals', 'gap_visibility', 'route_source'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-040 [NORMAL] 加工费组合定价 - 组合→单价（元/米）写面五条护栏 + composition_key 归一化 + 版本账 + 未定价缺口可见（源: cases/processing.yml）──
+_CASE_PG_040 = EvalCase(
+    id='PG-040',
+    legacy_id='',
+    title='加工费组合定价 - 组合→单价（元/米）写面五条护栏 + composition_key 归一化 + 版本账 + 未定价缺口可见',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['success=true', '判据 1·**同一组合不重复定价**：同一 `composition_key` 建两次 ⇒ 第二次 HTTP **409**（冲突响应：错误码为 CONFLICT 形态 + 可行动 `suggestion`），且**零 insert**（撞 DB 唯一键 `uk_processing_fee_combinations_tenant_key` = 500，是缺陷不是护栏）。证据：ProcessingFeeCombinationCommandServiceTest「duplicateCompositionIsRejectedWithConflict」+ ProductionControllerTest「createProcessingFeeCombinationDuplicateReturnsConflict」（**注入**：去掉 `rejectDuplicate` ⇒ 两条断言红）', '判据 2·**归一化确定性、与书写顺序无关**：`compositionKey` 口径 = trim → 丢空 → 去重 → **按 Unicode 码点升序** → `+` 连接 ⇒ `韩褶+打孔+定型` ≡ `定型+打孔+韩褶` ≡ `打孔+定型+韩褶` 全部等于 `定型+打孔+韩褶`（码点真值：定 U+5B9A < 打 U+6253 < 韩 U+97E9，**勿凭读起来顺猜顺序**）；落库值与响应 `composition_key` 都是**归一化后**的值，`items` 与 key 同源；归一化后相同 ⇒ 撞判据 1 的 409。**为什么不能用「加工项目录 sort_order 序」**：那会让 key 随加工项表改动漂移（商家调一下排序 ⇒ 已成交组合匹配不上自己的价）。证据：ProcessingFeeCombinationCommandServiceTest「compositionKeyIsOrderIndependent」「storedCompositionKeyIsNormalized」「reorderedRequestHitsDuplicateGuard」（**注入**：把 `TreeSet` 改成 `LinkedHashSet` ⇒ 三条红，实测）', "判据 3·**护栏理由逐条可见**（422 + 真实信封）：失败响应 = HTTP **422** + `{success:false, error:{code:'VALIDATION_ERROR', message, details:[{field,message}]}, suggestion}` —— `details[].message` **逐条**（空组合 field=items / 特征名不存在或已停用 field=items[i] / 特征名重复 field=items[i] / unit_price 缺失·非数值·负数 field=unit_price / source 不在词表 field=source），且**一次报全**（不是报第一条就返回）；`unit_price=0` 合法（商家可把某组合做成免费）。证据：ProcessingFeeCombinationCommandServiceTest 四条护栏用例 + ProductionControllerTest「createProcessingFeeCombinationGuardFailureReturnsDetailsEnvelope」（断言 `details.length()==2`、`details[0].field=items[1]`、`details[1].field=unit_price`、`suggestion` 非空）。⚠️ 前端必须按 `error.details[].message` 读 —— **不得**读不存在的顶层 `error_messages`（#4308 实测：按那个形状读 ⇒ 真实失败路径静默退化成「Request failed with status code 422」）", '判据 4·**缺口可见**：`GET /api/admin/production/processing-fee-gaps` = 「订单里**实际出现过**（`order_items.processing_info.processingItems[].name`，与 OrderService.extractProcessingItems 同口径）、但库里查不到价」的组合 ⇒ 每行 `{composition_key, items, order_count, note}`，已定价的**不出现**，书写顺序不同的同一组合**合并计数**；空集时返回 `[]` + total=0（不是 null/异常）；响应带 `scanned_order_items` + `scanned_truncated`（扫描有上限，超限**不静默**）。**不发明任何默认价**（缺口就是缺口）。证据：ProcessingFeeCombinationCommandServiceTest「gapsListUnpricedCombinationsSeenInOrders」「gapsEmptyWhenNoOrders」+ ProductionControllerTest「processingFeeGapsEndpointIsRegistered」（**注入**：不排除已定价组合 ⇒ 判据红，实测）', '判据 5·**版本账**：新建落**首行**、改单价**真的变了**才追加一行到 `processing_fee_combination_versions`（记变更后 `unit_price` + 冗余 `composition_key` —— 组合行停用/改名后历史账仍答得出「当时是哪一组」）；同价重复提交 = **幂等空操作**（不追加无意义行，沿用 #4308 口径）；停用 = 软删语义（`status=disabled`，行保留、`deleted` 不动）。证据：ProcessingFeeCombinationCommandServiceTest「priceChangeAppendsVersionRow」「samePriceIsIdempotentNoop」「createAppendsFirstVersionRow」「disableKeepsRow」（**注入**：`appendVersion` 直接 return ⇒ 两条红，实测）', '判据 6·**管理面**（前端）：`/production/processing?tab=fees`（issue #4490 合并前为独立页 `/production/processing-fees`）渲染真实组合行（选配特征 + `¥x.xx` 元/米）、新建提交 `{items:[勾选集合], unit_price}`（**前端不拼 composition_key** —— 自己拼 = 第二份口径）、护栏理由**逐条**渲染、空组合**本地先拦**（不发 POST）、缺口区逐条可见、改单价走 `PUT /{id}`（body 只有 unit_price）、停用走 `DELETE /{id}`（二次确认后）、单接口失败只在**该区**给可读提示（不整页白屏）；侧边栏**「商品与加工项」组**（`product-center`；#5271 把组名由「商品管理」改判 —— **成员不变**，本组共**两项** = 商品列表 `/products` + 本项）含合并项「加工项管理」`/production/processing`（issue #4490 同日规格修订后归本组；本面是它的**第二个 tab「加工费组合」**，`?tab=fees` 直达；旧路径 `/production/processing-fees` 重定向到该 tab），权限码 **`production:view`**（🔴 **2026-09-25 改判（issue #5291）**：加工项管理节点改用生产域**读**码；该页的加工项 CRUD 写面仍是 `processing:manage`）。证据：frontend/admin-web/tests/unit/pages/processing-fees.test.tsx + tests/unit/pages/production-board.test.tsx（**注入**：把读法退化成 `error.message` 一句话 ⇒ 三条独立条目断言红）', '**红证（实测输出，2026-09-19）**：① 去掉归一化排序 ⇒ `Tests run: 17, Failures: 3`；② 去掉唯一键护栏 ⇒ `Failures: 2, Errors: 3`；③ 缺口不排除已定价 ⇒ `Failures: 1`；④ 去掉落账 ⇒ `Failures: 2`。**未做（如实登记）**：计价接线（`OrderService.sumProcessingFee` / 下单页 / ai-agent）**不在本单**（issue #4386「不做」），`fee_source` 三态（matched/unpriced/manual）随之未落码；`processing_rules` 可组合性校验未落码（KNOWN-03 仍在）。'],
+    skip_reason='[backend-contract] 后端契约 + 前端组件契约（无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProcessingFeeCombinationCommandServiceTest + ProductionControllerTest + frontend/admin-web/tests/unit/pages/processing-fees.test.tsx + tests/unit/pages/production-board.test.tsx 执行',
+    tags=['processing', 'processing_fee', 'fee_combination', 'composition_key', 'normalization', 'version_ledger', 'gap_visibility'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-042 [NORMAL] 加工费消费面 - 选配组合 → processing_fee_combinations 取价 × 加工费米数（未定价 ⇒ 0 + unpriced，不回落 Σ 加工项；人工改价 ⇒ manual + 建单回写组合）（源: cases/processing.yml）──
+_CASE_PG_042 = EvalCase(
+    id='PG-042',
+    legacy_id='',
+    title='加工费消费面 - 选配组合 → processing_fee_combinations 取价 × 加工费米数（未定价 ⇒ 0 + unpriced，不回落 Σ 加工项；人工改价 ⇒ manual + 建单回写组合）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['success=true', '判据 1·**选配组合命中 ⇒ 落库加工费 = 该组合单价 × 加工费米数**（不再 Σ 加工项）：组合「定型+打孔+韩褶」定价 ¥8.00/米、加工费米数 12.30 米 ⇒ 行加工费 98.40（Σ 加工项口径会得 9.50×2×2 = 38.00），订单总额 = 商品 599.00 + 98.40 = 697.40。证据：ProcessingFeeCalculatorTest「matchedCombinationUsesCombinationPriceTimesProcessingMeters」+ OrderServiceTest「createOrder_processingFeeComesFromMatchedCombination」（**注入**：退回 Σ 加工项 ⇒ 总额断言红，实测 637.00 vs 697.40）', '判据 2·**未定价组合 ⇒ 组合那半 0（`amount`=0）+ fee_source=unpriced + 可行动提示，绝不回落任何默认价**（用户裁定：「直接切，不回落 Σ 加工项」；#4308「静默回落」同族纪律）。空价目表、停用组合、组合键不匹配三种形态都归 unpriced；提示指向「加工费管理」定价入口。⚠️ **2026-09-19 改判（issue #4594）**：`fee_source=unpriced` 只表达**组合那半**，**不再蕴含「行金额 = 0」** —— 已定价的特殊选项照常计入（见 PG-043 判据 2′）。证据：ProcessingFeeCalculatorTest「unpricedCombinationYieldsZeroWithActionableHint」「emptyCombinationTableYieldsZeroNotDefaultPrice」「disabledCombinationIsNotUsedForPricing」+ OrderServiceTest「createOrder_unpricedCombinationStoresZeroAndHint」（**注入**：让未命中分支回落 Σ 加工项或套默认档价 ⇒ 4 条红，实测 599.00 vs 618.00）', '判据 3·**可审计 processingFeeDetail**：组合 composition / 命中哪条规则 matched_rule_id / 单价 unit_price / 单价来源 price_source / 加工费米数 meters / 米数来源 meters_source / fee_source 三态（matched·unpriced·manual） / 金额 amount / 未定价时的可行动 hint —— 随行落库到 `processing_info.processingFeeDetail`（读面与加工单快照读同一份），金额字段 `processingFee` 仍是 number（不改既有字段类型）。证据：ProcessingFeeCalculatorTest 全部用例的 detail 断言 + OrderServiceTest「createOrder_processingFeeComesFromMatchedCombination」', '判据 4·**组合键归一化复用写面同一份实现**（不许第二份）：`ProcessingFeeCombinationCommandService.compositionKey`（trim → 丢空 → 去重 → Unicode 码点升序 → `+` 连接）⇒ 「韩褶+打孔+定型」与「定型+打孔+韩褶」命中同一条规则、同一笔钱。证据：ProcessingFeeCalculatorTest「compositionKeyOrderIndependent」（**注入**：改回书写顺序敏感 ⇒ 红）', '判据 5·**加工费米数 = 该樘窗主布行米数**（裁定 R-b；纱含在组合价里，不另按米收）：取 `processing_info.processingMeters`，兼容键 `fabric_meters` 并记 `meters_source`；命中组合但**米数缺失 ⇒ 0 + unpriced**（不凭 quantity 猜米数）。证据：ProcessingFeeCalculatorTest「metersFallBackToFabricMetersAndRecordSource」「matchedCombinationWithoutMetersYieldsZero」', '判据 6·**改组合价 ⇒ 新单按新价；已生成订单一字不变**（R13 快照优先）：读面读 `processing_info.processingFeeDetail` 的落库值，**不重算** ⇒ 历史订单金额不随价目表漂移；存量单（接线前生成、无 detail）读 0 且不拿 Σ 加工项冒充。证据：OrderServiceTest「changingCombinationPriceLeavesExistingOrderUntouched」「readPathsReturnStoredFeeNotRecomputed」「legacyOrderWithoutStoredDetailReadsZero」（**注入**：读面改成重算 ⇒ 红，实测 98.40 vs 19.00）', '判据 7·**加工费不带商品维度**（R15）：同一选配在任意商品上取到同一个组合价（#4371 解耦后组合费用表是店铺级）。证据：ProcessingFeeCalculatorTest「sameCompositionSamePriceOnAnyProduct」', '判据 8·**两套账不互读**（R9）：对外加工费**不得**由 `production_operations.unit_price` / 加工项目录单价算出（那两处是给工人付的成本）。证据：ProcessingFeeCalculatorTest「processingFeeNeverDerivedFromOperationUnitPrice」（**注入**：让取价读工序/加工项单价 ⇒ 红）', "判据 9·**行级人工改价**（issue #4872，用户 2026-09-21 裁定「订单中加工费组合**未配置**的情况下，**允许更改该单价**」）：`processing_info.processingFeeOverride`（元/米）**只要**组合键非空 ∧ override 是**非负数**就被采用（🔴 #7658：`0` 是**有效单价**＝本单免加工费 —— 用户 2026-10-24「在订单中改成 0 后，费用明细的展示费用未联动更改」；旧口径「非正数一律不算改价」已作废）（🔴 2026-10-24 改判，**组合是否已配置价目都不影响** —— 旧口径「仅未配置」的后果 = 商家配了价目之后，某一单要按谈好的价收**没有任何入口**；用户逐字「新增订单中的加工费组合需要允许修改」） ⇒ `fee_source='manual'`、`price_source='manual'`、`unit_price`=override、金额 = override × 加工费米数（已定价特殊选项照常计入）。**组合命中时同样采用本单改价**（🔴 #7642 改判：旧口径「一律忽略 override」已作废）⇒ `fee_source='manual'`、`unit_price`=override、`matched_rule_id=null`，并把被覆盖的那条**价目价**记进 detail 的 `configured_unit_price`（键**只加不改**；未配置行**不写**这个键，免得读面以为有个价目价）。价目那一份**不动**（回写侧见判据 10）。只认**非负数**：缺键 / 非数值 / **负数**不算改价（负价不是价）⇒ 仍走 unpriced 且显式可见；**「清空改价」由缺键表达**（前端空框不发该键）⇒ 与 `0` 在数据上分得开。证据补 `#7658` 两条：`zeroOverrideOnPricedCombinationIsAZeroManualPrice`（命中组合 + 0 ⇒ manual、金额 0、`configured_unit_price` 仍在）与 `zeroOverrideOnUnmatchedCombinationOmitsConfiguredPrice`（未配置 + 0 ⇒ 不带该键）。未命中 ∧ override ∧ **缺米数** ⇒ 仍 `unpriced`（与判据 5 同族：不凭 quantity 猜米数），detail 里保留 override 可见 + 可行动 hint。证据：ProcessingFeeCalculatorTest「manualOverrideOnUnmatchedCombinationUsesOverrideTimesMeters」「manualOverrideOnPricedCombinationUsesOverrideForThisOrder」「manualOverrideOnUnmatchedCombinationRecordsNoConfiguredPrice」（**注入**：把 override 的采用退回「仅未命中」⇒ 第二条红，实测 `fee_source` 仍是 `matched`）「withoutOverrideUnmatchedCombinationKeepsUnpriced」「negativeOrGarbageOverrideIsNotAManualPrice」「manualOverrideWithoutCompositionStaysUnpriced」「manualOverrideWithoutMetersStaysUnpriced」「manualOverrideStillChargesPricedSpecialOptions」", "判据 10·**建单同事务回写加工费组合**（issue #4872，用户裁定「当订单**创建成功后**，同步**新增加工费组合&单价**到加工费配置中」）：对每条 `fee_source='manual'` **且该组合本来没有价目**（`Fee#configuredUnitPrice()` 为空）**且单价 > 0** 的行，按 `compositionKey` **同源口径** upsert `processing_fee_combinations`（`status='active'`、`source='实证'`）+ 追加版本台账（走既有 `appendVersion`，**不绕过**）。🔴 #7658：**0 元永不回写**（`unitPrice.signum() <= 0` ⇒ 跳过）—— 否则一个免费单就把整条组合价清零；🔴 #7642：组合**已配置**（`configured_unit_price` 非空）⇒ **零回写**（只改本单单价 —— 回写会把这一单的谈定价变成租户共享价，之后所有同组合的新单都按它算钱）。幂等三态：已存在同键 **active** 行 ⇒ **不覆盖其价**；已存在 **disabled** 行 ⇒ **复活为 active 并写本次订单价**（V77 那批 92 行全部 disabled ⇒ 这是主路径）；都不存在 ⇒ 新建。**无 manual 行 ⇒ 零回写调用**（正常建单路径不多一次写库、金额一字不变）。⚠️ **agent 通道被挡**（同日独立复核 #4878 补）：`order_create` 把 `processingFeeOverride` 列入 `_AGENT_FORBIDDEN_CRAFT_SPEC_KEYS` 并丢弃 —— 否则模型幻觉的一个正数会经 `createOrderForAgent` → `createOrder` 写进**租户共享价目**（且不走 `createCombination` 的护栏）。证据：ProcessingFeeCombinationCommandServiceTest「upsertFromOrderCreatesCombinationAndVersionLedger」「upsertFromOrderNeverOverwritesActivePrice」「upsertFromOrderRevivesDisabledRow」（**2026-10-03 幽灵名订正，issue #6147**：旧写的 `upsertFromOrderRevivesDisabledCombination` 在仓里**不存在**）+ OrderServiceTest「createOrder_manualOverrideOnUnmatchedCombination」「createOrder_manualOverrideOnConfiguredCombination」（**注入**：摘掉 `OrderService` 的回写循环 ⇒ 第一条红；去掉 #7642 的 skip 条件 ⇒ 第二条红 —— 「本单改价悄悄改了租户共享价目」）+ ai-agent `test_agent_cannot_write_manual_fee_override`", '**未落地（如实登记）**：① 前端 `orders/new/page.tsx` 仍是本地自算（本单**只做后端**，PR #4424 正在改该文件）⇒ 页面显示 ≠ 落库（R10 未闭合）；② C 端 `curtain_calc.py` 的 `DEFAULT_PROCESSING_PRICE` 常量未降级为种子 ⇒ 报价单与订单的**双算**（R10 / 关联 #4118）未闭合；③ ~~`fee_source=manual`（人工改价通道）只定义未落码~~ ⇒ **2026-09-21 已落码**（issue #4872，见判据 9/10；`manual` 三态至此齐全）；④ ai-agent 侧 `order_create` 不声明 processingFee 的推广登记在关联 #4390（#4872 仍未做）；⑤ **改价后「停用过的组合被复活」时，读面不保留停用前价的历史查询面**（版本台账有行，UI/端点未开）；⑥ `logisticsType` 值域（express/logistics）**未加校验**（只 trim 落库）。'],
+    skip_reason='[backend-contract] 后端契约（无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProcessingFeeCalculatorTest + ProcessingFeeCombinationCommandServiceTest + OrderServiceTest 执行',
+    tags=['processing_fee', 'fee_combination', 'consumption_face', 'fee_source', 'unpriced', 'snapshot_priority', 'manual_override'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-043 [NORMAL] 特殊选项按套计价（包 A）- route_rules 加对客单价列 + 加工费 = 组合价×米数 + Σ(选项价×套数) + 92 行合成价目（源: cases/processing.yml）──
+_CASE_PG_043 = EvalCase(
+    id='PG-043',
+    legacy_id='',
+    title='特殊选项按套计价（包 A）- route_rules 加对客单价列 + 加工费 = 组合价×米数 + Σ(选项价×套数) + 92 行合成价目',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['判据 1·**行加工费 = 组合价(元/米) × 加工费米数 + Σ 选中特殊选项(单价(元/套) × 套数)**，套数恒 1（R8「1 套 = 1 个订单行」），逐分可核对：组合 ¥8.00/米 × 12.30 米 = 98.40，选项「加铅块」¥6.00/套 +「接高」¥2.50/套 = 8.50 ⇒ 行金额 106.90（**只算组合那半 ⇒ 98.40 ⇒ 红**）。证据：ProcessingFeeCalculatorTest「specialOptionsAddPerSetFeeOnTopOfCombinationHalf」（+ FeePreviewControllerTest「passesSpecialOptionsThroughWithLineAmount」钉 HTTP 面 139.00）。**回归不变量**：没选任何特殊选项 ⇒ `special_options` 为空数组且 `special_options_total = 0`，行金额与 #4406 口径逐分相同（`matchedCombinationUsesCombinationPriceTimesProcessingMeters`）。', '判据 3·**选项未定价（`customer_unit_price IS NULL`）⇒ `special_options[].priced=false` + 单价 null + 计 0 + 可行动 hint**（指向 `/production/processing-fees`），且 `fee_source` 仍 `matched`（组合那半有效）；**静默按 0 收（priced=true / hint=null）⇒ 红**。证据：ProcessingFeeCalculatorTest「unpricedOptionIsExplicitlyVisibleAndNotSilentlyZero」。匹配必须**精确相等**（名字差一个字 ⇒ 视为未定价，不误收）：「specialOptionMatchingIsExact」。', '判据 2′·**组合未定价 ⇒ 只把「组合那半」记 0；已定价的特殊选项照常计入行金额**（用户裁定 2026-09-19 / issue #4594：「选择A的同时，告警仍然要有，而且要告知具体组合明细」）。三种 unpriced 形态（组合无价 / 无加工项 / 缺米数）一律：`amount`=0、`fee_source=unpriced`、**不回落** Σ 加工项，但 `lineAmount()` = 0 + Σ 已定价选项价。**选项是按套的独立一笔账**，与组合是否定价、米数是否齐全无关；选项**未定价**时仍是 `priced:false` + 计 0（不许静默按 0 收）。证据：ProcessingFeeCalculatorTest「unmatchedCombinationStillChargesPricedSpecialOptions」（**红证**：改前 `lineAmount` 0 vs 期望 6.00）「unmatchedCombinationWithUnpricedOptionStaysZeroAndVisible」「missingMetersStillChargesPricedSpecialOptions」「emptyCompositionStillChargesPricedSpecialOptions」+ OrderServiceTest「createOrder_unpricedCombinationStillChargesPricedSpecialOptions」（**红证**：改前总额 599.00 vs 期望 605.00）「readPathsReturnStoredOptionFeeForUnpricedRow」。**影响面（显式登记）**：组合没配价时订单金额会**变大**（开始收已定价的选项价）—— 这是用户要的口径。', "🔴 **合成价一律不得参与取价 + 选项初始价按租户初始化**（issue #4525 复核的 P1 钱风险；② 于 2026-09-19 按用户裁定**改判**）：`MigrationRunner` 在 **admin-api 启动时**执行迁移 ⇒ **生产一样会跑**，而取价侧只过滤 `status='active'`（**不按 `source` 过滤**）⇒ ① 92 行组合价**全部** `status='disabled'`（有任一行 active ⇒ 生产 tenant 1 的真实订单按随机价收费）；② 特殊选项价（V82；用户裁定「特殊选项缺乏单价，通常按套收费」「随便初始化一份价格数据，单价是元/套」）**按租户初始化恰好 16 项**（元/套）、**只在 `customer_unit_price IS NULL` 时写**（不覆盖商家改过的价）、**非 option 行保持 NULL**；该列**无 status 可门控** ⇒ 这 16 个占位值**会真的参与对客取价**（商家改价即覆盖 —— 已知代价，用户已接受）。证据：test_option_fee_seed.py「test_synthetic_combination_rows_are_all_disabled」「test_v82_prices_exactly_the_option_rows」（均带注入式自证）。", "判据 9·**测试数据带 `source='synthetic'` 且两次生成逐值相同**：V77 的组合价目（92 行 = 91 组合 + 缎带）与选项价（16 条）逐值等于固定种子生成器 `tests/unit_ci_workflows/synthetic_processing_fee_data.py` 的重算结果；e2e fixture 重建为 L2 特征词典（旧的 13 条编造数据一条不剩）。证据：tests/unit_ci_workflows/test_option_fee_seed.py「test_seed_rows_match_the_deterministic_generator」「test_seed_is_deterministic_across_two_runs」「test_seed_carries_synthetic_provenance」「test_e2e_fixture_is_the_rebuilt_feature_dictionary」。", '判据 10·**计件路径零读取 `customer_unit_price`**（两套账不互读）：全 `main` 源码里该标识符只允许出现在**取价层**（ProcessingFeeCalculator）、**实体字段声明**、以及**配置面**（读面 ProductionRoutingReadService + 其端点 ProductionController —— issue #4567 用户裁定「特殊选项要有定价」⇒ 商家必须能看见并修改这个价，两处都只**原样透出/写入**、不参与任何计件计算）；同表 `factor`（计件系数）改了 ⇒ 对客加工费一字不变。证据：test_option_fee_seed.py「test_piecework_paths_never_read_customer_unit_price」（含注入式自证 test_piecework_read_guard_detects_injected_read）+ ProcessingFeeCalculatorTest「customerFeeNeverReadsPieceworkFactor」。', '判据 11·**历史订单一字不变**（R13 快照冻结）：读面仍读落库的 `processingFeeDetail`（`storedFee`），**不重算**；落库明细里的选项价原样读出。证据：test_option_fee_seed.py「test_read_paths_still_read_the_persisted_detail」+ ProcessingFeeCalculatorTest「storedFeeReadsPersistedSpecialOptions」。', '迁移面·V77 **幂等**且带 `COMMENT ON COLUMN`（写明「对客售价账」+「计件路径绝不读本列」+「NULL = 未定价」）；bootstrap `docs/sql/schema.sql` 同步终态（该路径不跑迁移链）。证据：test_option_fee_seed.py「test_v77_adds_customer_unit_price_column」「test_v77_migration_is_idempotent」「test_schema_sql_carries_the_new_column」。', '**边界登记**：① 91 个组合名是按 12 个特征**确定性枚举的合成集**（`31 + 31 + 29`），**不等于 ERP 图里那 91 项真实名字**（ERP 点名而本枚举没有的例：`打孔+拼接+倒幅+定型`、`韩折+超高+接高+定型`、`韩折+超高+超宽+定型`）⇒ 真实名单待客户导出后**只换数据、不动结构**；② 特殊选项初始价 = **V82 的 16 项占位值**（用户裁定 2026-09-19 **推翻** V77 的「不落库」口径：`customer_unit_price` 无 status 可门控 ⇒ 会参与取价，商家改价即覆盖；生成器仍保留 16 条合成价作测试资产）。', "**与设计文档的冲突（以代码事实为准，已显式登记）**：设计 §7 写「19 项特殊选项价」，但 §4.1 冻结「非 `option` 行一律 `NULL`」；19 项里只有 **16 项**在 `production_route_rules` 里是 `trigger_kind='option'` 行（`余料带回-布`/`余料带回-纱` 不计件、`一分为二` 只有计件系数档）⇒ 只给这 16 条定价，另 3 项**不造规则行**（造了就违反 §4.1 与 R11 边界）。逐条点名判据：test_priced_option_rows_are_exactly_the_option_rules。**D5 豁免**：`routing.py::ROUTE_RULES` 不带本列（agent 侧豁免）⇒ test_production_catalog_seed.py 显式登记为**债务类**豁免，待 agent 统一重构时销账。"],
+    skip_reason='[backend-contract] 后端契约 + 迁移/种子守卫（无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProcessingFeeCalculatorTest / FeePreviewControllerTest / tests/unit_ci_workflows/test_option_fee_seed.py 执行',
+    tags=['processing_fee', 'special_options', 'per_set', 'customer_unit_price', 'migration_v77', 'migration_v82', 'synthetic_seed'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PP-015 [NORMAL] 算料配置查询（只读）—— 黄金策取本店算料参数并原样转述，不用默认值/行业常识顶替（覆盖 #5247 新接入的只读工具）（源: cases/processing.yml）──
+_CASE_PP_015 = EvalCase(
+    id='PP-015',
+    legacy_id='',
+    title='算料配置查询（只读）—— 黄金策取本店算料参数并原样转述，不用默认值/行业常识顶替（覆盖 #5247 新接入的只读工具）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['我们店的算料配置现在是什么？'],
+    expectations=['craft_calc_config_query'],
+    data_checks=['success=true', '（散文、不计分）逐项来自服务端：配置项与数值只能来自工具返回（`GET /api/admin/production/craft-calc-config`），不得用行业常识 / 代码里的默认常量顶替，也不得编造服务端没返回的键；取不到时如实说「暂未取到算料配置」', '（散文、不计分）边界：本工具**不做算料**（不给某一单算米数 / 报价）⇒ 要算具体一单必须引导到后台算料页填尺寸；**改口径**只走 `craft_calc_config_update`（issue #7514：A 档可逆变更）—— 先 `craft_calc_config_query` 取本店真值，再发确认卡**逐项**展示「改前 → 改后」（中文字段名，不摆内部键名），**点卡之后**才执行；未点卡**不得声称已修改**，也**不支持**「重置为默认值」（引导到后台「企业基础设置 → 工艺与路线 → 算料口径」页）'],
+    skip_reason='',
+    tags=['craft_calc', 'config', 'mibao', 'readonly', 'llm_behavior'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'craft_calc_config_query'}],
+)
+
+# ── PP-016 [NORMAL] 工艺路线缺口查询（只读）—— 黄金策调 craft_config_query(action=routing_gaps) 并逐条转述缺口（覆盖 #4923 零覆盖端点）（源: cases/processing.yml）──
+_CASE_PP_016 = EvalCase(
+    id='PP-016',
+    legacy_id='',
+    title='工艺路线缺口查询（只读）—— 黄金策调 craft_config_query(action=routing_gaps) 并逐条转述缺口（覆盖 #4923 零覆盖端点）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工艺路线现在有没有缺口？哪些工序还没进路线？'],
+    expectations=['craft_config_query(action=routing_gaps)'],
+    data_checks=['success=true', '调用参数 action=routing_gaps（缺口面；工序库目录是 operation_catalog_query 的 operations，两者不得混用）', '（散文、不计分）缺口逐条来自服务端：`unrouted_operations` / `unrouted_operation_total` / `pending_confirmation_total` / `signal_keys_without_route` 只能原样转述 `GET /api/admin/production/routing-gaps` 的返回，不得自行推断「哪道工序该进哪条路线」，也不得编造服务端没返回的数量', '（散文、不计分）「有意挂起 ≠ 系统漏了」：`pending_confirmation=true` 的工序（等客户输入）必须如实说明**是有意挂起**，不得报成系统缺口；必要时可用 `note` 字段的口径解释', '（散文、不计分）只读边界：本工具 read_only=true，无任何写 action ⇒ 不得声称已把工序加进路线 / 已新建路线，只能引导商家去「企业基础设置 → 工艺路线」处理'],
+    skip_reason='',
+    tags=['craft_config', 'production', 'routing_gaps', 'readonly', 'llm_behavior'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'craft_config_query', 'action': 'routing_gaps'}],
+)
+
+# ── PP-017 [NORMAL] 路线信号映射查询（只读）—— 黄金策调 craft_config_query(action=route_signals) 并说明它是存量单兜底表（覆盖 #4923 零覆盖端点）（源: cases/processing.yml）──
+_CASE_PP_017 = EvalCase(
+    id='PP-017',
+    legacy_id='',
+    title='路线信号映射查询（只读）—— 黄金策调 craft_config_query(action=route_signals) 并说明它是存量单兜底表（覆盖 #4923 零覆盖端点）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['现在有哪些路线信号映射？部位和工艺是怎么对应的？'],
+    expectations=['craft_config_query(action=route_signals)'],
+    data_checks=['success=true', '调用参数 action=route_signals（信号映射面）', '（散文、不计分）逐条来自服务端：`signals[]` 的 signal / curtain_type / craft / priority / status 只能原样转述 `GET /api/admin/production/route-signals` 的返回，不得编造映射行、不得自行发明新键', '（散文、不计分）语义边界：该表自 issue #4452 起是**存量单兜底**（写面已退役，新单的部位改走 componentRole、工艺改走加工项的 craft_hint）⇒ 不得把它说成「新增映射的入口」，也不得声称已新增/已修改（本工具只读）'],
+    skip_reason='',
+    tags=['craft_config', 'production', 'route_signals', 'readonly', 'llm_behavior'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'craft_config_query', 'action': 'route_signals'}],
+)
+
+# ── PP-018 [NORMAL] 路线来源异常订单清单（只读）—— 黄金策调 craft_config_query(action=routing_anomalies) 并逐条给可行动建议（覆盖 #4923 零覆盖端点）（源: cases/processing.yml）──
+_CASE_PP_018 = EvalCase(
+    id='PP-018',
+    legacy_id='',
+    title='路线来源异常订单清单（只读）—— 黄金策调 craft_config_query(action=routing_anomalies) 并逐条给可行动建议（覆盖 #4923 零覆盖端点）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['有没有哪张加工单的部位或工艺是系统猜的？路线来源异常的订单有哪些？'],
+    expectations=['craft_config_query(action=routing_anomalies)'],
+    data_checks=['success=true', '调用参数 action=routing_anomalies（异常订单清单面）', '（散文、不计分）逐条来自服务端：`orders[]` 的 processing_order_no / route_key / route_requested_key / route_source / suggestion 只能原样转述 `GET /api/admin/production/orders/routing-anomalies` 的返回；route_source ∈ {default, partial} 的语义（default = 部位与工艺都没填、partial = 只填了一维）必须如实区分，不得含混', '（散文、不计分）只读边界：不得声称已替商家补上部位/工艺或已重新生成加工单，只能按服务端 suggestion 引导商家去下单侧补信息'],
+    skip_reason='',
+    tags=['craft_config', 'production', 'routing_anomalies', 'readonly', 'llm_behavior'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'craft_config_query', 'action': 'routing_anomalies'}],
+)
+
+# ── PP-019 [NORMAL] 加工费组合定价表查询（只读）—— 黄金策调 craft_config_query(action=fee_combinations) 并逐条转述组合与元/米单价（覆盖 #4923 零覆盖端点）（源: cases/processing.yml）──
+_CASE_PP_019 = EvalCase(
+    id='PP-019',
+    legacy_id='',
+    title='加工费组合定价表查询（只读）—— 黄金策调 craft_config_query(action=fee_combinations) 并逐条转述组合与元/米单价（覆盖 #4923 零覆盖端点）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['我们店现在的加工费组合是怎么定价的？有哪些组合、多少钱一米？'],
+    expectations=['craft_config_query(action=fee_combinations)'],
+    data_checks=['success=true', '调用参数 action=fee_combinations（组合定价表面）', '（散文、不计分）逐条来自服务端：`combinations[]` 的 items / composition_key / unit_price / unit / status 只能原样转述 `GET /api/admin/production/processing-fee-combinations` 的返回；**不得用行业常识或代码默认常量编一个价**，也不得把 `unit_price` 与加工项自己的单价混为一谈', '（散文、不计分）只读边界：改价 / 新建 / 停用组合都不在能力内（工具 read_only=true）⇒ 只能引导「企业基础设置 → 加工费组合」，不得声称已改价'],
+    skip_reason='',
+    tags=['craft_config', 'production', 'fee_combinations', 'readonly', 'llm_behavior'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'craft_config_query', 'action': 'fee_combinations'}],
+)
+
+# ── PP-020 [NORMAL] 加工费缺口查询（只读）—— 黄金策调 craft_config_query(action=fee_gaps) 并说明「缺价就是缺价、不发明默认价」（覆盖 #4923 零覆盖端点）（源: cases/processing.yml）──
+_CASE_PP_020 = EvalCase(
+    id='PP-020',
+    legacy_id='',
+    title='加工费缺口查询（只读）—— 黄金策调 craft_config_query(action=fee_gaps) 并说明「缺价就是缺价、不发明默认价」（覆盖 #4923 零覆盖端点）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['有哪几个加工费组合是订单里用过、但我们还没定价的？'],
+    expectations=['craft_config_query(action=fee_gaps)'],
+    data_checks=['success=true', '调用参数 action=fee_gaps（缺口面；`fee_combinations` 是已定价表面，两者不得混用）', '（散文、不计分）逐条来自服务端：`unpriced_combinations[]` 的 composition_key / items / order_count / note 与 `unpriced_combination_total` / `scanned_order_items` / `scanned_truncated` 只能原样转述 `GET /api/admin/production/processing-fee-gaps` 的返回；**不得替缺口发明一个默认价或给一个「大概多少钱」的估算**', '（散文、不计分）截断要显式：`scanned_truncated=true` 时必须说明「只扫了最近的一批订单」，不得把扫到的当全量；只读边界：不得声称已补价'],
+    skip_reason='',
+    tags=['craft_config', 'production', 'fee_gaps', 'readonly', 'llm_behavior'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'craft_config_query', 'action': 'fee_gaps'}],
+)
+
+# ── PP-021 [NORMAL] 生产卡点查询（只读，A 模式）—— 黄金策调 craft_config_query(action=stuck_points) 并带上阈值来源解释「卡在哪」（覆盖 #4923 零覆盖端点）（源: cases/processing.yml）──
+_CASE_PP_021 = EvalCase(
+    id='PP-021',
+    legacy_id='',
+    title='生产卡点查询（只读，A 模式）—— 黄金策调 craft_config_query(action=stuck_points) 并带上阈值来源解释「卡在哪」（覆盖 #4923 零覆盖端点）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['车间现在卡在哪？哪些工序还没开工一直等着？'],
+    expectations=['craft_config_query(action=stuck_points)'],
+    data_checks=['success=true', '调用参数 action=stuck_points（卡点面；不带 processing_order_id = 看本租户全部活跃加工单）', '（散文、不计分）逐条来自服务端：`mode` / `threshold_hours` / `threshold_source` / `states` / `stuck_total` / `stuck[]` 的 set_no / position / operation / predecessor / stalled_hours 只能原样转述 `GET /api/admin/production/stuck-points` 的返回；「卡了多久」取前道 `done_at`（服务端已算好 `stalled_hours`），**不得自己按 updated_at 或当下时间心算**', '（散文、不计分）A 模式口径：本片只查「**没开工**」那一种卡点（mode=A）⇒ 不得把「开了没完」也说成卡点；阈值要说清从哪来（`threshold_source`），不得把默认阈值说成商家自己配的'],
+    skip_reason='',
+    tags=['craft_config', 'production', 'stuck_points', 'readonly', 'llm_behavior'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'craft_config_query', 'action': 'stuck_points'}],
+)
+
+# ── PG-044 [NORMAL] 加工项目录名与加工费组合键统一为「韩褶」（V139）：改名 + 组合键重算 + 不改价 + 历史不改 + 撞键 fail-closed（源: cases/processing.yml）──
+_CASE_PG_044 = EvalCase(
+    id='PG-044',
+    legacy_id='',
+    title='加工项目录名与加工费组合键统一为「韩褶」（V139）：改名 + 组合键重算 + 不改价 + 历史不改 + 撞键 fail-closed',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-09-28 逐字：「成品帘行默认带 韩褶+ 定型 ，**把加工项和加工费组合里面叫韩折的都改成韩褶**」'],
+    expectations=[],
+    data_checks=["判据 1·**目录改名**：`processing_items.name = '韩折'` 的存活行一律变 `'韩褶'`（`deleted = 0`），且 **`craft_hint` 一字不动**（本来就是「韩褶」）。执行点 = backend/admin-api/src/main/resources/db/migration/V139__rename_hanzhe_item_and_fee_keys.sql（真 PG 执行判据见 traces.tests 的第一条）。红证：把 `SET name = '韩褶'` 改成别的字 / 删掉该 UPDATE ⇒ 终态对账与静态判据双红。", '判据 2·🔴 **组合键跟着重算（不改这一步 = 报价整体落空）**：`processing_fee_combinations` 里含「韩折」的存活行，`items` 成员名替换后按**码点序**（`COLLATE "C"`，与 Java `compositionKey()` 的 `TreeSet` 同序）去重重排，`composition_key = array_to_string(names, \'+\')`。红证：把 `COLLATE "C"` 去掉 ⇒ 中文按 locale 序排 ⇒ 同一个组合在「迁移写出的键」与「商家再保存一次得到的键」之间分叉（两行价）。', '判据 3·**不改价**：只写 `items` / `composition_key` / `updated_at`（组合表）与 `name` / `updated_at`（目录表）；`unit_price` / `status` / `sort_order` / `source` / `id` 逐值不变。执行点 = 该迁移的真 PG 判据（跑前跑后逐列比对）。红证：顺手带上 `unit_price = …` ⇒ 静态红线判据红。', '判据 4·**撞键 fail-closed，不静默合并两笔价**：同租户已存在改名后的组合键时，迁移在**改名之前**抛异常并点名「租户 + 两条现行组合键」，整份回滚（两行都还在、名字未改）。', '判据 5·**幂等**：连跑两遍净效果相同（第二遍合法地认领 0 行）；空跑自证由文末**终态对账**承担（两遍都成立）。', '判据 6·**历史不改（显式登记）**：已成交订单的加工项快照（`order_items.processing_info`）与组合版本账 `processing_fee_combination_versions` **一字不动** —— 历史单据仍显示「韩折」（当时的写法），重启条件 = 用户要求历史也统一（需一次显式回填 + 影响面确认）。', '判据 7·**三源收敛（冻结面 + 迁移 + 今天）**：`db/init/schema.sql` 基线的第 02 项 = 「韩褶」；归档 V83（冻结、写「韩折」）+ V139 的**净效果** == `tests/e2e/fixtures/processing-list.json`（由生成器 `tests/unit_ci_workflows/synthetic_processing_fee_data.py` 渲染）== 两条守卫独立重写的期望表。红证：只改 fixture 不改基线 / 只改基线不落 V139 ⇒ 对应守卫红。'],
+    skip_reason='[backend-contract] 纯数据迁移与目录/组合种子契约（无 LLM 环节，不进 agent-eval 冒烟）：断言由 tests/unit_ci_workflows/test_v139_rename_hanzhe_item_and_fee_keys.py（真 PG 执行 + 静态红线）、tests/unit_ci_workflows/test_processing_catalog_seed.py、tests/unit_ci_workflows/test_option_fee_seed.py 执行',
+    tags=['processing', 'catalog', 'fee-combination', 'migration', 'naming'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-045 [NORMAL] 裁高配置 - 裁剪高度 = 成品高 + Σ命中增量项（条件组：特殊选项×加工项×部位 AND + 工序专用/公共兜底两组 + 取整三位小数；单测覆盖，非 LLM 行为）（源: cases/processing.yml）──
+_CASE_PG_045 = EvalCase(
+    id='PG-045',
+    legacy_id='',
+    title='裁高配置 - 裁剪高度 = 成品高 + Σ命中增量项（条件组：特殊选项×加工项×部位 AND + 工序专用/公共兜底两组 + 取整三位小数；单测覆盖，非 LLM 行为）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这台裁高机这一单的布帘要裁多高？'],
+    expectations=['direct_reply'],
+    data_checks=['裁剪高度(部位) = 成品高 + Σ(命中且启用的增量项)，按 rounding 取整后输出（默认保留三位小数 = mm 精度）', '命中口径 = 复用 production_route_rules 的 trigger_kind / trigger_value / position（特殊选项 / 工艺 / 加工项 / 定型 + 部位限定），**不另写第二份匹配实现**', 'v2（issue #7997）：每项命中 = **条件组**（跨 kind 与 AND、组内 values 或 OR）+ 部位；**不加第五种触发源**（工序由特殊选项派生）。红证：把条件循环改成「任一命中」⇒ 布绑带-打孔在韩褶单上误命中 ⇒ 红。', 'v2：配置分 `scope=specific`（工序专用）与 `scope=fallback`（公共兜底），兜底是**替换**语义（有任何专用项命中 ⇒ 整组不参与；含「命中但未配置取值」也视为命中，不许被兜底盖住）。红证：两组合并成一遍求和 ⇒ 布绑带单又加一份布贴 ⇒ 红。', 'v2 种子 = 3 项工序专用（布绑带-韩褶 0.14 / 布绑带-打孔 0.16 / 接高-画线 0.145；便签值按 2026-10-28 裁定 ⑪ 进种子）+ 6 项公共兜底；存量 v1 配置读面单点归一（hit → conditions + scope=specific），旧库不改一行也算得对。', '命中而**未配置取值**的项（壁达的「画线」即此形态）= misses(reason=unresolved)：显式报出、不计入合计、**不按 0 算**', '缺行 ⇒ source=default（壁达现场弹窗 7 项，画线留空）；PUT 是全量替换，缺键 / 未知键 / 越界值 ⇒ 422 逐条理由（不静默回退默认值）', '本版只算不写机器：任何路径都不得开串口 / 写寄存器（下发归上游设计单）', '预演取值域 = **闭词表选择器**（issue #7213）：安装工艺 = 单选 `CRAFT_OPTIONS`（4 值 +「不指定」）、特殊选项 = 多选 `SPECIAL_OPTIONS`（19 项，默认折叠），两个字段都**不是自由文本**；提交 body 仍为 `craft` 字符串 + `special_options` 数组，逐字取自所选项（不拼逗号串）。红证：把任一改回 `<input>` ⇒ ⑥ 红（`tagName` / 默认折叠）。执行点 = frontend/admin-web/tests/unit/components/CuttingHeightConfigPanel.test.tsx 的「⑥ 预演的「安装工艺 / 特殊选项」是闭词表选择器」。'],
+    skip_reason='[backend-contract] 本条只登记「裁高配置与裁剪高度计算」这一层**确定性逻辑**，由单元测试全量覆盖（backend/admin-api/src/test/java/com/migao/admin/service/CuttingHeightConfigServiceTest.java）⇒ 不进 agent-eval 冒烟（同 CH-036 / CH-042 惯例）。⚠️ 它**不覆盖**「商家该把哪些选项配上」—— 壁达那批「选项/扩展项 ↔ 增量项」的对应行属现场取证（设计单 docs/design/cutting-height-config-and-terminal.md §5）。',
+    tags=['processing', 'cutting_height', 'tenant_config', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-046 [NORMAL] 扫码读面补「部位生产信息」全量明细键（只加不改：商品身份/规格尺寸/加工信息/算料/派工/部位备注；键集 = 三条工人读面共享的唯一一份，单测覆盖，非 LLM 行为）（源: cases/processing.yml）──
+_CASE_PG_046 = EvalCase(
+    id='PG-046',
+    legacy_id='',
+    title='扫码读面补「部位生产信息」全量明细键（只加不改：商品身份/规格尺寸/加工信息/算料/派工/部位备注；键集 = 三条工人读面共享的唯一一份，单测覆盖，非 LLM 行为）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['扫这张水洗唛，这个部位的宽高、加工类型和用料是多少？'],
+    expectations=['direct_reply'],
+    data_checks=['positions[] 追加**共享键集**（`PositionDetailFields.DETAIL_KEYS`，三条工人读面同一份；母单 #6901 由 9 键扩为全量，issue #7636 收口，canonical = snake_case）：商品身份 `product_name` / `product_code`（= **商品货号** `products.sku_code`，**不是** SKU 码 `{货号}-{色序2位}-{门幅}`）/ `color_name` / `door_width` / `selling_method` / `unit` / `roll_count`；规格尺寸 `width` / `height`；加工信息 `curtain_type` / `craft` / `cutting_mode` / `open_count` / `is_shaped` / `style` / `fee_combination_items`（加工费组合成员名，去重保序）/ `pleat_count` / `per_panel_pleats` / `panels` / `has_pattern` / `pattern_repeat` / `special_options` / `processing_meters` / `formula_text`；算料 `fabric_meters`；派工 `batch_no` / `batch_meters` / `component_role`；部位备注 `remark`。🔴 issue #7636（用户 2026-10-24 逐字裁定）：`sku` 不再下发工人面（屏上「货号」改印商品货号）；`fullness`（理论褶倍）、`formula`（用料公式，屏上是 `pleat`）、`craft_tier`（算料档位，屏上是 `standard`）**已删除**。P0-C 原 9 键中 8 键仍是**真子集**，名字与取值口径一字未动（例外 = 已删的 `fullness`）。🔴 issue #7842（用户 2026-10-26 逐字「移除实际褶倍」）：`fullness_actual` 不再登记（工人屏不印褶倍），同单补 `fee_combination_items`', '既有四键（order_item_id / position_kind / position_name / remark）与其值**一字未变**', '新键逐字取库/取快照（不在 Java 侧重算）；缺失 ⇒ 键恒在且 null（不造 0）', '不新增 position_remark 别名（部位备注的既有键是 remark —— 一个事实一个键）。⚠️ 机台读面例外：该面既有键名就是 position_remark ⇒ 用**具名排除集** `MACHINE_ROW_EXCLUDED_KEYS` 排除 remark（不覆盖、不别名）', '🔴 `getOperations` 面上同一事实另有 camelCase 兼容支（既有契约，不改名）⇒ 两支**不许漂移**：判据 = `PositionDetailFieldsTest#twinKeysNeverDrift` —— 孪生对照**现取**（实跑 `OrderLineCraftFields.toSnapshotKeys` 取 camelCase 侧）+ **反空转断言**（一对都取不到 ⇒ 判红，不许静默恒绿）'],
+    skip_reason='[backend-contract] 本条只登记「扫码读面加键」这一层**确定性契约**，由单元测试全量覆盖（backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanServiceDetailFieldsTest.java）⇒ 不进 agent-eval 冒烟（同 CH-036 / CH-042 / PG-045 惯例）。',
+    tags=['processing', 'scan', 'contract', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-047 [NORMAL] 一体机裁高计算（机台那台屏）：扫水洗唛 ⇒ 详情 + 裁高值 + 一步报工（不写机器；含设备级预设与「去报工页」逃生门；单测覆盖，非 LLM 行为）（源: cases/processing.yml）──
+_CASE_PG_047 = EvalCase(
+    id='PG-047',
+    legacy_id='',
+    title='一体机裁高计算（机台那台屏）：扫水洗唛 ⇒ 详情 + 裁高值 + 一步报工（不写机器；含设备级预设与「去报工页」逃生门；单测覆盖，非 LLM 行为）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['扫一下这个部位，这刀该裁多高？顺手把这道工序报掉。'],
+    expectations=['direct_reply'],
+    data_checks=['GET /api/worker/production/cutting-height?token=… ：工人 session 准入（无 ⇒ 401）、零商家权限码、只读', '裁剪高度逐部位给出，命中/取整复用 CuttingHeightConfigService.preview（不重算）；命中而未配置取值的项显式进 missing 且不计入、不按 0 算', '报工走既有 POST /api/worker/production/scan/complete：**只发 token + 幂等键**，工序/数量/身份由服务端定；手改裁高项不进请求体', '常驻扫码输入不依赖 focus；兼容 CR+LF / 双 Enter；输入法合成期不吃字符', '🔴 任何路径都不写机器（无串口 / 无 Modbus 调用面）', '🔴 屏上 / 入口文案一律 **「裁高计算（一体机）」**（2026-10-10 用户裁定，issue #6635 —— 改前的「机台模式」只有内部人懂）+ **设备级预设**：机台那台屏打开一次 `/w/?page=cut_calc` ⇒ 本机记住（`migao:worker-h5:home`），此后打开 `/w/` 直接落到 `/w/machine.html`（**只在已登录后换页** —— 机台页没有登录面，未登录换过去 = 把人关在门外）；`?page=report`（不带 `keep`）取消钉住；机台屏上的「去报工页」= `?page=report&keep=1`（**只本次**，绝不改机台的预设）。**零后端改动**（不新增字段/端点）。证据：frontend/worker-h5/tests/worker-h5-pages.test.mjs（⑥ 六条：解析 / 钉住 / 逃生门 / 取消 / 存储不可用 / 唯一换页出口）+ frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs（⑨ 真装配层三段）'],
+    skip_reason='[backend-contract] 本条只登记「一体机读面 + 报工链 + 不写机器」这几层**确定性行为**，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProductionCuttingHeightTest.java、backend/admin-api/src/test/java/com/migao/admin/service/WorkerCuttingHeightServiceTest.java、frontend/worker-h5/tests/worker-h5-machine.test.mjs）⇒ 不进 agent-eval 冒烟。⚠️ 真机（一体机 + 有线扫码枪）的 HID 时序与输入法行为为**注入式单测**覆盖，现场未验。',
+    tags=['processing', 'worker', 'cutting_height', 'terminal', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-065 [NORMAL] 工人会话超时 30 天 + 工人端菜单页集只按档案级收窄（权限红线不动；单测覆盖，非 LLM 行为）（源: cases/processing.yml）──
+_CASE_PG_065 = EvalCase(
+    id='PG-065',
+    legacy_id='',
+    title='工人会话超时 30 天 + 工人端菜单页集只按档案级收窄（权限红线不动；单测覆盖，非 LLM 行为）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工人手机上该看到哪几页？一体机也一样吗？'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 **页面集只有一层**（issue #6828）：真值 = 工人档案上的 `users.worker_pages`（V152）—— `GET /api/worker/me` 下发 `pages[]` = 该档案上的收窄（未收窄 / 脏值 ⇒ 全部页面 report/order/cut_calc/shipment，fail-open）。判据 = backend/admin-api/src/test/java/com/migao/admin/worker/WorkerPagesTest.java + backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java', '🔴 **企业级页面开关已整层移除**（issue #6828）：表 `worker_page_configs`（V141）由 `V154__drop_worker_page_configs.sql` DROP；`GET/PUT /api/admin/worker-page-config` 端点与 `WorkerPageConfig*` 服务/实体/mapper、设置页「工人端页面」域与面板全部退场；旧深链 `?tab=workerPages` **与** `?domain=worker-pages`（本页自己产出过的形态）都有确定落点（送到「员工管理」，不被静默送到第一个可见域）。判据 = tests/unit_ci_workflows/test_worker_page_layer_removed.py（未登记即红：源码里再出现那一层的符号 ⇒ 具名报出）+ tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py', 'GET /api/worker/me 只回**本工人**身份与**本工人**的页面集（租户 / 工人取自会话行，不接受任何请求入参）；工人 session/JWT 的 permissions 恒为 []、工人进 /api/admin/** 仍 403', 'worker.session.idle-minutes 全局默认 = 43200（30 天，2026-10-07 用户裁定「延长到 1 个月」；上一版 10080 一周）；越界/非法 ⇒ 回落默认并 WARN；换人/切换工人仍立即失效旧会话', '🔴 后台对账（`checkAlive` = `current-worker` + `/me`）的两条硬约束（2026-10-10 收口，issue #6642；线上日志实测）：① **请求有界** —— 单飞 + 最小间隔 5s ⇒ 一次可见性事件风暴只允许**一轮**（2 个请求），不再放大成 15–23 req/s（现场：同一条 session 4 秒 92 个请求、被 nginx `worker_sess` rate=2r/s burst=60 拒 4 条）；② **失败不进报工卡** —— 对账是后台动作，它的失败（429 / 5xx / 断网）只给一句「不影响报工」的提示（现场：`current-worker` 被拒 429 ⇒ 报工卡出现红字「请求失败（HTTP 429）」= 用户截图），唯一例外 = 401/会话过期（身份面）仍回落未登录。证据：frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs（⑩ / ⑪）', '🔴 页面开关的**前端消费面**（2026-10-10 收口，issue #6635）：`cut_calc` ∈ `pages` ⇔ `/w/` 页头出现**唯一**入口「裁高计算（一体机）」（`/w/machine.html`；文案与商家端「裁高计算器」同源，改前的「机台模式」只有内部人懂）；∉ ⇒ **整条入口栏不渲染**（不留空 `<nav>`）。两条跨应用入口（拍照入库 / 补打入库标签）**已移出 `/w/`**（用户逐字「移除拍照入库和补打入库标签」）⇒ 反向钉住（本页再出现 `/b/#/pages/worker/inbound|reprint` ⇒ 红），可达性由**工人工作台**承担（入口台账 `from` 逐值核）。**设备级预设**（同上裁定，「扫码枪那台屏默认机台模式、其他工人默认报工」）：`/w/?page=cut_calc` ⇒ 本机记住并落到 `/w/machine.html`（**只在已登录后换页**）、`?page=report` 取消、`?page=report&keep=1` = 只本次（机台屏的「去报工页」逃生门）；零后端改动。证据：frontend/worker-h5/tests/worker-h5-pages.test.mjs（① / ④ / ⑥）+ frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs + frontend/bmini-app/tests/page-entry-reachability.test.ts（L5）', '🔴 逐人收窄（issue #6788；用户 2026-10-13 逐字「工人档案上也应该设置 h5 工人端的菜单权限，这样让不同岗位的工人只关注他自己有权限的功能了」）是页面集的**唯一**来源 —— issue #6828 起企业级那一层（租户级开关）已整层移除，完整口径见用例 **PG-072**；本条只登记「页面集 + 会话超时」这两层确定性行为', '🔴 归一后为空集（脏数据：全未知键 / 空数组 / 非字符串元素）⇒ **回落全部页面**（issue #6788 评审实测形态 + issue #6828 改判为单层）：若原样下发空数组，工人端 `effectivePages` 会把空集读成「没读到权限 ⇒ **全开**」—— 服务端与端侧口径会分叉；回落与「未收窄 ⇒ 全部页面」同向（fail-open，绝不把工人挡在活外面）。证据：backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java + backend/admin-api/src/test/java/com/migao/admin/worker/WorkerPagesTest.java'],
+    skip_reason='[backend-contract] 本条只登记「页面集（单层）+ 会话超时」这两层**确定性行为**，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/worker/WorkerPagesTest.java、backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java、backend/admin-api/src/test/java/com/migao/admin/worker/WorkerSessionServiceTest.java）⇒ 不进 agent-eval 冒烟。',
+    tags=['processing', 'worker', 'rbac', 'tenant_config', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-072 [NORMAL] 工人档案级「H5 工人端菜单」逐人收窄（单层页集；单测覆盖，非 LLM 行为）（源: cases/processing.yml）──
+_CASE_PG_072 = EvalCase(
+    id='PG-072',
+    legacy_id='',
+    title='工人档案级「H5 工人端菜单」逐人收窄（单层页集；单测覆盖，非 LLM 行为）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['车间里只会裁高的工人，能只让他看到裁高计算器吗？'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 **单层页集**（issue #6788 起逐人可配；issue #6828 起企业级层移除 ⇒ 真值只有这一处；用户 2026-10-13 逐字「工人档案上也应该设置 h5 工人端的菜单权限，这样让不同岗位的工人只关注他自己有权限的功能了」）：实际下发 = `users.worker_pages`（V152）这一列本身', '三态：NULL / 缺省 = **未收窄 = 全部页面**（存量与新建的默认值 ⇒ **零回归**）· `[...]` = 收窄到这几页（闭词表 = WorkerPages.ALL）· 空数组在**写面被拒**（422 + 指路「停用」而不是清空菜单）', '写面：`PUT /api/admin/workers/{id}/pages`（挂 `employee:create`）+ 建号 `POST /api/admin/workers` 可带；未知键 / 非数组 / 重复键 / 空数组 ⇒ **422 + error.details 点名下标**（不静默忽略）；清回收窄（null）必须**显式 set**（MyBatis-Plus 默认 NOT_NULL 策略下「塞 null 再 updateById」SQL 里根本没有这一列 ⇒ 静默不生效而接口回 200，评审实测形态）', '读面：存储值是**原样 JSON 文本**（不用 JacksonTypeHandler：手写 select 未绑 resultMap 时 JSONB 会落成字符串、且坏值会**抛异常**让 /me 500 —— 类级守卫 = backend/admin-api/src/test/java/com/migao/admin/mapper/JacksonTypeHandlerMappingGuardTest.java）；**不是数组 / 解析不出来** ⇒ 当未收窄（fail-open）· **是数组但无真键** ⇒ 空集（只裁不放宽）· 未知键只裁不放宽', '🔴 归一后为空集（脏数据：全未知键 / 空数组文本 / 非字符串元素）⇒ **回落全部页面**：原样下发空数组会被工人端 `frontend/worker-h5/src/render.mjs` 的 effectivePages 读成「没读到权限 ⇒ **全开**」—— 服务端与端侧口径会分叉；回落只影响这一位工人的菜单显隐（不是授权放宽，见下一条）', '🔴 页面码**不是权限码**：`users.permissions` 一字不动、工人 session 的 permissions 恒为 `[]`、`/api/admin/**` 对 worker 仍 403；工人端语义仍是**菜单/入口显隐**（2026-09-29 用户裁定），藏起菜单 ≠ 挡住接口', '商家面：工人档案列表新增「工人端菜单」列（未收窄 ⇒「全部页面」单列一处；收窄 ⇒ 逐个人话名），建号弹窗按**服务端页面目录**（`GET /api/admin/worker-pages`）逐页勾选（默认全勾 = 发 null；全取消 ⇒ 就地拦住不发请求）；目录读不到 ⇒ 菜单一节不显示，建号主流程照旧', '商家面·改菜单（issue #7804，2026-10-26 用户「这个页面不能修改工人菜单，要支持」）：存量工人行内「改菜单」⇒ 弹窗初值 = **该档案当前值**（`null` / 空数组都读作未收窄，与读面 fail-open 同口径）、勾选区与建号**同一份渲染**；保存 = **整集写入** `PUT /api/admin/workers/{id}/pages`（全部勾默认页且未开能力页 ⇒ 发 `null`；空集 ⇒ 就地拦住不发请求）；无 `employee:create` ⇒ 不可点；目录读不到 ⇒ 入口不出现', '🔴 **逐人开的能力页必须全部下发**（issue #7932，2026-10-27 用户二次现场）：`WorkerPages.ALL` 里每个**不在** `defaultPages()` 的键（`inspect` / `rework`）都必须被求值覆盖 —— 遍历 `ALL` 而不是 `defaultPages()`。红证（实跑）：改前遍历 `defaultPages()` + 只特判 `inspect` ⇒ `effectiveFor([report, rework])` 只回 `[report]` ⇒ 商家勾了「返工记录」工人端**什么也看不见**（bmini 工作台与 H5 菜单同时藏）；附带口径错误：「只开 rework」时 `out` 为空 ⇒ 回落成**全部默认页**（把商家意图反过来）。判据 = backend/admin-api/src/test/java/com/migao/admin/worker/WorkerPagesTest.java 的 `reworkIsOptInAndNeverInDefaults`（默认不含 / 给了才下发 / 只开一页不回落 / 全勾一个不少）。', '商家面「单独开放」每个能力页各有**自己的**说明（issue #7932）：`rework` 不得复用质检那句「扫水洗唛后录判定、生成质检单」；未知键**不显示**说明（宁可少一句，不摆一句错的）。判据 = frontend/admin-web/tests/unit/components/WorkerProfilesPanel.test.tsx 的 ⑩（`OPTIONAL_PAGE_HINTS.rework` 与 `.inspect` 不同 + 返工记录那一格查不到质检文案）。'],
+    skip_reason='[backend-contract] 本条只登记「逐人收窄 + 两层求交」这几层**确定性行为**，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/worker/WorkerPagesTest.java、backend/admin-api/src/test/java/com/migao/admin/service/WorkerAdminServiceTest.java、backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java、frontend/admin-web/tests/unit/components/WorkerProfilesPanel.test.tsx）⇒ 不进 agent-eval 冒烟。⚠️ 工人端 H5 的**渲染面**消费口径（菜单/入口显隐、非阻断提示）沿用 2026-09-29 裁定，2026-10-13 的 issue #6828 **也未改** frontend/worker-h5（契约 `me.pages` 一字不变）。',
+    tags=['processing', 'worker', 'rbac', 'tenant_config', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-059 [NORMAL] 裁高读面 - 明细 product_id 为空时 brand 如实回 null 而不是 500（不可变表 get(null) 抛 NPE；单测覆盖，非 LLM 行为）（源: cases/processing.yml）──
+_CASE_PG_059 = EvalCase(
+    id='PG-059',
+    legacy_id='',
+    title='裁高读面 - 明细 product_id 为空时 brand 如实回 null 而不是 500（不可变表 get(null) 抛 NPE；单测覆盖，非 LLM 行为）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这张水洗唛的订单明细没填商品，扫它还能算出裁高吗？'],
+    expectations=['direct_reply'],
+    data_checks=['明细 product_id 为空 ⇒ GET /api/worker/production/cutting-height 仍 200，且该行 brand=null（**不得 5xx**）；该行其余键与裁高照常给出（一个部位缺品牌不拖垮整屏）', '回归对照：product_id 非空 ⇒ brand 取 product_attributes 的 brand 属性值；属性缺失 ⇒ null（修前修后逐字不变）', '🔴 类级形态：`Map.of()` / `Map.copyOf()` 是 ImmutableCollections，`get(null)` **抛 NPE**（`Collections.emptyMap()` / `LinkedHashMap` 返 null）⇒ 「返回空不可变表的方法」其调用方**必须**显式短路空键或改用容忍空键的读法；未登记即红（判据 = backend/admin-api/src/test/java/com/migao/admin/service/WorkerCuttingHeightNullProductIdTest.java 的同族守卫 + 台账）'],
+    skip_reason='[backend-contract] 本条只登记「裁高读面空值容忍 + 不可变表空键索引」这一层**确定性契约**，由单元测试全量覆盖（backend/admin-api/src/test/java/com/migao/admin/service/WorkerCuttingHeightNullProductIdTest.java）⇒ 不进 agent-eval 冒烟（同 PG-045 / PG-046 惯例）。',
+    tags=['processing', 'cutting_height', 'scan', 'backend-contract', 'null_safety'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PP-022 [EDGE] 工序改价并发面核验（N=4 并发提交同一工序的同一次调价）：价格版本账恰追加 1 行、当前价 = 最新版本行（issue #6238）（源: cases/processing.yml）──
+_CASE_PP_022 = EvalCase(
+    id='PP-022',
+    legacy_id='',
+    title='工序改价并发面核验（N=4 并发提交同一工序的同一次调价）：价格版本账恰追加 1 行、当前价 = 最新版本行（issue #6238）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.EDGE,
+    user_inputs=['商家在「企业基础设置 → 工序与部位单价」改了工序单价，手抖点了两次保存（或两个管理员同时点了保存）'],
+    expectations=[],
+    data_checks=['**核验结论 = 真**（台账 after-sales-sideeffect-concurrency-ledger.json 的 unverified 观察项逐字称「⚠️ **涉钱面**：价格版本**追加 insert** + 可选状态写 ⇒ 并发重复提交可能重复追加版本行」）：该主张**在当前代码上成立** —— 修前 N=4 并发提交同一次调价（旧价 100.00 → 新价 200.00）**3 轮全部**读到「版本账总行数 5 / 其中新价行 4」，即同一次调价被记了 4 次。', '**主判据（取库内事实）**：并发提交后 `unit_price = 新价` 的版本行恰 1 行，总行数 == 独立算式（基线 1 + 追加 1 = 2）；断言 = backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationPriceVersionConcurrentRealDbTest.java 的 concurrentSamePriceSubmissionAppendsExactlyOneVersionRow（N=4 × 3 轮，逐轮打印「真重叠」证据：4 个请求的时间区间逐对求交 6/6 + 并集跨度 < 各历时之和）。', '**账目自洽**：`production_operations.unit_price` == 新价，且 `created_at` 最新那行版本账的价 == 当前价（「当前价 = 最新版本行」这条冻结契约在并发下仍成立）。', '**库层零兜底（可复核判据）**：`production_operation_price_versions` 除主键外**无唯一约束**（`pg_indexes` 实测 + 「同一个未提交事务里直接插两行同 (operation_id, unit_price) 被库接受」的反向自证，事务回滚零残留）⇒ 重复记账不可能由 DDL 挡住。若将来加了唯一索引，本判据转红（撞约束是 500 还是 409 须重新裁定）。', '**正对照（闸不误杀）**：单请求串行改价真追加 1 行；随后**同价重复提交**仍是 1 行（既有的「价没变 ⇒ 不追加」幂等路径没被改坏）—— 断言 = 同文件 serialPriceChangeStillAppendsExactlyOneRow。', '**入口面（实测登记）**：`PUT /api/admin/production/operations/{id}` **没有** Idempotency-Key 请求头 ⇒ 并发 / 重复提交的唯一防线就是服务层自己的闸（断言 = 同文件 updateEndpointOffersNoIdempotencyKeyEntry）。', '**判别力（红证，注入式 · 双向）**：把 `ProductionOperationMapper#lockById` 的 SQL 里的 `FOR UPDATE` 摘掉（= 退回「不加锁读旧价」的修前形态）⇒ 本判据 3 轮全部必红，实测读数 = 成功数 4 / 版本账总行数 5 / 其中新价行 4；注入撤回后复绿。注入方式与成对读数见 PR body（注入是手动、一次性动作，不落成常驻判据）。'],
+    skip_reason='[backend-contract] 纯后端并发落库判据（无 LLM 写路径：工序改价走 admin-api 服务层的 PUT /api/admin/production/operations/{id}，不经黄金策 Agent 工具）⇒ 不进 agent-eval 冒烟：由 admin-api 真库并发单测 ProductionOperationPriceVersionConcurrentRealDbTest 执行',
+    tags=['production', 'price-version', 'concurrency', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-074 [EDGE] 工序一键「设为不做并删除」写面并发 exactly-once：5 并发 ⇒ 至多一个赢家 + 无重复副作用 + 终态唯一（issue #6936）（源: cases/processing.yml）──
+_CASE_PG_074 = EvalCase(
+    id='PG-074',
+    legacy_id='',
+    title='工序一键「设为不做并删除」写面并发 exactly-once：5 并发 ⇒ 至多一个赢家 + 无重复副作用 + 终态唯一（issue #6936）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.EDGE,
+    user_inputs=['商家在「企业基础设置 → 工序与部位单价」点「设为不做并删除」时手抖点了两次（或两个管理员同时点）'],
+    expectations=[],
+    data_checks=['**核验结论 = 真**：`DELETE /api/admin/production/operations/{id}/detach-and-delete` 在并发下**不是** exactly-once。修前实测（验收探针 E4，逐字读数见 acceptance/2026-10-14/line1-worker-config/out/batch-writeface-sweep/E4-detach-concurrent.json 与同目录 run.log 的 `[FAIL] [E4.1]` 行）：并发 5 次同一工序 ⇒ HTTP `[200,200,200,422,422]`（成功 **3** 次）；终态**正确**（deleted=1、无半完成）⇒ 这是**并发语义**缺陷，不是账实不符。', '**病根形态**：`ProductionOperationCommandService#deleteDetaching` 是 check-then-act（先读 `op.deleted==0` 判活，再摘格 / 级联软删 / 写工序行），判断与写入不在同一条语句上 ⇒ 并发请求都读到提交前快照、都进写侧。同族参照 = issue #6928 / PR #6931（`InboundOrderService#cancel` 改成与 `#post` 同款条件更新）。', '**主判据（已落码）**：N=5 并发同一工序 ⇒ 成功（200）次数 **≤ 1**；报 `detached_positions=1` 的请求数 ≤ 1；摘格写（`updatePriceAndApplicable`）与级联软删（`softDelete`）对同一个格**各恰一次**；落败方必须是显式 **409 CONFLICT**。断言 = backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationDetachConcurrentTest.java 的 `concurrentDetachAndDeleteHasAtMostOneWinner`。', '**谓词完整性**：删除权的 CAS 必须带 `id` + `tenant_id` + `deleted=0` 三条谓词（wrapper SQL 段恰 3 个 AND 分量；实参含本租户与 0）—— 断言 = 同文件 `serialDetachAndDeleteStillSucceeds`。', '**正对照（不误杀）**：单请求串行 `detach-and-delete` 必须成功（200）且摘格/软删各恰一次；护栏命中（主线/规则引用）时仍返回 **422 + details**（CAS 不改变既有 conflict/validation 口径）；已软删的工序仍是 **200 幂等 no-op**（公开契约一字不变）。', '**红证（修前实测，确定性）**：撤掉 CAS（退回修前形态，`git stash` 主源那一处）⇒ 同一条判据实测 `各状态=[200,200,200,200,200] 成功数=5 报 detached_positions=1 的请求数=5 被拒(409)数=0`（5/5 全赢家，比 HTTP 层 3/5 更强）⇒ 判据当场红。修后（CAS）⇒ 成功数=1。', '**边界（如实登记）**：① 本类跑的是 mock 面（服务层只认 CAS 的影响行数）；真 PG 的行锁/条件重估由同族真库判据承担（`InboundOrderCancelRaceRealDbTest`，#6928）；② HTTP 层成对读数见 PR body 的 E4 对照；③ 只覆盖 `deleteDetaching` 一个入口。'],
+    skip_reason='[backend-contract] 纯后端并发落库判据（无 LLM 写路径）⇒ 不进 agent-eval 冒烟：由 admin-api 单测 ProductionOperationDetachConcurrentTest 执行（一并由 ProductionOperationDeleteCasMetaGuardTest 的类级元守卫兜住同族写面）。',
+    tags=['production', 'operation', 'detach', 'concurrency', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-075 [EDGE] 类级元守卫（#6936）：工序「删除权」的写路径必须落到 SQL 谓词（CAS）+ 未登记即红 + 豁免只许缩短（源: cases/processing.yml）──
+_CASE_PG_075 = EvalCase(
+    id='PG-075',
+    legacy_id='',
+    title='类级元守卫（#6936）：工序「删除权」的写路径必须落到 SQL 谓词（CAS）+ 未登记即红 + 豁免只许缩短',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.EDGE,
+    user_inputs=['（元守卫，无用户轮次）下一个人在工序族新加一条软删写路径，或把 CAS 的「影响行数 0」判定删掉'],
+    expectations=[],
+    data_checks=['**为什么是类级**（铁律 8）：只修 `deleteDetaching` 一处 = 没修 —— 下一个同族写面照样可以「有谓词但不看影响行数」，而没有任何东西会红。守卫把「写 deleted 列的写路径清单 + 谓词完整性 + 影响行数判定」钉成机械判据。', '**判据 1（扫描器非空跑自证 + 谓词完整性 + 显式写列）**：现取 `ProductionOperationCommandService` 里「写 deleted 列的调用点」（`.set(ProductionXxx::getDeleted, 1)`）必须含 `delete` / `deleteDetaching` 两条软删路径；每个写点**同一条链**上必须同时有 `.eq(…::getId,` + `.eq(…::getTenantId,` + `.eq(…::getDeleted, 0)` 三条谓词，且必须 `.set(…::getUpdatedAt,` 保住审计列（#4608：不得退回无谓词 `updateById` 形态）。断言 = backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationDeleteCasMetaGuardTest.java 的 `softDeleteWritesCarryTheFullPredicate`。', '**判据 2（必须判影响行数 + 未登记即红 + 登记必须兑现 + 豁免只许缩短）**：每个行写调用（`*Mapper.update(`）的后 600 字符窗口内必须出现 `== 0)`（只留赋值不判 0 行 = #6936 病根本体）；「写 deleted 列的 service 方法」清单必须逐条登记在台账 backend/admin-api/src/test/resources/production-operation-delete-cas-ledger.json（`entries[].method` + `evidence` 锚逐字兑现，幽灵条目判红）；豁免 `unverified` ≤ `unverified_baseline`（**0**，只许缩短）。断言 = 同文件 `serviceWritePathsAreRegisteredAndLedgerIsFaithful`。', '**判据 3（判别力自证）**：合成语料上六种坏形态各自判红 —— ① 缺 `deleted = 0` 谓词；② 缺 tenant 谓词；③ CAS 谓词齐但不看影响行数；④ 最隐蔽的「赋值留着、`if (… == 0)` 判定删掉」；⑤ 软删写成无谓词 `updateById`；⑥ 缺 `updated_at` 审计列；合规语料（与真源码同形）判绿；只改注释不红。断言 = 同文件 `guardHasDiscriminatingPower`。', '**边界（如实登记）**：见台账 `_boundary` —— 形态判据不做 AST（把三谓词拆成变量 / 跨方法判定会被保守判红）；射程 = `ProductionOperationCommandService` 的工序写面；判不了「不改 deleted 列的写」，也判不了 HTTP 层与读写交接的原子性（那层由 PG-074 的实例判据承担）；不跑被它引用的实例判据；与 `tests/unit_ci_workflows/test_logic_delete_write_shape.py`（#4608 显式写列守卫）**有意重叠**：那条只管形态（不得走 `updateById`），本条另管三谓词 + 影响行数判定 + 未登记即红。'],
+    skip_reason='[backend-contract] 类级形态守卫（读源码文本、零 DB 零网络）⇒ 不进 agent-eval 冒烟：由 admin-api 单测 ProductionOperationDeleteCasMetaGuardTest 执行。',
+    tags=['production', 'operation', 'concurrency', 'meta_guard', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-089 [EDGE] 工人端 H5 闲置登出定时器分片调度：30 天（43200 分钟）延时不得溢出 2^31-1 ⇒ 不得立即触发 / 不得每次装配多打一轮对账（单测覆盖，非 LLM 行为）（源: cases/processing.yml）──
+_CASE_PG_089 = EvalCase(
+    id='PG-089',
+    legacy_id='',
+    title='工人端 H5 闲置登出定时器分片调度：30 天（43200 分钟）延时不得溢出 2^31-1 ⇒ 不得立即触发 / 不得每次装配多打一轮对账（单测覆盖，非 LLM 行为）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.EDGE,
+    user_inputs=['工人这台手机放在工位上一直没退出，第二天打开还要再登录吗？'],
+    expectations=[],
+    data_checks=['**病根（修前实测读数，确定性）**：`frontend/worker-h5/src/app.mjs::armIdle` 把闲置延时会一次性塞进 `setTimeout(..., Math.max(1, minutes) * 60_000)`；默认 `minutes = 43200`（30 天，issue #6473 用户裁定）⇒ 2,592,000,000 ms **大于** 2^31-1（2,147,483,647）⇒ 浏览器 / Node 把延时钳成 ~1ms 立即触发（本机实测：`TimeoutOverflowWarning: 2592000000 does not fit into a 32-bit signed integer. Timeout duration was set to 1.` + `fired after 3 ms`）。后果 ①「闲置 30 天自动登出」从未按 30 天排期（`checkAlive` 节流分支不重排 ⇒ 之后不再有闲置登出）；② 每次 `armIdle()`（登录成功 / `resolved` / 每次 `checkAlive` 成功）立刻多打一轮 `GET /api/worker/production/current-worker` + `GET /api/worker/me`。', '**主判据（会红；改回单次超长定时器 ⇒ 读数 = ①/②/③/⑤ 红并打印 `2592000000`，② 打印 1ms 内已发两个请求）**：`idleMinutes = 43200` 装配后，每一次 `setTimeout` 入队（含续排分片）≤ 2^31-1；分片之和 = 43,200 × 60_000 ms（30 天口径不变）；装配后第一帧（1ms）内零对账；首片到期只续排、不到期不对账；到期时恰好发起一轮 `current-worker` + `/me`。断言 = frontend/worker-h5/tests/worker-h5-7251-idle-timer.test.mjs 的 ①②③⑤。', '**边界（2^31-1 ms 的两侧）**：35,791 分钟 = 2,147,460,000 ms ≤ 上限 ⇒ 仍是**单次**入队（与改前同形）；35,792 分钟 = 2,147,520,000 ms > 上限 ⇒ 必须分片且各片 ≤ 上限。断言 = 同文件 ④。', '**类级（不是只钉 43200）**：服务端可配区间 **5 ~ 43200 分钟逐个值**都成立 —— 每片 ≤ 2^31-1、各片之和 = 总延时、且「是否分片」正好等于「总延时是否 > 2^31-1」。断言 = 同文件 ⑥。', '**边界（如实登记）**：① 未改 30 天口径、未新增绝对有效期 —— 只改**调度**；「到期」语义仍 = `idle_minutes` 之后做一次后台对账（末片到期）；② 测试替身按平台规范把「> 2^31-1 ⇒ 1ms」建模进来（真实读数见 issue #7251 的 `node -e` 输出），替身只替换 `setTimeout` / `clearTimeout`，不碰被测逻辑；③ **未在真机**验证 24.8 天（首片上限）这一段的浏览器行为，也**不声称**设备休眠 / 后台挂起期间的定时器精度（与改前同级）。'],
+    skip_reason='[backend-contract] 本条只登记「长延时不得溢出 2^31-1 + 到期才发起一轮对账」这一层**确定性调度行为**（零网络，假时钟），由 frontend/worker-h5/tests/worker-h5-7251-idle-timer.test.mjs 单测执行 ⇒ 不进 agent-eval 冒烟。',
+    tags=['processing', 'worker', 'session', 'timer', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PP-023 [NORMAL] 算料口径变更真跑：说「上下卷边改成 0.25」→ 先查本店真值 + 逐键「改前 → 改后」确认卡 → 点卡后才真写（源: cases/processing.yml）──
+_CASE_PP_023 = EvalCase(
+    id='PP-023',
+    legacy_id='',
+    title='算料口径变更真跑：说「上下卷边改成 0.25」→ 先查本店真值 + 逐键「改前 → 改后」确认卡 → 点卡后才真写',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['上下卷边改成 0.25', '确认'],
+    expectations=['craft_calc_config_query', 'interact', 'craft_calc_config_update'],
+    data_checks=['改前值必须逐字取自 craft_calc_config_query 的返回（服务端逐键核对，不符即 craft_calc_config_stale 且零写入 —— 不得凭记忆/默认常量填 before）', '确认卡必须逐键展示「改前 → 改后」并用中文字段名（「上下卷边合计」），不摆内部键名（hem_margin）', '未点卡不得调用 craft_calc_config_update；点卡后必须真写成功（success=true）——「只发了一张卡」不算做过', '只改商家点名的键，其余配置原样保留（PUT 是全量替换；工具侧以 current+changes 合并，判据在 tests/test_tools_craft_calc_config_update.py）'],
+    skip_reason='',
+    tags=['write', 'craft_calc', 'write_path', 'confirm_card'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    order_before=['interact[confirm] before craft_calc_config_update'],
+    required_args=[{'tool': 'craft_calc_config_update', 'fields': ['changes', 'before']}],
+    must_succeed=[{'tool': 'craft_calc_config_update'}],
+    pre_clean=[{'type': 'craft_calc_config_restore', 'keys': {'hem_margin': 0.3}}],
+    post_clean=[{'type': 'craft_calc_config_restore', 'keys': {'hem_margin': 0.3}}],
+    precondition='前置 = 本店算料配置可读（`GET /api/admin/production/craft-calc-config` 返回 `data.config`，且含 `hem_margin`）；不成立时查询/写工具都 fail-closed，红会伪装成「agent 不会改算料口径」而不是数据层问题',
+)
+
+CASES = (
+    _CASE_PP_002,
+    _CASE_PP_006,
+    _CASE_PP_007,
+    _CASE_PP_008,
+    _CASE_PP_009,
+    _CASE_PP_010,
+    _CASE_PP_013,
+    _CASE_PP_011,
+    _CASE_PP_012,
+    _CASE_PP_014,
+    _CASE_PG_040,
+    _CASE_PG_042,
+    _CASE_PG_043,
+    _CASE_PP_015,
+    _CASE_PP_016,
+    _CASE_PP_017,
+    _CASE_PP_018,
+    _CASE_PP_019,
+    _CASE_PP_020,
+    _CASE_PP_021,
+    _CASE_PG_044,
+    _CASE_PG_045,
+    _CASE_PG_046,
+    _CASE_PG_047,
+    _CASE_PG_065,
+    _CASE_PG_072,
+    _CASE_PG_059,
+    _CASE_PP_022,
+    _CASE_PG_074,
+    _CASE_PG_075,
+    _CASE_PG_089,
+    _CASE_PP_023,
+)

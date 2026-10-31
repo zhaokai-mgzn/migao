@@ -13,7 +13,7 @@
 
 本测试把两层都锁住：
   1. 解析层：flow 序列/映射必须解析成 list/dict；
-  2. 产物层：渲染出的 `eval_cases.py` 里 `checks` 必须是**列表字面量**（不是字符串）。
+  2. 产物层：渲染出的 `eval_cases/`（按域分包）里 `checks` 必须是**列表字面量**（不是字符串）。
 """
 import sys
 from pathlib import Path
@@ -23,7 +23,7 @@ sys.path.insert(0, str(REPO_ROOT / ".github"))
 
 from yaml_light import load as yl_load  # noqa: E402
 
-EVAL_PY = REPO_ROOT / "tests" / "agent_eval" / "eval_cases.py"
+EVAL_PKG = REPO_ROOT / "tests" / "agent_eval" / "eval_cases"   # 目录型生成物（issue #8188）
 
 
 class TestFlowSequences:
@@ -53,10 +53,10 @@ class TestFlowSequences:
 class TestRenderedAmountChecksAreLists:
     def test_amount_verify_checks_are_python_lists(self):
         """产物层守卫：`checks` 若是字符串，金额断言就会静默失效（本轮实证）。"""
-        import importlib.util
-        spec = importlib.util.spec_from_file_location("ec_guard", EVAL_PY)
-        m = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(m)
+        import importlib
+        if str(EVAL_PKG.parent) not in sys.path:
+            sys.path.insert(0, str(EVAL_PKG.parent))
+        m = importlib.import_module("eval_cases")
         bad = []
         for c in m.ALL_CASES:
             for av in (getattr(c, "amount_verify", None) or []):
@@ -71,10 +71,10 @@ class TestRenderedAmountChecksAreLists:
         )
 
     def test_db_verify_expect_products_are_lists(self):
-        import importlib.util
-        spec = importlib.util.spec_from_file_location("ec_guard2", EVAL_PY)
-        m = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(m)
+        import importlib
+        if str(EVAL_PKG.parent) not in sys.path:
+            sys.path.insert(0, str(EVAL_PKG.parent))
+        m = importlib.import_module("eval_cases")
         bad = []
         for c in m.ALL_CASES:
             for dv in (getattr(c, "db_verify", None) or []):

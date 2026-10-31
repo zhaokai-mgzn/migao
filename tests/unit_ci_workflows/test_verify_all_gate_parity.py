@@ -49,7 +49,7 @@ CI_TRUTHS_CMD = "python3 .github/truths.py check --templates .github/templates -
 # 生成物新鲜度的**单一实现**（CI 与本地都调它；渲染口径在它内部仍是 `.github/render_cases.py`）
 SHARED_FRESHNESS_IMPL = "scripts/generated_artifacts_freshness.py"
 CI_FRESHNESS_CMD = f"python3 {SHARED_FRESHNESS_IMPL}"
-GENERATED = ("tests/agent_eval/eval_cases.py", "docs/testing/mibao-verification-cases.md")
+GENERATED = ("tests/agent_eval/eval_cases", "docs/testing/mibao-verification-cases.md")
 
 _RUN_TIMEOUT = 120
 
@@ -187,7 +187,8 @@ class TestManagedCasePaths:
             ".github/cases/",
             ".github/case-trust-baseline.json",
             ".github/case-trust-unimplemented.json",
-            "tests/agent_eval/eval_cases.py",
+            "tests/agent_eval/eval_cases/order.py",
+            "tests/agent_eval/eval_cases/",
             "docs/testing/mibao-verification-cases.md",
         ],
     )

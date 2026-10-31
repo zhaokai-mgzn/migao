@@ -113,7 +113,7 @@
 | **A 真值源 + DB** | `backend/ai-agent-service/app/production/routing.py`（`_POSITION_PRICE_ROWS` / `OPERATION_POSITION_PRICES` / 适用性集合）、**新迁移**（`V101+__*`）、`docs/sql/schema.sql`、`tests/unit_ci_workflows/test_production_catalog_seed.py`、`tests/unit_ci_workflows/migration_fingerprints.json` | 价目塌缩为**工序级一口价**（取布帘价）+ 适用性删除 | **零**（v2 仍零消费者）⇒ **可独立安全落地** |
 | **B 消费面切换（Java）** | `ProcessingOrderService`（取价改读工序库 `unit_price`、取路不再按部位、实例化不再按 `applicable` 过滤）、`ProductionService`、端点退场（`GET/PUT /operation-positions`、`DELETE /operations/{id}/detach-and-delete`、`POST /operations` 的 `positions`/`skipped_positions`）、`backend/admin-api/src/test/**` | **这才是改运行时行为的包** | **改工人工资** ⇒ 必须带**逐工序对照**＋注入式红证 |
 | **C 前端** | `production/routings/page.tsx`（矩阵 → 工序列表一口价；路线 tab 去适用帘种；抽屉去部位限定的「适用条件」）、相关组件与其测试 | 配置面**不再出现**布帘/纱帘/帘头 | 依赖 B 的读面口径 |
-| **D 用例 / 文档** | `.github/cases/{processing,processing-order,ui}.yml`（7 条断言 + PG-055 退场）、`CONTRACT-LEDGER`（**已在 P4 分支落**）、`docs/design/**`、生成物 `eval_cases.py` / `mibao-verification-cases.md` | 同步 + **缴 case-trust burn-down 预算** | — |
+| **D 用例 / 文档** | `.github/cases/{processing,processing-order,ui}.yml`（7 条断言 + PG-055 退场）、`CONTRACT-LEDGER`（**已在 P4 分支落**）、`docs/design/**`、生成物 `eval_cases/` / `mibao-verification-cases.md` | 同步 + **缴 case-trust burn-down 预算** | — |
 
 ### 8.2 顺序与两条安全线
 

@@ -38,7 +38,7 @@ _restore_notification_unread`）+ ST-005 声明 `pre_clean`（口径与 seed 的
 ## 为什么用离线驱动（零 LLM / 零网络）
 
 真值源 = `.github/cases/settings.yml` 的**声明**（`tests/agent_eval/render_cases.load_case_dicts`，
-与生成物 `eval_cases.py` 同源）+ runner 的**真实**动作实现（`_run_clean_specs` /
+与生成物 `eval_cases/` 同源）+ runner 的**真实**动作实现（`_run_clean_specs` /
 `_run_clean_action`），DB 由注入式假 `asyncpg` 承担（与
 `tests/unit_ci_workflows/test_eval_preclean_failure_family.py` 同形）。
 """

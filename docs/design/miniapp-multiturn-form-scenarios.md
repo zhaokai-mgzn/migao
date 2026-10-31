@@ -143,6 +143,6 @@ FormCard（新组件，e2e 场景 + jest 单测）：
 ## 8. 验收口径
 
 - E2E：S1 全流程 20+ 断言全绿（模拟器 + 真实后端）
-- Agent Eval：S1~S5 用例通过（eval_cases 重渲染）
+- Agent Eval：S1~S5 用例通过（`eval_cases/` 重渲染）
 - 三把工具：`verify-all.sh gate` / `contract-check.sh` / `check-ui-regression.sh` 全过
 - 数据安全：S5 对抗用例全过（无越权/无泄露/无绕过验证）

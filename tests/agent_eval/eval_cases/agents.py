@@ -1,0 +1,241 @@
+# GENERATED FILE — DO NOT EDIT
+# 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
+# 源: cases/*.yml（case-contract 单一源）
+# 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
+# 域: agents（源: cases/agents.yml，12 条）
+
+from ._schema import Difficulty, EvalCase, Skill
+
+# ── AG-001 [NORMAL] AgentResponse/AgentContext 数据结构 + _extract_msg_content think 剥离（源: cases/agents.yml）──
+_CASE_AG_001 = EvalCase(
+    id='AG-001',
+    legacy_id='',
+    title='AgentResponse/AgentContext 数据结构 + _extract_msg_content think 剥离',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 构造 AgentResponse / AgentContext 并从 AIMessage 提取文本'],
+    expectations=['direct_reply'],
+    data_checks=['AgentResponse 默认 type=text、tool_calls=None、metadata=None；type 枚举 text/tool_call/tool_result/error', '_extract_msg_content 移除 <think>...</think>（含多行），content 为 list 时仅拼接 type==text 的 text 块', 'AgentContext.to_dict 返回 6 字段；to_tool_context 透传 tenant_id/user_id/session_id/role'],
+    skip_reason='[backend-contract] dataclass/纯函数由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['agents', 'data_contract', 'message_extraction'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── AG-002 [NORMAL] BaseAgent 组装与对话历史转换（__init__ 双分支 + 多模态 history）（源: cases/agents.yml）──
+_CASE_AG_002 = EvalCase(
+    id='AG-002',
+    legacy_id='',
+    title='BaseAgent 组装与对话历史转换（__init__ 双分支 + 多模态 history）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 初始化 BaseAgent 并转换多模态对话历史'],
+    expectations=['direct_reply'],
+    data_checks=['__init__ 调 get_agent_config+build_agent_graph；tool_registry=None→create_default_registry()，非 None→用传入实例', '_convert_history user 普通→HumanMessage；mixed+images→多模态 content list；assistant→AIMessage；其他 role 忽略'],
+    skip_reason='[backend-contract] 组装/纯函数由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['agents', 'history', 'multimodal'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── AG-003 [NORMAL] _build_initial_state plan 优先 + 18 键 state 透传（源: cases/agents.yml）──
+_CASE_AG_003 = EvalCase(
+    id='AG-003',
+    legacy_id='',
+    title='_build_initial_state plan 优先 + 18 键 state 透传',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 构建 LangGraph 初始 state（含 plan state 恢复）'],
+    expectations=['direct_reply'],
+    data_checks=['plan state 存在 skill_name 非空→pending_interact_skill=skill_name；否则读 get_pending_skill', "SessionMemory 异常→warning 且 pending_interact_skill=''，不向上抛", '返回完整 18 键 state dict（messages/agent_type/tenant_id/user_id/user_name/session_id/role/.../pending_interact_skill）'],
+    skip_reason='[backend-contract] 异步状态构造由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['agents', 'state', 'plan_routing'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── AG-004 [NORMAL] achat 非流式对话 - final_answer 返回 + 异常友好兜底（源: cases/agents.yml）──
+_CASE_AG_004 = EvalCase(
+    id='AG-004',
+    legacy_id='',
+    title='achat 非流式对话 - final_answer 返回 + 异常友好兜底',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 非流式对话（graph.ainvoke 返回 final_answer / 抛异常）'],
+    expectations=['direct_reply'],
+    data_checks=['graph.ainvoke 返回 final_answer→AgentResponse(type=text, content=final_answer)', "抛异常→AgentResponse(type=error, content 含'稍后重试')"],
+    skip_reason='[backend-contract] 异步对话由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['agents', 'chat', 'error_fallback'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── AG-005 [NORMAL] astream_chat 流式事件序列 - tool_call/tool_result/text/error（源: cases/agents.yml）──
+_CASE_AG_005 = EvalCase(
+    id='AG-005',
+    legacy_id='',
+    title='astream_chat 流式事件序列 - tool_call/tool_result/text/error',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 流式对话（graph.astream 节点级更新）'],
+    expectations=['direct_reply'],
+    data_checks=['AIMessage.tool_calls 先 yield tool_calls 前文本，再逐条 yield type=tool_call', 'ToolMessage 经 json.loads 解析（失败降级 {data: str(content)}），图执行完统一 yield type=tool_result', 'final_answer 有新内容→yield type=text；异常→yield type=error（含异常类名）'],
+    skip_reason='[backend-contract] 异步流式对话由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['agents', 'streaming', 'tool_result'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── AG-006 [NORMAL] get_greeting/get_agent 单例/reset_agent/兼容别名（源: cases/agents.yml）──
+_CASE_AG_006 = EvalCase(
+    id='AG-006',
+    legacy_id='',
+    title='get_greeting/get_agent 单例/reset_agent/兼容别名',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 获取欢迎语 / 单例 Agent / 重置 / 兼容别名'],
+    expectations=['direct_reply'],
+    data_checks=["get_greeting 优先 get_direct_reply('greeting') 回退 config.greeting", 'get_agent 同 agent_type 二次调用返回同一实例，不同 agent_type 返回不同实例；reset_agent 后重建并调 reset_agent_intents_cache', 'CustomerServiceAgent→xiaobu / WorkAssistantAgent→mibao 别名映射'],
+    skip_reason='[backend-contract] 工厂/单例/别名由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['agents', 'factory', 'alias'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── AG-007 [NORMAL] 多模态路由 + _extract_content 空响应兜底（两个线上 Bug 的回归锁）（源: cases/agents.yml）──
+_CASE_AG_007 = EvalCase(
+    id='AG-007',
+    legacy_id='',
+    title='多模态路由 + _extract_content 空响应兜底（两个线上 Bug 的回归锁）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 路由带图消息 + 从回复内容里提取有效文本'],
+    expectations=['direct_reply'],
+    data_checks=['Bug A：带图（mixed/multimodal）消息**不得**被路由到 direct_reply_node（直复模板不处理图片）；_last_human_has_image 只认最近一条人类消息的图片块', 'Bug C：_extract_content 在回复**仅含思考内容**时返回空串（不把 think 内容当正文）；正常文本原样返回'],
+    skip_reason='[backend-contract] 纯函数/路由判定由 pytest 单测验证（tests/test_bugfix_multimodal_directreply.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['agents', 'multimodal', 'routing', 'regression'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── AG-010 [NORMAL] 定时任务（用户「预约」）服务端：三件套 fail-closed + 幂等 + 取消 + 到点投递只读（源: cases/agents.yml）──
+_CASE_AG_010 = EvalCase(
+    id='AG-010',
+    legacy_id='',
+    title='定时任务（用户「预约」）服务端：三件套 fail-closed + 幂等 + 取消 + 到点投递只读',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家对黄金策说「3 天后提醒我跟进张先生」→ 建一条待办；到点由每分钟的扫描腿投递成站内通知'],
+    expectations=['direct_reply'],
+    data_checks=['三件套 fail-closed：criterion / actionLabel / actionUrl 任一为空 ⇒ 抛 BusinessException 且**一次 insert 都不发**（三条各自独立）', '幂等：同租户同 dedupKey 第二次调用返回既有行、不 insert；派生键 = 收件人:类型:触发时刻(秒)', '取消：pending ⇒ 落 cancelled；fired ⇒ 拒绝（消息已发出，不可撤回）；跨租户 id ⇒ 拒绝', '投递：到期的 pending ⇒ 调通知服务一次（收件人 / 标题 / 正文 = 三件套）+ 置 fired；单条失败 ⇒ 该条置 failed 且不拖垮同轮其它条', '只读：投递路径只触达通知服务（结构面判据 = 服务依赖里没有订单 / 商品 / 售后写服务）', '租户上下文：扫描完必须还原为进入前的值（issue #3957 的调度线程教训）'],
+    skip_reason='[backend-contract] 服务端纯逻辑由 JUnit 单测验证（ScheduledTaskServiceTest），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['agents', 'scheduled_task', 'notification'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── AG-011 [NORMAL] 定时提醒工具面：action 闭集 + A 档可逆写声明 + 三件套本地 fail-closed（源: cases/agents.yml）──
+_CASE_AG_011 = EvalCase(
+    id='AG-011',
+    legacy_id='',
+    title='定时提醒工具面：action 闭集 + A 档可逆写声明 + 三件套本地 fail-closed',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家对黄金策说「3 天后提醒我跟进张先生」→ 黄金策发确认卡，点头后建一条待办'],
+    expectations=['direct_reply'],
+    data_checks=['action 面是**闭集** {create, list, cancel}（多一个写 action 进来 = 能力扩面，须重走 A 档裁定）', 'A 档声明齐全：read_only=False + requires_confirmation=True + idempotent=True + destructive=False', '只有 list 免确认（read_only_actions == {list}）—— 写 action 不得被挪进来「洗白」', '角色层显式声明 allowed_roles == [admin, operator]，不含 C 端 / 幽灵角色', '三件套（fire_at / task_type / criterion / action_label / action_url）缺任一 ⇒ **本地**即返回 missing_arguments（在发 HTTP 之前，用例不 mock HTTP 自证这一点）'],
+    skip_reason='[backend-contract] 工具声明面与本地 fail-closed 由 pytest 单测验证（test_scheduled_task_manage.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['agents', 'scheduled_task', 'write_boundary'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── AG-012 [NORMAL] 双 Agent 声明契约（元元 / 黄金策）：display_name / persona / skill 集 / 角色白名单 / 默认 agent 与建图（源: cases/agents.yml）──
+_CASE_AG_012 = EvalCase(
+    id='AG-012',
+    legacy_id='',
+    title='双 Agent 声明契约（元元 / 黄金策）：display_name / persona / skill 集 / 角色白名单 / 默认 agent 与建图',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 的双 Agent 声明：mibao / xiaobu 两种 agent_type 的 AgentConfig（称呼 / persona / skill 集 / 角色面）'],
+    expectations=['direct_reply'],
+    data_checks=["判据 1·声明字段（issue #6525 改名后口径）：`get_agent_config('mibao').display_name == '黄金策'` 且 `persona == 'mibao'`；`get_agent_config('xiaobu').display_name == '元元'` 且 `persona == 'xiaobu'` —— **中文字面量是称呼、`agent_type`/`persona` 是标识符**，改名只动前者。执行点 = backend/ai-agent-service/tests/test_dual_agent.py 的 `TestAgentConfigs::test_mibao_config_exists` / `test_xiaobu_config_exists`", '判据 2·skill 集与 fallback 不塌缩：黄金策 = order / product / aftersales（`general` 兜底）；元元 = `customer_*` 前缀（customer_order / customer_product）+ `customer_general` 兜底。执行点 = 同文件 `test_mibao_skills` / `test_xiaobu_skills`', '判据 3·角色白名单：黄金策容许 admin / agent 而**不许** customer；元元只容许 customer 而不许 admin。执行点 = 同文件 `test_mibao_roles` / `test_xiaobu_roles`', '判据 4·工厂与默认值：不传参的 `get_agent()` 默认返回元元（向后兼容）、两种 agent_type 返回**不同实例**、传入自定义 registry 时不再建默认 registry。执行点 = `TestGetAgentFactory` 四条', "判据 5·双类型建图 + 兼容入口：`build_agent_graph('mibao' / 'xiaobu')` 与 `build_customer_service_graph()` 都能建出图。执行点 = `TestGraphBuilderDualType` 三条", '🔴 红证（可复算）：把 `backend/ai-agent-service/app/agents/agents/{xiaobu,mibao}.py` 的 `display_name` 换回旧称呼 ⇒ 判据 1 与 `TestGreetings` 当场红；复算命令 = 在仓库根跑 `pytest backend/ai-agent-service/tests/test_dual_agent.py -q`'],
+    skip_reason='[backend-contract] AgentConfig / 工厂 / 建图的**零 LLM** 单元契约：判定在 dataclass 与图构建层（由 ai-agent-service pytest 执行），不进 agent-eval 冒烟',
+    tags=['agents', 'dual-agent', 'config-contract', 'naming'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置 = 双 Agent 声明模块与 skill 注册表可导入（`app.agents.agent_config` / `app.graph.skills.skill_registry`）；前置由测试自身的 autouse fixture（重置全局实例与注册表）持有 —— 导入失败即直接红，不表现成「agent 不干活」',
+)
+
+# ── AG-013 [EDGE] 客服会话并发分配「读计数 × 再写」无互斥 ⇒ max_concurrent_sessions 被突破；改写为条件更新后并发数不超过上限（issue #6962）（源: cases/agents.yml）──
+_CASE_AG_013 = EvalCase(
+    id='AG-013',
+    legacy_id='',
+    title='客服会话并发分配「读计数 × 再写」无互斥 ⇒ max_concurrent_sessions 被突破；改写为条件更新后并发数不超过上限（issue #6962）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.EDGE,
+    user_inputs=['同一名客服（上限 3）上，6 个等待中的会话被严格同时分配（并发 assignSession）', '串行正对照：额度未满时逐条分配必须照旧成功（谓词不得误杀正常请求）'],
+    expectations=[],
+    data_checks=["**病（真实缺陷形态）**：修前 `AgentSessionService#assignSession` 先 `selectCount(status='active')` 读出计数、在应用层判 `activeCount >= maxConcurrent`，再 `agentSessionMapper.updateById(session)`（WHERE 仅主键 ⇒ **无谓词**）⇒ 读判与写之间没有任何互斥。① 同一个 `sessionId` 并发分配 ⇒ 两个请求都过读判、都成功（后写者覆盖 `employee_id`）；② 同一个员工的 N 个**不同**会话并发分配 ⇒ N 个请求各自读到的 `activeCount` 都是分配前的值、各自都判「未超额」⇒ `max_concurrent_sessions` 被**突破**（上限 3 时 6 个并发全落 `active`）。", "**判据 1（并发数不超过上限）**：真库并发判据 = backend/admin-api/src/test/java/com/migao/admin/service/ConcurrentQuotaAdoptDeleteCas6962RealDbTest.java：6 个并发 `assignSession`（上限 3，探针开）后，落库读数 `SELECT COUNT(*) FROM agent_sessions WHERE employee_id=? AND status='active' AND deleted=0` 必须 **≤ 3**（修前为 6 ⇒ 判红）；成功数必须与落库计数一致（不许「回了 200 但没落库」或反之）。", '**判据 2（落败方是显式 409）**：抢不到分配权 / 抢不到额度的请求必须回 **409 CONFLICT**（不是 500、不是静默成功），且 409 文案带**实际当前态**（会话态的中文标签 / 额度当前值）。', '**正对照（护栏不误杀）**：串行分配前 `max` 条必须成功、第 `max + 1` 条必须被拒 —— 谓词写错（写成常量 / 写错前驱）会让这条先红。', '**窗口注入（判据确定性的来源）**：`AgentSessionService#setAssignProbePauseMillisForTest`（**生产恒 0**，与 `InboundOrderService` 的 `CANCEL_PROBE_PAUSE_MILLIS` 同款）在「读会话/员工」之后、判额度之前留一条窄缝 ⇒ 探针开 = 修前形态必红 / 修后绿；探针关 = 修后仍绿（无假红）。', "**修法（照抄本仓范式）**：① 抢分配权 = `AgentSessionMapper#markAssignedIfWaiting`（谓词 `id + tenant_id + status='waiting' + deleted=0`，按**影响行数**判归属，0 行 ⇒ 409）；② 抢额度 = `AgentSessionMapper#lockEmployeeForQuota`（`SELECT … FOR UPDATE` 锁住员工行）+ `#countActiveSessions`（锁内现取计数）—— 判额度与占额度在同一持锁临界区，后到者阻塞到前者提交后再求值。**为什么不是 `UPDATE … WHERE current < max`**：超额时谓词不成立 ⇒ 不取锁 ⇒ 计数照旧读到旧值 ⇒ 上限照样破（实测订正，写在 mapper javadoc 里）。", '**边界（照实登记）**：① 判据跑的是**服务层真库并发**而非 HTTP 栈；② 探针对象全部自建（tenant / id 前缀 `6962`），随一次性临时集群销毁、不碰存量数据；③ 计数的真值源 = 会话表本身（`agent_employees` **没有** `current_sessions` 列，`db/init/schema.sql` 自证）⇒ 不引入第二份会漂移的账。'],
+    skip_reason='[backend-contract] 纯后端真库并发判据（真 PG 一次性集群，走 `PgCluster.startOrAbort()` 收口）+ 类级元守卫：admin-api 单测面，不进 agent-eval 冒烟',
+    tags=['concurrency', 'cas', 'quota', 'backend-contract', 'realdb'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition="前置 = ① 一名 `status != offline`、`max_concurrent_sessions = 3` 的客服员工；② 同租户下 N=6 个 `status='waiting'` 的人工会话。前置由判据自建（一次性真 PG 集群 `PgCluster.startOrAbort()` + 自建 tenant 与行），**不成立时 fail-closed 硬失败**（探针在 10000ms 内等不到即抛 `IllegalStateException`；夹具缺失在建夹具那一步红）。本用例不是 LLM 多轮对话，无 agent 期望 ⇒ 红了只有一个读法：判据或装置坏了。",
+)
+
+# ── AG-008 [NORMAL] 海报/图片的能力边界陈述被下单域守卫当成「下单能力误宣」⇒ relock 到 order、连问 3 轮下单规格；顾客显式撤回后仍无出口（issue #7758）（源: cases/agents.yml）──
+_CASE_AG_008 = EvalCase(
+    id='AG-008',
+    legacy_id='',
+    title='海报/图片的能力边界陈述被下单域守卫当成「下单能力误宣」⇒ relock 到 order、连问 3 轮下单规格；顾客显式撤回后仍无出口（issue #7758）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这海报太简单了，要做的精美一点，缺了好多商品图片（15:43:21）', '但是你上面生成的海报图片没有带上窗帘效果图（15:44:40）', '我不是要下单，我要更新商品（15:48:24）'],
+    expectations=[],
+    data_checks=["**病（修前实测）**：`capability_denial_text_hit('…海报卡的能力是固定的…我这边改不了排版…')` 返回 `'我这边**改不了排版'`（下单域判据命中图片域文本）⇒ `react_turn` 判「在办下单 × 能力可达 × 本 skill 无 order_create」⇒ `_relock_order_skill` 把 `session_states.pending_skill` 写成 `order`（生产库实测）⇒ 下一轮按下单话术问配色/门幅/米数/收货人。", '**判据 1（域隔离）**：backend/ai-agent-service/tests/test_order_lock_cross_domain.py::TestDenialDomainIsolation —— 海报边界句在两个判据上都返回空；#5318 的 4 条图片域拒绝只在图片域命中、下单域必须为空；OR-014 的 5 句下单否定照旧命中。', '**判据 2（跨小句收紧）**：同文件 `test_layout_and_copy_boundaries_are_not_image_denials` —— 整段有「主图」锚点但否定宾语是排版/版式/字体/配色/拼图/文案时不得命中；`test_cross_clause_capability_negation_still_hit` 保住 #3938 的「没有…能力/工具/通道」形态。', '**判据 3（撤回）**：`TestOrderingWithdrawal` + `TestOrderFlowInProgressRespectsWithdrawal` —— 「我不是要下单，我要更新商品」必须为撤回、在办判据必须为假；「确认下单」不得被当撤回。', '**判据 4（解锁）**：`TestRoutingUnlocksOnWithdrawal` + `TestPendingLockReleasedOnWithdrawal` —— 路由不得回 order 且清 state 锁；`finalize_turn` 必须调 `_release_order_lock_on_withdrawal` 清跨轮 `pending_skill`。', '**类级元守卫**：tests/unit_ci_workflows/test_denial_domain_isolation.py —— AST 断言下单域判据不得调用图片域判据、跨小句只认能力资源否定形态、三处撤回接线必须存在；三个 checker 各自喂**注入变异**副本（把缺陷写回去）自证不空跑。', '**边界（照实登记）**：撤回判据是**窄**判据（否定词与动作词相距 ≤4 字）——「不买贵的」这类会漏（宁可漏、不误吞正向推进）；`_TEXT_DENIAL_CORRECTIVE_PRODUCT_IMAGE` 在模型已如实说明边界的轮次仍会多烧一次重答（#5318 遗留口径），本单不碰。'],
+    skip_reason='[backend-contract] 纯判据/结构面（零 LLM / 零真库）：计分通道 = traces.tests（3 个文件均真实存在），不进 agent-eval 冒烟；按 #4262 裁定不自动跑真实 LLM 评测',
+    tags=['denial-guard', 'domain-isolation', 'routing', 'session-lock', 'zero-llm'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='零 LLM / 零真库：判据直接对 `capability_denial_text_hit` / `_product_image_denial_hit` / `_is_ordering_withdrawal` / `_order_flow_in_progress` / `route_by_intent` 施加生产原文；假 store 只回放会话事实（`grounded_product_detail` + 跨轮 pending 锁）。符号被改名/移动 ⇒ fixture 当场 ImportError 红。',
+)
+
+CASES = (
+    _CASE_AG_001,
+    _CASE_AG_002,
+    _CASE_AG_003,
+    _CASE_AG_004,
+    _CASE_AG_005,
+    _CASE_AG_006,
+    _CASE_AG_007,
+    _CASE_AG_010,
+    _CASE_AG_011,
+    _CASE_AG_012,
+    _CASE_AG_013,
+    _CASE_AG_008,
+)

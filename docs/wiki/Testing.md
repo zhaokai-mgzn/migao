@@ -45,7 +45,7 @@
 ## 行为用例单一源（Case Contract，2026-08-14 起）
 
 行为用例只存一份：`.github/cases/<domain>.yml`（**域数与条数现取、本页不写死**；原写 ~~18 域 117 条~~ = **基线读数**，见下方口径订正注；block style，`truths_ref` 引用真值 ID）。以下均为**生成物，禁止手改**：
-- `tests/agent_eval/eval_cases.py`（CI 跑）
+- `tests/agent_eval/eval_cases/`（**按域分包的目录**，issue #8188；CI 跑）
 - `docs/testing/mibao-verification-cases.md`（人读）
 
 **现取 + 复算命令**（域数 / 总条数 / 各 tier 条数 / `skip_reason` 放行面，**一个脚本一次给全**）：

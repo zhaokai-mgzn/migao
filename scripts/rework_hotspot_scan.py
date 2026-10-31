@@ -83,11 +83,15 @@ DEFAULT_PATHS: tuple[str, ...] = (
 
 #: 生成物/账本类文件不参与排序（它们被高频改写是**设计如此**，不是返工信号）
 _EXCLUDE_SUFFIXES: tuple[str, ...] = (
-    "/eval_cases.py",
     "/mibao-verification-cases.md",
     "/CHANGELOG.md",
     "/package-lock.json",
     "/pnpm-lock.yaml",
+)
+
+#: **目录型**生成物（issue #8188：按域分包）——整目录都不参与排序（高频改是设计如此）
+_EXCLUDE_DIRS: tuple[str, ...] = (
+    "/eval_cases/",
 )
 
 
@@ -247,7 +251,8 @@ def scan(
         fix_total += int(is_fix)
         files, ranges_by_file = changed_files_and_ranges(repo, sha)
         for path in files:
-            if _EXCLUDE_SUFFIXES and any(path.endswith(s) for s in _EXCLUDE_SUFFIXES):
+            if any(path.endswith(s) for s in _EXCLUDE_SUFFIXES) \
+                    or any(d in path for d in _EXCLUDE_DIRS):
                 continue
             if paths and not any(path.startswith(p) for p in paths):
                 continue
