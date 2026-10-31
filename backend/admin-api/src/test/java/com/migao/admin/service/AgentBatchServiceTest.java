@@ -27,7 +27,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
-import org.springframework.core.task.TaskExecutor;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -82,9 +81,9 @@ class AgentBatchServiceTest {
     @Mock
     private ProductService productService;
 
-    /** 后台执行器：默认 mock 不跑任务；异步判据用 captor 取出 Runnable 后手动跑。 */
+    /** 后台 job 提交口：默认 mock 不跑任务；异步判据用 captor 取出 Runnable 后手动跑。 */
     @Mock
-    private TaskExecutor batchExecutor;
+    private BatchJobLauncher batchJobLauncher;
 
     @InjectMocks
     private AgentBatchService batchService;
@@ -685,7 +684,7 @@ class AgentBatchServiceTest {
             assertThat(batchStatusWrites).as("job 还没跑 ⇒ 终态尚未落库").isEmpty();
 
             ArgumentCaptor<Runnable> job = ArgumentCaptor.forClass(Runnable.class);
-            verify(batchExecutor).execute(job.capture());
+            verify(batchJobLauncher).launch(job.capture());
             job.getValue().run();
 
             assertThat(batchStatusWrites).containsExactly(AgentBatchService.STATUS_DONE);
@@ -703,7 +702,7 @@ class AgentBatchServiceTest {
             BusinessException ex = rejection(() -> batchService.executeAsync(TENANT, BATCH_ID));
 
             assertThat(ex.getCode()).isEqualTo("CONFLICT");
-            verify(batchExecutor, never()).execute(any());
+            verify(batchJobLauncher, never()).launch(any());
             verify(productService, never()).updateProductForAgent(any(), any(), any());
         }
 
@@ -717,7 +716,7 @@ class AgentBatchServiceTest {
             batchService.executeAsync(TENANT, BATCH_ID);
 
             ArgumentCaptor<Runnable> job = ArgumentCaptor.forClass(Runnable.class);
-            verify(batchExecutor).execute(job.capture());
+            verify(batchJobLauncher).launch(job.capture());
             job.getValue().run();
 
             assertThat(batchStatusWrites).as("job 级异常也必须落终态，且 partial 可撤销")
@@ -738,7 +737,7 @@ class AgentBatchServiceTest {
 
             assertThat(accepted.getStatus()).isEqualTo(AgentBatchService.STATUS_EXECUTING);
             ArgumentCaptor<Runnable> job = ArgumentCaptor.forClass(Runnable.class);
-            verify(batchExecutor).execute(job.capture());
+            verify(batchJobLauncher).launch(job.capture());
             job.getValue().run();
 
             assertThat(batchStatusWrites).containsExactly(AgentBatchService.STATUS_REVERTED);

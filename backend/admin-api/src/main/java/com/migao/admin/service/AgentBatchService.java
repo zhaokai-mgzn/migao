@@ -12,9 +12,6 @@ import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.AgentBatchItemMapper;
 import com.migao.admin.mapper.AgentBatchMapper;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.core.task.TaskExecutor;
-import org.springframework.core.task.TaskRejectedException;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -118,17 +115,17 @@ public class AgentBatchService {
     /** 单条写的既有路径（含状态机校验与 SKU 价同步）—— 批量复用同一条，不另写一份写逻辑。 */
     private final ProductService productService;
 
-    /** 批次后台执行线程池（issue #8283；显式 bean 名，避免被 @Async 默认执行器接管）。 */
-    private final TaskExecutor batchExecutor;
+    /** 批次后台 job 提交口（issue #8283；专用接口，不占用 Spring 的 TaskExecutor bean 面）。 */
+    private final BatchJobLauncher batchJobLauncher;
 
     public AgentBatchService(AgentBatchMapper batchMapper,
                              AgentBatchItemMapper itemMapper,
                              ProductService productService,
-                             @Qualifier("batchExecutor") TaskExecutor batchExecutor) {
+                             BatchJobLauncher batchJobLauncher) {
         this.batchMapper = batchMapper;
         this.itemMapper = itemMapper;
         this.productService = productService;
-        this.batchExecutor = batchExecutor;
+        this.batchJobLauncher = batchJobLauncher;
     }
 
     // ═══════════════════ ① 创建批次（= 预演）═══════════════════
@@ -242,7 +239,7 @@ public class AgentBatchService {
     public AgentBatchViews.Batch executeAsync(Long tenantId, String batchId) {
         AgentBatch batch = claimForExecute(tenantId, batchId);
         AgentBatchViews.Batch accepted = view(batch, null, null);
-        submit(tenantId, batchId, () -> runBatch(tenantId, batch));
+        batchJobLauncher.launch(() -> runBatch(tenantId, batch));
         return accepted;
     }
 
@@ -361,7 +358,7 @@ public class AgentBatchService {
     public AgentBatchViews.Batch revertAsync(Long tenantId, String batchId) {
         AgentBatch batch = claimForRevert(tenantId, batchId);
         AgentBatchViews.Batch accepted = view(batch, null, null);
-        submit(tenantId, batchId, () -> runRevert(tenantId, batch));
+        batchJobLauncher.launch(() -> runRevert(tenantId, batch));
         return accepted;
     }
 
@@ -653,22 +650,6 @@ public class AgentBatchService {
         String message = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
         String text = resourceId + ": " + message;
         return text.length() > MAX_ERROR_LEN ? text.substring(0, MAX_ERROR_LEN) : text;
-    }
-
-    /**
-     * 提交后台 job；线程池拒绝（例如已 shutdown）时退化为同步执行。
-     *
-     * <p>不吞 job 内部异常：逐条失败 / 读取失败已在 {@link #runBatch} / {@link #runRevert}
-     * 内落成 partial（可撤销）；这里只兜「任务根本没被接收」。</p>
-     */
-    private void submit(Long tenantId, String batchId, Runnable job) {
-        try {
-            batchExecutor.execute(job);
-        } catch (TaskRejectedException e) {
-            log.warn("[Agent] 批次线程池拒绝任务，改为同步执行: batchId={}, tenantId={}",
-                    batchId, tenantId, e);
-            job.run();
-        }
     }
 
     private AgentBatchViews.Batch view(AgentBatch batch, List<AgentBatchViews.Result> results,
