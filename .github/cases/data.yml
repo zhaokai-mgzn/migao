@@ -945,3 +945,34 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+
+  - id: DA-028
+    legacy_id: ""
+    title: "跨域视图判断层：同行基线（peer baseline）与 good/watch/bad/unknown 分档（issue #8234）"
+    domains:
+      - data
+    tier: normal
+    tags:
+      - proactive
+      - briefing
+      - baseline
+      - verdict
+    truths_ref: []
+    user_inputs:
+      - "商品健康度里的退货率 18%，算高还是低？"
+    expectations: []
+    data_checks:
+      - "同行基线 = **同一份快照内全部 SKU** 的中位数（`peer_median`，奇偶两分）与上四分位（`peer_p75`，最近秩法 ceil(0.75n)）；`sample_size` = 有效样本数。基线用**全量**行算，不受输出截断影响（截断只截 rows，不截基线样本）。"
+      - "🔴 未知不装懂（注入式红证）：① 指标未知（退货率无分母 / 成本未知 ⇒ 毛利 None）⇒ verdict = `unknown` 且**不进样本**；② 有效样本 < `MIN_BASELINE_SAMPLE`（5）⇒ `return_rate_baseline` = None + verdict = `unknown`。红证：把阈值改为 0（= 退化成「有值就判断」）⇒ `test_sample_below_minimum_yields_unknown` 必红；恢复 ⇒ 绿。"
+      - "🔴 毛利为负是**绝对判据**（注入式红证）：`gross_margin < 0` ⇒ `bad`，**不因**「全店都亏、基线中位数也是负」而被相对判成 `good`。红证：删掉 `_verdict` 的 absolute_bad 分支（= 退化成纯相对判断）⇒ `test_negative_margin_is_bad_even_when_the_whole_store_loses_money` 必红。"
+      - "分档边界（含等号归属）：`<= peer_median` ⇒ good；`peer_median < x <= peer_p75` ⇒ watch；`> peer_p75` ⇒ bad。边界值单独钉（P6 = p75 ⇒ watch、P7 > p75 ⇒ bad）。"
+      - "确定性：同一 snapshot 连续两次调用，`rows` 逐字节相等、`baseline_basis` 相等（不读挂钟、不联网）。"
+      - "🔴 基线性质自述（防「相对」被读成「绝对」）：视图顶层 `baseline_basis` 与 `basis.return_rate_baseline` 均为 `BASELINE_BASIS`，文本必须同时含「相对」与「非绝对」。"
+    skip_reason: "[backend-contract] 视图语义由 backend/ai-agent-service/tests/test_briefing_product_health_baseline.py 验证（纯函数、零 LLM、两次注入式红证），不进入 agent-eval 冒烟"
+    merge_log: "2026-10-31 新增（issue #8234）：黄金策决策能力 P0-a「参照系」第一包 —— 视图从「只给数值」升到「数值 + 同行基线 + 分档」。刻意只做**相对基线**（全店中位数/p75），不做绝对行业阈值（那属业务口径，需人裁定）；历史基线与客户可配置目标值登记在 issue 正文「不在本单」。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_briefing_product_health_baseline.py"
+      ci:
+        - pr-check.yml
+      verifies: []

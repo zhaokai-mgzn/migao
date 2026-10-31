@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: data（源: cases/data.yml，27 条）
+# 域: data（源: cases/data.yml，28 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -502,6 +502,24 @@ _CASE_DA_027 = EvalCase(
     precondition='评测栈需有跨两个等长窗口的订单 seed 才能得到非零读数；无 seed 时工具仍 success=true 但 top_up/top_down 为空、delta_pct=null ⇒ 本条按「如实转述口径」判定，不把空读数当失败。**前置不成立时红的伪装形态**：seed 只有单窗口 ⇒ 所有商品都进 top_up（上期 0），此时红的落点是数据层（seed 不足）而不是 agent 行为层；机器判据见 data_checks 的 previous_is_zero 与 delta=0 两条',
 )
 
+# ── DA-028 [NORMAL] 跨域视图判断层：同行基线（peer baseline）与 good/watch/bad/unknown 分档（issue #8234）（源: cases/data.yml）──
+_CASE_DA_028 = EvalCase(
+    id='DA-028',
+    legacy_id='',
+    title='跨域视图判断层：同行基线（peer baseline）与 good/watch/bad/unknown 分档（issue #8234）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商品健康度里的退货率 18%，算高还是低？'],
+    expectations=[],
+    data_checks=['同行基线 = **同一份快照内全部 SKU** 的中位数（`peer_median`，奇偶两分）与上四分位（`peer_p75`，最近秩法 ceil(0.75n)）；`sample_size` = 有效样本数。基线用**全量**行算，不受输出截断影响（截断只截 rows，不截基线样本）。', '🔴 未知不装懂（注入式红证）：① 指标未知（退货率无分母 / 成本未知 ⇒ 毛利 None）⇒ verdict = `unknown` 且**不进样本**；② 有效样本 < `MIN_BASELINE_SAMPLE`（5）⇒ `return_rate_baseline` = None + verdict = `unknown`。红证：把阈值改为 0（= 退化成「有值就判断」）⇒ `test_sample_below_minimum_yields_unknown` 必红；恢复 ⇒ 绿。', '🔴 毛利为负是**绝对判据**（注入式红证）：`gross_margin < 0` ⇒ `bad`，**不因**「全店都亏、基线中位数也是负」而被相对判成 `good`。红证：删掉 `_verdict` 的 absolute_bad 分支（= 退化成纯相对判断）⇒ `test_negative_margin_is_bad_even_when_the_whole_store_loses_money` 必红。', '分档边界（含等号归属）：`<= peer_median` ⇒ good；`peer_median < x <= peer_p75` ⇒ watch；`> peer_p75` ⇒ bad。边界值单独钉（P6 = p75 ⇒ watch、P7 > p75 ⇒ bad）。', '确定性：同一 snapshot 连续两次调用，`rows` 逐字节相等、`baseline_basis` 相等（不读挂钟、不联网）。', '🔴 基线性质自述（防「相对」被读成「绝对」）：视图顶层 `baseline_basis` 与 `basis.return_rate_baseline` 均为 `BASELINE_BASIS`，文本必须同时含「相对」与「非绝对」。'],
+    skip_reason='[backend-contract] 视图语义由 backend/ai-agent-service/tests/test_briefing_product_health_baseline.py 验证（纯函数、零 LLM、两次注入式红证），不进入 agent-eval 冒烟',
+    tags=['proactive', 'briefing', 'baseline', 'verdict'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_DA_001,
     _CASE_DA_002,
@@ -530,4 +548,5 @@ CASES = (
     _CASE_DA_025,
     _CASE_DA_026,
     _CASE_DA_027,
+    _CASE_DA_028,
 )

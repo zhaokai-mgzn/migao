@@ -192,6 +192,90 @@ def _gross_margin(price: Optional[Decimal], avg_cost: Optional[Decimal]) -> Opti
     return price - avg_cost
 
 
+# ── 同行基线（peer baseline）与判断（verdict）—— issue #8234 ─────────────────
+
+#: 判定所需的最小有效样本量：少于它 ⇒ `unknown`（**样本太少不装懂**）
+MIN_BASELINE_SAMPLE = 5
+
+VERDICT_GOOD = "good"
+VERDICT_WATCH = "watch"
+VERDICT_BAD = "bad"
+VERDICT_UNKNOWN = "unknown"
+
+#: 基线性质自述（纪律 3：别让调用方把「相对」读成「绝对」）
+BASELINE_BASIS = (
+    "同行基线 = 同一份快照内全部 SKU 的中位数（peer_median）/ 上四分位（peer_p75，最近秩法）；"
+    "这是**相对**判断、**非绝对**标准 —— 全店整体偏高时，相对 good 不代表单店健康"
+)
+
+
+def _median(values: List[Decimal]) -> Optional[Decimal]:
+    """中位数（奇数取中位、偶数取中间两数均值）；空集 ⇒ `None`。"""
+    if not values:
+        return None
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    if len(ordered) % 2 == 1:
+        return ordered[middle]
+    return (ordered[middle - 1] + ordered[middle]) / Decimal(2)
+
+
+def _p75(values: List[Decimal]) -> Optional[Decimal]:
+    """上四分位（最近秩法，NIST 口径）：取第 `ceil(0.75n)` 个（1-based）；空集 ⇒ `None`。"""
+    if not values:
+        return None
+    ordered = sorted(values)
+    rank = -((-3 * len(ordered)) // 4)  # ceil(3n/4)，不引入 math
+    return ordered[max(0, min(rank - 1, len(ordered) - 1))]
+
+
+def _peer_baseline(values: List[Optional[float]]) -> Optional[Dict[str, Any]]:
+    """`{peer_median, peer_p75, sample_size}`；`None` 值**不进样本**，样本不足 ⇒ `None`。"""
+    known = [Decimal(str(value)) for value in values if value is not None]
+    if len(known) < MIN_BASELINE_SAMPLE:
+        return None
+    return {
+        "peer_median": _out(_median(known)),
+        "peer_p75": _out(_p75(known)),
+        "sample_size": len(known),
+    }
+
+
+def _verdict(
+    value: Optional[float],
+    baseline: Optional[Dict[str, Any]],
+    *,
+    absolute_bad: bool = False,
+) -> str:
+    """分档：`<= peer_median` ⇒ good；`<= peer_p75` ⇒ watch；`> peer_p75` ⇒ bad。
+
+    `absolute_bad=True` 时**先判绝对**（`value < 0` ⇒ bad）—— 毛利为负**不因**「全店都亏、
+    中位数也是负」而被相对判成 good（注入式红证见
+    `test_negative_margin_is_bad_even_when_the_whole_store_loses_money`）。
+    值未知或基线不可用（样本不足）⇒ `unknown`（**不装懂**）。
+    """
+    if value is None:
+        return VERDICT_UNKNOWN
+    if absolute_bad and Decimal(str(value)) < 0:
+        return VERDICT_BAD
+    if baseline is None:
+        return VERDICT_UNKNOWN
+    current = Decimal(str(value))
+    if current <= Decimal(str(baseline["peer_median"])):
+        return VERDICT_GOOD
+    if current <= Decimal(str(baseline["peer_p75"])):
+        return VERDICT_WATCH
+    return VERDICT_BAD
+
+
+def _baselines(rows: List[Dict[str, Any]]) -> Dict[str, Optional[Dict[str, Any]]]:
+    """两条基线（退货率 / 毛利率）—— 用**全量**行算，不受输出截断影响。"""
+    return {
+        "return_rate": _peer_baseline([row.get("return_rate") for row in rows]),
+        "gross_margin": _peer_baseline([row.get("gross_margin") for row in rows]),
+    }
+
+
 def _blank_rows(snapshot: Any, array: str, field: str) -> int:
     """某个行数组里 `field` 缺值的行数（维度缺值 ⇒ 结论不完整，不是「这些行没问题」）。"""
     return sum(1 for row in _rows(snapshot, array) if row.get(field) in (None, ""))
@@ -466,6 +550,8 @@ def product_health(
     rows.sort(key=lambda item: (str(item["product_id"] or ""), str(item["sku_id"] or "")))
 
     total = len(rows)
+    # 基线用**全量**行算（不受输出截断影响）—— issue #8234
+    baselines = _baselines(rows)
     truncated = total > limit
     if truncated:
         rows = rows[:limit]
@@ -477,6 +563,14 @@ def product_health(
             ]
             entry["status"] = INCOMPLETE
             entry["reason"] = "；".join(entry["gaps"])
+
+    # ── 同行基线 + 判断（issue #8234）：基线放视图级（不逐行重复），行内只放分档 ──
+    rate_baseline, margin_baseline = baselines["return_rate"], baselines["gross_margin"]
+    for row in rows:
+        row["return_rate_verdict"] = _verdict(row.get("return_rate"), rate_baseline)
+        row["gross_margin_verdict"] = _verdict(
+            row.get("gross_margin"), margin_baseline, absolute_bad=True
+        )
 
     row_meta = snapshot.get("row_meta") if isinstance(snapshot, dict) else None
     return {
@@ -492,11 +586,20 @@ def product_health(
         "unattributed_returns": _blank_rows(snapshot, "returns", "product_id"),
         # 服务端过滤事实（issue #6347 Part B）：**独立于三态**，工具层据它把原因与出路说给模型
         "not_on_sale": filtered_skus(snapshot),
+        # 同行基线与性质自述（issue #8234；基线放视图级，行内只放 verdict）
+        "baselines": baselines,
+        "baseline_basis": BASELINE_BASIS,
         "basis": {
             "stock_authority": STOCK_AUTHORITY,
             "sales_authority": STOCK_AUTHORITY,
             "cost_authority": STOCK_AUTHORITY,
             "low_stock": f"stock {LOW_STOCK_OPERATOR} {LOW_STOCK_THRESHOLD}",
             "return_rate": "退货工单数 ÷ 订单行数（同期窗口，装配层同源）",
+            "return_rate_baseline": BASELINE_BASIS,
+            "return_rate_verdict": (
+                "good ≤ peer_median；watch ≤ peer_p75；bad > peer_p75；"
+                f"值未知或有效样本 < {MIN_BASELINE_SAMPLE} ⇒ unknown"
+            ),
+            "gross_margin_verdict": "毛利 < 0 ⇒ bad（绝对判据）；否则同 return_rate_verdict 的分档",
         },
     }
