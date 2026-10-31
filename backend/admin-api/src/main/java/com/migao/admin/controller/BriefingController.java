@@ -13,7 +13,9 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -73,6 +75,31 @@ public class BriefingController {
      * <p>租户取会话上下文（`TenantContext`），权限码与 `/today` 同码（`dashboard:view`）；
      * 行级数组有界（≤ {@code DailyBriefingService.SNAPSHOT_ROW_LIMIT}）且截断在 `row_meta` 里显式。</p>
      */
+    /**
+     * 历史简报（issue #8253）：过去 N 天 AI 提醒过什么。
+     *
+     * <p>复盘的第一块原料 —— 没有它，「上个月你建议我改价，效果如何？」根本答不出来。
+     * {@code days} 由 Service 钳制（上限 {@link DailyBriefingService#HISTORY_MAX_DAYS}），
+     * 这里**不重复**做边界，避免两处口径。</p>
+     */
+    @RequirePermission("dashboard:view")
+    @GetMapping("/history")
+    public ApiResponse<List<Map<String, Object>>> getHistory(
+            @RequestParam(value = "days", defaultValue = "30") int days) {
+        Long tenantId = TenantContext.getTenantId();
+        List<DailyBriefing> rows = dailyBriefingService.getBriefingHistory(tenantId, days);
+        List<Map<String, Object>> resp = new ArrayList<>(rows.size());
+        for (DailyBriefing row : rows) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("bizDate", row.getBizDate() != null ? row.getBizDate().toString() : null);
+            item.put("content", row.getContent());
+            item.put("verifyStatus", row.getVerifyStatus());
+            item.put("generatedAt", row.getGeneratedAt() != null ? row.getGeneratedAt().toString() : null);
+            resp.add(item);
+        }
+        return ApiResponse.success(resp);
+    }
+
     @RequirePermission("dashboard:view")
     @GetMapping("/snapshot")
     public ApiResponse<Map<String, Object>> getSnapshot() {

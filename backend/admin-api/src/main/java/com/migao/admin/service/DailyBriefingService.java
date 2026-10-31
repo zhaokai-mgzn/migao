@@ -335,6 +335,34 @@ public class DailyBriefingService {
     }
 
     /**
+     * 历史简报天数**硬上限**（issue #8253）。
+     *
+     * <p>不设上限时一次 `days=10000` 就能把整张表读进内存 —— 这不是理论风险，
+     * 而是任何「给我过去 N 天」接口的默认坑。90 天也是老板真正会回看的长度。</p>
+     */
+    public static final int HISTORY_MAX_DAYS = 90;
+
+    /**
+     * 查最近 {@code days} 天的简报（按业务日期**倒序**，最新在前）。
+     *
+     * <p>窗口按 {@link BusinessClock#today()}（业务时区 +08）算 —— 全仓「今天」的唯一来源，
+     * 这里不另开一套 {@code LocalDate.now()}（UTC 16:00 边界前后会差一天，issue #3802）。</p>
+     *
+     * <p>查不到 ⇒ **空列表**（不是 null）：调用方据条数自己说「没有历史简报」，
+     * 对齐「未知 ≠ 0」纪律 —— 让上层 NPE 或被当成「历史里有 0 条」都是错的。</p>
+     */
+    public List<DailyBriefing> getBriefingHistory(Long tenantId, int days) {
+        int bounded = Math.max(1, Math.min(days, HISTORY_MAX_DAYS));
+        List<DailyBriefing> rows = dailyBriefingMapper.selectList(
+                new LambdaQueryWrapper<DailyBriefing>()
+                        .eq(DailyBriefing::getTenantId, tenantId)
+                        .ge(DailyBriefing::getBizDate, businessClock.today().minusDays(bounded - 1L))
+                        .orderByDesc(DailyBriefing::getBizDate)
+                        .last("LIMIT " + bounded));
+        return rows == null ? List.of() : rows;
+    }
+
+    /**
      * 查询指定日期简报
      */
     public DailyBriefing getBriefingByDate(Long tenantId, LocalDate bizDate) {
