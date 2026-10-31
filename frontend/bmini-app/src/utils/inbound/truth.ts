@@ -1,11 +1,12 @@
 /**
- * 跨工程**真值源的唯一引用点**（issue #5052 P3）
+ * 跨工程**真值源的唯一引用点**（issue #5052 P3；issue #8287 起扩到 50×70 行式标签）
  *
- * 本页要用到两件已经有真值源的东西，它们都落在 `frontend/admin-web`：
+ * 本页要用到几件已经有真值源的东西，它们都落在 `frontend/admin-web`：
  *
  * | 真值 | 真值源（仓库相对全路径） | 谁落的 |
  * |---|---|---|
  * | 入库标签（50×80mm）的**纸型 + 像素口径** | `frontend/admin-web/src/lib/print-media.json` | #5651 打印介质矩阵 |
+ * | 成品入库标签 / 发货联（50×70mm）的**纸型 + 像素口径 + 纸长范围** | 同上（`label-50x70`） | #7761 / #7786 / #8287 |
  *
  * ## 🔴 为什么是「直接 import」，不是「各写一份」或「构建期拷贝」
  *
@@ -36,6 +37,12 @@ import matrix from '../../../../admin-web/src/lib/print-media.json'
  * 矩阵里没有它 / 字段缺失 ⇒ 本模块**抛错**（fail-closed：静默回落 = 按 0 像素画一张空标签）。
  */
 export const INBOUND_LABEL_MEDIA_ID = 'label-50x80'
+
+/**
+ * 成品入库标签 / 发货联共用的介质 id（issue #8287）：50mm 宽连续纸卷、纸长按内容撑开。
+ * 与 `frontend/worker-h5/src/shipment.mjs` 的 `SHIP_LABEL_MEDIA_ID` **逐字同名**（同一份真值）。
+ */
+export const SHIP_LABEL_MEDIA_ID = 'label-50x70'
 
 /**
  * 标签码形态（设计 §7.1，**一次定死**）：`https://app.migaozn.com/i/<8 位短码>`。
@@ -69,37 +76,81 @@ interface MediaSpec {
   pendingMeasurements?: string[]
   note?: string
   dotGeometry?: DotGeometry
+  /** 纸型（mm）—— 版面只从这里取，不在渲染器里另写一份 */
+  pageBoxMm?: { widthMm: number; heightMm: number }
+  /** 连续纸卷的纸长范围（`mode=content` ⇒ 长度按内容撑开） */
+  lengthMm?: { mode: string; minMm: number; maxMm: number }
 }
 
-/** 取本页消费的介质条目；缺项 ⇒ 抛错（**不**回落到别的介质、**不**兜底默认值） */
-export function inboundLabelMedia(): MediaSpec {
+/** 纸长范围（mm）：只对连续纸卷介质有；固定纸型 ⇒ 不提供。 */
+export interface LabelLengthRange {
+  minMm: number
+  maxMm: number
+}
+
+/** 取介质条目；缺项 ⇒ 抛错（**不**回落到别的介质、**不**兜底默认值） */
+function mediaById(id: string): MediaSpec {
   const specs = (matrix as unknown as { media: MediaSpec[] }).media || []
-  const spec = specs.find((item) => item.id === INBOUND_LABEL_MEDIA_ID)
+  const spec = specs.find((item) => item.id === id)
   if (!spec) {
-    throw new Error(
-      `介质矩阵里没有 \`${INBOUND_LABEL_MEDIA_ID}\`（真值源 = frontend/admin-web/src/lib/print-media.json）`,
-    )
+    throw new Error(`介质矩阵里没有 \`${id}\`（真值源 = frontend/admin-web/src/lib/print-media.json）`)
   }
   if (!spec.dotGeometry) {
-    throw new Error(`介质 \`${INBOUND_LABEL_MEDIA_ID}\` 缺 dotGeometry（纸型与像素口径必须同源在矩阵里）`)
+    throw new Error(`介质 \`${id}\` 缺 dotGeometry（纸型与像素口径必须同源在矩阵里）`)
   }
   return spec
+}
+
+/** 取本页消费的介质条目（保留旧签名：入库标签链路只认 50×80）。 */
+export function inboundLabelMedia(): MediaSpec {
+  return mediaById(INBOUND_LABEL_MEDIA_ID)
 }
 
 /**
  * 标签的**渲染口径**（标签渲染/打印适配层只读它，不自己写像素字面量）。
  *
- * 🔴 画布取**有效打印宽**（现在 = 384px：50mm 纸宽于 48mm 头 ⇒ 右侧约 2mm 打不到），而**不是**任何推定值：
- * DP235S 的**打印头 dpi 与宽度尚未核实**（设计 §8.5 ④），按安全侧设计 —— 连上后读
- * `getPrinterInfo()` 的 `printerDPI` / `printerWidth` 回填矩阵即可。**1:1 不缩放、不裁切**。
+ * 🔴 画布取**有效打印宽**（现在 = 头宽：50mm 纸宽于 48mm 头 ⇒ 右侧约 2mm 打不到），
+ * 而**不是**任何推定值：DP235S 的**打印头 dpi 与宽度尚未核实**（设计 §8.5 ④），按安全侧设计 ——
+ * 连上后读 `getPrinterInfo()` 的 `printerDPI` / `printerWidth` 回填矩阵即可。**1:1 不缩放、不裁切**。
  */
-export function inboundLabelGeometry(): DotGeometry & { canvasWidthPx: number; canvasHeightPx: number } {
-  const geometry = inboundLabelMedia().dotGeometry as DotGeometry
+export function labelGeometry(
+  id: string,
+): DotGeometry & { canvasWidthPx: number; canvasHeightPx: number } {
+  const geometry = mediaById(id).dotGeometry as DotGeometry
   return {
     ...geometry,
     canvasWidthPx: geometry.effectiveWidthPx,
     canvasHeightPx: geometry.heightPx,
   }
+}
+
+/** 入库标签（50×80）的渲染口径（旧调用点保持不变）。 */
+export function inboundLabelGeometry(): DotGeometry & { canvasWidthPx: number; canvasHeightPx: number } {
+  return labelGeometry(INBOUND_LABEL_MEDIA_ID)
+}
+
+/**
+ * 纸型（mm）—— 版面 / 测试只从这里取。
+ * 介质矩阵缺 `pageBoxMm` ⇒ 抛错（版面不能猜一个尺寸）。
+ */
+export function labelPaperBox(id: string): { widthMm: number; heightMm: number } {
+  const box = mediaById(id).pageBoxMm
+  if (!box || !box.widthMm || !box.heightMm) {
+    throw new Error(`介质 \`${id}\` 缺 pageBoxMm（纸型必须同源在矩阵里）`)
+  }
+  return { widthMm: box.widthMm, heightMm: box.heightMm }
+}
+
+/**
+ * 连续纸卷的纸长范围（mm）—— 发货联按内容撑开（下限 / 上限）的唯一真值。
+ * 固定纸型 / 缺 `lengthMm` ⇒ 抛错（调用方要的是「按内容撑开」，不能静默按固定纸长出图）。
+ */
+export function labelLengthRange(id: string): LabelLengthRange {
+  const range = mediaById(id).lengthMm
+  if (!range || !range.minMm || !range.maxMm) {
+    throw new Error(`介质 \`${id}\` 缺 lengthMm（按内容撑开的纸长范围必须同源在矩阵里）`)
+  }
+  return { minMm: range.minMm, maxMm: range.maxMm }
 }
 
 /** 短码 ⇒ 标签上的码内容（设计 §7.1 的唯一拼装处） */

@@ -32,8 +32,9 @@
  *
  * ## 不做（照实登记）
  *
- * 机台/裁高、精裁清单、质检区块、成品标签打印属于 `/w/` 的其它面（P2b），本页不渲染；
- * 发货/入库走工作台的其它入口。
+ * 机台/裁高、精裁清单、质检区块属于 `/w/` 的其它面（P2b），本页不渲染；
+ * **成品入库卡 + 入库标签（50×70）打印**已随 issue #8287 搬到本页（服务端随扫码 / 报工回执
+ * 下发 `finished_inbound`，端侧不拼字段）；发货/入库的其它入口仍走工作台。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Input, Text, View } from '@tarojs/components'
@@ -92,6 +93,19 @@ import {
 // 🔴 小程序专有 API 的 h5 出路（守卫 tests/h5-platform-api-guard.test.ts）：h5 产物里没有
 // 原生扫码 ⇒ 不摆「扫一扫」按钮，手输码这条降级路径仍然可用（不是把页面弄死）。
 import { canUseNativeScan } from '../../../utils/platform'
+// 成品入库卡 + 50×70 入库标签（issue #8287）：数据只来自服务端 `finished_inbound`；
+// 打印走「行式标签」通道（与入库标签的「必留痕」通道分开，见 labelPrint.ts 文件头）。
+import {
+  finishedInboundBinText,
+  finishedInboundQualityText,
+  finishedInboundRows,
+  finishedInboundSpec,
+} from '../../../utils/labels/finishedInbound'
+import { ROWS_LABEL_MISSING, renderRowsLabel } from '../../../utils/labels/rowsLabel'
+import { createH5CanvasFactory, SDK_UNAVAILABLE_HINT } from '../../../utils/inbound/labelPageKit'
+import { printRowsLabel } from '../../../utils/inbound/labelPrint'
+import { probePrintCapability } from '../../../utils/inbound/printCapability'
+import { createPrintTransport } from '../../../utils/inbound/terminalTransport'
 import './index.scss'
 
 /** 读面失败兜底（技术原文留在请求层）。 */
@@ -135,6 +149,9 @@ export default function WorkerReportPage() {
   const [message, setMessage] = useState('')
   /** 页内错误（只用于「读不到 / 失败」这类非状态机的临时提示） */
   const [phaseError, setPhaseError] = useState('')
+  /** 成品入库标签的打印态（置真期间按钮 disabled，防连点送两张） */
+  const [printBusy, setPrintBusy] = useState(false)
+  const [labelNotice, setLabelNotice] = useState('')
   /**
    * 入口解码后的码（issue #8196）：A 档 `q=/s/<短码>` ⇒ **token**；其余入口形态原样。
    * 入口效果只写它，页面别的分支只读 —— 免得每处都自己再看一遍入口参数（两处推导必然漂）。
@@ -351,6 +368,7 @@ export default function WorkerReportPage() {
           nextOperation: (res.data?.next_operation as any) ?? null,
           setCompleted: res.data?.set_completed ?? null,
           setProgress: res.data?.set_progress ?? null,
+          finishedInbound: res.data?.finished_inbound ?? null,
         }),
       )
       setMessage('')
@@ -372,6 +390,44 @@ export default function WorkerReportPage() {
     requestIdRef.current = ''
     setState((prev) => ({ ...initialState(prev.worker), mode: prev.worker ? 'scan' : 'unauthorized' }))
   }, [])
+
+  /** 打印能力（动手前就说清本机能不能打；不把"点了才知道失败"留给工人）。 */
+  const printCapability = useMemo(() => probePrintCapability(), [])
+
+  /**
+   * 打印成品入库标签（50×70）。
+   *
+   * 数据只取服务端 `finished_inbound`；版面 / 渲染 / 送打印三段都走共享件，
+   * 这两类纸**没有**入库标签那样的服务端留痕端点（与 `/w/` 行为一致，见 labelPrint.ts）。
+   */
+  const printFinishedLabel = useCallback(async () => {
+    const finished = state.finishedInbound
+    if (!finished) return
+    setLabelNotice('')
+    if (!printCapability.ok) {
+      setLabelNotice(printCapability.hint)
+      return
+    }
+    setPrintBusy(true)
+    try {
+      const transport = await createPrintTransport()
+      if (!transport) {
+        setLabelNotice(SDK_UNAVAILABLE_HINT)
+        return
+      }
+      const result = await printRowsLabel({
+        capability: printCapability,
+        transport,
+        render: () => renderRowsLabel(finishedInboundSpec(finished), createH5CanvasFactory()),
+      })
+      setLabelNotice(result.ok ? `已送出打印（${result.transportLabel}）` : result.hint)
+    } catch {
+      // 通道加载 / 连接异常：给可行动文案，不把未捕获异常留给工人
+      setLabelNotice(SDK_UNAVAILABLE_HINT)
+    } finally {
+      setPrintBusy(false)
+    }
+  }, [state.finishedInbound, printCapability])
 
   const candidates = useMemo(() => {
     const op = state.view?.operation
@@ -612,6 +668,55 @@ export default function WorkerReportPage() {
           <Button className='worker-report__ghost' data-testid='worker-report-rescan' onClick={rescan}>
             再扫一张
           </Button>
+        </View>
+      ) : null}
+
+      {state.finishedInbound ? (
+        <View className='worker-report__finished' data-testid='worker-report-finished-inbound'>
+          <Text className='worker-report__set' data-testid='worker-report-finished-bin'>
+            成品入库 · 仓位 {finishedInboundBinText(state.finishedInbound)}
+          </Text>
+          <Text className='worker-report__line' data-testid='worker-report-finished-quality'>
+            质检：{finishedInboundQualityText(state.finishedInbound)}
+          </Text>
+          {state.finishedInbound.inbound_no ? (
+            <Text className='worker-report__line' data-testid='worker-report-finished-no'>
+              入库单 {state.finishedInbound.inbound_no}
+            </Text>
+          ) : null}
+          <View className='worker-report__label-rows' data-testid='worker-report-finished-rows'>
+            {finishedInboundRows(state.finishedInbound).map((row) => (
+              <View key={row.key} className='worker-report__label-row'>
+                <Text className='worker-report__label-key'>{row.label}</Text>
+                <Text className='worker-report__label-value'>
+                  {String(row.value ?? '').trim() === '' ? ROWS_LABEL_MISSING : row.value}
+                </Text>
+              </View>
+            ))}
+          </View>
+          {state.finishedInbound.label?.short_code ? (
+            <Text className='worker-report__label-code' data-testid='worker-report-finished-code'>
+              {state.finishedInbound.label.short_code}
+            </Text>
+          ) : null}
+          <Text className='worker-report__hint' data-testid='worker-report-finished-label-hint'>
+            {printCapability.ok ? printCapability.readyHint : printCapability.hint}
+          </Text>
+          <Button
+            className='worker-report__primary'
+            data-testid='worker-report-finished-print'
+            disabled={!printCapability.ok || printBusy}
+            onClick={() => {
+              void printFinishedLabel()
+            }}
+          >
+            {printBusy ? '打印中…' : '打印入库标签（50×70）'}
+          </Button>
+          {labelNotice ? (
+            <Text className='worker-report__notice' data-testid='worker-report-finished-label-notice'>
+              {labelNotice}
+            </Text>
+          ) : null}
         </View>
       ) : null}
 

@@ -846,7 +846,7 @@
 真值: auth.qr-login-ticket
 溯源: 2026-10-26 新增（issue #7825）：现场 = 顶栏「手机端」二维码只是裸链接（不带登录交接），换浏览器 / App 或本机存储被清后每次扫码都要重新输密码。冻结口径 = 一次性票据（JWT 类型 qr_login、120 秒、兑换即吊销 jti）+ 手机端兑换后与密码登录同一套 30 天会话 + 签发失败降级裸入口 + 启动探针（续期失败原因本地可读）。 ｜ tags: auth, session, qr-login, bmini, admin-web
 
-## B 端小程序域（56 case）
+## B 端小程序域（58 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -1651,6 +1651,32 @@
 ```
 真值: processing-manage.worker-menu-pages
 溯源: 2026-10-31 新增（issue #8196 目标 ⑤）：收口「工人菜单有第二份映射」—— bmini 把后端页面键字面量抄了一份（WORKER_MENU_KEYS），两端之间原先**没有判据**（后端加键 / 前端拼错都不会红）。新增子集守卫（只许缩小）；菜单的标签与路由仍只在 bmini 一份（后端只下发可见页面键集合），故不另造标签映射。 ｜ tags: bmini, worker, worker-menu, single-source, cross-language
+
+### BM-060. 报工详情页成品入库卡 + 50×70 入库标签打印（数据只来自服务端 finished_inbound；打印走行式标签通道；小程序离屏画布） 🔵
+```
+你: 工人扫「套 × 部位」码 → 报完最后一道 → 本页出现「成品入库 · 仓位 A-01」卡：质检结论、入库单号、标签行（品名/色号/入库日期/数量）与短码；点「打印入库标签（50×70）」经小程序 BLE / 手持终端 / 浏览器蓝牙打出 50×70 标签；服务端没给 finished_inbound 时整卡不渲染。
+期望: direct_reply
+数据: 判据 1·🔴 数据只来自服务端：卡片与标签行逐字取 finished_inbound（bin_code / inbound_no / label.rows / label.short_code / quality），端侧不拼业务字段；缺值按「未分配」/「—」/ 无记录=正常。红证：把行数据改成端侧常量或补字段 ⇒ frontend/bmini-app/tests/rows-label-layout.test.ts 的 L2 与 worker-report-page.test.tsx 的 ⑦ 判红
+数据: 判据 2·🔴 纸型 50×70 固定：布局只从 label-50x70 介质取纸型 / 像素口径，成品标签高 = 70mm；宽度与纸长不另写一份。红证：删掉 fixedLengthMm ⇒ L2 红；在布局里写像素字面量 ⇒ tests/inbound-print-geometry-single-source.test.ts 的 C2b 红
+数据: 判据 3·🔴 送打印只走 printRowsLabel：顺序 = 能力探测 → 渲染 → 送打印机（这两类纸无服务端留痕端点）；能力不可用 ⇒ 按钮 disabled 且先给可行动文案。红证：把按钮改成点了才判 / 页面直连 .print ⇒ inbound-print-channel.test.ts 的 D7 红；worker-report-page.test.tsx 的 ⑨ 红
+数据: 判据 4·小程序可打印：无 DOM 时画布工厂改用 Taro.createOffscreenCanvas（h5 仍用 DOM canvas）；取不到位图 ⇒ 渲染抛错（不静默打印白图）。红证：去掉离屏画布分支 ⇒ worker-report-page.test.tsx 的 ⑦ 渲染失败；去掉 requirePixels ⇒ rows-label-layout.test.ts 的 L5 红
+跳过: [frontend-contract] 确定性页面 / 版面判据（jest: rows-label-layout / worker-report-page / inbound-print-channel），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-10-31 新增（issue #8287：用户「打包的工人要在报工详情页面增加成品入库功能并打印入库标签」）。改动 = bmini 报工页渲染服务端随扫码 / 报工回执下发的 finished_inbound 卡（仓位 / 质检 / 入库单 / 标签行 / 短码），并接 50×70 行式标签打印；共用 rowsLabel 版面 + printRowsLabel 入口；小程序画布改走离屏画布（此前无 DOM 直接抛错 ⇒ 小程序打印实际不可用，本单一并修）。边界：这两类纸无服务端打印留痕端点（与 /w/ 一致），入库标签的必留痕红线仍只约束 printInboundLabel。 ｜ tags: bmini, inbound, print, finished-goods, weapp
+
+### BM-061. 待发货单整套出库单（发货联）50×70 预览 + 打印 —— 行清单与 /w/ 同源，仍不新增发货写路径 🔵
+```
+你: 工人在「待发货单」列表点某单「发货联」→ 屏上出现 50×70 纸面的行清单（订单号 / 收货人 / 电话 / 地址 / 帘种 / 安装小区 / 安装位置 / 物流类型 / 物流公司 / 下单日期 / 套数 / 备注）→ 点「打印发货联（50×70）」经共享行式标签通道打出整套出库单；缺值印 —、可选附注缺值整行不印；本页仍不发货。
+期望: direct_reply
+数据: 判据 1·🔴 行清单与 /w/ 逐行等价：bmini buildShipLabelRows 与 frontend/worker-h5/src/shipment.mjs 的 buildShipLabelRows 对同一组 fixture（全字段 / 最小 / 可选全缺 / 时区 / 缺值）逐行相等。红证：任一侧改行序 / 缺值规则 / 日期 ⇒ frontend/bmini-app/tests/ship-label-rows-parity.test.ts 红（逐字段点名）
+数据: 判据 2·🔴 日期按 Asia/Shanghai：16:30Z ⇒ 次日；不按 UTC 切。红证：改成本地 / UTC 取日 ⇒ parity P4 与 worker-shipment-orders-page.test.tsx 的 ⑧ 红
+数据: 判据 3·🔴 纸长按内容撑开 70~150mm、50mm 宽、像素口径只取介质矩阵；长内容可见省略 / 折行，超上限停止追加并给 warnings。红证：把纸长写死 / 删 warnings ⇒ rows-label-layout.test.ts 的 L3 红
+数据: 判据 4·🔴 仍然不新增发货写路径：页面只读列表 + 打纸，不调 ship 端点；送打印只走 printRowsLabel（页面无 .print）。红证：页面里加 .print 直连 ⇒ inbound-print-channel 的 D7 红；加 ship 调用 ⇒ 现有测试的 mock 服务导出不存在即红
+跳过: [frontend-contract] 确定性页面 / 跨端行清单判据（jest: ship-label-rows-parity / worker-shipment-orders-page / rows-label-layout），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-10-31 新增（issue #8287：用户「整单出库功能要能做成品出库，并打印标签」）。现状：成品出库写路径已存在（拍照发货 / PC 发货 → POST /api/worker/shipment/orders/{id}/ship；服务端已过账 outbound source=ship），本单补的是手机端整套出库单纸面：待发货单列表逐单「发货联」预览 + 50×70 打印，行清单与 /w/ 的 buildShipLabelRows 同源（parity 现取两侧比对）。明确不做第二条发货写路径（PR 写明）。 ｜ tags: bmini, worker, shipment, label, print
 
 ## 分类域（3 case）
 
@@ -13994,13 +14020,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：944（活跃 152，跳过 792）
-- tier 分布：smoke 15 / normal 872 / adversarial 33
+- 用例总数：946（活跃 152，跳过 794）
+- tier 分布：smoke 15 / normal 874 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
 - 登录认证域：14
-- B 端小程序域：56
+- B 端小程序域：58
 - 分类域：3
 - 对话边界域：53
 - 跨域：3
