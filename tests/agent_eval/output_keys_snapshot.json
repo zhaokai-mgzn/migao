@@ -1139,6 +1139,7 @@
     "execute": {
      "dynamic": true,
      "keys": [
+      "batchId",
       "results",
       "revertible",
       "status"
@@ -1156,7 +1157,9 @@
     "revert": {
      "dynamic": true,
      "keys": [
-      "results"
+      "batchId",
+      "results",
+      "status"
      ]
     }
    },
@@ -1171,11 +1174,15 @@
     "revertible",
     "status"
    ],
-   "literal_keys": [],
-   "shape_notes": [
-    "data=dict(response.get('data') or {})"
+   "literal_keys": [
+    "batchId",
+    "status"
    ],
-   "source_sha256": "4e790119241266923346e7605d61921e45dbacb801d608f76d4e85ef62883747"
+   "shape_notes": [
+    "data=dict(response.get('data') or {})",
+    "data=polled or data"
+   ],
+   "source_sha256": "a995e432ecaad7e54f1ad5912c47daff44df3e95bef1b7a8781e26df581af98c"
   },
   "product_detail": {
    "actions": null,
