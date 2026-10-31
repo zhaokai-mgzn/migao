@@ -1,6 +1,8 @@
 /* 扫码报工页（issue #7812 P2a）—— 车间手机 / PAD：单手可点、触控 ≥44px、弱光高对比。 */
 .worker-report {
   min-height: 100vh;
+  width: 100%;
+  box-sizing: border-box;
   padding: 24px 24px 48px;
   background: #faf7f2;
   display: flex;
@@ -30,6 +32,10 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
   }
 
   &__scan,

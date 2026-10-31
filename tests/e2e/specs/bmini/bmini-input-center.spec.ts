@@ -174,4 +174,22 @@ test.describe('B 端 H5 输入框文字竖向居中（issue #6478）', () => {
 
     for (const reading of readings) expectCentered(reading)
   })
+
+  test('报工页未登录的登录卡片在 390px 宽内不横向溢出（issue #8194）', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto('/#/pages/worker/report/index')
+    const card = page.locator('.worker-login-form')
+    await expect(card).toBeVisible()
+    // 视觉验收（2026-10-31）抓到的真形态：卡片默认 content-box + min-width:auto，
+    // 在 390 宽下把右缘顶出视口（副标题被切、输入框/按钮右侧出屏）。
+    const m = await page.evaluate(() => {
+      const el = document.querySelector('.worker-login-form') as HTMLElement
+      const r = el.getBoundingClientRect()
+      return { doc: document.documentElement.scrollWidth, inner: window.innerWidth, right: r.right, width: r.width }
+    })
+    console.log(`[worker-login-card] 390px 读数 ${JSON.stringify(m)}`)
+    expect(m.doc).toBeLessThanOrEqual(m.inner + 1)
+    expect(m.right).toBeLessThanOrEqual(m.inner + 1)
+    expect(m.width).toBeGreaterThan(300)
+  })
 })

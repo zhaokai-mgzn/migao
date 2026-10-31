@@ -2,11 +2,22 @@
    （admin-web 暖色阶：neutral / primary / accent），**不新造设计语言**。
    单位口径 = Taro 设计 px（`designWidth: 750`，1 CSS px ≈ 2 设计 px），PAD 上按同一比例放大。
    卡片与 `/w/` 的 `.wh5-card` **同值**：padding 16 CSS px（= 32 设计 px）/ 圆角 16px（= 32）/
-   间距 12px（= 24）/ 同一条阴影（白卡片落在页面底色 `#faf7f2` 上，与 `/w/` 是同一观感）。 */
+   间距 12px（= 24）/ 同一条阴影（白卡片落在页面底色 `#faf7f2` 上，与 `/w/` 是同一观感）。
+
+   🔴 390px 真机宽度的横向约束（2026-10-31 视觉验收，issue #8194）：卡片是 flex 列的子项，
+   默认 `min-width:auto` + 内容盒（content-box）会让「卡片 padding + 输入框 padding」把右缘顶出
+   视口（实测副标题「无需微信）」被切、输入框/按钮右侧出屏）。视觉判据
+   `tests/e2e/specs/bmini/bmini-input-center.spec.ts` 只量竖向居中，**看不见这类横向溢出**
+   ⇒ 这里显式 `width/max-width:100%` + `box-sizing:border-box` + `min-width:0`，并让副标题
+   可在任意位置换行；改宽度/边距时必须保持这三条。 */
 .worker-login-form {
   display: flex;
   flex-direction: column;
   gap: 24px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   padding: 32px;
   background: #ffffff;
   border-radius: 32px;
@@ -23,6 +34,8 @@
     font-size: 28px;
     line-height: 1.5;
     color: #7e6f57;
+    /* 长中文/括号不许把卡片撑宽；宁可换行 */
+    overflow-wrap: anywhere;
   }
 
   /* 错误位（`/w/` 的 `.wh5-error`：--wh5-danger） */
@@ -35,6 +48,7 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+    min-width: 0;
   }
 
   &__label {
@@ -49,6 +63,10 @@
      `tests/e2e/specs/bmini/bmini-input-center.spec.ts` 会判红（本仓那一族缺陷的判据）。
      ⚠️ 本文件的注释里也**不许**出现那两个 h5 选择器名（台账守卫 `input-center-guard` 判「逐页打补丁」，注释同样命中）。 */
   &__input {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
     height: 96px;
     padding: 0 24px;
     font-size: 36px;
@@ -60,6 +78,9 @@
 
   /* 主按钮（`/w/` 的 `.wh5-primary`：--wh5-brand 底 / 18px 字 / 字距 .2em） */
   &__submit {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
     min-height: 88px;
     line-height: 88px;
     border-radius: 24px;
