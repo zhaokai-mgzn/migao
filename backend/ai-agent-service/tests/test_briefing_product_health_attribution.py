@@ -101,8 +101,8 @@ class TestSkuLevelMarginContrast:
     def test_worst_sku_gets_sibling_margin_attribution(self):
         row = _row_of(_margin_contrast_view(), "p1-s1")
         attr = row["attribution"]
-        assert attr is not None, "同商品有兄弟 + 毛利低于中位 ⇒ 必须给归因"
-        assert attr["kind"] == "sibling_margin_contrast"
+        # 不用 `is not None` 凑数：直接断言内容（弱断言会被 QA Growth Gate 扫出来）
+        assert attr["kind"] == "sibling_margin_contrast", "同商品有兄弟 + 毛利低于中位 ⇒ 必须给归因"
         assert attr["level"] == "sku", "毛利是 SKU 级 ⇒ 归因落在 SKU 层"
         assert attr["sibling_count"] == 3, "同商品共 3 个变体（含自己）"
 
@@ -132,7 +132,6 @@ class TestProductLevelOnly:
         view = product_health(_snapshot(skus, stats), tenant_id=7)
 
         attr = _row_of(view, "r0-s1")["attribution"]
-        assert attr is not None
         assert attr["kind"] == "product_level_only", "退货率只有商品级数据"
         assert attr["level"] == "product"
         assert "指不到具体变体" in attr["reason"]
