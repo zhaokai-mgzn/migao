@@ -222,6 +222,41 @@ cases:
       ci:
         - ai-agent-tests.yml
       verifies: []
+  # AG-009（issue #8174，工具面裁剪）：取号 = `scripts/next_case_id.py AG` 现取
+  # （main: 001-008/010-013 ⇒ 最小空闲号 AG-009，历史空档）。
+  # 本单不改任何工具实现与权限，只改「本轮暴露哪些」⇒ 纯单测可判（skip_reason 非空），
+  # 不进 agent-eval 冒烟；真实误选面由 PR body 的手动 eval 清单集中跑一次（#4262 不自动派发）。
+  - id: AG-009
+    legacy_id: ""
+    title: "B 端工具面按意图裁剪（读面 ≤16 / 保底不被裁 / 关闭等价 / C 端不变）"
+    domains:
+      - agents
+    tier: normal
+    persona: mibao
+    tags:
+      - agents
+      - tools
+      - cost
+      - regression
+    truths_ref: []
+    user_inputs:
+      - "B 端商家一轮：帮我查一下最近订单的物流到哪了"
+    expectations:
+      - tool: order_query
+    data_checks:
+      - "裁剪开启时每轮绑定工具数 ≤ `TOOL_TRIM_MAX_READ`（默认 16）；改前现取 35~39（把上限调到 100 ⇒ 判据红）"
+      - "保底集合永不被裁：本轮 skill 的全部写工具 + nav_guide/knowledge_search/interact/validate_input/confirm_value + 上一轮用过的读工具（清空保底集合 ⇒ 判据红）"
+      - "`TOOL_TRIM_ENABLED=false` ⇒ B 端绑定集合与改前逐名相等；C 端（xiaobu）任何开关下逐名相等"
+      - "只裁 `read_only=True`：写工具集合前后相等；同一输入连跑两次结果逐字一致（含顺序）"
+      - "字符数棘轮：各 skill 的 prompt 字符数与工具 schema 字符数都下降（关闭裁剪 ⇒ 回落）"
+    skip_reason: "[backend-contract] 纯单测（backend/ai-agent-service/tests/test_tool_selection_trim.py）；不改工具实现与权限，只改「本轮暴露哪些」；真实误选面由人工集中跑一次手动 eval 清单（#4262 不自动派发）"
+    merge_log: "2026-10-30 新增（issue #8174）。取号 = `scripts/next_case_id.py AG` 现取（main: 001-008/010-013 ⇒ 最小空闲号 AG-009，历史空档）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tool_selection_trim.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []
   - id: AG-010
     legacy_id: ""
     title: "定时任务（用户「预约」）服务端：三件套 fail-closed + 幂等 + 取消 + 到点投递只读"

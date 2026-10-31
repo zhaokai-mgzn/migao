@@ -142,6 +142,16 @@ class Settings(BaseSettings):
     TOOL_TIMEOUT_S: float = 30.0
     TOOL_TIMEOUT_OVERRIDES: str = "product_image_generate=120"
 
+    # ── 本轮工具面裁剪（issue #8174）─────────────────────────────────────
+    # 现状：B 端每轮绑定 35~39 把工具（读面按 persona 家族**全量**并入）⇒ 工具 schema
+    # 33~40KB、模型误选（#8133）。本开关按**本轮意图**裁读面：
+    #   · 只裁 `read_only=True`（写工具一把都不裁）；保底集合永不被裁（见
+    #     `tool_selection.ALWAYS_KEEP_TOOL_NAMES` + 本轮 skill 的写工具 + 上一轮用过的读工具）；
+    #   · `TOOL_TRIM_MAX_READ` = 本轮**绑定工具总数**上限（保底先占位，余量按分数填）；
+    #   · **只对 B 端（mibao）生效**；`False` ⇒ 与改动前逐字一致（C 端始终不受影响）。
+    TOOL_TRIM_ENABLED: bool = True
+    TOOL_TRIM_MAX_READ: int = 16
+
     DASHSCOPE_EMBEDDING_MODEL: str = "text-embedding-v3"
     INTENT_MODEL: str = "deepseek-flash"                 # 意图分类/摘要（快速模型）
 

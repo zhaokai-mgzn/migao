@@ -239,7 +239,7 @@
 ```
 溯源: 2026-10-19 新增（issue #7027 的用例补齐）：售后域现有用例集中在工单状态机与退款口径（AS-001~015），缺「客户报损 → 商家问怎么处理」这条**商家视角**的真实旅程；且它与能力边界段（#7291）同源 —— 只读化之后模型最容易在这里承诺代办。 ｜ tags: aftersales, journey, capability-boundary
 
-## Agent 核心域（12 case）
+## Agent 核心域（13 case）
 
 ### AG-001. AgentResponse/AgentContext 数据结构 + _extract_msg_content think 剥离 🔵
 ```
@@ -321,6 +321,20 @@
 ```
 真值: ai-chat.intent-domains
 溯源: 2026-10-02 新增（issue #5951）：该测试文件此前未声明 case_ids，本单改动它（去掉已退役的 suggestions 桩键）后按门禁口径补声明；用例内容如实对应该文件既有的两组断言，**未新增/未放宽任何断言**。 ｜ tags: agents, multimodal, routing, regression
+
+### AG-009. B 端工具面按意图裁剪（读面 ≤16 / 保底不被裁 / 关闭等价 / C 端不变） 🔵
+```
+你: B 端商家一轮：帮我查一下最近订单的物流到哪了
+端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
+期望: order_query
+数据: 裁剪开启时每轮绑定工具数 ≤ `TOOL_TRIM_MAX_READ`（默认 16）；改前现取 35~39（把上限调到 100 ⇒ 判据红）
+数据: 保底集合永不被裁：本轮 skill 的全部写工具 + nav_guide/knowledge_search/interact/validate_input/confirm_value + 上一轮用过的读工具（清空保底集合 ⇒ 判据红）
+数据: `TOOL_TRIM_ENABLED=false` ⇒ B 端绑定集合与改前逐名相等；C 端（xiaobu）任何开关下逐名相等
+数据: 只裁 `read_only=True`：写工具集合前后相等；同一输入连跑两次结果逐字一致（含顺序）
+数据: 字符数棘轮：各 skill 的 prompt 字符数与工具 schema 字符数都下降（关闭裁剪 ⇒ 回落）
+跳过: [backend-contract] 纯单测（backend/ai-agent-service/tests/test_tool_selection_trim.py）；不改工具实现与权限，只改「本轮暴露哪些」；真实误选面由人工集中跑一次手动 eval 清单（#4262 不自动派发）
+```
+溯源: 2026-10-30 新增（issue #8174）。取号 = `scripts/next_case_id.py AG` 现取（main: 001-008/010-013 ⇒ 最小空闲号 AG-009，历史空档）。 ｜ tags: agents, tools, cost, regression
 
 ### AG-010. 定时任务（用户「预约」）服务端：三件套 fail-closed + 幂等 + 取消 + 到点投递只读 🔵
 ```
@@ -13789,10 +13803,10 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：929（活跃 152，跳过 777）
-- tier 分布：smoke 15 / normal 857 / adversarial 33
+- 用例总数：930（活跃 152，跳过 778）
+- tier 分布：smoke 15 / normal 858 / adversarial 33
 - 售后域：16
-- Agent 核心域：12
+- Agent 核心域：13
 - API 层域：21
 - 登录认证域：14
 - B 端小程序域：53
@@ -13821,6 +13835,7 @@
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
 - AS-015: 售后工单详情/列表响应不再携带恒空的 refundMethod 键（三个 Java 载体上字段/getter/setter 全无；键不存在而非值为 null）
 - AS-016: 售后如实引导：客户说窗帘收到时有破洞 → 先查那单 + 说清后台怎么走，不承诺代办
+- AG-009: B 端工具面按意图裁剪（读面 ≤16 / 保底不被裁 / 关闭等价 / C 端不变）
 - AG-013: 客服会话并发分配「读计数 × 再写」无互斥 ⇒ max_concurrent_sessions 被突破；改写为条件更新后并发数不超过上限（issue #6962）
 - AG-008: 海报/图片的能力边界陈述被下单域守卫当成「下单能力误宣」⇒ relock 到 order、连问 3 轮下单规格；顾客显式撤回后仍无出口（issue #7758）
 - API-013: 知识知识卡片数据模型 - knowledge_cards 表/实体/Mapper（LLM WIKI 板块 #3051）
