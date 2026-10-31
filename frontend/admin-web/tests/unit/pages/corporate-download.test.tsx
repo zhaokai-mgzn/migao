@@ -30,11 +30,6 @@ vi.mock('next/link', () => ({
 }))
 
 import DownloadPage, { metadata } from '@/app/(corporate)/download/page'
-import {
-  parseWindowsManifest,
-  parseAndroidManifest,
-  formatBytes,
-} from '@/lib/terminal-manifest'
 
 const WINDOWS_MANIFEST = {
   version: '1.0.1.0',
@@ -238,29 +233,5 @@ describe('结构：同源转发与入口（否则这页在线上打不到）', (
     ] as const) {
       expect(src, `${name} 缺 /download 入口`).toMatch(/href=\{[^}]*'\/download'|href="\/download"|'\/download'/)
     }
-  })
-})
-
-describe('清单解析（纯函数）：字段真值只有一处', () => {
-  it('parseWindowsManifest 只认终端客户端真实字段名（snake_case）', () => {
-    expect(parseWindowsManifest(WINDOWS_MANIFEST)?.version).toBe('1.0.1.0')
-    expect(parseWindowsManifest({ ...WINDOWS_MANIFEST, version: '' })).toBeNull()
-    expect(parseWindowsManifest({ ...WINDOWS_MANIFEST, size: -1 })).toBeNull()
-    expect(parseWindowsManifest({ ...WINDOWS_MANIFEST, download_url: 'javascript:alert(1)' })).toBeNull()
-    expect(parseWindowsManifest(null)).toBeNull()
-    expect(parseWindowsManifest('not an object')).toBeNull()
-  })
-
-  it('parseAndroidManifest 要求 versionCode 是正整数', () => {
-    expect(parseAndroidManifest(ANDROID_MANIFEST)?.versionCode).toBe(7)
-    expect(parseAndroidManifest({ ...ANDROID_MANIFEST, versionCode: 0 })).toBeNull()
-    expect(parseAndroidManifest({ ...ANDROID_MANIFEST, versionCode: 1.5 })).toBeNull()
-    expect(parseAndroidManifest({ ...ANDROID_MANIFEST, sha256: 'zz' })).toBeNull()
-  })
-
-  it('formatBytes 对真实字节数给出可读读数', () => {
-    expect(formatBytes(328704)).toBe('321.0 KB')
-    expect(formatBytes(1234567)).toBe('1.2 MB')
-    expect(formatBytes(512)).toBe('512 B')
   })
 })

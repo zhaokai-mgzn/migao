@@ -44,8 +44,13 @@ function asText(value: unknown): string | null {
   return trimmed === '' ? null : trimmed
 }
 
-function asOptionalText(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : ''
+/**
+ * `notes` 是可选字段（老清单可以没有），但**给了就必须是字符串**：
+ * `notes: 42` 这种形态说明发布腿或人工改坏了清单，整条作废比把 `42` 渲染上屏好。
+ */
+function notesOf(row: Record<string, unknown>): string | null {
+  if (row.notes === undefined || row.notes === null) return ''
+  return typeof row.notes === 'string' ? row.notes.trim() : null
 }
 
 function asPositiveInt(value: unknown): number | null {
@@ -86,14 +91,15 @@ export function parseWindowsManifest(raw: unknown): TerminalRelease | null {
   const sha256 = asSha256(row.sha256)
   const size = asPositiveInt(row.size)
   const publishedAt = asPublishedAt(row.published_at)
-  if (!version || !downloadUrl || !sha256 || size === null || !publishedAt) return null
+  const notes = notesOf(row)
+  if (!version || !downloadUrl || !sha256 || size === null || !publishedAt || notes === null) return null
   return {
     platform: 'windows',
     version,
     downloadUrl,
     sha256,
     size,
-    notes: asOptionalText(row.notes),
+    notes,
     publishedAt,
   }
 }
@@ -108,7 +114,8 @@ export function parseAndroidManifest(raw: unknown): TerminalRelease | null {
   const sha256 = asSha256(row.sha256)
   const size = asPositiveInt(row.size)
   const publishedAt = asPublishedAt(row.published_at)
-  if (versionCode === null || !version || !downloadUrl || !sha256 || size === null || !publishedAt) {
+  const notes = notesOf(row)
+  if (versionCode === null || !version || !downloadUrl || !sha256 || size === null || !publishedAt || notes === null) {
     return null
   }
   return {
@@ -118,7 +125,7 @@ export function parseAndroidManifest(raw: unknown): TerminalRelease | null {
     downloadUrl,
     sha256,
     size,
-    notes: asOptionalText(row.notes),
+    notes,
     publishedAt,
   }
 }
