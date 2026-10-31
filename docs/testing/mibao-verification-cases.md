@@ -2808,7 +2808,7 @@
 ```
 溯源: 2026-10-20 新增（issue #7370，P0-1 之后按用户「逐步推进」落地为 P0-2 段 1）。落码 = ① V169 迁移（两列）+ 建库脚本终态同步；② CreditPolicy（纯函数口径）+ 7 条判据；③ OrderService 下单闸门；④ CustomerService.creditStatus/updateCreditSettings + 两个端点；⑤ 客户详情页「授信与往来」卡片 + 4 条页面判据；⑥ CHANGELOG。⚠️ **未做（照实登记）**：部分收款核销、账龄分档、审批出口、现结订单豁免 —— 分属 #7370 段 2/3 与 #7374(P1-2)。取号 = 现取 origin/main 的 CU 最大 012 ⇒ CU-013。 ｜ tags: backend-contract, credit, credit-limit, payment-terms, receivable, admin-api, red-proof
 
-## 数据域（28 case）
+## 数据域（29 case）
 
 ### DA-001. 经营概览 🔵
 ```
@@ -3170,6 +3170,19 @@
 跳过: [backend-contract] 视图语义由 backend/ai-agent-service/tests/test_briefing_product_health_baseline.py 验证（纯函数、零 LLM、两次注入式红证），不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-31 新增（issue #8234）：黄金策决策能力 P0-a「参照系」第一包 —— 视图从「只给数值」升到「数值 + 同行基线 + 分档」。刻意只做**相对基线**（全店中位数/p75），不做绝对行业阈值（那属业务口径，需人裁定）；历史基线与客户可配置目标值登记在 issue 正文「不在本单」。 ｜ tags: proactive, briefing, baseline, verdict
+
+### DA-029. 简报条目 → 问黄金策：洞察到执行的入口（有 link / 无 link 都有，点一下就把这条交给 AI） 🔵
+```
+你: 日报说 10 个订单待发货，我不想自己点进去一个个处理
+数据: 每条简报条目（`todo` / `risks` / `suggestions`）都渲染「问黄金策」按钮，`aria-label` = `问黄金策：<条目标题>`。**无 `link` 的条目同样有** —— 恰恰是建议/风险类条目没有页面可去（现状：无 link 时整行不可点 ⇒ 价值最高的那类反而没有入口）。
+数据: 点击 ⇒ `useChatStore.assistantOpen = true` 且 `assistantDraft` 含该条目标题、含「处理建议」「确认卡」—— 预置问题要能落成「查数据 + 给建议 + 批量确认卡」，不是一句空泛的「帮我看看」。
+数据: 🔴 草稿取一次即消费：`consumeAssistantDraft()` 第一次返回全文、第二次返回 `null`（防 React 严格模式/重渲染重复发送同一句）。红证：把 `ItemRow` 的 `onClick` 改成空操作（= 入口失效）⇒ 点击与消费两条断言必红。
+数据: `closeAssistant()` ⇒ `assistantOpen = false`（外部入口不改变关闭语义）。
+数据: 浮窗开关从 `FloatingAssistant` 的**本地 state** 提升到 store —— 否则外部（日报卡片）根本打不开它；`tests/unit/floating-assistant.test.tsx` 的 store mock 因此改为**响应式**（静态 mock 会让 `openAssistant()` 改值而组件不重渲染 ⇒ FAB 两条用例红）。
+跳过: [backend-contract] 纯前端交互判据（零 LLM）：由 frontend/admin-web/tests/unit/components/BriefingCardAskAgent.test.tsx（5 条，含注入式红证）+ tests/unit/floating-assistant.test.tsx（20 条）验证，不进入 agent-eval 冒烟
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: 2026-10-31 新增（issue #8236）：黄金策决策能力 P1「洞察 → 执行连通」第一包。承接 #8155（对话内追问闭环）登记的前端缺口 —— 其 merge_log 逐字写了「卡片面『可点追问』不在本单，要做得另开单」。**未覆盖面（如实登记）**：① 浮窗内「预置问题 → 模型真的调工具 → 出确认卡」属 LLM 行为面，本单只落前端入口，不派评测；② 未做本地 Playwright 多模态验收（本机未起 admin-api/ai-agent 栈），由 CI 的 admin-web 腿兜底。 ｜ tags: briefing, agent-handoff, frontend
 
 ## 防御域（24 case）
 
@@ -13875,8 +13888,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：935（活跃 152，跳过 783）
-- tier 分布：smoke 15 / normal 863 / adversarial 33
+- 用例总数：936（活跃 152，跳过 784）
+- tier 分布：smoke 15 / normal 864 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -13886,7 +13899,7 @@
 - 对话边界域：53
 - 跨域：3
 - 客户域：13
-- 数据域：28
+- 数据域：29
 - 防御域：24
 - 财务对账域：6
 - 人事域：13
@@ -13946,6 +13959,7 @@
 - DA-025: 经营环比对比由工具确定性计算（trend_compare / get_summary compare=true），模型只转述不口算（issue #8120）
 - DA-027: 问「这周为什么少卖」直接看商品归因（sales_attribution）：涨跌 Top N 逐字转述、不口算（issue #8157）
 - DA-028: 跨域视图判断层：同行基线（peer baseline）与 good/watch/bad/unknown 分档（issue #8234）
+- DA-029: 简报条目 → 问黄金策：洞察到执行的入口（有 link / 无 link 都有，点一下就把这条交给 AI）
 - KN-001: 元元知识问答 - 面料问题先检索本店知识卡片（query 必填）
 - KN-002: 元元知识问答 - 清洗保养类问题走知识卡片检索
 - KN-003: 黄金策知识问答 - 本店售后政策先检索知识卡片（B 端接线回归，issue #3059）
