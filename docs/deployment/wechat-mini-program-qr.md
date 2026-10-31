@@ -28,12 +28,14 @@
 | **短链 JSON 解析**（小程序 A 档） | `GET /s/<短码>/json` ⇒ `200 {"reportPath":"/b/report/","token":"<token>"}`；未知 ⇒ `404 {"error":"not_found"}`；已撤销 ⇒ `410 {"error":"revoked"}` | 仓库（`WorkerShortLinkController#resolveJson`） |
 | 小程序页面 | `pages/worker/report/index` | 仓库（`frontend/bmini-app/src/pages/worker/report/`） |
 | 校验文件（微信生成） | `https://app.migaozn.com/<名字>.txt`；源文件放 `deploy/swas/wechat-verify/` | **文件内容 = 用户侧**；承接 = 仓库（`deploy.sh` + `nginx.conf`） |
-| 静态根 | `/opt/migaozn.com` → `/opt/migao-deploy/h5`（nginx `root`） | 仓库（发布腿 / `deploy.sh`） |
+| 静态根 | `/opt/migao-deploy/h5`（nginx `root`；宿主上 ≈ 部署目录的 `h5/`，`deploy/swas/docker-compose.yml` 的只读挂载） | 仓库（发布腿 / `deploy.sh`） |
 | appid / 上传私钥 / 后台规则 / 提审 | 微信公众平台（mp.weixin.qq.com） | **用户侧**（仓库里 `project.config.json` 的 `appid: "touristappid"` 是占位，**不要**把真 appid / 私钥写进仓） |
 
-> 小程序请求 API 用的是 `TARO_APP_API_URL`（`frontend/bmini-app/src/utils/constants.ts::API_BASE_URL`）——
-> 线上即 `https://api.migaozn.com`。这条链路上的 `/s/<短码>/json` 也由同一份 `/s/` 转发承担
-> （`api.migaozn.com` 的 `location /` 反代到 admin-api；`worker_entry` 限流按 `/s/` 口径计账）。
+> 小程序请求 API 用的是 `TARO_APP_API_URL`（`frontend/bmini-app/src/utils/constants.ts::API_BASE_URL`）。
+> **线上小程序只有一个合法域名 = `https://app.migaozn.com`**（`deploy/scripts/wx-mini-test-env-setup.sh` 的
+> `WX_API_DOMAIN`；bmini 的 h5 发布腿也注入同一个值）—— 它同时承担 `/api/`（反代 admin-api）与 `/s/`
+> （短链面，`worker_entry` 限流），所以 `/s/<短码>/json` 跟二维码链接**同域**、不需要再加 `api.` 域名。
+> ⚠️ 构建 weapp 时必须显式给 `TARO_APP_API_URL`（见 §5）：不给会烘进 `http://localhost:8080`，上传后真机连不上。
 
 ## 3. 微信后台规则（用户侧，一次性）
 
@@ -95,13 +97,17 @@ python3 -m pytest tests/unit_ci_workflows/test_wechat_verify_route.py -q
 ```bash
 cd frontend/bmini-app
 npm ci                 # 与 main 同一份 package-lock
-npm run build:weapp    # Taro 4.2.1 ⇒ dist/（project.config.json 的 miniprogramRoot = ./dist）
+TARO_APP_API_URL=https://app.migaozn.com npm run build:weapp   # 生产值**必须显式给**（见下）
+# Taro 4.2.1 ⇒ dist/（project.config.json 的 miniprogramRoot = ./dist）
 ```
+
+> 🔴 `TARO_APP_API_URL` 是**构建期**注入（`config/index.ts` 的 `defineConstants`）：不给就烘进
+> `http://localhost:8080` ⇒ 真机 / 体验版一律连不上，而开发者工具勾了「不校验合法域名」时**看不出**这个错。
 
 1. 微信开发者工具 → 导入项目 → 选 **`frontend/bmini-app` 目录**（不是 `dist/`），appid 填**自己的**。
 2. 确认「不校验合法域名」**只在开发时**勾选；真机必须在小程序后台
    **开发管理 → 开发设置 → 服务器域名 → request 合法域名** 里加上实际 API 域名
-   （线上 = `https://api.migaozn.com`；以构建时的 `TARO_APP_API_URL` 为准）。⚠️ 用户侧配置，仓库不代填。
+   （线上 = `https://app.migaozn.com`，即上面 `TARO_APP_API_URL` 的值；⚠️ 用户侧配置，仓库不代填）。
 3. 上传：开发者工具「上传」（需要你有该小程序的开发权限 / 上传私钥走 CI 时由你放
    `private.<appid>.key`，**绝不入库**）→ 后台 **版本管理** 里设为体验版。
 4. 提审 → 发布。审核通过前，A 档规则用「测试链接」先验（测试链接也要先过校验文件）。
