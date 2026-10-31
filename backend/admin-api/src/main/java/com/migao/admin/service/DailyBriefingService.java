@@ -346,7 +346,7 @@ public class DailyBriefingService {
      * 查最近 {@code days} 天的简报（按业务日期**倒序**，最新在前）。
      *
      * <p>窗口按 {@link BusinessClock#today()}（业务时区 +08）算 —— 全仓「今天」的唯一来源，
-     * 这里不另开一套 {@code LocalDate.now()}（UTC 16:00 边界前后会差一天，issue #3802）。</p>
+     * 这里不另开一套无参 now()（UTC 16:00 边界前后会差一天，issue #3802）。</p>
      *
      * <p>查不到 ⇒ **空列表**（不是 null）：调用方据条数自己说「没有历史简报」，
      * 对齐「未知 ≠ 0」纪律 —— 让上层 NPE 或被当成「历史里有 0 条」都是错的。</p>

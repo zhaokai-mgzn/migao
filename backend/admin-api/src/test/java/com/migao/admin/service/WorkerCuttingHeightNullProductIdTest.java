@@ -429,7 +429,7 @@ class WorkerCuttingHeightNullProductIdTest {
                                 + "2026-10-25（issue #7568）：建单补 SKU 归属校验后下移 15 行（187→202），判定依据未变")),
                 // ── 存量：读法本身与表可变性无关（getOrDefault / containsKey） ──
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/DailyBriefingService.java|skusByProduct",
-                        new IndexSite("skusByProduct", "costSkusByProduct", "line.getProductId()", "line.getProductId()", 1025,
+                        new IndexSite("skusByProduct", "costSkusByProduct", "line.getProductId()", "line.getProductId()", 1053,
                                 Verdict.READ_IS_NULL_TOLERANT, "getOrDefault(line.getProductId(), List.of()) ⇒ 空键安全")),
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/FinanceService.java|refundMap",
                         new IndexSite("refundMap", "sumRefundByOrder", "o.getId()", "o.getId()", 323,
