@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Sparkles, AlertTriangle, Lightbulb, ListTodo, ArrowRight, RefreshCw, Newspaper, ShieldCheck } from 'lucide-react'
 import { briefingApi } from '@/lib/api'
+import { useChatStore } from '@/store/chat'
 import { cn } from '@/lib/utils'
 import ProactiveStatusPanel from '@/components/dashboard/ProactiveStatusPanel'
 import type { BriefingContent, BriefingItem, BriefingReviewItem, ProactiveStatus } from '@/types'
@@ -57,13 +58,24 @@ function SeverityBadge({ item }: { item: BriefingItem }) {
   )
 }
 
-/** 单条目行：标题 + 理由 + 一键直达（link 由后端 LLM 生成，仅允许站内路由） */
+/** 条目 → 预置给黄金策的问题：带上下文，不是空泛的「帮我看看」（issue #8236） */
+function askPrompt(item: BriefingItem): string {
+  const detail = item.reason || item.detail
+  return `日报里这条：${item.title}${detail ? `（${detail}）` : ''}`
+    + ' —— 帮我查一下相关数据，给出处理建议；能批量处理的话给我确认卡。'
+}
+
+/** 单条目行：标题 + 理由 + 一键直达（link）+ 问黄金策（issue #8236） */
 function ItemRow({ item, tone }: { item: BriefingItem; tone: 'todo' | 'risk' | 'suggestion' }) {
+  // 外部入口：把这条建议**直接交给**黄金策，而不是只给一个跳页面的箭头。
+  // 无 link 的条目（建议/风险类）同样有它 —— 恰恰是这些条目没有「页面可去」。
+  const openAssistant = useChatStore((s) => s.openAssistant)
   const icon = tone === 'todo' ? <ListTodo className="h-3.5 w-3.5 text-primary-600" />
     : tone === 'risk' ? <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
     : <Lightbulb className="h-3.5 w-3.5 text-amber-500" />
-  const inner = (
-    <div className="group flex items-start gap-2.5 rounded-lg px-3 py-2.5 transition-colors hover:bg-neutral-50">
+  const link = item.link && item.link.startsWith('/') ? item.link : null
+  const content = (
+    <div className="flex min-w-0 flex-1 items-start gap-2.5">
       <span className="mt-0.5 flex-shrink-0">{icon}</span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
@@ -74,18 +86,32 @@ function ItemRow({ item, tone }: { item: BriefingItem; tone: 'todo' | 'risk' | '
           <p className="mt-0.5 text-xs text-neutral-500">{item.reason || item.detail}</p>
         )}
       </div>
-      {item.link && (
+    </div>
+  )
+  return (
+    <div className="group flex items-start gap-2 rounded-lg px-3 py-2.5 transition-colors hover:bg-neutral-50">
+      {/* 一键直达：link 是后端生成的白名单站内路由，用 <Link> 跳转 */}
+      {link ? (
+        <Link href={link} className="min-w-0 flex-1">{content}</Link>
+      ) : (
+        <div className="min-w-0 flex-1">{content}</div>
+      )}
+      {link && (
         <span className="mt-0.5 flex-shrink-0 text-neutral-300 transition-transform group-hover:translate-x-0.5 group-hover:text-primary-500">
           <ArrowRight className="h-4 w-4" />
         </span>
       )}
+      <button
+        type="button"
+        onClick={() => openAssistant(askPrompt(item))}
+        className="mt-0.5 flex flex-shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-neutral-400 transition-colors hover:bg-primary-50 hover:text-primary-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
+        aria-label={`问黄金策：${item.title}`}
+      >
+        <Sparkles className="h-3.5 w-3.5" />
+        <span className="hidden sm:inline">问黄金策</span>
+      </button>
     </div>
   )
-  // 一键直达：link 是后端生成的白名单站内路由，用 <Link> 跳转
-  if (item.link && item.link.startsWith('/')) {
-    return <Link href={item.link}>{inner}</Link>
-  }
-  return inner
 }
 
 /** 环比涨跌方向：↑/+ 与 升/增/涨 → 涨（绿）；↓/- 与 降/减/跌 → 跌（红）；其余（如「持平」）中性。口径与 StatCard 一致。 */

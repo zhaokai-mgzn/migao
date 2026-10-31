@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: data（源: cases/data.yml，28 条）
+# 域: data（源: cases/data.yml，29 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -520,6 +520,24 @@ _CASE_DA_028 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── DA-029 [NORMAL] 简报条目 → 问黄金策：洞察到执行的入口（有 link / 无 link 都有，点一下就把这条交给 AI）（源: cases/data.yml）──
+_CASE_DA_029 = EvalCase(
+    id='DA-029',
+    legacy_id='',
+    title='简报条目 → 问黄金策：洞察到执行的入口（有 link / 无 link 都有，点一下就把这条交给 AI）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['日报说 10 个订单待发货，我不想自己点进去一个个处理'],
+    expectations=[],
+    data_checks=['每条简报条目（`todo` / `risks` / `suggestions`）都渲染「问黄金策」按钮，`aria-label` = `问黄金策：<条目标题>`。**无 `link` 的条目同样有** —— 恰恰是建议/风险类条目没有页面可去（现状：无 link 时整行不可点 ⇒ 价值最高的那类反而没有入口）。', '点击 ⇒ `useChatStore.assistantOpen = true` 且 `assistantDraft` 含该条目标题、含「处理建议」「确认卡」—— 预置问题要能落成「查数据 + 给建议 + 批量确认卡」，不是一句空泛的「帮我看看」。', '🔴 草稿取一次即消费：`consumeAssistantDraft()` 第一次返回全文、第二次返回 `null`（防 React 严格模式/重渲染重复发送同一句）。红证：把 `ItemRow` 的 `onClick` 改成空操作（= 入口失效）⇒ 点击与消费两条断言必红。', '`closeAssistant()` ⇒ `assistantOpen = false`（外部入口不改变关闭语义）。', '浮窗开关从 `FloatingAssistant` 的**本地 state** 提升到 store —— 否则外部（日报卡片）根本打不开它；`tests/unit/floating-assistant.test.tsx` 的 store mock 因此改为**响应式**（静态 mock 会让 `openAssistant()` 改值而组件不重渲染 ⇒ FAB 两条用例红）。'],
+    skip_reason='[backend-contract] 纯前端交互判据（零 LLM）：由 frontend/admin-web/tests/unit/components/BriefingCardAskAgent.test.tsx（5 条，含注入式红证）+ tests/unit/floating-assistant.test.tsx（20 条）验证，不进入 agent-eval 冒烟',
+    tags=['briefing', 'agent-handoff', 'frontend'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_DA_001,
     _CASE_DA_002,
@@ -549,4 +567,5 @@ CASES = (
     _CASE_DA_026,
     _CASE_DA_027,
     _CASE_DA_028,
+    _CASE_DA_029,
 )
