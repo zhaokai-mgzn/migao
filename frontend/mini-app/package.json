@@ -68,7 +68,7 @@
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "4.6.2",
     "jest": "^30.5.2",
-    "jest-environment-jsdom": "^29.7.0",
+    "jest-environment-jsdom": "^30.5.2",
     "miniprogram-automator": "^0.12.1",
     "postcss": "^8.5.30",
     "sass": "^1.106.0",
