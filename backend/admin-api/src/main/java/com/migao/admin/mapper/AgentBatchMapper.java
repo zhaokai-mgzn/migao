@@ -6,6 +6,8 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Update;
 
+import java.time.OffsetDateTime;
+
 /**
  * 批次 Mapper（issue #5314）。标准 CRUD 由 {@code TenantLineInnerInterceptor}
  * 自动注入租户过滤 ⇒ {@code selectById} 天然看不见别的租户的批次（跨租户 = NOT_FOUND）。
@@ -80,4 +82,44 @@ public interface AgentBatchMapper extends BaseMapper<AgentBatch> {
                        @Param("tenantId") Long tenantId,
                        @Param("successCount") int successCount,
                        @Param("failCount") int failCount);
+
+    /**
+     * 执行终态 CAS（issue #8283）：{@code executing → done}，并落计数 + {@code executed_at}。
+     *
+     * <p>为什么终态也要条件写：后台 job 与前台的并发处置（回收 / 人工改态）可能同时发生；只按主键
+     * {@code updateById} 会把对方刚写的终态覆盖回去。谓词带 {@code status='executing'} ⇒ 只有仍由
+     * 本 job 持有的批次才能落终态，0 行时服务层只记日志、不覆盖。</p>
+     */
+    @Update("UPDATE agent_batches SET status = 'done', success_count = #{successCount}, "
+            + "fail_count = #{failCount}, executed_at = #{executedAt} "
+            + "WHERE id = #{id} AND tenant_id = #{tenantId} AND status = 'executing'")
+    int markExecutedDone(@Param("id") String id,
+                         @Param("tenantId") Long tenantId,
+                         @Param("successCount") int successCount,
+                         @Param("failCount") int failCount,
+                         @Param("executedAt") OffsetDateTime executedAt);
+
+    /** 执行终态 CAS（部分失败）：{@code executing → partial}，语义同 {@link #markExecutedDone}。 */
+    @Update("UPDATE agent_batches SET status = 'partial', success_count = #{successCount}, "
+            + "fail_count = #{failCount}, executed_at = #{executedAt} "
+            + "WHERE id = #{id} AND tenant_id = #{tenantId} AND status = 'executing'")
+    int markExecutedPartial(@Param("id") String id,
+                            @Param("tenantId") Long tenantId,
+                            @Param("successCount") int successCount,
+                            @Param("failCount") int failCount,
+                            @Param("executedAt") OffsetDateTime executedAt);
+
+    /** 撤销终态 CAS：{@code executing → reverted}。 */
+    @Update("UPDATE agent_batches SET status = 'reverted', reverted_at = #{revertedAt} "
+            + "WHERE id = #{id} AND tenant_id = #{tenantId} AND status = 'executing'")
+    int markReverted(@Param("id") String id,
+                     @Param("tenantId") Long tenantId,
+                     @Param("revertedAt") OffsetDateTime revertedAt);
+
+    /** 撤销终态 CAS（部分失败）：{@code executing → revert_partial}。 */
+    @Update("UPDATE agent_batches SET status = 'revert_partial', reverted_at = #{revertedAt} "
+            + "WHERE id = #{id} AND tenant_id = #{tenantId} AND status = 'executing'")
+    int markRevertPartial(@Param("id") String id,
+                          @Param("tenantId") Long tenantId,
+                          @Param("revertedAt") OffsetDateTime revertedAt);
 }

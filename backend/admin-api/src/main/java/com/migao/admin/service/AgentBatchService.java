@@ -284,7 +284,13 @@ public class AgentBatchService {
             batch.setStatus(STATUS_PARTIAL);
             batch.setFailCount(batch.getItemCount() == null ? 0 : batch.getItemCount());
             batch.setExecutedAt(OffsetDateTime.now());
-            batchMapper.updateById(batch);
+            int finalized = batchMapper.markExecutedPartial(batchId, tenantId, 0,
+                    batch.getFailCount(), batch.getExecutedAt());
+            if (finalized == 0) {
+                log.warn("[Agent] 批量执行终态 CAS 未命中（状态已被并发改变），不覆盖: batchId={}", batchId);
+            } else {
+                batchMapper.updateById(batch);
+            }
             return List.of();
         }
 
@@ -328,7 +334,14 @@ public class AgentBatchService {
         boolean allProcessed = results.size() == items.size();
         batch.setStatus(fail == 0 && allProcessed ? STATUS_DONE : STATUS_PARTIAL);
         batch.setExecutedAt(OffsetDateTime.now());
-        batchMapper.updateById(batch);
+        int finalized = STATUS_DONE.equals(batch.getStatus())
+                ? batchMapper.markExecutedDone(batchId, tenantId, success, fail, batch.getExecutedAt())
+                : batchMapper.markExecutedPartial(batchId, tenantId, success, fail, batch.getExecutedAt());
+        if (finalized == 0) {
+            log.warn("[Agent] 批量执行终态 CAS 未命中（状态已被并发改变），不覆盖: batchId={}", batchId);
+        } else {
+            batchMapper.updateById(batch);
+        }
         log.info("[Agent] 批量执行完成: batchId={}, success={}, fail={}, status={}",
                 batchId, success, fail, batch.getStatus());
         return results;
@@ -405,7 +418,12 @@ public class AgentBatchService {
             log.error("[Agent] 批量撤销读取明细失败，落 revert_partial: batchId={}", batchId, e);
             batch.setStatus(STATUS_REVERT_PARTIAL);
             batch.setRevertedAt(OffsetDateTime.now());
-            batchMapper.updateById(batch);
+            int finalized = batchMapper.markRevertPartial(batchId, tenantId, batch.getRevertedAt());
+            if (finalized == 0) {
+                log.warn("[Agent] 批量撤销终态 CAS 未命中（状态已被并发改变），不覆盖: batchId={}", batchId);
+            } else {
+                batchMapper.updateById(batch);
+            }
             return List.of();
         }
 
@@ -446,7 +464,14 @@ public class AgentBatchService {
 
         batch.setStatus(failed == 0 ? STATUS_REVERTED : STATUS_REVERT_PARTIAL);
         batch.setRevertedAt(OffsetDateTime.now());
-        batchMapper.updateById(batch);
+        int finalized = STATUS_REVERTED.equals(batch.getStatus())
+                ? batchMapper.markReverted(batchId, tenantId, batch.getRevertedAt())
+                : batchMapper.markRevertPartial(batchId, tenantId, batch.getRevertedAt());
+        if (finalized == 0) {
+            log.warn("[Agent] 批量撤销终态 CAS 未命中（状态已被并发改变），不覆盖: batchId={}", batchId);
+        } else {
+            batchMapper.updateById(batch);
+        }
         log.info("[Agent] 批量撤销完成: batchId={}, failed={}, status={}", batchId, failed, batch.getStatus());
         return results;
     }

@@ -36,6 +36,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
@@ -95,6 +96,11 @@ class AgentBatchServiceTest {
         // 「抢不到 ⇒ 409 且零写」的判据各自显式覆盖这两条 stub。
         when(batchMapper.markExecuting(any(), any())).thenReturn(1);
         when(batchMapper.markReverting(any(), any(), any(), any())).thenReturn(1);
+        // 终态 CAS（issue #8283）：mock int 默认 0 ⇒ 不 stub 会跳过 updateById（终态不落库）。
+        when(batchMapper.markExecutedDone(any(), any(), anyInt(), anyInt(), any())).thenReturn(1);
+        when(batchMapper.markExecutedPartial(any(), any(), anyInt(), anyInt(), any())).thenReturn(1);
+        when(batchMapper.markReverted(any(), any(), any())).thenReturn(1);
+        when(batchMapper.markRevertPartial(any(), any(), any())).thenReturn(1);
         // MyBatis-Plus 的 lambda 列名缓存（CI 无 Spring 上下文，见 TenantIsolationTest 同款初始化）
         MybatisConfiguration configuration = new MybatisConfiguration();
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, ""), AgentBatch.class);
