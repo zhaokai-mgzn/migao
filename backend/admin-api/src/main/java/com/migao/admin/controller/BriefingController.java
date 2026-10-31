@@ -87,7 +87,10 @@ public class BriefingController {
      *
      * <p>入参：{@code bizDate} / {@code itemKind}（todo|risk|suggestion）/ {@code title}（前端传原文，服务端只存 hash）/ {@code action}。</p>
      */
-    @RequirePermission("dashboard:view")
+    // 🔴 码是 `agent:chat`（=「唤出黄金策对话」，员工需授权），不是 `dashboard:view`：
+    // 「点『问黄金策』」在语义上就是唤出对话那个动作，能唤出的人才该产生这条记录。
+    // 用读码会让本端点落进 I4（写动作挂读码）台账 —— 那张表**只许缩短**，不认新增。
+    @RequirePermission("agent:chat")
     @PostMapping("/actions")
     public ApiResponse<Map<String, Object>> recordAction(@RequestBody Map<String, Object> body) {
         Long tenantId = TenantContext.getTenantId();
