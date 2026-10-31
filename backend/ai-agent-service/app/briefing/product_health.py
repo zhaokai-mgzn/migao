@@ -241,14 +241,25 @@ def _peer_baseline(values: List[Optional[float]]) -> Optional[Dict[str, Any]]:
     }
 
 
+#: 指标方向 —— **登记即契约**（issue #8293）。
+#:
+#: 为什么方向不能由调用方传参：缺陷 #8280 就是这么来的 —— `_verdict` 只为退货率写（「越小越好」），
+#: 毛利复制粘贴调用时**忘了传方向**，于是毛利越低越判「好」，而**那条单测也一起写反了**，CI 一直是绿的。
+#: ⇒ 方向必须来自**这张表**：调用方连传错的机会都没有；新指标没登记 ⇒ `KeyError` ⇒ 当场红。
+METRIC_DIRECTIONS: Dict[str, bool] = {
+    "return_rate": False,     # 越低越好：退货率高是坏事
+    "gross_margin": True,     # 越高越好：毛利高是好事
+}
+
+
 def _verdict(
+    metric: str,
     value: Optional[float],
     baseline: Optional[Dict[str, Any]],
     *,
     absolute_bad: bool = False,
-    higher_is_better: bool = False,
 ) -> str:
-    """分档。**方向必须由调用方声明** —— 见 `higher_is_better`。
+    """分档。**方向从 `METRIC_DIRECTIONS` 查**（不由调用方传）。
 
     默认（退货率这类「越小越好」的量）：`<= peer_median` ⇒ good；`<= peer_p75` ⇒ watch；
     `> peer_p75` ⇒ bad。
@@ -262,6 +273,13 @@ def _verdict(
     `test_negative_margin_is_bad_even_when_the_whole_store_loses_money`）。
     值未知或基线不可用（样本不足）⇒ `unknown`（**不装懂**）。
     """
+    try:
+        higher_is_better = METRIC_DIRECTIONS[metric]
+    except KeyError:
+        raise KeyError(
+            f"指标 `{metric}` 没有登记方向 —— 在 `METRIC_DIRECTIONS`（product_health.py）里加一行："
+            "越高越好写 True、越低越好写 False。方向不许猜（issue #8293 / 缺陷 #8280）"
+        ) from None
     if value is None:
         return VERDICT_UNKNOWN
     if absolute_bad and Decimal(str(value)) < 0:
@@ -839,12 +857,11 @@ def product_health(
         key = item.get("product_id")
         return by_product.get(str(key), []) if key not in (None, "") else []
     for row in rows:
-        row["return_rate_verdict"] = _verdict(row.get("return_rate"), rate_baseline)
+        row["return_rate_verdict"] = _verdict(
+            "return_rate", row.get("return_rate"), rate_baseline
+        )
         row["gross_margin_verdict"] = _verdict(
-            row.get("gross_margin"), margin_baseline,
-            absolute_bad=True,
-            # 🔴 毛利越大越好（issue #8280：漏传这个参数 ⇒ 毛利越低越判 good）
-            higher_is_better=True,
+            "gross_margin", row.get("gross_margin"), margin_baseline, absolute_bad=True
         )
         # 「然后呢？」—— 只给有问题的行（issue #8251）
         # 权衡的刻度（issue #8276）：钱是**事实**，所以 good 行也给；选项才是建议

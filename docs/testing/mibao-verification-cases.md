@@ -2859,7 +2859,7 @@
 ```
 溯源: 2026-10-20 新增（issue #7370，P0-1 之后按用户「逐步推进」落地为 P0-2 段 1）。落码 = ① V169 迁移（两列）+ 建库脚本终态同步；② CreditPolicy（纯函数口径）+ 7 条判据；③ OrderService 下单闸门；④ CustomerService.creditStatus/updateCreditSettings + 两个端点；⑤ 客户详情页「授信与往来」卡片 + 4 条页面判据；⑥ CHANGELOG。⚠️ **未做（照实登记）**：部分收款核销、账龄分档、审批出口、现结订单豁免 —— 分属 #7370 段 2/3 与 #7374(P1-2)。取号 = 现取 origin/main 的 CU 最大 012 ⇒ CU-013。 ｜ tags: backend-contract, credit, credit-limit, payment-terms, receivable, admin-api, red-proof
 
-## 数据域（34 case）
+## 数据域（35 case）
 
 ### DA-001. 经营概览 🔵
 ```
@@ -3302,6 +3302,20 @@
 跳过: [backend-contract] 纯确定性视图判据（零 LLM）：`product_health` 是纯函数 + 规则表；判据 = backend/ai-agent-service/tests/test_briefing_product_health_attribution.py（8 条，含两条注入式红证）+ test_briefing_product_health_baseline.py 的方向断言
 ```
 溯源: 2026-10-31 新增（issue #8279 + 缺陷 #8280）：第 3 层「归因」。**关键发现**：原设想的「同款退货率对照」不成立（退货率是商品级）⇒ 改用 SKU 级毛利对照 + 退货率诚实标注 `product_level_only`。**顺手修了 P0 遗留的毛利 verdict 方向 bug**（#8280，低毛利 SKU 标绿）。**未覆盖面**：① 退货原因的**结构化字段**（`after_sales_tickets` 只有自由文本 `description`，要分类得上 LLM，需裁定值不值）；② 因果推断 / 显著性检验（只并排给读数，不做统计判定）。 ｜ tags: proactive, briefing, decision, attribution
+
+### DA-035. 方向性判定守卫：方向必须登记（传给表查），传错/忘传/绕过都不可能通过 🔵
+```
+你: （无用户输入 —— 这是研发侧守卫，防「判断方向反了但测试跟着错」这类形态）
+数据: 🔴 **方向登记即契约**：`METRIC_DIRECTIONS = {return_rate: False（越低越好）, gross_margin: True（越高越好）}`。`_verdict(metric, value, baseline)` 的方向**从表查**，**不由调用方传** —— 缺陷 #8280 的机制正是「调用方忘了传 higher_is_better」。
+数据: 🔴 **未登记指标 ⇒ `KeyError` 且报错点名**：新指标没定方向不许静默跑（默认 False 会让「越高越好」的指标静默反向）。判据断言报错文本同时含指标名与 `METRIC_DIRECTIONS`。
+数据: 🔴 **调用点源码扫描**（AST）：`_verdict` 的第一个实参必须是**字符串字面量**且在表里；仍用 `higher_is_better=` 关键字传方向 ⇒ 红。红证：把调用改成 `_m = "gross_margin"; _verdict(_m, ...)` ⇒ `test_every_call_site_passes_a_string_literal` + `test_every_literal_metric_is_registered` 双红。
+数据: 🔴 **极值双向断言**（最关键的形态守卫）：对表里每个指标造极值数据验证方向。红证：把表里 `gross_margin: True` 改成 `False`（= #8280 的形态）⇒ 本判据 + 基线方向断言**双红**；恢复 ⇒ 8 passed。
+数据: **极值断言必须混合数据**：`_verdict` 是**相对**判据（`<= peer_median ⇒ good`），全员 100% 退货率时基线也是 100% ⇒ 谁都不比谁差 ⇒ 全判 good。这是**合理**的（相对基线不制造「全员异常」），所以极值测试不能拿「全员极值」当样本 —— 这条写进测试 docstring，防下一个人误判成缺陷。
+数据: **行为零变化**（本单是纯守卫）：`return_rate` 表里 False、`gross_margin` 表里 True，与改前调用点传的值完全一致 ⇒ 对外结论不变，因此**不入 CHANGELOG**（纯研发工具类改动，铁律 7 豁免口径）。
+数据: **未覆盖面（如实登记）**：只覆盖 `_verdict` 这一族。其他「方向敏感」的比较（`low_stock` 的 `<=`、`_attribution` 的 `max()` 取最好的兄弟、`money` 的 `peer_median − 毛利` 取正负方向）**不在本单**，同一形态仍存在。
+跳过: [backend-contract] 纯研发侧守卫（零 LLM、零用户可见面）：判据 = backend/ai-agent-service/tests/test_briefing_verdict_direction_guard.py（8 条：3 条调用点扫描 + 4 条方向语义 + 1 条未登记即抛），两条注入式红证实跑成立
+```
+溯源: 2026-10-31 新增（issue #8293）：由缺陷 #8280 触发 —— 「测试和实现一起错」这类形态没有任何东西会变红。三层守卫：① 方向从表查（签名层面无传错机会）② 调用点 AST 扫描（变量绕过 / 忘登记即红）③ 极值双向断言（改表即红）。**未覆盖面**：只覆盖 `_verdict` 一族；`low_stock` 比较、归因的 `max()` 取最佳兄弟、money 的差值方向仍靠人工判断。 ｜ tags: proactive, briefing, guard, meta
 
 ## 防御域（24 case）
 
@@ -14034,8 +14048,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：947（活跃 152，跳过 795）
-- tier 分布：smoke 15 / normal 875 / adversarial 33
+- 用例总数：948（活跃 152，跳过 796）
+- tier 分布：smoke 15 / normal 876 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14045,7 +14059,7 @@
 - 对话边界域：53
 - 跨域：3
 - 客户域：13
-- 数据域：34
+- 数据域：35
 - 防御域：24
 - 财务对账域：6
 - 人事域：13
@@ -14111,6 +14125,7 @@
 - DA-032: 决策采纳记录：AI 建议了什么 → 人做了什么（item_key 稳定 hash、幂等、不记原文）
 - DA-033: 权衡补刻度：压货资金 / 离同行差多少 / 每件多赚多少（未知不当 0、不乘销量、不做预测）
 - DA-034: 归因：同款对照只对 SKU 级信号有效（毛利能指到变体、退货率只能指到商品）；并修正毛利 verdict 方向
+- DA-035: 方向性判定守卫：方向必须登记（传给表查），传错/忘传/绕过都不可能通过
 - KN-001: 元元知识问答 - 面料问题先检索本店知识卡片（query 必填）
 - KN-002: 元元知识问答 - 清洗保养类问题走知识卡片检索
 - KN-003: 黄金策知识问答 - 本店售后政策先检索知识卡片（B 端接线回归，issue #3059）
