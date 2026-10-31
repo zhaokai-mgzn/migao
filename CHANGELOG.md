@@ -16,6 +16,17 @@
 - **改前**：复盘只能回忆「AI 说过什么」，说不出「人做了什么」—— 续费时那句「帮你发现 47 个问题、其中 31 个你处理了」说不出后半句。
 - **改后**：新增 `briefing_actions` 表与 `POST/GET /api/admin/briefing/actions`；点日报条目的「问黄金策」时**后台记一条**（前缀式 `opened_agent`）。同一条目反复点只留一行（`UNIQUE` + 先查后写）；只存条目标题的 hash，**不存原文**（不给简报再造一份副本，也不扩 PII 面）。**上报失败不影响任何交互**（fire-and-forget）。
 - **口径**：**记录 ≠ 采纳** —— `opened_agent` 只表示「点开问了」，「已处理 / 忽略」需要单独的按钮（未做）。所以任何报表都不许把它说成「采纳率」。
+### 商品分类页读失败不再假装「还没有分类」（2026-10-31，issue #8200）
+
+- **改前**：`/categories` 的读接口 500 / 断网时只有一个空 `catch`，屏上照印「还没有商品分类 —— 先建一个分类」，
+  与「这个店真的没有分类」逐字相同（拦截器 toast ≈4s 一消失，就只剩这句事实性断言）。
+- **改后**：读失败 ⇒ **常驻**失败面「分类没读到 —— 不是没有分类，是这次没读成功」+「重新加载」；
+  失败时**不渲染**空态，重试真的重发并把结果接上屏（不清零，保留上次成功值）。
+- **类级**：凡渲染共享空态原语 `<EmptyState>` 的文件必须带常驻读失败出口 —— 判据
+  `frontend/admin-web/scripts/read-failure-empty-state-scan.mjs::componentEmptyStateOffenders` +
+  `frontend/admin-web/tests/unit/read-failure-component-empty-state-guard.test.ts`（未登记即红、台账只许缩短）。
+- **边界**：手写空态（不用 `EmptyState`）不在该判据射程；审计 P1-06 另点名的四页
+  （`/products` `/dashboard` `/production` `/orders/[id]`）复核**早已可区分读失败与真空态**，口径未改。
 
 ### 黄金策能回看历史了：过去 N 天提醒过什么，一句话问得出来（2026-10-31，issue #8253）
 
