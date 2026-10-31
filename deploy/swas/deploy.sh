@@ -669,6 +669,13 @@ else
   cp src/deploy/swas/nginx.conf ./nginx/nginx.conf
   # 蓝绿 override（issue #4785）：**只新增** green 探针服务，不改既有服务定义
   cp src/deploy/swas/docker-compose.bluegreen.yml ./docker-compose.bluegreen.yml
+  # TLS 自动续期脚本（issue #8201）：与配置同批落盘，供宿主 cron（/etc/cron.d/migao-tls-renew）调用。
+  # ⚠️ 存在性守卫不是修饰：回滚到本单之前的 tag 时 tarball 里**没有**这个文件，
+  #    无条件 `cp` 会让**回滚部署**当场 abort（本脚本 set -e）。
+  if [ -f src/deploy/scripts/tls-renew.sh ]; then
+    cp src/deploy/scripts/tls-renew.sh ./tls-renew.sh
+    chmod +x ./tls-renew.sh
+  fi
   # 记下「盘上这套配置物化自哪个 ref」（#6551 ②）：下次目标 ref 相同（含**回滚回同一 tag**）
   # ⇒ 直接复用、不再下一次 66.5MB 整仓。三份文件**都落到盘上之后**才写标记 ⇒ 标记不会先于配置落地。
   printf '%s\n' "$CONFIG_REF_RESOLVED" > "$CONFIG_REF_MARKER_FILE"
@@ -1287,6 +1294,17 @@ docker compose up -d --no-deps nginx
 # 用 **reload**（优雅：旧 worker 把在途请求做完再退）而不是 restart（硬重启 ⇒ 当场丢弃在途连接）；
 # reload 不可用/失败 ⇒ 回落 restart（= 改动前的行为，不引入新的坏路径）。
 docker compose exec -T nginx nginx -s reload || docker compose restart nginx
+
+# ── 2.6.1 TLS 证书自动续期（宿主 cron；issue #8201）──────────────────────────
+# 幂等：/etc/cron.d/migao-tls-renew 内容未变则不重写（`--install-cron` 自己判）。
+# 检测到**既有** crontab `certbot renew` 条目 ⇒ **不安装**（否则同一条续期一天跑两遍，
+#   两把锁互不知情），改由 runbook 的一条人工命令切换（`--replace-legacy-cron`，先备份 crontab）。
+# 任何跳过 / 失败都**不拖垮部署**（部署是主路径），但必须**出声** —— 不许静默。
+if [ -f ./tls-renew.sh ]; then
+  bash ./tls-renew.sh --install-cron || echo "  ⚠️ TLS 自动续期未安装（原因见上）—— **部署不受影响**；处置见 docs/deployment/tls-renewal.md"
+else
+  echo "  ⏭️ 跳过 TLS 自动续期安装：盘上没有 ./tls-renew.sh（本次未取源码树）—— **部署不受影响**"
+fi
 
 # ══════════════════════════════════════════════════════════════════════════
 # 2.7 部署成功后：按**保留策略**清理（issue #4808 ①）——替换原来那句只清 dangling 的
