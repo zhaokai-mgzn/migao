@@ -346,13 +346,13 @@ python3 scripts/trial_onboarding_check.py \
 | 3 | 安全响应头 | `bash deploy/scripts/prod-security-headers.sh` | `rc=0`；`1` = 确定缺头；`3` = 探不到（**不当 0 读**） |
 | 4 | TLS 证书 | `bash deploy/scripts/tls-expiry-check.sh` | `rc=0`（剩余 ≥21 天）；`1` = 临期/过期/SAN 不覆盖；`3` = 取不到证书 |
 | 5 | 线上是否本次构建 | `bash deploy/scripts/served-version-verify.sh` | 版本自证（「推没推」≠「线上是它」） |
-| 6 | **DB 增长率** | ❌ **`scripts/db_growth_readout.py` 不存在**（`grep -rln "db_growth_readout" .` 零命中） | 替代动作：DBA 在 PG 侧跑**只读**统计（`pg_database_size` / 表行数快照）并人工记入台账。**缺口已登记**（§9） |
-| 7 | **RDS 备份窗口 / PITR** | ❌ **`scripts/rds_backup_window_readout.py` 不存在**（同上零命中） | 云控制台侧，**公网不可判定**（与审计 P1-07 同结论）⇒ 每周由 DBA 截图备份策略页留证。**缺口已登记**（§9） |
+| 6 | **DB 增长率** | `python3 scripts/db_growth_readout.py`（PSQL 连接靠环境变量/DBA 侧；读不到 ⇒ `rc=3`） | `rc=0` 过；`1` = 确定超阈（按 `deploy/ops/db-retention.sql` 人工处置）；`3` = 不可判定（**不得当 0 读**） |
+| 7 | **RDS 备份窗口 / PITR** | `MIGAO_RDS_INSTANCE_ID=<id> python3 scripts/rds_backup_window_readout.py`（缺 id ⇒ `rc=3`；离线快照亦可） | `rc=0` 过（保留 ≥14 天）；`1` = 保留期不足（云控制台调到 ≥14）；`3` = 取不到策略（**不得当 0 读**；恢复演练仍待补） |
 | 8 | 客户端版本分布 | 下载页 + 终端「检查更新」日志 | 老版本占比高 ⇒ 说明更新链路没走通（§2.5） |
 
-> 🔴 第 6、7 条**原来是任务清单里点名的脚本，仓内不存在** —— 这里照实登记成缺口，
-> 用「DBA 只读 + 人眼留证」替代，**不**假装有机械判据（铁律 11：转述即未核实）。
-> 补齐方式见 §9「重启条件」。
+> ✅ 第 6、7 条的读数脚本已随 #8265 落地（`scripts/db_growth_readout.py` / `scripts/rds_backup_window_readout.py`），
+> 三态口径同其它 ops 读数：`0` 过 / `1` 确定超阈 / `3` 不可判定（**不得当 0 读**）。
+> 云侧保留时长与**恢复演练记录**仍待用户补齐（见 §9）。
 
 ### 6.3 P0 / P1 / P2 升级路径
 
