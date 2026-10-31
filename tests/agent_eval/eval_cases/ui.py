@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: ui（源: cases/ui.yml，147 条）
+# 域: ui（源: cases/ui.yml，146 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -2676,24 +2676,6 @@ _CASE_UI_146 = EvalCase(
     precondition='本用例是 [backend-contract] 纯前端契约：`fetch` 一律 `vi.stubGlobal`（零网络），不依赖任何真实服务',
 )
 
-# ── UI-147 [NORMAL] 商家后台读失败出口（issue #8200 · P1-06）：凡渲染共享空态原语 <EmptyState> 的文件必须带常驻读失败出口；/categories 读失败 ⇒ 失败面 + 重试，空态与「还没有商品分类」断言都不上屏（DQ-1）（源: cases/ui.yml）──
-_CASE_UI_147 = EvalCase(
-    id='UI-147',
-    legacy_id='',
-    title='商家后台读失败出口（issue #8200 · P1-06）：凡渲染共享空态原语 <EmptyState> 的文件必须带常驻读失败出口；/categories 读失败 ⇒ 失败面 + 重试，空态与「还没有商品分类」断言都不上屏（DQ-1）',
-    skill=Skill.GENERAL,
-    difficulty=Difficulty.NORMAL,
-    user_inputs=['商家打开商品分类页时接口挂了：屏幕上不能写「还没有商品分类」「先建一个分类」（那是把没读到说成本来就没有），要明确说没读到并给重试'],
-    expectations=['direct_reply'],
-    data_checks=['**读失败 ⇒ 常驻失败面（会红）**：mock `categoryApi.getCategories` reject ⇒ 屏上有 `categories-load-error`（`role="alert"`）与 `categories-load-error-retry`。改前该页只有空 `catch` + `<EmptyState title="还没有商品分类">`，两个锚都不存在（红证读数见 PR body）。执行点 = frontend/admin-web/tests/unit/pages/categories.test.tsx。', '**不冒充空态（会红）**：同一失败态下 `categories-empty` 锚不在、「还没有商品分类」文案不在，且整屏经 `findEmptyDataAssertions`（单一源口径）无「没有数据」断言。', '**重试真的重发（会红）**：点 `categories-load-error-retry` ⇒ `getCategories` 调用次数增加，且成功回包后分类树渲染、失败面退场（不是只把失败面藏起来）。', '**对照读数（不许把真 0 判红）**：读成功且真的 0 条 ⇒ `categories-empty` 照旧在、失败面不在。', '**类级（会红）**：`frontend/admin-web/scripts/read-failure-empty-state-scan.mjs::componentEmptyStateOffenders` 在面内（`(dashboard)` + `src/components`）对「渲染 `<EmptyState>` 且无失败锚」的文件判红；台账 `COMPONENT_EMPTY_LEDGER` 现取 0 条、只许缩短；判别力自证 = `frontend/admin-web/tests/unit/read-failure-component-empty-state-guard.test.ts`。', '**审计读数纠偏**：审计 P1-06 用「有没有引用 `ListLoadError`」当代理指标 ⇒ 得出「37 页缺失」。逐页复核：`/products`（`products-load-failed`）/`/dashboard`（`dashboard-load-failed` + 分块重试）/`/production`（`production-board-error` + 重试，失败时不渲染 `production-board-empty`）/`/orders/[id]`（`order-detail-load-error` + 重试）**早已可区分读失败与真空态**；真实缺口只有 `/categories` 一处。'],
-    skip_reason='[backend-contract] 纯前端渲染契约（vitest + mock 读接口），不经过 LLM 对话/工具，不进入 agent-eval 冒烟',
-    tags=['read-failure', 'empty-state', 'categories', 'class-guard'],
-    persona='',
-    debug_user='',
-    form_prefill=[],
-    forbidden_card_text=[],
-)
-
 CASES = (
     _CASE_UI_001,
     _CASE_UI_002,
@@ -2841,5 +2823,4 @@ CASES = (
     _CASE_UI_144,
     _CASE_UI_145,
     _CASE_UI_146,
-    _CASE_UI_147,
 )
