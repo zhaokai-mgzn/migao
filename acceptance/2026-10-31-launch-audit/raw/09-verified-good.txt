@@ -1,0 +1,32 @@
+# 「已验证通过」的线上读数（防止下一轮重复劳动）
+# 采集时间 2026-10-31 08:15~08:21 +08
+
+## 未认证面（全部 fail-closed）
+GET  https://api.migaozn.com/api/admin/orders?page=1&size=1   -> 401 {"code":"UNAUTHORIZED"}
+POST https://api.migaozn.com/api/chat/stream                 -> 401
+GET  https://api.migaozn.com/swagger-ui/index.html           -> 404
+GET  https://api.migaozn.com/v3/api-docs                     -> 404
+GET  https://api.migaozn.com/actuator/health                 -> 404（nginx 屏蔽；副作用见 P1-05）
+GET  https://ai-api.migaozn.com/docs|/redoc|/openapi.json    -> 404
+
+## 错误形状（不是 500）
+POST https://api.migaozn.com/api/worker/login  {}            -> 422 逐字段中文 + requestId
+POST https://api.migaozn.com/api/auth/admin/login 假凭据      -> 422（校验层），实现层面直接抛 AUTH_FAILED
+
+## 四个前端入口
+merchant.migaozn.com/          -> 307 -> /login；/login 资产 13/13 = 200
+app.migaozn.com/  (C 端)       -> 200，资产 3/3 = 200
+app.migaozn.com/b/ (bmini)     -> 200，资产 3/3 = 200
+app.migaozn.com/w/ (worker-h5) -> 200，资产 2/2 = 200
+/w/machine.html /piecework.html /shipment.html /rework.html -> 全 200
+/b/report/                     -> 200，body 769B，<title>工人报工</title>（rewrite 到 /w/，未串 C 端）
+
+## MIME（历史白屏病灶）
+/w/src/app.mjs|api.mjs|render.mjs -> content-type: application/javascript
+/b/js/app.js、/js/app.js         -> content-type: application/javascript
+
+## 新鲜度
+admin-api  /api/version   -> sha=32d4066e762b84e1c74d9c0ed7833d5ed1c1d2bc builtAt=2026-10-31T00:06:11Z（= main HEAD）
+admin-web  /version.json  -> sha=a9f3f9c681ac… builtAt=2026-10-30T15:31:09Z（32d4066e7 未触 admin-web，不算落后）
+worker-h5  9 个文件 sha256 与仓库逐字节相同
+bmini H5   /b/ last-modified 2026-10-30T22:41Z ≥ 最近 bmini 提交 2026-10-29T15:25Z
