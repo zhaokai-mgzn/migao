@@ -2833,7 +2833,7 @@
 ```
 溯源: 2026-10-20 新增（issue #7370，P0-1 之后按用户「逐步推进」落地为 P0-2 段 1）。落码 = ① V169 迁移（两列）+ 建库脚本终态同步；② CreditPolicy（纯函数口径）+ 7 条判据；③ OrderService 下单闸门；④ CustomerService.creditStatus/updateCreditSettings + 两个端点；⑤ 客户详情页「授信与往来」卡片 + 4 条页面判据；⑥ CHANGELOG。⚠️ **未做（照实登记）**：部分收款核销、账龄分档、审批出口、现结订单豁免 —— 分属 #7370 段 2/3 与 #7374(P1-2)。取号 = 现取 origin/main 的 CU 最大 012 ⇒ CU-013。 ｜ tags: backend-contract, credit, credit-limit, payment-terms, receivable, admin-api, red-proof
 
-## 数据域（29 case）
+## 数据域（30 case）
 
 ### DA-001. 经营概览 🔵
 ```
@@ -3208,6 +3208,19 @@
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-10-31 新增（issue #8236）：黄金策决策能力 P1「洞察 → 执行连通」第一包。承接 #8155（对话内追问闭环）登记的前端缺口 —— 其 merge_log 逐字写了「卡片面『可点追问』不在本单，要做得另开单」。**未覆盖面（如实登记）**：① 浮窗内「预置问题 → 模型真的调工具 → 出确认卡」属 LLM 行为面，本单只落前端入口，不派评测；② 未做本地 Playwright 多模态验收（本机未起 admin-api/ai-agent 栈），由 CI 的 admin-web 腿兜底。 ｜ tags: briefing, agent-handoff, frontend
+
+### DA-030. 视图的「然后呢」：bad/watch 行给可选动作 + 代价 + 可逆性 + 验证方法（issue #8251） 🔵
+```
+你: 这个 SKU 退货率 30%，判 bad —— 然后我该做什么？
+数据: `bad` / `watch` 行带 `next_options`，每个选项三要素齐全：`action`（可执行且可验证）/ `cost` ∈ {low,medium,high} + `cost_note` / `reversible`（bool）；另带 `verify`（**怎么验证它有没有用**，指向具体数据而非空话）+ `metric` + `for_verdict`。
+数据: 🔴 **没问题不给动作**（注入式红证）：`good` 与 `unknown` 行**没有** `next_options`（None 或 []）。红证：让 `_next_options` 对任何行都返回一条选项 ⇒ `TestGoodRowsGetNoOptions` 两条 + `test_negative_margin_gets_a_cost_check_option_first` 共 3 条必红；恢复 ⇒ 9 passed。
+数据: 毛利判 `bad` 时**第一条**选项必须是「先核对成本价是否已维护」—— 成本未知时毛利根本不可算，跳过去直接调价等于在脏数据上做决定。
+数据: 确定性：同一快照连续两次调用 `rows` 逐字节相等（选项来自**规则表**，不读 LLM）。
+数据: 🔴 性质自述：视图顶层 `options_basis` 与 `basis.next_options` 均为 `OPTIONS_BASIS`，文本必须含「行业」「人工判断」—— 防止把「行业常见做法」读成「对你这家店的建议」。
+数据: v1 只收**可逆 + 低成本**动作：清仓 / 下架 / 换供应商这类不可逆动作**不在表里**（登记在 issue #8251「不在本单」，需业务裁定）。
+跳过: [backend-contract] 视图语义由 backend/ai-agent-service/tests/test_briefing_product_health_options.py 验证（纯函数、零 LLM、一条注入式判别力红证），不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8251）：黄金策决策能力 P3「谋 / 权衡」第一包 —— 视图从「告诉你哪不对」升到「告诉你接下来能做什么、代价多大、能不能反悔、怎么验证」。 ｜ tags: proactive, briefing, verdict, options
 
 ## 防御域（24 case）
 
@@ -13925,8 +13938,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：939（活跃 152，跳过 787）
-- tier 分布：smoke 15 / normal 867 / adversarial 33
+- 用例总数：940（活跃 152，跳过 788）
+- tier 分布：smoke 15 / normal 868 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -13936,7 +13949,7 @@
 - 对话边界域：53
 - 跨域：3
 - 客户域：13
-- 数据域：29
+- 数据域：30
 - 防御域：24
 - 财务对账域：6
 - 人事域：13
@@ -13997,6 +14010,7 @@
 - DA-027: 问「这周为什么少卖」直接看商品归因（sales_attribution）：涨跌 Top N 逐字转述、不口算（issue #8157）
 - DA-028: 跨域视图判断层：同行基线（peer baseline）与 good/watch/bad/unknown 分档（issue #8234）
 - DA-029: 简报条目 → 问黄金策：洞察到执行的入口（有 link / 无 link 都有，点一下就把这条交给 AI）
+- DA-030: 视图的「然后呢」：bad/watch 行给可选动作 + 代价 + 可逆性 + 验证方法（issue #8251）
 - KN-001: 元元知识问答 - 面料问题先检索本店知识卡片（query 必填）
 - KN-002: 元元知识问答 - 清洗保养类问题走知识卡片检索
 - KN-003: 黄金策知识问答 - 本店售后政策先检索知识卡片（B 端接线回归，issue #3059）
