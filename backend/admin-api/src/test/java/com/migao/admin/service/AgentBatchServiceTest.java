@@ -36,6 +36,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
@@ -81,6 +82,10 @@ class AgentBatchServiceTest {
     @Mock
     private ProductService productService;
 
+    /** 后台 job 提交口：默认 mock 不跑任务；异步判据用 captor 取出 Runnable 后手动跑。 */
+    @Mock
+    private BatchJobLauncher batchJobLauncher;
+
     @InjectMocks
     private AgentBatchService batchService;
 
@@ -91,6 +96,11 @@ class AgentBatchServiceTest {
         // 「抢不到 ⇒ 409 且零写」的判据各自显式覆盖这两条 stub。
         when(batchMapper.markExecuting(any(), any())).thenReturn(1);
         when(batchMapper.markReverting(any(), any(), any(), any())).thenReturn(1);
+        // 终态 CAS（issue #8283）：mock int 默认 0 ⇒ 不 stub 会跳过 updateById（终态不落库）。
+        when(batchMapper.markExecutedDone(any(), any(), anyInt(), anyInt(), any())).thenReturn(1);
+        when(batchMapper.markExecutedPartial(any(), any(), anyInt(), anyInt(), any())).thenReturn(1);
+        when(batchMapper.markReverted(any(), any(), any())).thenReturn(1);
+        when(batchMapper.markRevertPartial(any(), any(), any())).thenReturn(1);
         // MyBatis-Plus 的 lambda 列名缓存（CI 无 Spring 上下文，见 TenantIsolationTest 同款初始化）
         MybatisConfiguration configuration = new MybatisConfiguration();
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, ""), AgentBatch.class);
@@ -651,6 +661,96 @@ class AgentBatchServiceTest {
             assertThat(ex.getCode()).isEqualTo("NOT_FOUND");
             verify(productService, never()).updateProductForAgent(any(), any(), any());
             verify(itemMapper, never()).updateById(any(AgentBatchItem.class));
+        }
+    }
+
+    // ══════════════════ ②' 后台执行 / 撤销（issue #8283）════════════════════
+
+    @Nested
+    @DisplayName("POST /{batchId}/execute-async / revert-async（后台 job）")
+    class AsyncExecution {
+
+        @Test
+        @DisplayName("execute-async：立即返回 executing；job 跑完落 done + 进度可见")
+        void executeAsyncReturnsExecutingThenFinalizesDone() {
+            when(batchMapper.selectById(BATCH_ID)).thenReturn(batch(AgentBatchService.STATUS_PREVIEW));
+            when(itemMapper.selectList(any())).thenReturn(List.of(
+                    item(P1, "10.00", "12.00", AgentBatchService.ITEM_PENDING)));
+            when(productService.updateProductForAgent(eq(P1), any(), eq(TENANT)))
+                    .thenReturn(product("12.00", "on_sale"));
+            List<String> batchStatusWrites = recordBatchStatusWrites();
+
+            AgentBatchViews.Batch accepted = batchService.executeAsync(TENANT, BATCH_ID);
+
+            assertThat(accepted.getStatus()).as("提交即返回，不等逐条跑完")
+                    .isEqualTo(AgentBatchService.STATUS_EXECUTING);
+            assertThat(accepted.getSuccessCount()).isZero();
+            assertThat(accepted.getFailCount()).isZero();
+            assertThat(accepted.getResults()).as("异步路径的逐条结果走 GET items，不在提交响应里").isNull();
+            assertThat(batchStatusWrites).as("job 还没跑 ⇒ 终态尚未落库").isEmpty();
+
+            ArgumentCaptor<Runnable> job = ArgumentCaptor.forClass(Runnable.class);
+            verify(batchJobLauncher).launch(job.capture());
+            job.getValue().run();
+
+            assertThat(batchStatusWrites).containsExactly(AgentBatchService.STATUS_DONE);
+            verify(batchMapper).updateProgress(BATCH_ID, TENANT, 1, 0);
+            assertThat(accepted.getStatus()).as("accepted 是提交时刻的快照，不随后台线程改写")
+                    .isEqualTo(AgentBatchService.STATUS_EXECUTING);
+        }
+
+        @Test
+        @DisplayName("execute-async：抢不到执行权 ⇒ 409，且任务不入池")
+        void executeAsyncDoesNotSubmitWhenClaimLost() {
+            when(batchMapper.selectById(BATCH_ID)).thenReturn(batch(AgentBatchService.STATUS_PREVIEW));
+            when(batchMapper.markExecuting(BATCH_ID, TENANT)).thenReturn(0);
+
+            BusinessException ex = rejection(() -> batchService.executeAsync(TENANT, BATCH_ID));
+
+            assertThat(ex.getCode()).isEqualTo("CONFLICT");
+            verify(batchJobLauncher, never()).launch(any());
+            verify(productService, never()).updateProductForAgent(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("execute-async：读明细就炸 ⇒ 落 partial（不能永远停在 executing）")
+        void executeAsyncFinalizesPartialWhenJobCannotReadItems() {
+            when(batchMapper.selectById(BATCH_ID)).thenReturn(batch(AgentBatchService.STATUS_PREVIEW));
+            when(itemMapper.selectList(any())).thenThrow(new RuntimeException("db down"));
+            List<String> batchStatusWrites = recordBatchStatusWrites();
+
+            batchService.executeAsync(TENANT, BATCH_ID);
+
+            ArgumentCaptor<Runnable> job = ArgumentCaptor.forClass(Runnable.class);
+            verify(batchJobLauncher).launch(job.capture());
+            job.getValue().run();
+
+            assertThat(batchStatusWrites).as("job 级异常也必须落终态，且 partial 可撤销")
+                    .containsExactly(AgentBatchService.STATUS_PARTIAL);
+        }
+
+        @Test
+        @DisplayName("revert-async：立即返回 executing；job 跑完落 reverted")
+        void revertAsyncReturnsExecutingThenFinalizesReverted() {
+            when(batchMapper.selectById(BATCH_ID)).thenReturn(batch(AgentBatchService.STATUS_DONE));
+            when(itemMapper.selectList(any())).thenReturn(List.of(
+                    item(P1, "10.00", "12.00", AgentBatchService.ITEM_SUCCESS)));
+            when(productService.updateProductForAgent(eq(P1), any(), eq(TENANT)))
+                    .thenReturn(product("10.00", "on_sale"));
+            List<String> batchStatusWrites = recordBatchStatusWrites();
+
+            AgentBatchViews.Batch accepted = batchService.revertAsync(TENANT, BATCH_ID);
+
+            assertThat(accepted.getStatus()).isEqualTo(AgentBatchService.STATUS_EXECUTING);
+            ArgumentCaptor<Runnable> job = ArgumentCaptor.forClass(Runnable.class);
+            verify(batchJobLauncher).launch(job.capture());
+            job.getValue().run();
+
+            assertThat(batchStatusWrites).containsExactly(AgentBatchService.STATUS_REVERTED);
+            ArgumentCaptor<AgentProductUpdateRequest> req =
+                    ArgumentCaptor.forClass(AgentProductUpdateRequest.class);
+            verify(productService).updateProductForAgent(eq(P1), req.capture(), eq(TENANT));
+            assertThat(req.getValue().getBasePrice()).isEqualByComparingTo("10.00");
         }
     }
 

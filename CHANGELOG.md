@@ -17,6 +17,12 @@
 - **改前（错的）**：`gross_margin_verdict` 的**方向反了** —— 毛利的判据直接复用了退货率那套「越小越好」的逻辑，于是**毛利越低越被判「好」**。实测：毛利 5 元（同行中位 40）的 SKU 被判 **good**（健康）。连带后果：P3 的「下一步建议」只给判 `bad`/`watch` 的行 ⇒ **低毛利 SKU 永远拿不到「试调价 / 核对成本价」的建议**，恰恰是最该拿到的那一批。
 - **改后**：毛利走自己的方向 —— `>= 同行中位 ⇒ good`，低于中位 ⇒ `watch`（值得看一眼），`< 0` 仍是绝对的 `bad`（全店都亏时也不因「相对不那么亏」被判健康）。
 - **为什么一直没被发现**：那条单测**也写反了**（断言「毛利 10 判 good、毛利 50 判 bad」），测试和实现一起错，CI 一直是绿的。已改正并加注入式红证（把方向改回去必红）。
+### 批量写执行转后台 job：进度可查、超时如实说未完成（2026-10-31，issue #8283）
+
+- **改前**：批量改价/库存的 `execute` / `revert` 是同步请求 —— Agent 在对话轮里等整批逐条 apply 跑完；执行中 `GET /batches/{id}` 只有 `executing`，`success_count/fail_count` 要等终态才写，50 条批次一旦慢，用户只能干等。
+- **改后**：新增 `POST /api/admin/agent/batches/{id}/execute-async` / `revert-async`（CAS claim 后提交进程内线程池，立即返回 `status=executing`）；每处理一条更新成功/失败计数，`GET` 可看进度；Agent 工具改用 async 端点并轮询到终态（上限 60s），**超时只报「尚未完成」**，不谎报完成。同步端点保留 #5314 冻结契约，页面/其它调用方可先接 async。
+- **边界**：单批仍 ≤50；线程池 core 2 / max 4 / queue 50 + 优雅停机等待 60s；JVM 崩溃/强杀可能留下 `executing` 批次（跨实例自动回收需 lease/heartbeat，另开单跟踪）。
+- 判据：`AgentBatchServiceTest$AsyncExecution` / `ContextPropagatingTaskDecoratorTest` / `test_product_batch_update.py::TestAsyncPolling`；红证：去掉 decorator ⇒ tenant/user 上下文判红。
 
 ### 黄金策开始算钱了：这批货压了多少、离同行差多少、调价一件多赚多少（2026-10-31，issue #8276）
 
