@@ -1166,3 +1166,35 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: DA-035
+    legacy_id: ""
+    title: "方向性判定守卫：方向必须登记（传给表查），传错/忘传/绕过都不可能通过"
+    domains:
+      - data
+    tier: normal
+    tags:
+      - proactive
+      - briefing
+      - guard
+      - meta
+    truths_ref: []
+    user_inputs:
+      - "（无用户输入 —— 这是研发侧守卫，防「判断方向反了但测试跟着错」这类形态）"
+    expectations: []
+    data_checks:
+      - "🔴 **方向登记即契约**：`METRIC_DIRECTIONS = {return_rate: False（越低越好）, gross_margin: True（越高越好）}`。`_verdict(metric, value, baseline)` 的方向**从表查**，**不由调用方传** —— 缺陷 #8280 的机制正是「调用方忘了传 higher_is_better」。"
+      - "🔴 **未登记指标 ⇒ `KeyError` 且报错点名**：新指标没定方向不许静默跑（默认 False 会让「越高越好」的指标静默反向）。判据断言报错文本同时含指标名与 `METRIC_DIRECTIONS`。"
+      - "🔴 **调用点源码扫描**（AST）：`_verdict` 的第一个实参必须是**字符串字面量**且在表里；仍用 `higher_is_better=` 关键字传方向 ⇒ 红。红证：把调用改成 `_m = \"gross_margin\"; _verdict(_m, ...)` ⇒ `test_every_call_site_passes_a_string_literal` + `test_every_literal_metric_is_registered` 双红。"
+      - "🔴 **极值双向断言**（最关键的形态守卫）：对表里每个指标造极值数据验证方向。红证：把表里 `gross_margin: True` 改成 `False`（= #8280 的形态）⇒ 本判据 + 基线方向断言**双红**；恢复 ⇒ 8 passed。"
+      - "**极值断言必须混合数据**：`_verdict` 是**相对**判据（`<= peer_median ⇒ good`），全员 100% 退货率时基线也是 100% ⇒ 谁都不比谁差 ⇒ 全判 good。这是**合理**的（相对基线不制造「全员异常」），所以极值测试不能拿「全员极值」当样本 —— 这条写进测试 docstring，防下一个人误判成缺陷。"
+      - "**行为零变化**（本单是纯守卫）：`return_rate` 表里 False、`gross_margin` 表里 True，与改前调用点传的值完全一致 ⇒ 对外结论不变，因此**不入 CHANGELOG**（纯研发工具类改动，铁律 7 豁免口径）。"
+      - "**未覆盖面（如实登记）**：只覆盖 `_verdict` 这一族。其他「方向敏感」的比较（`low_stock` 的 `<=`、`_attribution` 的 `max()` 取最好的兄弟、`money` 的 `peer_median − 毛利` 取正负方向）**不在本单**，同一形态仍存在。"
+    skip_reason: "[backend-contract] 纯研发侧守卫（零 LLM、零用户可见面）：判据 = backend/ai-agent-service/tests/test_briefing_verdict_direction_guard.py（8 条：3 条调用点扫描 + 4 条方向语义 + 1 条未登记即抛），两条注入式红证实跑成立"
+    merge_log: "2026-10-31 新增（issue #8293）：由缺陷 #8280 触发 —— 「测试和实现一起错」这类形态没有任何东西会变红。三层守卫：① 方向从表查（签名层面无传错机会）② 调用点 AST 扫描（变量绕过 / 忘登记即红）③ 极值双向断言（改表即红）。**未覆盖面**：只覆盖 `_verdict` 一族；`low_stock` 比较、归因的 `max()` 取最佳兄弟、money 的差值方向仍靠人工判断。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_briefing_verdict_direction_guard.py"
+      ci:
+        - pr-check.yml
+      verifies: []
