@@ -146,7 +146,9 @@ curl -fsS https://app.migaozn.com/terminal/latest.json | python3 -m json.tool
 4. 首屏应出现该工人可报的加工单；**报一单**（§7.2 第 5 步）。
 
 **EXE（Windows 一体机）**
-1. 前提：**WebView2 运行时**（Win10 1803+ 通常自带；没有则先装 Evergreen Runtime，否则界面白屏而进程活着）。
+1. 前提：**WebView2 运行时**（若该终端版本内嵌浏览器；Win10 1803+ 通常自带，没有则先装 Evergreen Runtime）。
+   ⚠️ **本仓无这条依赖的判据**（终端代码在 `zhaokai-mgzn/migao-terminal`）⇒ 安装前按**终端仓**的
+   `docs/release.md` 核实运行时依赖与最低系统版本。缺运行时的典型表现 = **界面白屏而进程活着**（没有报错）。
 2. 下载 `GuanxingtaiSetup.exe` → 右键「属性 → 数字签名」**应为空**（未签名，见 §2.3）⇒ SmartScreen 走「更多信息 → 仍要运行」。
 3. 安装后首次启动填 **企业编码 + 工号 + PIN**。
 4. 检查更新能读到 `/terminal/latest.json`（§2.5）。
@@ -435,6 +437,7 @@ python3 scripts/trial_onboarding_check.py \
 | ⑤ | **Android keystore** | 自签，存终端仓 Secrets；换 key = 必须重装 | 终端仓 | §2.3 |
 | ⑥ | **真机安装与现场网络** | 需人到现场（未知来源授权 / WebView2 / 反光） | 客户 IT + 我们 | §2.4 / §4.2 |
 | ⑦ | **真机打印**（标签/三联纸/A4） | 未验证（只读审计覆盖不到） | 客户 + 我们 | 本文 §4.1 |
+| ⑦b | **终端运行时依赖**（WebView2 / .NET 版本 / 最低系统） | 本仓无判据（终端代码不在本仓） | 终端仓 + 客户 IT | §2.4 |
 | ⑧ | **RDS 备份窗口 / PITR ≥14 天** | 云控制台侧，公网**不可判定** | DBA | §6.2 第 7 条 |
 | ⑨ | **告警触达值班** | 未落地（审计 P0-04） | 研发 | §6.1 的缺口登记 |
 | ⑩ | **短信通道**（管理员首登/工人 PIN 通知） | 走既有短信服务；**需确认余额与签名报备** | 运营 | —— |
