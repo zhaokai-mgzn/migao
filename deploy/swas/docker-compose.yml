@@ -4,7 +4,7 @@
 # 环境变量（.env.admin-api/.env.ai-agent/.env.admin-web）与 TLS 证书在服务器侧，不入仓。
 # 镜像 tag 由 IMAGE_TAG 控制（默认 latest）；deploy.sh 通过环境注入。
 
-# ── 容器日志上限（issue #8218 P1-02，2026-10-31 上线审计）────────────────────────────
+# ── 容器日志上限（issue #8197 P1-02，2026-10-31 上线审计）────────────────────────────
 # 病：改前四个服务**都没有 `logging:` 段** ⇒ docker 默认的 json-file 驱动**无上限**。
 #     单机 SWAS 上日志单调增长 ⇒ 磁盘打满 ⇒ 四个服务同时 502（`restart: unless-stopped`
 #     救不了「写不进去」），而且**没有任何读数会先变红**。
@@ -38,7 +38,7 @@ services:
     mem_limit: 1536m
     cpus: 1.0
     logging: *migao-logging
-    # 健康检查（issue #8218 P1-12「假活」）：进程僵死（线程池耗尽 / 死锁）时容器仍 `Up`，
+    # 健康检查（issue #8197 P1-12「假活」）：进程僵死（线程池耗尽 / 死锁）时容器仍 `Up`，
     # 而 `restart: unless-stopped` 不会重启它 —— 改前**只有 ai-agent** 有健康检查。
     # 🔴 与 `deploy/swas/deploy.sh::wait_healthy` **同源**：同一个容器端口（8080）+ 同一个路径
     #    （`/actuator/health`，即该脚本 `svc_port` / `svc_health_path` 的取值）⇒ 判据不可能漂移。
@@ -97,7 +97,7 @@ services:
     mem_limit: 512m
     cpus: 0.5
     logging: *migao-logging
-    # 健康检查（issue #8218 P1-12）：与 `deploy.sh::wait_healthy` **同源** —— 同一个端口（3001）、
+    # 健康检查（issue #8197 P1-12）：与 `deploy.sh::wait_healthy` **同源** —— 同一个端口（3001）、
     # 同一个路径（`/`），且**照抄它的状态码集合**（200/301/302 都算活：admin-web 的 `/` 可能是
     # 一条跳转）。image 是 `node:20-alpine`（没有 curl）⇒ 用 node 的 fetch 表达同一份判据，
     # 不引入第二套语义（例如「只认 200」会让健康检查比部署判据更严 ⇒ 回滚抖动）。
@@ -120,7 +120,7 @@ services:
     mem_limit: 256m
     cpus: 0.25
     logging: *migao-logging
-    # 健康检查（issue #8218 P1-12）：nginx 没有「上游」可探 —— 探一个**只表达「nginx 进程还在
+    # 健康检查（issue #8197 P1-12）：nginx 没有「上游」可探 —— 探一个**只表达「nginx 进程还在
     # 按配置应答」**的本地面：`deploy/swas/nginx.conf` 的 `location = /healthz`（:80，回一行 200，
     # `access_log off`，不碰磁盘 / 不代理 / 不碰证书）。
     # ⚠️ 刻意**不**探 https 的静态面：那要 `--no-check-certificate` 且依赖某个已发布文件存在，

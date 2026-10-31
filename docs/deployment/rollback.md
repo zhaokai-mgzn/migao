@@ -5,7 +5,7 @@
 
 ## 1. 判定需要回滚的信号
 
-> 🔴 **判据地址必须自己先 200**（issue #8218 P1-05，2026-10-31 上线审计）。
+> 🔴 **判据地址必须自己先 200**（issue #8197 P1-05，2026-10-31 上线审计）。
 > 本节的每条判据都必须是**线上真的 200** 的面 —— 否则 runbook 会给出「永远命中」的错误信号。
 > 曾经的错误形态（改前逐字）：第一条判据是 `curl api.migaozn.com/actuator/health`，而
 > `deploy/swas/nginx.conf` 把 `/actuator` **整段 404**（`location ~ ^/(actuator|v3/api-docs|swagger-ui)`）
