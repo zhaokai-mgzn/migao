@@ -1,4 +1,4 @@
-// case_ids: BM-014, BM-015, BM-025
+// case_ids: BM-014, BM-015, BM-025, BM-057
 /**
  * 工人**扫码报工页**判据（issue #7812 P2a；页面 = `src/pages/worker/report/index.tsx`）。
  *
@@ -7,7 +7,7 @@
  *
  * | # | 判据 | 红证 |
  * |---|---|---|
- * | ① | 未登录 ⇒ **没有报工按钮**，只有登录引导 | 把按钮渲染条件改成恒真 ⇒ 红 |
+ * | ① | 未登录 ⇒ **没有报工按钮**，**就地**给工人登录表单（issue #8194：不再跳三角色登录页） | 把按钮渲染条件改成恒真 ⇒ 红；还原成「去登录工人身份」跳转 ⇒ 红 |
  * | ② | 工序未确定 ⇒ **没有报工按钮**（并说明为什么） | 同上 ⇒ 红 |
  * | ③ | 旧码 ⇒ 先出**套号清单**，不点就不出部位、也不出报工按钮；点第 2 套 ⇒ 才出部位 | 自动选第 1 套 ⇒ 红 |
  * | ④ | 报工后**只认回执**：显示服务端给的「下一道」，而不是自己猜 | 改成显示「下一道：定型」这类本地常量 ⇒ 红 |
@@ -42,6 +42,8 @@ jest.mock('@tarojs/taro', () => {
 
 jest.mock('../src/services/workerService', () => ({
   fetchCurrentWorker: jest.fn(),
+  // issue #8194：未登录**就地**登录（表单组件负责调它；本文件的用例不提交登录，但导出处必须存在）
+  workerLogin: jest.fn(),
 }))
 
 // 报工写面 = **单一实现**（`services/productionService.ts`，守卫 production-single-write-entry）
@@ -54,7 +56,6 @@ import Taro from '@tarojs/taro'
 import WorkerReportPage from '../src/pages/worker/report/index'
 import { fetchCurrentWorker } from '../src/services/workerService'
 import { completeByScan, scanResolve } from '../src/services/productionService'
-import { WORKER_TAB_LOGIN_ROUTE } from '../src/utils/inbound/gaps'
 import { setWorkerSessionId } from '../src/utils/workerSession'
 import type { ReportView } from '../src/utils/reportState'
 
@@ -113,14 +114,15 @@ describe('扫码报工页（issue #7812）', () => {
     ;(Taro as any).__clearStorage()
   })
 
-  it('① 未登录 ⇒ 没有报工按钮，只有登录引导', async () => {
+  it('① 未登录 ⇒ 没有报工按钮；**就地**给工人登录表单（不跳三角色登录页）', async () => {
     ;(Taro as any).__clearStorage()
     render(<WorkerReportPage />)
     expect(await screen.findByTestId('worker-report-login-required')).toBeTruthy()
     expect(screen.queryByTestId('worker-report-submit')).toBeNull()
-
-    fireEvent.click(screen.getByTestId('worker-report-login'))
-    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: WORKER_TAB_LOGIN_ROUTE })
+    // issue #8194：就地表单（与 `/w/` 同一份），**没有**「去登录工人身份」跳转按钮
+    expect(screen.getByTestId('worker-login-form')).toBeTruthy()
+    expect(screen.queryByText('去登录工人身份')).toBeNull()
+    expect(Taro.navigateTo).not.toHaveBeenCalled()
   })
 
   it('② 工序未确定 ⇒ 没有报工按钮，并说明原因', async () => {

@@ -24,10 +24,17 @@
     color: #7e6f57;
   }
 
+  /* 未登录的**就地**登录（issue #8194）：卡片形态由共享组件 `WorkerLoginForm.scss` 承担，
+     这里只是版面容器 —— 不再需要第二层白底/阴影（那会变成「卡中卡」）。 */
+  &__login {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
   &__scan,
   &__card,
-  &__legacy,
-  &__gate {
+  &__legacy {
     background: #fff;
     border-radius: 20px;
     padding: 24px;
