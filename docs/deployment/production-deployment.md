@@ -111,6 +111,39 @@ rollback.md 回滚（重新发布上一稳定版本）
 **服务器侧复核（可复制）**：`docker compose exec -T nginx grep -c 't=' /var/log/nginx/access.log` ⇒ 期望 `0`
 （改前该命令会数出成片的 token）。
 
+### 5.3 只增表体量 / 最老行年龄读数（issue #8218 P1-11 —— 只读，不新增无人值守删除）
+
+**病**：`deploy/ops/db-retention.sql` 文件头逐字「**人工执行**，不是定时任务」
+（`audit_logs` 365 天 / `notifications` 180 天），而仓内**无任何值守面**（无告警、无读数、无到期提醒）
+⇒ 两张只增表**无界增长**（索引体积 / 备份窗口 / 查询变慢），且「**没有清理**这件事不会有人知道」。
+
+**修法（只读读数）**：⛔ 不新增 schedule / cron（**铁律 10**：无人值守删除不安全）；删除仍是**人工执行**
+`deploy/ops/db-retention.sql`（先 count 看量，再低峰 purge）。本节只补两件读数：**表多大**、**多久没清了**。
+
+| 面 | 命令 | 性质 |
+|---|---|---|
+| 读数器（默认） | `python3 scripts/db_growth_readout.py` | 只读三态 `0/1/3` |
+| 只读 SQL | `psql "$DATABASE_URL" -f deploy/ops/db-growth-readout.sql` | 值班可直接看表 |
+| 离线复核 | `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --csv -f deploy/ops/db-growth-readout.sql > /tmp/db-growth.csv`，再 `python3 scripts/db_growth_readout.py --from-csv /tmp/db-growth.csv` | 零网络 |
+
+**读数列**：`table_name` / `total_bytes`（`pg_total_relation_size`）/ `row_count` /
+`oldest_created_at` / `oldest_age_days`。
+
+**期望阈值与告警口径**（默认值与脚本同源）：
+
+| 读数 | 期望 | 超限含义 | 值班动作 |
+|---|---|---|---|
+| `audit_logs` 的 `oldest_age_days` | ≤ **365** | 保留期口径**没人执行** | rc=1 ⇒ 当班开单：按 `deploy/ops/db-retention.sql` **人工执行**（先 count 看量，再低峰 purge） |
+| `notifications` 的 `oldest_age_days` | ≤ **180** | 同上 | 同上 |
+| 任一张表 `total_bytes` | ≤ **512 MiB** | 索引体积 / 备份窗口开始受拖累 | rc=1 ⇒ 先跑 count 读数确认增量是「活动量上涨」还是「没有清理」，再排 purge 期 |
+| 取不到（缺 `DATABASE_URL` / 无 `psql` / 连接或 SQL 失败 / 少一张表的读数行 / 解析不了） | —— | **无法判定** | rc=3 ⇒ 修取数面，**不得**当通过（`DQ-U` 同族：读不到 ≠ 通过） |
+
+**值班节奏**：每周一次（发布前必跑一次）；`rc=1` ⇒ 当班开单，`rc=3` ⇒ 先修取数面。
+**不新增 schedule**：这是「人跑一条命令」，不是周期任务。
+
+判据 = `tests/unit_ci_workflows/test_ops_readouts.py`（替身 `psql` + 离线 CSV，零网络、零真库；
+另核 `deploy/ops/db-growth-readout.sql` 的只读性：可执行面出现任何写 / DDL 动词 ⇒ 红）。
+
 ## 6. 与测试环境的差异提醒
 
 - **自动部署只在测试环境**：push main → 测试环境自动部署（快速迭代）；生产必须走受控发布

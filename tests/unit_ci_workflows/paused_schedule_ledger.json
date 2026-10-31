@@ -1,0 +1,81 @@
+{
+  "schema": "paused-schedule-ledger/v1",
+  "_what": "**已停用的周期腿**（`on.schedule` 被注释掉）的具名登记表（issue #8218 上线审计 P1-03）。判据 = `tests/unit_ci_workflows/test_paused_schedule_registry.py`。🔴 本表回答的唯一问题是「**这条腿为什么停、现在靠什么兜、什么条件下恢复、谁在什么时候复查**」——它**不恢复**任何调度，也**不判定**「该不该恢复」（那是重启条件承接方的裁决）。停用判据的唯一出处 = `scripts/drift_audit.py` 的 `PAUSED_SCHED` / `SCHED_LINE`（本判据直接 import，不另造第二份正则）。",
+  "_why": "2026-10-31 上线审计读数：`.github/workflows/nightly-verification.yml` 的 `schedule` 自 2026-09-06 起被注释（issue #2957）⇒ 夜间回归**停了 55 天**（`gh run list --workflow=nightly-verification.yml`：最后三次均 workflow_dispatch + failure，schedule 最后一次 2026-09-05）。**停用写在注释里 = 停用不会被任何人看见**：注释不会过期、不会报警，也没有东西会因此变红（`drift_audit` 的 `<wf>|paused` finding 被 `scripts/drift_audit_baseline.json` 放行，且 `Drift Audit` 不在 required 集合）⇒ 本表把「已接受缺口 + 重启条件」变成**会红的台账**：未登记即红（判据 2）/ 恢复即销账（判据 3）/ 复查日期过期即红（判据 5）/ 文档锚缺失即红（判据 8）。",
+  "_who_else": "本判据落地时的**第一条红证**就是它自己抓到的第二条腿：`e2e-real.yml` 也在 2026-09-06 因同一根因（issue #2957）被注释停用，而**审计清单里没有它** —— 「只修 P1-03 点名的那一条」会把同类漏在暗处。两条腿同口径登记（类级固化，铁律 8）。",
+  "_clock_policy": "判据 5（复查新鲜度）天生依赖「今天」⇒ 日期是**参数**（`judge(..., today=...)`），判据本体是纯函数；只有真语料那一条用 `date.today()`（它的用途正是「到日子就红」）。同口径先例 = `tests/unit_ci_workflows/test_skip_exemption_gate.py`。",
+  "_coverage_boundary": [
+    "不恢复任何调度，也不判定「该不该恢复」；重启条件是否达成由承接方裁决。",
+    "判不了「替代腿真的覆盖了原腿的能力」——只证明替代腿文件存在（运行期覆盖度见 `tests/unit_ci_workflows/e2e_spec_inventory_ledger.json` 与 `docs/testing/` 的相关残余清单）。",
+    "判不了「值班真的按文档复算了」——复查是人的动作；本判据只把「过了复查日期没人复查」变成红。",
+    "停用形态只认 `# schedule:` / `# - cron:`（唯一出处 = drift_audit）；「改名成 .yml.disabled」这类停用不在射程内，两边口径一致。"
+  ],
+  "entries": [
+    {
+      "file": "nightly-verification.yml",
+      "name": "Nightly Verification (p1 smoke + fixture e2e)",
+      "paused_since": "2026-09-06",
+      "reason_issue": 2957,
+      "reason": "调度自 2026-09-06 暂停（workflow 头注释原文）：最近 nightly 多次 failure 且失败钩子自动开 issue 制造噪音 ⇒ 待失败根因排查 + 本地验证提速落地后再恢复。2026-10-31 审计复算：schedule 最后一次运行 2026-09-05，此后 55 天零调度运行；剩余三次均为 workflow_dispatch + failure（2026-09-14/15）。复算：gh run list --workflow=nightly-verification.yml --limit 5 --json createdAt,event,conclusion",
+      "alternative_legs": [
+        "post-merge-verify.yml",
+        "post-deploy-eval.yml",
+        "smoke-test.yml"
+      ],
+      "residual_gap": "夜间腿承载的两块**长周期回归无人跑**：① smoke p1 全量（对生产的环境级 HTTP 冒烟）；② fixture e2e 全量（--project=web 全量 spec）。白天只有 post-merge-verify / post-deploy-eval / smoke-test 的窄面兜底 ⇒ 不进这三条腿的 spec 与 p1 标记在 CI 里哪儿都不跑（该残余已登记在 tests/unit_ci_workflows/e2e_spec_inventory_ledger.json）。",
+      "restart_conditions": [
+        "issue #2957 的失败根因修复：两条 job（Smoke p1 regression / E2E fixture specs）能连续多轮稳定绿（不再一跑就红 + 自动开 issue 制造噪音）",
+        "本地验证提速落地：单轮 ./verify-all.sh gate 不再是小时级，运维/值班才有余力在停摆时接手排查",
+        "恢复时按铁律 10 的口径销账：只把 on.schedule 的 # 去掉，并在 PR body 声明；若按窄例外口径被视为新增 schedule，则同批登记 tests/unit_ci_workflows/schedule_scope_ledger.json"
+      ],
+      "owner": "CI / 测试（值班按 docs/testing/paused-schedules.md 的复查步骤执行；承接单 #2957）",
+      "review_due": "2026-12-31",
+      "reviewed_at": "2026-10-31",
+      "doc": "docs/testing/paused-schedules.md",
+      "doc_markers": [
+        "nightly-verification.yml",
+        "#2957",
+        "2026-09-06",
+        "2026-12-31",
+        "post-merge-verify.yml",
+        "post-deploy-eval.yml",
+        "smoke-test.yml",
+        "smoke p1",
+        "fixture e2e",
+        "修复后复启"
+      ]
+    },
+    {
+      "file": "e2e-real.yml",
+      "name": "E2E Real (AI Agent 能力测试)",
+      "paused_since": "2026-09-06",
+      "reason_issue": 2957,
+      "reason": "调度自 2026-09-06 暂停（workflow 头注释原文，逐字与 nightly 同源）：连续 5+ 日 daily failure 且自动开 issue 制造噪音 ⇒ 待失败根因排查 + 本地验证提速落地后再恢复。🔴 它**不在** 2026-10-31 审计的 P1-03 正文里（审计只点了 nightly-verification），是本判据落地时由「未登记即红」抓出来的同类第二条（`scripts/drift_audit_baseline.json` 里早有 e2e-real.yml|paused，但基线放行 ⇒ 没有人知道它停着）。复算：gh run list --workflow=e2e-real.yml --limit 5 --json createdAt,event,conclusion",
+      "alternative_legs": [
+        "agent-eval.yml",
+        "agent-eval-adversarial.yml",
+        "post-deploy-eval.yml"
+      ],
+      "residual_gap": "这条腿跑的是**真实环境零 Mock** 的 E2E（pytest tests/e2e/real/ + 4 个 integration 标记用例：跨服务租户隔离、全链路、性能隔离），要真库真 key。替代腿都是**评测栈/部署后**的窄面（不覆盖「生产形态的真实环境 + integration 标记」）⇒ 那一族用例在 CI 里哪儿都不跑。",
+      "restart_conditions": [
+        "issue #2957 的失败根因修复：e2e-real 连续多轮稳定绿（不再 daily failure + 自动开 issue）",
+        "本地验证提速落地（同 nightly 口径）：停摆时才有余力接手排查",
+        "恢复时按铁律 10 的口径销账：只把 on.schedule 的 # 去掉并在 PR body 声明；若按窄例外口径被视为新增 schedule，则同批登记 tests/unit_ci_workflows/schedule_scope_ledger.json"
+      ],
+      "owner": "AI Agent / 测试（值班按 docs/testing/paused-schedules.md 的复查步骤执行；承接单 #2957）",
+      "review_due": "2026-12-31",
+      "reviewed_at": "2026-10-31",
+      "doc": "docs/testing/paused-schedules.md",
+      "doc_markers": [
+        "e2e-real.yml",
+        "#2957",
+        "2026-09-06",
+        "2026-12-31",
+        "agent-eval.yml",
+        "post-deploy-eval.yml",
+        "真实环境",
+        "integration"
+      ]
+    }
+  ]
+}
