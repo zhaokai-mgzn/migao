@@ -292,9 +292,10 @@ python3 scripts/trial_onboarding_check.py \
 | `worker-h5-page` | `{app}/w/` | 200 + HSTS + nosniff + CSP |
 | `shortlink-json-contract` | `{app}/s/<未知码>/json` | **404 + `application/json` + `{"error":"not_found"}`**；给了真码时还与 302 面 token 逐字一致 |
 | `tenant-binding-{worker,order}` | `{app}/s/<码>`、`{app}/o/<码>` | 302 + 落点 `tenant_code` == 入参企业编码 |
+| `shortlink-json-parity` | `{app}/s/<真码>/json` | 与 302 面**同一份** token（A 档拿到旧 token = 报工失败） |
 | `headers-*` | 上述各面 | HSTS + nosniff（另 `/download` 也要） |
 
-### 5.3 实测读数（2026-10-31 15:25 +08，`rc=3 passed=9 failed=0 unknown=3`）
+### 5.3 实测读数（2026-10-31 15:25 +08，`rc=3 passed=9 failed=0 unknown=3`；连跑两次逐行一致 = 幂等）
 
 ```
 ✅ enterprise-code          demo-customer

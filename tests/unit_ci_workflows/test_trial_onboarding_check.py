@@ -263,6 +263,7 @@ def test_green_when_every_face_is_complete(stub):
         "bmini-report-page",
         "worker-h5-page",
         "shortlink-json-contract",
+        "shortlink-json-parity",
         "tenant-binding-worker",
         "tenant-binding-order",
         "headers-site-download",
@@ -343,7 +344,7 @@ def test_red_when_json_token_disagrees_with_302(stub):
     _Stub.cfg["json_token"] = "tok-stale"
     out = _run(stub, "--enterprise-code", ENTERPRISE_CODE, "--worker-code", WORKER_CODE)
     assert out.returncode == 1, f"{out.stdout}"
-    assert "shortlink-json-contract" in out.stdout and "不一致" in out.stdout
+    assert "shortlink-json-parity" in out.stdout and "不一致" in out.stdout
 
 
 def test_unknown_when_enterprise_code_is_absent_but_static_faces_still_judged(stub):

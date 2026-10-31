@@ -20,6 +20,7 @@
 | `shortlink-json-contract` | `{app}/s/<未知码>/json` | **404 + `application/json` + `{"error":"not_found"}`** |
 | `security-headers` | 上述各面 | HSTS + nosniff（`/w/` `/b/report/` 另要 CSP） |
 | `tenant-binding` | `{app}/s/<工人短码>` + `/o/<加工单短码>` | 302 落点里 `tenant_code` == 入参企业编码 |
+| `shortlink-json-parity` | `{app}/s/<工人短码>/json` | 与 302 面**同一份** token（A 档拿到旧 token = 报工失败） |
 
 ## 三态退出码（**`3` 不得当 `0` 读**）
 
@@ -287,7 +288,7 @@ def check_tenant_binding(
         if label == "worker":
             json_status, json_headers, json_body, json_error = _request(app + path + "/json", timeout)
             if json_status is None:
-                report.add("shortlink-json-contract", UNKNOWN, f"{path}/json 探不到（{json_error}）")
+                report.add("shortlink-json-parity", UNKNOWN, f"{path}/json 探不到（{json_error}）")
                 continue
             try:
                 payload = json.loads(json_body.decode("utf-8"))
@@ -295,16 +296,16 @@ def check_tenant_binding(
                 payload = {}
             expected_token = (query.get("t") or [""])[0]
             if json_status != 200 or "json" not in _header(json_headers, "Content-Type").lower():
-                report.add("shortlink-json-contract", FAIL, f"{path}/json 期望 200 JSON，实测 {json_status}")
+                report.add("shortlink-json-parity", FAIL, f"{path}/json 期望 200 JSON，实测 {json_status}")
                 continue
             if payload.get("reportPath") != REPORT_PAGE_PATH or payload.get("token") != expected_token:
                 report.add(
-                    "shortlink-json-contract",
+                    "shortlink-json-parity",
                     FAIL,
                     f"{path}/json 与 302 面不一致（reportPath={payload.get('reportPath')!r} token 相同={payload.get('token') == expected_token}）",
                 )
                 continue
-            report.add("shortlink-json-contract", OK, f"{path}/json 与 302 的 token 逐字一致")
+            report.add("shortlink-json-parity", OK, f"{path}/json 与 302 的 token 逐字一致")
         report.add(f"tenant-binding-{label}", OK, f"{path} → tenant_code={actual}")
 
 
