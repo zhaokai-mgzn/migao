@@ -23,14 +23,19 @@
  * | 面 | 修前 内层/外框（占比） | 修前 上/下留白 | 修后 内层/外框（占比） | 修后 上/下留白 |
  * |---|---|---|---|---|
  * | 登录页 `.login-field__input`（9 个；员工面自 issue #7944 起是「用户名 / 企业编码 / 密码」三格） | 26.0 / 49.906（52.1%） | 1.0 / 22.91 | 47.906 / 49.906（96.0%） | 1.0 / 1.0 |
- * | 工人登录页 `.worker-login__input`（4 个） | 22.94 / 47.75（48.0%） | 1.0 / 23.81 | 45.75 / 47.75（95.8%） | 1.0 / 1.0 |
+ * | 工人登录页 `.worker-login-form__input`（3 个；issue #8194 起 = 共享组件 `WorkerLoginForm`，去掉「设备标签」一格） | 22.94 / 47.75（48.0%）※旧页 `.worker-login__input` 读数 | 1.0 / 23.81 | **未重测**（见下） | **未重测** |
  * | 首登强制改密页 `.cp-field__input`（3 个） | 24.47 / 47.75（51.2%） | 1.0 / 22.28 | 45.75 / 47.75（95.8%） | 1.0 / 1.0 |
+ *
+ * ⚠️ **issue #8194 起工人登录页的几何读数标注为「未重测」**（照实登记）：该页重写成共享组件
+ * （外框 96 设计 px / 1px 边框、字号 36 设计 px），几何断言仍是下面同一套（同一全局共享层
+ * `src/styles/input-center.scss` 作用于 `taro-input-core`，与 className 无关）⇒ 该面**照旧受判**，
+ * 读数由 CI 腿的 `[input-center]` 日志打印；红了按日志逐面归因。**不把旧页的读数冒充成新页的**。
  *
  * （上/下留白各 1 CSS px = 各页自己的 1px 边框 —— 内外层之间**没有**任何多余留白，文字在整框里居中。）
  *
  * ## 边界（照实登记，§19.1）
  * - 只判**竖向几何**：颜色 / 观感 / 暗色模式不在判据内，也不做像素基线（与 `bmini-tabbar.spec.ts` 同口径）。
- * - 覆盖「**有显式高度的圆角框**」这一族输入面里的 **3 个页面 / 16 个输入框**（登录页 9 + 工人登录页 4 +
+ * - 覆盖「**有显式高度的圆角框**」这一族输入面里的 **3 个页面 / 15 个输入框**（登录页 9 + 工人登录页 3 +
  *   首登强制改密页 3）—— 它们是**未登录即可到达**的输入面，也是本缺陷的判别面。
  *   ⚠️ **未实测**的输入面（报工页 / 坐席会话详情 / 工人入库 / 工人补打 / WorkerBar / FormCard ——
  *   需要登录态或业务数据才能到达）**不在本腿**；它们靠**同一个全局选择器**（共享样式层作用于
@@ -145,11 +150,12 @@ test.describe('B 端 H5 输入框文字竖向居中（issue #6478）', () => {
 
   test('独立工人登录页（另一个输入面）同样撑满外框且上下留白对称', async ({ page }) => {
     await page.goto(WORKER_LOGIN_PAGE)
-    await expect(page.locator('.worker-login__input').first()).toBeVisible()
+    // issue #8194：本页 = 共享组件 `WorkerLoginForm`（与终端 `/w/` 同一份），输入面 className 随组件走
+    await expect(page.locator('.worker-login-form__input').first()).toBeVisible()
 
-    const readings = await measureAll(page, '.worker-login__input', '工人登录页')
-    // 企业编码 / 工号 / PIN / 设备标签（#6564 起企业编码也在本页）
-    expect(readings.length).toBeGreaterThanOrEqual(4)
+    const readings = await measureAll(page, '.worker-login-form__input', '工人登录页')
+    // 企业编码（向商家索取）/ 工号 / PIN —— `/w/` 没有「设备标签」那一格
+    expect(readings.length).toBeGreaterThanOrEqual(3)
     console.log(`[input-center] 工人登录页读数 ${JSON.stringify(readings)}`)
 
     for (const reading of readings) expectCentered(reading)
@@ -167,5 +173,23 @@ test.describe('B 端 H5 输入框文字竖向居中（issue #6478）', () => {
     console.log(`[input-center] 改密页读数 ${JSON.stringify(readings)}`)
 
     for (const reading of readings) expectCentered(reading)
+  })
+
+  test('报工页未登录的登录卡片在 390px 宽内不横向溢出（issue #8194）', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto('/#/pages/worker/report/index')
+    const card = page.locator('.worker-login-form')
+    await expect(card).toBeVisible()
+    // 视觉验收（2026-10-31）抓到的真形态：卡片默认 content-box + min-width:auto，
+    // 在 390 宽下把右缘顶出视口（副标题被切、输入框/按钮右侧出屏）。
+    const m = await page.evaluate(() => {
+      const el = document.querySelector('.worker-login-form') as HTMLElement
+      const r = el.getBoundingClientRect()
+      return { doc: document.documentElement.scrollWidth, inner: window.innerWidth, right: r.right, width: r.width }
+    })
+    console.log(`[worker-login-card] 390px 读数 ${JSON.stringify(m)}`)
+    expect(m.doc).toBeLessThanOrEqual(m.inner + 1)
+    expect(m.right).toBeLessThanOrEqual(m.inner + 1)
+    expect(m.width).toBeGreaterThan(300)
   })
 })

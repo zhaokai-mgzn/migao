@@ -55,7 +55,7 @@ import {
   SHIPMENT_PAGE_ROUTE,
   STOCK_PAGE_ROUTE,
   WORKER_HOME_LOGIN_REQUIRED,
-  WORKER_TAB_LOGIN_ROUTE,
+  WORKER_LOGIN_ROUTE,
 } from '../../../utils/inbound/gaps'
 import { fetchWorkerPages } from '../../../services/workerService'
 import { listReadyShipmentOrders } from '../../../services/workerShipmentOrdersService'
@@ -162,16 +162,21 @@ export default function WorkerHomePage() {
     }
   }, [worker, showToShip, showRework])
 
-  /** 引导去登录页的**工人入口**（`?tab=worker` 直达第三 tab） */
+  /**
+   * 引导去**工人登录页**（issue #8194）：落在 `pages/worker/login/index` —— 它渲染的是与终端
+   * `/w/` 逐字一致的共享表单 `WorkerLoginForm`，与扫码报工页未登录时就地渲染的是**同一份**。
+   * （三角色登录页的工人 tab 仍是常规入口，本页不再拿它当工人的登录引导。）
+   */
   const goWorkerLogin = useCallback(() => {
-    Taro.navigateTo({ url: WORKER_TAB_LOGIN_ROUTE })
+    Taro.navigateTo({ url: WORKER_LOGIN_ROUTE })
   }, [])
 
   const exitWorker = useCallback(async () => {
     // 先结束服务端 session（幂等），再清本机 —— 只清本机会让下一个人记到上一个人头上
     await workerLogout()
     clearWorkerSession()
-    Taro.redirectTo({ url: WORKER_TAB_LOGIN_ROUTE })
+    // 退出后同样回工人登录页（同一张表单；登录页在页面栈只有自己时会回本页）
+    Taro.redirectTo({ url: WORKER_LOGIN_ROUTE })
   }, [])
 
   return (

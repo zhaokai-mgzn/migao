@@ -1,6 +1,8 @@
 /* 扫码报工页（issue #7812 P2a）—— 车间手机 / PAD：单手可点、触控 ≥44px、弱光高对比。 */
 .worker-report {
   min-height: 100vh;
+  width: 100%;
+  box-sizing: border-box;
   padding: 24px 24px 48px;
   background: #faf7f2;
   display: flex;
@@ -24,10 +26,21 @@
     color: #7e6f57;
   }
 
+  /* 未登录的**就地**登录（issue #8194）：卡片形态由共享组件 `WorkerLoginForm.scss` 承担，
+     这里只是版面容器 —— 不再需要第二层白底/阴影（那会变成「卡中卡」）。 */
+  &__login {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
   &__scan,
   &__card,
-  &__legacy,
-  &__gate {
+  &__legacy {
     background: #fff;
     border-radius: 20px;
     padding: 24px;

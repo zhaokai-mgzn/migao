@@ -46,7 +46,6 @@ import {
   SHIPMENT_PAGE_ROUTE,
   WORKER_HOME_ROUTE,
   WORKER_LOGIN_ROUTE,
-  WORKER_TAB_LOGIN_ROUTE,
 } from './inbound/gaps'
 
 /** 导航形态（守卫据此选正则；**不能**是新造的词 —— 形态本身就是判据的一部分） */
@@ -205,13 +204,18 @@ export const PAGE_ENTRY_LEDGER: PageEntry[] = [
   // 该页是工人报工的**第二份实现**（唯一实现 = `frontend/worker-h5` 的 `/w/`）⇒ 已整页删除，
   // 那条登记随之删掉（台账只许缩短）。`/pages/auth/login/index` 这个**路由**本身仍有活入口
   // （请求层 401 兜底 / 首登改密 / 工人首页的「去登录工人身份」三条，见下与上面两条）。
+  // 🔴 issue #8194：工人首页的「去登录工人身份」（以及「退出工人身份」）改落**工人登录页**
+  // （`pages/worker/login/index`，渲染与终端 `/w/` 逐字一致的共享表单 `WorkerLoginForm`）。
+  // 原「工人首页 → `/pages/auth/login/index`」那条登记随之删掉（台账只许缩短）；三角色登录页
+  // 本身仍有活入口（请求层 401 兜底 / 首登改密），`?tab=worker` 直达保留兼容。
   {
-    route: '/pages/auth/login/index',
+    route: WORKER_LOGIN_ROUTE,
     from: 'src/pages/worker/home/index.tsx',
     nav: 'navigateTo',
-    via: 'WORKER_TAB_LOGIN_ROUTE',
+    via: 'WORKER_LOGIN_ROUTE',
     viaBinding: 'src/utils/inbound/gaps.ts',
-    audience: '工人身份（工人首页读不到当前工人 / 未登录时的「去登录工人身份」）',
+    audience:
+      '工人身份（工人首页读不到当前工人 / 未登录时的「去登录工人身份」；「退出工人身份」走 redirectTo 同一页）',
   },
   // 🔴 issue #6868 实现包 D1：这里原本登记着「工人首页 → 扫码报工」（route = 已删除的
   // `PRODUCTION_PAGE_ROUTE`）—— 报工页整页下架 ⇒ 工人首页的「扫码报工」主按钮是死链，一并删除
