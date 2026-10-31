@@ -11,6 +11,18 @@
 - **改后**：新增 `deploy/scripts/prod-5xx-window.sh`（只读合成探针：审计点名的四面 × N 轮窗口，数 5xx 条数；0=未超阈值 / 1=超阈值 / 3=无法判定）+ `scripts/prod_alert.sh`（**唯一**投递出口：GitHub Issue `priority/P1` 标题去重 + 读数分级指纹去重，webhook 由 `MIGAO_ALERT_WEBHOOK_URL` 可选）。5xx 与证书到期（21 天阈值）都接进既有 `post-merge-verify` 腿（`push: main` / 每日 / 手动三个既有触发面，**不新增 schedule**）；发布失败沿用既有 `[deploy-leg]` 通道。同一事件**只开一条单**，读数分级没变就不再评论。
 - **边界**：全站 5xx 率（nginx access log 口径）与 30s 级外部监控**未覆盖**；短信/电话/邮件直发**未做**（需外部账号）；告警投递失败**不改腿色**（只降级为 `::warning::`，理由与重启条件见 `docs/deployment/observability-minimum.md`）。
 
+### 商品分类页读失败不再假装「还没有分类」（2026-10-31，issue #8200）
+
+- **改前**：`/categories` 的读接口 500 / 断网时只有一个空 `catch`，屏上照印「还没有商品分类 —— 先建一个分类」，
+  与「这个店真的没有分类」逐字相同（拦截器 toast ≈4s 一消失，就只剩这句事实性断言）。
+- **改后**：读失败 ⇒ **常驻**失败面「分类没读到 —— 不是没有分类，是这次没读成功」+「重新加载」；
+  失败时**不渲染**空态，重试真的重发并把结果接上屏（不清零，保留上次成功值）。
+- **类级**：凡渲染共享空态原语 `<EmptyState>` 的文件必须带常驻读失败出口 —— 判据
+  `frontend/admin-web/scripts/read-failure-empty-state-scan.mjs::componentEmptyStateOffenders` +
+  `frontend/admin-web/tests/unit/read-failure-component-empty-state-guard.test.ts`（未登记即红、台账只许缩短）。
+- **边界**：手写空态（不用 `EmptyState`）不在该判据射程；审计 P1-06 另点名的四页
+  （`/products` `/dashboard` `/production` `/orders/[id]`）复核**早已可区分读失败与真空态**，口径未改。
+
 ### 黄金策能回看历史了：过去 N 天提醒过什么，一句话问得出来（2026-10-31，issue #8253）
 
 - **改前**：`briefing_query` 工具只能拿**当日** —— 老板问「上个月你建议我改价，效果如何？」，答不出来（连「提醒过什么」都不知道）。
