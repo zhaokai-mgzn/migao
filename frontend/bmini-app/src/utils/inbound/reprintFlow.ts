@@ -104,6 +104,17 @@ export const LABEL_DETAIL_CALLERS: {
     why: '打印成功后刷新标签详情（短码取自**已过门禁**的 reading，不再经用户输入）',
     gatedByCodeSpace: false,
   },
+  {
+    // issue #8210：库存修正的「拍照识别批次号」——命中入库标签码 ⇒ 读详情拿批次号（0 次 LLM）。
+    // 🔴 门禁**在这一处的上一层**：`utils/workerStockRecognize.ts::runStockRecognize` 先用
+    // `classifyScannedCode` 判码空间，**只有** `space === 'inbound-label'` 的 `shortCode` 才会传进来
+    // （洗水码 / 陌生码在那一步就停住，不会到达本函数）。故这里没有第二道 `classify*Code`。
+    file: 'src/pages/worker/stock/index.tsx',
+    in: 'runRecognize',
+    calls: 1,
+    why: '库存修正的拍照识别：shortCode 已由 runStockRecognize 的 classifyScannedCode 判为入库标签码才会进来',
+    gatedByCodeSpace: false,
+  },
 ]
 
 /** 端侧走了哪条路（`manual-required` = 没解出码 ⇒ 页面必须给手输入口，**不猜单**） */

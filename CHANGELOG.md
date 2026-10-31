@@ -5,6 +5,26 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 工人库存修正支持「拍照识别批次号」：扫标签码优先（0 次 LLM）→ OCR 兜底 → 手输（2026-10-31，issue #8210）
+
+改前：工人修正在手机上只能**手输**批次号（14 位 `PC-yyyyMMdd-NNNN`），车间光照差 / 标签小 / 布卷在地上 ⇒ 抄错一位就搜不到，甚至搜到别的批次。
+
+改后：修正页多一个「拍照识别批次号」入口，三段优先级：
+
+1. **拍我们自己的入库标签** ⇒ 本机解二维码（jsQR）→ 按短码读标签详情拿批次号，**0 次 LLM**；
+2. **只有批次号文字**（供应商原标签 / 码磨花）⇒ 拍照上传 → ai-agent vision 新 target `batch`，
+   只认 `PC-yyyyMMdd-NNNN`（阈值 0.90 + 形状硬闸含日期成立）⇒ 认不准就留空；
+3. 都失败 ⇒ 照旧**手输**（不静默、不拿「最近入库的批次」凑一个）。
+
+认出批次号后自动定位到**那一批**并打开修正面板；**提交仍是工人的动作**（填实盘米数 + 选原因 + 二次确认）。
+定位用既有搜索读面按批次号**精确**比对（`PC-…-0001` 不会被 `PC-…-00011` 冒充）；未过账的标签如实说「还没有批次号」，不退回 OCR 去猜。
+
+- 新增端点：`POST /api/worker/batch-stock/recognize`（工人 session；图先走既有 `POST /api/worker/inbound/upload`）。
+- 库存写面**零新增**：修正仍走 `BatchStocktakeService#stocktake`（批次分录 + SKU 库存同事务）。
+- 判据：`backend/ai-agent-service/tests/test_vision/test_targets.py` / `test_recognizer.py`（形状硬闸）、
+  `WorkerBatchStockControllerTest` / `WorkerBatchStockServiceTest`、
+  `frontend/bmini-app/tests/worker-stock-recognize.test.ts`（扫码优先 ⇒ 假服务端计数为 0）/ `worker-stock-page.test.tsx`。
+
 ### 小程序扫码报工未登录 ⇒ **就地登录**，表单与终端 `/w/` 逐字一致（2026-10-31，issue #8194）
 
 - **改前**：新手机第一次扫纸上的码（`/s/<短码>` → 302 → `/b/?t=<token>`）时本机没有工人身份，

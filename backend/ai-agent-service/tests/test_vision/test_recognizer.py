@@ -639,3 +639,60 @@ class TestReferenceOnlyFields:
         """登记表 ⇄ 字段表：声明了的键必须真实存在（否则是死声明，永远不会有行为）。"""
         for target, keys in REFERENCE_KEYS.items():
             assert set(keys) <= {f.key for f in TARGET_FIELDS[target]}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 批次侧：批次号的**形状硬闸**（issue #8210）
+# ══════════════════════════════════════════════════════════════════════════════
+def batch_cell(value, confidence=0.95, reason=None):
+    """跑一遍**真** `extract_fields`（不直接调私有函数），把批次号那一格取出来。"""
+    payload = json.dumps({"fields": {"batch_no": {
+        "value": value, "confidence": confidence, "reason": reason}}})
+    return extract_fields("batch", payload)[0]
+
+
+class TestBatchNoHardGate:
+    """批次号形状硬闸（放在置信度闸**之前** —— 与手机号 / 尺寸 / 实发数量同族）。
+
+    为什么必须有这道闸：`PC-20261031-0001` 的每一段都是**定长定形**的。
+    一个「很自信地抄错」的批次号（漏一段流水 / 少一位日期 / 抄成旧系统号）如果放行，
+    下游会**定位不到批次**（搜出来 0 行）——工人只会觉得「系统坏了」，错误被当成正常；
+    更糟的是「恰好命中另一个批次」，那会**改错那一卷布的账**。
+    """
+
+    def test_lowercase_and_spaces_are_normalised_then_accepted(self):
+        # 标签印的是大写；模型偶尔回小写 / 带空格 ⇒ 归一成规范形态再采纳（不猜、不改数字）
+        cell = batch_cell("pc-2026 1031-0001")
+        assert cell["value"] == "PC-20261031-0001"
+        assert cell["source"] == FIELD_MARKER
+        assert cell["reason"] is None
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            "PC-2026-001",          # 日期段少两位
+            "PC-20261031-1",        # 流水段少三位
+            "20261031-0001",        # 丢了 PC- 前缀
+            "PC202610310001",       # 没有分隔符
+            "批次A12",              # 旧系统批次号 / 手写标记（不是本系统号）
+            "PC-20261331-0001",     # 日期本身非法（13 月）—— 形态过闸但日期不成立
+        ],
+    )
+    def test_bad_shape_is_left_empty_with_an_actionable_reason(self, raw):
+        cell = batch_cell(raw)
+        assert cell["value"] is None
+        assert cell["source"] is None
+        # 理由必须**可行动**（说清是什么形态、让人去手输）—— 空理由等于让工人猜
+        assert "PC-" in (cell["reason"] or "")
+        assert "手输" in (cell["reason"] or "")
+
+    def test_confidence_below_threshold_is_left_empty(self):
+        cell = batch_cell("PC-20261031-0001", confidence=0.85)
+        assert cell["value"] is None
+        assert "阈值" in (cell["reason"] or "")
+
+    def test_reference_is_never_carried_for_batch_no(self):
+        """批次号不进 `REFERENCE_KEYS`：它唯一的消费方是「定位批次」，原文带出去没有安全出口
+        （与订单 `items` 的「只用来查目录 + 商家点选」不同）。"""
+        cell = batch_cell("PC-2026-001", confidence=0.95)
+        assert cell["reference"] is None

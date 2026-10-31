@@ -1593,9 +1593,9 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-10-27 新增（issue #7944）：用户要求手机端登录记住企业编码 + 员工账号拆两格固定 `@`。口径 = 企业编码按登录面分开记住（员工面 / 工人面）、只在成功登录后写、退出登录不清；`@` 是静态文本不用输入；旧版整串标识按最后一个 `@` 拆开迁移；🔴 issue #6478 的凭据红线**一格不放宽**（密码 / PIN / 验证码仍绝不落盘）。口径替换（用户口述「让浏览器记录」→ 仓内既有 localStorage 约定）已写进 CHANGELOG 与 PR body。取号说明：scripts/next_case_id.py 现取最小空闲号返回 BM-007，但该号是 issue #6868 退役用例（PR #6877 删除）的墓碑号，复用会让历史引用（原 BM-007 = 部位规格行）指错 ⇒ 本包取现取最大号 + 1 = BM-055，理由与命令登记在本 PR body。 ｜ tags: bmini, auth, login, ux
 
-### BM-056. 工人端库存修正 - 手机/APK 按批次把余量改成实盘米数（复用按批次盘点唯一写面 + 幂等 + 台账可答「谁/为什么」） 🔵
+### BM-056. 工人端库存修正 - 手机/APK 按批次把余量改成实盘米数（拍照识别批次号：标签码 0 次 LLM 优先 + OCR 兜底 + 手输；复用按批次盘点唯一写面 + 幂等 + 台账可答「谁/为什么」） 🔵
 ```
-你: 工人（工号 + PIN 登录后）在工作台点「库存修正」→ 搜批次（批次号 / 货号 / 缸号 / 入库单号任一段，空关键词 = 最近入库）→ 看到系统余量 → 选中该批 → 填实盘米数（例如系统说 45.5 米、实盘 42 米）+ 选原因（数量记错了 / 破损报废 / 报工选错批次 / 其他）→ 二次确认「系统 45.5 米 → 实盘 42 米」→ 提交 → 回执显示盘前 / 实盘 / 差异 / 盘后
+你: 工人（工号 + PIN 登录后）在工作台点「库存修正」→ 搜批次（批次号 / 货号 / 缸号 / 入库单号任一段，空关键词 = 最近入库）→ 或点「拍照识别批次号」（拍标签：有我们的二维码 ⇒ 本机解码按短码读批次号，0 次 LLM；只有批次号文字 ⇒ 走 OCR，取严档 0.90 且形状必须是 PC-yyyyMMdd-NNNN）→ 认出后自动定位到那一批 → 看到系统余量 → 选中该批 → 填实盘米数（例如系统说 45.5 米、实盘 42 米）+ 选原因（数量记错了 / 破损报废 / 报工选错批次 / 其他）→ 二次确认「系统 45.5 米 → 实盘 42 米」→ 提交 → 回执显示盘前 / 实盘 / 差异 / 盘后
 期望: direct_reply
 数据: 判据 1·**未登录零读写**：无工人 session ⇒ 两个端点都 401，服务层零调用；页面只渲染引导 + 去登录（`WORKER_LOGIN_ROUTE`）。红证：摘掉 gate ⇒ `tests/worker-stock-page.test.tsx` ① 红；控制器侧 = `WorkerBatchStockControllerTest` ①（无 session ⇒ 401 且 `verify(never())`）
 数据: 判据 2·**复用唯一写面（不是第二套库存逻辑）**：本类不写任何表，只调 `BatchStocktakeService#stocktake`，参数逐值钉住（tenant 来自会话上下文、productId 由批次行解析、runId = `wc-<client_request_id>`、实盘行、审计来源）。红证：把 productId 改成请求体自带 ⇒ `WorkerBatchStockServiceTest` ① 的 ArgumentCaptor 断言红
@@ -1607,10 +1607,11 @@
 数据: 判据 8·**端侧幂等键语义**：同一份输入重试 ⇒ 复用同一个 `client_request_id`；改了米数 / 原因 / 备注 ⇒ 换新键（否则服务端按回放处理，静默不落账）。红证：每次提交都新生成 ⇒ `tests/worker-stock-page.test.tsx` ⑦ 红
 数据: 判据 9·**入口可达 + 写入口台账 + 视觉形态**：`pages/worker/stock/index` 登记进 `app.config.ts` 且工人首页有**真导航**（漏登记 = 死链 ⇒ `page-entry-reachability` 红）；`submitBatchCorrection(` 登记进工人写入口台账（未登记即红，且必须命中身份分流 + 引导登录记号）；新页 `__gate` 卡片有可见边界、页面有非白底色（`worker-card-contrast-guard`）
 数据: 判据 10·**菜单开关可设**：`WorkerPages.STOCK = stock` 进闭词表与默认集合，商家后台「设置工人端菜单」能看到「库存修正」（目录端点 `labels.stock`）；`/w/` 的闭词表镜像同批更新（`worker-h5-pages` 逐值比对）。红证：只改后端不改镜像 ⇒ `frontend/worker-h5/tests/worker-h5-pages.test.mjs` 红
-跳过: [backend-contract] 确定性判据（maven: WorkerBatchStockControllerTest / WorkerBatchStockServiceTest / WorkerPagesTest / WorkerPageCatalogControllerTest；jest: worker-stock-page / worker-stock / page-entry-reachability / worker-surface-ledger / worker-card-contrast-guard；node: worker-h5-pages），非 LLM 行为，不进入 agent-eval 冒烟
+数据: 判据 11·**拍照识别批次号（issue #8210）三段式**：① 标签二维码命中 ⇒ 本机解码 + 按短码读详情，**0 次 LLM**（`upload` / `recognize` 零调用）；② 解不出码 ⇒ 上传后走 ai-agent vision（target `batch`，阈值 0.90，批次号形状硬闸 `^PC-\d{8}-\d{4}$` 且日期成立）；③ 都失败 ⇒ **手输出路**（不静默）。认出后用**既有**搜索面按批次号**精确**定位（`PC-...-0001` 不得被 `PC-...-00011` 冒充）；同号多行交工人点选；0 行 ⇒ 明说「没找到批次 X」。识别**不落库、不提交**（提交仍是工人填实盘数 + 二次确认）。红证：把 vision 排到扫码前 ⇒ `frontend/bmini-app/tests/worker-stock-recognize.test.ts` ① 的假服务端计数红；放行坏形状 ⇒ `backend/ai-agent-service/tests/test_vision/test_recognizer.py::TestBatchNoHardGate` 红
+跳过: [backend-contract] 确定性判据（maven: WorkerBatchStockControllerTest / WorkerBatchStockServiceTest / WorkerPagesTest / WorkerPageCatalogControllerTest；jest: worker-stock-page / worker-stock / worker-stock-recognize / page-entry-reachability / worker-surface-ledger / worker-card-contrast-guard；pytest: tests/test_vision/test_targets.py + test_recognizer.py；node: worker-h5-pages），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: batch-stocktake.worker-correction
-溯源: 2026-10-29 新增（issue #8104）：用户逐字「手机端还要增加一个库存修正的功能，apk程序也要同步增加这个功能，允许工人对某个批次的布匹进行修正」。形态 = bmini 新页 `pages/worker/stock/index`（手机 `https://app.migaozn.com/b/` 与 APK 观星台终端加载的同一份 `/b/` 页面 ⇒ APK 无需重打包，菜单随页面发布出现）。服务端 = `/api/worker/batch-stock/{batches,correction}`，**复用**按批次盘点的唯一写面（不新造第二套库存逻辑、不新增迁移）。边界：不做盘点单（无单号/审批/打印）；一次提交只改一个批次；不新增批次来源 reason（工人修正 = 实盘为准，沿用 `reason=stocktake`，如需在台账上把「工人修正 / 商家盘点」分列 ⇒ 另开迁移单）；小程序发版是人工环节（#7806：合并 ≠ 用户手机已是新版，`/b/` H5 腿自动发布）。 ｜ tags: bmini, worker, stock, batch-stocktake, idempotency
+溯源: 2026-10-29 新增（issue #8104）：用户逐字「手机端还要增加一个库存修正的功能，apk程序也要同步增加这个功能，允许工人对某个批次的布匹进行修正」。形态 = bmini 新页 `pages/worker/stock/index`（手机 `https://app.migaozn.com/b/` 与 APK 观星台终端加载的同一份 `/b/` 页面 ⇒ APK 无需重打包，菜单随页面发布出现）。服务端 = `/api/worker/batch-stock/{batches,correction}`，**复用**按批次盘点的唯一写面（不新造第二套库存逻辑、不新增迁移）。边界：不做盘点单（无单号/审批/打印）；一次提交只改一个批次；不新增批次来源 reason（工人修正 = 实盘为准，沿用 `reason=stocktake`，如需在台账上把「工人修正 / 商家盘点」分列 ⇒ 另开迁移单）；小程序发版是人工环节（#7806：合并 ≠ 用户手机已是新版，`/b/` H5 腿自动发布）。 2026-10-31 追加（issue #8210；用户逐字「移动端……通过拍照来识别批次号」）：加识别入口 `POST /api/worker/batch-stock/recognize`（工人 session，复用 `POST /api/worker/inbound/upload` 上传腿）+ ai-agent 新 vision target `batch`（一格 `batch_no`，阈值 0.90，形状硬闸在置信度闸之前）；端侧顺序 = 扫标签二维码（0 次 LLM）→ OCR 兜底 → 手输，认出后按批次号精确定位到**既有**修正页。边界：不新增库存写面 / 不新增 reason 族 / 不新增迁移；未过账标签**不退回 OCR 猜**；旧系统批次号不认（手输）。 ｜ tags: bmini, worker, stock, batch-stocktake, idempotency
 
 ### BM-057. 小程序工人登录 = 终端 /w/ 同一份表单 - 扫码报工页未登录就地登录（不跳三角色登录页），工人首页入口复用同一组件 🔵
 ```
