@@ -84,11 +84,16 @@ export default function ErrorFallback({
           重试
         </Button>
         {/* 用原生 <a>（**不是** next/link）：错误页上 SPA router 可能已经坏了，
-            整页跳转是最后一条可靠出口。 */}
+            整页跳转是最后一条可靠出口。
+            ⚠️ **不手拼控件铬**（`h-9` + `rounded-lg` + `border-neutral-300` 三位一体）：
+            `tests/unit/design-system-form-fields.test.tsx` 的「控件铬只许住在共享原语里」会判红
+            （业务面自拼一份 = 第二套设计语言；存量台账**只许缩短** ⇒ 不许加条目）。
+            故回入口渲染成**文字链接**（原生 `<a href>`，无边框/底色/padding），
+            主操作只留「重试」一个按钮 —— 动作层级清楚，也不与共享原语分叉。 */}
         <a
           href={homeHref}
           data-testid="error-home"
-          className="inline-flex h-9 items-center justify-center whitespace-nowrap rounded-lg border border-neutral-300 bg-white px-4 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50"
+          className="text-sm font-medium text-primary-600 underline-offset-4 transition-colors hover:text-primary-700 hover:underline focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
         >
           {homeLabel}
         </a>
