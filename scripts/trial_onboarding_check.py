@@ -257,6 +257,10 @@ def check_tenant_binding(
     `reportPageLocation()` 拼的是 `/b/report/?t=<token>&tenant_id=…&tenant_code=…`
     ⇒ 这是零凭据、零写入就能读到的**唯一**归属证据（`/s/<码>/json` 面上**故意**没有 tenant_code）。
     """
+    if not enterprise_code:
+        # 没有企业编码就没有比较基准 ⇒ 这一条**判定不了**（缺配置是 3，不是缺陷 1）
+        report.add("tenant-binding", UNKNOWN, "缺 --enterprise-code ⇒ 没有归属基准，无法核这张码属于谁")
+        return
     probes = [("worker", "/s/", worker_code), ("order", "/o/", order_code)]
     usable = [(label, prefix, code) for label, prefix, code in probes if code]
     if not usable:

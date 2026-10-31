@@ -356,6 +356,13 @@ def test_unknown_when_enterprise_code_is_absent_but_static_faces_still_judged(st
     assert "enterprise-code" in out.stdout
 
 
+def test_unknown_when_enterprise_code_absent_even_with_a_worker_code(stub):
+    """缺企业编码时即便给了纸上短码也判 3 —— **缺配置不许变成「缺陷」（1）**，方向不能反。"""
+    out = _run(stub, "--worker-code", WORKER_CODE)
+    assert out.returncode == 3, f"缺企业编码必须退 3，实测 {out.returncode}\n{out.stdout}"
+    assert "tenant-binding" in out.stdout and "没有归属基准" in out.stdout
+
+
 def test_unknown_when_unreachable():
     """判据 12：连不上 ⇒ rc=3（不是 0、也不是 1）。"""
     out = _run("http://127.0.0.1:1", "--enterprise-code", ENTERPRISE_CODE)
