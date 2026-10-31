@@ -288,6 +288,15 @@ OPTIONS_BASIS = (
     "行业常见做法，**不是**对具体店铺的建议；每条都需人工判断后再执行"
 )
 
+#: 试调价的固定步长（选项表是**确定性规则表** ⇒ 不做参数化，同一行永远同一组数）
+PRICE_UP_STEP = Decimal("0.05")
+
+#: 金额自述（纪律 2：别让「给定情景的算术」被读成「预测」）
+MONEY_BASIS = (
+    "金额 = 给定情景下的**算术**，不是预测：成本未知的行不算钱（未知 ≠ 0）；"
+    "调价只算「每件多赚多少」—— 销量会怎么变我们没有**价格弹性**数据，不猜"
+)
+
 _COST_LOW = ("low", "低成本：只看数据 / 改文案")
 
 _OPTIONS: Dict[str, Dict[str, List[Dict[str, Any]]]] = {
@@ -340,6 +349,8 @@ _OPTIONS: Dict[str, Dict[str, List[Dict[str, Any]]]] = {
                 "cost_note": "调价影响转化，需盯销量",
                 "reversible": True,
                 "verify": "两周内该 SKU 的销量与毛利双向变化；只涨毛利不涨销量的价格要慎用",
+                # 唯一能算钱的选项：+5% 每件多赚多少（见 _option_money）
+                "money_kind": "price_step",
             },
         ],
         VERDICT_WATCH: [
@@ -353,6 +364,58 @@ _OPTIONS: Dict[str, Dict[str, List[Dict[str, Any]]]] = {
         ],
     },
 }
+
+
+def _money(row: Dict[str, Any], margin_baseline: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """权衡的刻度（issue #8276）—— 「这批货压了多少钱 / 离同行差多少 / 每件多赚多少」。
+
+    🔴 三条不许：
+    · **成本未知不许当 0**：`stock_value = None` + 自述 `cost_unknown`。把未知写成 0 等于
+      说「这批货不占钱」，与事实**正好相反**（注入式红证见 `test_unknown_cost_is_not_zero_capital`）。
+    · **不乘销量**：`sales_count` 的周期口径在快照契约里没标注，乘上去就是编
+      （红证见 `test_price_step_does_not_multiply_by_sales_count`）。
+    · **不给「建议价」**：没有弹性数据，只算「+5% 这个情景下每件多赚多少」。
+    """
+    stock = _dec(row.get("stock"))
+    price = _dec(row.get("price"))
+    cost = _dec(row.get("avg_cost"))
+    margin = _dec(row.get("gross_margin"))
+
+    if cost is None:
+        stock_value, value_basis = None, "cost_unknown"
+    elif stock is None:
+        stock_value, value_basis = None, "stock_unknown"
+    else:
+        stock_value, value_basis = stock * cost, "stock × avg_cost"
+
+    peer_median = _dec((margin_baseline or {}).get("peer_median"))
+    gap = (peer_median - margin) if (margin is not None and peer_median is not None) else None
+
+    return {
+        "stock_value": _out(stock_value),
+        "stock_value_basis": value_basis,
+        # 正数 = 每件比同行中位**少赚**这么多（方向写反是最难发现的错）
+        "margin_gap_per_unit": _out(gap),
+        "margin_gap_basis": (
+            "peer_median − 本行毛利；正数 = 每件比同行中位少赚"
+            if gap is not None
+            else "基线样本不足（< 最小样本量）或本行毛利未知 ⇒ 算不出差额"
+        ),
+        "price_up_5pct_per_unit": _out(price * PRICE_UP_STEP) if price is not None else None,
+    }
+
+
+def _option_money(row: Dict[str, Any], money_kind: str) -> Optional[Dict[str, Any]]:
+    """选项层面的钱：**算得出才给**（算不出的不给字段，而不是给 0）。"""
+    if money_kind != "price_step":
+        return None
+    price = _dec(row.get("price"))
+    if price is None:
+        return None
+    return {
+        "per_unit": _out(price * PRICE_UP_STEP),
+        "premise": "销量不变假设下每件多赚这么多；销量会怎么变没有弹性数据（不猜）",
+    }
 
 
 def _next_options(row: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
@@ -374,7 +437,14 @@ def _next_options(row: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
             if key in seen:
                 continue
             seen.add(key)
-            options.append({**option, "metric": metric, "for_verdict": verdict})
+            entry = {**option, "metric": metric, "for_verdict": verdict}
+            money_kind = option.get("money_kind")
+            impact = _option_money(row, money_kind) if money_kind else None
+            if impact is not None:
+                entry["money_impact"] = impact
+            # 内部标记不外泄（它是规则表的元数据，不是给调用方看的）
+            entry.pop("money_kind", None)
+            options.append(entry)
     return options or None
 
 
@@ -674,6 +744,8 @@ def product_health(
             row.get("gross_margin"), margin_baseline, absolute_bad=True
         )
         # 「然后呢？」—— 只给有问题的行（issue #8251）
+        # 权衡的刻度（issue #8276）：钱是**事实**，所以 good 行也给；选项才是建议
+        row["money"] = _money(row, margin_baseline)
         row["next_options"] = _next_options(row)
 
     row_meta = snapshot.get("row_meta") if isinstance(snapshot, dict) else None
@@ -694,6 +766,7 @@ def product_health(
         "baselines": baselines,
         "baseline_basis": BASELINE_BASIS,
         "options_basis": OPTIONS_BASIS,
+        "money_basis": MONEY_BASIS,
         "basis": {
             "stock_authority": STOCK_AUTHORITY,
             "sales_authority": STOCK_AUTHORITY,
@@ -707,5 +780,6 @@ def product_health(
             ),
             "gross_margin_verdict": "毛利 < 0 ⇒ bad（绝对判据）；否则同 return_rate_verdict 的分档",
             "next_options": OPTIONS_BASIS + "；只给 bad / watch 行，good 与 unknown 不给",
+            "money": MONEY_BASIS + "；stock_value = stock × avg_cost（压货占用资金）",
         },
     }

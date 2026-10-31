@@ -344,6 +344,19 @@ def render_view_result(view: str, snapshot: Dict[str, Any], context: ToolContext
         )
     else:
         message += "。退货率样本不足（少于 5 个有效 SKU），本次不给出好坏判断"
+    # 权衡的刻度（issue #8276）：钱不进 message，模型只会念「8 个 SKU」——
+    # 「这批货压了多少钱」是老板看第一眼就想知道的数，必须自己说出来。
+    stocked = [row for row in result["rows"]
+               if row.get("money", {}).get("stock_value") is not None]
+    if stocked:
+        total_value = sum(row["money"]["stock_value"] for row in stocked)
+        no_value = sum(1 for row in result["rows"]
+                       if row.get("money", {}).get("stock_value") is None)
+        message += f"。这些 SKU 压着的库存成本合计约 {total_value:,.2f} 元（stock × 成本价）"
+        if no_value:
+            # 🔴 「算不出来」不是「不占钱」—— 必须说清哪部分是盲区
+            message += f"；另有 {no_value} 个 SKU 成本未知 ⇒ 这部分的资金占用**算不出来**（不是 0）"
+
     unknown_cost = result["unknown_cost_rows"]
     if unknown_cost:
         # 关键口径：成本未知**不是**毛利 0 —— 不许让模型把「读不到」说成「成本为零」

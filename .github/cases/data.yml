@@ -1101,3 +1101,35 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: DA-033
+    legacy_id: ""
+    title: "权衡补刻度：压货资金 / 离同行差多少 / 每件多赚多少（未知不当 0、不乘销量、不做预测）"
+    domains:
+      - data
+    tier: normal
+    tags:
+      - proactive
+      - briefing
+      - decision
+      - money
+    truths_ref: []
+    user_inputs:
+      - "我这批货压了多少钱？把毛利低的调一调，一件能多赚多少？"
+    expectations: []
+    data_checks:
+      - "行内 `money`：`stock_value`（= stock × avg_cost，压货占用资金）/ `stock_value_basis` / `margin_gap_per_unit`（= peer_median − 本行毛利，**正数 = 比同行少赚**）/ `margin_gap_basis` / `price_up_5pct_per_unit`（= price × 5%）。顶层 `money_basis`。"
+      - "🔴 **成本未知不许当 0**：`avg_cost IS NULL` ⇒ `stock_value = None` + `stock_value_basis = \"cost_unknown\"`。写成 0 等于说「这批货不占钱」，与事实正好相反。红证：把 `None` 换成 `Decimal(0)` ⇒ `test_unknown_cost_is_not_zero_capital` 必红；恢复 ⇒ 16 passed。"
+      - "🔴 **每件增量不许乘销量**：`sales_count` 的周期口径在快照契约里没标注，乘上去就是编。红证：把 `price_up_5pct_per_unit` 改成 `price × 5% × sales_count` ⇒ `test_price_step_does_not_multiply_by_sales_count` 必红（同价格不同销量必须给出相同的每件增量）。"
+      - "**方向断言双向**：比同行差 ⇒ `margin_gap_per_unit > 0`；比同行好 ⇒ `< 0`。方向写反是最容易犯又最难发现的错，所以正负两种行都断言。"
+      - "**钱是事实、选项是建议**：`good` 行**不给选项**（P3 纪律不变）但**照样给钱**（`stock_value` 照出）—— 「这批货压了 5000 元」对好卖的 SKU 同样是事实。"
+      - "**选项带钱只给算得出的**：「小范围试调价 +5%」带 `money_impact.per_unit` + `premise`（前提必须写出来：销量不变假设）；算不出的选项**不给字段**，而不是给 0。"
+      - "工具层 `message` 必须带「库存成本合计约 X 元」+ 成本未知部分「**算不出来**（不是 0）」—— message 是模型的唯一摘要，钱不进 message 等于不存在。"
+    skip_reason: "[backend-contract] 纯确定性视图判据（零 LLM）：`product_health` 是纯函数、规则表，不进 agent-eval；判据 = backend/ai-agent-service/tests/test_briefing_product_health_money.py（16 条，含两条注入式红证 + 工具层摘要断言）"
+    merge_log: "2026-10-31 新增（issue #8276）：第 6 层「权衡」从等级补到金额。**未覆盖面（如实登记）**：① **价格弹性 / 销量预测**（第 7 层「推演」的事，需要历史成交 + 回归）；② 「清仓能回收多少」——属不可逆动作，P3 明确不进选项表，需业务裁定；③ **多目标优化求解**（本单只给刻度、不给排序：回收现金与保毛利不能互相换算，AI 排序就是替老板做他没授权的价值判断）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_briefing_product_health_money.py"
+      ci:
+        - pr-check.yml
+      verifies: []
