@@ -183,7 +183,7 @@ python3 -m pytest tests/unit_ci_workflows/test_synthetic_probe.py -q
 cd backend/admin-api && ./mvnw test -Dtest=ClientErrorControllerTest -q
 
 # ai-agent /version 三态
-cd backend/ai-agent-service && python3 -m pytest tests/test_version_probe.py -q
+python3 -m pytest backend/ai-agent-service/tests/test_version_probe.py -q
 
 # 前端上报器 / 错误页出口
 cd frontend/admin-web && npx vitest run tests/unit/lib/clientErrorReporter.test.ts \
