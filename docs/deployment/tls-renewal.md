@@ -24,7 +24,7 @@
 | **它每天在失败** | `/var/log/certbot-renew.log` 每天重复两条：① `api.migaozn.com` lineage：`None of the preferred challenges are supported by the selected plugin`；② `migao` lineage：`Some challenges have failed.` |
 | **失败没有告警** | 失败只写进上面那个日志文件，没有任何判红 / 值班面 —— 所以「没续上」这件事可以一直静默到证书过期 |
 | 仓内**确实**没有到期判据 | `deploy/swas/deploy.sh` 无到期检查；`.github/workflows` 无续期腿（本单之前） |
-| `admin.migaozn.com` **没有 A 记录** | `dig +short admin.migaozn.com` 空；其余 7 个 SAN 都解析到 `121.40.28.213` ⇒ 主证书的 HTTP-01 对 `admin` **必失败** ⇒ **整张证书续期失败** |
+| `admin.migaozn.com` **没有 A 记录** | `dig +short admin.migaozn.com` 空；其余 7 个 SAN 都解析到 `121.40.28.213` ⇒ 主证书的 HTTP-01 对 `admin` **必失败** ⇒ **整张证书续期失败**。✅ **2026-10-31 已按路径 ② 重签去掉**（证书只剩 7 个可解析 SAN，见 §3「执行记录」） |
 | 陈旧 lineage `api.migaozn.com` | 到期 **2026-11-12**；renewal conf 是 `authenticator = manual` + `pref_challs = dns-01`（+ `/root/certbot-auth.sh`），与 cron 全局的 `--webroot` **冲突** ⇒ 每天一条必然失败；**nginx 并未使用它**（nginx 全站用 `live/migao/fullchain.pem`） |
 
 ⇒ 结论：**不是「没有机制」，是「机制坏了、而且坏了没人知道」**。本单交付 = 判据（把到期变成可见的红）
@@ -58,7 +58,7 @@ bash deploy/scripts/tls-expiry-check.sh --warn-days 30
 `certbot` 的两条 lineage 读数（`TLS_LINEAGE …`）**只做诊断，不改变退出码** —— 未被 nginx 使用的
 lineage 到期不影响四域 HTTPS，但它会让每天的 `certbot renew` 整条跑失败（见 §5）。
 
-## 3. 一次性修复：**已裁定走路径 ②**（2026-10-31），路径 ① 保留给「以后 admin 要用时」
+## 3. 一次性修复：**已裁定走路径 ②**（2026-10-31）**并已执行完毕**，路径 ① 保留给「以后 admin 要用时」
 
 > 根因 = `migao` 证书的 SAN 里有 `admin.migaozn.com`，而该域名**没有 A 记录** ⇒ HTTP-01 必失败。
 > **用户已于 2026-10-31 裁定：走路径 ②**（重签、去掉 `admin`、保留 7 个可解析 SAN）。
@@ -67,7 +67,7 @@ lineage 到期不影响四域 HTTPS，但它会让每天的 `certbot renew` 整�
 ### 路径 ②（**已裁定，先跑这条**）：重签，只带 7 个可解析 SAN（去掉 `admin`）
 
 ```bash
-# 在服务器上、/opt/migao-deploy 目录下执行（一次性动作；本单未执行，执行权在人）
+# 在服务器上、/opt/migao-deploy 目录下执行（一次性动作；**2026-10-31 已由用户授权、经 aliyun CLI 在宿主执行完毕**，结果见下方「执行记录」）
 cd /opt/migao-deploy
 certbot certonly --cert-name migao \
   --webroot -w /opt/migao-deploy/certbot-www \
@@ -110,6 +110,29 @@ bash /opt/migao-deploy/tls-renew.sh --dry-run
 # ③ 判据：四域应该都 status=ok
 bash deploy/scripts/tls-expiry-check.sh; echo "rc=$?"
 ```
+
+> ⚠️ 服务器上**没有** `/opt/migao-deploy/tls-renew.sh`（本仓脚本未同步到宿主）时，② 改用
+> `certbot renew --dry-run`（语义等价：走 staging、不换生产证书）。
+
+### 执行记录（2026-10-31 已跑完 · 直接读数）
+
+| 项 | 读数 |
+|---|---|
+| 宿主 | SWAS `b23c69e599524b1da719734f72e6a0e3`（`iZbp1421ocyirzm131owhyZ`，`121.40.28.213`），certbot 1.23.0 |
+| 执行通道 | 用户 2026-10-31 授权「通过 aliyun CLI 去操作」⇒ `aliyun swas-open run-command`（云助手），非 SSH |
+| 备份 | `/root/letsencrypt-backup-20261031T112340Z.tar.gz`（59,453 B，整份 `/etc/letsencrypt`） |
+| 陈旧 lineage | `/etc/letsencrypt/renewal/api.migaozn.com.conf` → `/etc/letsencrypt/renewal-disabled/api.migaozn.com.conf.20261031T112340Z`（**只停续期，不删证书**；nginx 从未用它） |
+| 重签 | `certbot certonly --cert-name migao --webroot ... --expand --force-renewal -d`（7 域）⇒ `CERTBOT_RC=0` |
+| 新证书 | `notAfter=Jan 29 10:25:18 2027 GMT`（90 天）；SAN = `ai-api/api/app/merchant/migaozn/ops/www` ⇒ **7 个，无 `admin`** |
+| reload | `docker compose exec -T nginx nginx -t` 通过 → `nginx -s reload`（`signal process started`；**未 restart**） |
+| 判据 | `TLS_EXPIRY_SUMMARY rc=0 checked=7 ok=7 expiring=0 expired=0 mismatch=0 unknown=0 threshold_days=21`（`days_left=89`） |
+| 外部复探 | 7 个域名 `openssl s_client` 全部返回新证书；`api/api/version`、`ai-api/health`、`/b/`、`/w/`、`merchant/login`、`/`、`/download` 全 200 |
+| 安全头回归 | `PROD-HEADERS-SUMMARY rc=0 failed=0 unknown=0 probed=7` |
+| 续期通路证明 | `certbot renew --dry-run`（后台跑，2026-10-31 19:32→19:34 CST）⇒ `DRYRUN_RC=0` + `Congratulations, all simulated renewals succeeded` ⇒ **7-SAN + webroot 的续期通路真的能过**，不是只看配置猜 |
+| 仍未做 | 宿主 cron 仍是旧条目（`certbot renew --quiet ... --post-hook 'docker compose restart nginx'`，无失败告警、用 restart 而非 reload）⇒ §4 的加固**未执行**（改生产 cron 属另一动作，未经授权不动） |
+
+> 续期窗口：新证书 2027-01-29 到期 ⇒ 宿主 cron 会在 **2026-12-30 前后**开始真续（`renew_before_expiry = 30 days`）。
+> 在那之前，P0-04 的每日 TLS 判据（21 天阈值）不会再误报；若那时 cron 仍失败，`post-merge-verify` 的告警会自己开单。
 
 ## 4. cron 加固（把「整断」换成 reload + 可观测）
 

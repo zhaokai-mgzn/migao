@@ -1,6 +1,6 @@
 # 生产环境部署方案（未来）
 
-> 状态：**设计文档**。当前生产部署目标为测试环境（单台 SWAS：api.migaozn.com / ai-api.migaozn.com / admin.migaozn.com），
+> 状态：**设计文档**。当前生产部署目标为测试环境（单台 SWAS，一张 7-SAN 证书覆盖 migaozn.com / www / api / ai-api / app / merchant / ops；`admin.migaozn.com` 无 A 记录，已于 2026-10-31 从证书移除），
 > 自动部署已足够。本页定义**未来正式生产环境**的部署与发布方案。
 > 关联：`deploy-prod.yml`（生产发布工作流）、[rollback.md](rollback.md)、[CI-CD.md](../wiki/CI-CD.md)。
 

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # TLS 证书到期检查（**只读**；issue #8201）
 #
-# 为什么要它：四个域名共用一张 Let's Encrypt 证书（CN=migaozn.com，SAN 含
-# admin/ai-api/api/app/merchant/migaozn/ops/www），而**仓内没有任何到期判据** ——
-# 2026-11-27 到期这件事只能靠人去跑 openssl 才知道（本单的起点就是这么发现的）。
+# 为什么要它：七个域名共用一张 Let's Encrypt 证书（CN=migaozn.com，SAN 含
+# ai-api/api/app/merchant/migaozn/ops/www —— 2026-10-31 重签后已去掉无 A 记录的 admin），
+# 而**仓内没有任何到期判据** —— 到期这件事只能靠人去跑 openssl 才知道（本单的起点就是这么发现的）。
 #
 # 判据（三态，**3 不当 0 读**）：
 #   0 = 全部域名的证书都读到了、且剩余天数 >= 阈值（默认 21 天，LE 的 30 天续期窗口之内）
