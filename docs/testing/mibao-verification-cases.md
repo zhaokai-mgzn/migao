@@ -2808,7 +2808,7 @@
 ```
 溯源: 2026-10-20 新增（issue #7370，P0-1 之后按用户「逐步推进」落地为 P0-2 段 1）。落码 = ① V169 迁移（两列）+ 建库脚本终态同步；② CreditPolicy（纯函数口径）+ 7 条判据；③ OrderService 下单闸门；④ CustomerService.creditStatus/updateCreditSettings + 两个端点；⑤ 客户详情页「授信与往来」卡片 + 4 条页面判据；⑥ CHANGELOG。⚠️ **未做（照实登记）**：部分收款核销、账龄分档、审批出口、现结订单豁免 —— 分属 #7370 段 2/3 与 #7374(P1-2)。取号 = 现取 origin/main 的 CU 最大 012 ⇒ CU-013。 ｜ tags: backend-contract, credit, credit-limit, payment-terms, receivable, admin-api, red-proof
 
-## 数据域（27 case）
+## 数据域（28 case）
 
 ### DA-001. 经营概览 🔵
 ```
@@ -3157,6 +3157,19 @@
 必须成功: sales_attribution
 ```
 溯源: 2026-10-30 新增（issue #8157）：黄金策分析能力 P1-3 后半「归因」——按商品聚合两个等长窗口的销售额并给出涨跌 Top N，全部算术在独立的只读工具内（sales_attribution，权限码 = 订单查看 order:list），模型只转述。取号 DA-027：`python3 scripts/next_case_id.py DA`（候选 = origin/main ∪ 全部 open PR 的分支 ∪ 本工作区，rc=0）读数 = main:001-025 · PR #8156:026 ⇒ 取 DA-027。**未覆盖面（如实登记）**：只覆盖「按商品」归因；按客户 / 按状态归因、以及「下一步建议」不在本单（审计 F5 的其余部分，另包）；prompt 段本单未改（工具描述自带触发说明） ｜ tags: dashboard, attribution, readonly, llm_behavior
+
+### DA-028. 跨域视图判断层：同行基线（peer baseline）与 good/watch/bad/unknown 分档（issue #8234） 🔵
+```
+你: 商品健康度里的退货率 18%，算高还是低？
+数据: 同行基线 = **同一份快照内全部 SKU** 的中位数（`peer_median`，奇偶两分）与上四分位（`peer_p75`，最近秩法 ceil(0.75n)）；`sample_size` = 有效样本数。基线用**全量**行算，不受输出截断影响（截断只截 rows，不截基线样本）。
+数据: 🔴 未知不装懂（注入式红证）：① 指标未知（退货率无分母 / 成本未知 ⇒ 毛利 None）⇒ verdict = `unknown` 且**不进样本**；② 有效样本 < `MIN_BASELINE_SAMPLE`（5）⇒ `return_rate_baseline` = None + verdict = `unknown`。红证：把阈值改为 0（= 退化成「有值就判断」）⇒ `test_sample_below_minimum_yields_unknown` 必红；恢复 ⇒ 绿。
+数据: 🔴 毛利为负是**绝对判据**（注入式红证）：`gross_margin < 0` ⇒ `bad`，**不因**「全店都亏、基线中位数也是负」而被相对判成 `good`。红证：删掉 `_verdict` 的 absolute_bad 分支（= 退化成纯相对判断）⇒ `test_negative_margin_is_bad_even_when_the_whole_store_loses_money` 必红。
+数据: 分档边界（含等号归属）：`<= peer_median` ⇒ good；`peer_median < x <= peer_p75` ⇒ watch；`> peer_p75` ⇒ bad。边界值单独钉（P6 = p75 ⇒ watch、P7 > p75 ⇒ bad）。
+数据: 确定性：同一 snapshot 连续两次调用，`rows` 逐字节相等、`baseline_basis` 相等（不读挂钟、不联网）。
+数据: 🔴 基线性质自述（防「相对」被读成「绝对」）：视图顶层 `baseline_basis` 与 `basis.return_rate_baseline` 均为 `BASELINE_BASIS`，文本必须同时含「相对」与「非绝对」。
+跳过: [backend-contract] 视图语义由 backend/ai-agent-service/tests/test_briefing_product_health_baseline.py 验证（纯函数、零 LLM、两次注入式红证），不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8234）：黄金策决策能力 P0-a「参照系」第一包 —— 视图从「只给数值」升到「数值 + 同行基线 + 分档」。刻意只做**相对基线**（全店中位数/p75），不做绝对行业阈值（那属业务口径，需人裁定）；历史基线与客户可配置目标值登记在 issue 正文「不在本单」。 ｜ tags: proactive, briefing, baseline, verdict
 
 ## 防御域（24 case）
 
@@ -13862,8 +13875,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：934（活跃 152，跳过 782）
-- tier 分布：smoke 15 / normal 862 / adversarial 33
+- 用例总数：935（活跃 152，跳过 783）
+- tier 分布：smoke 15 / normal 863 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -13873,7 +13886,7 @@
 - 对话边界域：53
 - 跨域：3
 - 客户域：13
-- 数据域：27
+- 数据域：28
 - 防御域：24
 - 财务对账域：6
 - 人事域：13
@@ -13932,6 +13945,7 @@
 - DA-024: 评测目标租户收敛到单一可注入配置（EVAL_TENANT_ID），并钉住「非 DEBUG 不接受外部租户」（issue #6288）
 - DA-025: 经营环比对比由工具确定性计算（trend_compare / get_summary compare=true），模型只转述不口算（issue #8120）
 - DA-027: 问「这周为什么少卖」直接看商品归因（sales_attribution）：涨跌 Top N 逐字转述、不口算（issue #8157）
+- DA-028: 跨域视图判断层：同行基线（peer baseline）与 good/watch/bad/unknown 分档（issue #8234）
 - KN-001: 元元知识问答 - 面料问题先检索本店知识卡片（query 必填）
 - KN-002: 元元知识问答 - 清洗保养类问题走知识卡片检索
 - KN-003: 黄金策知识问答 - 本店售后政策先检索知识卡片（B 端接线回归，issue #3059）

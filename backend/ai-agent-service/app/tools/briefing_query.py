@@ -16,7 +16,13 @@ from app.briefing.proactive import (
     daily_findings_total,
     proactive_status,
 )
-from app.briefing.product_health import FIELD_LABELS, NOT_ON_SALE, product_health
+from app.briefing.product_health import (
+    FIELD_LABELS,
+    NOT_ON_SALE,
+    VERDICT_BAD,
+    VERDICT_WATCH,
+    product_health,
+)
 from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
@@ -244,6 +250,20 @@ def render_view_result(view: str, snapshot: Dict[str, Any], context: ToolContext
         message += f"（另有 {filtered['filtered_count']} 个 SKU 因商品未上架未纳入 —— {filtered['message']}）"
     if result["truncated"]:
         message += f"（视图只列前 {result['count']} 行，共 {result['rows_total']} 行）"
+    # 同行基线 + 判断摘要（issue #8234）：message 是模型的唯一摘要 —— 基线不写进来，
+    # 模型只会照念「8 个 SKU」，verdict 等于不存在。
+    rate_baseline = result["baselines"]["return_rate"]
+    if rate_baseline:
+        bad = sum(1 for row in result["rows"] if row["return_rate_verdict"] == VERDICT_BAD)
+        watch = sum(1 for row in result["rows"] if row["return_rate_verdict"] == VERDICT_WATCH)
+        message += (
+            f"。退货率同行基线：中位 {rate_baseline['peer_median']:.1%}、"
+            f"上四分位 {rate_baseline['peer_p75']:.1%}"
+            f"（{rate_baseline['sample_size']} 个样本）—— "
+            f"{bad} 个 SKU 高于上四分位、{watch} 个居中（这是相对基线，不是绝对标准）"
+        )
+    else:
+        message += "。退货率样本不足（少于 5 个有效 SKU），本次不给出好坏判断"
     unknown_cost = result["unknown_cost_rows"]
     if unknown_cost:
         # 关键口径：成本未知**不是**毛利 0 —— 不许让模型把「读不到」说成「成本为零」
