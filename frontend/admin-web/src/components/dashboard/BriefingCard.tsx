@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Sparkles, AlertTriangle, Lightbulb, ListTodo, ArrowRight, RefreshCw, Newspaper, ShieldCheck } from 'lucide-react'
 import { briefingApi } from '@/lib/api'
+import { briefingActionApi } from '@/lib/briefing-actions'
 import { useChatStore } from '@/store/chat'
 import { cn } from '@/lib/utils'
 import ProactiveStatusPanel from '@/components/dashboard/ProactiveStatusPanel'
@@ -74,8 +75,8 @@ function ItemRow({ item, tone, bizDate }: { item: BriefingItem; tone: 'todo' | '
   // `opened_agent` 只表示「点开问了」，**不表示**「照着做了」（报表文案必须区分）。
   const reportAsked = () => {
     if (!bizDate) return
-    void briefingApi
-      .recordAction({ bizDate, itemKind: tone, title: item.title, action: 'opened_agent' })
+    void briefingActionApi
+      .record({ bizDate, itemKind: tone, title: item.title, action: 'opened_agent' })
       .catch(() => {})
   }
   const icon = tone === 'todo' ? <ListTodo className="h-3.5 w-3.5 text-primary-600" />

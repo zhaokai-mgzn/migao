@@ -1944,14 +1944,6 @@ export const briefingApi = {
   updateConfig: (data: Partial<BriefingConfig>) =>
     request.put<ApiResponse<BriefingConfig>>('/api/admin/briefing/config', data),
 
-  /**
-   * 记录一次决策动作（issue #8260）——「AI 建议了什么 → 人做了什么」的后半句。
-   * **fire-and-forget**：调用方 `.catch(() => {})`，失败不影响交互（用户点的是「问黄金策」，
-   * 不该因为一条内部埋点失败而失败）。
-   */
-  recordAction: (data: { bizDate: string; itemKind: 'todo' | 'risk' | 'suggestion'; title: string; action: 'opened_agent' }) =>
-    request.post<ApiResponse<{ recorded: boolean }>>('/api/admin/briefing/actions', data),
-
   /** 手动触发当日生成（仅 admin） */
   generate: () =>
     request.post<ApiResponse<{ generated: boolean; verifyStatus?: string; reason?: string; content?: BriefingContent }>>('/api/admin/briefing/generate'),

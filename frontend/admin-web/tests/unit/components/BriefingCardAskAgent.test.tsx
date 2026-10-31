@@ -14,8 +14,12 @@ vi.mock('@/lib/api', () => ({
   briefingApi: {
     getToday: () => getToday(),
     getConfig: () => getConfig(),
-    recordAction: (data: any) => recordAction(data),
   },
+}))
+
+// 决策采纳记录（issue #8260）—— 独立模块：`lib/api.ts` 是冻结文件，新增接口不进它
+vi.mock('@/lib/briefing-actions', () => ({
+  briefingActionApi: { record: (data: any) => recordAction(data) },
 }))
 
 import BriefingCard from '@/components/dashboard/BriefingCard'
