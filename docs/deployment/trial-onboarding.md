@@ -41,7 +41,13 @@
    形态 `^[a-z0-9][a-z0-9_-]{1,31}$`（**允许下划线**，存量编码有 `tenant_7478359537` 这种），
    10 个保留字（`admin/api/www/app/platform/support/system/root/login/auth`）不可占用。
 2. **八个默认岗位** + 每岗默认权限快照（管理员 / 客服 / 运营 / 销售 / 财务 / 商品管理员 / 知识编辑 / 质检员）。
-3. **管理员账号**：`username` = 申请手机号，**随机初始密码**（短信验证码是主路径，密码是备用）⇒ 首登后必须改密。
+3. **管理员账号**：以**手机号**为标识（`users.phone`）；审批链路**不写** `users.username`
+   （`createUser` 的 `username` 传空），随机初始密码仅作备用 ⇒ 实际入口是**短信验证码登录**
+   （`POST /api/auth/sms/login`）。
+   ⚠️ **首登不强制改密**：`users.must_change_password` 默认 `FALSE`，审批链路传 `forceChangePassword=false`
+   ⇒ 试用期必须**人工**要求管理员改密（`POST /api/auth/password/change`）。
+   ⚠️ 若要启用「`<用户名>@<企业编码>` + 密码」这条管理员入口，得先给管理员落一个 `users.username` ——
+   审批链路不写它，**本 runbook 不假设它存在**（登记为 §9 的缺口）。
 4. **开租初始数据**（`OnboardingInitialData.REQUIRED` 逐条播种 + 后置现取校验）。
 
 > 🔴 **企业编码一旦发出就是登录标识的一部分**（员工用 `<用户名>@<企业编码>` 登录）⇒ 试用期内**不要再改**。
@@ -400,7 +406,7 @@ python3 scripts/trial_onboarding_check.py \
 | # | 步骤 | 谁 | 命令 / 动作 | 判据 | 留证 |
 |---|---|---|---|---|---|
 | T-2 | 租户已开、企业编码已确认 | 运营 | `/register` 或 super-admin 审批 | 客户确认编码 | 审批截图 |
-| T-2 | 管理员能登、已改密 | 客户 | `merchant.migaozn.com/login` | 进得去工作台 | 首屏截图 |
+| T-2 | 管理员能登（**短信验证码**）并**主动改密** | 客户 | `merchant.migaozn.com/login` | 进得去工作台 + 已改密 | 首屏截图 |
 | T-2 | 员工 + 工人工号/PIN 已建 | 运营 | `/employees`（员工页签 + 工人页签） | 每个工人都能用工号+PIN 登进 `/b/report/` | 工人列表截图 + **PIN 交付方式**（当面/短信，**别贴群**） |
 | T-2 | 终端清单已发布 | 研发 | `gh workflow run terminal-publish.yml --ref main -f release_tag=<tag> …` | 脚本 `windows-manifest` / `android-manifest` 不再 `????` | 脚本输出 |
 | T-1 | 终端安装包下载 + SHA256 核对 | 客户 IT | §2.2 命令 | 与清单 `sha256` 逐字一致 | 命令输出截图 |
@@ -443,6 +449,7 @@ python3 scripts/trial_onboarding_check.py \
 | `rds_backup_window_readout.py`（备份窗口读数） | 云控制台侧、无 API 凭据；公网不可判定 | 拿到只读云凭据，或审计再要求一次 | §6.2 第 7 条 |
 | 自助注销 / 按租户导出 / 删除逐表清单 | 客户数少、删除必须人工；无人值守删除**有意不做**（铁律 10） | 客户数 > 5，或客户要求「删除并审计」 | §6.5 |
 | 小程序 A 档端到端真机验证 | 依赖 §8-① 的微信后台（用户侧） | 规则发布后：微信扫一次 + 截图，贴进试用台账 | §3.2 |
+| 管理员 `users.username`（`<用户名>@<企业编码>` + 密码这条入口） | 审批链路不写 username，管理员实际走短信登录 | 客户要求「管理员也用账号密码登录」或短信不可用 | §1.1 |
 | 登录后的写链路（下单/报工/计件）自动验收 | 需要凭据；只读审计无凭据 | 给一个**试用租户的只读/测试账号**后可做成只读 GET 断言 | §1.2 |
 | 终端签名自动校验（Authenticode / apksigner） | 公网读不到 | 终端仓在发布腿里做签名校验并把结果写进清单 | §2.3 |
 
