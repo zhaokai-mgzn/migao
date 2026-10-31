@@ -117,13 +117,14 @@ def stub_server():
 
 
 def _run_probe(urls: str, **overrides: str):
-    env = _env(
-        PROD_5XX_URLS=urls,
-        PROD_5XX_ROUNDS="2",
-        PROD_5XX_INTERVAL="0",  # 窗口内不 sleep（判据要快）
-        PROD_5XX_TIMEOUT="5",
-        **overrides,
-    )
+    values = {
+        "PROD_5XX_URLS": urls,
+        "PROD_5XX_ROUNDS": "2",
+        "PROD_5XX_INTERVAL": "0",  # 窗口内不 sleep（判据要快）
+        "PROD_5XX_TIMEOUT": "5",
+    }
+    values.update(overrides)
+    env = _env(**values)
     return subprocess.run(
         ["bash", str(PROBE)], capture_output=True, text=True, env=env, timeout=120, cwd=str(REPO_ROOT)
     )
@@ -171,6 +172,20 @@ def test_probe_is_unknown_when_no_face_answers_2xx_or_3xx(stub_server):
     out = _run_probe(f"{stub_server}/missing")
     assert out.returncode == 3, f"全 4xx 必须退 3，实测 {out.returncode}\n{out.stdout}"
     assert "reason=no_ok_face" in out.stdout
+
+
+def test_window_seconds_reading_matches_the_actual_pacing(stub_server):
+    """窗口读数必须等于**轮间间隔 × (轮数−1)**：单轮没有轮间间隔 ⇒ 0s；两轮 ⇒ 1×INTERVAL。
+
+    读数与行为不一致会误导排障（"≈ 15s 窗口" 实际是 0s 或反过来）。
+    """
+    single = _run_probe(f"{stub_server}/ok", PROD_5XX_ROUNDS="1", PROD_5XX_INTERVAL="5")
+    assert single.returncode == 0, single.stdout
+    assert "window_s=0" in single.stdout, f"单轮窗口必须读 0s：\n{single.stdout}"
+
+    two = _run_probe(f"{stub_server}/ok", PROD_5XX_ROUNDS="2", PROD_5XX_INTERVAL="1")
+    assert two.returncode == 0, two.stdout
+    assert "window_s=1" in two.stdout, f"两轮 × 轮间 1s ⇒ 窗口 1s：\n{two.stdout}"
 
 
 # ══════════════════════════════════════════════════════════════════════════

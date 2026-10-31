@@ -93,7 +93,9 @@ if [ -z "$(printf '%s' "$URLS" | tr -d '[:space:]')" ]; then
   exit 2
 fi
 
-WINDOW=$((ROUNDS * INTERVAL + ROUNDS * 0))
+# 窗口时长 = **轮间**间隔 × (轮数 − 1)：单轮（ROUNDS=1）没有轮间间隔 ⇒ 窗口 0s（不是 INTERVAL）。
+# 读数必须与真实行为一致 —— 否则 README/告警里的「≈ Ns 窗口」会骗人。
+WINDOW=0
 [ "$ROUNDS" -gt 1 ] && WINDOW=$(((ROUNDS - 1) * INTERVAL))
 
 echo '=============================================================='
