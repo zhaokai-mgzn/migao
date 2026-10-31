@@ -276,6 +276,108 @@ def _baselines(rows: List[Dict[str, Any]]) -> Dict[str, Optional[Dict[str, Any]]
     }
 
 
+# ── 可选动作（next options）—— issue #8251 ───────────────────────────────────
+# 判据：P0 让视图能说「判 bad」，但**然后呢？** 没有下文。给人一个方案叫「通知」，
+# 给几个选项**带代价与可逆性**才叫「帮决策」。
+#
+# v1 只收**可逆 + 低成本**的动作（清仓 / 下架 / 换供应商这类不可逆动作不进 v1，
+# 登记在 issue #8251「不在本单」—— 它们需要业务裁定，不是代码能替老板决定的）。
+
+#: 选项性质自述（纪律 3：别让调用方把「行业常见做法」读成「对你这家店的建议」）
+OPTIONS_BASIS = (
+    "行业常见做法，**不是**对具体店铺的建议；每条都需人工判断后再执行"
+)
+
+_COST_LOW = ("low", "低成本：只看数据 / 改文案")
+
+_OPTIONS: Dict[str, Dict[str, List[Dict[str, Any]]]] = {
+    "return_rate": {
+        VERDICT_BAD: [
+            {
+                "action": "先看这批退货的售后原因分布（色差 / 尺寸 / 物流 / 质量）",
+                "cost": "low",
+                "cost_note": _COST_LOW[1],
+                "reversible": True,
+                "verify": "售后工单按原因分组的条数；先知道「主要怪谁」再决定改什么",
+            },
+            {
+                "action": "在商品描述里补「实物色差 / 尺寸以实物为准」提示",
+                "cost": "low",
+                "cost_note": "改文案，不动物流与价格",
+                "reversible": True,
+                "verify": "两周后该 SKU 的退货率是否回落（对比本视图的 peer_median）",
+            },
+        ],
+        VERDICT_WATCH: [
+            {
+                "action": "先看这批退货的售后原因分布（色差 / 尺寸 / 物流 / 质量）",
+                "cost": "low",
+                "cost_note": _COST_LOW[1],
+                "reversible": True,
+                "verify": "售后工单按原因分组的条数",
+            },
+        ],
+    },
+    "gross_margin": {
+        VERDICT_BAD: [
+            {
+                "action": "先核对成本价是否已维护（成本未知时毛利根本不可算，本行的负数可能是脏数据）",
+                "cost": "low",
+                "cost_note": _COST_LOW[1],
+                "reversible": True,
+                "verify": "该 SKU 的 avg_cost 是否有值；有值才是真亏，无值只是「算不出来」",
+            },
+            {
+                "action": "核对近期是否有低于成本价的成交（改价 / 折扣叠加）",
+                "cost": "low",
+                "cost_note": _COST_LOW[1],
+                "reversible": True,
+                "verify": "改价记录与订单折扣：看这笔低价是「定价」还是「一次性的让利」",
+            },
+            {
+                "action": "小范围试调价（如 +5%），观察 2 周销量再决定是否扩大",
+                "cost": "medium",
+                "cost_note": "调价影响转化，需盯销量",
+                "reversible": True,
+                "verify": "两周内该 SKU 的销量与毛利双向变化；只涨毛利不涨销量的价格要慎用",
+            },
+        ],
+        VERDICT_WATCH: [
+            {
+                "action": "核对成本价是否已维护（成本未知时毛利不可算）",
+                "cost": "low",
+                "cost_note": _COST_LOW[1],
+                "reversible": True,
+                "verify": "该 SKU 的 avg_cost 是否有值",
+            },
+        ],
+    },
+}
+
+
+def _next_options(row: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
+    """按行的 verdict 产出去重后的可选动作；**没问题（good / unknown）⇒ 不产出**。
+
+    纯规则表（不读 LLM）⇒ 同一组 verdict 必然产出同一组选项（确定性由规则表保证，不需要额外排序）。
+    """
+    options: List[Dict[str, Any]] = []
+    seen = set()
+    for metric, verdict_field in (
+        ("return_rate", "return_rate_verdict"),
+        ("gross_margin", "gross_margin_verdict"),
+    ):
+        verdict = row.get(verdict_field)
+        if verdict not in (VERDICT_BAD, VERDICT_WATCH):
+            continue
+        for option in _OPTIONS.get(metric, {}).get(verdict, []):
+            key = (metric, option["action"])
+            if key in seen:
+                continue
+            seen.add(key)
+            options.append({**option, "metric": metric, "for_verdict": verdict})
+    return options or None
+
+
 def _blank_rows(snapshot: Any, array: str, field: str) -> int:
     """某个行数组里 `field` 缺值的行数（维度缺值 ⇒ 结论不完整，不是「这些行没问题」）。"""
     return sum(1 for row in _rows(snapshot, array) if row.get(field) in (None, ""))
@@ -571,6 +673,8 @@ def product_health(
         row["gross_margin_verdict"] = _verdict(
             row.get("gross_margin"), margin_baseline, absolute_bad=True
         )
+        # 「然后呢？」—— 只给有问题的行（issue #8251）
+        row["next_options"] = _next_options(row)
 
     row_meta = snapshot.get("row_meta") if isinstance(snapshot, dict) else None
     return {
@@ -589,6 +693,7 @@ def product_health(
         # 同行基线与性质自述（issue #8234；基线放视图级，行内只放 verdict）
         "baselines": baselines,
         "baseline_basis": BASELINE_BASIS,
+        "options_basis": OPTIONS_BASIS,
         "basis": {
             "stock_authority": STOCK_AUTHORITY,
             "sales_authority": STOCK_AUTHORITY,
@@ -601,5 +706,6 @@ def product_health(
                 f"值未知或有效样本 < {MIN_BASELINE_SAMPLE} ⇒ unknown"
             ),
             "gross_margin_verdict": "毛利 < 0 ⇒ bad（绝对判据）；否则同 return_rate_verdict 的分档",
+            "next_options": OPTIONS_BASIS + "；只给 bad / watch 行，good 与 unknown 不给",
         },
     }
