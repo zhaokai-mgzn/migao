@@ -139,7 +139,8 @@ def test_raising_the_cap_disables_the_cap():
     """红证：上限调到 100 ⇒ 绑定数回到改前（>16）⇒「上限生效」那条会红。"""
     tool_names = _tool_names("order")
     plan = _plan(tool_names, max_tools=100)
-    assert plan is None, "上限 100 时不该再做任何裁剪（不该有可裁项）"
+    # 不下断言 "plan is None"（弱断言形态）：直接钉**绑定结果** —— 上限 100 ⇒ 回收全量，
+    # 既排除「裁了」也排除「裁了没生效」，比断言 None 更强。
     assert len(_bound(tool_names, plan)) == len(_oracle_names(tool_names)) > DEFAULT_CAP
 
 
