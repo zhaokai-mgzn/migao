@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@link BriefingActionMapper} 映射一致性（issue #8260）。
  *
  * <p>裸 {@code BaseMapper} 没有自定义 SQL 可测，所以这里钉**真正会坏的那件事**：
- * 实体的字段 ↔ 列名 ↔ {@code V196} 迁移的三方一致。改字段名、改列名、加列忘了写迁移
+ * 实体的字段 ↔ 列名 ↔ {@code V204} 迁移的三方一致。改字段名、改列名、加列忘了写迁移
  * （或反过来）—— 生产上表现为「查不到 / 插入报列不存在」，而单测通常一片绿。
  * 这条判据让它在 PR 上就红。</p>
  */
@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class BriefingActionMapperTest {
 
     private static final Path MIGRATION =
-            Path.of("src/main/resources/db/migration/V196__create_briefing_actions.sql");
+            Path.of("src/main/resources/db/migration/V204__create_briefing_actions.sql");
 
     private TableInfo tableInfo() {
         MybatisConfiguration conf = new MybatisConfiguration();
@@ -47,7 +47,7 @@ class BriefingActionMapperTest {
     }
 
     @Test
-    @DisplayName("每个字段都有对应列，且列名**全部**在 V196 迁移里（加字段忘写迁移 ⇒ 红）")
+    @DisplayName("每个字段都有对应列，且列名**全部**在 V204 迁移里（加字段忘写迁移 ⇒ 红）")
     void every_column_exists_in_the_migration() throws Exception {
         List<String> columns = tableInfo().getFieldList().stream()
                 .map(TableFieldInfo::getColumn)
@@ -59,7 +59,7 @@ class BriefingActionMapperTest {
                 "action", "actor_id", "created_at", "updated_at");
         for (String column : columns) {
             assertThat(sql)
-                    .as("实体字段映射到列 %s，但 V196 迁移里没有它 —— 上线会报「列不存在」", column)
+                    .as("实体字段映射到列 %s，但 V204 迁移里没有它 —— 上线会报「列不存在」", column)
                     .contains(column);
         }
     }

@@ -1085,7 +1085,7 @@ cases:
       - "这个月黄金策提醒我的事，我处理了多少？"
     expectations: []
     data_checks:
-      - "表 `briefing_actions`（Flyway V196，bootstrap `schema.sql` 已同步终态）：`tenant_id` / `biz_date` / `item_kind` / `item_key` / `action` / `actor_id`，`UNIQUE(tenant_id, biz_date, item_kind, item_key)` 兜底幂等。"
+      - "表 `briefing_actions`（Flyway V204，bootstrap `schema.sql` 已同步终态）：`tenant_id` / `biz_date` / `item_kind` / `item_key` / `action` / `actor_id`，`UNIQUE(tenant_id, biz_date, item_kind, item_key)` 兜底幂等。"
       - "🔴 **item_key = 标题 sha256 前 16 位**：同标题同 key、不同标题不同 key、**不含标题原文**（判据 `doesNotContain(\"补货\")`）—— 存原文等于把 `daily_briefings.content` 抄一份，内容冗余 + PII 面扩大；存下标则简报每次重排都会把同一条记成两条。"
       - "🔴 **幂等**：同一条目第二次上报走 `updateById` 而不是再 `insert`。红证：把 `if (existing != null)` 改成 `if (false)`（永远 insert）⇒ `repeated_actions_upsert_instead_of_inserting` 必红；恢复 ⇒ 5 passed。"
       - "动作白名单不猜：`opened_agent` 通过，`done` / 空 / null 一律 `false`（`done` / `ignored` 需要 UI 上的「已处理 / 忽略」按钮，属产品决策，不在本单）。"
