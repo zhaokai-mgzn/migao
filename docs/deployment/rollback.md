@@ -5,8 +5,27 @@
 
 ## 1. 判定需要回滚的信号
 
+> 🔴 **判据地址必须自己先 200**（issue #8218 P1-05，2026-10-31 上线审计）。
+> 本节的每条判据都必须是**线上真的 200** 的面 —— 否则 runbook 会给出「永远命中」的错误信号。
+> 曾经的错误形态（改前逐字）：第一条判据是 `curl api.migaozn.com/actuator/health`，而
+> `deploy/swas/nginx.conf` 把 `/actuator` **整段 404**（`location ~ ^/(actuator|v3/api-docs|swagger-ui)`）
+> ⇒ 线上实测 **404** ⇒ 按 runbook 执行**必然**得出「非 200 ⇒ 需要回滚」。
+>
+> **自检（一条命令；三条面必须都是 200）**：
+> ```bash
+> for u in https://api.migaozn.com/api/version https://ai-api.migaozn.com/health https://merchant.migaozn.com/login; do
+>   printf '%s -> ' "$u"; curl -s -o /dev/null -w '%{http_code}\n' -m 10 "$u"
+> done
+> ```
+> **判据（会红）**：`tests/unit_ci_workflows/test_rollback_runbook_criteria.py` —— 本文件里任何
+> `https://…` 形态的判据地址，只要落在 nginx 的 404 屏蔽面里、或不在「线上 200 面」白名单里 ⇒ 判红。
+> 新增一条判据地址时，**先跑上面那段自检**，再把地址加进该测试的白名单（并写明它的归属面）。
+
 - 部署后冒烟失败（post-deploy smoke / frontend probe）
-- 健康检查异常（`curl api.migaozn.com/actuator/health`、`ai-api.migaozn.com/health` 非 200）
+- 健康检查异常 —— **用线上真的 200 的面**（公网）：
+  - `GET https://api.migaozn.com/api/version` **非 200**（admin-api 的版本面，nginx 放行 `/api/` 前缀）
+  - `GET https://ai-api.migaozn.com/health` **非 200**（ai-agent 健康面，nginx 只屏蔽 `/docs` `/redoc` `/openapi.json`）
+  - ⚠️ **不要**用 `/actuator/health` 判公网（它被 nginx 整段 404；容器内部面见 §3 的 `127.0.0.1` 那三条）
 - 用户投诉 / 关键指标异常（订单、登录、AI 对话）
 
 ## 2. 快速回滚（推荐：GitHub 手动部署旧版本）
@@ -45,6 +64,9 @@ docker compose up -d --no-deps admin-api
 docker compose restart nginx
 
 # 健康检查（与 deploy.sh 相同）
+# ⚠️ 这三条是**容器内部面**（127.0.0.1 + 服务端口）—— 它们 200 是合法的（`/actuator/health` 在
+#    nginx 后面被 404 屏蔽，但**容器内部**仍然直接由 Spring 提供服务）⇒ 本节与 §1 的**公网面**
+#    是两套坐标：公网判据不要抄这三条（见 §1 的自检）。
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/actuator/health
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/health
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3001/
