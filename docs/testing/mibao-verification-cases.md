@@ -239,7 +239,7 @@
 ```
 溯源: 2026-10-19 新增（issue #7027 的用例补齐）：售后域现有用例集中在工单状态机与退款口径（AS-001~015），缺「客户报损 → 商家问怎么处理」这条**商家视角**的真实旅程；且它与能力边界段（#7291）同源 —— 只读化之后模型最容易在这里承诺代办。 ｜ tags: aftersales, journey, capability-boundary
 
-## Agent 核心域（12 case）
+## Agent 核心域（13 case）
 
 ### AG-001. AgentResponse/AgentContext 数据结构 + _extract_msg_content think 剥离 🔵
 ```
@@ -321,6 +321,20 @@
 ```
 真值: ai-chat.intent-domains
 溯源: 2026-10-02 新增（issue #5951）：该测试文件此前未声明 case_ids，本单改动它（去掉已退役的 suggestions 桩键）后按门禁口径补声明；用例内容如实对应该文件既有的两组断言，**未新增/未放宽任何断言**。 ｜ tags: agents, multimodal, routing, regression
+
+### AG-009. B 端工具面按意图裁剪（读面 ≤16 / 保底不被裁 / 关闭等价 / C 端不变） 🔵
+```
+你: B 端商家一轮：帮我查一下最近订单的物流到哪了
+端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
+期望: order_query
+数据: 裁剪开启时每轮绑定工具数 ≤ `TOOL_TRIM_MAX_READ`（默认 16）；改前现取 35~39（把上限调到 100 ⇒ 判据红）
+数据: 保底集合永不被裁：本轮 skill 的全部写工具 + nav_guide/knowledge_search/interact/validate_input/confirm_value + 上一轮用过的读工具（清空保底集合 ⇒ 判据红）
+数据: `TOOL_TRIM_ENABLED=false` ⇒ B 端绑定集合与改前逐名相等；C 端（xiaobu）任何开关下逐名相等
+数据: 只裁 `read_only=True`：写工具集合前后相等；同一输入连跑两次结果逐字一致（含顺序）
+数据: 字符数棘轮：各 skill 的 prompt 字符数与工具 schema 字符数都下降（关闭裁剪 ⇒ 回落）
+跳过: [backend-contract] 纯单测（backend/ai-agent-service/tests/test_tool_selection_trim.py）；不改工具实现与权限，只改「本轮暴露哪些」；真实误选面由人工集中跑一次手动 eval 清单（#4262 不自动派发）
+```
+溯源: 2026-10-30 新增（issue #8174）。取号 = `scripts/next_case_id.py AG` 现取（main: 001-008/010-013 ⇒ 最小空闲号 AG-009，历史空档）。 ｜ tags: agents, tools, cost, regression
 
 ### AG-010. 定时任务（用户「预约」）服务端：三件套 fail-closed + 幂等 + 取消 + 到点投递只读 🔵
 ```
@@ -3864,7 +3878,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（166 case）
+## 杂项域（167 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -6423,6 +6437,24 @@
 前置: 改商品价的入口在 frontend/admin-web/src/app/(dashboard)/products/page.tsx（侧边栏「商品管理」）；编辑页 products/[id]/edit 的价格列在 SKU 表（文案「价格（元）」）。菜单被改名/移除 ⇒ 登记面判据先红。
 ```
 溯源: 2026-10-29 新增（issue #8147，承接 #5989 的 F6/P2-1）：页面动作登记表 backend/ai-agent-service/app/tools/page_actions.py（纯数据 + lookup）+ nav_guide(action=how_to, topic=…) 投影面 + general_agent 导航段口径改为「先 how_to，未命中才如实说没有」。取号 MC-120（python3 scripts/next_case_id.py MC 现取 main 001-119 + 全部 open PR 的语料面/claim 面 ⇒ 返回 MC-120）。⚠️ 与并行改 .github/cases/misc.yml 的包：谁后合并谁 ./scripts/sync-main.sh --rebase 并重渲染生成物。 ｜ tags: navigation, teaching, fail-closed, red-proof, no-fabrication
+
+### MC-121. 四域共用一张 Let's Encrypt 证书的自动续期与到期判红（issue #8201）：续期机制在**宿主 cron** 但已连天失败且无告警 ⇒ 到期判据（0/1/3）+ 一次性修复 runbook + cron 加固 🔵
+```
+你: 四个域名（api / ai-api / app / migaozn.com）共用同一张 CN=migaozn.com 的 Let's Encrypt 证书，notAfter=Nov 27 10:29:18 2026 GMT（SAN 含 admin/ai-api/api/app/merchant/migaozn/ops/www）；宿主有 cron 在跑 certbot 却每天失败、且失败没有任何告警 —— 到期这件事必须有人被叫醒，而不是等 TLS 握手开始报错
+期望: **到期判据在**（`deploy/scripts/tls-expiry-check.sh`，只读）：默认查四域（可加 www），逐域打印 notAfter + 剩余天数 + **可复制的复算命令**；剩余 <21 天 ⇒ 退出 1；已过期 ⇒ 1；证书 SAN 不覆盖被查域名 ⇒ 1（具名「不匹配」）；取不到 / notAfter 解析不了 ⇒ 退出 **3**（**不可判定不得当 0**）。`openssl` / `certbot` / `docker` / `crontab` 全经 PATH 垫片注入 ⇒ 判据零网络、秒级。
+期望: **lineage 诊断在**：当本机存在 letsencrypt 目录时，解析 `certbot certificates` 的每条 lineage（到期日 + `used=yes|no`：nginx 用的是 `live/migao/fullchain.pem` ⇒ `api.migaozn.com` 这条陈旧 lineage 标 `used=no`），并读出 `renewal/<name>.conf` 的 `authenticator` / `pref_challs` 与 `--webroot` 的冲突；**不因此判红**（未使用的 lineage 到期不影响四域 HTTPS），但必须**具名**；本机没有 letsencrypt 目录 ⇒ 明说 `status=skipped`（缺失 ≠ 没问题）。
+期望: **续期腿在**（`deploy/scripts/tls-renew.sh`）：`--dry-run` 必须把 `--dry-run` 传给 certbot 且**不 reload**；成功才 reload（`docker compose exec -T nginx nginx -s reload`，**不是** restart）；「没有到期证书」⇒ 幂等 no-op（`TLS_RENEW_RESULT=noop`）且不 reload；失败 ⇒ **非零退出** + 归因清单 + 日志位置（cron 才看得见）。
+期望: **cron 加固在**：`--install-cron` 幂等写 `/etc/cron.d/migao-tls-renew`（内容未变不重写）；检测到既有 `certbot renew` crontab 条目 ⇒ **拒绝安装**并退 3（否则同一条续期一天跑两遍），加 `--replace-legacy-cron` 才**先备份**（`/var/backups/crontab-*.bak`）再替换；非 root / 无 letsencrypt 目录 ⇒ 跳过并退 3（**出声**，不静默）。
+期望: **接线在且会红**：`.github/workflows/post-verify` 一族里由 `.github/workflows/post-merge-verify.yml` 的 `TLS 证书到期判红` 步承接（只在 main 侧跑 —— `if: github.event_name != 'pull_request'`，PR 红该反映 PR），**必须排在 `if: failure()` 的 P1 出口之前**（之后 ⇒ 判红不产生值班单 = 静默），`exit 3` 不许归一化成 0。判据 = tests/unit_ci_workflows/test_tls_renewal.py::test_workflow_wiring_is_present + ::test_wiring_removal_turns_it_red（摘掉该步 / 挪到出口之后 / 把 3 改成 0 / 摘掉 `if:` 四种注入各自判红）；**不新增 schedule**（铁律 10）。
+期望: **部署侧幂等**：`deploy/swas/deploy.sh` 在 nginx reload **之后**跑 `tls-renew.sh --install-cron`，失败 / 跳过只出声、**不拖垮部署**；同步 `src/deploy/scripts/tls-renew.sh` 带 `[ -f ]` 守卫（回滚到旧 tag 时 tarball 里没有该文件，无条件 `cp` 会让回滚部署 abort）。
+数据: **病（现取读数，2026-10-31 在服务器上核实）**：`openssl s_client -connect api.migaozn.com:443 -servername api.migaozn.com | openssl x509 -noout -dates` ⇒ `notBefore=Aug 29 10:29:19 2026 GMT` / `notAfter=Nov 27 10:29:18 2026 GMT`；宿主 `crontab -l` 有 `0 3 * * * certbot renew --quiet --webroot -w /opt/migao-deploy/certbot-www --post-hook 'cd /opt/migao-deploy && docker compose restart nginx >/dev/null 2>&1' >> /var/log/certbot-renew.log 2>&1`；`/var/log/certbot-renew.log` 每天重复两条失败：`api.migaozn.com` lineage 的 `None of the preferred challenges are supported by the selected plugin`（renewal conf = `authenticator=manual` + `pref_challs=dns-01`，与 `--webroot` 冲突；该 lineage **未被 nginx 使用**，到期 2026-11-12）与 `migao` lineage 的 `Some challenges have failed.`。
+数据: **根因（双向核对 DNS）**：`admin.migaozn.com` **没有 A 记录**（`dig +short` 空；其余 7 个 SAN 都解析到 `121.40.28.213`），而 `migao` 证书的 SAN 含 `admin` ⇒ HTTP-01 对 admin 必失败 ⇒ 整张证书续期失败。⇒ **订正审计口径**：仓内确实没有续期腿 / 到期判据，但「仓内零续期机制」漏掉了「宿主 cron 已存在且在失败、且失败无告警」这一半（PR body 逐字登记）。
+数据: **判别力自证（注入式红证，本包实跑）**：① 正常态（剩余 60 天）⇒ rc=0 + 逐域 `days_left` + 复算命令；② 临期 20/10/1 天 ⇒ rc=1 `status=expiring`；③ 已过期（剩余 −3 天）⇒ rc=1 `status=expired`；④ 取不到（s_client 失败）/ notAfter 为空 / notAfter 是垃圾 ⇒ 各自 rc=**3** `status=unknown` 且明说「无法判定」；⑤ SAN 不含 api/ai-api/app ⇒ rc=1 `status=mismatch`；`*.migaozn.com` 只覆盖 `api/api/ai-api/app` 而**不覆盖裸域** ⇒ 只有 `domain=migaozn.com status=mismatch`；⑥ 阈值边界：21 天 ⇒ 0、20 天 ⇒ 1；⑦ lineage：`migao` used=yes / `api.migaozn.com` used=no / `authenticator=manual` 冲突被具名；无 letsencrypt 目录 ⇒ `TLS_LINEAGE_SUMMARY status=skipped` 且**仍退 0**（不因缺诊断读数判红）；⑧ 续期腿：成功 ⇒ 只出现 `nginx -s reload`（无 `compose restart`）、`TLS_RENEW_RESULT=renewed`；失败 ⇒ 非零 + 无 reload + 归因；noop ⇒ 两次都 0 且无 reload；⑨ cron：有旧条目 ⇒ 退 3 且**不写** cron 文件、文案给 `--replace-legacy-cron`；替换 ⇒ 备份 + 过滤旧行 + 幂等（第二次「已就位」且逐字节相同）；非 root ⇒ 退 3 不写文件。
+数据: **红证读数**（本包实测）：先写判据、实现全缺时 `29 failed`；实现后 `29 passed`（复算：`python3 -m pytest tests/unit_ci_workflows/test_tls_renewal.py -q`）。接线面的红证是**内存变异**（把该步从 YAML 里删掉 / 挪到 `if: failure()` 之后 / 把 `exit 3` 改成 `exit 0` / 摘掉 `if:`）四种注入各自让 `tls_wiring_problems()` 非空 —— 而不是「读一遍 YAML 看着对」。
+数据: **边界（照实登记，不粉饰）**：① 判据**不联网**（openssl / certbot / docker / crontab 全是 PATH 垫片）⇒ 证的是「脚本在给定输入下会做什么」，**不是**「阿里云 / Let's Encrypt 真的这么回」；② **本单未执行**任何真实续期 / 重签 / DNS 变更（用户边界：执行留给人工确认），PR body 的「未覆盖项」逐条登记需要人执行的那一步；③ 「宿主 cron 真的每天跑了 / 续上了」只能事后看 `/var/log/migao-tls-renew.log` 与 `tls-expiry-check.sh` 的读数；④ 路径②（`certbot certonly --expand` 去掉 admin）**改变 SAN 集合** ⇒ 与「不改域名集合」的边界冲突，runbook 里明确写成「需人裁定」的例外，**不默认执行**；⑤ 陈旧 lineage 只给「不删证书」的禁用 / 修正方式（`mv renewal/api.migaozn.com.conf → renewal-disabled/`），**不静默 delete**；⑥ 不新增任何 GitHub schedule（铁律 10），只沿用 `post-merge-verify.yml` 既有的 push / schedule / dispatch 触发面。
+跳过: [backend-contract] 运维判据（只读仓内脚本 + PATH 垫片伪造 openssl/certbot/docker/crontab + 真 YAML）由 tests/unit_ci_workflows/test_tls_renewal.py 验证，零网络、零真实续期、不写共享 /tmp、不烧 token，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8201，P0：四域共用证书 2026-11-27 到期，LE 的 30 天续期窗口已于 2026-10-28 过去仍未续）。取号 MC-121（`python3 scripts/next_case_id.py MC` 现取最小空闲号；候选 = main ∪ open PR 分支 ∪ 本工作区）。落码 = ① `deploy/scripts/tls-expiry-check.sh`（只读、四域 + 可选 www、阈值 21 天、0/1/3、lineage 诊断）② `deploy/scripts/tls-renew.sh`（host certbot 优先 / docker 兜底、`--dry-run`、成功才 reload、`--install-cron` 幂等 + 双跑 guard + 备份替换）③ `.github/workflows/post-merge-verify.yml` 的 `TLS 证书到期判红` 步（main 侧、在 `if: failure()` 出口之前、不新增 schedule）④ `deploy/swas/deploy.sh` 的 `2.6.1`（幂等刷新宿主 cron，跳过/失败不拖垮部署；同步脚本带 `[ -f ]` 守卫以保回滚）⑤ `docs/deployment/tls-renewal.md`（现状 / 两条修复路径与代价 / 陈旧 lineage 不删证书 / cron 加固 / 验收复算 / 回滚 / 影响面）。**订正审计口径**：PR #8200 的 P0-01「仓内零续期机制」应读作「机制在宿主 cron，但已连天失败 + 无告警」。 ｜ tags: ops, tls, deploy, certbot, alarm
 
 ## 商家入驻域（7 case）
 
@@ -13789,10 +13821,10 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：929（活跃 152，跳过 777）
-- tier 分布：smoke 15 / normal 857 / adversarial 33
+- 用例总数：931（活跃 152，跳过 779）
+- tier 分布：smoke 15 / normal 859 / adversarial 33
 - 售后域：16
-- Agent 核心域：12
+- Agent 核心域：13
 - API 层域：21
 - 登录认证域：14
 - B 端小程序域：53
@@ -13805,7 +13837,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：166
+- 杂项域：167
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：74
@@ -13821,6 +13853,7 @@
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
 - AS-015: 售后工单详情/列表响应不再携带恒空的 refundMethod 键（三个 Java 载体上字段/getter/setter 全无；键不存在而非值为 null）
 - AS-016: 售后如实引导：客户说窗帘收到时有破洞 → 先查那单 + 说清后台怎么走，不承诺代办
+- AG-009: B 端工具面按意图裁剪（读面 ≤16 / 保底不被裁 / 关闭等价 / C 端不变）
 - AG-013: 客服会话并发分配「读计数 × 再写」无互斥 ⇒ max_concurrent_sessions 被突破；改写为条件更新后并发数不超过上限（issue #6962）
 - AG-008: 海报/图片的能力边界陈述被下单域守卫当成「下单能力误宣」⇒ relock 到 order、连问 3 轮下单规格；顾客显式撤回后仍无出口（issue #7758）
 - API-013: 知识知识卡片数据模型 - knowledge_cards 表/实体/Mapper（LLM WIKI 板块 #3051）
@@ -14019,6 +14052,7 @@
 - WH-010: 成品仓水位智能分配 + 区域容量 + 批量建号（issue #7791）
 - WH-011: 成品打包入库：同一订单固定入同一仓位（仓位满了也不换仓，issue #8103）
 - MC-120: 页面动作登记表 → 步骤级教学（F6 / P2-1，承接 #5989）：how_to 命中逐字返回登记表、未登记如实说没有步骤级指引
+- MC-121: 四域共用一张 Let's Encrypt 证书的自动续期与到期判红（issue #8201）：续期机制在**宿主 cron** 但已连天失败且无告警 ⇒ 到期判据（0/1/3）+ 一次性修复 runbook + cron 加固
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
