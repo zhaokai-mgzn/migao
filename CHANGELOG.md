@@ -5,6 +5,13 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 批量写执行转后台 job：进度可查、超时如实说未完成（2026-10-31，issue #8283）
+
+- **改前**：批量改价/库存的 `execute` / `revert` 是同步请求 —— Agent 在对话轮里等整批逐条 apply 跑完；执行中 `GET /batches/{id}` 只有 `executing`，`success_count/fail_count` 要等终态才写，50 条批次一旦慢，用户只能干等。
+- **改后**：新增 `POST /api/admin/agent/batches/{id}/execute-async` / `revert-async`（CAS claim 后提交进程内线程池，立即返回 `status=executing`）；每处理一条更新成功/失败计数，`GET` 可看进度；Agent 工具改用 async 端点并轮询到终态（上限 60s），**超时只报「尚未完成」**，不谎报完成。同步端点保留 #5314 冻结契约，页面/其它调用方可先接 async。
+- **边界**：单批仍 ≤50；线程池 core 2 / max 4 / queue 50 + 优雅停机等待 60s；JVM 崩溃/强杀可能留下 `executing` 批次（跨实例自动回收需 lease/heartbeat，另开单跟踪）。
+- 判据：`AgentBatchServiceTest$AsyncExecution` / `ContextPropagatingTaskDecoratorTest` / `test_product_batch_update.py::TestAsyncPolling`；红证：去掉 decorator ⇒ tenant/user 上下文判红。
+
 ### 黄金策开始算钱了：这批货压了多少、离同行差多少、调价一件多赚多少（2026-10-31，issue #8276）
 
 - **改前**：P3 给的选项只有「可逆 / 不可逆」和「高 / 中 / 低」成本 —— **没有一个数字**。老板看到「小范围试调价（如 +5%）」时真正想问的是「这批货压了多少钱、+5% 一件能多赚多少」，答不出来。**权衡没有刻度。**
