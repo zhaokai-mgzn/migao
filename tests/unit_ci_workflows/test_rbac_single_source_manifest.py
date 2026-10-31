@@ -138,6 +138,12 @@ LEDGER_CEILINGS = {
     # `{reportPath, token}`）。它与既有 `GET /s/{}` **同族**（公开印刷品入口、`permitAll`、不查企业编码、
     # 响应键集恰好两个、不多给 302 Location 之外的字段）⇒ 已登记进 `UNANNOTATED_ENDPOINTS`。
     # **显式放宽**（diff 里看得见）：增长的原因是「确实新增了一条与 `/s/{}` 同族的公开入口」，
+
+    # issue #8203（P0-03，2026-10-31）：新增 `POST /api/client-errors`（`ClientErrorController` 的
+    # **浏览器错误上报**端点，`permitAll` —— 登录页崩了也要能上报，故障态没有凭据）⇒ 已登记进
+    # `UNANNOTATED_ENDPOINTS` 台账（逐条带理由：只把 8 个白名单字段落**一行**日志，不建表不落库、
+    # 不读租户/业务数据；三道闸 = 8 KiB / 每 IP 30 条·分钟⁻¹ + 全局 600 / 三道去敏）。
+    # **显式放宽**（diff 里看得见）：增长的原因是「确实新增了一条刻意公开的上报面」，
     # 不是「有人把台账放宽了」。24 → 25。
     "UNANNOTATED_ENDPOINTS": 25,
 
