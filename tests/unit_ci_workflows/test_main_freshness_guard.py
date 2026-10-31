@@ -12,7 +12,7 @@ r"""**main 侧生成物新鲜度守护腿**的判据（issue #5687 族的 burn-d
 
 - **main 可以先漂移**（有人改了 `.github/cases/**` 却没提交生成物）；
 - **第一个撞上它的无辜 PR 会红**，且红的信息指向**那个 PR 自己的 diff** ⇒ **归因指向错误的对象**。
-- 实测两例：某包在**纯检出 `origin/main`** 上复算复现（`eval_cases.py` ✅ 新鲜 / casebook ❌ 陈旧）；
+- 实测两例：某包在**纯检出 `origin/main`** 上复算复现（`eval_cases/` ✅ 新鲜 / casebook ❌ 陈旧）；
   另一例归因被指到**另一个无关的 PR**，并被写进了公开记录（事后用提交级读数才发现站不住）。
 
 这条残余**已被具名登记**在 `tests/unit_ci_workflows/test_casebook_summary_is_derived.py` 的
@@ -124,7 +124,8 @@ SHARED_IMPLEMENTATION = SCRIPT_REL
 
 #: 本腿**登记覆盖**的生成物（逐个行为级验证；与判定本体的 `ARTIFACTS` 双向相等才算齐）。
 COVERED_ARTIFACTS = (
-    "tests/agent_eval/eval_cases.py",
+    # issue #8188：单文件 `eval_cases.py` → **按域分包的目录**（目录型产物，逐模块比对）
+    "tests/agent_eval/eval_cases",
     "docs/testing/mibao-verification-cases.md",
 )
 
@@ -306,9 +307,7 @@ def _build_repo(root: Path, *, drift_source: bool = False, corrupt: tuple[str, .
         shutil.copy2(REPO / ".github" / name, root / ".github" / name)
     shutil.copytree(REPO / ".github" / "cases", root / ".github" / "cases")
     for rel in COVERED_ARTIFACTS:
-        dest = root / rel
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text((REPO / rel).read_text(encoding="utf-8"), encoding="utf-8")
+        _copy_artifact(REPO / rel, root / rel)
 
     if drift_source:
         target = root / ".github" / "cases" / "misc.yml"
@@ -319,18 +318,41 @@ def _build_repo(root: Path, *, drift_source: bool = False, corrupt: tuple[str, .
         target.write_text(text[:j] + "（夹具漂移）" + text[j:], encoding="utf-8")
 
     for rel in corrupt:
-        target = root / rel
-        target.write_text(target.read_text(encoding="utf-8") + "\n# 夹具：这一行只存在于提交版\n",
-                          encoding="utf-8")
+        _corrupt_artifact(root / rel)
 
     if broken_renderer:
         (root / ".github" / "render_cases.py").write_text(
             "import shutil, sys\n"
             "argv = sys.argv\n"
-            "shutil.copyfile('tests/agent_eval/eval_cases.py', argv[argv.index('--out-eval') + 1])\n"
+            "out_eval = argv[argv.index('--out-eval') + 1]\n"
+            "committed = 'tests/agent_eval/eval_cases'\n"
+            "shutil.copytree(committed, out_eval, dirs_exist_ok=True)  # 永远输出提交版副本（夹具）\n"
             "shutil.copyfile('docs/testing/mibao-verification-cases.md', argv[argv.index('--out-md') + 1])\n",
             encoding="utf-8")
     return root
+
+
+def _copy_artifact(src: Path, dest: Path) -> None:
+    """把生成物复制进夹具仓（**单文件 / 目录型生成物**两种形态都支持，issue #8188）。"""
+    if src.is_dir():
+        shutil.copytree(src, dest, ignore=shutil.ignore_patterns("__pycache__"))
+        return
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+
+
+def _corrupt_artifact(target: Path) -> None:
+    """只弄脏**那一个**产物：单文件追加一行；目录型 ⇒ 往其中一个模块追加一行。
+
+    目录型**不改文件名集合**（否则测到的会是「新增/缺模块」那条判据，而不是「字节不同」）。
+    """
+    marker = "\n# 夹具：这一行只存在于提交版\n"
+    if target.is_dir():
+        modules = sorted(target.glob("*.py"))
+        assert modules, f"夹具的目录型生成物里没有模块：{target}"
+        modules[0].write_text(modules[0].read_text(encoding="utf-8") + marker, encoding="utf-8")
+        return
+    target.write_text(target.read_text(encoding="utf-8") + marker, encoding="utf-8")
 
 
 def _run(repo: Path, *extra: str) -> tuple[int, str, dict]:
@@ -400,6 +422,8 @@ class TestTriggerFaces:
 # ══════════════════════════════════════════════════════════════════════════════
 
 #: 旧的内联实现文本（**红证夹具**：把它塞回任一侧 ⇒ 判据必须红）。
+#: ⚠️ 这里保留的是 **issue #8188 之前**的单文件形态（`--out-eval .../eval_cases.py`）——
+#:    它**不是**现役引用，而是「内联第二份实现」这条判据的**历史样本**，故意逐字保留。
 INLINE_LEGACY_IMPL = (
     "python3 .github/render_cases.py --cases .github/cases "
     "--out-eval tests/agent_eval/eval_cases.py "
@@ -573,6 +597,32 @@ class TestCoverage:
         assert drifted == [artifact], f"具名报出的产物不对（实测 {drifted}）：\n{out}"
         assert artifact in report.get("error_annotation", ""), report.get("error_annotation")
 
+    def test_hand_stuffed_module_in_the_directory_artifact_is_red(self, tmp_path):
+        """**未登记模块 ⇒ 红**（issue #8188 的防手塞面，行为级）。
+
+        生成物目录里的 `.py` 只要不在渲染结果里，就是**手塞**（重渲染不会覆盖、也不会删它）
+        ⇒ 必须判红且**点名那个模块**；否则「文件被塞进生成物目录」这件事完全静默。
+        """
+        repo = _build_repo(tmp_path / "stuffed")
+        (repo / COVERED_ARTIFACTS[0] / "hand_stuffed.py").write_text("X = 1\n", encoding="utf-8")
+        rc, out, report = _run(repo)
+        assert rc == 1, f"生成物目录被手塞了一个模块却 rc={rc}：\n{out}"
+        drifted = [d["artifact"] for d in report.get("drifted") or []]
+        assert drifted == [COVERED_ARTIFACTS[0]], f"具名报出的产物不对（实测 {drifted}）：\n{out}"
+        assert "未登记模块" in out and "hand_stuffed.py" in out, out[-1500:]
+
+    def test_missing_module_in_the_directory_artifact_is_red(self, tmp_path):
+        """**缺模块 ⇒ 红**（行为级）：删掉提交版里的一个模块（渲染结果里有）⇒ 必红且点名。"""
+        repo = _build_repo(tmp_path / "missing-module")
+        victim = repo / COVERED_ARTIFACTS[0] / "order.py"
+        assert victim.is_file(), "前提：提交版的包里有 order.py"
+        victim.unlink()
+        rc, out, report = _run(repo)
+        assert rc == 1, f"生成物少了一个模块却 rc={rc}：\n{out}"
+        drifted = [d["artifact"] for d in report.get("drifted") or []]
+        assert drifted == [COVERED_ARTIFACTS[0]], f"具名报出的产物不对（实测 {drifted}）：\n{out}"
+        assert "缺模块" in out and "order.py" in out, out[-1500:]
+
     def test_drift_shape_from_the_two_real_incidents_turns_it_red(self, drifted_repo):
         """**判据 3 的靶子 = 今天真实发生过的那两次形态**：改了 `.github/cases/**` 但生成物没跟。
 
@@ -590,6 +640,10 @@ class TestCoverage:
         """
         mutant = _mutate(_script_source(), "            if committed == renewed:",
                          "            if True:  # 变异：恒绿")
+        # issue #8188：目录型产物有**第二处**比较（`_artifact_bytes_equal`），必须一起致盲才算
+        # 「判定恒绿」；只致盲单文件那处 ⇒ 目录型产物照旧判红（那是**两个独立比较点**）。
+        mutant = _mutate(mutant, "    return committed == renewed",
+                         "    return True  # 变异：恒绿（目录型产物）")
         module = _exec_mutant(mutant)
         rc = module.main(["--repo", str(drifted_repo)])
         assert rc == 0, f"判定换成恒绿之后仍非零（{rc}）⇒ 判别力证明不成立"
@@ -1242,7 +1296,7 @@ class TestMergeUnionShape:
 # ══════════════════════════════════════════════════════════════════════════════
 
 PROBE_FACE_PATHS = (".github/cases", ".github/render_cases.py",
-                    "docs/testing/mibao-verification-cases.md", "tests/agent_eval/eval_cases.py")
+                    "docs/testing/mibao-verification-cases.md", "tests/agent_eval/eval_cases")
 PROBE_STEP_NEEDLE = "--merge-probe origin/main"
 PROBE_GATE_NEEDLE = "steps.probe_face.outputs.probe == 'true'"
 PROBE_RE_NEEDLE = "PROBE_FACE_RE='"
@@ -1333,9 +1387,7 @@ def _git_fixture(root: Path) -> Path:
         shutil.copy2(REPO / ".github" / name, root / ".github" / name)
     shutil.copytree(REPO / ".github" / "cases", root / ".github" / "cases")
     for rel in COVERED_ARTIFACTS:
-        dest = root / rel
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text((REPO / rel).read_text(encoding="utf-8"), encoding="utf-8")
+        _copy_artifact(REPO / rel, root / rel)
     _git_in(root, "init", "-q", ".")
     _git_in(root, "add", "-A")
     _git_in(root, "-c", "user.email=case@example.invalid", "-c", "user.name=case", "commit", "-qm", "base")

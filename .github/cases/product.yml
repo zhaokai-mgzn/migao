@@ -3202,7 +3202,7 @@ cases:
       - |-
         🔴 判据 3·**「生成物新鲜度」抓不到这条（所以必须单列判据）**：那条检查比的是「能否由当前源重渲染出**已提交的**产物」，**不是**「产物是否等于真值」⇒ 一份**稳定地错**的产物永远绿。实证：修前那两个生成物在 main 上**长期"新鲜"**，而 33 处取值与真值不同（连带交给 LLM 的判据文本与真值不同；任何按值检索/比对的工具都会漏）。
       - |-
-        判据 4·**零 diff 自证（稳定点）**：同参数再跑 `python3 .github/render_cases.py --cases .github/cases --out-eval tests/agent_eval/eval_cases.py --out-md docs/testing/mibao-verification-cases.md` ⇒ 两个生成物**逐字节相同**，且与已提交版本**逐字节一致**；判据本体 = 同文件 `test_render_is_a_stable_fixpoint_and_matches_committed`（渲染两次 + 对齐已提交）。⚠️ 本单**预期生成物会变**（那正是修复本身）⇒ 生成物由 `render_cases.py` 重生成，**一个字面量都不许手改**。
+        判据 4·**零 diff 自证（稳定点）**：同参数再跑 `python3 .github/render_cases.py --cases .github/cases --out-eval tests/agent_eval/eval_cases --out-md docs/testing/mibao-verification-cases.md` ⇒ 两个生成物**逐字节相同**，且与已提交版本**逐字节一致**；判据本体 = 同文件 `test_render_is_a_stable_fixpoint_and_matches_committed`（渲染两次 + 对齐已提交）。⚠️ 本单**预期生成物会变**（那正是修复本身）⇒ 生成物由 `render_cases.py` 重生成，**一个字面量都不许手改**。
     skip_reason: "[backend-contract] 渲染腿取值保真（CI 机具面，无黄金策工具面）⇒ 由 tests/unit_ci_workflows 单测验证，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5179）：双引号标量按 YAML 8.1.3 解码（引号 / 反斜杠 / 斜杠 / 换行 / 制表 / 回车 / 退格 / 换页 / 十六进制 / Unicode 与代理对）+ 单引号 `''` 只处理 `''`；修前 33 处取值不同 / 163 个多余转义序列，修后 0。取号 PR-083。"
     traces:

@@ -11231,7 +11231,7 @@ async def main():
         print(f"📚 用例源: {args.cases}（{len(cases)} 条，YAML 单一源）")
     else:
         cases = ALL_CASES
-        print(f"📚 用例源: eval_cases.py（生成物，{len(cases)} 条）")
+        print(f"📚 用例源: eval_cases/（生成物包，{len(cases)} 条）")
 
     # persona 归属 + C 端工具集过滤（issue #2855 / #3266）
     # mibao：跳过 C 端专属（xiaobu）用例

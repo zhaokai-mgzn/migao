@@ -923,7 +923,7 @@ jobs:
           #    `git diff origin/main...HEAD` 会 **rc≠0**，而管道里的 rc 被 `grep` 吃掉 ⇒ 落进 else 并把原因
           #    写成「未命中」= **归因写错**（「算不出」≠「没命中」）。⇒ 基线自己取、diff 的 rc 自己判。
           git fetch --no-tags --quiet origin main
-          PROBE_FACE_RE='(\.github/cases/|\.github/render_cases\.py|docs/testing/mibao-verification-cases\.md|tests/agent_eval/eval_cases\.py)'
+          PROBE_FACE_RE='(\.github/cases/|\.github/render_cases\.py|docs/testing/mibao-verification-cases\.md|tests/agent_eval/eval_cases/)'
           if ! CHANGED="$(git diff --name-only "origin/main...HEAD")"; then
             echo "::error::算不出「本次改动是否命中受管用例面」（\`git diff origin/main...HEAD\` rc≠0）⇒ **不得当「未命中」**；检查 fetch-depth: 0 / \`origin/main\` 是否可得"
             exit 1

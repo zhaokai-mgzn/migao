@@ -12,13 +12,14 @@
 这正是本 issue 要消灭的那类静默失效（§16.1：能由 L0 静态层拦的缺陷不许流到真实 LLM）。
 """
 import importlib.util
+import sys
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MODULE_PATH = REPO_ROOT / "tests" / "agent_eval" / "behavior_mapping.py"
-EVAL_CASES_PATH = REPO_ROOT / "tests" / "agent_eval" / "eval_cases.py"
+EVAL_CASES_PKG = REPO_ROOT / "tests" / "agent_eval"    # 生成物 = 包目录 eval_cases/（issue #8188）
 
 
 def _load(path: Path, name: str):
@@ -30,7 +31,10 @@ def _load(path: Path, name: str):
 
 bm = _load(MODULE_PATH, "migao_behavior_mapping")
 # 用例库渲染产物（`render_cases.py` 单一源）：用来锁「映射引用的 case ID 真实存在」
-_eval_cases = _load(EVAL_CASES_PATH, "migao_eval_cases_for_mapping")
+# issue #8188 起生成物是**按域分包的目录** ⇒ 用包导入（`from eval_cases import ...` 的同一导入面）
+if str(EVAL_CASES_PKG) not in sys.path:
+    sys.path.insert(0, str(EVAL_CASES_PKG))
+import eval_cases as _eval_cases  # noqa: E402
 
 # 各规则的「代表性改动文件」（取仓内真实路径，含 §13.2 列出的承载文件）
 ORDER_PATH = "backend/ai-agent-service/app/graph/skills/order_skill.py"

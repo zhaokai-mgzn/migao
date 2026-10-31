@@ -149,7 +149,7 @@ def test_d3_skill_map_values_are_real_enum_members():
     bad = invalid_skill_values(render_cases.SKILL_MAP, SKILL_MEMBERS)
     assert not bad, (
         f"`SKILL_MAP` 有非法值：{bad} —— 合法值只有 {sorted(SKILL_MEMBERS)}；"
-        f"非法值会渲染成 `Skill.<未定义名>` ⇒ `eval_cases.py` 导入失败"
+        f"非法值会渲染成 `Skill.<未定义名>` ⇒ `eval_cases/` 包导入失败"
     )
 
 
@@ -162,7 +162,7 @@ def test_d4_generated_md_sections_use_titles_not_raw_domains():
     assert not raw, (
         f"md 章节标题仍是**英文域名**：{raw} ⇒ 生成物过期或域表未生效；"
         f"跑 `python3 .github/render_cases.py --cases .github/cases "
-        f"--out-eval tests/agent_eval/eval_cases.py "
+        f"--out-eval tests/agent_eval/eval_cases "
         f"--out-md docs/testing/mibao-verification-cases.md` 重渲染并提交"
     )
 
@@ -233,7 +233,7 @@ class TestSkillIsNotConsumed:
     的**读取点**。`local_runner.py` 自建 `EvalCase` 时写 `skill=Skill.GENERAL`（写入，不是读取）
     —— 构造关键字参数不算消费，故按「`.skill` 属性读取」判。
 
-    **实测现状（全仓唯一的消费点）**：`tests/agent_eval/eval_cases.py` 的 `print_summary()`
+    **实测现状（全仓唯一的消费点）**：`tests/agent_eval/eval_cases/__init__.py` 的 `print_summary()`
     里 `cs = [c for c in active if c.skill == skill]` —— 但该函数**只被本文件的
     `if __name__ == "__main__":` 调用**，全仓无其它调用方（判据 = 本文件
     `test_print_summary_has_no_callers`）⇒ `skill` 不进 runner / CI 的任何判定路径。
@@ -246,7 +246,7 @@ class TestSkillIsNotConsumed:
     READ_RE = re.compile(r"\.skill\b|getattr\([^)]*[\"']skill[\"']")
     #: 允许名单：只放**非消费**的读取（逐条给出理由）。
     ALLOWED: dict[str, str] = {
-        "tests/agent_eval/eval_cases.py": (
+        "tests/agent_eval/eval_cases/__init__.py": (
             "生成物自带的 `print_summary()` 调试打印（仅 `__main__` 可达、无调用方）"
             "—— 见 `test_print_summary_has_no_callers`"
         ),
@@ -278,18 +278,18 @@ class TestSkillIsNotConsumed:
         """允许名单的**死亡条件**：`print_summary()` 一旦有了调用方，豁免即失效（须重评）。
 
         判据走 **AST**（不是正则）：字符串字面量 / 注释 / prose 里的 `print_summary()` 都不算，
-        只有真实 `Call` 节点才算。`eval_cases.py` 自己的
+        只有真实 `Call` 节点才算。`eval_cases/__init__.py` 自己的
         `if __name__ == "__main__": print_summary()` 不算 —— 那正是本豁免所述的那一次调用。
         """
         offenders, missing = [], []
-        for rel in ("tests/agent_eval/eval_cases.py", ".github/render_cases.py",
+        for rel in ("tests/agent_eval/eval_cases/__init__.py", ".github/render_cases.py",
                     "tests/agent_eval/local_runner.py"):
             path = REPO_ROOT / rel
             if not path.is_file():
                 missing.append(rel)
                 continue
             for lineno, in_main in print_summary_calls(path):
-                if rel == "tests/agent_eval/eval_cases.py" and in_main:
+                if rel == "tests/agent_eval/eval_cases/__init__.py" and in_main:
                     continue
                 offenders.append(f"{rel}:{lineno}")
         assert not missing, (

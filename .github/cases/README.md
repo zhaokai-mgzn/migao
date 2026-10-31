@@ -31,7 +31,7 @@ cases/
 2. **ID 稳定**：`<域前缀>-<3位数字>` 一经发布不可改；旧 ID 保留在 `legacy_id`。
 3. **并源溯源**：每条用例的 `merge_log` 记录「由哪些旧用例合并而来」，防止合并时丢覆盖。
 4. **缺口显式**：真值暂缺时 `truths_ref: []` + ⚠️ 注释，由映射表 5.1 节跟踪补真值，禁止留空装作无事发生。
-5. **生成物禁手写**：`eval_cases.py` 与 `mibao-verification-cases.md` 迁移完成后由 `render_cases.py` 渲染。
+5. **生成物禁手写**：`eval_cases/`（按域分包的目录，issue #8188）与 `mibao-verification-cases.md` 由 `render_cases.py` 渲染。
 6. **persona 归属（issue #2855）**：可选字段 `persona: mibao | xiaobu`，标记用例归属 agent；缺省/`both` = 双端。
    `local_runner` 按 persona 过滤（mibao 跳过 xiaobu 专属，反之亦然），防止 C/B 端专属用例在另一端回归中误报。
    已标记案例：C 端订单/物流（customer_* 工具）等元元专属用例。
@@ -56,7 +56,7 @@ cases/
 | 真值解析器 | ✅ `.github/truths.py`（index / check，fail-closed）+ `test_truths.py` 6 条单测 |
 | 12 域用例转换 | ✅ 80 条全部落地（126 处 truths_ref 可解析，7 个缺口用例显式标注） |
 | CI 门禁 | ✅ `pr-check.yml` 新增 `case-truth-check` job（seed + migao 两份），seed 文件已部署至 `migao/.github/` |
-| `render_cases.py` 生成器 | ✅ YAML → `eval_cases.py`（80 条）+ `mibao-verification-cases.md`，两者已生成、禁止手改 |
+| `render_cases.py` 生成器 | ✅ YAML → `eval_cases/`（按域分包的目录）+ `mibao-verification-cases.md`，两者已生成、禁止手改 |
 | `local_runner.py` 直读 YAML | ✅ 新增 `--cases` 参数 + direct_reply 分支 + legacy_id 查找；`agent-eval.yml` 已改走单一源 |
 | G5 追溯链（测试文件→用例） | ⏳ |
 
@@ -65,7 +65,7 @@ cases/
 ```bash
 python3 .github/render_cases.py \
   --cases .github/cases \
-  --out-eval tests/agent_eval/eval_cases.py \
+  --out-eval tests/agent_eval/eval_cases \
   --out-md docs/testing/mibao-verification-cases.md
 ```
 

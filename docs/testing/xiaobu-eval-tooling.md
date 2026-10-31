@@ -628,7 +628,7 @@ L1 不命中（"确认"/"好的"/"米白"这类点卡值/短确认）才用合�
 3. 断言优先用**可执行形态**（`order_before` / `required_args` / `forbidden_text` /
    `db_verify`），自然语义 `data_checks` 不算覆盖（`acceptance-protocol` §1.3）；
 4. 涉及数据隔离的能力（订单/物流/售后/地址）必须断言「仅本人」+「无 B 端越权工具」；
-5. 跑 `python3 .github/render_cases.py --cases .github/cases --out-eval tests/agent_eval/eval_cases.py --out-md docs/testing/mibao-verification-cases.md` 提交生成物；
+5. 跑 `python3 .github/render_cases.py --cases .github/cases --out-eval tests/agent_eval/eval_cases --out-md docs/testing/mibao-verification-cases.md` 提交生成物；
 6. 跑覆盖体检 `--check` 确认无孤儿用例；
 7. 用本地 DEBUG 栈实测该用例 ≥1 次（真实 LLM），确认断言与行为一致（先例：行为合理但
    断言过严的，按 §14.2 校准而非删用例）；

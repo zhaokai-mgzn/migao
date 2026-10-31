@@ -4,7 +4,7 @@
 #
 # 背景（2026-09-07 复盘）：PR open→merge 长尾耗时 90% 来自两个返工模式：
 #   ① CI 首轮红了无人盯 → 2 小时空窗；
-#   ② merge origin/main 后 cases/ 单一源前进，生成物（eval_cases.py /
+#   ② merge origin/main 后 cases/ 单一源前进，生成物（eval_cases/ 包目录 /
 #      mibao-verification-cases.md）未同步 → CI「生成物新鲜度校验」必红
 #      → 手动重渲染 + 再 push + 多跑一轮全量 CI。
 # 本脚本把「同步 main + 重渲染生成物 + 提交」合成一步，杜绝②类返工。
@@ -26,8 +26,8 @@
 #   5. 合并后内容级校验：origin/main 在受管用例面上新增的**每一行**（用例条目 `- id:`、
 #      销账字段块 `must_succeed` / `namespaces` / `precondition` …）必须仍在合并结果里；
 #      缺任何一行 ⇒ 非零退出 + 指名文件与缺失内容
-#   6. 重渲染生成物（.github/render_cases.py → eval_cases.py + casebook.md）
-#   7. 有 diff → 自动提交（仅含两个生成物文件，message 标准化）：
+#   6. 重渲染生成物（.github/render_cases.py → eval_cases/（按域分包）+ casebook.md）
+#   7. 有 diff → 自动提交（仅含两个生成物路径：`eval_cases/` 目录 + casebook 文件，message 标准化）：
 #      "chore(cases): 合并 main 后重渲染生成物（N 条）"
 #   8. 提醒 push
 #
@@ -89,7 +89,7 @@ for arg in "$@"; do
   esac
 done
 
-EVAL_OUT="tests/agent_eval/eval_cases.py"
+EVAL_OUT="tests/agent_eval/eval_cases"   # 目录型生成物（issue #8188）
 CASEBOOK_OUT="docs/testing/mibao-verification-cases.md"
 
 # ── 合并后内容级校验（issue #4984 第二层）─────────────────────────────────────
@@ -397,16 +397,21 @@ python3 .github/render_cases.py \
   --out-eval "$EVAL_OUT" \
   --out-md "$CASEBOOK_OUT" >/dev/null
 
-if git diff --exit-code -- "$EVAL_OUT" "$CASEBOOK_OUT" >/dev/null 2>&1; then
+# ⚠️ `git diff` **看不见 untracked 文件**，而 `eval_cases/` 是**目录型**生成物（issue #8188）：
+# 新增一个域（新 `.yml`）会产出**新模块文件** ⇒ 只看 `git diff` 会误判「无更新」而漏提交
+# ⇒ 这里改用 `git status --porcelain`（含 untracked）。
+if [ -z "$(git status --porcelain -- "$EVAL_OUT" "$CASEBOOK_OUT")" ]; then
   echo "✅ 生成物已是最新（无 diff），无额外提交"
 else
-  echo "ℹ️ 生成物有更新："
-  git diff --stat -- "$EVAL_OUT" "$CASEBOOK_OUT"
   if [ "$AUTO_COMMIT" -eq 0 ]; then
+    echo "ℹ️ 生成物有更新："
+    git status --short -- "$EVAL_OUT" "$CASEBOOK_OUT"
     echo "ℹ️ --no-commit：请人工审 diff 后自行提交"
     exit 0
   fi
   git add "$EVAL_OUT" "$CASEBOOK_OUT"
+  echo "ℹ️ 生成物有更新："
+  git diff --cached --stat -- "$EVAL_OUT" "$CASEBOOK_OUT"
   CHANGES="$(git diff --cached --stat | tail -1 | grep -oE '[0-9]+ files? changed' || echo "生成物更新")"
   git commit -m "chore(cases): 合并 main 后重渲染生成物（${CHANGES}）"
   echo "✅ 已提交生成物重渲染"

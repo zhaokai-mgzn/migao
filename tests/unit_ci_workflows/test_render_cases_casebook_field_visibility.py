@@ -107,7 +107,7 @@ NOT_RENDERED: dict[str, str] = {
     "traces": "证据链（测试文件 / CI workflow 名）：由 `.github/cases/README.md` 的 7 条纪律与 "
               "`tests/unit_ci_workflows/test_eval_evidence_chain.py` 守卫；逐条印会与 `真值:` / "
               "`溯源:` 行混淆（那两行是**引用**，不是人读断言）",
-    "legacy_id": "迁移期旧 ID 映射（`eval L001` 之类），只有生成物 `eval_cases.py` 的 runner 兜底查找用；"
+    "legacy_id": "迁移期旧 ID 映射（`eval L001` 之类），只有生成物 `eval_cases/` 的 runner 兜底查找用；"
                  "人读账本以 `### <ID>.` 标题为准",
     "domains": "跨域**过滤**标签（`.github/` 侧消费）；人读账本按章节（= 源文件名 `_domain`）+ `tags` 行定位，"
                "逐条印 483 次是纯噪声",

@@ -453,12 +453,12 @@ UNUSED_ALLOWED = {
 def _assertion_vocabulary():
     """从生成物 dataclass 解析断言字段（单一源）"""
     import ast
-    src = (REPO_ROOT / "tests" / "agent_eval" / "eval_cases.py").read_text(encoding="utf-8")
+    src = (REPO_ROOT / "tests" / "agent_eval" / "eval_cases" / "_schema.py").read_text(encoding="utf-8")
     for node in ast.parse(src).body:
         if isinstance(node, ast.ClassDef) and node.name == "EvalCase":
             return [s.target.id for s in node.body
                     if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name)]
-    raise AssertionError("eval_cases.py 里找不到 EvalCase dataclass —— 解析失效")
+    raise AssertionError("eval_cases/_schema.py 里找不到 EvalCase dataclass —— 解析失效")
 
 
 class TestAssertionVocabularyIsExercised:

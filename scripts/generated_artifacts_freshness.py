@@ -20,7 +20,7 @@
 
 | 生成物 | 唯一源 |
 |---|---|
-| `tests/agent_eval/eval_cases.py` | `.github/cases/**` |
+| `tests/agent_eval/eval_cases/` | `.github/cases/**` |
 | `docs/testing/mibao-verification-cases.md` | `.github/cases/**` |
 
 渲染口径**不在这里重写**：一律调 `.github/render_cases.py`（渲染器本身就是单一源，
@@ -91,14 +91,22 @@ BASE_PROBE_COMMAND = "python3 scripts/generated_artifacts_freshness.py --base-pr
 
 @dataclass(frozen=True)
 class Artifact:
-    """一个生成物 + 它对应的 `render_cases.py` 输出开关。"""
+    """一个生成物 + 它对应的 `render_cases.py` 输出开关。
+
+    `kind` 区分两种形态（issue #8188）：
+      · `"file"` —— 单个文件，逐字节比对；
+      · `"dir"`  —— **目录型生成物**（渲染器写一**目录**，如按域分包的 `eval_cases/`），
+        逐模块逐字节比对；提交版里**多出来的模块文件**（手塞）与**缺的模块**都判红。
+    """
 
     rel: str
     out_flag: str
+    kind: str = "file"
 
 
 ARTIFACTS: tuple[Artifact, ...] = (
-    Artifact("tests/agent_eval/eval_cases.py", "--out-eval"),
+    # issue #8188：`eval_cases` 从单文件（18000+ 行）拆成**按域分包的目录** ⇒ 目录型产物。
+    Artifact("tests/agent_eval/eval_cases", "--out-eval", "dir"),
     Artifact("docs/testing/mibao-verification-cases.md", "--out-md"),
 )
 
@@ -120,6 +128,91 @@ def build_render_argv(python: str, cases_rel: str, renderer_rel: str, outs: dict
     for art in ARTIFACTS:
         argv += [art.out_flag, str(outs[art.rel])]
     return argv
+
+
+# ── 目录型生成物（issue #8188）：逐模块逐字节 + 「未登记 / 缺模块」都判红 ─────────────────────
+
+
+def _module_bytes(directory: Path) -> dict[str, bytes]:
+    """目录里的**模块文件**（`*.py`，不递归）→ `{文件名: 字节}`。
+
+    只看 `*.py`：生成物目录里可以出现 `__pycache__/`（导入时产生、不入库），
+    那不是生成物的一部分 ⇒ 不参与比对（否则「跑过一次测试」会伪造漂移）。
+    """
+    return {p.name: p.read_bytes() for p in sorted(directory.glob("*.py")) if p.is_file()}
+
+
+def _artifact_bytes_equal(committed: dict[str, bytes], renewed: dict[str, bytes]) -> bool:
+    """目录型产物是否**逐模块逐字节**相同 —— 判定的**单一比较点**（红证变异锚点）。
+
+    独立成函数是为了让「把比较换成恒绿 ⇒ 同一夹具变绿」这条判别力自证有一个**唯一**、
+    可逐字替换的锚点（目录型产物不能用单文件那处 `if committed == renewed:`）。
+    """
+    return committed == renewed
+
+
+def _compare_dir_artifact(repo: Path, art: Artifact, renewed_dir: Path):
+    """目录型生成物 vs 提交版：`(drifted_row | None, problems, undecidable)`。
+
+    判红三种形态（**逐条具名到模块文件**）：
+      ① 同名模块字节不同（改完用例库没重渲染）；
+      ② 提交版有、渲染结果没有 ⇒ **未登记模块**（手塞进生成物目录的 `.py`）；
+      ③ 渲染结果有、提交版没有 ⇒ **缺模块**（生成了却没提交）。
+    `drifted_row` 仍是**产物级**的一行（产物名 + 总行数差），逐模块明细进 `problems`。
+    """
+    problems: list[str] = []
+    undecidable: list[str] = []
+    if not renewed_dir.is_dir():
+        undecidable.append(f"渲染产物不是目录：{art.rel}/（渲染器新版应写目录；旧版才写单文件）")
+        return None, problems, undecidable
+    renewed = _module_bytes(renewed_dir)
+    committed = _module_bytes(repo / art.rel) if (repo / art.rel).is_dir() else {}
+    if not renewed:
+        undecidable.append(f"渲染产物目录里没有任何模块文件：{art.rel}/")
+        return None, problems, undecidable
+    if not committed:
+        undecidable.append(f"生成物目录不存在或没有模块文件：{art.rel}/")
+        return None, problems, undecidable
+    if _artifact_bytes_equal(committed, renewed):
+        return None, problems, undecidable
+
+    extra = sorted(set(committed) - set(renewed))
+    missing = sorted(set(renewed) - set(committed))
+    for name in extra:
+        problems.append(f"   📦 未登记模块：{art.rel}/{name}（提交版有、渲染结果没有 "
+                        f"⇒ 生成物目录**不许手塞**：删掉它）")
+    for name in missing:
+        problems.append(f"   📦 缺模块：{art.rel}/{name}（渲染结果有、提交版没有 "
+                        f"⇒ 重渲染并提交生成物）")
+
+    n_committed = n_renewed = n_changed = 0
+    for name in sorted(set(committed) | set(renewed)):
+        c_bytes = committed.get(name, b"")
+        r_bytes = renewed.get(name, b"")
+        c_text = c_bytes.decode("utf-8", "replace")
+        r_text = r_bytes.decode("utf-8", "replace")
+        c_lines, r_lines, changed = _changed_line_count(c_text, r_text)
+        n_committed += c_lines
+        n_renewed += r_lines
+        n_changed += changed
+        if c_bytes == r_bytes:
+            continue
+        if name in extra or name in missing:
+            # 缺/多模块已经有**具名**的一行（上面的 📦）；这里只补行数读数，不重复印 diff
+            problems.append(f"      行数：提交版 {c_lines} 行 / 现取 {r_lines} 行")
+            continue
+        problems += [f"   📄 模块：{art.rel}/{name}"] + divergence_report(
+            f"{art.rel}/{name}", c_text, r_text)
+
+    if not (extra or missing or n_changed):
+        return None, problems, undecidable
+    # 产物级差量行（与单文件产物的 `divergence_report` 同形：产物名 + 两侧行数 + 不同行数）
+    # ⇒ 「差量是现取的真数、不是模板」这条判据对**目录型产物**同样有对象可判。
+    header = [
+        f"❌ 产物：{art.rel}（目录型产物：逐模块比对，共 {len(set(committed) | set(renewed))} 个模块）",
+        f"   差量：提交版 {n_committed} 行 / 现取 {n_renewed} 行；不同 {n_changed} 行",
+    ]
+    return (art.rel, n_committed, n_renewed, n_changed), header + problems, undecidable
 
 
 def _changed_line_count(committed: str, renewed: str) -> tuple[int, int, int]:
@@ -232,7 +325,8 @@ def evaluate(repo: Path, *, python: str | None = None, cases_rel: str = CASES_RE
         undecidable.append(f"渲染器缺失：{renderer_rel}")
     if not cases_dir.is_dir():
         undecidable.append(f"用例库缺失：{cases_rel}/")
-    missing = [a.rel for a in ARTIFACTS if not (repo / a.rel).is_file()]
+    missing = [a.rel + ("/" if a.kind == "dir" else "") for a in ARTIFACTS
+               if not ((repo / a.rel).is_dir() if a.kind == "dir" else (repo / a.rel).is_file())]
     if missing:
         undecidable.append(f"生成物缺失：{'、'.join(missing)}")
     if undecidable:
@@ -271,6 +365,13 @@ def evaluate(repo: Path, *, python: str | None = None, cases_rel: str = CASES_RE
 
         drifted: list[tuple[str, int, int, int]] = []
         for art in ARTIFACTS:
+            if art.kind == "dir":
+                row, problems, undec = _compare_dir_artifact(repo, art, outs[art.rel])
+                undecidable += undec
+                if row is not None:
+                    drifted.append(row)
+                    report["problems"] += problems
+                continue
             renewed = outs[art.rel].read_text(encoding="utf-8")
             if not renewed.strip():
                 undecidable.append(f"渲染产物为空：{art.rel}")
@@ -342,7 +443,7 @@ def summary_line(report: dict) -> str:
 
 #: 合并探测要物化的路径（够跑 `evaluate()` 即可；整仓 `git archive` 太重）。
 MERGE_PROBE_PATHS: tuple[str, ...] = (".github", "docs/testing/mibao-verification-cases.md",
-                                      "tests/agent_eval/eval_cases.py")
+                                      "tests/agent_eval/eval_cases")
 
 
 def _git_rc(repo: Path, *args: str, timeout: int = 300) -> subprocess.CompletedProcess:

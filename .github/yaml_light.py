@@ -31,7 +31,7 @@
   （复核方两次人工比对都没比出来，正说明"看不出"是常态）。
 
 **可复算读数**（比较器 = `tests/unit_ci_workflows/render_leg_compare.py`；真值 = `yaml.safe_load`，
-产物 = `tests/agent_eval/eval_cases.py` 的 `ast.literal_eval` 字面量）：修前真值 **428** 条用例、
+产物 = `tests/agent_eval/eval_cases/` 各模块的 `ast.literal_eval` 字面量）：修前真值 **428** 条用例、
 产物 **428** 条（id 序列逐位相同），逐值不同的 **(文件, 用例, 字段)** = **33 处**、不同的字符串
 **45** 个、产物侧多出的转义序列 **163** 个（`\\"` 148 + `\\\\` 9 + `\\/` 1 + `\\n` 5），成因只有一个。
 ⇒ 现在按 YAML 8.1.3 解码（`_DQ_ESCAPES` 与 `\\x` / `\\u` / `\\U`），取值逐值等于 PyYAML。

@@ -1,0 +1,146 @@
+# GENERATED FILE — DO NOT EDIT
+# 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
+# 源: cases/*.yml（case-contract 单一源）
+# 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
+# 域: onboarding（源: cases/onboarding.yml，7 条）
+
+from ._schema import Difficulty, EvalCase, Skill
+
+# ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
+_CASE_OB_001 = EvalCase(
+    id='OB-001',
+    legacy_id='',
+    title='商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家提交合规入驻申请（POST /api/auth/register），AI 自动甄别'],
+    expectations=['direct_reply'],
+    data_checks=['响应 status=approved 且 applicationId 非空，同步自动创建租户(active)+企业管理员(admin)+默认角色权限', 'tenant_applications 落 review_source=ai / risk_flags / review_summary / reviewed_by=ai', 'ai-agent 内部端点 POST /api/internal/registration/review 规则层无违规 + LLM approve → approve；LLM 不可用且规则层通过 → review_source=system 放行'],
+    skip_reason='[backend-contract] 由 admin-api 单测（RegistrationServiceTest/ControllerTest/ReviewClientTest）+ ai-agent 单测（test_registration_review.py）+ 前端单测（register.test.tsx）验证，非 LLM 冒烟',
+    tags=['onboarding', 'ai_review', 'auto_approve'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── OB-002 [NORMAL] 商家入驻 - AI 自动驳回（敏感内容 / 法律风险）（源: cases/onboarding.yml）──
+_CASE_OB_002 = EvalCase(
+    id='OB-002',
+    legacy_id='',
+    title='商家入驻 - AI 自动驳回（敏感内容 / 法律风险）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家提交含敏感/违法内容或法律风险的入驻申请'],
+    expectations=['direct_reply'],
+    data_checks=['规则层命中敏感词/注入/格式违规 → 直接驳回（review_source=rule，不调用 LLM 防刷成本）', 'LLM 识别法律风险（decision=reject 或 high 风险）→ 驳回（review_source=ai），响应 rejectReason 非空', '驳回不创建租户/管理员，申请置 rejected'],
+    skip_reason='[backend-contract] 由 admin-api + ai-agent 单测验证（规则层/LLM 层/决策合成），非 LLM 冒烟',
+    tags=['onboarding', 'ai_review', 'auto_reject', 'compliance'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── OB-003 [NORMAL] 商家入驻 - 防重复/防攻击（手机号/企业名/IP 频率/蜜罐/冷却/fail-closed）（源: cases/onboarding.yml）──
+_CASE_OB_003 = EvalCase(
+    id='OB-003',
+    legacy_id='',
+    title='商家入驻 - 防重复/防攻击（手机号/企业名/IP 频率/蜜罐/冷却/fail-closed）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['同一家公司/手机号/IP 反复提交入驻申请，或自动化脚本提交'],
+    expectations=['direct_reply'],
+    data_checks=['同手机号 pending/approved → 422；同企业规范化名称（去空格/括号/后缀）pending/approved → 422', 'AI 驳回 24h 冷却（review_source=system 的系统繁忙驳回不冷却，可立即重试）', '每手机号每日提交上限 3、每 IP 每小时上限 5（Redis 计数）→ 超限 422', '蜜罐字段 website 被填充 → 不落库不调 AI，静默返回 pending 占位', 'AI 甄别服务不可达 → fail-closed 系统繁忙驳回（review_source=system），绝不放行'],
+    skip_reason='[backend-contract] 由 RegistrationServiceTest + register.test.tsx（蜜罐隐藏字段）+ ai-agent 单测验证，非 LLM 冒烟',
+    tags=['onboarding', 'anti_abuse', 'rate_limit', 'honeypot', 'dedup'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── OB-004 [NORMAL] 商家入驻 - 人工审批页废弃，仅保留超管 API 兜底（源: cases/onboarding.yml）──
+_CASE_OB_004 = EvalCase(
+    id='OB-004',
+    legacy_id='',
+    title='商家入驻 - 人工审批页废弃，仅保留超管 API 兜底',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['平台不再提供人工审核新商家页面，商家入驻全部由 AI 自动甄别'],
+    expectations=['direct_reply'],
+    data_checks=['ops.migaozn.com 域名分支/入驻审批菜单/审批页面/中间件前缀已移除（前端无 /registrations 页面）', '超管兜底接口保留：GET/PUT /api/super-admin/registrations* 仅 API 应急，无前端入口', '主页与入驻页文案改为 AI 秒审（不再出现 1-3 个工作日人工审核）'],
+    skip_reason='[backend-contract] 由前端单测验证（corporate-home/app-routes/components-other/register），非 LLM 冒烟',
+    tags=['onboarding', 'ops_page_removed', 'super_admin_api'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── OB-005 [NORMAL] 官网主页 GB/T 47746-2026 遵循宣称（标准号 + 能力点 + 免责小字）（源: cases/onboarding.yml）──
+_CASE_OB_005 = EvalCase(
+    id='OB-005',
+    legacy_id='',
+    title='官网主页 GB/T 47746-2026 遵循宣称（标准号 + 能力点 + 免责小字）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['官网主页展示「遵循国家标准」区块：标准号 GB/T 47746-2026 与《顾客联络服务 人工与智能客户服务协同要求》', '4 个能力点：自动识别复杂诉求转人工 / 转人工规则可配置 / 转人工即同步上下文 / AI 严格承诺边界', '页脚免责：推荐性国标无认证机制，不构成认证、检测或备案结论'],
+    expectations=['direct_reply'],
+    data_checks=['corporate-home page.tsx 含 GB/T 47746-2026 区块（标准号、4 能力点、免责小字）', '文案不含「认证/通过检测/备案」误导词', 'corporate-home.test.tsx 断言标准号与能力点渲染（无快照/无新 icon）'],
+    skip_reason='[backend-contract] 由前端单测验证（corporate-home.test.tsx），非 LLM 冒烟',
+    tags=['homepage', 'compliance', 'gb47746'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯前端页面用例：前置 = `corporate-home` 页面源码与其单测同时存在、且被 vitest 正常收集（frontend/admin-web/tests/unit/pages/corporate-home.test.tsx）；前置由测试自身持有、不依赖共享夹具 ⇒ 前置不成立时（页面文件缺失/改名/选择器被摘）该单测直接红，不会表现成「agent 不干活」；agent-eval 栈不跑它',
+)
+
+# ── OB-006 [NORMAL] 开租即种默认商品分类 —— 新租户开箱首建商品不再 422「分类ID不能为空」（源: cases/onboarding.yml）──
+_CASE_OB_006 = EvalCase(
+    id='OB-006',
+    legacy_id='',
+    title='开租即种默认商品分类 —— 新租户开箱首建商品不再 422「分类ID不能为空」',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家入驻通过（POST /api/auth/register 或超管 PUT /api/super-admin/registrations/{id}/approve）后，管理员第一次建商品不应该先撞 422；他应该开箱就有一个可选的商品分类。', '同一个租户若被重复开通 / 重试，不应该种出两个同名默认分类。'],
+    expectations=['direct_reply'],
+    data_checks=['**病（issue #6295 的形态，已在云测试环境复现）**：入驻链路（RegistrationService.approveApplication）种了行业生产种子模板，**唯独漏了商品分类** ⇒ 新租户 categories 表 0 行；而 POST /api/admin/products 在非草稿状态要求 categoryId 非空（ProductService.validateRequiredForStatus）⇒ 开箱第一次建商品必撞 422「分类ID不能为空」（实测 tenant 25：catsBefore: []）。', '**判据 1（真库主判据）**：空库上真跑入驻链路 ⇒ 该租户 categories 恰 **1** 行、名字 = 单一来源常量 OnboardingInitialData.DEFAULT_PRODUCT_CATEGORY_NAME、tenant_id = 新租户；随后用该分类 id 走真 ProductService.createProduct（status=on_sale）⇒ **首建商品成功**、products 落 1 行且 category_id = 该分类 id。判据 = backend/admin-api/src/test/java/com/migao/admin/service/NewTenantOnboardingCategoryRealDbTest.java::onboardingSeedsDefaultCategoryAndFirstProductSucceeds。', '**判据 2（注入式红证 A · 双向）**：把种子那步摘掉（seedDefaultCategory spy 成 no-op）+ 同时摘掉后置条件探针 ⇒ 入驻「成功」但分类表 0 行 ⇒ 界面唯一能提交的 categoryId 是空 ⇒ 首建商品**逐字**报 422「分类ID不能为空」（读数为 VALIDATION_ERROR / 422）。这条读数自证判据 1 的绿**有判别力**。判据 = 同文件 neuteredSeedWithoutPostconditionGuardReproduces422。', '**判据 3（后置条件元守卫的判别力 · 注入红证 B）**：只把种子摘掉、保留后置条件校验 ⇒ 入驻**当场 fail-closed**（ONBOARDING_REQUIRED_DATA_MISSING）—— 「漏种」从静默变成开租当场红，不许产出「开箱不可用」的租户。判据 = 同文件 neuteredSeedWithPostconditionGuardFailsOnboarding + backend/admin-api/src/test/java/com/migao/admin/service/RegistrationServiceTest.java::failsClosedWhenRequiredInitialDataMissing。', '**判据 4（幂等 · 真库行数）**：入驻已种下 1 行后再对同一租户调播种 ⇒ 返回 0、分类行数仍为 1（重复入驻 / 重试不种出重复分类）。判据 = 同文件 seedingIsIdempotentOnRealDatabase。', '**判据 5（调用点具名断言 · mock 面）**：approveApplication 必须对新租户 id 调 seedDefaultCategory（删掉那一行即红）—— 同 #4430 的教训（调用点没有具名断言 ⇒ 删掉调用 CI 全绿）。判据 = RegistrationServiceTest::successSeedsDefaultProductCategory。', '**类级固化（本用例的元守卫）**：开租「必需初始数据清单」⇄ 入驻链路的播种调用双向对账（未登记即红 / 后置条件接线在 / 豁免台账只许缩短 / 默认值单一来源）—— 判据 = tests/unit_ci_workflows/test_onboarding_required_seed_guard.py（用例 MC-083）。', '🔴 **未固化 / 边界（照实登记）**：① **既有租户不自动补种**（本单选择「登记式」而非迁移回填，理由与重启条件见 PR body）⇒ tenant 25 这类存量租户仍走自助路径（建商品页「管理分类 → 添加分类」，需 product:category 权限）；② 真库判据用的是**真 PG + 真 mapper + 真 Service**，但**没有**真 HTTP 栈（端点层是否 422 由 ProductServiceTest 与端点既有判据覆盖）；③ 默认分类名是**产品口径**（「窗帘成品」，可编辑），改它不需要动代码之外的东西，但换名会改本用例与判据的常量来源（单一来源 = OnboardingInitialData.DEFAULT_PRODUCT_CATEGORY_NAME）。'],
+    skip_reason='[backend-contract] 由 admin-api 单测（真库 NewTenantOnboardingCategoryRealDbTest + mock RegistrationServiceTest / ProductCategorySeedServiceTest）+ 静态元守卫（test_onboarding_required_seed_guard.py）验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['onboarding', 'required-initial-data', 'default-category', 'idempotent', 'red-proof', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯后端契约用例：前置 = 真 PG 二进制（CI 由 admin-api-test job 的「Assert PostgreSQL binaries exist」保证，缺失即 job 失败）+ bootstrap 终态 schema（backend/admin-api/src/main/resources/db/init/schema.sql）；前置由测试自身持有（PgCluster.startOrAbort 缺 PG 时 CI 判红 / 本机显式 skip），不依赖共享夹具与远端环境 ⇒ 不会表现成「agent 不干活」；agent-eval 栈不跑它',
+)
+
+# ── OB-007 [NORMAL] 开租即种默认加工项目录 —— 新租户「加工项与分类」开箱即有（韩褶/打孔/定型…共 15 项）（源: cases/onboarding.yml）──
+_CASE_OB_007 = EvalCase(
+    id='OB-007',
+    legacy_id='',
+    title='开租即种默认加工项目录 —— 新租户「加工项与分类」开箱即有（韩褶/打孔/定型…共 15 项）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家入驻通过后第一次打开「生产配置 → 加工项与分类」时，他应该已经有行业常用的加工项（韩褶 / 打孔 / 定型…），可以直接选、也可以改；而不是从 0 项开始自己建。', '同一个租户若被重复开通 / 重试，不应该种出两份加工项目录；商家改过 / 删过的项也不应该被复活。'],
+    expectations=['direct_reply'],
+    data_checks=['**病（issue #7148 的形态）**：加工项目录的两条种子路径（backend/admin-api/src/main/resources/db/migration-archive/V83__seed_processing_item_catalog.sql 与 backend/admin-api/src/main/resources/db/init/schema.sql 的 V83 终态块）都是「对**当时**的租户循环」⇒ 迁移之后新入驻的租户 processing_categories / processing_items 都是 0 行（形态同 #4316 的工序库、#6295 的商品分类）—— 「生产配置 → 加工项与分类」页显示 0 项，下单页选不到任何加工项、加工费组合配不出来。', '**判据 1（真库主判据）**：空库真跑入驻链路 ⇒ 该租户 processing_items 恰 15 行存活项（= 建库脚本 16 项 − V123 撤出的「接高」）、全部挂在 OnboardingInitialData.DEFAULT_PROCESSING_CATEGORY_NAME（「加工费」）分类下（真外键 REFERENCES processing_categories(id)）、craft_hint 逐条照目录；再调播种 ⇒ 返回 0、行数不变。判据 = backend/admin-api/src/test/java/com/migao/admin/service/NewTenantOnboardingCategoryRealDbTest.java::onboardingSeedsProcessingCatalogOnRealDatabase。', '**判据 2（mock 面）**：空目录租户 ⇒ 种 1 个「加工费」分类 + 整份目录（字段逐条正确、tenantId / categoryId 正确）；已有目录 ⇒ 返回 0 且零写操作；已有同名分类 ⇒ 复用不重复建；countProcessingItems 对 null 归 0。判据 = backend/admin-api/src/test/java/com/migao/admin/service/ProcessingItemSeedServiceTest.java。', '**判据 3（注入式红证 · 双向）**：只把加工项目录那步摘掉（seedDefaultCatalog spy 成 no-op）、保留后置条件校验 ⇒ 入驻当场 fail-closed（ONBOARDING_REQUIRED_DATA_MISSING）—— 「目录漏种」从静默变成开租当场红。判据 = NewTenantOnboardingCategoryRealDbTest::neuteredProcessingCatalogSeedFailsOnboarding + backend/admin-api/src/test/java/com/migao/admin/service/RegistrationServiceTest.java::failsClosedWhenProcessingCatalogMissing。', '**判据 4（调用点具名断言 · mock 面）**：approveApplication 必须对新租户 id 调 seedDefaultCatalog（删掉那一行即红）—— 同 #4430 / #6295 的教训（调用点没有具名断言 ⇒ 删掉调用 CI 全绿）。判据 = RegistrationServiceTest::successSeedsDefaultProcessingCatalog。', '**类级固化（本用例的元守卫）**：Java 种子目录 ⇄（建库脚本目录 − 活迁移的撤出项 + 改名映射）**双向对账** —— 以后再加 / 撤一个目录项或改 craftHint 而漏改 Java 种子 ⇒ 当场判红；判别力在内存语料上自证（删行 / 改名 / 改工艺 / 清空 / 漏读撤出迁移各自判红，「只改注释」不红）。判据 = tests/unit_ci_workflows/test_onboarding_processing_catalog_seed.py（用例 MC-114）。另：本项已登记进 OnboardingInitialData.REQUIRED ⇒ 既有元守卫 tests/unit_ci_workflows/test_onboarding_required_seed_guard.py（用例 MC-083）自动按锚对账「漏种 / 未登记 / 后置条件接线」。', '🔴 **未固化 / 边界（照实登记）**：① **既有租户不自动补种**（本单只改入驻链路、不新增回填迁移：迁移链之后入驻且至今目录为空的存量租户仍为空）；② 「接高」**不种**（V123 已把它撤出目录，种下 = 复活一个商家不该勾到的项）；③ 目录项的 description / unit **逐字照既有租户**（与 V83 那批行同值），商家可读文案的进一步措辞打磨属另一面（见 #6492）；④ 目录**不落价**（R10 口径不变：价只在「加工费组合」上）。'],
+    skip_reason='[backend-contract] 由 admin-api 单测（真库 NewTenantOnboardingCategoryRealDbTest + mock ProcessingItemSeedServiceTest / RegistrationServiceTest）+ 静态元守卫（test_onboarding_processing_catalog_seed.py）验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['onboarding', 'required-initial-data', 'default-processing-catalog', 'idempotent', 'red-proof', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯后端契约用例：前置 = 真 PG 二进制（CI 由 admin-api-test job 的「Assert PostgreSQL binaries exist」保证，缺失即 job 失败）+ bootstrap 终态 schema（backend/admin-api/src/main/resources/db/init/schema.sql）+ 活迁移 backend/admin-api/src/main/resources/db/migration/V123__retire_join_height_processing_item.sql（撤出项的真值源）；前置由测试自身持有（PgCluster.startOrAbort 缺 PG 时 CI 判红 / 本机显式 skip），不依赖共享夹具与远端环境 ⇒ 不会表现成「agent 不干活」；agent-eval 栈不跑它',
+)
+
+CASES = (
+    _CASE_OB_001,
+    _CASE_OB_002,
+    _CASE_OB_003,
+    _CASE_OB_004,
+    _CASE_OB_005,
+    _CASE_OB_006,
+    _CASE_OB_007,
+)

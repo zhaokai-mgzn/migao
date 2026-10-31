@@ -394,7 +394,7 @@
         "kind": "step-detect-grep",
         "step": "Detect 受管用例面 changes（决定是否跑**合并探测**；未命中 ⇒ 显式打印「未跑」）",
         "emit_id": "probe_face",
-        "predicate": "(\\.github/cases/|\\.github/render_cases\\.py|docs/testing/mibao-verification-cases\\.md|tests/agent_eval/eval_cases\\.py)"
+        "predicate": "(\\.github/cases/|\\.github/render_cases\\.py|docs/testing/mibao-verification-cases\\.md|tests/agent_eval/eval_cases/)"
       },
       "must_cover": [
         {
@@ -410,8 +410,8 @@
           "reason": "被判的生成物之一（块进了、汇总没进的载体）"
         },
         {
-          "path": "tests/agent_eval/eval_cases.py",
-          "reason": "被判的生成物之二"
+          "path": "tests/agent_eval/eval_cases/",
+          "reason": "被判的生成物之二（issue #8188 起是按域分包的**目录**）"
         }
       ],
       "uncovered": [

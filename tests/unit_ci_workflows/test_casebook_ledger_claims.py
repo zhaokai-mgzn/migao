@@ -39,7 +39,7 @@
   真要覆盖，出口是**逐条登记**（`CLAIMS`），不是放宽正则；
 - **只判「文本里的数与台账现取是不是同一个值」**：台账本身对不对是台账自己的事
   （`test_dev_mode_failure_modes.py` 的边界已登记「只保证有承载体、不保证承载体是对的」）；
-- **不碰生成物**：`tests/agent_eval/eval_cases.py` 与 `docs/testing/mibao-verification-cases.md`
+- **不碰生成物**：`tests/agent_eval/eval_cases/` 与 `docs/testing/mibao-verification-cases.md`
   由 `scripts/generated_artifacts_freshness.py`（0/1/3）保证 ≡ 源 —— 源改准、重渲染即同步
   （**手改生成物**会被它判红，两边不重复判）；
 - 本判据**不改任何门禁的通过条件、不新增豁免**。
@@ -200,7 +200,7 @@ UNCOVERED_FORMS: tuple[dict, ...] = (
         "out_of_corpus": ".agent-presets/",
     },
     {
-        "form": "生成物里的同族陈旧（`tests/agent_eval/eval_cases.py` · `docs/testing/mibao-verification-cases.md`）",
+        "form": "生成物里的同族陈旧（`tests/agent_eval/eval_cases/` · `docs/testing/mibao-verification-cases.md`）",
         "reason": "生成物**不独立判**：`scripts/generated_artifacts_freshness.py`（0/1/3）已保证它 ≡ `.github/cases/**` 的源"
                   "（源改准 + 重渲染 ⇒ 同步；手改生成物它判红）⇒ 两边不重复判。",
         "owner": "用例库线（生成物机具）",

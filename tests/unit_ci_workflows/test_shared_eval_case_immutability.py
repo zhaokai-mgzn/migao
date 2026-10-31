@@ -3,7 +3,7 @@
 
 ## 病灶（改前实测，非推断）
 
-`tests/agent_eval/eval_cases.py`（生成物）的 `ALL_CASES` 是模块级共享单例。
+`tests/agent_eval/eval_cases/`（生成物包，issue #8188）的 `ALL_CASES` 是模块级共享单例。
 `test_eval_namespace_isolation.py` 的 `test_real_collisions_would_recur_if_declarations_are_removed`
 把 `namespaces` 逐条清空 —— 改的是**共享实例**，不是副本 ⇒ 同进程内
 `test_eval_case_asset_truth.py::...::test_declares_a_namespace_that_is_actually_contested`

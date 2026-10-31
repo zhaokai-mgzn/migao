@@ -239,7 +239,7 @@
 ```
 溯源: 2026-10-19 新增（issue #7027 的用例补齐）：售后域现有用例集中在工单状态机与退款口径（AS-001~015），缺「客户报损 → 商家问怎么处理」这条**商家视角**的真实旅程；且它与能力边界段（#7291）同源 —— 只读化之后模型最容易在这里承诺代办。 ｜ tags: aftersales, journey, capability-boundary
 
-## Agent 核心域（12 case）
+## Agent 核心域（13 case）
 
 ### AG-001. AgentResponse/AgentContext 数据结构 + _extract_msg_content think 剥离 🔵
 ```
@@ -321,6 +321,20 @@
 ```
 真值: ai-chat.intent-domains
 溯源: 2026-10-02 新增（issue #5951）：该测试文件此前未声明 case_ids，本单改动它（去掉已退役的 suggestions 桩键）后按门禁口径补声明；用例内容如实对应该文件既有的两组断言，**未新增/未放宽任何断言**。 ｜ tags: agents, multimodal, routing, regression
+
+### AG-009. B 端工具面按意图裁剪（读面 ≤16 / 保底不被裁 / 关闭等价 / C 端不变） 🔵
+```
+你: B 端商家一轮：帮我查一下最近订单的物流到哪了
+端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
+期望: order_query
+数据: 裁剪开启时每轮绑定工具数 ≤ `TOOL_TRIM_MAX_READ`（默认 16）；改前现取 35~39（把上限调到 100 ⇒ 判据红）
+数据: 保底集合永不被裁：本轮 skill 的全部写工具 + nav_guide/knowledge_search/interact/validate_input/confirm_value + 上一轮用过的读工具（清空保底集合 ⇒ 判据红）
+数据: `TOOL_TRIM_ENABLED=false` ⇒ B 端绑定集合与改前逐名相等；C 端（xiaobu）任何开关下逐名相等
+数据: 只裁 `read_only=True`：写工具集合前后相等；同一输入连跑两次结果逐字一致（含顺序）
+数据: 字符数棘轮：各 skill 的 prompt 字符数与工具 schema 字符数都下降（关闭裁剪 ⇒ 回落）
+跳过: [backend-contract] 纯单测（backend/ai-agent-service/tests/test_tool_selection_trim.py）；不改工具实现与权限，只改「本轮暴露哪些」；真实误选面由人工集中跑一次手动 eval 清单（#4262 不自动派发）
+```
+溯源: 2026-10-30 新增（issue #8174）。取号 = `scripts/next_case_id.py AG` 现取（main: 001-008/010-013 ⇒ 最小空闲号 AG-009，历史空档）。 ｜ tags: agents, tools, cost, regression
 
 ### AG-010. 定时任务（用户「预约」）服务端：三件套 fail-closed + 幂等 + 取消 + 到点投递只读 🔵
 ```
@@ -4003,7 +4017,7 @@
 数据: CI workflow 的 Create Issue step 必须先 search 同标题 open issue：已存在 → 仅评论追加 run 链接；不存在 → 才 issues.create
 数据: 守卫与创建逻辑同属一个 github-script step，避免 failure 时重复 issue 堆积
 数据: **迁移指纹账本只追加**（issue #4235 判据 2；issue #5291 的 `V129__backfill_domain_read_permissions.sql` 是最近一次消费方）：新增迁移必须在 `tests/unit_ci_workflows/migration_fingerprints.json` **只追加一条**，**已登记条目的字节漂移一律判红**（判据本体 = `tests/unit_ci_workflows/test_migration_immutability.py`，**不新写第二份**；重生成入口 = 该脚本的 `--write-ledger`，它带前置断言：任何其它条目漂移即拒绝写出）
-数据: **生成物新鲜度（零 diff 自证）**：`.github/cases/*.yml` 或 `.github/templates/*.yml` 改后必须跑 `python3 .github/render_cases.py --cases .github/cases --out-eval tests/agent_eval/eval_cases.py --out-md docs/testing/mibao-verification-cases.md` 重渲染；**同参数再跑一次必须零 diff**（生成物是派生物，手改生成物一律判红）
+数据: **生成物新鲜度（零 diff 自证）**：`.github/cases/*.yml` 或 `.github/templates/*.yml` 改后必须跑 `python3 .github/render_cases.py --cases .github/cases --out-eval tests/agent_eval/eval_cases --out-md docs/testing/mibao-verification-cases.md` 重渲染；**同参数再跑一次必须零 diff**（生成物是派生物，手改生成物一律判红）
 数据: **重活锁 `--wait`（issue #5863，2026-10-01）**：`machine-heavy-lock.sh acquire --wait <秒>` 是「排队等待」的合规入口（脚本内部轮询，间隔 **2~5 秒随机抖动**，到上限即止并**具名**拒绝）；`verify-all.sh` 用 `MIGAO_HEAVY_WAIT=<秒>` 显式开启，**未设置时拒绝语义一字不改**（拿不到锁仍立即出声拒绝）。判据 = `tests/unit_ci_workflows/test_machine_heavy_lock.py::TestWaitOption`（**真跑脚本**：空闲时不得变慢 / 被占则等到释放并出声「排队等待…后取得」/ 超时具名且不偷锁 / `--wait 0` 与不传等价 / 参数错误 rc=2 / 退避落在 [2,5] 且**非常数** / **变异红证**：把「可等待」那行拿掉 ⇒ 判据当场红）
 数据: **重活锁**的**射程**（issue #5863，2026-10-01 改判）：`verify-all.sh` 的 `heavy_lock_wanted` 覆盖**所有会跑全量测试的档**（`quick` / `full` / `frontend` / `backend` / `agent` / `redproof` / `gate`），**未知 / 空档位不拿**。病史 = 原判据断言「只有 `gate` 拿锁」（理由「其余档不是同一台机器上的重活」）**与事实不符** —— `full` 按脚本自己的档位说明就是三模块全量 ~10-15 分钟，`redproof` 机具实跑单机具 2~30 分钟；实测 `gate` 持锁期间 `load average` 16.71 / 28.71 / 20.14（8 核）而单份档最多打满 ~8 核 ⇒ 锁外确有重活。判据 = `tests/unit_ci_workflows/test_machine_heavy_lock.py::TestVerifyAllWiring::test_every_tier_that_runs_tests_takes_the_lock`（正向七档全 WANT + 反向空/未知档 NONE）
 数据: **双引号内的裸反引号 = bash 命令替换**（issue #6095 第四层同批扫出；判据 6）：报错文案里写行内代码标记（`die "…（`refs/heads/*`、`main`）…"`）⇒ bash 去**执行**它们 ⇒ 走到那个失败分支的人拿到 `refs/heads/*: No such file or directory` / `main: command not found`，**且原文案里的行内代码被吃掉** —— 而那句正是「参数传错时唯一可读的出口」。判据体 = `tests/unit_ci_workflows/test_scripts_bash32_var_brace.py` 判据 6（**全仓受控 `*.sh` 射程**，沿用同一 `GUARD_SCOPE`/`scanned_shell_files`）：只判「双引号内 + **未转义**」这一种形态 —— 已转义的 ``、单引号字面量、注释、**heredoc 正文**（本仓 `.sh` 里的内联 Python/JS 载荷）都不算（不做 heredoc 预处理时真语料上有 **35 处假红**）。红证 = 在真语料上注入同族形态 ⇒ 报出文件 + 行号；负例 = 上述四种形态必须不命中。行为面 = `test_c_end_h5_hosting.py::TestCiSideInjectedValuesAndMessages`：坏长度 `DIST_SHA` 必须**具名且文案干净**（不含 `command not found`），注入式红证 = 撤掉转义 ⇒ 噪音当场出现。⚠️ **这条类级判据在第五层真的抓到过一次**（本轮回放）：`deploy/scripts/c-end-h5-publish-ci.sh` 里那句『执行体 ref 为空：请给 `H5_PUBLISHED_COMMIT`』的文案中那对反引号忘了转义 ⇒ 空执行体 ref 时凭空多一行 `command not found`、文案被吃掉一块；**抓到它的是「全仓 `*.sh` 类级判据 6」，不是任何单点判据**（典型：窄跑看不见、全目录跑才红）⇒ 已修 + 补行为判据 `test_empty_executor_ref_dies_with_a_clean_named_message`，并按 `guard_scope_ledger.json` 的 exit ② 把本判据文件以 `kind=mentions` 入册（它只**点名**该语料、不扫描它）
@@ -10536,7 +10550,7 @@
 数据: 🔴 判据 1·**逐值相等（本单的靶心）**：真用例库 25 文件 ⇒ 产物（`tests/agent_eval/eval_cases.py` 的 `EvalCase(...)` **字面量**，用 `ast.literal_eval` 取、**不 exec**）与真值（`yaml.safe_load`）逐 `(文件, 用例 id, 字段)` 相等。判据本体 = `tests/unit_ci_workflows/test_render_leg_escape_decode.py` 的 `test_artifact_values_are_value_identical_to_truth`；比较器 = `tests/unit_ci_workflows/render_leg_compare.py`（**唯一实现**，别处不许再写第二份）。**红证（修前实测）**：33 处不同，逐处清单口径 = `(文件, 用例, 字段)` —— 代表三处：`AS-003.data_checks`（真值 `^AS-\d{8}-\d{4}$` / 修前 `^AS-\\d{8}-\\d{4}$`）、`CH-009.user_inputs`（真值 `__FORM__|{"customer_name":"张三"…}` / 修前每个引号前多一个反斜杠）、`PG-055.data_checks`（真值 `"applicable"` / 修前 `\"applicable\"`）。
 数据: 🔴 判据 2·**转义序列零外溢**：产物侧不得比真值多出任何转义序列（`\"` / `\\` / `\/` / `\n` / `\t` / `\r`）。**修前实测 163 个**（`\"` 148 + `\\` 9 + `\/` 1 + `\n` 5）；判据本体 = 同文件 `test_artifact_has_no_escape_overflow`（与判据 1 分开写：这条**只在「转义未解码」这一族**上红，诊断信息直接点名是哪个转义序列）。**单点变异红证** = 回滚 `.github/yaml_light.py` 的双引号解码（`_parse_scalar` 里 `_unescape_double(inner) if '\\' in inner else inner` 退回 `inner`）⇒ 该判据单独变红，且诊断信息给出外溢计数。
 数据: 🔴 判据 3·**「生成物新鲜度」抓不到这条（所以必须单列判据）**：那条检查比的是「能否由当前源重渲染出**已提交的**产物」，**不是**「产物是否等于真值」⇒ 一份**稳定地错**的产物永远绿。实证：修前那两个生成物在 main 上**长期"新鲜"**，而 33 处取值与真值不同（连带交给 LLM 的判据文本与真值不同；任何按值检索/比对的工具都会漏）。
-数据: 判据 4·**零 diff 自证（稳定点）**：同参数再跑 `python3 .github/render_cases.py --cases .github/cases --out-eval tests/agent_eval/eval_cases.py --out-md docs/testing/mibao-verification-cases.md` ⇒ 两个生成物**逐字节相同**，且与已提交版本**逐字节一致**；判据本体 = 同文件 `test_render_is_a_stable_fixpoint_and_matches_committed`（渲染两次 + 对齐已提交）。⚠️ 本单**预期生成物会变**（那正是修复本身）⇒ 生成物由 `render_cases.py` 重生成，**一个字面量都不许手改**。
+数据: 判据 4·**零 diff 自证（稳定点）**：同参数再跑 `python3 .github/render_cases.py --cases .github/cases --out-eval tests/agent_eval/eval_cases --out-md docs/testing/mibao-verification-cases.md` ⇒ 两个生成物**逐字节相同**，且与已提交版本**逐字节一致**；判据本体 = 同文件 `test_render_is_a_stable_fixpoint_and_matches_committed`（渲染两次 + 对齐已提交）。⚠️ 本单**预期生成物会变**（那正是修复本身）⇒ 生成物由 `render_cases.py` 重生成，**一个字面量都不许手改**。
 跳过: [backend-contract] 渲染腿取值保真（CI 机具面，无黄金策工具面）⇒ 由 tests/unit_ci_workflows 单测验证，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-23 新增（issue #5179）：双引号标量按 YAML 8.1.3 解码（引号 / 反斜杠 / 斜杠 / 换行 / 制表 / 回车 / 退格 / 换页 / 十六进制 / Unicode 与代理对）+ 单引号 `''` 只处理 `''`；修前 33 处取值不同 / 163 个多余转义序列，修后 0。取号 PR-083。 ｜ tags: ci, case-library, render-leg, backend-contract
@@ -13789,10 +13803,10 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：929（活跃 152，跳过 777）
-- tier 分布：smoke 15 / normal 857 / adversarial 33
+- 用例总数：930（活跃 152，跳过 778）
+- tier 分布：smoke 15 / normal 858 / adversarial 33
 - 售后域：16
-- Agent 核心域：12
+- Agent 核心域：13
 - API 层域：21
 - 登录认证域：14
 - B 端小程序域：53
@@ -13821,6 +13835,7 @@
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
 - AS-015: 售后工单详情/列表响应不再携带恒空的 refundMethod 键（三个 Java 载体上字段/getter/setter 全无；键不存在而非值为 null）
 - AS-016: 售后如实引导：客户说窗帘收到时有破洞 → 先查那单 + 说清后台怎么走，不承诺代办
+- AG-009: B 端工具面按意图裁剪（读面 ≤16 / 保底不被裁 / 关闭等价 / C 端不变）
 - AG-013: 客服会话并发分配「读计数 × 再写」无互斥 ⇒ max_concurrent_sessions 被突破；改写为条件更新后并发数不超过上限（issue #6962）
 - AG-008: 海报/图片的能力边界陈述被下单域守卫当成「下单能力误宣」⇒ relock 到 order、连问 3 轮下单规格；顾客显式撤回后仍无出口（issue #7758）
 - API-013: 知识知识卡片数据模型 - knowledge_cards 表/实体/Mapper（LLM WIKI 板块 #3051）

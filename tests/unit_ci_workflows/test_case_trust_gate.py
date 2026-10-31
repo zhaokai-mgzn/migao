@@ -3571,7 +3571,7 @@ class TestDictFormOrWriteVisibility:
     `{tool: "after_sales_manage or aftersale_create"}` 整串被当成**一个工具名** ⇒
     `is_write_expectation()` 判读（该串不在 `WRITE_TOOLS`）⇒ 该用例**不再被分类为写用例**
     ⇒ 规则 a2（效果层断言）与规则 b（自清理）对它**静默失效**，且没有任何东西变红。
-    生成物 `eval_cases.py` 把 dict 渲染成**字符串**（走拆分分支）⇒ **同一棵树两套判定**。
+    生成物 `eval_cases/` 把 dict 渲染成**字符串**（走拆分分支）⇒ **同一棵树两套判定**。
 
     现取受影响面 = 3 条：`AS-003` / `AS-005` / `CH-009`（**#7048 P1 重锚后这三条已不再把写工具
     写在 `expectations` 里**，写声明只在效果层 ⇒ 本类现在守的是**同一套解析在期望面上的口径**

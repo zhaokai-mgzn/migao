@@ -108,7 +108,7 @@ REF_SURFACE = (
     # 位置），`.github/cases/` 是**用例单一源**（注释与 merge_log 里点名源码位置是常规写法）。
     # 匹配语义：`_in_surface` 用 `startswith` ⇒ 两条都以 `/` 结尾 = **精确目录前缀**，
     # 不吃同名前缀的兄弟目录（如 `tests/agent_eval_extra/`）；仍先判 `REF_SURFACE_EXEMPT`，
-    # `DERIVED_VIEWS` 仍对 `tests/agent_eval/eval_cases.py` 只报告不阻塞。
+    # `DERIVED_VIEWS` 仍对 `tests/agent_eval/eval_cases/` 只报告不阻塞。
     # **加面不是加豁免**：这两处当下的存量已在 #5309 第一批逐条改成符号/文本锚（新增 0 条），
     # 此后**新增**引用照常 fail-closed；覆盖固化见
     # `tests/unit_ci_workflows/test_drift_audit_ref_surface.py`（含类级元守卫）。
@@ -124,8 +124,22 @@ REF_SURFACE_EXEMPT = (
 # 派生视图：内容由别的单一源生成，本面无写权限 ⇒ 只报告不阻塞（违规归因到源面）。
 DERIVED_VIEWS = (
     "docs/testing/mibao-verification-cases.md",
-    "tests/agent_eval/eval_cases.py",
+    "tests/agent_eval/eval_cases/",   # 目录型生成物（issue #8188，按域分包）
 )
+
+
+def _is_derived_view(rel: str) -> bool:
+    """该路径是否**派生视图**（生成物）：单文件**精确相等**，目录型（以 `/` 结尾）按**前缀**。
+
+    issue #8188 起 `eval_cases` 是**目录** ⇒ 必须按前缀判；只写精确相等的话，生成物模块里的
+    引用会被当成活跃面（阻塞）⇒ 与拆分前「派生视图只报告不阻塞」的口径分叉。
+    """
+    for view in DERIVED_VIEWS:
+        if view.endswith("/") and rel.startswith(view):
+            return True
+        if rel == view:
+            return True
+    return False
 
 # ── 扫描面：受管引用面里**哪些文件类型**会被判定 ───────────────────────────────
 # ⚠️ **漏一类 = 那一类永久免检，而且没有任何东西会变红**（#4708 的确切形态：`.sql` 不在这张
@@ -152,7 +166,7 @@ SCAN_EXT_NOT_JUDGED = {
 SKILLS_DIR = ".agent-presets/migao/skills"
 DEV_FLOW_SKILL = ".agent-presets/migao/skills/migao-dev-flow/SKILL.md"
 DEV_FLOW_COPY = "docs/wiki/DEV-FLOW.md"
-GEN_EVAL = "tests/agent_eval/eval_cases.py"
+GEN_EVAL = "tests/agent_eval/eval_cases"   # 目录型生成物（issue #8188）
 GEN_MD = "docs/testing/mibao-verification-cases.md"
 CASES_DIR = ".github/cases"
 
@@ -783,6 +797,22 @@ def check_sync_copy(a: Audit) -> CheckResult:
 # ═══════════════════════════════════════════════════════════════════════════
 # C3 生成物新鲜度（I1：派生视图重生成 diff）
 # ═══════════════════════════════════════════════════════════════════════════
+def _read_artifact_text(root: Path, rel: str) -> str | None:
+    """读生成物文本：单文件 → 全文；**目录型生成物** → 各模块按文件名字典序拼接（issue #8188）。
+
+    拼接口径与 `render_cases.package_files` 的落盘集合逐文件等价 ⇒ 比较仍是「逐字节」的
+    （拼接只是把逐文件比较折成一个字符串；缺/多模块都会让它不等）。
+    """
+    path = root / rel
+    if path.is_dir():
+        parts = [p.read_text(encoding="utf-8", errors="ignore") for p in sorted(path.glob("*.py"))]
+        return "".join(parts) if parts else None
+    try:
+        return path.read_text(encoding="utf-8", errors="ignore") or None
+    except OSError:
+        return None
+
+
 def check_generated(a: Audit) -> CheckResult:
     r = CheckResult("generated-freshness")
     renderer = a.repo / ".github" / "render_cases.py"
@@ -792,7 +822,7 @@ def check_generated(a: Audit) -> CheckResult:
         return r
     r.evaluated = 2
     with tempfile.TemporaryDirectory() as td:
-        out_eval = Path(td) / "eval_cases.py"
+        out_eval = Path(td) / "eval_cases"
         out_md = Path(td) / "casebook.md"
         p = subprocess.run(
             [sys.executable, str(renderer), "--cases", CASES_DIR,
@@ -803,11 +833,15 @@ def check_generated(a: Audit) -> CheckResult:
             r.status = "error"
             r.error = f"重渲染失败：{(p.stderr or p.stdout).strip()[:400]}"
             return r
-        renewed_eval = out_eval.read_text(encoding="utf-8")
+        renewed_eval = _read_artifact_text(Path(td), "eval_cases")
+        if renewed_eval is None:
+            r.status = "error"
+            r.error = "重渲染没有产出 eval_cases/ 目录（渲染器形态变了？）"
+            return r
         renewed_md = out_md.read_text(encoding="utf-8")
 
     for rel, renewed in ((GEN_EVAL, renewed_eval), (GEN_MD, renewed_md)):
-        committed = a.read(rel)
+        committed = _read_artifact_text(a.repo, rel)
         if committed is None:
             r.findings.append(Finding(f"{rel}|missing", f"生成物缺失：{rel}"))
             continue
@@ -887,7 +921,7 @@ def check_refs(a: Audit) -> CheckResult:
                 # 就会被别的 `path:NNN` 模式扫描（实证：case-trust 门禁的规则 G 扫 diff
                 # 全部改动文件，把本基线的 key 判成悬空引用 ⇒ 本 PR 被别的门禁挡下）。
                 key = f"{rel}|{ref_path}#{ref_line}"
-                blocking = rel not in DERIVED_VIEWS
+                blocking = not _is_derived_view(rel)
                 cand = a.resolve_ref_path(ref_path)
                 if not cand:
                     r.findings.append(Finding(
@@ -923,7 +957,7 @@ def check_refs(a: Audit) -> CheckResult:
                     key,
                     f"{rel} 第 {lineno} 行用裸行号 `{bare.group(0)}` 定位同行的文件，"
                     f"无 `@<sha>` 也无历史标记（改成符号/文本锚点，或写成 `第 N 行` + `@<sha>`）",
-                    rel not in DERIVED_VIEWS))
+                    not _is_derived_view(rel)))
     r.notes.append(f"受管引用面 {len(files)} 个文件；判定引用 {r.evaluated} 处")
     return r
 
@@ -1429,10 +1463,10 @@ CHECKS: list[Check] = [
     Check(
         id="generated-freshness", invariant="I1",
         title="生成物新鲜度（派生视图重生成 diff）",
-        judgment="重跑 `.github/render_cases.py` 后与提交的 `eval_cases.py` / `mibao-verification-cases.md` "
+        judgment="重跑 `.github/render_cases.py` 后与提交的 `eval_cases/`（逐模块）/ `mibao-verification-cases.md` "
                  "逐字节比较；并断言用例库里的 `pre_clean` 字段在渲染结果里存在（渲染器静默丢字段）。",
         remedy="以 `.github/cases/` 为唯一源重渲染并提交生成物：`python3 .github/render_cases.py "
-               "--cases .github/cases --out-eval tests/agent_eval/eval_cases.py "
+               "--cases .github/cases --out-eval tests/agent_eval/eval_cases "
                "--out-md docs/testing/mibao-verification-cases.md`；**不要手改生成物**。",
         fn=check_generated, min_evaluated=2,
     ),
@@ -1962,7 +1996,13 @@ def _in_scope(key: str, changed: set[str] | None) -> bool:
     first = _entry_file(key)
     if not _PATHISH.search(first):
         return True
-    return first in changed
+    if first in changed:
+        return True
+    # **目录型产物**（issue #8188：`tests/agent_eval/eval_cases` 是包目录）：key 是产物
+    # **根目录**，改动落在其下任一模块（`…/eval_cases/order.py`）都属本 PR 面。
+    # 不补这一条 ⇒ 真 PR 改了某个域模块时，新鲜度漂移会被记成「面外」⇒ **不阻塞**（假绿）。
+    prefix = first.rstrip("/") + "/"
+    return any(rel.startswith(prefix) for rel in changed)
 
 
 def changed_files(a: Audit) -> set[str]:
