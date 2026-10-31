@@ -846,7 +846,7 @@
 真值: auth.qr-login-ticket
 溯源: 2026-10-26 新增（issue #7825）：现场 = 顶栏「手机端」二维码只是裸链接（不带登录交接），换浏览器 / App 或本机存储被清后每次扫码都要重新输密码。冻结口径 = 一次性票据（JWT 类型 qr_login、120 秒、兑换即吊销 jti）+ 手机端兑换后与密码登录同一套 30 天会话 + 签发失败降级裸入口 + 启动探针（续期失败原因本地可读）。 ｜ tags: auth, session, qr-login, bmini, admin-web
 
-## B 端小程序域（53 case）
+## B 端小程序域（54 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -1611,6 +1611,20 @@
 ```
 真值: batch-stocktake.worker-correction
 溯源: 2026-10-29 新增（issue #8104）：用户逐字「手机端还要增加一个库存修正的功能，apk程序也要同步增加这个功能，允许工人对某个批次的布匹进行修正」。形态 = bmini 新页 `pages/worker/stock/index`（手机 `https://app.migaozn.com/b/` 与 APK 观星台终端加载的同一份 `/b/` 页面 ⇒ APK 无需重打包，菜单随页面发布出现）。服务端 = `/api/worker/batch-stock/{batches,correction}`，**复用**按批次盘点的唯一写面（不新造第二套库存逻辑、不新增迁移）。边界：不做盘点单（无单号/审批/打印）；一次提交只改一个批次；不新增批次来源 reason（工人修正 = 实盘为准，沿用 `reason=stocktake`，如需在台账上把「工人修正 / 商家盘点」分列 ⇒ 另开迁移单）；小程序发版是人工环节（#7806：合并 ≠ 用户手机已是新版，`/b/` H5 腿自动发布）。 ｜ tags: bmini, worker, stock, batch-stocktake, idempotency
+
+### BM-057. 小程序工人登录 = 终端 /w/ 同一份表单 - 扫码报工页未登录就地登录（不跳三角色登录页），工人首页入口复用同一组件 🔵
+```
+你: 新手机第一次扫纸上的码（GET /s/<短码> → 302 → /b/?t=<token>）⇒ 本机没有工人 session ⇒ 扫码报工页**就地**显示登录表单：标题「工人报工」/ 副标题「工号 + PIN 登录（手机 / PAD 均可，无需微信）」/ 企业编码（向商家索取）→ 工号 → PIN / 按钮「登 录」，与终端 /w/ 逐字一致；**没有**「设备标签」一格，也**没有**「去登录工人身份」跳转按钮；登录成功留在本页继续手里的那个码（无码则回工人首页）
+期望: direct_reply
+数据: 判据 1·**跨端逐字一致**（真值 = frontend/worker-h5/src/render.mjs 的 loginView()）：标题 / 副标题 / 三个字段标签**及顺序** / 按钮文案逐字相等，且不出现「设备标签」字段；渲染面同序（标题 → 副标题 → 企业编码 → 工号 → PIN → 按钮），错误位在字段**上方**（与 /w/ 的 .wh5-error 同位）。红证（实跑，真语料注入）：改一个标签 ⇒ 4 failed / 2 passed；把两个字段换顺序 ⇒ 3 failed / 3 passed。证据：frontend/bmini-app/tests/worker-login-parity.test.ts
+数据: 判据 2·**报工页未登录就地登录**：渲染三个输入 + 「登 录」，没有「去登录工人身份」跳转按钮、不导航去三角色登录页、不出报工按钮。红证（实跑，摘掉就地表单渲染只留 import）：9 failed / 5 passed（台账具名「就地渲染工人登录表单」+ 页面 find 不到表单）。证据：frontend/bmini-app/tests/worker-report-login.test.tsx + frontend/bmini-app/tests/worker-report-page.test.tsx
+数据: 判据 3·**登录后接着报手里的码**：带码（/b/?t=<token>）⇒ 留在本页并 scanResolve 该码（不回首页、不跳走）；无码 ⇒ 回工人首页；失败 ⇒ 错误上屏、不解析码。跨登录那一步的码走 utils/reportEntry.ts 的既有一次性记录 rememberReportReturn / takeReportReturn（登录前 write、成功后 take 即清），不新造第二套「待报码」通道。证据：frontend/bmini-app/tests/worker-report-login.test.tsx
+数据: 判据 4·**工人首页入口复用同一组件**（同一份表单的**第二个入口**，不是第二份实现）：「去登录工人身份」与「退出工人身份」都落 frontend/bmini-app/src/pages/worker/login/index.tsx（WORKER_LOGIN_ROUTE）；三角色登录页（/pages/auth/login/index?tab=worker）保留为常规入口、本单不改；该页重写成共享组件的一层壳（只负责调 workerLogin 与登录后去向：有 pending code 回报工页、从入库/补打/库存 navigateTo 过来则 navigateBack、页面栈只有自己则回工人首页）。证据：frontend/bmini-app/tests/worker-home-page.test.tsx + frontend/bmini-app/tests/login-identifier-split.test.tsx + frontend/bmini-app/tests/login-remember-account.test.tsx
+数据: 判据 5·**台账同批更新（未登记即红 / 只许缩短）**：报工页新增 workerLogin( 写入口登记；其引导形态改成 login_in_place_token（认 JSX 渲染形态 <WorkerLoginForm，import 提及不算）；工人首页 login_route_token 改 WORKER_LOGIN_ROUTE；入口台账把「工人首页 → 三角色登录页」换成「工人首页 → 工人登录页」；输入面台账把 worker-login__input 换成共享组件的 worker-login-form__input。证据：frontend/bmini-app/tests/worker-surface-ledger.test.ts + frontend/bmini-app/tests/input-center-guard.test.ts + frontend/bmini-app/tests/page-entry-reachability.test.ts
+跳过: [backend-contract] 确定性跨端文案/装配判据（jest: worker-login-parity / worker-report-login / worker-report-page / worker-home-page / worker-surface-ledger / input-center-guard / page-entry-reachability），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: inbound-order-flow.worker-narrow-surface
+溯源: 2026-10-31 新增（issue #8194）：改前扫码报工页未登录把工人**踢到三角色登录页**（表单的标题 / 副标题 / 字段（还多一格「设备标签」）/ 配色都与终端 /w/ 不同，手里的码还要绕一圈才接着报）；改后未登录在报工页**就地**渲染与 /w/ 逐字一致的共享组件 WorkerLoginForm，登录成功留在本页继续那个码（无码回工人首页）。工人首页的「去登录工人身份」也改落同一份组件（pages/worker/login/index 重写为壳）。三角色登录页与 ?tab=worker **一字未动**（保留为常规入口）。视觉对比（/b/ vs /w/，390×844）留给多模态验收（migao-dev-flow §15.7）。 ｜ tags: bmini, worker, login, parity, h5
 
 ## 分类域（3 case）
 
@@ -13827,7 +13841,7 @@
 - Agent 核心域：13
 - API 层域：21
 - 登录认证域：14
-- B 端小程序域：53
+- B 端小程序域：54
 - 分类域：3
 - 对话边界域：53
 - 跨域：3
