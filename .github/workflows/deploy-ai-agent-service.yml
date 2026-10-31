@@ -365,6 +365,33 @@ jobs:
           echo "构建位置 = **SWAS 服务器侧**（issue #5814 C′）；CI 不构建、不推 ACR。"
           echo "镜像由 deploy/swas/deploy.sh 在服务器 flock 之内 \`docker build\` 产出，tag=${IMAGE_TAG}（= sha-\${GITHUB_SHA::7}）。"
 
+      # ── 构建身份（issue #8203；审计 P1-01：ai-agent 线上「跑的是哪个 commit」不可判定）──────────
+      # 与 `deploy-admin-api.yml` 的 `build_id` 步**同一套口径**（照它接上，不改任何其它语义）。
+      # 五个跳缺一跳都不成立（判据把它们逐跳钉住 = `tests/unit_ci_workflows/test_synthetic_probe.py`）：
+      #   ① runner 现取（本步）→ ② `swas-deploy-ci.sh` 位置参数第 9/10 位 → ③ 远端 BOOTSTRAP 渲染
+      #   → ④ `deploy/swas/deploy.sh` 的 `--build-arg MIGAO_BUILD_SHA/BUILT_AT`
+      #   → ⑤ `backend/ai-agent-service/Dockerfile` 的 `ARG`+`ENV` ⇒ `Settings` ⇒ `GET /version`。
+      # 缺 ①②⇒ 线上 `/version` 的 `sha`/`builtAt` **恒空** = 探不到构建身份（本单要治的那个洞）。
+      # ⚠️ 取值源 = **runner 时钟**（`date -u`），不走任何环境变量名 —— `GITHUB_RUN_STARTED_AT`
+      #    与 `github.run_started_at` 都**不存在**（issue #7015 / #7029 的实测教训）。
+      - name: Resolve build identity (issue #8203)
+        id: build_id
+        if: steps.sync.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          SHA=$(git rev-parse HEAD)
+          case "$SHA" in
+            *[!0-9a-f]*|"") echo "::error::git rev-parse HEAD 解不出 hex sha（'$SHA'）⇒ 拒绝在身份不明时构建"; exit 1 ;;
+          esac
+          BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          case "$BUILT_AT" in
+            [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z) : ;;
+            *) echo "::error::BUILT_AT 不是 ISO8601 形态（实测 '$BUILT_AT'）⇒ 取值源 = runner 时钟 [date -u +%Y-%m-%dT%H:%M:%SZ]"; exit 1 ;;
+          esac
+          echo "BUILD_SHA=$SHA" >> "$GITHUB_OUTPUT"
+          echo "BUILT_AT=${BUILT_AT}" >> "$GITHUB_OUTPUT"
+          echo "构建身份：sha=${SHA} · tag=${{ steps.tag.outputs.IMAGE_TAG }} · builtAt=${BUILT_AT}"
+
       # 自动部署目标 = 测试环境（当前 SWAS）；生产发布走 deploy-prod（未来）
       - name: Deploy to SWAS (测试环境)
         if: steps.sync.outputs.skip != 'true'
@@ -372,6 +399,10 @@ jobs:
           ACR_U: ${{ secrets.ACR_USERNAME }}
           ACR_P: ${{ secrets.ACR_PASSWORD }}
           IMAGE_TAG: ${{ steps.tag.outputs.IMAGE_TAG }}
+          # 构建身份（issue #8203）：C′ 之后**构建发生在服务器上** ⇒ 这两个值必须**过驱动脚本的
+          # 位置参数面**（`$9`/`$10`）到远端；只写在这里的 `env:` 只在 runner 上生效。
+          BUILD_SHA: ${{ steps.build_id.outputs.BUILD_SHA }}
+          BUILT_AT: ${{ steps.build_id.outputs.BUILT_AT }}
           # 显式降级许可（issue #4852 ②）：`workflow_dispatch -f image_tag=<tag>`（MODE=rollback）
           # 是**人工回滚接口** ⇒ 只有这条路径给 1，其余（push / schedule 构建部署）恒 0
           # ⇒ 远端闸门「target 是当前在跑 tag 的祖先就跳过该服务」对普通部署生效、对显式回滚放行。
@@ -379,7 +410,7 @@ jobs:
         run: |
           bash deploy/scripts/swas-deploy-ci.sh \
             ${{ env.SWAS_INSTANCE_ID }} ${{ env.SWAS_REGION }} "$AK" "$SK" "$ACR_U" "$ACR_P" "$IMAGE_TAG" \
-            ai-agent
+            ai-agent "$BUILD_SHA" "$BUILT_AT"
 
       # ── 「跳过部署」的运行面自证（issue #6294，判据 1）────────────────────────────
       # 病：上面 `Skip if already built` 判「已部署」**只看 run 结论**（镜像在 ACR / 同 sha 结论 success）

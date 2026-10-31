@@ -57,9 +57,12 @@
   —— 这是本条判据的**唯一终判**，命令逐字：
   `bash deploy/scripts/served-version-verify.sh 'https://api.migaozn.com' "$(git rev-parse origin/main)"`
   （要求 rc=0 + `SERVED_VERSION=match`）；
-  ② `deploy-frontend.yml` / `deploy-ai-agent-service.yml` 两条腿**未接线**（同形缺口；
-  前端那半边还依赖 #6611 的构建期注入面）—— 逐腿登记在
-  `tests/unit_ci_workflows/test_swas_server_side_build.py` 的 `BUILD_IDENTITY_LEGS`；
+  ② 本文件只判 **admin-api** 腿的 served-version 断言；另两条腿的**构建身份接线**不在本文件射程内，
+  逐腿登记在 `tests/unit_ci_workflows/test_swas_server_side_build.py` 的 `BUILD_IDENTITY_LEGS`
+  （`deploy-frontend.yml` 由 issue #6611 接入、`deploy-ai-agent-service.yml` 由 issue #8203 接入 ⇒
+  三条腿现已全部接线），逐跳（现取 → 位置参数 → BOOTSTRAP → `--build-arg` → Dockerfile `ENV`）
+  由 `tests/unit_ci_workflows/test_synthetic_probe.py` 钉住；ai-agent 端点语义见
+  `backend/ai-agent-service/tests/test_version_probe.py`；
   ③ Java 侧只做**静态接线判据**，本包**未**跑 `mvn test`（worktree 无构建产物、且那属于全量档）。
 - **执行式探针的边界**：`_captured_remote_command()` 桩掉 `run_cmd`（拦住 `aliyun` CLI）与 `nap`，
   被桩化的是外部依赖，被测的是**驱动脚本自己的渲染编排**；它**不证**「阿里云会真的执行这条命令」。

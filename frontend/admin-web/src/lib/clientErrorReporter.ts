@@ -2,7 +2,7 @@
  * 客户端错误上报（issue #8203 · P0-03；审计原文 `acceptance/2026-10-31-launch-audit/findings.md` 的 P0-03）。
  *
  * ## 病（改前，durable 读数）
- * `grep -rn "Sentry\|window.onerror\|unhandledrejection" frontend/*/src` ⇒ **0 命中**：
+ * `grep -rn "Sentry\|window.onerror\|unhandledrejection" frontend --include=*.ts --include=*.tsx` ⇒ **0 命中**：
  * 58 个页面里 57 个没有错误边界，渲染期异常 ⇒ Next.js 默认错误页（整页白屏、无重试出口），
  * 且**线上发生无人知道**（无事件、无聚合）。
  *
