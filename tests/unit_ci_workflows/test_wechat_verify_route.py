@@ -160,7 +160,8 @@ def _serve(block: str, files: set[str], uri: str) -> tuple[int, str | None]:
         if uri == loc["spec"] or uri.startswith(loc["spec"]):
             if best is None or len(loc["spec"]) > len(best["spec"]):
                 best = loc
-    assert best is not None, f"{SERVER_NAME} 段没有匹配 {uri} 的 location"
+    if best is None:
+        raise AssertionError(f"{SERVER_NAME} 段没有匹配 {uri} 的 location")
     return _apply_try_files(best, files, uri)
 
 
@@ -193,7 +194,8 @@ def test_wechat_txt_face_is_exactly_one_narrow_regex_location():
     """判据 1：根下 `.txt` 有**显式**面，且它不回落任何 HTML、不放宽到别的命名空间。"""
     block = _app_block(_read(NGINX_CONF))
     loc = _txt_location(block)
-    assert loc is not None, (
+    if loc is None:
+        raise AssertionError(
         f"{SERVER_NAME} 段缺少根下 .txt 的显式面（`location ~ {WECHAT_TXT_RE}`）——"
         "微信校验文件缺失时会落进 SPA fallback：**HTTP 200 的一页 HTML**，与「内容对不上」无法区分"
     )
