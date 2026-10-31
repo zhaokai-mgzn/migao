@@ -563,6 +563,15 @@ class SecurityConfigTest {
     private com.migao.admin.mapper.DailyBriefingMapper dailyBriefingMapper;
     @MockBean
     private com.migao.admin.service.DailyBriefingService dailyBriefingService;
+
+    /**
+     * 决策采纳记录（issue #8260）：理由同上 —— 本类 {@code exclude} 了
+     * {@code MybatisPlusAutoConfiguration}，真实 Mapper 建不出来，对全部服务一律 {@code @MockBean}。
+     */
+    @MockBean
+    private com.migao.admin.mapper.BriefingActionMapper briefingActionMapper;
+    @MockBean
+    private com.migao.admin.service.BriefingActionService briefingActionService;
     @MockBean
     private com.migao.admin.service.BriefingGenerateClient briefingGenerateClient;
     @MockBean
