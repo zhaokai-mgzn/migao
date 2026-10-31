@@ -20,7 +20,7 @@ r"""微信「扫普通链接二维码打开小程序」校验文件：**nginx �
 | 2 | **nginx 语义模拟**：`/xxx.txt` 存在 ⇒ 200 该文件；**缺失 ⇒ 404**（**不是** `index.html`）；`/b/<子路由>` 仍回落 `b/index.html`；`/w/…` 不被劫持；根级 SPA 路由仍是 `index.html` | 同上三条注入，各自让对应断言变红 |
 | 3 | **拷贝语义（真跑 deploy.sh 的那一段）**：只拷 `*.txt`；**只增/覆盖、不删**；**幂等**（连跑两次逐字节一致）；父目录 `index.html` 哈希不变 | 把 `cp -f` 换成 `rsync --delete` / 去掉 `*.txt` 过滤 ⇒ 红 |
 | 4 | **跳过必须出声且不拖垮部署**：源目录不存在 / 为空 / 静态根不存在 ⇒ 退出码 `0` + 明确提示 | 静默 `exit 1` / 静默什么都不做 ⇒ 红 |
-| 5 | **仓库不许编文件名/内容**：本目录不得预置任何 `*.txt`，README 必须写清「原样放进、别改名」 | 往仓里塞一个假校验文件 ⇒ 红 |
+| 5 | **仓库不许编文件名/内容**：用户拿到的**真文件可以提交**（部署只从源码包取），但不许出现 `example/sample/…` 这类**伪造/占位**文件；README 必须写清「原样放进、别改名」 | 塞一个 `example.txt` / 内容写 TODO ⇒ 红 |
 
 ## 边界（照实登记，§19.1）
 
@@ -434,11 +434,50 @@ def test_block_skips_loudly_when_source_tree_absent(tmp_path):
 
 # ── 判据 5：仓库不许编文件名 / 内容 ────────────────────────────────────────
 
-def test_repo_ships_no_fake_verification_file():
-    """本目录是**承接位**：不许预置任何 `*.txt`（文件名/内容由微信生成，用户侧放）。"""
+FABRICATED_NAME_WORDS = ("example", "sample", "demo", "placeholder", "fake", "dummy", "changeme", "your")
+FABRICATED_CONTENT_WORDS = ("todo", "fixme", "placeholder", "your_", "changeme", "example", "sample", "fake")
+
+
+def fabricated_verify_file_problems(name: str, content: str) -> list[str]:
+    """这份 `*.txt` 像不像**编出来的**（空清单 = 通过）。
+
+    🔴 **真文件必须能提交**：部署链路只从**仓库源码包**（`src/deploy/swas/wechat-verify/`）取文件
+    （`deploy.sh` 的 1.3.1 段），用户在微信后台生成后不提交 ⇒ 服务器永远取不到。所以本判据只禁
+    **伪造 / 占位**（`example.txt` / 内容写 TODO / 空文件），**不**禁微信给的真文件
+    —— 早先那版「本目录不许出现任何 .txt」会把用户唯一的合法路径也堵死（自查改判）。
+    """
+    problems: list[str] = []
+    low = name.lower()
+    for word in FABRICATED_NAME_WORDS:
+        if word in low:
+            problems.append(
+                f"文件名「{name}」含占位词「{word}」：真文件名由微信生成（一串随机字符），不是人起的"
+            )
+    if content.strip() == "":
+        problems.append(f"文件「{name}」是空的：空文件骗不过微信校验，属假绿")
+    else:
+        low_c = content.lower()
+        for word in FABRICATED_CONTENT_WORDS:
+            if word in low_c:
+                problems.append(f"文件「{name}」内容含占位词「{word}」：内容必须逐字来自微信后台，不许手写")
+    return problems
+
+
+def test_repo_ships_no_fabricated_verification_file():
+    """仓库**可以**有用户拿到的真文件，但不许伪造 / 占位（判据 = 上面那份纯函数）。"""
     assert VERIFY_DIR.is_dir(), "缺 deploy/swas/wechat-verify/ 目录（承接位）"
-    leaked = sorted(p.name for p in VERIFY_DIR.glob("*.txt"))
-    assert leaked == [], f"仓库里出现了校验文件 {leaked} —— 真文件由用户在微信后台生成，仓库不许编"
+    problems: list[str] = []
+    for path in sorted(VERIFY_DIR.glob("*.txt")):
+        problems += fabricated_verify_file_problems(
+            path.name, path.read_text(encoding="utf-8", errors="replace")
+        )
+    assert problems == [], "\n".join(problems)
+
+    # 判别力自证（否则「空清单」= 判据恒真）：三种典型伪造形态必须被判红，真形态必须通过
+    assert fabricated_verify_file_problems("example.txt", "hello")
+    assert fabricated_verify_file_problems("abc123.txt", "TODO: paste wechat content here")
+    assert fabricated_verify_file_problems("abc123.txt", "")
+    assert fabricated_verify_file_problems("d41d8cd98f00b204.txt", "a1b2c3d4e5f60718") == []
 
 
 def test_readme_tells_user_to_drop_the_file_verbatim():

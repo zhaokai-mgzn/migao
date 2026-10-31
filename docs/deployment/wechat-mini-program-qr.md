@@ -68,10 +68,11 @@
 
 ## 4. 校验文件落位与部署（仓库侧已自动化）
 
-- 承接位：[`deploy/swas/wechat-verify/`](../../deploy/swas/wechat-verify/README.md)（只有 README，**不预置任何 `.txt`**）。
+- 承接位：[`deploy/swas/wechat-verify/`](../../deploy/swas/wechat-verify/README.md)（README + **你在微信后台下载的真文件**；可以提交 —— 部署只从仓库源码包取它。目录里**不许有**示例/占位 `.txt`（判据会判红））。
 - 落位：[`deploy/swas/deploy.sh`](../../deploy/swas/deploy.sh) 的 `1.3.1` 段把该目录下**所有 `*.txt`**
   **幂等**拷到静态根根下；只**增 / 覆盖**、**不删**任何别的文件（那个根同时是 C 端 h5 的落地面）；
   源目录空 / 源码树不在 / 静态根不存在 ⇒ **出声跳过**，不拖垮部署。
+  ⚠️ **首次部署**（静态根还没被创建）时本段会跳过 ⇒ 等 h5 落位后**再跑一次部署**（或手动把文件 `cp` 到静态根根下）。
 - 服务：[`deploy/swas/nginx.conf`](../../deploy/swas/nginx.conf) 的
   `location ~ ^/[^/]+\.txt$ { try_files $uri =404; }` —— **缺失就是 404**，
   **绝不**回落 SPA 的 `index.html`（回落 = HTTP 200 的一页 HTML，与「内容对不上」无法区分）；
@@ -114,7 +115,7 @@ TARO_APP_API_URL=https://app.migaozn.com npm run build:weapp   # 生产值**必�
 
 > 🔴 仓库侧**不**写 appid、不写私钥、不写校验文件内容：它们都是用户侧产物，写进仓只会造成
 > 「看起来配好了」的假绿。判据 = `tests/unit_ci_workflows/test_wechat_verify_route.py` 的
-> 「本目录不得预置 `*.txt`」。
+> 「本目录不得出现**伪造 / 占位**的 `*.txt`」（你从微信后台下载的真文件**可以**提交 —— 部署只从源码包取它）。
 
 ## 6. 三角色范围与工人菜单单一真源（目标 ⑤）
 
