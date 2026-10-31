@@ -4052,6 +4052,98 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
+## 客户主数据迁移域（10 case）
+
+### MIG-001. 客户 Excel 任意表头：AI 映射建议（非固定模板） 🔵
+```
+你: POST /api/internal/migration/customer-mapping {headers:['购货单位','联系方式','送货地点'], ...}
+数据: AI 返回 mappings：source_index 指向正确列，target_field ∈ 请求 fields[].key；未知 target / 越界 index / 重复 target 被过滤（承载体 = tests/test_customer_mapping.py）
+数据: 合法映射 confidence ∈ [0,1]；degraded=false 只在 LLM 输出可解析时出现
+跳过: [backend-contract] 内部 AI 映射端点的 JSON 契约由 pytest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8295）：客户主数据迁移 MVP，AI 只给列映射建议，不执行导入 ｜ tags: ai-mapping, backend-contract
+
+### MIG-002. 客户 Excel 任意表头：AI 输入样本脱敏 🟡
+```
+你: 样本含手机号 13800138000 / 邮箱 a@b.com 时调用映射端点
+数据: 送给 LLM 的 prompt 不含原始手机号/邮箱；手机号与邮箱已打码（承载体 = tests/test_customer_mapping.py::test_masks_pii_before_prompt）
+数据: 日志不含样本原文；端点只返回映射建议，不回传客户样本之外的完整行
+跳过: [backend-contract] 脱敏判据由 pytest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8295）：客户 PII 不送模型的硬约束 ｜ tags: ai-mapping, pii, backend-contract
+
+### MIG-003. AI 映射不可用/输出非法 ⇒ 降级但不阻断迁移 🟡
+```
+你: LLM 抛异常或返回非 JSON 时调用映射端点
+数据: 端点仍返回 success=true + degraded=true + mappings=[]，不抛 500（承载体 = tests/test_customer_mapping.py）
+数据: admin-api analyze 在 AI 不可用时用确定性表头别名兜底，aiDegraded=true，页面可手工映射
+跳过: [backend-contract] 降级契约由 pytest + Java 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8295）：AI 可用性不得阻断迁移 ｜ tags: ai-mapping, degraded, backend-contract
+
+### MIG-004. 客户 Excel 解析 + 列映射分析：任意表头、空表头、行数上限 🔵
+```
+你: POST /api/admin/customers/import/analyze multipart file
+数据: 任意表头（购货单位/联系方式/送货地点）能解析出 headers + 样本 + 确定性映射建议；不写库
+数据: 空表头补「列N」；超过 2000 行 / 5MB 显式 422，不静默截断（承载体 = CustomerImportParserTest）
+跳过: [backend-contract] Excel 解析/边界由 admin-api 单测验证，非 Agent 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8295）：客户导入第一步（只读分析） ｜ tags: excel, backend-contract
+
+### MIG-005. 试运行绝不写库；缺 externalId / 重复 externalId / 手机号冲突 ⇒ 行错误 🔵
+```
+你: POST /api/admin/customers/import/preview multipart file + mapping
+数据: preview 期间 mapper 的 insert/update 零调用，客户行数不变（承载体 = CustomerImportServiceTest）
+数据: 缺 externalId / displayName、文件内 externalId 重复、手机号撞他人 ⇒ action=ERROR，不写该行
+跳过: [backend-contract] 试运行只读判据由 admin-api 单测验证，非 Agent 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8295）：先试运行、人确认再写 ｜ tags: preview, fail-closed, backend-contract
+
+### MIG-006. 正式导入按 externalId 幂等：重跑不重复建、updateExisting 可控更新 🔵
+```
+你: POST /api/admin/customers/import/commit（同一文件重跑；updateExisting=false/true）
+数据: 首次创建写 external_id + wechat_nickname + phone + default_receiver_address；同一 (tenant, external_id) 仍 1 行（承载体 = CustomerImportServiceTest）
+数据: 重跑 updateExisting=false ⇒ SKIPPED；true ⇒ 调 updateCustomer 且不新建；created/updated/skipped/failed 计数与行一致
+跳过: [backend-contract] 幂等/重跑由 admin-api 单测验证，非 Agent 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8295）：客户主数据迁移的核心安全护栏 ｜ tags: idempotency, backend-contract
+
+### MIG-007. 客户导入 HTTP 端点：analyze/preview/commit + customer:create 权限 🔵
+```
+你: POST /api/admin/customers/import/{analyze,preview,commit}
+数据: 三个端点均返回 ApiResponse.success + 对应 data；mapping/updateExisting 参数透传（承载体 = CustomerImportControllerTest）
+数据: 三端点均标注 @RequirePermission("customer:create")，不给只读角色接触客户 PII
+跳过: [backend-contract] HTTP 契约由 admin-api 单测验证，非 Agent 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8295）：页面接入的 API 契约 ｜ tags: api, backend-contract
+
+### MIG-008. AI 映射客户端失败语义：超时/非 2xx/坏 JSON ⇒ null，由确定性兜底 🟡
+```
+你: ai-agent-service 不可达或返回 success=false 时调用 analyze
+数据: CustomerImportAiClient.suggest 返回 null，不抛异常；analyze 的 aiDegraded=true 且仍有确定性建议（承载体 = CustomerImportAiClientTest）
+数据: 只有 data.mappings 的合法结构才映射为内部 DTO；source_index/target_field 逐字段取，不按位置猜
+跳过: [backend-contract] 客户端失败语义由 admin-api 单测验证，非 Agent 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8295）：AI 服务的失败不得阻断迁移 ｜ tags: ai-mapping, degraded, backend-contract
+
+### MIG-009. 客户迁移工作台：上传 → AI 映射建议 → 人工确认 🔵
+```
+你: 打开 /customers/import，上传任意表头客户 Excel
+数据: analyze 返回 success=true 后页面渲染每个源列 + 样本 + 目标字段下拉；AI 建议预选；必填 externalId/displayName 有标记（承载体 = page.test.tsx）
+数据: AI 降级时显示提示，仍可手工映射并试运行
+跳过: [frontend-contract] 页面行为由 admin-web Vitest/RTL 验证；真实登录/截图的 Playwright 多模态验收在集成阶段单独跑
+```
+溯源: 2026-10-31 新增（issue #8295）：迁移工作台页面 ｜ tags: ui, ai-mapping
+
+### MIG-010. 客户迁移工作台：试运行 → 正式导入 → 逐行结果 🔵
+```
+你: 在 /customers/import 点试运行，再点正式导入
+数据: 未试运行前正式导入接口未被调用（not called）；试运行后展示 new/update/skip/error 汇总；commit 返回 success=true 后展示 created/updated/skipped/failed（承载体 = page.test.tsx）
+数据: updateExisting 勾选透传到 preview/commit
+跳过: [frontend-contract] 页面行为由 admin-web Vitest/RTL 验证；真实登录/截图的 Playwright 多模态验收在集成阶段单独跑
+```
+溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
+
 ## 杂项域（169 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
@@ -14048,8 +14140,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：948（活跃 152，跳过 796）
-- tier 分布：smoke 15 / normal 876 / adversarial 33
+- 用例总数：958（活跃 152，跳过 806）
+- tier 分布：smoke 15 / normal 883 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14064,6 +14156,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
+- 客户主数据迁移域：10
 - 杂项域：169
 - 商家入驻域：7
 - 领域本体域：4
@@ -14135,6 +14228,16 @@
 - KN-008: 知识来源标注边界 - 自补常识不得混入「📖 来自本店知识库」标注（P2-4，issue #3076）
 - KN-009: C 端知识问答**活栈**冒烟（元元）：多轮上下文 + 复合 Tool 的 SSE 事件 + 异常输入 + 快捷操作菜单
 - KN-010: 知识候选并发双采纳各自插卡 ⇒ 产出两张卡；改写为「先抢发布权（CAS）再插卡」后恰一次成功、恰一张卡（issue #6962）
+- MIG-001: 客户 Excel 任意表头：AI 映射建议（非固定模板）
+- MIG-002: 客户 Excel 任意表头：AI 输入样本脱敏
+- MIG-003: AI 映射不可用/输出非法 ⇒ 降级但不阻断迁移
+- MIG-004: 客户 Excel 解析 + 列映射分析：任意表头、空表头、行数上限
+- MIG-005: 试运行绝不写库；缺 externalId / 重复 externalId / 手机号冲突 ⇒ 行错误
+- MIG-006: 正式导入按 externalId 幂等：重跑不重复建、updateExisting 可控更新
+- MIG-007: 客户导入 HTTP 端点：analyze/preview/commit + customer:create 权限
+- MIG-008: AI 映射客户端失败语义：超时/非 2xx/坏 JSON ⇒ null，由确定性兜底
+- MIG-009: 客户迁移工作台：上传 → AI 映射建议 → 人工确认
+- MIG-010: 客户迁移工作台：试运行 → 正式导入 → 逐行结果
 - MC-005: RBAC 岗位目录读端点的权限注解守卫（AdminRoleController 逐端点台账 + 有意的跨码登记）
 - MC-006: RBAC 岗位目录读端点的身份级鉴权（9 身份：无 employee:list/system:view ⇒ 403，持有者 ⇒ 200）
 - MC-012: CI 失败报告去重 - 同日同标题 open issue 存在时不重复建

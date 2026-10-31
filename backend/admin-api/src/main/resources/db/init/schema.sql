@@ -1663,7 +1663,7 @@ CREATE TABLE IF NOT EXISTS briefing_actions (
 CREATE INDEX IF NOT EXISTS idx_briefing_actions_tenant_date
     ON briefing_actions (tenant_id, biz_date DESC);
 
--- 决策采纳记录（issue #8260，V196 迁移终态同步）：「AI 建议了什么 → 人做了什么」的后半句。
+-- 决策采纳记录（issue #8260，V205 迁移终态同步）：「AI 建议了什么 → 人做了什么」的后半句。
 -- item_key = 条目标题 sha256 前 16 位：稳定、不含原文、不随简报重排漂移。
 -- action 目前只有 opened_agent（点开问了）—— **记录 ≠ 采纳**，不表示人照着做了。
 CREATE TABLE IF NOT EXISTS briefing_actions (
@@ -1709,7 +1709,7 @@ CREATE TABLE IF NOT EXISTS stock_ledger_entries (
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     deleted INTEGER NOT NULL DEFAULT 0,
     -- V111：放行 inbound（入库单过账）
-    -- 变更来源（V196 / issue #7750 追加 outbound：出库单过账）
+    -- 变更来源（V205 / issue #7750 追加 outbound：出库单过账）
     CONSTRAINT ck_stock_ledger_reason CHECK (reason IN ('order', 'aftersales', 'manual', 'inbound', 'outbound'))
 );
 CREATE INDEX IF NOT EXISTS idx_stock_ledger_tenant_sku
@@ -1857,7 +1857,7 @@ ALTER TABLE purchase_order_items ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_purchase_order_items ON purchase_order_items
     USING (tenant_id::text = current_setting('app.current_tenant_id'));
 
--- 仓库实体提前到「入库单」之前（V196 / issue #7750）：`inbound_orders.warehouse_id` 的外键
+-- 仓库实体提前到「入库单」之前（V205 / issue #7750）：`inbound_orders.warehouse_id` 的外键
 -- 需要被引用表先生成（bootstrap 脚本按文件顺序执行；迁移链里 V182 早已建好，故无此约束）。
 CREATE TABLE IF NOT EXISTS warehouses (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -1871,7 +1871,7 @@ CREATE TABLE IF NOT EXISTS warehouses (
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     deleted INT NOT NULL DEFAULT 0,
-    -- 仓库类型（V196 / issue #7750）：store 门店仓 / processing 加工仓 / material 原料仓 / finished 成品仓
+    -- 仓库类型（V205 / issue #7750）：store 门店仓 / processing 加工仓 / material 原料仓 / finished 成品仓
     CONSTRAINT ck_warehouses_type CHECK (warehouse_type IN ('store', 'processing', 'material', 'finished')),
     CONSTRAINT ck_warehouses_status CHECK (status IN ('active', 'inactive'))
 );
@@ -1897,7 +1897,7 @@ CREATE TABLE IF NOT EXISTS inbound_orders (
     -- 单据来源（V117）：purchase 采购收货 / opening 期初建账（迁移导入）；photo 工人拍照入库（V153 / issue #6812：
     -- 该来源的明细行「数量」是**卷数**、roll_length_m 是**每卷米数**，入库米数 = 数量 × 卷长）
     source VARCHAR(16) NOT NULL DEFAULT 'purchase' CONSTRAINT ck_inbound_orders_source
-        CHECK (source IN ('purchase', 'opening', 'photo', 'packing')),   -- packing：成品打包入库（V196）
+        CHECK (source IN ('purchase', 'opening', 'photo', 'packing')),   -- packing：成品打包入库（V205）
     -- 建单运行级幂等键（V117）：同一 (tenant_id, import_run_id) 至多一张未软删的单
     import_run_id VARCHAR(128),
     posted_at TIMESTAMP WITH TIME ZONE,
@@ -1909,10 +1909,10 @@ CREATE TABLE IF NOT EXISTS inbound_orders (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted INT DEFAULT 0,
-    -- 业务类别（V196 / issue #7750）：fabric 布料（批次 + SKU 库存 + 移动加权成本）/ finished 成品（仓位，不碰米数库存）
+    -- 业务类别（V205 / issue #7750）：fabric 布料（批次 + SKU 库存 + 移动加权成本）/ finished 成品（仓位，不碰米数库存）
     biz_category VARCHAR(16) NOT NULL DEFAULT 'fabric'
         CONSTRAINT ck_inbound_orders_biz_category CHECK (biz_category IN ('fabric', 'finished')),
-    -- 仓库引用（V196）：与 warehouse（文本快照）**不是同一件事**
+    -- 仓库引用（V205）：与 warehouse（文本快照）**不是同一件事**
     warehouse_id BIGINT REFERENCES warehouses(id)
 );
 -- 单号**租户内唯一**（V117 起；列 = (tenant_id, inbound_no)、谓词 deleted = 0，与 @TableLogic 查询口径同界）
@@ -3769,6 +3769,14 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions TEXT;
 -- SKU 颜色标识（ProductSku.colorName —— 两条 SQL 链都没有，仅 java 实体声明）
 ALTER TABLE product_skus ADD COLUMN IF NOT EXISTS color_name VARCHAR(64);
 
+-- 客户主数据迁移的幂等键（V205，issue #8295）：迁移链已加列，bootstrap 段必须同步，
+-- 否则新建库 / 冒烟库没有 external_id ⇒ 迁移预览/提交 SQL 报列不存在。
+ALTER TABLE customer_profiles ADD COLUMN IF NOT EXISTS external_id VARCHAR(128);
+-- 旧 ERP 客户ID 幂等键（issue #8295 / V205）：只对非空值唯一，手工建档仍可留空。
+CREATE UNIQUE INDEX IF NOT EXISTS uk_customer_profiles_external_id
+    ON customer_profiles (tenant_id, external_id)
+    WHERE external_id IS NOT NULL;
+
 -- 租户 AI 配置：机器人名称（docs/sql/009）+ 渠道配置（V10）
 ALTER TABLE tenant_ai_configs ADD COLUMN IF NOT EXISTS bot_name VARCHAR(64) DEFAULT '小布';
 ALTER TABLE tenant_ai_configs ADD COLUMN IF NOT EXISTS channel_configs JSONB;
@@ -4456,8 +4464,8 @@ CREATE INDEX IF NOT EXISTS idx_rework_orders_piece
     ON rework_orders (tenant_id, order_item_id, set_no) WHERE deleted = 0;
 
 -- ══════════════════════════════════════════════════════════════════════════════
--- 原料仓/成品仓 + 仓位 + 成品在库 + 出库单（V196，issue #7750）
--- 与 migration/V196__stock_warehouse_locations_and_in_out_documents.sql 终态同步
+-- 原料仓/成品仓 + 仓位 + 成品在库 + 出库单（V205，issue #7750）
+-- 与 migration/V205__stock_warehouse_locations_and_in_out_documents.sql 终态同步
 -- ══════════════════════════════════════════════════════════════════════════════
 
 -- 仓位（成品仓里的货位）：bin_code = 仓位号（租户内唯一 —— 扫码/口头指位都认它）
@@ -4482,7 +4490,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_warehouse_locations_bin
 CREATE INDEX IF NOT EXISTS idx_warehouse_locations_warehouse
     ON warehouse_locations (tenant_id, warehouse_id);
 COMMENT ON TABLE warehouse_locations IS
-    '仓位（V196 / issue #7750；V198 / issue #7791 加 capacity）：成品仓里的货位。bin_code = 仓位号（租户内唯一），zone_code/zone_name = 区域，capacity = 本区每仓最多几件（默认 10，区域统一）';
+    '仓位（V205 / issue #7750；V198 / issue #7791 加 capacity）：成品仓里的货位。bin_code = 仓位号（租户内唯一），zone_code/zone_name = 区域，capacity = 本区每仓最多几件（默认 10，区域统一）';
 
 -- 出库单（与入库单同形；只有 posted 一个状态 —— 建单即过账）
 CREATE TABLE IF NOT EXISTS outbound_orders (
@@ -4516,7 +4524,7 @@ CREATE INDEX IF NOT EXISTS idx_outbound_orders_tenant_date
 CREATE INDEX IF NOT EXISTS idx_outbound_orders_order
     ON outbound_orders (tenant_id, order_id) WHERE order_id IS NOT NULL AND deleted = 0;
 COMMENT ON TABLE outbound_orders IS
-    '出库单（V196 / issue #7750）：布料手工出库 + 成品发货出库同形；建单即过账（无草稿态）';
+    '出库单（V205 / issue #7750）：布料手工出库 + 成品发货出库同形；建单即过账（无草稿态）';
 
 CREATE TABLE IF NOT EXISTS outbound_order_items (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -4544,7 +4552,7 @@ CREATE INDEX IF NOT EXISTS idx_outbound_order_items_order
 CREATE INDEX IF NOT EXISTS idx_outbound_order_items_sku
     ON outbound_order_items (tenant_id, sku_id) WHERE sku_id IS NOT NULL;
 COMMENT ON TABLE outbound_order_items IS
-    '出库单明细（V196）：布料行 = SKU + 米数；成品行 = 订单行 + 仓位 + 套数';
+    '出库单明细（V205）：布料行 = SKU + 米数；成品行 = 订单行 + 仓位 + 套数';
 
 -- 成品在库（一行 = 一个打包后的成品订单行；含仓位号）
 CREATE TABLE IF NOT EXISTS finished_goods_stock (
@@ -4587,7 +4595,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_finished_goods_legacy_item_in_stock
 CREATE INDEX IF NOT EXISTS idx_finished_goods_order
     ON finished_goods_stock (tenant_id, order_id) WHERE deleted = 0;
 COMMENT ON TABLE finished_goods_stock IS
-    '成品在库（V196 / issue #7750）：一行 = 一个打包后的成品订单行（含仓位号）；status 三态 in_stock/shipped/unpacked';
+    '成品在库（V205 / issue #7750）：一行 = 一个打包后的成品订单行（含仓位号）；status 三态 in_stock/shipped/unpacked';
 
 -- 租户隔离（RLS）：幂等建策略（新建库只跑一次，但保持与迁移同形可重入）
 ALTER TABLE warehouse_locations ENABLE ROW LEVEL SECURITY;
@@ -4618,7 +4626,7 @@ BEGIN
     END IF;
 END $$;
 
--- 入库单按仓查询（V196）
+-- 入库单按仓查询（V205）
 CREATE INDEX IF NOT EXISTS idx_inbound_orders_tenant_warehouse
     ON inbound_orders (tenant_id, warehouse_id) WHERE warehouse_id IS NOT NULL AND deleted = 0;
 

@@ -239,6 +239,29 @@ class LLMFactory:
         )
 
     @staticmethod
+    def create_mapping_llm() -> ChatOpenAI:
+        """创建「旧 ERP 表头 → 规范客户字段」映射建议 LLM（issue #8295）
+
+        - temperature=0  确定性输出：同一份表头每次给出同一批映射，便于商家核对与复现
+        - max_completion_tokens=1000  一次建议通常十几条（每条约 40 token），1000 足够；
+          给足余量但不放大成本 —— 映射结果由端点二次校验，不靠模型自我约束长度
+        - thinking=disabled  纯对齐任务（列名 ↔ 字段），不需要深度思考；关掉后延迟与成本都低一档
+        - request_timeout=25  上游 admin-api 的 `CustomerImportAiClient` 读超时是 **30s**
+          （`READ_TIMEOUT_MS`）—— 本值必须**小于**它：超时先在本侧触发 ⇒ 返回 `degraded=true`
+          的降级体，而不是让上游白等 30s 再拿到一个断开的连接。模型 / base_url / api_key
+          与 `create_registration_review_llm` 同一套（复用 `INTENT_MODEL`，不新增模型依赖 / 配置项）。
+        """
+        return _new_chat_model(
+            model=settings.INTENT_MODEL,
+            api_key=LLM_API_KEY,
+            base_url=LLM_BASE_URL,
+            temperature=0,
+            max_completion_tokens=1000,
+            request_timeout=25,
+            extra_body={"thinking": {"type": "disabled"}},
+        )
+
+    @staticmethod
     def create_briefing_llm() -> ChatOpenAI:
         """创建智能每日经营简报生成 LLM（issue #3468）
 
