@@ -3892,7 +3892,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（167 case）
+## 杂项域（168 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -6469,6 +6469,19 @@
 跳过: [backend-contract] 运维判据（只读仓内脚本 + PATH 垫片伪造 openssl/certbot/docker/crontab + 真 YAML）由 tests/unit_ci_workflows/test_tls_renewal.py 验证，零网络、零真实续期、不写共享 /tmp、不烧 token，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-31 新增（issue #8201，P0：四域共用证书 2026-11-27 到期，LE 的 30 天续期窗口已于 2026-10-28 过去仍未续）。取号 MC-121（`python3 scripts/next_case_id.py MC` 现取最小空闲号；候选 = main ∪ open PR 分支 ∪ 本工作区）。落码 = ① `deploy/scripts/tls-expiry-check.sh`（只读、四域 + 可选 www、阈值 21 天、0/1/3、lineage 诊断）② `deploy/scripts/tls-renew.sh`（host certbot 优先 / docker 兜底、`--dry-run`、成功才 reload、`--install-cron` 幂等 + 双跑 guard + 备份替换）③ `.github/workflows/post-merge-verify.yml` 的 `TLS 证书到期判红` 步（main 侧、在 `if: failure()` 出口之前、不新增 schedule）④ `deploy/swas/deploy.sh` 的 `2.6.1`（幂等刷新宿主 cron，跳过/失败不拖垮部署；同步脚本带 `[ -f ]` 守卫以保回滚）⑤ `docs/deployment/tls-renewal.md`（现状 / 两条修复路径与代价 / 陈旧 lineage 不删证书 / cron 加固 / 验收复算 / 回滚 / 影响面）。**订正审计口径**：PR #8200 的 P0-01「仓内零续期机制」应读作「机制在宿主 cron，但已连天失败 + 无告警」。**2026-10-31 用户裁定**：修复走路径②（重签去掉 admin、只带 7 个可解析 SAN）；陈旧 lineage 移出 renewal 目录（不删证书）；`--replace-legacy-cron` 等合并+部署后再跑，「先手工改旧 cron 的 restart→reload」为**可选**。 ｜ tags: ops, tls, deploy, certbot, alarm
+
+### MC-122. 观星台终端正式发布链路（issue #8195）：/terminal/ 是纯静态下载面（缺失文件必须 404、不得回落 SPA、不限流、MIME 可判），官网 /download 有下载页，发布腿把终端仓 Release 的 exe/apk 幂等落到静态根并自证「线上字节 == 本地载荷」 🔵
+```
+你: 终端自己检查更新打的地址是 app.migaozn.com/terminal/latest.json 与 /terminal/android/latest.json，官网没有下载页，产物也没有发布通路；要一条能发、能回滚、发错了会红的链路
+期望: direct_reply
+数据: **nginx 面（会红）**：`app.migaozn.com` 的 443 server 段必须有 `location /terminal/`，其 `try_files` 必须是 `$uri =404`（缺失文件 404）——回落任何 HTML 都是「200 + 别人的页面」（客户端会把 HTML 当清单/安装包解析，失败形态与「没有新版本」无法区分）。裸前缀 `location /terminal` 必须 `return 301 /terminal/`（否则它同样落进 SPA fallback）。该 location 不得挂 `limit_req`（批量更新会误伤），必须有 `default_type application/octet-stream`（exe/apk 按二进制落盘）与 `X-Content-Type-Options: nosniff`；**不许**用 `types {}`（替换继承表，类级判据 test_served_leg_mime_guard.py 禁止）。判据是**真解析 + 真模拟**（`_serve()`：前缀最长者 + try_files + return），不是文本匹配；变异（删 location / 改回 SPA fallback / 删 301 / default_type 改文本 / 挂限流 / 注入 types{}）各自判红。
+数据: **发布腿结构（会红）**：`.github/workflows/terminal-publish.yml` 只允许 `workflow_dispatch` 且 `release_tag` 必填（发布是人工闸：没有 tag 就不知道该发哪一版，`push` 触发会让合并即发布）；发布/断言步骤不得带 `continue-on-error` / `|| true` / 恒假 `if`；ACR 登录必须走唯一实现 `scripts/acr_login.sh --fatal`（本腿把载荷推进 ACR ⇒ 登录承重）；静态根 `/opt/migao-deploy/h5` + 子目录 `terminal` 逐字在案。
+数据: **CI 脚本契约（会红）**：`deploy/scripts/terminal-publish-ci.sh` 必须逐字含四条验收断言（远端 latest.json / android/latest.json 哈希 == 本地载荷、静态根 index.html 前后一致、PAYLOAD_MANIFEST_OK=1 自证行、InvocationStatus 必须 Success）与命令内容字节前置断言（`COMMAND_CONTENT_LIMIT_BYTES` 16384 + 官方出处 URL），且**不许内联远端执行体**（台账 swas_command_content_legs_ledger.json 的射程）。
+数据: **沙箱行为（真跑脚本，会红）**：`prepare` 从「已下载的 Release 目录」生成两份清单，字段名与终端客户端逐字对齐（Windows `version` / `notes` / `download_url`；Android `versionCode`(int) / `versionName` / `download_url`），sha256/size 与实际文件一致；坏输入（缺目录 / versionCode 非整数 / tag 含引号 / version 为空）一律拒绝。远端脚本把载荷落到沙箱静态根：父目录 index.html 哈希不变、陈旧文件被收敛、不属于发布面的文件不搬、**幂等**（连跑两次逐字节一致）；清单与载荷不一致 / 缺件 / 多出未知文件 / 越界子目录 / 缺静态根 ⇒ 非零退出且**什么都没改**。
+数据: **发布文档（会红）**：`docs/deployment/terminal-release.md` 必须写清发布步骤、回滚、证书现状（Windows 未签名 + SmartScreen + SHA256 公布）、不上架应用市场、`versionCode` 单调、两个清单地址。
+跳过: [backend-contract] 静态结构 + 沙箱真跑判据（零网络、零云调用、不碰真实静态根）由 tests/unit_ci_workflows/test_terminal_release_leg.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8195）：交付 = ① nginx 的 `/terminal` 归一 + `/terminal/` 纯静态下载面 ② 官网 `(corporate)/download` 下载页 + nav/footer/sitemap 入口 + next rewrites 同源转发 ③ `deploy/terminal-dist/Dockerfile` + `deploy/scripts/terminal-publish-ci.sh`（prepare / publish）+ `deploy/swas/terminal-publish-remote.sh` + `.github/workflows/terminal-publish.yml`（只有 workflow_dispatch）④ `docs/deployment/terminal-release.md` ⑤ 判据 = tests/unit_ci_workflows/test_terminal_release_leg.py（含注入式红证）+ test_public_code_spaces_are_disjoint.py 的 `/terminal` 归属登记与两条红证。取号 MC-122（python3 scripts/next_case_id.py MC 现取 main 001-120 + 在飞 PR 面 ⇒ 返回 MC-122）。⚠️ 未闭合（照实登记）：终端仓的 Release 自动出包（terminal#12）与 `secrets.TERMINAL_REPO_TOKEN`（人工前置）不在本用例射程；真实发布与 served 断言由 workflow 在线上跑。 ｜ tags: ci, nginx, terminal, publish-leg, no-spa-fallback, idempotent, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -11710,7 +11723,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（143 case）
+## 前端 UI 域（144 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -13806,6 +13819,19 @@
 ```
 溯源: 2026-10-29 再更新（issue #8114）：顶部两块 AI 内容（速览条 + 简报卡）合并成一张 `daily-business-card` —— 判据 1 与 4 改写、新增判据 5（四态，重点是「简报未开启时卡片仍在」）。2026-10-29 更新（issue #8105）：看板首屏重排 —— 待处理提到简报之前、简报有数据时也默认收起一行（判据 1 与新增判据 4）。原判据「有数据时卡片形态不变」已失效并改写。2026-10-28 新增（issue #8012）。取号 = scripts/next_case_id.py UI 现取。后端口径：DashboardController 的 *Change 已是百分比 ⇒ changeBadge 收比值、页面经 asRatio() 单一换算。未做：简报未开启态现在会多出**一行**提示（改前整块不渲染），若后续裁定收回，删 BriefingCard 的 !enabled 分支并同步本判据。 ｜ tags: dashboard, first-screen, skeleton
 
+### UI-144. 官网下载页（/download，issue #8195）：从终端发布清单展示版本 / SHA-256 / 大小 / 发布时间 / 说明与两个下载按钮；清单缺失或格式坏 ⇒ 明确「暂未发布」且不编造版本号；伪协议不渲成链接；首屏正文进初始 HTML 🔵
+```
+你: 商家要在官网下载车间一体机（Windows）与手持机（Android）的安装包，并核对版本与校验值；没有正式版时必须明确说「暂未发布」，不能显示一个不存在的版本
+期望: direct_reply
+数据: **清单正常 ⇒ 逐项展示（会红）**：Windows 卡显示版本 / SHA-256 / 大小（`321.0 KB`）/ 发布时间 / notes 与「下载 Windows 安装包」链接（href 逐字等于清单的 `download_url`）；Android 卡显示 `versionName（versionCode N）` 与「下载 Android 安装包」链接。两个请求分别打到 `/terminal/latest.json` 与 `/terminal/android/latest.json`。执行点 = frontend/admin-web/tests/unit/pages/corporate-download.test.tsx。
+数据: **缺失 / 坏 / 网络失败 ⇒ 「暂未发布」（会红）**：两个清单都 404 / 返回坏 JSON / 字段类型不对（`versionCode: 'seven'`、`sha256: 'not-a-hash'`）/ fetch reject ⇒ 两处「暂未发布」、**没有**下载按钮、页面不出现任何版本号；只有一端发布时另一端单独显示「暂未发布」（互不牵连）。
+数据: **安全（会红）**：清单是外部输入，`download_url` 为 `javascript:` ⇒ 该端按「暂未发布」处理、不渲染 href。
+数据: **首屏（会红）**：页面是服务端组件（正文进初始 HTML）——渲染出 h1「下载观星台终端」、三段安装说明（未知来源 / SmartScreen / 检查更新）与 SHA-256 校验方法，且不含「加载中...」骨架。
+数据: **结构（会红）**：`next.config.mjs` 有 `/terminal/:path*` → `app.migaozn.com` 的同源转发（浏览器直连会被 CORS 挡）；`src/proxy.ts` 的官网白名单含 `/download`；`CorporateNav` / `CorporateFooter` 都有 `/download` 入口；sitemap 含 `/download/`。
+跳过: [backend-contract] 纯前端契约（mock fetch，不经过 LLM 对话/工具），由 admin-web vitest 执行，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8195）：官网 `(corporate)/download` 下载页 + 客户端清单读取（`src/lib/terminal-manifest.ts` 的解析真值源）+ 类级守卫接入（服务端组件 / 元数据单一源 / 文案口吻 / proxy 白名单 / 按钮规范）。取号 UI-144（python3 scripts/next_case_id.py UI 现取 main 001-143 + 在飞 PR 面 ⇒ 返回 UI-144）。 ｜ tags: corporate, download, terminal, no-fabrication, first-screen
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -13835,8 +13861,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：932（活跃 152，跳过 780）
-- tier 分布：smoke 15 / normal 860 / adversarial 33
+- 用例总数：934（活跃 152，跳过 782）
+- tier 分布：smoke 15 / normal 862 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -13851,7 +13877,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：167
+- 杂项域：168
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：74
@@ -13861,7 +13887,7 @@
 - 工具注册器域：1
 - 设置域：11
 - 令牌刷新域：4
-- 前端 UI 域：143
+- 前端 UI 域：144
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -14067,6 +14093,7 @@
 - WH-011: 成品打包入库：同一订单固定入同一仓位（仓位满了也不换仓，issue #8103）
 - MC-120: 页面动作登记表 → 步骤级教学（F6 / P2-1，承接 #5989）：how_to 命中逐字返回登记表、未登记如实说没有步骤级指引
 - MC-121: 四域共用一张 Let's Encrypt 证书的自动续期与到期判红（issue #8201）：续期机制在**宿主 cron** 但已连天失败且无告警 ⇒ 到期判据（0/1/3）+ 一次性修复 runbook + cron 加固
+- MC-122: 观星台终端正式发布链路（issue #8195）：/terminal/ 是纯静态下载面（缺失文件必须 404、不得回落 SPA、不限流、MIME 可判），官网 /download 有下载页，发布腿把终端仓 Release 的 exe/apk 幂等落到静态根并自证「线上字节 == 本地载荷」
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
@@ -14261,4 +14288,5 @@
 - UI-131: 全站下拉框只有一种形态（共享 SELECT_CONTROL / 自绘箭尖）+ 筛选条字段参与伸缩（issue #7397）
 - UI-142: 销售订单列表：4 个同级文字链收敛为「1 主行动 + ⋯ 菜单」，非加急行不再印「不加急」，订单号可复制（issue #8011）
 - UI-143: 经营看板首屏：待处理前置 + 顶部两块 AI 内容合并成一卡（四态齐全）+ 骨架 + 环比改倍数（issue #8012 / #8105 / #8114）
+- UI-144: 官网下载页（/download，issue #8195）：从终端发布清单展示版本 / SHA-256 / 大小 / 发布时间 / 说明与两个下载按钮；清单缺失或格式坏 ⇒ 明确「暂未发布」且不编造版本号；伪协议不渲成链接；首屏正文进初始 HTML
 

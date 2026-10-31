@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: ui（源: cases/ui.yml，143 条）
+# 域: ui（源: cases/ui.yml，144 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -2620,6 +2620,24 @@ _CASE_UI_143 = EvalCase(
     precondition='本用例是 [backend-contract] 纯前端契约：mock `@/lib/api`，不依赖真实服务',
 )
 
+# ── UI-144 [NORMAL] 官网下载页（/download，issue #8195）：从终端发布清单展示版本 / SHA-256 / 大小 / 发布时间 / 说明与两个下载按钮；清单缺失或格式坏 ⇒ 明确「暂未发布」且不编造版本号；伪协议不渲成链接；首屏正文进初始 HTML（源: cases/ui.yml）──
+_CASE_UI_144 = EvalCase(
+    id='UI-144',
+    legacy_id='',
+    title='官网下载页（/download，issue #8195）：从终端发布清单展示版本 / SHA-256 / 大小 / 发布时间 / 说明与两个下载按钮；清单缺失或格式坏 ⇒ 明确「暂未发布」且不编造版本号；伪协议不渲成链接；首屏正文进初始 HTML',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家要在官网下载车间一体机（Windows）与手持机（Android）的安装包，并核对版本与校验值；没有正式版时必须明确说「暂未发布」，不能显示一个不存在的版本'],
+    expectations=['direct_reply'],
+    data_checks=['**清单正常 ⇒ 逐项展示（会红）**：Windows 卡显示版本 / SHA-256 / 大小（`321.0 KB`）/ 发布时间 / notes 与「下载 Windows 安装包」链接（href 逐字等于清单的 `download_url`）；Android 卡显示 `versionName（versionCode N）` 与「下载 Android 安装包」链接。两个请求分别打到 `/terminal/latest.json` 与 `/terminal/android/latest.json`。执行点 = frontend/admin-web/tests/unit/pages/corporate-download.test.tsx。', "**缺失 / 坏 / 网络失败 ⇒ 「暂未发布」（会红）**：两个清单都 404 / 返回坏 JSON / 字段类型不对（`versionCode: 'seven'`、`sha256: 'not-a-hash'`）/ fetch reject ⇒ 两处「暂未发布」、**没有**下载按钮、页面不出现任何版本号；只有一端发布时另一端单独显示「暂未发布」（互不牵连）。", '**安全（会红）**：清单是外部输入，`download_url` 为 `javascript:` ⇒ 该端按「暂未发布」处理、不渲染 href。', '**首屏（会红）**：页面是服务端组件（正文进初始 HTML）——渲染出 h1「下载观星台终端」、三段安装说明（未知来源 / SmartScreen / 检查更新）与 SHA-256 校验方法，且不含「加载中...」骨架。', '**结构（会红）**：`next.config.mjs` 有 `/terminal/:path*` → `app.migaozn.com` 的同源转发（浏览器直连会被 CORS 挡）；`src/proxy.ts` 的官网白名单含 `/download`；`CorporateNav` / `CorporateFooter` 都有 `/download` 入口；sitemap 含 `/download/`。'],
+    skip_reason='[backend-contract] 纯前端契约（mock fetch，不经过 LLM 对话/工具），由 admin-web vitest 执行，不进入 agent-eval 冒烟',
+    tags=['corporate', 'download', 'terminal', 'no-fabrication', 'first-screen'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_UI_001,
     _CASE_UI_002,
@@ -2764,4 +2782,5 @@ CASES = (
     _CASE_UI_140,
     _CASE_UI_142,
     _CASE_UI_143,
+    _CASE_UI_144,
 )

@@ -20,6 +20,31 @@
   改一个标签或换顺序 ⇒ 红）+ `frontend/bmini-app/tests/worker-report-login.test.tsx`（就地登录 / 继续码 / 无码回首页）。
   ⚠️ 390×844 的 `/b/` vs `/w/` 视觉对比属多模态验收，不在本条判据内。
 
+### 观星台终端可从官网下载，更新清单有了正式落地面（2026-10-31，issue #8195）
+
+改前：终端（车间一体机 Windows / 工人手持机 Android）的更新检查地址早就写死在程序里
+（`app.migaozn.com/terminal/latest.json` 与 `/terminal/android/latest.json`），但 nginx 里
+`/terminal` **0 命中** ⇒ 请求落进 `location /` 的 SPA fallback：**HTTP 200 的一页 C 端元元 HTML**
+（缺失文件也是 200，监控不红）；官网 `/download` **404**；终端产物**没有任何发布通路**。
+
+改后：
+
+- **静态面**：`app.migaozn.com/terminal/` 有自己的 location，`try_files $uri =404`
+  （缺文件就是 404，**不回落**任何页面）；不限流；exe/apk 按 `application/octet-stream` 下发、
+  清单按 `application/json` 解析；裸前缀 `/terminal` 301 到 `/terminal/`。
+- **官网下载页**：`https://migaozn.com/download` 展示版本 / SHA-256 / 大小 / 发布时间 / 说明与两个下载按钮；
+  安卓「未知来源」、Windows SmartScreen、检查更新三段安装说明。清单读不到或格式坏 ⇒ 明确「暂未发布」，
+  **不编造版本号**（清单经 Next 同源转发读取，不给静态下载面加 CORS）。
+- **发布腿**：`.github/workflows/terminal-publish.yml`（**只有 workflow_dispatch**，由人点名 release tag）
+  把终端仓 Release 的 exe/apk 生成两份更新清单、装进 ACR 传输镜像、幂等落到静态根，
+  并断言「线上字节 == 本地载荷」（载荷与清单不一致时**什么都没改**）。
+- **文档**：`docs/deployment/terminal-release.md`（发布 / 回滚 / 证书现状：Windows 未签名 + SHA256 + SmartScreen；
+  不上架应用市场）。
+
+判据：`tests/unit_ci_workflows/test_terminal_release_leg.py`（nginx 语义模拟 + 发布腿结构与沙箱真跑，
+含注入式红证）+ `frontend/admin-web/tests/unit/pages/corporate-download.test.tsx`（清单正常 / 404 / 坏 JSON /
+网络失败 / 伪协议）。
+
 ### 会话空闲自动关闭阈值 4 小时 ⇒ **12 小时**（2026-10-30，issue #8182）
 
 - **用户裁定**（2026-10-30，逐字）：「把过期时间调整到 12 个小时。」
