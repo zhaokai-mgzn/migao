@@ -2833,7 +2833,7 @@
 ```
 溯源: 2026-10-20 新增（issue #7370，P0-1 之后按用户「逐步推进」落地为 P0-2 段 1）。落码 = ① V169 迁移（两列）+ 建库脚本终态同步；② CreditPolicy（纯函数口径）+ 7 条判据；③ OrderService 下单闸门；④ CustomerService.creditStatus/updateCreditSettings + 两个端点；⑤ 客户详情页「授信与往来」卡片 + 4 条页面判据；⑥ CHANGELOG。⚠️ **未做（照实登记）**：部分收款核销、账龄分档、审批出口、现结订单豁免 —— 分属 #7370 段 2/3 与 #7374(P1-2)。取号 = 现取 origin/main 的 CU 最大 012 ⇒ CU-013。 ｜ tags: backend-contract, credit, credit-limit, payment-terms, receivable, admin-api, red-proof
 
-## 数据域（30 case）
+## 数据域（31 case）
 
 ### DA-001. 经营概览 🔵
 ```
@@ -3221,6 +3221,19 @@
 跳过: [backend-contract] 视图语义由 backend/ai-agent-service/tests/test_briefing_product_health_options.py 验证（纯函数、零 LLM、一条注入式判别力红证），不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-31 新增（issue #8251）：黄金策决策能力 P3「谋 / 权衡」第一包 —— 视图从「告诉你哪不对」升到「告诉你接下来能做什么、代价多大、能不能反悔、怎么验证」。 ｜ tags: proactive, briefing, verdict, options
+
+### DA-031. 复盘第一块原料：历史简报回溯（过去 N 天 AI 提醒过什么），空历史必须自述「没有记录」 🔵
+```
+你: 上个月你建议我改价，效果如何？
+数据: Java `GET /api/admin/briefing/history?days=N`：按**业务日期倒序**返回最近 N 天（`days` 默认 30、**硬上限 90**、`<=0` 退化为 1）—— 上限不在调用方做（否则一次 `days=10000` 就能把整张表读进内存）。窗口起点按 `BusinessClock.today()` 算（全仓「今天」唯一来源，不另开 `LocalDate.now()`）。查不到 ⇒ **空列表不是 null**。
+数据: 🔴 Python `view="history"` 必须走 `/api/admin/briefing/history`，**不是** `VALUED_VIEWS` 里的 view（那个白名单走 `/snapshot`，拿回来的是「今天的快照」—— 名字像、东西完全不是）。判据含 `assert "history" not in VALUED_VIEWS` 与「未触碰 `/snapshot`」。
+数据: 🔴 **空历史必须自述「没有记录」**：message 里明写「这不是『一切正常』」。红证：把空态文案改成「过去 N 天经营一切正常」⇒ `test_empty_history_says_so` 必红；恢复 ⇒ 8 passed。
+数据: `days` 透传：默认 30，显式 7 就传 7（上限钳制在 Java 侧，Python 不重复实现，避免两处口径打架）。
+数据: 权限面：`view=history` 与当日/快照同码 `dashboard:view`，无权限 ⇒ 拒绝**且不发请求**。
+数据: 端点字面量契约：调用点的三个字面量集合 == `{TODAY_ENDPOINT, SNAPSHOT_ENDPOINT, HISTORY_ENDPOINT}`，且三个 `@GetMapping` 都真的在 Java 控制器里（同 PR 补齐被约束对象，铁律 9）。
+跳过: [backend-contract] 跨端只读回溯：Java 判据 = backend/admin-api/src/test/java/com/migao/admin/service/DailyBriefingHistoryTest.java（5 条，含 90 天上限注入式红证）；Python 判据 = backend/ai-agent-service/tests/test_briefing_query_history.py（8 条，含空历史诚实性红证）—— 零 LLM，不进 agent-eval
+```
+溯源: 2026-10-31 新增（issue #8253）：黄金策决策能力 P2「复盘」第一包。**只给原料，不给结论**：历史原文交回模型，是否被处理 / 有没有效让模型自己调当前视图对比 —— 因为「有没有被处理」需要决策事件记录（新表），本单不做。**未覆盖面（如实登记）**：① 决策采纳记录（谁点了、有没有执行）；② 季度价值报告（PDF / 推送）；③ 历史指标对比的本体（本单只确保历史原文可达）。 ｜ tags: proactive, briefing, review
 
 ## 防御域（24 case）
 
@@ -13938,8 +13951,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：940（活跃 152，跳过 788）
-- tier 分布：smoke 15 / normal 868 / adversarial 33
+- 用例总数：941（活跃 152，跳过 789）
+- tier 分布：smoke 15 / normal 869 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -13949,7 +13962,7 @@
 - 对话边界域：53
 - 跨域：3
 - 客户域：13
-- 数据域：30
+- 数据域：31
 - 防御域：24
 - 财务对账域：6
 - 人事域：13
@@ -14011,6 +14024,7 @@
 - DA-028: 跨域视图判断层：同行基线（peer baseline）与 good/watch/bad/unknown 分档（issue #8234）
 - DA-029: 简报条目 → 问黄金策：洞察到执行的入口（有 link / 无 link 都有，点一下就把这条交给 AI）
 - DA-030: 视图的「然后呢」：bad/watch 行给可选动作 + 代价 + 可逆性 + 验证方法（issue #8251）
+- DA-031: 复盘第一块原料：历史简报回溯（过去 N 天 AI 提醒过什么），空历史必须自述「没有记录」
 - KN-001: 元元知识问答 - 面料问题先检索本店知识卡片（query 必填）
 - KN-002: 元元知识问答 - 清洗保养类问题走知识卡片检索
 - KN-003: 黄金策知识问答 - 本店售后政策先检索知识卡片（B 端接线回归，issue #3059）

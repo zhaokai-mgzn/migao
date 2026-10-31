@@ -133,7 +133,7 @@
    "shape_notes": [
     "data=dict(data, proactive=findings, proactive_status=status)"
    ],
-   "source_sha256": "77346f94c6d4770c58ff17aee731259fe6f0ab01b735ca07257631da23e7f720"
+   "source_sha256": "59d07f0719dff8684681da9f3affa2a5554715b26dae6a77dc227b8cc9e7b049"
   },
   "category_manage": {
    "actions": {

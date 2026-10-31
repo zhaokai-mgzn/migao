@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: data（源: cases/data.yml，30 条）
+# 域: data（源: cases/data.yml，31 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -556,6 +556,24 @@ _CASE_DA_030 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── DA-031 [NORMAL] 复盘第一块原料：历史简报回溯（过去 N 天 AI 提醒过什么），空历史必须自述「没有记录」（源: cases/data.yml）──
+_CASE_DA_031 = EvalCase(
+    id='DA-031',
+    legacy_id='',
+    title='复盘第一块原料：历史简报回溯（过去 N 天 AI 提醒过什么），空历史必须自述「没有记录」',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['上个月你建议我改价，效果如何？'],
+    expectations=[],
+    data_checks=['Java `GET /api/admin/briefing/history?days=N`：按**业务日期倒序**返回最近 N 天（`days` 默认 30、**硬上限 90**、`<=0` 退化为 1）—— 上限不在调用方做（否则一次 `days=10000` 就能把整张表读进内存）。窗口起点按 `BusinessClock.today()` 算（全仓「今天」唯一来源，不另开 `LocalDate.now()`）。查不到 ⇒ **空列表不是 null**。', '🔴 Python `view="history"` 必须走 `/api/admin/briefing/history`，**不是** `VALUED_VIEWS` 里的 view（那个白名单走 `/snapshot`，拿回来的是「今天的快照」—— 名字像、东西完全不是）。判据含 `assert "history" not in VALUED_VIEWS` 与「未触碰 `/snapshot`」。', '🔴 **空历史必须自述「没有记录」**：message 里明写「这不是『一切正常』」。红证：把空态文案改成「过去 N 天经营一切正常」⇒ `test_empty_history_says_so` 必红；恢复 ⇒ 8 passed。', '`days` 透传：默认 30，显式 7 就传 7（上限钳制在 Java 侧，Python 不重复实现，避免两处口径打架）。', '权限面：`view=history` 与当日/快照同码 `dashboard:view`，无权限 ⇒ 拒绝**且不发请求**。', '端点字面量契约：调用点的三个字面量集合 == `{TODAY_ENDPOINT, SNAPSHOT_ENDPOINT, HISTORY_ENDPOINT}`，且三个 `@GetMapping` 都真的在 Java 控制器里（同 PR 补齐被约束对象，铁律 9）。'],
+    skip_reason='[backend-contract] 跨端只读回溯：Java 判据 = backend/admin-api/src/test/java/com/migao/admin/service/DailyBriefingHistoryTest.java（5 条，含 90 天上限注入式红证）；Python 判据 = backend/ai-agent-service/tests/test_briefing_query_history.py（8 条，含空历史诚实性红证）—— 零 LLM，不进 agent-eval',
+    tags=['proactive', 'briefing', 'review'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_DA_001,
     _CASE_DA_002,
@@ -587,4 +605,5 @@ CASES = (
     _CASE_DA_028,
     _CASE_DA_029,
     _CASE_DA_030,
+    _CASE_DA_031,
 )
