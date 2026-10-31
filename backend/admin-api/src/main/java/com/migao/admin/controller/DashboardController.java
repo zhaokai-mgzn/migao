@@ -4,6 +4,7 @@ import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.entity.*;
 import com.migao.admin.mapper.*;
+import com.migao.admin.service.OrderStatusTransitions;
 import com.migao.admin.service.ProductService;
 import com.migao.admin.security.RequirePermission;
 import com.migao.admin.time.BusinessClock;
@@ -220,21 +221,21 @@ public class DashboardController {
 
     // 真实订单状态 → 中文标签（与 OrderService 状态机 pending/confirmed/producing/shipped/completed/cancelled 对齐）
     private static final Map<String, String> STATUS_LABELS = Map.of(
-            "pending", "待付款",
-            "confirmed", "待发货",
-            "producing", "生产中",
-            "shipped", "已发货",
-            "completed", "已完成",
-            "cancelled", "已取消"
+            OrderStatusTransitions.PENDING, "待付款",
+            OrderStatusTransitions.CONFIRMED, "待发货",
+            OrderStatusTransitions.PRODUCING, "生产中",
+            OrderStatusTransitions.SHIPPED, "已发货",
+            OrderStatusTransitions.COMPLETED, "已完成",
+            OrderStatusTransitions.CANCELLED, "已取消"
     );
 
     private static final Map<String, String> STATUS_COLORS = Map.of(
-            "pending", "#faad14",
-            "confirmed", "#2563eb",
-            "producing", "#8b5cf6",
-            "shipped", "#06b6d4",
-            "completed", "#16a34a",
-            "cancelled", "#9ca3af"
+            OrderStatusTransitions.PENDING, "#faad14",
+            OrderStatusTransitions.CONFIRMED, "#2563eb",
+            OrderStatusTransitions.PRODUCING, "#8b5cf6",
+            OrderStatusTransitions.SHIPPED, "#06b6d4",
+            OrderStatusTransitions.COMPLETED, "#16a34a",
+            OrderStatusTransitions.CANCELLED, "#9ca3af"
     );
 
     @GetMapping("/order-status")
@@ -359,7 +360,7 @@ public class DashboardController {
         List<Order> pendingOrders = orderMapper.selectList(
                 new LambdaQueryWrapper<Order>()
                         .eq(Order::getTenantId, tenantId)
-                        .eq(Order::getStatus, "pending")
+                        .eq(Order::getStatus, OrderStatusTransitions.PENDING)
                         .orderByDesc(Order::getCreatedAt)
                         .last("LIMIT 5"));
         for (Order o : pendingOrders) {
@@ -460,7 +461,7 @@ public class DashboardController {
         long count = orderMapper.selectCount(
                 new LambdaQueryWrapper<Order>()
                         .eq(Order::getTenantId, tenantId)
-                        .in(Order::getStatus, "confirmed", "producing"));
+                        .in(Order::getStatus, OrderStatusTransitions.CONFIRMED, OrderStatusTransitions.PRODUCING));
         return ApiResponse.success(count);
     }
 
@@ -473,7 +474,7 @@ public class DashboardController {
         long count = orderMapper.selectCount(
                 new LambdaQueryWrapper<Order>()
                         .eq(Order::getTenantId, tenantId)
-                        .in(Order::getStatus, "confirmed", "producing"));
+                        .in(Order::getStatus, OrderStatusTransitions.CONFIRMED, OrderStatusTransitions.PRODUCING));
         // TODO: 等 orders 表加 has_processing 列后加 .eq(Order::getHasProcessing, true)
         return ApiResponse.success(count);
     }
