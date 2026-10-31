@@ -639,6 +639,52 @@ jobs:
             || echo "::warning::5xx 告警**投递失败**（不改腿色；通道配置与复算见 docs/deployment/observability-minimum.md）"
           exit "${RC}"
 
+      # ── 只读合成探针（issue #8203 · P0-04）────────────────────────────────────────
+      # 审计 P0-04 的读数：`docs/deployment/production-deployment.md` §5 把「告警触达值班」列为必须项，
+      # 而仓库内**零实现**、线上**没有外部合成探针** ⇒ 5xx / 白屏 / 发布失败都不会主动惊动人。
+      #
+      # 形态（刻意最小）：**只读 GET** + **既有**本腿的 P1 值班 issue 出口。
+      #   ⛔ 不新增 schedule（铁律 10）；⛔ 不新增 secret（三个面都是公开读面）；
+      #   ⛔ 不新造告警通道（本腿 `if: failure()` 的 P1 出口就是通道）。
+      #
+      # 判据本体 = `scripts/synthetic_probe.py`（0 全通过 / 1 至少一条失败 / 3 无法判定，
+      # `3` 不得当 `0` 读）。它打三个面：`api.migaozn.com/api/version`（200 + JSON 含
+      # app/sha/builtAt）、`app.migaozn.com/b/`、`app.migaozn.com/w/`（200 + 非空 body）。
+      #
+      # ⚠️ 只在 main 侧跑（`push` / `schedule` / `workflow_dispatch`）：PR 面红应该反映 PR，
+      #    不该因为**生产站点此刻不通**把业务 PR 判红（归因会指向错误对象）—— 与上面 TLS 步同口径。
+      # ⚠️ 必须排在下面 `if: failure()` 的 P1 出口**之前** —— 放在之后 ⇒ 判红不产生值班单 = 静默。
+      # 反证（会红）：把 `--api-base` 指到一个必然 404 的地址 ⇒ 退出码 1 并有具名输出；
+      #    判据 = `tests/unit_ci_workflows/test_synthetic_probe.py`（含「摘掉本步 ⇒ 红」的接线判据）。
+      - name: 只读合成探针（issue #8203：/api/version + /b/ + /w/ 失败即判红）
+        if: github.event_name != 'pull_request'
+        run: |
+          set -uo pipefail
+          if [ ! -f scripts/synthetic_probe.py ]; then
+            echo "::error::判据本体 scripts/synthetic_probe.py 不在检出里（合成探针被摘掉）⇒ 视为无法判定，判红"
+            exit 1
+          fi
+          set +e
+          python3 scripts/synthetic_probe.py 2>&1 | tee /tmp/synthetic-probe.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          {
+            echo '## 只读合成探针（issue #8203 · P0-04）'
+            echo ''
+            echo '- 覆盖：`api.migaozn.com/api/version`（200 + JSON 含 app/sha/builtAt）、`app.migaozn.com/b/`、`app.migaozn.com/w/`（200 + 非空 body）'
+            echo "- 退出码：\`${rc}\`（0 = 全通过 / 1 = 至少一条失败 / 3 = 无法判定，**不得当 0 读**）"
+            echo ''
+            echo '```'
+            cat /tmp/synthetic-probe.log
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+          if [ "${rc}" = '0' ]; then
+            echo "::notice::合成探针全通过（/api/version + /b/ + /w/）"
+            exit 0
+          fi
+          echo "::error::合成探针失败（退出码 ${rc}）⇒ 生产站点有面不可用 / 构建身份探不到；复算：python3 scripts/synthetic_probe.py（读数见本 run 的 step summary）"
+          exit "${rc}"
+
       # ── 判红出口：沿用既有通道（mechanism-liveness / redproof-sweep 的同一形态）──────
       # 定时腿 / push 腿**没有 PR 对象** ⇒ `block/merge` 无处施加（给"相关 PR"打标会把修它的人自己
       # 拦死 = `#5075` 同款自锁）⇒ 出口 = **P1 值班 issue**（开/更，不新造第二套约定）。

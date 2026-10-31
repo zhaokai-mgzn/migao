@@ -3998,7 +3998,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（169 case）
+## 杂项域（171 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -6589,6 +6589,26 @@
 ```
 溯源: 2026-10-31 新增（issue #8195）：交付 = ① nginx 的 `/terminal` 归一 + `/terminal/` 纯静态下载面 ② 官网 `(corporate)/download` 下载页 + nav/footer/sitemap 入口 + next rewrites 同源转发 ③ `deploy/terminal-dist/Dockerfile` + `deploy/scripts/terminal-publish-ci.sh`（prepare / publish）+ `deploy/swas/terminal-publish-remote.sh` + `.github/workflows/terminal-publish.yml`（只有 workflow_dispatch）④ `docs/deployment/terminal-release.md` ⑤ 判据 = tests/unit_ci_workflows/test_terminal_release_leg.py（含注入式红证）+ test_public_code_spaces_are_disjoint.py 的 `/terminal` 归属登记与两条红证。取号 MC-122（python3 scripts/next_case_id.py MC 现取 main 001-120 + 在飞 PR 面 ⇒ 返回 MC-122）。⚠️ 未闭合（照实登记）：终端仓的 Release 自动出包（terminal#12）与 `secrets.TERMINAL_REPO_TOKEN`（人工前置）不在本用例射程；真实发布与 served 断言由 workflow 在线上跑。 ｜ tags: ci, nginx, terminal, publish-leg, no-spa-fallback, idempotent, red-proof
 
+### MC-123. 浏览器端错误上报端点（issue #8203 · P0-03）：公开面 permitAll 只写一行去敏日志 —— 8 KiB 体积上限 / 8 字段白名单 / 30 条·分钟⁻¹·IP⁻¹ + 全局 600 条 / 204·400·413·415·429 🔵
+```
+你: 改前四端零前端错误上报（`grep -rn "Sentry|window.onerror|unhandledrejection" frontend --include=*.ts --include=*.tsx` ⇒ 0 命中）⇒ 线上白屏「发生过多少次、在哪一页」不可知；而登录页崩了也必须能上报 ⇒ 端点必须 permitAll（公开面 = 攻击面）
+期望: **端点只写一行日志**：`POST /api/client-errors` 收下合法上报 ⇒ `204` 无响应体 + 恰好一行 WARN `CLIENT_ERROR source=… path=… name=… message=… digest=… at=… ua=… stack=…`；不建表 / 不落库 / 不进 Redis / 不接外部 APM。
+期望: **三道闸缺一不可**：① 体积上限 8 KiB（先看 `Content-Length`，再**有界读取** ⇒ 无声明长度的分块请求同样挡 ⇒ `413`）② 进程内固定窗口限流（每 IP 30 条/分钟 + 全局 600 条/分钟 ⇒ `429`）③ 8 字段白名单 + 长度上限 + `source` 枚举 + `path` 必须是不含 `?`/`#` 的 pathname（含 ⇒ `400`）。
+期望: **隐私边界（硬约束）**：上报体只有 8 个字段；**不含** PIN / token / 手机号 / 请求体 / 请求头 / cookie / 表单值 / 用户标识。三道防线：采集阶段不取 ⇒ 前端 `sanitizeText` 涂抹 ⇒ 服务端落日志前同套模式再涂一次。
+期望: **三态语义**：`204` 收下（无响应体）/ `4xx` 拒收（`400` 字段·JSON、`413` 超体积、`415` 非 JSON·非 text、`429` 限流，**且 4xx 不写业务日志** —— 否则公开面等于日志放大器）/ **不返回 5xx**（本端点自己出错不污染服务端 5xx 读数）。
+期望: **接线**：`/api/client-errors` 在 `SecurityConfig` 的 `permitAll` 名单里（未登录也要能上报）；漏了 ⇒ 白屏永远不上报（负控）。
+数据: 判据 1·正常态（会红）：合法 8 字段上报 ⇒ `204` + 空响应体 + 日志恰好一行 WARN，且含 `source=` / `path=` / `digest=`。执行点 = backend/admin-api/src/test/java/com/migao/admin/controller/ClientErrorControllerTest.java 的 `acceptsValidPayloadWithNoContent`。
+数据: 判据 2·字段校验（会红）：未知 `source`（如 `sentry`）⇒ `400`；`path` 含 `?` / `#` / 不以 `/` 开头 ⇒ 各自 `400`；`name` 空白 ⇒ `400`；`message` 超 300 字 ⇒ `400`；空体 / 非法 JSON ⇒ `400`。执行点同文件（`rejectsUnknownSource` / `rejectsPathWithQueryOrHash` / `rejectsMalformedFields` / `rejectsEmptyOrInvalidJson`）。
+数据: 判据 3·体积上限两条路（会红）：声明 `Content-Length` 超 8 KiB ⇒ `413`；**没有声明长度**（`getContentLengthLong() == -1` 的分块形态）同样 `413`（证明上限是真的，不是事后检查）。执行点 = 同文件 `rejectsDeclaredOversizeBody` / `rejectsOversizeBodyWithoutDeclaredLength`。
+数据: 判据 4·限流（会红）：同一 IP 前 30 条 `204`、第 31 条 `429`；负控 = 另一个 IP 仍有额度（按 IP 分桶，且 `X-Forwarded-For` 取首位 / `X-Real-IP` 优先）。执行点 = 同文件 `rateLimitsPerIp` / `rateLimitIsKeyedByClientIp`。
+数据: 判据 5·隐私（本单一等判据，会红）：喂 JWT + `pin=` + `token=` + 11 位手机号 + `url=…?page=1` 的 message / stack / digest / ua ⇒ 日志行里**五类凭据一个都不出现**，且出现涂抹标记（`[redacted-jwt]` / `pin=[redacted]` / `token=[redacted]` / `[redacted-phone]` / `[redacted-query]`）⇒ 证明是**被替换**而不是恰好没打印。执行点 = 同文件 `logLineCarriesNoSecrets` + `sanitizeIsSingleLineAndTruncated`。
+数据: 判据 6·4xx 不写业务日志（会红）：被拒请求（`400` / `415`）后 WARN 事件数为 0。执行点 = 同文件 `rejectedRequestsAreNotLoggedAsBusinessEvents`。
+数据: 判据 7·前端采集侧（会红）：上报体恰好 8 字段；`path` 剥 query / hash / 完整 URL 前缀；去敏（JWT / Bearer / 键值 / 手机号 / query）；超长截断带省略号；同一错误 30s 内只发一次、窗口过后可再发；`fetch` 同步抛 / 异步 reject / 非浏览器环境**都不抛**；全局监听用 `addEventListener`（**不覆写** `window.onerror`）且幂等。执行点 = frontend/admin-web/tests/unit/lib/clientErrorReporter.test.ts 与 frontend/admin-web/tests/unit/components/ClientErrorReporter.test.tsx。
+数据: 判据 8·红证读数（本包实跑）：实现与判据同批落地，改前该端点**不存在**（`grep -rn "client-errors" backend/admin-api/src/main` ⇒ 0 命中）⇒ 本判据在改前必红（无 `@PostMapping`）。落地后复算：`cd backend/admin-api && ./mvnw test -Dtest=ClientErrorControllerTest -q`。
+跳过: [backend-contract] 纯后端契约（MockMvc standalone + logback ListAppender，零 Spring 上下文、零网络、零 DB；前端侧为 vitest），非 LLM 行为，不进入 agent-eval 冒烟；判据见 traces.tests 点名的两份文件
+```
+溯源: 2026-10-31 新增（issue #8203，P0-03：白屏有出口 + 线上可发现）。取号 = `python3 scripts/next_case_id.py MC` 现取（main:001-121 · open PR #8205 的 MC-122 在飞 ⇒ 取 MC-123）。实现 = `ClientErrorController`（自读 InputStream 的有界读取 · 8 KiB · 8 字段白名单 · 日志前三道涂抹）+ `ClientErrorRateLimiter`（进程内固定窗口，**刻意不用 Redis**：故障时恰是最需要上报的时刻，Redis fail-closed 会把可观测性归零）+ `SecurityConfig` permitAll + 前端 `lib/clientErrorReporter.ts`（归一化 / 去敏 / 截断 / 去重 / 不抛 / 全局监听）。未做（照实登记）：外部 APM / Sentry、错误采样、5xx 聚合、跨实例共享限流 —— 见 docs/deployment/observability-minimum.md 的「已知不覆盖」。 ｜ tags: observability, error-reporting, privacy, rate-limit, p0
+
 ### MC-125. 微信「扫普通链接二维码打开小程序」校验文件（issue #8196）：nginx 根下 .txt 是显式静态面（缺失 404、不回落 SPA、只吃单段），deploy.sh 幂等只拷 *.txt 到静态根根下（只增/覆盖、父目录 index.html 哈希不变、跳过要出声） 🔵
 ```
 你: 微信后台要求把生成的根下 `<名字>.txt` 放到 https://app.migaozn.com/<名字>.txt；仓库侧要能承接这个文件，且文件缺失时不能伪装成「已就位」
@@ -6600,6 +6620,28 @@
 跳过: [backend-contract] 静态结构 + 沙箱真跑判据（零网络、零云调用、不碰真实静态根）由 tests/unit_ci_workflows/test_wechat_verify_route.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-31 新增（issue #8196）：微信「扫普通链接二维码打开小程序」的**校验文件承接**。交付 = ① `deploy/swas/wechat-verify/README.md`（承接位，不预置文件）② `deploy/swas/deploy.sh` 的 1.3.1 段（在**取配置之后、C′ 构建之前**：源码树 `src/` 只在那时存在；幂等只拷 *.txt 到静态根根下）③ `deploy/swas/nginx.conf` 的根下 `.txt` 显式面（缺失 404、不回落 SPA）④ 判据 tests/unit_ci_workflows/test_wechat_verify_route.py（nginx 语义模拟 + 真跑拷贝段 + 变异红证）⑤ 两条「无正则 location」类级守卫的唯一白名单。取号 MC-125（python3 scripts/next_case_id.py MC 现取 main 001-122 + 在飞 PR #8214 的 123-124 ⇒ 返回 MC-125）。⚠️ 未闭合：微信后台生成的真实文件名/内容与真机扫码属用户侧。🔴 自查改判：早先那版判据写「本目录不许出现任何 .txt」，会把用户唯一的合法路径（提交真文件）也堵死 —— 现改为只禁伪造/占位，并把「真文件可提交」写进 README。 ｜ tags: ci, nginx, wechat, static-root, no-spa-fallback, idempotent, red-proof
+
+### MC-124. 只读合成探针 + 构建身份五跳（issue #8203 · P0-04；审计 P1-01）：三个公网只读面 / 退出码 0·1·3 / 只对瞬态重试 / 接在既有 post-merge-verify 腿的 P1 出口之前；ai-agent `/version` 的 sha 从 CI 到镜像的五跳接线 🔵
+```
+你: 改前线上**没有外部合成探针**（`docs/deployment/production-deployment.md` §5 把「告警触达值班」列为必须项，仓内零实现）；且 `https://ai-api.migaozn.com/api/version|/version|/build-info` **全 404** ⇒ ai-agent 线上「跑的是哪个 commit」不可判定
+期望: **三个当前真实存在的只读面**：`api.migaozn.com/api/version`（200 + JSON 含 app/sha/builtAt）、`app.migaozn.com/b/`、`app.migaozn.com/w/`（200 + 非空 body）。刻意不探永久 404 的面（终端发布未上线）—— 那会做成审计 P1-04 的「成功即红」。
+期望: **退出码三态**：`0` 全通过 / `1` 至少一条失败 / `3` 无法判定（没有可探目标）。`3` 不得当 `0` 读。
+期望: **重试只对瞬态**（连接失败 / 5xx）；`4xx` 与 JSON 形状不符当场定案（重试只会把红推后）。
+期望: **接线在既有通道**：`.github/workflows/post-merge-verify.yml` 的 main 侧步（PR 面不跑），**排在 `if: failure()` 的 P1 值班 issue 出口之前**，退出码原样上抛（`3` 不归一化成 `0`），判据本体缺席即 fail-closed；**不新增 schedule**、不新增 secret、不新造告警通道。
+期望: **构建身份五跳同源**（改前缺第 1/2 跳 ⇒ 线上 `/version` 的 sha 恒空）：runner 现取（`git rev-parse HEAD` + `date -u` ISO8601）→ `deploy/scripts/swas-deploy-ci.sh` 位置参数 `$9/$10` → 远端 BOOTSTRAP 占位符 → `deploy/swas/deploy.sh` 的 `--build-arg` → Dockerfile `ARG`+**`ENV`** ⇒ `Settings` ⇒ `GET /version`。
+期望: **`/version` 三态语义**：sha 非空且一致 ⇒ 通过；非空且不一致 ⇒ **判红**；**为空 ⇒ 探不到**（不得判绿也不得判红）。未注入时报**空串**，不伪造 `unknown`。
+数据: 判据 1·覆盖面（会红）：`default_targets()` 的三条 URL / 名称 / 判定语义逐字钉住；构建身份面 `require_fields == (app, sha, builtAt)`、静态面 `min_body_bytes >= 1`（挡「200 + 空 body = 白屏」）。执行点 = tests/unit_ci_workflows/test_synthetic_probe.py 的 `test_covers_the_three_live_read_faces`。
+数据: 判据 2·判定语义（会红）：200 + 空 body / 404 / 连不上 / 非 JSON / JSON 缺字段 / JSON 顶层非对象 ⇒ 各自判红并**具名**（期望值 + 实际值）；`sha` 为空**只报告不判红**（= 探不到，人看输出判断，与 `/version` 三态一致）。执行点同文件（`test_static_target_fails_loudly` / `test_json_shape_is_checked_not_just_status` / `test_empty_sha_is_reported_but_not_judged_here`）。
+数据: 判据 3·重试语义（会红）：502 → 200 ⇒ 第 2 次成功且只 sleep 一次；404 ⇒ 1 次调用（**不重试**）；两次 503 ⇒ 判红且 detail 含「已重试 2 次」。执行点同文件（`test_retries_transient_then_succeeds` / `test_does_not_retry_4xx_or_shape_mismatch` / `test_exhausted_retries_are_named`）。
+数据: 判据 4·三态（会红）：全通过 ⇒ `0`；任一面 404 ⇒ `1` 且输出含复算命令；`default_targets()` 返回空 ⇒ `3` 且打印「无法判定」。执行点同文件（`test_main_returns_0_when_all_faces_pass` / `test_main_returns_1_when_any_face_fails` / `test_main_returns_3_when_there_is_nothing_to_probe`）。
+数据: 判据 5·接线 + 判别力自证（会红）：真 YAML 上 `probe_wiring_problems() == []`；**五种注入各自判红** = 摘掉该步 / 摘掉 `if: github.event_name != pull_request` / 把 `exit "${rc}"` 改成 `exit 0` / 把该步挪到 P1 出口之后 / 摘掉判据本体的 fail-closed 守卫。执行点同文件（`test_probe_is_wired_into_post_merge_verify` / `test_removing_the_wiring_turns_it_red`）。
+数据: 判据 6·不新增通道（会红）：`scripts/synthetic_probe.py` 只被**一个** workflow 的执行面引用（`post-merge-verify.yml`），且不存在探针专用 workflow。执行点 = 同文件 `test_probe_has_a_single_wiring_point`。
+数据: 判据 7·构建身份五跳（会红）：ai-agent 部署腿的 `build_id` 步输出 + `Deploy to SWAS` 的 env 取自 `steps.build_id.outputs.*` + 调用点把 `"$BUILD_SHA" "$BUILT_AT"` 作为位置参数**且服务键 `ai-agent` 仍在**；驱动脚本收 `$9/$10` 并渲染 `__BUILD_SHA__`/`__BUILT_AT__`；`deploy.sh` 带 `--build-arg MIGAO_BUILD_SHA/BUILT_AT`；Dockerfile `ARG`+`ENV`；`Settings` 两项默认空串。三种注入各自判红 = 摘位置参数 / 摘 env / 删 `build_id` 步。执行点同文件（`test_ai_agent_deploy_leg_sends_build_identity` / `test_dropping_build_identity_wiring_turns_it_red` / `test_driver_accepts_and_renders_build_identity` / `test_deploy_script_passes_build_args_to_docker_build` / `test_dockerfile_turns_build_args_into_runtime_env`）。
+数据: 判据 8·`/version` 端点三态（会红）：两个路径返回同一响应、恰好 3 个字段、空 sha 报空串（不是 unknown/null/0）、非空 sha 原样回显（不截断/不归一）、空白 strip、`Settings` 默认空串。执行点 = backend/ai-agent-service/tests/test_version_probe.py。
+数据: 判据 9·红证读数（本包实跑）：改前 `https://ai-api.migaozn.com/api/version` **404**（审计 P1-01 现取）、`deploy-ai-agent-service.yml` 里 `grep -c BUILD_SHA` = **0**（第 1/2 跳缺）；落地后复算 = `python3 -m pytest tests/unit_ci_workflows/test_synthetic_probe.py -q`（**30 passed**）与 `python3 -m pytest backend/ai-agent-service/tests/test_version_probe.py -q`（**10 passed**）。
+跳过: [backend-contract] 探针判定 + 接线由零网络 pytest 覆盖（假 fetch / 假 sleep / 真 YAML），ai-agent 端点由 FastAPI TestClient 覆盖；非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8203，P0-04 + P1-01）。取号 = `python3 scripts/next_case_id.py MC` 现取（同批 MC-123 占 123 ⇒ 取 124；候选 = main ∪ open PR 分支 ∪ 本工作区）。落地 = `scripts/synthetic_probe.py`（三面 / 0·1·3 / 仅瞬态重试 / 零写）+ `post-merge-verify.yml` 的只读探针步（main 侧、在 P1 出口之前）+ `.github/workflows/deploy-ai-agent-service.yml` 的 `Resolve build identity` 步与位置参数（**本单补齐第 1/2 跳** —— 改前 `BUILD_SHA` 在 ai-agent 腿里 0 命中 ⇒ 线上 `/version` 恒空）+ Dockerfile `ARG`+`ENV` + `app/main.py` 的双路径 `/version`。**未覆盖**（照实登记）：探针只证「HTTP 面 + 构建身份」，不证业务可用性；告警升级仍是「腿红 ⇒ P1 值班 issue」且**不拦合并**；真实读数要等一次部署（复算命令见 docs/deployment/observability-minimum.md）。 ｜ tags: observability, synthetic-probe, build-identity, deploy, p0
 
 ## 商家入驻域（7 case）
 
@@ -11841,7 +11883,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（145 case）
+## 前端 UI 域（147 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -13950,6 +13992,49 @@
 ```
 溯源: 2026-10-31 新增（issue #8195）：官网 `(corporate)/download` 下载页 + 客户端清单读取（`src/lib/terminal-manifest.ts` 的解析真值源）+ 类级守卫接入（服务端组件 / 元数据单一源 / 文案口吻 / proxy 白名单 / 按钮规范）。取号 UI-144（python3 scripts/next_case_id.py UI 现取 main 001-143 + 在飞 PR 面 ⇒ 返回 UI-144）。 ｜ tags: corporate, download, terminal, no-fabrication, first-screen
 
+### UI-145. 白屏出口：四个路由组 / 根级错误边界共用同一形态（重试 + 按病因选回入口 + 上报一次，issue #8203 · P0-03） 🔵
+```
+你: 用户看到的故障态：任一页面渲染期异常（脏数据 / 接口形状变化）改前整页白屏、**没有重试出口**（58 个页面里只有客户管理页一个错误边界）
+期望: **白屏必须有出口**：错误页渲染「重试」（调用 Next.js 注入的 `reset()`）与「回入口」（原生 `<a>` 整页跳转 —— 错误页上 SPA router 可能已经坏了）。
+期望: **回入口按病因选，不统一写死**：`app/error.tsx` ⇒ `/login`（它可能正是被「工作台 layout 崩了」触发的，回 `/dashboard` 会二次白屏）；`(dashboard)/error.tsx` ⇒ `/dashboard`；`(corporate)/error.tsx` ⇒ `/`；`global-error.tsx` ⇒ `/`。
+期望: **同一形态**：四个边界 + 客户管理页都渲染共享的 `ErrorFallback`（只保留页面级文案差异），不再各写一份。
+期望: **上报一次**：同一个 `error` 对象只上报一次（StrictMode 双 effect / 重渲染不重复；换成新的 error 对象才算新错误）；上报器自己抛异常也**不能**把错误页打挂（那等于二次白屏）。
+期望: **`digest` 有才展示**（React 给的可检索编号，客服 / 研发据此查日志），没有就不编一个。
+期望: **`global-error.tsx` 必须自带 `<html lang>` / `<body>`**（Next.js 硬约束：它替换整个 root layout；少一层等于边界不生效）。
+数据: 判据 1（会红）：点「重试」⇒ `error-retry` 的 onClick 调用 `reset()` 恰好一次。执行点 = frontend/admin-web/tests/unit/components/ErrorFallback.test.tsx 的「点「重试」调用 reset()」。
+数据: 判据 2（会红）：`error-home` 是 `<a>`（不是 next/link），默认 `href=/dashboard`、可按 props 覆盖；三个路由边界各自的 `href` = `/login` / `/dashboard` / `/` 且文案随落点变。执行点同文件（「回入口默认 /dashboard…」+「各路由组边界」参数化）。
+数据: 判据 3（会红）：`StrictMode` 下渲染 + 重渲染同一 error ⇒ `report` 被调**恰好一次**；换新 error 对象 ⇒ 再报一次。执行点同文件（「同一 error 对象只上报一次」/「换成一个新的 error 对象」）。
+数据: 判据 4（会红）：`report` 抛异常 ⇒ 错误页照常渲染（`error-fallback` / `error-retry` 都在）。执行点同文件（「上报器自己抛异常」）。
+数据: 判据 5（会红）：有 `digest` ⇒ `error-digest` 展示它；无 ⇒ `queryByTestId` 为 null。执行点同文件（「digest：有就展示」）。
+数据: 判据 6（会红）：`global-error.tsx` 的结构面 = 返回 `<html lang="zh-CN">` → `<body>` → `ErrorFallback`。执行点同文件（「global-error：自带 html/body」）。
+数据: 判据 7·负控：默认文案只陈述事实 + 该做什么，不出现内部标识（权限码形态 `域:动作` 零命中）。执行点同文件（「标题 / 说明可覆盖」）。
+前置: 本用例是 [backend-contract] 纯前端契约：不 mock 真实接口，直接渲染错误边界组件并把上报函数作为 props 注入（`report` 是判据注入点）
+跳过: [backend-contract] 纯前端契约（不经过 LLM 对话 / 工具），由 frontend/admin-web vitest 执行，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8203，P0-03）。取号 = `python3 scripts/next_case_id.py UI` 现取（main:001-143 · open PR #8205 的 UI-144 在飞 ⇒ 取 UI-145）。实现 = `frontend/admin-web/src/components/common/ErrorFallback.tsx`（唯一形态）+ `src/app/global-error.tsx` / `src/app/error.tsx` / `src/app/(dashboard)/error.tsx` / `src/app/(corporate)/error.tsx` 四个边界 + 既有 `(dashboard)/customers/error.tsx` 收敛到同一形态。未覆盖：`global-error.tsx` **只在生产构建生效**（开发态 overlay 会盖住它）⇒ 真机验收要 `npm run build && npm run start`；本用例证的是结构与行为，不是真机构建。 ｜ tags: error-boundary, white-screen, observability, p0
+
+### UI-146. 客户端错误上报器：8 字段归一化 + 去敏 / 截断 / 去重 + 任何失败都不抛（issue #8203 · P0-03） 🔵
+```
+你: 改前四端零前端错误上报（`grep -rn "Sentry|window.onerror|unhandledrejection" frontend --include=*.ts --include=*.tsx` ⇒ 0 命中）⇒ 线上白屏「发生过多少次、在哪一页」不可知
+期望: **上报体恰好 8 个字段**（path / name / message / stack / digest / at / ua / source），与后端白名单逐字对应；`path` **只留 pathname**（剥 query / hash / 完整 URL 前缀）。
+期望: **去敏**：JWT、`Bearer`、`token=`·`pin=`·`phone=` 等键值、11 位手机号、URL 后面的 query 串一律涂掉；真实上报链路上连 message / stack 里自带的凭据都不出现在请求体里。
+期望: **截断**：超长字段按服务端同值上限截断并带 `…`（不假装完整）；控制字符 / 换行压成单行。
+期望: **去重**：同一 `path|name|message|digest` 在 30s 内只发一次，窗口过后可再发（不是永久静音）。
+期望: **任何失败都不抛**：`fetch` 同步抛 ⇒ `sent=false/reason=send-failed`；异步 reject（离线 / CORS / 5xx）⇒ 被吞掉、不产生 unhandled rejection；非浏览器环境（SSR / 预渲染）⇒ `not-browser` 且不碰 fetch。
+期望: **全局监听**：用 `addEventListener`（**不覆写** `window.onerror` —— 覆写会吃掉别人的 handler）、幂等（同一 window 装两次只装一份）、`error` / `unhandledrejection` 都转成上报、资源加载失败（只有 message）也记一条。
+期望: **接线早期性**：`ClientErrorReporter` 是 `'use client'` 组件且**模块顶层**安装 ⇒ 早于 React 首次 commit（hydration 期崩溃也要被上报）；渲染 `null`，多次渲染不叠加监听。
+数据: 判据 1（会红）：`Object.keys(buildClientErrorEvent(...)).sort()` 逐字等于 8 字段；`toPathOnly` 对 `/orders?token=…#frag` / 完整 URL / 相对路径 / 空串都有确定答案。执行点 = frontend/admin-web/tests/unit/lib/clientErrorReporter.test.ts 的「上报体形状」组。
+数据: 判据 2（会红）：五类凭据各自被涂掉（JWT / Bearer / 键值 / 手机号 / query）；真实链路断言请求体不含任何伪造凭据值。执行点 = 同文件「去敏」组 + frontend/admin-web/tests/unit/components/ClientErrorReporter.test.tsx。
+数据: 判据 3（会红）：message / stack 超上限时长度 == 上限且以 `…` 结尾；`a\\nb\\tc` ⇒ `a b c`；未超长原样保留。执行点 = 同文件「截断」组。
+数据: 判据 4（会红）：第二次相同上报 `sent=false/reason=deduped`、fetch 只 1 次；`Date.now` 推到窗口边界后 `sent=true`；不同 path / 不同 message 不被误去重。执行点 = 同文件「去重」组。
+数据: 判据 5（会红）：同步抛 → `send-failed`；reject → 无 unhandledRejection；`window=undefined` → `not-browser` 且 fetch 0 次；请求形态 = POST + JSON + `keepalive` + `credentials: omit`，base URL 尾斜杠被剥。执行点 = 同文件「失败不得影响页面」组。
+数据: 判据 6（会红）：`installClientErrorHandlers` 返回 true/false 判幂等、监听类型恰为 error+unhandledrejection、`onerror` 原值仍在、派发两种事件各产生一条上报、只有 message 的 error 事件也上报。执行点 = 同文件「全局监听」组。
+数据: 判据 7·接线（会红）：导入组件后 `window.__migaoClientErrorHandlersInstalled === true`（模块顶层安装）；渲染 `null`；真 `window.dispatchEvent` 的 error / unhandledrejection 各产生一次上报；渲染两次后两次不同错误 ⇒ 恰好两条（不叠加）。执行点 = frontend/admin-web/tests/unit/components/ClientErrorReporter.test.tsx。
+前置: 本用例是 [backend-contract] 纯前端契约：`fetch` 一律 `vi.stubGlobal`（零网络），不依赖任何真实服务
+跳过: [backend-contract] 纯前端契约（零网络：fetch 全部 stubGlobal；不经过 LLM 对话 / 工具），由 frontend/admin-web vitest 执行，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8203，P0-03）。取号 = `python3 scripts/next_case_id.py UI` 现取（同批 UI-145 占 145 ⇒ 取 UI-146）。实现 = `frontend/admin-web/src/lib/clientErrorReporter.ts`（归一化 / 两道去敏 / 截断 / 30s 去重 / 不抛 / 全局监听）+ `src/components/ClientErrorReporter.tsx`（`'use client'` 模块顶层安装；`src/app/layout.tsx` 接线）。**未覆盖**（照实登记）：不发 `sendBeacon`（单一 keepalive 通道便于判据）、不做采样 / 聚合 / 告警升级、不上报 C 端（mini-app / bmini / worker-h5）、不记用户标识；服务端第三道去敏的判据在 MC-123。 ｜ tags: error-reporting, privacy, observability, p0
+
 ### UI-147. 商家后台读失败出口（issue #8200 · P1-06）：凡渲染共享空态原语 <EmptyState> 的文件必须带常驻读失败出口；/categories 读失败 ⇒ 失败面 + 重试，空态与「还没有商品分类」断言都不上屏（DQ-1） 🔵
 ```
 你: 商家打开商品分类页时接口挂了：屏幕上不能写「还没有商品分类」「先建一个分类」（那是把没读到说成本来就没有），要明确说没读到并给重试
@@ -13994,8 +14079,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：944（活跃 152，跳过 792）
-- tier 分布：smoke 15 / normal 872 / adversarial 33
+- 用例总数：948（活跃 152，跳过 796）
+- tier 分布：smoke 15 / normal 876 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14010,7 +14095,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：169
+- 杂项域：171
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：74
@@ -14020,7 +14105,7 @@
 - 工具注册器域：1
 - 设置域：11
 - 令牌刷新域：4
-- 前端 UI 域：145
+- 前端 UI 域：147
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -14233,7 +14318,9 @@
 - MC-120: 页面动作登记表 → 步骤级教学（F6 / P2-1，承接 #5989）：how_to 命中逐字返回登记表、未登记如实说没有步骤级指引
 - MC-121: 四域共用一张 Let's Encrypt 证书的自动续期与到期判红（issue #8201）：续期机制在**宿主 cron** 但已连天失败且无告警 ⇒ 到期判据（0/1/3）+ 一次性修复 runbook + cron 加固
 - MC-122: 观星台终端正式发布链路（issue #8195）：/terminal/ 是纯静态下载面（缺失文件必须 404、不得回落 SPA、不限流、MIME 可判），官网 /download 有下载页，发布腿把终端仓 Release 的 exe/apk 幂等落到静态根并自证「线上字节 == 本地载荷」
+- MC-123: 浏览器端错误上报端点（issue #8203 · P0-03）：公开面 permitAll 只写一行去敏日志 —— 8 KiB 体积上限 / 8 字段白名单 / 30 条·分钟⁻¹·IP⁻¹ + 全局 600 条 / 204·400·413·415·429
 - MC-125: 微信「扫普通链接二维码打开小程序」校验文件（issue #8196）：nginx 根下 .txt 是显式静态面（缺失 404、不回落 SPA、只吃单段），deploy.sh 幂等只拷 *.txt 到静态根根下（只增/覆盖、父目录 index.html 哈希不变、跳过要出声）
+- MC-124: 只读合成探针 + 构建身份五跳（issue #8203 · P0-04；审计 P1-01）：三个公网只读面 / 退出码 0·1·3 / 只对瞬态重试 / 接在既有 post-merge-verify 腿的 P1 出口之前；ai-agent `/version` 的 sha 从 CI 到镜像的五跳接线
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
@@ -14429,4 +14516,6 @@
 - UI-142: 销售订单列表：4 个同级文字链收敛为「1 主行动 + ⋯ 菜单」，非加急行不再印「不加急」，订单号可复制（issue #8011）
 - UI-143: 经营看板首屏：待处理前置 + 顶部两块 AI 内容合并成一卡（四态齐全）+ 骨架 + 环比改倍数（issue #8012 / #8105 / #8114）
 - UI-144: 官网下载页（/download，issue #8195）：从终端发布清单展示版本 / SHA-256 / 大小 / 发布时间 / 说明与两个下载按钮；清单缺失或格式坏 ⇒ 明确「暂未发布」且不编造版本号；伪协议不渲成链接；首屏正文进初始 HTML
+- UI-145: 白屏出口：四个路由组 / 根级错误边界共用同一形态（重试 + 按病因选回入口 + 上报一次，issue #8203 · P0-03）
+- UI-146: 客户端错误上报器：8 字段归一化 + 去敏 / 截断 / 去重 + 任何失败都不抛（issue #8203 · P0-03）
 

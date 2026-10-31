@@ -7,6 +7,9 @@ import { AuthGuard } from '@/components/auth-guard'
 // ⚠️ 必须走**客户端组件**：本文件是 Server Component，直接 `import '../lib/user-timing-guard'` 只在 Node 侧执行
 // ⇒ 浏览器里守卫根本没装上（#6946 实测 `__userTimingGuardInstalled === false`、`measure` 仍是 `[native code]`）。
 import UserTimingGuard from '@/components/UserTimingGuard'
+// issue #8203（P0-03）：全局错误上报的客户端接线点（`window.onerror` / `unhandledrejection`）。
+// ⚠️ 同样**必须**是客户端组件（理由同上）；模块顶层安装 ⇒ 早于 hydration。
+import ClientErrorReporter from '@/components/ClientErrorReporter'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -65,6 +68,8 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: SPA_PATH_RESTORE_SCRIPT }} />
         {/* 装上 `performance.measure` 区间守卫（客户端模块顶层执行，早于 React 首次 commit 埋点）—— issue #6946 */}
         <UserTimingGuard />
+        {/* 装上全局错误上报（幂等；渲染 null）—— issue #8203 */}
+        <ClientErrorReporter />
         <AuthProvider>
           <AuthGuard>{children}</AuthGuard>
         </AuthProvider>

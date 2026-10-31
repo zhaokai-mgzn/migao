@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: ui（源: cases/ui.yml，145 条）
+# 域: ui（源: cases/ui.yml，147 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -2638,6 +2638,44 @@ _CASE_UI_144 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-145 [NORMAL] 白屏出口：四个路由组 / 根级错误边界共用同一形态（重试 + 按病因选回入口 + 上报一次，issue #8203 · P0-03）（源: cases/ui.yml）──
+_CASE_UI_145 = EvalCase(
+    id='UI-145',
+    legacy_id='',
+    title='白屏出口：四个路由组 / 根级错误边界共用同一形态（重试 + 按病因选回入口 + 上报一次，issue #8203 · P0-03）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户看到的故障态：任一页面渲染期异常（脏数据 / 接口形状变化）改前整页白屏、**没有重试出口**（58 个页面里只有客户管理页一个错误边界）'],
+    expectations=['**白屏必须有出口**：错误页渲染「重试」（调用 Next.js 注入的 `reset()`）与「回入口」（原生 `<a>` 整页跳转 —— 错误页上 SPA router 可能已经坏了）。', '**回入口按病因选，不统一写死**：`app/error.tsx` ⇒ `/login`（它可能正是被「工作台 layout 崩了」触发的，回 `/dashboard` 会二次白屏）；`(dashboard)/error.tsx` ⇒ `/dashboard`；`(corporate)/error.tsx` ⇒ `/`；`global-error.tsx` ⇒ `/`。', '**同一形态**：四个边界 + 客户管理页都渲染共享的 `ErrorFallback`（只保留页面级文案差异），不再各写一份。', '**上报一次**：同一个 `error` 对象只上报一次（StrictMode 双 effect / 重渲染不重复；换成新的 error 对象才算新错误）；上报器自己抛异常也**不能**把错误页打挂（那等于二次白屏）。', '**`digest` 有才展示**（React 给的可检索编号，客服 / 研发据此查日志），没有就不编一个。', '**`global-error.tsx` 必须自带 `<html lang>` / `<body>`**（Next.js 硬约束：它替换整个 root layout；少一层等于边界不生效）。'],
+    data_checks=['判据 1（会红）：点「重试」⇒ `error-retry` 的 onClick 调用 `reset()` 恰好一次。执行点 = frontend/admin-web/tests/unit/components/ErrorFallback.test.tsx 的「点「重试」调用 reset()」。', '判据 2（会红）：`error-home` 是 `<a>`（不是 next/link），默认 `href=/dashboard`、可按 props 覆盖；三个路由边界各自的 `href` = `/login` / `/dashboard` / `/` 且文案随落点变。执行点同文件（「回入口默认 /dashboard…」+「各路由组边界」参数化）。', '判据 3（会红）：`StrictMode` 下渲染 + 重渲染同一 error ⇒ `report` 被调**恰好一次**；换新 error 对象 ⇒ 再报一次。执行点同文件（「同一 error 对象只上报一次」/「换成一个新的 error 对象」）。', '判据 4（会红）：`report` 抛异常 ⇒ 错误页照常渲染（`error-fallback` / `error-retry` 都在）。执行点同文件（「上报器自己抛异常」）。', '判据 5（会红）：有 `digest` ⇒ `error-digest` 展示它；无 ⇒ `queryByTestId` 为 null。执行点同文件（「digest：有就展示」）。', '判据 6（会红）：`global-error.tsx` 的结构面 = 返回 `<html lang="zh-CN">` → `<body>` → `ErrorFallback`。执行点同文件（「global-error：自带 html/body」）。', '判据 7·负控：默认文案只陈述事实 + 该做什么，不出现内部标识（权限码形态 `域:动作` 零命中）。执行点同文件（「标题 / 说明可覆盖」）。'],
+    skip_reason='[backend-contract] 纯前端契约（不经过 LLM 对话 / 工具），由 frontend/admin-web vitest 执行，不进入 agent-eval 冒烟',
+    tags=['error-boundary', 'white-screen', 'observability', 'p0'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯前端契约：不 mock 真实接口，直接渲染错误边界组件并把上报函数作为 props 注入（`report` 是判据注入点）',
+)
+
+# ── UI-146 [NORMAL] 客户端错误上报器：8 字段归一化 + 去敏 / 截断 / 去重 + 任何失败都不抛（issue #8203 · P0-03）（源: cases/ui.yml）──
+_CASE_UI_146 = EvalCase(
+    id='UI-146',
+    legacy_id='',
+    title='客户端错误上报器：8 字段归一化 + 去敏 / 截断 / 去重 + 任何失败都不抛（issue #8203 · P0-03）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['改前四端零前端错误上报（`grep -rn "Sentry|window.onerror|unhandledrejection" frontend --include=*.ts --include=*.tsx` ⇒ 0 命中）⇒ 线上白屏「发生过多少次、在哪一页」不可知'],
+    expectations=['**上报体恰好 8 个字段**（path / name / message / stack / digest / at / ua / source），与后端白名单逐字对应；`path` **只留 pathname**（剥 query / hash / 完整 URL 前缀）。', '**去敏**：JWT、`Bearer`、`token=`·`pin=`·`phone=` 等键值、11 位手机号、URL 后面的 query 串一律涂掉；真实上报链路上连 message / stack 里自带的凭据都不出现在请求体里。', '**截断**：超长字段按服务端同值上限截断并带 `…`（不假装完整）；控制字符 / 换行压成单行。', '**去重**：同一 `path|name|message|digest` 在 30s 内只发一次，窗口过后可再发（不是永久静音）。', '**任何失败都不抛**：`fetch` 同步抛 ⇒ `sent=false/reason=send-failed`；异步 reject（离线 / CORS / 5xx）⇒ 被吞掉、不产生 unhandled rejection；非浏览器环境（SSR / 预渲染）⇒ `not-browser` 且不碰 fetch。', '**全局监听**：用 `addEventListener`（**不覆写** `window.onerror` —— 覆写会吃掉别人的 handler）、幂等（同一 window 装两次只装一份）、`error` / `unhandledrejection` 都转成上报、资源加载失败（只有 message）也记一条。', "**接线早期性**：`ClientErrorReporter` 是 `'use client'` 组件且**模块顶层**安装 ⇒ 早于 React 首次 commit（hydration 期崩溃也要被上报）；渲染 `null`，多次渲染不叠加监听。"],
+    data_checks=['判据 1（会红）：`Object.keys(buildClientErrorEvent(...)).sort()` 逐字等于 8 字段；`toPathOnly` 对 `/orders?token=…#frag` / 完整 URL / 相对路径 / 空串都有确定答案。执行点 = frontend/admin-web/tests/unit/lib/clientErrorReporter.test.ts 的「上报体形状」组。', '判据 2（会红）：五类凭据各自被涂掉（JWT / Bearer / 键值 / 手机号 / query）；真实链路断言请求体不含任何伪造凭据值。执行点 = 同文件「去敏」组 + frontend/admin-web/tests/unit/components/ClientErrorReporter.test.tsx。', '判据 3（会红）：message / stack 超上限时长度 == 上限且以 `…` 结尾；`a\\\\nb\\\\tc` ⇒ `a b c`；未超长原样保留。执行点 = 同文件「截断」组。', '判据 4（会红）：第二次相同上报 `sent=false/reason=deduped`、fetch 只 1 次；`Date.now` 推到窗口边界后 `sent=true`；不同 path / 不同 message 不被误去重。执行点 = 同文件「去重」组。', '判据 5（会红）：同步抛 → `send-failed`；reject → 无 unhandledRejection；`window=undefined` → `not-browser` 且 fetch 0 次；请求形态 = POST + JSON + `keepalive` + `credentials: omit`，base URL 尾斜杠被剥。执行点 = 同文件「失败不得影响页面」组。', '判据 6（会红）：`installClientErrorHandlers` 返回 true/false 判幂等、监听类型恰为 error+unhandledrejection、`onerror` 原值仍在、派发两种事件各产生一条上报、只有 message 的 error 事件也上报。执行点 = 同文件「全局监听」组。', '判据 7·接线（会红）：导入组件后 `window.__migaoClientErrorHandlersInstalled === true`（模块顶层安装）；渲染 `null`；真 `window.dispatchEvent` 的 error / unhandledrejection 各产生一次上报；渲染两次后两次不同错误 ⇒ 恰好两条（不叠加）。执行点 = frontend/admin-web/tests/unit/components/ClientErrorReporter.test.tsx。'],
+    skip_reason='[backend-contract] 纯前端契约（零网络：fetch 全部 stubGlobal；不经过 LLM 对话 / 工具），由 frontend/admin-web vitest 执行，不进入 agent-eval 冒烟',
+    tags=['error-reporting', 'privacy', 'observability', 'p0'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯前端契约：`fetch` 一律 `vi.stubGlobal`（零网络），不依赖任何真实服务',
+)
+
 # ── UI-147 [NORMAL] 商家后台读失败出口（issue #8200 · P1-06）：凡渲染共享空态原语 <EmptyState> 的文件必须带常驻读失败出口；/categories 读失败 ⇒ 失败面 + 重试，空态与「还没有商品分类」断言都不上屏（DQ-1）（源: cases/ui.yml）──
 _CASE_UI_147 = EvalCase(
     id='UI-147',
@@ -2801,5 +2839,7 @@ CASES = (
     _CASE_UI_142,
     _CASE_UI_143,
     _CASE_UI_144,
+    _CASE_UI_145,
+    _CASE_UI_146,
     _CASE_UI_147,
 )
