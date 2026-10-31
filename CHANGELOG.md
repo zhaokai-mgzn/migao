@@ -11,6 +11,11 @@
 - **改后**：新增 `deploy/scripts/prod-5xx-window.sh`（只读合成探针：审计点名的四面 × N 轮窗口，数 5xx 条数；0=未超阈值 / 1=超阈值 / 3=无法判定）+ `scripts/prod_alert.sh`（**唯一**投递出口：GitHub Issue `priority/P1` 标题去重 + 读数分级指纹去重，webhook 由 `MIGAO_ALERT_WEBHOOK_URL` 可选）。5xx 与证书到期（21 天阈值）都接进既有 `post-merge-verify` 腿（`push: main` / 每日 / 手动三个既有触发面，**不新增 schedule**）；发布失败沿用既有 `[deploy-leg]` 通道。同一事件**只开一条单**，读数分级没变就不再评论。
 - **边界**：全站 5xx 率（nginx access log 口径）与 30s 级外部监控**未覆盖**；短信/电话/邮件直发**未做**（需外部账号）；告警投递失败**不改腿色**（只降级为 `::warning::`，理由与重启条件见 `docs/deployment/observability-minimum.md`）。
 
+### 黄金策开始记「建议之后你做了什么」：点开就算一条，同一件事只记一次（2026-10-31，issue #8260）
+
+- **改前**：复盘只能回忆「AI 说过什么」，说不出「人做了什么」—— 续费时那句「帮你发现 47 个问题、其中 31 个你处理了」说不出后半句。
+- **改后**：新增 `briefing_actions` 表与 `POST/GET /api/admin/briefing/actions`；点日报条目的「问黄金策」时**后台记一条**（前缀式 `opened_agent`）。同一条目反复点只留一行（`UNIQUE` + 先查后写）；只存条目标题的 hash，**不存原文**（不给简报再造一份副本，也不扩 PII 面）。**上报失败不影响任何交互**（fire-and-forget）。
+- **口径**：**记录 ≠ 采纳** —— `opened_agent` 只表示「点开问了」，「已处理 / 忽略」需要单独的按钮（未做）。所以任何报表都不许把它说成「采纳率」。
 ### 商品分类页读失败不再假装「还没有分类」（2026-10-31，issue #8200）
 
 - **改前**：`/categories` 的读接口 500 / 断网时只有一个空 `catch`，屏上照印「还没有商品分类 —— 先建一个分类」，

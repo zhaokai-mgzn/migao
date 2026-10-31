@@ -5,7 +5,9 @@ import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.entity.DailyBriefing;
 import com.migao.admin.security.RequirePermission;
 import com.migao.admin.security.SecurityUser;
+import com.migao.admin.entity.BriefingAction;
 import com.migao.admin.service.AuditLogService;
+import com.migao.admin.service.BriefingActionService;
 import com.migao.admin.service.DailyBriefingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,6 +38,7 @@ import java.util.Map;
 public class BriefingController {
 
     private final DailyBriefingService dailyBriefingService;
+    private final BriefingActionService briefingActionService;
     private final AuditLogService auditLogService;
 
     /**
@@ -75,6 +78,68 @@ public class BriefingController {
      * <p>租户取会话上下文（`TenantContext`），权限码与 `/today` 同码（`dashboard:view`）；
      * 行级数组有界（≤ {@code DailyBriefingService.SNAPSHOT_ROW_LIMIT}）且截断在 `row_meta` 里显式。</p>
      */
+    /**
+     * 记录一次决策动作（issue #8260）—— 「AI 建议了什么 → 人做了什么」的后半句。
+     *
+     * <p><b>fire-and-forget 语义</b>：调用方（前端）不等待结果、失败不提示用户。
+     * 因此这里对非法入参**不抛错**，只回 {@code recorded=false} ——
+     * 用户点的是「问黄金策」，不该因为一条内部埋点失败而失败。</p>
+     *
+     * <p>入参：{@code bizDate} / {@code itemKind}（todo|risk|suggestion）/ {@code title}（前端传原文，服务端只存 hash）/ {@code action}。</p>
+     */
+    // 🔴 码是 `agent:chat`（=「唤出黄金策对话」，员工需授权），不是 `dashboard:view`：
+    // 「点『问黄金策』」在语义上就是唤出对话那个动作，能唤出的人才该产生这条记录。
+    // 用读码会让本端点落进 I4（写动作挂读码）台账 —— 那张表**只许缩短**，不认新增。
+    @RequirePermission("agent:chat")
+    @PostMapping("/actions")
+    public ApiResponse<Map<String, Object>> recordAction(@RequestBody Map<String, Object> body) {
+        Long tenantId = TenantContext.getTenantId();
+        String userId = null;
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof SecurityUser su) {
+            userId = su.getUserId();
+        }
+        boolean recorded = briefingActionService.record(
+                tenantId,
+                asText(body.get("bizDate")),
+                asText(body.get("itemKind")),
+                asText(body.get("title")),
+                asText(body.get("action")),
+                userId);
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("recorded", recorded);
+        return ApiResponse.success(resp);
+    }
+
+    /**
+     * 查决策动作记录（issue #8260）：复盘时回答「这些建议你点开过几条」。
+     *
+     * <p>{@code days} 由 Service 钳制（上限 {@link BriefingActionService#MAX_DAYS}），此处不重复。
+     * 返回的每条**只有 itemKey**（hash）—— 要还原成标题得回到对应日期的简报，
+     * 这是刻意的：事件表不该成为简报内容的第二份副本。</p>
+     */
+    @RequirePermission("dashboard:view")
+    @GetMapping("/actions")
+    public ApiResponse<List<Map<String, Object>>> listActions(
+            @RequestParam(value = "days", defaultValue = "30") int days) {
+        Long tenantId = TenantContext.getTenantId();
+        List<BriefingAction> rows = briefingActionService.listRecent(tenantId, days);
+        List<Map<String, Object>> resp = new ArrayList<>(rows.size());
+        for (BriefingAction row : rows) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("bizDate", row.getBizDate() != null ? row.getBizDate().toString() : null);
+            item.put("itemKind", row.getItemKind());
+            item.put("itemKey", row.getItemKey());
+            item.put("action", row.getAction());
+            resp.add(item);
+        }
+        return ApiResponse.success(resp);
+    }
+
+    private static String asText(Object value) {
+        return value == null ? null : String.valueOf(value);
+    }
+
     /**
      * 历史简报（issue #8253）：过去 N 天 AI 提醒过什么。
      *
