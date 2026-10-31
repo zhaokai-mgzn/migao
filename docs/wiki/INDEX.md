@@ -50,7 +50,7 @@ Wiki 页面是摘要，详细文档在：
 | 架构 | [docs/wiki/Architecture.md](Architecture.md)（当前事实） |
 | **上游框架归档出处** | [upstream-ershen-archive.md](upstream-ershen-archive.md)（二郎神/ershen 的最后有效 sha + 未搬资产 + 取回方式） |
 | **研发模式三维平衡（墙钟 / 质量 / token：目标函数 + 执行域 + 十项机制 + 反模式 + 路线图）** | **[Dev-Mode-Balance.md](Dev-Mode-Balance.md)** |
-| 部署 | [docs/deployment/swas-migration-lessons.md](../deployment/swas-migration-lessons.md)（SWAS 踩坑）· [deployment-checklist.md](../deployment/deployment-checklist.md) |
+| 部署 | [docs/deployment/swas-migration-lessons.md](../deployment/swas-migration-lessons.md)（SWAS 踩坑）· [deployment-checklist.md](../deployment/deployment-checklist.md) · [tls-renewal.md](../deployment/tls-renewal.md)（**TLS 证书自动续期 / 到期判红 / 一次性修复 runbook**，issue #8201） |
 | API | [docs/api/api-reference.md](../api/api-reference.md) |
 | SQL | [docs/sql/schema.sql](../sql/schema.sql) |
 | **生产/工序术语真值源** | [docs/curtain-production-process-standard.md](../curtain-production-process-standard.md)（行业文档《成品窗帘生产流程及工作规范》逐字引文摘录 —— 界面第一层行业术语：裁床 / 车位 / 烫工及后整 / 质检 / 包装）· [curtain-production-rules.md](../curtain-production-rules.md)（生产/计件规则） |
