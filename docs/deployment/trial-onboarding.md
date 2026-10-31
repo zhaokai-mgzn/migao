@@ -290,7 +290,7 @@ python3 scripts/trial_onboarding_check.py \
 | `android-manifest` | `{app}/terminal/android/latest.json` | 同上 + `versionCode` 正整数 |
 | `bmini-report-page` | `{app}/b/report/` | 200 + HSTS + nosniff + CSP |
 | `worker-h5-page` | `{app}/w/` | 200 + HSTS + nosniff + CSP |
-| `shortlink-json-contract` | `{app}/s/<未知码>/json` | **404 + `application/json` + `{"error":"not_found"}`**；给了真码时还与 302 面 token 逐字一致 |
+| `shortlink-json-contract` | `{app}/s/<未知码>/json` | **404 + `application/json` + `{"error":"not_found"}`** |
 | `tenant-binding-{worker,order}` | `{app}/s/<码>`、`{app}/o/<码>` | 302 + 落点 `tenant_code` == 入参企业编码 |
 | `shortlink-json-parity` | `{app}/s/<真码>/json` | 与 302 面**同一份** token（A 档拿到旧 token = 报工失败） |
 | `headers-*` | 上述各面 | HSTS + nosniff（另 `/download` 也要） |
@@ -298,7 +298,7 @@ python3 scripts/trial_onboarding_check.py \
 ### 5.3 实测读数（2026-10-31 15:25 +08，`rc=3 passed=9 failed=0 unknown=3`；连跑两次逐行一致 = 幂等）
 
 ```
-✅ enterprise-code          demo-customer
+✅ enterprise-code          trial-acme
 ✅ download-page            200 text/html，正文含「观星台终端」（29600 bytes）
 ✅ terminal-dir-redirect    301 → https://app.migaozn.com/terminal/
 ???? windows-manifest       /terminal/latest.json 404 未发布（先跑 terminal-publish.yml，见 §2）
@@ -310,7 +310,7 @@ python3 scripts/trial_onboarding_check.py \
 ✅ headers-site-download    HSTS+nosniff
 ```
 
-**这三条 `????` 就是现在**不能**发给客户的原因**：终端还没发布（装不上）、没有印出来的码（核不了归属）。
+**这三条 `????` 就是现在不能发给客户的原因**：终端还没发布（装不上）、没有印出来的码（核不了归属）。
 它们是**开通前置未执行**，不是线上缺陷 ⇒ 落 `3`，而 `3` **不得当 `0` 读**。
 
 ### 5.4 验收红线
@@ -438,10 +438,10 @@ python3 scripts/trial_onboarding_check.py \
 | ⑤ | **Android keystore** | 自签，存终端仓 Secrets；换 key = 必须重装 | 终端仓 | §2.3 |
 | ⑥ | **真机安装与现场网络** | 需人到现场（未知来源授权 / WebView2 / 反光） | 客户 IT + 我们 | §2.4 / §4.2 |
 | ⑦ | **真机打印**（标签/三联纸/A4） | 未验证（只读审计覆盖不到） | 客户 + 我们 | 本文 §4.1 |
-| ⑦b | **终端运行时依赖**（WebView2 / .NET 版本 / 最低系统） | 本仓无判据（终端代码不在本仓） | 终端仓 + 客户 IT | §2.4 |
-| ⑧ | **RDS 备份窗口 / PITR ≥14 天** | 云控制台侧，公网**不可判定** | DBA | §6.2 第 7 条 |
-| ⑨ | **告警触达值班** | 未落地（审计 P0-04） | 研发 | §6.1 的缺口登记 |
-| ⑩ | **短信通道**（管理员首登/工人 PIN 通知） | 走既有短信服务；**需确认余额与签名报备** | 运营 | —— |
+| ⑧ | **终端运行时依赖**（WebView2 / .NET 版本 / 最低系统） | 本仓无判据（终端代码不在本仓） | 终端仓 + 客户 IT | §2.4 |
+| ⑨ | **RDS 备份窗口 / PITR ≥14 天** | 云控制台侧，公网**不可判定** | DBA | §6.2 第 7 条 |
+| ⑩ | **告警触达值班** | 未落地（审计 P0-04） | 研发 | §6.1 的缺口登记 |
+| ⑪ | **短信通道**（管理员首登/工人 PIN 通知） | 走既有短信服务；**需确认余额与签名报备** | 运营 | —— |
 
 ---
 
