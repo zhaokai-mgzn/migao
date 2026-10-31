@@ -58,47 +58,57 @@ bash deploy/scripts/tls-expiry-check.sh --warn-days 30
 `certbot` 的两条 lineage 读数（`TLS_LINEAGE …`）**只做诊断，不改变退出码** —— 未被 nginx 使用的
 lineage 到期不影响四域 HTTPS，但它会让每天的 `certbot renew` 整条跑失败（见 §5）。
 
-## 3. 一次性修复：两条可选路径（**都要人执行；本单未执行**）
+## 3. 一次性修复：**已裁定走路径 ②**（2026-10-31），路径 ① 保留给「以后 admin 要用时」
 
 > 根因 = `migao` 证书的 SAN 里有 `admin.migaozn.com`，而该域名**没有 A 记录** ⇒ HTTP-01 必失败。
-> 两条路都能修，代价不同，**必须人选**。
+> **用户已于 2026-10-31 裁定：走路径 ②**（重签、去掉 `admin`、保留 7 个可解析 SAN）。
+> 本单的边界原本是「不改域名集合」⇒ 这条被登记为**需人裁定的例外**，现已由用户裁定**执行**。
 
-### 路径 ①（推荐，不动 SAN）：给 `admin.migaozn.com` 补 A 记录
-
-```bash
-# 在权威 DNS 上加一条：admin.migaozn.com.  A  121.40.28.213（与其余 7 个 SAN 同 IP）
-dig +short admin.migaozn.com          # 期望 121.40.28.213；先等 TTL 生效
-# 然后用同一张证书原样续期（webroot 已由 nginx 提供 /.well-known/acme-challenge/）：
-cd /opt/migao-deploy && bash /opt/migao-deploy/tls-renew.sh --dry-run   # 先验通路，不真续
-cd /opt/migao-deploy && bash /opt/migao-deploy/tls-renew.sh             # 真续 + reload nginx
-```
-
-代价：**依赖外部输入**（DNS 是第三方面，本仓改不了）；好处：**SAN 集合不变**，`admin` 站点将来要上线时不需要再动证书。
-
-### 路径 ②（不补 DNS）：重签，**显式只带 7 个可解析 SAN**（去掉 `admin`）
+### 路径 ②（**已裁定，先跑这条**）：重签，只带 7 个可解析 SAN（去掉 `admin`）
 
 ```bash
-# ⚠️ 这会**改变证书的 SAN 集合**（少一个 admin.migaozn.com）—— 本单的边界是「不改域名集合」，
-#    所以这条路是**需人裁定的例外**，不默认执行；裁定人：技术负责人。
+# 在服务器上、/opt/migao-deploy 目录下执行（一次性动作；本单未执行，执行权在人）
 cd /opt/migao-deploy
 certbot certonly --cert-name migao \
+  --webroot -w /opt/migao-deploy/certbot-www \
+  --expand --force-renewal --non-interactive \
   -d migaozn.com -d www.migaozn.com -d api.migaozn.com -d ai-api.migaozn.com \
-  -d app.migaozn.com -d merchant.migaozn.com -d ops.migaozn.com \
-  --webroot -w /opt/migao-deploy/certbot-www --expand --non-interactive
-docker compose exec -T nginx nginx -s reload
+  -d app.migaozn.com -d merchant.migaozn.com -d ops.migaozn.com
+# 然后由用户执行 reload（不重启，避免整断在途请求）：
+cd /opt/migao-deploy && docker compose exec -T nginx nginx -s reload
 ```
 
-代价：`admin.migaozn.com` **不再在证书里** —— 将来要用该子域，必须再加 DNS 后重新 `--expand`；
-好处：不再依赖 DNS 变更，当天即可闭环。
-（`--expand` 的作用：`cert-name` 已存在且域名集合变化时**扩/改同一个 lineage**，不新建第二张证书。）
+两个开关的作用（别省、也别乱加）：
 
-### 落地后自证（两条路都要跑）
+- `--expand`：`--cert-name migao` 这条 lineage **已存在**且域名集合变化时，**扩/改同一个 lineage**，
+  不会新建第二张证书（否则 `live/migao/` 与 nginx 里写死的路径就对不上了）。
+- `--force-renewal`：证书**还没到 30 天窗口时 certbot 默认跳过续期**；加上它才会**按新 SAN 集合重新签发**。
+  ⚠️ 这是**一次性动作**：**不要**把它写进 cron / `tls-renew.sh` —— 写进去等于每次 tick 都强制签发，
+  会直接撞 Let's Encrypt 的限流（`too many failed authorizations` / duplicate certificate）。
+
+### 路径 ①（**不再是默认推荐**，保留给「以后要用 `admin` 子域时」）：补 A 记录后原样续
 
 ```bash
+# 权威 DNS 加一条：admin.migaozn.com.  A  121.40.28.213（与其余 7 个 SAN 同 IP）
+dig +short admin.migaozn.com            # 期望 121.40.28.213；先等 TTL 生效
+cd /opt/migao-deploy && bash /opt/migao-deploy/tls-renew.sh --dry-run   # 验通路，不真续
+cd /opt/migao-deploy && bash /opt/migao-deploy/tls-renew.sh             # 真续 + reload
+```
+
+代价：**依赖外部输入**（DNS 是第三方面）。好处：SAN 集合不变 —— 但要先做一次
+`certbot certonly --cert-name migao --expand ... -d admin.migaozn.com ...` 才能把 `admin` 加回来
+（路径 ② 执行后证书里已没有 `admin`）。
+
+### 落地后自证（裁定路径跑完必须做）
+
+```bash
+# ① 新 SAN 集合里应该没有 admin，且 7 个域名都在
 openssl s_client -connect api.migaozn.com:443 -servername api.migaozn.com </dev/null 2>/dev/null \
-  | openssl x509 -noout -dates -subject
-bash /opt/migao-deploy/tls-renew.sh --dry-run    # 期望 rc=0 且无 challenge 失败
-bash deploy/scripts/tls-expiry-check.sh          # 期望 rc=0、四个域 status=ok
+  | openssl x509 -noout -dates -ext subjectAltName
+# ② 通路：dry-run 应该不再报 challenge 失败
+bash /opt/migao-deploy/tls-renew.sh --dry-run
+# ③ 判据：四域应该都 status=ok
+bash deploy/scripts/tls-expiry-check.sh; echo "rc=$?"
 ```
 
 ## 4. cron 加固（把「整断」换成 reload + 可观测）
@@ -110,7 +120,7 @@ bash deploy/scripts/tls-expiry-check.sh          # 期望 rc=0、四个域 statu
 # ① 先看会不会双跑（既有 crontab 条目会让同一条续期一天跑两遍）
 crontab -l | grep 'certbot renew'
 
-# ② 备份并替换：把旧条目移出 crontab（备份到 /var/backups），装 /etc/cron.d/migao-tls-renew
+# ② 真正切换：备份并替换（把旧条目移出 crontab，备份到 /var/backups），装 /etc/cron.d/migao-tls-renew
 bash /opt/migao-deploy/tls-renew.sh --install-cron --replace-legacy-cron
 
 # ③ 复核（三段读数都要看）
@@ -120,38 +130,44 @@ ls -l /var/backups/crontab-*.bak         # 被移出的原条目留档
 systemctl is-active cron                 # 宿主没 cron 守护进程 ⇒ 文件就位也不会跑（脚本会打 ⚠️）
 ```
 
-> 不带 `--replace-legacy-cron` 时，`--install-cron` 检测到既有条目会**拒绝安装**并退 `3`（避免双跑）。
-> 部署时 `deploy/swas/deploy.sh` 的 `2.6.1` 会幂等地跑一次 `--install-cron`：**内容未变不重写**；
-> 被 guard 跳过时只打 `⚠️`，**不拖垮部署**。
-> 脚本里 reload 用 `docker compose exec -T nginx nginx -s reload`，只有 reload 失败才回落 `restart`。
+**时序（已裁定口径）**：
 
-## 5. 陈旧 lineage：**不删证书**的禁用方式
+- **`--replace-legacy-cron` 等本 PR 合并 + 部署之后再跑** —— 部署时 `deploy/swas/deploy.sh` 的 `2.6.1`
+  会幂等地尝试 `--install-cron`；因为检测到既有 root crontab 条目，它会**拒绝安装并退 3**（避免双跑），
+  这是**有意的安全 guard**，只出声、**不拖垮部署**。
+- **「先手工把旧 cron 的 `restart` 改成 `reload`」是可选、不强制**：路径 ② 重签成功后，旧 cron 下一次
+  03:00 的 `certbot renew` 本来就会成功（SAN 里已没有解析不了的域名），代价只是那一次会**短暂 restart**。
+  想让这段窗口也优雅，就顺手把旧条目的 `--post-hook` 改成
+  `docker compose exec -T nginx nginx -s reload`；不改也行。
+
+> 脚本里 reload 一律用 `docker compose exec -T nginx nginx -s reload`，只有 reload 失败才回落 `restart`
+> （回落路径会打印「短暂整断」，不静默）。
+
+## 5. 陈旧 lineage：**已裁定执行**（移出 renewal 目录，**不删证书**）
 
 `api.migaozn.com` 这条 lineage 未被 nginx 使用，但它的 renewal conf 与 `--webroot` 冲突，
-会让每天的 `certbot renew` **整条**跑失败（即使主证书本来能续）。
+会让每天的 `certbot renew` **整条**跑失败（即使主证书本来能续）。**用户已裁定：移出 renewal 目录（不删证书）。**
 
 ```bash
-# 方式 A（推荐，可逆、不删任何证书）：把 conf 移出 renewal 目录并留档
+# 唯一口径：/etc/letsencrypt/renewal-disabled/（本文件只留这一种路径，避免执行时两处）
 mkdir -p /etc/letsencrypt/renewal-disabled
 mv /etc/letsencrypt/renewal/api.migaozn.com.conf /etc/letsencrypt/renewal-disabled/
 ls /etc/letsencrypt/live/api.migaozn.com/    # 证书文件仍在（不删）
-
-# 方式 B（保留自动续期，但改成 webroot）：把 authenticator/pref_challs 改对
-grep -E 'authenticator|pref_challs' /etc/letsencrypt/renewal/api.migaozn.com.conf
-# 期望（改后）：authenticator = webroot / pref_challs = http-01,
-# 同时补 webroot_path = /opt/migao-deploy/certbot-www
 ```
 
-**不许**直接 `certbot delete`（会删证书文件）—— 两种方式都保留文件，可随时恢复。
-改完复算：`certbot renew --dry-run` 不应再出现那条 `None of the preferred challenges are supported`。
+- **不许**直接 `certbot delete`（会删证书文件）—— 移出即可，随时可以 `mv` 回来。
+- 想让这条 lineage 也自动续期（而不是停用）才需要改：`authenticator = webroot` +
+  `pref_challs = http-01,` + `webroot_path = /opt/migao-deploy/certbot-www`；**默认不做**（它不是 nginx 在用的那张）。
+- 改完复算：`certbot renew --dry-run` 不应再出现那条
+  `None of the preferred challenges are supported by the selected plugin`。
 
 ## 6. 失败排查（按日志原文对号入座）
 
 | 日志原文 | 真因 | 处置 |
 |---|---|---|
-| `None of the preferred challenges are supported by the selected plugin` | 某 lineage 的 `authenticator` / `pref_challs` 与 `--webroot` 冲突 | §5 方式 A 或 B |
-| `Some challenges have failed` + 某域名 | 该域名的 HTTP-01 打不通（DNS 缺 A 记录 / 80 被挡 / 网关没放通） | 路径 ①（补 DNS）；`dig +short <域名>` 先自证 |
-| `too many failed authorizations` | Let's Encrypt 限流（同域名失败过多） | **停手 1 小时**，别连续重跑 |
+| `None of the preferred challenges are supported by the selected plugin` | 某 lineage 的 `authenticator` / `pref_challs` 与 `--webroot` 冲突 | §5 移出 renewal 目录（已裁定） |
+| `Some challenges have failed` + 某域名 | 该域名的 HTTP-01 打不通（DNS 缺 A 记录 / 80 被挡 / 网关没放通） | 路径 ② 重签去掉解析不了的域名；先 `dig +short <域名>` 自证 |
+| `too many failed authorizations` | Let's Encrypt 限流（同域名失败过多） | **停手 1 小时**，别连续重跑（也别把 `--force-renewal` 塞进 cron） |
 | `No renewals were attempted` | 没有到期证书（**正常**幂等路径） | 无需动作；`TLS_RENEW_RESULT=noop` |
 | remote 80 返回 404 / 301 | `/.well-known/acme-challenge/` 没落到 `certbot-www` | 核对 `deploy/swas/nginx.conf` 的 webroot location 与 compose 的 `./certbot-www:/var/www/certbot` 挂载 |
 
@@ -169,6 +185,7 @@ bash /opt/migao-deploy/tls-expiry-check.sh
 |---|---|
 | 回滚 cron 调度到旧行为 | `mv /etc/cron.d/migao-tls-renew /etc/cron.d/migao-tls-renew.disabled`（或删掉该文件），再按 §4 把 `--replace-legacy-cron` 备份的 `/var/backups/crontab-*.bak` 用 `crontab <文件>` 恢复 |
 | 回滚证书（重签出问题） | 证书文件不删：`ls /etc/letsencrypt/live/migao/`；`archive/` 下保留历史版本。确认后可把 `live/migao/` 指回之前的 `archive/<时间戳>/`（`live` 是软链），再 `docker compose exec -T nginx nginx -s reload` |
+| 回滚被移出的陈旧 lineage | `mv /etc/letsencrypt/renewal-disabled/api.migaozn.com.conf /etc/letsencrypt/renewal/`（文件一直在） |
 | 回滚判红接线 | 把 `.github/workflows/post-merge-verify.yml` 的 `TLS 证书到期判红` 步移除 —— **注意**：`tests/unit_ci_workflows/test_tls_renewal.py` 会当场判红（「摘掉接线 ⇒ 红」），这是有意的 |
 | 回滚部署脚本改动 | `deploy/swas/deploy.sh` 的两处改动都是**增量**：`2.6.1` 段与配置同步里的 `[ -f src/deploy/scripts/tls-renew.sh ]` 守卫。回滚到更早的 tag 时该文件不存在，守卫会跳过（**不会**让回滚部署 abort） |
 
@@ -180,7 +197,7 @@ bash /opt/migao-deploy/tls-expiry-check.sh
   证书过期伤的是**服务端到客户端这一段握手**，不是操作系统或设备本身；
   桌面端 / 移动端要做的只有一件事：**不要**在过期后「继续访问」并忽略证书告警。
 - 未被 nginx 使用的 `api.migaozn.com` lineage **不影响**四域 HTTPS（它只是污染 `certbot renew` 的退出码）。
-- 本单**不改**证书域名集合 / 不换 CA / 不动 TLS 协议档；路径 ② 是**需人裁定**的例外（见 §3）。
+- 本单**不改** CA / 不动 TLS 协议档；**SAN 集合的变更（去掉 `admin`）是已裁定的例外**，见 §3。
 
 ## 9. 复算与验证清单（交付时逐条跑）
 
