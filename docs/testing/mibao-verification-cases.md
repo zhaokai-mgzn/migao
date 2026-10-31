@@ -11855,7 +11855,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（146 case）
+## 前端 UI 域（147 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -14007,6 +14007,21 @@
 ```
 溯源: 2026-10-31 新增（issue #8203，P0-03）。取号 = `python3 scripts/next_case_id.py UI` 现取（同批 UI-145 占 145 ⇒ 取 UI-146）。实现 = `frontend/admin-web/src/lib/clientErrorReporter.ts`（归一化 / 两道去敏 / 截断 / 30s 去重 / 不抛 / 全局监听）+ `src/components/ClientErrorReporter.tsx`（`'use client'` 模块顶层安装；`src/app/layout.tsx` 接线）。**未覆盖**（照实登记）：不发 `sendBeacon`（单一 keepalive 通道便于判据）、不做采样 / 聚合 / 告警升级、不上报 C 端（mini-app / bmini / worker-h5）、不记用户标识；服务端第三道去敏的判据在 MC-123。 ｜ tags: error-reporting, privacy, observability, p0
 
+### UI-147. 商家后台读失败出口（issue #8200 · P1-06）：凡渲染共享空态原语 <EmptyState> 的文件必须带常驻读失败出口；/categories 读失败 ⇒ 失败面 + 重试，空态与「还没有商品分类」断言都不上屏（DQ-1） 🔵
+```
+你: 商家打开商品分类页时接口挂了：屏幕上不能写「还没有商品分类」「先建一个分类」（那是把没读到说成本来就没有），要明确说没读到并给重试
+期望: direct_reply
+数据: **读失败 ⇒ 常驻失败面（会红）**：mock `categoryApi.getCategories` reject ⇒ 屏上有 `categories-load-error`（`role="alert"`）与 `categories-load-error-retry`。改前该页只有空 `catch` + `<EmptyState title="还没有商品分类">`，两个锚都不存在（红证读数见 PR body）。执行点 = frontend/admin-web/tests/unit/pages/categories.test.tsx。
+数据: **不冒充空态（会红）**：同一失败态下 `categories-empty` 锚不在、「还没有商品分类」文案不在，且整屏经 `findEmptyDataAssertions`（单一源口径）无「没有数据」断言。
+数据: **重试真的重发（会红）**：点 `categories-load-error-retry` ⇒ `getCategories` 调用次数增加，且成功回包后分类树渲染、失败面退场（不是只把失败面藏起来）。
+数据: **对照读数（不许把真 0 判红）**：读成功且真的 0 条 ⇒ `categories-empty` 照旧在、失败面不在。
+数据: **类级（会红）**：`frontend/admin-web/scripts/read-failure-empty-state-scan.mjs::componentEmptyStateOffenders` 在面内（`(dashboard)` + `src/components`）对「渲染 `<EmptyState>` 且无失败锚」的文件判红；台账 `COMPONENT_EMPTY_LEDGER` 现取 0 条、只许缩短；判别力自证 = `frontend/admin-web/tests/unit/read-failure-component-empty-state-guard.test.ts`。
+数据: **审计读数纠偏**：审计 P1-06 用「有没有引用 `ListLoadError`」当代理指标 ⇒ 得出「37 页缺失」。逐页复核：`/products`（`products-load-failed`）/`/dashboard`（`dashboard-load-failed` + 分块重试）/`/production`（`production-board-error` + 重试，失败时不渲染 `production-board-empty`）/`/orders/[id]`（`order-detail-load-error` + 重试）**早已可区分读失败与真空态**；真实缺口只有 `/categories` 一处。
+跳过: [backend-contract] 纯前端渲染契约（vitest + mock 读接口），不经过 LLM 对话/工具，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-10-31 新增（issue #8200 · P1-06 上线审计「读失败出口」）：取号 UI-147（`python3 scripts/next_case_id.py UI` 现取 main 最大 = UI-144，在飞 PR #8214 占 UI-145/146）。 ｜ tags: read-failure, empty-state, categories, class-guard
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -14036,8 +14051,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：945（活跃 152，跳过 793）
-- tier 分布：smoke 15 / normal 873 / adversarial 33
+- 用例总数：946（活跃 152，跳过 794）
+- tier 分布：smoke 15 / normal 874 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14062,7 +14077,7 @@
 - 工具注册器域：1
 - 设置域：11
 - 令牌刷新域：4
-- 前端 UI 域：146
+- 前端 UI 域：147
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
