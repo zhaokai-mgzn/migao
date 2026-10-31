@@ -4,6 +4,7 @@
 
 - `bmini-report-login-390x844.png`：小程序 `/b/` 报工页**未登录就地登录**（修复后；CDP `Emulation.setDeviceMetricsOverride` 390×844 截图）。
 - `wh5-login-390x844.png`：终端 `/w/` 工人登录参考（同一视口）。
+- `bmini-report-card-2x.png` / `bmini-report-unauthorized-full-2x.png`：同一修复后的 2x DPR 截图（卡片局部 / 整页；整页可见「无扫码报工页头」）。
 
 ## 修前真形态（视觉验收抓到，几何腿没覆盖）
 
