@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: data（源: cases/data.yml，32 条）
+# 域: data（源: cases/data.yml，33 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -592,6 +592,24 @@ _CASE_DA_032 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── DA-033 [NORMAL] 权衡补刻度：压货资金 / 离同行差多少 / 每件多赚多少（未知不当 0、不乘销量、不做预测）（源: cases/data.yml）──
+_CASE_DA_033 = EvalCase(
+    id='DA-033',
+    legacy_id='',
+    title='权衡补刻度：压货资金 / 离同行差多少 / 每件多赚多少（未知不当 0、不乘销量、不做预测）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['我这批货压了多少钱？把毛利低的调一调，一件能多赚多少？'],
+    expectations=[],
+    data_checks=['行内 `money`：`stock_value`（= stock × avg_cost，压货占用资金）/ `stock_value_basis` / `margin_gap_per_unit`（= peer_median − 本行毛利，**正数 = 比同行少赚**）/ `margin_gap_basis` / `price_up_5pct_per_unit`（= price × 5%）。顶层 `money_basis`。', '🔴 **成本未知不许当 0**：`avg_cost IS NULL` ⇒ `stock_value = None` + `stock_value_basis = "cost_unknown"`。写成 0 等于说「这批货不占钱」，与事实正好相反。红证：把 `None` 换成 `Decimal(0)` ⇒ `test_unknown_cost_is_not_zero_capital` 必红；恢复 ⇒ 16 passed。', '🔴 **每件增量不许乘销量**：`sales_count` 的周期口径在快照契约里没标注，乘上去就是编。红证：把 `price_up_5pct_per_unit` 改成 `price × 5% × sales_count` ⇒ `test_price_step_does_not_multiply_by_sales_count` 必红（同价格不同销量必须给出相同的每件增量）。', '**方向断言双向**：比同行差 ⇒ `margin_gap_per_unit > 0`；比同行好 ⇒ `< 0`。方向写反是最容易犯又最难发现的错，所以正负两种行都断言。', '**钱是事实、选项是建议**：`good` 行**不给选项**（P3 纪律不变）但**照样给钱**（`stock_value` 照出）—— 「这批货压了 5000 元」对好卖的 SKU 同样是事实。', '**选项带钱只给算得出的**：「小范围试调价 +5%」带 `money_impact.per_unit` + `premise`（前提必须写出来：销量不变假设）；算不出的选项**不给字段**，而不是给 0。', '工具层 `message` 必须带「库存成本合计约 X 元」+ 成本未知部分「**算不出来**（不是 0）」—— message 是模型的唯一摘要，钱不进 message 等于不存在。'],
+    skip_reason='[backend-contract] 纯确定性视图判据（零 LLM）：`product_health` 是纯函数、规则表，不进 agent-eval；判据 = backend/ai-agent-service/tests/test_briefing_product_health_money.py（16 条，含两条注入式红证 + 工具层摘要断言）',
+    tags=['proactive', 'briefing', 'decision', 'money'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_DA_001,
     _CASE_DA_002,
@@ -625,4 +643,5 @@ CASES = (
     _CASE_DA_030,
     _CASE_DA_031,
     _CASE_DA_032,
+    _CASE_DA_033,
 )
