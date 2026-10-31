@@ -349,7 +349,9 @@ describe('工人面写入口台账元守卫（issue #6467 S8）', () => {
     // 变异：只删渲染形态（保留 import 提及）—— 这正是「写了 ≠ 会被执行」的形态
     const mutated = input.read(target).replace(/<WorkerLoginForm[^>]*\/>/g, '<View />')
     expect(mutated.includes('<WorkerLoginForm')).toBe(false)
-    expect(mutated.includes("from '../../../components/WorkerLoginForm'")).toBe(true)
+    // ⚠️ 这里**不写带前导 `../` 的相对路径字面量**：`tests/unit_ci_workflows/test_local_gate_matrix.py`
+    // 的「跨目录输入」闭包会把源码里任何 `'../…'` 字符串字面量当真 import 解析 ⇒ 假红（本包实测踩过）。
+    expect(mutated).toContain('components/WorkerLoginForm')
     // 对照：真仓库下判绿（否则「红」可能只是读错了文件）
     expect(ledgerProblems(input)).toEqual([])
     const problems = ledgerProblems({
