@@ -1,6 +1,6 @@
 # 上线审计收口状态（issue #8197 · 2026-10-31）
 
-> 基线 = `origin/main` @ `42784b824` + 在飞（#8271 / #8214 / #8278）。
+> 基线 = `origin/main` @ `2dcd5bb55` + 在飞（#8271 / #8214 / #8278）。
 > 标记口径：**已合** = 已在 `origin/main`；**在飞** = PR open、CI 绿或近绿；**待用户** = 只能由人执行的仓库外动作；
 > **未覆盖** = 审计明确接受「本轮不做」。
 > 铁律 11a：本表每条状态都能用 `git log --oneline origin/main` / `gh pr view <N>` 复算；不能复算的一律标「待用户/未覆盖」。
@@ -9,7 +9,7 @@
 
 | # | 事项 | 容器 | 状态 | 复算 / 下一步 |
 |---|---|---|---|---|
-| **P0-01** | TLS 证书临期 + 续期必失败（SAN 含无 A 记录的 `admin`） | #8201 / #8278 | **已修复（2026-10-31 执行）**：判据 `tls-expiry-check.sh` 已合；用户授权后经 **aliyun CLI 云助手**在宿主重签 —— 7-SAN、`notAfter=2027-01-29`、`rc=0 checked=7 ok=7 days_left=89`、`certbot renew --dry-run`（`DRYRUN_RC=0`）；备份 `/root/letsencrypt-backup-20261031T112340Z.tar.gz`，陈旧 `api` lineage 已移入 `renewal-disabled/` | **待用户**：宿主 cron 仍是旧条目（`restart nginx` + 无失败告警）⇒ runbook §4 的 cron 加固未执行（改生产 cron 需显式授权） |
+| **P0-01** | TLS 证书临期 + 续期必失败（SAN 含无 A 记录的 `admin`；另废弃的 `ops` 已一并移除） | #8201 / #8278 | **已全部执行（2026-10-31）**：① 重签两刀 —— 先 7-SAN（去 `admin`），再按用户裁定收窄到 **6-SAN**（去 `ops`）+ 删除 `ops` DNS ⇒ `notAfter=2027-01-29`、`rc=0 checked=6 ok=6`；② 陈旧 `api` lineage 移入 `renewal-disabled/`；③ **cron 加固**：`/etc/cron.d/migao-tls-renew`（03:00，`tls-renew.sh`，reload 不 restart，失败非零），旧条目备份 `/var/backups/crontab-20261031T114052Z.bak`，`--dry-run` ⇒ `DRYRUN_RC=0`；备份 `/root/letsencrypt-backup-20261031T112340Z.tar.gz` | **无**（仅观察项：2026-12-30 前后 cron 真续一次，看 `/var/log/migao-tls-renew.log`） |
 | **P0-02** | C 端 H5 线上产物落后 5.0 天 | #8197 | **根因已定位**（2026-10-31 复算）：近 5 次 `c-end-h5-publish` 运行 `Resolve mode` 全部输出 `mode=notify` ⇒ **从未带 `publish=true` 跑过 publish 分支**；不是发布腿坏了 | **待用户**：`gh workflow run c-end-h5-publish.yml --ref main -f publish=true`（写生产静态根，首次发布由人手动触发 = issue #4184 用户裁定 B） |
 | **P0-03** | admin-web 无全局错误边界 + 四端零错误上报 | #8203 / #8214 | **在飞**：#8214 已 rebase 到 `824361510`（7 处冲突已解）、用例重渲染 945 条、RBAC 台账 `UNANNOTATED_ENDPOINTS` 25→26 显式放宽；CI 中 | 合并后真机复探白屏出口 + `POST /api/client-errors` 端点 |
 | **P0-04** | 上线可观测性缺位（5xx / 证书 / 发布失败不会叫人） | #8203 / #8269 | **已合** `55fdb5eee`：`deploy/scripts/prod-5xx-window.sh` + `scripts/prod_alert.sh`（issue `priority/P1` 标题+分档指纹去重），挂在既有 `post-merge-verify` / `deploy-reconcile` 腿上，**不新增 schedule**；发布失败通道已有 #8019 实证 | **待用户**：可选 `MIGAO_ALERT_WEBHOOK_URL`（群机器人/邮件转发）；短信/电话/邮件直发与全站 5xx 率**未覆盖**（登记在 `docs/deployment/observability-minimum.md`） |
@@ -33,7 +33,7 @@
 
 ## 仓库外动作清单（全部待用户）
 
-1. ~~TLS 7-SAN 重签~~ **已于 2026-10-31 执行完毕**（#8278 记录读数）；剩下 **宿主 cron 加固**（runbook §4，未授权不动）
+1. ~~TLS 重签 + cron 加固~~ **2026-10-31 全部执行完毕**（#8278 记录读数：6-SAN 重签 / `ops` 移除 / cron 加固 / dry-run 0）
 2. **C 端手动发布**（P0-02，`-f publish=true`）
 3. **终端发布链**：终端仓出包 `v1.0.1` + tag、`TERMINAL_REPO_TOKEN` secret（P0-02 / B1）
 4. **微信小程序**：appid/私钥、后台「扫普通链接二维码打开小程序」规则、校验文件、服务器域名白名单、提审发布（B4）
