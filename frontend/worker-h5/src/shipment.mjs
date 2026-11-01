@@ -290,7 +290,9 @@ function setsText(order) {
  */
 export function buildShipLabelRows(order) {
   const rows = [
-    { key: 'order_no', label: '订单号', value: labelText(order?.order_no) },
+    // 订单号**必须可折行**（2026-11-01 商米 V2s 真机：17 位单号被 nowrap+ellipsis 截成
+    // `20261101275210…` —— 纸上的单号是要拿去对单/查件的，截断等于没印）。
+    { key: 'order_no', label: '订单号', value: labelText(order?.order_no), multiline: true },
     { key: 'consignee', label: '收货人', value: labelText(order?.customer_name) },
     { key: 'customer_phone', label: '电话', value: labelText(order?.customer_phone) },
     { key: 'customer_address', label: '地址', value: labelText(order?.customer_address), multiline: true },
