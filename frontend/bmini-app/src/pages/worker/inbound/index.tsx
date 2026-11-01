@@ -99,7 +99,7 @@ import {
   recognizeInbound,
   recordInboundLabelPrint,
   searchInboundSkus,
-  uploadInboundPhoto,
+  uploadInboundPhotoSmart,
   newInboundRequestId,
 } from '../../../services/workerInboundService'
 import '../../../styles/admin-surfaces.scss'
@@ -206,7 +206,7 @@ export default function WorkerInboundPage() {
         upload: async (photo) => {
           setProgress(INBOUND_PROGRESS_UPLOAD)
           const res = await withTimeout(
-            uploadInboundPhoto(String(photo.tempFilePath || photo.file || '')),
+            uploadInboundPhotoSmart(photo),
             INBOUND_UPLOAD_TIMEOUT_MS,
             INBOUND_UPLOAD_TIMEOUT_HINT,
           )

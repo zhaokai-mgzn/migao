@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: bmini（源: cases/bmini.yml，59 条）
+# 域: bmini（源: cases/bmini.yml，60 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -1068,6 +1068,24 @@ _CASE_BM_062 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── BM-063 [NORMAL] 上传照片：h5 走 Blob 直传，不再依赖 Taro.uploadFile 的裸 XHR（真机卡死的根因）（源: cases/bmini.yml）──
+_CASE_BM_063 = EvalCase(
+    id='BM-063',
+    legacy_id='',
+    title='上传照片：h5 走 Blob 直传，不再依赖 Taro.uploadFile 的裸 XHR（真机卡死的根因）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工人在手持机上拍照 / 选图后点「识别」：照片照常上传成功并进入识别；网络真断时给「照片上传超时，请检查网络后重试」，按钮恢复可重试。'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·🔴 有 Blob 时走 FormData 直传（字段名 files、不设 Content-Type），一次都不调用 Taro.uploadFile。红证：改回走 Taro.uploadFile 并把该 mock 设为永不返回 ⇒ frontend/bmini-app/tests/inbound-upload-blob.test.ts 超时红', '判据 2·🔴 只有 blob: 串时先 fetch 读成 Blob 再直传。红证：跳过 fetch ⇒ 该条红', '判据 3·🔴 读不到 Blob 时回落 Taro.uploadFile（不静默失败）。红证：去掉回落 ⇒ 该条红', '判据 4·🔴 响应按服务端 data[0].url 归一，非 JSON 给明确文案。红证：改读 data.url ⇒ 该条红'],
+    skip_reason='[frontend-contract] 确定性服务层判据（jest），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'worker', 'inbound', 'upload'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_BM_001,
     _CASE_BM_002,
@@ -1128,4 +1146,5 @@ CASES = (
     _CASE_BM_060,
     _CASE_BM_061,
     _CASE_BM_062,
+    _CASE_BM_063,
 )

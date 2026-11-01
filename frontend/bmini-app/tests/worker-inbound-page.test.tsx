@@ -72,6 +72,7 @@ jest.mock('../src/utils/inbound/lpapiTransport', () => ({
 jest.mock('../src/services/workerInboundService', () => ({
   newInboundRequestId: jest.fn(() => 'req-1'),
   uploadInboundPhoto: jest.fn(async () => ({ success: true, data: { url: 'https://oss/1.jpg' }, message: '' })),
+  uploadInboundPhotoSmart: jest.fn(async () => ({ success: true, data: { url: 'https://oss/1.jpg' }, message: '' })),
   recognizeInbound: jest.fn(async () => ({
     success: true,
     message: '',
