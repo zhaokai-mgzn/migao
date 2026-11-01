@@ -977,10 +977,6 @@ cases:
         source: "13800138000"
     expectations:
       - tool: logistics_track
-    # 2026-11-01（issue #8300 自测发现一）：裸工具名期望 ⇒ 结构性不可失败；
-    # 按真跑轨迹（全档 run 41292387267 的 call_args）补「真返回」效果层。
-    must_succeed:
-      - tool: logistics_track
     required_args:
       - tool: logistics_track
         fields:

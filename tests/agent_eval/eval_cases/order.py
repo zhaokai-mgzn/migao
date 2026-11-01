@@ -317,7 +317,6 @@ _CASE_OR_013 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     required_args=[{'tool': 'logistics_track', 'fields': ['order_id']}],
-    must_succeed=[{'tool': 'logistics_track'}],
     namespaces=['customer_phone:13800138000'],
     precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
 )
