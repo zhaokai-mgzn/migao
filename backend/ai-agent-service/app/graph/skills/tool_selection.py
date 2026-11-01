@@ -41,6 +41,12 @@ ALWAYS_KEEP_TOOL_NAMES: Tuple[str, ...] = (
     "confirm_value",
 )
 
+#: 意图属主读工具**净增**上限（#8300）：只补被意图过滤挡在声明面外的属主工具，且不占分数槽位
+#: ⇒ 保留集可能比 `TOOL_TRIM_MAX_READ` 多出至多这么多把。取 3 是因为实测只有
+#: `system_settings` / `ai_config`（settings_manage 1 把）与 `dashboard`（dashboard_stats 等）
+#: 这类「被过滤到 general」的意图需要补，再多就说明是分数排序该解决的问题。
+OWNER_EXTRA_MAX = 3
+
 #: 命中工具名（用户/意图里出现 `order_query` 这种原样名字）的权重。
 _NAME_HIT = 60
 #: 工具名分段（`order_query` → `order` / `query`）被命中时的权重。
@@ -256,12 +262,6 @@ def plan_read_tools(tool_names: List[str], *, agent_type: str = "",
 
     keep = [n for n in ALWAYS_KEEP_TOOL_NAMES if n in candidates]
     keep_set = set(keep)
-    # 意图属主保底（#8300）：意图被过滤到别的 skill 时，属主 skill 的读工具仍要占位；
-    # 但它**不突破上限**（上限让位只给 ALWAYS_KEEP / 写工具），超出预算的部分交给分数兜底。
-    owner_budget = max(0, limit - len(fixed) - len(keep_set))
-    keep += [n for n in _intent_owner_read_tool_names(intent)
-             if n in candidates and n not in keep_set][:owner_budget]
-    keep_set = set(keep)
     keep += [n for n in recent_tools if n in candidates and n not in keep]
     keep_set = set(keep)
 
@@ -278,6 +278,17 @@ def plan_read_tools(tool_names: List[str], *, agent_type: str = "",
 
     budget = max(0, limit - len(fixed) - len(keep_set))
     keep_set.update(ranked[:budget])
+
+    # 意图属主保底（#8300）：意图被过滤到别的 skill 时，属主 skill 的读工具仍要占位。
+    # 🔴 必须**净增**、不许换：它只补「被意图过滤挡在本域声明面之外」的那些（声明面内的一律
+    # 交给上面的分数排序，不重复抬升），按相关度取前 OWNER_EXTRA_MAX 个，且**不占分数槽位**
+    # ⇒ 保留集只会变大、不会把本来会留的工具挤掉（2026-11-01 全档评测 7 条转红的形态：
+    # craft_config_query / batch_stock_query / operation_catalog_query 被属主工具挤走）。
+    owner_extra = [n for n in _intent_owner_read_tool_names(intent)
+                   if n in candidates and n not in keep_set and n not in declared_set]
+    owner_extra.sort(key=lambda n: -_score_tool(
+        get_tool_registry().get_tool(n), query_low, query_words, query_bigrams, False))
+    keep_set.update(owner_extra[:OWNER_EXTRA_MAX])
     return [n for n in pool if n in keep_set]
 
 
