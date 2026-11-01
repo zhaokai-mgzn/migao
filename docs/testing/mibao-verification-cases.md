@@ -2005,6 +2005,7 @@
 数据: （散文、**不计分**）order_query/quote 等明确业务意图即使含情绪词也不 offer（judge 白名单）
 数据: （散文、**不计分**）正常咨询不出现 interact 建议卡片 —— runner 现有能力**判不了「否」**：`handoff_offer` 节点的建议卡只走 interactive 事件（无 tool_call），而 runner 只有「卡片必须出现」的正向断言（`_interactive_satisfies`），没有「某类卡不得出现」的形态 ⇒ 该真值仍留在散文，不冒充已断言（能力缺口形态同 CH-001 的 suggestion 项）。
 前置: order_count_for_phone(source=13800138000)
+必须成功: order_query
 ```
 真值: ai-chat.handoff-offer
 溯源: xiaobu-ai-handoff-guidance.md 意图过滤防打断；2026-09-18 #4099：补机器计分项 expectations[order_query]（原只有纯散文 ⇒ 恒绿空断言），真值=「明确业务意图必须真的被服务」；「不弹建议卡」那半如实留在散文（runner 无负向卡片断言能力）；2026-09-19（issue #4452 的 burn-down 缴费）：补 `precondition[order_count_for_phone: 13800138000]` —— R1「查最近订单」真正依赖且只读的前置（同 CH-033 先例），有意不给 `expect`（计数随栈而变）。user_inputs / expectations / data_checks 原样未动、无放宽。 ｜ tags: handoff, non_interrupt
@@ -2393,6 +2394,7 @@
 数据: 商家问计件 → 调 piecework_query → 返回计件合计与逐工序明细（工序/数量/金额）
 数据: 工人姓名取自用户输入，用户未说月份时不编造月份（不传 period，按当月）
 数据: 查不到该工人/该月无报工时如实告知，禁止编造计件金额
+必须成功: piecework_query
 ```
 真值: ai-chat.intent-tool-map, ai-chat.tool-classes
 溯源: 2026-09-17 新增（issue #3996，M4-I）：计件工资问答 B 端覆盖（黄金策） ｜ tags: mibao, production, piecework
@@ -8220,6 +8222,7 @@
 前置: order_count_for_phone(source=13800138000)
 禁词（第 2 轮）: 请提供单号、请提供订单号、麻烦提供单号、麻烦提供订单号、是哪一单、哪一笔订单、哪个订单
 必须: {'round': 2, 'text': 'EVAL-MB-ORD-0002'}
+必须成功: order_query
 ```
 真值: ai-chat.context-memory
 溯源: 2026-10-30 新增（issue #8173）：B 端会话级工作记忆（焦点对象）。第 1 轮点名种子内真实订单 EVAL-MB-ORD-0002（tests/agent_eval/fixtures/mibao_eval_seed.sql，张三 13800138000），第 2 轮只靠指代「这单」⇒ 合格行为 = 复用焦点、不再问单号；`want_text` 钉第 2 轮仍出现该订单号，`forbidden_text` 钉第 2 轮不再索要单号（均轮次作用域，避免全程语义假红）。取号 = scripts/next_case_id.py OR（main 001-072 ∪ 全部 open PR）⇒ OR-073。 ｜ tags: order, multi_turn, focus_memory

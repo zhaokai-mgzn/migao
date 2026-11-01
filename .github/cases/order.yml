@@ -4746,6 +4746,10 @@ cases:
       - "这单的明细"
     expectations:
       - tool: order_query
+    # 2026-11-01（issue #8300 自测发现一）：本用例原先只有裸工具名期望 ⇒ 结构性不可失败
+    # （通过 + 无任何可失败断言 + 效果层未触发）。加「真返回」断言：调了 ≠ 成了。
+    must_succeed:
+      - tool: order_query
     want_text:
       - round: 2
         text: "EVAL-MB-ORD-0002"

@@ -1066,6 +1066,10 @@ cases:
     # 判别力边界（照实登记，不冒充已覆盖）：存在性级 —— 证「有查单」，**不**证「查单成功/结果正确」。
     expectations:
       - tool: order_query
+    # 2026-11-01（issue #8300 自测发现一）：本用例原先只有裸工具名期望 ⇒ 结构性不可失败
+    # （通过 + 无任何可失败断言 + 效果层未触发）。加「真返回」断言：调了 ≠ 成了。
+    must_succeed:
+      - tool: order_query
     data_checks:
       # 原两条都是纯散文（**不计分**）—— 保留语义，并如实标注它们**没有被机器断言**：
       - "（散文、**不计分**）order_query/quote 等明确业务意图即使含情绪词也不 offer（judge 白名单）"
@@ -2392,6 +2396,10 @@ cases:
     user_inputs:
       - "王师傅这个月计件做了多少？顺便看下明细"
     expectations:
+      - tool: piecework_query
+    # 2026-11-01（issue #8300 自测发现一）：本用例原先只有裸工具名期望 ⇒ 结构性不可失败
+    # （通过 + 无任何可失败断言 + 效果层未触发）。加「真返回」断言：调了 ≠ 成了。
+    must_succeed:
       - tool: piecework_query
     data_checks:
       - "商家问计件 → 调 piecework_query → 返回计件合计与逐工序明细（工序/数量/金额）"

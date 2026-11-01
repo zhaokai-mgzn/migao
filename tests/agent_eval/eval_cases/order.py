@@ -1463,6 +1463,7 @@ _CASE_OR_073 = EvalCase(
     forbidden_card_text=[],
     forbidden_text=[{'round': 2, 'any_of': ['请提供单号', '请提供订单号', '麻烦提供单号', '麻烦提供订单号', '是哪一单', '哪一笔订单', '哪个订单']}],
     want_text=[{'round': 2, 'text': 'EVAL-MB-ORD-0002'}],
+    must_succeed=[{'tool': 'order_query'}],
     precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
 )
 
