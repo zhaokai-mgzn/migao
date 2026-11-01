@@ -846,7 +846,7 @@
 真值: auth.qr-login-ticket
 溯源: 2026-10-26 新增（issue #7825）：现场 = 顶栏「手机端」二维码只是裸链接（不带登录交接），换浏览器 / App 或本机存储被清后每次扫码都要重新输密码。冻结口径 = 一次性票据（JWT 类型 qr_login、120 秒、兑换即吊销 jti）+ 手机端兑换后与密码登录同一套 30 天会话 + 签发失败降级裸入口 + 启动探针（续期失败原因本地可读）。 ｜ tags: auth, session, qr-login, bmini, admin-web
 
-## B 端小程序域（59 case）
+## B 端小程序域（60 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -1690,6 +1690,19 @@
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-11-01 新增（issue #8307 真机取证：拍照入库点「识别」永久置灰、无进度无超时，2/2 复现）。本单给三步各自封顶 + 分步进度 + 正式版文案收口；真机复测在发布后进行。 ｜ tags: bmini, worker, inbound, timeout
+
+### BM-063. 上传照片：h5 走 Blob 直传，不再依赖 Taro.uploadFile 的裸 XHR（真机卡死的根因） 🔵
+```
+你: 工人在手持机上拍照 / 选图后点「识别」：照片照常上传成功并进入识别；网络真断时给「照片上传超时，请检查网络后重试」，按钮恢复可重试。
+期望: direct_reply
+数据: 判据 1·🔴 有 Blob 时走 FormData 直传（字段名 files、不设 Content-Type），一次都不调用 Taro.uploadFile。红证：改回走 Taro.uploadFile 并把该 mock 设为永不返回 ⇒ frontend/bmini-app/tests/inbound-upload-blob.test.ts 超时红
+数据: 判据 2·🔴 只有 blob: 串时先 fetch 读成 Blob 再直传。红证：跳过 fetch ⇒ 该条红
+数据: 判据 3·🔴 读不到 Blob 时回落 Taro.uploadFile（不静默失败）。红证：去掉回落 ⇒ 该条红
+数据: 判据 4·🔴 响应按服务端 data[0].url 归一，非 JSON 给明确文案。红证：改读 data.url ⇒ 该条红
+跳过: [frontend-contract] 确定性服务层判据（jest），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-11-01 新增（issue #8307 真机复测：超时兜底生效并指认卡点=上传；读码得因 = taro-h5 uploadFile 的 convertObjectUrlToBlob 裸 XHR 无 error 回调）。本单改 Blob 直传，页面与拍照发货共用同一入口。 ｜ tags: bmini, worker, inbound, upload
 
 ## 分类域（3 case）
 
@@ -14153,13 +14166,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：959（活跃 152，跳过 807）
-- tier 分布：smoke 15 / normal 884 / adversarial 33
+- 用例总数：960（活跃 152，跳过 808）
+- tier 分布：smoke 15 / normal 885 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
 - 登录认证域：14
-- B 端小程序域：59
+- B 端小程序域：60
 - 分类域：3
 - 对话边界域：53
 - 跨域：3

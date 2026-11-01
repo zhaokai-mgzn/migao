@@ -67,7 +67,7 @@ describe('withTimeout（上限本身）', () => {
 describe('页面接线（判据 1~3）', () => {
   it('判据 1·三步各自 withTimeout，且各自的上限常量为参', () => {
     expect(PAGE).toMatch(/withTimeout\(\s*decodeBarcodeFromPhoto\(photo\),\s*INBOUND_DECODE_TIMEOUT_MS/)
-    expect(PAGE).toMatch(/withTimeout\(\s*uploadInboundPhoto\(/)
+    expect(PAGE).toMatch(/withTimeout\(\s*uploadInboundPhotoSmart\(/)
     expect(PAGE).toMatch(/INBOUND_UPLOAD_TIMEOUT_MS/)
     expect(PAGE).toMatch(/withTimeout\(\s*recognizeInbound\(payload\),\s*INBOUND_RECOGNIZE_TIMEOUT_MS/)
   })

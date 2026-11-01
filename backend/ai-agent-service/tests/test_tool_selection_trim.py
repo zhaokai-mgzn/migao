@@ -320,9 +320,11 @@ def test_intent_owner_keep_never_removes_a_baseline_tool(monkeypatch):
 
     for skill, message, intent in _OWNER_NET_ADDITIVE_MATRIX:
         baseline = off[(skill, intent, message)]
-        assert baseline is not None, f"{skill}/{intent}: 判据面没有触发裁剪"
+        if baseline is None:  # 裸存在断言是弱断言（tests/unit_ci_workflows/test_weak_assert_blindspots.py）
+            raise AssertionError(f"{skill}/{intent}: 判据面没有触发裁剪")
         plan = _plan(_tool_names(skill), user_message=message, intent=intent)
-        assert plan is not None
+        if plan is None:  # 同上
+            raise AssertionError(f"{skill}/{intent}: 开启属主保底后没有触发裁剪（pool ≤ 上限），判据失效")
         removed = [n for n in baseline if n not in plan]
         assert not removed, (
             f"{skill}/{intent}: 属主保底把本来保留的工具挤掉了 {removed} —— "
