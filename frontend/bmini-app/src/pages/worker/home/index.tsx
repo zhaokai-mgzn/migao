@@ -72,6 +72,9 @@ import {
 export const PAGES_UNREAD_NOTICE = '未能读取本机菜单开关，已按全部菜单显示；若与本机应开的不符，请找管理员'
 import './index.scss'
 
+/** 发货标签页（工人端 `/w/` 的静态页；与 `/b/` 同源 ⇒ 用相对路径，不写死域名） */
+const SHIPMENT_LABEL_PATH = '/b/report/shipment.html'
+
 export default function WorkerHomePage() {
   /** 本机有没有工人身份（本地判据，只决定「渲染工人功能」还是「引导去登录」） */
   const workerReady = hasWorkerSession()
@@ -271,6 +274,24 @@ export default function WorkerHomePage() {
             <View className='worker-home__entry-body'>
               <Text className='worker-home__entry-text'>拍照发货</Text>
               <Text className='worker-home__entry-sub'>拍运单 / 商品标签 ⇒ 生成发货单</Text>
+            </View>
+            <Text className='worker-home__entry-go'>›</Text>
+          </View>
+          ) : null}
+
+          {/* 发货标签（用户 2026-11-01 18:39 裁定）：从终端 ⋮ 菜单搬到这里 —— 页面在 `/w/shipment.html`
+              （终端壳里 window.print() 由原生接管，纸面 50×70；issue #7906：手机端只走 `/b` 命名空间）。与「拍照发货」同一道门控。 */}
+          {showShipment ? (
+          <View
+            className='worker-home__entry'
+            onClick={() => {
+              if (typeof window !== 'undefined') window.location.href = SHIPMENT_LABEL_PATH
+            }}
+          >
+            <View className='worker-home__entry-bar worker-home__entry-bar--b' />
+            <View className='worker-home__entry-body'>
+              <Text className='worker-home__entry-text'>发货标签</Text>
+              <Text className='worker-home__entry-sub'>打一张 50×70 的发货标签</Text>
             </View>
             <Text className='worker-home__entry-go'>›</Text>
           </View>
