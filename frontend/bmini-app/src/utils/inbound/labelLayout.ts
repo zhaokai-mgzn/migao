@@ -28,6 +28,14 @@ import { labelCodePayload } from './shortCode'
 export interface InboundLabelView {
   shortCode?: string | null
   inboundNo?: string | null
+  /**
+   * **商品货号**（`products.sku_code`，例 2659）—— 纸面「货号」印这一行。
+   *
+   * 🔴 与下面的 `skuCode`（规格编码，例 2659-04-28）**不是一回事**：用户 2026-11-01 裁定
+   * 「货号展示商品货号更好，不应该展示 sku 的货号……sku 不要等于货号」。
+   */
+  productCode?: string | null
+  /** **规格编码**（`product_skus.sku_code`：色号 + 门幅的组合，例 2659-04-28） */
   skuCode?: string | null
   productName?: string | null
   colorName?: string | null
@@ -273,8 +281,8 @@ export function layoutInboundLabel(view: InboundLabelView): InboundLabelPlan {
   }
 
   // ── ① 货号（headline）────────────────────────────────────────────────────
-  const skuCode = String(view.skuCode ?? '').trim()
-  if (skuCode) pushRow(`货号 ${skuCode}`, headFont, true, gap)
+  const productCode = String(view.productCode ?? '').trim()
+  if (productCode) pushRow(`货号 ${productCode}`, headFont, true, gap)
 
   // ── ② 色号 / 门幅（全宽；两行内放下）──────────────────────────────────────
   // 🔴 门幅**不并入色号行**（用户 2026-10-26：色号不要有遮挡）—— 两格各自占满整行，
