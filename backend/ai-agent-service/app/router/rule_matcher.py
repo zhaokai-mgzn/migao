@@ -52,7 +52,12 @@ KEYWORD_MAP: dict[IntentType, list[str]] = {
                          # 「加工单」关键词 → 降级 L2 被归到商品域（加工项）→ agent 调
                          # processing_item_query 返回加工项目录（sess_f3c0ee0d2cc342a0）。
                          # 加工单 ≠ 加工项；订单域的概念区分口径在 prompts/order.md。
-                         "加工单", "加工单号"],
+                         "加工单", "加工单号",
+                         # 加工**套件**（issue #8300，PG-064 实测）：与「加工单」同族 —— 缺这条关键词时
+                         # 降级 L2 被判 `product_inquiry`（2026-11-01 run 实测 `Routing to
+                         # 'product_inquiry'` → 执行 `[product]`）⇒ 工人问「店里有哪些加工套件」拿到的是
+                         # 「加工项目录」（`processing_item_query` 顶替；套件工具绑在订单域）。
+                         "加工套件"],
     IntentType.LOGISTICS_TRACK: ["物流", "快递", "到哪了"],
     # 主图/详情图（issue #3942）：此前缺关键词 → 「把主图设成…」降级 L2 误分 general
     # （无 product_manage）→ 主图写能力不可达、PR-026/027 评测不可满足、生产路由不稳。
