@@ -677,6 +677,21 @@ worker-h5 纯函数、承运商 4 条 × 两处入口 + 类级单一真值守卫
 
 ## [Unreleased]
 
+### 问「店里的加工套件」不再被当成商品咨询；问「订单量环比」不再答成销售额（2026-11-01，issue #8300）
+
+- **改前**：L1 关键词表只有「加工单」没有「加工套件」⇒ 「我们店里的加工套件现在有哪些？」
+  降级 L2 被判成**商品咨询**（`product_inquiry` → `[product]`），工人拿到的是**加工项目录**
+  （`processing_item_query` 顶替 `processing_order_set_query`）。
+  另一处：`sales_attribution`（按商品聚合**销售额**的归因工具）没有对「订单量/单数环比」的互斥条款
+  ⇒ 「这周订单比上周怎么样」被它接走、答成销售额对比，`dashboard_stats(trend_compare)` 一次没调。
+- **改后**：「加工套件」进 L1 关键词表 → 确定性路由到订单域（套件工具所在域）；
+  `sales_attribution` 描述前置一条【不适用】：「只问订单量/单数环比（不落到商品）⇒ 用
+  `dashboard_stats(action=trend_compare)`」。
+- 判据：`backend/ai-agent-service/tests/test_rule_matcher.py`（`TestProcessingOrderRouting` 新增
+  「加工套件 / 套件扫码进度」两条 + 原有「加工项仍走商品域」负控）与
+  `tests/test_sales_attribution.py::test_description_excludes_plain_order_count_comparison`
+  （红证：把描述改动 stash 回去 ⇒ 该条当场红）。
+
 ### 手持机 `/b/` 工人端不再白屏：H5 产物统一降到 ES2020（2026-11-01，issue #8302）
 
 - **改前**：`/b/` 的构建产物里混进了 ES2021 语法（依赖 `query-string@9.5` 的 `&&=`，`node_modules` 不进 babel）⇒ 商米手持机的系统 WebView 是 **Chrome 83（ES2020 上限）**，整包 SyntaxError、**整屏白**；桌面 / 新机型一切正常，所以"我这儿能打开"永远发现不了。拍照入库 / 补打入库标签 / 拍照发货（只在 `/b/`）在真机上全部走不到。

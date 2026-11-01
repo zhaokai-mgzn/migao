@@ -1,4 +1,4 @@
-# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004, PR-013, DA-003, PP-002, OR-014, CH-010, PG-017, CU-008, CU-001, CU-002, ST-002, ST-001, HR-009
+# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004, PR-013, DA-003, PP-002, OR-014, CH-010, PG-017, PG-064, CU-008, CU-001, CU-002, ST-002, ST-001, HR-009
 """规则匹配器单元测试（app/router/rule_matcher.py）
 
 覆盖：_extract_text / RuleMatcher.match 关键词优先级 / 正则规则 / 未命中。
@@ -341,6 +341,23 @@ class TestProcessingOrderRouting:
         result = self._match("查一下有哪些加工项")
         assert result is not None
         assert result.intent == IntentType.PRODUCT_INQUIRY
+
+    # ── 加工**套件**（issue #8300，PG-064 实测）──────────────────────────────
+    # 病灶：L1 只有「加工单」没有「加工套件」⇒ 降级 L2 被判 `product_inquiry`
+    # （2026-11-01 run 41258535162 系列实测：`Routing to 'product_inquiry'` → 执行 `[product]`）。
+    # 后果叠加读面裁剪后更硬：`processing_order_set_query` 不在 product 的声明面 ⇒ 工人问
+    # 「店里的加工套件有哪些」得到的是「加工项目录」（`processing_item_query` 顶替）。
+    def test_processing_order_set_routes_order(self):
+        """「加工套件」→ ORDER_QUERY（套件工具绑在订单域）。"""
+        result = self._match("我们店里的加工套件现在有哪些？")
+        assert result is not None
+        assert result.intent == IntentType.ORDER_QUERY
+
+    def test_processing_order_set_scan_progress_routes_order(self):
+        """「套件扫码进度」同样落订单域（套件工具的 scan_progress action）。"""
+        result = self._match("加工套件 JG-20261101-0001 的扫码进度到哪了")
+        assert result is not None
+        assert result.intent == IntentType.ORDER_QUERY
 
     def test_processing_item_manage_unchanged(self):
         """回归：加工项管理仍走 PROCESSING_MANAGE（PP-006）。"""
