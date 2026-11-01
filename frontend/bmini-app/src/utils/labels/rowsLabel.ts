@@ -64,6 +64,8 @@ const ROW_GAP_MM = 0.6
 const LABEL_COL_MM = 12
 const COL_GAP_MM = 1
 const CODE_LINE_MM = 5
+/** 底部安全白边（mm）：标签末端（间隙/剥离区）印不出来 ⇒ 纸尾要留白，否则最后一行被切（真机实测 1.5mm 不够） */
+const BOTTOM_SAFE_MM = 5
 
 /** 字体（pt）—— 与 `frontend/worker-h5/src/ship-label.css` 的 8pt 正文同档（介质 `minFontPt` 是 9pt 下限值，见下）。 */
 const TITLE_PT = 8
@@ -148,6 +150,7 @@ export function layoutRowsLabel(spec: RowsLabelSpec): InboundLabelPlan {
   const rowPx = fontPxOf(ROW_PT, dpi)
   const codePx = fontPxOf(CODE_PT, dpi)
 
+  const bottomSafe = Math.round(BOTTOM_SAFE_MM * pxPerMm)
   const minHeightPx = spec.fixedLengthMm
     ? Math.round(spec.fixedLengthMm * pxPerMm)
     : Math.round(range.minMm * pxPerMm)
@@ -180,7 +183,7 @@ export function layoutRowsLabel(spec: RowsLabelSpec): InboundLabelPlan {
     const truncated = fittedValue?.truncated === true
     const blockHeight = lines.length * rowLine
     // 装不下上限纸长（且要给底部短码留位）⇒ 停止追加并**可见登记**（不静默把后面的行裁掉）
-    if (y + blockHeight > maxHeightPx - padding - codeReserve) {
+    if (y + blockHeight > maxHeightPx - bottomSafe - codeReserve) {
       truncatedByHeight = true
       break
     }
@@ -197,7 +200,7 @@ export function layoutRowsLabel(spec: RowsLabelSpec): InboundLabelPlan {
     warnings.push('内容超出纸长上限：后面的行未印（请拆单或精简备注）')
   }
 
-  const contentHeightPx = Math.ceil(y + padding + codeReserve)
+  const contentHeightPx = Math.ceil(y + bottomSafe + codeReserve)
   let heightPx = spec.fixedLengthMm
     ? minHeightPx
     : Math.min(Math.max(contentHeightPx, minHeightPx), maxHeightPx)
@@ -208,7 +211,7 @@ export function layoutRowsLabel(spec: RowsLabelSpec): InboundLabelPlan {
   if (shortCode !== '') {
     const textWidth = estimateTextWidth(shortCode, codePx)
     const x = Math.max(padding, Math.round((widthPx - textWidth) / 2))
-    const codeY = Math.max(padding, heightPx - padding - codeLine)
+    const codeY = Math.max(padding, heightPx - bottomSafe - codeLine)
     ops.push(textOp(shortCode, x, codeY, codePx, contentWidth, true, false))
   }
 
