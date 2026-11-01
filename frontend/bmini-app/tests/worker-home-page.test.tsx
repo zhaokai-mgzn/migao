@@ -138,6 +138,13 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
     // 红证：身份卡改读 `getCachedWorker()`（不调服务端）⇒ 本断言收到 0 次调用（红）
   })
 
+  it('🔴 不渲染「工人功能」分组小标题（2026-11-01 用户逐字：小字可以移除）', async () => {
+    await renderLoggedIn()
+    expect(screen.queryByText('工人功能')).toBeNull()
+    // 删的是标题，不是能力：入口照旧在（把入口一起删掉 ⇒ 本断言红）
+    expect(screen.getByText('拍照入库')).toBeTruthy()
+  })
+
   it('工人功能入口各自跳对路由（都走 gaps.ts 的路由常量，不写字面量）', async () => {
     await renderLoggedIn()
 
@@ -261,6 +268,8 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
 
   // ── issue #7921：两条只读名单入口上的「待处理数」（红色数字） ──
   it('🔴 待处理数 = 服务端列表行数（>0 才显示红色数字）', async () => {
+    // 计数**等菜单落定**才取（真机读数 2026-11-01：fail-open 期按全开去请求 ⇒ 没有该页权限的工人吃 403）
+    mockPages.mockResolvedValue({ pages: ['report', 'to_ship', 'rework'], unread: false, unauthorized: false })
     mockShipmentOrders.mockResolvedValue({ success: true, data: { items: [{}, {}] }, message: '' })
     mockReworkOrders.mockResolvedValue({
       success: true,
@@ -274,6 +283,7 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
   })
 
   it('🔴 读不到 / 没有待处理 ⇒ 不显示数字（绝不冒充 0）', async () => {
+    mockPages.mockResolvedValue({ pages: ['report', 'to_ship', 'rework'], unread: false, unauthorized: false })
     mockShipmentOrders.mockResolvedValue({ success: false, message: '网络抖了一下' })
     mockReworkOrders.mockResolvedValue({ success: false, message: '网络抖了一下' })
     await renderLoggedIn()
@@ -282,4 +292,50 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
     expect(screen.queryByTestId('worker-home-badge-to-ship')).toBeNull()
     expect(screen.queryByTestId('worker-home-badge-rework')).toBeNull()
   })
+})
+
+// ── 真机读数 2026-11-01：首页给没有该页权限的工人打 403 → 弹「无权限访问」 ──────────────
+// 王建国 W2005（菜单 = 报工 + 计件）一进首页就有 `GET /api/worker/production/rework-orders` 403：
+// 菜单还没读回来时 `menuVisible` 是 fail-open（全开）⇒ 计数 effect 按「全开」发请求，
+// 而服务端的 `rework` 准入是真的 ⇒ 403 ⇒ `request.ts` 弹「无权限访问」。
+// 计数只是补充信息：等菜单落定再取，不是把入口挡掉。
+test('菜单还没读回来时，首页不得按 fail-open 去打会 403 的计数端点', async () => {
+  jest.clearAllMocks()
+  ;(Taro as any).__clearStorage()
+  let resolvePages: ((v: any) => void) | null = null
+  mockPages.mockReturnValue(new Promise((resolve) => { resolvePages = resolve }))
+  mockReworkOrders.mockResolvedValue({ success: true, data: { orders: [] } })
+  mockShipmentOrders.mockResolvedValue({ success: true, data: { items: [] } })
+  setWorkerSessionId(WORKER.session_id)
+  mockFetch.mockResolvedValue({ success: true, data: WORKER })
+
+  render(<WorkerHomePage />)
+  await screen.findByText('工号 G001')
+  await act(async () => {})
+
+  expect(mockReworkOrders).not.toHaveBeenCalled()
+  expect(mockShipmentOrders).not.toHaveBeenCalled()
+
+  // 菜单落定：这一位没有 rework / to_ship ⇒ 仍然不该打（打了就是 403）
+  await act(async () => {
+    resolvePages!({ pages: ['report', 'piecework'], unread: false })
+  })
+  expect(mockReworkOrders).not.toHaveBeenCalled()
+  expect(mockShipmentOrders).not.toHaveBeenCalled()
+})
+
+test('菜单里真开了该页 ⇒ 计数照旧要取（不是把功能关掉）', async () => {
+  jest.clearAllMocks()
+  ;(Taro as any).__clearStorage()
+  mockPages.mockResolvedValue({ pages: ['report', 'rework'], unread: false })
+  mockReworkOrders.mockResolvedValue({ success: true, data: { orders: [{}, {}] } })
+  mockShipmentOrders.mockResolvedValue({ success: true, data: { items: [] } })
+  setWorkerSessionId(WORKER.session_id)
+  mockFetch.mockResolvedValue({ success: true, data: WORKER })
+
+  render(<WorkerHomePage />)
+  await screen.findByText('工号 G001')
+  await act(async () => {})
+  await waitFor(() => expect(mockReworkOrders).toHaveBeenCalledTimes(1))
+  expect(mockShipmentOrders).not.toHaveBeenCalled()
 })

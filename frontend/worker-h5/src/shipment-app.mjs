@@ -11,6 +11,7 @@
 //      打印态由 `ship-label.css` 隔离（只有标签上纸）。
 
 import { createApi, SESSION_EXPIRED } from './api.mjs'
+import { installFlexGapFallback } from './flex-gap.mjs'
 import { renderReadyOrders, renderShipLabel, shipLabelLengthMm, shipLabelPageRule } from './shipment.mjs'
 
 /** 登录页（同源静态页；本页未登录时的出口）。 */
@@ -217,6 +218,8 @@ export function createShipmentApp({ doc, api, win = globalThis, replace = null }
 
 /** 浏览器入口（`shipment.html` 用 `<script type="module">` 直接加载，无构建步骤）。 */
 export async function boot() {
+  // WebView 83 没有 flex `gap`（issue #8336 / UI-148）⇒ 先量一次再上兜底类
+  installFlexGapFallback(globalThis.document)
   const api = createApi({ storage: globalThis.localStorage, deviceLabel: 'H5' })
   const app = createShipmentApp({ doc: globalThis.document, api })
   await app.boot()

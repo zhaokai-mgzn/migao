@@ -67,6 +67,7 @@ jest.mock('../src/utils/inbound/barcodeDecode', () => ({
 jest.mock('../src/services/workerInboundService', () => ({
   getInboundLabel: jest.fn(),
   uploadInboundPhoto: jest.fn(),
+  uploadInboundPhotoSmart: jest.fn(),
 }))
 
 import Taro from '@tarojs/taro'
@@ -77,7 +78,7 @@ import {
   searchStockBatches,
   submitBatchCorrection,
 } from '../src/services/workerStockService'
-import { getInboundLabel, uploadInboundPhoto } from '../src/services/workerInboundService'
+import { getInboundLabel, uploadInboundPhotoSmart } from '../src/services/workerInboundService'
 import { decodeBarcodeFromPhoto } from '../src/utils/inbound/barcodeDecode'
 import { STOCK_RECOGNIZE_MANUAL_HINT } from '../src/utils/workerStockRecognize'
 import { STOCK_WORKER_LOGIN_REQUIRED, WORKER_LOGIN_ROUTE } from '../src/utils/inbound/gaps'
@@ -89,7 +90,7 @@ const mockSearch = searchStockBatches as jest.Mock
 const mockSubmit = submitBatchCorrection as jest.Mock
 const mockRecognize = recognizeBatchNo as jest.Mock
 const mockDecode = decodeBarcodeFromPhoto as jest.Mock
-const mockUpload = uploadInboundPhoto as jest.Mock
+const mockUpload = uploadInboundPhotoSmart as jest.Mock
 const mockLabel = getInboundLabel as jest.Mock
 const mockChooseImage = Taro.chooseImage as jest.Mock
 const mockShowModal = Taro.showModal as jest.Mock

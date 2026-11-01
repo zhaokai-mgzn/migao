@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: bmini（源: cases/bmini.yml，56 条）
+# 域: bmini（源: cases/bmini.yml，60 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -1014,6 +1014,78 @@ _CASE_BM_059 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── BM-060 [NORMAL] 报工详情页成品入库卡 + 50×70 入库标签打印（数据只来自服务端 finished_inbound；打印走行式标签通道；小程序离屏画布）（源: cases/bmini.yml）──
+_CASE_BM_060 = EvalCase(
+    id='BM-060',
+    legacy_id='',
+    title='报工详情页成品入库卡 + 50×70 入库标签打印（数据只来自服务端 finished_inbound；打印走行式标签通道；小程序离屏画布）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工人扫「套 × 部位」码 → 报完最后一道 → 本页出现「成品入库 · 仓位 A-01」卡：质检结论、入库单号、标签行（品名/色号/入库日期/数量）与短码；点「打印入库标签（50×70）」经小程序 BLE / 手持终端 / 浏览器蓝牙打出 50×70 标签；服务端没给 finished_inbound 时整卡不渲染。'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·🔴 数据只来自服务端：卡片与标签行逐字取 finished_inbound（bin_code / inbound_no / label.rows / label.short_code / quality），端侧不拼业务字段；缺值按「未分配」/「—」/ 无记录=正常。红证：把行数据改成端侧常量或补字段 ⇒ frontend/bmini-app/tests/rows-label-layout.test.ts 的 L2 与 worker-report-page.test.tsx 的 ⑦ 判红', '判据 2·🔴 纸型 50×70 固定：布局只从 label-50x70 介质取纸型 / 像素口径，成品标签高 = 70mm；宽度与纸长不另写一份。红证：删掉 fixedLengthMm ⇒ L2 红；在布局里写像素字面量 ⇒ tests/inbound-print-geometry-single-source.test.ts 的 C2b 红', '判据 3·🔴 送打印只走 printRowsLabel：顺序 = 能力探测 → 渲染 → 送打印机（这两类纸无服务端留痕端点）；能力不可用 ⇒ 按钮 disabled 且先给可行动文案。红证：把按钮改成点了才判 / 页面直连 .print ⇒ inbound-print-channel.test.ts 的 D7 红；worker-report-page.test.tsx 的 ⑨ 红', '判据 4·小程序可打印：无 DOM 时画布工厂改用 Taro.createOffscreenCanvas（h5 仍用 DOM canvas）；取不到位图 ⇒ 渲染抛错（不静默打印白图）。红证：去掉离屏画布分支 ⇒ worker-report-page.test.tsx 的 ⑦ 渲染失败；去掉 requirePixels ⇒ rows-label-layout.test.ts 的 L5 红'],
+    skip_reason='[frontend-contract] 确定性页面 / 版面判据（jest: rows-label-layout / worker-report-page / inbound-print-channel），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'inbound', 'print', 'finished-goods', 'weapp'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── BM-061 [NORMAL] 待发货单整套出库单（发货联）50×70 预览 + 打印 —— 行清单与 /w/ 同源，仍不新增发货写路径（源: cases/bmini.yml）──
+_CASE_BM_061 = EvalCase(
+    id='BM-061',
+    legacy_id='',
+    title='待发货单整套出库单（发货联）50×70 预览 + 打印 —— 行清单与 /w/ 同源，仍不新增发货写路径',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工人在「待发货单」列表点某单「发货联」→ 屏上出现 50×70 纸面的行清单（订单号 / 收货人 / 电话 / 地址 / 帘种 / 安装小区 / 安装位置 / 物流类型 / 物流公司 / 下单日期 / 套数 / 备注）→ 点「打印发货联（50×70）」经共享行式标签通道打出整套出库单；缺值印 —、可选附注缺值整行不印；本页仍不发货。'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·🔴 行清单与 /w/ 逐行等价：bmini buildShipLabelRows 与 frontend/worker-h5/src/shipment.mjs 的 buildShipLabelRows 对同一组 fixture（全字段 / 最小 / 可选全缺 / 时区 / 缺值）逐行相等。红证：任一侧改行序 / 缺值规则 / 日期 ⇒ frontend/bmini-app/tests/ship-label-rows-parity.test.ts 红（逐字段点名）', '判据 2·🔴 日期按 Asia/Shanghai：16:30Z ⇒ 次日；不按 UTC 切。红证：改成本地 / UTC 取日 ⇒ parity P4 与 worker-shipment-orders-page.test.tsx 的 ⑧ 红', '判据 3·🔴 纸长按内容撑开 70~150mm、50mm 宽、像素口径只取介质矩阵；长内容可见省略 / 折行，超上限停止追加并给 warnings。红证：把纸长写死 / 删 warnings ⇒ rows-label-layout.test.ts 的 L3 红', '判据 4·🔴 仍然不新增发货写路径：页面只读列表 + 打纸，不调 ship 端点；送打印只走 printRowsLabel（页面无 .print）。红证：页面里加 .print 直连 ⇒ inbound-print-channel 的 D7 红；加 ship 调用 ⇒ 现有测试的 mock 服务导出不存在即红'],
+    skip_reason='[frontend-contract] 确定性页面 / 跨端行清单判据（jest: ship-label-rows-parity / worker-shipment-orders-page / rows-label-layout），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'worker', 'shipment', 'label', 'print'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── BM-062 [NORMAL] 拍照入库识别链三步各自封顶 + 分步进度 —— 不许把工人锁死在灰按钮上（源: cases/bmini.yml）──
+_CASE_BM_062 = EvalCase(
+    id='BM-062',
+    legacy_id='',
+    title='拍照入库识别链三步各自封顶 + 分步进度 —— 不许把工人锁死在灰按钮上',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工人在真机点「识别」后，屏上依次出现「正在读取照片… / 正在上传照片… / 正在识别标签…」；任一步超过上限 ⇒ 按钮恢复、给出点名那一步的人话错误，可重试，也可改用扫码或手工录入。'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·🔴 三步各自封顶（读图 15s / 上传 20s / 识别 60s），超时文案点名那一步。红证：删掉任一处 withTimeout 接线 ⇒ frontend/bmini-app/tests/inbound-recognize-timeout.test.ts 的「判据 1」红', "判据 2·🔴 超时后按钮必须恢复：finally 里 setBusy(false) 且 setProgress('')。红证：去掉 setProgress('') ⇒ 「判据 2」红", '判据 3·🔴 识别中要有可见进度：data-testid=inbound-progress 仅在 busy 且 progress 非空时渲染。红证：删掉该节点 ⇒ 「判据 3」红', '判据 4·🔴 正式版文案不许出现型号 / 品牌 / 选机指令（DP235S、「DP 开头」、德佟）。红证：把任一句改回 ⇒ 文案组判据点名那个文件'],
+    skip_reason='[frontend-contract] 确定性页面接线判据（jest），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'worker', 'inbound', 'timeout'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── BM-063 [NORMAL] 上传照片：h5 走 Blob 直传，不再依赖 Taro.uploadFile 的裸 XHR（真机卡死的根因）（源: cases/bmini.yml）──
+_CASE_BM_063 = EvalCase(
+    id='BM-063',
+    legacy_id='',
+    title='上传照片：h5 走 Blob 直传，不再依赖 Taro.uploadFile 的裸 XHR（真机卡死的根因）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工人在手持机上拍照 / 选图后点「识别」：照片照常上传成功并进入识别；网络真断时给「照片上传超时，请检查网络后重试」，按钮恢复可重试。'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·🔴 有 Blob 时走 FormData 直传（字段名 files、不设 Content-Type），一次都不调用 Taro.uploadFile。红证：改回走 Taro.uploadFile 并把该 mock 设为永不返回 ⇒ frontend/bmini-app/tests/inbound-upload-blob.test.ts 超时红', '判据 2·🔴 只有 blob: 串时先 fetch 读成 Blob 再直传。红证：跳过 fetch ⇒ 该条红', '判据 3·🔴 读不到 Blob 时回落 Taro.uploadFile（不静默失败）。红证：去掉回落 ⇒ 该条红', '判据 4·🔴 响应按服务端 data[0].url 归一，非 JSON 给明确文案。红证：改读 data.url ⇒ 该条红'],
+    skip_reason='[frontend-contract] 确定性服务层判据（jest），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'worker', 'inbound', 'upload'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_BM_001,
     _CASE_BM_002,
@@ -1071,4 +1143,8 @@ CASES = (
     _CASE_BM_057,
     _CASE_BM_058,
     _CASE_BM_059,
+    _CASE_BM_060,
+    _CASE_BM_061,
+    _CASE_BM_062,
+    _CASE_BM_063,
 )

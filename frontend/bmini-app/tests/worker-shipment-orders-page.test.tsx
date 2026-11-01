@@ -1,4 +1,4 @@
-// case_ids: BM-025, BM-034, BM-036, BM-051
+// case_ids: BM-025, BM-034, BM-036, BM-051, BM-061
 /**
  * 工人**待发货单**列表页（issue #7806 P1a；页面 = `src/pages/worker/shipment-orders/index.tsx`）
  *
@@ -52,15 +52,37 @@ jest.mock('../src/services/workerService', () => ({
   fetchCurrentWorker: jest.fn(),
 }))
 
+// 发货联（50×70）打印：只经 `printRowsLabel`；通道与能力用替身钉住「不可用不点」。
+jest.mock('../src/utils/inbound/terminalTransport', () => ({
+  createPrintTransport: jest.fn(),
+}))
+jest.mock('../src/utils/inbound/labelPrint', () => ({
+  printRowsLabel: jest.fn(),
+}))
+jest.mock('../src/utils/inbound/printCapability', () => ({
+  probePrintCapability: jest.fn(() => ({
+    ok: true,
+    readyHint: '本机可打印：点「打印标签」选好打印机',
+    hint: '',
+  })),
+  printFailureHint: jest.fn((reason: string) => `打印失败：${reason}`),
+}))
+
 import Taro from '@tarojs/taro'
 import WorkerShipmentOrdersPage, { EMPTY_HINT } from '../src/pages/worker/shipment-orders/index'
 import { listReadyShipmentOrders } from '../src/services/workerShipmentOrdersService'
 import { fetchCurrentWorker } from '../src/services/workerService'
+import { printRowsLabel } from '../src/utils/inbound/labelPrint'
+import { createPrintTransport } from '../src/utils/inbound/terminalTransport'
+import { probePrintCapability } from '../src/utils/inbound/printCapability'
 import { WORKER_TAB_LOGIN_ROUTE } from '../src/utils/inbound/gaps'
 import { clearWorkerSession, getWorkerSessionId, setWorkerSessionId } from '../src/utils/workerSession'
 
 const mockList = listReadyShipmentOrders as jest.Mock
 const mockFetch = fetchCurrentWorker as jest.Mock
+const mockPrintRows = printRowsLabel as jest.Mock
+const mockCreateTransport = createPrintTransport as jest.Mock
+const mockProbe = probePrintCapability as jest.Mock
 
 const WORKER = {
   session_id: 'sess-worker-1',
@@ -86,6 +108,10 @@ const READY_ROW = {
   completed_sets: 3,
   processing_order_no: 'JG-20260901-001',
   remark: '样品货款 600 元',
+  // 随货标识（issue #7856，服务端已下发）：发货联的帘种 / 安装信息行
+  curtain_types: '布帘/纱帘',
+  install_community: '珠江路小区',
+  install_rooms: '客厅\n主卧',
 }
 
 /** 半完工行：服务端**不该**给（给了也照实渲染、不许前端偷偷修好或丢掉）。 */
@@ -114,6 +140,17 @@ describe('WorkerShipmentOrdersPage 待发货单列表（issue #7806 P1a）', () 
     setWorkerSessionId(WORKER.session_id)
     mockFetch.mockResolvedValue({ success: true, data: WORKER })
     mockList.mockResolvedValue(okPage([READY_ROW]))
+    mockCreateTransport.mockResolvedValue({
+      id: 'fake-rows',
+      label: '测试打印机',
+      print: jest.fn(),
+    })
+    mockPrintRows.mockResolvedValue({ ok: true, transportId: 'fake-rows', transportLabel: '测试打印机' })
+    mockProbe.mockReturnValue({
+      ok: true,
+      readyHint: '本机可打印：点「打印标签」选好打印机',
+      hint: '',
+    })
   })
 
   afterEach(() => {
@@ -239,5 +276,102 @@ describe('WorkerShipmentOrdersPage 待发货单列表（issue #7806 P1a）', () 
 
     fireEvent.click(screen.getByTestId('shipment-orders-refresh'))
     await waitFor(() => expect(mockList).toHaveBeenCalledTimes(2))
+  })
+
+  it('⑦ 发货联：预览 = /w/ 同一份行清单（含随货标识），打印走 printRowsLabel（50×70）', async () => {
+    renderPage()
+    await screen.findByTestId('shipment-orders-list')
+
+    fireEvent.click(screen.getByTestId('shipment-orders-label-0'))
+    const preview = await screen.findByTestId('shipment-orders-label-preview')
+    expect(preview.textContent).toContain('发货联 · 0901-000084')
+
+    const rows = screen.getByTestId('shipment-orders-label-rows').textContent ?? ''
+    for (const label of [
+      '订单号',
+      '收货人',
+      '电话',
+      '地址',
+      '帘种',
+      '安装小区',
+      '安装位置',
+      '物流类型',
+      '物流公司',
+      '下单日期',
+      '套数',
+      '备注',
+    ]) {
+      expect(rows).toContain(label)
+    }
+    expect(rows).toContain('布帘/纱帘')
+    expect(rows).toContain('珠江路小区')
+    expect(rows).toContain('物流专线')
+    expect(rows).toContain('四季安')
+    expect(rows).toContain('3 套（全完工）')
+    expect(rows).toContain('2026-09-01')
+
+    fireEvent.click(screen.getByTestId('shipment-orders-label-print'))
+    await waitFor(() => expect(mockPrintRows).toHaveBeenCalledTimes(1))
+    const deps = mockPrintRows.mock.calls[0][0]
+    expect(deps.capability.ok).toBe(true)
+    expect(typeof deps.render).toBe('function')
+    await waitFor(() =>
+      expect(screen.getByTestId('shipment-orders-label-notice').textContent).toContain('已送出打印'),
+    )
+  })
+
+  it('⑧ 发货联下单日期按 Asia/Shanghai 取日（16:30Z ⇒ 次日，不按 UTC 切）', async () => {
+    mockList.mockResolvedValue(
+      okPage([{ ...READY_ROW, created_at: '2026-09-01T16:30:00Z' }]),
+    )
+    renderPage()
+    await screen.findByTestId('shipment-orders-list')
+    fireEvent.click(screen.getByTestId('shipment-orders-label-0'))
+
+    await screen.findByTestId('shipment-orders-label-preview')
+    const rows = screen.getByTestId('shipment-orders-label-rows').textContent ?? ''
+    expect(rows).toContain('2026-09-02')
+    expect(rows).not.toContain('2026-09-01')
+  })
+
+  it('⑨ 可选附注缺值 ⇒ 发货联整行不印（不拿「帘种 —」白吃 50mm 版心）', async () => {
+    mockList.mockResolvedValue(
+      okPage([
+        {
+          ...READY_ROW,
+          curtain_types: null,
+          install_community: '  ',
+          install_rooms: '',
+          remark: '',
+        },
+      ]),
+    )
+    renderPage()
+    await screen.findByTestId('shipment-orders-list')
+    fireEvent.click(screen.getByTestId('shipment-orders-label-0'))
+
+    await screen.findByTestId('shipment-orders-label-preview')
+    const rows = screen.getByTestId('shipment-orders-label-rows').textContent ?? ''
+    for (const optional of ['帘种', '安装小区', '安装位置', '备注']) {
+      expect(rows).not.toContain(optional)
+    }
+  })
+
+  it('⑩ 本机不能打印 ⇒ 发货联打印按钮 disabled + 先给可行动文案（不点了才失败）', async () => {
+    mockProbe.mockReturnValueOnce({
+      ok: false,
+      reason: 'insecure-context',
+      hint: '当前地址不是 HTTPS，手机不能直连打印机',
+      readyHint: '',
+    })
+    renderPage()
+    await screen.findByTestId('shipment-orders-list')
+    fireEvent.click(screen.getByTestId('shipment-orders-label-0'))
+
+    const button = await screen.findByTestId('shipment-orders-label-print')
+    expect((button as any).disabled).toBe(true)
+    expect(screen.getByTestId('shipment-orders-label-capability').textContent).toContain('HTTPS')
+    fireEvent.click(button)
+    expect(mockPrintRows).not.toHaveBeenCalled()
   })
 })

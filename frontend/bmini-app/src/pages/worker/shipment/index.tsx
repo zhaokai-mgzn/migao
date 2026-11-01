@@ -46,7 +46,7 @@ import {
   type ShipmentView,
   type UncertainCell,
 } from '../../../services/workerShipmentService'
-import { uploadInboundPhoto } from '../../../services/workerInboundService'
+import { uploadInboundPhotoSmart } from '../../../services/workerInboundService'
 import { scanResolve } from '../../../services/productionService'
 import { SHIPMENT_WORKER_LOGIN_REQUIRED, WORKER_TAB_LOGIN_ROUTE } from '../../../utils/inbound/gaps'
 import { MAX_INBOUND_PHOTOS } from '../../../utils/inbound/recognizeFlow'
@@ -133,7 +133,7 @@ export default function WorkerShipmentPage() {
     try {
       const urls: string[] = []
       for (const photo of photos) {
-        const uploaded = await uploadInboundPhoto(String(photo.tempFilePath || photo.file || ''))
+        const uploaded = await uploadInboundPhotoSmart(photo)
         if (!uploaded.success || !uploaded.data?.url) {
           throw new Error(uploaded.message || '照片上传失败')
         }
