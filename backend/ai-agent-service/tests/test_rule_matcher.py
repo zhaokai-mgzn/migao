@@ -85,18 +85,21 @@ class TestMatch:
     # 跨期算术必须由工具确定性计算（trend_compare），路由要确定性落到看板域。
     def test_week_over_week_order_comparison_routes_dashboard(self):
         result = self._match("这周订单比上周怎么样？")
-        assert result is not None
+        if result is None:  # 裸存在断言是弱断言（tests/unit_ci_workflows/test_weak_assert_blindspots.py）
+            raise AssertionError("「这周订单比上周」没有命中任何路由 —— 判据面失效")
         assert result.intent == IntentType.DASHBOARD
 
     def test_mom_comparison_routes_dashboard(self):
         result = self._match("本月和上个月环比一下")
-        assert result is not None
+        if result is None:  # 同上
+            raise AssertionError("「本月和上个月环比」没有命中任何路由 —— 判据面失效")
         assert result.intent == IntentType.DASHBOARD
 
     def test_plain_week_order_query_stays_order_query(self):
         """负控：只说「上周的订单」（无跨期比较词）仍是查订单，不许被环比关键词抢走。"""
         result = self._match("查一下上周的订单")
-        assert result is not None
+        if result is None:  # 同上
+            raise AssertionError("「查一下上周的订单」没有命中任何路由 —— 判据面失效")
         assert result.intent == IntentType.ORDER_QUERY
 
     def test_notification_mark_read_matches_notification(self):
@@ -371,13 +374,15 @@ class TestProcessingOrderRouting:
     def test_processing_order_set_routes_order(self):
         """「加工套件」→ ORDER_QUERY（套件工具绑在订单域）。"""
         result = self._match("我们店里的加工套件现在有哪些？")
-        assert result is not None
+        if result is None:  # 裸存在断言是弱断言（tests/unit_ci_workflows/test_weak_assert_blindspots.py）
+            raise AssertionError("「加工套件」没有命中任何路由 —— 判据面失效")
         assert result.intent == IntentType.ORDER_QUERY
 
     def test_processing_order_set_scan_progress_routes_order(self):
         """「套件扫码进度」同样落订单域（套件工具的 scan_progress action）。"""
         result = self._match("加工套件 JG-20261101-0001 的扫码进度到哪了")
-        assert result is not None
+        if result is None:  # 同上
+            raise AssertionError("「套件扫码进度」没有命中任何路由 —— 判据面失效")
         assert result.intent == IntentType.ORDER_QUERY
 
     def test_processing_item_manage_unchanged(self):

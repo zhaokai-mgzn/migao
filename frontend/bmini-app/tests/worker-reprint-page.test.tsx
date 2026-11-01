@@ -194,7 +194,7 @@ describe('工人拍照补打页', () => {
   it('P10 拍照步文案是给工人看的纯文本（无 markdown 标记、无研发术语，issue #7316）', () => {
     render(<WorkerReprintPage />)
     const photo = screen.getByTestId('reprint-step-photo').textContent || ''
-    expect(photo).toContain('手机当场就能认出来')
+    expect(photo).toContain('请把二维码拍清楚')
     expect(photo).toContain('手输短码')
     // 🔴 红证：写回 `**不会**` ⇒ 星号上屏，本断言当场红（同 worker-copy-plain-text-guard.test.ts）
     expect(photo).not.toContain('*')
