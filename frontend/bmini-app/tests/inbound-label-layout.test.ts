@@ -22,7 +22,8 @@ const GEOMETRY = inboundLabelGeometry()
 const FULL_VIEW = {
   shortCode: 'ABCD2345',
   inboundNo: 'RK-20260926-0001',
-  skuCode: 'MG-1001',
+  productCode: 'MG-1001',
+  skuCode: 'MG-1001-01-28',
   productName: '遮光布',
   colorName: '米白',
   doorWidth: '280cm',
@@ -237,5 +238,13 @@ describe('入库标签版面（50×80mm，issue #7820）', () => {
     const black = calls.filter((c) => c.kind === 'rect').length
     // 只有「铺底 + 缺码占位白框 + 分隔线」三次矩形，没有任何二维码模块
     expect(black).toBe(3)
+  })
+
+  it('C9 纸面「货号」印的是**商品货号**，不是 SKU 的规格编码（用户 2026-11-01 裁定）', () => {
+    // 🔴 红证：把 `pushRow(\`货号 ${skuCode}\`)` 改回去 ⇒ 本判据必红
+    const plan = layoutInboundLabel({ ...FULL_VIEW, productCode: '2659', skuCode: '2659-04-28' } as any)
+    const texts = plan.ops.filter((op) => op.kind === 'text').map((op: any) => op.text)
+    expect(texts).toContain('货号 2659')
+    expect(texts.some((t: string) => t.includes('2659-04-28'))).toBe(false)
   })
 })
