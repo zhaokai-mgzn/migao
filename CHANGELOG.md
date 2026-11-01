@@ -677,6 +677,18 @@ worker-h5 纯函数、承运商 4 条 × 两处入口 + 类级单一真值守卫
 
 ## [Unreleased]
 
+### 意图属主工具改为「只加不减」，不再把本域工具挤出可调用面（2026-11-01，issue #8300）
+
+- **改前**（#8301 引入的形态）：意图属主读工具占用**分数槽位**，把本该保留的本域工具挤出去 ——
+  2026-11-01 全档评测（run `41268493564`）实测 `PP-016/PP-017/PP-019/PP-020/PP-002/PR-101` 六条
+  **从绿转红**：`craft_config_query` / `batch_stock_query` / `operation_catalog_query` 被裁，
+  模型退到 `nav_guide` 答「在哪一页」。
+- **改后**：属主工具只补「被意图过滤挡在本域声明面之外」的那些、按相关度取前 ≤3 把，
+  且**不占分数槽位**（净增）⇒ 保留集只增不减；上限仍是 16 + 至多 3 把净增。
+- 判据：`tests/test_tool_selection_trim.py::test_intent_owner_keep_never_removes_a_baseline_tool`
+  与 `::test_owner_keep_is_net_additive_for_every_skill_intent`（任意 skill × 任意意图的类级守卫），
+  红证 = 在 #8301 实现上两条均红（已实跑 `2 failed`）。
+
 ### 问「这周比上周怎么样」时会走经营环比工具，不再拿订单统计＋销售额拼答案（2026-11-01，issue #8300）
 
 - **改前**：L1 关键词表没有跨期比较词 ⇒ 「这周订单比上周怎么样？」被 `ORDER_QUERY` 的「订单」
