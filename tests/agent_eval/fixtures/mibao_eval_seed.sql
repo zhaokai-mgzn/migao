@@ -806,6 +806,50 @@ BEGIN
   END IF;
 END $$;
 
+-- ── Phase 7. 算料口径配置（PP-023 点名：把「上下卷边」0.3 → 0.25）──
+-- 病灶（run 41270943560 实测 PP-023 首跑）：评测栈租户**没有** `craft_calc_configs` 行
+-- ⇒ admin-api `CraftCalcConfigService#get` 走「缺行 ⇒ 取引擎默认值」分支
+-- （`craftCalcClient.defaultConfig()`），而评测栈**不起 craft-calc 引擎** ⇒ 回 `config{}`
+-- ⇒ 工具 `craft_calc_config_update` 把 `hem_margin` 判成 `unknown_config_key` 而 fail-closed
+-- （trace: `craft_calc_config_query(source=default config{}); … craft_calc_config_update → unknown_config_key`）。
+--
+-- 为什么用**种一行**而不是让引擎在评测栈里跑：本用例要验的是「查真值 → 改前改后确认 →
+-- 点卡才写」这条写路径，起点必须是**已配置**的租户；缺配置是另一条产品口径（要不要给新租户
+-- 自动落默认行），不在本用例范围。
+--
+-- 幂等：行已存在则不动（`WHERE NOT EXISTS`），随后把**声明值**归一回（`hem_margin = 0.3`）——
+-- 后者是给「上一跑 restore 失败 / 中途崩」兜底的：同一输入连跑两次终态逐值一致。
+-- 数值口径 = `schema.sql` 的列默认值（`hem_margin 0.3`），不另编一套。
+INSERT INTO craft_calc_configs (id, tenant_id)
+SELECT 'ccc_eval_tenant1', 1
+WHERE NOT EXISTS (
+  SELECT 1 FROM craft_calc_configs WHERE tenant_id = 1 AND deleted = 0
+);
+
+UPDATE craft_calc_configs
+   SET hem_margin = 0.3,
+       status     = 'active',
+       deleted    = 0
+ WHERE tenant_id = 1 AND deleted = 0;
+
+-- 数据核对（fail-closed）：缺行 / 声明值不在位 ⇒ 注入步当场红（`psql -v ON_ERROR_STOP=1`）
+DO $$
+DECLARE
+  v_rows INTEGER;
+  v_hem  NUMERIC;
+BEGIN
+  SELECT count(*) INTO v_rows FROM craft_calc_configs
+   WHERE tenant_id = 1 AND deleted = 0;
+  SELECT hem_margin INTO v_hem FROM craft_calc_configs
+   WHERE tenant_id = 1 AND deleted = 0 LIMIT 1;
+  RAISE NOTICE 'B 端 Phase 7 核对: 算料口径行数=% hem_margin=%', v_rows, v_hem;
+  IF v_rows <> 1 OR v_hem IS DISTINCT FROM 0.3 THEN
+    RAISE EXCEPTION 'B 端 Phase 7 注入失败：tenant 1 的算料口径行数=% （期望 1）、hem_margin=%（期望 0.3）
+—— PP-023 的「查真值 → 改前改后确认 → 点卡才写」会因此变成不可达（issue #8300）',
+      v_rows, v_hem;
+  END IF;
+END $$;
+
 -- ============================================================================
 -- 遗留 TODO（#3496 / #3519 剩余失败）：
 --   · AS-004 工单 seed —— ✅ 已完成（本文件 Phase 3 段，issue #3519）。
