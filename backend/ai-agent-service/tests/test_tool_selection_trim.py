@@ -210,7 +210,8 @@ def test_intent_owner_read_tools_survive_on_foreign_skill(intent, skill, tool):
     """意图属主 skill 的读工具，在**落到别的 skill** 时也必须留在绑定面。"""
     tool_names = _tool_names(skill)
     plan = _plan(tool_names, user_message="查看系统设置", intent=intent)
-    assert plan is not None, f"{skill}: 判据面没有触发裁剪（pool ≤ 上限），判据失效"
+    if plan is None:  # 裸 `is not None` 是弱断言（tests/unit_ci_workflows/test_weak_assert_blindspots.py）
+        raise AssertionError(f"{skill}: 判据面没有触发裁剪（pool ≤ 上限），判据失效")
     assert tool in plan, f"intent={intent} 落到 {skill} 时 {tool} 被裁（#8300 的病灶形态）"
 
 
@@ -251,8 +252,8 @@ def test_every_foreign_intent_keeps_its_owner_read_tools():
                 if len(fixed) + len(always) + len(owner_read) > DEFAULT_CAP:
                     continue                     # 上限让位口径下的正当跳过
                 plan = _plan(tool_names, user_message="", intent=intent)
-                assert plan is not None, (
-                    f"skill={skill.name}: 意图 {intent} 未触发裁剪，判据面失效")
+                if plan is None:  # 同上：把弱断言换成显式失败，判据语义不变
+                    raise AssertionError(f"skill={skill.name}: 意图 {intent} 未触发裁剪，判据面失效")
                 missing = [n for n in owner_read if n not in plan]
                 assert not missing, (
                     f"skill={skill.name} intent={intent}（属主 {owner.name}）"
