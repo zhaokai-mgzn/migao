@@ -43,7 +43,13 @@ KEYWORD_MAP: dict[IntentType, list[str]] = {
     ],
     IntentType.SYSTEM_SETTINGS: ["系统设置", "企业设置", "基础设置", "店铺设置", "全局设置", "系统配置"],
     # 数据分析必须在订单前（防"订单趋势"被"订单"吞掉）
-    IntentType.DASHBOARD: ["看板", "趋势", "经营", "今日数据", "本周数据", "本月数据"],
+    # 跨期环比词（issue #8300，DA-025 实测）：缺它们时「这周订单比上周怎么样？」被 ORDER_QUERY 的
+    # 「订单」接走 ⇒ 模型用 order_query(statistics) + sales_attribution 拼答案，
+    # dashboard_stats(trend_compare) 一次没调（run 41266259486 逐字 trace）。
+    # 只用**跨期比较短语**，不含裸「上周 / 本月」（否则「查一下上周的订单」会被抢走，
+    # 负控 = TestMatch::test_plain_week_order_query_stays_order_query）。
+    IntentType.DASHBOARD: ["看板", "趋势", "经营", "今日数据", "本周数据", "本月数据",
+                           "比上周", "较上周", "对比上周", "环比", "同比"],
     IntentType.STATISTICS: ["统计", "数据报表"],
     IntentType.FINANCE: ["财务", "资金流水", "收支", "对账", "净收入", "净额", "登记收款", "登记退款", "记一笔", "收款", "进账", "流水", "应收账款", "没对平", "收入支出", "收了多少", "赚了多少", "收了几笔", "收入", "本期收入", "收入退款"],
     IntentType.ORDER_CREATE: ["创建订单", "新建订单", "下单", "开个单", "录单", "确认创建订单"],

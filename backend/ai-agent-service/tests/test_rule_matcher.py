@@ -1,4 +1,4 @@
-# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004, PR-013, DA-003, PP-002, OR-014, CH-010, PG-017, PG-064, CU-008, CU-001, CU-002, ST-002, ST-001, HR-009
+# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004, PR-013, DA-003, PP-002, OR-014, CH-010, PG-017, PG-064, DA-025, CU-008, CU-001, CU-002, ST-002, ST-001, HR-009
 """规则匹配器单元测试（app/router/rule_matcher.py）
 
 覆盖：_extract_text / RuleMatcher.match 关键词优先级 / 正则规则 / 未命中。
@@ -75,6 +75,27 @@ class TestMatch:
         # 不是看板 recent_orders——#3124 的「最近+订单→DASHBOARD」规则过宽把它误路由，
         # smoke 档 OR-001 回归（7/8，唯一失败）。收紧：仅「最近+数字量词+订单」走看板。
         result = self._match("查看最近的订单")
+        assert result is not None
+        assert result.intent == IntentType.ORDER_QUERY
+
+    # ── 跨期环比（issue #8300，DA-025 实测）──────────────────────────────────
+    # 病灶：L1 没有「比上周 / 环比」这类跨期词 ⇒ 「这周订单比上周怎么样？」被 ORDER_QUERY 的
+    # 「订单」接走（2026-11-01 run 41266259486 实测：`order_query(statistics)` +
+    # `sales_attribution` 拼答案，`dashboard_stats(trend_compare)` 一次没调）。
+    # 跨期算术必须由工具确定性计算（trend_compare），路由要确定性落到看板域。
+    def test_week_over_week_order_comparison_routes_dashboard(self):
+        result = self._match("这周订单比上周怎么样？")
+        assert result is not None
+        assert result.intent == IntentType.DASHBOARD
+
+    def test_mom_comparison_routes_dashboard(self):
+        result = self._match("本月和上个月环比一下")
+        assert result is not None
+        assert result.intent == IntentType.DASHBOARD
+
+    def test_plain_week_order_query_stays_order_query(self):
+        """负控：只说「上周的订单」（无跨期比较词）仍是查订单，不许被环比关键词抢走。"""
+        result = self._match("查一下上周的订单")
         assert result is not None
         assert result.intent == IntentType.ORDER_QUERY
 
