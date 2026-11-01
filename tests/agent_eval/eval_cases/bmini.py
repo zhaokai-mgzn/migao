@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: bmini（源: cases/bmini.yml，58 条）
+# 域: bmini（源: cases/bmini.yml，59 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -1050,6 +1050,24 @@ _CASE_BM_061 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── BM-062 [NORMAL] 拍照入库识别链三步各自封顶 + 分步进度 —— 不许把工人锁死在灰按钮上（源: cases/bmini.yml）──
+_CASE_BM_062 = EvalCase(
+    id='BM-062',
+    legacy_id='',
+    title='拍照入库识别链三步各自封顶 + 分步进度 —— 不许把工人锁死在灰按钮上',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工人在真机点「识别」后，屏上依次出现「正在读取照片… / 正在上传照片… / 正在识别标签…」；任一步超过上限 ⇒ 按钮恢复、给出点名那一步的人话错误，可重试，也可改用扫码或手工录入。'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·🔴 三步各自封顶（读图 15s / 上传 20s / 识别 60s），超时文案点名那一步。红证：删掉任一处 withTimeout 接线 ⇒ frontend/bmini-app/tests/inbound-recognize-timeout.test.ts 的「判据 1」红', "判据 2·🔴 超时后按钮必须恢复：finally 里 setBusy(false) 且 setProgress('')。红证：去掉 setProgress('') ⇒ 「判据 2」红", '判据 3·🔴 识别中要有可见进度：data-testid=inbound-progress 仅在 busy 且 progress 非空时渲染。红证：删掉该节点 ⇒ 「判据 3」红', '判据 4·🔴 正式版文案不许出现型号 / 品牌 / 选机指令（DP235S、「DP 开头」、德佟）。红证：把任一句改回 ⇒ 文案组判据点名那个文件'],
+    skip_reason='[frontend-contract] 确定性页面接线判据（jest），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'worker', 'inbound', 'timeout'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_BM_001,
     _CASE_BM_002,
@@ -1109,4 +1127,5 @@ CASES = (
     _CASE_BM_059,
     _CASE_BM_060,
     _CASE_BM_061,
+    _CASE_BM_062,
 )

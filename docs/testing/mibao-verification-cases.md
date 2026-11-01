@@ -846,7 +846,7 @@
 真值: auth.qr-login-ticket
 溯源: 2026-10-26 新增（issue #7825）：现场 = 顶栏「手机端」二维码只是裸链接（不带登录交接），换浏览器 / App 或本机存储被清后每次扫码都要重新输密码。冻结口径 = 一次性票据（JWT 类型 qr_login、120 秒、兑换即吊销 jti）+ 手机端兑换后与密码登录同一套 30 天会话 + 签发失败降级裸入口 + 启动探针（续期失败原因本地可读）。 ｜ tags: auth, session, qr-login, bmini, admin-web
 
-## B 端小程序域（58 case）
+## B 端小程序域（59 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -1677,6 +1677,19 @@
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-10-31 新增（issue #8287：用户「整单出库功能要能做成品出库，并打印标签」）。现状：成品出库写路径已存在（拍照发货 / PC 发货 → POST /api/worker/shipment/orders/{id}/ship；服务端已过账 outbound source=ship），本单补的是手机端整套出库单纸面：待发货单列表逐单「发货联」预览 + 50×70 打印，行清单与 /w/ 的 buildShipLabelRows 同源（parity 现取两侧比对）。明确不做第二条发货写路径（PR 写明）。 ｜ tags: bmini, worker, shipment, label, print
+
+### BM-062. 拍照入库识别链三步各自封顶 + 分步进度 —— 不许把工人锁死在灰按钮上 🔵
+```
+你: 工人在真机点「识别」后，屏上依次出现「正在读取照片… / 正在上传照片… / 正在识别标签…」；任一步超过上限 ⇒ 按钮恢复、给出点名那一步的人话错误，可重试，也可改用扫码或手工录入。
+期望: direct_reply
+数据: 判据 1·🔴 三步各自封顶（读图 15s / 上传 20s / 识别 60s），超时文案点名那一步。红证：删掉任一处 withTimeout 接线 ⇒ frontend/bmini-app/tests/inbound-recognize-timeout.test.ts 的「判据 1」红
+数据: 判据 2·🔴 超时后按钮必须恢复：finally 里 setBusy(false) 且 setProgress('')。红证：去掉 setProgress('') ⇒ 「判据 2」红
+数据: 判据 3·🔴 识别中要有可见进度：data-testid=inbound-progress 仅在 busy 且 progress 非空时渲染。红证：删掉该节点 ⇒ 「判据 3」红
+数据: 判据 4·🔴 正式版文案不许出现型号 / 品牌 / 选机指令（DP235S、「DP 开头」、德佟）。红证：把任一句改回 ⇒ 文案组判据点名那个文件
+跳过: [frontend-contract] 确定性页面接线判据（jest），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-11-01 新增（issue #8307 真机取证：拍照入库点「识别」永久置灰、无进度无超时，2/2 复现）。本单给三步各自封顶 + 分步进度 + 正式版文案收口；真机复测在发布后进行。 ｜ tags: bmini, worker, inbound, timeout
 
 ## 分类域（3 case）
 
@@ -14140,13 +14153,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：958（活跃 152，跳过 806）
-- tier 分布：smoke 15 / normal 883 / adversarial 33
+- 用例总数：959（活跃 152，跳过 807）
+- tier 分布：smoke 15 / normal 884 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
 - 登录认证域：14
-- B 端小程序域：58
+- B 端小程序域：59
 - 分类域：3
 - 对话边界域：53
 - 跨域：3

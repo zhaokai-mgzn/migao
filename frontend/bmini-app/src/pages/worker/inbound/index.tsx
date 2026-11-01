@@ -53,6 +53,18 @@ import {
 } from '../../../utils/inbound/recognizeGate'
 import { MAX_INBOUND_PHOTOS, runInboundRecognize } from '../../../utils/inbound/recognizeFlow'
 import {
+  INBOUND_DECODE_TIMEOUT_HINT,
+  INBOUND_DECODE_TIMEOUT_MS,
+  INBOUND_PROGRESS_DECODE,
+  INBOUND_PROGRESS_RECOGNIZE,
+  INBOUND_PROGRESS_UPLOAD,
+  INBOUND_RECOGNIZE_TIMEOUT_HINT,
+  INBOUND_RECOGNIZE_TIMEOUT_MS,
+  INBOUND_UPLOAD_TIMEOUT_HINT,
+  INBOUND_UPLOAD_TIMEOUT_MS,
+  withTimeout,
+} from '../../../utils/inbound/withTimeout'
+import {
   SUGGEST_DEBOUNCE_MS,
   SUGGEST_SHOW_LIMIT,
   SUGGEST_TOO_SHORT_HINT,
@@ -119,6 +131,9 @@ export default function WorkerInboundPage() {
   const [notices, setNotices] = useState<string[]>([])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  /** 识别链的**分步进度**（issue #8307）：三步各自封顶后，屏上还得说清「现在在做哪一步」，
+   *  否则慢的时候工人只看到一个灰按钮，无法判断是卡住还是在跑。 */
+  const [progress, setProgress] = useState('')
   /** 提交链的失败/拦截文案 —— **就地**渲染在「提交过账」正上方（issue #7822：顶部横幅在长表单里
    * 会被折到视口外，工人看到的是「点了没反应」）。与 `busy` 分开：提交期间要单独给「提交中…」。 */
   const [submitError, setSubmitError] = useState('')
@@ -184,14 +199,23 @@ export default function WorkerInboundPage() {
     try {
       const result = await runInboundRecognize({
         photos,
-        decode: decodeBarcodeFromPhoto,
+        decode: async (photo) => {
+          setProgress(INBOUND_PROGRESS_DECODE)
+          return withTimeout(decodeBarcodeFromPhoto(photo), INBOUND_DECODE_TIMEOUT_MS, INBOUND_DECODE_TIMEOUT_HINT)
+        },
         upload: async (photo) => {
-          const res = await uploadInboundPhoto(String(photo.tempFilePath || photo.file || ''))
+          setProgress(INBOUND_PROGRESS_UPLOAD)
+          const res = await withTimeout(
+            uploadInboundPhoto(String(photo.tempFilePath || photo.file || '')),
+            INBOUND_UPLOAD_TIMEOUT_MS,
+            INBOUND_UPLOAD_TIMEOUT_HINT,
+          )
           if (!res.success || !res.data?.url) throw new Error(res.message || '照片上传失败')
           return res.data.url
         },
         recognize: async (payload) => {
-          const res = await recognizeInbound(payload)
+          setProgress(INBOUND_PROGRESS_RECOGNIZE)
+          const res = await withTimeout(recognizeInbound(payload), INBOUND_RECOGNIZE_TIMEOUT_MS, INBOUND_RECOGNIZE_TIMEOUT_HINT)
           if (!res.success || !res.data) throw new Error(res.message || '识别失败')
           return res.data
         },
@@ -213,6 +237,7 @@ export default function WorkerInboundPage() {
       setError(e?.message || '识别失败，请重试')
     } finally {
       setBusy(false)
+      setProgress('')
     }
   }, [photos])
 
@@ -417,7 +442,7 @@ export default function WorkerInboundPage() {
       <View className='admin-surface__header'>
         <Text className='admin-surface__title'>拍照入库</Text>
         <Text className='admin-surface__subtitle'>
-          拍上游标签 → 核对 → 过账（加库存）→ 打印 {inboundLabelPageSize()} 标签
+          拍上游标签 → 核对 → 过账入库 → 打印标签
         </Text>
       </View>
 
@@ -452,8 +477,13 @@ export default function WorkerInboundPage() {
               <Text>拍照 / 选图（最多 {MAX_INBOUND_PHOTOS} 张）</Text>
             </View>
             <Text className='admin-card__meta'>
-              已选 {photos.length} 张 · 二维码拍清楚、拍完整，手机当场就能认出来；认不出再交给系统认，会稍慢一点
+              已选 {photos.length} 张 · 请把二维码拍清楚、拍完整
             </Text>
+            {busy && progress !== '' && (
+              <Text className='admin-card__meta' data-testid='inbound-progress'>
+                {progress}
+              </Text>
+            )}
             <View
               className={`admin-action admin-action--gold${busy || photos.length === 0 ? ' admin-action--disabled' : ''}`}
               data-testid='inbound-recognize'

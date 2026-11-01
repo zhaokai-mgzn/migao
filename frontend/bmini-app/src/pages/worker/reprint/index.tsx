@@ -316,7 +316,7 @@ export default function WorkerReprintPage() {
               <Text>拍照（对着标签上的二维码）</Text>
             </View>
             <Text className='admin-card__meta'>
-              二维码拍清楚，手机当场就能认出来；标签磨花认不出也没关系 —— 可以手输短码
+              请把二维码拍清楚、拍完整；标签磨花认不出也可以手输短码
             </Text>
             <View
               className={`admin-action admin-action--gold${busy || !photo ? ' admin-action--disabled' : ''}`}
