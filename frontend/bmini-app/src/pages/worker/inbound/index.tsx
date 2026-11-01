@@ -40,7 +40,7 @@ import { Image, Input, ScrollView, Text, View } from '@tarojs/components'
 import { confirmActionResult } from '../../../utils/adminConfirm'
 import { hasWorkerSession } from '../../../utils/workerSession'
 import { decodeBarcodeFromPhoto, type PendingPhoto } from '../../../utils/inbound/barcodeDecode'
-import { inboundLabelPageSize, layoutInboundLabel, type InboundLabelView } from '../../../utils/inbound/labelLayout'
+import { inboundLabelPageSize, type InboundLabelView } from '../../../utils/inbound/labelLayout'
 import { renderInboundLabel } from '../../../utils/inbound/labelCanvas'
 import {
   evaluateSkuGate,
@@ -407,7 +407,7 @@ export default function WorkerInboundPage() {
     })
     setBusy(false)
     if (result.ok) {
-      setPrintState(`已送出打印（系统记第 ${result.printCount} 次）`)
+      setPrintState(`已送出打印（第 ${result.printCount} 次）`)
       const refreshed = await getInboundLabel(shortCode)
       if (refreshed.success && refreshed.data) setLabel(refreshed.data)
       return
@@ -421,7 +421,6 @@ export default function WorkerInboundPage() {
   /** 逐格识别结果（服务端 `fields` 原样派生；空 = 这次没回字段表 ⇒ 不渲染这一段） */
   const fieldRows = useMemo(() => recognizedFieldRows(recognized), [recognized])
   /** 纸面版心（与送打印同一份绘制计划；页面不另算一套像素） */
-  const labelPlan = useMemo(() => layoutInboundLabel(label || {}), [label])
 
   if (!workerReady) {
     return (
@@ -693,9 +692,6 @@ export default function WorkerInboundPage() {
                 {printState}
               </Text>
             )}
-            <Text className='admin-card__meta' data-testid='inbound-label-bound'>
-              版心 {labelPlan.widthPx} × {labelPlan.heightPx} px（1:1 送打印）
-            </Text>
           </View>
         )}
       </View>

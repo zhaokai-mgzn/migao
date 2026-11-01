@@ -360,8 +360,9 @@ describe('工人拍照补打页', () => {
     expect(screen.getByTestId('reprint-error').textContent).toContain('没有编号')
     expect(mockRecordPrint).not.toHaveBeenCalled()
     expect(printLog).toEqual([])
-    // 版心仍按真值给出（缺码只影响二维码那一步，不影响纸型/版面）
-    expect(screen.getByTestId('reprint-label-bound').textContent).toContain('1:1 送打印')
+    // 版心（内部绘制参数：px / 1:1 送打印）不再上屏（2026-11-01 商米 V2s 真机验收）——
+    // 工人屏只说结论，不摆点阵读数；重新加回来 ⇒ 本判据红。
+    expect(screen.queryByTestId('reprint-label-bound')).toBeNull()
   })
 
   it('P8 页面不碰商家面：整条链只走 /api/worker/**（源码面）', () => {
