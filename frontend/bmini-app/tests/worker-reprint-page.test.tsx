@@ -195,7 +195,7 @@ describe('工人拍照补打页', () => {
     render(<WorkerReprintPage />)
     const photo = screen.getByTestId('reprint-step-photo').textContent || ''
     expect(photo).toContain('请把二维码拍清楚')
-    expect(photo).toContain('手输短码')
+    expect(photo).toContain('手输编号')
     // 🔴 红证：写回 `**不会**` ⇒ 星号上屏，本断言当场红（同 worker-copy-plain-text-guard.test.ts）
     expect(photo).not.toContain('*')
     expect(photo).not.toMatch(/识别模型|服务端|解码/)
@@ -264,13 +264,13 @@ describe('工人拍照补打页', () => {
       message: '入库标签不存在',
       statusCode: 404,
       code: 'NOT_FOUND',
-      suggestion: '请核对标签上的短码（8 位，字母与数字；字母 O/I/L 会被当作 0/1 处理）',
+      suggestion: '请核对标签编号（8 位，字母与数字；字母 O/I/L 会被当作 0/1 处理）',
     })
     const first = render(<WorkerReprintPage />)
     await shootAndRecognize()
     await waitFor(() => expect(screen.getByTestId('reprint-not-found')).toBeTruthy())
     const notFoundText = screen.getByTestId('reprint-not-found').textContent || ''
-    expect(notFoundText).toContain('查无此码')
+    expect(notFoundText).toContain('查无此编号')
     expect(screen.queryByTestId('reprint-revoked')).toBeNull()
     first.unmount()
 
@@ -357,7 +357,7 @@ describe('工人拍照补打页', () => {
     expect(screen.getByText(/（缺失）/)).toBeTruthy()
     fireEvent.click(screen.getByTestId('reprint-print'))
     await waitFor(() => expect(screen.getByTestId('reprint-error')).toBeTruthy())
-    expect(screen.getByTestId('reprint-error').textContent).toContain('没有短码')
+    expect(screen.getByTestId('reprint-error').textContent).toContain('没有编号')
     expect(mockRecordPrint).not.toHaveBeenCalled()
     expect(printLog).toEqual([])
     // 版心仍按真值给出（缺码只影响二维码那一步，不影响纸型/版面）

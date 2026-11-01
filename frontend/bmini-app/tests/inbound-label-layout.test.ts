@@ -126,17 +126,24 @@ describe('入库标签版面（50×80mm，issue #7820）', () => {
     expect(noTexts.some((t: string) => t.startsWith('入库'))).toBe(false)
   })
 
-  it('C8 二维码在**底部**且水平居中，所有文字都在它上方（用户 2026-10-26 裁定）', () => {
+  it('C8 二维码在**底部**、水平居中、下方不再印短码，且留 3mm 安全白边（用户 2026-10-26 / 2026-11-01 裁定）', () => {
     const plan = layoutInboundLabel(FULL_VIEW)
     const qr = plan.qr!
     expect(qr.y).toBeGreaterThan(plan.heightPx * 0.5)
     // 居中：左右留白差 ≤ 2px（取整误差）
     expect(Math.abs(qr.x - (plan.widthPx - qr.x - qr.sizePx))).toBeLessThanOrEqual(2)
-    const textOps: any[] = plan.ops.filter((op) => op.kind === 'text' && op.text !== plan.codeText)
+
+    // 所有文字都在二维码**上方**（码区独占下半区）
+    const textOps: any[] = plan.ops.filter((op) => op.kind === 'text')
     for (const op of textOps) expect(op.y).toBeLessThan(qr.y)
-    // 短码在二维码下方（手输兜底的那一行永远在纸面最底）
-    const codeOp: any = plan.ops.find((op) => op.kind === 'text' && op.text === plan.codeText)
-    expect(codeOp.y).toBeGreaterThan(qr.y + qr.sizePx - 1)
+
+    // 🔴 2026-11-01 用户裁定：「移除二维码下面的短码」—— 纸面不再有那行字
+    const codeOp = plan.ops.find((op) => op.kind === 'text' && op.text === plan.codeText)
+    expect(codeOp).toBeUndefined()
+
+    // 🔴 底部安全白边 ≥ 3mm（介质矩阵 dotsPerMm × 3）：标签末端印不出来，白边不足会把码切掉
+    const bottomGapPx = plan.heightPx - (qr.y + qr.sizePx)
+    expect(bottomGapPx).toBeGreaterThanOrEqual(24)
   })
 
   it('C2 🔴 截断判定本身要能红：静默裁切（截了但不加省略号）不算数', () => {
