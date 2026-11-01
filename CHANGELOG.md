@@ -5,6 +5,19 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 问「这批货是哪几张入库单入的库」时，黄金策按批次视图查，不再随手挑入库单列表（2026-11-01，issue #8300）
+
+- **改前**：`inbound_order_query` 的说明只写「list（入库单列表）/ batches（批次视图）」，没写什么问法对应哪个
+  action ⇒ 同一句话两次跑出不同 action（全档 run 41285244288 与定点 41286316979 都落到 `list`，用例期望 `batches`）。
+- **改后**：工具说明加「选 action 的硬口径」—— 批次来源 ⇒ `batches`、最近入库单列表 ⇒ `list`、单张明细 ⇒ `detail`。
+- 判据：`tests/test_inbound_order_query_action_routing.py`（红证 = 摘掉该段 ⇒ 2 failed）。
+
+### 客人问「我支付这笔订单怎么付款」时，知识库检索也被视为合理路径（2026-11-01，issue #8300）
+
+- ST-011 的期望集由 `direct_reply or order_query` 扩到 `direct_reply or order_query or knowledge_search`：
+  两次实测模型分别走 `nav_guide(how_to)` 与 `knowledge_search`，答的都是对的指引，却因期望集不全被判红。
+- 仍然**不是空断言**：至少命中一条期望，`data_checks` 的合规/展示口径一字未动。
+
 ### 客户主数据迁移 MVP：任意 Excel 表头 AI 映射 + 试运行 + 幂等导入（2026-10-31，issue #8295）
 
 - **改前**：客户档案只有单条 PUT 更新，没有批量导入；期初库存的固定模板导入不能复用到客户。
