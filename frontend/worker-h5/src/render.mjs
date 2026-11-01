@@ -212,7 +212,11 @@ function pageNoticeBanner(state) {
   if (unread) {
     return `<p class="wh5-perm-notice" id="wh5-perm-unread" role="status">${esc(permUnreadNotice)}</p>`
   }
-  if (!opened.has(PAGE_REPORT)) {
+  // 🔴 只对「既没开报工页、也没开质检」的人说这句话。
+  // 2026-11-01 真机（商米 V2s）：只开 `inspect` 的质检员扫码进来，页头挂着红字
+  // 「本机菜单未开报工页…或换一台设备 / 换一个工人」—— 他本来就不报工，质检块才是他要用的面；
+  // 这条警告对他是纯噪音（且读起来像"这台机器配错了"）。
+  if (!opened.has(PAGE_REPORT) && !opened.has(PAGE_INSPECT)) {
     return `<p class="wh5-perm-notice" id="wh5-report-menu-closed" role="status">${esc(reportMenuClosedNotice)}</p>`
   }
   return ''
@@ -1001,7 +1005,7 @@ function qualityBlock(state, view) {
     ? 'is-pending'
     : pending ? 'is-rework' : (result === 'scrap' ? 'is-scrap' : 'is-pass')
   const list = records.length > 0
-    ? `<ul class="wh5-record-list" id="wh5-quality-records">${records.map(qualityRecordView).join('')}</ul>`
+    ? `<ul class="wh5-record-list" id="wh5-quality-records">${records.map((r) => qualityRecordView(r, stateText)).join('')}</ul>`
     : errored
       ? ''
       : q.loading
@@ -1180,14 +1184,17 @@ function reworkRecordView(r) {
 }
 
 /** 一条质检记录：判定 / 时间 / 原因 / 检验人（缺值整项不渲染，不印占位）。 */
-function qualityRecordView(r) {
+function qualityRecordView(r, latestLabel) {
   const label = QUALITY_LABELS[r?.result] ?? ''
+  // 块头已经写着当前结论（如「正常」）⇒ 同一句不在记录行里再印一遍（§31 P2 信息不重复）；
+  // 历史里与当前结论**不同**的行（返工 → 合格）照旧带标签，否则看不出这条是什么。
+  const showLabel = label !== '' && label !== latestLabel
   const time = recordTime(r?.inspected_at)
   const reason = typeof r?.reason === 'string' ? r.reason.trim() : ''
   const who = typeof r?.inspector_name === 'string' ? r.inspector_name.trim() : ''
   return `<li class="wh5-record">
       <div class="wh5-record-top">
-        <span class="wh5-record-title">${esc(label || '质检')}</span>
+        ${showLabel ? `<span class="wh5-record-title">${esc(label)}</span>` : ''}
         ${time ? `<span class="wh5-record-time">${esc(time)}</span>` : ''}
       </div>
       ${reason ? `<p class="wh5-q-reason">${esc(reason)}</p>` : ''}
