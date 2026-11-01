@@ -1142,6 +1142,20 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 269,
       "note": "issue #8295（客户主数据迁移 MVP，rebase 到 origin/main #8294 后重算）新增 10 条 MIG-001..010：7 条 [backend-contract] scoring-zero（MIG-001/002/004/005/006/007/008，机器判红 = Java/pytest 真测试）、2 条 UI 走机器计分（MIG-009/010，data_checks 含 success=true / not called，承载体 = Vitest page.test.tsx）、MIG-003 自带计分断言 ⇒ 读数 262 → 269；no_channel_total 仍为 0。"
+    },
+    {
+      "sha": "pending-pr-8382",
+      "date": "2026-11-01",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 268,
+      "note": "issue #8382（撤回外部贡献者 llwand1 的代码，经 #6924 转手合并进 main）：删除 MC-099（含 Java 实现 + 单测 + 用例条目）⇒ 读数 269 → 268。本单是**删减**外部代码、不是新增豁免：.github/cases/misc.yml 删条目、两处生成物由 render_cases.py 重渲染（961 条）、后端实现与测试同批删除。真债务 no_channel_total 仍为 0。"
+    },
+    {
+      "sha": "pending-pr-8386",
+      "date": "2026-11-01",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 269,
+      "note": "issue #8386（外部作者守卫，防 #6897 → #6924 的「同仓转手合并」形态复发）新增 1 条 [backend-contract] 用例 MC-126 ⇒ 读数 268 → 269（268 来自已合并的 #8382 撤回）。机器判红通道 = tests/unit_ci_workflows/test_external_authorship_guard.py（10 条，含真实事故夹具）；红证：拿掉白名单比对 ⇒ 用例 1 红，删掉 fork 判定 ⇒ 用例 8 红。真债务 no_channel_total 仍为 0。"
     }
   ]
 }

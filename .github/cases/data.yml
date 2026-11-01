@@ -1198,3 +1198,42 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: DA-036
+    legacy_id: ""
+    title: "商品销量排行：问「最近哪些商品卖得最好」走 dashboard_stats(product_ranking)（零覆盖补口，issue #8300）"
+    domains:
+      - data
+    tier: normal
+    tags:
+      - dashboard
+      - ranking
+      - query
+    truths_ref:
+      - dashboard-jump.product-ranking
+    # 覆盖缺口来源（issue #8300 自测发现二）：`scripts/mibao_coverage.py` 报
+    # `dashboard_stats` 有 6/10 个 action 零用例（product_ranking 是其中最常被问到的一个）。
+    # 补它的目的是让这条能力**可测**：模型若改走 product_search / inventory_manage，
+    # 下面 `expectations[args.action]` 会直接判红（不是「随便调个工具就算过」）。
+    user_inputs:
+      - "最近 7 天哪些商品卖得最好，给我前 5 名"
+    expectations:
+      - tool: dashboard_stats
+        args:
+          action: product_ranking
+    # 效果层（issue #8300 发现一的口径）：调了 ≠ 成了 —— 排行必须真的从服务端取到数据。
+    must_succeed:
+      - tool: dashboard_stats
+        action: product_ranking
+    data_checks:
+      - "排行来自服务端（`dashboard_stats(action=product_ranking)` 的 items / 成交量字段），不得由模型编造商品名或销量"
+      - "回复须交代**统计口径**（近 7 天 / period=day），不能把「近 7 天销量」说成「今日销量」（#2984 的假涨跌形态）"
+      - "条数与用户要的「前 5 名」一致（limit=5）；数据不足 5 条时如实说明只有几条，不补虚构行"
+    skip_reason: ""
+    merge_log: "2026-11-01 新增（issue #8300 自测发现二）：补 `dashboard_stats(action=product_ranking)` 的零覆盖 —— 覆盖率报告显示该 action 无任何用例，属「能力坏了没人知道」的面。断言面 = 工具 + args.action（换工具即红）+ must_succeed（取不到数据即红）+ 口径散文（近 7 天不得说成今日）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_dashboard_stats.py"
+      ci:
+        - agent-eval.yml
+      verifies: []

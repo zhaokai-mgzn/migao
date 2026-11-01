@@ -692,3 +692,33 @@ class TestStaffAccountRouting:
     def test_negative_control_session(self):
         """负控：「客服会话」不得被账号域抢走（会话管理另有意图，SE-001 家族）。"""
         assert self._intent("看看当前有哪些客服会话") == IntentType.SESSION_MANAGE
+
+# ── 销量排行类问句必须走看板意图（issue #8300，DA-036 实测）───────────────
+# 现场：问「最近 7 天哪些商品卖得最好，给我前 5 名」⇒ 因含「商品」被 PRODUCT_INQUIRY 抢走，
+# product 域不绑 dashboard_stats ⇒ 模型退到 nav_guide（trace: nav_guide(products)），
+# 零覆盖用例 DA-036 首跑即红，暴露「能力在、路由到不了」。
+class TestRankingRoutesToDashboard:
+    def _match(self, text):
+        return RuleMatcher().match(text)
+
+    def test_best_selling_products_routes_dashboard(self):
+        result = self._match("最近 7 天哪些商品卖得最好，给我前 5 名")
+        if result is None:
+            raise AssertionError("排行问句没有命中任何路由 —— 判据面失效")
+        assert result.intent == IntentType.DASHBOARD
+
+    def test_ranking_phrasings_all_route_dashboard(self):
+        # ⚠️ 只收**信号不冲突**的说法：「商品畅销榜」这类同时强命中商品域与看板域的句子，
+        # matcher 按设计**弃权**（返回 None，交 L2 分类器），不属本判据的射程。
+        for text in ("哪个商品卖得最多", "销量排行前五名是哪些", "最近卖得最好的是什么"):
+            result = self._match(text)
+            if result is None:
+                raise AssertionError(f"{text!r} 没有命中任何路由")
+            assert result.intent == IntentType.DASHBOARD, f"{text!r} → {result.intent}"
+
+    def test_plain_product_sales_question_still_goes_to_product(self):
+        """负控：不带排行语义的「商品」问句仍走商品域（关键词不许越界）。"""
+        result = self._match("这个商品卖多少钱")
+        if result is None:
+            raise AssertionError("商品问句没有命中任何路由")
+        assert result.intent == IntentType.PRODUCT_INQUIRY
