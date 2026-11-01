@@ -275,8 +275,11 @@ describe('下单页的接线点（判据 1 的页面侧半边）(#5349)', () => 
  *
  * 有了这张表，「新 target 该不该带推导输入」就是一个**必须显式回答**的问题
  * （不登记 ⇒ 下面第 1 条断言红），而不是靠人记得去想。
+ *
+ * `batch`（issue #8210，工人库存修正的拍照识别批次号）：它只产出「定位是哪一批」的批次号，
+ * 后续是**实盘米数**（人工输入）⇒ 与算料推导链无关，登记在此。
  */
-const TARGETS_WITHOUT_DERIVATION = ['product', 'inbound', 'shipment'] as const
+const TARGETS_WITHOUT_DERIVATION = ['product', 'inbound', 'shipment', 'batch'] as const
 describe('类级元守卫：识别 target ⇄ 推导输入 的接线登记 (#5349 · 铁律 8)', () => {
   it('每个 target 要么登记了推导输入、要么在「不喂推导链」台账里（新 target 不登记 ⇒ 红）', () => {
     const unregistered = allTargets().filter(

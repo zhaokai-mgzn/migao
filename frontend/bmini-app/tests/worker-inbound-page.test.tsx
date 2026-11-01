@@ -72,6 +72,7 @@ jest.mock('../src/utils/inbound/lpapiTransport', () => ({
 jest.mock('../src/services/workerInboundService', () => ({
   newInboundRequestId: jest.fn(() => 'req-1'),
   uploadInboundPhoto: jest.fn(async () => ({ success: true, data: { url: 'https://oss/1.jpg' }, message: '' })),
+  uploadInboundPhotoSmart: jest.fn(async () => ({ success: true, data: { url: 'https://oss/1.jpg' }, message: '' })),
   recognizeInbound: jest.fn(async () => ({
     success: true,
     message: '',
@@ -217,7 +218,7 @@ describe('工人拍照入库页', () => {
   it('C9 拍照步文案是给工人看的纯文本（无 markdown 标记、无研发术语，issue #7316）', () => {
     render(<WorkerInboundPage />)
     const photo = screen.getByTestId('inbound-step-photo').textContent || ''
-    expect(photo).toContain('手机当场就能认出来')
+    expect(photo).toContain('请把二维码拍清楚')
     expect(photo).toContain('拍完整')
     // 🔴 红证：写回 `**不会**` ⇒ 星号上屏，本断言当场红（同 worker-copy-plain-text-guard.test.ts）
     expect(photo).not.toContain('*')
@@ -400,8 +401,9 @@ describe('工人拍照入库页', () => {
     // C7（#6340 靶心）：雪花号 id **逐字原样字符串**回传；`Number()` 会吞末两位 ⇒ 服务端查不到该 SKU
     expect(body.skuId).toBe(REAL_SNOWFLAKE_SKU_ID)
     expect(String(body.skuId)).toBe('2106900122848247810')
-    // 短码出现在屏上（人可读，工人可抄）
-    expect(screen.getByText(/ABCD2345/)).toBeTruthy()
+    // 🔴 2026-11-01 用户裁定：标签卡只留预览 + 打印按钮（编号那段说明文字已移除）
+    expect(screen.getByTestId('inbound-step-label')).toBeTruthy()
+    expect(screen.getByTestId('inbound-print')).toBeTruthy()
 
     // 打印：能力可用且 SDK 加载失败 ⇒ sdk-unavailable 的**专属**文案（不是"打印失败"）
     fireEvent.click(screen.getByTestId('inbound-print'))

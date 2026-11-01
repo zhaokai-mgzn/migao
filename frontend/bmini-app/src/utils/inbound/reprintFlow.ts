@@ -32,19 +32,19 @@ import type { InboundLabelView } from './labelLayout'
 
 /** 解不出码时给工人的话（重拍要点 + 手输兜底 —— 补打的主场景就是码磨花了） */
 export const REPRINT_RESHOOT_HINT =
-  '照片里没解出码（太暗 / 太糊 / 反光 / 拍歪都可能）：请对着标签正面、光线足一点、离近一点重拍，或直接手输纸面上的 8 位短码。'
+  '照片里没解出码（太暗 / 太糊 / 反光 / 拍歪都可能）：请对着标签正面、光线足一点、离近一点重拍，或直接手输标签编号（8 位）。'
 
 /** 404：码对不上任何一张标签（多半是抄错一位）⇒ 处置是**回去核对** */
 export const REPRINT_NOT_FOUND_MESSAGE =
-  '查无此码：系统里没有这个短码对应的入库标签。请核对纸面上的 8 位短码是否抄全（字母 O/I/L 会被当作 0/1 处理）；确认没抄错的话，请让文员在电脑端查这张单。'
+  '查无此编号：系统里没有这个编号对应的入库标签。请核对 8 位编号是否抄全（字母 O/I/L 会被当作 0/1 处理）；确认没抄错的话，请让文员在电脑端查这张单。'
 
 /** 410：这张纸被撤销了（码是对的）⇒ 处置是**重新补打**，核对再多次也没用 */
 export const REPRINT_REVOKED_MESSAGE =
-  '该标签已撤销：这个短码对应的标签已被作废（不是抄错码 —— 码是对的，但纸已失效）。旧码不再可用、也不会回落到别的标签；请让文员按单据重新补打一张新标签。'
+  '该标签已撤销：这个编号对应的标签已被作废（不是抄错码 —— 码是对的，但纸已失效）。旧码不再可用、也不会回落到别的标签；请让文员按单据重新补打一张新标签。'
 
 /** 网络 / 服务端其它故障（既不是"没有这个码"也不是"已撤销" ⇒ 不许冒充那两种） */
 export const REPRINT_DETAIL_ERROR_MESSAGE =
-  '读取单据详情失败（网络问题或系统暂时不可用）。请重试；若反复失败，请把纸面上的 8 位短码报给文员在电脑端处理。'
+  '读取单据详情失败（网络问题或系统暂时不可用）。请重试；若反复失败，请把 8 位标签编号报给文员在电脑端处理。'
 
 /**
  * 「谁可以查入库详情」的**登记表**（类级守卫 `tests/inbound-reprint-code-space.test.ts` 的 G2 逐值核验）。
@@ -102,6 +102,17 @@ export const LABEL_DETAIL_CALLERS: {
     in: 'onPrint',
     calls: 1,
     why: '打印成功后刷新标签详情（短码取自**已过门禁**的 reading，不再经用户输入）',
+    gatedByCodeSpace: false,
+  },
+  {
+    // issue #8210：库存修正的「拍照识别批次号」——命中入库标签码 ⇒ 读详情拿批次号（0 次 LLM）。
+    // 🔴 门禁**在这一处的上一层**：`utils/workerStockRecognize.ts::runStockRecognize` 先用
+    // `classifyScannedCode` 判码空间，**只有** `space === 'inbound-label'` 的 `shortCode` 才会传进来
+    // （洗水码 / 陌生码在那一步就停住，不会到达本函数）。故这里没有第二道 `classify*Code`。
+    file: 'src/pages/worker/stock/index.tsx',
+    in: 'runRecognize',
+    calls: 1,
+    why: '库存修正的拍照识别：shortCode 已由 runStockRecognize 的 classifyScannedCode 判为入库标签码才会进来',
     gatedByCodeSpace: false,
   },
 ]

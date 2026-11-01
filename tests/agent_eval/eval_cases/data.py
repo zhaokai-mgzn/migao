@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: data（源: cases/data.yml，27 条）
+# 域: data（源: cases/data.yml，36 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -502,6 +502,169 @@ _CASE_DA_027 = EvalCase(
     precondition='评测栈需有跨两个等长窗口的订单 seed 才能得到非零读数；无 seed 时工具仍 success=true 但 top_up/top_down 为空、delta_pct=null ⇒ 本条按「如实转述口径」判定，不把空读数当失败。**前置不成立时红的伪装形态**：seed 只有单窗口 ⇒ 所有商品都进 top_up（上期 0），此时红的落点是数据层（seed 不足）而不是 agent 行为层；机器判据见 data_checks 的 previous_is_zero 与 delta=0 两条',
 )
 
+# ── DA-028 [NORMAL] 跨域视图判断层：同行基线（peer baseline）与 good/watch/bad/unknown 分档（issue #8234）（源: cases/data.yml）──
+_CASE_DA_028 = EvalCase(
+    id='DA-028',
+    legacy_id='',
+    title='跨域视图判断层：同行基线（peer baseline）与 good/watch/bad/unknown 分档（issue #8234）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商品健康度里的退货率 18%，算高还是低？'],
+    expectations=[],
+    data_checks=['同行基线 = **同一份快照内全部 SKU** 的中位数（`peer_median`，奇偶两分）与上四分位（`peer_p75`，最近秩法 ceil(0.75n)）；`sample_size` = 有效样本数。基线用**全量**行算，不受输出截断影响（截断只截 rows，不截基线样本）。', '🔴 未知不装懂（注入式红证）：① 指标未知（退货率无分母 / 成本未知 ⇒ 毛利 None）⇒ verdict = `unknown` 且**不进样本**；② 有效样本 < `MIN_BASELINE_SAMPLE`（5）⇒ `return_rate_baseline` = None + verdict = `unknown`。红证：把阈值改为 0（= 退化成「有值就判断」）⇒ `test_sample_below_minimum_yields_unknown` 必红；恢复 ⇒ 绿。', '🔴 毛利为负是**绝对判据**（注入式红证）：`gross_margin < 0` ⇒ `bad`，**不因**「全店都亏、基线中位数也是负」而被相对判成 `good`。红证：删掉 `_verdict` 的 absolute_bad 分支（= 退化成纯相对判断）⇒ `test_negative_margin_is_bad_even_when_the_whole_store_loses_money` 必红。', '分档边界（含等号归属）：`<= peer_median` ⇒ good；`peer_median < x <= peer_p75` ⇒ watch；`> peer_p75` ⇒ bad。边界值单独钉（P6 = p75 ⇒ watch、P7 > p75 ⇒ bad）。', '确定性：同一 snapshot 连续两次调用，`rows` 逐字节相等、`baseline_basis` 相等（不读挂钟、不联网）。', '🔴 基线性质自述（防「相对」被读成「绝对」）：视图顶层 `baseline_basis` 与 `basis.return_rate_baseline` 均为 `BASELINE_BASIS`，文本必须同时含「相对」与「非绝对」。'],
+    skip_reason='[backend-contract] 视图语义由 backend/ai-agent-service/tests/test_briefing_product_health_baseline.py 验证（纯函数、零 LLM、两次注入式红证），不进入 agent-eval 冒烟',
+    tags=['proactive', 'briefing', 'baseline', 'verdict'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-029 [NORMAL] 简报条目 → 问黄金策：洞察到执行的入口（有 link / 无 link 都有，点一下就把这条交给 AI）（源: cases/data.yml）──
+_CASE_DA_029 = EvalCase(
+    id='DA-029',
+    legacy_id='',
+    title='简报条目 → 问黄金策：洞察到执行的入口（有 link / 无 link 都有，点一下就把这条交给 AI）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['日报说 10 个订单待发货，我不想自己点进去一个个处理'],
+    expectations=[],
+    data_checks=['每条简报条目（`todo` / `risks` / `suggestions`）都渲染「问黄金策」按钮，`aria-label` = `问黄金策：<条目标题>`。**无 `link` 的条目同样有** —— 恰恰是建议/风险类条目没有页面可去（现状：无 link 时整行不可点 ⇒ 价值最高的那类反而没有入口）。', '点击 ⇒ `useChatStore.assistantOpen = true` 且 `assistantDraft` 含该条目标题、含「处理建议」「确认卡」—— 预置问题要能落成「查数据 + 给建议 + 批量确认卡」，不是一句空泛的「帮我看看」。', '🔴 草稿取一次即消费：`consumeAssistantDraft()` 第一次返回全文、第二次返回 `null`（防 React 严格模式/重渲染重复发送同一句）。红证：把 `ItemRow` 的 `onClick` 改成空操作（= 入口失效）⇒ 点击与消费两条断言必红。', '`closeAssistant()` ⇒ `assistantOpen = false`（外部入口不改变关闭语义）。', '浮窗开关从 `FloatingAssistant` 的**本地 state** 提升到 store —— 否则外部（日报卡片）根本打不开它；`tests/unit/floating-assistant.test.tsx` 的 store mock 因此改为**响应式**（静态 mock 会让 `openAssistant()` 改值而组件不重渲染 ⇒ FAB 两条用例红）。'],
+    skip_reason='[backend-contract] 纯前端交互判据（零 LLM）：由 frontend/admin-web/tests/unit/components/BriefingCardAskAgent.test.tsx（5 条，含注入式红证）+ tests/unit/floating-assistant.test.tsx（20 条）验证，不进入 agent-eval 冒烟',
+    tags=['briefing', 'agent-handoff', 'frontend'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-030 [NORMAL] 视图的「然后呢」：bad/watch 行给可选动作 + 代价 + 可逆性 + 验证方法（issue #8251）（源: cases/data.yml）──
+_CASE_DA_030 = EvalCase(
+    id='DA-030',
+    legacy_id='',
+    title='视图的「然后呢」：bad/watch 行给可选动作 + 代价 + 可逆性 + 验证方法（issue #8251）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这个 SKU 退货率 30%，判 bad —— 然后我该做什么？'],
+    expectations=[],
+    data_checks=['`bad` / `watch` 行带 `next_options`，每个选项三要素齐全：`action`（可执行且可验证）/ `cost` ∈ {low,medium,high} + `cost_note` / `reversible`（bool）；另带 `verify`（**怎么验证它有没有用**，指向具体数据而非空话）+ `metric` + `for_verdict`。', '🔴 **没问题不给动作**（注入式红证）：`good` 与 `unknown` 行**没有** `next_options`（None 或 []）。红证：让 `_next_options` 对任何行都返回一条选项 ⇒ `TestGoodRowsGetNoOptions` 两条 + `test_negative_margin_gets_a_cost_check_option_first` 共 3 条必红；恢复 ⇒ 9 passed。', '毛利判 `bad` 时**第一条**选项必须是「先核对成本价是否已维护」—— 成本未知时毛利根本不可算，跳过去直接调价等于在脏数据上做决定。', '确定性：同一快照连续两次调用 `rows` 逐字节相等（选项来自**规则表**，不读 LLM）。', '🔴 性质自述：视图顶层 `options_basis` 与 `basis.next_options` 均为 `OPTIONS_BASIS`，文本必须含「行业」「人工判断」—— 防止把「行业常见做法」读成「对你这家店的建议」。', 'v1 只收**可逆 + 低成本**动作：清仓 / 下架 / 换供应商这类不可逆动作**不在表里**（登记在 issue #8251「不在本单」，需业务裁定）。'],
+    skip_reason='[backend-contract] 视图语义由 backend/ai-agent-service/tests/test_briefing_product_health_options.py 验证（纯函数、零 LLM、一条注入式判别力红证），不进入 agent-eval 冒烟',
+    tags=['proactive', 'briefing', 'verdict', 'options'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-031 [NORMAL] 复盘第一块原料：历史简报回溯（过去 N 天 AI 提醒过什么），空历史必须自述「没有记录」（源: cases/data.yml）──
+_CASE_DA_031 = EvalCase(
+    id='DA-031',
+    legacy_id='',
+    title='复盘第一块原料：历史简报回溯（过去 N 天 AI 提醒过什么），空历史必须自述「没有记录」',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['上个月你建议我改价，效果如何？'],
+    expectations=[],
+    data_checks=['Java `GET /api/admin/briefing/history?days=N`：按**业务日期倒序**返回最近 N 天（`days` 默认 30、**硬上限 90**、`<=0` 退化为 1）—— 上限不在调用方做（否则一次 `days=10000` 就能把整张表读进内存）。窗口起点按 `BusinessClock.today()` 算（全仓「今天」唯一来源，不另开 `LocalDate.now()`）。查不到 ⇒ **空列表不是 null**。', '🔴 Python `view="history"` 必须走 `/api/admin/briefing/history`，**不是** `VALUED_VIEWS` 里的 view（那个白名单走 `/snapshot`，拿回来的是「今天的快照」—— 名字像、东西完全不是）。判据含 `assert "history" not in VALUED_VIEWS` 与「未触碰 `/snapshot`」。', '🔴 **空历史必须自述「没有记录」**：message 里明写「这不是『一切正常』」。红证：把空态文案改成「过去 N 天经营一切正常」⇒ `test_empty_history_says_so` 必红；恢复 ⇒ 8 passed。', '`days` 透传：默认 30，显式 7 就传 7（上限钳制在 Java 侧，Python 不重复实现，避免两处口径打架）。', '权限面：`view=history` 与当日/快照同码 `dashboard:view`，无权限 ⇒ 拒绝**且不发请求**。', '端点字面量契约：调用点的三个字面量集合 == `{TODAY_ENDPOINT, SNAPSHOT_ENDPOINT, HISTORY_ENDPOINT}`，且三个 `@GetMapping` 都真的在 Java 控制器里（同 PR 补齐被约束对象，铁律 9）。'],
+    skip_reason='[backend-contract] 跨端只读回溯：Java 判据 = backend/admin-api/src/test/java/com/migao/admin/service/DailyBriefingHistoryTest.java（5 条，含 90 天上限注入式红证）；Python 判据 = backend/ai-agent-service/tests/test_briefing_query_history.py（8 条，含空历史诚实性红证）—— 零 LLM，不进 agent-eval',
+    tags=['proactive', 'briefing', 'review'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-032 [NORMAL] 决策采纳记录：AI 建议了什么 → 人做了什么（item_key 稳定 hash、幂等、不记原文）（源: cases/data.yml）──
+_CASE_DA_032 = EvalCase(
+    id='DA-032',
+    legacy_id='',
+    title='决策采纳记录：AI 建议了什么 → 人做了什么（item_key 稳定 hash、幂等、不记原文）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这个月黄金策提醒我的事，我处理了多少？'],
+    expectations=[],
+    data_checks=['表 `briefing_actions`（Flyway V204，bootstrap `schema.sql` 已同步终态）：`tenant_id` / `biz_date` / `item_kind` / `item_key` / `action` / `actor_id`，`UNIQUE(tenant_id, biz_date, item_kind, item_key)` 兜底幂等。', '🔴 **item_key = 标题 sha256 前 16 位**：同标题同 key、不同标题不同 key、**不含标题原文**（判据 `doesNotContain("补货")`）—— 存原文等于把 `daily_briefings.content` 抄一份，内容冗余 + PII 面扩大；存下标则简报每次重排都会把同一条记成两条。', '🔴 **幂等**：同一条目第二次上报走 `updateById` 而不是再 `insert`。红证：把 `if (existing != null)` 改成 `if (false)`（永远 insert）⇒ `repeated_actions_upsert_instead_of_inserting` 必红；恢复 ⇒ 5 passed。', '动作白名单不猜：`opened_agent` 通过，`done` / 空 / null 一律 `false`（`done` / `ignored` 需要 UI 上的「已处理 / 忽略」按钮，属产品决策，不在本单）。', '空查询 ⇒ 空列表不是 null；`days` 上限 90（与 `getBriefingHistory` 同口径）。', '🔴 前端 **fire-and-forget**：点「问黄金策」⇒ 上报被调用**且**浮窗照常打开；上报抛错**不影响**浮窗（红证：去掉 `reportAsked()` 调用 ⇒ 上报断言必红；恢复 ⇒ 6 passed）。', '**记录 ≠ 采纳**：`opened_agent` 只表示「点开问了」，不表示「照着做了」—— 报表文案必须区分，不许说成「采纳率」。'],
+    skip_reason='[backend-contract] 跨端事件面：Java 判据 = backend/admin-api/src/test/java/com/migao/admin/service/BriefingActionServiceTest.java（5 条，含幂等注入式红证）；前端判据 = frontend/admin-web/tests/unit/components/BriefingCardAskAgent.test.tsx（6 条，含上报失败不影响交互）—— 零 LLM，不进 agent-eval',
+    tags=['proactive', 'briefing', 'review', 'event'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-033 [NORMAL] 权衡补刻度：压货资金 / 离同行差多少 / 每件多赚多少（未知不当 0、不乘销量、不做预测）（源: cases/data.yml）──
+_CASE_DA_033 = EvalCase(
+    id='DA-033',
+    legacy_id='',
+    title='权衡补刻度：压货资金 / 离同行差多少 / 每件多赚多少（未知不当 0、不乘销量、不做预测）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['我这批货压了多少钱？把毛利低的调一调，一件能多赚多少？'],
+    expectations=[],
+    data_checks=['行内 `money`：`stock_value`（= stock × avg_cost，压货占用资金）/ `stock_value_basis` / `margin_gap_per_unit`（= peer_median − 本行毛利，**正数 = 比同行少赚**）/ `margin_gap_basis` / `price_up_5pct_per_unit`（= price × 5%）。顶层 `money_basis`。', '🔴 **成本未知不许当 0**：`avg_cost IS NULL` ⇒ `stock_value = None` + `stock_value_basis = "cost_unknown"`。写成 0 等于说「这批货不占钱」，与事实正好相反。红证：把 `None` 换成 `Decimal(0)` ⇒ `test_unknown_cost_is_not_zero_capital` 必红；恢复 ⇒ 16 passed。', '🔴 **每件增量不许乘销量**：`sales_count` 的周期口径在快照契约里没标注，乘上去就是编。红证：把 `price_up_5pct_per_unit` 改成 `price × 5% × sales_count` ⇒ `test_price_step_does_not_multiply_by_sales_count` 必红（同价格不同销量必须给出相同的每件增量）。', '**方向断言双向**：比同行差 ⇒ `margin_gap_per_unit > 0`；比同行好 ⇒ `< 0`。方向写反是最容易犯又最难发现的错，所以正负两种行都断言。', '**钱是事实、选项是建议**：`good` 行**不给选项**（P3 纪律不变）但**照样给钱**（`stock_value` 照出）—— 「这批货压了 5000 元」对好卖的 SKU 同样是事实。', '**选项带钱只给算得出的**：「小范围试调价 +5%」带 `money_impact.per_unit` + `premise`（前提必须写出来：销量不变假设）；算不出的选项**不给字段**，而不是给 0。', '工具层 `message` 必须带「库存成本合计约 X 元」+ 成本未知部分「**算不出来**（不是 0）」—— message 是模型的唯一摘要，钱不进 message 等于不存在。'],
+    skip_reason='[backend-contract] 纯确定性视图判据（零 LLM）：`product_health` 是纯函数、规则表，不进 agent-eval；判据 = backend/ai-agent-service/tests/test_briefing_product_health_money.py（16 条，含两条注入式红证 + 工具层摘要断言）',
+    tags=['proactive', 'briefing', 'decision', 'money'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-034 [NORMAL] 归因：同款对照只对 SKU 级信号有效（毛利能指到变体、退货率只能指到商品）；并修正毛利 verdict 方向（源: cases/data.yml）──
+_CASE_DA_034 = EvalCase(
+    id='DA-034',
+    legacy_id='',
+    title='归因：同款对照只对 SKU 级信号有效（毛利能指到变体、退货率只能指到商品）；并修正毛利 verdict 方向',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这个变体为什么毛利这么低？是不是整款都有问题？'],
+    expectations=[],
+    data_checks=['行内 `attribution` 两种 `kind`：`sibling_margin_contrast`（`level=sku`，能指到具体变体）/ `product_level_only`（`level=product`，退货率用，**明说指不到变体**）。顶层 `attribution_basis`。', '🔴 **退货率不许做变体对照**：`DailyBriefingService.assembleProductReturnStats` 按 `product_id` 聚合 ⇒ 同商品所有 SKU 的 `return_rate` **必然相同** ⇒ 「本行 vs 最好兄弟」的 gap **恒为 0**，那是假归因。判据 `test_high_return_rate_yields_product_level_only` 断言 `"gap" not in attr`；红证：给 `product_level_only` 也加一个 gap ⇒ 必红。', '🔴 **毛利 verdict 方向**（缺陷单 #8280，本单链内修）：`_verdict` 原本只为退货率写（`<= peer_median ⇒ good`），毛利直接复用 ⇒ **毛利越低越判 good**。修法 = `higher_is_better=True` ⇒ `>= peer_median ⇒ good`，`< 0` 仍由 `absolute_bad` 兜底。红证：去掉该参数 ⇒ `test_positive_margin_uses_the_peer_baseline` + 归因 3 条必红（共 4 红）。', '**旧断言把 bug 固化了**：`test_positive_margin_uses_the_peer_baseline` 原写「毛利 10（最低）⇒ good、毛利 50（最高）⇒ bad」——**测试和实现一起错**，所以 CI 一直绿。已改正方向并注红证。', '🔴 **没有对照就不给**：独款商品（同商品只有 1 个 SKU）⇒ `attribution = None`（**不是**「没问题」）。兄弟毛利未知 ⇒ 不算进来（脏数据算出的差值是噪音）。', '**不给因果断言**：`sample_note` 必须并排给出两者销量 + 自述「这是差异证据，不是因果结论」（样本量差很多时差异可能只是样本量）。', '**good 行不给归因**：没毛病时解释「为什么好」是噪音。工具层 `message` 只说能指向变体的那一类（毛利），退货率不进 message 的变体归因。'],
+    skip_reason='[backend-contract] 纯确定性视图判据（零 LLM）：`product_health` 是纯函数 + 规则表；判据 = backend/ai-agent-service/tests/test_briefing_product_health_attribution.py（8 条，含两条注入式红证）+ test_briefing_product_health_baseline.py 的方向断言',
+    tags=['proactive', 'briefing', 'decision', 'attribution'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-035 [NORMAL] 方向性判定守卫：方向必须登记（传给表查），传错/忘传/绕过都不可能通过（源: cases/data.yml）──
+_CASE_DA_035 = EvalCase(
+    id='DA-035',
+    legacy_id='',
+    title='方向性判定守卫：方向必须登记（传给表查），传错/忘传/绕过都不可能通过',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['（无用户输入 —— 这是研发侧守卫，防「判断方向反了但测试跟着错」这类形态）'],
+    expectations=[],
+    data_checks=['🔴 **方向登记即契约**：`METRIC_DIRECTIONS = {return_rate: False（越低越好）, gross_margin: True（越高越好）}`。`_verdict(metric, value, baseline)` 的方向**从表查**，**不由调用方传** —— 缺陷 #8280 的机制正是「调用方忘了传 higher_is_better」。', '🔴 **未登记指标 ⇒ `KeyError` 且报错点名**：新指标没定方向不许静默跑（默认 False 会让「越高越好」的指标静默反向）。判据断言报错文本同时含指标名与 `METRIC_DIRECTIONS`。', '🔴 **调用点源码扫描**（AST）：`_verdict` 的第一个实参必须是**字符串字面量**且在表里；仍用 `higher_is_better=` 关键字传方向 ⇒ 红。红证：把调用改成 `_m = "gross_margin"; _verdict(_m, ...)` ⇒ `test_every_call_site_passes_a_string_literal` + `test_every_literal_metric_is_registered` 双红。', '🔴 **极值双向断言**（最关键的形态守卫）：对表里每个指标造极值数据验证方向。红证：把表里 `gross_margin: True` 改成 `False`（= #8280 的形态）⇒ 本判据 + 基线方向断言**双红**；恢复 ⇒ 8 passed。', '**极值断言必须混合数据**：`_verdict` 是**相对**判据（`<= peer_median ⇒ good`），全员 100% 退货率时基线也是 100% ⇒ 谁都不比谁差 ⇒ 全判 good。这是**合理**的（相对基线不制造「全员异常」），所以极值测试不能拿「全员极值」当样本 —— 这条写进测试 docstring，防下一个人误判成缺陷。', '**行为零变化**（本单是纯守卫）：`return_rate` 表里 False、`gross_margin` 表里 True，与改前调用点传的值完全一致 ⇒ 对外结论不变，因此**不入 CHANGELOG**（纯研发工具类改动，铁律 7 豁免口径）。', '**未覆盖面（如实登记）**：只覆盖 `_verdict` 这一族。其他「方向敏感」的比较（`low_stock` 的 `<=`、`_attribution` 的 `max()` 取最好的兄弟、`money` 的 `peer_median − 毛利` 取正负方向）**不在本单**，同一形态仍存在。'],
+    skip_reason='[backend-contract] 纯研发侧守卫（零 LLM、零用户可见面）：判据 = backend/ai-agent-service/tests/test_briefing_verdict_direction_guard.py（8 条：3 条调用点扫描 + 4 条方向语义 + 1 条未登记即抛），两条注入式红证实跑成立',
+    tags=['proactive', 'briefing', 'guard', 'meta'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-036 [NORMAL] 商品销量排行：问「最近哪些商品卖得最好」走 dashboard_stats(product_ranking)（零覆盖补口，issue #8300）（源: cases/data.yml）──
+_CASE_DA_036 = EvalCase(
+    id='DA-036',
+    legacy_id='',
+    title='商品销量排行：问「最近哪些商品卖得最好」走 dashboard_stats(product_ranking)（零覆盖补口，issue #8300）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['最近 7 天哪些商品卖得最好，给我前 5 名'],
+    expectations=['dashboard_stats(action=product_ranking)'],
+    data_checks=['排行来自服务端（`dashboard_stats(action=product_ranking)` 的 items / 成交量字段），不得由模型编造商品名或销量', '回复须交代**统计口径**（近 7 天 / period=day），不能把「近 7 天销量」说成「今日销量」（#2984 的假涨跌形态）', '条数与用户要的「前 5 名」一致（limit=5）；数据不足 5 条时如实说明只有几条，不补虚构行'],
+    skip_reason='',
+    tags=['dashboard', 'ranking', 'query'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'dashboard_stats', 'action': 'product_ranking'}],
+)
+
 CASES = (
     _CASE_DA_001,
     _CASE_DA_002,
@@ -530,4 +693,13 @@ CASES = (
     _CASE_DA_025,
     _CASE_DA_026,
     _CASE_DA_027,
+    _CASE_DA_028,
+    _CASE_DA_029,
+    _CASE_DA_030,
+    _CASE_DA_031,
+    _CASE_DA_032,
+    _CASE_DA_033,
+    _CASE_DA_034,
+    _CASE_DA_035,
+    _CASE_DA_036,
 )

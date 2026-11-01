@@ -182,7 +182,8 @@ export const SHIPMENT_PAGE_FILE = 'src/pages/worker/shipment/index.tsx'
  * 工人只能在 H5 `/w/`（发货页）看到这份名单，端内工作台里看不见。
  * 本页补的就是这个入口与读面消费，**只读**。
  *
- * ⚠️ 本期**不含标签打印**：发货标签依赖小程序 BLE 通道 + 画布渲染，那是另一包（#7803）。
+ * ✅ 发货联（整套出库单）预览 / 50×70 打印已接（issue #8287；BLE 通道 = #7803）。
+ * ⚠️ 本页**仍不发货**：成品出库的写路径仍是拍照发货 / PC 发货（不新增第二条写路径）。
  *
  * 🔴 路由字面量是**单一真值**：`src/app.config.ts` 的 pages 必须逐字含它
  * （没登记 = 死链；守卫 = `tests/page-entry-reachability.test.ts` 的 L0/L2）。

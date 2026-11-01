@@ -81,6 +81,9 @@ test('空列表 = 可行动空态（不是空白、不是「加载中」）', ()
   assert.match(html, /id="wh5-ready-empty"/)
   assert.match(html, /最后一道工序报完后/, '空态要告诉工人「怎么才会有单」，不是只说「没有」')
   assert.ok(!html.includes('wh5-ready-0'), '空态不得再渲染行')
+  // 真机读数 2026-11-01：0 单时那句「（全部套已完工）」自相矛盾 —— 括号是**结论**，没有单就没有指代对象
+  assert.match(html, /待发货 0 单/, '计数照旧要说')
+  assert.ok(!html.includes('全部套已完工'), '0 单时不得再下「全部套已完工」的结论')
 })
 
 test('截断显式（不静默少显示）', () => {
@@ -393,4 +396,33 @@ test('装配层：读面失败**不冒充空态**（「没有单」≠「读不�
   assert.match(doc._root.innerHTML, /网络超时/)
   assert.ok(!doc._root.innerHTML.includes('id="wh5-ready-empty"'), '读失败不得渲染「暂无全部完工的订单」')
   assert.match(doc._root.innerHTML, /id="wh5-shipment-retry"/)
+})
+
+// ── 纸面可读性（2026-11-01 商米 V2s 真机验收）──────────────────────────────────
+// 现场读数两处：
+//   ① `订单号 20261101275210…` —— 17 位单号被 nowrap + ellipsis 截断（对单/查件时等于没印）；
+//   ② `物流类` / `型` 折成两行 —— 字号 2026-10-25 从 8pt 提到 11pt（#7776）后，12mm 栏宽
+//      放不下四个字（11pt ≈ 3.9mm/字）。
+// 期望：订单号行可折行、订单号永不被省略号吃掉；标签栏宽 ≥ 16mm。
+test('订单号不得被省略号截断（真机：印成 20261101275210…）', () => {
+  const row = buildShipLabelRows(READY_ROW).find((r) => r.key === 'order_no')
+  assert.equal(row.multiline, true, '订单号行必须带 multiline（否则 nowrap+ellipsis 截断 17 位单号）')
+  assert.match(
+    renderShipLabel(READY_ROW),
+    /class="wh5-label-row wh5-label-row-wrap" data-label-key="order_no"/,
+    '订单号行要渲染成可折行形态',
+  )
+})
+
+test('标签栏宽 ≥ 16mm（11pt 的四字标签「物流类型」必须一行放得下）', () => {
+  // 注释里有 `flex: 0 0 12mm` 的历史读数 ⇒ 先剥注释再取规则（避免读成"已修"）
+  const css = fs.readFileSync(path.join(H5_SRC, 'styles.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+  const rule = /\.wh5-label-key\s*\{[^}]*\}/.exec(css)
+  assert.ok(rule, 'styles.css 里找不到 .wh5-label-key 规则')
+  const basis = /flex:\s*0 0 ([\d.]+)mm/.exec(rule[0])
+  assert.ok(basis, '.wh5-label-key 必须用 flex: 0 0 <mm> 定栏宽')
+  assert.ok(
+    Number(basis[1]) >= 16,
+    `栏宽只有 ${basis[1]}mm：11pt 的四字标签会折行（真机读数「物流类/型」）`,
+  )
 })

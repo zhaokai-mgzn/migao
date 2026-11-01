@@ -23,6 +23,23 @@ const nextConfig = {
     ]
   },
 
+  // ── 终端发布清单的**同源转发**（issue #8195）──────────────────────────────────
+  // 清单真身在 `app.migaozn.com/terminal/`（终端程序硬编码的更新检查地址），而下载页在官网
+  // 域名（`migaozn.com` / `www`）⇒ 浏览器直接跨域 GET 拿不到响应体（app 域没有 CORS 头，
+  // 给静态下载面加 CORS 是另一个写面、对 `<a download>` 也毫无必要）。
+  // 这里改成**服务端同源转发**：页面只请求 `/terminal/...`，浏览器看不到跨域。
+  // 下载链接不走这条转发 —— 它指向清单里的绝对地址（`app.migaozn.com`），由 nginx 直接发二进制。
+  // 覆盖点：本地演练可把 `TERMINAL_MANIFEST_ORIGIN` 指到别的落地面。
+  async rewrites() {
+    const terminalOrigin = process.env.TERMINAL_MANIFEST_ORIGIN || 'https://app.migaozn.com'
+    return [
+      {
+        source: '/terminal/:path*',
+        destination: `${terminalOrigin}/terminal/:path*`,
+      },
+    ]
+  },
+
   // ── 已删除两个**无效**顶层键：`trustHost` / `hosts` ────────────────────────────
   // 它们从未是 Next 的配置项（Next 14.2.35 与 16.3.5 的 config schema 里都没有；
   // 旧版只是**静默忽略**，Next 16 起每次构建都会告警：

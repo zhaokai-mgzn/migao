@@ -4,7 +4,8 @@ AI 智能客服系统 - 经营日报（每日简报）查询 Tool（issue #5247 
 只读：`BriefingController` → `GET /api/admin/briefing/today`（方法级 `dashboard:view`）。
 """
 
-from typing import Any, Dict
+import json
+from typing import Any, Dict, List
 from loguru import logger
 
 from app.briefing.proactive import (
@@ -16,7 +17,13 @@ from app.briefing.proactive import (
     daily_findings_total,
     proactive_status,
 )
-from app.briefing.product_health import FIELD_LABELS, NOT_ON_SALE, product_health
+from app.briefing.product_health import (
+    FIELD_LABELS,
+    NOT_ON_SALE,
+    VERDICT_BAD,
+    VERDICT_WATCH,
+    product_health,
+)
 from app.tools.base import admin_api_failure, BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
@@ -26,6 +33,14 @@ VALUED_VIEWS = ("product_health",)
 
 #: 当日简报端点（依赖 LLM 生成链路；未生成 ⇒ 空态）
 TODAY_ENDPOINT = "/api/admin/briefing/today"
+
+#: 历史简报端点（issue #8253）：复盘的第一块原料 —— 过去 N 天 AI 提醒过什么。
+#: 🔴 它是**独立端点**，不是 `VALUED_VIEWS` 里的一个 view（那个白名单走的是 `/snapshot`，
+#: 拿回来的是「今天的快照」—— 名字像、东西完全不是）。
+HISTORY_ENDPOINT = "/api/admin/briefing/history"
+
+#: `view="history"` 的默认回看天数（上限 90 由 Java 侧 `HISTORY_MAX_DAYS` 钳制，此处不重复实现）
+HISTORY_DEFAULT_DAYS = 30
 
 #: 确定性快照端点（按需视图的数据面：同一份内核快照，零 LLM）—— 端点字面量与
 #: `BriefingController` 的 `@GetMapping("/snapshot")` 由单测机械钉住（不许凭语义推测，§17.3）
@@ -79,7 +94,8 @@ class BriefingQueryTool(BaseTool):
         "required": [],
     }
 
-    async def execute(self, context: ToolContext, view: str = "", **kwargs) -> ToolResult:
+    async def execute(self, context: ToolContext, view: str = "", days: int = HISTORY_DEFAULT_DAYS,
+                      **kwargs) -> ToolResult:
         view = (view or "").strip()
         if not self.check_permission(context):
             return ToolResult(
@@ -88,7 +104,7 @@ class BriefingQueryTool(BaseTool):
                 message="您没有权限查看经营日报",
                 suggestion="请联系管理员为您开通「经营概览」查看权限后重试",
             )
-        if view and view not in VALUED_VIEWS:
+        if view and view != "history" and view not in VALUED_VIEWS:
             # 白名单之外一律拒绝（不猜、不降级）：具名视图的契约就是「一个高频问题一个视图」
             return ToolResult(
                 success=False,
@@ -104,7 +120,14 @@ class BriefingQueryTool(BaseTool):
             # 会让本工具被判成「无 admin-api 调用点」⇒ 权限对账（`ci workflow helper unit tests`）
             # 两条判据一起红。常量与调用点字面量的一致性由单测机械钉住
             #（`tests/test_tools_briefing_query.py` 的 `test_call_site_literals_match_the_declared_endpoints`）。
-            if view:
+            if view == "history":
+                response = await client.get(
+                    "/api/admin/briefing/history",
+                    params={"days": days},
+                    tenant_id=context.tenant_id,
+                    user_id=context.user_id,
+                )
+            elif view:
                 response = await client.get(
                     "/api/admin/briefing/snapshot",
                     tenant_id=context.tenant_id,
@@ -140,6 +163,8 @@ class BriefingQueryTool(BaseTool):
             )
 
         data: Dict[str, Any] = response.get("data") or {}
+        if view == "history":
+            return render_history_result(data, days, context)
         if view:
             return render_view_result(view, data, context)
         if not data:
@@ -208,6 +233,67 @@ class BriefingQueryTool(BaseTool):
         )
 
 
+def render_history_result(rows: Any, days: int, context: ToolContext) -> ToolResult:
+    """历史简报 → 给模型的摘要（issue #8253）。
+
+    **空历史必须自己说「没有」**：`data=[]` 不等于「一切正常」。让模型对着空列表说
+    「近期经营无异常」是这类工具最典型的假绿（对齐 P0 的「未知 ≠ 0」）——
+    所以空态 message 里明写「这不是『一切正常』，是『没有记录』」。
+    """
+    items: List[Dict[str, Any]] = [row for row in (rows or []) if isinstance(row, dict)]
+    if not items:
+        return ToolResult(
+            success=True,
+            data={"days": days, "count": 0, "rows": []},
+            message=(
+                f"过去 {days} 天没有历史简报。**这不是「一切正常」，是「没有记录」** —— "
+                "可能简报功能刚启用、或这段时间没有生成。别据此下「经营没问题」的结论。"
+            ),
+        )
+
+    dates = [str(row.get("bizDate")) for row in items if row.get("bizDate")]
+    earliest, latest = (min(dates), max(dates)) if dates else ("未知", "未知")
+    lines = [f"过去 {days} 天共 {len(items)} 条历史简报（{earliest} ~ {latest}）。"]
+
+    shown = 0
+    for row in items:
+        if shown >= 12:
+            break
+        content = row.get("content")
+        if isinstance(content, str):
+            try:
+                content = json.loads(content)
+            except (ValueError, TypeError):
+                content = {}
+        if not isinstance(content, dict):
+            content = {}
+        titles: List[str] = []
+        for key in ("suggestions", "todos", "risks"):
+            for entry in (content.get(key) or [])[:3]:
+                if isinstance(entry, dict):
+                    text = str(entry.get("title") or entry.get("text") or entry.get("summary") or "")[:40]
+                elif isinstance(entry, str):
+                    text = entry[:40]
+                else:
+                    text = ""
+                if text:
+                    titles.append(text)
+        if titles:
+            lines.append(f"- {row.get('bizDate')}：{'；'.join(titles)}")
+            shown += 1
+    if len(items) > 12:
+        lines.append(f"（只列最近 12 条有内容的，共 {len(items)} 条）")
+    lines.append(
+        "以上是当时的**原文**；要判断「后来有没有被处理 / 有没有效」，"
+        "请再查对应的当前视图做对比（例如 view=product_health 看退货率现在是中位还是高于上四分位）。"
+    )
+    return ToolResult(
+        success=True,
+        data={"days": days, "count": len(items), "earliest": earliest, "latest": latest, "rows": items},
+        message="\n".join(lines),
+    )
+
+
 def render_view_result(view: str, snapshot: Dict[str, Any], context: ToolContext) -> ToolResult:
     """具名跨域视图的按需结果（族 3 · 包 2，issue #5369）。
 
@@ -244,6 +330,48 @@ def render_view_result(view: str, snapshot: Dict[str, Any], context: ToolContext
         message += f"（另有 {filtered['filtered_count']} 个 SKU 因商品未上架未纳入 —— {filtered['message']}）"
     if result["truncated"]:
         message += f"（视图只列前 {result['count']} 行，共 {result['rows_total']} 行）"
+    # 同行基线 + 判断摘要（issue #8234）：message 是模型的唯一摘要 —— 基线不写进来，
+    # 模型只会照念「8 个 SKU」，verdict 等于不存在。
+    rate_baseline = result["baselines"]["return_rate"]
+    if rate_baseline:
+        bad = sum(1 for row in result["rows"] if row["return_rate_verdict"] == VERDICT_BAD)
+        watch = sum(1 for row in result["rows"] if row["return_rate_verdict"] == VERDICT_WATCH)
+        message += (
+            f"。退货率同行基线：中位 {rate_baseline['peer_median']:.1%}、"
+            f"上四分位 {rate_baseline['peer_p75']:.1%}"
+            f"（{rate_baseline['sample_size']} 个样本）—— "
+            f"{bad} 个 SKU 高于上四分位、{watch} 个居中（这是相对基线，不是绝对标准）"
+        )
+    else:
+        message += "。退货率样本不足（少于 5 个有效 SKU），本次不给出好坏判断"
+    # 归因（issue #8279）：模型看不见「为什么差」，只会把 verdict 当成结论复述。
+    # 🔴 只说**能指向变体**的那一种（毛利是 SKU 级）；退货率是商品级，不含变体归因。
+    variant_hits = [
+        row for row in result["rows"]
+        if (row.get("attribution") or {}).get("kind") == "sibling_margin_contrast"
+    ]
+    if variant_hits:
+        worst = min(variant_hits, key=lambda item: item["attribution"]["gap"])
+        attr = worst["attribution"]
+        message += (
+            f"。其中 {len(variant_hits)} 个变体的毛利明显低于同款其他变体（最悬殊的是 "
+            f"{worst.get('sku_id')}：比同款最好的变体少赚 {abs(attr['gap']):.2f} 元/件）"
+            "—— 差异指向**这个变体的定价或成本维护**，不是整款的问题"
+        )
+
+    # 权衡的刻度（issue #8276）：钱不进 message，模型只会念「8 个 SKU」——
+    # 「这批货压了多少钱」是老板看第一眼就想知道的数，必须自己说出来。
+    stocked = [row for row in result["rows"]
+               if row.get("money", {}).get("stock_value") is not None]
+    if stocked:
+        total_value = sum(row["money"]["stock_value"] for row in stocked)
+        no_value = sum(1 for row in result["rows"]
+                       if row.get("money", {}).get("stock_value") is None)
+        message += f"。这些 SKU 压着的库存成本合计约 {total_value:,.2f} 元（stock × 成本价）"
+        if no_value:
+            # 🔴 「算不出来」不是「不占钱」—— 必须说清哪部分是盲区
+            message += f"；另有 {no_value} 个 SKU 成本未知 ⇒ 这部分的资金占用**算不出来**（不是 0）"
+
     unknown_cost = result["unknown_cost_rows"]
     if unknown_cost:
         # 关键口径：成本未知**不是**毛利 0 —— 不许让模型把「读不到」说成「成本为零」

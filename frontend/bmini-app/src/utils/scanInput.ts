@@ -26,7 +26,15 @@
  */
 
 /** 码从哪个形态取出来的（排查/判据用；**不上屏**） */
-export type ScanLandingFrom = 'param-t' | 'param-code' | 'scan-text' | 'mini-app-code' | 'link-qr' | 'none'
+export type ScanLandingFrom =
+  | 'param-t'
+  | 'param-code'
+  | 'scan-text'
+  | 'mini-app-code'
+  | 'link-qr'
+  /** A 档 `q` 里的**部位短链**（`/s/<短码>`）：小程序不跟随 302 ⇒ 这份码要先换 token（issue #8196） */
+  | 'link-qr-short'
+  | 'none'
 
 /** 该去哪一页：报工页 / 补打页 / 不去（不是落地形态） */
 export type ScanLandingKind = 'report' | 'reprint' | 'none'
@@ -155,18 +163,42 @@ function kindOfLink(text: string): ScanLandingKind {
 }
 
 /**
+ * `q` 里的链接是不是**部位短链**（`https://app.migaozn.com/s/<短码>`，issue #8196）。
+ *
+ * 它判的是**码从哪个来源取出来的**（路径段 vs 查询参数），**不是**码的形状 ——
+ * 与 {@link resolveScanLanding} 的 `kind` 同一条纪律（见模块头 ②）：前端仍不猜「这一串是不是短码」。
+ * 为什么要区分：A 档（微信「扫普通链接二维码打开小程序」）里小程序**不跟随服务端 302**，
+ * `/s/<短码>` 这一支必须先由短链 JSON 面换回 token（`services/workerShortLinkService.ts`），
+ * 而 `…/b/report/?t=<token>` 这一支（302 的落点形态）直接把 `t` 当 token 用，**不需要**多一跳。
+ */
+export function isPartShortLink(text: string | null | undefined): boolean {
+  const raw = String(text ?? '').trim()
+  if (raw === '') return false
+  // 显式 `t` / `token` / `code` 参数优先（那是 302 落点 / 手输形态）⇒ 码不来自路径段
+  if (paramInText(raw, SCAN_PARAM_KEYS) !== '') return false
+  return /\/s\/[A-Za-z0-9_-]+/.test(raw)
+}
+
+/**
  * **入口解析的唯一实现**：任意形态 ⇒ 「去哪一页 + 什么码」。
  *
  * 优先级（每个来源在真实世界里互斥，写死顺序只为结果确定）：
  * ① `q`（**A 档主路径**：小程序后台「扫普通链接二维码打开小程序」⇒ 微信把整条链接 URL-encoded
  *    放进 `getEnterOptionsSync().query.q`）→ ② `scene`（B 档「小程序码」，本期不生成但解析侧兼容）
  * → ③ `text`（小程序内扫一扫）→ ④ 页面参数 / 启动参数 → ⑤ h5 的 URL search。
+ *
+ * 🔴 `q` 那一支多给一个 `from` 取值：`/s/<短码>` ⇒ `'link-qr-short'`（要先换 token，issue #8196）；
+ * 其余（`…/b/report/?t=` / `/o/` / `/i/`）⇒ `'link-qr'`（码原样可用，与改前逐字一致）。
  */
 export function resolveScanLanding(entry: ScanEntry = {}): ScanLanding {
   const q = String(entry.q ?? entry.query?.q ?? entry.params?.q ?? '').trim()
   if (q !== '') {
     const link = decodeLoose(q)
-    return { kind: kindOfLink(link), code: codeFromScanText(link), from: 'link-qr' }
+    return {
+      kind: kindOfLink(link),
+      code: codeFromScanText(link),
+      from: isPartShortLink(link) ? 'link-qr-short' : 'link-qr',
+    }
   }
   const scene = String(entry.scene ?? entry.query?.scene ?? entry.params?.scene ?? '').trim()
   if (scene !== '') {
