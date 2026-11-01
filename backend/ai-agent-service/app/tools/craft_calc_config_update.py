@@ -71,6 +71,34 @@ ALLOWED_CONFIG_KEYS: tuple = (
     "oversize_height_threshold",
 )
 
+#: 商家说法 → 内部键名（issue #8300 实测：模型把「上下卷边」自造成 `hem_allowance`，
+#: 服务端只认内部键 ⇒ `unknown_config_key`）。键名翻译放在**确定性代码**里，不靠模型猜。
+KEY_ALIASES: dict = {
+    "上下卷边": "hem_margin",
+    "上下卷边合计": "hem_margin",
+    "单开余量": "margin_single",
+    "多开余量": "margin_multi",
+    "拼色单开余量": "margin_mixed_single",
+    "拼色多开余量": "margin_mixed_multi",
+    "褶倍下限": "min_fullness",
+    "单色每折吃布": "per_fold_single",
+    "拼色配布长度": "per_fold_mixed_times",
+    "进位步长": "meters_rounding_step",
+    "超宽阈值": "oversize_width_threshold",
+    "超高阈值": "oversize_height_threshold",
+    "工艺档位": "tiers",
+    "兜底用料公式": "default_formula",
+}
+
+
+def _canonical_key(key: Any) -> str:
+    """键名归一：商家说法 → 内部键；已是合法内部键 ⇒ 原样返回（未知键仍交给 fail-closed）。"""
+    raw = str(key or "").strip()
+    if raw in ALLOWED_CONFIG_KEYS:
+        return raw
+    return KEY_ALIASES.get(raw, raw)
+
+
 #: 数值比较容差：JSON 里 `0.25` / `0.250000` 是同一个值，浮点解析也留一丝误差。
 _NUMERIC_TOLERANCE = 1e-9
 
@@ -146,6 +174,11 @@ class CraftCalcConfigUpdateTool(BaseTool):
         "算具体一单的用布量/报价请引导商家到后台算料页填尺寸计算。"
         "【纪律】不要把内部键名 / 内部标识摆给商家：确认卡与人话一律用中文字段名。"
         "【标注】WRITE|IDEMPOTENT — 变更类写操作（同一 changes/before 重放结果一致），必须先确认再执行"
+        "｜【键名】上下卷边→hem_margin、单开余量→margin_single、多开余量→margin_multi、"
+        "拼色单开余量→margin_mixed_single、拼色多开余量→margin_mixed_multi、褶倍下限→min_fullness、"
+        "单色每折吃布→per_fold_single、拼色配布长度→per_fold_mixed_times、进位步长→meters_rounding_step、"
+        "超宽阈值→oversize_width_threshold、超高阈值→oversize_height_threshold、"
+        "工艺档位→tiers、兜底用料公式→default_formula；用商家说法当键也接受，**禁止自造英文键名**"
     )
 
     #: 写面权限码 = `CraftCalcConfigController` 的类级 `processing:manage`
@@ -197,8 +230,8 @@ class CraftCalcConfigUpdateTool(BaseTool):
                 ),
             )
 
-        changes_map = {k: v for k, v in (changes or {}).items() if v is not None}
-        before_map = dict(before or {})
+        changes_map = {_canonical_key(k): v for k, v in (changes or {}).items() if v is not None}
+        before_map = {_canonical_key(k): v for k, v in (before or {}).items()}
 
         # ② 参数面校验（**本地 fail-closed：一个请求都不发**）
         if not changes_map:
