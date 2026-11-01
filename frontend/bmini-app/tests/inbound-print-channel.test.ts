@@ -51,6 +51,9 @@ import { layoutInboundLabel } from '../src/utils/inbound/labelLayout'
 import { renderInboundLabel, type RenderedLabel } from '../src/utils/inbound/labelCanvas'
 import { stripComments, walk, SRC_DIR } from './helpers/h5PlatformLists'
 import { callSites } from './helpers/inboundCallSites'
+import { readFileSync } from 'fs'
+import { join } from 'path'
+import { showsPrinterLinkHint } from '../src/utils/inbound/terminalTransport'
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..')
 
@@ -925,5 +928,40 @@ describe('terminal print bridge（手持标签机）', () => {
     ;(window as any).migaoTerminal = { post: jest.fn() }
     expect(hasTerminalPrintBridge()).toBe(true)
     await expect(createPrintTransport()).resolves.toMatchObject({ id: 'terminal-print-bridge' })
+  })
+})
+
+describe('D11 终端上不显示「选择哪台打印机」（issue #8310 真机取证）', () => {
+  /**
+   * 终端走**机身内置打印机**，没有「选设备」这一步。旧形态：页面先写「由本机打印机直接出纸」，
+   * 下一行又写「还没选过打印机…请选择标签打印机」—— 两句话自相矛盾（2026-11-01 真机截图）。
+   * 判据：终端桥在 ⇒ `showsPrinterLinkHint()` 必须为 false；两个出标签的页面都必须用它做渲染条件。
+   */
+  const w = window as any
+
+  afterEach(() => {
+    delete w.chrome
+    delete w.migaoTerminal
+  })
+
+  it('终端桥在 ⇒ 不显示；不在 ⇒ 显示', () => {
+    w.chrome = { webview: { postMessage: () => {} } }
+    w.migaoTerminal = { post: () => {} }
+    expect(showsPrinterLinkHint()).toBe(false)
+
+    delete w.migaoTerminal
+    expect(showsPrinterLinkHint()).toBe(true)
+  })
+
+  it('两个出标签的页面都按它做渲染条件（摘掉 ⇒ 本判据红）', () => {
+    const files = [
+      'src/pages/worker/inbound/index.tsx',
+      'src/pages/worker/reprint/index.tsx',
+    ]
+    for (const rel of files) {
+      const src = readFileSync(join(__dirname, '..', rel), 'utf8')
+      expect(src).toContain('showsPrinterLinkHint()')
+      expect(src).toMatch(/capability\.ok && showsPrinterLinkHint\(\) && \(/)
+    }
   })
 })

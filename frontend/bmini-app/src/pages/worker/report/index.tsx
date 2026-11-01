@@ -112,7 +112,7 @@ import './index.scss'
 export const RESOLVE_FAILED_HINT = '扫码结果读取失败，请重试'
 
 /** 手输提示。 */
-export const MANUAL_HINT = '输码（短码 / 加工单号 / 订单号）'
+export const MANUAL_HINT = '输码（加工单号 / 订单号）'
 
 /**
  * 没有码落地时先给的那句话（2026-10-27 用户裁定，issue #7920）：
