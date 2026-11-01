@@ -250,7 +250,11 @@ export function layoutInboundLabel(view: InboundLabelView): InboundLabelPlan {
   const codeFont = Math.round(width * GRID.codeFontRatio)
 
   /** 自上而下逐行排（整行文字；超宽 ⇒ 可见截断） */
-  let cursorY = pad
+  // 🔴 真机出纸实测（2026-11-01 15:19 用户拍照）：**纸面顺序与画布上下相反** ——
+  //    画布最底部的二维码出现在纸面最上部，画布最顶部的「货号」贴着纸尾。
+  //    ⇒ 只在画布底部留白，等于把白边留在了纸面顶部。两端都留 5mm，纸面首尾才有白边。
+  const topSafePx = Math.max(pad, Math.round((geometry.dotsPerMm || 8) * BOTTOM_SAFE_MM))
+  let cursorY = topSafePx
   const pushRow = (raw: string, fontPx: number, bold: boolean, extraGap = 0) => {
     const fitted = fitTextVisible(raw, inner, fontPx)
     if (fitted.truncated) warnings.push(`字段行超宽已截断：${fitted.text}`)
