@@ -94,7 +94,10 @@ export function shipLabelDateText(value: unknown): string {
  */
 export function buildShipLabelRows(order: ReadyShipmentOrderLike | null | undefined): RowsLabelRow[] {
   const rows: RowsLabelRow[] = [
-    { key: 'order_no', label: '订单号', value: textOrMissing(order?.order_no) },
+    // 订单号**必须可折行**（2026-11-01 与 /w/ 对齐，#8340 的真机修复：17 位单号被 nowrap+ellipsis
+    // 截成 `20261101275210…` —— 纸上的单号要拿去对单/查件，截断等于没印）。
+    // parity 判据：frontend/bmini-app/tests/ship-label-rows-parity.test.ts 与 /w/ 逐行等价（issue #8287）。
+    { key: 'order_no', label: '订单号', value: textOrMissing(order?.order_no), multiline: true },
     { key: 'consignee', label: '收货人', value: textOrMissing(order?.customer_name) },
     { key: 'customer_phone', label: '电话', value: textOrMissing(order?.customer_phone) },
     {
