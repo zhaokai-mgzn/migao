@@ -43,7 +43,7 @@ from typing import Any, Dict, List
 from loguru import logger
 
 from app.tools.base import BaseTool, ToolContext, ToolResult, admin_api_failure
-from app.tools.confirm_value import config_key_label
+from app.tools.confirm_value import CRAFT_CALC_CONFIG_FIELD_LABELS, config_key_label
 from app.utils.http_client import get_admin_api_client
 
 #: 端点**不抽成模块常量**（有意，同 `notification_manage.py` 的口径）：
@@ -73,22 +73,11 @@ ALLOWED_CONFIG_KEYS: tuple = (
 
 #: 商家说法 → 内部键名（issue #8300 实测：模型把「上下卷边」自造成 `hem_allowance`，
 #: 服务端只认内部键 ⇒ `unknown_config_key`）。键名翻译放在**确定性代码**里，不靠模型猜。
-KEY_ALIASES: dict = {
-    "上下卷边": "hem_margin",
-    "上下卷边合计": "hem_margin",
-    "单开余量": "margin_single",
-    "多开余量": "margin_multi",
-    "拼色单开余量": "margin_mixed_single",
-    "拼色多开余量": "margin_mixed_multi",
-    "褶倍下限": "min_fullness",
-    "单色每折吃布": "per_fold_single",
-    "拼色配布长度": "per_fold_mixed_times",
-    "进位步长": "meters_rounding_step",
-    "超宽阈值": "oversize_width_threshold",
-    "超高阈值": "oversize_height_threshold",
-    "工艺档位": "tiers",
-    "兜底用料公式": "default_formula",
-}
+#: 单一真值源 = `confirm_value.CRAFT_CALC_CONFIG_FIELD_LABELS`（卡面同款人话名），这里只做反查，
+#: 避免第二份「中文 → 键」表漂移。
+KEY_ALIASES: dict = {label: key for key, label in CRAFT_CALC_CONFIG_FIELD_LABELS.items()}
+#: 商家口语会把「合计」省掉（实测原话就是「上下卷边」）⇒ 补一条同义写法。
+KEY_ALIASES["上下卷边"] = "hem_margin"
 
 
 def _canonical_key(key: Any) -> str:
@@ -174,11 +163,8 @@ class CraftCalcConfigUpdateTool(BaseTool):
         "算具体一单的用布量/报价请引导商家到后台算料页填尺寸计算。"
         "【纪律】不要把内部键名 / 内部标识摆给商家：确认卡与人话一律用中文字段名。"
         "【标注】WRITE|IDEMPOTENT — 变更类写操作（同一 changes/before 重放结果一致），必须先确认再执行"
-        "｜【键名】上下卷边→hem_margin、单开余量→margin_single、多开余量→margin_multi、"
-        "拼色单开余量→margin_mixed_single、拼色多开余量→margin_mixed_multi、褶倍下限→min_fullness、"
-        "单色每折吃布→per_fold_single、拼色配布长度→per_fold_mixed_times、进位步长→meters_rounding_step、"
-        "超宽阈值→oversize_width_threshold、超高阈值→oversize_height_threshold、"
-        "工艺档位→tiers、兜底用料公式→default_formula；用商家说法当键也接受，**禁止自造英文键名**"
+        "｜【键名】" + "、".join(f"{alias}→{key}" for alias, key in KEY_ALIASES.items())
+        + "；用商家说法当键也接受，**禁止自造英文键名**"
     )
 
     #: 写面权限码 = `CraftCalcConfigController` 的类级 `processing:manage`
