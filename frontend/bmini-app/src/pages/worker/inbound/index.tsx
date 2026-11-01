@@ -159,6 +159,9 @@ export default function WorkerInboundPage() {
 
   const [label, setLabel] = useState<InboundLabelView | null>(null)
   const [previewUrl, setPreviewUrl] = useState('')
+  // 预览占位比：外层按**画布的宽高比**撑高，内层铺满 ⇒ 屏上看得到整张标签（含二维码）
+  const [previewWidthPx, setPreviewWidthPx] = useState(0)
+  const [previewHeightPx, setPreviewHeightPx] = useState(0)
   const [printState, setPrintState] = useState('')
 
   // 能力探测**在动手前**做（不是打完才失败）：h5 + 安全上下文 + 非 iOS + 有 Web Bluetooth
@@ -365,6 +368,8 @@ export default function WorkerInboundPage() {
       // 出图（预览）：与送打印**同一份**绘制计划（不另写一份版面，也不各写一份画布工厂）
       const preview = renderLabelPreview(detail.data)
       setPreviewUrl(preview.url)
+      setPreviewWidthPx(preview.widthPx)
+      setPreviewHeightPx(preview.heightPx)
       if (preview.notice) setNotices((prev) => [...prev, preview.notice])
     } catch (e: any) {
       // 服务端 400/422/409 的文案**原样**落到按钮上方（口径真值在服务端，端侧不重写第二份）
@@ -664,7 +669,15 @@ export default function WorkerInboundPage() {
               编号 {label.shortCode || '（缺失）'} · 单号 {label.inboundNo || '-'} · 已打印{' '}
               {label.printCount ?? 0} 次
             </Text>
-            {previewUrl !== '' && <Image className='admin-label-preview' src={previewUrl} mode='widthFix' />}
+            {previewUrl !== '' && (
+              <View
+                className='admin-label-preview-box'
+                data-testid='label-preview-box'
+                style={{ paddingBottom: `${Math.round((previewHeightPx * 100) / Math.max(1, previewWidthPx))}%` }}
+              >
+                <Image className='admin-label-preview' src={previewUrl} mode='aspectFit' />
+              </View>
+            )}
             <View
               className={`admin-action admin-action--gold${busy || !capability.ok ? ' admin-action--disabled' : ''}`}
               data-testid='inbound-print'

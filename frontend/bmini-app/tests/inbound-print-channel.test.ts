@@ -965,3 +965,21 @@ describe('D11 终端上不显示「选择哪台打印机」（issue #8310 真机
     }
   })
 })
+
+describe('D12 预览按画布宽高比占位（issue #8325：屏上被裁掉下半截 ⇒ 二维码看不见）', () => {
+  /**
+   * WebView 83 没有 `aspect-ratio`，`Image mode='widthFix'` 不按比例撑高 ⇒ 预览只剩上半截。
+   * 判据：两个出标签的页面都必须用 `admin-label-preview-box`（padding-bottom 占位）+ 内层铺满。
+   */
+  it('两个页面都用 padding-bottom 占位框 + 绝对定位铺满', () => {
+    for (const rel of ['src/pages/worker/inbound/index.tsx', 'src/pages/worker/reprint/index.tsx']) {
+      const src = readFileSync(join(__dirname, '..', rel), 'utf8')
+      expect(src).toContain("className='admin-label-preview-box'")
+      expect(src).toMatch(/paddingBottom:/)
+      expect(src).toContain("mode='aspectFit'")
+    }
+    const scss = readFileSync(join(__dirname, '..', 'src/pages/worker/inbound/index.scss'), 'utf8')
+    expect(scss).toMatch(/\.admin-label-preview-box\s*\{[^}]*position:\s*relative/)
+    expect(scss).toMatch(/\.admin-label-preview\s*\{[^}]*position:\s*absolute/)
+  })
+})

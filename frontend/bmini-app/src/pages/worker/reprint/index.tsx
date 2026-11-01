@@ -97,6 +97,9 @@ export default function WorkerReprintPage() {
   const [detailState, setDetailState] = useState<ReprintDetailState | null>(null)
   const [label, setLabel] = useState<InboundLabelView | null>(null)
   const [previewUrl, setPreviewUrl] = useState('')
+  // 预览占位比：外层按**画布的宽高比**撑高，内层铺满 ⇒ 屏上看得到整张标签（含二维码）
+  const [previewWidthPx, setPreviewWidthPx] = useState(0)
+  const [previewHeightPx, setPreviewHeightPx] = useState(0)
   const [printState, setPrintState] = useState('')
 
   // 能力探测**在动手前**做（照 P3：iOS / 非 HTTPS / 无蓝牙 / 非 h5 各有各的文案）
@@ -143,6 +146,8 @@ export default function WorkerReprintPage() {
       // 预览与送打印**同一份**绘制计划（同族共用件；画不出来时它会给一句明说）
       const preview = renderLabelPreview(state.view)
       setPreviewUrl(preview.url)
+      setPreviewWidthPx(preview.widthPx)
+      setPreviewHeightPx(preview.heightPx)
       if (preview.notice) setNotices((prev) => [...prev, preview.notice])
       setStep('detail')
     } finally {
@@ -410,7 +415,15 @@ export default function WorkerReprintPage() {
               批次 {label.batchNo || '-'} · 供应商 {label.supplier || '-'} · 入库{' '}
               {label.inboundDate || '-'}
             </Text>
-            {previewUrl !== '' && <Image className='admin-label-preview' src={previewUrl} mode='widthFix' />}
+            {previewUrl !== '' && (
+              <View
+                className='admin-label-preview-box'
+                data-testid='label-preview-box'
+                style={{ paddingBottom: `${Math.round((previewHeightPx * 100) / Math.max(1, previewWidthPx))}%` }}
+              >
+                <Image className='admin-label-preview' src={previewUrl} mode='aspectFit' />
+              </View>
+            )}
             <View
               className={`admin-action admin-action--gold${busy || !capability.ok ? ' admin-action--disabled' : ''}`}
               data-testid='reprint-print'

@@ -147,8 +147,8 @@ const GRID = {
   metersFontRatio: 0.082, // ≈32px ≈ 3.9mm
   fieldFontRatio: 0.065, // ≈25px ≈ 3.1mm
   codeFontRatio: 0.075, // ≈29px（人可读短码：手输兜底用）
-  qrBoxRatio: 0.46, // 上限 ≈22mm 见方（2026-11-01 用户裁定「二维码太大了，可以缩小些」；每模块仍 ≥5 点）
-  qrMinRatio: 0.36, // 下限 ≈17mm 见方（再小就扫不动了）—— 字段多时按可用高度自适应收
+  qrBoxRatio: 0.4, // 上限 ≈22mm 见方（2026-11-01 用户裁定「二维码太大了，可以缩小些」；每模块仍 ≥5 点）
+  qrMinRatio: 0.32, // 下限 ≈17mm 见方（再小就扫不动了）—— 字段多时按可用高度自适应收
   gapRatio: 0.021, // ≈8px 行间（50×80 的纸面更宽，行间跟着放宽一档 —— 空隙均摊在字段区，不留大块空白）
 } as const
 
@@ -250,11 +250,9 @@ export function layoutInboundLabel(view: InboundLabelView): InboundLabelPlan {
   const codeFont = Math.round(width * GRID.codeFontRatio)
 
   /** 自上而下逐行排（整行文字；超宽 ⇒ 可见截断） */
-  // 🔴 真机出纸实测（2026-11-01 15:19 用户拍照）：**纸面顺序与画布上下相反** ——
-  //    画布最底部的二维码出现在纸面最上部，画布最顶部的「货号」贴着纸尾。
-  //    ⇒ 只在画布底部留白，等于把白边留在了纸面顶部。两端都留 5mm，纸面首尾才有白边。
-  const topSafePx = Math.max(pad, Math.round((geometry.dotsPerMm || 8) * BOTTOM_SAFE_MM))
-  let cursorY = topSafePx
+  // 顶部只留基础内边距（`pad`）。2026-11-01 16:16 用户复看：顶部再留 5mm 后，
+  // 纸面上「文字与二维码之间」的空隙变大 ⇒ 这段白边只加在**二维码那一侧**（见 BOTTOM_SAFE_MM）。
+  let cursorY = pad
   const pushRow = (raw: string, fontPx: number, bold: boolean, extraGap = 0) => {
     const fitted = fitTextVisible(raw, inner, fontPx)
     if (fitted.truncated) warnings.push(`字段行超宽已截断：${fitted.text}`)
@@ -387,7 +385,7 @@ export function layoutInboundLabel(view: InboundLabelView): InboundLabelPlan {
 }
 
 /** 标签末端的安全白边（mm）：热敏标签机在标签间隙/剥离区印不出来。3mm 真机仍被切 ⇒ 改 5mm（用户 2026-11-01 裁定） */
-export const BOTTOM_SAFE_MM = 5
+export const BOTTOM_SAFE_MM = 10
 
 /** 版面声明的纸型（与矩阵同源；渲染器/打印适配层读它，不写 `50mm 80mm` 字面量） */
 export function inboundLabelPageSize(): string {
