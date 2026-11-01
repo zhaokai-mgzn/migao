@@ -138,6 +138,13 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
     // 红证：身份卡改读 `getCachedWorker()`（不调服务端）⇒ 本断言收到 0 次调用（红）
   })
 
+  it('🔴 不渲染「工人功能」分组小标题（2026-11-01 用户逐字：小字可以移除）', async () => {
+    await renderLoggedIn()
+    expect(screen.queryByText('工人功能')).toBeNull()
+    // 删的是标题，不是能力：入口照旧在（把入口一起删掉 ⇒ 本断言红）
+    expect(screen.getByText('拍照入库')).toBeTruthy()
+  })
+
   it('工人功能入口各自跳对路由（都走 gaps.ts 的路由常量，不写字面量）', async () => {
     await renderLoggedIn()
 

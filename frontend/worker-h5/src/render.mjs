@@ -692,7 +692,22 @@ export function afterComplete(view, receipt) {
     alternatives: [],
     needs_selection: [],
     completed: receipt.setCompleted === true,
+    // 绑定工序的工人（issue #7749；2026-11-01 商米 V2s 真机）：这一笔报的就是他那道 ⇒ 回执后
+    // 必须把状态说成「已经做完」。改前只清 `operation`、不动 `worker_operation_state`
+    // ⇒ 渲染层落到 `!== 'done'` 分支，屏上写「本件没有这道工序，不用报工」——与事实相反
+    // （计件已记上），只有刷新才恢复。判据：worker-h5-scan-complete 的自动报工用例。
+    worker_operation_state: workerOperationStateAfterComplete(view, receipt),
   }
+}
+
+/** 回执后的「绑定工序状态」：只在本笔报的正是他那道（或已经是 done）时给 `done`。 */
+function workerOperationStateAfterComplete(view, receipt) {
+  const bound = typeof view?.worker_operation === 'string' && view.worker_operation.trim() !== ''
+  if (!bound) return view?.worker_operation_state ?? null
+  // 回执给了下一道 ⇒ 屏上走工序卡，不需要这句话（保持中性，不谎报 done / absent）
+  if (receipt?.nextOperation) return null
+  if (view?.worker_operation_state === 'done') return 'done'
+  return view?.operation?.logical_name === view.worker_operation ? 'done' : (view?.worker_operation_state ?? null)
 }
 
 /**
@@ -747,10 +762,10 @@ function doneNoticeBase(receipt, auto) {
   // `frontend/bmini-app/tests/worker-scan-report-copy-same-source.test.ts` 逐字钉住）⇒
   // 这里保留字面量、不拼 `head`（拼了就只剩后缀，守卫会判「回执缺『已报工 · 下一道：』」）。
   if (receipt.orderCompleted) {
-    return auto ? '已自动报工 · 本单工序都报完了 🎉' : '已报工 · 本单工序都报完了 🎉'
+    return auto ? '已自动报工 · 本单工序都报完了' : '已报工 · 本单工序都报完了'
   }
   if (receipt.setCompleted === true) {
-    return auto ? '已自动报工 · 本套工序都报完了 🎉' : '已报工 · 本套工序都报完了 🎉'
+    return auto ? '已自动报工 · 本套工序都报完了' : '已报工 · 本套工序都报完了'
   }
   // 🔴 「下一道」必须**带部位**（issue #4963）：改前只拼 `nextOperation.logical_name`
   // ⇒ 跨部位时屏上少一半信息（`打卷 · 布帘` 显示成 `打卷`）。回执的 `next_operation`
@@ -1209,7 +1224,7 @@ function mainView(state) {
     <div class="wh5-set" id="wh5-set">第 ${esc(v.set_no)} 套 · ${esc(v.position?.position_name ?? '')}</div>
     ${ternLine(v)}
     ${v.completed === true
-      ? '<p class="wh5-done" id="wh5-completed">本套工序都已报工 🎉</p>'
+      ? '<p class="wh5-done" id="wh5-completed">本套工序都已报工</p>'
       : v.worker_operation
         ? `<p class="wh5-sub" id="wh5-no-operation">你的工序是「${esc(v.worker_operation)}」：本件${v.worker_operation_state === 'done' ? '的这道已经做完' : '没有这道工序'}，不用报工。</p>`
         : '<p class="wh5-sub" id="wh5-no-operation">本部位推断不出待报工序（工序未确定 ⇒ 不得记账）</p>'}
