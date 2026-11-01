@@ -442,6 +442,11 @@ cases:
     # （账面新增一条违规，与 burn-down「只许缩短」冲突）。只读用例的漂移恒为 0，
     # 商品维漂移判据（缺省 `max_growth: 0`）已足够。
     # **断言面（user_inputs / expectations / data_checks）一字未动、无放宽。**
+    # 2026-11-01（issue #8300 自测发现一）：裸工具名期望 ⇒ 结构性不可失败；
+    # 按真跑轨迹（全档 run 41292387267 的 call_args）补「真返回」效果层。
+    must_succeed:
+      - tool: product_search
+      - tool: product_detail
     precondition:
       - type: product_count_for_keyword
         source: "遮光窗帘"
