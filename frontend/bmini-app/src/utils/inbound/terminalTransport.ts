@@ -21,6 +21,17 @@ export function hasTerminalPrintBridge(): boolean {
 }
 
 /**
+ * 终端上要不要显示「连接哪台打印机」这段运行期状态？
+ *
+ * 🔴 不要（2026-11-01 真机取证）：终端走**机身内置打印机**，没有「选设备」这一步；
+ * 而 `printerLinkText()` 的默认态文案是写给蓝牙标签机的（"还没选过打印机…请选择标签打印机"），
+ * 与上一行「由本机打印机直接出纸」自相矛盾。判据 = `frontend/bmini-app/tests/inbound-print-channel.test.ts` 的 D11。
+ */
+export function showsPrinterLinkHint(): boolean {
+  return !hasTerminalPrintBridge()
+}
+
+/**
  * 造一个终端打印通道。
  *
  * @param options.timeoutMs 等终端回执的上限（默认 20s；打印头忙 / 缺纸时原生会回失败而不是不回）

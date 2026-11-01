@@ -80,6 +80,7 @@ import {
   type PrintCapability,
 } from '../../../utils/inbound/printCapability'
 import { printerLink, printerLinkText } from '../../../utils/inbound/printerLink'
+import { showsPrinterLinkHint } from '../../../utils/inbound/terminalTransport'
 import {
   SDK_UNAVAILABLE_HINT,
   createH5CanvasFactory,
@@ -465,7 +466,7 @@ export default function WorkerInboundPage() {
         </Text>
 
         {/* 连接状态（**运行期事实**）：能打 ≠ 已连上（机器可能没开机）—— 两件事分开显示 */}
-        {capability.ok && (
+        {capability.ok && showsPrinterLinkHint() && (
           <Text className='admin-card__note' data-testid='inbound-printer-link'>
             {printerLinkText(link)}
           </Text>
