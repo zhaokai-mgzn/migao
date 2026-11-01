@@ -69,7 +69,7 @@ def test_phase_seven_block_sits_before_the_legacy_todo_comment():
     """d：Phase 7 段在「遗留 TODO」注释块之前（否则等于把 SQL 写进注释里，永不执行）。"""
     sql = _sql()
     insert_at = sql.find("INSERT INTO craft_calc_configs")
-    todo_at = sql.find("遗留 TODO（#3496 / #3519 剩余失败）")
+    todo_at = sql.find("#3496 / #3519")   # ASCII 锚：遗留 TODO 注释块的工单号（#6802 同族守卫）
     assert insert_at >= 0, "找不到 craft_calc_configs 段"
     assert todo_at >= 0, "找不到「遗留 TODO」注释块（本判据的锚点漂了，需要更新判据）"
     assert insert_at < todo_at, (
