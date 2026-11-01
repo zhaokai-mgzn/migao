@@ -34,7 +34,7 @@ import {
   type PendingPhoto,
 } from '../../../utils/inbound/barcodeDecode'
 import { classifyManualCode, type LabelCodeReading } from '../../../utils/inbound/codeSpace'
-import { inboundLabelPageSize, type InboundLabelView } from '../../../utils/inbound/labelLayout'
+import type { InboundLabelView } from '../../../utils/inbound/labelLayout'
 import { renderInboundLabel } from '../../../utils/inbound/labelCanvas'
 import {
   SDK_UNAVAILABLE_HINT,
@@ -304,9 +304,12 @@ export default function WorkerReprintPage() {
         ))}
 
         {/* 🔴 打印能力缺口**动手前**就在屏上（不是打完才失败）：本机能不能打印，在拍照之前就说清 */}
-        <Text className='admin-card__note' data-testid='reprint-print-capability'>
-          {capability.ok ? capability.readyHint || PRINT_READY_HINT : capability.hint}
-        </Text>
+        {/* 只在**打不了**时说原因；能打就不再常驻一行说明（用户 2026-11-01：只留预览和按钮） */}
+        {!capability.ok && (
+          <Text className='admin-card__note' data-testid='reprint-print-capability'>
+            {capability.hint}
+          </Text>
+        )}
 
         {/* 连接状态（**运行期事实**）：能打 ≠ 已连上（机器可能没开机）—— 两件事分开显示 */}
         {capability.ok && showsPrinterLinkHint() && (
@@ -400,20 +403,7 @@ export default function WorkerReprintPage() {
 
         {step === 'detail' && label && (
           <View className='admin-card' data-testid='reprint-step-detail'>
-            <Text className='admin-card__title'>入库标签 {inboundLabelPageSize()}</Text>
-            <Text className='admin-card__meta'>
-              编号 {label.shortCode || '（缺失）'} · 单号 {label.inboundNo || '-'} · 已打印{' '}
-              {label.printCount ?? 0} 次
-            </Text>
-            <Text className='admin-card__meta' data-testid='reprint-detail-fields'>
-              {label.productName || '未填品名'} · 色号 {label.colorName || '-'}
-              {label.doorWidth ? ` / ${label.doorWidth}` : ''} · 米数 {label.quantity ?? '-'} · 货号{' '}
-              {label.skuCode || '-'} · 缸号 {label.dyeLot || '-'}
-            </Text>
-            <Text className='admin-card__meta'>
-              批次 {label.batchNo || '-'} · 供应商 {label.supplier || '-'} · 入库{' '}
-              {label.inboundDate || '-'}
-            </Text>
+            {/* 2026-11-01 用户裁定：「把入库标签上面的那段文字移除掉，只留打印预览和打印按钮」 */}
             {previewUrl !== '' && (
               <View
                 className='admin-label-preview-box'
