@@ -309,12 +309,17 @@ export function layoutInboundLabel(view: InboundLabelView): InboundLabelPlan {
   if (String(view.supplierDocNo ?? '').trim()) rows.push(`送单 ${view.supplierDocNo}`)
   rows.forEach((line) => pushRow(line, fieldFont, false))
 
-  // ── ⑤ 底部：二维码（居中）+ 人可读短码（居中）──────────────────────────
+  // ── ⑤ 底部：只有二维码（居中）──────────────────────────────────────────
+  //
+  // 🔴 2026-11-01 用户裁定：「移除二维码下面的短码」—— 短码仍印在标签的**人可读**位置（页面读面 +
+  //    补打页手输入口），纸面上不再重复一行文字，把高度还给二维码。
+  // 🔴 底部安全区 = 3mm：标签末端（间隙/剥离区）印不出来，留白不足会把码的下沿切掉
+  //    （真机出纸实测：原先只剩 1mm 白边）。按介质矩阵的 dotsPerMm 换算，**不写死像素**。
   const payload = labelCodePayload(view.shortCode)
   const codeRaw = payload ? String(view.shortCode).trim().toUpperCase() : MISSING_CODE_TEXT
   const code = fitTextVisible(codeRaw, inner, codeFont)
-  const codeY = height - pad - codeFont
-  const qrBottom = codeY - gap * 2
+  const bottomSafePx = Math.round((geometry.dotsPerMm || 8) * BOTTOM_SAFE_MM)
+  const qrBottom = height - Math.max(bottomSafePx, pad)
   // 码区上限 = 版心宽的 62%；下限 = 40%；两者之间按「文字排完剩下的高度」自适应
   const qrMax = Math.round(width * GRID.qrBoxRatio)
   const qrMin = Math.round(width * GRID.qrMinRatio)
@@ -367,17 +372,6 @@ export function layoutInboundLabel(view: InboundLabelView): InboundLabelPlan {
     warnings.push('版面偏挤：字段区与二维码区可能重叠（请核对字段数量）')
   }
 
-  ops.push({
-    kind: 'text',
-    text: code.text,
-    x: Math.max(pad, Math.round((width - estimateTextWidth(code.text, codeFont)) / 2)),
-    y: codeY,
-    fontPx: codeFont,
-    bold: true,
-    maxWidthPx: inner,
-    truncated: code.truncated,
-  })
-
   return {
     widthPx: width,
     heightPx: height,
@@ -387,6 +381,9 @@ export function layoutInboundLabel(view: InboundLabelView): InboundLabelPlan {
     warnings,
   }
 }
+
+/** 标签末端的安全白边（mm）：热敏标签机在标签间隙/剥离区印不出来，留 3mm 保证内容不被切 */
+export const BOTTOM_SAFE_MM = 3
 
 /** 版面声明的纸型（与矩阵同源；渲染器/打印适配层读它，不写 `50mm 80mm` 字面量） */
 export function inboundLabelPageSize(): string {
