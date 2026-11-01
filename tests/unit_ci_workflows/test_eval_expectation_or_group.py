@@ -91,6 +91,10 @@ _TEXT_SATISFIABLE_BRANCHES = frozenset({"direct_reply"})
 BARE_BRANCH_LEDGER = frozenset({
     "customer_manage", "direct_reply", "interact", "nav_guide",
     "order_query", "product_detail", "product_search", "validate_input",
+    # 2026-11-01（issue #8300）：ST-011 的 OR 面补入「知识库检索」这一条真实路径 ——
+    # 实测两次（全档 41285244288 / 定点 41286316979）模型分别走 nav_guide(how_to) 与 knowledge_search，
+    # 答复都正确却不在期望集里。登记的是**分支写法**，不是能力背书；只读工具、无写面。
+    "knowledge_search",
 })
 
 # 现取读数（语料规模）：防「把语料清空 ⇒ 循环体不执行 ⇒ 恒真（vacuous）」（§19.1）。
