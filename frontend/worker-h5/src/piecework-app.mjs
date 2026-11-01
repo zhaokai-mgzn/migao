@@ -9,6 +9,7 @@
 //   ③ 401 ⇒ 显式回落「请先登录」，并给登录页真链接（不静默重试、不按上一个人的身份读钱）。
 
 import { createApi, SESSION_EXPIRED } from './api.mjs'
+import { installFlexGapFallback } from './flex-gap.mjs'
 import { PIECEWORK_UNREADABLE, renderPiecework } from './piecework.mjs'
 
 /** 登录页（同源静态页；本页未登录时的出口）。 */
@@ -151,6 +152,8 @@ export function createPieceworkApp({ doc, api, location = globalThis.location, r
 
 /** 浏览器入口（`piecework.html` 用 `<script type="module">` 直接加载，无构建步骤）。 */
 export async function boot() {
+  // WebView 83 没有 flex `gap`（issue #8336 / UI-148）⇒ 先量一次再上兜底类
+  installFlexGapFallback(globalThis.document)
   const api = createApi({ storage: globalThis.localStorage, deviceLabel: 'H5' })
   const app = createPieceworkApp({ doc: globalThis.document, api })
   await app.boot()

@@ -12013,7 +12013,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（145 case）
+## 前端 UI 域（146 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -14137,6 +14137,20 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-10-31 新增（issue #8200 · P1-06 上线审计「读失败出口」）：取号 UI-147（`python3 scripts/next_case_id.py UI` 现取 main 最大 = UI-144，在飞 PR #8214 占 UI-145/146）。 ｜ tags: read-failure, empty-state, categories, class-guard
 
+### UI-148. 手持机 WebView 83 没有 flex `gap` ⇒ 工人端间距兜底（`.no-flex-gap` 作用域 + margin 兜底，issue #8336） 🔵
+```
+你: 手持标签机（商米 V2s）上工人报工页「裁剪 应做 1.00 米 0.25 元/米 待报工」挤成一串，字叠在一起；页头按钮也贴字并折行
+期望: direct_reply
+数据: 判据 1·**探测口径**（`frontend/worker-h5/src/flex-gap.mjs`）：用「两个 10px 子项 + 10px 间距」量真布局 —— 量到 ≈20px 判不支持、给 `<html>` 加 `no-flex-gap`；量到 ≈30px 判支持、**不加类**。红证 = 把 `width >= probeSize*2+gap-0.5` 改成恒 `true` ⇒ `worker-h5-flex-gap.test.mjs` 判据 ①红。
+数据: 判据 2·**不误伤现代浏览器**：支持时不得加类（否则 `gap` 与 margin 兜底叠加，PC/手机 Chrome ≥84 上间距翻倍）⇒ 判据 ② 红证 = 无条件加类。
+数据: 判据 3·**探测无副作用**：探测节点必须从 `body` 拆掉（判据 ③）；量不出宽度 / 没有 body ⇒ 视为支持且不抛（判据 ④⑤）。
+数据: 判据 4·**真机可见**（商米 V2s / Chrome 83.0.4103.120）：报工屏「裁剪 / 应做 1.00 米 / 0.25 元/米 / 待报工」四段分行或分列、不重叠；页头三个按钮不折行。判定 = 真机截图 + `getBoundingClientRect().left` 两两不重叠。
+数据: 判据 5·**不回退**：同一份 HTML 在 Chromium ≥84 上视觉不变（不加类 ⇒ 样式表逐字生效），且不新增任何 API 契约。
+跳过: [backend-contract] 纯前端布局兼容，由 node --test（worker-h5-flex-gap）+ 真机截图覆盖，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.layout, frontend-fix.no-api-change
+溯源: 2026-11-01 新增（issue #8336）：真机读数「裁剪 应做 1.00 米0.25 元/米待报工」三列挤成一串 —— Chrome 83 不支持 flex gap，而 60 处 gap 在真机上全等于没写。修法 = 运行期探测 + `.no-flex-gap` 作用域下的 margin 兜底（grid 不受影响）。取号 UI-148。 ｜ tags: ui, layout, worker-h5, webview83
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -14166,8 +14180,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：960（活跃 152，跳过 808）
-- tier 分布：smoke 15 / normal 885 / adversarial 33
+- 用例总数：961（活跃 152，跳过 809）
+- tier 分布：smoke 15 / normal 886 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14193,7 +14207,7 @@
 - 工具注册器域：1
 - 设置域：11
 - 令牌刷新域：4
-- 前端 UI 域：145
+- 前端 UI 域：146
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
