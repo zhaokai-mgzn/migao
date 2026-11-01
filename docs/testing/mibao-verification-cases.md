@@ -11924,7 +11924,7 @@
 ### ST-011. 企业收款二维码（微信/支付宝）C 端支付页展示与平台不经手资金（二清规避） 🔵
 ```
 你: 我支付这笔订单，怎么付款
-期望: direct_reply or order_query
+期望: direct_reply or order_query or knowledge_search
 数据: C 端收款码卡（卡型 `payment`）的**发射点**：C 端只读工具 `payment_qrcode_query`（无参，按租户取商家自己的收款码）返回的 data 即卡载荷 —— 含 `payment_qrcodes` 键（wechat/alipay 子对象含精简字段 image_url/payee_name），卡片渲染微信/支付宝切换与收款方（#4085 第 1 项）
 数据: 「应付金额」**只在载荷带 amount 时**展示（对话内收款码查询无订单上下文 ⇒ 不带 amount，卡片不显示金额行）；金额行由组件测试 frontend/mini-app/tests/payment-card.test.tsx 覆盖
 数据: 页面注明「款项直接支付给商家」（平台不经手资金，二清规避）
