@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: data（源: cases/data.yml，35 条）
+# 域: data（源: cases/data.yml，36 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -646,6 +646,25 @@ _CASE_DA_035 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── DA-036 [NORMAL] 商品销量排行：问「最近哪些商品卖得最好」走 dashboard_stats(product_ranking)（零覆盖补口，issue #8300）（源: cases/data.yml）──
+_CASE_DA_036 = EvalCase(
+    id='DA-036',
+    legacy_id='',
+    title='商品销量排行：问「最近哪些商品卖得最好」走 dashboard_stats(product_ranking)（零覆盖补口，issue #8300）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['最近 7 天哪些商品卖得最好，给我前 5 名'],
+    expectations=['dashboard_stats(action=product_ranking)'],
+    data_checks=['排行来自服务端（`dashboard_stats(action=product_ranking)` 的 items / 成交量字段），不得由模型编造商品名或销量', '回复须交代**统计口径**（近 7 天 / period=day），不能把「近 7 天销量」说成「今日销量」（#2984 的假涨跌形态）', '条数与用户要的「前 5 名」一致（limit=5）；数据不足 5 条时如实说明只有几条，不补虚构行'],
+    skip_reason='',
+    tags=['dashboard', 'ranking', 'query'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'dashboard_stats', 'action': 'product_ranking'}],
+)
+
 CASES = (
     _CASE_DA_001,
     _CASE_DA_002,
@@ -682,4 +701,5 @@ CASES = (
     _CASE_DA_033,
     _CASE_DA_034,
     _CASE_DA_035,
+    _CASE_DA_036,
 )

@@ -2889,7 +2889,7 @@
 ```
 溯源: 2026-10-20 新增（issue #7370，P0-1 之后按用户「逐步推进」落地为 P0-2 段 1）。落码 = ① V169 迁移（两列）+ 建库脚本终态同步；② CreditPolicy（纯函数口径）+ 7 条判据；③ OrderService 下单闸门；④ CustomerService.creditStatus/updateCreditSettings + 两个端点；⑤ 客户详情页「授信与往来」卡片 + 4 条页面判据；⑥ CHANGELOG。⚠️ **未做（照实登记）**：部分收款核销、账龄分档、审批出口、现结订单豁免 —— 分属 #7370 段 2/3 与 #7374(P1-2)。取号 = 现取 origin/main 的 CU 最大 012 ⇒ CU-013。 ｜ tags: backend-contract, credit, credit-limit, payment-terms, receivable, admin-api, red-proof
 
-## 数据域（35 case）
+## 数据域（36 case）
 
 ### DA-001. 经营概览 🔵
 ```
@@ -3346,6 +3346,18 @@
 跳过: [backend-contract] 纯研发侧守卫（零 LLM、零用户可见面）：判据 = backend/ai-agent-service/tests/test_briefing_verdict_direction_guard.py（8 条：3 条调用点扫描 + 4 条方向语义 + 1 条未登记即抛），两条注入式红证实跑成立
 ```
 溯源: 2026-10-31 新增（issue #8293）：由缺陷 #8280 触发 —— 「测试和实现一起错」这类形态没有任何东西会变红。三层守卫：① 方向从表查（签名层面无传错机会）② 调用点 AST 扫描（变量绕过 / 忘登记即红）③ 极值双向断言（改表即红）。**未覆盖面**：只覆盖 `_verdict` 一族；`low_stock` 比较、归因的 `max()` 取最佳兄弟、money 的差值方向仍靠人工判断。 ｜ tags: proactive, briefing, guard, meta
+
+### DA-036. 商品销量排行：问「最近哪些商品卖得最好」走 dashboard_stats(product_ranking)（零覆盖补口，issue #8300） 🔵
+```
+你: 最近 7 天哪些商品卖得最好，给我前 5 名
+期望: dashboard_stats(action=product_ranking)
+数据: 排行来自服务端（`dashboard_stats(action=product_ranking)` 的 items / 成交量字段），不得由模型编造商品名或销量
+数据: 回复须交代**统计口径**（近 7 天 / period=day），不能把「近 7 天销量」说成「今日销量」（#2984 的假涨跌形态）
+数据: 条数与用户要的「前 5 名」一致（limit=5）；数据不足 5 条时如实说明只有几条，不补虚构行
+必须成功: dashboard_stats(product_ranking)
+```
+真值: dashboard-jump.product-ranking
+溯源: 2026-11-01 新增（issue #8300 自测发现二）：补 `dashboard_stats(action=product_ranking)` 的零覆盖 —— 覆盖率报告显示该 action 无任何用例，属「能力坏了没人知道」的面。断言面 = 工具 + args.action（换工具即红）+ must_succeed（取不到数据即红）+ 口径散文（近 7 天不得说成今日）。 ｜ tags: dashboard, ranking, query
 
 ## 防御域（24 case）
 
@@ -14187,8 +14199,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：961（活跃 152，跳过 809）
-- tier 分布：smoke 15 / normal 886 / adversarial 33
+- 用例总数：962（活跃 153，跳过 809）
+- tier 分布：smoke 15 / normal 887 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14198,7 +14210,7 @@
 - 对话边界域：53
 - 跨域：3
 - 客户域：13
-- 数据域：35
+- 数据域：36
 - 防御域：24
 - 财务对账域：6
 - 人事域：13
