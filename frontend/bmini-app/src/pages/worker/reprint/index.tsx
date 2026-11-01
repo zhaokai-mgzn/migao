@@ -218,7 +218,7 @@ export default function WorkerReprintPage() {
     setPrintState('')
     const shortCode = String(label?.shortCode || '').trim()
     if (!shortCode) {
-      setError('这张标签没有短码，不能打印（可回电脑端补打）。')
+      setError('这张标签没有编号，不能打印（可回电脑端补打）。')
       return
     }
     setBusy(true)
@@ -283,7 +283,7 @@ export default function WorkerReprintPage() {
       <View className='admin-surface__header'>
         <Text className='admin-surface__title'>拍照补打标签</Text>
         <Text className='admin-surface__subtitle'>
-          拍观星台入库标签（或手输 8 位短码）→ 看单据详情 → 补打一张新标签
+          拍入库标签上的二维码（或手输标签编号）→ 看单据详情 → 补打一张新标签
         </Text>
       </View>
 
@@ -317,7 +317,7 @@ export default function WorkerReprintPage() {
               <Text>拍照（对着标签上的二维码）</Text>
             </View>
             <Text className='admin-card__meta'>
-              请把二维码拍清楚、拍完整；标签磨花认不出也可以手输短码
+              请把二维码拍清楚、拍完整；标签磨花认不出也可以手输编号
             </Text>
             <View
               className={`admin-action admin-action--gold${busy || !photo ? ' admin-action--disabled' : ''}`}
@@ -330,14 +330,14 @@ export default function WorkerReprintPage() {
               <Text>识别这张照片</Text>
             </View>
             <View className='admin-action' data-testid='reprint-to-manual' onClick={() => setStep('manual')}>
-              <Text>标签磨花了？手输短码</Text>
+              <Text>标签磨花了？手输编号</Text>
             </View>
           </View>
         )}
 
         {step === 'manual' && (
           <View className='admin-card' data-testid='reprint-step-manual'>
-            <Text className='admin-card__title'>手输标签上的 8 位短码</Text>
+            <Text className='admin-card__title'>手输标签编号（8 位）</Text>
             <Input
               className='admin-input'
               data-testid='reprint-manual-code'
@@ -377,7 +377,7 @@ export default function WorkerReprintPage() {
           <View className='admin-card' data-testid='reprint-not-found'>
             <Text className='admin-card__note'>{detailState.message}</Text>
             <View className='admin-action' data-testid='reprint-back-to-manual' onClick={() => setStep('manual')}>
-              <Text>重新输入短码</Text>
+              <Text>重新输入编号</Text>
             </View>
           </View>
         )}
@@ -398,7 +398,7 @@ export default function WorkerReprintPage() {
           <View className='admin-card' data-testid='reprint-step-detail'>
             <Text className='admin-card__title'>入库标签 {inboundLabelPageSize()}</Text>
             <Text className='admin-card__meta'>
-              短码 {label.shortCode || '（缺失）'} · 单号 {label.inboundNo || '-'} · 已打印{' '}
+              编号 {label.shortCode || '（缺失）'} · 单号 {label.inboundNo || '-'} · 已打印{' '}
               {label.printCount ?? 0} 次
             </Text>
             <Text className='admin-card__meta' data-testid='reprint-detail-fields'>

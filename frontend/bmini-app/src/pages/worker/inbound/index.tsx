@@ -379,7 +379,7 @@ export default function WorkerInboundPage() {
     setPrintState('')
     const shortCode = String(label?.shortCode || '')
     if (!shortCode) {
-      setError('这张标签没有短码，不能打印（可回电脑端补打）。')
+      setError('这张标签没有编号，不能打印（可回电脑端补打）。')
       return
     }
     setBusy(true)
@@ -661,7 +661,7 @@ export default function WorkerInboundPage() {
           <View className='admin-card' data-testid='inbound-step-label'>
             <Text className='admin-card__title'>入库标签 {inboundLabelPageSize()}</Text>
             <Text className='admin-card__meta'>
-              短码 {label.shortCode || '（缺失）'} · 单号 {label.inboundNo || '-'} · 已打印{' '}
+              编号 {label.shortCode || '（缺失）'} · 单号 {label.inboundNo || '-'} · 已打印{' '}
               {label.printCount ?? 0} 次
             </Text>
             {previewUrl !== '' && <Image className='admin-label-preview' src={previewUrl} mode='widthFix' />}

@@ -92,7 +92,7 @@ export interface InboundLabelPlan {
 }
 
 /** 缺码时纸面上的可见标注（设计 §7.1「留空位并标注」） */
-export const MISSING_CODE_TEXT = '短码缺失·未出码'
+export const MISSING_CODE_TEXT = '编号缺失·未出码'
 
 /** 文本宽度估算：CJK（含全角标点）按 1 em，ASCII 按 0.55 em —— 与 canvas `measureText` 同量级 */
 export function estimateTextWidth(text: string, fontPx: number): number {
@@ -348,7 +348,7 @@ export function layoutInboundLabel(view: InboundLabelView): InboundLabelPlan {
     codeTop = qr.y
   } else {
     // 🔴 缺码不画假码：留空位 + 可见标注（红证：画占位二维码 ⇒ 判据必红）
-    warnings.push('短码缺失或非法：未绘制二维码（不画占位码）')
+    warnings.push('标签编号缺失或非法：未绘制二维码（不画占位码）')
     const mark = fitTextVisible(MISSING_CODE_TEXT, qrBox, fieldFont)
     const boxX = Math.round((width - qrBox) / 2)
     ops.push({ kind: 'rect', x: boxX, y: qrBottom - qrBox, w: qrBox, h: qrBox, color: '#ffffff' })
