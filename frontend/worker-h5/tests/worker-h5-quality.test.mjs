@@ -86,7 +86,9 @@ test('② 开了「质检」页、无记录 ⇒ 状态「正常」+ 空态 + 页
   // 2026-10-27：入口上移到页头动作栏（只对开了 inspect 的工人可见）
   assert.match(html, /id="wh5-worker-entries"[\s\S]*id="wh5-quality-entry"[^>]*>质检</)
   // 🔴 用户逐字「质检不要显示合格」：整块（含状态/按钮/说明）不得出现「合格」**字样**
-  const block = html.slice(html.indexOf('id="wh5-quality"'))
+  // 只取质检 section 本体（页面下方「报工类型」里也有一个「正常」按钮，不是同一句话）
+  const start = html.indexOf('id="wh5-quality"')
+  const block = html.slice(start, html.indexOf('</section>', start))
   assert.equal(block.includes('合格'), false)
 })
 
@@ -216,4 +218,27 @@ test('⑪ 质检工序 + 未开通「质检」页 ⇒ 无报工按钮，且如�
   assert.equal(html.includes('id="wh5-report"'), false)
   assert.equal(html.includes('id="wh5-quality"'), false)
   assert.match(html, /id="wh5-quality-only"[^>]*>本道是质检工序：默认没问题；要记返工需开通「质检」页/)
+})
+
+// ── 质检员视角（2026-11-01 商米 V2s 真机验收）──────────────────────────────────
+// 现场读数：只开 `inspect` 的质检员（周敏 W3001）扫水洗唛进报工页 —— 页头挂着红字
+// 「本机菜单未开报工页（按管理员配置显隐）；本机报工仍可用 —— …或换一台设备 / 换一个工人」。
+// 他本来就不报工，质检块才是他要用的面：这条警告对他是噪音，且读起来像「这台机器配错了」。
+test('只开质检页（质检员）⇒ 不再挂「报工页没开」的红字，但质检块照旧在', () => {
+  const html = renderPage(loaded(null, [], [PAGE_INSPECT]))
+  assert.equal(html.includes('id="wh5-report-menu-closed"'), false, '质检员不该看到「报工页没开」警告')
+  assert.equal(html.includes('id="wh5-quality-entry"'), true, '质检入口必须在（那是他要用的面）')
+  // 反向：两个页面都没开 ⇒ 提示照旧（证明判据不是「把提示永远关掉」）
+  const neither = renderPage(loaded(null, [], ['order']))
+  assert.equal(neither.includes('id="wh5-report-menu-closed"'), true, '既没报工也没质检 ⇒ 提示照旧')
+})
+
+test('质检记录不再与块头结论重复同一句话（真机：「正常」印了两遍）', () => {
+  const html = renderPage(loaded({ result: 'pass', result_label: '合格' }, [PASS_RECORD]))
+  // 只取质检 section 本体（页面下方「报工类型」里也有一个「正常」按钮，不是同一句话）
+  const start = html.indexOf('id="wh5-quality"')
+  const block = html.slice(start, html.indexOf('</section>', start))
+  const occurrences = (block.match(/>正常</g) ?? []).length
+  assert.equal(occurrences, 1, `块头与记录行只该有一句「正常」，实测 ${occurrences} 句`)
+  assert.match(block, /检验人 李质检/, '检验人照旧要印（去掉的是重复的结论标签，不是记录本身）')
 })
