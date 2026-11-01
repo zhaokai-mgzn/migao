@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，169 条）
+# 域: misc（源: cases/misc.yml，168 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -1798,24 +1798,6 @@ _CASE_MC_098 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── MC-099 [NORMAL] **admin-api → ai-agent 内部调用腿的可观测契约**：接线断了必须摆进 `/actuator/health`，且恒 UP 不熔断（issue #6896）（源: cases/misc.yml）──
-_CASE_MC_099 = EvalCase(
-    id='MC-099',
-    legacy_id='',
-    title='**admin-api → ai-agent 内部调用腿的可观测契约**：接线断了必须摆进 `/actuator/health`，且恒 UP 不熔断（issue #6896）',
-    skill=Skill.GENERAL,
-    difficulty=Difficulty.NORMAL,
-    user_inputs=['本地漏设 `AI_AGENT_BASE_URL` / `AI_AGENT_SERVICE_TOKEN` 时，凭什么在业务侧静默驳回「系统繁忙」**之前**就知道这条腿断了？'],
-    expectations=[],
-    data_checks=['🔴 **判据 1·事实必须在面上**：`AiAgentLinkHealthIndicator.health()` 的 details 必须含 `base_url` / `base_url_configured` / `token_configured` / `reachable` / `probe_error` / `probed_at` 六键 —— **去掉任一键即红**（执行点 = `backend/admin-api/src/test/java/com/migao/admin/config/AiAgentLinkHealthIndicatorTest.java`）', '🔴 **判据 2·恒 UP 不许熔断**：token 未配、base-url 不可达、base-url 未配置三种坏态下，`status` 必须**仍是 `UP`**。沿用 #5184 / #4517 的既有裁定 —— 把 `/actuator/health` 打成 DOWN 会连带部署腿 / 探活 / 负载均衡一起红，比原问题更糟。**有人顺手改成 DOWN ⇒ 红**', '🔴 **判据 3·只暴露有无，不暴露值**：注入非空 token 后 `details.toString()` 必须**不含**该 token 原文 —— 防「把配置值直接摆进对外健康端点」这类泄密（红证 = 把 `token_configured` 换成 `service_token`）', '**判据 4·坏配置降级为事实而非异常**：`base-url` 为空串时不得调用探针、不得抛异常，须落 `base_url_configured=false` + `reachable=false` + 带原因的 `probe_error`', '**边界（照实登记）**：① 本用例只判「事实有没有被摆出来」，**不判**「运维看到 DOWN 态的 details 后是否真会去修」—— 那是值守面的事；② 每次 health 现探一次（超时 800ms 封顶）、**不缓存**，故 health 被高频拉取时会给 ai-agent 增加等量 `/health` 请求，本仓 health 非热点路径 ⇒ 暂不引后台线程；③ 六个客户端里各自重复的坏默认值**本单未收敛到一处**（8000 对 `deploy/docker-compose.yml` 的 `8001:8000` 是正确的容器内地址，改默认值会弄坏容器那条路）'],
-    skip_reason='[backend-contract] 零 LLM 的确定性单测（假探针 + 纯函数判定），mvn 真跑、零网络、不进 agent-eval 冒烟',
-    tags=['backend-contract', 'liveness', 'observability'],
-    persona='',
-    debug_user='',
-    form_prefill=[],
-    forbidden_card_text=[],
-)
-
 # ── MC-100 [NORMAL] **入库单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6928 的类级固化）（源: cases/misc.yml）──
 _CASE_MC_100 = EvalCase(
     id='MC-100',
@@ -3217,7 +3199,6 @@ CASES = (
     _CASE_MC_096,
     _CASE_MC_097,
     _CASE_MC_098,
-    _CASE_MC_099,
     _CASE_MC_100,
     _CASE_MC_101,
     _CASE_MC_102,

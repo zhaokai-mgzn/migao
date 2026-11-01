@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（169 case）
+## 杂项域（168 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5676,18 +5676,6 @@
 跳过: [backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 字面量 + 读两个前端文件 + 纯函数判定 + 注入自证），pytest 真跑、零网络、不进 agent-eval 冒烟
 ```
 溯源: 2026-10-13 新增（issue #6853）。为什么必须有这条（本次事故的形状）：B1 删掉后端 `PRICING_ENTRY` 后，前端跨包判据仍抽它 ⇒ **只有 admin-web 腿会红**，而那条腿**不在 main 的 push 腿里** ⇒ 断点在合并前**没有任何东西会响**。本判据把「消费者 ⇄ 后端下发面」搬到 **Python 腿**上判，删任一侧都会在 `ci workflow helper unit tests` 里红。取号 = main 现取 MC-001~097 ⇒ **MC-098**。读数：本判据落地后 `pytest tests/unit_ci_workflows/test_removed_page_pointer_targets.py -q` 全绿（含注入式自证）。 ｜ tags: cross-package-anchor, liveness, ledger, backend-contract, red-proof
-
-### MC-099. **admin-api → ai-agent 内部调用腿的可观测契约**：接线断了必须摆进 `/actuator/health`，且恒 UP 不熔断（issue #6896） 🔵
-```
-你: 本地漏设 `AI_AGENT_BASE_URL` / `AI_AGENT_SERVICE_TOKEN` 时，凭什么在业务侧静默驳回「系统繁忙」**之前**就知道这条腿断了？
-数据: 🔴 **判据 1·事实必须在面上**：`AiAgentLinkHealthIndicator.health()` 的 details 必须含 `base_url` / `base_url_configured` / `token_configured` / `reachable` / `probe_error` / `probed_at` 六键 —— **去掉任一键即红**（执行点 = `backend/admin-api/src/test/java/com/migao/admin/config/AiAgentLinkHealthIndicatorTest.java`）
-数据: 🔴 **判据 2·恒 UP 不许熔断**：token 未配、base-url 不可达、base-url 未配置三种坏态下，`status` 必须**仍是 `UP`**。沿用 #5184 / #4517 的既有裁定 —— 把 `/actuator/health` 打成 DOWN 会连带部署腿 / 探活 / 负载均衡一起红，比原问题更糟。**有人顺手改成 DOWN ⇒ 红**
-数据: 🔴 **判据 3·只暴露有无，不暴露值**：注入非空 token 后 `details.toString()` 必须**不含**该 token 原文 —— 防「把配置值直接摆进对外健康端点」这类泄密（红证 = 把 `token_configured` 换成 `service_token`）
-数据: **判据 4·坏配置降级为事实而非异常**：`base-url` 为空串时不得调用探针、不得抛异常，须落 `base_url_configured=false` + `reachable=false` + 带原因的 `probe_error`
-数据: **边界（照实登记）**：① 本用例只判「事实有没有被摆出来」，**不判**「运维看到 DOWN 态的 details 后是否真会去修」—— 那是值守面的事；② 每次 health 现探一次（超时 800ms 封顶）、**不缓存**，故 health 被高频拉取时会给 ai-agent 增加等量 `/health` 请求，本仓 health 非热点路径 ⇒ 暂不引后台线程；③ 六个客户端里各自重复的坏默认值**本单未收敛到一处**（8000 对 `deploy/docker-compose.yml` 的 `8001:8000` 是正确的容器内地址，改默认值会弄坏容器那条路）
-跳过: [backend-contract] 零 LLM 的确定性单测（假探针 + 纯函数判定），mvn 真跑、零网络、不进 agent-eval 冒烟
-```
-溯源: 2026-10-14 新增（issue #6896，外部贡献者提交）。为什么必须有这条：六个客户端各自读 `ai-agent.base-url` / `ai-agent.service-token`，两个默认值都是坏的（`backend/admin-api/src/main/resources/application.yml` 的 `ai-agent.base-url` / `ai-agent.service-token` 两键，与各客户端 `@Value` 里重复的 `http://localhost:8000` / 空串），漏设环境变量时应用 UP、探活 200、ai-agent 自己看着健康，只有真实入驻静默被驳回成「系统繁忙」（`review_source=system`）—— 与 #5184（到期扫描腿静默停摆）、#4517（迁移被跳过与全过不可区分）是**同一类**失效，此前没有承接面。#6674 的收口方式是补 `docs/wiki/Quick-Start.md` 的「本地开发」节（该节列出 `AI_AGENT_BASE_URL` / `AI_AGENT_SERVICE_TOKEN` 的启动口径），保护的是读过文档的人，**可观测面仍缺**。取号 = main 现取 MC-001~098 ⇒ **MC-099**。⚠️ 贡献者自述：本机无云 dev DB/Redis、未起 ai-agent-service、未装 `migao-agent-presets`，故 `verify-all.sh gate` / `contract-check.sh` **未跑全**，以本 PR 的 CI 为准。 ｜ tags: backend-contract, liveness, observability
 
 ### MC-100. **入库单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6928 的类级固化） 🔵
 ```
@@ -14199,8 +14187,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：962（活跃 153，跳过 809）
-- tier 分布：smoke 15 / normal 887 / adversarial 33
+- 用例总数：961（活跃 153，跳过 808）
+- tier 分布：smoke 15 / normal 886 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14216,7 +14204,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：169
+- 杂项域：168
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：74
@@ -14382,7 +14370,6 @@
 - MC-096: 已移除的页面名不得出现在**服务端面向商家的文案**里（issue #6827）：#6580 收口后未配置提示与 422 理由仍指向「参数总览 → 余料回收」—— 类级守卫只扫**字符串字面量**（沿革注释合法），未登记即红 + 台账只许缩短
 - MC-097: 已移除页面名的**旧指针**改指「企业基础设置 → <域 label>」（issue #6839 = #6826 的 B1 包·admin-api 面）：按**动作**拆指针、假出口改写动作、能力名显式不改
 - MC-098: **跨包指针消费者 ⇄ 后端下发面**双向核对：删锚点必红（issue #6853 的类级固化）
-- MC-099: **admin-api → ai-agent 内部调用腿的可观测契约**：接线断了必须摆进 `/actuator/health`，且恒 UP 不熔断（issue #6896）
 - MC-100: **入库单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6928 的类级固化）
 - MC-101: **入驻审批并发双 approve ⇒ 租户数恰好 +1、恰好 1 次成功**：CAS 闸必须在副作用之前（issue #6954）
 - MC-102: **入驻审批写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 负谓词（本表无 deleted 列）即红 / 台账只许缩短（issue #6954 的类级固化）
