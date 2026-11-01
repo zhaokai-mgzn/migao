@@ -204,7 +204,6 @@ export default function WorkerHomePage() {
 
       {worker ? (
         <>
-          <Text className='worker-home__section'>工人功能</Text>
           {pagesUnread ? (
             <Text className='worker-home__message' data-testid='worker-home-pages-unread'>
               {PAGES_UNREAD_NOTICE}
