@@ -349,7 +349,11 @@ export function renderShipLabel(order) {
 export function renderReadyOrders(payload) {
   const items = Array.isArray(payload?.items) ? payload.items : []
   const count = items.length
-  const countLine = `<p class="wh5-ready-count" id="wh5-ready-count">待发货 ${count} 单（全部套已完工）</p>`
+  // 🔴 0 单时那句「（全部套已完工）」没有指代对象（真机读数 2026-11-01：「待发货 0 单（全部套已完工）」
+  // 自相矛盾）—— 括号是**结论**，只在有单时说。
+  const countLine = count === 0
+    ? '<p class="wh5-ready-count" id="wh5-ready-count">待发货 0 单</p>'
+    : `<p class="wh5-ready-count" id="wh5-ready-count">待发货 ${count} 单（全部套已完工）</p>`
   const truncated = payload?.scan?.truncated
     ? `<p class="wh5-ready-more" id="wh5-ready-truncated">还有更多单未列出（本次最多 ${esc(payload.scan.limit)} 单），发完再来刷新</p>`
     : ''
