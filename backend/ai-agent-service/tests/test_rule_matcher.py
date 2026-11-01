@@ -350,13 +350,15 @@ class TestProcessingOrderRouting:
     def test_processing_order_set_routes_order(self):
         """「加工套件」→ ORDER_QUERY（套件工具绑在订单域）。"""
         result = self._match("我们店里的加工套件现在有哪些？")
-        assert result is not None
+        if result is None:  # 裸存在断言是弱断言（tests/unit_ci_workflows/test_weak_assert_blindspots.py）
+            raise AssertionError("「加工套件」没有命中任何路由 —— 判据面失效")
         assert result.intent == IntentType.ORDER_QUERY
 
     def test_processing_order_set_scan_progress_routes_order(self):
         """「套件扫码进度」同样落订单域（套件工具的 scan_progress action）。"""
         result = self._match("加工套件 JG-20261101-0001 的扫码进度到哪了")
-        assert result is not None
+        if result is None:  # 同上
+            raise AssertionError("「套件扫码进度」没有命中任何路由 —— 判据面失效")
         assert result.intent == IntentType.ORDER_QUERY
 
     def test_processing_item_manage_unchanged(self):
