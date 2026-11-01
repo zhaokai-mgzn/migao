@@ -28,6 +28,14 @@ import { labelCodePayload } from './shortCode'
 export interface InboundLabelView {
   shortCode?: string | null
   inboundNo?: string | null
+  /**
+   * **商品货号**（`products.sku_code`，例 2659）—— 纸面「货号」印这一行。
+   *
+   * 🔴 与下面的 `skuCode`（规格编码，例 2659-04-28）**不是一回事**：用户 2026-11-01 裁定
+   * 「货号展示商品货号更好，不应该展示 sku 的货号……sku 不要等于货号」。
+   */
+  productCode?: string | null
+  /** **规格编码**（`product_skus.sku_code`：色号 + 门幅的组合，例 2659-04-28） */
   skuCode?: string | null
   productName?: string | null
   colorName?: string | null
@@ -252,7 +260,10 @@ export function layoutInboundLabel(view: InboundLabelView): InboundLabelPlan {
   /** 自上而下逐行排（整行文字；超宽 ⇒ 可见截断） */
   // 顶部只留基础内边距（`pad`）。2026-11-01 16:16 用户复看：顶部再留 5mm 后，
   // 纸面上「文字与二维码之间」的空隙变大 ⇒ 这段白边只加在**二维码那一侧**（见 BOTTOM_SAFE_MM）。
-  let cursorY = pad
+  // 顶部同样按 BOTTOM_SAFE_MM 留白：真机出纸方向与画布上下**相反**（两次实拍取证：纸面最上面的
+  // 二维码其实是画布最底部），只在画布底部留 ⇒ 白边落在了纸面顶部。两端对称留，纸面首尾才有白边。
+  const safePx = Math.round((geometry.dotsPerMm || 8) * bottomSafeMm())
+  let cursorY = Math.max(pad, safePx)
   const pushRow = (raw: string, fontPx: number, bold: boolean, extraGap = 0) => {
     const fitted = fitTextVisible(raw, inner, fontPx)
     if (fitted.truncated) warnings.push(`字段行超宽已截断：${fitted.text}`)
@@ -270,8 +281,8 @@ export function layoutInboundLabel(view: InboundLabelView): InboundLabelPlan {
   }
 
   // ── ① 货号（headline）────────────────────────────────────────────────────
-  const skuCode = String(view.skuCode ?? '').trim()
-  if (skuCode) pushRow(`货号 ${skuCode}`, headFont, true, gap)
+  const productCode = String(view.productCode ?? '').trim()
+  if (productCode) pushRow(`货号 ${productCode}`, headFont, true, gap)
 
   // ── ② 色号 / 门幅（全宽；两行内放下）──────────────────────────────────────
   // 🔴 门幅**不并入色号行**（用户 2026-10-26：色号不要有遮挡）—— 两格各自占满整行，
@@ -320,8 +331,11 @@ export function layoutInboundLabel(view: InboundLabelView): InboundLabelPlan {
   const payload = labelCodePayload(view.shortCode)
   const codeRaw = payload ? String(view.shortCode).trim().toUpperCase() : MISSING_CODE_TEXT
   const code = fitTextVisible(codeRaw, inner, codeFont)
-  const bottomSafePx = Math.round((geometry.dotsPerMm || 8) * BOTTOM_SAFE_MM)
-  const qrBottom = height - Math.max(bottomSafePx, pad)
+  const bottomSafePx = safePx
+  // 码**紧跟文字**（分隔线 → 2mm → 码），剩下多少高度全给码那一侧做白边：
+  //   用户 2026-11-01 16:16「文字和二维码之间留白变大了」⇒ 不再把码钉在版心底部；
+  //   同一轮「下面留白」⇒ 剩余高度就是纸面那一侧的白边（两种出纸方向下都 ≥10mm）。
+  const qrBottom = Math.min(height - Math.max(bottomSafePx, pad), cursorY + gap + Math.round(width * GRID.qrBoxRatio))
   // 码区上限 = 版心宽的 62%；下限 = 40%；两者之间按「文字排完剩下的高度」自适应
   const qrMax = Math.round(width * GRID.qrBoxRatio)
   const qrMin = Math.round(width * GRID.qrMinRatio)
@@ -386,6 +400,10 @@ export function layoutInboundLabel(view: InboundLabelView): InboundLabelPlan {
 
 /** 标签末端的安全白边（mm）：热敏标签机在标签间隙/剥离区印不出来。3mm 真机仍被切 ⇒ 改 5mm（用户 2026-11-01 裁定） */
 export const BOTTOM_SAFE_MM = 10
+
+function bottomSafeMm(): number {
+  return BOTTOM_SAFE_MM
+}
 
 /** 版面声明的纸型（与矩阵同源；渲染器/打印适配层读它，不写 `50mm 80mm` 字面量） */
 export function inboundLabelPageSize(): string {
