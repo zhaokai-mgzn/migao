@@ -174,4 +174,112 @@
     background: $primary-color;
     border-radius: $radius-full;
   }
+
+  // ── 发货联（50×70）预览 / 打印（issue #8287） ──
+  // 行卡里的「发货联」：Taro Button 默认 width:100% ⇒ 必须显式 width:auto + 自身对齐，
+  // 否则会把整张卡撑成一条按钮（同页头的 `__refresh` 踩过，判据见 worker-page-header-button-width）。
+  &__label-open {
+    display: inline-block;
+    width: auto;
+    flex: 0 0 auto;
+    margin-top: 18px;
+    padding: 0 28px;
+    height: 64px;
+    line-height: 64px;
+    font-size: 26px;
+    color: $primary-color;
+    background: $bg-primary;
+    border: 1px solid $border-color;
+    border-radius: $radius-full;
+  }
+
+  &__label {
+    margin: 0 24px 20px;
+    padding: 28px 32px;
+    background: $bg-primary;
+    border: 1px solid $border-color;
+    border-radius: $radius-lg;
+    box-shadow: $shadow-card;
+  }
+
+  &__label-title {
+    display: block;
+    font-size: 32px;
+    font-weight: 700;
+    color: $text-primary;
+  }
+
+  &__label-rows {
+    display: block;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed $border-color;
+  }
+
+  &__label-row {
+    display: flex;
+    gap: 16px;
+    margin-top: 8px;
+    font-size: 26px;
+    line-height: 1.5;
+  }
+
+  &__label-key {
+    flex: 0 0 140px;
+    color: $text-secondary;
+  }
+
+  &__label-value {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: $text-primary;
+    word-break: break-all;
+  }
+
+  &__label-hint {
+    display: block;
+    margin-top: 16px;
+    font-size: 24px;
+    color: $text-secondary;
+  }
+
+  &__label-actions {
+    display: flex;
+    gap: 16px;
+    margin-top: 20px;
+    align-items: center;
+  }
+
+  &__label-print {
+    width: auto;
+    flex: 0 0 auto;
+    padding: 0 28px;
+    height: 72px;
+    line-height: 72px;
+    font-size: 26px;
+    color: $bg-primary;
+    background: $primary-color;
+    border-radius: $radius-full;
+  }
+
+  &__label-close {
+    width: auto;
+    flex: 0 0 auto;
+    padding: 0 28px;
+    height: 72px;
+    line-height: 72px;
+    font-size: 26px;
+    color: $primary-color;
+    background: $bg-secondary;
+    border: 1px solid $border-color;
+    border-radius: $radius-full;
+  }
+
+  &__label-notice {
+    display: block;
+    margin-top: 16px;
+    font-size: 25px;
+    color: $text-secondary;
+    line-height: 1.5;
+  }
 }

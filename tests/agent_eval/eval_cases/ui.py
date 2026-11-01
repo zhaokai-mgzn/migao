@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: ui（源: cases/ui.yml，143 条）
+# 域: ui（源: cases/ui.yml，146 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -2620,6 +2620,60 @@ _CASE_UI_143 = EvalCase(
     precondition='本用例是 [backend-contract] 纯前端契约：mock `@/lib/api`，不依赖真实服务',
 )
 
+# ── UI-144 [NORMAL] 官网下载页（/download，issue #8195）：从终端发布清单展示版本 / SHA-256 / 大小 / 发布时间 / 说明与两个下载按钮；清单缺失或格式坏 ⇒ 明确「暂未发布」且不编造版本号；伪协议不渲成链接；首屏正文进初始 HTML（源: cases/ui.yml）──
+_CASE_UI_144 = EvalCase(
+    id='UI-144',
+    legacy_id='',
+    title='官网下载页（/download，issue #8195）：从终端发布清单展示版本 / SHA-256 / 大小 / 发布时间 / 说明与两个下载按钮；清单缺失或格式坏 ⇒ 明确「暂未发布」且不编造版本号；伪协议不渲成链接；首屏正文进初始 HTML',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家要在官网下载车间一体机（Windows）与手持机（Android）的安装包，并核对版本与校验值；没有正式版时必须明确说「暂未发布」，不能显示一个不存在的版本'],
+    expectations=['direct_reply'],
+    data_checks=['**清单正常 ⇒ 逐项展示（会红）**：Windows 卡显示版本 / SHA-256 / 大小（`321.0 KB`）/ 发布时间 / notes 与「下载 Windows 安装包」链接（href 逐字等于清单的 `download_url`）；Android 卡显示 `versionName（versionCode N）` 与「下载 Android 安装包」链接。两个请求分别打到 `/terminal/latest.json` 与 `/terminal/android/latest.json`。执行点 = frontend/admin-web/tests/unit/pages/corporate-download.test.tsx。', "**缺失 / 坏 / 网络失败 ⇒ 「暂未发布」（会红）**：两个清单都 404 / 返回坏 JSON / 字段类型不对（`versionCode: 'seven'`、`sha256: 'not-a-hash'`）/ fetch reject ⇒ 两处「暂未发布」、**没有**下载按钮、页面不出现任何版本号；只有一端发布时另一端单独显示「暂未发布」（互不牵连）。", '**安全（会红）**：清单是外部输入，`download_url` 为 `javascript:` ⇒ 该端按「暂未发布」处理、不渲染 href。', '**首屏（会红）**：页面是服务端组件（正文进初始 HTML）——渲染出 h1「下载观星台终端」、三段安装说明（未知来源 / SmartScreen / 检查更新）与 SHA-256 校验方法，且不含「加载中...」骨架。', '**结构（会红）**：`next.config.mjs` 有 `/terminal/:path*` → `app.migaozn.com` 的同源转发（浏览器直连会被 CORS 挡）；`src/proxy.ts` 的官网白名单含 `/download`；`CorporateNav` / `CorporateFooter` 都有 `/download` 入口；sitemap 含 `/download/`。'],
+    skip_reason='[backend-contract] 纯前端契约（mock fetch，不经过 LLM 对话/工具），由 admin-web vitest 执行，不进入 agent-eval 冒烟',
+    tags=['corporate', 'download', 'terminal', 'no-fabrication', 'first-screen'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── UI-147 [NORMAL] 商家后台读失败出口（issue #8200 · P1-06）：凡渲染共享空态原语 <EmptyState> 的文件必须带常驻读失败出口；/categories 读失败 ⇒ 失败面 + 重试，空态与「还没有商品分类」断言都不上屏（DQ-1）（源: cases/ui.yml）──
+_CASE_UI_147 = EvalCase(
+    id='UI-147',
+    legacy_id='',
+    title='商家后台读失败出口（issue #8200 · P1-06）：凡渲染共享空态原语 <EmptyState> 的文件必须带常驻读失败出口；/categories 读失败 ⇒ 失败面 + 重试，空态与「还没有商品分类」断言都不上屏（DQ-1）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家打开商品分类页时接口挂了：屏幕上不能写「还没有商品分类」「先建一个分类」（那是把没读到说成本来就没有），要明确说没读到并给重试'],
+    expectations=['direct_reply'],
+    data_checks=['**读失败 ⇒ 常驻失败面（会红）**：mock `categoryApi.getCategories` reject ⇒ 屏上有 `categories-load-error`（`role="alert"`）与 `categories-load-error-retry`。改前该页只有空 `catch` + `<EmptyState title="还没有商品分类">`，两个锚都不存在（红证读数见 PR body）。执行点 = frontend/admin-web/tests/unit/pages/categories.test.tsx。', '**不冒充空态（会红）**：同一失败态下 `categories-empty` 锚不在、「还没有商品分类」文案不在，且整屏经 `findEmptyDataAssertions`（单一源口径）无「没有数据」断言。', '**重试真的重发（会红）**：点 `categories-load-error-retry` ⇒ `getCategories` 调用次数增加，且成功回包后分类树渲染、失败面退场（不是只把失败面藏起来）。', '**对照读数（不许把真 0 判红）**：读成功且真的 0 条 ⇒ `categories-empty` 照旧在、失败面不在。', '**类级（会红）**：`frontend/admin-web/scripts/read-failure-empty-state-scan.mjs::componentEmptyStateOffenders` 在面内（`(dashboard)` + `src/components`）对「渲染 `<EmptyState>` 且无失败锚」的文件判红；台账 `COMPONENT_EMPTY_LEDGER` 现取 0 条、只许缩短；判别力自证 = `frontend/admin-web/tests/unit/read-failure-component-empty-state-guard.test.ts`。', '**审计读数纠偏**：审计 P1-06 用「有没有引用 `ListLoadError`」当代理指标 ⇒ 得出「37 页缺失」。逐页复核：`/products`（`products-load-failed`）/`/dashboard`（`dashboard-load-failed` + 分块重试）/`/production`（`production-board-error` + 重试，失败时不渲染 `production-board-empty`）/`/orders/[id]`（`order-detail-load-error` + 重试）**早已可区分读失败与真空态**；真实缺口只有 `/categories` 一处。'],
+    skip_reason='[backend-contract] 纯前端渲染契约（vitest + mock 读接口），不经过 LLM 对话/工具，不进入 agent-eval 冒烟',
+    tags=['read-failure', 'empty-state', 'categories', 'class-guard'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── UI-148 [NORMAL] 手持机 WebView 83 没有 flex `gap` ⇒ 工人端间距兜底（`.no-flex-gap` 作用域 + margin 兜底，issue #8336）（源: cases/ui.yml）──
+_CASE_UI_148 = EvalCase(
+    id='UI-148',
+    legacy_id='',
+    title='手持机 WebView 83 没有 flex `gap` ⇒ 工人端间距兜底（`.no-flex-gap` 作用域 + margin 兜底，issue #8336）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['手持标签机（商米 V2s）上工人报工页「裁剪 应做 1.00 米 0.25 元/米 待报工」挤成一串，字叠在一起；页头按钮也贴字并折行'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**探测口径**（`frontend/worker-h5/src/flex-gap.mjs`）：用「两个 10px 子项 + 10px 间距」量真布局 —— 量到 ≈20px 判不支持、给 `<html>` 加 `no-flex-gap`；量到 ≈30px 判支持、**不加类**。红证 = 把 `width >= probeSize*2+gap-0.5` 改成恒 `true` ⇒ `worker-h5-flex-gap.test.mjs` 判据 ①红。', '判据 2·**不误伤现代浏览器**：支持时不得加类（否则 `gap` 与 margin 兜底叠加，PC/手机 Chrome ≥84 上间距翻倍）⇒ 判据 ② 红证 = 无条件加类。', '判据 3·**探测无副作用**：探测节点必须从 `body` 拆掉（判据 ③）；量不出宽度 / 没有 body ⇒ 视为支持且不抛（判据 ④⑤）。', '判据 4·**真机可见**（商米 V2s / Chrome 83.0.4103.120）：报工屏「裁剪 / 应做 1.00 米 / 0.25 元/米 / 待报工」四段分行或分列、不重叠；页头三个按钮不折行。判定 = 真机截图 + `getBoundingClientRect().left` 两两不重叠。', '判据 5·**不回退**：同一份 HTML 在 Chromium ≥84 上视觉不变（不加类 ⇒ 样式表逐字生效），且不新增任何 API 契约。'],
+    skip_reason='[backend-contract] 纯前端布局兼容，由 node --test（worker-h5-flex-gap）+ 真机截图覆盖，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'layout', 'worker-h5', 'webview83'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_UI_001,
     _CASE_UI_002,
@@ -2764,4 +2818,7 @@ CASES = (
     _CASE_UI_140,
     _CASE_UI_142,
     _CASE_UI_143,
+    _CASE_UI_144,
+    _CASE_UI_147,
+    _CASE_UI_148,
 )

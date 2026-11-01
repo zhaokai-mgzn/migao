@@ -72,13 +72,31 @@ public class QualityCheckController {
                 str(body, "result"),
                 str(body, "reason"),
                 me.getUserId(),
-                me.getDisplayName(),
+                inspectorDisplayName(me),
                 // 🔴 业务时钟单点（issue #3802 / BusinessClockSourceGuardTest）：不在本类写时区字面量、不调无参 now()
                 QualityCheckService.INSPECTOR_EMPLOYEE,
                 businessClock.nowOffset(),
                 null,
                 str(body, "set_no"));
         return ApiResponse.success(record);
+    }
+
+    /**
+     * 质检记录上的「检验人」展示名。
+     *
+     * <p>🔴 真机读数（2026-11-01）：`SecurityUser.displayName` 取的是登录名 = **手机号**
+     * （见 `SecurityUser` 的构造），于是工人扫水洗唛看到的检验人是 `13900001025` ——
+     * 内部登录标识上了车间屏（§31 P3「不摆内部标识」）。</p>
+     *
+     * <p>口径：有真名用真名；没真名（空 / 手机号形状）就显示「管理员」——
+     * **不猜**具体是谁，也不把账号印出去。</p>
+     */
+    private static String inspectorDisplayName(SecurityUser me) {
+        String name = me.getDisplayName();
+        if (name == null || name.isBlank() || name.matches("1\\d{10}")) {
+            return "管理员";
+        }
+        return name;
     }
 
     /**

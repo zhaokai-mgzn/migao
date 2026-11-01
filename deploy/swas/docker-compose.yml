@@ -4,6 +4,22 @@
 # 环境变量（.env.admin-api/.env.ai-agent/.env.admin-web）与 TLS 证书在服务器侧，不入仓。
 # 镜像 tag 由 IMAGE_TAG 控制（默认 latest）；deploy.sh 通过环境注入。
 
+# ── 容器日志上限（issue #8218 P1-02，2026-10-31 上线审计）────────────────────────────
+# 病：改前四个服务**都没有 `logging:` 段** ⇒ docker 默认的 json-file 驱动**无上限**。
+#     单机 SWAS 上日志单调增长 ⇒ 磁盘打满 ⇒ 四个服务同时 502（`restart: unless-stopped`
+#     救不了「写不进去」），而且**没有任何读数会先变红**。
+# 修：每个容器 `max-size: 50m` + `max-file: 3` ⇒ 单容器上界 **150MB**，四个服务合计 600MB。
+#     ⚠️ 这两条是**上界**，不是目标值：`deploy.sh` 的「2.8 磁盘与容器日志水位读数」每次部署
+#     把实测占用打进日志，**超过上界总和**即意味着轮转没生效（`logging:` 被删 / docker 不认）
+#     —— 那件事改前同样是静默的（**只读读数，不新增任何定时删除**）。
+# ⚠️ 判据（会红）：tests/unit_ci_workflows/test_swas_container_runtime.py 逐服务比对 `logging:`
+#    与 `deploy.sh` 的 `LOG_CAP_MB` / `LOG_MAX_FILES`（同一份口径，两处不许各写各的）。
+x-logging: &migao-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
+
 services:
   admin-api:
     image: ${ACR_REGISTRY:-crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com}/ai-customer-service/admin-api:${IMAGE_TAG:-latest}
@@ -21,6 +37,20 @@ services:
       - "127.0.0.1:8080:8080"
     mem_limit: 1536m
     cpus: 1.0
+    logging: *migao-logging
+    # 健康检查（issue #8218 P1-12「假活」）：进程僵死（线程池耗尽 / 死锁）时容器仍 `Up`，
+    # 而 `restart: unless-stopped` 不会重启它 —— 改前**只有 ai-agent** 有健康检查。
+    # 🔴 与 `deploy/swas/deploy.sh::wait_healthy` **同源**：同一个容器端口（8080）+ 同一个路径
+    #    （`/actuator/health`，即该脚本 `svc_port` / `svc_health_path` 的取值）⇒ 判据不可能漂移。
+    #    ⚠️ 本段会**覆盖**镜像 Dockerfile 里的 HEALTHCHECK —— 两处必须同口径（判据钉住）。
+    # ⚠️ 它只做**观测**（docker 不会因 unhealthy 自动重启，除非另接 autoheal）：价值在于
+    #    `docker compose ps` / `docker inspect` 上「假活」不再长得像健康。
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:8080/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
 
   ai-agent:
     image: ${ACR_REGISTRY:-crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com}/ai-customer-service/ai-agent-service:${IMAGE_TAG:-latest}
@@ -47,6 +77,7 @@ services:
       - "127.0.0.1:8000:8000"
     mem_limit: 1024m
     cpus: 1.0
+    logging: *migao-logging
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready', timeout=3)"]
       interval: 30s
@@ -65,6 +96,17 @@ services:
       - "127.0.0.1:3001:3001"
     mem_limit: 512m
     cpus: 0.5
+    logging: *migao-logging
+    # 健康检查（issue #8218 P1-12）：与 `deploy.sh::wait_healthy` **同源** —— 同一个端口（3001）、
+    # 同一个路径（`/`），且**照抄它的状态码集合**（200/301/302 都算活：admin-web 的 `/` 可能是
+    # 一条跳转）。image 是 `node:20-alpine`（没有 curl）⇒ 用 node 的 fetch 表达同一份判据，
+    # 不引入第二套语义（例如「只认 200」会让健康检查比部署判据更严 ⇒ 回滚抖动）。
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/').then(r=>process.exit([200,301,302].includes(r.status)?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
 
   nginx:
     image: nginx:alpine
@@ -77,6 +119,18 @@ services:
       - "443:443"
     mem_limit: 256m
     cpus: 0.25
+    logging: *migao-logging
+    # 健康检查（issue #8218 P1-12）：nginx 没有「上游」可探 —— 探一个**只表达「nginx 进程还在
+    # 按配置应答」**的本地面：`deploy/swas/nginx.conf` 的 `location = /healthz`（:80，回一行 200，
+    # `access_log off`，不碰磁盘 / 不代理 / 不碰证书）。
+    # ⚠️ 刻意**不**探 https 的静态面：那要 `--no-check-certificate` 且依赖某个已发布文件存在，
+    #    会把「健康」绑到发布状态上（没发布 ⇒ nginx 被判死）。
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null --tries=1 http://127.0.0.1/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro

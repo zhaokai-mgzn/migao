@@ -212,7 +212,11 @@ function pageNoticeBanner(state) {
   if (unread) {
     return `<p class="wh5-perm-notice" id="wh5-perm-unread" role="status">${esc(permUnreadNotice)}</p>`
   }
-  if (!opened.has(PAGE_REPORT)) {
+  // 🔴 只对「既没开报工页、也没开质检」的人说这句话。
+  // 2026-11-01 真机（商米 V2s）：只开 `inspect` 的质检员扫码进来，页头挂着红字
+  // 「本机菜单未开报工页…或换一台设备 / 换一个工人」—— 他本来就不报工，质检块才是他要用的面；
+  // 这条警告对他是纯噪音（且读起来像"这台机器配错了"）。
+  if (!opened.has(PAGE_REPORT) && !opened.has(PAGE_INSPECT)) {
     return `<p class="wh5-perm-notice" id="wh5-report-menu-closed" role="status">${esc(reportMenuClosedNotice)}</p>`
   }
   return ''
@@ -260,7 +264,7 @@ export function reduce(state, action) {
         ...state,
         view,
         selection: { setId: null, orderItemId: null },
-        notice: needsSelection ? '这是一张旧码：请先选择套号与部位' : (action.notice ?? null),
+        notice: needsSelection ? '这张是加工单码：请先选择套号与部位' : (action.notice ?? null),
         error: null,
         // 🔴 `view: null` ⇒ 回等扫码态（issue #7845 起 UI 不再有「重扫」按钮；这条分支留给
         //    「还没解析出任何一屏」与装配层/测试的显式复位）。
@@ -692,7 +696,22 @@ export function afterComplete(view, receipt) {
     alternatives: [],
     needs_selection: [],
     completed: receipt.setCompleted === true,
+    // 绑定工序的工人（issue #7749；2026-11-01 商米 V2s 真机）：这一笔报的就是他那道 ⇒ 回执后
+    // 必须把状态说成「已经做完」。改前只清 `operation`、不动 `worker_operation_state`
+    // ⇒ 渲染层落到 `!== 'done'` 分支，屏上写「本件没有这道工序，不用报工」——与事实相反
+    // （计件已记上），只有刷新才恢复。判据：worker-h5-scan-complete 的自动报工用例。
+    worker_operation_state: workerOperationStateAfterComplete(view, receipt),
   }
+}
+
+/** 回执后的「绑定工序状态」：只在本笔报的正是他那道（或已经是 done）时给 `done`。 */
+function workerOperationStateAfterComplete(view, receipt) {
+  const bound = typeof view?.worker_operation === 'string' && view.worker_operation.trim() !== ''
+  if (!bound) return view?.worker_operation_state ?? null
+  // 回执给了下一道 ⇒ 屏上走工序卡，不需要这句话（保持中性，不谎报 done / absent）
+  if (receipt?.nextOperation) return null
+  if (view?.worker_operation_state === 'done') return 'done'
+  return view?.operation?.logical_name === view.worker_operation ? 'done' : (view?.worker_operation_state ?? null)
 }
 
 /**
@@ -747,10 +766,10 @@ function doneNoticeBase(receipt, auto) {
   // `frontend/bmini-app/tests/worker-scan-report-copy-same-source.test.ts` 逐字钉住）⇒
   // 这里保留字面量、不拼 `head`（拼了就只剩后缀，守卫会判「回执缺『已报工 · 下一道：』」）。
   if (receipt.orderCompleted) {
-    return auto ? '已自动报工 · 本单工序都报完了 🎉' : '已报工 · 本单工序都报完了 🎉'
+    return auto ? '已自动报工 · 本单工序都报完了' : '已报工 · 本单工序都报完了'
   }
   if (receipt.setCompleted === true) {
-    return auto ? '已自动报工 · 本套工序都报完了 🎉' : '已报工 · 本套工序都报完了 🎉'
+    return auto ? '已自动报工 · 本套工序都报完了' : '已报工 · 本套工序都报完了'
   }
   // 🔴 「下一道」必须**带部位**（issue #4963）：改前只拼 `nextOperation.logical_name`
   // ⇒ 跨部位时屏上少一半信息（`打卷 · 布帘` 显示成 `打卷`）。回执的 `next_operation`
@@ -874,9 +893,9 @@ function selectView(state) {
     : ''
   return `${header(state)}
   <section class="wh5-card">
-    <h1 class="wh5-title">旧码：请选择套号与部位</h1>
+    <h1 class="wh5-title">请选择套号与部位</h1>
     ${state.notice ? `<p class="wh5-notice" id="wh5-notice">${esc(state.notice)}</p>` : ''}
-    <p class="wh5-sub">这张码只到加工单级（旧码），系统判不出是哪一套、哪个部位 —— 请手工选一次。</p>
+    <p class="wh5-sub">这张是加工单上的码，只到加工单一级 —— 请选是哪一套、哪个部位（只有一套一个部位时系统会直接进，不用选）。</p>
     <div class="wh5-group"><span class="wh5-group-label">选套</span>${setsHtml}</div>
     ${set ? `<div class="wh5-group"><span class="wh5-group-label">选部位</span>${posHtml}</div>` : ''}
     <p class="wh5-sub" id="wh5-legacy-pending">本单：${esc(state.view?.processing_order_no ?? '')}</p>
@@ -986,7 +1005,7 @@ function qualityBlock(state, view) {
     ? 'is-pending'
     : pending ? 'is-rework' : (result === 'scrap' ? 'is-scrap' : 'is-pass')
   const list = records.length > 0
-    ? `<ul class="wh5-record-list" id="wh5-quality-records">${records.map(qualityRecordView).join('')}</ul>`
+    ? `<ul class="wh5-record-list" id="wh5-quality-records">${records.map((r) => qualityRecordView(r, stateText)).join('')}</ul>`
     : errored
       ? ''
       : q.loading
@@ -1165,14 +1184,17 @@ function reworkRecordView(r) {
 }
 
 /** 一条质检记录：判定 / 时间 / 原因 / 检验人（缺值整项不渲染，不印占位）。 */
-function qualityRecordView(r) {
+function qualityRecordView(r, latestLabel) {
   const label = QUALITY_LABELS[r?.result] ?? ''
+  // 块头已经写着当前结论（如「正常」）⇒ 同一句不在记录行里再印一遍（§31 P2 信息不重复）；
+  // 历史里与当前结论**不同**的行（返工 → 合格）照旧带标签，否则看不出这条是什么。
+  const showLabel = label !== '' && label !== latestLabel
   const time = recordTime(r?.inspected_at)
   const reason = typeof r?.reason === 'string' ? r.reason.trim() : ''
   const who = typeof r?.inspector_name === 'string' ? r.inspector_name.trim() : ''
   return `<li class="wh5-record">
       <div class="wh5-record-top">
-        <span class="wh5-record-title">${esc(label || '质检')}</span>
+        ${showLabel ? `<span class="wh5-record-title">${esc(label)}</span>` : ''}
         ${time ? `<span class="wh5-record-time">${esc(time)}</span>` : ''}
       </div>
       ${reason ? `<p class="wh5-q-reason">${esc(reason)}</p>` : ''}
@@ -1209,7 +1231,7 @@ function mainView(state) {
     <div class="wh5-set" id="wh5-set">第 ${esc(v.set_no)} 套 · ${esc(v.position?.position_name ?? '')}</div>
     ${ternLine(v)}
     ${v.completed === true
-      ? '<p class="wh5-done" id="wh5-completed">本套工序都已报工 🎉</p>'
+      ? '<p class="wh5-done" id="wh5-completed">本套工序都已报工</p>'
       : v.worker_operation
         ? `<p class="wh5-sub" id="wh5-no-operation">你的工序是「${esc(v.worker_operation)}」：本件${v.worker_operation_state === 'done' ? '的这道已经做完' : '没有这道工序'}，不用报工。</p>`
         : '<p class="wh5-sub" id="wh5-no-operation">本部位推断不出待报工序（工序未确定 ⇒ 不得记账）</p>'}

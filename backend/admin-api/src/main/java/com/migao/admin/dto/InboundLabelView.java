@@ -33,7 +33,16 @@ public class InboundLabelView {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long itemId;
 
-    /** 货号快照 */
+    /**
+     * **商品货号**（{@code products.sku_code}，例：{@code 2659}）—— 纸面「货号」印的就是它。
+     *
+     * <p>🔴 与 {@link #skuCode}（{@code product_skus.sku_code} 的规格编码，例：{@code 2659-04-28}）
+     * <b>不是一回事</b>：用户 2026-11-01 逐字「货号展示商品货号更好，不应该展示 sku 的货号……
+     * sku 不要等于货号」。商品管理里两者常被叫混，这里用字段名把定义钉住。</p>
+     */
+    private String productCode;
+
+    /** **规格编码**（{@code product_skus.sku_code}，例：{@code 2659-04-28}：色号 + 门幅的组合） */
     private String skuCode;
 
     /** 品名（{@code products.name}，实读时取；商品已删 ⇒ null，不编造） */

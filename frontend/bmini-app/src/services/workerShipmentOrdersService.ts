@@ -53,6 +53,12 @@ export interface ReadyShipmentOrder {
   completed_sets?: number | null
   processing_order_no?: string | null
   remark?: string | null
+  /** 随货标识（issue #7856，服务端已下发）：帘种，按部位序去重、`/` 连接；缺值 = 发货联该行不印 */
+  curtain_types?: string | null
+  /** 安装小区（可选附注；缺值 = 该行不印） */
+  install_community?: string | null
+  /** 安装位置（可选附注；可多行，缺值 = 该行不印） */
+  install_rooms?: string | null
 }
 
 /** 本次扫描的边界（截断不静默：`truncated=true` 时页面要说明「还有更多单未列出」）。 */
@@ -103,7 +109,7 @@ function failure<T>(error: any, fallback: string): ShipmentOrdersResponse<T> {
 }
 
 /**
- * 读「全完工待发货单」列表（**只读**；没有写入口 —— 本页不发货、不打标签）。
+ * 读「全完工待发货单」列表（**只读**；没有写入口 —— 本页不发货，发货联打印只读本列表的行字段）。
  *
  * 服务端无工人 session ⇒ 401；调用页据此引导去工人登录页（而不是显示「没有单」）。
  */

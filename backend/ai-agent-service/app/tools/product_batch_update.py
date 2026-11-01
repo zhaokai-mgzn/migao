@@ -6,8 +6,12 @@
     POST /api/admin/agent/batches                创建批次（= 预演）
         req  {batchType, items:[{resourceId, field, oldValue, newValue}]}
         resp {batchId, itemCount, status:"preview"}
-    POST /api/admin/agent/batches/{batchId}/execute   执行 → {batchId, status, results:[{resourceId, success, error?}]}
-    POST /api/admin/agent/batches/{batchId}/revert    撤销 → 同上形态
+    POST /api/admin/agent/batches/{batchId}/execute-async   后台执行 → {batchId, status:"executing"}
+    POST /api/admin/agent/batches/{batchId}/revert-async    后台撤销 → 同上形态
+    GET  /api/admin/agent/batches/{batchId}                 进度 / 终态 / 逐条 items
+
+（同步 `execute` / `revert` 端点保留为 #5314 冻结契约；Agent 走 async 端点 + GET 轮询至终态，
+轮询有界超时 —— 超时如实说「尚未完成」，不得声称完成。issue #8283。）
 
 为什么不复用 `product_update`（有意分开，契约 §四 明写）：单条路径已交付并带自己的
 「改前 → 改后」护栏；批量是**另一类风险**（一键确认 N 条 = 商家实际没看 = 盲签），
@@ -23,11 +27,14 @@
 2. **`old_value` 必须在预览阶段采集**（契约 §三：它是撤销的唯一依据，必须持久化）
    ⇒ 任一条目缺改前值一律拒；改价类型的判据复用 `confirm_value.price_preview_missing`
    （#5303 的同一套单一源，不另立第二份）。
-3. **阈值**：`N > MAX_BATCH_ITEMS(50)` ⇒ 拒绝并提示分批（本单不做后台异步任务）。
+3. **阈值 + 后台 job**：`N > MAX_BATCH_ITEMS(50)` ⇒ 拒绝并提示分批；执行 / 撤销提交后
+   轮询 `GET /batches/{batchId}` 至终态（有界超时），超时只报「尚未完成」。
 
 字段投影同样**只此一处**：预览行由 `app.tools.confirm_value.confirm_card_fields` 派生。
 """
 
+import asyncio
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
@@ -63,8 +70,18 @@ _FIELD_OF_BATCH_TYPE = {BATCH_TYPE_PRICE: "basePrice", BATCH_TYPE_STOCK: "stock"
 _FIELD_ALIASES = {BATCH_TYPE_PRICE: {"basePrice", "price"},
                   BATCH_TYPE_STOCK: {"stock"}}
 
-#: 单批上限（契约 §四）：N > 50 ⇒ 拒绝并提示分批（本单不做后台任务，最小实现）。
+#: 单批上限（契约 §四）：N > 50 ⇒ 拒绝并提示分批。
 MAX_BATCH_ITEMS = 50
+
+#: 后台 job 轮询（issue #8283）：提交后 GET 批次，直到终态或超时。
+#: 0.5s 是「秒级批次通常 1~2 次就能读到终态」与「不把下游打爆」的折中；
+#: 超时 60s 覆盖单批 50 条的正常执行 + 一次短暂排队，超时后 job 仍在后台继续。
+POLL_INTERVAL_SECONDS = 0.5
+POLL_TIMEOUT_SECONDS = 60.0
+
+#: 终态集合：`failed` 是旧契约/异常路径的兜底终态（服务端正常不会产出）。
+_TERMINAL_EXECUTE = frozenset({"done", "partial", "failed"})
+_TERMINAL_REVERT = frozenset({"reverted", "revert_partial"})
 
 #: 本工具的 action 全集（模块级常量 = `read_only_actions ⊆ VALID_ACTIONS` 契约的校验面）。
 VALID_ACTIONS = {"preview", "execute", "revert"}
@@ -109,6 +126,65 @@ def _preview_row(batch_type: str, item: Dict[str, Any]) -> Dict[str, Any]:
     return {"resourceId": resource_id, "fields": confirm_value.confirm_card_fields(args)}
 
 
+# ── 后台 job 轮询（issue #8283）──────────────────────────────────────────────
+def _results_of(data: Dict[str, Any], *, revert: bool) -> List[Dict[str, Any]]:
+    """统一 results 取数：同步端点直接有 results；异步端点只有 GET items。"""
+    raw = data.get("results")
+    if isinstance(raw, list):
+        return [r for r in raw if isinstance(r, dict)]
+    items = data.get("items")
+    if not isinstance(items, list):
+        return []
+    results: List[Dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        status = item.get("status")
+        success = status in ("reverted", "skipped") if revert else status == "success"
+        row: Dict[str, Any] = {
+            "resourceId": item.get("resourceId"),
+            "success": success,
+            "status": status,
+        }
+        if not success:
+            row["error"] = item.get("error") or f"未完成（状态：{status or 'pending'}）"
+        results.append(row)
+    return results
+
+
+def _is_terminal(data: Dict[str, Any], *, revert: bool) -> bool:
+    return data.get("status") in (_TERMINAL_REVERT if revert else _TERMINAL_EXECUTE)
+
+
+async def _poll_batch(
+    client: Any,
+    context: ToolContext,
+    batch_id: str,
+    *,
+    revert: bool,
+) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """轮询批次到终态；返回 (data, 查询失败的 response)。
+
+    超时返回最后一次 data（status 仍 executing）—— 调用方必须如实说「尚未完成」。
+    """
+    deadline = time.monotonic() + POLL_TIMEOUT_SECONDS
+    last: Dict[str, Any] = {}
+    while True:
+        response = await client.get(
+            f"/api/admin/agent/batches/{batch_id}",
+            tenant_id=context.tenant_id,
+            user_id=context.user_id,
+        )
+        if not response.get("success"):
+            return None, response
+        last = dict(response.get("data") or {})
+        if _is_terminal(last, revert=revert):
+            return last, None
+        if time.monotonic() >= deadline:
+            return last, None
+        await asyncio.sleep(POLL_INTERVAL_SECONDS)
+
+
 class ProductBatchUpdateTool(BaseTool):
     """商品批量更新 —— 批量改价 / 批量库存调整（先预览后执行，可撤销）"""
 
@@ -122,7 +198,8 @@ class ProductBatchUpdateTool(BaseTool):
         "multiSelect 必须显式传 true（漏传会变单选，商家选不了多条）；"
         "② 第二段（改成什么）：调本工具 action=preview 生成**逐条「改前 → 改后」**预览，"
         "把返回的 fields 交给 `interact(component=confirm, fields=…)` 展示给商家并等其点卡；"
-        "③ 商家点卡后，再调 action=execute 并带上 preview 返回的 batch_id。"
+        "③ 商家点卡后，再调 action=execute 并带上 preview 返回的 batch_id（会提交后台 job 并轮询到终态，"
+        "最长约 60 秒；超时只报「尚未完成」，不得声称做完）。"
         "**禁止跳过任一段直接执行**：不带 batch_id 调 execute/revert 一律被拒（batch_preview_required）。"
         "【参数】action=preview / execute / revert；preview 必填 batch_type + items（batch_id 由它产生）；"
         "execute / revert 只需 batch_id。items 每项 {resourceId, field, oldValue, newValue}："
@@ -133,13 +210,16 @@ class ProductBatchUpdateTool(BaseTool):
         "/ inventory_stock（批量库存调整，field=stock，单位米，最多 1 位小数；口径 = **该商品每个规格都调到该值**，故**要求该商品各规格库存一致**，不一致时 preview 阶段会被服务端拒绝并给出实际值，如实转述并引导到商品管理页；与逐条改库存同一字段词，issue #5950）。"
         "其它类型（改名 / 改图 / 上下架 / 自由字段）**不支持** —— 上下架按 2026-10-16 裁定（单件与批量都 ❌）"
         "如实说明并引导到商品管理页 /products；其余类型同样引导到商品管理页。"
-        "【阈值】单批最多 50 条：N>50 一律拒绝并提示**分批**（本工具不做后台异步任务）。"
+        "【阈值】单批最多 50 条：N>50 一律拒绝并提示**分批**（执行/撤销转后台 job，但单批仍限 50 条，"
+        "不承诺跨批一次完成）。"
         "【撤销】执行成功后**必须告诉商家可以撤销**：action=revert + batch_id 会逐条还原为改前值 "
-        "old_value；部分失败**逐条报告、不做整体回滚**（回滚会掩盖真问题）—— 把失败条目与原因如实转述。"
+        "old_value（同样后台执行并轮询）；部分失败**逐条报告、不做整体回滚**（回滚会掩盖真问题）—— "
+        "把失败条目与原因如实转述。"
         "【反例】单条改价/改名用 product_update；单规格调价用 sku_update；"
         "查数据用 product_search / product_detail；本工具不查数据、不猜值，也不做批量**创建**/导入。"
         "【标注】WRITE|NON_IDEMPOTENT — 写操作：先 preview（两段确认齐了）再 execute；"
-        "禁止只预览就宣称已改，也禁止把 preview 的结果当成已执行。"
+        "禁止只预览就宣称已改，也禁止把 preview 的结果当成已执行；execute/revert 返回「尚未完成」时"
+        "更不得声称做完。"
     )
     # 权限码（契约 §三）：与**逐条写同码**，不新开权限面。
     # 逐条写的码 = `product_update.required_permissions` = admin-api `ProductController`
@@ -278,8 +358,8 @@ class ProductBatchUpdateTool(BaseTool):
                 error="batch_too_large",
                 message=f"一次最多处理 {MAX_BATCH_ITEMS} 条，本次 {len(items)} 条",
                 suggestion=(f"本次 {len(items)} 条超过单批上限 {MAX_BATCH_ITEMS} 条 —— 请提示商家**分批**处理"
-                            f"（每批 ≤ {MAX_BATCH_ITEMS} 条，逐批走两段确认）；本工具不做后台异步任务，"
-                            "不要承诺「稍后一次性完成」。"),
+                            f"（每批 ≤ {MAX_BATCH_ITEMS} 条，逐批走两段确认）；执行/撤销虽转后台 job，"
+                            "但单批仍限 50 条，不要承诺「稍后一次性完成」。"),
             )
 
         expected_field = _FIELD_OF_BATCH_TYPE[batch_type]
@@ -377,24 +457,50 @@ class ProductBatchUpdateTool(BaseTool):
             )
         client = get_admin_api_client()
         response = await client.post(
-            f"/api/admin/agent/batches/{batch_id}/execute",
+            f"/api/admin/agent/batches/{batch_id}/execute-async",
             json_data={},
             tenant_id=context.tenant_id,
             user_id=context.user_id,
         )
         if not response.get("success"):
             err = response.get("error", {})
-            msg = err.get("message", "批量执行失败") if isinstance(err, dict) else str(err)
+            msg = err.get("message", "批量执行提交失败") if isinstance(err, dict) else str(err)
             return admin_api_failure(
-                response, error=msg, message=f"批量执行失败: {msg}",
-                suggestion=("批量执行失败：请按返回的 error.code 处理（批次不存在/状态不允许执行等），"
+                response, error=msg, message=f"批量执行提交失败: {msg}",
+                suggestion=("批量执行提交失败：请按返回的 error.code 处理（批次不存在/状态不允许执行等），"
                             "不要把失败说成已完成；必要时引导商家在商品管理页 /products 核对"),
             )
 
         data: Dict[str, Any] = dict(response.get("data") or {})
-        results = [r for r in (data.get("results") or []) if isinstance(r, dict)]
+        if not _is_terminal(data, revert=False):
+            polled, poll_error = await _poll_batch(client, context, batch_id, revert=False)
+            if poll_error is not None:
+                return ToolResult(
+                    success=True,
+                    data={"batchId": batch_id, "status": "unknown"},
+                    message=(f"批量执行**已提交**（batch_id={batch_id}），但查询进度失败 —— "
+                             "不要声称已经做完；请让商家稍后在商品管理页 /products 核对批次结果。"),
+                    summary="批量执行已提交，进度查询失败",
+                )
+            data = polled or data
+
+        status = data.get("status")
+        results = _results_of(data, revert=False)
+        data["results"] = results
         ok = sum(1 for r in results if r.get("success"))
         failed = [r for r in results if not r.get("success")]
+        if not _is_terminal(data, revert=False):
+            logger.info(f"[product_batch_update] execute pending batch_id={batch_id} status={status} "
+                        f"ok_so_far={ok} tenant={context.tenant_id}")
+            return ToolResult(
+                success=True,
+                data=data,
+                message=(f"批量执行**已开始但尚未完成**（batch_id={batch_id}，当前状态 {status or 'unknown'}，"
+                         f"已看到成功 {ok} 条）—— 请如实告诉商家「正在执行，稍后刷新批次状态」，"
+                         "**不要声称已经做完**；可稍后再问一次，或到商品管理页 /products 核对。"),
+                summary=f"批量执行中：已成功 {ok} 条（未完成）",
+            )
+
         logger.info(f"[product_batch_update] execute batch_id={batch_id} ok={ok} fail={len(failed)} "
                     f"tenant={context.tenant_id}")
         # 部分失败**逐条报告、不做整体回滚**（契约 §五 判据 3）：回滚会掩盖真问题。
@@ -431,26 +537,50 @@ class ProductBatchUpdateTool(BaseTool):
             )
         client = get_admin_api_client()
         response = await client.post(
-            f"/api/admin/agent/batches/{batch_id}/revert",
+            f"/api/admin/agent/batches/{batch_id}/revert-async",
             json_data={},
             tenant_id=context.tenant_id,
             user_id=context.user_id,
         )
         if not response.get("success"):
             err = response.get("error", {})
-            msg = err.get("message", "撤销失败") if isinstance(err, dict) else str(err)
+            msg = err.get("message", "撤销提交失败") if isinstance(err, dict) else str(err)
             return admin_api_failure(
-                response, error=msg, message=f"撤销失败: {msg}",
-                suggestion="撤销失败：请先只读查询该批次状态后再决定（不可撤销 = 状态非 done/partial 或已撤销）",
+                response, error=msg, message=f"撤销提交失败: {msg}",
+                suggestion="撤销提交失败：请先只读查询该批次状态后再决定（不可撤销 = 状态非 done/partial 或已撤销）",
             )
 
         data: Dict[str, Any] = dict(response.get("data") or {})
-        results = [r for r in (data.get("results") or []) if isinstance(r, dict)]
+        if not _is_terminal(data, revert=True):
+            polled, poll_error = await _poll_batch(client, context, batch_id, revert=True)
+            if poll_error is not None:
+                return ToolResult(
+                    success=True,
+                    data={"batchId": batch_id, "status": "unknown"},
+                    message=(f"批量撤销**已提交**（batch_id={batch_id}），但查询进度失败 —— "
+                             "不要声称已经撤销；请让商家稍后在商品管理页 /products 核对。"),
+                    summary="批量撤销已提交，进度查询失败",
+                )
+            data = polled or data
+
+        status = data.get("status")
+        results = _results_of(data, revert=True)
+        data["results"] = results
         ok = sum(1 for r in results if r.get("success"))
         failed = [r for r in results if not r.get("success")]
         # `skipped` = 执行时本就失败的条目（撤销时报 skipped + success=true，服务端口径）
         # ⇒ 单独计数，别把它混进"还原成功 N 条"（那是一句会误导商家的话）。
         skipped = sum(1 for r in results if r.get("status") == "skipped")
+        if not _is_terminal(data, revert=True):
+            logger.info(f"[product_batch_update] revert pending batch_id={batch_id} status={status} "
+                        f"tenant={context.tenant_id}")
+            return ToolResult(
+                success=True,
+                data=data,
+                message=(f"批量撤销**已开始但尚未完成**（batch_id={batch_id}，当前状态 {status or 'unknown'}）—— "
+                         "请如实告诉商家「正在撤销，稍后刷新批次状态」，**不要声称已经撤销**。"),
+                summary="批量撤销中（未完成）",
+            )
         logger.info(f"[product_batch_update] revert batch_id={batch_id} ok={ok} fail={len(failed)} "
                     f"tenant={context.tenant_id}")
         return ToolResult(

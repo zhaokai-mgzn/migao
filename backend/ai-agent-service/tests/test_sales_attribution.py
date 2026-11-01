@@ -20,7 +20,7 @@
 - 响应 ``data.items[]`` = ``OrderListResponse``，其 ``items[]`` = ``OrderItemBrief``
   （``productName`` / ``amount`` = unitPrice×quantity / ``subtotal`` 可能为 null）。
 """
-# case_ids: DA-027
+# case_ids: DA-027, DA-025
 
 import datetime as _dt
 import json
@@ -128,6 +128,18 @@ class TestSalesAttributionDeclaration:
         assert top_schema["default"] == 5
         assert top_schema["minimum"] == 1
         assert top_schema["maximum"] == MAX_ATTRIBUTION_TOP
+
+    def test_description_excludes_plain_order_count_comparison(self, tool):
+        """#8300（DA-025 实测）：**订单量/单数**环比必须让给 dashboard_stats(trend_compare)。
+
+        run `41258516251` 与 `41262203082` 两次都栽在同一处：用户问「这周订单比上周怎么样」，
+        模型两次都调 `sales_attribution` 答**销售额**。判据 = 描述里必须有一条**前置**的
+        【不适用】互斥条款（出现在【触发】之前 —— 越早的约束对选工具权重越高）。
+        """
+        d = tool.description
+        assert "【不适用】" in d
+        assert "trend_compare" in d
+        assert d.index("【不适用】") < d.index("【触发】")
 
 
 class TestToolPermissionBoundary:

@@ -40,7 +40,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <ol>
  *   <li><b>扫描器非空跑自证</b>：现取「写 {@code agent_batches.status} 的 mapper SQL」必须包含
  *       {@code markExecuting} 与 {@code markReverting}；现取「service 里写状态列的调用点」必须包含
- *       {@code execute} 与 {@code revert}。候选集为空 / 少了核心对象 ⇒ 先红
+ *       {@code claimForExecute} / {@code claimForRevert} / {@code runBatch} / {@code runRevert}
+ *       （#8283 把同步入口拆成「抢权 + 后台执行」两半，真正写状态列的是这两半）。候选集为空 / 少了核心对象 ⇒ 先红
  *       （形态被改名不是「通过」，而是「判据失明」）。</li>
  *   <li><b>mapper 状态写 SQL 必须带完整谓词</b>：凡在 SET 侧写 {@code status} 的手写 {@code @Update}
  *       SQL，必须同时含 {@code tenant_id} 参数、来源态谓词（{@code status = '<当前态>'} 或
@@ -142,7 +143,7 @@ class AgentBatchStatusCasMetaGuardTest {
                 .contains("markExecuting", "markReverting");
         assertThat(servicePaths)
                 .as("扫描器必须现取到 service 里写状态列的调用点（返回空集 = 判据失明，不是通过）")
-                .contains("execute", "revert");
+                .contains("claimForExecute", "claimForRevert", "runBatch", "runRevert");
     }
 
     @Test

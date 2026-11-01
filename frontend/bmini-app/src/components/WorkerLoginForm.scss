@@ -1,0 +1,93 @@
+/* 工人登录表单（issue #8194）—— 取值逐条对齐终端 `/w/` 的 `frontend/worker-h5/src/styles.css`
+   （admin-web 暖色阶：neutral / primary / accent），**不新造设计语言**。
+   单位口径 = Taro 设计 px（`designWidth: 750`，1 CSS px ≈ 2 设计 px），PAD 上按同一比例放大。
+   卡片与 `/w/` 的 `.wh5-card` **同值**：padding 16 CSS px（= 32 设计 px）/ 圆角 16px（= 32）/
+   间距 12px（= 24）/ 同一条阴影（白卡片落在页面底色 `#faf7f2` 上，与 `/w/` 是同一观感）。
+
+   🔴 390px 真机宽度的横向约束（2026-10-31 视觉验收，issue #8194）：卡片是 flex 列的子项，
+   默认 `min-width:auto` + 内容盒（content-box）会让「卡片 padding + 输入框 padding」把右缘顶出
+   视口（实测副标题「无需微信）」被切、输入框/按钮右侧出屏）。视觉判据
+   `tests/e2e/specs/bmini/bmini-input-center.spec.ts` 只量竖向居中，**看不见这类横向溢出**
+   ⇒ 这里显式 `width/max-width:100%` + `box-sizing:border-box` + `min-width:0`，并让副标题
+   可在任意位置换行；改宽度/边距时必须保持这三条。 */
+.worker-login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 32px;
+  background: #ffffff;
+  border-radius: 32px;
+  box-shadow: 0 1px 2px rgba(36, 31, 24, 0.04), 0 4px 16px rgba(36, 31, 24, 0.06);
+
+  &__title {
+    font-size: 40px;
+    font-weight: 700;
+    color: #312c26;
+  }
+
+  /* 副标题（`/w/` 的 `.wh5-sub`：--wh5-muted） */
+  &__sub {
+    font-size: 28px;
+    line-height: 1.5;
+    color: #7e6f57;
+    /* 长中文/括号不许把卡片撑宽；宁可换行 */
+    overflow-wrap: anywhere;
+  }
+
+  /* 错误位（`/w/` 的 `.wh5-error`：--wh5-danger） */
+  &__error {
+    font-size: 30px;
+    color: #b91c1c;
+  }
+
+  &__field {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  &__label {
+    font-size: 30px;
+    color: #7e6f57;
+  }
+
+  /* 输入框（`/w/` 的 `.wh5-input`：48 CSS px 高 / 18px 字 / `--wh5-line-strong` 描边）。
+     🔴 **固定高度 + 零纵向 padding**：h5 下 Taro 的 `<Input>` 是「外层自定义元素（拿 className）
+     + 内层原生 `<input>`」两层，竖向靠共享层 `src/styles/input-center.scss`（内层 `height:100%`）居中 ——
+     若在这里加纵向 padding，内层 ÷ 外框的占比会掉到 0.9 以下，**真几何判据**
+     `tests/e2e/specs/bmini/bmini-input-center.spec.ts` 会判红（本仓那一族缺陷的判据）。
+     ⚠️ 本文件的注释里也**不许**出现那两个 h5 选择器名（台账守卫 `input-center-guard` 判「逐页打补丁」，注释同样命中）。 */
+  &__input {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    height: 96px;
+    padding: 0 24px;
+    font-size: 36px;
+    border: 1px solid #d4c9b8;
+    border-radius: 16px;
+    background: #ffffff;
+    color: #312c26;
+  }
+
+  /* 主按钮（`/w/` 的 `.wh5-primary`：--wh5-brand 底 / 18px 字 / 字距 .2em） */
+  &__submit {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    min-height: 88px;
+    line-height: 88px;
+    border-radius: 24px;
+    background: #3a4e75;
+    color: #ffffff;
+    font-size: 36px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+  }
+}

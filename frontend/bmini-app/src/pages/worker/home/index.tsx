@@ -55,7 +55,7 @@ import {
   SHIPMENT_PAGE_ROUTE,
   STOCK_PAGE_ROUTE,
   WORKER_HOME_LOGIN_REQUIRED,
-  WORKER_TAB_LOGIN_ROUTE,
+  WORKER_LOGIN_ROUTE,
 } from '../../../utils/inbound/gaps'
 import { fetchWorkerPages } from '../../../services/workerService'
 import { listReadyShipmentOrders } from '../../../services/workerShipmentOrdersService'
@@ -71,6 +71,9 @@ import {
 /** 读不到菜单开关时给工人的一句话（不摆内部键；文案守卫只扫 src/pages/**，故写在页内）。 */
 export const PAGES_UNREAD_NOTICE = '未能读取本机菜单开关，已按全部菜单显示；若与本机应开的不符，请找管理员'
 import './index.scss'
+
+/** 发货标签页（工人端 `/w/` 的静态页；与 `/b/` 同源 ⇒ 用相对路径，不写死域名） */
+const SHIPMENT_LABEL_PATH = '/b/report/shipment.html'
 
 export default function WorkerHomePage() {
   /** 本机有没有工人身份（本地判据，只决定「渲染工人功能」还是「引导去登录」） */
@@ -134,8 +137,13 @@ export default function WorkerHomePage() {
   const [pendingToShip, setPendingToShip] = useState<number | null>(null)
   const [pendingRework, setPendingRework] = useState<number | null>(null)
 
+  // 🔴 菜单还没读到 = `menuVisible` 的 fail-open 期（全开）⇒ 这时候按「全开」去请求，
+  // 会给没有该页权限的工人打出 403，手机照 `request.ts` 弹一句「无权限访问」
+  // （真机读数 2026-11-01：王建国 W2005 首页 `GET /api/worker/production/rework-orders` 403）。
+  // 计数只是**补充信息**，等菜单落定再取 —— 不是把入口挡掉（显隐仍按 fail-open 显示）。
+  const pagesSettled = pages !== null || pagesUnread
   useEffect(() => {
-    if (!worker) {
+    if (!worker || !pagesSettled) {
       setPendingToShip(null)
       setPendingRework(null)
       return
@@ -160,18 +168,23 @@ export default function WorkerHomePage() {
     return () => {
       alive = false
     }
-  }, [worker, showToShip, showRework])
+  }, [worker, pagesSettled, showToShip, showRework])
 
-  /** 引导去登录页的**工人入口**（`?tab=worker` 直达第三 tab） */
+  /**
+   * 引导去**工人登录页**（issue #8194）：落在 `pages/worker/login/index` —— 它渲染的是与终端
+   * `/w/` 逐字一致的共享表单 `WorkerLoginForm`，与扫码报工页未登录时就地渲染的是**同一份**。
+   * （三角色登录页的工人 tab 仍是常规入口，本页不再拿它当工人的登录引导。）
+   */
   const goWorkerLogin = useCallback(() => {
-    Taro.navigateTo({ url: WORKER_TAB_LOGIN_ROUTE })
+    Taro.navigateTo({ url: WORKER_LOGIN_ROUTE })
   }, [])
 
   const exitWorker = useCallback(async () => {
     // 先结束服务端 session（幂等），再清本机 —— 只清本机会让下一个人记到上一个人头上
     await workerLogout()
     clearWorkerSession()
-    Taro.redirectTo({ url: WORKER_TAB_LOGIN_ROUTE })
+    // 退出后同样回工人登录页（同一张表单；登录页在页面栈只有自己时会回本页）
+    Taro.redirectTo({ url: WORKER_LOGIN_ROUTE })
   }, [])
 
   return (
@@ -199,7 +212,6 @@ export default function WorkerHomePage() {
 
       {worker ? (
         <>
-          <Text className='worker-home__section'>工人功能</Text>
           {pagesUnread ? (
             <Text className='worker-home__message' data-testid='worker-home-pages-unread'>
               {PAGES_UNREAD_NOTICE}
@@ -267,6 +279,24 @@ export default function WorkerHomePage() {
             <View className='worker-home__entry-body'>
               <Text className='worker-home__entry-text'>拍照发货</Text>
               <Text className='worker-home__entry-sub'>拍运单 / 商品标签 ⇒ 生成发货单</Text>
+            </View>
+            <Text className='worker-home__entry-go'>›</Text>
+          </View>
+          ) : null}
+
+          {/* 发货标签（用户 2026-11-01 18:39 裁定）：从终端 ⋮ 菜单搬到这里 —— 页面在 `/w/shipment.html`
+              （终端壳里 window.print() 由原生接管，纸面 50×70；issue #7906：手机端只走 `/b` 命名空间）。与「拍照发货」同一道门控。 */}
+          {showShipment ? (
+          <View
+            className='worker-home__entry'
+            onClick={() => {
+              if (typeof window !== 'undefined') window.location.href = SHIPMENT_LABEL_PATH
+            }}
+          >
+            <View className='worker-home__entry-bar worker-home__entry-bar--b' />
+            <View className='worker-home__entry-body'>
+              <Text className='worker-home__entry-text'>发货标签</Text>
+              <Text className='worker-home__entry-sub'>打一张 50×70 的发货标签</Text>
             </View>
             <Text className='worker-home__entry-go'>›</Text>
           </View>

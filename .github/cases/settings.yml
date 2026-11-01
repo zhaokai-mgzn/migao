@@ -461,7 +461,12 @@ cases:
     user_inputs:
       - "我支付这笔订单，怎么付款"
     expectations:
-      - tool: direct_reply or order_query
+      # 2026-11-01（issue #8300 全档两次实测）：原 `direct_reply or order_query` 仍漏了**知识库检索**这一条
+      # 真实路径 —— 全档 run 41285244288 走 `nav_guide(how_to)`、定点 41286316979 走 `knowledge_search`，
+      # 两次都给对了指引却没被任何一条放行（同一句话每轮选不同工具 = 期望集没覆盖真实解空间）。
+      # 补齐方式与 2026-09-17 那次放宽同型（#4007：direct_reply → direct_reply or order_query），
+      # **不放宽成空断言**：仍要求至少命中其中之一，data_checks 继续钉「合规展示」事实。
+      - tool: direct_reply or order_query or knowledge_search
     data_checks:
       - "C 端收款码卡（卡型 `payment`）的**发射点**：C 端只读工具 `payment_qrcode_query`（无参，按租户取商家自己的收款码）返回的 data 即卡载荷 —— 含 `payment_qrcodes` 键（wechat/alipay 子对象含精简字段 image_url/payee_name），卡片渲染微信/支付宝切换与收款方（#4085 第 1 项）"
       - "「应付金额」**只在载荷带 amount 时**展示（对话内收款码查询无订单上下文 ⇒ 不带 amount，卡片不显示金额行）；金额行由组件测试 frontend/mini-app/tests/payment-card.test.tsx 覆盖"

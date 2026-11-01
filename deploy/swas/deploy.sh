@@ -301,6 +301,35 @@ disk_used_mb() { df -Pk / | awk 'NR==2 {print int($3/1024)}'; }
 # 可用空间（MB）：**唯一一份**口径 —— 构建前置门槛与缓存回收的水位判定共用它（两处不许各写各的）。
 disk_free_mb() { df -Pk / | awk 'NR==2 {print int($4/1024)}'; }
 
+# ── 容器日志上界（issue #8218 P1-02）──────────────────────────────────────────────
+# 口径 = `deploy/swas/docker-compose.yml` 的 `x-logging` 锚点（max-size / max-file）。
+# 🔴 这两条常量**不是**第二个真值源：它们是**同一份口径的读数侧**，判据
+#    `tests/unit_ci_workflows/test_swas_container_runtime.py` 逐字比对两边（不一致即红）。
+LOG_CAP_MB=${LOG_CAP_MB:-50}
+LOG_MAX_FILES=${LOG_MAX_FILES:-3}
+
+#: 单容器日志上界（MB）= max-size × max-file（compose 的 json-file 轮转语义）
+log_cap_per_container_mb() { echo $((LOG_CAP_MB * LOG_MAX_FILES)); }
+
+#: 本 compose 项目**容器 json-file 日志的实际占用**（MB）+ 计入的容器数：`<mb> <count>`
+#: ⚠️ **只读**：只 `docker compose ps -q` + `docker inspect` + `du`，不删任何东西
+#:    （铁律 10：本读数不新增任何无人值守的删除动作）。
+#: ⚠️ 取不到（无 docker / 容器不是 json-file 驱动 / 无权限）⇒ 容器数与 MB 都照实给 0 ——
+#:    `0` 在这里的含义是「本机没数到这个项目的容器」，**不是**「日志占用为零」；
+#:    消费面（`::warning::` 门）只在**数到了容器**且超过上界时才响。
+container_log_footprint_mb() {
+  local total=0 count=0 cid path kb
+  for cid in $(docker compose ps -q 2>/dev/null || true); do
+    [ -n "$cid" ] || continue
+    path=$(docker inspect -f '{{.LogPath}}' "$cid" 2>/dev/null || true)
+    [ -n "$path" ] && [ -f "$path" ] || continue
+    kb=$(du -k "$path" 2>/dev/null | awk '{print $1}')
+    total=$((total + ${kb:-0}))
+    count=$((count + 1))
+  done
+  echo "$((total / 1024)) $count"
+}
+
 # ══════════════════════════════════════════════════════════════════════════
 # 构建缓存的**水位联动回收**（issue #6508）—— 只碰构建缓存，永不碰镜像/保留集
 #
@@ -680,6 +709,47 @@ else
   # ⇒ 直接复用、不再下一次 66.5MB 整仓。三份文件**都落到盘上之后**才写标记 ⇒ 标记不会先于配置落地。
   printf '%s\n' "$CONFIG_REF_RESOLVED" > "$CONFIG_REF_MARKER_FILE"
 fi
+
+# ── 1.3.1 微信「扫普通链接二维码打开小程序」校验文件落位（issue #8196）────────────
+# 微信后台生成的是一个**根下随机的 `<一串字符>.txt`**（文件名/内容都由微信给，仓库不编、不改）。
+# 它必须出现在 `https://app.migaozn.com/<名字>.txt` —— 也就是静态根的**根下**。
+# 用户在微信后台下载后原样放进 `deploy/swas/wechat-verify/`（说明见该目录 README），本段负责落位。
+# 🔴 **必须放在取配置之后、C′ 构建之前**：源码树 `src/` 只在第 1 段存在（构建成功后按磁盘策略删掉，
+#    见 1.4 与 #5814）⇒ 放到 2.x 那一段时 `src/` 已不在，本段会永远「跳过」= 静默不落位。
+#    配置**复用**（同 ref 重部署，盘上没有 `src/`）时本段照样跳过并出声：该 ref 的首次部署已经把
+#    文件拷过去了（静态根跨部署保留）。
+# 🔴 只**增/覆盖** `.txt`：静态根同时是 C 端 h5 的落地面（`index.html` / `js/` / `b/` / `w/` /
+#    `terminal/` 都不归本段所有）⇒ 这里**不删**任何别的文件、也不做清理。
+# 幂等：同一份输入连跑两次结果逐字节一致（判据 = tests/unit_ci_workflows/test_wechat_verify_route.py）。
+# 任何跳过都**出声**且**不拖垮部署**（还没放文件是常态，不是故障）。
+# >>> wechat-verify
+MIGAO_VERIFY_STATIC_ROOT=${MIGAO_STATIC_ROOT:-/opt/migao-deploy/h5}
+MIGAO_VERIFY_SRC_DIR=${MIGAO_WECHAT_VERIFY_DIR:-}
+if [ -z "$MIGAO_VERIFY_SRC_DIR" ]; then
+  # 默认取**本次解出来的源码树**（第 1 段的 `src/`）；从仓检出直接跑时退回 `deploy/…`。
+  if [ -d src/deploy/swas/wechat-verify ]; then
+    MIGAO_VERIFY_SRC_DIR=src/deploy/swas/wechat-verify
+  else
+    MIGAO_VERIFY_SRC_DIR=deploy/swas/wechat-verify
+  fi
+fi
+MIGAO_VERIFY_COPIED=0
+if [ ! -d "$MIGAO_VERIFY_SRC_DIR" ]; then
+  echo "  ⏭️ 跳过微信校验文件：盘上没有 ${MIGAO_VERIFY_SRC_DIR}（本次未取源码树 / 同 ref 复用配置）—— **部署不受影响**"
+elif [ ! -d "$MIGAO_VERIFY_STATIC_ROOT" ]; then
+  echo "  ⏭️ 跳过微信校验文件：静态根 ${MIGAO_VERIFY_STATIC_ROOT} 不存在（h5 尚未落位）—— **部署不受影响**"
+else
+  for _migao_verify_file in "$MIGAO_VERIFY_SRC_DIR"/*.txt; do
+    [ -e "$_migao_verify_file" ] || continue
+    cp -f "$_migao_verify_file" "$MIGAO_VERIFY_STATIC_ROOT/$(basename "$_migao_verify_file")"
+    MIGAO_VERIFY_COPIED=$((MIGAO_VERIFY_COPIED + 1))
+    echo "  微信校验文件：$(basename "$_migao_verify_file") → ${MIGAO_VERIFY_STATIC_ROOT}/"
+  done
+  if [ "$MIGAO_VERIFY_COPIED" -eq 0 ]; then
+    echo "  ℹ️ 微信校验文件：${MIGAO_VERIFY_SRC_DIR} 里还没有 *.txt（微信后台生成后原样放进来；**部署不受影响**）"
+  fi
+fi
+# <<< wechat-verify
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 1.4 C′ 服务器侧构建（issue #5814）—— **在本脚本已持有的 flock 之内**
@@ -1306,6 +1376,7 @@ else
   echo "  ⏭️ 跳过 TLS 自动续期安装：盘上没有 ./tls-renew.sh（本次未取源码树）—— **部署不受影响**"
 fi
 
+
 # ══════════════════════════════════════════════════════════════════════════
 # 2.7 部署成功后：按**保留策略**清理（issue #4808 ①）——替换原来那句只清 dangling 的
 #     `docker image prune -f`（它**不带 `-a`** ⇒ 带 tag 的 `sha-*` 旧镜像**永远不被清**
@@ -1342,6 +1413,33 @@ if [ "${DISK_PCT_AFTER:-0}" -gt "$DISK_WARN_PCT" ]; then
   echo "     若持续高于阈值 ⇒ 说明单次增长 > 保留策略的回收量，需扩容或调大清理力度（人工判断）"
 fi
 report_rollback_point
+
+# ══════════════════════════════════════════════════════════════════════════
+# 2.8 磁盘与**容器日志**水位读数（issue #8218 P1-02）—— **只读**，不删任何东西
+#
+# 病：四个服务的 json-file 日志原先**无上限**（compose 无 `logging:` 段）⇒ 单机磁盘单调爬升；
+#     写满后四服务同时 502（`restart: unless-stopped` 救不了「写不进去」），而**没有任何读数**
+#     会先变红 —— 「日志到底涨到多少了」改前只能靠人上机器 `du`。
+# 修：compose 给每个服务 `max-size: 50m` / `max-file: 3`（见该文件的 `x-logging` 锚点）。
+# 本段把**实测占用**打进每次部署的日志（与上面磁盘水位同一形态），并与**上界总和**对账：
+#     越过上界 ⇒ 轮转没生效（`logging:` 被删 / docker 不认）⇒ 那是一次**具名**的告警，
+#     而不是等磁盘满了才发现。
+# 🔴 本段**只读**：不 prune、不 rm、不 truncate 日志文件（无人值守删除不安全 —— 铁律 10）。
+# 判据 = tests/unit_ci_workflows/test_swas_container_runtime.py（含「本段不得出现删除动作」）
+# ══════════════════════════════════════════════════════════════════════════
+echo "== 2.8 磁盘 / 容器日志水位读数（只读；issue #8218 P1-02）=="
+LOG_READING=$(container_log_footprint_mb || echo "0 0")
+LOG_FOOTPRINT_MB=${LOG_READING%% *}
+LOG_CONTAINER_COUNT=${LOG_READING##* }
+LOG_CAP_PER_CONTAINER_MB=$(log_cap_per_container_mb)
+LOG_CAP_TOTAL_MB=$((LOG_CAP_PER_CONTAINER_MB * LOG_CONTAINER_COUNT))
+echo "MIGAO-DISK-WATERMARK root_pct=$(disk_pct) root_free_mb=$(disk_free_mb) container_logs_mb=${LOG_FOOTPRINT_MB} containers=${LOG_CONTAINER_COUNT} log_cap_per_container_mb=${LOG_CAP_PER_CONTAINER_MB} cap_total_mb=${LOG_CAP_TOTAL_MB}"
+if [ "${LOG_CONTAINER_COUNT:-0}" -gt 0 ] && [ "${LOG_FOOTPRINT_MB:-0}" -gt "$LOG_CAP_TOTAL_MB" ]; then
+  echo "  ::warning::容器 json-file 日志实测 ${LOG_FOOTPRINT_MB}MB > 上界总和 ${LOG_CAP_TOTAL_MB}MB"
+  echo "     （= ${LOG_CAP_PER_CONTAINER_MB}MB × ${LOG_CONTAINER_COUNT} 个容器）⇒ **轮转没有生效**："
+  echo "     核对 deploy/swas/docker-compose.yml 的 x-logging（max-size=${LOG_CAP_MB}m / max-file=${LOG_MAX_FILES}）"
+  echo "     与 \`docker inspect <容器> --format '{{json .HostConfig.LogConfig}}'\`；日志无界增长会把磁盘写满 ⇒ 四服务 502。"
+fi
 
 echo "== 3. 健康检查（正式容器，最终判据；与蓝绿预验证**同一份**判据）=="
 HC_FAILED=0
