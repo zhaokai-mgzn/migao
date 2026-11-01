@@ -40,7 +40,7 @@ import { Image, Input, ScrollView, Text, View } from '@tarojs/components'
 import { confirmActionResult } from '../../../utils/adminConfirm'
 import { hasWorkerSession } from '../../../utils/workerSession'
 import { decodeBarcodeFromPhoto, type PendingPhoto } from '../../../utils/inbound/barcodeDecode'
-import { inboundLabelPageSize, type InboundLabelView } from '../../../utils/inbound/labelLayout'
+import type { InboundLabelView } from '../../../utils/inbound/labelLayout'
 import { renderInboundLabel } from '../../../utils/inbound/labelCanvas'
 import {
   evaluateSkuGate,
@@ -663,11 +663,7 @@ export default function WorkerInboundPage() {
 
         {step === 'label' && label && (
           <View className='admin-card' data-testid='inbound-step-label'>
-            <Text className='admin-card__title'>入库标签 {inboundLabelPageSize()}</Text>
-            <Text className='admin-card__meta'>
-              编号 {label.shortCode || '（缺失）'} · 单号 {label.inboundNo || '-'} · 已打印{' '}
-              {label.printCount ?? 0} 次
-            </Text>
+            {/* 2026-11-01 用户裁定：卡片里只留预览 + 打印按钮（上面的标签说明文字移除） */}
             {previewUrl !== '' && (
               <View
                 className='admin-label-preview-box'
