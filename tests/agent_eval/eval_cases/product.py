@@ -2366,6 +2366,7 @@ _CASE_PR_130 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'product_detail'}],
 )
 
 # ── PR-053 [NORMAL] 营销海报 - 商品事实 + 商家确认文案生成海报卡（缺文案 fail-closed；PC 下载 / 手机保存相册）（源: cases/product.yml）──

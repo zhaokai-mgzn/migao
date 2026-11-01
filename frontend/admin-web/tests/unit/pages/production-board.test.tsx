@@ -1,4 +1,4 @@
-// case_ids: PP-014, PG-024, PG-038, PG-041, PR-106, PG-021, UI-094, UI-136
+// case_ids: PP-014, PG-024, PG-038, PG-041, PR-106, PG-021, UI-094, UI-136, UI-147
 //
 // PP-014（issue #4307 前端半边）：菜单组第 4 项「工艺路线」—— 页面存在但侧边栏进不去等于没交付；
 //   本文件的链接清单 + 权限码断言随加项改判（红证：加项后旧断言即红）。
@@ -33,6 +33,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within, act, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { findEmptyDataAssertions } from '../../../scripts/read-failure-empty-state-scan.mjs'
 
 const mockList = vi.fn()
 const mockGetOrderOperations = vi.fn()
@@ -450,6 +451,10 @@ describe('作业看板页 /production（作业单唯一入口，PG-038）', () =
 
     await waitFor(() => expect(screen.getByTestId('production-board-error')).toBeInTheDocument())
     expect(screen.getByTestId('production-board-retry')).toBeInTheDocument()
+    // 🔴 读失败 ≠ 真空态（issue #8200 · P1-06，审计点名的高流量页）：空态行**不得**同屏 ——
+    // 「暂无作业单」是一句事实性断言，而真相当下是「没读到」。
+    expect(screen.queryByTestId('production-board-empty')).toBeNull()
+    expect(findEmptyDataAssertions(document.body.textContent ?? '')).toEqual([])
   })
 
   // ── 合并能力（PG-038）：加工单列表页并入后，下列能力一条都不能丢 ──

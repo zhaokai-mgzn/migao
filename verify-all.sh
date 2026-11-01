@@ -602,10 +602,13 @@ gate_check() {
 # 代价 = 一轮 CI 往返。本块只补本地门禁，**不动 CI**。
 #
 # 触发面 = 该腿**判定对象的输入闭包**（唯一实现就在下面这个函数里）：模块目录本身 + 它 import / **现取**到的
-# **跨目录**仓内文件（现取 2 个：① frontend/admin-web/src/lib/print-media.json，被 bmini 的
+# **跨目录**仓内文件（现取 3 个：① frontend/admin-web/src/lib/print-media.json，被 bmini 的
 # src/utils/inbound/truth.ts import；② backend/ai-agent-service/app/api/chat.py，被
-# frontend/bmini-app/tests/chat-empty-state.test.tsx **现取**当「快捷入口单一真值」（issue #6476）——
-# 那份文件改了而这条腿不跑 = 空态文案与入口对不上没人发现）。闭包由判据
+# frontend/bmini-app/tests/chat-empty-state.test.tsx **现取**当「快捷入口单一真值」（issue #6476）；
+# ③ frontend/worker-h5/src/shipment.mjs，被
+# frontend/bmini-app/tests/ship-label-rows-parity.test.ts **现取**当「发货联行清单同源」真值
+# （issue #8287：/w/ 行清单改了而 bmini 不重跑 = 两端悄悄对不上，且没有别的腿会发现）——
+# 前两条漏跑 = 空态文案 / 打印纸型与入口对不上没人发现）。闭包由判据
 # `tests/unit_ci_workflows/test_local_gate_matrix.py` 现取（C5：跨目录输入被谓词命中或登记在
 # local_gate_matrix.json 的 trigger_face_uncovered_inputs，未登记即红），
 # 故**未来新增一条跨目录输入不会静默漏过**（本行就是被该判据抓出来后补的）。
@@ -615,7 +618,7 @@ gate_check() {
 # `… | grep -q .` —— `grep -q` 命中即退，上游 printf 吃 SIGPIPE ⇒ `set -o pipefail` 下
 # 「命中」被读成「不命中」= 假绿。
 bmini_face_paths() {
-  grep -E '^(frontend/bmini-app/|frontend/admin-web/src/lib/print-media\.json$|backend/ai-agent-service/app/api/chat\.py$)' || true
+  grep -E '^(frontend/bmini-app/|frontend/admin-web/src/lib/print-media\.json$|backend/ai-agent-service/app/api/chat\.py$|frontend/worker-h5/src/shipment\.mjs$)' || true
 }
 bmini_face_hit() {
   local hit

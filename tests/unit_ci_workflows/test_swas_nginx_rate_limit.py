@@ -636,11 +636,19 @@ def test_red_proof_gutting_a_burst_is_detected() -> None:
 
 
 def test_red_proof_throttling_static_surface_is_detected() -> None:
-    """红证③：给工人端静态 `location /` 加一条限流 ⇒ 判据必须报出「静态面不该限流」。"""
+    """红证③：给工人端静态 `location /` 加一条限流 ⇒ 判据必须报出「静态面不该限流」。
+
+    ⚠️ 注入锚点 = 该 location 的 `try_files` 行（`try_files $uri $uri/ /index.html;` 在
+    `app.migaozn.com` 段里唯一）—— **不要**锚在整块 `location / { … }` 文本上：那块会随
+    **合法**改动（如 issue #8218 P1-09 给它加的安全头 `add_header`）而变化，锚死整块会让本红证
+    在无关改动上报「定位失败」（那是判据的脆弱性，不是缺陷）。注入语义不变：静态面上多一条 limit_req。
+    """
     text = _live_text()
-    mutated = _inject(text, "    location / {\n        try_files $uri $uri/ /index.html;\n    }",
-                      "    location / {\n        limit_req zone=api_perip burst=5 nodelay;\n"
-                      "        try_files $uri $uri/ /index.html;\n    }")
+    mutated = _inject(
+        text,
+        "        try_files $uri $uri/ /index.html;",
+        "        limit_req zone=api_perip burst=5 nodelay;\n        try_files $uri $uri/ /index.html;",
+    )
     page_cost, _where, _missing = measured_page_cost()
     scan_cost, _missing2 = measured_worker_scan_cost()
     found = problems(mutated, page_cost, scan_cost)

@@ -1,6 +1,8 @@
 /* 扫码报工页（issue #7812 P2a）—— 车间手机 / PAD：单手可点、触控 ≥44px、弱光高对比。 */
 .worker-report {
   min-height: 100vh;
+  width: 100%;
+  box-sizing: border-box;
   padding: 24px 24px 48px;
   background: #faf7f2;
   display: flex;
@@ -24,10 +26,22 @@
     color: #7e6f57;
   }
 
+  /* 未登录的**就地**登录（issue #8194）：卡片形态由共享组件 `WorkerLoginForm.scss` 承担，
+     这里只是版面容器 —— 不再需要第二层白底/阴影（那会变成「卡中卡」）。 */
+  &__login {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
   &__scan,
   &__card,
   &__legacy,
-  &__gate {
+  &__finished {
     background: #fff;
     border-radius: 20px;
     padding: 24px;
@@ -35,6 +49,48 @@
     flex-direction: column;
     gap: 16px;
     box-shadow: 0 1px 2px rgba(36, 31, 24, 0.04), 0 4px 16px rgba(36, 31, 24, 0.06);
+  }
+
+  /* 成品入库卡（issue #8287）：与报工卡同底，但补一道细描边 —— 它是**另一件事**（入库/贴标），
+     不是报工流程的一部分，白卡叠白卡时靠描边分出边界。 */
+  &__finished {
+    border: 1px solid #d4c9b8;
+  }
+
+  &__label-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    background: #faf7f2;
+  }
+
+  &__label-row {
+    display: flex;
+    gap: 16px;
+    font-size: 26px;
+    line-height: 1.4;
+  }
+
+  &__label-key {
+    flex: 0 0 120px;
+    color: #7e6f57;
+  }
+
+  &__label-value {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: #312c26;
+    word-break: break-all;
+  }
+
+  &__label-code {
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-align: center;
+    color: #232e46;
   }
 
   &__primary,

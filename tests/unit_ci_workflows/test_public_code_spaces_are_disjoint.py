@@ -340,6 +340,13 @@ FACE_STATIC = "static"
 FACE_STATIC_UNDER_ROOT = "static-under-root"
 #: 内部重写面：该前缀**没有自己的文件**，nginx 用 `rewrite … last;` 把它换到另一个前缀（issue #7906）
 FACE_REWRITE = "rewrite"
+#: **纯静态下载面**（issue #8195）：前缀下只有文件、没有 SPA ⇒ `try_files $uri =404`（缺文件即 404）。
+#: **不许**有任何 HTML fallback —— 回落一页别人的应用 = HTTP 200 + 客户端把 HTML 当清单/安装包解析
+#: （失败形态与「没有新版本」无法区分，而监控不红）。
+FACE_STATIC_DOWNLOADS = "static-downloads"
+#: 裸前缀归一（issue #8195）：`location /terminal` 只做 `return 301 /terminal/`，
+#: 否则裸前缀会落进 `location /` 的 SPA fallback（同样是假 200）。
+FACE_REDIRECT = "redirect"
 
 
 @dataclass(frozen=True)
@@ -353,6 +360,7 @@ class NginxFace:
     upstream: str = ""   # kind == FACE_PROXY 时：登记的代理上游（host:port）
     fallback: str = ""   # kind == FACE_STATIC / FACE_STATIC_UNDER_ROOT 时：fallback 落在哪
     rewrite_to: str = ""  # kind == FACE_REWRITE 时：内部重写到的目标前缀（谁真正伺候它）
+    redirect_to: str = ""  # kind == FACE_REDIRECT 时：301 的目标（裸前缀归一）
 
 
 #: 🔴 **登记表**（与 CODE_SPACES 同文件、同族 —— 一处登记 = 一个公开前缀的全部归属）。
@@ -402,6 +410,22 @@ PUBLIC_PREFIX_FACES: dict[str, NginxFace] = {
         semantics="工人端报工页（零构建纯 ESM，静态根下的 w/ 子目录；自有 location 是为了给 `.mjs` 一个 JS MIME）",
         fallback="落回自己的 /w/index.html（**不得**落到根 index.html）",
     ),
+    "/terminal": NginxFace(
+        prefix="/terminal",
+        kind=FACE_REDIRECT,
+        owner="观星台终端下载面（issue #8195；nginx 只做裸前缀归一）",
+        semantics="裸前缀（无斜杠）301 到 /terminal/ —— 否则它会落进 `location /` 的 SPA fallback"
+        "（HTTP 200 + C 端元元页面，而状态码不是错误码 ⇒ 监控不红）",
+        redirect_to="/terminal/",
+    ),
+    "/terminal/": NginxFace(
+        prefix="/terminal/",
+        kind=FACE_STATIC_DOWNLOADS,
+        owner="终端发布腿（.github/workflows/terminal-publish.yml，issue #8195）",
+        semantics="终端更新清单（latest.json / android/latest.json）与安装包（exe/apk）；"
+        "纯静态下载面，缺文件即 404",
+        fallback="=404（**没有** HTML fallback：缺文件必须 404，不许回落任何页面）",
+    ),
 }
 
 #: 探针用的**虚拟静态根**（线上静态根 `/opt/migao-deploy/h5` 的预期形态）。
@@ -409,6 +433,7 @@ _STATIC_ROOT_FILES = frozenset({
     "index.html", "js/app.js", "css/app.css",
     "b/index.html", "b/js/app.js", "b/css/app.css",
     "w/index.html", "w/src/app.mjs",
+    "terminal/latest.json", "terminal/android/latest.json", "terminal/GuanxingtaiSetup.exe",
 })
 
 #: 端到端链路的**探针表**（照 `deploy/scripts/bmini-h5-verify-served.sh` 的 `SPA_PROBE` /
@@ -427,6 +452,10 @@ ROUTE_PROBES: tuple[tuple[str, str, str], ...] = (
     ("/w/index.html", FACE_STATIC, "w/index.html"),
     ("/", FACE_STATIC, "index.html"),
     ("/customer/service", FACE_STATIC, "index.html"),
+    # 终端下载面（issue #8195）：文件由自己的命名空间伺候，缺失文件必须是 404（不是 SPA 页）
+    ("/terminal/latest.json", FACE_STATIC, "terminal/latest.json"),
+    ("/terminal/GuanxingtaiSetup.exe", FACE_STATIC, "terminal/GuanxingtaiSetup.exe"),
+    ("/terminal/__absent__.exe", FACE_STATIC, "404"),
 )
 
 
@@ -624,6 +653,37 @@ def prefix_wiring_problems(conf: str, java_prefixes: set[str], h5_prefixes: set[
                     f"`location {prefix}` 的内部重写目标是 {rewritten!r}，登记的是 {face.rewrite_to!r}"
                     f"（改目标 = 换页面，必须同步改登记与判据）"
                 )
+        elif face.kind == FACE_STATIC_DOWNLOADS:
+            if block is None:
+                bad.append(f"{prefix} 登记为纯静态下载面（{face.owner}）但 nginx 里没有 `location {prefix}`"
+                           " ⇒ 请求会落到 `location /` 的 SPA fallback（200 + 别人的页面）")
+                continue
+            if proxy_target_of(block) is not None:
+                bad.append(f"`location {prefix}` 是纯静态下载面（{face.owner}）却挂了 proxy_pass")
+            fallback = _try_files_fallback(block)
+            if fallback != "=404":
+                bad.append(
+                    f"`location {prefix}` 的 try_files 末项是 {fallback!r}，必须是 `=404`："
+                    f"缺文件回落成任何页面都是「200 + 别人的应用」（客户端会把 HTML 当清单/安装包解析）；"
+                    f"登记要求：{face.fallback}"
+                )
+        elif face.kind == FACE_REDIRECT:
+            if block is None:
+                bad.append(f"{prefix} 登记为裸前缀归一（{face.owner}）但 nginx 里没有 `location {prefix}`"
+                           " ⇒ 裸前缀会落进 `location /` 的 SPA fallback（假 200）")
+                continue
+            if proxy_target_of(block) is not None:
+                bad.append(f"`location {prefix}` 登记为裸前缀归一（{face.owner}）却挂了 proxy_pass")
+            returns = [s for s in block.directives if s.startswith("return ")]
+            matched_return = ""
+            for statement in returns:
+                m = re.match(r"return\s+(\d{3})\s+(\S+?);?$", statement.strip())
+                if m:
+                    matched_return = f"{m.group(1)} {m.group(2)}"
+                    break
+            want = f"301 {face.redirect_to}"
+            if matched_return != want:
+                bad.append(f"`location {prefix}` 必须 `{want}`（登记要求），实际 {returns[:1] or '（没有 return）'}")
         else:  # FACE_STATIC_UNDER_ROOT
             if block is not None:
                 bad.append(f"{prefix} 登记为「由 `location /` 的 root 承载」，但现在它有了自己的 `location {prefix}` ⇒ 请更新登记")
@@ -838,3 +898,40 @@ def test_red_proof_a_removed_order_permit_all_is_detected() -> None:
     assert f'"{CODE_SPACES["/o/"].prefix}**"' not in permitted_paths(mutated), (
         "删掉 '/o/**' 后 permitAll 名单里竟然还在 ⇒ 变异注入没生效"
     )
+
+
+# ── 注入式红证（#8195 的 `/terminal/` 面：纯静态下载面 / 裸前缀归一）────────────────────
+
+
+def test_red_proof_terminal_downloads_fall_back_to_a_page() -> None:
+    """红证：把 `/terminal/` 的 `=404` 改成回落 HTML ⇒ 必须判红。
+
+    形态本身：**缺文件回落成页面 = HTTP 200 + 别人的应用**（终端会把 HTML 当清单/安装包解析，
+    失败形态与「没有新版本」无法区分，而监控不红）。
+    """
+    conf = _read(NGINX_CONF)
+    mutated = _replace_in_location(conf, "/terminal/", "try_files $uri =404;", "try_files $uri /index.html;")
+    assert route(mutated, "/terminal/__absent__.exe") == (FACE_STATIC, "index.html", "/terminal/__absent__.exe"), (
+        "变异注入没让缺失文件回落根页 ⇒ 模拟器与 nginx 语义对不上（本条红证是空断言）"
+    )
+    bad = _nginx_problems(mutated)
+    assert any("/terminal/" in item and "必须是 `=404`" in item for item in bad), (
+        f"`/terminal/` 回落 HTML 没被判红：{bad}"
+    )
+
+
+def test_red_proof_missing_terminal_location_is_detected() -> None:
+    """红证：删掉 `location /terminal/` 整块 ⇒ 登记表与现取集合不再相等 ⇒ 判红。"""
+    conf = _read(NGINX_CONF)
+    mutated = _drop_location(conf, "/terminal/")
+    assert "/terminal/" not in public_nginx_prefixes(mutated), "变异注入未生效（自证失败 ⇒ 红证是空断言）"
+    bad = _nginx_problems(mutated)
+    assert any("/terminal/" in item for item in bad), f"删掉 `location /terminal/` 没被判红：{bad}"
+
+
+def test_red_proof_a_terminal_face_without_redirect_is_detected() -> None:
+    """红证：把裸前缀的 `return 301 /terminal/` 改成 302 到别处 ⇒ 必须判红（归一规则被改）。"""
+    conf = _read(NGINX_CONF)
+    mutated = _replace_in_location(conf, "/terminal", "return 301 /terminal/;", "return 302 /w/;")
+    bad = _nginx_problems(mutated)
+    assert any("/terminal" in item and "必须" in item for item in bad), f"裸前缀归一被改没被判红：{bad}"

@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，167 条）
+# 域: misc（源: cases/misc.yml，169 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -1798,24 +1798,6 @@ _CASE_MC_098 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── MC-099 [NORMAL] **admin-api → ai-agent 内部调用腿的可观测契约**：接线断了必须摆进 `/actuator/health`，且恒 UP 不熔断（issue #6896）（源: cases/misc.yml）──
-_CASE_MC_099 = EvalCase(
-    id='MC-099',
-    legacy_id='',
-    title='**admin-api → ai-agent 内部调用腿的可观测契约**：接线断了必须摆进 `/actuator/health`，且恒 UP 不熔断（issue #6896）',
-    skill=Skill.GENERAL,
-    difficulty=Difficulty.NORMAL,
-    user_inputs=['本地漏设 `AI_AGENT_BASE_URL` / `AI_AGENT_SERVICE_TOKEN` 时，凭什么在业务侧静默驳回「系统繁忙」**之前**就知道这条腿断了？'],
-    expectations=[],
-    data_checks=['🔴 **判据 1·事实必须在面上**：`AiAgentLinkHealthIndicator.health()` 的 details 必须含 `base_url` / `base_url_configured` / `token_configured` / `reachable` / `probe_error` / `probed_at` 六键 —— **去掉任一键即红**（执行点 = `backend/admin-api/src/test/java/com/migao/admin/config/AiAgentLinkHealthIndicatorTest.java`）', '🔴 **判据 2·恒 UP 不许熔断**：token 未配、base-url 不可达、base-url 未配置三种坏态下，`status` 必须**仍是 `UP`**。沿用 #5184 / #4517 的既有裁定 —— 把 `/actuator/health` 打成 DOWN 会连带部署腿 / 探活 / 负载均衡一起红，比原问题更糟。**有人顺手改成 DOWN ⇒ 红**', '🔴 **判据 3·只暴露有无，不暴露值**：注入非空 token 后 `details.toString()` 必须**不含**该 token 原文 —— 防「把配置值直接摆进对外健康端点」这类泄密（红证 = 把 `token_configured` 换成 `service_token`）', '**判据 4·坏配置降级为事实而非异常**：`base-url` 为空串时不得调用探针、不得抛异常，须落 `base_url_configured=false` + `reachable=false` + 带原因的 `probe_error`', '**边界（照实登记）**：① 本用例只判「事实有没有被摆出来」，**不判**「运维看到 DOWN 态的 details 后是否真会去修」—— 那是值守面的事；② 每次 health 现探一次（超时 800ms 封顶）、**不缓存**，故 health 被高频拉取时会给 ai-agent 增加等量 `/health` 请求，本仓 health 非热点路径 ⇒ 暂不引后台线程；③ 六个客户端里各自重复的坏默认值**本单未收敛到一处**（8000 对 `deploy/docker-compose.yml` 的 `8001:8000` 是正确的容器内地址，改默认值会弄坏容器那条路）'],
-    skip_reason='[backend-contract] 零 LLM 的确定性单测（假探针 + 纯函数判定），mvn 真跑、零网络、不进 agent-eval 冒烟',
-    tags=['backend-contract', 'liveness', 'observability'],
-    persona='',
-    debug_user='',
-    form_prefill=[],
-    forbidden_card_text=[],
-)
-
 # ── MC-100 [NORMAL] **入库单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6928 的类级固化）（源: cases/misc.yml）──
 _CASE_MC_100 = EvalCase(
     id='MC-100',
@@ -3072,9 +3054,63 @@ _CASE_MC_121 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=["四个域名（api / ai-api / app / migaozn.com）共用同一张 CN=migaozn.com 的 Let's Encrypt 证书，notAfter=Nov 27 10:29:18 2026 GMT（SAN 含 admin/ai-api/api/app/merchant/migaozn/ops/www）；宿主有 cron 在跑 certbot 却每天失败、且失败没有任何告警 —— 到期这件事必须有人被叫醒，而不是等 TLS 握手开始报错"],
     expectations=['**到期判据在**（`deploy/scripts/tls-expiry-check.sh`，只读）：默认查四域（可加 www），逐域打印 notAfter + 剩余天数 + **可复制的复算命令**；剩余 <21 天 ⇒ 退出 1；已过期 ⇒ 1；证书 SAN 不覆盖被查域名 ⇒ 1（具名「不匹配」）；取不到 / notAfter 解析不了 ⇒ 退出 **3**（**不可判定不得当 0**）。`openssl` / `certbot` / `docker` / `crontab` 全经 PATH 垫片注入 ⇒ 判据零网络、秒级。', '**lineage 诊断在**：当本机存在 letsencrypt 目录时，解析 `certbot certificates` 的每条 lineage（到期日 + `used=yes|no`：nginx 用的是 `live/migao/fullchain.pem` ⇒ `api.migaozn.com` 这条陈旧 lineage 标 `used=no`），并读出 `renewal/<name>.conf` 的 `authenticator` / `pref_challs` 与 `--webroot` 的冲突；**不因此判红**（未使用的 lineage 到期不影响四域 HTTPS），但必须**具名**；本机没有 letsencrypt 目录 ⇒ 明说 `status=skipped`（缺失 ≠ 没问题）。', '**续期腿在**（`deploy/scripts/tls-renew.sh`）：`--dry-run` 必须把 `--dry-run` 传给 certbot 且**不 reload**；成功才 reload（`docker compose exec -T nginx nginx -s reload`，**不是** restart）；「没有到期证书」⇒ 幂等 no-op（`TLS_RENEW_RESULT=noop`）且不 reload；失败 ⇒ **非零退出** + 归因清单 + 日志位置（cron 才看得见）。', '**cron 加固在**：`--install-cron` 幂等写 `/etc/cron.d/migao-tls-renew`（内容未变不重写）；检测到既有 `certbot renew` crontab 条目 ⇒ **拒绝安装**并退 3（否则同一条续期一天跑两遍），加 `--replace-legacy-cron` 才**先备份**（`/var/backups/crontab-*.bak`）再替换；非 root / 无 letsencrypt 目录 ⇒ 跳过并退 3（**出声**，不静默）。', "**接线在且会红**：`.github/workflows/post-verify` 一族里由 `.github/workflows/post-merge-verify.yml` 的 `TLS 证书到期判红` 步承接（只在 main 侧跑 —— `if: github.event_name != 'pull_request'`，PR 红该反映 PR），**必须排在 `if: failure()` 的 P1 出口之前**（之后 ⇒ 判红不产生值班单 = 静默），`exit 3` 不许归一化成 0。判据 = tests/unit_ci_workflows/test_tls_renewal.py::test_workflow_wiring_is_present + ::test_wiring_removal_turns_it_red（摘掉该步 / 挪到出口之后 / 把 3 改成 0 / 摘掉 `if:` 四种注入各自判红）；**不新增 schedule**（铁律 10）。", '**部署侧幂等**：`deploy/swas/deploy.sh` 在 nginx reload **之后**跑 `tls-renew.sh --install-cron`，失败 / 跳过只出声、**不拖垮部署**；同步 `src/deploy/scripts/tls-renew.sh` 带 `[ -f ]` 守卫（回滚到旧 tag 时 tarball 里没有该文件，无条件 `cp` 会让回滚部署 abort）。'],
-    data_checks=["**病（现取读数，2026-10-31 在服务器上核实）**：`openssl s_client -connect api.migaozn.com:443 -servername api.migaozn.com | openssl x509 -noout -dates` ⇒ `notBefore=Aug 29 10:29:19 2026 GMT` / `notAfter=Nov 27 10:29:18 2026 GMT`；宿主 `crontab -l` 有 `0 3 * * * certbot renew --quiet --webroot -w /opt/migao-deploy/certbot-www --post-hook 'cd /opt/migao-deploy && docker compose restart nginx >/dev/null 2>&1' >> /var/log/certbot-renew.log 2>&1`；`/var/log/certbot-renew.log` 每天重复两条失败：`api.migaozn.com` lineage 的 `None of the preferred challenges are supported by the selected plugin`（renewal conf = `authenticator=manual` + `pref_challs=dns-01`，与 `--webroot` 冲突；该 lineage **未被 nginx 使用**，到期 2026-11-12）与 `migao` lineage 的 `Some challenges have failed.`。", '**根因（双向核对 DNS）**：`admin.migaozn.com` **没有 A 记录**（`dig +short` 空；其余 7 个 SAN 都解析到 `121.40.28.213`），而 `migao` 证书的 SAN 含 `admin` ⇒ HTTP-01 对 admin 必失败 ⇒ 整张证书续期失败。⇒ **订正审计口径**：仓内确实没有续期腿 / 到期判据，但「仓内零续期机制」漏掉了「宿主 cron 已存在且在失败、且失败无告警」这一半（PR body 逐字登记）。', '**判别力自证（注入式红证，本包实跑）**：① 正常态（剩余 60 天）⇒ rc=0 + 逐域 `days_left` + 复算命令；② 临期 20/10/1 天 ⇒ rc=1 `status=expiring`；③ 已过期（剩余 −3 天）⇒ rc=1 `status=expired`；④ 取不到（s_client 失败）/ notAfter 为空 / notAfter 是垃圾 ⇒ 各自 rc=**3** `status=unknown` 且明说「无法判定」；⑤ SAN 不含 api/ai-api/app ⇒ rc=1 `status=mismatch`；`*.migaozn.com` 只覆盖 `api/api/ai-api/app` 而**不覆盖裸域** ⇒ 只有 `domain=migaozn.com status=mismatch`；⑥ 阈值边界：21 天 ⇒ 0、20 天 ⇒ 1；⑦ lineage：`migao` used=yes / `api.migaozn.com` used=no / `authenticator=manual` 冲突被具名；无 letsencrypt 目录 ⇒ `TLS_LINEAGE_SUMMARY status=skipped` 且**仍退 0**（不因缺诊断读数判红）；⑧ 续期腿：成功 ⇒ 只出现 `nginx -s reload`（无 `compose restart`）、`TLS_RENEW_RESULT=renewed`；失败 ⇒ 非零 + 无 reload + 归因；noop ⇒ 两次都 0 且无 reload；⑨ cron：有旧条目 ⇒ 退 3 且**不写** cron 文件、文案给 `--replace-legacy-cron`；替换 ⇒ 备份 + 过滤旧行 + 幂等（第二次「已就位」且逐字节相同）；非 root ⇒ 退 3 不写文件。', '**红证读数**（本包实测）：先写判据、实现全缺时 `29 failed`；实现后 `29 passed`（复算：`python3 -m pytest tests/unit_ci_workflows/test_tls_renewal.py -q`）。接线面的红证是**内存变异**（把该步从 YAML 里删掉 / 挪到 `if: failure()` 之后 / 把 `exit 3` 改成 `exit 0` / 摘掉 `if:`）四种注入各自让 `tls_wiring_problems()` 非空 —— 而不是「读一遍 YAML 看着对」。', "**边界（照实登记，不粉饰）**：① 判据**不联网**（openssl / certbot / docker / crontab 全是 PATH 垫片）⇒ 证的是「脚本在给定输入下会做什么」，**不是**「阿里云 / Let's Encrypt 真的这么回」；② **本单未执行**任何真实续期 / 重签 / DNS 变更（用户边界：执行留给人工确认），PR body 的「未覆盖项」逐条登记需要人执行的那一步；③ 「宿主 cron 真的每天跑了 / 续上了」只能事后看 `/var/log/migao-tls-renew.log` 与 `tls-expiry-check.sh` 的读数；④ 路径②（`certbot certonly --expand` 去掉 admin）**改变 SAN 集合** ⇒ 与「不改域名集合」的边界冲突，runbook 里明确写成「需人裁定」的例外，**不默认执行**；⑤ 陈旧 lineage 只给「不删证书」的禁用 / 修正方式（`mv renewal/api.migaozn.com.conf → renewal-disabled/`），**不静默 delete**；⑥ 不新增任何 GitHub schedule（铁律 10），只沿用 `post-merge-verify.yml` 既有的 push / schedule / dispatch 触发面。"],
+    data_checks=["**病（现取读数，2026-10-31 在服务器上核实）**：`openssl s_client -connect api.migaozn.com:443 -servername api.migaozn.com | openssl x509 -noout -dates` ⇒ `notBefore=Aug 29 10:29:19 2026 GMT` / `notAfter=Nov 27 10:29:18 2026 GMT`；宿主 `crontab -l` 有 `0 3 * * * certbot renew --quiet --webroot -w /opt/migao-deploy/certbot-www --post-hook 'cd /opt/migao-deploy && docker compose restart nginx >/dev/null 2>&1' >> /var/log/certbot-renew.log 2>&1`；`/var/log/certbot-renew.log` 每天重复两条失败：`api.migaozn.com` lineage 的 `None of the preferred challenges are supported by the selected plugin`（renewal conf = `authenticator=manual` + `pref_challs=dns-01`，与 `--webroot` 冲突；该 lineage **未被 nginx 使用**，到期 2026-11-12）与 `migao` lineage 的 `Some challenges have failed.`。", '**根因（双向核对 DNS）**：`admin.migaozn.com` **没有 A 记录**（`dig +short` 空；其余 7 个 SAN 都解析到 `121.40.28.213`），而 `migao` 证书的 SAN 含 `admin` ⇒ HTTP-01 对 admin 必失败 ⇒ 整张证书续期失败。⇒ **订正审计口径**：仓内确实没有续期腿 / 到期判据，但「仓内零续期机制」漏掉了「宿主 cron 已存在且在失败、且失败无告警」这一半（PR body 逐字登记）。', '**判别力自证（注入式红证，本包实跑）**：① 正常态（剩余 60 天）⇒ rc=0 + 逐域 `days_left` + 复算命令；② 临期 20/10/1 天 ⇒ rc=1 `status=expiring`；③ 已过期（剩余 −3 天）⇒ rc=1 `status=expired`；④ 取不到（s_client 失败）/ notAfter 为空 / notAfter 是垃圾 ⇒ 各自 rc=**3** `status=unknown` 且明说「无法判定」；⑤ SAN 不含 api/ai-api/app ⇒ rc=1 `status=mismatch`；`*.migaozn.com` 只覆盖 `api/api/ai-api/app` 而**不覆盖裸域** ⇒ 只有 `domain=migaozn.com status=mismatch`；⑥ 阈值边界：21 天 ⇒ 0、20 天 ⇒ 1；⑦ lineage：`migao` used=yes / `api.migaozn.com` used=no / `authenticator=manual` 冲突被具名；无 letsencrypt 目录 ⇒ `TLS_LINEAGE_SUMMARY status=skipped` 且**仍退 0**（不因缺诊断读数判红）；⑧ 续期腿：成功 ⇒ 只出现 `nginx -s reload`（无 `compose restart`）、`TLS_RENEW_RESULT=renewed`；失败 ⇒ 非零 + 无 reload + 归因；noop ⇒ 两次都 0 且无 reload；⑨ cron：有旧条目 ⇒ 退 3 且**不写** cron 文件、文案给 `--replace-legacy-cron`；替换 ⇒ 备份 + 过滤旧行 + 幂等（第二次「已就位」且逐字节相同）；非 root ⇒ 退 3 不写文件。', '**红证读数**（本包实测）：先写判据、实现全缺时 `29 failed`；实现后 `29 passed`（复算：`python3 -m pytest tests/unit_ci_workflows/test_tls_renewal.py -q`）。接线面的红证是**内存变异**（把该步从 YAML 里删掉 / 挪到 `if: failure()` 之后 / 把 `exit 3` 改成 `exit 0` / 摘掉 `if:`）四种注入各自让 `tls_wiring_problems()` 非空 —— 而不是「读一遍 YAML 看着对」。', "**边界（照实登记，不粉饰）**：① 判据**不联网**（openssl / certbot / docker / crontab 全是 PATH 垫片）⇒ 证的是「脚本在给定输入下会做什么」，**不是**「阿里云 / Let's Encrypt 真的这么回」；② **本单未执行**任何真实续期 / 重签 / DNS 变更（用户边界：执行留给人工确认），PR body 的「未覆盖项」逐条登记需要人执行的那一步；③ 「宿主 cron 真的每天跑了 / 续上了」只能事后看 `/var/log/migao-tls-renew.log` 与 `tls-expiry-check.sh` 的读数；④ 路径②（`certbot certonly --expand --force-renewal` 去掉 admin）**改变 SAN 集合** ⇒ 与「不改域名集合」的边界冲突；该例外已由用户在 **2026-10-31 裁定走路径②**（runbook 记为「已裁定执行」），`--force-renewal` 明确标注为**一次性动作、不许写进 cron**；⑤ 陈旧 lineage 已裁定执行「移出 renewal 目录、不删证书」（唯一口径 `/etc/letsencrypt/renewal-disabled/`），**不静默 delete**；⑥ 不新增任何 GitHub schedule（铁律 10），只沿用 `post-merge-verify.yml` 既有的 push / schedule / dispatch 触发面。"],
     skip_reason='[backend-contract] 运维判据（只读仓内脚本 + PATH 垫片伪造 openssl/certbot/docker/crontab + 真 YAML）由 tests/unit_ci_workflows/test_tls_renewal.py 验证，零网络、零真实续期、不写共享 /tmp、不烧 token，非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ops', 'tls', 'deploy', 'certbot', 'alarm'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-122 [NORMAL] 观星台终端正式发布链路（issue #8195）：/terminal/ 是纯静态下载面（缺失文件必须 404、不得回落 SPA、不限流、MIME 可判），官网 /download 有下载页，发布腿把终端仓 Release 的 exe/apk 幂等落到静态根并自证「线上字节 == 本地载荷」（源: cases/misc.yml）──
+_CASE_MC_122 = EvalCase(
+    id='MC-122',
+    legacy_id='',
+    title='观星台终端正式发布链路（issue #8195）：/terminal/ 是纯静态下载面（缺失文件必须 404、不得回落 SPA、不限流、MIME 可判），官网 /download 有下载页，发布腿把终端仓 Release 的 exe/apk 幂等落到静态根并自证「线上字节 == 本地载荷」',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['终端自己检查更新打的地址是 app.migaozn.com/terminal/latest.json 与 /terminal/android/latest.json，官网没有下载页，产物也没有发布通路；要一条能发、能回滚、发错了会红的链路'],
+    expectations=['direct_reply'],
+    data_checks=['**nginx 面（会红）**：`app.migaozn.com` 的 443 server 段必须有 `location /terminal/`，其 `try_files` 必须是 `$uri =404`（缺失文件 404）——回落任何 HTML 都是「200 + 别人的页面」（客户端会把 HTML 当清单/安装包解析，失败形态与「没有新版本」无法区分）。裸前缀 `location /terminal` 必须 `return 301 /terminal/`（否则它同样落进 SPA fallback）。该 location 不得挂 `limit_req`（批量更新会误伤），必须有 `default_type application/octet-stream`（exe/apk 按二进制落盘）与 `X-Content-Type-Options: nosniff`；**不许**用 `types {}`（替换继承表，类级判据 test_served_leg_mime_guard.py 禁止）。判据是**真解析 + 真模拟**（`_serve()`：前缀最长者 + try_files + return），不是文本匹配；变异（删 location / 改回 SPA fallback / 删 301 / default_type 改文本 / 挂限流 / 注入 types{}）各自判红。', '**发布腿结构（会红）**：`.github/workflows/terminal-publish.yml` 只允许 `workflow_dispatch` 且 `release_tag` 必填（发布是人工闸：没有 tag 就不知道该发哪一版，`push` 触发会让合并即发布）；发布/断言步骤不得带 `continue-on-error` / `|| true` / 恒假 `if`；ACR 登录必须走唯一实现 `scripts/acr_login.sh --fatal`（本腿把载荷推进 ACR ⇒ 登录承重）；静态根 `/opt/migao-deploy/h5` + 子目录 `terminal` 逐字在案。', '**CI 脚本契约（会红）**：`deploy/scripts/terminal-publish-ci.sh` 必须逐字含四条验收断言（远端 latest.json / android/latest.json 哈希 == 本地载荷、静态根 index.html 前后一致、PAYLOAD_MANIFEST_OK=1 自证行、InvocationStatus 必须 Success）与命令内容字节前置断言（`COMMAND_CONTENT_LIMIT_BYTES` 16384 + 官方出处 URL），且**不许内联远端执行体**（台账 swas_command_content_legs_ledger.json 的射程）。', '**沙箱行为（真跑脚本，会红）**：`prepare` 从「已下载的 Release 目录」生成两份清单，字段名与终端客户端逐字对齐（Windows `version` / `notes` / `download_url`；Android `versionCode`(int) / `versionName` / `download_url`），sha256/size 与实际文件一致；坏输入（缺目录 / versionCode 非整数 / tag 含引号 / version 为空）一律拒绝。远端脚本把载荷落到沙箱静态根：父目录 index.html 哈希不变、陈旧文件被收敛、不属于发布面的文件不搬、**幂等**（连跑两次逐字节一致）；清单与载荷不一致 / 缺件 / 多出未知文件 / 越界子目录 / 缺静态根 ⇒ 非零退出且**什么都没改**。', '**发布文档（会红）**：`docs/deployment/terminal-release.md` 必须写清发布步骤、回滚、证书现状（Windows 未签名 + SmartScreen + SHA256 公布）、不上架应用市场、`versionCode` 单调、两个清单地址。'],
+    skip_reason='[backend-contract] 静态结构 + 沙箱真跑判据（零网络、零云调用、不碰真实静态根）由 tests/unit_ci_workflows/test_terminal_release_leg.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'nginx', 'terminal', 'publish-leg', 'no-spa-fallback', 'idempotent', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-125 [NORMAL] 微信「扫普通链接二维码打开小程序」校验文件（issue #8196）：nginx 根下 .txt 是显式静态面（缺失 404、不回落 SPA、只吃单段），deploy.sh 幂等只拷 *.txt 到静态根根下（只增/覆盖、父目录 index.html 哈希不变、跳过要出声）（源: cases/misc.yml）──
+_CASE_MC_125 = EvalCase(
+    id='MC-125',
+    legacy_id='',
+    title='微信「扫普通链接二维码打开小程序」校验文件（issue #8196）：nginx 根下 .txt 是显式静态面（缺失 404、不回落 SPA、只吃单段），deploy.sh 幂等只拷 *.txt 到静态根根下（只增/覆盖、父目录 index.html 哈希不变、跳过要出声）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['微信后台要求把生成的根下 `<名字>.txt` 放到 https://app.migaozn.com/<名字>.txt；仓库侧要能承接这个文件，且文件缺失时不能伪装成「已就位」'],
+    expectations=['direct_reply'],
+    data_checks=['**nginx 面（会红）**：`app.migaozn.com` 的 443 段必须有**唯一**一条窄正则 location（`^/[^/]+\\.txt$`，`try_files $uri =404`，无 proxy / 无 rewrite）：根下 .txt 存在 ⇒ 200 该文件；**缺失 ⇒ 404**（绝不回落 `location /` 的 `index.html` —— 回落就是 HTTP 200 的一页 HTML，与「内容对不上」无法区分）；该正则只匹配根下单段 ⇒ `/b/…` 仍回落 `b/index.html`、`/w/…` 与 `/terminal/…` 不被劫持、根级 SPA 路由仍是 `index.html`。`location /` 的 SPA fallback 必须原样保留（404 是新面带来的，不是把全站改成 404）。判据 = **真解析 + 真模拟**（正则 location 先于前缀 + 前缀最长者 + try_files + index），不是文本匹配；三种变异（删 location / 把 `=404` 换成 `/index.html` / 把正则放宽成 `^/.*\\.txt$`）各自判红。', '**落位拷贝语义（真跑 deploy.sh 的 `# >>> wechat-verify` 段，会红）**：只拷 `*.txt`（非 txt 不落盘）；**只增/覆盖**，静态根里别的文件（`index.html` / `js/` / `b/` / 已有 `keep.txt`）逐字节不变；**幂等**（连跑两次快照逐字节一致）；同名以源为准；源目录为空 / 源目录不存在 / 静态根不存在 ⇒ 退出码 **0** 且**出声**（不拖垮部署）；🔴 **默认源 = `src/deploy/swas/wechat-verify`**（线上配置包解出来的源码树；该目录在 C′ 构建后被删 ⇒ 段必须放在取配置之后、构建之前，否则永远「跳过」= 静默不落位）；源码层红线 = 该段不得出现 `rm` / `rsync` / `mv` / `--delete` / `find`。', '**仓库不许编文件名/内容（但真文件必须能提交）**：部署只从**仓库源码包**取文件 ⇒ 用户从微信后台下载的真 `*.txt` 可以入库；判据禁的是**伪造 / 占位**（文件名含 `example/sample/…`、内容含 `TODO/PLACEHOLDER/…`、空文件）。README 必须写清「原样放进来、别改名/改内容」、首次部署要跑第二次、以及部署后的三条 `curl` 自证（内容 diff / `content-type` / 缺失 404）。', '**类级不变式同步**：`app` 段「不出现非前缀 location」的两条守卫（tests/unit_ci_workflows/test_bmini_h5_hosting.py / test_terminal_release_leg.py）改为**唯一白名单**（只允许本条 `.txt` 面）；其余任何正则 location 仍判红。'],
+    skip_reason='[backend-contract] 静态结构 + 沙箱真跑判据（零网络、零云调用、不碰真实静态根）由 tests/unit_ci_workflows/test_wechat_verify_route.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'nginx', 'wechat', 'static-root', 'no-spa-fallback', 'idempotent', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-126 [NORMAL] **外部账号的代码不得直接进本仓**：PR 提交作者 / head 仓库来源必须命中白名单，命中即判红并解除自动合并（issue #8386）（源: cases/misc.yml）──
+_CASE_MC_126 = EvalCase(
+    id='MC-126',
+    legacy_id='',
+    title='**外部账号的代码不得直接进本仓**：PR 提交作者 / head 仓库来源必须命中白名单，命中即判红并解除自动合并（issue #8386）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['外部账号的 fork PR 关闭后，内容被搬到同仓分支重开并 squash 合并 —— 凭什么保证这种事不再发生？'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·真实事故提交必须判红**：把 llwand1 在 PR #6897 / #6924 里的那条提交喂给 `classify()`，必须返回恰好 1 条违规且具名 `llwand1`。执行点 = tests/unit_ci_workflows/test_external_authorship_guard.py::test_real_incident_commit_is_flagged', '🔴 **判据 2·白名单形态**：空名单 / 通配一律拒绝启动（空名单等于放行一切，通配等于名单形同虚设）；真实白名单必须精确、非空、含两个协作者且**不含 llwand1**。执行点 = 同文件::test_empty_allowlist_is_refused / test_wildcard_allowlist_is_refused / test_real_allowlist_is_exact_and_covers_known_accounts', '🔴 **判据 3·fork 来源无条件判红**：head 仓库 != 本仓时，无论作者是否在白名单都判红并说明是 fork。执行点 = 同文件::test_cli_flags_fork_head_repo', '🔴 **判据 4·CLI 三态**：陌生提交 ⇒ exit 1 且具名；自家提交 ⇒ exit 0；白名单读不到 ⇒ exit 2（不得当 0 读）。执行点 = 同文件::test_cli_flags_foreign_commit_offline / test_cli_allows_team_commit_offline', '🔴 **判据 5·接线**：`.github/workflows/pr-check.yml` 必须有 `external-authorship-guard` job、`timeout-minutes` 与真实调用脚本的 run 步骤，且 `on.pull_request` 不得有 paths 过滤（将来翻 required 的前提）。执行点 = 同文件::test_workflow_wires_the_guard', '**边界（照实登记）**：① 判不了「外部代码被本人身份重新提交」（squash 后作者面看不出异常）；② 白名单是自证式的，伪造 team 邮箱可绕过 —— 流程护栏，不是安全边界；③ 本腿非 required，阻断直接合并靠「判红 + 解除 auto-merge + block/merge」。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性判据（纯函数分类器 + 离线 CLI 夹具 + workflow 结构读取），pytest 真跑、零网络、不进 agent-eval 冒烟',
+    tags=['backend-contract', 'governance', 'ci'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -3181,7 +3217,6 @@ CASES = (
     _CASE_MC_096,
     _CASE_MC_097,
     _CASE_MC_098,
-    _CASE_MC_099,
     _CASE_MC_100,
     _CASE_MC_101,
     _CASE_MC_102,
@@ -3249,4 +3284,7 @@ CASES = (
     _CASE_WH_011,
     _CASE_MC_120,
     _CASE_MC_121,
+    _CASE_MC_122,
+    _CASE_MC_125,
+    _CASE_MC_126,
 )

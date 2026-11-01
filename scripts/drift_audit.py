@@ -65,7 +65,7 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -1081,6 +1081,63 @@ def check_mutable_locators(a: Audit) -> CheckResult:
 SCHED_LINE = re.compile(r"^\s*-?\s*cron:\s*['\"]?([^'\"\n]+)['\"]?", re.M)
 PAUSED_SCHED = re.compile(r"^\s*#\s*(schedule:|-?\s*cron:)", re.M)
 
+#: 停用登记的台账（issue #8218 上线审计 P1-03，2026-10-31）：
+#: `# schedule:` 被注释的腿**凭什么**不算漂移 —— 必须是**具名登记 + 复查日期未过**，
+#: 否则「注释里停了」就只是从「没人看得见」搬到了「基线放行」里（同一个静默，换了个位置）。
+#: 🔴 方向是 **fail-closed**：台账读不到 / 条目形态不对 / 日期缺 ⇒ 照旧报 `|paused` 一族的 finding
+#: （**不许**因为「读不到台账」就给停用放行）。
+PAUSED_LEDGER_REL = Path("tests") / "unit_ci_workflows" / "paused_schedule_ledger.json"
+
+
+def _iso_date(raw: object) -> date | None:
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def load_paused_registry(repo: Path) -> dict[str, dict]:
+    """→ {workflow 文件名: 台账条目}；读不到 / 形态不对 ⇒ **空表**（= 全部照旧判漂移，fail-closed）。"""
+    try:
+        data = json.loads((Path(repo) / PAUSED_LEDGER_REL).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    entries = data.get("entries") if isinstance(data, dict) else None
+    if not isinstance(entries, list):
+        return {}
+    out: dict[str, dict] = {}
+    for entry in entries:
+        if isinstance(entry, dict) and str(entry.get("file") or "").strip():
+            out[str(entry["file"]).strip()] = entry
+    return out
+
+
+def paused_finding_for(name: str, entry: dict | None, today: date) -> tuple[str, str] | None:
+    """停用腿的**单一判定**（`check_heartbeat` 与判据都调它，不各写一份）。
+
+    → `(finding key, detail)`；**`None`** = 已具名登记且复查日期未过（不算漂移，由调用方以 note 报出）。
+    """
+    if not isinstance(entry, dict):
+        return (
+            f"{name}|paused",
+            f"{name} 的 `schedule:` 被**注释停用** —— 冻结的调度是「陈旧」最喜欢的藏身处："
+            f"没有任何心跳会响，也没有任何红会因为停摆而红",
+        )
+    issue = entry.get("reason_issue", "?")
+    due_raw = str(entry.get("review_due") or "").strip()
+    due = _iso_date(due_raw)
+    if due is not None and today <= due:
+        return None
+    return (
+        f"{name}|paused-expired",
+        f"{name} 的停用登记**已过复查日期**（review_due={due_raw or '(缺)'}，issue #{issue}）—— "
+        f"停用缺口不许永久静默：按台账 `restart_conditions` 恢复，或复查后顺延 `review_due`"
+        f"（步骤见 docs/testing/paused-schedules.md）",
+    )
+
 # ── 心跳阈值：**声明周期** vs **GitHub 实际投递**（结构性误红的根因，issue #3951）─────────
 # 事实（现取，命令见 `docs/wiki/truth-source-contract.md` §1 I4-b）：GitHub 对本仓**分钟级**
 # cron（`*/N`，N < 60）的投递被节流 —— 实测 `flaky-ledger-reconcile.yml` 的 schedule run 间隔
@@ -1288,11 +1345,23 @@ def check_heartbeat(a: Audit) -> CheckResult:
         r.notes.append(f"登记的分钟级 cron 节流上界 {throttle}min **本轮没用上**（判据面里没有分钟级 "
                        f"cron）⇒ 该登记可以撤掉（豁免台账只许缩短）")
     r.evaluated = len(scheduled) + len(paused)
+    # ── 停用腿：**登记后才能不算漂移**（issue #8218 P1-03）─────────────────────────
+    # 改前（2026-10-31 审计）：两条腿 `# schedule:` 停了 55 天，drift 只报 `<wf>|paused`，
+    # 而该 key 早在 `scripts/drift_audit_baseline.json` 里被**基线放行** ⇒ 报告里也看不到
+    # （「注释里停了、无人知道」的第二种形态）。现在：台账登记且未过复查日期 ⇒ 只出 note；
+    # 过期 / 未登记 ⇒ 出 finding（过期的 key 不在基线里 ⇒ 真红）。
+    today = a.now.date()
+    registry = load_paused_registry(a.repo)
     for name in paused:
-        r.findings.append(Finding(
-            f"{name}|paused",
-            f"{name} 的 `schedule:` 被**注释停用** —— 冻结的调度是「陈旧」最喜欢的藏身处："
-            f"没有任何心跳会响，也没有任何红会因为停摆而红"))
+        decision = paused_finding_for(name, registry.get(name), today)
+        if decision is None:
+            entry = registry.get(name) or {}
+            r.notes.append(
+                f"`{name}` 的 `schedule:` 已停用且**已具名登记**"
+                f"（issue #{entry.get('reason_issue', '?')}，复查日期 {entry.get('review_due', '?')}）"
+                f"⇒ 不算漂移；**过期未复查** ⇒ `{name}|paused-expired` 判红")
+            continue
+        r.findings.append(Finding(decision[0], decision[1]))
     if not scheduled and not paused:
         r.status = "error"
         r.error = "仓里没有任何 `schedule:` 工作流（判据面为空 = 护栏失效）"

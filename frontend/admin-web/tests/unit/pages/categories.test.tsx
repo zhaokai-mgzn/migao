@@ -1,7 +1,8 @@
-// case_ids: CT-001, CT-002, CT-003
+// case_ids: CT-001, CT-002, CT-003, UI-147
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { findEmptyDataAssertions } from '../../../scripts/read-failure-empty-state-scan.mjs'
 import userEvent from '@testing-library/user-event'
 
 // ===== Mock categoryApi =====
@@ -448,4 +449,60 @@ describe('CategoriesPage', () => {
       expect(btn).toBeDisabled()
     })
   })
+})
+
+/**
+ * 读失败 vs 真空态（issue #8200 · P1-06）—— `/categories` 是审计 P1-06 里**唯一**复核成立的那一处：
+ * 改前读接口失败走**空 catch**，屏上照印 `<EmptyState title="还没有商品分类">` + 「先建一个分类」，
+ * 与「这个店真的没有分类」逐字相同（DQ-1：空态不得冒充读不到）。
+ *
+ * 钉住三件事（各自红在自己那条断言上）：
+ *   ① 失败 ⇒ **常驻**失败面（`role="alert"`）+ 重试出口在屏上；
+ *   ② 失败 ⇒ 空态锚与空态文案**都不在**（`findEmptyDataAssertions` 是仓内**单一源**口径，不抄第二份正则）；
+ *   ③ 点重试 ⇒ **真的重发**（调用次数 +1）且成功后失败面退场、树回来；
+ * 对照读数：读**成功且真为空** ⇒ 空态照旧，失败面**不在**（不许把真 0 判红）。
+ */
+/** 整例预算（失败态等到底会走 RTL 的 5s `asyncUtilTimeout`；不拉长会以 `Test timed out` 出现 = 没跑到断言） */
+const TEST_TIMEOUT = 20_000
+
+describe('读失败 vs 真空态（issue #8200 · P1-06）', () => {
+  it('读失败：常驻失败面 + 重试出口；空态锚与「没有分类」断言都不在屏上', async () => {
+    mockGetCategories.mockRejectedValue(new Error('boom'))
+    render(<CategoriesPage />)
+
+    const anchor = await screen.findByTestId('categories-load-error')
+    expect(anchor).toHaveAttribute('role', 'alert')
+    expect(anchor).toHaveTextContent('分类没读到')
+    expect(screen.getByTestId('categories-load-error-retry')).toBeInTheDocument()
+
+    // ② 不冒充空态：锚与文案都要「不在」，且整屏没有「没有数据」式断言
+    expect(screen.queryByTestId('categories-empty')).toBeNull()
+    expect(screen.queryByText('还没有商品分类')).toBeNull()
+    expect(findEmptyDataAssertions(document.body.textContent ?? '')).toEqual([])
+  }, TEST_TIMEOUT)
+
+  it('重试真的重发（不是只把失败面藏起来）：成功后失败面退场、分类树回来', async () => {
+    mockGetCategories.mockRejectedValueOnce(new Error('boom'))
+    mockGetCategories.mockResolvedValueOnce({ data: { data: mockCategories } })
+    render(<CategoriesPage />)
+
+    await screen.findByTestId('categories-load-error')
+    // 基线取「点之前」的调用次数（**相对增量**：不受本文件其它用例遗留的自动重拉影响，
+    // 判的仍是「这一次点击真的发了一次新请求」，不是「总次数恰好等于某个数」）
+    const beforeRetry = mockGetCategories.mock.calls.length
+    fireEvent.click(screen.getByTestId('categories-load-error-retry'))
+
+    await waitFor(() => expect(mockGetCategories.mock.calls.length).toBeGreaterThan(beforeRetry))
+    // 新请求的结果**真的被采用**（不是只把失败面藏起来）
+    await waitFor(() => expect(screen.getByTestId('category-tree')).toBeInTheDocument())
+    expect(screen.queryByTestId('categories-load-error')).toBeNull()
+  }, TEST_TIMEOUT)
+
+  it('对照读数：读成功且真为空 ⇒ 仍是空态（失败面没有把真空态吃掉）', async () => {
+    mockGetCategories.mockResolvedValue({ data: { data: [] } })
+    render(<CategoriesPage />)
+
+    await waitFor(() => expect(screen.getByTestId('categories-empty')).toBeInTheDocument())
+    expect(screen.queryByTestId('categories-load-error')).toBeNull()
+  }, TEST_TIMEOUT)
 })

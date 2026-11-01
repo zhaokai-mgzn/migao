@@ -1,0 +1,235 @@
+name: Publish terminal (app.migaozn.com/terminal/)
+
+# ── 为什么需要这条腿（issue #8195）─────────────────────────────────────────────
+# 观星台终端（车间一体机 Windows EXE / 工人手持机 Android APK）此前**没有任何发布通路**：
+#   · 终端程序的更新检查地址写死为 `https://app.migaozn.com/terminal/latest.json`（Windows）
+#     与 `/terminal/android/latest.json`（Android），而 nginx 里 `/terminal` **0 命中**
+#     ⇒ 请求落进 `location /` 的 SPA fallback：HTTP 200 + 一页 C 端元元 HTML（假 200，监控不红）；
+#   · 官网下载页也不存在（`https://migaozn.com/download` = 404）。
+# ⇒ 终端做完了，用户既打不开官网下载页、终端自己检查更新也永远拿不到清单。
+# 本腿把「终端仓 Release 里的 exe/apk」发布到静态根下的 `terminal/` 子树，并生成两份更新清单。
+#
+# ── 为什么只有 workflow_dispatch（刻意不加 push / schedule）────────────────────
+# 这条腿发布的是**二进制**，且输入是**终端仓的某个 Release tag**：
+#   · 没有 tag 就不知道该发哪一版 ⇒ `push` 触发无意义（会把「合并」变成「重新发布上一版」）；
+#   · `schedule` 重发布需要「取哪个 tag」的规则，而「最新」不等于「该发的那一版」
+#     （终端的 versionCode 必须单调递增，选错等于把线上降级）⇒ **发布是人闸**：
+#     由人点名 tag 触发，失败在 run 上可见（不静默半成品）。
+#   也因此本腿不属于 `publish_leg_fallback_ledger.json` 的登记面（那里登记的是「自走面 == {push}」的腿）。
+#
+# ── 产物怎么从终端仓到实例（`deploy/terminal-dist/Dockerfile` 里有完整理由）──
+# 终端仓是 **private** ⇒ 本仓 `GITHUB_TOKEN` 读不到它的 Release ⇒ 需要一个只读 PAT
+# （`secrets.TERMINAL_REPO_TOKEN`，fine-grained：仅 `migao-terminal`，Contents: Read-only）。
+# 🔴 **这是本腿唯一的人工前置**：缺它时本 workflow 在第一步**出声失败**（不是静默跳过）。
+# 产物到实例走 ACR 传输镜像（实例上没有构建工具链；安装包几 MB，装不进 16 KB 的命令内容）。
+#
+# ⚠️ 发布后**必须**自证：`/terminal/` 的 200 不算通过 —— 修复前它返回的就是 200 的 C 端页面。
+#    最后一步同时断言 ① 两份清单的**字节哈希**与本地载荷一致 ② `Content-Type` 是 `application/json`
+#    ③ 安装包是 `application/octet-stream` ④ 缺失文件是 **404**（不回落 SPA）。
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: '终端仓（zhaokai-mgzn/migao-terminal）的 Release tag，例如 terminal-v1.0.1'
+        required: true
+        type: string
+      android_version_code:
+        description: 'Android versionCode（正整数，且必须大于线上；留空则从 Release 里的 latest-android.json 读）'
+        required: false
+        type: string
+      version:
+        description: 'Windows 版本（与终端 ProductVersion 同形，例如 1.0.1.0；留空则从 tag 推导）'
+        required: false
+        type: string
+      notes:
+        description: '版本说明（展示在下载页；留空则以 tag 作为说明）'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+# 与 deploy-* 同口径：不取消进行中的发布（两个并发发布会让「谁最后落地」不可判定）
+concurrency:
+  group: terminal-publish
+  cancel-in-progress: false
+
+env:
+  # 终端仓（发布源）。**不是**本仓 —— 见上面「TERMINAL_REPO_TOKEN」的理由。
+  TERMINAL_REPO: zhaokai-mgzn/migao-terminal
+  # 静态根（= deploy/swas/nginx.conf 里 app.migaozn.com 的 root）；**只收敛其 terminal/ 子树**
+  TERMINAL_STATIC_ROOT: /opt/migao-deploy/h5
+  TERMINAL_SUBDIR: terminal
+  # 清单里 download_url 的前缀（终端与下载页都读这个地址）
+  TERMINAL_BASE_URL: https://app.migaozn.com/terminal
+  # 传输镜像的仓库（与 deploy-frontend.yml 同域同命名空间 ⇒ 不新增 ACR secret）
+  ACR_REGISTRY: crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com
+  ACR_NAMESPACE: ai-customer-service
+  IMAGE_NAME: terminal-dist
+  # 与 deploy-frontend.yml / bmini-h5-publish.yml 同一台 SWAS 实例
+  SWAS_INSTANCE_ID: b23c69e599524b1da719734f72e6a0e3
+  SWAS_REGION: cn-hangzhou
+
+jobs:
+  publish:
+    name: publish terminal → /terminal/ + identity assertions
+    runs-on: ubuntu-latest
+    # 下载 + 打包 + 推镜像 + 发布 + served 断言（含容器拉取与 curl 重试）
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download release assets from terminal repo
+        env:
+          # 🔴 唯一的人工前置：终端仓是 private，需要一个只读 PAT。
+          # 缺失时**出声失败**（不是跳过）——「没发布」必须长得像「没发布」。
+          GH_TOKEN: ${{ secrets.TERMINAL_REPO_TOKEN }}
+          INPUT_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::error::缺少 secrets.TERMINAL_REPO_TOKEN —— 终端仓 ${TERMINAL_REPO} 是 private，"
+            echo "::error::本仓的 GITHUB_TOKEN 读不到它的 Release。"
+            echo "::error::修法：新建一个 fine-grained PAT（仅 migao-terminal，Contents: Read-only），"
+            echo "::error::加到本仓 Secrets 的 TERMINAL_REPO_TOKEN，再重跑本 workflow。"
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/terminal-release"
+          gh release download "$INPUT_TAG" --repo "$TERMINAL_REPO" --dir "$RUNNER_TEMP/terminal-release"
+          echo "已下载 $(find "$RUNNER_TEMP/terminal-release" -type f | wc -l) 个文件："
+          ( cd "$RUNNER_TEMP/terminal-release" && find . -maxdepth 1 -type f | sed 's/^/  /' )
+
+      - name: Prepare payload and manifests (sha256 + schema check)
+        env:
+          INPUT_TAG: ${{ inputs.release_tag }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_ANDROID_VERSION_CODE: ${{ inputs.android_version_code }}
+          INPUT_NOTES: ${{ inputs.notes }}
+        run: |
+          set -euo pipefail
+          # Windows 版本：显式给 > 从 tag 推导（`terminal-v1.0.1` / `v1.0.1` ⇒ `1.0.1`）
+          VERSION="$INPUT_VERSION"
+          if [ -z "$VERSION" ]; then
+            VERSION=$(printf '%s' "$INPUT_TAG" | sed -nE 's/^.*[vV]([0-9][0-9.]*)$/\1/p')
+          fi
+          if [ -z "$VERSION" ]; then
+            echo "::error::无法从 tag '$INPUT_TAG' 推导版本号 —— 请用 version 输入显式给出（例如 1.0.1.0）"
+            exit 1
+          fi
+          # Android versionCode 是**更新比较的唯一依据**（必须单调递增）⇒ 不许猜：
+          # 优先用人的输入；否则从 Release 里带的 latest-android.json 读；都没有就判红。
+          VERSION_CODE="$INPUT_ANDROID_VERSION_CODE"
+          if [ -z "$VERSION_CODE" ] && [ -f "$RUNNER_TEMP/terminal-release/latest-android.json" ]; then
+            VERSION_CODE=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1], encoding='utf-8'))['versionCode'])" "$RUNNER_TEMP/terminal-release/latest-android.json")
+          fi
+          if [ -z "$VERSION_CODE" ]; then
+            echo "::error::缺少 android_version_code —— Android 更新只按 versionCode 单调比较，"
+            echo "::error::猜一个会让已装机器永远收不到更新（或收到降级）。请显式给出本次发布的 versionCode。"
+            exit 1
+          fi
+          args=(--release-dir "$RUNNER_TEMP/terminal-release" --out "$RUNNER_TEMP/terminal-dist"
+                --tag "$INPUT_TAG" --version "$VERSION" --android-version-code "$VERSION_CODE")
+          if [ -n "$INPUT_NOTES" ]; then args+=(--notes "$INPUT_NOTES"); fi
+          bash deploy/scripts/terminal-publish-ci.sh prepare "${args[@]}"
+
+      # 登录实现**唯一一份** = `scripts/acr_login.sh`（issue #6526 A）。
+      # 🔴 本调用点**承重**（带 `--fatal`）：本腿把载荷装进**传输镜像推到 ACR**，登录是必要步骤
+      #    ⇒ 重试 3 次仍失败必须判红（不许降成 warning）。
+      # 判据 = tests/unit_ci_workflows/test_acr_login_not_load_bearing.py（双向）。
+      - name: Docker login ACR (retry, fatal)
+        if: ${{ hashFiles('scripts/acr_login.sh') != '' }}
+        run: bash scripts/acr_login.sh ${{ env.ACR_REGISTRY }} "${{ secrets.ACR_USERNAME }}" "${{ secrets.ACR_PASSWORD }}" --fatal
+
+      - name: Pack payload into transport image and push
+        # 推送的显式墙钟上界（同 bmini-h5-publish / issue #5814：`docker push` 会无上界地挂住）
+        env:
+          PUSH_TIMEOUT_SECS: '720'
+        run: |
+          set -euo pipefail
+          IMG="${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}"
+          TAG="sha-${GITHUB_SHA::7}"
+          # 上下文只给载荷目录（给仓库根会把整仓打进构建上下文）
+          docker build -f deploy/terminal-dist/Dockerfile -t "$IMG:$TAG" "$RUNNER_TEMP/terminal-dist"
+          if timeout "${PUSH_TIMEOUT_SECS}" docker push "$IMG:$TAG"; then
+            echo "✅ 传输镜像已推送（单次上界 ${PUSH_TIMEOUT_SECS}s）"
+          else
+            rc=$?
+            if [ "$rc" = "124" ]; then
+              echo "::error::**推送到 ACR 挂住**（rc=124，超过上界 ${PUSH_TIMEOUT_SECS}s）—— 镜像 $IMG:$TAG 未推送成功。"
+            else
+              echo "::error::传输镜像推送失败（rc=${rc}，上界 ${PUSH_TIMEOUT_SECS}s）—— 镜像 $IMG:$TAG 未推送成功。"
+            fi
+            exit "$rc"
+          fi
+          # 推完立刻复验：推失败/推了一半 ⇒ 这里就红（在远端 pull 之前 fail-closed）
+          docker manifest inspect "$IMG:$TAG" >/dev/null
+          echo "传输镜像：\`$IMG:$TAG\`（内容 = 本次 prepare 生成的载荷）" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install Aliyun CLI
+        run: |
+          curl -fsSL --retry 3 --retry-delay 3 https://aliyuncli.alicdn.com/aliyun-cli-linux-latest-amd64.tgz -o /tmp/aliyun.tgz
+          file /tmp/aliyun.tgz | grep -q "gzip compressed data"
+          tar xzf /tmp/aliyun.tgz -C /tmp
+          sudo mv /tmp/aliyun /usr/local/bin/
+          aliyun plugin install --names aliyun-cli-swas-open >/dev/null 2>&1 || true
+          aliyun version
+
+      - name: Publish to SWAS (/terminal/ subtree) and assert identity
+        env:
+          ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          ALIYUN_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+          # 🔴 **执行体 ref**（issue #6124）：引导**按它**从 codeload 取回
+          #    `deploy/swas/terminal-publish-remote.sh` 并执行；发布逻辑**不进**命令内容。
+          #    = 本 workflow 跑的那个 commit ⇒ 它的 tarball 必定含远端执行体。
+          TERMINAL_PUBLISHED_COMMIT: ${{ github.sha }}
+          INPUT_TAG: ${{ inputs.release_tag }}
+        run: |
+          bash deploy/scripts/terminal-publish-ci.sh publish \
+            "${{ env.SWAS_INSTANCE_ID }}" "${{ env.SWAS_REGION }}" "sha-${GITHUB_SHA::7}" \
+            --dist-dir "$RUNNER_TEMP/terminal-dist" \
+            --release-tag "$INPUT_TAG"
+
+      # 发布后身份断言（**不是**「200 就算过」—— 修复前 `/terminal/` 就是 200 的 C 端页面）
+      - name: Assert served manifests, sha256, MIME and 404 (/terminal/)
+        run: |
+          set -euo pipefail
+          WIN_MANIFEST="https://app.migaozn.com/terminal/latest.json"
+          ANDROID_MANIFEST="https://app.migaozn.com/terminal/android/latest.json"
+          fail=0
+
+          check_manifest() {
+            url=$1; local_file=$2; label=$3
+            served="$RUNNER_TEMP/served-$label.json"
+            curl -fsS --retry 3 --retry-delay 3 --max-time 30 "$url" -o "$served"
+            local_sha=$(sha256sum "$local_file" | awk '{print $1}')
+            served_sha=$(sha256sum "$served" | awk '{print $1}')
+            if [ "$local_sha" != "$served_sha" ]; then
+              echo "::error::$label 的 served 哈希与本次载荷不一致：$served_sha ≠ $local_sha"
+              fail=1
+            fi
+            ctype=$(curl -fsSI --max-time 30 "$url" | tr -d '\r' | awk 'tolower($1)=="content-type:"{print tolower($2)}' | head -1)
+            case "$ctype" in
+              application/json*) : ;;
+              *) echo "::error::$label 的 Content-Type 是 '$ctype'，必须是 application/json（客户端按 JSON 解析）"; fail=1 ;;
+            esac
+            echo "$label: sha256=$served_sha content-type=$ctype"
+          }
+
+          check_manifest "$WIN_MANIFEST" "$RUNNER_TEMP/terminal-dist/latest.json" "windows"
+          check_manifest "$ANDROID_MANIFEST" "$RUNNER_TEMP/terminal-dist/latest-android.json" "android"
+
+          # 安装包必须是二进制（application/octet-stream），否则下载器/浏览器会当文本处理
+          exe_url=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1], encoding='utf-8'))['download_url'])" "$RUNNER_TEMP/terminal-dist/latest.json")
+          exe_type=$(curl -fsSI --max-time 30 "$exe_url" | tr -d '\r' | awk 'tolower($1)=="content-type:"{print tolower($2)}' | head -1)
+          case "$exe_type" in
+            application/octet-stream*) : ;;
+            *) echo "::error::安装包的 Content-Type 是 '$exe_type'，必须是 application/octet-stream"; fail=1 ;;
+          esac
+
+          # 缺失文件必须 404 —— 修复前这里是 200 + C 端 HTML（假 200，监控不红）
+          missing_code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 "https://app.migaozn.com/terminal/__absent__.exe")
+          if [ "$missing_code" != "404" ]; then
+            echo "::error::/terminal/__absent__.exe 返回 $missing_code，必须是 404（缺失文件不许回落 SPA）"
+            fail=1
+          fi
+          exit "$fail"

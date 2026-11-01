@@ -144,7 +144,7 @@ test('🔴 回执「下一道」必须带部位（改前只拼 logical_name ⇒ 
   )
   // 回执没给下一道（推断失败）⇒ 保持既有兜底文案，不编工序名
   assert.equal(doneNotice({}), '已报工')
-  assert.equal(doneNotice({ setCompleted: true }), '已报工 · 本套工序都报完了 🎉')
+  assert.equal(doneNotice({ setCompleted: true }), '已报工 · 本套工序都报完了')
 })
 
 // ── ④ 反空跑锚点：render.mjs 必须**引用**共享模块（不许自拼一份回来）─────────

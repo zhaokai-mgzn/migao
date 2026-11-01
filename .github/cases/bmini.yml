@@ -461,6 +461,7 @@ cases:
     traces:
       tests:
         - "frontend/bmini-app/tests/inbound-print-channel.test.ts"
+        - "frontend/bmini-app/tests/label-canvas-weapp.test.ts"
       ci:
         - bmini-app.yml
       verifies: []
@@ -1355,7 +1356,7 @@ cases:
       - tool: direct_reply
     data_checks:
       - "判据 1·**根因与修法**：Taro h5 的 `<Input>` 是两层 —— 外层 `taro-input-core`（拿 `className`，即用户看到的圆角框）+ 内层原生 `<input class=\"weui-input\">`（Taro 自带 `height:1.47059em`）；外层 `display:block` 且无居中规则 ⇒ 内层行盒贴顶。修法落在**共享样式层** frontend/bmini-app/src/styles/input-center.scss（① 外框 `display:flex` + `align-items:center`；② 内层 `height:100%`），由 frontend/bmini-app/src/app.scss 引入。**只改竖向对齐**，不动任何尺寸 / 圆角 / 字号。"
-      - "判据 2·**真几何判据（不是字符串断言）**：tests/e2e/specs/bmini/bmini-input-center.spec.ts（配置 tests/playwright.bmini.config.ts；CI = .github/workflows/bmini-app.yml 的 `tabbar-geometry` job，该 job 的 run 自 issue #6478 起跑整个 `specs/bmini/` 目录）—— 对**未登录即可到达的 3 个输入面 / 16 个输入框**（登录页 9 + 工人登录页 4 + 首登强制改密页 3；2026-10-27 按实测校正，旧文写的 13 = #6564 之后未更新的读数）逐个量「内层 input 高 ÷ 外框高 ≥ 0.90」「内层相对外框的上留白 == 下留白（±1 CSS px）」「上留白 > 0」。实测读数（390×844，Chromium，本地 dist 重建）：修后 登录页 47.906/49.906（上/下留白 1.0/1.0）、工人登录页 45.75/47.75（1.0/1.0）、改密页 45.75/47.75（1.0/1.0）；修前（临时撤掉共享层引入 + 重建后同一 spec 实跑）登录页 26.0/49.906（1.0/22.91）、工人登录页 22.94/47.75（1.0/23.81）、改密页 24.47/47.75（1.0/22.28）⇒ **3 failed** 且逐面具名报出占比与留白。未实测的输入面（报工页 / 坐席详情 / 工人入库 / 工人补打 / WorkerBar / FormCard）靠同一全局选择器构造性覆盖 + 台账登记（见 BM-043）。"
+      - "判据 2·**真几何判据（不是字符串断言）**：tests/e2e/specs/bmini/bmini-input-center.spec.ts（配置 tests/playwright.bmini.config.ts；CI = .github/workflows/bmini-app.yml 的 `tabbar-geometry` job，该 job 的 run 自 issue #6478 起跑整个 `specs/bmini/` 目录）—— 对**未登录即可到达的 3 个输入面 / 15 个输入框**（登录页 9 + 工人登录页 3 + 首登强制改密页 3；2026-10-31 按 issue #8194 校正：工人登录页重写成共享组件 `WorkerLoginForm` ⇒ 选择器改 `.worker-login-form__input`、去掉「设备标签」一格，4 → 3；旧文写的 16 / 13 都是历史读数）逐个量「内层 input 高 ÷ 外框高 ≥ 0.90」「内层相对外框的上留白 == 下留白（±1 CSS px）」「上留白 > 0」。实测读数（390×844，Chromium，本地 dist 重建）：修后 登录页 47.906/49.906（上/下留白 1.0/1.0）、改密页 45.75/47.75（1.0/1.0）；修前（临时撤掉共享层引入 + 重建后同一 spec 实跑）登录页 26.0/49.906（1.0/22.91）、改密页 24.47/47.75（1.0/22.28）⇒ **3 failed** 且逐面具名报出占比与留白。⚠️ **工人登录页的新几何读数未重测**（issue #8194 重写该页；同一缺陷口径与同一全局共享层照旧判它，读数由 CI 腿的 `[input-center]` 日志打印，红了按日志逐面归因）—— 旧页的读数（45.75/47.75 修后、22.94/47.75 修前）保留在 `tests/e2e/specs/bmini/bmini-input-center.spec.ts` 的表里并标注为该页旧形态。未实测的输入面（报工页 / 坐席详情 / 工人入库 / 工人补打 / WorkerBar / FormCard）靠同一全局选择器构造性覆盖 + 台账登记（见 BM-043）。"
       - "判据 3·**共享层必须真的接线且只许一份**：frontend/bmini-app/tests/input-center-guard.test.ts 断言共享层文件在位 + 被 frontend/bmini-app/src/app.scss 引入 + 三条居中声明都在；且 `taro-input-core` 只许出现在 frontend/bmini-app/src/styles 下的 scss（逐页打补丁 ⇒ 判红）。注入式红证（in-memory，实跑）：删 `@use` ⇒ 红；外框改回 `display:block` ⇒ 红；内层改回 `height:1.47059em` ⇒ 红；把规则抄进 frontend/bmini-app/src/pages/auth/login/index.scss ⇒ 红并具名。"
       - "判据 4·**小程序端逐字不变**：共享层的两条选择器（`taro-input-core` / `.weui-input`）只存在于 Taro **h5** 产物 DOM；小程序编译产物里 `<Input>` 是单层原生 input，选择器一个元素都匹配不到 ⇒ 对小程序零影响。"
     skip_reason: "[backend-contract] 确定性判据（jest: frontend/bmini-app/tests/input-center-guard.test.ts；playwright: tests/e2e/specs/bmini/bmini-input-center.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟"
@@ -1876,7 +1877,7 @@ cases:
 
   - id: BM-056
     legacy_id: ""
-    title: "工人端库存修正 - 手机/APK 按批次把余量改成实盘米数（复用按批次盘点唯一写面 + 幂等 + 台账可答「谁/为什么」）"
+    title: "工人端库存修正 - 手机/APK 按批次把余量改成实盘米数（拍照识别批次号：标签码 0 次 LLM 优先 + OCR 兜底 + 手输；复用按批次盘点唯一写面 + 幂等 + 台账可答「谁/为什么」）"
     domains:
       - bmini
       - product
@@ -1891,7 +1892,7 @@ cases:
     truths_ref:
       - batch-stocktake.worker-correction
     user_inputs:
-      - "工人（工号 + PIN 登录后）在工作台点「库存修正」→ 搜批次（批次号 / 货号 / 缸号 / 入库单号任一段，空关键词 = 最近入库）→ 看到系统余量 → 选中该批 → 填实盘米数（例如系统说 45.5 米、实盘 42 米）+ 选原因（数量记错了 / 破损报废 / 报工选错批次 / 其他）→ 二次确认「系统 45.5 米 → 实盘 42 米」→ 提交 → 回执显示盘前 / 实盘 / 差异 / 盘后"
+      - "工人（工号 + PIN 登录后）在工作台点「库存修正」→ 搜批次（批次号 / 货号 / 缸号 / 入库单号任一段，空关键词 = 最近入库）→ 或点「拍照识别批次号」（拍标签：有我们的二维码 ⇒ 本机解码按短码读批次号，0 次 LLM；只有批次号文字 ⇒ 走 OCR，取严档 0.90 且形状必须是 PC-yyyyMMdd-NNNN）→ 认出后自动定位到那一批 → 看到系统余量 → 选中该批 → 填实盘米数（例如系统说 45.5 米、实盘 42 米）+ 选原因（数量记错了 / 破损报废 / 报工选错批次 / 其他）→ 二次确认「系统 45.5 米 → 实盘 42 米」→ 提交 → 回执显示盘前 / 实盘 / 差异 / 盘后"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -1905,8 +1906,9 @@ cases:
       - "判据 8·**端侧幂等键语义**：同一份输入重试 ⇒ 复用同一个 `client_request_id`；改了米数 / 原因 / 备注 ⇒ 换新键（否则服务端按回放处理，静默不落账）。红证：每次提交都新生成 ⇒ `tests/worker-stock-page.test.tsx` ⑦ 红"
       - "判据 9·**入口可达 + 写入口台账 + 视觉形态**：`pages/worker/stock/index` 登记进 `app.config.ts` 且工人首页有**真导航**（漏登记 = 死链 ⇒ `page-entry-reachability` 红）；`submitBatchCorrection(` 登记进工人写入口台账（未登记即红，且必须命中身份分流 + 引导登录记号）；新页 `__gate` 卡片有可见边界、页面有非白底色（`worker-card-contrast-guard`）"
       - "判据 10·**菜单开关可设**：`WorkerPages.STOCK = stock` 进闭词表与默认集合，商家后台「设置工人端菜单」能看到「库存修正」（目录端点 `labels.stock`）；`/w/` 的闭词表镜像同批更新（`worker-h5-pages` 逐值比对）。红证：只改后端不改镜像 ⇒ `frontend/worker-h5/tests/worker-h5-pages.test.mjs` 红"
-    skip_reason: "[backend-contract] 确定性判据（maven: WorkerBatchStockControllerTest / WorkerBatchStockServiceTest / WorkerPagesTest / WorkerPageCatalogControllerTest；jest: worker-stock-page / worker-stock / page-entry-reachability / worker-surface-ledger / worker-card-contrast-guard；node: worker-h5-pages），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-10-29 新增（issue #8104）：用户逐字「手机端还要增加一个库存修正的功能，apk程序也要同步增加这个功能，允许工人对某个批次的布匹进行修正」。形态 = bmini 新页 `pages/worker/stock/index`（手机 `https://app.migaozn.com/b/` 与 APK 观星台终端加载的同一份 `/b/` 页面 ⇒ APK 无需重打包，菜单随页面发布出现）。服务端 = `/api/worker/batch-stock/{batches,correction}`，**复用**按批次盘点的唯一写面（不新造第二套库存逻辑、不新增迁移）。边界：不做盘点单（无单号/审批/打印）；一次提交只改一个批次；不新增批次来源 reason（工人修正 = 实盘为准，沿用 `reason=stocktake`，如需在台账上把「工人修正 / 商家盘点」分列 ⇒ 另开迁移单）；小程序发版是人工环节（#7806：合并 ≠ 用户手机已是新版，`/b/` H5 腿自动发布）。"
+      - "判据 11·**拍照识别批次号（issue #8210）三段式**：① 标签二维码命中 ⇒ 本机解码 + 按短码读详情，**0 次 LLM**（`upload` / `recognize` 零调用）；② 解不出码 ⇒ 上传后走 ai-agent vision（target `batch`，阈值 0.90，批次号形状硬闸 `^PC-\\d{8}-\\d{4}$` 且日期成立）；③ 都失败 ⇒ **手输出路**（不静默）。认出后用**既有**搜索面按批次号**精确**定位（`PC-...-0001` 不得被 `PC-...-00011` 冒充）；同号多行交工人点选；0 行 ⇒ 明说「没找到批次 X」。识别**不落库、不提交**（提交仍是工人填实盘数 + 二次确认）。红证：把 vision 排到扫码前 ⇒ `frontend/bmini-app/tests/worker-stock-recognize.test.ts` ① 的假服务端计数红；放行坏形状 ⇒ `backend/ai-agent-service/tests/test_vision/test_recognizer.py::TestBatchNoHardGate` 红"
+    skip_reason: "[backend-contract] 确定性判据（maven: WorkerBatchStockControllerTest / WorkerBatchStockServiceTest / WorkerPagesTest / WorkerPageCatalogControllerTest；jest: worker-stock-page / worker-stock / worker-stock-recognize / page-entry-reachability / worker-surface-ledger / worker-card-contrast-guard；pytest: tests/test_vision/test_targets.py + test_recognizer.py；node: worker-h5-pages），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-29 新增（issue #8104）：用户逐字「手机端还要增加一个库存修正的功能，apk程序也要同步增加这个功能，允许工人对某个批次的布匹进行修正」。形态 = bmini 新页 `pages/worker/stock/index`（手机 `https://app.migaozn.com/b/` 与 APK 观星台终端加载的同一份 `/b/` 页面 ⇒ APK 无需重打包，菜单随页面发布出现）。服务端 = `/api/worker/batch-stock/{batches,correction}`，**复用**按批次盘点的唯一写面（不新造第二套库存逻辑、不新增迁移）。边界：不做盘点单（无单号/审批/打印）；一次提交只改一个批次；不新增批次来源 reason（工人修正 = 实盘为准，沿用 `reason=stocktake`，如需在台账上把「工人修正 / 商家盘点」分列 ⇒ 另开迁移单）；小程序发版是人工环节（#7806：合并 ≠ 用户手机已是新版，`/b/` H5 腿自动发布）。 2026-10-31 追加（issue #8210；用户逐字「移动端……通过拍照来识别批次号」）：加识别入口 `POST /api/worker/batch-stock/recognize`（工人 session，复用 `POST /api/worker/inbound/upload` 上传腿）+ ai-agent 新 vision target `batch`（一格 `batch_no`，阈值 0.90，形状硬闸在置信度闸之前）；端侧顺序 = 扫标签二维码（0 次 LLM）→ OCR 兜底 → 手输，认出后按批次号精确定位到**既有**修正页。边界：不新增库存写面 / 不新增 reason 族 / 不新增迁移；未过账标签**不退回 OCR 猜**；旧系统批次号不认（手输）。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/controller/WorkerBatchStockControllerTest.java"
@@ -1914,6 +1916,9 @@ cases:
         - "backend/admin-api/src/test/java/com/migao/admin/worker/WorkerPagesTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/controller/WorkerPageCatalogControllerTest.java"
         - "frontend/bmini-app/tests/worker-stock-page.test.tsx"
+        - "frontend/bmini-app/tests/worker-stock-recognize.test.ts"
+        - "backend/ai-agent-service/tests/test_vision/test_targets.py"
+        - "backend/ai-agent-service/tests/test_vision/test_recognizer.py"
         - "frontend/bmini-app/tests/worker-stock.test.ts"
         - "frontend/bmini-app/tests/page-entry-reachability.test.ts"
         - "frontend/bmini-app/tests/worker-surface-ledger.test.ts"
@@ -1922,3 +1927,255 @@ cases:
         - pr-check.yml
         - bmini-app.yml
       verifies: []
+  - id: BM-057
+    legacy_id: ""
+    title: "小程序工人登录 = 终端 /w/ 同一份表单 - 扫码报工页未登录就地登录（不跳三角色登录页），工人首页入口复用同一组件"
+    domains:
+      - bmini
+      - auth
+    tier: normal
+    tags:
+      - bmini
+      - worker
+      - login
+      - parity
+      - h5
+    truths_ref:
+      - inbound-order-flow.worker-narrow-surface
+    user_inputs:
+      - "新手机第一次扫纸上的码（GET /s/<短码> → 302 → /b/?t=<token>）⇒ 本机没有工人 session ⇒ 扫码报工页**就地**显示登录表单：标题「工人报工」/ 副标题「工号 + PIN 登录（手机 / PAD 均可，无需微信）」/ 企业编码（向商家索取）→ 工号 → PIN / 按钮「登 录」，与终端 /w/ 逐字一致；**没有**「设备标签」一格，也**没有**「去登录工人身份」跳转按钮；登录成功留在本页继续手里的那个码（无码则回工人首页）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**跨端逐字一致**（真值 = frontend/worker-h5/src/render.mjs 的 loginView()）：标题 / 副标题 / 三个字段标签**及顺序** / 按钮文案逐字相等，且不出现「设备标签」字段；渲染面同序（标题 → 副标题 → 企业编码 → 工号 → PIN → 按钮），错误位在字段**上方**（与 /w/ 的 .wh5-error 同位）。红证（实跑，真语料注入）：改一个标签 ⇒ 4 failed / 2 passed；把两个字段换顺序 ⇒ 3 failed / 3 passed。证据：frontend/bmini-app/tests/worker-login-parity.test.ts"
+      - "判据 2·**报工页未登录就地登录**：渲染三个输入 + 「登 录」，没有「去登录工人身份」跳转按钮、不导航去三角色登录页、不出报工按钮；🔴 未登录**不渲染页头**（`/w/` 的登录屏只有一张卡片 —— 用户 2026-10-31 裁定「不一致，需要收口」：否则「扫码报工」+「工人报工」两层标题），登录成功后才出现页头（含当前工人）。红证（实跑）：摘掉就地表单渲染（只留 import）⇒ 9 failed / 5 passed（台账具名「就地渲染工人登录表单」+ 页面 find 不到表单）；未登录态把页头加回来 ⇒ 2 failed / 9 passed（两条 ① 各自具名 `worker-report-header`）。证据：frontend/bmini-app/tests/worker-report-login.test.tsx + frontend/bmini-app/tests/worker-report-page.test.tsx"
+      - "判据 3·**登录后接着报手里的码**：带码（/b/?t=<token>）⇒ 留在本页并 scanResolve 该码（不回首页、不跳走）；无码 ⇒ 回工人首页；失败 ⇒ 错误上屏、不解析码。跨登录那一步的码走 utils/reportEntry.ts 的既有一次性记录 rememberReportReturn / takeReportReturn（登录前 write、成功后 take 即清），不新造第二套「待报码」通道。证据：frontend/bmini-app/tests/worker-report-login.test.tsx"
+      - "判据 4·**工人首页入口复用同一组件**（同一份表单的**第二个入口**，不是第二份实现）：「去登录工人身份」与「退出工人身份」都落 frontend/bmini-app/src/pages/worker/login/index.tsx（WORKER_LOGIN_ROUTE）；三角色登录页（/pages/auth/login/index?tab=worker）保留为常规入口、本单不改；该页重写成共享组件的一层壳（只负责调 workerLogin 与登录后去向：有 pending code 回报工页、从入库/补打/库存 navigateTo 过来则 navigateBack、页面栈只有自己则回工人首页）。证据：frontend/bmini-app/tests/worker-home-page.test.tsx + frontend/bmini-app/tests/login-identifier-split.test.tsx + frontend/bmini-app/tests/login-remember-account.test.tsx"
+      - "判据 5·**台账同批更新（未登记即红 / 只许缩短）**：报工页新增 workerLogin( 写入口登记；其引导形态改成 login_in_place_token（认 JSX 渲染形态 <WorkerLoginForm，import 提及不算）；工人首页 login_route_token 改 WORKER_LOGIN_ROUTE；入口台账把「工人首页 → 三角色登录页」换成「工人首页 → 工人登录页」；输入面台账把 worker-login__input 换成共享组件的 worker-login-form__input。证据：frontend/bmini-app/tests/worker-surface-ledger.test.ts + frontend/bmini-app/tests/input-center-guard.test.ts + frontend/bmini-app/tests/page-entry-reachability.test.ts"
+    skip_reason: "[backend-contract] 确定性跨端文案/装配判据（jest: worker-login-parity / worker-report-login / worker-report-page / worker-home-page / worker-surface-ledger / input-center-guard / page-entry-reachability），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-31 新增（issue #8194）：改前扫码报工页未登录把工人**踢到三角色登录页**（表单的标题 / 副标题 / 字段（还多一格「设备标签」）/ 配色都与终端 /w/ 不同，手里的码还要绕一圈才接着报）；改后未登录在报工页**就地**渲染与 /w/ 逐字一致的共享组件 WorkerLoginForm，登录成功留在本页继续那个码（无码回工人首页）。工人首页的「去登录工人身份」也改落同一份组件（pages/worker/login/index 重写为壳）。三角色登录页与 ?tab=worker **一字未动**（保留为常规入口）。卡片形态与 `/w/` 的 `.wh5-card` **同值**（padding 16 CSS px / 圆角 16 / 间距 12 / 同一条阴影，白卡落在 `#faf7f2` 页面底上）；未登录态**不渲染报工页页头**（用户同日裁定「不一致，需要收口」——`/w/` 的登录屏只有一张卡片，两层标题会读成两个页面）。视觉对比（/b/ vs /w/，390×844）留给多模态验收（migao-dev-flow §15.7）。"
+    traces:
+      tests:
+        - "frontend/bmini-app/tests/worker-login-parity.test.ts"
+        - "frontend/bmini-app/tests/worker-report-login.test.tsx"
+        - "frontend/bmini-app/tests/worker-report-page.test.tsx"
+        - "frontend/bmini-app/tests/worker-home-page.test.tsx"
+        - "frontend/bmini-app/tests/login-identifier-split.test.tsx"
+        - "frontend/bmini-app/tests/login-remember-account.test.tsx"
+        - "frontend/bmini-app/tests/worker-surface-ledger.test.ts"
+        - "frontend/bmini-app/tests/input-center-guard.test.ts"
+        - "frontend/bmini-app/tests/page-entry-reachability.test.ts"
+      ci:
+        - pr-check.yml
+        - bmini-app.yml
+      verifies: []
+
+  - id: BM-058
+    legacy_id: ""
+    title: "微信「扫普通链接二维码打开小程序」（A 档）- 短链 JSON 解析换 token、q 四种落地与解码边界、校验文件承接"
+    domains:
+      - bmini
+      - ci
+    tier: normal
+    tags:
+      - bmini
+      - worker
+      - qr
+      - wechat
+      - short-link
+      - nginx
+    truths_ref:
+      - processing-manage.scan-report-landing-path
+      - processing-manage.wechat-qr-a-open
+    user_inputs:
+      - "工人在微信里用「扫一扫」扫纸上的 https://app.migaozn.com/s/<短码> ⇒ 微信按后台规则**直接打开小程序** pages/worker/report/index（整条链接在 getEnterOptionsSync().query.q，URL-encoded）；小程序不跟随 302 ⇒ 页面先调 GET /s/<短码>/json 拿 token，再走既有报工 / 就地登录流程"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**JSON 面的形状与不泄露**（backend/admin-api/src/test/java/com/migao/admin/controller/WorkerShortLinkControllerTest.java）：GET /s/{短码}/json ⇒ 200 `{reportPath, token}`，键集**恰好**这两个（不含工人 / 工序 / 订单 / 价格 / 租户参数，也不查企业编码）；未知 ⇒ 404 `{error:not_found}`、已撤销 ⇒ 410 `{error:revoked}`；手输抄错形态（小写 / O→0）同样可用；`/s/{32位token}/json` ⇒ 404 且一次库都不查。"
+      - "判据 2·**印刷品红线：旧路径任何 Accept 下仍是 302**（同文件）：GET /s/{短码} 在 `Accept: text/html`、`Accept: application/json`、**无 Accept** 三种姿态下都 302 到 `/b/report/?t=…` —— 落点因此选显式子路径而**不是**内容协商（不带 Accept 的扫码工具不会被切成 JSON 文本）。"
+      - "判据 3·**A 档端侧四种落地**（frontend/bmini-app/tests/worker-report-wechat-qr.test.tsx）：q=/s/<短码> ⇒ 先 JSON 解析（只一次）再以 **token** 解析一屏（不是短码）；未登录 ⇒ 登录**前**就解析（无效码当场说清）、登录后接着报这个 token；q=…/b/report/?t= ⇒ 不调 JSON、直接用 t；页面参数 t 与无码直进行为不变（无码不发请求、不导航）；未知/撤销 ⇒ 明确错误上屏、只解析一次、不出报工入口、死码不跨登录带走；JSON 面读不到 ⇒ 退回「短码原样交给工人扫码端点」。"
+      - "判据 4·**解码边界**（同文件）：q 里的链接 URL-encoded（中文 / 百分号 / `+` / 重复参数）都能取出同一个短码；非法百分号编码**不抛**（读参数不许变成白屏）；重复 t 取第一个；`/s/` 链接同时带 t 参数时以 t 为准（不再申请 JSON 解析）。"
+      - "判据 5·**客户端请求形状**（frontend/bmini-app/tests/worker-short-link-service.test.ts）：GET …/s/<短码>/json、`Accept: application/json`、**不带**商家凭据（短码在纸上，这一跳不是身份入口）；404/410 不抛、状态码原样带回；200 无 token ⇒ 当成读不到（不把空 token 交给报工解析）。"
+      - "判据 6·**校验文件承接**（tests/unit_ci_workflows/test_wechat_verify_route.py）：`app.migaozn.com` 段有**唯一**一条窄正则 location（`^/[^/]+\\.txt$` + `try_files $uri =404`）⇒ 根下 .txt 缺失 **404**、绝不回落 index.html；不劫持 /b/ /w/ /terminal/ 与根级 SPA 路由；`deploy.sh` 的落位段**真跑**：只拷 *.txt、只增/覆盖、幂等、父目录 index.html 哈希不变、源空/缺目录时出声且退出 0；仓库不许预置假校验文件（README 写清「原样放入、别改名」）。"
+    skip_reason: "[backend-contract] 确定性前后端判据（Java MockMvc + jest + pytest 的 nginx 语义模拟/沙箱真跑），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-31 新增（issue #8196）：A 档「扫普通链接二维码打开小程序」的**仓库侧**。小程序不能跟随 302 ⇒ 新增显式 JSON 面 `GET /s/{短码}/json`（旧 `/s/` 任何 Accept 仍 302，已印出去的码不受影响）；报工页从 `q` 取短码→token（未登录就地登录后继续）；微信校验文件的落位（`deploy/swas/wechat-verify/` + `deploy.sh` 幂等拷贝 + nginx 根下 `.txt` 显式面）。用户侧的 appid / 上传私钥 / 后台规则 / 提审未做 ⇒ **部分交付**（PR 不写关闭词）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/WorkerShortLinkControllerTest.java"
+        - "frontend/bmini-app/tests/worker-report-wechat-qr.test.tsx"
+        - "frontend/bmini-app/tests/worker-short-link-service.test.ts"
+        - "frontend/bmini-app/tests/report-landing.test.ts"
+        - "tests/unit_ci_workflows/test_wechat_verify_route.py"
+      ci:
+        - pr-check.yml
+        - bmini-app.yml
+      verifies: []
+  - id: BM-059
+    legacy_id: ""
+    title: "工人菜单页面键闭词表：bmini 的 WORKER_MENU_KEYS 必须是后端 WorkerPages 常量的子集（只许缩小，不许发明）"
+    domains:
+      - bmini
+    tier: normal
+    tags:
+      - bmini
+      - worker
+      - worker-menu
+      - single-source
+      - cross-language
+    truths_ref:
+      - processing-manage.worker-menu-pages
+    user_inputs:
+      - "商家后台「设置工人端菜单」勾了某项而工人端没出现 / 后端改了页面键而小程序没跟上：两处各自测试都绿，没有任何判据会红"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据（frontend/bmini-app/tests/worker-menu-single-source.test.ts，**现取**两端源码、不做文本快照）：bmini `src/utils/workerMenu.ts` 的 `WORKER_MENU_KEYS` 每个值都必须在 `backend/admin-api/src/main/java/com/migao/admin/worker/WorkerPages.java` 的 `public static final String <键名> = <键值>;` 常量值里**逐字**找到（前端**不许发明**后端没有的键）；键值唯一（两个菜单名同一个键会互相影响显隐）；后端闭词表解析为空 / bmini 键集为空 ⇒ fail-closed；判别力自证 = 发明键（kitchen）/ 重复键 / 后端撤键（to_ship）各自判红。方向 = **只许缩小**：后端新增键**不**强制小程序加菜单（后端键还服务 /w/ 与工人档案配置）。"
+    skip_reason: "[backend-contract] 跨语言静态同源判据（jest 现取 Java 常量 + TS 常量），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-31 新增（issue #8196 目标 ⑤）：收口「工人菜单有第二份映射」—— bmini 把后端页面键字面量抄了一份（WORKER_MENU_KEYS），两端之间原先**没有判据**（后端加键 / 前端拼错都不会红）。新增子集守卫（只许缩小）；菜单的标签与路由仍只在 bmini 一份（后端只下发可见页面键集合），故不另造标签映射。"
+    traces:
+      tests:
+        - "frontend/bmini-app/tests/worker-menu-single-source.test.ts"
+      ci:
+        - pr-check.yml
+        - bmini-app.yml
+      verifies: []
+
+  - id: BM-060
+    legacy_id: ""
+    title: "报工详情页成品入库卡 + 50×70 入库标签打印（数据只来自服务端 finished_inbound；打印走行式标签通道；小程序离屏画布）"
+    domains:
+      - bmini
+      - inbound
+      - production
+    tier: normal
+    tags:
+      - bmini
+      - inbound
+      - print
+      - finished-goods
+      - weapp
+    truths_ref:
+      - frontend-fix.no-api-change
+    user_inputs:
+      - "工人扫「套 × 部位」码 → 报完最后一道 → 本页出现「成品入库 · 仓位 A-01」卡：质检结论、入库单号、标签行（品名/色号/入库日期/数量）与短码；点「打印入库标签（50×70）」经小程序 BLE / 手持终端 / 浏览器蓝牙打出 50×70 标签；服务端没给 finished_inbound 时整卡不渲染。"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·🔴 数据只来自服务端：卡片与标签行逐字取 finished_inbound（bin_code / inbound_no / label.rows / label.short_code / quality），端侧不拼业务字段；缺值按「未分配」/「—」/ 无记录=正常。红证：把行数据改成端侧常量或补字段 ⇒ frontend/bmini-app/tests/rows-label-layout.test.ts 的 L2 与 worker-report-page.test.tsx 的 ⑦ 判红"
+      - "判据 2·🔴 纸型 50×70 固定：布局只从 label-50x70 介质取纸型 / 像素口径，成品标签高 = 70mm；宽度与纸长不另写一份。红证：删掉 fixedLengthMm ⇒ L2 红；在布局里写像素字面量 ⇒ tests/inbound-print-geometry-single-source.test.ts 的 C2b 红"
+      - "判据 3·🔴 送打印只走 printRowsLabel：顺序 = 能力探测 → 渲染 → 送打印机（这两类纸无服务端留痕端点）；能力不可用 ⇒ 按钮 disabled 且先给可行动文案。红证：把按钮改成点了才判 / 页面直连 .print ⇒ inbound-print-channel.test.ts 的 D7 红；worker-report-page.test.tsx 的 ⑨ 红"
+      - "判据 4·小程序可打印：无 DOM 时画布工厂改用 Taro.createOffscreenCanvas（h5 仍用 DOM canvas）；取不到位图 ⇒ 渲染抛错（不静默打印白图）。红证：去掉离屏画布分支 ⇒ worker-report-page.test.tsx 的 ⑦ 渲染失败；去掉 requirePixels ⇒ rows-label-layout.test.ts 的 L5 红"
+    skip_reason: "[frontend-contract] 确定性页面 / 版面判据（jest: rows-label-layout / worker-report-page / inbound-print-channel），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-31 新增（issue #8287：用户「打包的工人要在报工详情页面增加成品入库功能并打印入库标签」）。改动 = bmini 报工页渲染服务端随扫码 / 报工回执下发的 finished_inbound 卡（仓位 / 质检 / 入库单 / 标签行 / 短码），并接 50×70 行式标签打印；共用 rowsLabel 版面 + printRowsLabel 入口；小程序画布改走离屏画布（此前无 DOM 直接抛错 ⇒ 小程序打印实际不可用，本单一并修）。边界：这两类纸无服务端打印留痕端点（与 /w/ 一致），入库标签的必留痕红线仍只约束 printInboundLabel。"
+    traces:
+      tests:
+        - "frontend/bmini-app/tests/rows-label-layout.test.ts"
+        - "frontend/bmini-app/tests/worker-report-page.test.tsx"
+        - "frontend/bmini-app/tests/inbound-print-channel.test.ts"
+      ci:
+        - bmini-app.yml
+      verifies: []
+
+  - id: BM-061
+    legacy_id: ""
+    title: "待发货单整套出库单（发货联）50×70 预览 + 打印 —— 行清单与 /w/ 同源，仍不新增发货写路径"
+    domains:
+      - bmini
+      - shipment
+      - worker
+    tier: normal
+    tags:
+      - bmini
+      - worker
+      - shipment
+      - label
+      - print
+    truths_ref:
+      - frontend-fix.no-api-change
+    user_inputs:
+      - "工人在「待发货单」列表点某单「发货联」→ 屏上出现 50×70 纸面的行清单（订单号 / 收货人 / 电话 / 地址 / 帘种 / 安装小区 / 安装位置 / 物流类型 / 物流公司 / 下单日期 / 套数 / 备注）→ 点「打印发货联（50×70）」经共享行式标签通道打出整套出库单；缺值印 —、可选附注缺值整行不印；本页仍不发货。"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·🔴 行清单与 /w/ 逐行等价：bmini buildShipLabelRows 与 frontend/worker-h5/src/shipment.mjs 的 buildShipLabelRows 对同一组 fixture（全字段 / 最小 / 可选全缺 / 时区 / 缺值）逐行相等。红证：任一侧改行序 / 缺值规则 / 日期 ⇒ frontend/bmini-app/tests/ship-label-rows-parity.test.ts 红（逐字段点名）"
+      - "判据 2·🔴 日期按 Asia/Shanghai：16:30Z ⇒ 次日；不按 UTC 切。红证：改成本地 / UTC 取日 ⇒ parity P4 与 worker-shipment-orders-page.test.tsx 的 ⑧ 红"
+      - "判据 3·🔴 纸长按内容撑开 70~150mm、50mm 宽、像素口径只取介质矩阵；长内容可见省略 / 折行，超上限停止追加并给 warnings。红证：把纸长写死 / 删 warnings ⇒ rows-label-layout.test.ts 的 L3 红"
+      - "判据 4·🔴 仍然不新增发货写路径：页面只读列表 + 打纸，不调 ship 端点；送打印只走 printRowsLabel（页面无 .print）。红证：页面里加 .print 直连 ⇒ inbound-print-channel 的 D7 红；加 ship 调用 ⇒ 现有测试的 mock 服务导出不存在即红"
+    skip_reason: "[frontend-contract] 确定性页面 / 跨端行清单判据（jest: ship-label-rows-parity / worker-shipment-orders-page / rows-label-layout），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-31 新增（issue #8287：用户「整单出库功能要能做成品出库，并打印标签」）。现状：成品出库写路径已存在（拍照发货 / PC 发货 → POST /api/worker/shipment/orders/{id}/ship；服务端已过账 outbound source=ship），本单补的是手机端整套出库单纸面：待发货单列表逐单「发货联」预览 + 50×70 打印，行清单与 /w/ 的 buildShipLabelRows 同源（parity 现取两侧比对）。明确不做第二条发货写路径（PR 写明）。"
+    traces:
+      tests:
+        - "frontend/bmini-app/tests/ship-label-rows-parity.test.ts"
+        - "frontend/bmini-app/tests/worker-shipment-orders-page.test.tsx"
+        - "frontend/bmini-app/tests/rows-label-layout.test.ts"
+      ci:
+        - bmini-app.yml
+      verifies: []
+
+  - id: BM-062
+    legacy_id: ""
+    title: "拍照入库识别链三步各自封顶 + 分步进度 —— 不许把工人锁死在灰按钮上"
+    domains:
+      - bmini
+      - worker
+      - inbound
+    tier: normal
+    tags:
+      - bmini
+      - worker
+      - inbound
+      - timeout
+    truths_ref:
+      - frontend-fix.no-api-change
+    user_inputs:
+      - "工人在真机点「识别」后，屏上依次出现「正在读取照片… / 正在上传照片… / 正在识别标签…」；任一步超过上限 ⇒ 按钮恢复、给出点名那一步的人话错误，可重试，也可改用扫码或手工录入。"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·🔴 三步各自封顶（读图 15s / 上传 20s / 识别 60s），超时文案点名那一步。红证：删掉任一处 withTimeout 接线 ⇒ frontend/bmini-app/tests/inbound-recognize-timeout.test.ts 的「判据 1」红"
+      - "判据 2·🔴 超时后按钮必须恢复：finally 里 setBusy(false) 且 setProgress('')。红证：去掉 setProgress('') ⇒ 「判据 2」红"
+      - "判据 3·🔴 识别中要有可见进度：data-testid=inbound-progress 仅在 busy 且 progress 非空时渲染。红证：删掉该节点 ⇒ 「判据 3」红"
+      - "判据 4·🔴 正式版文案不许出现型号 / 品牌 / 选机指令（DP235S、「DP 开头」、德佟）。红证：把任一句改回 ⇒ 文案组判据点名那个文件"
+    skip_reason: "[frontend-contract] 确定性页面接线判据（jest），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-01 新增（issue #8307 真机取证：拍照入库点「识别」永久置灰、无进度无超时，2/2 复现）。本单给三步各自封顶 + 分步进度 + 正式版文案收口；真机复测在发布后进行。"
+    traces:
+      tests:
+        - "frontend/bmini-app/tests/inbound-recognize-timeout.test.ts"
+      ci:
+        - bmini-app.yml
+      verifies: []
+
+  - id: BM-063
+    legacy_id: ""
+    title: "上传照片：h5 走 Blob 直传，不再依赖 Taro.uploadFile 的裸 XHR（真机卡死的根因）"
+    domains:
+      - bmini
+      - worker
+      - inbound
+    tier: normal
+    tags:
+      - bmini
+      - worker
+      - inbound
+      - upload
+    truths_ref:
+      - frontend-fix.no-api-change
+    user_inputs:
+      - "工人在手持机上拍照 / 选图后点「识别」：照片照常上传成功并进入识别；网络真断时给「照片上传超时，请检查网络后重试」，按钮恢复可重试。"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·🔴 有 Blob 时走 FormData 直传（字段名 files、不设 Content-Type），一次都不调用 Taro.uploadFile。红证：改回走 Taro.uploadFile 并把该 mock 设为永不返回 ⇒ frontend/bmini-app/tests/inbound-upload-blob.test.ts 超时红"
+      - "判据 2·🔴 只有 blob: 串时先 fetch 读成 Blob 再直传。红证：跳过 fetch ⇒ 该条红"
+      - "判据 3·🔴 读不到 Blob 时回落 Taro.uploadFile（不静默失败）。红证：去掉回落 ⇒ 该条红"
+      - "判据 4·🔴 响应按服务端 data[0].url 归一，非 JSON 给明确文案。红证：改读 data.url ⇒ 该条红"
+    skip_reason: "[frontend-contract] 确定性服务层判据（jest），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-01 新增（issue #8307 真机复测：超时兜底生效并指认卡点=上传；读码得因 = taro-h5 uploadFile 的 convertObjectUrlToBlob 裸 XHR 无 error 回调）。本单改 Blob 直传，页面与拍照发货共用同一入口。"
+    traces:
+      tests:
+        - "frontend/bmini-app/tests/inbound-upload-blob.test.ts"
+      ci:
+        - bmini-app.yml
+      verifies: []
+

@@ -43,7 +43,19 @@ KEYWORD_MAP: dict[IntentType, list[str]] = {
     ],
     IntentType.SYSTEM_SETTINGS: ["系统设置", "企业设置", "基础设置", "店铺设置", "全局设置", "系统配置"],
     # 数据分析必须在订单前（防"订单趋势"被"订单"吞掉）
-    IntentType.DASHBOARD: ["看板", "趋势", "经营", "今日数据", "本周数据", "本月数据"],
+    # 跨期环比词（issue #8300，DA-025 实测）：缺它们时「这周订单比上周怎么样？」被 ORDER_QUERY 的
+    # 「订单」接走 ⇒ 模型用 order_query(statistics) + sales_attribution 拼答案，
+    # dashboard_stats(trend_compare) 一次没调（run 41266259486 逐字 trace）。
+    # 只用**跨期比较短语**，不含裸「上周 / 本月」（否则「查一下上周的订单」会被抢走，
+    # 负控 = TestMatch::test_plain_week_order_query_stays_order_query）。
+    IntentType.DASHBOARD: ["看板", "趋势", "经营", "今日数据", "本周数据", "本月数据",
+                           "比上周", "较上周", "对比上周", "环比", "同比",
+                           # 销量排行（issue #8300，DA-036 实测）：问句里带「商品」⇒ 若无这条，
+                           # 会被 PRODUCT_INQUIRY 抢走 → product 域**不绑** dashboard_stats
+                           # ⇒ 模型只能退到 nav_guide（实测 trace: nav_guide(products/label=商品管理)）。
+                           # 关键词只收**排行语义**，不收裸「销量」（「这个商品销量多少」仍属商品域）。
+                           "卖得最好", "卖得最多", "最好卖", "最畅销", "热销", "畅销",
+                           "销量排行", "销量榜", "销量排名", "商品排行"],
     IntentType.STATISTICS: ["统计", "数据报表"],
     IntentType.FINANCE: ["财务", "资金流水", "收支", "对账", "净收入", "净额", "登记收款", "登记退款", "记一笔", "收款", "进账", "流水", "应收账款", "没对平", "收入支出", "收了多少", "赚了多少", "收了几笔", "收入", "本期收入", "收入退款"],
     IntentType.ORDER_CREATE: ["创建订单", "新建订单", "下单", "开个单", "录单", "确认创建订单"],
@@ -52,7 +64,12 @@ KEYWORD_MAP: dict[IntentType, list[str]] = {
                          # 「加工单」关键词 → 降级 L2 被归到商品域（加工项）→ agent 调
                          # processing_item_query 返回加工项目录（sess_f3c0ee0d2cc342a0）。
                          # 加工单 ≠ 加工项；订单域的概念区分口径在 prompts/order.md。
-                         "加工单", "加工单号"],
+                         "加工单", "加工单号",
+                         # 加工**套件**（issue #8300，PG-064 实测）：与「加工单」同族 —— 缺这条关键词时
+                         # 降级 L2 被判 `product_inquiry`（2026-11-01 run 实测 `Routing to
+                         # 'product_inquiry'` → 执行 `[product]`）⇒ 工人问「店里有哪些加工套件」拿到的是
+                         # 「加工项目录」（`processing_item_query` 顶替；套件工具绑在订单域）。
+                         "加工套件"],
     IntentType.LOGISTICS_TRACK: ["物流", "快递", "到哪了"],
     # 主图/详情图（issue #3942）：此前缺关键词 → 「把主图设成…」降级 L2 误分 general
     # （无 product_manage）→ 主图写能力不可达、PR-026/027 评测不可满足、生产路由不稳。
