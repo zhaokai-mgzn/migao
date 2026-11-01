@@ -6,8 +6,8 @@
 - 改前：B 端每轮绑定 **35~39** 把工具（读面按 persona 家族全量并入，见 #4125），
   工具 schema 33~40KB、prompt 5.7~15KB。
 - 改后：同一轮读面按**本轮意图**打分保留到上限（`TOOL_TRIM_MAX_READ`，默认 16），
-  **保底集合永不被裁**（本 skill 写工具 + `ALWAYS_KEEP_TOOL_NAMES` + 上一轮用过的读工具），
-  且**只对 B 端（mibao）生效**。
+  **保底集合永不被裁**（本 skill 写工具 + `ALWAYS_KEEP_TOOL_NAMES` + 上一轮用过的读工具
+  + **意图属主 skill 的读工具**，最后一条见 issue #8300），且**只对 B 端（mibao）生效**。
 
 ## 每条判据都有红证（不会红的断言 = 空断言）
 
@@ -20,6 +20,7 @@
 | 确定性 | 同一输入连跑两次，顺序逐字一致 |
 | 写面不裁 | `read_only=False` 的工具集合前后相等 |
 | 字符数棘轮 | prompt / schema 字符数**都下降**（关闭裁剪 ⇒ 回落） |
+| **意图属主保底**（#8300） | `test_dropping_intent_owner_keep_reproduces_the_outage`：摘掉保底 ⇒ `settings_manage` 立刻被裁 |
 
 判据里用的"改前行为"由 `_oracle_names` **独立重算**（声明面 ∪ 家族只读，按注册表顺序），
 不复用被测实现，避免"判据自己证明自己"。
@@ -191,6 +192,73 @@ def test_order_intent_keeps_order_query():
     """「查订单」意图下 `order_query` 必须留下 —— 裁错工具才是本单的真实风险面。"""
     plan = _plan(_tool_names("order"))
     assert plan is not None and "order_query" in plan
+
+
+# ── 8. 意图属主 skill 的读工具必须保底（issue #8300）────────────────────────
+# 病灶（2026-11-01 真实 LLM 评测实测：normal 档 ST-001 / ST-002 / DA-025 确定性红）：
+# `nodes._get_intent_to_route` 按**绑定面**过滤意图 ⇒ `system_settings` / `ai_config`
+# 落到 fallback skill `general`（#6044 缺陷 C：`settings` 不在图上）。改动前 #4125 的
+# 「同 persona 家族只读并入」把 `settings_manage` 一起带进来；#8174 裁剪后它不在 general
+# 的声明面、词面又零分 ⇒ 被裁 ⇒ 模型改用保底的 `nav_guide` 回「菜单位置」，能力不可达。
+@pytest.mark.parametrize("intent,skill,tool", [
+    ("system_settings", "general", "settings_manage"),
+    ("ai_config", "general", "settings_manage"),
+    ("dashboard", "order", "dashboard_stats"),
+    ("processing_order_query", "general", "processing_order_set_query"),
+])
+def test_intent_owner_read_tools_survive_on_foreign_skill(intent, skill, tool):
+    """意图属主 skill 的读工具，在**落到别的 skill** 时也必须留在绑定面。"""
+    tool_names = _tool_names(skill)
+    plan = _plan(tool_names, user_message="查看系统设置", intent=intent)
+    assert plan is not None, f"{skill}: 判据面没有触发裁剪（pool ≤ 上限），判据失效"
+    assert tool in plan, f"intent={intent} 落到 {skill} 时 {tool} 被裁（#8300 的病灶形态）"
+
+
+def test_dropping_intent_owner_keep_reproduces_the_outage(monkeypatch):
+    """红证：摘掉「意图属主读工具」这条保底 ⇒ 上一条**真的**会红（证明它不是恒真）。"""
+    monkeypatch.setattr(ts, "_intent_owner_read_tool_names", lambda _intent: [])
+    plan = _plan(_tool_names("general"), user_message="查看系统设置",
+                 intent="system_settings")
+    assert "settings_manage" not in (plan or []), (
+        "摘掉保底后 settings_manage 仍在保留集 —— 说明上一条不是靠这条保底通过的（空判据）"
+    )
+
+
+def test_every_foreign_intent_keeps_its_owner_read_tools():
+    """类级元守卫（#8300）：**任意** skill × **别家**意图 ⇒ 属主的读工具都在保留集。
+
+    枚举现算（不写死 skill / 意图名）：属主 = 声明该 intent 的 mibao skill；执行方 = 任一
+    别的 mibao skill。预算不足的组合（保底 + 写工具已占满上限）按既有「上限让位只给
+    ALWAYS_KEEP / 写工具」口径跳过 —— 但**跳过数不能吃掉判据面**（末尾自证 checked 下界）。
+    """
+    cfgs = [c for c in get_skill_registry().get_all()
+            if "mibao" in (c.system_prompts or {})]
+    read_only = _read_only()
+    checked = 0
+    for owner in cfgs:
+        owner_read = [n for n in (owner.tool_names or []) if n in read_only]
+        if not owner_read:
+            continue
+        for intent in (owner.intents or []):
+            for skill in cfgs:
+                if skill.name == owner.name:
+                    continue
+                tool_names = _tool_names(skill.name)
+                # 候选池按**独立 oracle** 重算（声明面 ∪ 家族只读），不用被测实现
+                candidates = {n for n in _oracle_names(tool_names) if n in read_only}
+                fixed = [n for n in tool_names if n not in read_only]
+                always = [n for n in ts.ALWAYS_KEEP_TOOL_NAMES if n in candidates]
+                if len(fixed) + len(always) + len(owner_read) > DEFAULT_CAP:
+                    continue                     # 上限让位口径下的正当跳过
+                plan = _plan(tool_names, user_message="", intent=intent)
+                assert plan is not None, (
+                    f"skill={skill.name}: 意图 {intent} 未触发裁剪，判据面失效")
+                missing = [n for n in owner_read if n not in plan]
+                assert not missing, (
+                    f"skill={skill.name} intent={intent}（属主 {owner.name}）"
+                    f"丢了属主读工具 {missing} —— #8300 的病灶形态")
+                checked += 1
+    assert checked >= 10, f"判据面过小（{checked} 组合）—— 元守卫退化成空判据"
 
 
 def test_recent_tool_survives():
