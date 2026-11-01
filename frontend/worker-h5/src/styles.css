@@ -833,3 +833,87 @@ a.wh5-machine__back:active { color: var(--wh5-machine-ink); }
 .wh5-machine__chip-value { font-variant-numeric: tabular-nums; }
 .wh5-machine__chip.is-off { opacity: .5; }
 .wh5-machine__chip:not(.is-off) { border-color: var(--wh5-machine-accent); background: var(--wh5-brand); color: #fff; }
+
+/* ==== WebView 83 兜底：flex `gap` 在 Chrome 83 上被静默忽略（issue #8336 / UI-148）====
+   页面启动时 `flex-gap.mjs` 量一次真布局：量到「gap 没生效」才给 <html> 加 `.no-flex-gap`，
+   下面这些规则才生效；支持的浏览器（Chrome ≥84 / 现代手机 / PC）**不加类**，仍走上面的 `gap`，
+   视觉逐像素不变。真机读数：`裁剪 应做 1.00 米0.25 元/米待报工` 三列挤成一串就是这里缺的间距。
+   🔴 grid 容器不在兜底范围（grid 的 gap 自 Chrome 57 起就支持）。 */
+
+.no-flex-gap .wh5-spec > * + *,
+.no-flex-gap .wh5-ov-pos > * + *,
+.no-flex-gap .wh5-ov-ops > li + li,
+.no-flex-gap .wh5-cut-rows > li + li {
+  margin-top: 4px;
+}
+
+.no-flex-gap .wh5-label > * + *,
+.no-flex-gap .wh5-overview > * + *,
+.no-flex-gap .wh5-cutplan > * + *,
+.no-flex-gap .wh5-shipment > * + * {
+  margin-top: 6px;
+}
+
+.no-flex-gap .wh5-batch > * + *,
+.no-flex-gap .wh5-quality > * + * {
+  margin-top: 8px;
+}
+
+.no-flex-gap .wh5-q-form > * + *,
+.no-flex-gap .wh5-shipments > * + *,
+.no-flex-gap .wh5-ready > * + *,
+.no-flex-gap .wh5-machine__hits > * + * {
+  margin-top: 10px;
+}
+
+.no-flex-gap .wh5-card > * + *,
+.no-flex-gap .wh5-machine__col > * + *,
+.no-flex-gap .wh5-machine__report > * + * {
+  margin-top: 12px;
+}
+
+.no-flex-gap .wh5-machine__panel > * + * {
+  margin-top: 16px;
+}
+
+.no-flex-gap .wh5-shipment ul > li + li {
+  margin-top: 2px;
+}
+
+.no-flex-gap .wh5-header > * + *,
+.no-flex-gap .wh5-entries > * + *,
+.no-flex-gap .wh5-group > * + *,
+.no-flex-gap .wh5-pick > * + *,
+.no-flex-gap .wh5-batch-cands > * + *,
+.no-flex-gap .wh5-spec-row > * + *,
+.no-flex-gap .wh5-q-choices > * + *,
+.no-flex-gap .wh5-q-head > * + *,
+.no-flex-gap .wh5-record-top > * + *,
+.no-flex-gap .wh5-piecework-nav > * + * {
+  margin-left: 8px;
+}
+
+.no-flex-gap .wh5-q-actions > * + *,
+.no-flex-gap .wh5-label-actions > * + * {
+  margin-left: 10px;
+}
+
+.no-flex-gap .wh5-ov-op > * + *,
+.no-flex-gap .wh5-cut-row > * + * {
+  margin-left: 12px;
+}
+
+.no-flex-gap .wh5-machine__head > * + *,
+.no-flex-gap .wh5-machine__actions > * + * {
+  margin-left: 16px;
+}
+
+.no-flex-gap .wh5-machine__body > * + * {
+  margin-left: 24px;
+}
+
+/* 成品入库标签（50×70 联单）：label/value 两栏 gap 2mm ⇒ 兜底同样 2mm */
+.no-flex-gap .wh5-finished-label .wh5-fl-row > * + *,
+.no-flex-gap .wh5-finished-label .wh5-fl-actions > * + * {
+  margin-left: 2mm;
+}
