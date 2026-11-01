@@ -134,8 +134,13 @@ export default function WorkerHomePage() {
   const [pendingToShip, setPendingToShip] = useState<number | null>(null)
   const [pendingRework, setPendingRework] = useState<number | null>(null)
 
+  // 🔴 菜单还没读到 = `menuVisible` 的 fail-open 期（全开）⇒ 这时候按「全开」去请求，
+  // 会给没有该页权限的工人打出 403，手机照 `request.ts` 弹一句「无权限访问」
+  // （真机读数 2026-11-01：王建国 W2005 首页 `GET /api/worker/production/rework-orders` 403）。
+  // 计数只是**补充信息**，等菜单落定再取 —— 不是把入口挡掉（显隐仍按 fail-open 显示）。
+  const pagesSettled = pages !== null || pagesUnread
   useEffect(() => {
-    if (!worker) {
+    if (!worker || !pagesSettled) {
       setPendingToShip(null)
       setPendingRework(null)
       return
@@ -160,7 +165,7 @@ export default function WorkerHomePage() {
     return () => {
       alive = false
     }
-  }, [worker, showToShip, showRework])
+  }, [worker, pagesSettled, showToShip, showRework])
 
   /**
    * 引导去**工人登录页**（issue #8194）：落在 `pages/worker/login/index` —— 它渲染的是与终端
