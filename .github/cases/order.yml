@@ -304,6 +304,10 @@ cases:
       - "帮我查一下最近一笔已发货订单的物流"
     expectations:
       - tool: logistics_track
+    # 2026-11-01（issue #8300 自测发现一）：裸工具名期望 ⇒ 结构性不可失败；
+    # 按真跑轨迹（全档 run 41292387267 的 call_args）补「真返回」效果层。
+    must_succeed:
+      - tool: logistics_track
     required_args:
       - tool: logistics_track
         fields:
@@ -972,6 +976,10 @@ cases:
       - type: order_count_for_phone
         source: "13800138000"
     expectations:
+      - tool: logistics_track
+    # 2026-11-01（issue #8300 自测发现一）：裸工具名期望 ⇒ 结构性不可失败；
+    # 按真跑轨迹（全档 run 41292387267 的 call_args）补「真返回」效果层。
+    must_succeed:
       - tool: logistics_track
     required_args:
       - tool: logistics_track
@@ -4745,6 +4753,10 @@ cases:
       - "查一下订单 EVAL-MB-ORD-0002"
       - "这单的明细"
     expectations:
+      - tool: order_query
+    # 2026-11-01（issue #8300 自测发现一）：本用例原先只有裸工具名期望 ⇒ 结构性不可失败
+    # （通过 + 无任何可失败断言 + 效果层未触发）。加「真返回」断言：调了 ≠ 成了。
+    must_succeed:
       - tool: order_query
     want_text:
       - round: 2
