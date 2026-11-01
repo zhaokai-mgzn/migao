@@ -5578,3 +5578,37 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: UI-148
+    legacy_id: ""
+    title: "手持机 WebView 83 没有 flex `gap` ⇒ 工人端间距兜底（`.no-flex-gap` 作用域 + margin 兜底，issue #8336）"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - layout
+      - worker-h5
+      - webview83
+    truths_ref:
+      - frontend-fix.layout
+      - frontend-fix.no-api-change
+    user_inputs:
+      - "手持标签机（商米 V2s）上工人报工页「裁剪 应做 1.00 米 0.25 元/米 待报工」挤成一串，字叠在一起；页头按钮也贴字并折行"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**探测口径**（`frontend/worker-h5/src/flex-gap.mjs`）：用「两个 10px 子项 + 10px 间距」量真布局 —— 量到 ≈20px 判不支持、给 `<html>` 加 `no-flex-gap`；量到 ≈30px 判支持、**不加类**。红证 = 把 `width >= probeSize*2+gap-0.5` 改成恒 `true` ⇒ `worker-h5-flex-gap.test.mjs` 判据 ①红。"
+      - "判据 2·**不误伤现代浏览器**：支持时不得加类（否则 `gap` 与 margin 兜底叠加，PC/手机 Chrome ≥84 上间距翻倍）⇒ 判据 ② 红证 = 无条件加类。"
+      - "判据 3·**探测无副作用**：探测节点必须从 `body` 拆掉（判据 ③）；量不出宽度 / 没有 body ⇒ 视为支持且不抛（判据 ④⑤）。"
+      - "判据 4·**真机可见**（商米 V2s / Chrome 83.0.4103.120）：报工屏「裁剪 / 应做 1.00 米 / 0.25 元/米 / 待报工」四段分行或分列、不重叠；页头三个按钮不折行。判定 = 真机截图 + `getBoundingClientRect().left` 两两不重叠。"
+      - "判据 5·**不回退**：同一份 HTML 在 Chromium ≥84 上视觉不变（不加类 ⇒ 样式表逐字生效），且不新增任何 API 契约。"
+    skip_reason: "[backend-contract] 纯前端布局兼容，由 node --test（worker-h5-flex-gap）+ 真机截图覆盖，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-11-01 新增（issue #8336）：真机读数「裁剪 应做 1.00 米0.25 元/米待报工」三列挤成一串 —— Chrome 83 不支持 flex gap，而 60 处 gap 在真机上全等于没写。修法 = 运行期探测 + `.no-flex-gap` 作用域下的 margin 兜底（grid 不受影响）。取号 UI-148。"
+    traces:
+      tests:
+        - "frontend/worker-h5/tests/worker-h5-flex-gap.test.mjs"
+      ci:
+        - pr-check.yml
+      verifies: []
