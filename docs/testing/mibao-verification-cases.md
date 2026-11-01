@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（168 case）
+## 杂项域（169 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -6776,6 +6776,19 @@
 跳过: [backend-contract] 静态结构 + 沙箱真跑判据（零网络、零云调用、不碰真实静态根）由 tests/unit_ci_workflows/test_wechat_verify_route.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-31 新增（issue #8196）：微信「扫普通链接二维码打开小程序」的**校验文件承接**。交付 = ① `deploy/swas/wechat-verify/README.md`（承接位，不预置文件）② `deploy/swas/deploy.sh` 的 1.3.1 段（在**取配置之后、C′ 构建之前**：源码树 `src/` 只在那时存在；幂等只拷 *.txt 到静态根根下）③ `deploy/swas/nginx.conf` 的根下 `.txt` 显式面（缺失 404、不回落 SPA）④ 判据 tests/unit_ci_workflows/test_wechat_verify_route.py（nginx 语义模拟 + 真跑拷贝段 + 变异红证）⑤ 两条「无正则 location」类级守卫的唯一白名单。取号 MC-125（python3 scripts/next_case_id.py MC 现取 main 001-122 + 在飞 PR #8214 的 123-124 ⇒ 返回 MC-125）。⚠️ 未闭合：微信后台生成的真实文件名/内容与真机扫码属用户侧。🔴 自查改判：早先那版判据写「本目录不许出现任何 .txt」，会把用户唯一的合法路径（提交真文件）也堵死 —— 现改为只禁伪造/占位，并把「真文件可提交」写进 README。 ｜ tags: ci, nginx, wechat, static-root, no-spa-fallback, idempotent, red-proof
+
+### MC-126. **外部账号的代码不得直接进本仓**：PR 提交作者 / head 仓库来源必须命中白名单，命中即判红并解除自动合并（issue #8386） 🔵
+```
+你: 外部账号的 fork PR 关闭后，内容被搬到同仓分支重开并 squash 合并 —— 凭什么保证这种事不再发生？
+数据: 🔴 **判据 1·真实事故提交必须判红**：把 llwand1 在 PR #6897 / #6924 里的那条提交喂给 `classify()`，必须返回恰好 1 条违规且具名 `llwand1`。执行点 = tests/unit_ci_workflows/test_external_authorship_guard.py::test_real_incident_commit_is_flagged
+数据: 🔴 **判据 2·白名单形态**：空名单 / 通配一律拒绝启动（空名单等于放行一切，通配等于名单形同虚设）；真实白名单必须精确、非空、含两个协作者且**不含 llwand1**。执行点 = 同文件::test_empty_allowlist_is_refused / test_wildcard_allowlist_is_refused / test_real_allowlist_is_exact_and_covers_known_accounts
+数据: 🔴 **判据 3·fork 来源无条件判红**：head 仓库 != 本仓时，无论作者是否在白名单都判红并说明是 fork。执行点 = 同文件::test_cli_flags_fork_head_repo
+数据: 🔴 **判据 4·CLI 三态**：陌生提交 ⇒ exit 1 且具名；自家提交 ⇒ exit 0；白名单读不到 ⇒ exit 2（不得当 0 读）。执行点 = 同文件::test_cli_flags_foreign_commit_offline / test_cli_allows_team_commit_offline
+数据: 🔴 **判据 5·接线**：`.github/workflows/pr-check.yml` 必须有 `external-authorship-guard` job、`timeout-minutes` 与真实调用脚本的 run 步骤，且 `on.pull_request` 不得有 paths 过滤（将来翻 required 的前提）。执行点 = 同文件::test_workflow_wires_the_guard
+数据: **边界（照实登记）**：① 判不了「外部代码被本人身份重新提交」（squash 后作者面看不出异常）；② 白名单是自证式的，伪造 team 邮箱可绕过 —— 流程护栏，不是安全边界；③ 本腿非 required，阻断直接合并靠「判红 + 解除 auto-merge + block/merge」。
+跳过: [backend-contract] 零 LLM 的确定性判据（纯函数分类器 + 离线 CLI 夹具 + workflow 结构读取），pytest 真跑、零网络、不进 agent-eval 冒烟
+```
+溯源: 2026-11-01 新增（issue #8386，源于 #6897 → #6924 的真实事故复盘）。为什么必须有这条：外部账号 llwand1 的 fork PR #6897 关闭未合并，但同日被搬到同仓分支以 PR #6924 重开并 squash 合并（9626b8f9a）⇒ 陌生代码进入 main；而 `automerge.yml` 只排 fork PR，对同仓转手完全无感。事后由 PR #8383 全部撤回，本单补防复发。取号 = 现取 MC-001~122,125（123-124 在 PR #8214）⇒ **MC-126**。读数：本判据 10 条全绿（含真实事故夹具红证）。 ｜ tags: backend-contract, governance, ci
 
 ## 商家入驻域（7 case）
 
@@ -14187,8 +14200,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：961（活跃 153，跳过 808）
-- tier 分布：smoke 15 / normal 886 / adversarial 33
+- 用例总数：962（活跃 153，跳过 809）
+- tier 分布：smoke 15 / normal 887 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14204,7 +14217,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：168
+- 杂项域：169
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：74
@@ -14439,6 +14452,7 @@
 - MC-121: 四域共用一张 Let's Encrypt 证书的自动续期与到期判红（issue #8201）：续期机制在**宿主 cron** 但已连天失败且无告警 ⇒ 到期判据（0/1/3）+ 一次性修复 runbook + cron 加固
 - MC-122: 观星台终端正式发布链路（issue #8195）：/terminal/ 是纯静态下载面（缺失文件必须 404、不得回落 SPA、不限流、MIME 可判），官网 /download 有下载页，发布腿把终端仓 Release 的 exe/apk 幂等落到静态根并自证「线上字节 == 本地载荷」
 - MC-125: 微信「扫普通链接二维码打开小程序」校验文件（issue #8196）：nginx 根下 .txt 是显式静态面（缺失 404、不回落 SPA、只吃单段），deploy.sh 幂等只拷 *.txt 到静态根根下（只增/覆盖、父目录 index.html 哈希不变、跳过要出声）
+- MC-126: **外部账号的代码不得直接进本仓**：PR 提交作者 / head 仓库来源必须命中白名单，命中即判红并解除自动合并（issue #8386）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

@@ -456,6 +456,12 @@
    "guards": "指标判定的**方向**：`_verdict(metric, ...)` 的方向从 `METRIC_DIRECTIONS` 查，不由调用方传（缺陷 #8280：毛利方向反了而那条单测也一起写反，CI 全绿）。三层：① 未登记指标 ⇒ KeyError 点名；② 调用点 AST 扫描（第一实参必须是字面量且在表里，不许再用 higher_is_better= 关键字）；③ 极值双向断言（改表里的方向 ⇒ 立刻红）",
    "red_proof": "① 把 `app/briefing/product_health.py` 的 `METRIC_DIRECTIONS[\"gross_margin\"]` 从 True 改成 False ⇒ `test_gross_margin_is_higher_is_better` + `test_positive_margin_uses_the_peer_baseline` 双红（本机实测 2 failed / 21）；② 把调用点改成 `_m = \"gross_margin\"; _verdict(_m, ...)` ⇒ `test_every_call_site_passes_a_string_literal` + `test_every_literal_metric_is_registered` 双红（实测 2 failed / 6）",
    "owner": "#8293"
+  },
+  {
+   "path": "tests/unit_ci_workflows/test_external_authorship_guard.py",
+   "guards": "外部账号提交的代码不得直接进本仓：PR 的提交作者（账号 / 邮箱 / GitHub noreply）与 head 仓库来源必须命中 .github/external-authorship-allow.json 白名单；命中即判红、解除已 arm 的 auto-merge 并打 block/merge（真实形态：#6897 fork PR 关闭后被搬到同仓分支以 #6924 重开并 squash 合并）",
+   "red_proof": "把 scripts/external_authorship_guard.py 的 classify() 白名单比对删掉 ⇒ tests/unit_ci_workflows/test_external_authorship_guard.py::test_real_incident_commit_is_flagged 红（夹具 = 5e1c56f74 llwand1）；删掉 head 仓库比较 ⇒ ::test_cli_flags_fork_head_repo 红；删掉 pr-check.yml 的 job ⇒ ::test_workflow_wires_the_guard 红",
+   "owner": "#8386"
   }
  ]
 }
