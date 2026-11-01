@@ -8,6 +8,7 @@
  *
  * 判据：
  *  1. 产物里有 ES2021 语法 ⇒ `--check` **非零退出**并具名（现状回归时会红）；
+ *  1b. 产物用了 `String.prototype.replaceAll`（Chrome 85+）且无垫片 ⇒ 同样判红；垫片注入后幂等；
  *  2. 降级后**能按 ES2020 解析**，再 `--check` 通过（修法真的生效，不是"扫了一眼"）；
  *  3. 本来就能按 ES2020 解析的产物**逐字节不动**（不给正常产物制造 churn）；
  *  4. **接线**：`build:h5` 之后必须自动跑这道门禁（`postbuild:h5`），否则脚本再对也没人调用。
@@ -77,6 +78,21 @@ describe('h5 产物 ES2020 门禁（issue #8302）', () => {
     try {
       expect(run(['--dist=' + dir]).code).toBe(0)
       expect(readFileSync(join(dir, 'js/clean.js'), 'utf8')).toBe(ES2020_SAMPLE)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('用了 replaceAll 的产物会被前置垫片，且重复跑幂等', () => {
+    const sample = 'var s = "a+b".replaceAll("+", " ");\nconsole.log(s);\n'
+    const dir = dist({ 'js/app.js': sample })
+    try {
+      expect(run(['--dist=' + dir]).code).toBe(0)
+      const once = readFileSync(join(dir, 'js/app.js'), 'utf8')
+      expect(once).toContain('migao-compat:replaceAll')
+      expect(run(['--dist=' + dir, '--check']).code).toBe(0)
+      expect(run(['--dist=' + dir]).code).toBe(0)
+      expect(readFileSync(join(dir, 'js/app.js'), 'utf8')).toBe(once)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
