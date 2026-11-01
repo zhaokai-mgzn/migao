@@ -81,6 +81,9 @@ test('空列表 = 可行动空态（不是空白、不是「加载中」）', ()
   assert.match(html, /id="wh5-ready-empty"/)
   assert.match(html, /最后一道工序报完后/, '空态要告诉工人「怎么才会有单」，不是只说「没有」')
   assert.ok(!html.includes('wh5-ready-0'), '空态不得再渲染行')
+  // 真机读数 2026-11-01：0 单时那句「（全部套已完工）」自相矛盾 —— 括号是**结论**，没有单就没有指代对象
+  assert.match(html, /待发货 0 单/, '计数照旧要说')
+  assert.ok(!html.includes('全部套已完工'), '0 单时不得再下「全部套已完工」的结论')
 })
 
 test('截断显式（不静默少显示）', () => {
