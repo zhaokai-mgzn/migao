@@ -677,6 +677,17 @@ worker-h5 纯函数、承运商 4 条 × 两处入口 + 类级单一真值守卫
 
 ## [Unreleased]
 
+### 问「这周比上周怎么样」时会走经营环比工具，不再拿订单统计＋销售额拼答案（2026-11-01，issue #8300）
+
+- **改前**：L1 关键词表没有跨期比较词 ⇒ 「这周订单比上周怎么样？」被 `ORDER_QUERY` 的「订单」
+  接走，模型改用 `order_query(action=statistics)` + `sales_attribution`（销售额）拼两周对比，
+  `dashboard_stats(action=trend_compare)` 一次没调（run `41266259486` 逐字 trace）。
+- **改后**：「比上周 / 较上周 / 对比上周 / 环比 / 同比」进 `DASHBOARD` 关键词 ⇒ 确定性路由到看板域；
+  `dashboard_stats` 描述补一条触发说明（跨期对比一律 `action=trend_compare`，两期算术在工具内算）。
+  裸「上周 / 本月」**不进**词表（防「查一下上周的订单」被抢走，负控已钉）。
+- 判据：`tests/test_rule_matcher.py::TestMatch::test_week_over_week_order_comparison_routes_dashboard`
+  / `::test_mom_comparison_routes_dashboard` / `::test_plain_week_order_query_stays_order_query`。
+
 ### 问「店里的加工套件」不再被当成商品咨询；问「订单量环比」不再答成销售额（2026-11-01，issue #8300）
 
 - **改前**：L1 关键词表只有「加工单」没有「加工套件」⇒ 「我们店里的加工套件现在有哪些？」
