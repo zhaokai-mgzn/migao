@@ -38,6 +38,7 @@ class InboundOrderQueryTool(BaseTool):
         "【触发】用户问'入库单''到货记录''批次''这批货什么时候到的''某个 SKU 的批次余量'时调用。"
         "【参数】action 必填：list（入库单列表，可选 keyword）/ batches（批次视图，可选 sku_id）/ "
         "detail（单张入库单，需 id）。"
+        "【选 action 的硬口径】问「这批货/这个 SKU 是**哪几张入库单**入的库 / 批次来源」⇒ action=batches；问「最近的入库单有哪些」⇒ action=list；问「某张入库单的明细」⇒ action=detail。"
         "【反例】商品/颜色的库存数用 inventory_manage(query)；库存台账分页用 stock_ledger_query；"
         "批次成本与省料金额用 batch_stock_query。"
         "【标注】READONLY — 只读查询，不含任何写 action"
