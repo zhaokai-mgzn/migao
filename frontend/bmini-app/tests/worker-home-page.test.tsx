@@ -289,4 +289,32 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
     expect(screen.queryByTestId('worker-home-badge-to-ship')).toBeNull()
     expect(screen.queryByTestId('worker-home-badge-rework')).toBeNull()
   })
+
+  it('🔴 菜单还没落定 ⇒ 两个计数端点一次都不调（issue #8351：没有权限的工人吃 403「无权限访问」）', async () => {
+    // 把菜单读取悬在 pending：这一瞬间 `menuVisible(null,...)` 是 fail-open 全开，
+    // 改前首页就按「全开」抢跑去请求 ⇒ 403。判据：此时**零次**请求。
+    let release: (v: any) => void = () => {}
+    mockPages.mockReturnValue(new Promise((resolve) => { release = resolve }))
+    setWorkerSessionId(WORKER.session_id)
+    mockFetch.mockResolvedValue({ success: true, data: WORKER })
+    render(<WorkerHomePage />)
+    await screen.findByText('工号 G001')
+    await act(async () => {})
+
+    expect(mockShipmentOrders).not.toHaveBeenCalled()
+    expect(mockReworkOrders).not.toHaveBeenCalled()
+
+    // 菜单落定为「只开了计件」（`[]` 是 fail-open 全开，不能拿它当「什么都没开」）⇒ 计数仍然不请求
+    await act(async () => { release({ pages: ['piecework'], unread: false, unauthorized: false }) })
+    expect(mockShipmentOrders).not.toHaveBeenCalled()
+    expect(mockReworkOrders).not.toHaveBeenCalled()
+  })
+
+  it('🔴 菜单落定且开了该页 ⇒ 计数照旧取（不能顺手把功能关掉）', async () => {
+    mockPages.mockResolvedValue({ pages: ['to_ship', 'rework'], unread: false, unauthorized: false })
+    await renderLoggedIn()
+    await act(async () => {})
+    expect(mockShipmentOrders).toHaveBeenCalledTimes(1)
+    expect(mockReworkOrders).toHaveBeenCalledTimes(1)
+  })
 })

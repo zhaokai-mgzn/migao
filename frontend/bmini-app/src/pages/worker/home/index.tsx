@@ -84,6 +84,10 @@ export default function WorkerHomePage() {
   // `pagesUnread` = 读不到（网络 / 5xx）⇒ fail-open 全开 + 一句显式提示。
   const [pages, setPages] = useState<string[] | null>(null)
   const [pagesUnread, setPagesUnread] = useState(false)
+  // 🔴 菜单**落定**过没有（issue #8351）：读回来之前 `menuVisible` 按 fail-open 全开，
+  //    此时去请求「要权限的」计数端点 ⇒ 没权限的工人吃 403 ⇒ 屏上弹「无权限访问」。
+  //    显隐照旧 fail-open（显隐 ≠ 访问拦截），但**请求**必须等菜单落定。
+  const [pagesSettled, setPagesSettled] = useState(false)
 
   const refresh = useCallback(async () => {
     const res = await fetchCurrentWorker()
@@ -105,7 +109,10 @@ export default function WorkerHomePage() {
 
   // 页面开关：只决定**入口显不显示**（不是访问拦截）；读不到 ⇒ 全开 + 提示，绝不把活挡掉
   useEffect(() => {
-    if (!worker) return
+    if (!worker) {
+      setPagesSettled(false)
+      return
+    }
     void fetchWorkerPages().then((res) => {
       if (res.unauthorized) {
         clearWorkerSession()
@@ -114,6 +121,8 @@ export default function WorkerHomePage() {
       }
       setPages(res.pages)
       setPagesUnread(res.unread)
+      // 读到（或明确读不到）才算落定：两种都比「还没读过」更接近事实
+      setPagesSettled(true)
     })
   }, [worker])
 
@@ -138,7 +147,8 @@ export default function WorkerHomePage() {
   const [pendingRework, setPendingRework] = useState<number | null>(null)
 
   useEffect(() => {
-    if (!worker) {
+    // 🔴 菜单没落定 ⇒ **一条计数请求都不发**（issue #8351 的红证就在这行）
+    if (!worker || !pagesSettled) {
       setPendingToShip(null)
       setPendingRework(null)
       return
@@ -163,7 +173,7 @@ export default function WorkerHomePage() {
     return () => {
       alive = false
     }
-  }, [worker, showToShip, showRework])
+  }, [worker, pagesSettled, showToShip, showRework])
 
   /**
    * 引导去**工人登录页**（issue #8194）：落在 `pages/worker/login/index` —— 它渲染的是与终端
