@@ -264,7 +264,7 @@ export function reduce(state, action) {
         ...state,
         view,
         selection: { setId: null, orderItemId: null },
-        notice: needsSelection ? '这是一张旧码：请先选择套号与部位' : (action.notice ?? null),
+        notice: needsSelection ? '这张是加工单码：请先选择套号与部位' : (action.notice ?? null),
         error: null,
         // 🔴 `view: null` ⇒ 回等扫码态（issue #7845 起 UI 不再有「重扫」按钮；这条分支留给
         //    「还没解析出任何一屏」与装配层/测试的显式复位）。
@@ -893,9 +893,9 @@ function selectView(state) {
     : ''
   return `${header(state)}
   <section class="wh5-card">
-    <h1 class="wh5-title">旧码：请选择套号与部位</h1>
+    <h1 class="wh5-title">请选择套号与部位</h1>
     ${state.notice ? `<p class="wh5-notice" id="wh5-notice">${esc(state.notice)}</p>` : ''}
-    <p class="wh5-sub">这张码只到加工单级（旧码），系统判不出是哪一套、哪个部位 —— 请手工选一次。</p>
+    <p class="wh5-sub">这张是加工单上的码，只到加工单一级 —— 请选是哪一套、哪个部位（只有一套一个部位时系统会直接进，不用选）。</p>
     <div class="wh5-group"><span class="wh5-group-label">选套</span>${setsHtml}</div>
     ${set ? `<div class="wh5-group"><span class="wh5-group-label">选部位</span>${posHtml}</div>` : ''}
     <p class="wh5-sub" id="wh5-legacy-pending">本单：${esc(state.view?.processing_order_no ?? '')}</p>

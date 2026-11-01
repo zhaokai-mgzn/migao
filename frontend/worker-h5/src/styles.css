@@ -743,7 +743,10 @@ a.wh5-machine__back:active { color: var(--wh5-machine-ink); }
 }
 
 .wh5-label-key {
-  flex: 0 0 12mm;
+  /* 栏宽 16mm（2026-11-01 真机）：字号 2026-10-25 从 8pt 提到 11pt（#7776）后，12mm 放不下
+     「物流类型 / 物流公司 / 下单日期」四个字（11pt ≈ 3.9mm/字）⇒ 纸上折成「物流类 / 型」。
+     16mm + 1mm 间距 + 值 30mm = 47mm 版心，仍装得下 11 位手机号。 */
+  flex: 0 0 16mm;
   margin: 0;
   font-weight: 700;
   color: #000;
