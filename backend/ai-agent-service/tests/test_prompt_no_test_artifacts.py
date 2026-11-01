@@ -5,10 +5,9 @@
 
 `grep -n "tests/\\|test_[a-z_]+\\.py\\|Test[A-Z]" prompts/*.md` 在 origin/main 上命中一处：
 
-```
-product.md:85:  **不落库、不提交**（`backend/ai-agent-service/tests/test_tools_image_recognize.py`
-                 的 `TestNoWriteBoundary` 钉住识别内核不 import 任何写入缝）
-```
+原句（改动前，见 PR 的 diff）：`**不落库、不提交**（\`backend/ai-agent-service/tests/…\` 的
+`TestNoWriteBoundary` 钉住识别内核不 import 任何写入缝）` —— 就写在 `prompts/product.md` 的
+「图片识别」小节里，把测试文件路径与测试类名带进了运行期提示。
 
 这是**给模型看的系统提示**：测试文件路径与测试类名对模型没有任何行为价值，只会：
 ① 白占 prompt 预算（每轮都要付）；② 泄漏内部实现（测试布局）给用户可见的推理链；
