@@ -141,9 +141,11 @@ describe('入库标签版面（50×80mm，issue #7820）', () => {
     const codeOp = plan.ops.find((op) => op.kind === 'text' && op.text === plan.codeText)
     expect(codeOp).toBeUndefined()
 
-    // 🔴 底部安全白边 ≥ 3mm（介质矩阵 dotsPerMm × 3）：标签末端印不出来，白边不足会把码切掉
+    // 🔴 底部安全白边 ≥ 5mm（介质矩阵 dotsPerMm × 5）：3mm 真机仍被切，标签末端印不出来
     const bottomGapPx = plan.heightPx - (qr.y + qr.sizePx)
-    expect(bottomGapPx).toBeGreaterThanOrEqual(24)
+    expect(bottomGapPx).toBeGreaterThanOrEqual(40)
+    // 码不要占满版心宽（用户 2026-11-01：太大了）—— 上限 ≈22mm
+    expect(qr.sizePx).toBeLessThanOrEqual(Math.round(plan.widthPx * 0.46))
   })
 
   it('C2 🔴 截断判定本身要能红：静默裁切（截了但不加省略号）不算数', () => {

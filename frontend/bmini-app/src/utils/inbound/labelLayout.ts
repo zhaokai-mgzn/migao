@@ -92,7 +92,7 @@ export interface InboundLabelPlan {
 }
 
 /** 缺码时纸面上的可见标注（设计 §7.1「留空位并标注」） */
-export const MISSING_CODE_TEXT = '编号缺失·未出码'
+export const MISSING_CODE_TEXT = '编号缺失'
 
 /** 文本宽度估算：CJK（含全角标点）按 1 em，ASCII 按 0.55 em —— 与 canvas `measureText` 同量级 */
 export function estimateTextWidth(text: string, fontPx: number): number {
@@ -147,8 +147,8 @@ const GRID = {
   metersFontRatio: 0.082, // ≈32px ≈ 3.9mm
   fieldFontRatio: 0.065, // ≈25px ≈ 3.1mm
   codeFontRatio: 0.075, // ≈29px（人可读短码：手输兜底用）
-  qrBoxRatio: 0.62, // 上限 ≈29mm 见方（203dpi 下每模块 ≥8 点，磨花的码也扫得出）
-  qrMinRatio: 0.4, // 下限 ≈19mm 见方（再小就扫不动了）—— 字段多时按可用高度自适应收
+  qrBoxRatio: 0.46, // 上限 ≈22mm 见方（2026-11-01 用户裁定「二维码太大了，可以缩小些」；每模块仍 ≥5 点）
+  qrMinRatio: 0.36, // 下限 ≈17mm 见方（再小就扫不动了）—— 字段多时按可用高度自适应收
   gapRatio: 0.021, // ≈8px 行间（50×80 的纸面更宽，行间跟着放宽一档 —— 空隙均摊在字段区，不留大块空白）
 } as const
 
@@ -382,8 +382,8 @@ export function layoutInboundLabel(view: InboundLabelView): InboundLabelPlan {
   }
 }
 
-/** 标签末端的安全白边（mm）：热敏标签机在标签间隙/剥离区印不出来，留 3mm 保证内容不被切 */
-export const BOTTOM_SAFE_MM = 3
+/** 标签末端的安全白边（mm）：热敏标签机在标签间隙/剥离区印不出来。3mm 真机仍被切 ⇒ 改 5mm（用户 2026-11-01 裁定） */
+export const BOTTOM_SAFE_MM = 5
 
 /** 版面声明的纸型（与矩阵同源；渲染器/打印适配层读它，不写 `50mm 80mm` 字面量） */
 export function inboundLabelPageSize(): string {
