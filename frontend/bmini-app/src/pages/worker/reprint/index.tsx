@@ -34,7 +34,7 @@ import {
   type PendingPhoto,
 } from '../../../utils/inbound/barcodeDecode'
 import { classifyManualCode, type LabelCodeReading } from '../../../utils/inbound/codeSpace'
-import { layoutInboundLabel, inboundLabelPageSize, type InboundLabelView } from '../../../utils/inbound/labelLayout'
+import { inboundLabelPageSize, type InboundLabelView } from '../../../utils/inbound/labelLayout'
 import { renderInboundLabel } from '../../../utils/inbound/labelCanvas'
 import {
   SDK_UNAVAILABLE_HINT,
@@ -248,7 +248,7 @@ export default function WorkerReprintPage() {
     setBusy(false)
     if (result.ok) {
       // 计数**原样转发**服务端回执（前端不 +1、不累加）
-      setPrintState(`已送出打印（系统记第 ${result.printCount} 次）`)
+      setPrintState(`已送出打印（第 ${result.printCount} 次）`)
       const refreshed = await getInboundLabel(shortCode)
       if (refreshed.success && refreshed.data) setLabel(refreshed.data)
       return
@@ -258,7 +258,6 @@ export default function WorkerReprintPage() {
   }, [label, capability])
 
   /** 纸面版心（与送打印同一份绘制计划；页面不另算一套像素） */
-  const labelPlan = useMemo(() => layoutInboundLabel(label || {}), [label])
   const blockedTestId = reading ? BLOCKED_TEST_IDS[reading.space] : ''
 
   if (!workerReady) {
@@ -439,9 +438,6 @@ export default function WorkerReprintPage() {
                 {printState}
               </Text>
             )}
-            <Text className='admin-card__meta' data-testid='reprint-label-bound'>
-              版心 {labelPlan.widthPx} × {labelPlan.heightPx} px（1:1 送打印）
-            </Text>
           </View>
         )}
       </View>
