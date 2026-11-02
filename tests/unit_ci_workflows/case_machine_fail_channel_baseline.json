@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 276
+    "backend_contract_scoring_zero": 277
   },
   "history": [
     {
@@ -1205,6 +1205,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 276,
       "note": "issue #6212（batch-gate 就绪判定拒绝「已 arm 的 auto-merge」）新增 1 条 [backend-contract] 用例 MC-132 ⇒ 读数按合并当时的 main 现值重锚。机器判红通道 = tests/unit_ci_workflows/test_batch_gate.py。用例不进 agent-eval，真债务 no_channel_total 仍为 0。"
+    },
+    {
+      "sha": "pending-pr-8499",
+      "date": "2026-11-03",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 277,
+      "note": "issue #8490（出库单号取号改原子占号）新增 1 条 [backend-contract] 用例 OR-076 ⇒ 读数按合并当时的 main 现值重锚。机器判红通道 = OutboundNoTakeRaceRealDbTest + AtomicNoAllocatorTest。用例不进 agent-eval，真债务 no_channel_total 仍为 0。"
     }
   ]
 }
