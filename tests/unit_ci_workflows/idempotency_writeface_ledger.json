@@ -50,13 +50,14 @@
       "note": "issue #6209 本单接入：此前 claim/complete/discard/replay 全类零出现 ⇒ 同键并发 4 次建出 4 条商品、client_request_keys 0 行（注入式红证实测）。"
     },
     {
-      "file": "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/OrderCreationService.java",
       "anchor": "clientRequestIdService.claim(tenantId, clientRequestId, ENDPOINT_CREATE_ORDER)",
       "surface": "POST /api/admin/agent/orders（agent 建单）",
       "case_ids": [
         "OR-049",
         "OR-050"
-      ]
+      ],
+      "note": "issue #8191（P2-1b）随 createOrder/createOrderForAgent 从 OrderService 搬到本类（台账坐标同步；消费形态与端点标识不变）。"
     },
     {
       "file": "backend/admin-api/src/main/java/com/migao/admin/service/OrderShipmentService.java",
