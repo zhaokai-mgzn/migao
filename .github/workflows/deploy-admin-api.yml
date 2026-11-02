@@ -513,7 +513,7 @@ jobs:
           fi
 
       # ══════════════════════════════════════════════════════════════════════════
-      # 线上**安全响应头**判据（issue #8218 P1-08 / P1-09）
+      # 线上**安全响应头**判据（issue #8197 P1-08 / P1-09）
       #
       # 为什么挂在**这一条**腿（而不是新开 schedule）：
       #   · 本腿的 `on.push.paths` 同时覆盖 `backend/admin-api/**`（= P1-08 的
@@ -528,7 +528,7 @@ jobs:
       # 都没有）⇒ rc=1。绿 = 同一命令 rc=0（见该脚本输出的 `PROD-HEADERS-SUMMARY rc=0`）。
       # 判据 / 接线守卫 = tests/unit_ci_workflows/test_prod_security_headers.py
       # ══════════════════════════════════════════════════════════════════════════
-      - name: "Assert production security headers (HSTS / nosniff / CSP，issue #8218 P1-08/P1-09)"
+      - name: "Assert production security headers (HSTS / nosniff / CSP，issue #8197 P1-08/P1-09)"
         if: always()
         run: |
           set -uo pipefail

@@ -1081,7 +1081,7 @@ def check_mutable_locators(a: Audit) -> CheckResult:
 SCHED_LINE = re.compile(r"^\s*-?\s*cron:\s*['\"]?([^'\"\n]+)['\"]?", re.M)
 PAUSED_SCHED = re.compile(r"^\s*#\s*(schedule:|-?\s*cron:)", re.M)
 
-#: 停用登记的台账（issue #8218 上线审计 P1-03，2026-10-31）：
+#: 停用登记的台账（issue #8197 上线审计 P1-03，2026-10-31）：
 #: `# schedule:` 被注释的腿**凭什么**不算漂移 —— 必须是**具名登记 + 复查日期未过**，
 #: 否则「注释里停了」就只是从「没人看得见」搬到了「基线放行」里（同一个静默，换了个位置）。
 #: 🔴 方向是 **fail-closed**：台账读不到 / 条目形态不对 / 日期缺 ⇒ 照旧报 `|paused` 一族的 finding
@@ -1345,7 +1345,7 @@ def check_heartbeat(a: Audit) -> CheckResult:
         r.notes.append(f"登记的分钟级 cron 节流上界 {throttle}min **本轮没用上**（判据面里没有分钟级 "
                        f"cron）⇒ 该登记可以撤掉（豁免台账只许缩短）")
     r.evaluated = len(scheduled) + len(paused)
-    # ── 停用腿：**登记后才能不算漂移**（issue #8218 P1-03）─────────────────────────
+    # ── 停用腿：**登记后才能不算漂移**（issue #8197 P1-03）─────────────────────────
     # 改前（2026-10-31 审计）：两条腿 `# schedule:` 停了 55 天，drift 只报 `<wf>|paused`，
     # 而该 key 早在 `scripts/drift_audit_baseline.json` 里被**基线放行** ⇒ 报告里也看不到
     # （「注释里停了、无人知道」的第二种形态）。现在：台账登记且未过复查日期 ⇒ 只出 note；

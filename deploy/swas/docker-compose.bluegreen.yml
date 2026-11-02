@@ -28,7 +28,7 @@
 # ⇒ 与旧容器抢端口 ⇒ **每次部署都必然失败**。无 docker 环境无法当场证伪 ⇒ 不拿部署链赌它，
 # 改为**显式重复 + 静态守卫**（守卫能判红，语义不确定的魔法不能）。
 
-# ── 容器日志上限（issue #8218 P1-02）────────────────────────────────────────────────
+# ── 容器日志上限（issue #8197 P1-02）────────────────────────────────────────────────
 # 与 docker-compose.yml **同值、同形态**（本文件不能引用另一文件的 YAML 锚点 ⇒ 显式重复）：
 # green 是**真容器**，它同样写 json-file 日志；被强杀的部署会留下残留 green（deploy.sh 会清，
 # 但「清之前」这段时间照样在写）⇒ 不给上限就留下一个无界的日志增长点。
@@ -52,7 +52,7 @@ services:
     mem_limit: 1536m
     cpus: 1.0
     logging: *migao-logging
-    # 与 docker-compose.yml 的 admin-api **逐字一致**（抗漂移红线，issue #8218 P1-12 +
+    # 与 docker-compose.yml 的 admin-api **逐字一致**（抗漂移红线，issue #8197 P1-12 +
     # tests/unit_ci_workflows/test_swas_deploy_blue_green.py 的 parity 判据比对 healthcheck）。
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:8080/actuator/health || exit 1"]

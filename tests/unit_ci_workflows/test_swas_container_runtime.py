@@ -1,7 +1,7 @@
 # case_ids: MC-012
 # （沿用 tests/unit_ci_workflows/** 的既有惯例：CI/流程结构类 L0 不变式统一挂 MC-012 ——
 #   见 .github/cases/misc.yml 的 MC-012「CI workflow 行为由 tests/unit_ci_workflows/ 单测验证」。）
-"""`deploy/swas/docker-compose*.yml` 的**容器运行面**判据（issue #8218 P1-02 / P1-12）。
+"""`deploy/swas/docker-compose*.yml` 的**容器运行面**判据（issue #8197 P1-02 / P1-12）。
 
 ## 病（两条都在 2026-10-31 上线审计里，读数逐条在 findings.md）
 
@@ -384,8 +384,8 @@ def test_injection_service_without_logging_is_caught():
     base = _read(BASE_COMPOSE)
     mutated = _inject(
         base,
-        "    logging: *migao-logging\n    # 健康检查（issue #8218 P1-12「假活」）",
-        "    # 健康检查（issue #8218 P1-12「假活」）",
+        "    logging: *migao-logging\n    # 健康检查（issue #8197 P1-12「假活」）",
+        "    # 健康检查（issue #8197 P1-12「假活」）",
     )
     v = judge_logging(mutated, file_label="docker-compose.yml")
     assert any("admin-api" in x and "logging" in x for x in v), v

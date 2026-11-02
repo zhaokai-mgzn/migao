@@ -5,7 +5,7 @@
 
 ## 1. 判定需要回滚的信号
 
-> 🔴 **判据地址必须自己先 200**（issue #8218 P1-05，2026-10-31 上线审计）。
+> 🔴 **判据地址必须自己先 200**（issue #8197 P1-05，2026-10-31 上线审计）。
 > 本节的每条判据都必须是**线上真的 200** 的面 —— 否则 runbook 会给出「永远命中」的错误信号。
 > 曾经的错误形态（改前逐字）：第一条判据是 `curl api.migaozn.com/actuator/health`，而
 > `deploy/swas/nginx.conf` 把 `/actuator` **整段 404**（`location ~ ^/(actuator|v3/api-docs|swagger-ui)`）
@@ -78,7 +78,7 @@ curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3001/
 - **配置漂移**：对比服务器 `.env.*` 与仓库 `.env.example` 模板；用模板 + 密文引用重建。
 - **DB 迁移异常**：MigrationRunner 幂等（IF NOT EXISTS）；如半执行，修复迁移文件后重启（schema_migrations 记录为准）。
 
-### 4.1 备份窗口读数（≥14 天）与值班复查（issue #8218 P1-07）
+### 4.1 备份窗口读数（≥14 天）与值班复查（issue #8197 P1-07）
 
 **为什么是读数而不是流程**：审计读数 —— `grep -rn "pg_dump\|backup" deploy/ .github/workflows/` ⇒ 只有 H5
 静态根备份、**无数据库备份代码** ⇒ 误删 / 坏数据**不可自助恢复**；而「备份策略是否 ≥14 天」
