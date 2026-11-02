@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，176 条）
+# 域: misc（源: cases/misc.yml，177 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3243,6 +3243,24 @@ _CASE_CI_001 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-128 [NORMAL] **端点泄漏台账的键不许含行号**：只插空行（行号漂移）判据仍绿，真删/真加泄漏照旧红（issue #6977）（源: cases/misc.yml）──
+_CASE_MC_128 = EvalCase(
+    id='MC-128',
+    legacy_id='',
+    title='**端点泄漏台账的键不许含行号**：只插空行（行号漂移）判据仍绿，真删/真加泄漏照旧红（issue #6977）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['我只在文件里插了几行空行，凭什么端点泄漏台账判据同时报「未登记」和「台账未被兑现」，还白烧一轮 required 腿？'],
+    expectations=[],
+    data_checks=['🔴 **判据 6c·插空行必须仍绿（本单验收判据①）**：`backend/admin-api/src/main/java/com/migao/admin/service/AgentBatchService.java` 全文每个换行后再插两个空行（行号整体漂移、零泄漏增删）⇒ 判据 6 与键形态判据**都不得变红**；且必须先自证行号真的漂了（否则这条自证是空的）。执行点 = tests/unit_ci_workflows/test_removed_page_pointer_targets.py::test_injection_blank_line_shift_keeps_endpoint_ledger_green', '🔴 **判据 6d·真删已登记端点必须红（本单验收判据②）**：把 `backend/admin-api/src/main/java/com/migao/admin/service/ProductionOperationCommandService.java` 里已登记那条提示的端点从句删掉（只删端点、不删文案）⇒ 判据 6 判红且具名「台账未被兑现 …（第 1 次出现）」。执行点 = 同文件 ::test_injection_deleting_a_registered_endpoint_turns_red', '🔴 **判据 6b·类级元守卫（键不许含行号）**：台账键必须逐条匹配 `路径::字面量::#出现序号`，**出现纯数字段即红**（旧形态 `文件::行::字面量` 恰好如此），且键里的路径/字面量必须在该文件里仍存在、序号 ≥ 1、键不得重复。执行点 = 同文件 ::test_leak_ledger_keys_carry_no_line_number + ::test_injection_line_numbered_key_is_red', '🔴 **一次性迁移的幂等 + 语义等价**：旧形态台账（`line` 当锚）迁移到新键后，第二次跑必须**逐字节零 diff**，且迁移结果的 `(路径, 字面量, 出现序号)` 与现取台账**逐值相等**（债务认定一字未改）；读取侧遇旧形态 **fail-closed** 并给出重新生成入口。迁移器 = 判据文件的 `--migrate-leak-ledger`（自证：每条旧行号必须能解析到现取扫描的同一命中，解析不到即 fail-closed）。执行点 = 同文件 ::test_legacy_ledger_migration_is_idempotent_and_semantics_preserving + ::test_legacy_ledger_reader_fails_closed_with_regenerate_hint', '**边界（照实登记）**：① 序号是「同文件、同字面量」的出现顺序 —— 两条同串互换先后时键集合不变（仍绿），此时 reason 文案可能挂到另一次出现上（判不了，也不影响债务认定）；② 判据只判台账键形态与双向对账，不判「哪条泄漏该不该修」（口径仍归 issue #6841）；③ 迁移只接受「全旧」或「全新」两种台账形态（混合 ⇒ fail-closed 要求人工核对）；④ 旧条目 reason 里的「⚠️ 行号 …」是沿革记录，不参与判据。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 字面量 + 台账键形态 + 纯函数判定 + 内存注入自证 + tmp 目录迁移幂等），pytest 真跑、零网络、不进 agent-eval 冒烟',
+    tags=['backend-contract', 'ledger', 'red-proof', 'idempotent-migration'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -3420,4 +3438,5 @@ CASES = (
     _CASE_MC_129,
     _CASE_MC_131,
     _CASE_CI_001,
+    _CASE_MC_128,
 )
