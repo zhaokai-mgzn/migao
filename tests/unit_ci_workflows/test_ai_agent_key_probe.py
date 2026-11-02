@@ -22,7 +22,7 @@ MaaS token-plan（#7661）之后，服务器那份仍停在**旧百炼 key**，�
 | 4 | **只读 + 不判失败**：退出码 0、env 文件逐字节不变、段内无 `exit` / 写动作 | 加 `exit 1` 或 `>> "$MIGAO_AI_ENV_FILE"` ⇒ 结构判据红 |
 | 5 | **生图复用 ASR** 与运行期同口径（`IMAGE_GEN_API_KEY` 未配但 `ASR_API_KEY` 有 ⇒ **不**报缺） | 改成两键独立判 ⇒ 红（会与 `app/images/generator.py` 的复用语义对不上） |
 | 6 | 键名 / 回落语义与 `backend/ai-agent-service/app/config.py`、`app/images/generator.py` **同源**（漂移守卫） | 把环境变量改名 / 删掉复用行 ⇒ 红 |
-| 7 | **接线**：探针段在 deploy.sh 里、位于第 3 步健康检查**之后**、`deploy.sh 完成`**之前**（部署后自证） | 删段 / 挪到健康检查之前 / 挪到收尾之后 ⇒ 红（判据 8 用同一份本体做注入式红证） |
+| 7 | **接线**：探针段在 deploy.sh 里、位于第 3 步健康检查循环**之后**（部署后自证），且**顶层执行**（首行代码顶格，不藏在函数 / if 体内） | 删段 / 挪到健康检查之前 / 把首行代码缩进进某个分支 ⇒ 红（判据 8 用同一份本体做注入式红证；位置锚是**代码符号**，不用中文文案） |
 
 ## 边界（照实登记，§19.1）
 
@@ -48,6 +48,10 @@ IMAGE_GENERATOR = REPO_ROOT / "backend" / "ai-agent-service" / "app" / "images" 
 
 BLOCK_START = "# >>> ai-agent-key-probe"
 BLOCK_END = "# <<< ai-agent-key-probe"
+
+# 结构位置锚 = **代码符号**（ASCII），不用中文文案（issue #6802 的类级判据
+# `test_cjk_position_anchor_guard.py` 禁止把文案级字符串当位置锚：注释里出现同一句话就会误伤）。
+HEALTH_CHECK_ANCHOR = 'for spec in "8080 admin-api /actuator/health"'  # 第 3 步健康检查循环的起首行
 
 # 探针必需项（真名以 app/config.py 为准；判据 6 守着这条「不许改名漂移」）。
 REQUIRED_KEYS = ("PRIMARY_API_KEY", "VISION_API_KEY", "ASR_API_KEY", "IMAGE_GEN_API_KEY")
@@ -106,18 +110,16 @@ def judge_probe_wiring(text: str) -> list[str]:
     i_end = text.find(BLOCK_END)
     if i_start < 0 or i_end < 0 or i_end < i_start:
         return [f"deploy.sh 里找不到探针段标记（{BLOCK_START} / {BLOCK_END}）—— 探针没接进部署链路"]
-    i_hc = text.find('echo "== 3. 健康检查')
-    i_done = text.find("== deploy.sh 完成")
+    i_hc = text.find(HEALTH_CHECK_ANCHOR)
     if i_hc < 0:
-        v.append("找不到第 3 步健康检查的锚点（判据已过期，需重新定位）")
-    if i_done < 0:
-        v.append("找不到脚本收尾的锚点（判据已过期，需重新定位）")
-    if i_hc >= 0 and i_start < i_hc:
-        v.append("探针排在「第 3 步健康检查」**之前** —— 那是在部署前查凭据，不是部署后自证")
-    if i_done >= 0 and i_start > i_done:
-        v.append("探针排在脚本收尾**之后** —— 那段不会被执行")
+        v.append(f"找不到健康检查循环的锚点 `{HEALTH_CHECK_ANCHOR}`（判据已过期，需重新定位）")
+    elif i_start < i_hc:
+        v.append("探针排在健康检查循环**之前** —— 那是在部署前查凭据，不是部署后自证")
     block = text[i_start:i_end]
     code = "\n".join(_code_lines(block))
+    first_code = _code_lines(block)[0] if _code_lines(block) else ""
+    if first_code != first_code.lstrip():
+        v.append(f"探针段首行代码带缩进（= 藏在函数 / if 体内，未必会执行）：{first_code.strip()[:60]}")
     for line in code.splitlines():
         if line.lstrip().startswith("exit "):
             v.append(f"探针段出现 `exit`（缺 key 会让整次部署失败）：{line.strip()[:60]}")
@@ -372,7 +374,7 @@ def test_red_proof_probe_moved_before_health_check_goes_red():
     assert 0 <= start < end
     block = text[start:end + len(BLOCK_END)] + "\n"
     removed = text[:start] + text[end + len(BLOCK_END):]
-    i_hc = removed.find('echo "== 3. 健康检查')
+    i_hc = removed.find(HEALTH_CHECK_ANCHOR)
     assert i_hc > 0, "反空跑锚点：找不到健康检查锚点"
     injected = removed[:i_hc] + block + removed[i_hc:]
     violations = judge_probe_wiring(injected)
