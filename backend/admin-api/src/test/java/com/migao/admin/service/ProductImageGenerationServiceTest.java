@@ -1,6 +1,6 @@
 package com.migao.admin.service;
 
-// case_ids: UI-129
+// case_ids: UI-129, MC-133
 
 import com.migao.admin.dto.UploadedFileInfo;
 import com.migao.admin.exception.BusinessException;
@@ -117,6 +117,15 @@ class ProductImageGenerationServiceTest {
                 .toList();
         assertThat(instanceFields)
                 .containsExactlyInAnyOrder(ProductImageClient.class, FileStorageService.class, RestTemplate.class);
+    }
+
+    @Test
+    @DisplayName("等待上限只转发 client 的 estimatedDeadlineMs（不另存一份数，issue #7731）")
+    void estimatedDeadlineIsForwarded() {
+        when(client.estimatedDeadlineMs()).thenReturn(330_000L);
+
+        assertThat(service.estimatedDeadlineMs()).isEqualTo(330_000L);
+        verify(client).estimatedDeadlineMs();
     }
 
     @Test

@@ -139,7 +139,13 @@ class Settings(BaseSettings):
         "https://token-plan.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/"
         "multimodal-generation/generation"
     )
-    IMAGE_GEN_TIMEOUT: int = 180                           # 单次生图读超时（实测 30~60s）
+    # 🔴 生图等待上限 = **唯一权威 deadline**（issue #7731，2026-10-25 两次独立实测 121s / 145s）。
+    # 旧值 180 只余 ~20%，长尾会被掐在「图已在供应商侧生成（照计费）、商家拿不到」；
+    # 现给到 240（≈ 实测 p100 的 1.65 倍）。**三层超时都从这里派生，别处不许再写一个数**：
+    #   admin-api 读超时 = 本值 + 传输余量（ProductImageClient 从 /images/deadline 现取）
+    #   前端等待与文案 = admin-api 下发的 estimated_deadline_ms（ProductImageAI）
+    # 判据 = tests/unit_ci_workflows/test_image_gen_deadline_single_source.py
+    IMAGE_GEN_TIMEOUT: int = 240
 
     # ── 工具执行预算（issue #7707）───────────────────────────────────────
     # `_execute_tool_safe` 原来写死 30s（`asyncio.wait_for`）—— 生图是**慢工具**

@@ -7,6 +7,7 @@ import com.migao.admin.service.ProductImageGenerationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -46,5 +47,17 @@ public class ProductImageController {
                 request.getKind(), variant, request.getProductName());
         return ApiResponse.success(productImageGenerationService.generate(
                 request.getImageUrl(), request.getProductName(), request.getKind(), variant));
+    }
+
+    /**
+     * 生图等待上限（毫秒）：前端据此显示「最长约 N 分钟」并设自己的等待上限（issue #7731）。
+     *
+     * <p>真值在 ai-agent（`IMAGE_GEN_TIMEOUT`）—— 本端点只**转发**，不另存一份数。</p>
+     */
+    @GetMapping("/estimate")
+    @RequirePermission("product:create")
+    public ApiResponse<Map<String, Long>> estimate() {
+        return ApiResponse.success(
+                Map.of("estimated_deadline_ms", productImageGenerationService.estimatedDeadlineMs()));
     }
 }

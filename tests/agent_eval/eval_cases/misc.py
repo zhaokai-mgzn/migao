@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，178 条）
+# 域: misc（源: cases/misc.yml，179 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3279,6 +3279,25 @@ _CASE_MC_132 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-133 [NORMAL] 生图等待上限只有一个权威（ai-agent 的 IMAGE_GEN_TIMEOUT）：admin-api 读超时与前端等待/文案都从它派生；文案按实测区间说、超 30 秒给「还在生成」（issue #7731）（源: cases/misc.yml）──
+_CASE_MC_133 = EvalCase(
+    id='MC-133',
+    legacy_id='',
+    title='生图等待上限只有一个权威（ai-agent 的 IMAGE_GEN_TIMEOUT）：admin-api 读超时与前端等待/文案都从它派生；文案按实测区间说、超 30 秒给「还在生成」（issue #7731）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家点「生成」后转圈 1~2 分钟，面板文案写的是「约 40 秒」，中途没有任何进度（issue #7731）', '三层超时各写一份（前端 210000ms / admin-api 200000ms / ai-agent 180s）⇒ 改一层忘一层'],
+    expectations=['direct_reply'],
+    data_checks=['**权威单一（会红）**：ai-agent `app/config.py` 的 `IMAGE_GEN_TIMEOUT` 是唯一 deadline 定义（三层里 0 处重复）；`.env.example` 不再写第二份活值；`GET /api/internal/images/deadline` 现取 `settings.IMAGE_GEN_TIMEOUT * 1000`（注入 240/300 ⇒ 240000/300000）。执行点 = tests/unit_ci_workflows/test_image_gen_deadline_single_source.py::test_ai_agent_is_the_single_authority + backend/ai-agent-service/tests/test_generator.py::test_deadline_endpoint_reads_the_single_authority。', '**admin-api 不写第二份（会红）**：ProductImageClient 无 GENERATE_READ_TIMEOUT_MS、无 deadline 量级的硬编码超时；生成前经 /images/deadline 现取并派生读超时（deadline + 传输余量；取不到 ⇒ 不设上限，不擅自给更紧的数）；GET /api/admin/products/ai-images/estimate 只转发 estimated_deadline_ms。执行点 = ProductImageClientTest::readTimeoutDerivesFromAiAgentDeadline + ProductImageControllerTest::estimate_forwardsTheAiAgentDeadline + ProductImageGenerationServiceTest::estimatedDeadlineIsForwarded。', '**前端派生（会红）**：商品图 API 模块（frontend/admin-web/src/lib/api-product-image.ts，从 loc ratchet 冻结的 api.ts 拆出）无生图超时字面量（改前 210000），等待上限 = admin-api 的 estimated_deadline_ms + 浏览器余量（imageGenTimeoutMs）；面板文案的「最长约 N 分钟」由该值算出（240000 ⇒ 4 分钟，300000 ⇒ 5 分钟）。执行点 = frontend/admin-web/tests/unit/lib/api-product-image.test.ts + ProductImageAI.test.tsx。', '**文案与进度（会红）**：不再出现与实测（121~145s）不符的等待承诺（旧口径的「约 N 秒」「约 2~4 分钟」）；文案 = 实测区间（单张 2~3 分钟 / 整套 6~8 分钟）+ 由权威上限算出的「最长约」；生成中显示「已用时 N 秒」，超过 30 秒补「还在生成，通常 …」一行（不新增告警块、不摆模型名 / 请求 id，§31 P1/P3/P4）。', '**红证（注入式，可复制）**：把 `GENERATE_READ_TIMEOUT_MS = 200_000` 写回 ProductImageClient（或把 `timeout: 210000` 写回 api-product-image.ts、把「约 2~4 分钟」写回面板）⇒ test_image_gen_deadline_single_source.py 对应用例判红并具名；恢复即绿。'],
+    skip_reason='[backend-contract] 静态单一来源 + 沙箱行为判据（零网络、零真实生图），由 tests/unit_ci_workflows 与三端单测执行，不进入 agent-eval 冒烟',
+    tags=['single-source', 'timeout', 'image-generation', 'copy-standard', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 静态单一来源 + 三端单测用例：前置（ai-agent 内部端点、admin-api 端点、前端 API 模块）由各端单测自建或 mock（admin-web mock `@/lib/api`；admin-api mock RestTemplate；ai-agent 走真内核 + MockTransport），零网络、零真实生图；前置不成立时对应用例直接红，agent-eval 栈不跑它',
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -3458,4 +3477,5 @@ CASES = (
     _CASE_CI_001,
     _CASE_MC_128,
     _CASE_MC_132,
+    _CASE_MC_133,
 )

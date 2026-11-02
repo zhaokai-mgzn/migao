@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（178 case）
+## 杂项域（179 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -6927,6 +6927,21 @@
 跳过: [backend-contract] 零 LLM 的确定性脚本判据（自足临时 git 仓库 + 桩 gh + **真跑** scripts/batch-gate.sh），pytest 真跑、零网络（GH 全部由桩替），不进 agent-eval 冒烟
 ```
 溯源: 2026-11-02 新增（issue #6212，AI 裁定选**脚本侧**方案 A）。为什么必须有这条：`--require-ready` 要求非 draft（draft 的 leg 不全 ⇒ `gh pr checks` 报 pending ⇒ 判定不就绪），而 `.github/workflows/automerge.yml` 恰在**非 draft** 时 arm 原生 auto-merge ⇒「集成期非 draft」这个就绪前提**本身**就打开了「跑全量期间被秒合」的窗口。逐字读数（#6206，2026-10-03）：转 ready 07:47:47Z → `github-actions[bot]` arm 07:48:04Z（**17 秒**）→ merged 07:52:30Z（**4 分 26 秒**），那一次批次全量被跳过。既有护栏为什么没挡住：`--disable-auto` 只在「此后不再 push」时有效（一次 push 触发的 synchronize 会让 automerge.yml 重新 arm，#4829 实证）、`block/merge` 标签拦不住**已 arm** 的 auto-merge、而「draft 唯一可靠」在 batch-gate 里被就绪判定本身关掉了。落码 = scripts/batch-gate.sh 就绪判定第 ③ 条（`autoMergeRequest` 非 null ⇒ 不就绪，exit 3）+ `--check-arm` 回读入口（与判定**共用同一个探针**）；三态 = `0` 未 arm / `1` 已 arm / `3` 读不到（`3` 不许当 `0`）。取号 = `python3 scripts/next_case_id.py MC` 现取（main 001-098 · 100-127 + 在飞 PR #8460 的 129 / #8453 的 128 + 本工作区 099）⇒ **MC-130**。 ｜ tags: ci-process, auto-merge, batch-gate, readiness, tri-state, idempotent, red-proof
+
+### MC-133. 生图等待上限只有一个权威（ai-agent 的 IMAGE_GEN_TIMEOUT）：admin-api 读超时与前端等待/文案都从它派生；文案按实测区间说、超 30 秒给「还在生成」（issue #7731） 🔵
+```
+你: 商家点「生成」后转圈 1~2 分钟，面板文案写的是「约 40 秒」，中途没有任何进度（issue #7731）
+你: 三层超时各写一份（前端 210000ms / admin-api 200000ms / ai-agent 180s）⇒ 改一层忘一层
+期望: direct_reply
+数据: **权威单一（会红）**：ai-agent `app/config.py` 的 `IMAGE_GEN_TIMEOUT` 是唯一 deadline 定义（三层里 0 处重复）；`.env.example` 不再写第二份活值；`GET /api/internal/images/deadline` 现取 `settings.IMAGE_GEN_TIMEOUT * 1000`（注入 240/300 ⇒ 240000/300000）。执行点 = tests/unit_ci_workflows/test_image_gen_deadline_single_source.py::test_ai_agent_is_the_single_authority + backend/ai-agent-service/tests/test_generator.py::test_deadline_endpoint_reads_the_single_authority。
+数据: **admin-api 不写第二份（会红）**：ProductImageClient 无 GENERATE_READ_TIMEOUT_MS、无 deadline 量级的硬编码超时；生成前经 /images/deadline 现取并派生读超时（deadline + 传输余量；取不到 ⇒ 不设上限，不擅自给更紧的数）；GET /api/admin/products/ai-images/estimate 只转发 estimated_deadline_ms。执行点 = ProductImageClientTest::readTimeoutDerivesFromAiAgentDeadline + ProductImageControllerTest::estimate_forwardsTheAiAgentDeadline + ProductImageGenerationServiceTest::estimatedDeadlineIsForwarded。
+数据: **前端派生（会红）**：商品图 API 模块（frontend/admin-web/src/lib/api-product-image.ts，从 loc ratchet 冻结的 api.ts 拆出）无生图超时字面量（改前 210000），等待上限 = admin-api 的 estimated_deadline_ms + 浏览器余量（imageGenTimeoutMs）；面板文案的「最长约 N 分钟」由该值算出（240000 ⇒ 4 分钟，300000 ⇒ 5 分钟）。执行点 = frontend/admin-web/tests/unit/lib/api-product-image.test.ts + ProductImageAI.test.tsx。
+数据: **文案与进度（会红）**：不再出现与实测（121~145s）不符的等待承诺（旧口径的「约 N 秒」「约 2~4 分钟」）；文案 = 实测区间（单张 2~3 分钟 / 整套 6~8 分钟）+ 由权威上限算出的「最长约」；生成中显示「已用时 N 秒」，超过 30 秒补「还在生成，通常 …」一行（不新增告警块、不摆模型名 / 请求 id，§31 P1/P3/P4）。
+数据: **红证（注入式，可复制）**：把 `GENERATE_READ_TIMEOUT_MS = 200_000` 写回 ProductImageClient（或把 `timeout: 210000` 写回 api-product-image.ts、把「约 2~4 分钟」写回面板）⇒ test_image_gen_deadline_single_source.py 对应用例判红并具名；恢复即绿。
+前置: 本用例是 [backend-contract] 静态单一来源 + 三端单测用例：前置（ai-agent 内部端点、admin-api 端点、前端 API 模块）由各端单测自建或 mock（admin-web mock `@/lib/api`；admin-api mock RestTemplate；ai-agent 走真内核 + MockTransport），零网络、零真实生图；前置不成立时对应用例直接红，agent-eval 栈不跑它
+跳过: [backend-contract] 静态单一来源 + 沙箱行为判据（零网络、零真实生图），由 tests/unit_ci_workflows 与三端单测执行，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #7731）。取号 MC-133（python3 scripts/next_case_id.py MC 现取：main 001-098,100-132 + 工作区 099 ⇒ 返回 MC-133）。权威层选择 = ai-agent（唯一真正等供应商的一层）：`IMAGE_GEN_TIMEOUT` 180→240（实测 121s/145s，旧值只余 ~20%）；新增 GET /api/internal/images/deadline 下发 deadline_ms；admin-api 删掉 GENERATE_READ_TIMEOUT_MS（200000），生成前现取并按 deadline+传输余量设读超时，取不到 ⇒ 不设上限；新增 GET /api/admin/products/ai-images/estimate 转发 estimated_deadline_ms；前端删掉 timeout: 210000，imageGenTimeoutMs(deadline) = deadline + 120s 浏览器余量；文案改成实测区间（单张 2~3 分钟 / 整套 6~8 分钟）+ 由权威上限算出的「最长约」，生成中显示已用时、超 30 秒补「还在生成」。⚠️ 未闭合（照实登记）：① 线上 `.env.ai-agent` 由运维人工维护，若它显式钉了 IMAGE_GEN_TIMEOUT=180，三层会跟着 180 走（页面文案自动显示「最长约 3 分钟」，不会说谎），但长尾余量要等运维改配置；② 本用例不跑真实生图（零生成费用），供应商真实长尾仍以线上读数为准。 ｜ tags: single-source, timeout, image-generation, copy-standard, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -14420,8 +14435,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：975（活跃 153，跳过 822）
-- tier 分布：smoke 15 / normal 898 / adversarial 33
+- 用例总数：976（活跃 153，跳过 823）
+- tier 分布：smoke 15 / normal 899 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14437,7 +14452,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：178
+- 杂项域：179
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -14682,6 +14697,7 @@
 - CI-001: **fixture 录制基址只认 BASE_URL**：缺失即 fail-closed，不得静默回落到本机 127.0.0.1:8080（issue #8391）
 - MC-128: **端点泄漏台账的键不许含行号**：只插空行（行号漂移）判据仍绿，真删/真加泄漏照旧红（issue #6977）
 - MC-132: 批次就绪判定把「已 arm 的原生 auto-merge」也算作不就绪（issue #6212）：跑那一次全量期间不许存在被秒合的窗口
+- MC-133: 生图等待上限只有一个权威（ai-agent 的 IMAGE_GEN_TIMEOUT）：admin-api 读超时与前端等待/文案都从它派生；文案按实测区间说、超 30 秒给「还在生成」（issue #7731）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

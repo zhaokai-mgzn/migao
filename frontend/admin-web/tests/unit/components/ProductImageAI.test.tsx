@@ -1,4 +1,4 @@
-// case_ids: UI-129
+// case_ids: UI-129, MC-133
 /**
  * ProductImageAI 组件测试（issue #7335 · 建品页「AI 生成商品图」；issue #7533 改为生成即落位）。
  *
@@ -11,9 +11,12 @@
  * 5. 多张图可切换样图（生成携带所选样图 URL）；生成中按钮 loading；失败不落位且错误可见。
  * 6. **失败话术按 admin-api 错误码分叉**（issue #7552）：模型不支持 / 额度用尽 / 真·瞬时三类
  *    说不同的话；「稍后重试」只出现在真·瞬时那一条；页面上**不出现**服务名与内部地址（§31 P3）。
+ * 7. **等待口径与进度**（issue #7731）：文案按实测区间（单张 2~3 分钟 / 整套 6~8 分钟）；
+ *    「最长约 N 分钟」由 admin-api 下发的权威上限算出（240000 ⇒ 4 分钟，300000 ⇒ 5 分钟）；
+ *    生成超过 30 秒补一句「还在生成」+ 已用时；页面不再出现与实测不符的乐观承诺。
  */
 import React from 'react'
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, cleanup, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import ProductImageAI from '@/components/products/ProductImageAI'
 import { aiProductImageApi } from '@/lib/api'
@@ -22,11 +25,12 @@ vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
   return {
     ...actual,
-    aiProductImageApi: { generate: vi.fn() },
+    aiProductImageApi: { generate: vi.fn(), estimate: vi.fn() },
   }
 })
 
 const generate = vi.mocked(aiProductImageApi.generate)
+const estimate = vi.mocked(aiProductImageApi.estimate)
 
 const SAMPLE = 'https://oss.example.com/sample.png'
 const SAMPLE_2 = 'https://oss.example.com/sample-2.png'
@@ -55,6 +59,8 @@ describe('ProductImageAI', () => {
   beforeEach(() => {
     generate.mockReset()
     generate.mockResolvedValue(ok())
+    estimate.mockReset()
+    estimate.mockResolvedValue(0)
   })
 
   it('没有样图时按钮不可用，并提示先上传样图', () => {
@@ -271,6 +277,51 @@ describe('ProductImageAI', () => {
   it('无失败码（网络 / 超时）⇒ 保留「稍后重试」兜底', async () => {
     await failWith(new Error('Network Error'))
     expect(await screen.findByText(/生成失败，请稍后重试/)).toBeInTheDocument()
+  })
+
+  // ===== 等待口径与进度（issue #7731）=====
+
+  it('文案按实测区间 + 权威上限：上限 4 分钟 ⇒ 单张「最长约 4 分钟」、整套「最长约 12 分钟」', async () => {
+    estimate.mockResolvedValue(240_000)
+    renderAI()
+    fireEvent.click(screen.getByRole('button', { name: 'AI 生成商品图' }))
+
+    expect(await screen.findByText(/单张通常 2~3 分钟，最长约 4 分钟/)).toBeInTheDocument()
+    expect(screen.getByText(/共 8 张，通常 6~8 分钟，最长约 12 分钟/)).toBeInTheDocument()
+    // 与实测（121~145s）不符的旧承诺不得回流
+    expect(document.body.textContent).not.toMatch(/40 秒/)
+    expect(document.body.textContent).not.toMatch(/约 2~4 分钟/)
+  })
+
+  it('权威上限改成 5 分钟 ⇒ 文案跟着变（改一处，另两层跟着走）', async () => {
+    estimate.mockResolvedValue(300_000)
+    renderAI()
+    fireEvent.click(screen.getByRole('button', { name: 'AI 生成商品图' }))
+
+    expect(await screen.findByText(/单张通常 2~3 分钟，最长约 5 分钟/)).toBeInTheDocument()
+    expect(screen.getByText(/共 8 张，通常 6~8 分钟，最长约 15 分钟/)).toBeInTheDocument()
+  })
+
+  it('生成超过 30 秒仍无结果 ⇒ 显示已用时 + 「还在生成，通常 2~3 分钟」', async () => {
+    vi.useFakeTimers()
+    try {
+      estimate.mockResolvedValue(240_000)
+      generate.mockReturnValue(new Promise(() => {}) as never)
+      renderAI()
+      fireEvent.click(screen.getByRole('button', { name: 'AI 生成商品图' }))
+      fireEvent.click(screen.getByRole('button', { name: '生成' }))
+      await act(async () => {
+        await Promise.resolve()
+      })
+      act(() => {
+        vi.advanceTimersByTime(31_000)
+      })
+
+      expect(screen.getByText(/已用时 31 秒/)).toBeInTheDocument()
+      expect(screen.getByText(/还在生成，通常 2~3 分钟/)).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('失败话术不把服务端内部标识带上屏（服务名 / 地址一律不出现）', async () => {
