@@ -229,7 +229,7 @@ test('① 扫一次水洗唛（全局 keydown，不点任何输入框）⇒ 屏�
   assert.match(html, /订单详情/, '扫完必须直接给详情面（用户裁定：扫 ⇒ 直接展示订单详情）')
   assert.match(html, /观星台/, '品牌')
   assert.match(html, /张女士/, '收货人')
-  assert.match(html, /全遮光布窗帘/, '款式')
+  assert.match(html, /全遮光布窗帘/, '商品（issue #7000 起标签叫「商品」，原「款式」与工艺款式重名）')
   assert.match(html, /套数<\/dt><dd>3套/, '套数（整数，不显示 3.000 套）')
   assert.match(html, /3\.500/, '宽（米，机器三位小数）')
   assert.match(html, /2\.700/, '高')
