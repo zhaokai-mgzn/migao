@@ -141,10 +141,6 @@ public class StockBatchConsumptionService {
      */
     public static final String ASSIGNMENT_RULE_BEST_FIT = "best_fit";
 
-    private static final BigDecimal LE_0_2 = new BigDecimal("0.2");
-    private static final BigDecimal LE_0_5 = new BigDecimal("0.5");
-    private static final BigDecimal LE_1 = new BigDecimal("1");
-
     /**
      * 分摊商的小数位（内部中间值，**不是业务精度**）：分摊的结果紧接着就经
      * {@link StockQuantity#toStockScaleByCeiling} 归一到 0.1 —— 这里多留几位只是为了让
@@ -1052,7 +1048,7 @@ public class StockBatchConsumptionService {
         List<BatchStockViews.BatchRemaining> rows = remaining(tenantId, productId, null, false);
         int[] counts = new int[4];
         for (BatchStockViews.BatchRemaining r : rows) {
-            counts[bucketIndex(r.remainingMeters())]++;
+            counts[StockQuantity.bucketIndexOf(r.remainingMeters())]++;
         }
         int total = rows.size();
         List<BatchStockViews.Bucket> buckets = new ArrayList<>();
@@ -1233,7 +1229,7 @@ public class StockBatchConsumptionService {
      * <h2>口径怎么保证「只有一套」（判据 1）</h2>
      * <ul>
      *   <li><b>批次余量 / 分档</b>：直接复用 {@link #remaining} 的余量派生（{@code 入库量 + Σdelta}）
-     *       与 {@link #bucketIndex} 的边界 —— <b>#5145 的分档口径一个字没改</b>，
+     *       与 {@link StockQuantity#bucketIndexOf} 的边界 —— <b>#5145 的分档口径一个字没改</b>，
      *       本读面只是把它**再按（时间 × 来源 × 物料）分组**；</li>
      *   <li><b>省料米数 / 金额</b>：SQL 侧逐行取整再求和
      *       （见 {@code StockBatchConsumptionMapper.sumSavingByPeriodCohortMaterial}），
@@ -1716,7 +1712,7 @@ public class StockBatchConsumptionService {
         }
 
         private void add(BigDecimal rest) {
-            int i = bucketIndex(rest);
+            int i = StockQuantity.bucketIndexOf(rest);
             counts[i]++;
             bucketMeters[i] = bucketMeters[i].add(StockQuantity.orZero(rest));
             remaining = remaining.add(StockQuantity.orZero(rest));
@@ -1858,12 +1854,18 @@ public class StockBatchConsumptionService {
     }
 
     /**
-     * 单批最大余量（issue #7091）：**唯一实现**在 {@link StockSatisfiability#maxRemainingByMaterial}，
-     * 这里只留池读面的读入口（调用方按物料去重后传入 ⇒ 行数增长不带来查询数增长）。
+     * 单批最大余量（issue #7091）：**余量派生的两个读口都在本类**（批次一条 + {@link #consumedByBatchId}），
+     * 纯计算在 {@link StockSatisfiability#maxRemainingByMaterial}；入参按物料去重 ⇒ 行数增长不带查询数增长。
      */
     public Map<StockSatisfiability.MaterialDemand, BigDecimal> maxRemainingByMaterial(
             Long tenantId, Collection<StockSatisfiability.MaterialDemand> demands) {
-        return StockSatisfiability.maxRemainingByMaterial(stockBatchMapper, consumptionMapper, tenantId, demands);
+        Set<String> productIds = StockSatisfiability.productIdsOf(demands);
+        List<StockBatch> batches = productIds.isEmpty() ? List.of()
+                : stockBatchMapper.selectList(new LambdaQueryWrapper<StockBatch>()
+                        .eq(StockBatch::getTenantId, tenantId).eq(StockBatch::getDeleted, 0)
+                        .in(StockBatch::getProductId, productIds));
+        return StockSatisfiability.maxRemainingByMaterial(demands, batches,
+                consumedByBatchId(tenantId, ids(batches)));
     }
 
     /** 候选 + 建议值的**唯一实现**（读面与自动指派共用）：候选顺序不动，只按规则挑建议值。 */
@@ -2282,9 +2284,21 @@ public class StockBatchConsumptionService {
                 .orderByAsc(StockBatch::getId));
     }
 
-    /** 批次 Σ消耗（唯一实现在 {@link StockSatisfiability#consumedByBatchId}；这里只留短签名的包内入口）。 */
+    /**
+     * 批次 {@code Σdelta}（「派生余量 = 入库量 + Σ消耗」里那一半）—— **全仓唯一的聚合点**：
+     * 第二份聚合 = 第二份「这批还剩多少」，而两份不会同时变红 ⇒ 只许这里读
+     * {@link StockBatchConsumptionMapper#sumDeltaByBatchIds}（判据 = {@code test_batch_remaining_is_derived_in_one_place}）。
+     */
     private Map<Long, BigDecimal> consumedByBatchId(Long tenantId, Collection<Long> batchIds) {
-        return StockSatisfiability.consumedByBatchId(consumptionMapper, tenantId, batchIds);
+        Map<Long, BigDecimal> out = new HashMap<>();
+        if (batchIds == null || batchIds.isEmpty()) {
+            return out;
+        }
+        for (StockBatchConsumptionMapper.BatchDeltaSum sum
+                : consumptionMapper.sumDeltaByBatchIds(tenantId, batchIds)) {
+            out.put(sum.getBatchId(), StockQuantity.orZero(sum.getDeltaSum()));
+        }
+        return out;
     }
 
     private static List<Long> ids(List<StockBatch> batches) {
@@ -2293,20 +2307,6 @@ public class StockBatchConsumptionService {
             ids.add(b.getId());
         }
         return ids;
-    }
-
-    private static int bucketIndex(BigDecimal remaining) {
-        BigDecimal r = StockQuantity.orZero(remaining);
-        if (r.compareTo(LE_0_2) <= 0) {
-            return 0;
-        }
-        if (r.compareTo(LE_0_5) <= 0) {
-            return 1;
-        }
-        if (r.compareTo(LE_1) <= 0) {
-            return 2;
-        }
-        return 3;
     }
 
     private static BatchStockViews.Bucket bucket(String key, String label, int count, int total) {

@@ -206,4 +206,40 @@ public final class StockQuantity {
     public static BigDecimal fromTenths(long tenths) {
         return stripTrailingZerosPlain(BigDecimal.valueOf(tenths, SCALE));
     }
+
+    // ══════════════════════════════════════════════════════════════════════════════════
+    // 批次余量的四档阈值（米；issue #5145 起的分档口径）
+    //   口径正文（边界右闭、负余量归第 0 档）在承载体 {@code BatchStockViews.Distribution} 的 javadoc；
+    //   **实现只此一处** —— 批次分布读面与服务端省料看板共用同一套阈值。
+    //   为什么住这里（issue #7091）：分档是**米数上的纯函数**，与上面三条精度口径同族；它原先住在
+    //   `StockBatchConsumptionService`（LOC 棘轮的冻结文件，行数只许向下）⇒ 每加一处派工逻辑都要
+    //   为它腾行数，纯函数不该占冻结文件的额度。
+    // ══════════════════════════════════════════════════════════════════════════════════
+
+    /** 第 0 档上界：{@code r ≤ 0.2} 米（含负余量 = 超扣 —— 它是「用尽」的极端，不单独藏起来）。 */
+    static final BigDecimal BUCKET_LE_0_2 = new BigDecimal("0.2");
+    /** 第 1 档上界：{@code 0.2 < r ≤ 0.5} 米。 */
+    static final BigDecimal BUCKET_LE_0_5 = new BigDecimal("0.5");
+    /** 第 2 档上界：{@code 0.5 < r ≤ 1} 米；{@code r > 1} 落第 3 档。 */
+    static final BigDecimal BUCKET_LE_1 = new BigDecimal("1");
+
+    /**
+     * 批次余量的**四档下标**（0 = ≤0.2 米 / 1 = 0.2~0.5 米 / 2 = 0.5~1 米 / 3 = &gt;1 米）。
+     *
+     * <p>边界右闭、负余量归第 0 档；口径正文见 {@link com.migao.admin.dto.BatchStockViews.Distribution}
+     * 的 javadoc，这里是它的**唯一**实现（{@code #5145} 的分档口径一个字没改）。</p>
+     */
+    static int bucketIndexOf(BigDecimal remaining) {
+        BigDecimal r = orZero(remaining);
+        if (r.compareTo(BUCKET_LE_0_2) <= 0) {
+            return 0;
+        }
+        if (r.compareTo(BUCKET_LE_0_5) <= 0) {
+            return 1;
+        }
+        if (r.compareTo(BUCKET_LE_1) <= 0) {
+            return 2;
+        }
+        return 3;
+    }
 }
