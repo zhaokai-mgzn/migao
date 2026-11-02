@@ -124,6 +124,11 @@ public final class ProductionPoolViews {
             List<PoolLine> lines) {
     }
 
+    /** 物料键 {@code productId|skuCode}（{@code PoolGroup.materialKey} 的派生处，issue #7091 随字段下沉本件）。 */
+    public static String materialKey(String productId, String skuCode) {
+        return (productId == null ? "" : productId) + "|" + (skuCode == null ? "" : skuCode);
+    }
+
     /**
      * 超上限的告警行（「不得静默压单」的可行动面）。
      *

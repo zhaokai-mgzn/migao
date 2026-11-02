@@ -4835,9 +4835,9 @@ class ProcessingOrderServiceTest {
         // 余量读数来自服务端**同一份**派生点（这里只给读数）：SKU-1 够本行 3 米、SKU-2 只有 1 米
         when(stockBatchConsumptionService.maxRemainingByMaterial(eq(TENANT), anyCollection()))
                 .thenReturn(Map.of(
-                        new StockBatchConsumptionService.MaterialDemand("prod-1", "SKU-1"),
+                        new StockSatisfiability.MaterialDemand("prod-1", "SKU-1"),
                         new BigDecimal("3.0"),
-                        new StockBatchConsumptionService.MaterialDemand("prod-1", "SKU-2"),
+                        new StockSatisfiability.MaterialDemand("prod-1", "SKU-2"),
                         new BigDecimal("1.0")));
 
         var pool = processingOrderService.pool(TENANT, null);
@@ -4855,7 +4855,7 @@ class ProcessingOrderServiceTest {
                 .isFalse();
 
         @SuppressWarnings("unchecked")
-        ArgumentCaptor<java.util.Collection<StockBatchConsumptionService.MaterialDemand>> demands =
+        ArgumentCaptor<java.util.Collection<StockSatisfiability.MaterialDemand>> demands =
                 ArgumentCaptor.forClass(java.util.Collection.class);
         verify(stockBatchConsumptionService, times(1))
                 .maxRemainingByMaterial(eq(TENANT), demands.capture());

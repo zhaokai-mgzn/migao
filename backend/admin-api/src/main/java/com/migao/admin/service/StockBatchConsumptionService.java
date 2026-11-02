@@ -337,8 +337,7 @@ public class StockBatchConsumptionService {
                                 batch.getBatchNo(), batch.getProductId()), 400,
                         "请选择与该行商品一致的批次");
             }
-            if (StringUtils.hasText(d.skuCode()) && StringUtils.hasText(batch.getSkuCode())
-                    && !batch.getSkuCode().equals(d.skuCode())) {
+            if (!StockSatisfiability.sameSku(d.skuCode(), batch.getSkuCode())) {
                 throw new BusinessException(ERR_BATCH_SKU_MISMATCH,
                         String.format("批次 %s 属于 SKU %s，与订单明细行指定的 SKU %s 不一致",
                                 batch.getBatchNo(), batch.getSkuCode(), d.skuCode()), 400,
@@ -661,8 +660,7 @@ public class StockBatchConsumptionService {
                     String.format("批次 %s 的货号与这一行不一致（本次未记账）", wanted), 422,
                     "请核对这卷布的颜色与门幅后重新填写批次");
         }
-        if (StringUtils.hasText(skuCode) && StringUtils.hasText(target.getSkuCode())
-                && !skuCode.equals(target.getSkuCode())) {
+        if (!StockSatisfiability.sameSku(skuCode, target.getSkuCode())) {
             throw new BusinessException(ERR_BATCH_SKU_MISMATCH,
                     String.format("批次 %s 的货号与这一行不一致（本次未记账）", wanted), 422,
                     "请核对这卷布的颜色与门幅后重新填写批次");
@@ -1851,7 +1849,7 @@ public class StockBatchConsumptionService {
         String rule = normalizeAssignmentRule(assignmentRule);
         List<BatchStockViews.BatchRemaining> rows = new ArrayList<>();
         for (BatchStockViews.BatchRemaining r : remaining(tenantId, productId, null, true)) {
-            if (!sameSku(skuCode, r.skuCode())) {
+            if (!StockSatisfiability.sameSku(skuCode, r.skuCode())) {
                 continue;
             }
             rows.add(r);
@@ -1860,68 +1858,12 @@ public class StockBatchConsumptionService {
     }
 
     /**
-     * SKU 一致性口径（**唯一实现**）：两边都有值才比，缺一不算不一致。
-     *
-     * <p>派工三层共用一个口径：{@link #plan} 的拒绝判据、{@link #suggestedBatchNo} 的候选过滤、
-     * 以及池读面的库存可满足性（{@link #maxRemainingByMaterial}）—— 各写一份必然漂移。</p>
+     * 单批最大余量（issue #7091）：**唯一实现**在 {@link StockSatisfiability#maxRemainingByMaterial}，
+     * 这里只留池读面的读入口（调用方按物料去重后传入 ⇒ 行数增长不带来查询数增长）。
      */
-    private static boolean sameSku(String lineSkuCode, String batchSkuCode) {
-        return !StringUtils.hasText(lineSkuCode) || !StringUtils.hasText(batchSkuCode)
-                || lineSkuCode.equals(batchSkuCode);
-    }
-
-    /** 一个物料（商品 × 颜色/门幅）—— 库存可满足性批量判定的入参（issue #7091）。 */
-    public record MaterialDemand(String productId, String skuCode) {
-    }
-
-    /**
-     * 批量「单批最大余量」（issue #7091，**只读**）：每个物料里**单个批次**的最大派生余量。
-     *
-     * <p>它回答池读面的行级问题「这一行有没有能裁出它的批次」—— 与 {@link #suggestedBatchNo}
-     * **同源**（同一份余量派生点 {@link #toRemaining}、同一条 SKU 一致性口径 {@link #sameSku}）
-     * ⇒ {@code max ≥ 本行需求米数 ⇔ 该行有可满足的批次}（= 派工前 fail-closed 的那个条件）。</p>
-     *
-     * <p>🔴 **一次取**（批次一条 + Σ消耗一条）⇒ 池读面不随行数增长而 N+1：调用方按物料去重后传进来。
-     * 没有可用批次的物料 ⇒ {@code 0}（**显式给读数**，不用「缺席」区分「没查」与「没有」）。</p>
-     */
-    public Map<MaterialDemand, BigDecimal> maxRemainingByMaterial(Long tenantId,
-                                                                  Collection<MaterialDemand> demands) {
-        Map<MaterialDemand, BigDecimal> out = new LinkedHashMap<>();
-        Set<String> productIds = new LinkedHashSet<>();
-        if (demands != null) {
-            for (MaterialDemand d : demands) {
-                if (d == null || out.containsKey(d)) {
-                    continue;
-                }
-                out.put(d, BigDecimal.ZERO);
-                if (StringUtils.hasText(d.productId())) {
-                    productIds.add(d.productId());
-                }
-            }
-        }
-        if (out.isEmpty() || productIds.isEmpty()) {
-            return out;
-        }
-        List<StockBatch> batches = stockBatchMapper.selectList(new LambdaQueryWrapper<StockBatch>()
-                .eq(StockBatch::getTenantId, tenantId)
-                .eq(StockBatch::getDeleted, 0)
-                .in(StockBatch::getProductId, productIds));
-        Map<Long, BigDecimal> consumed = consumedByBatchId(tenantId, ids(batches));
-        for (StockBatch b : batches) {
-            BigDecimal rest = StockQuantity.orZero(b.getQuantity())
-                    .add(consumed.getOrDefault(b.getId(), BigDecimal.ZERO));
-            for (Map.Entry<MaterialDemand, BigDecimal> e : out.entrySet()) {
-                MaterialDemand d = e.getKey();
-                if (!StringUtils.hasText(d.productId()) || !d.productId().equals(b.getProductId())
-                        || !sameSku(d.skuCode(), b.getSkuCode())) {
-                    continue;
-                }
-                if (rest.compareTo(e.getValue()) > 0) {
-                    e.setValue(rest);
-                }
-            }
-        }
-        return out;
+    public Map<StockSatisfiability.MaterialDemand, BigDecimal> maxRemainingByMaterial(
+            Long tenantId, Collection<StockSatisfiability.MaterialDemand> demands) {
+        return StockSatisfiability.maxRemainingByMaterial(stockBatchMapper, consumptionMapper, tenantId, demands);
     }
 
     /** 候选 + 建议值的**唯一实现**（读面与自动指派共用）：候选顺序不动，只按规则挑建议值。 */
@@ -2340,16 +2282,9 @@ public class StockBatchConsumptionService {
                 .orderByAsc(StockBatch::getId));
     }
 
+    /** 批次 Σ消耗（唯一实现在 {@link StockSatisfiability#consumedByBatchId}；这里只留短签名的包内入口）。 */
     private Map<Long, BigDecimal> consumedByBatchId(Long tenantId, Collection<Long> batchIds) {
-        Map<Long, BigDecimal> out = new HashMap<>();
-        if (batchIds == null || batchIds.isEmpty()) {
-            return out;
-        }
-        for (StockBatchConsumptionMapper.BatchDeltaSum sum
-                : consumptionMapper.sumDeltaByBatchIds(tenantId, batchIds)) {
-            out.put(sum.getBatchId(), StockQuantity.orZero(sum.getDeltaSum()));
-        }
-        return out;
+        return StockSatisfiability.consumedByBatchId(consumptionMapper, tenantId, batchIds);
     }
 
     private static List<Long> ids(List<StockBatch> batches) {

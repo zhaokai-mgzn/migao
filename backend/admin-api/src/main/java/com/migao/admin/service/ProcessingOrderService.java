@@ -702,7 +702,7 @@ public class ProcessingOrderService {
                     // 去处 = 外发区（同样一个动作 = 立刻单派，但**必须**选承接方）。
                     outsourcedLines.add(line);
                 } else {
-                    String key = materialKey(productId, skuCode);
+                    String key = ProductionPoolViews.materialKey(productId, skuCode);
                     materialOf.putIfAbsent(key, new String[]{productId, skuCode});
                     linesByMaterial.computeIfAbsent(key, k -> new ArrayList<>()).add(line);
                     lineCount++;
@@ -716,16 +716,9 @@ public class ProcessingOrderService {
                 ordersInPool.add(order.getId());
             }
         }
-        // issue #7091（AI 裁定 A）：**行级**库存可满足性（只读）。先收全部行、再**一次**按物料批量判定
-        // （同一物料多行去重 ⇒ 行数增长不带来查询数增长），最后回填三条队列 —— 前端据此禁用勾选 +
-        // 行内提示，让「注定被 fail-closed 拒绝的行」在点「一键合并派单」之前就看得出来。
-        Map<StockBatchConsumptionService.MaterialDemand, BigDecimal> maxRemaining =
-                maxBatchRemainingByMaterial(tenantId, urgentLines, outsourcedLines, linesByMaterial);
-        urgentLines.replaceAll(line -> withStockSatisfiable(line, maxRemaining));
-        outsourcedLines.replaceAll(line -> withStockSatisfiable(line, maxRemaining));
-        for (List<ProductionPoolViews.PoolLine> materialLines : linesByMaterial.values()) {
-            materialLines.replaceAll(line -> withStockSatisfiable(line, maxRemaining));
-        }
+        // issue #7091：行级库存可满足性（只读）—— 按物料**一次**批量判定后回填三条队列（唯一实现见 StockSatisfiability）。
+        StockSatisfiability.fill(batchStock(), tenantId, urgentLines, outsourcedLines,
+                linesByMaterial.values());
         // 智能派单排序（判据 5 的唯一落点）：插队区与每个物料组**各自**按同一把键排（见 POOL_LINE_ORDER）
         urgentLines.sort(POOL_LINE_ORDER);
         outsourcedLines.sort(POOL_LINE_ORDER);
@@ -748,46 +741,6 @@ public class ProcessingOrderService {
                 lineCount, warnings.size(), urgentOrders.size(), List.copyOf(warnings),
                 List.copyOf(urgentLines), List.copyOf(outsourcedLines), outsourcedOrders.size(),
                 List.copyOf(groups));
-    }
-
-    /**
-     * 池内各行的「单批最大余量」（issue #7091）—— **按物料去重**后一次批量取。
-     *
-     * <p>池读面是商家每次进页面都会看的列表，行数随待派单增长 ⇒ 逐行查库必然 N+1
-     * （这是本单写进施工单的硬约束）。这里只把**去重后的物料集合**交下去，库侧两条查询封顶。</p>
-     */
-    private Map<StockBatchConsumptionService.MaterialDemand, BigDecimal> maxBatchRemainingByMaterial(
-            Long tenantId, List<ProductionPoolViews.PoolLine> urgentLines,
-            List<ProductionPoolViews.PoolLine> outsourcedLines,
-            Map<String, List<ProductionPoolViews.PoolLine>> linesByMaterial) {
-        Set<StockBatchConsumptionService.MaterialDemand> demands = new LinkedHashSet<>();
-        collectMaterialDemands(demands, urgentLines);
-        collectMaterialDemands(demands, outsourcedLines);
-        for (List<ProductionPoolViews.PoolLine> lines : linesByMaterial.values()) {
-            collectMaterialDemands(demands, lines);
-        }
-        return batchStock().maxRemainingByMaterial(tenantId, demands);
-    }
-
-    private static void collectMaterialDemands(Set<StockBatchConsumptionService.MaterialDemand> demands,
-                                               List<ProductionPoolViews.PoolLine> lines) {
-        for (ProductionPoolViews.PoolLine line : lines) {
-            demands.add(new StockBatchConsumptionService.MaterialDemand(line.productId(), line.skuCode()));
-        }
-    }
-
-    /**
-     * 回填只读的可满足性：单批最大余量 ≥ 本行需求米数。
-     *
-     * <p>与派工前的 fail-closed 判据**同源**（{@code StockBatchConsumptionService#suggestedBatchNo}：
-     * 同一份余量派生点、同一条 SKU 一致性口径）⇒ 判据不另算一套，也不因池读面而放宽上游。</p>
-     */
-    private static ProductionPoolViews.PoolLine withStockSatisfiable(
-            ProductionPoolViews.PoolLine line,
-            Map<StockBatchConsumptionService.MaterialDemand, BigDecimal> maxRemaining) {
-        BigDecimal max = maxRemaining.get(
-                new StockBatchConsumptionService.MaterialDemand(line.productId(), line.skuCode()));
-        return line.withStockSatisfiable(max != null && max.compareTo(line.requiredMeters()) >= 0);
     }
 
     /**
@@ -864,11 +817,6 @@ public class ProcessingOrderService {
             minutes = 0;
         }
         return BigDecimal.valueOf(minutes).divide(BigDecimal.valueOf(60), 1, RoundingMode.HALF_UP);
-    }
-
-    /** 物料键（商品 × 颜色 × 门幅）。{@code skuCode} 在本系统里就是「颜色 × 门幅」的组合。 */
-    private static String materialKey(String productId, String skuCode) {
-        return (productId == null ? "" : productId) + "|" + (skuCode == null ? "" : skuCode);
     }
 
     /**
