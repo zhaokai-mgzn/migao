@@ -573,14 +573,19 @@ class RegistrationServiceTest extends BaseServiceTest {
         }
 
         @Test
-        @DisplayName("已处理的申请 → VALIDATION_ERROR")
+        @DisplayName("已处理的申请 → CONFLICT(409)，与 CAS 落空同码（#7931 / #8408）")
         void alreadyProcessed() {
             pendingApp.setStatus("approved");
             when(applicationMapper.selectById(1L)).thenReturn(pendingApp);
 
             assertThatThrownBy(() -> registrationService.approveApplication(1L, "reviewer-001"))
                     .isInstanceOf(BusinessException.class)
-                    .satisfies(ex -> assertThat(((BusinessException) ex).getCode()).isEqualTo("VALIDATION_ERROR"));
+                    .satisfies(ex -> {
+                        BusinessException be = (BusinessException) ex;
+                        assertThat(be.getCode()).isEqualTo("CONFLICT");
+                        assertThat(be.getHttpStatus()).as("同一个终态（已审结）的拒绝只有一种状态码")
+                                .isEqualTo(409);
+                    });
         }
     }
 
@@ -602,13 +607,18 @@ class RegistrationServiceTest extends BaseServiceTest {
         }
 
         @Test
-        @DisplayName("已处理的申请 → VALIDATION_ERROR")
+        @DisplayName("已处理的申请 → CONFLICT(409)（与通过侧同码，#7931 / #8408）")
         void alreadyProcessed() {
             pendingApp.setStatus("rejected");
             when(applicationMapper.selectById(1L)).thenReturn(pendingApp);
 
             assertThatThrownBy(() -> registrationService.rejectApplication(1L, "r1", "x"))
-                    .isInstanceOf(BusinessException.class);
+                    .isInstanceOf(BusinessException.class)
+                    .satisfies(ex -> {
+                        BusinessException be = (BusinessException) ex;
+                        assertThat(be.getCode()).isEqualTo("CONFLICT");
+                        assertThat(be.getHttpStatus()).isEqualTo(409);
+                    });
         }
     }
 }

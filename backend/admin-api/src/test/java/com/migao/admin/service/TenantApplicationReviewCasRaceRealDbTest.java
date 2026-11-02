@@ -89,7 +89,8 @@ import static org.mockito.Mockito.when;
  * <h2>判据（每条都会红）</h2>
  * <ol>
  *   <li><b>恰好 1 次成功</b>：并发 N 次 approve 同一申请单 ⇒ 成功数 {@code == 1}（不是 2、不是 0），
- *       其余全部是**显式 4xx**（CAS 落空 409 CONFLICT / 读判 400），<b>不许有 500</b>；</li>
+ *       其余全部是**显式 4xx**，且**全部是 409 CONFLICT**（快速路径读判与 CAS 落空同码 —— 改前快速路径
+ *       给 422 ⇒ 落败方的状态码由时序决定，判据随机红，#7931 / #8408），<b>不许有 500</b>；</li>
  *   <li><b>租户数恰好 +1（不可逆副作用的独立算式）</b>：以该企业名建出的 {@code tenants} 行
  *       <b>恰好 1 行</b>（改前实测 2 行 ⇒ 本条红）、该租户下的管理员用户<b>恰好 1 个</b>；</li>
  *   <li><b>终态与赢家一致</b>：申请单终态 {@code approved} 且 {@code reviewed_by} 非空（审结事实落库）；</li>
@@ -101,7 +102,10 @@ import static org.mockito.Mockito.when;
  * ① 临时把 {@code approveIfPending} 的 {@code AND status = 'pending'} 摘掉 ⇒ 本判据
  * {@code concurrentApprovalsCreateExactlyOneTenant} 当场红，逐字读数
  * {@code 成功数=2 租户行=2 管理员行=2}（受控注入的唯一变量 = 谓词，别的都不动）；
- * ② 撤回注入 ⇒ 全绿。② 的反向对照（串行正对照）在两次都能通过 ⇒ 证明红的不是「装置坏了」。
+ * ② 撤回注入 ⇒ 全绿。② 的反向对照（串行正对照）在两次都能通过 ⇒ 证明红的不是「装置坏了」；
+ * ③ #7931 / #8408（重复审批必须同码）：把 {@code requirePendingForApprove} 的 {@code conflictForApprove}
+ * 改回 {@code validationError}（422）⇒ 判据 5 {@code repeatedApproveUsesTheSameConflictCodeAsCasLoser}
+ * 当场红，逐字读数 {@code 第一次=200 第二次=422}（受控注入的唯一变量 = 快速路径的状态码）。
  *
  * <p><b>边界（如实登记）</b>：① 本判据跑的是<b>服务层真库并发</b>而非 HTTP 栈（controller 只是薄转发，
  * 状态机与副作用全在服务层）；② 判定「两个请求都成功」用的不是响应体而是<b>落库事实</b>
@@ -230,10 +234,13 @@ class TenantApplicationReviewCasRaceRealDbTest {
                 .isEqualTo(1L);
         assertThat(finalStatus).as("申请单终态必须与赢家一致").isEqualTo("approved");
         assertThat(reviewedBy).as("审结事实（reviewed_by）必须落库").isNotBlank();
-        assertThat(failures).as("落败方必须全部是显式 4xx（CAS 落空 409 / 读判 400），不许出现 500").isNotEmpty();
+        assertThat(failures).as("落败方必须全部是显式 4xx，不许出现 500").isNotEmpty();
         assertThat(failures).as("落败方不得有 5xx").allMatch(s -> s >= 400 && s < 500);
-        assertThat(failures).as("至少一条必须是 CAS 落空的 409 CONFLICT（= 闸真的拦住了，而不是全都撞在快速路径上）")
-                .contains(409);
+        assertThat(failures)
+                .as("落败方**全部**必须是 409 CONFLICT —— 快速路径读判与 CAS 落空说的是**同一个终态**"
+                        + "（「该申请已审结」）⇒ 只有一种状态码。改前快速路径给 422，于是落败方拿到哪个码"
+                        + "取决于时序 ⇒ 本断言随机红（#7931 / #8408 的 flaky 机制）")
+                .allMatch(s -> s == 409);
     }
 
     // ────────────────────────────────────────────── 判据 4：串行正对照（护栏不误杀）
@@ -258,6 +265,44 @@ class TenantApplicationReviewCasRaceRealDbTest {
                 .isEqualTo(200);
         assertThat(tenantRows).as("串行开租：租户恰 1 行").isEqualTo(1L);
         assertThat(finalStatus).as("单据终态").isEqualTo("approved");
+    }
+
+    // ──────────────────────────── 判据 5：重复审批必须与 CAS 落空**同码**（#7931 / #8408）
+
+    /**
+     * 判据 5 = #7931 / #8408 的**确定性**实例（不像判据 1 那样依赖并发时序）：
+     * 串行地审两次同一张单，第二次**必然**走「读判快速路径」。
+     *
+     * <p>改前它是 {@code validationError}（422），而 CAS 落空是 {@code conflict}（409）
+     * ⇒ 同一个终态两个码 ⇒ 并发判据里「落败方必须是 409」随机红。改后同码 409 ⇒ 这条恒绿。</p>
+     */
+    @Test
+    @DisplayName("串行重复审批（走读判快速路径）必须是 409 CONFLICT —— 与 CAS 落空同码，不随并发时序摇摆")
+    void repeatedApproveUsesTheSameConflictCodeAsCasLoser() {
+        String company = "ta-7931-重复审批布艺有限公司";
+        long appId = insertPendingApplication(company, "13900007931");
+
+        Verdict first = approveOnce(appId);
+        Verdict second = approveOnce(appId);
+        long tenantRows = count("SELECT count(*) FROM tenants WHERE name = '" + company + "'");
+        String finalStatus = string("SELECT status FROM tenant_applications WHERE id = " + appId);
+
+        System.out.println("[READING #7931 重复审批] appId=" + appId
+                + " 第一次=" + first.status()
+                + " 第二次=" + second.status()
+                + " detail=" + second.detail()
+                + " 租户行=" + tenantRows
+                + " 单据终态=" + finalStatus);
+
+        assertThat(first.status()).as("第一次审批必须成功").isEqualTo(200);
+        assertThat(second.status())
+                .as("重复审批的拒绝必须与 CAS 落空**同码** 409 —— 改前这条走读判快速路径给 422，"
+                        + "于是并发审批的落败方状态码由时序决定（#7931 / #8408）")
+                .isEqualTo(409);
+        assertThat(second.detail()).as("冲突文案必须可归因（点明终态）")
+                .startsWith("CONFLICT").contains("已被审结");
+        assertThat(tenantRows).as("重复审批不得再建租户").isEqualTo(1L);
+        assertThat(finalStatus).as("终态不得被第二次请求改写").isEqualTo("approved");
     }
 
     // ────────────────────────────────────────────── 并发装置
