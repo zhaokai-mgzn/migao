@@ -19,7 +19,8 @@
 | J4 | **豁免只许缩短**：台账 `engines` 条数 ≤ `frozen_baseline`（现取 2），且不许清空 | 新增一条未登记的 `.txt` 机具 ⇒ 红；清空台账 ⇒ 红 |
 | J5 | **规范必须指向入口**：`docs/wiki/Development.md` 逐字含 `./scripts/java-test.sh` 与 `.txt` 摘要不可信的结论 | 文档把入口删掉 / 把结论删掉 ⇒ 红 |
 | J6 | **@Nested 判定不许被注释骗**（对照读数）：只含**注释**里提到 `@Nested` 的测试类**不算**嵌套类（现取证据：`git grep` 45 个文件 vs 索引 44 个） | 把 `mask_literals_and_comments` 摘掉 ⇒ 判据 J6 红 |
-| J7 | **边界（照实登记）**：① 文档面没有「不许教 `.txt` 读数」的形态判据（同一句里既有正解又有反例，形态判据分不清）；② 判不了「人敲了什么命令」（命令在键盘上，不在仓里）；③ 不跑被它引用的 Java 判据（那要 Maven ⇒ 归 `scripts/java-test.sh` 与 CI）；④ 不改任何门禁的通过条件、不新增豁免。 |
+| J7 | **报告卫生（会红）**：入口跑 Maven **前**必须删掉目标报告 —— 否则「这次没跑到」会读到**上一次**的 `Tests run: N` ⇒ 又一种假绿（本工具首版真踩过） | 用桩 `mvnw`（不产出报告）+ 预置陈旧 XML ⇒ `run_selector` 必须返回 1，且陈旧文件已被删除 |
+| J8 | **边界（照实登记）**：① 文档面没有「不许教 `.txt` 读数」的形态判据（同一句里既有正解又有反例，形态判据分不清）；② 判不了「人敲了什么命令」（命令在键盘上，不在仓里）；③ 不跑被它引用的 Java 判据（那要 Maven ⇒ 归 `scripts/java-test.sh` 与 CI）；④ 不改任何门禁的通过条件、不新增豁免。 |
 
 执行点（本文件内的测试名）：`test_j1_*` / `test_j2_*` / `test_j3_*` / `test_j4_*` / `test_j5_*` / `test_j6_*`。
 """
@@ -329,3 +330,47 @@ def test_j6_mask_makes_the_decision(snippet, expect_nested):
     bodies = jtr.class_bodies(jtr.mask_literals_and_comments(snippet))
     inner = [b for b in bodies if b.name == "B"]
     assert (inner[0].nested if inner else False) is expect_nested
+
+# ────────────────────────── J7 报告卫生（陈旧报告不许当读数） ──────────────────────────
+
+def _fake_module(tmp_path: Path, *, stub: str) -> tuple[Path, Path]:
+    """造一个最小模块树：`backend/demo/src/test/java/demo/SampleTest.java` + 桩 `mvnw`。"""
+    module = tmp_path / "backend" / "demo"
+    src = module / "src" / "test" / "java" / "demo" / "SampleTest.java"
+    src.parent.mkdir(parents=True)
+    src.write_text("package demo;\nclass SampleTest { @Test void a() {}\n @Test void b() {} }\n",
+                   encoding="utf-8")
+    mvnw = module / "mvnw"
+    mvnw.write_text(stub, encoding="utf-8")
+    mvnw.chmod(0o755)
+    return module, module / "target" / "surefire-reports"
+
+
+def test_j7_stale_report_is_deleted_before_the_run_and_empty_run_is_red(tmp_path):
+    """跑前必须删陈旧报告：否则「这次一条没跑到」会读到上一次的读数（假绿）。"""
+    module, reports = _fake_module(tmp_path, stub="#!/bin/sh\nexit 0\n")
+    reports.mkdir(parents=True)
+    stale = reports / "TEST-demo.SampleTest.xml"
+    stale.write_text('<testsuite name="demo.SampleTest" tests="3" failures="0" errors="0" skipped="0"/>',
+                     encoding="utf-8")
+
+    rc = jtr.run_selector("SampleTest", jtr.index_test_classes(tmp_path), [], mvn="./mvnw",
+                          repo_root=tmp_path)
+    assert rc == 1, "陈旧报告被当成读数 ⇒ 空跑被判绿（报告卫生失效）"
+    assert not stale.exists(), "跑 Maven 之前没有删除目标报告"
+
+
+def test_j7_fresh_report_is_read_from_xml(tmp_path):
+    """正向对照：桩 mvnw 真写出一份新报告 ⇒ 正常判绿（否则 J7 会退化成「一律红」）。"""
+    _module, reports = _fake_module(
+        tmp_path,
+        stub="#!/bin/sh\nmkdir -p target/surefire-reports\n"
+             "cat > target/surefire-reports/TEST-demo.SampleTest.xml <<'XML'\n"
+             '<testsuite name="demo.SampleTest" tests="2" failures="0" errors="0" skipped="0">'
+             '<testcase classname="demo.SampleTest" name="a"/><testcase classname="demo.SampleTest" name="b"/>'
+             '</testsuite>\nXML\nexit 0\n',
+    )
+    rc = jtr.run_selector("SampleTest", jtr.index_test_classes(tmp_path), [], mvn="./mvnw",
+                          repo_root=tmp_path)
+    assert rc == 0, "新报告里 2 条测试却被判红 ⇒ 读数路径坏了"
+    assert (reports / "TEST-demo.SampleTest.xml").exists()

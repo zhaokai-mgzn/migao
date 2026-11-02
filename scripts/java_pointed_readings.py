@@ -285,7 +285,8 @@ def read_xml(report_dir: Path, fqn: str) -> Readings:
 
 # ────────────────────────── 跑与判定 ──────────────────────────
 
-def run_selector(selector: str, index: dict[str, TestClass], extra: list[str], mvn: str = "./mvnw") -> int:
+def run_selector(selector: str, index: dict[str, TestClass], extra: list[str], mvn: str = "./mvnw",
+                 repo_root: Path = REPO_ROOT) -> int:
     parts = split_selectors(selector)
     classes: list[TestClass] = []
     for p in parts:
@@ -301,12 +302,18 @@ def run_selector(selector: str, index: dict[str, TestClass], extra: list[str], m
     module = classes[0].module
     reports = module / "target" / "surefire-reports"
     if not (module / "mvnw").exists():
-        print(f"❌ 不可判定：{module.relative_to(REPO_ROOT)} 下没有 mvnw", file=sys.stderr)
+        print(f"❌ 不可判定：{module.relative_to(repo_root)} 下没有 mvnw", file=sys.stderr)
         return 3
 
     offline = os.environ.get("MIGAO_MVN_OFFLINE", "1") == "1"  # 默认离线（本仓常用口径）；冷缓存用 MIGAO_MVN_OFFLINE=0
+    # 报告卫生（与 issue #5216 同口径，别处已踩过）：跑 Maven **前先删**目标报告 ——
+    # 否则「这次一条都没跑到」会读到**上一次**留下的 `Tests run: N` ⇒ 又一种假绿（本工具首版真踩了：
+    # 先跑正确的 `$Create#…`（1 条）再 `--no-fix` 跑坏写法，读到陈旧的 1 条 ⇒ 判绿）。
+    for tc in classes:
+        for stale in reports.glob(f"TEST-{tc.fqn}.xml"):
+            stale.unlink()
     cmd = [mvn] + (["-o"] if offline else []) + ["test", f"-Dtest={selector}", "-DfailIfNoTests=false"] + extra
-    print(f"▶ cd {module.relative_to(REPO_ROOT)} && {' '.join(cmd)}")
+    print(f"▶ cd {module.relative_to(repo_root)} && {' '.join(cmd)}")
     proc = subprocess.run(cmd, cwd=module, capture_output=True, text=True)
     tail = "\n".join((proc.stdout + proc.stderr).strip().splitlines()[-25:])
 

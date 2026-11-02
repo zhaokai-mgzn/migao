@@ -6937,6 +6937,7 @@
 数据: 🔴 **判据 4·豁免只许缩短**：台账 tests/unit_ci_workflows/java_pointed_run_ledger.json 的 `engines` 条数不得超冻结基线、不得清空；每条须有非空 `reason`，且 `anchor` 串必须在源码里逐字兑现（摘掉就红）。执行点 = 同文件::test_j4_ledger_is_not_empty_and_only_shrinks + ::test_j3_every_txt_reading_engine_is_registered_and_precondition_holds
 数据: 🔴 **判据 5·扫描器非空跑自证**：Java 测试类索引必须非空且含 @Nested 类（现取 642 个测试类 / 44 个含 @Nested；`git grep -l @Nested` 的 45 比它多 1 = 只在**注释**里提到 @Nested 的 ScheduledTaskServiceTest）。执行点 = 同文件::test_j1_scanner_is_not_blind + ::test_j6_comments_do_not_make_a_class_nested
 数据: 🔴 **判据 6·规范必须指向入口**：docs/wiki/Development.md 必须逐字给出 `./scripts/java-test.sh` 与读数口径（`.txt` 摘要不可信、读数为 0 即红）—— 否则下一个人又回去 head 那个摘要。执行点 = 同文件::test_j5_development_doc_points_to_the_entry
+数据: 🔴 **判据 7·报告卫生（陈旧报告不许当读数）**：入口跑 Maven **前**必须先删 `target/surefire-reports/TEST-<fqn>.xml` —— 否则「这次一条都没跑到」会读到**上一次**的 `Tests run: N` ⇒ 又一种假绿（本工具首版真踩过：先跑 `…$Create#…` 得 1 条、再按原样跑坏写法，读到陈旧的 1 条 ⇒ 判绿）。执行点 = tests/unit_ci_workflows/test_java_nested_pointed_run_guard.py::test_j7_stale_report_is_deleted_before_the_run_and_empty_run_is_red（+ ::test_j7_fresh_report_is_read_from_xml 正向对照：桩 mvnw 写出新报告 ⇒ 判绿，防「一律红」）
 数据: **边界（照实登记）**：① 文档面没有「不许教 `.txt` 读数」的形态判据（同一句里既有正解又有反例，形态判据分不清）；② 判不了**人**敲了什么命令（命令在键盘上，不在仓里）；③ 本守卫不跑它引用的 Java 判据（那要 Maven ⇒ 归 scripts/java-test.sh 与 CI）；④ 不改任何门禁的通过条件、不新增豁免。
 跳过: [backend-contract] 零 LLM 的确定性静态判据（Python AST + 正则扫仓内 durable 面 + 现取 Java 测试源码索引），pytest 真跑、零网络、零 Maven、零真库，不进 agent-eval 冒烟
 ```
@@ -14449,8 +14450,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：976（活跃 153，跳过 823）
-- tier 分布：smoke 15 / normal 899 / adversarial 33
+- 用例总数：977（活跃 153，跳过 824）
+- tier 分布：smoke 15 / normal 900 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
