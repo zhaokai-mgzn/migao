@@ -1,7 +1,7 @@
 # 商家小程序上架 + 微信支付接入方案（多租户 SaaS）
 
 > 版本 v1.2 ｜ 2026-08 ｜ 状态：方案定稿（未开发，实现项见附录 C TODO 清单）
-> 关联文档：[multi-tenant-wechat.md](multi-tenant-wechat.md)（多租户小程序登录）、[commercialization-plan.md](../../product/commercialization-plan.md)（商业化）
+> 关联文档：[multi-tenant-wechat.md](multi-tenant-wechat.md)（多租户小程序登录）、商业方案 `product/commercialization-plan.md`（2026-11-02 已迁至私有仓 `migao-internal`）
 > 本文档覆盖：商家如何把元元 agent 上架为自己的微信小程序（模式 A 半自动发布）+ 微信支付接入（平台服务商 + 特约商户直清）。
 > v1.1 变更：升级发布改为「升级包 + 商家确认升级」模式（§3.3.1/§3.4）。v1.2 变更：实现项固化为附录 C TODO 清单。
 
