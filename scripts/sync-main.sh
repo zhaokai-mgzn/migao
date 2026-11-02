@@ -52,14 +52,24 @@
 #   无重复」→ `git add` → `rebase --continue` → 重跑 sync-main。现折叠进本脚本的冲突路径
 #   （**不是**新加一条命令 —— 那只是把重复挪个地方）。
 #   · 射程**不许扩大**：只有「未合并文件集合 == {CHANGELOG.md}」才尝试；其余形态交人工。
-#   · 三条内容级验证（**写盘之前**跑完；不过 ⇒ python 非零退出，工作树一个字节都没动）：
+#   · 三条内容级验证（**写盘之前**跑完；不过 ⇒ python 非零退出，工作树一个字节都没动）。
+#     🔴 判据的**射程 = 冲突块**（issue #7861：旧判据拿 `git show :2:` / `:3:` 的**全文**当参照面，
+#     三方合并里另一侧合法的改写 / 删除会让本侧那行「对不上」/「丢了」⇒ 每次都假红，实测 4/4；
+#     而人工解**同一份**冲突一次就过 —— 病在判据的射程，不在解法）：
 #     A 无残留冲突标记（`<<<<<<<` / `=======` / `>>>>>>>`，含 diff3 的 `|||||||`）
-#     B `### ` 标题集合 == 索引 `:2:` ∪ `:3:`（一条不丢）+ 不得比两侧更多地重复某一条
-#     C `:2:` / `:3:` 的每一行都在解后文本里**按原序**出现（除冲突块插入点外逐字保留）
+#     B 每个冲突块**两侧都保留**：块内 `### ` 标题一条不丢、不多出；块内非空行一条不丢
+#     C 每侧块的行**按原序**：① 出现在解后文本的该块区间里 ② 来自对应索引侧（解析没串侧 / 没混 base）；
+#       并且**冲突块之外逐字不变**（解只许动冲突块）
+#   · 能自动解到什么形态（登记）：未合并文件恰好 {CHANGELOG.md}、冲突块结构完整、每块两侧内容都能在
+#     对应索引侧按原序找到、块外一字不动 ⇒ 两侧条目按「`:2:` 块 / 空行 / `:3:` 块」原序保留
+#     （**与人工解同形态**）。同一条目两侧都有 ⇒ **保留两份**（旧判据的「放大重复」判红已撤：
+#     人工解也留两份，那一条只会把正常冲突读成失败）。
+#   · 必须人工（自动解**不接管**）：未合并文件不止 CHANGELOG.md / 文件里没有冲突块 / 冲突块缺结束标记 /
+#     块内容对不上它声称的那一侧（正文里有整行 `=======` 之类的歧义）/ 任一条判据判红 /
+#     `git add` 或 `--continue` 失败 —— 一律逐字节还原成冲突态并交人工。
 #   · 失败即还原 + 非零退出（冲突态备份逐字节回写），交人工按老办法处理 —— **绝不静默丢内容**。
-#   · 已知边界（如实登记）：C 是**保守判据** —— 某侧在冲突区**之外**合法删过一行时它会判红
-#     （假红 ⇒ 退回人工路径，不产错内容）；`--continue` 必须带 `GIT_EDITOR=true`，否则非交互
-#     环境下 git 直接报「Terminal is dumb, but EDITOR unset」而失败（本机实测）。
+#   · `--continue` 必须带 `GIT_EDITOR=true`，否则非交互环境下 git 直接报
+#     「Terminal is dumb, but EDITOR unset」而失败（本机实测）。
 #
 # 环境变量：
 #   RENDER_CASES_ARGS=...  # 可选，覆盖渲染器参数（默认指向仓库内单一源）
@@ -227,14 +237,26 @@ if not any(ln.rstrip("\r").startswith("<<<<<<<") for ln in work):
     die("⛔ %s 里没有冲突块（`<<<<<<<` 零命中）⇒ 不自动解" % FILE)
 ours, theirs = side(2), side(3)
 
+
+def check_scope(hunks):
+    """判据 B/C 的**参照面** = 每个冲突块的两侧块 + 它在解后文本里的区间（issue #7861）。
+
+    换回 `return [(ours, theirs, 0, len(out))]`（拿两侧**全文**当参照面）就是旧形态：三方合并里
+    另一侧合法的改写 / 删除会让本侧那行「对不上」/「丢了」⇒ 每次都假红（实测 4/4，而人工解同一份
+    冲突一次就过）。自动解**只接管冲突块** ⇒ 判据的射程也只能是冲突块。
+    """
+    return list(hunks)
+
+
 # ── 解法：每个冲突块保留**两侧**（标记里的原序、块之间空行分隔），其余行原样 ──
-out, idx, hunks = [], 0, 0
+out, idx, hunks, common = [], 0, [], []
 while idx < len(work):
     if not work[idx].rstrip("\r").startswith("<<<<<<<"):
         out.append(work[idx])
+        common.append(work[idx])            # 冲突块**之外**的行（判据 C② 的比对面）
         idx += 1
         continue
-    hunks += 1
+    start = len(out)
     idx += 1
     sides = {"ours": [], "base": [], "theirs": []}
     cur, closed = "ours", False
@@ -252,34 +274,54 @@ while idx < len(work):
             sides[cur].append(work[idx])
         idx += 1
     if not closed:
-        die("⛔ 第 %d 个冲突块没有结束标记（`>>>>>>>` 缺失）⇒ 结构不合预期，不自动解" % hunks)
+        die("⛔ 第 %d 个冲突块没有结束标记（`>>>>>>>` 缺失）⇒ 结构不合预期，不自动解"
+            % (len(hunks) + 1))
     kept = [s for s in (sides["ours"], sides["theirs"]) if s]
     if len(kept) == 2 and kept[0][-1].strip():
         kept.insert(1, [""])
     for block in kept:
         out.extend(block)
+    hunks.append((sides["ours"], sides["theirs"], start, len(out)))
 
-# ── 三条内容级验证（全部在**写盘之前**）──────────────────────────────────────
+# ── 三条内容级验证（全部在**写盘之前**；射程 = 冲突块，见 check_scope）─────────
 problems = []
 for ln in out:                                                      # A 无残留标记
     if MARKER.match(ln.rstrip("\r")):
         problems.append("残留冲突标记：%r" % ln)
-cnt, c_ours, c_theirs = Counter(heads(out)), Counter(heads(ours)), Counter(heads(theirs))
-want = set(c_ours) | set(c_theirs)
-lost = sorted(want - set(cnt))                                      # B 并集一条不丢
-extra = sorted(set(cnt) - want)
-amplified = sorted(h for h in cnt if cnt[h] > max(c_ours.get(h, 0), c_theirs.get(h, 0)))
-if lost:
-    problems.append("丢了 %d 条 `### ` 条目：%s" % (len(lost), " ｜ ".join(lost)))
-if extra:
-    problems.append("多出 %d 条两侧都没有的 `### ` 条目：%s" % (len(extra), " ｜ ".join(extra)))
-if amplified:
-    problems.append("这些 `### ` 条目比两侧更多地重复（并集解不得放大重复）：%s" % " ｜ ".join(amplified))
-for label, lines in ((":2:", ours), (":3:", theirs)):               # C 两侧原版按原序保留
-    bad = first_unmatched(lines, out)
-    if bad is not None:
-        problems.append("索引第 %s 侧原版的这一行在解后文本里对不上（丢了或次序被打乱）：%r"
-                        % (label, bad))
+rest, cursor = [], 0                                                # C② 块外逐字不变
+for (_o, _t, lo, hi) in hunks:
+    rest.extend(out[cursor:lo])
+    cursor = hi
+rest.extend(out[cursor:])
+if rest != common:
+    i = next(i for i in range(min(len(rest), len(common)) + 1)
+             if i >= len(rest) or i >= len(common) or rest[i] != common[i])
+    problems.append("冲突块**之外**的内容被改动了（解只许动冲突块）：块外第 %d 行起不同：解后=%r / 冲突态=%r"
+                    % (i, rest[i] if i < len(rest) else None,
+                       common[i] if i < len(common) else None))
+for n, (b2, b3, lo, hi) in enumerate(check_scope(hunks), 1):
+    region = out[lo:hi]
+    got, want = Counter(heads(region)), Counter(heads(b2) + heads(b3))   # B 标题一条不丢/不多出
+    lost, extra = list((want - got).elements()), list((got - want).elements())
+    if lost:
+        problems.append("第 %d 个冲突块：丢了 %d 条 `### ` 条目：%s"
+                        % (n, len(lost), " ｜ ".join(lost[:3]) + ("…" if len(lost) > 3 else "")))
+    if extra:
+        problems.append("第 %d 个冲突块：多出 %d 条两侧块都没有的 `### ` 条目：%s"
+                        % (n, len(extra), " ｜ ".join(extra[:3]) + ("…" if len(extra) > 3 else "")))
+    missing = Counter(ln for ln in b2 + b3 if ln.strip()) - Counter(ln for ln in region if ln.strip())
+    if missing:
+        problems.append("第 %d 个冲突块：这些行在解后文本里少了（一条都不许丢）：%s"
+                        % (n, " ｜ ".join(list(missing.elements())[:3])))
+    for label, block, src in ((":2:", b2, ours), (":3:", b3, theirs)):
+        bad = first_unmatched(block, src)               # C① 解析自证：块的行来自它声称的那一侧
+        if bad is not None:
+            problems.append("第 %d 个冲突块：索引第 %s 侧的这一行其实不属于该侧（解析串侧 / 混入 base）"
+                            "⇒ 不自动解：%r" % (n, label, bad))
+        bad = first_unmatched(block, region)            # C① 块内按原序保留
+        if bad is not None:
+            problems.append("第 %d 个冲突块：索引第 %s 侧的这一行在解后文本里对不上（丢了或次序被打乱）：%r"
+                            % (n, label, bad))
 if problems:
     sys.stderr.write("⛔ %s 冲突自动解**未通过**内容级验证（%d 条）—— 不写盘、保持冲突态：\n"
                      % (FILE, len(problems)))
@@ -293,8 +335,8 @@ with open(FILE, "w", encoding="utf-8", newline="") as fh:
 with open(FILE, encoding="utf-8", newline="") as fh:                # 写后回读自证（防半截写）
     if fh.read() != merged:
         die("⛔ 写入后回读与验证过的内容不一致 ⇒ 不认这次解（请人工处理）")
-print("ℹ️ 自动解 %d 个冲突块：`### ` 索引 :2:=%d / :3:=%d / 并集=%d / 结果=%d"
-      % (hunks, len(c_ours), len(c_theirs), len(want), len(cnt)))
+print("ℹ️ 自动解 %d 个冲突块（判据只判冲突块，issue #7861）：`### ` 索引 :2:=%d / :3:=%d / 结果=%d"
+      % (len(hunks), len(heads(ours)), len(heads(theirs)), len(heads(out))))
 PY
   then
     # 还原（此刻索引未动 ⇒ 逐字节就是冲突态）。还原**也要自证**：失败就不许删备份、
