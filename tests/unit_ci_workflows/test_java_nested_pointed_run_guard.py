@@ -1,4 +1,4 @@
-# case_ids: MC-133
+# case_ids: MC-134
 """Java 定点判据的「空跑 / 读数」类级守卫（issue #6495 的类级固化）
 
 ## 病（2026-11-03 本机实跑，读数逐条见 docs/wiki/Development.md 的「Java 定点判据」节）

@@ -1,5 +1,5 @@
 {
-  "case_ids": ["MC-133"],
+  "case_ids": ["MC-134"],
   "issue": 6495,
   "why": "issue #6495 的类级固化：Java 定点判据的两条「空跑」形态。① `.txt` 摘要对 @Nested 类恒报 `Tests run: 0`（实测：同一次运行 XML/console 15 条、摘要写 0）⇒ 任何机具把 `.txt` 的 `Tests run:` 当读数源、而它跑的类可能含 @Nested ⇒ 会得到「0 条」的假读数。② `-Dtest=<外层类>#<方法>`，方法声明在 @Nested 内 ⇒ 真·空跑（Tests run: 0 / BUILD SUCCESS / exit=0 / 无 XML）。本台账登记**今天仍读 `.txt` 的机具**及其前提（「定点类保持扁平」），前提一变即红。",
   "l-enforcement": "tests/unit_ci_workflows/test_java_nested_pointed_run_guard.py（判据 J3/J7）",

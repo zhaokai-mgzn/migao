@@ -3279,9 +3279,9 @@ _CASE_MC_132 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── MC-133 [NORMAL] Java 定点判据的读数与空跑（issue #6495 的类级固化）：`.txt` 摘要对 @Nested 类恒报 0（误诊源）+ `外层类#嵌套方法` 真·空跑（exit 0）⇒ 读数只信 XML 且必须大于 0（源: cases/misc.yml）──
-_CASE_MC_133 = EvalCase(
-    id='MC-133',
+# ── MC-134 [NORMAL] Java 定点判据的读数与空跑（issue #6495 的类级固化）：`.txt` 摘要对 @Nested 类恒报 0（误诊源）+ `外层类#嵌套方法` 真·空跑（exit 0）⇒ 读数只信 XML 且必须大于 0（源: cases/misc.yml）──
+_CASE_MC_134 = EvalCase(
+    id='MC-134',
     legacy_id='',
     title='Java 定点判据的读数与空跑（issue #6495 的类级固化）：`.txt` 摘要对 @Nested 类恒报 0（误诊源）+ `外层类#嵌套方法` 真·空跑（exit 0）⇒ 读数只信 XML 且必须大于 0',
     skill=Skill.GENERAL,
@@ -3476,5 +3476,5 @@ CASES = (
     _CASE_CI_001,
     _CASE_MC_128,
     _CASE_MC_132,
-    _CASE_MC_133,
+    _CASE_MC_134,
 )
