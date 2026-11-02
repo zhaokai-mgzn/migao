@@ -816,6 +816,15 @@ def cross_pr_claims_problems(
     open_prs, problems = result
     out = list(problems)
     for p in open_prs:
+        # 🔴 跳过**本 PR 自己**（#8425 实证）：判据 7 的语义是「本 PR ↔ **其他** open PR」，
+        # 「自己 ↔ 自己」不可能撞号。而本 PR 的改动面在**超大 PR**（如 #8425 的 2637 个文件）
+        # 下会超 `PR_FILE_LIST_MAX_PAGES` ⇒ 自己的 `added_ids` 读不全 ⇒ 原来那版会把
+        # 「看不到自己的语料面」误报成「看不到别的 PR」⇒ **大 PR 永远自我阻塞**
+        # （实测：#8425 之外**每一个** PR 也都被它连累判红，等于全仓卡死）。
+        # 自己的语料面读不全只影响 `live_corpus` 的完整性（下面 `mine.added_ids is not None`
+        # 已判空），**本 PR 自己的 claim 台账面（`live_claims`）不受影响**。
+        if p.pr == current:
+            continue
         if p.ids is None or p.added_ids is None:
             out.append(
                 f"判定不了：读不到在飞 PR #{p.pr} 的取号面（网络 / 权限 / 该 ref 读不了）"
@@ -2037,4 +2046,42 @@ def test_this_judgement_is_pure_static_and_never_skips() -> None:
     )
     assert import_guard_lines == [], (
         f"禁 `except ImportError` / `ModuleNotFoundError` 兜底（同族假绿）—— 命中行 {import_guard_lines}"
+    )
+
+
+def test_own_pr_unreadable_face_does_not_self_block_but_others_still_do():
+    """红证（#8425）：**本 PR 自己**的改动面读不全 ⇒ **不**报红（自己跟自己不可能撞号）；
+    但**别的** PR 读不全 ⇒ **仍然**报红（这一条证明修复没把整个 fail-closed 放宽）。
+
+    病灶实测：#8425 改了 2637 个文件，超过 `PR_FILE_LIST_MAX_PAGES` 的分页上限 ⇒
+    自己的 `added_ids` = None ⇒ 旧代码把它当成「读不到在飞 PR #8425」判红。
+    而判据 7 的语义是「本 PR ↔ **其他** open PR」，「自己」本就不该在被比对的集合里。
+    """
+    claims = _claims_6974()
+
+    # ① 自己读不全 + 别的 PR 正常 ⇒ 不报「判定不了自己」
+    stub_self_blind = (
+        [OpenPrClaims(pr=6974, ids=frozenset(), added_ids=None),
+         OpenPrClaims(pr=7199, ids=frozenset({"MC-900"}), added_ids=frozenset())],
+        [],
+    )
+    problems = cross_pr_claims_problems(claims, 6974, fetch=lambda: stub_self_blind,
+                                        main_ids=set())
+    self_problems = [p for p in problems if "6974" in p and "判定不了" in p]
+    assert not self_problems, (
+        "本 PR 自己的改动面读不全时**不该**判红（否则任何超大 PR 都会自我阻塞，"
+        f"实测 #8425 就是这样卡死全仓的）：{self_problems}"
+    )
+
+    # ② 别的 PR 读不全 ⇒ 仍报红（fail-closed 没被放宽）
+    stub_other_blind = (
+        [OpenPrClaims(pr=6974, ids=frozenset(), added_ids=frozenset()),
+         OpenPrClaims(pr=7199, ids=None, added_ids=None)],
+        [],
+    )
+    problems2 = cross_pr_claims_problems(claims, 6974, fetch=lambda: stub_other_blind,
+                                         main_ids=set())
+    other_problems = [p for p in problems2 if "7199" in p and "判定不了" in p]
+    assert other_problems, (
+        f"别的 PR 读不到时**必须**仍判红（fail-closed），实际没报：{problems2}"
     )
