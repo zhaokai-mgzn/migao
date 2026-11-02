@@ -2,7 +2,7 @@
   "_doc": [
     "「**商家答复型提示里泄漏内部端点**」（§31 P3「不摆内部标识」）的**只许缩短**燃尽台账（issue #6839 建立；跟踪单 = issue #6841）。",
     "判据 = tests/unit_ci_workflows/test_removed_page_pointer_targets.py 的 ::test_merchant_hint_endpoint_leaks_are_all_registered：① 现取命中 ⇄ 本台账**双向相等**（未登记即红 / 幽灵条目即红）；② 条数 == 判据里的 `LEAK_LEDGER_BASELINE`（**只许缩短**：加条目必须同 PR 改大基线 + PR body 说明为什么它是跨单债务）；③ 每条必须有 issue / kind / reason。",
-    "键 = 「文件::行::字面量原文」（**必须带行**：`AgentBatchService` 有两条字面量完全相同的提示，只用 `文件::字面量` 会把它们合并 ⇒ 两侧都对不上）。",
+    "键 = 「仓库相对路径::字面量原文::#出现序号」（**不含行号**，issue #6977）：行号是**可变分量**，它一漂就会让该文件里**所有**已登记条目同时变成「未登记」+「陈旧」**双向假红**（红的是排版，不是泄漏）；序号 = 同文件、**同字面量**的出现顺序（`AgentBatchService` 有两条完全相同的提示 ⇒ 靠序号消歧，不靠行）。旧形态（键含行号）⇒ 读取侧 **fail-closed** 并提示重新生成：`python3 tests/unit_ci_workflows/test_removed_page_pointer_targets.py --migrate-leak-ledger`（一次性迁移，**幂等**：第二次跑零 diff）。条目 reason 里的「⚠️ 行号 …」是**沿革记录**，不参与判据（键里已无行号）。",
     "判据面（**收紧口径，防误伤**）= `backend/admin-api/src/main/java/**/*.java` 的**字符串字面量**里「HTTP 动词 + `/api/` 路径」**且**含中文字符 ⇒ 即**人话提示里夹着端点**。",
     "🔴 **判据面外的形态（有意不在面内，具名登记）**：① **纯 ASCII 端点常量**（`OrderShipmentService.ENDPOINT_*` / `OrderService.ENDPOINT_*` / `ProductService.ENDPOINT_*` / `ProductionScanCompleteService.ENDPOINT_*` / `AgentAfterSalesController.ENDPOINT_CREATE_*` —— 给日志与幂等诊断用，注释逐字要求与 Controller 路径一致）；② **worker 端点文档串**（`OrderShipmentService` 的 `POST /api/worker/...`）。这两类**不是「商家答复」** ⇒ 本台账有意不碰（碰了会把判据面变成「所有端点」，随新增端点漂）。",
     "#6839（B1 包）已销 6 处：`ProcessingOrderService` 4 处（routings ×2 / operations-catalog ×2）+ `ProductionRoutingCommandService` 5 条字面量（routings ×2 / route-rules ×2 / operations-catalog ×1 —— 其中 2 条在同一条 suggestion 里，合并为 1 处销账）+ `ProcessingFeeCombinationCommandService` 1 处（processing/items）。",
@@ -10,88 +10,88 @@
   ],
   "frozen_at": "2026-10-13",
   "tracking_issue": "#6841",
-  "frozen_note": "冻结读数（2026-10-13，issue #6839 修掉 6 处后现取）：**9 条 / 9 处**（全部为商家可见文案）。修好一处必须同 PR 删对应条目（判据会判「台账未被兑现」）。",
+  "frozen_note": "冻结读数（2026-10-13，issue #6839 修掉 6 处后现取）：**9 条 / 9 处**（全部为商家可见文案）。修好一处必须同 PR 删对应条目（判据会判「台账未被兑现」）。 🔻 2026-11-02（issue #6977）：键从「文件::行::字面量」迁到「文件::字面量::#出现序号」（条数/处数不变，仍 9 条 / 9 处；迁移器 = 判据文件的 `--migrate-leak-ledger`，幂等）。",
   "entries": [
     {
       "path": "backend/admin-api/src/main/java/com/migao/admin/controller/ImageRecognitionController.java",
       "literal": "请先上传图片（POST /api/admin/upload/image 拿 url），再把 url 列表传给 images。",
-      "line": 173,
       "hits": 1,
       "issue": "#6841",
       "kind": "登记（跟踪 #6841，B1 射程外）",
-      "reason": "图片识别参数校验 message 写着 `POST /api/admin/upload/image` —— 这条 message 走商家可见通道（管理端上传图片报错），端点对商家不可读不可点 ⇒ 应改成动作说法（「请先用页面上的上传按钮选图」）。（现取命中 1 处）"
+      "reason": "图片识别参数校验 message 写着 `POST /api/admin/upload/image` —— 这条 message 走商家可见通道（管理端上传图片报错），端点对商家不可读不可点 ⇒ 应改成动作说法（「请先用页面上的上传按钮选图」）。（现取命中 1 处）",
+      "index": 1
     },
     {
       "path": "backend/admin-api/src/main/java/com/migao/admin/security/PasswordChangeRequiredFilter.java",
       "literal": "首次登录需先修改密码，请调用 POST /api/auth/password/change",
-      "line": 45,
       "hits": 1,
       "issue": "#6841",
       "kind": "登记（跟踪 #6841，B1 射程外）",
-      "reason": "强制改密提示 message 写着 `POST /api/auth/password/change` —— **登录流程里的商家可见话术**，凭空一条接口调用指令 ⇒ 应只说「请先修改密码」+ 页面动作。（现取命中 1 处）"
+      "reason": "强制改密提示 message 写着 `POST /api/auth/password/change` —— **登录流程里的商家可见话术**，凭空一条接口调用指令 ⇒ 应只说「请先修改密码」+ 页面动作。（现取命中 1 处）",
+      "index": 1
     },
     {
       "path": "backend/admin-api/src/main/java/com/migao/admin/service/AgentBatchService.java",
       "literal": "用 GET /api/admin/agent/batches/",
-      "line": 252,
       "hits": 1,
       "issue": "#6841",
       "kind": "登记（跟踪 #6841，B1 射程外）",
-      "reason": "批次状态查询提示「用 GET /api/admin/agent/batches/{id} 查看该批次的状态与结果」—— 受众待判（运营/商家），按泄漏登记。（现取命中 1 处）⚠️ 行号 210→216 = issue #6960 在 `execute` 的**读-判**与**抢执行权（CAS）**之间插入探针与条件更新（本包**未新增**泄漏，只把这条已登记债务的位置钉回现取行）。 ⚠️ #8283 把准入段拆到 claimForExecute/claimForRevert ⇒ 行号 216→252（字面量未改）。"
+      "reason": "批次状态查询提示「用 GET /api/admin/agent/batches/{id} 查看该批次的状态与结果」—— 受众待判（运营/商家），按泄漏登记。（现取命中 1 处）⚠️ 行号 210→216 = issue #6960 在 `execute` 的**读-判**与**抢执行权（CAS）**之间插入探针与条件更新（本包**未新增**泄漏，只把这条已登记债务的位置钉回现取行）。 ⚠️ #8283 把准入段拆到 claimForExecute/claimForRevert ⇒ 行号 216→252（字面量未改）。",
+      "index": 1
     },
     {
       "path": "backend/admin-api/src/main/java/com/migao/admin/service/AgentBatchService.java",
       "literal": "用 GET /api/admin/agent/batches/",
-      "line": 384,
       "hits": 1,
       "issue": "#6841",
       "kind": "登记（跟踪 #6841，B1 射程外）",
-      "reason": "批次撤销结果提示「用 GET /api/admin/agent/batches/{id} 查看该批次的撤销结果」—— 同上（⚠️ 与上一条**字面量完全相同** ⇒ 台账键必须带行号，见判据 ::leak_key 的 docstring）。（现取命中 1 处）⚠️ 行号 262→284 = issue #6960 重排 `revert` 的准入段所致（未新增泄漏）。 ⚠️ #8283 把准入段拆到 claimForExecute/claimForRevert ⇒ 行号 284→371（字面量未改）。 ⚠️ 终态 CAS 补丁后再现取：371→384（字面量未改）。"
+      "reason": "批次撤销结果提示「用 GET /api/admin/agent/batches/{id} 查看该批次的撤销结果」—— 同上（⚠️ 与上一条**字面量完全相同** ⇒ 台账键靠**出现序号**消歧（本条 = 同串的第 2 次出现），见判据 ::leak_key 的 docstring）。（现取命中 1 处）⚠️ 行号 262→284 = issue #6960 重排 `revert` 的准入段所致（未新增泄漏）。 ⚠️ #8283 把准入段拆到 claimForExecute/claimForRevert ⇒ 行号 284→371（字面量未改）。 ⚠️ 终态 CAS 补丁后再现取：371→384（字面量未改）。",
+      "index": 2
     },
     {
       "path": "backend/admin-api/src/main/java/com/migao/admin/service/AgentBatchService.java",
       "literal": "请先执行该批次（POST /api/admin/agent/batches/",
-      "line": 389,
       "hits": 1,
       "issue": "#6841",
       "kind": "登记（跟踪 #6841，B1 射程外）",
-      "reason": "批次执行顺序提示「请先执行该批次（POST /api/admin/agent/batches/{id}/execute）」—— 同上。（现取命中 1 处）⚠️ 行号 267→289 = issue #6960 重排 `revert` 的准入段所致（未新增泄漏）。 ⚠️ #8283 把准入段拆到 claimForExecute/claimForRevert ⇒ 行号 289→376（字面量未改）。 ⚠️ 终态 CAS 补丁后再现取：376→389（字面量未改）。"
+      "reason": "批次执行顺序提示「请先执行该批次（POST /api/admin/agent/batches/{id}/execute）」—— 同上。（现取命中 1 处）⚠️ 行号 267→289 = issue #6960 重排 `revert` 的准入段所致（未新增泄漏）。 ⚠️ #8283 把准入段拆到 claimForExecute/claimForRevert ⇒ 行号 289→376（字面量未改）。 ⚠️ 终态 CAS 补丁后再现取：376→389（字面量未改）。",
+      "index": 1
     },
     {
       "path": "backend/admin-api/src/main/java/com/migao/admin/service/CraftCalcConfigService.java",
       "literal": "GET /api/admin/production/craft-calc-config（source='default' 的那一份）。",
-      "line": 408,
       "hits": 1,
       "issue": "#6841",
       "kind": "登记（跟踪 #6841，B1 射程外）",
-      "reason": "算料配置整份拒绝时的 suggestion 让商家去看 `GET /api/admin/production/craft-calc-config`（source='default'）—— 端点对商家不可读；而该域**有页面**（企业基础设置 → 算料口径）⇒ 应不指路或改指现域。（现取命中 1 处）⚠️ 行号 367→405 = issue #7548 在 `validate()` 上方补了两份护栏键清单的注释所致；405→408 = issue #7560 给拼色余量加 `margin_mixed_single` / `margin_mixed_multi` 两个数值键（`NUMERIC_KEYS` / `NON_NEGATIVE_KEYS` 各多两行）所致 —— 未新增泄漏，字面量一字未动。"
+      "reason": "算料配置整份拒绝时的 suggestion 让商家去看 `GET /api/admin/production/craft-calc-config`（source='default'）—— 端点对商家不可读；而该域**有页面**（企业基础设置 → 算料口径）⇒ 应不指路或改指现域。（现取命中 1 处）⚠️ 行号 367→405 = issue #7548 在 `validate()` 上方补了两份护栏键清单的注释所致；405→408 = issue #7560 给拼色余量加 `margin_mixed_single` / `margin_mixed_multi` 两个数值键（`NUMERIC_KEYS` / `NON_NEGATIVE_KEYS` 各多两行）所致 —— 未新增泄漏，字面量一字未动。",
+      "index": 1
     },
     {
       "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingFeeCombinationCommandService.java",
       "literal": "请直接编辑既有那一行（PUT /api/admin/production/processing-fee-combinations/%s），",
-      "line": 339,
       "hits": 1,
       "issue": "#6841",
       "kind": "登记（跟踪 #6841，B1 射程外）",
-      "reason": "客户编辑既有组合的建议**直接给端点**（`PUT /api/admin/production/processing-fee-combinations/{id}`）而不是说「改既有那一行」⇒ §31 P3。⚠️ 本文件本包已改文案，但这处与页名无关 ⇒ **留在台账**（避免战线外扩），跟踪 #6841。（现取命中 1 处）"
+      "reason": "客户编辑既有组合的建议**直接给端点**（`PUT /api/admin/production/processing-fee-combinations/{id}`）而不是说「改既有那一行」⇒ §31 P3。⚠️ 本文件本包已改文案，但这处与页名无关 ⇒ **留在台账**（避免战线外扩），跟踪 #6841。（现取命中 1 处）",
+      "index": 1
     },
     {
       "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionOperationCommandService.java",
       "literal": "同名工序只能有一条：改它的单价/状态，或换一个工序名（目录查看入口 GET /api/admin/production/operations-catalog）",
-      "line": 288,
       "hits": 1,
       "issue": "#6841",
       "kind": "登记（跟踪 #6841，B1 射程外）",
-      "reason": "工序写面查重的**可行动建议**结尾挂着「目录查看入口 GET /api/admin/production/operations-catalog」⇒ §31 P3。（现取命中 1 处）"
+      "reason": "工序写面查重的**可行动建议**结尾挂着「目录查看入口 GET /api/admin/production/operations-catalog」⇒ §31 P3。（现取命中 1 处）",
+      "index": 1
     },
     {
       "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionSeedTemplateService.java",
       "literal": "POST /api/admin/production/seed-templates/{templateId}/apply 手动补套）",
-      "line": 379,
       "hits": 1,
       "issue": "#6841",
       "kind": "登记（跟踪 #6841，B1 射程外）",
-      "reason": "开租种子模板套用失败的人工补套指引写着 `POST /api/admin/production/seed-templates/{templateId}/apply`；走商家可见 message 通道 ⇒ 受众待判。（现取命中 1 处）"
+      "reason": "开租种子模板套用失败的人工补套指引写着 `POST /api/admin/production/seed-templates/{templateId}/apply`；走商家可见 message 通道 ⇒ 受众待判。（现取命中 1 处）",
+      "index": 1
     }
   ]
 }

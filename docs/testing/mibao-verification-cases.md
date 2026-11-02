@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（176 case）
+## 杂项域（177 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -6901,6 +6901,18 @@
 跳过: [backend-contract] 零 LLM 的确定性判据（真 node 跑解析器 + workflow/录制脚本结构读取），pytest 真跑、零网络、不进 agent-eval 冒烟
 ```
 溯源: 2026-11-02 新增（issue #8391）：该月度 schedule（fixture-record.yml，每月 1 日 03:00 CST）自 2026-09 起连红三次，同一形态 = 录制脚本的登录没采纳 BASE_URL、回落到 Playwright 默认 127.0.0.1:8080。取号过程：next_case_id.py CI exit 3（PR #8425 改动文件 > 300 读不到 diff）⇒ 按工具设计手工核在飞面（main / PR #8425 / PR #8446 / 本工作区）确认 CI- 号段全新、无占用 ⇒ CI-001。 ｜ tags: backend-contract, ci, fixture
+
+### MC-128. **端点泄漏台账的键不许含行号**：只插空行（行号漂移）判据仍绿，真删/真加泄漏照旧红（issue #6977） 🔵
+```
+你: 我只在文件里插了几行空行，凭什么端点泄漏台账判据同时报「未登记」和「台账未被兑现」，还白烧一轮 required 腿？
+数据: 🔴 **判据 6c·插空行必须仍绿（本单验收判据①）**：`backend/admin-api/src/main/java/com/migao/admin/service/AgentBatchService.java` 全文每个换行后再插两个空行（行号整体漂移、零泄漏增删）⇒ 判据 6 与键形态判据**都不得变红**；且必须先自证行号真的漂了（否则这条自证是空的）。执行点 = tests/unit_ci_workflows/test_removed_page_pointer_targets.py::test_injection_blank_line_shift_keeps_endpoint_ledger_green
+数据: 🔴 **判据 6d·真删已登记端点必须红（本单验收判据②）**：把 `backend/admin-api/src/main/java/com/migao/admin/service/ProductionOperationCommandService.java` 里已登记那条提示的端点从句删掉（只删端点、不删文案）⇒ 判据 6 判红且具名「台账未被兑现 …（第 1 次出现）」。执行点 = 同文件 ::test_injection_deleting_a_registered_endpoint_turns_red
+数据: 🔴 **判据 6b·类级元守卫（键不许含行号）**：台账键必须逐条匹配 `路径::字面量::#出现序号`，**出现纯数字段即红**（旧形态 `文件::行::字面量` 恰好如此），且键里的路径/字面量必须在该文件里仍存在、序号 ≥ 1、键不得重复。执行点 = 同文件 ::test_leak_ledger_keys_carry_no_line_number + ::test_injection_line_numbered_key_is_red
+数据: 🔴 **一次性迁移的幂等 + 语义等价**：旧形态台账（`line` 当锚）迁移到新键后，第二次跑必须**逐字节零 diff**，且迁移结果的 `(路径, 字面量, 出现序号)` 与现取台账**逐值相等**（债务认定一字未改）；读取侧遇旧形态 **fail-closed** 并给出重新生成入口。迁移器 = 判据文件的 `--migrate-leak-ledger`（自证：每条旧行号必须能解析到现取扫描的同一命中，解析不到即 fail-closed）。执行点 = 同文件 ::test_legacy_ledger_migration_is_idempotent_and_semantics_preserving + ::test_legacy_ledger_reader_fails_closed_with_regenerate_hint
+数据: **边界（照实登记）**：① 序号是「同文件、同字面量」的出现顺序 —— 两条同串互换先后时键集合不变（仍绿），此时 reason 文案可能挂到另一次出现上（判不了，也不影响债务认定）；② 判据只判台账键形态与双向对账，不判「哪条泄漏该不该修」（口径仍归 issue #6841）；③ 迁移只接受「全旧」或「全新」两种台账形态（混合 ⇒ fail-closed 要求人工核对）；④ 旧条目 reason 里的「⚠️ 行号 …」是沿革记录，不参与判据。
+跳过: [backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 字面量 + 台账键形态 + 纯函数判定 + 内存注入自证 + tmp 目录迁移幂等），pytest 真跑、零网络、不进 agent-eval 冒烟
+```
+溯源: 2026-11-02 新增（issue #6977）。病（PR #6973 实测）：台账键 = `文件::行::字面量` ⇒ 任何人在被监视文件里增删一行，该文件里所有已登记条目会同时变成「未登记（新行号）」+「陈旧（旧行号）」双向假红（红的是排版，不是泄漏），作者只能手工重锚行号而债务内容一字未改。取号 = `python3 scripts/next_case_id.py MC` **exit 3**（PR #8425 改动文件 >300 ⇒ `gh pr diff` 读不到 ⇒ 按工具出口手工核在飞面）⇒ main 现取最大 = **MC-126**、在飞 PR #8450 / #8446 正文声称 **MC-127** ⇒ 取 **MC-128**（`git log --all -S"id: MC-128"` 零命中 + 本工作区 `grep -rn "id: MC-128" .github/cases` 零命中）。**红证（逐字，本包实跑）**：① 修前（origin/main 判据 + origin/main 台账）在 `AgentBatchService.java` 顶部插 3 个空行 ⇒ `1 failed`，具名「未登记 …:255 / :387 / :392」+「台账未被兑现 …（3 条）」；② 修后同一次注空行 ⇒ `2 passed`；③ 修后真删 `ProductionOperationCommandService.java` 的端点从句 ⇒ `1 failed` 且具名「台账未被兑现 …（第 1 次出现）」；④ 修后新增一处未登记泄漏 ⇒ `1 failed` 且具名「未登记 …（键 = …::#1）」。迁移读数：`--migrate-leak-ledger` 第 1 次「已迁移」、第 2 次「已是新形态（幂等：零写入）」，台账 9 条 / 9 处不变。 ｜ tags: backend-contract, ledger, red-proof, idempotent-migration
 
 ## 商家入驻域（7 case）
 
@@ -14374,8 +14386,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：972（活跃 153，跳过 819）
-- tier 分布：smoke 15 / normal 896 / adversarial 33
+- 用例总数：973（活跃 153，跳过 820）
+- tier 分布：smoke 15 / normal 897 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14391,7 +14403,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：176
+- 杂项域：177
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：75
@@ -14634,6 +14646,7 @@
 - MC-129: LLM 主凭据失效（401）必须成为**可观测事件**：恰好一条可行动 ERROR + 独立只读探针 `/internal/llm-health`（ok=false ⇒ 503），`/ready` 语义不变（issue #8084）
 - MC-131: **预设搬运通道台账**（issue #6060）：搬出去的每个预设文件逐条登记「最后承载的字节（blob）+ 版末提交 + 最后承载的版本 + 搬入证据（预设仓 commit）」；未登记即红、登记了但现取没有即红、字节/版本对不上即红、版本证据缺口只许缩短
 - CI-001: **fixture 录制基址只认 BASE_URL**：缺失即 fail-closed，不得静默回落到本机 127.0.0.1:8080（issue #8391）
+- MC-128: **端点泄漏台账的键不许含行号**：只插空行（行号漂移）判据仍绿，真删/真加泄漏照旧红（issue #6977）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
