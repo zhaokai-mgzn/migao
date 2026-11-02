@@ -432,6 +432,9 @@ public class ProductionRoutingCommandService {
      *   <li>{@code action} ∈ {@code insert} / {@code remove}；{@code operation} / {@code after_operation}
      *       用**逻辑工序名**（复用既有校验）；{@code remove} 不接受锚点；</li>
      *   <li>目标工序 / 锚点不在工序库 ⇒ <b>422</b>（规则命中后插不进来 = 黑洞，V72 种子同款护栏）；</li>
+     *   <li><b>目标工序必须在规则**生效的每个部位**上解析得到库行</b>（{@code variantNameOf}，与实例化侧
+     *       **同一份判据**；issue #6428）⇒ 否则 <b>422</b> ——「工序存在、但这条规则把它用到了没有该变体的
+     *       部位」正是 #6420 的形态（规则今天存得下，等有订单命中才在**生产环节**整单 fail-closed）；</li>
      *   <li>同一条「kind + 触发值 + 动作 + 目标工序」已存在 ⇒ <b>409</b>
      *       （对齐 DB 唯一索引 {@code uk_production_route_rules_tenant_trigger_operation}）；</li>
      *   <li>单价：可空（= 未定价 ≠ 0）；非数值 / 负数 / 超两位小数 ⇒ <b>422</b>（同
@@ -507,12 +510,25 @@ public class ProductionRoutingCommandService {
             details.add(BusinessException.detail("after_operation",
                     "「移除」动作没有锚点（锚点只对「插入」有意义）—— 请清掉 after_operation，或把动作改成 insert"));
         }
-        if (!logicalOperationExists(operation, tenantId)) {
+        // 工序库目录（一次取回、复用）：规则写面的**存在性**与**部位可解析性**读同一份目录
+        // （`operationsByName` = 实例化侧 `catalogByName` 的同源视图）—— 不另造第二份映射表。
+        Map<String, Map<String, Object>> catalog = productionOperationQueryService.operationsByName(tenantId);
+        if (!logicalOperationExists(operation, catalog)) {
             details.add(BusinessException.detail("operation", String.format(
                     "工序库里没有「%s」—— 规则指向一道不存在的工序 ⇒ 命中后插不进来，这条规则等于黑洞",
                     operation)));
+        } else if ("insert".equals(action)) {
+            // 🔴 部位敏感的可实例化校验（issue #6428）：只判「工序存在」不够 —— 实例化按
+            // (工序 × 部位) 取变体名（`variantNameOf`），取不到就把该部位**每一张单**整单停
+            // （#6420：租户 25 的纱帘单 22/22 全挂）。写面必须与实例化侧**同一份判据**，
+            // 否则能存下一条「等有订单命中它才在生产环节炸」的规则。
+            // 只判 insert：remove 只按逻辑名从序列里删、不做变体解析 ⇒ 不会 fail-closed。
+            String unresolvedReason = unresolvedOperationReason(operation, triggerKind, rulePosition, catalog);
+            if (unresolvedReason != null) {
+                details.add(BusinessException.detail("operation", unresolvedReason));
+            }
         }
-        if (afterOperation != null && !logicalOperationExists(afterOperation, tenantId)) {
+        if (afterOperation != null && !logicalOperationExists(afterOperation, catalog)) {
             details.add(BusinessException.detail("after_operation", String.format(
                     "锚点工序「%s」不在工序库里 ⇒ 插不到它后面（会落到末尾，与商家预期不符）", afterOperation)));
         }
@@ -687,10 +703,65 @@ public class ProductionRoutingCommandService {
      * <p>库里存的是**变体名**（{@code 精裁-布}），而规则表 {@code operation} 存的是**逻辑名**
      * （{@code 精裁}）⇒ 两态都接受：先按原样查库（部位无关的裸逻辑名，如 {@code 外帘打卷}），
      * 再按 {@link ProductionOperationQueryService#normalizeOperationName} 归一后比对。</p>
+     *
+     * <p>目录由调用方传入（一次取回、两处复用）：规则写面还要拿同一份目录做**部位可解析性**判据
+     * （{@link #unresolvedOperationReason}）——重复查库只会让两侧看到不同的快照。</p>
      */
-    private boolean logicalOperationExists(String logicalName, Long tenantId) {
-        return logicalOperationExistsIn(logicalName,
-                productionOperationQueryService.operationsByName(tenantId).keySet());
+    private boolean logicalOperationExists(String logicalName,
+                                           Map<String, Map<String, Object>> catalog) {
+        return logicalOperationExistsIn(logicalName, catalog.keySet());
+    }
+
+    /**
+     * 该规则**实际会在哪些部位生效** —— 与实例化侧**同一份口径**（不另造一份值域）：
+     * <ul>
+     *   <li>{@code trigger_kind='sales_form'} 只吃**布料单**（{@link ProcessingOrderService} 的
+     *       {@code buildRoute} 按产品形态分派：布料单只吃售卖方式规则、窗帘单只吃其余规则）；</li>
+     *   <li>其余触发维只吃**窗帘单**的基线三部位（{@link ProductionOperationQueryService#BASELINE_POSITIONS}）；</li>
+     *   <li>规则级 {@code position} 非空 ⇒ 再按实例化侧 {@code rulePositionMatches} 的**逐字相等**收窄。</li>
+     * </ul>
+     *
+     * <p>收窄后为空（如「部位维规则又限定到布料」）⇒ 这条规则**任何单都不会命中**（产品形态分派），
+     * 不参与目标工序的可解析性判据 —— 该形态属**另一条**既有缺口（规则永不生效），不在本判据射程内。</p>
+     */
+    private static List<String> effectivePositionsOf(String triggerKind, String rulePosition) {
+        List<String> scope = TRIGGER_KIND_SALES_FORM.equals(triggerKind)
+                ? List.of(ProcessingOrderService.FABRIC_POSITION)
+                : ProductionOperationQueryService.BASELINE_POSITIONS;
+        if (rulePosition == null) {
+            return scope;
+        }
+        return scope.contains(rulePosition) ? List.of(rulePosition) : List.of();
+    }
+
+    /**
+     * 目标工序在该规则的**每个生效部位**上都解析得到库行吗（issue #6428）？返回 {@code null} =
+     * 都解析得到（或该规则不会在任何部位生效），否则返回**可行动的**逐条理由。
+     *
+     * <p>解析判据 = {@link ProductionOperationQueryService#variantNameOf}（**唯一一份**）—— 与实例化侧
+     * {@code ProcessingOrderService#buildRoute} / {@code insertConditionalOperations} 逐字同一调用。
+     * 在这里另写一份「理论上的变体名」就是**第二份口径**：它一旦漂移，写面放行、运行期照样 fail-closed，
+     * 而没有任何东西会变红。</p>
+     */
+    private String unresolvedOperationReason(String operation, String triggerKind, String rulePosition,
+                                             Map<String, Map<String, Object>> catalog) {
+        List<String> unresolved = new ArrayList<>();
+        for (String position : effectivePositionsOf(triggerKind, rulePosition)) {
+            if (productionOperationQueryService.variantNameOf(operation, position, catalog) == null) {
+                unresolved.add(position);
+            }
+        }
+        if (unresolved.isEmpty()) {
+            return null;
+        }
+        String scope = rulePosition == null
+                ? "这条规则**不限部位**、会在「" + String.join(" / ", unresolved) + "」部位的单上命中"
+                : "这条规则限定在「" + rulePosition + "」部位";
+        return String.format(
+                "工序库里没有「%s」在「%s」部位的库行 ⇒ %s —— 命中后该部位的单**无法实例化工序**"
+                        + "（实例化按「工序 × 部位」取变体名，取不到就整单停，商家配的价进不了单）。"
+                        + "请先在「企业基础设置 → 工序与部位单价」补「%s」的该部位变体，或把这条规则限定到它真有变体的部位",
+                operation, String.join(" / ", unresolved), scope, operation);
     }
 
     /**

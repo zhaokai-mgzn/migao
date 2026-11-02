@@ -5,6 +5,24 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 一条「把工序用到没有该部位库行的条件」的规则，保存时就被拒（不再等派单在整单上炸）（2026-11-03，issue #6428）
+
+- **改前**：`POST /api/admin/production/route-rules` 只校验「工序库里有没有这道工序」（逻辑名存在性），
+  **不校验**它在规则**生效的部位**上解析得到 —— 而实例化是按 `(工序 × 部位)` 取变体名
+  （`ProductionOperationQueryService#variantNameOf`）。于是「花边」只有布帘库行（`花边-布`）时，
+  一条**不限部位**的规则照样存得下，等到有**纱帘单**命中它，才在**生产环节**整单 fail-closed
+  （#6420 实证：22 张纱帘单派不出去，报「引用的工序 [花边] 在工序库中不存在」）。
+- **改后**：写面按实例化侧**同一份**判据校验：目标工序必须在规则**生效的每个部位**上都解析得到
+  （`sales_form` 规则只吃布料单 ⇒ 只判布料；其余触发维只吃窗帘单 ⇒ 判布帘 / 纱帘 / 帘头；规则级
+  `position` 再按实例化侧的逐字匹配收窄），否则 **422 + 逐条理由**（点名「哪个工序 × 哪个部位」+
+  先去补该部位变体 / 或把规则限定到它真有变体的部位）。**不静默兜底、不改默认工序**；
+  `action='remove'` 不做变体解析 ⇒ 不判；**存量行不做数据回填**，运行期那条 fail-closed 一字不动
+  留作最后一道。
+- 判据：`backend/admin-api/src/test/java/com/migao/admin/service/ProductionRoutingCommandServiceOptionCreateTest.java`
+  （PG-100 组 9 条 + 注入式红证）、
+  `backend/admin-api/src/test/java/com/migao/admin/service/ProductionRouteRuleWriteSurfaceMetaGuardTest.java`
+  （`production_route_rules` 写面台账的类级元守卫：新写面未登记即红、GATED 调用点被摘即红）。
+
 ### 同时做出库不再出现 500：出库单号也改成「一条语句占号」（2026-11-03，issue #8490）
 
 - **改前**：出库单号（`CK-yyyyMMdd-NNNN`）与改前的入库单号**逐字同构** —— 先 `exists` 判「没人占」⇒
