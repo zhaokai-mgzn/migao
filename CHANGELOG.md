@@ -780,6 +780,17 @@ worker-h5 纯函数、承运商 4 条 × 两处入口 + 类级单一真值守卫
   不降级备用供应商（涉钱 / 质量口径待裁）；用户侧可行动话术属商家可见文案，另开。
 - 判据：`backend/ai-agent-service/tests/test_llm_health.py`（红证 7 条，见 PR body）。
 
+### 智能派单：库存不足的行在列表上就标出来，并且勾不上（2026-11-02，issue #7091）
+
+- **改前**：列表里 14 行长得一模一样，点完「一键合并派单」才收到「库存里没有能裁出它的批次」，
+  而且**一次只报一行** ⇒ 全选即必失败，反复发生。
+- **改后**：`GET /api/admin/production/pool` 的行多一个**只读**字段 `stockSatisfiable`
+  （该行需求能否被某个库存批次裁出 —— 与派工前的 fail-closed 判据**同源**，按物料去重后**一次**批量取
+  ⇒ 不随行数 N+1）；前端对缺料行**禁用勾选**，行内一句「库存不足，先入库」（行内标记，不是占屏告警）。
+- 边界：「全选」按**订单**粒度跳过缺料单 —— 一单跨两个料组时只要一行缺料，整单都不可勾
+  （服务端对整批 fail-closed，不静默少派）。
+- 判据：`ProcessingOrderServiceTest#poolMarksStockSatisfiabilityPerLine`（红证 = 字段恒 true ⇒ 红）+
+  `frontend/admin-web/tests/unit/components/production-pool-stock-hint.test.tsx`（红证 = 页面不看字段 ⇒ ①② 红）。
 
 ### 商家用「上下卷边」这类人话改算料参数时，黄金策不再因键名对不上而拒绝（2026-11-01，issue #8300）
 

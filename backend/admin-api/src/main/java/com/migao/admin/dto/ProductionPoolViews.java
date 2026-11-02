@@ -47,6 +47,12 @@ public final class ProductionPoolViews {
      *                       会让看板变成噪声）。
      * @param deliveryDaysLeft 到货日**临期度**（天）= 到货日 − 今天；负数 = **已逾期**；
      *                       {@code null} = 未指定。服务端算、前端只渲染（不造第二份口径）。
+     * @param stockSatisfiable **库存可满足性**（issue #7091，只读）：本行需求能否被**某一个**库存批次裁出。
+     *                       <p>口径与派工前的 fail-closed 判据**同源**（{@code StockBatchConsumptionService}
+     *                       的同一份余量派生点 + 同一条 SKU 一致性口径）⇒ {@code false} 恰好是「这一行
+     *                       点下去必被拒（没有能裁出它的批次）」那个条件，不是另算的一套口径。</p>
+     *                       <p>🔴 **只读**：不参与任何写 —— 不选批次、不改扣减、不进落账判据；只决定
+     *                       前端「这一行能不能勾」与行内那句提示。落库数据一律来自派工链路自己的判据。</p>
      */
     public record PoolLine(
             String orderId,
@@ -62,15 +68,32 @@ public final class ProductionPoolViews {
             boolean isUrgent,
             boolean isOutsourced,
             LocalDate requiredDeliveryDate,
-            Integer deliveryDaysLeft) {
+            Integer deliveryDaysLeft,
+            boolean stockSatisfiable) {
 
-        /** 兼容旧 arity（未标记外发）：测试与既有调用方不必逐个改签名。 */
+        /** 兼容旧 arity（未标记外发 / 未判库存）：测试与既有调用方不必逐个改签名。 */
         public PoolLine(String orderId, String orderNo, String itemId, String productId, String productName,
                         String skuCode, BigDecimal requiredMeters, OffsetDateTime waitingSince,
                         BigDecimal waitHours, boolean overdue, boolean isUrgent,
                         LocalDate requiredDeliveryDate, Integer deliveryDaysLeft) {
             this(orderId, orderNo, itemId, productId, productName, skuCode, requiredMeters, waitingSince,
-                    waitHours, overdue, isUrgent, false, requiredDeliveryDate, deliveryDaysLeft);
+                    waitHours, overdue, isUrgent, false, requiredDeliveryDate, deliveryDaysLeft, true);
+        }
+
+        /** 兼容旧 arity（未判库存）：{@code true} = **不判**（缺省不制造假阻塞）。 */
+        public PoolLine(String orderId, String orderNo, String itemId, String productId, String productName,
+                        String skuCode, BigDecimal requiredMeters, OffsetDateTime waitingSince,
+                        BigDecimal waitHours, boolean overdue, boolean isUrgent, boolean isOutsourced,
+                        LocalDate requiredDeliveryDate, Integer deliveryDaysLeft) {
+            this(orderId, orderNo, itemId, productId, productName, skuCode, requiredMeters, waitingSince,
+                    waitHours, overdue, isUrgent, isOutsourced, requiredDeliveryDate, deliveryDaysLeft, true);
+        }
+
+        /** 回填只读的可满足性（池读面先收全部行，再**一次**批量判定 —— issue #7091）。 */
+        public PoolLine withStockSatisfiable(boolean value) {
+            return new PoolLine(orderId, orderNo, itemId, productId, productName, skuCode, requiredMeters,
+                    waitingSince, waitHours, overdue, isUrgent, isOutsourced, requiredDeliveryDate,
+                    deliveryDaysLeft, value);
         }
     }
 
@@ -99,6 +122,11 @@ public final class ProductionPoolViews {
             int orderCount,
             BigDecimal requiredMeters,
             List<PoolLine> lines) {
+    }
+
+    /** 物料键 {@code productId|skuCode}（{@code PoolGroup.materialKey} 的派生处，issue #7091 随字段下沉本件）。 */
+    public static String materialKey(String productId, String skuCode) {
+        return (productId == null ? "" : productId) + "|" + (skuCode == null ? "" : skuCode);
     }
 
     /**

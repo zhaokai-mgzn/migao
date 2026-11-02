@@ -692,7 +692,7 @@ public class ProcessingOrderService {
                 ProductionPoolViews.PoolLine line = new ProductionPoolViews.PoolLine(
                         order.getId(), order.getOrderNo(), itemId, productId, str(row.get("productName")),
                         skuCode, required, order.getCreatedAt(), waitHours, overdue,
-                        urgent, outsourced, requiredDeliveryDate, deliveryDaysLeft);
+                        urgent, outsourced, requiredDeliveryDate, deliveryDaysLeft, true);
                 if (urgent) {
                     // 🔴 加急单**不进池**（用户裁定「允许加急的订单直接派，不加急的同批次候选池优先」）：
                     // 它的去处是插队区（看板上一个动作 = 立刻单派），**不是**成批候选。
@@ -702,7 +702,7 @@ public class ProcessingOrderService {
                     // 去处 = 外发区（同样一个动作 = 立刻单派，但**必须**选承接方）。
                     outsourcedLines.add(line);
                 } else {
-                    String key = materialKey(productId, skuCode);
+                    String key = ProductionPoolViews.materialKey(productId, skuCode);
                     materialOf.putIfAbsent(key, new String[]{productId, skuCode});
                     linesByMaterial.computeIfAbsent(key, k -> new ArrayList<>()).add(line);
                     lineCount++;
@@ -716,6 +716,9 @@ public class ProcessingOrderService {
                 ordersInPool.add(order.getId());
             }
         }
+        // issue #7091：行级库存可满足性（只读）—— 按物料**一次**批量判定后回填三条队列（唯一实现见 StockSatisfiability）。
+        StockSatisfiability.fill(batchStock(), tenantId, urgentLines, outsourcedLines,
+                linesByMaterial.values());
         // 智能派单排序（判据 5 的唯一落点）：插队区与每个物料组**各自**按同一把键排（见 POOL_LINE_ORDER）
         urgentLines.sort(POOL_LINE_ORDER);
         outsourcedLines.sort(POOL_LINE_ORDER);
@@ -814,11 +817,6 @@ public class ProcessingOrderService {
             minutes = 0;
         }
         return BigDecimal.valueOf(minutes).divide(BigDecimal.valueOf(60), 1, RoundingMode.HALF_UP);
-    }
-
-    /** 物料键（商品 × 颜色 × 门幅）。{@code skuCode} 在本系统里就是「颜色 × 门幅」的组合。 */
-    private static String materialKey(String productId, String skuCode) {
-        return (productId == null ? "" : productId) + "|" + (skuCode == null ? "" : skuCode);
     }
 
     /**

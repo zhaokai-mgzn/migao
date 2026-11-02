@@ -101,9 +101,23 @@ class PoolBoardUrgencyTest {
     @Mock
     private com.migao.admin.mapper.ProcessingItemMapper processingItemMapper;
 
+    /**
+     * 池读面的**库存可满足性**（issue #7091）：{@code pool()} 现在会按物料批量问一次
+     * （缺省 stub = 空 Map ⇒ 每行 {@code stockSatisfiable=false}）。本类的判据只看成员 / 计数 /
+     * 行序 / 文案，不读这个字段；但它必须在场 —— 漏装配时 {@code batchStock()} fail-closed 抛错
+     * （那是**有意**的：派工扣批次不能静默跳过）。
+     */
+    @Mock
+    private StockBatchConsumptionService stockBatchConsumptionService;
+
     @BeforeEach
     void setUp() {
         com.migao.admin.config.TenantContext.setTenantId(TENANT);
+        // 显式装配（同 `ProcessingOrderServiceTest#realChainService` 的理由）：池读面现在要按物料问一次
+        // 库存可满足性（issue #7091）⇒ 这个依赖**必须在场**。`@InjectMocks` 经构造器建实例、
+        // 字段注入不保证覆盖它 ⇒ 不赌注入顺序；漏装配时 `batchStock()` fail-closed 抛错（有意）。
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                processingOrderService, "stockBatchConsumptionService", stockBatchConsumptionService);
     }
 
     // ─────────────────────────────────────────── 判据 1/2：缺省不变

@@ -1,6 +1,7 @@
 package com.migao.admin.service;
 
 import com.migao.admin.exception.BusinessException;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -205,5 +206,27 @@ public final class StockQuantity {
      */
     public static BigDecimal fromTenths(long tenths) {
         return stripTrailingZerosPlain(BigDecimal.valueOf(tenths, SCALE));
+    }
+
+    /**
+     * 门幅原串 → 米（{@code "2.8米"} / {@code "2.8"} 两种存量形态；去掉一切非数字修饰）。
+     *
+     * <p>解析不出 / 非正 ⇒ {@code null} ⇒ 调用方（排料）**不猜门幅**：猜大了会把两块料并进一行
+     * ⇒ 少领 ⇒ 切不出货。</p>
+     *
+     * <p>为什么住这里（issue #7091）：它是**米数上的纯函数**，与上面三条精度口径同族；原先住在
+     * {@code StockBatchConsumptionService}（LOC 棘轮的冻结文件，行数只许向下）—— 纯函数不该占
+     * 冻结文件的额度（那里每加一处派工逻辑都要为它腾行数）。</p>
+     */
+    static Double doorWidthMeters(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return null;
+        }
+        try {
+            BigDecimal value = new BigDecimal(raw.replaceAll("[^0-9.]", ""));
+            return value.signum() > 0 ? value.doubleValue() : null;
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 }

@@ -1,3 +1,5 @@
+import type { PoolLine } from './production-pool'
+
 // 通用 API 响应类型（后端统一格式：{success, data, error, requestId, timestamp}）
 export interface ApiResponse<T = unknown> {
   success: boolean
@@ -4129,39 +4131,8 @@ export interface BatchCandidates {
 
 // ========== 智能派单 / 池化派单（issue #5177，消费 #5169 已交付的三个端点）==========
 
-/**
- * 池内一行（`PoolLine`）—— `GET /api/admin/production/pool` 的
- * `urgentLines[]` 与 `groups[].lines[]` 共用同一结构。
- *
- * 🔴 **顺序由服务端唯一确定**（到货日升序 null 最后 → waitHours 降序 → waitingSince 升序 →
- * orderId 升序）：前端**按接口给的数组顺序渲染，不得重排**（在浏览器里再排一次 = 第二份会漂的口径）。
- */
-export interface PoolLine {
-  orderId: string
-  orderNo: string
-  itemId: string
-  productId: string
-  productName: string
-  skuCode?: string | null
-  requiredMeters: number
-  /** ISO offset datetime（`waitHours` 的取数起点） */
-  waitingSince: string
-  waitHours: number
-  overdue: boolean
-  /** 非空列 ⇒ 服务端**总是**下发（缺省 false = 不加急） */
-  isUrgent: boolean
-  /** 外发加工标记（V194，issue #7746 后续）：true ⇒ 不进池、进外发区、派单必须选承接方。 */
-  isOutsourced?: boolean
-  /**
-   * 到货日 `YYYY-MM-DD`。
-   * 🔴 后端 Jackson 配了 `default-property-inclusion: non_null` ⇒ **未指定时这个键整个缺席**
-   * （不是 `null`）⇒ 渲染必须把「缺席」与「null」当同一件事（`?? null` / 可选链），
-   * 且**不得**把日期串过 `new Date(...)`（服务端时区 Asia/Shanghai，会整体差一天）。
-   */
-  requiredDeliveryDate?: string | null
-  /** 到货日 − 今天（天）；负数 = 已逾期；**未指定时键缺席**；服务端算，前端不重算 */
-  deliveryDaysLeft?: number | null
-}
+/** 池内一行（`PoolLine`）见 `./production-pool`：本文件是冻结文件、只许向下（issue #8166 / #7091）。 */
+export type { PoolLine } from './production-pool'
 
 /** 超时未派告警（`overdueCount > 0` 时必须有可行动文案） */
 export interface PoolWarning {

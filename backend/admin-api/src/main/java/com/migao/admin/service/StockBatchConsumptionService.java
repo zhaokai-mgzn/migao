@@ -337,8 +337,7 @@ public class StockBatchConsumptionService {
                                 batch.getBatchNo(), batch.getProductId()), 400,
                         "请选择与该行商品一致的批次");
             }
-            if (StringUtils.hasText(d.skuCode()) && StringUtils.hasText(batch.getSkuCode())
-                    && !batch.getSkuCode().equals(d.skuCode())) {
+            if (!StockSatisfiability.sameSku(d.skuCode(), batch.getSkuCode())) {
                 throw new BusinessException(ERR_BATCH_SKU_MISMATCH,
                         String.format("批次 %s 属于 SKU %s，与订单明细行指定的 SKU %s 不一致",
                                 batch.getBatchNo(), batch.getSkuCode(), d.skuCode()), 400,
@@ -661,8 +660,7 @@ public class StockBatchConsumptionService {
                     String.format("批次 %s 的货号与这一行不一致（本次未记账）", wanted), 422,
                     "请核对这卷布的颜色与门幅后重新填写批次");
         }
-        if (StringUtils.hasText(skuCode) && StringUtils.hasText(target.getSkuCode())
-                && !skuCode.equals(target.getSkuCode())) {
+        if (!StockSatisfiability.sameSku(skuCode, target.getSkuCode())) {
             throw new BusinessException(ERR_BATCH_SKU_MISMATCH,
                     String.format("批次 %s 的货号与这一行不一致（本次未记账）", wanted), 422,
                     "请核对这卷布的颜色与门幅后重新填写批次");
@@ -1851,13 +1849,27 @@ public class StockBatchConsumptionService {
         String rule = normalizeAssignmentRule(assignmentRule);
         List<BatchStockViews.BatchRemaining> rows = new ArrayList<>();
         for (BatchStockViews.BatchRemaining r : remaining(tenantId, productId, null, true)) {
-            if (StringUtils.hasText(skuCode) && StringUtils.hasText(r.skuCode())
-                    && !r.skuCode().equals(skuCode)) {
+            if (!StockSatisfiability.sameSku(skuCode, r.skuCode())) {
                 continue;
             }
             rows.add(r);
         }
         return suggest(rows, requiredMeters, rule).suggestedBatchNo();
+    }
+
+    /**
+     * 单批最大余量（issue #7091）：**余量派生的两个读口都在本类**（批次一条 + {@link #consumedByBatchId}），
+     * 纯计算在 {@link StockSatisfiability#maxRemainingByMaterial}；入参按物料去重 ⇒ 行数增长不带查询数增长。
+     */
+    public Map<StockSatisfiability.MaterialDemand, BigDecimal> maxRemainingByMaterial(
+            Long tenantId, Collection<StockSatisfiability.MaterialDemand> demands) {
+        Set<String> productIds = StockSatisfiability.productIdsOf(demands);
+        List<StockBatch> batches = productIds.isEmpty() ? List.of()
+                : stockBatchMapper.selectList(new LambdaQueryWrapper<StockBatch>()
+                        .eq(StockBatch::getTenantId, tenantId).eq(StockBatch::getDeleted, 0)
+                        .in(StockBatch::getProductId, productIds));
+        return StockSatisfiability.maxRemainingByMaterial(demands, batches,
+                consumedByBatchId(tenantId, ids(batches)));
     }
 
     /** 候选 + 建议值的**唯一实现**（读面与自动指派共用）：候选顺序不动，只按规则挑建议值。 */
@@ -2234,31 +2246,12 @@ public class StockBatchConsumptionService {
         for (ProductSku sku : productSkuMapper.selectList(new LambdaQueryWrapper<ProductSku>()
                 .eq(ProductSku::getTenantId, tenantId)
                 .in(ProductSku::getId, skuIds))) {
-            Double meters = parseDoorWidth(sku.getDoorWidth());
+            Double meters = StockQuantity.doorWidthMeters(sku.getDoorWidth());
             if (meters != null) {
                 out.put(sku.getId(), meters);
             }
         }
         return out;
-    }
-
-    /**
-     * 门幅原串 → 米。存量有两种形态（{@code "2.8米"} / {@code "2.8"}），与
-     * {@code ProductService} 的建品解析、前端 {@code craft-display} 同一口径（去掉非数字修饰）。
-     *
-     * <p>解析不出 / 非正 ⇒ {@code null} ⇒ 该批次**不参与排料**（**不猜门幅**：
-     * 猜大了会把两块料并进一行 ⇒ 少领 ⇒ 切不出货）。</p>
-     */
-    private static Double parseDoorWidth(String raw) {
-        if (!StringUtils.hasText(raw)) {
-            return null;
-        }
-        try {
-            BigDecimal value = new BigDecimal(raw.replaceAll("[^0-9.]", ""));
-            return value.signum() > 0 ? value.doubleValue() : null;
-        } catch (NumberFormatException e) {
-            return null;
-        }
     }
 
     private static BigDecimal negated(BigDecimal value) {
@@ -2276,6 +2269,11 @@ public class StockBatchConsumptionService {
                 .orderByAsc(StockBatch::getId));
     }
 
+    /**
+     * 批次 {@code Σdelta}（「派生余量 = 入库量 + Σ消耗」里那一半）—— **全仓唯一的聚合点**：
+     * 第二份聚合 = 第二份「这批还剩多少」，而两份不会同时变红 ⇒ 只许这里读
+     * {@link StockBatchConsumptionMapper#sumDeltaByBatchIds}（判据 = {@code test_batch_remaining_is_derived_in_one_place}）。
+     */
     private Map<Long, BigDecimal> consumedByBatchId(Long tenantId, Collection<Long> batchIds) {
         Map<Long, BigDecimal> out = new HashMap<>();
         if (batchIds == null || batchIds.isEmpty()) {
