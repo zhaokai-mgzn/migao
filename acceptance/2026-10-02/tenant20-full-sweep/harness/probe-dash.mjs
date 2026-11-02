@@ -1,0 +1,36 @@
+// probe-dash: UI 登录 → /dashboard，抓 :8080 全部响应状态与页面最终文案
+import { createRequire } from 'module'
+const require = createRequire('/Users/guangzhen.zk/ai native/migao/tests/package.json')
+const { chromium } = require('playwright')
+
+const browser = await chromium.launch()
+const page = await browser.newPage()
+const apiCalls = []
+page.on('response', (r) => {
+  const u = r.url()
+  if (u.includes(':8080')) apiCalls.push(`${r.status()} ${u.replace('http://127.0.0.1:8080', '')}`)
+})
+page.on('console', (m) => { if (m.type() === 'error' && !m.text().includes('_next')) console.log('[console]', m.text().slice(0, 120)) })
+
+await page.goto('http://localhost:3001/login', { waitUntil: 'domcontentloaded' })
+await page.getByRole('tab', { name: /管理员登录/ }).click()
+await page.waitForSelector('#phone', { timeout: 30000 })
+await page.fill('#phone', '13870217889')
+await page.getByRole('button', { name: /获取验证码/ }).click()
+await page.waitForTimeout(1200)
+await page.fill('#code', '123456')
+await page.getByRole('button', { name: /登\s*录|登录/ }).last().click()
+await page.waitForURL('**/dashboard**', { timeout: 20000 }).catch(() => console.log('[!] 未跳 dashboard, url=', page.url()))
+await page.waitForTimeout(4000)
+const ls = await page.evaluate(() => Object.fromEntries(Object.entries(localStorage).filter(([k]) => !k.startsWith('next'))))
+console.log('== 登录后 localStorage 键:', Object.keys(ls).map(k => `${k}=${String(ls[k]).slice(0, 30)}`).join(', ') || '(空)')
+console.log('== 登录后 cookies:', (await page.context().cookies()).map(c => `${c.name}@${c.domain}`).join(', ') || '(空)')
+await page.reload({ waitUntil: 'domcontentloaded' })
+await page.waitForTimeout(6000)
+console.log('== reload 后 url:', page.url())
+console.log('== reload 后 body(前200):', (await page.evaluate(() => document.body.innerText)).replace(/\n+/g, ' | ').slice(0, 200))
+console.log('== url:', page.url())
+console.log('== body(前300):', (await page.evaluate(() => document.body.innerText)).replace(/\n+/g, ' | ').slice(0, 300))
+console.log('== :8080 请求 ==')
+for (const c of apiCalls) console.log('  ', c)
+await browser.close()
