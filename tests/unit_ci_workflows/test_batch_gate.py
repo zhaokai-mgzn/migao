@@ -1,5 +1,6 @@
-# case_ids: MC-012
-# （沿用 tests/unit_ci_workflows/** 的既有惯例：CI 结构类 L0 不变式统一挂 MC-012）
+# case_ids: MC-012, MC-130
+# （沿用 tests/unit_ci_workflows/** 的既有惯例：CI 结构类 L0 不变式统一挂 MC-012；本单新增的
+#   auto-merge arm 面另挂 MC-130，见 .github/cases/misc.yml）
 r"""批次统一验证入口 `scripts/batch-gate.sh` 的实例判据（issue #6012；#6028 补就绪前置判定）。
 
 ## 治的形态（2026-10-02 17:24–17:29 CST 现场，读数现取）
@@ -13,6 +14,14 @@ r"""批次统一验证入口 `scripts/batch-gate.sh` 的实例判据（issue #60
 **与 base 冲突（GitHub 侧 DIRTY）** 的包被拉进批次 ⇒ 集成结果必然红、且红在**别人**身上
 （面级归因指向错误对象）⇒ 白烧一次全量。⇒ 那一次全量**之前**逐包判「就绪」（无冲突 + PR checks 全绿），
 **任一不就绪 ⇒ 拒绝**（exit 3，不跑全量）。
+
+#6212 补的第三半（**时机**本身也会烂）：`--require-ready` 要求**非 draft**（draft 的 leg 不全 ⇒ pending），
+而 `.github/workflows/automerge.yml` 恰在「非 draft」时 arm 原生 auto-merge —— 实测 2026-10-03：
+转 ready → arm **17 秒**、arm → 合并 **4 分 26 秒** ⇒ 集成侧还没跑那一次全量，包就已经被合进 main
+（#6206 现场踩中，那一次批次全量被跳过）。`gh pr merge --disable-auto` **不是**可靠控制：一次 push 触发的
+`synchronize` 会让 `automerge.yml` **重新 arm**（#4829 实证）；`block/merge` 标签也拦不住**已 arm** 的
+auto-merge。⇒ 把「**已 arm**」并入**同一个**就绪判定（三态 `0/1/3`），并给可复制的**解除 + 回读**命令
+（回读与判定用**同一个**探针 ⇒ 两处口径不可能漂移）。
 
 ## 判据（每条都能单独变红）
 
@@ -34,13 +43,18 @@ r"""批次统一验证入口 `scripts/batch-gate.sh` 的实例判据（issue #60
 | 10' | `gh` **不在 PATH**（PATH 桩驱动）⇒ 同上，且走「gh 不存在」具名分支 | 只有环境「碰巧没有 gh」才成立 ⇒ CI 上永远走不到（空断言）⇒ 红 |
 | 11 | `--require-ready` **默认开启**（不传开关也判） | 默认值被改成 off ⇒ 判 11 红（沙箱里无 gh ⇒ 期望 fail-closed 却跑了 gate） |
 | 12 | `--no-require-ready` ⇒ 跑，但**必须打印**「未跑（--no-require-ready）—— 这不是「就绪」」 | 逃生口静默跳过（看起来和「就绪」一样）⇒ 红 |
+| 16 | **已 arm 原生 auto-merge** 的包 ⇒ 拒绝（exit 3）、**没跑** gate、印成 ❌（明确不就绪）+ PR 号 + `enabledAt` | 把「已 arm」当就绪（#6212 的形态：跑全量期间被秒合）⇒ 红 |
+| 17 | **未 arm** ⇒ 该包就绪、那一次全量照跑（且只跑一次） | 把「未 arm」也判不就绪 ⇒ 批次恒启动不了（反向假红）⇒ 红 |
+| 18 | `autoMergeRequest` **读不到**（空 stdout / 非 JSON / 字段缺失 / gh 调用失败）⇒ **fail-closed**（exit 3）+ ❓ + 具名 | 把「读不到」当「未 arm」（fail-open）⇒ 红 |
+| 19 | 出口**可复制且含本次 PR 号**：解除 `gh pr merge <PR> --disable-auto` + **回读** `--check-arm <PR>` | 出口缺一条 / 印了别的 PR 号 ⇒ 红 |
+| 20 | `--check-arm` 回读三态（仍 arm ⇒ **1** / 未 arm ⇒ **0** / 读不到 ⇒ **3**）且**幂等**（连跑两次逐字节一致） | 回读静默放行 / 把读不到当已解除 / 非幂等 ⇒ 红 |
 
 ## 注入式红证（`test_mutations_turn_the_suite_red`，§28.1 出口①）
 
-判据 7~12 都能**单独**变红这件事，不是靠"这些断言写得很细"，而是**注入式实测**：
-把真脚本复制进临时沙箱 → 做 4 处**定向变异**（每处断言唯一命中，命中数 0 或 >1 即判红 = 变异没生效）
-→ 各自跑一次 → **必须非 0 退出且命中具名断言关键字**（"没跑" / "无法判定" / "这不是「就绪」"）。
-⇒ 判据不是空断言：变异体真红。
+判据 7~20 都能**单独**变红这件事，不是靠"这些断言写得很细"，而是**注入式实测**：
+把真脚本复制进临时沙箱 → 做 9 处**定向变异**（存量 5 处 + #6212 的 4 处；每处断言唯一命中，
+命中数 0 或 >1 即判红 = 变异没生效）→ 各自跑一次 → **必须命中具名断言读数**。
+⇒ 判据不是空断言：变异体真红。本单新增的 4 处见 `MUTATIONS` 的第 6~9 项（逐条对应判据 16 / 18 / 20 / 19）。
 
 ## 隔离（为什么这些判据是安全的）
 
@@ -112,6 +126,20 @@ if [ "${1:-}" = "pr" ] && [ "${2:-}" = "list" ]; then
     offline) echo "error: could not resolve host: api.github.com" >&2; exit 1 ;;
     *) printf '[{"number": %s}]\n' "${BATCH_GATE_GH_PR:-6801}"; exit 0 ;;
   esac
+fi
+if [ "${1:-}" = "pr" ] && [ "${2:-}" = "view" ]; then
+  # ⚠️ 「未 arm」是**默认**：存量判据（fail / pending / all-green / …）都只关心 checks 面，
+  # 本分支若默认给「已 arm」，它们会全体红在 arm 面上 —— 那会把存量判据变成在测新面（假红）。
+  case "$mode" in
+    armed)        printf '{"autoMergeRequest":{"enabledAt":"2026-10-03T07:48:04Z","mergeMethod":"SQUASH"}}\n' ;;
+    unarmed)      printf '{"autoMergeRequest":null}\n' ;;
+    arm-missing)  printf '{}\n' ;;          # 字段**整个缺失**（不是 null）⇒ 无法判定
+    arm-empty)    : ;;                      # 空 stdout ⇒ 无法判定
+    arm-nonjson)  printf 'not json at all\n' ;;
+    arm-offline)  echo "error: could not resolve host: api.github.com" >&2; exit 1 ;;
+    *)            printf '{"autoMergeRequest":null}\n' ;;
+  esac
+  exit 0
 fi
 if [ "${1:-}" = "pr" ] && [ "${2:-}" = "checks" ]; then
   case "$mode" in
@@ -557,6 +585,93 @@ def test_all_ready_runs_exactly_one_gate(sandbox):
     assert len([ln for ln in gh_calls if "list" in ln]) == 2, f"gh 调用读数：{gh_calls}"
 
 
+# ── 判据 16~20：**已 arm 的 auto-merge 也是「不就绪」**（issue #6212）────────────
+
+def test_armed_auto_merge_is_refused_before_the_gate(sandbox):
+    """判据 16：PR 的 auto-merge **已 arm** ⇒ 拒绝（exit 3）、**没跑** gate、印成 ❌ + PR 号 + enabledAt。
+
+    治的形态（#6206 实测）：`--require-ready` 要求非 draft，而 `automerge.yml` 恰在非 draft 时 arm
+    ⇒ 集成侧还没跑那一次全量，包就能被秒合（转 ready → arm 17 秒 → 合并 4 分 26 秒）。
+    """
+    proc, calls, _ = run_batch(sandbox, "pkg-a", gh_mode="armed")
+    out = proc.stdout + proc.stderr
+    assert proc.returncode == 3, out
+    assert calls == [], f"已 arm 的包**一次全量都不该跑**（跑完它可能已被合掉），实得 {calls}"
+    assert "❌ pkg-a（不就绪）" in out, f"没有印成「明确不就绪」（而不是「无法判定」）：{out}"
+    assert "已 arm" in out, f"没有说清是哪条不满足：{out}"
+    assert "2026-10-03T07:48:04Z" in out, f"没给出 enabledAt 现取读数：{out}"
+    assert "❓ pkg-a（**无法判定 ≠ 就绪**）" not in out, f"「已 arm」是**明确不就绪**，不该退化成「无法判定」：{out}"
+
+
+def test_unarmed_auto_merge_is_ready(sandbox):
+    """判据 17（正向对照）：**未 arm** ⇒ 该包就绪、那一次全量照跑（且只跑一次）。
+
+    这条是判据 16 的判别力对照：判定若退化成「一律不就绪」，判据 16 仍会绿 ⇒ 必须由本条抓住。
+    """
+    proc, calls, _ = run_batch(sandbox, "pkg-a", gh_mode="unarmed")
+    out = proc.stdout + proc.stderr
+    assert proc.returncode == 0, out
+    assert len(calls) == 1, f"未 arm ⇒ 就绪 ⇒ 应跑且只跑一次，实得 {calls}"
+    assert "✅ pkg-a：" in out, f"未 arm 的包没有被印成就绪：{out}"
+    assert "auto-merge 未 arm" in out, f"就绪结论没有把 arm 面摆出来（读者看不出「判过」）：{out}"
+
+
+@pytest.mark.parametrize("mode", ["arm-empty", "arm-nonjson", "arm-missing", "arm-offline"])
+def test_unreadable_auto_merge_fails_closed(sandbox, mode):
+    """判据 18：`autoMergeRequest` **读不到** ⇒ fail-closed（exit 3）、**没跑** gate、❓ 具名。
+
+    四种坏读数（空 stdout / 非 JSON / 字段缺失 / gh 调用失败）都必须走「无法判定」——
+    **读不到≠未 arm**：它此刻可能真的已 arm，当成「就绪」就是 fail-open。
+    """
+    proc, calls, _ = run_batch(sandbox, "pkg-a", gh_mode=mode)
+    out = proc.stdout + proc.stderr
+    assert proc.returncode == 3, f"[{mode}] {out}"
+    assert calls == [], f"[{mode}] 读不到 auto-merge 状态时不该跑全量（fail-closed），实得 {calls}"
+    assert "❓ pkg-a（**无法判定 ≠ 就绪**）" in out, f"[{mode}] 没有印出「无法判定」：{out}"
+    assert "auto-merge 状态读不到" in out, f"[{mode}] 没具名是哪一档读不到：{out}"
+    assert "✅ pkg-a：" not in out, f"[{mode}] 把「读不到」印成就绪（fail-open）：{out}"
+
+
+def test_disarm_and_readback_commands_are_actionable(sandbox):
+    """判据 19：出口**可复制、含本次 PR 号**（必须两条：解除 + 回读）。
+
+    ⚠️ 用 `gh_pr="6212"`（而不是默认 6801）判「**含 PR 号**」：若实现把 PR 号写死/印错号，
+    `gh pr merge 6212 --disable-auto` 与 `--check-arm 6212` 就不会同时出现 ⇒ 判据当场红。
+    """
+    proc, _, _ = run_batch(sandbox, "pkg-a", gh_mode="armed", gh_pr="6212")
+    out = proc.stdout + proc.stderr
+    assert proc.returncode == 3, out
+    assert "gh pr merge 6212 --disable-auto" in out, f"没有给可复制的**解除**命令：{out}"
+    assert "./scripts/batch-gate.sh --check-arm 6212" in out, f"没有给**当场回读**命令：{out}"
+    assert "6801" not in out, f"印了别的 PR 号（说明没按现取的 PR 号拼命令）：{out}"
+    assert "gh pr merge 6212 --disable-auto" in out and "--check-arm 6212" in out
+
+
+def test_check_arm_readback_is_tri_state_and_idempotent(sandbox):
+    """判据 20：`--check-arm` 回读 —— 仍 arm ⇒ **1**、未 arm ⇒ **0**（幂等）、读不到 ⇒ **3**。
+
+    为什么回读必须是**独立入口**：解除（`--disable-auto`）不持久，一次 push 会重新 arm（#4829）
+    ⇒ 「我跑过 disarm」不是证据；把回读做成可再跑的命令，判定与解除之间才有闭环。
+    """
+    armed, calls, _ = run_batch(sandbox, "--check-arm", "6212", gh_mode="armed")
+    out = armed.stdout + armed.stderr
+    assert armed.returncode == 1, f"仍 arm ⇒ exit 1（明确不就绪）：{out}"
+    assert "仍 arm" in out and "#6212" in out, f"没有具名「仍 arm」+ PR 号：{out}"
+    assert calls == [], f"回读是只读入口 ⇒ 不该跑全量，实得 {calls}"
+
+    one, calls2, _ = run_batch(sandbox, "--check-arm", "6212", gh_mode="unarmed")
+    two, _, _ = run_batch(sandbox, "--check-arm", "6212", gh_mode="unarmed")
+    assert one.returncode == 0, one.stdout + one.stderr
+    assert "未 arm" in one.stdout, one.stdout
+    assert one.stdout == two.stdout, f"回读必须**幂等**（同一输入连跑两次逐字节一致）：\n{one.stdout}\n---\n{two.stdout}"
+    assert calls2 == [], f"回读是只读入口 ⇒ 不该跑全量，实得 {calls2}"
+
+    blind, _, _ = run_batch(sandbox, "--check-arm", "6212", gh_mode="arm-nonjson")
+    out3 = blind.stdout + blind.stderr
+    assert blind.returncode == 3, f"读不到 ⇒ 3（不许当 0/1 读）：{out3}"
+    assert "无法判定" in out3, f"没有印出「无法判定」：{out3}"
+
+
 # ── 注入式红证（§28.1 出口①）：变异体必须真红 ────────────────────────────────
 
 #: 四处**定向**变异：每处的 `old` 在真脚本里**恰好出现一次**（命中数 0 或 >1 即判红 =
@@ -603,6 +718,39 @@ MUTATIONS = [
         "pkg-a",
         None,        # 走 run_batch 的默认：显式 `--no-require-ready`
     ),
+    # ── #6212 新增：auto-merge arm 面的四处定向变异（逐条对应判据 16 / 18 / 20 / 19）──────
+    (
+        "已 arm 不就绪 → 就绪（判据 16）",
+        '    not_ready "$b" "PR #${pr} 的 auto-merge **已 arm**',
+        '    ready_ok "$b" "PR #${pr} 的 auto-merge **已 arm**',
+        "not_ready_became_ready",
+        "pkg-a",
+        "armed",
+    ),
+    (
+        "读不到 arm ⇒ 放行（fail-open，判据 18）",
+        '  elif [ "$rc" -ne 0 ]; then\n    undecidable "$b" "PR #${pr} 的 auto-merge 状态读不到',
+        '  elif [ "$rc" -eq 99 ]; then\n    undecidable "$b" "PR #${pr} 的 auto-merge 状态读不到',
+        "arm_undecidable_became_ready",
+        "pkg-a",
+        "arm-nonjson",
+    ),
+    (
+        "回读「仍 arm」不再非零（静默放行，判据 20）",
+        '    exit 1\n  fi\n  echo "  ⇒ 全部 ${#CHECK_ARMS[@]} 个 PR 未 arm',
+        '    exit 0\n  fi\n  echo "  ⇒ 全部 ${#CHECK_ARMS[@]} 个 PR 未 arm',
+        "check_arm_silent_pass",
+        "--check-arm 6212",
+        "armed",
+    ),
+    (
+        "回读命令从出口里被摘掉（判据 19）",
+        "② 当场回读（仍 arm ⇒ 非零；无法判定 ⇒ 3）：./scripts/batch-gate.sh --check-arm ${pr}",
+        "② 当场回读：见 --help",
+        "readback_cmd_gone",
+        "pkg-a",
+        "armed",
+    ),
 ]
 
 
@@ -640,11 +788,18 @@ def test_mutations_turn_the_suite_red(sandbox, tmp_path, label, old, new, expect
     mutant = _mutated_repo(tmp_path, old, new)
     # ⚠️ 必须走**真默认路径**（不传 `--no-require-ready`）—— 否则脚本压根不判就绪，
     # 变异体一律「看起来绿」⇒ 这组红证就成了空断言（这不是假设：本判据第一版正是如此被抓出来的）。
-    proc, calls, _ = run_batch(mutant, branch, gh_mode=gh_mode)
+    # `--check-arm` 形态的变异（判据 20）走**回读**入口 ⇒ 它的「branch」是一整串参数，不是分支名。
+    args = branch.split(" ") if expect.startswith("check_arm") else (branch,)
+    proc, calls, _ = run_batch(mutant, *args, gh_mode=gh_mode)
     out = proc.stdout + proc.stderr
-    # 共同读数：就绪判定**没有再拒绝**（那句「⛔ 有包未通过就绪判定」不见了）——
-    # 三条变异都会让它消失，而**正常脚本**下判据 7~10 正是靠它变红的。
-    assert "⛔ 有包未通过就绪判定" not in out, f"变异「{label}」**没被抓住**（就绪判定仍拒绝了）：\n{out}"
+    if expect == "readback_cmd_gone":
+        # 这条变异的读数不是「放行」，而是「出口少了一条命令」⇒ **拒绝行为必须仍在**
+        # （若它连拒绝也没了，说明变异打歪了、红证无效）。
+        assert "⛔ 有包未通过就绪判定" in out, f"变异「{label}」改变了拒绝行为（本应只缺命令）：\n{out}"
+    elif not expect.startswith("check_arm"):
+        # 共同读数：就绪判定**没有再拒绝**（那句「⛔ 有包未通过就绪判定」不见了）——
+        # 这几条变异都会让它消失，而**正常脚本**下判据 7~10/16/18 正是靠它变红的。
+        assert "⛔ 有包未通过就绪判定" not in out, f"变异「{label}」**没被抓住**（就绪判定仍拒绝了）：\n{out}"
     # 逐条读数（**每条都必须真的择得出来**，否则这条变异是空断言）：
     if expect == "not_ready_became_ready":
         marker = f"✅ {branch}："
@@ -666,6 +821,20 @@ def test_mutations_turn_the_suite_red(sandbox, tmp_path, label, old, new, expect
         assert "就绪前置判定（--require-ready 默认开启" not in out, f"变异「{label}」没被抓住（横幅还在）：\n{out}"
         assert "⏭️ 就绪判定未跑" in out, f"变异「{label}」没被抓住（连「未跑」都没印）：\n{out}"
         assert len(calls) == 1, f"变异「{label}」没被抓住（没放行）：{calls}"
+    elif expect == "arm_undecidable_became_ready":
+        # fail-open 的可见形态：读不到 arm 状态却被印成 ✅（判据 18 正是断这个不出现）
+        assert "✅ pkg-a：" in out, f"变异「{label}」没被抓住（读不到却印成就绪）：\n{out}"
+        assert "❓" not in out, f"变异「{label}」仍印着「无法判定」标记：\n{out}"
+        assert len(calls) == 1, f"变异「{label}」没被抓住（没放行）：{calls}"
+    elif expect == "check_arm_silent_pass":
+        # 回读「仍 arm」本该 exit 1；变异后 exit 0，而 ❌ 行还印着 ⇒ 就是「说了红却当绿」的形态
+        assert proc.returncode == 0, f"变异「{label}」没生效（回读仍非零）：rc={proc.returncode}\n{out}"
+        assert "❌ PR #6212（**仍 arm**" in out, f"变异「{label}」打歪了（没走到 armed 分支）：\n{out}"
+        assert calls == [], f"回读是只读入口 ⇒ 不该跑全量，实得 {calls}"
+    elif expect == "readback_cmd_gone":
+        assert "gh pr merge 6801 --disable-auto" in out, f"变异「{label}」把**解除**命令也弄丢了：\n{out}"
+        assert "--check-arm 6801" not in out, f"变异「{label}」没被抓住（回读命令还在）：\n{out}"
+        assert calls == [], f"不就绪的包不该跑全量，实得 {calls}"
     else:  # pragma: no cover - 防呆：expect 写错时当场红，不静默放行
         raise AssertionError(f"未知的 expect：{expect!r}（变异表写错 ⇒ 红证无效）")
 

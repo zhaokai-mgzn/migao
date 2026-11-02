@@ -26,7 +26,7 @@
 #   ⇒ 集成结果必然红、且红在**别人**身上（面级归因指向错误对象）⇒ 白烧一次全量。
 #   「一次全量」这么贵 ⇒ 先把「明知会红」的包挡在门外。
 #
-#   跑那一次全量**之前**，逐包做两条判定（任一不就绪 ⇒ **拒绝**，exit 3，**不跑**全量）：
+#   跑那一次全量**之前**，逐包做三条判定（任一不就绪 ⇒ **拒绝**，exit 3，**不跑**全量）：
 #     ① **无冲突**（离线可判，必做）：`git merge-tree --write-tree <base> <head>`
 #        （**只读**：不落工作区、不改索引）。有冲突 ⇒ 提示先同步主线。
 #     ② **required 全绿**（需 `gh` + 网络）：`gh pr list --head <branch> --state open` 取 PR 号，
@@ -35,10 +35,19 @@
 #        见 #6160/#6170；把它当红会让单模块包**恒不就绪** ⇒ 本条修的是 issue #6216），
 #        但 skipping **只计数、不静默**（输出里显式写「另有 N 条 skipping」）；
 #        **找不到对应 PR** ⇒ 提示先开 PR。
+#     ③ **auto-merge 未 arm**（需 `gh` + 网络；issue #6212）：`gh pr view <PR> --json autoMergeRequest`
+#        非 null ⇒ **不就绪**，并给可复制的解除命令 + **回读**命令（`--check-arm`，见「用法」）。
+#        为什么这条必须进这道门：本仓 `automerge.yml` 恰在「**非 draft**」时 arm 原生 auto-merge，
+#        而本判定 ② 又要求非 draft（draft 的 leg 不全 ⇒ pending）⇒「集成期非 draft」这个前提本身
+#        就打开了「跑全量期间被秒合」的窗口（实测：转 ready → arm **17 秒**、arm → 合并 **4 分 26 秒**，
+#        人来不及在窗口内核实）。且 `--disable-auto` **不是**可靠控制 —— 一次 push 触发的 `synchronize`
+#        会让 `automerge.yml` **重新 arm**（#4829 实证）；`block/merge` 标签也拦不住**已 arm** 的
+#        auto-merge。⇒ 唯一可靠的做法是**跑之前就判**：已 arm ⇒ 拒绝（先 disarm，再回读确认）。
 #
 #   三态口径（**不许糊**）：
 #     - **明确不就绪** ⇒ 拒绝（exit 3）+ 逐包打印**判定依据**（哪条不满足 / 现取读数 / 下一步命令）；
-#     - **无法判定**（`gh` 不存在 / 无凭据 / 网络不可用 / 取不到 base ref / `gh` 输出不可解析）
+#     - **无法判定**（`gh` 不存在 / 无凭据 / 网络不可用 / 取不到 base ref / `gh` 输出不可解析 /
+#       读不到 `autoMergeRequest` —— 读不到**不许**当「未 arm」）
 #       ⇒ **fail-closed 拒绝**（exit 3），输出里**具名**写「无法判定 ≠ 就绪」；
 #     - 只有**显式** `--no-require-ready` 才跳过这套判定（逃生口；跳过时**必须打印**未跑声明）。
 #
@@ -49,6 +58,7 @@
 #   ./scripts/batch-gate.sh --keep <branch> ...       # 保留集成 worktree（默认结束即删）
 #   ./scripts/batch-gate.sh --base <ref> <branch> ... # 换基准（默认 origin/main）
 #   ./scripts/batch-gate.sh --no-require-ready <branch> ...  # 逃生口：跳过就绪判定（人类明知故犯时用）
+#   ./scripts/batch-gate.sh --check-arm <PR> [<PR> ...]  # **回读** auto-merge 解除结果（幂等只读；disarm 后当场核对）
 #
 #   环境变量：`MIGAO_HEAVY_WAIT=<秒>`（默认 2700）—— 透传给 gate 的排队上限。
 #
@@ -74,6 +84,9 @@
 #   3 = 无法判定（分支不存在 / 包不就绪 / 就绪判定无法判定 / 建不出 worktree / gate 自己 exit 3）
 #       —— **不得当 0 读**
 #
+#   `--check-arm` **不复用**上面三态（它是回读，不是批次结论）：
+#     0 = 未 arm（可进批次）｜1 = **仍 arm**（解除没生效）｜3 = 无法判定（读不到 ≠ 未 arm）
+#
 # ## 边界（照实登记）
 #
 #   - **就绪判定 ≠ 合并后 main 健康**：`merge-tree` 判的是「此刻 head vs base 的文本冲突」，
@@ -95,6 +108,7 @@ BASE="${BATCH_GATE_BASE:-origin/main}"
 KEEP=0
 IN_WT=""
 BRANCHES=()
+CHECK_ARMS=()
 READY=1
 
 while [ $# -gt 0 ]; do
@@ -104,15 +118,22 @@ while [ $# -gt 0 ]; do
     --keep) KEEP=1; shift ;;
     --require-ready)    READY=1; shift ;;
     --no-require-ready) READY=0; shift ;;
+    --check-arm) CHECK_ARM=1; shift ;;
     # --help = 文件头**全部**注释行（写到「第一行非注释」为止）。⛔ 别写死行数区间：
     # 头部长一英寸就被静默截断（本包加「就绪判定」段后就截到了「## 退出码」标题、0/1/3 三态看不见了）。
     -h|--help) awk '/^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; exit 0 ;;
     -*)     echo "未知参数：$1（用法见 $0 --help）" >&2; exit 2 ;;
-    *)      BRANCHES+=("$1"); shift ;;
+    # `--check-arm` 之后的位置参数 = PR 号（不是分支名）；两种形态互斥。
+    *)      if [ "${CHECK_ARM:-0}" = 1 ]; then CHECK_ARMS+=("$1"); else BRANCHES+=("$1"); fi; shift ;;
   esac
 done
 
-if [ "${#BRANCHES[@]}" -eq 0 ]; then
+if [ "${CHECK_ARM:-0}" = 1 ] && [ "${#CHECK_ARMS[@]}" -eq 0 ]; then
+  echo "用法: $0 --check-arm <PR> [<PR> ...]   # 回读 auto-merge 是否已解除（幂等只读）" >&2
+  exit 2
+fi
+
+if [ "${CHECK_ARM:-0}" != 1 ] && [ "${#BRANCHES[@]}" -eq 0 ]; then
   echo "用法: $0 <branch> [<branch> ...] ｜ $0 --in <worktree> <branch> ..." >&2
   echo "      （本命令的全部意义 = 让这批包的全量**只跑一次**，见文件头）" >&2
   exit 2
@@ -131,6 +152,84 @@ trap cleanup EXIT
 
 # 无法判定 ⇒ 出声 + 非零（**不是**「通过」）
 die() { echo "❌ $*" >&2; echo "exit=3（无法判定 —— 不是「通过」）" >&2; exit 3; }
+
+# ── 1.3) auto-merge 三态探针 + `--check-arm` 回读（issue #6212）─────────────────
+#
+# 为什么「解除」之后还要回读：`gh pr merge <PR> --disable-auto` **不是**一次性的可靠控制 ——
+# 一次 push 触发的 `synchronize` 会让 `automerge.yml` **重新 arm**（#4829 实证）。所以
+# 「我跑过 --disable-auto」不是证据，**解除后当场回读 `autoMergeRequest`** 才是。
+# 回读与就绪判定 ③ 用**同一个**探针（不写第二份「算不算已 arm」的实现）⇒ 两处口径不可能漂移。
+# 幂等：同一输入连跑两次结果逐字节一致（只读、零写操作）。
+
+#: `gh pr view <PR> --json autoMergeRequest` → 三态（与就绪判定同一套口径，`3` 不许当 `0` 读）。
+#: stdout = 读数：未 arm 空 / 已 arm 的 `enabledAt` / 无法判定的原因。
+AUTOMERGE_PROBE='
+import json, sys
+raw = sys.stdin.read()
+if not raw.strip():
+    print("stdout 为空（取不到读数）"); sys.exit(3)
+try:
+    data = json.loads(raw)
+except Exception:
+    print("输出不可解析（不是 JSON）"); sys.exit(3)
+if not isinstance(data, dict) or "autoMergeRequest" not in data:
+    print("字段 autoMergeRequest 缺失"); sys.exit(3)
+req = data["autoMergeRequest"]
+if req is None:
+    sys.exit(0)
+print((req or {}).get("enabledAt") or "(enabledAt 未提供)")
+sys.exit(1)
+'
+
+#: 三态探针：0 = 未 arm（就绪）｜1 = **已 arm**（不就绪；stdout = enabledAt）｜3 = 无法判定。
+automerge_state() {
+  local pr="$1" raw rc
+  # `2>&1`：失败原因必须与 JSON 在**同一次**调用里取到（否则「无法判定」只剩一个退出码，出声不了）。
+  raw="$(gh pr view "$pr" --json autoMergeRequest 2>&1)"
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf 'gh pr view %s --json autoMergeRequest 失败（rc=%s；%s）\n' \
+      "$pr" "$rc" "$(printf '%s' "$raw" | head -1)"
+    return 3
+  fi
+  printf '%s' "$raw" | python3 -c "$AUTOMERGE_PROBE"
+}
+
+if [ "${CHECK_ARM:-0}" = 1 ]; then
+  echo "── auto-merge 回读（--check-arm；幂等只读，issue #6212）──"
+  armed=0
+  unk=0
+  for pr in "${CHECK_ARMS[@]}"; do
+    case "$pr" in
+      ''|*[!0-9]*) die "--check-arm 只收 PR 号（纯数字），实得：${pr}" ;;
+    esac
+    if ! command -v gh >/dev/null 2>&1; then
+      die "gh 不存在 ⇒ 回读不了 autoMergeRequest —— 无法判定 ≠ 未 arm（装好 gh 再回读）"
+    fi
+    info="$(automerge_state "$pr")"
+    rc=$?
+    case "$rc" in
+      0) echo "  ✅ PR #${pr}：未 arm（= 可进批次；解除已生效 / 本就未 arm —— 幂等）" ;;
+      1) echo "  ❌ PR #${pr}（**仍 arm**，enabledAt=${info}）：解除没生效 ⇒ 跑全量期间它可被秒合"
+         echo "     ｜下一步：gh pr merge ${pr} --disable-auto，然后再跑一次本命令回读"
+         echo "     ⚠️ 回读要放在**最后一次 push 之后**：一次 push 触发的 synchronize 会让 automerge.yml 重新 arm（#4829）"
+         armed=1 ;;
+      *) echo "  ❓ PR #${pr}（**无法判定 ≠ 未 arm**）：${info}"
+         echo "     ｜下一步：修好 gh（凭据 / 网络 / 限流）再回读 —— 别把「读不到」当「已解除」"
+         unk=1 ;;
+    esac
+  done
+  if [ "$unk" = 1 ]; then
+    echo "⛔ 回读**无法判定**（exit=3）—— 不是「已 disarm」，也不是「通过」。"
+    exit 3
+  fi
+  if [ "$armed" = 1 ]; then
+    echo "⛔ 回读发现**仍 arm**（exit=1）—— 解除没生效，别把它当已就绪。"
+    exit 1
+  fi
+  echo "  ⇒ 全部 ${#CHECK_ARMS[@]} 个 PR 未 arm（同一输入连跑两次结果一致 = 可回读）"
+  exit 0
+fi
 
 #: 批次集成 worktree 的**标记文件名** —— 与 `verify-all.sh` 的角色判定共用同一个约定
 #: （那边只读、这边只写；名字变了两边一起变）。
@@ -294,6 +393,21 @@ check_one_package() {
     return
   fi
 
+  # ── ③ auto-merge **未 arm**（需 gh + 网络；issue #6212）────────────────────
+  # 为什么它必须在这道门里（不是「另一条纪律」）：`automerge.yml` 恰在「**非 draft**」时 arm 原生
+  # auto-merge，而 ② 又要求非 draft（draft 的 leg 不全 ⇒ pending）⇒ 集成期的就绪前提本身就打开了
+  # 「跑全量期间被秒合」的窗口（实测：转 ready → arm 17 秒、arm → 合并 4 分 26 秒）。已 arm 的包
+  # **跑之前**就得挡在门外；解除不可信（一次 push 就重新 arm，#4829）⇒ 出口必须带**回读**。
+  am="$(automerge_state "$pr")"
+  rc=$?
+  if [ "$rc" -eq 1 ]; then
+    not_ready "$b" "PR #${pr} 的 auto-merge **已 arm**（enabledAt=${am}）—— 已 arm 的包在跑全量期间可被秒合（实测 arm→合并 4 分 26 秒；一次 push 就重新 arm，#4829）⇒ 不就绪 ｜下一步：① gh pr merge ${pr} --disable-auto ② 当场回读（仍 arm ⇒ 非零；无法判定 ⇒ 3）：./scripts/batch-gate.sh --check-arm ${pr}"
+    return
+  elif [ "$rc" -ne 0 ]; then
+    undecidable "$b" "PR #${pr} 的 auto-merge 状态读不到（${am}）—— 无法判定 ≠ 就绪（读不到时它**可能**已 arm，跑全量期间会被秒合）｜下一步：修好 gh/网络重跑，或显式 --no-require-ready"
+    return
+  fi
+
   checks="$(gh pr checks "$pr" --json name,state,bucket 2>"$TMP/ghc.err")"
   rc=$?
   if [ "$rc" -ne 0 ]; then
@@ -343,7 +457,7 @@ if [ "$READY" = 1 ]; then
     echo "   ⚠️ 「无法判定」是 fail-closed 的**拒绝**，不是「就绪」—— 别把 ❓ 读成 ✅。"
     exit 3
   fi
-  echo "  ⇒ 全部 ${#BRANCHES[@]} 个包就绪（无冲突 + PR checks 全绿）"
+  echo "  ⇒ 全部 ${#BRANCHES[@]} 个包就绪（无冲突 + auto-merge 未 arm + PR checks 全绿）"
 else
   echo "⏭️ 就绪判定未跑（--no-require-ready）—— 这不是「就绪」"
   echo "   ⇒ 本批**可能**含与基准冲突（DIRTY）或 CI 未绿的包；那次全量的红**未必**是集成引入的。"
