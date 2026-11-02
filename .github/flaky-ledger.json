@@ -35253,10 +35253,11 @@
       "observed_at": "2026-10-27T10:44:24Z",
       "reason": "失败（2026-10-27T10:42:01Z）与重跑通过（2026-10-27T10:44:23Z）落在**同一时间桶**⇒ 「重跑通过」仍是 flaky 的合法证据",
       "remedy": "按 `migao-acceptance`「随机红 = 归因层失效」**定位机制**（不许只加 waitFor/sleep）：时间相关 ⇒ 冻结时钟（`jest.setSystemTime` / 注入时钟）；并行或共享状态 ⇒ 显式隔离或独立 fixture；修后**必须给红证**（把机制注回 ⇒ 必红）",
-      "status": "open",
+      "status": "fixed",
       "follow_up": 7923,
       "requires_follow_up": true,
-      "failing_tests": []
+      "failing_tests": [],
+      "fixed_by": "PR #8464（测试侧收敛钉：两个菜单测试文件改为在 act 内推进菜单 promise + 新增「⏱ 菜单开关晚到」回归钉）"
     },
     {
       "workflow": "PR Check",
