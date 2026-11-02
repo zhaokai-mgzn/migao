@@ -91,7 +91,7 @@
 - 证据：`line3-aftersales-race/out/race/probe-write-raw.json::cases.W2`、`out/race/W2-rounds-index.txt`（逐轮毫秒时间线 + 库侧三读数）、
   `line3-aftersales-race/REPORT.md` §2.1；一键复算 `bash acceptance/2026-10-14/line3-aftersales-race/run-w2-rounds.sh`。
 - 处置：**已修并已独立重放** —— issue **#6928** → PR **#6931**（`InboundOrderService#cancel` 改成与 `#post` 同款条件更新
-  `markCancelled`（`WHERE id=? AND tenant_id=? AND status='draft' AND deleted=0`，0 行 ⇒ 409）+ 类级元守卫 MC-099 + 台账基线 0）。
+  `markCancelled`（`WHERE id=? AND tenant_id=? AND status='draft' AND deleted=0`，0 行 ⇒ 409）+ 类级元守卫 MC-100 + 台账基线 0）。
   **主会话独立重放**（新起修复版 admin-api `:8081`，20 轮严格同时起跑，同一探针对象）：
   **修复后 18/18 轮 `inconsistent=0`**（`post=409 / cancel=200 / delta=0 / ledger=0`），
   **同脚本打原 `:8080`（未修）18 轮里 1 轮命中 `inconsistent=3`**（`post=200 / cancel=200 / db=cancelled / delta=5 / ledger=1`）

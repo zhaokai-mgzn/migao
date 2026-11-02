@@ -1,0 +1,65 @@
+# 代码层证据锚（一条命令一条读数；2026-10-31 于 origin/main 32d4066e7 上复算）
+# 全部只读；路径均为仓库相对路径
+
+## P0-01 证书续期机制：仓库内零证据
+$ grep -rln "certbot\|letsencrypt\|renew" .github/workflows/ ; echo "rc=$?"
+（无输出，rc=1）
+$ ls .github/workflows | grep -iE "cert|renew" || echo "（无续期 workflow）"
+（无续期 workflow）
+$ grep -n "certbot" deploy/swas/docker-compose.yml deploy/swas/deploy.sh
+deploy/swas/docker-compose.yml:83:      - ./certbot-www:/var/www/certbot
+deploy/swas/deploy.sh:667:  mkdir -p nginx certbot-www
+⇒ 只有 ACME challenge 目录挂载，没有续期器/续期排程
+
+## P0-02 C 端产物与主仓分叉（craft-display）
+$ git log -1 --format="%h %ci %s" -- frontend/mini-app/src/utils/craft-display.ts
+e0500beff 2026-10-29 23:25:34 +0800 feat(production): 特殊选项「布绑带 / 纱绑带」合并为「绑带」，材料跟随帘种（issue #8108） (#8112)
+$ git log --oneline --until="2026-10-24T15:40:08Z" -1 -- frontend/mini-app/src/utils/craft-display.ts
+10ac79b1d feat(frontend): #5022 C 端报价卡展示系统自动选中的门幅 (#5027)
+⇒ 线上（10-24 15:40Z）之后还有一次 craft-display 改动未上线
+
+## P0-03 错误边界 + 上报面
+$ find frontend -name "error.tsx" -o -name "global-error.tsx"
+frontend/admin-web/src/app/(dashboard)/customers/error.tsx      ← 唯一一个
+$ find frontend -name "not-found.tsx" | wc -l
+0
+$ grep -rn "Sentry\|sentry\|window.onerror\|unhandledrejection" frontend/admin-web/src frontend/bmini-app/src frontend/worker-h5/src | wc -l
+4   （全部是 worker-h5/src/machine.mjs 的局部状态字段 reportError，非上报）
+$ find frontend/admin-web/src/app -name page.tsx | wc -l
+58
+
+## P1-04 reaper 成功即红
+$ grep -n "EXIT_OK, EXIT_USAGE, EXIT_ACTED, EXIT_UNKNOWN" scripts/stale_report_reaper.py
+38:EXIT_OK, EXIT_USAGE, EXIT_ACTED, EXIT_UNKNOWN = 0, 1, 2, 3
+$ grep -n "exit \${RC}" .github/workflows/stale-report-reaper.yml
+79:          exit ${RC}
+
+## P1-06 ListLoadError 覆盖
+$ grep -rln "ListLoadError" frontend/admin-web/src | wc -l
+28
+$ for f in $(find frontend/admin-web/src/app -name page.tsx); do grep -q "ListLoadError\|LoadError" "$f" || echo x; done | wc -l
+37
+
+## P1-08 HSTS 声明 vs 线上
+$ grep -n "hsts\|httpStrictTransportSecurity" backend/admin-api/src/main/java/com/migao/admin/security/SecurityConfig.java
+（.headers(headers -> headers .frameOptions(...).httpStrictTransportSecurity(hsts -> hsts.maxAgeInSeconds(31536000).includeSubDomains(true)))）
+$ grep -rn "forward-headers-strategy" backend/admin-api/src/main/resources/application*.yml ; echo "rc=$?"
+（无输出，rc=1）
+$ curl -sI https://api.migaozn.com/api/version | grep -ic strict-transport
+0
+
+## P1-09 静态域无安全头 / 工人会话落 localStorage
+$ curl -sI https://app.migaozn.com/w/ | grep -iE "strict-transport|x-content-type|content-security" ; echo "rc=$?"
+（无输出，rc=1）
+$ grep -n "localStorage.setItem(H5_WORKER_SESSION_KEY" frontend/bmini-app/src/utils/workerSession.ts
+39:    localStorage.setItem(H5_WORKER_SESSION_KEY, JSON.stringify({
+
+## P1-10 短链把 token 放 query
+$ grep -n "reportPageLocation\|/b/?t=" backend/admin-api/src/main/java/com/migao/admin/controller/WorkerShortLinkController.java
+（类注释：302 → /b/?t=<token>&tenant_id=<id>&tenant_code=<code>；方法 = resolve）
+
+## P1-12 容器健康检查
+$ grep -c "healthcheck" deploy/swas/docker-compose.yml
+1        （只有 ai-agent）
+$ grep -c "logging" deploy/swas/docker-compose.yml
+0        （四个服务都没有日志轮转）

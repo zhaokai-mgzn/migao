@@ -11,6 +11,7 @@
 //   ③ 闲置登出 —— 定时器 + `visibilitychange` 双保险（PAD 常被切到别的 App，只靠定时器会漏）。
 
 import { createApi, PAGES_UNREAD, SESSION_EXPIRED } from './api.mjs'
+import { installFlexGapFallback } from './flex-gap.mjs'
 import { deviceHomeFromLocation, enterpriseCodeFromLocation, normalizeEnterpriseCode, parseScanInput } from './scan-input.mjs'
 import {
   afterComplete,
@@ -787,6 +788,8 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
 
 /** 浏览器入口（`index.html` 用 `<script type="module">` 直接加载，无构建步骤）。 */
 export async function boot() {
+  // WebView 83 没有 flex `gap`（issue #8336 / UI-148）⇒ 先量一次再上兜底类
+  installFlexGapFallback(globalThis.document)
   const { createApi: mk } = await import('./api.mjs')
   const storage = globalThis.localStorage
   const api = mk({ storage })

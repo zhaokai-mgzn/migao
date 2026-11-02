@@ -11,7 +11,6 @@ import com.migao.admin.entity.AgentBatchItem;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.AgentBatchItemMapper;
 import com.migao.admin.mapper.AgentBatchMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -46,7 +45,11 @@ import java.util.UUID;
  *
  * <h2>边界（如实登记，不粉饰）</h2>
  * <ul>
- *   <li><b>同步 + 阈值</b>：{@code N > 50} 直接拒绝并提示分批（本单不做后台任务与进度轮询）。</li>
+ *   <li><b>同步 + 后台双形态</b>：同步 {@code execute}/{@code revert} 保留 #5314 冻结契约；
+ *       {@code executeAsync}/{@code revertAsync}（issue #8283）提交进程内线程池并立即返回
+ *       {@code executing}，进度由 GET 查询。{@code N > 50} 仍直接拒绝并提示分批。</li>
+ *   <li><b>后台 job 的生命周期边界</b>：进程内线程池 + 优雅停机等待 60s；JVM 崩溃 / 强杀可能留下
+ *       {@code executing} 批次（不自动回收 —— 跨实例需 lease/heartbeat，另开单跟踪）。</li>
  *   <li><b>上/下架的撤销可能被状态机挡住</b>：例如原状态 {@code draft} 的商品被批量上架后，
  *       撤销回 {@code draft} 会被 {@code ProductService} 的状态机拒绝（{@code on_sale → draft} 不是
  *       合法流转）⇒ 该条以 {@code revert_failed} 逐条报出，批次落 {@code revert_partial}。
@@ -57,10 +60,9 @@ import java.util.UUID;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class AgentBatchService {
 
-    /** 单批上限（契约：N &gt; 50 拒绝并提示分批；本单不做后台任务）。 */
+    /** 单批上限（契约：N &gt; 50 拒绝并提示分批；后台 job 不改变这个上限）。 */
     public static final int MAX_ITEMS = 50;
 
     /** batchType 白名单（具名批量：商品改价 / 上下架 / 库存调整）。 */
@@ -112,6 +114,19 @@ public class AgentBatchService {
 
     /** 单条写的既有路径（含状态机校验与 SKU 价同步）—— 批量复用同一条，不另写一份写逻辑。 */
     private final ProductService productService;
+
+    /** 批次后台 job 提交口（issue #8283；专用接口，不占用 Spring 的 TaskExecutor bean 面）。 */
+    private final BatchJobLauncher batchJobLauncher;
+
+    public AgentBatchService(AgentBatchMapper batchMapper,
+                             AgentBatchItemMapper itemMapper,
+                             ProductService productService,
+                             BatchJobLauncher batchJobLauncher) {
+        this.batchMapper = batchMapper;
+        this.itemMapper = itemMapper;
+        this.productService = productService;
+        this.batchJobLauncher = batchJobLauncher;
+    }
 
     // ═══════════════════ ① 创建批次（= 预演）═══════════════════
 
@@ -197,18 +212,39 @@ public class AgentBatchService {
     // ═══════════════════ ② 执行（逐条）═══════════════════
 
     /**
-     * 执行批次：{@code preview → executing → done | partial}，逐条写 {@code new_value}。
+     * 执行批次（同步）：{@code preview → executing → done | partial}，逐条写 {@code new_value}。
      *
-     * <p>逐条独立提交（本方法**有意不加事务**，见类注释取舍 ②③）：单条失败只影响该条，
-     * 结果里逐条回 {@code {resourceId, success, error?}}。</p>
+     * <p>同步形态保留是为了不打破 #5314 的冻结契约；页面与 Agent 新路径走
+     * {@link #executeAsync(Long, String)}。两者共用 {@link #claimForExecute}（CAS 准入）与
+     * {@link #runBatch}（逐条 apply）—— 不存在第二份写逻辑。</p>
      *
      * <p>🔴 <b>执行准入 = 条件更新（CAS，issue #6960）</b>：{@code preview → executing} 这一次状态迁移
      * 必须走 {@link AgentBatchMapper#markExecuting}（判断与写入同一条语句）⇒ 两个并发 execute 里
-     * 只有先到者命中行，后到者影响行数 0 ⇒ 409，**一条 apply 都不跑**。改前是「先读批次判 preview、
-     * 再 {@code updateById}（WHERE 仅主键 ⇒ 无谓词）」⇒ 两个请求都能读到 preview 并各 apply 一轮
-     * （对同一批商品**重复 apply**）。</p>
+     * 只有先到者命中行，后到者影响行数 0 ⇒ 409，**一条 apply 都不跑**。</p>
      */
     public AgentBatchViews.Batch execute(Long tenantId, String batchId) {
+        AgentBatch batch = claimForExecute(tenantId, batchId);
+        List<AgentBatchViews.Result> results = runBatch(tenantId, batch);
+        return view(batch, results, null);
+    }
+
+    /**
+     * 执行批次（后台 job，issue #8283）：claim 后提交线程池，**立即**返回
+     * {@code status=executing}；进度/结果由 {@link #get(Long, String)} 查询。
+     *
+     * <p>为什么先取 {@code accepted} 再 submit：工作线程会原地改写 {@code batch} 的 status/counts；
+     * 先固化响应快照，避免调用方读到「一半执行、一半未执行」的字段。线程池饱和时 CallerRuns
+     * 会内联跑完，此时响应仍是提交时刻的快照 —— 调用方按 {@code GET} 读终态即可（与异步路径同一读法）。</p>
+     */
+    public AgentBatchViews.Batch executeAsync(Long tenantId, String batchId) {
+        AgentBatch batch = claimForExecute(tenantId, batchId);
+        AgentBatchViews.Batch accepted = view(batch, null, null);
+        batchJobLauncher.launch(() -> runBatch(tenantId, batch));
+        return accepted;
+    }
+
+    /** 执行准入：状态检查 + 测试探针 + CAS 抢执行权；返回已置 executing 的批次。 */
+    private AgentBatch claimForExecute(Long tenantId, String batchId) {
         AgentBatch batch = requireBatch(tenantId, batchId);
         if (!STATUS_PREVIEW.equals(batch.getStatus())) {
             throw BusinessException.conflict("批次当前状态为 " + batch.getStatus()
@@ -228,12 +264,44 @@ public class AgentBatchService {
                     "请刷新该批次的状态与结果后重试");
         }
         batch.setStatus(STATUS_EXECUTING);
+        return batch;
+    }
 
-        List<AgentBatchItem> items = itemsOf(batchId);
+    /**
+     * 逐条执行（同步 / 异步共用）：单条失败只影响该条；每条后更新进度，最后写终态。
+     *
+     * <p>job 级异常（例如读 items 失败）也必须落终态 —— 否则批次会永远停在
+     * {@code executing}，既不能重试也不能撤销。这里 catch 后落 {@code partial}
+     * （可撤销），已 apply 的条目仍可被逐条还原。</p>
+     */
+    private List<AgentBatchViews.Result> runBatch(Long tenantId, AgentBatch batch) {
+        String batchId = batch.getId();
+        List<AgentBatchItem> items;
+        try {
+            items = itemsOf(batchId);
+        } catch (RuntimeException e) {
+            log.error("[Agent] 批量执行读取明细失败，落 partial: batchId={}", batchId, e);
+            batch.setStatus(STATUS_PARTIAL);
+            batch.setFailCount(batch.getItemCount() == null ? 0 : batch.getItemCount());
+            batch.setExecutedAt(OffsetDateTime.now());
+            int finalized = batchMapper.markExecutedPartial(batchId, tenantId, 0,
+                    batch.getFailCount(), batch.getExecutedAt());
+            if (finalized == 0) {
+                log.warn("[Agent] 批量执行终态 CAS 未命中（状态已被并发改变），不覆盖: batchId={}", batchId);
+            } else {
+                batchMapper.updateById(batch);
+            }
+            return List.of();
+        }
+
         List<AgentBatchViews.Result> results = new ArrayList<>(items.size());
         int success = 0;
         int fail = 0;
         for (AgentBatchItem item : items) {
+            if (Thread.currentThread().isInterrupted()) {
+                log.warn("[Agent] 批量执行被中断，剩余条目保持 pending: batchId={}", batchId);
+                break;
+            }
             try {
                 apply(tenantId, item, item.getNewValue());
                 item.setStatus(ITEM_SUCCESS);
@@ -251,32 +319,64 @@ public class AgentBatchService {
                         batchId, item.getResourceId(), reason);
             }
             itemMapper.updateById(item);
+            // 进度：只更新计数（不写 status），让执行中的 GET 能看到「成功 / 失败」。
+            // 进度写失败不应中断整批（apply 已成功，计数只是可观测面）⇒ 记日志继续。
+            try {
+                batchMapper.updateProgress(batchId, tenantId, success, fail);
+            } catch (RuntimeException e) {
+                log.warn("[Agent] 批量执行进度写入失败: batchId={}, success={}, fail={}",
+                        batchId, success, fail, e);
+            }
         }
 
         batch.setSuccessCount(success);
         batch.setFailCount(fail);
-        batch.setStatus(fail == 0 ? STATUS_DONE : STATUS_PARTIAL);
+        boolean allProcessed = results.size() == items.size();
+        batch.setStatus(fail == 0 && allProcessed ? STATUS_DONE : STATUS_PARTIAL);
         batch.setExecutedAt(OffsetDateTime.now());
-        batchMapper.updateById(batch);
+        int finalized = STATUS_DONE.equals(batch.getStatus())
+                ? batchMapper.markExecutedDone(batchId, tenantId, success, fail, batch.getExecutedAt())
+                : batchMapper.markExecutedPartial(batchId, tenantId, success, fail, batch.getExecutedAt());
+        if (finalized == 0) {
+            log.warn("[Agent] 批量执行终态 CAS 未命中（状态已被并发改变），不覆盖: batchId={}", batchId);
+        } else {
+            batchMapper.updateById(batch);
+        }
         log.info("[Agent] 批量执行完成: batchId={}, success={}, fail={}, status={}",
                 batchId, success, fail, batch.getStatus());
-        return view(batch, results, null);
+        return results;
     }
 
     // ═══════════════════ ③ 撤销（逐条还原 old_value）═══════════════════
 
     /**
-     * 撤销批次：逐条还原为持久化的 {@code old_value}，{@code done | partial → reverted | revert_partial}。
+     * 撤销批次（同步）：逐条还原为持久化的 {@code old_value}，
+     * {@code done | partial → reverted | revert_partial}。
      *
      * <p><b>不可撤销</b>（契约）：状态非 {@code done}/{@code partial}、或已 {@code reverted}
      * （含 {@code revert_partial} —— 撤销过的批次不再提供第二次撤销）。</p>
      *
-     * <p>🔴 <b>撤销准入 = 条件更新（CAS，issue #6960）</b>：与 {@link #execute} 同款 ——
-     * 「{@code done}/{@code partial} → 已被 claim」这一次状态迁移走
-     * {@link AgentBatchMapper#markReverting}（谓词 = id + tenant_id + 契约里那一对可撤销状态）。
-     * 并发两个 revert 只有一个命中行 ⇒ 后到者 409，**一轮 apply 都不跑**。</p>
+     * <p>同步形态保留契约理由同 {@link #execute}；后台路径见 {@link #revertAsync(Long, String)}。</p>
      */
     public AgentBatchViews.Batch revert(Long tenantId, String batchId) {
+        AgentBatch batch = claimForRevert(tenantId, batchId);
+        List<AgentBatchViews.Result> results = runRevert(tenantId, batch);
+        return view(batch, results, null);
+    }
+
+    /**
+     * 撤销批次（后台 job，issue #8283）：claim 后提交线程池，立即返回 {@code executing}；
+     * 终态由 {@link #get(Long, String)} 查询。
+     */
+    public AgentBatchViews.Batch revertAsync(Long tenantId, String batchId) {
+        AgentBatch batch = claimForRevert(tenantId, batchId);
+        AgentBatchViews.Batch accepted = view(batch, null, null);
+        batchJobLauncher.launch(() -> runRevert(tenantId, batch));
+        return accepted;
+    }
+
+    /** 撤销准入：状态检查 + 测试探针 + CAS 抢撤销权；返回已置 executing 的批次。 */
+    private AgentBatch claimForRevert(Long tenantId, String batchId) {
         AgentBatch batch = requireBatch(tenantId, batchId);
         if (STATUS_REVERTED.equals(batch.getStatus()) || STATUS_REVERT_PARTIAL.equals(batch.getStatus())) {
             throw BusinessException.conflict("批次当前状态为 " + batch.getStatus()
@@ -300,11 +400,41 @@ public class AgentBatchService {
                     "请先执行该批次，再撤销");
         }
         batch.setStatus(STATUS_EXECUTING);
+        return batch;
+    }
 
-        List<AgentBatchItem> items = itemsOf(batchId);
+    /**
+     * 逐条撤销（同步 / 异步共用）：只还原执行成功的条目；skipped 逐条报出，不误写。
+     *
+     * <p>job 级异常（例如读 items 失败）也落 {@code revert_partial}，避免永远停在
+     * {@code executing}；已还原的条目仍按 DB 中的 item 状态逐条可核。</p>
+     */
+    private List<AgentBatchViews.Result> runRevert(Long tenantId, AgentBatch batch) {
+        String batchId = batch.getId();
+        List<AgentBatchItem> items;
+        try {
+            items = itemsOf(batchId);
+        } catch (RuntimeException e) {
+            log.error("[Agent] 批量撤销读取明细失败，落 revert_partial: batchId={}", batchId, e);
+            batch.setStatus(STATUS_REVERT_PARTIAL);
+            batch.setRevertedAt(OffsetDateTime.now());
+            int finalized = batchMapper.markRevertPartial(batchId, tenantId, batch.getRevertedAt());
+            if (finalized == 0) {
+                log.warn("[Agent] 批量撤销终态 CAS 未命中（状态已被并发改变），不覆盖: batchId={}", batchId);
+            } else {
+                batchMapper.updateById(batch);
+            }
+            return List.of();
+        }
+
         List<AgentBatchViews.Result> results = new ArrayList<>(items.size());
         int failed = 0;
         for (AgentBatchItem item : items) {
+            if (Thread.currentThread().isInterrupted()) {
+                log.warn("[Agent] 批量撤销被中断，剩余条目保持原状态: batchId={}", batchId);
+                failed++;
+                continue;
+            }
             if (!ITEM_SUCCESS.equals(item.getStatus())) {
                 // 执行阶段就失败过的条目从未生效 ⇒ 没有东西要还原；逐条报出（不静默略过、不误写）
                 item.setStatus(ITEM_SKIPPED);
@@ -334,9 +464,16 @@ public class AgentBatchService {
 
         batch.setStatus(failed == 0 ? STATUS_REVERTED : STATUS_REVERT_PARTIAL);
         batch.setRevertedAt(OffsetDateTime.now());
-        batchMapper.updateById(batch);
+        int finalized = STATUS_REVERTED.equals(batch.getStatus())
+                ? batchMapper.markReverted(batchId, tenantId, batch.getRevertedAt())
+                : batchMapper.markRevertPartial(batchId, tenantId, batch.getRevertedAt());
+        if (finalized == 0) {
+            log.warn("[Agent] 批量撤销终态 CAS 未命中（状态已被并发改变），不覆盖: batchId={}", batchId);
+        } else {
+            batchMapper.updateById(batch);
+        }
         log.info("[Agent] 批量撤销完成: batchId={}, failed={}, status={}", batchId, failed, batch.getStatus());
-        return view(batch, results, null);
+        return results;
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════

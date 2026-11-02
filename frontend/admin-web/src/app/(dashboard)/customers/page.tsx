@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Tags, X, Star } from 'lucide-react'
+import { Plus, Tags, Upload, X, Star } from 'lucide-react'
 import { toast } from 'sonner'
 import { customerApi } from '@/lib/api'
 import { resolveImageUrl } from '@/lib/utils'
@@ -411,10 +411,21 @@ export default function CustomersPage() {
         title="客户管理"
         subtitle="管理客户信息、标签和互动记录"
         actions={
-          <Button variant="secondary" onClick={openTagManager}>
-            <Tags className="w-4 h-4 mr-1.5" />
-            标签管理
-          </Button>
+          <>
+            {/* 客户主数据迁移（issue #8295）：旧系统客户档案批量导入的独立工作台 */}
+            <Button
+              variant="secondary"
+              data-testid="customers-import-link"
+              onClick={() => router.push('/customers/import')}
+              icon={<Upload className="w-4 h-4" />}
+            >
+              导入客户
+            </Button>
+            <Button variant="secondary" onClick={openTagManager}>
+              <Tags className="w-4 h-4 mr-1.5" />
+              标签管理
+            </Button>
+          </>
         }
       />
 

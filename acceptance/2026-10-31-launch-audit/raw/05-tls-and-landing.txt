@@ -1,0 +1,15 @@
+=== TLS cert expiry ===
+merchant.migaozn.com: notBefore=Aug 29 10:29:19 2026 GMT notAfter=Nov 27 10:29:18 2026 GMT issuer=C=US, O=Let's Encrypt, CN=YR2 
+api.migaozn.com: notBefore=Aug 29 10:29:19 2026 GMT notAfter=Nov 27 10:29:18 2026 GMT issuer=C=US, O=Let's Encrypt, CN=YR2 
+ai-api.migaozn.com: notBefore=Aug 29 10:29:19 2026 GMT notAfter=Nov 27 10:29:18 2026 GMT issuer=C=US, O=Let's Encrypt, CN=YR2 
+app.migaozn.com: notBefore=Aug 29 10:29:19 2026 GMT notAfter=Nov 27 10:29:18 2026 GMT issuer=C=US, O=Let's Encrypt, CN=YR2 
+
+=== worker entry landing pages ===
+/b/report/ -> 200
+/b/ -> 200
+/w/machine.html -> 200
+/w/piecework.html -> 200
+/w/shipment.html -> 200
+/w/rework.html -> 200
+/i/ -> 404
+/o/ -> 404

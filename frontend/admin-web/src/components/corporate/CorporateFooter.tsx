@@ -4,6 +4,8 @@ import Logo from '@/components/ui/Logo'
 const quickLinks = [
   { name: '首页', href: '/' },
   { name: '产品服务', href: '/services' },
+  // 终端下载页（issue #8195）
+  { name: '下载中心', href: '/download' },
   { name: '关于我们', href: '/about' },
   { name: '联系方式', href: '/contact' },
   { name: '商家入驻', href: '/register' },

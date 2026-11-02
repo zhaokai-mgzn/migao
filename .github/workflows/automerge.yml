@@ -27,7 +27,7 @@ name: Auto Merge
 #     minor（同 major）**，且该版本字面量确实出现在 diff 的增删行里（不信标题）。**major 升级
 #     仍然留人工** —— 这是仓库原本跳过 bot PR 的真实理由（半套升级 / 大版本破坏要人工关）。
 # 两类都要求 required 检查未判红、且无 `block/merge` 标签。
-# **非 bot（人类 PR）路径的行为逐字不变** —— 既有 job 的 `if:` 与 steps 一个字未改（本文件
+# **非 bot（人类 PR）路径的 `if:` 改为 PR 作者白名单（#8393：两名使用账号 + CI bot）** —— 既有 job 的 steps 一个字未改（本文件
 # 从 `on:` 起的所有原文原样保留，新增内容只在文件头注释与文件末尾的新 job）。
 # 守卫：tests/unit_ci_workflows/test_automerge_bot_safe_path.py（11 条判据各带注入式红证）。
 #
@@ -46,7 +46,7 @@ name: Auto Merge
 # 本 job 的 workflow 属**同一信任域**，被评审的 PR 替换不了它；③ 取不到尺子 ⇒
 # `SECRETS_YARDSTICK_UNAVAILABLE` ⇒ **不 arm**（绝不把「量不出来」读成「没问题」）。
 # 判据强度**未放宽**：diff 里真新增 secrets 引用 ⇒ 照旧 `SECRETS_ADDED`、照旧不 arm。
-# 未改：两个安全类的口径、其余安全闸、非 bot 路径（逐字不变）。
+# 改动面：非 bot 路径的 `if:` 改为 PR 作者白名单（#8393）；两个安全类的口径与其余安全闸未改。
 #
 # ── 2026-09-23 新增（issue #5235「PR 悬空但零信号」的两族）────────────────────────
 # 族 A（**arm 腿自己失败**）：PR 停在「required 全绿但永不合并」，不红、不通知。真因是
@@ -125,7 +125,7 @@ jobs:
     if: |
       github.event.pull_request.base.ref == 'main' &&
       github.event.pull_request.draft == false &&
-      github.event.pull_request.user.type != 'Bot' &&
+      contains(fromJSON('["zhaokai-mgzn","ciyuantongda","github-actions[bot]"]'), github.event.pull_request.user.login) &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       !contains(github.event.pull_request.labels.*.name, 'block/merge')
 
@@ -351,7 +351,7 @@ jobs:
     if: |
       github.event.pull_request.base.ref == 'main' &&
       github.event.pull_request.draft == false &&
-      github.event.pull_request.user.type == 'Bot' &&
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       !contains(github.event.pull_request.labels.*.name, 'block/merge')
 

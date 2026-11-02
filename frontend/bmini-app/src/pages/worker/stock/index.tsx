@@ -32,8 +32,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Taro from '@tarojs/taro'
 import { Button, Input, Text, View } from '@tarojs/components'
 import { fetchCurrentWorker } from '../../../services/workerService'
-import { searchStockBatches, submitBatchCorrection } from '../../../services/workerStockService'
+import { getInboundLabel, uploadInboundPhotoSmart } from '../../../services/workerInboundService'
+import {
+  recognizeBatchNo,
+  searchStockBatches,
+  submitBatchCorrection,
+} from '../../../services/workerStockService'
 import type { StockBatchPage } from '../../../services/workerStockService'
+import { decodeBarcodeFromPhoto } from '../../../utils/inbound/barcodeDecode'
 import { STOCK_WORKER_LOGIN_REQUIRED, WORKER_LOGIN_ROUTE } from '../../../utils/inbound/gaps'
 import { clearWorkerSession, hasWorkerSession, type CurrentWorker } from '../../../utils/workerSession'
 import {
@@ -49,6 +55,12 @@ import {
   type CorrectionReceipt,
   type StockBatchRow,
 } from '../../../utils/workerStock'
+import {
+  STOCK_RECOGNIZE_MANUAL_HINT,
+  locateByBatchNo,
+  normalizeBatchNo,
+  runStockRecognize,
+} from '../../../utils/workerStockRecognize'
 import './index.scss'
 
 /** 空态文案（说清「怎么才会有批次」——只说「没有」等于没说）。 */
@@ -151,10 +163,11 @@ export default function WorkerStockPage() {
 
   /** 选中一个批次 ⇒ 打开修正面板（并清掉上一次的输入 / 回执 / 幂等键）。 */
   const selectRow = useCallback(
-    (row: StockBatchRow) => {
+    (row: StockBatchRow, reasonList?: CorrectionReason[]) => {
       setSelected(row)
       setActual('')
-      setReasonCode(reasons[0]?.code ?? '')
+      // 原因清单可能来自**本次**搜索（识别后的定位），不能只读 state 里上一次的那份
+      setReasonCode((reasonList ?? reasons)[0]?.code ?? '')
       setNote('')
       setReceipt(null)
       setMessage('')
@@ -167,6 +180,113 @@ export default function WorkerStockPage() {
   const touched = useCallback(() => {
     requestIdRef.current = ''
   }, [])
+
+  /**
+   * 按批次号**精确定位**（识别入口的唯一落点；复用既有搜索读面，不新造端点）。
+   *
+   * 三态分开说：命中 1 行 ⇒ 直接打开修正面板；同号多行 ⇒ 列出来让工人点；0 行 ⇒ 明说
+   * 「没找到批次 X」（**不**退化成「没有批次」，那会让工人以为系统里全没了）。
+   */
+  const locateBatch = useCallback(
+    async (rawBatchNo: string) => {
+      const batchNo = normalizeBatchNo(rawBatchNo)
+      if (batchNo === '') {
+        setMessage(STOCK_RECOGNIZE_MANUAL_HINT)
+        return
+      }
+      setKeyword(batchNo)
+      setBusy(true)
+      setMessage('')
+      const res = await searchStockBatches(batchNo)
+      setBusy(false)
+      if (!res.success || !res.data) {
+        if (res.statusCode === 401) {
+          unauthorized()
+          return
+        }
+        setMessage(res.message || READ_FAILED_HINT)
+        setPhase('error')
+        return
+      }
+      const page: StockBatchPage = res.data
+      const found = Array.isArray(page.items) ? page.items : []
+      const reasonList = Array.isArray(page.reasons) ? page.reasons : []
+      setRows(found)
+      setReasons(reasonList)
+      setSearched(true)
+      setPhase('ready')
+
+      const location = locateByBatchNo(found, batchNo)
+      if (location.kind === 'selected') {
+        selectRow(location.row, reasonList)
+        return
+      }
+      setSelected(null)
+      if (location.kind === 'ambiguous') {
+        setMessage(`找到 ${location.rows.length} 个批次都用这个批次号，请点一行确认要修正哪一批`)
+        return
+      }
+      setMessage(
+        `没找到批次 ${batchNo}：可能不是本企业的批次，或这张标签上印的是旧系统批次号 —— 请核对后手输`,
+      )
+    },
+    [selectRow, unauthorized],
+  )
+
+  /**
+   * 拍照识别批次号（issue #8210）。
+   *
+   * 顺序在 `runStockRecognize` 里钉死：**扫标签二维码（0 次 LLM）→ vision 兜底 → 手输**。
+   * 页面只做接线：拿图 → 交纯函数 → 按结果定位。识别**不提交**（提交仍要工人填实盘数 + 二次确认）。
+   */
+  const runRecognize = useCallback(async () => {
+    if (!workerReady) {
+      setPhase('unauthorized')
+      return
+    }
+    setMessage('')
+    let photos: Array<{ tempFilePath: string }> = []
+    try {
+      const picked: any = await Taro.chooseImage({ count: 1, sourceType: ['camera', 'album'] })
+      const paths: string[] = Array.isArray(picked?.tempFilePaths) ? picked.tempFilePaths : []
+      photos = paths.filter((path) => String(path ?? '') !== '').map((path) => ({ tempFilePath: path }))
+    } catch {
+      // 取消拍照 / 没有相机权限 ⇒ 静默返回（不是错误，工人可以改手输）
+      return
+    }
+    if (photos.length === 0) return
+
+    setBusy(true)
+    try {
+      const outcome = await runStockRecognize({
+        photos,
+        decode: decodeBarcodeFromPhoto,
+        lookupLabelBatchNo: async (shortCode: string) => {
+          const res = await getInboundLabel(shortCode)
+          if (!res.success || !res.data) return { batchNo: null, failed: true }
+          return { batchNo: res.data.batchNo ?? null }
+        },
+        upload: async (photo) => {
+          const path = String(photo.tempFilePath || photo.file || '')
+          const res = await uploadInboundPhotoSmart({ tempFilePath: path })
+          const url = res?.data?.url
+          if (!res?.success || !url) throw new Error('upload failed')
+          return String(url)
+        },
+        recognize: async ({ images }) => recognizeBatchNo(images),
+      })
+      setBusy(false)
+      if (outcome.statusCode === 401) {
+        unauthorized()
+        return
+      }
+      if (outcome.notice) setMessage(outcome.notice)
+      if (outcome.batchNo) await locateBatch(outcome.batchNo)
+    } catch {
+      setBusy(false)
+      setMessage(STOCK_RECOGNIZE_MANUAL_HINT)
+    }
+  }, [locateBatch, unauthorized, workerReady])
 
   const submit = useCallback(async () => {
     if (!selected) return
@@ -272,6 +392,21 @@ export default function WorkerStockPage() {
         >
           查询
         </Button>
+      </View>
+
+      {/* 拍照识别批次号（issue #8210）：扫标签二维码优先（0 次 LLM）→ OCR 兜底 → 手输 */}
+      <View className='worker-stock__recognize'>
+        <Button
+          className='worker-stock__recognize-button'
+          data-testid='worker-stock-recognize'
+          disabled={busy}
+          onClick={() => void runRecognize()}
+        >
+          拍照识别批次号
+        </Button>
+        <Text className='worker-stock__recognize-hint'>
+          拍标签上的二维码最快；没有码时自动按批次号文字识别
+        </Text>
       </View>
 
       {message ? (

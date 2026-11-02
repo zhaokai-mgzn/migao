@@ -1,4 +1,4 @@
-// case_ids: BM-055
+// case_ids: BM-055, BM-057
 /**
  * 手机端登录：「员工账号 = 用户名 @ 企业编码」拆两格 + 中间固定 `@`，企业编码记住（issue #7944）
  *
@@ -227,17 +227,23 @@ describe('工人面：企业编码预填（issue #7944）', () => {
 
     render(<WorkerLoginPage />)
 
-    // 独立工人登录页的 placeholder 与工人 tab 不同（'工号' / 'PIN'，不是 '请输入…'）
-    expect(valueOf('工号')).toBe('W-042')
-    expect(valueOf(WORKER_TENANT_PLACEHOLDER)).toBe('acme')
-    expect(valueOf('PIN')).toBe('')
+    // issue #8194：本页改成共享组件 `WorkerLoginForm`（与终端 `/w/` 逐字一致：标签在框上方，
+    // 不是 placeholder）⇒ 按 testid 取值，断言的仍是「预填 / 不预填」这件事本身
+    const valueOfId = (id: string): string => (screen.getByTestId(id) as HTMLInputElement).value
+    expect(valueOfId('worker-login-worker-no')).toBe('W-042')
+    expect(valueOfId('worker-login-enterprise-code')).toBe('acme')
+    expect(valueOfId('worker-login-pin')).toBe('')
 
-    type('PIN', 'pin-1234')
-    await clickLogin()
+    fireEvent.change(screen.getByTestId('worker-login-pin'), { target: { value: 'pin-1234' } })
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('worker-login-submit'))
+    })
 
     expect(Taro.getStorageSync(STORAGE_KEYS.LOGIN_TENANT_WORKER)).toBe('acme')
     // 反空跑：确实调了工人登录（否则「键还在」可能只是什么都没发生）
     expect(mockWorkerLogin).toHaveBeenCalledTimes(1)
+    // 设备标签**不传**（`/w/` 没有那一格）：第三参恒 undefined
+    expect(mockWorkerLogin).toHaveBeenCalledWith('W-042', 'pin-1234', undefined, 'acme')
   })
 
   it('判据 7d：两张面**都**有企业编码键时各用各的（不共用同一个键）', () => {

@@ -17,13 +17,25 @@
   box-sizing: border-box;
 }
 
-.admin-label-preview {
-  display: block;
+/* 预览占位：`padding-bottom` 百分比 = 画布宽高比（WebView 83 没有 aspect-ratio，
+   `Image mode=widthFix` 在该内核下不按比例撑高 ⇒ 预览被裁掉下半截、二维码看不见，issue #8325） */
+.admin-label-preview-box {
+  position: relative;
   width: 100%;
   margin: 8px 0;
+  overflow: hidden;
   border: 1px solid rgba(10, 37, 64, 0.12);
   border-radius: 6px;
   background: #ffffff;
+}
+
+.admin-label-preview {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 /**

@@ -186,16 +186,16 @@ describe('工人拍照补打页', () => {
     expect(mockGetLabel).not.toHaveBeenCalled()
   })
 
-  it('P2 安卓 Chrome + HTTPS ⇒ 正向提示（可打印）', () => {
+  it('P2 安卓 Chrome + HTTPS ⇒ 能打印时**不再**常驻一行说明（用户 2026-11-01：只留预览和按钮）', () => {
     render(<WorkerReprintPage />)
-    expect(screen.getByTestId('reprint-print-capability').textContent).toBe(PRINT_READY_HINT)
+    expect(screen.queryByTestId('reprint-print-capability')).toBeNull()
   })
 
   it('P10 拍照步文案是给工人看的纯文本（无 markdown 标记、无研发术语，issue #7316）', () => {
     render(<WorkerReprintPage />)
     const photo = screen.getByTestId('reprint-step-photo').textContent || ''
-    expect(photo).toContain('手机当场就能认出来')
-    expect(photo).toContain('手输短码')
+    expect(photo).toContain('请把二维码拍清楚')
+    expect(photo).toContain('手输编号')
     // 🔴 红证：写回 `**不会**` ⇒ 星号上屏，本断言当场红（同 worker-copy-plain-text-guard.test.ts）
     expect(photo).not.toContain('*')
     expect(photo).not.toMatch(/识别模型|服务端|解码/)
@@ -206,8 +206,9 @@ describe('工人拍照补打页', () => {
     await shootAndRecognize()
     await waitFor(() => expect(screen.getByTestId('reprint-step-detail')).toBeTruthy())
     expect(mockGetLabel).toHaveBeenCalledWith('ABCD0234')
-    expect(screen.getByText(/RK-20260927-0001/)).toBeTruthy()
-    expect(screen.getByText(/遮光布/)).toBeTruthy()
+    // 🔴 2026-11-01 用户裁定：标签卡里只留「预览 + 打印按钮」⇒ 单号/品名那段说明文字不再上屏
+    expect(screen.queryByText(/RK-20260927-0001/)).toBeNull()
+    expect(screen.getByTestId('label-preview-box')).toBeTruthy()
     // 🔴 红证：还没点打印 ⇒ 一次留痕都不该有（"先留痕"不是"提前留痕"）
     expect(mockRecordPrint).not.toHaveBeenCalled()
     // 🔴 0 次 LLM（验收判据 2）：整条补打链**没有任何**识别/上传调用
@@ -264,13 +265,13 @@ describe('工人拍照补打页', () => {
       message: '入库标签不存在',
       statusCode: 404,
       code: 'NOT_FOUND',
-      suggestion: '请核对标签上的短码（8 位，字母与数字；字母 O/I/L 会被当作 0/1 处理）',
+      suggestion: '请核对标签编号（8 位，字母与数字；字母 O/I/L 会被当作 0/1 处理）',
     })
     const first = render(<WorkerReprintPage />)
     await shootAndRecognize()
     await waitFor(() => expect(screen.getByTestId('reprint-not-found')).toBeTruthy())
     const notFoundText = screen.getByTestId('reprint-not-found').textContent || ''
-    expect(notFoundText).toContain('查无此码')
+    expect(notFoundText).toContain('查无此编号')
     expect(screen.queryByTestId('reprint-revoked')).toBeNull()
     first.unmount()
 
@@ -354,14 +355,14 @@ describe('工人拍照补打页', () => {
     render(<WorkerReprintPage />)
     await shootAndRecognize()
     await waitFor(() => expect(screen.getByTestId('reprint-step-detail')).toBeTruthy())
-    expect(screen.getByText(/（缺失）/)).toBeTruthy()
     fireEvent.click(screen.getByTestId('reprint-print'))
     await waitFor(() => expect(screen.getByTestId('reprint-error')).toBeTruthy())
-    expect(screen.getByTestId('reprint-error').textContent).toContain('没有短码')
+    expect(screen.getByTestId('reprint-error').textContent).toContain('没有编号')
     expect(mockRecordPrint).not.toHaveBeenCalled()
     expect(printLog).toEqual([])
-    // 版心仍按真值给出（缺码只影响二维码那一步，不影响纸型/版面）
-    expect(screen.getByTestId('reprint-label-bound').textContent).toContain('1:1 送打印')
+    // 版心（内部绘制参数：px / 1:1 送打印）不再上屏（2026-11-01 商米 V2s 真机验收）——
+    // 工人屏只说结论，不摆点阵读数；重新加回来 ⇒ 本判据红。
+    expect(screen.queryByTestId('reprint-label-bound')).toBeNull()
   })
 
   it('P8 页面不碰商家面：整条链只走 /api/worker/**（源码面）', () => {

@@ -609,9 +609,13 @@ def test_runbook_exists_and_covers_both_repair_paths():
     text = RUNBOOK.read_text(encoding="utf-8")
     for needle, why in (
         ("admin.migaozn.com", "必须点名根因域名（缺 A 记录 ⇒ HTTP-01 必失败）"),
-        ("--expand", "路径②（不补 DNS，重签并只带可解析 SAN）必须给可复制命令"),
-        ("需人裁定", "路径②改变了 SAN 集合 ⇒ 必须写明「需人裁定」，不许默认执行"),
-        ("renewal/api.migaozn.com.conf", "陈旧 lineage 必须给「不删证书」的禁用方式"),
+        ("已裁定", "路径②是**已裁定**的执行路径（2026-10-31 用户裁定走②），不许再写成「待裁定」"),
+        ("--expand", "路径②必须给可复制命令（--expand 保住同一条 lineage，不新建第二张证书）"),
+        ("--force-renewal", "重签必须带 --force-renewal（未到 30 天窗口时 certbot 会跳过续期）"),
+        ("写进 cron", "--force-renewal 是**一次性动作**，必须写明不许进 cron（否则撞 LE 限流）"),
+        ("需人裁定", "必须交代这条路径与「不改域名集合」边界的关系（它曾登记为需人裁定的例外）"),
+        ("renewal/api.migaozn.com.conf", "陈旧 lineage 必须给「不删证书」的处置方式"),
+        ("renewal-disabled", "陈旧 lineage 的唯一口径目录（只留一种，避免执行时两处）"),
         ("tls-renew.sh --install-cron", "cron 加固必须给可复制命令"),
         ("nginx -s reload", "必须写清用 reload 而不是 restart（不整断）"),
         ("Windows", "必须写清终端影响面（Windows/Android 终端不受影响，四域 HTTPS 全受影响）"),

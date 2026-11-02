@@ -249,9 +249,12 @@ describe('A. 记住上次成功登录的账号名（issue #6478）', () => {
 
     render(<WorkerLoginPage />)
 
-    expect(valueOf('工号')).toBe('W-042')
-    expect(valueOf(ENTERPRISE_PLACEHOLDER)).toBe('acme')
-    expect(valueOf('PIN')).toBe('')
+    // issue #8194：本页改用共享组件 `WorkerLoginForm`（标签在框上方，与 `/w/` 一致、无 placeholder）
+    // ⇒ 按 testid 取值；断言的仍是「预填工号 + 企业编码、PIN 不预填」这条纪律
+    const valueOfId = (id: string): string => (screen.getByTestId(id) as HTMLInputElement).value
+    expect(valueOfId('worker-login-worker-no')).toBe('W-042')
+    expect(valueOfId('worker-login-enterprise-code')).toBe('acme')
+    expect(valueOfId('worker-login-pin')).toBe('')
   })
 
   it('🔴 判据 2（反向红线）：三个面全部填满并成功登录 ⇒ 落盘键值里不出现密码 / 验证码 / PIN', async () => {

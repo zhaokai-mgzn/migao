@@ -1,0 +1,12 @@
+=== module MIME types (白屏红线) ===
+/w/src/app.mjs -> content-type: application/javascript 
+/w/src/api.mjs -> content-type: application/javascript 
+/w/src/render.mjs -> content-type: application/javascript 
+/b/js/app.js -> content-type: application/javascript 
+/js/app.js -> content-type: application/javascript 
+
+=== .mjs body first 40 bytes (是否被当成 HTML 兜底) ===
+// case_ids: PG-018, BM-006, DF-017
+//
+// 工人端 H5 报�curl: (56) Failure writing output to destination, passed 8192 returned 0
+

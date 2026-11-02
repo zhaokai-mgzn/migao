@@ -1,51 +1,11 @@
+/* 独立工人登录页（issue #8194）—— 页面只提供**底色与留白**：表单自身的形态（卡片 / 标题 / 字段 /
+   主按钮）在共享组件 `src/components/WorkerLoginForm.scss`（与 `/w/` 同一套暖色阶）。
+   底色沿用工人面其它页（`#faf7f2` = `/w/` 的 `--wh5-bg`），白卡片因此有可见色差。 */
 .worker-login {
-  padding: 48px 32px;
-
-  &__title {
-    display: block;
-    font-size: 44px;
-    font-weight: 700;
-    color: #0a2540;
-    margin-bottom: 12px;
-  }
-
-  &__subtitle {
-    display: block;
-    font-size: 26px;
-    color: #5b6b7c;
-    margin-bottom: 40px;
-  }
-
-  &__input {
-    height: 88px;
-    padding: 0 24px;
-    margin-bottom: 24px;
-    background: #ffffff;
-    border: 1px solid #dfe6ef;
-    border-radius: 8px;
-    font-size: 30px;
-  }
-
-  &__error {
-    display: block;
-    font-size: 26px;
-    color: #d93025;
-    margin-bottom: 16px;
-  }
-
-  &__submit {
-    height: 88px;
-    line-height: 88px;
-    background: #1a73e8;
-    color: #ffffff;
-    border-radius: 8px;
-    font-size: 32px;
-  }
-
-  &__hint {
-    display: block;
-    margin-top: 32px;
-    font-size: 24px;
-    color: #7a8899;
-  }
+  min-height: 100vh;
+  padding: 32px 24px 48px;
+  background: #faf7f2;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }

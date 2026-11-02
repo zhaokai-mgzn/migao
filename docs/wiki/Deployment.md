@@ -28,7 +28,7 @@
 - `ai-api.migaozn.com` → ai-agent:8000
 - `migaozn.com` / `www.migaozn.com` / `merchant.migaozn.com` → admin-web:3001
 
-> 注：nginx `server_name` 里还列了 `admin.migaozn.com` 与 `ops.migaozn.com`（后者已废弃：商家入驻 2026-08-30 起由 AI 自动甄别，无人工审批页面），两域名均无实际前端入口。
+> 注：nginx `server_name` 里曾列 `admin.migaozn.com` 与 `ops.migaozn.com`（后者已废弃：商家入驻 2026-08-30 起由 AI 自动甄别，无人工审批页面）。**2026-10-31** 两者都已从证书 SAN 移除，`ops` 的 DNS A 记录同批删除（证书收窄到 6 个可解析域名）。
 
 ## 阿里云服务
 

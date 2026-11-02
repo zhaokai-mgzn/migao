@@ -89,12 +89,93 @@ class StockDeductionAndLedgerAtomicityMetaGuardTest {
 
     // ────────────────────────────────────────────── 形态
 
-    /** SET 子句（`UPDATE x SET … ` 到 `WHERE` 之间）—— 只在这一段上判「加减」，免得被 RETURNING 里的算式误判。 */
-    private static final Pattern SET_CLAUSE = Pattern.compile(
-            "(?i)\\bSET\\b(.*?)\\bWHERE\\b", Pattern.DOTALL);
-    /** SET 子句里「stock = … - …」= 扣减型入口（现取，不写死方法名表）。 */
-    private static final Pattern DEDUCT_STOCK_WRITE = Pattern.compile(
-            "stock\\s*=\\s*[^;]*?\\s-\\s*\\#\\{", Pattern.CASE_INSENSITIVE);
+    /**
+     * SET 子句（`UPDATE x SET … ` 到 `WHERE` 之间）—— 只在这一段上判「加减」，免得被 RETURNING 里的算式误判。
+     *
+     * 🔴 #8356：原实现是正则 `(?i)\\bSET\\b(.*?)\\bWHERE\\b` + {@code Pattern.DOTALL}。{@code .*?} 在
+     * DOTALL 下由 {@code java.util.regex} 以**递归**匹配，被扫语料一长（长 SQL / 长行）递归深度就打穿 JVM 栈
+     * ⇒ 抛 {@code StackOverflowError}（**不是** OOM）。实证：PR #8346 / PR #8214 的 {@code admin-api unit tests}
+     * 在 5500+ 个测试里只因这一条随机红，且与它们各自的改动无关。
+     *
+     * 改用**确定性扫描**（{@link #indexOfWord} + {@code substring}）：无回溯、无递归，复杂度 O(n)，
+     * 语义与 `\\bSET\\b … \\bWHERE\\b` 逐字等价（只在第一个 SET 词边界与随后的第一个 WHERE 词边界之间取段）。
+     */
+    private static String setClause(String sql) {
+        int setIdx = indexOfWord(sql, "SET", 0);
+        if (setIdx < 0) {
+            return sql;
+        }
+        int from = setIdx + "SET".length();
+        int whereIdx = indexOfWord(sql, "WHERE", from);
+        return whereIdx >= 0 ? sql.substring(from, whereIdx) : sql.substring(from);
+    }
+
+    /** 忽略大小写的**词边界**查找（等价于正则 {@code \\bWORD\\b}，但不用正则 ⇒ 无回溯）。 */
+    private static int indexOfWord(String haystack, String word, int from) {
+        int len = word.length();
+        for (int i = Math.max(0, from); i + len <= haystack.length(); i++) {
+            if (!haystack.regionMatches(true, i, word, 0, len)) {
+                continue;
+            }
+            boolean leftOk = i == 0 || !isWordChar(haystack.charAt(i - 1));
+            int end = i + len;
+            boolean rightOk = end >= haystack.length() || !isWordChar(haystack.charAt(end));
+            if (leftOk && rightOk) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static boolean isWordChar(char c) {
+        return Character.isLetterOrDigit(c) || c == '_';
+    }
+    /**
+     * SET 子句里「`stock = … - …#{…}`」= 扣减型入口（现取，不写死方法名表）。
+     *
+     * 🔴 #8356（同族第二处，PR #8410 漏掉的另一半）：原实现是正则
+     * {@code stock\s*=\s*[^;]*?\s-\s*\#\{} —— {@code [^;]*?} 是**惰性可回溯**量词，
+     * 一旦被扫串里没有分号（典型：`setClause()` 找不到 `SET` 而**回退成整条 SQL**），
+     * 递归深度就打穿 JVM 栈 ⇒ {@code StackOverflowError}。
+     *
+     * 实证：PR #8214 的 {@code admin-api unit tests} 在 5597 个测试里因这一条 error 红
+     * （堆栈全是 {@code java.util.regex.Pattern$*），而同一测试类单跑是 4 passed ——
+     * 差别就在于**跑全量时 setClause 的回退分支被触发**。
+     *
+     * 改成确定性扫描（{@link #hasStockMinusParam}）：无回溯、无递归、O(n)。
+     * 语义与 {@code stock\s*=\s*[^;]*?\s-\s*\#\{} 等价：词 `stock` + 空白 + `=`，
+     * 之后到 `;` 之前出现「空白 + `-` + 空白 + `#{`」。
+     */
+    private static boolean hasStockMinusParam(String clause) {
+        // ⚠️ 必须逐字等价于原正则的 `stock`：**不用词边界**（`restock = …` 在原口径下也算命中）。
+        String lower = clause.toLowerCase(java.util.Locale.ROOT);
+        int from = 0;
+        while (true) {
+            int k = lower.indexOf("stock", from);
+            if (k < 0) {
+                return false;
+            }
+            int j = k + "stock".length();
+            while (j < clause.length() && Character.isWhitespace(clause.charAt(j))) {
+                j++;
+            }
+            if (j < clause.length() && clause.charAt(j) == '=') {
+                for (int p = j + 1; p < clause.length() && clause.charAt(p) != ';'; p++) {
+                    if (clause.charAt(p) != '-' || p == 0 || !Character.isWhitespace(clause.charAt(p - 1))) {
+                        continue;
+                    }
+                    int q = p + 1;
+                    while (q < clause.length() && Character.isWhitespace(clause.charAt(q))) {
+                        q++;
+                    }
+                    if (q + 1 < clause.length() && clause.charAt(q) == '#' && clause.charAt(q + 1) == '{') {
+                        return true;
+                    }
+                }
+            }
+            from = k + "stock".length();
+        }
+    }
     /** 受影响行数的判定（本单新形态下「0 行」表现为返回 null，故 null 判定同样算）。 */
     private static final Pattern ROWCOUNT_CHECK = Pattern.compile("==\\s*0|!=\\s*0|<\\s*1|>\\s*0|==\\s*null|!=\\s*null");
     /** 快照读属性（`X.getStock()`）—— 落台账时**不得**用它当 before/after。 */
@@ -262,8 +343,7 @@ class StockDeductionAndLedgerAtomicityMetaGuardTest {
 
     /** 扣减写面的两条纪律（真语料给整条 SQL，合成语料给片段 —— 同一套判定）。 */
     private static List<String> deductViolations(String sql, String display) {
-        Matcher set = SET_CLAUSE.matcher(sql);
-        String clause = set.find() ? set.group(1) : sql;
+        String clause = setClause(sql);
         List<String> violations = new ArrayList<>();
         if (!sql.contains(">=")) {
             violations.add(display + " 无下限谓词（并发下会扣成负数 / 需靠 GREATEST 钳 0 掩盖）");
@@ -327,9 +407,8 @@ class StockDeductionAndLedgerAtomicityMetaGuardTest {
 
     /** 该写面是否为「扣减」：只在 SET 子句里判 `stock = … - …`（RETURNING 里的算式不算）。 */
     private static boolean isStockDeduct(String sql) {
-        Matcher set = SET_CLAUSE.matcher(sql);
-        String clause = set.find() ? set.group(1) : sql;
-        return DEDUCT_STOCK_WRITE.matcher(clause).find();
+        String clause = setClause(sql);
+        return hasStockMinusParam(clause);
     }
 
     /**

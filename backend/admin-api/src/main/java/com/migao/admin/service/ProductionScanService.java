@@ -292,7 +292,15 @@ public class ProductionScanService {
                     workerOperation);
         }
         // ②~⑤ 既有四形态（一字不动）；全不命中 ⇒ 404「订单不存在」（既有行为）
-        return degradedView(key, tenantId);
+        // 🔴 免选（2026-11-01 用户裁定「能定位就免选」）：整单只有**一套 × 一个部位**时，
+        // 选与不选没有第二个可能 ⇒ 直接给部位级视图（走工人手选的那同一条 legacySelectionView，
+        // 推断口径不分叉）；真的多套 / 多部位才回降级形态让工人选。
+        Map<String, Object> degraded = degradedView(key, tenantId);
+        String[] only = solePositionOf(degraded);
+        if (only != null) {
+            return legacySelectionView(key, only[0], only[1], operationId, tenantId, workerOperation);
+        }
+        return degraded;
     }
 
     /** 新码命中：`token` 未撤销 + 同租户（fail-closed，`deleted = 0` 正向相等）。 */
@@ -573,6 +581,38 @@ public class ProductionScanService {
             throw BusinessException.notFound("套", "该码指向的套不存在或已作废，请重新打印任务卡");
         }
         return set;
+    }
+
+    /**
+     * 降级清单里**唯一**那一套 × 部位（没有第二个可能）⇒ `[setId, orderItemId]`；
+     * 多套 / 多部位 / 形状不对 ⇒ `null`（保持降级形态，交给工人选）。
+     *
+     * <p>判据只读 {@code selections}（与工人肉眼看到的是**同一份**清单）—— 不在服务端另算一遍
+     * 「应该有几套」，否则两处迟早不同。</p>
+     */
+    private static String[] solePositionOf(Map<String, Object> degraded) {
+        Object raw = degraded.get("selections");
+        if (!(raw instanceof List<?> sets) || sets.size() != 1) {
+            return null;
+        }
+        Object first = sets.get(0);
+        if (!(first instanceof Map<?, ?> set)) {
+            return null;
+        }
+        Object positions = set.get("positions");
+        if (!(positions instanceof List<?> list) || list.size() != 1) {
+            return null;
+        }
+        Object onlyPosition = list.get(0);
+        if (!(onlyPosition instanceof Map<?, ?> pos)) {
+            return null;
+        }
+        Object setId = set.get("set_id");
+        Object orderItemId = pos.get("order_item_id");
+        if (setId == null || orderItemId == null) {
+            return null;
+        }
+        return new String[]{String.valueOf(setId), String.valueOf(orderItemId)};
     }
 
     // ============================================================ 旧码：降级形态（强制选部位）

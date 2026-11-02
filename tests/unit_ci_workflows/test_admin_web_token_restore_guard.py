@@ -51,6 +51,14 @@ AUTH_STORE = "frontend/admin-web/src/store/auth.ts"
 #: 冻结的「裸 fetch + Bearer」面（现取必须与它**逐项相等** —— 判据 1 用等号，不设下界）
 FROZEN_RAW_FETCH_SURFACES = (
     "frontend/admin-web/src/lib/api.ts",
+    # issue #8203（P0-03）：**错误上报器**（`src/lib/clientErrorReporter.ts`）。
+    # 判据 1 的问句是「它的 token 从哪来」——本面的答案是**它不发 token**：
+    #   · 目标是 `POST /api/client-errors`（`permitAll`，未登录也要能上报：登录页崩了也得有事件）；
+    #   · 请求固定 `credentials: 'omit'`，**不**带 cookie、**不**带 `Authorization`；
+    #   · 文件里出现 `Bearer` 是因为它有一条**去敏规则**（把 message/stack 里自带的 `Bearer xxx`
+    #     涂成 `Bearer [redacted]`）—— 与「发 Bearer」恰好相反。
+    # 故它进本名单是「登记一个新面并回答 token 从哪来」，不是放宽判据（判据 1 仍是逐项相等，顺序也参与）。
+    "frontend/admin-web/src/lib/clientErrorReporter.ts",
     "frontend/admin-web/src/store/chat.ts",
 )
 

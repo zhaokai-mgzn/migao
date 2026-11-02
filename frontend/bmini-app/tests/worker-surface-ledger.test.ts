@@ -1,4 +1,4 @@
-// case_ids: BM-037
+// case_ids: BM-037, BM-057
 /**
  * 工人面**写入口台账**元守卫（issue #6467 切片 1，S8；AGENTS.md 铁律 8 / `migao-dev-flow` §23 G1~G3）
  *
@@ -17,7 +17,7 @@
  * | 1 | **未登记即红**：`src/pages/**` 里出现工人写调用（`completeByScan(` / `workerLogin(` / `workerLogout(` / `createInboundDraft(` / `postInboundDraft(`）而台账没有这个 **(页面, 调用)** 配对 | 新页面调一次 `workerLogout()` ⇒ 红并具名 |
  * | 2 | **台账只许缩短**：每条登记都必须仍能被扫到（页面已不再有该调用 ⇒ 该条已死 ⇒ 红） | 摘掉某页的写调用而不删登记 ⇒ 红 |
  * | 3 | **声称「必须先有工人身份」的写入口必须真的有身份分流**：页面里找不到 `gate_token` ⇒ 红 | 把分流摘掉（内存变异）⇒ 红 |
- * | 4 | **引导可行动**：分流页面必须渲染引导文案 + 指向登录页的工人入口（`guide_token` / `login_route_token`） | 删掉引导 / 改指向 ⇒ 红 |
+ * | 4 | **引导可行动**：分流页面必须要么给指向工人登录页的入口（`login_route_token`），要么**就地**渲染共享工人登录表单（`login_in_place_token`，认 JSX 渲染形态） | 删掉引导 / 改指向 / 摘掉就地表单 ⇒ 红 |
  * | 5 | **台账不许空转**（fail-closed）：条数为 0 ⇒ 红；每条必须声明 `case_ids` | 清空台账「消红」⇒ 红 |
  *
  * ## 边界（照实登记，§19.1）
@@ -70,6 +70,11 @@ export interface LedgerEntry {
   gate_tokens?: string[]
   guide_token?: string
   login_route_token?: string
+  /**
+   * 「引导可行动」的**第二种合法形态**（issue #8194）：页面**就地**渲染共享工人登录表单。
+   * 记号 = `<WorkerLoginForm`（JSX 渲染形态）—— 只 import 不渲染**不算**（同 §28.2「写了 ≠ 会被执行」）。
+   */
+  login_in_place_token?: string
   case_ids: string[]
 }
 
@@ -146,13 +151,20 @@ export function ledgerProblems(input: LedgerInput): string[] {
         )
       }
     }
-    // 判据 4：引导必须可行动（文案 + 去登录）
-    if (!entry.guide_token || !text.includes(entry.guide_token)) {
-      problems.push(`${key}：没有渲染可行动的引导文案（guide_token=${entry.guide_token ?? '（缺）'}）`)
+    // 判据 4：引导必须**可行动** —— 两态二选一：
+    // ① 跳工人登录页（`login_route_token`）；② **就地**渲染共享工人登录表单（`login_in_place_token`，
+    // 记号认 **JSX 渲染形态** `<WorkerLoginForm`，import 提及不算 —— 同 §28.2 的口径）。
+    // 🔴 2026-10-31（issue #8194）：报工页未登录改成**就地**登录（不再把人踢去三角色登录页），
+    // 它属于 ②。这不是放宽：两种形态都必须让工人**当场**有地方输入工号 + PIN。
+    if (entry.guide_token && !text.includes(entry.guide_token)) {
+      problems.push(`${key}：没有渲染可行动的引导文案（guide_token=${entry.guide_token}）`)
     }
-    if (!entry.login_route_token || !text.includes(entry.login_route_token)) {
+    const routeOk = !!entry.login_route_token && text.includes(entry.login_route_token)
+    const inPlaceOk = !!entry.login_in_place_token && text.includes(entry.login_in_place_token)
+    if (!routeOk && !inPlaceOk) {
       problems.push(
-        `${key}：没有指向登录页工人入口（login_route_token=${entry.login_route_token ?? '（缺）'}）`,
+        `${key}：既没有指向登录页工人入口（login_route_token=${entry.login_route_token ?? '（缺）'}）` +
+          `，也没有就地渲染工人登录表单（login_in_place_token=${entry.login_in_place_token ?? '（缺）'}）`,
       )
     }
   }
@@ -313,15 +325,40 @@ describe('工人面写入口台账元守卫（issue #6467 S8）', () => {
   it('🔴 判据 4 红证：删掉引导文案 / 改坏去登录入口 ⇒ 判红', () => {
     const input = realInput()
     // 🔴 2026-10-14（issue #6868 实现包 D1）：改钉到保留的工人首页（guide/login 两记号）。
+    // 🔴 2026-10-31（issue #8194）：首页的登录入口改到工人登录页（`WORKER_LOGIN_ROUTE`），
+    // 三角色登录页的 `?tab=worker` 只是常规入口、不再是本页的引导去向。
     const target = 'src/pages/worker/home/index.tsx'
     const read = (rel: string): string =>
       rel === target
         ? input.read(rel)
             .replace(/WORKER_HOME_LOGIN_REQUIRED/g, 'SOME_OTHER_HINT')
-            .replace(/WORKER_TAB_LOGIN_ROUTE/g, 'SOME_OTHER_ROUTE')
+            .replace(/WORKER_LOGIN_ROUTE/g, 'SOME_OTHER_ROUTE')
         : input.read(rel)
+    const mutated = read(target)
+    // 变异生效自证：两个记号真的没了（否则红证可能是空的）
+    expect(mutated.includes('WORKER_HOME_LOGIN_REQUIRED')).toBe(false)
+    expect(mutated.includes('WORKER_LOGIN_ROUTE')).toBe(false)
     const problems = ledgerProblems({ ...input, read })
     expect(problems.join('\n')).toContain('引导文案')
     expect(problems.join('\n')).toContain('登录页工人入口')
+  })
+
+  it('🔴 判据 4b 红证：把报工页的**就地**登录表单摘掉 ⇒ 判红（既无跳转入口、也无就地表单）', () => {
+    const input = realInput()
+    const target = 'src/pages/worker/report/index.tsx'
+    // 变异：只删渲染形态（保留 import 提及）—— 这正是「写了 ≠ 会被执行」的形态
+    const mutated = input.read(target).replace(/<WorkerLoginForm[^>]*\/>/g, '<View />')
+    expect(mutated.includes('<WorkerLoginForm')).toBe(false)
+    // ⚠️ 这里**不写带前导 `../` 的相对路径字面量**：`tests/unit_ci_workflows/test_local_gate_matrix.py`
+    // 的「跨目录输入」闭包会把源码里任何 `'../…'` 字符串字面量当真 import 解析 ⇒ 假红（本包实测踩过）。
+    expect(mutated).toContain('components/WorkerLoginForm')
+    // 对照：真仓库下判绿（否则「红」可能只是读错了文件）
+    expect(ledgerProblems(input)).toEqual([])
+    const problems = ledgerProblems({
+      ...input,
+      read: (rel: string) => (rel === target ? mutated : input.read(rel)),
+    })
+    expect(problems.join('\n')).toContain(target)
+    expect(problems.join('\n')).toContain('就地渲染工人登录表单')
   })
 })

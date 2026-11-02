@@ -1,0 +1,14 @@
+--- http -> https redirect (merchant) ---
+http_merchant=301 redirect=https://merchant.migaozn.com/login
+--- http -> https redirect (api) ---
+http_api=301 redirect=https://api.migaozn.com/api/version
+--- HSTS present? (merchant page) ---
+0
+--- HSTS present? (api) ---
+--- app.migaozn.com headers ---
+--- worker login POST no body (shape check) ---
+{"success":false,"error":{"code":"VALIDATION_ERROR","message":"参数校验失败","details":[{"field":"pin","message":"PIN 不能为空"},{"field":"workerNo","message":"工号不能为空"}]},"requestId":"req_f782741e01304a92","timestamp":1793405891}
+[http=422]
+--- admin login POST wrong creds (enumeration/copy check) ---
+{"success":false,"error":{"code":"VALIDATION_ERROR","message":"参数校验失败","details":[{"field":"tenantId","message":"租户ID不能为空"}]},"requestId":"req_152f318808fc4987","timestamp":1793405891}
+[http=422]

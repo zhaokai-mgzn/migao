@@ -290,7 +290,9 @@ function setsText(order) {
  */
 export function buildShipLabelRows(order) {
   const rows = [
-    { key: 'order_no', label: '订单号', value: labelText(order?.order_no) },
+    // 订单号**必须可折行**（2026-11-01 商米 V2s 真机：17 位单号被 nowrap+ellipsis 截成
+    // `20261101275210…` —— 纸上的单号是要拿去对单/查件的，截断等于没印）。
+    { key: 'order_no', label: '订单号', value: labelText(order?.order_no), multiline: true },
     { key: 'consignee', label: '收货人', value: labelText(order?.customer_name) },
     { key: 'customer_phone', label: '电话', value: labelText(order?.customer_phone) },
     { key: 'customer_address', label: '地址', value: labelText(order?.customer_address), multiline: true },
@@ -349,7 +351,11 @@ export function renderShipLabel(order) {
 export function renderReadyOrders(payload) {
   const items = Array.isArray(payload?.items) ? payload.items : []
   const count = items.length
-  const countLine = `<p class="wh5-ready-count" id="wh5-ready-count">待发货 ${count} 单（全部套已完工）</p>`
+  // 🔴 0 单时那句「（全部套已完工）」没有指代对象（真机读数 2026-11-01：「待发货 0 单（全部套已完工）」
+  // 自相矛盾）—— 括号是**结论**，只在有单时说。
+  const countLine = count === 0
+    ? '<p class="wh5-ready-count" id="wh5-ready-count">待发货 0 单</p>'
+    : `<p class="wh5-ready-count" id="wh5-ready-count">待发货 ${count} 单（全部套已完工）</p>`
   const truncated = payload?.scan?.truncated
     ? `<p class="wh5-ready-more" id="wh5-ready-truncated">还有更多单未列出（本次最多 ${esc(payload.scan.limit)} 单），发完再来刷新</p>`
     : ''

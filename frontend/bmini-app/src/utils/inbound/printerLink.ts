@@ -100,13 +100,13 @@ export function printerLinkText(state: PrinterLinkState): string {
   const warnSuffix = warning ? `；打印机提示：${warning}` : ''
   switch (state.status) {
     case 'connecting':
-      return '正在连接打印机…请在系统弹窗里选择名字以 DP 开头的标签机。'
+      return '正在连接打印机…请在系统弹窗里选择标签打印机。'
     case 'connected':
       return `打印机已连接${name ? `：${name}` : ''}${warnSuffix}（连接状态以最近一次打印时为准）`
     case 'disconnected':
       return `打印机未连上（最近一次没连通）${warnSuffix}。请确认机器已开机、在 3 米内、没被别的手机占用，再点「打印标签」重连。`
     default:
-      return '还没选过打印机：点「打印标签」时系统会弹出设备列表，请选名字以 DP 开头的标签机。'
+      return '还没选过打印机：点「打印标签」时系统会弹出设备列表，请选择标签打印机。'
   }
 }
 

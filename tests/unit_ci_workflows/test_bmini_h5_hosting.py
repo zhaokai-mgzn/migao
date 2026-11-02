@@ -51,6 +51,9 @@ r"""B 端 h5（`frontend/bmini-app` 的 `build:h5` 产物）**对外落地面**�
 - `_serve()` 只模拟 nginx 的**前缀 location + try_files + index** 三件事（本段用到的全集）；
   正则 location / `alias` / `rewrite` 等不在面内 —— 故本文件另有一条判据要求
   `app.migaozn.com` 段里**不出现**正则 location（否则模拟的前提不成立即红）。
+  🔴 唯一例外 = issue #8196 的微信校验文件面 `location ~ ^/[^/]+\.txt$`（名字由用户在微信后台
+  生成 ⇒ 前缀 location 表达不了）；它**不在**本文件的模拟器面内，语义由
+  `tests/unit_ci_workflows/test_wechat_verify_route.py` 的独立模拟器判（缺失 ⇒ 404、不劫持命名空间）。
 """
 from __future__ import annotations
 
@@ -533,12 +536,22 @@ def _block():
     return APP_BLOCK
 
 
+#: app 段里**允许**的唯一非前缀 location（issue #8196）：微信「扫普通链接二维码打开小程序」的
+#: 校验文件是**根下随机 `<名字>.txt`**（名字由用户在微信后台生成）⇒ 前缀 location 表达不了。
+#: 它的语义由独立模拟器判：`tests/unit_ci_workflows/test_wechat_verify_route.py`。
+ALLOWED_NON_PREFIX_LOCATIONS: set[tuple[str, str]] = {("~", r"^/[^/]+\.txt$")}
+
+
 def test_app_server_has_no_regex_location():
-    """模拟器的前提：本段不出现正则 location（有不等于判据失效，直接红）。"""
+    """模拟器的前提：本段不出现正则 location（唯一例外见 ALLOWED_NON_PREFIX_LOCATIONS）。"""
     block = _read(NGINX_CONF) or ""
     for m in LOCATION_RE.finditer(_app_server_block(block)):
-        if m.group("mod").strip():
-            pytest.fail(f"{SERVER_NAME} 段出现了非前缀 location（模拟器不覆盖该形态，需同步判据）：{m.group(0)[:60]}")
+        mod = m.group("mod").strip()
+        if not mod:
+            continue
+        if (mod, m.group("prefix")) in ALLOWED_NON_PREFIX_LOCATIONS:
+            continue
+        pytest.fail(f"{SERVER_NAME} 段出现了非前缀 location（模拟器不覆盖该形态，需同步判据）：{m.group(0)[:60]}")
 
 
 def test_bmini_subroute_is_served_by_own_fallback():

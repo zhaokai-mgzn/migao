@@ -35,11 +35,12 @@ grep -rn "docker push\|--push" .github/workflows/
 | `.github/workflows/deploy-admin-api.yml` | **0**（原 2） | `docker push` ×2 **已由 issue #5814 的 C′ 整体删除**（改服务器侧构建 ⇒ 不推 ACR） |
 | `.github/workflows/deploy-frontend.yml` | **0**（原 2） | 同上 |
 | `.github/workflows/deploy-ai-agent-service.yml` | **0**（原 1） | `docker buildx build --push` **已由 C′ 删除** |
-| `.github/workflows/bmini-h5-publish.yml` | 1 | `docker push` —— C′ 同批补上界后**现取唯一**的推送面 |
+| `.github/workflows/bmini-h5-publish.yml` | 1 | `docker push` —— C′ 同批补上界（`timeout 720`）|
+| `.github/workflows/terminal-publish.yml` | 1 | `docker push` —— issue #8195 新增的终端发布腿（`timeout "${PUSH_TIMEOUT_SECS}"` + `docker manifest inspect` 复验）|
 | `.github/workflows/worker-h5-publish.yml` | **0** | 静态落地面腿，无镜像 |
 | `.github/workflows/c-end-h5-publish.yml` | **0** | 静态落地面腿，无镜像 |
 
-⇒ 若把后两条 0 命中的腿写进射程，会得到**恒真的空断言**（或长出**幻影台账条目**）——
+⇒ 若把 0 命中的腿写进射程，会得到**恒真的空断言**（或长出**幻影台账条目**）——
 正是铁律 8「条数现取、台账只许缩短」要拦的形态。
 非 workflow 载体（`scripts/` / `deploy/` / `.github/scripts/`）唯一命中是
 `scripts/ci_cost_ledger.py` 的**文案**（不是真实推送）⇒ 射程 = `.github/workflows/**` 的 `run:` 正文。
@@ -81,11 +82,15 @@ REPO = Path(__file__).resolve().parents[2]
 WORKFLOWS_DIR = REPO / ".github" / "workflows"
 LEDGER_PATH = Path(__file__).with_name("push_bound_ledger.json")
 
-# 冻结射程（现取 3 条：真语料里**有**推送命令且**已**加上界的那三条）。改它必须同批改语料 ⇒ diff 里看得见。
+# 冻结射程（现取 = 真语料里**有**推送命令且**已**加上界的两条：bmini h5 + 终端发布腿）。
+# 改它必须同批改语料 ⇒ diff 里看得见。
 # ⚠️ 射程**随事实收窄**（issue #5814 C′，2026-09-30）：三条部署腿的构建/推送步已被整体删除
 # （改服务器侧构建 ⇒ 不推 ACR）⇒ 现取只剩 bmini 一处推送面。这正是「台账/射程**只许缩短**」。
 PUSH_BOUND_GUARD_FILES_FROZEN = (
     "bmini-h5-publish.yml",
+    # issue #8195：终端发布腿把载荷装进 ACR 传输镜像并推送（`timeout "${PUSH_TIMEOUT_SECS}" docker push`
+    # + 推完 `docker manifest inspect` 复验）⇒ 它是现取的推送面之一，必须在这条射程里。
+    "terminal-publish.yml",
 )
 # 台账条数上限（只许缩短）。
 LEDGER_MAX_FROZEN = 0

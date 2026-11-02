@@ -89,6 +89,14 @@ interface ChatState {
   fetchQuickActions: () => Promise<void>
   toggleChoiceSelection: (sessionId: string, tool: string, label: string) => void
   clearChoiceSelections: (sessionId: string, tool: string) => void
+
+  // 浮窗「问黄金策」入口（issue #8236）：日报卡片等**外部入口**打开浮窗并预置一个问题。
+  // 为什么提到 store：浮窗开关原先是 FloatingAssistant 的本地 state，外部打不开它。
+  assistantOpen: boolean
+  assistantDraft: string | null
+  openAssistant: (draft?: string) => void
+  closeAssistant: () => void
+  consumeAssistantDraft: () => string | null
 }
 
 const getToken = () => useAuthStore.getState().accessToken || ''
@@ -181,12 +189,24 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   isLoadingMessages: false,
   messagesLoadFailed: false,
   searchKeyword: '',
+  assistantOpen: false,
+  assistantDraft: null,
   quickActions: [],
   quickTools: [],
   isLoadingQuickActions: false,
   choiceSelections: {},
 
   setSearchKeyword: (keyword: string) => set({ searchKeyword: keyword }),
+
+  // 浮窗外部入口（issue #8236）：`draft` 非空时，浮窗打开后会自动发送这一句
+  openAssistant: (draft?: string) => set({ assistantOpen: true, assistantDraft: draft ?? null }),
+  closeAssistant: () => set({ assistantOpen: false }),
+  // 取出并清空草稿：取一次即消费（防 React 严格模式/重渲染导致重复发送）
+  consumeAssistantDraft: () => {
+    const draft = get().assistantDraft
+    if (draft) set({ assistantDraft: null })
+    return draft
+  },
 
   clearCurrentSession: () => set(state => withView(state, {
     currentSessionId: null,

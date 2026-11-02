@@ -28,25 +28,95 @@
       "case_ids": [
         "PR-028"
       ]
+    },
+    {
+      "method": "AgentBatchMapper#markExecutedDone",
+      "verdict": "guarded",
+      "guard": "执行终态 CAS（#8283）：`executing → done` + 计数 + executed_at，谓词 = id + tenant_id + status='executing'。0 行 ⇒ 状态已被并发改变/回收，服务层只记日志、不覆盖。",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/mapper/AgentBatchMapper.java::int markExecutedDone(",
+      "case_ids": [
+        "PR-028",
+        "PR-007",
+        "PR-010"
+      ]
+    },
+    {
+      "method": "AgentBatchMapper#markExecutedPartial",
+      "verdict": "guarded",
+      "guard": "执行终态 CAS（部分失败）：`executing → partial` + 计数 + executed_at，谓词同 markExecutedDone。",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/mapper/AgentBatchMapper.java::int markExecutedPartial(",
+      "case_ids": [
+        "PR-028",
+        "PR-007",
+        "PR-010"
+      ]
+    },
+    {
+      "method": "AgentBatchMapper#markReverted",
+      "verdict": "guarded",
+      "guard": "撤销终态 CAS：`executing → reverted` + reverted_at，谓词 = id + tenant_id + status='executing'。",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/mapper/AgentBatchMapper.java::int markReverted(",
+      "case_ids": [
+        "PR-028",
+        "PR-007",
+        "PR-010"
+      ]
+    },
+    {
+      "method": "AgentBatchMapper#markRevertPartial",
+      "verdict": "guarded",
+      "guard": "撤销终态 CAS（部分失败）：`executing → revert_partial` + reverted_at，谓词同 markReverted。",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/mapper/AgentBatchMapper.java::int markRevertPartial(",
+      "case_ids": [
+        "PR-028",
+        "PR-007",
+        "PR-010"
+      ]
     }
   ],
   "service_write_paths": [
     {
-      "method": "AgentBatchService#execute",
+      "method": "AgentBatchService#claimForExecute",
       "path": "AgentBatchMapper#markExecuting",
       "call_anchor": "batchMapper.markExecuting(",
       "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/AgentBatchService.java::batchMapper.markExecuting(",
       "case_ids": [
-        "PR-028"
+        "PR-028",
+        "PR-007",
+        "PR-010"
       ]
     },
     {
-      "method": "AgentBatchService#revert",
+      "method": "AgentBatchService#runBatch",
+      "path": "AgentBatchMapper#markExecutedDone / #markExecutedPartial",
+      "call_anchor": "batchMapper.markExecuted",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/AgentBatchService.java::batchMapper.markExecuted",
+      "case_ids": [
+        "PR-028",
+        "PR-007",
+        "PR-010"
+      ]
+    },
+    {
+      "method": "AgentBatchService#claimForRevert",
       "path": "AgentBatchMapper#markReverting",
       "call_anchor": "batchMapper.markReverting(",
       "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/AgentBatchService.java::batchMapper.markReverting(",
       "case_ids": [
-        "PR-028"
+        "PR-028",
+        "PR-007",
+        "PR-010"
+      ]
+    },
+    {
+      "method": "AgentBatchService#runRevert",
+      "path": "AgentBatchMapper#markReverted / #markRevertPartial",
+      "call_anchor": "batchMapper.markRevert",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/AgentBatchService.java::batchMapper.markRevert",
+      "case_ids": [
+        "PR-028",
+        "PR-007",
+        "PR-010"
       ]
     }
   ],

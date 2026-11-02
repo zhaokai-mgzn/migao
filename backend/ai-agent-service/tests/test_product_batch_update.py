@@ -9,7 +9,8 @@
 
 1. **契约面**：preview → `POST /api/admin/agent/batches`，body `{batchType, items:[{resourceId,
    field, oldValue, newValue}]}`（camelCase，逐字对齐契约表）；execute/revert →
-   `POST /api/admin/agent/batches/{batchId}/{execute,revert}`。
+   `POST /api/admin/agent/batches/{batchId}/{execute-async,revert-async}`，随后
+   `GET /api/admin/agent/batches/{batchId}` 轮询到终态（issue #8283）。
 2. **两段确认不可跳过**（本单核心交互）：
    · 第一段 = `interact(multiSelect=true)` 让商家勾选集合（**改哪些**）；
    · 第二段 = `interact(confirm)` 逐条「改前 → 改后」预览（**改成什么**）；
@@ -17,7 +18,8 @@
      产生 ⇒ 「没预览就执行」在结构上不可达（不是靠 prompt 自律）。
 3. **逐条 before → after 的字段投影只此一处**：预览行由 `app/tools/confirm_value.py`
    派生（`confirm_card_fields`），**不新立第二份字段投影**（#5303 的同一套单一源）。
-4. **阈值**：`N > 50` ⇒ 拒绝并提示分批（不做后台任务）；`N == 50` 放行（边界双侧）。
+4. **阈值 + 后台 job**：`N > 50` ⇒ 拒绝并提示分批；`N == 50` 放行（边界双侧）；
+   执行/撤销提交后台 job 后轮询，超时只报「尚未完成」。
 5. **batchType 白名单只有两个**：`product_price` / `inventory_stock`（通用批量不做；
    上下架按 2026-10-16 裁定单件/批量都 ❌，#7334 裁定 A 移除 `product_status`）。
 6. **撤销入口可用**：`revert` 逐条还原 `old_value`，且执行成功的话术里就告诉用户「可以撤销」。
@@ -55,10 +57,11 @@ def _ctx(permissions=("*",), role="admin") -> ToolContext:
                        permissions=list(permissions), session_id="s1")
 
 
-def _client(post_return):
-    """替身 admin-api 客户端（`post` 是唯一被本工具使用的动词）。"""
+def _client(post_return, get_return=None):
+    """替身 admin-api 客户端：`post` 提交 job，`get` 查进度（issue #8283）。"""
     client = MagicMock()
     client.post = AsyncMock(return_value=post_return)
+    client.get = AsyncMock(return_value=get_return if get_return is not None else _ok({}))
     return client
 
 
@@ -239,7 +242,7 @@ class TestInventoryStockBatch:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 二、阈值：N > 50 拒绝并提示分批（边界双侧；不做后台任务）
+# 二、阈值：N > 50 拒绝并提示分批（边界双侧；执行/撤销转后台 job 不改变上限）
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -412,7 +415,7 @@ class TestExecuteRequiresPreview:
         with patch("app.tools.product_batch_update.get_admin_api_client", return_value=client):
             result = await tool.execute(_ctx(), action="execute", batch_id="b1")
         assert result.success
-        assert client.post.call_args.args[0] == "/api/admin/agent/batches/b1/execute"
+        assert client.post.call_args.args[0] == "/api/admin/agent/batches/b1/execute-async"
         assert result.data["status"] == "done"
 
     @pytest.mark.asyncio
@@ -429,7 +432,7 @@ class TestExecuteRequiresPreview:
         assert "失败 1" in (result.message or "") and "成功 1" in (result.message or "")
         assert "不做整体回滚" in (result.message or "")
         called_paths = [c.args[0] for c in client.post.call_args_list]
-        assert called_paths == ["/api/admin/agent/batches/b1/execute"]   # 不得顺手撤销
+        assert called_paths == ["/api/admin/agent/batches/b1/execute-async"]   # 不得顺手撤销
 
     @pytest.mark.asyncio
     async def test_execute_tells_user_it_can_be_reverted(self, tool):
@@ -451,6 +454,78 @@ class TestExecuteRequiresPreview:
         assert "action=revert" not in (result.message or "")
 
 
+class TestAsyncPolling:
+    """issue #8283：execute/revert 提交后台 job → GET 轮询 → 终态/超时/查询失败三态。"""
+
+    @pytest.mark.asyncio
+    async def test_execute_polls_until_done_and_maps_items(self, tool, monkeypatch):
+        import app.tools.product_batch_update as pbu
+        monkeypatch.setattr(pbu, "POLL_TIMEOUT_SECONDS", 1.0)
+        monkeypatch.setattr(pbu, "POLL_INTERVAL_SECONDS", 0)
+        get_return = _ok({
+            "batchId": "b1", "status": "done", "successCount": 1, "failCount": 0,
+            "revertible": True,
+            "items": [{"resourceId": "p1", "field": "basePrice",
+                       "oldValue": "10.00", "newValue": "12.00", "status": "success"}],
+        })
+        client = _client(_ok({"batchId": "b1", "status": "executing"}), get_return)
+        with patch("app.tools.product_batch_update.get_admin_api_client", return_value=client):
+            result = await tool.execute(_ctx(), action="execute", batch_id="b1")
+
+        assert result.success
+        assert client.get.call_args.args[0] == "/api/admin/agent/batches/b1"
+        assert result.data["status"] == "done"
+        assert result.data["results"][0]["success"] is True
+        assert "成功 1" in (result.message or "") and "失败 0" in (result.message or "")
+
+    @pytest.mark.asyncio
+    async def test_execute_timeout_reports_unfinished_not_completed(self, tool, monkeypatch):
+        import app.tools.product_batch_update as pbu
+        monkeypatch.setattr(pbu, "POLL_TIMEOUT_SECONDS", 0)
+        client = _client(_ok({"batchId": "b1", "status": "executing"}),
+                         _ok({"batchId": "b1", "status": "executing", "items": []}))
+        with patch("app.tools.product_batch_update.get_admin_api_client", return_value=client):
+            result = await tool.execute(_ctx(), action="execute", batch_id="b1")
+
+        assert result.success is True
+        assert "尚未完成" in (result.message or "")
+        assert "批量执行完成" not in (result.message or "")
+        assert result.data["status"] == "executing"
+
+    @pytest.mark.asyncio
+    async def test_execute_status_query_failure_is_not_reported_as_submit_failure(self, tool, monkeypatch):
+        import app.tools.product_batch_update as pbu
+        monkeypatch.setattr(pbu, "POLL_TIMEOUT_SECONDS", 0)
+        client = _client(_ok({"batchId": "b1", "status": "executing"}),
+                         {"success": False, "error": {"message": "progress unavailable"}})
+        with patch("app.tools.product_batch_update.get_admin_api_client", return_value=client):
+            result = await tool.execute(_ctx(), action="execute", batch_id="b1")
+
+        assert result.success is True
+        assert "查询进度失败" in (result.message or "")
+        assert "批量执行提交失败" not in (result.message or "")
+        assert result.data["status"] == "unknown"
+
+    @pytest.mark.asyncio
+    async def test_revert_polls_until_reverted(self, tool, monkeypatch):
+        import app.tools.product_batch_update as pbu
+        monkeypatch.setattr(pbu, "POLL_TIMEOUT_SECONDS", 1.0)
+        monkeypatch.setattr(pbu, "POLL_INTERVAL_SECONDS", 0)
+        get_return = _ok({
+            "batchId": "b1", "status": "reverted", "revertible": False,
+            "items": [{"resourceId": "p1", "status": "reverted"}],
+        })
+        client = _client(_ok({"batchId": "b1", "status": "executing"}), get_return)
+        with patch("app.tools.product_batch_update.get_admin_api_client", return_value=client):
+            result = await tool.execute(_ctx(), action="revert", batch_id="b1")
+
+        assert result.success
+        assert client.post.call_args.args[0] == "/api/admin/agent/batches/b1/revert-async"
+        assert client.get.call_args.args[0] == "/api/admin/agent/batches/b1"
+        assert result.data["status"] == "reverted"
+        assert "还原" in (result.message or "")
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 五、撤销：逐条还原 old_value
 # ══════════════════════════════════════════════════════════════════════════════
@@ -464,7 +539,7 @@ class TestRevert:
         with patch("app.tools.product_batch_update.get_admin_api_client", return_value=client):
             result = await tool.execute(_ctx(), action="revert", batch_id="b1")
         assert result.success
-        assert client.post.call_args.args[0] == "/api/admin/agent/batches/b1/revert"
+        assert client.post.call_args.args[0] == "/api/admin/agent/batches/b1/revert-async"
         assert result.data["status"] == "reverted"
 
     @pytest.mark.asyncio

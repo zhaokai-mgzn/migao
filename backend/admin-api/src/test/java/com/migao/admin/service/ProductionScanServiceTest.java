@@ -776,6 +776,23 @@ class ProductionScanServiceTest {
                 op("op-4", ITEM_GAUZE, "纱帘", "纱帘B", 1, "精裁-纱", "8", "0", SET_ID)));
     }
 
+    @Test
+    @DisplayName("🔴 免选（2026-11-01 用户裁定）：整单只有一套 × 一个部位 ⇒ 直接部位级视图，不进选择屏")
+    void legacyTokenAutoResolvesWhenOnlyOneSetAndOnePosition() {
+        stubLegacyQrTokenScan();
+        when(orderSetMapper.selectList(any())).thenReturn(List.of(set(SET_ID, SET_NO, 14, 0)));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                op("op-4", ITEM_GAUZE, "纱帘", "纱帘B", 1, "精裁-纱", "8", "0", SET_ID)));
+        when(orderSetMapper.selectById(SET_ID)).thenReturn(set(SET_ID, SET_NO, 14, 0));
+
+        Map<String, Object> result = service.resolve(OLD_CODE, null, TENANT);
+
+        // 选与不选没有第二个可能 ⇒ 不该再把「选哪一套/哪个部位」推给工人
+        assertThat(result.get("granularity")).isEqualTo("set_position");
+        assertThat(result.get("needs_selection")).isEqualTo(List.of());
+        assertThat(result.get("set_no")).isEqualTo(SET_NO);
+    }
+
     /** 旧码 + 工人选了（套, 部位）：该套的实例行就位（与 `selections` 清单**同一份**来源）。 */
     private void stubLegacySelectionScan() {
         stubLegacyQrTokenScan();

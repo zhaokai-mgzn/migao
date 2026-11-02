@@ -219,12 +219,17 @@ class InboundLabelServiceTest {
         when(inboundLabelMapper.selectByCode(LIVE_CODE))
                 .thenReturn(label(LIVE_CODE, TENANT, ITEM_ID, 3));
         when(inboundOrderService.detail(ORDER_ID, TENANT)).thenReturn(orderWithItem());
-        when(productMapper.selectById("p-1")).thenReturn(Product.builder().id("p-1").name("遮光布").build());
+        when(productMapper.selectById("p-1")).thenReturn(Product.builder()
+                .id("p-1").name("遮光布")
+                // 商品货号（products.sku_code）与 SKU 规格编码（product_skus.sku_code）不是一回事
+                .skuCode("2659").build());
 
         InboundLabelView view = service.detail("7k3m9qp2", TENANT);
 
         assertThat(view.getShortCode()).isEqualTo(LIVE_CODE);
         assertThat(view.getProductName()).isEqualTo("遮光布");
+        // 纸面「货号」= 商品货号（products.sku_code）；SKU 的规格编码另走 skuCode（用户 2026-11-01 裁定）
+        assertThat(view.getProductCode()).isEqualTo("2659");
         assertThat(view.getSkuCode()).isEqualTo("SKU-001");
         assertThat(view.getColorName()).isEqualTo("米白");
         assertThat(view.getDoorWidth()).isEqualTo("2.8m");
@@ -249,7 +254,10 @@ class InboundLabelServiceTest {
         photoOrder.getItems().get(0).setRollLengthM(new BigDecimal("67.2"));
         photoOrder.getItems().get(0).setMeters(new BigDecimal("67.2"));
         when(inboundOrderService.detail(ORDER_ID, TENANT)).thenReturn(photoOrder);
-        when(productMapper.selectById("p-1")).thenReturn(Product.builder().id("p-1").name("遮光布").build());
+        when(productMapper.selectById("p-1")).thenReturn(Product.builder()
+                .id("p-1").name("遮光布")
+                // 商品货号（products.sku_code）与 SKU 规格编码（product_skus.sku_code）不是一回事
+                .skuCode("2659").build());
 
         InboundLabelView view = service.detail(LIVE_CODE, TENANT);
 

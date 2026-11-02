@@ -230,11 +230,14 @@ function backendPrefixes(): string[] {
     'backend/admin-api/src/main/java/com/migao/admin/controller/WorkerShortLinkController.java',
     'backend/admin-api/src/main/java/com/migao/admin/controller/InboundLabelShortLinkController.java',
   ]
-  const prefixes: string[] = []
+  // 🔴 **去重后再比"码空间前缀"**：同一个码空间可以挂**多个端点**（issue #8196 给 `/s/` 加了
+  // JSON 面 `@GetMapping("/s/{shortCode}/json")` —— 小程序 A 档换 token 用；它仍是 `/s/` 这一个
+  // 码空间，不构成第二套前缀）。判据要的是「前缀集合 == {/i/, /s/}」，不是「端点个数」。
+  const prefixes = new Set<string>()
   for (const rel of controllers) {
-    for (const match of readRepo(rel).matchAll(/@GetMapping\(\s*"(\/[a-z])\/\{/g)) prefixes.push(`${match[1]}/`)
+    for (const match of readRepo(rel).matchAll(/@GetMapping\(\s*"(\/[a-z])\/\{/g)) prefixes.add(`${match[1]}/`)
   }
-  return prefixes.sort()
+  return [...prefixes].sort()
 }
 
 describe('拍照补打：码空间判定与手输兜底（issue #5640）', () => {

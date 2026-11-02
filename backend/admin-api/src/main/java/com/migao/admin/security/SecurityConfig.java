@@ -219,6 +219,13 @@ public class SecurityConfig {
                                 // 判据 = tests/unit_ci_workflows/test_served_version_verify.py 的字段白名单判据。
                                 "/api/version",
                                 "/api/version/migrations",
+                                // 浏览器错误上报（issue #8203 · P0-03）：**必须 permitAll** ——
+                                // 登录页/白屏时用户还没有会话，401 就等于「白屏永远不上报」。
+                                // 公开面 = 攻击面 ⇒ 三道闸全在端点自己身上：体积上限 8 KiB（413）+
+                                // 进程内限流每 IP 30/min & 全局 600/min（429）+ 8 字段白名单校验（400）。
+                                // 写面只有一行 SLF4J（不建表 / 不落库 / 不存 PII），
+                                // 判据 = ClientErrorControllerTest 的 logLineCarriesNoSecrets。
+                                "/api/client-errors",
                                 // 健康检查和文档
                                 "/actuator/health",
                                 "/actuator/info",

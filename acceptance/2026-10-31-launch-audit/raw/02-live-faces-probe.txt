@@ -1,0 +1,19 @@
+--- ai-agent /ready ---
+[http=200 time=0.113684]
+--- api host /api/chat/ unauth ---
+[http=401]
+--- api host /api/chat/stream unauth ---
+[http=401]
+--- ai-agent internal endpoints unauth ---
+/api/chat/stream -> 404
+/api/ai/chat -> 404
+/api/internal/chat -> 404
+/v1/chat/completions -> 404
+--- static faces ---
+/b/ -> 200
+/w/ -> 200
+/w/machine.html -> 200
+/w/piecework.html -> 200
+/s/abc -> 404
+/i/abc -> 404
+/o/abc -> 404

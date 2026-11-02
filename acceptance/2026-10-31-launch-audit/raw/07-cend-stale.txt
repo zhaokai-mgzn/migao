@@ -1,0 +1,20 @@
+### C 端 H5 新鲜度（线上读数）
+app.migaozn.com/js/app.js last-modified:
+last-modified: Sat, 24 Oct 2026 15:40:08 GMT
+app.migaozn.com/ last-modified:
+last-modified: Sat, 24 Oct 2026 15:40:08 GMT
+
+### 最近 8 次 c-end-h5-publish run（全 failure）
+2026-10-31T00:05:51Z failure workflow_dispatch 32d4066e7
+2026-10-30T22:41:04Z failure schedule a9f3f9c68
+2026-10-30T08:57:33Z failure workflow_dispatch a9f3f9c68
+2026-10-30T02:23:50Z failure workflow_dispatch caa0cfcd2
+2026-10-30T00:15:58Z failure workflow_dispatch 964c62f7b
+2026-10-30T00:05:26Z failure workflow_dispatch b417170f7
+2026-10-29T23:51:35Z failure workflow_dispatch 1985c8ba9
+2026-10-29T23:18:49Z failure workflow_dispatch d0443660e
+
+### 判定步骤日志原文（run 41148260773）
+publish c-end h5 → 静态根 + identity/protected assertions	UNKNOWN STEP	2026-10-31T00:06:18.3877138Z ^[[36;1m  echo "✅ 线上产物不落后于 frontend/mini-app 的最近改动（判据本体 = scripts/h5_freshness_guard.py）"^[[0m
+publish c-end h5 → 静态根 + identity/protected assertions	UNKNOWN STEP	2026-10-31T00:06:18.3878669Z ^[[36;1mecho "::error::线上产物落后 / 无法判定（判据本体 rc=$rc；rc=2 陈旧、rc=3 无法判定、rc=1 参数错）。"^[[0m
+publish c-end h5 → 静态根 + identity/protected assertions	UNKNOWN STEP	2026-10-31T00:06:19.4114211Z ##[error] 线上产物**陈旧**：2026-10-24T15:40Z 早于 frontend/mini-app 最近改动 2026-10-29T23:25Z（落后 5.0 天）（URL=https://app.migaozn.com/js/app.js；发布通路 = .github/workflows/c-end-h5-publish.yml，人工发布：gh workflow run c-end-h5-publish.yml --ref main -f publish=true）

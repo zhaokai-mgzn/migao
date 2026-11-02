@@ -2,7 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 云环境验收：商家入驻 AI 自动甄别全场景（生产环境）
-目标: api.migaozn.com / ai-api.migaozn.com / migaozn.com / merchant.migaozn.com / ops.migaozn.com
+目标: api.migaozn.com / ai-api.migaozn.com / migaozn.com / merchant.migaozn.com
+（ops.migaozn.com 已于 2026-10-31 移除：DNS 记录删除 + 证书 SAN 收窄，不再作为验收面）
 覆盖:
   H1-H5 健康/文案/废弃页
   A1  合法商家 → AI 自动通过 → 新租户管理员可登录
@@ -35,7 +36,6 @@ API = "https://api.migaozn.com"
 AI = "https://ai-api.migaozn.com"
 WEB = "https://migaozn.com"
 MERCHANT = "https://merchant.migaozn.com"
-OPS = "https://ops.migaozn.com"
 
 SUPER_ADMIN_PHONE = "13456800919"  # 生产 platform.admin.phone（云助手查 .env.admin-api 确认）
 BYPASS_CODE = "123456"
@@ -147,17 +147,13 @@ def h_homepage():
     except Exception as e:
         record("H4", "merchant 登录页可达", False, str(e))
 
-    # ops 人工审批页废弃：/registrations 不应再有可用页面
+    # 人工审批页废弃：ops.migaozn.com 子域已于 2026-10-31 移除（DNS + 证书），
+    # 只剩 merchant 面可探；/registrations 不应再有可用页面
     try:
-        ro = http("GET", f"{OPS}/registrations", allow_redirects=False)
         rm = http("GET", f"{MERCHANT}/registrations", allow_redirects=False)
-        page_gone = ro.status_code in (404, 410) or ro.status_code >= 500 or (
-            "入驻审批" not in (ro.text or "")
-        )
         page_gone_m = rm.status_code in (404, 410) or ("入驻审批" not in (rm.text or ""))
-        record("H5", "人工审批页废弃(ops/merchant /registrations 无旧页面)",
-               page_gone and page_gone_m,
-               f"ops={ro.status_code} merchant={rm.status_code}")
+        record("H5", "人工审批页废弃(merchant /registrations 无旧页面)",
+               page_gone_m, f"merchant={rm.status_code}")
     except Exception as e:
         record("H5", "人工审批页废弃", False, str(e))
 

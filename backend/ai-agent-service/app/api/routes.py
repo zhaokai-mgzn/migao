@@ -9,6 +9,7 @@ from fastapi import APIRouter
 from app.api.asr import router as asr_router
 from app.api.chat import router as chat_router
 from app.api.internal import router as internal_router
+from app.api.migration import router as migration_router
 from app.api.payments import router as payments_router
 from app.api.products import router as products_router
 from app.api.registration_review import router as registration_review_router
@@ -37,5 +38,14 @@ router.include_router(internal_router, prefix="/internal", tags=["internal"])
 router.include_router(
     registration_review_router,
     prefix="/internal/registration",
+    tags=["internal"],
+)
+
+# 客户迁移：旧 ERP 表头 → 规范客户字段的**映射建议**（issue #8295）
+# 最终路径 = settings.API_PREFIX + /internal/migration + /customer-mapping
+# = /api/internal/migration/customer-mapping（与 internal_router 的 /internal/* 不重叠）。
+router.include_router(
+    migration_router,
+    prefix="/internal/migration",
     tags=["internal"],
 )

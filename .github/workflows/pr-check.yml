@@ -48,6 +48,32 @@ jobs:
           fi
           echo "✅ No forbidden .env files"
 
+  # ============ 外部作者守卫：陌生账号 / fork 来源的代码不得直接进本仓（issue #8386）============
+  # 病：外部账号的 fork PR 关闭后，内容被搬到**同仓分支**重开并 squash 合并 ⇒ 陌生代码进 main，
+  #     而 `automerge.yml` 只排 fork PR，这条路径在它眼里与自研 PR 无异（真实事故 = #6897 → #6924）。
+  # 治：按 PR 的**提交作者**与 head 仓库来源比对白名单；命中即判红 + 解除已 arm 的 auto-merge + 打 block/merge。
+  # 边界：判不了「外部代码被本人身份重新提交」；白名单是自证式的（流程护栏，不是安全边界）。
+  external-authorship-guard:
+    name: External Authorship Guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      - name: 拦截陌生账号 / fork 来源的 PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 scripts/external_authorship_guard.py \
+            --repo "${{ github.repository }}" \
+            --pr "${{ github.event.pull_request.number }}" \
+            --allow-file .github/external-authorship-allow.json
+
   # ============ admin-api 单测全量 ============
   admin-api-test:
     name: admin-api unit tests

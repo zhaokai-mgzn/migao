@@ -43,7 +43,7 @@ from typing import Any, Dict, List
 from loguru import logger
 
 from app.tools.base import BaseTool, ToolContext, ToolResult, admin_api_failure
-from app.tools.confirm_value import config_key_label
+from app.tools.confirm_value import CRAFT_CALC_CONFIG_FIELD_LABELS, config_key_label
 from app.utils.http_client import get_admin_api_client
 
 #: 端点**不抽成模块常量**（有意，同 `notification_manage.py` 的口径）：
@@ -70,6 +70,23 @@ ALLOWED_CONFIG_KEYS: tuple = (
     "oversize_width_threshold",
     "oversize_height_threshold",
 )
+
+#: 商家说法 → 内部键名（issue #8300 实测：模型把「上下卷边」自造成 `hem_allowance`，
+#: 服务端只认内部键 ⇒ `unknown_config_key`）。键名翻译放在**确定性代码**里，不靠模型猜。
+#: 单一真值源 = `confirm_value.CRAFT_CALC_CONFIG_FIELD_LABELS`（卡面同款人话名），这里只做反查，
+#: 避免第二份「中文 → 键」表漂移。
+KEY_ALIASES: dict = {label: key for key, label in CRAFT_CALC_CONFIG_FIELD_LABELS.items()}
+#: 商家口语会把「合计」省掉（实测原话就是「上下卷边」）⇒ 补一条同义写法。
+KEY_ALIASES["上下卷边"] = "hem_margin"
+
+
+def _canonical_key(key: Any) -> str:
+    """键名归一：商家说法 → 内部键；已是合法内部键 ⇒ 原样返回（未知键仍交给 fail-closed）。"""
+    raw = str(key or "").strip()
+    if raw in ALLOWED_CONFIG_KEYS:
+        return raw
+    return KEY_ALIASES.get(raw, raw)
+
 
 #: 数值比较容差：JSON 里 `0.25` / `0.250000` 是同一个值，浮点解析也留一丝误差。
 _NUMERIC_TOLERANCE = 1e-9
@@ -146,6 +163,8 @@ class CraftCalcConfigUpdateTool(BaseTool):
         "算具体一单的用布量/报价请引导商家到后台算料页填尺寸计算。"
         "【纪律】不要把内部键名 / 内部标识摆给商家：确认卡与人话一律用中文字段名。"
         "【标注】WRITE|IDEMPOTENT — 变更类写操作（同一 changes/before 重放结果一致），必须先确认再执行"
+        "｜【键名】" + "、".join(f"{alias}→{key}" for alias, key in KEY_ALIASES.items())
+        + "；用商家说法当键也接受，**禁止自造英文键名**"
     )
 
     #: 写面权限码 = `CraftCalcConfigController` 的类级 `processing:manage`
@@ -197,8 +216,8 @@ class CraftCalcConfigUpdateTool(BaseTool):
                 ),
             )
 
-        changes_map = {k: v for k, v in (changes or {}).items() if v is not None}
-        before_map = dict(before or {})
+        changes_map = {_canonical_key(k): v for k, v in (changes or {}).items() if v is not None}
+        before_map = {_canonical_key(k): v for k, v in (before or {}).items()}
 
         # ② 参数面校验（**本地 fail-closed：一个请求都不发**）
         if not changes_map:

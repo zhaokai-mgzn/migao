@@ -63,6 +63,7 @@ class WorkerBatchStockControllerTest extends BaseControllerTest {
 
     private static final String BATCHES_URL = "/api/worker/batch-stock/batches";
     private static final String CORRECTION_URL = "/api/worker/batch-stock/correction";
+    private static final String RECOGNIZE_URL = "/api/worker/batch-stock/recognize";
     private static final String SESSION = "sess-worker-zhang";
     private static final WorkerIdentity ZHANG =
             new WorkerIdentity("worker-zhang", "张三", WorkerIdentity.SOURCE_SERVER_SESSION, SESSION);
@@ -135,9 +136,13 @@ class WorkerBatchStockControllerTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.error.message").value(org.hamcrest.Matchers.containsString("工号")));
         mockMvc.perform(post(CORRECTION_URL).contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isUnauthorized());
+        mockMvc.perform(post(RECOGNIZE_URL).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"images\":[\"https://cdn.example.com/a.jpg\"]}"))
+                .andExpect(status().isUnauthorized());
 
         verify(workerBatchStockService, never()).search(anyLong(), any(), anyLong(), anyLong());
         verify(workerBatchStockService, never()).correct(any(), any(), any());
+        verify(workerBatchStockService, never()).recognize(any());
     }
 
     // ────────────────────────────────────────────────────────── ② 读面
@@ -212,6 +217,39 @@ class WorkerBatchStockControllerTest extends BaseControllerTest {
                         .header(WorkerSessionService.SESSION_HEADER, SESSION)
                         .content("{\"batchId\":7,\"actualMeters\":42,\"clientRequestId\":\"x\"}"))
                 .andExpect(status().isUnprocessableEntity());
+    }
+
+    // ────────────────────────────────────────────────────────── ④ 识别入口（issue #8210）
+
+    @Test
+    @DisplayName("④′ 拍照识别批次号 ⇒ 200 + 字段表**原样下发**（只在屏上提示，不写任何东西）")
+    void recognizePassesImagesToTheServiceAndReturnsFieldsVerbatim() throws Exception {
+        Map<String, Object> cell = new LinkedHashMap<>();
+        cell.put("key", "batch_no");
+        cell.put("label", "批次号");
+        cell.put("value", "PC-20261031-0001");
+        cell.put("source", "[图片识别]");
+        cell.put("reason", null);
+        cell.put("reference", null);
+        when(workerBatchStockService.recognize(List.of("https://cdn.example.com/label.jpg")))
+                .thenReturn(new com.migao.admin.service.ImageRecognitionClient
+                        .ImageRecognitionResult("batch", List.of(cell), false));
+
+        mockMvc.perform(post(RECOGNIZE_URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header(WorkerSessionService.SESSION_HEADER, SESSION)
+                        .content("{\"images\":[\"https://cdn.example.com/label.jpg\"]}"))
+                .andExpect(status().isOk())
+                // 字段表逐键原样（Java 侧不重建表：键名就是 ai-agent 的契约）
+                .andExpect(jsonPath("$.data.targetType").value("batch"))
+                .andExpect(jsonPath("$.data.fields[0].key").value("batch_no"))
+                .andExpect(jsonPath("$.data.fields[0].value").value("PC-20261031-0001"))
+                .andExpect(jsonPath("$.data.fields[0].source").value("[图片识别]"))
+                .andExpect(jsonPath("$.data.degraded").value(false));
+
+        verify(workerBatchStockService).recognize(List.of("https://cdn.example.com/label.jpg"));
+        // 🔴 识别不落库 / 不提交：写面一次都没被触达
+        verify(workerBatchStockService, never()).correct(any(), any(), any());
     }
 
     // ────────────────────────────────────────────────────────── ⑤ 结构判据

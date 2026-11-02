@@ -53,6 +53,15 @@
       "bootstrap_mode": "**内联极小引导**（不取远端执行体：探测必须在部署 exec 体之外独立成立；命令体固定约 400 字节，与远端脚本大小**无关**）",
       "byte_guard_since": "#6294（本包新增，与 #6124 的既有闸同口径）",
       "ref_kind": "**无 ref**：探测对象是**运行面**（容器真身），不是任何 git 引用 —— 这正是它比「run 结论」强的地方。"
+    },
+    {
+      "id": "terminal",
+      "path": "deploy/scripts/terminal-publish-ci.sh",
+      "what": "观星台终端静态落位（`terminal/` 子树：exe/apk + 两份更新清单，issue #8195）。",
+      "command_content_source": "$COMMAND_CONTENT（env 前缀 + `$REMOTE_FETCH`）",
+      "bootstrap_mode": "fetch-by-ref（codeload `tar.gz/$SCRIPT_SHA` ⇒ `deploy/swas/terminal-publish-remote.sh`）",
+      "byte_guard_since": "#8195（本包新增；与 #6124 的既有闸同口径）",
+      "ref_kind": "`SCRIPT_SHA` = `TERMINAL_PUBLISHED_COMMIT`（CI 里 = `github.sha`）；产物是 ACR 传输镜像（不是 git ref）⇒ git 侧只有这一个 ref。"
     }
   ],
   "coverage_boundary": [

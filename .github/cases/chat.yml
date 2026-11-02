@@ -442,6 +442,11 @@ cases:
     # （账面新增一条违规，与 burn-down「只许缩短」冲突）。只读用例的漂移恒为 0，
     # 商品维漂移判据（缺省 `max_growth: 0`）已足够。
     # **断言面（user_inputs / expectations / data_checks）一字未动、无放宽。**
+    # 2026-11-01（issue #8300 自测发现一）：裸工具名期望 ⇒ 结构性不可失败；
+    # 按真跑轨迹（全档 run 41292387267 的 call_args）补「真返回」效果层。
+    must_succeed:
+      - tool: product_search
+      - tool: product_detail
     precondition:
       - type: product_count_for_keyword
         source: "遮光窗帘"
@@ -1065,6 +1070,10 @@ cases:
     #   （`must_succeed` 不映射）⇒ 值级/效果层声明会**在一腿上假红**；要落先得取两腿种子真值。
     # 判别力边界（照实登记，不冒充已覆盖）：存在性级 —— 证「有查单」，**不**证「查单成功/结果正确」。
     expectations:
+      - tool: order_query
+    # 2026-11-01（issue #8300 自测发现一）：本用例原先只有裸工具名期望 ⇒ 结构性不可失败
+    # （通过 + 无任何可失败断言 + 效果层未触发）。加「真返回」断言：调了 ≠ 成了。
+    must_succeed:
       - tool: order_query
     data_checks:
       # 原两条都是纯散文（**不计分**）—— 保留语义，并如实标注它们**没有被机器断言**：
@@ -2392,6 +2401,10 @@ cases:
     user_inputs:
       - "王师傅这个月计件做了多少？顺便看下明细"
     expectations:
+      - tool: piecework_query
+    # 2026-11-01（issue #8300 自测发现一）：本用例原先只有裸工具名期望 ⇒ 结构性不可失败
+    # （通过 + 无任何可失败断言 + 效果层未触发）。加「真返回」断言：调了 ≠ 成了。
+    must_succeed:
       - tool: piecework_query
     data_checks:
       - "商家问计件 → 调 piecework_query → 返回计件合计与逐工序明细（工序/数量/金额）"

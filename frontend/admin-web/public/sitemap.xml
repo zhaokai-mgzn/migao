@@ -25,4 +25,10 @@
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
+  <!-- 终端下载页（issue #8195）：公开面，商家会直接搜到它 -->
+  <url>
+    <loc>https://www.migaozn.com/download/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
 </urlset>

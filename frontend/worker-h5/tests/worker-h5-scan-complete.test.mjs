@@ -1152,6 +1152,24 @@ test('🔴 ⑫ 扫码即报工：绑定工序的工人扫到码 ⇒ 自动 POST 
   app.destroy()
 })
 
+test('🔴 ⑫-a 自动报工回执后**不许**说「本件没有这道工序」（2026-11-01 商米 V2s 真机：说反了）', async () => {
+  // 现场读数：绑定「韩褶」的工人扫码 ⇒ 服务端已记上这一笔（回读 done / 张师傅），
+  // 而同一屏写着「你的工序是「韩褶」：本件没有这道工序，不用报工。」——只有刷新才恢复。
+  // 根因：afterComplete 只清 operation、不改 worker_operation_state ⇒ 渲染层落到 absent 分支。
+  const doc = fakeDom()
+  const f = routeFetch({
+    '/api/worker/production/scan?': resolveOk({ ...BOUND_VIEW, worker_operation: '打包', worker_operation_state: null }),
+    // 回执没有下一道 ⇒ 屏上回到「无工序卡」形态，这句话才会被渲染出来
+    '/api/worker/production/scan/complete': receipt({ next_operation: null }),
+  })
+  const app = bootPage({ doc, f })
+  await scan(doc, 'tok-cloth')
+  await waitFor(() => /已自动报工/.test(doc.html), '自动报工回执')
+  assert.doesNotMatch(doc.html, /没有这道工序/, '计件已经记上了，不许说「本件没有这道工序」')
+  assert.match(doc.html, /本件的这道已经做完/, '要说成「已经做完」')
+  app.destroy()
+})
+
 test('🔴 ⑫-b 未绑定工序（determined_by≠worker）⇒ **零**自动写（推断出的下一道不等于本次做的活）', async () => {
   const doc = fakeDom()
   const f = routeFetch({
