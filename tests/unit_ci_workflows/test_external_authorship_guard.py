@@ -21,6 +21,7 @@
 | 8 | **fork 来源 ⇒ 无论作者是谁都判红** | 删掉 head-repo 比较 ⇒ 用例 8 红 |
 | 9 | **接线**：`pr-check.yml` 有这个 job、有 `timeout-minutes`、真的调用脚本 | 删 job / 改脚本路径 ⇒ 用例 9 红 |
 | 10 | 真实白名单**精确且非空**（不许通配、两个协作者在列） | 把 `zhaokai-mgzn` 删掉 ⇒ 用例 10 红 |
+| 11 | **PR 作者**不命中 `pr_authors` ⇒ 判红（dependabot 为已知例外） | 删掉 `main` 的 PR 作者检查 ⇒ 用例 11 红 |
 
 ## 边界（照实登记）
 
@@ -72,7 +73,12 @@ def _guard():
     return module
 
 
-def _run_cli(tmp_path: Path, commits: list[dict], head_repo: str = "zhaokai-mgzn/migao") -> subprocess.CompletedProcess:
+def _run_cli(
+    tmp_path: Path,
+    commits: list[dict],
+    head_repo: str = "zhaokai-mgzn/migao",
+    pr_author: str = "zhaokai-mgzn",
+) -> subprocess.CompletedProcess:
     fixture = tmp_path / "commits.json"
     fixture.write_text(json.dumps(commits), encoding="utf-8")
     return subprocess.run(
@@ -83,6 +89,7 @@ def _run_cli(tmp_path: Path, commits: list[dict], head_repo: str = "zhaokai-mgzn
             "--allow-file", str(ALLOW),
             "--commits-json", str(fixture),
             "--head-repo", head_repo,
+            "--pr-author", pr_author,
             "--no-remediate",
         ],
         capture_output=True,
@@ -160,6 +167,45 @@ def test_cli_flags_fork_head_repo(tmp_path: Path):
     result = _run_cli(tmp_path, TEAM_COMMITS, head_repo="llwand1/migao")
     assert result.returncode == 1, f"fork 来源必须判红（实际 {result.returncode}）：{result.stdout}"
     assert "fork" in result.stdout, "判红输出必须说明是 fork 来源"
+
+
+def test_cli_flags_unknown_pr_author_offline(tmp_path: Path):
+    result = _run_cli(tmp_path, TEAM_COMMITS, pr_author="llwand1")
+    assert result.returncode == 1, f"陌生 PR 作者必须 exit 1（实际 {result.returncode}）：{result.stdout}{result.stderr}"
+    assert "PR 作者" in result.stdout, "判红输出必须说明是 PR 作者面"
+    assert "llwand1" in result.stdout, "判红输出必须具名到陌生作者"
+
+
+def test_cli_allows_known_bot_pr_authors_offline(tmp_path: Path):
+    for author in ("github-actions[bot]", "dependabot[bot]"):
+        result = _run_cli(tmp_path, TEAM_COMMITS, pr_author=author)
+        assert result.returncode == 0, f"{author} 必须放行（实际 {result.returncode}）：{result.stdout}{result.stderr}"
+
+
+def test_missing_pr_authors_is_refused(tmp_path: Path):
+    guard = _guard()
+    path = tmp_path / "allow.json"
+    path.write_text(json.dumps({"logins": ["zhaokai-mgzn"], "emails": []}), encoding="utf-8")
+    try:
+        guard.load_pr_authors(path)
+    except ValueError as exc:
+        assert "pr_authors" in str(exc) or "空" in str(exc), f"缺少 pr_authors 必须报出可读原因：{exc}"
+    else:
+        raise AssertionError("缺少 pr_authors 必须 fail-closed，实际被放行了")
+
+
+def test_real_allowlist_has_auto_merge_and_pr_author_lists():
+    data = json.loads(ALLOW.read_text(encoding="utf-8"))
+    assert data["auto_merge_logins"] == ["zhaokai-mgzn", "ciyuantongda", "github-actions[bot]"], (
+        f"自动合并白名单必须是两名使用账号 + CI bot：{data.get('auto_merge_logins')}"
+    )
+    assert set(data["pr_authors"]) == {
+        "zhaokai-mgzn", "ciyuantongda", "github-actions[bot]", "dependabot[bot]",
+    }, f"PR 作者白名单必须含已知 dependabot 例外：{data.get('pr_authors')}"
+    for key in ("auto_merge_logins", "pr_authors"):
+        assert data[key], f"{key} 不能为空"
+        wildcards = [x for x in data[key] if "*" in x or "?" in x]
+        assert wildcards == [], f"{key} 不许通配：{wildcards}"
 
 
 def test_workflow_wires_the_guard():

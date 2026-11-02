@@ -299,7 +299,10 @@ export default function WorkerShipmentOrdersPage() {
       {phase === 'ready' ? (
         <View className='shipment-orders__body'>
           <Text className='shipment-orders__count' data-testid='shipment-orders-count'>
-            待发货 {count} 单（全部套已完工）
+            {/* 🔴 0 单时那句「（全部套已完工）」没有指代对象（真机读数 2026-11-01：
+                「待发货 0 单（全部套已完工）」自相矛盾）—— 括号是**结论**，只在有单时说。
+                与 /w/ 发货页（`shipment.mjs` 的 countLine）逐字同口径。 */}
+            {count === 0 ? '待发货 0 单' : `待发货 ${count} 单（全部套已完工）`}
           </Text>
           {count === 0 ? (
             <View className='shipment-orders__notice' data-testid='shipment-orders-empty'>

@@ -218,6 +218,30 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     private ApprovalService approvalService;
 
     /**
+     * 订单**查询族**（issue #8191，P2-1a）：列表 / 详情 / 统计 / 单号解析的唯一实现点。
+     *
+     * <p>本类只留<b>门面委托</b>（调用方零改动）。字段注入而非构造参数，理由同
+     * {@link #stockBatchConsumptionService}：本类构造签名被多处测试显式装配，加参数会把它们全改一遍。</p>
+     */
+    @Autowired(required = false)
+    private OrderQueryService orderQueryService;
+
+    /**
+     * 取查询服务：Spring 装配下 = 上面的 bean；**直接 new / {@code @InjectMocks} 的既有单测**
+     * （Mockito 只做构造注入、不注入字段）没有该 bean ⇒ 用本类已装配的协作者就地构造一个
+     * （同一份 Mapper / ObjectMapper 实例）⇒ 行为与拆分前逐字一致。
+     */
+    private OrderQueryService queryService() {
+        OrderQueryService service = this.orderQueryService;
+        if (service == null) {
+            service = new OrderQueryService(orderMapper, orderItemMapper, orderLogisticsMapper,
+                    productMapper, productSkuMapper, objectMapper, printLogMapper, businessClock);
+            this.orderQueryService = service;
+        }
+        return service;
+    }
+
+    /**
      * <b>测试探针</b>（issue #6955，生产恒为 {@code 0}）：在 {@link #cancelOrder} 的「读判加工单为
      * {@code generated}」之后、「联动作废（CAS）」之前暂停指定毫秒。
      *
@@ -298,141 +322,10 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * @return 分页响应
      */
     public PageResponse<OrderListResponse> getOrderPage(long page, long size, String status, String keyword, String followStatus, Boolean hasProcessing, String startDate, String endDate, String orderId, String receiver, String productCode, String productTitle, Long tenantId, String userId, String creator, String dataScopeOwnerId) {
-        LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
-
-        // 数据范围（issue #7372 段 1）：非 null ⇒ 只看该用户创建的单据（角色范围 = self）。
-        // ⚠️ 与下面的 C 端隔离是**两件事**：本参数来自**服务端角色配置**，userId 来自查询入参。
-        if (StringUtils.hasText(dataScopeOwnerId)) {
-            wrapper.eq(Order::getCreatedBy, dataScopeOwnerId);
-        }
-        // C 端数据隔离：按下单用户过滤（必须精确匹配 user_id，忽略其他模糊条件）
-        if (StringUtils.hasText(userId)) {
-            wrapper.eq(Order::getUserId, userId);
-        }
-
-        // 制单人过滤（issue #5835，用户裁定「文本框模糊匹配」）：
-        // 只认**快照列** created_by_name（不 join users —— 见 V142 的注释）。
-        // 🔴 `like` 是**紧条件**：存量单该列为 NULL ⇒ 自然落选（用户裁定「筛了就只出有制单人的单」），
-        //    无需额外 `isNotNull` —— NULL LIKE 在 SQL 三值逻辑下不为真，条件自动把它排除。
-        if (StringUtils.hasText(creator)) {
-            wrapper.like(Order::getCreatedByName, creator.trim());
-        }
-
-        // 状态筛选（支持逗号分隔多值，见 applyStatusFilter）
-        applyStatusFilter(wrapper, status);
-
-        // 跟进状态筛选
-        if (StringUtils.hasText(followStatus)) {
-            wrapper.eq(Order::getFollowStatus, followStatus);
-        }
-
-        // 时间范围筛选（issue #6200：日界 = 业务日 +08，不是 UTC 日）
-        // 半开区间 [D 00:00+08, D+1 00:00+08)：原写法把两端拼成 UTC 日的 00:00 与 23:59:59，把
-        // 北京 00:00–08:00 的单归错天 / 月 / 年，且与走 businessClock 的看板 / 趋势互相矛盾。
-        ListDateWindow window = resolveListWindow(startDate, endDate, businessClock);
-        wrapper.ge(Order::getCreatedAt, window.start());
-        wrapper.lt(Order::getCreatedAt, window.end());
-
-        // 订单ID精确搜索
-        if (StringUtils.hasText(orderId)) {
-            wrapper.like(Order::getOrderNo, orderId);
-        }
-
-        // 收货人搜索（姓名或手机号）
-        if (StringUtils.hasText(receiver)) {
-            wrapper.and(w -> w.like(Order::getCustomerName, receiver)
-                    .or()
-                    .like(Order::getCustomerPhone, receiver));
-        }
-
-        // 商品货号/标题搜索：通过子查询 order_items 表筛选包含该商品的订单
-        if (StringUtils.hasText(productCode) || StringUtils.hasText(productTitle)) {
-            LambdaQueryWrapper<OrderItem> itemWrapper = new LambdaQueryWrapper<>();
-            if (StringUtils.hasText(productCode)) {
-                // 🔴 issue #6884：改前是 `itemWrapper.eq(OrderItem::getProductId, productCode)` ——
-                // 拿**货号**去比 `order_items.product_id`（商品主键，形如 UUID）⇒ 恒不相等 ⇒
-                // 商家输入任何货号都得到**空页**（不是「忽略条件」）。货号的真值在 `products.sku_code`
-                // 上（列表展示用的 `OrderItemBrief.productCode` 也是从它填的）。
-                // 口径与同块的 `productTitle` 一致：**子串匹配**（搜索框语义）。
-                List<String> productIds = productMapper.selectList(
-                                new LambdaQueryWrapper<Product>()
-                                        .like(Product::getSkuCode, productCode)
-                                        .select(Product::getId))
-                        .stream()
-                        .map(Product::getId)
-                        .collect(Collectors.toList());
-                if (productIds.isEmpty()) {
-                    // 没有任何商品匹配这个货号 ⇒ 结果必然是空 —— 如实返回空页，不得退化成「忽略该条件」
-                    return PageResponse.of(0L, page, size, Collections.emptyList());
-                }
-                itemWrapper.in(OrderItem::getProductId, productIds);
-            }
-            if (StringUtils.hasText(productTitle)) {
-                itemWrapper.like(OrderItem::getProductName, productTitle);
-            }
-            itemWrapper.select(OrderItem::getOrderId);
-            List<String> matchedOrderIds = orderItemMapper.selectList(itemWrapper).stream()
-                    .map(OrderItem::getOrderId)
-                    .distinct()
-                    .collect(Collectors.toList());
-            if (matchedOrderIds.isEmpty()) {
-                return PageResponse.of(0L, page, size, Collections.emptyList());
-            }
-            wrapper.in(Order::getId, matchedOrderIds);
-        }
-
-        // 关键词搜索（客户姓名/电话/订单号，与分字段搜索取 OR）
-        if (StringUtils.hasText(keyword)) {
-            wrapper.and(w -> w.like(Order::getCustomerName, keyword)
-                    .or()
-                    .like(Order::getCustomerPhone, keyword)
-                    .or()
-                    .like(Order::getOrderNo, keyword));
-        }
-
-        // 含加工项过滤：通过子查询 order_items 表，筛选含/不含加工项的订单
-        // 注：tenant_id 由 TenantLineInnerInterceptor 自动注入，无需手动添加
-        if (hasProcessing != null) {
-            Set<String> orderIdsWithProcessing = orderItemMapper.selectList(
-                new LambdaQueryWrapper<OrderItem>()
-                    .isNotNull(OrderItem::getProcessingInfo)
-                    // 投影必须同时带出 processing_info：只 select(orderId) 时 MyBatis-Plus 不会填充
-                    // processingInfo，下方 extractProcessingItems 恒拿到 null → 集合恒为空
-                    // → hasProcessing=true 恒返回 0 条（回归见 OrderServiceTest#getOrderPage_HasProcessingFilter_SubQueryProjectionIncludesProcessingInfo）
-                    .select(OrderItem::getOrderId, OrderItem::getProcessingInfo)
-            ).stream()
-                .filter(item -> !extractProcessingItems(item.getProcessingInfo()).isEmpty())
-                .map(OrderItem::getOrderId)
-                .collect(Collectors.toSet());
-
-            if (hasProcessing) {
-                // 只查询含加工项的订单
-                if (orderIdsWithProcessing.isEmpty()) {
-                    return PageResponse.of(0L, page, size, Collections.emptyList());
-                }
-                wrapper.in(Order::getId, orderIdsWithProcessing);
-            } else {
-                // 只查询不含加工项的订单
-                if (!orderIdsWithProcessing.isEmpty()) {
-                    wrapper.notIn(Order::getId, orderIdsWithProcessing);
-                }
-            }
-        }
-
-        // 按创建时间倒序
-        wrapper.orderByDesc(Order::getCreatedAt);
-
-        // 执行分页查询
-        Page<Order> orderPage = new Page<>(page, size);
-        Page<Order> resultPage = orderMapper.selectPage(orderPage, wrapper);
-
-        // 转换为响应 DTO + 批量补充明细
-        List<OrderListResponse> responses = resultPage.getRecords().stream()
-                .map(this::convertToListResponse)
-                .collect(Collectors.toList());
-        enrichListResponses(responses, tenantId);
-
-        return PageResponse.of(resultPage.getTotal(), resultPage.getCurrent(), resultPage.getSize(), responses);
+        // 门面委托（issue #8191，P2-1a）：查询族实现点在 OrderQueryService，调用方零改动。
+        return queryService().getOrderPage(page, size, status, keyword, followStatus, hasProcessing, startDate,
+                endDate, orderId, receiver, productCode, productTitle, tenantId, userId, creator,
+                dataScopeOwnerId);
     }
 
     /**
@@ -454,33 +347,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      */
     public PageResponse<OrderListResponse> getMyOrderPage(long page, long size, String status,
                                                           Long tenantId, String userId, String userPhone) {
-        if (userId == null || userId.isBlank() || "internal-service".equals(userId)) {
-            throw BusinessException.authFailed("缺少用户标识，无法查询订单");
-        }
-
-        LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
-        // 用户级隔离：本人订单 OR（未绑定 + 手机号=本人）——手机号兜底仅在有绑定号时启用
-        if (StringUtils.hasText(userPhone)) {
-            wrapper.and(w -> w.eq(Order::getUserId, userId)
-                    .or(o -> o.isNull(Order::getUserId).eq(Order::getCustomerPhone, userPhone.trim())));
-        } else {
-            wrapper.eq(Order::getUserId, userId);
-        }
-
-        // 状态筛选（支持逗号分隔多值，见 applyStatusFilter）
-        applyStatusFilter(wrapper, status);
-
-        wrapper.orderByDesc(Order::getCreatedAt);
-
-        Page<Order> orderPage = new Page<>(page, size);
-        Page<Order> resultPage = orderMapper.selectPage(orderPage, wrapper);
-
-        List<OrderListResponse> responses = resultPage.getRecords().stream()
-                .map(this::convertToListResponse)
-                .collect(Collectors.toList());
-        enrichListResponses(responses, tenantId);
-
-        return PageResponse.of(resultPage.getTotal(), resultPage.getCurrent(), resultPage.getSize(), responses);
+        // 门面委托（issue #8191，P2-1a）：查询族实现点在 OrderQueryService，调用方零改动。
+        return queryService().getMyOrderPage(page, size, status, tenantId, userId, userPhone);
     }
 
     /**
@@ -516,140 +384,14 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     }
 
     /**
-     * 批量补充订单明细/加工费/实收款/「是否已打印」（getOrderPage 与 getMyOrderPage 共用，避免 N+1）
-     *
-     * @param tenantId 当前租户（打印汇总必须**同租户**：跨租户的 order_id 撞车不可想象，但白读一次也没意义）
-     */
-    private void enrichListResponses(List<OrderListResponse> responses, Long tenantId) {
-        // 「是否已打印」（V201，issue #7902）：先给**全页**的确定值，再一次性批量覆盖 ——
-        // 两条分支（有单 / 空页）都拿到同一份口径，前端不必分情况判空。
-        enrichPrintStatus(responses, tenantId);
-
-        // 批量补充订单明细，避免 N+1 查询；前端列表"采购商品"列依赖 items[0]
-        List<String> orderIds = responses.stream()
-                .map(OrderListResponse::getId)
-                .collect(Collectors.toList());
-        if (!orderIds.isEmpty()) {
-            List<OrderItem> allItems = orderItemMapper.selectList(
-                    new LambdaQueryWrapper<OrderItem>().in(OrderItem::getOrderId, orderIds)
-            );
-            Map<String, List<OrderItem>> itemsMap = allItems.stream()
-                    .collect(Collectors.groupingBy(OrderItem::getOrderId));
-            // 批量加载商品货号，避免 N+1 查询
-            Set<String> productIds = allItems.stream()
-                    .map(OrderItem::getProductId)
-                    .filter(id -> id != null && !id.isEmpty())
-                    .collect(Collectors.toSet());
-            Map<String, Product> productMap = productIds.isEmpty()
-                    ? Collections.emptyMap()
-                    : productMapper.selectBatchIds(productIds).stream()
-                            .collect(Collectors.toMap(Product::getId, p -> p));
-            for (OrderListResponse resp : responses) {
-                List<OrderItem> orderItems = itemsMap.getOrDefault(resp.getId(), Collections.emptyList());
-                resp.setItems(orderItems.stream()
-                        .map(item -> {
-                            // amount = unitPrice * quantity（兜底：subtotal）
-                            BigDecimal itemAmount = BigDecimal.ZERO;
-                            if (item.getUnitPrice() != null && item.getQuantity() != null) {
-                                itemAmount = item.getUnitPrice().multiply(item.getQuantity());
-                            } else if (item.getSubtotal() != null) {
-                                itemAmount = item.getSubtotal();
-                            }
-                            Product product = productMap.get(item.getProductId());
-                            return new OrderListResponse.OrderItemBrief(
-                                    // issue #6883：行主键（`order_items.id`）—— 余料行搜索要它指认「哪一行」
-                                    item.getId(),
-                                    item.getProductId(),
-                                    item.getProductName(),
-                                    product != null ? product.getSkuCode() : null,
-                                    item.getQuantity(),
-                                    item.getUnitPrice(),
-                                    itemAmount,
-                                    item.getSubtotal(),
-                                    item.getProcessingInfo()
-                            );
-                        })
-                        .collect(Collectors.toList()));
-                // 后端统一计算加工费与实收款，避免前端重复计算
-                // issue #4406：加工费 = Σ 各行**落库时算好的**加工费（组合价 × 加工费米数），不重算。
-                BigDecimal processingFee = orderItems.stream()
-                        .map(item -> storedProcessingFee(item.getProcessingInfo()))
-                        .reduce(BigDecimal.ZERO, BigDecimal::add);
-                resp.setProcessingFee(processingFee);
-                if (resp.getActualAmount() == null) {
-                    resp.setActualAmount(resp.getTotalAmount());
-                }
-                // 判断是否含加工项：复用 extractProcessingItems 解析，避免空 JSONB 对象误判
-                boolean itemHasProcessing = orderItems.stream()
-                        .anyMatch(item -> !extractProcessingItems(item.getProcessingInfo()).isEmpty());
-                resp.setHasProcessing(itemHasProcessing);
-            }
-        } else {
-            for (OrderListResponse resp : responses) {
-                resp.setItems(Collections.emptyList());
-                resp.setProcessingFee(BigDecimal.ZERO);
-                resp.setHasProcessing(false);
-                if (resp.getActualAmount() == null) {
-                    resp.setActualAmount(resp.getTotalAmount());
-                }
-            }
-        }
-    }
-
-    /**
-     * 批量补充「是否已打印」（V201，issue #7902）：**一次**聚合查询（禁止 N+1）。
-     *
-     * <h3>三个读数的口径</h3>
-     * <ul>
-     *   <li>{@code printedAt} = 最近一次**成功发起**的打印时间（{@code print_logs.status = 'fired'}）；
-     *       {@code null} = 从未打印；</li>
-     *   <li>{@code printCount} = 打印条数（不是出纸张数之和 —— 「打了几次」与「出了几张纸」是两件事）；</li>
-     *   <li>{@code printedDocTypes} = 去重排序的单据类型（{@code processing} / {@code sales} / …）。</li>
-     * </ul>
-     *
-     * <p>🔴 未打印的订单回的是**确定值**（{@code null} / {@code 0} / 空列表），不是「本次不填」：
-     * 让「没打过」与「读不到」长得不一样，前端就得按三种情况判空 —— 而那正是「某处漏填了」
-     * 永远不会被发现的原因（判据：{@code OrderServicePrintStatusTest}）。</p>
-     */
-    private void enrichPrintStatus(List<OrderListResponse> responses, Long tenantId) {
-        for (OrderListResponse response : responses) {
-            response.setPrintedAt(null);
-            response.setPrintCount(0);
-            response.setPrintedDocTypes(Collections.emptyList());
-        }
-        // 空页 / 单测切片（未装配 Mapper）/ 无租户上下文 ⇒ 不发查询（`IN ()` 还会是语法错误）
-        if (printLogMapper == null || responses.isEmpty() || tenantId == null) {
-            return;
-        }
-        List<String> orderIds = responses.stream()
-                .map(OrderListResponse::getId)
-                .filter(StringUtils::hasText)
-                .distinct()
-                .collect(Collectors.toList());
-        if (orderIds.isEmpty()) {
-            return;
-        }
-        Map<String, PrintLogSummary> summaries = printLogMapper.selectPrintSummary(tenantId, orderIds).stream()
-                .collect(Collectors.toMap(PrintLogSummary::getOrderId, summary -> summary, (first, second) -> first));
-        for (OrderListResponse response : responses) {
-            PrintLogSummary summary = summaries.get(response.getId());
-            if (summary == null) {
-                continue;
-            }
-            response.setPrintedAt(summary.getPrintedAt());
-            response.setPrintCount(summary.getPrintCount() == null ? 0 : summary.getPrintCount());
-            response.setPrintedDocTypes(summary.printedDocTypes());
-        }
-    }
-
-    /**
      * 根据ID查询订单详情（含订单明细和物流信息）
      *
      * @param id 订单ID
      * @return 订单详情响应
      */
     public OrderDetailResponse getOrderById(String id) {
-        return getOrderById(id, null);
+        // 门面委托（issue #8191，P2-1a）：查询族实现点在 OrderQueryService，调用方零改动。
+        return queryService().getOrderById(id);
     }
 
     /**
@@ -661,17 +403,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * @param dataScopeOwnerId 非 null ⇒ 只允许读该用户创建的单据
      */
     public OrderDetailResponse getOrderById(String id, String dataScopeOwnerId) {
-        Order order = orderMapper.selectById(id);
-        if (order == null) {
-            throw BusinessException.notFound("订单");
-        }
-        if (StringUtils.hasText(dataScopeOwnerId)
-                && !dataScopeOwnerId.equals(order.getCreatedBy())) {
-            // 越权对象 = 不存在（同一句提示，不泄露存在性）
-            throw BusinessException.notFound("订单");
-        }
-
-        return convertToDetailResponse(order);
+        // 门面委托（issue #8191，P2-1a）：查询族实现点在 OrderQueryService，调用方零改动。
+        return queryService().getOrderById(id, dataScopeOwnerId);
     }
 
     /**
@@ -690,7 +423,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * @return 当前租户下可见 ⇒ true
      */
     public boolean existsForCurrentTenant(String id) {
-        return orderMapper.selectById(id) != null;
+        // 门面委托（issue #8191，P2-1a）：查询族实现点在 OrderQueryService，调用方零改动。
+        return queryService().existsForCurrentTenant(id);
     }
 
     /**
@@ -1568,99 +1302,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     }
 
     /**
-     * 转换为列表响应 DTO
-     */
-    private OrderListResponse convertToListResponse(Order order) {
-        OrderListResponse response = new OrderListResponse();
-        BeanUtils.copyProperties(order, response);
-        return response;
-    }
-
-    /**
-     * 转换为详情响应 DTO（含订单明细和物流信息）
-     */
-    private OrderDetailResponse convertToDetailResponse(Order order) {
-        OrderDetailResponse response = new OrderDetailResponse();
-        BeanUtils.copyProperties(order, response);
-
-        // 查询订单明细（使用 LambdaQueryWrapper 走 BaseMapper，确保 processingInfo 经过 JacksonTypeHandler 反序列化为 Map）
-        List<OrderItem> items = orderItemMapper.selectList(
-                new LambdaQueryWrapper<OrderItem>()
-                        .eq(OrderItem::getOrderId, order.getId())
-                        .eq(OrderItem::getTenantId, order.getTenantId())
-        );
-        List<OrderDetailResponse.OrderItemResponse> itemResponses = items.stream()
-                .map(this::convertToItemResponse)
-                .collect(Collectors.toList());
-        response.setItems(itemResponses);
-
-        // 「发货前是否有需要报工的作业」+「没有作业单时该生成哪一型」（issue #7079 第 5 包）：
-        // 判据本体在 `OrderShipGuard.requiredOrderKind`（= 发货守卫用的那份 `needsWork` 的同一实现点），
-        // 本处只做参数搬运 —— 前端据此给卖布单「生成出库作业单」的出口、并前置拦下发货。
-        // ⚠️ 它自己加载一次明细（`items` 走的是 `OrderItem` 实体、没有 `processing_info` 的解析结果可复用，
-        // 见 `OrderShipGuard.loadOrderItems` 的既有约定：必须走 BaseMapper 才经 JacksonTypeHandler）。
-        String workOrderKind = OrderShipGuard.requiredOrderKind(orderItemMapper, objectMapper, order);
-        response.setNeedsWork(workOrderKind != null);
-        response.setWorkOrderKind(workOrderKind);
-
-        // 后端统一聚合加工项，并计算加工费 / 实收款（架构决策：费用计算全部在后端）
-        // issue #4406：加工费 = Σ 各行**落库时算好的**加工费（组合价 × 加工费米数），不重算；
-        // 同时把该行的加工费与可审计构成透出（行级 processingFee / processingFeeDetail）。
-        // ⚠️ `processingItems` 列表保持原样（**明细快照**：当时选了哪些加工项）；
-        //    issue #4882 起快照不再有 `unitPrice` / `amount`（加工费口径**只有** processingFee 一处）。
-        List<OrderDetailResponse.ProcessingItemBrief> aggregatedProcessing = new ArrayList<>();
-        BigDecimal processingFee = BigDecimal.ZERO;
-        // 安装小区（issue #7856）：**读侧收敛** —— 取该单明细里第一条非空（写侧扇出到每行同值）。
-        // 存量单 / 扇出之前落的单没有该键 ⇒ null（前端不渲染该行，不印「—」占纸）。
-        String installCommunity = null;
-        for (int i = 0; i < items.size(); i++) {
-            OrderItem item = items.get(i);
-            aggregatedProcessing.addAll(extractProcessingItems(item.getProcessingInfo()));
-            ProcessingFeeCalculator.Fee fee = ProcessingFeeCalculator.storedFee(item.getProcessingInfo());
-            // #4525：行加工费 = 组合那半 + Σ 选项价（落库时的完整行金额；读面**不重算**，R13）
-            BigDecimal itemFee = fee == null ? BigDecimal.ZERO : fee.lineAmount();
-            processingFee = processingFee.add(itemFee);
-            OrderDetailResponse.OrderItemResponse itemResponse = itemResponses.get(i);
-            itemResponse.setProcessingFee(itemFee);
-            itemResponse.setProcessingFeeDetail(fee == null ? null : fee.detail());
-            // 安装信息（issue #7856）：行级「安装位置」逐行投影；订单级「安装小区」读侧收敛。
-            itemResponse.setInstallRoom(OrderInstallInfo.valueOf(
-                    item.getProcessingInfo(), OrderInstallInfo.KEY_INSTALL_ROOM, objectMapper));
-            if (installCommunity == null) {
-                installCommunity = OrderInstallInfo.valueOf(
-                        item.getProcessingInfo(), OrderInstallInfo.KEY_INSTALL_COMMUNITY, objectMapper);
-            }
-        }
-        response.setInstallCommunity(installCommunity);
-        response.setProcessingItems(aggregatedProcessing);
-        response.setProcessingFee(processingFee);
-        // 当前阶段：实收款 = 总金额；后续支持优惠/部分付款时再调整
-        // 实收款：使用存储值，老订单 fallback 到 totalAmount
-        response.setActualAmount(order.getActualAmount() != null ? order.getActualAmount() : order.getTotalAmount());
-
-        // 查询物流信息
-        List<OrderLogistics> logisticsList = orderLogisticsMapper.selectByOrderId(order.getId(), TenantContext.getTenantId());
-        if (logisticsList != null && !logisticsList.isEmpty()) {
-            OrderLogistics logistics = logisticsList.get(0); // 取最新一条
-            OrderDetailResponse.LogisticsInfo logisticsInfo = new OrderDetailResponse.LogisticsInfo();
-            logisticsInfo.setId(logistics.getId());
-            logisticsInfo.setLogisticsCompany(logistics.getLogisticsCompany());
-            logisticsInfo.setTrackingNo(logistics.getTrackingNo());
-            logisticsInfo.setLogisticsType(logistics.getLogisticsType());
-            // 发货方式（issue #6239）：回吐「用户当时选了什么」；null = 未采集（存量行）
-            logisticsInfo.setShippingMethod(logistics.getShippingMethod());
-            logisticsInfo.setStatus(logistics.getStatus());
-            logisticsInfo.setTrackingInfo(logistics.getTrackingInfo());
-            logisticsInfo.setShipperName(logistics.getShipperName());
-            logisticsInfo.setShippedAt(logistics.getShippedAt());
-            logisticsInfo.setDeliveredAt(logistics.getDeliveredAt());
-            response.setLogistics(logisticsInfo);
-        }
-
-        return response;
-    }
-
-    /**
      * 售卖方式偏好校验 + 「优先整卷发货」分配落列（V111，用户裁定 2026-09-21）。
      *
      * <p><b>为什么分配在服务端算</b>：整卷数是 {@code quantity} 与货号卷长的函数，只能有一个
@@ -1933,41 +1574,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         }
     }
 
-    /**
-     * 从订单明细的 processingInfo（JSON）中解析加工项列表。
-     * processingInfo 格式来自前端创建订单时写入：
-     * { "processingFee": <number>, "processingItems": [ { id,name,quantity,unit } ] , ... }
-     * 解析失败/缺字段时返回空列表，确保不影响订单查询主流程。
-     *
-     * <p>issue #4882：加工项目录已删「单价」与「计价方式」（下单入口也不再写 {@code unitPrice}）
-     * ⇒ 本方法只回填 {@code id} / {@code name} / {@code quantity}。加工费**不**在这里取 ——
-     * 真值源 = {@code processing_info.processingFeeDetail}（{@code processing_fee_combinations} 落库值），
-     * 见 {@link #storedProcessingFee}。</p>
-     *
-     * issue #3340 验收实战：processingInfo 可能是 JSON **字符串**（自定义 @Select 查询不经过
-     * JacksonTypeHandler），此处做兼容解析，避免"有加工项却被判无加工项"。
-     */
-    @SuppressWarnings("unchecked")
-    private List<OrderDetailResponse.ProcessingItemBrief> extractProcessingItems(Object processingInfo) {
-        return OrderShipGuard.extractProcessingItems(objectMapper, processingInfo);
-    }
-
-    /**
-     * 读单个订单明细的加工费（issue #4406）：**读落库时算好的那一份**，不重算。
-     *
-     * <p>旧实现 = {@code Σ 加工项单价 × 数量}（{@code extractProcessingItems} 求和）——
-     * 它是「配了组合费用订单金额一分不变」的病根，也是 R13「改组合价后历史订单一字不变」的破坏点
-     * （重算 ⇒ 历史订单金额随价目表漂移）。新口径 = 取
-     * {@code processing_info.processingFeeDetail.amount}（{@code createOrder} 落库的唯一权威值）。</p>
-     *
-     * <p>存量单（接线前生成、无 {@code processingFeeDetail}）⇒ **返回 0**（{@code unpriced}）：
-     * 「这一行没有权威加工费」必须显式可见，**不**拿一个重算值冒充历史（#4308 同族纪律）。</p>
-     */
-    private BigDecimal storedProcessingFee(Object processingInfo) {
-        ProcessingFeeCalculator.Fee fee = ProcessingFeeCalculator.storedFee(processingInfo);
-        return fee == null ? BigDecimal.ZERO : fee.lineAmount();
-    }
-
     private BigDecimal toBigDecimal(Object value) {
         return OrderShipGuard.toBigDecimal(value);
     }
@@ -1987,50 +1593,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     }
 
     /**
-     * 转换为订单明细响应 DTO
-     */
-    private OrderDetailResponse.OrderItemResponse convertToItemResponse(OrderItem item) {
-        OrderDetailResponse.OrderItemResponse response = new OrderDetailResponse.OrderItemResponse();
-        BeanUtils.copyProperties(item, response);
-        // 计算 amount = unitPrice * quantity（优先），否则回退 subtotal
-        if (item.getUnitPrice() != null && item.getQuantity() != null) {
-            response.setAmount(item.getUnitPrice().multiply(item.getQuantity()));
-        } else {
-            response.setAmount(item.getSubtotal());
-        }
-        // 填充商品货号（从 products 表查）(#386)
-        if (item.getProductId() != null) {
-            Product product = productMapper.selectById(item.getProductId());
-            if (product != null && product.getSkuCode() != null) {
-                response.setSkuCode(product.getSkuCode());
-            }
-            // SKU 身份兜底（issue #7219）：存量/回归单的 processing_info 可能没有
-            // colorName/doorWidth（纸面与详情都读这两个键 ⇒ 颜色/门幅恒空）。
-            // 只在**缺值**且能从 SKU 唯一确定时回填；多 SKU 且无 skuId ⇒ 不猜（宁可留空）。
-            Map<String, Object> skuInfo = toSkuIdentityMap(item.getProcessingInfo());
-            if (skuInfo != null && (!hasText(skuInfo.get("colorName")) || !hasText(skuInfo.get("doorWidth")))) {
-                List<ProductSku> skus = productSkuMapper.selectList(
-                        new LambdaQueryWrapper<ProductSku>().eq(ProductSku::getProductId, item.getProductId()));
-                response.setProcessingInfo(backfillSkuIdentity(skuInfo, skus, item.getProductName()));
-            }
-        }
-        return response;
-    }
-
-    /** 把 processing_info 归一成可改写的 Map（JSONB 经 JacksonTypeHandler 可能是 String/其它形态）。 */
-    @SuppressWarnings("unchecked")
-    static Map<String, Object> toSkuIdentityMap(Object raw) {
-        if (!(raw instanceof Map<?, ?> map)) return null;
-        Map<String, Object> copy = new LinkedHashMap<>();
-        for (Map.Entry<?, ?> e : map.entrySet()) copy.put(String.valueOf(e.getKey()), e.getValue());
-        return copy;
-    }
-
-    private static boolean hasText(Object value) {
-        return value instanceof String text && !text.isBlank();
-    }
-
-    /**
      * SKU 身份兜底（issue #7219）—— **纯函数**，判据见 {@code OrderServiceSkuBackfillTest}。
      *
      * <p>口径：① 两个键都有 ⇒ 原样返回（**不覆盖**既有快照）；② {@code skuId} 命中 ⇒ 用那个 SKU；
@@ -2040,35 +1602,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * 只补**缺的那一半**。</p>
      */
     static Map<String, Object> backfillSkuIdentity(Map<String, Object> info, List<ProductSku> skus, String productName) {
-        if (info == null) return null;
-        boolean hasColor = hasText(info.get("colorName"));
-        boolean hasWidth = hasText(info.get("doorWidth"));
-        if (hasColor && hasWidth) return info;
-        List<ProductSku> rows = skus == null ? List.of() : skus;
-        ProductSku picked = null;
-        Object rawSkuId = info.get("skuId");
-        if (rawSkuId != null && !String.valueOf(rawSkuId).isBlank()) {
-            String skuId = String.valueOf(rawSkuId);
-            picked = rows.stream()
-                    .filter(sku -> sku.getId() != null && String.valueOf(sku.getId()).equals(skuId))
-                    .findFirst().orElse(null);
-        }
-        if (picked == null && rows.size() == 1) picked = rows.get(0);
-        // ③ 多 SKU 的历史单：产品名常以「-颜色-门幅」结尾（下单工具/人工命名的既有形态）——
-        //    后缀**唯一命中**才采用；零命中/多命中一律不猜（猜错 = 把 A 的颜色印到 B 的行上）。
-        if (picked == null && productName != null && !productName.isBlank()) {
-            String name = productName.trim();
-            List<ProductSku> suffixHits = rows.stream()
-                    .filter(sku -> hasText(sku.getColorName()) && hasText(sku.getDoorWidth())
-                            && name.endsWith("-" + sku.getColorName() + "-" + sku.getDoorWidth()))
-                    .toList();
-            if (suffixHits.size() == 1) picked = suffixHits.get(0);
-        }
-        if (picked == null) return info;
-        Map<String, Object> merged = new LinkedHashMap<>(info);
-        if (!hasColor && hasText(picked.getColorName())) merged.put("colorName", picked.getColorName());
-        if (!hasWidth && hasText(picked.getDoorWidth())) merged.put("doorWidth", picked.getDoorWidth());
-        return merged;
+        // 口径单点在 OrderQueryService（issue #8191，P2-1a）；本留静态入口因为既有单测按 OrderService.backfillSkuIdentity 引用。
+        return OrderQueryService.backfillSkuIdentity(info, skus, productName);
     }
 
     // ==================== 订单统计与跟进状态 ====================
@@ -3587,34 +3122,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * GET /api/admin/agent/orders/resolve?keyword=xxx 的核心逻辑。
      */
     public AgentOrderResolveResponse resolveOrderId(String keyword, Long tenantId) {
-        if (!StringUtils.hasText(keyword)) {
-            throw BusinessException.validationError("keyword 不能为空");
-        }
-
-        String resolvedId = resolveOrderIdToUuid(keyword, tenantId);
-        if (resolvedId == null) {
-            throw new BusinessException("ORDER_NOT_FOUND",
-                    "未找到匹配的订单：" + keyword + "。请检查订单号是否正确。", 404);
-        }
-
-        Order order = orderMapper.selectById(resolvedId);
-        if (order == null) {
-            throw BusinessException.notFound("订单");
-        }
-
-        int itemCount = 0;
-        Long count = orderItemMapper.selectCount(
-                new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderId, resolvedId));
-        if (count != null) itemCount = count.intValue();
-
-        return AgentOrderResolveResponse.builder()
-                .id(order.getId())
-                .orderNo(order.getOrderNo())
-                .customerName(order.getCustomerName())
-                .status(order.getStatus())
-                .totalAmount(order.getActualAmount() != null ? order.getActualAmount() : order.getTotalAmount())
-                .itemCount(itemCount)
-                .build();
+        // 门面委托（issue #8191，P2-1a）：查询族实现点在 OrderQueryService，调用方零改动。
+        return queryService().resolveOrderId(keyword, tenantId);
     }
 
     /**
@@ -3623,43 +3132,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * @return 解析出的 UUID，未找到返回 null
      */
     private String resolveOrderIdToUuid(String raw, Long tenantId) {
-        if (!StringUtils.hasText(raw)) return null;
-
-        // 1. UUID 精确匹配（租户隔离）
-        Order order = orderMapper.selectOne(
-                new LambdaQueryWrapper<Order>()
-                        .eq(Order::getId, raw)
-                        .eq(Order::getTenantId, tenantId));
-        if (order != null) return order.getId();
-
-        // 2. 按订单号搜索
-        List<Order> byOrderNo = orderMapper.selectList(
-                new LambdaQueryWrapper<Order>()
-                        .eq(Order::getTenantId, tenantId)
-                        .eq(Order::getOrderNo, raw));
-        if (!byOrderNo.isEmpty()) return byOrderNo.get(0).getId();
-
-        // 3. 按关键词搜索（订单号模糊/手机号/姓名）
-        List<Order> byKeyword = orderMapper.selectList(
-                new LambdaQueryWrapper<Order>()
-                        .eq(Order::getTenantId, tenantId)
-                        .and(w -> w.like(Order::getOrderNo, raw)
-                                .or().like(Order::getCustomerPhone, raw)
-                                .or().like(Order::getCustomerName, raw))
-                        .last("LIMIT 1"));
-        if (!byKeyword.isEmpty()) return byKeyword.get(0).getId();
-
-        // 4. UUID 前缀匹配
-        if (raw.length() >= 8) {
-            List<Order> byPrefix = orderMapper.selectList(
-                    new LambdaQueryWrapper<Order>()
-                            .eq(Order::getTenantId, tenantId)
-                            .likeRight(Order::getId, raw.substring(0, Math.min(16, raw.length())))
-                            .last("LIMIT 1"));
-            if (!byPrefix.isEmpty()) return byPrefix.get(0).getId();
-        }
-
-        return null;
+        // 解析口径单点在 OrderQueryService（issue #8191，P2-1a）；本留私有入口给写入路径 updateOrderForAgent。
+        return queryService().resolveOrderIdToUuid(raw, tenantId);
     }
 
     /**
