@@ -1,4 +1,4 @@
-# case_ids: MC-133
+# case_ids: MC-138
 """`scripts/dev-worktree.sh` 的「自动收尾（真删）」必须判**活占用**（issue #7008）。
 
 ## 病灶（2026-10-16 实测，逐字读数）
