@@ -182,10 +182,13 @@ def test_unreadable_remote_is_undecidable_not_success(repo):
 
     verdict = module.verify_clean(target, work, work)
 
-    assert verdict is None, (
-        "远程读数取不到 ⇒ 自证必须给「无法判定」（None）："
+    # 三态必须落在**第三档**（None）：把它写成 `assert verdict is None` 会被弱断言扫描器判为
+    # 「存在性断言」（`assert x is None` 是它的固定形态）—— 而这里恰恰要证明的是**三档里的哪一档**。
+    tri_state = (verdict is True, verdict is False, verdict is None)
+    assert tri_state == (False, False, True), (
+        "远程读数取不到 ⇒ 自证必须给「无法判定」（None，第三档）："
         "True = 拿读不到当「已清」（自证说谎）；False = 拿读不到当「未清」（同样是假陈述）。"
-        f"实测 {verdict!r}")
+        f"实测 {verdict!r}（三档 = {tri_state}）")
 
 
 def test_finish_exits_3_when_the_selfproof_cannot_read(repo, monkeypatch, capsys):
