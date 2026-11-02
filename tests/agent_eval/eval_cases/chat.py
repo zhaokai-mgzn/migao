@@ -143,6 +143,7 @@ _CASE_CH_007 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'product_search'}, {'tool': 'product_detail'}],
     precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
 
@@ -327,6 +328,7 @@ _CASE_CH_016 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'order_query'}],
     precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
 )
 
@@ -797,6 +799,7 @@ _CASE_CH_041 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_succeed=[{'tool': 'piecework_query'}],
 )
 
 # ── CH-042 [NORMAL] 门幅与加工类型自动选择 - 候选集内选门幅 + 自动定高买宽/定宽买高（单测覆盖，非 LLM 行为）（源: cases/chat.yml）──

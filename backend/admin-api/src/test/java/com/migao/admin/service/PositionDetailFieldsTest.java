@@ -453,6 +453,17 @@ class PositionDetailFieldsTest {
 
     private Map<String, Object> legacyPositionOf() {
         when(setPartTokenMapper.selectOne(any())).thenReturn(null);
+        // 🔴 加工单码「能定位就免选」（issue #8354）：**单套 × 单部位**会直接进件（granularity=set_position），
+        //    不再出选择屏。本判据要的是**旧码降级清单**（selections[].positions[]）的形状 ⇒
+        //    夹具给**两套**（每套一个部位）⇒ 候选不唯一 ⇒ 仍走选择屏那条分支。
+        when(processingOrderSetMapper.selectList(any())).thenReturn(List.of(
+                ProcessingOrderSet.builder()
+                        .id(SET_ID).tenantId(TENANT).processingOrderId(PO_ID)
+                        .setIndex(1).setNo(PO_NO + "-001").deleted(0).build(),
+                ProcessingOrderSet.builder()
+                        .id(SET_ID + "-b").tenantId(TENANT).processingOrderId(PO_ID)
+                        .setIndex(2).setNo(PO_NO + "-002").deleted(0).build()));
+        when(setPartTokenMapper.selectOne(any())).thenReturn(null);
         Map<String, Object> result = scanService.resolve("legacy-scan-6901", null, TENANT);
         assertThat(result.get("granularity")).isEqualTo("order");
         @SuppressWarnings("unchecked")

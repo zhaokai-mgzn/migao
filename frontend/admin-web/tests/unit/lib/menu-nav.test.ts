@@ -1002,7 +1002,7 @@ describe('非菜单页归属兜底（issue #8085）', () => {
     ).map((i) => i.path)
     const groups = visibleMenuGroups(menuGroups, { permissions: ['*'] })
     // 有意排除：外部门户/认证页（无侧边栏）+ `/chat`（黄金策对话经右下角 FAB，**有意**不进菜单）
-    const EXCLUDED = new Set(['/', '/login', '/register', '/about', '/contact', '/services', '/change-password', '/chat'])
+    const EXCLUDED = new Set(['/', '/login', '/register', '/about', '/contact', '/services', '/download', '/change-password', '/chat'])
     const routes = dashboardStaticRoutes().filter((r) => !EXCLUDED.has(r))
     expect(routes.length).toBeGreaterThan(30)
     for (const route of routes) {

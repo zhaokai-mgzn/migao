@@ -1,5 +1,26 @@
 server:
   port: 8080
+  # 反向代理后的「真实协议」还原（issue #8218 P1-08，2026-10-31 上线审计）
+  # 病（线上实测）：`curl -sI https://api.migaozn.com/api/version | grep -i strict-transport` **无输出** ——
+  #   而 `SecurityConfig` 里明明白白声明了 HSTS（maxAge 31536000 + includeSubDomains）。
+  #   机制：nginx 终止 TLS 后以 **http** 回源（真实协议放在 `X-Forwarded-Proto: https`），
+  #   应用默认**不看**这个头 ⇒ `request.isSecure()` 为假 ⇒ Spring Security 的 HSTS **一个字都不发**。
+  #
+  # 取值为什么是 `native`（Tomcat `RemoteIpValve`）而**不是** `framework`（Boot 的 ForwardedHeaderFilter）：
+  #   · `framework` 会**剥离** `X-Forwarded-Proto/Host/Port` 这几个**请求头**，而
+  #     `com.migao.admin.security.SameOriginOriginHeaderFilter` 是**直接读这些头**的
+  #     （它的 `X_FORWARDED_*` 常量）—— 头被剥离后它退到 `request.getServerPort()`
+  #     （反代后面是 **8080**，不是 443）⇒ 同源判定翻成「跨域」⇒ app 域页面（`/w/` `/b/`）
+  #     对 `/api/**` 的写请求会被 CORS 拦掉（403）。那是**行为改动**，本单不拿它换一个安全头。
+  #   · `native` 让容器按同一批头把 `isSecure()` / `getRemoteAddr()` 还原，**头保留** ⇒
+  #     既有读头逻辑一字不改；对外可观察的变化只有「HSTS 真的发出去了」。
+  #   ⚠️ `native` 只信任 `internalProxies`（默认含 172.16/12 等私网段）：nginx 容器在 docker 网络上
+  #     ⇒ 命中默认值。若反代将来换到公网 IP 段，需显式配 `server.tomcat.remoteip.internal-proxies`；
+  #     而「线上没带 HSTS」由 `deploy/scripts/prod-security-headers.sh` 判红（不会静默失效）。
+  #   ⚠️ 与 `deploy/swas/nginx.conf` 的分工：**api 域**的 HSTS 由此发出，nginx 不许再加一条
+  #     （重复的 STS 头按 RFC 6797 会被浏览器整条忽略）；静态域（app / merchant / ai-api）由 nginx 发。
+  # 判据（会红）：tests/unit_ci_workflows/test_prod_security_headers.py（本行 + 线上探针脚本的接线）。
+  forward-headers-strategy: native
   servlet:
     context-path: /
   tomcat:

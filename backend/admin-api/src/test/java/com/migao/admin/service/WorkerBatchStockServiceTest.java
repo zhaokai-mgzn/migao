@@ -60,6 +60,7 @@ class WorkerBatchStockServiceTest {
     private BatchStocktakeService batchStocktakeService;
     private ProductMapper productMapper;
     private UserMapper userMapper;
+    private ImageRecognitionClient imageRecognitionClient;
     private WorkerBatchStockService service;
 
     @BeforeEach
@@ -68,8 +69,9 @@ class WorkerBatchStockServiceTest {
         batchStocktakeService = mock(BatchStocktakeService.class);
         productMapper = mock(ProductMapper.class);
         userMapper = mock(UserMapper.class);
+        imageRecognitionClient = mock(ImageRecognitionClient.class);
         service = new WorkerBatchStockService(batchStockService, batchStocktakeService,
-                productMapper, userMapper);
+                productMapper, userMapper, imageRecognitionClient);
 
         when(productMapper.selectList(any())).thenReturn(List.of(
                 Product.builder().id(PRODUCT_ID).name("雪尼尔窗帘布").build()));
@@ -279,5 +281,66 @@ class WorkerBatchStockServiceTest {
                 .doesNotHaveDuplicates();
         assertThat(WorkerBatchStockService.REASONS).extracting(WorkerBatchStockService.Reason::label)
                 .doesNotHaveDuplicates();
+    }
+
+    // ────────────────────────────────────────────── ④ 识别入口（issue #8210）
+
+    @Test
+    @DisplayName("⑨ 识别走 batch target，结果**原样搬运**（不重建字段表、不做二次消歧、不落库）")
+    void recognizeUsesTheBatchTargetAndPassesTheResultThrough() {
+        List<String> images = List.of("https://cdn.example.com/label.jpg");
+        ImageRecognitionClient.ImageRecognitionResult upstream =
+                new ImageRecognitionClient.ImageRecognitionResult("batch",
+                        List.of(fieldCell("batch_no", "批次号", "PC-20261031-0001")), false);
+        when(imageRecognitionClient.recognize("batch", images)).thenReturn(upstream);
+
+        ImageRecognitionClient.ImageRecognitionResult result = service.recognize(images);
+
+        // 同一个对象：Java 侧不重建字段表（第二份字段表 = 会漂的第二份口径）
+        assertThat(result).isSameAs(upstream);
+        verify(imageRecognitionClient).recognize("batch", images);
+        // 🔴 识别只做定位：写面一次都不能被触达（提交永远是人的动作）
+        org.mockito.Mockito.verifyNoInteractions(batchStocktakeService);
+    }
+
+    @Test
+    @DisplayName("⑩ 空图片 / 超上限 ⇒ 400 且**不发起远端调用**（不拿空列表去烧一次 vision）")
+    void recognizeRejectsEmptyOrOversizedImageLists() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.recognize(List.of()))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(400));
+
+        List<String> tooMany = List.of("https://cdn.example.com/1.jpg",
+                "https://cdn.example.com/2.jpg", "https://cdn.example.com/3.jpg",
+                "https://cdn.example.com/4.jpg");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.recognize(tooMany))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(400));
+
+        verify(imageRecognitionClient, never()).recognize(anyString(), any());
+    }
+
+    @Test
+    @DisplayName("⑪ 上游 fail-closed **原样上抛**（端点不可达 ≠ 没认出来 —— 两种事实各有各的出口）")
+    void recognizePropagatesUpstreamFailure() {
+        BusinessException unavailable = new BusinessException(
+                ImageRecognitionClient.ERR_IMAGE_RECOGNITION_UNAVAILABLE, "图片识别服务不可用", 422, "请手工填写");
+        when(imageRecognitionClient.recognize(anyString(), any())).thenThrow(unavailable);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> service.recognize(List.of("https://cdn.example.com/a.jpg")))
+                .isSameAs(unavailable);
+    }
+
+    /** 一格识别结果（与 ai-agent 的出口形状逐键一致；原样搬运的对象，不在服务层增删键）。 */
+    private static Map<String, Object> fieldCell(String key, String label, String value) {
+        Map<String, Object> cell = new java.util.LinkedHashMap<>();
+        cell.put("key", key);
+        cell.put("label", label);
+        cell.put("value", value);
+        cell.put("source", "[图片识别]");
+        cell.put("reason", null);
+        cell.put("reference", null);
+        return cell;
     }
 }

@@ -659,3 +659,23 @@ test('🔴 ⑧ 算料公式只印公式名（推导链不上屏）＋ 实际褶�
   assert.equal(block.includes('<dt>实际褶倍</dt>'), false, '实际褶倍必须退场（用户 2026-10-26 逐字）')
   assert.equal(block.includes('2.05倍'), false, '实际褶倍的值也不得借道其它行上屏')
 })
+
+// ── 售卖方式：内部键不上屏（2026-11-01 商米 V2s 真机验收）────────────────────────
+//
+// 真机读数：报工屏「本部位生产信息」直接印 `售卖方式 bulk_cut`（英文枚举，§31 P3 内部标识上屏）。
+// 期望：登记键给人话（散剪 / 整卷）；**未登记值如实回显**（不编默认值、不吞成空）。
+// 红证：把 `format: 'selling_method'` 摘掉（回到 raw）⇒ 本判据红。
+test('售卖方式内部键不上屏：bulk_cut ⇒ 散剪；未登记值原样回显', () => {
+  const block = firstSpecBlock(renderPage(
+    LOGGED_IN(),
+    viewWith([clothPosition({ selling_method: 'bulk_cut' })]),
+  ))
+  assert.equal(block.includes(specRow('售卖方式', '散剪')), true, 'bulk_cut ⇒ 散剪')
+  assert.equal(block.includes('bulk_cut'), false, '内部键不得上屏')
+
+  const other = firstSpecBlock(renderPage(
+    LOGGED_IN(),
+    viewWith([clothPosition({ selling_method: '定高买宽' })]),
+  ))
+  assert.equal(other.includes(specRow('售卖方式', '定高买宽')), true, '未登记值原样显示（不编默认值）')
+})

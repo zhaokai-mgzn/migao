@@ -604,6 +604,18 @@ export const READ_SURFACES = {
   // 共享表仍印**静态**空态「还没有工人档案…」⇒ 失败被画成「没有工人」。本面板的失败面走共享件
   // `ListLoadError`（`worker-profiles-load-failed` + `-retry` 由组件内部渲染）、失败读数 = 本地
   // `loadFailed`，失败时 `emptyText` 置空 ⇒ 登记后判据 ④ 才看得见它（不登记 = 假绿）。
+  // #8200 · P1-06：`/categories` 的空态是**组件式**的（`<EmptyState title="还没有商品分类">`），
+  // 判据 ③ 的文案面（`EMPTY_TEXT_RE`）扫不到它 ⇒ 改前「读接口 500」与「真的没有分类」在屏上
+  // 逐字相同。本包补常驻失败面（共享件 + 重试）并把这一形态交给判据 ⑥ 类级收口。
+  categories: {
+    issue: '#8200',
+    file: 'src/app/(dashboard)/categories/page.tsx',
+    anchor: 'categories-load-error',
+    retryAnchor: 'categories-load-error',
+    failureViaSharedComponent: true,
+    emptyTestId: 'categories-empty',
+    failureKey: 'categoriesLoadFailed',
+  },
   'worker-profiles': {
     issue: '#8063',
     file: 'src/components/employees/WorkerProfilesPanel.tsx',
@@ -672,7 +684,7 @@ export const PENDING_AUDIT = {
   },
   categories: {
     observed: '/categories（153 字壳页）',
-    evidence: '同 `/agent-workspace`：无数据区可观察 ⇒ 登记为「未分类 / 待判」，既不判红也不放行。',
+    evidence: '**已由 issue #8200 · P1-06 处理**（原登记「同 `/agent-workspace`：无数据区可观察」**复核不成立**：该页有真实读面 `categoryApi.getCategories()`，空态是**组件式** `<EmptyState title="还没有商品分类">` ⇒ 读失败与「真的没有分类」同屏，正是 DQ-1 禁止的形态）。修后：失败走常驻 `categories-load-error` + 重试、失败时不渲染空态；并由判据 ⑥（`componentEmptyStateOffenders`，判据承载体 `tests/unit/read-failure-component-empty-state-guard.test.ts`）把「组件式空态必须带失败锚」类级收口。保留登记作为审计沿革。',
   },
   'customers-detail-sessions': {
     observed: 'src/app/(dashboard)/customers/[id]/CustomerDetail.tsx 的「暂无订单记录 / 暂无会话记录」',
@@ -899,6 +911,107 @@ export function emptyStateSitesFromSource(source, { file = '<probe>.tsx', tsModu
 /** 该文件是否带**读面失败锚** */
 export function hasFailureAnchor(source) {
   return FAILURE_ANCHOR_RE.test(source)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 判据 ⑥（issue #8200 · P1-06）：「**组件式空态**」同样不许冒充读失败
+//
+// ## 为什么必须再来一条（上一把尺子的**射程盲区**，不是它写错了）
+//
+// 判据 ③ 只认**文案字面量**（`EMPTY_TEXT_RE` = `暂无` / `没有匹配的` / `还没有…(记录|数据|内容)`）。
+// `src/app/(dashboard)/categories/page.tsx` 的空态是**组件式**的：
+// `<EmptyState title="还没有商品分类" … />` —— 文案在 JSX 属性里、措辞不以「记录/数据/内容」收尾
+// ⇒ ①②③ 三条判据**全绿**，而真实现场是「读接口 500 ⇒ 屏上写『还没有商品分类』+『先建一个分类』」
+// （`PENDING_AUDIT.categories` 早就把这一页登记成「未分类/待判」，但没有任何判据会因此变红）。
+// 这正是 #8200 P1-06 的形态（DQ-1：不得把读失败冒充成空数据）。
+//
+// ## 判据（与 ③ **同一把尺子的另一条边**，不复制台账、不写第二份锚点正则）
+//
+// - 面内文件凡渲染**共享空态原语** `<EmptyState`（跨行 / 自闭合两种形态都认）⇒ 该文件必须带
+//   读面失败锚（复用 `hasFailureAnchor`）；
+// - 未登记即红；`COMPONENT_EMPTY_LEDGER` **只许缩短** + 僵尸条目即红；
+// - 空态原语自己（`src/components/ui/**`）是**纯展示件**，不在面内（它没有读面）。
+//
+// ## 边界（照实登记，§19.1）
+//
+// - 只认**共享原语**的调用点：手写空态（不用 `EmptyState`）判不了 —— 那一半由 ③ 的文案面
+//   与 ⑤ 的运行期面承担（三条判据各自射程不同，互为补集，不互为替代）；
+// - 只判「**同一文件**里有没有失败锚」：失败锚在父组件、空态在子组件的形态会**假红**
+//   （本仓惯例是页面自持失败面；真出现时按 §19.1 登记，不静默放宽）；
+// - 判不了「失败锚是不是真的接到了这次读失败上」（源码形态的固有边界）—— 那一半由实例判据
+//   （`tests/unit/pages/categories.test.tsx` 的「读失败 ⇒ 常驻失败面 + 重试」）承担。
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** 判据 ⑥ 的面：商家后台页面 + 业务组件（纯展示原语除外） */
+export const COMPONENT_EMPTY_SCOPES = ['src/app/(dashboard)', 'src/components']
+const COMPONENT_EMPTY_PRIMITIVES = new Set([
+  'src/components/ui/EmptyState.tsx',
+  'src/components/ui/Table.tsx',
+  'src/components/ui/TableSkeleton.tsx',
+  'src/components/ui/index.ts',
+])
+
+/**
+ * 取一段源码里全部 `<EmptyState …>` 调用点。
+ * `line` 只进 CLI 输出；台账键**不写行号**（活跃文件的行号几分钟就失效）。
+ */
+export function componentEmptyStateSitesFromSource(source, { file = '<probe>.tsx', tsModule = ts } = {}) {
+  const sf = tsModule.createSourceFile(file, source, tsModule.ScriptTarget.Latest, true, tsModule.ScriptKind.TSX)
+  const out = []
+  const visit = (node) => {
+    const tag = node.tagName
+    if (
+      (tsModule.isJsxOpeningElement(node) || tsModule.isJsxSelfClosingElement(node)) &&
+      tag &&
+      tsModule.isIdentifier(tag) &&
+      tag.text === 'EmptyState'
+    ) {
+      out.push({ file, line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1 })
+    }
+    tsModule.forEachChild(node, visit)
+  }
+  tsModule.forEachChild(sf, visit)
+  return out
+}
+
+/** 台账：**未接失败锚**的组件式空态（只许缩短；键 = 仓库相对文件路径） */
+export const COMPONENT_EMPTY_LEDGER = []
+/** 台账上界（现取 = 0，只许缩短） */
+export const COMPONENT_EMPTY_LEDGER_FLOOR = 0
+
+/** 命中清单（**单一源**）：面内每个渲染 `<EmptyState` 的文件 + 它有没有失败锚 */
+export function componentEmptyStateSites(root, scopes = COMPONENT_EMPTY_SCOPES) {
+  const files = []
+  for (const scope of scopes) {
+    for (const f of walk(join(root, scope))) {
+      const rel = relative(root, f).split('\\').join('/')
+      if (/\.test\.tsx?$/.test(rel) || COMPONENT_EMPTY_PRIMITIVES.has(rel)) continue
+      files.push(rel)
+    }
+  }
+  files.sort()
+  const sites = []
+  for (const file of files) {
+    const source = readFileSync(join(root, file), 'utf8')
+    const calls = componentEmptyStateSitesFromSource(source, { file })
+    if (calls.length === 0) continue
+    sites.push({ file, line: calls[0].line, count: calls.length, guarded: hasFailureAnchor(source), key: file })
+  }
+  return { files, sites }
+}
+
+/** 判红：渲染了组件式空态却**没有**失败锚、且没登记 */
+export function componentEmptyStateOffenders(root, ledger = COMPONENT_EMPTY_LEDGER, scopes = COMPONENT_EMPTY_SCOPES) {
+  const { files, sites } = componentEmptyStateSites(root, scopes)
+  const unregistered = sites.filter((s) => !s.guarded && !ledger.includes(s.key))
+  return { files, sites, unregistered, stale: componentEmptyStateStale(root, ledger, sites) }
+}
+
+/** 僵尸台账条目：登记了但**不再**命中（修好了 / 文件删了）⇒ 必须删条目 */
+export function componentEmptyStateStale(root, ledger = COMPONENT_EMPTY_LEDGER, sites = null) {
+  const scanned = sites ?? componentEmptyStateSites(root).sites
+  const stillUnguarded = new Set(scanned.filter((s) => !s.guarded).map((s) => s.key))
+  return ledger.filter((k) => !stillUnguarded.has(k))
 }
 
 /** 命中清单（**单一源**）：面内每个文件的空态断言 + 该文件有没有失败锚 */
@@ -1558,6 +1671,28 @@ if (isMain) {
       : '  ✅ 登记读面的共享表格都已显式把失败读数接进 emptyText、台账未超基线',
   )
 
+  // ── 第六条判据：组件式空态必须带读面失败锚（issue #8200 · P1-06） ──
+  const compEmpty = componentEmptyStateOffenders(root)
+  console.log(
+    `\n扫描 ${compEmpty.files.length} 个文件（${COMPONENT_EMPTY_SCOPES.join(' + ')}，含业务组件）· ` +
+      `命中「渲染 <EmptyState> 但没接失败锚」${compEmpty.sites.filter((x) => !x.guarded).length} 处 · ` +
+      `台账豁免 ${COMPONENT_EMPTY_LEDGER.length} 条（基线 ${COMPONENT_EMPTY_LEDGER_FLOOR}）\n`,
+  )
+  for (const x of compEmpty.sites) {
+    const mark = x.guarded ? '✅ 有失败锚' : COMPONENT_EMPTY_LEDGER.includes(x.key) ? '📝 已登记' : '❌ 未登记'
+    console.log(`  ${mark} [${x.file}] 第 ${x.line} 行 ${x.count} 处 <EmptyState>`)
+  }
+  for (const k of compEmpty.stale) console.log(`  🔴 僵尸台账条目（不再命中，必须删）：${k}`)
+  const badComponentEmpty =
+    compEmpty.unregistered.length > 0 ||
+    compEmpty.stale.length > 0 ||
+    COMPONENT_EMPTY_LEDGER.length > COMPONENT_EMPTY_LEDGER_FLOOR
+  console.log(
+    badComponentEmpty
+      ? '  🔴 判红：未登记「组件式空态没接失败锚」/ 僵尸条目 / 台账超基线'
+      : '  ✅ 面内组件式空态都带了读面失败锚、台账未超基线',
+  )
+
   // ── 第五条判据：运行期「读失败后屏上不得出现任何"没有数据"断言」（issue #6733） ──
   const runtimeUnregistered = unregisteredRuntimeSurfaces()
   const runtimeBad = runtimeGuardOffenders(root)
@@ -1591,6 +1726,7 @@ if (isMain) {
       dup.offenders.length ||
       dupStale.length ||
       badTableEmpty ||
+      badComponentEmpty ||
       badRuntime
       ? 1
       : 0,

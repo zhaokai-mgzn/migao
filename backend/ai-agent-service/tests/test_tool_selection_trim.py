@@ -1,4 +1,4 @@
-# case_ids: AG-009
+# case_ids: AG-009, PP-002, PP-016, PR-101
 """B 端工具面**按意图裁剪读面**（issue #8174）—— 保底 / 上限 / 关闭等价 / C 端不变 / 确定性。
 
 ## 被测事实（改前读数现取）
@@ -6,8 +6,8 @@
 - 改前：B 端每轮绑定 **35~39** 把工具（读面按 persona 家族全量并入，见 #4125），
   工具 schema 33~40KB、prompt 5.7~15KB。
 - 改后：同一轮读面按**本轮意图**打分保留到上限（`TOOL_TRIM_MAX_READ`，默认 16），
-  **保底集合永不被裁**（本 skill 写工具 + `ALWAYS_KEEP_TOOL_NAMES` + 上一轮用过的读工具），
-  且**只对 B 端（mibao）生效**。
+  **保底集合永不被裁**（本 skill 写工具 + `ALWAYS_KEEP_TOOL_NAMES` + 上一轮用过的读工具
+  + **意图属主 skill 的读工具**，最后一条见 issue #8300），且**只对 B 端（mibao）生效**。
 
 ## 每条判据都有红证（不会红的断言 = 空断言）
 
@@ -20,6 +20,7 @@
 | 确定性 | 同一输入连跑两次，顺序逐字一致 |
 | 写面不裁 | `read_only=False` 的工具集合前后相等 |
 | 字符数棘轮 | prompt / schema 字符数**都下降**（关闭裁剪 ⇒ 回落） |
+| **意图属主保底**（#8300） | `test_dropping_intent_owner_keep_reproduces_the_outage`：摘掉保底 ⇒ `settings_manage` 立刻被裁 |
 
 判据里用的"改前行为"由 `_oracle_names` **独立重算**（声明面 ∪ 家族只读，按注册表顺序），
 不复用被测实现，避免"判据自己证明自己"。
@@ -54,6 +55,11 @@ def _skill_names(agent_config) -> list:
 
 def _tool_names(skill: str) -> list:
     return list(get_skill_registry().get(skill).tool_names)
+
+
+def _intent_list(skill: str) -> list:
+    """该 skill **自己声明**的意图（真实可达组合；跨域组合只能人造）。"""
+    return list(get_skill_registry().get(skill).intents or [])
 
 
 def _read_only() -> frozenset:
@@ -127,12 +133,22 @@ def test_clearing_always_keep_set_cuts_them(monkeypatch):
 # ── 2. 上限生效（含"上限调大 ⇒ 红"）───────────────────────────────────────
 @pytest.mark.parametrize("skill", _skill_names(MIBAO_CONFIG))
 def test_bound_count_is_capped_for_every_mibao_skill(skill):
-    """开启裁剪 ⇒ 绑定数 ≤ 16；且改前确实 > 16（证明裁剪真的发生）。"""
+    """开启裁剪 ⇒ 绑定数 ≤ 16（+ 属主净增 ≤ `OWNER_EXTRA_MAX`）；且改前确实 > 16。
+
+    意图取该 skill **自己声明的**意图（真实可达组合）。注意 `notification` 这类意图会被
+    `nodes._get_intent_to_route` 过滤到 `general`（#6044 缺陷 C）⇒ 它们按「被过滤意图」处理，
+    会额外补 ≤ `OWNER_EXTRA_MAX` 把属主读工具 —— 这是**设计内的净增**（只加不减），
+    不是上限失效：上限仍钉住「分数排序那一层」的 16 把。
+    """
     tool_names = _tool_names(skill)
+    own_intent = (_intent_list(skill) or ["general"])[0]
     full = _bound(tool_names, None)
-    trimmed = _bound(tool_names, _plan(tool_names))
+    trimmed = _bound(tool_names, _plan(tool_names, intent=own_intent))
     assert len(full) > DEFAULT_CAP, f"{skill}: 改前只有 {len(full)} 把，判据面没有可裁空间"
-    assert len(trimmed) <= DEFAULT_CAP, f"{skill}: 裁剪后仍绑定 {len(trimmed)} 把（上限 {DEFAULT_CAP}）"
+    assert len(trimmed) <= DEFAULT_CAP + ts.OWNER_EXTRA_MAX, (
+        f"{skill}: 裁剪后绑定 {len(trimmed)} 把（上限 {DEFAULT_CAP}+{ts.OWNER_EXTRA_MAX}，"
+        f"自身意图 {own_intent}）")
+    assert len(trimmed) < len(full), f"{skill}: 裁剪没有减少任何工具（{len(trimmed)}/{len(full)}）"
 
 
 def test_raising_the_cap_disables_the_cap():
@@ -191,6 +207,157 @@ def test_order_intent_keeps_order_query():
     """「查订单」意图下 `order_query` 必须留下 —— 裁错工具才是本单的真实风险面。"""
     plan = _plan(_tool_names("order"))
     assert plan is not None and "order_query" in plan
+
+
+# ── 8. 意图属主 skill 的读工具必须保底（issue #8300）────────────────────────
+# 病灶（2026-11-01 真实 LLM 评测实测：normal 档 ST-001 / ST-002 / DA-025 确定性红）：
+# `nodes._get_intent_to_route` 按**绑定面**过滤意图 ⇒ `system_settings` / `ai_config`
+# 落到 fallback skill `general`（#6044 缺陷 C：`settings` 不在图上）。改动前 #4125 的
+# 「同 persona 家族只读并入」把 `settings_manage` 一起带进来；#8174 裁剪后它不在 general
+# 的声明面、词面又零分 ⇒ 被裁 ⇒ 模型改用保底的 `nav_guide` 回「菜单位置」，能力不可达。
+@pytest.mark.parametrize("intent,skill,tool", [
+    ("system_settings", "general", "settings_manage"),
+    ("ai_config", "general", "settings_manage"),
+    ("dashboard", "order", "dashboard_stats"),
+    ("processing_order_query", "general", "processing_order_set_query"),
+])
+def test_intent_owner_read_tools_survive_on_foreign_skill(intent, skill, tool):
+    """意图属主 skill 的读工具，在**落到别的 skill** 时也必须留在绑定面。"""
+    tool_names = _tool_names(skill)
+    plan = _plan(tool_names, user_message="查看系统设置", intent=intent)
+    if plan is None:  # 裸 `is not None` 是弱断言（tests/unit_ci_workflows/test_weak_assert_blindspots.py）
+        raise AssertionError(f"{skill}: 判据面没有触发裁剪（pool ≤ 上限），判据失效")
+    assert tool in plan, f"intent={intent} 落到 {skill} 时 {tool} 被裁（#8300 的病灶形态）"
+
+
+def test_dropping_intent_owner_keep_reproduces_the_outage(monkeypatch):
+    """红证：摘掉「意图属主读工具」这条保底 ⇒ 上一条**真的**会红（证明它不是恒真）。"""
+    monkeypatch.setattr(ts, "_intent_owner_read_tool_names", lambda _intent: [])
+    plan = _plan(_tool_names("general"), user_message="查看系统设置",
+                 intent="system_settings")
+    assert "settings_manage" not in (plan or []), (
+        "摘掉保底后 settings_manage 仍在保留集 —— 说明上一条不是靠这条保底通过的（空判据）"
+    )
+
+
+def test_every_foreign_intent_keeps_its_owner_read_tools():
+    """类级元守卫（#8300）：**任意** skill × **别家**意图 ⇒ 属主读工具至少留一个、且**只增不减**。
+
+    ⚠️ 刻意**不再**要求「属主读工具全留」（#8300 首版写法）：那正是 2026-11-01 全档评测
+    7 条转红的成因 —— 属主工具占满分数槽位，把本域的 `craft_config_query` /
+    `batch_stock_query` / `operation_catalog_query` 挤了出去。现行口径 =
+    「净增 ≤ `OWNER_EXTRA_MAX` 把、按相关度挑」+ 不减少既有保留集。
+    """
+    cfgs = [c for c in get_skill_registry().get_all()
+            if "mibao" in (c.system_prompts or {})]
+    read_only = _read_only()
+    checked = 0
+    original = ts._intent_owner_read_tool_names
+    baseline_without_owner = {}
+    try:
+        ts._intent_owner_read_tool_names = lambda _intent: []
+        for owner in cfgs:
+            for intent in (owner.intents or []):
+                for skill in cfgs:
+                    if skill.name == owner.name:
+                        continue
+                    baseline_without_owner[(skill.name, intent)] = _plan(
+                        _tool_names(skill.name), user_message="", intent=intent)
+    finally:
+        ts._intent_owner_read_tool_names = original
+    for owner in cfgs:
+        owner_read = [n for n in (owner.tool_names or []) if n in read_only]
+        if not owner_read:
+            continue
+        for intent in (owner.intents or []):
+            for skill in cfgs:
+                if skill.name == owner.name:
+                    continue
+                tool_names = _tool_names(skill.name)
+                baseline = baseline_without_owner[(skill.name, intent)]
+                if baseline is None:
+                    continue
+                plan = _plan(tool_names, user_message="", intent=intent)
+                if plan is None:  # 同上：把弱断言换成显式失败，判据语义不变
+                    raise AssertionError(
+                        f"skill={skill.name}: 意图 {intent} 未触发裁剪，判据面失效")
+                # ① 只许加：关闭属主保底时的保留集必须仍是子集（净增口径）
+                removed = [n for n in baseline if n not in plan]
+                assert not removed, (
+                    f"skill={skill.name} intent={intent}（属主 {owner.name}）"
+                    f"挤掉了 {removed} —— #8300 第二形态的病灶")
+                # ② 属主工具至少留一个（否则「保底」名存实亡）
+                hits = [n for n in owner_read if n in plan]
+                assert hits, (
+                    f"skill={skill.name} intent={intent}（属主 {owner.name}）"
+                    f"一个属主读工具都没留下 —— #8300 的病灶形态")
+                checked += 1
+    assert checked >= 10, f"判据面过小（{checked} 组合）—— 元守卫退化成空判据"
+
+
+# ── 4b. 属主保底必须**净增**（#8300 第二形态：2026-11-01 全档评测回归）──────────
+# 实测（run 41268493564，B 端 normal 82 条）：PP-016/PP-017/PP-019/PP-020/PP-002/PR-101/CH-044
+# 七条**从绿转红** —— 属主工具占了分数槽位 ⇒ `craft_config_query` / `batch_stock_query` /
+# `operation_catalog_query` / `image_recognize` 被挤出绑定面（同一 (skill,intent,message) 下
+# 摘掉属主保底反而保留它们）。修法：属主工具只补「被意图过滤挡在声明面之外」的那些、按相关度
+# 取前几个，且**不占分数槽位** ⇒ 属主保底只许加、不许换。
+_OWNER_NET_ADDITIVE_MATRIX = [
+    # (skill, message, intent)：三个真实形态 —— 批次余量（PR-101）/ 工艺路线（PP-016/017）/ 工序库（PP-002）
+    ("general", "批次余量、剩料分布在哪一页？快用完的批次在哪看", "general"),
+    ("general", "工艺路线配置在哪一页？工序库在哪？", "general"),
+    ("general", "工序库在哪", "general"),
+]
+
+
+def test_intent_owner_keep_never_removes_a_baseline_tool(monkeypatch):
+    """属主保底**只许加**：同一输入下，开启它之后的保留集必须 ⊇ 关闭它时的保留集。"""
+    off = {}
+    monkeypatch.setattr(ts, "_intent_owner_read_tool_names", lambda _intent: [])
+    for skill, message, intent in _OWNER_NET_ADDITIVE_MATRIX:
+        off[(skill, intent, message)] = _plan(
+            _tool_names(skill), user_message=message, intent=intent)
+    monkeypatch.undo()
+
+    for skill, message, intent in _OWNER_NET_ADDITIVE_MATRIX:
+        baseline = off[(skill, intent, message)]
+        if baseline is None:  # 裸存在断言是弱断言（tests/unit_ci_workflows/test_weak_assert_blindspots.py）
+            raise AssertionError(f"{skill}/{intent}: 判据面没有触发裁剪")
+        plan = _plan(_tool_names(skill), user_message=message, intent=intent)
+        if plan is None:  # 同上
+            raise AssertionError(f"{skill}/{intent}: 开启属主保底后没有触发裁剪（pool ≤ 上限），判据失效")
+        removed = [n for n in baseline if n not in plan]
+        assert not removed, (
+            f"{skill}/{intent}: 属主保底把本来保留的工具挤掉了 {removed} —— "
+            f"2026-11-01 全档评测的病灶形态（7 条转红）")
+
+
+def test_owner_keep_is_net_additive_for_every_skill_intent():
+    """类级元守卫（#8300）：**任意** skill × **任意**已注册意图 ⇒ 开启属主保底不减少保留集。"""
+    cfgs = [c for c in get_skill_registry().get_all()
+            if "mibao" in (c.system_prompts or {})]
+    intents = sorted({i for c in cfgs for i in (c.intents or [])})
+    assert len(intents) >= 5, f"意图面过小（{len(intents)}）—— 元守卫退化成空判据"
+    checked = 0
+    original = ts._intent_owner_read_tool_names
+    for skill in cfgs:
+        tool_names = _tool_names(skill.name)
+        baseline = {}
+        try:
+            ts._intent_owner_read_tool_names = lambda _intent: []
+            for intent in intents:
+                baseline[intent] = _plan(tool_names, user_message="", intent=intent)
+        finally:
+            ts._intent_owner_read_tool_names = original
+        for intent in intents:
+            plan = _plan(tool_names, user_message="", intent=intent)
+            base = baseline[intent]
+            if base is None or plan is None:
+                continue
+            removed = [n for n in base if n not in plan]
+            assert not removed, (
+                f"skill={skill.name} intent={intent}: 属主保底挤掉了 {removed}")
+            checked += 1
+    assert checked >= 10, f"判据面过小（{checked} 组合）—— 元守卫退化成空判据"
 
 
 def test_recent_tool_survives():

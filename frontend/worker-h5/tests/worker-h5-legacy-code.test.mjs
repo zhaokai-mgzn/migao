@@ -148,3 +148,22 @@ test('🔴 接线护栏：app.mjs 的「选部位」必须**重新解析**（只
   assert.match(app, /legacySelection\(/, '选择的合法性判据必须走纯函数（新码恒 null）')
   assert.match(app, /selection:\s*(v|state\.view)\??\.__selection/, '报工必须回传 __selection（服务端据此重解析同一部位）')
 })
+
+// ── 措辞（用户 2026-11-01）：「我们也不应该出现旧码的可能性」──────────────��─────────
+// 加工单码是**现在**印在加工单纸面上的码（2026-10-27 裁定迁过去的），不是「旧东西」；
+// 屏上不该自称「旧码」。多套/多部位时仍然要让工人选（只在唯一能定位时免选，见后端）。
+test('选择屏不再自称「旧码」，且能唯一确定时不进这一屏（免选由服务端直接给部位级）', () => {
+  const state = reduce(initialState(), { type: 'worker', worker: { workerName: '张三', workerNo: 'G001' } })
+  const withView = reduce(state, {
+    type: 'resolved',
+    view: {
+      granularity: 'order',
+      processing_order_no: 'JG-20261101-9999',
+      needs_selection: ['set', 'position'],
+      selections: [{ set_id: 's-1', set_no: 'JG-20261101-9999-001', positions: [{ order_item_id: 'i-1', position_name: '布帘' }] }],
+    },
+  })
+  const html = renderPage(withView)
+  assert.ok(!html.includes('旧码'), '屏上不得再出现「旧码」这个词')
+  assert.match(html, /请选择套号与部位/, '仍然要能看出「这一步是选套/部位」')
+})

@@ -846,7 +846,7 @@
 真值: auth.qr-login-ticket
 溯源: 2026-10-26 新增（issue #7825）：现场 = 顶栏「手机端」二维码只是裸链接（不带登录交接），换浏览器 / App 或本机存储被清后每次扫码都要重新输密码。冻结口径 = 一次性票据（JWT 类型 qr_login、120 秒、兑换即吊销 jti）+ 手机端兑换后与密码登录同一套 30 天会话 + 签发失败降级裸入口 + 启动探针（续期失败原因本地可读）。 ｜ tags: auth, session, qr-login, bmini, admin-web
 
-## B 端小程序域（54 case）
+## B 端小程序域（60 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -1593,9 +1593,9 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-10-27 新增（issue #7944）：用户要求手机端登录记住企业编码 + 员工账号拆两格固定 `@`。口径 = 企业编码按登录面分开记住（员工面 / 工人面）、只在成功登录后写、退出登录不清；`@` 是静态文本不用输入；旧版整串标识按最后一个 `@` 拆开迁移；🔴 issue #6478 的凭据红线**一格不放宽**（密码 / PIN / 验证码仍绝不落盘）。口径替换（用户口述「让浏览器记录」→ 仓内既有 localStorage 约定）已写进 CHANGELOG 与 PR body。取号说明：scripts/next_case_id.py 现取最小空闲号返回 BM-007，但该号是 issue #6868 退役用例（PR #6877 删除）的墓碑号，复用会让历史引用（原 BM-007 = 部位规格行）指错 ⇒ 本包取现取最大号 + 1 = BM-055，理由与命令登记在本 PR body。 ｜ tags: bmini, auth, login, ux
 
-### BM-056. 工人端库存修正 - 手机/APK 按批次把余量改成实盘米数（复用按批次盘点唯一写面 + 幂等 + 台账可答「谁/为什么」） 🔵
+### BM-056. 工人端库存修正 - 手机/APK 按批次把余量改成实盘米数（拍照识别批次号：标签码 0 次 LLM 优先 + OCR 兜底 + 手输；复用按批次盘点唯一写面 + 幂等 + 台账可答「谁/为什么」） 🔵
 ```
-你: 工人（工号 + PIN 登录后）在工作台点「库存修正」→ 搜批次（批次号 / 货号 / 缸号 / 入库单号任一段，空关键词 = 最近入库）→ 看到系统余量 → 选中该批 → 填实盘米数（例如系统说 45.5 米、实盘 42 米）+ 选原因（数量记错了 / 破损报废 / 报工选错批次 / 其他）→ 二次确认「系统 45.5 米 → 实盘 42 米」→ 提交 → 回执显示盘前 / 实盘 / 差异 / 盘后
+你: 工人（工号 + PIN 登录后）在工作台点「库存修正」→ 搜批次（批次号 / 货号 / 缸号 / 入库单号任一段，空关键词 = 最近入库）→ 或点「拍照识别批次号」（拍标签：有我们的二维码 ⇒ 本机解码按短码读批次号，0 次 LLM；只有批次号文字 ⇒ 走 OCR，取严档 0.90 且形状必须是 PC-yyyyMMdd-NNNN）→ 认出后自动定位到那一批 → 看到系统余量 → 选中该批 → 填实盘米数（例如系统说 45.5 米、实盘 42 米）+ 选原因（数量记错了 / 破损报废 / 报工选错批次 / 其他）→ 二次确认「系统 45.5 米 → 实盘 42 米」→ 提交 → 回执显示盘前 / 实盘 / 差异 / 盘后
 期望: direct_reply
 数据: 判据 1·**未登录零读写**：无工人 session ⇒ 两个端点都 401，服务层零调用；页面只渲染引导 + 去登录（`WORKER_LOGIN_ROUTE`）。红证：摘掉 gate ⇒ `tests/worker-stock-page.test.tsx` ① 红；控制器侧 = `WorkerBatchStockControllerTest` ①（无 session ⇒ 401 且 `verify(never())`）
 数据: 判据 2·**复用唯一写面（不是第二套库存逻辑）**：本类不写任何表，只调 `BatchStocktakeService#stocktake`，参数逐值钉住（tenant 来自会话上下文、productId 由批次行解析、runId = `wc-<client_request_id>`、实盘行、审计来源）。红证：把 productId 改成请求体自带 ⇒ `WorkerBatchStockServiceTest` ① 的 ArgumentCaptor 断言红
@@ -1607,10 +1607,11 @@
 数据: 判据 8·**端侧幂等键语义**：同一份输入重试 ⇒ 复用同一个 `client_request_id`；改了米数 / 原因 / 备注 ⇒ 换新键（否则服务端按回放处理，静默不落账）。红证：每次提交都新生成 ⇒ `tests/worker-stock-page.test.tsx` ⑦ 红
 数据: 判据 9·**入口可达 + 写入口台账 + 视觉形态**：`pages/worker/stock/index` 登记进 `app.config.ts` 且工人首页有**真导航**（漏登记 = 死链 ⇒ `page-entry-reachability` 红）；`submitBatchCorrection(` 登记进工人写入口台账（未登记即红，且必须命中身份分流 + 引导登录记号）；新页 `__gate` 卡片有可见边界、页面有非白底色（`worker-card-contrast-guard`）
 数据: 判据 10·**菜单开关可设**：`WorkerPages.STOCK = stock` 进闭词表与默认集合，商家后台「设置工人端菜单」能看到「库存修正」（目录端点 `labels.stock`）；`/w/` 的闭词表镜像同批更新（`worker-h5-pages` 逐值比对）。红证：只改后端不改镜像 ⇒ `frontend/worker-h5/tests/worker-h5-pages.test.mjs` 红
-跳过: [backend-contract] 确定性判据（maven: WorkerBatchStockControllerTest / WorkerBatchStockServiceTest / WorkerPagesTest / WorkerPageCatalogControllerTest；jest: worker-stock-page / worker-stock / page-entry-reachability / worker-surface-ledger / worker-card-contrast-guard；node: worker-h5-pages），非 LLM 行为，不进入 agent-eval 冒烟
+数据: 判据 11·**拍照识别批次号（issue #8210）三段式**：① 标签二维码命中 ⇒ 本机解码 + 按短码读详情，**0 次 LLM**（`upload` / `recognize` 零调用）；② 解不出码 ⇒ 上传后走 ai-agent vision（target `batch`，阈值 0.90，批次号形状硬闸 `^PC-\d{8}-\d{4}$` 且日期成立）；③ 都失败 ⇒ **手输出路**（不静默）。认出后用**既有**搜索面按批次号**精确**定位（`PC-...-0001` 不得被 `PC-...-00011` 冒充）；同号多行交工人点选；0 行 ⇒ 明说「没找到批次 X」。识别**不落库、不提交**（提交仍是工人填实盘数 + 二次确认）。红证：把 vision 排到扫码前 ⇒ `frontend/bmini-app/tests/worker-stock-recognize.test.ts` ① 的假服务端计数红；放行坏形状 ⇒ `backend/ai-agent-service/tests/test_vision/test_recognizer.py::TestBatchNoHardGate` 红
+跳过: [backend-contract] 确定性判据（maven: WorkerBatchStockControllerTest / WorkerBatchStockServiceTest / WorkerPagesTest / WorkerPageCatalogControllerTest；jest: worker-stock-page / worker-stock / worker-stock-recognize / page-entry-reachability / worker-surface-ledger / worker-card-contrast-guard；pytest: tests/test_vision/test_targets.py + test_recognizer.py；node: worker-h5-pages），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: batch-stocktake.worker-correction
-溯源: 2026-10-29 新增（issue #8104）：用户逐字「手机端还要增加一个库存修正的功能，apk程序也要同步增加这个功能，允许工人对某个批次的布匹进行修正」。形态 = bmini 新页 `pages/worker/stock/index`（手机 `https://app.migaozn.com/b/` 与 APK 观星台终端加载的同一份 `/b/` 页面 ⇒ APK 无需重打包，菜单随页面发布出现）。服务端 = `/api/worker/batch-stock/{batches,correction}`，**复用**按批次盘点的唯一写面（不新造第二套库存逻辑、不新增迁移）。边界：不做盘点单（无单号/审批/打印）；一次提交只改一个批次；不新增批次来源 reason（工人修正 = 实盘为准，沿用 `reason=stocktake`，如需在台账上把「工人修正 / 商家盘点」分列 ⇒ 另开迁移单）；小程序发版是人工环节（#7806：合并 ≠ 用户手机已是新版，`/b/` H5 腿自动发布）。 ｜ tags: bmini, worker, stock, batch-stocktake, idempotency
+溯源: 2026-10-29 新增（issue #8104）：用户逐字「手机端还要增加一个库存修正的功能，apk程序也要同步增加这个功能，允许工人对某个批次的布匹进行修正」。形态 = bmini 新页 `pages/worker/stock/index`（手机 `https://app.migaozn.com/b/` 与 APK 观星台终端加载的同一份 `/b/` 页面 ⇒ APK 无需重打包，菜单随页面发布出现）。服务端 = `/api/worker/batch-stock/{batches,correction}`，**复用**按批次盘点的唯一写面（不新造第二套库存逻辑、不新增迁移）。边界：不做盘点单（无单号/审批/打印）；一次提交只改一个批次；不新增批次来源 reason（工人修正 = 实盘为准，沿用 `reason=stocktake`，如需在台账上把「工人修正 / 商家盘点」分列 ⇒ 另开迁移单）；小程序发版是人工环节（#7806：合并 ≠ 用户手机已是新版，`/b/` H5 腿自动发布）。 2026-10-31 追加（issue #8210；用户逐字「移动端……通过拍照来识别批次号」）：加识别入口 `POST /api/worker/batch-stock/recognize`（工人 session，复用 `POST /api/worker/inbound/upload` 上传腿）+ ai-agent 新 vision target `batch`（一格 `batch_no`，阈值 0.90，形状硬闸在置信度闸之前）；端侧顺序 = 扫标签二维码（0 次 LLM）→ OCR 兜底 → 手输，认出后按批次号精确定位到**既有**修正页。边界：不新增库存写面 / 不新增 reason 族 / 不新增迁移；未过账标签**不退回 OCR 猜**；旧系统批次号不认（手输）。 ｜ tags: bmini, worker, stock, batch-stocktake, idempotency
 
 ### BM-057. 小程序工人登录 = 终端 /w/ 同一份表单 - 扫码报工页未登录就地登录（不跳三角色登录页），工人首页入口复用同一组件 🔵
 ```
@@ -1625,6 +1626,83 @@
 ```
 真值: inbound-order-flow.worker-narrow-surface
 溯源: 2026-10-31 新增（issue #8194）：改前扫码报工页未登录把工人**踢到三角色登录页**（表单的标题 / 副标题 / 字段（还多一格「设备标签」）/ 配色都与终端 /w/ 不同，手里的码还要绕一圈才接着报）；改后未登录在报工页**就地**渲染与 /w/ 逐字一致的共享组件 WorkerLoginForm，登录成功留在本页继续那个码（无码回工人首页）。工人首页的「去登录工人身份」也改落同一份组件（pages/worker/login/index 重写为壳）。三角色登录页与 ?tab=worker **一字未动**（保留为常规入口）。卡片形态与 `/w/` 的 `.wh5-card` **同值**（padding 16 CSS px / 圆角 16 / 间距 12 / 同一条阴影，白卡落在 `#faf7f2` 页面底上）；未登录态**不渲染报工页页头**（用户同日裁定「不一致，需要收口」——`/w/` 的登录屏只有一张卡片，两层标题会读成两个页面）。视觉对比（/b/ vs /w/，390×844）留给多模态验收（migao-dev-flow §15.7）。 ｜ tags: bmini, worker, login, parity, h5
+
+### BM-058. 微信「扫普通链接二维码打开小程序」（A 档）- 短链 JSON 解析换 token、q 四种落地与解码边界、校验文件承接 🔵
+```
+你: 工人在微信里用「扫一扫」扫纸上的 https://app.migaozn.com/s/<短码> ⇒ 微信按后台规则**直接打开小程序** pages/worker/report/index（整条链接在 getEnterOptionsSync().query.q，URL-encoded）；小程序不跟随 302 ⇒ 页面先调 GET /s/<短码>/json 拿 token，再走既有报工 / 就地登录流程
+期望: direct_reply
+数据: 判据 1·**JSON 面的形状与不泄露**（backend/admin-api/src/test/java/com/migao/admin/controller/WorkerShortLinkControllerTest.java）：GET /s/{短码}/json ⇒ 200 `{reportPath, token}`，键集**恰好**这两个（不含工人 / 工序 / 订单 / 价格 / 租户参数，也不查企业编码）；未知 ⇒ 404 `{error:not_found}`、已撤销 ⇒ 410 `{error:revoked}`；手输抄错形态（小写 / O→0）同样可用；`/s/{32位token}/json` ⇒ 404 且一次库都不查。
+数据: 判据 2·**印刷品红线：旧路径任何 Accept 下仍是 302**（同文件）：GET /s/{短码} 在 `Accept: text/html`、`Accept: application/json`、**无 Accept** 三种姿态下都 302 到 `/b/report/?t=…` —— 落点因此选显式子路径而**不是**内容协商（不带 Accept 的扫码工具不会被切成 JSON 文本）。
+数据: 判据 3·**A 档端侧四种落地**（frontend/bmini-app/tests/worker-report-wechat-qr.test.tsx）：q=/s/<短码> ⇒ 先 JSON 解析（只一次）再以 **token** 解析一屏（不是短码）；未登录 ⇒ 登录**前**就解析（无效码当场说清）、登录后接着报这个 token；q=…/b/report/?t= ⇒ 不调 JSON、直接用 t；页面参数 t 与无码直进行为不变（无码不发请求、不导航）；未知/撤销 ⇒ 明确错误上屏、只解析一次、不出报工入口、死码不跨登录带走；JSON 面读不到 ⇒ 退回「短码原样交给工人扫码端点」。
+数据: 判据 4·**解码边界**（同文件）：q 里的链接 URL-encoded（中文 / 百分号 / `+` / 重复参数）都能取出同一个短码；非法百分号编码**不抛**（读参数不许变成白屏）；重复 t 取第一个；`/s/` 链接同时带 t 参数时以 t 为准（不再申请 JSON 解析）。
+数据: 判据 5·**客户端请求形状**（frontend/bmini-app/tests/worker-short-link-service.test.ts）：GET …/s/<短码>/json、`Accept: application/json`、**不带**商家凭据（短码在纸上，这一跳不是身份入口）；404/410 不抛、状态码原样带回；200 无 token ⇒ 当成读不到（不把空 token 交给报工解析）。
+数据: 判据 6·**校验文件承接**（tests/unit_ci_workflows/test_wechat_verify_route.py）：`app.migaozn.com` 段有**唯一**一条窄正则 location（`^/[^/]+\.txt$` + `try_files $uri =404`）⇒ 根下 .txt 缺失 **404**、绝不回落 index.html；不劫持 /b/ /w/ /terminal/ 与根级 SPA 路由；`deploy.sh` 的落位段**真跑**：只拷 *.txt、只增/覆盖、幂等、父目录 index.html 哈希不变、源空/缺目录时出声且退出 0；仓库不许预置假校验文件（README 写清「原样放入、别改名」）。
+跳过: [backend-contract] 确定性前后端判据（Java MockMvc + jest + pytest 的 nginx 语义模拟/沙箱真跑），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: processing-manage.scan-report-landing-path, processing-manage.wechat-qr-a-open
+溯源: 2026-10-31 新增（issue #8196）：A 档「扫普通链接二维码打开小程序」的**仓库侧**。小程序不能跟随 302 ⇒ 新增显式 JSON 面 `GET /s/{短码}/json`（旧 `/s/` 任何 Accept 仍 302，已印出去的码不受影响）；报工页从 `q` 取短码→token（未登录就地登录后继续）；微信校验文件的落位（`deploy/swas/wechat-verify/` + `deploy.sh` 幂等拷贝 + nginx 根下 `.txt` 显式面）。用户侧的 appid / 上传私钥 / 后台规则 / 提审未做 ⇒ **部分交付**（PR 不写关闭词）。 ｜ tags: bmini, worker, qr, wechat, short-link, nginx
+
+### BM-059. 工人菜单页面键闭词表：bmini 的 WORKER_MENU_KEYS 必须是后端 WorkerPages 常量的子集（只许缩小，不许发明） 🔵
+```
+你: 商家后台「设置工人端菜单」勾了某项而工人端没出现 / 后端改了页面键而小程序没跟上：两处各自测试都绿，没有任何判据会红
+期望: direct_reply
+数据: 判据（frontend/bmini-app/tests/worker-menu-single-source.test.ts，**现取**两端源码、不做文本快照）：bmini `src/utils/workerMenu.ts` 的 `WORKER_MENU_KEYS` 每个值都必须在 `backend/admin-api/src/main/java/com/migao/admin/worker/WorkerPages.java` 的 `public static final String <键名> = <键值>;` 常量值里**逐字**找到（前端**不许发明**后端没有的键）；键值唯一（两个菜单名同一个键会互相影响显隐）；后端闭词表解析为空 / bmini 键集为空 ⇒ fail-closed；判别力自证 = 发明键（kitchen）/ 重复键 / 后端撤键（to_ship）各自判红。方向 = **只许缩小**：后端新增键**不**强制小程序加菜单（后端键还服务 /w/ 与工人档案配置）。
+跳过: [backend-contract] 跨语言静态同源判据（jest 现取 Java 常量 + TS 常量），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: processing-manage.worker-menu-pages
+溯源: 2026-10-31 新增（issue #8196 目标 ⑤）：收口「工人菜单有第二份映射」—— bmini 把后端页面键字面量抄了一份（WORKER_MENU_KEYS），两端之间原先**没有判据**（后端加键 / 前端拼错都不会红）。新增子集守卫（只许缩小）；菜单的标签与路由仍只在 bmini 一份（后端只下发可见页面键集合），故不另造标签映射。 ｜ tags: bmini, worker, worker-menu, single-source, cross-language
+
+### BM-060. 报工详情页成品入库卡 + 50×70 入库标签打印（数据只来自服务端 finished_inbound；打印走行式标签通道；小程序离屏画布） 🔵
+```
+你: 工人扫「套 × 部位」码 → 报完最后一道 → 本页出现「成品入库 · 仓位 A-01」卡：质检结论、入库单号、标签行（品名/色号/入库日期/数量）与短码；点「打印入库标签（50×70）」经小程序 BLE / 手持终端 / 浏览器蓝牙打出 50×70 标签；服务端没给 finished_inbound 时整卡不渲染。
+期望: direct_reply
+数据: 判据 1·🔴 数据只来自服务端：卡片与标签行逐字取 finished_inbound（bin_code / inbound_no / label.rows / label.short_code / quality），端侧不拼业务字段；缺值按「未分配」/「—」/ 无记录=正常。红证：把行数据改成端侧常量或补字段 ⇒ frontend/bmini-app/tests/rows-label-layout.test.ts 的 L2 与 worker-report-page.test.tsx 的 ⑦ 判红
+数据: 判据 2·🔴 纸型 50×70 固定：布局只从 label-50x70 介质取纸型 / 像素口径，成品标签高 = 70mm；宽度与纸长不另写一份。红证：删掉 fixedLengthMm ⇒ L2 红；在布局里写像素字面量 ⇒ tests/inbound-print-geometry-single-source.test.ts 的 C2b 红
+数据: 判据 3·🔴 送打印只走 printRowsLabel：顺序 = 能力探测 → 渲染 → 送打印机（这两类纸无服务端留痕端点）；能力不可用 ⇒ 按钮 disabled 且先给可行动文案。红证：把按钮改成点了才判 / 页面直连 .print ⇒ inbound-print-channel.test.ts 的 D7 红；worker-report-page.test.tsx 的 ⑨ 红
+数据: 判据 4·小程序可打印：无 DOM 时画布工厂改用 Taro.createOffscreenCanvas（h5 仍用 DOM canvas）；取不到位图 ⇒ 渲染抛错（不静默打印白图）。红证：去掉离屏画布分支 ⇒ worker-report-page.test.tsx 的 ⑦ 渲染失败；去掉 requirePixels ⇒ rows-label-layout.test.ts 的 L5 红
+跳过: [frontend-contract] 确定性页面 / 版面判据（jest: rows-label-layout / worker-report-page / inbound-print-channel），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-10-31 新增（issue #8287：用户「打包的工人要在报工详情页面增加成品入库功能并打印入库标签」）。改动 = bmini 报工页渲染服务端随扫码 / 报工回执下发的 finished_inbound 卡（仓位 / 质检 / 入库单 / 标签行 / 短码），并接 50×70 行式标签打印；共用 rowsLabel 版面 + printRowsLabel 入口；小程序画布改走离屏画布（此前无 DOM 直接抛错 ⇒ 小程序打印实际不可用，本单一并修）。边界：这两类纸无服务端打印留痕端点（与 /w/ 一致），入库标签的必留痕红线仍只约束 printInboundLabel。 ｜ tags: bmini, inbound, print, finished-goods, weapp
+
+### BM-061. 待发货单整套出库单（发货联）50×70 预览 + 打印 —— 行清单与 /w/ 同源，仍不新增发货写路径 🔵
+```
+你: 工人在「待发货单」列表点某单「发货联」→ 屏上出现 50×70 纸面的行清单（订单号 / 收货人 / 电话 / 地址 / 帘种 / 安装小区 / 安装位置 / 物流类型 / 物流公司 / 下单日期 / 套数 / 备注）→ 点「打印发货联（50×70）」经共享行式标签通道打出整套出库单；缺值印 —、可选附注缺值整行不印；本页仍不发货。
+期望: direct_reply
+数据: 判据 1·🔴 行清单与 /w/ 逐行等价：bmini buildShipLabelRows 与 frontend/worker-h5/src/shipment.mjs 的 buildShipLabelRows 对同一组 fixture（全字段 / 最小 / 可选全缺 / 时区 / 缺值）逐行相等。红证：任一侧改行序 / 缺值规则 / 日期 ⇒ frontend/bmini-app/tests/ship-label-rows-parity.test.ts 红（逐字段点名）
+数据: 判据 2·🔴 日期按 Asia/Shanghai：16:30Z ⇒ 次日；不按 UTC 切。红证：改成本地 / UTC 取日 ⇒ parity P4 与 worker-shipment-orders-page.test.tsx 的 ⑧ 红
+数据: 判据 3·🔴 纸长按内容撑开 70~150mm、50mm 宽、像素口径只取介质矩阵；长内容可见省略 / 折行，超上限停止追加并给 warnings。红证：把纸长写死 / 删 warnings ⇒ rows-label-layout.test.ts 的 L3 红
+数据: 判据 4·🔴 仍然不新增发货写路径：页面只读列表 + 打纸，不调 ship 端点；送打印只走 printRowsLabel（页面无 .print）。红证：页面里加 .print 直连 ⇒ inbound-print-channel 的 D7 红；加 ship 调用 ⇒ 现有测试的 mock 服务导出不存在即红
+跳过: [frontend-contract] 确定性页面 / 跨端行清单判据（jest: ship-label-rows-parity / worker-shipment-orders-page / rows-label-layout），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-10-31 新增（issue #8287：用户「整单出库功能要能做成品出库，并打印标签」）。现状：成品出库写路径已存在（拍照发货 / PC 发货 → POST /api/worker/shipment/orders/{id}/ship；服务端已过账 outbound source=ship），本单补的是手机端整套出库单纸面：待发货单列表逐单「发货联」预览 + 50×70 打印，行清单与 /w/ 的 buildShipLabelRows 同源（parity 现取两侧比对）。明确不做第二条发货写路径（PR 写明）。 ｜ tags: bmini, worker, shipment, label, print
+
+### BM-062. 拍照入库识别链三步各自封顶 + 分步进度 —— 不许把工人锁死在灰按钮上 🔵
+```
+你: 工人在真机点「识别」后，屏上依次出现「正在读取照片… / 正在上传照片… / 正在识别标签…」；任一步超过上限 ⇒ 按钮恢复、给出点名那一步的人话错误，可重试，也可改用扫码或手工录入。
+期望: direct_reply
+数据: 判据 1·🔴 三步各自封顶（读图 15s / 上传 20s / 识别 60s），超时文案点名那一步。红证：删掉任一处 withTimeout 接线 ⇒ frontend/bmini-app/tests/inbound-recognize-timeout.test.ts 的「判据 1」红
+数据: 判据 2·🔴 超时后按钮必须恢复：finally 里 setBusy(false) 且 setProgress('')。红证：去掉 setProgress('') ⇒ 「判据 2」红
+数据: 判据 3·🔴 识别中要有可见进度：data-testid=inbound-progress 仅在 busy 且 progress 非空时渲染。红证：删掉该节点 ⇒ 「判据 3」红
+数据: 判据 4·🔴 正式版文案不许出现型号 / 品牌 / 选机指令（DP235S、「DP 开头」、德佟）。红证：把任一句改回 ⇒ 文案组判据点名那个文件
+跳过: [frontend-contract] 确定性页面接线判据（jest），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-11-01 新增（issue #8307 真机取证：拍照入库点「识别」永久置灰、无进度无超时，2/2 复现）。本单给三步各自封顶 + 分步进度 + 正式版文案收口；真机复测在发布后进行。 ｜ tags: bmini, worker, inbound, timeout
+
+### BM-063. 上传照片：h5 走 Blob 直传，不再依赖 Taro.uploadFile 的裸 XHR（真机卡死的根因） 🔵
+```
+你: 工人在手持机上拍照 / 选图后点「识别」：照片照常上传成功并进入识别；网络真断时给「照片上传超时，请检查网络后重试」，按钮恢复可重试。
+期望: direct_reply
+数据: 判据 1·🔴 有 Blob 时走 FormData 直传（字段名 files、不设 Content-Type），一次都不调用 Taro.uploadFile。红证：改回走 Taro.uploadFile 并把该 mock 设为永不返回 ⇒ frontend/bmini-app/tests/inbound-upload-blob.test.ts 超时红
+数据: 判据 2·🔴 只有 blob: 串时先 fetch 读成 Blob 再直传。红证：跳过 fetch ⇒ 该条红
+数据: 判据 3·🔴 读不到 Blob 时回落 Taro.uploadFile（不静默失败）。红证：去掉回落 ⇒ 该条红
+数据: 判据 4·🔴 响应按服务端 data[0].url 归一，非 JSON 给明确文案。红证：改读 data.url ⇒ 该条红
+跳过: [frontend-contract] 确定性服务层判据（jest），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-11-01 新增（issue #8307 真机复测：超时兜底生效并指认卡点=上传；读码得因 = taro-h5 uploadFile 的 convertObjectUrlToBlob 裸 XHR 无 error 回调）。本单改 Blob 直传，页面与拍照发货共用同一入口。 ｜ tags: bmini, worker, inbound, upload
 
 ## 分类域（3 case）
 
@@ -1767,6 +1845,8 @@
 数据: 闲聊回复不调用 tool
 数据: product_detail 正确使用 product_search 返回的 ID（按商品名解析到同一件，不重新问顾客）
 前置: product_count_for_keyword(source=遮光窗帘、expect=1)
+必须成功: product_search
+必须成功: product_detail
 ```
 真值: ai-chat.intent-domains, ai-chat.context-memory
 溯源: eval M012 独有；2026-09-14 自包含化（issue #3599）：序号指代 → 点名种子内真实商品；2026-09-19（issue #4454 的 burn-down 缴费 —— 本用例命中的唯一一条存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION，metric=entries ⇒ 必须整条销账）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（**有意不声明 `namespaces`**：只读用例声明它会被判 CASE-TRUST-NO-SELF-CLEAN = 账面新增违规，与「只许缩短」冲突） —— R5 按**商品名**定位商品，「该名字唯一」是它真正依赖且**只读**的前置（同名副本 >1 时 agent 会正确地反问要哪一件，固定轮次表会把合理行为判成「没调 product_detail」= 归因全错）；口径与 `pre_clean` 的商品定位同一份（`_list_products_matching`），先例 = OR-014 / CH-019 / CR-001 / OR-009。断言（user_inputs / expectations / data_checks）原样未动、无放宽。 ｜ tags: multi_turn, casual_chat, context_isolation
@@ -1927,6 +2007,7 @@
 数据: （散文、**不计分**）order_query/quote 等明确业务意图即使含情绪词也不 offer（judge 白名单）
 数据: （散文、**不计分**）正常咨询不出现 interact 建议卡片 —— runner 现有能力**判不了「否」**：`handoff_offer` 节点的建议卡只走 interactive 事件（无 tool_call），而 runner 只有「卡片必须出现」的正向断言（`_interactive_satisfies`），没有「某类卡不得出现」的形态 ⇒ 该真值仍留在散文，不冒充已断言（能力缺口形态同 CH-001 的 suggestion 项）。
 前置: order_count_for_phone(source=13800138000)
+必须成功: order_query
 ```
 真值: ai-chat.handoff-offer
 溯源: xiaobu-ai-handoff-guidance.md 意图过滤防打断；2026-09-18 #4099：补机器计分项 expectations[order_query]（原只有纯散文 ⇒ 恒绿空断言），真值=「明确业务意图必须真的被服务」；「不弹建议卡」那半如实留在散文（runner 无负向卡片断言能力）；2026-09-19（issue #4452 的 burn-down 缴费）：补 `precondition[order_count_for_phone: 13800138000]` —— R1「查最近订单」真正依赖且只读的前置（同 CH-033 先例），有意不给 `expect`（计数随栈而变）。user_inputs / expectations / data_checks 原样未动、无放宽。 ｜ tags: handoff, non_interrupt
@@ -2315,6 +2396,7 @@
 数据: 商家问计件 → 调 piecework_query → 返回计件合计与逐工序明细（工序/数量/金额）
 数据: 工人姓名取自用户输入，用户未说月份时不编造月份（不传 period，按当月）
 数据: 查不到该工人/该月无报工时如实告知，禁止编造计件金额
+必须成功: piecework_query
 ```
 真值: ai-chat.intent-tool-map, ai-chat.tool-classes
 溯源: 2026-09-17 新增（issue #3996，M4-I）：计件工资问答 B 端覆盖（黄金策） ｜ tags: mibao, production, piecework
@@ -2807,7 +2889,7 @@
 ```
 溯源: 2026-10-20 新增（issue #7370，P0-1 之后按用户「逐步推进」落地为 P0-2 段 1）。落码 = ① V169 迁移（两列）+ 建库脚本终态同步；② CreditPolicy（纯函数口径）+ 7 条判据；③ OrderService 下单闸门；④ CustomerService.creditStatus/updateCreditSettings + 两个端点；⑤ 客户详情页「授信与往来」卡片 + 4 条页面判据；⑥ CHANGELOG。⚠️ **未做（照实登记）**：部分收款核销、账龄分档、审批出口、现结订单豁免 —— 分属 #7370 段 2/3 与 #7374(P1-2)。取号 = 现取 origin/main 的 CU 最大 012 ⇒ CU-013。 ｜ tags: backend-contract, credit, credit-limit, payment-terms, receivable, admin-api, red-proof
 
-## 数据域（27 case）
+## 数据域（36 case）
 
 ### DA-001. 经营概览 🔵
 ```
@@ -3156,6 +3238,126 @@
 必须成功: sales_attribution
 ```
 溯源: 2026-10-30 新增（issue #8157）：黄金策分析能力 P1-3 后半「归因」——按商品聚合两个等长窗口的销售额并给出涨跌 Top N，全部算术在独立的只读工具内（sales_attribution，权限码 = 订单查看 order:list），模型只转述。取号 DA-027：`python3 scripts/next_case_id.py DA`（候选 = origin/main ∪ 全部 open PR 的分支 ∪ 本工作区，rc=0）读数 = main:001-025 · PR #8156:026 ⇒ 取 DA-027。**未覆盖面（如实登记）**：只覆盖「按商品」归因；按客户 / 按状态归因、以及「下一步建议」不在本单（审计 F5 的其余部分，另包）；prompt 段本单未改（工具描述自带触发说明） ｜ tags: dashboard, attribution, readonly, llm_behavior
+
+### DA-028. 跨域视图判断层：同行基线（peer baseline）与 good/watch/bad/unknown 分档（issue #8234） 🔵
+```
+你: 商品健康度里的退货率 18%，算高还是低？
+数据: 同行基线 = **同一份快照内全部 SKU** 的中位数（`peer_median`，奇偶两分）与上四分位（`peer_p75`，最近秩法 ceil(0.75n)）；`sample_size` = 有效样本数。基线用**全量**行算，不受输出截断影响（截断只截 rows，不截基线样本）。
+数据: 🔴 未知不装懂（注入式红证）：① 指标未知（退货率无分母 / 成本未知 ⇒ 毛利 None）⇒ verdict = `unknown` 且**不进样本**；② 有效样本 < `MIN_BASELINE_SAMPLE`（5）⇒ `return_rate_baseline` = None + verdict = `unknown`。红证：把阈值改为 0（= 退化成「有值就判断」）⇒ `test_sample_below_minimum_yields_unknown` 必红；恢复 ⇒ 绿。
+数据: 🔴 毛利为负是**绝对判据**（注入式红证）：`gross_margin < 0` ⇒ `bad`，**不因**「全店都亏、基线中位数也是负」而被相对判成 `good`。红证：删掉 `_verdict` 的 absolute_bad 分支（= 退化成纯相对判断）⇒ `test_negative_margin_is_bad_even_when_the_whole_store_loses_money` 必红。
+数据: 分档边界（含等号归属）：`<= peer_median` ⇒ good；`peer_median < x <= peer_p75` ⇒ watch；`> peer_p75` ⇒ bad。边界值单独钉（P6 = p75 ⇒ watch、P7 > p75 ⇒ bad）。
+数据: 确定性：同一 snapshot 连续两次调用，`rows` 逐字节相等、`baseline_basis` 相等（不读挂钟、不联网）。
+数据: 🔴 基线性质自述（防「相对」被读成「绝对」）：视图顶层 `baseline_basis` 与 `basis.return_rate_baseline` 均为 `BASELINE_BASIS`，文本必须同时含「相对」与「非绝对」。
+跳过: [backend-contract] 视图语义由 backend/ai-agent-service/tests/test_briefing_product_health_baseline.py 验证（纯函数、零 LLM、两次注入式红证），不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8234）：黄金策决策能力 P0-a「参照系」第一包 —— 视图从「只给数值」升到「数值 + 同行基线 + 分档」。刻意只做**相对基线**（全店中位数/p75），不做绝对行业阈值（那属业务口径，需人裁定）；历史基线与客户可配置目标值登记在 issue 正文「不在本单」。 ｜ tags: proactive, briefing, baseline, verdict
+
+### DA-029. 简报条目 → 问黄金策：洞察到执行的入口（有 link / 无 link 都有，点一下就把这条交给 AI） 🔵
+```
+你: 日报说 10 个订单待发货，我不想自己点进去一个个处理
+数据: 每条简报条目（`todo` / `risks` / `suggestions`）都渲染「问黄金策」按钮，`aria-label` = `问黄金策：<条目标题>`。**无 `link` 的条目同样有** —— 恰恰是建议/风险类条目没有页面可去（现状：无 link 时整行不可点 ⇒ 价值最高的那类反而没有入口）。
+数据: 点击 ⇒ `useChatStore.assistantOpen = true` 且 `assistantDraft` 含该条目标题、含「处理建议」「确认卡」—— 预置问题要能落成「查数据 + 给建议 + 批量确认卡」，不是一句空泛的「帮我看看」。
+数据: 🔴 草稿取一次即消费：`consumeAssistantDraft()` 第一次返回全文、第二次返回 `null`（防 React 严格模式/重渲染重复发送同一句）。红证：把 `ItemRow` 的 `onClick` 改成空操作（= 入口失效）⇒ 点击与消费两条断言必红。
+数据: `closeAssistant()` ⇒ `assistantOpen = false`（外部入口不改变关闭语义）。
+数据: 浮窗开关从 `FloatingAssistant` 的**本地 state** 提升到 store —— 否则外部（日报卡片）根本打不开它；`tests/unit/floating-assistant.test.tsx` 的 store mock 因此改为**响应式**（静态 mock 会让 `openAssistant()` 改值而组件不重渲染 ⇒ FAB 两条用例红）。
+跳过: [backend-contract] 纯前端交互判据（零 LLM）：由 frontend/admin-web/tests/unit/components/BriefingCardAskAgent.test.tsx（5 条，含注入式红证）+ tests/unit/floating-assistant.test.tsx（20 条）验证，不进入 agent-eval 冒烟
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: 2026-10-31 新增（issue #8236）：黄金策决策能力 P1「洞察 → 执行连通」第一包。承接 #8155（对话内追问闭环）登记的前端缺口 —— 其 merge_log 逐字写了「卡片面『可点追问』不在本单，要做得另开单」。**未覆盖面（如实登记）**：① 浮窗内「预置问题 → 模型真的调工具 → 出确认卡」属 LLM 行为面，本单只落前端入口，不派评测；② 未做本地 Playwright 多模态验收（本机未起 admin-api/ai-agent 栈），由 CI 的 admin-web 腿兜底。 ｜ tags: briefing, agent-handoff, frontend
+
+### DA-030. 视图的「然后呢」：bad/watch 行给可选动作 + 代价 + 可逆性 + 验证方法（issue #8251） 🔵
+```
+你: 这个 SKU 退货率 30%，判 bad —— 然后我该做什么？
+数据: `bad` / `watch` 行带 `next_options`，每个选项三要素齐全：`action`（可执行且可验证）/ `cost` ∈ {low,medium,high} + `cost_note` / `reversible`（bool）；另带 `verify`（**怎么验证它有没有用**，指向具体数据而非空话）+ `metric` + `for_verdict`。
+数据: 🔴 **没问题不给动作**（注入式红证）：`good` 与 `unknown` 行**没有** `next_options`（None 或 []）。红证：让 `_next_options` 对任何行都返回一条选项 ⇒ `TestGoodRowsGetNoOptions` 两条 + `test_negative_margin_gets_a_cost_check_option_first` 共 3 条必红；恢复 ⇒ 9 passed。
+数据: 毛利判 `bad` 时**第一条**选项必须是「先核对成本价是否已维护」—— 成本未知时毛利根本不可算，跳过去直接调价等于在脏数据上做决定。
+数据: 确定性：同一快照连续两次调用 `rows` 逐字节相等（选项来自**规则表**，不读 LLM）。
+数据: 🔴 性质自述：视图顶层 `options_basis` 与 `basis.next_options` 均为 `OPTIONS_BASIS`，文本必须含「行业」「人工判断」—— 防止把「行业常见做法」读成「对你这家店的建议」。
+数据: v1 只收**可逆 + 低成本**动作：清仓 / 下架 / 换供应商这类不可逆动作**不在表里**（登记在 issue #8251「不在本单」，需业务裁定）。
+跳过: [backend-contract] 视图语义由 backend/ai-agent-service/tests/test_briefing_product_health_options.py 验证（纯函数、零 LLM、一条注入式判别力红证），不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8251）：黄金策决策能力 P3「谋 / 权衡」第一包 —— 视图从「告诉你哪不对」升到「告诉你接下来能做什么、代价多大、能不能反悔、怎么验证」。 ｜ tags: proactive, briefing, verdict, options
+
+### DA-031. 复盘第一块原料：历史简报回溯（过去 N 天 AI 提醒过什么），空历史必须自述「没有记录」 🔵
+```
+你: 上个月你建议我改价，效果如何？
+数据: Java `GET /api/admin/briefing/history?days=N`：按**业务日期倒序**返回最近 N 天（`days` 默认 30、**硬上限 90**、`<=0` 退化为 1）—— 上限不在调用方做（否则一次 `days=10000` 就能把整张表读进内存）。窗口起点按 `BusinessClock.today()` 算（全仓「今天」唯一来源，不另开 `LocalDate.now()`）。查不到 ⇒ **空列表不是 null**。
+数据: 🔴 Python `view="history"` 必须走 `/api/admin/briefing/history`，**不是** `VALUED_VIEWS` 里的 view（那个白名单走 `/snapshot`，拿回来的是「今天的快照」—— 名字像、东西完全不是）。判据含 `assert "history" not in VALUED_VIEWS` 与「未触碰 `/snapshot`」。
+数据: 🔴 **空历史必须自述「没有记录」**：message 里明写「这不是『一切正常』」。红证：把空态文案改成「过去 N 天经营一切正常」⇒ `test_empty_history_says_so` 必红；恢复 ⇒ 8 passed。
+数据: `days` 透传：默认 30，显式 7 就传 7（上限钳制在 Java 侧，Python 不重复实现，避免两处口径打架）。
+数据: 权限面：`view=history` 与当日/快照同码 `dashboard:view`，无权限 ⇒ 拒绝**且不发请求**。
+数据: 端点字面量契约：调用点的三个字面量集合 == `{TODAY_ENDPOINT, SNAPSHOT_ENDPOINT, HISTORY_ENDPOINT}`，且三个 `@GetMapping` 都真的在 Java 控制器里（同 PR 补齐被约束对象，铁律 9）。
+跳过: [backend-contract] 跨端只读回溯：Java 判据 = backend/admin-api/src/test/java/com/migao/admin/service/DailyBriefingHistoryTest.java（5 条，含 90 天上限注入式红证）；Python 判据 = backend/ai-agent-service/tests/test_briefing_query_history.py（8 条，含空历史诚实性红证）—— 零 LLM，不进 agent-eval
+```
+溯源: 2026-10-31 新增（issue #8253）：黄金策决策能力 P2「复盘」第一包。**只给原料，不给结论**：历史原文交回模型，是否被处理 / 有没有效让模型自己调当前视图对比 —— 因为「有没有被处理」需要决策事件记录（新表），本单不做。**未覆盖面（如实登记）**：① 决策采纳记录（谁点了、有没有执行）；② 季度价值报告（PDF / 推送）；③ 历史指标对比的本体（本单只确保历史原文可达）。 ｜ tags: proactive, briefing, review
+
+### DA-032. 决策采纳记录：AI 建议了什么 → 人做了什么（item_key 稳定 hash、幂等、不记原文） 🔵
+```
+你: 这个月黄金策提醒我的事，我处理了多少？
+数据: 表 `briefing_actions`（Flyway V204，bootstrap `schema.sql` 已同步终态）：`tenant_id` / `biz_date` / `item_kind` / `item_key` / `action` / `actor_id`，`UNIQUE(tenant_id, biz_date, item_kind, item_key)` 兜底幂等。
+数据: 🔴 **item_key = 标题 sha256 前 16 位**：同标题同 key、不同标题不同 key、**不含标题原文**（判据 `doesNotContain("补货")`）—— 存原文等于把 `daily_briefings.content` 抄一份，内容冗余 + PII 面扩大；存下标则简报每次重排都会把同一条记成两条。
+数据: 🔴 **幂等**：同一条目第二次上报走 `updateById` 而不是再 `insert`。红证：把 `if (existing != null)` 改成 `if (false)`（永远 insert）⇒ `repeated_actions_upsert_instead_of_inserting` 必红；恢复 ⇒ 5 passed。
+数据: 动作白名单不猜：`opened_agent` 通过，`done` / 空 / null 一律 `false`（`done` / `ignored` 需要 UI 上的「已处理 / 忽略」按钮，属产品决策，不在本单）。
+数据: 空查询 ⇒ 空列表不是 null；`days` 上限 90（与 `getBriefingHistory` 同口径）。
+数据: 🔴 前端 **fire-and-forget**：点「问黄金策」⇒ 上报被调用**且**浮窗照常打开；上报抛错**不影响**浮窗（红证：去掉 `reportAsked()` 调用 ⇒ 上报断言必红；恢复 ⇒ 6 passed）。
+数据: **记录 ≠ 采纳**：`opened_agent` 只表示「点开问了」，不表示「照着做了」—— 报表文案必须区分，不许说成「采纳率」。
+跳过: [backend-contract] 跨端事件面：Java 判据 = backend/admin-api/src/test/java/com/migao/admin/service/BriefingActionServiceTest.java（5 条，含幂等注入式红证）；前端判据 = frontend/admin-web/tests/unit/components/BriefingCardAskAgent.test.tsx（6 条，含上报失败不影响交互）—— 零 LLM，不进 agent-eval
+```
+溯源: 2026-10-31 新增（issue #8260）：黄金策 P2「复盘」第二包 —— 把「AI 建议了什么」补上后半句「人做了什么」。**未覆盖面（如实登记）**：① `done` / `ignored` 动作（需产品决策与 UI 按钮）；② **效果跟踪**（建议后指标怎么变，需要指标快照对齐）；③ 季度价值报告（PDF / 推送）；④ 工具侧的「采纳率」视图（等数据攒够）。 ｜ tags: proactive, briefing, review, event
+
+### DA-033. 权衡补刻度：压货资金 / 离同行差多少 / 每件多赚多少（未知不当 0、不乘销量、不做预测） 🔵
+```
+你: 我这批货压了多少钱？把毛利低的调一调，一件能多赚多少？
+数据: 行内 `money`：`stock_value`（= stock × avg_cost，压货占用资金）/ `stock_value_basis` / `margin_gap_per_unit`（= peer_median − 本行毛利，**正数 = 比同行少赚**）/ `margin_gap_basis` / `price_up_5pct_per_unit`（= price × 5%）。顶层 `money_basis`。
+数据: 🔴 **成本未知不许当 0**：`avg_cost IS NULL` ⇒ `stock_value = None` + `stock_value_basis = "cost_unknown"`。写成 0 等于说「这批货不占钱」，与事实正好相反。红证：把 `None` 换成 `Decimal(0)` ⇒ `test_unknown_cost_is_not_zero_capital` 必红；恢复 ⇒ 16 passed。
+数据: 🔴 **每件增量不许乘销量**：`sales_count` 的周期口径在快照契约里没标注，乘上去就是编。红证：把 `price_up_5pct_per_unit` 改成 `price × 5% × sales_count` ⇒ `test_price_step_does_not_multiply_by_sales_count` 必红（同价格不同销量必须给出相同的每件增量）。
+数据: **方向断言双向**：比同行差 ⇒ `margin_gap_per_unit > 0`；比同行好 ⇒ `< 0`。方向写反是最容易犯又最难发现的错，所以正负两种行都断言。
+数据: **钱是事实、选项是建议**：`good` 行**不给选项**（P3 纪律不变）但**照样给钱**（`stock_value` 照出）—— 「这批货压了 5000 元」对好卖的 SKU 同样是事实。
+数据: **选项带钱只给算得出的**：「小范围试调价 +5%」带 `money_impact.per_unit` + `premise`（前提必须写出来：销量不变假设）；算不出的选项**不给字段**，而不是给 0。
+数据: 工具层 `message` 必须带「库存成本合计约 X 元」+ 成本未知部分「**算不出来**（不是 0）」—— message 是模型的唯一摘要，钱不进 message 等于不存在。
+跳过: [backend-contract] 纯确定性视图判据（零 LLM）：`product_health` 是纯函数、规则表，不进 agent-eval；判据 = backend/ai-agent-service/tests/test_briefing_product_health_money.py（16 条，含两条注入式红证 + 工具层摘要断言）
+```
+溯源: 2026-10-31 新增（issue #8276）：第 6 层「权衡」从等级补到金额。**未覆盖面（如实登记）**：① **价格弹性 / 销量预测**（第 7 层「推演」的事，需要历史成交 + 回归）；② 「清仓能回收多少」——属不可逆动作，P3 明确不进选项表，需业务裁定；③ **多目标优化求解**（本单只给刻度、不给排序：回收现金与保毛利不能互相换算，AI 排序就是替老板做他没授权的价值判断）。 ｜ tags: proactive, briefing, decision, money
+
+### DA-034. 归因：同款对照只对 SKU 级信号有效（毛利能指到变体、退货率只能指到商品）；并修正毛利 verdict 方向 🔵
+```
+你: 这个变体为什么毛利这么低？是不是整款都有问题？
+数据: 行内 `attribution` 两种 `kind`：`sibling_margin_contrast`（`level=sku`，能指到具体变体）/ `product_level_only`（`level=product`，退货率用，**明说指不到变体**）。顶层 `attribution_basis`。
+数据: 🔴 **退货率不许做变体对照**：`DailyBriefingService.assembleProductReturnStats` 按 `product_id` 聚合 ⇒ 同商品所有 SKU 的 `return_rate` **必然相同** ⇒ 「本行 vs 最好兄弟」的 gap **恒为 0**，那是假归因。判据 `test_high_return_rate_yields_product_level_only` 断言 `"gap" not in attr`；红证：给 `product_level_only` 也加一个 gap ⇒ 必红。
+数据: 🔴 **毛利 verdict 方向**（缺陷单 #8280，本单链内修）：`_verdict` 原本只为退货率写（`<= peer_median ⇒ good`），毛利直接复用 ⇒ **毛利越低越判 good**。修法 = `higher_is_better=True` ⇒ `>= peer_median ⇒ good`，`< 0` 仍由 `absolute_bad` 兜底。红证：去掉该参数 ⇒ `test_positive_margin_uses_the_peer_baseline` + 归因 3 条必红（共 4 红）。
+数据: **旧断言把 bug 固化了**：`test_positive_margin_uses_the_peer_baseline` 原写「毛利 10（最低）⇒ good、毛利 50（最高）⇒ bad」——**测试和实现一起错**，所以 CI 一直绿。已改正方向并注红证。
+数据: 🔴 **没有对照就不给**：独款商品（同商品只有 1 个 SKU）⇒ `attribution = None`（**不是**「没问题」）。兄弟毛利未知 ⇒ 不算进来（脏数据算出的差值是噪音）。
+数据: **不给因果断言**：`sample_note` 必须并排给出两者销量 + 自述「这是差异证据，不是因果结论」（样本量差很多时差异可能只是样本量）。
+数据: **good 行不给归因**：没毛病时解释「为什么好」是噪音。工具层 `message` 只说能指向变体的那一类（毛利），退货率不进 message 的变体归因。
+跳过: [backend-contract] 纯确定性视图判据（零 LLM）：`product_health` 是纯函数 + 规则表；判据 = backend/ai-agent-service/tests/test_briefing_product_health_attribution.py（8 条，含两条注入式红证）+ test_briefing_product_health_baseline.py 的方向断言
+```
+溯源: 2026-10-31 新增（issue #8279 + 缺陷 #8280）：第 3 层「归因」。**关键发现**：原设想的「同款退货率对照」不成立（退货率是商品级）⇒ 改用 SKU 级毛利对照 + 退货率诚实标注 `product_level_only`。**顺手修了 P0 遗留的毛利 verdict 方向 bug**（#8280，低毛利 SKU 标绿）。**未覆盖面**：① 退货原因的**结构化字段**（`after_sales_tickets` 只有自由文本 `description`，要分类得上 LLM，需裁定值不值）；② 因果推断 / 显著性检验（只并排给读数，不做统计判定）。 ｜ tags: proactive, briefing, decision, attribution
+
+### DA-035. 方向性判定守卫：方向必须登记（传给表查），传错/忘传/绕过都不可能通过 🔵
+```
+你: （无用户输入 —— 这是研发侧守卫，防「判断方向反了但测试跟着错」这类形态）
+数据: 🔴 **方向登记即契约**：`METRIC_DIRECTIONS = {return_rate: False（越低越好）, gross_margin: True（越高越好）}`。`_verdict(metric, value, baseline)` 的方向**从表查**，**不由调用方传** —— 缺陷 #8280 的机制正是「调用方忘了传 higher_is_better」。
+数据: 🔴 **未登记指标 ⇒ `KeyError` 且报错点名**：新指标没定方向不许静默跑（默认 False 会让「越高越好」的指标静默反向）。判据断言报错文本同时含指标名与 `METRIC_DIRECTIONS`。
+数据: 🔴 **调用点源码扫描**（AST）：`_verdict` 的第一个实参必须是**字符串字面量**且在表里；仍用 `higher_is_better=` 关键字传方向 ⇒ 红。红证：把调用改成 `_m = "gross_margin"; _verdict(_m, ...)` ⇒ `test_every_call_site_passes_a_string_literal` + `test_every_literal_metric_is_registered` 双红。
+数据: 🔴 **极值双向断言**（最关键的形态守卫）：对表里每个指标造极值数据验证方向。红证：把表里 `gross_margin: True` 改成 `False`（= #8280 的形态）⇒ 本判据 + 基线方向断言**双红**；恢复 ⇒ 8 passed。
+数据: **极值断言必须混合数据**：`_verdict` 是**相对**判据（`<= peer_median ⇒ good`），全员 100% 退货率时基线也是 100% ⇒ 谁都不比谁差 ⇒ 全判 good。这是**合理**的（相对基线不制造「全员异常」），所以极值测试不能拿「全员极值」当样本 —— 这条写进测试 docstring，防下一个人误判成缺陷。
+数据: **行为零变化**（本单是纯守卫）：`return_rate` 表里 False、`gross_margin` 表里 True，与改前调用点传的值完全一致 ⇒ 对外结论不变，因此**不入 CHANGELOG**（纯研发工具类改动，铁律 7 豁免口径）。
+数据: **未覆盖面（如实登记）**：只覆盖 `_verdict` 这一族。其他「方向敏感」的比较（`low_stock` 的 `<=`、`_attribution` 的 `max()` 取最好的兄弟、`money` 的 `peer_median − 毛利` 取正负方向）**不在本单**，同一形态仍存在。
+跳过: [backend-contract] 纯研发侧守卫（零 LLM、零用户可见面）：判据 = backend/ai-agent-service/tests/test_briefing_verdict_direction_guard.py（8 条：3 条调用点扫描 + 4 条方向语义 + 1 条未登记即抛），两条注入式红证实跑成立
+```
+溯源: 2026-10-31 新增（issue #8293）：由缺陷 #8280 触发 —— 「测试和实现一起错」这类形态没有任何东西会变红。三层守卫：① 方向从表查（签名层面无传错机会）② 调用点 AST 扫描（变量绕过 / 忘登记即红）③ 极值双向断言（改表即红）。**未覆盖面**：只覆盖 `_verdict` 一族；`low_stock` 比较、归因的 `max()` 取最佳兄弟、money 的差值方向仍靠人工判断。 ｜ tags: proactive, briefing, guard, meta
+
+### DA-036. 商品销量排行：问「最近哪些商品卖得最好」走 dashboard_stats(product_ranking)（零覆盖补口，issue #8300） 🔵
+```
+你: 最近 7 天哪些商品卖得最好，给我前 5 名
+期望: dashboard_stats(action=product_ranking)
+数据: 排行来自服务端（`dashboard_stats(action=product_ranking)` 的 items / 成交量字段），不得由模型编造商品名或销量
+数据: 回复须交代**统计口径**（近 7 天 / period=day），不能把「近 7 天销量」说成「今日销量」（#2984 的假涨跌形态）
+数据: 条数与用户要的「前 5 名」一致（limit=5）；数据不足 5 条时如实说明只有几条，不补虚构行
+必须成功: dashboard_stats(product_ranking)
+```
+真值: dashboard-jump.product-ranking
+溯源: 2026-11-01 新增（issue #8300 自测发现二）：补 `dashboard_stats(action=product_ranking)` 的零覆盖 —— 覆盖率报告显示该 action 无任何用例，属「能力坏了没人知道」的面。断言面 = 工具 + args.action（换工具即红）+ must_succeed（取不到数据即红）+ 口径散文（近 7 天不得说成今日）。 ｜ tags: dashboard, ranking, query
 
 ## 防御域（24 case）
 
@@ -3892,7 +4094,99 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（167 case）
+## 客户主数据迁移域（10 case）
+
+### MIG-001. 客户 Excel 任意表头：AI 映射建议（非固定模板） 🔵
+```
+你: POST /api/internal/migration/customer-mapping {headers:['购货单位','联系方式','送货地点'], ...}
+数据: AI 返回 mappings：source_index 指向正确列，target_field ∈ 请求 fields[].key；未知 target / 越界 index / 重复 target 被过滤（承载体 = tests/test_customer_mapping.py）
+数据: 合法映射 confidence ∈ [0,1]；degraded=false 只在 LLM 输出可解析时出现
+跳过: [backend-contract] 内部 AI 映射端点的 JSON 契约由 pytest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8295）：客户主数据迁移 MVP，AI 只给列映射建议，不执行导入 ｜ tags: ai-mapping, backend-contract
+
+### MIG-002. 客户 Excel 任意表头：AI 输入样本脱敏 🟡
+```
+你: 样本含手机号 13800138000 / 邮箱 a@b.com 时调用映射端点
+数据: 送给 LLM 的 prompt 不含原始手机号/邮箱；手机号与邮箱已打码（承载体 = tests/test_customer_mapping.py::test_masks_pii_before_prompt）
+数据: 日志不含样本原文；端点只返回映射建议，不回传客户样本之外的完整行
+跳过: [backend-contract] 脱敏判据由 pytest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8295）：客户 PII 不送模型的硬约束 ｜ tags: ai-mapping, pii, backend-contract
+
+### MIG-003. AI 映射不可用/输出非法 ⇒ 降级但不阻断迁移 🟡
+```
+你: LLM 抛异常或返回非 JSON 时调用映射端点
+数据: 端点仍返回 success=true + degraded=true + mappings=[]，不抛 500（承载体 = tests/test_customer_mapping.py）
+数据: admin-api analyze 在 AI 不可用时用确定性表头别名兜底，aiDegraded=true，页面可手工映射
+跳过: [backend-contract] 降级契约由 pytest + Java 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8295）：AI 可用性不得阻断迁移 ｜ tags: ai-mapping, degraded, backend-contract
+
+### MIG-004. 客户 Excel 解析 + 列映射分析：任意表头、空表头、行数上限 🔵
+```
+你: POST /api/admin/customers/import/analyze multipart file
+数据: 任意表头（购货单位/联系方式/送货地点）能解析出 headers + 样本 + 确定性映射建议；不写库
+数据: 空表头补「列N」；超过 2000 行 / 5MB 显式 422，不静默截断（承载体 = CustomerImportParserTest）
+跳过: [backend-contract] Excel 解析/边界由 admin-api 单测验证，非 Agent 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8295）：客户导入第一步（只读分析） ｜ tags: excel, backend-contract
+
+### MIG-005. 试运行绝不写库；缺 externalId / 重复 externalId / 手机号冲突 ⇒ 行错误 🔵
+```
+你: POST /api/admin/customers/import/preview multipart file + mapping
+数据: preview 期间 mapper 的 insert/update 零调用，客户行数不变（承载体 = CustomerImportServiceTest）
+数据: 缺 externalId / displayName、文件内 externalId 重复、手机号撞他人 ⇒ action=ERROR，不写该行
+跳过: [backend-contract] 试运行只读判据由 admin-api 单测验证，非 Agent 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8295）：先试运行、人确认再写 ｜ tags: preview, fail-closed, backend-contract
+
+### MIG-006. 正式导入按 externalId 幂等：重跑不重复建、updateExisting 可控更新 🔵
+```
+你: POST /api/admin/customers/import/commit（同一文件重跑；updateExisting=false/true）
+数据: 首次创建写 external_id + wechat_nickname + phone + default_receiver_address；同一 (tenant, external_id) 仍 1 行（承载体 = CustomerImportServiceTest）
+数据: 重跑 updateExisting=false ⇒ SKIPPED；true ⇒ 调 updateCustomer 且不新建；created/updated/skipped/failed 计数与行一致
+跳过: [backend-contract] 幂等/重跑由 admin-api 单测验证，非 Agent 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8295）：客户主数据迁移的核心安全护栏 ｜ tags: idempotency, backend-contract
+
+### MIG-007. 客户导入 HTTP 端点：analyze/preview/commit + customer:create 权限 🔵
+```
+你: POST /api/admin/customers/import/{analyze,preview,commit}
+数据: 三个端点均返回 ApiResponse.success + 对应 data；mapping/updateExisting 参数透传（承载体 = CustomerImportControllerTest）
+数据: 三端点均标注 @RequirePermission("customer:create")，不给只读角色接触客户 PII
+跳过: [backend-contract] HTTP 契约由 admin-api 单测验证，非 Agent 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8295）：页面接入的 API 契约 ｜ tags: api, backend-contract
+
+### MIG-008. AI 映射客户端失败语义：超时/非 2xx/坏 JSON ⇒ null，由确定性兜底 🟡
+```
+你: ai-agent-service 不可达或返回 success=false 时调用 analyze
+数据: CustomerImportAiClient.suggest 返回 null，不抛异常；analyze 的 aiDegraded=true 且仍有确定性建议（承载体 = CustomerImportAiClientTest）
+数据: 只有 data.mappings 的合法结构才映射为内部 DTO；source_index/target_field 逐字段取，不按位置猜
+跳过: [backend-contract] 客户端失败语义由 admin-api 单测验证，非 Agent 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8295）：AI 服务的失败不得阻断迁移 ｜ tags: ai-mapping, degraded, backend-contract
+
+### MIG-009. 客户迁移工作台：上传 → AI 映射建议 → 人工确认 🔵
+```
+你: 打开 /customers/import，上传任意表头客户 Excel
+数据: analyze 返回 success=true 后页面渲染每个源列 + 样本 + 目标字段下拉；AI 建议预选；必填 externalId/displayName 有标记（承载体 = page.test.tsx）
+数据: AI 降级时显示提示，仍可手工映射并试运行
+跳过: [frontend-contract] 页面行为由 admin-web Vitest/RTL 验证；真实登录/截图的 Playwright 多模态验收在集成阶段单独跑
+```
+溯源: 2026-10-31 新增（issue #8295）：迁移工作台页面 ｜ tags: ui, ai-mapping
+
+### MIG-010. 客户迁移工作台：试运行 → 正式导入 → 逐行结果 🔵
+```
+你: 在 /customers/import 点试运行，再点正式导入
+数据: 未试运行前正式导入接口未被调用（not called）；试运行后展示 new/update/skip/error 汇总；commit 返回 success=true 后展示 created/updated/skipped/failed（承载体 = page.test.tsx）
+数据: updateExisting 勾选透传到 preview/commit
+跳过: [frontend-contract] 页面行为由 admin-web Vitest/RTL 验证；真实登录/截图的 Playwright 多模态验收在集成阶段单独跑
+```
+溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
+
+## 杂项域（169 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5383,18 +5677,6 @@
 ```
 溯源: 2026-10-13 新增（issue #6853）。为什么必须有这条（本次事故的形状）：B1 删掉后端 `PRICING_ENTRY` 后，前端跨包判据仍抽它 ⇒ **只有 admin-web 腿会红**，而那条腿**不在 main 的 push 腿里** ⇒ 断点在合并前**没有任何东西会响**。本判据把「消费者 ⇄ 后端下发面」搬到 **Python 腿**上判，删任一侧都会在 `ci workflow helper unit tests` 里红。取号 = main 现取 MC-001~097 ⇒ **MC-098**。读数：本判据落地后 `pytest tests/unit_ci_workflows/test_removed_page_pointer_targets.py -q` 全绿（含注入式自证）。 ｜ tags: cross-package-anchor, liveness, ledger, backend-contract, red-proof
 
-### MC-099. **admin-api → ai-agent 内部调用腿的可观测契约**：接线断了必须摆进 `/actuator/health`，且恒 UP 不熔断（issue #6896） 🔵
-```
-你: 本地漏设 `AI_AGENT_BASE_URL` / `AI_AGENT_SERVICE_TOKEN` 时，凭什么在业务侧静默驳回「系统繁忙」**之前**就知道这条腿断了？
-数据: 🔴 **判据 1·事实必须在面上**：`AiAgentLinkHealthIndicator.health()` 的 details 必须含 `base_url` / `base_url_configured` / `token_configured` / `reachable` / `probe_error` / `probed_at` 六键 —— **去掉任一键即红**（执行点 = `backend/admin-api/src/test/java/com/migao/admin/config/AiAgentLinkHealthIndicatorTest.java`）
-数据: 🔴 **判据 2·恒 UP 不许熔断**：token 未配、base-url 不可达、base-url 未配置三种坏态下，`status` 必须**仍是 `UP`**。沿用 #5184 / #4517 的既有裁定 —— 把 `/actuator/health` 打成 DOWN 会连带部署腿 / 探活 / 负载均衡一起红，比原问题更糟。**有人顺手改成 DOWN ⇒ 红**
-数据: 🔴 **判据 3·只暴露有无，不暴露值**：注入非空 token 后 `details.toString()` 必须**不含**该 token 原文 —— 防「把配置值直接摆进对外健康端点」这类泄密（红证 = 把 `token_configured` 换成 `service_token`）
-数据: **判据 4·坏配置降级为事实而非异常**：`base-url` 为空串时不得调用探针、不得抛异常，须落 `base_url_configured=false` + `reachable=false` + 带原因的 `probe_error`
-数据: **边界（照实登记）**：① 本用例只判「事实有没有被摆出来」，**不判**「运维看到 DOWN 态的 details 后是否真会去修」—— 那是值守面的事；② 每次 health 现探一次（超时 800ms 封顶）、**不缓存**，故 health 被高频拉取时会给 ai-agent 增加等量 `/health` 请求，本仓 health 非热点路径 ⇒ 暂不引后台线程；③ 六个客户端里各自重复的坏默认值**本单未收敛到一处**（8000 对 `deploy/docker-compose.yml` 的 `8001:8000` 是正确的容器内地址，改默认值会弄坏容器那条路）
-跳过: [backend-contract] 零 LLM 的确定性单测（假探针 + 纯函数判定），mvn 真跑、零网络、不进 agent-eval 冒烟
-```
-溯源: 2026-10-14 新增（issue #6896，外部贡献者提交）。为什么必须有这条：六个客户端各自读 `ai-agent.base-url` / `ai-agent.service-token`，两个默认值都是坏的（`backend/admin-api/src/main/resources/application.yml` 的 `ai-agent.base-url` / `ai-agent.service-token` 两键，与各客户端 `@Value` 里重复的 `http://localhost:8000` / 空串），漏设环境变量时应用 UP、探活 200、ai-agent 自己看着健康，只有真实入驻静默被驳回成「系统繁忙」（`review_source=system`）—— 与 #5184（到期扫描腿静默停摆）、#4517（迁移被跳过与全过不可区分）是**同一类**失效，此前没有承接面。#6674 的收口方式是补 `docs/wiki/Quick-Start.md` 的「本地开发」节（该节列出 `AI_AGENT_BASE_URL` / `AI_AGENT_SERVICE_TOKEN` 的启动口径），保护的是读过文档的人，**可观测面仍缺**。取号 = main 现取 MC-001~098 ⇒ **MC-099**。⚠️ 贡献者自述：本机无云 dev DB/Redis、未起 ai-agent-service、未装 `migao-agent-presets`，故 `verify-all.sh gate` / `contract-check.sh` **未跑全**，以本 PR 的 CI 为准。 ｜ tags: backend-contract, liveness, observability
-
 ### MC-100. **入库单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6928 的类级固化） 🔵
 ```
 你: 同一份状态迁移权上有两个写面，只有一个带 CAS —— 凭什么相信「下一个写面不会漏」？
@@ -6470,6 +6752,44 @@
 ```
 溯源: 2026-10-31 新增（issue #8201，P0：四域共用证书 2026-11-27 到期，LE 的 30 天续期窗口已于 2026-10-28 过去仍未续）。取号 MC-121（`python3 scripts/next_case_id.py MC` 现取最小空闲号；候选 = main ∪ open PR 分支 ∪ 本工作区）。落码 = ① `deploy/scripts/tls-expiry-check.sh`（只读、四域 + 可选 www、阈值 21 天、0/1/3、lineage 诊断）② `deploy/scripts/tls-renew.sh`（host certbot 优先 / docker 兜底、`--dry-run`、成功才 reload、`--install-cron` 幂等 + 双跑 guard + 备份替换）③ `.github/workflows/post-merge-verify.yml` 的 `TLS 证书到期判红` 步（main 侧、在 `if: failure()` 出口之前、不新增 schedule）④ `deploy/swas/deploy.sh` 的 `2.6.1`（幂等刷新宿主 cron，跳过/失败不拖垮部署；同步脚本带 `[ -f ]` 守卫以保回滚）⑤ `docs/deployment/tls-renewal.md`（现状 / 两条修复路径与代价 / 陈旧 lineage 不删证书 / cron 加固 / 验收复算 / 回滚 / 影响面）。**订正审计口径**：PR #8200 的 P0-01「仓内零续期机制」应读作「机制在宿主 cron，但已连天失败 + 无告警」。**2026-10-31 用户裁定**：修复走路径②（重签去掉 admin、只带 7 个可解析 SAN）；陈旧 lineage 移出 renewal 目录（不删证书）；`--replace-legacy-cron` 等合并+部署后再跑，「先手工改旧 cron 的 restart→reload」为**可选**。 ｜ tags: ops, tls, deploy, certbot, alarm
 
+### MC-122. 观星台终端正式发布链路（issue #8195）：/terminal/ 是纯静态下载面（缺失文件必须 404、不得回落 SPA、不限流、MIME 可判），官网 /download 有下载页，发布腿把终端仓 Release 的 exe/apk 幂等落到静态根并自证「线上字节 == 本地载荷」 🔵
+```
+你: 终端自己检查更新打的地址是 app.migaozn.com/terminal/latest.json 与 /terminal/android/latest.json，官网没有下载页，产物也没有发布通路；要一条能发、能回滚、发错了会红的链路
+期望: direct_reply
+数据: **nginx 面（会红）**：`app.migaozn.com` 的 443 server 段必须有 `location /terminal/`，其 `try_files` 必须是 `$uri =404`（缺失文件 404）——回落任何 HTML 都是「200 + 别人的页面」（客户端会把 HTML 当清单/安装包解析，失败形态与「没有新版本」无法区分）。裸前缀 `location /terminal` 必须 `return 301 /terminal/`（否则它同样落进 SPA fallback）。该 location 不得挂 `limit_req`（批量更新会误伤），必须有 `default_type application/octet-stream`（exe/apk 按二进制落盘）与 `X-Content-Type-Options: nosniff`；**不许**用 `types {}`（替换继承表，类级判据 test_served_leg_mime_guard.py 禁止）。判据是**真解析 + 真模拟**（`_serve()`：前缀最长者 + try_files + return），不是文本匹配；变异（删 location / 改回 SPA fallback / 删 301 / default_type 改文本 / 挂限流 / 注入 types{}）各自判红。
+数据: **发布腿结构（会红）**：`.github/workflows/terminal-publish.yml` 只允许 `workflow_dispatch` 且 `release_tag` 必填（发布是人工闸：没有 tag 就不知道该发哪一版，`push` 触发会让合并即发布）；发布/断言步骤不得带 `continue-on-error` / `|| true` / 恒假 `if`；ACR 登录必须走唯一实现 `scripts/acr_login.sh --fatal`（本腿把载荷推进 ACR ⇒ 登录承重）；静态根 `/opt/migao-deploy/h5` + 子目录 `terminal` 逐字在案。
+数据: **CI 脚本契约（会红）**：`deploy/scripts/terminal-publish-ci.sh` 必须逐字含四条验收断言（远端 latest.json / android/latest.json 哈希 == 本地载荷、静态根 index.html 前后一致、PAYLOAD_MANIFEST_OK=1 自证行、InvocationStatus 必须 Success）与命令内容字节前置断言（`COMMAND_CONTENT_LIMIT_BYTES` 16384 + 官方出处 URL），且**不许内联远端执行体**（台账 swas_command_content_legs_ledger.json 的射程）。
+数据: **沙箱行为（真跑脚本，会红）**：`prepare` 从「已下载的 Release 目录」生成两份清单，字段名与终端客户端逐字对齐（Windows `version` / `notes` / `download_url`；Android `versionCode`(int) / `versionName` / `download_url`），sha256/size 与实际文件一致；坏输入（缺目录 / versionCode 非整数 / tag 含引号 / version 为空）一律拒绝。远端脚本把载荷落到沙箱静态根：父目录 index.html 哈希不变、陈旧文件被收敛、不属于发布面的文件不搬、**幂等**（连跑两次逐字节一致）；清单与载荷不一致 / 缺件 / 多出未知文件 / 越界子目录 / 缺静态根 ⇒ 非零退出且**什么都没改**。
+数据: **发布文档（会红）**：`docs/deployment/terminal-release.md` 必须写清发布步骤、回滚、证书现状（Windows 未签名 + SmartScreen + SHA256 公布）、不上架应用市场、`versionCode` 单调、两个清单地址。
+跳过: [backend-contract] 静态结构 + 沙箱真跑判据（零网络、零云调用、不碰真实静态根）由 tests/unit_ci_workflows/test_terminal_release_leg.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8195）：交付 = ① nginx 的 `/terminal` 归一 + `/terminal/` 纯静态下载面 ② 官网 `(corporate)/download` 下载页 + nav/footer/sitemap 入口 + next rewrites 同源转发 ③ `deploy/terminal-dist/Dockerfile` + `deploy/scripts/terminal-publish-ci.sh`（prepare / publish）+ `deploy/swas/terminal-publish-remote.sh` + `.github/workflows/terminal-publish.yml`（只有 workflow_dispatch）④ `docs/deployment/terminal-release.md` ⑤ 判据 = tests/unit_ci_workflows/test_terminal_release_leg.py（含注入式红证）+ test_public_code_spaces_are_disjoint.py 的 `/terminal` 归属登记与两条红证。取号 MC-122（python3 scripts/next_case_id.py MC 现取 main 001-120 + 在飞 PR 面 ⇒ 返回 MC-122）。⚠️ 未闭合（照实登记）：终端仓的 Release 自动出包（terminal#12）与 `secrets.TERMINAL_REPO_TOKEN`（人工前置）不在本用例射程；真实发布与 served 断言由 workflow 在线上跑。 ｜ tags: ci, nginx, terminal, publish-leg, no-spa-fallback, idempotent, red-proof
+
+### MC-125. 微信「扫普通链接二维码打开小程序」校验文件（issue #8196）：nginx 根下 .txt 是显式静态面（缺失 404、不回落 SPA、只吃单段），deploy.sh 幂等只拷 *.txt 到静态根根下（只增/覆盖、父目录 index.html 哈希不变、跳过要出声） 🔵
+```
+你: 微信后台要求把生成的根下 `<名字>.txt` 放到 https://app.migaozn.com/<名字>.txt；仓库侧要能承接这个文件，且文件缺失时不能伪装成「已就位」
+期望: direct_reply
+数据: **nginx 面（会红）**：`app.migaozn.com` 的 443 段必须有**唯一**一条窄正则 location（`^/[^/]+\.txt$`，`try_files $uri =404`，无 proxy / 无 rewrite）：根下 .txt 存在 ⇒ 200 该文件；**缺失 ⇒ 404**（绝不回落 `location /` 的 `index.html` —— 回落就是 HTTP 200 的一页 HTML，与「内容对不上」无法区分）；该正则只匹配根下单段 ⇒ `/b/…` 仍回落 `b/index.html`、`/w/…` 与 `/terminal/…` 不被劫持、根级 SPA 路由仍是 `index.html`。`location /` 的 SPA fallback 必须原样保留（404 是新面带来的，不是把全站改成 404）。判据 = **真解析 + 真模拟**（正则 location 先于前缀 + 前缀最长者 + try_files + index），不是文本匹配；三种变异（删 location / 把 `=404` 换成 `/index.html` / 把正则放宽成 `^/.*\.txt$`）各自判红。
+数据: **落位拷贝语义（真跑 deploy.sh 的 `# >>> wechat-verify` 段，会红）**：只拷 `*.txt`（非 txt 不落盘）；**只增/覆盖**，静态根里别的文件（`index.html` / `js/` / `b/` / 已有 `keep.txt`）逐字节不变；**幂等**（连跑两次快照逐字节一致）；同名以源为准；源目录为空 / 源目录不存在 / 静态根不存在 ⇒ 退出码 **0** 且**出声**（不拖垮部署）；🔴 **默认源 = `src/deploy/swas/wechat-verify`**（线上配置包解出来的源码树；该目录在 C′ 构建后被删 ⇒ 段必须放在取配置之后、构建之前，否则永远「跳过」= 静默不落位）；源码层红线 = 该段不得出现 `rm` / `rsync` / `mv` / `--delete` / `find`。
+数据: **仓库不许编文件名/内容（但真文件必须能提交）**：部署只从**仓库源码包**取文件 ⇒ 用户从微信后台下载的真 `*.txt` 可以入库；判据禁的是**伪造 / 占位**（文件名含 `example/sample/…`、内容含 `TODO/PLACEHOLDER/…`、空文件）。README 必须写清「原样放进来、别改名/改内容」、首次部署要跑第二次、以及部署后的三条 `curl` 自证（内容 diff / `content-type` / 缺失 404）。
+数据: **类级不变式同步**：`app` 段「不出现非前缀 location」的两条守卫（tests/unit_ci_workflows/test_bmini_h5_hosting.py / test_terminal_release_leg.py）改为**唯一白名单**（只允许本条 `.txt` 面）；其余任何正则 location 仍判红。
+跳过: [backend-contract] 静态结构 + 沙箱真跑判据（零网络、零云调用、不碰真实静态根）由 tests/unit_ci_workflows/test_wechat_verify_route.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8196）：微信「扫普通链接二维码打开小程序」的**校验文件承接**。交付 = ① `deploy/swas/wechat-verify/README.md`（承接位，不预置文件）② `deploy/swas/deploy.sh` 的 1.3.1 段（在**取配置之后、C′ 构建之前**：源码树 `src/` 只在那时存在；幂等只拷 *.txt 到静态根根下）③ `deploy/swas/nginx.conf` 的根下 `.txt` 显式面（缺失 404、不回落 SPA）④ 判据 tests/unit_ci_workflows/test_wechat_verify_route.py（nginx 语义模拟 + 真跑拷贝段 + 变异红证）⑤ 两条「无正则 location」类级守卫的唯一白名单。取号 MC-125（python3 scripts/next_case_id.py MC 现取 main 001-122 + 在飞 PR #8214 的 123-124 ⇒ 返回 MC-125）。⚠️ 未闭合：微信后台生成的真实文件名/内容与真机扫码属用户侧。🔴 自查改判：早先那版判据写「本目录不许出现任何 .txt」，会把用户唯一的合法路径（提交真文件）也堵死 —— 现改为只禁伪造/占位，并把「真文件可提交」写进 README。 ｜ tags: ci, nginx, wechat, static-root, no-spa-fallback, idempotent, red-proof
+
+### MC-126. **外部账号的代码不得直接进本仓**：PR 提交作者 / head 仓库来源必须命中白名单，命中即判红并解除自动合并（issue #8386） 🔵
+```
+你: 外部账号的 fork PR 关闭后，内容被搬到同仓分支重开并 squash 合并 —— 凭什么保证这种事不再发生？
+数据: 🔴 **判据 1·真实事故提交必须判红**：把 llwand1 在 PR #6897 / #6924 里的那条提交喂给 `classify()`，必须返回恰好 1 条违规且具名 `llwand1`。执行点 = tests/unit_ci_workflows/test_external_authorship_guard.py::test_real_incident_commit_is_flagged
+数据: 🔴 **判据 2·白名单形态**：空名单 / 通配一律拒绝启动（空名单等于放行一切，通配等于名单形同虚设）；真实白名单必须精确、非空、含两个协作者且**不含 llwand1**。执行点 = 同文件::test_empty_allowlist_is_refused / test_wildcard_allowlist_is_refused / test_real_allowlist_is_exact_and_covers_known_accounts
+数据: 🔴 **判据 3·fork 来源无条件判红**：head 仓库 != 本仓时，无论作者是否在白名单都判红并说明是 fork。执行点 = 同文件::test_cli_flags_fork_head_repo
+数据: 🔴 **判据 4·CLI 三态**：陌生提交 ⇒ exit 1 且具名；自家提交 ⇒ exit 0；白名单读不到 ⇒ exit 2（不得当 0 读）。执行点 = 同文件::test_cli_flags_foreign_commit_offline / test_cli_allows_team_commit_offline
+数据: 🔴 **判据 5·接线**：`.github/workflows/pr-check.yml` 必须有 `external-authorship-guard` job、`timeout-minutes` 与真实调用脚本的 run 步骤，且 `on.pull_request` 不得有 paths 过滤（将来翻 required 的前提）。执行点 = 同文件::test_workflow_wires_the_guard
+数据: **边界（照实登记）**：① 判不了「外部代码被本人身份重新提交」（squash 后作者面看不出异常）；② 白名单是自证式的，伪造 team 邮箱可绕过 —— 流程护栏，不是安全边界；③ 本腿非 required，阻断直接合并靠「判红 + 解除 auto-merge + block/merge」。
+跳过: [backend-contract] 零 LLM 的确定性判据（纯函数分类器 + 离线 CLI 夹具 + workflow 结构读取），pytest 真跑、零网络、不进 agent-eval 冒烟
+```
+溯源: 2026-11-01 新增（issue #8386，源于 #6897 → #6924 的真实事故复盘）。为什么必须有这条：外部账号 llwand1 的 fork PR #6897 关闭未合并，但同日被搬到同仓分支以 PR #6924 重开并 squash 合并（9626b8f9a）⇒ 陌生代码进入 main；而 `automerge.yml` 只排 fork PR，对同仓转手完全无感。事后由 PR #8383 全部撤回，本单补防复发。取号 = 现取 MC-001~122,125（123-124 在 PR #8214）⇒ **MC-126**。读数：本判据 10 条全绿（含真实事故夹具红证）。 ｜ tags: backend-contract, governance, ci
+
 ## 商家入驻域（7 case）
 
 ### OB-001. 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员 🔵
@@ -6720,6 +7040,7 @@
 期望: logistics_track
 数据: 快递公司/运单号/轨迹非空
 必填: logistics_track() 字段 order_id
+必须成功: logistics_track
 ```
 真值: order.logistics
 溯源: verification 1.5 独有（M007 中物流只是旅程一环，不合并）；2026-09-14 自包含化（issue #3599）：去掉栈上不存在的硬编码订单号 ORD-20260701-0001，改自然指代 + required_args[order_id] 守住解析结果 ｜ tags: query, logistics
@@ -7917,6 +8238,7 @@
 前置: order_count_for_phone(source=13800138000)
 禁词（第 2 轮）: 请提供单号、请提供订单号、麻烦提供单号、麻烦提供订单号、是哪一单、哪一笔订单、哪个订单
 必须: {'round': 2, 'text': 'EVAL-MB-ORD-0002'}
+必须成功: order_query
 ```
 真值: ai-chat.context-memory
 溯源: 2026-10-30 新增（issue #8173）：B 端会话级工作记忆（焦点对象）。第 1 轮点名种子内真实订单 EVAL-MB-ORD-0002（tests/agent_eval/fixtures/mibao_eval_seed.sql，张三 13800138000），第 2 轮只靠指代「这单」⇒ 合格行为 = 复用焦点、不再问单号；`want_text` 钉第 2 轮仍出现该订单号，`forbidden_text` 钉第 2 轮不再索要单号（均轮次作用域，避免全程语义假红）。取号 = scripts/next_case_id.py OR（main 001-072 ∪ 全部 open PR）⇒ OR-073。 ｜ tags: order, multi_turn, focus_memory
@@ -11402,6 +11724,7 @@
 数据: 必须落到**商品真价 23.80 元/米**（夹具 prod_eval_2699 的 base_price；回复里出现 23.8 / 23.80 任一形态）
 数据: 必须说清**加工费/用料另有口径**（店铺加工项目录 15 项、按加工费组合计价）—— 不得把布料单价直接当总价，也不得凭空编一个总价数字
 数据: 不得出现「免费 / 一共 0 元」这类**未算就给结论**的形态
+必须成功: product_detail
 ```
 溯源: 2026-10-19 新增（issue #7027 的用例补齐）：报价是商家最高频的问法，但语料里只有「查商品详情」（PR-0xx）这种**工具签名式**用例，没有「按商家的说法问价」的旅程用例。本用例只钉可判定的两点（真价 + 口径），不规定措辞。 ｜ tags: product, pricing, journey
 
@@ -11621,7 +11944,7 @@
 ### ST-011. 企业收款二维码（微信/支付宝）C 端支付页展示与平台不经手资金（二清规避） 🔵
 ```
 你: 我支付这笔订单，怎么付款
-期望: direct_reply or order_query
+期望: direct_reply or order_query or knowledge_search
 数据: C 端收款码卡（卡型 `payment`）的**发射点**：C 端只读工具 `payment_qrcode_query`（无参，按租户取商家自己的收款码）返回的 data 即卡载荷 —— 含 `payment_qrcodes` 键（wechat/alipay 子对象含精简字段 image_url/payee_name），卡片渲染微信/支付宝切换与收款方（#4085 第 1 项）
 数据: 「应付金额」**只在载荷带 amount 时**展示（对话内收款码查询无订单上下文 ⇒ 不带 amount，卡片不显示金额行）；金额行由组件测试 frontend/mini-app/tests/payment-card.test.tsx 覆盖
 数据: 页面注明「款项直接支付给商家」（平台不经手资金，二清规避）
@@ -11710,7 +12033,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（143 case）
+## 前端 UI 域（146 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -13806,6 +14129,48 @@
 ```
 溯源: 2026-10-29 再更新（issue #8114）：顶部两块 AI 内容（速览条 + 简报卡）合并成一张 `daily-business-card` —— 判据 1 与 4 改写、新增判据 5（四态，重点是「简报未开启时卡片仍在」）。2026-10-29 更新（issue #8105）：看板首屏重排 —— 待处理提到简报之前、简报有数据时也默认收起一行（判据 1 与新增判据 4）。原判据「有数据时卡片形态不变」已失效并改写。2026-10-28 新增（issue #8012）。取号 = scripts/next_case_id.py UI 现取。后端口径：DashboardController 的 *Change 已是百分比 ⇒ changeBadge 收比值、页面经 asRatio() 单一换算。未做：简报未开启态现在会多出**一行**提示（改前整块不渲染），若后续裁定收回，删 BriefingCard 的 !enabled 分支并同步本判据。 ｜ tags: dashboard, first-screen, skeleton
 
+### UI-144. 官网下载页（/download，issue #8195）：从终端发布清单展示版本 / SHA-256 / 大小 / 发布时间 / 说明与两个下载按钮；清单缺失或格式坏 ⇒ 明确「暂未发布」且不编造版本号；伪协议不渲成链接；首屏正文进初始 HTML 🔵
+```
+你: 商家要在官网下载车间一体机（Windows）与手持机（Android）的安装包，并核对版本与校验值；没有正式版时必须明确说「暂未发布」，不能显示一个不存在的版本
+期望: direct_reply
+数据: **清单正常 ⇒ 逐项展示（会红）**：Windows 卡显示版本 / SHA-256 / 大小（`321.0 KB`）/ 发布时间 / notes 与「下载 Windows 安装包」链接（href 逐字等于清单的 `download_url`）；Android 卡显示 `versionName（versionCode N）` 与「下载 Android 安装包」链接。两个请求分别打到 `/terminal/latest.json` 与 `/terminal/android/latest.json`。执行点 = frontend/admin-web/tests/unit/pages/corporate-download.test.tsx。
+数据: **缺失 / 坏 / 网络失败 ⇒ 「暂未发布」（会红）**：两个清单都 404 / 返回坏 JSON / 字段类型不对（`versionCode: 'seven'`、`sha256: 'not-a-hash'`）/ fetch reject ⇒ 两处「暂未发布」、**没有**下载按钮、页面不出现任何版本号；只有一端发布时另一端单独显示「暂未发布」（互不牵连）。
+数据: **安全（会红）**：清单是外部输入，`download_url` 为 `javascript:` ⇒ 该端按「暂未发布」处理、不渲染 href。
+数据: **首屏（会红）**：页面是服务端组件（正文进初始 HTML）——渲染出 h1「下载观星台终端」、三段安装说明（未知来源 / SmartScreen / 检查更新）与 SHA-256 校验方法，且不含「加载中...」骨架。
+数据: **结构（会红）**：`next.config.mjs` 有 `/terminal/:path*` → `app.migaozn.com` 的同源转发（浏览器直连会被 CORS 挡）；`src/proxy.ts` 的官网白名单含 `/download`；`CorporateNav` / `CorporateFooter` 都有 `/download` 入口；sitemap 含 `/download/`。
+跳过: [backend-contract] 纯前端契约（mock fetch，不经过 LLM 对话/工具），由 admin-web vitest 执行，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-31 新增（issue #8195）：官网 `(corporate)/download` 下载页 + 客户端清单读取（`src/lib/terminal-manifest.ts` 的解析真值源）+ 类级守卫接入（服务端组件 / 元数据单一源 / 文案口吻 / proxy 白名单 / 按钮规范）。取号 UI-144（python3 scripts/next_case_id.py UI 现取 main 001-143 + 在飞 PR 面 ⇒ 返回 UI-144）。 ｜ tags: corporate, download, terminal, no-fabrication, first-screen
+
+### UI-147. 商家后台读失败出口（issue #8200 · P1-06）：凡渲染共享空态原语 <EmptyState> 的文件必须带常驻读失败出口；/categories 读失败 ⇒ 失败面 + 重试，空态与「还没有商品分类」断言都不上屏（DQ-1） 🔵
+```
+你: 商家打开商品分类页时接口挂了：屏幕上不能写「还没有商品分类」「先建一个分类」（那是把没读到说成本来就没有），要明确说没读到并给重试
+期望: direct_reply
+数据: **读失败 ⇒ 常驻失败面（会红）**：mock `categoryApi.getCategories` reject ⇒ 屏上有 `categories-load-error`（`role="alert"`）与 `categories-load-error-retry`。改前该页只有空 `catch` + `<EmptyState title="还没有商品分类">`，两个锚都不存在（红证读数见 PR body）。执行点 = frontend/admin-web/tests/unit/pages/categories.test.tsx。
+数据: **不冒充空态（会红）**：同一失败态下 `categories-empty` 锚不在、「还没有商品分类」文案不在，且整屏经 `findEmptyDataAssertions`（单一源口径）无「没有数据」断言。
+数据: **重试真的重发（会红）**：点 `categories-load-error-retry` ⇒ `getCategories` 调用次数增加，且成功回包后分类树渲染、失败面退场（不是只把失败面藏起来）。
+数据: **对照读数（不许把真 0 判红）**：读成功且真的 0 条 ⇒ `categories-empty` 照旧在、失败面不在。
+数据: **类级（会红）**：`frontend/admin-web/scripts/read-failure-empty-state-scan.mjs::componentEmptyStateOffenders` 在面内（`(dashboard)` + `src/components`）对「渲染 `<EmptyState>` 且无失败锚」的文件判红；台账 `COMPONENT_EMPTY_LEDGER` 现取 0 条、只许缩短；判别力自证 = `frontend/admin-web/tests/unit/read-failure-component-empty-state-guard.test.ts`。
+数据: **审计读数纠偏**：审计 P1-06 用「有没有引用 `ListLoadError`」当代理指标 ⇒ 得出「37 页缺失」。逐页复核：`/products`（`products-load-failed`）/`/dashboard`（`dashboard-load-failed` + 分块重试）/`/production`（`production-board-error` + 重试，失败时不渲染 `production-board-empty`）/`/orders/[id]`（`order-detail-load-error` + 重试）**早已可区分读失败与真空态**；真实缺口只有 `/categories` 一处。
+跳过: [backend-contract] 纯前端渲染契约（vitest + mock 读接口），不经过 LLM 对话/工具，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-10-31 新增（issue #8200 · P1-06 上线审计「读失败出口」）：取号 UI-147（`python3 scripts/next_case_id.py UI` 现取 main 最大 = UI-144，在飞 PR #8214 占 UI-145/146）。 ｜ tags: read-failure, empty-state, categories, class-guard
+
+### UI-148. 手持机 WebView 83 没有 flex `gap` ⇒ 工人端间距兜底（`.no-flex-gap` 作用域 + margin 兜底，issue #8336） 🔵
+```
+你: 手持标签机（商米 V2s）上工人报工页「裁剪 应做 1.00 米 0.25 元/米 待报工」挤成一串，字叠在一起；页头按钮也贴字并折行
+期望: direct_reply
+数据: 判据 1·**探测口径**（`frontend/worker-h5/src/flex-gap.mjs`）：用「两个 10px 子项 + 10px 间距」量真布局 —— 量到 ≈20px 判不支持、给 `<html>` 加 `no-flex-gap`；量到 ≈30px 判支持、**不加类**。红证 = 把 `width >= probeSize*2+gap-0.5` 改成恒 `true` ⇒ `worker-h5-flex-gap.test.mjs` 判据 ①红。
+数据: 判据 2·**不误伤现代浏览器**：支持时不得加类（否则 `gap` 与 margin 兜底叠加，PC/手机 Chrome ≥84 上间距翻倍）⇒ 判据 ② 红证 = 无条件加类。
+数据: 判据 3·**探测无副作用**：探测节点必须从 `body` 拆掉（判据 ③）；量不出宽度 / 没有 body ⇒ 视为支持且不抛（判据 ④⑤）。
+数据: 判据 4·**真机可见**（商米 V2s / Chrome 83.0.4103.120）：报工屏「裁剪 / 应做 1.00 米 / 0.25 元/米 / 待报工」四段分行或分列、不重叠；页头三个按钮不折行。判定 = 真机截图 + `getBoundingClientRect().left` 两两不重叠。
+数据: 判据 5·**不回退**：同一份 HTML 在 Chromium ≥84 上视觉不变（不加类 ⇒ 样式表逐字生效），且不新增任何 API 契约。
+跳过: [backend-contract] 纯前端布局兼容，由 node --test（worker-h5-flex-gap）+ 真机截图覆盖，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.layout, frontend-fix.no-api-change
+溯源: 2026-11-01 新增（issue #8336）：真机读数「裁剪 应做 1.00 米0.25 元/米待报工」三列挤成一串 —— Chrome 83 不支持 flex gap，而 60 处 gap 在真机上全等于没写。修法 = 运行期探测 + `.no-flex-gap` 作用域下的 margin 兜底（grid 不受影响）。取号 UI-148。 ｜ tags: ui, layout, worker-h5, webview83
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -13835,23 +14200,24 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：932（活跃 152，跳过 780）
-- tier 分布：smoke 15 / normal 860 / adversarial 33
+- 用例总数：962（活跃 153，跳过 809）
+- tier 分布：smoke 15 / normal 887 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
 - 登录认证域：14
-- B 端小程序域：54
+- B 端小程序域：60
 - 分类域：3
 - 对话边界域：53
 - 跨域：3
 - 客户域：13
-- 数据域：27
+- 数据域：36
 - 防御域：24
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：167
+- 客户主数据迁移域：10
+- 杂项域：169
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：74
@@ -13861,7 +14227,7 @@
 - 工具注册器域：1
 - 设置域：11
 - 令牌刷新域：4
-- 前端 UI 域：143
+- 前端 UI 域：146
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -13905,6 +14271,14 @@
 - DA-024: 评测目标租户收敛到单一可注入配置（EVAL_TENANT_ID），并钉住「非 DEBUG 不接受外部租户」（issue #6288）
 - DA-025: 经营环比对比由工具确定性计算（trend_compare / get_summary compare=true），模型只转述不口算（issue #8120）
 - DA-027: 问「这周为什么少卖」直接看商品归因（sales_attribution）：涨跌 Top N 逐字转述、不口算（issue #8157）
+- DA-028: 跨域视图判断层：同行基线（peer baseline）与 good/watch/bad/unknown 分档（issue #8234）
+- DA-029: 简报条目 → 问黄金策：洞察到执行的入口（有 link / 无 link 都有，点一下就把这条交给 AI）
+- DA-030: 视图的「然后呢」：bad/watch 行给可选动作 + 代价 + 可逆性 + 验证方法（issue #8251）
+- DA-031: 复盘第一块原料：历史简报回溯（过去 N 天 AI 提醒过什么），空历史必须自述「没有记录」
+- DA-032: 决策采纳记录：AI 建议了什么 → 人做了什么（item_key 稳定 hash、幂等、不记原文）
+- DA-033: 权衡补刻度：压货资金 / 离同行差多少 / 每件多赚多少（未知不当 0、不乘销量、不做预测）
+- DA-034: 归因：同款对照只对 SKU 级信号有效（毛利能指到变体、退货率只能指到商品）；并修正毛利 verdict 方向
+- DA-035: 方向性判定守卫：方向必须登记（传给表查），传错/忘传/绕过都不可能通过
 - KN-001: 元元知识问答 - 面料问题先检索本店知识卡片（query 必填）
 - KN-002: 元元知识问答 - 清洗保养类问题走知识卡片检索
 - KN-003: 黄金策知识问答 - 本店售后政策先检索知识卡片（B 端接线回归，issue #3059）
@@ -13914,6 +14288,16 @@
 - KN-008: 知识来源标注边界 - 自补常识不得混入「📖 来自本店知识库」标注（P2-4，issue #3076）
 - KN-009: C 端知识问答**活栈**冒烟（元元）：多轮上下文 + 复合 Tool 的 SSE 事件 + 异常输入 + 快捷操作菜单
 - KN-010: 知识候选并发双采纳各自插卡 ⇒ 产出两张卡；改写为「先抢发布权（CAS）再插卡」后恰一次成功、恰一张卡（issue #6962）
+- MIG-001: 客户 Excel 任意表头：AI 映射建议（非固定模板）
+- MIG-002: 客户 Excel 任意表头：AI 输入样本脱敏
+- MIG-003: AI 映射不可用/输出非法 ⇒ 降级但不阻断迁移
+- MIG-004: 客户 Excel 解析 + 列映射分析：任意表头、空表头、行数上限
+- MIG-005: 试运行绝不写库；缺 externalId / 重复 externalId / 手机号冲突 ⇒ 行错误
+- MIG-006: 正式导入按 externalId 幂等：重跑不重复建、updateExisting 可控更新
+- MIG-007: 客户导入 HTTP 端点：analyze/preview/commit + customer:create 权限
+- MIG-008: AI 映射客户端失败语义：超时/非 2xx/坏 JSON ⇒ null，由确定性兜底
+- MIG-009: 客户迁移工作台：上传 → AI 映射建议 → 人工确认
+- MIG-010: 客户迁移工作台：试运行 → 正式导入 → 逐行结果
 - MC-005: RBAC 岗位目录读端点的权限注解守卫（AdminRoleController 逐端点台账 + 有意的跨码登记）
 - MC-006: RBAC 岗位目录读端点的身份级鉴权（9 身份：无 employee:list/system:view ⇒ 403，持有者 ⇒ 200）
 - MC-012: CI 失败报告去重 - 同日同标题 open issue 存在时不重复建
@@ -13999,7 +14383,6 @@
 - MC-096: 已移除的页面名不得出现在**服务端面向商家的文案**里（issue #6827）：#6580 收口后未配置提示与 422 理由仍指向「参数总览 → 余料回收」—— 类级守卫只扫**字符串字面量**（沿革注释合法），未登记即红 + 台账只许缩短
 - MC-097: 已移除页面名的**旧指针**改指「企业基础设置 → <域 label>」（issue #6839 = #6826 的 B1 包·admin-api 面）：按**动作**拆指针、假出口改写动作、能力名显式不改
 - MC-098: **跨包指针消费者 ⇄ 后端下发面**双向核对：删锚点必红（issue #6853 的类级固化）
-- MC-099: **admin-api → ai-agent 内部调用腿的可观测契约**：接线断了必须摆进 `/actuator/health`，且恒 UP 不熔断（issue #6896）
 - MC-100: **入库单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6928 的类级固化）
 - MC-101: **入驻审批并发双 approve ⇒ 租户数恰好 +1、恰好 1 次成功**：CAS 闸必须在副作用之前（issue #6954）
 - MC-102: **入驻审批写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 负谓词（本表无 deleted 列）即红 / 台账只许缩短（issue #6954 的类级固化）
@@ -14067,6 +14450,9 @@
 - WH-011: 成品打包入库：同一订单固定入同一仓位（仓位满了也不换仓，issue #8103）
 - MC-120: 页面动作登记表 → 步骤级教学（F6 / P2-1，承接 #5989）：how_to 命中逐字返回登记表、未登记如实说没有步骤级指引
 - MC-121: 四域共用一张 Let's Encrypt 证书的自动续期与到期判红（issue #8201）：续期机制在**宿主 cron** 但已连天失败且无告警 ⇒ 到期判据（0/1/3）+ 一次性修复 runbook + cron 加固
+- MC-122: 观星台终端正式发布链路（issue #8195）：/terminal/ 是纯静态下载面（缺失文件必须 404、不得回落 SPA、不限流、MIME 可判），官网 /download 有下载页，发布腿把终端仓 Release 的 exe/apk 幂等落到静态根并自证「线上字节 == 本地载荷」
+- MC-125: 微信「扫普通链接二维码打开小程序」校验文件（issue #8196）：nginx 根下 .txt 是显式静态面（缺失 404、不回落 SPA、只吃单段），deploy.sh 幂等只拷 *.txt 到静态根根下（只增/覆盖、父目录 index.html 哈希不变、跳过要出声）
+- MC-126: **外部账号的代码不得直接进本仓**：PR 提交作者 / head 仓库来源必须命中白名单，命中即判红并解除自动合并（issue #8386）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
@@ -14261,4 +14647,5 @@
 - UI-131: 全站下拉框只有一种形态（共享 SELECT_CONTROL / 自绘箭尖）+ 筛选条字段参与伸缩（issue #7397）
 - UI-142: 销售订单列表：4 个同级文字链收敛为「1 主行动 + ⋯ 菜单」，非加急行不再印「不加急」，订单号可复制（issue #8011）
 - UI-143: 经营看板首屏：待处理前置 + 顶部两块 AI 内容合并成一卡（四态齐全）+ 骨架 + 环比改倍数（issue #8012 / #8105 / #8114）
+- UI-144: 官网下载页（/download，issue #8195）：从终端发布清单展示版本 / SHA-256 / 大小 / 发布时间 / 说明与两个下载按钮；清单缺失或格式坏 ⇒ 明确「暂未发布」且不编造版本号；伪协议不渲成链接；首屏正文进初始 HTML
 

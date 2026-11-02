@@ -3759,34 +3759,6 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
-  - id: MC-099
-    legacy_id: ""
-    title: "**admin-api → ai-agent 内部调用腿的可观测契约**：接线断了必须摆进 `/actuator/health`，且恒 UP 不熔断（issue #6896）"
-    domains:
-      - misc
-    tier: normal
-    tags:
-      - backend-contract
-      - liveness
-      - observability
-    truths_ref: []
-    user_inputs:
-      - "本地漏设 `AI_AGENT_BASE_URL` / `AI_AGENT_SERVICE_TOKEN` 时，凭什么在业务侧静默驳回「系统繁忙」**之前**就知道这条腿断了？"
-    expectations: []
-    data_checks:
-      - "🔴 **判据 1·事实必须在面上**：`AiAgentLinkHealthIndicator.health()` 的 details 必须含 `base_url` / `base_url_configured` / `token_configured` / `reachable` / `probe_error` / `probed_at` 六键 —— **去掉任一键即红**（执行点 = `backend/admin-api/src/test/java/com/migao/admin/config/AiAgentLinkHealthIndicatorTest.java`）"
-      - "🔴 **判据 2·恒 UP 不许熔断**：token 未配、base-url 不可达、base-url 未配置三种坏态下，`status` 必须**仍是 `UP`**。沿用 #5184 / #4517 的既有裁定 —— 把 `/actuator/health` 打成 DOWN 会连带部署腿 / 探活 / 负载均衡一起红，比原问题更糟。**有人顺手改成 DOWN ⇒ 红**"
-      - "🔴 **判据 3·只暴露有无，不暴露值**：注入非空 token 后 `details.toString()` 必须**不含**该 token 原文 —— 防「把配置值直接摆进对外健康端点」这类泄密（红证 = 把 `token_configured` 换成 `service_token`）"
-      - "**判据 4·坏配置降级为事实而非异常**：`base-url` 为空串时不得调用探针、不得抛异常，须落 `base_url_configured=false` + `reachable=false` + 带原因的 `probe_error`"
-      - "**边界（照实登记）**：① 本用例只判「事实有没有被摆出来」，**不判**「运维看到 DOWN 态的 details 后是否真会去修」—— 那是值守面的事；② 每次 health 现探一次（超时 800ms 封顶）、**不缓存**，故 health 被高频拉取时会给 ai-agent 增加等量 `/health` 请求，本仓 health 非热点路径 ⇒ 暂不引后台线程；③ 六个客户端里各自重复的坏默认值**本单未收敛到一处**（8000 对 `deploy/docker-compose.yml` 的 `8001:8000` 是正确的容器内地址，改默认值会弄坏容器那条路）"
-    skip_reason: "[backend-contract] 零 LLM 的确定性单测（假探针 + 纯函数判定），mvn 真跑、零网络、不进 agent-eval 冒烟"
-    merge_log: "2026-10-14 新增（issue #6896，外部贡献者提交）。为什么必须有这条：六个客户端各自读 `ai-agent.base-url` / `ai-agent.service-token`，两个默认值都是坏的（`backend/admin-api/src/main/resources/application.yml` 的 `ai-agent.base-url` / `ai-agent.service-token` 两键，与各客户端 `@Value` 里重复的 `http://localhost:8000` / 空串），漏设环境变量时应用 UP、探活 200、ai-agent 自己看着健康，只有真实入驻静默被驳回成「系统繁忙」（`review_source=system`）—— 与 #5184（到期扫描腿静默停摆）、#4517（迁移被跳过与全过不可区分）是**同一类**失效，此前没有承接面。#6674 的收口方式是补 `docs/wiki/Quick-Start.md` 的「本地开发」节（该节列出 `AI_AGENT_BASE_URL` / `AI_AGENT_SERVICE_TOKEN` 的启动口径），保护的是读过文档的人，**可观测面仍缺**。取号 = main 现取 MC-001~098 ⇒ **MC-099**。⚠️ 贡献者自述：本机无云 dev DB/Redis、未起 ai-agent-service、未装 `migao-agent-presets`，故 `verify-all.sh gate` / `contract-check.sh` **未跑全**，以本 PR 的 CI 为准。"
-    traces:
-      tests:
-        - "backend/admin-api/src/test/java/com/migao/admin/config/AiAgentLinkHealthIndicatorTest.java"
-      ci:
-        - pr-check.yml
-      verifies: []
   # ==========================================================================
   # MC-100（issue #6928）：入库单状态迁移写路径必须落到 SQL 谓词（CAS）—— 类级元守卫
   # ==========================================================================
@@ -6137,5 +6109,119 @@ cases:
         - "tests/unit_ci_workflows/test_tls_renewal.py"
       ci:
         - post-merge-verify.yml
+        - pr-check.yml
+      verifies: []
+
+  # ==========================================================================
+  # MC-122（issue #8195）：观星台终端（工人端 APK / Windows 一体机 EXE）的**正式发布链路**。
+  # 病：终端的更新检查地址早就写死在程序里（app.migaozn.com/terminal/latest.json），
+  #     而 nginx 里 `/terminal` 0 命中 ⇒ 请求落进 `location /` 的 SPA fallback：
+  #     200 + 一页 C 端元元 HTML（缺失文件也是 200）；官网 `/download` 404；产物没有任何发布通路。
+  # ==========================================================================
+  - id: MC-122
+    legacy_id: ""
+    title: "观星台终端正式发布链路（issue #8195）：/terminal/ 是纯静态下载面（缺失文件必须 404、不得回落 SPA、不限流、MIME 可判），官网 /download 有下载页，发布腿把终端仓 Release 的 exe/apk 幂等落到静态根并自证「线上字节 == 本地载荷」"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - nginx
+      - terminal
+      - publish-leg
+      - no-spa-fallback
+      - idempotent
+      - red-proof
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是**结构 + 沙箱行为**事实（nginx 语义模拟 / 发布腿脚本在本地沙箱真跑），
+    # 由 tests/unit_ci_workflows/test_terminal_release_leg.py 验证；真实发布（SWAS + ACR）不在此面。
+    user_inputs:
+      - "终端自己检查更新打的地址是 app.migaozn.com/terminal/latest.json 与 /terminal/android/latest.json，官网没有下载页，产物也没有发布通路；要一条能发、能回滚、发错了会红的链路"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**nginx 面（会红）**：`app.migaozn.com` 的 443 server 段必须有 `location /terminal/`，其 `try_files` 必须是 `$uri =404`（缺失文件 404）——回落任何 HTML 都是「200 + 别人的页面」（客户端会把 HTML 当清单/安装包解析，失败形态与「没有新版本」无法区分）。裸前缀 `location /terminal` 必须 `return 301 /terminal/`（否则它同样落进 SPA fallback）。该 location 不得挂 `limit_req`（批量更新会误伤），必须有 `default_type application/octet-stream`（exe/apk 按二进制落盘）与 `X-Content-Type-Options: nosniff`；**不许**用 `types {}`（替换继承表，类级判据 test_served_leg_mime_guard.py 禁止）。判据是**真解析 + 真模拟**（`_serve()`：前缀最长者 + try_files + return），不是文本匹配；变异（删 location / 改回 SPA fallback / 删 301 / default_type 改文本 / 挂限流 / 注入 types{}）各自判红。"
+      - "**发布腿结构（会红）**：`.github/workflows/terminal-publish.yml` 只允许 `workflow_dispatch` 且 `release_tag` 必填（发布是人工闸：没有 tag 就不知道该发哪一版，`push` 触发会让合并即发布）；发布/断言步骤不得带 `continue-on-error` / `|| true` / 恒假 `if`；ACR 登录必须走唯一实现 `scripts/acr_login.sh --fatal`（本腿把载荷推进 ACR ⇒ 登录承重）；静态根 `/opt/migao-deploy/h5` + 子目录 `terminal` 逐字在案。"
+      - "**CI 脚本契约（会红）**：`deploy/scripts/terminal-publish-ci.sh` 必须逐字含四条验收断言（远端 latest.json / android/latest.json 哈希 == 本地载荷、静态根 index.html 前后一致、PAYLOAD_MANIFEST_OK=1 自证行、InvocationStatus 必须 Success）与命令内容字节前置断言（`COMMAND_CONTENT_LIMIT_BYTES` 16384 + 官方出处 URL），且**不许内联远端执行体**（台账 swas_command_content_legs_ledger.json 的射程）。"
+      - "**沙箱行为（真跑脚本，会红）**：`prepare` 从「已下载的 Release 目录」生成两份清单，字段名与终端客户端逐字对齐（Windows `version` / `notes` / `download_url`；Android `versionCode`(int) / `versionName` / `download_url`），sha256/size 与实际文件一致；坏输入（缺目录 / versionCode 非整数 / tag 含引号 / version 为空）一律拒绝。远端脚本把载荷落到沙箱静态根：父目录 index.html 哈希不变、陈旧文件被收敛、不属于发布面的文件不搬、**幂等**（连跑两次逐字节一致）；清单与载荷不一致 / 缺件 / 多出未知文件 / 越界子目录 / 缺静态根 ⇒ 非零退出且**什么都没改**。"
+      - "**发布文档（会红）**：`docs/deployment/terminal-release.md` 必须写清发布步骤、回滚、证书现状（Windows 未签名 + SmartScreen + SHA256 公布）、不上架应用市场、`versionCode` 单调、两个清单地址。"
+    skip_reason: "[backend-contract] 静态结构 + 沙箱真跑判据（零网络、零云调用、不碰真实静态根）由 tests/unit_ci_workflows/test_terminal_release_leg.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-31 新增（issue #8195）：交付 = ① nginx 的 `/terminal` 归一 + `/terminal/` 纯静态下载面 ② 官网 `(corporate)/download` 下载页 + nav/footer/sitemap 入口 + next rewrites 同源转发 ③ `deploy/terminal-dist/Dockerfile` + `deploy/scripts/terminal-publish-ci.sh`（prepare / publish）+ `deploy/swas/terminal-publish-remote.sh` + `.github/workflows/terminal-publish.yml`（只有 workflow_dispatch）④ `docs/deployment/terminal-release.md` ⑤ 判据 = tests/unit_ci_workflows/test_terminal_release_leg.py（含注入式红证）+ test_public_code_spaces_are_disjoint.py 的 `/terminal` 归属登记与两条红证。取号 MC-122（python3 scripts/next_case_id.py MC 现取 main 001-120 + 在飞 PR 面 ⇒ 返回 MC-122）。⚠️ 未闭合（照实登记）：终端仓的 Release 自动出包（terminal#12）与 `secrets.TERMINAL_REPO_TOKEN`（人工前置）不在本用例射程；真实发布与 served 断言由 workflow 在线上跑。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_terminal_release_leg.py"
+        - "tests/unit_ci_workflows/test_public_code_spaces_are_disjoint.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: MC-125
+    legacy_id: ""
+    title: "微信「扫普通链接二维码打开小程序」校验文件（issue #8196）：nginx 根下 .txt 是显式静态面（缺失 404、不回落 SPA、只吃单段），deploy.sh 幂等只拷 *.txt 到静态根根下（只增/覆盖、父目录 index.html 哈希不变、跳过要出声）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - nginx
+      - wechat
+      - static-root
+      - no-spa-fallback
+      - idempotent
+      - red-proof
+    truths_ref: []
+    # ⚠️ 真值暂缺：本判据是**结构 + 沙箱行为**事实（nginx 语义模拟 / deploy.sh 的落位段在本地沙箱真跑），
+    # 由 tests/unit_ci_workflows/test_wechat_verify_route.py 验证；真实域名上的校验（微信后台 / curl）不在此面。
+    user_inputs:
+      - "微信后台要求把生成的根下 `<名字>.txt` 放到 https://app.migaozn.com/<名字>.txt；仓库侧要能承接这个文件，且文件缺失时不能伪装成「已就位」"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**nginx 面（会红）**：`app.migaozn.com` 的 443 段必须有**唯一**一条窄正则 location（`^/[^/]+\\.txt$`，`try_files $uri =404`，无 proxy / 无 rewrite）：根下 .txt 存在 ⇒ 200 该文件；**缺失 ⇒ 404**（绝不回落 `location /` 的 `index.html` —— 回落就是 HTTP 200 的一页 HTML，与「内容对不上」无法区分）；该正则只匹配根下单段 ⇒ `/b/…` 仍回落 `b/index.html`、`/w/…` 与 `/terminal/…` 不被劫持、根级 SPA 路由仍是 `index.html`。`location /` 的 SPA fallback 必须原样保留（404 是新面带来的，不是把全站改成 404）。判据 = **真解析 + 真模拟**（正则 location 先于前缀 + 前缀最长者 + try_files + index），不是文本匹配；三种变异（删 location / 把 `=404` 换成 `/index.html` / 把正则放宽成 `^/.*\\.txt$`）各自判红。"
+      - "**落位拷贝语义（真跑 deploy.sh 的 `# >>> wechat-verify` 段，会红）**：只拷 `*.txt`（非 txt 不落盘）；**只增/覆盖**，静态根里别的文件（`index.html` / `js/` / `b/` / 已有 `keep.txt`）逐字节不变；**幂等**（连跑两次快照逐字节一致）；同名以源为准；源目录为空 / 源目录不存在 / 静态根不存在 ⇒ 退出码 **0** 且**出声**（不拖垮部署）；🔴 **默认源 = `src/deploy/swas/wechat-verify`**（线上配置包解出来的源码树；该目录在 C′ 构建后被删 ⇒ 段必须放在取配置之后、构建之前，否则永远「跳过」= 静默不落位）；源码层红线 = 该段不得出现 `rm` / `rsync` / `mv` / `--delete` / `find`。"
+      - "**仓库不许编文件名/内容（但真文件必须能提交）**：部署只从**仓库源码包**取文件 ⇒ 用户从微信后台下载的真 `*.txt` 可以入库；判据禁的是**伪造 / 占位**（文件名含 `example/sample/…`、内容含 `TODO/PLACEHOLDER/…`、空文件）。README 必须写清「原样放进来、别改名/改内容」、首次部署要跑第二次、以及部署后的三条 `curl` 自证（内容 diff / `content-type` / 缺失 404）。"
+      - "**类级不变式同步**：`app` 段「不出现非前缀 location」的两条守卫（tests/unit_ci_workflows/test_bmini_h5_hosting.py / test_terminal_release_leg.py）改为**唯一白名单**（只允许本条 `.txt` 面）；其余任何正则 location 仍判红。"
+    skip_reason: "[backend-contract] 静态结构 + 沙箱真跑判据（零网络、零云调用、不碰真实静态根）由 tests/unit_ci_workflows/test_wechat_verify_route.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-31 新增（issue #8196）：微信「扫普通链接二维码打开小程序」的**校验文件承接**。交付 = ① `deploy/swas/wechat-verify/README.md`（承接位，不预置文件）② `deploy/swas/deploy.sh` 的 1.3.1 段（在**取配置之后、C′ 构建之前**：源码树 `src/` 只在那时存在；幂等只拷 *.txt 到静态根根下）③ `deploy/swas/nginx.conf` 的根下 `.txt` 显式面（缺失 404、不回落 SPA）④ 判据 tests/unit_ci_workflows/test_wechat_verify_route.py（nginx 语义模拟 + 真跑拷贝段 + 变异红证）⑤ 两条「无正则 location」类级守卫的唯一白名单。取号 MC-125（python3 scripts/next_case_id.py MC 现取 main 001-122 + 在飞 PR #8214 的 123-124 ⇒ 返回 MC-125）。⚠️ 未闭合：微信后台生成的真实文件名/内容与真机扫码属用户侧。🔴 自查改判：早先那版判据写「本目录不许出现任何 .txt」，会把用户唯一的合法路径（提交真文件）也堵死 —— 现改为只禁伪造/占位，并把「真文件可提交」写进 README。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_wechat_verify_route.py"
+        - "tests/unit_ci_workflows/test_bmini_h5_hosting.py"
+        - "tests/unit_ci_workflows/test_terminal_release_leg.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+  # ==========================================================================
+  # MC-126（issue #8386）：外部作者守卫 —— 陌生账号 / fork 来源的代码不得直接进本仓
+  # ==========================================================================
+  - id: MC-126
+    legacy_id: ""
+    title: "**外部账号的代码不得直接进本仓**：PR 提交作者 / head 仓库来源必须命中白名单，命中即判红并解除自动合并（issue #8386）"
+    domains:
+      - misc
+    tier: normal
+    tags:
+      - backend-contract
+      - governance
+      - ci
+    truths_ref: []
+    user_inputs:
+      - "外部账号的 fork PR 关闭后，内容被搬到同仓分支重开并 squash 合并 —— 凭什么保证这种事不再发生？"
+    expectations: []
+    data_checks:
+      - "🔴 **判据 1·真实事故提交必须判红**：把 llwand1 在 PR #6897 / #6924 里的那条提交喂给 `classify()`，必须返回恰好 1 条违规且具名 `llwand1`。执行点 = tests/unit_ci_workflows/test_external_authorship_guard.py::test_real_incident_commit_is_flagged"
+      - "🔴 **判据 2·白名单形态**：空名单 / 通配一律拒绝启动（空名单等于放行一切，通配等于名单形同虚设）；真实白名单必须精确、非空、含两个协作者且**不含 llwand1**。执行点 = 同文件::test_empty_allowlist_is_refused / test_wildcard_allowlist_is_refused / test_real_allowlist_is_exact_and_covers_known_accounts"
+      - "🔴 **判据 3·fork 来源无条件判红**：head 仓库 != 本仓时，无论作者是否在白名单都判红并说明是 fork。执行点 = 同文件::test_cli_flags_fork_head_repo"
+      - "🔴 **判据 4·CLI 三态**：陌生提交 ⇒ exit 1 且具名；自家提交 ⇒ exit 0；白名单读不到 ⇒ exit 2（不得当 0 读）。执行点 = 同文件::test_cli_flags_foreign_commit_offline / test_cli_allows_team_commit_offline"
+      - "🔴 **判据 5·接线**：`.github/workflows/pr-check.yml` 必须有 `external-authorship-guard` job、`timeout-minutes` 与真实调用脚本的 run 步骤，且 `on.pull_request` 不得有 paths 过滤（将来翻 required 的前提）。执行点 = 同文件::test_workflow_wires_the_guard"
+      - "**边界（照实登记）**：① 判不了「外部代码被本人身份重新提交」（squash 后作者面看不出异常）；② 白名单是自证式的，伪造 team 邮箱可绕过 —— 流程护栏，不是安全边界；③ 本腿非 required，阻断直接合并靠「判红 + 解除 auto-merge + block/merge」。"
+    skip_reason: "[backend-contract] 零 LLM 的确定性判据（纯函数分类器 + 离线 CLI 夹具 + workflow 结构读取），pytest 真跑、零网络、不进 agent-eval 冒烟"
+    merge_log: "2026-11-01 新增（issue #8386，源于 #6897 → #6924 的真实事故复盘）。为什么必须有这条：外部账号 llwand1 的 fork PR #6897 关闭未合并，但同日被搬到同仓分支以 PR #6924 重开并 squash 合并（9626b8f9a）⇒ 陌生代码进入 main；而 `automerge.yml` 只排 fork PR，对同仓转手完全无感。事后由 PR #8383 全部撤回，本单补防复发。取号 = 现取 MC-001~122,125（123-124 在 PR #8214）⇒ **MC-126**。读数：本判据 10 条全绿（含真实事故夹具红证）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_external_authorship_guard.py"
+      ci:
         - pr-check.yml
       verifies: []

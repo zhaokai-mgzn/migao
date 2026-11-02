@@ -133,7 +133,13 @@ LEDGER_CEILINGS = {
     # `UNANNOTATED_ENDPOINTS` 台账（逐条带理由：只回 5 个非敏感键 `app`/`sha`/`tag`/`builtAt`/`servedAt`，
     # 无租户/业务/实例数据）。**显式放宽**（diff 里看得见）：增长的原因是「确实新增了一条无鉴权只读探针」，
     # 不是「有人把台账放宽了」。23 → 24。
-    "UNANNOTATED_ENDPOINTS": 24,
+    # issue #8196（2026-10-31）：新增 `GET /s/{shortCode}/json`（`WorkerShortLinkController`，
+    # 小程序「扫普通链接二维码打开小程序」A 档：小程序**不跟随 302** ⇒ 需要一跳 JSON 把短码换回
+    # `{reportPath, token}`）。它与既有 `GET /s/{}` **同族**（公开印刷品入口、`permitAll`、不查企业编码、
+    # 响应键集恰好两个、不多给 302 Location 之外的字段）⇒ 已登记进 `UNANNOTATED_ENDPOINTS`。
+    # **显式放宽**（diff 里看得见）：增长的原因是「确实新增了一条与 `/s/{}` 同族的公开入口」，
+    # 不是「有人把台账放宽了」。24 → 25。
+    "UNANNOTATED_ENDPOINTS": 25,
 
     # issue #4923（2026-10-02）：`craft_config_query` 是**跨码工具**（6 个读端点分属三档生效码，
     # 工具声明生产域读码 `production:view`）⇒ 判据 2 的具名出口 `CODE_DIVERGENCE_EXCEPTIONS`

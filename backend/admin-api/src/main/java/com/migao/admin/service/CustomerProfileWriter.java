@@ -11,7 +11,7 @@ import java.util.UUID;
 /**
  * 客户档案建档的**单一实现点**（issue #7257）。
  *
- * <p><b>病</b>：三处建档写面（手工建档 / 会话自动建档 / 下单自动建档）各自「{@code selectOne} 判空 + {@code insert}」，
+ * <p><b>病</b>：建档写面（手工建档 / 会话自动建档 / 下单自动建档 / 客户主数据迁移导入）各自「{@code selectOne} 判空 + {@code insert}」，
  * 而 {@code customer_profiles} 上没有任何唯一约束 ⇒ 并发会**静默**建出同一手机号/微信身份的两条档案，
  * 于是 {@code total_orders} / {@code total_consumption} 被劈成两行（涉钱口径读不准）。</p>
  *
@@ -76,7 +76,40 @@ public final class CustomerProfileWriter {
     }
 
     /**
-     * 统一的默认值（三处建档案原来各写一份，口径容易漂）。返回 builder 而不是成品，
+     * 按旧系统客户ID确保档案存在（issue #8295；迁移幂等键）。
+     *
+     * <p>写面顺序与 {@link #ensureByPhone} 同构：先读 → 再 {@code insertIgnore} → 撞键回读。
+     * 唯一键是 {@code uk_customer_profiles_external_id (tenant_id, external_id)}；
+     * 同时手机号唯一索引也会兜底，所以插入 0 行且回读不到 external_id 时，说明手机号被**另一条**档案占用
+     * ⇒ 返回 {@code profile=null}，由迁移服务落成行错误（不静默合并、不改既有档案）。</p>
+     */
+    public static Result ensureByExternalId(CustomerProfileMapper mapper, CustomerProfile candidate,
+                                            String externalId) {
+        Long tenantId = candidate.getTenantId();
+        CustomerProfile existing = mapper.findFirstByExternalId(tenantId, externalId);
+        if (existing != null) {
+            return new Result(touch(mapper, tenantId, existing), false);
+        }
+        candidate.setId(newId());
+        int inserted = mapper.insertIgnoreByExternalId(candidate, externalId);
+        if (inserted > 0) {
+            log.info("客户档案已建档（迁移）: id={}, externalId={}, tenantId={}",
+                    candidate.getId(), externalId, tenantId);
+            return new Result(candidate, true);
+        }
+        CustomerProfile winner = mapper.findFirstByExternalId(tenantId, externalId);
+        if (winner != null) {
+            log.info("客户档案撞并发（对手先建）⇒ 收敛到既有档案: externalId={}, tenantId={}",
+                    externalId, tenantId);
+            return new Result(touch(mapper, tenantId, winner), false);
+        }
+        log.warn("迁移建档未写入（external_id 之外撞唯一键，手机号已被其他客户占用）: externalId={}, tenantId={}",
+                externalId, tenantId);
+        return new Result(null, false);
+    }
+
+    /**
+     * 统一的默认值（各建档路径原来各写一份，口径容易漂）。返回 builder 而不是成品，
      * 因为 {@code CustomerProfile} 没有 {@code toBuilder()}，调用方要在默认值上追加自己的字段。
      */
     public static CustomerProfile.CustomerProfileBuilder candidate(Long tenantId) {

@@ -191,6 +191,8 @@ public class InboundLabelService {
             view.setDyeLot(item.getDyeLot());
             view.setBatchNo(item.getBatchNo());
             view.setProductName(productNameOf(item.getProductId()));
+            // 纸面「货号」= 商品货号（不是 SKU 的规格编码，见 InboundLabelView#productCode 的注释）
+            view.setProductCode(productCodeOf(item.getProductId()));
         }
         return view;
     }
@@ -297,11 +299,21 @@ public class InboundLabelService {
 
     /** 实读品名（商品已删 ⇒ null，**不编造**）。 */
     private String productNameOf(String productId) {
+        Product product = loadProduct(productId);
+        return product == null ? null : product.getName();
+    }
+
+    /** 实读**商品货号**（`products.sku_code`；商品已删 ⇒ null，**不编造**）。 */
+    private String productCodeOf(String productId) {
+        Product product = loadProduct(productId);
+        return product == null ? null : product.getSkuCode();
+    }
+
+    private Product loadProduct(String productId) {
         if (!StringUtils.hasText(productId)) {
             return null;
         }
-        Product product = productMapper.selectById(productId);
-        return product == null ? null : product.getName();
+        return productMapper.selectById(productId);
     }
 
     /** 在单据详情里找那一行（找不到 ⇒ null：字段留空，不猜）。 */

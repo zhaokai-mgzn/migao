@@ -33,29 +33,29 @@
     {
       "path": "backend/admin-api/src/main/java/com/migao/admin/service/AgentBatchService.java",
       "literal": "用 GET /api/admin/agent/batches/",
-      "line": 216,
+      "line": 252,
       "hits": 1,
       "issue": "#6841",
       "kind": "登记（跟踪 #6841，B1 射程外）",
-      "reason": "批次状态查询提示「用 GET /api/admin/agent/batches/{id} 查看该批次的状态与结果」—— 受众待判（运营/商家），按泄漏登记。（现取命中 1 处）⚠️ 行号 210→216 = issue #6960 在 `execute` 的**读-判**与**抢执行权（CAS）**之间插入探针与条件更新（本包**未新增**泄漏，只把这条已登记债务的位置钉回现取行）。"
+      "reason": "批次状态查询提示「用 GET /api/admin/agent/batches/{id} 查看该批次的状态与结果」—— 受众待判（运营/商家），按泄漏登记。（现取命中 1 处）⚠️ 行号 210→216 = issue #6960 在 `execute` 的**读-判**与**抢执行权（CAS）**之间插入探针与条件更新（本包**未新增**泄漏，只把这条已登记债务的位置钉回现取行）。 ⚠️ #8283 把准入段拆到 claimForExecute/claimForRevert ⇒ 行号 216→252（字面量未改）。"
     },
     {
       "path": "backend/admin-api/src/main/java/com/migao/admin/service/AgentBatchService.java",
       "literal": "用 GET /api/admin/agent/batches/",
-      "line": 284,
+      "line": 384,
       "hits": 1,
       "issue": "#6841",
       "kind": "登记（跟踪 #6841，B1 射程外）",
-      "reason": "批次撤销结果提示「用 GET /api/admin/agent/batches/{id} 查看该批次的撤销结果」—— 同上（⚠️ 与上一条**字面量完全相同** ⇒ 台账键必须带行号，见判据 ::leak_key 的 docstring）。（现取命中 1 处）⚠️ 行号 262→284 = issue #6960 重排 `revert` 的准入段所致（未新增泄漏）。"
+      "reason": "批次撤销结果提示「用 GET /api/admin/agent/batches/{id} 查看该批次的撤销结果」—— 同上（⚠️ 与上一条**字面量完全相同** ⇒ 台账键必须带行号，见判据 ::leak_key 的 docstring）。（现取命中 1 处）⚠️ 行号 262→284 = issue #6960 重排 `revert` 的准入段所致（未新增泄漏）。 ⚠️ #8283 把准入段拆到 claimForExecute/claimForRevert ⇒ 行号 284→371（字面量未改）。 ⚠️ 终态 CAS 补丁后再现取：371→384（字面量未改）。"
     },
     {
       "path": "backend/admin-api/src/main/java/com/migao/admin/service/AgentBatchService.java",
       "literal": "请先执行该批次（POST /api/admin/agent/batches/",
-      "line": 289,
+      "line": 389,
       "hits": 1,
       "issue": "#6841",
       "kind": "登记（跟踪 #6841，B1 射程外）",
-      "reason": "批次执行顺序提示「请先执行该批次（POST /api/admin/agent/batches/{id}/execute）」—— 同上。（现取命中 1 处）⚠️ 行号 267→289 = issue #6960 重排 `revert` 的准入段所致（未新增泄漏）。"
+      "reason": "批次执行顺序提示「请先执行该批次（POST /api/admin/agent/batches/{id}/execute）」—— 同上。（现取命中 1 处）⚠️ 行号 267→289 = issue #6960 重排 `revert` 的准入段所致（未新增泄漏）。 ⚠️ #8283 把准入段拆到 claimForExecute/claimForRevert ⇒ 行号 289→376（字面量未改）。 ⚠️ 终态 CAS 补丁后再现取：376→389（字面量未改）。"
     },
     {
       "path": "backend/admin-api/src/main/java/com/migao/admin/service/CraftCalcConfigService.java",

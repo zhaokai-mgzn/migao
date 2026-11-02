@@ -8,6 +8,10 @@
 --     agent_batches, agent_batch_items
 --      批量更新的批次资源（V127，issue #5314 服务端包 —— 一张批次 + 一张逐条明细；
 --      明细的 old_value 是**撤销的唯一依据**，**不得**改用 audit_logs：审计是有界 fail-open、丢行允许），
+--     briefing_actions
+--      决策采纳记录（V204，issue #8260 —— 「AI 建议了什么 → 人做了什么」的后半句；
+--      item_key = 标题 sha256 前 16 位，不存原文；记录 ≠ 采纳）。缺这张表，
+--      「建议之后到底有没有人管」就永远只能靠回忆。
 --     client_request_keys, craft_calc_configs, daily_briefings, fabric_remnants,
 --     finance_transactions,
 --     receipt_allocations
