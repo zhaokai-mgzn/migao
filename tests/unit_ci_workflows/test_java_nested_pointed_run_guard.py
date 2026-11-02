@@ -149,6 +149,20 @@ def txt_engines() -> dict[str, str]:
     return engines
 
 
+def precondition_problems(entry: dict, index: dict) -> list[str]:
+    """台账「定点类保持扁平」这个前提的**现取**判定（J3 与它的判别力自证共用这一个谓词）。"""
+    unit = entry["unit"]
+    tc = index.get(unit)
+    if tc is None:
+        return [f"声明的定点类 `{unit}` 不存在（台账给不存在的对象盖章）"]
+    if tc.has_nested:
+        return [
+            f"前提已失效：定点类 `{unit}` 现在含 @Nested（{', '.join(sorted(tc.nested))}）⇒ "
+            f"`.txt` 摘要对它恒报 Tests run: 0，机具必须改读 `target/surefire-reports/TEST-<fqn>.xml`"
+        ]
+    return []
+
+
 def ledger() -> dict:
     return json.loads(LEDGER_PATH.read_text(encoding="utf-8"))
 
@@ -189,13 +203,12 @@ def test_j2_synthetic_bad_form_is_red_and_good_forms_are_not():
         (f"{simple}#{method}", f"{simple}${owner}#{method}")
     ], "合成语料里的坏形态没被判红 ⇒ 判据失效（这是「判别力自证」）"
 
-    for good in (f"{simple}#{method}".replace("#", "$" + owner + "#"),
-                 f"{simple}${owner}", simple, f"{simple}*",
-                 "SomeClass#someMethodThatDoesNotExist"):
+    good_forms = [f"{simple}${owner}#{method}", f"{simple}${owner}", simple, f"{simple}*",
+                  "SomeClass#someMethodThatDoesNotExist"]
+    for good in good_forms:
         assert jtr.bad_selectors_in_text(f"./mvnw test -Dtest={good}", index) == [], (
             f"合规写法 {good} 被判红 ⇒ 假红"
         )
-    assert f"{simple}#{method}" != f"{simple}${owner}#{method}"
 
 
 # ────────────────────────── J3/J4 `.txt` 读数源台账 ──────────────────────────
@@ -216,16 +229,11 @@ def test_j3_every_txt_reading_engine_is_registered_and_precondition_holds():
         text = path.read_text(encoding="utf-8", errors="replace")
         assert entry["anchor"] in text, f"台账锚未兑现：{name} 里找不到 {entry['anchor']!r}"
         assert entry["reason"].strip(), f"{name} 的登记理由为空（豁免必须写明为什么）"
-        unit = entry["unit"]
-        assert unit in index, f"{name} 声明的定点类 `{unit}` 不存在"
-        tc = index[unit]
-        assert entry["precondition"].strip()
-        assert not tc.has_nested, (
-            f"{name} 的前提已失效：定点类 `{unit}` 现在含 @Nested（{', '.join(sorted(tc.nested))}）⇒ "
-            f"`.txt` 摘要对它恒报 Tests run: 0，机具必须改读 `target/surefire-reports/TEST-<fqn>.xml`"
-        )
-        assert engines.get(name) == unit, (
-            f"{name} 的定点类与台账不符（现取 {engines.get(name)!r} / 台账 {unit!r}）"
+        assert entry["precondition"].strip(), f"{name} 的前提声明为空（前提必须写清）"
+        problems = precondition_problems(entry, index)
+        assert not problems, f"{name} " + "；".join(problems)
+        assert engines.get(name) == entry["unit"], (
+            f"{name} 的定点类与台账不符（现取 {engines.get(name)!r} / 台账 {entry['unit']!r}）"
         )
 
 
@@ -240,15 +248,16 @@ def test_j4_ledger_is_not_empty_and_only_shrinks():
 
 
 def test_j4_synthetic_nested_unit_would_be_red():
-    """判别力自证：把台账里任一机具的定点类换成**真含 @Nested** 的类 ⇒ J3 的前提判定必须红。"""
+    """判别力自证：前提判定（与 J3 **同一个谓词**）对三种语料各自给出正确结论。"""
     index = _repo_test_index()
-    nested_unit = next(tc.simple for tc in index.values() if tc.has_nested)
     data = ledger()
-    entry = dict(data["engines"][0], unit=nested_unit)
-    tc = index[entry["unit"]]
-    assert tc.has_nested, "合成语料选错了类（它不含 @Nested）"
-    # 与 J3 里那条断言同一谓词：前提失效 ⇒ 红
-    assert tc.has_nested is True
+    base = data["engines"][0]
+    nested_unit = next(tc.simple for tc in index.values() if tc.has_nested)
+
+    hit = precondition_problems(dict(base, unit=nested_unit), index)
+    assert hit and "前提已失效" in hit[0], "定点类含 @Nested 却判绿 ⇒「前提现取成立」是空断言"
+    assert precondition_problems(dict(base, unit="NoSuchTestClass"), index), "不存在的定点类被判绿 ⇒ 假绿"
+    assert not precondition_problems(base, index), "合规（扁平）前提被判红 ⇒ 假红"
 
 
 # ────────────────────────── J5 规范指向入口 ──────────────────────────
