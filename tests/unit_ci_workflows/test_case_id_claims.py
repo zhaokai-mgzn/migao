@@ -174,11 +174,18 @@ PR_LIST_LIMIT = 100
 #: ⚠️ 实测：这个数**不能**贪大 —— 响应体积由 `patch` 决定，带大 diff 的 PR 会到 **1MB+**（本机固定超时）。
 #: ⇒ 清单调用按它取（多数 PR < 100），**patch 另起一次**只为语料文件取（见 `list_changed_case_files`）。
 PR_FILE_LIST_MIN = 100
-#: 改动清单的**分页上限**（页数；每页 `PR_FILE_LIST_MIN` 条）⇒ 覆盖到 1000 个改动文件。
+#: 改动清单的**分页上限**（页数；每页 `PR_FILE_LIST_MIN` 条）⇒ 覆盖到 **3000** 个改动文件。
 #: 🔴 2026-10-03 实测（issue #6245 假绿面）：**只请求一页 ⇒ 任何 >100 文件的 PR 都让判据面 fail-closed**，
 #: 而它卡的是**所有**在飞 PR（#6278 承载体 562 文件 ⇒ #6277/#6275/#6229 全被连带判红）。
-#: 分页后仍超上限 ⇒ 照旧 fail-closed（宁红不绿）。
-PR_FILE_LIST_MAX_PAGES = 10
+#: 🔴 2026-11-02 **同族第二次**（issue #8439，别再把上限拍成一个"看起来够大"的数）：
+#: 上限还是 10 页（1000 文件）⇒ PR #8425（删 `acceptance/` 等，**2855** 个改动文件）让**全仓每个 PR**
+#: 的 required 腿一起红（#8423 / #8425 / #8437 / #8438 同时红），大 PR 自己也被卡 ⇒ **死锁**。
+#: 现口径 = **对齐平台硬上限**：`GET /pulls/{n}/files` 官方最多返回 **3000** 条
+#: ⇒ 30 页就覆盖 GitHub 可能给的全部；走满仍满页时再读一次 `changed_files` 判「是否真被截断」。
+PR_FILE_LIST_MAX_PAGES = 30
+#: GitHub 对「单个 PR 的改动文件清单」的**平台硬上限**（官方文档：最多返回 3000 条）。
+#: 超过它 ⇒ GitHub **静默截断**（语料面可能不完整）⇒ 仍 fail-closed（**不降级**）。
+PR_FILE_LIST_HARD_CAP = 3000
 #: 远端 claims 目录（判据 7 的**第一面**：取号台账的正门；只读这一层）。
 CLAIMS_API_PATH = ".github/cases/claims"
 #: 语料文件形态（判据 7 的**第二面**：该 PR **改过**的 `.github/cases/*.yml`）。
@@ -557,6 +564,23 @@ def list_claim_files(base: str, repo: str, token: str, number: int, sha: str
     return out, ""
 
 
+def _pr_changed_files(base: str, repo: str, token: str, number: int) -> tuple[int | None, str]:
+    """读一个 PR 的 `changed_files`（issue #8439）⇒ `(总数 | None, 错误文本)`。
+
+    用途**只有一个**：分页走满 `PR_FILE_LIST_MAX_PAGES`（= 平台硬上限 3000）后，判「到底有没有被截断」。
+    ⇒ **普通 PR 一次都不会调用它**（只在走满 30 页时发生），不新增常态网络面。
+
+    ⚠️ 与 `files` 清单不同：这个响应很小（PR 对象），但字段缺失 / 不是整数 ⇒ **判定不了**（不许当 0）。
+    """
+    raw, err = _api_json(f"{base}/repos/{repo}/pulls/{number}", token, HTTP_TIMEOUT_S)
+    if err or not isinstance(raw, dict):
+        return None, err or "PR 对象响应不是字典"
+    total = raw.get("changed_files")
+    if not isinstance(total, int):
+        return None, "PR 对象里没有整数 `changed_files` ⇒ 判不了是否被截断（宁红不绿）"
+    return total, ""
+
+
 def list_changed_case_files(base: str, repo: str, token: str, number: int, sha: str
                             ) -> tuple[list[tuple[str, str, str]], str]:
     """读一个 open PR **改过的** `.github/cases/*.yml` ⇒ `([(路径, 内容 SHA, patch)], 错误文本)`。
@@ -602,9 +626,17 @@ def list_changed_case_files(base: str, repo: str, token: str, number: int, sha: 
             out.append((name, blob, patch if isinstance(patch, str) else ""))
         if len(entries) < PR_FILE_LIST_MIN:
             return out, ""          # 最后一页（或空页）⇒ 清单已取全
+    # 走满 30 页（= 平台硬上限）仍满页：**再读一次 PR 的 `changed_files`** 判「到底有没有被截断」
+    # （issue #8439）。`changed_files <= 3000` ⇒ GitHub 不会再给第 31 页 ⇒ 清单**已取全**（不是「无法判定」）；
+    # `> 3000` ⇒ GitHub 静默截断 ⇒ 照旧 fail-closed（**不降级**）。
+    total, total_err = _pr_changed_files(base, repo, token, number)
+    if total_err:
+        return [], total_err
+    if total is not None and total <= PR_FILE_LIST_HARD_CAP:
+        return out, ""
     return [], (
-        f"改动文件数超过分页上限（{PR_FILE_LIST_MAX_PAGES} 页 × {PR_FILE_LIST_MIN} 条）"
-        f" ⇒ 可能还有下一页，语料面不完整"
+        f"改动文件数 {total if total is not None else '未知'} 超过 GitHub 的 "
+        f"{PR_FILE_LIST_HARD_CAP} 条清单上限 ⇒ GitHub 会截断，语料面不完整（宁红不绿）"
     )
 
 
@@ -1424,13 +1456,16 @@ class _ApiStub:
                  pr_files: dict[int, list[dict]] | None = None,
                  fail_first_pulls_status: int | None = None,
                  extra_headers: dict[str, str] | None = None,
-                 fail_first_pulls_message: str = "API rate limit exceeded for installation.") -> None:
+                 fail_first_pulls_message: str = "API rate limit exceeded for installation.",
+                 pr_changed_files: dict[int, int] | None = None) -> None:
         self.pulls = pulls
         self.contents = contents
         self.status = status
         self.blobs = blobs or {}
         self.fail_first_status = fail_first_status
         self.pr_files = pr_files or {}
+        # issue #8439：`GET /pulls/{n}` 的 `changed_files`（只在走满 30 页时被读一次）
+        self.pr_changed_files = pr_changed_files or {}
         # 限流面（issue #7549）：第一次 `GET /pulls` 直接给 403/429，用来量「等一个窗口再试」这条路径
         self.fail_first_pulls_status = fail_first_pulls_status
         self.fail_first_pulls_message = fail_first_pulls_message
@@ -1457,6 +1492,12 @@ class _ApiStub:
             return self.fail_first_status, {"message": "transient"}, ""
         if path.endswith("/pulls"):
             return self.status, self.pulls, ""
+        if re.fullmatch(r".*/pulls/\d+", path):          # issue #8439：/pulls/{n}（PR 对象）
+            number = int(path.rsplit("/", 1)[-1])
+            total = self.pr_changed_files.get(number)
+            if total is None:
+                total = len(self.pr_files.get(number, []))
+            return 200, {"number": number, "changed_files": total}, ""
         if "/pulls/" in path and path.endswith("/files"):
             number = int(path.rsplit("/pulls/", 1)[-1].split("/")[0])
             q = urllib.parse.parse_qs(query)
@@ -2038,3 +2079,65 @@ def test_this_judgement_is_pure_static_and_never_skips() -> None:
     assert import_guard_lines == [], (
         f"禁 `except ImportError` / `ModuleNotFoundError` 兜底（同族假绿）—— 命中行 {import_guard_lines}"
     )
+
+
+def test_http_changed_file_list_survives_a_pr_over_the_old_cap(monkeypatch) -> None:
+    """🔴 **回归（issue #8439）**：改动文件数**超过旧上限 1000**（PR #8425 实测 2855）⇒ 清单必须取全。
+
+    病（2026-11-02 **实测**）：`PR_FILE_LIST_MAX_PAGES` 原为 10（1000 文件），走满即 fail-closed
+    ⇒ **任何一个大 PR 在飞，全仓每个 PR 的 required 腿一起红**（#8423 / #8425 / #8437 / #8438 同时红），
+    而大 PR 自己也被卡 ⇒ 死锁。现口径 = 对齐 GitHub 平台硬上限（3000 条 ⇒ 30 页）。
+
+    本判据：1500 个改动文件 + 语料文件在**末页** ⇒ 必须读到 `OR-900`（修前：判「无法判定」⇒ 红）。
+    """
+    count = 1500
+    noisy = [{"filename": f"acceptance/noise/{i}.json", "sha": f"n{i}"} for i in range(count - 1)]
+    pr_files = {7201: noisy + [{"filename": ".github/cases/order.yml", "sha": "blob-a"}]}
+    stub = _ApiStub(
+        [{"number": 7201, "head": {"sha": "sha-a"}}],
+        {"sha-a/" + CLAIMS_API_PATH: []},
+        200,
+        {"blob-a": "cases:\n  - id: OR-900\n"},
+        pr_files=pr_files,
+    )
+    base = _serve_api(monkeypatch, stub)
+    _api_env(monkeypatch, base)
+    try:
+        fetched = fetch_open_pr_claims()
+        assert fetched is not None, "取数面返回 None（网络层失败）"
+        open_prs, problems = fetched
+        assert problems == [], f"1500 文件的 PR 不该判「无法判定」：{problems}"
+        assert {p.pr: p.added_ids for p in open_prs} == {7201: frozenset({"OR-900"})}, open_prs
+        files_calls = [r for r in stub.snapshot()[1] if r.endswith("/files")]
+        # 1500 条 = 15 个满页 + 1 个空页（第 16 页 0 条 ⇒ 判「已取全」）
+        assert len(files_calls) == 16, files_calls
+    finally:
+        _release(stub)
+
+
+def test_http_changed_file_list_stays_fail_closed_past_the_platform_cap(monkeypatch) -> None:
+    """🔴 **红证（#8439，判别力）**：`changed_files > 3000`（GitHub **静默截断**）⇒ **仍 fail-closed**。
+
+    这一条是「上限放大」这一改动的**反面**：如果只把 10 改成 30 而不判截断，那么**真被截断**的 PR
+    会被当成「已取全」⇒ 语料面**假绿**（看不见末尾新增的号）。本判据把它按住。
+    """
+    count = PR_FILE_LIST_MAX_PAGES * PR_FILE_LIST_MIN      # 30 页 × 100 = 3000（走满仍满页）
+    noisy = [{"filename": f"acceptance/noise/{i}.json", "sha": f"n{i}"} for i in range(count)]
+    pr_files = {7301: noisy}
+    stub = _ApiStub(
+        [{"number": 7301, "head": {"sha": "sha-a"}}],
+        {"sha-a/" + CLAIMS_API_PATH: []},
+        200,
+        {},
+        pr_files=pr_files,
+        pr_changed_files={7301: 3500},                     # GitHub 只给前 3000 条
+    )
+    base = _serve_api(monkeypatch, stub)
+    _api_env(monkeypatch, base)
+    try:
+        fetched = fetch_open_pr_claims()
+        assert fetched is not None and fetched[1], f"被截断的 PR 必须判「判定不了」：{fetched!r}"
+        joined = "\n".join(fetched[1])
+        assert "截断" in joined and "3000" in joined, joined
+    finally:
+        _release(stub)
