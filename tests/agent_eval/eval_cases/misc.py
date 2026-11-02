@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，175 条）
+# 域: misc（源: cases/misc.yml，176 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3225,6 +3225,24 @@ _CASE_MC_131 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── CI-001 [NORMAL] **fixture 录制基址只认 BASE_URL**：缺失即 fail-closed，不得静默回落到本机 127.0.0.1:8080（issue #8391）（源: cases/misc.yml）──
+_CASE_CI_001 = EvalCase(
+    id='CI-001',
+    legacy_id='',
+    title='**fixture 录制基址只认 BASE_URL**：缺失即 fail-closed，不得静默回落到本机 127.0.0.1:8080（issue #8391）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['月度 fixture 重录（fixture-record.yml）必须把 API 基址取自 BASE_URL；未设置时显式失败，不得静默回落到 127.0.0.1:8080'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·正向（行为面）**：设置 BASE_URL=https://example.test ⇒ 解析器（tests/e2e/helpers/api-base-url.mjs，用真 node 执行）返回值逐字等于它。执行点 = tests/unit_ci_workflows/test_fixture_record_base_url.py::test_base_url_env_is_adopted_verbatim', '🔴 **判据 2·fail-closed（行为面）**：不设 BASE_URL ⇒ 非零退出 + 具名报错（含 BASE_URL 与「未设置」）；输出里不得出现 127.0.0.1:8080 / localhost:8080。红证 = 2026-11-01 run 41358293178 逐字 `ECONNREFUSED 127.0.0.1:8080 → POST /api/auth/sms/login`（脚本自己打印的却是 BASE_URL=https://api.migaozn.com）。执行点 = 同文件::test_missing_base_url_fails_closed_without_local_fallback', '🔴 **判据 3·单一真值 + 接线（静态面）**：录制入口用 resolveRecordingBaseUrl() 并把结果显式传给 loginViaApi（原先登录走 auth.helper 的 NEXT_PUBLIC_API_BASE_URL || 127.0.0.1:8080 = 根因）；fixture-record.yml 的 BASE_URL 由 secrets.E2E_ADMIN_API_URL 透传且无本机地址。执行点 = 同文件::test_recording_entry_threads_resolved_base_into_login / test_auth_helper_login_uses_explicit_base / test_workflow_passes_base_url_through_secrets', '🔴 **判据 4·判别力自证**：把解析器改回历史形态（BASE_URL || 本机默认）⇒ 判据 2 的三条断言全部不成立；同一注入下判据 1 仍绿（证明「只测设置了 env 的路径」抓不到本缺陷）。执行点 = 同文件::test_guard_discriminates_the_historical_silent_fallback', '**边界（照实登记）**：① 判据不跑真 Playwright / 真后端，只判基址解析与接线（录制 job 的网络行为面由 run 日志承担）；② 判据 3 是静态面，不判「远端 API 真的可用」。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性判据（真 node 跑解析器 + workflow/录制脚本结构读取），pytest 真跑、零网络、不进 agent-eval 冒烟',
+    tags=['backend-contract', 'ci', 'fixture'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -3401,4 +3419,5 @@ CASES = (
     _CASE_MC_130,
     _CASE_MC_129,
     _CASE_MC_131,
+    _CASE_CI_001,
 )
