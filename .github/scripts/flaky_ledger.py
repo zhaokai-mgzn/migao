@@ -1722,6 +1722,35 @@ def _gh_api(path: str, *, method: str = "GET", fields=None) -> dict:
     return data
 
 
+def _failure_detail(exc) -> str:
+    """把「命令 / 解析失败」渲染成**可归因**的一句话（issue #8398）。
+
+    病（2026-11-02 实测，`Flaky Ledger Reconcile` 每轮判红）：`_gh_api` 用
+    `subprocess.run(..., check=True, capture_output=True)`，而调用方一律只打印 `{exc}`
+    —— `CalledProcessError.__str__()` **只有「命令 + 退出码」，不含 stderr**
+    ⇒ CI 上能读到的只有 `⛔ 取不到 run 列表 / 分支 tip（Command '['gh', 'api', …]' returned
+    non-zero exit status 1.）`，**真因（`gh: Not Found` / `API rate limit exceeded` / `unknown flag`）
+    被吞掉** ⇒ 只能靠猜。
+
+    口径：`CalledProcessError` ⇒ `rc` + `stderr`（尾 800 字，够放完整 gh 报错）+ `cmd`；
+    其余异常 ⇒ `类型: 原文`（`JSONDecodeError` 等）。**只读**：不改判定、不改退出码。
+    """
+    if isinstance(exc, subprocess.CalledProcessError):
+        parts = [f"rc={exc.returncode}"]
+        stderr = (getattr(exc, "stderr", "") or "").strip()
+        stdout = (getattr(exc, "stdout", "") or "").strip()
+        if stderr:
+            parts.append(f"stderr={stderr[-800:]}")
+        if stdout:
+            parts.append(f"stdout={stdout[-400:]}")
+        cmd = exc.cmd
+        if isinstance(cmd, (list, tuple)):
+            cmd = " ".join(str(c) for c in cmd)
+        parts.append(f"cmd={cmd}")
+        return " · ".join(parts)
+    return f"{type(exc).__name__}: {exc}"
+
+
 def fetch_bundle(repo: str, run_id: int) -> dict:
     run = _gh_api(f"repos/{repo}/actions/runs/{run_id}")
     attempt = _attempt(run)
@@ -2844,8 +2873,8 @@ def main(argv=None) -> int:
                         .get("workflow_runs") or [])
             tip = branch_tip(_gh_api(f"repos/{args.repo}/branches/{args.head_branch}"))
         except (subprocess.CalledProcessError, json.JSONDecodeError) as exc:
-            print(f"⛔ 取不到 run 列表 / 分支 tip（{exc}）⇒ **未跑 ≠ 通过**（不得当「队列为空」读）",
-                  file=sys.stderr)
+            print(f"⛔ 取不到 run 列表 / 分支 tip（{_failure_detail(exc)}）⇒ **未跑 ≠ 通过**"
+                  f"（不得当「队列为空」读）", file=sys.stderr)
             return 3
         if not tip:
             print(f"⛔ 取不到台账分支 `{args.head_branch}` 的 tip ⇒ **无法判定**（不得当「没有待批准 run」读）",
@@ -3251,8 +3280,8 @@ def main(argv=None) -> int:
                               f"?event=pull_request&branch={args.branch}&per_page=100")
             tip = branch_tip(_gh_api(f"repos/{args.repo}/branches/{args.branch}"))
         except (subprocess.CalledProcessError, ValueError) as exc:
-            print(f"⛔ 取不到台账分支 `{args.branch}` 的 run / tip 事实（{exc}）⇒ **无法判定**"
-                  f"（未跑 ≠ 通过），本轮零动作、fail-closed", file=sys.stderr)
+            print(f"⛔ 取不到台账分支 `{args.branch}` 的 run / tip 事实（{_failure_detail(exc)}）"
+                  f"⇒ **无法判定**（未跑 ≠ 通过），本轮零动作、fail-closed", file=sys.stderr)
             return 3
         if not tip:
             # 与 `approve` 同一条纪律：**不**用「此刻最新可见的 run」代替 tip（GitHub 创建 run 是
@@ -3271,8 +3300,8 @@ def main(argv=None) -> int:
                 jobs = (_gh_api(f"repos/{args.repo}/actions/runs/{entry['id']}/jobs")
                         .get("jobs") or [])
             except (subprocess.CalledProcessError, ValueError) as exc:
-                print(f"⛔ 取不到 run {entry['id']} 的 job 事实（{exc}）⇒ **不重跑它**"
-                      f"（「到底有没有失败 job」不许靠猜）⇒ 退 3", file=sys.stderr)
+                print(f"⛔ 取不到 run {entry['id']} 的 job 事实（{_failure_detail(exc)}）"
+                      f"⇒ **不重跑它**（「到底有没有失败 job」不许靠猜）⇒ 退 3", file=sys.stderr)
                 return 3
             failed = [str(job.get("name")) for job in jobs if is_failed(job)]
             if not failed:
