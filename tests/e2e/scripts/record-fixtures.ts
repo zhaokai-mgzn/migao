@@ -1,25 +1,34 @@
 /**
  * Fixture 录制脚本
  *
- * 用法:
+ * 用法（BASE_URL **必填**，缺失即失败 —— issue #8391）:
  *   cd tests
- *   BASE_URL=http://localhost:8080 npx tsx e2e/scripts/record-fixtures.ts
+ *   BASE_URL=https://api.migaozn.com npx tsx e2e/scripts/record-fixtures.ts
  *
  * 录制所有关键 API 的实际响应到 fixtures/ 目录。
  * 之后 E2E 测试用真实数据 mock，不再手写 mock 数据。
+ *
+ * 为什么 BASE_URL 必填（issue #8391）：2026-11-01 的月度重录 job env 明明是
+ * `BASE_URL=https://api.migaozn.com`，登录却回落到 Playwright 的本机默认地址
+ * （`ECONNREFUSED` 打向本机 8080 的 `/api/auth/sms/login`，run 41358293178；
+ * 同一形态 2026-09 起连红三次）。基址只认 BASE_URL 一个来源。
  */
 import { loginViaApi } from '../helpers/auth.helper'
 import { recordFixture } from '../helpers/record-replay'
+import { resolveRecordingBaseUrl } from '../helpers/api-base-url.mjs'
 
 const PHONE = process.env.E2E_ADMIN_PHONE || '13800138000'
 const CODE = process.env.E2E_SMS_CODE || '123456'
 
+// fail-closed：缺失 / 非法的 BASE_URL 在这里就报错，绝不带着本机默认地址往下跑请求。
+const BASE = resolveRecordingBaseUrl()
+
 async function main() {
   console.log('📡 开始录制 API fixtures...')
-  console.log(`   BASE_URL: ${process.env.BASE_URL || '默认'}`)
+  console.log(`   API 基址（env BASE_URL）：${BASE}`)
   console.log(`   login: ${PHONE} / ${CODE}`)
 
-  const tokens = await loginViaApi(PHONE, CODE)
+  const tokens = await loginViaApi(PHONE, CODE, BASE)
   const auth = { Authorization: `Bearer ${tokens.accessToken}` }
 
   // ====== 订单 ======
@@ -84,8 +93,8 @@ async function main() {
 }
 
 function getBaseUrl(): string {
-  // Playwright 在 test 中有 baseURL，录制脚本用环境变量
-  return process.env.BASE_URL || 'http://localhost:8080'
+  // 唯一来源 = resolveRecordingBaseUrl()（env BASE_URL，缺失即 fail-closed）；没有本机默认值。
+  return BASE
 }
 
 main().catch((e) => {
