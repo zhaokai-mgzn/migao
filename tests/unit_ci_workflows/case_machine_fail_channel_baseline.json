@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 271
+    "backend_contract_scoring_zero": 272
   },
   "history": [
     {
@@ -1170,6 +1170,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 271,
       "note": "issue #8084（LLM 主凭据失效不再是静默故障）新增 1 条 [backend-contract] 用例 MC-129 ⇒ 读数 270 → 271。机器判红通道 = backend/ai-agent-service/tests/test_llm_health.py（16 条）+ tests/unit_ci_workflows 的探针登记判据；含 6 条注入式红证（删 note_llm_failure / 摘接线 / 探针恒 200 / 去缓存 / 未登记探针 / 摘装饰器）。用例不进 agent-eval（skip_reason 已写明 [backend-contract]），真债务 no_channel_total 仍为 0。生成物由 render_cases.py 重渲染（968 条）。"
+    },
+    {
+      "sha": "pending-pr-8491",
+      "date": "2026-11-03",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 272,
+      "note": "issue #6266（入库单号取号改原子占号）新增 1 条 [backend-contract] 用例 OR-075 ⇒ 读数 271 → 272。机器判红通道 = InboundNoTakeRaceRealDbTest（真库并发 4 路 × 3 轮：单号互不相同）+ NumberTakeTwoStepMetaGuardTest（类级元守卫，两步取号写面未登记即红）+ InboundOrderServiceTest。用例不进 agent-eval（skip_reason 已写明 [backend-contract]），真债务 no_channel_total 仍为 0。"
     }
   ]
 }
