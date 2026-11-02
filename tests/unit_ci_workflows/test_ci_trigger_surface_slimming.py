@@ -336,8 +336,12 @@ def test_tracked_files_exist() -> None:
 
 #: ① 的门控**规范形态**（逐字）：两半都必需。用逐字相等而不是子串 —— 子串判据会被
 #: 说明文字骗绿（本仓「提及 ≠ 调用」纪律，已踩四次）。
-FLAKY_TRIAGE_GATE = ("github.event.workflow_run.conclusion == 'failure' ||\n"
-                     "github.event.workflow_run.run_attempt > 1")
+#: #8444 追加**第三半**（`head_branch != LEDGER_BRANCH`）：台账分支的完成事件过去在脚本里
+#: `skip`，但 **job 已经跑满**（checkout + 两次 API 取数）⇒ 台账每推一次白烧 4 轮
+#: （限流风暴下那正是自激放大的一条腿）。闸门提到 job 级 ⇒ 连 job 都不创建。
+FLAKY_TRIAGE_GATE = ("(github.event.workflow_run.conclusion == 'failure' || "
+                     "github.event.workflow_run.run_attempt > 1) && "
+                     "github.event.workflow_run.head_branch != 'chore/flaky-ledger'")
 
 
 def flaky_triage_problems(wf: object) -> list[str]:

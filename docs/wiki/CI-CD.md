@@ -150,6 +150,46 @@ bad = workflow_structure_violations(mutant)              # 判据吃的是**当�
 - **真实 LLM 成本**：**PR 层 = 0 次真实 LLM**（2026-09-17 用户裁定 2′/4′，承载 issue #4034；**#4275** 之后 PR 层连**零 LLM 的映射信号**也没有了 —— `agent-behavior-eval.yml` 已整体删除，PR 上**不再有任何自动行为信号**，代价已知并接受）。判定走**单一入口** `post-deploy-eval`（**仅手动 `workflow_dispatch`**：#4262 收敛定时档、**#4974 删掉最后一条每周一 cron** ⇒ 全仓自动真实 LLM 触发 = **0 条**）；映射能力保留在 `tests/agent_eval/behavior_mapping.py`（零依赖纯函数，本机可调）。LLM 红例的闭环改由**确定性下沉台账**承接（`.github/llm-finding-ledger.json` + `llm_sink_check.py`，见 `docs/testing/llm-finding-sinking.md`）。
 - **观察指标**：`gh run list --status queued` 排队 >20 即需治理（先按 DEV-FLOW §7 清 dependabot 潮）。
 
+## 等待 CI：**不可假绿**的入口（2026-11-02 固化，issue #7009）
+
+**为什么要有这一节**：`gh pr checks <PR> --watch` 的**退出码不是**「全绿」的判据 —— 实测（PR #7003）
+**两次**在「并未全绿」时 rc=0 退出，每次都差点把 pending 读成「CI 全绿」（而「CI 全绿」是合并/收口的
+**放行依据**，读错会污染交付证据）。
+
+| 形态 | `--watch` 的行为 | 后果 |
+|---|---|---|
+| `PR Check` **还没上报** check（later-created run / 刚 push） | 认为「没有待跑的」⇒ rc=0 | 「还没跑」被读成「已全绿」 |
+| `Post graphql: read: connection reset by peer` | **仍 rc=0**，而 required 还在 pending | 同上，且有错误字样仍 0（更隐蔽） |
+
+**唯一入口**：`./scripts/wait-checks.sh <PR>`（判定本体 = `scripts/merge_gate.py --wait-checks`；
+required 集合**现取**自分支保护，与 `--check` / `--required-diff` **同一个真值源**，不写死清单）。
+
+| 退出码 | 含义 | 纪律 |
+|---|---|---|
+| `0` | required 集合里**每一条**都拿到**终态 SUCCESS** | **只有**这一条可以写「CI 全绿」 |
+| `1` | 有 required 是**终态非 SUCCESS**（红 / 取消 / 超时 / `SKIPPED`） | 具名打印后停；不重试、不猜 |
+| `3` | **无法判定**：pending / queued / 尚未上报 / required 读不到或为空 / 网络或 API 报错（**与退出码无关**） | **绝不是通过**：不得写成「全绿」，也不得当成「没问题」 |
+
+**五条纪律**：
+
+1. 结论只来自 `./scripts/wait-checks.sh <PR>` 的退出码**加上**它打印的**读数来源**（PR 号 + head sha +
+   required 条数与出处 + 每条 required 的 state + 采样次数 + 读数时刻）；
+2. **`3` ≠ `0`**：`3` 的正确动作是「继续等 / 修 gh / 修红」，**不是**「记成通过」；
+3. 别处仍用 `gh pr checks --watch` 时（如 `scripts/issue_lifecycle.py` 的 `land` 的 `wait-ci` 步），
+   **rc 只能用来「更早停」**：必须**再读一次** `gh pr checks --json` + required 集合才给结论，
+   且输出里出现 `connection reset by peer` / `Post graphql` 之类字样时**无论 rc** 都当失败（`land` 已按此落地）；
+4. **四条类级清单**（本仓「等待/阻塞」封装逐个核对「有没有把退出码当结论」）：
+   - `scripts/wait-checks.sh` + `scripts/merge_gate.py --wait-checks` —— 本单新增，只认数据；
+   - `scripts/pr-merge-when-clean.sh` —— 轮询 `gh pr view --json statusCheckRollup`，带形状断言 + 三态，**未**把 rc 当结论；
+   - `scripts/stranding-check.sh` —— 三态 `0/1/3`，读不到关键输入一律 `3`；
+   - `scripts/issue_lifecycle.py` 的 `wait-ci` —— 原先把 `--watch` 的 rc 当结论（本单的病灶来源），已改为「rc 只用来更早停 + 必须读数据」；
+5. **判据**：`tests/unit_ci_workflows/test_wait_checks.py`（三态 + 网络错误 + 空 required 集合 + 读数来源 +
+   接线 + **注入式红证**：把任一条改坏 ⇒ 对应判据单独变红，只改注释 ⇒ 全部照旧）与
+   `tests/unit_ci_workflows/test_lifecycle_land_and_reap.py` 的 `wait-ci` 组（含「`--watch` 假完成」的两条回归）。
+
+**边界（照实登记）**：本入口判的是「required 判据**报了**什么」，**不判**「判据本身判得对不对」；
+required 集合读不到时退 `3`（不猜）；`gh` 抖动 / 未登录 / 离线同样退 `3` —— 都不是 `0`。
+
 ## CI / 台账反复出错点：具名清单（2026-09-27 固化，用户逐字「**如果 ci 或者台账经常出错的点也应该固化下来**」）
 
 **这一节不是劝告**：下面每一条都带 `FM-EN` 记号，**逐条**给出「现状（有无守护）→ 守护是什么 →

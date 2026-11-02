@@ -194,6 +194,46 @@ MAX_ATTEMPTS = 2
 #: 计数器随进程消失 ⇒ 每 20 分钟触发一轮的兜底迟早变成**无限重跑**（那是红线）。
 MAX_LEDGER_RERUNS = MAX_ATTEMPTS - 1
 
+# ── #8444：限流熔断 + 同一提交的时间窗去重（**不新增计数器状态机**）──────────────
+#
+# 病（实测，2026-11-02 19:10 +08）：配额重置后 38 分钟又回到 `X-RateLimit-Remaining=0`，
+# 70 分钟内 32 次 Flaky Triage + 台账分支 34 次 CI —— **自激**，不是「负载高」：
+#   某 job 失败 → 分流 #1（fetch + rerun）→ rerun 的完成事件 → 分流 #2（第二次绿检测）
+#   → 记 flaky → 推台账分支 → 该分支 4 条 workflow 各跑一遍 → 4 次分流 …
+# 而限流红本身让**全仓失败** ⇒ 闭环。治法 = **熔断**（限流态整轮短路），不是继续调阈值。
+#
+# ⚠️ 两条都**不改变**任何既有语义：`MAX_ATTEMPTS` 仍是 2、`run_attempt > 1` 那一半
+#    （第二次绿检测）仍在、台账仍只追加、`decide` 仍是不改任何状态的纯函数。
+
+#: `gh` 报错文本里表示**限流**的片段（小写匹配）。命中的是**环境态**，不是 flaky。
+RATE_LIMIT_MARKERS = ("rate limit", "secondary rate limit", "abuse detection")
+
+#: #8444②：同一 `(workflow, head_sha)` 的**时间窗去重**（分钟）。窗口内重复的完成事件只分流一次。
+#: 窗口用**现取时间戳**判（`_dedup_hit`），**不是**计数器 —— 计数器会腐烂（随进程消失、随分支分叉），
+#: 而时间窗会自己过期 ⇒ 「压住一个提交」不会变成「永久压住它」。
+TRIAGE_DEDUP_WINDOW_MINUTES = 30
+
+
+class RateLimited(RuntimeError):
+    """`gh api` 撞到**限流**（HTTP 403 / secondary rate limit）—— **环境态**，不是 flaky。
+
+    为什么要专门的类型（#8444）：限流与「权限不足 / 404 / 网络抖动」的处置**完全不同** ——
+    前者要整轮短路（零 rerun / 零记账 / 零推台账），后者必须照旧 fail-closed（真失效不许被吞）。
+    继承 `RuntimeError` ⇒ 既有 `except RuntimeError` 的 fail-closed 出口语义不变。
+    """
+
+
+def is_rate_limit_error(text) -> bool:
+    """**纯函数**：`gh` 的错误文本是否表示**限流**（而不是权限 / 404 / 网络）。
+
+    只认「限流」那几个片段 —— **不**把任意 `403` 当限流：`403 Resource not accessible by
+    integration` 是权限问题，照旧 fail-closed（否则真失效会被当成「环境态」静默掉，
+    那正是本仓库最贵的形态「绿了但没跑」的同族）。
+    """
+    low = str(text or "").lower()
+    return any(marker in low for marker in RATE_LIMIT_MARKERS)
+
+
 #: 这些 conclusion **不是测试失败**：取消 / 超时 / 基础设施 / 启动失败 / 过期。
 #: 命中 ⇒ 不重跑、不记账、不打标（「不许把 infra 抖动记成 flaky」）。
 NOT_TEST_FAILURE_CONCLUSIONS = frozenset({
@@ -892,11 +932,82 @@ def build_entries(run, failed_jobs, rerun_result: str, prior_failed_jobs=None,
     return out
 
 
-def decide(bundle, max_attempts: int = MAX_ATTEMPTS) -> dict:
+def _utc_dt(value):
+    """任意 ISO8601 时刻 → `datetime`（UTC）；取不到/畸形 ⇒ `None`（**不猜**）。"""
+    iso = utc_iso(value)
+    if not iso:
+        return None
+    try:
+        return datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    except ValueError:  # pragma: no cover - `utc_iso` 已经校验过形态
+        return None
+
+
+def _dedup_hit(ledger, run, *, now=None, window_minutes=TRIAGE_DEDUP_WINDOW_MINUTES):
+    """#8444②：同一 `(workflow, head_sha)` 在**时间窗内已分流过** ⇒ 返回那次的分流时刻。
+
+    状态源 = **台账自身**（条目已带 `workflow` / `head_sha` / `observed_at`）⇒ 不新增计数器
+    状态机（计数器会腐烂）；判据 = **现取时间戳** `now` 与该条目时刻的差 ⇒ **窗口外的条目
+    自动失效**（不会永久压制同一个提交的后续分流）。
+
+    ⚠️ 如实登记的边界（不粉饰）：台账取的是**检出侧（main）**那一份 ⇒ 台账 PR 还没合并时，
+    上一轮的条目不在 main 上、本函数看不见它。此时挡住放大的是①限流熔断
+    ②`flaky-triage.yml` 的 job 级台账分支闸门，**不是**这里。
+    """
+    if not isinstance(ledger, dict):
+        return None
+    workflow = str((run or {}).get("name") or "")
+    sha = str((run or {}).get("head_sha") or "")
+    window = TRIAGE_DEDUP_WINDOW_MINUTES if window_minutes is None else float(window_minutes)
+    if not workflow or not sha or window <= 0:
+        return None
+    now_dt = _utc_dt(now or _now())
+    if now_dt is None:
+        return None
+    hit = None
+    for entry in ledger.get("entries") or []:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("workflow") != workflow or entry.get("head_sha") != sha:
+            continue
+        stamps = [_utc_dt(entry.get(key)) for key in ("observed_at", "rerun_at", "failed_at")]
+        stamps = [stamp for stamp in stamps if stamp is not None]
+        if not stamps:
+            continue
+        newest = max(stamps)
+        # 未来时刻（时钟漂移 / 伪造时间戳）也算命中：宁可少分一次，不可放大。
+        if (now_dt - newest).total_seconds() / 60.0 <= window:
+            hit = newest if hit is None else max(hit, newest)
+    return hit.isoformat().replace("+00:00", "Z") if hit else None
+
+
+def _rate_limited_skip(run, reading) -> dict:
+    """#8444①：限流态的 `decide` 结果 —— **只看环境态、不改任何状态**（零动作）。"""
+    remaining = (reading or {}).get("remaining")
+    detail = f"remaining={remaining}" if remaining is not None else "remaining=?"
+    if (reading or {}).get("reset"):
+        detail += f" reset={(reading or {}).get('reset')}"
+    return {
+        "action": "skip", "kind": None, "entries": [], "pr": pr_number(run),
+        "attempt": _attempt(run),
+        # 两个显式标志：CLI / 判据 / 读日志的人据此知道「这轮**没跑**」（不是「没有 flaky」）
+        "rate_limited": True, "environment_state": True,
+        "reason": (f"本轮**未分流**（环境态：GitHub API 限流 {detail}）⇒ 零 rerun / 零记账 / "
+                   "零推台账。⚠️ **「没跑」≠「没有 flaky」**：这轮的失败**留白**（不是「已确认"
+                   "无 flaky」），配额恢复后由下一个同形失败事件再触发"),
+    }
+
+
+def decide(bundle, max_attempts: int = MAX_ATTEMPTS, *, ledger=None, now=None,
+           dedup_window_minutes=None) -> dict:
     """**唯一**的分流判据（纯函数）。返回 `{action, reason, kind, entries, pr, attempt}`。
 
     `bundle` = `{"run": {...}, "jobs": [...], "prior_jobs": [...] | None}`
     （形状与 GitHub REST `/actions/runs/{id}` 与 `/attempts/{n}/jobs` 同源）。
+
+    #8444 新增两个**可选**入参（缺省 ⇒ 行为与改前逐字一致，既有调用方不受影响）：
+      · `ledger` —— 同 `(workflow, head_sha)` **时间窗去重**的状态源（条目自带时刻，无计数器）；
+      · `now` —— 现取时间戳（UTC ISO）；缺省 → `_now()`。窗口长度 = `dedup_window_minutes`。
 
     action 四态：
       · `skip`                   —— 不动作（含 infra/取消/超时/非 PR/不在白名单）
@@ -914,6 +1025,13 @@ def decide(bundle, max_attempts: int = MAX_ATTEMPTS) -> dict:
         return {"action": "skip", "reason": reason, "kind": None,
                 "entries": [], "pr": pr_number(run), "attempt": _attempt(run)}
 
+    # 🔴 #8444①：限流是**环境态**，必须在任何分流判据**之前**短路 —— 否则空 bundle 会被读成
+    # 「workflow 不在白名单 ⇒ skip」，而「skip」在下游与「没有 flaky」长得一样（那是本单最忌的
+    # 读数错位）。这里返回的是**显式**的「本轮没跑」。
+    rate = (bundle or {}).get("rate_limit") or {}
+    if isinstance(rate, dict) and rate.get("limited"):
+        return _rate_limited_skip(run, rate)
+
     name = str(run.get("name") or "")
     if name not in TRIAGED_WORKFLOWS:
         return skip(f"workflow `{name}` 不在分流白名单（重跑无副作用才收）")
@@ -927,6 +1045,19 @@ def decide(bundle, max_attempts: int = MAX_ATTEMPTS) -> dict:
     conclusion = _conclusion(run)
     if conclusion in NOT_TEST_FAILURE_CONCLUSIONS:
         return skip(f"conclusion={conclusion} 属取消/超时/基础设施失败 —— 不算 flaky、也不重跑")
+
+    # ── #8444②：同 `(workflow, head_sha)` 的**时间窗去重** ─────────────────────────
+    # 同一提交的多次完成事件（重复触发 / 重复投递 / 重跑之后的再次完成）在窗口内**只分流一次**。
+    # 状态源 = 台账条目自带的时刻（`_dedup_hit`，**没有计数器**）；窗口外自动失效 ⇒ 不会永久压制。
+    # ⚠️ `run_attempt > 1` 那一半（第二次绿检测）**不受影响**：首次尝试的失败/成功**不写台账**
+    #    ⇒ 重跑那次完成事件时窗口内没有同 `(workflow, head_sha)` 的条目 ⇒ 照旧进 `_terminal`。
+    window = TRIAGE_DEDUP_WINDOW_MINUTES if dedup_window_minutes is None else dedup_window_minutes
+    dup = _dedup_hit(ledger, run, now=now, window_minutes=window)
+    if dup:
+        return skip(f"同一 (workflow=`{name}`, "
+                    f"head_sha=`{str(run.get('head_sha') or '')[:12]}`) 在 {window:g} 分钟内"
+                    f"已分流过（{dup}）⇒ 同一提交的完成事件**只分流一次**"
+                    f"（去重，**不是**「没有 flaky」）")
     if conclusion == "success":
         if attempt < 2:
             return skip("首次尝试即绿 —— 无需分流")
@@ -1712,7 +1843,17 @@ def _gh_api(path: str, *, method: str = "GET", fields=None) -> dict:
             continue
         cmd += ["-f", f"{key}={value}"]
     cmd.append(path)
-    out = subprocess.run(cmd, check=True, capture_output=True, text=True).stdout
+    try:
+        out = subprocess.run(cmd, check=True, capture_output=True, text=True).stdout
+    except subprocess.CalledProcessError as exc:
+        # #8444：限流是**环境态**（要整轮短路），不是「这个调用失败了」（要 fail-closed）
+        # ⇒ 只把「限流」转成专门类型；其余错误**原样抛出**（不改变任何既有处置）。
+        detail = ((exc.stderr or "") + (exc.stdout or "")).strip()
+        if is_rate_limit_error(detail):
+            raise RateLimited(
+                f"`gh {' '.join(cmd[1:6])}` 撞到 GitHub API 限流（HTTP 403）：{detail[:200]}"
+            ) from exc
+        raise
     data = json.loads(out)
     # --slurp 对单页返回 [obj]；对分页返回 [obj, obj…]（jobs 走 per_page=100 单页即可）
     if isinstance(data, list) and len(data) == 1 and isinstance(data[0], dict):
@@ -1722,15 +1863,102 @@ def _gh_api(path: str, *, method: str = "GET", fields=None) -> dict:
     return data
 
 
-def fetch_bundle(repo: str, run_id: int) -> dict:
-    run = _gh_api(f"repos/{repo}/actions/runs/{run_id}")
-    attempt = _attempt(run)
-    jobs = (_gh_api(f"repos/{repo}/actions/runs/{run_id}/attempts/{attempt}/jobs")
-            .get("jobs") or [])
-    prior_jobs = None
-    if attempt >= 2:
-        prior_jobs = (_gh_api(f"repos/{repo}/actions/runs/{run_id}/attempts/{attempt - 1}/jobs")
-                      .get("jobs") or [])
+def _failure_detail(exc) -> str:
+    """把「命令 / 解析失败」渲染成**可归因**的一句话（issue #8398）。
+
+    病（2026-11-02 实测，`Flaky Ledger Reconcile` 每轮判红）：`_gh_api` 用
+    `subprocess.run(..., check=True, capture_output=True)`，而调用方一律只打印 `{exc}`
+    —— `CalledProcessError.__str__()` **只有「命令 + 退出码」，不含 stderr**
+    ⇒ CI 上能读到的只有 `⛔ 取不到 run 列表 / 分支 tip（Command '['gh', 'api', …]' returned
+    non-zero exit status 1.）`，**真因（`gh: Not Found` / `API rate limit exceeded` / `unknown flag`）
+    被吞掉** ⇒ 只能靠猜。
+
+    口径：`CalledProcessError` ⇒ `rc` + `stderr`（尾 800 字，够放完整 gh 报错）+ `cmd`；
+    其余异常 ⇒ `类型: 原文`（`JSONDecodeError` 等）。**只读**：不改判定、不改退出码。
+    """
+    if isinstance(exc, subprocess.CalledProcessError):
+        parts = [f"rc={exc.returncode}"]
+        stderr = (getattr(exc, "stderr", "") or "").strip()
+        stdout = (getattr(exc, "stdout", "") or "").strip()
+        if stderr:
+            parts.append(f"stderr={stderr[-800:]}")
+        if stdout:
+            parts.append(f"stdout={stdout[-400:]}")
+        cmd = exc.cmd
+        if isinstance(cmd, (list, tuple)):
+            cmd = " ".join(str(c) for c in cmd)
+        parts.append(f"cmd={cmd}")
+        return " · ".join(parts)
+    return f"{type(exc).__name__}: {exc}"
+
+
+def rate_limit_reading(data) -> dict:
+    """**纯函数**：`GET /rate_limit` 形状 ⇒ 熔断读数 `{remaining, reset, limited, source}`。
+
+    `limited` 的判据**只有一个**：`resources.core.remaining <= 0` —— 与响应头
+    `X-RateLimit-Remaining: 0` **同源同义**（该端点不消耗配额，故可以「先问一句再干活」）。
+    ⚠️ 读不到 `remaining` ⇒ `limited=False`（**读不到 ≠ 限流**：不许据此熔断，否则一次
+    网络抖动就能让分流整轮停摆）。
+    """
+    core = {}
+    if isinstance(data, dict) and isinstance(data.get("resources"), dict):
+        core = data["resources"].get("core") or {}
+    if not isinstance(core, dict):
+        core = {}
+    try:
+        remaining = int(core.get("remaining"))
+    except (TypeError, ValueError):
+        remaining = None
+    return {"remaining": remaining, "reset": core.get("reset"),
+            "limited": remaining is not None and remaining <= 0,
+            "source": "gh api rate_limit（与 X-RateLimit-Remaining 同源）"}
+
+
+def rate_limit_snapshot(api=None) -> dict | None:
+    """**零配额**探测当前限额（`GET /rate_limit` 不计入配额）⇒ `rate_limit_reading` 或 `None`。
+
+    为什么先探测（#8444）：限流态下每轮分流要花 2~3 次配额调用（还要 rerun + 推台账），
+    而全仓红时**每个完成事件**都会来一轮 ⇒ 自激。先花 0 配额问一句，就能整轮短路。
+    读不出（未登录 / 网络 / 形状不对）⇒ `None` ⇒ **照常走未熔断路径**（读不到 ≠ 限流）。
+    """
+    call = api or _gh_api
+    try:
+        data = call("rate_limit")
+    except (RuntimeError, ValueError, OSError, subprocess.SubprocessError):
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("resources"), dict):
+        return None
+    return rate_limit_reading(data)
+
+
+def fetch_bundle(repo: str, run_id: int, *, rate_limit_probe=None) -> dict:
+    """取 run + 本次/上次尝试的 job 事实（只读网络）。
+
+    🔴 #8444：**先做一次零配额限流探测**，限流态直接返回「环境态」bundle（`rate_limit.limited`）
+    —— 这时**不做**任何消耗配额的取数，后续 `decide` 会给出「本轮未分流」，于是
+    零 rerun / 零记账 / 零推台账。`fetch` 撞到 403 限流（探测之后才耗尽）同样收敛成这种 bundle。
+    （`rate_limit_probe` 只为单测注入；生产走 `rate_limit_snapshot`。）
+    """
+    probe = rate_limit_snapshot if rate_limit_probe is None else rate_limit_probe
+    try:
+        reading = probe() or {}
+    except Exception:  # noqa: BLE001 - 探测面坏掉不许拖垮取数（读不到 ≠ 限流）
+        reading = {}
+    if isinstance(reading, dict) and reading.get("limited"):
+        return {"run": {}, "jobs": [], "prior_jobs": None, "rate_limit": reading}
+    try:
+        run = _gh_api(f"repos/{repo}/actions/runs/{run_id}")
+        attempt = _attempt(run)
+        jobs = (_gh_api(f"repos/{repo}/actions/runs/{run_id}/attempts/{attempt}/jobs")
+                .get("jobs") or [])
+        prior_jobs = None
+        if attempt >= 2:
+            prior_jobs = (_gh_api(f"repos/{repo}/actions/runs/{run_id}/attempts/{attempt - 1}/jobs")
+                          .get("jobs") or [])
+    except RateLimited as exc:
+        # 探测之后配额才耗尽（或探测端点也读不出）⇒ 同样收敛成环境态，**不重试、不兜底重取**
+        return {"run": {}, "jobs": [], "prior_jobs": None,
+                "rate_limit": {"remaining": 0, "limited": True, "source": str(exc)}}
     return {"run": run, "jobs": jobs, "prior_jobs": prior_jobs}
 
 
@@ -2533,9 +2761,15 @@ def render_comment(decision: dict) -> str:
 
 
 def render_summary(decision: dict) -> str:
-    return (f"action=`{decision.get('action')}` kind=`{decision.get('kind')}` "
+    text = (f"action=`{decision.get('action')}` kind=`{decision.get('kind')}` "
             f"attempt={decision.get('attempt')} pr={decision.get('pr')} "
             f"entries={len(decision.get('entries') or [])} —— {decision.get('reason')}")
+    # #8444①：限流态必须**出声**（`::warning::` 会进 GitHub 注解与 job summary）——
+    # 「这轮没分流」与「没有 flaky」长得一样，是本单要治的读数错位。
+    if decision.get("rate_limited"):
+        text += ("\n::warning::限流熔断：本轮**未分流**（环境态，不是 flaky）—— 零 rerun / "
+                 "零记账 / 零推台账。**「没跑」≠「没有 flaky」**（本轮的失败留白）")
+    return text
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
@@ -2577,6 +2811,12 @@ def main(argv=None) -> int:
     p.add_argument("--comment-out")
     p.add_argument("--gh-output")
     p.add_argument("--json-out")
+    p.add_argument("--ledger", default=str(LEDGER_PATH),
+                   help="#8444②：同 (workflow, head_sha) 时间窗去重的状态源（台账自身，"
+                        "检出侧 = main 那一份）；读不到 ⇒ **不去重**并出声（未跑 ≠ 没有重复事件）")
+    p.add_argument("--dedup-window-minutes", type=float,
+                   default=TRIAGE_DEDUP_WINDOW_MINUTES,
+                   help=f"#8444②：去重窗口（分钟，默认 {TRIAGE_DEDUP_WINDOW_MINUTES}；<=0 ⇒ 关闭）")
 
     p = sub.add_parser("approve", help="批准被 GITHUB_TOKEN 抑制（action_required）的 PR run")
     p.add_argument("--repo", required=True)
@@ -2706,7 +2946,16 @@ def main(argv=None) -> int:
 
     if args.cmd == "decide":
         bundle = json.loads(Path(args.bundle).read_text(encoding="utf-8"))
-        decision = decide(bundle)
+        # #8444②：去重的状态源 = 台账自身（job 检出的是 main ⇒ 这就是「已分流过」的读法）。
+        # ⚠️ 读不到 ⇒ **不去重**并**出声**：不许把「读不到」当「没有重复事件」（未跑 ≠ 通过）。
+        ledger = None
+        try:
+            ledger = load_ledger(Path(args.ledger))
+        except (OSError, ValueError) as exc:
+            print(f"::warning::去重判据不可用（台账 {args.ledger} 读不到：{exc}）⇒ "
+                  f"本轮按**未去重**路径判定（**不是**「没有重复的完成事件」）")
+        decision = decide(bundle, ledger=ledger,
+                          dedup_window_minutes=args.dedup_window_minutes)
         print(render_summary(decision))
         if args.json_out:
             _write(args.json_out, json.dumps(decision, ensure_ascii=False, indent=2))
@@ -2844,8 +3093,8 @@ def main(argv=None) -> int:
                         .get("workflow_runs") or [])
             tip = branch_tip(_gh_api(f"repos/{args.repo}/branches/{args.head_branch}"))
         except (subprocess.CalledProcessError, json.JSONDecodeError) as exc:
-            print(f"⛔ 取不到 run 列表 / 分支 tip（{exc}）⇒ **未跑 ≠ 通过**（不得当「队列为空」读）",
-                  file=sys.stderr)
+            print(f"⛔ 取不到 run 列表 / 分支 tip（{_failure_detail(exc)}）⇒ **未跑 ≠ 通过**"
+                  f"（不得当「队列为空」读）", file=sys.stderr)
             return 3
         if not tip:
             print(f"⛔ 取不到台账分支 `{args.head_branch}` 的 tip ⇒ **无法判定**（不得当「没有待批准 run」读）",
@@ -3251,8 +3500,8 @@ def main(argv=None) -> int:
                               f"?event=pull_request&branch={args.branch}&per_page=100")
             tip = branch_tip(_gh_api(f"repos/{args.repo}/branches/{args.branch}"))
         except (subprocess.CalledProcessError, ValueError) as exc:
-            print(f"⛔ 取不到台账分支 `{args.branch}` 的 run / tip 事实（{exc}）⇒ **无法判定**"
-                  f"（未跑 ≠ 通过），本轮零动作、fail-closed", file=sys.stderr)
+            print(f"⛔ 取不到台账分支 `{args.branch}` 的 run / tip 事实（{_failure_detail(exc)}）"
+                  f"⇒ **无法判定**（未跑 ≠ 通过），本轮零动作、fail-closed", file=sys.stderr)
             return 3
         if not tip:
             # 与 `approve` 同一条纪律：**不**用「此刻最新可见的 run」代替 tip（GitHub 创建 run 是
@@ -3271,8 +3520,8 @@ def main(argv=None) -> int:
                 jobs = (_gh_api(f"repos/{args.repo}/actions/runs/{entry['id']}/jobs")
                         .get("jobs") or [])
             except (subprocess.CalledProcessError, ValueError) as exc:
-                print(f"⛔ 取不到 run {entry['id']} 的 job 事实（{exc}）⇒ **不重跑它**"
-                      f"（「到底有没有失败 job」不许靠猜）⇒ 退 3", file=sys.stderr)
+                print(f"⛔ 取不到 run {entry['id']} 的 job 事实（{_failure_detail(exc)}）"
+                      f"⇒ **不重跑它**（「到底有没有失败 job」不许靠猜）⇒ 退 3", file=sys.stderr)
                 return 3
             failed = [str(job.get("name")) for job in jobs if is_failed(job)]
             if not failed:

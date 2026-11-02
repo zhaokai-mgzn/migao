@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，171 条）
+# 域: misc（源: cases/misc.yml，172 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3153,6 +3153,24 @@ _CASE_MC_126 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-127 [NORMAL] **`needs-truths` 标签必须随 issue body 重算**（issue #8406）：`on.issues` 加 `edited` + 判定双向（满足 ⇒ 摘标、不满足 ⇒ 补标）+ 幂等（状态一致 ⇒ 零写请求、`edited` 不重复发提醒评论）（源: cases/misc.yml）──
+_CASE_MC_127 = EvalCase(
+    id='MC-127',
+    legacy_id='',
+    title='**`needs-truths` 标签必须随 issue body 重算**（issue #8406）：`on.issues` 加 `edited` + 判定双向（满足 ⇒ 摘标、不满足 ⇒ 补标）+ 幂等（状态一致 ⇒ 零写请求、`edited` 不重复发提醒评论）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['issue 事后补上了判据节，为什么 `needs-truths` 还挂着？'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·触发面**：`.github/workflows/issue-contract-check.yml` 的 `on.issues.types` 必须含 `opened` 与 `edited`（只有 `opened` ⇒ 标签只算一次、永不重算）。执行点 = tests/unit_ci_workflows/test_issue_contract_needs_truths_recompute.py::test_issue_events_recompute_on_body_edit', "🔴 **判据 2·双向（摘）**：判据满足且 `needs-truths` 在（含**两标签并存**这个陈旧形态）⇒ 必须发出 `removeLabel('needs-truths')`。执行点 = 同文件::test_satisfied_issue_drops_stale_needs_truths / test_satisfied_issue_drops_stale_label_even_when_needs_verification_present", '🔴 **判据 3·幂等**：标签已不在 ⇒ **零** remove 请求（无条件 remove = 对不存在的标签发 404 写请求）。执行点 = 同文件::test_satisfied_issue_does_not_remove_an_absent_label', '🔴 **判据 4·补标 + 不刷评论**：判据不满足 ⇒ 补回 `needs-truths`；`edited` 只重算标签、不重复发提醒评论（`opened` 恰好发一条）。执行点 = 同文件::test_unsatisfied_edited_body_restores_needs_truths_without_reposting_the_reminder / test_unsatisfied_opened_body_reminds_exactly_once_and_is_idempotent', '🔴 **判据 5·政策不变**：`ai-draft` 的 issue 在 `edited` 分支上同样零动作（质量门禁完全不可见）。执行点 = 同文件::test_ai_draft_issues_are_invisible_to_the_edited_branch', '**边界（照实登记）**：① 判据**质量**（写了 `## 验收标准` 但内容空洞）不在射程内，那是人读台账的事；② 判不了「真值只写在评论里」的形态；③ 本 workflow 非 required check ⇒ 标签口径错误**不阻断合并**，靠读标签的下游（如 verify-trigger）自己承担。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性判据（workflow YAML 结构读取 + 把 `with.script` 真跑在 Node 里、github/context 用内存替身），pytest 真跑、零网络、不进 agent-eval 冒烟',
+    tags=['backend-contract', 'governance', 'ci'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -3325,4 +3343,5 @@ CASES = (
     _CASE_MC_125,
     _CASE_MC_124,
     _CASE_MC_126,
+    _CASE_MC_127,
 )

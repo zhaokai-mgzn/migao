@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（171 case）
+## 杂项域（172 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -6831,6 +6831,19 @@
 跳过: [backend-contract] 零 LLM 的确定性判据（纯函数分类器 + 离线 CLI 夹具 + workflow 结构读取），pytest 真跑、零网络、不进 agent-eval 冒烟
 ```
 溯源: 2026-11-01 新增（issue #8386，源于 #6897 → #6924 的真实事故复盘）。为什么必须有这条：外部账号 llwand1 的 fork PR #6897 关闭未合并，但同日被搬到同仓分支以 PR #6924 重开并 squash 合并（9626b8f9a）⇒ 陌生代码进入 main；而 `automerge.yml` 只排 fork PR，对同仓转手完全无感。事后由 PR #8383 全部撤回，本单补防复发。取号 = 现取 MC-001~122,125（123-124 在 PR #8214）⇒ **MC-126**。读数：本判据 10 条全绿（含真实事故夹具红证）。 ｜ tags: backend-contract, governance, ci
+
+### MC-127. **`needs-truths` 标签必须随 issue body 重算**（issue #8406）：`on.issues` 加 `edited` + 判定双向（满足 ⇒ 摘标、不满足 ⇒ 补标）+ 幂等（状态一致 ⇒ 零写请求、`edited` 不重复发提醒评论） 🔵
+```
+你: issue 事后补上了判据节，为什么 `needs-truths` 还挂着？
+数据: 🔴 **判据 1·触发面**：`.github/workflows/issue-contract-check.yml` 的 `on.issues.types` 必须含 `opened` 与 `edited`（只有 `opened` ⇒ 标签只算一次、永不重算）。执行点 = tests/unit_ci_workflows/test_issue_contract_needs_truths_recompute.py::test_issue_events_recompute_on_body_edit
+数据: 🔴 **判据 2·双向（摘）**：判据满足且 `needs-truths` 在（含**两标签并存**这个陈旧形态）⇒ 必须发出 `removeLabel('needs-truths')`。执行点 = 同文件::test_satisfied_issue_drops_stale_needs_truths / test_satisfied_issue_drops_stale_label_even_when_needs_verification_present
+数据: 🔴 **判据 3·幂等**：标签已不在 ⇒ **零** remove 请求（无条件 remove = 对不存在的标签发 404 写请求）。执行点 = 同文件::test_satisfied_issue_does_not_remove_an_absent_label
+数据: 🔴 **判据 4·补标 + 不刷评论**：判据不满足 ⇒ 补回 `needs-truths`；`edited` 只重算标签、不重复发提醒评论（`opened` 恰好发一条）。执行点 = 同文件::test_unsatisfied_edited_body_restores_needs_truths_without_reposting_the_reminder / test_unsatisfied_opened_body_reminds_exactly_once_and_is_idempotent
+数据: 🔴 **判据 5·政策不变**：`ai-draft` 的 issue 在 `edited` 分支上同样零动作（质量门禁完全不可见）。执行点 = 同文件::test_ai_draft_issues_are_invisible_to_the_edited_branch
+数据: **边界（照实登记）**：① 判据**质量**（写了 `## 验收标准` 但内容空洞）不在射程内，那是人读台账的事；② 判不了「真值只写在评论里」的形态；③ 本 workflow 非 required check ⇒ 标签口径错误**不阻断合并**，靠读标签的下游（如 verify-trigger）自己承担。
+跳过: [backend-contract] 零 LLM 的确定性判据（workflow YAML 结构读取 + 把 `with.script` 真跑在 Node 里、github/context 用内存替身），pytest 真跑、零网络、不进 agent-eval 冒烟
+```
+溯源: 2026-11-02 新增（issue #8406：`needs-truths` 只算一次、永不重算 ⇒ 陈旧误标；#5481 修的是**词表**层，本条修的是**生命周期**层）。现取读数：51 条 open `needs-truths` 里 2 条按本 workflow 自己的判据已满足（#5052 / #5061）。同族第二处：摘标原先嵌在「刚加 needs-verification」分支里 ⇒ 两标签并存的陈旧形态永远摘不掉，本单一起修。取号 = MC-127（主库 MC-001~098 + MC-100~126 已占；MC-099 是 PR #8383 revert 留下的空档，可能被重投复用 ⇒ 不占用）。 ｜ tags: backend-contract, governance, ci
 
 ## 商家入驻域（7 case）
 
@@ -14285,8 +14298,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：966（活跃 153，跳过 813）
-- tier 分布：smoke 15 / normal 891 / adversarial 33
+- 用例总数：967（活跃 153，跳过 814）
+- tier 分布：smoke 15 / normal 892 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14302,7 +14315,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：171
+- 杂项域：172
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：74
@@ -14540,6 +14553,7 @@
 - MC-125: 微信「扫普通链接二维码打开小程序」校验文件（issue #8196）：nginx 根下 .txt 是显式静态面（缺失 404、不回落 SPA、只吃单段），deploy.sh 幂等只拷 *.txt 到静态根根下（只增/覆盖、父目录 index.html 哈希不变、跳过要出声）
 - MC-124: 只读合成探针 + 构建身份五跳（issue #8203 · P0-04；审计 P1-01）：三个公网只读面 / 退出码 0·1·3 / 只对瞬态重试 / 接在既有 post-merge-verify 腿的 P1 出口之前；ai-agent `/version` 的 sha 从 CI 到镜像的五跳接线
 - MC-126: **外部账号的代码不得直接进本仓**：PR 提交作者 / head 仓库来源必须命中白名单，命中即判红并解除自动合并（issue #8386）
+- MC-127: **`needs-truths` 标签必须随 issue body 重算**（issue #8406）：`on.issues` 加 `edited` + 判定双向（满足 ⇒ 摘标、不满足 ⇒ 补标）+ 幂等（状态一致 ⇒ 零写请求、`edited` 不重复发提醒评论）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

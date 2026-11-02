@@ -107,9 +107,15 @@ jobs:
     #    `conclusion=success` 而我们是**需要**知道的；只看 `failure` 会把这条机制打断
     #    （= 降门禁，绝对不行）。取消档（`cancelled`）**故意不入闸**：它一路走到脚本里
     #    由 `decide()` 判 `skip`（`MAX_ATTEMPTS` 那条红线），本闸不再多加一种语义。
+    # ── #8444③：台账分支自己的 CI **在 job 级就不创建** ──────────────────────────
+    # 病（实测，2026-11-02）：脚本里的 `decide()` 早就有「台账分支 ⇒ skip」，但那时 **job 已经跑满**
+    # —— checkout + 两次 API 取数（限流风暴下是纯烧配额）。而台账**每推一次**，该分支上的
+    # 4 条 workflow（PR Check / Mini-App / AI Agent / Bmini）各完成一次 ⇒ 4 次空转分流。
+    # 闸门提到 job 级 ⇒ 连 checkout 都不发生（`decide()` 那道脚本闸门**保留**：双重保险，不是重复）。
     if: >-
-      github.event.workflow_run.conclusion == 'failure' ||
-      github.event.workflow_run.run_attempt > 1
+      (github.event.workflow_run.conclusion == 'failure' ||
+       github.event.workflow_run.run_attempt > 1) &&
+      github.event.workflow_run.head_branch != 'chore/flaky-ledger'
     steps:
       - name: Checkout（台账基线 = main；`workflow_run` 默认取默认分支，显式声明）
         uses: actions/checkout@v7
