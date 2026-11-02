@@ -7036,7 +7036,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（74 case）
+## 订单域（75 case）
 
 ### OR-061. 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262） 🔵
 ```
@@ -8339,6 +8339,24 @@
 ```
 真值: ai-chat.context-memory
 溯源: 2026-10-30 新增（issue #8173）：与 OR-073 成对——OR-073 证明「有焦点 ⇒ 确定性复用」，本用例证明「无焦点 ⇒ 保持追问、不许猜」。单轮用例（新会话天然无焦点）；`precondition[order_count_for_phone: 13800138000]` 保证库里确实有单可猜，否则「不猜」会被空库洗成假绿。取号 = scripts/next_case_id.py OR ⇒ OR-074。 ｜ tags: order, multi_turn, focus_memory, negative
+
+### OR-075. 入库建单取号核验（issue #6266）：取号与占用是两步 ⇒ 同候选被抢时有一单建不成；改成一条语句占号后换号吸收 / 耗尽 409 🟡
+```
+你: 两个管理员同时新建入库单（服务刚重启过 / 部署了多个实例，两边的取号计数器都从同一位置开始）
+你: 另一个请求正把同一个入库单号写进库、还没提交
+数据: **核验结论 = 真**：`nextFreeInboundNo` 改前是**两步**（先 `exists(tenant_id, inbound_no)` 判假 ⇒ 返回候选 ⇒ **之后**才 `insert(..)`）。窗口在**多实例 / 重启**下可被利用（两个实例的进程内计数器从同一位置起步 ⇒ 同一个候选 ⇒ 两边 `exists` 都为假）⇒ 后到者撞 `uk_inbound_orders_no`，`create(..)` 的 catch 把它变成 **409**：这一单没建成。
+数据: **并发建单（机器断言 = backend/admin-api/src/test/java/com/migao/admin/service/InboundNoTakeRaceRealDbTest.java 的 concurrentCreateTakesExactlyNDistinctInboundNos）**：4 个并发建单 × 3 轮（**钉住同一候选** = 两个实例同起点）⇒ 4/4 成功、库内恰 4 行、4 个单号**互不相同**、被钉住的同一候选只被一个单占用、全租户零重号组、每单恰 1 行明细；逐轮打印「真重叠」证据（4 个请求的时间区间逐对求交 6/6 + 并集跨度 < 各历时之和）。
+数据: **另一事务持号未提交（判据 ②，确定性红证）**：外部事务先写入该号但**不提交**（任何 `exists` 都看不见它）⇒ 建单必须等它提交、由唯一索引裁决后**换号成功**（读数：耗时 431–438ms ≥ 持有时长、落库号 ≠ 被抢号、持号行仍在）。**退回两步形态**：`exists` 判假 ⇒ insert 撞唯一索引 ⇒ 建单失败（真库裸装配下读作 PersistenceException / 500，Spring 装配下是 409），零落库。
+数据: **号段耗尽（判据 ④）**：当天头部 0001..0020（= 重试上限 20）被占满 + 计数器归零（= 重启）⇒ 20 次重试耗尽 ⇒ **显式 409 `INBOUND_NO_EXHAUSTED`**、拒绝后行数不变（**零残行**）、零明细行 —— 不静默用一个可能重复的号。
+数据: **串行正对照 + 列清单回读（判据 ③）**：串行建单成功、单号成形 `RK-yyyyMMdd-NNNN`、草稿态、来源 purchase、明细 1 行；手写 INSERT 的每一列（supplier / supplier_doc_no / warehouse / created_by / biz_category 默认 fabric / created_at 由 DB 默认承接 / deleted 默认 0）逐列回读一致 ⇒ 列清单漂移会被这条逮住。
+数据: **修法（生产代码）**：取号 + 落库并成**一条语句** `InboundOrderMapper#insertIgnoreInboundNoConflict`（`ON CONFLICT (tenant_id, inbound_no) WHERE deleted = 0 DO NOTHING`，按受影响行数 1/0 判号归谁）⇒ 不再有可被插队的第二条语句；冲突时 PG 事务**不进 aborted** ⇒ 同一事务内换号重试安全（用捕获 `DuplicateKeyException` 则必须开新事务，那会把单据提前提交、后续明细行失败会留下半张单）。
+数据: **DB 对象（实测在场，判据 ⑤）**：`uk_inbound_orders_no = CREATE UNIQUE INDEX … ON inbound_orders (tenant_id, inbound_no) WHERE (deleted = 0)`（**部分**唯一索引 ⇒ `ON CONFLICT` 的推断必须带 `WHERE deleted = 0` 谓词）。
+数据: **类级元守卫（机器断言 = backend/admin-api/src/test/java/com/migao/admin/service/NumberTakeTwoStepMetaGuardTest.java）**：`service/*.java` 里的两步取号写面必须登记进 backend/admin-api/src/test/resources/number-take-two-step-ledger.json（未登记即红、台账盖章不存在即红、豁免只许缩短），且已改成原子占号的 SQL 必须以**兑付锚**逐字在场（删掉 ⇒ 红）。本单落在册的缺口 = 出库单号 `nextFreeOutboundNo`（同形态，未修，跟踪 = #8490）。
+数据: **廉价正向判据**：`InboundOrderServiceTest#createRetriesWhenTheCandidateIsSnatchedByTheInsert`（候选在**插入那一刻**被抢 ⇒ 换号重来并落到下一个候选）+ `#createRetriesWhenTodaysNumberIsAlreadyTaken`（重启重走已占号 ⇒ 换号成功）。
+前置: 本用例是 [backend-contract] 纯后端并发取号用例（agent-eval 栈不跑它）：前置 = 一次性真 PG 集群 + 自建租户/商品夹具，由单测 backend/admin-api/src/test/java/com/migao/admin/service/InboundNoTakeRaceRealDbTest.java 自建自毁，不依赖任何共享数据；前置不成立（本机 / CI 缺 PG 二进制）时按 PgCluster 的 fail-closed 口径判红（CI 注入 MIGAO_REQUIRE_REALDB ⇒ 不许静默 skip 成绿）
+跳过: [backend-contract] 纯后端并发取号判据（无 LLM 写路径：入库建单不经黄金策 Agent 工具，B 端 POST /api/admin/inbound-orders 与工人拍照草稿都落在 admin-api 服务层）⇒ 不进 agent-eval 冒烟：由 admin-api 真库并发单测 InboundNoTakeRaceRealDbTest 执行
+```
+溯源: 2026-11-03 新增（issue #6266）：#6248 的核验包在台账 coverage_boundary 里登记了「兄弟形态 nextFreeInboundNo 未核验」，本单把它核到读数并修掉 —— 可达路径 = 多实例 / 重启（进程内计数器同起点 ⇒ 同一候选），撞 `uk_inbound_orders_no` 时那一单**建不成**（真库裸装配 500 / Spring 装配 409），且没有任何残行。**已修**：取号与占用并成一条语句（`ON CONFLICT … WHERE deleted = 0 DO NOTHING` + 有界换号重试），耗尽仍 fail-closed（409 INBOUND_NO_EXHAUSTED）。交付物 = 真库并发判据（5 条：并发 N 单 / 另一事务持号未提交 / 串行正对照+列清单回读 / 耗尽 409 / 唯一索引在场）+ 类级元守卫 + 台账登记 + 出库兄弟形态开单（#8490）。 ｜ tags: inbound, concurrency, backend-contract
 
 ## 加工项域（32 case）
 
@@ -14327,7 +14345,7 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：969（活跃 153，跳过 816）
+- 用例总数：970（活跃 153，跳过 817）
 - tier 分布：smoke 15 / normal 894 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
@@ -14347,7 +14365,7 @@
 - 杂项域：174
 - 商家入驻域：7
 - 领域本体域：4
-- 订单域：74
+- 订单域：75
 - 加工项域：32
 - 加工单域：85
 - 商品域：133
@@ -14617,6 +14635,7 @@
 - OR-070: 订单安装信息（安装小区 = 订单级、安装位置 = 件级）：两条只存只印的附注 —— 录入 / 详情展示 / 纸面打印读同一份真值（issue #7856）
 - OR-071: 打印中心：订单详情页一处打印（销售单 / 加工单 / 报价单 / 水洗唛）+ 打印流水（谁、何时、哪种单据、几张）—— 列表页的「是否已打印」是这张事件表的聚合投影（issue #7902）
 - OR-072: 打印中心（admin-web）：销售订单详情页是唯一打印入口 —— 发货单退场、加工单/面料单/水洗唛按派单状态出现、「联合打印」勾选后逐张出纸、打印流水（入口在打印预览表头）与列表「已打印」标记（issue #7902 / #7964）
+- OR-075: 入库建单取号核验（issue #6266）：取号与占用是两步 ⇒ 同候选被抢时有一单建不成；改成一条语句占号后换号吸收 / 耗尽 409
 - PG-001: 生成加工单 - 已确认含加工项订单 → 作业单生成 + 订单进入生产中（派单即生产；issue #7723 改判）
 - PG-002: 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成
 - PG-003: 生成加工单 - 无加工项订单不生成（现货成品直跳发货）

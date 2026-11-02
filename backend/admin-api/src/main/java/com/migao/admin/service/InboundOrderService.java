@@ -49,6 +49,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -204,7 +205,6 @@ public class InboundOrderService {
         String supplierText = trimToNull(req.getSupplier());
         InboundOrder order = InboundOrder.builder()
                 .tenantId(tenantId)
-                .inboundNo(nextFreeInboundNo(tenantId))
                 .supplier(supplierText)
                 .supplierId(resolveSupplierId(tenantId, req.getSupplierId(), supplierText))
                 .supplierDocNo(trimToNull(req.getSupplierDocNo()))
@@ -221,17 +221,18 @@ public class InboundOrderService {
                 .createdBy(operator)
                 .build();
         try {
-            inboundOrderMapper.insert(order);
+            // 取号 + 落库 = **一条语句**（issue #6266）：单号冲突由 uk_inbound_orders_no 在插入那一刻裁，
+            // 落败者换候选重来 —— 「读-判-写」窗口不再落在两条语句之间。
+            insertWithFreshInboundNo(order);
         } catch (DuplicateKeyException e) {
-            // 并发同键（两份请求同时走到这里）：唯一索引是原子判据，只有一个能落库。
-            // 唯一索引的冲突会让 PG 的**当前事务进入 aborted 状态**（后续查询全失败）⇒
-            // 不能在本事务里再去回读那张单，只能 fail-closed 让调用方重查（重查即命中幂等分支）。
-            log.warn("入库单建单撞唯一索引（并发同键或同号）: tenant={}, importRunId={}, inboundNo={}",
+            // 单号冲突已被 ON CONFLICT 吸收 ⇒ 能走到这里的只剩**运行标识**那一个部分唯一索引
+            // （uk_inbound_orders_tenant_import_run）。唯一索引的冲突会让 PG 的**当前事务进入
+            // aborted 状态**（后续查询全失败）⇒ 不能在本事务里再去回读那张单，只能 fail-closed
+            // 让调用方重查（重查即命中上面的幂等分支）。
+            log.warn("入库单建单撞运行标识唯一索引（并发同键）: tenant={}, importRunId={}, inboundNo={}",
                     tenantId, importRunId, order.getInboundNo());
-            // 唯一索引有两个（单号 / 运行标识）⇒ 文案两义都覆盖，不把冲突来源说死
-            String subject = importRunId != null ? "运行标识 " + importRunId : "单号 " + order.getInboundNo();
             throw BusinessException.conflict(
-                    "入库单未创建：同一单号或同一份导入（" + subject + "）刚刚已被创建",
+                    "入库单未创建：同一份导入（运行标识 " + importRunId + "）刚刚已被创建",
                     "请刷新列表查看既有单据；重复提交不会建出第二张单（库存不会加两次）");
         }
 
@@ -414,19 +415,6 @@ public class InboundOrderService {
         if (items == null || items.isEmpty()) {
             throw BusinessException.validationError("订单没有成品行，无法生成成品入库单");
         }
-        InboundOrder doc = InboundOrder.builder()
-                .tenantId(tenantId)
-                .inboundNo(nextFreeInboundNo(tenantId))
-                .warehouse(warehouseText)
-                .warehouseId(warehouseId)
-                .inboundDate(businessClock.today())
-                .status(InboundOrder.STATUS_DRAFT)
-                .totalAmount(BigDecimal.ZERO)
-                .source(InboundOrder.SOURCE_PACKING)
-                .bizCategory(InboundOrder.BIZ_FINISHED)
-                .remark("成品打包入库（订单 " + order.getOrderNo() + "）")
-                .createdBy(operator)
-                .build();
         // 变量名刻意不叫 `item`：`OrderRollAllocationAuthorityTest` 按「本文件里有没有
         // `OrderItem <名>` 声明」判定写面归属，同名会让别处的 `item.setRollCount(...)`
         // 被误判成在写 OrderItem 实体（成品入库路径只读订单行、不写整卷两列）。
@@ -465,7 +453,6 @@ public class InboundOrderService {
         }
         InboundOrder doc = InboundOrder.builder()
                 .tenantId(tenantId)
-                .inboundNo(nextFreeInboundNo(tenantId))
                 .warehouse(warehouseText)
                 .warehouseId(warehouseId)
                 .inboundDate(businessClock.today())
@@ -476,7 +463,7 @@ public class InboundOrderService {
                 .remark("成品打包入库（订单 " + order.getOrderNo() + "）")
                 .createdBy(operator)
                 .build();
-        inboundOrderMapper.insert(doc);
+        insertWithFreshInboundNo(doc);
         for (InboundOrderItem line : lines) {
             line.setTenantId(tenantId);
             line.setInboundOrderId(doc.getId());
@@ -1183,9 +1170,8 @@ public class InboundOrderService {
      * 入库单号：{@code RK-yyyyMMdd-NNNN}。
      *
      * <p>与订单号（17 位数字）、加工单号 {@code JG-yyyyMMdd-NNNN}、售后单号 {@code AS-*} 同族：
-     * 前缀 + 日期 + 序号。序号是进程内原子计数器（降低同秒碰撞），实际取号走
-     * {@link #nextFreeInboundNo}（查库占用 + 重试），**DB 唯一索引兜底防重号**
-     * （同 {@code ProcessingOrderService.generateOrderNo} 的既有口径）。</p>
+     * 前缀 + 日期 + 序号。序号是进程内原子计数器（降低同秒重叠），**号归不归我由 DB 唯一的单号索引
+     * 在插入那一刻裁**（{@link #insertWithFreshInboundNo}；issue #6266）。</p>
      */
     private String generateInboundNo() {
         return "RK-" + businessClock.today().format(DATE_FMT) + "-"
@@ -1193,32 +1179,67 @@ public class InboundOrderService {
     }
 
     /**
-     * 取一个**库内未被占用**的入库单号（租户内）。
+     * 取号 + 落库的**重试上限**（issue #6266）：候选号在插入那一刻被别的事务抢走（受影响行数 0）
+     * ⇒ 换候选重来；连续 {@value} 次全被抢 ⇒ 显式抛 {@code INBOUND_NO_EXHAUSTED}(409)，
+     * <b>不静默用一个可能重复的号</b>。
+     *
+     * <p>为什么是 20（同族口径，见 {@code BATCH_NO_ATTEMPTS}）：远超「同一天重启 20 次且每次都恰好
+     * 撞上」的实际情况。<b>已知代价</b>（如实登记）：当天已用号 ≥ 20 时重启后的第一批建单会被显式拒绝
+     * （回 409、零副作用），而不是静默重号 —— 判据见 {@code InboundNoTakeRaceRealDbTest} 判据 ④。</p>
+     */
+    private static final int INBOUND_NO_ATTEMPTS = 20;
+
+    /**
+     * <b>测试探针</b>（issue #6266，生产恒为 {@code null}）：把**第一次**取号钉成给定候选。
+     *
+     * <p><b>为什么需要它</b>：本缺陷的可达形态是「两个实例（或重启后的新进程）从同一计数器位置起步
+     * ⇒ 拿到**同一个**候选」，而 {@code INBOUND_SEQ} 是进程内的原子计数器 —— 同一 JVM 里两个线程
+     * 天然拿到**不同**候选 ⇒ 不钉住候选就造不出「同号竞争」，判据会退化成碰运气的 flake
+     * （{@code migao-dev-flow} §28.1：修前必须红）。钉住之后，「第一条语句裁决 ⇒ 落败者换号重来」
+     * 与「读-判-写两步」在同一份装置上给出**成对**读数（{@code InboundNoTakeRaceRealDbTest} 判据 ②）。</p>
+     *
+     * <p>为什么放在生产类里：窗口在 {@link #insertWithFreshInboundNo} 内部，测试侧无法在
+     * 「候选已定、尚未落库」那一刻插进去（用 {@code mock()} 替换真 mapper 又会把唯一的 DB 原子判据
+     * 换成 mock 的恒真返回）。故留这条窄缝，且只在包内可见。</p>
+     */
+    static void setInboundNoProbeFirstCandidateForTest(String candidate) {
+        INBOUND_NO_PROBE_FIRST_CANDIDATE = candidate;
+    }
+
+    /** 首次取号的测试候选（{@code null} = 不钉）；见 {@link #setInboundNoProbeFirstCandidateForTest}。 */
+    private static volatile String INBOUND_NO_PROBE_FIRST_CANDIDATE = null;
+
+    /**
+     * 取号并落库（issue #6266）：把「判单号是否被占」与「占用它」并成**一条语句**
+     * （{@code InboundOrderMapper#insertIgnoreInboundNoConflict} 的
+     * {@code ON CONFLICT (tenant_id, inbound_no) WHERE deleted = 0 DO NOTHING}）；
+     * 受影响行数 {@code 1} = 号归我（单据已落库）、{@code 0} = 号刚被抢走 ⇒ 换候选重来。
      *
      * <p>为什么不能只靠原子计数器：计数器是**进程内**的，服务重启 / 换副本后从 0 开始 ⇒ 当天已用过的
-     * {@code RK-<今天>-0001} 会被再次生成，撞唯一索引 ⇒ **建单直接失败**（用户只看到「建单失败」，
-     * 看不出是重号）。单号是要印在单据上、要对账的标识，不能靠「重启得够少」。</p>
+     * {@code RK-<今天>-0001} 会被再次生成。单号是要印在单据上、要对账的标识，不能靠「重启得够少」。</p>
      *
-     * <p>重试上限 20 次（远超「同一天重启 20 次且每次都恰好撞上」的实际情况）；耗尽则显式抛错 ——
-     * 不静默用一个可能重复的号。</p>
+     * <p>为什么不是「先 exists 查库、再 insert」：那两步之间的窗口在多实例 / 重启下可被利用
+     * （两边 {@code exists} 都为假 ⇒ 后到者撞唯一索引 ⇒ **建单直接失败**）。唯一索引在插入那一刻的
+     * 判定才是原子的；{@code ON CONFLICT} 把冲突变成「0 行」而不是异常 ⇒ 同一事务内换号重试安全
+     * （捕获 {@code DuplicateKeyException} 则 PG 事务已坏，只能开新事务 —— 那会把半张单提前提交）。</p>
      *
-     * <p><b>边界（如实登记）</b>：查占用与插入之间仍有窗口 ⇒ 两个**同时**建单的进程理论上可选中同号，
-     * 此时由唯一索引挡下（后到者收到明确失败，不会静默重号）；单一进程内计数器单调递增，
-     * 该窗口只在多副本/重启瞬间存在。</p>
+     * @return 已落库的单（{@code id} / {@code inboundNo} 已定；其余列由调用方在 builder 里给）
      */
-    private String nextFreeInboundNo(Long tenantId) {
-        for (int i = 0; i < 20; i++) {
-            String candidate = generateInboundNo();
-            boolean taken = inboundOrderMapper.exists(new LambdaQueryWrapper<InboundOrder>()
-                    .eq(InboundOrder::getTenantId, tenantId)
-                    .eq(InboundOrder::getInboundNo, candidate));
-            if (!taken) {
-                return candidate;
+    private InboundOrder insertWithFreshInboundNo(InboundOrder order) {
+        // 主键由服务端生成：手写 INSERT 不走 MyBatis-Plus 的 ASSIGN_UUID（单号同一批写面同口径）
+        order.setId(UUID.randomUUID().toString().replace("-", ""));
+        for (int attempt = 0; attempt < INBOUND_NO_ATTEMPTS; attempt++) {
+            String candidate = attempt == 0 && INBOUND_NO_PROBE_FIRST_CANDIDATE != null
+                    ? INBOUND_NO_PROBE_FIRST_CANDIDATE
+                    : generateInboundNo();
+            order.setInboundNo(candidate);
+            if (inboundOrderMapper.insertIgnoreInboundNoConflict(order) == 1) {
+                return order;
             }
-            log.warn("入库单号已被占用，重新生成: tenant={}, candidate={}", tenantId, candidate);
+            log.warn("入库单号刚被占用，重新生成: tenant={}, candidate={}", order.getTenantId(), candidate);
         }
         throw new BusinessException("INBOUND_NO_EXHAUSTED",
-                "入库单号连续 20 次生成失败（当天号段疑似被占满），请稍后重试或联系管理员", 409);
+                "入库单号连续 " + INBOUND_NO_ATTEMPTS + " 次生成失败（当天号段疑似被占满），请稍后重试或联系管理员", 409);
     }
 
     /** 该运行标识在本租户下**已建的**入库单（软删行不算：V117 的部分唯一索引带 {@code deleted = 0} 谓词） */
