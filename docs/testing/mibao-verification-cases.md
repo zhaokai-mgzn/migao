@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（179 case）
+## 杂项域（180 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -6942,6 +6942,20 @@
 跳过: [backend-contract] 零 LLM 的确定性静态判据（Python AST + 正则扫仓内 durable 面 + 现取 Java 测试源码索引），pytest 真跑、零网络、零 Maven、零真库，不进 agent-eval 冒烟
 ```
 溯源: 2026-11-03 新增（issue #6495，AI 裁定按**实测**改判病灶）。原始单的读数（`head -6 target/surefire-reports/<fqn>.txt` 得 `Tests run: 0` 且 exit 0）复现了，但归因错了一半：实测 `-Dtest=OssConfigTest`（3 外层 + 12 嵌套）= **15/15 真跑**、`-Dtest=AgentBatchServiceTest`（38 条全在 @Nested）= **38/38 真跑**、`-Dtest=OssConfigTest*` 同为 15（**通配符没有额外收益**）⇒「类里含 @Nested ⇒ 一条都不跑」**不成立**，原单那条是**误诊**，误诊源 = `.txt` 摘要在 @Nested 类上恒报 0（同一次运行 XML/console 15，摘要 0）。真·空跑另有一条：`-Dtest=AgentBatchServiceTest#persistsPreviewWithOldValueCollectedFromDb`（该方法声明在 @Nested class Create 内）⇒ `Tests run: 0` / `BUILD SUCCESS` / exit=0 / 无 XML；加 `$` 限定 `-Dtest=AgentBatchServiceTest$Create#persistsPreviewWithOldValueCollectedFromDb` ⇒ **1/1 真跑**。交付 = 入口 scripts/java-test.sh（+ scripts/java_pointed_readings.py）把选择器自动纠正 + **只信 XML** + 断言读数大于 0（0 即红，exit 1）；守卫 = tests/unit_ci_workflows/test_java_nested_pointed_run_guard.py J1~J7 + 台账 java_pointed_run_ledger.json（读 `.txt` 的两个红证机具**已登记**并钉住「定点类保持扁平」这个前提）；同时改掉两处在仓内传播错读数的文案（ScheduledTaskServiceTest 的类注释、docs/wiki/Development.md 新增「Java 定点判据」节）。取号 = **MC-134**（`scripts/next_case_id.py MC` 给的是历史空档 MC-099 —— 仓库内已有两次明文说明 MC-099 是 PR #6924 随 #8383 整包撤回被删、**不回填**；本轮 **5 个在飞 PR（#8503 / #8506 / #8508 / #8509 / #8510）同时占了 MC-133**（CI 的 `test_case_id_claims.py` 在合并前就判红）⇒ 按「后合入者让号」让到现取最小空闲号 MC-134）。 ｜ tags: backend-contract, java-test, surefire, nested, readings, guard, red-proof
+
+### MC-133. issue_lifecycle 自证不得读进程内快照（issue #6617）：远程面强制现取 / 读不到 ⇒ 三态 3 / 批量路径只许一次现取（NS-3） 🔵
+```
+你: 收尾自证读的是进程内快照 `_REMOTE_HEADS` ⇒「快照先被读过、远程才被删」时，自证拿删除前的值判「还在不在」，会报出与最终态**相反**的结论 —— 凭什么相信「自证干净」这四个字？
+数据: 🔴 **判据 1·自证读真值（实例，会红）**：夹具 = 真 bare origin + 真仓库；顺序 = 先读快照（分支在）→ 再删远程（快照不刷新）⇒ `verify_clean` 必须判 `True`；读快照的实现必报 `False`。执行点 = tests/unit_ci_workflows/test_issue_lifecycle_selfproof.py::test_selfproof_reads_the_truth_not_the_snapshot
+数据: 🔴 **判据 2·读不到 ⇒ 无法判定（三态）**：origin **真不可达**（不是 mock）⇒ 模块级自证给 `None`（既非 True 也非 False）；CLI `finish` 出口 `exit 3` 且**不**打印「✅ 收尾完成」（`3` 不得当 `0` 读）。执行点 = 同文件::test_unreadable_remote_is_undecidable_not_success + ::test_finish_exits_3_when_the_selfproof_cannot_read
+数据: 🔴 **判据 3·红证（注入式）**：把 `verify_clean` 的现取那一行变异成 `remote_heads`（读快照）⇒ 判据 1 的同一夹具**必红**（True → False），变异副本带语法自检。执行点 = 同文件::test_reverting_the_selfproof_to_the_snapshot_turns_it_red
+数据: 🔴 **判据 4·类级元守卫（AST，防「下一个删除路径又漏」）**：① `verify_clean` 必须调 `remote_heads_refresh` 且不得调 `remote_heads` / `remote_branch_gone`；② 传给它的 `heads=` 只许来自现取（直接调用或同函数绑定）；③ 任何调 `delete_remote_branch` / `batch_delete_remote_branches` 的函数必须同时调 `verify_clean` —— **新增删除路径忘了自证即红**。含判别力自证：四种坏形态在合成语料上各自判红。执行点 = 同文件::test_class_guard_holds_on_the_real_module + ::test_class_guard_has_discriminating_power
+数据: 🔴 **判据 5·审计面**：`close` 的 dry-run 必须显示「这一条会用什么依据关」= 判定 → `gh issue close --reason` 映射（delivered→completed / superseded→not planned）+ **证据原文（不再截断 110 字）** + 未实装登记闸门读数，且**零 gh 调用**。执行点 = 同文件::test_close_dry_run_shows_the_basis_for_each_close
+数据: 🔴 **判据 6·往返不变式（NS-3 不许退化）**：批量调用方传现取读数 ⇒ 自证 **0 次** `ls-remote`；默认自证 **恰好 1 次**。执行点 = 同文件::test_selfproof_round_trips_are_constant
+数据: **边界（照实登记，§19.1）**：① 判据判不了「调用方在生产环境真的跑过」——它只保证接线锚在；行为面由实例判据 + 真 CLI 出口承担；② AST 守卫射程 = 本文件内的函数调用形态（`getattr` / 变量拼接不在面内）；③ 不改任何门禁的通过条件、不新增豁免。
+跳过: [backend-contract] 零 LLM 的确定性脚本判据（自足临时 git 仓库 + 真 bare origin + 真不可达 origin + AST 守卫），pytest 真跑、零网络（gh 由替换函数顶替），不进 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #6617，承接 #6261 / PR #6614 登记的「未复现」形态）。取号 = `python3 scripts/next_case_id.py MC` 现取（main 001-098 · 100-132 ⇒ **MC-133**）。修复 = ① `remote_heads_refresh()` 具名现取入口（自证唯一允许的远程真值入口）；② `verify_clean` 三态（`True` / `False` / `None` → `exit 3`）且默认强制现取；③ 批量路径 `heads=` 传**一次**现取读数（`NS-3` 不退化）；④ 删前读数 / 写决策也改为现取；⑤ `close` dry-run 审计面。 ｜ tags: dev-tooling, self-proof, stale-snapshot, tri-state, ast-meta-guard, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -14450,8 +14464,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：977（活跃 153，跳过 824）
-- tier 分布：smoke 15 / normal 900 / adversarial 33
+- 用例总数：978（活跃 153，跳过 825）
+- tier 分布：smoke 15 / normal 901 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14467,7 +14481,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：179
+- 杂项域：180
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -14713,6 +14727,7 @@
 - MC-128: **端点泄漏台账的键不许含行号**：只插空行（行号漂移）判据仍绿，真删/真加泄漏照旧红（issue #6977）
 - MC-132: 批次就绪判定把「已 arm 的原生 auto-merge」也算作不就绪（issue #6212）：跑那一次全量期间不许存在被秒合的窗口
 - MC-134: Java 定点判据的读数与空跑（issue #6495 的类级固化）：`.txt` 摘要对 @Nested 类恒报 0（误诊源）+ `外层类#嵌套方法` 真·空跑（exit 0）⇒ 读数只信 XML 且必须大于 0
+- MC-133: issue_lifecycle 自证不得读进程内快照（issue #6617）：远程面强制现取 / 读不到 ⇒ 三态 3 / 批量路径只许一次现取（NS-3）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
