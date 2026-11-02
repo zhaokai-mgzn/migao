@@ -10143,7 +10143,7 @@
 
 ### PG-100. 条件工序规则写面：目标工序必须在规则**生效的每个部位**上解析得到（否则 422，不再等派单才整单 fail-closed） 🔵
 ```
-你: 商家在「工艺配置 → 工序」抽屉里「添加条件」：什么时候 = 特殊选项「加花边」、做 = 做、目标工序 = 花边（不限部位）
+你: 商家在「企业基础设置 → 工序与部位单价」的工序抽屉里「添加条件」：什么时候 = 特殊选项「加花边」、做 = 做、目标工序 = 花边（不限部位）
 你: 同上，但把这条规则限定到「纱帘」部位
 数据: **判据 1（会红，写面）= 部位敏感的可解析性**：目标工序必须在规则**生效的每个部位**上都解析得到才落库 —— `sales_form` 规则只吃布料单（只判 `布料`）、其余触发维只吃窗帘单（判 `布帘 / 纱帘 / 帘头`）、规则级 `position` 再按实例化侧逐字收窄；解析判据 = 实例化侧**同一份** `variantNameOf`。执行点 = `ProductionRoutingCommandServiceOptionCreateTest#positionLimitedRuleWithoutVariantOnItsPositionIsRejected` / `#unlimitedRuleWithoutVariantOnEveryPositionIsRejected`（422 + `details[0].field=operation` + 理由含值/部位/去哪儿配；`insert` **从未**被调用）。**红证**：把 `unresolvedOperationReason(...)` 调用摘掉 ⇒ 两条红（实测 `Expecting code to raise a throwable.`）。
 数据: **判据 2（负控：存在的工序 ⇒ 成功）**：同一工序限定到**有该变体**的部位（布帘）⇒ 200 落库（`position=布帘`）；帘头格走**显式帘头条目**（`花边 × 帘头 → 花边-布`）⇒ 同样落库。执行点 = 同文件 `#positionLimitedRuleWithVariantIsAccepted` / `#headPositionResolvesThroughTheExplicitHeadEntry`。

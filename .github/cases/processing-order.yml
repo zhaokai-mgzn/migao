@@ -3820,7 +3820,7 @@ cases:
     truths_ref: []
     precondition: "Mockito 夹具：工序库 4 行（`三边` / `精裁-布` / `外帘打卷` / `花边-布`）；规则表空（无重复）。`ProductionOperationQueryService` 用**真实对象**（只 mock Mapper）⇒ `variantNameOf` 不是桩。"
     user_inputs:
-      - "商家在「工艺配置 → 工序」抽屉里「添加条件」：什么时候 = 特殊选项「加花边」、做 = 做、目标工序 = 花边（不限部位）"
+      - "商家在「企业基础设置 → 工序与部位单价」的工序抽屉里「添加条件」：什么时候 = 特殊选项「加花边」、做 = 做、目标工序 = 花边（不限部位）"
       - "同上，但把这条规则限定到「纱帘」部位"
     expectations: []
     data_checks:

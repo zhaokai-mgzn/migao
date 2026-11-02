@@ -632,7 +632,11 @@ class ProductionRoutingCommandServiceOptionCreateTest {
                     assertThat(e.getDetails()).extracting("field").containsExactly("operation");
                     assertThat(e.getDetails().get(0).getMessage())
                             .as("可行动理由必须点名「哪个值 + 哪个部位 + 去哪儿配」，且与运行期同词（无法实例化工序）")
-                            .contains("花边").contains("纱帘").contains("工艺配置").contains("无法实例化工序");
+                            .contains("花边").contains("纱帘")
+                            // 页面坐标按**当前 IA**（#6580 起「工艺配置」菜单项已撤，配置面在「企业基础设置」页内；
+                            // 判据 = test_removed_page_copy_guard，服务端文案里出现已移除页面名即红）
+                            .contains("企业基础设置").contains("工序与部位单价")
+                            .contains("无法实例化工序");
                 });
         verify(productionRouteRuleMapper, never()).insert(any(ProductionRouteRule.class));
     }

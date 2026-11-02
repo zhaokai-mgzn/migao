@@ -760,7 +760,7 @@ public class ProductionRoutingCommandService {
         return String.format(
                 "工序库里没有「%s」在「%s」部位的库行 ⇒ %s —— 命中后该部位的单**无法实例化工序**"
                         + "（实例化按「工序 × 部位」取变体名，取不到就整单停，商家配的价进不了单）。"
-                        + "请先在「工艺配置 → 工序库」补「%s」的该部位变体，或把这条规则限定到它真有变体的部位",
+                        + "请先在「企业基础设置 → 工序与部位单价」补「%s」的该部位变体，或把这条规则限定到它真有变体的部位",
                 operation, String.join(" / ", unresolved), scope, operation);
     }
 
