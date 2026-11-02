@@ -60,6 +60,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       （无谓词状态写 / 缺 {@code status} 谓词 / service 无谓词 {@code updateById} / 未登记写路径 /
  *       台账锚被摘掉）各自判红，合规语料判绿，<b>只加注释 ⇒ 不红</b>。
  *       没有这条，「判据恒绿」与「判据有效」在结果列上长得一样。</li>
+ *   <li><b>「已审结」的拒绝只有一种状态码（判据 9，issue #7931 / #8408）</b>：快速路径读判
+ *       （方法体含 {@code "pending".equals(}）与 CAS 落空说的是<b>同一个终态</b> ⇒ 必须同为
+ *       {@code conflict family}（409）。出现 {@code validationError(}（422）⇒ 红 ——
+ *       改前快速路径 422、CAS 落空 409，落败方拿到哪个码取决于时序，真库并发判据随机红。</li>
  * </ol>
  *
  * <h2>与 MC-100 / PG-075 的关系（有意不重叠）</h2>
@@ -120,6 +124,12 @@ class TenantApplicationReviewCasMetaGuardTest {
      */
     private static final Pattern DELETED_PREDICATE =
             Pattern.compile("deleted\\s*=\\s*0", Pattern.CASE_INSENSITIVE);
+    /** 快速路径读判的形态（现取：`"pending".equals(` —— 全类只有审结前置这一处，判据 9）。 */
+    private static final String PENDING_STATE_CHECK = "\"pending\".equals(";
+    /** 「参数校验错误」= 422 —— 与 CAS 落空的 409 **同因异码**（判据 9）。 */
+    private static final String VALIDATION_ERROR_CALL = "validationError(";
+    /** 冲突（409）家族：`conflictForApprove(` / `conflictForReject(` —— 判据 9 要求的收口。 */
+    private static final Pattern CONFLICT_FACTORY = Pattern.compile("conflictFor\\w+\\(");
     /** 方法体收尾形态（`… ) {`）：真方法的长签名可跨行 ⇒ 判「签名行」时只看「出现 `) {`」。 */
     private static final String BODY_OPEN = ") {";
     /** 类体顶层的缩进（4 空格）；嵌套块（控制结构 / lambda）更深 ⇒ 靠它把方法从体内区分出来。 */
@@ -257,6 +267,29 @@ class TenantApplicationReviewCasMetaGuardTest {
         assertThat(broken).as("evidence 必须逐字兑现（摘掉 CAS 调用 / 方法改名 ⇒ 当场红）").isEmpty();
     }
 
+    // ────────────────────────────────────────────── 判据 9：同因同码（issue #7931 / #8408）
+
+    @Test
+    @DisplayName("判据 9：「已审结」的拒绝只有一种状态码（快速路径 409 conflict，不得 validationError/422）")
+    void fastPathRejectionSharesTheCasLoserStatusCode() throws IOException {
+        String service = serviceText();
+        List<String> guardMethods = membersWithBody(service).stream()
+                .filter(m -> m.body().contains(PENDING_STATE_CHECK))
+                .map(MethodBody::name)
+                .toList();
+        List<String> violations = sameCodeProblems(service);
+
+        System.out.println("[READING MC-102 同因同码] 现取快速路径读判方法=" + guardMethods
+                + " 违规=" + violations);
+        assertThat(guardMethods)
+                .as("扫描器必须现取到快速路径读判（返回空集 = 判据失明，不是通过）")
+                .isNotEmpty();
+        assertThat(violations)
+                .as("「该申请已审结」这条判定只有一种状态码：快速路径与 CAS 落空同为 409 CONFLICT"
+                        + "（改前快速路径 422 ⇒ 落败方的状态码由时序决定 = #7931 / #8408 的 flaky 机制）")
+                .isEmpty();
+    }
+
     // ────────────────────────────────────────────── 判据 8：合成语料判别力自证
 
     @Test
@@ -323,6 +356,17 @@ class TenantApplicationReviewCasMetaGuardTest {
                 goodService, registered))
                 .as("带了本表不存在的 deleted 谓词必须判红（#6928/#6936 的模板照抄 = SQL 报错）").isNotEmpty();
 
+        // 坏形态 ⑥（#7931 / #8408）：快速路径读判用 validationError(422) —— 与 CAS 落空(409) 同因异码
+        String oldFastPath = goodService + serviceCorpus("requirePendingForApprove",
+                "if (!\"pending\".equals(application.getStatus())) {\n"
+                        + "            throw BusinessException.validationError(\"该申请已被处理，当前状态: \"\n"
+                        + "                    + application.getStatus());\n"
+                        + "        }");
+        assertThat(problems(goodMapper, oldFastPath, registered))
+                .as("快速路径读判用 validationError(422) 必须判红"
+                        + "（同一个终态两个码 ⇒ 落败方的状态码由时序决定）")
+                .isNotEmpty();
+
         // 反向对照：只改注释 ⇒ 不红
         assertThat(problems(goodMapper,
                         "// 注释里提一句 applicationMapper.updateById(application)\n" + goodService, registered))
@@ -375,6 +419,32 @@ class TenantApplicationReviewCasMetaGuardTest {
                 problems.add("台账给不存在的写路径盖章: " + r.getKey());
             } else if (r.getValue() != null && !body.body().contains(r.getValue())) {
                 problems.add("写路径未兑现：主张的 " + r.getKey() + " 收口锚不在方法体里（" + r.getValue() + "）");
+            }
+        }
+        // 🔴 判据 9（#7931 / #8408）：同一个终态的拒绝只能有一种状态码。
+        problems.addAll(sameCodeProblems(serviceText));
+        return problems;
+    }
+
+    /**
+     * 判据 9（issue #7931 / #8408）：**「已审结」这条判定只能有一种状态码**。
+     *
+     * <p>快速路径读判（方法体含 {@code "pending".equals(}）与 CAS 落空说的是同一件事 ⇒ 必须同码
+     * （{@code conflictForApprove} / {@code conflictForReject} ⇒ 409），<b>不得</b>用
+     * {@code validationError}（422）。改前快速路径 422、CAS 落空 409 ⇒ 并发审批的落败方拿到哪个码
+     * 取决于时序（真库并发判据里「落败方必须是 409」这张断言随之随机红 = #7931 / #8408 的 flaky 机制）。</p>
+     */
+    private static List<String> sameCodeProblems(String serviceText) {
+        List<String> problems = new ArrayList<>();
+        for (MethodBody m : membersWithBody(serviceText)) {
+            if (!m.body().contains(PENDING_STATE_CHECK)) {
+                continue;
+            }
+            if (m.body().contains(VALIDATION_ERROR_CALL)) {
+                problems.add("快速路径读判用了 validationError(422)，与 CAS 落空(409) 同因异码: " + m.name());
+            }
+            if (!CONFLICT_FACTORY.matcher(m.body()).find()) {
+                problems.add("快速路径读判没走 conflict 家族(409): " + m.name());
             }
         }
         return problems;

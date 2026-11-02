@@ -970,7 +970,7 @@ public class OrderShipmentService {
      * <p>🔴 {@code target = shipped} 时**同一条 UPDATE** 里写 {@code orders.shipped_at}
      * （issue #6262，V148）：工人扫码发货路与商家路（{@code OrderService.transitionStatusAtomic}）
      * 是本列的两个写入点，两条路各有一份「真的写了」的判据
-     * （{@code OrderShippedAtWriteGuardTest}）—— 漏写任何一条，自动完成那条腿就永远扫不到这些单，
+     * （{@code OrderAutoCompleteSqlGuardTest}）—— 漏写任何一条，自动完成那条腿就永远扫不到这些单，
      * 而**不会有别的东西变红**（静默漏单）。</p>
      */
     private int transition(String orderId, String expected, String target) {

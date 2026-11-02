@@ -77,15 +77,27 @@ const mockLogout = workerLogout as jest.Mock
 const mockShipmentOrders = listReadyShipmentOrders as jest.Mock
 const mockReworkOrders = listWorkerReworkOrders as jest.Mock
 
+/**
+ * 带**收窄后**菜单渲染 —— 菜单开关是异步读回的（issue #7923），断言必须等**收敛事件**。
+ *
+ * promise 由测试持有，`release` 在 `act` 内推进 ⇒ state 更新与重渲染在 `act` 返回前完成，
+ * 断言读到的一定是收窄之后的那一版（不是 `waitFor` 碰运气，更不是 `sleep`）。
+ * 本文件末尾「⏱ 菜单开关晚到」用例就是这个机制的行为面红钉（先 fail-open、读到后收敛）。
+ */
 async function renderWithPages(pages: string[] | null, unread = false) {
   setWorkerSessionId(WORKER.session_id)
   mockFetch.mockResolvedValue({ success: true, data: WORKER })
-  mockPages.mockResolvedValue({ pages, unread, unauthorized: false })
+  let release: (value: any) => void = () => {}
+  mockPages.mockReturnValue(
+    new Promise((resolve) => {
+      release = resolve
+    }),
+  )
   render(<WorkerHomePage />)
   await screen.findByText('工号 G001')
-  await waitFor(() => expect(mockPages).toHaveBeenCalled())
-  // 菜单开关是异步读回的 ⇒ 等它应用到 state 再断言（否则断言跑在 fail-open 默认态上）
-  await act(async () => {})
+  await act(async () => {
+    release({ pages, unread, unauthorized: false })
+  })
   return screen
 }
 

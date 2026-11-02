@@ -106,16 +106,47 @@ const mockPages = fetchWorkerPages as jest.Mock
 const mockShipmentOrders = listReadyShipmentOrders as jest.Mock
 const mockReworkOrders = listWorkerReworkOrders as jest.Mock
 
-/** 有工人身份 + 服务端认出当前工人 ⇒ 落在工人首页的**正跑**形态 */
+/** 有工人身份 + 服务端认出当前工人 ⇒ 落在工人首页的**正跑**形态（入口按 fail-open 全开） */
 async function renderLoggedIn() {
   setWorkerSessionId(WORKER.session_id)
   mockFetch.mockResolvedValue({ success: true, data: WORKER })
   render(<WorkerHomePage />)
   await screen.findByText('工号 G001')
-  // 🔴 菜单开关是**异步**读回来的（`fetchWorkerPages().then(...)`）⇒ 只等身份卡会与它赛跑
-  //    （CI 上实测偶发红：断言跑在 fail-open 默认态上）。这里把所有待 settle 的微任务冲刷掉，
-  //    让后面的入口断言读到的是**菜单应用之后**的那一版。
+  // 冲刷「身份卡之后」的微任务（让页面上其它 then 有机会跑完）。
+  // 🔴 它**不是**「菜单已应用」的信号（issue #7923）：`fetchWorkerPages().then(setPages)` 何时落地
+  //    不由这一跳决定 ⇒ 要断言入口显隐，必须用下面的 `renderWithMenu()`。
   await act(async () => {})
+}
+
+/**
+ * 带**收窄后**工人端菜单渲染（issue #7923）—— 菜单应用是**确定性事件**，不是「猜它已经好了」。
+ *
+ * ## 为什么必须有它
+ * 本页是**两阶段渲染**：`pages === null` ⇒ fail-open 全开；`fetchWorkerPages()` resolve 之后
+ * `.then(setPages)` 才收敛到工人档案的收窄集（判据本体见 `frontend/bmini-app/src/utils/workerMenu.ts`）。
+ * 身份卡（工号）在**第一阶段**就出现了 ⇒ 它不是菜单已应用的信号。旧形态的断言就跑在这个窗口里：
+ * CI（run 40490058403 / PR #7922）实测 `queryByText('待发货单')` 拿到
+ * `<span class="worker-home__entry-text">待发货单</span>` ⇒ 判红（同一 SHA 重跑又绿 ⇒ 被记成 flaky）。
+ *
+ * ## 怎么钉稳
+ * promise 由测试持有，`release` 在 `act` 内调用 ⇒ React 在 `act` 返回前完成 state 更新与重渲染，
+ * 后面的断言**一定**读到收窄之后的那一版。**不是** `waitFor` 碰运气、更不是 `sleep`。
+ * 同范式的回归钉见 `frontend/bmini-app/tests/worker-home-menu.test.tsx` 的「⏱ 菜单开关晚到」用例。
+ *
+ * ## 红证（注入即红）
+ * 把 `release` 挪到 `act` 之外 / 延迟到断言之后 ⇒ 本文件两条菜单判据必红，报错与上面那句 CI 读数逐字相同。
+ */
+async function renderWithMenu(pages: string[], unread = false) {
+  let release: (value: any) => void = () => {}
+  mockPages.mockReturnValue(
+    new Promise((resolve) => {
+      release = resolve
+    }),
+  )
+  await renderLoggedIn()
+  await act(async () => {
+    release({ pages, unread, unauthorized: false })
+  })
 }
 
 describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
@@ -248,22 +279,44 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
 
   // ── issue #7921：返工记录入口（工人档案的 `rework` 键） ──
   it('🔴 返工记录入口按工人档案的 `rework` 键显隐（勾了就出现）', async () => {
-    mockPages.mockResolvedValue({ pages: ['report', 'rework'], unread: false, unauthorized: false })
-    await renderLoggedIn()
+    await renderWithMenu(['report', 'rework'])
 
-    // 等待「菜单已应用」的可观察读数（收窄集里没有 to_ship ⇒ 待发货单消失），再断言返工记录在
-    await waitFor(() => expect(screen.queryByText('待发货单')).toBeNull())
     expect(screen.getByText('返工记录')).toBeTruthy()
+    // 同一份收窄集里没有 to_ship / shipment ⇒ 待发货单 / 拍照发货如实不出现（显隐按同一套口径）
+    expect(screen.queryByText('待发货单')).toBeNull()
+    expect(screen.queryByText('拍照发货')).toBeNull()
   })
 
   it('🔴 档案没勾 `rework` ⇒ 返工记录入口不出现（勾了才出现，不是恒显示）', async () => {
-    mockPages.mockResolvedValue({ pages: ['report', 'to_ship'], unread: false, unauthorized: false })
-    await renderLoggedIn()
+    await renderWithMenu(['report', 'to_ship'])
 
-    // 等待「菜单已应用」的可观察读数（收窄集里没有 shipment ⇒ 拍照发货消失），再断言返工记录不在
-    await waitFor(() => expect(screen.queryByText('拍照发货')).toBeNull())
     expect(screen.queryByText('返工记录')).toBeNull()
     expect(screen.getByText('待发货单')).toBeTruthy()
+    // 收窄是**整套**生效（`shipment` 没勾 ⇒ 「拍照发货」也不在），不是只藏了返工记录
+    expect(screen.queryByText('拍照发货')).toBeNull()
+  })
+
+  // ── issue #7923：菜单晚到的**顺序**回归钉（防「断言跑在 fail-open 窗口里」再次混进来） ──
+  it('⏱ 菜单开关晚到：先 fail-open 全开，读到 pages 后收敛到收窄集', async () => {
+    let release: (value: any) => void = () => {}
+    mockPages.mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve
+      }),
+    )
+    await renderLoggedIn()
+
+    // ① 页面集还没回来 ⇒ fail-open：受键控制的入口都在（读不到不能把活挡掉）
+    expect(screen.getByText('待发货单')).toBeTruthy()
+    expect(screen.getByText('返工记录')).toBeTruthy()
+
+    // ② 读回 `['report','rework']` ⇒ 收敛：只剩 rework 那一条（`to_ship` / `shipment` 收起）
+    await act(async () => {
+      release({ pages: ['report', 'rework'], unread: false, unauthorized: false })
+    })
+    expect(screen.getByText('返工记录')).toBeTruthy()
+    expect(screen.queryByText('待发货单')).toBeNull()
+    expect(screen.queryByText('拍照发货')).toBeNull()
   })
 
   // ── issue #7921：两条只读名单入口上的「待处理数」（红色数字） ──
