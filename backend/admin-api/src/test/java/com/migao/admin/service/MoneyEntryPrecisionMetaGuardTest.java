@@ -220,12 +220,12 @@ class MoneyEntryPrecisionMetaGuardTest {
                         "出库不携带成本口径：留 NULL（不写 0，成本未知就是未知）"),
                 site("com/migao/admin/service/OpeningRegisterImportService.java", "setUnitCost", Admission.GATED,
                         "Excel 行单价写入报告行前过 MoneyScale（外部表格输入）"),
-                site("com/migao/admin/service/OrderService.java", "setActualAmount", Admission.GATED,
-                        "建单/改单过 MoneyScale（请求实收）；未传 ⇒ 沿用原值/总额，不归一成 0"),
-                site("com/migao/admin/service/OrderService.java", "setDiscountAmount", Admission.GATED,
-                        "建单/改单过 MoneyScale（请求优惠）"),
-                site("com/migao/admin/service/OrderService.java", "setTotalAmount", Admission.GATED,
-                        "订单总额（服务端 Σ(单价×数量)+行加工费，\"积\"）在 computeItemsTotal 之后过 MoneyScale"),
+                site("com/migao/admin/service/OrderCreationService.java", "setDiscountAmount", Admission.GATED,
+                        "建单/改单过 MoneyScale（请求优惠）；issue #8191（P2-1b）随 createOrder 从 OrderService 搬到本文件"
+                                + "（准入形态不变，仍是 GATED）"),
+                site("com/migao/admin/service/OrderCreationService.java", "setTotalAmount", Admission.GATED,
+                        "订单总额（服务端 Σ(单价×数量)+行加工费）在 computeItemsTotal 之后过 MoneyScale；"
+                                + "issue #8191（P2-1b）随 createOrder 从 OrderService 搬到本文件（准入形态不变）"),
                 site("com/migao/admin/service/OrderService.java", "setUnitPrice", Admission.GATED,
                         "明细单价在 assertItemAmountsValid（建单/改单唯一共享闸门）过 MoneyScale"),
                 site("com/migao/admin/service/ProcessingFeeCombinationCommandService.java", "setUnitPrice",
@@ -278,6 +278,10 @@ class MoneyEntryPrecisionMetaGuardTest {
                 site("com/migao/admin/service/OrderQueryService.java", "setActualAmount", Admission.NO_NEW_INPUT_SOURCE,
                         "订单列表响应 DTO 的回显（actualAmount 缺省时取 totalAmount），不落库；"
                                 + "根条目 = OrderService.java :: setActualAmount（建单/改单的库写入面准入不变）"),
+                site("com/migao/admin/service/OrderCreationService.java", "setActualAmount", Admission.NO_NEW_INPUT_SOURCE,
+                        "建单/改单时的订单主表回显组装（金额已在唯一积计算点算好），不引入新输入源；"
+                                + "issue #8191（P2-1b）随 createOrder 从 OrderService 搬到本文件（台账同步，准入口径不变）；"
+                                + "根条目 = OrderService.java :: setActualAmount"),
                 site("com/migao/admin/service/ProcessingFeeCombinationCommandService.java",
                         "ProcessingFeeCombinationVersion.builder()", Admission.NO_NEW_INPUT_SOURCE,
                         "改价版本台账：记录的是同一笔已写入的 unit_price（根条目 = 本文件的 setUnitPrice）"),
