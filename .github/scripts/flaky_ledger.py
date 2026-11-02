@@ -113,6 +113,21 @@ job 日志**取证（读数见该 PR body）：21 条里 **7 条判错**（issue
     旧值的语义在台账顶层 `_schema` 里**显式登记**为「旧口径，已知会过度声称」，且新写入
     **不再产生**该值（判据：`tests/unit_ci_workflows/test_flaky_ledger_kind_semantics.py`）。
 
+#6455：**部署腿的偶发失败没有承接面**（本单修：只记录、不重跑）
+----------------------------------------------------------------
+病（issue #6455 / PR #6452 实测）：`Build and Deploy frontend (admin-web)` 的**单测步**偶发红
+（`CuttingHeightConfigPanel.test.tsx` 取配置与断言的时序竞争）⇒ **那次改动当时没上线**
+（整条部署腿失败、`Post-Deploy Frontend Probe` skipped），靠 `Deploy Reconcile` 的延迟补偿才生效
+—— 而用户在窗口里看到的是旧构建。
+为什么没有任何机制接住它：部署腿被**有意**排除在 `TRIAGED_WORKFLOWS` 之外（重跑**有副作用**：
+会真的部署 —— 这条理由成立，本单**一个字都不动**）⇒ 它的失败**既不重跑、也不进台账**
+（365 条里没有 `CuttingHeight`）⇒ 「偶发」**永远不可度量**（`flaky-triage.yml` 只对 PR 腿生效）。
+⇒ 本单加的是**只读承接面**：`DEPLOY_RECORD_WORKFLOWS`（部署腿）⇒ `decide()` 产出 `record_deploy`
+（**零 rerun**），条目照常走 `append` 的**单写者**通道（不新增第二个写者 ⇒ 不争抢台账分支的重写权）。
+条目 `kind=unknown` + `rerun_result="not_rerun"`：**没有第二次尝试就没有归因凭据**（#5088）⇒
+不归因，也**不**记 `infra_suspect`（那是「环境问题」的**结论**，同样需要凭据）；`not_rerun` 让读侧
+能把部署腿条目与 PR 分流条目分开。
+
 退出码（三态，照本仓库 `merge_gate.py` / `llm_sink_check.py` 口径）
 ------------------------------------------------------------------
 `0` = 正常；`1` = 违规（台账不自洽 / 参数非法 / 重跑动作失败 / 额度用尽 / 缺跟踪单）；`3` = **无法判定**（取不到事实）。
@@ -183,6 +198,35 @@ TRIAGED_WORKFLOWS = (
     "Mini-App CI",
     "AI Agent Service Unit Tests",
     "Bmini-App CI",
+)
+
+#: 🔴 **#6455：部署腿 = 「只记台账、不重跑」的承接面**（受控记录的 workflow `name`）。
+#:
+#: 为什么**不放进** `TRIAGED_WORKFLOWS`（既有裁定，本单**一个字都不动**）：部署腿重跑**有副作用**
+#: （会真的部署）⇒ 它不许进分流白名单。代价 = 它的偶发失败**没有第二次尝试** ⇒ 「同 SHA 重跑绿」
+#: 这条 flaky 判据**结构上取不到** ⇒ 只能**只记事实**（#6455 的现场：部署腿单测偶发红 ⇒ 那次改动
+#: 没上线，靠 `Deploy Reconcile` 延迟补偿才生效，而用户在窗口里看到的是旧构建）。
+#: ⇒ `decide()` 对它们只产出 `record_deploy`（**零 rerun**），条目照常走 `append` 的**单写者**通道
+#: （不新增第二个写者 —— 台账分支的重写权仍只有 `flaky-triage.yml` 那一处）。
+DEPLOY_RECORD_WORKFLOWS = (
+    "Build and Deploy admin-api",
+    "Build and Deploy frontend (admin-web)",
+    "Build and Deploy ai-agent-service",
+)
+
+#: #6455 部署腿条目的三段文案（**单一事实源**）：`reason` 与 `unknown_reason` 同源，`remedy` 给出口。
+#: ⚠️ 为什么**不**复用 `KIND_REASON["unknown"]`：那条的判据是「**两次**尝试都红」；部署腿是
+#: 「**没有**第二次尝试」。两者同属「事实不足以归因」，但让读的人以为是「重跑两遍都红」= 读数与事实
+#: 不一致（本仓最贵的形态）⇒ 逐字写清「为什么不归因」。
+DEPLOY_RECORD_REASON = (
+    "**部署腿不重跑**（重跑会真的部署 ⇒ 既有裁定的红线）⇒ 这条失败**没有第二次尝试**："
+    "「同 SHA 重跑绿」这条 flaky 判据**结构上取不到**，infra 也没有凭据 ⇒ 按 #5088 的 fail-closed "
+    "口径记 `kind=unknown`（**不归因**），只记录事实（哪条腿 · 哪个 job · 哪个失败步骤 · 哪次 run）"
+)
+DEPLOY_RECORD_REMEDY = (
+    "按条目的 `first_failure_step` / `failing_tests` 定位机制：同一 SHA 的 PR 腿是否**同一条用例**"
+    "失败？本机复跑是否复现？确认后给红证并修根因。本条**不会**自动重跑、**不会**放行任何 PR —— "
+    "它的全部作用是把「部署腿的偶发失败」写进台账，让次数**可数**（此前 365 条里一条都没有）"
 )
 
 #: **上限**：首次 + 最多 1 次重跑。改大这个数 = 允许无限重跑 ⇒ 守卫测试会红。
@@ -1033,6 +1077,17 @@ def decide(bundle, max_attempts: int = MAX_ATTEMPTS, *, ledger=None, now=None,
         return _rate_limited_skip(run, rate)
 
     name = str(run.get("name") or "")
+    # ── 🔴 #6455：部署腿 = **只记台账、不重跑** ────────────────────────────────────
+    # 位置是判据的一部分（两条都硬）：
+    #   ① 在**限流熔断之后** —— #8444① 的「限流态整轮零动作」不许被本分支绕过（否则「没跑」会被
+    #      记成「有失败」，且放大闭环照旧）；
+    #   ② 在**白名单判定之前** —— 部署腿按设计不在 `TRIAGED_WORKFLOWS` 里（重跑会真的部署），
+    #      若放在其后它永远只会得到「不在白名单 ⇒ skip」，即本单要治的「不可度量」。
+    if name in DEPLOY_RECORD_WORKFLOWS:
+        return _deploy_record_decision(
+            run, jobs, prior_jobs, ledger=ledger, now=now,
+            window=(TRIAGE_DEDUP_WINDOW_MINUTES if dedup_window_minutes is None
+                    else dedup_window_minutes))
     if name not in TRIAGED_WORKFLOWS:
         return skip(f"workflow `{name}` 不在分流白名单（重跑无副作用才收）")
     if str(run.get("event") or "") != "pull_request":
@@ -1094,6 +1149,70 @@ def decide(bundle, max_attempts: int = MAX_ATTEMPTS, *, ledger=None, now=None,
         "kind": None,
         "failed_jobs": [j.get("name") for j in failed],
         "entries": [],
+        "pr": pr_number(run),
+        "attempt": attempt,
+    }
+
+
+def _deploy_record_decision(run, jobs, prior_jobs, *, ledger=None, now=None,
+                            window=TRIAGE_DEDUP_WINDOW_MINUTES) -> dict:
+    """#6455：部署腿的**只记录、不重跑**判定（**唯一**产出 `action=record_deploy` 的地方）。
+
+    **为什么只记录不重跑**（本函数存在的全部理由）：部署腿重跑**会真的部署** ⇒ 它被有意排除在
+    `TRIAGED_WORKFLOWS` 之外（#4717 的既有裁定，本单**一个字都不动**）。代价是它的偶发失败
+    **没有第二次尝试** ⇒ 「同 SHA 重跑绿」这条 flaky 判据**结构上取不到** ⇒「偶发」不可度量
+    （#6455 的现场：部署腿单测偶发红 ⇒ 那次改动没上线）。⇒ 本函数把它写进**同一本台账**
+    （`append` 的**单写者**通道），但**绝不**产出 `rerun`（`gh run rerun` 那一步的 `if:` 只认
+    `action == 'rerun'` ⇒ 本条在结构上不可能触发重跑）。
+
+    边界（照实登记，不粉饰）：
+      · 只对 `conclusion=failure` 记账 ⇒ 成功 / 取消 / 超时 / 无失败 job 一律**零动作**
+        （与既有红线同口径：`NOT_TEST_FAILURE_CONCLUSIONS` 不入账）；
+      · 去重仍用 #8444② 的 `(workflow, head_sha)` 时间窗 —— **不新增计数器、不加宽也不缩窄**；
+      · 定时 / 手动触发的部署腿失败**同样记账**（每轮 ≤1 条/job，幂等键含 `run_id` ⇒ 不会重复）；
+        持久性失败的部署腿会**按轮追加**条目（已知且**可见**：每条带 run 链接，量级由 schedule
+        频率封顶）—— 若要按窗口压制，那是另一单的口径，不在本单偷偷加。
+    """
+    name = str(run.get("name") or "")
+    attempt = _attempt(run)
+
+    def skip(reason: str) -> dict:
+        return {"action": "skip", "reason": reason, "kind": None, "entries": [],
+                "pr": pr_number(run), "attempt": attempt}
+
+    conclusion = _conclusion(run)
+    if conclusion in NOT_TEST_FAILURE_CONCLUSIONS:
+        return skip(f"部署腿 `{name}` conclusion={conclusion} 属取消/超时/基础设施 ⇒ 不记账"
+                    f"（**也不重跑**：本腿重跑会真的部署）")
+    if conclusion != "failure":
+        return skip(f"部署腿 `{name}` conclusion={conclusion} —— 只对**失败**记账"
+                    f"（本腿**不重跑**：重跑会真的部署）")
+    failed = [j for j in jobs if is_failed(j)]
+    if not failed:
+        return skip(f"部署腿 `{name}` 结论失败但没有任何失败 job（workflow 级失败）⇒ 无事实可记")
+    dup = _dedup_hit(ledger, run, now=now, window_minutes=window)
+    if dup:
+        return skip(f"同一 (workflow=`{name}`, head_sha=`{str(run.get('head_sha') or '')[:12]}`) 在 "
+                    f"{window:g} 分钟内已记过账（{dup}）⇒ 不重复记账"
+                    f"（#8444② 的时间窗去重，**不是**「没有失败」）")
+    # 复用**唯一**的条目构造器（字段形状与 `append` / `ledger_violations` 同源，不写第二份）；
+    # `rerun_result="not_rerun"` 是**事实**（本腿从不重跑）而不是「重跑失败」。
+    entries = build_entries(run, failed, "not_rerun",
+                            prior_failed_jobs=list(prior_jobs or []),
+                            failed_attempt=attempt)
+    for entry in entries:
+        entry["kind"] = "unknown"
+        entry["reason"] = DEPLOY_RECORD_REASON
+        entry["unknown_reason"] = DEPLOY_RECORD_REASON
+        entry["remedy"] = DEPLOY_RECORD_REMEDY
+    return {
+        "action": "record_deploy",
+        "kind": "unknown",
+        "reason": (f"部署腿 `{name}` 失败（attempt={attempt}）⇒ **只记台账、不重跑**"
+                   f"（重跑会真的部署；#6455 的全部意义 = 让「偶发」可数）："
+                   f"{len(entries)} 条事实待 append"),
+        "failed_jobs": [j.get("name") for j in failed],
+        "entries": entries,
         "pr": pr_number(run),
         "attempt": attempt,
     }
@@ -2717,6 +2836,24 @@ def render_comment(decision: dict) -> str:
             "",
             "⚠️ **不许**把本次的红当成「已澄清」：`block/merge` 与 auto-merge 的处置见下面两节 —— "
             "本类**不**打 `flaky/rerun-green`（它不是 flaky），但同样**不**自动放行。",
+            "",
+            f"判据：{decision.get('reason')}",
+        ]
+    elif decision.get("action") == "record_deploy":
+        # #6455：部署腿**只记台账、不重跑** —— 评论（若有）必须与 `record_infra` 长得不一样：
+        # 后者是「重跑绿但属环境问题」，本条是「**根本没重跑过**」，混在一起就是读数与事实不一致。
+        lines += [
+            "## 🗂️ Flaky Triage —— 部署腿失败（**只记台账，不重跑**）",
+            "",
+            f"**为什么记在这里**：{why}；本腿**不重跑**（重跑会真的部署 ⇒ 既有裁定的红线）"
+            "⇒ 「同 SHA 重跑绿」这条 flaky 判据**结构上取不到** ⇒ 只记录事实"
+            "（`kind=unknown`，**不归因**；`rerun_result=not_rerun`）。",
+            "",
+            *table("失败步骤"),
+            "",
+            f"**下一步（可行动）**：{first.get('remedy') or ''}",
+            "",
+            "⚠️ 本条**未**重跑、**未**打 `flaky/rerun-green`、**未**卸 auto-merge、**未**放行任何 PR。",
             "",
             f"判据：{decision.get('reason')}",
         ]

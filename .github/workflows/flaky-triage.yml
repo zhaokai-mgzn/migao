@@ -65,19 +65,28 @@ name: Flaky Triage (失败重跑分流)
 #
 # 守卫（本文件的结构不许被静默改坏）：`tests/unit_ci_workflows/test_flaky_triage.py`，
 # 跑在 **required** 的 `ci workflow helper unit tests` 里（每条判据都带注入式红证）。
+# #6455：部署腿偶发**不可度量**（不重跑 ⇒ 没有第二次尝试 ⇒ 台账里永远查不到）⇒ 本文件对它们只做
+# 「记账」这一件事：`decide()` 的 `record_deploy` **不**触发 `gh run rerun`（那一步只认 `rerun`）。
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
   workflow_run:
-    # 白名单口径 = 「PR 上跑测试 且 重跑无副作用」。故意不收：
+    # 分流白名单口径 = 「PR 上跑测试 且 重跑无副作用」。故意不收：
     #   · Drift Audit / Agent Behavior Eval / Demo Evidence Gate —— 报告型，不阻塞；
-    #   · Deploy Reconcile / deploy-* —— **重跑有副作用**（会真的部署）；
+    #   · Deploy Reconcile —— 报告型对账腿；
     #   · Post-Deploy Eval 等真实 LLM workflow —— 重跑 = 重复烧 token（#4262 用户裁定）。
+    # 🔴 #6455：部署腿（deploy-*）**进触发面、但不进分流白名单** —— 它们**只记台账、不重跑**
+    #    （重跑会真的部署 ⇒ 既有裁定的红线**不动**）。此前它们**既不在触发面、也不在台账里**
+    #    ⇒ 单测偶发红**永远不可度量**（#6452 实测：那次改动没上线，365 条台账里一条都没有）。
     workflows:
       - PR Check
       - Mini-App CI
       - AI Agent Service Unit Tests
       - Bmini-App CI
+      # ── #6455 部署腿：**只记台账、不重跑**（`decide()` 产出 `record_deploy`，零 rerun）──
+      - Build and Deploy admin-api
+      - Build and Deploy frontend (admin-web)
+      - Build and Deploy ai-agent-service
     types: [completed]
 
 # 台账 push 是「读-改-写」⇒ 串行化，防并发 run 互相覆盖（幂等键仍在脚本侧，双保险）
@@ -297,7 +306,10 @@ jobs:
 
       # ── ③ 可见评论（幂等：同 marker 已存在则**更新**，不重复堆积 ⇒ 不再造噪音）──
       - name: ③ PR 评论（幂等：同 marker 更新而非重复创建）
-        if: steps.decide.outputs.entry_count != '0'
+        # #6455：**部署腿没有 PR**（push / schedule 触发 ⇒ `pr` 为空）⇒ 不发评论
+        # （否则 `issues//comments` 会 404 ⇒ fail-closed 判红，把「只记账」变成「整条链红」）。
+        # PR 腿的 `pr` 恒非空 ⇒ 本条件对既有路径**零影响**。
+        if: steps.decide.outputs.entry_count != '0' && steps.decide.outputs.pr != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.decide.outputs.pr }}
