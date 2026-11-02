@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import copy
 import re
+import sys
 from pathlib import Path
 
 import pytest
@@ -58,6 +59,11 @@ URL_HELPER = ADMIN_WEB_SRC / "lib" / "bmini-h5-url.ts"
 ENV_EXAMPLE = REPO_ROOT / "frontend" / "admin-web" / ".env.example"
 DOCKERFILE = REPO_ROOT / "frontend" / "admin-web" / "Dockerfile"
 DEPLOY_FRONTEND = REPO_ROOT / ".github" / "workflows" / "deploy-frontend.yml"
+
+# 注入走共用原语（issue #7017）：`str.replace` 0 命中时**静默返回原串** ⇒ 把「锚点漂移」误报成
+# 「判据没牙」。`inject()` 0 命中抛 AnchorDrift（报文含语料名 + 锚点前 60 字），不唯一抛 AmbiguousAnchor。
+sys.path.append(str(REPO_ROOT / "tests"))
+from unit_ci_workflows.injection import inject  # noqa: E402
 
 ENV_VAR = "NEXT_PUBLIC_BMINI_H5_URL"
 #: 唯一允许读该环境变量的文件（仓库相对路径）—— 单一真值的落点
@@ -494,18 +500,27 @@ def test_mutations_are_all_detected(tmp_path):
     src_files = [polluted, second_reader]
 
     # ③ 假码：把 QRCodeSVG 挪进无值分支（缺配置也画一个）
-    fake_qr = entry.replace(
-        '<QRCodeSVG value={entryUrl} size={140} title={entryUrl} data-testid="bmini-h5-qr" />', ""
-    ).replace(
+    fake_qr = inject(
+        inject(
+            entry,
+            '<QRCodeSVG value={entryUrl} size={140} title={entryUrl} data-testid="bmini-h5-qr" />',
+            "",
+            where=_rel(MOBILE_ENTRY),
+        ),
         '<p className="text-sm text-neutral-500" data-testid="bmini-h5-unconfigured">',
         '<p className="text-sm text-neutral-500" data-testid="bmini-h5-unconfigured">'
         '<QRCodeSVG value="" data-testid="bmini-h5-qr" />',
+        where=_rel(MOBILE_ENTRY),
     )
-    assert fake_qr != entry, "变异注入未生效（找不到 QRCodeSVG 那一行）"
 
     mutations = {
         "前端源码里硬编码域名": dict(files=src_files),
-        "Dockerfile 去掉 ENV": dict(dockerfile=dockerfile.replace(f"ENV {ENV_VAR}=${{{ENV_VAR}}}\n", "")),
+        "Dockerfile 去掉 ENV": dict(
+            dockerfile=inject(
+                dockerfile, "ENV NEXT_PUBLIC_BMINI_H5_URL=${NEXT_PUBLIC_BMINI_H5_URL}\n", "",
+                where=_rel(DOCKERFILE),
+            )
+        ),
         "Dockerfile 的 ARG 缺省值置空": dict(
             dockerfile=dockerfile.replace("ARG NEXT_PUBLIC_BMINI_H5_URL=https://app.migaozn.com/b/", "ARG NEXT_PUBLIC_BMINI_H5_URL=")
         ),
@@ -519,7 +534,12 @@ def test_mutations_are_all_detected(tmp_path):
         "把二维码挪进无值分支（画假码）": dict(entry_src=fake_qr),
         # issue #7825：组件里自己拼 `?qr=`（绕开单一真值的派生点）⇒ 必须判红
         "二维码内容在组件里自己拼 qr 参数": dict(
-            entry_src=entry.replace("value={entryUrl}", "value={bminiH5Url + '?qr=' + ticket}", 1)
+            entry_src=inject(
+                entry,
+                "value={entryUrl}",
+                "value={bminiH5Url + '?qr=' + ticket}",
+                where=_rel(MOBILE_ENTRY),
+            )
         ),
         "二维码内容改成硬编码（不取配置值）": dict(
             entry_src=entry.replace(
@@ -528,9 +548,16 @@ def test_mutations_are_all_detected(tmp_path):
             )
         ),
         "手机端入口自己读 process.env（绕过单一读取点）": dict(
-            entry_src=entry.replace("const bminiH5Url = getBminiH5Url()", f"const bminiH5Url = process.env.{ENV_VAR} || ''")
+            entry_src=inject(
+                entry,
+                "const bminiH5Url = getBminiH5Url()",
+                f"const bminiH5Url = process.env.{ENV_VAR} || ''",
+                where=_rel(MOBILE_ENTRY),
+            )
         ),
-        "顶栏摘掉手机端入口": dict(header_src=header.replace("<MobileEntryHeader />", "")),
+        "顶栏摘掉手机端入口": dict(
+            header_src=inject(header, "<MobileEntryHeader />", "", where=_rel(HEADER))
+        ),
         "设置页复活手机端入口块": dict(
             page_src=page + '\n<div data-testid="bmini-h5-entry"><MobileEntryInline /></div>\n'
         ),

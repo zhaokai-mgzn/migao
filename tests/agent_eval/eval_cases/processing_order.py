@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: processing-order（源: cases/processing-order.yml，85 条）
+# 域: processing-order（源: cases/processing-order.yml，86 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -1582,6 +1582,25 @@ _CASE_PG_099 = EvalCase(
     precondition='前置 = ① 车间报返工：活跃加工单 + 工序实例（带 order_item_id/set_id/set_no/position_name）+ 工人 session；② 质检：同一件成品帘 + live 套（processing_order_sets.position_item_ids 含该部位）。后端夹具 = Mockito（`ProcessingOrderSetMapper` 替身，件键逐值断言）；H5 = 纯渲染/状态机夹具（零 DOM、零网络）。',
 )
 
+# ── PG-100 [NORMAL] 条件工序规则写面：目标工序必须在规则**生效的每个部位**上解析得到（否则 422，不再等派单才整单 fail-closed）（源: cases/processing-order.yml）──
+_CASE_PG_100 = EvalCase(
+    id='PG-100',
+    legacy_id='',
+    title='条件工序规则写面：目标工序必须在规则**生效的每个部位**上解析得到（否则 422，不再等派单才整单 fail-closed）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家在「企业基础设置 → 工序与部位单价」的工序抽屉里「添加条件」：什么时候 = 特殊选项「加花边」、做 = 做、目标工序 = 花边（不限部位）', '同上，但把这条规则限定到「纱帘」部位'],
+    expectations=[],
+    data_checks=['**判据 1（会红，写面）= 部位敏感的可解析性**：目标工序必须在规则**生效的每个部位**上都解析得到才落库 —— `sales_form` 规则只吃布料单（只判 `布料`）、其余触发维只吃窗帘单（判 `布帘 / 纱帘 / 帘头`）、规则级 `position` 再按实例化侧逐字收窄；解析判据 = 实例化侧**同一份** `variantNameOf`。执行点 = `ProductionRoutingCommandServiceOptionCreateTest#positionLimitedRuleWithoutVariantOnItsPositionIsRejected` / `#unlimitedRuleWithoutVariantOnEveryPositionIsRejected`（422 + `details[0].field=operation` + 理由含值/部位/去哪儿配；`insert` **从未**被调用）。**红证**：把 `unresolvedOperationReason(...)` 调用摘掉 ⇒ 两条红（实测 `Expecting code to raise a throwable.`）。', '**判据 2（负控：存在的工序 ⇒ 成功）**：同一工序限定到**有该变体**的部位（布帘）⇒ 200 落库（`position=布帘`）；帘头格走**显式帘头条目**（`花边 × 帘头 → 花边-布`）⇒ 同样落库。执行点 = 同文件 `#positionLimitedRuleWithVariantIsAccepted` / `#headPositionResolvesThroughTheExplicitHeadEntry`。', "**判据 3（边界：不许把合法形态判成非法）**：① 部位无关**裸名行**（`外帘打卷`，与 `打包` / `质检` 同形态）在**任何**部位都解析得到 ⇒ 不限部位落库成功（`#bareOperationResolvesOnEveryPosition`）；② `action='remove'` 不做变体解析（只按逻辑名从序列删）⇒ 不判部位（`#removeRuleIsNotJudgedByPositionResolution`）。", '**判据 4（判别力自证 / 防止护栏退化成空断言）**：真实 `variantNameOf` 必须**部位敏感** —— `花边` 在布帘 / 帘头返回 `花边-布`、在纱帘返回 `null`；`外帘打卷` 三部位返回自身。把 `variantNameOf` 改成恒返回逻辑名 ⇒ 判据 1 两条 + 本条红（实测 `expected: 花边-布 but was: 花边`）。执行点 = 同文件 `#variantResolutionIsPositionSensitive`。', '**判据 5（类级元守卫：未登记写面即红）**：`production_route_rules` 的**每个**写面都必须在台账登记（现取：`ProductionRoutingCommandService` = GATED / `ProductionSeedTemplateService` = POSITION_PINNED）；GATED 写面把 `unresolvedOperationReason(` 调用点摘掉 ⇒ 红。执行点 = `ProductionRouteRuleWriteSurfaceMetaGuardTest`（判据 1~4）。**红证**：临时新增一个未登记写面文件 + 摘掉 GATED 调用点 ⇒ 实测 `Tests run: 4, Failures: 2`（具名报出）。', '**边界（照实登记）**：① 读面不加「这条规则某部位可否实例化」的具名标记（`ruleView` 10 键是冻结契约）；② 存量非法行**不做数据回填**（运行期 fail-closed 保留作最后一道）；③「规则永不生效」是另一条既有缺口（如部位维规则又限定到布料），不在本判据射程内。'],
+    skip_reason='[backend-contract] Java 服务层单测 + 源码结构判据（零 LLM 行为），不进 agent-eval 冒烟',
+    tags=['route-rule', 'write-guard', 'backend-contract', 'meta-guard'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='Mockito 夹具：工序库 4 行（`三边` / `精裁-布` / `外帘打卷` / `花边-布`）；规则表空（无重复）。`ProductionOperationQueryService` 用**真实对象**（只 mock Mapper）⇒ `variantNameOf` 不是桩。',
+)
+
 CASES = (
     _CASE_PG_001,
     _CASE_PG_002,
@@ -1668,4 +1687,5 @@ CASES = (
     _CASE_PG_097,
     _CASE_PG_098,
     _CASE_PG_099,
+    _CASE_PG_100,
 )

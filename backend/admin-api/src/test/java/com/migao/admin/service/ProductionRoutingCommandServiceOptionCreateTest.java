@@ -1,6 +1,6 @@
 package com.migao.admin.service;
 
-// case_ids: PG-032, PG-033, PG-053
+// case_ids: PG-032, PG-033, PG-053, PG-100
 
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.ProductionOperation;
@@ -54,7 +54,12 @@ import static org.mockito.Mockito.verify;
  * <h2>红证（不会红的断言 = 空断言）</h2>
  * ① 把「目标工序存在」校验删掉 ⇒ {@link #unknownOperationIsRejectedAndNothingIsWritten} 红
  * （不再抛 422，且 insert 会被调用）；② 把重复预检删掉 ⇒ {@link #duplicateOptionIsConflict} 红；
- * ③ 把 {@code setScale(2, UNNECESSARY)} 换成 {@code round} ⇒ {@link #threeDecimalPriceIsRejected} 红。
+ * ③ 把 {@code setScale(2, UNNECESSARY)} 换成 {@code round} ⇒ {@link #threeDecimalPriceIsRejected} 红；
+ * ④ 把「目标工序在规则生效的**每个部位**上都解析得到」判据删掉（issue #6428）⇒
+ * {@link #positionLimitedRuleWithoutVariantOnItsPositionIsRejected} 与
+ * {@link #unlimitedRuleWithoutVariantOnEveryPositionIsRejected} 红（422 变 200、insert 被调用）；
+ * 把 {@code ProductionOperationQueryService#variantNameOf} 改成恒返回逻辑名（护栏退化成空断言）⇒
+ * 同两条 + {@link #variantResolutionIsPositionSensitive} 红（**这两条走真实实现，不是 mock 桩**）。
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("特殊选项写面（issue #4570）：新建 + 护栏")
@@ -80,19 +85,27 @@ class ProductionRoutingCommandServiceOptionCreateTest {
     private ProcessingItemMapper processingItemMapper;
 
     private ProductionRoutingCommandService service;
+    /**
+     * 读面用**真实对象**（只 mock Mapper）：{@code variantNameOf} 是「工序 × 部位 → 变体名」的
+     * **唯一实现**（issue #6428 的写面判据与实例化侧共用）——mock 掉它 = 判据退化成空断言。
+     */
+    private ProductionOperationQueryService queryService;
 
     @BeforeEach
     void setUp() {
         TenantContext.setTenantId(TENANT);
+        queryService = new ProductionOperationQueryService(
+                productionOperationMapper, productionRouteTemplateMapper, productionRouteRuleMapper,
+                productionOperationPositionMapper, productionCraftMapper, productionRouteSignalMapper);
         service = new ProductionRoutingCommandService(
                 productionRouteTemplateMapper, productionRoutingVersionMapper, productionOperationMapper,
-                new ProductionOperationQueryService(productionOperationMapper, productionRouteTemplateMapper,
-                        productionRouteRuleMapper, productionOperationPositionMapper,
-                        productionCraftMapper, productionRouteSignalMapper),
-                productionRouteRuleMapper, processingItemMapper);
-        // 工序库：3 道（**变体名**口径 —— 库里存的是「三边/精裁」这类裸逻辑名与「精裁-布」变体名）
+                queryService, productionRouteRuleMapper, processingItemMapper);
+        // 工序库：4 道（**变体名**口径 —— 库里存的是「三边/精裁」这类裸逻辑名与「精裁-布」变体名）。
+        // `花边-布` 是 #6420 的实证形态：**有布帘库行、没有纱帘库行**（`花边-纱`）——
+        // 规则一旦在纱帘上生效，`variantNameOf("花边","纱帘",catalog)` = null ⇒ 整单 fail-closed。
         lenient().when(productionOperationMapper.selectList(any())).thenReturn(List.of(
-                op("op-1", "三边"), op("op-2", "精裁-布"), op("op-3", "外帘打卷")));
+                op("op-1", "三边"), op("op-2", "精裁-布"), op("op-3", "外帘打卷"),
+                op("op-4", "花边-布")));
         // 规则表：默认空（无重复）
         lenient().when(productionRouteRuleMapper.selectList(any())).thenReturn(new ArrayList<>());
     }
@@ -161,7 +174,9 @@ class ProductionRoutingCommandServiceOptionCreateTest {
     @DisplayName("PG-032 目标工序 / 锚点传**变体名** ⇒ 落库与回显都是**逻辑名**（精裁-布 → 精裁，issue #4643）")
     void acceptsVariantOperationName() {
         Map<String, Object> result = service.createOptionRule(
-                body("trigger_value", "接高", "operation", "精裁-布", "after_operation", "精裁-布"), TENANT);
+                // 限定布帘（issue #6428）：库里有「精裁-布」、没有「精裁-纱」⇒ 不限部位会被 422
+                body("trigger_value", "接高", "operation", "精裁-布", "after_operation", "精裁-布",
+                        "position", "布帘"), TENANT);
 
         ProductionRouteRule row = inserted();
         // 改前实测：operation/after_operation 落的是变体名「精裁-布」⇒ GET /route-rules 回传变体名、
@@ -187,7 +202,8 @@ class ProductionRoutingCommandServiceOptionCreateTest {
         lenient().when(productionRouteRuleMapper.selectList(any())).thenReturn(rows);
 
         assertThatThrownBy(() -> service.createOptionRule(
-                body("trigger_value", "接高", "operation", "精裁"), TENANT))
+                // 限定布帘（issue #6428）：不限部位会先被「部位可解析性」判据 422，走不到重复预检
+                body("trigger_value", "接高", "operation", "精裁", "position", "布帘"), TENANT))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("已存在");
         verify(productionRouteRuleMapper, never()).insert(any(ProductionRouteRule.class));
@@ -594,5 +610,136 @@ class ProductionRoutingCommandServiceOptionCreateTest {
                     assertThat(e.getMessage()).contains("已存在");
                 });
         verify(productionRouteRuleMapper, never()).insert(any(ProductionRouteRule.class));
+    }
+
+    // ══════════ PG-100 / #6428：目标工序必须在规则**生效的每个部位**上解析得到 ══════════
+    //
+    // 病（#6420 实证）：写面只校验「工序库里有这道工序」（存在性），而实例化按 **工序 × 部位** 取变体名
+    // （`variantNameOf`）——「花边」只有布帘库行（`花边-布`）时，一条**不限部位**的规则照样存得下，
+    // 一直到有**纱帘单**命中它，才在**生产环节**整单 fail-closed（租户 25：纱帘单 22/22 全挂）。
+    // 本组把「写面与实例化侧同一份解析判据」钉住（红证见类 javadoc ④）。
+
+    @Test
+    @DisplayName("PG-100 / #6428 规则限定「纱帘」但库里只有「花边-布」⇒ 422：具名值 + 部位 + 去哪儿配，一个字节都不写")
+    void positionLimitedRuleWithoutVariantOnItsPositionIsRejected() {
+        assertThatThrownBy(() -> service.createOptionRule(
+                body("trigger_value", "加花边", "operation", "花边", "position", "纱帘"), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(thrown -> {
+                    BusinessException e = (BusinessException) thrown;
+                    assertThat(e.getHttpStatus()).isEqualTo(422);
+                    assertThat(e.getCode()).isEqualTo("VALIDATION_ERROR");
+                    assertThat(e.getDetails()).extracting("field").containsExactly("operation");
+                    assertThat(e.getDetails().get(0).getMessage())
+                            .as("可行动理由必须点名「哪个值 + 哪个部位 + 去哪儿配」，且与运行期同词（无法实例化工序）")
+                            .contains("花边").contains("纱帘")
+                            // 页面坐标按**当前 IA**（#6580 起「工艺配置」菜单项已撤，配置面在「企业基础设置」页内；
+                            // 判据 = test_removed_page_copy_guard，服务端文案里出现已移除页面名即红）
+                            .contains("企业基础设置").contains("工序与部位单价")
+                            .contains("无法实例化工序");
+                });
+        verify(productionRouteRuleMapper, never()).insert(any(ProductionRouteRule.class));
+    }
+
+    @Test
+    @DisplayName("PG-100 / #6428 **不限部位**的规则把「花边」用到没有该变体的纱帘 ⇒ 422（#6420 的写面闸）")
+    void unlimitedRuleWithoutVariantOnEveryPositionIsRejected() {
+        assertThatThrownBy(() -> service.createOptionRule(
+                body("trigger_value", "加花边", "operation", "花边"), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(thrown -> {
+                    BusinessException e = (BusinessException) thrown;
+                    assertThat(e.getHttpStatus()).isEqualTo(422);
+                    assertThat(e.getDetails()).extracting("field").containsExactly("operation");
+                    assertThat(e.getDetails().get(0).getMessage())
+                            .as("#6420 的形态：不限部位 ⇒ 必须在写面拦下，而不是等纱帘单命中才炸")
+                            .contains("不限部位").contains("纱帘").contains("花边");
+                });
+        verify(productionRouteRuleMapper, never()).insert(any(ProductionRouteRule.class));
+    }
+
+    @Test
+    @DisplayName("PG-100 / #6428 负控：限定到**有该变体**的部位（布帘）⇒ 照常落库（不是「一律拒花边」）")
+    void positionLimitedRuleWithVariantIsAccepted() {
+        Map<String, Object> result = service.createOptionRule(
+                body("trigger_value", "加花边", "operation", "花边", "position", "布帘"), TENANT);
+
+        ProductionRouteRule row = inserted();
+        assertThat(row.getOperation()).isEqualTo("花边");
+        assertThat(row.getPosition()).isEqualTo("布帘");
+        assertThat(result).containsEntry("operation", "花边").containsEntry("position", "布帘");
+    }
+
+    @Test
+    @DisplayName("PG-100 / #6428 帘头格走**显式帘头条目**（花边 × 帘头 → 花边-布）⇒ 限定帘头同样落库")
+    void headPositionResolvesThroughTheExplicitHeadEntry() {
+        service.createOptionRule(
+                body("trigger_value", "加花边", "operation", "花边", "position", "帘头"), TENANT);
+
+        assertThat(inserted().getPosition()).isEqualTo("帘头");
+    }
+
+    @Test
+    @DisplayName("PG-100 / #6428 边界：部位无关的裸名行（外帘打卷）在任何部位都解析得到 ⇒ 不限部位照常落库")
+    void bareOperationResolvesOnEveryPosition() {
+        service.createOptionRule(body("trigger_value", "加流苏", "operation", "外帘打卷"), TENANT);
+
+        assertThat(inserted().getOperation()).isEqualTo("外帘打卷");
+        assertThat(inserted().getPosition()).isNull();
+    }
+
+    @Test
+    @DisplayName("PG-100 / #6428 边界：action='remove' **不做变体解析**（只按逻辑名从序列删）⇒ 不判部位")
+    void removeRuleIsNotJudgedByPositionResolution() {
+        stubCrafts("打孔");
+        service.createRouteRule(
+                body("trigger_kind", "craft", "trigger_value", "打孔", "action", "remove",
+                        "operation", "花边", "position", "纱帘"),
+                TENANT);
+
+        assertThat(inserted().getAction()).isEqualTo("remove");
+        assertThat(inserted().getOperation()).isEqualTo("花边");
+    }
+
+    @Test
+    @DisplayName("PG-100 / #6428 生效部位按**产品形态**分派：非 sales_form 规则不套用到布料单 ⇒ 理由里不点布料")
+    void nonSalesFormRuleIsNotJudgedOnFabricPosition() {
+        assertThatThrownBy(() -> service.createOptionRule(
+                body("trigger_value", "加花边", "operation", "花边"), TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(thrown -> assertThat(((BusinessException) thrown).getDetails().get(0).getMessage())
+                        // 实例化侧：布料单只吃 sales_form 规则（`buildRoute` 的形态分派）⇒「花边」
+                        // 在布料部位解析不到**不会**发生（这条规则根本不在布料单上生效）——
+                        // 判据若把布料算进来就会误报
+                        .contains("纱帘").doesNotContain("布料"));
+    }
+
+    @Test
+    @DisplayName("PG-100 / #6428 sales_form 规则只吃布料单 ⇒ 目标工序在布料解析不到照样 422")
+    void salesFormRuleIsJudgedOnFabricPosition() {
+        assertThatThrownBy(() -> service.createRouteRule(
+                body("trigger_kind", "sales_form", "trigger_value", "full_roll", "operation", "花边"),
+                TENANT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(thrown -> assertThat(((BusinessException) thrown).getDetails().get(0).getMessage())
+                        .contains("布料"));
+        verify(productionRouteRuleMapper, never()).insert(any(ProductionRouteRule.class));
+    }
+
+    @Test
+    @DisplayName("PG-100 / #6428 判别力自证：variantNameOf 部位敏感（恒返回逻辑名 ⇒ 两条 422 用例与本条红）")
+    void variantResolutionIsPositionSensitive() {
+        Map<String, Map<String, Object>> catalog = queryService.operationsByName(TENANT);
+        // 有布帘库行 ⇒ 解析得到（不是「一律 null」的假护栏）
+        assertThat(queryService.variantNameOf("花边", "布帘", catalog)).isEqualTo("花边-布");
+        // 帘头走显式帘头条目（issue #4777），同样解析得到
+        assertThat(queryService.variantNameOf("花边", "帘头", catalog)).isEqualTo("花边-布");
+        // 纱帘没有 `花边-纱` ⇒ **必须**是 null —— 写面 422 的唯一依据（恒真 = 空断言）
+        assertThat(queryService.variantNameOf("花边", "纱帘", catalog)).isNull();
+        // 部位无关的裸名行（打包 / 质检 同形态）在任何部位都解析得到 —— #6428 的边界：
+        // 护栏**不得**把这类工序判成非法
+        assertThat(queryService.variantNameOf("外帘打卷", "布帘", catalog)).isEqualTo("外帘打卷");
+        assertThat(queryService.variantNameOf("外帘打卷", "纱帘", catalog)).isEqualTo("外帘打卷");
+        assertThat(queryService.variantNameOf("外帘打卷", "帘头", catalog)).isEqualTo("外帘打卷");
     }
 }

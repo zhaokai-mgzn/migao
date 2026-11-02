@@ -78,6 +78,11 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "automerge.yml"
 
+# 注入走共用原语（issue #7017）：`str.replace` 0 命中时**静默返回原串** ⇒ 把「锚点漂移」误报成
+# 「判据没牙」。`inject()` 0 命中抛 AnchorDrift（报文含语料名 + 锚点前 60 字），不唯一抛 AmbiguousAnchor。
+sys.path.append(str(REPO_ROOT / "tests"))
+from unit_ci_workflows.injection import inject  # noqa: E402
+
 BOT_JOB = "enable-auto-merge-bot-safe"
 NONBOT_JOB = "enable-auto-merge"
 MERGE_CMD = "pr merge 1 --auto --squash --delete-branch"
@@ -1208,9 +1213,9 @@ class TestCriterion7NonBotPathUnchanged:
 
         证明这条逐字快照**不是橡皮图章**（本 PR 实测：刷新常量前它确实因 `#5113` 的改动变红）。
         """
-        mutated = workflow_text().replace(
-            'if [ "$mergeable" = "UNKNOWN" ]; then', "if false; then", 1)
-        assert mutated != workflow_text(), "变异未生效（锚点漂移）"
+        mutated = inject(
+            workflow_text(), 'if [ "$mergeable" = "UNKNOWN" ]; then', "if false; then",
+            where=".github/workflows/automerge.yml")
         assert ORIGINAL_NONBOT_RUN_RAW not in mutated
         # 语义上确认改的正是**非 bot job 的 run**（不是别处同名字符串）
         run = yaml.safe_load(mutated)["jobs"][NONBOT_JOB]["steps"][1]["run"]
@@ -1259,9 +1264,9 @@ class TestCriterion7NonBotPathUnchanged:
 
         这是判据 7 的"能单独变红"证明（不读断言自己的文案，读的是**真文件文本**）。
         """
-        mutated = workflow_text().replace(
-            "      contains(fromJSON(", "      false && contains(fromJSON(", 1)
-        assert mutated != workflow_text(), "变异未生效（锚点漂移）"
+        mutated = inject(
+            workflow_text(), "      contains(fromJSON(", "      false && contains(fromJSON(",
+            where=".github/workflows/automerge.yml")
         assert ORIGINAL_NONBOT_IF_RAW not in mutated
         # 语义上确认改的正是**非 bot job 的 if**（不是别处同名字符串）
         assert "false && contains(fromJSON(" in yaml.safe_load(mutated)["jobs"][NONBOT_JOB]["if"]
