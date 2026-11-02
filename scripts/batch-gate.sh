@@ -20,7 +20,7 @@
 #   都在加类级判据/台账（AGENTS.md 铁律 8）⇒ 每包都必然触发那条最重的腿。故「N 份全量」是
 #   **结构性**的，不是偶发。集成层本来就是这些判据互相影响的地方 ⇒ 一次跑在**合起来之后**更有效。
 #
-# ## 就绪前置判定（`--require-ready`，默认**开启**；issue #6028）
+# ## 就绪前置判定（`--require-ready`，默认**开启**；issue #6055 / PR #6056）
 #
 #   治的形态（2026-10-02 实测）：`#6003` / `#6005` 这类**与 base 冲突（GitHub 侧 DIRTY）**的包被拉进批次
 #   ⇒ 集成结果必然红、且红在**别人**身上（面级归因指向错误对象）⇒ 白烧一次全量。
@@ -274,7 +274,7 @@ echo "批次数：${#BRANCHES[@]} 个包｜基准：${BASE}@${BASE_SHA}"
 echo "包：${BRANCHES[*]}"
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 1.5) **就绪前置判定**（issue #6028）—— 在跑那一次全量**之前**
+# 1.5) **就绪前置判定**（issue #6055 / PR #6056）—— 在跑那一次全量**之前**
 #
 #   为什么放在这里：全量是这一批**唯一一次**、也是最贵的一步。明知有 DIRTY 包（与 base 冲突）
 #   或 CI 未绿的包拉进来，只会「必然红 + 归因指向别人」⇒ 白烧。**拒绝必须发生在花钱之前**。
@@ -429,13 +429,13 @@ check_one_package() {
 }
 
 if [ "$READY" = 1 ]; then
-  echo "── 就绪前置判定（--require-ready 默认开启；issue #6028）──"
+  echo "── 就绪前置判定（--require-ready 默认开启；issue #6055 / PR #6056）──"
   if git -C "$ROOT" rev-parse --verify --quiet "${BASE}^{commit}" >/dev/null 2>&1; then
     while IFS=$'\t' read -r b sha; do
       check_one_package "$b" "$sha"
     done < "$TMP/branches.tsv"
   else
-    # 取不到基准 ⇒ 两条判定都做不了 ⇒ **无法判定**（fail-closed，≠ 就绪）
+    # 取不到基准 ⇒ 三条判定都做不了 ⇒ **无法判定**（fail-closed，≠ 就绪）
     for b in "${BRANCHES[@]}"; do
       undecidable "$b" "取不到基准 ${BASE}（git rev-parse ${BASE} 失败）—— 无法判定 ≠ 就绪"
     done

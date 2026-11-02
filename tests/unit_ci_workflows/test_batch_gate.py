@@ -1,7 +1,7 @@
 # case_ids: MC-012, MC-130
 # （沿用 tests/unit_ci_workflows/** 的既有惯例：CI 结构类 L0 不变式统一挂 MC-012；本单新增的
 #   auto-merge arm 面另挂 MC-130，见 .github/cases/misc.yml）
-r"""批次统一验证入口 `scripts/batch-gate.sh` 的实例判据（issue #6012；#6028 补就绪前置判定）。
+r"""批次统一验证入口 `scripts/batch-gate.sh` 的实例判据（issue #6012；#6055 / PR #6056 补就绪前置判定）。
 
 ## 治的形态（2026-10-02 17:24–17:29 CST 现场，读数现取）
 
@@ -10,7 +10,7 @@ r"""批次统一验证入口 `scripts/batch-gate.sh` 的实例判据（issue #60
 ⇒ 类级病 = **「每个包各自跑一遍全量」× 「本机只装得下一份全量」**。
 排他锁治的是 CPU 争用，治不了**份数**；本判据守的是份数。
 
-#6028 补的第二半：**份数**治住之后，**「时机」**成了现取缺口 —— `#6003` / `#6005` 这类
+#6055 补的第二半（PR #6056）：**份数**治住之后，**「时机」**成了现取缺口 —— `#6003` / `#6005` 这类
 **与 base 冲突（GitHub 侧 DIRTY）** 的包被拉进批次 ⇒ 集成结果必然红、且红在**别人**身上
 （面级归因指向错误对象）⇒ 白烧一次全量。⇒ 那一次全量**之前**逐包判「就绪」（无冲突 + PR checks 全绿），
 **任一不就绪 ⇒ 拒绝**（exit 3，不跑全量）。
@@ -380,7 +380,7 @@ def test_help_and_usage_are_actionable(sandbox):
         assert needle in hel.stdout, f"--help 被截断了（缺 {needle!r}）：{hel.stdout}"
 
 
-# ── 判据 7~12：就绪前置判定（issue #6028）─────────────────────────────────────
+# ── 判据 7~12：就绪前置判定（issue #6055 / PR #6056）──────────────────────────
 
 def test_dirty_package_is_refused_before_the_gate(sandbox):
     """判据 7：包与 base 有冲突（DIRTY）⇒ 拒绝（exit 3）、没跑 gate、出口可行动。
