@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""试用客户上线前的**只读**开通面判据（issue #8218，runbook = docs/deployment/trial-onboarding.md）。
+"""试用客户上线前的**只读**开通面判据（上线审计 issue #8197，runbook = docs/deployment/trial-onboarding.md）。
 
 ## 它判什么（以及**不**判什么）
 

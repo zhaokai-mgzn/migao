@@ -301,7 +301,7 @@ disk_used_mb() { df -Pk / | awk 'NR==2 {print int($3/1024)}'; }
 # 可用空间（MB）：**唯一一份**口径 —— 构建前置门槛与缓存回收的水位判定共用它（两处不许各写各的）。
 disk_free_mb() { df -Pk / | awk 'NR==2 {print int($4/1024)}'; }
 
-# ── 容器日志上界（issue #8218 P1-02）──────────────────────────────────────────────
+# ── 容器日志上界（issue #8197 P1-02）──────────────────────────────────────────────
 # 口径 = `deploy/swas/docker-compose.yml` 的 `x-logging` 锚点（max-size / max-file）。
 # 🔴 这两条常量**不是**第二个真值源：它们是**同一份口径的读数侧**，判据
 #    `tests/unit_ci_workflows/test_swas_container_runtime.py` 逐字比对两边（不一致即红）。
@@ -1415,7 +1415,7 @@ fi
 report_rollback_point
 
 # ══════════════════════════════════════════════════════════════════════════
-# 2.8 磁盘与**容器日志**水位读数（issue #8218 P1-02）—— **只读**，不删任何东西
+# 2.8 磁盘与**容器日志**水位读数（issue #8197 P1-02）—— **只读**，不删任何东西
 #
 # 病：四个服务的 json-file 日志原先**无上限**（compose 无 `logging:` 段）⇒ 单机磁盘单调爬升；
 #     写满后四服务同时 502（`restart: unless-stopped` 救不了「写不进去」），而**没有任何读数**
@@ -1427,7 +1427,7 @@ report_rollback_point
 # 🔴 本段**只读**：不 prune、不 rm、不 truncate 日志文件（无人值守删除不安全 —— 铁律 10）。
 # 判据 = tests/unit_ci_workflows/test_swas_container_runtime.py（含「本段不得出现删除动作」）
 # ══════════════════════════════════════════════════════════════════════════
-echo "== 2.8 磁盘 / 容器日志水位读数（只读；issue #8218 P1-02）=="
+echo "== 2.8 磁盘 / 容器日志水位读数（只读；issue #8197 P1-02）=="
 LOG_READING=$(container_log_footprint_mb || echo "0 0")
 LOG_FOOTPRINT_MB=${LOG_READING%% *}
 LOG_CONTAINER_COUNT=${LOG_READING##* }
