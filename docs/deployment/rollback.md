@@ -78,7 +78,7 @@ curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3001/
 - **配置漂移**：对比服务器 `.env.*` 与仓库 `.env.example` 模板；用模板 + 密文引用重建。
 - **DB 迁移异常**：MigrationRunner 幂等（IF NOT EXISTS）；如半执行，修复迁移文件后重启（schema_migrations 记录为准）。
 
-### 4.1 备份窗口读数（≥14 天）与值班复查（issue #8218 P1-07）
+### 4.1 备份窗口读数（≥14 天）与值班复查（issue #8197 P1-07）
 
 **为什么是读数而不是流程**：审计读数 —— `grep -rn "pg_dump\|backup" deploy/ .github/workflows/` ⇒ 只有 H5
 静态根备份、**无数据库备份代码** ⇒ 误删 / 坏数据**不可自助恢复**；而「备份策略是否 ≥14 天」

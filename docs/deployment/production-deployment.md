@@ -111,7 +111,7 @@ rollback.md 回滚（重新发布上一稳定版本）
 **服务器侧复核（可复制）**：`docker compose exec -T nginx grep -c 't=' /var/log/nginx/access.log` ⇒ 期望 `0`
 （改前该命令会数出成片的 token）。
 
-### 5.3 只增表体量 / 最老行年龄读数（issue #8218 P1-11 —— 只读，不新增无人值守删除）
+### 5.3 只增表体量 / 最老行年龄读数（issue #8197 P1-11 —— 只读，不新增无人值守删除）
 
 **病**：`deploy/ops/db-retention.sql` 文件头逐字「**人工执行**，不是定时任务」
 （`audit_logs` 365 天 / `notifications` 180 天），而仓内**无任何值守面**（无告警、无读数、无到期提醒）

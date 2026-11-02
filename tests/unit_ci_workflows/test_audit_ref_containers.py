@@ -111,6 +111,23 @@ def _git_grep_files(pattern: str) -> list[str]:
     return [line for line in proc.stdout.splitlines() if line]
 
 
+#: 🔴 **具名豁免：只此一条**（判据 1 的扫描面排除它）。
+#:
+#: 为什么：`scripts/drift_audit_baseline.json` 的 `reason` 字段记的是「这条豁免**当年为什么被批准**」，
+#: 其中必然引用**当时**的 issue / PR 号。若当时那个号就是错挂的，把它写进 reason 恰恰是**历史事实**
+#: —— 判据 1 的意图是防「**活跃**引用错挂」，不是改写记账（改了反而抹掉「曾经错挂过」这件事）。
+#:
+#: **重启条件**（不满足就必须撤销本豁免）：一旦该文件的 `reason` 被用于**活跃引用**
+#: （指向当前对象的定位 / 判据可解析的坐标），本豁免立即失效。
+#: 台账**只许缩短**：新增任何豁免都必须改 `test_exemption_is_named_and_only_shrinks` 并写明理由。
+EXEMPT_FILES = frozenset({"scripts/drift_audit_baseline.json"})
+
+
+def _scanned_files(pattern: str) -> list[str]:
+    """判据 1/2 的扫描面 = `git grep` 命中的已跟踪文本文件**减去具名豁免**。"""
+    return [path for path in _git_grep_files(pattern) if path not in EXEMPT_FILES]
+
+
 def _read(rel: str) -> str:
     return (REPO_ROOT / rel).read_text(encoding="utf-8")
 
@@ -154,7 +171,7 @@ def judge_finding_containers(files: dict[str, str]) -> list[str]:
 
 def test_no_audit_finding_is_labelled_with_the_dependency_pr_number():
     """仓库内该号的引用只允许出现在依赖语境；审计语境 / 裸引用一律红。"""
-    violations = judge_refs({path: _read(path) for path in _git_grep_files(REF_RE.pattern)})
+    violations = judge_refs({path: _read(path) for path in _scanned_files(REF_RE.pattern)})
     assert violations == [], (
         "上线审计 finding 被挂到了 dependabot PR 的号上（或出现无法归类的裸引用）。\n"
         "订正口径 = 审计 finding 挂 上线审计 issue 8197 / 审计 PR 8200；依赖升级才挂那个号。\n"
@@ -168,7 +185,7 @@ def test_no_audit_finding_is_labelled_with_the_dependency_pr_number():
 
 def test_mislabelled_findings_still_carry_a_verified_container():
     """订正不得退化成「删引用」：7 条 P1 finding 必须仍有与容器同行的引用。"""
-    files = {path: _read(path) for path in _git_grep_files(FINDINGS_RE)}
+    files = {path: _read(path) for path in _scanned_files(FINDINGS_RE)}
     missing = judge_finding_containers(files)
     assert missing == [], (
         f"这些 finding 已没有任何与已核实容器（#{AUDIT_ISSUE} / #{AUDIT_REPORT_PR}）同行的引用：{missing}\n"
@@ -237,3 +254,24 @@ def test_dependency_context_is_exempt():
         )
     }
     assert judge_refs(exempt) == []
+
+
+def test_exemption_is_named_and_only_shrinks():
+    """豁免台账**只许缩短**：新增豁免必须具名 + 写理由 + 写重启条件。
+
+    判别力：把 `EXEMPT_FILES` 改成空集 ⇒ 判据 1 立刻重新扫到 baseline 的 reason 而红（红证见
+    `test_red_proof_exempt_file_would_otherwise_be_flagged`）；往里加第二个文件 ⇒ 本条红。
+    """
+    assert EXEMPT_FILES == frozenset({"scripts/drift_audit_baseline.json"}), (
+        f"豁免台账只许缩短，且只允许这一条具名项；实际 = {sorted(EXEMPT_FILES)}"
+    )
+
+
+def test_red_proof_exempt_file_would_otherwise_be_flagged():
+    """**红证**：把豁免拿掉 ⇒ 同一份 baseline 内容会被判红（证明豁免真的在起作用，不是空集）。"""
+    text = _read("scripts/drift_audit_baseline.json")
+    flagged = judge_refs({"scripts/drift_audit_baseline.json": text})
+    assert flagged, (
+        "拿掉豁免后该文件本应被判红 —— 若这里是空的，说明它本来就不含审计语境引用，"
+        "那本条豁免就是**多余的门**，应删除"
+    )
