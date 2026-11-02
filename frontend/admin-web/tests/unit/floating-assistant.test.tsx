@@ -22,19 +22,49 @@ vi.mock('@/components/icons/MibaoLogo', () => ({
 
 vi.mock('@/lib/utils', () => ({ cn: (...args: any[]) => args.filter(Boolean).join(' ') }))
 
-// Mock chat store
-const mockFetchSessions = vi.fn()
-vi.mock('@/store/chat', () => {
-  const fn = () => ({
+// Mock chat store —— **响应式**（issue #8236：浮窗开关已从组件本地 state 提升到 store）。
+// 静态 mock 不行：`openAssistant()` 改了 mock 里的值、组件不重渲染 ⇒ 面板永远打不开。
+const { mockFetchSessions } = vi.hoisted(() => ({ mockFetchSessions: vi.fn() }))
+vi.mock('@/store/chat', async () => {
+  const { useSyncExternalStore } = await import('react')
+  const listeners = new Set<() => void>()
+  let state: any = {
+    assistantOpen: false,
+    assistantDraft: null,
     fetchSessions: mockFetchSessions,
+    createSession: vi.fn(),
+    sendMessage: vi.fn(),
     sessions: [],
     currentSessionId: null,
     messages: [],
     isStreaming: false,
     isLoadingSessions: false,
     isLoadingMessages: false,
-  })
-  return { useChatStore: Object.assign(fn, { getState: () => fn() }) }
+  }
+  const set = (patch: any) => {
+    state = { ...state, ...patch }
+    listeners.forEach((cb) => cb())
+  }
+  state.openAssistant = (draft?: string) => set({ assistantOpen: true, assistantDraft: draft ?? null })
+  state.closeAssistant = () => set({ assistantOpen: false })
+  state.consumeAssistantDraft = () => {
+    const draft = state.assistantDraft
+    if (draft) set({ assistantDraft: null })
+    return draft
+  }
+  const subscribe = (cb: () => void) => {
+    listeners.add(cb)
+    return () => { listeners.delete(cb) }
+  }
+  const useChatStore: any = (selector?: (s: any) => any) =>
+    useSyncExternalStore(
+      subscribe,
+      () => (selector ? selector(state) : state),
+      () => (selector ? selector(state) : state),
+    )
+  useChatStore.getState = () => state
+  useChatStore.setState = (patch: any) => set(patch)
+  return { useChatStore }
 })
 
 // Mock chat components
@@ -42,12 +72,15 @@ vi.mock('@/components/chat/SessionList', () => ({ default: () => <div data-testi
 vi.mock('@/components/chat/ChatArea', () => ({ default: () => <div data-testid="chat-area">ChatArea</div> }))
 
 import FloatingAssistant from '@/components/ai-assistant/FloatingAssistant'
+import { useChatStore } from '@/store/chat'
 
 describe('FloatingAssistant', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
     Element.prototype.scrollIntoView = vi.fn()
+    // 每个用例从「关闭」开始（store 是跨用例共享的模块级状态）
+    ;(useChatStore as any).setState({ assistantOpen: false, assistantDraft: null })
   })
 
   it('默认状态下只显示 FAB 按钮', () => {

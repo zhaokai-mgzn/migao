@@ -570,7 +570,9 @@ public class ProcessingSetReadService {
      */
     private static String cutPlanMissingReason(BigDecimal fabricMeters, String mode, Integer panels) {
         if (mode == null) {
-            return "未选加工类型（定高买宽 / 定宽买高）：裁多长与几片都算不出来（不猜工艺）";
+            // 「不猜工艺」是**内部口径**（§31 P3 不摆内部标识），车间看到只会想「谁猜的」；
+            // 与同级其它分支同一句式：说清缺什么 + 下一步补哪里。
+            return "未选加工类型（定高买宽 / 定宽买高）：先在订单行补上加工类型，裁多长、几片才算得出来";
         }
         if (fabricMeters == null) {
             return "这行还没算出用料米数：先在订单行补上窗宽 / 窗高与加工类型，算料出数后这里就有了";

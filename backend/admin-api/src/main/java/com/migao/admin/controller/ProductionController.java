@@ -8,6 +8,7 @@ import com.migao.admin.service.ClientRequestIdService;
 import com.migao.admin.service.OrderLogisticsWriter;
 import com.migao.admin.service.OrderService;
 import com.migao.admin.service.OrderShipmentService;
+import com.migao.admin.service.OrderStatusTransitions;
 import com.migao.admin.service.ProcessingOrderService;
 import com.migao.admin.service.ProductionOperationCommandService;
 import com.migao.admin.service.ProductionOperationPositionCommandService;
@@ -412,7 +413,7 @@ public class ProductionController {
             throw com.migao.admin.exception.BusinessException.notFound("订单");
         }
         String status = order.getStatus();
-        if (!OrderShipmentService.SHIPPABLE_FROM.contains(status) && !"shipped".equals(status)) {
+        if (!OrderShipmentService.SHIPPABLE_FROM.contains(status) && !OrderStatusTransitions.SHIPPED.equals(status)) {
             throw com.migao.admin.exception.BusinessException.validationError(String.format(
                     "当前状态（%s）不可发货：仅 %s 可发货",
                     com.migao.admin.service.OrderStatusTransitions.label(status),

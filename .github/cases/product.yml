@@ -5454,6 +5454,10 @@ cases:
       - "2699系列雪尼尔窗帘面料，2.8 米门幅，做 3 米宽的一幅窗帘，大概多少钱？"
     expectations:
       - tool: product_detail or product_search
+    # 2026-11-01（issue #8300 自测发现一）：裸工具名期望 ⇒ 结构性不可失败；
+    # 按真跑轨迹（全档 run 41292387267 的 call_args）补「真返回」效果层。
+    must_succeed:
+      - tool: product_detail
     data_checks:
       - "必须落到**商品真价 23.80 元/米**（夹具 prod_eval_2699 的 base_price；回复里出现 23.8 / 23.80 任一形态）"
       - "必须说清**加工费/用料另有口径**（店铺加工项目录 15 项、按加工费组合计价）—— 不得把布料单价直接当总价，也不得凭空编一个总价数字"

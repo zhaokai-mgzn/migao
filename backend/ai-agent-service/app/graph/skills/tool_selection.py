@@ -13,8 +13,10 @@
 ## 口径（三条，缺一即失真）
 
 - **只裁读面**：`read_only=False` 的工具一个都不裁（写面与权限完全不动）。
-- **保底集合**（`ALWAYS_KEEP_TOOL_NAMES` + 本轮 skill 的写工具 + 上一轮用过的只读工具）
-  **永不被裁** —— 裁掉 `validate_input`/`interact` 这类兜底等于把流程关节打断。
+- **保底集合**（`ALWAYS_KEEP_TOOL_NAMES` + 本轮 skill 的写工具 + 上一轮用过的只读工具
+  + **意图属主 skill 的读工具**）
+  **永不被裁** —— 裁掉 `validate_input`/`interact` 这类兜底等于把流程关节打断；
+  意图属主那条见 `_intent_owner_read_tool_names`（issue #8300）。
 - **开关可回退**：`settings.TOOL_TRIM_ENABLED=False`（或非 B 端）⇒ `plan_read_tools` 返回
   `None`，`create_skill_registry` 走**与改动前逐字相同**的分支（C 端零回归）。
 
@@ -38,6 +40,12 @@ ALWAYS_KEEP_TOOL_NAMES: Tuple[str, ...] = (
     "validate_input",
     "confirm_value",
 )
+
+#: 意图属主读工具**净增**上限（#8300）：只补被意图过滤挡在声明面外的属主工具，且不占分数槽位
+#: ⇒ 保留集可能比 `TOOL_TRIM_MAX_READ` 多出至多这么多把。取 3 是因为实测只有
+#: `system_settings` / `ai_config`（settings_manage 1 把）与 `dashboard`（dashboard_stats 等）
+#: 这类「被过滤到 general」的意图需要补，再多就说明是分数排序该解决的问题。
+OWNER_EXTRA_MAX = 3
 
 #: 命中工具名（用户/意图里出现 `order_query` 这种原样名字）的权重。
 _NAME_HIT = 60
@@ -107,6 +115,32 @@ def _family_read_only_tool_names(tool_names: List[str]) -> List[str]:
         if personas & set(cfg.system_prompts or {}):
             names.update(t for t in (cfg.tool_names or []) if t in read_only)
     return sorted(names)
+
+
+def _intent_owner_read_tool_names(intent: str) -> List[str]:
+    """**意图属主 skill** 声明的只读工具名（issue #8300 的保底项）。
+
+    为什么要这条保底：`nodes._get_intent_to_route` 会**按绑定面过滤**意图 —— 例如
+    `system_settings` / `ai_config` / `notification` 一律落到 fallback skill（`general`），
+    因为属主 skill `settings` 不在图上（#6044 缺陷 C 的源头堵法）。改动前 #4125 的
+    「同 persona 家族只读并入」把属主工具一起带进来；#8174 裁剪后它既不在执行 skill 的
+    声明面（无 own-skill 先验）、词面又常零分 ⇒ 被裁 ⇒ 模型退到保底的 `nav_guide`
+    答「菜单在哪」而不是「设置值是什么」（2026-11-01 评测实测 ST-001/ST-002）。
+
+    只取 **mibao 属主**的读工具：本函数只在 B 端裁剪路径上被调用，C 端不参与裁剪；
+    未命中任何属主（意图名漂移 / 走 fallback 的兜底意图）⇒ 空列表（不改既有行为）。
+    """
+    key = str(intent or "").strip()
+    if not key:
+        return []
+    read_only = _read_only_tool_names()
+    names: List[str] = []
+    for cfg in _all_skill_configs():
+        if "mibao" not in (cfg.system_prompts or {}):
+            continue
+        if key in (cfg.intents or []):
+            names.extend(n for n in (cfg.tool_names or []) if n in read_only)
+    return names
 
 
 # ── 意图打分（确定性：同样输入两次结果逐字一致）────────────────────────────
@@ -227,6 +261,7 @@ def plan_read_tools(tool_names: List[str], *, agent_type: str = "",
         return None                                          # 本来就够小 ⇒ 不裁剪
 
     keep = [n for n in ALWAYS_KEEP_TOOL_NAMES if n in candidates]
+    keep_set = set(keep)
     keep += [n for n in recent_tools if n in candidates and n not in keep]
     keep_set = set(keep)
 
@@ -243,6 +278,17 @@ def plan_read_tools(tool_names: List[str], *, agent_type: str = "",
 
     budget = max(0, limit - len(fixed) - len(keep_set))
     keep_set.update(ranked[:budget])
+
+    # 意图属主保底（#8300）：意图被过滤到别的 skill 时，属主 skill 的读工具仍要占位。
+    # 🔴 必须**净增**、不许换：它只补「被意图过滤挡在本域声明面之外」的那些（声明面内的一律
+    # 交给上面的分数排序，不重复抬升），按相关度取前 OWNER_EXTRA_MAX 个，且**不占分数槽位**
+    # ⇒ 保留集只会变大、不会把本来会留的工具挤掉（2026-11-01 全档评测 7 条转红的形态：
+    # craft_config_query / batch_stock_query / operation_catalog_query 被属主工具挤走）。
+    owner_extra = [n for n in _intent_owner_read_tool_names(intent)
+                   if n in candidates and n not in keep_set and n not in declared_set]
+    owner_extra.sort(key=lambda n: -_score_tool(
+        get_tool_registry().get_tool(n), query_low, query_words, query_bigrams, False))
+    keep_set.update(owner_extra[:OWNER_EXTRA_MAX])
     return [n for n in pool if n in keep_set]
 
 

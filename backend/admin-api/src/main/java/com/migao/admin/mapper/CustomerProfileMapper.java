@@ -1,13 +1,18 @@
 package com.migao.admin.mapper;
 
+import com.migao.admin.dto.CustomerImportKey;
 import com.migao.admin.entity.CustomerProfile;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Result;
 import org.apache.ibatis.annotations.ResultMap;
+import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
+
+import java.util.List;
 
 /**
  * 客户档案 Mapper 接口
@@ -16,6 +21,9 @@ import org.apache.ibatis.annotations.Update;
  * 而本表**没有任何唯一约束** ⇒ 并发（下单自动建档 × 手工建档 × 接口重试）会静默写出同一手机号/微信身份的两条档案，
  * 消费总额与订单数被劈成两行。现在唯一性靠迁移 V167 的两条部分唯一索引兜底，
  * 写面统一走 {@code insertIgnore* + 撞键回读}（见 {@code CustomerProfileWriter}），不再用裸 {@code insert}。</p>
+ *
+ * <p>issue #8295（客户主数据迁移）追加 {@code external_id} 幂等键：同一
+ * {@code (tenant_id, external_id)} 至多一行，重跑同一份 Excel 不重复建客户。</p>
  *
  * <p>🔴 手写 {@code @Select} 必须显式绑 {@code mybatis-plus_<实体>} 的 autoResultMap（#4865 同族口径）：
  * 否则 {@code tags} / {@code custom_fields}（JSONB）会以 JSON 字符串落到 {@code Object} 字段上，
@@ -43,6 +51,29 @@ public interface CustomerProfileMapper extends BaseMapper<CustomerProfile> {
     @Select("SELECT * FROM customer_profiles WHERE tenant_id = #{tenantId} AND wechat_openid = #{openid} "
             + "ORDER BY registered_at, id LIMIT 1")
     CustomerProfile findFirstByOpenid(@Param("tenantId") Long tenantId, @Param("openid") String openid);
+
+    /** 按旧系统客户ID取最早的一条（issue #8295；外部 ID 是迁移幂等键）。 */
+    @ResultMap("mybatis-plus_CustomerProfile")
+    @Select("SELECT * FROM customer_profiles WHERE tenant_id = #{tenantId} AND external_id = #{externalId} "
+            + "ORDER BY registered_at, id LIMIT 1")
+    CustomerProfile findFirstByExternalId(@Param("tenantId") Long tenantId,
+                                          @Param("externalId") String externalId);
+
+    /**
+     * 批量取 {@code external_id -> id}（迁移预览/提交用；不做 N+1 查询）。
+     *
+     * <p>调用方必须保证 {@code externalIds} 非空；分块由调用方负责。</p>
+     */
+    @Select("<script>SELECT id, external_id FROM customer_profiles "
+            + "WHERE tenant_id = #{tenantId} AND external_id IN "
+            + "<foreach collection='externalIds' item='eid' open='(' separator=',' close=')'>#{eid}</foreach>"
+            + "</script>")
+    @Results({
+            @Result(column = "id", property = "id"),
+            @Result(column = "external_id", property = "externalId")
+    })
+    List<CustomerImportKey> findKeysByExternalIds(@Param("tenantId") Long tenantId,
+                                                  @Param("externalIds") List<String> externalIds);
 
     /**
      * 按手机号建档，**撞唯一键不插**（幂等 + 并发兜底）。
@@ -74,4 +105,27 @@ public interface CustomerProfileMapper extends BaseMapper<CustomerProfile> {
             + " #{p.totalConsumption}, #{p.registeredAt}, #{p.lastActiveAt}) "
             + "ON CONFLICT DO NOTHING")
     int insertIgnoreByOpenid(@Param("p") CustomerProfile profile);
+
+    /**
+     * 迁移建档：写全客户主数据 canonical 字段 + {@code external_id}（issue #8295）。
+     *
+     * <p>为什么不复用 {@link #insertIgnoreByPhone}：那条固定列清单只写会话/下单建档需要的 14 列，
+     * 会把导入的地址、收货人、省市区静默丢掉；这里是独立的迁移写面，列清单显式可审计。</p>
+     *
+     * <p>无目标 {@code ON CONFLICT DO NOTHING}：同时覆盖 {@code external_id} / 手机号两个唯一键；
+     * 调用方回读判断是并发命中还是手机号占用。</p>
+     */
+    @Insert("INSERT INTO customer_profiles "
+            + "(id, tenant_id, external_id, wechat_nickname, phone, region_province, region_city, region_district, "
+            + " agent_notes, vip_level, customer_status, lifecycle_stage, total_orders, total_consumption, "
+            + " source_channel, default_receiver_name, default_receiver_phone, default_receiver_address, "
+            + " registered_at, last_active_at) "
+            + "VALUES (#{p.id}, #{p.tenantId}, #{externalId}, #{p.wechatNickname}, #{p.phone}, "
+            + " #{p.regionProvince}, #{p.regionCity}, #{p.regionDistrict}, #{p.agentNotes}, #{p.vipLevel}, "
+            + " #{p.customerStatus}, #{p.lifecycleStage}, #{p.totalOrders}, #{p.totalConsumption}, "
+            + " #{p.sourceChannel}, #{p.defaultReceiverName}, #{p.defaultReceiverPhone}, "
+            + " #{p.defaultReceiverAddress}, #{p.registeredAt}, #{p.lastActiveAt}) "
+            + "ON CONFLICT DO NOTHING")
+    int insertIgnoreByExternalId(@Param("p") CustomerProfile profile,
+                                 @Param("externalId") String externalId);
 }

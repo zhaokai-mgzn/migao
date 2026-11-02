@@ -201,6 +201,86 @@ export async function uploadInboundPhoto(filePath: string): Promise<InboundRespo
 }
 
 /**
+ * 上传一张照片（**Blob 直传**：h5 专用，绕开 `Taro.uploadFile` —— issue #8307）。
+ *
+ * 为什么不能再用 `Taro.uploadFile`：它对 `filePath` 一律先做 `convertObjectUrlToBlob()`，
+ * 里面是**只有 `onload` 的裸 XHR**（没有 `onerror` / `ontimeout` / `onabort`）——
+ * 真机（商米 V2s / WebView 83）上这一步不回调 ⇒ 整个上传 promise **永不 settle**，
+ * 页面停在「正在上传照片…」直到我们加的超时兜底（issue #8307 现场读数：t=3s 上传中、t=24s 超时）。
+ *
+ * 这里直接用 `FormData` + `fetch` 打**同一个**端点：字段名 `files`、身份仍是 `workerSessionHeaders()`，
+ * 响应归一化沿用 `firstUploadedOf` + `toResponse`（与服务端 `ApiResponse<List<UploadedFileInfo>>` 同口径）。
+ * 🔴 不设 `Content-Type`：multipart 的 boundary 必须由浏览器自己生成。
+ */
+export async function uploadInboundPhotoBlob(
+  blob: Blob,
+  fileName?: string,
+): Promise<InboundResponse<UploadedFileInfo>> {
+  try {
+    const form = new FormData()
+    form.append('files', blob, fileName || 'photo.jpg')
+    const res = await fetch(`${API_BASE_URL}${INBOUND_ENDPOINTS.upload}`, {
+      method: 'POST',
+      headers: workerSessionHeaders(),
+      body: form,
+    })
+    const text = await res.text()
+    let body: any
+    try {
+      body = JSON.parse(text)
+    } catch {
+      return { success: false, message: '上传返回的不是 JSON，请重试' }
+    }
+    return toResponse<UploadedFileInfo>(firstUploadedOf(body), '照片上传失败，请重试')
+  } catch (error: any) {
+    return failure<UploadedFileInfo>(error, '照片上传失败，请重试')
+  }
+}
+
+/**
+ * 把「已选照片」变成可直传的 Blob（h5；取不到 ⇒ `null`，由调用方回落 `Taro.uploadFile`）。
+ *
+ * 两条来源：① Taro `chooseImage` 给的 `originalFileObj`（真 `File`，最省事，不用再拉一次）；
+ * ② 只有 `blob:` / `content:` 串时，用 `fetch` 读成 Blob —— `fetch` 有正常 reject 语义，
+ * 不会像上面那个裸 XHR 一样静默吊死。
+ */
+export async function resolvePhotoBlob(photo: {
+  file?: Blob | string | null
+  tempFilePath?: string | null
+}): Promise<Blob | null> {
+  const raw = photo?.file
+  // Blob / File 的**形态判定**：不用 `instanceof`（跨 realm 与老 jsdom 都不可靠），
+  // 也不用 `arrayBuffer`（jsdom 的 Blob 没有这个方法）—— 看 `size` + `slice` 这两件 Blob 必有的事。
+  const isBlobLike =
+    !!raw && typeof raw === 'object' && typeof (raw as any).size === 'number' && typeof (raw as any).slice === 'function'
+  if (isBlobLike) return raw as Blob
+  const path = photo?.tempFilePath || (typeof raw === 'string' ? raw : '')
+  if (!path || typeof fetch !== 'function') return null
+  try {
+    const res = await fetch(path)
+    if (!res.ok) return null
+    return await res.blob()
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 上传一张照片的**唯一入口**（页面只许用它）：h5 优先 Blob 直传，取不到 Blob 才回落 `Taro.uploadFile`。
+ *
+ * 判据 = `frontend/bmini-app/tests/inbound-upload-blob.test.ts`（把 `Taro.uploadFile` mock 成
+ * **永不返回** ⇒ 这条路径仍必须成功，证明不依赖它）。
+ */
+export async function uploadInboundPhotoSmart(photo: {
+  file?: Blob | string | null
+  tempFilePath?: string | null
+}): Promise<InboundResponse<UploadedFileInfo>> {
+  const blob = await resolvePhotoBlob(photo)
+  if (blob) return uploadInboundPhotoBlob(blob)
+  return uploadInboundPhoto(String(photo?.tempFilePath || photo?.file || ''))
+}
+
+/**
  * 识别候选（**不落库、不动库存**）。
  *
  * 🔴 `barcode` 非空 ⇒ 服务端走解码优先路径、**零 LLM 调用**（设计 §6.1 的成本守卫）。

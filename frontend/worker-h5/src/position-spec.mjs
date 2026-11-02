@@ -50,7 +50,7 @@ export function dataOr(value) {
  * @property {string} key    wire 键名（**snake_case**，与服务端 `getOperations.positions[]` 逐字同名）
  * @property {string} label  屏上标签
  * @property {string} [unit] 单位（缺值不显示单位）
- * @property {'raw'|'m'|'number'|'int'|'bool'|'list'|'formula'} [format] 呈现口径（缺省 `raw`；
+ * @property {'raw'|'m'|'number'|'int'|'bool'|'list'|'formula'|'optionList'|'selling_method'} [format] 呈现口径（缺省 `raw`；
  *           `list` = 字符串数组按「、」并列；`formula` = 公式串只留公式名）
  */
 
@@ -64,7 +64,9 @@ export const POSITION_SPEC_KEYS = [
   { key: 'product_code', label: '货号' },
   { key: 'color_name', label: '颜色' },
   { key: 'door_width', label: '门幅' },
-  { key: 'selling_method', label: '售卖方式' },
+  // 售卖方式落库是**内部键**（`bulk_cut` / `full_roll`）⇒ 屏上给人话；未登记键如实回显
+  // （2026-11-01 商米 V2s 真机：工人屏直接把 `bulk_cut` 印出来了）。
+  { key: 'selling_method', label: '售卖方式', format: 'selling_method' },
   // 整卷卷数（issue #7523）：批次号即卷号 ⇒ 工人屏要能看见「整卷 N 卷」；散剪单缺键不渲染
   { key: 'roll_count', label: '卷数', unit: '卷', format: 'int' },
   { key: 'unit', label: '数量单位' },
@@ -119,6 +121,14 @@ export const POSITION_SPEC_KEYS = [
 const digitsOfFormat = (format) => (format === 'm' ? DEFAULT_DIGITS : null)
 
 /**
+ * 售卖方式内部键 → 展示名（与 `frontend/bmini-app/src/utils/selling-method.ts` 同一份口径）。
+ *
+ * <p>worker-h5 是零依赖静态页、import 不了 bmini 的 TS ⇒ 这里登记同样两条；未登记的键
+ * **如实回显**（不编默认值、不吞成空），形态判据见 `worker-h5-position-spec.test.mjs`。</p>
+ */
+const SELLING_METHOD_LABELS = { bulk_cut: '散剪', full_roll: '整卷' }
+
+/**
  * 一个值按口径 → 屏上文本；**缺值 ⇒ {@link EMPTY}**（绝不出 `undefined` / `null` / `NaN`）。
  *
  * <p>数值路径**先判数值再格式化**（同机台屏 `kvRows` 的判据）：`"2.5"` 这类字符串照旧按数字显示，
@@ -130,6 +140,10 @@ export function formatSpecValue(value, format) {
   if (format === 'list') return nameList(value)
   if (format === 'optionList') return optionListValue(value)
   if (format === 'formula') return formulaName(dataOr(value))
+  if (format === 'selling_method') {
+    const raw = dataOr(value)
+    return SELLING_METHOD_LABELS[raw] ?? raw
+  }
   if (value !== '' && Number.isFinite(Number(value))) {
     if (format === 'int') return String(Math.trunc(Number(value)))
     if (format === 'm') return fmtNumber(value, DEFAULT_DIGITS)

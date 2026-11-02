@@ -61,6 +61,7 @@ jest.mock('../src/services/workerShipmentService', () => ({
 
 jest.mock('../src/services/workerInboundService', () => ({
   uploadInboundPhoto: jest.fn(),
+  uploadInboundPhotoSmart: jest.fn(),
 }))
 
 jest.mock('../src/services/productionService', () => ({
@@ -75,7 +76,7 @@ import {
   readWorkerShipment,
   recognizeShipment,
 } from '../src/services/workerShipmentService'
-import { uploadInboundPhoto } from '../src/services/workerInboundService'
+import { uploadInboundPhotoSmart } from '../src/services/workerInboundService'
 import { scanResolve } from '../src/services/productionService'
 import { SHIPMENT_PAGE_ROUTE, WORKER_TAB_LOGIN_ROUTE } from '../src/utils/inbound/gaps'
 import { clearWorkerSession, setWorkerSessionId } from '../src/utils/workerSession'
@@ -92,7 +93,7 @@ const FIELDS = [
 const ORDER_ID = 'CSO261007-00001'
 
 const mockRecognize = recognizeShipment as jest.Mock
-const mockUpload = uploadInboundPhoto as jest.Mock
+const mockUpload = uploadInboundPhotoSmart as jest.Mock
 const mockScan = scanResolve as jest.Mock
 const mockShip = postWorkerShipment as jest.Mock
 const mockRead = readWorkerShipment as jest.Mock
@@ -190,7 +191,7 @@ describe('拍照发货页：拍照 → 识别 → 核对（判据 P2 / P3）', (
       sourceType: ['camera', 'album'],
     })
     // 复用既有通道（不新造第二条上传链）
-    expect(mockUpload.mock.calls[0][0]).toBe('blob://photo-1')
+    expect(mockUpload.mock.calls[0][0]).toMatchObject({ tempFilePath: 'blob://photo-1' })
     expect(mockRecognize).toHaveBeenCalledWith(['https://oss/1.jpg'])
   })
 

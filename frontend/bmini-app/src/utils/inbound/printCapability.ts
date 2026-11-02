@@ -56,9 +56,9 @@ export const PRINT_FAILURE_HINTS: Record<PrintFailureReason, string> = {
   //    所以"这次记了没有"取决于 `result.printRecorded`，由 `printFailureText` 统一补一句。
   //    历史缺陷（issue #5052 验收 D6）：这里曾写「重打不会重复计数」——与实现和 `print-failed` 两条都相反。
   'user-cancelled':
-    '已取消选择打印机（这次没打成）。请点「打印标签」重新选择标签机后重试。',
+    '已取消选择打印机（这次没打成）。点「打印标签」重新选择即可重试。',
   'device-unsupported':
-    '选中的设备不是标签打印机（或不是德佟 DP 系列）。请在系统弹出的设备列表里选择名字以 DP 开头的标签机。',
+    '选中的设备不是标签打印机。请重新点「打印标签」，在系统弹出的设备列表里选择标签打印机。',
   'connect-failed':
     '连不上打印机：请确认打印机已开机、在 3 米内、且没被别的手机占用，然后重试。',
   'print-failed':
@@ -182,7 +182,7 @@ export function printFailureText(hint: string, printRecorded: boolean): string {
  * —— 真实按钮叫「打印标签」（`data-testid=inbound-print`）⇒ 工人照着提示找不到入口。
  * 文案里的按钮名必须与页面**逐字**相同（判据见 `tests/inbound-print-weapp.test.ts` 的 W1）。
  */
-export const PRINT_READY_HINT = '点「打印标签」，在设备列表里选择名字以 DP 开头的标签机即可打印'
+export const PRINT_READY_HINT = '点「打印标签」，在系统弹出的设备列表里选择标签打印机。'
 
 /**
  * 小程序侧的正向说法 —— 与 h5 **不同**：小程序**没有系统设备弹窗**，SDK 自己搜自己连，
@@ -192,7 +192,7 @@ export const PRINT_READY_HINT_WX =
   '点「打印标签」即可：小程序会自己搜索附近的标签机（请先把打印机开机、放在 1~3 米内）'
 
 /** 手持标签机（观星台 Android 终端）的正向说法：打印走机身内置打印机，不需要选设备。 */
-export const PRINT_READY_HINT_TERMINAL = '点「打印标签」，由机身内置打印机直接出纸'
+export const PRINT_READY_HINT_TERMINAL = '点「打印标签」，由本机打印机直接出纸。'
 
 /** 本页是否处在「可打印」平台（给页面做分支用；真正的判定仍是 `probePrintCapability`） */
 export function isPrintPlatform(): boolean {

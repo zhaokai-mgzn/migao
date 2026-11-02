@@ -34,6 +34,7 @@
 import asyncio
 import json
 import re
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from langchain_core.messages import HumanMessage
@@ -77,6 +78,18 @@ _SIZE_FIELDS_BY_TARGET: Dict[str, frozenset] = {
 #: 下限 0.2：比这更小的窗帘不存在；上限 20：家用 / 商用布艺的极端值，
 #: 同时能抓住「漏了小数点」的形态（`2.8` → `28`）。
 _SIZE_RANGE_M: Tuple[float, float] = (0.2, 20.0)
+
+#: 批次侧的**系统批次号**形态（issue #8210）—— 真值是 V111 / `StockBatch.batchNo` 的生成口径
+#: `PC-yyyyMMdd-NNNN`（`PC-` + 8 位日期 + `-` + 4 位流水）。**不是**旧系统批次号
+#: （`stock_batches.legacy_batch_no` 是另一列一义，供应商 / 旧 ERP 自己的编号）。
+_BATCH_NO_RE = re.compile(r"^PC-(\d{8})-(\d{4})$")
+
+#: 需要过批次号硬闸的字段（唯一登记表；目前只有一格 —— 识别只负责「定位是哪一批」）。
+_BATCH_FIELDS = frozenset({"batch_no"})
+
+#: OCR 常带回的空白（标签换行 / 抄写空格）—— 只做**无损**归一（去空白 + 大写），
+#: **不**补零、**不**换分隔符、**不**把全角数字转半角（那些都是「替 OCR 改字」，改错就是改错批次）。
+_BATCH_SPACE_RE = re.compile(r"\s+")
 
 _SIZE_NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
 
@@ -287,6 +300,15 @@ def _resolve(
             return None, qty_reason, None
         value = qty
 
+    # 批次侧的硬闸（issue #8210）：**系统批次号**形态 `PC-yyyyMMdd-NNNN`。
+    # 放在置信度闸**之前**，理由与上面三道同族：一个「很自信地抄错」的批次号，置信度再高也不能填
+    # —— 下游是库存修正，认错批次 = 改错那一卷布的账（SKU 库存同事务跟着变）。
+    if target_type == "batch" and field.key in _BATCH_FIELDS:
+        batch_no, batch_reason = _normalise_batch_no(value)
+        if batch_no is None:
+            return None, batch_reason, None
+        value = batch_no
+
     min_confidence = policy["min_confidence"]
     if confidence < min_confidence:
         gate_reason = (
@@ -299,6 +321,34 @@ def _resolve(
             return None, gate_reason, value
         return None, gate_reason, None
     return value, None, None
+
+
+def _normalise_batch_no(value: str) -> Tuple[Optional[str], Optional[str]]:
+    """批次号原文 → `(规范批次号, None)`；**形态不合法 ⇒ `(None, 留空理由)`**（issue #8210）。
+
+    两条（判据见 `tests/test_vision/test_recognizer.py::TestBatchNoHardGate`）：
+
+    1. 归一**只做无损动作**（去空白 + 大写）：标签印的是大写，模型偶尔回小写 / 带抄写空格；
+       **不**补零、**不**换分隔符、**不**做全角→半角 —— 那些都是「替 OCR 改字」，
+       改对了没人知道，改错了就是把 A 批的账记到 B 批上；
+    2. 形态必须是 `PC-yyyyMMdd-NNNN` **且日期成立**（`PC-20261331-0001` 这种 13 月的号，
+       系统生成面上不可能出现 ⇒ 一定是认错了）。不合格 ⇒ 留空 + 说清形态与出路（手输）。
+
+    旧系统批次号（`legacy_batch_no`）会在这里被拦下 —— 那是**另一列一义**（V111），
+    它的形状与本系统号不同，硬要猜「图上那个是不是旧号」= 让识别替业务判断，不做。
+    """
+    compact = _BATCH_SPACE_RE.sub("", str(value or "")).upper()
+    matched = _BATCH_NO_RE.match(compact)
+    if not matched:
+        return None, (
+            f"「{value}」不是系统批次号（形如 PC-20261031-0001：PC- + 8 位日期 + - + 4 位流水）"
+            "⇒ 宁可不填，请手输批次号"
+        )
+    try:
+        datetime.strptime(matched.group(1), "%Y%m%d")
+    except ValueError:
+        return None, f"「{value}」里的日期不成立（不是系统批次号）⇒ 宁可不填，请手输批次号"
+    return compact, None
 
 
 def _normalise_size(value: str) -> Tuple[Optional[str], Optional[str]]:

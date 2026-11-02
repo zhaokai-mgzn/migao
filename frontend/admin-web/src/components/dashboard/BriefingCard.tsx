@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Sparkles, AlertTriangle, Lightbulb, ListTodo, ArrowRight, RefreshCw, Newspaper, ShieldCheck } from 'lucide-react'
 import { briefingApi } from '@/lib/api'
+import { briefingActionApi } from '@/lib/briefing-actions'
+import { useChatStore } from '@/store/chat'
 import { cn } from '@/lib/utils'
 import ProactiveStatusPanel from '@/components/dashboard/ProactiveStatusPanel'
 import type { BriefingContent, BriefingItem, BriefingReviewItem, ProactiveStatus } from '@/types'
@@ -57,13 +59,32 @@ function SeverityBadge({ item }: { item: BriefingItem }) {
   )
 }
 
-/** 单条目行：标题 + 理由 + 一键直达（link 由后端 LLM 生成，仅允许站内路由） */
-function ItemRow({ item, tone }: { item: BriefingItem; tone: 'todo' | 'risk' | 'suggestion' }) {
+/** 条目 → 预置给黄金策的问题：带上下文，不是空泛的「帮我看看」（issue #8236） */
+function askPrompt(item: BriefingItem): string {
+  const detail = item.reason || item.detail
+  return `日报里这条：${item.title}${detail ? `（${detail}）` : ''}`
+    + ' —— 帮我查一下相关数据，给出处理建议；能批量处理的话给我确认卡。'
+}
+
+/** 单条目行：标题 + 理由 + 一键直达（link）+ 问黄金策（issue #8236） */
+function ItemRow({ item, tone, bizDate }: { item: BriefingItem; tone: 'todo' | 'risk' | 'suggestion'; bizDate: string | null }) {
+  // 外部入口：把这条建议**直接交给**黄金策，而不是只给一个跳页面的箭头。
+  // 无 link 的条目（建议/风险类）同样有它 —— 恰恰是这些条目没有「页面可去」。
+  const openAssistant = useChatStore((s) => s.openAssistant)
+  // 上报「点开问了」（issue #8260）：**fire-and-forget** —— 不 await、不 catch 弹错。
+  // `opened_agent` 只表示「点开问了」，**不表示**「照着做了」（报表文案必须区分）。
+  const reportAsked = () => {
+    if (!bizDate) return
+    void briefingActionApi
+      .record({ bizDate, itemKind: tone, title: item.title, action: 'opened_agent' })
+      .catch(() => {})
+  }
   const icon = tone === 'todo' ? <ListTodo className="h-3.5 w-3.5 text-primary-600" />
     : tone === 'risk' ? <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
     : <Lightbulb className="h-3.5 w-3.5 text-amber-500" />
-  const inner = (
-    <div className="group flex items-start gap-2.5 rounded-lg px-3 py-2.5 transition-colors hover:bg-neutral-50">
+  const link = item.link && item.link.startsWith('/') ? item.link : null
+  const content = (
+    <div className="flex min-w-0 flex-1 items-start gap-2.5">
       <span className="mt-0.5 flex-shrink-0">{icon}</span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
@@ -74,18 +95,35 @@ function ItemRow({ item, tone }: { item: BriefingItem; tone: 'todo' | 'risk' | '
           <p className="mt-0.5 text-xs text-neutral-500">{item.reason || item.detail}</p>
         )}
       </div>
-      {item.link && (
+    </div>
+  )
+  return (
+    <div className="group flex items-start gap-2 rounded-lg px-3 py-2.5 transition-colors hover:bg-neutral-50">
+      {/* 一键直达：link 是后端生成的白名单站内路由，用 <Link> 跳转 */}
+      {link ? (
+        <Link href={link} className="min-w-0 flex-1">{content}</Link>
+      ) : (
+        <div className="min-w-0 flex-1">{content}</div>
+      )}
+      {link && (
         <span className="mt-0.5 flex-shrink-0 text-neutral-300 transition-transform group-hover:translate-x-0.5 group-hover:text-primary-500">
           <ArrowRight className="h-4 w-4" />
         </span>
       )}
+      <button
+        type="button"
+        onClick={() => {
+                reportAsked()
+                openAssistant(askPrompt(item))
+              }}
+        className="mt-0.5 flex flex-shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-neutral-400 transition-colors hover:bg-primary-50 hover:text-primary-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
+        aria-label={`问黄金策：${item.title}`}
+      >
+        <Sparkles className="h-3.5 w-3.5" />
+        <span className="hidden sm:inline">问黄金策</span>
+      </button>
     </div>
   )
-  // 一键直达：link 是后端生成的白名单站内路由，用 <Link> 跳转
-  if (item.link && item.link.startsWith('/')) {
-    return <Link href={item.link}>{inner}</Link>
-  }
-  return inner
 }
 
 /** 环比涨跌方向：↑/+ 与 升/增/涨 → 涨（绿）；↓/- 与 降/减/跌 → 跌（红）；其余（如「持平」）中性。口径与 StatCard 一致。 */
@@ -126,6 +164,8 @@ export default function BriefingCard({ enabled = true, variant = 'dashboard', em
   const [loading, setLoading] = useState(enabled !== false)
   const [briefing, setBriefing] = useState<BriefingContent | null>(null)
   const [verifyStatus, setVerifyStatus] = useState<string | null>(null)
+  // 上报需要业务日期（issue #8260）：简报条目的「哪一天的」由它钉住
+  const [bizDate, setBizDate] = useState<string | null>(null)
   const [generated, setGenerated] = useState(false)
   // 逐规则接线状态（issue #5955）：后端原样透传的引擎四态；null = 未采集（不渲染面板）
   const [proactiveStatus, setProactiveStatus] = useState<ProactiveStatus | null>(null)
@@ -138,6 +178,7 @@ export default function BriefingCard({ enabled = true, variant = 'dashboard', em
       const data = res.data.data
       setGenerated(!!data?.generated)
       setVerifyStatus(data?.verifyStatus ?? null)
+      setBizDate(data?.bizDate ?? null)
       setProactiveStatus(data?.proactive_status ?? null)
       // 后端 failed 状态返回 content={}（空对象）：归一化为 null，
       // 避免渲染期 briefing.review.length 等对 undefined 取属性崩溃（UI 旅程实证）
@@ -256,7 +297,7 @@ export default function BriefingCard({ enabled = true, variant = 'dashboard', em
             <ListTodo className="h-3.5 w-3.5 text-primary-500" /> 今日必办
           </h3>
           <div className="space-y-1">
-            {briefing.todo.map((item, i) => <ItemRow key={i} item={item} tone="todo" />)}
+            {briefing.todo.map((item, i) => <ItemRow key={i} item={item} tone="todo" bizDate={bizDate} />)}
           </div>
         </div>
       )}
@@ -268,7 +309,7 @@ export default function BriefingCard({ enabled = true, variant = 'dashboard', em
             <AlertTriangle className="h-3.5 w-3.5 text-red-500" /> 风险预警
           </h3>
           <div className="space-y-1">
-            {briefing.risks.map((item, i) => <ItemRow key={i} item={item} tone="risk" />)}
+            {briefing.risks.map((item, i) => <ItemRow key={i} item={item} tone="risk" bizDate={bizDate} />)}
           </div>
         </div>
       )}
@@ -280,7 +321,7 @@ export default function BriefingCard({ enabled = true, variant = 'dashboard', em
             <Lightbulb className="h-3.5 w-3.5 text-amber-500" /> 优化建议
           </h3>
           <div className="space-y-1">
-            {briefing.suggestions.map((item, i) => <ItemRow key={i} item={item} tone="suggestion" />)}
+            {briefing.suggestions.map((item, i) => <ItemRow key={i} item={item} tone="suggestion" bizDate={bizDate} />)}
           </div>
         </div>
       )}

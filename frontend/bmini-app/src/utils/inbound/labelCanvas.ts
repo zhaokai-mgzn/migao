@@ -84,7 +84,37 @@ export function paintInboundLabel(ctx: LabelCanvasContextLike, plan: InboundLabe
 }
 
 /**
- * 渲染一张标签 ⇒ 计划 + 位图。
+ * 渲染**任意一份绘制计划** ⇒ 计划 + 位图（入库标签与 50×70 行式标签共用这一条）。
+ *
+ * @param createCanvas 画布工厂（浏览器传 `document.createElement('canvas')`；小程序传离屏画布；测试传替身）
+ * @param options.requirePixels 取不到位图时是否抛错（**默认 false**：保留入库链路的旧行为；
+ *        50×70 行式标签传 true —— 它没有「画不出来也照打」的退路，白图会被当成「打出来了」）
+ * @throws 画布拿不到 2d 上下文 ⇒ 抛错（**不静默返回白图**：白图会被当成「打出来了」）
+ */
+export function renderLabelPlan(
+  plan: InboundLabelPlan,
+  createCanvas: (widthPx: number, heightPx: number) => LabelCanvasElementLike,
+  options: { requirePixels?: boolean } = {},
+): RenderedLabel {
+  const canvas = createCanvas(plan.widthPx, plan.heightPx)
+  canvas.width = plan.widthPx
+  canvas.height = plan.heightPx
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('标签渲染失败：画布拿不到 2d 上下文（不静默返回空白标签）')
+  paintInboundLabel(ctx, plan)
+  let image: RasterImageLike
+  if (ctx.getImageData) {
+    image = ctx.getImageData(0, 0, plan.widthPx, plan.heightPx)
+  } else if (options.requirePixels) {
+    throw new Error('标签渲染失败：画布取不到位图（不静默打印空白标签）')
+  } else {
+    image = { data: new Uint8ClampedArray(plan.widthPx * plan.heightPx * 4), width: plan.widthPx, height: plan.heightPx }
+  }
+  return { plan, canvas, image, widthPx: plan.widthPx, heightPx: plan.heightPx }
+}
+
+/**
+ * 渲染一张**入库标签** ⇒ 计划 + 位图。
  *
  * @param createCanvas 画布工厂（浏览器传 `document.createElement('canvas')`；测试传替身）
  * @throws 画布拿不到 2d 上下文 ⇒ 抛错（**不静默返回白图**：白图会被当成「打出来了」）
@@ -93,15 +123,5 @@ export function renderInboundLabel(
   view: InboundLabelView,
   createCanvas: (widthPx: number, heightPx: number) => LabelCanvasElementLike,
 ): RenderedLabel {
-  const plan = layoutInboundLabel(view)
-  const canvas = createCanvas(plan.widthPx, plan.heightPx)
-  canvas.width = plan.widthPx
-  canvas.height = plan.heightPx
-  const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('标签渲染失败：画布拿不到 2d 上下文（不静默返回空白标签）')
-  paintInboundLabel(ctx, plan)
-  const image = ctx.getImageData
-    ? ctx.getImageData(0, 0, plan.widthPx, plan.heightPx)
-    : { data: new Uint8ClampedArray(plan.widthPx * plan.heightPx * 4), width: plan.widthPx, height: plan.heightPx }
-  return { plan, canvas, image, widthPx: plan.widthPx, heightPx: plan.heightPx }
+  return renderLabelPlan(layoutInboundLabel(view), createCanvas)
 }

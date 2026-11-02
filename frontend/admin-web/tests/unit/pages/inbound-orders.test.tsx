@@ -307,7 +307,7 @@ describe('入库单页面（PR-037 / issue #5034）', () => {
 // 守四件事：① 默认视图请求带 bizCategory=fabric（现有行为零回归）；
 //   ② 切到成品视图即带 bizCategory=finished，且**只读**（无建单 / 期初建账入口）；
 //   ③ 列随视图变：成品视图无 供应商 / 批次号 / 金额，有 明细行数 + 套数合计；
-//   ④ 成品单详情看得到 套号 / 仓位号 / 短码，数量「N 套」，不显示 米数 / 单价 / 金额。
+//   ④ 成品单详情看得到 套号 / 仓位号 / 标签编号，数量「N 套」，不显示 米数 / 单价 / 金额。
 // 后端侧同判据：InboundOrderServiceTest.InboundBizCategory / InboundOrderQueryMapperTest（#7794 两条）。
 
 const finishedRow = {
@@ -413,7 +413,7 @@ describe('入库单两个视图：原料仓 / 成品仓（#7794）', () => {
     expect(within(table).getByTestId('inbound-finished-set-count').textContent).toBe('2 套')
   })
 
-  it('成品单详情：套号 / 仓位号 / 短码 三列 + 数量「N 套」，不显示 米数 / 单价 / 金额', async () => {
+  it('成品单详情：套号 / 仓位号 / 标签编号 三列 + 数量「N 套」，不显示 米数 / 单价 / 金额', async () => {
     mockDetail.mockResolvedValueOnce({ data: { data: finishedDetail } })
     render(<InboundOrdersPage />)
     await screen.findByText('RK-20260923-0001')
@@ -427,7 +427,7 @@ describe('入库单两个视图：原料仓 / 成品仓（#7794）', () => {
 
     const detailTable = (await screen.findByText('套号')).closest('table') as HTMLTableElement
     expect(within(detailTable).getByText('仓位号')).toBeInTheDocument()
-    expect(within(detailTable).getByText('短码')).toBeInTheDocument()
+    expect(within(detailTable).getByText('标签编号')).toBeInTheDocument()
     // 真值逐行渲染（不重算、不截断）；同一套的两个部位（布帘 / 纱帘）共享同一个套号 ⇒ 两行都有
     expect(within(detailTable).getAllByText('JG-20261026-001-001').length).toBe(2)
     expect(within(detailTable).getByText('A-01')).toBeInTheDocument()

@@ -1108,6 +1108,14 @@ UNANNOTATED_ENDPOINTS: dict[str, str] = {
     # 只回构建身份 / 迁移计数，**不含**迁移文件名、租户、业务数据、实例路径。
     # 两条共用**一条前缀登记**（不是两条）：台账只许缩短，探针族本质是一件事，不该各占一行。
     "GET /api/version*": "探针族（#6951 版本 + #7373 迁移事实）：只读、无鉴权、只回构建身份与迁移计数",
+    # issue #8203（P0-03）：浏览器**错误上报**端点 `POST /api/client-errors`（`ClientErrorController`）
+    # 是**刻意的公开面**：登录页崩了也要能上报（前端在故障态没有凭据）⇒ `SecurityConfig` 把它放进 `permitAll`。
+    # 它**不读租户/业务数据**（只把 8 个白名单字段落**一行** SLF4J 日志，不建表不落库），
+    # 且公开面三道闸缺一不可：8 KiB 体积上限（含分块无长度）/ 每 IP 30 条·分钟⁻¹ + 全局 600 / 字段白名单。
+    # 加权限码 = 「白屏永远不上报」—— 正是本单要治的失效模式（沉默放行与过度加码在同一格）。
+    # 判据 = 本文件 `test_every_judgement_is_green`
+    #        + `backend/admin-api/src/test/java/com/migao/admin/controller/ClientErrorControllerTest.java`。
+    "POST /api/client-errors": "白屏上报面：`permitAll` **有意放行**（8 KiB / 每 IP 30·分钟⁻¹ + 全局 600 / 三道去敏；不读业务数据）",
     "GET /api/admin/notifications*": "自助通知中心：收件人一律取 `SecurityContext` 当前用户（#4727 第 4 行）",
     "PUT /api/admin/notifications*": "同上（标记已读）",
     "DELETE /api/admin/notifications*": "同上（删除自己的通知）",
@@ -1153,6 +1161,7 @@ UNANNOTATED_ENDPOINTS: dict[str, str] = {
     "GET /api/worker/*": "工人端身份（#4716 设计 C11 预留）：`ADMIN_API_REJECTED_ROLES` 已把 worker 挡在 `/api/admin/**` 之外",
     "POST /api/worker/*": "同上",
     "GET /s/{}": "短链跳转（`permitAll`，无租户数据）",
+    "GET /s/{}/json": "短链 JSON 解析面（issue #8196，`permitAll`）：小程序「扫普通链接二维码打开小程序」**不跟随 302** ⇒ 这一跳把短码换回 `{reportPath, token}`；响应键集**恰好**两个（不查企业编码，也不给租户 / 工人 / 订单 / 价格）⇒ 不新增任何 302 之外的数据面；旧 `GET /s/{}` 在**任何** Accept 下仍是 302（印刷品红线：已印出去的码不可重印）。判据 = backend/admin-api/src/test/java/com/migao/admin/controller/WorkerShortLinkControllerTest.java ",
     "GET /i/{}": "入库标签公开入口（issue #5052 P2，`permitAll`）：标签贴在布卷 / 塑料袋上，"
                  "纸上的码对**任何持码人等价** ⇒ 服务端 302 到落地页；**只回跳转、不泄露业务字段**"
                  "（响应体为空，`Location` 里只有落地页 + 短码 + 租户 id）。它与 `/s/{}` 是"

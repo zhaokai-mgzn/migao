@@ -192,3 +192,30 @@ class TestPolicy:
         assert set(TARGET_SIDE_LABEL) == set(TARGET_FIELDS)
         assert TARGET_SIDE_LABEL["order"] == "订单侧"
         assert TARGET_SIDE_LABEL["shipment"] == "发货侧"
+
+
+class TestBatchTarget:
+    """批次侧（issue #8210；用户 2026-10-31 逐字「移动端……通过拍照来识别批次号」）。
+
+    这一格的下游是**库存修正**：认错批次 = 改错那一卷布的账（SKU 库存会一起对齐错）
+    ⇒ 取严档；而系统批次号的形态是完全确定的（`PC-yyyyMMdd-NNNN`，V111 的生成口径），
+    没有「差不多」的余地 —— 形态不对就留空，让工人手输。
+    """
+
+    def test_batch_target_has_exactly_one_field(self):
+        """只认批次号一格：识别只负责「定位是哪一批」，实盘米数永远是人的输入。"""
+        assert field_keys("batch") == ("batch_no",)
+
+    def test_batch_threshold_is_the_strictest(self):
+        # 认错批次的代价 ≥ 发货侧认错数量（都已出车间、都要追回来改账）⇒ 不得比发货侧松
+        assert TARGET_POLICY["batch"]["min_confidence"] >= TARGET_POLICY["shipment"]["min_confidence"]
+        assert TARGET_POLICY["batch"]["min_confidence"] == 0.90
+
+    def test_batch_hint_spells_out_the_shape_and_the_leave_empty_rule(self):
+        """hint 必须写死形态与「看不清就留空」——只说「抄批次号」等于让模型自由发挥。"""
+        hinted = {f.key: f.hint for f in TARGET_FIELDS["batch"]}
+        assert "PC-" in hinted["batch_no"]
+        assert "留空" in hinted["batch_no"]
+
+    def test_batch_side_label_is_batch_side(self):
+        assert TARGET_SIDE_LABEL["batch"] == "批次侧"

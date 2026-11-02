@@ -4,7 +4,7 @@
  "why": "「新增文件 ≥800 行」必须有个**可判的界面**：未登记即红（判据里不硬编码清单，读本表）。本表同时是**存量上限**（只许缩短）—— 文件已删 / 改名 / 已拆到 800 行以下 ⇒ 必须销账，否则红；因此「豁免」不会腐烂成永久白名单。台账为空**合法**（没有大文件时它就该是空的）。",
  "seeded_at": "2026-10-30",
  "seeded_from": "origin/main @ 456e0632a（2026-10-30 现取）：源码面 ≥ 800 行的全部 60 个文件（> 2000 行的 12 个 + 800–2000 行的 48 个）；判据侧逐条与现取行数对账。",
- "declared_count": 58,
+ "declared_count": 59,
  "declared_count_note": "条数**现取**：判据不做「>= N」下界，而是断言 `declared_count == len(exemptions)`（少一条/多一条且不同步声明 ⇒ 红）。增删条目必须同步本字段 —— 一次改动 = diff 里看得见。",
  "shrink_only_note": "① 条目指向的文件已不存在 ⇒ 红（销账即删）；② 文件已跌破 800 线 ⇒ 红（本表是存量上限，不是永久白名单）；③ 台账为空合法；④ 本表**不**给 > 2000 行的文件发放「可以继续长」的许可（那由 loc_freeze_ledger.json 逐行冻结）。",
  "exemptions": [
@@ -297,6 +297,11 @@
    "path": "frontend/admin-web/src/app/(dashboard)/knowledge/page.tsx",
    "reason": "存量 800–2000 行；本单只做棘轮不做拆分（issue #8166），登记为存量上限；跌破 800 线即销账",
    "date": "2026-10-30"
+  },
+  {
+   "path": "backend/ai-agent-service/app/briefing/product_health.py",
+   "reason": "issue #8279 加归因后 893 行（合并 #8277 时已 784，贴着 800 线）。**这是债务登记，不是解决方案**：拆分的阻碍是循环依赖 —— 判断/刻度/归因三块都依赖 _dec/_out/_num/_gross_margin，而 helper 同在文件里；要拆需先把数值 helper 抽成无依赖底层模块，属另一个包的工作量。拆分方案与重启条件见 issue #8290（三刀：numbers → money → attribution，做完可删本条）",
+   "date": "2026-10-31"
   }
  ]
 }

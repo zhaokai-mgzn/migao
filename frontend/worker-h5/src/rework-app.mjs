@@ -11,6 +11,7 @@
 //   ⑤ 身份读不到（非 401）仍**继续拉列表** —— 把「页头读不到」变成「活干不了」是更坏的失败。
 
 import { createApi, SESSION_EXPIRED } from './api.mjs'
+import { installFlexGapFallback } from './flex-gap.mjs'
 import {
   REWORK_LOGIN_HREF,
   renderPageHeader,
@@ -110,6 +111,8 @@ export function createReworkApp({ doc, api, replace = null }) {
 
 /** 浏览器入口（`rework.html` 用 `<script type="module">` 直接加载，无构建步骤）。 */
 export async function boot() {
+  // WebView 83 没有 flex `gap`（issue #8336 / UI-148）⇒ 先量一次再上兜底类
+  installFlexGapFallback(globalThis.document)
   const api = createApi({ storage: globalThis.localStorage, deviceLabel: 'H5' })
   const app = createReworkApp({ doc: globalThis.document, api })
   await app.boot()

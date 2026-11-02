@@ -2,6 +2,7 @@
 package com.migao.admin.controller;
 
 import com.migao.admin.security.RequirePermission;
+import com.migao.admin.security.SecurityUser;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -192,5 +193,23 @@ class QualityCheckControllerTest {
             }
         });
         return holders;
+    }
+
+    /**
+     * 检验人展示名（真机读数 2026-11-01）：`SecurityUser.displayName` 取的是登录名 = 手机号，
+     * 于是工人扫水洗唛看到的「检验人」是 `13900001025` —— 内部登录标识上了车间屏。
+     * 口径：有真名用真名；没有就显示「管理员」（不猜是谁，也不把账号印出去）。
+     */
+    @Test
+    @DisplayName("检验人显示名：登录名是手机号 ⇒ 「管理员」；有真名 ⇒ 用真名")
+    void inspectorDisplayNameMustNotLeakLoginId() throws Exception {
+        Method m = QualityCheckController.class.getDeclaredMethod("inspectorDisplayName", SecurityUser.class);
+        m.setAccessible(true);
+        assertThat(m.invoke(null, new SecurityUser("u-1", 46L, "13900001025", List.of("inspector"), List.of())))
+                .isEqualTo("管理员");
+        assertThat(m.invoke(null, new SecurityUser("u-2", 46L, "张质检", List.of("inspector"), List.of())))
+                .isEqualTo("张质检");
+        assertThat(m.invoke(null, new SecurityUser("u-3", 46L, " ", List.of("inspector"), List.of())))
+                .isEqualTo("管理员");
     }
 }

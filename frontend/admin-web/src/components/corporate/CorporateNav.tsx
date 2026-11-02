@@ -10,6 +10,8 @@ import Logo from '@/components/ui/Logo'
 const navItems = [
   { name: '首页', href: '/' },
   { name: '产品服务', href: '/services' },
+  // 终端下载页（issue #8195）：终端安装包是商家真正要拿到手的东西，必须有常驻入口
+  { name: '下载中心', href: '/download' },
   { name: '关于我们', href: '/about' },
   { name: '联系方式', href: '/contact' },
 ]

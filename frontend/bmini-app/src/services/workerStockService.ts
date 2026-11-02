@@ -27,10 +27,20 @@ import type {
   CorrectionReceipt,
   StockBatchRow,
 } from '../utils/workerStock'
+import type { RecognizedFieldCell } from '../utils/workerStockRecognize'
 
 /** 端点字面量（与后端 `@RequestMapping("/api/worker/batch-stock")` 逐字同名）。 */
 export const BATCHES_ENDPOINT = '/api/worker/batch-stock/batches'
 export const CORRECTION_ENDPOINT = '/api/worker/batch-stock/correction'
+/** 拍照识别批次号（issue #8210；返回 ai-agent 的字段表**原样**）。 */
+export const RECOGNIZE_ENDPOINT = '/api/worker/batch-stock/recognize'
+
+/** 识别回执（ai-agent 的出口形状原样搬运：端侧只读 `fields[].key/value`）。 */
+export interface BatchRecognizeResult {
+  targetType?: string
+  fields?: RecognizedFieldCell[]
+  degraded?: boolean
+}
 
 /** 读面回执（行 + 原因闭词表 + 分页）。 */
 export interface StockBatchPage {
@@ -111,9 +121,34 @@ export async function submitBatchCorrection(
   }
 }
 
+/**
+ * **拍照识别批次号**（issue #8210）。
+ *
+ * 上游 = `ImageRecognitionClient` → ai-agent vision（target `batch`）⇒ 回执是**字段表原样**
+ * （Java 侧不重建表、不做二次消歧）。端侧按键 `batch_no` 取值，取到后**仍要工人核对**。
+ *
+ * 🔴 识别不落库、不提交：它是预填，提交永远是人的动作。
+ * 🔴 401 单独透出（`statusCode`）：会话失效 ⇒ 页面引导登录，**不**渲染成「没认出来」。
+ */
+export async function recognizeBatchNo(
+  images: string[],
+): Promise<WorkerStockResponse<BatchRecognizeResult>> {
+  try {
+    const res = await post<any>(RECOGNIZE_ENDPOINT, { images }, {
+      baseURL: API_BASE_URL,
+      headers: workerSessionHeaders(),
+    })
+    return toResponse<BatchRecognizeResult>(res, '识别批次号失败，请重试')
+  } catch (error: any) {
+    return failure<BatchRecognizeResult>(error, '识别批次号失败，请重试')
+  }
+}
+
 export default {
   BATCHES_ENDPOINT,
   CORRECTION_ENDPOINT,
+  RECOGNIZE_ENDPOINT,
   searchStockBatches,
   submitBatchCorrection,
+  recognizeBatchNo,
 }

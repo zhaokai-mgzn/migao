@@ -11,6 +11,7 @@
 //      打印态由 `ship-label.css` 隔离（只有标签上纸）。
 
 import { createApi, SESSION_EXPIRED } from './api.mjs'
+import { installFlexGapFallback } from './flex-gap.mjs'
 import { renderReadyOrders, renderShipLabel, shipLabelLengthMm, shipLabelPageRule } from './shipment.mjs'
 
 /** 登录页（同源静态页；本页未登录时的出口）。 */
@@ -18,6 +19,13 @@ export const SHIPMENT_LOGIN_HREF = './'
 
 /** 读面失败时的兜底文案（技术原文留在 `err.technical`，屏上只出现人话）。 */
 export const SHIPMENT_UNREADABLE = '待发货订单读取失败：请检查网络后刷新'
+
+/** 打印抓屏隔离的 class（`styles.css` 的 `html.wh5-printing` 规则；
+ *  终端打印 = 抓屏，见 printLabel 的注释）。 */
+const PRINT_CAPTURE_CLASS = 'wh5-printing'
+/** 撤 class 的延时：要**晚于**原生那次 PixelCopy（PRINT_HOOK 里 120ms），
+ *  否则抓屏抓到的是已经恢复成「列表 + 纸面」的画面。 */
+const PRINT_CAPTURE_RESTORE_MS = 1200
 
 /** HTML 转义（与 `render.mjs` / `shipment.mjs` 同口径）。 */
 function esc(value) {
@@ -152,7 +160,32 @@ export function createShipmentApp({ doc, api, win = globalThis, replace = null }
   function printLabel() {
     // 打印前再量一次：字体 / 内容随设备与缩放变化，纸长每次都要按**当前**纸面算
     fitLabelToPaper()
-    if (typeof win?.print === 'function') win.print()
+    if (typeof win?.print !== 'function') return
+    /**
+     * 🔴 打印这一瞬**只留纸面**（`html.wh5-printing` 见 styles.css）—— 终端打印是**抓屏**：
+     * `PagePrinter` 把标签 `scrollIntoView` 后对窗口做 PixelCopy，再按元素矩形裁剪。
+     * 2026-11-01 商米 V2s 真机实测：纸上出现了**屏幕的卡片边框**，地址两行还叠在一起
+     * （抓到的是一帧「还在滚动/重排」的画面）。把纸面钉在视口左上角（无需滚动）+
+     * 白底无边框 + 其余元素 display:none，抓屏就只有纸面这一层。
+     */
+    const htmlEl = doc?.documentElement
+    const canClass = typeof htmlEl?.classList?.add === 'function'
+    if (canClass) htmlEl.classList.add(PRINT_CAPTURE_CLASS)
+    // 强制一次布局：让 class 的效果落到几何上，别让原生抓到上一帧
+    if (typeof doc?.getElementById === 'function') {
+      const label = doc.getElementById('wh5-ship-label')
+      if (label) void label.offsetHeight
+    }
+    try {
+      win.print()
+    } finally {
+      // 抓屏在原生侧是**异步**的（PRINT_HOOK → 约 120ms 后才 PixelCopy）⇒ 不能立刻撤 class
+      if (canClass) {
+        const restore = () => htmlEl.classList.remove(PRINT_CAPTURE_CLASS)
+        if (typeof win?.setTimeout === 'function') win.setTimeout(restore, PRINT_CAPTURE_RESTORE_MS)
+        else setTimeout(restore, PRINT_CAPTURE_RESTORE_MS)
+      }
+    }
   }
 
   function bind() {
@@ -217,6 +250,8 @@ export function createShipmentApp({ doc, api, win = globalThis, replace = null }
 
 /** 浏览器入口（`shipment.html` 用 `<script type="module">` 直接加载，无构建步骤）。 */
 export async function boot() {
+  // WebView 83 没有 flex `gap`（issue #8336 / UI-148）⇒ 先量一次再上兜底类
+  installFlexGapFallback(globalThis.document)
   const api = createApi({ storage: globalThis.localStorage, deviceLabel: 'H5' })
   const app = createShipmentApp({ doc: globalThis.document, api })
   await app.boot()

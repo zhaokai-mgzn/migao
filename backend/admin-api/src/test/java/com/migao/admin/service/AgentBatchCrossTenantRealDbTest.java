@@ -172,7 +172,7 @@ class AgentBatchCrossTenantRealDbTest {
         itemMapper = session.getMapper(AgentBatchItemMapper.class);
         // 商品侧 stub（见类注释「边界」）；批量服务本身与两张批次表**全真**
         productService = mock(ProductService.class);
-        service = new AgentBatchService(batchMapper, itemMapper, productService);
+        service = new AgentBatchService(batchMapper, itemMapper, productService, job -> job.run());
     }
 
     /** 每个用例从干净夹具开始：本类共用一个集群，前一个用例的行不得串味。 */

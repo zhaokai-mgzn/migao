@@ -749,7 +749,7 @@ export default function InboundOrdersPage() {
                       <th className="text-left px-3 py-2 font-medium whitespace-nowrap">品名</th>
                       <th className="text-left px-3 py-2 font-medium whitespace-nowrap">套号</th>
                       <th className="text-left px-3 py-2 font-medium whitespace-nowrap">仓位号</th>
-                      <th className="text-left px-3 py-2 font-medium whitespace-nowrap">短码</th>
+                      <th className="text-left px-3 py-2 font-medium whitespace-nowrap">标签编号</th>
                       {/* 来源订单号（issue #7799）：成品行不挂 SKU 货号 ⇒ 没有它就无法回查是哪张订单的 */}
                       <th className="text-left px-3 py-2 font-medium whitespace-nowrap">来源订单号</th>
                       <th className="text-right px-3 py-2 font-medium whitespace-nowrap">数量</th>

@@ -35,6 +35,17 @@ RUN if [ "$APT_MIRROR" != "deb.debian.org" ]; then \
 # 统一时区 UTC+8（所有系统/agent 业务时间均为北京时间）
 ENV TZ=Asia/Shanghai
 
+# ── 构建身份（issue #8203；审计 P1-01：ai-agent 改前探不到「跑的是哪个 commit」）──────────────
+# 与 `backend/admin-api/Dockerfile` **同名同口径**；值由 `deploy/swas/deploy.sh` 的
+# `--build-arg MIGAO_BUILD_SHA=… --build-arg MIGAO_BUILT_AT=…` 注入（C′ 服务器侧构建同样传）。
+# 🔴 `ARG` 只在构建期存在 ⇒ **必须 `ENV` 转成运行期环境变量**，否则容器里 `os.environ` 读不到、
+#    `/version` 恒为空串（「探不到」看着像「没注入」，排查会走偏）。
+# 默认空串（不是 `unknown`）：未注入时端点报空 = 探不到，**不伪造**。
+ARG MIGAO_BUILD_SHA=""
+ARG MIGAO_BUILT_AT=""
+ENV MIGAO_BUILD_SHA=$MIGAO_BUILD_SHA
+ENV MIGAO_BUILT_AT=$MIGAO_BUILT_AT
+
 # 复制并安装 Python 依赖
 #
 # ⚠️ 同一族的口径（issue #5814 §四.2）：CI 现在传 `--build-arg PIP_INDEX_URL=https://pypi.org/simple/`

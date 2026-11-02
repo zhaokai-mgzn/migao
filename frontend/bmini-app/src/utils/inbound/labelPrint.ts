@@ -5,7 +5,7 @@
  *
  * 「设备侧打印**前**必须先调 `POST /api/worker/inbound/labels/{短码}/print`」这条纪律，
  * 靠「记得调」是不成立的：只要页面上还存在**第二条**能送数据给打印机的路径，它迟早会被走到
- * （重打 / 补打 / 某个"顺手"的按钮）。⇒ 本单把送打印做成**只有一个函数**：
+ * （重打 / 补打 / 某个"顺手"的按钮）。⇒ 本单把入库标签的送打印做成**只有一个函数**：
  *
  * ```
  * printInboundLabel() = ① 能力探测 → ② 服务端留痕（计数原子自增 + 审计） → ③ 渲染 → ④ 送打印机
@@ -13,6 +13,15 @@
  *
  * 顺序是硬的：**②失败 ⇒ 不打印**（留不下痕就不许打）；跳过②直接进④的路径**在本模块里不存在**
  * （守卫 `frontend/bmini-app/tests/inbound-print-channel.test.ts` 用调用序断言 + 源码面判据钉住）。
+ * 行式标签（成品入库标签 / 发货联）另走 `printRowsLabel`（见下节）—— 它没有留痕这一步，
+ * 但**同样只在本文件里送数据**。
+ *
+ * ## 第二类纸（issue #8287）：成品入库标签 / 发货联
+ *
+ * 这两类纸**没有**服务端打印留痕端点（H5 `/w/` 那一版也是直接打印，见 `CHANGELOG.md`）⇒
+ * 它们的入口是 `printRowsLabel()`：能力探测 → 渲染 → 送打印机，**没有 recordPrint 这一步**。
+ * 「送数据只许在本文件里发生」的**类级**判据仍然成立（守卫 D7 现取两个函数名白名单），
+ * 页面里依旧不许出现 `.print(...)` 或第二条传输通道。
  *
  * ## 前端**不自行计数**（验收判据 5）
  *
@@ -137,4 +146,52 @@ export async function printInboundLabel(deps: InboundPrintDeps): Promise<Inbound
     transportId: deps.transport.id,
     transportLabel: deps.transport.label,
   }
+}
+
+/** 50×70 行式标签（成品入库标签 / 发货联）的送打印依赖（**无**服务端留痕端点）。 */
+export interface RowsPrintDeps {
+  /** 能力探测结果（`ok: false` ⇒ 直接给文案，**不连打印机**） */
+  capability: PrintCapability
+  transport: LabelTransport
+  /** 渲染（与屏上预览同一份绘制计划；失败 ⇒ 中止，不送空白图） */
+  render: () => RenderedLabel | Promise<RenderedLabel>
+  /** 失败分类器（默认 `classifyPrintError`；测试可注入） */
+  classify?: (error: unknown) => PrintFailureReason
+}
+
+export type RowsPrintResult =
+  | { ok: true; transportId: string; transportLabel: string }
+  | { ok: false; reason: PrintFailureReason; hint: string }
+
+/**
+ * 打印一张 **50×70 行式标签**（成品入库标签 / 发货联；issue #8287）。
+ *
+ * 执行序：① 能力探测（不可用 ⇒ 直接给文案）→ ② 渲染（失败 ⇒ 中止，不送空白图）→ ③ 送打印机。
+ * 🔴 这两类纸**不做服务端留痕**：它们没有 `print_count` 端点（与 H5 `/w/` 的打印行为一致）；
+ * 入库标签的「必留痕」红线仍只约束 `printInboundLabel`，**不因本函数存在而放宽**。
+ */
+export async function printRowsLabel(deps: RowsPrintDeps): Promise<RowsPrintResult> {
+  const classify = deps.classify ?? classifyPrintError
+
+  if (!deps.capability.ok) {
+    const reason = deps.capability.reason || 'print-failed'
+    return { ok: false, reason, hint: deps.capability.hint || printFailureHint(reason) }
+  }
+
+  let label: RenderedLabel
+  try {
+    label = await deps.render()
+  } catch {
+    return { ok: false, reason: 'render-failed', hint: printFailureHint('render-failed') }
+  }
+
+  try {
+    // printCount 只用于通道的 job 名（这两类纸没有服务端计数）；如实传 0，不编造次数。
+    await deps.transport.print(label, { printCount: 0 })
+  } catch (error) {
+    const reason = classify(error)
+    return { ok: false, reason, hint: printFailureHint(reason) }
+  }
+
+  return { ok: true, transportId: deps.transport.id, transportLabel: deps.transport.label }
 }

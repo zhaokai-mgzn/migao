@@ -21,13 +21,14 @@
  *
  * ## 边界（照实登记）
  *
- * - **本页不含标签打印**：发货标签依赖小程序 BLE 通道 + 画布渲染，那是另一包（#7803）；
- *   工作台入口的副文案按产品口径已写「打发货标签」，本页当前只提供名单与收货信息。
- * - 本页**不发货**（没有写入口）：发货的写路径在 H5 `/w/`（`/api/worker/shipment/orders/{id}/ship`），
- *   端内接它需要实发明细录入面，不在本单。
+ * - **发货联（整套出库单）预览 + 50×70 打印**（issue #8287）：行清单 = `utils/labels/shipLabel.ts`，
+ *   与 H5 `/w/` 的 `buildShipLabelRows` **同源**（判据 `tests/ship-label-rows-parity.test.ts` 现取两侧实现比对）；
+ *   打印走共享行式标签通道（小程序 BLE / 手持终端 / 浏览器蓝牙，经 `createPrintTransport`）。
+ * - 本页**仍然不发货**（没有写入口）：发货的写路径在 H5 `/w/` 与端内「拍照发货」
+ *   （`POST /api/worker/shipment/orders/{id}/ship`）；本页**不**新增第二条发货写路径。
  * - 列表没有关键词筛选 / 分页：服务端按最新在前截断并回 `scan.truncated`，本页只负责把它说出来。
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Taro from '@tarojs/taro'
 import { Button, Text, View } from '@tarojs/components'
 import { fetchCurrentWorker } from '../../../services/workerService'
@@ -35,6 +36,13 @@ import { listReadyShipmentOrders } from '../../../services/workerShipmentOrdersS
 import { SHIPMENT_ORDERS_WORKER_LOGIN_REQUIRED, WORKER_TAB_LOGIN_ROUTE } from '../../../utils/inbound/gaps'
 import { clearWorkerSession, hasWorkerSession, type CurrentWorker } from '../../../utils/workerSession'
 import type { ReadyShipmentOrder, ReadyShipmentOrdersPage } from '../../../services/workerShipmentOrdersService'
+// 发货联（50×70）预览 / 打印：行清单与 `/w/` 同源；送打印只走共享入口（不在页面里碰 transport）。
+import { buildShipLabelRows, shipLabelSpec } from '../../../utils/labels/shipLabel'
+import { renderRowsLabel } from '../../../utils/labels/rowsLabel'
+import { createH5CanvasFactory, SDK_UNAVAILABLE_HINT } from '../../../utils/inbound/labelPageKit'
+import { printRowsLabel } from '../../../utils/inbound/labelPrint'
+import { probePrintCapability } from '../../../utils/inbound/printCapability'
+import { createPrintTransport } from '../../../utils/inbound/terminalTransport'
 import './index.scss'
 
 /** 缺值占位符（与 H5 发货页 / 发货单纸面同口径：**不是** 0、不是空串、不是「未知」）。 */
@@ -86,7 +94,15 @@ export function logisticsText(order: ReadyShipmentOrder | null | undefined): str
 }
 
 /** 一行订单卡（`data-testid` 逐字段带序号：判据按它定位，不按文案）。 */
-function OrderRow({ order, index }: { order: ReadyShipmentOrder; index: number }) {
+function OrderRow({
+  order,
+  index,
+  onPreview,
+}: {
+  order: ReadyShipmentOrder
+  index: number
+  onPreview: (order: ReadyShipmentOrder) => void
+}) {
   return (
     <View className='shipment-orders__row' data-testid={`shipment-orders-row-${index}`}>
       <Text className='shipment-orders__no' data-testid={`shipment-orders-no-${index}`}>
@@ -107,6 +123,13 @@ function OrderRow({ order, index }: { order: ReadyShipmentOrder; index: number }
       <Text className='shipment-orders__line' data-testid={`shipment-orders-sets-${index}`}>
         套数：{setsText(order)}
       </Text>
+      <Button
+        className='shipment-orders__label-open'
+        data-testid={`shipment-orders-label-${index}`}
+        onClick={() => onPreview(order)}
+      >
+        发货联
+      </Button>
     </View>
   )
 }
@@ -118,6 +141,10 @@ export default function WorkerShipmentOrdersPage() {
   const [phase, setPhase] = useState<ShipmentOrdersPhase>(workerReady ? 'loading' : 'unauthorized')
   const [page, setPage] = useState<ReadyShipmentOrdersPage | null>(null)
   const [message, setMessage] = useState('')
+  /** 正在预览 / 待打印的那张发货联（`null` = 收起） */
+  const [labelOrder, setLabelOrder] = useState<ReadyShipmentOrder | null>(null)
+  const [printBusy, setPrintBusy] = useState(false)
+  const [labelNotice, setLabelNotice] = useState('')
 
   const load = useCallback(async () => {
     if (!workerReady) {
@@ -159,6 +186,55 @@ export default function WorkerShipmentOrdersPage() {
   const goWorkerLogin = useCallback(() => {
     Taro.navigateTo({ url: WORKER_TAB_LOGIN_ROUTE })
   }, [])
+
+  /** 打印能力（动手前就说清本机能不能打）。 */
+  const printCapability = useMemo(() => probePrintCapability(), [])
+
+  const openLabel = useCallback((order: ReadyShipmentOrder) => {
+    setLabelOrder(order)
+    setLabelNotice('')
+  }, [])
+
+  const closeLabel = useCallback(() => {
+    setLabelOrder(null)
+    setLabelNotice('')
+  }, [])
+
+  /**
+   * 打印发货联（50×70 整套出库单）。
+   *
+   * 行清单只取本行服务端字段；版面 / 渲染 / 送打印走共享件。本页**不发货** ——
+   * 发货联是**出库单纸面**，不改库存、不调 ship 端点（写路径仍在拍照发货 / PC 发货）。
+   */
+  const printShipLabel = useCallback(
+    async (order: ReadyShipmentOrder) => {
+      setLabelNotice('')
+      if (!printCapability.ok) {
+        setLabelNotice(printCapability.hint)
+        return
+      }
+      setPrintBusy(true)
+      try {
+        const transport = await createPrintTransport()
+        if (!transport) {
+          setLabelNotice(SDK_UNAVAILABLE_HINT)
+          return
+        }
+        const result = await printRowsLabel({
+          capability: printCapability,
+          transport,
+          render: () => renderRowsLabel(shipLabelSpec(order), createH5CanvasFactory()),
+        })
+        setLabelNotice(result.ok ? `已送出打印（${result.transportLabel}）` : result.hint)
+      } catch {
+        // 通道加载 / 连接异常：给可行动文案，不把未捕获异常留给工人
+        setLabelNotice(SDK_UNAVAILABLE_HINT)
+      } finally {
+        setPrintBusy(false)
+      }
+    },
+    [printCapability],
+  )
 
   const items = page?.items ?? []
   const count = items.length
@@ -223,7 +299,10 @@ export default function WorkerShipmentOrdersPage() {
       {phase === 'ready' ? (
         <View className='shipment-orders__body'>
           <Text className='shipment-orders__count' data-testid='shipment-orders-count'>
-            待发货 {count} 单（全部套已完工）
+            {/* 🔴 0 单时那句「（全部套已完工）」没有指代对象（真机读数 2026-11-01：
+                「待发货 0 单（全部套已完工）」自相矛盾）—— 括号是**结论**，只在有单时说。
+                与 /w/ 发货页（`shipment.mjs` 的 countLine）逐字同口径。 */}
+            {count === 0 ? '待发货 0 单' : `待发货 ${count} 单（全部套已完工）`}
           </Text>
           {count === 0 ? (
             <View className='shipment-orders__notice' data-testid='shipment-orders-empty'>
@@ -232,7 +311,12 @@ export default function WorkerShipmentOrdersPage() {
           ) : (
             <View className='shipment-orders__list' data-testid='shipment-orders-list'>
               {items.map((order, index) => (
-                <OrderRow key={order.order_id || `row-${index}`} order={order} index={index} />
+                <OrderRow
+                  key={order.order_id || `row-${index}`}
+                  order={order}
+                  index={index}
+                  onPreview={openLabel}
+                />
               ))}
             </View>
           )}
@@ -240,6 +324,49 @@ export default function WorkerShipmentOrdersPage() {
             <Text className='shipment-orders__truncated' data-testid='shipment-orders-truncated'>
               还有更多单未列出，发完再来刷新
             </Text>
+          ) : null}
+
+          {labelOrder ? (
+            <View className='shipment-orders__label' data-testid='shipment-orders-label-preview'>
+              <Text className='shipment-orders__label-title' data-testid='shipment-orders-label-title'>
+                发货联 · {textOrMissing(labelOrder.order_no)}
+              </Text>
+              <View className='shipment-orders__label-rows' data-testid='shipment-orders-label-rows'>
+                {buildShipLabelRows(labelOrder).map((row) => (
+                  <View key={row.key} className='shipment-orders__label-row'>
+                    <Text className='shipment-orders__label-key'>{row.label}</Text>
+                    <Text className='shipment-orders__label-value'>{row.value}</Text>
+                  </View>
+                ))}
+              </View>
+              <Text className='shipment-orders__label-hint' data-testid='shipment-orders-label-capability'>
+                {printCapability.ok ? printCapability.readyHint : printCapability.hint}
+              </Text>
+              <View className='shipment-orders__label-actions'>
+                <Button
+                  className='shipment-orders__label-print'
+                  data-testid='shipment-orders-label-print'
+                  disabled={!printCapability.ok || printBusy}
+                  onClick={() => {
+                    void printShipLabel(labelOrder)
+                  }}
+                >
+                  {printBusy ? '打印中…' : '打印发货联（50×70）'}
+                </Button>
+                <Button
+                  className='shipment-orders__label-close'
+                  data-testid='shipment-orders-label-close'
+                  onClick={closeLabel}
+                >
+                  收起
+                </Button>
+              </View>
+              {labelNotice ? (
+                <Text className='shipment-orders__label-notice' data-testid='shipment-orders-label-notice'>
+                  {labelNotice}
+                </Text>
+              ) : null}
+            </View>
           ) : null}
         </View>
       ) : null}

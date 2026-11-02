@@ -135,6 +135,8 @@ class DashboardStatsTool(BaseTool):
     description = (
         "【触发】用户说'今天生意''经营看板''数据概览''订单趋势''状态分布''最近X条订单''活跃会话'"
         "'哪个卖得好''卖得最好''销量排行''看看数据'时，优先用本工具而非 order_query。"
+        "**跨期对比**（'这周比上周''本周 vs 上周''环比''同比''多了还是少了'）一律走 "
+        "action=trend_compare：两期算术在工具内算，禁止自己拿两次查询结果口算。"
         "【参数】action 必填：overview(今日概览) / order_trend(趋势,需 days) / "
         "trend_compare(环比对比:本期 vs 紧邻上期,需 days) / order_status(状态分布) / "
         "recent_orders(最近,需 limit) / active_sessions(活跃,需 limit) / "

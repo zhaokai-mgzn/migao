@@ -102,14 +102,6 @@
     white-space: nowrap;
   }
 
-  // ── 分组小标题（V1 只有一组「工人功能」；它给列表一个层次，也给将来加组留位）──
-  &__section {
-    display: block;
-    margin: 8px 24px 16px;
-    font-size: 26px;
-    color: $text-tertiary;
-  }
-
   // ── 行卡：一条一件事（彩色左条 + 标题 + 一句「拿它干什么」+ ›）──
   &__entry {
     display: flex;

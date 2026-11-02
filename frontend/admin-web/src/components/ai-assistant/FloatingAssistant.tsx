@@ -73,7 +73,14 @@ function clampPos(pos: { x: number; y: number }, size: { w: number; h: number })
 }
 
 export default function FloatingAssistant() {
-  const [isOpen, setIsOpen] = useState(false)
+  // 开关提升到 store（issue #8236）：日报卡片等外部入口要能打开它并预置一个问题
+  const isOpen = useChatStore((s) => s.assistantOpen)
+  const openAssistant = useChatStore((s) => s.openAssistant)
+  const closeAssistant = useChatStore((s) => s.closeAssistant)
+  const assistantDraft = useChatStore((s) => s.assistantDraft)
+  const consumeAssistantDraft = useChatStore((s) => s.consumeAssistantDraft)
+  const createSession = useChatStore((s) => s.createSession)
+  const sendMessage = useChatStore((s) => s.sendMessage)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [isMinimized, setIsMinimized] = useState(false)
   const { fetchSessions } = useChatStore()
@@ -209,19 +216,37 @@ export default function FloatingAssistant() {
     }
   }, [isResizingFloat])
 
+  // 外部入口预置的问题（issue #8236）：打开后**消费一次**再发送。
+  // 没有会话时先建一个 —— `sendMessage` 对 `!currentSessionId` 是**静默早退**，
+  // 不兜底的话用户点了「问黄金策」会毫无反应。
+  useEffect(() => {
+    if (!isOpen || !assistantDraft) return
+    let cancelled = false
+    const run = async () => {
+      if (!useChatStore.getState().currentSessionId) {
+        await createSession()
+      }
+      const pending = consumeAssistantDraft()
+      if (pending && !cancelled) await sendMessage(pending)
+    }
+    void run()
+    return () => { cancelled = true }
+  }, [isOpen, assistantDraft, createSession, consumeAssistantDraft, sendMessage])
+
   const togglePanel = () => {
     if (isMinimized) {
       // 从最小化恢复
       setIsMinimized(false)
     } else {
-      setIsOpen(!isOpen)
+      if (isOpen) closeAssistant()
+      else openAssistant()
       setIsFullscreen(false)
       setIsMinimized(false)
     }
   }
 
   const handleClose = () => {
-    setIsOpen(false)
+    closeAssistant()
     setIsFullscreen(false)
     setIsMinimized(false)
   }

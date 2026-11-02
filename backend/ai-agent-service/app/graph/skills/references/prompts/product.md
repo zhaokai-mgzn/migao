@@ -82,8 +82,7 @@ tools: product_search, product_detail, product_update, sku_update, product_batch
 商家发图 + 「照这张图帮我建个商品」时，**两件事要分开办、都要办**：
 
 1. **仍要调 `image_recognize`（不是可不调）** —— 它产出的是**同页填充计划**（哪些格填什么值 + 候选 + 解读），
-   **不落库、不提交**（`backend/ai-agent-service/tests/test_tools_image_recognize.py` 的 `TestNoWriteBoundary`
-   钉住识别内核不 import 任何写入缝）⇒ 与「创建商品」无关，是**分析**能力，属能力边界明确支持的
+   **不落库、不提交**（识别内核按设计不持有任何写入能力，产出只用于同页填充）⇒ 与「创建商品」无关，是**分析**能力，属能力边界明确支持的
    「查询与分析类」；识别结果让商家**照填后台建品页**，商家少跑一趟。
 2. **建品落点如实说明 + 引导后台**（`/products` 新增入口），**不得**承诺代办、**不得**发建品确认卡。
 

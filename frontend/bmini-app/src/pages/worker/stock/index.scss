@@ -77,6 +77,38 @@
     border-radius: $radius-md;
   }
 
+  // ── 拍照识别入口（issue #8210）：一屏至多一个主色按钮 ⇒ 本按钮走**描边**（查询才是主色）──
+  &__recognize {
+    display: flex;
+    align-items: center;
+    margin: 0 24px 16px;
+  }
+
+  &__recognize-button {
+    flex: 0 0 auto;
+    // Taro Button 默认 `width: 100%` ⇒ 必须显式 auto 才能在行内与提示并排
+    width: auto;
+    white-space: nowrap;
+    margin: 0;
+    padding: 0 24px;
+    height: 64px;
+    line-height: 64px;
+    font-size: 26px;
+    color: $primary-color;
+    background: $bg-primary;
+    border: 1px solid $border-color;
+    border-radius: $radius-full;
+  }
+
+  &__recognize-hint {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin-left: 16px;
+    font-size: 24px;
+    line-height: 1.4;
+    color: $text-secondary;
+  }
+
   &__message {
     display: block;
     margin: 0 24px 16px;

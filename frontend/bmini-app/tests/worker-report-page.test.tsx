@@ -1,4 +1,4 @@
-// case_ids: BM-014, BM-015, BM-025, BM-057
+// case_ids: BM-014, BM-015, BM-025, BM-057, BM-060
 /**
  * 工人**扫码报工页**判据（issue #7812 P2a；页面 = `src/pages/worker/report/index.tsx`）。
  *
@@ -52,10 +52,30 @@ jest.mock('../src/services/productionService', () => ({
   completeByScan: jest.fn(),
 }))
 
+// 成品入库标签（issue #8287）：送打印只经 `printRowsLabel`（行式标签通道）；
+// 能力探测 / 通道选择用替身钉住「不可用不点」与调用参数。
+jest.mock('../src/utils/inbound/terminalTransport', () => ({
+  createPrintTransport: jest.fn(),
+}))
+jest.mock('../src/utils/inbound/labelPrint', () => ({
+  printRowsLabel: jest.fn(),
+}))
+jest.mock('../src/utils/inbound/printCapability', () => ({
+  probePrintCapability: jest.fn(() => ({
+    ok: true,
+    readyHint: '本机可打印：点「打印标签」选好打印机',
+    hint: '',
+  })),
+  printFailureHint: jest.fn((reason: string) => `打印失败：${reason}`),
+}))
+
 import Taro from '@tarojs/taro'
 import WorkerReportPage from '../src/pages/worker/report/index'
 import { fetchCurrentWorker } from '../src/services/workerService'
 import { completeByScan, scanResolve } from '../src/services/productionService'
+import { printRowsLabel } from '../src/utils/inbound/labelPrint'
+import { createPrintTransport } from '../src/utils/inbound/terminalTransport'
+import { probePrintCapability } from '../src/utils/inbound/printCapability'
 import { setWorkerSessionId } from '../src/utils/workerSession'
 import type { ReportView } from '../src/utils/reportState'
 
@@ -93,6 +113,25 @@ const LEGACY_VIEW: ReportView = {
 const mockFetchWorker = fetchCurrentWorker as jest.Mock
 const mockResolve = scanResolve as jest.Mock
 const mockComplete = completeByScan as jest.Mock
+const mockPrintRows = printRowsLabel as jest.Mock
+const mockCreateTransport = createPrintTransport as jest.Mock
+const mockProbe = probePrintCapability as jest.Mock
+
+/** 服务端随扫码 / 报工回执下发的成品入库块（`FinishedGoodsService#inboundView` 的形状）。 */
+const FINISHED_INBOUND = {
+  already: false,
+  bin_code: 'A-01',
+  inbound_no: 'RK-20261031-001',
+  label: {
+    rows: [
+      { label: '品名', value: '遮光布' },
+      { label: '色号', value: '米白' },
+      { label: '数量', value: '3 米' },
+    ],
+    short_code: 'ABCD2345',
+  },
+  quality: { result: 'rework', reason: '跳线' },
+}
 
 async function bootLoggedIn() {
   setWorkerSessionId(WORKER.session_id)
@@ -112,6 +151,17 @@ describe('扫码报工页（issue #7812）', () => {
   beforeEach(() => {
     jest.clearAllMocks()
     ;(Taro as any).__clearStorage()
+    mockCreateTransport.mockResolvedValue({
+      id: 'fake-rows',
+      label: '测试打印机',
+      print: jest.fn(),
+    })
+    mockPrintRows.mockResolvedValue({ ok: true, transportId: 'fake-rows', transportLabel: '测试打印机' })
+    mockProbe.mockReturnValue({
+      ok: true,
+      readyHint: '本机可打印：点「打印标签」选好打印机',
+      hint: '',
+    })
   })
 
   it('① 未登录 ⇒ 没有报工按钮；**就地**给工人登录表单（不跳三角色登录页、无页头）', async () => {
@@ -213,5 +263,67 @@ describe('扫码报工页（issue #7812）', () => {
 
     release({ success: false, message: '网络超时' })
     await waitFor(() => expect((button as any).disabled).toBe(false))
+  })
+
+  it('⑦ 成品入库卡 = 服务端字段原样；打印走 printRowsLabel（50×70 行式标签）', async () => {
+    await bootLoggedIn()
+    mockResolve.mockResolvedValue({
+      success: true,
+      data: { ...MAIN_VIEW, finished_inbound: FINISHED_INBOUND },
+    })
+    await scanByManual('ab12cd34')
+
+    const card = await screen.findByTestId('worker-report-finished-inbound')
+    expect(card.textContent).toContain('成品入库 · 仓位 A-01')
+    expect(card.textContent).toContain('质检：已记做工返工（原因：跳线）')
+    expect(card.textContent).toContain('入库单 RK-20261031-001')
+    const rows = screen.getByTestId('worker-report-finished-rows').textContent ?? ''
+    expect(rows).toContain('品名')
+    expect(rows).toContain('遮光布')
+    expect(rows).toContain('数量')
+    expect(rows).toContain('3 米')
+    expect(card.textContent).toContain('ABCD2345')
+    // 能力提示在动手前就上屏
+    expect(card.textContent).toContain('点「打印标签」')
+
+    fireEvent.click(screen.getByTestId('worker-report-finished-print'))
+    await waitFor(() => expect(mockPrintRows).toHaveBeenCalledTimes(1))
+    const deps = mockPrintRows.mock.calls[0][0]
+    expect(deps.capability.ok).toBe(true)
+    expect(typeof deps.render).toBe('function')
+    expect(deps.transport.id).toBe('fake-rows')
+    await waitFor(() =>
+      expect(screen.getByTestId('worker-report-finished-label-notice').textContent).toContain('已送出打印'),
+    )
+  })
+
+  it('⑧ 服务端没给 finished_inbound ⇒ 整卡不渲染（不印空卡）', async () => {
+    await bootLoggedIn()
+    mockResolve.mockResolvedValue({ success: true, data: MAIN_VIEW })
+    await scanByManual('ab12cd34')
+
+    await screen.findByTestId('worker-report-card')
+    expect(screen.queryByTestId('worker-report-finished-inbound')).toBeNull()
+  })
+
+  it('⑨ 本机不能打印 ⇒ 按钮 disabled 且先给可行动文案（不点了才失败）', async () => {
+    mockProbe.mockReturnValueOnce({
+      ok: false,
+      reason: 'insecure-context',
+      hint: '当前地址不是 HTTPS，手机不能直连打印机',
+      readyHint: '',
+    })
+    await bootLoggedIn()
+    mockResolve.mockResolvedValue({
+      success: true,
+      data: { ...MAIN_VIEW, finished_inbound: FINISHED_INBOUND },
+    })
+    await scanByManual('ab12cd34')
+
+    const button = await screen.findByTestId('worker-report-finished-print')
+    expect((button as any).disabled).toBe(true)
+    expect(screen.getByTestId('worker-report-finished-label-hint').textContent).toContain('HTTPS')
+    fireEvent.click(button)
+    expect(mockPrintRows).not.toHaveBeenCalled()
   })
 })

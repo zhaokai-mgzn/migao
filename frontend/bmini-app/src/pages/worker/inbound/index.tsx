@@ -40,7 +40,7 @@ import { Image, Input, ScrollView, Text, View } from '@tarojs/components'
 import { confirmActionResult } from '../../../utils/adminConfirm'
 import { hasWorkerSession } from '../../../utils/workerSession'
 import { decodeBarcodeFromPhoto, type PendingPhoto } from '../../../utils/inbound/barcodeDecode'
-import { inboundLabelPageSize, layoutInboundLabel, type InboundLabelView } from '../../../utils/inbound/labelLayout'
+import type { InboundLabelView } from '../../../utils/inbound/labelLayout'
 import { renderInboundLabel } from '../../../utils/inbound/labelCanvas'
 import {
   evaluateSkuGate,
@@ -52,6 +52,18 @@ import {
   type SkuMatch,
 } from '../../../utils/inbound/recognizeGate'
 import { MAX_INBOUND_PHOTOS, runInboundRecognize } from '../../../utils/inbound/recognizeFlow'
+import {
+  INBOUND_DECODE_TIMEOUT_HINT,
+  INBOUND_DECODE_TIMEOUT_MS,
+  INBOUND_PROGRESS_DECODE,
+  INBOUND_PROGRESS_RECOGNIZE,
+  INBOUND_PROGRESS_UPLOAD,
+  INBOUND_RECOGNIZE_TIMEOUT_HINT,
+  INBOUND_RECOGNIZE_TIMEOUT_MS,
+  INBOUND_UPLOAD_TIMEOUT_HINT,
+  INBOUND_UPLOAD_TIMEOUT_MS,
+  withTimeout,
+} from '../../../utils/inbound/withTimeout'
 import {
   SUGGEST_DEBOUNCE_MS,
   SUGGEST_SHOW_LIMIT,
@@ -68,6 +80,7 @@ import {
   type PrintCapability,
 } from '../../../utils/inbound/printCapability'
 import { printerLink, printerLinkText } from '../../../utils/inbound/printerLink'
+import { showsPrinterLinkHint } from '../../../utils/inbound/terminalTransport'
 import {
   SDK_UNAVAILABLE_HINT,
   createH5CanvasFactory,
@@ -87,7 +100,7 @@ import {
   recognizeInbound,
   recordInboundLabelPrint,
   searchInboundSkus,
-  uploadInboundPhoto,
+  uploadInboundPhotoSmart,
   newInboundRequestId,
 } from '../../../services/workerInboundService'
 import '../../../styles/admin-surfaces.scss'
@@ -119,6 +132,9 @@ export default function WorkerInboundPage() {
   const [notices, setNotices] = useState<string[]>([])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  /** 识别链的**分步进度**（issue #8307）：三步各自封顶后，屏上还得说清「现在在做哪一步」，
+   *  否则慢的时候工人只看到一个灰按钮，无法判断是卡住还是在跑。 */
+  const [progress, setProgress] = useState('')
   /** 提交链的失败/拦截文案 —— **就地**渲染在「提交过账」正上方（issue #7822：顶部横幅在长表单里
    * 会被折到视口外，工人看到的是「点了没反应」）。与 `busy` 分开：提交期间要单独给「提交中…」。 */
   const [submitError, setSubmitError] = useState('')
@@ -143,6 +159,9 @@ export default function WorkerInboundPage() {
 
   const [label, setLabel] = useState<InboundLabelView | null>(null)
   const [previewUrl, setPreviewUrl] = useState('')
+  // 预览占位比：外层按**画布的宽高比**撑高，内层铺满 ⇒ 屏上看得到整张标签（含二维码）
+  const [previewWidthPx, setPreviewWidthPx] = useState(0)
+  const [previewHeightPx, setPreviewHeightPx] = useState(0)
   const [printState, setPrintState] = useState('')
 
   // 能力探测**在动手前**做（不是打完才失败）：h5 + 安全上下文 + 非 iOS + 有 Web Bluetooth
@@ -184,14 +203,23 @@ export default function WorkerInboundPage() {
     try {
       const result = await runInboundRecognize({
         photos,
-        decode: decodeBarcodeFromPhoto,
+        decode: async (photo) => {
+          setProgress(INBOUND_PROGRESS_DECODE)
+          return withTimeout(decodeBarcodeFromPhoto(photo), INBOUND_DECODE_TIMEOUT_MS, INBOUND_DECODE_TIMEOUT_HINT)
+        },
         upload: async (photo) => {
-          const res = await uploadInboundPhoto(String(photo.tempFilePath || photo.file || ''))
+          setProgress(INBOUND_PROGRESS_UPLOAD)
+          const res = await withTimeout(
+            uploadInboundPhotoSmart(photo),
+            INBOUND_UPLOAD_TIMEOUT_MS,
+            INBOUND_UPLOAD_TIMEOUT_HINT,
+          )
           if (!res.success || !res.data?.url) throw new Error(res.message || '照片上传失败')
           return res.data.url
         },
         recognize: async (payload) => {
-          const res = await recognizeInbound(payload)
+          setProgress(INBOUND_PROGRESS_RECOGNIZE)
+          const res = await withTimeout(recognizeInbound(payload), INBOUND_RECOGNIZE_TIMEOUT_MS, INBOUND_RECOGNIZE_TIMEOUT_HINT)
           if (!res.success || !res.data) throw new Error(res.message || '识别失败')
           return res.data
         },
@@ -213,6 +241,7 @@ export default function WorkerInboundPage() {
       setError(e?.message || '识别失败，请重试')
     } finally {
       setBusy(false)
+      setProgress('')
     }
   }, [photos])
 
@@ -339,6 +368,8 @@ export default function WorkerInboundPage() {
       // 出图（预览）：与送打印**同一份**绘制计划（不另写一份版面，也不各写一份画布工厂）
       const preview = renderLabelPreview(detail.data)
       setPreviewUrl(preview.url)
+      setPreviewWidthPx(preview.widthPx)
+      setPreviewHeightPx(preview.heightPx)
       if (preview.notice) setNotices((prev) => [...prev, preview.notice])
     } catch (e: any) {
       // 服务端 400/422/409 的文案**原样**落到按钮上方（口径真值在服务端，端侧不重写第二份）
@@ -353,7 +384,7 @@ export default function WorkerInboundPage() {
     setPrintState('')
     const shortCode = String(label?.shortCode || '')
     if (!shortCode) {
-      setError('这张标签没有短码，不能打印（可回电脑端补打）。')
+      setError('这张标签没有编号，不能打印（可回电脑端补打）。')
       return
     }
     setBusy(true)
@@ -376,7 +407,7 @@ export default function WorkerInboundPage() {
     })
     setBusy(false)
     if (result.ok) {
-      setPrintState(`已送出打印（系统记第 ${result.printCount} 次）`)
+      setPrintState(`已送出打印（第 ${result.printCount} 次）`)
       const refreshed = await getInboundLabel(shortCode)
       if (refreshed.success && refreshed.data) setLabel(refreshed.data)
       return
@@ -390,7 +421,6 @@ export default function WorkerInboundPage() {
   /** 逐格识别结果（服务端 `fields` 原样派生；空 = 这次没回字段表 ⇒ 不渲染这一段） */
   const fieldRows = useMemo(() => recognizedFieldRows(recognized), [recognized])
   /** 纸面版心（与送打印同一份绘制计划；页面不另算一套像素） */
-  const labelPlan = useMemo(() => layoutInboundLabel(label || {}), [label])
 
   if (!workerReady) {
     return (
@@ -417,7 +447,7 @@ export default function WorkerInboundPage() {
       <View className='admin-surface__header'>
         <Text className='admin-surface__title'>拍照入库</Text>
         <Text className='admin-surface__subtitle'>
-          拍上游标签 → 核对 → 过账（加库存）→ 打印 {inboundLabelPageSize()} 标签
+          拍上游标签 → 核对 → 过账入库 → 打印标签
         </Text>
       </View>
 
@@ -440,7 +470,7 @@ export default function WorkerInboundPage() {
         </Text>
 
         {/* 连接状态（**运行期事实**）：能打 ≠ 已连上（机器可能没开机）—— 两件事分开显示 */}
-        {capability.ok && (
+        {capability.ok && showsPrinterLinkHint() && (
           <Text className='admin-card__note' data-testid='inbound-printer-link'>
             {printerLinkText(link)}
           </Text>
@@ -452,8 +482,13 @@ export default function WorkerInboundPage() {
               <Text>拍照 / 选图（最多 {MAX_INBOUND_PHOTOS} 张）</Text>
             </View>
             <Text className='admin-card__meta'>
-              已选 {photos.length} 张 · 二维码拍清楚、拍完整，手机当场就能认出来；认不出再交给系统认，会稍慢一点
+              已选 {photos.length} 张 · 请把二维码拍清楚、拍完整
             </Text>
+            {busy && progress !== '' && (
+              <Text className='admin-card__meta' data-testid='inbound-progress'>
+                {progress}
+              </Text>
+            )}
             <View
               className={`admin-action admin-action--gold${busy || photos.length === 0 ? ' admin-action--disabled' : ''}`}
               data-testid='inbound-recognize'
@@ -628,12 +663,16 @@ export default function WorkerInboundPage() {
 
         {step === 'label' && label && (
           <View className='admin-card' data-testid='inbound-step-label'>
-            <Text className='admin-card__title'>入库标签 {inboundLabelPageSize()}</Text>
-            <Text className='admin-card__meta'>
-              短码 {label.shortCode || '（缺失）'} · 单号 {label.inboundNo || '-'} · 已打印{' '}
-              {label.printCount ?? 0} 次
-            </Text>
-            {previewUrl !== '' && <Image className='admin-label-preview' src={previewUrl} mode='widthFix' />}
+            {/* 2026-11-01 用户裁定：卡片里只留预览 + 打印按钮（上面的标签说明文字移除） */}
+            {previewUrl !== '' && (
+              <View
+                className='admin-label-preview-box'
+                data-testid='label-preview-box'
+                style={{ paddingBottom: `${Math.round((previewHeightPx * 100) / Math.max(1, previewWidthPx))}%` }}
+              >
+                <Image className='admin-label-preview' src={previewUrl} mode='aspectFit' />
+              </View>
+            )}
             <View
               className={`admin-action admin-action--gold${busy || !capability.ok ? ' admin-action--disabled' : ''}`}
               data-testid='inbound-print'
@@ -649,9 +688,6 @@ export default function WorkerInboundPage() {
                 {printState}
               </Text>
             )}
-            <Text className='admin-card__meta' data-testid='inbound-label-bound'>
-              版心 {labelPlan.widthPx} × {labelPlan.heightPx} px（1:1 送打印）
-            </Text>
           </View>
         )}
       </View>

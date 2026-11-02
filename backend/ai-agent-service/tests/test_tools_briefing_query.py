@@ -24,6 +24,7 @@ import pytest
 from unittest.mock import patch, AsyncMock
 
 from app.tools.briefing_query import (
+    HISTORY_ENDPOINT,
     SNAPSHOT_ENDPOINT,
     TODAY_ENDPOINT,
     VALUED_VIEWS,
@@ -482,13 +483,15 @@ class TestOnDemandProductHealthView:
             and node.args[0].value.startswith("/api")
         }
 
-        assert literals == {TODAY_ENDPOINT, SNAPSHOT_ENDPOINT}, literals
+        assert literals == {TODAY_ENDPOINT, SNAPSHOT_ENDPOINT, HISTORY_ENDPOINT}, literals
 
     def test_endpoint_literals_match_the_backend_controller(self):
         """端点字面量必须真的在 Java 控制器里（不许凭语义推测 —— §17.3 ⑤）"""
         java = CONTROLLER_SRC.read_text(encoding="utf-8")
 
         assert '@GetMapping("/snapshot")' in java
+        assert '@GetMapping("/history")' in java
+        assert HISTORY_ENDPOINT == "/api/admin/briefing/history"
         assert '@GetMapping("/today")' in java
         assert SNAPSHOT_ENDPOINT == "/api/admin/briefing/snapshot"
         assert TODAY_ENDPOINT == "/api/admin/briefing/today"

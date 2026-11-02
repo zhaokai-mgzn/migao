@@ -11,6 +11,7 @@
 import { get, post } from '../utils/request'
 import { API_BASE_URL } from '../utils/constants'
 import { workerSessionHeaders } from '../utils/workerSession'
+import type { FinishedInboundView } from '../utils/labels/finishedInbound'
 
 /** 工序实例（契约 1：positions[].operations[]） */
 export interface ProductionOperation {
@@ -302,6 +303,8 @@ export interface ScanResolveResult {
   completed_at?: string | null
   /** 非空 = 旧码降级，必须由工人补齐（绝不默认取第 1 套） */
   needs_selection: string[]
+  /** 成品入库块（issue #8287；服务端 `ProductionScanService` 注入）—— 没有 = 本次扫码不涉及成品入库 */
+  finished_inbound?: FinishedInboundView | null
 }
 
 /** POST /scan/complete 的 data：既有报工结果 + 一屏闭环（套号/部位/进度/下一道） */
@@ -315,6 +318,8 @@ export interface ScanCompleteResult extends ReportResult {
   set_completed?: boolean | null
   /** 下一道待领工序；null = 未知（尽力而为：缺它**不影响**本次领活已成功） */
   next_operation?: ScanOperationView | null
+  /** 成品入库块（issue #8287）：本套最后一道报工 ⇒ 服务端自动入库并随回执下发；缺 = 本笔不入库 */
+  finished_inbound?: FinishedInboundView | null
 }
 
 /**

@@ -306,3 +306,42 @@ class TestValidationErrorsAreRelayed:
 
 
 PUT_HINT = "PUT 是全量替换：只改一个键时其余 10 个键必须原样写回"
+
+class TestMerchantWordingKeys:
+    """⑤ 商家说法当键名（issue #8300 实测：模型把「上下卷边」自造成 `hem_allowance`）"""
+
+    @patch("app.tools.craft_calc_config_update.get_admin_api_client")
+    async def test_chinese_key_is_normalised_to_the_internal_key(self, mock_get_client):
+        """商家原话「上下卷边」必须确定性翻译成 `hem_margin` —— 不靠模型猜英文键名。"""
+        client = _client()
+        mock_get_client.return_value = client
+
+        result = await CraftCalcConfigUpdateTool().execute(
+            context=ALLOWED,
+            changes={"上下卷边": 0.25},
+            before={"上下卷边": 0.3},
+        )
+
+        assert result.success is True, result.error
+        body = client.put.call_args.kwargs["json_data"]
+        assert body["hem_margin"] == 0.25
+        assert result.data["keys"] == ["hem_margin"]
+        assert "hem_margin" not in (result.message or "")
+
+    def test_description_carries_the_key_mapping(self):
+        """工具说明必须给出「商家说法 → 内部键」映射，模型不需要猜。"""
+        from app.tools.craft_calc_config_update import (ALLOWED_CONFIG_KEYS, KEY_ALIASES,
+                                                        CraftCalcConfigUpdateTool)
+        desc = CraftCalcConfigUpdateTool.description
+        for key in ALLOWED_CONFIG_KEYS:
+            assert key in desc, f"工具说明缺内部键 {key}（模型只能猜 ⇒ unknown_config_key）"
+        # 每个内部键至少有一种商家说法被点名（同义词不必全列，避免说明膨胀）
+        mapped_keys = set(KEY_ALIASES.values())
+        for key in ALLOWED_CONFIG_KEYS:
+            if key == "default_formula":
+                continue
+            assert key in mapped_keys, f"{key} 没有任何商家说法映射"
+        for alias, key in KEY_ALIASES.items():
+            if alias in ("上下卷边合计",):
+                continue   # 同义写法，说明只列最常用那一个
+            assert f"{alias}→{key}" in desc, f"工具说明缺映射 {alias}→{key}"
