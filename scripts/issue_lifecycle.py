@@ -82,6 +82,16 @@
 worktree 必须在工作区根（`MIGAO_WT_BASE`，默认 `<主仓库根>/../migao-wt`）之下 ⇒ 半径外的检出
 （别人的手工检出）**一律不动**。
 
+🔴 **活占用保护（issue #7008，2026-10-16 实测）**：只判「GitHub 侧状态」**不足以**说明「没人正在用」——
+该 worktree 可能正被**活进程**当 cwd 用着（评测栈就是这么起的）：实测进程的 `cwd` 被删后
+`/health` 仍是 **200**，而创建会话变成 **HTTP 500**（惰性 import 在已删目录上失败）⇒ 症状把人引向产品代码。
+⇒ 另加三条**本机** fail-closed 保护（任一命中即**不删**，且**具名**说明是哪条）：
+⑤ 有进程的 cwd / 打开文件落在该 worktree 内（macOS `lsof`；Linux `/proc`；**取不到读数 = 无法判定 = 不删**）；
+⑥ 有**未提交改动**或**未推送提交**（删了会丢工作）；
+⑦ **持有中的机器级重活锁**（`$HOME/.migao-heavy.lock` 的 `worktree`/`cwd` 落在该 worktree 内）。
+`dev-worktree.sh add` 的**自动**收尾因此改为「**先 dry-run 打印、再真删**」（`--force` 只跳过打印，
+**不**跳过任何拒绝条件）。
+
 **零动作也要出声**（G6）：没有可收尾的 ⇒ 打印「本轮零动作 + 逐类原因计数」——
 「我判了、都不该动」必须与「我没跑」长得不一样。
 
@@ -99,6 +109,7 @@ worktree 必须在工作区根（`MIGAO_WT_BASE`，默认 `<主仓库根>/../mig
     MIGAO_PRESET_REFRESH_BIN=...  # preset-anchor-refresh.sh
     MIGAO_WT_BASE=...             # 工作区根（同 dev-worktree.sh）
     MIGAO_ANCHOR=...              # 活锚路径（默认 $HOME/.dsh/.agent-presets/migao）
+    MIGAO_HEAVY_LOCK_FILE=...     # 机器级重活锁文件（默认 $HOME/.migao-heavy.lock；issue #7008 的活占用面）
 
 退出码：0 = 成功（含幂等空转与「零动作」）；1 = 用法/找不到目标；2 = fail-closed（判红 / 未合并 /
 有目标被拒）—— 该删的照删、不该删的一个不删；3 = **无法判定**（gh 不可用 / 离线 / CI 未跑完）——
@@ -135,6 +146,8 @@ DEVTREE_ENV = "MIGAO_DEVTREE_BIN"
 VERIFY_ENV = "MIGAO_VERIFY_BIN"
 PRESET_REFRESH_ENV = "MIGAO_PRESET_REFRESH_BIN"
 WT_BASE_ENV = "MIGAO_WT_BASE"
+#: 机器级重活锁文件（与 `scripts/machine-heavy-lock.sh` 的默认路径**同一处**；测试注入点）
+HEAVY_LOCK_ENV = "MIGAO_HEAVY_LOCK_FILE"
 DEFAULT_CI_TIMEOUT = 1800
 PR_LIMIT = 500  # 一次取数的上限（与 GUARD._pr_merged_branches 同量级；截断后果见 read_pr_rows 调用点）
 #: 临时（点号）worktree 的出声阈值（issue #5480 漏洞 1）：**只报不删**（无人值守删除不安全）
@@ -896,6 +909,204 @@ def _land_summary(branch: str, pr: PrReading, results: list[StepResult], ctx: di
     return rc
 
 
+# ── 活占用面（issue #7008）：删 worktree 之前必须判「有没有活进程在用」────────────────
+#
+# 病灶（2026-10-16 实测）：评测栈进程的 `/health` 200，而创建会话 **HTTP 500** ——
+# 因为它的 cwd 正是被自动收尾删掉的那个 worktree（`lsof -p <pid> | grep cwd` 指向已不存在的目录）。
+# ⇒ 「PR 已合并 + 无 open PR」判的是 **GitHub 侧**，与**本机进程**毫无关系。
+#   三条 fail-closed 保护（任一命中即不删，且**具名**）：活占用 / 未提交或未推送 / 持有重活锁。
+#   取不到读数 ⇒ **无法判定** ⇒ 不删（**不得**把「读不到」读成「没人用」）。
+
+class Occupant:
+    """一条占用证据：谁（pid）· 以什么方式（cwd / 打开文件）· 落在哪个路径。"""
+
+    def __init__(self, pid: int, kind: str, path: str):
+        self.pid, self.kind, self.path = pid, kind, path
+
+    def line(self) -> str:
+        return f"pid {self.pid}（{self.kind}）{self.path}"
+
+
+class HeavyLock:
+    """机器级重活锁的读数：`fields` 为空 = 无锁；`error` 非空 = **无法判定**（读不到 ≠ 无锁）。"""
+
+    def __init__(self, fields: dict[str, str] | None = None, error: str = ""):
+        self.fields, self.error = fields or {}, error
+
+
+def heavy_lock_path() -> Path:
+    return Path(os.environ.get(HEAVY_LOCK_ENV) or (Path.home() / ".migao-heavy.lock"))
+
+
+def read_heavy_lock() -> HeavyLock:
+    """读机器级重活锁（与 `machine-heavy-lock.sh` **同一路径**，不另写第二份锁机制）。"""
+    path = heavy_lock_path()
+    if not path.exists():
+        return HeavyLock()
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return HeavyLock(error=f"读不到 {path}（{type(exc).__name__}）")
+    fields: dict[str, str] = {}
+    for line in text.splitlines():
+        key, sep, value = line.partition("=")
+        if sep and key.strip():
+            fields[key.strip()] = value.strip()
+    return HeavyLock(fields)
+
+
+def _pid_alive(pid: str) -> bool:
+    if not pid.isdigit():
+        return False
+    try:
+        os.kill(int(pid), 0)
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+def _path_within(candidate: str, root: Path) -> bool:
+    """`candidate` 是否落在 `root` 之下（含 root 本身）。纯字符串前缀 —— 快照条目很多，不做 IO。"""
+    text = candidate.rstrip("/")
+    base = str(root).rstrip("/")
+    return text == base or text.startswith(base + "/")
+
+
+def heavy_lock_holder(path: Path, lock: HeavyLock) -> str | None:
+    """该 worktree 是否被**持有中的**机器级重活锁占着 ⇒ 具名原因；否则 None。"""
+    if lock.error:
+        return f"锁面**无法判定**（{lock.error}）⇒ fail-closed，不删"
+    if not lock.fields:
+        return None
+    pid = lock.fields.get("pid", "")
+    if pid and not _pid_alive(pid):
+        return None  # 持有者已退出 ⇒ 陈旧锁（下一次 acquire 会回收），不构成占用
+    root = path.resolve()
+    for key in ("worktree", "cwd"):
+        value = lock.fields.get(key, "")
+        if value and _path_within(value, root):
+            return (f"机器级重活锁（name={lock.fields.get('name') or '未知'} · pid {pid or '未知'} · "
+                    f"{key}={value}）")
+    return None
+
+
+def _proc_occupants() -> list[Occupant] | None:
+    """Linux：`/proc/<pid>/cwd` 与 `/proc/<pid>/fd/*` 的软链目标；取不到 `/proc` ⇒ None（无法判定）。"""
+    proc_root = Path("/proc")
+    if not proc_root.is_dir():
+        return None
+    out: list[Occupant] = []
+    for entry in proc_root.iterdir():
+        if not entry.name.isdigit():
+            continue
+        pid = int(entry.name)
+        try:
+            out.append(Occupant(pid, "cwd", os.readlink(entry / "cwd")))
+        except OSError:
+            pass
+        try:
+            fds = list((entry / "fd").iterdir())
+        except OSError:
+            continue
+        for fd in fds:
+            try:
+                target = os.readlink(fd)
+            except OSError:
+                continue
+            if target.startswith("/"):  # socket:/pipe:/anon_inode: 不是文件路径，跳过
+                out.append(Occupant(pid, "打开文件", target))
+    return out
+
+
+def _lsof_occupants() -> list[Occupant] | None:
+    """macOS：`lsof -n -P -Fpn`（cwd + 打开文件，**一次**取数）；取不到 / 超时 ⇒ None（无法判定）。"""
+    exe = shutil.which("lsof") or "/usr/sbin/lsof"
+    if not Path(exe).is_file():
+        return None
+    try:
+        proc = subprocess.run([exe, "-n", "-P", "-Fpn"], capture_output=True, text=True, timeout=180)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if not proc.stdout.strip():
+        return None
+    out: list[Occupant] = []
+    pid, fd = 0, ""
+    for line in proc.stdout.splitlines():
+        if line.startswith("p"):
+            pid = int(line[1:]) if line[1:].strip().isdigit() else 0
+        elif line.startswith("f"):
+            fd = line[1:].strip()
+        elif line.startswith("n"):
+            target = line[1:]
+            if target.startswith("/"):
+                out.append(Occupant(pid, "cwd" if fd == "cwd" else "打开文件", target))
+    return out
+
+
+def occupancy_snapshot() -> list[Occupant] | None:
+    """全机进程的 cwd / 打开文件快照 —— **一次**取数（reap 一轮只取一次）。`None` = 无法判定。"""
+    return _lsof_occupants() if sys.platform == "darwin" else _proc_occupants()
+
+
+def live_occupants(path: Path, snapshot: list[Occupant] | None = None) -> list[Occupant] | None:
+    """占用该 worktree 的活进程证据；`None` = **无法判定**（不得当「没有占用」读）。"""
+    if snapshot is None:
+        snapshot = occupancy_snapshot()
+    if snapshot is None:
+        return None
+    root = path.resolve()
+    hits = sorted((o for o in snapshot if _path_within(o.path, root)),
+                  key=lambda o: (o.pid, o.kind, o.path))
+    seen: set[tuple[int, str, str]] = set()
+    uniq: list[Occupant] = []
+    for o in hits:
+        key = (o.pid, o.kind, o.path)
+        if key not in seen:
+            seen.add(key)
+            uniq.append(o)
+    return uniq
+
+
+def worktree_git_hygiene(path: Path) -> str | None:
+    """该 worktree 是否有**未提交改动**或**未推送提交** ⇒ 具名原因；干净且已推送 ⇒ None。
+
+    「未推送」口径：有 upstream ⇒ `@{u}..HEAD`；**无 upstream**（远端分支已被删 / 已 prune）⇒
+    `HEAD --not --remotes`：只要还有提交不在**任何**远端引用上，就按未推送处置（fail-closed ——
+    squash 合并下「内容已合入」与「提交已在远端」不是同一件事；宁可漏收，也不丢别人的工作）。
+    """
+    status = git("status", "--porcelain", cwd=path, check=False)
+    if status.returncode != 0:
+        return f"**无法判定**未提交改动（git status 退出 {status.returncode}）⇒ fail-closed"
+    dirty = [line for line in status.stdout.splitlines() if line.strip()]
+    if dirty:
+        return f"{len(dirty)} 个**未提交改动**（首个：{dirty[0].strip()}）"
+    upstream = git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}", cwd=path, check=False)
+    if upstream.returncode == 0 and upstream.stdout.strip():
+        ref = upstream.stdout.strip()
+        count = git("rev-list", "--count", f"{ref}..HEAD", cwd=path, check=False)
+        if count.returncode != 0:
+            return f"**无法判定**未推送提交（rev-list {ref}..HEAD 退出 {count.returncode}）⇒ fail-closed"
+        try:
+            ahead = int(count.stdout.strip() or "0")
+        except ValueError:
+            return "**无法判定**未推送提交（rev-list 读数非数字）⇒ fail-closed"
+        if ahead:
+            tip_proc = git("log", "-1", "--format=%h %s", f"{ref}..HEAD", cwd=path, check=False)
+            # 判 rc 再采信 stdout（`check=False` 时 stdout 可能是 git 的**回显**而不是数据 —— #5430 同族；
+            # 取不到就当「取不到」，不把进程对象的 stdout 直接当证据）。
+            tip = tip_proc.stdout.strip() if tip_proc.returncode == 0 else ""
+            return f"{ahead} 个**未推送提交**（{ref}..HEAD；最新：{tip or '取不到'}）"
+        return None
+    loose = git("log", "--oneline", "HEAD", "--not", "--remotes", cwd=path, check=False)
+    if loose.returncode != 0:
+        return "**无法判定**未推送提交（无 upstream，且 git log 失败）⇒ fail-closed"
+    rows = [line for line in loose.stdout.splitlines() if line.strip()]
+    if rows:
+        return (f"{len(rows)} 个提交**不在任何 origin/* 引用上**（无 upstream；最新：{rows[0].strip()}）"
+                " ⇒ 按未推送处置")
+    return None
+
+
 # ── reap-merged：新工作前把「已合并但没人收尾」的自动收掉 ──────────────────────────
 
 class Candidate:
@@ -1008,7 +1219,8 @@ def reap_candidates(cwd: Path, root: Path) -> list[Candidate]:
 
 def classify_candidate(c: Candidate, merged: set[str], open_nums: dict[str, int], open_bases: set[str],
                        protected: list[Path], locked: set[str], self_branches: set[str],
-                       wt_base: Path) -> tuple[bool, str, str]:
+                       wt_base: Path, *, occupancy: list[Occupant] | None = None,
+                       heavy_lock: HeavyLock | None = None) -> tuple[bool, str, str]:
     """⇒ (可否收尾, 原因分类键, 可读原因)。**任一保护命中即不删**（fail-closed，顺序即处置优先级）。"""
     if c.branch in PROTECTED_BRANCHES:
         return False, "主干分支", "主干分支，永不判可移除"
@@ -1028,6 +1240,21 @@ def classify_candidate(c: Candidate, merged: set[str], open_nums: dict[str, int]
         return False, "是 open PR 的 base", "是某个 open PR 的 base（stacked PR）⇒ 删了会连带影响它"
     if c.branch in locked:
         return False, "活跃会话锁", "有**活跃会话锁**（PID 存活）⇒ 可能正在用"
+    if c.path is not None:
+        # issue #7008：GitHub 侧状态 ≠ 本机没人用 —— 三条活占用保护（命中即具名拒删）
+        occupants = live_occupants(c.path, occupancy)
+        if occupants is None:
+            return False, "占用面无法判定", (
+                "占用面**无法判定**（取不到 /proc 或 lsof）⇒ fail-closed，不删（读不到 ≠ 没人用）")
+        if occupants:
+            extra = f"（另有 {len(occupants) - 1} 条同类读数）" if len(occupants) > 1 else ""
+            return False, "活占用", f"**有活进程正在使用**：{occupants[0].line()}{extra} ⇒ 不删"
+        hygiene = worktree_git_hygiene(c.path)
+        if hygiene:
+            return False, "有未提交/未推送内容", f"{hygiene} ⇒ 不删（删了会丢工作）"
+        holder = heavy_lock_holder(c.path, heavy_lock if heavy_lock is not None else read_heavy_lock())
+        if holder:
+            return False, "持有重活锁", f"{holder} ⇒ 不删"
     if c.branch not in merged:
         return False, "无已合并 PR", "GitHub 上没有已合并 PR（从未有 PR / 未合并）⇒ fail-closed"
     return True, "可收尾", "有已合并 PR 且无 open PR ⇒ 可收尾"
@@ -1061,6 +1288,21 @@ def cmd_reap_merged(args: argparse.Namespace) -> int:
 
     merged, open_nums, open_bases = classify_rows(rows)
     protected = anchor_protected_paths()
+    # issue #7008：活占用面**一次**取数（全机进程 cwd/打开文件 + 重活锁），
+    # 逐候选只做前缀过滤 —— 每候选各扫一次会让 reap 从秒级变成分钟级。
+    occupancy = occupancy_snapshot()
+    heavy = read_heavy_lock()
+    if occupancy is None:
+        print("⚠️  占用面**无法判定**（取不到 /proc 或 lsof）⇒ 每个 worktree 候选都按 fail-closed 跳过"
+              "（**读不到 ≠ 没人用**）。", file=sys.stderr)
+    else:
+        print(f"   活占用读数：{len(occupancy)} 条进程 cwd / 打开文件（**一次**取数；命中候选 worktree 即拒删）")
+    if heavy.error:
+        print(f"⚠️  锁面**无法判定**（{heavy.error}）⇒ 每个 worktree 候选都按 fail-closed 跳过。",
+              file=sys.stderr)
+    elif heavy.fields:
+        print(f"   机器级重活锁：持有中（name={heavy.fields.get('name') or '未知'} · "
+              f"pid {heavy.fields.get('pid') or '未知'} · worktree={heavy.fields.get('worktree') or '未知'}）")
     locked = GUARD._locked_branches(cwd)
     if locked is None:
         # `_locked_branches` 的 `None` = **无法判定**（#5430 同族：取不到 common git dir）。
@@ -1095,7 +1337,8 @@ def cmd_reap_merged(args: argparse.Namespace) -> int:
     skipped: list[tuple[Candidate, str, str]] = []
     for c in candidates:
         ok, key, why = classify_candidate(c, merged, open_nums, open_bases,
-                                         protected, locked, self_branches, wt_base)
+                                         protected, locked, self_branches, wt_base,
+                                         occupancy=occupancy, heavy_lock=heavy)
         if ok:
             reapable.append(c)
         else:

@@ -86,6 +86,12 @@ REAP_CALL_LINE = (
     '  bash "$REPO_ROOT/scripts/issue-lifecycle.sh" reap-merged --apply --no-artifacts '
     '--except "$branch" || echo "⚠️  自动收尾未完成（exit≠0 不阻塞建工作区；原因见上）"'
 )
+# issue #7008：自动收尾 = **先 dry-run 打印、再真删**（两段都在同一次 `add` 里；
+# `--force` 只跳过预演、**不**跳过任何拒绝条件）。真删那一段的锚点 = 上面的 REAP_CALL_LINE。
+REAP_DRY_RUN_LINE = (
+    '    bash "$REPO_ROOT/scripts/issue-lifecycle.sh" reap-merged --no-artifacts --except "$branch" \\\n'
+    '      || echo "⚠️  自动收尾（dry-run 预演）未完成（exit≠0 不阻塞建工作区；原因见上）"'
+)
 
 
 # ── 纯函数判据（红绿两侧共用 —— 红证才有判别力）────────────────────────────────
@@ -150,6 +156,13 @@ def _wiring_problems(body: str) -> list[str]:
         problems.append('必须 --except "$branch"（本次要建的分支不能被自己收掉）')
     if "--no-artifacts" not in body:
         problems.append("必须 --no-artifacts（主工作区根是跨会话共享写面：别人的 pr-body-*.md 可能正在用）")
+    # issue #7008：删除的**安全顺序** = ① 先 dry-run 打印（零删除）② 再 --apply 真删。
+    dry = body.find("reap-merged --no-artifacts")
+    apply_at = body.find("reap-merged --apply")
+    if dry < 0:
+        problems.append("`add` 必须先跑一段 dry-run 预演（零删除；打印将删清单与逐条拒绝原因）")
+    elif apply_at >= 0 and not dry < apply_at:
+        problems.append("顺序错：dry-run 预演必须排在 --apply 之前（顺序即安全顺序）")
     return problems
 
 
@@ -826,10 +839,11 @@ def test_dev_worktree_add_wires_auto_reap():
 
 
 def test_wiring_criterion_is_red_when_call_line_is_removed():
-    """**红证**：删掉那一行接线 ⇒ 同一条判据必红。"""
+    """**红证**：删掉那两段接线（预演 + 真删）⇒ 同一条判据必红。"""
     src = DEV_WORKTREE.read_text(encoding="utf-8")
     assert src.count(REAP_CALL_LINE) == 1, f"注入锚点必须**恰好命中 1 次**（源码漂移 ⇒ 红证会失效）"
-    mutated = src.replace(REAP_CALL_LINE + "\n", "")
+    assert src.count(REAP_DRY_RUN_LINE) == 1, "预演段的注入锚点必须恰好命中 1 次"
+    mutated = src.replace(REAP_DRY_RUN_LINE + "\n", "").replace(REAP_CALL_LINE + "\n", "")
     assert mutated != src, "变异没落到源码上"
 
     assert _wiring_problems(_cmd_add_body(src)) == [], "基线（真源码）必须绿"

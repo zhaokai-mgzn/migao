@@ -8,7 +8,7 @@
 # 切换零污染。本脚本封装常用操作。
 #
 # 用法（在 migao 仓库根目录执行）：
-#   ./scripts/dev-worktree.sh add <branch> [路径]   # 为分支创建独立工作区（默认 ../migao-wt/<分支>）
+#   ./scripts/dev-worktree.sh add [--force] <branch> [路径]   # 建独立工作区（自动收尾：先 dry-run 打印、再真删）
 #   ./scripts/dev-worktree.sh list                  # 列出所有工作区 + 会话锁状态
 #   ./scripts/dev-worktree.sh lock [--prune]        # 查看会话锁（--prune：清理失效锁；多会话并发时先查锁）
 #   ./scripts/dev-worktree.sh rm <分支|路径> [--delete-branch]  # 移除工作区（可选连带删分支）
@@ -107,6 +107,19 @@
 #   git 管理命令 / 会话锁 / 默认 worktree 目录必须基于主仓库根 REPO_ROOT（由
 #   `git rev-parse --git-common-dir` 归一化），否则 mkdir 锁目录会静默失败。
 #
+# 自动收尾的活占用保护（v1.17，2026-11-03 新增，issue #7008）：
+#   `add` 内置「把已合并但没人收尾的 worktree 自动收掉」，而**删 worktree 是本脚本最危险的动作** ——
+#   实测：评测栈进程的 cwd 就在被删的 worktree 里 ⇒ `/health` 仍是 **200**，而创建会话变成 **HTTP 500**
+#   （症状把人引向产品代码，本次排查用了 3 轮读数）。⇒ 判定侧（scripts/issue_lifecycle.py::classify_candidate）
+#   新增三条 fail-closed 拒绝条件，任一命中即**不删**并**具名**说明是哪条：
+#     ① **活进程占用**：任一进程的 cwd / 打开文件落在该 worktree 内（macOS `lsof`；Linux `/proc`）；
+#        取不到读数 = 无法判定 = **不删**（读不到 ≠ 没人用）。
+#     ② **有未提交改动 / 未推送提交**（删了会丢工作）。
+#     ③ **该 worktree 上持有机器级重活锁**（`$HOME/.migao-heavy.lock` 的 `worktree`/`cwd` 落在里面）。
+#   并且本脚本的**自动**收尾改为「**先 dry-run 打印、再真删**」：第一段零删除、把将删清单与逐条拒绝原因
+#   打出来，第二段才 `--apply`。`--force` 只跳过第一段打印，**不**跳过任何拒绝条件（护栏不可绕过）。
+#   判据 = tests/unit_ci_workflows/test_dev_worktree_reap_guard.py（真进程 + 真 git 夹具 + 注入式红证）。
+#
 # 环境变量：
 #   MIGAO_WT_BASE=...  # 覆盖工作区根目录（默认仓库父目录下的 migao-wt/）
 #   FORCE_LOCK=1       # 忽略会话锁强制建工作区（危险，仅确认无活跃会话时用）
@@ -137,7 +150,8 @@ usage() {
   # v1.14（issue #5930）：新增「地雷 C：删除不许穿过软链」段（文件头 +18 行）⇒ 上限 46 → 80
   # S4（issue #6020）：文件头重写（预设迁出业务仓）⇒ 头部现 95 行，上限 80 → 100
   # v1.15（issue #6235）：新增「地雷 D：登记表 × 磁盘不一致」段（文件头 +20 行）⇒ 上限 100 → 120
-  sed -n 's/^# \{0,1\}//p' "$0" | sed -n '/^dev-worktree.sh/,/^===/p' | head -120
+  # v1.17（issue #7008）：新增「自动收尾的活占用保护」段（文件头 +12 行）⇒ 上限 120 → 140
+  sed -n 's/^# \{0,1\}//p' "$0" | sed -n '/^dev-worktree.sh/,/^===/p' | head -140
   exit 1
 }
 
@@ -540,6 +554,9 @@ cmd_hooks_install() {
 }
 
 cmd_add() {
+  local force=0
+  # issue #7008：`--force` 只跳过「自动收尾前的 dry-run 打印」，**不**跳过任何拒绝条件
+  if [ "${1:-}" = "--force" ]; then force=1; shift; fi
   [ $# -ge 1 ] || usage
   local branch="$1"
   local path="${2:-$WT_BASE/$(slug "$branch")}"
@@ -598,6 +615,12 @@ cmd_add() {
     exit 1
   fi
   # v1.11（issue #5422）：建工作区前把「已合并但没人收尾」的自动收掉（事件驱动，判定在 issue_lifecycle.py；失败不阻塞建工作区）
+  # 🔴 v1.17（issue #7008）：删除的**安全顺序** = ① 先 dry-run **打印**（零删除：将删清单 + 逐条拒绝原因：
+  #    谁在用 / 哪个文件 / 哪个锁）② 再 `--apply` 真删。`--force` 只跳过 ①，**不**跳过任何拒绝条件。
+  if [ "${force}" = "0" ]; then
+    bash "$REPO_ROOT/scripts/issue-lifecycle.sh" reap-merged --no-artifacts --except "$branch" \
+      || echo "⚠️  自动收尾（dry-run 预演）未完成（exit≠0 不阻塞建工作区；原因见上）"
+  fi
   bash "$REPO_ROOT/scripts/issue-lifecycle.sh" reap-merged --apply --no-artifacts --except "$branch" || echo "⚠️  自动收尾未完成（exit≠0 不阻塞建工作区；原因见上）"
   mkdir -p "$(dirname "$path")"
   if [ "$branch_is_local" = "1" ]; then

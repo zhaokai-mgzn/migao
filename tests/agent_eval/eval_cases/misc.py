@@ -3300,6 +3300,7 @@ _CASE_MC_134 = EvalCase(
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 # ── MC-137 [NORMAL] gate 的 bmini 打印口径守卫读**git 索引**而不是工作树：被 `.gitignore` 命中的旧产物不再让本机假红（issue #6594）（源: cases/misc.yml）──
 _CASE_MC_137 = EvalCase(
     id='MC-137',
@@ -3354,10 +3355,25 @@ _CASE_MC_133 = EvalCase(
     skip_reason='[backend-contract] 零 LLM 的确定性脚本判据（自足临时 git 仓库 + 真 bare origin + 真不可达 origin + AST 守卫），pytest 真跑、零网络（gh 由替换函数顶替），不进 agent-eval 冒烟',
     tags=['dev-tooling', 'self-proof', 'stale-snapshot', 'tri-state', 'ast-meta-guard', 'red-proof'],
 >>>>>>> origin/fix/6617-issue-lifecycle-snapshot
+=======
+# ── MC-133 [NORMAL] 删 worktree 前必须判「活进程占用 / 未提交未推送 / 持有重活锁」：自动收尾不再删掉正在被用的检出（issue #7008）（源: cases/misc.yml）──
+_CASE_MC_133 = EvalCase(
+    id='MC-133',
+    legacy_id='',
+    title='删 worktree 前必须判「活进程占用 / 未提交未推送 / 持有重活锁」：自动收尾不再删掉正在被用的检出（issue #7008）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['评测栈从某个 worktree 起服务（进程的 cwd 就在里面），PR 合并后跑下一次 dev-worktree.sh add —— 凭什么保证那个还活着的 worktree 不会被自动收尾删掉？'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·活进程占用 ⇒ 拒删并具名（会红）**：真子进程 `Popen(cwd=<worktree>)` ⇒ `classify_candidate` 判不可收尾、原因键 `活占用`，输出含 pid / `cwd` / 命中路径。执行点 = tests/unit_ci_workflows/test_dev_worktree_reap_guard.py::test_live_process_cwd_inside_worktree_refuses_reap', '🔴 **判据 2·有未提交改动 / 未推送提交 ⇒ 拒删（会红，单变量对照）**：写一个未跟踪文件 ⇒ `有未提交/未推送内容` 并指名该文件；本地多一次提交 ⇒ 报「未推送提交」；把它推上去 ⇒ 同一条判据放行。执行点 = 同文件::test_uncommitted_change_refuses_reap / ::test_unpushed_commit_refuses_reap_and_push_clears_it', '🔴 **判据 3·干净且无占用 ⇒ 允许（负控，会红）**：干净、已推送、无进程、无锁 ⇒ `可收尾`（防「一律拒删」的假修把自动收尾挡死）。执行点 = 同文件::test_clean_unoccupied_worktree_is_allowed', '🔴 **判据 4·持有中的机器级重活锁 ⇒ 拒删（含两条负控）**：锁的 `worktree` 落在候选内 ⇒ `持有重活锁` 并指名 name/pid/落点；锁在别的工作区 / 持有者已退出（陈旧锁）⇒ 放行。执行点 = 同文件::test_heavy_lock_held_on_worktree_refuses_reap', '🔴 **判据 5·端到端（真脚本 + 真 git 夹具 + 真进程）**：`reap-merged --apply` 与 `dev-worktree.sh add` 在占用存在时都**不删**工作区/本地分支/远程分支；去掉占用后同一命令**仍会真删**（对照臂，证明没把功能删瘫）；`add` 的输出里「dry-run（零删除）」必须先于「APPLY（真删）」。执行点 = 同文件::test_reap_apply_keeps_worktree_in_use_and_reaps_it_after / ::test_dev_worktree_add_does_not_delete_a_worktree_in_use', '🔴 **判据 6·类级元守卫（§23，会红）**：扫 `scripts/*.py` + `scripts/*.sh` 的**全部**删 worktree 入口，与登记表**双向相等**（新入口未登记 ⇒ 红；台账里有已消失的入口 ⇒ 红）；登记为**自动面**的 `scripts/issue_lifecycle.py::cmd_reap_merged` 必须真的含三条活占用保护调用。红证 = 注入一个未登记的删除入口 / 从 `classify_candidate` 摘掉 `live_occupants` ⇒ 两者各自单独红。执行点 = 同文件::test_every_worktree_delete_entry_is_registered / ::test_class_guard_goes_red_when_liveness_check_is_removed / ::test_class_guard_goes_red_when_a_new_delete_entry_appears_unregistered', '🔴 **判别力自证（注入式红证）**：把 `live_occupants` 调用从源码副本里物理摘掉 ⇒ 同一夹具变「可收尾」（判据 1 必红）；未变异的真模块在同一夹具上仍拒删（反向对照）。执行点 = 同文件::test_red_proof_removing_live_occupancy_detection_makes_it_reapable', '**边界（照实登记，§19.1）**：① 探针读不到（无 `/proc` 且无 `lsof`）⇒ 判「无法判定」并拒删；但**判不了**「有进程却因权限看不到」（macOS 上别的用户的进程默认不可见）。② 无 upstream 且提交不在任何 `origin/*` 引用上 ⇒ 按「未推送」拒删（fail-closed：远端分支已删并 prune 的 worktree 会被漏收 —— **有意收窄**，出口 = 人工 `git worktree remove`）。③ 不改任何门禁的通过条件、不新增豁免。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性脚本判据（真 git 仓库 + 真 bare origin + 真 worktree + 真子进程 + 注入式红证），pytest 真跑、零网络，不进 agent-eval 冒烟',
+    tags=['worktree', 'reap', 'liveness', 'fail-closed', 'tooling', 'red-proof'],
+>>>>>>> origin/fix/7008-worktree-reap-guard
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 =======
@@ -3365,6 +3381,8 @@ _CASE_MC_133 = EvalCase(
 >>>>>>> origin/fix/7731-image-timeout-copy
 =======
 >>>>>>> origin/fix/6617-issue-lifecycle-snapshot
+=======
+>>>>>>> origin/fix/7008-worktree-reap-guard
 )
 
 CASES = (
@@ -3550,6 +3568,7 @@ CASES = (
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
     _CASE_MC_137,
 =======
     _CASE_MC_135,
@@ -3560,4 +3579,7 @@ CASES = (
 =======
     _CASE_MC_133,
 >>>>>>> origin/fix/6617-issue-lifecycle-snapshot
+=======
+    _CASE_MC_133,
+>>>>>>> origin/fix/7008-worktree-reap-guard
 )

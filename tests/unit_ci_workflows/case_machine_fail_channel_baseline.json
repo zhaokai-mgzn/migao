@@ -1229,6 +1229,7 @@
     },
     {
 <<<<<<< HEAD
+<<<<<<< HEAD
       "sha": "pending-pr-8517",
       "date": "2026-11-03",
       "no_channel_total": 0,
@@ -1241,6 +1242,13 @@
       "backend_contract_scoring_zero": 280,
       "note": "issue #6617（issue-lifecycle 收尾自证改读强制现取真值）新增 1 条 [backend-contract] 用例 MC-133 ⇒ 读数按合并当时的 main 现值重锚。机器判红通道 = tests/unit_ci_workflows/test_issue_lifecycle_selfproof.py（9 条，含「快照说不一致、真值一致」与「读不到判 3」）。用例不进 agent-eval，真债务 no_channel_total 仍为 0。"
 >>>>>>> origin/fix/6617-issue-lifecycle-snapshot
+=======
+      "sha": "pending-pr-8509",
+      "date": "2026-11-03",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 280,
+      "note": "issue #7008（worktree 收尾先判活占用）新增 [backend-contract] 用例 ⇒ 读数按合并当时的 main 现值重锚。机器判红通道 = test_dev_worktree_reap_guard.py（活占用/未提交/重活锁三条拒绝 + 负控）。真债务 no_channel_total 仍为 0。"
+>>>>>>> origin/fix/7008-worktree-reap-guard
     }
   ]
 }

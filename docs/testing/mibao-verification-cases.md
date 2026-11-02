@@ -6946,6 +6946,7 @@
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 ### MC-137. gate 的 bmini 打印口径守卫读**git 索引**而不是工作树：被 `.gitignore` 命中的旧产物不再让本机假红（issue #6594） 🔵
 ```
 你: 我只在本机跑过一次 ai-agent-service 的覆盖率，为什么 gate 的 bmini 腿就说我在打印口径里写死了 384？CI 明明是绿的。
@@ -7003,6 +7004,22 @@
 ```
 溯源: 2026-11-03 新增（issue #6617，承接 #6261 / PR #6614 登记的「未复现」形态）。取号 = `python3 scripts/next_case_id.py MC` 现取（main 001-098 · 100-132 ⇒ **MC-133**）。修复 = ① `remote_heads_refresh()` 具名现取入口（自证唯一允许的远程真值入口）；② `verify_clean` 三态（`True` / `False` / `None` → `exit 3`）且默认强制现取；③ 批量路径 `heads=` 传**一次**现取读数（`NS-3` 不退化）；④ 删前读数 / 写决策也改为现取；⑤ `close` dry-run 审计面。 ｜ tags: dev-tooling, self-proof, stale-snapshot, tri-state, ast-meta-guard, red-proof
 >>>>>>> origin/fix/6617-issue-lifecycle-snapshot
+=======
+### MC-133. 删 worktree 前必须判「活进程占用 / 未提交未推送 / 持有重活锁」：自动收尾不再删掉正在被用的检出（issue #7008） 🔵
+```
+你: 评测栈从某个 worktree 起服务（进程的 cwd 就在里面），PR 合并后跑下一次 dev-worktree.sh add —— 凭什么保证那个还活着的 worktree 不会被自动收尾删掉？
+数据: 🔴 **判据 1·活进程占用 ⇒ 拒删并具名（会红）**：真子进程 `Popen(cwd=<worktree>)` ⇒ `classify_candidate` 判不可收尾、原因键 `活占用`，输出含 pid / `cwd` / 命中路径。执行点 = tests/unit_ci_workflows/test_dev_worktree_reap_guard.py::test_live_process_cwd_inside_worktree_refuses_reap
+数据: 🔴 **判据 2·有未提交改动 / 未推送提交 ⇒ 拒删（会红，单变量对照）**：写一个未跟踪文件 ⇒ `有未提交/未推送内容` 并指名该文件；本地多一次提交 ⇒ 报「未推送提交」；把它推上去 ⇒ 同一条判据放行。执行点 = 同文件::test_uncommitted_change_refuses_reap / ::test_unpushed_commit_refuses_reap_and_push_clears_it
+数据: 🔴 **判据 3·干净且无占用 ⇒ 允许（负控，会红）**：干净、已推送、无进程、无锁 ⇒ `可收尾`（防「一律拒删」的假修把自动收尾挡死）。执行点 = 同文件::test_clean_unoccupied_worktree_is_allowed
+数据: 🔴 **判据 4·持有中的机器级重活锁 ⇒ 拒删（含两条负控）**：锁的 `worktree` 落在候选内 ⇒ `持有重活锁` 并指名 name/pid/落点；锁在别的工作区 / 持有者已退出（陈旧锁）⇒ 放行。执行点 = 同文件::test_heavy_lock_held_on_worktree_refuses_reap
+数据: 🔴 **判据 5·端到端（真脚本 + 真 git 夹具 + 真进程）**：`reap-merged --apply` 与 `dev-worktree.sh add` 在占用存在时都**不删**工作区/本地分支/远程分支；去掉占用后同一命令**仍会真删**（对照臂，证明没把功能删瘫）；`add` 的输出里「dry-run（零删除）」必须先于「APPLY（真删）」。执行点 = 同文件::test_reap_apply_keeps_worktree_in_use_and_reaps_it_after / ::test_dev_worktree_add_does_not_delete_a_worktree_in_use
+数据: 🔴 **判据 6·类级元守卫（§23，会红）**：扫 `scripts/*.py` + `scripts/*.sh` 的**全部**删 worktree 入口，与登记表**双向相等**（新入口未登记 ⇒ 红；台账里有已消失的入口 ⇒ 红）；登记为**自动面**的 `scripts/issue_lifecycle.py::cmd_reap_merged` 必须真的含三条活占用保护调用。红证 = 注入一个未登记的删除入口 / 从 `classify_candidate` 摘掉 `live_occupants` ⇒ 两者各自单独红。执行点 = 同文件::test_every_worktree_delete_entry_is_registered / ::test_class_guard_goes_red_when_liveness_check_is_removed / ::test_class_guard_goes_red_when_a_new_delete_entry_appears_unregistered
+数据: 🔴 **判别力自证（注入式红证）**：把 `live_occupants` 调用从源码副本里物理摘掉 ⇒ 同一夹具变「可收尾」（判据 1 必红）；未变异的真模块在同一夹具上仍拒删（反向对照）。执行点 = 同文件::test_red_proof_removing_live_occupancy_detection_makes_it_reapable
+数据: **边界（照实登记，§19.1）**：① 探针读不到（无 `/proc` 且无 `lsof`）⇒ 判「无法判定」并拒删；但**判不了**「有进程却因权限看不到」（macOS 上别的用户的进程默认不可见）。② 无 upstream 且提交不在任何 `origin/*` 引用上 ⇒ 按「未推送」拒删（fail-closed：远端分支已删并 prune 的 worktree 会被漏收 —— **有意收窄**，出口 = 人工 `git worktree remove`）。③ 不改任何门禁的通过条件、不新增豁免。
+跳过: [backend-contract] 零 LLM 的确定性脚本判据（真 git 仓库 + 真 bare origin + 真 worktree + 真子进程 + 注入式红证），pytest 真跑、零网络，不进 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #7008）。病（2026-10-16 实测）：`:8101` 的 ai-agent 评测实例 `/health` 200，而 `lsof -p <pid> | grep cwd` 指向**已被自动收尾删掉**的 worktree（`migao-wt/6985-confirm-execute/backend/ai-agent-service`）⇒ 创建会话 HTTP 500（惰性 import 在已删 cwd 上失败），症状把人引向产品代码。根因 = 自动收尾只判 GitHub 侧（有已合并 PR 且无 open PR），**从不问本机有没有进程在用**。落码 = scripts/issue_lifecycle.py 的 `classify_candidate` 新增三条 fail-closed 拒绝条件（活占用 / 未提交或未推送 / 持有中的机器级重活锁；**读不到读数 = 无法判定 = 不删**）＋ `cmd_reap_merged` 一次取数并打印读数与逐条拒绝原因；scripts/dev-worktree.sh 的自动收尾改为「**先 dry-run 打印、再真删**」（`--force` 只跳过打印，**不**跳过拒绝条件）。取号 = MC-133（`python3 scripts/next_case_id.py MC` 现取：main 001-098 · 100-132 + 本工作区 099 ⇒ 返回 MC-133）。红证 = 把 `live_occupants` 调用物理摘掉 ⇒ 同一夹具变「可收尾」（判据 1 必红）；恢复后全绿。类级元守卫（§23）= 扫 `scripts/*.py` + `scripts/*.sh` 的全部删 worktree 入口 ⇄ 登记表**双向相等**（未登记即红），自动面必须含三条保护调用 —— 注入式红证见判据 6。 ｜ tags: worktree, reap, liveness, fail-closed, tooling, red-proof
+>>>>>>> origin/fix/7008-worktree-reap-guard
 
 ## 商家入驻域（7 case）
 
@@ -14777,6 +14794,7 @@
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 - MC-137: gate 的 bmini 打印口径守卫读**git 索引**而不是工作树：被 `.gitignore` 命中的旧产物不再让本机假红（issue #6594）
 =======
 - MC-135: 生图失败归因必须读供应商 message 正文：400 InvalidParameter 的「样图读不到」与「模型不接」分成两格（issue #7719）
@@ -14787,6 +14805,9 @@
 =======
 - MC-133: issue_lifecycle 自证不得读进程内快照（issue #6617）：远程面强制现取 / 读不到 ⇒ 三态 3 / 批量路径只许一次现取（NS-3）
 >>>>>>> origin/fix/6617-issue-lifecycle-snapshot
+=======
+- MC-133: 删 worktree 前必须判「活进程占用 / 未提交未推送 / 持有重活锁」：自动收尾不再删掉正在被用的检出（issue #7008）
+>>>>>>> origin/fix/7008-worktree-reap-guard
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
