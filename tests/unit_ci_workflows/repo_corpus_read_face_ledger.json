@@ -35,7 +35,7 @@
         "frontend/admin-web/src/lib/print-media.json"
       ],
       "why": "打印像素口径的单一真值：出图链路零像素字面量（C2）+ **全仓** `384` 只许出现在介质矩阵（C2b，issue #5052 CP-1）。C2b 的射程是**整个 frontend + backend** ⇒ 读工作树时任何本地产物都能让它假红（#6594 的发作点）。",
-      "case_ids": ["BM-010", "MC-134"]
+      "case_ids": ["BM-010", "MC-137"]
     }
   ],
   "exceptions": [],
