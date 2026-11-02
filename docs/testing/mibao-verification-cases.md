@@ -6945,6 +6945,7 @@
 
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 ### MC-137. gate 的 bmini 打印口径守卫读**git 索引**而不是工作树：被 `.gitignore` 命中的旧产物不再让本机假红（issue #6594） 🔵
 ```
 你: 我只在本机跑过一次 ai-agent-service 的覆盖率，为什么 gate 的 bmini 腿就说我在打印口径里写死了 384？CI 明明是绿的。
@@ -6987,6 +6988,21 @@
 ```
 溯源: 2026-11-03 新增（issue #7731）。取号 MC-136（`python3 scripts/next_case_id.py MC` 现取：main 001-098,100-132,134 + 在飞 PR #8509/#8508 占 133、#8503 占 135 ⇒ 本包让号到 136；MC-099 历史空档不回填）。权威层选择 = ai-agent（唯一真正等供应商的一层）：`IMAGE_GEN_TIMEOUT` 180→240（实测 121s/145s，旧值只余 ~20%）；新增 GET /api/internal/images/deadline 下发 deadline_ms；admin-api 删掉 GENERATE_READ_TIMEOUT_MS（200000），生成前现取并按 deadline+传输余量设读超时，取不到 ⇒ 不设上限；新增 GET /api/admin/products/ai-images/estimate 转发 estimated_deadline_ms；前端删掉 timeout: 210000，imageGenTimeoutMs(deadline) = deadline + 120s 浏览器余量；文案改成实测区间（单张 2~3 分钟 / 整套 6~8 分钟）+ 由权威上限算出的「最长约」，生成中显示已用时、超 30 秒补「还在生成」。⚠️ 未闭合（照实登记）：① 线上 `.env.ai-agent` 由运维人工维护，若它显式钉了 IMAGE_GEN_TIMEOUT=180，三层会跟着 180 走（页面文案自动显示「最长约 3 分钟」，不会说谎），但长尾余量要等运维改配置；② 本用例不跑真实生图（零生成费用），供应商真实长尾仍以线上读数为准。 ｜ tags: single-source, timeout, image-generation, copy-standard, red-proof
 >>>>>>> origin/fix/7731-image-timeout-copy
+=======
+### MC-133. issue_lifecycle 自证不得读进程内快照（issue #6617）：远程面强制现取 / 读不到 ⇒ 三态 3 / 批量路径只许一次现取（NS-3） 🔵
+```
+你: 收尾自证读的是进程内快照 `_REMOTE_HEADS` ⇒「快照先被读过、远程才被删」时，自证拿删除前的值判「还在不在」，会报出与最终态**相反**的结论 —— 凭什么相信「自证干净」这四个字？
+数据: 🔴 **判据 1·自证读真值（实例，会红）**：夹具 = 真 bare origin + 真仓库；顺序 = 先读快照（分支在）→ 再删远程（快照不刷新）⇒ `verify_clean` 必须判 `True`；读快照的实现必报 `False`。执行点 = tests/unit_ci_workflows/test_issue_lifecycle_selfproof.py::test_selfproof_reads_the_truth_not_the_snapshot
+数据: 🔴 **判据 2·读不到 ⇒ 无法判定（三态）**：origin **真不可达**（不是 mock）⇒ 模块级自证给 `None`（既非 True 也非 False）；CLI `finish` 出口 `exit 3` 且**不**打印「✅ 收尾完成」（`3` 不得当 `0` 读）。执行点 = 同文件::test_unreadable_remote_is_undecidable_not_success + ::test_finish_exits_3_when_the_selfproof_cannot_read
+数据: 🔴 **判据 3·红证（注入式）**：把 `verify_clean` 的现取那一行变异成 `remote_heads`（读快照）⇒ 判据 1 的同一夹具**必红**（True → False），变异副本带语法自检。执行点 = 同文件::test_reverting_the_selfproof_to_the_snapshot_turns_it_red
+数据: 🔴 **判据 4·类级元守卫（AST，防「下一个删除路径又漏」）**：① `verify_clean` 必须调 `remote_heads_refresh` 且不得调 `remote_heads` / `remote_branch_gone`；② 传给它的 `heads=` 只许来自现取（直接调用或同函数绑定）；③ 任何调 `delete_remote_branch` / `batch_delete_remote_branches` 的函数必须同时调 `verify_clean` —— **新增删除路径忘了自证即红**。含判别力自证：四种坏形态在合成语料上各自判红。执行点 = 同文件::test_class_guard_holds_on_the_real_module + ::test_class_guard_has_discriminating_power
+数据: 🔴 **判据 5·审计面**：`close` 的 dry-run 必须显示「这一条会用什么依据关」= 判定 → `gh issue close --reason` 映射（delivered→completed / superseded→not planned）+ **证据原文（不再截断 110 字）** + 未实装登记闸门读数，且**零 gh 调用**。执行点 = 同文件::test_close_dry_run_shows_the_basis_for_each_close
+数据: 🔴 **判据 6·往返不变式（NS-3 不许退化）**：批量调用方传现取读数 ⇒ 自证 **0 次** `ls-remote`；默认自证 **恰好 1 次**。执行点 = 同文件::test_selfproof_round_trips_are_constant
+数据: **边界（照实登记，§19.1）**：① 判据判不了「调用方在生产环境真的跑过」——它只保证接线锚在；行为面由实例判据 + 真 CLI 出口承担；② AST 守卫射程 = 本文件内的函数调用形态（`getattr` / 变量拼接不在面内）；③ 不改任何门禁的通过条件、不新增豁免。
+跳过: [backend-contract] 零 LLM 的确定性脚本判据（自足临时 git 仓库 + 真 bare origin + 真不可达 origin + AST 守卫），pytest 真跑、零网络（gh 由替换函数顶替），不进 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #6617，承接 #6261 / PR #6614 登记的「未复现」形态）。取号 = `python3 scripts/next_case_id.py MC` 现取（main 001-098 · 100-132 ⇒ **MC-133**）。修复 = ① `remote_heads_refresh()` 具名现取入口（自证唯一允许的远程真值入口）；② `verify_clean` 三态（`True` / `False` / `None` → `exit 3`）且默认强制现取；③ 批量路径 `heads=` 传**一次**现取读数（`NS-3` 不退化）；④ 删前读数 / 写决策也改为现取；⑤ `close` dry-run 审计面。 ｜ tags: dev-tooling, self-proof, stale-snapshot, tri-state, ast-meta-guard, red-proof
+>>>>>>> origin/fix/6617-issue-lifecycle-snapshot
 
 ## 商家入驻域（7 case）
 
@@ -14760,6 +14776,7 @@
 - MC-134: Java 定点判据的读数与空跑（issue #6495 的类级固化）：`.txt` 摘要对 @Nested 类恒报 0（误诊源）+ `外层类#嵌套方法` 真·空跑（exit 0）⇒ 读数只信 XML 且必须大于 0
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 - MC-137: gate 的 bmini 打印口径守卫读**git 索引**而不是工作树：被 `.gitignore` 命中的旧产物不再让本机假红（issue #6594）
 =======
 - MC-135: 生图失败归因必须读供应商 message 正文：400 InvalidParameter 的「样图读不到」与「模型不接」分成两格（issue #7719）
@@ -14767,6 +14784,9 @@
 =======
 - MC-136: 生图等待上限只有一个权威（ai-agent 的 IMAGE_GEN_TIMEOUT）：admin-api 读超时与前端等待/文案都从它派生；文案按实测区间说、超 30 秒给「还在生成」（issue #7731）
 >>>>>>> origin/fix/7731-image-timeout-copy
+=======
+- MC-133: issue_lifecycle 自证不得读进程内快照（issue #6617）：远程面强制现取 / 读不到 ⇒ 三态 3 / 批量路径只许一次现取（NS-3）
+>>>>>>> origin/fix/6617-issue-lifecycle-snapshot
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

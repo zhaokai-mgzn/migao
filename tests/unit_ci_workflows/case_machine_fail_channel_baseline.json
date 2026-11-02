@@ -1228,11 +1228,19 @@
       "note": "issue #6495（Java 定点判据的读数与空跑：`.txt` 摘要对 @Nested 恒报 0 + `-Dtest=<外层类>#<@Nested 内方法>` 真空跑）新增 1 条 [backend-contract] 用例 MC-134（取号 133 → 134 是「后合入者让号」：5 个在飞 PR 同占 MC-133）⇒ 读数按合并当时的 main 现值重锚。机器判红通道 = tests/unit_ci_workflows/test_java_nested_pointed_run_guard.py。用例不进 agent-eval（expectations 为空），真债务 no_channel_total 仍为 0。"
     },
     {
+<<<<<<< HEAD
       "sha": "pending-pr-8517",
       "date": "2026-11-03",
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 280,
       "note": "issue #6594 的**取号事故补丁**：该修复的用例条目首次以 MC-134 起草，合入时与 #8510 撞号（#8510 的 Java 定点判据用例先占了 MC-134，claim = 8510-MC-134.json），两条都以 - id: 追加在 misc.yml 末尾 ⇒ 分支更新时本条目被静默吞掉（main 上 grep 语料读面 = 0），而 CI 全绿（判据只查「声明的 id 存在」，不查「它指的还是不是自己那条」）。本 PR 补回该条目并改用例号 MC-137（现取最大 136 + 1；MC-099 是刻意的历史空档，按纪律不回填）⇒ 读数 279 → 280。机器判红通道 = tests/unit_ci_workflows/test_bmini_corpus_read_face.py + tests/unit_ci_workflows/test_repo_corpus_read_face_ledger.py。用例不进 agent-eval，真债务 no_channel_total 仍为 0。"
+=======
+      "sha": "pending-pr-8508",
+      "date": "2026-11-03",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 280,
+      "note": "issue #6617（issue-lifecycle 收尾自证改读强制现取真值）新增 1 条 [backend-contract] 用例 MC-133 ⇒ 读数按合并当时的 main 现值重锚。机器判红通道 = tests/unit_ci_workflows/test_issue_lifecycle_selfproof.py（9 条，含「快照说不一致、真值一致」与「读不到判 3」）。用例不进 agent-eval，真债务 no_channel_total 仍为 0。"
+>>>>>>> origin/fix/6617-issue-lifecycle-snapshot
     }
   ]
 }
