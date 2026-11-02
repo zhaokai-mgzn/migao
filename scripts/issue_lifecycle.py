@@ -1091,7 +1091,10 @@ def worktree_git_hygiene(path: Path) -> str | None:
         except ValueError:
             return "**无法判定**未推送提交（rev-list 读数非数字）⇒ fail-closed"
         if ahead:
-            tip = git("log", "-1", "--format=%h %s", f"{ref}..HEAD", cwd=path, check=False).stdout.strip()
+            tip_proc = git("log", "-1", "--format=%h %s", f"{ref}..HEAD", cwd=path, check=False)
+            # 判 rc 再采信 stdout（`check=False` 时 stdout 可能是 git 的**回显**而不是数据 —— #5430 同族；
+            # 取不到就当「取不到」，不把进程对象的 stdout 直接当证据）。
+            tip = tip_proc.stdout.strip() if tip_proc.returncode == 0 else ""
             return f"{ahead} 个**未推送提交**（{ref}..HEAD；最新：{tip or '取不到'}）"
         return None
     loose = git("log", "--oneline", "HEAD", "--not", "--remotes", cwd=path, check=False)

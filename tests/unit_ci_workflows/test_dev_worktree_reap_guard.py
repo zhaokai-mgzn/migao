@@ -125,7 +125,10 @@ def _classify(mod, path: Path, branch: str, *, merged: bool = True, occupancy=No
 
 def _snapshot(mod):
     snap = mod.occupancy_snapshot()
-    assert snap is not None, "占用探针不可用（取不到 /proc 或 lsof）—— 判据必须报「无法判定」，不得静默当没人用"
+    assert isinstance(snap, list), (
+        "占用探针不可用（取不到 /proc 或 lsof ⇒ 契约值是 None）—— 判据必须报「无法判定」，"
+        f"不得静默当没人用：{snap!r}")
+    assert all(isinstance(o, mod.Occupant) for o in snap), "快照条目必须都是 Occupant（探针的返回契约）"
     return snap
 
 
@@ -147,7 +150,8 @@ def _wait_occupant(mod, path: Path, pid: int, timeout: float = 20.0):
     while time.time() < deadline:
         snap = _snapshot(mod)
         hits = mod.live_occupants(path, snap)
-        assert hits is not None
+        assert isinstance(hits, list), (
+            f"占用面无法判定（契约值是 None，实际 {hits!r}）⇒ 不得把「读不到」当「没人用」：{path}")
         if any(h.pid == pid for h in hits):
             return snap
         last = hits
@@ -162,7 +166,8 @@ def _wait_no_occupant(mod, path: Path, timeout: float = 20.0):
     while time.time() < deadline:
         snap = _snapshot(mod)
         hits = mod.live_occupants(path, snap)
-        assert hits is not None
+        assert isinstance(hits, list), (
+            f"占用面无法判定（契约值是 None，实际 {hits!r}）⇒ 「干净」不许由无法判定推出：{path}")
         if not hits:
             return snap
         time.sleep(0.2)
@@ -423,10 +428,16 @@ def test_dev_worktree_add_does_not_delete_a_worktree_in_use(tmp_path: Path):
         assert stale.is_dir(), "**add 不得删掉正被活进程使用的 worktree**（这就是 #7008 的病灶）"
         assert f"pid {holder.pid}" in proc.stdout
         assert "活占用" in proc.stdout
-        # 安全顺序：先 dry-run 打印（零删除）再 APPLY 真删 —— 两段都必须在输出里可见
-        assert "dry-run（零删除）" in proc.stdout, f"自动收尾缺「先 dry-run 打印」这一段：\n{proc.stdout}"
-        assert "APPLY（真删）" in proc.stdout, f"自动收尾少了真删那一段：\n{proc.stdout}"
-        assert proc.stdout.index("dry-run（零删除）") < proc.stdout.index("APPLY（真删）")
+        # 安全顺序：先 dry-run 预演（零删除）再真删 —— 两段都必须在输出里可见。
+        # 🔴 锚用**模式令牌 / CLI 旗标**（`dry-run` / `APPLY`：issue_lifecycle.py 的 mode 常量、
+        #    dev-worktree.sh 的两次 argv），**不拿中文文案当结构位置**（issue #6802 同族：同一句文案
+        #    出现在更靠前的位置就会把位置判据带偏）。argv 的静态顺序判据见
+        #    test_add_runs_dry_run_before_apply_and_documents_force（锚 = `reap-merged --no-artifacts` /
+        #    `reap-merged --apply`，同样是代码面旗标）。
+        assert proc.stdout.count("dry-run") == 1, f"自动收尾缺「dry-run 预演」这一段：\n{proc.stdout}"
+        assert proc.stdout.count("APPLY") == 1, f"自动收尾缺「APPLY 真删」这一段：\n{proc.stdout}"
+        assert proc.stdout.index("dry-run") < proc.stdout.index("APPLY"), (
+            f"顺序错：必须先 dry-run 预演、再 APPLY 真删（顺序即安全顺序）：\n{proc.stdout}")
     finally:
         _stop(holder)
 
