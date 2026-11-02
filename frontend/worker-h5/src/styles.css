@@ -917,3 +917,42 @@ a.wh5-machine__back:active { color: var(--wh5-machine-ink); }
 .no-flex-gap .wh5-finished-label .wh5-fl-actions > * + * {
   margin-left: 2mm;
 }
+
+/* ── 打印一瞬：只留纸面（终端是**抓屏**打印，见 shipment-app.mjs 的 printLabel）───────────────
+   2026-11-01 商米 V2s 真机（v1.0.29）：打出来的纸上出现了**屏幕的卡片边框**，地址两行叠在一起。
+   根因：终端 `PagePrinter` 拿到的是「标签 scrollIntoView 之后、对窗口 PixelCopy 再裁剪」的画面
+   —— 也就是**屏幕**，不是 `@media print` 那套版面。抓屏时页面若还在滚动/重排，就会抓到跨两帧的画面。
+   ⇒ 调 `win.print()` 之前套上这个 class：纸面钉在视口左上角（不用滚）、白底无边框、其余元素
+   全部 `display:none`（不是 visibility：display:none 不占版面，也不会留下空白区域）。
+   撤 class 由 printLabel 在 1200ms 后做（必须晚于原生的那一次 PixelCopy）。 */
+html.wh5-printing,
+html.wh5-printing body {
+  background: #fff !important;
+}
+html.wh5-printing body > *:not(#shipment-root) {
+  display: none !important;
+}
+html.wh5-printing #shipment-root > *:not(#wh5-ship-label-sheet) {
+  display: none !important;
+}
+html.wh5-printing #wh5-ship-label-sheet {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 50mm;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: #fff;
+  box-shadow: none;
+  z-index: 2147483647;
+}
+html.wh5-printing #wh5-ship-label-sheet > *:not(#wh5-ship-label) {
+  display: none !important;
+}
+html.wh5-printing #wh5-ship-label {
+  margin: 0;
+  border: 0;
+  box-shadow: none;
+}
