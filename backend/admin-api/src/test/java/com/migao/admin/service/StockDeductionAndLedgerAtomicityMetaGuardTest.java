@@ -89,9 +89,47 @@ class StockDeductionAndLedgerAtomicityMetaGuardTest {
 
     // ────────────────────────────────────────────── 形态
 
-    /** SET 子句（`UPDATE x SET … ` 到 `WHERE` 之间）—— 只在这一段上判「加减」，免得被 RETURNING 里的算式误判。 */
-    private static final Pattern SET_CLAUSE = Pattern.compile(
-            "(?i)\\bSET\\b(.*?)\\bWHERE\\b", Pattern.DOTALL);
+    /**
+     * SET 子句（`UPDATE x SET … ` 到 `WHERE` 之间）—— 只在这一段上判「加减」，免得被 RETURNING 里的算式误判。
+     *
+     * 🔴 #8356：原实现是正则 `(?i)\\bSET\\b(.*?)\\bWHERE\\b` + {@code Pattern.DOTALL}。{@code .*?} 在
+     * DOTALL 下由 {@code java.util.regex} 以**递归**匹配，被扫语料一长（长 SQL / 长行）递归深度就打穿 JVM 栈
+     * ⇒ 抛 {@code StackOverflowError}（**不是** OOM）。实证：PR #8346 / PR #8214 的 {@code admin-api unit tests}
+     * 在 5500+ 个测试里只因这一条随机红，且与它们各自的改动无关。
+     *
+     * 改用**确定性扫描**（{@link #indexOfWord} + {@code substring}）：无回溯、无递归，复杂度 O(n)，
+     * 语义与 `\\bSET\\b … \\bWHERE\\b` 逐字等价（只在第一个 SET 词边界与随后的第一个 WHERE 词边界之间取段）。
+     */
+    private static String setClause(String sql) {
+        int setIdx = indexOfWord(sql, "SET", 0);
+        if (setIdx < 0) {
+            return sql;
+        }
+        int from = setIdx + "SET".length();
+        int whereIdx = indexOfWord(sql, "WHERE", from);
+        return whereIdx >= 0 ? sql.substring(from, whereIdx) : sql.substring(from);
+    }
+
+    /** 忽略大小写的**词边界**查找（等价于正则 {@code \\bWORD\\b}，但不用正则 ⇒ 无回溯）。 */
+    private static int indexOfWord(String haystack, String word, int from) {
+        int len = word.length();
+        for (int i = Math.max(0, from); i + len <= haystack.length(); i++) {
+            if (!haystack.regionMatches(true, i, word, 0, len)) {
+                continue;
+            }
+            boolean leftOk = i == 0 || !isWordChar(haystack.charAt(i - 1));
+            int end = i + len;
+            boolean rightOk = end >= haystack.length() || !isWordChar(haystack.charAt(end));
+            if (leftOk && rightOk) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static boolean isWordChar(char c) {
+        return Character.isLetterOrDigit(c) || c == '_';
+    }
     /** SET 子句里「stock = … - …」= 扣减型入口（现取，不写死方法名表）。 */
     private static final Pattern DEDUCT_STOCK_WRITE = Pattern.compile(
             "stock\\s*=\\s*[^;]*?\\s-\\s*\\#\\{", Pattern.CASE_INSENSITIVE);
@@ -262,8 +300,7 @@ class StockDeductionAndLedgerAtomicityMetaGuardTest {
 
     /** 扣减写面的两条纪律（真语料给整条 SQL，合成语料给片段 —— 同一套判定）。 */
     private static List<String> deductViolations(String sql, String display) {
-        Matcher set = SET_CLAUSE.matcher(sql);
-        String clause = set.find() ? set.group(1) : sql;
+        String clause = setClause(sql);
         List<String> violations = new ArrayList<>();
         if (!sql.contains(">=")) {
             violations.add(display + " 无下限谓词（并发下会扣成负数 / 需靠 GREATEST 钳 0 掩盖）");
@@ -327,8 +364,7 @@ class StockDeductionAndLedgerAtomicityMetaGuardTest {
 
     /** 该写面是否为「扣减」：只在 SET 子句里判 `stock = … - …`（RETURNING 里的算式不算）。 */
     private static boolean isStockDeduct(String sql) {
-        Matcher set = SET_CLAUSE.matcher(sql);
-        String clause = set.find() ? set.group(1) : sql;
+        String clause = setClause(sql);
         return DEDUCT_STOCK_WRITE.matcher(clause).find();
     }
 
