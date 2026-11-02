@@ -1228,18 +1228,20 @@ public class InboundOrderService {
     private InboundOrder insertWithFreshInboundNo(InboundOrder order) {
         // 主键由服务端生成：手写 INSERT 不走 MyBatis-Plus 的 ASSIGN_UUID（单号同一批写面同口径）
         order.setId(UUID.randomUUID().toString().replace("-", ""));
-        for (int attempt = 0; attempt < INBOUND_NO_ATTEMPTS; attempt++) {
-            String candidate = attempt == 0 && INBOUND_NO_PROBE_FIRST_CANDIDATE != null
-                    ? INBOUND_NO_PROBE_FIRST_CANDIDATE
-                    : generateInboundNo();
-            order.setInboundNo(candidate);
-            if (inboundOrderMapper.insertIgnoreInboundNoConflict(order) == 1) {
-                return order;
-            }
-            log.warn("入库单号刚被占用，重新生成: tenant={}, candidate={}", order.getTenantId(), candidate);
+        // 重试骨架在 AtomicNoAllocator（与出库建单取号**同一份实现**，不各写一份循环）
+        String taken = AtomicNoAllocator.take(INBOUND_NO_ATTEMPTS, "入库单号", order.getTenantId(),
+                attempt -> attempt == 0 && INBOUND_NO_PROBE_FIRST_CANDIDATE != null
+                        ? INBOUND_NO_PROBE_FIRST_CANDIDATE
+                        : generateInboundNo(),
+                candidate -> {
+                    order.setInboundNo(candidate);
+                    return inboundOrderMapper.insertIgnoreInboundNoConflict(order) == 1;
+                });
+        if (taken == null) {
+            throw new BusinessException("INBOUND_NO_EXHAUSTED",
+                    "入库单号连续 " + INBOUND_NO_ATTEMPTS + " 次生成失败（当天号段疑似被占满），请稍后重试或联系管理员", 409);
         }
-        throw new BusinessException("INBOUND_NO_EXHAUSTED",
-                "入库单号连续 " + INBOUND_NO_ATTEMPTS + " 次生成失败（当天号段疑似被占满），请稍后重试或联系管理员", 409);
+        return order;
     }
 
     /** 该运行标识在本租户下**已建的**入库单（软删行不算：V117 的部分唯一索引带 {@code deleted = 0} 谓词） */

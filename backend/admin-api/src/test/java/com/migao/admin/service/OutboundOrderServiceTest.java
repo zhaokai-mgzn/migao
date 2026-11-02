@@ -15,6 +15,7 @@ import com.migao.admin.mapper.OutboundOrderItemMapper;
 import com.migao.admin.mapper.OutboundOrderMapper;
 import com.migao.admin.mapper.OutboundOrderQueryMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,6 +27,7 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +39,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -66,6 +69,17 @@ class OutboundOrderServiceTest {
     @Mock private WarehouseService warehouseService;
 
     @InjectMocks private OutboundOrderService service;
+
+    /**
+     * 默认「号归我」（受影响行数 1）：取号与占号是**同一条语句**（issue #8490）。
+     *
+     * <p>不登记这条默认值 ⇒ Mockito 对 {@code int} 返回 0 ⇒ 服务把它读成「刚被抢走」⇒ 20 次重试后
+     * 显式 409，本类所有建单用例都会红 —— 那是**装置**没准备好，不是被测行为退了。</p>
+     */
+    @BeforeEach
+    void outboundNoClaimSucceedsByDefault() {
+        when(outboundOrderMapper.insertIgnoreOutboundNoConflict(any())).thenReturn(1);
+    }
 
     private static ProductSku sku(long id, long tenantId, String code) {
         ProductSku sku = new ProductSku();
@@ -105,7 +119,7 @@ class OutboundOrderServiceTest {
         OutboundOrderView view = service.createAndPost(request("5.0"), TENANT, "仓管A");
 
         ArgumentCaptor<OutboundOrder> orderCap = ArgumentCaptor.forClass(OutboundOrder.class);
-        verify(outboundOrderMapper).insert(orderCap.capture());
+        verify(outboundOrderMapper).insertIgnoreOutboundNoConflict(orderCap.capture());
         OutboundOrder saved = orderCap.getValue();
         assertThat(saved.getStatus()).isEqualTo(OutboundOrder.STATUS_POSTED);
         assertThat(saved.getOutboundNo()).startsWith("CK-").matches("CK-\\d{8}-\\d{4}");
@@ -186,7 +200,7 @@ class OutboundOrderServiceTest {
         service.createFinishedOutbound(order, List.of(row), warehouse, TENANT, "工人甲");
 
         ArgumentCaptor<OutboundOrder> orderCap = ArgumentCaptor.forClass(OutboundOrder.class);
-        verify(outboundOrderMapper).insert(orderCap.capture());
+        verify(outboundOrderMapper).insertIgnoreOutboundNoConflict(orderCap.capture());
         assertThat(orderCap.getValue().getBizCategory()).isEqualTo(OutboundOrder.BIZ_FINISHED);
         assertThat(orderCap.getValue().getSource()).isEqualTo(OutboundOrder.SOURCE_SHIP);
         assertThat(orderCap.getValue().getOrderNo()).isEqualTo("DD-1");
@@ -198,5 +212,44 @@ class OutboundOrderServiceTest {
         // 成品无成本口径 ⇒ 单价留空，不伪造 0
         assertThat(itemCap.getValue().getUnitCost()).isNull();
         verify(productSkuMapper, never()).deductStock(anyLong(), any(), anyLong());
+    }
+
+    @Test
+    @DisplayName("🔴 取号在**插入那一刻**被抢走 ⇒ 换候选重来并建成（改前两步形态在这里是 500）")
+    void retriesWhenTheCandidateIsSnatchedAtInsert() {
+        when(productSkuMapper.selectById(11L)).thenReturn(sku(11L, TENANT, "H-01"));
+        when(productSkuMapper.deductStock(eq(11L), any(), eq(TENANT)))
+                .thenReturn(deducted("10.0", "5.0", "H-01"));
+        // 逐次记录**调用当时**的单号：ArgumentCaptor 只存引用，同一个 order 实例被复用 ⇒
+        // getAllValues() 会给出两个指向同一对象的引用（两次读到的号都被改写成最后一次的值）。
+        List<String> attempted = new ArrayList<>();
+        when(outboundOrderMapper.insertIgnoreOutboundNoConflict(any())).thenAnswer(invocation -> {
+            attempted.add(((OutboundOrder) invocation.getArgument(0)).getOutboundNo());
+            // 第一条语句受影响行数 0 = 该号刚被别的事务抢走（唯一索引在插入那一刻裁决）；第二次才归我
+            return attempted.size() == 1 ? 0 : 1;
+        });
+
+        service.createAndPost(request("5.0"), TENANT, "仓管A");
+
+        verify(outboundOrderMapper, times(2)).insertIgnoreOutboundNoConflict(any());
+        assertThat(attempted).as("落败者必须换一个候选重来（拿同一个号重试 = 白试一次）")
+                .hasSize(2);
+        assertThat(attempted.get(0)).isNotEqualTo(attempted.get(1));
+        assertThat(attempted.get(1)).matches("CK-\\d{8}-\\d{4}");
+    }
+
+    @Test
+    @DisplayName("号段耗尽（20 次全被抢）⇒ 显式 409 OUTBOUND_NO_EXHAUSTED，不静默重号、不留明细")
+    void exhaustedSegmentFailsClosedInsteadOfDuplicating() {
+        when(outboundOrderMapper.insertIgnoreOutboundNoConflict(any())).thenReturn(0);
+
+        assertThatThrownBy(() -> service.createAndPost(request("5.0"), TENANT, "仓管A"))
+                .isInstanceOfSatisfying(BusinessException.class, ex -> {
+                    assertThat(ex.getCode()).isEqualTo("OUTBOUND_NO_EXHAUSTED");
+                    assertThat(ex.getHttpStatus()).isEqualTo(409);
+                    assertThat(ex.getMessage()).contains("出库单号连续 20 次");
+                });
+        verify(outboundOrderMapper, times(20)).insertIgnoreOutboundNoConflict(any());
+        verify(outboundOrderItemMapper, never()).insert(any(OutboundOrderItem.class));
     }
 }

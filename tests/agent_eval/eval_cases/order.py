@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: order（源: cases/order.yml，75 条）
+# 域: order（源: cases/order.yml，76 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -1498,7 +1498,7 @@ _CASE_OR_075 = EvalCase(
     difficulty=Difficulty.EDGE,
     user_inputs=['两个管理员同时新建入库单（服务刚重启过 / 部署了多个实例，两边的取号计数器都从同一位置开始）', '另一个请求正把同一个入库单号写进库、还没提交'],
     expectations=[],
-    data_checks=['**核验结论 = 真**：`nextFreeInboundNo` 改前是**两步**（先 `exists(tenant_id, inbound_no)` 判假 ⇒ 返回候选 ⇒ **之后**才 `insert(..)`）。窗口在**多实例 / 重启**下可被利用（两个实例的进程内计数器从同一位置起步 ⇒ 同一个候选 ⇒ 两边 `exists` 都为假）⇒ 后到者撞 `uk_inbound_orders_no`，`create(..)` 的 catch 把它变成 **409**：这一单没建成。', '**并发建单（机器断言 = backend/admin-api/src/test/java/com/migao/admin/service/InboundNoTakeRaceRealDbTest.java 的 concurrentCreateTakesExactlyNDistinctInboundNos）**：4 个并发建单 × 3 轮（**钉住同一候选** = 两个实例同起点）⇒ 4/4 成功、库内恰 4 行、4 个单号**互不相同**、被钉住的同一候选只被一个单占用、全租户零重号组、每单恰 1 行明细；逐轮打印「真重叠」证据（4 个请求的时间区间逐对求交 6/6 + 并集跨度 < 各历时之和）。', '**另一事务持号未提交（判据 ②，确定性红证）**：外部事务先写入该号但**不提交**（任何 `exists` 都看不见它）⇒ 建单必须等它提交、由唯一索引裁决后**换号成功**（读数：耗时 431–438ms ≥ 持有时长、落库号 ≠ 被抢号、持号行仍在）。**退回两步形态**：`exists` 判假 ⇒ insert 撞唯一索引 ⇒ 建单失败（真库裸装配下读作 PersistenceException / 500，Spring 装配下是 409），零落库。', '**号段耗尽（判据 ④）**：当天头部 0001..0020（= 重试上限 20）被占满 + 计数器归零（= 重启）⇒ 20 次重试耗尽 ⇒ **显式 409 `INBOUND_NO_EXHAUSTED`**、拒绝后行数不变（**零残行**）、零明细行 —— 不静默用一个可能重复的号。', '**串行正对照 + 列清单回读（判据 ③）**：串行建单成功、单号成形 `RK-yyyyMMdd-NNNN`、草稿态、来源 purchase、明细 1 行；手写 INSERT 的每一列（supplier / supplier_doc_no / warehouse / created_by / biz_category 默认 fabric / created_at 由 DB 默认承接 / deleted 默认 0）逐列回读一致 ⇒ 列清单漂移会被这条逮住。', '**修法（生产代码）**：取号 + 落库并成**一条语句** `InboundOrderMapper#insertIgnoreInboundNoConflict`（`ON CONFLICT (tenant_id, inbound_no) WHERE deleted = 0 DO NOTHING`，按受影响行数 1/0 判号归谁）⇒ 不再有可被插队的第二条语句；冲突时 PG 事务**不进 aborted** ⇒ 同一事务内换号重试安全（用捕获 `DuplicateKeyException` 则必须开新事务，那会把单据提前提交、后续明细行失败会留下半张单）。', '**DB 对象（实测在场，判据 ⑤）**：`uk_inbound_orders_no = CREATE UNIQUE INDEX … ON inbound_orders (tenant_id, inbound_no) WHERE (deleted = 0)`（**部分**唯一索引 ⇒ `ON CONFLICT` 的推断必须带 `WHERE deleted = 0` 谓词）。', '**类级元守卫（机器断言 = backend/admin-api/src/test/java/com/migao/admin/service/NumberTakeTwoStepMetaGuardTest.java）**：`service/*.java` 里的两步取号写面必须登记进 backend/admin-api/src/test/resources/number-take-two-step-ledger.json（未登记即红、台账盖章不存在即红、豁免只许缩短），且已改成原子占号的 SQL 必须以**兑付锚**逐字在场（删掉 ⇒ 红）。本单落在册的缺口 = 出库单号 `nextFreeOutboundNo`（同形态，未修，跟踪 = #8490）。', '**廉价正向判据**：`InboundOrderServiceTest#createRetriesWhenTheCandidateIsSnatchedByTheInsert`（候选在**插入那一刻**被抢 ⇒ 换号重来并落到下一个候选）+ `#createRetriesWhenTodaysNumberIsAlreadyTaken`（重启重走已占号 ⇒ 换号成功）。'],
+    data_checks=['**核验结论 = 真**：`nextFreeInboundNo` 改前是**两步**（先 `exists(tenant_id, inbound_no)` 判假 ⇒ 返回候选 ⇒ **之后**才 `insert(..)`）。窗口在**多实例 / 重启**下可被利用（两个实例的进程内计数器从同一位置起步 ⇒ 同一个候选 ⇒ 两边 `exists` 都为假）⇒ 后到者撞 `uk_inbound_orders_no`，`create(..)` 的 catch 把它变成 **409**：这一单没建成。', '**并发建单（机器断言 = backend/admin-api/src/test/java/com/migao/admin/service/InboundNoTakeRaceRealDbTest.java 的 concurrentCreateTakesExactlyNDistinctInboundNos）**：4 个并发建单 × 3 轮（**钉住同一候选** = 两个实例同起点）⇒ 4/4 成功、库内恰 4 行、4 个单号**互不相同**、被钉住的同一候选只被一个单占用、全租户零重号组、每单恰 1 行明细；逐轮打印「真重叠」证据（4 个请求的时间区间逐对求交 6/6 + 并集跨度 < 各历时之和）。', '**另一事务持号未提交（判据 ②，确定性红证）**：外部事务先写入该号但**不提交**（任何 `exists` 都看不见它）⇒ 建单必须等它提交、由唯一索引裁决后**换号成功**（读数：耗时 431–438ms ≥ 持有时长、落库号 ≠ 被抢号、持号行仍在）。**退回两步形态**：`exists` 判假 ⇒ insert 撞唯一索引 ⇒ 建单失败（真库裸装配下读作 PersistenceException / 500，Spring 装配下是 409），零落库。', '**号段耗尽（判据 ④）**：当天头部 0001..0020（= 重试上限 20）被占满 + 计数器归零（= 重启）⇒ 20 次重试耗尽 ⇒ **显式 409 `INBOUND_NO_EXHAUSTED`**、拒绝后行数不变（**零残行**）、零明细行 —— 不静默用一个可能重复的号。', '**串行正对照 + 列清单回读（判据 ③）**：串行建单成功、单号成形 `RK-yyyyMMdd-NNNN`、草稿态、来源 purchase、明细 1 行；手写 INSERT 的每一列（supplier / supplier_doc_no / warehouse / created_by / biz_category 默认 fabric / created_at 由 DB 默认承接 / deleted 默认 0）逐列回读一致 ⇒ 列清单漂移会被这条逮住。', '**修法（生产代码）**：取号 + 落库并成**一条语句** `InboundOrderMapper#insertIgnoreInboundNoConflict`（`ON CONFLICT (tenant_id, inbound_no) WHERE deleted = 0 DO NOTHING`，按受影响行数 1/0 判号归谁）⇒ 不再有可被插队的第二条语句；冲突时 PG 事务**不进 aborted** ⇒ 同一事务内换号重试安全（用捕获 `DuplicateKeyException` 则必须开新事务，那会把单据提前提交、后续明细行失败会留下半张单）。', '**DB 对象（实测在场，判据 ⑤）**：`uk_inbound_orders_no = CREATE UNIQUE INDEX … ON inbound_orders (tenant_id, inbound_no) WHERE (deleted = 0)`（**部分**唯一索引 ⇒ `ON CONFLICT` 的推断必须带 `WHERE deleted = 0` 谓词）。', '**类级元守卫（机器断言 = backend/admin-api/src/test/java/com/migao/admin/service/NumberTakeTwoStepMetaGuardTest.java）**：`service/*.java` 里的两步取号写面必须登记进 backend/admin-api/src/test/resources/number-take-two-step-ledger.json（未登记即红、台账盖章不存在即红、豁免只许缩短），且已改成原子占号的 SQL 必须以**兑付锚**逐字在场（删掉 ⇒ 红）。同类写面里剩下的那处缺口 = 出库单号 `nextFreeOutboundNo`（同形态；已由 #8490 修掉 —— 见用例 OR-076，本表豁免条数随之 1 → 0）。', '**廉价正向判据**：`InboundOrderServiceTest#createRetriesWhenTheCandidateIsSnatchedByTheInsert`（候选在**插入那一刻**被抢 ⇒ 换号重来并落到下一个候选）+ `#createRetriesWhenTodaysNumberIsAlreadyTaken`（重启重走已占号 ⇒ 换号成功）。'],
     skip_reason='[backend-contract] 纯后端并发取号判据（无 LLM 写路径：入库建单不经黄金策 Agent 工具，B 端 POST /api/admin/inbound-orders 与工人拍照草稿都落在 admin-api 服务层）⇒ 不进 agent-eval 冒烟：由 admin-api 真库并发单测 InboundNoTakeRaceRealDbTest 执行',
     tags=['inbound', 'concurrency', 'backend-contract'],
     persona='',
@@ -1506,6 +1506,25 @@ _CASE_OR_075 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     precondition='本用例是 [backend-contract] 纯后端并发取号用例（agent-eval 栈不跑它）：前置 = 一次性真 PG 集群 + 自建租户/商品夹具，由单测 backend/admin-api/src/test/java/com/migao/admin/service/InboundNoTakeRaceRealDbTest.java 自建自毁，不依赖任何共享数据；前置不成立（本机 / CI 缺 PG 二进制）时按 PgCluster 的 fail-closed 口径判红（CI 注入 MIGAO_REQUIRE_REALDB ⇒ 不许静默 skip 成绿）',
+)
+
+# ── OR-076 [EDGE] 出库建单取号核验（issue #8490）：取号与占用是两步且 insert 没有 catch ⇒ 并发撞号时用户看到 500；改成一条语句占号后换号吸收 / 耗尽 409（源: cases/order.yml）──
+_CASE_OR_076 = EvalCase(
+    id='OR-076',
+    legacy_id='',
+    title='出库建单取号核验（issue #8490）：取号与占用是两步且 insert 没有 catch ⇒ 并发撞号时用户看到 500；改成一条语句占号后换号吸收 / 耗尽 409',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.EDGE,
+    user_inputs=['两个管理员同时做出库（服务刚重启过 / 部署了多个实例，两边的取号计数器都从同一位置开始）', '另一个请求正把同一个出库单号写进库、还没提交'],
+    expectations=[],
+    data_checks=['**核验结论 = 真**：`nextFreeOutboundNo` 改前是**两步**（先 `exists(tenant_id, outbound_no)` 判假 ⇒ 返回候选 ⇒ **之后**才 `insert(..)`），且那条 insert **没有任何 catch** ⇒ 窗口被利用时 `DuplicateKeyException` 直抛到全局处理器 ⇒ 用户侧 **500**（整笔回滚、零残行 —— 比入库单的 409 更糟：商家会以为「出库没成功」而重复操作）。布料手工出库 / 成品发货出库 / 扫水洗唛出库**三条建单路径**都走这个取号函数。', '**并发建单（机器断言 = backend/admin-api/src/test/java/com/migao/admin/service/OutboundNoTakeRaceRealDbTest.java 的 concurrentCreateTakesExactlyNDistinctOutboundNos）**：4 个并发建单 × 3 轮（**钉住同一候选** = 两个实例同起点）⇒ 读数逐轮为 `成功数=4 状态码=[200, 200, 200, 200] 本轮行数=4 本轮不同单号=4 该候选被几单占用=1 全租户重号组=0 明细行=4`；每轮另打印「真重叠」证据（4 个请求的时间区间**逐对求交 6/6**、并集跨度 12/7/17ms < 各历时之和 44/44/61ms）。', '**另一事务持号未提交（判据 ②，确定性红证）**：外部事务先写入该号但**不提交**（任何 `exists` 都看不见它）⇒ 建单必须等它提交、由唯一索引裁决后**换号成功**（读数：`持号候选=CK-20261103-5901 建单成功=true 状态码=200 建单耗时ms=505 建单落库单号=[CK-20261103-5902] 该候选被几单占用=1`；505ms ≥ 持有时长 400ms = 确实被唯一索引挡过）。', '**号段耗尽（判据 ④）**：当天头部 0001..0020（= 重试上限 20）被占满 + 计数器归零（= 重启）⇒ 20 次重试耗尽 ⇒ **显式 409 `OUTBOUND_NO_EXHAUSTED`**、拒绝后行数不变（`已占号数=20 → 拒绝后行数=20`，**零残行**）、零明细行 —— 不静默用一个可能重复的号。', '**串行正对照 + 列清单回读（判据 ③）**：串行建单成功、单号成形 `CK-yyyyMMdd-NNNN`、状态 posted、来源 scan、类别 finished、明细 1 行；手写 INSERT 的每一列（biz_category / source / warehouse 文本 + warehouse_id 引用 / order_no / posted_by / created_by / posted_at / outbound_date / created_at 由 DB 默认承接 / deleted 默认 0）逐列回读一致 ⇒ 列清单漂移会被这条逮住。', '**修法（生产代码）**：取号 + 落库并成**一条语句** `OutboundOrderMapper#insertIgnoreOutboundNoConflict`（`ON CONFLICT (tenant_id, outbound_no) WHERE deleted = 0 DO NOTHING`，按受影响行数 1/0 判号归谁）⇒ 不再有可被插队的第二条语句；冲突时 PG 事务**不进 aborted** ⇒ 同一事务内换号重试安全（用捕获 `DuplicateKeyException` 则必须开新事务，那会把单头提前提交、明细行失败就是半张单）。', '**复用（不复制第二份逻辑）**：重试骨架抽到 `backend/admin-api/src/main/java/com/migao/admin/service/AtomicNoAllocator.java`，入库单号（#6266）与出库单号（#8490）**共用同一份实现**（各自只给候选生成 / 占号语句 / 耗尽业务码）。', '**DB 对象（实测在场，判据 ⑤）**：`uk_outbound_orders_no = CREATE UNIQUE INDEX uk_outbound_orders_no ON public.outbound_orders USING btree (tenant_id, outbound_no) WHERE (deleted = 0)`（**部分**唯一索引 ⇒ `ON CONFLICT` 的推断必须带 `WHERE deleted = 0` 谓词）。', '**类级元守卫（机器断言 = backend/admin-api/src/test/java/com/migao/admin/service/NumberTakeTwoStepMetaGuardTest.java）**：`service/*.java` 里的两步取号写面必须登记进 backend/admin-api/src/test/resources/number-take-two-step-ledger.json（未登记即红、台账盖章不存在即红、豁免只许缩短），且已改成原子占号的 SQL 必须以**兑付锚**逐字在场（删掉 ⇒ 红）。本单落地的读数：`现取两步取号写面 = []`、`unverified = []`、`baseline 0 / 镜像 0`、`atomic_sites` 三条（入库 / 出库 / 批次）。', '**廉价正向判据**：`OutboundOrderServiceTest#retriesWhenTheCandidateIsSnatchedAtInsert`（第一条语句受影响行数 0 ⇒ 换候选重来并建成）+ `#exhaustedSegmentFailsClosedInsteadOfDuplicating`（20 次全 0 ⇒ 409 OUTBOUND_NO_EXHAUSTED、零明细）。', '**红证（注入式，退回两步形态）**：把 `insertWithFreshOutboundNo` 改回 `exists` 判假 ⇒ `insert`，同一台机器同一装置读数 = 判据① `成功数=1 状态码=[200, 500, 500, 500] 本轮行数=1`（测试当场红）、判据② `建单成功=false 状态码=500 异常码=PersistenceException 建单耗时ms=415`、判据④ `状态码=500 异常码=PersistenceException`（= 500 顶替了 409）；共 **3 failed / 2 passed**（③ 串行正对照与 ⑤ 索引在场与竞态无关，不红 —— 正是判别力的对照面）。'],
+    skip_reason='[backend-contract] 纯后端并发取号判据（无 LLM 写路径：出库建单不经黄金策 Agent 工具，B 端手工出库 / 成品发货出库 / 工人扫唛出库都落在 admin-api 服务层）⇒ 不进 agent-eval 冒烟：由 admin-api 真库并发单测 OutboundNoTakeRaceRealDbTest 执行',
+    tags=['outbound', 'concurrency', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯后端并发取号用例（agent-eval 栈不跑它）：前置 = 一次性真 PG 集群 + 自建租户/仓库夹具，由单测 backend/admin-api/src/test/java/com/migao/admin/service/OutboundNoTakeRaceRealDbTest.java 自建自毁，不依赖任何共享数据；前置不成立（本机 / CI 缺 PG 二进制）时按 PgCluster 的 fail-closed 口径判红（CI 注入 MIGAO_REQUIRE_REALDB ⇒ 不许静默 skip 成绿）',
 )
 
 CASES = (
@@ -1584,4 +1603,5 @@ CASES = (
     _CASE_OR_073,
     _CASE_OR_074,
     _CASE_OR_075,
+    _CASE_OR_076,
 )

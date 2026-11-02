@@ -37,8 +37,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <h2>判据（每条都会红）</h2>
  * <ol>
- *   <li><b>扫描器非空跑自证</b>：现取集合必须包含已登记的兄弟形态 {@code OutboundOrderService#nextFreeOutboundNo}
- *       —— 形态被改名 / 扫描器被写瘫 ⇒ 先红（「看不见」不是「通过」，而是「判据失明」）。</li>
+ *   <li><b>扫描器非空跑自证</b>：把出库单号**改前**的两步形态拼回 {@code OutboundOrderService} 的真文件文本
+ *       ⇒ 必须被扫到；不拼 ⇒ 现取集合必须为空（「看不见」不是「通过」，而是「判据失明」；
+ *       issue #8490 起入库 / 出库 / 批次三处取号写面已全部原子化，真语料里不再有活样本）。</li>
  *   <li><b>未登记即红</b>：现取到的每个两步取号写面必须出现在台账 {@code unverified}（带理由 + 跟踪单 + 重启条件）。</li>
  *   <li><b>台账不许给不存在的对象盖章</b>：{@code unverified} 每条必须仍能在现取集合里找到（修好后请删条目
  *       并下调 {@code unverified_baseline}）。</li>
@@ -67,7 +68,7 @@ class NumberTakeTwoStepMetaGuardTest {
     private static final String LEDGER_PATH = MODULE + "/src/test/resources/number-take-two-step-ledger.json";
 
     /** 台账 {@code unverified_baseline} 的镜像（「条数只许缩短」的第二把锁：放宽要同时改两处）。 */
-    private static final int UNVERIFIED_BASELINE_MIRROR = 1;
+    private static final int UNVERIFIED_BASELINE_MIRROR = 0;
 
     /**
      * 两步取号的**形态**：方法体里出现 {@code .exists(} 且其参数里带业务号 getter（{@code ::getXxxNo}）。
@@ -77,6 +78,27 @@ class NumberTakeTwoStepMetaGuardTest {
      */
     private static final Pattern TWO_STEP =
             Pattern.compile("\\.exists\\s*\\([\\s\\S]{0,800}?::get\\w*No\\b");
+
+    /**
+     * 判据① 的**注入语料**（issue #8490）：出库单号**改前**的两步形态（原样）。
+     *
+     * <p>三处取号写面全部改成原子占号之后，「现取集合为空」既可能是「真干净」也可能是「扫描器失明」
+     * —— 两者在断言上长得一样。所以判据① 把这段旧形态**拼在真文件文本后面**：拼上必须被扫到、
+     * 不拼必须空集，两个方向都钉住（{@code migao-dev-flow} §28.2.1 的注入式自证）。</p>
+     */
+    private static final String REVERTED_TWO_STEP_CORPUS =
+            "\n    private String nextFreeOutboundNo(Long tenantId) {\n"
+                    + "        for (int i = 0; i < 20; i++) {\n"
+                    + "            String candidate = generateOutboundNo();\n"
+                    + "            boolean taken = outboundOrderMapper.exists(new LambdaQueryWrapper<OutboundOrder>()\n"
+                    + "                    .eq(OutboundOrder::getTenantId, tenantId)\n"
+                    + "                    .eq(OutboundOrder::getOutboundNo, candidate));\n"
+                    + "            if (!taken) {\n"
+                    + "                return candidate;\n"
+                    + "            }\n"
+                    + "        }\n"
+                    + "        return null;\n"
+                    + "    }\n";
 
     /** 类体顶层的方法声明（修饰符串 + 返回类型 + 名字 + 参数表），用于按花括号深度切方法体。 */
     private static final Pattern METHOD_SIG = Pattern.compile(
@@ -103,11 +125,16 @@ class NumberTakeTwoStepMetaGuardTest {
         System.out.println("[READING #6266 守卫① 现取两步取号写面] " + live.stream().map(Candidate::key).toList()
                 + " · 台账 unverified=" + ledger.unverifiedKeys() + " · atomic_sites=" + ledger.atomicKeys());
 
-        // 判据 1：扫描器非空跑自证 —— 已登记的兄弟形态必须被看见
-        assertThat(live).as("扫描器必须看见已登记的兄弟形态 OutboundOrderService#nextFreeOutboundNo"
-                        + "（看不见 = 判据失明，不是「通过」）")
-                .anyMatch(c -> c.path().endsWith("OutboundOrderService.java")
-                        && c.method().equals("nextFreeOutboundNo"));
+        // 判据 1（扫描器非空跑自证，issue #8490 改锚）：现取集合已空（入库 / 出库 / 批次三处取号写面
+        // 全部改成原子占号）⇒ 对**真语料**做双向自证：把旧的两步形态拼回真文件文本 ⇒ 必须被扫到；
+        // 不拼 ⇒ 必须扫不到。否则「空集」与「扫描器失明」在断言上长得一样。
+        String outboundService = Files.readString(
+                root.resolve(SERVICE_DIR).resolve("OutboundOrderService.java"), StandardCharsets.UTF_8);
+        assertThat(scanSource("OutboundOrderService.java", outboundService))
+                .as("真语料不许再出现两步取号形态（issue #8490 修好后现取集合必须为空）").isEmpty();
+        assertThat(scanSource("OutboundOrderService.java", outboundService + REVERTED_TWO_STEP_CORPUS))
+                .as("把旧的两步形态拼回真文件文本必须被扫到（看不见 = 判据失明，不是「通过」）")
+                .anyMatch(c -> c.method().equals("nextFreeOutboundNo"));
 
         // 判据 2 + 3：双向相等
         assertThat(judgeTwoStepSites(live, ledger))
@@ -177,12 +204,16 @@ class NumberTakeTwoStepMetaGuardTest {
                 .anyMatch(v -> v.contains("未登记") && v.contains("DemoService.java#nextFreeDemoNo"));
 
         // ② 台账盖章幽灵：现取集合为空 + 台账仍有一条 ⇒ 红（修好后不删条目 = 红）
-        assertThat(judgeTwoStepSites(List.of(), real))
+        //    ⚠️ 用**合成**条目，不用真台账里残留的那条：豁免已清零（issue #8490 修完）之后，
+        //    拿它当语料会让这条自证在「全部修好」那一刻自己崩掉（IndexOutOfBoundsException）——
+        //    自证必须与真台账的当前存量解耦。
+        Ledger ghostLedger = new Ledger(real.unverifiedBaseline(), List.of(ghostExemption()), real.atomicSites());
+        assertThat(judgeTwoStepSites(List.of(), ghostLedger))
                 .as("台账里的条目在现取集合里消失必须判红（修好后请删条目并下调 baseline）")
                 .anyMatch(v -> v.contains("台账盖章不存在"));
 
         // ③ 豁免超基线：条数 +1 ⇒ 红
-        Ledger grown = new Ledger(real.unverifiedBaseline(), append(real.unverified(), real.unverified().get(0)),
+        Ledger grown = new Ledger(real.unverifiedBaseline(), append(real.unverified(), ghostExemption()),
                 real.atomicSites());
         assertThat(judgeExemptions(grown))
                 .as("往豁免里塞条目把红变绿必须判红（豁免只许缩短）").isNotEmpty();
@@ -356,6 +387,13 @@ class NumberTakeTwoStepMetaGuardTest {
         List<JsonNode> out = new ArrayList<>(nodes);
         out.add(extra);
         return out;
+    }
+
+    /** 合成一条「已登记」的豁免条目（判别力自证用；**不依赖**真台账当前是否还有豁免）。 */
+    private static JsonNode ghostExemption() throws IOException {
+        return new ObjectMapper().readTree("{\"path\":\"backend/admin-api/src/main/java/com/migao/admin/service/"
+                + "GhostService.java\",\"method\":\"nextFreeGhostNo\",\"why\":\"判别力自证\","
+                + "\"issue\":\"#0\",\"restart_condition\":\"合成语料，不指向真文件\"}");
     }
 
     private static Path repoRoot() {

@@ -49,6 +49,11 @@
       "table": "user_roles",
       "reason": "本包只把 V166 已发布的 uk_user_roles_active 同步进建库脚本，不动角色授予写路径；端点级并发回执判据属独立包。",
       "restart_condition": "补角色授予端点级判据时（并发两次授予同一角色 ⇒ 200 + 恰好一条活跃行）从 deferred 移入 sites。"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/OutboundOrderService.java::outboundOrderMapper": {
+      "table": "outbound_orders",
+      "reason": "issue #8490：原子闸 = OutboundOrderMapper#insertIgnoreOutboundNoConflict（ON CONFLICT (tenant_id, outbound_no) WHERE deleted = 0 DO NOTHING）。端点级判据**已交付**（backend/admin-api/src/test/java/com/migao/admin/controller/OutboundOrderEndpointReceiptTest.java：真 MockMvc + GlobalExceptionHandler —— 200 + 最终单号 / 409 OUTBOUND_NO_EXHAUSTED / 改前裸 insert ⇒ 500 INTERNAL_ERROR 的红证），但**登记面**受限：本元守卫的端点解析（`_METHOD_MAPPING`）只认**单字符串**写法，而该端点是**无参** `@PostMapping`（`POST /api/admin/outbound-orders`）⇒ 现取端点集合里没有它，登记进 `sites` 会反判「端点不存在」。故留 deferred，判据本体已在场。",
+      "restart_condition": "本元守卫的端点解析支持无参 `@PostMapping`（以类级前缀即端点），或该控制器写上显式单字符串路径时，把本条从 deferred 移入 sites：`endpoint` = `POST /api/admin/outbound-orders`，`criterion` = `backend/admin-api/src/test/java/com/migao/admin/controller/OutboundOrderEndpointReceiptTest.java::exhaustedNumbersSurfaceAsNamed409Not500`，`log_criterion` / `red_proof` = 同文件 `naiveInsertWouldTurnTheEndpointIntoFiveHundreds`。"
     }
   }
 }
