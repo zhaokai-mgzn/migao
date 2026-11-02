@@ -8943,7 +8943,7 @@
 真值: fabric-calc.craft-calc-config, ai-chat.tool-classes
 溯源: 2026-10-29 新增（issue #8116，黄金策能力优化 P0）：`craft_calc_config_update` 是 B 端最新的写工具（issue #7514），但此前**零个正向用例**（`scripts/mibao_coverage.py` 实测「0 条（正向 0）」）⇒ 它的确认链（查真值 → 逐键改前改后 → 点卡才写）从未被真实 LLM 跑过。本用例补上这条写路径；同批给 `tests/agent_eval/local_runner.py` 补复位手段 `craft_calc_config_restore`（共享租户配置的写方必须能复位，#4075 口径），判据 = tests/agent_eval/test_craft_calc_config_restore.py。取号说明：`scripts/next_case_id.py PP` 因 gh contents API 抖动（stream error）判不出（exit 3）；改为按 §26.3 手工核在飞面 —— main 最大 PP-022，唯一改 `cases/processing.yml` 的 open PR #8111 的最大号同为 PP-022（已 fetch refs/pull/8111/head 逐文件比对）⇒ PP-023 空闲。 ｜ tags: write, craft_calc, write_path, confirm_card
 
-## 加工单域（85 case）
+## 加工单域（86 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 作业单生成 + 订单进入生产中（派单即生产；issue #7723 改判） 🔵
 ```
@@ -10140,6 +10140,21 @@
 跳过: [backend-contract] 结构性判据 + 纯渲染/源码扫描（零 LLM 行为），不进 agent-eval 冒烟
 ```
 溯源: 2026-10-27 改判（issue #7945；用户逐字见 user_inputs）⇒ 上一版（#7919）的「返工报工自动落质检」**整体删除**：`QualityCheckService#recordReworkReport` 与 `ProductionService#recordReworkQuality` 双双移除（不是藏起来），并由类级守卫 ReworkQualitySeparationGuardTest 钉住「返工写路径不持有任何质检依赖」；QC 判定入口迁回**手机端**（`inspect` 页面集，质检员扫码），PC 质检记录页移除「待检成品帘 + 录入判定」只留指标 + 流水。两单补件键：V202 迁移给 `rework_orders.order_item_id/set_id/set_no/position_name` 与 `quality_inspections.set_id/set_no`，车间返工从工序实例取件、质检由手机端扫码带 `set_no`（多套未给 ⇒ 422，不猜）。取号沿用 PG-099（原用途随 #7919 撤销）。 2026-10-28 追加（issue #7973）：质检读面按件返回 `records`（带 `set_no`）+ 待复检门禁（409 `QUALITY_REWORK_PENDING`）+ 复检两个动作（`pass` / `recheck=true` + `rework`）——把「报了还能一直报」变成「一次问题一条记录、复检才闭环」。 ｜ tags: quality-inspection, rework, worker-h5, backend-contract, piece-key
+
+### PG-100. 条件工序规则写面：目标工序必须在规则**生效的每个部位**上解析得到（否则 422，不再等派单才整单 fail-closed） 🔵
+```
+你: 商家在「工艺配置 → 工序」抽屉里「添加条件」：什么时候 = 特殊选项「加花边」、做 = 做、目标工序 = 花边（不限部位）
+你: 同上，但把这条规则限定到「纱帘」部位
+数据: **判据 1（会红，写面）= 部位敏感的可解析性**：目标工序必须在规则**生效的每个部位**上都解析得到才落库 —— `sales_form` 规则只吃布料单（只判 `布料`）、其余触发维只吃窗帘单（判 `布帘 / 纱帘 / 帘头`）、规则级 `position` 再按实例化侧逐字收窄；解析判据 = 实例化侧**同一份** `variantNameOf`。执行点 = `ProductionRoutingCommandServiceOptionCreateTest#positionLimitedRuleWithoutVariantOnItsPositionIsRejected` / `#unlimitedRuleWithoutVariantOnEveryPositionIsRejected`（422 + `details[0].field=operation` + 理由含值/部位/去哪儿配；`insert` **从未**被调用）。**红证**：把 `unresolvedOperationReason(...)` 调用摘掉 ⇒ 两条红（实测 `Expecting code to raise a throwable.`）。
+数据: **判据 2（负控：存在的工序 ⇒ 成功）**：同一工序限定到**有该变体**的部位（布帘）⇒ 200 落库（`position=布帘`）；帘头格走**显式帘头条目**（`花边 × 帘头 → 花边-布`）⇒ 同样落库。执行点 = 同文件 `#positionLimitedRuleWithVariantIsAccepted` / `#headPositionResolvesThroughTheExplicitHeadEntry`。
+数据: **判据 3（边界：不许把合法形态判成非法）**：① 部位无关**裸名行**（`外帘打卷`，与 `打包` / `质检` 同形态）在**任何**部位都解析得到 ⇒ 不限部位落库成功（`#bareOperationResolvesOnEveryPosition`）；② `action='remove'` 不做变体解析（只按逻辑名从序列删）⇒ 不判部位（`#removeRuleIsNotJudgedByPositionResolution`）。
+数据: **判据 4（判别力自证 / 防止护栏退化成空断言）**：真实 `variantNameOf` 必须**部位敏感** —— `花边` 在布帘 / 帘头返回 `花边-布`、在纱帘返回 `null`；`外帘打卷` 三部位返回自身。把 `variantNameOf` 改成恒返回逻辑名 ⇒ 判据 1 两条 + 本条红（实测 `expected: 花边-布 but was: 花边`）。执行点 = 同文件 `#variantResolutionIsPositionSensitive`。
+数据: **判据 5（类级元守卫：未登记写面即红）**：`production_route_rules` 的**每个**写面都必须在台账登记（现取：`ProductionRoutingCommandService` = GATED / `ProductionSeedTemplateService` = POSITION_PINNED）；GATED 写面把 `unresolvedOperationReason(` 调用点摘掉 ⇒ 红。执行点 = `ProductionRouteRuleWriteSurfaceMetaGuardTest`（判据 1~4）。**红证**：临时新增一个未登记写面文件 + 摘掉 GATED 调用点 ⇒ 实测 `Tests run: 4, Failures: 2`（具名报出）。
+数据: **边界（照实登记）**：① 读面不加「这条规则某部位可否实例化」的具名标记（`ruleView` 10 键是冻结契约）；② 存量非法行**不做数据回填**（运行期 fail-closed 保留作最后一道）；③「规则永不生效」是另一条既有缺口（如部位维规则又限定到布料），不在本判据射程内。
+前置: Mockito 夹具：工序库 4 行（`三边` / `精裁-布` / `外帘打卷` / `花边-布`）；规则表空（无重复）。`ProductionOperationQueryService` 用**真实对象**（只 mock Mapper）⇒ `variantNameOf` 不是桩。
+跳过: [backend-contract] Java 服务层单测 + 源码结构判据（零 LLM 行为），不进 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #6428）：`production_route_rules.operation` 写面缺「工序 × 部位」可解析性校验 ⇒ 规则存得下、到生产环节才整单 fail-closed（关联 #6420 实证：22 张纱帘单派不出去）。取号 = `python3 scripts/next_case_id.py PG` 现取 PG-100（当时 origin/main 已占号最大 PG-099）。 ｜ tags: route-rule, write-guard, backend-contract, meta-guard
 
 ## 商品域（133 case）
 
@@ -14420,8 +14435,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：975（活跃 153，跳过 822）
-- tier 分布：smoke 15 / normal 898 / adversarial 33
+- 用例总数：976（活跃 153，跳过 823）
+- tier 分布：smoke 15 / normal 899 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14442,7 +14457,7 @@
 - 领域本体域：4
 - 订单域：76
 - 加工项域：32
-- 加工单域：85
+- 加工单域：86
 - 商品域：133
 - 工具注册器域：1
 - 设置域：11
@@ -14798,6 +14813,7 @@
 - PG-097: 外发加工标记：订单打标后不进成批候选、进派单页外发区逐单立即派，且派单必须选承接方（V194）
 - PG-098: 任一工序工人可报返工：把该笔报工改记为返工（回退 done_qty/done_at/加工单完成态、计件归零）+ 生成返工单 + 手机端返工加工单列表（逐人开）
 - PG-099: 返工与质检分离：返工写路径不再产生质检数据（类级守卫），质检判定只在手机端；两张单都定位到「套号 × 部位」
+- PG-100: 条件工序规则写面：目标工序必须在规则**生效的每个部位**上解析得到（否则 422，不再等派单才整单 fail-closed）
 - PP-007: 黄金策加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）
 - PP-008: 黄金策加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 加工项已无单价与计价方式 ⇒ calculate_price 端点与 action 整体退场（退场守卫）
