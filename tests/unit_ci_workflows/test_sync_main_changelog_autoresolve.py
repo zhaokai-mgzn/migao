@@ -71,6 +71,7 @@ import importlib.util
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -82,6 +83,11 @@ RED_PROOF = REPO_ROOT / "scripts" / "red_proof.py"
 CHANGELOG = "CHANGELOG.md"
 SCRIPT_REL = "scripts/sync-main.sh"
 OTHER_REL = "README.md"
+
+# 注入走共用原语（issue #7017）：`str.replace` 0 命中时**静默返回原串** ⇒ 把「锚点漂移」误报成
+# 「判据没牙」。`inject()` 0 命中抛 AnchorDrift（报文含语料名 + 锚点前 60 字），不唯一抛 AmbiguousAnchor。
+sys.path.append(str(REPO_ROOT / "tests"))
+from unit_ci_workflows.injection import inject  # noqa: E402
 
 #: 冲突标记（判据 1/2/3 的「无残留」口径；含 diff3 的基线标记）
 MARKER_RE = re.compile(r"^(<{7}|={7}|>{7}|\|{7})", re.M)
@@ -344,9 +350,7 @@ def test_injected_drop_of_one_side_is_detected(tmp_path):
     没有这一条，判据 1 可能是「不管解成什么样都绿」的空断言。
     """
     src = _real_script()
-    assert DROP_THEIRS_OLD in src, "注入锚点没命中（解法行已变）⇒ 红证不成立"
-    injected = src.replace(DROP_THEIRS_OLD, DROP_THEIRS_NEW)
-    assert injected != src, "注入未生效（自证失败 ⇒ 本判据的红证是空断言）"
+    injected = inject(src, DROP_THEIRS_OLD, DROP_THEIRS_NEW, where=SCRIPT_REL)
 
     work = _build_repo(tmp_path, script_text=injected)
     result = _run_sync(work, "--rebase")
@@ -366,7 +370,7 @@ def test_injection_is_content_level_and_syntactically_valid(tmp_path):
     """红证卫生：注入是**内容级**的（指纹变化）且注入后的脚本 `bash -n` 通过。"""
     orig = _real_script()
     baseline_fp = red_proof.content_fingerprint(SCRIPT)
-    injected = orig.replace(DROP_THEIRS_OLD, DROP_THEIRS_NEW)
+    injected = inject(orig, DROP_THEIRS_OLD, DROP_THEIRS_NEW, where=SCRIPT_REL)
     path = tmp_path / "sync-main-injected.sh"
     path.write_text(injected, encoding="utf-8")
     red_proof.assert_injection_effective(baseline_fp, red_proof.content_fingerprint(path), True,
@@ -484,9 +488,7 @@ def test_deleted_section_inside_a_conflict_is_not_silently_dropped(tmp_path):
 def test_injected_keep_of_the_deleting_side_is_detected(tmp_path):
     """反向注入：只保留**删除方**（`:3:`）⇒ 另一侧还在的小节被丢 ⇒ 判据必须判红。"""
     src = _real_script()
-    assert DROP_THEIRS_OLD in src, "注入锚点没命中"
-    injected = src.replace(DROP_THEIRS_OLD, DROP_OURS_NEW)
-    assert injected != src, "注入未生效"
+    injected = inject(src, DROP_THEIRS_OLD, DROP_OURS_NEW, where=SCRIPT_REL)
     assert red_proof.content_fingerprint(SCRIPT) != red_proof.content_fingerprint(
         _write_copy(tmp_path, injected)), "注入不是内容级的（指纹没变）⇒ 红证不成立"
     work = _build_repo(tmp_path, branch_deletes_section=True, script_text=injected)

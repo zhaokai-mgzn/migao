@@ -1,0 +1,890 @@
+{
+  "_doc": [
+    "注入式红证的**锚点台账**（issue #7017 类级固化；判据 = tests/unit_ci_workflows/test_red_proof_anchor_liveness.py）。",
+    "病：`str.replace` 找不到锚点就返回原串 ⇒ 注入静默失配 ⇒ 判据仍绿被读成「判据没牙」，",
+    "    而真因是「红证没生效」（两者处置相反）。本台账让「锚点漂了」变成**具名红**。",
+    "",
+    "anchors[] = 活锚登记册（已迁移到共用原语 tests/unit_ci_workflows/injection.py 的注入点）：",
+    "  ① 每条 {id, corpus, anchor, call_site, why, issue}；corpus 必须是**真语料**（仓库相对路径）。",
+    "  ② 判据 ② 会对每条 anchor 在当前语料上真跑 inject() —— 0 命中 ⇒ 具名红「锚点漂移」。",
+    "  ③ 判据另核 call_site 里确有以该 anchor 作第二实参、且带 where= 的 inject(...) 调用",
+    "     ⇒ 迁移点被改回裸 replace 时会红（否则「锚点活着」证明不了「红证还在注入」）。",
+    "",
+    "bare_replace_exemptions[] = 存量债务（只许缩短，与 guard_parsing_allowlist.json 同族）：",
+    "  ① 每条 {path, hits, reason, issue}；hits = 现取条数（不写解释性上限）。",
+    "  ② 未登记即红；已登记文件的条数**涨或跌**都红；文件已无命中而条目还在（陈旧）⇒ 红。",
+    "  ③ 想吸收新债务必须先改这个数据文件（在 diff 里看得见），但纪律上**只许缩短**。",
+    "",
+    "本 PR（#7017）把 13 处**真语料**注入迁到 inject() 作落地样本（bmini 入口 6 / automerge 2 / ACR 2 / sync-main 3，其中形态面内 11 处）；其余 131 文件 / 383 处为存量债务，按棘轮逐包收口。"
+  ],
+  "anchors": [
+    {
+      "id": "bmini-qr-moved-to-unconfigured-branch",
+      "corpus": "frontend/admin-web/src/components/layout/MobileEntry.tsx",
+      "call_site": "tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py",
+      "anchor": "<QRCodeSVG value={entryUrl} size={140} title={entryUrl} data-testid=\"bmini-h5-qr\" />",
+      "why": "摘掉唯一那处 QRCodeSVG ⇒ 变异体在**无值分支**里画码（缺配置也画一个假码）",
+      "issue": "#7017"
+    },
+    {
+      "id": "bmini-unconfigured-branch",
+      "corpus": "frontend/admin-web/src/components/layout/MobileEntry.tsx",
+      "call_site": "tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py",
+      "anchor": "<p className=\"text-sm text-neutral-500\" data-testid=\"bmini-h5-unconfigured\">",
+      "why": "把 QRCodeSVG 塞进「未配置」分支 ⇒ 证明「缺配置不画假码」那条判据有牙",
+      "issue": "#7017"
+    },
+    {
+      "id": "bmini-dockerfile-env",
+      "corpus": "frontend/admin-web/Dockerfile",
+      "call_site": "tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py",
+      "anchor": "ENV NEXT_PUBLIC_BMINI_H5_URL=${NEXT_PUBLIC_BMINI_H5_URL}\n",
+      "why": "删掉 Dockerfile 的 ENV ⇒ 运行时拿不到地址（构建期注入不再是单一真值）",
+      "issue": "#7017"
+    },
+    {
+      "id": "bmini-qr-value-entryurl",
+      "corpus": "frontend/admin-web/src/components/layout/MobileEntry.tsx",
+      "call_site": "tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py",
+      "anchor": "value={entryUrl}",
+      "why": "组件里自己拼 `?qr=` ⇒ 绕开单一真值的派生点（issue #7825 的坏形态）",
+      "issue": "#7017"
+    },
+    {
+      "id": "bmini-url-read-helper",
+      "corpus": "frontend/admin-web/src/components/layout/MobileEntry.tsx",
+      "call_site": "tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py",
+      "anchor": "const bminiH5Url = getBminiH5Url()",
+      "why": "改成自己读 `process.env` ⇒ 出现第二个读取点（单一真值被绕过）",
+      "issue": "#7017"
+    },
+    {
+      "id": "bmini-header-entry",
+      "corpus": "frontend/admin-web/src/components/layout/Header.tsx",
+      "call_site": "tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py",
+      "anchor": "<MobileEntryHeader />",
+      "why": "摘掉顶栏的手机端入口 ⇒ 证明「全站只有一处入口」有牙",
+      "issue": "#7017"
+    },
+    {
+      "id": "acr-ai-agent-login-call",
+      "corpus": ".github/workflows/deploy-ai-agent-service.yml",
+      "call_site": "tests/unit_ci_workflows/test_acr_login_not_load_bearing.py",
+      "anchor": "run: bash scripts/acr_login.sh ${{ env.ACR_REGISTRY }} \"${{ secrets.ACR_USERNAME }}\" \"${{ secrets.ACR_PASSWORD }}\"",
+      "why": "写回裸 `docker login`（旧形态）⇒ 证明「ACR 登录不承重」那条判据会红",
+      "issue": "#7017"
+    },
+    {
+      "id": "acr-helper-wall-clock-timeout",
+      "corpus": "scripts/acr_login.sh",
+      "call_site": "tests/unit_ci_workflows/test_acr_login_not_load_bearing.py",
+      "anchor": "\"$TIMEOUT_BIN\" \"$ATTEMPT_TIMEOUT\" docker login",
+      "why": "摘掉墙钟上界 ⇒ 登录可能无限挂住（判据 3 必须红）",
+      "issue": "#7017"
+    },
+    {
+      "id": "automerge-nonbot-run-three-state",
+      "corpus": ".github/workflows/automerge.yml",
+      "call_site": "tests/unit_ci_workflows/test_automerge_bot_safe_path.py",
+      "anchor": "if [ \"$mergeable\" = \"UNKNOWN\" ]; then",
+      "why": "改掉回读的三态分流 ⇒ 证明 `ORIGINAL_NONBOT_RUN_RAW` 逐字快照不是橡皮图章",
+      "issue": "#7017"
+    },
+    {
+      "id": "automerge-nonbot-if-bot-clause",
+      "corpus": ".github/workflows/automerge.yml",
+      "call_site": "tests/unit_ci_workflows/test_automerge_bot_safe_path.py",
+      "anchor": "      contains(fromJSON(",
+      "why": "把 bot 排除子句短路成 false ⇒ 证明 `ORIGINAL_NONBOT_IF_RAW` 判据能单独变红",
+      "issue": "#7017"
+    }
+  ],
+  "bare_replace_exemptions": [
+    {
+      "path": "tests/unit_ci_workflows/heavy_entry_sandbox.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_admin_role_read_surface_guard.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_agent_batch_type_domain.py",
+      "hits": 4,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_agent_jwt_key_alignment.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_agent_permission_parity.py",
+      "hits": 13,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_automerge_bot_safe_path.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_batch_gate.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_batch_stocktake_write_point.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_bmini_h5_hosting.py",
+      "hits": 5,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_c_end_h5_hosting.py",
+      "hits": 14,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_case_prose_test_names.py",
+      "hits": 2,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_casebook_ledger_claims.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_contribution_gate.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_db_hot_path_indexes.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_dead_capability_meta_guard.py",
+      "hits": 4,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_declaration_truth_guards.py",
+      "hits": 2,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_denial_domain_isolation.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_deploy_leg_failure_reaction.py",
+      "hits": 8,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_deploy_leg_run_undefined_vars.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_deploy_skip_credential.py",
+      "hits": 2,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_dev_db_whitelist_one_command.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_dev_flow_sync_claim.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_dev_mode_failure_modes.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_dev_worktree_lock_liveness.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_dev_worktree_preset_wording.py",
+      "hits": 4,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_dev_worktree_symlink_safety.py",
+      "hits": 6,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_drift_audit_outer_drift_channel.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_eval_auto_respond_l0.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_eval_seed_catalog.py",
+      "hits": 4,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_eval_tenant_fixture_consistency.py",
+      "hits": 4,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_flaky_ledger_append_selfheal.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_flaky_ledger_approval_wait.py",
+      "hits": 2,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_flaky_ledger_branch_presence_consistency.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_flaky_ledger_reconcile.py",
+      "hits": 16,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_flaky_ledger_reconcile_conflict_split.py",
+      "hits": 2,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_flaky_ledger_reconcile_health.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_flaky_ledger_tracking_gate.py",
+      "hits": 2,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_flaky_triage.py",
+      "hits": 19,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_flaky_triage_circuit_breaker.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py",
+      "hits": 2,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_growth_gate_pr_comment.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_guard_scope_declaration.py",
+      "hits": 2,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_helper_leg_execution_shape.py",
+      "hits": 2,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_iron_rule_10_schedule_scope.py",
+      "hits": 7,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_java_endpoint_parser_comments.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_join_height_legacy_sync.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_land_tool_provenance.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_lifecycle_land_and_reap.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_local_ai_wiring_doc.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_local_gate_matrix.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_logic_delete_write_shape.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_machine_heavy_lock.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_main_freshness_guard.py",
+      "hits": 5,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_mechanism_jobs_alerting.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_mechanism_liveness.py",
+      "hits": 2,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_menu_navigator.py",
+      "hits": 5,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py",
+      "hits": 10,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_merge_gate_job_if.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_mibao_b_end_readonly.py",
+      "hits": 13,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_mibao_chat_gate.py",
+      "hits": 4,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_must_finish_retire_migration.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_next_case_id_allocator.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_nginx_log_redaction.py",
+      "hits": 2,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_onboarding_processing_catalog_seed.py",
+      "hits": 2,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_onboarding_required_seed_guard.py",
+      "hits": 4,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_op_name_registry_guard.py",
+      "hits": 6,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_operation_display_name_guard.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_ops_readouts.py",
+      "hits": 3,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_option_fee_seed.py",
+      "hits": 6,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_order_print_entry_matrix.py",
+      "hits": 5,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_package_heavy_entry_ban.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_page_context_registry_coverage.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_paused_schedule_registry.py",
+      "hits": 5,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_pg_orphan_sweep.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_post_merge_verify_credential_probe.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_post_merge_verify_leg.py",
+      "hits": 7,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_pr_comment_claiming_marker.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_print_doc_convention_guard.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_print_media_matrix_guard.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_print_single_doc_on_paper.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_proactive_declarations_are_registered.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_processing_catalog_seed.py",
+      "hits": 6,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_processing_item_route_rules_seed.py",
+      "hits": 3,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_prod_security_headers.py",
+      "hits": 2,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_product_status_single_source.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_production_catalog_seed.py",
+      "hits": 14,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_public_code_spaces_are_disjoint.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_rbac_derived_roles_and_catalog.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_read_face_json_key_guard.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_readonly_verification_pack.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_redproof_harness_gate.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_removed_page_copy_guard.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_removed_page_pointer_targets.py",
+      "hits": 3,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_rerun_to_clear_paths.py",
+      "hits": 2,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_restore_route_rule_positions_migration.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_rollback_runbook_criteria.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_schema_bootstrap_order.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_scripts_bash32_var_brace.py",
+      "hits": 3,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_set_code_storage_v92_migration.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_set_overview_shape_truth_sources.py",
+      "hits": 3,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_shipment_read_surface_guard.py",
+      "hits": 2,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_swas_bootstrap_same_source_guard.py",
+      "hits": 5,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_swas_command_content_limit.py",
+      "hits": 4,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_swas_config_tarball_fetch_budget.py",
+      "hits": 2,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_swas_container_runtime.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_swas_deploy_blue_green.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_swas_deploy_config_pinning.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_swas_deploy_disk_recovery.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_swas_deploy_disk_retention.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_swas_deploy_no_downgrade.py",
+      "hits": 5,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_swas_nginx_rate_limit.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_swas_server_side_build.py",
+      "hits": 12,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_sync_main_case_surface_guard.py",
+      "hits": 2,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_synthetic_probe.py",
+      "hits": 2,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_terminal_release_leg.py",
+      "hits": 3,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_trial_onboarding_check.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_ui_smoke_name_ledger.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_ui_smoke_selector_liveness.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_ui_smoke_worktree_deps.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_v93_route_rules_backfill.py",
+      "hits": 4,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_v96_operation_price_versions_backfill.py",
+      "hits": 7,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_v97_orphan_positions_cleanup.py",
+      "hits": 4,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_voice_upload_form_contract.py",
+      "hits": 2,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_wait_checks.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_wash_label_geometry_guard.py",
+      "hits": 7,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_wash_label_single_source.py",
+      "hits": 7,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_wechat_verify_route.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_wiring_claims_registry.py",
+      "hits": 2,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_worker_h5_auth_failure_copy.py",
+      "hits": 2,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_worker_h5_hosting.py",
+      "hits": 2,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    },
+    {
+      "path": "tests/unit_ci_workflows/test_worker_h5_module_closure_guard.py",
+      "hits": 1,
+      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
+      "issue": "#7017"
+    }
+  ]
+}

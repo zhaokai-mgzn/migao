@@ -47,6 +47,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -56,6 +57,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 HELPER = REPO_ROOT / "scripts" / "acr_login.sh"
 BASH = "/bin/bash"
+
+# 注入走共用原语（issue #7017）：`str.replace` 0 命中时**静默返回原串** ⇒ 把「锚点漂移」误报成
+# 「判据没牙」。`inject()` 0 命中抛 AnchorDrift（报文含语料名 + 锚点前 60 字），不唯一抛 AmbiguousAnchor。
+sys.path.append(str(REPO_ROOT / "tests"))
+from unit_ci_workflows.injection import inject  # noqa: E402
 
 NON_FATAL = ("deploy-admin-api.yml", "deploy-frontend.yml",
              "deploy-ai-agent-service.yml", "deploy-reconcile.yml")
@@ -298,10 +304,12 @@ def test_docker_login_lint_has_discriminating_power():
     assert _lint_docker_login(real) == [], "真语料上判据 1 已经不干净（前置条件不成立）"
     # 注入：把 ai-agent 那一步换成裸 login（逐字还原旧形态）
     src = real["deploy-ai-agent-service.yml"]
-    broken = src.replace(
+    broken = inject(
+        src,
         'run: bash scripts/acr_login.sh ${{ env.ACR_REGISTRY }} "${{ secrets.ACR_USERNAME }}" "${{ secrets.ACR_PASSWORD }}"',
-        "run: echo x | docker login ${{ env.ACR_REGISTRY }} -u u --password-stdin", 1)
-    assert broken != src, "注入未生效：ai-agent 的登录调用没找到（判据已过期）"
+        "run: echo x | docker login ${{ env.ACR_REGISTRY }} -u u --password-stdin",
+        where=".github/workflows/deploy-ai-agent-service.yml",
+    )
     hits = _lint_docker_login({**real, "deploy-ai-agent-service.yml": broken})
     assert hits, "把裸 `docker login` 写回来却**没红** ⇒ 判据 1 是空断言"
     # 反向对照：只改注释 ⇒ 不红
@@ -315,8 +323,9 @@ def test_helper_criterion_has_discriminating_power():
     """判据 10b：摘掉 `timeout` / 把 `exit 0` 改成 `exit 1` ⇒ 判据 3 / 4 必红。"""
     text = HELPER.read_text(encoding="utf-8")
     # 摘掉 timeout（把 `timeout "$ATTEMPT_TIMEOUT"` 删掉）
-    no_timeout = text.replace('"$TIMEOUT_BIN" "$ATTEMPT_TIMEOUT" docker login', "docker login", 1)
-    assert no_timeout != text, "注入未生效：helper 里找不到带墙钟上界的 docker login"
+    no_timeout = inject(
+        text, '"$TIMEOUT_BIN" "$ATTEMPT_TIMEOUT" docker login', "docker login", where="scripts/acr_login.sh"
+    )
     active = "\n".join(l for l in no_timeout.splitlines() if ACTIVE_LINE.match(l))
     assert not re.search(r'"\$TIMEOUT_BIN" "\$ATTEMPT_TIMEOUT" docker login', active), (
         "摘掉墙钟上界后判据 3 仍绿 ⇒ 那条断言是空断言"
