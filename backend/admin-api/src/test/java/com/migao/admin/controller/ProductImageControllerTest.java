@@ -1,6 +1,6 @@
 package com.migao.admin.controller;
 
-// case_ids: UI-129
+// case_ids: UI-129, MC-136
 
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.service.ProductImageGenerationService;
@@ -22,6 +22,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -136,6 +137,18 @@ class ProductImageControllerTest extends BaseControllerTest {
                         """))
                 .andExpect(status().isUnprocessableEntity());
         verifyNoInteractions(service);
+    }
+
+    @Test
+    @DisplayName("等待上限转发（issue #7731）：GET /estimate 回 estimated_deadline_ms，真值在 ai-agent")
+    void estimate_forwardsTheAiAgentDeadline() throws Exception {
+        when(service.estimatedDeadlineMs()).thenReturn(330_000L);
+
+        mockMvc.perform(get(URL + "/estimate"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.estimated_deadline_ms").value(330_000));
+        verify(service).estimatedDeadlineMs();
     }
 
     @Test

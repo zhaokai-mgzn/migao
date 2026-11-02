@@ -40,10 +40,20 @@ import java.util.Map;
 public class ProductImageClient {
 
     private static final String GENERATE_PATH = "/api/internal/images/generate";
+
+    /**
+     * 生图等待上限的**唯一真值在 ai-agent**（`IMAGE_GEN_TIMEOUT`，issue #7731）：
+     * 本层不再写自己的超时数，生成前经本端点**现取**（admin-api 只是等上游的那一层）。
+     */
+    private static final String DEADLINE_PATH = "/api/internal/images/deadline";
+
     private static final int CONNECT_TIMEOUT_MS = 3_000;
 
-    /** 生图比识别慢（实测 30~60s，长尾可能到 120s）⇒ 读超时给足，但不无限等。 */
-    static final int GENERATE_READ_TIMEOUT_MS = 200_000;
+    /** 传输余量（JSON / 下载转存交接）—— 加在上游 deadline 之上的空间，**不是** deadline 本身。 */
+    static final int TRANSFER_MARGIN_MS = 90_000;
+
+    /** 上游 deadline 的缓存时长：改配置后最多这么久生效（缓存的是**上游给的值**，不是超时本身）。 */
+    private static final long DEADLINE_TTL_MS = 10 * 60 * 1000L;
 
     /** fail-closed 错误码（对外 422 + suggestion，与图片识别同口径）。 */
     public static final String ERR_AI_IMAGE_UNAVAILABLE = "AI_PRODUCT_IMAGE_UNAVAILABLE";
@@ -106,6 +116,12 @@ public class ProductImageClient {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final RestTemplate restTemplate;
+    /** 读超时按上游 deadline 现设（测试注入 mock RestTemplate 时为 null）。 */
+    private final SimpleClientHttpRequestFactory requestFactory;
+
+    /** 上游 deadline 缓存（0 = 没取到 ⇒ 本层不设读超时，不擅自给一个更紧的数）。 */
+    private volatile long cachedDeadlineMs;
+    private volatile long cachedDeadlineAt;
 
     @Value("${ai-agent.base-url:http://localhost:8000}")
     private String baseUrl;
@@ -114,18 +130,24 @@ public class ProductImageClient {
     private String serviceToken;
 
     public ProductImageClient() {
-        this(new RestTemplate(factory()));
+        this(factory());
+    }
+
+    private ProductImageClient(SimpleClientHttpRequestFactory requestFactory) {
+        this.requestFactory = requestFactory;
+        this.restTemplate = new RestTemplate(requestFactory);
     }
 
     /** 供测试注入 MockRestTemplate。 */
     ProductImageClient(RestTemplate restTemplate) {
         this.restTemplate = restTemplate;
+        this.requestFactory = null;
     }
 
     private static SimpleClientHttpRequestFactory factory() {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(CONNECT_TIMEOUT_MS);
-        factory.setReadTimeout(GENERATE_READ_TIMEOUT_MS);
+        // 读超时**不在这里写死**：每次生成前按 ai-agent 现取的 deadline 设置（issue #7731）
         return factory;
     }
 
@@ -144,6 +166,8 @@ public class ProductImageClient {
         if (!StringUtils.hasText(serviceToken)) {
             throw fail(NOT_CONFIGURED, "未配置 ai-agent.service-token", null);
         }
+        // 三层同源（issue #7731）：读超时 = ai-agent 下发的 deadline + 传输余量。
+        applyReadTimeout(deadlineMs());
         Map<String, Object> payload = new LinkedHashMap<>();
         Long tenantId = TenantContext.getTenantId();
         payload.put("tenant_id", tenantId == null ? 0L : tenantId);
@@ -189,9 +213,71 @@ public class ProductImageClient {
         }
     }
 
+    /**
+     * 生图等待上限（毫秒）：**唯一真值在 ai-agent**（`IMAGE_GEN_TIMEOUT`，经内部端点下发）。
+     *
+     * <p>取不到 ⇒ 0 = 本层不设读超时（上游自己有上限；不给一个更紧的数是本单的核心：
+     * 改前写死 200s，会在上游 180s 之外再加一层「后端比供应商还短」的风险）。</p>
+     */
+    long deadlineMs() {
+        long now = System.currentTimeMillis();
+        if (cachedDeadlineAt > 0 && now - cachedDeadlineAt < DEADLINE_TTL_MS) {
+            return cachedDeadlineMs;
+        }
+        long fetched = fetchDeadlineMs();
+        cachedDeadlineMs = fetched;
+        cachedDeadlineAt = now;
+        return fetched;
+    }
+
+    /**
+     * 对外（前端）展示/等待用的上限 = **上游 deadline 本身**（0 = 未知）。
+     *
+     * <p>传输余量只加在本层读超时上（{@link #readTimeoutFor(long)}）—— 那是内部等待空间，
+     * 不是「商家要等多久」的承诺；文案的「最长约」只按权威 deadline 算。</p>
+     */
+    public long estimatedDeadlineMs() {
+        return deadlineMs();
+    }
+
+    /** 本层读超时：上游 deadline + 传输余量；0（未知）⇒ 不设上限。 */
+    static int readTimeoutFor(long deadlineMs) {
+        long timeout = deadlineMs > 0 ? deadlineMs + TRANSFER_MARGIN_MS : 0;
+        return timeout > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) timeout;
+    }
+
+    private void applyReadTimeout(long deadlineMs) {
+        if (requestFactory != null) {
+            requestFactory.setReadTimeout(readTimeoutFor(deadlineMs));
+        }
+    }
+
+    /** 现取上游 deadline；取不到 ⇒ 0（单独一层失败不阻断生成，也不偷偷塞一个本地数）。 */
+    private long fetchDeadlineMs() {
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("X-Service-Token", serviceToken);
+            ResponseEntity<String> response = restTemplate.exchange(
+                    endpoint(DEADLINE_PATH), HttpMethod.GET, new HttpEntity<>(headers), String.class);
+            JsonNode root = objectMapper.readTree(response.getBody());
+            long deadline = root == null ? 0 : root.path("data").path("deadline_ms").asLong(0);
+            if (deadline <= 0) {
+                log.warn("生图 deadline 端点没给可用值，本层不设读超时: body={}", response.getBody());
+            }
+            return deadline;
+        } catch (Exception e) {
+            log.warn("生图 deadline 端点不可达，本层不设读超时（上游自己有上限）: {}", e.getMessage());
+            return 0;
+        }
+    }
+
     private String endpoint() {
+        return endpoint(GENERATE_PATH);
+    }
+
+    private String endpoint(String path) {
         String base = StringUtils.hasText(baseUrl) ? baseUrl : "http://localhost:8000";
-        return base.endsWith("/") ? base.substring(0, base.length() - 1) + GENERATE_PATH : base + GENERATE_PATH;
+        return base.endsWith("/") ? base.substring(0, base.length() - 1) + path : base + path;
     }
 
     /**

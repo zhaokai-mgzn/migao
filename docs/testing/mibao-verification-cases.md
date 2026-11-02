@@ -6944,6 +6944,7 @@
 溯源: 2026-11-03 新增（issue #6495，AI 裁定按**实测**改判病灶）。原始单的读数（`head -6 target/surefire-reports/<fqn>.txt` 得 `Tests run: 0` 且 exit 0）复现了，但归因错了一半：实测 `-Dtest=OssConfigTest`（3 外层 + 12 嵌套）= **15/15 真跑**、`-Dtest=AgentBatchServiceTest`（38 条全在 @Nested）= **38/38 真跑**、`-Dtest=OssConfigTest*` 同为 15（**通配符没有额外收益**）⇒「类里含 @Nested ⇒ 一条都不跑」**不成立**，原单那条是**误诊**，误诊源 = `.txt` 摘要在 @Nested 类上恒报 0（同一次运行 XML/console 15，摘要 0）。真·空跑另有一条：`-Dtest=AgentBatchServiceTest#persistsPreviewWithOldValueCollectedFromDb`（该方法声明在 @Nested class Create 内）⇒ `Tests run: 0` / `BUILD SUCCESS` / exit=0 / 无 XML；加 `$` 限定 `-Dtest=AgentBatchServiceTest$Create#persistsPreviewWithOldValueCollectedFromDb` ⇒ **1/1 真跑**。交付 = 入口 scripts/java-test.sh（+ scripts/java_pointed_readings.py）把选择器自动纠正 + **只信 XML** + 断言读数大于 0（0 即红，exit 1）；守卫 = tests/unit_ci_workflows/test_java_nested_pointed_run_guard.py J1~J7 + 台账 java_pointed_run_ledger.json（读 `.txt` 的两个红证机具**已登记**并钉住「定点类保持扁平」这个前提）；同时改掉两处在仓内传播错读数的文案（ScheduledTaskServiceTest 的类注释、docs/wiki/Development.md 新增「Java 定点判据」节）。取号 = **MC-134**（`scripts/next_case_id.py MC` 给的是历史空档 MC-099 —— 仓库内已有两次明文说明 MC-099 是 PR #6924 随 #8383 整包撤回被删、**不回填**；本轮 **5 个在飞 PR（#8503 / #8506 / #8508 / #8509 / #8510）同时占了 MC-133**（CI 的 `test_case_id_claims.py` 在合并前就判红）⇒ 按「后合入者让号」让到现取最小空闲号 MC-134）。 ｜ tags: backend-contract, java-test, surefire, nested, readings, guard, red-proof
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 ### MC-137. gate 的 bmini 打印口径守卫读**git 索引**而不是工作树：被 `.gitignore` 命中的旧产物不再让本机假红（issue #6594） 🔵
 ```
 你: 我只在本机跑过一次 ai-agent-service 的覆盖率，为什么 gate 的 bmini 腿就说我在打印口径里写死了 384？CI 明明是绿的。
@@ -6970,6 +6971,22 @@
 ```
 溯源: 2026-11-03 新增（issue #7719）。逐字读数（2026-10-25 10:11）：对外 503 IMAGE_GEN_MODEL_UNSUPPORTED，而供应商对同一请求的原文 = HTTP 400 code=InvalidParameter message=URL hostname cannot be resolved（样图域名解析不了）。取号 = MC-135（**让号记实**：原取 MC-133，但同日在飞 PR #8506 / #8508 / #8509 都取在同一段号上 ⇒ 按 `docs/wiki/Change-Blast-Radius.md` 陷阱 3 的「后合入者让号」，在 CI 报红前主动让到现取最大号 + 1 = MC-135）。 ｜ tags: image-generation, failure-attribution, input-side, red-proof
 >>>>>>> origin/fix/7719-image-error-attribution
+=======
+### MC-136. 生图等待上限只有一个权威（ai-agent 的 IMAGE_GEN_TIMEOUT）：admin-api 读超时与前端等待/文案都从它派生；文案按实测区间说、超 30 秒给「还在生成」（issue #7731） 🔵
+```
+你: 商家点「生成」后转圈 1~2 分钟，面板文案写的是「约 40 秒」，中途没有任何进度（issue #7731）
+你: 三层超时各写一份（前端 210000ms / admin-api 200000ms / ai-agent 180s）⇒ 改一层忘一层
+期望: direct_reply
+数据: **权威单一（会红）**：ai-agent `app/config.py` 的 `IMAGE_GEN_TIMEOUT` 是唯一 deadline 定义（三层里 0 处重复）；`.env.example` 不再写第二份活值；`GET /api/internal/images/deadline` 现取 `settings.IMAGE_GEN_TIMEOUT * 1000`（注入 240/300 ⇒ 240000/300000）。执行点 = tests/unit_ci_workflows/test_image_gen_deadline_single_source.py::test_ai_agent_is_the_single_authority + backend/ai-agent-service/tests/test_generator.py::test_deadline_endpoint_reads_the_single_authority。
+数据: **admin-api 不写第二份（会红）**：ProductImageClient 无 GENERATE_READ_TIMEOUT_MS、无 deadline 量级的硬编码超时；生成前经 /images/deadline 现取并派生读超时（deadline + 传输余量；取不到 ⇒ 不设上限，不擅自给更紧的数）；GET /api/admin/products/ai-images/estimate 只转发 estimated_deadline_ms。执行点 = ProductImageClientTest::readTimeoutDerivesFromAiAgentDeadline + ProductImageControllerTest::estimate_forwardsTheAiAgentDeadline + ProductImageGenerationServiceTest::estimatedDeadlineIsForwarded。
+数据: **前端派生（会红）**：商品图 API 模块（frontend/admin-web/src/lib/api-product-image.ts，从 loc ratchet 冻结的 api.ts 拆出）无生图超时字面量（改前 210000），等待上限 = admin-api 的 estimated_deadline_ms + 浏览器余量（imageGenTimeoutMs）；面板文案的「最长约 N 分钟」由该值算出（240000 ⇒ 4 分钟，300000 ⇒ 5 分钟）。执行点 = frontend/admin-web/tests/unit/lib/api-product-image.test.ts + ProductImageAI.test.tsx。
+数据: **文案与进度（会红）**：不再出现与实测（121~145s）不符的等待承诺（旧口径的「约 N 秒」「约 2~4 分钟」）；文案 = 实测区间（单张 2~3 分钟 / 整套 6~8 分钟）+ 由权威上限算出的「最长约」；生成中显示「已用时 N 秒」，超过 30 秒补「还在生成，通常 …」一行（不新增告警块、不摆模型名 / 请求 id，§31 P1/P3/P4）。
+数据: **红证（注入式，可复制）**：把 `GENERATE_READ_TIMEOUT_MS = 200_000` 写回 ProductImageClient（或把 `timeout: 210000` 写回 api-product-image.ts、把「约 2~4 分钟」写回面板）⇒ test_image_gen_deadline_single_source.py 对应用例判红并具名；恢复即绿。
+前置: 本用例是 [backend-contract] 静态单一来源 + 三端单测用例：前置（ai-agent 内部端点、admin-api 端点、前端 API 模块）由各端单测自建或 mock（admin-web mock `@/lib/api`；admin-api mock RestTemplate；ai-agent 走真内核 + MockTransport），零网络、零真实生图；前置不成立时对应用例直接红，agent-eval 栈不跑它
+跳过: [backend-contract] 静态单一来源 + 沙箱行为判据（零网络、零真实生图），由 tests/unit_ci_workflows 与三端单测执行，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #7731）。取号 MC-136（`python3 scripts/next_case_id.py MC` 现取：main 001-098,100-132,134 + 在飞 PR #8509/#8508 占 133、#8503 占 135 ⇒ 本包让号到 136；MC-099 历史空档不回填）。权威层选择 = ai-agent（唯一真正等供应商的一层）：`IMAGE_GEN_TIMEOUT` 180→240（实测 121s/145s，旧值只余 ~20%）；新增 GET /api/internal/images/deadline 下发 deadline_ms；admin-api 删掉 GENERATE_READ_TIMEOUT_MS（200000），生成前现取并按 deadline+传输余量设读超时，取不到 ⇒ 不设上限；新增 GET /api/admin/products/ai-images/estimate 转发 estimated_deadline_ms；前端删掉 timeout: 210000，imageGenTimeoutMs(deadline) = deadline + 120s 浏览器余量；文案改成实测区间（单张 2~3 分钟 / 整套 6~8 分钟）+ 由权威上限算出的「最长约」，生成中显示已用时、超 30 秒补「还在生成」。⚠️ 未闭合（照实登记）：① 线上 `.env.ai-agent` 由运维人工维护，若它显式钉了 IMAGE_GEN_TIMEOUT=180，三层会跟着 180 走（页面文案自动显示「最长约 3 分钟」，不会说谎），但长尾余量要等运维改配置；② 本用例不跑真实生图（零生成费用），供应商真实长尾仍以线上读数为准。 ｜ tags: single-source, timeout, image-generation, copy-standard, red-proof
+>>>>>>> origin/fix/7731-image-timeout-copy
 
 ## 商家入驻域（7 case）
 
@@ -14742,10 +14759,14 @@
 - MC-132: 批次就绪判定把「已 arm 的原生 auto-merge」也算作不就绪（issue #6212）：跑那一次全量期间不许存在被秒合的窗口
 - MC-134: Java 定点判据的读数与空跑（issue #6495 的类级固化）：`.txt` 摘要对 @Nested 类恒报 0（误诊源）+ `外层类#嵌套方法` 真·空跑（exit 0）⇒ 读数只信 XML 且必须大于 0
 <<<<<<< HEAD
+<<<<<<< HEAD
 - MC-137: gate 的 bmini 打印口径守卫读**git 索引**而不是工作树：被 `.gitignore` 命中的旧产物不再让本机假红（issue #6594）
 =======
 - MC-135: 生图失败归因必须读供应商 message 正文：400 InvalidParameter 的「样图读不到」与「模型不接」分成两格（issue #7719）
 >>>>>>> origin/fix/7719-image-error-attribution
+=======
+- MC-136: 生图等待上限只有一个权威（ai-agent 的 IMAGE_GEN_TIMEOUT）：admin-api 读超时与前端等待/文案都从它派生；文案按实测区间说、超 30 秒给「还在生成」（issue #7731）
+>>>>>>> origin/fix/7731-image-timeout-copy
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

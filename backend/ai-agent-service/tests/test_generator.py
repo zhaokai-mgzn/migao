@@ -14,7 +14,7 @@
 - 503 响应体带稳定机器可读 `code`（issue #7552）：四类失败各回不同码，`detail` 仍可读，
   状态码语义不变（其它供应商失败仍是 502）。
 """
-# case_ids: UI-129
+# case_ids: UI-129, MC-136
 
 import asyncio
 import json
@@ -386,6 +386,21 @@ def test_internal_endpoint_returns_only_preview_fields(monkeypatch):
         resp = asyncio.run(image_generate(request, authorized=True))
     assert resp["success"] is True
     assert resp["data"] == {"image_url": "https://dashscope.oss/out.png", "model": "model-a"}
+
+
+def test_deadline_endpoint_reads_the_single_authority(monkeypatch):
+    """生图等待上限只认 `settings.IMAGE_GEN_TIMEOUT`（issue #7731 的单一来源）。
+
+    admin-api 的读超时与前端文案都经本端点派生 ⇒ 它必须**现取** settings（不能再写一个常量）。
+    注入 240/300 ⇒ 240000/300000，证明「改一处，其它两层跟着走」。
+    """
+    from app.api.internal import image_deadline
+
+    for seconds, expected in ((240, 240_000), (300, 300_000)):
+        monkeypatch.setattr(gen.settings, "IMAGE_GEN_TIMEOUT", seconds)
+        resp = asyncio.run(image_deadline(authorized=True))
+        assert resp["success"] is True
+        assert resp["data"] == {"deadline_ms": expected}
 
 
 def test_internal_endpoint_credential_failure_is_503_not_502(monkeypatch):

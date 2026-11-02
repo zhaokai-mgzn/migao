@@ -15,6 +15,7 @@ from loguru import logger
 from app.utils.auth import verify_service_token
 from app.tools import ToolContext, get_tool_registry
 from app.api.response_models import make_response
+from app.config import settings
 from app.knowledge.distill import distill
 from app.briefing.generator import generate_briefing
 from app.production.routing import qty_and_source
@@ -463,6 +464,18 @@ class ImageGenerationFailure(HTTPException):
     def __init__(self, code: str, detail: str):
         super().__init__(status_code=503, detail=detail)
         self.code = code
+
+
+@router.get("/images/deadline")
+async def image_deadline(
+    authorized: bool = Depends(verify_service_token),
+):
+    """生图等待上限（**唯一权威** = `settings.IMAGE_GEN_TIMEOUT`，issue #7731）。
+
+    admin-api 据此设自己的读超时、前端据此显示「最长约 N 分钟」—— 三层同源，
+    改 `IMAGE_GEN_TIMEOUT` 一处即可。只回毫秒数：不暴露供应商、Key、端点。
+    """
+    return make_response(True, data={"deadline_ms": int(settings.IMAGE_GEN_TIMEOUT * 1000)})
 
 
 @router.post("/images/generate")

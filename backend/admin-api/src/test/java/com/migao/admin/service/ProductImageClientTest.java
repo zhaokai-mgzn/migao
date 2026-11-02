@@ -1,6 +1,6 @@
 package com.migao.admin.service;
 
-// case_ids: UI-129
+// case_ids: UI-129, MC-136
 
 import com.migao.admin.exception.BusinessException;
 import org.junit.jupiter.api.DisplayName;
@@ -77,6 +77,29 @@ class ProductImageClientTest {
 
         assertThat(generated.imageUrl()).isEqualTo("https://oss/tmp.png");
         assertThat(generated.model()).isEqualTo("qwen-image-3.0");
+    }
+
+    @Test
+    @DisplayName("读超时同源（issue #7731）：deadline 从 ai-agent 现取，本层 = deadline + 传输余量")
+    void readTimeoutDerivesFromAiAgentDeadline() {
+        RestTemplate restTemplate = mock(RestTemplate.class);
+        when(restTemplate.exchange(anyString(), eq(HttpMethod.GET), any(), eq(String.class)))
+                .thenReturn(new ResponseEntity<>(
+                        "{\"success\":true,\"data\":{\"deadline_ms\":240000}}", HttpStatus.OK));
+        when(restTemplate.exchange(anyString(), eq(HttpMethod.POST), any(), eq(String.class)))
+                .thenReturn(new ResponseEntity<>("""
+                        {"success":true,"data":{"image_url":"https://oss/tmp.png","model":"m"}}
+                        """, HttpStatus.OK));
+
+        ProductImageClient client = clientWith(restTemplate, "tok");
+        client.generate("https://oss/sample.png", "回归布帘", "main", 0);
+
+        // 本层不写死 deadline：值来自上游端点（改 ai-agent 一处，本层跟着走）
+        assertThat(client.estimatedDeadlineMs()).isEqualTo(240_000);
+        assertThat(ProductImageClient.readTimeoutFor(240_000))
+                .isEqualTo(240_000 + ProductImageClient.TRANSFER_MARGIN_MS);
+        // 取不到 ⇒ 不设上限（不擅自给一个比供应商更紧的数）
+        assertThat(ProductImageClient.readTimeoutFor(0)).isZero();
     }
 
     @Test
