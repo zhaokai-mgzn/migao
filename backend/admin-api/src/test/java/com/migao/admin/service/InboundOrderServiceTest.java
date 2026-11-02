@@ -122,37 +122,25 @@ class InboundOrderServiceTest {
         TableInfoHelper.initTableInfo(asst, InboundOrderItem.class);
         TableInfoHelper.initTableInfo(asst, StockBatch.class);
 
-        // 建单时 MyBatis-Plus 会回填 UUID 主键；测试里给一个确定值，便于断言「单据与明细对得上」
+        // 建单时主键由服务端生成（手写 INSERT 不走 MyBatis-Plus 的 ASSIGN_UUID）；测试里给一个确定值，
+        // 便于断言「单据与明细对得上」
         lastInsertedOrder = null;
         lastInsertedLines = new java.util.ArrayList<>();
         markPostedRows = 1;
+        // 单号唯一性由 mock 承担（与真库 uk_inbound_orders_no 的部分唯一索引同语义，issue #6266）：
+        // 号已被占 ⇒ **0 行受影响**（真实现是 ON CONFLICT DO NOTHING，不再抛异常）。
+        // 没有这层，「撞号后换号」用例会因为「重复号也照样插进去」而恒绿（空断言）。
         org.mockito.Mockito.doAnswer(inv -> {
             InboundOrder o = inv.getArgument(0);
-            // 单号唯一性由 mock 承担（与真库 uk_inbound_orders_no 同语义）：号已被占 ⇒ 唯一索引冲突。
-            // 没有这层，「单号重试」用例会因为「重复号也照样插进去」而恒绿（空断言）。
             if (o.getInboundNo() != null && !takenInboundNos.add(o.getInboundNo())) {
-                throw new org.springframework.dao.DuplicateKeyException(
-                        "uk_inbound_orders_no: " + o.getInboundNo());
+                return 0;
             }
             if (o.getId() == null) {
                 o.setId("inbound-uuid-" + (++insertSeq));
             }
             lastInsertedOrder = o;
             return 1;
-        }).when(inboundOrderMapper).insert(any(InboundOrder.class));
-        // 「单号是否被占用」= 查库（candidate 就在 LambdaQueryWrapper 的入参值里）。
-        // ⚠️ MyBatis-Plus 是**惰性**物化入参：不先取一次 SQL 段，paramNameValuePairs 还是空的
-        //    ⇒ 探测恒返回 false、重试用例变成空断言（本用例第一版就是这么假绿的）。
-        org.mockito.Mockito.doAnswer(inv -> {
-            LambdaQueryWrapper<InboundOrder> wrapper = inv.getArgument(0);
-            if (wrapper.getParamNameValuePairs().isEmpty()) {
-                wrapper.getSqlSegment();
-            }
-            return wrapper.getParamNameValuePairs().values().stream()
-                    .filter(String.class::isInstance)
-                    .map(String.class::cast)
-                    .anyMatch(takenInboundNos::contains);
-        }).when(inboundOrderMapper).exists(any(LambdaQueryWrapper.class));
+        }).when(inboundOrderMapper).insertIgnoreInboundNoConflict(any(InboundOrder.class));
         // 过账原子闸：默认「抢到过账权」（影响行数 1）；抢不到的场景在各用例里覆盖成 0
         org.mockito.Mockito.doAnswer(inv -> markPostedRows)
                 .when(inboundOrderMapper).markPosted(anyString(), anyLong(), any(), any());
@@ -294,7 +282,7 @@ class InboundOrderServiceTest {
             service.create(request(item("prod-1", 11L, 30, "12.50")), TENANT, "13800000000");
 
             ArgumentCaptor<InboundOrder> orderCap = ArgumentCaptor.forClass(InboundOrder.class);
-            verify(inboundOrderMapper).insert(orderCap.capture());
+            verify(inboundOrderMapper).insertIgnoreInboundNoConflict(orderCap.capture());
             InboundOrder saved = orderCap.getValue();
             assertThat(saved.getStatus()).isEqualTo(InboundOrder.STATUS_DRAFT);
             assertThat(saved.getInboundNo()).startsWith("RK-")
@@ -359,7 +347,7 @@ class InboundOrderServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("1 位小数")
                     .hasMessageContaining("2.755");
-            verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+            verify(inboundOrderMapper, never()).insertIgnoreInboundNoConflict(any(InboundOrder.class));
         }
 
         @Test
@@ -370,7 +358,7 @@ class InboundOrderServiceTest {
             assertThatThrownBy(() -> service.create(req, TENANT, "op"))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("至少要有 1 行明细");
-            verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+            verify(inboundOrderMapper, never()).insertIgnoreInboundNoConflict(any(InboundOrder.class));
         }
     }
 
@@ -427,7 +415,7 @@ class InboundOrderServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("1 位小数")
                     .hasMessageContaining("2.755");
-            verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+            verify(inboundOrderMapper, never()).insertIgnoreInboundNoConflict(any(InboundOrder.class));
         }
 
         @Test
@@ -951,25 +939,55 @@ class InboundOrderServiceTest {
 
             assertThat(second).matches("RK-\\d{8}-\\d{4}").endsWith("-0002");
             assertThat(second).isNotEqualTo(first);
-            // 判别力：第二次确实**探测了两次**（0001 被占 ⇒ 重新生成）
-            verify(inboundOrderMapper, times(2)).exists(any(LambdaQueryWrapper.class));
+            // 判别力：第二次确实**闯了两次库**（0001 被占 ⇒ 0 行 ⇒ 换号重来）
+            verify(inboundOrderMapper, times(2)).insertIgnoreInboundNoConflict(any(InboundOrder.class));
         }
 
         @Test
-        @DisplayName("红证：mock 承担了真库的唯一索引语义 —— 手工插入重号当场 DuplicateKeyException")
-        void duplicateNumberIsRejectedLikeTheRealUniqueIndex() {
+        @DisplayName("🔴 原子取号（#6266）：候选在**插入那一刻**被抢 ⇒ 换号重来，建单仍成功（不再 409）")
+        void createRetriesWhenTheCandidateIsSnatchedByTheInsert() {
+            givenSkuAndDetail();
+            resetInboundSeq();
+            service.create(request(item("prod-1", 11L, 30, "12.50")), TENANT, "op");
+            String taken = lastInsertedOrder.getInboundNo();
+            assertThat(taken).endsWith("-0001");
+
+            // 钉住**第一次**候选 = 已被占用的那个号（= 另一个实例的计数器从同一位置起步，
+            // 或重启后重走 0001）—— 这正是 #6266 的可达形态；进程内原子计数器天然给不同候选，
+            // 不钉住就造不出来（判据会退化成碰运气）。
+            org.mockito.Mockito.clearInvocations(inboundOrderMapper);
+            InboundOrderService.setInboundNoProbeFirstCandidateForTest(taken);
+            try {
+                service.create(request(item("prod-1", 11L, 30, "12.50")), TENANT, "op");
+            } finally {
+                InboundOrderService.setInboundNoProbeFirstCandidateForTest(null);
+            }
+
+            assertThat(lastInsertedOrder.getInboundNo())
+                    .as("落败的候选必须被**换号重试**吸收，而不是让这一单建不成")
+                    .isNotEqualTo(taken)
+                    .endsWith("-0002");
+            verify(inboundOrderMapper, times(2)).insertIgnoreInboundNoConflict(any(InboundOrder.class));
+        }
+
+        @Test
+        @DisplayName("红证：mock 承担了真库唯一索引语义 —— 同号再落库**0 行**（改前是 DuplicateKeyException ⇒ 409）")
+        void duplicateNumberConvergesToZeroRowsLikeTheRealUniqueIndex() {
             givenSkuAndDetail();
             resetInboundSeq();
             service.create(request(item("prod-1", 11L, 30, "12.50")), TENANT, "op");
             String used = lastInsertedOrder.getInboundNo();
 
-            // 不做去重重试、直接用同一个号插一次 —— 应当当场冲突（这正是改前的失败形态）
+            // 用同一个号再落一次库：真库由 uk_inbound_orders_no 判 0 行。
+            // 改前那条路径是 `exists` 判假后 insert ⇒ 抛 DuplicateKeyException ⇒ create 的 catch 回 409
+            // （并发下必有一方建单失败）—— 那正是 #6266 修掉的形态。
             InboundOrder dup = new InboundOrder();
+            dup.setId("dup-" + insertSeq);
             dup.setTenantId(TENANT);
             dup.setInboundNo(used);
-            assertThatThrownBy(() -> inboundOrderMapper.insert(dup))
-                    .isInstanceOf(org.springframework.dao.DuplicateKeyException.class)
-                    .hasMessageContaining(used);
+            assertThat(inboundOrderMapper.insertIgnoreInboundNoConflict(dup))
+                    .as("同号第二次落库必须收敛成 0 行（号归先到者），且**不抛异常**（事务不被 abort）")
+                    .isZero();
         }
 
         @Test
@@ -990,7 +1008,7 @@ class InboundOrderServiceTest {
             again.setImportRunId("opening-20260924-01");
             InboundOrderResponse replayed = service.create(again, TENANT, "op");
 
-            verify(inboundOrderMapper, times(1)).insert(any(InboundOrder.class));   // 只落了一张单
+            verify(inboundOrderMapper, times(1)).insertIgnoreInboundNoConflict(any(InboundOrder.class));   // 只落了一张单
             assertThat(replayed.getId()).isEqualTo(created.getId());
             assertThat(replayed.getInboundNo()).isEqualTo(created.getInboundNo());
             assertThat(takenInboundNos).hasSize(1);                                 // 也没有偷偷占第二个号
@@ -1000,7 +1018,7 @@ class InboundOrderServiceTest {
         @DisplayName("并发同键：唯一索引挡下第二个（DuplicateKeyException）⇒ 明确 409，不静默建第二张")
         void concurrentSameImportRunFailsClosed() {
             givenSkuAndDetail();
-            when(inboundOrderMapper.insert(any(InboundOrder.class)))
+            when(inboundOrderMapper.insertIgnoreInboundNoConflict(any(InboundOrder.class)))
                     .thenThrow(new org.springframework.dao.DuplicateKeyException(
                             "uk_inbound_orders_tenant_import_run"));
             InboundOrderCreateRequest req = request(item("prod-1", 11L, 30, "12.50"));
@@ -1088,7 +1106,7 @@ class InboundOrderServiceTest {
             assertThatThrownBy(() -> service.create(request(item("prod-1", 11L, -3, null)), TENANT, "op"))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("必须大于 0 米");
-            verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+            verify(inboundOrderMapper, never()).insertIgnoreInboundNoConflict(any(InboundOrder.class));
         }
 
         @Test
@@ -1114,7 +1132,7 @@ class InboundOrderServiceTest {
             assertThatThrownBy(() -> service.create(req, TENANT, "op"))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("单据来源只支持");
-            verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+            verify(inboundOrderMapper, never()).insertIgnoreInboundNoConflict(any(InboundOrder.class));
         }
 
         @Test
@@ -1126,7 +1144,7 @@ class InboundOrderServiceTest {
             assertThatThrownBy(() -> service.create(request(item("prod-1", 11L, 5, null)), TENANT, "op"))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("SKU 不属于该商品");
-            verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+            verify(inboundOrderMapper, never()).insertIgnoreInboundNoConflict(any(InboundOrder.class));
         }
     }
 
@@ -1188,7 +1206,7 @@ class InboundOrderServiceTest {
                     .hasMessageContaining("2 位小数")
                     .hasMessageContaining("0.005");
 
-            verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+            verify(inboundOrderMapper, never()).insertIgnoreInboundNoConflict(any(InboundOrder.class));
             verify(inboundOrderItemMapper, never()).insert(any(InboundOrderItem.class));
         }
 
@@ -1206,7 +1224,7 @@ class InboundOrderServiceTest {
                     .hasMessageContaining("0.015");
 
             verify(inboundOrderItemMapper, never()).insert(any(InboundOrderItem.class));
-            verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+            verify(inboundOrderMapper, never()).insertIgnoreInboundNoConflict(any(InboundOrder.class));
         }
 
         @Test
@@ -1398,7 +1416,7 @@ class InboundOrderServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("必须大于 0");
 
-            verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+            verify(inboundOrderMapper, never()).insertIgnoreInboundNoConflict(any(InboundOrder.class));
         }
 
         @Test
@@ -1411,7 +1429,7 @@ class InboundOrderServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("单据来源只支持");
 
-            verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+            verify(inboundOrderMapper, never()).insertIgnoreInboundNoConflict(any(InboundOrder.class));
         }
 
         @Test
@@ -1430,7 +1448,7 @@ class InboundOrderServiceTest {
             service.create(request(line), TENANT, "worker-zhang", InboundOrder.SOURCE_PHOTO);
 
             ArgumentCaptor<InboundOrder> orderCap = ArgumentCaptor.forClass(InboundOrder.class);
-            verify(inboundOrderMapper).insert(orderCap.capture());
+            verify(inboundOrderMapper).insertIgnoreInboundNoConflict(orderCap.capture());
             assertThat(orderCap.getValue().getSource()).isEqualTo(InboundOrder.SOURCE_PHOTO);
 
             ArgumentCaptor<InboundOrderItem> lineCap = ArgumentCaptor.forClass(InboundOrderItem.class);
@@ -1602,7 +1620,7 @@ class InboundOrderServiceTest {
             service.createAndPost(req, TENANT, "op");
 
             ArgumentCaptor<InboundOrder> cap = ArgumentCaptor.forClass(InboundOrder.class);
-            verify(inboundOrderMapper).insert(cap.capture());
+            verify(inboundOrderMapper).insertIgnoreInboundNoConflict(cap.capture());
             assertThat(cap.getValue().getWarehouseId()).as("库存/对账要靠 id 找到仓").isEqualTo(501L);
             assertThat(cap.getValue().getWarehouse()).as("文本快照以仓名为准（两处口径只留一份）")
                     .isEqualTo("一号原料仓");
@@ -1622,7 +1640,7 @@ class InboundOrderServiceTest {
             assertThat(ex.getCode()).isEqualTo("VALIDATION_ERROR");
             assertThat(ex.getHttpStatus()).isEqualTo(422);
             assertThat(ex.getMessage()).contains("成品仓不能建布料入库单");
-            verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+            verify(inboundOrderMapper, never()).insertIgnoreInboundNoConflict(any(InboundOrder.class));
         }
 
         @Test
@@ -1645,7 +1663,7 @@ class InboundOrderServiceTest {
                 assertThat(ex.getCode()).isEqualTo("VALIDATION_ERROR");
                 assertThat(ex.getMessage()).contains("仓库不存在或已停用");
             }
-            verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+            verify(inboundOrderMapper, never()).insertIgnoreInboundNoConflict(any(InboundOrder.class));
         }
 
         @Test
@@ -1658,7 +1676,7 @@ class InboundOrderServiceTest {
             service.createAndPost(req, TENANT, "op");
 
             ArgumentCaptor<InboundOrder> cap = ArgumentCaptor.forClass(InboundOrder.class);
-            verify(inboundOrderMapper).insert(cap.capture());
+            verify(inboundOrderMapper).insertIgnoreInboundNoConflict(cap.capture());
             assertThat(cap.getValue().getWarehouseId()).as("旧口径：没有仓 id 就不许凭空造一个").isNull();
             assertThat(cap.getValue().getWarehouse()).isEqualTo("一号仓");
             // 没带 id ⇒ 一次仓表都不查（行为一字不动，连读都没有）

@@ -132,8 +132,7 @@ class WorkerInboundServiceTest {
             }
             order = inserted;
             return 1;
-        }).when(inboundOrderMapper).insert(any(InboundOrder.class));
-        when(inboundOrderMapper.exists(any())).thenReturn(false);
+        }).when(inboundOrderMapper).insertIgnoreInboundNoConflict(any(InboundOrder.class));
         when(inboundOrderMapper.updateById(any(InboundOrder.class))).thenReturn(1);
         when(inboundOrderMapper.selectOne(any())).thenAnswer(inv -> order);
         when(inboundOrderMapper.markPosted(anyString(), anyLong(), anyString(), any())).thenReturn(1);
@@ -679,7 +678,7 @@ class WorkerInboundServiceTest {
                                 .as("设计 §5.2：工人面参数类拒绝的状态码是 400（口径本体仍是 #5063 那一处）")
                                 .isEqualTo(400));
             }
-            verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+            verify(inboundOrderMapper, never()).insertIgnoreInboundNoConflict(any(InboundOrder.class));
             verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
         }
 
@@ -705,7 +704,7 @@ class WorkerInboundServiceTest {
 
             org.mockito.ArgumentCaptor<InboundOrder> orderCap =
                     org.mockito.ArgumentCaptor.forClass(InboundOrder.class);
-            verify(inboundOrderMapper).insert(orderCap.capture());
+            verify(inboundOrderMapper).insertIgnoreInboundNoConflict(orderCap.capture());
             assertThat(orderCap.getValue().getSource())
                     .as("工人链的服务端强制来源：请求体里没有被客户端写入口")
                     .isEqualTo(InboundOrder.SOURCE_PHOTO);
@@ -736,7 +735,7 @@ class WorkerInboundServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(400));
 
-            verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+            verify(inboundOrderMapper, never()).insertIgnoreInboundNoConflict(any(InboundOrder.class));
             verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
         }
 
@@ -748,7 +747,7 @@ class WorkerInboundServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(400));
 
-            verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+            verify(inboundOrderMapper, never()).insertIgnoreInboundNoConflict(any(InboundOrder.class));
             verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
         }
 
@@ -762,7 +761,7 @@ class WorkerInboundServiceTest {
                     .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(400));
             verify(productMapper, never()).insert(any(Product.class));
             verify(productSkuMapper, never()).insert(any(ProductSku.class));
-            verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+            verify(inboundOrderMapper, never()).insertIgnoreInboundNoConflict(any(InboundOrder.class));
         }
 
         @Test
@@ -780,7 +779,7 @@ class WorkerInboundServiceTest {
 
             WorkerInboundDraftView second = service.createDraft(draftRequest("60.5"), TENANT, WORKER_ID, "dk-1");
 
-            verify(inboundOrderMapper, times(1)).insert(any(InboundOrder.class));
+            verify(inboundOrderMapper, times(1)).insertIgnoreInboundNoConflict(any(InboundOrder.class));
             assertThat(second.getReplayed()).isTrue();
             assertThat(second.getDraftId()).isEqualTo(first.getDraftId());
         }
@@ -945,7 +944,7 @@ class WorkerInboundServiceTest {
                         .as("工人面参数类拒绝的状态码是 400（口径本体仍是 MoneyScale 那一处）")
                         .isEqualTo(400));
 
-        verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+        verify(inboundOrderMapper, never()).insertIgnoreInboundNoConflict(any(InboundOrder.class));
         verify(inboundOrderItemMapper, never()).insert(any(InboundOrderItem.class));
     }
 

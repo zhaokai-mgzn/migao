@@ -5,6 +5,18 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 两个人同时新建入库单时不再有一单落空：取号与占号收成一条语句（2026-11-03，issue #6266）
+
+- **改前**：入库单号是**两步**取的 —— 先 `exists` 判「没人占」⇒ 返回候选 ⇒ **之后**才 insert。服务重启 /
+  多副本（两边进程内计数器从同一位置起步），或另一请求正把同一个号写进库（其事务尚未提交）时，两边都会判
+  「没人占」⇒ 后到者撞唯一索引 ⇒ 那一单直接失败（「同一单号或同一份导入刚刚已被创建」），**单没建成**。
+- **改后**：取号与占号并成**一条语句**（`ON CONFLICT (tenant_id, inbound_no) WHERE deleted = 0 DO NOTHING`）：
+  号归谁由唯一索引在插入那一刻裁，落败方**换号重来**（上限 20）⇒ 并发建单各自成功、单号互不相同；
+  号段真的耗尽时仍显式 409（`INBOUND_NO_EXHAUSTED`），不静默重号、不留半张单。
+- 判据：`backend/admin-api/src/test/java/com/migao/admin/service/InboundNoTakeRaceRealDbTest.java`（真库五条）、
+  `NumberTakeTwoStepMetaGuardTest.java`（取号类写面的类级元守卫）、
+  `InboundOrderServiceTest#createRetriesWhenTheCandidateIsSnatchedByTheInsert`（廉价正向判据）。
+
 ### 重复审批同一入驻申请时，第二次也回 409 冲突（不再因时序在 422/409 之间摇摆）（2026-11-02，issue #7931）
 
 - **改前**：同一个「该申请已审结」的拒绝有**两个状态码** —— 读判快速路径给 `VALIDATION_ERROR`（422），
