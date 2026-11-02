@@ -82,18 +82,69 @@ class OrderLogisticsServiceTest extends BaseServiceTest {
     }
 
     @Nested
-    @DisplayName("createLogistics")
+    @DisplayName("createLogistics（issue #7398：写面收敛到 OrderLogisticsWriter）")
     class Create {
 
         @Test
-        @DisplayName("创建成功 → in_transit 状态")
+        @DisplayName("创建成功 → 先条件更新 0 行、再建行，返回表里的那一行")
         void success() {
+            java.util.concurrent.atomic.AtomicReference<OrderLogistics> inserted = new java.util.concurrent.atomic.AtomicReference<>();
+            when(orderLogisticsMapper.updateShippingDetails(TEST_TENANT_ID, "order-1", "顺丰速运", "SF123456",
+                    null, null, null)).thenReturn(0);
+            when(orderLogisticsMapper.insert(any(OrderLogistics.class))).thenAnswer(invocation -> {
+                inserted.set(invocation.getArgument(0));
+                return 1;
+            });
+            when(orderLogisticsMapper.selectByOrderId("order-1", TEST_TENANT_ID))
+                    .thenAnswer(invocation -> List.of(inserted.get()));
+
             OrderLogistics result = orderLogisticsService.createLogistics(
-                    "order-1", TEST_TENANT_ID, "顺丰速运", "SF123456");
+                    "order-1", TEST_TENANT_ID, "顺丰速运", "SF123456", null);
 
             assertThat(result.getStatus()).isEqualTo("in_transit");
             assertThat(result.getLogisticsCompany()).isEqualTo("顺丰速运");
             assertThat(result.getTrackingNo()).isEqualTo("SF123456");
+            assertThat(result.getShippedAt()).as("新建即首次发货时刻（#6276 口径，由 writer 的 insert 分支写）")
+                    .isNotNull();
+        }
+
+        @Test
+        @DisplayName("已有该单物流行 ⇒ 只更新、不建行（同一订单最终恰好 1 行）")
+        void existingRowIsUpdatedNotDuplicated() {
+            OrderLogistics existing = OrderLogistics.builder()
+                    .id("log-1").tenantId(TEST_TENANT_ID).orderId("order-1")
+                    .logisticsCompany("顺丰速运").trackingNo("SF-FIRST").status("in_transit").build();
+            when(orderLogisticsMapper.updateShippingDetails(TEST_TENANT_ID, "order-1", "中通快递", "ZT-SECOND",
+                    null, null, null)).thenReturn(1);
+            when(orderLogisticsMapper.selectByOrderId("order-1", TEST_TENANT_ID)).thenReturn(List.of(existing));
+
+            OrderLogistics result = orderLogisticsService.createLogistics(
+                    "order-1", TEST_TENANT_ID, "中通快递", "ZT-SECOND", null);
+
+            assertThat(result).isSameAs(existing);
+            verify(orderLogisticsMapper, never()).insert(any(OrderLogistics.class));
+        }
+
+        @Test
+        @DisplayName("🔴 同一 (tenant_id, order_id) 重复写入撞唯一索引 ⇒ 收敛为更新、不抛错（#7398）")
+        void duplicateWriteConvergesToUpdate() {
+            OrderLogistics winner = OrderLogistics.builder()
+                    .id("log-winner").tenantId(TEST_TENANT_ID).orderId("order-1")
+                    .logisticsCompany("顺丰速运").trackingNo("SF-FIRST").status("in_transit").build();
+            // ① 条件更新 0 行（当时没有行）⇒ 建行；② 建行撞上并发对手已提交的行（唯一索引兜底）
+            //    ⇒ writer 捕获冲突后**再**更新一次（第二次影响 1 行）—— 调用方不感知冲突、也不报错。
+            when(orderLogisticsMapper.updateShippingDetails(TEST_TENANT_ID, "order-1", "中通快递", "ZT-SECOND",
+                    null, null, null)).thenReturn(0, 1);
+            when(orderLogisticsMapper.insert(any(OrderLogistics.class)))
+                    .thenThrow(new org.springframework.dao.DuplicateKeyException("uk_order_logistics_tenant_order"));
+            when(orderLogisticsMapper.selectByOrderId("order-1", TEST_TENANT_ID)).thenReturn(List.of(winner));
+
+            OrderLogistics result = orderLogisticsService.createLogistics(
+                    "order-1", TEST_TENANT_ID, "中通快递", "ZT-SECOND", null);
+
+            assertThat(result).as("返回值以表里的行为准（不是本次入参的假实体）").isSameAs(winner);
+            verify(orderLogisticsMapper, times(2)).updateShippingDetails(TEST_TENANT_ID, "order-1",
+                    "中通快递", "ZT-SECOND", null, null, null);
         }
     }
 

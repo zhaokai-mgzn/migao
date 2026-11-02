@@ -161,6 +161,28 @@ class OrderLogisticsWriterTest {
     }
 
     @Test
+    @DisplayName("🔴 事务已被 PG 中止（25P02）⇒ 回可读业务错误（409），不许漏成 5xx（issue #7398）")
+    void abortedTransactionConflictBecomesReadableBusinessError() {
+        java.sql.SQLException aborted = new java.sql.SQLException(
+                "current transaction is aborted, commands ignored until end of transaction block", "25P02");
+        when(orderLogisticsMapper.updateShippingDetails(any(), anyString(), any(), any(), any(), any(), any()))
+                .thenReturn(0)   // 第一次：0 行 ⇒ 建行
+                .thenThrow(new org.springframework.dao.DataAccessResourceFailureException(
+                        "Statement failed", aborted));   // 收敛更新落在已中止的事务上（PG 的必然行为）
+        when(orderLogisticsMapper.insert(any(OrderLogistics.class)))
+                .thenThrow(new DuplicateKeyException(
+                        "duplicate key value violates unique constraint \"uk_order_logistics_tenant_order\""));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                        OrderLogisticsWriter.upsert(orderLogisticsMapper, TENANT, ORDER, "顺丰", "SF1",
+                                (OrderLogisticsWriter.ShippingDetails) null, () -> null))
+                .as("事务内无法收敛为更新 ⇒ 必须回可读业务错误，而不是 5xx")
+                .isInstanceOf(com.migao.admin.exception.BusinessException.class)
+                .satisfies(error -> assertThat(
+                        ((com.migao.admin.exception.BusinessException) error).getCode()).isEqualTo("CONFLICT"));
+    }
+
+    @Test
     @DisplayName("🔴 建行抛出**非**唯一约束异常 ⇒ 必须原样抛出（不许把真实故障当并发冲突吞掉）")
     void nonUniqueInsertFailureIsRethrown() {
         givenUpdateMatches(0);

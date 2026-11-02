@@ -49,28 +49,32 @@ public class OrderLogisticsService extends ServiceImpl<OrderLogisticsMapper, Ord
     }
 
     /**
-     * 创建物流信息
+     * 创建物流信息（issue #7398：写面**收敛到** {@link OrderLogisticsWriter} 这唯一写入口）。
      *
-     * @param orderId          订单ID
-     * @param tenantId         租户ID
-     * @param logisticsCompany 物流公司
-     * @param trackingNo       快递单号
-     * @return 物流记录
+     * <p><b>为什么不能直连 insert</b>：{@code order_logistics} 自 V165 起有部分唯一索引
+     * {@code uk_order_logistics_tenant_order}（{@code (tenant_id, order_id) WHERE deleted = 0}）。
+     * 原实现无条件直连插入 ⇒ 同一订单的第二次写入
+     * （并发两次发货 / 双击 / 双端同时确认）撞索引，异常直接冒泡成 <b>5xx</b>。</p>
+     *
+     * <p>⇒ 改走 writer：已有该单物流行时**退化为更新那一行**（同一订单最终恰好 1 行，
+     * 调用方不感知冲突、也不报错）—— 与商家发货页 / 工人端发货共用<b>同一份</b>冲突映射
+     * （见 {@link OrderLogisticsWriter#upsert}）。</p>
+     *
+     * @param details 除承运商 / 运单号之外的发货字段（{@code null} = 本次请求没给）
+     * @return 落库后**重新读出**的那一行（结果以表里的行为准，不把本次入参当成结果回吐）
      */
     @Transactional(rollbackFor = Exception.class)
-    public OrderLogistics createLogistics(String orderId, Long tenantId, String logisticsCompany, String trackingNo) {
-        OrderLogistics logistics = OrderLogistics.builder()
-                .tenantId(tenantId)
-                .orderId(orderId)
-                .logisticsCompany(logisticsCompany)
-                .trackingNo(trackingNo)
-                .status("in_transit")
-                .shippedAt(OffsetDateTime.now())
-                .build();
-
-        orderLogisticsMapper.insert(logistics);
+    public OrderLogistics createLogistics(String orderId, Long tenantId, String logisticsCompany, String trackingNo,
+                                         OrderLogisticsWriter.ShippingDetails details) {
+        OrderLogisticsWriter.upsert(orderLogisticsMapper, tenantId, orderId, logisticsCompany, trackingNo,
+                details, () -> null);
+        List<OrderLogistics> rows = orderLogisticsMapper.selectByOrderId(orderId, tenantId);
+        if (rows == null || rows.isEmpty()) {
+            // 刚刚写成功却读不到行 = 数据不一致（不是业务冲突）⇒ 显式失败，不返回一个假实体
+            throw new IllegalStateException("物流写入后读不到记录: orderId=" + orderId);
+        }
         log.info("创建物流信息成功: orderId={}, trackingNo={}", orderId, trackingNo);
-        return logistics;
+        return rows.get(0);
     }
 
     /**
