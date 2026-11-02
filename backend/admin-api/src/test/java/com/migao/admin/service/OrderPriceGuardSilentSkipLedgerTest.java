@@ -135,15 +135,24 @@ class OrderPriceGuardSilentSkipLedgerTest {
         return n;
     }
 
-    /** 取 `OrderService.java` 源码（与真库判据同款「从 user.dir 向上找仓根」定位，不写死绝对路径）。 */
+    /**
+     * 取**取价守卫载体集合**源码（issue #8191 P2-1b：创建族
+     * {@code validateAgentItemUnitPrice} / {@code ...ByProductAuthority} 已搬到
+     * {@code OrderCreationService}）。
+     *
+     * <p>判据扫集合而不是钉死一个文件名：载体再搬家/再拆，判据跟着覆盖即可。
+     * <b>回归面不变</b> —— fail-open 指纹出现在任一载体里、或两个载体合计的静默跳过点
+     * 与台账不符，一律判红。</p>
+     */
     private static String orderServiceSource() throws IOException {
         Path root = Paths.get(System.getProperty("user.dir")).toAbsolutePath();
         while (root != null && !Files.exists(root.resolve("backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java"))) {
             root = root.getParent();
         }
         assertThat(root).as("必须能定位 backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java").isNotNull();
-        return Files.readString(root.resolve("backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java"))
-                .replace("\r\n", "\n");
+        Path carrierDir = root.resolve("backend/admin-api/src/main/java/com/migao/admin/service");
+        return Files.readString(carrierDir.resolve("OrderService.java")).replace("\r\n", "\n")
+                + "\n" + Files.readString(carrierDir.resolve("OrderCreationService.java")).replace("\r\n", "\n");
     }
 
     /**
