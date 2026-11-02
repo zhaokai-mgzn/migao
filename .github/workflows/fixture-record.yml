@@ -38,12 +38,15 @@ jobs:
       - name: Re-record fixtures from dev API
         working-directory: tests
         env:
+          # issue #8391：基址只走 env 透传（secret 可覆盖）。缺省值是**显式生产地址**，不是本机地址；
+          # 录制脚本在 BASE_URL 为空时 fail-closed（不静默回落）。
           BASE_URL: ${{ secrets.E2E_ADMIN_API_URL || 'https://api.migaozn.com' }}
           E2E_MOCK_AUTH: 'false'
           # 商家管理员账号（issue #7479：`13800138000` 是 C 端顾客，管理端登录会被拒）
           E2E_ADMIN_PHONE: ${{ secrets.E2E_ADMIN_PHONE || '13600136000' }}
           E2E_SMS_CODE: ${{ secrets.E2E_SMS_CODE || '123456' }}
         run: |
+          echo "API 基址（env BASE_URL）=$BASE_URL"
           npx tsx e2e/scripts/record-fixtures.ts
 
       - name: Open PR if fixtures changed

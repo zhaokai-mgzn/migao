@@ -43,11 +43,17 @@ interface ZustandPersistState {
   version: number
 }
 
+// Playwright 测试面的 API 基址（本地开发默认本机 8080）。
+// fixture 录制**不**走这个缺省：record-fixtures.ts 用 resolveRecordingBaseUrl() 把 BASE_URL
+// 显式传进来 —— 否则录制 job（只设 BASE_URL）会静默连到本机，见 issue #8391。
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8080'
 
 /**
  * Login via the backend SMS API (bypasses the UI).
  * Uses universal dev SMS code 123456 — works across all environments.
+ *
+ * 基址优先级：显式入参 apiBaseUrl > NEXT_PUBLIC_API_BASE_URL > 本机默认（仅本地开发）。
+ * fixture 录制（record-fixtures.ts）必须显式传 BASE_URL —— 否则登录会连到本机 8080（issue #8391）。
  *
  * 设 E2E_MOCK_AUTH=true 可跳过真实 API 调用，用 mock token 直接注入。
  * 适用于本地开发（无后端）或 CI 网络受限场景。
@@ -56,6 +62,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8
 export async function loginViaApi(
   phone = '13800138000',
   code = '123456',
+  apiBaseUrl?: string,
 ): Promise<AuthTokens> {
   // Mock 模式：跳过真实 API，直接返回 mock token
   if (process.env.E2E_MOCK_AUTH === 'true') {
@@ -67,12 +74,15 @@ export async function loginViaApi(
     }
   }
 
+  // 显式入参优先（fixture 录制：BASE_URL）；否则用 Playwright 测试面的默认基址
+  const baseUrl = (apiBaseUrl || API_BASE_URL).replace(/\/+$/, '')
+
   // Retry on 5xx (transient server errors) — dev server may be briefly unavailable
   return withRetry(
     async () => {
       const ctx: APIRequestContext = await pwRequest.newContext()
       try {
-        const response = await ctx.post(`${API_BASE_URL}/api/auth/sms/login`, {
+        const response = await ctx.post(`${baseUrl}/api/auth/sms/login`, {
           data: { phone, code },
         })
 

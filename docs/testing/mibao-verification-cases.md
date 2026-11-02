@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（175 case）
+## 杂项域（176 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -6889,6 +6889,18 @@
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-11-03 新增（issue #6060：S4 删除预设前用过期基线核对 ⇒ v1.104.0 未搬即被删，已补搬；本单落**类级固化**）。落码 = ① 台账 tests/unit_ci_workflows/preset_port_ledger.json（9 个端口 × path/blob/版末提交/最后承载版本/搬入证据 + 106 条版本 + 9 条版本证据 + 97 条版本证据缺口）② 机具 tests/unit_ci_workflows/preset_port_ledger.py（`--write` 现取两侧 git 重写台账、`--check` 三态退出码 0/1/3）③ 判据 tests/unit_ci_workflows/test_preset_port_ledger.py（23 条：8 种坏形态的判别力自证 + 不可判定红证）。取号 = MC-131（`python3 scripts/next_case_id.py MC` 现取：main 001-098/100-127/130 + 在飞 PR #8460:129 / PR #8453:128 / 工作区:099 ⇒ 返回 MC-131）。红证 = ① `problems()` 改成恒绿 `return []` ⇒ 9 failed / 13 passed；② 某端口 `path` 指向不存在的文件 ⇒ `登记了但现取不存在：…ghost-does-not-exist.md` 具名判红。⚠️ 未固化（照实登记）：预设仓侧证据真实性只有本机镜像能复算，CI 侧只能核形态（重启条件 = 预设仓转公开或 CI 拿到只读凭据）。 ｜ tags: ci, governance, ledger, preset, red-proof
+
+### CI-001. **fixture 录制基址只认 BASE_URL**：缺失即 fail-closed，不得静默回落到本机 127.0.0.1:8080（issue #8391） 🔵
+```
+你: 月度 fixture 重录（fixture-record.yml）必须把 API 基址取自 BASE_URL；未设置时显式失败，不得静默回落到 127.0.0.1:8080
+数据: 🔴 **判据 1·正向（行为面）**：设置 BASE_URL=https://example.test ⇒ 解析器（tests/e2e/helpers/api-base-url.mjs，用真 node 执行）返回值逐字等于它。执行点 = tests/unit_ci_workflows/test_fixture_record_base_url.py::test_base_url_env_is_adopted_verbatim
+数据: 🔴 **判据 2·fail-closed（行为面）**：不设 BASE_URL ⇒ 非零退出 + 具名报错（含 BASE_URL 与「未设置」）；输出里不得出现 127.0.0.1:8080 / localhost:8080。红证 = 2026-11-01 run 41358293178 逐字 `ECONNREFUSED 127.0.0.1:8080 → POST /api/auth/sms/login`（脚本自己打印的却是 BASE_URL=https://api.migaozn.com）。执行点 = 同文件::test_missing_base_url_fails_closed_without_local_fallback
+数据: 🔴 **判据 3·单一真值 + 接线（静态面）**：录制入口用 resolveRecordingBaseUrl() 并把结果显式传给 loginViaApi（原先登录走 auth.helper 的 NEXT_PUBLIC_API_BASE_URL || 127.0.0.1:8080 = 根因）；fixture-record.yml 的 BASE_URL 由 secrets.E2E_ADMIN_API_URL 透传且无本机地址。执行点 = 同文件::test_recording_entry_threads_resolved_base_into_login / test_auth_helper_login_uses_explicit_base / test_workflow_passes_base_url_through_secrets
+数据: 🔴 **判据 4·判别力自证**：把解析器改回历史形态（BASE_URL || 本机默认）⇒ 判据 2 的三条断言全部不成立；同一注入下判据 1 仍绿（证明「只测设置了 env 的路径」抓不到本缺陷）。执行点 = 同文件::test_guard_discriminates_the_historical_silent_fallback
+数据: **边界（照实登记）**：① 判据不跑真 Playwright / 真后端，只判基址解析与接线（录制 job 的网络行为面由 run 日志承担）；② 判据 3 是静态面，不判「远端 API 真的可用」。
+跳过: [backend-contract] 零 LLM 的确定性判据（真 node 跑解析器 + workflow/录制脚本结构读取），pytest 真跑、零网络、不进 agent-eval 冒烟
+```
+溯源: 2026-11-02 新增（issue #8391）：该月度 schedule（fixture-record.yml，每月 1 日 03:00 CST）自 2026-09 起连红三次，同一形态 = 录制脚本的登录没采纳 BASE_URL、回落到 Playwright 默认 127.0.0.1:8080。取号过程：next_case_id.py CI exit 3（PR #8425 改动文件 > 300 读不到 diff）⇒ 按工具设计手工核在飞面（main / PR #8425 / PR #8446 / 本工作区）确认 CI- 号段全新、无占用 ⇒ CI-001。 ｜ tags: backend-contract, ci, fixture
 
 ## 商家入驻域（7 case）
 
@@ -14362,8 +14374,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：971（活跃 153，跳过 818）
-- tier 分布：smoke 15 / normal 895 / adversarial 33
+- 用例总数：972（活跃 153，跳过 819）
+- tier 分布：smoke 15 / normal 896 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14379,7 +14391,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：175
+- 杂项域：176
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：75
@@ -14621,6 +14633,7 @@
 - MC-130: .env.ai-agent 凭据探针（issue #7718 裁定 B）：deploy.sh 部署后只读检查三项 key（主 LLM / 语音 / 生图），缺任一项 ⇒ 可行动告警（缺哪项 / 怎么补 / 影响是什么），不判失败、绝不打印密钥值
 - MC-129: LLM 主凭据失效（401）必须成为**可观测事件**：恰好一条可行动 ERROR + 独立只读探针 `/internal/llm-health`（ok=false ⇒ 503），`/ready` 语义不变（issue #8084）
 - MC-131: **预设搬运通道台账**（issue #6060）：搬出去的每个预设文件逐条登记「最后承载的字节（blob）+ 版末提交 + 最后承载的版本 + 搬入证据（预设仓 commit）」；未登记即红、登记了但现取没有即红、字节/版本对不上即红、版本证据缺口只许缩短
+- CI-001: **fixture 录制基址只认 BASE_URL**：缺失即 fail-closed，不得静默回落到本机 127.0.0.1:8080（issue #8391）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
