@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "_what": "**仓库级 / 跨模块文本语料的读面**登记表：谁在读「整个仓库的代码文本」做判决，读面是什么。判据 = `tests/unit_ci_workflows/test_repo_corpus_read_face_ledger.py`（未登记即红）。",
+  "_why": "issue #6594（本机实测）：`frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts` 的 C2b 用 `readCorpus(['frontend','backend'])` **遍历工作树** ⇒ 扫到被 `.gitignore` 命中的旧覆盖率产物（`backend/ai-agent-service/coverage.json`，python coverage 输出、天然含打印头宽的像素口径）⇒ **本机判红 / CI 判绿**（干净检出里没有它），人会去修一个不存在的问题。根因不是「那一个文件」，而是「读面 = 工作树」这个**口径**：任何本地产物都能造出同一形态的假红。",
+  "_judged_by": "tests/unit_ci_workflows/test_repo_corpus_read_face_ledger.py",
+  "_invariants": [
+    "**单实现**：仓内 `frontend/**` 的 `.ts/.tsx/.js/.jsx/.mjs` 文件里，**定义** `readCorpus` 的只许一处（= `single_implementation.path`）。第二份定义 ⇒ 红（它就是「读面又分叉」的形态）。",
+    "**唯一实现必须真的导出**：`single_implementation.path` 的 `module.exports` 里必须含 `readCorpus`（否则挂一个不存在的实现名 ⇒ 红）。",
+    "**未登记即红**：`frontend/**/tests/**` 里凡出现 `trackedCorpus` 引用的文件必须在 `consumers` 里。新造一个消费者却不登记 ⇒ 红。",
+    "**登记未兑现即红**：`consumers` 每条必须①文件真实存在、②仍引用 `trackedCorpus`、③它的 `roots` 每个都在该文件里**逐字出现**（防「台账给不存在的射程盖章」）。",
+    "**读面纯度**：已登记的 consumer 里**不许**出现 `readdirSync`（= 自己走路工作树）。塞回去 ⇒ 红。",
+    "**例外只许缩短**：`exceptions` 条数不得超过 `exceptions_frozen_max`，且 `exceptions_frozen_max` 必须等于判据里的常量（本单 = 0）—— 现取读数、**不许**悄悄抬高；每条例外必须带 `reason` + `restart`。",
+    "`consumers` 为空 ⇒ 红（fail-closed）：清空本表不得把守卫变成空跑。",
+    "本表**不**为存量登记条目的正确性背书，只判「单实现 + 已登记 + 读面纯」三件事。"
+  ],
+  "_boundary": "机械保证的是**形态**：单实现、消费者已登记、登记能兑现、登记的消费者没有 `readdirSync`。**不保证**：① 换了个**别的名字**再写一份工作树读面（形态学判据不做语义一刀切 —— 「叫别的名字的读面」与「不存在的读面」静态不可区分）；② `tests/unit_ci_workflows/**` 之外的 Python 侧语料读面（本仓那一侧的判据与 CI 跑的是同一份工作树，不存在「CI 干净检出」这个第二口径）；③ 谓词本身的判别力（本单**一字未改**谓词；红证在 jest 判据的 C2/C2b）；④ 读面**行为**（默认 index / 工作树对照必红）—— 那由 `tests/unit_ci_workflows/test_bmini_corpus_read_face.py` 承担，本表只判「接线与登记」。",
+  "skill": {
+    "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+    "section": "## 23. 类级固化（G1~G10）"
+  },
+  "single_implementation": {
+    "path": "frontend/bmini-app/tests/helpers/trackedCorpus.js",
+    "symbol": "readCorpus",
+    "default_source": "index",
+    "why": "语料 = **git 索引里已跟踪的文件**（= CI 干净检出那一份）。同口径是构造出来的（CI 检出里只有跟踪文件），不是靠一张必然漏的排除清单。`source: 'worktree'` 只留给判据做单变量对照。"
+  },
+  "consumers": [
+    {
+      "path": "frontend/bmini-app/tests/inbound-print-geometry-single-source.test.ts",
+      "roots": [
+        "frontend/bmini-app/src/utils/inbound",
+        "frontend/bmini-app/src/pages/worker",
+        "frontend",
+        "backend",
+        "frontend/admin-web/src/lib/print-media.json"
+      ],
+      "why": "打印像素口径的单一真值：出图链路零像素字面量（C2）+ **全仓** `384` 只许出现在介质矩阵（C2b，issue #5052 CP-1）。C2b 的射程是**整个 frontend + backend** ⇒ 读工作树时任何本地产物都能让它假红（#6594 的发作点）。",
+      "case_ids": ["BM-010", "MC-134"]
+    }
+  ],
+  "exceptions": [],
+  "exceptions_frozen_max": 0
+}
