@@ -62,10 +62,28 @@ class OutboundOrderMapperTest {
     }
 
     @Test
-    @DisplayName("Mapper 只继承 BaseMapper（唯一性交给索引，不在 SQL 里再写一套取号逻辑）")
-    void mapperHasNoCustomSql() {
-        long declared = java.util.Arrays.stream(OutboundOrderMapper.class.getDeclaredMethods())
-                .filter(m -> !m.isSynthetic()).count();
-        assertThat(declared).isZero();
+    @DisplayName("Mapper 只有**一条**自定义语句：原子占号 INSERT（唯一性交给索引；不许加查询式取号）")
+    void mapperOnlyCarriesTheAtomicNumberClaim() {
+        var declared = java.util.Arrays.stream(OutboundOrderMapper.class.getDeclaredMethods())
+                .filter(m -> !m.isSynthetic()).toList();
+        assertThat(declared).as("自定义语句必须恰好一条（issue #8490 的原子占号）"
+                + "—— 多写一条 SQL 就是多一份会漂的取号口径").hasSize(1);
+
+        var claim = declared.get(0);
+        assertThat(claim.getName()).isEqualTo("insertIgnoreOutboundNoConflict");
+        assertThat(claim.isAnnotationPresent(org.apache.ibatis.annotations.Select.class)
+                || claim.isAnnotationPresent(org.apache.ibatis.annotations.Update.class)
+                || claim.isAnnotationPresent(org.apache.ibatis.annotations.Delete.class))
+                .as("不许出现查询 / 更新 / 删除式取号（那不是「一条语句占号」）").isFalse();
+
+        org.apache.ibatis.annotations.Insert insert =
+                claim.getAnnotation(org.apache.ibatis.annotations.Insert.class);
+        assertThat(insert).as("必须是 @Insert（取号与落库同一条语句）").isNotNull();
+        String sql = String.join(" ", insert.value());
+        assertThat(sql).as("冲突目标必须带部分唯一索引的谓词（否则 PG 推断不到冲突）")
+                .contains("ON CONFLICT (tenant_id, outbound_no) WHERE deleted = 0 DO NOTHING");
+        assertThat(sql).as("不许在 SQL 里再写一套取号逻辑（SELECT / FOR UPDATE）")
+                .doesNotContainIgnoringCase("SELECT")
+                .doesNotContainIgnoringCase("FOR UPDATE");
     }
 }
