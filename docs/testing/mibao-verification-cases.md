@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（180 case）
+## 杂项域（181 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -6942,6 +6942,19 @@
 跳过: [backend-contract] 零 LLM 的确定性静态判据（Python AST + 正则扫仓内 durable 面 + 现取 Java 测试源码索引），pytest 真跑、零网络、零 Maven、零真库，不进 agent-eval 冒烟
 ```
 溯源: 2026-11-03 新增（issue #6495，AI 裁定按**实测**改判病灶）。原始单的读数（`head -6 target/surefire-reports/<fqn>.txt` 得 `Tests run: 0` 且 exit 0）复现了，但归因错了一半：实测 `-Dtest=OssConfigTest`（3 外层 + 12 嵌套）= **15/15 真跑**、`-Dtest=AgentBatchServiceTest`（38 条全在 @Nested）= **38/38 真跑**、`-Dtest=OssConfigTest*` 同为 15（**通配符没有额外收益**）⇒「类里含 @Nested ⇒ 一条都不跑」**不成立**，原单那条是**误诊**，误诊源 = `.txt` 摘要在 @Nested 类上恒报 0（同一次运行 XML/console 15，摘要 0）。真·空跑另有一条：`-Dtest=AgentBatchServiceTest#persistsPreviewWithOldValueCollectedFromDb`（该方法声明在 @Nested class Create 内）⇒ `Tests run: 0` / `BUILD SUCCESS` / exit=0 / 无 XML；加 `$` 限定 `-Dtest=AgentBatchServiceTest$Create#persistsPreviewWithOldValueCollectedFromDb` ⇒ **1/1 真跑**。交付 = 入口 scripts/java-test.sh（+ scripts/java_pointed_readings.py）把选择器自动纠正 + **只信 XML** + 断言读数大于 0（0 即红，exit 1）；守卫 = tests/unit_ci_workflows/test_java_nested_pointed_run_guard.py J1~J7 + 台账 java_pointed_run_ledger.json（读 `.txt` 的两个红证机具**已登记**并钉住「定点类保持扁平」这个前提）；同时改掉两处在仓内传播错读数的文案（ScheduledTaskServiceTest 的类注释、docs/wiki/Development.md 新增「Java 定点判据」节）。取号 = **MC-134**（`scripts/next_case_id.py MC` 给的是历史空档 MC-099 —— 仓库内已有两次明文说明 MC-099 是 PR #6924 随 #8383 整包撤回被删、**不回填**；本轮 **5 个在飞 PR（#8503 / #8506 / #8508 / #8509 / #8510）同时占了 MC-133**（CI 的 `test_case_id_claims.py` 在合并前就判红）⇒ 按「后合入者让号」让到现取最小空闲号 MC-134）。 ｜ tags: backend-contract, java-test, surefire, nested, readings, guard, red-proof
+
+### MC-135. 生图失败归因必须读供应商 message 正文：400 InvalidParameter 的「样图读不到」与「模型不接」分成两格（issue #7719） 🔵
+```
+你: 样图 URL 供应商抓不到（域名解析不了 / 下载失败）时，建品页说「该能力暂不可用，已反馈平台」⇒ 商家以为要找平台换模型，而真正该做的是换一张能访问的样图。
+期望: direct_reply
+数据: 判据 1·输入侧分流（会红）：供应商 400 + code=InvalidParameter + message 指向输入素材（URL 解析不了 / 下载失败 / 格式或尺寸非法）⇒ 归 ImageGenerationInputUnreachable（对外 code = IMAGE_GEN_INPUT_UNREACHABLE），**不**归 IMAGE_GEN_MODEL_UNSUPPORTED，且**不切模型**（默认链两个模型 ⇒ 恰好一次 HTTP 调用）。执行点 = backend/ai-agent-service/tests/test_generator.py::test_unresolvable_sample_url_is_input_side_not_model_unsupported。
+数据: 判据 2·不许一律改判（会红）：400 + InvalidParameter 但 message 是模型侧原因（model does not support messages）⇒ 仍切下一个模型（#7341 的回落链逐字保留）；全链都不接仍是 IMAGE_GEN_MODEL_UNSUPPORTED。执行点 = ::test_other_invalid_parameter_messages_still_switch_models + ::test_internal_endpoint_503_carries_stable_failure_code。
+数据: 判据 3·配额不回归（会红）：429 / Throttling / AllocationQuota 仍归 IMAGE_GEN_QUOTA_EXCEEDED，不被输入侧分类吃掉。执行点 = ::test_quota_429_is_still_quota_not_input_side + ::test_all_models_quota_raises_quota_exceeded。
+数据: 判据 4·红证（常驻）：同状态码、同 code、只有 message 不同的两条必须分类相反；把 message 解析删掉（只看 code）⇒ ::test_input_side_classifier_reads_message_body_not_just_code 必红。
+数据: 判据 5·对外话术（会红）：admin-api 把 IMAGE_GEN_INPUT_UNREACHABLE 映射成 AI_PRODUCT_IMAGE_INPUT_UNREACHABLE，话术只说「换一张能正常打开的样图」，不含「稍后重试」「已反馈平台」，也不含服务名 / 地址（§31 P3）；建品页按该码显示同一口径（与「能力不可用」两句不同的话）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductImageClientTest.java::mapsUpstreamFailureCodesToDistinctActions + frontend/admin-web/tests/unit/components/ProductImageAI.test.tsx。
+跳过: [backend-contract] 纯确定性单测（httpx mock / MockRestTemplate / vitest mock，零生成费用、零真实供应商调用），不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #7719）。逐字读数（2026-10-25 10:11）：对外 503 IMAGE_GEN_MODEL_UNSUPPORTED，而供应商对同一请求的原文 = HTTP 400 code=InvalidParameter message=URL hostname cannot be resolved（样图域名解析不了）。取号 = MC-135（**让号记实**：原取 MC-133，但同日在飞 PR #8506 / #8508 / #8509 都取在同一段号上 ⇒ 按 `docs/wiki/Change-Blast-Radius.md` 陷阱 3 的「后合入者让号」，在 CI 报红前主动让到现取最大号 + 1 = MC-135）。 ｜ tags: image-generation, failure-attribution, input-side, red-proof
 
 ### MC-135. 生图失败归因必须读供应商 message 正文：400 InvalidParameter 的「样图读不到」与「模型不接」分成两格（issue #7719） 🔵
 ```
@@ -14463,8 +14476,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：978（活跃 153，跳过 825）
-- tier 分布：smoke 15 / normal 901 / adversarial 33
+- 用例总数：979（活跃 153，跳过 826）
+- tier 分布：smoke 15 / normal 902 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14480,7 +14493,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：180
+- 杂项域：181
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -14726,6 +14739,7 @@
 - MC-128: **端点泄漏台账的键不许含行号**：只插空行（行号漂移）判据仍绿，真删/真加泄漏照旧红（issue #6977）
 - MC-132: 批次就绪判定把「已 arm 的原生 auto-merge」也算作不就绪（issue #6212）：跑那一次全量期间不许存在被秒合的窗口
 - MC-134: Java 定点判据的读数与空跑（issue #6495 的类级固化）：`.txt` 摘要对 @Nested 类恒报 0（误诊源）+ `外层类#嵌套方法` 真·空跑（exit 0）⇒ 读数只信 XML 且必须大于 0
+- MC-135: 生图失败归因必须读供应商 message 正文：400 InvalidParameter 的「样图读不到」与「模型不接」分成两格（issue #7719）
 - MC-135: 生图失败归因必须读供应商 message 正文：400 InvalidParameter 的「样图读不到」与「模型不接」分成两格（issue #7719）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
