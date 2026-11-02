@@ -1230,11 +1230,15 @@
     {
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> origin/fix/6594-case-id-followup
       "sha": "pending-pr-8517",
       "date": "2026-11-03",
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 280,
       "note": "issue #6594 的**取号事故补丁**：该修复的用例条目首次以 MC-134 起草，合入时与 #8510 撞号（#8510 的 Java 定点判据用例先占了 MC-134，claim = 8510-MC-134.json），两条都以 - id: 追加在 misc.yml 末尾 ⇒ 分支更新时本条目被静默吞掉（main 上 grep 语料读面 = 0），而 CI 全绿（判据只查「声明的 id 存在」，不查「它指的还是不是自己那条」）。本 PR 补回该条目并改用例号 MC-137（现取最大 136 + 1；MC-099 是刻意的历史空档，按纪律不回填）⇒ 读数 279 → 280。机器判红通道 = tests/unit_ci_workflows/test_bmini_corpus_read_face.py + tests/unit_ci_workflows/test_repo_corpus_read_face_ledger.py。用例不进 agent-eval，真债务 no_channel_total 仍为 0。"
+<<<<<<< HEAD
 =======
       "sha": "pending-pr-8508",
       "date": "2026-11-03",
@@ -1249,6 +1253,8 @@
       "backend_contract_scoring_zero": 280,
       "note": "issue #7008（worktree 收尾先判活占用）新增 [backend-contract] 用例 ⇒ 读数按合并当时的 main 现值重锚。机器判红通道 = test_dev_worktree_reap_guard.py（活占用/未提交/重活锁三条拒绝 + 负控）。真债务 no_channel_total 仍为 0。"
 >>>>>>> origin/fix/7008-worktree-reap-guard
+=======
+>>>>>>> origin/fix/6594-case-id-followup
     }
   ]
 }

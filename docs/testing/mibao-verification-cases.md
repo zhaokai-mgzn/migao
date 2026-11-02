@@ -6947,6 +6947,9 @@
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> origin/fix/6594-case-id-followup
 ### MC-137. gate 的 bmini 打印口径守卫读**git 索引**而不是工作树：被 `.gitignore` 命中的旧产物不再让本机假红（issue #6594） 🔵
 ```
 你: 我只在本机跑过一次 ai-agent-service 的覆盖率，为什么 gate 的 bmini 腿就说我在打印口径里写死了 384？CI 明明是绿的。
@@ -6959,6 +6962,7 @@
 跳过: [backend-contract] 零 LLM 的确定性读数（真 git 临时仓 + 真跑 node 读面 CLI + 真仓库 git ls-files 对账 + 内存注入自证），pytest 真跑、零网络，不进 agent-eval 冒烟
 ```
 溯源: 2026-11-03 新增（issue #6594）。病（本机实测，issue 原文）：bmini 打印口径守卫的 C2b 用 readCorpus(['frontend','backend']) **遍历工作树** ⇒ 扫到被 .gitignore 命中的旧覆盖率产物（backend/ai-agent-service/coverage.json，python coverage 输出、496KB、天然含打印头宽的像素口径）⇒ ./verify-all.sh gate 的 bmini 腿在本机判红（Array [] vs Array ['…coverage.json: 自带像素口径字面量 384…']），而 CI（干净检出）判绿 ⇒ **本机红 / CI 绿的分裂**。修法 = **A（读 git 索引）**：语料 = git ls-files 的跟踪集合；同口径是**构造出来的**（CI 检出里只有跟踪文件），不是靠一张必然漏的排除清单。落码 = frontend/bmini-app/tests/helpers/trackedCorpus.js（唯一读面，默认 index；worktree 只给判据做单变量对照）+ 守卫改为调用它 + 未跟踪且未被 ignore 的文件**出声**（不静默漏扫、也不判红）。**红证（实跑，双向对照）**：同一份被 ignore 的产物存在时 —— 修前（读面 = 工作树）**1 failed / 7 passed**，报错与 issue 逐字相同；修后（读面 = 索引）**8 passed**。🔴 **取号出过一次事故（照实登记，本 PR 是补丁）**：本用例**首次**以 MC-134 起草并随修复 PR #8511 提交，合入前该分支被更新到含 #8510 的 main —— **#8510 的 Java 定点判据用例先占了 MC-134**（.github/cases/claims/8510-MC-134.json），两条都以 `- id:` 追加在 misc.yml 末尾 ⇒ 分支更新时**本条目被静默吞掉**（main 上 grep `语料读面` = **0**），而 CI 全绿（判据只查「声明的 id 存在」，不查「它指的还是不是自己那条」）。本 PR 补回该条目并改用例号 **MC-137**（现取最大 136 + 1；`next_case_id.py` 的最小空闲号是刻意的历史空档 MC-099，**按纪律不回填**），并补 `.github/cases/claims/<本 PR>-MC-137.json` 取号登记。 ｜ tags: ci-process, corpus-read-face, git-index, false-positive, red-proof, single-source
+<<<<<<< HEAD
 =======
 ### MC-135. 生图失败归因必须读供应商 message 正文：400 InvalidParameter 的「样图读不到」与「模型不接」分成两格（issue #7719） 🔵
 ```
@@ -7020,6 +7024,8 @@
 ```
 溯源: 2026-11-03 新增（issue #7008）。病（2026-10-16 实测）：`:8101` 的 ai-agent 评测实例 `/health` 200，而 `lsof -p <pid> | grep cwd` 指向**已被自动收尾删掉**的 worktree（`migao-wt/6985-confirm-execute/backend/ai-agent-service`）⇒ 创建会话 HTTP 500（惰性 import 在已删 cwd 上失败），症状把人引向产品代码。根因 = 自动收尾只判 GitHub 侧（有已合并 PR 且无 open PR），**从不问本机有没有进程在用**。落码 = scripts/issue_lifecycle.py 的 `classify_candidate` 新增三条 fail-closed 拒绝条件（活占用 / 未提交或未推送 / 持有中的机器级重活锁；**读不到读数 = 无法判定 = 不删**）＋ `cmd_reap_merged` 一次取数并打印读数与逐条拒绝原因；scripts/dev-worktree.sh 的自动收尾改为「**先 dry-run 打印、再真删**」（`--force` 只跳过打印，**不**跳过拒绝条件）。取号 = MC-133（`python3 scripts/next_case_id.py MC` 现取：main 001-098 · 100-132 + 本工作区 099 ⇒ 返回 MC-133）。红证 = 把 `live_occupants` 调用物理摘掉 ⇒ 同一夹具变「可收尾」（判据 1 必红）；恢复后全绿。类级元守卫（§23）= 扫 `scripts/*.py` + `scripts/*.sh` 的全部删 worktree 入口 ⇄ 登记表**双向相等**（未登记即红），自动面必须含三条保护调用 —— 注入式红证见判据 6。 ｜ tags: worktree, reap, liveness, fail-closed, tooling, red-proof
 >>>>>>> origin/fix/7008-worktree-reap-guard
+=======
+>>>>>>> origin/fix/6594-case-id-followup
 
 ## 商家入驻域（7 case）
 
@@ -14795,6 +14801,7 @@
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 - MC-137: gate 的 bmini 打印口径守卫读**git 索引**而不是工作树：被 `.gitignore` 命中的旧产物不再让本机假红（issue #6594）
 =======
 - MC-135: 生图失败归因必须读供应商 message 正文：400 InvalidParameter 的「样图读不到」与「模型不接」分成两格（issue #7719）
@@ -14808,6 +14815,9 @@
 =======
 - MC-133: 删 worktree 前必须判「活进程占用 / 未提交未推送 / 持有重活锁」：自动收尾不再删掉正在被用的检出（issue #7008）
 >>>>>>> origin/fix/7008-worktree-reap-guard
+=======
+- MC-137: gate 的 bmini 打印口径守卫读**git 索引**而不是工作树：被 `.gitignore` 命中的旧产物不再让本机假红（issue #6594）
+>>>>>>> origin/fix/6594-case-id-followup
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
