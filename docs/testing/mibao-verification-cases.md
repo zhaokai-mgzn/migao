@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（173 case）
+## 杂项域（174 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -6857,6 +6857,22 @@
 跳过: [backend-contract] 静态结构 + 沙箱真跑判据（零网络、零容器、零真实密钥；env 文件是 tmp_path 里的假文件）由 tests/unit_ci_workflows/test_ai_agent_key_probe.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-11-02 新增（issue #7718，裁定B：只加「缺 key ⇒ 部署期告警」探针，**不**把 MaaS 密钥接进 CI secret —— A 案会让部署期成为密钥唯一来源、扩大涉密面）。交付 = `deploy/swas/deploy.sh` 的 3.5 段（`# >>> ai-agent-key-probe`，部署后只读探针：三项 key + 可行动告警 + 长度脱敏）＋判据 tests/unit_ci_workflows/test_ai_agent_key_probe.py（13 条，含三类注入式红证）。取号 = MC-130（`python3 scripts/next_case_id.py MC` 现取：main 001-098 / 100-127 + 在飞 PR #8460:129 / PR #8453:128 / 工作区:099 ⇒ 返回 MC-130）。红证（物理删段）：删掉探针后本判据 13 条全红，恢复后全绿；sha 对照 462b115c…（改后 deploy.sh）。⚠️ 未闭合（照实登记）：① 服务器 `.env.ai-agent` 的实际补 key 动作属运维侧（本包无权限，只把动作写进部署输出）；② 探针只判「有没有」，判不了「是不是旧百炼 key 形态」—— 形态 / 指纹自证仍属 #7718 的线上证据；③ 密钥的直接下发（A 案）**有意不做**，重启条件 = 用户明确要求把 MaaS key 纳入 CI secret 并接受涉密面扩大。 ｜ tags: ci, deploy, credentials, env-file, read-only, red-proof
+
+### MC-129. LLM 主凭据失效（401）必须成为**可观测事件**：恰好一条可行动 ERROR + 独立只读探针 `/internal/llm-health`（ok=false ⇒ 503），`/ready` 语义不变（issue #8084） 🔵
+```
+你: DeepSeek 主凭据在供应商侧失效时，黄金策 / 元元每一轮都只回一句兜底话术，而 `/ready`、`/health`、`docker ps` 全绿 —— 凭什么能提前发现，而不是靠用户投诉？
+数据: 🔴 **判据 1·失败是可观测事件（会红）**：LLM 调用抛 401（`AuthenticationError` 形态，带 `status_code`）⇒ 进程级 `broken` 标志置位，日志**恰好 1 条** `[llm_health]` ERROR，且带 `error_class=authentication_error` / `status=401` / `PRIMARY_API_KEY` 可行动提示；**连续 3 次**失败仍只有 1 条（跃变语义，不是逐轮刷屏）。402 额度类同口径（`error_class=quota_exceeded`）；超时 / 5xx **不**置标志。执行点 = backend/ai-agent-service/tests/test_llm_health.py::TestCredentialFailureBecomesOneObservableEvent
+数据: 🔴 **判据 2·探针能区分「服务活着但 AI 不可用」（会红）**：`GET /internal/llm-health` 在 401 下返回 **503** + `{ok, last_error_class, last_ok_at, cached_at}` 四字段（`ok=false`）；健康 key ⇒ 200 + `ok=true` + `last_ok_at` 为 ISO-8601 UTC。执行点 = 同文件::TestReadOnlyProbe
+数据: 🔴 **判据 3·探针 60s 缓存（会红）**：同一分钟内连打三次端点 ⇒ 底层只发**一次**真实调用；`force=True` 才再发一次（运维手工复探出口）。执行点 = 同文件::TestReadOnlyProbe::test_probe_is_cached_for_a_minute
+数据: 🔴 **判据 4·恢复自愈 + 事件可重新武装（会红）**：401 → 真成功 ⇒ 清标志（探针转绿，换 key 后不必重启）；再 401 ⇒ **重新**落一条（第二次事故不能被吞）。执行点 = 同文件::TestRecovery
+数据: 🔴 **判据 5·`/ready` 语义不变（会红，本单明确不做）**：`/ready` 响应仍是 `{status, service}` 两个字段、**不**调用 LLM（否则供应商抖动会被放大成容器 unhealthy → 重启 churn）。执行点 = 同文件::TestReadySemanticsUnchanged
+数据: 🔴 **判据 6·接线（会红）**：`_PassthroughOpenAI` / `_PassthroughDeepSeek` 两个模型类都真的挂上凭据健康混入（`ainvoke` 解析到混入实现），且 `ChatDeepSeek` 仍先于 `ChatOpenAI`（payload 口径不回退）。执行点 = 同文件::TestWiring
+数据: 🔴 **判据 7·兜底句路径 vs 真成功路径分开断言（会红）**：真入口 `execute_skill` 上，401 ⇒ 用户仍是兜底句**且**留痕；真成功 ⇒ 不回兜底句**且**不留痕。执行点 = 同文件::TestFallbackPathVsSuccessPath
+数据: 🔴 **判据 8·类级元守卫（会红）**：backend/ai-agent-service/app/main.py 的应用层探针台账 ⇄ 实现**双向相等** —— 新增探针未登记即红（防止再造一个「只探 DB 的 `/ready`」冒充 AI 可用）。执行点 = 同文件::TestProbeDeclarations::test_every_app_level_probe_is_declared
+数据: **边界（照实登记）**：① 只裁**确定性**类（401 / 402），超时 / 5xx / 429 不进标志（那已有 `call_with_retry` + 熔断）；② 不自动换 key、不降级备用供应商（涉钱 + 质量口径，须人工裁定）；③ 判据用替身（`ChatOpenAI.ainvoke` 被替换），**不跑真实 LLM**（#4262 口径）；④ 探针端点未鉴权（与 `/ready` 同信任边界，响应无密钥材料，真实调用受 60s 缓存限流）。
+跳过: [backend-contract] 替身驱动的端点语义 + 接线 + 日志结构判据（零网络、零真实 LLM，pytest 真跑），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-02 新增（issue #8084：2026-10-29 15:29 线上「黄金策挂球」复盘）。取号 = `python3 scripts/next_case_id.py MC` 现取（main:001-098,100-126 · PR #8446:127 · PR #8453:128）；工具给出的最小空闲号是**历史空档 MC-099**，而工具自身口径提示「空档是否刻意保留 / 已废弃，它判不了」—— 现取该空档的真因：MC-099 是外部贡献者 PR #6924 的用例号，已随 PR #8383 的**整包撤回**一起删除（该提交摘要逐字：「删除 .github/cases/misc.yml 的 MC-099 条目」）⇒ **空档是刻意的，不回填**，取**现取最大号 +1 = MC-129**（已核 ∉ main ∪ 在飞 PR 候选集）。落地 = backend/ai-agent-service/app/utils/llm_health.py（进程级标志 + 单条可行动 ERROR + 60s 缓存探针）+ backend/ai-agent-service/app/llm/factory.py 的 `_LLMHealthChatModel` 混入（唯一组合处，覆盖全部 AI 面）+ backend/ai-agent-service/app/main.py 的 `GET /internal/llm-health`。🔴 **未做（照实登记）**：用户侧可行动话术（商家可见文案，按研发模式 §31 语调评审后另开）、部署腿 1-token 探活、自动换 key / 备用供应商。 ｜ tags: backend-contract, observability, llm-credential, ai-agent, probe, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -14311,8 +14327,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：968（活跃 153，跳过 815）
-- tier 分布：smoke 15 / normal 893 / adversarial 33
+- 用例总数：969（活跃 153，跳过 816）
+- tier 分布：smoke 15 / normal 894 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14328,7 +14344,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：173
+- 杂项域：174
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：74
@@ -14568,6 +14584,7 @@
 - MC-126: **外部账号的代码不得直接进本仓**：PR 提交作者 / head 仓库来源必须命中白名单，命中即判红并解除自动合并（issue #8386）
 - MC-127: **`needs-truths` 标签必须随 issue body 重算**（issue #8406）：`on.issues` 加 `edited` + 判定双向（满足 ⇒ 摘标、不满足 ⇒ 补标）+ 幂等（状态一致 ⇒ 零写请求、`edited` 不重复发提醒评论）
 - MC-130: .env.ai-agent 凭据探针（issue #7718 裁定 B）：deploy.sh 部署后只读检查三项 key（主 LLM / 语音 / 生图），缺任一项 ⇒ 可行动告警（缺哪项 / 怎么补 / 影响是什么），不判失败、绝不打印密钥值
+- MC-129: LLM 主凭据失效（401）必须成为**可观测事件**：恰好一条可行动 ERROR + 独立只读探针 `/internal/llm-health`（ok=false ⇒ 503），`/ready` 语义不变（issue #8084）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
