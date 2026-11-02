@@ -876,13 +876,29 @@ describe('判据 7：域内零 tab（两层导航并存 = 用户说的「分不�
     mockSearchParams.mockReturnValue(new URLSearchParams('domain=calc'))
     render(<SettingsPage />)
     const input = await screen.findByTestId('calc-caliber-scalar-per_fold_single')
+
+    /**
+     * 🔴 改值必须建立在**读面那份草稿**上（issue #7685 / #8043 / #8409，同一机制三张 flaky 单）。
+     *
+     * 改前本页用一条 `useEffect(() => setCalcDraft(calc?.config ?? null), [calc])` 回写草稿 ⇒
+     * 「输入框可见」与「草稿就绪」是两个提交。在这个窗口里改值会被随后的回写**盖回基线**，
+     * `CalcCaliberPanel` 据此判 `calcConfigEqual(draft, baseline)`「没有变更」⇒ 撤掉待发的 `PUT`
+     * ⇒ 请求一次都不发（诊断读数 = `expected "spy" to be called 1 times, but got 0 times`）。
+     * 修复在**组件侧**：读面落地时草稿与 `calc` 同批提交（`page.tsx` 的 `load()`），窗口不存在。
+     */
+    expect(input).toHaveValue('0.25')
     fireEvent.change(input, { target: { value: '0.42' } })
 
     /**
      * issue #7183：保存按钮已退场 ⇒ 变更自己进**防抖窗口**（0.6 秒）后由面板发 `PUT`。
      * 这里等「请求真的发出去了」，**不点任何按钮**（点不到才是对的形态）。
+     *
+     * ⚠️ 等待预算**必须严格小于** vitest 的 `testTimeout`（默认 5000；`tests/setup.ts` 把
+     * `asyncUtilTimeout` 也配成 5000）：改前两者相等 ⇒ 请求真没发出时**外层先到点**，报出来的
+     * 只有 `Test timed out in 5000ms`，真断言（`toHaveBeenCalledTimes(1)`）被盖住 —— 这正是三张
+     * flaky 单只能定位到「哪一行」、定位不到「什么状态没到」的原因。
      */
-    await waitFor(() => expect(mockUpdateCraftCalcConfig).toHaveBeenCalledTimes(1), { timeout: 5000 })
+    await waitFor(() => expect(mockUpdateCraftCalcConfig).toHaveBeenCalledTimes(1), { timeout: 3000 })
 
     // 🔴 红证：页面把 `calcDraft` 解构掉一个键再发（「只发改过的那个键」那种写法）⇒ 本断言当场红。
     //    面板侧的同类判据用的是测试自建的宿主，**盖不到页面这一跳**（实测：注入丢键 ⇒ 页面用例全绿）。
