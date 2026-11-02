@@ -55,6 +55,12 @@ public class ProductImageClient {
     public static final String ERR_AI_IMAGE_DISABLED = "AI_PRODUCT_IMAGE_DISABLED";
     /** 平台侧未配置（上游没生图 Key / 本侧没 service token）。 */
     public static final String ERR_AI_IMAGE_NOT_CONFIGURED = "AI_PRODUCT_IMAGE_NOT_CONFIGURED";
+    /**
+     * 样图本身读不到（上游 400 + 正文指向输入素材，issue #7719）⇒ 该换一张能访问的样图，
+     * 不是找平台换模型。与 {@link #ERR_AI_IMAGE_MODEL_UNSUPPORTED} 同属「这次没生成成」，
+     * 但**下一个动作相反**，所以必须是两个码。
+     */
+    public static final String ERR_AI_IMAGE_INPUT_UNREACHABLE = "AI_PRODUCT_IMAGE_INPUT_UNREACHABLE";
 
     /**
      * 平台侧不可用的统一出路（§31 P3：不出现服务名 / 地址 / 配置键名）。
@@ -74,12 +80,18 @@ public class ProductImageClient {
     /**
      * ai-agent 503 响应体的机器可读 {@code code}（issue #7552）⇒ 本侧错误码与话术。
      *
-     * <p>四类成因分开，是因为商家的**下一个动作**不同：找平台换模型 / 等额度恢复 /
-     * 平台侧修配置。合成一个「暂不可用」会让前两种都变成「稍后重试」，而它们都不会自己好。</p>
+     * <p>成因分开，是因为商家的**下一个动作**不同：换一张能访问的样图 / 找平台换模型 /
+     * 等额度恢复 / 平台侧修配置。合成一个「暂不可用」会让它们都变成「稍后重试」，
+     * 而其中大多数都不会自己好。</p>
      */
     private static final Map<String, Failure> UPSTREAM_FAILURES = Map.of(
             "IMAGE_GEN_MODEL_UNSUPPORTED", new Failure(ERR_AI_IMAGE_MODEL_UNSUPPORTED,
                     "商品图 AI 生成暂不可用：当前不支持这类样图", PLATFORM_ACTION),
+            // 样图读不到（issue #7719）：上游 400 的正文指向输入素材。能好起来的动作只有一个 ——
+            // 换一张能打开的样图；劝「稍后重试」（同一张图）或「已反馈平台」都是反方向。
+            "IMAGE_GEN_INPUT_UNREACHABLE", new Failure(ERR_AI_IMAGE_INPUT_UNREACHABLE,
+                    "这张样图读取失败，没法基于它生成商品图",
+                    "换一张能正常打开的样图再试，或直接用「上传封面」手工传图 —— 生成只是辅助，不影响建品提交"),
             "IMAGE_GEN_QUOTA_EXCEEDED", new Failure(ERR_AI_IMAGE_QUOTA_EXCEEDED,
                     "今日商品图生成额度已用完",
                     "今日额度已用完，可明天再试；也可先用「上传封面」手工传图"),

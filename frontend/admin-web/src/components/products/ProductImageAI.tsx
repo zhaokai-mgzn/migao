@@ -68,16 +68,21 @@ const FAILURE_MESSAGE = '生成失败，请稍后重试，或直接上传图片'
 /**
  * 失败话术（issue #7552）：按 admin-api 的 `error.code` 分叉，**不在前端切字符串**。
  *
- * 三类不同的下一个动作：模型/能力不可用（该找平台）≠ 额度用尽（该等额度）≠ 真·瞬时（该重试）。
+ * 四类不同的下一个动作：样图读不到（该换一张图）≠ 模型/能力不可用（该找平台）≠
+ * 额度用尽（该等额度）≠ 真·瞬时（该重试）。
  * 话术里不出现服务名 / 内部地址（§31 P3）—— 那些只进日志。
  */
 const PLATFORM_UNAVAILABLE = '该能力暂不可用，已反馈平台；可先上传图片继续建品。'
+
+/** 样图读不到（issue #7719）：唯一能好起来的动作是换一张能打开的图 —— 不是找平台，也不是重试同一张。 */
+const SAMPLE_UNREADABLE = '这张样图读取失败，换一张能正常打开的样图再试，或直接上传图片。'
 
 /** 生成成功但图片位已满 ⇒ 不是失败，是「先腾个位置」。不静默丢图，也不假装已填入。 */
 const MAIN_FULL = '主图已满 5 张，先在图片列表里删一张再生成。'
 const DETAIL_FULL = '详情图已满 9 张，先在详情图列表里删一张再生成。'
 
 const FAILURE_MESSAGES: Record<string, string> = {
+  AI_PRODUCT_IMAGE_INPUT_UNREACHABLE: SAMPLE_UNREADABLE,
   AI_PRODUCT_IMAGE_MODEL_UNSUPPORTED: PLATFORM_UNAVAILABLE,
   AI_PRODUCT_IMAGE_DISABLED: PLATFORM_UNAVAILABLE,
   AI_PRODUCT_IMAGE_NOT_CONFIGURED: PLATFORM_UNAVAILABLE,

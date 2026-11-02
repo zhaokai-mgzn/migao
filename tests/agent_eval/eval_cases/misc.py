@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，179 条）
+# 域: misc（源: cases/misc.yml，180 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3297,6 +3297,24 @@ _CASE_MC_134 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-135 [NORMAL] 生图失败归因必须读供应商 message 正文：400 InvalidParameter 的「样图读不到」与「模型不接」分成两格（issue #7719）（源: cases/misc.yml）──
+_CASE_MC_135 = EvalCase(
+    id='MC-135',
+    legacy_id='',
+    title='生图失败归因必须读供应商 message 正文：400 InvalidParameter 的「样图读不到」与「模型不接」分成两格（issue #7719）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['样图 URL 供应商抓不到（域名解析不了 / 下载失败）时，建品页说「该能力暂不可用，已反馈平台」⇒ 商家以为要找平台换模型，而真正该做的是换一张能访问的样图。'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·输入侧分流（会红）：供应商 400 + code=InvalidParameter + message 指向输入素材（URL 解析不了 / 下载失败 / 格式或尺寸非法）⇒ 归 ImageGenerationInputUnreachable（对外 code = IMAGE_GEN_INPUT_UNREACHABLE），**不**归 IMAGE_GEN_MODEL_UNSUPPORTED，且**不切模型**（默认链两个模型 ⇒ 恰好一次 HTTP 调用）。执行点 = backend/ai-agent-service/tests/test_generator.py::test_unresolvable_sample_url_is_input_side_not_model_unsupported。', '判据 2·不许一律改判（会红）：400 + InvalidParameter 但 message 是模型侧原因（model does not support messages）⇒ 仍切下一个模型（#7341 的回落链逐字保留）；全链都不接仍是 IMAGE_GEN_MODEL_UNSUPPORTED。执行点 = ::test_other_invalid_parameter_messages_still_switch_models + ::test_internal_endpoint_503_carries_stable_failure_code。', '判据 3·配额不回归（会红）：429 / Throttling / AllocationQuota 仍归 IMAGE_GEN_QUOTA_EXCEEDED，不被输入侧分类吃掉。执行点 = ::test_quota_429_is_still_quota_not_input_side + ::test_all_models_quota_raises_quota_exceeded。', '判据 4·红证（常驻）：同状态码、同 code、只有 message 不同的两条必须分类相反；把 message 解析删掉（只看 code）⇒ ::test_input_side_classifier_reads_message_body_not_just_code 必红。', '判据 5·对外话术（会红）：admin-api 把 IMAGE_GEN_INPUT_UNREACHABLE 映射成 AI_PRODUCT_IMAGE_INPUT_UNREACHABLE，话术只说「换一张能正常打开的样图」，不含「稍后重试」「已反馈平台」，也不含服务名 / 地址（§31 P3）；建品页按该码显示同一口径（与「能力不可用」两句不同的话）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductImageClientTest.java::mapsUpstreamFailureCodesToDistinctActions + frontend/admin-web/tests/unit/components/ProductImageAI.test.tsx。'],
+    skip_reason='[backend-contract] 纯确定性单测（httpx mock / MockRestTemplate / vitest mock，零生成费用、零真实供应商调用），不进入 agent-eval 冒烟',
+    tags=['image-generation', 'failure-attribution', 'input-side', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -3477,4 +3495,5 @@ CASES = (
     _CASE_MC_128,
     _CASE_MC_132,
     _CASE_MC_134,
+    _CASE_MC_135,
 )
