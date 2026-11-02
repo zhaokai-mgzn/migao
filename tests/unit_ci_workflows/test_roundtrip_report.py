@@ -467,12 +467,17 @@ def test_non_bash_tool_with_sleep_in_arguments_is_not_a_wait_call(tmp_path):
 
 
 def test_report_surfaces_the_waiting_section_with_actionable_fix(tmp_path, capsys):
-    """报告必须给出**处置**（改 `--watch`），否则会被读成「仅供参考的统计」。"""
+    """报告必须给出**处置**（改成 `wait-checks.sh` 一次阻塞），否则会被读成「仅供参考的统计」。
+
+    issue #7009：`--watch` 的退出码**不是**「全绿」的判据 ⇒ 处置必须指向不可假绿的入口；
+    报告里仍会**引述** `--watch`（作为被否定的旧写法），故该词仍在输出里。
+    """
     lines = _session_lines() + [_bash_call(5000, "b1", "sleep 90; gh pr checks 1")] + [_result(95000, "b1")]
     target = _write(tmp_path, lines)
     assert mod.main([str(target)]) == mod.EXIT_OK
     out = capsys.readouterr().out
     assert "等待型调用" in out
+    assert "wait-checks.sh" in out
     assert "--watch" in out
 
 

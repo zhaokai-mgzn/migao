@@ -35,6 +35,7 @@ import inspect
 import io
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -102,6 +103,58 @@ def _mutant_ns(*replacements) -> dict:
     ns = {"__name__": "migao_flaky_ledger_5417_mutant", "__file__": str(SCRIPT)}
     exec(compile(src, str(SCRIPT), "exec"), ns)
     return ns
+
+
+def _run_cli_with_api_error(ns, argv, exc):
+    """桩掉 `_gh_api` 让它抛 `exc`（真 `subprocess.CalledProcessError`），跑一次 CLI。
+
+    ⚠️ `branch_presence` **也**要桩成 `exists`：否则 CLI 会先走「分支确定不存在」的早退
+    （`::notice::` + 退 0），**根本走不到 gh 失败那条路** ⇒ 判据测的是另一条分支。
+    """
+    keys = ("_gh_api", "branch_presence")
+    saved = {k: ns[k] for k in keys}
+
+    def boom(path):
+        raise exc
+
+    ns["_gh_api"] = boom
+    ns["branch_presence"] = lambda branch=None: ns["BRANCH_EXISTS"]
+    out, err, old = io.StringIO(), io.StringIO(), (sys.stdout, sys.stderr)
+    sys.stdout, sys.stderr = out, err
+    try:
+        rc = ns["main"](argv)
+    finally:
+        sys.stdout, sys.stderr = old
+        ns.update(saved)
+    return rc, out.getvalue(), err.getvalue()
+
+
+def stderr_visibility_violations(ns) -> list:
+    """**判据⑤（issue #8398）**：命令失败时必须把 `stderr` 带出来 —— 「无法判定」要**可归因**。
+
+    病（2026-11-02 **实测**，`Flaky Ledger Reconcile` 每轮判红）：CI 日志只有
+    `⛔ 取不到 run 列表 / 分支 tip（Command '['gh', 'api', …]' returned non-zero exit status 1.）`
+    —— `CalledProcessError.__str__()` **只有命令 + 退出码、不含 stderr**，而 `_gh_api` 一律
+    `capture_output=True` ⇒ 真因（`API rate limit exceeded` / `Not Found` / `unknown flag`）被吞掉，
+    只能靠猜。⇒ 本判据同时锁**纯函数面**（detail 里有 rc/stderr/cmd）与**接线面**（CLI 用的是 detail）。
+    """
+    bad = []
+    stderr_text = "gh: API rate limit exceeded for installation (HTTP 403)"
+    exc = subprocess.CalledProcessError(
+        1, ["gh", "api", "repos/o/r/actions/runs?event=pull_request&branch=chore/flaky-ledger"],
+        stderr=f"some leading noise\n{stderr_text}\n")
+    detail = ns["_failure_detail"](exc)
+    for token, why in ((stderr_text, "stderr 原文"), ("rc=1", "退出码"), ("gh api", "失败的命令")):
+        if token not in detail:
+            bad.append(f"`_failure_detail` 丢了{why}：{detail!r}")
+    argv = ["approval-queue", "--repo", "o/r", "--head-branch", ns["LEDGER_BRANCH"],
+            "--min-age-minutes", "0"]
+    rc, out, err = _run_cli_with_api_error(ns, argv, exc)
+    if rc != 3:
+        bad.append(f"取不到事实时必须退 3（无法判定），实际 {rc}（stdout={out!r} stderr={err!r}）")
+    if stderr_text not in (out + err):
+        bad.append(f"CLI 的失败输出没带 gh 的 stderr ⇒ 真因被吞掉（只能靠猜）：{(out + err)!r}")
+    return bad
 
 
 def _run_cli(ns, argv, *, runs_rounds, tip=PUSH_SHA, approve_fails=False, keep_queued=False,
@@ -388,6 +441,10 @@ class TestApprovalQueueFix:
     def test_reading_cli_distinguishes_an_absent_branch(self):
         assert reading_cli_branch_absent_violations(vars(FL)) == []
 
+    def test_command_failure_carries_the_stderr(self):
+        """#8398：`gh` 失败时，CI 日志必须带出 stderr（否则「无法判定」只能靠猜）。"""
+        assert stderr_visibility_violations(vars(FL)) == []
+
     def test_workflows_carry_the_retry_and_the_reading(self):
         assert workflow_violations(TRIAGE_SRC, RECONCILE_SRC) == []
 
@@ -505,3 +562,12 @@ class TestEveryJudgmentCanGoRed:
             count=None)
         assert any("读数步" in v for v in workflow_violations(TRIAGE_SRC, no_reading)), \
             "摘掉 reconcile 的读数步后判绿 ⇒ 消费面判据是**空断言**"
+    def test_red_proof_dropping_the_stderr_detail(self):
+        """注入式红证（#8398）：把 approval-queue 的失败输出退回裸 `{exc}`（= 真因被吞）⇒ 必须红。"""
+        mutant = _mutant_ns((
+            '（{_failure_detail(exc)}）⇒ **未跑 ≠ 通过**',
+            '（{exc}）⇒ **未跑 ≠ 通过**'))
+        assert stderr_visibility_violations(vars(FL)) == [], "真实实现先要绿，红证才有意义"
+        violations = stderr_visibility_violations(mutant)
+        assert violations, "退回裸 `{exc}` 后仍判绿 ⇒ 本条是**空断言**"
+        assert any("stderr" in v for v in violations), violations

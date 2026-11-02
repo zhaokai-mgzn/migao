@@ -407,8 +407,8 @@ public class RegistrationService {
     public void approveApplication(Long id, String reviewerId, ApplicationReview review) {
         log.info("审批通过入驻申请: id={}, reviewerId={}", id, reviewerId);
 
-        // 1. 查找申请（读判只是**快速路径**：给已审结的单一个干净 400 + 当前状态；
-        //    并发下的**唯一权威判定**在下面第 2 步的 CAS —— 见 issue #6954）
+        // 1. 查找申请（读判只是**快速路径**：给已审结的单**与 CAS 落空同码**的 409 + 当前状态；
+        //    并发下的**唯一权威判定**在下面第 2 步的 CAS —— 见 issue #6954 / #7931）
         TenantApplication application = getApplicationDetail(id);
         requirePendingForApprove(application);
 
@@ -482,10 +482,28 @@ public class RegistrationService {
         log.info("入驻申请审批通过: applicationId={}, tenantId={}", id, tenant.getId());
     }
 
-    /** 审批通过前的**快速路径**读判（并发下的唯一权威判定是 {@code approveIfPending} 的 CAS）。 */
+    /**
+     * 审批通过前的**快速路径**读判（并发下的唯一权威判定是 {@code approveIfPending} 的 CAS）。
+     *
+     * <p>🔴 issue #7931 / #8408：这里的拒绝**必须与 CAS 落空同码同因**（{@code conflictForApprove} ⇒ 409）。
+     * 改前这里抛 {@code validationError}（422），而 CAS 落空抛 409 —— <b>同一个终态</b>（「该申请已审结」）
+     * 却因**时序**不同给两个状态码：并发审批的落败方谁走快速路径、谁走 CAS 是随机的
+     * （实测一次 {@code [200,409,409,409,422,422]}）⇒ 调用方无法按状态码写任何正确逻辑，
+     * 真库判据里「落败方必须是 409」也随之随机红（flaky 的机制就在这一行）。</p>
+     */
     private void requirePendingForApprove(TenantApplication application) {
         if (!"pending".equals(application.getStatus())) {
-            throw BusinessException.validationError("该申请已被处理，当前状态: " + application.getStatus());
+            throw conflictForApprove(application.getId());
+        }
+    }
+
+    /**
+     * 驳回前的**快速路径**读判 —— 与 {@link #requirePendingForApprove} 同款（issue #7931 / #8408）：
+     * 拒绝与 CAS 落空同码（{@code conflictForReject} ⇒ 409），不再按「参数校验错误」拒。
+     */
+    private void requirePendingForReject(TenantApplication application) {
+        if (!"pending".equals(application.getStatus())) {
+            throw conflictForReject(application.getId());
         }
     }
 
@@ -636,8 +654,9 @@ public class RegistrationService {
         log.info("驳回入驻申请: id={}, reviewerId={}, reason={}", id, reviewerId, reason);
 
         // 1. 查找申请（读判只是**快速路径**；并发下的唯一权威判定在下面的 CAS，见 issue #6954）
+        //    拒绝同码（issue #7931 / #8408）：快速路径与 CAS 落空都是 409 CONFLICT。
         TenantApplication application = getApplicationDetail(id);
-        requirePendingForApprove(application);
+        requirePendingForReject(application);
 
         // 2. 🔴 驳回权 = 与通过**同款**的 DB 原子条件更新（CAS，issue #6954）——
         //    两者争的是同一份审批权。改前这里是「读判 pending → 无条件 updateById」⇒

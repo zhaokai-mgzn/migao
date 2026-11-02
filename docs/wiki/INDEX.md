@@ -48,7 +48,7 @@ Wiki 页面是摘要，详细文档在：
 | 域 | 详细文档路径 |
 |----|------------|
 | 架构 | [docs/wiki/Architecture.md](Architecture.md)（当前事实） |
-| **上游框架归档出处** | [upstream-ershen-archive.md](upstream-ershen-archive.md)（二郎神/ershen 的最后有效 sha + 未搬资产 + 取回方式） |
+| **上游框架出处（仓已删除）** | [upstream-ershen-archive.md](upstream-ershen-archive.md)（二郎神/ershen 已于 2026-11-02 删除：最后有效 sha + 本地 bundle 取回方式） |
 | **研发模式三维平衡（墙钟 / 质量 / token：目标函数 + 执行域 + 十项机制 + 反模式 + 路线图）** | **[Dev-Mode-Balance.md](Dev-Mode-Balance.md)** |
 | 部署 | [docs/deployment/swas-migration-lessons.md](../deployment/swas-migration-lessons.md)（SWAS 踩坑）· [deployment-checklist.md](../deployment/deployment-checklist.md) · [tls-renewal.md](../deployment/tls-renewal.md)（**TLS 证书自动续期 / 到期判红 / 一次性修复 runbook**，issue #8201）· [observability-minimum.md](../deployment/observability-minimum.md)（**生产最小可观测：5xx 计数 / 证书到期 / 发布失败三类事件怎么真的响**，issue #8203）· [terminal-release.md](../deployment/terminal-release.md)（**终端发布与回滚**，issue #8195）· [wechat-mini-program-qr.md](../deployment/wechat-mini-program-qr.md)（**微信扫普通链接二维码打开小程序（A 档）+ 校验文件落位**，issue #8196）· [trial-onboarding.md](../deployment/trial-onboarding.md)（**试用客户上线 runbook**：建号 / 终端 / 小程序 / 二维码 / 只读验收 / 试用期，判据 = `scripts/trial_onboarding_check.py`，issue #8197） |
 | API | [docs/api/api-reference.md](../api/api-reference.md) |

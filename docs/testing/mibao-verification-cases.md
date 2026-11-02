@@ -2726,15 +2726,15 @@
 
 ### CU-003. 查客户标签（只读；原「打标签」随 #5247 写能力下线改判） 🔵
 ```
-你: 张三（手机号 13800138000）都有哪些标签？
+你: 店里现在有哪些客户标签？我这会儿在接待张三（手机号 13800138000），想先看下全店标签目录
 期望: customer_manage(action=list_tags)
-数据: 标签清单逐条来自服务端（customer_manage list_tags），不得编造；只读，不得声称已加标签（原「add_tag 真实落库（customer_profiles.tags JSONB 写入），重复标签幂等跳过」是写路径断言，已随 #5247 写能力下线改判）
+数据: 全店标签清单（= 标签**目录**，`customer_manage list_tags` → `GET /api/admin/customer-tags`，不带 customer_id）逐条来自服务端，不得编造；**不得**把「某个客户自己的标签」（`customer_manage action=detail` 返回的 `tags` 字段）当成 `list_tags` 的答案（issue #8124：两个取数面不同，答非所问即不满足）；只读，不得声称已加标签（原「add_tag 真实落库（customer_profiles.tags JSONB 写入），重复标签幂等跳过」是写路径断言，已随 #5247 写能力下线改判）
 清理: customer_tag_remove(customer_keyword=13800138000、tag_name=VIP2)
 前置: order_count_for_phone(source=13800138000)
 命名空间(同键互斥·自动串行): customer_phone:13800138000
 ```
 真值: customer-list.tag-todo
-溯源: verification 4.3 独有；2026-09-09 校准：① truth「tag-todo 空实现」已过时（真实落库）；② 标签名「VIP」生产不存在（实际「VIP2活跃」），改真实标签名；③ 补「选第一个」+「确认」轮（重名澄清 + 标签确认，probe 实证需多轮）。2026-09-10 再校准：agent 重名澄清升级为 choice 交互卡（card 内容 LLM 动态生成），「第一个」文本指代不稳定 → 改 auto_select 自动回第一个选项（runner #3160 支持）。2026-09-15（issue #3832）修正三处真值错误：① 标签名改种子目录真有的「VIP2」（原「VIP2活跃」不在目录里 ⇒ pre_clean 结构性空转，见 #3794）；② 姓名改手机号唯一指代（OR-010 建单自动 upsert 出同名张三 ⇒ 重名澄清轮不可控、「张三」落点不确定），删掉 auto_select 轮；③ 收尾轮裸文本「确认」→ auto_respond 答卡轮（裸文本不放行写操作）；④ 补 namespaces 进串行道。断言（customer_manage(action=add_tag)）**未改** ｜ 2026-09-21（issue #4962 的 case-trust burn-down 缴费，metric=entries ⇒ **整条销账**）：本用例从豁免清单**整条移除**（9→8）。① `CASE-TRUST-VOLATILE-LOCATOR` 销账 —— `pre_clean[].customer_index: 0` **删除**（手机号是不变标识；序号选择器是这条规则的取证形态本身），定位键**换强不换弱**；② `CASE-TRUST-NO-PRECONDITION-ASSERTION` 销账 —— 补 `precondition[order_count_for_phone: 13800138000]`（既有已登记 type，靶子存在性，结构下界 `min:1`，与 CU-004 同源同口径）；③ `CASE-TRUST-NO-EFFECT-ASSERTION` 销账 —— 补 `must_succeed[customer_manage]`（效果层）。`user_inputs` / `expectations` / `data_checks` / `skip_reason` / `namespaces` **一字未动**、判据一格不放宽 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`customer_manage` 收窄为只读（写 action `add_tag` 已删除）⇒ 本用例按新机制改判：`expectations` 由 `customer_manage(action=add_tag)` → `customer_manage(action=list_tags)`，`must_succeed[customer_manage]` 整格移除，`title` / `user_inputs` / `data_checks` 随新语义改判，确认轮（`auto_respond`）随写能力下线删除（**不是放宽**：标签清单的**来源**仍逐条受服务端断言约束（list_tags），并新增「不得声称已加标签」的正向约束；原「打标签」意图在本用例上已不可达 —— 该写 action 已从源码删除）。 ｜ tags: tag, write
+溯源: verification 4.3 独有；2026-09-09 校准：① truth「tag-todo 空实现」已过时（真实落库）；② 标签名「VIP」生产不存在（实际「VIP2活跃」），改真实标签名；③ 补「选第一个」+「确认」轮（重名澄清 + 标签确认，probe 实证需多轮）。2026-09-10 再校准：agent 重名澄清升级为 choice 交互卡（card 内容 LLM 动态生成），「第一个」文本指代不稳定 → 改 auto_select 自动回第一个选项（runner #3160 支持）。2026-09-15（issue #3832）修正三处真值错误：① 标签名改种子目录真有的「VIP2」（原「VIP2活跃」不在目录里 ⇒ pre_clean 结构性空转，见 #3794）；② 姓名改手机号唯一指代（OR-010 建单自动 upsert 出同名张三 ⇒ 重名澄清轮不可控、「张三」落点不确定），删掉 auto_select 轮；③ 收尾轮裸文本「确认」→ auto_respond 答卡轮（裸文本不放行写操作）；④ 补 namespaces 进串行道。断言（customer_manage(action=add_tag)）**未改** ｜ 2026-09-21（issue #4962 的 case-trust burn-down 缴费，metric=entries ⇒ **整条销账**）：本用例从豁免清单**整条移除**（9→8）。① `CASE-TRUST-VOLATILE-LOCATOR` 销账 —— `pre_clean[].customer_index: 0` **删除**（手机号是不变标识；序号选择器是这条规则的取证形态本身），定位键**换强不换弱**；② `CASE-TRUST-NO-PRECONDITION-ASSERTION` 销账 —— 补 `precondition[order_count_for_phone: 13800138000]`（既有已登记 type，靶子存在性，结构下界 `min:1`，与 CU-004 同源同口径）；③ `CASE-TRUST-NO-EFFECT-ASSERTION` 销账 —— 补 `must_succeed[customer_manage]`（效果层）。`user_inputs` / `expectations` / `data_checks` / `skip_reason` / `namespaces` **一字未动**、判据一格不放宽 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`customer_manage` 收窄为只读（写 action `add_tag` 已删除）⇒ 本用例按新机制改判：`expectations` 由 `customer_manage(action=add_tag)` → `customer_manage(action=list_tags)`，`must_succeed[customer_manage]` 整格移除，`title` / `user_inputs` / `data_checks` 随新语义改判，确认轮（`auto_respond`）随写能力下线删除（**不是放宽**：标签清单的**来源**仍逐条受服务端断言约束（list_tags），并新增「不得声称已加标签」的正向约束；原「打标签」意图在本用例上已不可达 —— 该写 action 已从源码删除）。 ｜ 2026-11-02（issue #8124，裁定 B = 改问句）：修**问句 × 期望**的不自洽 —— `list_tags` 的取数面是 `GET /api/admin/customer-tags`（**全店标签目录**，不带 customer_id），而原问句问的是「**某个客户**有哪些标签」（该答案在 `_detail` 的 record 的 `tags` 字段里）⇒ 问句改判为**目录问法**「店里现在有哪些客户标签？…」；`expectations` 仍是 `customer_manage(action=list_tags)`（**一字未改**），资产守卫 `TestCU003AssetIsSatisfiableAndNotRelaxed` **一字未动**（选 A 要放宽守卫断言，是用守卫强度换覆盖）。`data_checks` 只把「标签清单」的**取数面**写明为全店目录、并禁止把 detail 的客户 tags 当答案（**不是放宽**：来源仍逐条受服务端断言约束，「不得声称已加标签」正向约束保留）。问句仍带不可变键手机号 13800138000（守卫逐字要求），且不含写动词。丢失的「查某个客户自己的标签」覆盖另开用例补 —— **不在本单扩射程**。 ｜ tags: tag, write
 
 ### CU-004. 更新客户资料（部分更新） 🔵
 ```
@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（171 case）
+## 杂项域（172 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -6831,6 +6831,19 @@
 跳过: [backend-contract] 零 LLM 的确定性判据（纯函数分类器 + 离线 CLI 夹具 + workflow 结构读取），pytest 真跑、零网络、不进 agent-eval 冒烟
 ```
 溯源: 2026-11-01 新增（issue #8386，源于 #6897 → #6924 的真实事故复盘）。为什么必须有这条：外部账号 llwand1 的 fork PR #6897 关闭未合并，但同日被搬到同仓分支以 PR #6924 重开并 squash 合并（9626b8f9a）⇒ 陌生代码进入 main；而 `automerge.yml` 只排 fork PR，对同仓转手完全无感。事后由 PR #8383 全部撤回，本单补防复发。取号 = 现取 MC-001~122,125（123-124 在 PR #8214）⇒ **MC-126**。读数：本判据 10 条全绿（含真实事故夹具红证）。 ｜ tags: backend-contract, governance, ci
+
+### MC-127. **`needs-truths` 标签必须随 issue body 重算**（issue #8406）：`on.issues` 加 `edited` + 判定双向（满足 ⇒ 摘标、不满足 ⇒ 补标）+ 幂等（状态一致 ⇒ 零写请求、`edited` 不重复发提醒评论） 🔵
+```
+你: issue 事后补上了判据节，为什么 `needs-truths` 还挂着？
+数据: 🔴 **判据 1·触发面**：`.github/workflows/issue-contract-check.yml` 的 `on.issues.types` 必须含 `opened` 与 `edited`（只有 `opened` ⇒ 标签只算一次、永不重算）。执行点 = tests/unit_ci_workflows/test_issue_contract_needs_truths_recompute.py::test_issue_events_recompute_on_body_edit
+数据: 🔴 **判据 2·双向（摘）**：判据满足且 `needs-truths` 在（含**两标签并存**这个陈旧形态）⇒ 必须发出 `removeLabel('needs-truths')`。执行点 = 同文件::test_satisfied_issue_drops_stale_needs_truths / test_satisfied_issue_drops_stale_label_even_when_needs_verification_present
+数据: 🔴 **判据 3·幂等**：标签已不在 ⇒ **零** remove 请求（无条件 remove = 对不存在的标签发 404 写请求）。执行点 = 同文件::test_satisfied_issue_does_not_remove_an_absent_label
+数据: 🔴 **判据 4·补标 + 不刷评论**：判据不满足 ⇒ 补回 `needs-truths`；`edited` 只重算标签、不重复发提醒评论（`opened` 恰好发一条）。执行点 = 同文件::test_unsatisfied_edited_body_restores_needs_truths_without_reposting_the_reminder / test_unsatisfied_opened_body_reminds_exactly_once_and_is_idempotent
+数据: 🔴 **判据 5·政策不变**：`ai-draft` 的 issue 在 `edited` 分支上同样零动作（质量门禁完全不可见）。执行点 = 同文件::test_ai_draft_issues_are_invisible_to_the_edited_branch
+数据: **边界（照实登记）**：① 判据**质量**（写了 `## 验收标准` 但内容空洞）不在射程内，那是人读台账的事；② 判不了「真值只写在评论里」的形态；③ 本 workflow 非 required check ⇒ 标签口径错误**不阻断合并**，靠读标签的下游（如 verify-trigger）自己承担。
+跳过: [backend-contract] 零 LLM 的确定性判据（workflow YAML 结构读取 + 把 `with.script` 真跑在 Node 里、github/context 用内存替身），pytest 真跑、零网络、不进 agent-eval 冒烟
+```
+溯源: 2026-11-02 新增（issue #8406：`needs-truths` 只算一次、永不重算 ⇒ 陈旧误标；#5481 修的是**词表**层，本条修的是**生命周期**层）。现取读数：51 条 open `needs-truths` 里 2 条按本 workflow 自己的判据已满足（#5052 / #5061）。同族第二处：摘标原先嵌在「刚加 needs-verification」分支里 ⇒ 两标签并存的陈旧形态永远摘不掉，本单一起修。取号 = MC-127（主库 MC-001~098 + MC-100~126 已占；MC-099 是 PR #8383 revert 留下的空档，可能被重投复用 ⇒ 不占用）。 ｜ tags: backend-contract, governance, ci
 
 ## 商家入驻域（7 case）
 
@@ -14285,8 +14298,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：966（活跃 153，跳过 813）
-- tier 分布：smoke 15 / normal 891 / adversarial 33
+- 用例总数：967（活跃 153，跳过 814）
+- tier 分布：smoke 15 / normal 892 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14302,7 +14315,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：171
+- 杂项域：172
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：74
@@ -14540,6 +14553,7 @@
 - MC-125: 微信「扫普通链接二维码打开小程序」校验文件（issue #8196）：nginx 根下 .txt 是显式静态面（缺失 404、不回落 SPA、只吃单段），deploy.sh 幂等只拷 *.txt 到静态根根下（只增/覆盖、父目录 index.html 哈希不变、跳过要出声）
 - MC-124: 只读合成探针 + 构建身份五跳（issue #8203 · P0-04；审计 P1-01）：三个公网只读面 / 退出码 0·1·3 / 只对瞬态重试 / 接在既有 post-merge-verify 腿的 P1 出口之前；ai-agent `/version` 的 sha 从 CI 到镜像的五跳接线
 - MC-126: **外部账号的代码不得直接进本仓**：PR 提交作者 / head 仓库来源必须命中白名单，命中即判红并解除自动合并（issue #8386）
+- MC-127: **`needs-truths` 标签必须随 issue body 重算**（issue #8406）：`on.issues` 加 `edited` + 判定双向（满足 ⇒ 摘标、不满足 ⇒ 补标）+ 幂等（状态一致 ⇒ 零写请求、`edited` 不重复发提醒评论）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

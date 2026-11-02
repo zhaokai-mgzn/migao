@@ -2,7 +2,15 @@ name: Issue CONTRACT_JSON Check
 
 on:
   issues:
-    types: [opened]
+    # 🔴 `edited` 是必需的（issue #8406）：本 workflow 判定的对象是 **issue body**
+    # （判据节 / CONTRACT_JSON），而 body 在 `opened` 之后仍会变。原先只有 `opened`
+    # ⇒ `needs-truths` **只算一次、永不重算**：事后补上判据节的 issue 仍挂着「缺业务真值」，
+    # 而该标签被当 backlog 规模读数用（2026-11-02 现取：51 条 open `needs-truths` 里 2 条已满足判据）
+    # ⇒ 陈旧条目**虚增**读数，且没有任何东西会因此变红。
+    # 幂等：`edited` 在改标题 / 改无关段落时也会触发 ⇒ 一律「先重算判据、再比当前标签」，
+    # 状态一致 ⇒ **零写请求**（不重复评论、不重复打/摘标）。判据 =
+    # tests/unit_ci_workflows/test_issue_contract_needs_truths_recompute.py
+    types: [opened, edited]
 
 permissions:
   contents: read
@@ -29,9 +37,14 @@ jobs:
         with:
           script: |
             const body = context.payload.issue.body || '';
+            // 当前标签（按名字；载荷里既可能是对象也可能是裸串，两种形态都兜住）
+            const labels = (context.payload.issue.labels || [])
+              .map(l => (typeof l === 'string' ? l : l.name));
+            // `opened` = 首判（可发提醒评论）；`edited` = 只重算标签（见文件头的幂等口径）
+            const isFirstPass = context.payload.action === 'opened';
 
             // ai-draft 标签：用户手动 draft，质量门禁完全不可见，直接跳过
-            if (context.payload.issue.labels.some(l => l.name === 'ai-draft')) {
+            if (labels.includes('ai-draft')) {
               console.log('⏭️  ai-draft 标签 — 质量门禁跳过');
               return;
             }
@@ -59,27 +72,29 @@ jobs:
 
             if (hasContract || hasTruths) {
               // 有业务真值 → 自动加入质量门禁体系
-              const needsLabel = !context.payload.issue.labels.some(l => l.name === 'needs-verification');
-              if (needsLabel) {
+              if (!labels.includes('needs-verification')) {
                 await github.rest.issues.addLabels({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: context.issue.number,
                   labels: ['needs-verification'],
                 });
-                // B8 fix: 同时移除 needs-truths (修复前两个标签可能并存，导致状态不一致)
-                const hasTruthsLabel = context.payload.issue.labels.some(l => l.name === 'needs-truths');
-                if (hasTruthsLabel) {
-                  await github.rest.issues.removeLabel({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    issue_number: context.issue.number,
-                    name: 'needs-truths',
-                  });
-                }
                 console.log('✅ 已添加 needs-verification → 进入质量门禁体系');
               } else {
                 console.log('✅ 已有 needs-verification');
+              }
+              // 🔴 摘标必须**独立于**上面那个分支（issue #8406 的陈旧形态）：修复前这条 removeLabel
+              // 藏在 `if (!labels.includes('needs-verification'))` 里面 ⇒ **两标签并存**的 issue
+              // （补判据前被人工加过 needs-verification）永远摘不掉，`edited` 也不会触发本 workflow。
+              // 幂等护栏：当前标签里**没有就不调用**（对不存在的标签调 removeLabel 会 404 且无意义）。
+              if (labels.includes('needs-truths')) {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  name: 'needs-truths',
+                });
+                console.log('🧹 已移除陈旧的 needs-truths（判据已满足）');
               }
               return;
             }
@@ -118,20 +133,33 @@ jobs:
 
             > 🤖 真值齐全后自动评审会自动反推 case 草稿，研发 review 后即可开工。`;
 
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: msg,
-            });
+            // 判据不满足 ⇒ `needs-truths` 必须在（issue #8406 的另一半：作者把判据节删掉时标签要回来）。
+            // 幂等护栏：已在就不调用。
+            if (!labels.includes('needs-truths')) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: ['needs-truths'],
+              });
+              console.log('✅ 已标记 needs-truths');
+            } else {
+              console.log('✅ 已有 needs-truths');
+            }
 
-            await github.rest.issues.addLabels({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              labels: ['needs-truths'],
-            });
-            console.log('✅ 已提醒补充 CONTRACT_JSON');
+            // 提醒评论**只在 `opened` 发一次**：`edited` 会在任何标题 / 正文编辑时触发，
+            // 每次编辑都刷一条同样的提醒 = 噪音（且把 durable trail 污染成重复项）。
+            if (isFirstPass) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: msg,
+              });
+              console.log('✅ 已提醒补充 CONTRACT_JSON');
+            } else {
+              console.log(`⏭️  action=${context.payload.action} — 只重算标签，不重复发提醒评论`);
+            }
 
       - name: Validate cases references (case-contract)
         env:

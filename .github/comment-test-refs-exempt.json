@@ -1,0 +1,17 @@
+{
+  "_note": "源码注释里点名的**测试类**若在仓库里不存在（`声明存在 ≠ 可达`，issue #6637）⇒ 必须在此登记。**只许缩短**：条目一旦在语料里不再出现（已改名/已删声明）就必须删掉，判据会红。判据 = tests/unit_ci_workflows/test_source_comment_test_refs.py。",
+  "_scope": "backend/** 的 *.java 与 *.sql 的**注释行**；跳过 src/test/**（那里是测试本体）与 migration/V*/migration-archive/（已发布迁移不可变，#6539）。",
+  "_reopen_when": "每条的 reopen_when 写的是「什么时候必须回来清账」：真守卫找到后立即把引用改成真名并删本条目。",
+  "frozen_max": 9,
+  "entries": [
+    {"name": "AdminShipmentListReadTest", "files": ["backend/admin-api/src/main/java/com/migao/admin/dto/ShipmentListRow.java", "backend/admin-api/src/main/java/com/migao/admin/controller/ShipmentController.java"], "reason": "点名了一个不存在的测试类（真实覆盖在 ShipmentListQueryRealDbTest / AdminShipmentList* 一族里）", "reopen_when": "把引用改到真类名后删本条"},
+    {"name": "QrLoginTicketTest", "files": ["backend/admin-api/src/main/java/com/migao/admin/security/JwtTokenProvider.java", "backend/admin-api/src/main/java/com/migao/admin/service/QrLoginTicketService.java"], "reason": "同上（QR 登录票据的判据真名待认领）", "reopen_when": "找到真类并改名后删本条"},
+    {"name": "QualityCheckPermissionTest", "files": ["backend/admin-api/src/main/java/com/migao/admin/controller/QualityCheckController.java", "backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java"], "reason": "同上", "reopen_when": "改名后删本条"},
+    {"name": "PoolBoardOrderingTest", "files": ["backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java"], "reason": "同上", "reopen_when": "改名后删本条"},
+    {"name": "PooledDispatchTest", "files": ["backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java"], "reason": "同上", "reopen_when": "改名后删本条"},
+    {"name": "OrderServiceSkuBackfillTest", "files": ["backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java", "backend/admin-api/src/main/java/com/migao/admin/service/OrderQueryService.java"], "reason": "同上", "reopen_when": "改名后删本条"},
+    {"name": "OrderContentEditableTransitionsTest", "files": ["backend/admin-api/src/main/java/com/migao/admin/service/OrderStatusTransitions.java"], "reason": "同上", "reopen_when": "改名后删本条"},
+    {"name": "WorkerShipmentReadyOrdersTest", "files": ["backend/admin-api/src/main/java/com/migao/admin/service/WorkerShipmentReadyService.java"], "reason": "同上", "reopen_when": "改名后删本条"},
+    {"name": "RemnantNonAssetRealDbTest", "files": ["backend/admin-api/src/main/java/com/migao/admin/entity/FabricRemnant.java"], "reason": "同族真名是 RemnantNonAssetGuardTest / RemnantNonAssetRealDbTest 之外的名字，引用写错", "reopen_when": "改名后删本条"}
+  ]
+}
