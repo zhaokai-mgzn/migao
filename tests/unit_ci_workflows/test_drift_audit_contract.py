@@ -711,7 +711,7 @@ def test_heartbeat_red_when_last_success_nine_days_ago(tmp_path):
                       {"status": "completed", "conclusion": "success",
                        "createdAt": "2026-09-06T02:00:00Z"}],
     }), encoding="utf-8")
-    rc, out, rep = run(repo, "--check", "--only", "heartbeat", "--stale-scope", "none",
+    rc, out, rep = run(repo, "--check", "--only", "heartbeat", "--host-workflow", "", "--stale-scope", "none",
                        "--gh-fixture", str(fixture), "--now", NOW)
     chk = check_of(rep, "heartbeat")
     details = " || ".join(f["detail"] for f in chk["findings"])
@@ -727,7 +727,7 @@ def test_heartbeat_never_succeeded_is_red(tmp_path):
     fixture.write_text(json.dumps({"monthly.yml": [
         {"status": "completed", "conclusion": "failure", "createdAt": "2026-09-01T21:40:35Z"}]}),
         encoding="utf-8")
-    rc, out, rep = run(repo, "--check", "--only", "heartbeat", "--stale-scope", "none",
+    rc, out, rep = run(repo, "--check", "--only", "heartbeat", "--host-workflow", "", "--stale-scope", "none",
                        "--gh-fixture", str(fixture), "--now", NOW)
     details = " ".join(f["detail"] for f in check_of(rep, "heartbeat")["findings"])
     assert rc == 1 and "零成功" in details, out
@@ -749,7 +749,7 @@ def test_heartbeat_new_workflow_is_pending_not_never_succeeded(tmp_path):
         "brand-new.yml": [{"status": "in_progress", "conclusion": "",
                            "createdAt": "2026-09-15T03:00:00Z"}],
     }), encoding="utf-8")
-    rc, out, rep = run(repo, "--check", "--only", "heartbeat",
+    rc, out, rep = run(repo, "--check", "--only", "heartbeat", "--host-workflow", "",
                        "--gh-fixture", str(fixture), "--now", NOW)
     chk = check_of(rep, "heartbeat")
     assert rc == 0, out
@@ -760,7 +760,7 @@ def test_heartbeat_new_workflow_is_pending_not_never_succeeded(tmp_path):
 def test_heartbeat_offline_is_unknown_not_pass(tmp_path):
     """离线 ⇒ **未知**，不假装通过（"没网"与"没漂移"是两件事）。"""
     repo = mk_repo(tmp_path, {".github/workflows/daily.yml": _wf("Daily", "0 2 * * *")})
-    rc, out, rep = run(repo, "--check", "--only", "heartbeat")
+    rc, out, rep = run(repo, "--check", "--only", "heartbeat", "--host-workflow", "")
     chk = check_of(rep, "heartbeat")
     assert chk["status"] == "unknown", out
     assert any("未知" in n for n in chk["notes"]), out
@@ -768,7 +768,7 @@ def test_heartbeat_offline_is_unknown_not_pass(tmp_path):
     # 定时审计用 --fail-on-unknown ⇒ 未知要红（防"网络静默"变成假绿）。
     # ⚠️ #5151 起「未知」走**三态 `3`**（不可判）而不是 `1`：两者都是非零 ⇒ 定时腿照样红，
     # 但报告/退出码能把"判据没跑出结论"与"确实有漂移"分开（`3` 不得当 `0` 读）。
-    rc2, out2, _ = run(repo, "--check", "--only", "heartbeat", "--fail-on-unknown")
+    rc2, out2, _ = run(repo, "--check", "--only", "heartbeat", "--host-workflow", "", "--fail-on-unknown")
     assert rc2 == 3, out2
 
 
@@ -801,7 +801,7 @@ def _throttled_repo(tmp_path, decl: int | None, *, age_hours: float = 3.5,
 
 
 def _heartbeat_run(repo, fixture):
-    return run(repo, "--check", "--only", "heartbeat", "--stale-scope", "none",
+    return run(repo, "--check", "--only", "heartbeat", "--host-workflow", "", "--stale-scope", "none",
                "--gh-fixture", str(fixture), "--now", NOW)
 
 
@@ -911,7 +911,7 @@ def test_heartbeat_host_workflow_judges_itself_without_the_exclusion(tmp_path):
     """
     repo = _self_host_repo(tmp_path)
     fixture = _self_host_fixture(tmp_path)
-    rc, out, rep = run(repo, "--check", "--only", "heartbeat", "--stale-scope", "none",
+    rc, out, rep = run(repo, "--check", "--only", "heartbeat", "--host-workflow", "", "--stale-scope", "none",
                        "--gh-fixture", str(fixture), "--now", NOW, "--host-workflow", "")
     details = _self_host_details(rep)
     assert rc == 1, out
@@ -928,7 +928,7 @@ def test_heartbeat_host_workflow_is_excluded_from_its_own_judgment(tmp_path):
     """
     repo = _self_host_repo(tmp_path)
     fixture = _self_host_fixture(tmp_path)
-    rc, out, rep = run(repo, "--check", "--only", "heartbeat", "--stale-scope", "none",
+    rc, out, rep = run(repo, "--check", "--only", "heartbeat", "--host-workflow", "", "--stale-scope", "none",
                        "--gh-fixture", str(fixture), "--now", NOW,
                        "--host-workflow", HOST_NAME)
     chk = check_of(rep, "heartbeat")
@@ -946,7 +946,7 @@ def test_heartbeat_other_workflows_still_red_when_host_is_excluded(tmp_path):
     """
     repo = _self_host_repo(tmp_path)
     fixture = _self_host_fixture(tmp_path)
-    rc, out, rep = run(repo, "--check", "--only", "heartbeat", "--stale-scope", "none",
+    rc, out, rep = run(repo, "--check", "--only", "heartbeat", "--host-workflow", "", "--stale-scope", "none",
                        "--gh-fixture", str(fixture), "--now", NOW,
                        "--host-workflow", HOST_NAME)
     details = _self_host_details(rep)
@@ -995,7 +995,7 @@ def test_heartbeat_unresolvable_host_name_is_loud_not_silent(tmp_path):
     """
     repo = _self_host_repo(tmp_path)
     fixture = _self_host_fixture(tmp_path)
-    rc, out, rep = run(repo, "--check", "--only", "heartbeat", "--stale-scope", "none",
+    rc, out, rep = run(repo, "--check", "--only", "heartbeat", "--host-workflow", "", "--stale-scope", "none",
                        "--gh-fixture", str(fixture), "--now", NOW,
                        "--host-workflow", "No Such Workflow")
     chk = check_of(rep, "heartbeat")
@@ -1012,7 +1012,7 @@ def _cli_no_env(repo, fixture, *args: str):
     p = subprocess.run(
         [sys.executable, str(DRIFT), "--repo", str(repo), "--base", "main",
          "--json", str(out_json), "--offline", "--check", "--fail-on-unknown",
-         "--only", "heartbeat", "--stale-scope", "none", "--baseline",
+         "--only", "heartbeat", "--host-workflow", "", "--stale-scope", "none", "--baseline",
          str(tmp / "bl.json"), "--gh-fixture", str(fixture), "--now", NOW, *args],
         capture_output=True, text=True, timeout=300, env=env)
     rep = json.loads(out_json.read_text(encoding="utf-8"))

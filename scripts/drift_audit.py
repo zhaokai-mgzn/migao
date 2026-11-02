@@ -259,6 +259,29 @@ def sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _anchor_git_root(path: Path) -> Path:
+    """把 `--repo` 锚到**它所在的那个 git 工作树根**（不依赖调用时的 cwd，issue #8061）。
+
+    为什么必须有这一层：`--repo` 的缺省值是 `.`，而 `.` 是**调用时的 cwd** ⇒ 在子目录里
+    跑审计时，所有仓内判定面（`.github/workflows` / `.github/cases` / 基线 / 预设语料）
+    都被相对**子目录**定位 ⇒ 判定面凭空缩小（`heartbeat` 变成「0 个调度任务」、
+    `cases_fingerprint` 变成 `<无用例库>`），而且**不报错** —— 只是判得更少
+    （「环境静默即缺陷」）。worktree 里同理：`.` 必须解析成**该 worktree 的根**，
+    否则同一个分支在不同检出形态下得到不同的 `preset_root()`（实测：子目录形态退到
+    git 物化的临时目录，而根形态拿到的是仓内真目录 ⇒ 三条预设判据比的**不是同一个对象**）。
+
+    解析口径与 `git` 自己一致（`rev-parse --show-toplevel`）；非 git 目录（夹具 / 裸目录）
+    ⇒ 原样返回（审计夹具仓库本身是 git 仓，其工作树根 = 它自己）。
+    """
+    try:
+        proc = subprocess.run(["git", "-C", str(path), "rev-parse", "--show-toplevel"],
+                              capture_output=True, text=True, timeout=60)
+    except OSError:
+        return path.resolve()
+    top = proc.stdout.strip()
+    return Path(top).resolve() if proc.returncode == 0 and top else path.resolve()
+
+
 def norm_text(text: str) -> str:
     """章节比对用的归一化：去掉空白与 markdown 强调符（两者差异不构成口径差异）。"""
     return re.sub(r"[\s*`_>]", "", text)
@@ -459,7 +482,13 @@ def _preset_moved_note(what: str) -> str:
     """预设语料取不到时的**显式**说明（防「静默通过」）。"""
     return (f"⏭️ 读不到预设语料（{what}）—— S4 / issue #6020 起预设权威源在 "
             f"zhaokai-mgzn/migao-agent-presets，业务仓已不承载 {PRESET_PREFIX_IN_REPO}。"
-            f"本判据**不可判**（未跑 ≠ 通过）；本机建镜像 / CI 用 `fetch-depth: 0` 让基线带着该路径。")
+            f"本判据**不可判**（未跑 ≠ 通过）。正路只有一条 = **本机建镜像**"
+            f"（`$MIGAO_PRESET_MIRROR` / `~/migao-dev-preset-anchor`）；"
+            f"🔴 **CI 上 `fetch-depth: 0` 不解决这件事**（它只给 git 历史，而本解析器只枚举 "
+            f"{list(PRESET_BASELINE_REFS)} 这几个固定 ref ⇒ S4 后它们全空）——CI 纯检出里该对象"
+            f"**结构性不存在** ⇒ `not_applicable` 就是正确三态（不是判据坏了）。要让它可判须把"
+            f"唯一读取口径上提为共享模块，见 "
+            f"`tests/unit_ci_workflows/single_reader_residuals.json` 的 `restart_condition`。")
 
 
 def _skill_versions(skills_dir: Path) -> dict[str, str]:
@@ -516,8 +545,10 @@ def check_skill_anchor(a: Audit) -> CheckResult:
         # 与 `preset-monotonic` 同因（同一份语料）：被比的两个对象都不存在 ⇒ 不判红、不当通过。
         return not_applicable(
             r, "预设语料", "`preset_root()` 解析不到带 `skills/` 的预设目录",
-            "S4 / issue #6020：业务仓已不承载 `.agent-presets/**`；本机建镜像"
-            "（`$MIGAO_PRESET_MIRROR` / `~/migao-dev-preset-anchor`）或 CI 用 `fetch-depth: 0`")
+            "S4 / issue #6020：业务仓已不承载 `.agent-presets/**`；**本机建镜像**"
+            "（`$MIGAO_PRESET_MIRROR` / `~/migao-dev-preset-anchor`）。CI 纯检出里该对象"
+            "**结构性不存在**（`fetch-depth: 0` 也不造出它 ⇒ 别再照那条旧建议修）——"
+            "要让它可判须在 CI 检出预设仓并指到 `$MIGAO_PRESET_MIRROR`")
     skills_dir = preset / "skills"
     repo_skills = _skill_versions(skills_dir)
     r.evaluated = len(repo_skills)
@@ -535,8 +566,8 @@ def check_skill_anchor(a: Audit) -> CheckResult:
         # 旧形态是 `unknown` ⇒ 定时腿 `--fail-on-unknown` 下与「真漂移」同码（本单 §1-C1 的成因之一）。
         return not_applicable(
             r, "活锚", f"活锚未安装：{anchor} 不存在",
-            "本机装活锚（`./scripts/preset-anchor-refresh.sh`）/ CI 上用 `fetch-depth: 0` 让基线"
-            "带着预设语料；活锚**不可达**本身就判该条不适用，不是判红")
+            "本机装活锚（`./scripts/preset-anchor-refresh.sh`）；CI runner 上活锚**结构性不存在**"
+            "（`fetch-depth: 0` 不会装出活锚）—— 活锚不可达本身就判该条不适用，不是判红")
     live_skills = _skill_versions(anchor / "skills")
     for name, ver in repo_skills.items():
         lv = live_skills.get(name)
@@ -655,8 +686,10 @@ def check_preset_monotonic(a: Audit) -> CheckResult:
         #    也不是 ✅：没有读数）。计数声明见 `not_applicable()`。
         return not_applicable(
             r, "预设语料", "`preset_root()` 解析不到带 `skills/` 的预设目录",
-            "S4 / issue #6020：业务仓已不承载 `.agent-presets/**`；本机建镜像"
-            "（`$MIGAO_PRESET_MIRROR` / `~/migao-dev-preset-anchor`）或 CI 用 `fetch-depth: 0`")
+            "S4 / issue #6020：业务仓已不承载 `.agent-presets/**`；**本机建镜像**"
+            "（`$MIGAO_PRESET_MIRROR` / `~/migao-dev-preset-anchor`）。CI 纯检出里该对象"
+            "**结构性不存在**（`fetch-depth: 0` 也不造出它 ⇒ 别再照那条旧建议修）——"
+            "要让它可判须在 CI 检出预设仓并指到 `$MIGAO_PRESET_MIRROR`")
     skills_dir = preset / "skills"
     names = sorted(p.parent.name for p in skills_dir.glob("*/SKILL.md"))
     r.evaluated = len(names)
@@ -2082,6 +2115,17 @@ def changed_files(a: Audit) -> set[str]:
     return {x.strip() for x in out.split("\n") if x.strip()}
 
 
+def _reached_conclusion(res: CheckResult) -> bool:
+    """该判据本轮**是否给出了结论**（三态口径：崩溃 / 整体未知 / 对象不在本环境 ≠ 有结论）。
+
+    判据没结论 ⇒ 它名下的 findings **不得**被算成「有结论的红」（issue #8061）——
+    否则 `tri_state()` 的 `1` 分支会成立，把「判不了」报成「违规」，与同一份报告里
+    「❌ 判据不可判（三态 3）」那节**结论相反**。本函数是**唯一**判定点（注入式红证据此注入，
+    见 `tests/unit_ci_workflows/test_drift_audit_not_conclusive_not_violation.py`）。
+    """
+    return res.status not in ("error", "unknown", "not_applicable")
+
+
 def run_audit(a: Audit, baseline: dict, only: list[str] | None,
               changed: set[str] | None = None,
               base_baseline: dict | None = None) -> dict:
@@ -2154,8 +2198,10 @@ def run_audit(a: Audit, baseline: dict, only: list[str] | None,
         # ⚠️ `not_applicable` 也算「本轮没能重算」：判定对象不在本环境 ⇒ 它名下的旧基线条目
         # 不得被读成「已不漂移」（#6640 实测：`sync-copy` 的两条 `sections-diverged` / `version`
         # 差一步被归零未删阻塞；而"没跑"必须长得像"没跑"）。
-        unverifiable = res.status in ("error", "unknown", "not_applicable") \
-            or (c.network and a.offline)
+        #: 判据**自己没给出结论**的三态（崩溃 / 整体未知 / 判定对象不在本环境）。
+        #: 这三种状态下它名下的 findings **不是**「有结论的红」——见下面 `non_conclusive`。
+        non_conclusive = not _reached_conclusion(res)
+        unverifiable = non_conclusive or (c.network and a.offline)
         cmp_ = compare_baseline(res, base_entries, changed, recorded_entries=recorded,
                                 base_check_entries=(base_entries_all or {}).get(c.id, {}),
                                 unverifiable=unverifiable)
@@ -2165,23 +2211,56 @@ def run_audit(a: Audit, baseline: dict, only: list[str] | None,
             # 判据自己声明了「对象不在本环境」⇒ **保留这一态**，不被下面那串
             # 「有没有漂移」的重算覆盖成 `ok`（覆盖会把它读成「没问题」，正是本单要治的形态）。
             status = "not_applicable"
+        elif non_conclusive:
+            # 🔴 同理：`unknown` 也**不许**被 findings 覆盖成 `new-drift`（issue #8061）——
+            # 覆盖等于用一条「我没读出结论」的判据产出一条「有结论的红」，而 `tri_state()`
+            # 的 `1` 分支正是按这些计数成立的 ⇒ 报告会同时打印「❌ 判据不可判（三态 3）」
+            # 与「1 判红（有结论：确实有漂移）」，**两句结论互相矛盾**（实测：
+            # `--check --strict-stale --fail-on-unknown` 在本机 rc=1，而 heartbeat 已声明
+            # 「宿主未知 ⇒ 本轮没读出结论」）。
+            status = "unknown"
         elif cmp_["new"] or cmp_["stale_blocking"] or cmp_["dropped"] or env_res:
             status = "new-drift"
-        elif res.status == "unknown":
-            status = "unknown"
         elif cmp_["known"] or cmp_["stale"]:
             status = "known-drift"
         else:
             status = "ok"
         res.status = status
-        new_total += len(cmp_["new"]) + len(env_res)
-        new_out_total += len(cmp_["new_out_of_scope"])
+        # 🔴 **没有结论的判据 ⇒ 它名下的 findings 不计入阻塞计数**（三态口径：`3` 必须出声，
+        # 但**不得**与 `1` 同码）。裁决权仍在：`unknown` 在 `--fail-on-unknown` 下照旧折 `3`
+        # （定时腿仍红、P1 值班单照旧承接），`error` 折 `3`，`not_applicable` 不折非零。
+        # 这些读数**一条都不丢**：逐条进 `non_conclusive_findings`（报告与 JSON 都具名打印）。
+        # `stale_blocking` 不必在此处理：`unverifiable=True` 已把它们挪进 `unverifiable_stale`。
+        non_conclusive_findings: list[dict] = []
+        if non_conclusive:
+            non_conclusive_findings = (
+                [{"kind": "new-in-scope", "key": k, "delta": n} for k, n in cmp_["new"]]
+                + [{"kind": "new-out-of-scope", "key": k, "delta": n}
+                   for k, n in cmp_["new_out_of_scope"]]
+                + [{"kind": "dropped", "key": k} for k in cmp_["dropped"]]
+                + [{"kind": "env", "key": f.key} for f in env_res])
+        else:
+            new_total += len(cmp_["new"]) + len(env_res)
+            new_out_total += len(cmp_["new_out_of_scope"])
+            dropped_total += len(cmp_["dropped"])
         known_total += len(cmp_["known"])
         paydown_total += len(cmp_["paydown"])
         stale_total += len(cmp_["stale"])
         stale_block_total += len(cmp_["stale_blocking"])
-        dropped_total += len(cmp_["dropped"])
         unverifiable_total += len(cmp_["unverifiable_stale"])
+        # 非结论判据的**计数面**字段一律留空（读数已逐条进 `non_conclusive_findings`）：
+        # 留着它们会让下游（`_new_in_scope()` 的 burn-down scope、报告里的「新增漂移」行）
+        # 把「没读出结论」读成「确实有漂移」——正是本单要治的形态。判据自己的 `findings`
+        # 照旧原样输出（"未知"没有被改写成"通过"）。
+        new_drift_list = [] if non_conclusive \
+            else [{"key": k, "delta": n} for k, n in cmp_["new"]]
+        new_out_list = [] if non_conclusive \
+            else [{"key": k, "delta": n} for k, n in cmp_["new_out_of_scope"]]
+        env_list = [] if non_conclusive \
+            else [{"key": f.key, "detail": f.detail} for f in env_res]
+        dropped_list = [] if non_conclusive else cmp_["dropped"]
+        new_findings_detail = [] if non_conclusive else [
+            next((f.detail for f in res.findings if f.key == k), k) for k, _ in cmp_["new"]]
         out["checks"].append({
             "id": c.id,
             "invariant": c.invariant,
@@ -2198,9 +2277,10 @@ def run_audit(a: Audit, baseline: dict, only: list[str] | None,
             "na_remedy": res.na_remedy,
             "error": res.error,
             "notes": res.notes,
-            "new_drift": [{"key": k, "delta": n} for k, n in cmp_["new"]],
-            "new_drift_out_of_scope": [{"key": k, "delta": n}
-                                       for k, n in cmp_["new_out_of_scope"]],
+            "new_drift": new_drift_list,
+            "new_drift_out_of_scope": new_out_list,
+            # 非结论判据名下的 findings（**不计入阻塞**，但一条都不丢）：报告与 JSON 都具名打印。
+            "non_conclusive_findings": non_conclusive_findings,
             "known_drift": [{"key": k, "count": n} for k, n in cmp_["known"]],
             "paydown": [{"key": k, "delta": n} for k, n in cmp_["paydown"]],
             "stale_baseline_entry": [
@@ -2212,13 +2292,11 @@ def run_audit(a: Audit, baseline: dict, only: list[str] | None,
                 {"key": k, "count": n, "check": c.id}
                 for k, n in cmp_["unverifiable_stale"]],
             "stale_baseline_blocking": [k for k, _ in cmp_["stale_blocking"]],
-            "dropped_baseline_entry": cmp_["dropped"],
-            "env_findings": [{"key": f.key, "detail": f.detail} for f in env_res],
+            "dropped_baseline_entry": dropped_list,
+            "env_findings": env_list,
             "findings": [{"key": f.key, "detail": f.detail, "blocking": f.blocking,
                           "env": f.env, "always": f.always} for f in res.findings],
-            "new_findings_detail": [
-                next((f.detail for f in res.findings if f.key == k), k)
-                for k, _ in cmp_["new"]],
+            "new_findings_detail": new_findings_detail,
         })
     # ── burn-down 预算（#4045）：判据本体在 `case_trust_gate.burn_down_verdict` ──────
     # `scope=case_touching_prs` 的「命中」= 本 PR 动了**判据面**（基线文件本身，或引入了新的
@@ -2379,6 +2457,23 @@ def render_summary(rep: dict, baseline: dict) -> str:
             L.append(f"   · [{c['id']}] 对象={c['na_subject']}；原因={c['na_reason']}；"
                      f"evaluated={c['evaluated']}")
             L.append(f"     处置：{c['na_remedy']}")
+    # **没有结论的判据名下的 findings**（issue #8061）：**不计入阻塞**，但**必须出声** ——
+    # 判据自己声明「本轮没读出结论」时把它名下的读数算成「有结论的红」，就是**把「判不了」
+    # 谎报成「违规」**（同一份报告里会同时出现「三态 3 不可判」与「1 判红（有结论）」）。
+    withheld = [c for c in rep["checks"] if c.get("non_conclusive_findings")]
+    if withheld:
+        L.append("⏸️ **没有结论的判据名下的 findings（不计入阻塞，逐条具名保留）** —— "
+                 "判据没读出结论 ⇒ 它名下的读数**不能**算成「有结论的红」：")
+        for c in withheld:
+            L.append(f"   · [{c['id']}] status={c['status']}："
+                     f"{len(c['non_conclusive_findings'])} 条")
+            for q in c["non_conclusive_findings"]:
+                detail = next((f["detail"] for f in c["findings"] if f["key"] == q["key"]),
+                              q["key"])
+                L.append(f"      ⏸️ {q['kind']}：{detail}")
+        L.append("   ⇒ 它们**不折 `1`**：`unknown` 在 `--fail-on-unknown` 下折 **`3`（不可判，出声）**、"
+                 "`error` 折 `3`、`not_applicable` 不折非零（判定对象不在本环境）。"
+                 "**先把判据修到能判**，再读这些数 —— 在这里消账 = 把「判据没跑」写成「没有漂移」。")
     L.append("本次相对基线的增减：新增漂移 %d（面内，阻塞） / 面外新增 %d（不阻塞，定时腿红） / "
              "存量放行 %d / 可销账 %d / 基线归零未删 %d（**全量对账 ⇒ 阻塞 %d**） / "
              "条目被删但仍漂移 %d（阻塞）⇒ %s"
@@ -2695,7 +2790,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--now", default=None, help="基准时刻 ISO8601（L0 夹具用）")
     ap.add_argument("--list-checks", action="store_true", help="打印判据集合（机器可读）")
     args = ap.parse_args(argv)
-    repo = Path(args.repo).resolve()
+    # `--repo` 锚到**git 工作树根**（不是调用时的 cwd）：否则子目录形态下判定面会静默缩小。
+    repo = _anchor_git_root(Path(args.repo))
 
     if args.list_checks:
         print(json.dumps({
