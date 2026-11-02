@@ -16,6 +16,16 @@ updates:
     ignore:
       - dependency-name: "com.baomidou:mybatis-plus-*"
         versions: [">=3.5.9"]
+      # Spring Boot 4 是一次大版本迁移：一批 starter 从 spring-boot-dependencies 的版本管理里
+      # 移出/改名（#8221 实撞：'dependencies.dependency.version' for spring-boot-starter-aop is
+      # missing），且自动配置类路径整体迁移（boot.autoconfigure.* → boot.*.autoconfigure）。
+      # 升级路径：独立专项单 —— 逐条核对 starter、修类名迁移、跑真库族回归。
+      - dependency-name: "org.springframework.boot:spring-boot-starter-parent"
+        update-types: ["version-update:semver-major"]
+      # springdoc 3.x 按 Spring Boot 4 编译（#8215 实撞：JacksonAutoConfiguration 在两个包路径下
+      # 同名 bean 冲突，overriding 默认关闭 ⇒ 应用起不来）⇒ 必须等 Boot 4 专项落地后再升。
+      - dependency-name: "org.springdoc:springdoc-openapi-starter-*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "pip"
     directory: "/backend/ai-agent-service"
@@ -33,6 +43,11 @@ updates:
       - dependency-name: "langchain-core"
       - dependency-name: "langchain-openai"
       - dependency-name: "langchain-deepseek"
+      # pytest 9 与 requirements.txt 里部分包冲突（#8216 实撞：pip 直接
+      # ResolutionImpossible ⇒ 整条 ai-agent-service unit tests 腿红）。等那些包发布
+      # 支持 pytest 9 的版本后再升，不硬推。
+      - dependency-name: "pytest"
+        update-types: ["version-update:semver-major"]
       - dependency-name: "langgraph"
       - dependency-name: "langgraph-checkpoint"
       - dependency-name: "langgraph-prebuilt"
@@ -89,6 +104,16 @@ updates:
         versions: [">=8.0.0"]
       - dependency-name: "eslint-plugin-react-hooks"
         versions: [">=7.0.0"]
+      # Taro 4.2.1 的 @tarojs/react peer 写死 `react: ^18`（现取：npm view @tarojs/react@4.2.1
+      # peerDependencies ⇒ { react: '^18' }）⇒ react-dom 19 在依赖层面就不成立（#8225 曾关闭，
+      # CI 报 Conflicting peer dependency: react@19.3.1）。而且 dependabot 只升 react-dom、
+      # 不升 react，「半套升级」必现 peer 冲突。
+      # 升级路径：先升 Taro 到支持 React 19 的版本（整组升，见上面 @tarojs/* 那条），
+      # 再同步升 react + react-dom，作为一次工程级 PR。
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "npm"
     directory: "/tests"
