@@ -22,6 +22,7 @@
 | 9 | **接线**：`pr-check.yml` 有这个 job、有 `timeout-minutes`、真的调用脚本 | 删 job / 改脚本路径 ⇒ 用例 9 红 |
 | 10 | 真实白名单**精确且非空**（不许通配、两个协作者在列） | 把 `zhaokai-mgzn` 删掉 ⇒ 用例 10 红 |
 | 11 | **PR 作者**不命中 `pr_authors` ⇒ 判红（dependabot 为已知例外） | 删掉 `main` 的 PR 作者检查 ⇒ 用例 11 红 |
+| 12 | **类级（#8398）**：workflow 里以机器人身份推提交（`git config user.email`）⇒ 该身份必须在白名单里，否则**该 bot 的每个提交都判红** | 从 `emails` 里删掉 `flaky-bot@users.noreply.github.com` ⇒ 用例 12 红 |
 
 ## 边界（照实登记）
 
@@ -33,6 +34,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -231,3 +233,66 @@ def test_real_allowlist_is_exact_and_covers_known_accounts():
     wildcards = [x for x in list(logins) + list(emails) if "*" in str(x) or "?" in str(x)]
     assert wildcards == [], f"白名单不许通配：{wildcards}"
     assert "llwand1" not in logins, "事故账号不得出现在白名单里"
+
+
+# ── 判据 12（类级，issue #8398）：**每个会推提交的机器人身份**都必须在白名单里 ─────────
+
+#: 推提交的身份只有一个来源 = workflow 里的 `git config user.email`（`user.name` 不参与白名单比对）。
+BOT_EMAIL_RE = re.compile(r'git\s+config\s+user\.email\s+"?([^"\s]+)"?')
+WORKFLOWS = REPO / ".github" / "workflows"
+
+
+def bot_identity_problems(sources: dict[str, str], allow: dict) -> list[str]:
+    """**类级判据**：workflow 里以机器人身份推提交 ⇒ 该身份必须已在白名单里（#8398）。
+
+    病（2026-11-02 **实测**，`Flaky Ledger Reconcile` 每轮判红的真因之一）：
+    `external-authorship-allow.json` 的 `logins` 里写着 `migao-flaky-bot`（那是 **git 署名 name**），
+    而 `classify()` 只比对 **GitHub 账号 `author.login`** 与 **提交邮箱**，**从不看 name**
+    ⇒ `migao-flaky-bot <flaky-bot@users.noreply.github.com>` 这条身份**一条判据都不命中**
+    ⇒ `flaky-triage.yml` 追加到台账分支的**每个提交**都被判红 + 打 `block/merge`
+    ⇒ 台账 PR 落不了 main ⇒ 分支领先 main 却没有 open PR ⇒ 对账腿每轮报红（#8398 / #6773）。
+
+    同族**尚未爆**的两条（本判据就是为它们设的）：`migao-fixture-bot` / `migao-drift-bot` ——
+    它们各自推送后同样会撞上这一堵墙，而那时才发现就又是一轮白烧。
+
+    ⚠️ 有意**只**看 `user.email`：`user.name` 写在白名单里是**空条目**（`classify()` 不读 name），
+    所以「加一行 name 就以为放行了」正是本单的病根形态。
+    """
+    emails = {str(x).strip().lower() for x in (allow.get("emails") or [])}
+    logins = {str(x).strip().lower() for x in (allow.get("logins") or [])}
+    problems: list[str] = []
+    for name, src in sorted(sources.items()):
+        for email in sorted(set(BOT_EMAIL_RE.findall(src))):
+            normalized = email.strip().lower()
+            if normalized in emails:
+                continue
+            local = normalized.split("@", 1)[0]
+            login = local.split("+", 1)[1] if "+" in local else local
+            if login in logins:
+                continue
+            problems.append(
+                f"{name}: 机器人身份 `{email}` 未登记进 .github/external-authorship-allow.json 的 "
+                f"emails/logins ⇒ 该 bot 推的每个提交都会被 External Authorship Guard 判红（#8398 实证）"
+            )
+    return problems
+
+
+def _workflow_sources() -> dict[str, str]:
+    return {p.name: p.read_text(encoding="utf-8") for p in sorted(WORKFLOWS.glob("*.yml"))}
+
+
+def test_every_bot_identity_is_allowlisted():
+    """三个推提交的机器人身份（flaky / fixture / drift）都必须已在白名单里。"""
+    problems = bot_identity_problems(
+        _workflow_sources(), json.loads(ALLOW.read_text(encoding="utf-8")))
+    assert problems == [], "\n".join(problems)
+
+
+def test_bot_identity_check_can_go_red():
+    """注入式红证：未登记的机器人身份 ⇒ 必红；已登记的同一形态 ⇒ 不红（否则是恒红的空判据）。"""
+    allow = json.loads(ALLOW.read_text(encoding="utf-8"))
+    known = {"fake.yml": 'git config user.email "flaky-bot@users.noreply.github.com"'}
+    assert bot_identity_problems(known, allow) == [], "已登记的身份不该判红（否则同一形态两套口径）"
+    stranger = {"fake.yml": 'git config user.email "stranger-bot@users.noreply.github.com"'}
+    problems = bot_identity_problems(stranger, allow)
+    assert problems and "stranger-bot" in problems[0], "未登记的机器人身份必须判红"
