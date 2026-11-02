@@ -31743,10 +31743,11 @@
       "observed_at": "2026-10-24T16:49:31Z",
       "reason": "失败（2026-10-24T16:38:32Z）与重跑通过（2026-10-24T16:48:12Z）落在**同一时间桶**⇒ 「重跑通过」仍是 flaky 的合法证据",
       "remedy": "按 `migao-acceptance`「随机红 = 归因层失效」**定位机制**（不许只加 waitFor/sleep）：时间相关 ⇒ 冻结时钟（`jest.setSystemTime` / 注入时钟）；并行或共享状态 ⇒ 显式隔离或独立 fixture；修后**必须给红证**（把机制注回 ⇒ 必红）",
-      "status": "open",
+      "status": "fixed",
       "follow_up": 7685,
       "requires_follow_up": true,
-      "failing_tests": []
+      "failing_tests": [],
+      "fixed_by": "PR #8475"
     },
     {
       "workflow": "PR Check",
@@ -35945,10 +35946,11 @@
       "observed_at": "2026-10-28T16:06:49Z",
       "reason": "失败（2026-10-28T15:51:22Z）与重跑通过（2026-10-28T16:06:38Z）落在**不同时间桶**（UTC 日期 / +08 业务日 / 时钟任一不同）⇒ 不许凭「重跑通过」判 flaky",
       "remedy": "先**按时间维度复核**（不是先重跑）：拿条目的 `failed_at` / `rerun_at` 与失败 job 的日志复算「同一 commit 在失败那一段时刻是否稳定地红」（窗口型缺陷的特征 = **每天同一时段必红**）；确认是窗口型 ⇒ 修根因（冻结时钟 / 注入业务时钟 / 两侧同源取日），修后**必须给红证**（把机制注回 ⇒ 必红），再把条目标 `status=fixed` + `fixed_by`。⚠️ **不许**把本类当普通 flaky 消红（它必须带 `follow_up` 跟踪单）；确属真 flaky（同桶内不可复现）⇒ 按 `flaky` 的 remedy 处理并说明为什么该跨桶是巧合",
-      "status": "open",
+      "status": "fixed",
       "follow_up": 8043,
       "requires_follow_up": true,
-      "failing_tests": []
+      "failing_tests": [],
+      "fixed_by": "PR #8475"
     },
     {
       "workflow": "PR Check",
