@@ -29,6 +29,7 @@ import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -60,7 +61,7 @@ public class OutboundOrderService {
 
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
-    /** 出库单号序号（CK-yyyyMMdd-NNNN）；DB 唯一索引兜底防重号，同入库单口径 */
+    /** 出库单号序号（CK-yyyyMMdd-NNNN）；**号归谁由 DB 唯一索引在插入那一刻裁**（issue #8490），计数器只降重叠 */
     private static final AtomicInteger OUTBOUND_SEQ = new AtomicInteger(0);
 
     /** 列表一次最多返回的单据数（同族页面口径） */
@@ -91,12 +92,10 @@ public class OutboundOrderService {
             throw BusinessException.validationError("出库单至少要有一行明细");
         }
         Warehouse warehouse = resolveWarehouse(req.getWarehouseId(), tenantId);
-        String outboundNo = nextFreeOutboundNo(tenantId);
         LocalDate date = req.getOutboundDate() != null ? req.getOutboundDate() : businessClock.today();
 
         OutboundOrder order = OutboundOrder.builder()
                 .tenantId(tenantId)
-                .outboundNo(outboundNo)
                 .bizCategory(OutboundOrder.BIZ_FABRIC)
                 .source(OutboundOrder.SOURCE_MANUAL)
                 .warehouseId(warehouse == null ? null : warehouse.getId())
@@ -109,7 +108,7 @@ public class OutboundOrderService {
                 .postedBy(operator)
                 .createdBy(operator)
                 .build();
-        outboundOrderMapper.insert(order);
+        insertWithFreshOutboundNo(order);
 
         BigDecimal total = BigDecimal.ZERO;
         List<OutboundOrderItem> lines = new ArrayList<>(items.size());
@@ -135,7 +134,7 @@ public class OutboundOrderService {
             // 落库存台账（reason=outbound）：before/after 来自同一条 SQL 的 RETURNING（issue #6300）
             stockLedgerService.record(tenantId, sku.getProductId(), sku.getId(), change.skuCode(),
                     change.beforeQuantity(), change.afterQuantity(),
-                    StockLedger.REASON_OUTBOUND, outboundNo, "出库单过账",
+                    StockLedger.REASON_OUTBOUND, order.getOutboundNo(), "出库单过账",
                     unitCost, unitCost, unitCost);
 
             OutboundOrderItem line = OutboundOrderItem.builder()
@@ -160,7 +159,7 @@ public class OutboundOrderService {
         order.setTotalAmount(total);
         outboundOrderMapper.updateById(order);
         log.info("[出库] 布料出库单已过账: tenant={}, outboundNo={}, items={}, total={}, operator={}",
-                tenantId, outboundNo, lines.size(), total, operator);
+                tenantId, order.getOutboundNo(), lines.size(), total, operator);
         return toView(order, lines);
     }
 
@@ -186,7 +185,6 @@ public class OutboundOrderService {
                                             Long tenantId, String operator) {
         OutboundOrder doc = OutboundOrder.builder()
                 .tenantId(tenantId)
-                .outboundNo(nextFreeOutboundNo(tenantId))
                 .bizCategory(OutboundOrder.BIZ_FINISHED)
                 .source(OutboundOrder.SOURCE_SCAN)
                 .warehouseId(warehouse == null ? null : warehouse.getId())
@@ -201,7 +199,7 @@ public class OutboundOrderService {
                 .postedBy(operator)
                 .createdBy(operator)
                 .build();
-        outboundOrderMapper.insert(doc);
+        insertWithFreshOutboundNo(doc);
         outboundOrderItemMapper.insert(OutboundOrderItem.builder()
                 .tenantId(tenantId)
                 .outboundOrderId(doc.getId())
@@ -225,7 +223,6 @@ public class OutboundOrderService {
                                                 Warehouse warehouse, Long tenantId, String operator) {
         OutboundOrder doc = OutboundOrder.builder()
                 .tenantId(tenantId)
-                .outboundNo(nextFreeOutboundNo(tenantId))
                 .bizCategory(OutboundOrder.BIZ_FINISHED)
                 .source(OutboundOrder.SOURCE_SHIP)
                 .warehouseId(warehouse == null ? null : warehouse.getId())
@@ -240,7 +237,7 @@ public class OutboundOrderService {
                 .postedBy(operator)
                 .createdBy(operator)
                 .build();
-        outboundOrderMapper.insert(doc);
+        insertWithFreshOutboundNo(doc);
 
         for (FinishedGoodsStock row : rows) {
             OutboundOrderItem line = OutboundOrderItem.builder()
@@ -353,23 +350,74 @@ public class OutboundOrderService {
     /**
      * 出库单号取号（CK-yyyyMMdd-NNNN）。
      *
-     * <p>口径与入库单 {@code nextFreeInboundNo} 完全一致：候选号先查重（≤20 次），
-     * DB 唯一索引 {@code uk_outbound_orders_no} 兜住并发下的最后一道。</p>
+     * <p>与入库单号（{@code RK-…}）、加工单号 {@code JG-…} 同族：前缀 + 日期 + 序号。序号是进程内原子
+     * 计数器（降低同秒重叠），**号归不归我由 DB 唯一的单号索引在插入那一刻裁**
+     * （{@link #insertWithFreshOutboundNo}；issue #8490）。</p>
      */
-    private String nextFreeOutboundNo(Long tenantId) {
-        for (int i = 0; i < 20; i++) {
-            String candidate = "CK-" + businessClock.today().format(DATE_FMT) + "-"
-                    + String.format("%04d", OUTBOUND_SEQ.incrementAndGet() % 10_000);
-            boolean taken = outboundOrderMapper.exists(new LambdaQueryWrapper<OutboundOrder>()
-                    .eq(OutboundOrder::getTenantId, tenantId)
-                    .eq(OutboundOrder::getOutboundNo, candidate));
-            if (!taken) {
-                return candidate;
-            }
-            log.warn("出库单号已被占用，重新生成: tenant={}, candidate={}", tenantId, candidate);
+    private String generateOutboundNo() {
+        return "CK-" + businessClock.today().format(DATE_FMT) + "-"
+                + String.format("%04d", OUTBOUND_SEQ.incrementAndGet() % 10_000);
+    }
+
+    /**
+     * 取号 + 落库的**重试上限**（issue #8490）：候选号在插入那一刻被别的事务抢走（受影响行数 0）
+     * ⇒ 换候选重来；连续 {@value} 次全被抢 ⇒ 显式抛 {@code OUTBOUND_NO_EXHAUSTED}(409)，
+     * <b>不静默用一个可能重复的号</b>。
+     *
+     * <p>为什么是 20（同族口径，见 {@code INBOUND_NO_ATTEMPTS} / {@code BATCH_NO_ATTEMPTS}）：远超
+     * 「同一天重启 20 次且每次都恰好撞上」的实际情况。<b>已知代价</b>（如实登记）：当天已用号 ≥ 20 时
+     * 重启后的第一批出库会被显式拒绝（回 409、零副作用），而不是静默重号 —— 判据见
+     * {@code OutboundNoTakeRaceRealDbTest} 判据 ④。</p>
+     */
+    private static final int OUTBOUND_NO_ATTEMPTS = 20;
+
+    /** 首次取号的测试候选（{@code null} = 不钉）；见 {@link #setOutboundNoProbeFirstCandidateForTest}。 */
+    private static volatile String OUTBOUND_NO_PROBE_FIRST_CANDIDATE = null;
+
+    /**
+     * <b>测试探针</b>（issue #8490，生产恒为 {@code null}）：把**第一次**取号钉成给定候选。
+     *
+     * <p><b>为什么需要它</b>：本缺陷的可达形态是「两个实例（或重启后的新进程）从同一计数器位置起步
+     * ⇒ 拿到**同一个**候选」，而 {@code OUTBOUND_SEQ} 是进程内的原子计数器 —— 同一 JVM 里两个线程
+     * 天然拿到**不同**候选 ⇒ 不钉住候选就造不出「同号竞争」，判据会退化成碰运气的 flake
+     * （{@code migao-dev-flow} §28.1：修前必须红）。语义与 {@code InboundOrderService} 的同名探针一致。</p>
+     */
+    static void setOutboundNoProbeFirstCandidateForTest(String candidate) {
+        OUTBOUND_NO_PROBE_FIRST_CANDIDATE = candidate;
+    }
+
+    /**
+     * 取号并落库（issue #8490）：把「判单号是否被占」与「占用它」并成**一条语句**
+     * （{@code OutboundOrderMapper#insertIgnoreOutboundNoConflict} 的
+     * {@code ON CONFLICT (tenant_id, outbound_no) WHERE deleted = 0 DO NOTHING}）；
+     * 受影响行数 {@code 1} = 号归我（单据已落库）、{@code 0} = 号刚被抢走 ⇒ 换候选重来。
+     *
+     * <p><b>改前</b>（两步形态，本单的病）：{@code exists(tenant_id, outbound_no)} 判假 ⇒ 返回候选 ⇒
+     * 调用方**之后**才 {@code insert(..)}，且那条 insert <b>没有任何 catch</b> ⇒ 窗口被利用时
+     * {@code DuplicateKeyException} 直抛到全局处理器 ⇒ 用户侧 <b>500</b>（整笔回滚、零残行）。</p>
+     *
+     * <p>为什么不是「先 exists 查库、再 insert」：那两步之间的窗口在多实例 / 重启下可被利用
+     * （两边 {@code exists} 都为假）。唯一索引在插入那一刻的判定才是原子的；{@code ON CONFLICT}
+     * 把冲突变成「0 行」而不是异常 ⇒ 同一事务内换号重试安全（捕获 {@code DuplicateKeyException}
+     * 则 PG 事务已坏，只能开新事务 —— 那会把单头提前提交、明细行失败就是半张单）。</p>
+     *
+     * <p>重试骨架在 {@link AtomicNoAllocator}（与入库建单取号**同一份实现**，不各写一份循环）。</p>
+     */
+    private void insertWithFreshOutboundNo(OutboundOrder order) {
+        // 主键由服务端生成：手写 INSERT 不走 MyBatis-Plus 的 ASSIGN_UUID（与入库单同一批写面同口径）
+        order.setId(UUID.randomUUID().toString().replace("-", ""));
+        String taken = AtomicNoAllocator.take(OUTBOUND_NO_ATTEMPTS, "出库单号", order.getTenantId(),
+                attempt -> attempt == 0 && OUTBOUND_NO_PROBE_FIRST_CANDIDATE != null
+                        ? OUTBOUND_NO_PROBE_FIRST_CANDIDATE
+                        : generateOutboundNo(),
+                candidate -> {
+                    order.setOutboundNo(candidate);
+                    return outboundOrderMapper.insertIgnoreOutboundNoConflict(order) == 1;
+                });
+        if (taken == null) {
+            throw new BusinessException("OUTBOUND_NO_EXHAUSTED",
+                    "出库单号连续 " + OUTBOUND_NO_ATTEMPTS + " 次生成失败（当天号段疑似被占满），请稍后重试或联系管理员", 409);
         }
-        throw new BusinessException("OUTBOUND_NO_EXHAUSTED",
-                "出库单号连续 20 次生成失败（当天号段疑似被占满），请稍后重试或联系管理员", 409);
     }
 
     private static String trimToNull(String value) {

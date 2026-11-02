@@ -7020,7 +7020,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（75 case）
+## 订单域（76 case）
 
 ### OR-061. 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262） 🔵
 ```
@@ -8341,6 +8341,26 @@
 跳过: [backend-contract] 纯后端并发取号判据（无 LLM 写路径：入库建单不经黄金策 Agent 工具，B 端 POST /api/admin/inbound-orders 与工人拍照草稿都落在 admin-api 服务层）⇒ 不进 agent-eval 冒烟：由 admin-api 真库并发单测 InboundNoTakeRaceRealDbTest 执行
 ```
 溯源: 2026-11-03 新增（issue #6266）：#6248 的核验包在台账 coverage_boundary 里登记了「兄弟形态 nextFreeInboundNo 未核验」，本单把它核到读数并修掉 —— 可达路径 = 多实例 / 重启（进程内计数器同起点 ⇒ 同一候选），撞 `uk_inbound_orders_no` 时那一单**建不成**（真库裸装配 500 / Spring 装配 409），且没有任何残行。**已修**：取号与占用并成一条语句（`ON CONFLICT … WHERE deleted = 0 DO NOTHING` + 有界换号重试），耗尽仍 fail-closed（409 INBOUND_NO_EXHAUSTED）。交付物 = 真库并发判据（5 条：并发 N 单 / 另一事务持号未提交 / 串行正对照+列清单回读 / 耗尽 409 / 唯一索引在场）+ 类级元守卫 + 台账登记 + 出库兄弟形态开单（#8490）。 ｜ tags: inbound, concurrency, backend-contract
+
+### OR-076. 出库建单取号核验（issue #8490）：取号与占用是两步且 insert 没有 catch ⇒ 并发撞号时用户看到 500；改成一条语句占号后换号吸收 / 耗尽 409 🟡
+```
+你: 两个管理员同时做出库（服务刚重启过 / 部署了多个实例，两边的取号计数器都从同一位置开始）
+你: 另一个请求正把同一个出库单号写进库、还没提交
+数据: **核验结论 = 真**：`nextFreeOutboundNo` 改前是**两步**（先 `exists(tenant_id, outbound_no)` 判假 ⇒ 返回候选 ⇒ **之后**才 `insert(..)`），且那条 insert **没有任何 catch** ⇒ 窗口被利用时 `DuplicateKeyException` 直抛到全局处理器 ⇒ 用户侧 **500**（整笔回滚、零残行 —— 比入库单的 409 更糟：商家会以为「出库没成功」而重复操作）。布料手工出库 / 成品发货出库 / 扫水洗唛出库**三条建单路径**都走这个取号函数。
+数据: **并发建单（机器断言 = backend/admin-api/src/test/java/com/migao/admin/service/OutboundNoTakeRaceRealDbTest.java 的 concurrentCreateTakesExactlyNDistinctOutboundNos）**：4 个并发建单 × 3 轮（**钉住同一候选** = 两个实例同起点）⇒ 读数逐轮为 `成功数=4 状态码=[200, 200, 200, 200] 本轮行数=4 本轮不同单号=4 该候选被几单占用=1 全租户重号组=0 明细行=4`；每轮另打印「真重叠」证据（4 个请求的时间区间**逐对求交 6/6**、并集跨度 12/7/17ms < 各历时之和 44/44/61ms）。
+数据: **另一事务持号未提交（判据 ②，确定性红证）**：外部事务先写入该号但**不提交**（任何 `exists` 都看不见它）⇒ 建单必须等它提交、由唯一索引裁决后**换号成功**（读数：`持号候选=CK-20261103-5901 建单成功=true 状态码=200 建单耗时ms=505 建单落库单号=[CK-20261103-5902] 该候选被几单占用=1`；505ms ≥ 持有时长 400ms = 确实被唯一索引挡过）。
+数据: **号段耗尽（判据 ④）**：当天头部 0001..0020（= 重试上限 20）被占满 + 计数器归零（= 重启）⇒ 20 次重试耗尽 ⇒ **显式 409 `OUTBOUND_NO_EXHAUSTED`**、拒绝后行数不变（`已占号数=20 → 拒绝后行数=20`，**零残行**）、零明细行 —— 不静默用一个可能重复的号。
+数据: **串行正对照 + 列清单回读（判据 ③）**：串行建单成功、单号成形 `CK-yyyyMMdd-NNNN`、状态 posted、来源 scan、类别 finished、明细 1 行；手写 INSERT 的每一列（biz_category / source / warehouse 文本 + warehouse_id 引用 / order_no / posted_by / created_by / posted_at / outbound_date / created_at 由 DB 默认承接 / deleted 默认 0）逐列回读一致 ⇒ 列清单漂移会被这条逮住。
+数据: **修法（生产代码）**：取号 + 落库并成**一条语句** `OutboundOrderMapper#insertIgnoreOutboundNoConflict`（`ON CONFLICT (tenant_id, outbound_no) WHERE deleted = 0 DO NOTHING`，按受影响行数 1/0 判号归谁）⇒ 不再有可被插队的第二条语句；冲突时 PG 事务**不进 aborted** ⇒ 同一事务内换号重试安全（用捕获 `DuplicateKeyException` 则必须开新事务，那会把单头提前提交、明细行失败就是半张单）。
+数据: **复用（不复制第二份逻辑）**：重试骨架抽到 `backend/admin-api/src/main/java/com/migao/admin/service/AtomicNoAllocator.java`，入库单号（#6266）与出库单号（#8490）**共用同一份实现**（各自只给候选生成 / 占号语句 / 耗尽业务码）。
+数据: **DB 对象（实测在场，判据 ⑤）**：`uk_outbound_orders_no = CREATE UNIQUE INDEX uk_outbound_orders_no ON public.outbound_orders USING btree (tenant_id, outbound_no) WHERE (deleted = 0)`（**部分**唯一索引 ⇒ `ON CONFLICT` 的推断必须带 `WHERE deleted = 0` 谓词）。
+数据: **类级元守卫（机器断言 = backend/admin-api/src/test/java/com/migao/admin/service/NumberTakeTwoStepMetaGuardTest.java）**：`service/*.java` 里的两步取号写面必须登记进 backend/admin-api/src/test/resources/number-take-two-step-ledger.json（未登记即红、台账盖章不存在即红、豁免只许缩短），且已改成原子占号的 SQL 必须以**兑付锚**逐字在场（删掉 ⇒ 红）。本单落地的读数：`现取两步取号写面 = []`、`unverified = []`、`baseline 0 / 镜像 0`、`atomic_sites` 三条（入库 / 出库 / 批次）。
+数据: **廉价正向判据**：`OutboundOrderServiceTest#retriesWhenTheCandidateIsSnatchedAtInsert`（第一条语句受影响行数 0 ⇒ 换候选重来并建成）+ `#exhaustedSegmentFailsClosedInsteadOfDuplicating`（20 次全 0 ⇒ 409 OUTBOUND_NO_EXHAUSTED、零明细）。
+数据: **红证（注入式，退回两步形态）**：把 `insertWithFreshOutboundNo` 改回 `exists` 判假 ⇒ `insert`，同一台机器同一装置读数 = 判据① `成功数=1 状态码=[200, 500, 500, 500] 本轮行数=1`（测试当场红）、判据② `建单成功=false 状态码=500 异常码=PersistenceException 建单耗时ms=415`、判据④ `状态码=500 异常码=PersistenceException`（= 500 顶替了 409）；共 **3 failed / 2 passed**（③ 串行正对照与 ⑤ 索引在场与竞态无关，不红 —— 正是判别力的对照面）。
+前置: 本用例是 [backend-contract] 纯后端并发取号用例（agent-eval 栈不跑它）：前置 = 一次性真 PG 集群 + 自建租户/仓库夹具，由单测 backend/admin-api/src/test/java/com/migao/admin/service/OutboundNoTakeRaceRealDbTest.java 自建自毁，不依赖任何共享数据；前置不成立（本机 / CI 缺 PG 二进制）时按 PgCluster 的 fail-closed 口径判红（CI 注入 MIGAO_REQUIRE_REALDB ⇒ 不许静默 skip 成绿）
+跳过: [backend-contract] 纯后端并发取号判据（无 LLM 写路径：出库建单不经黄金策 Agent 工具，B 端手工出库 / 成品发货出库 / 工人扫唛出库都落在 admin-api 服务层）⇒ 不进 agent-eval 冒烟：由 admin-api 真库并发单测 OutboundNoTakeRaceRealDbTest 执行
+```
+溯源: 2026-11-03 新增（issue #8490）：#6266 的核验包在台账里登记了「兄弟形态 nextFreeOutboundNo 未核验」，本单把它核到读数并修掉 —— 可达路径 = 多实例 / 重启（进程内计数器同起点 ⇒ 同一候选）或另一事务持号未提交，撞 `uk_outbound_orders_no` 时用户侧看到 **500**（那条 insert 没有 catch），整笔回滚、零残行。**已修**：取号与占用并成一条语句（`ON CONFLICT … WHERE deleted = 0 DO NOTHING` + 有界换号重试，骨架与入库共用 `AtomicNoAllocator`），耗尽仍 fail-closed（409 OUTBOUND_NO_EXHAUSTED）。交付物 = 真库并发判据（5 条）+ 类级元守卫台账收口（`unverified` 1→0、`unverified_baseline` 1→0、镜像常量 1→0）+ 廉价正向判据。**未覆盖（照实登记）**：Closes 只在真库判据与本机定点判据上取证，未跑全量 gate（按本次派单口径只跑定点判据）；`AtomicNoAllocator` 的「耗尽后 409」文案对出库/入库各一份（业务码不同），属有意保留的差异。 ｜ tags: outbound, concurrency, backend-contract
 
 ## 加工项域（32 case）
 
@@ -14329,7 +14349,7 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：969（活跃 153，跳过 816）
+- 用例总数：970（活跃 153，跳过 817）
 - tier 分布：smoke 15 / normal 893 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
@@ -14349,7 +14369,7 @@
 - 杂项域：173
 - 商家入驻域：7
 - 领域本体域：4
-- 订单域：75
+- 订单域：76
 - 加工项域：32
 - 加工单域：85
 - 商品域：133
@@ -14619,6 +14639,7 @@
 - OR-071: 打印中心：订单详情页一处打印（销售单 / 加工单 / 报价单 / 水洗唛）+ 打印流水（谁、何时、哪种单据、几张）—— 列表页的「是否已打印」是这张事件表的聚合投影（issue #7902）
 - OR-072: 打印中心（admin-web）：销售订单详情页是唯一打印入口 —— 发货单退场、加工单/面料单/水洗唛按派单状态出现、「联合打印」勾选后逐张出纸、打印流水（入口在打印预览表头）与列表「已打印」标记（issue #7902 / #7964）
 - OR-075: 入库建单取号核验（issue #6266）：取号与占用是两步 ⇒ 同候选被抢时有一单建不成；改成一条语句占号后换号吸收 / 耗尽 409
+- OR-076: 出库建单取号核验（issue #8490）：取号与占用是两步且 insert 没有 catch ⇒ 并发撞号时用户看到 500；改成一条语句占号后换号吸收 / 耗尽 409
 - PG-001: 生成加工单 - 已确认含加工项订单 → 作业单生成 + 订单进入生产中（派单即生产；issue #7723 改判）
 - PG-002: 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成
 - PG-003: 生成加工单 - 无加工项订单不生成（现货成品直跳发货）

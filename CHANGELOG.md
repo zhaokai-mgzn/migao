@@ -5,6 +5,21 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 同时做出库不再出现 500：出库单号也改成「一条语句占号」（2026-11-03，issue #8490）
+
+- **改前**：出库单号（`CK-yyyyMMdd-NNNN`）与改前的入库单号**逐字同构** —— 先 `exists` 判「没人占」⇒
+  返回候选 ⇒ **之后**才 insert，而且那条 insert **没有任何 catch**。服务重启 / 多副本（两边进程内计数器
+  从同一位置起步），或另一请求正把同一个号写进库（其事务尚未提交）时，两边都会判「没人占」⇒ 后到者撞
+  唯一索引 `uk_outbound_orders_no` ⇒ `DuplicateKeyException` 直抛到全局处理器 ⇒ 用户侧 **500**。
+  布料手工出库、成品发货出库、扫水洗唛出库**三条建单路径**都走这个取号函数。
+- **改后**：取号与占号并成**一条语句**（`ON CONFLICT (tenant_id, outbound_no) WHERE deleted = 0 DO NOTHING`）：
+  号归谁由唯一索引在插入那一刻裁，落败方**换号重来**（上限 20）⇒ 并发出库各自成功、单号互不相同；
+  号段真的耗尽时显式 409（`OUTBOUND_NO_EXHAUSTED`），不静默重号、不留半张单。重试骨架抽到
+  `AtomicNoAllocator`，与入库单号（#6266）**共用同一份实现**（不再各写一份循环）。
+- 判据：`backend/admin-api/src/test/java/com/migao/admin/service/OutboundNoTakeRaceRealDbTest.java`（真库五条）、
+  `NumberTakeTwoStepMetaGuardTest.java`（取号类写面的类级元守卫，豁免条数降到 0）、
+  `OutboundOrderServiceTest#retriesWhenTheCandidateIsSnatchedAtInsert`（廉价正向判据）。
+
 ### 两个人同时新建入库单时不再有一单落空：取号与占号收成一条语句（2026-11-03，issue #6266）
 
 - **改前**：入库单号是**两步**取的 —— 先 `exists` 判「没人占」⇒ 返回候选 ⇒ **之后**才 insert。服务重启 /
