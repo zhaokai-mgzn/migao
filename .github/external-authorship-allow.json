@@ -41,6 +41,9 @@
     "junshi@openclaw.local",
     "noreply@openclaw.local",
     "41898282+github-actions[bot]@users.noreply.github.com",
-    "49699333+dependabot[bot]@users.noreply.github.com"
+    "49699333+dependabot[bot]@users.noreply.github.com",
+    "flaky-bot@users.noreply.github.com",
+    "fixture-bot@users.noreply.github.com",
+    "drift-bot@users.noreply.github.com"
   ]
 }

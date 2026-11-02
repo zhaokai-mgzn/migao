@@ -209,9 +209,14 @@ def main(argv: list[str] | None = None) -> int:
             commits = fetch_commits(args.repo, args.pr)
     except Exception as exc:  # noqa: BLE001 - 三态：读不到 = 无法判定
         print(f"⛔ 无法判定（exit {EXIT_UNDECIDABLE}，**不得当 0 读**）：{exc}")
-        if not args.no_remediate:
-            for note in remediate(args.repo, args.pr):
-                print(f"   · {note}")
+        # 🔴 **「无法判定」不许落闸**（issue #7549 / #8398，2026-11-02 实测）：
+        # 原实现在这一支也调 `remediate()`（解除 auto-merge + 打 `block/merge`）⇒ 一次**瞬态**
+        # 失败（最典型：`gh: API rate limit exceeded for installation`）就把 PR 变成**人工闸**
+        # —— 实测 #8442 的 `Contribution Gate` / `External Authorship Guard` 双双因限流 exit 3，
+        # 而 `block/merge` 已打上；而那个时候**根本没有**「陌生作者」这件事（本机同参复跑 rc=0）。
+        # ⇒ 落闸只属于**真违规**（下面那条 `violations` 非空的分支）；「判不了」= 本腿红（可见、可重跑）。
+        print("   · 本次**不落闸**（不打 block/merge、不解除 auto-merge）—— 判不了 ≠ 有违规；"
+              "重跑同一腿即可（限流是瞬态）")
         return EXIT_UNDECIDABLE
 
     violations: list[dict] = []
