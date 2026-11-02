@@ -1,4 +1,4 @@
-# case_ids: MC-133
+# case_ids: MC-137
 """`scripts/issue_lifecycle.py` 的**自证面** —— 「拿旧读数证明新状态」这一形态（issue #6617）。
 
 ## 这守的是什么
