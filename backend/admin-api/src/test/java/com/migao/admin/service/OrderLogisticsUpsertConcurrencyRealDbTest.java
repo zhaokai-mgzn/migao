@@ -39,6 +39,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * issue #7174：并发两次发货 ⇒ 该订单**恰好 1 条**物流记录（真库窗口探针）。
@@ -151,6 +152,51 @@ class OrderLogisticsUpsertConcurrencyRealDbTest {
         }
     }
 
+    // ────────────────────────────────────────────── issue #7398：同一订单**重复写入**
+
+    @Test
+    @DisplayName("🔴 #7398：同一 (tenant_id, order_id) 重复写入 ⇒ 不抛冲突、仍恰 1 行（幂等收敛）")
+    void duplicateCreateForSameOrderIsIdempotent() throws Exception {
+        String orderId = "dup-1";
+        seedOrder(orderId);
+
+        // 第一次 = 建行；第二次 = 同一 (tenant, order) —— 旧实现（直连 insert）在这里撞
+        // uk_order_logistics_tenant_order ⇒ 异常冒泡成 5xx。改走 writer 后应**收敛为更新**。
+        createLogisticsViaService(orderId, "顺丰速运", "SF-FIRST");
+        createLogisticsViaService(orderId, "中通快递", "ZT-SECOND");
+
+        assertThat(countRows(orderId))
+                .as("同一订单两次写入后必须**恰好 1 行**（唯一索引兜底 + 冲突收敛为更新）")
+                .isEqualTo(1);
+        assertThat(readTrackingNo(orderId))
+                .as("第二次写入生效（幂等 = 收敛到同一行，不是静默丢弃）")
+                .isEqualTo("ZT-SECOND");
+        assertThat(readShippedAt(orderId))
+                .as("首次发货时刻必须落值（writer 的 insert 分支写 now()，#6276 口径）")
+                .isNotNull();
+    }
+
+    @Test
+    @DisplayName("🔴 #7398 判别力自证：旧形状（直连 insert）第二次同 (tenant, order) 必撞唯一索引")
+    void directInsertOnExistingOrderMustViolateUniqueIndex() throws Exception {
+        String orderId = "dup-2";
+        seedOrder(orderId);
+
+        try (SqlSession session = factory.openSession(true)) {
+            OrderLogisticsMapper mapper = session.getMapper(OrderLogisticsMapper.class);
+            mapper.insert(buildLogistics(orderId, "顺丰速运", "SF-A"));
+            assertThatThrownBy(() -> mapper.insert(buildLogistics(orderId, "中通快递", "ZT-B")))
+                    .as("旧形状（本单的病）必须撞唯一索引 —— 若这里不抛，说明索引不在场，"
+                            + "上一条判据测的就不是唯一面（假绿）")
+                    .satisfies(error -> assertThat(isUniqueViolation(error))
+                            .as("必须是唯一冲突（SQLState 23505），不是别的写库异常")
+                            .isTrue());
+        }
+        assertThat(countRows(orderId))
+                .as("撞键那一行不落库 ⇒ 仍是 1 行")
+                .isEqualTo(1);
+    }
+
     // ────────────────────────────────────────────── 判别力自证（确定性，不靠抢跑）
 
     @Test
@@ -226,6 +272,35 @@ class OrderLogisticsUpsertConcurrencyRealDbTest {
             OrderLogisticsWriter.upsert(s.getMapper(OrderLogisticsMapper.class), TENANT, orderId,
                     "顺丰", trackingNo, null, () -> null);
         }
+    }
+
+    /** issue #7398：经**服务层**建行（生产路径 = 商家发货页「编辑物流」的建行分支）。 */
+    private void createLogisticsViaService(String orderId, String company, String trackingNo) {
+        try (SqlSession session = factory.openSession(true)) {
+            new OrderLogisticsService(session.getMapper(OrderLogisticsMapper.class))
+                    .createLogistics(orderId, TENANT, company, trackingNo, null);
+        }
+    }
+
+    private static OrderLogistics buildLogistics(String orderId, String company, String trackingNo) {
+        return OrderLogistics.builder()
+                .tenantId(TENANT).orderId(orderId)
+                .logisticsCompany(company).trackingNo(trackingNo)
+                .status("in_transit").shippedAt(java.time.OffsetDateTime.now())
+                .build();
+    }
+
+    /** 唯一冲突判定（驱动无关）：PSQLException / SQLException 的 SQLState = 23505。 */
+    private static boolean isUniqueViolation(Throwable error) {
+        for (Throwable current = error; current != null; current = current.getCause()) {
+            if (current instanceof java.sql.SQLException sql && "23505".equals(sql.getSQLState())) {
+                return true;
+            }
+            if (current.getCause() == current) {
+                return false;
+            }
+        }
+        return false;
     }
 
     private void dropUniqueIndex() throws Exception {

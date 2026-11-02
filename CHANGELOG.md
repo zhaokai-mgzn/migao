@@ -14,6 +14,17 @@
 - **改后**：快速路径读判与 CAS 落空**同码同因**（409 + 「该入驻申请已被审结，当前状态: <实际状态>」），
   第二次审批不再按「参数错误」拒。**串行正常路径与开租行为一字未改**。
 
+### 同一订单重复写物流不再 500：建行统一走冲突映射，第二次写入收敛为更新（2026-11-02，issue #7398）
+
+- **改前**：`OrderLogisticsService.createLogistics` 直连 `insert`、控制器建行分支直连 `ServiceImpl.save`，
+  两条路都**绕过** `OrderLogisticsWriter` 的冲突映射 ⇒ 同一 `(tenant_id, order_id)` 的第二次写入撞部分唯一索引
+  `uk_order_logistics_tenant_order`（V165），`DuplicateKeyException` 冒泡成 **5xx**（双击发货 / 双端同时确认）。
+- **改后**：两条建行路径都经 `OrderLogisticsWriter.upsert` —— 已有该单物流行时**退化为更新那一行**，
+  同一订单最终恰好 1 行，调用方不感知冲突；`order_logistics` 表结构 / 索引**一字未改**。
+- 判据：`backend/admin-api/src/test/java/com/migao/admin/service/OrderLogisticsServiceTest.java`（重复写入收敛）、
+  `OrderLogisticsUpsertConcurrencyRealDbTest.java`（真库两次写入恰 1 行 + 旧形状必撞索引的判别力自证）、
+  `OrderLogisticsWritePathMetaGuardTest.java`（两条旁路写面的结构守卫）。
+
 ### 问「这批货是哪几张入库单入的库」时，黄金策按批次视图查，不再随手挑入库单列表（2026-11-01，issue #8300）
 
 - **改前**：`inbound_order_query` 的说明只写「list（入库单列表）/ batches（批次视图）」，没写什么问法对应哪个
