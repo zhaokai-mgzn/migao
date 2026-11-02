@@ -1,0 +1,445 @@
+{
+  "stamp": "20261004015252",
+  "tenant": 25,
+  "skus": {
+    "A1": {
+      "id": "2106563197058707458",
+      "product_id": "e8530194dda28ad69ee593424f2d3ba3",
+      "sku_code": "RACE-SWEEP-A1-20261004015252-01-28",
+      "stock": "10.0"
+    },
+    "A2": {
+      "id": "2106563198749011970",
+      "product_id": "782c23699d1aeb615818c5f7a39e573e",
+      "sku_code": "RACE-SWEEP-A2-20261004015252-01-28",
+      "stock": "10.0"
+    }
+  },
+  "cases": {
+    "W1": {
+      "inboundNo": "RK-20261004-0001",
+      "inboundId": "1fa0f5b75d067c47079496131d1a2f41",
+      "statuses": [
+        409,
+        409,
+        409,
+        409,
+        409,
+        200,
+        409,
+        409
+      ],
+      "successBodies": 1,
+      "window": {
+        "requests": 8,
+        "overlappedPairs": 28,
+        "issueSpanMs": 4,
+        "wallMs": 1082,
+        "spans": [
+          [
+            1791078780320,
+            1791078781207
+          ],
+          [
+            1791078780321,
+            1791078781382
+          ],
+          [
+            1791078780322,
+            1791078781300
+          ],
+          [
+            1791078780322,
+            1791078781285
+          ],
+          [
+            1791078780323,
+            1791078781315
+          ],
+          [
+            1791078780323,
+            1791078781187
+          ],
+          [
+            1791078780324,
+            1791078781412
+          ],
+          [
+            1791078780324,
+            1791078781402
+          ]
+        ]
+      },
+      "dbStatus": "posted",
+      "stockBefore": "10.0",
+      "stockAfter": "30.0",
+      "ledgerRowsForThisRef": 1,
+      "ledger": [
+        {
+          "id": 2397,
+          "sku_id": "2106563197058707458",
+          "delta": "20.0",
+          "before_qty": "10.0",
+          "after_qty": "30.0",
+          "reason": "inbound",
+          "ref_no": "RK-20261004-0001",
+          "note": "入库单过账（缸号 race-sweep-lot）",
+          "created_at": "2026-10-04T09:53:01.865747+08:00"
+        }
+      ],
+      "batchCountAfter": 1
+    },
+    "W2": {
+      "inboundNo": "RK-20261004-0002",
+      "statuses": [
+        409,
+        200
+      ],
+      "window": {
+        "requests": 2,
+        "overlappedPairs": 1,
+        "issueSpanMs": 1,
+        "wallMs": 142,
+        "spans": [
+          [
+            1791078780320,
+            1791078780479
+          ],
+          [
+            1791078780321,
+            1791078780462
+          ]
+        ]
+      },
+      "dbStatus": "cancelled",
+      "stockBefore": "30.0",
+      "stockAfter": "30.0",
+      "ledgerForRef": 0,
+      "inconsistent": []
+    },
+    "W3": {
+      "inboundNos": [
+        "RK-20261004-0003",
+        "RK-20261004-0004"
+      ],
+      "statuses": [
+        200,
+        200
+      ],
+      "window": {
+        "requests": 2,
+        "overlappedPairs": 1,
+        "issueSpanMs": 2,
+        "wallMs": 318,
+        "spans": [
+          [
+            1791078780320,
+            1791078780548
+          ],
+          [
+            1791078780322,
+            1791078780638
+          ]
+        ]
+      },
+      "stockBefore": "10.0",
+      "stockAfter": "35.0",
+      "observedDelta": 25,
+      "sumOfOps": 25,
+      "ledgerMine": [
+        {
+          "id": 2398,
+          "delta": "10.0",
+          "before": "10.0",
+          "after": "20.0",
+          "ref_no": "RK-20261004-0003"
+        },
+        {
+          "id": 2399,
+          "delta": "15.0",
+          "before": "10.0",
+          "after": "25.0",
+          "ref_no": "RK-20261004-0004"
+        }
+      ],
+      "chainBad": [
+        {
+          "at": 2399,
+          "prevAfter": "20.0",
+          "curBefore": "10.0"
+        }
+      ],
+      "sameBaseConcurrentRead": true
+    },
+    "W4": {
+      "skuId": "2106563221045932033",
+      "skuCode": "RACEW4JMJ8RF-01-28",
+      "orderNos": [
+        "20261004936930055",
+        "20261004874960056"
+      ],
+      "statuses": [
+        200,
+        200
+      ],
+      "window": {
+        "requests": 2,
+        "overlappedPairs": 1,
+        "issueSpanMs": 1,
+        "wallMs": 573,
+        "spans": [
+          [
+            1791078780320,
+            1791078780768
+          ],
+          [
+            1791078780321,
+            1791078780893
+          ]
+        ]
+      },
+      "stockBefore": "10.0",
+      "stockAfter": "0.0",
+      "ledgerMine": [
+        {
+          "id": 2401,
+          "delta": "-8.0",
+          "before": "10.0",
+          "after": "2.0",
+          "ref_no": "20261004936930055"
+        },
+        {
+          "id": 2402,
+          "delta": "-10.0",
+          "before": "10.0",
+          "after": "0.0",
+          "ref_no": "20261004874960056"
+        }
+      ],
+      "chainBad": [
+        {
+          "at": 2402,
+          "prevAfter": "2.0",
+          "curBefore": "10.0"
+        }
+      ],
+      "rejectedBodies": []
+    },
+    "W5": {
+      "runId": "race-sweep-run-20261004015252-oqbp2y",
+      "batchId": 48,
+      "batchNo": "PC-20261004-0001",
+      "remainingBefore": 20,
+      "actual": "17.0",
+      "statuses": [
+        200,
+        500,
+        500,
+        500,
+        500,
+        500
+      ],
+      "window": {
+        "requests": 6,
+        "overlappedPairs": 15,
+        "issueSpanMs": 2,
+        "wallMs": 552,
+        "spans": [
+          [
+            1791078780320,
+            1791078780853
+          ],
+          [
+            1791078780321,
+            1791078780953
+          ],
+          [
+            1791078780321,
+            1791078780951
+          ],
+          [
+            1791078780321,
+            1791078780953
+          ],
+          [
+            1791078780322,
+            1791078780953
+          ],
+          [
+            1791078780322,
+            1791078780872
+          ]
+        ]
+      },
+      "bodyStatuses": [
+        "{\"success\":true,\"data\":{\"runId\":\"race-sweep-run-20261004015252-oqbp2y\",\"productI",
+        "{\"success\":false,\"error\":{\"code\":\"INTERNAL_ERROR\",\"message\":\"服务器内部错误\"},\"requestI",
+        "{\"success\":false,\"error\":{\"code\":\"INTERNAL_ERROR\",\"message\":\"服务器内部错误\"},\"requestI",
+        "{\"success\":false,\"error\":{\"code\":\"INTERNAL_ERROR\",\"message\":\"服务器内部错误\"},\"requestI",
+        "{\"success\":false,\"error\":{\"code\":\"INTERNAL_ERROR\",\"message\":\"服务器内部错误\"},\"requestI",
+        "{\"success\":false,\"error\":{\"code\":\"INTERNAL_ERROR\",\"message\":\"服务器内部错误\"},\"requestI"
+      ],
+      "stockBefore": "30.0",
+      "stockAfter": "27.0",
+      "consumptionsForRun": 1,
+      "cons": [
+        {
+          "id": 50,
+          "batch_id": 48,
+          "delta": "-3.0",
+          "before_qty": "20.0",
+          "after_qty": "17.0",
+          "reason": "stocktake",
+          "stocktake_run_id": "race-sweep-run-20261004015252-oqbp2y"
+        }
+      ],
+      "ledgerForRun": 0
+    },
+    "W6": {
+      "productId": "85413941eaaab6b262eb1ab78e28483f",
+      "skuCode": "RACEW6NUS45Y-01-28",
+      "statusAfterManualOnSale": "on_sale",
+      "statuses": [
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200
+      ],
+      "window": {
+        "requests": 8,
+        "overlappedPairs": 28,
+        "issueSpanMs": 2,
+        "wallMs": 376,
+        "spans": [
+          [
+            1791078780320,
+            1791078780592
+          ],
+          [
+            1791078780320,
+            1791078780706
+          ],
+          [
+            1791078780321,
+            1791078780677
+          ],
+          [
+            1791078780321,
+            1791078780700
+          ],
+          [
+            1791078780321,
+            1791078780673
+          ],
+          [
+            1791078780321,
+            1791078780691
+          ],
+          [
+            1791078780322,
+            1791078780594
+          ],
+          [
+            1791078780322,
+            1791078780696
+          ]
+        ]
+      },
+      "successEntries": [
+        1,
+        1,
+        0,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "errorEntries": [
+        [],
+        [],
+        [
+          "当前状态[已下架]不允许下架"
+        ],
+        [],
+        [],
+        [],
+        [],
+        []
+      ],
+      "dbStatusAfter": "on_sale",
+      "c5xx": 0
+    },
+    "W7": {
+      "productId": "a2fdd897295c9ce92e4f52d33aa6fdb1",
+      "skuId": "2106563240100655106",
+      "skuCode": "RACEA38M95S9-01-28",
+      "inboundNos": [
+        "RK-20261004-0005",
+        "RK-20261004-0006"
+      ],
+      "statuses": [
+        200,
+        200
+      ],
+      "window": {
+        "requests": 2,
+        "overlappedPairs": 1,
+        "issueSpanMs": 0,
+        "wallMs": 213,
+        "spans": [
+          [
+            1791078780321,
+            1791078780587
+          ],
+          [
+            1791078780321,
+            1791078780534
+          ]
+        ]
+      },
+      "stockBefore": "100.0",
+      "stockAfter": "125.0",
+      "ledgerMine": [
+        {
+          "id": 2406,
+          "delta": "15.0",
+          "before": "100.0",
+          "after": "115.0",
+          "ref_no": "RK-20261004-0006"
+        },
+        {
+          "id": 2407,
+          "delta": "10.0",
+          "before": "100.0",
+          "after": "110.0",
+          "ref_no": "RK-20261004-0005"
+        }
+      ],
+      "chainBad": [
+        {
+          "at": 2407,
+          "prevAfter": "115.0",
+          "curBefore": "100.0"
+        }
+      ]
+    }
+  },
+  "env": {
+    "productCreate": {
+      "tag": "A3",
+      "attempts": 1,
+      "attemptsDetail": [
+        {
+          "attempt": 0,
+          "status": 200,
+          "body": "{\"success\":true,\"data\":{\"id\":\"a2fdd897295c9ce92e4f52d33aa6fdb1\",\"name\":\"race-sweep-A3-20261004015252-ym1x0d0\",\"basePrice\":10.00,\"images\":[],\"status\":\"draft\",\"st"
+        }
+      ]
+    }
+  }
+}
