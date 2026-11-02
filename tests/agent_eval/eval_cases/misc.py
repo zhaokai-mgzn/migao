@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，172 条）
+# 域: misc（源: cases/misc.yml，173 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3171,6 +3171,24 @@ _CASE_MC_127 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-130 [NORMAL] .env.ai-agent 凭据探针（issue #7718 裁定 B）：deploy.sh 部署后只读检查三项 key（主 LLM / 语音 / 生图），缺任一项 ⇒ 可行动告警（缺哪项 / 怎么补 / 影响是什么），不判失败、绝不打印密钥值（源: cases/misc.yml）──
+_CASE_MC_130 = EvalCase(
+    id='MC-130',
+    legacy_id='',
+    title='.env.ai-agent 凭据探针（issue #7718 裁定 B）：deploy.sh 部署后只读检查三项 key（主 LLM / 语音 / 生图），缺任一项 ⇒ 可行动告警（缺哪项 / 怎么补 / 影响是什么），不判失败、绝不打印密钥值',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['语音 / 生图切到 MaaS（#7661）后服务器 .env.ai-agent 仍停在旧百炼 key ⇒ 线上 401 InvalidApiKey，商家看到「商品图 AI 生成未配置完成」（#7680 的 IMAGE_GEN_NO_KEY）；部署链路没有任何面会说这件事，只能等人发现。要一条「缺 key 就说」的部署期信号，但**不许**把密钥接进 CI secret。'],
+    expectations=['direct_reply'],
+    data_checks=['**缺 ⇒ 可行动告警（会红）**：`.env.ai-agent` 缺 `ASR_API_KEY` / `IMAGE_GEN_API_KEY` / 主 LLM key 任一项 ⇒ deploy.sh 的 `# >>> ai-agent-key-probe` 段必须打出 `::warning::` + 该键名 + 「影响：」（哪一面会坏）+ 「补法：」（改哪个文件、补哪个键、值形如什么），并给出机器可读的 `AI_AGENT_KEY_STATUS=… MISSING=<N>`；N 与实况一致。三条都在时**零告警**、`MISSING=0`（假告警会训练人忽略它）。执行点 = 本判据文件::test_probe_warns_actionably_for_each_missing_key / test_probe_stays_quiet_when_all_keys_present。', '**绝不打印密钥值（会红）**：输出里不得出现任何 key 的值或长前缀（假值注入 `sk-prim-…/sk-sp-…`，含 12 / 8 字符前缀断言）；只许出现「已设置（长度 N）」与「未设置」。执行点 = ::test_probe_never_prints_secret_values。', '**只读 + 不判失败（会红）**：三项全缺 / 文件整个不存在 ⇒ 退出码 **0**（缺 key 是运维态，不是构建失败）、env 文件逐字节不变、cwd 零新增文件；段内不得出现 `exit` / `sed -i` / `tee` / 重定向写 / `rm` / `mv`。执行点 = ::test_probe_is_read_only_and_never_fails / ::test_probe_block_has_no_exit_and_no_write_actions / ::test_missing_env_file_is_reported_not_fatal。', '**与运行期同源（会红）**：`LLM_API_KEY = PRIMARY_API_KEY or VISION_API_KEY`（config.py 的 property）；`IMAGE_GEN_API_KEY` 未单独配置时**复用 ASR_API_KEY**（app/images/generator.py 的取值行）⇒ 只配 ASR 时生图**不许**报缺。键名 / 回落语义漂移即红。执行点 = ::test_image_gen_reuses_asr_key_like_runtime / ::test_probe_key_names_match_ai_agent_config。', '**接线在部署后（会红）**：探针段必须位于 deploy.sh 第 3 步健康检查循环**之后**（= 部署后自证），且**顶层执行**（首行代码顶格，不藏在函数 / if 体内）；结构位置锚一律用**代码符号**（ASCII），不用中文文案（issue #6802 的类级判据禁止文案级位置锚）。解析语义按 compose `env_file` 口径（同名多行取最后一行、成对引号去掉、空值算未设置）。删段 / 挪到健康检查之前 / 把首行缩进进分支 ⇒ 红（注入式红证驱动同一份本体）。执行点 = ::test_probe_is_wired_into_the_deploy_flow_after_health_check / ::test_red_proof_removing_the_probe_goes_red / ::test_quoted_and_duplicate_env_values_follow_env_file_semantics。'],
+    skip_reason='[backend-contract] 静态结构 + 沙箱真跑判据（零网络、零容器、零真实密钥；env 文件是 tmp_path 里的假文件）由 tests/unit_ci_workflows/test_ai_agent_key_probe.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'deploy', 'credentials', 'env-file', 'read-only', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -3344,4 +3362,5 @@ CASES = (
     _CASE_MC_124,
     _CASE_MC_126,
     _CASE_MC_127,
+    _CASE_MC_130,
 )

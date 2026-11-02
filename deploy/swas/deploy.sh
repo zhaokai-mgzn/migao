@@ -1452,6 +1452,105 @@ if [ "$HC_FAILED" = "1" ]; then
   echo "❌ 健康检查失败，部署中止。排查：cd /opt/migao-deploy && docker compose logs <服务>"
   exit 1
 fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 3.5 `.env.ai-agent` 凭据探针（**只读**；issue #7718 的裁定 B，2026-11-02）
+#
+# 病（#7718 的实测链）：本脚本**从不写** `.env.ai-agent`（该文件人工维护）⇒ 2026-10-24 语音 /
+# 生图切到 MaaS token-plan（#7661）后，服务器那份仍停在**旧百炼 key** ⇒ 线上 `401 InvalidApiKey`，
+# 内核按 #7680 归入 `IMAGE_GEN_NO_KEY`，商家看到的是「商品图 AI 生成未配置完成」（同一把 key 也
+# 让语音失效）—— 而部署链路**没有任何面**会报这件事，只能等人发现。
+#
+# 裁定（AI，2026-11-02）：**不**把 MaaS 密钥接进 CI secret（那会让「部署期」变成密钥的**唯一**
+# 来源、扩大涉密面），只在部署链路加一条**只读探针**：缺 key ⇒ 打印**可行动告警**
+# （缺哪一项 / 怎么补 / 影响是什么）。密钥的直接下发属**未采纳的 A 案**，重启条件见 issue #7718。
+#
+# 三条纪律（判据 = tests/unit_ci_workflows/test_ai_agent_key_probe.py）：
+#   ① **绝不 `exit`**：缺 key 是**运维态**，不是构建失败。本仓 `exit 1` 的先例
+#      （`.env.admin-api` 的 SMS_BYPASS_CODE）针对的是「缺了会让**部署产物本身**在错误语义下运行」
+#      的显式开关；凭据缺失的形态是**可运行但降级** ⇒ 探针只告警，部署照旧走完。
+#   ② **只读**：不改 `.env.ai-agent`、不重建容器（写它需要新的下发通道 —— 那正是裁定 A 排除的）。
+#   ③ **绝不打印值**：只打印「已设置（长度 N）」/「未设置」；N 是长度读数，不是值
+#      （判据 ③ 用假值注入断言「输出里绝不出现密钥值」）。
+#
+# 必需项（真名以 backend/ai-agent-service/app/config.py 为准；改名即判据红）：
+#   · LLM_API_KEY       = PRIMARY_API_KEY 或 VISION_API_KEY（主推理 / 视觉；与该文件的 property 同口径）
+#   · ASR_API_KEY       = 语音（**不回落** PRIMARY_API_KEY，见 #7661）
+#   · IMAGE_GEN_API_KEY = 生图（未配时**复用 ASR_API_KEY**，见 app/images/generator.py 的取值行）
+# >>> ai-agent-key-probe
+MIGAO_AI_ENV_FILE=${MIGAO_AI_AGENT_ENV_FILE:-.env.ai-agent}
+# `$1` = 键名 ⇒ stdout = 该键的**非空**值（return 0）；未设置 / 空值 ⇒ return 1、无输出。
+# 同名多行取**最后一行**（compose `env_file` 的生效语义）；只去首尾空白与成对引号，不解释值。
+_migao_ai_env_val() {
+  _migao_ai_line=$(grep -E "^$1=" "$MIGAO_AI_ENV_FILE" 2>/dev/null | tail -1 || true)
+  [ -n "$_migao_ai_line" ] || return 1
+  _migao_ai_out=${_migao_ai_line#*=}
+  _migao_ai_out=$(printf '%s' "$_migao_ai_out" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+  case "$_migao_ai_out" in
+    \"*\") _migao_ai_out=${_migao_ai_out#\"}; _migao_ai_out=${_migao_ai_out%\"} ;;
+    \'*\') _migao_ai_out=${_migao_ai_out#\'}; _migao_ai_out=${_migao_ai_out%\'} ;;
+  esac
+  [ -n "$_migao_ai_out" ] || return 1
+  printf '%s' "$_migao_ai_out"
+}
+echo "== 3.5 .env.ai-agent 凭据探针（只读；issue #7718 裁定 B）=="
+_migao_ai_missing=0
+_migao_ai_status=""
+if [ ! -f "$MIGAO_AI_ENV_FILE" ]; then
+  echo "  ::warning::盘上没有 ${MIGAO_AI_ENV_FILE}（该文件人工维护，本脚本不创建）⇒ 下列凭据全部视为未设置"
+fi
+_migao_ai_llm=$(_migao_ai_env_val PRIMARY_API_KEY || true)
+_migao_ai_vision=$(_migao_ai_env_val VISION_API_KEY || true)
+_migao_ai_asr=$(_migao_ai_env_val ASR_API_KEY || true)
+_migao_ai_image_own=$(_migao_ai_env_val IMAGE_GEN_API_KEY || true)
+_migao_ai_llm=${_migao_ai_llm:-$_migao_ai_vision}
+_migao_ai_image=${_migao_ai_image_own:-$_migao_ai_asr}
+if [ -n "$_migao_ai_llm" ]; then
+  echo "  ✅ LLM_API_KEY（PRIMARY_API_KEY / VISION_API_KEY）：已设置（长度 ${#_migao_ai_llm}，值不打印）"
+  _migao_ai_status="${_migao_ai_status}LLM_API_KEY:set,"
+else
+  echo "  ::warning::.env.ai-agent 缺 **LLM_API_KEY**（PRIMARY_API_KEY / VISION_API_KEY 都未设置）"
+  echo "     影响：主推理 + 视觉全部不可用（C 端元元 / B 端黄金策 / 入驻 AI 甄别都会失败）"
+  echo "     补法：在服务器 ${MIGAO_AI_ENV_FILE} 追加 PRIMARY_API_KEY=<DeepSeek key>（或 VISION_API_KEY=<同一把 key>）"
+  _migao_ai_missing=$((_migao_ai_missing + 1))
+  _migao_ai_status="${_migao_ai_status}LLM_API_KEY:missing,"
+fi
+if [ -n "$_migao_ai_asr" ]; then
+  echo "  ✅ ASR_API_KEY：已设置（长度 ${#_migao_ai_asr}，值不打印）"
+  _migao_ai_status="${_migao_ai_status}ASR_API_KEY:set,"
+else
+  echo "  ::warning::.env.ai-agent 缺 **ASR_API_KEY**"
+  echo "     影响：语音识别 fail-closed（503「未配置」）—— 它**不回落** PRIMARY_API_KEY"
+  echo "           （#7661：那是 DeepSeek 的 key，打到百炼只会 401）"
+  echo "     补法：在服务器 ${MIGAO_AI_ENV_FILE} 追加 ASR_API_KEY=<MaaS token-plan key，形如 sk-sp-…>"
+  _migao_ai_missing=$((_migao_ai_missing + 1))
+  _migao_ai_status="${_migao_ai_status}ASR_API_KEY:missing,"
+fi
+if [ -n "$_migao_ai_image" ]; then
+  if [ -n "$_migao_ai_image_own" ]; then
+    echo "  ✅ IMAGE_GEN_API_KEY：已设置（长度 ${#_migao_ai_image_own}，值不打印）"
+  else
+    echo "  ✅ IMAGE_GEN_API_KEY：未单独设置，**复用 ASR_API_KEY**（长度 ${#_migao_ai_image}，值不打印）"
+  fi
+  _migao_ai_status="${_migao_ai_status}IMAGE_GEN_API_KEY:set,"
+else
+  echo "  ::warning::.env.ai-agent 缺 **IMAGE_GEN_API_KEY**（且 ASR_API_KEY 也为空 ⇒ 没有可复用的 MaaS key）"
+  echo "     影响：建品页「AI 生成商品图」返回 IMAGE_GEN_NO_KEY ⇒ 商家看到「商品图 AI 生成未配置完成」"
+  echo "           （#7680 的凭证失败语义 / #7718 的现场）"
+  echo "     补法：在服务器 ${MIGAO_AI_ENV_FILE} 追加 IMAGE_GEN_API_KEY=<MaaS token-plan key>，或只补 ASR_API_KEY（生图会复用）"
+  _migao_ai_missing=$((_migao_ai_missing + 1))
+  _migao_ai_status="${_migao_ai_status}IMAGE_GEN_API_KEY:missing,"
+fi
+if [ "$_migao_ai_missing" -gt 0 ]; then
+  echo "  📋 补齐动作（缺 key **不判失败**：本次部署已按流程走完，凭据缺失是运维态）"
+  echo "     1) 在服务器改 ${MIGAO_AI_ENV_FILE}（本脚本**不写**它 —— 人工维护、不入库）"
+  echo "     2) 改完必须 recreate（env_file 变更不重读）："
+  echo "        docker compose -f docker-compose.yml -f docker-compose.bluegreen.yml up -d --no-deps --force-recreate ai-agent"
+  echo "     3) 自证：容器内 ASR_API_KEY 指纹应为 sk-sp-…（MaaS）而不是 35 字节的旧百炼 key；curl -fsS http://127.0.0.1:8000/health"
+  echo "     4) 密钥来源 / 轮换流程见 issue #7718（含 2026-10-25 的线上热修记录）"
+fi
+echo "  AI_AGENT_KEY_STATUS=${_migao_ai_status%,} MISSING=${_migao_ai_missing}（探针只读，不改部署结果）"
+# <<< ai-agent-key-probe
 # ── 迁移结果可观测（issue #4936 实测教训）────────────────────────────────────────
 # `MigrationRunner` 的语义是「**单条失败只跳过这一条**、继续跑后面的」，且**不参与健康判定**
 # ⇒ 整批迁移失败时**部署照样全绿**（实测 2026-09-20：V102~V106 在云测试环境静默未生效，

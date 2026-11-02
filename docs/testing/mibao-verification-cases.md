@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（172 case）
+## 杂项域（173 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -6844,6 +6844,19 @@
 跳过: [backend-contract] 零 LLM 的确定性判据（workflow YAML 结构读取 + 把 `with.script` 真跑在 Node 里、github/context 用内存替身），pytest 真跑、零网络、不进 agent-eval 冒烟
 ```
 溯源: 2026-11-02 新增（issue #8406：`needs-truths` 只算一次、永不重算 ⇒ 陈旧误标；#5481 修的是**词表**层，本条修的是**生命周期**层）。现取读数：51 条 open `needs-truths` 里 2 条按本 workflow 自己的判据已满足（#5052 / #5061）。同族第二处：摘标原先嵌在「刚加 needs-verification」分支里 ⇒ 两标签并存的陈旧形态永远摘不掉，本单一起修。取号 = MC-127（主库 MC-001~098 + MC-100~126 已占；MC-099 是 PR #8383 revert 留下的空档，可能被重投复用 ⇒ 不占用）。 ｜ tags: backend-contract, governance, ci
+
+### MC-130. .env.ai-agent 凭据探针（issue #7718 裁定 B）：deploy.sh 部署后只读检查三项 key（主 LLM / 语音 / 生图），缺任一项 ⇒ 可行动告警（缺哪项 / 怎么补 / 影响是什么），不判失败、绝不打印密钥值 🔵
+```
+你: 语音 / 生图切到 MaaS（#7661）后服务器 .env.ai-agent 仍停在旧百炼 key ⇒ 线上 401 InvalidApiKey，商家看到「商品图 AI 生成未配置完成」（#7680 的 IMAGE_GEN_NO_KEY）；部署链路没有任何面会说这件事，只能等人发现。要一条「缺 key 就说」的部署期信号，但**不许**把密钥接进 CI secret。
+期望: direct_reply
+数据: **缺 ⇒ 可行动告警（会红）**：`.env.ai-agent` 缺 `ASR_API_KEY` / `IMAGE_GEN_API_KEY` / 主 LLM key 任一项 ⇒ deploy.sh 的 `# >>> ai-agent-key-probe` 段必须打出 `::warning::` + 该键名 + 「影响：」（哪一面会坏）+ 「补法：」（改哪个文件、补哪个键、值形如什么），并给出机器可读的 `AI_AGENT_KEY_STATUS=… MISSING=<N>`；N 与实况一致。三条都在时**零告警**、`MISSING=0`（假告警会训练人忽略它）。执行点 = 本判据文件::test_probe_warns_actionably_for_each_missing_key / test_probe_stays_quiet_when_all_keys_present。
+数据: **绝不打印密钥值（会红）**：输出里不得出现任何 key 的值或长前缀（假值注入 `sk-prim-…/sk-sp-…`，含 12 / 8 字符前缀断言）；只许出现「已设置（长度 N）」与「未设置」。执行点 = ::test_probe_never_prints_secret_values。
+数据: **只读 + 不判失败（会红）**：三项全缺 / 文件整个不存在 ⇒ 退出码 **0**（缺 key 是运维态，不是构建失败）、env 文件逐字节不变、cwd 零新增文件；段内不得出现 `exit` / `sed -i` / `tee` / 重定向写 / `rm` / `mv`。执行点 = ::test_probe_is_read_only_and_never_fails / ::test_probe_block_has_no_exit_and_no_write_actions / ::test_missing_env_file_is_reported_not_fatal。
+数据: **与运行期同源（会红）**：`LLM_API_KEY = PRIMARY_API_KEY or VISION_API_KEY`（config.py 的 property）；`IMAGE_GEN_API_KEY` 未单独配置时**复用 ASR_API_KEY**（app/images/generator.py 的取值行）⇒ 只配 ASR 时生图**不许**报缺。键名 / 回落语义漂移即红。执行点 = ::test_image_gen_reuses_asr_key_like_runtime / ::test_probe_key_names_match_ai_agent_config。
+数据: **接线在部署后（会红）**：探针段必须位于 deploy.sh 第 3 步健康检查循环**之后**（= 部署后自证），且**顶层执行**（首行代码顶格，不藏在函数 / if 体内）；结构位置锚一律用**代码符号**（ASCII），不用中文文案（issue #6802 的类级判据禁止文案级位置锚）。解析语义按 compose `env_file` 口径（同名多行取最后一行、成对引号去掉、空值算未设置）。删段 / 挪到健康检查之前 / 把首行缩进进分支 ⇒ 红（注入式红证驱动同一份本体）。执行点 = ::test_probe_is_wired_into_the_deploy_flow_after_health_check / ::test_red_proof_removing_the_probe_goes_red / ::test_quoted_and_duplicate_env_values_follow_env_file_semantics。
+跳过: [backend-contract] 静态结构 + 沙箱真跑判据（零网络、零容器、零真实密钥；env 文件是 tmp_path 里的假文件）由 tests/unit_ci_workflows/test_ai_agent_key_probe.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-11-02 新增（issue #7718，裁定B：只加「缺 key ⇒ 部署期告警」探针，**不**把 MaaS 密钥接进 CI secret —— A 案会让部署期成为密钥唯一来源、扩大涉密面）。交付 = `deploy/swas/deploy.sh` 的 3.5 段（`# >>> ai-agent-key-probe`，部署后只读探针：三项 key + 可行动告警 + 长度脱敏）＋判据 tests/unit_ci_workflows/test_ai_agent_key_probe.py（13 条，含三类注入式红证）。取号 = MC-130（`python3 scripts/next_case_id.py MC` 现取：main 001-098 / 100-127 + 在飞 PR #8460:129 / PR #8453:128 / 工作区:099 ⇒ 返回 MC-130）。红证（物理删段）：删掉探针后本判据 13 条全红，恢复后全绿；sha 对照 462b115c…（改后 deploy.sh）。⚠️ 未闭合（照实登记）：① 服务器 `.env.ai-agent` 的实际补 key 动作属运维侧（本包无权限，只把动作写进部署输出）；② 探针只判「有没有」，判不了「是不是旧百炼 key 形态」—— 形态 / 指纹自证仍属 #7718 的线上证据；③ 密钥的直接下发（A 案）**有意不做**，重启条件 = 用户明确要求把 MaaS key 纳入 CI secret 并接受涉密面扩大。 ｜ tags: ci, deploy, credentials, env-file, read-only, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -14298,8 +14311,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：967（活跃 153，跳过 814）
-- tier 分布：smoke 15 / normal 892 / adversarial 33
+- 用例总数：968（活跃 153，跳过 815）
+- tier 分布：smoke 15 / normal 893 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14315,7 +14328,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：172
+- 杂项域：173
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：74
@@ -14554,6 +14567,7 @@
 - MC-124: 只读合成探针 + 构建身份五跳（issue #8203 · P0-04；审计 P1-01）：三个公网只读面 / 退出码 0·1·3 / 只对瞬态重试 / 接在既有 post-merge-verify 腿的 P1 出口之前；ai-agent `/version` 的 sha 从 CI 到镜像的五跳接线
 - MC-126: **外部账号的代码不得直接进本仓**：PR 提交作者 / head 仓库来源必须命中白名单，命中即判红并解除自动合并（issue #8386）
 - MC-127: **`needs-truths` 标签必须随 issue body 重算**（issue #8406）：`on.issues` 加 `edited` + 判定双向（满足 ⇒ 摘标、不满足 ⇒ 补标）+ 幂等（状态一致 ⇒ 零写请求、`edited` 不重复发提醒评论）
+- MC-130: .env.ai-agent 凭据探针（issue #7718 裁定 B）：deploy.sh 部署后只读检查三项 key（主 LLM / 语音 / 生图），缺任一项 ⇒ 可行动告警（缺哪项 / 怎么补 / 影响是什么），不判失败、绝不打印密钥值
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
