@@ -640,7 +640,7 @@ def test_red_proof_throttling_static_surface_is_detected() -> None:
 
     ⚠️ 注入锚点 = 该 location 的 `try_files` 行（`try_files $uri $uri/ /index.html;` 在
     `app.migaozn.com` 段里唯一）—— **不要**锚在整块 `location / { … }` 文本上：那块会随
-    **合法**改动（如 issue #8218 P1-09 给它加的安全头 `add_header`）而变化，锚死整块会让本红证
+    **合法**改动（如 issue #8197 P1-09 给它加的安全头 `add_header`）而变化，锚死整块会让本红证
     在无关改动上报「定位失败」（那是判据的脆弱性，不是缺陷）。注入语义不变：静态面上多一条 limit_req。
     """
     text = _live_text()

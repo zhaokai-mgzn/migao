@@ -70,7 +70,7 @@ rollback.md 回滚（重新发布上一稳定版本）
   以及**仍未覆盖项**）见 [observability-minimum.md](observability-minimum.md)（issue #8203，上线审计 P0-04）
 - 生产发布记录（发布日志/版本表）+ 季度恢复演练
 
-### 5.1 安全响应头（issue #8218 P1-08 / P1-09 —— 已落地的形态，改它之前先读这一节）
+### 5.1 安全响应头（issue #8197 P1-08 / P1-09 —— 已落地的形态，改它之前先读这一节）
 
 | 面 | 谁发 | 带什么 | 备注 |
 |---|---|---|---|
@@ -93,7 +93,7 @@ rollback.md 回滚（重新发布上一稳定版本）
 挂在 `deploy-admin-api.yml` 的部署后探针位（该腿的 `on.push.paths` 同时覆盖 `backend/admin-api/**`
 与 `deploy/swas/**` ⇒ 改了任一面都会被它探到；⛔ 不新增 schedule）。
 
-### 5.2 短链 token：**有意取舍** + 日志侧脱敏（issue #8218 P1-10）
+### 5.2 短链 token：**有意取舍** + 日志侧脱敏（issue #8197 P1-10）
 
 **接受的取舍（有意，不是待修）**：报工 / 入库 / 加工单三种短码把 token 放在 URL query
 （`/b/?t=<token>`、`/w/?t=<token>`，由 `WorkerShortLinkController` / `InboundLabelShortLinkController` /
@@ -111,7 +111,7 @@ rollback.md 回滚（重新发布上一稳定版本）
 **服务器侧复核（可复制）**：`docker compose exec -T nginx grep -c 't=' /var/log/nginx/access.log` ⇒ 期望 `0`
 （改前该命令会数出成片的 token）。
 
-### 5.3 只增表体量 / 最老行年龄读数（issue #8218 P1-11 —— 只读，不新增无人值守删除）
+### 5.3 只增表体量 / 最老行年龄读数（issue #8197 P1-11 —— 只读，不新增无人值守删除）
 
 **病**：`deploy/ops/db-retention.sql` 文件头逐字「**人工执行**，不是定时任务」
 （`audit_logs` 365 天 / `notifications` 180 天），而仓内**无任何值守面**（无告警、无读数、无到期提醒）
