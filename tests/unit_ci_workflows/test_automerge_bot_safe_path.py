@@ -794,6 +794,13 @@ class TestCriterion11YardstickIsSingleSource:
             "tests/agent_eval/eval_cases/misc.py",                 # ← **生成物**的用例散文（MC-060 的 data_checks 里引了这个串；issue #8188 起按域分包 ⇒ 落在 misc）
             GUARD_FILE,                                            # 自匹配（已排除）
             "tests/unit_ci_workflows/test_deploy_breaker_allowlist.py",
+            # ← **同名不同族**（issue #8397 新增）：`issue_comment` 腿的身份门控守卫自带一个
+            #   **YAML 感知**的注释剥离器 `strip_comments`（复数：行内 `# …` + 整行 `# …`），
+            #   与正典（Python 行注释 `strip_comment`）**不是同一把尺子** —— 它剥的是 YAML
+            #   块标量里的 `#`（`if: |` 内注释不剥 ⇒ 写进注释就能盖章 = 假绿）。
+            #   与 #6434 / #6439 / #7110 三条同属「为什么用精确名谓词」的一类：退回前缀口径
+            #   ⇒ 它会进台账并被当成可合并的同族。
+            "tests/unit_ci_workflows/test_issue_comment_author_gate.py",
             "tests/unit_ci_workflows/test_logic_delete_write_shape.py",
             # ← **同名不同族**（issue #6439 新增）：LPAPI 守卫自带一个**JS/TS 感知**的注释剥离器
             #   `strip_comments`（复数：`/* */` + `//`），与正典（Python 行注释 `strip_comment`）
