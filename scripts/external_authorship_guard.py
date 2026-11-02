@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""外部作者守卫 —— 陌生账号提交的代码不得进本仓（issue #8386）。
+"""外部作者守卫 —— 陌生账号提交的代码不得进本仓（issue #8386；PR 作者面 #8393）。
+
+PR 作者面（#8393）：PR 的**提交者**也必须命中 `pr_authors`（两名使用账号 + CI bot +
+dependabot 已知例外）；`automerge.yml` 只 arm `auto_merge_logins`。dependabot 仍走既有
+bot-safe 路径（仅 patch/minor）。
 
 ## 治的形态（真实发生过，不是假想）
 
@@ -42,6 +46,7 @@ EXIT_USAGE = 2
 EXIT_UNDECIDABLE = 3
 
 DEFAULT_ALLOW_FILE = ".github/external-authorship-allow.json"
+PR_AUTHORS_KEY = "pr_authors"
 BLOCK_LABEL = "block/merge"
 NOREPLY_SUFFIX = "@users.noreply.github.com"
 
@@ -60,6 +65,20 @@ def load_allowlist(path: str | Path) -> tuple[set[str], set[str]]:
     if wildcards:
         raise ValueError(f"白名单不许通配：{wildcards}（通配 = 名单形同虚设）")
     return logins, emails
+
+
+def load_pr_authors(path: str | Path) -> set[str]:
+    """读 PR 作者白名单 → set。空名单 / 通配一律拒绝启动（fail-closed）。"""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("白名单必须是 JSON 对象")
+    authors = {str(x).strip().lower() for x in (data.get(PR_AUTHORS_KEY) or []) if str(x).strip()}
+    if not authors:
+        raise ValueError(f"白名单 `{PR_AUTHORS_KEY}` 为空 —— 空名单等于放行一切，拒绝启动")
+    wildcards = sorted(x for x in authors if "*" in x or "?" in x)
+    if wildcards:
+        raise ValueError(f"白名单不许通配：{wildcards}（通配 = 名单形同虚设）")
+    return authors
 
 
 def noreply_login(email: str, logins: set[str]) -> str | None:
@@ -108,6 +127,16 @@ def fetch_head_repo(repo: str, pr: int) -> str:
     return result.stdout.strip()
 
 
+def fetch_pr_author(repo: str, pr: int) -> str:
+    result = _gh(["api", f"repos/{repo}/pulls/{pr}", "--jq", '.user.login // ""'])
+    if result.returncode != 0:
+        raise RuntimeError(f"gh api 取 PR 作者失败：{(result.stderr or result.stdout).strip()[:300]}")
+    login = result.stdout.strip()
+    if not login:
+        raise RuntimeError("PR 作者为空（gh api 返回空 login）")
+    return login
+
+
 def fetch_commits(repo: str, pr: int) -> list[dict]:
     result = _gh(
         [
@@ -150,23 +179,30 @@ def _print_violations(violations: list[dict], reason: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="拦截陌生账号 / fork 来源的 PR（issue #8386）")
+    parser = argparse.ArgumentParser(description="拦截陌生账号 / fork 来源的 PR（issue #8386 / #8393）")
     parser.add_argument("--repo", required=True, help="owner/name")
     parser.add_argument("--pr", required=True, type=int, help="PR 号")
     parser.add_argument("--allow-file", default=DEFAULT_ALLOW_FILE)
     parser.add_argument("--commits-json", help="离线夹具：直接读该 JSON（判据用，不走网络）")
     parser.add_argument("--head-repo", help="离线夹具：PR head 仓库 full_name")
+    parser.add_argument("--pr-author", help="离线夹具：PR 作者的 login（判据用，不走网络）")
     parser.add_argument("--no-remediate", action="store_true", help="只报告、不解除 auto-merge / 不打标签")
     args = parser.parse_args(argv)
 
     try:
         logins, emails = load_allowlist(args.allow_file)
+        pr_authors = load_pr_authors(args.allow_file)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"❌ 无法读取白名单 {args.allow_file}：{exc}")
         return EXIT_USAGE
 
     try:
         head_repo = args.head_repo if args.head_repo is not None else fetch_head_repo(args.repo, args.pr)
+        pr_author = (
+            args.pr_author.strip()
+            if args.pr_author is not None
+            else fetch_pr_author(args.repo, args.pr)
+        )
         if args.commits_json:
             commits = json.loads(Path(args.commits_json).read_text(encoding="utf-8"))
         else:
@@ -179,27 +215,27 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_UNDECIDABLE
 
     violations: list[dict] = []
-    reason = ""
+    reasons: list[str] = []
+    if pr_author.lower() not in pr_authors:
+        violations.append({"sha": "-", "login": pr_author, "name": "(PR 作者)", "email": "-"})
+        reasons.append(f"PR 作者 `{pr_author}` 不在白名单（{PR_AUTHORS_KEY}）")
     if head_repo and head_repo.lower() != args.repo.lower():
-        reason = f"PR 来自 fork（{head_repo}），本仓不接受 fork PR 的代码直接合并"
-        violations = [
-            {
-                "sha": "-",
-                "login": "(fork)",
-                "name": "-",
-                "email": "-",
-            }
-        ]
+        reasons.append(f"PR 来自 fork（{head_repo}），本仓不接受 fork PR 的代码直接合并")
+        violations.append({"sha": "-", "login": "(fork)", "name": "-", "email": "-"})
     else:
-        violations = classify(commits, logins, emails)
-        if violations:
-            reason = f"{len(violations)} 个提交的作者不在白名单（{args.allow_file}）"
+        commit_violations = classify(commits, logins, emails)
+        if commit_violations:
+            reasons.append(f"{len(commit_violations)} 个提交的作者不在白名单（{args.allow_file}）")
+            violations.extend(commit_violations)
 
     if not violations:
-        print(f"✅ 全部 {len(commits)} 个提交的作者都在白名单内（{args.allow_file}）")
+        print(
+            f"✅ PR 作者 `{pr_author}` 与全部 {len(commits)} 个提交的作者都在白名单内"
+            f"（{args.allow_file}）"
+        )
         return EXIT_OK
 
-    _print_violations(violations, reason)
+    _print_violations(violations, "；".join(reasons) or "命中白名单拦截")
     if not args.no_remediate:
         for note in remediate(args.repo, args.pr):
             print(f"   · {note}")

@@ -25,7 +25,7 @@
 | 4 | bot + diff 新增 `secrets.*` ⇒ 不 arm | 加一行 secrets ⇒ `SECRETS_ADDED` |
 | 5 | bot + `block/merge` 标签 ⇒ 不 arm | 标签存在 ⇒ `BLOCK_LABEL` |
 | 6 | bot + required 检查判红 ⇒ 不 arm | `mergeStateStatus=BLOCKED` + 判红检查 ⇒ `CHECKS_FAILED` |
-| 7 | 非 bot（人类 PR）路径**逐字不变** | 删掉 bot 排除子句 ⇒ 该断言变红 |
+| 7 | 非 bot 路径的 `if:` **只允许三名 PR 作者**（逐字快照）；bot-safe 只允许 dependabot | 改名单 / 删 dependabot 条件 ⇒ 判据 7/12 红 |
 | 8 | 每条判据都能**单独**变红 | `TestGuardMutationsProveDiscriminatingPower`（6 个单点源码变异） |
 | 9 | diff **仅在注释里**含 `secrets.*` ⇒ arm（#5286） | `TestSecretsYardstickInjectionsProveDiscriminatingPower`（2 个变异：退回子串 / 退掉共享尺子） |
 | 10 | **真新增** secrets 引用 ⇒ 不 arm（语义不放宽） | 同上（放宽 secrets 闸即失配） |
@@ -87,10 +87,10 @@ WF_TITLE = "chore(deps): bump actions/download-artifact from 7 to 8"
 COMMENT_ONLY_SECRETS = "全文 `secrets.*` 引用仍只有既有那一处"
 
 # ── 判据 7：非 bot 路径的**逐字快照**（原文件文本，含 YAML 缩进）─────────────────
-# 这些片段必须**原样**留在文件里。改了它们 = 改了人类 PR 的既有行为。
+# 这些片段必须**原样**留在文件里。改了它们 = 改了 PR 作者白名单的准入行为。
 ORIGINAL_NONBOT_IF_RAW = """      github.event.pull_request.base.ref == 'main' &&
       github.event.pull_request.draft == false &&
-      github.event.pull_request.user.type != 'Bot' &&
+      contains(fromJSON('["zhaokai-mgzn","ciyuantongda","github-actions[bot]"]'), github.event.pull_request.user.login) &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       !contains(github.event.pull_request.labels.*.name, 'block/merge')"""
 
@@ -1180,7 +1180,7 @@ class TestCriterion6Checks:
 # 判据 7：非 bot（人类 PR）路径逐字不变 —— 回归守卫
 # ══════════════════════════════════════════════════════════════════════════════
 class TestCriterion7NonBotPathUnchanged:
-    """非 bot（人类 PR）路径的**逐字快照**：`if:` + 合并 step 的 `run` 正文。
+    """非 bot 路径的**准入白名单逐字快照**：`if:` + 合并 step 的 `run` 正文。
 
     🔴 口径沿革（issue #6418）：该 `run` 正文**被有意扩充**了一段「⓪ 选合并凭据」（非内置
     `AUTOMERGE_PAT` 优先 + 缺它时显式具名回落）—— 快照常量已同批重锚，扩充理由写在 PR body 的
@@ -1190,7 +1190,7 @@ class TestCriterion7NonBotPathUnchanged:
 
     def test_nonbot_if_block_is_byte_identical(self):
         assert ORIGINAL_NONBOT_IF_RAW in workflow_text(), (
-            "非 bot job 的 `if:` 被改动了 —— 人类 PR 的既有行为必须逐字不变")
+            "非 bot job 的 `if:` 被改动了 —— PR 作者白名单的准入行为必须逐字锁定")
 
     def test_nonbot_run_block_is_byte_identical(self):
         assert ORIGINAL_NONBOT_RUN_RAW in workflow_text(), (
@@ -1229,10 +1229,15 @@ class TestCriterion7NonBotPathUnchanged:
             "Checkout", "Enable native auto-merge (squash)"]
         assert job["steps"][1]["env"]["AUTOMERGE_PAT"] == "${{ secrets.AUTOMERGE_PAT }}"
 
-    def test_two_jobs_are_disjoint_on_author_type(self):
-        """两个 job 的作者类型条件必须互斥 ⇒ 任一 PR 只可能走一条路径。"""
-        assert "github.event.pull_request.user.type == 'Bot'" in bot_job()["if"]
-        assert "github.event.pull_request.user.type != 'Bot'" in workflow_yaml()["jobs"][NONBOT_JOB]["if"]
+    def test_two_jobs_are_disjoint_on_pr_author(self):
+        """两个 job 的 PR 作者集合必须互斥：三名走人类路径，dependabot 走 bot-safe。"""
+        human_if = workflow_yaml()["jobs"][NONBOT_JOB]["if"]
+        bot_if = bot_job()["if"]
+        for login in ("zhaokai-mgzn", "ciyuantongda", "github-actions[bot]"):
+            assert login in human_if, f"人类路径丢了白名单 login：{login}"
+        assert "dependabot[bot]" not in human_if, "dependabot 不得并入人类路径"
+        assert "user.login == 'dependabot[bot]'" in bot_if
+        assert "user.type == 'Bot'" not in bot_if
 
     def test_bot_job_keeps_all_existing_guardrails(self):
         cond = bot_job()["if"]
@@ -1248,10 +1253,23 @@ class TestCriterion7NonBotPathUnchanged:
         这是判据 7 的"能单独变红"证明（不读断言自己的文案，读的是**真文件文本**）。
         """
         mutated = workflow_text().replace(
-            "      github.event.pull_request.user.type != 'Bot' &&\n", "")
+            "      contains(fromJSON(", "      false && contains(fromJSON(", 1)
+        assert mutated != workflow_text(), "变异未生效（锚点漂移）"
         assert ORIGINAL_NONBOT_IF_RAW not in mutated
         # 语义上确认改的正是**非 bot job 的 if**（不是别处同名字符串）
-        assert "user.type != 'Bot'" not in yaml.safe_load(mutated)["jobs"][NONBOT_JOB]["if"]
+        assert "false && contains(fromJSON(" in yaml.safe_load(mutated)["jobs"][NONBOT_JOB]["if"]
+
+
+    def test_automerge_allowlist_matches_single_source(self):
+        """workflow 的 PR 作者白名单必须与 JSON 单一真值源一致。"""
+        data = json.loads(
+            (REPO_ROOT / ".github" / "external-authorship-allow.json").read_text(encoding="utf-8"))
+        expected = data["auto_merge_logins"]
+        assert set(expected) == {"zhaokai-mgzn", "ciyuantongda", "github-actions[bot]"}
+        human_if = workflow_yaml()["jobs"][NONBOT_JOB]["if"]
+        for login in expected:
+            assert login in human_if, f"workflow 丢了白名单 login：{login}"
+        assert "dependabot[bot]" not in human_if, "dependabot 必须走 bot-safe，不并入人类路径"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
