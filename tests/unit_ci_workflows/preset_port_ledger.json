@@ -1,0 +1,764 @@
+{
+ "schema": "preset-port-ledger/v1",
+ "issue": 6060,
+ "what": "「业务仓 → 预设仓」这条**预设搬运通道**的台账：迁移退出点（S4 删除 `.agent-presets/**`）那一刻业务仓里**每个**预设文件，逐条登记「为什么它必须存在」「什么时候要重开这件事」+ **最后承载的字节（blob）与搬入证据（预设仓 commit）**；另登记两份 `SKILL.md` 的**每一版**。判据 = `tests/unit_ci_workflows/test_preset_port_ledger.py`（现取业务仓 git 历史，与台账**逐值相等**：多一个端口 / 少一个端口 / blob 对不上 / 版本少一版 / 证据变长 ⇒ 红）。",
+ "why": "2026-10-02 S4（#6034 / `0e059836e`）删除业务仓 `.agent-presets/**` 之前用**过期基线**做逐字节核对：PR body 写「业务仓 1.102.0 vs 预设仓 1.103.0」，而业务仓 `origin/main` 当时已是 **1.104.0** ⇒ 把「差一版」误判成「有意更新」⇒ **v1.104.0（#6033）从未被搬入预设仓就被删**（事后按 `b93fb8719` 补搬，预设仓 `42283c2`）。⇒ 缺的不是流程文字，是「搬出去的东西字节是不是真在目标仓里」这个**读数**：本台账把它变成会变红的东西 —— 未登记即红、登记了但现取没有即红、字节对不上即红、版本证据缺口只许缩短。",
+ "judged_by": "tests/unit_ci_workflows/test_preset_port_ledger.py",
+ "generated_by": "python3 tests/unit_ci_workflows/preset_port_ledger.py --write（现取两侧 git；机械字段**不手抄**）",
+ "deletion": {
+  "commit": "0e059836e7efbf8326d12d9a78f0955110927ce1",
+  "date": "2026-10-02",
+  "subject": "chore(ci): #6020 S4 —— 业务仓不再承载预设，链路改指预设仓（+ 台账/机具校正） (#6034)",
+  "pr": 6034,
+  "paths_from": ".agent-presets/migao/"
+ },
+ "preset_repo": "zhaokai-mgzn/migao-agent-presets",
+ "ports": [
+  {
+   "path": ".agent-presets/migao/.gitignore",
+   "preset_path": ".gitignore",
+   "why": "预设内容的忽略规则（`__pycache__` 等）；丢了它，预设仓镜像与检出会把构建垃圾带进版本库，而「垃圾被提交」不会让任何判据变红。",
+   "restart_condition": "预设仓改用自己的忽略策略（有意不再逐字节同步该文件）⇒ 删掉本条，并在台账 `coverage_boundary` 写明理由与日期（不许静默少一条）。",
+   "last_commit": "d6cd9935c18ee43517c673319f647218e052095a",
+   "blob": "3fc6bc9bc763d5e2e9be96b6d45b2ae0521a8017",
+   "version": null,
+   "preset_repo_commit": "212bae39011ca5bc2a2cf3434336f3391196c0c0",
+   "ported_at": "2026-09-14"
+  },
+  {
+   "path": ".agent-presets/migao/README.md",
+   "preset_path": "README.md",
+   "why": "预设仓的接线与运维说明入口：活锚建镜像 / 换链 / 刷新自检的 ①~④ 就在这份文件里，丢了新会话就不知道该去哪拿研发模式（DSH 静默加载不到，且不报错）。",
+   "restart_condition": "预设仓的接线口径整体改变（例如镜像路径约定 `$HOME/migao-dev-preset-anchor` 换名）⇒ 先改预设仓 README，再回来重算本条 blob。",
+   "last_commit": "956c9f85456f8b0b1e3801fde8bd14d7df9cc367",
+   "blob": "c34948f00e6a247b8db0552a68afcc8f0c33c2c9",
+   "version": null,
+   "preset_repo_commit": "35f7cdfbf0652ebc2ae30c848681911df429a72e",
+   "ported_at": "2026-10-02"
+  },
+  {
+   "path": ".agent-presets/migao/agent.cordis.yml",
+   "preset_path": "agent.cordis.yml",
+   "why": "观星台研发 preset 的 agent 接线（compaction 旋钮 `thresholdRatio` / `retainRatio`、技能清单）；丢版会让这类旋钮**静默回退**（§29 实测：旧臂继续跑旧配置且不报错）。",
+   "restart_condition": "preset 的接线机制迁到新载体（例如 DSH realm 配置取代 agent.cordis.yml）⇒ 本条必须随新载体重开，并把旧载体登记进 `coverage_boundary`。",
+   "last_commit": "1fbdfb0e4a985e334799c42c1111d16ccc8f2dd3",
+   "blob": "ccb10501e65294af642316870d3eb7883e9c7a46",
+   "version": null,
+   "preset_repo_commit": "35f7cdfbf0652ebc2ae30c848681911df429a72e",
+   "ported_at": "2026-10-02"
+  },
+  {
+   "path": ".agent-presets/migao/preset.yml",
+   "preset_path": "preset.yml",
+   "why": "preset 元数据（`name` / `description` / `skills` 清单）；丢版 ⇒ DSH 发现不到该 preset，或加载到旧描述 —— 两种都不会让任何东西变红。",
+   "restart_condition": "preset 发现口径变化（`USER_PRESET_DIR` / 拓扑 A·B 切换）⇒ 重新核对本条的落点。",
+   "last_commit": "d6cd9935c18ee43517c673319f647218e052095a",
+   "blob": "bbb5752cb7812462888f77579ffa951b1cf07bb4",
+   "version": null,
+   "preset_repo_commit": "9fcc6915613933d4ee26dc3a1a795151606a3ee8",
+   "ported_at": "2026-09-14"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-acceptance/CHANGELOG.md",
+   "preset_path": "skills/migao-acceptance/CHANGELOG.md",
+   "why": "验收协议的版本沿革；丢版 ⇒ 「这条纪律为什么存在」不可回溯，纪律退化成口号（`migao-acceptance` 的 L1/L2/UA 与红证口径都靠它溯源）。",
+   "restart_condition": "沿革改由别的载体承载（例如并入业务仓 docs）⇒ 登记新载体后再删本条。",
+   "last_commit": "956c9f85456f8b0b1e3801fde8bd14d7df9cc367",
+   "blob": "d620c33a9e9f930e920ab4b3e1a332a5e23f6be1",
+   "version": null,
+   "preset_repo_commit": "35f7cdfbf0652ebc2ae30c848681911df429a72e",
+   "ported_at": "2026-10-02"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-acceptance/SKILL.md",
+   "preset_path": "skills/migao-acceptance/SKILL.md",
+   "why": "验收协议本体（L1/L2/UA 断言降级、红证、双 AI 交叉验证、修复必须重放）；丢版 ⇒ 「验收通过」不再有可执行约束，只剩自然语义。",
+   "restart_condition": "技能被拆分 / 改名（例如验收协议并入 dev-flow）⇒ 按新形态重登记，不许让「有技能的仓里少一份技能」无人发现。",
+   "last_commit": "956c9f85456f8b0b1e3801fde8bd14d7df9cc367",
+   "blob": "501d12e0bbb20b207b721e5fd9f0c342889d2631",
+   "version": "1.14.0",
+   "preset_repo_commit": "35f7cdfbf0652ebc2ae30c848681911df429a72e",
+   "ported_at": "2026-10-02"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/CHANGELOG.md",
+   "preset_path": "skills/migao-dev-flow/CHANGELOG.md",
+   "why": "研发流程沿革（v1.95.0 起移出加载面 = 每次加载不再付历史账，但**必须**仍然可回溯）；丢版 ⇒ 纪律的出处与引入时点全部消失（本单 #6060 的教训正是这一条：2026-10-02 那天丢了 1.104.0）。",
+   "restart_condition": "沿革拆成多文件 / 移出预设仓 ⇒ 重登记新落点。",
+   "last_commit": "b93fb871922de2ee487748dbae0f48eb32186882",
+   "blob": "c815fee055471eeb5ee2d1b692bf93897055e162",
+   "version": null,
+   "preset_repo_commit": "42283c2d7f6cd992a4e69947f2ab64edc83fa7cf",
+   "ported_at": "2026-10-02"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "preset_path": "skills/migao-dev-flow/SKILL.md",
+   "why": "研发流程本体（铁律 1~13、§1~§33）；**2026-10-02 丢的就是它** —— v1.104.0（#6033）从未被搬入预设仓即被 S4 删除，靠人工发现才补搬（预设仓 `42283c2`）。",
+   "restart_condition": "技能在本仓重新出现（反向迁移 / 回滚）⇒ 立刻重算：本台账的「已删除」前提不再成立。",
+   "last_commit": "b93fb871922de2ee487748dbae0f48eb32186882",
+   "blob": "c0de9d0f01afef3e3aebb5a67717c080801ff940",
+   "version": "1.104.0",
+   "preset_repo_commit": "42283c2d7f6cd992a4e69947f2ab64edc83fa7cf",
+   "ported_at": "2026-10-02"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/scripts/ui-multimodal-acceptance.mjs",
+   "preset_path": "skills/migao-dev-flow/scripts/ui-multimodal-acceptance.mjs",
+   "why": "§15.7「改 web 页面必跑一轮页面多模态验收」的**可执行承载体**；丢版 ⇒ 该硬约束只剩散文，没有任何东西会跑。",
+   "restart_condition": "承载体改由别的脚本 / 服务承载 ⇒ 登记新路径并写明替换关系。",
+   "last_commit": "b93fb871922de2ee487748dbae0f48eb32186882",
+   "blob": "7d213154a2feaef1ac8385e02abdc607dcb92010",
+   "version": null,
+   "preset_repo_commit": "42283c2d7f6cd992a4e69947f2ab64edc83fa7cf",
+   "ported_at": "2026-10-02"
+  }
+ ],
+ "versions": [
+  {
+   "path": ".agent-presets/migao/skills/migao-acceptance/SKILL.md",
+   "version": "1.4.0",
+   "commit": "d6cd9935c18ee43517c673319f647218e052095a"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-acceptance/SKILL.md",
+   "version": "1.5.0",
+   "commit": "1e06487cca7adc5bf9594e58661b2a28d3edb232"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-acceptance/SKILL.md",
+   "version": "1.6.0",
+   "commit": "60a24c343dd95a2c370cde0d2c0f679a4b3230fd"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-acceptance/SKILL.md",
+   "version": "1.6.1",
+   "commit": "541bacbe328ad8b0734f75039488aaf0496531a1"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-acceptance/SKILL.md",
+   "version": "1.7.1",
+   "commit": "c5f07f292879aae8741eed5e4bec3e42c5288679"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-acceptance/SKILL.md",
+   "version": "1.7.2",
+   "commit": "eb76a6c0cb64e8596f0340e9013f4acb1675fed6"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-acceptance/SKILL.md",
+   "version": "1.7.3",
+   "commit": "2229d3c9800b264187105fd579b53503adb40e56"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-acceptance/SKILL.md",
+   "version": "1.8.0",
+   "commit": "49b8610b4e96f19e9ae2a03e584ec5f767ec6665"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-acceptance/SKILL.md",
+   "version": "1.9.0",
+   "commit": "d0724892eb47c9194f7d01a816a7ded5a822b140"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-acceptance/SKILL.md",
+   "version": "1.10.0",
+   "commit": "471b9f01139f3275ccb7f30ac46c3881e4e06e52"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-acceptance/SKILL.md",
+   "version": "1.11.0",
+   "commit": "91dee4cf36d51370bac57035fab11ec2aaea8b0a"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-acceptance/SKILL.md",
+   "version": "1.12.0",
+   "commit": "88855f2f51c9443f883e0b03270d6b7c9ff13a9e"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-acceptance/SKILL.md",
+   "version": "1.13.0",
+   "commit": "2ed644fc055641a32b5efcc82cb761beeebd22ea"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-acceptance/SKILL.md",
+   "version": "1.14.0",
+   "commit": "956c9f85456f8b0b1e3801fde8bd14d7df9cc367"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.18.0",
+   "commit": "d6cd9935c18ee43517c673319f647218e052095a"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.19.0",
+   "commit": "6c510476b22a883e0b1ef20f1a510b29b54f024b"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.20.0",
+   "commit": "f22bd280db8c4c3cf9021681e7fd8c3dacf7aff3"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.21.0",
+   "commit": "541bacbe328ad8b0734f75039488aaf0496531a1"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.23.0",
+   "commit": "c5f07f292879aae8741eed5e4bec3e42c5288679"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.24.0",
+   "commit": "eb76a6c0cb64e8596f0340e9013f4acb1675fed6"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.24.1",
+   "commit": "2229d3c9800b264187105fd579b53503adb40e56"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.25.0",
+   "commit": "49b8610b4e96f19e9ae2a03e584ec5f767ec6665"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.26.0",
+   "commit": "f2fde085b2e79bac9c649227bda3103918e98941"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.27.0",
+   "commit": "f9cb59d7bdd0745b2ac51d503e8d1d8d1c8473a2"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.28.0",
+   "commit": "d0724892eb47c9194f7d01a816a7ded5a822b140"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.29.0",
+   "commit": "471b9f01139f3275ccb7f30ac46c3881e4e06e52"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.30.0",
+   "commit": "4cf56f0b18dae1c4db0c586b8cf09f3e7db5a385"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.30.1",
+   "commit": "c8ae87e4e8228cb3b2364da344d0b3a4c2b7725c"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.31.0",
+   "commit": "9b12e1d7ab3e899a3701cd976b2d4d0f22d93683"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.32.0",
+   "commit": "90b76d0e81d978939772791a0aa6a060beb46c84"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.33.0",
+   "commit": "862c98b00de03f11c0e3ee54de21999665e13980"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.34.0",
+   "commit": "88855f2f51c9443f883e0b03270d6b7c9ff13a9e"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.35.0",
+   "commit": "2ed644fc055641a32b5efcc82cb761beeebd22ea"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.36.0",
+   "commit": "24529742b22417dfec3c07ad2531f295c157de47"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.37.0",
+   "commit": "f617a10a9193c82de45352a8f6fa5ac9ffa58142"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.38.0",
+   "commit": "ab54b7dea1e094e015a36fa6e5c73a89d3a491d2"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.38.1",
+   "commit": "02a54af301f158d97c19b4ca593e524eb2f07fb2"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.39.0",
+   "commit": "efaa7644e2f3d9fa81a225838ac141e8550ad028"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.40.0",
+   "commit": "e05076034ac3aeac3e6dba36f20325935821e2d6"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.41.0",
+   "commit": "77f5f0501d8d0e07ffbf79f2e84bdc61853bd290"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.42.0",
+   "commit": "4bdfc3c09c9d7ead9714a2eb8ac0bb8972e507d8"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.43.0",
+   "commit": "3ee041db8f8e8c9ea8399465c9488d54a400b66f"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.44.0",
+   "commit": "8ea0e61277f9dc93a010f741e1bac97e3d2797d7"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.45.0",
+   "commit": "1ea82af95a085dcdd40d938bab115d9b195a1b8f"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.46.0",
+   "commit": "7d485f2e7dc2978181499868158c930ade509306"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.47.0",
+   "commit": "bae09155695530b980e54a4f7fdef5454b91fc9a"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.48.0",
+   "commit": "11cd7677d7ccf8c051c84e828eb6cfe4a7d30ef6"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.49.0",
+   "commit": "849d6e417948157e3d689bcc339cfd4950b51c96"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.50.0",
+   "commit": "e340a250a372f81518a27e33473131fa69977e01"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.51.0",
+   "commit": "934ecd04f8636937e7810aceb9a91dc88ba11eed"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.52.0",
+   "commit": "ed7136bbd5adfff2d676a73c1635414cef8d08b2"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.53.0",
+   "commit": "9530693b195a99a2cd207c3a7eb88cef3053e0e2"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.54.0",
+   "commit": "6bc99be130eb0a8d60ea6238319e05501ac9f2d0"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.55.0",
+   "commit": "54bd6c2a56c5473955c86a2258779449ad7becd3"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.56.0",
+   "commit": "dfed1993342f015b8fd3c74fc6a3e56a5dec5955"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.57.0",
+   "commit": "2afb676ac40d9371e777462bef2f703a49767f82"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.58.0",
+   "commit": "726629b3d8fd47ec21bd6012e81ea835b83796c7"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.58.1",
+   "commit": "586d6d489faa23cfc65e8347fb470870829be835"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.59.0",
+   "commit": "dcfee99a01bfcb04a1a3a10731d5ec50c353a90d"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.59.1",
+   "commit": "87a9fc4610c8a1faac08443c0f71645327844412"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.60.0",
+   "commit": "4b772d04cabb6df81535c14cdb3b55c7c85aaf0c"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.60.1",
+   "commit": "3f3e4ca7d84711063b050cb2708c2d9e088324f5"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.61.0",
+   "commit": "218baa57061e53bde6c6a02837215e1c497b8c8e"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.61.1",
+   "commit": "fa6b0f78ecef867412c916a0afa2a7baedfd9f52"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.62.0",
+   "commit": "10652e8915e1a1c414b1907d2c7bde37a316cfba"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.63.0",
+   "commit": "494961bde3e3ed67b7040094db23862e867358c6"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.64.0",
+   "commit": "6d7bd8307d62a5ba864df14ac38ce95cf2858807"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.65.0",
+   "commit": "760fa7e93b554d2e907c0eba285446c54e76aaf3"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.66.0",
+   "commit": "5ede8e5a2cc9a9b34b83c6084af1c8ee22bf2d8f"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.67.0",
+   "commit": "4cce800e695e564b68cbce25897b375da63afb52"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.68.0",
+   "commit": "568c11a03c93016953b2c7c48e327b559e84bdaf"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.70.0",
+   "commit": "3ff37c0384d59c1575e320568552e5bb4f115632"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.71.0",
+   "commit": "71c178246e8c4e0aae9f3b486317be645a5106ea"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.72.0",
+   "commit": "0efc93c66283eacf594c4b2d9ac22672e66c68b1"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.73.0",
+   "commit": "08dd30e713d3a0aada827d2da64aef416d2c7036"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.74.0",
+   "commit": "98a16cd95fc64c956dd73d80cdfb55536c6fbccd"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.75.0",
+   "commit": "9aaaae439b7eb7f0dc8ad591bff86284ccecf537"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.76.0",
+   "commit": "7ab9fa80fe233a8f0591619f71fa56a392181382"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.77.0",
+   "commit": "f6a02b4027001cbcc5fdd24081118bf139fbab5d"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.78.0",
+   "commit": "c3b8e218059bdbdea82eba5b8f5ac8d5116e8202"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.79.0",
+   "commit": "9ab25c1ebc12195db4a7bcca6966c14a58177ae1"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.80.0",
+   "commit": "41825947e55e9aea2819d976a6b9aa74a4019068"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.81.0",
+   "commit": "6c309e9038d9e189c7cae7381a94c01e18afeff7"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.82.0",
+   "commit": "e3d35c13096f37f2d3411daa96dc0a04ecb11824"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.83.0",
+   "commit": "0686adae04e2c7b4d0d15a5adde59596e33fda31"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.84.0",
+   "commit": "04ec7ab6c952a45c2851ecfffa7a6f4a92158462"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.85.0",
+   "commit": "e1902a566a5a97fa179f9d5cfe3bc1b136e2f646"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.86.0",
+   "commit": "886a4e50f9d5672d98293ae2da069ced6ee91a9e"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.87.0",
+   "commit": "cc5fbcf8e59314f82c446864a1e6808cff8ad652"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.88.0",
+   "commit": "162d57d9481be88e895ab4695f209449f50ce5b6"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.89.0",
+   "commit": "4da24c53369214a5ba74989002a6835d265939dd"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.90.0",
+   "commit": "86da5d43a9c9a8959517bbd816a641757ba94bb8"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.91.0",
+   "commit": "6445851385fe0b62d0397da5ebeba131408dc4ee"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.92.0",
+   "commit": "9c01293eaa19e2ec7cdbab296b126fc31cb985ea"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.93.0",
+   "commit": "fc2de0dfe064c1ff4f5ecd4787303386bcaab665"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.94.0",
+   "commit": "ab59b8fd9f2dbee3d877a6db8135b98bfef08b9e"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.95.0",
+   "commit": "956c9f85456f8b0b1e3801fde8bd14d7df9cc367"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.96.0",
+   "commit": "84f1a9a0cf9920d55a26ac59241af96075da8eb4"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.97.0",
+   "commit": "fb742c8492fbbded8433df307d5a3db46023fca4"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.98.0",
+   "commit": "f1e640117f7de28afa61b7cd00d47c161c5694b1"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.99.0",
+   "commit": "1fbdfb0e4a985e334799c42c1111d16ccc8f2dd3"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.100.0",
+   "commit": "8dd6671148c4a0f03b2c31a39790c158aed63538"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.101.0",
+   "commit": "58f8c206d688c8eaa9014c3cfc82f14c4955ae3e"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.102.0",
+   "commit": "e2887ab1fbf18894bc4eb8bdfedd71c6c4742a57"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.103.0",
+   "commit": "5302219f20c5c48ebe509ba4479585078ea4f5d4"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.104.0",
+   "commit": "b93fb871922de2ee487748dbae0f48eb32186882"
+  }
+ ],
+ "version_ports": [
+  {
+   "path": ".agent-presets/migao/skills/migao-acceptance/SKILL.md",
+   "version": "1.4.0",
+   "business_commit": "d6cd9935c18ee43517c673319f647218e052095a",
+   "blob": "01fdeb8a1a90e8abe052c59a0a9fb54fd8b075c6",
+   "preset_repo_commit": "9d7a8701d38796123e8b940d955ae63c5e8c5021",
+   "ported_at": "2026-09-14"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-acceptance/SKILL.md",
+   "version": "1.5.0",
+   "business_commit": "1e06487cca7adc5bf9594e58661b2a28d3edb232",
+   "blob": "22dcac8a3431800be13ac38326f8f50922da3335",
+   "preset_repo_commit": "2d39d184b7a8a32eaeb4fec83c811d2ad3b95e69",
+   "ported_at": "2026-09-14"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-acceptance/SKILL.md",
+   "version": "1.14.0",
+   "business_commit": "956c9f85456f8b0b1e3801fde8bd14d7df9cc367",
+   "blob": "501d12e0bbb20b207b721e5fd9f0c342889d2631",
+   "preset_repo_commit": "35f7cdfbf0652ebc2ae30c848681911df429a72e",
+   "ported_at": "2026-10-02"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.18.0",
+   "business_commit": "d6cd9935c18ee43517c673319f647218e052095a",
+   "blob": "0a0d4485d697f492158c0980b80afdfad883f2c9",
+   "preset_repo_commit": "9d7a8701d38796123e8b940d955ae63c5e8c5021",
+   "ported_at": "2026-09-14"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.19.0",
+   "business_commit": "6c510476b22a883e0b1ef20f1a510b29b54f024b",
+   "blob": "613276af8b62d12f0c6e30f6af1075cc16333d39",
+   "preset_repo_commit": "fd92a44bbf6a60d4efbea540b0961303de64a1ad",
+   "ported_at": "2026-09-14"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.100.0",
+   "business_commit": "8dd6671148c4a0f03b2c31a39790c158aed63538",
+   "blob": "30ecb8b4f7fb5514b67d04589779a671b09a48ed",
+   "preset_repo_commit": "35f7cdfbf0652ebc2ae30c848681911df429a72e",
+   "ported_at": "2026-10-02"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.102.0",
+   "business_commit": "e2887ab1fbf18894bc4eb8bdfedd71c6c4742a57",
+   "blob": "043ea0ff65a79f1b04daa741d2af7da94af52fbd",
+   "preset_repo_commit": "0a82aa836fdd70644f04326da2d78988bf5fbb3e",
+   "ported_at": "2026-10-02"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.103.0",
+   "business_commit": "5302219f20c5c48ebe509ba4479585078ea4f5d4",
+   "blob": "8bd85854349ae27a4f7f54b6d636a3a13eac2f92",
+   "preset_repo_commit": "0a211ed0b35f4a2fec0d53e62710dd27a0afbd5f",
+   "ported_at": "2026-10-02"
+  },
+  {
+   "path": ".agent-presets/migao/skills/migao-dev-flow/SKILL.md",
+   "version": "1.104.0",
+   "business_commit": "b93fb871922de2ee487748dbae0f48eb32186882",
+   "blob": "c0de9d0f01afef3e3aebb5a67717c080801ff940",
+   "preset_repo_commit": "42283c2d7f6cd992a4e69947f2ab64edc83fa7cf",
+   "ported_at": "2026-10-02"
+  }
+ ],
+ "version_evidence_gap": {
+  "count": 97,
+  "reason": "业务仓 106 个版本条目里，只有 9 个能在预设仓按**字节**找回来：预设仓 2026-09-14 才建立、且中途是**周期快照**形态（S1 的 `35f7cdf` 一次性迁回 ≤v1.102.0 的改动，其中 1.100.0→1.102.0 的漏搬用 `0a82aa8` 补齐）⇒ 中间的多数版本没有「逐版」搬入 commit。**如实登记的缺口**：只许缩短（补出一版证据 ⇒ count 下降），不许变长（判据侧 `VERSION_EVIDENCE_GAP_MAX` 镜像同值，放宽要同时改两处，diff 里看得见）。",
+  "restart_condition": "预设仓历史被重写（force-push / 重建仓）⇒ 全部证据失效，先重新跑 --write 并逐条人工核对，再决定是补证据（count 下降）还是把缺口原因写进 `coverage_boundary`。"
+ },
+ "evidence_note": {
+  "no_evidence_ports": [],
+  "quote": "`preset_repo_commit` = 预设仓历史上**首次**出现该 blob 的 commit（内容寻址 ⇒ 同字节才认）；`ported_at` = 该 commit 的**提交日期**（`git show -s --format=%cs`，不是搬运决策日期）。"
+ },
+ "coverage_boundary": [
+  {
+   "face": "预设仓侧证据的真实性（`preset_repo_commit` 指向的字节）",
+   "reason": "预设仓是**私有仓**、需要网络 ⇒ CI 侧判据只核「业务仓侧逐值相等 + 证据字段形态」；证据由 `--write` 在**本机镜像**上按 blob 现取。镜像存在时 `--check` 会**加强**核验（本机更严），镜像缺失时**不**报问题（CI 与无镜像机器口径一致）。",
+   "recompute": "python3 scripts/preset_port_ledger.py --check（有镜像 ⇒ 逐条解析 commit:path 比 blob）"
+  },
+  {
+   "face": "更早退场的预设文件",
+   "reason": "只覆盖「迁移退出那一刻存在」的文件（`deletion.commit^` 的树）；2026-09-14 那次并入后又被删的（如 `tdd-iron-law`）不在面内 —— 它们不在 S4 的搬运清单里。",
+   "recompute": "git ls-tree -r --name-only <deletion>^ -- .agent-presets/"
+  },
+  {
+   "face": "预设仓内容后来有没有被继续改坏",
+   "reason": "本台账判「搬出去时的字节找到了」，判不了「之后有没有被改丢」—— 那是活锚自检与 `scripts/drift_audit.py` 的 `sync-copy` 射程。",
+   "recompute": "./scripts/preset-anchor-check.sh"
+  },
+  {
+   "face": "「中间某一版丢了」的细粒度判定",
+   "reason": "版本面用**冻结计数**表达缺口（`version_evidence_gap.count`，只许缩短），不逐版要求证据 —— 逐版要求会把 2026-09-14 之前的快照形态判成永久红。",
+   "recompute": "python3 -m pytest tests/unit_ci_workflows/test_preset_port_ledger.py -q"
+  },
+  {
+   "face": "预设内容本身的质量",
+   "reason": "台账只裁**搬运关系**（文件集合 / 字节 / 证据），不为技能内容是否正确背书。",
+   "recompute": "（无需复算：本表不是质量排行榜）"
+  },
+  {
+   "face": "浅克隆对**版本面**的截断",
+   "reason": "路径集合 / blob / 版末提交读的是 `deletion.commit^` 的树与提交，不受克隆深度影响；只有「每一版」要从 `git log` 现取 ⇒ 浅克隆若把它截断，判据会以「版本缺失」判红并附 `--unshallow` 提示（**不是**静默绿）。CI 侧由 `ci workflow helper unit tests` job 的 `fetch-depth: 0` 承担。",
+   "recompute": "git rev-parse --is-shallow-repository"
+  }
+ ]
+}
