@@ -379,8 +379,13 @@ def _close_args(issue: int, reason: str, evidence: str) -> argparse.Namespace:
 
 
 def test_close_dry_run_shows_the_basis_for_each_close(tmp_path, monkeypatch, capsys):
-    """dry-run 是**审计面**：判定 → `gh --reason` 映射 + 证据原文（不再截断）+ 闸门读数，且**零写**。"""
+    """dry-run 是**审计面**：判定 → `gh --reason` 映射 + 证据原文（不再截断）+ 闸门读数，且**零外部调用**。"""
     module = _load_module()
+
+    def _no_run(argv, cwd, timeout=None):   # dry-run 一旦真跑 gh ⇒ 判据当场红（不是「看着没跑」）
+        raise AssertionError(f"dry-run（默认零写）不得有外部调用，实测试图跑：{argv}")
+
+    monkeypatch.setattr(module, "_run", _no_run)
     (tmp_path / ".github").mkdir()
     (tmp_path / ".github" / "case-trust-unimplemented.json").write_text(
         json.dumps({"unimplemented": []}), encoding="utf-8")
