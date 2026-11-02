@@ -241,9 +241,18 @@ def _compute_mibao_reachable_tool_names() -> FrozenSet[str]:
     副作用：`create_skill_registry` 会把本轮工具集写进全局 `tool_scope`（A5 设计）——
     本函数是**只读探测**，必须原样还原，否则会把执行域留在最后一个 skill 上，
     让后续流程把域内目标判成越域（2026-10-19 实证：order_create 被误拒）。
+
+    🔴 **必须从实现模块 `tool_selection` 取工厂，不许走 `base_skill` 的 re-export**（issue #8125）：
+    `base_skill.create_skill_registry` 是**测试替身接缝** —— 驱动 `execute_skill` 的用例普遍
+    `@patch("app.graph.skills.base_skill.create_skill_registry")`，而这些用例会经
+    `prepare_turn` → `_build_system_prompt` → `_capability_boundary` 反调本探测。替身返回的
+    `MagicMock.get_tool_names()` 迭代为空 ⇒ 探测得到 `frozenset()`，又因公开函数带进程级
+    `lru_cache`，**空集被冻进缓存** —— 同进程后续任何 `resolve_units()` / 渲染都读到空集，
+    表现为「B 端能力真值全变了」（实测：`test_capability_boundary.py` 排在 `test_graph_skills.py`
+    之后执行稳定红，单独跑各自全绿）。实现模块从不被打桩，是这条只读探测的唯一真值源。
     """
     from app.agents.agents.mibao import MIBAO_CONFIG
-    from app.graph.skills.base_skill import create_skill_registry
+    from app.graph.skills.tool_selection import create_skill_registry
     from app.graph.skills.skill_registry import get_skill_registry
     from app.tools.registry import get_tool_scope, set_tool_scope
 
