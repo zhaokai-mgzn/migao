@@ -1,7 +1,7 @@
 # case_ids: MC-012
 # （沿用 tests/unit_ci_workflows/** 的既有惯例：CI/流程结构类 L0 不变式统一挂 MC-012 ——
 #   见 .github/cases/misc.yml 的 MC-012「CI workflow 行为由 tests/unit_ci_workflows/ 单测验证」。）
-"""`stale-report-reaper` 腿的**退出码语义**（issue #8218 P1-04，2026-10-31 上线审计）。
+"""`stale-report-reaper` 腿的**退出码语义**（issue #8197 P1-04，2026-10-31 上线审计）。
 
 ## 病（逐字读数在审计 findings 里）
 

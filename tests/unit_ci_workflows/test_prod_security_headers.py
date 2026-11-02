@@ -1,7 +1,7 @@
 # case_ids: MC-012
 # （沿用 tests/unit_ci_workflows/** 的既有惯例：CI/流程结构类 L0 不变式统一挂 MC-012 ——
 #   见 .github/cases/misc.yml 的 MC-012「CI workflow 行为由 tests/unit_ci_workflows/ 单测验证」。）
-"""线上**安全响应头**判据 + 它的接线（issue #8218 P1-08 / P1-09）。
+"""线上**安全响应头**判据 + 它的接线（issue #8197 P1-08 / P1-09）。
 
 ## 病（2026-10-31 上线审计，逐条线上读数）
 
@@ -489,9 +489,9 @@ def test_injection_csp_removed_from_bmini_is_caught():
 def test_injection_hsts_added_to_api_domain_is_caught():
     mutated = _inject(
         _read(NGINX_CONF),
-        "    # 访问日志脱敏（issue #8218 P1-10）：本域是 token 的**来源**",
+        "    # 访问日志脱敏（issue #8197 P1-10）：本域是 token 的**来源**",
         '    add_header Strict-Transport-Security "max-age=31536000" always;\n'
-        "    # 访问日志脱敏（issue #8218 P1-10）：本域是 token 的**来源**",
+        "    # 访问日志脱敏（issue #8197 P1-10）：本域是 token 的**来源**",
     )
     v = judge_nginx_headers(mutated)
     assert any("api.migaozn.com" in x and "RFC 6797" in x for x in v), v

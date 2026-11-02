@@ -76,7 +76,7 @@ jobs:
           WHY="$(printf '%s\n' "${OUT}" | sed -n 's/^MIGAO-REAPER-SUMMARY .*why=//p' | tail -1)"
           mechanism_liveness_declare --seen "${SEEN:-unknown}" --acted "${ACTED:-unknown}" \
             --why "${WHY:-no-declaration}"
-          # ── 退出码语义（issue #8218 P1-04，2026-10-31 上线审计）────────────────────────
+          # ── 退出码语义（issue #8197 P1-04，2026-10-31 上线审计）────────────────────────
           # 机制体 `scripts/stale_report_reaper.py` 的常量：
           #   `EXIT_OK, EXIT_USAGE, EXIT_ACTED, EXIT_UNKNOWN = 0, 1, 2, 3`
           # ⇒ **rc=2 = EXIT_ACTED = 成功关掉了陈旧报告**（干完了活），而改前本步把它**原样透传**

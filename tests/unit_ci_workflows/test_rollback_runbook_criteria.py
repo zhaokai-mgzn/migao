@@ -1,7 +1,7 @@
 # case_ids: MC-012
 # （沿用 tests/unit_ci_workflows/** 的既有惯例：CI/流程结构类 L0 不变式统一挂 MC-012 ——
 #   见 .github/cases/misc.yml 的 MC-012「CI workflow 行为由 tests/unit_ci_workflows/ 单测验证」。）
-"""回滚 Runbook 的**判据地址必须是线上真的 200 的面**（issue #8218 P1-05）。
+"""回滚 Runbook 的**判据地址必须是线上真的 200 的面**（issue #8197 P1-05）。
 
 ## 病（2026-10-31 上线审计，逐字读数）
 

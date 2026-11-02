@@ -1,7 +1,7 @@
 # case_ids: MC-012
 # （沿用 tests/unit_ci_workflows/** 的既有惯例：CI/流程结构类 L0 不变式统一挂 MC-012 ——
 #   见 .github/cases/misc.yml 的 MC-012「CI workflow 行为由 tests/unit_ci_workflows/ 单测验证」。）
-"""短链 token **不进访问日志**（issue #8218 P1-10，2026-10-31 上线审计）。
+"""短链 token **不进访问日志**（issue #8197 P1-10，2026-10-31 上线审计）。
 
 ## 病（durable 证据在审计 findings 的 P1-10 行）
 
@@ -234,7 +234,7 @@ def test_injection_server_without_access_log_is_caught():
     # 删掉 app 域 :80 那块的 access_log（它承载 `http://app.migaozn.com/b/?t=`）
     text = _inject(
         _read(NGINX_CONF),
-        "    # 明文面也**必须**脱敏（issue #8218 P1-10）：`http://app.migaozn.com/b/?t=<token>` 会先落到这里。\n"
+        "    # 明文面也**必须**脱敏（issue #8197 P1-10）：`http://app.migaozn.com/b/?t=<token>` 会先落到这里。\n"
         "    access_log /var/log/nginx/access.log migao_no_token;\n",
         "",
     )

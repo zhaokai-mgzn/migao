@@ -1,7 +1,7 @@
 # case_ids: MC-012
 # （沿用 tests/unit_ci_workflows/** 的既有惯例：CI/流程结构类 L0 不变式统一挂 MC-012 ——
 #   见 .github/cases/misc.yml 的 MC-012「CI workflow 行为由 tests/unit_ci_workflows/ 单测验证」。）
-"""P1-07 / P1-11 的**只读读数**：备份窗口 ≥14 天、只增表体量 / 最老行年龄（issue #8218 上线审计）。
+"""P1-07 / P1-11 的**只读读数**：备份窗口 ≥14 天、只增表体量 / 最老行年龄（issue #8197 上线审计）。
 
 ## 病（2026-10-31 审计读数，逐字）
 

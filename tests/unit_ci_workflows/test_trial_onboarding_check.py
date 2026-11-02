@@ -1,7 +1,7 @@
 # case_ids: MC-012
 # （沿用 `tests/unit_ci_workflows/**` 的既有惯例：CI/流程结构类 L0 不变式统一挂 MC-012 ——
 #   见 `.github/cases/misc.yml` 的 MC-012「CI workflow 行为由 tests/unit_ci_workflows/ 单测验证」。）
-"""试用客户上线 runbook 的**可执行判据**（issue #8218 目标①：先 1~2 家试用客户）。
+"""试用客户上线 runbook 的**可执行判据**（上线审计 issue #8197：先 1~2 家试用客户）。
 
 ## 被判的对象（两件，缺一件就等于没判）
 
