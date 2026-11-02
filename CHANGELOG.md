@@ -5,6 +5,144 @@
 > 原因 = 单文件涨到 512KB 越过扫描上限，详见存档文件头与 issue #6404。
 > **后续条目继续在本文件 `## [Unreleased]
 
+### 问「这批货是哪几张入库单入的库」时，黄金策按批次视图查，不再随手挑入库单列表（2026-11-01，issue #8300）
+
+- **改前**：`inbound_order_query` 的说明只写「list（入库单列表）/ batches（批次视图）」，没写什么问法对应哪个
+  action ⇒ 同一句话两次跑出不同 action（全档 run 41285244288 与定点 41286316979 都落到 `list`，用例期望 `batches`）。
+- **改后**：工具说明加「选 action 的硬口径」—— 批次来源 ⇒ `batches`、最近入库单列表 ⇒ `list`、单张明细 ⇒ `detail`。
+- 判据：`tests/test_inbound_order_query_action_routing.py`（红证 = 摘掉该段 ⇒ 2 failed）。
+
+### 客人问「我支付这笔订单怎么付款」时，知识库检索也被视为合理路径（2026-11-01，issue #8300）
+
+- ST-011 的期望集由 `direct_reply or order_query` 扩到 `direct_reply or order_query or knowledge_search`：
+  两次实测模型分别走 `nav_guide(how_to)` 与 `knowledge_search`，答的都是对的指引，却因期望集不全被判红。
+- 仍然**不是空断言**：至少命中一条期望，`data_checks` 的合规/展示口径一字未动。
+
+### 客户主数据迁移 MVP：任意 Excel 表头 AI 映射 + 试运行 + 幂等导入（2026-10-31，issue #8295）
+
+- **改前**：客户档案只有单条 PUT 更新，没有批量导入；期初库存的固定模板导入不能复用到客户。
+- **改后**：新增「客户主数据导入」工作台（`/customers/import`）与三个 API（analyze / preview / commit）：上传旧 ERP 任意表头的 `.xlsx/.xls`，AI 给列映射建议（表头别名确定性兜底；AI 不可用时仍可手工映射），人工确认后先试运行（只读、逐行 ok/warn/error），再正式导入。
+- **幂等**：以旧系统客户 ID（`external_id`）为幂等键，同一份文件重跑不会重复建客户；默认跳过已存在，勾选「更新已存在」才更新 canonical 字段。手机号撞另一个客户的行显式报错，不静默合并。
+- **边界（V1）**：客户档案核心字段（名称/手机号/省市区/地址/收货人/等级/备注）；不导授信额度/账期（涉钱口径，P2 另裁）；单文件 ≤2000 行 / 5MB；AI 只给映射建议，不执行导入；公式/日期/数字手机号已按确定性口径解析。
+
+### 黄金策会归因了：问题出在这个变体，还是整款？（2026-10-31，issue #8279）
+
+- **改前**：能说「这个 SKU 毛利低于同行」，但**说不出为什么** —— 老板拿着一个红标还是得自己从头查。
+- **改后**：每行带 `attribution` —— 同一商品下多个变体（不同颜色 / 门幅 / 尺寸）之间的**毛利对照**：「你这个商品 3 个变体里，只有 2.8m 那个毛利 8%，另外两个 40% ⇒ 差异更可能出在**这个变体的定价或成本维护**」。工具消息里也直接说出来。
+- **一处诚实的「不给」**：**退货率指不到变体**。退货率是**商品级**数据（按商品聚合），同一商品下所有变体拿到的是同一个数 —— 拿它做变体对照，差距**恒等于 0**，那是假归因。所以退货率高只给「整款退货高」，并明说「要定位到变体，需要 SKU 级的退货原因数据（当前没有）」。**错误的归因比没有归因更坏**（会让老板去改一个没问题的变体）。
+- **不给因果断言**：只说「差异指向这个变体的定价/成本」，不说「因为这个变体质量差」；两者销量并排给出（样本量差很多时，差异可能只是样本量）。
+### 修：毛利低的商品不再被标「健康」（2026-10-31，issue #8280）
+
+- **改前（错的）**：`gross_margin_verdict` 的**方向反了** —— 毛利的判据直接复用了退货率那套「越小越好」的逻辑，于是**毛利越低越被判「好」**。实测：毛利 5 元（同行中位 40）的 SKU 被判 **good**（健康）。连带后果：P3 的「下一步建议」只给判 `bad`/`watch` 的行 ⇒ **低毛利 SKU 永远拿不到「试调价 / 核对成本价」的建议**，恰恰是最该拿到的那一批。
+- **改后**：毛利走自己的方向 —— `>= 同行中位 ⇒ good`，低于中位 ⇒ `watch`（值得看一眼），`< 0` 仍是绝对的 `bad`（全店都亏时也不因「相对不那么亏」被判健康）。
+- **为什么一直没被发现**：那条单测**也写反了**（断言「毛利 10 判 good、毛利 50 判 bad」），测试和实现一起错，CI 一直是绿的。已改正并加注入式红证（把方向改回去必红）。
+### 批量写执行转后台 job：进度可查、超时如实说未完成（2026-10-31，issue #8283）
+
+- **改前**：批量改价/库存的 `execute` / `revert` 是同步请求 —— Agent 在对话轮里等整批逐条 apply 跑完；执行中 `GET /batches/{id}` 只有 `executing`，`success_count/fail_count` 要等终态才写，50 条批次一旦慢，用户只能干等。
+- **改后**：新增 `POST /api/admin/agent/batches/{id}/execute-async` / `revert-async`（CAS claim 后提交进程内线程池，立即返回 `status=executing`）；每处理一条更新成功/失败计数，`GET` 可看进度；Agent 工具改用 async 端点并轮询到终态（上限 60s），**超时只报「尚未完成」**，不谎报完成。同步端点保留 #5314 冻结契约，页面/其它调用方可先接 async。
+- **边界**：单批仍 ≤50；线程池 core 2 / max 4 / queue 50 + 优雅停机等待 60s；JVM 崩溃/强杀可能留下 `executing` 批次（跨实例自动回收需 lease/heartbeat，另开单跟踪）。
+- 判据：`AgentBatchServiceTest$AsyncExecution` / `ContextPropagatingTaskDecoratorTest` / `test_product_batch_update.py::TestAsyncPolling`；红证：去掉 decorator ⇒ tenant/user 上下文判红。
+
+### 手机端报工详情能看成品入库并打 50×70 入库标签；待发货单能打整套出库单（发货联）（2026-10-31，issue #8287）
+
+- **改前**：打包工人报完工，手机（小程序 / 手持终端）报工页只看到「已报工」，**看不到成品入到哪个仓位**，也打不出入库标签（入库标签打印只在拍照入库 / 补打页，报工页明确登记「不渲染」）；「待发货单」列表只有名单与收货信息，**打不出发货联**（H5 `/w/shipment.html` 才有，手机端入口已撤）。小程序端连入库标签都打不出来：渲染层要求 DOM canvas，小程序没有 DOM ⇒ 直接抛错（能力探测说「可用」、真点却失败）。
+- **改后**：① 报工详情页出现「成品入库 · 仓位 …」卡（质检结论 / 入库单号 / 标签行 / 短码，全部取服务端随扫码或报工回执下发的 `finished_inbound`），点「打印入库标签（50×70）」即可出纸；② 「待发货单」每单带「发货联」——预览 12 行（单号 / 收货人 / 电话 / 地址 / 帘种 / 安装小区 / 安装位置 / 物流类型 / 物流公司 / 下单日期 / 套数 / 备注），点「打印发货联（50×70）」打整套出库单；③ 两张纸共用 50×70 连续纸卷版面（成品入库固定 70mm；发货联按内容 70~150mm 撑开），小程序画布改走 `Taro.createOffscreenCanvas`，小程序 BLE / 手持终端 / 浏览器蓝牙三条通道同一入口。
+- **口径**：行清单与 H5 `/w/` **同源**（跨端逐行等价判据）；缺值印 `—`（可选附注缺值整行不印）；下单日期按 Asia/Shanghai 取日（`16:30Z` ⇒ 次日）；**仍不新增第二条发货写路径** —— 成品出库继续走 `POST /api/worker/shipment/orders/{id}/ship`（拍照发货 / PC 发货，服务端已过账 `source=ship` 出库单），这两张纸**没有**服务端打印留痕端点（与 `/w/` 一致；入库标签的「必留痕」红线不变）。
+
+### 黄金策开始算钱了：这批货压了多少、离同行差多少、调价一件多赚多少（2026-10-31，issue #8276）
+
+- **改前**：P3 给的选项只有「可逆 / 不可逆」和「高 / 中 / 低」成本 —— **没有一个数字**。老板看到「小范围试调价（如 +5%）」时真正想问的是「这批货压了多少钱、+5% 一件能多赚多少」，答不出来。**权衡没有刻度。**
+- **改后**：每个 SKU 带 `money` —— `stock_value`（库存成本合计 = 件数 × 成本价，即压货占用资金）、`margin_gap_per_unit`（离同行中位还差多少，**正数 = 比同行少赚**）、`price_up_5pct_per_unit`（调价 +5% 每件多赚多少）。「试调价」这个选项带 `money_impact`（每件 +X 元 + 写明前提）。视图带 `money_basis` 自述口径。日报工具的消息里直接说「这些 SKU 压着的库存成本合计约 X 元」。
+- **三条刻意的边界**：① **成本未知的行不算钱**（`stock_value` 为空 + 自述「算不出来」，**不是 0** —— 写成 0 等于说「不占钱」，正好反了）；② **只算给定情景的算术、不做预测**：`+5%` 只出「每件多赚多少」，**不乘销量**（销量的周期口径没标注，乘上去就是编），销量会怎么变没有价格弹性数据、**不猜**；③ **不给单一「最优解」**：回收现金与保毛利不能互相换算，只给刻度不给排序。
+### 生产事故会主动叫人了：5xx 计数 / 证书到期 / 发布失败三类事件落到同一条值班通道（2026-10-31，issue #8203）
+
+- **改前**：上线审计 P0-04 的读数 —— 仓库里对 5xx **一条判据都没有**（`.github/workflows/` 无 alert 腿、`deploy/` 无 metrics），线上唯一可信探针是 `GET /api/version`；三类事件（5xx / 证书到期 / 发布失败）发生时**只有腿本身红/绿**，不会主动惊动人。
+- **改后**：新增 `deploy/scripts/prod-5xx-window.sh`（只读合成探针：审计点名的四面 × N 轮窗口，数 5xx 条数；0=未超阈值 / 1=超阈值 / 3=无法判定）+ `scripts/prod_alert.sh`（**唯一**投递出口：GitHub Issue `priority/P1` 标题去重 + 读数分级指纹去重，webhook 由 `MIGAO_ALERT_WEBHOOK_URL` 可选）。5xx 与证书到期（21 天阈值）都接进既有 `post-merge-verify` 腿（`push: main` / 每日 / 手动三个既有触发面，**不新增 schedule**）；发布失败沿用既有 `[deploy-leg]` 通道。同一事件**只开一条单**，读数分级没变就不再评论。
+- **边界**：全站 5xx 率（nginx access log 口径）与 30s 级外部监控**未覆盖**；短信/电话/邮件直发**未做**（需外部账号）；告警投递失败**不改腿色**（只降级为 `::warning::`，理由与重启条件见 `docs/deployment/observability-minimum.md`）。
+
+### 黄金策开始记「建议之后你做了什么」：点开就算一条，同一件事只记一次（2026-10-31，issue #8260）
+
+- **改前**：复盘只能回忆「AI 说过什么」，说不出「人做了什么」—— 续费时那句「帮你发现 47 个问题、其中 31 个你处理了」说不出后半句。
+- **改后**：新增 `briefing_actions` 表与 `POST/GET /api/admin/briefing/actions`；点日报条目的「问黄金策」时**后台记一条**（前缀式 `opened_agent`）。同一条目反复点只留一行（`UNIQUE` + 先查后写）；只存条目标题的 hash，**不存原文**（不给简报再造一份副本，也不扩 PII 面）。**上报失败不影响任何交互**（fire-and-forget）。
+- **口径**：**记录 ≠ 采纳** —— `opened_agent` 只表示「点开问了」，「已处理 / 忽略」需要单独的按钮（未做）。所以任何报表都不许把它说成「采纳率」。
+### 商品分类页读失败不再假装「还没有分类」（2026-10-31，issue #8200）
+
+- **改前**：`/categories` 的读接口 500 / 断网时只有一个空 `catch`，屏上照印「还没有商品分类 —— 先建一个分类」，
+  与「这个店真的没有分类」逐字相同（拦截器 toast ≈4s 一消失，就只剩这句事实性断言）。
+- **改后**：读失败 ⇒ **常驻**失败面「分类没读到 —— 不是没有分类，是这次没读成功」+「重新加载」；
+  失败时**不渲染**空态，重试真的重发并把结果接上屏（不清零，保留上次成功值）。
+- **类级**：凡渲染共享空态原语 `<EmptyState>` 的文件必须带常驻读失败出口 —— 判据
+  `frontend/admin-web/scripts/read-failure-empty-state-scan.mjs::componentEmptyStateOffenders` +
+  `frontend/admin-web/tests/unit/read-failure-component-empty-state-guard.test.ts`（未登记即红、台账只许缩短）。
+- **边界**：手写空态（不用 `EmptyState`）不在该判据射程；审计 P1-06 另点名的四页
+  （`/products` `/dashboard` `/production` `/orders/[id]`）复核**早已可区分读失败与真空态**，口径未改。
+
+### 黄金策能回看历史了：过去 N 天提醒过什么，一句话问得出来（2026-10-31，issue #8253）
+
+- **改前**：`briefing_query` 工具只能拿**当日** —— 老板问「上个月你建议我改价，效果如何？」，答不出来（连「提醒过什么」都不知道）。
+- **改后**：新增 `GET /api/admin/briefing/history?days=N`（默认 30，**硬上限 90 天**，按业务日期倒序），工具支持 `view="history"`；返回给模型的摘要含「共 N 条、从 X 到 Y」并列出各天的建议标题。**空历史会明说「这不是『一切正常』，是『没有记录』」**——避免模型对着空列表下「经营没问题」的结论。
+- **边界**：只给**原料**（历史原文），「后来有没有被处理 / 有没有效」仍需模型自己调当前视图对比；决策采纳记录与季度价值报告未做。
+
+### 商品健康度视图给出「接下来能做什么」：bad/watch 行带可选动作 + 代价 + 可逆性（2026-10-31，issue #8251）
+
+- **改前**：视图只说「这个 SKU 退货率判 bad」—— **然后呢？** 没有下文，老板看到红标还是要自己从头想。
+- **改后**：`bad` / `watch` 行新增 `next_options`（**确定性规则表**，不交给 LLM 自由发挥）：每个选项带 `action`（具体做什么）、`cost`（low/medium/high + 说明）、`reversible`（能不能反悔）、`verify`（**怎么验证它有没有用**，指向具体数据）；视图顶层新增 `options_basis`，明写「行业常见做法、需人工判断」。`good` / `unknown` 行**不给**选项（没问题时推荐动作是噪音）。毛利判 bad 时第一条固定是「先核对成本价是否已维护」——成本未知时毛利不可算，在脏数据上做调价决定更糟。
+- **边界**：v1 只收**可逆 + 低成本**动作；清仓 / 下架 / 换供应商这类不可逆动作未进表（需业务裁定）。
+
+### 微信里扫纸上的码 ⇒ **直接打开小程序报工页**（A 档 + 校验文件承接）（2026-10-31，issue #8196）
+
+- **改前**：纸上的码 `https://app.migaozn.com/s/<短码>` 在微信里扫只会打开浏览器（靠服务端 302）；
+  小程序**不跟随 302** ⇒ 即便配了「扫普通链接二维码打开小程序」，页面手里也只有短码、换不到 token
+  （扫码后停在报工页、报工按钮一直不出来，且没有任何东西会变红）。
+- **改后**：
+  - 服务端新增**显式** JSON 解析面 `GET /s/<短码>/json` ⇒ `{reportPath, token}`（未知 404 / 已撤销 410；
+    旧 `/s/<短码>` 在**任何** Accept 下仍是 302 —— 已印出去的码不换、扫码工具不受影响）。
+  - 报工页按微信给的 `q` 分流：`q=/s/<短码>` ⇒ 先 JSON 换 token；`q=…/b/report/?t=<token>` ⇒ 直接用 `t`；
+    页面参数 `t` / 无码行为不变。未知/撤销 ⇒ **明确错误**、不重试；JSON 面读不到 ⇒ 退回短码直递
+    工人扫码端点（旧后端上也照常能报工）。未登录仍**就地登录**，登录后接着报手里的码。
+  - 微信校验文件承接：`deploy/swas/wechat-verify/`（用户原样放入）+ `deploy.sh` 幂等只拷 `*.txt` 到
+    静态根根下 + nginx 根下 `.txt` 显式面（缺失 **404**、绝不回落 SPA 页）。
+  - 工人菜单页面键收口：bmini 的键集必须是后端 `WorkerPages` 常量的**子集**（前端不许发明后端没有的键）。
+- **判据**：`frontend/bmini-app/tests/worker-report-wechat-qr.test.tsx`（4 类落地 + 解码边界）·
+  `frontend/bmini-app/tests/worker-short-link-service.test.ts` ·
+  `backend/admin-api/src/test/java/com/migao/admin/controller/WorkerShortLinkControllerTest.java`（JSON 面 + 印刷品红线）·
+  `tests/unit_ci_workflows/test_wechat_verify_route.py`（nginx 语义模拟 + 落位段真跑）·
+  `frontend/bmini-app/tests/worker-menu-single-source.test.ts`。
+- ⚠️ **用户侧未做**：微信 appid / 上传私钥 / 后台二维码规则 / 提审发布 / 服务器域名白名单 / 真机扫码
+  （步骤见 `docs/deployment/wechat-mini-program-qr.md`）。
+
+### 经营日报条目多一个「问黄金策」：点一下就把这条交给 AI 处理（2026-10-31，issue #8236）
+
+- **改前**：简报条目只有「一键直达」箭头（跳后台页面），**建议 / 风险类条目根本没有 link** —— 整行不可点，看见了也只能自己去想、自己去翻。
+- **改后**：每条 `todo` / `risks` / `suggestions` 右侧都有「问黄金策」按钮（小屏只留图标）。点击 ⇒ 打开浮动助手，并预置一句带上下文的问题（「日报里这条：<标题>（<理由>）—— 帮我查一下相关数据，给出处理建议；能批量处理的话给我确认卡」）。**浮窗开关从组件本地 state 提升到 store**，外部入口才打得开；无会话时先建会话再发（`sendMessage` 对无会话是静默早退）。
+- **边界**：只连「看见 → 交给 AI」这一根线；AI 是否真的调工具、是否出确认卡属 LLM 行为面，本单不派评测。
+
+### 商品健康度视图给出「好/中/差」判断：新增同行基线，不再只报数值（2026-10-31，issue #8234）
+
+- **改前**：`product_health` 视图只给 `return_rate: 0.18`、`gross_margin: 0.22` —— 老板看到还要自己判断「这算高还是低」；全仓无任何判断基准（`grep "target|目标值|行业均值|benchmark"` 在 `app/briefing/` 零命中）。
+- **改后**：视图按**同一份快照内全部 SKU** 算同行基线（中位数 / 上四分位，最近秩法），每行新增 `return_rate_verdict` / `gross_margin_verdict`（`good` / `watch` / `bad` / `unknown`），视图级新增 `baselines` 与 `baseline_basis`。**未知不装懂**：指标未知或有效样本 < `MIN_BASELINE_SAMPLE`（5）⇒ `unknown`；**毛利为负是绝对判据**（全店都亏时仍判 `bad`，不因相对基线被判成 good）。工具层 message 同步报出「几个 SKU 高于上四分位」，并明写这是**相对基线、非绝对标准**。
+- **边界**：本包只做相对基线；历史基线与客户可配置目标值未做（登记在 issue 正文「不在本单」）。
+
+### 工人库存修正支持「拍照识别批次号」：扫标签码优先（0 次 LLM）→ OCR 兜底 → 手输（2026-10-31，issue #8210）
+
+改前：工人修正在手机上只能**手输**批次号（14 位 `PC-yyyyMMdd-NNNN`），车间光照差 / 标签小 / 布卷在地上 ⇒ 抄错一位就搜不到，甚至搜到别的批次。
+
+改后：修正页多一个「拍照识别批次号」入口，三段优先级：
+
+1. **拍我们自己的入库标签** ⇒ 本机解二维码（jsQR）→ 按短码读标签详情拿批次号，**0 次 LLM**；
+2. **只有批次号文字**（供应商原标签 / 码磨花）⇒ 拍照上传 → ai-agent vision 新 target `batch`，
+   只认 `PC-yyyyMMdd-NNNN`（阈值 0.90 + 形状硬闸含日期成立）⇒ 认不准就留空；
+3. 都失败 ⇒ 照旧**手输**（不静默、不拿「最近入库的批次」凑一个）。
+
+认出批次号后自动定位到**那一批**并打开修正面板；**提交仍是工人的动作**（填实盘米数 + 选原因 + 二次确认）。
+定位用既有搜索读面按批次号**精确**比对（`PC-…-0001` 不会被 `PC-…-00011` 冒充）；未过账的标签如实说「还没有批次号」，不退回 OCR 去猜。
+
+- 新增端点：`POST /api/worker/batch-stock/recognize`（工人 session；图先走既有 `POST /api/worker/inbound/upload`）。
+- 库存写面**零新增**：修正仍走 `BatchStocktakeService#stocktake`（批次分录 + SKU 库存同事务）。
+- 判据：`backend/ai-agent-service/tests/test_vision/test_targets.py` / `test_recognizer.py`（形状硬闸）、
+  `WorkerBatchStockControllerTest` / `WorkerBatchStockServiceTest`、
+  `frontend/bmini-app/tests/worker-stock-recognize.test.ts`（扫码优先 ⇒ 假服务端计数为 0）/ `worker-stock-page.test.tsx`。
+
 ### 小程序扫码报工未登录 ⇒ **就地登录**，表单与终端 `/w/` 逐字一致（2026-10-31，issue #8194）
 
 - **改前**：新手机第一次扫纸上的码（`/s/<短码>` → 302 → `/b/?t=<token>`）时本机没有工人身份，
@@ -19,6 +157,31 @@
 - **判据**：`frontend/bmini-app/tests/worker-login-parity.test.ts`（跨端标题/副标题/三字段及顺序/按钮逐字比对，
   改一个标签或换顺序 ⇒ 红）+ `frontend/bmini-app/tests/worker-report-login.test.tsx`（就地登录 / 继续码 / 无码回首页）。
   ⚠️ 390×844 的 `/b/` vs `/w/` 视觉对比属多模态验收，不在本条判据内。
+
+### 观星台终端可从官网下载，更新清单有了正式落地面（2026-10-31，issue #8195）
+
+改前：终端（车间一体机 Windows / 工人手持机 Android）的更新检查地址早就写死在程序里
+（`app.migaozn.com/terminal/latest.json` 与 `/terminal/android/latest.json`），但 nginx 里
+`/terminal` **0 命中** ⇒ 请求落进 `location /` 的 SPA fallback：**HTTP 200 的一页 C 端元元 HTML**
+（缺失文件也是 200，监控不红）；官网 `/download` **404**；终端产物**没有任何发布通路**。
+
+改后：
+
+- **静态面**：`app.migaozn.com/terminal/` 有自己的 location，`try_files $uri =404`
+  （缺文件就是 404，**不回落**任何页面）；不限流；exe/apk 按 `application/octet-stream` 下发、
+  清单按 `application/json` 解析；裸前缀 `/terminal` 301 到 `/terminal/`。
+- **官网下载页**：`https://migaozn.com/download` 展示版本 / SHA-256 / 大小 / 发布时间 / 说明与两个下载按钮；
+  安卓「未知来源」、Windows SmartScreen、检查更新三段安装说明。清单读不到或格式坏 ⇒ 明确「暂未发布」，
+  **不编造版本号**（清单经 Next 同源转发读取，不给静态下载面加 CORS）。
+- **发布腿**：`.github/workflows/terminal-publish.yml`（**只有 workflow_dispatch**，由人点名 release tag）
+  把终端仓 Release 的 exe/apk 生成两份更新清单、装进 ACR 传输镜像、幂等落到静态根，
+  并断言「线上字节 == 本地载荷」（载荷与清单不一致时**什么都没改**）。
+- **文档**：`docs/deployment/terminal-release.md`（发布 / 回滚 / 证书现状：Windows 未签名 + SHA256 + SmartScreen；
+  不上架应用市场）。
+
+判据：`tests/unit_ci_workflows/test_terminal_release_leg.py`（nginx 语义模拟 + 发布腿结构与沙箱真跑，
+含注入式红证）+ `frontend/admin-web/tests/unit/pages/corporate-download.test.tsx`（清单正常 / 404 / 坏 JSON /
+网络失败 / 伪协议）。
 
 ### 会话空闲自动关闭阈值 4 小时 ⇒ **12 小时**（2026-10-30，issue #8182）
 
@@ -526,6 +689,79 @@ worker-h5 纯函数、承运商 4 条 × 两处入口 + 类级单一真值守卫
 
 
 ## [Unreleased]
+
+### 商家用「上下卷边」这类人话改算料参数时，黄金策不再因键名对不上而拒绝（2026-11-01，issue #8300）
+
+- **改前**：模型把「上下卷边」自己翻成 `hem_allowance` 之类**自造键名**，服务端只认内部键 ⇒
+  `unknown_config_key`、一次写入都没发生（run `41277486650` 实测 PP-023 首跑）。
+- **改后**：`craft_calc_config_update` 内置「商家说法 → 内部键」确定性映射（上下卷边→`hem_margin`
+  等 13 组），参数里用人话当键也能落库；工具说明同时列出整张映射表，模型不必猜英文键名。
+- 判据：`tests/test_tools_craft_calc_config_update.py::TestMerchantWordingKeys`（红证 = 摘掉映射 ⇒ 2 failed）。
+
+### 商家说「这单的明细」而会话里没有对应订单时，黄金策改为直接问单号，不再先列一串订单让人挑（2026-11-01，issue #8300 / #8173）
+
+- **改前**：模型对纯指代（「这单」「这笔」）且无焦点的情况，会先 `order_query(action=list)` 列出最近
+  5 单、再弹一张选择卡让商家点 —— 既是多余的查询，也容易点错单（run `41270943560` 实测 OR-074 首跑）。
+- **改后**：`prompts/order.md` 增加一节硬规则 —— 纯指代 + 无焦点 ⇒ **一句话追问**要单号或客户名，
+  **禁止**先列列表、**禁止**弹选择卡；商家**自己说**「最近一笔 / 上个月那笔」的仍可直接查（区分保留）。
+- 判据：`tests/test_order_prompt_focus_rule.py`（小节在、三类禁止点名、顺序在物流链之前、
+  物流链那条只对自述式指代开放；红证 = 摘掉 prompt 改动 ⇒ 3 failed）。
+
+### 意图属主工具改为「只加不减」，不再把本域工具挤出可调用面（2026-11-01，issue #8300）
+
+- **改前**（#8301 引入的形态）：意图属主读工具占用**分数槽位**，把本该保留的本域工具挤出去 ——
+  2026-11-01 全档评测（run `41268493564`）实测 `PP-016/PP-017/PP-019/PP-020/PP-002/PR-101` 六条
+  **从绿转红**：`craft_config_query` / `batch_stock_query` / `operation_catalog_query` 被裁，
+  模型退到 `nav_guide` 答「在哪一页」。
+- **改后**：属主工具只补「被意图过滤挡在本域声明面之外」的那些、按相关度取前 ≤3 把，
+  且**不占分数槽位**（净增）⇒ 保留集只增不减；上限仍是 16 + 至多 3 把净增。
+- 判据：`tests/test_tool_selection_trim.py::test_intent_owner_keep_never_removes_a_baseline_tool`
+  与 `::test_owner_keep_is_net_additive_for_every_skill_intent`（任意 skill × 任意意图的类级守卫），
+  红证 = 在 #8301 实现上两条均红（已实跑 `2 failed`）。
+
+### 问「这周比上周怎么样」时会走经营环比工具，不再拿订单统计＋销售额拼答案（2026-11-01，issue #8300）
+
+- **改前**：L1 关键词表没有跨期比较词 ⇒ 「这周订单比上周怎么样？」被 `ORDER_QUERY` 的「订单」
+  接走，模型改用 `order_query(action=statistics)` + `sales_attribution`（销售额）拼两周对比，
+  `dashboard_stats(action=trend_compare)` 一次没调（run `41266259486` 逐字 trace）。
+- **改后**：「比上周 / 较上周 / 对比上周 / 环比 / 同比」进 `DASHBOARD` 关键词 ⇒ 确定性路由到看板域；
+  `dashboard_stats` 描述补一条触发说明（跨期对比一律 `action=trend_compare`，两期算术在工具内算）。
+  裸「上周 / 本月」**不进**词表（防「查一下上周的订单」被抢走，负控已钉）。
+- 判据：`tests/test_rule_matcher.py::TestMatch::test_week_over_week_order_comparison_routes_dashboard`
+  / `::test_mom_comparison_routes_dashboard` / `::test_plain_week_order_query_stays_order_query`。
+
+### 问「店里的加工套件」不再被当成商品咨询；问「订单量环比」不再答成销售额（2026-11-01，issue #8300）
+
+- **改前**：L1 关键词表只有「加工单」没有「加工套件」⇒ 「我们店里的加工套件现在有哪些？」
+  降级 L2 被判成**商品咨询**（`product_inquiry` → `[product]`），工人拿到的是**加工项目录**
+  （`processing_item_query` 顶替 `processing_order_set_query`）。
+  另一处：`sales_attribution`（按商品聚合**销售额**的归因工具）没有对「订单量/单数环比」的互斥条款
+  ⇒ 「这周订单比上周怎么样」被它接走、答成销售额对比，`dashboard_stats(trend_compare)` 一次没调。
+- **改后**：「加工套件」进 L1 关键词表 → 确定性路由到订单域（套件工具所在域）；
+  `sales_attribution` 描述前置一条【不适用】：「只问订单量/单数环比（不落到商品）⇒ 用
+  `dashboard_stats(action=trend_compare)`」。
+- 判据：`backend/ai-agent-service/tests/test_rule_matcher.py`（`TestProcessingOrderRouting` 新增
+  「加工套件 / 套件扫码进度」两条 + 原有「加工项仍走商品域」负控）与
+  `tests/test_sales_attribution.py::test_description_excludes_plain_order_count_comparison`
+  （红证：把描述改动 stash 回去 ⇒ 该条当场红）。
+
+### 手持机 `/b/` 工人端不再白屏：H5 产物统一降到 ES2020（2026-11-01，issue #8302）
+
+- **改前**：`/b/` 的构建产物里混进了 ES2021 语法（依赖 `query-string@9.5` 的 `&&=`，`node_modules` 不进 babel）⇒ 商米手持机的系统 WebView 是 **Chrome 83（ES2020 上限）**，整包 SyntaxError、**整屏白**；桌面 / 新机型一切正常，所以"我这儿能打开"永远发现不了。拍照入库 / 补打入库标签 / 拍照发货（只在 `/b/`）在真机上全部走不到。
+- **改后**：`build:h5` 之后自动跑产物门禁 —— 已经能按 ES2020 解析的产物**逐字节不动**；解析不了的用 esbuild 降到 ES2020 再复核；降完仍不行就让构建**红**并具名。真机复测：`/b/` 工人首页恢复渲染。
+- **边界**：只保证**老 WebView 能跑**（ES2020 上限），不改产物路径（`/b/`）与发布腿语义；本单不涉及"登录后自动切 `/b/`"那一半。
+
+### 黄金策问「系统设置 / AI 配置 / 加工套件」时又能查到真值了（2026-11-01，issue #8300）
+
+- **改前**（2026-10-30 起）：B 端读面按意图裁剪（#8174）后，`system_settings` / `ai_config`
+  这类意图会被按绑定面过滤到 fallback skill `general`（属主 `settings` 不在图上，见 #6044 缺陷 C）；
+  属主读工具 `settings_manage` 既不在 `general` 的声明面、词面又零分 ⇒ 被裁 ⇒ 模型只能答
+  「菜单位置」（`nav_guide`），商家问「查看系统设置」拿不到设置值。同形态波及
+  `processing_order_set_query`（加工套件只答成「加工项目录」）与 `dashboard_stats`（环比改用别的工具）。
+- **改后**：裁剪的保底集合新增「**意图属主 skill 的读工具**」—— 意图被路由到别的 skill 时，
+  属主那条读工具仍留在本轮绑定面；仍受上限 16 约束（预算不够的部分才交给分数兜底）。
+- 判据：`backend/ai-agent-service/tests/test_tool_selection_trim.py`（4 组实例 + 类级元守卫
+  「任意 skill × 别家意图」+ 「摘掉保底 ⇒ `settings_manage` 立刻被裁」的注入红证）。
 
 ### 连续多轮没有进展时会先确认关键信息/换办法，而不是原地反复重试（2026-10-29，issue #8150）
 
@@ -4266,25 +4502,6 @@ schedule 兜底档另显式打出「本轮未部署 ⇒ 没有发生任何交付
 与「过账」的条件更新**不互斥**。现在作废与过账**同款**：状态迁移写进同一条带谓词的语句
 （`WHERE id=? AND tenant_id=? AND status='draft' AND deleted=0`），抢不到的一方得到明确的
 409「只有草稿可以作废 / 只有草稿可以过账」。**对外契约、字段名与状态取值一字未改。**
-### admin-api → ai-agent 这条内部调用腿断了不再静默：`/actuator/health` 摆出 `token_configured` / `reachable` / `probe_error`（2026-10-14，issue #6896）
-
-六个客户端（入驻审核 / 工艺计算 / 图片识别 / 知识蒸馏 / 简报生成 / 加工数量）各自读
-`ai-agent.base-url` 与 `ai-agent.service-token`，而两个默认值都是坏的：base-url 默认
-`http://localhost:8000`（8000 是容器内端口，本地直起 ai-agent 在 8001）、token 默认空串
-（ai-agent 侧 `verify_service_token` 对空配置 fail-closed）。漏设环境变量时的形态是**静默**——
-应用 UP、探活 200、ai-agent 自己看着健康，只有真实入驻被驳回成「系统繁忙，可稍后重试」
-（`review_source=system`）。#6674 的收口方式是补 Quick-Start 文档（保护读过文档的人），可观测面一直缺。
-
-现在新增 `AiAgentLinkHealthIndicator`，把这条腿的事实摆到运维一眼能看到的地方，
-**沿用 #5184（到期扫描腿）/ #4517（迁移腿）的同一范式与同一条裁定：恒 UP、不熔断**
-——把 health 打成 DOWN 会连带部署腿 / 探活 / 负载均衡一起红，比原问题更糟；
-「算不算故障」由观测方按 `reachable` / `probe_error` / `probed_at` 裁定。
-token 只暴露「配了没有」，**永不暴露值**（有判据钉住，注入原文即红）。
-
-**未做（照实登记）**：六个客户端里重复的坏默认值没有收敛到一处——8000 对
-`deploy/docker-compose.yml` 的 `8001:8000` 是正确的容器内地址，改默认值会弄坏容器那条路；
-探测结果不缓存（每次 health 现探、超时 800ms 封顶），换来零后台线程与零陈旧态。
-
 ### 加工单信息补齐：工人端两屏 / A4 纸质加工单 / 商家端加工单面同持一份生产字段口径（2026-10-14，issue #6901）
 
 用户 2026-10-14 逐字「加工单缺乏订单中的规格尺寸和加工信息，工人需要这些信息+商品信息来决定如何生产」

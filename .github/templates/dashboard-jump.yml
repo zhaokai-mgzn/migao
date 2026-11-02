@@ -11,6 +11,7 @@ business_truths:
   - [dashboard-jump.overview] dashboard_stats(action=overview)：经营概览（订单数/销售额）
   - [dashboard-jump.order-trend] dashboard_stats(action=order_trend)：订单趋势
   - [dashboard-jump.recent-orders] dashboard_stats(action=recent_orders)：最近订单
+  - [dashboard-jump.product-ranking] dashboard_stats(action=product_ranking)：商品销量排行（period=day 近 7 天 / month 近 30 天，limit 为条数）
 
   # 主动发现（族 1 · 包 1，issue #5322）—— 日报的异常条目由**确定性规则**产生，不由 LLM 自由发挥
   - [dashboard-jump.proactive-deterministic] 同一数据快照 ⇒ 逐字可复现的命中集合（规则具名、阈值可复算）

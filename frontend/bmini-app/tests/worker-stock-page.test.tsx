@@ -19,6 +19,8 @@
  * | ⑧ | **校验先于请求**：空 / 负数 / 2 位小数 ⇒ 不发请求 + 可行动文案 | 放行 `-1` ⇒ 红 |
  * | ⑨ | 🔴 **401 单独一态**：会话失效 ⇒ 引导登录（清本机工人身份），不是「读不到」/「没有批次」 | 把 401 当空态 ⇒ 红 |
  * | ⑩ | **空态 / 读失败互斥**：空结果给「换个关键词」，读失败给「重试」；点重试会再读一次 | 两者共用一个态 ⇒ 红 |
+ * | ⑪ | 🔴 **拍照识别入口（issue #8210）**：扫标签二维码优先（0 次 LLM）→ vision 兜底 → 手输；认出批次号后**自动定位并打开修正面板**，提交仍要工人自己来 | 把 vision 排到扫码前 ⇒ ⑬ 的调用计数红 |
+ * | ⑫ | **认出来但没这个批次** ⇒ 说「没找到批次 X」（不是空态、不是读失败） | 复用空态文案 ⇒ ⑭ 红 |
  */
 import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
@@ -40,6 +42,8 @@ jest.mock('@tarojs/taro', () => {
       }),
       getCurrentInstance: jest.fn(() => ({ router: { params: {} } })),
       showModal: jest.fn(() => Promise.resolve({ confirm: true, cancel: false })),
+      // 拍照 / 选图（h5 与小程序同 API；识别入口的两个兜底都从这里拿图）
+      chooseImage: jest.fn(() => Promise.resolve({ tempFilePaths: ['/tmp/label.jpg'] })),
     },
     useDidShow: jest.fn(),
   }
@@ -53,12 +57,30 @@ jest.mock('../src/services/workerService', () => ({
 jest.mock('../src/services/workerStockService', () => ({
   searchStockBatches: jest.fn(),
   submitBatchCorrection: jest.fn(),
+  recognizeBatchNo: jest.fn(),
+}))
+
+// 识别入口的四个依赖（页面只接线；顺序与降级判据在 utils/workerStockRecognize 的纯函数里钉）
+jest.mock('../src/utils/inbound/barcodeDecode', () => ({
+  decodeBarcodeFromPhoto: jest.fn(),
+}))
+jest.mock('../src/services/workerInboundService', () => ({
+  getInboundLabel: jest.fn(),
+  uploadInboundPhoto: jest.fn(),
+  uploadInboundPhotoSmart: jest.fn(),
 }))
 
 import Taro from '@tarojs/taro'
 import WorkerStockPage, { EMPTY_HINT } from '../src/pages/worker/stock/index'
 import { fetchCurrentWorker } from '../src/services/workerService'
-import { searchStockBatches, submitBatchCorrection } from '../src/services/workerStockService'
+import {
+  recognizeBatchNo,
+  searchStockBatches,
+  submitBatchCorrection,
+} from '../src/services/workerStockService'
+import { getInboundLabel, uploadInboundPhotoSmart } from '../src/services/workerInboundService'
+import { decodeBarcodeFromPhoto } from '../src/utils/inbound/barcodeDecode'
+import { STOCK_RECOGNIZE_MANUAL_HINT } from '../src/utils/workerStockRecognize'
 import { STOCK_WORKER_LOGIN_REQUIRED, WORKER_LOGIN_ROUTE } from '../src/utils/inbound/gaps'
 import { clearWorkerSession, getWorkerSessionId, setWorkerSessionId } from '../src/utils/workerSession'
 import type { CorrectionReceipt, StockBatchRow } from '../src/utils/workerStock'
@@ -66,6 +88,11 @@ import type { CorrectionReceipt, StockBatchRow } from '../src/utils/workerStock'
 const mockFetchWorker = fetchCurrentWorker as jest.Mock
 const mockSearch = searchStockBatches as jest.Mock
 const mockSubmit = submitBatchCorrection as jest.Mock
+const mockRecognize = recognizeBatchNo as jest.Mock
+const mockDecode = decodeBarcodeFromPhoto as jest.Mock
+const mockUpload = uploadInboundPhotoSmart as jest.Mock
+const mockLabel = getInboundLabel as jest.Mock
+const mockChooseImage = Taro.chooseImage as jest.Mock
 const mockShowModal = Taro.showModal as jest.Mock
 const mockNavigateTo = Taro.navigateTo as jest.Mock
 
@@ -135,6 +162,12 @@ beforeEach(() => {
   })
   mockSubmit.mockResolvedValue({ success: true, data: receipt() })
   mockShowModal.mockResolvedValue({ confirm: true, cancel: false })
+  // 识别入口的默认替身：没解出码 + 没认出来 ⇒ 走「手输」兜底（各用例按需覆盖）
+  mockChooseImage.mockResolvedValue({ tempFilePaths: ['/tmp/label.jpg'] })
+  mockDecode.mockResolvedValue({ text: null, source: null, hint: '' })
+  mockUpload.mockResolvedValue({ success: true, data: { url: 'https://cdn.example.com/label.jpg' } })
+  mockLabel.mockResolvedValue({ success: true, data: { batchNo: null } })
+  mockRecognize.mockResolvedValue({ success: true, data: { fields: [], degraded: true } })
 })
 
 // ═══════════════════════════════════════════════════ ① 未登录
@@ -334,4 +367,90 @@ it('⑪ 读失败 ⇒ 「重试」态；点重试会再读一次并渲染出行�
   await waitFor(() => expect(screen.getByTestId('worker-stock-row-0')).toBeTruthy())
   expect(screen.queryByTestId('worker-stock-error')).toBeNull()
   expect(mockSearch).toHaveBeenCalledTimes(2)
+})
+
+// ═══════════════════════════════════════════════════ ⑫⑬ 拍照识别批次号（issue #8210）
+
+it('⑫ 解不出码 ⇒ 走 vision 兜底；认出批次号后自动定位并打开修正面板（提交仍要工人自己来）', async () => {
+  mockRecognize.mockResolvedValue({
+    success: true,
+    data: {
+      targetType: 'batch',
+      fields: [{ key: 'batch_no', value: 'PC-20261020-0007', source: '[图片识别]' }],
+      degraded: false,
+    },
+  })
+  await renderLoggedIn()
+
+  fireEvent.click(screen.getByTestId('worker-stock-recognize'))
+
+  // 面板自动打开（工人只需填实盘米数 —— 识别只做定位）
+  const panel = await screen.findByTestId('worker-stock-panel')
+  expect(panel.textContent).toContain('PC-20261020-0007')
+  expect(mockChooseImage).toHaveBeenCalled()
+  expect(mockUpload).toHaveBeenCalledTimes(1)
+  expect(mockRecognize).toHaveBeenCalledTimes(1)
+  expect(mockRecognize.mock.calls[0][0]).toEqual(['https://cdn.example.com/label.jpg'])
+  // 定位走**既有**搜索面（不新造读端点）：关键词 = 识别出来的批次号
+  expect(mockSearch).toHaveBeenCalledWith('PC-20261020-0007')
+  // 识别**不提交**：提交仍是工人动作
+  expect(mockSubmit).not.toHaveBeenCalled()
+})
+
+it('⑬ 标签二维码命中 ⇒ 0 次 LLM（不上传、不问 vision），批次号从标签详情来', async () => {
+  mockDecode.mockResolvedValue({
+    text: 'https://app.migaozn.com/i/7K3M9QP2',
+    source: 'h5-dom-canvas',
+    hint: '',
+  })
+  mockLabel.mockResolvedValue({ success: true, data: { batchNo: 'PC-20261020-0007' } })
+  await renderLoggedIn()
+
+  fireEvent.click(screen.getByTestId('worker-stock-recognize'))
+
+  const panel = await screen.findByTestId('worker-stock-panel')
+  expect(panel.textContent).toContain('PC-20261020-0007')
+  expect(mockLabel).toHaveBeenCalledWith('7K3M9QP2')
+  expect(mockUpload).not.toHaveBeenCalled()
+  expect(mockRecognize).not.toHaveBeenCalled()
+})
+
+it('⑭ 认出来但本企业没有这个批次 ⇒ 明说「没找到批次 X」（不是空态、不是读失败）', async () => {
+  mockRecognize.mockResolvedValue({
+    success: true,
+    data: {
+      targetType: 'batch',
+      fields: [{ key: 'batch_no', value: 'PC-20261031-9999', source: '[图片识别]' }],
+      degraded: false,
+    },
+  })
+  mockSearch.mockResolvedValue({ success: true, data: { items: [], total: 0, reasons: REASONS } })
+  setWorkerSessionId('sess-worker-1')
+  render(<WorkerStockPage />)
+  await screen.findByTestId('worker-stock-empty')
+
+  fireEvent.click(screen.getByTestId('worker-stock-recognize'))
+
+  await waitFor(() =>
+    expect(screen.getByTestId('worker-stock-message').textContent).toContain('没找到批次'),
+  )
+  expect(screen.getByTestId('worker-stock-message').textContent).toContain('PC-20261031-9999')
+  expect(screen.getByTestId('worker-stock-message').textContent).toContain('手输')
+  expect(screen.queryByTestId('worker-stock-panel')).toBeNull()
+})
+
+it('⑮ 没认出来 ⇒ 给手输出路（不静默），且不发写请求', async () => {
+  setWorkerSessionId('sess-worker-1')
+  render(<WorkerStockPage />)
+  await screen.findByTestId('worker-stock-row-0')
+
+  fireEvent.click(screen.getByTestId('worker-stock-recognize'))
+
+  await waitFor(() =>
+    expect(screen.getByTestId('worker-stock-message').textContent).toContain(
+      STOCK_RECOGNIZE_MANUAL_HINT,
+    ),
+  )
+  expect(screen.queryByTestId('worker-stock-panel')).toBeNull()
+  expect(mockSubmit).not.toHaveBeenCalled()
 })

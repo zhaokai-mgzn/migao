@@ -23,6 +23,7 @@ from .defense import CASES as _defense
 from .finance import CASES as _finance
 from .hr import CASES as _hr
 from .knowledge import CASES as _knowledge
+from .migration import CASES as _migration
 from .misc import CASES as _misc
 from .onboarding import CASES as _onboarding
 from .ontology import CASES as _ontology
@@ -51,6 +52,7 @@ ALL_CASES = (
     *_finance,
     *_hr,
     *_knowledge,
+    *_migration,
     *_misc,
     *_onboarding,
     *_ontology,

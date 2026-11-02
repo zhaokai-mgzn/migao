@@ -95,7 +95,7 @@ function fakeServer() {
         message: '入库标签不存在',
         statusCode: 404,
         code: 'NOT_FOUND',
-        suggestion: '请核对标签上的短码（8 位，字母与数字；字母 O/I/L 会被当作 0/1 处理）',
+        suggestion: '请核对标签编号（8 位，字母与数字；字母 O/I/L 会被当作 0/1 处理）',
       }
     }
     if (code !== 'ABCD0234') {
@@ -232,7 +232,7 @@ describe('拍照补打主链：解码优先 / 码空间门禁 / 404-410 分开 /
     expect(notFound.kind).toBe('not-found')
     expect(revoked.kind).toBe('revoked')
     if (notFound.kind === 'not-found') {
-      expect(notFound.message).toContain('查无此码')
+      expect(notFound.message).toContain('查无此编号')
       expect(notFound.message).toContain(REPRINT_NOT_FOUND_MESSAGE.slice(0, 6))
     }
     if (revoked.kind === 'revoked') {

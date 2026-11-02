@@ -16,6 +16,14 @@
  *    不再跳三角色登录页 —— 手里那个码不绕路、扫码这一步不被别的页面打断）；
  * ④ 回执 ⇒ 只显示服务端给的「下一道 / 本套已完成」，**前端不猜下一道**。
  *
+ * ## 微信 A 档「扫普通链接二维码打开小程序」（issue #8196）
+ *
+ * 纸上的码 `https://app.migaozn.com/s/<短码>` 永不变（已印出去不可重印）。H5 靠服务端 302 落到
+ * `/b/?t=<token>`；小程序里微信把整条链接放进 `getEnterOptionsSync().query.q`，而**小程序不跟随
+ * 302** ⇒ `/s/<短码>` 这一支先经短链 JSON 面（`GET /s/<短码>/json`）换 token，再走本页既有流程
+ * （未登录 ⇒ 就地登录，登录后继续手里的码）。未知 / 已撤销的码**明确报错**、不重试；读不到时
+ * 退回既有行为（短码原样交给工人扫码端点 —— `ProductionScanService` 本来就认短码）。
+ *
  * ## 与 H5 `/w/` 的关系（收口方向 = #7806）
  *
  * 本页是纸上的码的**落地面**（issue #7879：`/s/` `/o/` 302 → `/b/?t=<token>` ⇒ h5 启动器把 token
@@ -24,8 +32,9 @@
  *
  * ## 不做（照实登记）
  *
- * 机台/裁高、精裁清单、质检区块、成品标签打印属于 `/w/` 的其它面（P2b），本页不渲染；
- * 发货/入库走工作台的其它入口。
+ * 机台/裁高、精裁清单、质检区块属于 `/w/` 的其它面（P2b），本页不渲染；
+ * **成品入库卡 + 入库标签（50×70）打印**已随 issue #8287 搬到本页（服务端随扫码 / 报工回执
+ * 下发 `finished_inbound`，端侧不拼字段）；发货/入库的其它入口仍走工作台。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Input, Text, View } from '@tarojs/components'
@@ -74,16 +83,36 @@ import WorkerLoginForm, {
   type WorkerLoginValues,
 } from '../../../components/WorkerLoginForm'
 import { resolveScanLanding } from '../../../utils/scanInput'
+// 🔴 短链 JSON 面（issue #8196）：A 档「扫普通链接二维码打开小程序」里微信把整条链接放进 `q`，
+// 而**小程序不跟随 302** ⇒ `/s/<短码>` 这一支要先换 token（服务端 `GET /s/{短码}/json`）。
+// 只有这一份调用点（前端不许再拼第二份「短码 ⇒ token」的映射）。
+import {
+  WORKER_SHORT_LINK_INVALID_HINT,
+  resolveWorkerShortLink,
+} from '../../../services/workerShortLinkService'
 // 🔴 小程序专有 API 的 h5 出路（守卫 tests/h5-platform-api-guard.test.ts）：h5 产物里没有
 // 原生扫码 ⇒ 不摆「扫一扫」按钮，手输码这条降级路径仍然可用（不是把页面弄死）。
 import { canUseNativeScan } from '../../../utils/platform'
+// 成品入库卡 + 50×70 入库标签（issue #8287）：数据只来自服务端 `finished_inbound`；
+// 打印走「行式标签」通道（与入库标签的「必留痕」通道分开，见 labelPrint.ts 文件头）。
+import {
+  finishedInboundBinText,
+  finishedInboundQualityText,
+  finishedInboundRows,
+  finishedInboundSpec,
+} from '../../../utils/labels/finishedInbound'
+import { ROWS_LABEL_MISSING, renderRowsLabel } from '../../../utils/labels/rowsLabel'
+import { createH5CanvasFactory, SDK_UNAVAILABLE_HINT } from '../../../utils/inbound/labelPageKit'
+import { printRowsLabel } from '../../../utils/inbound/labelPrint'
+import { probePrintCapability } from '../../../utils/inbound/printCapability'
+import { createPrintTransport } from '../../../utils/inbound/terminalTransport'
 import './index.scss'
 
 /** 读面失败兜底（技术原文留在请求层）。 */
 export const RESOLVE_FAILED_HINT = '扫码结果读取失败，请重试'
 
 /** 手输提示。 */
-export const MANUAL_HINT = '输码（短码 / 加工单号 / 订单号）'
+export const MANUAL_HINT = '输码（加工单号 / 订单号）'
 
 /**
  * 没有码落地时先给的那句话（2026-10-27 用户裁定，issue #7920）：
@@ -120,6 +149,16 @@ export default function WorkerReportPage() {
   const [message, setMessage] = useState('')
   /** 页内错误（只用于「读不到 / 失败」这类非状态机的临时提示） */
   const [phaseError, setPhaseError] = useState('')
+  /** 成品入库标签的打印态（置真期间按钮 disabled，防连点送两张） */
+  const [printBusy, setPrintBusy] = useState(false)
+  const [labelNotice, setLabelNotice] = useState('')
+  /**
+   * 入口解码后的码（issue #8196）：A 档 `q=/s/<短码>` ⇒ **token**；其余入口形态原样。
+   * 入口效果只写它，页面别的分支只读 —— 免得每处都自己再看一遍入口参数（两处推导必然漂）。
+   */
+  const [entryCode, setEntryCode] = useState('')
+  /** 入口本身不可用（未知 / 已撤销的码）：明确上屏，不进报工流程、不重试 */
+  const [entryError, setEntryError] = useState('')
   const requestIdRef = useRef('')
 
   // ① 身份：本机没有工人身份 ⇒ 直接给登录引导（不出任何报工按钮）
@@ -180,36 +219,72 @@ export default function WorkerReportPage() {
   )
 
   /**
+   * 🔴 **入口解码**（issue #8196）：A 档「扫码」在小程序里拿到的是 `getEnterOptionsSync().query.q`
+   * （整条链接 URL-encoded），而**小程序不跟随服务端 302** ⇒ `/s/<短码>` 这一支必须先用短链 JSON
+   * 面换回 token（`GET /s/{短码}/json`）。
+   *
+   * 三种结局，都是**有界**的（`entryResolvedRef` 保证只读一次入口、只解析一次，错误态不重试）：
+   * ① 换到 token ⇒ 走下面的既有报工流程（未登录则先就地登录，登录后继续）；
+   * ② 未知 / 已撤销（404 / 410）⇒ 明确错误上屏（不必等工人填完 PIN 才说「码坏了」）；
+   * ③ 读不到（离线 / 旧后端没有这条路径）⇒ 退回既有行为：短码原样交给工人扫码端点
+   *    （`ProductionScanService` 本来就认短码）—— **已印出去的码不能因为新版前端而作废**。
+   *
+   * 其余入口形态（`…/b/report/?t=<token>`、页面参数 `t`、无码）**原样**，行为与改前逐字一致。
+   */
+  const entryResolvedRef = useRef(false)
+  useEffect(() => {
+    if (entryResolvedRef.current) return
+    entryResolvedRef.current = true
+    const landing = currentEntryLanding()
+    if (landing.kind !== 'report' || landing.code === '') return
+    if (landing.from !== 'link-qr-short') {
+      setEntryCode(landing.code)
+      return
+    }
+    void resolveWorkerShortLink(landing.code).then((res) => {
+      if (res.success && res.data) {
+        setEntryCode(res.data.token)
+        return
+      }
+      if (res.statusCode === 404 || res.statusCode === 410) {
+        setEntryError(WORKER_SHORT_LINK_INVALID_HINT)
+        return
+      }
+      setEntryCode(landing.code)
+    })
+  }, [])
+
+  /**
    * 🔴 **入口即解析**（issue #7879）：h5 启动器 `redirectTo` 带 `?t=<token>`、小程序冷启动的
    * `query.q`（A 档「扫普通链接二维码打开小程序」）/ `query.scene`（B 档小程序码）—— 三条都经
    * `currentEntryLanding()` 归一 ⇒ 工人扫码后**不必再手输一次**。
    *
-   * 只消费返回值（页面里**不判平台**）；身份未就绪时先等（下面的身份 effect 会把它设成
+   * 只消费返回值（页面里**不判平台**）；身份未就绪时先等（上面的身份 effect 会把它设成
    * `scan` / `unauthorized`）。未登录时**就地**登录（下面的 `signIn`），登录成功后由它接着解析。
+   * 手里的码 = `entryCode`（A 档已换过 token；其余形态原样）。
    */
   const entryDoneRef = useRef(false)
   useEffect(() => {
     if (entryDoneRef.current) return
+    if (entryCode === '') return
     if (state.mode === 'unauthorized' || !state.worker) return
-    const landing = currentEntryLanding()
-    if (landing.kind !== 'report' || landing.code === '') {
-      entryDoneRef.current = true
-      return
-    }
     entryDoneRef.current = true
-    void resolve(landing.code)
-  }, [state.mode, state.worker, resolve])
+    void resolve(entryCode)
+  }, [entryCode, state.mode, state.worker, resolve])
 
   /**
    * 🔴 **未登录 + 手里有码 ⇒ 先记下「登录后接着报这个码」**（issue #8194）：走
    * `utils/reportEntry.ts` 的**同一份**一次性记录（不是第二套待报码通道）——
    * 工人填 PIN 期间页面被系统回收 / 刷新，码不会丢；登录成功后由下面的 `signIn` 读回（读到即清）。
+   *
+   * issue #8196：记的是**入口解码后的码**（A 档 = token）—— 死码（404 / 410）不记，
+   * 免得登录成功后白解析一次、再给一遍同样的错误。
    */
   useEffect(() => {
     if (state.mode !== 'unauthorized') return
-    const landing = currentEntryLanding()
-    if (landing.kind === 'report' && landing.code) rememberReportReturn(landing.code)
-  }, [state.mode])
+    if (entryCode === '') return
+    rememberReportReturn(entryCode)
+  }, [state.mode, entryCode])
 
   /**
    * 未登录 ⇒ **就地**登录（issue #8194；不再跳三角色登录页）。
@@ -236,10 +311,9 @@ export default function WorkerReportPage() {
         return { ok: false, message: '登录已成功，但没能读到工人身份，请再试一次' }
       }
       setState(initialState(current.data as CurrentWorker))
-      // 一次性记录读回（读到即清）；存储写失败时退回直接读当前入口（码不能因为记不住就丢）
+      // 一次性记录读回（读到即清）；存储写失败时退回入口解码后的码（码不能因为记不住就丢）
       const back = takeReportReturn()
-      const landing = currentEntryLanding()
-      const code = back.code || (landing.kind === 'report' ? landing.code : '')
+      const code = back.code || entryCode
       // 上面那条入口 effect 不得再解析一次（同一个码只递一次服务端）
       entryDoneRef.current = true
       if (code) {
@@ -249,7 +323,7 @@ export default function WorkerReportPage() {
       }
       return { ok: true, workerName: res.data?.worker_name ?? null }
     },
-    [resolve],
+    [entryCode, resolve],
   )
 
   /** 扫一扫（小程序原生；扫码结果可能是短链 / 带 t 参数 / 裸码）。 */
@@ -294,6 +368,7 @@ export default function WorkerReportPage() {
           nextOperation: (res.data?.next_operation as any) ?? null,
           setCompleted: res.data?.set_completed ?? null,
           setProgress: res.data?.set_progress ?? null,
+          finishedInbound: res.data?.finished_inbound ?? null,
         }),
       )
       setMessage('')
@@ -315,6 +390,44 @@ export default function WorkerReportPage() {
     requestIdRef.current = ''
     setState((prev) => ({ ...initialState(prev.worker), mode: prev.worker ? 'scan' : 'unauthorized' }))
   }, [])
+
+  /** 打印能力（动手前就说清本机能不能打；不把"点了才知道失败"留给工人）。 */
+  const printCapability = useMemo(() => probePrintCapability(), [])
+
+  /**
+   * 打印成品入库标签（50×70）。
+   *
+   * 数据只取服务端 `finished_inbound`；版面 / 渲染 / 送打印三段都走共享件，
+   * 这两类纸**没有**入库标签那样的服务端留痕端点（与 `/w/` 行为一致，见 labelPrint.ts）。
+   */
+  const printFinishedLabel = useCallback(async () => {
+    const finished = state.finishedInbound
+    if (!finished) return
+    setLabelNotice('')
+    if (!printCapability.ok) {
+      setLabelNotice(printCapability.hint)
+      return
+    }
+    setPrintBusy(true)
+    try {
+      const transport = await createPrintTransport()
+      if (!transport) {
+        setLabelNotice(SDK_UNAVAILABLE_HINT)
+        return
+      }
+      const result = await printRowsLabel({
+        capability: printCapability,
+        transport,
+        render: () => renderRowsLabel(finishedInboundSpec(finished), createH5CanvasFactory()),
+      })
+      setLabelNotice(result.ok ? `已送出打印（${result.transportLabel}）` : result.hint)
+    } catch {
+      // 通道加载 / 连接异常：给可行动文案，不把未捕获异常留给工人
+      setLabelNotice(SDK_UNAVAILABLE_HINT)
+    } finally {
+      setPrintBusy(false)
+    }
+  }, [state.finishedInbound, printCapability])
 
   const candidates = useMemo(() => {
     const op = state.view?.operation
@@ -342,6 +455,15 @@ export default function WorkerReportPage() {
           ) : null}
         </View>
       )}
+
+      {/* 🔴 入口本身不可用（issue #8196：未知 / 已撤销的短码）⇒ **明确**说清「码没了、下一步怎么办」。
+          未登录时它与登录表单同屏（回到工人登录，不白屏）；登录后它与手输码同在（还能手输别的单号）。
+          错误态**不重试**（`entryResolvedRef` 保证入口只解析一次）。 */}
+      {entryError ? (
+        <View className='worker-report__notice' data-testid='worker-report-entry-error'>
+          <Text className='worker-report__error'>{entryError}</Text>
+        </View>
+      ) : null}
 
       {state.mode === 'unauthorized' ? (
         <View className='worker-report__login' data-testid='worker-report-login-required'>
@@ -546,6 +668,55 @@ export default function WorkerReportPage() {
           <Button className='worker-report__ghost' data-testid='worker-report-rescan' onClick={rescan}>
             再扫一张
           </Button>
+        </View>
+      ) : null}
+
+      {state.finishedInbound ? (
+        <View className='worker-report__finished' data-testid='worker-report-finished-inbound'>
+          <Text className='worker-report__set' data-testid='worker-report-finished-bin'>
+            成品入库 · 仓位 {finishedInboundBinText(state.finishedInbound)}
+          </Text>
+          <Text className='worker-report__line' data-testid='worker-report-finished-quality'>
+            质检：{finishedInboundQualityText(state.finishedInbound)}
+          </Text>
+          {state.finishedInbound.inbound_no ? (
+            <Text className='worker-report__line' data-testid='worker-report-finished-no'>
+              入库单 {state.finishedInbound.inbound_no}
+            </Text>
+          ) : null}
+          <View className='worker-report__label-rows' data-testid='worker-report-finished-rows'>
+            {finishedInboundRows(state.finishedInbound).map((row) => (
+              <View key={row.key} className='worker-report__label-row'>
+                <Text className='worker-report__label-key'>{row.label}</Text>
+                <Text className='worker-report__label-value'>
+                  {String(row.value ?? '').trim() === '' ? ROWS_LABEL_MISSING : row.value}
+                </Text>
+              </View>
+            ))}
+          </View>
+          {state.finishedInbound.label?.short_code ? (
+            <Text className='worker-report__label-code' data-testid='worker-report-finished-code'>
+              {state.finishedInbound.label.short_code}
+            </Text>
+          ) : null}
+          <Text className='worker-report__hint' data-testid='worker-report-finished-label-hint'>
+            {printCapability.ok ? printCapability.readyHint : printCapability.hint}
+          </Text>
+          <Button
+            className='worker-report__primary'
+            data-testid='worker-report-finished-print'
+            disabled={!printCapability.ok || printBusy}
+            onClick={() => {
+              void printFinishedLabel()
+            }}
+          >
+            {printBusy ? '打印中…' : '打印入库标签（50×70）'}
+          </Button>
+          {labelNotice ? (
+            <Text className='worker-report__notice' data-testid='worker-report-finished-label-notice'>
+              {labelNotice}
+            </Text>
+          ) : null}
         </View>
       ) : null}
 

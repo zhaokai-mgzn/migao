@@ -22,7 +22,8 @@ const GEOMETRY = inboundLabelGeometry()
 const FULL_VIEW = {
   shortCode: 'ABCD2345',
   inboundNo: 'RK-20260926-0001',
-  skuCode: 'MG-1001',
+  productCode: 'MG-1001',
+  skuCode: 'MG-1001-01-28',
   productName: '遮光布',
   colorName: '米白',
   doorWidth: '280cm',
@@ -126,17 +127,26 @@ describe('入库标签版面（50×80mm，issue #7820）', () => {
     expect(noTexts.some((t: string) => t.startsWith('入库'))).toBe(false)
   })
 
-  it('C8 二维码在**底部**且水平居中，所有文字都在它上方（用户 2026-10-26 裁定）', () => {
+  it('C8 二维码在**底部**、水平居中、下方不再印短码，且留 3mm 安全白边（用户 2026-10-26 / 2026-11-01 裁定）', () => {
     const plan = layoutInboundLabel(FULL_VIEW)
     const qr = plan.qr!
     expect(qr.y).toBeGreaterThan(plan.heightPx * 0.5)
     // 居中：左右留白差 ≤ 2px（取整误差）
     expect(Math.abs(qr.x - (plan.widthPx - qr.x - qr.sizePx))).toBeLessThanOrEqual(2)
-    const textOps: any[] = plan.ops.filter((op) => op.kind === 'text' && op.text !== plan.codeText)
+
+    // 所有文字都在二维码**上方**（码区独占下半区）
+    const textOps: any[] = plan.ops.filter((op) => op.kind === 'text')
     for (const op of textOps) expect(op.y).toBeLessThan(qr.y)
-    // 短码在二维码下方（手输兜底的那一行永远在纸面最底）
-    const codeOp: any = plan.ops.find((op) => op.kind === 'text' && op.text === plan.codeText)
-    expect(codeOp.y).toBeGreaterThan(qr.y + qr.sizePx - 1)
+
+    // 🔴 2026-11-01 用户裁定：「移除二维码下面的短码」—— 纸面不再有那行字
+    const codeOp = plan.ops.find((op) => op.kind === 'text' && op.text === plan.codeText)
+    expect(codeOp).toBeUndefined()
+
+    // 🔴 码侧白边 ≥ 10mm（介质矩阵 dotsPerMm × 10）：5mm 真机仍被切（2026-11-01 16:16 用户复看）
+    const bottomGapPx = plan.heightPx - (qr.y + qr.sizePx)
+    expect(bottomGapPx).toBeGreaterThanOrEqual(80)
+    // 码不要占满版心宽（用户 2026-11-01：太大了、缩小再看）—— 上限 ≈40%（≈19mm）
+    expect(qr.sizePx).toBeLessThanOrEqual(Math.round(plan.widthPx * 0.4))
   })
 
   it('C2 🔴 截断判定本身要能红：静默裁切（截了但不加省略号）不算数', () => {
@@ -228,5 +238,13 @@ describe('入库标签版面（50×80mm，issue #7820）', () => {
     const black = calls.filter((c) => c.kind === 'rect').length
     // 只有「铺底 + 缺码占位白框 + 分隔线」三次矩形，没有任何二维码模块
     expect(black).toBe(3)
+  })
+
+  it('C9 纸面「货号」印的是**商品货号**，不是 SKU 的规格编码（用户 2026-11-01 裁定）', () => {
+    // 🔴 红证：把 `pushRow(\`货号 ${skuCode}\`)` 改回去 ⇒ 本判据必红
+    const plan = layoutInboundLabel({ ...FULL_VIEW, productCode: '2659', skuCode: '2659-04-28' } as any)
+    const texts = plan.ops.filter((op) => op.kind === 'text').map((op: any) => op.text)
+    expect(texts).toContain('货号 2659')
+    expect(texts.some((t: string) => t.includes('2659-04-28'))).toBe(false)
   })
 })

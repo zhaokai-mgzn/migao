@@ -1153,6 +1153,7 @@ UNANNOTATED_ENDPOINTS: dict[str, str] = {
     "GET /api/worker/*": "工人端身份（#4716 设计 C11 预留）：`ADMIN_API_REJECTED_ROLES` 已把 worker 挡在 `/api/admin/**` 之外",
     "POST /api/worker/*": "同上",
     "GET /s/{}": "短链跳转（`permitAll`，无租户数据）",
+    "GET /s/{}/json": "短链 JSON 解析面（issue #8196，`permitAll`）：小程序「扫普通链接二维码打开小程序」**不跟随 302** ⇒ 这一跳把短码换回 `{reportPath, token}`；响应键集**恰好**两个（不查企业编码，也不给租户 / 工人 / 订单 / 价格）⇒ 不新增任何 302 之外的数据面；旧 `GET /s/{}` 在**任何** Accept 下仍是 302（印刷品红线：已印出去的码不可重印）。判据 = backend/admin-api/src/test/java/com/migao/admin/controller/WorkerShortLinkControllerTest.java ",
     "GET /i/{}": "入库标签公开入口（issue #5052 P2，`permitAll`）：标签贴在布卷 / 塑料袋上，"
                  "纸上的码对**任何持码人等价** ⇒ 服务端 302 到落地页；**只回跳转、不泄露业务字段**"
                  "（响应体为空，`Location` 里只有落地页 + 短码 + 租户 id）。它与 `/s/{}` 是"

@@ -18,13 +18,16 @@
  *
  * ## 不搬的东西（照实登记）
  *
- * 机台/裁高、精裁清单、质检区块、成品标签打印属于 `/w/` 的其它面（P2b/P2c），本页**不渲染**；
+ * 机台/裁高、精裁清单、质检区块属于 `/w/` 的其它面（P2b/P2c），本页**不渲染**；
  * 报工三态（正常/返工/报废）与裁剪批次（`batch_required`）**保留**——它们直接影响记账口径，
  * 少一个就会把返工记成正常、或让裁剪工序提交被服务端 422 拒。
+ * **成品入库卡 + 入库标签打印**已随 issue #8287 搬到本页（数据 = 服务端随回执下发的
+ * `finished_inbound`，端侧不拼字段；打印走 50×70 行式标签通道）。
  */
 
 /** 缺值占位符（与纸面 / 其它工人面同口径：**不是** 0、不是空串）。 */
 import { codeFromScanText } from './scanInput'
+import type { FinishedInboundView } from './labels/finishedInbound'
 
 export const MISSING = '—'
 
@@ -93,6 +96,8 @@ export interface ReportView {
   /** 报工回执带回来的「下一道」/「本套是否已完成」 */
   next_operation?: ReportOperation | null
   set_completed?: boolean | null
+  /** 成品入库块（issue #8287；服务端注入，端侧只渲染） */
+  finished_inbound?: FinishedInboundView | null
 }
 
 /** 本页状态。 */
@@ -112,6 +117,8 @@ export interface ReportState {
   batchNo: string | null
   /** 报工回执（只来自服务端；`null` = 本屏还没报过） */
   receipt: string | null
+  /** 成品入库块（service 下发；`null` = 本屏没有入库动作 ⇒ 整卡不渲染） */
+  finishedInbound: FinishedInboundView | null
 }
 
 /** 初始态（未登录、待扫码）。 */
@@ -127,6 +134,7 @@ export function initialState(worker: ReportState['worker'] = null): ReportState 
     workType: DEFAULT_WORK_TYPE,
     batchNo: null,
     receipt: null,
+    finishedInbound: null,
   }
 }
 
@@ -164,6 +172,7 @@ export function applyScan(state: ReportState, view: ReportView | null): ReportSt
     submitting: false,
     receipt: null,
     batchNo: null,
+    finishedInbound: view?.finished_inbound ?? null,
   }
 }
 
@@ -277,7 +286,13 @@ export function receiptLine(receipt: {
  */
 export function applyReceipt(
   state: ReportState,
-  receipt: { nextOperation?: ReportOperation | null; setCompleted?: boolean | null; setProgress?: any },
+  receipt: {
+    nextOperation?: ReportOperation | null
+    setCompleted?: boolean | null
+    setProgress?: any
+    /** 本笔的成品入库块（`null` / 缺省 ⇒ 保留上一屏的块，不因回执缺键而闪掉） */
+    finishedInbound?: FinishedInboundView | null
+  },
   message?: string,
 ): ReportState {
   const base: ReportView = { ...(state.view ?? {}) }
@@ -302,6 +317,7 @@ export function applyReceipt(
     notice: message ?? null,
     error: null,
     batchNo: null,
+    finishedInbound: receipt?.finishedInbound ?? state.finishedInbound,
   }
 }
 

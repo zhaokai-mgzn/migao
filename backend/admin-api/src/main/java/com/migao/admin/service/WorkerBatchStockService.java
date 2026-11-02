@@ -119,6 +119,52 @@ public class WorkerBatchStockService {
     private final BatchStocktakeService batchStocktakeService;
     private final ProductMapper productMapper;
     private final UserMapper userMapper;
+    private final ImageRecognitionClient imageRecognitionClient;
+
+    /**
+     * 识别 target：批次号（与 ai-agent {@code app/vision/targets.py::TARGET_FIELDS["batch"]} 逐字同名）。
+     *
+     * <p>🔴 不复用 {@code inbound}：那是「上游标签 → 品名 / 色号 / 米数 → 入库」的字段面
+     * （要经 SKU 匹配门禁写库存），而这里只问一件事「图上印的批次号是多少」——
+     * 两个 target 的图、目标字段、风险都不同（同 issue #5321 的既有裁定）；混用会让
+     * 修复批次号的硬闸顺手改了入库口径。</p>
+     */
+    public static final String TARGET_BATCH = "batch";
+
+    /** 识别缺图（400）：与 stocktake 的入参校验同口径 —— 说清原因 + 怎么改。 */
+    public static final String ERR_RECOGNITION_NO_IMAGES = "WORKER_STOCK_RECOGNITION_NO_IMAGES";
+
+    /** 识别图太多（400）：上限复用拍照入库的同一条常量（不各写一份）。 */
+    public static final String ERR_RECOGNITION_TOO_MANY_IMAGES = "WORKER_STOCK_RECOGNITION_TOO_MANY_IMAGES";
+
+    /**
+     * 拍照识别批次号（issue #8210）—— 本类**只做一道准入 + 一次原样搬运**。
+     *
+     * <p>为什么这么薄（而不是在 Java 侧解析字段表）：字段 schema、消歧规则、`[图片识别]` 标注、
+     * 批次号形态硬闸全在 ai-agent 的 {@code app/vision/}（那里是**单一真值**）⇒
+     * Java 侧再读一遍 {@code batch_no} 就是第二份口径。端侧按键取值即可
+     * （与 {@code WorkerShipmentController#recognize} 同形）。</p>
+     *
+     * <p>🔴 <b>不落库、不提交</b>：本方法不注入任何写面，识别结果只回屏上供工人核对；
+     * 真正改账仍是 {@link #correct}（且要工人二次确认）。</p>
+     *
+     * @param images 已上传的照片 URL（1~{@link WorkerInboundService#MAX_IMAGES} 张）
+     * @throws BusinessException 400：没有图 / 图太多（**都在远端调用之前**，不烧 vision）
+     */
+    public ImageRecognitionClient.ImageRecognitionResult recognize(List<String> images) {
+        if (images == null || images.isEmpty()) {
+            throw new BusinessException(ERR_RECOGNITION_NO_IMAGES,
+                    "缺少照片：请先拍一张带批次号的标签 / 布卷照", 400,
+                    "识别只是预填：不方便拍照时可以直接在搜索框手输批次号（或货号 / 缸号 / 入库单号）");
+        }
+        if (images.size() > WorkerInboundService.MAX_IMAGES) {
+            throw new BusinessException(ERR_RECOGNITION_TOO_MANY_IMAGES,
+                    String.format("一次最多识别 %d 张照片（收到 %d 张）", WorkerInboundService.MAX_IMAGES,
+                            images.size()), 400,
+                    "请只拍带批次号的那一张（多拍不会更准，只会多等一轮）");
+        }
+        return imageRecognitionClient.recognize(TARGET_BATCH, images);
+    }
 
     /**
      * 按批次搜（批次号 / 旧系统批次号 / 货号 / 缸号 / 入库单号任一段命中）。

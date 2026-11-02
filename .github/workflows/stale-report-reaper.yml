@@ -76,6 +76,23 @@ jobs:
           WHY="$(printf '%s\n' "${OUT}" | sed -n 's/^MIGAO-REAPER-SUMMARY .*why=//p' | tail -1)"
           mechanism_liveness_declare --seen "${SEEN:-unknown}" --acted "${ACTED:-unknown}" \
             --why "${WHY:-no-declaration}"
+          # ── 退出码语义（issue #8218 P1-04，2026-10-31 上线审计）────────────────────────
+          # 机制体 `scripts/stale_report_reaper.py` 的常量：
+          #   `EXIT_OK, EXIT_USAGE, EXIT_ACTED, EXIT_UNKNOWN = 0, 1, 2, 3`
+          # ⇒ **rc=2 = EXIT_ACTED = 成功关掉了陈旧报告**（干完了活），而改前本步把它**原样透传**
+          #   ⇒ 「它每成功干活一轮，腿就红一次」。实测（审计引用）：
+          #     run 41148096721 日志 `MIGAO-REAPER-SUMMARY seen=3 acted=1 rc=2 why=可关 1 条，实关 1 条`
+          #     下一行就是 `##[error]Process completed with exit code 2`。
+          # 这是**假红**（与 `migao-acceptance` 的「假红」同形）：真失败与「干完了」长得一样
+          # ⇒ 告警疲劳 ⇒ 真的坏了也没人看。
+          # 修法：**2 → 0**（只进读数：seen/acted/why 已经在上面交给发射器了）；
+          #       **1（用法错）/ 3（无法判定）仍然原样判红** —— 3 不得当 0 读。
+          # 判据（会红）：tests/unit_ci_workflows/test_reaper_leg_exit_mapping.py
+          #   （它把**本 step 的 run 正文**抽出来、用替身 python3 真跑一遍：rc∈{0,2} ⇒ 绿，rc∈{1,3} ⇒ 红）
+          if [ "${RC}" = "2" ]; then
+            echo "::notice::stale-report-reaper rc=2 = EXIT_ACTED（本轮**成功**收口了陈旧报告：seen=${SEEN:-unknown} acted=${ACTED:-unknown}）⇒ 本腿判绿（rc 只作读数，不再当失败）"
+            RC=0
+          fi
           exit ${RC}
 
       # ── 存活读数（issue #5326 判据 1 / 4）──────────────────────────────────────

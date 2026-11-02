@@ -1,4 +1,4 @@
-// case_ids: BM-053, BM-040
+// case_ids: BM-053, BM-040, BM-058
 /**
  * **扫码报工落地面：`/b/?t=<token>` 被消费，且与 `?code=`（补打页）不串道**（issue #7879）
  *
@@ -377,13 +377,19 @@ describe('入口解析：六形态一张表（H5 与小程序共用同一个解�
 
   it('形态 3：扫普通链接二维码进小程序 `q`（A 档 = **主路径**，URL-encoded 完整链接）⇒ 报工页', () => {
     const link = 'https://app.migaozn.com/s/7K3M9QP2'
+    // 🔴 issue #8196：`/s/<短码>` 是**部位短链** ⇒ `from: 'link-qr-short'`（小程序不跟随 302，
+    // 这一支要先经短链 JSON 面换 token，见 tests/worker-report-wechat-qr.test.tsx）
     expect(resolveScanLanding({ query: { q: encodeURIComponent(link) } })).toEqual({
       kind: 'report',
       code: '7K3M9QP2',
+      from: 'link-qr-short',
+    })
+    // 完整链接里带 302 落点那种形态（`/b/?t=`）也要取出 token —— 那是**已带 token** 的落点，不必换
+    expect(resolveScanLanding({ q: encodeURIComponent(`https://app.migaozn.com/b/?t=${TOKEN}`) })).toEqual({
+      kind: 'report',
+      code: TOKEN,
       from: 'link-qr',
     })
-    // 完整链接里带 302 落点那种形态（`/b/?t=`）也要取出 token
-    expect(resolveScanLanding({ q: encodeURIComponent(`https://app.migaozn.com/b/?t=${TOKEN}`) }).code).toBe(TOKEN)
     // 🔴 顺序：A 档（`q`）优先于 B 档（`scene`）—— 两个都在时以 `q` 为准
     expect(resolveScanLanding({ query: { q: encodeURIComponent(link), scene: 'ZZZZZZZZ' } }).code).toBe('7K3M9QP2')
   })
@@ -515,7 +521,7 @@ describe('小程序侧：同一份代码、同一个解析器（无 `window` 也
       query: { q: encodeURIComponent('https://app.migaozn.com/s/7K3M9QP2') },
     })
     // 小程序里没有 `window`（jsdom 有，但这条路一个字节都不读它）
-    expect(currentEntryLanding()).toEqual({ kind: 'report', code: '7K3M9QP2', from: 'link-qr' })
+    expect(currentEntryLanding()).toEqual({ kind: 'report', code: '7K3M9QP2', from: 'link-qr-short' })
   })
 
   it('B 档：小程序码 `query.scene`（8 位短码）⇒ 报工页；没有进入参数 ⇒ 不去任何页', () => {

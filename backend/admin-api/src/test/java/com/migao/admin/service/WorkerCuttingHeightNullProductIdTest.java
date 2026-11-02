@@ -429,7 +429,7 @@ class WorkerCuttingHeightNullProductIdTest {
                                 + "2026-10-25（issue #7568）：建单补 SKU 归属校验后下移 15 行（187→202），判定依据未变")),
                 // ── 存量：读法本身与表可变性无关（getOrDefault / containsKey） ──
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/DailyBriefingService.java|skusByProduct",
-                        new IndexSite("skusByProduct", "costSkusByProduct", "line.getProductId()", "line.getProductId()", 1025,
+                        new IndexSite("skusByProduct", "costSkusByProduct", "line.getProductId()", "line.getProductId()", 1053,
                                 Verdict.READ_IS_NULL_TOLERANT, "getOrDefault(line.getProductId(), List.of()) ⇒ 空键安全")),
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/FinanceService.java|refundMap",
                         new IndexSite("refundMap", "sumRefundByOrder", "o.getId()", "o.getId()", 323,
@@ -443,7 +443,7 @@ class WorkerCuttingHeightNullProductIdTest {
                                 Verdict.READ_IS_NULL_TOLERANT, "getOrDefault(c.getId(), 0L) ⇒ 空键安全")),
                 // ── 存量：get + 可能为 null 的键 ⇒ 由调用点显式短路（本包不改这些文件，仅登记） ──
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/ProductionScanService.java|specByItemId",
-                        new IndexSite("specByItemId", "specByItemIdOf", "op.getOrderItemId()", "op.getOrderItemId()", 692,
+                        new IndexSite("specByItemId", "specByItemIdOf", "op.getOrderItemId()", "op.getOrderItemId()", 732,
                                 Verdict.KEY_NULLABLE,
                                 "调用点已 `specByItemId == null ? null : ...get(op.getOrderItemId())` 短路"
                                         + "（2026-10-24 / issue #7647：`resolve()` 追加批次三键后行号 594→603，判定未变）"
@@ -452,7 +452,10 @@ class WorkerCuttingHeightNullProductIdTest {
                                         // 2026-10-28 / issue #7965：`set_overview` 改走 workerSetOverview（+1 行注释），
                                         // 行号 691→692，判定未变 ⇒ 只更行号。
                                         + "（2026-10-26 / issue #7845：扫码视图追加成品入库块后行号 688→691）"
-                                        + "（2026-10-28 / issue #7965：`set_overview` 走 workerSetOverview 后行号 691→692）")),
+                                        + "（2026-10-28 / issue #7965：`set_overview` 走 workerSetOverview 后行号 691→692）"
+                                        // 2026-11-01 / issue #8354：加工单码「能定位就免选」在 resolve() 里加了
+                                        // solePositionOf 短路，行号 692→732，判定（KEY_NULLABLE + 调用点短路）未变。
+                                        + "（2026-11-01 / issue #8354：加工单码免选短路后行号 692→732）")),
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java|itemGroupKey",
                         new IndexSite("itemGroupKey", "itemIdToGroupKey", "itemGroupKey.get(spec.orderItemId())",
                                 "spec.orderItemId()", 290,

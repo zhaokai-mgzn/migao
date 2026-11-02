@@ -15,6 +15,15 @@
 -- 这里提供的是**可复核、可先看数、可分片**的脚本：由运维/值班人**显式执行**；
 -- 若要在运维自己的调度系统里跑，那是他们的值守面，不在本仓管辖范围内。
 --
+-- ## 读数（「多久没清了 / 表多大」—— 只读，issue #8218 P1-11）
+--
+-- 删除仍是**人工执行**；「该不该清」的读数由读数器给（三态 rc 0/1/3）：
+--
+--   python3 scripts/db_growth_readout.py      # 需要 DATABASE_URL；缺环境变量 ⇒ rc=3「无法判定」
+--
+-- 口径（期望阈值 / 告警口径）：`docs/deployment/production-deployment.md` 的 §5.3；
+-- 只读 SQL：`deploy/ops/db-growth-readout.sql`；判据 = `tests/unit_ci_workflows/test_ops_readouts.py`。
+--
 -- ## 用法
 --
 --   # ① 先看量（只读，默认 mode=count）

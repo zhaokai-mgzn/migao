@@ -34,7 +34,7 @@ import {
   type PendingPhoto,
 } from '../../../utils/inbound/barcodeDecode'
 import { classifyManualCode, type LabelCodeReading } from '../../../utils/inbound/codeSpace'
-import { layoutInboundLabel, inboundLabelPageSize, type InboundLabelView } from '../../../utils/inbound/labelLayout'
+import type { InboundLabelView } from '../../../utils/inbound/labelLayout'
 import { renderInboundLabel } from '../../../utils/inbound/labelCanvas'
 import {
   SDK_UNAVAILABLE_HINT,
@@ -50,6 +50,7 @@ import {
   type PrintCapability,
 } from '../../../utils/inbound/printCapability'
 import { printerLink, printerLinkText } from '../../../utils/inbound/printerLink'
+import { showsPrinterLinkHint } from '../../../utils/inbound/terminalTransport'
 import {
   MANUAL_CODE_PLACEHOLDER,
   type LabelCodeSpace,
@@ -96,6 +97,9 @@ export default function WorkerReprintPage() {
   const [detailState, setDetailState] = useState<ReprintDetailState | null>(null)
   const [label, setLabel] = useState<InboundLabelView | null>(null)
   const [previewUrl, setPreviewUrl] = useState('')
+  // 预览占位比：外层按**画布的宽高比**撑高，内层铺满 ⇒ 屏上看得到整张标签（含二维码）
+  const [previewWidthPx, setPreviewWidthPx] = useState(0)
+  const [previewHeightPx, setPreviewHeightPx] = useState(0)
   const [printState, setPrintState] = useState('')
 
   // 能力探测**在动手前**做（照 P3：iOS / 非 HTTPS / 无蓝牙 / 非 h5 各有各的文案）
@@ -142,6 +146,8 @@ export default function WorkerReprintPage() {
       // 预览与送打印**同一份**绘制计划（同族共用件；画不出来时它会给一句明说）
       const preview = renderLabelPreview(state.view)
       setPreviewUrl(preview.url)
+      setPreviewWidthPx(preview.widthPx)
+      setPreviewHeightPx(preview.heightPx)
       if (preview.notice) setNotices((prev) => [...prev, preview.notice])
       setStep('detail')
     } finally {
@@ -217,7 +223,7 @@ export default function WorkerReprintPage() {
     setPrintState('')
     const shortCode = String(label?.shortCode || '').trim()
     if (!shortCode) {
-      setError('这张标签没有短码，不能打印（可回电脑端补打）。')
+      setError('这张标签没有编号，不能打印（可回电脑端补打）。')
       return
     }
     setBusy(true)
@@ -242,7 +248,7 @@ export default function WorkerReprintPage() {
     setBusy(false)
     if (result.ok) {
       // 计数**原样转发**服务端回执（前端不 +1、不累加）
-      setPrintState(`已送出打印（系统记第 ${result.printCount} 次）`)
+      setPrintState(`已送出打印（第 ${result.printCount} 次）`)
       const refreshed = await getInboundLabel(shortCode)
       if (refreshed.success && refreshed.data) setLabel(refreshed.data)
       return
@@ -252,7 +258,6 @@ export default function WorkerReprintPage() {
   }, [label, capability])
 
   /** 纸面版心（与送打印同一份绘制计划；页面不另算一套像素） */
-  const labelPlan = useMemo(() => layoutInboundLabel(label || {}), [label])
   const blockedTestId = reading ? BLOCKED_TEST_IDS[reading.space] : ''
 
   if (!workerReady) {
@@ -282,7 +287,7 @@ export default function WorkerReprintPage() {
       <View className='admin-surface__header'>
         <Text className='admin-surface__title'>拍照补打标签</Text>
         <Text className='admin-surface__subtitle'>
-          拍观星台入库标签（或手输 8 位短码）→ 看单据详情 → 补打一张新标签
+          拍入库标签上的二维码（或手输标签编号）→ 看单据详情 → 补打一张新标签
         </Text>
       </View>
 
@@ -299,12 +304,15 @@ export default function WorkerReprintPage() {
         ))}
 
         {/* 🔴 打印能力缺口**动手前**就在屏上（不是打完才失败）：本机能不能打印，在拍照之前就说清 */}
-        <Text className='admin-card__note' data-testid='reprint-print-capability'>
-          {capability.ok ? capability.readyHint || PRINT_READY_HINT : capability.hint}
-        </Text>
+        {/* 只在**打不了**时说原因；能打就不再常驻一行说明（用户 2026-11-01：只留预览和按钮） */}
+        {!capability.ok && (
+          <Text className='admin-card__note' data-testid='reprint-print-capability'>
+            {capability.hint}
+          </Text>
+        )}
 
         {/* 连接状态（**运行期事实**）：能打 ≠ 已连上（机器可能没开机）—— 两件事分开显示 */}
-        {capability.ok && (
+        {capability.ok && showsPrinterLinkHint() && (
           <Text className='admin-card__note' data-testid='reprint-printer-link'>
             {printerLinkText(link)}
           </Text>
@@ -316,7 +324,7 @@ export default function WorkerReprintPage() {
               <Text>拍照（对着标签上的二维码）</Text>
             </View>
             <Text className='admin-card__meta'>
-              二维码拍清楚，手机当场就能认出来；标签磨花认不出也没关系 —— 可以手输短码
+              请把二维码拍清楚、拍完整；标签磨花认不出也可以手输编号
             </Text>
             <View
               className={`admin-action admin-action--gold${busy || !photo ? ' admin-action--disabled' : ''}`}
@@ -329,14 +337,14 @@ export default function WorkerReprintPage() {
               <Text>识别这张照片</Text>
             </View>
             <View className='admin-action' data-testid='reprint-to-manual' onClick={() => setStep('manual')}>
-              <Text>标签磨花了？手输短码</Text>
+              <Text>标签磨花了？手输编号</Text>
             </View>
           </View>
         )}
 
         {step === 'manual' && (
           <View className='admin-card' data-testid='reprint-step-manual'>
-            <Text className='admin-card__title'>手输标签上的 8 位短码</Text>
+            <Text className='admin-card__title'>手输标签编号（8 位）</Text>
             <Input
               className='admin-input'
               data-testid='reprint-manual-code'
@@ -376,7 +384,7 @@ export default function WorkerReprintPage() {
           <View className='admin-card' data-testid='reprint-not-found'>
             <Text className='admin-card__note'>{detailState.message}</Text>
             <View className='admin-action' data-testid='reprint-back-to-manual' onClick={() => setStep('manual')}>
-              <Text>重新输入短码</Text>
+              <Text>重新输入编号</Text>
             </View>
           </View>
         )}
@@ -395,21 +403,16 @@ export default function WorkerReprintPage() {
 
         {step === 'detail' && label && (
           <View className='admin-card' data-testid='reprint-step-detail'>
-            <Text className='admin-card__title'>入库标签 {inboundLabelPageSize()}</Text>
-            <Text className='admin-card__meta'>
-              短码 {label.shortCode || '（缺失）'} · 单号 {label.inboundNo || '-'} · 已打印{' '}
-              {label.printCount ?? 0} 次
-            </Text>
-            <Text className='admin-card__meta' data-testid='reprint-detail-fields'>
-              {label.productName || '未填品名'} · 色号 {label.colorName || '-'}
-              {label.doorWidth ? ` / ${label.doorWidth}` : ''} · 米数 {label.quantity ?? '-'} · 货号{' '}
-              {label.skuCode || '-'} · 缸号 {label.dyeLot || '-'}
-            </Text>
-            <Text className='admin-card__meta'>
-              批次 {label.batchNo || '-'} · 供应商 {label.supplier || '-'} · 入库{' '}
-              {label.inboundDate || '-'}
-            </Text>
-            {previewUrl !== '' && <Image className='admin-label-preview' src={previewUrl} mode='widthFix' />}
+            {/* 2026-11-01 用户裁定：「把入库标签上面的那段文字移除掉，只留打印预览和打印按钮」 */}
+            {previewUrl !== '' && (
+              <View
+                className='admin-label-preview-box'
+                data-testid='label-preview-box'
+                style={{ paddingBottom: `${Math.round((previewHeightPx * 100) / Math.max(1, previewWidthPx))}%` }}
+              >
+                <Image className='admin-label-preview' src={previewUrl} mode='aspectFit' />
+              </View>
+            )}
             <View
               className={`admin-action admin-action--gold${busy || !capability.ok ? ' admin-action--disabled' : ''}`}
               data-testid='reprint-print'
@@ -425,9 +428,6 @@ export default function WorkerReprintPage() {
                 {printState}
               </Text>
             )}
-            <Text className='admin-card__meta' data-testid='reprint-label-bound'>
-              版心 {labelPlan.widthPx} × {labelPlan.heightPx} px（1:1 送打印）
-            </Text>
           </View>
         )}
       </View>
