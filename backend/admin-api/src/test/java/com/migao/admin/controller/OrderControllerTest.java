@@ -430,8 +430,8 @@ class OrderControllerTest extends BaseControllerTest {
                             .content(logisticsBody("", "", null, "none")))
                     .andExpect(status().isOk());
 
-            verify(orderLogisticsService).save(org.mockito.ArgumentMatchers.<OrderLogistics>argThat(l ->
-                    "none".equals(l.getShippingMethod())));
+            verify(orderLogisticsService).createLogistics(eq(ORDER_ID), any(), eq(""), eq(""),
+                    org.mockito.ArgumentMatchers.argThat(d -> "none".equals(d.shippingMethod())));
         }
 
         @Test
@@ -445,7 +445,7 @@ class OrderControllerTest extends BaseControllerTest {
                             .content(logisticsBody("顺丰速运", "SF1", null, "express")))
                     .andExpect(status().isUnprocessableEntity());
 
-            verify(orderLogisticsService, never()).save(any(OrderLogistics.class));
+            verify(orderLogisticsService, never()).createLogistics(any(), any(), any(), any(), any());
             verify(orderLogisticsService, never()).updateById(any(OrderLogistics.class));
         }
 
@@ -461,7 +461,7 @@ class OrderControllerTest extends BaseControllerTest {
                             .content(logisticsBody("顺丰速运", "", null, "logistics")))
                     .andExpect(status().isUnprocessableEntity());
 
-            verify(orderLogisticsService, never()).save(any(OrderLogistics.class));
+            verify(orderLogisticsService, never()).createLogistics(any(), any(), any(), any(), any());
             verify(orderLogisticsService, never()).updateById(any(OrderLogistics.class));
         }
 
@@ -477,9 +477,9 @@ class OrderControllerTest extends BaseControllerTest {
                             .content(logisticsBody("顺丰速运", "SF20260915001", "王五", "logistics")))
                     .andExpect(status().isOk());
 
-            verify(orderLogisticsService).save(org.mockito.ArgumentMatchers.<OrderLogistics>argThat(l ->
-                    "logistics".equals(l.getShippingMethod())
-                            && "SF20260915001".equals(l.getTrackingNo())));
+            verify(orderLogisticsService).createLogistics(eq(ORDER_ID), any(), eq("顺丰速运"),
+                    eq("SF20260915001"), org.mockito.ArgumentMatchers.argThat(d ->
+                            "logistics".equals(d.shippingMethod()) && "王五".equals(d.shipperName())));
         }
 
         // ── ⑤ 兼容性钉子（别人收紧规则时会**当场红**）──────────────────────────────
@@ -543,8 +543,8 @@ class OrderControllerTest extends BaseControllerTest {
                             .content(logisticsBody("顺丰速运", "SF20260915001", "王五")))
                     .andExpect(status().isOk());
 
-            verify(orderLogisticsService).save(org.mockito.ArgumentMatchers.<OrderLogistics>argThat(l ->
-                    "SF20260915001".equals(l.getTrackingNo()) && "王五".equals(l.getShipperName())));
+            verify(orderLogisticsService).createLogistics(eq(ORDER_ID), any(), eq("顺丰速运"),
+                    eq("SF20260915001"), org.mockito.ArgumentMatchers.argThat(d -> "王五".equals(d.shipperName())));
         }
 
         @Test
@@ -559,8 +559,8 @@ class OrderControllerTest extends BaseControllerTest {
                             .content(logisticsBody("中通快递", "ZT20260915002", null)))
                     .andExpect(status().isOk());
 
-            verify(orderLogisticsService).save(org.mockito.ArgumentMatchers.<OrderLogistics>argThat(l ->
-                    "李四".equals(l.getShipperName())));
+            verify(orderLogisticsService).createLogistics(eq(ORDER_ID), any(), eq("中通快递"),
+                    eq("ZT20260915002"), org.mockito.ArgumentMatchers.argThat(d -> "李四".equals(d.shipperName())));
         }
 
         @Test
@@ -634,7 +634,7 @@ class OrderControllerTest extends BaseControllerTest {
                             .content(logisticsBody("顺丰速运", "SF20260915005", "王五")))
                     .andExpect(status().isUnprocessableEntity());
 
-            verify(orderLogisticsService, never()).save(any(OrderLogistics.class));
+            verify(orderLogisticsService, never()).createLogistics(any(), any(), any(), any(), any());
         }
     }
 }

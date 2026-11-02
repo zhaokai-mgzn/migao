@@ -410,7 +410,8 @@ class OrderIntegrationTest {
         OrderDetailResponse detail = buildOrderDetail(TEST_ORDER_ID, "ORD20250425001", "shipped");
         when(orderService.getOrderById(eq(TEST_ORDER_ID), isNull())).thenReturn(detail);
         when(orderLogisticsService.getByOrderId(TEST_ORDER_ID)).thenReturn(List.of());
-        when(orderLogisticsService.save(any(OrderLogistics.class))).thenReturn(true);
+        // 建行走 createLogistics（内部委托 OrderLogisticsWriter，issue #7398）—— 本用例只验状态校验接线
+        when(orderLogisticsService.createLogistics(any(), any(), any(), any(), any())).thenReturn(null);
 
         // When & Then
         mockMvc.perform(put("/api/admin/orders/" + TEST_ORDER_ID + "/logistics")

@@ -5,6 +5,7 @@ import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.OrderLogistics;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.service.OrderLogisticsService;
+import com.migao.admin.service.OrderLogisticsWriter;
 import com.migao.admin.service.OrderService;
 import com.migao.admin.service.OrderShipmentService;
 import com.migao.admin.service.OrderStatusTransitions;
@@ -509,18 +510,12 @@ public class OrderController {
             orderLogisticsService.backfillShippedAtIfAbsent(id, tenantId);
             orderLogisticsService.updateById(logistics);
         } else {
-            // 创建新的物流记录
-            OrderLogistics logistics = OrderLogistics.builder()
-                    .tenantId(tenantId)
-                    .orderId(id)
-                    .logisticsCompany(logisticsCompany)
-                    .trackingNo(trackingNo)
-                    .logisticsType(logisticsType != null ? logisticsType : "express")
-                    .shippingMethod(shippingMethod)
-                    .shipperName(shipperName)
-                    .status("in_transit")
-                    .build();
-            orderLogisticsService.save(logistics);
+            // 创建新的物流记录（issue #7398：建行写面**收敛到** OrderLogisticsWriter 唯一入口）——
+            // 并发两次「首次建行」撞 (tenant_id, order_id) 部分唯一索引时收敛为更新，不冒泡成 5xx；
+            // 顺带把首次发货时刻写进 shipped_at（与 #6276 口径、与 writer 的 insert 分支同一件事）。
+            orderLogisticsService.createLogistics(id, tenantId, logisticsCompany, trackingNo,
+                    new OrderLogisticsWriter.ShippingDetails(shipperName,
+                            logisticsType != null ? logisticsType : "express", shippingMethod));
         }
 
         return ApiResponse.success();
