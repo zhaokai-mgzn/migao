@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，173 条）
+# 域: misc（源: cases/misc.yml，174 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3189,6 +3189,24 @@ _CASE_MC_130 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-129 [NORMAL] LLM 主凭据失效（401）必须成为**可观测事件**：恰好一条可行动 ERROR + 独立只读探针 `/internal/llm-health`（ok=false ⇒ 503），`/ready` 语义不变（issue #8084）（源: cases/misc.yml）──
+_CASE_MC_129 = EvalCase(
+    id='MC-129',
+    legacy_id='',
+    title='LLM 主凭据失效（401）必须成为**可观测事件**：恰好一条可行动 ERROR + 独立只读探针 `/internal/llm-health`（ok=false ⇒ 503），`/ready` 语义不变（issue #8084）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['DeepSeek 主凭据在供应商侧失效时，黄金策 / 元元每一轮都只回一句兜底话术，而 `/ready`、`/health`、`docker ps` 全绿 —— 凭什么能提前发现，而不是靠用户投诉？'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·失败是可观测事件（会红）**：LLM 调用抛 401（`AuthenticationError` 形态，带 `status_code`）⇒ 进程级 `broken` 标志置位，日志**恰好 1 条** `[llm_health]` ERROR，且带 `error_class=authentication_error` / `status=401` / `PRIMARY_API_KEY` 可行动提示；**连续 3 次**失败仍只有 1 条（跃变语义，不是逐轮刷屏）。402 额度类同口径（`error_class=quota_exceeded`）；超时 / 5xx **不**置标志。执行点 = backend/ai-agent-service/tests/test_llm_health.py::TestCredentialFailureBecomesOneObservableEvent', '🔴 **判据 2·探针能区分「服务活着但 AI 不可用」（会红）**：`GET /internal/llm-health` 在 401 下返回 **503** + `{ok, last_error_class, last_ok_at, cached_at}` 四字段（`ok=false`）；健康 key ⇒ 200 + `ok=true` + `last_ok_at` 为 ISO-8601 UTC。执行点 = 同文件::TestReadOnlyProbe', '🔴 **判据 3·探针 60s 缓存（会红）**：同一分钟内连打三次端点 ⇒ 底层只发**一次**真实调用；`force=True` 才再发一次（运维手工复探出口）。执行点 = 同文件::TestReadOnlyProbe::test_probe_is_cached_for_a_minute', '🔴 **判据 4·恢复自愈 + 事件可重新武装（会红）**：401 → 真成功 ⇒ 清标志（探针转绿，换 key 后不必重启）；再 401 ⇒ **重新**落一条（第二次事故不能被吞）。执行点 = 同文件::TestRecovery', '🔴 **判据 5·`/ready` 语义不变（会红，本单明确不做）**：`/ready` 响应仍是 `{status, service}` 两个字段、**不**调用 LLM（否则供应商抖动会被放大成容器 unhealthy → 重启 churn）。执行点 = 同文件::TestReadySemanticsUnchanged', '🔴 **判据 6·接线（会红）**：`_PassthroughOpenAI` / `_PassthroughDeepSeek` 两个模型类都真的挂上凭据健康混入（`ainvoke` 解析到混入实现），且 `ChatDeepSeek` 仍先于 `ChatOpenAI`（payload 口径不回退）。执行点 = 同文件::TestWiring', '🔴 **判据 7·兜底句路径 vs 真成功路径分开断言（会红）**：真入口 `execute_skill` 上，401 ⇒ 用户仍是兜底句**且**留痕；真成功 ⇒ 不回兜底句**且**不留痕。执行点 = 同文件::TestFallbackPathVsSuccessPath', '🔴 **判据 8·类级元守卫（会红）**：backend/ai-agent-service/app/main.py 的应用层探针台账 ⇄ 实现**双向相等** —— 新增探针未登记即红（防止再造一个「只探 DB 的 `/ready`」冒充 AI 可用）。执行点 = 同文件::TestProbeDeclarations::test_every_app_level_probe_is_declared', '**边界（照实登记）**：① 只裁**确定性**类（401 / 402），超时 / 5xx / 429 不进标志（那已有 `call_with_retry` + 熔断）；② 不自动换 key、不降级备用供应商（涉钱 + 质量口径，须人工裁定）；③ 判据用替身（`ChatOpenAI.ainvoke` 被替换），**不跑真实 LLM**（#4262 口径）；④ 探针端点未鉴权（与 `/ready` 同信任边界，响应无密钥材料，真实调用受 60s 缓存限流）。'],
+    skip_reason='[backend-contract] 替身驱动的端点语义 + 接线 + 日志结构判据（零网络、零真实 LLM，pytest 真跑），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'observability', 'llm-credential', 'ai-agent', 'probe', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -3363,4 +3381,5 @@ CASES = (
     _CASE_MC_126,
     _CASE_MC_127,
     _CASE_MC_130,
+    _CASE_MC_129,
 )

@@ -226,6 +226,33 @@ def create_app() -> FastAPI:
             )
         return {"status": "ready", "service": settings.APP_NAME}
 
+    # LLM 主凭据探针（issue #8084）：**服务活着 ≠ AI 可用**。
+    #
+    # 改前：主凭据被供应商拒绝（401 `AuthenticationError`）时全部 AI 面（黄金策 / 元元 / 意图分类 /
+    # 会话标题 / 视觉）只看得到一句通用兜底话术，而 `/ready` 只探 DB+Redis ⇒ 200 全绿、
+    # 容器 healthy、`docker ps` 一路绿 ⇒ 靠人肉发现（2026-10-29 15:29 线上事故）。
+    #
+    # ⚠️ 刻意**不**并进 `/ready`（口径选择，理由同步写进 PR body）：
+    #   `/ready` 是 compose healthcheck 的**唯一**判据，把供应商侧状态塞进去 ⇒ 容器 unhealthy
+    #   ⇒ 重启 churn（本仓已被这类形态咬过）。本端点独立存在：探针可以红，容器不必重启。
+    #   只裁**确定性**类（401 / 402；见 app/utils/llm_health.py 的边界）—— 超时 / 5xx / 429
+    #   不会让 `ok` 变 false，所以供应商抖动不会把探针打成 flapping。
+    #
+    # 响应 = `{ok, last_error_class, last_ok_at, cached_at}`；
+    # `ok=false` ⇒ 503（消费方按状态码就能判，不必解析业务字段）。
+    # 与 `/ready` 同信任边界（不鉴权）：响应里**没有**密钥材料，只有状态码/类名与时间戳；
+    # 真实调用受 60s 缓存限制 ⇒ 成本上限 = 1 次 / 分钟 / 进程。
+    @app.get("/internal/llm-health")
+    async def llm_health_check():
+        from fastapi.responses import JSONResponse
+        from app.utils.llm_health import llm_health_snapshot
+
+        snapshot = await llm_health_snapshot()
+        return JSONResponse(
+            status_code=200 if snapshot["ok"] else 503,
+            content=snapshot,
+        )
+
     # 构建身份探针（issue #8203；审计 P1-01：改前 `ai-api.migaozn.com/api/version|/version|/build-info`
     # **全 404** ⇒ ai-agent 线上「跑的是哪个 commit」不可判定、发布漂移不可发现）。
     #

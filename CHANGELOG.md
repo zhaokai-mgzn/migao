@@ -740,6 +740,20 @@ worker-h5 纯函数、承运商 4 条 × 两处入口 + 类级单一真值守卫
 
 ## [Unreleased]
 
+### LLM 主凭据失效不再是「全 AI 面静默挂」：一条可行动告警 + 只读探针 `/internal/llm-health`（2026-11-02，issue #8084）
+
+- **改前**：DeepSeek 主凭据在供应商侧失效（401）时，黄金策 / 元元 / 意图分类 / 会话标题 / 视觉识别
+  共用同一把 key ⇒ 全 AI 面 100% 不可用，而用户只看到一句通用兜底话术；`/ready` 只探 DB+Redis
+  ⇒ 200 全绿、容器 `healthy`、`docker ps` 一路绿（2026-10-29 15:29 实测：一轮 10 条 401、0 条 `LLM done`）。
+- **改后**：确定性鉴权失败（401）/ 额度耗尽（402）**首次**命中时落**恰好一条**带 `PRIMARY_API_KEY`
+  可行动提示的 ERROR（`[llm_health]`），任一成功调用即自愈清零；新增只读探针
+  `GET /internal/llm-health`（`ok` / `last_error_class` / `last_ok_at` / `cached_at`，60s 缓存一次最小真实调用），
+  `ok=false` ⇒ 503。探针可红，容器不必重启。
+- **刻意不做**：`/ready` 语义不变（把供应商抖动塞进容器探针 = 重启 churn）；不自动换 key、
+  不降级备用供应商（涉钱 / 质量口径待裁）；用户侧可行动话术属商家可见文案，另开。
+- 判据：`backend/ai-agent-service/tests/test_llm_health.py`（红证 7 条，见 PR body）。
+
+
 ### 商家用「上下卷边」这类人话改算料参数时，黄金策不再因键名对不上而拒绝（2026-11-01，issue #8300）
 
 - **改前**：模型把「上下卷边」自己翻成 `hem_allowance` 之类**自造键名**，服务端只认内部键 ⇒

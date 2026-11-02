@@ -14,6 +14,7 @@ from langchain_deepseek import ChatDeepSeek
 
 from app.config import settings
 from app.llm.message_payload import ReasoningPassthroughChatModel
+from app.utils.llm_health import note_llm_failure, note_llm_success
 
 # ===== 唯一配置读取点（从 settings 读一次，全局共享）=====
 LLM_BASE_URL: str = settings.LLM_BASE_URL
@@ -30,14 +31,41 @@ DASHSCOPE_BASE_URL = LLM_BASE_URL
 #: `_get_request_payload`（内含 `thinking` 等模型专属段）**永远不被调用**；
 #: 必须把 `ChatDeepSeek` 放在 `ChatOpenAI` 之前，让它继承 `ChatOpenAI` 的那份实现
 #: 恰好是混入后的版本。该顺序由 `tests/test_message_payload_reasoning.py` 钉死。
+class _LLMHealthChatModel:
+    """每次**真实**调用都留痕：确定性凭据失败 ⇒ 进程级 broken 标志 + 一条可行动 ERROR（issue #8084）。
+
+    为什么挂在**这一层**（而不是逐个调用点）：本仓全部模型实例都出自本模块（上文唯一组合处），
+    而主循环 / 意图分类 / 会话标题 / 视觉识别 / 简报 / 知识提炼**共用同一把** `PRIMARY_API_KEY`
+    ⇒ 「一把 key 失效 = 全 AI 面不可用」正是线上实测形态。钩子放这里，新增调用点**自动**进面；
+    逐个调用点去接则漏一个点就漏一条面，且新代码会**静默**不进面（改前就是这个形态）。
+
+    MRO 两件事，别动：
+    · 必须排在 `ReasoningPassthroughChatModel` **之后** —— 后者被
+      `tests/test_llm_message_payload.py` 的 `test_mro_keeps_chatdeepseek_before_chatopenai`
+      钉在第一位（它要接管 `_get_request_payload`）；
+    · 必须排在 `ChatDeepSeek` / `ChatOpenAI` **之前**，否则本 `ainvoke` 永不生效（= 判据绿但没接线）。
+
+    只记账、**不吞异常**：异常原样抛出，用户侧话术与兜底路径一行不改（本单不改产品可见面）。
+    """
+
+    async def ainvoke(self, *args, **kwargs):
+        try:
+            response = await super().ainvoke(*args, **kwargs)
+        except BaseException as exc:  # 记账后原样 `raise`：不改变任何调用方语义
+            note_llm_failure(exc)
+            raise
+        note_llm_success()
+        return response
+
+
 _PassthroughDeepSeek = type(
     "_PassthroughDeepSeek",
-    (ReasoningPassthroughChatModel, ChatDeepSeek, ChatOpenAI),
+    (ReasoningPassthroughChatModel, _LLMHealthChatModel, ChatDeepSeek, ChatOpenAI),
     {},
 )
 _PassthroughOpenAI = type(
     "_PassthroughOpenAI",
-    (ReasoningPassthroughChatModel, ChatOpenAI),
+    (ReasoningPassthroughChatModel, _LLMHealthChatModel, ChatOpenAI),
     {},
 )
 
