@@ -32,7 +32,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Taro from '@tarojs/taro'
 import { Button, Input, Text, View } from '@tarojs/components'
 import { fetchCurrentWorker } from '../../../services/workerService'
-import { getInboundLabel, uploadInboundPhoto } from '../../../services/workerInboundService'
+import { getInboundLabel, uploadInboundPhotoSmart } from '../../../services/workerInboundService'
 import {
   recognizeBatchNo,
   searchStockBatches,
@@ -268,7 +268,7 @@ export default function WorkerStockPage() {
         },
         upload: async (photo) => {
           const path = String(photo.tempFilePath || photo.file || '')
-          const res = await uploadInboundPhoto(path)
+          const res = await uploadInboundPhotoSmart({ tempFilePath: path })
           const url = res?.data?.url
           if (!res?.success || !url) throw new Error('upload failed')
           return String(url)

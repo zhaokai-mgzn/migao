@@ -344,6 +344,21 @@ def render_view_result(view: str, snapshot: Dict[str, Any], context: ToolContext
         )
     else:
         message += "。退货率样本不足（少于 5 个有效 SKU），本次不给出好坏判断"
+    # 归因（issue #8279）：模型看不见「为什么差」，只会把 verdict 当成结论复述。
+    # 🔴 只说**能指向变体**的那一种（毛利是 SKU 级）；退货率是商品级，不含变体归因。
+    variant_hits = [
+        row for row in result["rows"]
+        if (row.get("attribution") or {}).get("kind") == "sibling_margin_contrast"
+    ]
+    if variant_hits:
+        worst = min(variant_hits, key=lambda item: item["attribution"]["gap"])
+        attr = worst["attribution"]
+        message += (
+            f"。其中 {len(variant_hits)} 个变体的毛利明显低于同款其他变体（最悬殊的是 "
+            f"{worst.get('sku_id')}：比同款最好的变体少赚 {abs(attr['gap']):.2f} 元/件）"
+            "—— 差异指向**这个变体的定价或成本维护**，不是整款的问题"
+        )
+
     # 权衡的刻度（issue #8276）：钱不进 message，模型只会念「8 个 SKU」——
     # 「这批货压了多少钱」是老板看第一眼就想知道的数，必须自己说出来。
     stocked = [row for row in result["rows"]

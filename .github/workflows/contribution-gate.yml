@@ -1,0 +1,66 @@
+name: Contribution Gate (authorship + sensitive paths)
+
+# issue #8395：**不可伪造**的那条 required —— workflow 定义在 base 分支、只检出 base、
+# 不执行任何 PR 代码，判定只走 REST API。
+#
+# 为什么需要它：16 条 required 全部来自 `pull_request` 型 workflow ⇒ fork PR 审批放行后，
+# 攻击者可以再推一个 commit 改 `.github/workflows/pr-check.yml`，把检查**伪造为绿**
+# （名字可自造、一条不跑）；而 `External Authorship Guard` 自己也住在 `pr-check.yml` 里、
+# 且不在 required 集合 ⇒ 「先改 workflow 再伪造」这条路它拦不住。
+#
+# 本闸门两道全过才算绿：
+#   ① 外部作者 / fork 来源 —— 复用 base 里的 `scripts/external_authorship_guard.py`（issue #8386
+#      的唯一实现，白名单 = `.github/external-authorship-allow.json`；`--no-remediate` 只判不改，
+#      解除 auto-merge / 打标签仍由 pr-check 那份负责）；
+#   ② 敏感路径 —— `.github/workflows/**`、`.github/scripts/**`、`deploy/**`、`.githooks` 等
+#      （实现 = `.github/scripts/sensitive_path_guard.py`，豁免 = `guard/allow-sensitive-paths` 标签 /
+#       bot 作者 / 仓库 owner，均具名打印）。
+#
+# ⚠️ required 前置（migao-dev-flow §2.2）：**不得**带 `paths:` 过滤、job 级**不得**有 `if:` / `needs:`
+#   —— 否则不命中该面的 PR 上该检查永不上报 ⇒ PR 永久 BLOCKED 且没有红信号。
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  # 同一 PR 的重复事件串行（不 cancel）：让「最后一次判定」稳定落在这个 head sha 上。
+  group: contribution-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: Contribution Gate (authorship + sensitive paths)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # ⚠️ 只取 base（`ref: main`）。**绝不** checkout PR head，也**绝不**把 PR 内容交给 shell
+      # （判据：tests/unit_ci_workflows/test_contribution_gate.py 的静态不变式）。
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+          fetch-depth: 1
+      - name: 外部作者 / fork 来源（base 里的唯一实现）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 scripts/external_authorship_guard.py \
+            --repo "$GITHUB_REPOSITORY" \
+            --pr "${{ github.event.pull_request.number }}" \
+            --allow-file .github/external-authorship-allow.json \
+            --no-remediate
+      - name: 敏感路径（CI / 部署 / 密钥扫描面）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 .github/scripts/sensitive_path_guard.py \
+            --repo "$GITHUB_REPOSITORY" \
+            --pr "${{ github.event.pull_request.number }}" \
+            --author "${{ github.event.pull_request.user.login }}" \
+            --author-type "${{ github.event.pull_request.user.type }}" \
+            --owner "${{ github.repository_owner }}"

@@ -40,7 +40,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class OrderDetailWorkSignalReadFaceTest {
 
     private static final Path MAIN = Path.of("src", "main", "java", "com", "migao", "admin");
-    private static final Path ORDER_SERVICE = MAIN.resolve("service/OrderService.java");
+    /** 读面本体在 issue #8191（P2-1a）随 {@code convertToDetailResponse} 搬到 OrderQueryService：
+     * 扫描对象跟着方法搬家（断言、判别力自证一字未改）—— 搬回去/改名 ⇒ 依然判红（methodBody 取不到即红）。 */
+    private static final Path ORDER_SERVICE = MAIN.resolve("service/OrderQueryService.java");
     private static final Path ORDER_DETAIL_RESPONSE = MAIN.resolve("dto/OrderDetailResponse.java");
 
     private static String source(Path path) throws IOException {

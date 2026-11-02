@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 260
+    "backend_contract_scoring_zero": 269
   },
   "history": [
     {
@@ -1121,6 +1121,41 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 260,
       "note": "issue #8276（权衡补刻度）新增 1 条 `[backend-contract]` 用例 DA-033 ⇒ 读数 259 → 260（259 来自已合并的 #8260）。机器判红通道 = 真测试 backend/ai-agent-service/tests/test_briefing_product_health_money.py（16 条，含两条注入式红证：成本未知当 0 / 每件增量乘销量），本机实跑 16 passed。真债务 `no_channel_total` 仍为 0。"
+    },
+    {
+      "sha": "pending-pr-8279",
+      "date": "2026-10-31",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 261,
+      "note": "issue #8279（归因）+ 缺陷 #8280（毛利 verdict 方向）新增 1 条 `[backend-contract]` 用例 DA-034 ⇒ 读数 260 → 261。机器判红通道 = backend/ai-agent-service/tests/test_briefing_product_health_attribution.py（8 条）+ test_briefing_product_health_baseline.py 的方向断言，两条注入式红证实跑成立（去掉 higher_is_better ⇒ 4 红；给 product_level_only 加 gap ⇒ 1 红）。真债务 no_channel_total 仍为 0。"
+    },
+    {
+      "sha": "pending-pr-8293",
+      "date": "2026-10-31",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 262,
+      "note": "issue #8293（方向性判定守卫）新增 1 条 `[backend-contract]` 用例 DA-035 ⇒ 读数 261 → 262（261 来自已合并的 #8279）。机器判红通道 = tests/test_briefing_verdict_direction_guard.py（8 条），两条注入式红证实跑：改方向表 ⇒ 2 红；调用点用变量传 metric ⇒ 2 红。真债务 no_channel_total 仍为 0。"
+    },
+    {
+      "sha": "pending-pr-8295",
+      "date": "2026-10-31",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 269,
+      "note": "issue #8295（客户主数据迁移 MVP，rebase 到 origin/main #8294 后重算）新增 10 条 MIG-001..010：7 条 [backend-contract] scoring-zero（MIG-001/002/004/005/006/007/008，机器判红 = Java/pytest 真测试）、2 条 UI 走机器计分（MIG-009/010，data_checks 含 success=true / not called，承载体 = Vitest page.test.tsx）、MIG-003 自带计分断言 ⇒ 读数 262 → 269；no_channel_total 仍为 0。"
+    },
+    {
+      "sha": "pending-pr-8382",
+      "date": "2026-11-01",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 268,
+      "note": "issue #8382（撤回外部贡献者 llwand1 的代码，经 #6924 转手合并进 main）：删除 MC-099（含 Java 实现 + 单测 + 用例条目）⇒ 读数 269 → 268。本单是**删减**外部代码、不是新增豁免：.github/cases/misc.yml 删条目、两处生成物由 render_cases.py 重渲染（961 条）、后端实现与测试同批删除。真债务 no_channel_total 仍为 0。"
+    },
+    {
+      "sha": "pending-pr-8386",
+      "date": "2026-11-01",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 269,
+      "note": "issue #8386（外部作者守卫，防 #6897 → #6924 的「同仓转手合并」形态复发）新增 1 条 [backend-contract] 用例 MC-126 ⇒ 读数 268 → 269（268 来自已合并的 #8382 撤回）。机器判红通道 = tests/unit_ci_workflows/test_external_authorship_guard.py（10 条，含真实事故夹具）；红证：拿掉白名单比对 ⇒ 用例 1 红，删掉 fork 判定 ⇒ 用例 8 红。真债务 no_channel_total 仍为 0。"
     }
   ]
 }

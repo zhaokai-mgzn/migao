@@ -61,7 +61,7 @@ export default defineAppConfig({
     // 地址 / 物流方式 · 公司 / N 套全完工），只读、无写入口。
     // 数据源 = `GET /api/worker/shipment/orders`（#7764 已上线：只回「多套全部完工 + 可发货状态 +
     // 作业单已完成」的单）⇒ 端侧**不筛、不补算**（半完工行照实显示 `1/3 套`）。
-    // ⚠️ 本期不含标签打印（依赖 #7803 的小程序 BLE 通道 + 画布）。
+    // ✅ 发货联（50×70）预览 / 打印已接（issue #8287）；本页仍只读（不发货）。
     // 路由字面量是**单一真值**：`src/utils/inbound/gaps.ts` 的 `SHIPMENT_ORDERS_PAGE_ROUTE`
     // 必须逐字等于它（没登记 = 死链 ⇒ 入口台账 tests/page-entry-reachability.test.ts 的 L0/L2 判红）
     'pages/worker/shipment-orders/index',

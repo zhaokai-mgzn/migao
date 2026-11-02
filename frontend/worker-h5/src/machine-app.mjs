@@ -13,6 +13,7 @@
 //   ⑤ 401 ⇒ 大字回落「请先登录」（绝不静默重试、绝不按上一个人的身份读写）。
 
 import { createApi, SESSION_EXPIRED } from './api.mjs'
+import { installFlexGapFallback } from './flex-gap.mjs'
 import { parseScanInput } from './scan-input.mjs'
 import { createScanBuffer, initialMachineState, MACHINE_LOGIN_HREF, machineBatchBlocked, machineBatchNo, machineBatchRequired, reduceMachine, renderMachine, resumePending } from './machine.mjs'
 // 未确认提交的幂等键**与手机报工页共用同一把**（同一个 storage 契约、同一份判据）⇒ 键名只有一处
@@ -209,6 +210,8 @@ export function createMachineApp({ doc, api, location = globalThis.location, sto
 
 /** 浏览器入口（`machine.html` 用 `<script type="module">` 直接加载，无构建步骤）。 */
 export async function boot() {
+  // WebView 83 没有 flex `gap`（issue #8336 / UI-148）⇒ 先量一次再上兜底类
+  installFlexGapFallback(globalThis.document)
   const storage = globalThis.localStorage
   const api = createApi({ storage, deviceLabel: 'MACHINE' })
   // storage 交给装配层：未确认提交的幂等键要跨刷新活着（与手机页同一把键，issue #4814）

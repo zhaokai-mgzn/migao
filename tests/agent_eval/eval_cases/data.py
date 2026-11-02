@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: data（源: cases/data.yml，33 条）
+# 域: data（源: cases/data.yml，36 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -610,6 +610,61 @@ _CASE_DA_033 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── DA-034 [NORMAL] 归因：同款对照只对 SKU 级信号有效（毛利能指到变体、退货率只能指到商品）；并修正毛利 verdict 方向（源: cases/data.yml）──
+_CASE_DA_034 = EvalCase(
+    id='DA-034',
+    legacy_id='',
+    title='归因：同款对照只对 SKU 级信号有效（毛利能指到变体、退货率只能指到商品）；并修正毛利 verdict 方向',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这个变体为什么毛利这么低？是不是整款都有问题？'],
+    expectations=[],
+    data_checks=['行内 `attribution` 两种 `kind`：`sibling_margin_contrast`（`level=sku`，能指到具体变体）/ `product_level_only`（`level=product`，退货率用，**明说指不到变体**）。顶层 `attribution_basis`。', '🔴 **退货率不许做变体对照**：`DailyBriefingService.assembleProductReturnStats` 按 `product_id` 聚合 ⇒ 同商品所有 SKU 的 `return_rate` **必然相同** ⇒ 「本行 vs 最好兄弟」的 gap **恒为 0**，那是假归因。判据 `test_high_return_rate_yields_product_level_only` 断言 `"gap" not in attr`；红证：给 `product_level_only` 也加一个 gap ⇒ 必红。', '🔴 **毛利 verdict 方向**（缺陷单 #8280，本单链内修）：`_verdict` 原本只为退货率写（`<= peer_median ⇒ good`），毛利直接复用 ⇒ **毛利越低越判 good**。修法 = `higher_is_better=True` ⇒ `>= peer_median ⇒ good`，`< 0` 仍由 `absolute_bad` 兜底。红证：去掉该参数 ⇒ `test_positive_margin_uses_the_peer_baseline` + 归因 3 条必红（共 4 红）。', '**旧断言把 bug 固化了**：`test_positive_margin_uses_the_peer_baseline` 原写「毛利 10（最低）⇒ good、毛利 50（最高）⇒ bad」——**测试和实现一起错**，所以 CI 一直绿。已改正方向并注红证。', '🔴 **没有对照就不给**：独款商品（同商品只有 1 个 SKU）⇒ `attribution = None`（**不是**「没问题」）。兄弟毛利未知 ⇒ 不算进来（脏数据算出的差值是噪音）。', '**不给因果断言**：`sample_note` 必须并排给出两者销量 + 自述「这是差异证据，不是因果结论」（样本量差很多时差异可能只是样本量）。', '**good 行不给归因**：没毛病时解释「为什么好」是噪音。工具层 `message` 只说能指向变体的那一类（毛利），退货率不进 message 的变体归因。'],
+    skip_reason='[backend-contract] 纯确定性视图判据（零 LLM）：`product_health` 是纯函数 + 规则表；判据 = backend/ai-agent-service/tests/test_briefing_product_health_attribution.py（8 条，含两条注入式红证）+ test_briefing_product_health_baseline.py 的方向断言',
+    tags=['proactive', 'briefing', 'decision', 'attribution'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-035 [NORMAL] 方向性判定守卫：方向必须登记（传给表查），传错/忘传/绕过都不可能通过（源: cases/data.yml）──
+_CASE_DA_035 = EvalCase(
+    id='DA-035',
+    legacy_id='',
+    title='方向性判定守卫：方向必须登记（传给表查），传错/忘传/绕过都不可能通过',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['（无用户输入 —— 这是研发侧守卫，防「判断方向反了但测试跟着错」这类形态）'],
+    expectations=[],
+    data_checks=['🔴 **方向登记即契约**：`METRIC_DIRECTIONS = {return_rate: False（越低越好）, gross_margin: True（越高越好）}`。`_verdict(metric, value, baseline)` 的方向**从表查**，**不由调用方传** —— 缺陷 #8280 的机制正是「调用方忘了传 higher_is_better」。', '🔴 **未登记指标 ⇒ `KeyError` 且报错点名**：新指标没定方向不许静默跑（默认 False 会让「越高越好」的指标静默反向）。判据断言报错文本同时含指标名与 `METRIC_DIRECTIONS`。', '🔴 **调用点源码扫描**（AST）：`_verdict` 的第一个实参必须是**字符串字面量**且在表里；仍用 `higher_is_better=` 关键字传方向 ⇒ 红。红证：把调用改成 `_m = "gross_margin"; _verdict(_m, ...)` ⇒ `test_every_call_site_passes_a_string_literal` + `test_every_literal_metric_is_registered` 双红。', '🔴 **极值双向断言**（最关键的形态守卫）：对表里每个指标造极值数据验证方向。红证：把表里 `gross_margin: True` 改成 `False`（= #8280 的形态）⇒ 本判据 + 基线方向断言**双红**；恢复 ⇒ 8 passed。', '**极值断言必须混合数据**：`_verdict` 是**相对**判据（`<= peer_median ⇒ good`），全员 100% 退货率时基线也是 100% ⇒ 谁都不比谁差 ⇒ 全判 good。这是**合理**的（相对基线不制造「全员异常」），所以极值测试不能拿「全员极值」当样本 —— 这条写进测试 docstring，防下一个人误判成缺陷。', '**行为零变化**（本单是纯守卫）：`return_rate` 表里 False、`gross_margin` 表里 True，与改前调用点传的值完全一致 ⇒ 对外结论不变，因此**不入 CHANGELOG**（纯研发工具类改动，铁律 7 豁免口径）。', '**未覆盖面（如实登记）**：只覆盖 `_verdict` 这一族。其他「方向敏感」的比较（`low_stock` 的 `<=`、`_attribution` 的 `max()` 取最好的兄弟、`money` 的 `peer_median − 毛利` 取正负方向）**不在本单**，同一形态仍存在。'],
+    skip_reason='[backend-contract] 纯研发侧守卫（零 LLM、零用户可见面）：判据 = backend/ai-agent-service/tests/test_briefing_verdict_direction_guard.py（8 条：3 条调用点扫描 + 4 条方向语义 + 1 条未登记即抛），两条注入式红证实跑成立',
+    tags=['proactive', 'briefing', 'guard', 'meta'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── DA-036 [NORMAL] 商品销量排行：问「最近哪些商品卖得最好」走 dashboard_stats(product_ranking)（零覆盖补口，issue #8300）（源: cases/data.yml）──
+_CASE_DA_036 = EvalCase(
+    id='DA-036',
+    legacy_id='',
+    title='商品销量排行：问「最近哪些商品卖得最好」走 dashboard_stats(product_ranking)（零覆盖补口，issue #8300）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['最近 7 天哪些商品卖得最好，给我前 5 名'],
+    expectations=['dashboard_stats(action=product_ranking)'],
+    data_checks=['排行来自服务端（`dashboard_stats(action=product_ranking)` 的 items / 成交量字段），不得由模型编造商品名或销量', '回复须交代**统计口径**（近 7 天 / period=day），不能把「近 7 天销量」说成「今日销量」（#2984 的假涨跌形态）', '条数与用户要的「前 5 名」一致（limit=5）；数据不足 5 条时如实说明只有几条，不补虚构行'],
+    skip_reason='',
+    tags=['dashboard', 'ranking', 'query'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'dashboard_stats', 'action': 'product_ranking'}],
+)
+
 CASES = (
     _CASE_DA_001,
     _CASE_DA_002,
@@ -644,4 +699,7 @@ CASES = (
     _CASE_DA_031,
     _CASE_DA_032,
     _CASE_DA_033,
+    _CASE_DA_034,
+    _CASE_DA_035,
+    _CASE_DA_036,
 )

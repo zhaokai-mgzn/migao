@@ -1,4 +1,4 @@
-# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004, PR-013, DA-003, PP-002, OR-014, CH-010, PG-017, CU-008, CU-001, CU-002, ST-002, ST-001, HR-009
+# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004, PR-013, DA-003, PP-002, OR-014, CH-010, PG-017, PG-064, DA-025, CU-008, CU-001, CU-002, ST-002, ST-001, HR-009
 """规则匹配器单元测试（app/router/rule_matcher.py）
 
 覆盖：_extract_text / RuleMatcher.match 关键词优先级 / 正则规则 / 未命中。
@@ -76,6 +76,30 @@ class TestMatch:
         # smoke 档 OR-001 回归（7/8，唯一失败）。收紧：仅「最近+数字量词+订单」走看板。
         result = self._match("查看最近的订单")
         assert result is not None
+        assert result.intent == IntentType.ORDER_QUERY
+
+    # ── 跨期环比（issue #8300，DA-025 实测）──────────────────────────────────
+    # 病灶：L1 没有「比上周 / 环比」这类跨期词 ⇒ 「这周订单比上周怎么样？」被 ORDER_QUERY 的
+    # 「订单」接走（2026-11-01 run 41266259486 实测：`order_query(statistics)` +
+    # `sales_attribution` 拼答案，`dashboard_stats(trend_compare)` 一次没调）。
+    # 跨期算术必须由工具确定性计算（trend_compare），路由要确定性落到看板域。
+    def test_week_over_week_order_comparison_routes_dashboard(self):
+        result = self._match("这周订单比上周怎么样？")
+        if result is None:  # 裸存在断言是弱断言（tests/unit_ci_workflows/test_weak_assert_blindspots.py）
+            raise AssertionError("「这周订单比上周」没有命中任何路由 —— 判据面失效")
+        assert result.intent == IntentType.DASHBOARD
+
+    def test_mom_comparison_routes_dashboard(self):
+        result = self._match("本月和上个月环比一下")
+        if result is None:  # 同上
+            raise AssertionError("「本月和上个月环比」没有命中任何路由 —— 判据面失效")
+        assert result.intent == IntentType.DASHBOARD
+
+    def test_plain_week_order_query_stays_order_query(self):
+        """负控：只说「上周的订单」（无跨期比较词）仍是查订单，不许被环比关键词抢走。"""
+        result = self._match("查一下上周的订单")
+        if result is None:  # 同上
+            raise AssertionError("「查一下上周的订单」没有命中任何路由 —— 判据面失效")
         assert result.intent == IntentType.ORDER_QUERY
 
     def test_notification_mark_read_matches_notification(self):
@@ -341,6 +365,25 @@ class TestProcessingOrderRouting:
         result = self._match("查一下有哪些加工项")
         assert result is not None
         assert result.intent == IntentType.PRODUCT_INQUIRY
+
+    # ── 加工**套件**（issue #8300，PG-064 实测）──────────────────────────────
+    # 病灶：L1 只有「加工单」没有「加工套件」⇒ 降级 L2 被判 `product_inquiry`
+    # （2026-11-01 run 41258535162 系列实测：`Routing to 'product_inquiry'` → 执行 `[product]`）。
+    # 后果叠加读面裁剪后更硬：`processing_order_set_query` 不在 product 的声明面 ⇒ 工人问
+    # 「店里的加工套件有哪些」得到的是「加工项目录」（`processing_item_query` 顶替）。
+    def test_processing_order_set_routes_order(self):
+        """「加工套件」→ ORDER_QUERY（套件工具绑在订单域）。"""
+        result = self._match("我们店里的加工套件现在有哪些？")
+        if result is None:  # 裸存在断言是弱断言（tests/unit_ci_workflows/test_weak_assert_blindspots.py）
+            raise AssertionError("「加工套件」没有命中任何路由 —— 判据面失效")
+        assert result.intent == IntentType.ORDER_QUERY
+
+    def test_processing_order_set_scan_progress_routes_order(self):
+        """「套件扫码进度」同样落订单域（套件工具的 scan_progress action）。"""
+        result = self._match("加工套件 JG-20261101-0001 的扫码进度到哪了")
+        if result is None:  # 同上
+            raise AssertionError("「套件扫码进度」没有命中任何路由 —— 判据面失效")
+        assert result.intent == IntentType.ORDER_QUERY
 
     def test_processing_item_manage_unchanged(self):
         """回归：加工项管理仍走 PROCESSING_MANAGE（PP-006）。"""
@@ -649,3 +692,33 @@ class TestStaffAccountRouting:
     def test_negative_control_session(self):
         """负控：「客服会话」不得被账号域抢走（会话管理另有意图，SE-001 家族）。"""
         assert self._intent("看看当前有哪些客服会话") == IntentType.SESSION_MANAGE
+
+# ── 销量排行类问句必须走看板意图（issue #8300，DA-036 实测）───────────────
+# 现场：问「最近 7 天哪些商品卖得最好，给我前 5 名」⇒ 因含「商品」被 PRODUCT_INQUIRY 抢走，
+# product 域不绑 dashboard_stats ⇒ 模型退到 nav_guide（trace: nav_guide(products)），
+# 零覆盖用例 DA-036 首跑即红，暴露「能力在、路由到不了」。
+class TestRankingRoutesToDashboard:
+    def _match(self, text):
+        return RuleMatcher().match(text)
+
+    def test_best_selling_products_routes_dashboard(self):
+        result = self._match("最近 7 天哪些商品卖得最好，给我前 5 名")
+        if result is None:
+            raise AssertionError("排行问句没有命中任何路由 —— 判据面失效")
+        assert result.intent == IntentType.DASHBOARD
+
+    def test_ranking_phrasings_all_route_dashboard(self):
+        # ⚠️ 只收**信号不冲突**的说法：「商品畅销榜」这类同时强命中商品域与看板域的句子，
+        # matcher 按设计**弃权**（返回 None，交 L2 分类器），不属本判据的射程。
+        for text in ("哪个商品卖得最多", "销量排行前五名是哪些", "最近卖得最好的是什么"):
+            result = self._match(text)
+            if result is None:
+                raise AssertionError(f"{text!r} 没有命中任何路由")
+            assert result.intent == IntentType.DASHBOARD, f"{text!r} → {result.intent}"
+
+    def test_plain_product_sales_question_still_goes_to_product(self):
+        """负控：不带排行语义的「商品」问句仍走商品域（关键词不许越界）。"""
+        result = self._match("这个商品卖多少钱")
+        if result is None:
+            raise AssertionError("商品问句没有命中任何路由")
+        assert result.intent == IntentType.PRODUCT_INQUIRY

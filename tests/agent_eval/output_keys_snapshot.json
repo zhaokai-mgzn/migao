@@ -133,7 +133,7 @@
    "shape_notes": [
     "data=dict(data, proactive=findings, proactive_status=status)"
    ],
-   "source_sha256": "82edc16133d46e99e64e1c04bb50bba16c0813adae714695b78e75f7a8582c5a"
+   "source_sha256": "ba9ef6a7079ebf8ccea2465a9f347f6f78163bc24d1e5024070fcb6df4fa93ea"
   },
   "category_manage": {
    "actions": {
@@ -181,7 +181,7 @@
     "keys",
     "source_before"
    ],
-   "source_sha256": "5b36373e963b5c8b49d326e011d4de972fd81e43691b5eea5fcfe0396658b7bc"
+   "source_sha256": "a29b6ab1b2fb7c24cd75527bab3793906f3879cb0087f6f7226973018f48b026"
   },
   "craft_config_query": {
    "actions": null,
@@ -508,7 +508,7 @@
     "data ← response.get('data', {})",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "39b0790def47e7ad064bc4af262bfeb4af4a1a5601572b5e3364e54fe6f7e6ad"
+   "source_sha256": "6850f3aecc38b848bf19cf5c51b0697f25bfe7ef60f5115a18104e166b1bee26"
   },
   "employee_manage": {
    "actions": {
@@ -647,7 +647,7 @@
     "data ← response.get('data')",
     "data=response.get('data')"
    ],
-   "source_sha256": "104f460f22a4873f4fe63faeefc84d5bad547c32711cafcb0c62f683c2d8d2a7"
+   "source_sha256": "bdd088f538bec981989a14eed408ed37a90376971b3221af61833e35bc0fd626"
   },
   "interact": {
    "actions": null,
@@ -1139,6 +1139,7 @@
     "execute": {
      "dynamic": true,
      "keys": [
+      "batchId",
       "results",
       "revertible",
       "status"
@@ -1156,7 +1157,9 @@
     "revert": {
      "dynamic": true,
      "keys": [
-      "results"
+      "batchId",
+      "results",
+      "status"
      ]
     }
    },
@@ -1171,11 +1174,15 @@
     "revertible",
     "status"
    ],
-   "literal_keys": [],
-   "shape_notes": [
-    "data=dict(response.get('data') or {})"
+   "literal_keys": [
+    "batchId",
+    "status"
    ],
-   "source_sha256": "4e790119241266923346e7605d61921e45dbacb801d608f76d4e85ef62883747"
+   "shape_notes": [
+    "data=dict(response.get('data') or {})",
+    "data=polled or data"
+   ],
+   "source_sha256": "a995e432ecaad7e54f1ad5912c47daff44df3e95bef1b7a8781e26df581af98c"
   },
   "product_detail": {
    "actions": null,
@@ -1386,7 +1393,7 @@
     "window_capped"
    ],
    "literal_keys": [],
-   "source_sha256": "dabedd11516eee5ae0b8fded0f60b64def839174ecdf53b2bc68e32464306536"
+   "source_sha256": "4369ca0f5abd3da33dbe2239b61a9a64a9f6c466adb242c2068131ce24bd8692"
   },
   "scheduled_task_manage": {
    "actions": {

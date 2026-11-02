@@ -47,7 +47,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 而不是在 standalone MockMvc 里假装测 403（那个拦截器不在这条链上，测出来的绿是空断言）。</p>
  */
 @ExtendWith(MockitoExtension.class)
-@DisplayName("AgentBatchController —— /api/admin/agent/batches 四端点")
+@DisplayName("AgentBatchController —— /api/admin/agent/batches 六端点")
 class AgentBatchControllerTest extends BaseControllerTest {
 
     private static final String BASE = "/api/admin/agent/batches";
@@ -161,6 +161,40 @@ class AgentBatchControllerTest extends BaseControllerTest {
     }
 
     @Nested
+    @DisplayName("POST /{batchId}/execute-async / revert-async — 后台 job（issue #8283）")
+    class Async {
+
+        @Test
+        @DisplayName("execute-async 返回 status=executing；逐条结果走 GET，不在提交响应里")
+        void executeAsyncReturnsExecuting() throws Exception {
+            when(batchService.executeAsync(TEST_TENANT_ID, BATCH_ID))
+                    .thenReturn(view("executing", null));
+
+            mockMvc.perform(post(BASE + "/" + BATCH_ID + "/execute-async"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.batchId").value(BATCH_ID))
+                    .andExpect(jsonPath("$.data.status").value("executing"))
+                    .andExpect(jsonPath("$.data.results").doesNotExist());
+
+            verify(batchService).executeAsync(TEST_TENANT_ID, BATCH_ID);
+        }
+
+        @Test
+        @DisplayName("revert-async 返回 status=executing")
+        void revertAsyncReturnsExecuting() throws Exception {
+            when(batchService.revertAsync(TEST_TENANT_ID, BATCH_ID))
+                    .thenReturn(view("executing", null));
+
+            mockMvc.perform(post(BASE + "/" + BATCH_ID + "/revert-async"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.batchId").value(BATCH_ID))
+                    .andExpect(jsonPath("$.data.status").value("executing"));
+
+            verify(batchService).revertAsync(TEST_TENANT_ID, BATCH_ID);
+        }
+    }
+
+    @Nested
     @DisplayName("POST /{batchId}/revert — 撤销")
     class Revert {
 
@@ -214,7 +248,7 @@ class AgentBatchControllerTest extends BaseControllerTest {
     class Permission {
 
         @Test
-        @DisplayName("四端点都要求 product:create —— 与 AgentProductController 的逐条写端点**逐字同码**")
+        @DisplayName("六端点都要求 product:create —— 与 AgentProductController 的逐条写端点**逐字同码**")
         void requiresSameCodeAsSingleWrite() throws Exception {
             RequirePermission onBatch = AgentBatchController.class.getAnnotation(RequirePermission.class);
             assertThat(onBatch).as("类级注解覆盖四个端点（方法级优先、其次类级）").isNotNull();
@@ -259,8 +293,16 @@ class AgentBatchControllerTest extends BaseControllerTest {
             Method execute = AgentBatchController.class.getMethod("execute", String.class);
             assertThat(execute.getAnnotation(PostMapping.class).value()).containsExactly("/{batchId}/execute");
 
+            Method executeAsync = AgentBatchController.class.getMethod("executeAsync", String.class);
+            assertThat(executeAsync.getAnnotation(PostMapping.class).value())
+                    .containsExactly("/{batchId}/execute-async");
+
             Method revert = AgentBatchController.class.getMethod("revert", String.class);
             assertThat(revert.getAnnotation(PostMapping.class).value()).containsExactly("/{batchId}/revert");
+
+            Method revertAsync = AgentBatchController.class.getMethod("revertAsync", String.class);
+            assertThat(revertAsync.getAnnotation(PostMapping.class).value())
+                    .containsExactly("/{batchId}/revert-async");
 
             Method query = AgentBatchController.class.getMethod("get", String.class);
             assertThat(query.getAnnotation(GetMapping.class).value()).containsExactly("/{batchId}");
