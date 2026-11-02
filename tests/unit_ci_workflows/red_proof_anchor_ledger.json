@@ -15,7 +15,7 @@
     "  ② 未登记即红；已登记文件的条数**涨或跌**都红；文件已无命中而条目还在（陈旧）⇒ 红。",
     "  ③ 想吸收新债务必须先改这个数据文件（在 diff 里看得见），但纪律上**只许缩短**。",
     "",
-    "本 PR（#7017）把 10 处**真语料**注入迁到 inject() 作落地样本（bmini 入口 6 / automerge 2 / ACR 2，其中面内 8 处 ⇒ 面内站点 393 → 385）；其余 132 文件 / 385 处为存量债务，按棘轮逐包收口。"
+    "本 PR（#7017）把 13 处**真语料**注入迁到 inject() 作落地样本（bmini 入口 6 / automerge 2 / ACR 2 / sync-main 3，其中形态面内 11 处）；其余 131 文件 / 383 处为存量债务，按棘轮逐包收口。"
   ],
   "anchors": [
     {
@@ -774,12 +774,6 @@
     },
     {
       "path": "tests/unit_ci_workflows/test_sync_main_case_surface_guard.py",
-      "hits": 2,
-      "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
-      "issue": "#7017"
-    },
-    {
-      "path": "tests/unit_ci_workflows/test_sync_main_changelog_autoresolve.py",
       "hits": 2,
       "reason": "存量债务（#7017 冻结清单）：裸 `.replace()` 造变异体；收口方向 = 改用 `injection.inject()`。",
       "issue": "#7017"
