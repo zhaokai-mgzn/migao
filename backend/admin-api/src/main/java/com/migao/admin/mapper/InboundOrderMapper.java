@@ -3,6 +3,7 @@ package com.migao.admin.mapper;
 import com.baomidou.mybatisplus.annotation.InterceptorIgnore;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.migao.admin.entity.InboundOrder;
+import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -87,6 +88,45 @@ public interface InboundOrderMapper extends BaseMapper<InboundOrder> {
             + "GROUP BY s.id, s.name, s.status "
             + "ORDER BY received_amount DESC, s.name LIMIT 500")
     List<Map<String, Object>> selectSupplierPayables(@Param("tenantId") Long tenantId);
+
+    /**
+     * <b>原子取号 + 落库</b>（issue #6266）：把「判 {@code inbound_no} 是否被占」与「占用它」并成
+     * <b>一条语句</b>。受影响行数 {@code 1} = 号归我（单据已落库）；{@code 0} = 号刚被别人抢走
+     * （调用方换候选再来，见 {@code InboundOrderService#insertWithFreshInboundNo}）。
+     *
+     * <p><b>为什么必须由 DB 判</b>：改前是 {@code nextFreeInboundNo} 先 {@code exists(tenant_id, inbound_no)}
+     * 判假 ⇒ 返回候选 ⇒ <b>之后</b>才由 {@code insert(..)} 落库。这个「读-判-写」窗口在<b>多实例 / 重启</b>下
+     * 可被利用（两个实例的进程内计数器从同一位置起步 ⇒ 同一个候选 ⇒ 两边 {@code exists} 都为假）
+     * ⇒ 后到的 insert 撞 {@code uk_inbound_orders_no} 抛 {@code DuplicateKeyException}
+     * ⇒ {@code create(..)} 把它 catch 成 409：<b>这一单没建成</b>（并发下必有一方失败）。
+     * 唯一索引在插入那一刻的判定才是原子的 ⇒ 把候选交给它裁。</p>
+     *
+     * <p>⚠️ {@code ON CONFLICT} 的目标必须带<b>索引谓词</b> {@code WHERE deleted = 0}：{@code uk_inbound_orders_no}
+     * 是<b>部分</b>唯一索引（V117），PG 的冲突推断要求谓词匹配；{@code ON CONFLICT ON CONSTRAINT} 形态对
+     * 部分唯一索引不成立（它不是 constraint）。同族先例见 {@code ProcessingOrderSetMapper#insertIgnoreConflict}。</p>
+     *
+     * <p>{@code ON CONFLICT … DO NOTHING} 与「捕获 {@code DuplicateKeyException} 再重试」的差别是
+     * <b>语义性</b>的：冲突时 PG 的<b>当前事务不会进入 aborted 状态</b>（该语句不报错）
+     * ⇒ 可以在<b>同一个事务</b>里安全地换号重试；若靠捕获异常，PG 已把事务标记为坏
+     * ⇒ 只有 {@code REQUIRES_NEW} 才救得回来，而那会把单据提前提交（后续明细行失败 ⇒ 留下半张单）。</p>
+     *
+     * <p>⚠️ <b>列清单显式</b>（issue #4608 纪律），且与「建单会写的列」同界：只列建单写的列 ——
+     * {@code posted_*} / {@code cancelled_*}（过账 / 作废时才写）、{@code created_at} / {@code updated_at}
+     * （DB 默认 {@code NOW()}）、{@code deleted}（默认 0）都不在此。新增「建单即写」的列必须同步到这里
+     * （判据 = {@code InboundNoTakeRaceRealDbTest} 的字段回读断言）。{@code biz_category} 走 {@code COALESCE}：
+     * 建单路径不传（= DB 默认 {@code fabric}），成品入库路径传 {@code finished}。</p>
+     */
+    @InterceptorIgnore(tenantLine = "true")
+    @Insert("INSERT INTO inbound_orders (id, tenant_id, inbound_no, supplier, supplier_id, supplier_doc_no,"
+            + " warehouse, warehouse_id, biz_category, inbound_date, status, total_amount, source,"
+            + " import_run_id, remark, created_by)"
+            + " VALUES (#{o.id}, #{o.tenantId}, #{o.inboundNo}, #{o.supplier}, #{o.supplierId},"
+            + " #{o.supplierDocNo}, #{o.warehouse}, #{o.warehouseId},"
+            + " COALESCE(#{o.bizCategory,jdbcType=VARCHAR}, 'fabric'), #{o.inboundDate}, #{o.status},"
+            + " #{o.totalAmount}, #{o.source}, #{o.importRunId,jdbcType=VARCHAR},"
+            + " #{o.remark,jdbcType=VARCHAR}, #{o.createdBy,jdbcType=VARCHAR})"
+            + " ON CONFLICT (tenant_id, inbound_no) WHERE deleted = 0 DO NOTHING")
+    int insertIgnoreInboundNoConflict(@Param("o") InboundOrder order);
 
     /**
      * 过账的**原子闸**：条件更新（CAS）—— 只有当前仍是 {@code draft} 才置 {@code posted}。

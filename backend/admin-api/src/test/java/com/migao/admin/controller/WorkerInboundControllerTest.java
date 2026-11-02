@@ -147,7 +147,7 @@ class WorkerInboundControllerTest {
                 .andExpect(status().isUnauthorized());
 
         verify(imageRecognitionClient, never()).recognize(any(), any());
-        verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+        verify(inboundOrderMapper, never()).insertIgnoreInboundNoConflict(any(InboundOrder.class));
     }
 
     // ============================================================ ② 状态码契约
@@ -164,7 +164,7 @@ class WorkerInboundControllerTest {
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
 
-        verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+        verify(inboundOrderMapper, never()).insertIgnoreInboundNoConflict(any(InboundOrder.class));
     }
 
     @Test

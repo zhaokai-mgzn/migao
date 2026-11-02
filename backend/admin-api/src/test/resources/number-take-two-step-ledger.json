@@ -1,0 +1,35 @@
+{
+  "schema": "number-take-two-step/1.0",
+  "_what": "业务单号「取号」写面的登记表：凡是 `service/*.java` 里出现的**两步形态**（先 `.exists(..)` 查占用、再由别处的 `insert(..)` 落库）都必须在此登记，**未登记即红**。合法形态 = 一条语句占号（`ON CONFLICT … DO NOTHING`，按受影响行数换号重试），登记在 `atomic_sites`。规范正文 = issue #6266 / #6248 + `migao-dev-flow` §23（类级固化）。",
+  "_why": "issue #6266（入库单号 nextFreeInboundNo）与 #6248（批次号 nextFreeBatchNo）是同一个病：**「判占用」与「占用」分在两条语句里**。窗口在多实例 / 重启下可被利用（两边的进程内计数器从同一位置起步 ⇒ 同一候选 ⇒ 两边 exists 都为假）⇒ 后到的 insert 撞唯一索引 ⇒ 用户侧看到的是 409（入库，一单没建成）或 500（出库 / 批次，异常直抛）。**只修一处 = 没修**：下一个人在同族写面上再写一份「exists 判假 ⇒ 之后 insert」，没有任何东西会红 ⇒ 本表把那类写面逐个登记，并把「已改成原子占号」的那几处钉成**兑付锚**（锚被删 ⇒ 红）。",
+  "scan": {
+    "root": "backend/admin-api/src/main/java/com/migao/admin/service",
+    "shape": "方法体里同时出现 ① `.exists(` ② 与之同句的业务号 getter（`::getXxxNo`）⇒ 判为「两步取号」候选（形态判据不做 AST 解析：换措辞可绕过，真实防线仍是各自的实例判据）。",
+    "legal_shape": "同一条语句里完成「判占用 + 占用」：`INSERT … ON CONFLICT (…) WHERE deleted = 0 DO NOTHING`（或同族 CAS `UPDATE … WHERE`），受影响行数 1 = 号归我、0 = 换候选重来（有界），耗尽显式 409（不静默重号）。"
+  },
+  "unverified_baseline": 1,
+  "unverified": [
+    {
+      "path": "backend/admin-api/src/main/java/com/migao/admin/service/OutboundOrderService.java",
+      "method": "nextFreeOutboundNo",
+      "why": "出库单号 `CK-yyyyMMdd-NNNN`：`exists(tenant_id, outbound_no)` 判假 ⇒ 返回候选，调用方 `createAndPost(..)` **之后**才 insert，且该 insert **没有 catch** ⇒ 窗口被利用时 `DuplicateKeyException` 直抛 = 用户侧 500（整笔回滚、零残行）。本单（#6266）只修入库建单；这条兄弟形态**未核验真库、未修**，已开单跟踪（#8490）。",
+      "issue": "#8490",
+      "restart_condition": "把出库建单取号改成原子占号（同 `InboundOrderMapper#insertIgnoreInboundNoConflict` 的形态：`ON CONFLICT (tenant_id, outbound_no) WHERE deleted = 0 DO NOTHING` + 有界换号重试 + 耗尽 409）并补真库并发判据后，**删除本条**并同步下调 `unverified_baseline`（台账只许缩短）。"
+    }
+  ],
+  "atomic_sites": [
+    {
+      "path": "backend/admin-api/src/main/java/com/migao/admin/mapper/InboundOrderMapper.java",
+      "anchor": "ON CONFLICT (tenant_id, inbound_no) WHERE deleted = 0 DO NOTHING",
+      "what": "入库建单取号（issue #6266）：受影响行数 1 = 号归我（单据已落库）、0 = 刚被抢走 ⇒ `InboundOrderService#insertWithFreshInboundNo` 换候选重来（上限 20，耗尽 409 INBOUND_NO_EXHAUSTED）。",
+      "case_ids": ["OR-075"]
+    },
+    {
+      "path": "backend/admin-api/src/main/java/com/migao/admin/mapper/StockBatchMapper.java",
+      "anchor": "ON CONFLICT (tenant_id, batch_no) DO NOTHING",
+      "what": "入库批次号取号（issue #6248）：候选随行插入 + ON CONFLICT，按受影响行数换号重试（`InboundOrderService#post` 的取号循环）。",
+      "case_ids": ["OR-060"]
+    }
+  ],
+  "coverage_boundary": "本表机械保证的是：① 现取的「两步取号」候选集 ⇄ `unverified` **双向相等**（新增未登记 ⇒ 红；台账给不存在的对象盖章 ⇒ 红）；② 豁免条数 ≤ `unverified_baseline`（**只许缩短**），每条必须写明 `why` / `issue` / `restart_condition`；③ `atomic_sites` 的锚必须在所列文件里**逐字出现**（删掉那条 ON CONFLICT / 改名 ⇒ 红），且 `atomic_sites` 不许为空；④ 判别力自证：四类坏形态（未登记 / 台账盖章幽灵 / 豁免超基线 / 锚被删）在**合成语料**上各自判红，合规语料判绿。它**不保证**：① `unverified` 里的形态真的没被别处保护（登记是诚实缺口，不是安全性背书）；② 形态判据不做 AST 解析 —— 换措辞（把 `exists` 包一层、用 XML mapper、用 `count(*)` 判占用）可绕过；③ 射程只到 `service/*.java`（controller / 别的模块 / XML mapper 不在面内）；④ 「原子占号」那条 SQL 的**语义**对不对（谓词是否匹配索引、是否 fail-closed）由真库判据承担（`InboundNoTakeRaceRealDbTest` / `BatchNoTakeRaceRealDbTest`），本表只保证它在场；⑤ 判不了「号段耗尽时的文案是否准确」这类语义问题。"
+}
