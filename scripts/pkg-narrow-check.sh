@@ -113,6 +113,11 @@ if [ -z "$PY" ]; then
   if [ -x "$ROOT/.venv/bin/python" ]; then PY="$ROOT/.venv/bin/python"; else PY="python3"; fi
 fi
 JAVA_RUNNER="${MIGAO_PKG_JAVA_RUNNER:-$ROOT/backend/admin-api/mvnw}"
+# 腿命令经 `eval` 执行 ⇒ runner / 解释器的**空格必须转义**（issue #6495 顺带实测：本机仓根是
+# `/Users/<user>/ai native/migao`，未转义时 python 腿与 java 腿都会退化成 `rc=127`「No such file or directory」，
+# 看起来像「判据红了」。`printf %q` 对无空格的 runner（如桩 `mvnw-probe`）输出逐字不变。
+PY_Q="$(printf '%q' "$PY")"
+JAVA_RUNNER_Q="$(printf '%q' "$JAVA_RUNNER")"
 
 echo "═══ 包级定点清单（issue #6250）· 基准 = $BASE · $(date '+%F %T %Z') ═══"
 
@@ -177,9 +182,9 @@ if [ "$NO_AUTO" -eq 1 ]; then RUN_JAVA=0; RUN_CASES=0; fi
 JAVA_LABEL="必然项① Java 测试墙钟拼写台账（outOfScopeSpellingsPresenceIsFrozen）"
 CASES_LABEL="必然项② 用例锚点（test_i3_anchor_matches_reality_and_is_only_shrinking）"
 JAVA_WHY="两条必然项①：Java 测试树里新增/改写了一个「覆盖外墙钟入口」（如 System.nanoTime(）而台账没裁定 ⇒ outOfScopeSpellingsPresenceIsFrozen 判红（#6237 实例）"
-JAVA_CMD="cd backend/admin-api && MIGAO_REQUIRE_REALDB=1 $JAVA_RUNNER -q -Dtest=BusinessClockTestSourceGuardTest test"
+JAVA_CMD="cd backend/admin-api && MIGAO_REQUIRE_REALDB=1 $JAVA_RUNNER_Q -q -Dtest=BusinessClockTestSourceGuardTest test"
 CASES_WHY="两条必然项②：新增 [backend-contract] 用例且 expectations: [] ⇒ backend_contract_scoring_zero 读数 +1 而锚点没动 ⇒ I3 判红（#6231/#6226/#6224/#6237 实例）"
-CASES_CMD="MIGAO_REQUIRE_REALDB=1 $PY -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -p no:cacheprovider"
+CASES_CMD="MIGAO_REQUIRE_REALDB=1 $PY_Q -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -p no:cacheprovider"
 
 run_leg() {  # run_leg <标签> <为什么> <命令>
   local label="$1" why="$2" cmd="$3" out leg_rc
