@@ -310,7 +310,15 @@ function fakeDoc() {
     get: () => root._html,
     set: (v) => { root._html = v; handlers.clear() },  // 真 DOM 里旧节点连同监听器一起被替换掉
   })
+  const htmlClasses = new Set()
   return {
+    documentElement: {
+      classList: {
+        add: (c) => htmlClasses.add(c),
+        remove: (c) => htmlClasses.delete(c),
+        contains: (c) => htmlClasses.has(c),
+      },
+    },
     getElementById: (id) => (id === 'shipment-root' ? root : null),
     querySelector: (sel) => ({
       addEventListener: (type, fn) => {
@@ -368,6 +376,45 @@ test('装配层：列表 → 点「发货联」才出纸面 → 点「打印发�
   doc._fire('#wh5-label-close')
   assert.equal(app.labelOrderId, null, '关闭后纸面不再挂在版面上')
   assert.ok(!doc._root.innerHTML.includes('id="wh5-ship-label"'))
+})
+
+test('打印那一刻**只留纸面**（终端打印 = 抓屏，抓到列表/卡片边框就会印在纸上）', async () => {
+  let printed = 0
+  let classAtPrint = null
+  const doc = fakeDoc()
+  const api = {
+    sessionId: () => 'sess-1',
+    currentWorker: async () => ({ workerName: '张三', workerNo: 'W-001' }),
+    listReadyShipments: async () => ({ items: [READY_ROW], scan: { limit: 200, truncated: false } }),
+  }
+  const app = createShipmentApp({
+    doc,
+    api,
+    win: {
+      print: () => {
+        printed += 1
+        classAtPrint = doc.documentElement.classList.contains('wh5-printing')
+      },
+      // 真机上撤 class 走 window.setTimeout(1200)；测试里注入「立刻执行」的替身，好断言收尾
+      setTimeout: (fn) => { fn() },
+    },
+  })
+  await app.boot()
+  doc._fire('#wh5-label-0')
+  doc._fire('#wh5-label-print')
+
+  assert.equal(printed, 1, '打印必须恰好一次')
+  assert.equal(classAtPrint, true,
+    '调 win.print() 时必须已套上 wh5-printing —— 终端抓的是**屏幕**，不隔离就会把列表/卡片边框印到纸上')
+  assert.equal(doc.documentElement.classList.contains('wh5-printing'), false,
+    '抓屏结束后必须撤掉 class，否则页面停在「只有纸面」的状态')
+})
+
+test('CSS 守卫：`html.wh5-printing` 的隔离规则不得被删（删了真机就印出屏幕边框）', () => {
+  const css = fs.readFileSync(path.join(H5_SRC, 'styles.css'), 'utf8')
+  assert.match(css, /html\.wh5-printing #shipment-root > \*:not\(#wh5-ship-label-sheet\)/, '缺「只留纸面」规则')
+  assert.match(css, /html\.wh5-printing #wh5-ship-label-sheet \{/, '缺纸面钉在视口左上角的规则')
+  assert.match(css, /display: none !important/, '必须用 display:none（visibility 会留下空白版面）')
 })
 
 test('装配层：401 ⇒ 显式回落登录页（不按上一个人的身份发货）', async () => {
