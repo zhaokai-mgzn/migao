@@ -18,6 +18,13 @@ name: Contribution Gate (authorship + sensitive paths)
 #
 # ⚠️ required 前置（migao-dev-flow §2.2）：**不得**带 `paths:` 过滤、job 级**不得**有 `if:` / `needs:`
 #   —— 否则不命中该面的 PR 上该检查永不上报 ⇒ PR 永久 BLOCKED 且没有红信号。
+#
+# 🔴 「判不了 ≠ 违规」（2026-11-03，issue #8395 裁定）：两道判定都靠 `gh api`，安装令牌限流时
+#   会按 fail-closed 返回 exit 2/3 ⇒ job 判红；若本腿是 required，每次限流窗口都会锁死所有合并
+#   （2026-11-02 实测 4 次假红，其中 run 41483003592 = `API rate limit exceeded for installation`）。
+#   ⇒ 每道判定都经 `.github/scripts/contribution_gate.py retry`：**可证明是限流** ⇒ 有界重试 3 次；
+#   重试后仍限流 ⇒ **不判红**（`::warning::` 具名「本次未判定」，重跑该腿即可）；
+#   **真实命中仍 exit 1**；**非限流读不到仍按原口径判红**（fail-closed 不变）。
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, labeled, unlabeled]
@@ -45,22 +52,30 @@ jobs:
           ref: main
           persist-credentials: false
           fetch-depth: 1
+      # ⚠️ 每道判定都**必须**经 `.github/scripts/contribution_gate.py retry` 包一层（判据：
+      # tests/unit_ci_workflows/test_contribution_gate.py 的静态不变式「未包 ⇒ 红」）。
+      # 它把「可证明是 API 限流」与「判红」分开：限流 ⇒ 有界重试；重试后仍限流 ⇒ **不判红**
+      # （`::warning::` 具名「本次未判定」）；**真实命中仍 exit 1**（issue #8395 裁定）。
       - name: 外部作者 / fork 来源（base 里的唯一实现）
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python3 scripts/external_authorship_guard.py \
-            --repo "$GITHUB_REPOSITORY" \
-            --pr "${{ github.event.pull_request.number }}" \
-            --allow-file .github/external-authorship-allow.json \
-            --no-remediate
+          python3 .github/scripts/contribution_gate.py retry \
+            --label "外部作者 / fork 来源" \
+            -- python3 scripts/external_authorship_guard.py \
+                 --repo "$GITHUB_REPOSITORY" \
+                 --pr "${{ github.event.pull_request.number }}" \
+                 --allow-file .github/external-authorship-allow.json \
+                 --no-remediate
       - name: 敏感路径（CI / 部署 / 密钥扫描面）
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python3 .github/scripts/sensitive_path_guard.py \
-            --repo "$GITHUB_REPOSITORY" \
-            --pr "${{ github.event.pull_request.number }}" \
-            --author "${{ github.event.pull_request.user.login }}" \
-            --author-type "${{ github.event.pull_request.user.type }}" \
-            --owner "${{ github.repository_owner }}"
+          python3 .github/scripts/contribution_gate.py retry \
+            --label "敏感路径" \
+            -- python3 .github/scripts/sensitive_path_guard.py \
+                 --repo "$GITHUB_REPOSITORY" \
+                 --pr "${{ github.event.pull_request.number }}" \
+                 --author "${{ github.event.pull_request.user.login }}" \
+                 --author-type "${{ github.event.pull_request.user.type }}" \
+                 --owner "${{ github.repository_owner }}"

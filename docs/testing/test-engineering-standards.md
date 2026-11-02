@@ -298,3 +298,264 @@ assertThat(src).doesNotContain("for (int i = 0; i < MAX_ALLOCATE_ATTEMPTS; i++)"
   （由文本形态改成语义动作后，两种等价坏形态在内存对照臂里各自判红；注入复跑具名报红），
   出处 = issue #6867 的 B1 包（PR #6876）自查。
 - 本节的判据**未接 CI required check**（同 §8.5：现为流程 / 人工调用；照实登记，勿读成"有硬门禁"）。
+
+## 10. 「返回值即契约」：mock 的默认返回值会变成业务事实（2026-11-03 固化，issue #6274）
+
+### 10.1 规则
+
+当某个既有方法的**返回值从「无意义」变成「契约」**（例：`update(...)` 的受影响行数 `1` = 号归我 /
+`0` = 刚被抢 ⇒ 换号重试），**同一个 PR 内**必须扫出**所有** mock 该方法的夹具并**显式桩值**；
+判据取向 =「返回值被业务读取、却没有显式桩值」即可疑。默认值 `0` / `false` / `null` 在业务上会被
+读成「失败 / 被抢 / 不存在」，而不是「未设置」。
+
+**机械口径：mock 的默认返回值不得被断言当成契约事实** —— 契约事实必须来自**真实现**
+（真库 / 真装配）或**显式夹具**（显式 `thenReturn(...)` 的桩值）；「没桩」不等于「没发生」。
+
+### 10.2 为什么：5 条与批次号无关的用例在 CI 上整片红（逐字）
+
+#6248 把「判占用 + 占用」并成一条语句后，`stockBatchMapper.update(...)` 的**受影响行数**成为契约。
+Mockito 对 `int` **默认返回 `0`** ⇒ 5 条与批次号**毫无关系**的既有用例把「每次都被抢」当成事实
+⇒ 20 次重试耗尽 ⇒ **409**：
+
+- `WorkerInboundServiceTest` ×2 · `AutoBatchMountPointTest` ×2 · `WorkerInboundControllerTest` ×1；
+- 症状指向错误方向（看起来像「过账功能坏了」），实际是**夹具前提被新契约改写**；
+- 修法（已落地）：三个驱动过账的 mock 夹具 `setUp` 把该调用桩成 `1`，注释写明契约来源：
+  ```java
+  // 批次号取号（issue #6248）= `stockBatchMapper.update(...)` 的**受影响行数**（1 = 号归我）。
+  when(stockBatchMapper.update(any(StockBatch.class))).thenReturn(1);
+  ```
+  本机复跑 7 个类 ⇒ **172 tests / 0 failures**。
+
+### 10.3 怎么判
+
+1. **同 PR 扫夹具**：先现取「候选面」= 所有 mock 了该类型 / 驱动到该路径的夹具，再逐文件确认桩点显式
+   给出了 `1` / `0` 的语义 —— **「没桩」的夹具不会出现在任何 `when(...)` 里**，只能靠候选面逐个点：
+   ```bash
+   grep -rln "StockBatchMapper" backend/admin-api/src/test/java   # 候选面：一个都不能少
+   ```
+   粗筛（只当线索；跨行写法 `.when(bean).method(...)` 会误命中 / 漏判，本仓实测 3 处）：
+   ```bash
+   grep -rn "when(.*stockBatchMapper" backend/admin-api/src/test/java | grep -v "thenReturn"
+   ```
+2. **契约写进方法 Javadoc**（`@return 受影响行数 = 契约：1 / 0`），让下一个改名的人先读到；
+3. **反向显式化**：某条用例若**依赖**默认值表达「失败」，必须显式写 `when(...).thenReturn(0)` ——
+   「沉默的默认值」与「显式声明」在回归时的可读性完全不同；
+4. **现有守卫**：**无**（如实登记 —— 本轮只落规范；机械元守卫「返回值为契约而未显式桩值即红」未实装，
+   重启条件 = 同形态第二次复发，届时按 §9.3 钉**语义动作**而非文本形态）。
+
+### 10.4 反例
+
+```java
+// ❌ 新契约下什么都没桩：Mockito 默认 0 ⇒ 业务读成「每次都被抢」⇒ 重试耗尽 409
+@Mock private StockBatchMapper stockBatchMapper;
+// setUp 里没有 when(stockBatchMapper.update(any())) —— 这条用例与批次号毫无关系，CI 上却红
+
+// ✅ 显式声明这次调用「号归我」：读用例的人一眼看到前提
+when(stockBatchMapper.update(any(StockBatch.class))).thenReturn(1);
+```
+
+## 11. 真库判据**不得共享可变全局占位**（号段 / 自增 / 租户内唯一键）（2026-11-03 固化，issue #6274）
+
+### 11.1 规则
+
+同一个真库上跑的多条判据**不得共享可变全局占位** —— **真库判据必须各用独立号段 / 区间，或用事务回滚，
+不许共享自增号段**。凡**故意耗尽**某范围（号段 / 自增 / 唯一键）的判据，必须与其他判据**隔离到不同区间**，
+且**至少按一种与执行顺序无关的方式自证**（例如强制方法名字典序复现 CI 的红序）。「期望成功」的判据
+**不得从 0 起步** —— 它的重试预算不得被别人故意耗尽的范围吃掉。
+
+### 11.2 为什么：判据 ③ 占满头部，吃光判据 ⑥ 的 20 次重试预算（CI 逐字）
+
+`BatchNoTakeRaceRealDbTest` 的判据 ③（`restartIntoAnOccupiedHeadFailsClosedInsteadOfSilentlyReusing`）
+**故意**占满当天头部 `0001..0020`（造「重启落在已占头部」），而生产重试上限**恰好 20**；
+判据 ④/⑥ 期望成功却从 `0` 起步 ⇒ 候选一路撞在**既有占用**上、20 次重试被吃光 ⇒ 成败取决于线程交错
+（判据 ④ 在 CI 里靠 `0021/0022` 擦线过）。CI 逐字（issue #6274 正文引用了同一条读数）：判据 ⑥ 红 `expected: 2L but was: 1L`，读数：
+
+```
+[READING #6248 ⑥ 零注入 round 1] 成功数=1 状态码=[200, 409] 落败异常类型=[BATCH_NO_EXHAUSTED]
+批次行=1 批次号=[PC-20261003-0023] 单终态=[posted, draft]
+```
+
+修法 = `SAFE_START = 5000`：三条**期望成功**的判据（①/④/⑥）从它起步，两条**故意耗尽**的（③/⑤）保持 `0`。
+自证 = 同一份判据按「默认顺序」与「**强制方法名字典序**（③ 先于 ⑥ = CI 的红序）」各跑一次 ⇒ 均 **6/6**。
+源码里这段约束写进了 `resetBatchSeq(int)` 的 Javadoc（`BatchNoTakeRaceRealDbTest.java`；
+下面是去掉 Javadoc 标记后的摘录）：
+
+```
+⚠️ 期望成功的判据必须用 SAFE_START 而不是 0（本判据在 CI 上就是这样红过的）：
+判据 ③ 会把当天头部 0001..0020 占满，而重试上限恰好是 20 ⇒ 从 0 起步的请求会把 20 次重试
+全部耗在被占的头上 ⇒ 显式 409。取一个远离头部的位置，判据就与执行顺序无关。
+```
+
+### 11.3 怎么判
+
+1. **区间常量**：每个真库判据类必须显式声明它使用的起始位置 / 区间（如 `SAFE_START`、`RESERVED_RANGE`），
+   并写明「本判据是否故意耗尽某区间」；
+2. **区间不相交**：「故意耗尽」的判据独占区间；「期望成功」的判据从 `SAFE_START` 起步；
+3. **登记**：新增真库判据必须同批登记进 `tests/unit_ci_workflows/test_realdb_failclosed.py` 的
+   `REALDB_FILES`（现取：`backend/admin-api/src/test/java/com/migao/admin/service/BatchNoTakeRaceRealDbTest.java`
+   → `direct`），否则真库 fail-closed 判据①红；
+4. **自证**：至少跑两种执行顺序（默认 + 强制字典序）各一次，均全绿才算「与执行顺序无关」；
+5. **现有守卫**：`test_realdb_failclosed.py` 只保证「真库判据被登记 / 缺真库时 fail-closed」，
+   **不判**区间是否相交（如实登记：区间相交的机械元守卫未实装，重启条件 = 同形态第二次复发）。
+
+### 11.4 反例
+
+```java
+// ❌ 期望成功的判据从 0 起步：兄弟判据把 0001..0020 占满时，20 次重试预算被吃光 ⇒ 看线程交错
+resetBatchSeq();                                  // 0
+assertThat(post(...)).isEqualTo(200);
+
+// ✅ 期望成功用 SAFE_START（远离被故意耗尽的范围）；只有故意耗尽的判据才用 0
+resetBatchSeq(SAFE_START);                        // 5000
+assertThat(post(...)).isEqualTo(200);
+```
+
+## 12. 判据**不得写坏共享工作树**：注入走文本参数，不落盘（2026-11-03 固化，issue #8415）
+
+**出处**：issue #8415 → 修法 PR #8482（**已 MERGED**，main 合并提交 `6e158ffd1`）；本节只固化口径，判据本体不在本 PR。
+
+### 12.1 规则（可被 checkout 执行）
+
+**判据运行期禁止把任何变异 / 坏形态写回仓库工作树** —— 包括「写入 → 断言 → `finally` 还原」；
+注入式用例一律把变异**当文本参数**传给被测函数，落盘只许写 `tmp_path`。
+
+### 12.2 为什么：CI 用 `-n 4`，写回窗口内别的判据会读到变异体（实测）
+
+`tests/unit_ci_workflows/test_worker_h5_auth_failure_copy.py::test_injection_unwired_case_file_is_red`
+原实现把 `.github/workflows/worker-h5-tests.yml` **写回真实工作树**、判完再还原：
+
+```python
+# 修前（旧实现，issue #8415 的病灶）
+WORKFLOW.write_text(broken, encoding="utf-8")
+problems = copy_defects(_api_text(), _production_auth_failed_message())
+WORKFLOW.write_text(orig, encoding="utf-8")     # finally 里还原
+```
+
+而 `ci workflow helper unit tests` 跑的是 **`-n 4`**（`.github/workflows/pr-check.yml` 的
+`python -m pytest tests/unit_ci_workflows -q … -n 4`）⇒ 「写回」窗口内，**任何**读同一份 workflow
+的判据都会读到变异体。受害判据 `test_real_source_has_no_login_failure_copy_defect` 红在一条与登录
+文案无关的问题上（逐字）：
+
+```
+AssertionError: 登录失败文案的类级判据判红：
+  - worker-h5-tests.yml 不再跑 `node --test frontend/worker-h5/tests/*.test.mjs`（实例判据会退回死文件）
+```
+
+放大复现（`-n 2` 只挑「读方 + 写方」两条，跑 40 次）：修前 **39/40 红**，修后 **40/40 绿**。
+旁证（durable）：`.github/flaky-ledger.json` 的 run `39927788364` 条目里，**同一次**失败的
+`failing_tests` 同时含 `test_worker_h5_auth_failure_copy.py::test_real_source_has_no_login_failure_copy_defect`
+与 `test_worker_h5_ci_wiring.py::test_red_proof_continue_on_error[step]` —— 两条读的是**同一份**
+`worker-h5-tests.yml`（后者只读不写 ⇒ 它是受害者，不是共犯）。
+
+### 12.3 怎么判（现有守卫 + 机械写法）
+
+1. **文本注入**：被测函数签名带 `workflow_text: str | None = None`，缺省读真实文件
+   （= 生产判定路径**不变**），注入用例显式传文本；并追加一条「变异没泄漏到真实文件」的断言：
+
+   ```python
+   assert WORKFLOW.read_text(encoding="utf-8") == wf, "变异注入泄漏到真实文件了（判据会与并行腿互相打架）"
+   ```
+
+2. **类级元守卫**（PR #8482 已落地，同在 `tests/unit_ci_workflows/test_worker_h5_auth_failure_copy.py`）：
+   - `test_no_guard_mutates_the_repo_tree_in_place` —— AST 扫描 `tests/unit_ci_workflows/*.py` 的
+     「写仓内路径」形态，**未登记即红**；
+   - `test_repo_tree_write_allowlist_only_shrinks` —— 台账 `REPO_WRITE_ALLOWLIST` **只许缩短**
+     （登记了却没有真实写点 ⇒ 红）；
+   - `test_repo_tree_write_judge_has_discriminating_power` —— 判别力自证：写仓内路径（两种隐蔽度）必红，
+     写 `tmp_path` / **读**仓内路径不红。
+3. **判红形态**：具名报到 `<文件>:<行> <表达式>`；出口 = 「把变异改走文本参数」，不是「再包一层 `finally`」。
+
+### 12.4 反例
+
+```python
+# ❌ 写回 + finally 还原：共享写面依然存在，-n 4 下随并行度抽签
+WORKFLOW.write_text(WORKFLOW.read_text().replace(A, B), encoding="utf-8")
+try:
+    assert copy_defects(...)          # 此刻同套件里任何读 WORKFLOW 的判据都读到 B
+finally:
+    WORKFLOW.write_text(orig, encoding="utf-8")
+
+# ✅ 文本注入：不落盘，生产判定路径不变
+broken = wf.replace(A, B)
+assert broken != wf, "变异注入没生效"                  # 先自证注入生效（§8.2 同口径）
+assert copy_defects(..., workflow_text=broken)
+assert WORKFLOW.read_text(encoding="utf-8") == wf     # 变异没泄漏
+```
+
+**边界（照实登记）**：元守卫判的是**形态**，射程 =「模块级仓内路径名字」与表达式里出现
+`REPO_ROOT` / `__file__`；路径经函数参数 / 变量拼接后再传、行内 `Path.replace` **不在射程**；
+它**判不了**「写完有没有还原」—— 写本身就是共享写面，这是刻意的（#8415 的还原本身是正确的，仍然红）。
+
+## 13. 三态口径：**判不了 ≠ 违规**（2026-11-03 固化，issue #8061）
+
+**出处**：issue #8061 → 修法 PR #8486（**仍 OPEN**：机制已定，`_reached_conclusion()` 与 9 条判据**尚未进 main**）。
+
+### 13.1 规则
+
+判据 / 审计的退出码三态且**互不同义**：`0` 通过（有结论：无漂移）· `1` 违规（有结论：确实有漂移）·
+`3` **判不了**（**没有产出结论**：`error` / `unknown`）。
+⇒ 「没有结论」的 findings（`error` / `unknown` / `not_applicable` 名下）**不得计入**任何违规 / 漂移计数，
+必须**具名摘出**并在报告里打印（摘出 ≠ 静默丢弃）：`error` / `unknown` 折 `3`；`not_applicable`
+表示「该对象本轮未跑」—— **不折非零，但也不得读成「通过」**。
+消费侧（workflow step / 台账 / 值班腿）必须**出声消费 `3`**：既不得读成 `0`，也不得读成 `1`。
+
+### 13.2 为什么：报告一半说「判不了」、一半说「确实有漂移」（逐字）
+
+`drift-audit.yml` 定时腿 10-29 ~ 11-02 连续 5 次 `failure`；其中 run `41369129772` 的报告**自相矛盾**：
+
+```
+❌ **判据不可判**（三态 `3`，**不得读成 0**）—— 它们**没有产出结论**：· [heartbeat] status=unknown
+本次相对基线的增减：… 面外新增 1（不阻塞，定时腿红） … ⇒ DRIFT
+退出码（三态…）：1 判红（有结论：确实有漂移…）
+```
+
+`heartbeat` 因为 `GITHUB_WORKFLOW` 取不到（`host-unknown`）而声明「本轮没读出结论」，却仍把它名下
+那条 finding 留在 `new_drift_out_of_scope` 里 ⇒ `tri_state()` **先看计数**（`main` 上的实现：
+`new_drift` / `stale_baseline_blocking` / `dropped_baseline_entry` / burn-down 命中即 `return 1`，
+之后才看 `error` / `unknown`）⇒ 返回 `1`。⇒ `3`（判不了）与 `1`（违规）**同码**。
+
+复算（本机，同一份 `origin/main`）：
+
+```bash
+python3 scripts/drift_audit.py --check --strict-stale --fail-on-unknown --base origin/main
+# 改前：rc=1 · 面外新增 1 · 退出码「1 判红（有结论）」  ← 与它自己的「判据不可判」那节相反
+# 改后：rc=3 · 面外新增 0 · 退出码「3 不可判」+ 那条读数仍被具名打印（⏸️ new-out-of-scope：…）
+```
+
+### 13.3 怎么判（唯一判定点 + 负控）
+
+1. **唯一判定点**：修法（PR #8486，**仍 OPEN**）在 `scripts/drift_audit.py` 增加 `_reached_conclusion()` ——
+   `error` / `unknown` / `not_applicable` = **没有结论**；`run_audit()` 把这些判据名下的 findings 从
+   `new_drift` / `new_drift_out_of_scope` / `dropped_baseline_entry` / `env_findings` 摘出，逐条进
+   `non_conclusive_findings` 并**具名打印**（一条都不丢），`verdict` 不再报 `drift`。
+2. **判据**：`tests/unit_ci_workflows/test_drift_audit_not_conclusive_not_violation.py`（9 条，随
+   PR #8486 提交 —— **尚未进 main**）：三态守门 / `not_applicable` 不得以违规码退出 / 报告具名 + `cwd`·`worktree` 解析同源 /
+   两组注入式红证 / **负控** `test_control_conclusive_checks_still_block`（只放行「没结论」这一态 ⇒
+   不会退化成把守卫改瞎）。
+3. **消费面**：`tri_state()` → rc `3` → `drift-audit.yml` 审计 step **原样 `exit`**（非 0 ⇒ job failure）
+   → `if: failure()` 的 P1 值班步骤（开 / 更 issue）→ `mechanism-liveness.yml` 的存活读数。
+   ⇒ `3` 少掉的是「确实有漂移」这个**假结论**，不是「出声」。
+4. ⚠️ `tri_state()` 的三态码**早已存在**（issue #5151）；#8061 的病是**计数层**把「没结论」的 findings
+   混进了违规集合 ⇒ 修的是「谁有资格进计数」，不是「再加一个退出码」。
+
+### 13.4 反例
+
+```python
+# ❌ 先看计数：判不了的那条已经被算进 new_drift_out_of_scope ⇒ 返回 1（把「判不了」谎报成「违规」）
+if s["new_drift"] or s["new_drift_out_of_scope"]:
+    return 1
+if any(c["status"] == "unknown" for c in rep["checks"]):
+    return 3
+return 0
+
+# ✅ 先摘「没结论」，再只对「有结论」的计数
+non_conclusive = [f for f in findings if not _reached_conclusion(f.check)]
+report(non_conclusive)                          # 具名打印，一条都不丢
+if non_conclusive:
+    return 3
+return 1 if conclusive_findings else 0
+```
+
+**边界（照实登记）**：射程只到 `scripts/drift_audit.py` 这一族 ——「别的脚本 / 别的台账也把
+`not_applicable` 当违规」**判不了**；`unknown` 在**未声明** `--fail-on-unknown` 时仍只报告（`0`），
+这是既有语义、不放宽（CI runner 上活锚天然不存在，无条件折非零 = 每个 PR 常红）。

@@ -86,11 +86,13 @@ tab（「员工登录」默认 / 「管理员登录」），**全文件没有「
 from __future__ import annotations
 
 import copy
+import io
 import json
 import os
 import re
 import subprocess
 import sys
+import tokenize
 from pathlib import Path
 
 import pytest
@@ -367,8 +369,14 @@ def _jsx_tags(text: str) -> list[tuple[str, int, int, str]]:
 
 
 def _jsx_element_spans(text: str) -> list[tuple[int, int]]:
-    """JSX 元素的**内容区间** `(start, end)`（不含标签本身）；`</div>` 必须有同名开标签。"""
-    key = str(id(text))
+    """JSX 元素的**内容区间** `(start, end)`（不含标签本身）；`</div>` 必须有同名开标签。
+
+    缓存键 = **文本内容本身**，**不是**对象身份（issue #7810）：`id()` 只保证在对象存活期间唯一，
+    而缓存不持有 text ⇒ 被回收的文本把地址让给内容不同的另一份文本时，陈旧区间会被当成命中
+    （CI run 40254074373 同一 SHA 一红一绿，报错 = 台账条目 '添加颜色'/'批量填写' 取不到独立文本
+    节点）。键 = 内容后 dict 同时**持有**该字符串 ⇒ 地址不可能被复用，等价内容也天然归一。
+    """
+    key = text
     if key in _ELEMENT_CACHE:
         return _ELEMENT_CACHE[key]
     stack: list[tuple[str, int]] = []
@@ -1628,6 +1636,99 @@ def test_name_registry_is_live_and_shrink_only():
     shrunk = copy.deepcopy(registry)
     shrunk["baseline_count"] = {"exact": 0, "registered_matchers": 0}
     assert registry_name_failures(spec, driven_sources(), shrunk), "超过冻结基线未判红"
+
+
+# ── 缓存键纪律（issue #7810）──────────────────────────────────────────────
+# `id()` 只保证「对象存活期间」唯一；缓存**不持有**被键对象时，被回收的文本把地址让给内容不同的
+# 另一份文本 ⇒ 陈旧条目被当成命中（表现为「同 SHA 两跑一红一绿」、且每次读数不同）。
+# ⇒ **禁止以对象身份作缓存键**。唯一出口 = 就地写 `# noqa: id-cache` + 说明理由（当前只有反证夹具）。
+ID_CACHE_NOQA = "# noqa: id-cache"
+
+
+def _id_key(obj: object) -> str:
+    """构造**被禁形态**的 id 键 —— 只给元守卫的反证夹具用，生产代码不得这样写缓存键。"""
+    return str(id(obj))  # noqa: id-cache（反证夹具：故意构造老形态的键）
+
+
+def _identity_key_sites(path: Path) -> list[str]:
+    """按 **token** 扫 `str(id(...))`：字符串 / 注释里的「提及」不算（与 case_ids 声明同族口径）。"""
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        toks = list(tokenize.generate_tokens(io.StringIO(text).readline))
+    except (OSError, tokenize.TokenError, IndentationError, SyntaxError):
+        return []
+    lines = text.splitlines()
+    sig = [t for t in toks if t.type not in (tokenize.NL, tokenize.NEWLINE, tokenize.INDENT,
+                                             tokenize.DEDENT, tokenize.COMMENT)]
+    out: list[str] = []
+    for i in range(len(sig) - 3):
+        a, b, c, d = sig[i], sig[i + 1], sig[i + 2], sig[i + 3]
+        if not (a.type == tokenize.NAME and a.string == "str" and b.type == tokenize.OP and b.string == "("
+                and c.type == tokenize.NAME and c.string == "id" and d.type == tokenize.OP and d.string == "("):
+            continue
+        no = a.start[0]
+        raw = lines[no - 1] if 0 < no <= len(lines) else ""
+        if ID_CACHE_NOQA in raw:
+            continue
+        out.append(f"{path.relative_to(REPO_ROOT)}:{no}: {raw.strip()}")
+    return out
+
+
+def test_element_span_cache_is_keyed_by_content_not_object_id():
+    """⑳ 判据 N 的**缓存键契约**：JSX 元素区间缓存必须按**内容**归一，禁止按 `id(text)`。
+
+    issue #7810（CI run 40254074373：attempt 1 判红 / attempt 2 **同一 SHA** 判绿）。病灶：
+    `_ELEMENT_CACHE` 曾以对象地址作键，而它**不持有** text —— 被回收的文本把地址让给内容不同的
+    另一份文本时，陈旧条目被当成命中（`id()` 只在对象存活期间唯一）⇒ 台账条目 '添加颜色' /
+    '批量填写' 现取不到「可及名字恰等于它」的 JSX 文本节点。
+    """
+    text = "<div><span>确定</span></div>"
+    spans = _jsx_element_spans(text)
+    assert spans, "夹具不成立：该文本必须真解析出 JSX 元素内容区间"
+    assert _id_key(text) not in _ELEMENT_CACHE, (
+        "JSX 元素区间缓存的键不得是对象身份：id() 只在对象存活期间唯一，而缓存不持有 text "
+        "⇒ 地址复用后会把**别的文本**的区间当成本文本的（issue #7810：同 SHA 一红一绿）"
+    )
+    twin = "".join(["<div><span>确定", "</span></div>"])
+    assert twin is not text, "夹具不成立：需要**不同对象**的等价内容"
+    assert _jsx_element_spans(twin) == spans, "等价内容（不同对象）必须命中同一份解析结果"
+
+
+def test_stale_span_entry_for_a_recycled_address_is_never_served():
+    """㉑ 陈旧命中不可能（判据 N 的行为面，issue #7810）：注入「老形态」的键 ⇒ 必须仍绿。
+
+    注入的正是**修复前**的真实形态：某个已被回收的文本在 `_ELEMENT_CACHE` 里留下区间，而新文本
+    恰好落在同一地址。修复前该条目被当成命中 ⇒ 本判据红；修复后（键 = 内容）它永不参与查找。
+    """
+    sources = {
+        "a.tsx": '<Button type="button">添加颜色</Button>',
+        "b.tsx": '<Button type="button">批量填写</Button>',
+    }
+    key = _id_key(sources["a.tsx"])
+    _ELEMENT_CACHE[key] = [(0, 0)]  # 陈旧条目的形态（另一份文本留下的区间，与本文本无关）
+    try:
+        assert standalone_text_name("添加颜色", sources) == "a.tsx", (
+            "陈旧条目被当成本文本的区间 ⇒ exact 名字活性判据会**假红**（issue #7810 的形态）"
+        )
+        assert standalone_text_name("批量填写", sources) == "b.tsx"
+    finally:
+        _ELEMENT_CACHE.pop(key, None)
+
+
+def test_no_test_helper_keys_a_cache_by_object_identity():
+    """㉒ 类级元守卫：测试辅助文件**不得**以对象身份作缓存键（issue #7810 的类）。
+
+    形态病：缓存键取 `id(obj)` 而缓存不持有该对象 ⇒ 地址复用后把**别人的**结果当成这一份 ——
+    表现是「同 SHA 两跑一红一绿」，且**没有任何东西能归因**（每次读数不同）。红证 = 摘掉修复
+    （把键改回对象身份）⇒ 本判据当场具名报出该行。当前命中数 = 0（豁免只许缩短，须就地写理由）。
+    """
+    offenders: list[str] = []
+    for path in sorted((REPO_ROOT / "tests").rglob("*.py")):
+        offenders.extend(_identity_key_sites(path))
+    assert offenders == [], (
+        "禁止以对象身份（str(id(...))）作缓存键（issue #7810：id() 可在回收后被复用）：\n"
+        + "\n".join(offenders)
+    )
 
 
 def test_exact_name_must_be_registered():
