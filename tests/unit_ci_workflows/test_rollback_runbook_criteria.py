@@ -61,6 +61,11 @@ LIVE_200_ALLOWLIST: dict[str, str] = {
     "https://api.migaozn.com/api/version": "admin-api 版本面（nginx 放行 `/api/` 前缀；线上 200）",
     "https://ai-api.migaozn.com/health": "ai-agent 健康面（nginx 只屏蔽 /docs /redoc /openapi.json）",
     "https://merchant.migaozn.com/login": "admin-web 登录页（admin-web server 段 `location /`）",
+    # issue #8203（P1-05）：审计要求判据地址自己先有 200 读数；以下三条由
+    # `python3 scripts/synthetic_probe.py` 覆盖，均为公网可达的 200 面。
+    "https://ai-api.migaozn.com/version": "ai-agent 构建身份面（#8203 新增，{app,sha,builtAt}）",
+    "https://app.migaozn.com/b/": "商家 H5 落地（扫码入口）",
+    "https://app.migaozn.com/w/": "工人 H5 落地（报工入口）",
 }
 #: 自检段的存在标记
 SELF_CHECK_MARKERS = ("判据地址必须自己先 200", "自检（一条命令", "curl -s -o /dev/null -w")

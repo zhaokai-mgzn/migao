@@ -22,7 +22,7 @@
 > 新增一条判据地址时，**先跑上面那段自检**，再把地址加进该测试的白名单（并写明它的归属面）。
 
 - 部署后冒烟失败（post-deploy smoke / frontend probe）
-- **健康检查异常**（公网口径 —— 三个都必须是 200）：
+- 健康检查异常 —— **公网口径，三个都必须是 200**：
   ```bash
   # ① 后端活着 且 跑的是哪个 build（唯一的公开构建身份面）
   curl -s -o /dev/null -w '%{http_code}\n' https://api.migaozn.com/api/version
@@ -82,7 +82,7 @@ docker compose up -d --no-deps admin-api
 docker compose restart nginx
 
 # 健康检查（与 deploy.sh 相同）
-# ⚠️ 这里是**回环/容器view**，不是公网面：`/actuator/health` 只被 nginx 的公网 location 屏蔽，
+# ⚠️ 这里是**回环/容器内部面**，不是公网面：`/actuator/health` 只被 nginx 的公网 location 屏蔽，
 #    容器内 127.0.0.1:8080 仍然 200（deploy.sh 的 wait_healthy 用的就是它）。
 #    公网判据见 §1（`/api/version`）—— 两处口径**不要混用**。
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/actuator/health
