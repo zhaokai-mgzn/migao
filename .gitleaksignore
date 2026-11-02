@@ -14,3 +14,12 @@
 206fa06b6007ea166b095777bbd071b9f66e4efb:acceptance/2026-10-03/shipments-sweep/out/replay-postrevert2/p1-records.json:generic-api-key:146
 206fa06b6007ea166b095777bbd071b9f66e4efb:acceptance/2026-10-03/shipments-sweep/out/replay-s2-INVALID-dupchain/p1-records.json:generic-api-key:146
 206fa06b6007ea166b095777bbd071b9f66e4efb:acceptance/2026-10-03/shipments-sweep/out/replay-s2b/p1-records.json:generic-api-key:146
+
+# ── #8203（P0-03 白屏出口）的**假 JWT 测试夹具**被 `jwt` 规则误报（2026-11-02 实测）：
+#   backend/…/ClientErrorControllerTest.java:301 与 frontend/…/clientErrorReporter.test.ts:43
+#   两处是**同一个构造出来的假 token**：header={"alg":"HS256"}、payload={"sub":"1234"}、
+#   signature 是字面量 `signature-value`（不是任何真实签名）；TS 侧变量名就叫 FAKE_JWT。
+#   它不含任何可用凭据，也不指向任何真实主体 ⇒ 用**逐 commit 指纹**豁免（不能用路径正则：
+#   这两个文件里将来若真的混进真 token，路径豁免会把它一起放过）。
+6fd7a4df40f801191ffe46b71b10ded10d96d3ac:backend/admin-api/src/test/java/com/migao/admin/controller/ClientErrorControllerTest.java:jwt:301
+6fd7a4df40f801191ffe46b71b10ded10d96d3ac:frontend/admin-web/tests/unit/lib/clientErrorReporter.test.ts:jwt:43

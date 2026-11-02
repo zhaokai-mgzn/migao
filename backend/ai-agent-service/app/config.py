@@ -12,6 +12,13 @@ class Settings(BaseSettings):
     # 应用基础配置
     APP_NAME: str = "ai-agent-service"
     APP_VERSION: str = "1.0.0"
+    # ── 构建身份（issue #8203；审计 P1-01：改前 ai-agent 线上「跑的是哪个 commit」不可判定）──
+    # 三个值由 **构建期** 注入（`docker build --build-arg` ⇒ Dockerfile 的 `ENV`）——
+    # 部署镜像里**没有 .git**（C′ 服务器侧构建的上下文是 codeload 归档树）⇒ 任何运行期
+    # `git rev-parse` 都是错的。取不到就是**空串**（=「探不到」），**不伪造** `unknown`。
+    # 与 admin-api `VersionController`（`MIGAO_BUILD_SHA` / `MIGAO_BUILT_AT`）**同名同口径**。
+    MIGAO_BUILD_SHA: str = ""
+    MIGAO_BUILT_AT: str = ""
     DEBUG: bool = False
     API_PREFIX: str = "/api"
 
