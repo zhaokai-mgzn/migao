@@ -27,6 +27,7 @@
 from __future__ import annotations
 
 import ast
+import functools
 import importlib.util
 import json
 import re
@@ -67,6 +68,12 @@ def _load_module():
 
 
 jtr = _load_module()
+
+
+@functools.lru_cache(maxsize=1)
+def _repo_test_index() -> dict:
+    """现取的 Java 测试类索引（**只解析一次**：一个文件里多处用到，避免重复扫 600+ 个源文件）。"""
+    return {tc.simple: tc for tc in jtr.index_all(REPO_ROOT)}
 
 
 # ────────────────────────── 取数 ──────────────────────────
@@ -160,7 +167,7 @@ def test_j1_scanner_is_not_blind():
 # ────────────────────────── J2 真空跑形态 ──────────────────────────
 
 def test_j2_repo_has_no_bare_method_selector_on_nested_method():
-    index = {tc.simple: tc for tc in jtr.index_all(REPO_ROOT)}
+    index = _repo_test_index()
     hits = bad_form_hits(index)
     assert not hits, (
         "以下位置用了**会静默空跑**的写法（`-Dtest=<外层类>#<方法>`，而方法声明在 @Nested 内 ⇒ "
@@ -169,7 +176,7 @@ def test_j2_repo_has_no_bare_method_selector_on_nested_method():
 
 
 def test_j2_synthetic_bad_form_is_red_and_good_forms_are_not():
-    index = {tc.simple: tc for tc in jtr.index_all(REPO_ROOT)}
+    index = _repo_test_index()
     nested_class = next(tc for tc in index.values() if tc.has_nested and tc.nested_owner_of(
         next(iter(set().union(*tc.nested.values())))
     ))
@@ -195,7 +202,7 @@ def test_j2_synthetic_bad_form_is_red_and_good_forms_are_not():
 
 def test_j3_every_txt_reading_engine_is_registered_and_precondition_holds():
     data = ledger()
-    index = {tc.simple: tc for tc in jtr.index_all(REPO_ROOT)}
+    index = _repo_test_index()
     engines = txt_engines()
     registered = {e["file"]: e for e in data["engines"]}
 
@@ -234,7 +241,7 @@ def test_j4_ledger_is_not_empty_and_only_shrinks():
 
 def test_j4_synthetic_nested_unit_would_be_red():
     """判别力自证：把台账里任一机具的定点类换成**真含 @Nested** 的类 ⇒ J3 的前提判定必须红。"""
-    index = {tc.simple: tc for tc in jtr.index_all(REPO_ROOT)}
+    index = _repo_test_index()
     nested_unit = next(tc.simple for tc in index.values() if tc.has_nested)
     data = ledger()
     entry = dict(data["engines"][0], unit=nested_unit)
@@ -259,7 +266,7 @@ def test_j5_development_doc_points_to_the_entry():
 # ────────────────────────── J6 注释不算 @Nested（对照读数） ──────────────────────────
 
 def test_j6_comments_do_not_make_a_class_nested():
-    index = {tc.simple: tc for tc in jtr.index_all(REPO_ROOT)}
+    index = _repo_test_index()
     commented_only = [
         tc.simple for tc in index.values()
         if not tc.has_nested and re.search(r"@Nested", tc.path.read_text(encoding="utf-8", errors="replace"))
