@@ -462,6 +462,12 @@
    "guards": "外部账号提交的代码不得直接进本仓：PR 的提交作者（账号 / 邮箱 / GitHub noreply）与 head 仓库来源必须命中 .github/external-authorship-allow.json 白名单；命中即判红、解除已 arm 的 auto-merge 并打 block/merge（真实形态：#6897 fork PR 关闭后被搬到同仓分支以 #6924 重开并 squash 合并）",
    "red_proof": "把 scripts/external_authorship_guard.py 的 classify() 白名单比对删掉 ⇒ tests/unit_ci_workflows/test_external_authorship_guard.py::test_real_incident_commit_is_flagged 红（夹具 = 5e1c56f74 llwand1）；删掉 head 仓库比较 ⇒ ::test_cli_flags_fork_head_repo 红；删掉 pr-check.yml 的 job ⇒ ::test_workflow_wires_the_guard 红",
    "owner": "#8386"
+  },
+  {
+   "path": "tests/unit_ci_workflows/test_capability_projection_seam_guard.py",
+   "guards": "进程级缓存不得经**测试替身接缝**取值（形态 #8125）：扫 backend/ai-agent-service/app/agents/** 与 app/graph/skills/** 里所有被 @lru_cache/@cache 缓存的函数，沿**同模块调用链**收集取值来源；命中「从登记接缝 PATCH_SEAMS（现取 = app.graph.skills.base_skill）import」或「使用模块级从接缝导入的符号」即具名报红 —— 否则替身期间算出的退化值（空集）会被冻进进程级缓存，表现为「能力真值变了」",
+   "red_proof": "把 backend/ai-agent-service/app/agents/capability_boundary.py 的 create_skill_registry 来源从 app.graph.skills.tool_selection 改回 app.graph.skills.base_skill ⇒ tests/unit_ci_workflows/test_capability_projection_seam_guard.py::test_no_cached_projection_reads_through_a_test_double_seam 红并具名到 capability_boundary.py::mibao_reachable_tool_names._compute_mibao_reachable_tool_names（本机实测 3 failed / 2 passed）；把扫描面 CAPABILITY_BOUNDARY 指向别处 ⇒ ::test_scan_surface_is_not_empty 红（fail-closed）",
+   "owner": "#8125"
   }
  ]
 }
