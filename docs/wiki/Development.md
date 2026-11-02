@@ -383,6 +383,14 @@ pytest -q --durations=20    # 单用例 >2s 即可疑
   整合冲突 / 读不到分支 ⇒ **不跑**且非零（「没跑」必须长得像「没跑」）。
 - 判据 = `tests/unit_ci_workflows/test_batch_gate.py`（N 个包 ⇒ 那次全量**恰好被调用 1 次**；
   调用数**不随 N 增长**；红 ⇒ 面级归因；冲突/读不到分支 ⇒ 不跑 + 非零）。
+- **就绪判定（`--require-ready`，默认开）还判「auto-merge **未** arm」**（issue #6212）：本仓
+  `automerge.yml` 恰在**非 draft** 时 arm 原生 auto-merge，而就绪判定又要求非 draft（draft 的 leg 不全
+  ⇒ `gh pr checks` 报 pending）⇒ 「集成期非 draft」这个前提**本身**就把包暴露在「跑全量期间被秒合」的
+  窗口里（实测：转 ready → arm **17 秒**、arm → 合并 **4 分 26 秒**；#6206 因此跳过了那一次批次全量）。
+  ⇒ `gh pr view <PR> --json autoMergeRequest` 非 null ⇒ **不就绪**、整批拒绝；出口 =
+  `gh pr merge <PR> --disable-auto`，**然后当场回读** `./scripts/batch-gate.sh --check-arm <PR>`
+  （三态 `0` 未 arm / `1` 仍 arm / `3` 读不到）。⚠️ 回读要放在**最后一次 push 之后** —— 一次 push 触发的
+  `synchronize` 会让 `automerge.yml` 重新 arm（#4829）；「我跑过 --disable-auto」不是证据。
 - 并发仍守 `migao-dev-flow` §17.2 的 **≤3**；CI 仍是权威（本入口是**起飞前**的整合层守护）。
 - 🔻 **盖不到的**：有人**绕过脚本**直接 `pytest tests/unit_ci_workflows`（那一路没有锁）；
   靠研发模式纪律（活锚 `~/.dsh/.agent-presets/migao` → 预设仓

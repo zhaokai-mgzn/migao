@@ -6505,3 +6505,38 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+  - id: MC-132
+    legacy_id: ""
+    title: "批次就绪判定把「已 arm 的原生 auto-merge」也算作不就绪（issue #6212）：跑那一次全量期间不许存在被秒合的窗口"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci-process
+      - auto-merge
+      - batch-gate
+      - readiness
+      - tri-state
+      - idempotent
+      - red-proof
+    truths_ref: []
+    user_inputs:
+      - "集成侧为了让批次包满足 --require-ready 而把它们转成非 draft，之后凭什么保证那一次全量跑完之前包还没被 bot 自动合进 main？"
+    expectations: []
+    data_checks:
+      - "🔴 **判据 1·已 arm ⇒ 不就绪（会红）**：`gh pr view <PR> --json autoMergeRequest` 非 null ⇒ 该包**不就绪**、整批**拒绝**（那一次全量**不跑**），输出印 ❌ + PR 号 + `enabledAt`。执行点 = tests/unit_ci_workflows/test_batch_gate.py::test_armed_auto_merge_is_refused_before_the_gate"
+      - "🔴 **判据 2·未 arm ⇒ 就绪（正向对照）**：`autoMergeRequest` 为 null ⇒ 该包就绪、那一次全量照跑且**只跑一次**——防「一律不就绪」的假修（那样判据 1 仍会绿）。执行点 = 同文件::test_unarmed_auto_merge_is_ready"
+      - "🔴 **判据 3·读不到 ⇒ 3（fail-closed）**：空 stdout / 非 JSON / 字段缺失 / `gh` 调用失败四种坏读数 ⇒ `❓ 无法判定 ≠ 就绪` + 整批拒绝（**读不到 ≠ 未 arm**：它此刻可能真的已 arm）。执行点 = 同文件::test_unreadable_auto_merge_fails_closed"
+      - "🔴 **判据 4·出口可复制且含本次 PR 号**：解除命令 `gh pr merge <PR> --disable-auto` **与**回读命令 `./scripts/batch-gate.sh --check-arm <PR>` 必须同时出现，且 PR 号 = 现取的那个（印成别的号即红）。执行点 = 同文件::test_disarm_and_readback_commands_are_actionable"
+      - "🔴 **判据 5·回读三态 + 幂等（会红）**：`--check-arm` —— 仍 arm ⇒ **1**、未 arm ⇒ **0**（同一输入连跑两次 stdout 逐字节一致）、读不到 ⇒ **3**；回读与就绪判定**共用同一个探针**（不写第二份「算不算已 arm」）。执行点 = 同文件::test_check_arm_readback_is_tri_state_and_idempotent"
+      - "🔴 **判别力自证（注入式红证，4 条各自单独变红）**：① 把「已 arm」改判成 `ready_ok` ⇒ 判据 1 红；② 把「读不到 arm」那一支改成放行 ⇒ 判据 3 红；③ 把回读「仍 arm」的 `exit 1` 改成 `exit 0` ⇒ 判据 5 红；④ 从出口里摘掉 `--check-arm <PR>` ⇒ 判据 4 红。执行点 = 同文件::test_mutations_turn_the_suite_red（'已 arm 不就绪 → 就绪' / '读不到 arm ⇒ 放行' / '回读「仍 arm」不再非零' / '回读命令从出口里被摘掉'）"
+      - "**边界（照实登记，§19.1）**：① 判不了「谁在什么时候 arm 了」—— 那需要 timeline 回溯（本单只判「判定的那一刻 arm 了没有」）；② 判不了「解除之后又被谁重新 arm」—— 一次 push 就重新 arm（#4829）⇒ 纪律是**回读要放在最后一次 push 之后**，不是「回读一次永逸」；③ 不改任何门禁的通过条件、不新增豁免。"
+    skip_reason: "[backend-contract] 零 LLM 的确定性脚本判据（自足临时 git 仓库 + 桩 gh + **真跑** scripts/batch-gate.sh），pytest 真跑、零网络（GH 全部由桩替），不进 agent-eval 冒烟"
+    merge_log: "2026-11-02 新增（issue #6212，AI 裁定选**脚本侧**方案 A）。为什么必须有这条：`--require-ready` 要求非 draft（draft 的 leg 不全 ⇒ `gh pr checks` 报 pending ⇒ 判定不就绪），而 `.github/workflows/automerge.yml` 恰在**非 draft** 时 arm 原生 auto-merge ⇒「集成期非 draft」这个就绪前提**本身**就打开了「跑全量期间被秒合」的窗口。逐字读数（#6206，2026-10-03）：转 ready 07:47:47Z → `github-actions[bot]` arm 07:48:04Z（**17 秒**）→ merged 07:52:30Z（**4 分 26 秒**），那一次批次全量被跳过。既有护栏为什么没挡住：`--disable-auto` 只在「此后不再 push」时有效（一次 push 触发的 synchronize 会让 automerge.yml 重新 arm，#4829 实证）、`block/merge` 标签拦不住**已 arm** 的 auto-merge、而「draft 唯一可靠」在 batch-gate 里被就绪判定本身关掉了。落码 = scripts/batch-gate.sh 就绪判定第 ③ 条（`autoMergeRequest` 非 null ⇒ 不就绪，exit 3）+ `--check-arm` 回读入口（与判定**共用同一个探针**）；三态 = `0` 未 arm / `1` 已 arm / `3` 读不到（`3` 不许当 `0`）。取号 = `python3 scripts/next_case_id.py MC` 现取（main 001-098 · 100-127 + 在飞 PR #8460 的 129 / #8453 的 128 + 本工作区 099）⇒ **MC-130**。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_batch_gate.py"
+      ci:
+        - pr-check.yml
+      verifies: []

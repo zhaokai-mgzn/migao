@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，177 条）
+# 域: misc（源: cases/misc.yml，178 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3261,6 +3261,24 @@ _CASE_MC_128 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-132 [NORMAL] 批次就绪判定把「已 arm 的原生 auto-merge」也算作不就绪（issue #6212）：跑那一次全量期间不许存在被秒合的窗口（源: cases/misc.yml）──
+_CASE_MC_132 = EvalCase(
+    id='MC-132',
+    legacy_id='',
+    title='批次就绪判定把「已 arm 的原生 auto-merge」也算作不就绪（issue #6212）：跑那一次全量期间不许存在被秒合的窗口',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['集成侧为了让批次包满足 --require-ready 而把它们转成非 draft，之后凭什么保证那一次全量跑完之前包还没被 bot 自动合进 main？'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·已 arm ⇒ 不就绪（会红）**：`gh pr view <PR> --json autoMergeRequest` 非 null ⇒ 该包**不就绪**、整批**拒绝**（那一次全量**不跑**），输出印 ❌ + PR 号 + `enabledAt`。执行点 = tests/unit_ci_workflows/test_batch_gate.py::test_armed_auto_merge_is_refused_before_the_gate', '🔴 **判据 2·未 arm ⇒ 就绪（正向对照）**：`autoMergeRequest` 为 null ⇒ 该包就绪、那一次全量照跑且**只跑一次**——防「一律不就绪」的假修（那样判据 1 仍会绿）。执行点 = 同文件::test_unarmed_auto_merge_is_ready', '🔴 **判据 3·读不到 ⇒ 3（fail-closed）**：空 stdout / 非 JSON / 字段缺失 / `gh` 调用失败四种坏读数 ⇒ `❓ 无法判定 ≠ 就绪` + 整批拒绝（**读不到 ≠ 未 arm**：它此刻可能真的已 arm）。执行点 = 同文件::test_unreadable_auto_merge_fails_closed', '🔴 **判据 4·出口可复制且含本次 PR 号**：解除命令 `gh pr merge <PR> --disable-auto` **与**回读命令 `./scripts/batch-gate.sh --check-arm <PR>` 必须同时出现，且 PR 号 = 现取的那个（印成别的号即红）。执行点 = 同文件::test_disarm_and_readback_commands_are_actionable', '🔴 **判据 5·回读三态 + 幂等（会红）**：`--check-arm` —— 仍 arm ⇒ **1**、未 arm ⇒ **0**（同一输入连跑两次 stdout 逐字节一致）、读不到 ⇒ **3**；回读与就绪判定**共用同一个探针**（不写第二份「算不算已 arm」）。执行点 = 同文件::test_check_arm_readback_is_tri_state_and_idempotent', "🔴 **判别力自证（注入式红证，4 条各自单独变红）**：① 把「已 arm」改判成 `ready_ok` ⇒ 判据 1 红；② 把「读不到 arm」那一支改成放行 ⇒ 判据 3 红；③ 把回读「仍 arm」的 `exit 1` 改成 `exit 0` ⇒ 判据 5 红；④ 从出口里摘掉 `--check-arm <PR>` ⇒ 判据 4 红。执行点 = 同文件::test_mutations_turn_the_suite_red（'已 arm 不就绪 → 就绪' / '读不到 arm ⇒ 放行' / '回读「仍 arm」不再非零' / '回读命令从出口里被摘掉'）", '**边界（照实登记，§19.1）**：① 判不了「谁在什么时候 arm 了」—— 那需要 timeline 回溯（本单只判「判定的那一刻 arm 了没有」）；② 判不了「解除之后又被谁重新 arm」—— 一次 push 就重新 arm（#4829）⇒ 纪律是**回读要放在最后一次 push 之后**，不是「回读一次永逸」；③ 不改任何门禁的通过条件、不新增豁免。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性脚本判据（自足临时 git 仓库 + 桩 gh + **真跑** scripts/batch-gate.sh），pytest 真跑、零网络（GH 全部由桩替），不进 agent-eval 冒烟',
+    tags=['ci-process', 'auto-merge', 'batch-gate', 'readiness', 'tri-state', 'idempotent', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -3439,4 +3457,5 @@ CASES = (
     _CASE_MC_131,
     _CASE_CI_001,
     _CASE_MC_128,
+    _CASE_MC_132,
 )
