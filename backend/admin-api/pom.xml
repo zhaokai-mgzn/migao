@@ -191,6 +191,24 @@
 
     <build>
         <plugins>
+            <!-- 线程栈：元守卫测试（StockDeductionAndLedgerAtomicityMetaGuardTest 等扫全仓源码的
+                 类级判据）要用正则做结构分析，`java.util.regex` 的匹配是**递归**的 ⇒ 扫大文件时
+                 递归深度直接吃线程栈。
+
+                 🔴 #8356 实证：同一份代码在 macOS（主线程栈由 OS 给到 8MB）上 5597 个测试全绿，
+                 在 CI runner（线程栈 512KB）上必红 `StackOverflowError`（堆栈全是
+                 `java.util.regex.Pattern$*`）。用 `-DargLine=-Xss512k` 可在本机精确复现；
+                 `-Xss1m` 即可通过，这里取 2m 留一档余量（成本可忽略）。
+
+                 ⚠️ 这是**基础设施兜底**，不是治本：回溯型正则仍在（见 #8356 的残留清单），
+                 本项只保证「输入再长也不会因为栈小而假红」。 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <argLine>-Xss2m</argLine>
+                </configuration>
+            </plugin>
             <!-- Maven 版本强制检查：maven-compiler-plugin 3.11+ 要求 Maven ≥ 3.6.3 -->
             <!-- CI/QA 请用 ./mvnw（内置 Maven 3.9.9），不要直接用系统 mvn -->
             <plugin>
