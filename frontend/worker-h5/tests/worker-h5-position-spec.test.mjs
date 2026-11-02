@@ -44,7 +44,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { initialMachineState, renderMachine } from '../src/machine.mjs'
+import { detailRows, initialMachineState, renderMachine } from '../src/machine.mjs'
 import { initialState, renderPage } from '../src/render.mjs'
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -386,12 +386,15 @@ const kvRow = (label, text) => `<div class="wh5-machine__kv"><dt>${label}</dt><d
 
 /**
  * 机台屏**既有 12 行**（#6901 之前就在那儿的真值：文案 / 顺序 / `m` 三位小数 / 缺值形态）。
- * **负控**：本单只加判据、不动它们 ⇒ 注入 C 下这 12 行必须**逐字仍绿**。
+ * **负控**：注入 C（摘掉共享表新增行）下这 12 行必须**逐字仍绿**。
+ *
+ * <p>唯一一次标签改动 = issue #7000 裁定：第 3 行装的是 `product_name`，标签由「款式」改为
+ * 「商品」—— 改前它和共享表 `style`（工艺款式）的标签**逐字重名**。值 / 顺序 / 精度一字未动。</p>
  */
 const LEGACY_12_ROWS = [
   kvRow('品牌', '观星台'),
   kvRow('收货人', '张女士'),
-  kvRow('款式', '全遮光布窗帘'),
+  kvRow('商品', '全遮光布窗帘'),
   kvRow('套数', '3套'),
   kvRow('宽', '2.800米'),
   kvRow('高', '2.650米'),
@@ -479,13 +482,12 @@ const machineDetailState = () => ({
 })
 
 /**
- * ⚠️ **附带发现（本文件有意不钉，钉它必须先改产品代码 —— 本单边界 = 只加测试）**：
- * 机台屏目前把 `货号` / `颜色` / `门幅` / `款式` / `部位备注` **各印两遍** ——
- * `machine.mjs::MACHINE_DETAIL_COVERED` 未收 `sku` / `color_name` / `door_width`（这三个键在
- * `detailRows` 里已有手写行），`style` 与既有手写行「款式」同名、共享表的 `remark` 与
- * `remarkText(position)` 复用同一标签。复现（读数写在 issue #6999 的 PR body 里）：
- * `node --input-type=module -e "…detailRows(…).map(r=>r[0])"` ⇒ 38 行、重复标签 5 个。
- * 本文件的 ④ 只钉「新增行上屏 / 缺值 `—` / 既有 12 行逐字不变」，**不替产品做取舍**。
+ * ✅ **原「附带发现」已闭合（issue #7000，2026-11-02）**：本文件早先登记过「机台屏把
+ * `颜色` / `门幅` / `款式` / `部位备注` 各印两遍、本文件有意不钉（钉它必须先改产品代码）」。
+ * 产品代码已按裁定改完 ⇒ 现在由本文件 **⑨** 钉住（标签集合无重名，零例外）。
+ * 注意实测口径的两处漂移（照实记录，不按 issue 正文抄）：`货号` 早已不重复（issue #7636 起手写行读
+ * `product_code`，且 `sku` **不在**共享表里 ⇒ 它没有第二条打印路径）；行数当时是 **36** 行 /
+ * 重复标签 **4** 个（不是 38 / 5 —— 那之后 #7636 / #7842 删过行）。
  */
 test('🔴 ④ 机台屏屏一：#6901 新增规格行上屏 + 缺值 `—`（既有 12 行逐字不变 = 负控；注入 C ⇒ 红）', () => {
   const html = renderMachine(machineDetailState())
@@ -679,3 +681,72 @@ test('售卖方式内部键不上屏：bulk_cut ⇒ 散剪；未登记值原样�
   ))
   assert.equal(other.includes(specRow('售卖方式', '定高买宽')), true, '未登记值原样显示（不编默认值）')
 })
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ⑨ 机台屏屏一：**标签集合不许有重名**（issue #7000；零例外 —— 不接受例外清单）
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 病（issue #7000 的实测读数）：`machine.mjs::detailRows` 的 36 行里 **4 个标签各印两遍**
+ * （`颜色` / `门幅` / `款式` / `部位备注`），而 worker-h5 全套 236 / 0 一条不红 ——
+ * 因为既有判据只钉「某一行在不在」，**没有一条钉「同一屏同一个标签只许出现一次」**。
+ * 产品口径 = `migao-dev-flow` §31 P2（信息不重复）。
+ *
+ * <p>裁定（AI，2026-11-02）：① 共享表 `style` **保留**标签「款式」（工艺款式），商品名那一行改标签
+ * 「商品」；② 部位备注**只留** `remarkText()` 合成行（共享表 `remark` 在机台屏排除，共享表本身不动）；
+ * ③ **不接受例外清单** —— 判据就是「标签集合无重名」的零例外形态。</p>
+ *
+ * <p>为什么要判两遍（`detailRows` + 渲染结果）：主屏走 `MACHINE_MAIN_ROWS` 白名单 +
+ * `find`（**只取第一个同名行**）⇒ 重复标签在渲染面上被静默折叠，只判渲染会**假绿**；
+ * 反过来只判 `detailRows` 就漏掉「白名单里写了两遍同一标签」。两处都判才既不假绿也不漏判。</p>
+ *
+ * <p>红证（三条，都会红；实测读数见 PR body）：① 从 `MACHINE_DETAIL_COVERED` 摘掉 `color_name`
+ * ⇒ `颜色` 重现两行 ⇒ 本条红；② 摘掉 `remark` ⇒ `部位备注` 重现两行 ⇒ 红；
+ * ③ 把 `['商品'…]` 改回 `['款式'…]` ⇒ 与共享表 `style` 重名 ⇒ 红。</p>
+ */
+test('🔴 ⑨ 机台屏屏一：标签集合无重名（同一件事实只印一行，零例外）', () => {
+  const state = machineDetailState()
+  const position = state.data.positions[0]
+
+  // (a) 数据面：`detailRows` 的标签集合不许有重复
+  const labels = detailRows(state.data, position).map(([label]) => label)
+  const dupLabels = labels.filter((label, index) => labels.indexOf(label) !== index)
+  assert.equal(
+    new Set(labels).size,
+    labels.length,
+    `同一屏不得有两个相同标签（重复 = ${JSON.stringify([...new Set(dupLabels)])}）；` +
+      '产品口径 = §31 P2 信息不重复（issue #7000）',
+  )
+
+  // (b) 渲染面：主屏白名单也不许把两行同名取进来（`find` 会静默折叠 ⇒ 必须显式判一次）
+  const rendered = renderMachine(state)
+  const kvList = rendered.match(/<dl class="wh5-machine__kv-list">([\s\S]*?)<\/dl>/)?.[1] ?? ''
+  const dtLabels = [...kvList.matchAll(/<dt>([^<]*)<\/dt>/g)].map((match) => match[1])
+  const dupDt = dtLabels.filter((label, index) => dtLabels.indexOf(label) !== index)
+  assert.equal(
+    new Set(dtLabels).size,
+    dtLabels.length,
+    `渲染面同样不得有重复标签（重复 = ${JSON.stringify([...new Set(dupDt)])}）`,
+  )
+
+  // (c) 裁定结果钉死 —— 只判「不重复」的话，把两行都删掉也会绿（那是把缺陷换成缺信息）：
+  //     「款式」= 工艺款式（共享表 `style`，裁定保留）；商品名在「商品」行。
+  //     注：主屏 16 格里只有「商品」（`style` 不在主屏白名单），所以「款式」按**数据行**取值判。
+  const valueOf = (label) => detailRows(state.data, position).find(([name]) => name === label)?.[1]
+  assert.equal(valueOf('款式'), '韩式', '「款式」= 工艺款式（style）—— 裁定保留')
+  assert.equal(valueOf('商品'), '全遮光布窗帘', '商品名那一行的标签 = 「商品」（原「款式」）')
+  assert.equal(rendered.includes('<dt>商品</dt><dd>全遮光布窗帘</dd>'), true, '主屏第 3 格 = 「商品」')
+  // 部位备注只留合成行（`remarkText`），不是共享表那条只装备注原文的重复行
+  assert.equal(
+    valueOf('部位备注'),
+    '全遮光布窗帘 · 左窗',
+    '部位备注 = 合成行「商品行名 · 备注」（issue #6667 的读数不许被这次去重弄丢）',
+  )
+  assert.equal(
+    rendered.includes('<dt>部位备注</dt><dd>全遮光布窗帘 · 左窗</dd>'),
+    true,
+    '渲染面同样只留合成行',
+  )
+  assert.equal(labels.filter((label) => label === '部位备注').length, 1, '部位备注在 `detailRows` 里也只许一行')
+})
+
