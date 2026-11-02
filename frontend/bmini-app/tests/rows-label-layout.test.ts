@@ -246,6 +246,29 @@ describe('L5 渲染与预览同一份计划；取不到位图 ⇒ 抛错', () =>
 })
 
 describe('L6 多行字段：显式换行 + 宽度折行', () => {
+  it('L6b 同一列里不许有两条文字落在同一个 y（同 y = 纸上两层字叠在一起）', () => {
+    // 真机 2026-11-01（商米 V2s，发货联 50×70）：15 字的地址折成两行，两行都画在**同一个 y**
+    // ⇒ 纸上就是两层字叠在一起（屏幕 DOM 预览正常，只有 canvas 出的纸面错位 —— 预览 ≠ 打印）。
+    const plan = layoutRowsLabel(shipLabelSpec({
+      ...SHIP,
+      customer_address: '上海市徐汇区漕溪北路 88 号 3 楼 501 室（前台代收）',
+    }))
+    const texts = plan.ops.filter((op) => op.kind === 'text') as Array<{ text: string; x: number; y: number }>
+    // 按 x（列）分组：标签列与值列在同一行 y 相同是**设计**，同一列里 y 相同才是叠字
+    const byColumn = new Map<number, number[]>()
+    for (const op of texts) {
+      const list = byColumn.get(op.x) ?? []
+      list.push(op.y)
+      byColumn.set(op.x, list)
+    }
+    for (const [x, ys] of byColumn) {
+      expect({ x, duplicated: ys.length !== new Set(ys).size }).toEqual({ x, duplicated: false })
+    }
+    // 这条判据必须真的覆盖到折行：值列里至少有两条起点相同的行文本
+    const valueColumn = [...byColumn.entries()].sort((a, b) => b[1].length - a[1].length)[0]
+    expect(valueColumn[1].length).toBeGreaterThanOrEqual(2)
+  })
+
   it('安装位置/备注里的换行各自成行（不是粘成一行）', () => {
     const plan = layoutRowsLabel(shipLabelSpec(SHIP))
     const all = plan.ops.filter((op) => op.kind === 'text').map((op) => (op as { text: string }).text)

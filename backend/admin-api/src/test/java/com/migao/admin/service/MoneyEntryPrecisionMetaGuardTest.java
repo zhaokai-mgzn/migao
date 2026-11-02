@@ -272,8 +272,12 @@ class MoneyEntryPrecisionMetaGuardTest {
                 site("com/migao/admin/service/InboundOrderService.java", "setTotalAmount", Admission.NO_NEW_INPUT_SOURCE,
                         "入库单主表总额 = Σ 行金额，而每条行金额已在唯一积计算点 amountOf() 过 MoneyScale "
                                 + "（≤2 位小数之和精确，不引入新精度；根条目 = 本文件的 InboundOrderItem.builder()）"),
-                site("com/migao/admin/service/OrderService.java", "setAmount", Admission.NO_NEW_INPUT_SOURCE,
-                        "订单明细内的响应 DTO（读面回显 unitPrice×quantity），不落库"),
+                site("com/migao/admin/service/OrderQueryService.java", "setAmount", Admission.NO_NEW_INPUT_SOURCE,
+                        "订单明细内的响应 DTO（读面回显 unitPrice×quantity），不落库；"
+                                + "issue #8191（P2-1a）随 convertToItemResponse 从 OrderService 搬到本文件（台账同步，准入口径不变）"),
+                site("com/migao/admin/service/OrderQueryService.java", "setActualAmount", Admission.NO_NEW_INPUT_SOURCE,
+                        "订单列表响应 DTO 的回显（actualAmount 缺省时取 totalAmount），不落库；"
+                                + "根条目 = OrderService.java :: setActualAmount（建单/改单的库写入面准入不变）"),
                 site("com/migao/admin/service/ProcessingFeeCombinationCommandService.java",
                         "ProcessingFeeCombinationVersion.builder()", Admission.NO_NEW_INPUT_SOURCE,
                         "改价版本台账：记录的是同一笔已写入的 unit_price（根条目 = 本文件的 setUnitPrice）"),

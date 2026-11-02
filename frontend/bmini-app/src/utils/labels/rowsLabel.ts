@@ -188,11 +188,15 @@ export function layoutRowsLabel(spec: RowsLabelSpec): InboundLabelPlan {
       break
     }
     lines.forEach((line, index) => {
+      // 🔴 折行的第 N 行必须**逐行下移**（`y + index * rowLine`）。
+      //    2026-11-01 真机（商米 V2s，发货联 50×70）：15 字的地址折成两行，两行都画在**同一个 y**
+      //    ⇒ 纸上就是两层字叠在一起（屏幕上 DOM 预览正常，只有 canvas 出的纸面错位 —— 预览 ≠ 打印）。
+      const lineY = y + index * rowLine
       if (index === 0 && label !== '') {
         const fittedLabel = fitTextVisible(label, labelColPx, rowPx)
-        ops.push(textOp(fittedLabel.text, padding, y, rowPx, labelColPx, false, fittedLabel.truncated))
+        ops.push(textOp(fittedLabel.text, padding, lineY, rowPx, labelColPx, false, fittedLabel.truncated))
       }
-      ops.push(textOp(line, valueX, y, rowPx, valueWidth, false, truncated))
+      ops.push(textOp(line, valueX, lineY, rowPx, valueWidth, false, truncated))
     })
     y += blockHeight + rowGap
   }

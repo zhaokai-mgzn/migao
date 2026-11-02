@@ -1,6 +1,6 @@
 {
   "schema": "paused-schedule-ledger/v1",
-  "_what": "**已停用的周期腿**（`on.schedule` 被注释掉）的具名登记表（issue #8218 上线审计 P1-03）。判据 = `tests/unit_ci_workflows/test_paused_schedule_registry.py`。🔴 本表回答的唯一问题是「**这条腿为什么停、现在靠什么兜、什么条件下恢复、谁在什么时候复查**」——它**不恢复**任何调度，也**不判定**「该不该恢复」（那是重启条件承接方的裁决）。停用判据的唯一出处 = `scripts/drift_audit.py` 的 `PAUSED_SCHED` / `SCHED_LINE`（本判据直接 import，不另造第二份正则）。",
+  "_what": "**已停用的周期腿**（`on.schedule` 被注释掉）的具名登记表（issue #8197 上线审计 P1-03）。判据 = `tests/unit_ci_workflows/test_paused_schedule_registry.py`。🔴 本表回答的唯一问题是「**这条腿为什么停、现在靠什么兜、什么条件下恢复、谁在什么时候复查**」——它**不恢复**任何调度，也**不判定**「该不该恢复」（那是重启条件承接方的裁决）。停用判据的唯一出处 = `scripts/drift_audit.py` 的 `PAUSED_SCHED` / `SCHED_LINE`（本判据直接 import，不另造第二份正则）。",
   "_why": "2026-10-31 上线审计读数：`.github/workflows/nightly-verification.yml` 的 `schedule` 自 2026-09-06 起被注释（issue #2957）⇒ 夜间回归**停了 55 天**（`gh run list --workflow=nightly-verification.yml`：最后三次均 workflow_dispatch + failure，schedule 最后一次 2026-09-05）。**停用写在注释里 = 停用不会被任何人看见**：注释不会过期、不会报警，也没有东西会因此变红（`drift_audit` 的 `<wf>|paused` finding 被 `scripts/drift_audit_baseline.json` 放行，且 `Drift Audit` 不在 required 集合）⇒ 本表把「已接受缺口 + 重启条件」变成**会红的台账**：未登记即红（判据 2）/ 恢复即销账（判据 3）/ 复查日期过期即红（判据 5）/ 文档锚缺失即红（判据 8）。",
   "_who_else": "本判据落地时的**第一条红证**就是它自己抓到的第二条腿：`e2e-real.yml` 也在 2026-09-06 因同一根因（issue #2957）被注释停用，而**审计清单里没有它** —— 「只修 P1-03 点名的那一条」会把同类漏在暗处。两条腿同口径登记（类级固化，铁律 8）。",
   "_clock_policy": "判据 5（复查新鲜度）天生依赖「今天」⇒ 日期是**参数**（`judge(..., today=...)`），判据本体是纯函数；只有真语料那一条用 `date.today()`（它的用途正是「到日子就红」）。同口径先例 = `tests/unit_ci_workflows/test_skip_exemption_gate.py`。",
@@ -10,7 +10,7 @@
     "判不了「值班真的按文档复算了」——复查是人的动作；本判据只把「过了复查日期没人复查」变成红。",
     "停用形态只认 `# schedule:` / `# - cron:`（唯一出处 = drift_audit）；「改名成 .yml.disabled」这类停用不在射程内，两边口径一致。"
   ],
-  "_drift_wiring": "漂移审计（`scripts/drift_audit.py`）的 C6 心跳判据**改挂到本台账**（`load_paused_registry` / `paused_finding_for`，issue #8218 P1-03）：登记的腿且 `review_due` 未过 ⇒ 只出一行 note（**不算漂移**）；`review_due` 已过 ⇒ `<wf>|paused-expired` finding（该 key **不在**基线里 ⇒ 真红）；未登记 ⇒ 照旧 `<wf>|paused`。同时把 `scripts/drift_audit_baseline.json` 里原有的 `e2e-real.yml|paused` / `nightly-verification.yml|paused` 两条放行**销账**（`--prune-zeroed`，基线只许缩短）⇒ 「停用不算漂移」从此只有一条合法路径 = 本台账登记 + 复查日期未过；「基线放行」那条静默路径已删除（判据 = `tests/unit_ci_workflows/test_paused_schedule_registry.py::test_drift_baseline_carries_no_paused_allowance`，**僵尸基线即红**）。",
+  "_drift_wiring": "漂移审计（`scripts/drift_audit.py`）的 C6 心跳判据**改挂到本台账**（`load_paused_registry` / `paused_finding_for`，issue #8197 P1-03）：登记的腿且 `review_due` 未过 ⇒ 只出一行 note（**不算漂移**）；`review_due` 已过 ⇒ `<wf>|paused-expired` finding（该 key **不在**基线里 ⇒ 真红）；未登记 ⇒ 照旧 `<wf>|paused`。同时把 `scripts/drift_audit_baseline.json` 里原有的 `e2e-real.yml|paused` / `nightly-verification.yml|paused` 两条放行**销账**（`--prune-zeroed`，基线只许缩短）⇒ 「停用不算漂移」从此只有一条合法路径 = 本台账登记 + 复查日期未过；「基线放行」那条静默路径已删除（判据 = `tests/unit_ci_workflows/test_paused_schedule_registry.py::test_drift_baseline_carries_no_paused_allowance`，**僵尸基线即红**）。",
   "entries": [
     {
       "file": "nightly-verification.yml",

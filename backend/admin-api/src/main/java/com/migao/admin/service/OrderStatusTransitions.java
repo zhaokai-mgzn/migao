@@ -33,6 +33,21 @@ import java.util.Set;
 public final class OrderStatusTransitions {
 
     /**
+     * 订单状态的**唯一载体**（issue #8198，P2-2a 第一步）：值与数据库存储值**逐字相等**。
+     *
+     * <p>只加常量、**不新建枚举**：实体字段是 {@code String}，枚举会引入第三种表示
+     * （枚举 / 字符串 / DB 值）且不带来本单要的扫面判据（issue #8198 评论裁定）。
+     * 三张表与 controller 一律引用这些常量；判据 = {@code OrderStatusConstantsTest}。</p>
+     */
+    public static final String PENDING = "pending";
+    public static final String CONFIRMED = "confirmed";
+    public static final String PRODUCING = "producing";
+    public static final String PACKED = "packed";
+    public static final String SHIPPED = "shipped";
+    public static final String COMPLETED = "completed";
+    public static final String CANCELLED = "cancelled";
+
+    /**
      * 合法的状态流转定义：key = 当前状态，value = 允许流转到的目标状态集合。
      *
      * <p>相对 issue #5648 之前**只多两个目标**：{@code confirmed → packed}、
@@ -40,24 +55,24 @@ public final class OrderStatusTransitions {
      * 其余五条逐字未改（回归判据在 {@code OrderStatusTransitionsTest}）。</p>
      */
     public static final Map<String, Set<String>> STATUS_TRANSITIONS = Map.of(
-            "pending", Set.of("confirmed", "cancelled"),
-            "confirmed", Set.of("producing", "packed", "shipped", "cancelled"),
-            "producing", Set.of("packed", "shipped", "cancelled"),
-            "packed", Set.of("shipped"),
-            "shipped", Set.of("completed"),
-            "completed", Set.of(),
-            "cancelled", Set.of()
+            PENDING, Set.of(CONFIRMED, CANCELLED),
+            CONFIRMED, Set.of(PRODUCING, PACKED, SHIPPED, CANCELLED),
+            PRODUCING, Set.of(PACKED, SHIPPED, CANCELLED),
+            PACKED, Set.of(SHIPPED),
+            SHIPPED, Set.of(COMPLETED),
+            COMPLETED, Set.of(),
+            CANCELLED, Set.of()
     );
 
     /** 订单状态 → 中文业务术语（错误消息用，直接展示给企业客户 ⇒ 必须中文）。 */
     public static final Map<String, String> ORDER_STATUS_LABELS = Map.of(
-            "pending", "待付款",
-            "confirmed", "已确认",
-            "producing", "生产中",
-            "packed", "已打包",
-            "shipped", "已发货",
-            "completed", "已完成",
-            "cancelled", "已取消"
+            PENDING, "待付款",
+            CONFIRMED, "已确认",
+            PRODUCING, "生产中",
+            PACKED, "已打包",
+            SHIPPED, "已发货",
+            COMPLETED, "已完成",
+            CANCELLED, "已取消"
     );
 
     /**
@@ -75,7 +90,7 @@ public final class OrderStatusTransitions {
      * （{@code 状态全集 − reachable(confirmed)} == {@link #CONTENT_EDITABLE_STATUSES}）
      * ⇒ 将来状态机加新态时，是"忘了评估可编辑性"这件事**变红**，而不是静默放行。</p>
      */
-    public static final Set<String> CONTENT_EDITABLE_STATUSES = Set.of("pending");
+    public static final Set<String> CONTENT_EDITABLE_STATUSES = Set.of(PENDING);
 
     private OrderStatusTransitions() {
     }
@@ -98,7 +113,7 @@ public final class OrderStatusTransitions {
         throw BusinessException.validationError(String.format(
                 "订单当前状态为「%s」，只有「%s」的订单可以修改内容；"
                         + "已收款及之后的状态如需更正，请先取消订单后重新下单",
-                label(status), label("pending")));
+                label(status), label(PENDING)));
     }
 
     /** 状态值是否是状态机认识的状态（未知值一律拒绝，不做默认回落）。 */

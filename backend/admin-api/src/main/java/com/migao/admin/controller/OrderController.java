@@ -7,6 +7,7 @@ import com.migao.admin.exception.BusinessException;
 import com.migao.admin.service.OrderLogisticsService;
 import com.migao.admin.service.OrderService;
 import com.migao.admin.service.OrderShipmentService;
+import com.migao.admin.service.OrderStatusTransitions;
 import com.migao.admin.security.RequirePermission;
 import com.migao.admin.security.TenantOwnedResource;
 import jakarta.validation.Valid;
@@ -445,7 +446,9 @@ public class OrderController {
                 roleService.resolveDataScope(currentUserId()), currentUserId());
         OrderDetailResponse orderDetail = orderService.getOrderById(id, scopedOwner);
         String orderStatus = orderDetail.getStatus();
-        if (!"shipped".equals(orderStatus) && !"confirmed".equals(orderStatus) && !"producing".equals(orderStatus)) {
+        if (!OrderStatusTransitions.SHIPPED.equals(orderStatus)
+                && !OrderStatusTransitions.CONFIRMED.equals(orderStatus)
+                && !OrderStatusTransitions.PRODUCING.equals(orderStatus)) {
             throw com.migao.admin.exception.BusinessException.validationError(
                     "仅已确认/生产中/已发货状态可更新物流，当前状态: " + orderStatus);
         }

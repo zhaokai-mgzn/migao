@@ -1,5 +1,16 @@
 {
-  "_note": "外部作者守卫的**唯一**白名单（issue #8386）。PR 里每个提交的作者必须命中 `logins` 或 `emails`，否则 `scripts/external_authorship_guard.py` 判红、解除 auto-merge 并打 block/merge 标签。口径：① **只收精确值，禁止通配**（通配即形同虚设，脚本与判据都会拒绝启动）；② 加人 = 在这里加一行 + 在 PR 里说明是谁/什么权限，**不要**用域名或通配图省事；③ 空名单会让脚本拒绝启动（fail-closed），不要靠删条目来「消红」。",
+  "_note": "外部作者守卫 / automerge 的**唯一**白名单（issue #8386；PR 作者面 #8393）。`logins` / `emails` = PR 里每个**提交作者**必须命中（否则判红、解除 auto-merge、打 block/merge）；`auto_merge_logins` = 允许进入 arm / auto-merge 的 **PR 作者**（两名使用账号 + CI bot；dependabot 走既有 bot-safe）；`pr_authors` = 允许**提交 PR** 的作者（含 dependabot 已知例外；其他陌生账号判红）。口径：① **只收精确值，禁止通配**（通配即形同虚设，脚本与判据都会拒绝启动）；② 加人 = 在这里加一行 + 在 PR 里说明是谁/什么权限，**不要**用域名或通配图省事；③ 空名单会让脚本拒绝启动（fail-closed），不要靠删条目来「消红」。",
+  "auto_merge_logins": [
+    "zhaokai-mgzn",
+    "ciyuantongda",
+    "github-actions[bot]"
+  ],
+  "pr_authors": [
+    "zhaokai-mgzn",
+    "ciyuantongda",
+    "github-actions[bot]",
+    "dependabot[bot]"
+  ],
   "logins": [
     "zhaokai-mgzn",
     "ciyuantongda",

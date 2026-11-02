@@ -1,6 +1,6 @@
 server:
   port: 8080
-  # 反向代理后的「真实协议」还原（issue #8218 P1-08，2026-10-31 上线审计）
+  # 反向代理后的「真实协议」还原（issue #8197 P1-08，2026-10-31 上线审计）
   # 病（线上实测）：`curl -sI https://api.migaozn.com/api/version | grep -i strict-transport` **无输出** ——
   #   而 `SecurityConfig` 里明明白白声明了 HSTS（maxAge 31536000 + includeSubDomains）。
   #   机制：nginx 终止 TLS 后以 **http** 回源（真实协议放在 `X-Forwarded-Proto: https`），

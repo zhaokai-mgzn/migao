@@ -1,0 +1,7 @@
+{
+  "schema": "issue-comment-author-gate-ledger/v1",
+  "issue": "#8397",
+  "what": "`issue_comment` 触发腿的**身份门控**豁免台账。凡 `on.issue_comment` 的 workflow，其**每个** job 的 job 级 `if:` 必须引用 `author_association` 且白名单含 OWNER / MEMBER / COLLABORATOR（issue #8397 ①：正文关键词是内容判据，不是身份判据）。未登记即红；登记项必须写明 workflow + reason + issue。**只许缩短**：某条腿补上了门控 ⇒ 必须从本表删除（留着 = 陈旧登记）。",
+  "judged_by": "tests/unit_ci_workflows/test_issue_comment_author_gate.py::test_issue_comment_legs_have_author_gate",
+  "exemptions": []
+}
