@@ -1209,9 +1209,11 @@ class TestWorkflowGuardRedProofs:
     """注入式红证：每条结构守卫都必须能红（不会红的断言 = 空断言）。"""
 
     def test_inject_continue_on_error(self):
+        # 锚点 = 重跑步的 `if:` 行本体（#8444 之后它前面多了熔断闸门 ⇒ 锚点同步）
         mutated = REAL_WORKFLOW.replace(
-            "        if: steps.decide.outputs.action == 'rerun'",
-            "        continue-on-error: true\n        if: steps.decide.outputs.action == 'rerun'", 1)
+            "        if: steps.quota.outputs.low != '1' && steps.decide.outputs.action == 'rerun'",
+            "        continue-on-error: true\n"
+            "        if: steps.quota.outputs.low != '1' && steps.decide.outputs.action == 'rerun'", 1)
         assert mutated != REAL_WORKFLOW, "注入锚点失效（先修本测试）"
         assert any("continue-on-error" in v for v in audit_workflow(mutated))
 
@@ -1225,7 +1227,8 @@ class TestWorkflowGuardRedProofs:
 
     def test_inject_removing_the_rerun_condition(self):
         mutated = REAL_WORKFLOW.replace(
-            "        if: steps.decide.outputs.action == 'rerun'\n", "", 1)
+            "        if: steps.quota.outputs.low != '1' && steps.decide.outputs.action == 'rerun'\n",
+            "", 1)
         assert mutated != REAL_WORKFLOW, "注入锚点失效（先修本测试）"
         assert any("独占" in v for v in audit_workflow(mutated))
 
@@ -1978,3 +1981,74 @@ class TestTrackingIssueLabelSelfHeal:
                        "url": "https://github.com/o/r/issues/42"}, out
         assert [c for c in api_calls if c["path"] in ("repos/o/r/labels", "repos/o/r/issues")
                 and c["method"] in ("POST", "PATCH")] == [], api_calls
+
+
+# ── ⑤ 限流风暴下的**放大器**护栏（issue #8444）──────────────────────────────────
+
+
+def circuit_breaker_problems(wf: dict) -> list:
+    """**纯函数**：三条熔断护栏是否都在（空 = 合规）。
+
+    病（2026-11-02 **实测**）：安装令牌限流 ⇒ 全仓红 ⇒ 本腿被「每一次失败」触发；而它的
+    `rerun` 会产生 `attempt≥2` 的新 run，**再次**触发本腿（这是「第二次绿」检测所必需的）
+    ⇒ 自激：70 分钟本腿 **32** 次、台账分支 **34** 次 CI；配额 18:32:29 重置、**18:35 又见底**
+    ⇒ 任何 PR 都合不了。三条护栏各自可单独变红：
+
+    ① `workflow_run.head_branch == chore/flaky-ledger` ⇒ **job 级**跳过（现在只有脚本里的
+       `decide()` 返回 skip，run 仍会跑满 checkout + 两次 API 取数）；
+    ② 配额见底 ⇒ 熔断步（`id=quota`）置 `low=1`（读不到配额同样置 1：环境态不许放大）；
+    ③ 两个**放大器**步（重跑 / 推台账）必须被熔断闸门住。
+    """
+    job = ((wf.get("jobs") or {}).get("triage") or {})
+    bad: list = []
+    job_if = str(job.get("if") or "")
+    if "head_branch != 'chore/flaky-ledger'" not in job_if:
+        bad.append("job 闸门没排除台账分支 ⇒ 台账每次 push 都再拉起一轮分流（每 push 4 条 CI）")
+    steps = [s for s in (job.get("steps") or []) if isinstance(s, dict)]
+    quota = [s for s in steps if s.get("id") == "quota"]
+    if not quota:
+        bad.append("缺限流熔断步（id=quota）⇒ 配额见底时仍会 rerun / 推台账，形成自激")
+    else:
+        run = str(quota[0].get("run") or "")
+        for token, why in (("rate_limit", "读安装令牌配额"), ("GITHUB_OUTPUT", "把判定交给下游闸门")):
+            if token not in run:
+                bad.append(f"熔断步没有{why}（缺 `{token}`）")
+    for anchor in ("① 首次失败 ⇒ 自动重跑失败 job（最多 1 次）", "④ 台账追加"):
+        hit = [s for s in steps if anchor in str(s.get("name") or "")]
+        if not hit:
+            bad.append(f"找不到步骤「{anchor}」—— 结构变了，同步本判据（否则本条假绿）")
+        elif "steps.quota.outputs.low != '1'" not in str(hit[0].get("if") or ""):
+            bad.append(f"「{anchor}」没有被熔断闸门住（配额见底仍会动作 ⇒ 自激）")
+    return bad
+
+
+class TestRateLimitCircuitBreaker:
+    """#8444：限流风暴下**不许**成为放大器（每条都带注入式红证）。"""
+
+    def test_shipped_workflow_breaks_the_amplification_loop(self):
+        assert circuit_breaker_problems(yaml.safe_load(REAL_WORKFLOW)) == []
+
+    def test_red_proof_removing_the_ledger_branch_guard(self):
+        wf = yaml.safe_load(REAL_WORKFLOW)
+        job = wf["jobs"]["triage"]
+        job["if"] = re.sub(
+            r"&&\s*github\.event\.workflow_run\.head_branch\s*!=\s*'chore/flaky-ledger'",
+            "", str(job.get("if") or ""))
+        problems = circuit_breaker_problems(wf)
+        assert problems and any("台账分支" in p for p in problems), problems
+
+    def test_red_proof_removing_the_quota_gate(self):
+        wf = yaml.safe_load(REAL_WORKFLOW)
+        for step in wf["jobs"]["triage"]["steps"]:
+            if isinstance(step, dict) and step.get("if"):
+                step["if"] = str(step["if"]).replace("steps.quota.outputs.low != '1' && ", "")
+        problems = circuit_breaker_problems(wf)
+        assert problems and any("熔断闸门" in p for p in problems), problems
+
+    def test_red_proof_removing_the_quota_step(self):
+        wf = yaml.safe_load(REAL_WORKFLOW)
+        wf["jobs"]["triage"]["steps"] = [
+            s for s in wf["jobs"]["triage"]["steps"]
+            if not (isinstance(s, dict) and s.get("id") == "quota")]
+        problems = circuit_breaker_problems(wf)
+        assert problems and any("熔断步" in p for p in problems), problems
