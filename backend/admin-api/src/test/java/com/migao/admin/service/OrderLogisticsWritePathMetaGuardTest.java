@@ -55,6 +55,11 @@ class OrderLogisticsWritePathMetaGuardTest {
             "src/main/java/com/migao/admin/service/OrderLogisticsWriter.java");
     private static final Path MAPPER = REPO_ROOT.resolve(
             "src/main/java/com/migao/admin/mapper/OrderLogisticsMapper.java");
+    /** issue #7398：两条**旁路建行**的宿主（服务层直连 insert / 控制器直连 ServiceImpl.save）。 */
+    private static final Path SERVICE = REPO_ROOT.resolve(
+            "src/main/java/com/migao/admin/service/OrderLogisticsService.java");
+    private static final Path CONTROLLER = REPO_ROOT.resolve(
+            "src/main/java/com/migao/admin/controller/OrderController.java");
 
     /** 注意：真值取自**生产源码**；文件路径漂移 ⇒ 判红（不是空跑通过）。 */
     private static String source(Path path) throws IOException {
@@ -101,5 +106,36 @@ class OrderLogisticsWritePathMetaGuardTest {
         assertThat(writer)
                 .as("应用层不得自己写首次发货时刻（写 now() = 采用被否掉的「最近一次改物流时刻」口径）")
                 .doesNotContain("setShippedAt(OffsetDateTime.now())");
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // issue #7398：**旁路建行**——两张纸都在写 order_logistics，却都不经 writer
+    // ══════════════════════════════════════════════════════════════════════
+    // 病：`(tenant_id, order_id) WHERE deleted = 0` 唯一索引（V165）兜的是并发双写，
+    // 而绕过 writer 的直连 insert / ServiceImpl.save **没有任何冲突映射** ⇒ 撞键冒泡成 5xx。
+    // 这两条是**确定性**的结构判据（并发探针是概率性的，未必每次都在 CI 上撞到）。
+
+    @Test
+    @DisplayName("🔴 判据 4（#7398）：服务层建行不得直连 insert —— 必须走 OrderLogisticsWriter.upsert")
+    void serviceCreatesLogisticsOnlyThroughWriter() throws IOException {
+        String service = source(SERVICE);
+        assertThat(service)
+                .as("直连 orderLogisticsMapper.insert 会绕过冲突映射 ⇒ 重复写入撞唯一索引冒泡成 5xx")
+                .doesNotContain("orderLogisticsMapper.insert(");
+        assertThat(service)
+                .as("物流建行必须经唯一写入口 OrderLogisticsWriter.upsert（同一份冲突映射）")
+                .contains("OrderLogisticsWriter.upsert(");
+    }
+
+    @Test
+    @DisplayName("🔴 判据 5（#7398）：控制器建行不得直连 ServiceImpl.save —— 第二张旁路写面")
+    void controllerCreatesLogisticsOnlyThroughWriter() throws IOException {
+        String controller = source(CONTROLLER);
+        assertThat(controller)
+                .as("orderLogisticsService.save( 是绕过 writer 的第二条建行路径（并发首次建行同样 500）")
+                .doesNotContain("orderLogisticsService.save(");
+        assertThat(controller)
+                .as("控制器建行必须经 createLogistics（内部委托 writer）")
+                .contains("createLogistics(");
     }
 }

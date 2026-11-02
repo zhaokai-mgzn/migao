@@ -1,6 +1,7 @@
 package com.migao.admin.service;
 
 import com.migao.admin.entity.OrderLogistics;
+import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.OrderLogisticsMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
@@ -100,8 +101,20 @@ public final class OrderLogisticsWriter {
             if (!isUniqueViolation(race)) {
                 throw race;
             }
-            orderLogisticsMapper.updateShippingDetails(tenantId, orderId, logisticsCompany,
-                    trackingNo, explicitShipper, explicitType, explicitMethod);
+            try {
+                orderLogisticsMapper.updateShippingDetails(tenantId, orderId, logisticsCompany,
+                        trackingNo, explicitShipper, explicitType, explicitMethod);
+            } catch (RuntimeException aborted) {
+                // 🔴 事务内撞唯一索引时，PG 会把**当前事务**置为 aborted（之后每条语句都是 25P02，
+                // 见 InboundOrderService 的同款注释）⇒ 这条「收敛为更新」注定失败。
+                // 此时给**可读业务错误**（409），绝不把「并发撞键」漏成 5xx（issue #7398）。
+                if (!isFailedTransaction(aborted)) {
+                    throw aborted;
+                }
+                throw BusinessException.conflict(
+                        "物流信息未写入：同一订单的物流刚被另一请求创建（并发发货）",
+                        "请刷新订单详情查看既有物流记录；重复提交不会写出第二条物流记录");
+            }
             log.info("创建物流信息撞并发（对手先建行）⇒ 已收敛为更新: orderId={}, trackingNo={}",
                     orderId, trackingNo);
         }
@@ -115,6 +128,20 @@ public final class OrderLogisticsWriter {
             }
             if (current instanceof java.sql.SQLException sql
                     && "23505".equals(sql.getSQLState())) {   // 23505 = unique_violation
+                return true;
+            }
+            if (current.getCause() == current) {
+                break;
+            }
+        }
+        return false;
+    }
+
+    /** 「当前事务已被 PG 中止」判定：SQLState 25P02（in_failed_sql_transaction）。 */
+    private static boolean isFailedTransaction(Throwable error) {
+        for (Throwable current = error; current != null; current = current.getCause()) {
+            if (current instanceof java.sql.SQLException sql
+                    && "25P02".equals(sql.getSQLState())) {   // 25P02 = in_failed_sql_transaction
                 return true;
             }
             if (current.getCause() == current) {

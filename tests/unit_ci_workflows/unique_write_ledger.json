@@ -36,10 +36,6 @@
       "table": "inbound_orders",
       "handling": "backend/admin-api/src/main/java/com/migao/admin/service/InboundOrderService.java"
     },
-    "backend/admin-api/src/main/java/com/migao/admin/service/OrderLogisticsService.java::orderLogisticsMapper": {
-      "table": "order_logistics",
-      "handling": "none"
-    },
     "backend/admin-api/src/main/java/com/migao/admin/service/OrderLogisticsWriter.java::orderLogisticsMapper": {
       "table": "order_logistics",
       "handling": "backend/admin-api/src/main/java/com/migao/admin/service/OrderLogisticsWriter.java"
