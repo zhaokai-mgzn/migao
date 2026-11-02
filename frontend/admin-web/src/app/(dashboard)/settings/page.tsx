@@ -344,14 +344,12 @@ export default function SettingsPage() {
     void load()
   }, [load])
 
-  /**
-   * 写面草稿的**唯一**写入点 = `load()`（读面落地时与 `setCalc` 同批提交）与 `saveCalcConfig`
-   * （保存成功后回填服务端回的整份）。
-   *
-   * ⚠️ **不许**再用 `useEffect` 从 `calc` 回写草稿（issue #7685 / #8043 / #8409）：那会把
-   * 「可编辑面可见」与「草稿就绪」拆成两个提交，窗口里落下的编辑被回写盖掉、自动保存被静默取消。
-   * 类级守卫 = `tests/unit/inline-edit-persistence-guard.test.ts` 判据 C。
-   */
+  // 写面草稿的**唯一**写入点 = `load()`（读面落地时与 `setCalc` 同批提交）与 `saveCalcConfig`
+  // （保存成功后回填服务端回的整份）。
+  //
+  // ⚠️ **不许**再用 `useEffect` 从 `calc` 回写草稿（issue #7685 / #8043 / #8409）：那会把
+  // 「可编辑面可见」与「草稿就绪」拆成两个提交，窗口里落下的编辑被回写盖掉、自动保存被静默取消。
+  // 类级守卫 = `tests/unit/inline-edit-persistence-guard.test.ts` 判据 C。
   /**
    * 保存算料口径（`PUT` = **全量替换**）。
    *
