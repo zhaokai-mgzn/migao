@@ -141,6 +141,10 @@ public class StockBatchConsumptionService {
      */
     public static final String ASSIGNMENT_RULE_BEST_FIT = "best_fit";
 
+    private static final BigDecimal LE_0_2 = new BigDecimal("0.2");
+    private static final BigDecimal LE_0_5 = new BigDecimal("0.5");
+    private static final BigDecimal LE_1 = new BigDecimal("1");
+
     /**
      * 分摊商的小数位（内部中间值，**不是业务精度**）：分摊的结果紧接着就经
      * {@link StockQuantity#toStockScaleByCeiling} 归一到 0.1 —— 这里多留几位只是为了让
@@ -1048,7 +1052,7 @@ public class StockBatchConsumptionService {
         List<BatchStockViews.BatchRemaining> rows = remaining(tenantId, productId, null, false);
         int[] counts = new int[4];
         for (BatchStockViews.BatchRemaining r : rows) {
-            counts[StockQuantity.bucketIndexOf(r.remainingMeters())]++;
+            counts[bucketIndex(r.remainingMeters())]++;
         }
         int total = rows.size();
         List<BatchStockViews.Bucket> buckets = new ArrayList<>();
@@ -1229,7 +1233,7 @@ public class StockBatchConsumptionService {
      * <h2>口径怎么保证「只有一套」（判据 1）</h2>
      * <ul>
      *   <li><b>批次余量 / 分档</b>：直接复用 {@link #remaining} 的余量派生（{@code 入库量 + Σdelta}）
-     *       与 {@link StockQuantity#bucketIndexOf} 的边界 —— <b>#5145 的分档口径一个字没改</b>，
+     *       与 {@link #bucketIndex} 的边界 —— <b>#5145 的分档口径一个字没改</b>，
      *       本读面只是把它**再按（时间 × 来源 × 物料）分组**；</li>
      *   <li><b>省料米数 / 金额</b>：SQL 侧逐行取整再求和
      *       （见 {@code StockBatchConsumptionMapper.sumSavingByPeriodCohortMaterial}），
@@ -1712,7 +1716,7 @@ public class StockBatchConsumptionService {
         }
 
         private void add(BigDecimal rest) {
-            int i = StockQuantity.bucketIndexOf(rest);
+            int i = bucketIndex(rest);
             counts[i]++;
             bucketMeters[i] = bucketMeters[i].add(StockQuantity.orZero(rest));
             remaining = remaining.add(StockQuantity.orZero(rest));
@@ -2242,31 +2246,12 @@ public class StockBatchConsumptionService {
         for (ProductSku sku : productSkuMapper.selectList(new LambdaQueryWrapper<ProductSku>()
                 .eq(ProductSku::getTenantId, tenantId)
                 .in(ProductSku::getId, skuIds))) {
-            Double meters = parseDoorWidth(sku.getDoorWidth());
+            Double meters = StockQuantity.doorWidthMeters(sku.getDoorWidth());
             if (meters != null) {
                 out.put(sku.getId(), meters);
             }
         }
         return out;
-    }
-
-    /**
-     * 门幅原串 → 米。存量有两种形态（{@code "2.8米"} / {@code "2.8"}），与
-     * {@code ProductService} 的建品解析、前端 {@code craft-display} 同一口径（去掉非数字修饰）。
-     *
-     * <p>解析不出 / 非正 ⇒ {@code null} ⇒ 该批次**不参与排料**（**不猜门幅**：
-     * 猜大了会把两块料并进一行 ⇒ 少领 ⇒ 切不出货）。</p>
-     */
-    private static Double parseDoorWidth(String raw) {
-        if (!StringUtils.hasText(raw)) {
-            return null;
-        }
-        try {
-            BigDecimal value = new BigDecimal(raw.replaceAll("[^0-9.]", ""));
-            return value.signum() > 0 ? value.doubleValue() : null;
-        } catch (NumberFormatException e) {
-            return null;
-        }
     }
 
     private static BigDecimal negated(BigDecimal value) {
@@ -2307,6 +2292,20 @@ public class StockBatchConsumptionService {
             ids.add(b.getId());
         }
         return ids;
+    }
+
+    private static int bucketIndex(BigDecimal remaining) {
+        BigDecimal r = StockQuantity.orZero(remaining);
+        if (r.compareTo(LE_0_2) <= 0) {
+            return 0;
+        }
+        if (r.compareTo(LE_0_5) <= 0) {
+            return 1;
+        }
+        if (r.compareTo(LE_1) <= 0) {
+            return 2;
+        }
+        return 3;
     }
 
     private static BatchStockViews.Bucket bucket(String key, String label, int count, int total) {
