@@ -157,6 +157,27 @@
 - **判据**：`frontend/bmini-app/tests/worker-login-parity.test.ts`（跨端标题/副标题/三字段及顺序/按钮逐字比对，
   改一个标签或换顺序 ⇒ 红）+ `frontend/bmini-app/tests/worker-report-login.test.tsx`（就地登录 / 继续码 / 无码回首页）。
   ⚠️ 390×844 的 `/b/` vs `/w/` 视觉对比属多模态验收，不在本条判据内。
+### 任一页面崩了不再是纯白屏：错误页有出口 + 一次去敏上报 + 构建身份可探（2026-10-31，issue #8203）
+
+- **改前**：58 个页面里只有客户管理页一个错误边界 ⇒ 其余页面渲染期异常落到 Next.js 默认错误页
+  （**整页白屏、无重试出口**），且**线上无人知道**（四端零前端错误上报；`/version` 面缺失 ⇒ 发布漂移不可发现）。
+- **改后（白屏出口）**：根级 `global-error.tsx` + `app/` 与两个路由组（工作台 / 企业站）的 `error.tsx`
+  全部走同一个 `ErrorFallback`：**重试** + **按病因选回入口**（`/login` / `/dashboard` / `/`）+ **上报一次**；
+  客户管理页收敛到同一形态（页面级文案保留）。
+- **改后（上报面）**：`POST /api/client-errors`（未登录可用，登录页崩了也要能报）只写一行**去敏日志** ——
+  8 字段白名单、8 KiB 体积上限、每 IP 30 条/分钟 + 全局 600 条/分钟；**不含** PIN / token / 手机号 /
+  请求体 / 请求头 / cookie / 用户标识。
+- **改后（可观测面）**：ai-agent 新增 `GET /version` 与 `/api/version`（`app` / `sha` / `builtAt`，
+  值由构建期注入；取不到报**空串** = 探不到，**不伪造** `unknown`）；`scripts/synthetic_probe.py`
+  从公网打三个只读面（`/api/version` + `/b/` + `/w/`，退出码 `0/1/3`），接在既有 `post-merge-verify`
+  腿的 P1 出口**之前**（**不新增 schedule**、不新增 secret）。
+- **口径全文**：`docs/deployment/observability-minimum.md`（含**已知不覆盖**：无外部 APM / 无告警升级 /
+  无 5xx 聚合 / 无前端采样 / C 端未接）。
+- 判据：`frontend/admin-web/tests/unit/lib/clientErrorReporter.test.ts` ·
+  `frontend/admin-web/tests/unit/components/ErrorFallback.test.tsx` ·
+  `backend/admin-api/src/test/java/com/migao/admin/controller/ClientErrorControllerTest.java` ·
+  `backend/ai-agent-service/tests/test_version_probe.py` ·
+  `tests/unit_ci_workflows/test_synthetic_probe.py`。
 
 ### 观星台终端可从官网下载，更新清单有了正式落地面（2026-10-31，issue #8195）
 
