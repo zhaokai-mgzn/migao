@@ -20,7 +20,14 @@ jobs:
     # 事件量无法再降；唯一还能省的是「bot 自己的评论也创建一次 run」这一族。
     # 实测读数（如实登记，不粉饰）：09-27~09-29 共 90 次 run，**全部**是 job 级 `if` 跳过的
     # `skipped` ⇒ 本腿不是体积最大的放大器，本次也没有可观的量能降下来。
+    # ── 🔴 作者门控（issue #8397 ①，2026-11-02）─────────────────────────────────
+    # 此前只按**评论正文关键词**筛 ⇒ 仓库公开后，**任何陌生人**在本仓任一 issue 下贴一段含
+    # `<!-- REVIEW_JSON` + `"reject"` 的评论，就能触发这条跑在 base 仓、带 `issues: write` 的腿
+    # （改 label、隐藏既有 DRAFT 评论）。正文关键词是**内容**判据，不是**身份**判据 —— 两者必须都有。
+    # 白名单只认本仓 OWNER / MEMBER / COLLABORATOR（陌生人的 author_association 是 `NONE`/`CONTRIBUTOR`）。
+    # 判据 = tests/unit_ci_workflows/test_issue_comment_author_gate.py（**所有** `issue_comment` 腿都受约束）。
     if: |
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
       contains(github.event.comment.body, '<!-- REVIEW_JSON') &&
       (contains(github.event.comment.body, '"reject"') || contains(github.event.comment.body, '"supplement"')) &&
       !contains(github.event.issue.labels.*.name, 'ai-draft') &&
