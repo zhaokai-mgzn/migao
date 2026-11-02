@@ -4161,6 +4161,14 @@ export interface PoolLine {
   requiredDeliveryDate?: string | null
   /** 到货日 − 今天（天）；负数 = 已逾期；**未指定时键缺席**；服务端算，前端不重算 */
   deliveryDaysLeft?: number | null
+  /**
+   * **库存可满足性**（issue #7091，服务端只读字段）：本行需求能否被某个库存批次裁出。
+   *
+   * 语义 = 派工前 fail-closed 判据的那一个条件（服务端同源的余量派生点 + 同一条 SKU 一致性口径）
+   * ⇒ `false` = 勾上它点「一键合并派单」必被拒（服务端拒绝整批，不静默少派）。
+   * 🔴 缺席（老服务端 / 桩数据）= **不可判定** ⇒ 一律按可派处理（缺字段不制造假阻塞）。
+   */
+  stockSatisfiable?: boolean
 }
 
 /** 超时未派告警（`overdueCount > 0` 时必须有可行动文案） */

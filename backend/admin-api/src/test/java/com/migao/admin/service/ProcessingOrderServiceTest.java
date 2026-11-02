@@ -1,5 +1,5 @@
 package com.migao.admin.service;
-// case_ids: PG-001, PG-002, PG-003, PG-004, PG-005, PG-006, PG-007, PG-008, PG-011, PG-018, PG-019, PG-022, PG-023, PG-025, PG-060, PG-069, PG-090, PG-094, PG-095, UI-030, PR-068, PR-069, PR-070, PR-077
+// case_ids: PG-001, PG-002, PG-003, PG-004, PG-005, PG-006, PG-007, PG-008, PG-011, PG-018, PG-019, PG-022, PG-023, PG-025, PG-060, PG-069, PG-090, PG-094, PG-095, UI-030, PR-068, PR-069, PR-070, PR-077, PR-081
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -4819,6 +4819,49 @@ class ProcessingOrderServiceTest {
         assertThatThrownBy(() -> processingOrderService.pool(TENANT, BigDecimal.ZERO))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("maxWaitHours 必须为正数");
+    }
+
+    @Test
+    @DisplayName("#7091 池读面：行级「库存可满足性」跟库存走（够 true / 不够 false），且按物料**一次**批量取（不 N+1）")
+    void poolMarksStockSatisfiabilityPerLine() {
+        java.time.OffsetDateTime now = java.time.OffsetDateTime.now();
+        when(orderMapper.selectList(any())).thenReturn(List.of(
+                confirmedOrderOf("order-001", "ORD-20260912-0001", now.minusHours(2))));
+        when(processingOrderMapper.selectActiveOrderIds(eq(TENANT), anyCollection())).thenReturn(List.of());
+        // 同一张单两行、两个物料（布 + 纱的现场形态）：主键去重后只该问库存服务**一次**
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(
+                itemOf("order-001", "item-1", "SKU-1"),
+                itemOf("order-001", "item-2", "SKU-2")));
+        // 余量读数来自服务端**同一份**派生点（这里只给读数）：SKU-1 够本行 3 米、SKU-2 只有 1 米
+        when(stockBatchConsumptionService.maxRemainingByMaterial(eq(TENANT), anyCollection()))
+                .thenReturn(Map.of(
+                        new StockBatchConsumptionService.MaterialDemand("prod-1", "SKU-1"),
+                        new BigDecimal("3.0"),
+                        new StockBatchConsumptionService.MaterialDemand("prod-1", "SKU-2"),
+                        new BigDecimal("1.0")));
+
+        var pool = processingOrderService.pool(TENANT, null);
+
+        Map<String, ProductionPoolViews.PoolLine> lineBySku = new LinkedHashMap<>();
+        for (ProductionPoolViews.PoolGroup group : pool.groups()) {
+            for (ProductionPoolViews.PoolLine line : group.lines()) {
+                lineBySku.put(line.skuCode(), line);
+            }
+        }
+        assertThat(lineBySku.get("SKU-1").stockSatisfiable())
+                .as("单批最大余量 3.0 ≥ 本行需求 3 米 ⇒ 有能裁出它的批次").isTrue();
+        assertThat(lineBySku.get("SKU-2").stockSatisfiable())
+                .as("单批最大余量 1.0 < 本行需求 3 米 ⇒ 这一行点下去必被 fail-closed 拒绝（= 本单要预先标出的那些行）")
+                .isFalse();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<java.util.Collection<StockBatchConsumptionService.MaterialDemand>> demands =
+                ArgumentCaptor.forClass(java.util.Collection.class);
+        verify(stockBatchConsumptionService, times(1))
+                .maxRemainingByMaterial(eq(TENANT), demands.capture());
+        assertThat(demands.getValue())
+                .as("两行 ⇒ 两个物料，且**只调一次**：行数增长不等于查询数增长（池读面不得 N+1）")
+                .hasSize(2);
     }
 
     // ============================================================ 外发区（V194，issue #7746 后续）

@@ -9,17 +9,20 @@ import { poolBoardApi } from '@/lib/api'
 import { Badge, Button, Card, PageHeader, SELECT_CONTROL } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import {
+  batchCandidateOrderIds,
   batchGroups,
   buildPoolRequest,
   formatDeliveryDaysLeft,
   formatMeters,
   formatRequiredDeliveryDate,
   formatWaitHours,
+  isStockSatisfiable,
   mustSurfaceDispatchError,
   previewSummaryRows,
   singleDispatchLines,
   singleDispatchLinesOfOrder,
   singleDispatchOrders,
+  stockBlockedOrderIds,
   type SingleDispatchOrder,
 } from '@/lib/pool-board'
 import { isUrgentFlag, urgentBadgeText } from '@/lib/order-urgency'
@@ -243,15 +246,20 @@ export default function ProductionPoolPage() {
   const warnings = board?.warnings ?? []
 
   /**
-   * **成批候选**的全部订单 id —— 「全选」的唯一取值口径（复用 `batchGroups`，
+   * 缺料的订单（issue #7091）—— 勾选与「全选」都按**订单**粒度判（见 `stockBlockedOrderIds`）。
+   * 数据集约定：一张单可能横跨两个料组（布 + 纱），只要有一行缺料，整单派出去必被服务端拒绝。
+   */
+  const stockBlocked = stockBlockedOrderIds(board)
+
+  /**
+   * **成批候选**的全部订单 id —— 「全选」的唯一取值口径（走 `batchCandidateOrderIds`，
    * 不在这里另写一份 `groups` 遍历）。
    *
    * 🔴 加急单在 `urgentLines`（插队区），**不是**成批候选 ⇒ 全选**勾不到**它；
-   * 否则整批必被 422 拒绝（同 `frontend/admin-web/src/lib/pool-board.ts` 的 `batchGroups` 口径）。
+   * 缺料行（`stockSatisfiable === false`）按订单粒度剔除 —— 全选不得勾出一批注定被拒的派单
+   * （issue #7091；否则「全选 14 单 → 一键合并派单」必失败这个现场会原样复发）。
    */
-  const candidateIds = Array.from(
-    new Set(groups.flatMap((g) => (g.lines ?? []).map((l) => l.orderId))),
-  )
+  const candidateIds = batchCandidateOrderIds(board)
   const allSelected = candidateIds.length > 0 && candidateIds.every((id) => selectedIds.includes(id))
 
   /** 全选 / 取消全选（跨**全部料组**的成批候选并集） */
@@ -501,18 +509,32 @@ export default function ProductionPoolPage() {
                                 )}
                               >
                                 <td className="px-3 py-2">
+                                  {/*
+                                    issue #7091：缺料行**禁用勾选**。提示做成**行内标记**（不是顶部横幅）
+                                    —— 它跟着行数增长，常驻面不得随条数长高（§31 P1）；
+                                    文案只说事实与该做什么（§31 P4），不念同屏已有的列（§31 P2）。
+                                  */}
                                   <input
                                     type="checkbox"
                                     aria-label={`选择订单 ${line.orderNo}`}
                                     checked={selectedIds.includes(line.orderId)}
+                                    disabled={stockBlocked.has(line.orderId)}
                                     onChange={() => toggleOrder(line.orderId)}
-                                    className="w-4 h-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
+                                    className="w-4 h-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-40"
                                   />
                                 </td>
                                 <td className="px-3 py-2 font-mono text-neutral-900">{line.orderNo}</td>
                                 <td className="px-3 py-2 text-neutral-700">
                                   {line.productName}
                                   <span className="text-neutral-400 ml-1.5">{line.skuCode || '-'}</span>
+                                  {!isStockSatisfiable(line) && (
+                                    <span
+                                      data-testid={`pool-line-stock-hint-${line.orderId}`}
+                                      className="block text-xs text-amber-600"
+                                    >
+                                      库存不足，先入库
+                                    </span>
+                                  )}
                                 </td>
                                 <td className="px-3 py-2 text-right font-mono text-neutral-900">
                                   {formatMeters(line.requiredMeters)}

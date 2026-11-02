@@ -73,9 +73,42 @@ export function batchGroups(board: PoolBoard | null | undefined): PoolGroup[] {
   return board?.groups ?? []
 }
 
-/** 成批候选的订单 id（「加急单不进池」的机器面读数：成批候选 ∩ 加急单 = 空集） */
+/**
+ * 这一行的库存能否满足本行需求（issue #7091，服务端只读字段 `stockSatisfiable`）。
+ *
+ * 语义 = 派工前 fail-closed 判据的那一个条件（服务端同源的余量派生点 + 同一条 SKU 一致性口径）。
+ * 🔴 只有服务端**明确**下发 `false` 才判不可派 —— 缺席（老服务端 / 桩数据）= 不可判定 ⇒ 按可派处理：
+ * 缺一个字段不许把商家本来能派的单挡在门外（不制造假阻塞）。
+ */
+export function isStockSatisfiable(line: Pick<PoolLine, 'stockSatisfiable'>): boolean {
+  return line.stockSatisfiable !== false
+}
+
+/**
+ * 库存**不够**的订单 id（issue #7091）：勾选粒度是**订单**（一次动作派整单）⇒ 只要该单有**任意一行**
+ * 缺料，这一单就派不出去（服务端 fail-closed 拒绝整批）⇒ 禁用勾选与「全选」都必须按这个粒度判，
+ * 否则从**另一个料组**仍能勾上同一张注定失败的整单。
+ */
+export function stockBlockedOrderIds(board: PoolBoard | null | undefined): Set<string> {
+  const blocked = new Set<string>()
+  for (const group of batchGroups(board)) {
+    for (const line of group.lines ?? []) {
+      if (!isStockSatisfiable(line)) blocked.add(line.orderId)
+    }
+  }
+  return blocked
+}
+
+/**
+ * 成批候选的订单 id（「加急单不进池」+「缺料单不可勾」的机器面读数）。
+ *
+ * 加急单在 `urgentLines`（插队区），**不在** `groups` ⇒ 这里天然勾不到它；缺料单按
+ * {@link stockBlockedOrderIds} 的**订单**粒度剔除（全选不得勾出一批注定失败的派单）。
+ */
 export function batchCandidateOrderIds(board: PoolBoard | null | undefined): string[] {
-  return batchGroups(board).flatMap((g) => (g.lines ?? []).map((l) => l.orderId))
+  const blocked = stockBlockedOrderIds(board)
+  const ids = batchGroups(board).flatMap((g) => (g.lines ?? []).map((l) => l.orderId))
+  return [...new Set(ids)].filter((id) => !blocked.has(id))
 }
 
 /**
