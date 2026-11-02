@@ -1061,8 +1061,17 @@ def audit_workflow(src: str) -> list:
         wr = trig["workflow_run"] or {}
         if list(wr.get("types") or []) != ["completed"]:
             bad.append("workflow_run.types 必须是 [completed]（run 结束才分流）")
-        if sorted(wr.get("workflows") or []) != sorted(FL.TRIAGED_WORKFLOWS):
-            bad.append("workflow_run.workflows 必须与 flaky_ledger.TRIAGED_WORKFLOWS 逐字一致")
+        # #6455：触发面 = 「分流白名单 ∪ **记账腿**（部署腿：只记台账、不重跑）」。两集合必须**不相交**
+        # （重跑有副作用的腿不许进白名单），触发面多一个/少一个都判红 —— 语义与改前**一致**，
+        # 只是把「只记账那一半」也纳入等式（否则它要么进不了触发面 = 本单要治的「不可度量」，
+        # 要么进得去却没人在判据里承认它）。
+        _triggers = sorted(set(FL.TRIAGED_WORKFLOWS) | set(FL.DEPLOY_RECORD_WORKFLOWS))
+        if set(FL.TRIAGED_WORKFLOWS) & set(FL.DEPLOY_RECORD_WORKFLOWS):
+            bad.append("TRIAGED_WORKFLOWS 与 DEPLOY_RECORD_WORKFLOWS 必须**不相交**"
+                       "（部署腿重跑有副作用 ⇒ 绝不许进分流白名单）")
+        if sorted(wr.get("workflows") or []) != _triggers:
+            bad.append("workflow_run.workflows 必须与 flaky_ledger.TRIAGED_WORKFLOWS ∪ "
+                       "DEPLOY_RECORD_WORKFLOWS 逐字一致")
 
     perms = wf.get("permissions") or {}
     for scope in ("actions", "contents", "pull-requests", "issues"):
