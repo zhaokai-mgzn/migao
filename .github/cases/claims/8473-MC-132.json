@@ -1,5 +1,5 @@
 {
-  "id": "MC-130",
+  "id": "MC-132",
   "pr": 8473,
   "title": "批次就绪判定把「已 arm 的原生 auto-merge」也算作不就绪（issue #6212）",
   "claimed_at": "2026-11-02"

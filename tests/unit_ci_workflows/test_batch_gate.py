@@ -1,6 +1,6 @@
-# case_ids: MC-012, MC-130
+# case_ids: MC-012, MC-132
 # （沿用 tests/unit_ci_workflows/** 的既有惯例：CI 结构类 L0 不变式统一挂 MC-012；本单新增的
-#   auto-merge arm 面另挂 MC-130，见 .github/cases/misc.yml）
+#   auto-merge arm 面另挂 MC-132，见 .github/cases/misc.yml）
 r"""批次统一验证入口 `scripts/batch-gate.sh` 的实例判据（issue #6012；#6055 / PR #6056 补就绪前置判定）。
 
 ## 治的形态（2026-10-02 17:24–17:29 CST 现场，读数现取）
