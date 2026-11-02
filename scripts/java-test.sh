@@ -21,10 +21,10 @@
 #
 # 退出码：0 真跑且绿 / 1 红（空跑 / 失败 / @Nested 没跑到）/ 2 用法 / 3 不可判定
 #
-# 判定逻辑全在 scripts/java_test_readings.py（同源判据：tests/unit_ci_workflows/test_java_nested_pointed_run_guard.py）
+# 判定逻辑全在 scripts/java_pointed_readings.py（同源判据：tests/unit_ci_workflows/test_java_nested_pointed_run_guard.py）
 # —— 本文件只做入口，不复制口径。
 # =============================================================================
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-exec python3 "$ROOT/scripts/java_test_readings.py" --root "$ROOT" "$@"
+exec python3 "$ROOT/scripts/java_pointed_readings.py" --root "$ROOT" "$@"

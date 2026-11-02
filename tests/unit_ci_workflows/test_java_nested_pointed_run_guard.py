@@ -30,6 +30,7 @@ import ast
 import functools
 import importlib.util
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -38,7 +39,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ENTRY = REPO_ROOT / "scripts" / "java-test.sh"
-MODULE_PATH = REPO_ROOT / "scripts" / "java_test_readings.py"
+MODULE_PATH = REPO_ROOT / "scripts" / "java_pointed_readings.py"
 LEDGER_PATH = Path(__file__).resolve().parent / "java_pointed_run_ledger.json"
 DEV_DOC = REPO_ROOT / "docs" / "wiki" / "Development.md"
 
@@ -57,12 +58,39 @@ SURFACE_GLOBS = (
 
 TXT_ENGINE_GLOB = "scripts/*.py"
 
+#: 射程声明（`tests/unit_ci_workflows/guard_scope_ledger.json` 的 `declaration` 必须与本常量**逐字一致**；
+#: 语料定义由 `test_guard_scope_declaration.py` 冻结 —— 收窄射程或扩大剪枝都要先改那里）。
+#: 为什么本判据会碰到 `*.sh`：`-Dtest=` 的调用方有一类在 shell 入口里（`scripts/*.sh`），
+#: 形态②（`外层类#嵌套方法`）在那种地方同样会静默空跑 ⇒ `.sh` 面必须在射程内。
+GUARD_SCOPE = {
+    "roots": ["."],
+    "glob": "*.sh",
+    "exclude_dirs": [".git", "node_modules", ".venv", "venv", "site-packages", ".next", "dist",
+                     "build", "coverage"],
+    "enumerator": "scanned_shell_files",
+    "uncovered_faces": [],
+}
+
+EXCLUDE_DIRS = frozenset(GUARD_SCOPE["exclude_dirs"])
+
+
+def scanned_shell_files() -> list[str]:
+    """本判据**实际**扫描的 `*.sh` 集（= `GUARD_SCOPE` 声明的那一份；供射程判据复算）。"""
+    out: list[str] = []
+    for dirpath, dirnames, filenames in os.walk(REPO_ROOT):
+        dirnames[:] = sorted(d for d in dirnames if d not in EXCLUDE_DIRS)
+        for name in sorted(filenames):
+            if name.endswith(".sh"):
+                out.append((Path(dirpath) / name).as_posix())
+    return out
+
+
 
 def _load_module():
-    spec = importlib.util.spec_from_file_location("java_test_readings", MODULE_PATH)
+    spec = importlib.util.spec_from_file_location("java_pointed_readings", MODULE_PATH)
     assert spec and spec.loader, f"入口实现不存在：{MODULE_PATH.relative_to(REPO_ROOT)}"
     mod = importlib.util.module_from_spec(spec)
-    sys.modules["java_test_readings"] = mod  # dataclass 需要 __module__ 可解析
+    sys.modules["java_pointed_readings"] = mod  # dataclass 需要 __module__ 可解析
     spec.loader.exec_module(mod)
     return mod
 
@@ -87,6 +115,7 @@ def surface_files() -> list[Path]:
                 out.append(path)
             continue
         out.extend(sorted(REPO_ROOT.glob(pattern)))
+    out.extend(Path(p) for p in scanned_shell_files())  # `.sh` 调用面（射程见 GUARD_SCOPE）
     return [p for p in out if p.is_file()]
 
 

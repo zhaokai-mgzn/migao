@@ -472,7 +472,7 @@
     {
       "path": "tests/unit_ci_workflows/test_java_nested_pointed_run_guard.py",
       "guards": "Java 定点判据的两条「空跑 / 读数」形态（issue #6495）：① 把 target/surefire-reports/<fqn>.txt 的 Tests run: 当读数源 —— 该摘要在 @Nested 类上恒报 0（实测同一次运行 XML/console 15，摘要 0）；② -Dtest=<外层类>#<方法> 而该方法声明在 @Nested 内 ⇒ Tests run: 0 / BUILD SUCCESS / exit=0 且不产出 XML。仓内 durable 面出现形态②即具名报红并给正解 <外层类>$<嵌套类>#<方法>；读 .txt 的机具未登记即红、且其定点类必须现取不含 @Nested（前提一变即红）",
-      "red_proof": "把 scripts/java_test_readings.py 的 class_bodies() 里 @Nested 判定改成 nested = False ⇒ tests/unit_ci_workflows/test_java_nested_pointed_run_guard.py::test_j1_scanner_is_not_blind / ::test_j2_synthetic_bad_form_is_red_and_good_forms_are_not / ::test_j4_synthetic_nested_unit_would_be_red / ::test_j6_mask_makes_the_decision 四条同时红（本机实测 4 failed / 7 passed）；在 scripts/ 放一个未登记的 .txt 读数机具 ⇒ ::test_j3_every_txt_reading_engine_is_registered_and_precondition_holds 红；把台账 tests/unit_ci_workflows/java_pointed_run_ledger.json 的定点类换成含 @Nested 的 OssConfigTest ⇒ 同一条判据红（前提失效）",
+      "red_proof": "把 scripts/java_pointed_readings.py 的 class_bodies() 里 @Nested 判定改成 nested = False ⇒ tests/unit_ci_workflows/test_java_nested_pointed_run_guard.py::test_j1_scanner_is_not_blind / ::test_j2_synthetic_bad_form_is_red_and_good_forms_are_not / ::test_j4_synthetic_nested_unit_would_be_red / ::test_j6_mask_makes_the_decision 四条同时红（本机实测 4 failed / 7 passed）；在 scripts/ 放一个未登记的 .txt 读数机具 ⇒ ::test_j3_every_txt_reading_engine_is_registered_and_precondition_holds 红；把台账 tests/unit_ci_workflows/java_pointed_run_ledger.json 的定点类换成含 @Nested 的 OssConfigTest ⇒ 同一条判据红（前提失效）",
       "owner": "#6495"
     }
   ]

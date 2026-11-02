@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-# case_ids: MC-134
-"""java_test_readings.py — Java「定点判据」的**可信读数**（issue #6495）
+"""java_pointed_readings.py — Java「定点判据」的**可信读数**（issue #6495）
 
 ## 病（2026-11-03 本机实跑，逐条读数见 docs/wiki/Development.md 的「Java 定点判据」节）
 
