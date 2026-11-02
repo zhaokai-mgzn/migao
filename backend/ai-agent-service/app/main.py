@@ -226,6 +226,29 @@ def create_app() -> FastAPI:
             )
         return {"status": "ready", "service": settings.APP_NAME}
 
+    # 构建身份探针（issue #8203；审计 P1-01：改前 `ai-api.migaozn.com/api/version|/version|/build-info`
+    # **全 404** ⇒ ai-agent 线上「跑的是哪个 commit」不可判定、发布漂移不可发现）。
+    #
+    # 与 admin-api `GET /api/version` **同口径**（三个字段：app / sha / builtAt），
+    # 值全部来自**构建期注入**（`Settings.MIGAO_BUILD_SHA` / `MIGAO_BUILT_AT` ← Dockerfile 的
+    # `ARG`+`ENV` ← `deploy.sh` 的 `--build-arg`）。
+    #
+    # 三态语义（消费方必须照此判，「取不到」不得当「一致」）：
+    #   · sha 非空且与期望一致 ⇒ 线上就是这次构建；
+    #   · sha 非空但不一致     ⇒ 判红（这正是本端点存在的理由）；
+    #   · sha 为空             ⇒ **探不到**（老镜像 / 非部署形态启动），不得判绿也不得判红。
+    #
+    # ⚠️ 挂在**两个路径**上有意：`/version`（本服务原有 `/health` `/ready` 的邻居，直连容器/回环用）
+    #   与 `/api/version`（与 admin-api **同名**，运维/探针只有一条命名口径）。
+    @app.get("/version")
+    @app.get("/api/version")
+    async def version_probe():
+        return {
+            "app": settings.APP_NAME,
+            "sha": (settings.MIGAO_BUILD_SHA or "").strip(),
+            "builtAt": (settings.MIGAO_BUILT_AT or "").strip(),
+        }
+
     return app
 
 

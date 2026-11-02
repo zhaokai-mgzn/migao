@@ -22,10 +22,28 @@
 > 新增一条判据地址时，**先跑上面那段自检**，再把地址加进该测试的白名单（并写明它的归属面）。
 
 - 部署后冒烟失败（post-deploy smoke / frontend probe）
-- 健康检查异常 —— **用线上真的 200 的面**（公网）：
-  - `GET https://api.migaozn.com/api/version` **非 200**（admin-api 的版本面，nginx 放行 `/api/` 前缀）
-  - `GET https://ai-api.migaozn.com/health` **非 200**（ai-agent 健康面，nginx 只屏蔽 `/docs` `/redoc` `/openapi.json`）
-  - ⚠️ **不要**用 `/actuator/health` 判公网（它被 nginx 整段 404；容器内部面见 §3 的 `127.0.0.1` 那三条）
+- 健康检查异常 —— **公网口径，三个都必须是 200**：
+  ```bash
+  # ① 后端活着 且 跑的是哪个 build（唯一的公开构建身份面）
+  curl -s -o /dev/null -w '%{http_code}\n' https://api.migaozn.com/api/version
+  curl -s https://api.migaozn.com/api/version        # ⇒ {"app","sha","tag","builtAt"}
+  # ② AI 服务
+  curl -s -o /dev/null -w '%{http_code}\n' https://ai-api.migaozn.com/health
+  curl -s -o /dev/null -w '%{http_code}\n' https://ai-api.migaozn.com/version   # issue #8203 新增（{app,sha,builtAt}）
+  # ③ 两条 H5 落地（商家扫码 / 工人报工）
+  curl -s -o /dev/null -w '%{http_code}\n' https://app.migaozn.com/b/
+  curl -s -o /dev/null -w '%{http_code}\n' https://app.migaozn.com/w/
+  ```
+  > 🔴 **改前这里是 `curl api.migaozn.com/actuator/health`（线上恒 404）** —— 审计 P1-05：
+  > nginx 把 actuator 面整段屏蔽（`deploy/swas/nginx.conf` 的
+  > `location ~ ^/(actuator|v3/api-docs|swagger-ui)(/|$)` ⇒ `return 404`），
+  > 于是按 runbook 执行会得到「非 200 ⇒ 判定需要回滚」的**错误信号**（永远命中）。
+  > 判据地址必须**自己有 200 的读数**：复算 = `curl -s -o /dev/null -w '%{http_code}\n' https://api.migaozn.com/api/version`
+  > ⇒ 现取 **200**（本节所有地址都以此为准；加新判据地址前先跑一遍确认它真是 200）。
+  >
+  > **一条命令复算全部**：`python3 scripts/synthetic_probe.py`（issue #8203 的只读合成探针；
+  > 覆盖 `/api/version` + `/b/` + `/w/`，退出码 0 全通过 / 1 至少一条失败 / 3 无法判定）。
+  > 它也接在 `.github/workflows/post-merge-verify.yml` 上：失败 ⇒ 该腿红 ⇒ 既有 P1 值班 issue。
 - 用户投诉 / 关键指标异常（订单、登录、AI 对话）
 
 ## 2. 快速回滚（推荐：GitHub 手动部署旧版本）
@@ -64,12 +82,15 @@ docker compose up -d --no-deps admin-api
 docker compose restart nginx
 
 # 健康检查（与 deploy.sh 相同）
-# ⚠️ 这三条是**容器内部面**（127.0.0.1 + 服务端口）—— 它们 200 是合法的（`/actuator/health` 在
-#    nginx 后面被 404 屏蔽，但**容器内部**仍然直接由 Spring 提供服务）⇒ 本节与 §1 的**公网面**
-#    是两套坐标：公网判据不要抄这三条（见 §1 的自检）。
+# ⚠️ 这里是**回环/容器内部面**，不是公网面：`/actuator/health` 只被 nginx 的公网 location 屏蔽，
+#    容器内 127.0.0.1:8080 仍然 200（deploy.sh 的 wait_healthy 用的就是它）。
+#    公网判据见 §1（`/api/version`）—— 两处口径**不要混用**。
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/actuator/health
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/health
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3001/
+
+# 公网面复算（回滚后必跑：这一步才证明"用户能看到的那一面"是好的）
+python3 scripts/synthetic_probe.py
 ```
 
 ## 4. 数据回滚（不适用代码回滚时）

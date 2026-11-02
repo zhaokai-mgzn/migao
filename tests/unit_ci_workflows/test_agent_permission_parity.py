@@ -1108,6 +1108,14 @@ UNANNOTATED_ENDPOINTS: dict[str, str] = {
     # 只回构建身份 / 迁移计数，**不含**迁移文件名、租户、业务数据、实例路径。
     # 两条共用**一条前缀登记**（不是两条）：台账只许缩短，探针族本质是一件事，不该各占一行。
     "GET /api/version*": "探针族（#6951 版本 + #7373 迁移事实）：只读、无鉴权、只回构建身份与迁移计数",
+    # issue #8203（P0-03）：浏览器**错误上报**端点 `POST /api/client-errors`（`ClientErrorController`）
+    # 是**刻意的公开面**：登录页崩了也要能上报（前端在故障态没有凭据）⇒ `SecurityConfig` 把它放进 `permitAll`。
+    # 它**不读租户/业务数据**（只把 8 个白名单字段落**一行** SLF4J 日志，不建表不落库），
+    # 且公开面三道闸缺一不可：8 KiB 体积上限（含分块无长度）/ 每 IP 30 条·分钟⁻¹ + 全局 600 / 字段白名单。
+    # 加权限码 = 「白屏永远不上报」—— 正是本单要治的失效模式（沉默放行与过度加码在同一格）。
+    # 判据 = 本文件 `test_every_judgement_is_green`
+    #        + `backend/admin-api/src/test/java/com/migao/admin/controller/ClientErrorControllerTest.java`。
+    "POST /api/client-errors": "白屏上报面：`permitAll` **有意放行**（8 KiB / 每 IP 30·分钟⁻¹ + 全局 600 / 三道去敏；不读业务数据）",
     "GET /api/admin/notifications*": "自助通知中心：收件人一律取 `SecurityContext` 当前用户（#4727 第 4 行）",
     "PUT /api/admin/notifications*": "同上（标记已读）",
     "DELETE /api/admin/notifications*": "同上（删除自己的通知）",
