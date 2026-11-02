@@ -329,12 +329,15 @@ function scannedIndex(data) {
 // 渲染（HTML 字符串；机台页零可编辑元素）
 // ══════════════════════════════════════════════════════════════════════════════
 
-/** 屏一 订单详情：品牌 / 收货人 / 款式 / 套数 / 宽高 / 加工类型 / 安装工艺 / 褶倍 / 用料 / 部位备注。 */
+/** 屏一 订单详情：品牌 / 收货人 / 商品 / 套数 / 宽高 / 加工类型 / 安装工艺 / 褶倍 / 用料 / 部位备注。 */
 export function detailRows(data, position) {
   return [
     ['品牌', position?.brand, ''],
     ['收货人', data?.order?.customer_name, ''],
-    ['款式', dataOr(position?.product_name) === EMPTY ? position?.curtain_type : position?.product_name, ''],
+    // 商品行名（issue #7000 裁定，2026-11-02）：本行原标签是「款式」、装的是 `product_name` ——
+    // 与共享表 `style`（工艺款式）的标签**逐字重名** ⇒ 同一屏两行「款式」装两件不同的事。
+    // 裁定 = `style` **保留**「款式」（工艺款式），商品名这一行改标签「商品」。
+    ['商品', dataOr(position?.product_name) === EMPTY ? position?.curtain_type : position?.product_name, ''],
     // 第 4 位 = 显示口径：'m' 三位小数（机器精度）· 'int' 整数 · 缺省原样（不替人四舍五入）
     ['套数', data?.order?.set_count, '套', 'int'],
     ['宽', position?.width, '米', 'm'],
@@ -378,6 +381,13 @@ const MACHINE_DETAIL_COVERED = new Set([
   'fullness', 'fabric_meters',
   // 货号手写行改读 `product_code`（issue #7636）⇒ 共享表这一格也必须排除，否则一屏印两遍
   'product_code',
+  // issue #7000（机台屏屏一同一标签各印两遍）：上面那几行手写行已经印过颜色 / 门幅，
+  // 共享表再展开一次 ⇒ 同一屏**两个同名标签**（`migao-dev-flow` §31 P2 信息不重复）。
+  'color_name', 'door_width',
+  // 部位备注：`remarkText()` 合成行（「商品行名 · 备注」）才是工人要的读数 —— 共享表这条只装备注
+  // 原文、**标签也叫「部位备注」** ⇒ 一屏两行同名，第二行多数时候还是缺值「—」。
+  // 裁定（issue #7000）：**只留合成行**；共享表本身不动（报工屏的 `remark` 照旧），机台屏排除。
+  'remark',
 ])
 
 /** 「商品行名 · 部位备注」；两者都缺 ⇒ `null`（由 `dataOr` 兜成「—」）。 */
@@ -404,7 +414,9 @@ const MACHINE_KEY_ROWS = new Set(['宽', '高', '用料'])
  * <p>顺序 = 既有 12 行原序（`worker-h5-position-spec.test.mjs` 的负控按此逐字比较）+ 4 行裁剪口径。</p>
  */
 const MACHINE_MAIN_ROWS = [
-  '品牌', '收货人', '款式', '套数', '宽', '高', '加工类型', '开数', '安装工艺', '褶倍', '用料', '部位备注',
+  // 🔴 第 3 格是**商品名**（`product_name`），标签「商品」—— issue #7000 裁定前它叫「款式」，
+  //    而「款式」在 `detailRows` 里同时还是共享表 `style`（工艺款式）的标签 ⇒ 两行同名。
+  '品牌', '收货人', '商品', '套数', '宽', '高', '加工类型', '开数', '安装工艺', '褶倍', '用料', '部位备注',
   '总褶数', '每片褶数', '特殊选项', '加工费组合',
 ]
 
