@@ -1,6 +1,6 @@
 package com.migao.admin.controller;
 
-// case_ids: UI-129, MC-133
+// case_ids: UI-129, MC-136
 
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.service.ProductImageGenerationService;

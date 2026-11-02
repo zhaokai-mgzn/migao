@@ -531,6 +531,34 @@ v = hs.run_verify(sb, wt, tmp_path, script=hs.install_real_script(wt))   # 真�
 - 血泪教训（桩仓根 / 审计桩转发方式 / `origin/main` 必需 / 读数不许用「锁文件还在」…）逐条写在
   `tests/unit_ci_workflows/heavy_entry_sandbox.py` 的模块 docstring 里，**改夹具前先读它**。
 
+## Java 定点判据：读数只信 XML，且必须 `Tests run > 0`（2026-11-03 固化，issue #6495）
+
+**正解 = 一条命令**（选择器会被自动纠正，读数只取自 `target/surefire-reports/TEST-<fqn>.xml` 的 `<testcase>` 计数）：
+
+```bash
+./scripts/java-test.sh OssConfigTest                       # 类：@Nested 里的用例**会**被真跑到（实测 15/15）
+./scripts/java-test.sh 'AgentBatchServiceTest$Create#persistsPreviewWithOldValueCollectedFromDb'   # 外层$嵌套#方法
+./scripts/java-test.sh --check OssConfigTest               # 只解析 / 纠正，不跑
+./scripts/java-test.sh --no-fix 'AgentBatchServiceTest#someNestedMethod'  # 按原样跑（复现「空跑」时用）
+```
+
+退出码 `0` 真跑且绿 / `1` 红（**空跑** / 用例失败 / 声明了 @Nested 但嵌套一条没跑到）/ `2` 用法 / `3` 不可判定。
+
+**两条实测形态（2026-11-03 本机，surefire 3.5.6，`-o` 离线）**：
+
+| 形态 | 读数 |
+|---|---|
+| 拿 `.txt` 摘要当读数源 | 同一次运行 XML/console = **15**（`OssConfigTest`），而 `target/surefire-reports/<fqn>.txt` 写 **`Tests run: 0`**；`AgentBatchServiceTest` 是 **38 / 0** ⇒ **摘要不可信**，`head -6 …txt` 判「没跑」会**误诊**（#6495 的原始读数就是这么来的） |
+| `-Dtest=<外层类>#<方法>`，而方法**声明在 `@Nested` 内** | **真·空跑**：`Tests run: 0` / `BUILD SUCCESS` / `exit=0`，且**不产出 XML** ⇒ 正解 `<外层类>$<嵌套类>#<方法>`（实测 `…$Create#…` = 1 条） |
+
+**反例（会静默空跑，别写）**：`./mvnw test -Dtest=<外层类>#<嵌套里的方法>`。
+**也不必**给类名加通配符：`-Dtest=OssConfigTest` 与 `-Dtest=OssConfigTest*` 实测都是 **15/15**
+（「@Nested 类要加 `*` 才会跑」是**未复现的 workaround**，别传播）。
+
+**判据**：`tests/unit_ci_workflows/test_java_nested_pointed_run_guard.py`（J1~J7：仓内 durable 面出现真空跑形态 ⇒ 红；
+读 `.txt` 的机具**必须登记**、且「定点类保持扁平」这个前提**现取成立**（前提一变即红）；本页必须指向
+`./scripts/java-test.sh`）+ 台账 `tests/unit_ci_workflows/java_pointed_run_ledger.json`（**豁免只许缩短**）。
+
 ## 重活锁的**准入/溢出**台账（2026-10-03 固化，issue #6091；蓝图 P2 的「测量那一半」）
 
 **治的形态（蓝图 `Dev-Mode-Balance.md` §4 行 4/5 + §10 的 P2 行）**：D 口径下本机是「并发 = 1 的

@@ -13,7 +13,7 @@
 
 判别力自证：把任一层改回硬编码 / 把旧承诺写回文案 ⇒ 对应用例判红并具名（见 test_guard_*）。
 """
-# case_ids: MC-133
+# case_ids: MC-136
 
 import re
 from pathlib import Path

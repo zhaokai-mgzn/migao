@@ -58,9 +58,13 @@ import static org.mockito.Mockito.when;
  *   <li><b>只有 pending 会被投递</b>（疲劳控制）：投递后不重投。</li>
  * </ol>
  *
- * <p>⚠️ 结构说明：本类**刻意不用 `@Nested` 分组** —— 实测 `mvn -Dtest=ScheduledTaskServiceTest test`
- * 在 @Nested 结构下报告 `Tests run: 0`（exit 0 = **假绿**：一条都没跑）。扁平结构下同一条命令真跑，
- * 故按「测试必须真跑」优先于分组可读性。</p>
+ * <p>⚠️ 读数口径（issue #6495，2026-11-03 复测，原注释的结论**已改判**）：本类不用 `@Nested` 分组是
+ * <b>可读性上的选择</b>，<b>不是</b>被「空跑」逼的 —— 实测 `-Dtest=&lt;类名&gt;` **会**真跑到 `@Nested`
+ * 里的用例（`OssConfigTest` 3 外层 + 12 嵌套 = <b>15/15</b>、`AgentBatchServiceTest` 38 条全在 `@Nested`
+ * = <b>38/38</b>）；而 `target/surefire-reports/&lt;fqn&gt;.txt` 的 `Tests run:` 对 `@Nested` 类
+ * <b>恒报 0</b>（同一次运行 XML/console 是 15）⇒ 原注释把**摘要的 0** 读成了「一条都没跑」，是误诊。
+ * 判「跑没跑 / 跑了多少」请用 `./scripts/java-test.sh &lt;类名&gt;`（只信 XML 且要求读数 &gt; 0），
+ * 别 `head` 那个 `.txt`。</p>
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)

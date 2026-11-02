@@ -205,6 +205,13 @@
       "hits": 2,
       "reason": "issue #6434（订单详情打印入口矩阵守卫）新增的**有意**原文口径解析，两处都只吃单引号里的标识符：① `order_status_members`（`'([a-z_]+)'`）从 frontend/admin-web/src/types/index.ts 的 `export type OrderStatus = '…' | …` 取成员 —— TS 联合类型在 Python 侧没有 import 面，只能扫字面量，「现取」正是这条判据的要点（新增状态忘登记即红）；② `matrix_entries`（`'([a-z]+)'`）从 frontend/admin-web/src/app/(dashboard)/orders/[id]/OrderDetail.tsx 的 `PRINT_TARGETS_BY_STATUS` 取数组元素。**残余风险已由判别力自证的对照读数覆盖**：只往页面里加注释（注释里可以写满按钮名）⇒ 一条判据都不红（见同文件 `TestDiscriminatingPower::test_g5_comment_only_change_is_not_red`）。",
       "issue": "#6434"
+    },
+    {
+      "path": "scripts/java_pointed_readings.py",
+      "rule": "naive-hash-cut",
+      "hits": 4,
+      "reason": "**不是剥注释**：这里的 `#` 是 surefire **选择器语法** `-Dtest=<外层类>#<方法>` 的分隔符（issue #6495 的形态②）。四处 `split('#', 1)` 只切 `Class#method` 形式的入参，与「按 `#` 截断行尾注释」无关；同一模块对**源码**的解析走 `mask_literals_and_comments()`（先清空字符串/字符/文本块再配平括号），没有任何朴素剥注释路径。登记为豁免而不是改写，是因为换成 `find`/切片同样是等价的字面切分 —— 那只是绕开检测，不是消除风险面。",
+      "issue": "#6495"
     }
   ]
 }

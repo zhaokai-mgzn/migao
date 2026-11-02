@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（179 case）
+## 杂项域（180 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -6928,7 +6928,22 @@
 ```
 溯源: 2026-11-02 新增（issue #6212，AI 裁定选**脚本侧**方案 A）。为什么必须有这条：`--require-ready` 要求非 draft（draft 的 leg 不全 ⇒ `gh pr checks` 报 pending ⇒ 判定不就绪），而 `.github/workflows/automerge.yml` 恰在**非 draft** 时 arm 原生 auto-merge ⇒「集成期非 draft」这个就绪前提**本身**就打开了「跑全量期间被秒合」的窗口。逐字读数（#6206，2026-10-03）：转 ready 07:47:47Z → `github-actions[bot]` arm 07:48:04Z（**17 秒**）→ merged 07:52:30Z（**4 分 26 秒**），那一次批次全量被跳过。既有护栏为什么没挡住：`--disable-auto` 只在「此后不再 push」时有效（一次 push 触发的 synchronize 会让 automerge.yml 重新 arm，#4829 实证）、`block/merge` 标签拦不住**已 arm** 的 auto-merge、而「draft 唯一可靠」在 batch-gate 里被就绪判定本身关掉了。落码 = scripts/batch-gate.sh 就绪判定第 ③ 条（`autoMergeRequest` 非 null ⇒ 不就绪，exit 3）+ `--check-arm` 回读入口（与判定**共用同一个探针**）；三态 = `0` 未 arm / `1` 已 arm / `3` 读不到（`3` 不许当 `0`）。取号 = `python3 scripts/next_case_id.py MC` 现取（main 001-098 · 100-127 + 在飞 PR #8460 的 129 / #8453 的 128 + 本工作区 099）⇒ **MC-130**。 ｜ tags: ci-process, auto-merge, batch-gate, readiness, tri-state, idempotent, red-proof
 
-### MC-133. 生图等待上限只有一个权威（ai-agent 的 IMAGE_GEN_TIMEOUT）：admin-api 读超时与前端等待/文案都从它派生；文案按实测区间说、超 30 秒给「还在生成」（issue #7731） 🔵
+### MC-134. Java 定点判据的读数与空跑（issue #6495 的类级固化）：`.txt` 摘要对 @Nested 类恒报 0（误诊源）+ `外层类#嵌套方法` 真·空跑（exit 0）⇒ 读数只信 XML 且必须大于 0 🔵
+```
+你: `./mvnw -q -Dtest=<类名> test` 报 `Tests run: 0` 却 exit 0 —— 到底是真没跑，还是读数在骗人？
+数据: 🔴 **判据 1·读数源：`.txt` 摘要不可信（会红）**：`target/surefire-reports/<fqn>.txt` 的 `Tests run:` 在 @Nested 类上**恒报 0** —— 实测同一次运行 XML/console = 15（OssConfigTest）/ 38（AgentBatchServiceTest），而摘要 = 0 / 0。⇒ 任何把它当读数源的机具（scripts/** 里同时出现 surefire-reports 与 `.txt` 路径常量者）都必须登记进台账，且其定点类必须**现取不含 @Nested**（前提一变即红）。执行点 = tests/unit_ci_workflows/test_java_nested_pointed_run_guard.py::test_j3_every_txt_reading_engine_is_registered_and_precondition_holds
+数据: 🔴 **判据 2·真空跑形态即红**：仓内 durable 面（docs/wiki、docs/testing、AGENTS.md、scripts、.github/cases、.github/workflows、backend 测试源码）不得出现 `-Dtest=<外层类>#<方法>` 而该方法**声明在 @Nested 内** —— 该形态实测 `Tests run: 0` / `BUILD SUCCESS` / exit 0 / 且不产出 XML。执行点 = 同文件::test_j2_repo_has_no_bare_method_selector_on_nested_method
+数据: 🔴 **判据 3·判别力自证**：合成语料里坏形态（`外层#嵌套方法`）必须判红并给出 `外层$嵌套#方法`；合规形态（`外层$嵌套#方法` / `外层$嵌套` / 类名 / `类名*` / 不存在的方法名）**不得**被判红（假红同样是缺陷）。执行点 = 同文件::test_j2_synthetic_bad_form_is_red_and_good_forms_are_not
+数据: 🔴 **判据 4·豁免只许缩短**：台账 tests/unit_ci_workflows/java_pointed_run_ledger.json 的 `engines` 条数不得超冻结基线、不得清空；每条须有非空 `reason`，且 `anchor` 串必须在源码里逐字兑现（摘掉就红）。执行点 = 同文件::test_j4_ledger_is_not_empty_and_only_shrinks + ::test_j3_every_txt_reading_engine_is_registered_and_precondition_holds
+数据: 🔴 **判据 5·扫描器非空跑自证**：Java 测试类索引必须非空且含 @Nested 类（现取 642 个测试类 / 44 个含 @Nested；`git grep -l @Nested` 的 45 比它多 1 = 只在**注释**里提到 @Nested 的 ScheduledTaskServiceTest）。执行点 = 同文件::test_j1_scanner_is_not_blind + ::test_j6_comments_do_not_make_a_class_nested
+数据: 🔴 **判据 6·规范必须指向入口**：docs/wiki/Development.md 必须逐字给出 `./scripts/java-test.sh` 与读数口径（`.txt` 摘要不可信、读数为 0 即红）—— 否则下一个人又回去 head 那个摘要。执行点 = 同文件::test_j5_development_doc_points_to_the_entry
+数据: 🔴 **判据 7·报告卫生（陈旧报告不许当读数）**：入口跑 Maven **前**必须先删 `target/surefire-reports/TEST-<fqn>.xml` —— 否则「这次一条都没跑到」会读到**上一次**的 `Tests run: N` ⇒ 又一种假绿（本工具首版真踩过：先跑 `…$Create#…` 得 1 条、再按原样跑坏写法，读到陈旧的 1 条 ⇒ 判绿）。执行点 = tests/unit_ci_workflows/test_java_nested_pointed_run_guard.py::test_j7_stale_report_is_deleted_before_the_run_and_empty_run_is_red（+ ::test_j7_fresh_report_is_read_from_xml 正向对照：桩 mvnw 写出新报告 ⇒ 判绿，防「一律红」）
+数据: **边界（照实登记）**：① 文档面没有「不许教 `.txt` 读数」的形态判据（同一句里既有正解又有反例，形态判据分不清）；② 判不了**人**敲了什么命令（命令在键盘上，不在仓里）；③ 本守卫不跑它引用的 Java 判据（那要 Maven ⇒ 归 scripts/java-test.sh 与 CI）；④ 不改任何门禁的通过条件、不新增豁免。
+跳过: [backend-contract] 零 LLM 的确定性静态判据（Python AST + 正则扫仓内 durable 面 + 现取 Java 测试源码索引），pytest 真跑、零网络、零 Maven、零真库，不进 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #6495，AI 裁定按**实测**改判病灶）。原始单的读数（`head -6 target/surefire-reports/<fqn>.txt` 得 `Tests run: 0` 且 exit 0）复现了，但归因错了一半：实测 `-Dtest=OssConfigTest`（3 外层 + 12 嵌套）= **15/15 真跑**、`-Dtest=AgentBatchServiceTest`（38 条全在 @Nested）= **38/38 真跑**、`-Dtest=OssConfigTest*` 同为 15（**通配符没有额外收益**）⇒「类里含 @Nested ⇒ 一条都不跑」**不成立**，原单那条是**误诊**，误诊源 = `.txt` 摘要在 @Nested 类上恒报 0（同一次运行 XML/console 15，摘要 0）。真·空跑另有一条：`-Dtest=AgentBatchServiceTest#persistsPreviewWithOldValueCollectedFromDb`（该方法声明在 @Nested class Create 内）⇒ `Tests run: 0` / `BUILD SUCCESS` / exit=0 / 无 XML；加 `$` 限定 `-Dtest=AgentBatchServiceTest$Create#persistsPreviewWithOldValueCollectedFromDb` ⇒ **1/1 真跑**。交付 = 入口 scripts/java-test.sh（+ scripts/java_pointed_readings.py）把选择器自动纠正 + **只信 XML** + 断言读数大于 0（0 即红，exit 1）；守卫 = tests/unit_ci_workflows/test_java_nested_pointed_run_guard.py J1~J7 + 台账 java_pointed_run_ledger.json（读 `.txt` 的两个红证机具**已登记**并钉住「定点类保持扁平」这个前提）；同时改掉两处在仓内传播错读数的文案（ScheduledTaskServiceTest 的类注释、docs/wiki/Development.md 新增「Java 定点判据」节）。取号 = **MC-134**（`scripts/next_case_id.py MC` 给的是历史空档 MC-099 —— 仓库内已有两次明文说明 MC-099 是 PR #6924 随 #8383 整包撤回被删、**不回填**；本轮 **5 个在飞 PR（#8503 / #8506 / #8508 / #8509 / #8510）同时占了 MC-133**（CI 的 `test_case_id_claims.py` 在合并前就判红）⇒ 按「后合入者让号」让到现取最小空闲号 MC-134）。 ｜ tags: backend-contract, java-test, surefire, nested, readings, guard, red-proof
+
+### MC-136. 生图等待上限只有一个权威（ai-agent 的 IMAGE_GEN_TIMEOUT）：admin-api 读超时与前端等待/文案都从它派生；文案按实测区间说、超 30 秒给「还在生成」（issue #7731） 🔵
 ```
 你: 商家点「生成」后转圈 1~2 分钟，面板文案写的是「约 40 秒」，中途没有任何进度（issue #7731）
 你: 三层超时各写一份（前端 210000ms / admin-api 200000ms / ai-agent 180s）⇒ 改一层忘一层
@@ -6941,7 +6956,7 @@
 前置: 本用例是 [backend-contract] 静态单一来源 + 三端单测用例：前置（ai-agent 内部端点、admin-api 端点、前端 API 模块）由各端单测自建或 mock（admin-web mock `@/lib/api`；admin-api mock RestTemplate；ai-agent 走真内核 + MockTransport），零网络、零真实生图；前置不成立时对应用例直接红，agent-eval 栈不跑它
 跳过: [backend-contract] 静态单一来源 + 沙箱行为判据（零网络、零真实生图），由 tests/unit_ci_workflows 与三端单测执行，不进入 agent-eval 冒烟
 ```
-溯源: 2026-11-03 新增（issue #7731）。取号 MC-133（python3 scripts/next_case_id.py MC 现取：main 001-098,100-132 + 工作区 099 ⇒ 返回 MC-133）。权威层选择 = ai-agent（唯一真正等供应商的一层）：`IMAGE_GEN_TIMEOUT` 180→240（实测 121s/145s，旧值只余 ~20%）；新增 GET /api/internal/images/deadline 下发 deadline_ms；admin-api 删掉 GENERATE_READ_TIMEOUT_MS（200000），生成前现取并按 deadline+传输余量设读超时，取不到 ⇒ 不设上限；新增 GET /api/admin/products/ai-images/estimate 转发 estimated_deadline_ms；前端删掉 timeout: 210000，imageGenTimeoutMs(deadline) = deadline + 120s 浏览器余量；文案改成实测区间（单张 2~3 分钟 / 整套 6~8 分钟）+ 由权威上限算出的「最长约」，生成中显示已用时、超 30 秒补「还在生成」。⚠️ 未闭合（照实登记）：① 线上 `.env.ai-agent` 由运维人工维护，若它显式钉了 IMAGE_GEN_TIMEOUT=180，三层会跟着 180 走（页面文案自动显示「最长约 3 分钟」，不会说谎），但长尾余量要等运维改配置；② 本用例不跑真实生图（零生成费用），供应商真实长尾仍以线上读数为准。 ｜ tags: single-source, timeout, image-generation, copy-standard, red-proof
+溯源: 2026-11-03 新增（issue #7731）。取号 MC-136（`python3 scripts/next_case_id.py MC` 现取：main 001-098,100-132,134 + 在飞 PR #8509/#8508 占 133、#8503 占 135 ⇒ 本包让号到 136；MC-099 历史空档不回填）。权威层选择 = ai-agent（唯一真正等供应商的一层）：`IMAGE_GEN_TIMEOUT` 180→240（实测 121s/145s，旧值只余 ~20%）；新增 GET /api/internal/images/deadline 下发 deadline_ms；admin-api 删掉 GENERATE_READ_TIMEOUT_MS（200000），生成前现取并按 deadline+传输余量设读超时，取不到 ⇒ 不设上限；新增 GET /api/admin/products/ai-images/estimate 转发 estimated_deadline_ms；前端删掉 timeout: 210000，imageGenTimeoutMs(deadline) = deadline + 120s 浏览器余量；文案改成实测区间（单张 2~3 分钟 / 整套 6~8 分钟）+ 由权威上限算出的「最长约」，生成中显示已用时、超 30 秒补「还在生成」。⚠️ 未闭合（照实登记）：① 线上 `.env.ai-agent` 由运维人工维护，若它显式钉了 IMAGE_GEN_TIMEOUT=180，三层会跟着 180 走（页面文案自动显示「最长约 3 分钟」，不会说谎），但长尾余量要等运维改配置；② 本用例不跑真实生图（零生成费用），供应商真实长尾仍以线上读数为准。 ｜ tags: single-source, timeout, image-generation, copy-standard, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -14450,8 +14465,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：977（活跃 153，跳过 824）
-- tier 分布：smoke 15 / normal 900 / adversarial 33
+- 用例总数：978（活跃 153，跳过 825）
+- tier 分布：smoke 15 / normal 901 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14467,7 +14482,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：179
+- 杂项域：180
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：76
@@ -14712,7 +14727,8 @@
 - CI-001: **fixture 录制基址只认 BASE_URL**：缺失即 fail-closed，不得静默回落到本机 127.0.0.1:8080（issue #8391）
 - MC-128: **端点泄漏台账的键不许含行号**：只插空行（行号漂移）判据仍绿，真删/真加泄漏照旧红（issue #6977）
 - MC-132: 批次就绪判定把「已 arm 的原生 auto-merge」也算作不就绪（issue #6212）：跑那一次全量期间不许存在被秒合的窗口
-- MC-133: 生图等待上限只有一个权威（ai-agent 的 IMAGE_GEN_TIMEOUT）：admin-api 读超时与前端等待/文案都从它派生；文案按实测区间说、超 30 秒给「还在生成」（issue #7731）
+- MC-134: Java 定点判据的读数与空跑（issue #6495 的类级固化）：`.txt` 摘要对 @Nested 类恒报 0（误诊源）+ `外层类#嵌套方法` 真·空跑（exit 0）⇒ 读数只信 XML 且必须大于 0
+- MC-136: 生图等待上限只有一个权威（ai-agent 的 IMAGE_GEN_TIMEOUT）：admin-api 读超时与前端等待/文案都从它派生；文案按实测区间说、超 30 秒给「还在生成」（issue #7731）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

@@ -12,7 +12,7 @@
 - 503 响应体带稳定机器可读 `code`（issue #7552）：四类失败各回不同码，`detail` 仍可读，
   状态码语义不变（其它供应商失败仍是 502）。
 """
-# case_ids: UI-129, MC-133
+# case_ids: UI-129, MC-136
 
 import asyncio
 import json

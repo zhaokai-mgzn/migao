@@ -1,4 +1,4 @@
-// case_ids: MC-133
+// case_ids: MC-136
 /**
  * 商品图生成 API（issue #7731）：等待上限由 admin-api 下发的权威值派生，前端不写死。
  *

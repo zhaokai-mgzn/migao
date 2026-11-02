@@ -1,4 +1,4 @@
-// case_ids: UI-129, MC-133
+// case_ids: UI-129, MC-136
 /**
  * ProductImageAI 组件测试（issue #7335 · 建品页「AI 生成商品图」；issue #7533 改为生成即落位）。
  *
