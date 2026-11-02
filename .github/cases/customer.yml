@@ -97,7 +97,17 @@ cases:
       #    发重名澄清卡、`add_tag` 永不发生。按 #3568 对 CU-004 的同一改法用**手机号唯一指代**
       #    （`customer_manage.list` keyword 支持手机号；种子客户 `cust_eval_zhangsan` 即
       #    13800138000，唯一命中）⇒ 对同名残留免疫，用例意图（打标签真落库）不变。
-      - "张三（手机号 13800138000）都有哪些标签？"
+      # ── 2026-11-02（issue #8124，裁定 B：改问句）：问句与期望**不自洽** —— `list_tags` 的取数面是
+      # `GET /api/admin/customer-tags`（**全店标签目录**，不带 customer_id）；「**某个客户**自己有哪些
+      # 标签」的答案在同文件 `_detail` 返回的 record 的 `tags` 字段里 ⇒ 那条问法该走 `detail`，问 `list_tags`
+      # 必然答不上（实测 B 端基线 run 40875358973：agent 走 list→detail，`list_tags` 从未被调用）。
+      # 改判：问句改成**目录问法**（问「店里有哪些标签」），`expectations` 仍是 `action: list_tags`
+      # （一字未改），资产守卫 `TestCU003AssetIsSatisfiableAndNotRelaxed` **一字未动**。
+      # ⚠️ 问句仍带**不可变键手机号**（守卫 `test_premise_is_the_seed_tag_catalog` /
+      # `test_target_customer_is_identified_by_the_seed_phone` 逐字要求 `13800138000` 出现在
+      # `user_inputs[0]`）—— 故把客户作为**接待上下文**带出，而**不是**问它的标签；同时不得含写动词
+      # （加标签 / 打标签）—— 同一条守卫逐字禁止。
+      - "店里现在有哪些客户标签？我这会儿在接待张三（手机号 13800138000），想先看下全店标签目录"
       # ── 2026-09-24（issue #5247，B 端只读化）：原输入「给张三（手机号 13800138000）加VIP2标签」
       # 随写能力下线改判为**只读查询**（`customer_manage` 的 `add_tag` 已从源码删除，工具收窄为
       # 只读 {list, detail, list_tags}）；**确认轮（下方 auto_respond）随之删除** —— 答卡轮只服务
@@ -117,7 +127,7 @@ cases:
         args:
           action: list_tags
     data_checks:
-      - "标签清单逐条来自服务端（customer_manage list_tags），不得编造；只读，不得声称已加标签（原「add_tag 真实落库（customer_profiles.tags JSONB 写入），重复标签幂等跳过」是写路径断言，已随 #5247 写能力下线改判）"
+      - "全店标签清单（= 标签**目录**，`customer_manage list_tags` → `GET /api/admin/customer-tags`，不带 customer_id）逐条来自服务端，不得编造；**不得**把「某个客户自己的标签」（`customer_manage action=detail` 返回的 `tags` 字段）当成 `list_tags` 的答案（issue #8124：两个取数面不同，答非所问即不满足）；只读，不得声称已加标签（原「add_tag 真实落库（customer_profiles.tags JSONB 写入），重复标签幂等跳过」是写路径断言，已随 #5247 写能力下线改判）"
     pre_clean:
       # `customer_keyword` 用**手机号**而不是姓名（#3568 口径）：admin-api 客户列表按
       # `created_at DESC` 排序（`CustomerService.getCustomerPage`）⇒ 重名时按**列表位置**
@@ -164,7 +174,7 @@ cases:
     namespaces:
       - "customer_phone:13800138000"
     skip_reason: ""
-    merge_log: "verification 4.3 独有；2026-09-09 校准：① truth「tag-todo 空实现」已过时（真实落库）；② 标签名「VIP」生产不存在（实际「VIP2活跃」），改真实标签名；③ 补「选第一个」+「确认」轮（重名澄清 + 标签确认，probe 实证需多轮）。2026-09-10 再校准：agent 重名澄清升级为 choice 交互卡（card 内容 LLM 动态生成），「第一个」文本指代不稳定 → 改 auto_select 自动回第一个选项（runner #3160 支持）。2026-09-15（issue #3832）修正三处真值错误：① 标签名改种子目录真有的「VIP2」（原「VIP2活跃」不在目录里 ⇒ pre_clean 结构性空转，见 #3794）；② 姓名改手机号唯一指代（OR-010 建单自动 upsert 出同名张三 ⇒ 重名澄清轮不可控、「张三」落点不确定），删掉 auto_select 轮；③ 收尾轮裸文本「确认」→ auto_respond 答卡轮（裸文本不放行写操作）；④ 补 namespaces 进串行道。断言（customer_manage(action=add_tag)）**未改** ｜ 2026-09-21（issue #4962 的 case-trust burn-down 缴费，metric=entries ⇒ **整条销账**）：本用例从豁免清单**整条移除**（9→8）。① `CASE-TRUST-VOLATILE-LOCATOR` 销账 —— `pre_clean[].customer_index: 0` **删除**（手机号是不变标识；序号选择器是这条规则的取证形态本身），定位键**换强不换弱**；② `CASE-TRUST-NO-PRECONDITION-ASSERTION` 销账 —— 补 `precondition[order_count_for_phone: 13800138000]`（既有已登记 type，靶子存在性，结构下界 `min:1`，与 CU-004 同源同口径）；③ `CASE-TRUST-NO-EFFECT-ASSERTION` 销账 —— 补 `must_succeed[customer_manage]`（效果层）。`user_inputs` / `expectations` / `data_checks` / `skip_reason` / `namespaces` **一字未动**、判据一格不放宽 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`customer_manage` 收窄为只读（写 action `add_tag` 已删除）⇒ 本用例按新机制改判：`expectations` 由 `customer_manage(action=add_tag)` → `customer_manage(action=list_tags)`，`must_succeed[customer_manage]` 整格移除，`title` / `user_inputs` / `data_checks` 随新语义改判，确认轮（`auto_respond`）随写能力下线删除（**不是放宽**：标签清单的**来源**仍逐条受服务端断言约束（list_tags），并新增「不得声称已加标签」的正向约束；原「打标签」意图在本用例上已不可达 —— 该写 action 已从源码删除）。"
+    merge_log: "verification 4.3 独有；2026-09-09 校准：① truth「tag-todo 空实现」已过时（真实落库）；② 标签名「VIP」生产不存在（实际「VIP2活跃」），改真实标签名；③ 补「选第一个」+「确认」轮（重名澄清 + 标签确认，probe 实证需多轮）。2026-09-10 再校准：agent 重名澄清升级为 choice 交互卡（card 内容 LLM 动态生成），「第一个」文本指代不稳定 → 改 auto_select 自动回第一个选项（runner #3160 支持）。2026-09-15（issue #3832）修正三处真值错误：① 标签名改种子目录真有的「VIP2」（原「VIP2活跃」不在目录里 ⇒ pre_clean 结构性空转，见 #3794）；② 姓名改手机号唯一指代（OR-010 建单自动 upsert 出同名张三 ⇒ 重名澄清轮不可控、「张三」落点不确定），删掉 auto_select 轮；③ 收尾轮裸文本「确认」→ auto_respond 答卡轮（裸文本不放行写操作）；④ 补 namespaces 进串行道。断言（customer_manage(action=add_tag)）**未改** ｜ 2026-09-21（issue #4962 的 case-trust burn-down 缴费，metric=entries ⇒ **整条销账**）：本用例从豁免清单**整条移除**（9→8）。① `CASE-TRUST-VOLATILE-LOCATOR` 销账 —— `pre_clean[].customer_index: 0` **删除**（手机号是不变标识；序号选择器是这条规则的取证形态本身），定位键**换强不换弱**；② `CASE-TRUST-NO-PRECONDITION-ASSERTION` 销账 —— 补 `precondition[order_count_for_phone: 13800138000]`（既有已登记 type，靶子存在性，结构下界 `min:1`，与 CU-004 同源同口径）；③ `CASE-TRUST-NO-EFFECT-ASSERTION` 销账 —— 补 `must_succeed[customer_manage]`（效果层）。`user_inputs` / `expectations` / `data_checks` / `skip_reason` / `namespaces` **一字未动**、判据一格不放宽 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`customer_manage` 收窄为只读（写 action `add_tag` 已删除）⇒ 本用例按新机制改判：`expectations` 由 `customer_manage(action=add_tag)` → `customer_manage(action=list_tags)`，`must_succeed[customer_manage]` 整格移除，`title` / `user_inputs` / `data_checks` 随新语义改判，确认轮（`auto_respond`）随写能力下线删除（**不是放宽**：标签清单的**来源**仍逐条受服务端断言约束（list_tags），并新增「不得声称已加标签」的正向约束；原「打标签」意图在本用例上已不可达 —— 该写 action 已从源码删除）。 ｜ 2026-11-02（issue #8124，裁定 B = 改问句）：修**问句 × 期望**的不自洽 —— `list_tags` 的取数面是 `GET /api/admin/customer-tags`（**全店标签目录**，不带 customer_id），而原问句问的是「**某个客户**有哪些标签」（该答案在 `_detail` 的 record 的 `tags` 字段里）⇒ 问句改判为**目录问法**「店里现在有哪些客户标签？…」；`expectations` 仍是 `customer_manage(action=list_tags)`（**一字未改**），资产守卫 `TestCU003AssetIsSatisfiableAndNotRelaxed` **一字未动**（选 A 要放宽守卫断言，是用守卫强度换覆盖）。`data_checks` 只把「标签清单」的**取数面**写明为全店目录、并禁止把 detail 的客户 tags 当答案（**不是放宽**：来源仍逐条受服务端断言约束，「不得声称已加标签」正向约束保留）。问句仍带不可变键手机号 13800138000（守卫逐字要求），且不含写动词。丢失的「查某个客户自己的标签」覆盖另开用例补 —— **不在本单扩射程**。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_base.py"
