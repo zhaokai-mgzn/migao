@@ -33696,12 +33696,13 @@
       "observed_at": "2026-10-26T01:40:52Z",
       "reason": "失败（2026-10-26T01:32:34Z）与重跑通过（2026-10-26T01:40:45Z）落在**同一时间桶**⇒ 「重跑通过」仍是 flaky 的合法证据",
       "remedy": "按 `migao-acceptance`「随机红 = 归因层失效」**定位机制**（不许只加 waitFor/sleep）：时间相关 ⇒ 冻结时钟（`jest.setSystemTime` / 注入时钟）；并行或共享状态 ⇒ 显式隔离或独立 fixture；修后**必须给红证**（把机制注回 ⇒ 必红）",
-      "status": "open",
+      "status": "fixed",
       "follow_up": 7810,
       "requires_follow_up": true,
       "failing_tests": [
         "tests/unit_ci_workflows/test_ui_smoke_selector_liveness.py::test_name_registry_is_live_and_shrink_only"
-      ]
+      ],
+      "fixed_by": "PR #8481 / tests/unit_ci_workflows/test_ui_smoke_selector_liveness.py::test_element_span_cache_is_keyed_by_content_not_object_id"
     },
     {
       "workflow": "PR Check",
