@@ -102,11 +102,16 @@ GitHub 对**被 job 级 `if` 跳过**的 job **不创建/不上报**该 context�
   `required_status_snapshot.json`，并**大字打印**「当前走的是 snapshot 形态」+ 捕获时间 +
   年龄 + 刷新命令。
 - **映射方法（现取，不写名单）**：对 `.github/workflows/*.yml` 逐个 `yaml.safe_load`，取
-  **`on.pull_request` 存在的** workflow 的每个 job，把 `job.get("name") or <job id>` 当**上报的
+  **`on.pull_request` 或 `on.pull_request_target` 存在的** workflow 的每个 job，把 `job.get("name") or <job id>` 当**上报的
   检查名**（GitHub 的上报名是 job 的 `display name`；本仓现取**逐字** = 该 `name:`，无 workflow
   前缀 —— 由判据 2「每个 required 名都能被某个 PR 触发 job 上报」当场核，对不上就红）⇒
   得到 `检查名 → [(workflow 文件, job id, job 定义)]`。**required 集合里的每个名字**经这张表反查
   到它的 job；查不到 = 判据 2 红（陈旧 / 非 PR 触发面），**不是**在这里静默跳过。
+  🔴 **两个 PR 触发面同等对待（issue #8395）**：`pull_request_target` 定义在 base、只检出 base、
+  不执行任何 PR 代码 ⇒ 它比 `pull_request` **更**不可伪造，是**合法且更强**的 required 上报面
+  （`Contribution Gate (authorship + sensitive paths)` 就是这一类）。两者在「不命中面 ⇒ context
+  永不上报」这条病上**同形** ⇒ 本文件的 paths 过滤 / job 级 `needs` / job 级 `if` 三条判据对两者
+  **同等**生效（**扩大射程，不是放宽**）。
 - **读的是哪一份 workflow 文本（自证坐标）**：默认读**工作树**（CI = 该 PR 的 merge ref，
   与 GitHub 实际执行的那份**同一份**）；可用环境变量 **`MIGAO_WORKFLOW_REF=<git ref>`** 指定读
   `git show <ref>:<path>`（本机主检出落后 `origin/main` 时，用它拿到线上真值）。每次运行都打印
@@ -233,12 +238,35 @@ def _live_required() -> set[str] | None:
 # ══════════════════════════════════════════════════════════════════════════════
 
 
-def _pr_config(doc: dict) -> dict | None:
+#: PR 触发面：`pull_request` **与** `pull_request_target`（issue #8395）。
+#: 后者定义在 base、只检出 base、不执行任何 PR 代码 ⇒ **更**不可伪造，是合法的 required 上报面；
+#: 两者在「不命中面 ⇒ context 永不上报」这条病上同形 ⇒ 三条判据对两者同等生效（扩大射程）。
+PR_FACES = ("pull_request", "pull_request_target")
+
+
+def _on_dict(doc: dict) -> dict | None:
+    """`on:` 映射（YAML 1.1 会把裸 `on` 解析成布尔 `True`，两种键都认）。"""
     on = doc.get("on") if isinstance(doc.get("on"), dict) else doc.get(True)
-    if not isinstance(on, dict) or on.get("pull_request") is None:
+    return on if isinstance(on, dict) else None
+
+
+def _pr_config(doc: dict) -> dict | None:
+    """该 workflow 的 PR 触发面配置（多面时合并）；**无任何 PR 面 ⇒ `None`**。
+
+    合并而不是只取 `pull_request`：任一 PR 面挂了 `paths` 过滤，该 context 在不命中面的 PR 上
+    就永不上报 —— 病与是哪一面无关（issue #8395 的 `pull_request_target` 腿同理）。
+    """
+    on = _on_dict(doc)
+    if on is None:
         return None
-    pr = on["pull_request"]
-    return pr if isinstance(pr, dict) else {}
+    faces = [on[face] for face in PR_FACES if face in on]
+    if not faces:
+        return None
+    merged: dict = {}
+    for face in faces:
+        if isinstance(face, dict):
+            merged.update(face)
+    return merged
 
 
 def _workflows() -> dict[str, dict]:
@@ -705,6 +733,33 @@ def test_every_snapshot_context_is_reported_by_a_pr_triggered_job() -> None:
         + f"\n修法：本机跑 `{REFRESH_CMD}` 用现取 API 重写 snapshot；"
         "若该名字仍存在但 job 改了名，说明**分支保护与新名字脱节** ⇒ 先对齐分支保护。"
     )
+
+
+#: **语料锚**（不是 required 名单的副本）：issue #8395 的 required 腿由 `pull_request_target` 上报。
+CHECK_CONTRIBUTION = "Contribution Gate (authorship + sensitive paths)"
+
+
+def test_pull_request_target_face_counts_as_a_pr_reporting_face() -> None:
+    """🔴 issue #8395：`pull_request_target` 也是 required 的**合法上报面**（base 定义、不执行 PR 代码）。
+
+    红证：把 `PR_FACES` 收窄回 `("pull_request",)` ⇒ 本判据当场红（该 required 腿找不到上报者）；
+    这也正是「翻 required 前」必须先解掉的结构性阻塞 —— 否则翻完判据 2 会把新的 required 判成陈旧，
+    **每个 PR 都红在 `ci workflow helper unit tests` 上**。
+    """
+    docs = _workflows()
+    assert "contribution-gate.yml" in docs, "缺 contribution-gate.yml（本判据的语料）"
+    _, by_check = _pr_reported_checks()
+    assert CHECK_CONTRIBUTION in by_check, (
+        "`pull_request_target` 面没有被当 PR 上报面 ⇒ issue #8395 的 required 腿会被判成"
+        "「非 PR 触发面」（判据 2 假红）"
+    )
+    assert by_check[CHECK_CONTRIBUTION] == ["contribution-gate.yml::gate"]
+    # paths 过滤判据同样必须扫到这一面（在 `pull_request_target` 上加 paths 是**同一种** BLOCKED 形态）
+    injected = {"on": {"pull_request_target": {"branches": ["main"], "paths": ["backend/**"]}}}
+    assert (_pr_config(injected) or {}).get("paths") == ["backend/**"]
+    # 对照：既无 `pull_request` 也无 `pull_request_target` 的 workflow 仍不算 PR 面
+    #（**没有**放宽成「所有 workflow」，射程只扩大到一个同样安全的 PR 面）
+    assert _pr_config({"on": {"push": {"branches": ["main"]}}}) is None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
