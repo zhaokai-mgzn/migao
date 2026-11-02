@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（177 case）
+## 杂项域（178 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -6913,6 +6913,20 @@
 跳过: [backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 字面量 + 台账键形态 + 纯函数判定 + 内存注入自证 + tmp 目录迁移幂等），pytest 真跑、零网络、不进 agent-eval 冒烟
 ```
 溯源: 2026-11-02 新增（issue #6977）。病（PR #6973 实测）：台账键 = `文件::行::字面量` ⇒ 任何人在被监视文件里增删一行，该文件里所有已登记条目会同时变成「未登记（新行号）」+「陈旧（旧行号）」双向假红（红的是排版，不是泄漏），作者只能手工重锚行号而债务内容一字未改。取号 = `python3 scripts/next_case_id.py MC` **exit 3**（PR #8425 改动文件 >300 ⇒ `gh pr diff` 读不到 ⇒ 按工具出口手工核在飞面）⇒ main 现取最大 = **MC-126**、在飞 PR #8450 / #8446 正文声称 **MC-127** ⇒ 取 **MC-128**（`git log --all -S"id: MC-128"` 零命中 + 本工作区 `grep -rn "id: MC-128" .github/cases` 零命中）。**红证（逐字，本包实跑）**：① 修前（origin/main 判据 + origin/main 台账）在 `AgentBatchService.java` 顶部插 3 个空行 ⇒ `1 failed`，具名「未登记 …:255 / :387 / :392」+「台账未被兑现 …（3 条）」；② 修后同一次注空行 ⇒ `2 passed`；③ 修后真删 `ProductionOperationCommandService.java` 的端点从句 ⇒ `1 failed` 且具名「台账未被兑现 …（第 1 次出现）」；④ 修后新增一处未登记泄漏 ⇒ `1 failed` 且具名「未登记 …（键 = …::#1）」。迁移读数：`--migrate-leak-ledger` 第 1 次「已迁移」、第 2 次「已是新形态（幂等：零写入）」，台账 9 条 / 9 处不变。 ｜ tags: backend-contract, ledger, red-proof, idempotent-migration
+
+### MC-132. 批次就绪判定把「已 arm 的原生 auto-merge」也算作不就绪（issue #6212）：跑那一次全量期间不许存在被秒合的窗口 🔵
+```
+你: 集成侧为了让批次包满足 --require-ready 而把它们转成非 draft，之后凭什么保证那一次全量跑完之前包还没被 bot 自动合进 main？
+数据: 🔴 **判据 1·已 arm ⇒ 不就绪（会红）**：`gh pr view <PR> --json autoMergeRequest` 非 null ⇒ 该包**不就绪**、整批**拒绝**（那一次全量**不跑**），输出印 ❌ + PR 号 + `enabledAt`。执行点 = tests/unit_ci_workflows/test_batch_gate.py::test_armed_auto_merge_is_refused_before_the_gate
+数据: 🔴 **判据 2·未 arm ⇒ 就绪（正向对照）**：`autoMergeRequest` 为 null ⇒ 该包就绪、那一次全量照跑且**只跑一次**——防「一律不就绪」的假修（那样判据 1 仍会绿）。执行点 = 同文件::test_unarmed_auto_merge_is_ready
+数据: 🔴 **判据 3·读不到 ⇒ 3（fail-closed）**：空 stdout / 非 JSON / 字段缺失 / `gh` 调用失败四种坏读数 ⇒ `❓ 无法判定 ≠ 就绪` + 整批拒绝（**读不到 ≠ 未 arm**：它此刻可能真的已 arm）。执行点 = 同文件::test_unreadable_auto_merge_fails_closed
+数据: 🔴 **判据 4·出口可复制且含本次 PR 号**：解除命令 `gh pr merge <PR> --disable-auto` **与**回读命令 `./scripts/batch-gate.sh --check-arm <PR>` 必须同时出现，且 PR 号 = 现取的那个（印成别的号即红）。执行点 = 同文件::test_disarm_and_readback_commands_are_actionable
+数据: 🔴 **判据 5·回读三态 + 幂等（会红）**：`--check-arm` —— 仍 arm ⇒ **1**、未 arm ⇒ **0**（同一输入连跑两次 stdout 逐字节一致）、读不到 ⇒ **3**；回读与就绪判定**共用同一个探针**（不写第二份「算不算已 arm」）。执行点 = 同文件::test_check_arm_readback_is_tri_state_and_idempotent
+数据: 🔴 **判别力自证（注入式红证，4 条各自单独变红）**：① 把「已 arm」改判成 `ready_ok` ⇒ 判据 1 红；② 把「读不到 arm」那一支改成放行 ⇒ 判据 3 红；③ 把回读「仍 arm」的 `exit 1` 改成 `exit 0` ⇒ 判据 5 红；④ 从出口里摘掉 `--check-arm <PR>` ⇒ 判据 4 红。执行点 = 同文件::test_mutations_turn_the_suite_red（'已 arm 不就绪 → 就绪' / '读不到 arm ⇒ 放行' / '回读「仍 arm」不再非零' / '回读命令从出口里被摘掉'）
+数据: **边界（照实登记，§19.1）**：① 判不了「谁在什么时候 arm 了」—— 那需要 timeline 回溯（本单只判「判定的那一刻 arm 了没有」）；② 判不了「解除之后又被谁重新 arm」—— 一次 push 就重新 arm（#4829）⇒ 纪律是**回读要放在最后一次 push 之后**，不是「回读一次永逸」；③ 不改任何门禁的通过条件、不新增豁免。
+跳过: [backend-contract] 零 LLM 的确定性脚本判据（自足临时 git 仓库 + 桩 gh + **真跑** scripts/batch-gate.sh），pytest 真跑、零网络（GH 全部由桩替），不进 agent-eval 冒烟
+```
+溯源: 2026-11-02 新增（issue #6212，AI 裁定选**脚本侧**方案 A）。为什么必须有这条：`--require-ready` 要求非 draft（draft 的 leg 不全 ⇒ `gh pr checks` 报 pending ⇒ 判定不就绪），而 `.github/workflows/automerge.yml` 恰在**非 draft** 时 arm 原生 auto-merge ⇒「集成期非 draft」这个就绪前提**本身**就打开了「跑全量期间被秒合」的窗口。逐字读数（#6206，2026-10-03）：转 ready 07:47:47Z → `github-actions[bot]` arm 07:48:04Z（**17 秒**）→ merged 07:52:30Z（**4 分 26 秒**），那一次批次全量被跳过。既有护栏为什么没挡住：`--disable-auto` 只在「此后不再 push」时有效（一次 push 触发的 synchronize 会让 automerge.yml 重新 arm，#4829 实证）、`block/merge` 标签拦不住**已 arm** 的 auto-merge、而「draft 唯一可靠」在 batch-gate 里被就绪判定本身关掉了。落码 = scripts/batch-gate.sh 就绪判定第 ③ 条（`autoMergeRequest` 非 null ⇒ 不就绪，exit 3）+ `--check-arm` 回读入口（与判定**共用同一个探针**）；三态 = `0` 未 arm / `1` 已 arm / `3` 读不到（`3` 不许当 `0`）。取号 = `python3 scripts/next_case_id.py MC` 现取（main 001-098 · 100-127 + 在飞 PR #8460 的 129 / #8453 的 128 + 本工作区 099）⇒ **MC-130**。 ｜ tags: ci-process, auto-merge, batch-gate, readiness, tri-state, idempotent, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -14386,8 +14400,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：973（活跃 153，跳过 820）
-- tier 分布：smoke 15 / normal 897 / adversarial 33
+- 用例总数：974（活跃 153，跳过 821）
+- tier 分布：smoke 15 / normal 898 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14403,7 +14417,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：177
+- 杂项域：178
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：75
@@ -14647,6 +14661,7 @@
 - MC-131: **预设搬运通道台账**（issue #6060）：搬出去的每个预设文件逐条登记「最后承载的字节（blob）+ 版末提交 + 最后承载的版本 + 搬入证据（预设仓 commit）」；未登记即红、登记了但现取没有即红、字节/版本对不上即红、版本证据缺口只许缩短
 - CI-001: **fixture 录制基址只认 BASE_URL**：缺失即 fail-closed，不得静默回落到本机 127.0.0.1:8080（issue #8391）
 - MC-128: **端点泄漏台账的键不许含行号**：只插空行（行号漂移）判据仍绿，真删/真加泄漏照旧红（issue #6977）
+- MC-132: 批次就绪判定把「已 arm 的原生 auto-merge」也算作不就绪（issue #6212）：跑那一次全量期间不许存在被秒合的窗口
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
