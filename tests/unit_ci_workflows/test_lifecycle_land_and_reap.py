@@ -215,6 +215,8 @@ if argv[:2] == ["pr", "ready"]:
 if argv[:2] == ["pr", "checks"]:
     if "--json" in argv:
         emit(list(state.get("checks_json") or []))
+    if state.get("watch_stderr"):
+        sys.stderr.write(str(state["watch_stderr"]) + "\n")
     sys.exit(int(state.get("checks_rc") or 0))
 
 if argv[:1] == ["api"]:
@@ -290,7 +292,14 @@ class Fixture:
         _git(self.repo, "commit", "-q", "-m", "init")
         _git(self.repo, "push", "-q", "-u", "origin", "main")
 
-        self.state: dict = {"rows": [], "view": {}, "ready_rc": 0, "checks_rc": 0, "list_rc": 0}
+        # 默认读数 = **required 全绿**：issue #7009 之后 wait-ci **必须拿到正向读数**才敢说绿
+        # （`--watch` 的 rc 不作判据）；需要别的形态的用例自己 set_state 覆盖。
+        # ⚠️ REQ_SAMPLE 在模块后面定义 —— 运行期解析（夹具在用例执行时才构造）。
+        self.state: dict = {
+            "rows": [], "view": {}, "ready_rc": 0, "checks_rc": 0, "list_rc": 0,
+            "required_payload": {"contexts": [REQ_SAMPLE]},
+            "checks_json": [{"name": REQ_SAMPLE, "bucket": "pass", "state": "SUCCESS", "link": None}],
+        }
         self.set_state()
         self._write_stubs()
 
@@ -459,6 +468,8 @@ def test_land_order_criterion_is_red_when_ready_moves_before_gate(tmp_path: Path
     assert mutated_src != src, "变异没落到源码上"
     (mutated_dir / "issue_lifecycle.py").write_text(mutated_src, encoding="utf-8")
     shutil.copy(GUARD_MODULE, mutated_dir / "agent-presets-guard.py")
+    # wait-ci 的「required 每条都终态 SUCCESS」判定本体在 merge_gate ⇒ 变异副本旁也要有一份
+    shutil.copy(MERGE_GATE_MODULE, mutated_dir / "merge_gate.py")
 
     mutated_module = _load_module(mutated_dir / "issue_lifecycle.py")
     steps = list(mutated_module.LAND_STEPS)
@@ -915,10 +926,11 @@ def _check_row(name: str, bucket: str = "fail") -> dict:
 
 
 def _wait_ci_run(fx: Fixture, *, checks_rc: int = 1, checks_json: list | None = None,
-                 required: list | None = None, api_rc: int = 0, module: Path | None = None):
+                 required: list | None = None, api_rc: int = 0, watch_stderr: str = "",
+                 module: Path | None = None):
     """跑一遍**真** `land`（只换 gh CLI 边界）⇒ `(proc, 调用日志, worktree)`。"""
     wt = _land_shape(fx, files=[".agent-presets/migao/preset.yml"])
-    fx.set_state(checks_rc=checks_rc, api_rc=api_rc,
+    fx.set_state(checks_rc=checks_rc, api_rc=api_rc, watch_stderr=watch_stderr,
                  required_payload={"contexts": [REQ_SAMPLE] if required is None else list(required)},
                  checks_json=list(checks_json or []))
     proc = fx.run_module(module, "land", BRANCH) if module else fx.run("land", BRANCH)
@@ -984,7 +996,8 @@ def test_wait_ci_bare_red_continues_and_prints_the_list(fx: Fixture):
 
     病灶实证（PR #5722）：2 条非 required 红 ⇒ `LAND_RC=2`、fail-closed 停、未收尾。
     """
-    proc, log, wt = _wait_ci_run(fx, checks_json=[_check_row(BARE_SAMPLE)])
+    proc, log, wt = _wait_ci_run(
+        fx, checks_json=[_check_row(REQ_SAMPLE, "pass"), _check_row(BARE_SAMPLE)])
 
     assert _bare_red_problems(proc, log) == [], (
         f"非 required 红不该拦落地：{_bare_red_problems(proc, log)}\n--- out ---\n{proc.stdout}\n--- log ---\n{log}")
@@ -1001,40 +1014,120 @@ def test_wait_ci_unreadable_required_set_falls_back_to_strict(fx: Fixture):
         f"取不到 required 集合必须退回严格行为：{_unreadable_problems(proc, log)}\n--- out ---\n{proc.stdout}")
 
 
-def test_wait_ci_inconsistent_reading_stops(fx: Fixture):
-    """读数**不自洽**（`--watch` 判红，而 `--json` 里没有红项）⇒ 停（**未判定不得当绿**）。"""
-    proc, log, wt = _wait_ci_run(fx, checks_json=[])
+def test_wait_ci_reading_without_required_rows_is_undecidable(fx: Fixture):
+    """`--watch` 判红、而 `--json` 里**没有 required 行**（还没上报）⇒ 未判定（3）。
 
-    assert proc.returncode == 2, f"不自洽必须 fail-closed：exit={proc.returncode}\n{proc.stdout}"
-    assert "不自洽" in proc.stdout, f"必须点明是「读数不自洽」：\n{proc.stdout}"
+    issue #7009 的口径：rc 只用来「更早停」，**不给结论**；结论只来自数据。
+    「没上报」与「还在跑」都不是绿。
+    """
+    proc, log, wt = _wait_ci_run(fx, checks_rc=1, checks_json=[])
+
+    assert proc.returncode == 3, f"读数缺 required 行 ⇒ 未判定：exit={proc.returncode}\n{proc.stdout}"
+    assert "尚未上报" in proc.stdout and REQ_SAMPLE in proc.stdout, (
+        f"必须点明「谁没来」（未上报 ≠ 绿）：\n{proc.stdout}")
 
 
-def test_wait_ci_green_path_adds_no_reading(fx: Fixture):
-    """对照（零回归）：全绿 ⇒ 照旧 done，且**不新增任何读数调用**（happy path 一个都不加）。"""
-    proc, log, wt = _wait_ci_run(fx, checks_rc=0)
+def test_wait_ci_green_path_requires_a_positive_reading(fx: Fixture):
+    """对照（零回归）：全绿 ⇒ done，且**必须**真读一次数据（rc 不作判据 —— issue #7009）。
+
+    ⚠️ 旧形态曾经断言「全绿不加读数」（happy path 一个都不加）；本单**有意推翻**它：
+    `--watch` 的 rc 在同一份数据上可以是 0 也可以是错的（PR #7003 实测两次）⇒ 「不读数据就说绿」
+    正是本单要治的假绿。
+    """
+    proc, log, wt = _wait_ci_run(fx, checks_rc=0, checks_json=[_check_row(REQ_SAMPLE, "pass")])
 
     assert proc.returncode == 0, f"全绿应当 exit 0：\n{proc.stdout}\n{proc.stderr}"
-    assert "gh:api" not in log, f"全绿不该去读分支保护（多一次调用 = 多一个失败面）：\n{log}"
+    assert "gh:pr checks" in log, f"必须读 checks 数据（rc 不作判据）：\n{log}"
+    assert "gh:api" in log, f"必须现取 required 集合（不写死清单）：\n{log}"
+    assert "读数来源" in proc.stdout, f"必须自报读数来源（可复核）：\n{proc.stdout}"
+
+
+# ── ④' 本单的核心回归：`--watch` 假完成（rc=0）不得被读成「CI 全绿」 ──────────────
+
+def _undecidable_problems(proc, log) -> list[str]:
+    """判据：读数没跑完 ⇒ **未判定（3）**，且不许继续到 wait-merge。"""
+    problems: list[str] = []
+    if proc.returncode != 3:
+        problems.append(f"required 还在 pending ⇒ 必须未判定（3）：exit={proc.returncode}")
+    if "未判定" not in proc.stdout:
+        problems.append("没有点明「未判定」")
+    if _marker_index(log, "gh:pr view") >= 0:
+        problems.append("未判定却继续到 wait-merge（把「没跑完」读成绿）")
+    return problems
+
+
+def _network_error_problems(proc, log) -> list[str]:
+    """判据：`--watch` 输出里有网络错误字样 ⇒ **与退出码无关**地当失败（exit 3）。"""
+    problems: list[str] = []
+    if proc.returncode != 3:
+        problems.append(f"网络错误字样必须当失败（3）：exit={proc.returncode}")
+    if "connection reset by peer" not in (proc.stdout + proc.stderr):
+        problems.append("没有把原始错误字样打出来（不可复核）")
+    return problems
+
+
+def test_wait_ci_watch_false_green_on_pending_is_undecidable(fx: Fixture):
+    """**本单核心回归**（issue #7009 形态 ①）：`--watch` rc=0，而 required 仍 pending ⇒ 未判定（3）。
+
+    旧形态（rc=0 ⇒「CI 全绿」）在这条上必红 —— 它会把「还在跑」写进交付证据。
+    """
+    proc, log, wt = _wait_ci_run(fx, checks_rc=0, checks_json=[_check_row(REQ_SAMPLE, "pending")])
+
+    assert _undecidable_problems(proc, log) == [], (
+        f"pending 却 rc=0（假完成）必须被拦：{_undecidable_problems(proc, log)}\n--- out ---\n{proc.stdout}")
+    assert REQ_SAMPLE in proc.stdout, f"必须**具名**点出谁还没跑完：\n{proc.stdout}"
+
+
+def test_wait_ci_watch_false_green_on_unreported_is_undecidable(fx: Fixture):
+    """形态 ①'：required check **还没上报**（later-created run）⇒ 未上报 ≠ 绿 ⇒ 3。"""
+    proc, log, wt = _wait_ci_run(fx, checks_rc=0, checks_json=[_check_row(BARE_SAMPLE)])
+
+    assert proc.returncode == 3, f"未上报 ⇒ 未判定：exit={proc.returncode}\n{proc.stdout}"
+    assert "尚未上报" in proc.stdout and REQ_SAMPLE in proc.stdout, f"必须具名：\n{proc.stdout}"
+
+
+def test_wait_ci_network_error_text_is_undecidable(fx: Fixture):
+    """形态 ②（**实测原样**）：`Post graphql: read: connection reset by peer` + rc=0 ⇒ 3。
+
+    关键点：此刻 `--json` 读数是**全绿**的 —— 若照旧信 rc 或只读 JSON，就会 rc/结论不一致。
+    本判据要求「输出里有网络错误字样 ⇒ 这次读数不可信」。
+    """
+    proc, log, wt = _wait_ci_run(
+        fx, checks_rc=0, checks_json=[_check_row(REQ_SAMPLE, "pass")],
+        watch_stderr="Post graphql: read: connection reset by peer")
+
+    assert _network_error_problems(proc, log) == [], (
+        f"网络错误必须当失败：{_network_error_problems(proc, log)}\n--- out ---\n{proc.stdout}")
 
 
 #: 注入锚点（**逐字**取自 `scripts/issue_lifecycle.py`；每条都是**单行**，注入后仍是合法 Python）。
 WAIT_CI_ANCHORS = {
     # 判据② 的坏形态：把「非 required 红的清单」整条删掉（= 静默忽略，会把「有红」读成「没问题」）
     "bare_print": (
-        '        print(f"   ℹ️ 有 **{len(reading[\'bare_red\'])} 条非 required 红**（不在 required 集合里 ⇒ **不拦合并**）—— 如实打印，不静默忽略：\\n{_fmt_ci_bare_rows(reading[\'bare_red\'])}")',
-        "        pass  # 变异：删掉非 required 红的清单（静默忽略）",
+        '        if reading["bare_red"]:',
+        "        if False:  # 变异：删掉非 required 红的清单（静默忽略）",
     ),
-    # 判据① 的坏形态：把所有红都当**裸判据**（= 本单要修的 bug 的镜像）
-    "required_as_bare": (
-        "    required_red, bare_red = mg.classify(checks, required)",
-        "    required_red, bare_red = mg.classify(checks, set())  # 变异：所有红都当裸判据",
+    # 判据① 的坏形态：required 红也照旧往下走（把「红」读成「绿」）
+    "required_red_as_green": (
+        "        if wait.code != EXIT_OK:",
+        "        if False:  # 变异：required 红也当绿（fail-closed 破了）",
     ),
     # 判据③ 的坏形态：把「读不到」当成「没有 required」（假放行）
     "unreadable_continues": (
         '        if not reading["readable"]:',
         '        if False:  # 变异：读不到也继续（把「读不到」当成「不拦」）',
     ),
-    # 对照：**只改注释**（语义完全不变 ⇒ 三条判据都必须照旧）
+    # 判据④ 的坏形态（issue #7009 形态 ②）：不看 `--watch` 输出里的网络错误字样
+    "network_ignored": (
+        "        net = _watch_network_errors(proc)",
+        "        net = []  # 变异：忽略网络错误字样（旧形态）",
+    ),
+    # 判据⑤ 的坏形态（**本单的原 bug**）：读数没跑完（EXIT_UNKNOWN）也当绿
+    "wait_undecidable_is_green": (
+        "        if wait.code == EXIT_UNKNOWN:",
+        "        if False:  # 变异：未判定也算绿（旧形态 = issue #7009 的 bug 本身）",
+    ),
+    # 对照：**只改注释**（语义完全不变 ⇒ 所有判据都必须照旧）
     "comment_only": (
         "        # 三态读数：读不到 required 集合 ⇒ 退回严格行为（**不许**把「读不到」读成「不拦」）",
         "        # 三态读数（只改措辞，语义不变）：读不到 required 集合 ⇒ 退回严格行为",
@@ -1043,36 +1136,45 @@ WAIT_CI_ANCHORS = {
 
 
 def test_wait_ci_criteria_have_discriminating_power(tmp_path: Path):
-    """**红证**：三条判据各自改坏 ⇒ 必须红（且红的**来源**可归因）；**只改注释** ⇒ 必须不红。
+    """**红证**：每条判据各自改坏一处 ⇒ 必须红（且红的**来源**可归因）；**只改注释** ⇒ 全部照旧。
 
     注入一律**实跑**（真 `land` + 替身 gh + 独立 worktree），自证三件由 `_mutate_module` 保证：
     ① 锚**恰好命中 1 次** ② 变异体 ≠ 原文 ③ 仍是合法 Python。
+    后两条（`network_ignored` / `wait_undecidable_is_green`）是 issue #7009 的两半：
+    「读数的**可读性**」（网络错误当失败）与「读数**没跑完**时不许下结论」。
     """
-    for key, predicate, checks, expect in (
-        ("bare_print", _bare_red_problems, [_check_row(BARE_SAMPLE)], "如实打印"),
-        ("required_as_bare", _required_red_problems, [_check_row(REQ_SAMPLE)], "fail-closed"),
-        ("unreadable_continues", _unreadable_problems, [_check_row(BARE_SAMPLE)], "退回严格行为"),
-    ):
+    cases = [
+        ("bare_print", _bare_red_problems,
+         dict(checks_json=[_check_row(REQ_SAMPLE, "pass"), _check_row(BARE_SAMPLE)]), "如实打印"),
+        ("required_red_as_green", _required_red_problems,
+         dict(checks_json=[_check_row(REQ_SAMPLE)]), "fail-closed"),
+        ("unreadable_continues", _unreadable_problems,
+         dict(checks_json=[_check_row(BARE_SAMPLE)], api_rc=1), "退回严格行为"),
+        ("network_ignored", _network_error_problems,
+         dict(checks_json=[_check_row(REQ_SAMPLE, "pass")],
+              watch_stderr="Post graphql: read: connection reset by peer"), "网络错误"),
+        ("wait_undecidable_is_green", _undecidable_problems,
+         dict(checks_json=[_check_row(REQ_SAMPLE, "pending")]), "未判定"),
+    ]
+    for key, predicate, kwargs, expect in cases:
         anchor, replacement = WAIT_CI_ANCHORS[key]
         mutant = _mutate_module(tmp_path / f"mut-{key}", anchor, replacement)
         fx = Fixture(tmp_path / f"red-{key}")
-        proc, log, _ = _wait_ci_run(fx, checks_json=checks, module=mutant,
-                                    api_rc=1 if key == "unreadable_continues" else 0)
+        proc, log, _ = _wait_ci_run(fx, module=mutant, **kwargs)
         problems = predicate(proc, log)
         assert problems, (f"注入 `{key}` 之后判据必须红（否则那条判据是空断言）"
                           f"\n--- out ---\n{proc.stdout}\n--- log ---\n{log}")
         assert any(expect in p for p in problems), f"红的必须是 `{expect}` 这件事：{problems}"
 
-    # 对照读数：**只改注释** ⇒ 三个形态都必须照旧（证明判据判的是语义，不是「文件变了没有」）
+    # 对照读数：**只改注释** ⇒ 五个形态都必须照旧（证明判据判的是语义，不是「文件变了没有」）
     anchor, replacement = WAIT_CI_ANCHORS["comment_only"]
     mutant = _mutate_module(tmp_path / "mut-comment", anchor, replacement)
-    for key, predicate, checks, api_rc in (("bare", _bare_red_problems, [_check_row(BARE_SAMPLE)], 0),
-                                           ("req", _required_red_problems, [_check_row(REQ_SAMPLE)], 0),
-                                           ("unread", _unreadable_problems, [_check_row(BARE_SAMPLE)], 1)):
+    for key, predicate, kwargs, _expect in cases:
         fx = Fixture(tmp_path / f"ctrl-{key}")
-        proc, log, _ = _wait_ci_run(fx, checks_json=checks, api_rc=api_rc, module=mutant)
+        proc, log, _ = _wait_ci_run(fx, module=mutant, **kwargs)
         assert predicate(proc, log) == [], (
-            f"只改注释 ⇒ 判据必须照旧（对照读数非空 = 判据判的是文本不是语义）：{predicate(proc, log)}")
+            f"只改注释 ⇒ `{key}` 必须照旧（对照读数非空 = 判据判的是文本不是语义）：{predicate(proc, log)}")
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 判据（台账 `NS-3` 的承载体）：远程**读/删**的往返次数必须与目标数**无关**

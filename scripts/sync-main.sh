@@ -419,5 +419,5 @@ fi
 
 echo "── 完成 ──"
 echo "分支 ${BRANCH} 已同步 origin/main。CI 即将重跑，请盯首轮结果（见 migao-dev-flow §11）："
-echo "  gh pr checks <PR> --watch"
+echo "  ./scripts/wait-checks.sh <PR>   # 三态 0/1/3：只有 0 是「required 全部终态 SUCCESS」，3 不得当 0 读"
 echo "push 分支后 CI 红了立即修复，禁止丢下红 CI 去开新任务。"

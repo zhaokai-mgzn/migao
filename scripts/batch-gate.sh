@@ -309,7 +309,7 @@ check_one_package() {
   case "$verdict" in
     "OK "*      ) ready_ok    "$b" "PR #${pr}；${verdict#OK }" ;;
     "FAIL "*    ) not_ready   "$b" "PR #${pr}；${verdict#FAIL } ｜下一步：等 CI 或先修红（gh pr checks ${pr}）" ;;
-    "PENDING "* ) not_ready   "$b" "PR #${pr}；${verdict#PENDING } ｜下一步：等 CI 绿（gh pr checks ${pr} --watch）" ;;
+    "PENDING "* ) not_ready   "$b" "PR #${pr}；${verdict#PENDING } ｜下一步：等 CI 绿（./scripts/wait-checks.sh ${pr} —— 三态 0/1/3，3 不得当 0 读；别用 gh pr checks --watch 的退出码当结论）" ;;
     *           ) undecidable "$b" "PR #${pr}；没有上报任何 check（起飞前的 PR？）—— 无法判定 ≠ 就绪" ;;
   esac
 }

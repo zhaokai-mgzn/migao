@@ -89,7 +89,7 @@ CI（GitHub）     验证农场：每 PR 并行、按面无变更即跳过、合
 3. **查要合并** —— 多条独立查询合成一条命令。
 4. **输出先过滤再进上下文** —— `--jq` / `tail -n` / `grep -E`；**严禁**把 CI 全量日志倒进上下文（今天有一次 `gh run view --log-failed` 全量即为反例）。
 5. **验证不来回** —— 先窄跑定位，再一次全量。
-6. **等待不轮询** —— 用后台 job / `gh pr checks --watch` 一次阻塞，禁止 `sleep N` 轮询。
+6. **等待不轮询** —— 用后台 job / `./scripts/wait-checks.sh <PR>` 一次阻塞（🔴 **不要**用 `gh pr checks --watch` 的退出码当「全绿」结论：它在「check 尚未上报」与「`connection reset`」两种形态下都 rc=0 **假完成** —— 见 [CI-CD.md](CI-CD.md) 的「等待 CI」节），禁止 `sleep N` 轮询。
 7. **探索性阅读外包** —— 宽面阅读交给 subagent（它的上下文不占主会话）。
 8. **把已核实事实落 durable 载体**（台账 / CHANGELOG / PR body / issue），别每会话重推。
 9. **子任务提示词自带验收口径**（判据文件 + 不许跑什么），减少澄清往返。

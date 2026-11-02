@@ -12,12 +12,18 @@
 实证（只读读回，勿当"少了一道检查"读）：关联 #4214 的 `Drift Audit` = fail 而该 PR 仍 MERGED；
 #4266 / #4267 / #4271 同款复发 —— 三条都带着 `Drift Audit` 红被合入。
 
-## 两个子命令（三态退出码 0/1/3，**默认只读**）
+## 三个子命令（三态退出码 0/1/3，**默认只读**）
 
     # ① 元判据：required 集合 vs 「实际存在且会判红」的 job 集合 的差集
     python3 scripts/merge_gate.py --required-diff
     # ② 合并闸门：某 PR 的 checks 里是否有「红了也照合」的裸判据
     python3 scripts/merge_gate.py --check <PR号> [--apply-label] [--no-disarm-auto]
+    # ③ 不可假绿的等待入口（issue #7009）：required 每条都终态 SUCCESS 才退 0
+    ./scripts/wait-checks.sh <PR号> [--timeout N] [--once]   # = --wait-checks（单一判定本体）
+
+    ③ 的存在理由：`gh pr checks --watch` 在「check 尚未上报」与「connection reset」两种形态下
+    **都 rc=0 退出**（PR #7003 实测两次）⇒ 退出码**不是**「全绿」的判据。③ 只认数据：
+    pending / 未上报 / required 读不到 / 网络错误 ⇒ **3（无法判定）**，绝不返回 0。
 
     0 = 未命中（差集为空 / 无裸判据红 / 已被 required 拦 / 已有 block/merge）
     1 = **命中**（① 存在裸判据；② 裸判据红且 PR 处于可合并态，或已带红合入）
@@ -108,7 +114,9 @@ import os
 import re
 import subprocess
 import sys
+import time
 from collections import namedtuple
+from datetime import datetime
 from pathlib import Path
 
 try:
@@ -590,6 +598,186 @@ def read_check_snapshot(pr, repo=None, branch="main", gh_bin="gh"):
     return build_check_snapshot(node, fetch_checks(pr, repo, gh_bin), required), repo
 
 
+# ── 不可假绿的等待入口：`--wait-checks`（issue #7009）──────────────────────────
+#
+# 病（PR #7003 实测**两次**，每次都差点把 pending 读成「CI 全绿」）：`gh pr checks <PR> --watch` 在
+# 下面两种形态下都 **rc=0** 退出 ——
+#   ① `PR Check` 还没**上报** check（later-created run）⇒ watch 认为「没有待跑的」⇒ rc=0；
+#   ② 遇到 `Post graphql: read: connection reset by peer` ⇒ 仍 rc=0，而两条 required **还在 pending**。
+# ⇒ **退出码不是「全绿」的判据**。本入口只认**数据**：required 集合里**每一条**都拿到终态 `SUCCESS`
+# 才退 0；其余 pending / 未上报 / required 集合读不到 / 网络或 API 报错 ⇒ **3（无法判定）**，
+# 绝不返回 0。required 集合从分支保护**现取**（与 `--check` 同一个真值源，**不写死清单**）。
+
+WAIT_TIMEOUT = 1800          # 等 CI 的默认上限（秒）—— 与 `land --ci-timeout` 同量级
+WAIT_POLL_SECONDS = 20       # 两次采样的间隔（等，不是「靠轮询猜」；见 migao-dev-flow §21）
+#: 只有终态 SUCCESS 才算绿（`SKIPPED` / `NEUTRAL` 等**终态非 SUCCESS** 一律不算 —— 宁可报红也不假绿）。
+WAIT_GREEN_STATES = ("SUCCESS",)
+#: 仍在跑 / 还没上报。**空串 = 读数里没有 state** ⇒ 缺省按「未定」处理（fail-closed）。
+WAIT_PENDING_STATES = ("PENDING", "QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED", "")
+#: 出现在 gh 输出里即「这次读数不可信」⇒ 3（**与退出码无关**，正是 issue #7009 的形态 ②）。
+NETWORK_ERROR_MARKERS = (
+    "connection reset by peer", "connection refused", "connection timed out",
+    "tls handshake timeout", "timeout awaiting response headers", "could not resolve host",
+    "bad gateway", "post graphql", "http 502", "http 503", "http 504",
+)
+
+WaitVerdict = namedtuple(
+    "WaitVerdict", "code reason required rows pending not_green missing bare_red waitable counts")
+
+
+def judge_wait_snapshot(checks, required):
+    """纯函数：**单次快照** → 三态（0 / 1 / 3）。
+
+    0 **仅当** required 里每一条都拿到终态 SUCCESS；
+    1 = 有 required 是**终态非 SUCCESS**（红 / 取消 / 超时 / 跳过 —— 可判定，故不退 3）；
+    3 = **仍未定**：required 里有 pending / 还没上报（调用方继续等，到点仍是 3），
+        或 required 集合为空（**空集合 ≠ 没有 required** —— 拿空集合宣告全绿正是本单要治的假绿）。
+    """
+    required = set(required or ())
+    by_name = {str(c.get("name")): c for c in (checks or [])}
+    rows, pending, not_green, missing = [], [], [], []
+    for name in sorted(required):
+        row = by_name.get(name)
+        if row is None:
+            missing.append(name)          # 没上报 ≠ 绿
+            continue
+        state = str(row.get("state") or "").upper()
+        bucket = str(row.get("bucket") or "").lower()
+        rows.append({"name": name, "state": state or "?", "link": row.get("link")})
+        if state in WAIT_GREEN_STATES:
+            continue
+        if bucket == "pending" or state in WAIT_PENDING_STATES:
+            pending.append(name)
+        else:
+            not_green.append(name)
+    bare_red = classify(checks, required)[1]
+    counts = check_counts(checks)
+    common = {"required": required, "rows": rows, "pending": pending, "not_green": not_green,
+              "missing": missing, "bare_red": bare_red, "counts": counts}
+    if not required:
+        return WaitVerdict(code=EXIT_UNDECIDABLE,
+                           reason="required 集合**为空**（读不到，或该分支确实没有 required）⇒ "
+                                  "无法判定「全绿」（空集合不是绿）",
+                           waitable=False, **common)
+    if not_green:
+        return WaitVerdict(code=EXIT_HIT,
+                           reason="required 判据**没拿到终态 SUCCESS**：" + "、".join(
+                               f"{r['name']}[{r['state']}]" for r in rows if r["name"] in not_green),
+                           waitable=False, **common)
+    if pending or missing:
+        parts = []
+        if pending:
+            parts.append("仍 pending：" + "、".join(pending))
+        if missing:
+            parts.append("尚未上报（later-created run / 刚 push）：" + "、".join(missing))
+        return WaitVerdict(code=EXIT_UNDECIDABLE,
+                           reason="required 判据还没跑完（" + "；".join(parts) + "）⇒ 未定",
+                           waitable=True, **common)
+    return WaitVerdict(code=EXIT_OK,
+                       reason=f"required {len(required)} 条**全部终态 SUCCESS**",
+                       waitable=False, **common)
+
+
+def fetch_checks_for_wait(pr, repo, gh_bin):
+    """`gh pr checks --json`（**退出码不可作判据**：有红项时也可能 rc=0 —— 关联 #5722 实测）。
+
+    判据 = **stdout 能解析** ∧ **输出里没有网络/API 错误字样**（有 ⇒ 3，与退出码无关）。
+    """
+    args = ["pr", "checks", str(pr), "--json", "name,state,bucket,link"]
+    if repo:
+        args += ["--repo", repo]
+    proc = gh_run(args, gh_bin)
+    text = ((proc.stdout or "") + "\n" + (proc.stderr or "")).lower()
+    hits = [m for m in NETWORK_ERROR_MARKERS if m in text]
+    if hits:
+        raise Undecidable(f"读数里出现网络/API 错误字样（{'、'.join(hits)}）⇒ 这次读数不可信"
+                          f"（**与退出码无关**）：{((proc.stderr or proc.stdout or '').strip())[:200]}")
+    checks = parse_checks(proc.stdout)
+    if checks is None:
+        raise Undecidable(f"`gh pr checks {pr} --json` 未返回可解析 JSON（退出 {proc.returncode}）："
+                          f"{(proc.stderr or proc.stdout or '').strip()[:200]}")
+    return checks
+
+
+def fetch_wait_head(pr, repo, gh_bin):
+    """读 PR 的 state / headRefOid —— 读数来源要能自证「读的是哪一次提交」。"""
+    args = ["pr", "view", str(pr), "--json", "state,headRefOid"]
+    if repo:
+        args += ["--repo", repo]
+    proc = gh_run(args, gh_bin)
+    try:
+        payload = json.loads(proc.stdout or "")
+    except ValueError:
+        raise Undecidable(f"`gh pr view {pr}` 未返回 JSON（退出 {proc.returncode}）："
+                          f"{(proc.stderr or proc.stdout or '').strip()[:200]}")
+    if not isinstance(payload, dict) or not payload.get("state"):
+        raise Undecidable(f"`gh pr view {pr}` 未返回 PR 载荷（退出 {proc.returncode}）："
+                          f"{(proc.stderr or '').strip()[:200]}")
+    return payload
+
+
+def _now_stamp():
+    return datetime.now().astimezone().strftime("%Y-%m-%dT%H:%M:%S%z")
+
+
+def wait_for_checks(pr, repo=None, branch="main", gh_bin="gh", timeout=WAIT_TIMEOUT,
+                    poll_seconds=WAIT_POLL_SECONDS, once=False, sleep=time.sleep,
+                    clock=time.monotonic):
+    """等 required 判据全部终态 SUCCESS。→ `(verdict, 读数来源, 采样次数, 读数时刻)`。
+
+    required 集合只读一次（一次等待里它是静态的）；**逐次重读 checks**。
+    `once=True` ⇒ 只采样一次（pending / 未上报 ⇒ 立即 3，不等待）。
+    """
+    repo = repo or gh_repo(gh_bin)
+    required = fetch_required(repo, branch, gh_bin)
+    head = fetch_wait_head(pr, repo, gh_bin)
+    source = (f"PR #{pr} head={head.get('headRefOid') or '(未知)'} state={head.get('state')}"
+              f"（读自 `gh pr view {pr} --json state,headRefOid`）"
+              f" · required {len(required)} 条（读自 `gh api repos/{repo}/branches/{branch}"
+              f"/protection/required_status_checks`）")
+    started = clock()
+    attempts = 0
+    while True:
+        attempts += 1
+        verdict = judge_wait_snapshot(fetch_checks_for_wait(pr, repo, gh_bin), required)
+        if verdict.code != EXIT_UNDECIDABLE or not verdict.waitable:
+            return verdict, source, attempts, _now_stamp()
+        elapsed = clock() - started
+        if once or elapsed >= timeout:
+            return verdict, source, attempts, _now_stamp()
+        sleep(min(max(poll_seconds, 0), max(timeout - elapsed, 0)))
+
+
+def render_wait(verdict, pr, repo, source, attempts, stamp):
+    tag = {EXIT_OK: "✅ required 判据**全部终态 SUCCESS**",
+           EXIT_HIT: "❌ 有 required 判据**没拿到终态 SUCCESS**",
+           EXIT_UNDECIDABLE: "⚠️ 无法判定 —— **这不是绿**"}[verdict.code]
+    lines = [f"=== 不可假绿的 CI 等待（issue #7009）· PR #{pr} ===",
+             f"判定：{tag} —— {verdict.reason}",
+             f"读数来源：{source}",
+             f"采样：第 {attempts} 次 · 读数时刻 {stamp}（本机时区；GitHub 侧时间是 UTC）",
+             f"required（{len(verdict.required)} 条，现取自分支保护）："]
+    if verdict.rows:
+        lines += [f"  · {r['name']}  [{r['state']}]" for r in verdict.rows]
+    if verdict.missing:
+        lines += [f"  · {name}  [尚未上报]" for name in verdict.missing]
+    if not verdict.rows and not verdict.missing:
+        lines.append("  （无）")
+    if verdict.bare_red:
+        lines.append(f"ℹ️ 另有非 required 红 {len(verdict.bare_red)} 条"
+                     "（不在 required 集合里 ⇒ **不拦合并**，如实打印）：")
+        lines += [f"  · {c.get('name')}  [{c.get('state') or c.get('bucket')}]" for c in verdict.bare_red]
+    if verdict.code == EXIT_UNDECIDABLE:
+        lines.append("🔴 **这不是绿**：`gh pr checks --watch` 正是在这里 rc=0 假完成（issue #7009）"
+                     "—— 不许把本读数写成「CI 全绿」。")
+        suffix = f" --repo {repo}" if repo and "/" in str(repo) else ""
+        lines.append(f"续跑：./scripts/wait-checks.sh {pr}{suffix} --timeout {WAIT_TIMEOUT * 2}")
+        lines.append(f"复核：gh pr checks {pr} --json name,state,bucket")
+    elif verdict.code == EXIT_HIT:
+        lines.append(f"复核：gh pr checks {pr} --json name,state,bucket   # 修红后重跑本入口")
+    return "\n".join(lines)
+
+
 # ── 写操作（只有 --apply-label / --disarm-auto 才走到这里）────────────────────
 
 def add_label(pr, repo, gh_bin):
@@ -725,12 +913,24 @@ def main(argv=None):
                         help="逃生口：只打标签、跳过 disarm（输出会明写它拦不住已 arm 的 auto-merge）")
     parser.add_argument("--disarm-auto", action="store_true",
                         help="（已是 `--apply-label` 的默认行为；保留仅为兼容既有命令行）")
+    parser.add_argument("--wait-checks", type=int, metavar="PR", default=None,
+                        help="不可假绿的等待入口（issue #7009）：**只有** required 集合里每条都终态 "
+                             "SUCCESS 才退 0；pending / 未上报 / 网络或 API 报错 ⇒ 退 3（**绝不返回 0**）")
+    parser.add_argument("--timeout", type=int, default=WAIT_TIMEOUT,
+                        help=f"等 CI 的上限（秒，默认 {WAIT_TIMEOUT}）；到点仍未定 ⇒ 退 3")
+    parser.add_argument("--poll-seconds", type=int, default=WAIT_POLL_SECONDS,
+                        help=f"两次采样的间隔（秒，默认 {WAIT_POLL_SECONDS}）")
+    parser.add_argument("--once", action="store_true",
+                        help="只采样一次：pending / 未上报 ⇒ 立即退 3（不等待）")
     args = parser.parse_args(argv)
 
     gh_bin = os.environ.get("MG_GH_BIN", "gh")
-    if args.required_diff == (args.check is not None):
-        print("用法：必须**恰好**给一个子命令 —— --required-diff 或 --check <PR号>\n"
-              "（两者都给 / 都不给 ⇒ 无法判定，退 3）")
+    given = [name for name, hit in (("--required-diff", args.required_diff),
+                                    ("--check", args.check is not None),
+                                    ("--wait-checks", args.wait_checks is not None)) if hit]
+    if len(given) != 1:
+        print("用法：必须**恰好**给一个子命令 —— --required-diff / --check <PR号> / --wait-checks <PR号>\n"
+              f"（给了 {len(given)} 个：{'、'.join(given) or '无'} ⇒ 无法判定，退 3）")
         return EXIT_UNDECIDABLE
 
     if args.required_diff:
@@ -748,6 +948,21 @@ def main(argv=None):
         verdict = decide_required_diff(scan.jobs, required)
         print(render_required_diff(verdict, scan.jobs, required, args.branch, repo,
                                    source=source, scan=scan))
+        return verdict.code
+
+    if args.wait_checks is not None:
+        try:
+            verdict, source, attempts, stamp = wait_for_checks(
+                args.wait_checks, args.repo, args.branch, gh_bin,
+                timeout=args.timeout, poll_seconds=args.poll_seconds, once=args.once)
+        except Undecidable as exc:
+            verdict = WaitVerdict(code=EXIT_UNDECIDABLE, reason=f"读不到关键输入：{exc}",
+                                  required=set(), rows=[], pending=[], not_green=[], missing=[],
+                                  bare_red=[], waitable=False,
+                                  counts={"total": 0, "pass": 0, "fail": 0, "pending": 0})
+            source = "（无可用读数）"
+            attempts, stamp = 0, _now_stamp()
+        print(render_wait(verdict, args.wait_checks, args.repo or "(当前仓库)", source, attempts, stamp))
         return verdict.code
 
     try:

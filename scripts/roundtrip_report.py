@@ -72,8 +72,9 @@ REQUIRED_ACTION = (
     "命中「往返占比高」时（判据：某工具的**调用数占比**显著高于其**执行耗时占比**）⇒ "
     "按 `migao-dev-flow` §21 的 P1~P4 处置：读要成批 / 改要成批（同一步多个 edit，>3 处用一次 write）/ "
     "查要合并（多条 grep 合成一条 bash）/ 验证不来回（先窄跑再全量）；"
-    "命中「等待型调用」时 ⇒ 按 **P7** 处置：用 `gh pr checks <PR> --watch`（一次阻塞调用）"
-    "或把它丢**后台 job**（完成时被通知）替代 `sleep N` 轮询。"
+    "命中「等待型调用」时 ⇒ 按 **P7** 处置：用 `./scripts/wait-checks.sh <PR>`（一次阻塞调用；"
+    "三态 0/1/3，`3` 不得当 `0` 读；**别**用 `gh pr checks --watch` 的退出码当「全绿」结论 —— "
+    "它会假完成，issue #7009）或把它丢**后台 job**（完成时被通知）替代 `sleep N` 轮询。"
 )
 
 
@@ -257,7 +258,8 @@ def render(report: dict, path: Path, top: int) -> str:
             "（纯空等，且每次都是一轮模型往返）"
         )
         out.append(
-            "  处置：改 `gh pr checks <PR> --watch`（一次阻塞调用）；**首选丢后台 job**（完成时被通知，期间做别的）"
+            "  处置：改 `./scripts/wait-checks.sh <PR>`（一次阻塞；三态 0/1/3，`3` 不得当 `0` 读；"
+            "**别**用 `gh pr checks --watch` 的退出码当结论）；**首选丢后台 job**（完成时被通知，期间做别的）"
         )
     else:
         out.append("  0 次（未发现 `sleep N` 轮询）")
