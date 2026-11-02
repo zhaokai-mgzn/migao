@@ -1,0 +1,24 @@
+{
+  "case_ids": ["MC-133"],
+  "issue": 6495,
+  "why": "issue #6495 的类级固化：Java 定点判据的两条「空跑」形态。① `.txt` 摘要对 @Nested 类恒报 `Tests run: 0`（实测：同一次运行 XML/console 15 条、摘要写 0）⇒ 任何机具把 `.txt` 的 `Tests run:` 当读数源、而它跑的类可能含 @Nested ⇒ 会得到「0 条」的假读数。② `-Dtest=<外层类>#<方法>`，方法声明在 @Nested 内 ⇒ 真·空跑（Tests run: 0 / BUILD SUCCESS / exit=0 / 无 XML）。本台账登记**今天仍读 `.txt` 的机具**及其前提（「定点类保持扁平」），前提一变即红。",
+  "l-enforcement": "tests/unit_ci_workflows/test_java_nested_pointed_run_guard.py（判据 J3/J7）",
+  "frozen_baseline": 2,
+  "engines": [
+    {
+      "file": "scripts/auto-batch-red-proof.py",
+      "unit": "AutoBatchDispatchTest",
+      "anchor": "UNIT = \"AutoBatchDispatchTest\"",
+      "reason": "该机具用 `.txt` 摘要判「变异有没有被抓住」（report_of / failed_methods）。今天它的定点类是**扁平**类（现取 @Nested = 0）⇒ 读数成立；一旦该类被改成 @Nested 分组，摘要恒报 Tests run: 0 且 failed_methods 恒空 ⇒ 机具会把「判据没抓住」误读成红（fail-closed，但归因错），或反过来让红证失去判别力。",
+      "precondition": "定点类保持扁平（无 @Nested）；出现 @Nested ⇒ 本判据当场红，机具必须改读 `target/surefire-reports/TEST-<fqn>.xml`"
+    },
+    {
+      "file": "scripts/auto-batch-due-scan-red-proof.py",
+      "unit": "AutoBatchDueScanServiceTest",
+      "anchor": "UNIT = \"AutoBatchDueScanServiceTest\"",
+      "reason": "与上一条同族（同一套 report_of / failed_methods 写法）。定点类今天扁平（现取 @Nested = 0）⇒ 读数成立。",
+      "precondition": "定点类保持扁平（无 @Nested）；出现 @Nested ⇒ 本判据当场红，机具必须改读 XML"
+    }
+  ],
+  "exemptions": []
+}
