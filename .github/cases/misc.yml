@@ -6609,3 +6609,37 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+  - id: MC-135
+    legacy_id: ""
+    title: "生图失败归因必须读供应商 message 正文：400 InvalidParameter 的「样图读不到」与「模型不接」分成两格（issue #7719）"
+    domains:
+      - misc
+      - product
+    tier: normal
+    tags:
+      - image-generation
+      - failure-attribution
+      - input-side
+      - red-proof
+    truths_ref: []
+    user_inputs:
+      - "样图 URL 供应商抓不到（域名解析不了 / 下载失败）时，建品页说「该能力暂不可用，已反馈平台」⇒ 商家以为要找平台换模型，而真正该做的是换一张能访问的样图。"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·输入侧分流（会红）：供应商 400 + code=InvalidParameter + message 指向输入素材（URL 解析不了 / 下载失败 / 格式或尺寸非法）⇒ 归 ImageGenerationInputUnreachable（对外 code = IMAGE_GEN_INPUT_UNREACHABLE），**不**归 IMAGE_GEN_MODEL_UNSUPPORTED，且**不切模型**（默认链两个模型 ⇒ 恰好一次 HTTP 调用）。执行点 = backend/ai-agent-service/tests/test_generator.py::test_unresolvable_sample_url_is_input_side_not_model_unsupported。"
+      - "判据 2·不许一律改判（会红）：400 + InvalidParameter 但 message 是模型侧原因（model does not support messages）⇒ 仍切下一个模型（#7341 的回落链逐字保留）；全链都不接仍是 IMAGE_GEN_MODEL_UNSUPPORTED。执行点 = ::test_other_invalid_parameter_messages_still_switch_models + ::test_internal_endpoint_503_carries_stable_failure_code。"
+      - "判据 3·配额不回归（会红）：429 / Throttling / AllocationQuota 仍归 IMAGE_GEN_QUOTA_EXCEEDED，不被输入侧分类吃掉。执行点 = ::test_quota_429_is_still_quota_not_input_side + ::test_all_models_quota_raises_quota_exceeded。"
+      - "判据 4·红证（常驻）：同状态码、同 code、只有 message 不同的两条必须分类相反；把 message 解析删掉（只看 code）⇒ ::test_input_side_classifier_reads_message_body_not_just_code 必红。"
+      - "判据 5·对外话术（会红）：admin-api 把 IMAGE_GEN_INPUT_UNREACHABLE 映射成 AI_PRODUCT_IMAGE_INPUT_UNREACHABLE，话术只说「换一张能正常打开的样图」，不含「稍后重试」「已反馈平台」，也不含服务名 / 地址（§31 P3）；建品页按该码显示同一口径（与「能力不可用」两句不同的话）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductImageClientTest.java::mapsUpstreamFailureCodesToDistinctActions + frontend/admin-web/tests/unit/components/ProductImageAI.test.tsx。"
+    skip_reason: "[backend-contract] 纯确定性单测（httpx mock / MockRestTemplate / vitest mock，零生成费用、零真实供应商调用），不进入 agent-eval 冒烟"
+    merge_log: "2026-11-03 新增（issue #7719）。逐字读数（2026-10-25 10:11）：对外 503 IMAGE_GEN_MODEL_UNSUPPORTED，而供应商对同一请求的原文 = HTTP 400 code=InvalidParameter message=URL hostname cannot be resolved（样图域名解析不了）。取号 = MC-135（**让号记实**：原取 MC-133，但同日在飞 PR #8506 / #8508 / #8509 都取在同一段号上 ⇒ 按 `docs/wiki/Change-Blast-Radius.md` 陷阱 3 的「后合入者让号」，在 CI 报红前主动让到现取最大号 + 1 = MC-135）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_generator.py"
+        - "backend/ai-agent-service/tests/test_product_image_generate.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductImageClientTest.java"
+        - "frontend/admin-web/tests/unit/components/ProductImageAI.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []

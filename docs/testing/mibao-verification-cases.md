@@ -6943,6 +6943,7 @@
 ```
 溯源: 2026-11-03 新增（issue #6495，AI 裁定按**实测**改判病灶）。原始单的读数（`head -6 target/surefire-reports/<fqn>.txt` 得 `Tests run: 0` 且 exit 0）复现了，但归因错了一半：实测 `-Dtest=OssConfigTest`（3 外层 + 12 嵌套）= **15/15 真跑**、`-Dtest=AgentBatchServiceTest`（38 条全在 @Nested）= **38/38 真跑**、`-Dtest=OssConfigTest*` 同为 15（**通配符没有额外收益**）⇒「类里含 @Nested ⇒ 一条都不跑」**不成立**，原单那条是**误诊**，误诊源 = `.txt` 摘要在 @Nested 类上恒报 0（同一次运行 XML/console 15，摘要 0）。真·空跑另有一条：`-Dtest=AgentBatchServiceTest#persistsPreviewWithOldValueCollectedFromDb`（该方法声明在 @Nested class Create 内）⇒ `Tests run: 0` / `BUILD SUCCESS` / exit=0 / 无 XML；加 `$` 限定 `-Dtest=AgentBatchServiceTest$Create#persistsPreviewWithOldValueCollectedFromDb` ⇒ **1/1 真跑**。交付 = 入口 scripts/java-test.sh（+ scripts/java_pointed_readings.py）把选择器自动纠正 + **只信 XML** + 断言读数大于 0（0 即红，exit 1）；守卫 = tests/unit_ci_workflows/test_java_nested_pointed_run_guard.py J1~J7 + 台账 java_pointed_run_ledger.json（读 `.txt` 的两个红证机具**已登记**并钉住「定点类保持扁平」这个前提）；同时改掉两处在仓内传播错读数的文案（ScheduledTaskServiceTest 的类注释、docs/wiki/Development.md 新增「Java 定点判据」节）。取号 = **MC-134**（`scripts/next_case_id.py MC` 给的是历史空档 MC-099 —— 仓库内已有两次明文说明 MC-099 是 PR #6924 随 #8383 整包撤回被删、**不回填**；本轮 **5 个在飞 PR（#8503 / #8506 / #8508 / #8509 / #8510）同时占了 MC-133**（CI 的 `test_case_id_claims.py` 在合并前就判红）⇒ 按「后合入者让号」让到现取最小空闲号 MC-134）。 ｜ tags: backend-contract, java-test, surefire, nested, readings, guard, red-proof
 
+<<<<<<< HEAD
 ### MC-137. gate 的 bmini 打印口径守卫读**git 索引**而不是工作树：被 `.gitignore` 命中的旧产物不再让本机假红（issue #6594） 🔵
 ```
 你: 我只在本机跑过一次 ai-agent-service 的覆盖率，为什么 gate 的 bmini 腿就说我在打印口径里写死了 384？CI 明明是绿的。
@@ -6955,6 +6956,20 @@
 跳过: [backend-contract] 零 LLM 的确定性读数（真 git 临时仓 + 真跑 node 读面 CLI + 真仓库 git ls-files 对账 + 内存注入自证），pytest 真跑、零网络，不进 agent-eval 冒烟
 ```
 溯源: 2026-11-03 新增（issue #6594）。病（本机实测，issue 原文）：bmini 打印口径守卫的 C2b 用 readCorpus(['frontend','backend']) **遍历工作树** ⇒ 扫到被 .gitignore 命中的旧覆盖率产物（backend/ai-agent-service/coverage.json，python coverage 输出、496KB、天然含打印头宽的像素口径）⇒ ./verify-all.sh gate 的 bmini 腿在本机判红（Array [] vs Array ['…coverage.json: 自带像素口径字面量 384…']），而 CI（干净检出）判绿 ⇒ **本机红 / CI 绿的分裂**。修法 = **A（读 git 索引）**：语料 = git ls-files 的跟踪集合；同口径是**构造出来的**（CI 检出里只有跟踪文件），不是靠一张必然漏的排除清单。落码 = frontend/bmini-app/tests/helpers/trackedCorpus.js（唯一读面，默认 index；worktree 只给判据做单变量对照）+ 守卫改为调用它 + 未跟踪且未被 ignore 的文件**出声**（不静默漏扫、也不判红）。**红证（实跑，双向对照）**：同一份被 ignore 的产物存在时 —— 修前（读面 = 工作树）**1 failed / 7 passed**，报错与 issue 逐字相同；修后（读面 = 索引）**8 passed**。🔴 **取号出过一次事故（照实登记，本 PR 是补丁）**：本用例**首次**以 MC-134 起草并随修复 PR #8511 提交，合入前该分支被更新到含 #8510 的 main —— **#8510 的 Java 定点判据用例先占了 MC-134**（.github/cases/claims/8510-MC-134.json），两条都以 `- id:` 追加在 misc.yml 末尾 ⇒ 分支更新时**本条目被静默吞掉**（main 上 grep `语料读面` = **0**），而 CI 全绿（判据只查「声明的 id 存在」，不查「它指的还是不是自己那条」）。本 PR 补回该条目并改用例号 **MC-137**（现取最大 136 + 1；`next_case_id.py` 的最小空闲号是刻意的历史空档 MC-099，**按纪律不回填**），并补 `.github/cases/claims/<本 PR>-MC-137.json` 取号登记。 ｜ tags: ci-process, corpus-read-face, git-index, false-positive, red-proof, single-source
+=======
+### MC-135. 生图失败归因必须读供应商 message 正文：400 InvalidParameter 的「样图读不到」与「模型不接」分成两格（issue #7719） 🔵
+```
+你: 样图 URL 供应商抓不到（域名解析不了 / 下载失败）时，建品页说「该能力暂不可用，已反馈平台」⇒ 商家以为要找平台换模型，而真正该做的是换一张能访问的样图。
+期望: direct_reply
+数据: 判据 1·输入侧分流（会红）：供应商 400 + code=InvalidParameter + message 指向输入素材（URL 解析不了 / 下载失败 / 格式或尺寸非法）⇒ 归 ImageGenerationInputUnreachable（对外 code = IMAGE_GEN_INPUT_UNREACHABLE），**不**归 IMAGE_GEN_MODEL_UNSUPPORTED，且**不切模型**（默认链两个模型 ⇒ 恰好一次 HTTP 调用）。执行点 = backend/ai-agent-service/tests/test_generator.py::test_unresolvable_sample_url_is_input_side_not_model_unsupported。
+数据: 判据 2·不许一律改判（会红）：400 + InvalidParameter 但 message 是模型侧原因（model does not support messages）⇒ 仍切下一个模型（#7341 的回落链逐字保留）；全链都不接仍是 IMAGE_GEN_MODEL_UNSUPPORTED。执行点 = ::test_other_invalid_parameter_messages_still_switch_models + ::test_internal_endpoint_503_carries_stable_failure_code。
+数据: 判据 3·配额不回归（会红）：429 / Throttling / AllocationQuota 仍归 IMAGE_GEN_QUOTA_EXCEEDED，不被输入侧分类吃掉。执行点 = ::test_quota_429_is_still_quota_not_input_side + ::test_all_models_quota_raises_quota_exceeded。
+数据: 判据 4·红证（常驻）：同状态码、同 code、只有 message 不同的两条必须分类相反；把 message 解析删掉（只看 code）⇒ ::test_input_side_classifier_reads_message_body_not_just_code 必红。
+数据: 判据 5·对外话术（会红）：admin-api 把 IMAGE_GEN_INPUT_UNREACHABLE 映射成 AI_PRODUCT_IMAGE_INPUT_UNREACHABLE，话术只说「换一张能正常打开的样图」，不含「稍后重试」「已反馈平台」，也不含服务名 / 地址（§31 P3）；建品页按该码显示同一口径（与「能力不可用」两句不同的话）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductImageClientTest.java::mapsUpstreamFailureCodesToDistinctActions + frontend/admin-web/tests/unit/components/ProductImageAI.test.tsx。
+跳过: [backend-contract] 纯确定性单测（httpx mock / MockRestTemplate / vitest mock，零生成费用、零真实供应商调用），不进入 agent-eval 冒烟
+```
+溯源: 2026-11-03 新增（issue #7719）。逐字读数（2026-10-25 10:11）：对外 503 IMAGE_GEN_MODEL_UNSUPPORTED，而供应商对同一请求的原文 = HTTP 400 code=InvalidParameter message=URL hostname cannot be resolved（样图域名解析不了）。取号 = MC-135（**让号记实**：原取 MC-133，但同日在飞 PR #8506 / #8508 / #8509 都取在同一段号上 ⇒ 按 `docs/wiki/Change-Blast-Radius.md` 陷阱 3 的「后合入者让号」，在 CI 报红前主动让到现取最大号 + 1 = MC-135）。 ｜ tags: image-generation, failure-attribution, input-side, red-proof
+>>>>>>> origin/fix/7719-image-error-attribution
 
 ## 商家入驻域（7 case）
 
@@ -14127,11 +14142,11 @@
 期望: direct_reply
 数据: 判据 1·后端不落库（会红）：POST /api/admin/products/ai-images 只回 {url, model}（data 恰好两个键）；控制器依赖面恰好 ProductImageGenerationService（无 ProductService / Mapper）。执行点 = ProductImageControllerTest + ProductImageGenerationServiceTest。
 数据: 判据 2·链路收口（会红）：临时 URL 只允许从 *.aliyuncs.com 下载并转存 OSS（非百炼域名 ⇒ 422 且不下载）；样图必须 https；用途白名单 **main/white/texture/craft/scene** 之外 ⇒ 422 且不发起生成请求；主图构图变体 `variant` 越界（>2）⇒ 422 且不发起生成请求，缺省 = 0（老客户端不受影响）。执行点 = ProductImageGenerationServiceTest + ProductImageControllerTest。
-数据: 判据 3·ai-agent 模型轮换（会红）：配额类错误（429 / AllocationQuota）与「模型接不了该请求」（HTTP 400 InvalidParameter）自动切下一个模型；审核类 400（DataInspectionFailed）不切模型；**默认链 = qwen-image-3.0-pro、端点 = 阿里云 MaaS token-plan 的原生多模态路径（用户 2026-10-24 裁定，issue #7661）**，旧百炼模型与旧 host 不得回流（类级守卫 = tests/unit_ci_workflows/test_maas_audio_image_single_source.py 的 G1/G3）；全链不可用时报「模型不接这类请求（非配额原因）」而不是「额度用尽」；全部用尽 ⇒ 503；未配置 Key ⇒ 503 且不发外部请求（**不回落 PRIMARY 的 DeepSeek key**）。**503 响应体必须带稳定机器可读 code（四类互不相同：IMAGE_GEN_MODEL_UNSUPPORTED / IMAGE_GEN_QUOTA_EXCEEDED / IMAGE_GEN_DISABLED / IMAGE_GEN_NO_KEY，issue #7552），detail 并存、状态码语义不变（其它供应商失败仍 502）；凭证失效（401/403，issue #7680）复用 IMAGE_GEN_NO_KEY（同属平台侧凭证问题、商家的下一个动作一致，不新增第五码）**。执行点 = backend/ai-agent-service/tests/test_generator.py。
+数据: 判据 3·ai-agent 模型轮换（会红）：配额类错误（429 / AllocationQuota）与「模型接不了该请求」（HTTP 400 InvalidParameter）自动切下一个模型；审核类 400（DataInspectionFailed）不切模型；**默认链 = qwen-image-3.0-pro、端点 = 阿里云 MaaS token-plan 的原生多模态路径（用户 2026-10-24 裁定，issue #7661）**，旧百炼模型与旧 host 不得回流（类级守卫 = tests/unit_ci_workflows/test_maas_audio_image_single_source.py 的 G1/G3）；全链不可用时报「模型不接这类请求（非配额原因）」而不是「额度用尽」；全部用尽 ⇒ 503；未配置 Key ⇒ 503 且不发外部请求（**不回落 PRIMARY 的 DeepSeek key**）。**503 响应体必须带稳定机器可读 code（五类互不相同：IMAGE_GEN_MODEL_UNSUPPORTED / IMAGE_GEN_QUOTA_EXCEEDED / IMAGE_GEN_DISABLED / IMAGE_GEN_NO_KEY / IMAGE_GEN_INPUT_UNREACHABLE，issue #7552 / #7719；最后一格只在供应商 400 InvalidParameter 且 message 正文指向「样图读不到」时命中 ⇒ 输入侧、不切模型、不报模型不支持），detail 并存、状态码语义不变（其它供应商失败仍 502）；凭证失效（401/403，issue #7680）复用 IMAGE_GEN_NO_KEY（同属平台侧凭证问题、商家的下一个动作一致，不新增第五码）**。执行点 = backend/ai-agent-service/tests/test_generator.py。
 数据: 判据 4·前端（会红，issue #7533 / #7773 / #7782 改判）：无样图 ⇒ 按钮 disabled + 先上传提示；默认用第 1 张、多图可切换样图（生成携带所选样图 URL + kind + variant）；**生成成功即自动追加到图片位**（主图·白底图 ⇒ onApplyMain 追加主图末尾；细节·工艺·场景 ⇒ onApplyDetail 追加 detailImages 末尾），**不存在「用这张」按钮**（回归守卫）；**只追加不覆盖**：再生成一张 / 换用途再生成 **都不摘掉上一张**（不再有 replaceUrl；先详情后主图 ⇒ 详情那张仍在）；**一键生成整套**（用户 21:09 改判）⇒ 一次点出 8 张：`main:0 / main:1 / white:0 / texture:0 / texture:1 / craft:0 / scene:0 / scene:1`，并发 3，边生成边落位，结束时报「已生成 8/8」；个别失败 ⇒ 其余照常落位并在错误行点名未成功的用途（可单独补）；单张补生成时主图连点 ⇒ 构图 `variant` 按 0→1→2→0 轮换，面板写明「本次构图：正面棚拍/半垂坠/悬挂近景」；白底图 ⇒ kind=white 且进主图列表、面板写明「可直接放第 5 张」；列表满（主图 5 / 详情图 9）⇒ 提示先删一张、**不静默丢图**；生成中 loading；失败**不落位**且错误可见可行动。**失败话术按 admin-api 错误码分叉（issue #7552）：模型不支持 / 额度用尽 / 真·瞬时三类不同，「稍后重试」只出现在真·瞬时那一条；页面不出现服务名与内部地址（§31 P3）**。执行点 = frontend/admin-web/tests/unit/components/ProductImageAI.test.tsx。
 数据: 判据 5·落位闭环（会红，issue #7533 / #7773）：渲染真实 `ProductForm` ⇒ 生成成功**无需任何额外点击**主图位即变为 [原图, 生成图]（**追加末位**，不再抢封面）；点「提交并上架」⇒ `onSubmit` 载荷 `images` 带上该 URL（= 用户逐字「保存后也没有」的判据）；**再生成 ⇒ 追加不替换**（不摘掉上一张）；细节用途 ⇒ `detailImages` 末位**且提交载荷 `detailImages` 带上它**（= 用户逐字「生图不能保存到详情图」的判据）；**先出详情图、再出主图 ⇒ 详情图那张不得被摘掉**（改前红）；主图已满 5 张 ⇒ 提示先删一张、盘里 5 张一张不少；**生成期间（1~2min）商家改过图片列表 ⇒ 落位基于最新列表**（删掉的图不复活、新图不丢，靠函数式更新）。执行点 = frontend/admin-web/tests/unit/components/ProductFormAIImage.test.tsx + ProductFormAIImageEditPage.test.tsx（编辑页父组件再渲染不得冲掉落位）；编辑态样图候选去重 = ProductForm.test.tsx。
 数据: 判据 7·生成侧「岗位」口径（会红，issue #7782）：ai-agent 提示词按用途分叉 —— 主图三套构图（正面棚拍 / 半垂坠 / 悬挂近景）**互不相同**且都带商品名、`variant` 越界取模；`white` 白底图提示词包含平台硬要求（纯白背景 + RGB 255,255,255 + 居中 + 无水印/无 logo/无边框），且 `variant` 对它无影响；材质提示词不变。取数理由：用户 2026-10-25「主图图片生成的都一样」+ 淘宝/天猫 5 张主图岗位分工（第 5 位白底图是合规位与免费流量位）。执行点 = backend/ai-agent-service/tests/test_generator.py。
-数据: 判据 6·失败口径分叉（会红，issue #7552）：ai-agent 503 的四种 code 在 admin-api 产出**互不相同**的错误码与 suggestion（表驱动）；「稍后重试」只用于真·瞬时不可用（模型不支持 ⇒ 「该能力暂不可用，已反馈平台」+ 手工传图出路；额度 ⇒ 「今日额度已用完」）；对外 message / suggestion **不含**服务名与 URL（§31 P3）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductImageClientTest.java。
+数据: 判据 6·失败口径分叉（会红，issue #7552）：ai-agent 503 的五种 code 在 admin-api 产出**互不相同**的错误码与 suggestion（表驱动；含 issue #7719 的 IMAGE_GEN_INPUT_UNREACHABLE ⇒ AI_PRODUCT_IMAGE_INPUT_UNREACHABLE，话术是「换一张能正常打开的样图」，不是「已反馈平台」）；「稍后重试」只用于真·瞬时不可用（模型不支持 ⇒ 「该能力暂不可用，已反馈平台」+ 手工传图出路；额度 ⇒ 「今日额度已用完」）；对外 message / suggestion **不含**服务名与 URL（§31 P3）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductImageClientTest.java。
 前置: 本用例是 [backend-contract] 纯前端/接口契约用例：前置（已上传样图、admin-api 端点、ai-agent 内部端点）由三端单测自建或 mock（admin-web mock `@/lib/api`；admin-api mock ProductImageClient/FileStorageService；ai-agent mock httpx），不依赖共享夹具与真实服务 ⇒ 前置不成立时对应单测直接红；agent-eval 栈不跑它
 跳过: [backend-contract] 纯页面 AI 辅助入口（不经过 LLM 对话/工具），由 admin-api 单测 + ai-agent pytest + 前端 vitest 执行，不进入 agent-eval 冒烟
 ```
@@ -14726,7 +14741,11 @@
 - MC-128: **端点泄漏台账的键不许含行号**：只插空行（行号漂移）判据仍绿，真删/真加泄漏照旧红（issue #6977）
 - MC-132: 批次就绪判定把「已 arm 的原生 auto-merge」也算作不就绪（issue #6212）：跑那一次全量期间不许存在被秒合的窗口
 - MC-134: Java 定点判据的读数与空跑（issue #6495 的类级固化）：`.txt` 摘要对 @Nested 类恒报 0（误诊源）+ `外层类#嵌套方法` 真·空跑（exit 0）⇒ 读数只信 XML 且必须大于 0
+<<<<<<< HEAD
 - MC-137: gate 的 bmini 打印口径守卫读**git 索引**而不是工作树：被 `.gitignore` 命中的旧产物不再让本机假红（issue #6594）
+=======
+- MC-135: 生图失败归因必须读供应商 message 正文：400 InvalidParameter 的「样图读不到」与「模型不接」分成两格（issue #7719）
+>>>>>>> origin/fix/7719-image-error-attribution
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

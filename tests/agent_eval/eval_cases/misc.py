@@ -3297,6 +3297,7 @@ _CASE_MC_134 = EvalCase(
     forbidden_card_text=[],
 )
 
+<<<<<<< HEAD
 # ── MC-137 [NORMAL] gate 的 bmini 打印口径守卫读**git 索引**而不是工作树：被 `.gitignore` 命中的旧产物不再让本机假红（issue #6594）（源: cases/misc.yml）──
 _CASE_MC_137 = EvalCase(
     id='MC-137',
@@ -3309,6 +3310,20 @@ _CASE_MC_137 = EvalCase(
     data_checks=['🔴 **判据 ①·被 ignore 的旧产物不进判决语料（与 CI 同口径）**：临时 git 仓里「索引干净 + 工作树有一份被 .gitignore 命中的 coverage.json（含 384）」⇒ 语料**不含**它，而真值源与源码仍在语料里（反空跑）。执行点 = tests/unit_ci_workflows/test_bmini_corpus_read_face.py::test_ignored_stale_artifact_is_outside_the_verdict_corpus', '🔴 **判据 ③·单变量对照（红证）**：**同一夹具**只把读面换成 `worktree` ⇒ 那份产物**必须**进语料（否则上一条的绿不证明任何事）。执行点 = 同文件::test_same_fixture_read_from_the_worktree_turns_red', '🔴 **判据 ②·判别力不降**：产物 `git add -f` 入库（= CI 里也会有它）⇒ 语料**必须**含它。执行点 = 同文件::test_tracked_violation_still_enters_the_corpus', '**判据 ④~⑧**：默认读面 = index（行为面）/ 守卫接线到共享读面且不留 `readdirSync` / **真仓库**上语料 ⊆ `git ls-files` / 读不到 ⇒ 非零退出 / 未跟踪且未被 ignore 的文件必须**出声**（不静默漏扫、也不判红）。执行点 = 同文件::test_default_read_face_is_the_index + ::test_guard_is_wired_to_the_shared_read_face + ::test_real_repo_corpus_is_a_subset_of_tracked_files + ::test_unreadable_corpus_fails_closed + ::test_untracked_but_not_ignored_files_are_surfaced', '🔴 **类级元守卫**：`frontend/**` 里**定义** `readCorpus` 只许一处（台账 `single_implementation`）、`frontend/**/tests/**` 里引用共享读面的文件必须登记、已登记消费者**不许**出现 `readdirSync`、例外只许缩短（冻结 0）、台账空 ⇒ 红；六种坏形态内存注入各自判红 + 只改注释不红。执行点 = tests/unit_ci_workflows/test_repo_corpus_read_face_ledger.py（8 条）', '**边界（照实登记，§19.1）**：① 换了名字的第二份读面判不了；② `tests/unit_ci_workflows/**` 的 Python 语料读工作树**不在射程**（CI 上那一侧跑的就是同一份工作树，不存在第二个口径）；③ 谓词判别力不归本单（谓词**一字未改**，红证在 jest 判据的 C2/C2b）；④ 不改任何门禁的通过条件、不新增豁免。'],
     skip_reason='[backend-contract] 零 LLM 的确定性读数（真 git 临时仓 + 真跑 node 读面 CLI + 真仓库 git ls-files 对账 + 内存注入自证），pytest 真跑、零网络，不进 agent-eval 冒烟',
     tags=['ci-process', 'corpus-read-face', 'git-index', 'false-positive', 'red-proof', 'single-source'],
+=======
+# ── MC-135 [NORMAL] 生图失败归因必须读供应商 message 正文：400 InvalidParameter 的「样图读不到」与「模型不接」分成两格（issue #7719）（源: cases/misc.yml）──
+_CASE_MC_135 = EvalCase(
+    id='MC-135',
+    legacy_id='',
+    title='生图失败归因必须读供应商 message 正文：400 InvalidParameter 的「样图读不到」与「模型不接」分成两格（issue #7719）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['样图 URL 供应商抓不到（域名解析不了 / 下载失败）时，建品页说「该能力暂不可用，已反馈平台」⇒ 商家以为要找平台换模型，而真正该做的是换一张能访问的样图。'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·输入侧分流（会红）：供应商 400 + code=InvalidParameter + message 指向输入素材（URL 解析不了 / 下载失败 / 格式或尺寸非法）⇒ 归 ImageGenerationInputUnreachable（对外 code = IMAGE_GEN_INPUT_UNREACHABLE），**不**归 IMAGE_GEN_MODEL_UNSUPPORTED，且**不切模型**（默认链两个模型 ⇒ 恰好一次 HTTP 调用）。执行点 = backend/ai-agent-service/tests/test_generator.py::test_unresolvable_sample_url_is_input_side_not_model_unsupported。', '判据 2·不许一律改判（会红）：400 + InvalidParameter 但 message 是模型侧原因（model does not support messages）⇒ 仍切下一个模型（#7341 的回落链逐字保留）；全链都不接仍是 IMAGE_GEN_MODEL_UNSUPPORTED。执行点 = ::test_other_invalid_parameter_messages_still_switch_models + ::test_internal_endpoint_503_carries_stable_failure_code。', '判据 3·配额不回归（会红）：429 / Throttling / AllocationQuota 仍归 IMAGE_GEN_QUOTA_EXCEEDED，不被输入侧分类吃掉。执行点 = ::test_quota_429_is_still_quota_not_input_side + ::test_all_models_quota_raises_quota_exceeded。', '判据 4·红证（常驻）：同状态码、同 code、只有 message 不同的两条必须分类相反；把 message 解析删掉（只看 code）⇒ ::test_input_side_classifier_reads_message_body_not_just_code 必红。', '判据 5·对外话术（会红）：admin-api 把 IMAGE_GEN_INPUT_UNREACHABLE 映射成 AI_PRODUCT_IMAGE_INPUT_UNREACHABLE，话术只说「换一张能正常打开的样图」，不含「稍后重试」「已反馈平台」，也不含服务名 / 地址（§31 P3）；建品页按该码显示同一口径（与「能力不可用」两句不同的话）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductImageClientTest.java::mapsUpstreamFailureCodesToDistinctActions + frontend/admin-web/tests/unit/components/ProductImageAI.test.tsx。'],
+    skip_reason='[backend-contract] 纯确定性单测（httpx mock / MockRestTemplate / vitest mock，零生成费用、零真实供应商调用），不进入 agent-eval 冒烟',
+    tags=['image-generation', 'failure-attribution', 'input-side', 'red-proof'],
+>>>>>>> origin/fix/7719-image-error-attribution
     persona='',
     debug_user='',
     form_prefill=[],
@@ -3495,5 +3510,9 @@ CASES = (
     _CASE_MC_128,
     _CASE_MC_132,
     _CASE_MC_134,
+<<<<<<< HEAD
     _CASE_MC_137,
+=======
+    _CASE_MC_135,
+>>>>>>> origin/fix/7719-image-error-attribution
 )

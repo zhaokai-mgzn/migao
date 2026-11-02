@@ -33,8 +33,8 @@ import static org.mockito.Mockito.when;
  *   <li>成功外壳 ⇒ 原样取 {@code data.image_url} / {@code data.model}（Java 侧不重建）；</li>
  *   <li>缺 {@code image_url} / 外壳失败 ⇒ 422 fail-closed（不把「端点没说」当空结果）；</li>
  *   <li>未配置 service token ⇒ 422 且**不发任何外部请求**；</li>
- *   <li>上游 503 的 {@code code} ⇒ **不同**的本侧错误码与话术（issue #7552：模型不支持 /
- *       额度用尽 / 未启用 / 未配 Key / 瞬时不可用 五类互不相同）；</li>
+ *   <li>上游 503 的 {@code code} ⇒ **不同**的本侧错误码与话术（issue #7552 / #7719：样图读不到 /
+ *       模型不支持 / 额度用尽 / 未启用 / 未配 Key / 瞬时不可用 六类互不相同）；</li>
  *   <li>对外 message / suggestion **不含**服务名与内部地址（§31 P3）；「稍后重试」
  *       只出现在真·瞬时那一条 —— 模型不支持时等多久都不会好。</li>
  * </ol>
@@ -108,8 +108,11 @@ class ProductImageClientTest {
     }
 
     @Test
-    @DisplayName("上游 503 的 code ⇒ 五类互不相同的错误码与话术（issue #7552）")
+    @DisplayName("上游 503 的 code ⇒ 六类互不相同的错误码与话术（issue #7552 / #7719）")
     void mapsUpstreamFailureCodesToDistinctActions() {
+        BusinessException inputUnreachable = failureFor("""
+                {"code":"IMAGE_GEN_INPUT_UNREACHABLE","detail":"model-a: 样图读取失败（HTTP 400）：URL hostname cannot be resolved: https://example.invalid/x.png"}
+                """);
         BusinessException modelUnsupported = failureFor("""
                 {"code":"IMAGE_GEN_MODEL_UNSUPPORTED","detail":"生图模型不可用：配置的 1 个模型都不接这类图生图请求（非配额原因）"}
                 """);
@@ -122,16 +125,24 @@ class ProductImageClientTest {
                 "{\"code\":\"IMAGE_GEN_NO_KEY\",\"detail\":\"未配置 IMAGE_GEN_API_KEY / ASR_API_KEY\"}");
         BusinessException transientFailure = failureFor("{\"detail\":\"上游网关超时\"}");
 
+        assertThat(inputUnreachable.getCode()).isEqualTo("AI_PRODUCT_IMAGE_INPUT_UNREACHABLE");
         assertThat(modelUnsupported.getCode()).isEqualTo("AI_PRODUCT_IMAGE_MODEL_UNSUPPORTED");
         assertThat(quotaExceeded.getCode()).isEqualTo("AI_PRODUCT_IMAGE_QUOTA_EXCEEDED");
         assertThat(disabled.getCode()).isEqualTo("AI_PRODUCT_IMAGE_DISABLED");
         assertThat(noKey.getCode()).isEqualTo("AI_PRODUCT_IMAGE_NOT_CONFIGURED");
         assertThat(transientFailure.getCode()).isEqualTo(ProductImageClient.ERR_AI_IMAGE_UNAVAILABLE);
-        // 判据自证：五类确实是五个不同的码，不是同一句话换地方（与 #7545 的「四分语义」同口径）
-        assertThat(List.of(modelUnsupported.getCode(), quotaExceeded.getCode(), disabled.getCode(),
+        // 判据自证：六类确实是六个不同的码，不是同一句话换地方（与 #7545 的「四分语义」同口径）
+        assertThat(List.of(inputUnreachable.getCode(), modelUnsupported.getCode(),
+                        quotaExceeded.getCode(), disabled.getCode(),
                         noKey.getCode(), transientFailure.getCode()))
                 .doesNotHaveDuplicates();
 
+        // 样图读不到（issue #7719）：该换一张图 —— 既不是「稍后重试」，也不是「已反馈平台」
+        // （后者是平台侧问题的出路，用在这里会把商家引向「等平台换模型」= 永远不会好）
+        assertThat(inputUnreachable.getSuggestion()).contains("换一张", "样图")
+                .doesNotContain("稍后重试", "已反馈平台");
+        assertThat(inputUnreachable.getMessage()).contains("样图")
+                .doesNotContain("模型");
         // 模型不支持：该找平台，不该劝「稍后重试」（等多久都不会好）
         assertThat(modelUnsupported.getSuggestion()).contains("已反馈平台", "上传封面")
                 .doesNotContain("稍后重试");
@@ -143,7 +154,7 @@ class ProductImageClientTest {
         assertThat(transientFailure.getSuggestion()).contains("稍后重试");
 
         for (BusinessException failure : List.of(
-                modelUnsupported, quotaExceeded, disabled, noKey, transientFailure)) {
+                inputUnreachable, modelUnsupported, quotaExceeded, disabled, noKey, transientFailure)) {
             assertThat(failure.getHttpStatus()).isEqualTo(422);
             assertNoInternalIdentifiers(failure);
         }

@@ -23,6 +23,20 @@
   `backend/admin-api/src/test/java/com/migao/admin/service/ProductionRouteRuleWriteSurfaceMetaGuardTest.java`
   （`production_route_rules` 写面台账的类级元守卫：新写面未登记即红、GATED 调用点被摘即红）。
 
+### 样图抓不到时不再说「模型不支持」：说清「这张样图读不到，换一张」（2026-11-03，issue #7719）
+
+- **改前**：供应商抓不到样图（域名解析不了 / 下载失败）时回 `400 InvalidParameter`，而生图内核只按 `code`
+  判「模型接不了这类请求」⇒ 对外 `IMAGE_GEN_MODEL_UNSUPPORTED` ⇒ 建品页「该能力暂不可用，已反馈平台」。
+  **商家被引向「找平台换模型」**，而正确动作是「换一张能访问的样图」—— 两个方向正好相反。
+- **改后**：400 时**读供应商 `message` 正文**分流 —— 正文指向输入素材（URL 解析不了 / 下载失败 /
+  格式或尺寸非法）⇒ 新错误码 `IMAGE_GEN_INPUT_UNREACHABLE`（admin-api 映射成
+  `AI_PRODUCT_IMAGE_INPUT_UNREACHABLE`），文案只说事实与下一步：「这张样图读取失败，换一张能正常打开的
+  样图再试，或直接上传图片」。**不切模型**（同一张读不到的图，换哪个模型都读不到）。
+  真·模型不接这类载荷（正文是模型侧原因）**行为逐字不变**：仍切下一个模型（#7341 的回落链），
+  全链都不接仍是 `IMAGE_GEN_MODEL_UNSUPPORTED`；429 / 配额仍归 `IMAGE_GEN_QUOTA_EXCEEDED`。
+- 判据：`backend/ai-agent-service/tests/test_generator.py`（输入侧 / 模型侧 / 配额三分流 + 常驻红证）、
+  `ProductImageClientTest#mapsUpstreamFailureCodesToDistinctActions`、`ProductImageAI.test.tsx`。
+
 ### 同时做出库不再出现 500：出库单号也改成「一条语句占号」（2026-11-03，issue #8490）
 
 - **改前**：出库单号（`CK-yyyyMMdd-NNNN`）与改前的入库单号**逐字同构** —— 先 `exists` 判「没人占」⇒

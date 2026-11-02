@@ -253,6 +253,16 @@ describe('ProductImageAI', () => {
     expect(onApplyMain).not.toHaveBeenCalled()
   })
 
+  it('样图读不到 ⇒ 只说「换一张能打开的样图」，不说「暂不可用」「稍后重试」（issue #7719）', async () => {
+    await failWith(failure('AI_PRODUCT_IMAGE_INPUT_UNREACHABLE'))
+
+    const shown = await screen.findByText(/这张样图读取失败/)
+    expect(shown.textContent).not.toContain('稍后重试')
+    // 与「能力不可用」必须是两句不同的话：后者会把商家引向「等平台换模型」
+    expect(shown.textContent).not.toContain('已反馈平台')
+    expect(shown.textContent).toContain('换一张')
+  })
+
   it('额度用尽 ⇒ 说清「今日额度已用完」，与模型不支持的话术不同', async () => {
     await failWith(failure('AI_PRODUCT_IMAGE_QUOTA_EXCEEDED'))
     expect(await screen.findByText(/今日额度已用完/)).toBeInTheDocument()
