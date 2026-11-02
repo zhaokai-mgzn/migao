@@ -2104,7 +2104,8 @@ def test_http_changed_file_list_survives_a_pr_over_the_old_cap(monkeypatch) -> N
     _api_env(monkeypatch, base)
     try:
         fetched = fetch_open_pr_claims()
-        assert fetched is not None, "取数面返回 None（网络层失败）"
+        # 形态判据（而不是裸存在性）：取数面必须给出 `(open_prs, problems)` 两元组
+        assert isinstance(fetched, tuple) and len(fetched) == 2, f"取数面返回异常：{fetched!r}"
         open_prs, problems = fetched
         assert problems == [], f"1500 文件的 PR 不该判「无法判定」：{problems}"
         assert {p.pr: p.added_ids for p in open_prs} == {7201: frozenset({"OR-900"})}, open_prs
