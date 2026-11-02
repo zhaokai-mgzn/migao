@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，178 条）
+# 域: misc（源: cases/misc.yml，179 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3279,6 +3279,24 @@ _CASE_MC_132 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-134 [NORMAL] Java 定点判据的读数与空跑（issue #6495 的类级固化）：`.txt` 摘要对 @Nested 类恒报 0（误诊源）+ `外层类#嵌套方法` 真·空跑（exit 0）⇒ 读数只信 XML 且必须大于 0（源: cases/misc.yml）──
+_CASE_MC_134 = EvalCase(
+    id='MC-134',
+    legacy_id='',
+    title='Java 定点判据的读数与空跑（issue #6495 的类级固化）：`.txt` 摘要对 @Nested 类恒报 0（误诊源）+ `外层类#嵌套方法` 真·空跑（exit 0）⇒ 读数只信 XML 且必须大于 0',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['`./mvnw -q -Dtest=<类名> test` 报 `Tests run: 0` 却 exit 0 —— 到底是真没跑，还是读数在骗人？'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·读数源：`.txt` 摘要不可信（会红）**：`target/surefire-reports/<fqn>.txt` 的 `Tests run:` 在 @Nested 类上**恒报 0** —— 实测同一次运行 XML/console = 15（OssConfigTest）/ 38（AgentBatchServiceTest），而摘要 = 0 / 0。⇒ 任何把它当读数源的机具（scripts/** 里同时出现 surefire-reports 与 `.txt` 路径常量者）都必须登记进台账，且其定点类必须**现取不含 @Nested**（前提一变即红）。执行点 = tests/unit_ci_workflows/test_java_nested_pointed_run_guard.py::test_j3_every_txt_reading_engine_is_registered_and_precondition_holds', '🔴 **判据 2·真空跑形态即红**：仓内 durable 面（docs/wiki、docs/testing、AGENTS.md、scripts、.github/cases、.github/workflows、backend 测试源码）不得出现 `-Dtest=<外层类>#<方法>` 而该方法**声明在 @Nested 内** —— 该形态实测 `Tests run: 0` / `BUILD SUCCESS` / exit 0 / 且不产出 XML。执行点 = 同文件::test_j2_repo_has_no_bare_method_selector_on_nested_method', '🔴 **判据 3·判别力自证**：合成语料里坏形态（`外层#嵌套方法`）必须判红并给出 `外层$嵌套#方法`；合规形态（`外层$嵌套#方法` / `外层$嵌套` / 类名 / `类名*` / 不存在的方法名）**不得**被判红（假红同样是缺陷）。执行点 = 同文件::test_j2_synthetic_bad_form_is_red_and_good_forms_are_not', '🔴 **判据 4·豁免只许缩短**：台账 tests/unit_ci_workflows/java_pointed_run_ledger.json 的 `engines` 条数不得超冻结基线、不得清空；每条须有非空 `reason`，且 `anchor` 串必须在源码里逐字兑现（摘掉就红）。执行点 = 同文件::test_j4_ledger_is_not_empty_and_only_shrinks + ::test_j3_every_txt_reading_engine_is_registered_and_precondition_holds', '🔴 **判据 5·扫描器非空跑自证**：Java 测试类索引必须非空且含 @Nested 类（现取 642 个测试类 / 44 个含 @Nested；`git grep -l @Nested` 的 45 比它多 1 = 只在**注释**里提到 @Nested 的 ScheduledTaskServiceTest）。执行点 = 同文件::test_j1_scanner_is_not_blind + ::test_j6_comments_do_not_make_a_class_nested', '🔴 **判据 6·规范必须指向入口**：docs/wiki/Development.md 必须逐字给出 `./scripts/java-test.sh` 与读数口径（`.txt` 摘要不可信、读数为 0 即红）—— 否则下一个人又回去 head 那个摘要。执行点 = 同文件::test_j5_development_doc_points_to_the_entry', '🔴 **判据 7·报告卫生（陈旧报告不许当读数）**：入口跑 Maven **前**必须先删 `target/surefire-reports/TEST-<fqn>.xml` —— 否则「这次一条都没跑到」会读到**上一次**的 `Tests run: N` ⇒ 又一种假绿（本工具首版真踩过：先跑 `…$Create#…` 得 1 条、再按原样跑坏写法，读到陈旧的 1 条 ⇒ 判绿）。执行点 = tests/unit_ci_workflows/test_java_nested_pointed_run_guard.py::test_j7_stale_report_is_deleted_before_the_run_and_empty_run_is_red（+ ::test_j7_fresh_report_is_read_from_xml 正向对照：桩 mvnw 写出新报告 ⇒ 判绿，防「一律红」）', '**边界（照实登记）**：① 文档面没有「不许教 `.txt` 读数」的形态判据（同一句里既有正解又有反例，形态判据分不清）；② 判不了**人**敲了什么命令（命令在键盘上，不在仓里）；③ 本守卫不跑它引用的 Java 判据（那要 Maven ⇒ 归 scripts/java-test.sh 与 CI）；④ 不改任何门禁的通过条件、不新增豁免。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性静态判据（Python AST + 正则扫仓内 durable 面 + 现取 Java 测试源码索引），pytest 真跑、零网络、零 Maven、零真库，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'java-test', 'surefire', 'nested', 'readings', 'guard', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -3458,4 +3476,5 @@ CASES = (
     _CASE_CI_001,
     _CASE_MC_128,
     _CASE_MC_132,
+    _CASE_MC_134,
 )
