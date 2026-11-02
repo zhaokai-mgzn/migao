@@ -168,6 +168,48 @@ export function scanUnconditionalModalClose(rawSource: string): string[] {
   return violations
 }
 
+/**
+ * 判据 C 的扫描器（**纯函数**）：返回「草稿写入发生在 `useEffect` 里」的违规清单。
+ *
+ * 病根（issue #7685 / #8043 / #8409，同一机制三张 flaky 单）：
+ * 读面落地走 `setCalc(...)`，草稿却由**后一条 effect** 回写 ⇒ 「可编辑面可见」与
+ * 「草稿就绪」被拆成两个提交。窗口里落下的编辑先写进草稿，随后被 effect 用读面原文
+ * **盖回基线**，自动保存据此判「没有变更」撤掉待发的 `PUT` ⇒ 改动无声消失
+ * （CI 实测：`settings.test.tsx` 的自动保存判据偶发 `Test timed out in 5000ms`；
+ * 诊断读数 = `expected "spy" to be called 1 times, but got 0 times`）。
+ * ⇒ 草稿必须与读面**同一次提交**写入（在取数回调里 set），所以 `useEffect` 里一出现就是缺陷形态。
+ *
+ * 语义（有意收窄，边界见文件末）：只认 `set<...>Draft(` 这一族命名；块内判定用**括号配对**
+ * （不是 `[^)]*`：那会被内层 `)` 提前截断 ⇒ 守卫退化成恒绿）。
+ */
+export function scanDraftSyncInsideEffect(rawSource: string): string[] {
+  const source = stripComments(rawSource)
+  const violations: string[] = []
+  const marker = /useEffect\s*\(/g
+  let m: RegExpExecArray | null
+  while ((m = marker.exec(source))) {
+    const openIdx = m.index + m[0].length - 1
+    let depth = 0
+    let end = openIdx
+    for (let i = openIdx; i < source.length; i++) {
+      if (source[i] === '(') depth++
+      else if (source[i] === ')') {
+        depth--
+        if (depth === 0) { end = i; break }
+      }
+    }
+    const block = source.slice(openIdx, end + 1)
+    const writes = block.match(/set\w*Draft\s*\(/g) || []
+    for (const write of writes) {
+      violations.push(
+        `\`useEffect\` 里写草稿 \`${write}...\` —— 与读面分两次提交 ⇒ 两次提交之间的输入会被` +
+          `回写盖回基线，自动保存静默取消（编辑无声消失）`,
+      )
+    }
+  }
+  return violations
+}
+
 type Ledger = { claims: string[]; notes?: string }
 function readLedger(): Ledger {
   if (!existsSync(LEDGER_PATH)) return { claims: [] }
@@ -250,6 +292,46 @@ describe('#6662 判据 B｜弹窗关闭不得发生在非条件路径上（类�
   })
 })
 
+describe('#7685 判据 C｜草稿写入不得发生在 `useEffect` 里（两阶段回写会吞掉编辑）', () => {
+  it('判别力自证：读面后的 effect 回写判红、取数回调里同批写入判绿、对照组不误报', () => {
+    // 坏形态（改前的 `settings/page.tsx` 逐字形态）：读面 set 完之后，effect 再回写草稿
+    const bad = `
+      useEffect(() => {
+        setCalcDraft(calc?.config ?? null)
+      }, [calc])`
+    // 好形态：读面与草稿在**同一次提交**里写入（取数回调内）
+    const good = `
+      const load = async () => {
+        const next = await productionApi.getCraftCalcConfig(true)
+        setCalc(next)
+        setCalcDraft(next?.config ?? null)
+      }`
+    // 对照组：handler 里的草稿写入不是这一族（用户编辑本来就该在事件里改草稿）
+    const control = `
+      const onFieldChange = (v: number) => {
+        setCalcDraft((prev) => ({ ...prev, per_fold_single: v }))
+      }`
+    expect(scanDraftSyncInsideEffect(bad).length).toBeGreaterThanOrEqual(1)
+    expect(scanDraftSyncInsideEffect(good)).toEqual([])
+    expect(scanDraftSyncInsideEffect(control)).toEqual([])
+  })
+
+  it('全仓零违规：`src/**` 里没有 `useEffect` 回写草稿（出现即红 —— 没有豁免台账）', () => {
+    const offenders: string[] = []
+    for (const file of sourceFiles) {
+      const rel = relative(process.cwd(), file)
+      for (const v of scanDraftSyncInsideEffect(readFileSync(file, 'utf-8'))) {
+        offenders.push(`${rel}: ${v}`)
+      }
+    }
+    expect(
+      offenders,
+      `草稿写入出现在 \`useEffect\` 里 —— 必须与读面同一次提交落地（issue #7685 / #8043 / #8409）：\n` +
+        offenders.join('\n'),
+    ).toEqual([])
+  })
+})
+
 // ========== 未固化 / 边界（照实登记，不粉饰）==========
 //
 // 1. **判据 A 只认「同一文件内的落库函数名被调用」**：`onBlur` 经由中间变量
@@ -261,3 +343,8 @@ describe('#6662 判据 B｜弹窗关闭不得发生在非条件路径上（类�
 //    是**语义**问题 —— 扫不出来，靠评审 + 实例判据。
 // 4. 两条判据都**不跑被引用的组件**（不渲染、不连网）⇒ 结构面绿 ≠ 行为面绿；
 //    行为面由 `product-detail.test.tsx` / `ProductForm.test.tsx` 的 #6662 用例承担。
+// 5. **判据 C（#7685）只认 `set<...>Draft(` 这一族命名**：草稿若叫别的名字（`setForm` /
+//    `setPending`）扫不出来；也只看「写在 `useEffect` 块内」这一形态（结构面）——
+//    「窗口里那次输入会不会被盖掉」是**行为**，由实例判据
+//    `tests/unit/pages/settings.test.tsx::算料口径域保存：PUT 正文是**全量键**` 承担，
+//    本判据只保证「同一个缺陷形态进不来」。

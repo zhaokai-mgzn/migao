@@ -266,9 +266,24 @@ export default function SettingsPage() {
 
     // ── 算料域读面（面板要的值 + 主线的第 ⑤ 步判据同源于它）
     if (calcRes.status === 'fulfilled') {
-      setCalc(calcRes.value.data?.data ?? null)
+      const nextCalc = calcRes.value.data?.data ?? null
+      setCalc(nextCalc)
+      /**
+       * 🔴 草稿必须与读面**同一次提交**落地（issue #7685 / #8043 / #8409，同一机制三张单）。
+       *
+       * 改前草稿由**后一条** `useEffect(() => setCalcDraft(calc?.config ?? null), [calc])` 回写 ⇒
+       * 「输入框可见」与「草稿就绪」被拆成两个提交。中间那一瞬落下的编辑先写进草稿，随后被那条
+       * effect 用读面原文**盖回基线**，`CalcCaliberPanel` 的自动保存据此判
+       * `calcConfigEqual(draft, baseline)`「没有变更」⇒ 撤掉待发的 `PUT` ⇒ **改动无声消失**
+       * （CI 实测：`settings.test.tsx` 的自动保存判据偶发 `Test timed out in 5000ms`；
+       * 诊断读数 = `expected "spy" to be called 1 times, but got 0 times` —— 请求一次都没发）。
+       * 类级守卫：`tests/unit/inline-edit-persistence-guard.test.ts` 判据 C。
+       */
+      setCalcDraft(nextCalc?.config ?? null)
     } else {
       setCalc(null)
+      // 读面失败 ⇒ 草稿一并清掉（留着上一次的草稿会把写面画成可编辑，而基线是「没读到」）
+      setCalcDraft(null)
       // ⚠️ 读面受生产域读码 `production:view` 门控（issue #5291；写面 `PUT` 仍 `processing:manage`）：
       // **权限拒绝是终态**，不是「参数有问题」—— 给可行动话术，不让商家反复重试（同族实证：issue #4103）。
       // 🔴 2026-10-09（issue #6580，真实浏览器验收实测）：改前**一律**说「可能是没有权限」——
@@ -329,16 +344,12 @@ export default function SettingsPage() {
     void load()
   }, [load])
 
-  /**
-   * 读面落地 ⇒ 同步写面草稿（issue #6825）。
-   *
-   * 依赖用 `calc` 的**对象标识**（每次读面落地都是新对象）：编辑中的草稿不在依赖里
-   * ⇒ 商家敲到一半不会被读面回写冲掉；保存成功后 `saveCalcConfig` 会把草稿重置为服务端回的整份。
-   */
-  useEffect(() => {
-    setCalcDraft(calc?.config ?? null)
-  }, [calc])
-
+  // 写面草稿的**唯一**写入点 = `load()`（读面落地时与 `setCalc` 同批提交）与 `saveCalcConfig`
+  // （保存成功后回填服务端回的整份）。
+  //
+  // ⚠️ **不许**再用 `useEffect` 从 `calc` 回写草稿（issue #7685 / #8043 / #8409）：那会把
+  // 「可编辑面可见」与「草稿就绪」拆成两个提交，窗口里落下的编辑被回写盖掉、自动保存被静默取消。
+  // 类级守卫 = `tests/unit/inline-edit-persistence-guard.test.ts` 判据 C。
   /**
    * 保存算料口径（`PUT` = **全量替换**）。
    *
