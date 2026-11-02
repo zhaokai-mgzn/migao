@@ -55,4 +55,4 @@ Wiki 页面是摘要，详细文档在：
 | SQL | [backend/admin-api/src/main/resources/db/init/schema.sql](../../backend/admin-api/src/main/resources/db/init/schema.sql)（唯一建库脚本；建库/迁移说明见 [Database](Database.md)） |
 | **生产/工序术语真值源** | [docs/curtain-production-process-standard.md](../curtain-production-process-standard.md)（行业文档《成品窗帘生产流程及工作规范》逐字引文摘录 —— 界面第一层行业术语：裁床 / 车位 / 烫工及后整 / 质检 / 包装）· [curtain-production-rules.md](../curtain-production-rules.md)（生产/计件规则） |
 | **算料/计价规则真值源（窗帘用布量与报价）** | [docs/curtain-fabric-quote-rules.md](../curtain-fabric-quote-rules.md)（AI 算料工具 `curtain_calc` 的真值来源：§0 数值常量清单 + §3 公式；漂移守卫 `tests/unit_ci_workflows/test_prose_constant_drift_guard.py`） |
-| 审计归档 | [docs/audit-2026-09/](../audit-2026-09/03-audit-archive-README.md)（03 批 = 2026-09-17：Skill 层 / Tool 层 / 评测体系 / 六机制 / 线上取证 + 评分卡）· [docs/audit-2026-08/](../audit-2026-08/01-docs-audit.md) |
+| 审计归档 / 内部资产 | **已迁至私有仓 `migao-internal`**（`docs/audit-2026-08/09/10`、`product/`、`acceptance/`）—— 迁出记录与判据见 [internal-assets-migration.md](internal-assets-migration.md) |
