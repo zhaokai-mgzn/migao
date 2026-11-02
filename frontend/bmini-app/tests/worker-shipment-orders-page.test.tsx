@@ -180,6 +180,21 @@ describe('WorkerShipmentOrdersPage 待发货单列表（issue #7806 P1a）', () 
     expect(screen.getByTestId('shipment-orders-logistics-1').textContent).toContain('快递 · 顺丰')
   })
 
+  it('⓪ 0 单时计数行只说「待发货 0 单」——不带「（全部套已完工）」', async () => {
+    mockList.mockResolvedValue(okPage([]))
+    renderPage()
+
+    await screen.findByTestId('shipment-orders-empty')
+    const count = screen.getByTestId('shipment-orders-count').textContent ?? ''
+    expect(count).toContain('待发货 0 单')
+    expect(count).not.toContain('全部套已完工')
+    // 有单时括号照旧（结论只在有对象时成立）
+    mockList.mockResolvedValue(okPage([READY_ROW]))
+    renderPage()
+    await screen.findByTestId('shipment-orders-list')
+    expect(screen.getAllByTestId('shipment-orders-count')[1].textContent).toContain('待发货 1 单（全部套已完工）')
+  })
+
   it('⑥ 内部值不上屏 + 缺值印 —（不印 0 / 不猜「快递」）', async () => {
     mockList.mockResolvedValue(
       okPage([
