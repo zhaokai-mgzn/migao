@@ -296,3 +296,40 @@ def test_bot_identity_check_can_go_red():
     stranger = {"fake.yml": 'git config user.email "stranger-bot@users.noreply.github.com"'}
     problems = bot_identity_problems(stranger, allow)
     assert problems and "stranger-bot" in problems[0], "未登记的机器人身份必须判红"
+
+
+# ── 判据 13（issue #7549 / #8398）：**「判不了」不许落闸** ───────────────────────────
+
+def test_undecidable_does_not_block_merge(monkeypatch):
+    """判据 13：读不到（限流 / 网络 / 权限）⇒ 本腿红，但**不许**打 `block/merge` / 解除 auto-merge。
+
+    实测（2026-11-02，PR #8442）：CI 的安装令牌限流
+    （`gh: API rate limit exceeded for installation`）让本守卫 exit 3，而原实现在这一支**也**调
+    `remediate()` ⇒ 一次**瞬态**失败把 PR 变成**人工闸**（`block/merge` 打上，需人工摘）。
+    而那一刻**根本没有违规**：本机用同参数复跑同一守卫 ⇒ `rc=0`。
+
+    ⇒ 落闸只属于**真违规**（下一条判据按住那一半）；「判不了」= 红腿 + 可重跑。
+    """
+    guard = _guard()
+    calls: list[tuple[str, int]] = []
+    monkeypatch.setattr(
+        guard, "fetch_head_repo",
+        lambda *a: (_ for _ in ()).throw(RuntimeError("gh: API rate limit exceeded for installation")),
+    )
+    monkeypatch.setattr(guard, "remediate", lambda repo, pr: calls.append((repo, pr)) or ["spy"])
+    rc = guard.main(["--repo", "zhaokai-mgzn/migao", "--pr", "1", "--allow-file", str(ALLOW)])
+    assert rc == guard.EXIT_UNDECIDABLE, f"读不到必须是 exit 3（不得当 0 读），实际 {rc}"
+    assert calls == [], "「无法判定」时不许落闸（block/merge / disarm）—— 那会把瞬态变成人工闸"
+
+
+def test_violation_still_remediates(monkeypatch):
+    """判据 13 的**反向对照**：真违规（陌生 PR 作者）⇒ 必须仍然落闸（不许顺手把护栏拆了）。"""
+    guard = _guard()
+    calls: list[tuple[str, int]] = []
+    monkeypatch.setattr(guard, "fetch_head_repo", lambda *a: "zhaokai-mgzn/migao")
+    monkeypatch.setattr(guard, "fetch_pr_author", lambda *a: "stranger-account")
+    monkeypatch.setattr(guard, "fetch_commits", lambda *a: [])
+    monkeypatch.setattr(guard, "remediate", lambda repo, pr: calls.append((repo, pr)) or ["spy"])
+    rc = guard.main(["--repo", "zhaokai-mgzn/migao", "--pr", "1", "--allow-file", str(ALLOW)])
+    assert rc == guard.EXIT_VIOLATION, f"陌生 PR 作者必须判违规，实际 {rc}"
+    assert calls, "真违规时必须落闸（否则本条把护栏拆了）"
