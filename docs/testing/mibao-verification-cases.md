@@ -4186,7 +4186,7 @@
 ```
 溯源: 2026-10-31 新增（issue #8295）：两步确认，避免误写 ｜ tags: ui, preview
 
-## 杂项域（174 case）
+## 杂项域（175 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -6873,6 +6873,22 @@
 跳过: [backend-contract] 替身驱动的端点语义 + 接线 + 日志结构判据（零网络、零真实 LLM，pytest 真跑），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-11-02 新增（issue #8084：2026-10-29 15:29 线上「黄金策挂球」复盘）。取号 = `python3 scripts/next_case_id.py MC` 现取（main:001-098,100-126 · PR #8446:127 · PR #8453:128）；工具给出的最小空闲号是**历史空档 MC-099**，而工具自身口径提示「空档是否刻意保留 / 已废弃，它判不了」—— 现取该空档的真因：MC-099 是外部贡献者 PR #6924 的用例号，已随 PR #8383 的**整包撤回**一起删除（该提交摘要逐字：「删除 .github/cases/misc.yml 的 MC-099 条目」）⇒ **空档是刻意的，不回填**，取**现取最大号 +1 = MC-129**（已核 ∉ main ∪ 在飞 PR 候选集）。落地 = backend/ai-agent-service/app/utils/llm_health.py（进程级标志 + 单条可行动 ERROR + 60s 缓存探针）+ backend/ai-agent-service/app/llm/factory.py 的 `_LLMHealthChatModel` 混入（唯一组合处，覆盖全部 AI 面）+ backend/ai-agent-service/app/main.py 的 `GET /internal/llm-health`。🔴 **未做（照实登记）**：用户侧可行动话术（商家可见文案，按研发模式 §31 语调评审后另开）、部署腿 1-token 探活、自动换 key / 备用供应商。 ｜ tags: backend-contract, observability, llm-credential, ai-agent, probe, red-proof
+
+### MC-131. **预设搬运通道台账**（issue #6060）：搬出去的每个预设文件逐条登记「最后承载的字节（blob）+ 版末提交 + 最后承载的版本 + 搬入证据（预设仓 commit）」；未登记即红、登记了但现取没有即红、字节/版本对不上即红、版本证据缺口只许缩短 🔵
+```
+你: 2026-10-02 S4 删掉业务仓 `.agent-presets/**` 之前用**过期基线**做逐字节核对（PR body 写「业务仓 1.102.0 vs 预设仓 1.103.0」，而业务仓 origin/main 当时已是 1.104.0）⇒ 把「差一版」误判成有意更新 ⇒ v1.104.0 没搬进预设仓就被删。下一次同类丢版，凭什么能自己发现？
+数据: 🔴 **判据 1·台账非空且自洽**：schema / 坐标原点（`deletion.commit` 必须等于迁移退出点）/ `judged_by` 与 `generated_by` 指向的文件真实存在 / `coverage_boundary` 每条带 face+reason+recompute（缺口不许匿名存在）。执行点 = tests/unit_ci_workflows/test_preset_port_ledger.py::test_ledger_is_non_empty_and_self_consistent / test_ledger_points_at_its_own_judge_and_generator / test_coverage_boundary_is_registered_not_anonymous
+数据: 🔴 **判据 2·文件集合双向相等**：`deletion.commit^` 树里的每个预设文件都必须有台账条目（未登记即红），台账每个条目都必须现取存在（登记了但现取不存在即红），重复 path 亦红。执行点 = 同文件::test_registered_ports_match_the_migrated_tree_exactly / test_no_problems_against_live_business_repo_history
+数据: 🔴 **判据 3·逐值相等**：blob / 版末提交 / 最后承载的版本 / 源→目标路径映射逐条与 git 现取相等；版本面「每一版 = 版本号 + 版末提交」逐值相等（多一版/少一版/对不上 ⇒ 红）。执行点 = 同文件::test_each_port_is_byte_identical_to_the_last_carried_state / test_version_history_is_reproduced_one_row_per_version
+数据: 🔴 **判据 4·证据齐备 + 缺口只许缩短**：每个端口带 `preset_repo_commit` + `ported_at` + why + restart_condition；版本证据必须落到已登记的版本与真实业务 commit；缺口读数必须与现取一致且 ≤ 判据侧镜像常量 `VERSION_EVIDENCE_GAP_MAX_MIRROR_VALUE`（补证据 ⇒ 下降即绿；删证据 ⇒ 变长即红）。执行点 = 同文件::test_every_port_carries_a_usable_port_evidence / test_version_evidence_gap_is_pinned_and_may_only_shrink / test_growing_the_evidence_gap_is_red / test_shrinking_evidence_below_the_frozen_gap_is_green
+数据: 🔴 **判据 5·「已搬走」的前提不许被悄悄推翻**：路径重新出现在 HEAD、或该路径在迁移退出点之后又被改动 ⇒ 红。执行点 = 同文件::test_migrated_paths_stay_gone_and_untouched
+数据: 🔴 **判别力自证（内存注入，8 种坏形态各自必须报非空问题）**：多一个端口 / 少一个端口 / blob 对不上 / 少一版 / 证据变长 / 端口证据或 why 缺失 / 路径重新出现在 HEAD / 空台账；对「恒绿」的 `problems()`（直接 `return []`）必须红（实测 9 failed）。执行点 = 同文件::test_more_ports_than_registered_is_red / test_registered_but_missing_port_is_red / test_blob_mismatch_is_red / test_missing_version_is_red / test_growing_the_evidence_gap_is_red / test_port_with_missing_evidence_is_red / test_path_reappearing_in_head_is_red / test_empty_ledger_is_red_not_green
+数据: **不可判定必须红**：取不到迁移退出点（空夹具仓）/ 环境不可判定 ⇒ `LedgerToolError` 或 `check()` 返回 `3`，不得当 `0` 读。执行点 = 同文件::test_unreachable_deletion_commit_is_a_named_error / test_check_returns_three_when_environment_is_unjudgeable
+数据: **边界（照实登记）**：① 预设仓侧证据的**真实性**不在 CI 射程（私有仓 + 需网络）—— CI 只核业务仓侧逐值相等 + 证据字段形态；镜像存在时判据自动加强（本机更严），镜像缺失时不报问题；② 只覆盖「迁移退出那一刻存在」的文件，更早退场的预设文件不在面内；③ 判不了「预设仓里内容后来有没有被继续改坏」（活锚自检 / drift audit 的 sync-copy 射程）；④ 版本缺口用冻结计数表达、不逐版要求证据（逐版要求会把 2026-09-14 之前的快照形态判成永久红）；⑤ 判不了预设内容本身的质量。
+跳过: [backend-contract] 零网络、零 LLM 的确定性判据（只读业务仓 git 对象 + 台账 JSON；判别力自证全部在内存里注入），pytest 真跑，不进入 agent-eval 冒烟
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: 2026-11-03 新增（issue #6060：S4 删除预设前用过期基线核对 ⇒ v1.104.0 未搬即被删，已补搬；本单落**类级固化**）。落码 = ① 台账 tests/unit_ci_workflows/preset_port_ledger.json（9 个端口 × path/blob/版末提交/最后承载版本/搬入证据 + 106 条版本 + 9 条版本证据 + 97 条版本证据缺口）② 机具 tests/unit_ci_workflows/preset_port_ledger.py（`--write` 现取两侧 git 重写台账、`--check` 三态退出码 0/1/3）③ 判据 tests/unit_ci_workflows/test_preset_port_ledger.py（23 条：8 种坏形态的判别力自证 + 不可判定红证）。取号 = MC-131（`python3 scripts/next_case_id.py MC` 现取：main 001-098/100-127/130 + 在飞 PR #8460:129 / PR #8453:128 / 工作区:099 ⇒ 返回 MC-131）。红证 = ① `problems()` 改成恒绿 `return []` ⇒ 9 failed / 13 passed；② 某端口 `path` 指向不存在的文件 ⇒ `登记了但现取不存在：…ghost-does-not-exist.md` 具名判红。⚠️ 未固化（照实登记）：预设仓侧证据真实性只有本机镜像能复算，CI 侧只能核形态（重启条件 = 预设仓转公开或 CI 拿到只读凭据）。 ｜ tags: ci, governance, ledger, preset, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -14345,8 +14361,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：970（活跃 153，跳过 817）
-- tier 分布：smoke 15 / normal 894 / adversarial 33
+- 用例总数：971（活跃 153，跳过 818）
+- tier 分布：smoke 15 / normal 895 / adversarial 33
 - 售后域：16
 - Agent 核心域：13
 - API 层域：21
@@ -14362,7 +14378,7 @@
 - 人事域：13
 - 知识问答域：9
 - 客户主数据迁移域：10
-- 杂项域：174
+- 杂项域：175
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：75
@@ -14603,6 +14619,7 @@
 - MC-127: **`needs-truths` 标签必须随 issue body 重算**（issue #8406）：`on.issues` 加 `edited` + 判定双向（满足 ⇒ 摘标、不满足 ⇒ 补标）+ 幂等（状态一致 ⇒ 零写请求、`edited` 不重复发提醒评论）
 - MC-130: .env.ai-agent 凭据探针（issue #7718 裁定 B）：deploy.sh 部署后只读检查三项 key（主 LLM / 语音 / 生图），缺任一项 ⇒ 可行动告警（缺哪项 / 怎么补 / 影响是什么），不判失败、绝不打印密钥值
 - MC-129: LLM 主凭据失效（401）必须成为**可观测事件**：恰好一条可行动 ERROR + 独立只读探针 `/internal/llm-health`（ok=false ⇒ 503），`/ready` 语义不变（issue #8084）
+- MC-131: **预设搬运通道台账**（issue #6060）：搬出去的每个预设文件逐条登记「最后承载的字节（blob）+ 版末提交 + 最后承载的版本 + 搬入证据（预设仓 commit）」；未登记即红、登记了但现取没有即红、字节/版本对不上即红、版本证据缺口只许缩短
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

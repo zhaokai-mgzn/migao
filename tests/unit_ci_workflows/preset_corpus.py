@@ -49,6 +49,18 @@ PRESET_PREFIX_IN_REPO = ".agent-presets/migao/"
 #: 读预设内容的 git 基线候选（按序取第一个**真读得到**的）。
 PRESET_BASELINE_REFS = ("origin/main", "origin/main~1", "HEAD~1", "HEAD")
 
+
+def preset_relative(path_in_repo: str) -> str:
+    """→ 业务仓里带预设前缀的路径 → 预设仓里的相对路径（**唯一的剥前缀实现**）。
+
+    别处不许再写 `path[len(PRESET_PREFIX):]` 这类下标切法：前缀只有一个定义点
+    （本模块的 `PRESET_PREFIX_IN_REPO`），剥除也只有这一处 —— 否则「预设根 = 仓根」这条
+    S4 后的布局口径会在两个地方各自腐烂（守卫 = `test_single_preset_reader.py`）。
+    """
+    prefix = PRESET_PREFIX_IN_REPO
+    return path_in_repo[len(prefix):] if path_in_repo.startswith(prefix) else path_in_repo
+
+
 #: 历史候选的扫描上限（个提交）与最多试几个候选（性能：每个候选都要 `ls-tree`）。
 HISTORY_SCAN_LIMIT = 200
 HISTORY_CANDIDATES_MAX = 12
