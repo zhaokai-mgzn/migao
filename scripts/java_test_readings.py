@@ -4,7 +4,7 @@
 
 ## 病（2026-11-03 本机实跑，逐条读数见 docs/wiki/Development.md 的「Java 定点判据」节）
 
-① **`.txt` 摘要不可信**：同一次运行 control/XML 报 **15** 条，而
+① **`.txt` 摘要不可信**：同一次运行 console/XML 报 **15** 条，而
    `target/surefire-reports/<fqn>.txt` 写 **`Tests run: 0`**（@Nested 类的通例）。
    issue #6495 的原始读数（`head -6 …txt`）正是读到这个摘要 ⇒ 得出「一条都没跑」的**误诊**。
 ② **真·空跑绿**：`-Dtest=<外层类>#<方法>`，而该方法**声明在 `@Nested` 内** ⇒
@@ -28,6 +28,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -304,7 +305,8 @@ def run_selector(selector: str, index: dict[str, TestClass], extra: list[str], m
         print(f"❌ 不可判定：{module.relative_to(REPO_ROOT)} 下没有 mvnw", file=sys.stderr)
         return 3
 
-    cmd = [mvn, "-o", "test", f"-Dtest={selector}", "-DfailIfNoTests=false"] + extra
+    offline = os.environ.get("MIGAO_MVN_OFFLINE", "1") == "1"  # 默认离线（本仓常用口径）；冷缓存用 MIGAO_MVN_OFFLINE=0
+    cmd = [mvn] + (["-o"] if offline else []) + ["test", f"-Dtest={selector}", "-DfailIfNoTests=false"] + extra
     print(f"▶ cd {module.relative_to(REPO_ROOT)} && {' '.join(cmd)}")
     proc = subprocess.run(cmd, cwd=module, capture_output=True, text=True)
     tail = "\n".join((proc.stdout + proc.stderr).strip().splitlines()[-25:])

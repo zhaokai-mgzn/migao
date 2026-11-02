@@ -17,6 +17,7 @@
 #   ./scripts/java-test.sh AgentBatchServiceTest#someNestedMethod   # 会被自动纠正并打印原因
 #   ./scripts/java-test.sh --check OssConfigTest              # 只解析/纠正，不跑
 #   ./scripts/java-test.sh OssConfigTest -- -Dsurefire.rerunFailingTestsCount=1   # 额外 mvn 参数
+#   MIGAO_MVN_OFFLINE=0 ./scripts/java-test.sh OssConfigTest  # 冷 m2 缓存时走联网（默认离线 `-o`）
 #
 # 退出码：0 真跑且绿 / 1 红（空跑 / 失败 / @Nested 没跑到）/ 2 用法 / 3 不可判定
 #
