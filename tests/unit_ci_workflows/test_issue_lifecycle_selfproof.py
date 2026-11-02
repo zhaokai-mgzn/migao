@@ -38,6 +38,7 @@ import importlib.util
 import json
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -53,6 +54,12 @@ WIRING_UNDER_TEST = "scripts/issue_lifecycle.py::verify_clean"
 #: 注入锚点：**逐字**取自 `scripts/issue_lifecycle.py`（唯一命中 1 次才允许变异）
 REFRESH_LINE = "    heads_reading = remote_heads_refresh(cwd) if heads is _UNREAD else heads"
 SNAPSHOT_LINE = "    heads_reading = remote_heads(cwd) if heads is _UNREAD else heads"
+
+# 注入走共用原语（issue #7017）：`str.replace` 0 命中时**静默返回原串** ⇒ 会把「锚点漂移」
+# 误报成「判据没牙」。`inject()` 0 命中抛 AnchorDrift（报文含语料名 + 锚点前 60 字），
+# 命中不唯一抛 AmbiguousAnchor，换了等于没换抛 InjectionError。
+sys.path.append(str(REPO_ROOT / "tests"))
+from unit_ci_workflows.injection import inject  # noqa: E402
 
 
 def _load_module(path: Path = MODULE):
@@ -118,13 +125,13 @@ def _stale_snapshot_target(module, work: Path) -> object:
 def _mutated_module(dest_dir: Path, anchor: str, replacement: str) -> Path:
     """把真源码里的 `anchor` **逐字**替换成 `replacement`，落成一份可独立加载的副本。
 
-    自证三件（§23 G7）：① 锚点**恰好命中 1 次** ② 替换后源码确实变了 ③ 变异后仍是**合法 Python**
+    注入走**共用原语** `inject()`（issue #7017）：0 命中抛 `AnchorDrift`（报文含语料名 + 锚点前 60 字）、
+    命中不唯一抛 `AmbiguousAnchor`、换了等于没换抛 `InjectionError` —— 裸 `str.replace` 在锚点漂移时
+    **静默返回原串**，把「注入没生效」误报成「判据没牙」（同族假绿）。另加：变异体必须仍是**合法 Python**
     （否则「红」来自语法错，不来自判据）。
     """
     src = MODULE.read_text(encoding="utf-8")
-    assert src.count(anchor) == 1, f"注入锚点必须恰好命中 1 次（源码漂移 ⇒ 红证失效）：{anchor!r}"
-    mutated = src.replace(anchor, replacement)
-    assert mutated != src, "变异没落到源码上"
+    mutated = inject(src, anchor, replacement, where=str(MODULE.relative_to(REPO_ROOT)))
     dest_dir.mkdir(parents=True, exist_ok=True)
     target = dest_dir / "issue_lifecycle.py"
     target.write_text(mutated, encoding="utf-8")
