@@ -1,4 +1,4 @@
-// case_ids: BM-010
+// case_ids: BM-010, MC-134
 /**
  * **30×40mm 标签的像素口径：单一真值 + 逐值正确**（issue #5052 CP-1；设计 §7.2 / 验收判据 7）
  *
@@ -24,6 +24,12 @@
  *
  * ⚠️ C2 的语料**排除本文件自己**（`migao-dev-flow` §23.8 B1：判据语料必须排除判据自身，
  * 否则断言里的数字会把探针数成违规 ⇒ 判据永远是红的或永远抓不到真违规）。
+ *
+ * ⚠️ **语料读面 = git 索引（issue #6594）**：本判据的语料由
+ * `tests/helpers/trackedCorpus.js` 提供，**只读已跟踪文件**（= CI 干净检出那一份）。
+ * 旧实现**遍历工作树** ⇒ 被 `.gitignore` 命中的本地产物会被扫进来（实证：
+ * `backend/ai-agent-service/coverage.json` 这份 5 周前的 python coverage 输出天然含
+ * 打印头宽的像素口径）⇒ **本机假红、CI 判绿**。判据 = `tests/unit_ci_workflows/test_bmini_corpus_read_face.py`。
  *
  * ⚠️ **D5 修复的口径变化（照实登记，不粉饰）**：旧 C2 的谓词是「**同时**出现 384 与 240」——
  * 于是**只写一个数**的第二份字面量会静默落地（验收方 L1 实测：在 `labelPageKit.ts` 追加
@@ -62,19 +68,18 @@ const PIPELINE_DIRS = [
 ]
 /** 像素口径字面量（**分别**判，不再是"两个数同时出现才算"） */
 const PIXEL_LITERALS = [240, 320, 384, 640]
-const CODE_EXT = /\.(ts|tsx|js|jsx|mjs|json)$/
-const SKIP_DIRS = new Set(['node_modules', 'dist', 'coverage', '.next', 'build', '.git'])
 
-function walk(dir: string, out: string[] = []): string[] {
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name.startsWith('.') && entry.name !== '.github') continue
-    if (SKIP_DIRS.has(entry.name)) continue
-    const full = path.join(dir, entry.name)
-    if (entry.isDirectory()) walk(full, out)
-    else if (CODE_EXT.test(entry.name)) out.push(full)
-  }
-  return out
-}
+/**
+ * 语料读面 = **git 索引里已跟踪的文件**（= CI 干净检出里的那一份），**不是工作树遍历**（issue #6594）。
+ * 唯一实现 = `frontend/bmini-app/tests/helpers/trackedCorpus.js`；判据 =
+ * `tests/unit_ci_workflows/test_bmini_corpus_read_face.py`。
+ *
+ * ⚠️ 为什么不能读工作树（本机实测的假红）：`.gitignore` 命中的本地产物会被扫进来 ——
+ * `backend/ai-agent-service/coverage.json`（python coverage 的输出，496KB，天然含大量数字字面量，
+ * 其中就有打印头宽的像素口径）⇒ **本机判红、CI 判绿**，人跑去修一个不存在的问题。
+ * 改成「读跟踪集合」后这种分叉**结构性不存在**：CI 的检出里只有被跟踪的文件。
+ */
+const { readCorpus: readCorpusAt, untrackedCodeFiles } = require('./helpers/trackedCorpus.js')
 
 /**
  * 逐字面量判定（真判据与注入式红证**共用同一份**）：
@@ -98,21 +103,24 @@ function pixelLiteralProblems(
   return problems
 }
 
-/** 读某组根目录下的全部代码文件（相对仓库根） */
-function readCorpus(roots: string[]): { rel: string; code: string }[] {
-  const out: { rel: string; code: string }[] = []
-  for (const root of roots) {
-    const abs = path.join(REPO_ROOT, root)
-    if (!fs.existsSync(abs)) continue
-    if (fs.statSync(abs).isFile()) {
-      out.push({ rel: root, code: fs.readFileSync(abs, 'utf8') })
-      continue
-    }
-    for (const file of walk(abs)) {
-      out.push({ rel: path.relative(REPO_ROOT, file), code: fs.readFileSync(file, 'utf8') })
-    }
-  }
-  return out
+/** 读某组根目录下的**已跟踪**代码文件（相对仓库根；读面见上，issue #6594） */
+function corpusOf(roots: string[]): { rel: string; code: string }[] {
+  return readCorpusAt({ repoRoot: REPO_ROOT, roots })
+}
+
+/**
+ * 读面的**残余出声**（不静默，也不判红）：索引读不到**还没 `git add`** 的新文件 ⇒
+ * 本地把违规写进新文件时本判据会绿。这里把「扫得到但没进索引」的代码文件**印出来**。
+ * 刻意**不判红**：本地建文件未 `git add` 是常态，判红会把「本机红 / CI 绿」的分裂原样造回来，
+ * 只是方向相反（CI 一律绿、本机一律红）。
+ */
+function warnUntracked(roots: string[]): void {
+  const stray: string[] = untrackedCodeFiles({ repoRoot: REPO_ROOT, roots })
+  if (stray.length === 0) return
+  console.warn(
+    `⚠️ 语料读面 = git 索引（issue #6594），下列未跟踪文件**不在判决范围内**` +
+      `（要纳入判决请 \`git add\`）：\n${stray.map((rel) => `   - ${rel}`).join('\n')}`,
+  )
 }
 
 /** 与 C1 同口径的纯判定（供注入式红证复用；真实判据 = 上面的断言） */
@@ -173,7 +181,7 @@ describe('入库标签像素口径（50×80mm，issue #7820 改尺寸）：单�
   })
 
   it('C2 出图链路里**一个**像素字面量都没有（240 / 320 / 384 / 640 逐个数，不放过"只写一个"）', () => {
-    const pipeline = readCorpus(PIPELINE_DIRS)
+    const pipeline = corpusOf(PIPELINE_DIRS)
     // 反空跑：射程真的扫到了出图链路的源码
     expect(pipeline.length).toBeGreaterThanOrEqual(10)
     expect(pixelLiteralProblems(pipeline)).toEqual([])
@@ -191,14 +199,16 @@ describe('入库标签像素口径（50×80mm，issue #7820 改尺寸）：单�
     expect(pixelLiteralProblems([{ rel: 'a.ts', code: 'const h = 240\n' }]).join('\n')).toContain('240')
     expect(pixelLiteralProblems([{ rel: 'a.ts', code: 'const h = 320\n' }]).join('\n')).toContain('320')
     // ② 对照：真仓库的出图链路下同一判定判绿（否则上面那条"红"可能只是读错了语料）
-    expect(pixelLiteralProblems(readCorpus(PIPELINE_DIRS))).toEqual([])
+    expect(pixelLiteralProblems(corpusOf(PIPELINE_DIRS))).toEqual([])
   })
 
   it('C2b 全仓 `384`（打印头宽）只许出现在介质矩阵（240/320 与无关业务重号，故按链路判，口径见文件头）', () => {
-    const problems = pixelLiteralProblems(readCorpus(['frontend', 'backend']), [384], [MATRIX_REL])
+    // 读面的残余**出声**（issue #6594）：未跟踪的新文件不在索引里 ⇒ 印出来，但不判红（见 warnUntracked）
+    warnUntracked(['frontend', 'backend'])
+    const problems = pixelLiteralProblems(corpusOf(['frontend', 'backend']), [384], [MATRIX_REL])
     expect(problems).toEqual([])
     // 反空跑：真值源里**确实**写着这个数（否则"全仓 0 命中"会假绿）
-    expect(readCorpus([MATRIX_REL]).some((file) => /\b384\b/.test(file.code))).toBe(true)
+    expect(corpusOf([MATRIX_REL]).some((file) => /\b384\b/.test(file.code))).toBe(true)
   })
 
   it('C3 版面/渲染模块里没有像素字面量（只能从 truth 取）', () => {
