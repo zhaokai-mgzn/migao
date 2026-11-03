@@ -540,10 +540,11 @@ export default function OutboundOrdersPage() {
                     <tr key={line.skuId} className="border-t border-neutral-100">
                       <td className="px-3 py-2 text-neutral-900">{line.label}</td>
                       <td className="px-3 py-2">
+                        {/* issue #8004：出库数量是**带小数的数量面** —— 去掉 `type="number"`
+                            （会吞 `12.` 中间态）；口径与话术仍由 `checkStockQuantity` 承担 */}
                         <Input
-                          type="number"
-                          min="0"
-                          step="0.1"
+                          type="text"
+                          inputMode="decimal"
                           value={line.quantity}
                           placeholder="如 12.5"
                           onChange={(e) =>

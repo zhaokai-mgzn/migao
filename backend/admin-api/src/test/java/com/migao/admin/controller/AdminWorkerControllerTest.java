@@ -1,4 +1,4 @@
-// case_ids: PG-072, PG-096, HR-002, HR-001, UI-091
+// case_ids: PG-072, PG-096, HR-002, HR-001, UI-091, MC-158
 package com.migao.admin.controller;
 
 import com.migao.admin.config.GlobalExceptionHandler;
@@ -38,6 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -106,7 +107,9 @@ class AdminWorkerControllerTest {
     void createWorkerReturnsRedactedPayload() throws Exception {
         // 控制器调的是**带页面收窄**的那个重载（issue #6788）⇒ 必须按 4 参签名打桩
         // （只桩 3 参重载 ⇒ Mockito 返回 null ⇒ 500 —— 那正是「mock 掉了真行为」的经典坑）
-        when(workerAdminService.createWorker(eq("W-1001"), eq("张三"), eq("246810"), any(), any()))
+        // issue #8337：建号多了「岗位」参数 ⇒ 6 参重载（仍按「别只桩少参数重载」的口径打桩）
+        when(workerAdminService.createWorker(
+                eq("W-1001"), eq("张三"), eq("246810"), any(), any(), any()))
                 .thenReturn(worker("w-1", "W-1001", "张三"));
 
         mockMvc.perform(post("/api/admin/workers")
@@ -122,7 +125,7 @@ class AdminWorkerControllerTest {
                 .andExpect(jsonPath("$.data.passwordHash").doesNotExist())
                 .andExpect(jsonPath("$.data.password").doesNotExist());
 
-        verify(workerAdminService).createWorker("W-1001", "张三", "246810", null, null);
+        verify(workerAdminService).createWorker("W-1001", "张三", "246810", null, null, null);
     }
 
     @Test
@@ -145,6 +148,51 @@ class AdminWorkerControllerTest {
                 .getDeclaredMethod("updateWorkerPages", String.class, Map.class)
                 .getAnnotation(RequirePermission.class).value())
                 .as("与建号 / 重置 PIN 同档写权限（不新增权限码）")
+                .isEqualTo("employee:create");
+    }
+
+    @Test
+    @DisplayName("⑦ #8337 建号带岗位：POST 的 workerPosition 原样进服务层，响应回显岗位")
+    void createWorkerPassesThePositionThrough() throws Exception {
+        User created = worker("w-2", "W-2005", "王建国");
+        created.setPosition("裁剪");
+        created.setWorkerPages("[\"report\",\"piecework\"]");
+        when(workerAdminService.createWorker(
+                eq("W-2005"), eq("王建国"), eq("246810"), isNull(), isNull(), eq("裁剪")))
+                .thenReturn(created);
+
+        mockMvc.perform(post("/api/admin/workers")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "workerNo", "W-2005", "name", "王建国", "pin", "246810",
+                                "workerPosition", "裁剪"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.workerPosition").value("裁剪"))
+                .andExpect(jsonPath("$.data.workerPages[0]").value("report"))
+                .andExpect(jsonPath("$.data.workerPages[1]").value("piecework"));
+    }
+
+    @Test
+    @DisplayName("⑦ #8337 改岗位：PUT /{id}/position ⇒ 200 + 回显岗位与新菜单；权限 employee:create")
+    void updateWorkerPositionReturnsTheDerivedMenu() throws Exception {
+        User moved = worker("w-1", "W-1001", "张三");
+        moved.setPosition("仓管");
+        moved.setWorkerPages("[\"inbound\",\"reprint\",\"stock\"]");
+        when(workerAdminService.updateWorkerPosition(eq("w-1"), any())).thenReturn(moved);
+
+        mockMvc.perform(put("/api/admin/workers/w-1/position")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"workerPosition\":\"仓管\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.workerPosition").value("仓管"))
+                .andExpect(jsonPath("$.data.workerPages[0]").value("inbound"))
+                .andExpect(jsonPath("$.data.workerPages[2]").value("stock"));
+
+        verify(workerAdminService).updateWorkerPosition("w-1", "仓管");
+        assertThat(AdminWorkerController.class
+                .getDeclaredMethod("updateWorkerPosition", String.class, Map.class)
+                .getAnnotation(RequirePermission.class).value())
+                .as("与建号 / 页面收窄同档写权限（不新增权限码）")
                 .isEqualTo("employee:create");
     }
 
@@ -187,7 +235,7 @@ class AdminWorkerControllerTest {
     @Test
     @DisplayName("重复工号 ⇒ 409 + error.code=CONFLICT + 文案含工号（**不是 500**）")
     void duplicateWorkerNoReturnsConflictNotServerError() throws Exception {
-        when(workerAdminService.createWorker(any(), any(), any(), any(), any()))
+        when(workerAdminService.createWorker(any(), any(), any(), any(), any(), any()))
                 .thenThrow(BusinessException.conflict("工号已被占用：W-1001（本企业内工号必须唯一）",
                         "换一个工号，或先在列表里找到这位工人并启用其档案"));
 
@@ -204,7 +252,7 @@ class AdminWorkerControllerTest {
     @Test
     @DisplayName("字段缺失 ⇒ 422（服务端校验是唯一真值源，控制器不吞异常、不 500）")
     void missingFieldsReturnValidationError() throws Exception {
-        when(workerAdminService.createWorker(any(), any(), any(), any(), any()))
+        when(workerAdminService.createWorker(any(), any(), any(), any(), any(), any()))
                 .thenThrow(BusinessException.validationError("工号不能为空"));
 
         mockMvc.perform(post("/api/admin/workers")
@@ -217,7 +265,7 @@ class AdminWorkerControllerTest {
     @Test
     @DisplayName("非字符串入参（如 workerNo 传数字）⇒ 422 而不是 500（不把 ClassCastException 抛给用户）")
     void nonStringFieldReturnsValidationError() throws Exception {
-        when(workerAdminService.createWorker(any(), any(), any(), any(), any()))
+        when(workerAdminService.createWorker(any(), any(), any(), any(), any(), any()))
                 .thenThrow(BusinessException.validationError("工号不能为空"));
 
         mockMvc.perform(post("/api/admin/workers")
@@ -271,8 +319,9 @@ class AdminWorkerControllerTest {
                     .isNotBlank();
         }
         assertThat(handlers)
-                .as("建号 + 列表 + 重置 PIN + 设工人端菜单（#6788）+ 工序目录/绑定工序（#7749）六个端点是本面交付面，缺一即红")
-                .isEqualTo(6);
+                .as("建号 + 列表 + 重置 PIN + 设工人端菜单（#6788）+ 工序目录/绑定工序（#7749）"
+                        + "+ 设岗位（#8337）七个端点是本面交付面，缺一即红")
+                .isEqualTo(7);
     }
 
     @Test

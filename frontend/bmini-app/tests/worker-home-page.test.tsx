@@ -1,4 +1,4 @@
-// case_ids: BM-034, BM-057
+// case_ids: BM-034, BM-057, MC-158
 /**
  * 工人首页（issue #6467 切片 1，S2）：纯工人设备的落地页 —— **只**给工人面三件事，
  * 一件商家面东西都不出现。
@@ -27,7 +27,7 @@
  * - 退出只清本机不调 `workerLogout()`（服务端 session 还活着 ⇒ 下一个人扫码记到上一个人头上）⇒ ④红。
  */
 import React from 'react'
-import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 
 jest.mock('@tarojs/taro', () => {
   // 真内存 storage：工人态的清除必须能被**读到**（`jest.fn()` 空实现会让「真的清了」与
@@ -205,6 +205,19 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
     expect(REPRINT_PAGE_ROUTE).toBe('/pages/worker/reprint/index')
     expect(SHIPMENT_PAGE_ROUTE).toBe('/pages/worker/shipment/index')
     expect(PIECEWORK_PAGE_ROUTE).toBe('/pages/worker/piecework/index')
+  })
+
+  it('🔴 #8337 车位工看不见「拍照入库 / 补打入库标签」（两个入口此前无键、恒显示）', async () => {
+    // 车位工（收窄到 报工 + 计件）⇒ 两张物料页的入口**取不到**（不是 CSS 隐藏：queryByText 直接 null）
+    await renderWithMenu(['report', 'piecework'])
+    expect(screen.queryByText('拍照入库')).toBeNull()
+    expect(screen.queryByText('补打入库标签')).toBeNull()
+
+    // 仓管（收窄到 入库 + 补打 + 库存修正）⇒ 两个入口都在（判据 ② 的正面）
+    cleanup()
+    await renderWithMenu(['inbound', 'reprint', 'stock'])
+    expect(screen.getByText('拍照入库')).toBeTruthy()
+    expect(screen.getByText('补打入库标签')).toBeTruthy()
   })
 
   it('🔴 不出现任何商家面入口（问黄金策 / 数据 / 坐席 / 管理面 4 项 + 「我的」）', async () => {

@@ -433,7 +433,7 @@ describe('CustomerDetailPage', () => {
   it('显示服务端授信读数：额度 / 账期 / 已欠 / 可用', async () => {
     render(<CustomerDetailPage />)
     await waitFor(() => {
-      expect(screen.getByTestId('credit-limit')).toHaveValue(10000)
+      expect(screen.getByTestId('credit-limit')).toHaveValue('10000') // 涉钱面是 text 形态 ⇒ DOM 值是字符串（issue #8004）
     })
     expect(screen.getByTestId('credit-terms')).toHaveValue(30)
     expect(screen.getByTestId('credit-available')).toHaveTextContent('可用 ¥4,000.00')
@@ -443,7 +443,7 @@ describe('CustomerDetailPage', () => {
   it('保存授信：把输入数字发给服务端（不是字符串）', async () => {
     render(<CustomerDetailPage />)
     await waitFor(() => {
-      expect(screen.getByTestId('credit-limit')).toHaveValue(10000)
+      expect(screen.getByTestId('credit-limit')).toHaveValue('10000') // 涉钱面是 text 形态 ⇒ DOM 值是字符串（issue #8004）
     })
     fireEvent.change(screen.getByTestId('credit-limit'), { target: { value: '20000' } })
     fireEvent.change(screen.getByTestId('credit-terms'), { target: { value: '45' } })
@@ -463,7 +463,7 @@ describe('CustomerDetailPage', () => {
   it('清空额度 = 停用授信：发 null 而不是 0（0 是「零额度」）', async () => {
     render(<CustomerDetailPage />)
     await waitFor(() => {
-      expect(screen.getByTestId('credit-limit')).toHaveValue(10000)
+      expect(screen.getByTestId('credit-limit')).toHaveValue('10000') // 涉钱面是 text 形态 ⇒ DOM 值是字符串（issue #8004）
     })
     fireEvent.change(screen.getByTestId('credit-limit'), { target: { value: '' } })
     fireEvent.change(screen.getByTestId('credit-terms'), { target: { value: '' } })
@@ -480,14 +480,15 @@ describe('CustomerDetailPage', () => {
   it('负额度在前端就被拦（不发请求、给可行动提示）', async () => {
     render(<CustomerDetailPage />)
     await waitFor(() => {
-      expect(screen.getByTestId('credit-limit')).toHaveValue(10000)
+      expect(screen.getByTestId('credit-limit')).toHaveValue('10000') // 涉钱面是 text 形态 ⇒ DOM 值是字符串（issue #8004）
     })
     fireEvent.change(screen.getByTestId('credit-limit'), { target: { value: '-1' } })
-    fireEvent.click(screen.getByText('保存授信'))
 
-    await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith('授信额度必须是不小于 0 的数字（留空 = 不启用授信）')
-    })
+    // issue #8004 起这条缺陷**提前一层**被拦住：涉钱格非法 ⇒ 框下当场出具名话术 + 「保存授信」禁用，
+    // 不再等到点下按钮才 toast（旧的 toast 分支仍在 `handleSaveCredit` 里作为第二道闸）。
+    expect(screen.getByTestId('credit-limit-error')).toHaveTextContent('授信额度不能小于 0')
+    expect(screen.getByText('保存授信')).toBeDisabled()
+    fireEvent.click(screen.getByText('保存授信'))
     expect(customerApi.updateCredit).not.toHaveBeenCalled()
   })
 

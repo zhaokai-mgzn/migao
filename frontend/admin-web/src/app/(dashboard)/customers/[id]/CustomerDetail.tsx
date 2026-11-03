@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Phone, MapPin, Star, Plus, X, MessageSquare, ShoppingCart, Save } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button, Badge, SELECT_CONTROL, EmptyState } from '@/components/ui'
+import { Button, Badge, DecimalInput, SELECT_CONTROL, EmptyState } from '@/components/ui'
+import { useDecimalValidity } from '@/components/ui/DecimalInput'
 import ListLoadError from '@/components/common/ListLoadError'
 import { useRouteId } from '@/lib/use-route-id'
 import { customerApi } from '@/lib/api'
@@ -101,6 +102,9 @@ export default function CustomerDetailPage() {
   // 授信与往来（issue #7370）
   const [credit, setCredit] = useState<CustomerCreditStatus | null>(null)
   const [creditLimitInput, setCreditLimitInput] = useState('')
+  /** 授信额度（涉钱）是否合法：`DecimalInput` 不回调非法值 ⇒ 保存必须一起禁用，
+   *  否则「敲错 → 保存」会按上一个有效值（或空 = 不启用授信）落库 */
+  const { track: trackValidity, hasInvalid } = useDecimalValidity()
   const [creditTermsInput, setCreditTermsInput] = useState('')
   const [savingCredit, setSavingCredit] = useState(false)
 
@@ -365,15 +369,16 @@ export default function CustomerDetailPage() {
             <div className="space-y-3">
               <div>
                 <label className="block text-xs text-neutral-500 mb-1">授信额度（元，留空 = 不启用）</label>
-                <input
+                {/* issue #8004：授信额度是**涉钱面** —— `type="number"` 会吞 `12.` 中间态与千分位 */}
+                <DecimalInput
                   data-testid="credit-limit"
-                  type="number"
+                  field="授信额度"
                   min={0}
-                  step="0.01"
                   value={creditLimitInput}
-                  onChange={(e) => setCreditLimitInput(e.target.value)}
+                  onChange={setCreditLimitInput}
+                  onValidityChange={trackValidity}
                   placeholder="不限"
-                  className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                 />
               </div>
               <div>
@@ -392,7 +397,7 @@ export default function CustomerDetailPage() {
               <div className="flex items-center justify-between text-xs text-neutral-500">
                 <span>已欠 ¥{fmtMoney(credit?.outstanding)}</span>
               </div>
-              <Button size="sm" onClick={handleSaveCredit} disabled={savingCredit}>
+              <Button size="sm" onClick={handleSaveCredit} disabled={savingCredit || hasInvalid}>
                 {savingCredit ? '保存中...' : '保存授信'}
               </Button>
             </div>
