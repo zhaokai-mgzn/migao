@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，185 条）
+# 域: misc（源: cases/misc.yml，186 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3406,6 +3406,24 @@ _CASE_MC_141 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-140 [NORMAL] 多 PR **集中合**（batch merge）工具：从 origin/main 重建 + 重放（不 --ours 解冲突）/ 用例号「后合入者让号」/ 锚点按**实测**重锚 / 批次 body 零关闭词（源: cases/misc.yml）──
+_CASE_MC_140 = EvalCase(
+    id='MC-140',
+    legacy_id='',
+    title='多 PR **集中合**（batch merge）工具：从 origin/main 重建 + 重放（不 --ours 解冲突）/ 用例号「后合入者让号」/ 锚点按**实测**重锚 / 批次 body 零关闭词',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['5 个 PR 同时要合：逐个合 = 5×28 个 required job（strict=true 下每个 PR 各跑一轮全量）；换成一次「集中合」后 = 1×28，且用例号互撞 / 追加型台账冲突 / 锚点漂移要能被工具自动收口'],
+    expectations=[],
+    data_checks=['**合入不丢内容（会红）**：两个 PR 各向 `.github/cases/misc.yml` 追加一条用例 ⇒ 合批后**两条都在**（只追加型台账取 main 版 + 并上各支新增块，**不用** `--ours/--theirs` 解冲突 —— 实测那会把冲突标记留成嵌套垃圾、把锚点 JSON 写坏）。判据 = tests/unit_ci_workflows/test_batch_merge_tool.py::test_batch_lands_both_prs_and_renumbers_the_later_one。', '**用例号「后合入者让号」（会红）**：两个 PR 同占一个号 ⇒ 后合入者改 `id`，且 **claim 文件名/内容**（`<PR>-<ID>.json` 的 `id` 字段）、**声明该号的测试文件头** `# case_ids:`、**渲染物**三处同步；「谁让给谁」必须打印。红证 = 把让号逻辑删掉（`plan_renames → []`）⇒ 重复 id 当场留下。', '**锚点「从 main 重建 + 实测重锚」（会红）**：锚点取 main 版 → 跑判据拿**实测读数** → 追加一行 `history`（带 `note`）+ `entries` 对齐实测；产出必须能过**真**判据 tests/unit_ci_workflows/test_case_machine_fail_channel.py。红证 = 换成 main 版锚点（=`--ours` 解冲突的产物）⇒ 真判据必红（实测与 entries 不一致）。', "**「是否在合并中」只认 MERGE_HEAD（会红）**：worktree 里 `.git` 是**文件** ⇒ `Path(repo)/'.git'/'MERGE_HEAD'` **恒不存在**；判据必须用 `git rev-parse -q --verify MERGE_HEAD`。每支合并都以「提交前必须为真 / 提交后必须为假」收口（否则下一支必然 rc=128）。夹具本身就是 worktree 形态，红证 = 同一现场 naive 路径实测为 False。", '**批次 PR body 零关闭词（会红）**：生成后**当场**用 `scripts/pr_body_guard.py` 的 `find_close_keywords()`（同一实现）断言 0 条，非 0 即 fail-closed 不建 PR；负控 = body 里确实带 `#NNNN` 引用（所以「0 命中」不是空断言）。原 PR / issue 由值守面在合并后按证据关闭。', '**`--dry-run` 零落盘（会红）**：不建分支、不提交、不动远端（分支表 / 提交数 / `git status` 前后逐字节比对），正控 = 去掉 `--dry-run` 后同一夹具的读数**确实**变了（否则「没变」是空断言）。'],
+    skip_reason='[backend-contract] 研发工具面判据（临时 git 仓库 + worktree，零网络、不碰真仓库）由 tests/unit_ci_workflows/test_batch_merge_tool.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'batch-merge', 'pr-batching', 'case-id-collision', 'anchor-rebaseline', 'merge-head', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -3592,4 +3610,5 @@ CASES = (
     _CASE_MC_133,
     _CASE_MC_138,
     _CASE_MC_141,
+    _CASE_MC_140,
 )
