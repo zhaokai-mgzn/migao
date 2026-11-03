@@ -99,7 +99,7 @@ SUCCESSOR_TOKENS = ("+ 1", "+1", "+= 1", "+=1", "max(", "min(")
 #: （双向：多一个 ⇒ 红、少一个 ⇒ 红）。登记面 = `declaration_gate_registry.json::same_source_claims`。
 ALLOCATION_IMPLEMENTATIONS_FROZEN = (
     "scripts/next_case_id.py",
-    # `scripts/batch_merge_lib.py::allocate_free_id` —— **批次合并**（issue #8323）里的「后合入者让号」。
+    # `scripts/batch_merge_lib.py::allocate_free_id` —— **批次合并**（issue #8523）里的「后合入者让号」。
     # 为什么**不是**「删掉它并改调 `scripts/next_case_id.py`」（两条理由；② 是现取实测，不是推断）：
     # ① **口径不同，委托会退化**：工具的口径是「main ∪ 全部 open PR ∪ 本工作区」上的**最小空闲号**
     #    （会**填历史空档**）；而合批工具只在**本地集成分支**上跑，**看不见在飞面**（对在飞面的可见性
@@ -577,7 +577,7 @@ def test_allocation_site_marker_is_the_tool_itself() -> None:
 def test_single_implementation_criterion_has_discriminating_power() -> None:
     """判据 6 的判别力自证（**内存构造**）：新造第二份算号脚本 ⇒ 红；登记陈旧 ⇒ 红；只改注释 ⇒ 不红。"""
     # 🔴 本节用的是**缩减后的源集**（只放工具本体）⇒ 登记面也要同步缩到这一项，
-    #    否则「另一个已登记实现点不在此源集里」会被误判成**陈旧登记**（issue #8323 加进
+    #    否则「另一个已登记实现点不在此源集里」会被误判成**陈旧登记**（issue #8523 加进
     #    第二个实现点 `scripts/batch_merge_lib.py` 后暴露；那一条由判据 6 的**全量**源集裁）。
     reduced = (TOOL_REL,)
     real = {TOOL_REL: _source()}
