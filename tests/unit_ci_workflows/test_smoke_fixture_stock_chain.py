@@ -1,4 +1,4 @@
-# case_ids: MC-145
+# case_ids: MC-146
 """冒烟 / 种子夹具的**库存链路**判据（issue #7600；SDQS §33「绿证明的是页面，不是数据」）。
 
 ## 病灶（issue #7600 的 durable 证据）
