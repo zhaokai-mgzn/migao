@@ -58,7 +58,10 @@ describe('BatchStockCard（B 端移动会话卡）', () => {
     expect(screen.getByText('24.68 米 / 113.45 元')).toBeTruthy()
     expect(screen.queryByText(/24\.67/)).toBeNull()
     expect(screen.getByText(/档位甲/)).toBeTruthy()
-    // 🔴 来源组标题走 `utils/cohort-groups` 映射（issue #6461）：夹具仍带服务端内部标签，\n    // 页面必须说商家的话（标签不上屏）\n    expect(screen.getByText('开业时导入的老库存')).toBeTruthy()\n    expect(screen.queryByText(/切换后|存量导入|来源未知/)).toBeNull()
+    // 🔴 来源组标题走 `utils/cohort-groups` 映射（issue #6461）：夹具仍带服务端内部标签，
+    // 页面必须说商家的话（标签不上屏）
+    expect(screen.getByText('开业时导入的老库存')).toBeTruthy()
+    expect(screen.queryByText(/切换后|存量导入|来源未知/)).toBeNull()
     // 存量导入组读不出 ⇒ 「无数据」，不是 0
     expect(screen.getAllByText('无数据').length).toBeGreaterThan(0)
     expect(screen.queryByText('0.0%')).toBeNull()
