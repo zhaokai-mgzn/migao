@@ -1292,7 +1292,7 @@
       "date": "2026-11-03",
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 290,
-      "note": "issue #7600 新增 1 条 [backend-contract] 用例 MC-146（冒烟 / 种子夹具的库存直写点判据）—— 按设计**不进 agent-eval**（expectations 为空），机器判红通道 = traces.tests 里的 tests/unit_ci_workflows/test_smoke_fixture_stock_chain.py（非空且真实存在，8 passed）；traces.ci = pr-check.yml。⇒ 读数 289 → 290 是**合法新增**（同 #5079 既定口径），真债务 no_channel_total 仍为 0（不变）。按本文件 _how_to_regen 在同一 PR 内重锚。"
+      "note": "issue #7600（冒烟库存改走入库单公开 API + 种子直写点台账双向对账）新增 1 条 [backend-contract] 用例 ⇒ 读数按合并当时的 main 现值重锚。机器判红通道 = 直写点台账双向对账判据。真债务 no_channel_total 仍为 0。"
     }
   ]
 }
