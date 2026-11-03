@@ -3388,9 +3388,9 @@ _CASE_MC_138 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── MC-139 [NORMAL] 计件 sweep 的 A0b 不再按原始 `worker_name` 分组比对：无署名归集是**显式的一类**（结构判身份、文案只进证据），并由独立的 A0c 勾稽「总额 − 逐人 = 无署名 且 = 独立 SQL 的无名组」（issue #7030）（源: cases/misc.yml）──
-_CASE_MC_139 = EvalCase(
-    id='MC-139',
+# ── MC-142 [NORMAL] 计件 sweep 的 A0b 不再按原始 `worker_name` 分组比对：无署名归集是**显式的一类**（结构判身份、文案只进证据），并由独立的 A0c 勾稽「总额 − 逐人 = 无署名 且 = 独立 SQL 的无名组」（issue #7030）（源: cases/misc.yml）──
+_CASE_MC_142 = EvalCase(
+    id='MC-142',
     legacy_id='',
     title='计件 sweep 的 A0b 不再按原始 `worker_name` 分组比对：无署名归集是**显式的一类**（结构判身份、文案只进证据），并由独立的 A0c 勾稽「总额 − 逐人 = 无署名 且 = 独立 SQL 的无名组」（issue #7030）',
     skill=Skill.GENERAL,
@@ -3591,5 +3591,5 @@ CASES = (
     _CASE_MC_136,
     _CASE_MC_133,
     _CASE_MC_138,
-    _CASE_MC_139,
+    _CASE_MC_142,
 )

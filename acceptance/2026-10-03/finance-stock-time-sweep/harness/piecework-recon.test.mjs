@@ -1,4 +1,4 @@
-// case_ids: MC-139
+// case_ids: MC-142
 //
 // 计件 A0b「逐人比对」假红（issue #7030）的**夹具级**判据 —— 纯函数，零网络 / 零 DB / 零时钟。
 // 复算：node --test acceptance/2026-10-03/finance-stock-time-sweep/harness/piecework-recon.test.mjs

@@ -1,4 +1,4 @@
-# case_ids: MC-139
+# case_ids: MC-142
 """计件 A0b「逐人比对」假红的夹具判据 + 接线守卫 + 注入式红证（issue #7030）。
 
 病（issue #7030，工装假红，实测误导过一次）：`acceptance/2026-10-03/finance-stock-time-sweep/harness/
