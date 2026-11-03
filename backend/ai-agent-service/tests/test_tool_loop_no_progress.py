@@ -1,4 +1,4 @@
-# case_ids: HR-014, CH-054
+# case_ids: HR-009, CH-054
 """工具循环的「连续无进展」出口（P1-4 后半，issue #8150）。
 
 被测契约（`backend/ai-agent-service/app/graph/skills/execution/react_turn.py::react_turn`

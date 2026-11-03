@@ -1359,6 +1359,12 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 302,
       "note": "批合 night5（#7050 员工写 action + #5707 redproof 实测计数 + #7197 不合格原因字典）三条 [backend-contract] 用例新增 ⇒ 按实测重锚。批合同时按「后合入者让号」处理 HR-009→HR-014、MC-155→MC-181，并去掉重放产生的重复 MC-181 块。真债务 no_channel_total 仍为 0。"
+    },
+    {
+      "date": "2026-11-03",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 302,
+      "note": "撤销批合工具对主库既有 HR-009 的误让号（rename 到 HR-014 是**误判**：那是 modify/modify 冲突不是重号），复算后按实测重锚。真债务 no_channel_total 仍为 0。"
     }
   ]
 }

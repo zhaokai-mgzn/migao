@@ -1,4 +1,4 @@
-# case_ids: HR-014, DF-003
+# case_ids: HR-009, DF-003
 """Agent 能力研发范式的**元守卫**（issue #7291）。
 
 范式（`docs/wiki/agent-capability-paradigm.md`）的三条不变式：

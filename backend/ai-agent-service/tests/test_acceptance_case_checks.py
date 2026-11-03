@@ -9,7 +9,7 @@
   属「工具调用全对、用户看到的话是错的」类缺陷，PR-019 用本断言拦截。
 - interactive 事件采集：send_message 捕获 SSE interactive 事件（卡片证据）。
 """
-# case_ids: OR-016, AS-007, PR-019, CH-010, CH-024, OR-021, OR-022, PR-024, CH-025, AS-004, PP-006, PR-021, HR-003, HR-014, HR-010, DF-020, DF-021, DF-022, DF-023, OR-026
+# case_ids: OR-016, AS-007, PR-019, CH-010, CH-024, OR-021, OR-022, PR-024, CH-025, AS-004, PP-006, PR-021, HR-003, HR-009, HR-010, DF-020, DF-021, DF-022, DF-023, OR-026
 import asyncio
 from types import SimpleNamespace
 import importlib.util

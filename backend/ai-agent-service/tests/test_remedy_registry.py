@@ -1,4 +1,4 @@
-# case_ids: HR-014
+# case_ids: HR-009
 """族 6（善后与补救）登记表的**运行期**判据（issue #5441）。
 
 与 `tests/unit_ci_workflows/test_remedy_registry_guard.py`（静态元守卫）的分工：

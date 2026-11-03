@@ -1,4 +1,4 @@
-# case_ids: CH-051, HR-014
+# case_ids: CH-051, HR-009
 """能力边界投影的**进程级状态隔离**判据（issue #8125）。
 
 ## 病（origin/main 已复现）

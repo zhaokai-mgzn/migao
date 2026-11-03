@@ -1,4 +1,4 @@
-# case_ids: CH-001, HR-005, HR-006, HR-014, HR-010
+# case_ids: CH-001, HR-005, HR-006, HR-009, HR-010
 """B 端权限范围注入 + `principles.md` 权限归因规则两半（issue #4107 / 父单 #4103 的 F8+F7）。
 
 被测契约（本包 = F7/F8，仅 `app/graph/skills/**`）：

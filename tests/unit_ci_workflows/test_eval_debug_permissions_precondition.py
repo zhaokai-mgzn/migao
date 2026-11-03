@@ -1,4 +1,4 @@
-# case_ids: HR-002, HR-014, HR-010
+# case_ids: HR-002, HR-009, HR-010
 """评测可控权限（`X-Debug-Permissions`）的**前置自断言**：判据 = **服务端探针**（issue #4150）。
 
 ## 病灶（issue #4150，验证于 `origin/main`）
