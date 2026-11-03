@@ -37,6 +37,13 @@ import {
  *    （涉钱面**不允许带着错误提交**；这是「不许静默变 0 / 变 NaN 后提交」的另一半）。
  * ③ 失焦**只收尾、不改值**：`12.` ⇒ `12`、`1,` ⇒ `1`、`1,234.56` ⇒ `1234.56`；
  *    **不做四舍五入、不按 min/max 夹紧**（`12.345` 不许被悄悄改成 `12.35` —— 那是静默改价）。
+ *
+ * ## 草稿同步**不在 `useEffect` 里**（issue #7685 / #8043 / #8409）
+ *
+ * 外部值变化（弹窗预填「默认退款金额 = 实收」）时，草稿是**渲染期**按 React 官方
+ * 「adjust state during render」范式一起改掉的（`lastValue` 比对），不是 useEffect 回写：
+ * 两阶段回写会让「框里已经能编辑」与「草稿就绪」分处两次提交，用户正好落进那个窗口时
+ * 输入会被**盖回基线**（`inline-edit-persistence-guard.test.ts` 判据 C 全仓禁止，**无豁免**）。
  */
 
 /** 与 `Input` / `NumberInput` 同源的 neutral token（UI 回退检测逐字比对，不得引入新色板） */
@@ -88,8 +95,13 @@ const DecimalInput = forwardRef<HTMLInputElement, DecimalInputProps>(function De
   const rules: DecimalRules = { decimals, min, max }
   const [draft, setDraft] = useState<string>(value)
   const [error, setError] = useState<string | null>(null)
-  const focusedRef = useRef(false)
-  const lastValueRef = useRef(value)
+  /**
+   * 草稿同步的**唯一**机制（判据 C：不许 effect 回写）：
+   * `lastValue` = 上一次见到的外部值，在**渲染期**比对 ⇒ 与读面同一次提交落地。
+   * `focused` 用 state（不用 ref）：渲染期读 ref 会被 `react-hooks/refs` 判红。
+   */
+  const [lastValue, setLastValue] = useState(value)
+  const [focused, setFocused] = useState(false)
   const dataTestId = (props as { 'data-testid'?: string })['data-testid']
   /** 多字段表单里标识本框的稳定键：`data-testid` ⇒ `id` ⇒ 口径名 */
   const validityKey = String(dataTestId ?? id ?? field)
@@ -99,12 +111,14 @@ const DecimalInput = forwardRef<HTMLInputElement, DecimalInputProps>(function De
     cbRef.current = onValidityChange
   }, [onValidityChange])
 
-  /** 外部改值（预填「默认退款金额 = 实收」/ 重置）⇒ **未聚焦时**同步草稿；正在输入则让用户赢 */
-  useEffect(() => {
-    if (value === lastValueRef.current) return
-    lastValueRef.current = value
-    if (!focusedRef.current) setDraft(value)
-  }, [value])
+  /**
+   * 外部改值（预填「默认退款金额 = 实收」/ 重置）⇒ **未聚焦时**同步草稿；正在输入则让用户赢。
+   * 渲染期做（不是 effect）：见文件头「草稿同步不在 useEffect 里」。
+   */
+  if (!Object.is(lastValue, value)) {
+    setLastValue(value)
+    if (!focused) setDraft(value)
+  }
 
   /**
    * 离线合法性：`invalid` ⇒ 不合法；`empty && !allowEmpty` ⇒ 不合法；
@@ -144,23 +158,23 @@ const DecimalInput = forwardRef<HTMLInputElement, DecimalInputProps>(function De
     setDraft(raw)
     setError(null)
     if (r.state === 'ok') {
-      lastValueRef.current = r.canonical
+      setLastValue(r.canonical)
       onChange(r.canonical)
     } else if (r.state === 'empty') {
-      lastValueRef.current = ''
+      setLastValue('')
       onChange('')
     }
     // r.state === 'draft'（`12.` / `1,` / `-`）：不回调，等用户敲完或失焦收尾
   }
 
   const handleBlur = (e: FocusEvent<HTMLInputElement>) => {
-    focusedRef.current = false
+    setFocused(false)
     const { text, result: r } = finalizeDraft(draft, rules)
     if (r.state === 'ok') {
       setDraft(text)
       setError(null)
       if (text !== value) {
-        lastValueRef.current = text
+        setLastValue(text)
         onChange(text)
       }
     } else if (r.state === 'empty') {
@@ -190,7 +204,7 @@ const DecimalInput = forwardRef<HTMLInputElement, DecimalInputProps>(function De
         aria-invalid={error ? true : undefined}
         onChange={handleChange}
         onFocus={(e) => {
-          focusedRef.current = true
+          setFocused(true)
           onFocus?.(e)
         }}
         onBlur={handleBlur}
