@@ -101,8 +101,7 @@ describe('C 端 H5 输入面字体族 / 占位符收口（issue #8575）', () =>
     const code = sharedCode()
     const inner = block(code, '.weui-input,')
     // 缺了就以「null」失败，报错里能看到是哪一个断言（jest 的 expect 不收第二参数）
-    expect(inner).not.toBeNull()
-    expect(inner).toMatch(/font-family:\s*inherit/)
+    expect(inner).toContain('font-family: inherit')
     expect(inner).toContain('.taro-textarea')
   })
 
@@ -119,14 +118,12 @@ describe('C 端 H5 输入面字体族 / 占位符收口（issue #8575）', () =>
     // `.taro-textarea` 出现在两个块里（字体族那条是 `.weui-input, .taro-textarea {`），
     // 这里要的是**带 font-size: inherit 的**那一条 ⇒ 逐块找，不能只看第一次出现。
     const blocks = [...code.matchAll(/\.taro-textarea\s*\{([^}]*)\}/g)].map((m) => m[1])
-    expect(blocks.length).toBeGreaterThan(0)
     expect(blocks.some((b) => /font-size:\s*inherit/.test(b))).toBe(true)
   })
 
   it('④ `::placeholder` 覆盖两个内层选择器、取 `$text-secondary`、不写 font-size', () => {
     const code = sharedCode()
     const ph = block(code, '.weui-input::placeholder')
-    expect(ph).not.toBeNull()
     expect(ph).toContain('.taro-textarea::placeholder')
     expect(ph).toContain('$text-secondary')
     expect(ph).not.toMatch(/font-size:/)
