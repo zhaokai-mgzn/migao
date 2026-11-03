@@ -78,12 +78,11 @@ export const STOCK_PAGE_KEY = 'stock'
 /** 拍照入库 / 补打入库标签的页面键（issue #8337；此前它们「无键、恒显示」）。 */
 export const INBOUND_PAGE_KEY = 'inbound'
 export const REPRINT_PAGE_KEY = 'reprint'
-
-/**
- * 工人面此前「恒显示」的入口（**已清空**，保留常量是为了让旧引用显式红/被搜到 ——
- * issue #8337 起两个入口都由页面键门控；这里再登记任何一项 = 又出现「后台关不掉」的入口）。
+/*
+ * 这里原本有 `ALWAYS_VISIBLE = ['拍照入库','补打入库标签']`（「后端无键 ⇒ 恒显示」的登记表）。
+ * issue #8337 把两张物料页纳入闭词表后，**整条常量已删除**：工人工作台上不再存在任何
+ * 「后台关不掉」的入口 —— 两个入口与其它菜单同款，由 `inbound` / `reprint` 页面键门控。
  */
-export const ALWAYS_VISIBLE = [] as const
 
 /**
  * 本机可显示的菜单键集合。
