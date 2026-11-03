@@ -2,7 +2,7 @@
 # 本文件由 render_cases.py 生成，勿手改（改了也留不住：下次重渲染会覆盖）
 # 源: cases/*.yml（case-contract 单一源）
 # 重新生成: python3 render_cases.py --cases <dir> --out-eval <包目录> --out-md <md>
-# 域: misc（源: cases/misc.yml，192 条）
+# 域: misc（源: cases/misc.yml，193 条）
 
 from ._schema import Difficulty, EvalCase, Skill
 
@@ -3532,6 +3532,25 @@ _CASE_MC_147 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-154 [NORMAL] 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说（源: cases/misc.yml）──
+_CASE_MC_154 = EvalCase(
+    id='MC-154',
+    legacy_id='',
+    title='终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-11-01 真机取证，商米 V2s `Qbao_h2` / Android 11 / 终端壳 1.0.19）：拍照入库页第一行写「点「打印标签」，由本机打印机直接出纸。」，而同一台机器点「打印测试页」⇒「打印失败 / 打印机未连接（需商米内置打印服务）」（`PrinterLink.mode()` = -1，设备上只有 `com.sunmi.printer.firmware`）'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 **判据 1（实例，会红）**：`printerMode = -1`（真机读数：没有商米打印服务）⇒ 能力探测必须 `ok:false`、`reason = terminal-printer-unavailable`，且**不出现**「由本机打印机直接出纸」（`readyHint` 为空）。执行点 = frontend/bmini-app/tests/inbound-print-capability-terminal.test.ts::T1', '🔴 **判据 2（负控，防「修坏了」）**：`printerMode > 0`（原生报正向）⇒ **仍**报能打 + 机身内置打印机文案（`PRINT_READY_HINT_TERMINAL`），与 #8089 的终端通道形态一致。执行点 = 同文件::T2', '🔴 **判据 3（三态，最容易被写成 `|| true`）**：`printerMode` **读不到**（缺省 / 0 / NaN / Infinity）⇒ `unknown` ⇒ `ok:false` 且**不说**能打；「判不了」与「确知没有」是**两条不同文案**（出口相同 = 电脑端补打 / 找管理员）。执行点 = 同文件::T3', '🔴 **判据 4（类级固化）**：终端分支必须消费 `printerMode`（`terminalPrintState(env.printerMode)`），旧形态 `if (env.terminalBridge) { return { ok: true … } }` 必须不复存在；`PRINT_READY_HINT_TERMINAL` 只许由 frontend/bmini-app/src/utils/inbound/printCapability.ts 的 `available` 分支产出，`src/**` 里别的文件不许自己写死这句话。执行点 = 同文件::T4', '🔴 **判据 5（取值接线）**：`readPrintEnv()` 从原生注入的 `window.__CFG__.printerMode` 取数，非数字 / 非有限值一律按「读不到」处理（fail-closed）；端到端：`__CFG__ = { printerMode: -1 }` ⇒ 探针（读真环境）也不说能打。执行点 = 同文件::T5', '**边界（照实登记，§19.1）**：① 判据只钉**本仓这一侧**（判定 + 文案 + 取值接线），**不覆盖**原生侧是否真的按 `PrinterLink.mode()` 赋值（仓外，终端仓另单）；② 不判「这台机器该不该配打印机」（硬件选型不在本单）；③ 不改任何门禁的通过条件、不新增豁免；④ `terminalBridge` 的既有定义（`chrome.webview`）**未动** —— 本轮只让「能力」由原生上报的事实说话。'],
+    skip_reason='[backend-contract] 纯前端确定性判据（能力探测 = 纯函数 + 取值接线 + 源码结构守卫），由 frontend/bmini-app/tests/inbound-print-capability-terminal.test.ts 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'bmini', 'print-capability', 'fail-closed', 'three-state', 'no-overclaim', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = frontend/bmini-app/src/utils/inbound/printCapability.ts 的终端分支在场、`PrintEnv.printerMode` 可注入、`readPrintEnv()` 读 `window.__CFG__`；能力探测是纯函数（零网络、零硬件），页面侧已有的 `capability.ok` 门禁（打印按钮 disabled）不变。',
+)
+
 CASES = (
     _CASE_MC_001,
     _CASE_MC_002,
@@ -3725,4 +3744,5 @@ CASES = (
     _CASE_MC_143,
     _CASE_MC_144,
     _CASE_MC_147,
+    _CASE_MC_154,
 )

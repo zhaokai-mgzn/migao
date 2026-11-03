@@ -31,6 +31,10 @@ export type PrintFailureReason =
   | 'connect-failed'
   | 'print-failed'
   | 'render-failed'
+  // 手持标签机（观星台 Android 终端）的两条：**能力在原生侧**，页面只能转述原生上报的事实。
+  // 分开两条是因为出口的"为什么"不同（一个确知没有打印机，一个**判不了**）—— 见 `terminalPrintState`。
+  | 'terminal-printer-unavailable'
+  | 'terminal-print-unknown'
 
 /**
  * 逐条可行动文案（**唯一生成处**）。
@@ -65,6 +69,13 @@ export const PRINT_FAILURE_HINTS: Record<PrintFailureReason, string> = {
     '打印机已连上但这次没打出来：请检查纸仓是否装好、是否缺纸 / 卡纸，处理好后点「重打」。',
   'render-failed':
     '标签图没画出来，已中止打印（不会打出空白标签）。请重试；若反复失败请把单号报给文员在电脑端补打。',
+  // 🔴 下面两条治的是「**说能打却不能打**」（issue #8310 真机：`PrinterLink.mode()` = -1，页面却写
+  //    「由本机打印机直接出纸」）。两句都必须**只陈述事实 + 给出口**（§31 P4）：不责备、不催促、
+  //    不猜机器的状态。⚠️ 两句**不许**合并成一句通用文案（守卫 D5 判两两不同）。
+  'terminal-printer-unavailable':
+    '本机没有检测到标签打印机，标签在这里打不出来。请到电脑端补打；需要本机出纸请联系管理员开启打印服务。',
+  'terminal-print-unknown':
+    '还没确认这台手持机能不能打标签，所以这里先不提供打印。请到电脑端补打；需要本机出纸请联系管理员。',
 }
 
 /** 探测用的环境快照（**注入式**：浏览器传真实值，测试传构造值） */
@@ -83,6 +94,13 @@ export interface PrintEnv {
   isWechat?: boolean
   /** 是否运行在观星台手持终端（WebView + `window.chrome.webview` 桥）—— 打印走商米内置打印机 */
   terminalBridge?: boolean
+  /**
+   * 终端原生上报的**打印服务模式**（与终端仓 `PrinterLink.mode()` 同源；issue #8310）。
+   *
+   * 缺省 = **原生没送这个值** ⇒ 能力**判不了**（`unknown`），**不许**当能打。
+   * 值域口径见 `terminalPrintState()`；本仓只认符号，不解释具体正整数。
+   */
+  printerMode?: number
 }
 
 /** 浏览器真实环境快照（**只在 h5 分支被调用**） */
@@ -97,7 +115,49 @@ export function readPrintEnv(): PrintEnv {
     isIos: /iPhone|iPad|iPod/i.test(ua),
     isWechat: /MicroMessenger/i.test(ua),
     terminalBridge: typeof window !== 'undefined' && !!(window as any).chrome?.webview,
+    printerMode: readPrinterMode(),
   }
+}
+
+/**
+ * 读终端原生注入的**运行期配置** `window.__CFG__.printerMode`（issue #8310）。
+ *
+ * 🔴 这是**仓外事实**：`__CFG__` 由终端仓（`zhaokai-mgzn/migao-terminal`）注入，不来自本仓。
+ * 截至本条落地（终端壳 1.0.19，2026-11-01 真机），原生**只**注入了 `window.chrome.webview` 与
+ * `window.migaoTerminal`，`__CFG__` 里**还没有** `printerMode` —— 所以本函数现在读到的永远是
+ * `undefined`，能力判定落 `unknown`（**判不了**，页面不再说能打）。原生补送之后**本文件不用再改**：
+ * 非数字 / NaN / Infinity 一律按「读不到」处理（fail-closed，**不猜**）。
+ */
+function readPrinterMode(): number | undefined {
+  if (typeof window === 'undefined') return undefined
+  const raw = (window as any).__CFG__?.printerMode
+  return typeof raw === 'number' && Number.isFinite(raw) ? raw : undefined
+}
+
+/** 终端打印能力的**三态**（`unknown` 必须与 `unavailable` 分开：前者是「不知道」，后者是「确知没有」）。 */
+export type TerminalPrintState = 'available' | 'unavailable' | 'unknown'
+
+/**
+ * 终端打印能力的三态判定（issue #8310 的唯一判定点）。
+ *
+ * 🔴 病根：旧实现只看「**壳在不在**」（`chrome.webview`）就判 `ok: true` —— 桥证明的是**壳**，
+ * 不是**打印机**。2026-11-01 真机（商米 V2s / 终端壳 1.0.19）：`PrinterLink.mode()` = **-1**，
+ * 设备上只有 `com.sunmi.printer.firmware`，没有 `com.sunmi.printer` 服务也没有打印节点 ——
+ * 这台机器打不出来，页面却写「由本机打印机直接出纸」（工人先拍照、先过账，过账不可逆）。
+ *
+ * | 入参 | 判定 | 为什么 |
+ * |---|---|---|
+ * | `> 0` | `available` | 原生报的是**正向**模式（正整数含义由终端仓定义，本仓只认符号） |
+ * | `< 0` | `unavailable` | 实测 **-1** = 没有商米打印服务 |
+ * | `0` / 缺省 / 非有限数字 | `unknown` | **不猜**：`0` 的语义仓外未定义、读不到就更不该说能打 |
+ *
+ * ⚠️ 方向是**单向**的：只有正向读数才允许说能打；判不了与确知没有**分开**说（出口都是电脑端补打）。
+ */
+export function terminalPrintState(printerMode?: number): TerminalPrintState {
+  if (typeof printerMode !== 'number' || !Number.isFinite(printerMode)) return 'unknown'
+  if (printerMode < 0) return 'unavailable'
+  if (printerMode > 0) return 'available'
+  return 'unknown'
 }
 
 export interface PrintCapability {
@@ -126,8 +186,16 @@ export function probePrintCapability(env: PrintEnv = readPrintEnv()): PrintCapab
   }
   // 观星台手持标签机：页面跑在 Android WebView 里，打印走终端的商米内置打印机桥，
   // 不依赖 Web Bluetooth（WebView 也没有这个接口）。
+  // 🔴 但「桥在」只证明**壳在**，不证明**打印机在**（issue #8310）⇒ 能不能打由原生上报的
+  //    `printerMode` 说话：正向才算能打；负向 = 确知打不了；读不到 = **判不了**（不许说能打）。
   if (env.terminalBridge) {
-    return { ok: true, hint: '', readyHint: PRINT_READY_HINT_TERMINAL }
+    const state = terminalPrintState(env.printerMode)
+    if (state === 'available') {
+      return { ok: true, hint: '', readyHint: PRINT_READY_HINT_TERMINAL }
+    }
+    const reason: PrintFailureReason =
+      state === 'unavailable' ? 'terminal-printer-unavailable' : 'terminal-print-unknown'
+    return { ok: false, reason, hint: PRINT_FAILURE_HINTS[reason] }
   }
   if (env.platform !== 'h5') {
     return { ok: false, reason: 'not-h5', hint: PRINT_FAILURE_HINTS['not-h5'] }
@@ -191,7 +259,13 @@ export const PRINT_READY_HINT = '点「打印标签」，在系统弹出的设�
 export const PRINT_READY_HINT_WX =
   '点「打印标签」即可：小程序会自己搜索附近的标签机（请先把打印机开机、放在 1~3 米内）'
 
-/** 手持标签机（观星台 Android 终端）的正向说法：打印走机身内置打印机，不需要选设备。 */
+/**
+ * 手持标签机（观星台 Android 终端）的正向说法：打印走机身内置打印机，不需要选设备。
+ *
+ * 🔴 **只有** `terminalPrintState(printerMode) === 'available'` 时**才允许**说这句话
+ * （issue #8310：这句话曾在打不出来的机器上照旧出现）。页面**不许**自己写死它 ——
+ * 只能用 `capability.readyHint`（判据 = `tests/inbound-print-capability-terminal.test.ts` 的 T4）。
+ */
 export const PRINT_READY_HINT_TERMINAL = '点「打印标签」，由本机打印机直接出纸。'
 
 /** 本页是否处在「可打印」平台（给页面做分支用；真正的判定仍是 `probePrintCapability`） */
