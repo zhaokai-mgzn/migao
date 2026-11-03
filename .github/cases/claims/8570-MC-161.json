@@ -1,5 +1,5 @@
 {
-  "id": "MC-159",
+  "id": "MC-161",
   "pr": 8570,
   "title": "数字输入精度面（issue #8004）：涉钱 / 涉数量格不许再用 type=\"number\" —— 共用 DecimalInput 一处解析/校验/话术 + 类级台账守卫",
   "claimed_at": "2026-11-03"

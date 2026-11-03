@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// case_ids: MC-159
+// case_ids: MC-161
 /**
  * `DecimalInput` —— 涉钱 / 带小数数量面唯一输入原语的**行为判据**（issue #8004）。
  *

@@ -7255,7 +7255,7 @@
 ```
 溯源: 2026-11-03 新增（issue #6692：本地 `next dev` 与 `next build` 共用 `.next` 会互相写坏；dev 侧已存在路由 404 可复现、build 侧读半写生成物报 9 条 TS 错误）。取号（**三次让号，记实**）：`python3 scripts/next_case_id.py MC` 首取 **MC-145**（工具按「最小空闲号、含历史空档」口径返回；历史空档 MC-099 按裁定**不回填**）；按本轮约束「避开 MC-139~MC-153」让号到 MC-154；merge `origin/main` 时 main 已占 148~154 ⇒ 顺延 **MC-155**；随后批合工具（#8565）把原 MC-154 重编号成 **MC-155**、#7992 又占了 **MC-156**（`git show origin/main:.github/cases/misc.yml` 现取末段 = 150/151/152/153/155/156）⇒ 再撞一次，按「后合入者让号」顺延终态 **MC-157**（157 归本包，158 留给 #8561）。修法 = **A `distDir` 隔离**（根因：物理隔离 > 每次清理）：`frontend/admin-web/next.config.mjs` 按 `NODE_ENV` 切两个输出根（dev → `.next-dev`、build/start → `.next`；`next` CLI 缺省 dev=development、其余=production 且尊重外部已设值 ⇒ `npx next dev` 等任何形态都自动分派）。牵连面**逐处核对**（台账 17 条）：`.gitignore` 两条新规则、`tsconfig.json` include/exclude、dev 锁路径改为现取配置、冒烟脚本陈旧缓存处置文案 + 其判据 7b 断言收紧（并加「不得指向 build 侧 `.next`」负控）、4 处全仓/包内走盘扫描器跳过新目录；**已核对无需改**：Dockerfile（构建/运行都在 production）、`pr-check.yml`（只缓存 npm、不缓存 `.next`）、`playwright.config.ts`（`npx next dev` 自动落 dev 目录）、`package.json`（脚本不覆盖 NODE_ENV）、`deploy/**`（现取 0 处 `.next` 引用）。**红证（注入式，实跑，读数见 PR body）**：7 条各自判红并具名，还原后文件指纹一致。 ｜ tags: dev-experience, dist-dir-isolation, static-config, ledger, red-proof
 
-### MC-159. 数字输入精度面（issue #8004）：涉钱 / 涉数量格不许再用 `type="number"`（中间态 `12.` 与千分位 `1,234.56` 会被浏览器吞掉）—— 共用 `DecimalInput` 一处解析/校验/话术 + 类级台账守卫 🔵
+### MC-161. 数字输入精度面（issue #8004）：涉钱 / 涉数量格不许再用 `type="number"`（中间态 `12.` 与千分位 `1,234.56` 会被浏览器吞掉）—— 共用 `DecimalInput` 一处解析/校验/话术 + 类级台账守卫 🔵
 ```
 你: issue #8004（施工单口径）：存量 `<input type="number">` 在**涉钱 / 涉数量**面会吞精度（中文输入法 / 千分位 / 尾随小数点下有已知丢值行为）。这类输入一旦丢值，商家会按错价下单 —— 涉钱面吞一次就是钱错了
 期望: direct_reply
@@ -7270,7 +7270,7 @@
 前置: 本用例是 [backend-contract]：纯前端确定性判据（jsdom 渲染 + 源码结构扫描 + 台账双向对账），零网络、零 DB、不进 agent-eval 冒烟。前置 = frontend/admin-web/src/lib/decimal-input.ts（解析/校验/话术单一口径）与 frontend/admin-web/src/components/ui/DecimalInput.tsx（唯一原语）在场，11 个涉钱站点已迁。
 跳过: [backend-contract] 纯前端确定性判据（组件行为 + 生产源码结构扫描 + 台账双向对账），由 frontend/admin-web/tests/unit/money-input-guard.test.ts、tests/unit/lib/decimal-input.test.ts、tests/unit/components/DecimalInput.test.tsx 验证；零 LLM 环节，不进入 agent-eval 冒烟
 ```
-溯源: 2026-11-03 新增（issue #8004）。病 = 存量 `<input type="number">` 在涉钱 / 涉数量面吞精度（浏览器对 `12.` / `0.` / `1,234.56` 的 `el.value` 会失真），而这类缺陷**不会让任何既有判据变红**。修 = ① 抽**一处**解析/校验/话术（frontend/admin-web/src/lib/decimal-input.ts）+ **一个**原语（frontend/admin-web/src/components/ui/DecimalInput.tsx：text + inputMode=decimal + 字符串草稿 + 只回调合法值 + 具名话术 + 离线合法性）；② 11 个涉钱站点迁该原语并**把提交按钮绑到 `hasInvalid`**（否则「敲错 → 保存」会按上一个有效值提交 = 静默改价）；③ 9 个涉数量站点只去掉 `type="number"` 并补 `inputMode`（保留各页既有的 0.1 米粒度 / 正整数口径，不造第二套话术）；④ 类级元守卫 = money-input-guard.test.ts + number-input-ledger.ts（未登记即红、台账只许缩短）。取号 = MC-159（`python3 scripts/next_case_id.py MC` 现取返回历史空档 MC-099，按裁定**不回填**；**三次让号记实**：先取 MC-156 ⇒ 远端核对发现 open PR #8560 已 claim 且已进 main；顺延一号 ⇒ rebase 时 PR #8563 已占且已进 main；再顺延发现 MC-158 已被在飞 PR #8568 claim ⇒ 终态 MC-159。`next_case_id.py` 按设计**看不到未 push 的本地 claim**，这就是它连续给出已被占用的号的原因）。**未接 `max` 的如实登记**：现有涉钱站点没有一个有既有业务上限口径（授信额度 / 退款额 / 优惠额都没有），涉钱面**不自造**上限 ⇒ `max` 能力由判据 4 的单元断言钉住，等业务给口径再接。 ｜ tags: backend-contract, frontend, money-surface, input-precision, fail-closed, ledger, red-proof
+溯源: 2026-11-03 新增（issue #8004）。病 = 存量 `<input type="number">` 在涉钱 / 涉数量面吞精度（浏览器对 `12.` / `0.` / `1,234.56` 的 `el.value` 会失真），而这类缺陷**不会让任何既有判据变红**。修 = ① 抽**一处**解析/校验/话术（frontend/admin-web/src/lib/decimal-input.ts）+ **一个**原语（frontend/admin-web/src/components/ui/DecimalInput.tsx：text + inputMode=decimal + 字符串草稿 + 只回调合法值 + 具名话术 + 离线合法性）；② 11 个涉钱站点迁该原语并**把提交按钮绑到 `hasInvalid`**（否则「敲错 → 保存」会按上一个有效值提交 = 静默改价）；③ 9 个涉数量站点只去掉 `type="number"` 并补 `inputMode`（保留各页既有的 0.1 米粒度 / 正整数口径，不造第二套话术）；④ 类级元守卫 = money-input-guard.test.ts + number-input-ledger.ts（未登记即红、台账只许缩短）。取号 = MC-161（`python3 scripts/next_case_id.py MC` 现取返回历史空档 MC-099，按裁定**不回填**；**四轮让号记实**：MC-156 ⇒ open PR #8560 已 claim 且已进 main；MC-157 ⇒ PR #8563 已占且已进 main；MC-158 ⇒ 在飞 PR #8568/#8571 已占；MC-159 ⇒ CI 的跨在飞 PR 取号判据抓到在飞 PR #8574 同时占着（issue #6245 的判据，**合并前就红**）；MC-160 亦被 #8574 占 ⇒ 终态 MC-161。`next_case_id.py` 按设计**看不到未 push 的本地 claim**，这就是它连续给出已被占用的号的原因）。**未接 `max` 的如实登记**：现有涉钱站点没有一个有既有业务上限口径（授信额度 / 退款额 / 优惠额都没有），涉钱面**不自造**上限 ⇒ `max` 能力由判据 4 的单元断言钉住，等业务给口径再接。 ｜ tags: backend-contract, frontend, money-surface, input-precision, fail-closed, ledger, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -15064,7 +15064,7 @@
 - MC-155: 终端壳打印能力三态（issue #8310）：桥在 ≠ 打印机在 —— printerMode 负向 / 读不到都不许说「由本机打印机直接出纸」，且「判不了」与「确知没有」分开说
 - MC-156: 机台页详情屏补「报返工」入口（复用既有 reportRework / 不新建第二套返工实现 / 次要动作不抢主位）
 - MC-157: **本地 dev / build 输出目录物理隔离**：`next dev` 写 `.next-dev`、`next build` / `next start` 仍写 `.next`（共用 `.next` 时 dev 侧已存在路由 404 可复现 + build 侧读到半写生成物报 9 条 TS 错误）
-- MC-159: 数字输入精度面（issue #8004）：涉钱 / 涉数量格不许再用 `type="number"`（中间态 `12.` 与千分位 `1,234.56` 会被浏览器吞掉）—— 共用 `DecimalInput` 一处解析/校验/话术 + 类级台账守卫
+- MC-161: 数字输入精度面（issue #8004）：涉钱 / 涉数量格不许再用 `type="number"`（中间态 `12.` 与千分位 `1,234.56` 会被浏览器吞掉）—— 共用 `DecimalInput` 一处解析/校验/话术 + 类级台账守卫
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
